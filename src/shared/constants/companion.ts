@@ -65,6 +65,22 @@ export const COMPANION_LIMITS = {
   pollIntervalMs: 1_000,
   /** 有命令在飞时的轮询间隔：结算回执只能靠轮询取回，1 秒一拍等于每段转写白等半秒。 */
   pendingPollIntervalMs: 250,
+  /**
+   * 手机项目/会话 sheet 等「电脑里的库」读回的最长等待（2026-09-14 build 34 反馈③）：
+   * 底层 request 没有客户端超时，连接僵死时 UI 会无限转圈；到点落「连不上电脑」失败态。
+   */
+  librarySheetWaitMs: 8_000,
+  /**
+   * 「正在核对电脑是否已接收」这句在发出命令后憋多久才说（N-MOBILE-PENDING-NOISE）。
+   * 那句话是防重复发送的**异常**兜底语，正常路径上 ack 几十毫秒就回来，每发一条都闪一下
+   * 等于每次都提醒用户「别乱点」（爸 2026-09-16 build 43 真机）。低于这个阈值就闭嘴。
+   */
+  pendingNoticeDelayMs: 3_000,
+  /**
+   * 单次 mDNS 重解析的超时（fix4-⑤）：到点即回退绑定里的旧地址，别把重连卡在 DNS 上。
+   * 原生两侧（NeoLanDnsPlugin / LanDnsPlugin）由 JS 传参消费，这里是唯一真源。
+   */
+  mdnsResolveTimeoutMs: 3_000,
   uiPresenceTtlMs: 15_000,
   lanPort: 8182,
   approvalPreviewLength: 16_000,
@@ -75,6 +91,8 @@ export const COMPANION_LIMITS = {
   /** Pending commands older than this cannot reasonably still be resolving. */
   reconcilingRecoveryMs: 300_000,
   fileMaxBytes: FILE.MAX_SIZE,
+  /** Tiny uploads finish in one poll; keep preparing/transferring visible at least this long. */
+  attachChipMinVisibleMs: 400,
   /** Raw chunk size so base64 + JSON stay inside one Noise payload (≤48 KiB). */
   fileChunkBytes: FILE_CHUNK_BYTES,
   fileChunkBase64Limit: Math.ceil(FILE_CHUNK_BYTES / 3) * 4,

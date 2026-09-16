@@ -685,6 +685,8 @@ export function createAgentLoop(
       ...(config.agentOverride?.deniedToolNames ?? []),
     ])),
     allowedToolNames: config.allowedToolNames,
+    foregroundToolFace: config.foregroundToolFace,
+    historyVisibility: config.historyVisibility,
     telemetryAdapter,
     // CLI 消息持久化回调（包含 tool_results）
     persistMessage: async (message: Message) => {

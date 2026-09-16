@@ -111,8 +111,10 @@ export interface RuntimeContext {
   readonly systemPromptStore?: Pick<SystemPromptCache, 'store' | 'get'>;
   readonly inferenceOptions?: InferenceOptions;
   readonly historyVisibility?: 'visible' | 'meta';
+  readonly unattendedTurn?: boolean;
   readonly deniedToolNames?: string[];
   readonly allowedToolNames?: string[];
+  readonly foregroundToolFace?: boolean;
 
   // --- Turn 级状态切片（ADR-038 批3a，写操作走 TurnState 方法）---
   readonly turn: TurnState;

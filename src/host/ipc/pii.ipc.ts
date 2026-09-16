@@ -19,7 +19,9 @@ import * as os from 'os';
 import { spawn, type ChildProcess } from 'child_process';
 import type { IpcMain } from '../platform';
 import { broadcastToRenderer } from '../platform';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_CHANNELS } from '../../shared/ipc';
+import { PiiSchemas, type PiiDomainRequest } from '../../shared/ipc/schemas/pii';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('PiiIpc');
@@ -248,35 +250,30 @@ function getStatus() {
 // ---------------------------------------------------------------------------
 // IPC handler 注册
 // ---------------------------------------------------------------------------
+/**
+ * pii 域单源路由表（RQ-183 续作·PII 刀）：原 domain switch 4 个 `data = fn(); break;` case 平移为默认模式 handler（返回 data，
+ * 装配器包 { success: true, data }）。未知 action 用装配器缺省（INVALID_ACTION `Unknown action: <action>`，与原文逐字一致）；
+ * 抛错进 mapError：原样记 `pii ipc handler error` { action, error: message } 日志 + INTERNAL_ERROR（Error.message / String(error)）。
+ * 请求体为 null / 非对象时原实现在 try 外解构抛错（IPC reject），现返回 INVALID_ACTION。
+ */
+const piiRoutes = defineDomainRoutes<PiiDomainRequest, void>(PiiSchemas.REQUEST, {
+  /* eslint-disable @typescript-eslint/naming-convention -- action 名是 IPC 线协议字面量（renderer 调用 'setup:start' 等），不是标识符 */
+  'setup:start': () => startSetup(),
+  'setup:cancel': () => cancelSetup(),
+  'setup:status': () => getStatus(),
+  'setup:isReady': () => checkReady(),
+  /* eslint-enable @typescript-eslint/naming-convention */
+}, {
+  mapError: (error, action) => {
+    logger.error('pii ipc handler error', { action, error: error instanceof Error ? error.message : String(error) });
+    return { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) };
+  },
+});
+
 export function registerPiiHandlers(ipcMain: IpcMain): void {
-  ipcMain.handle(IPC_DOMAINS.PII, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action } = request;
-    try {
-      let data: unknown;
-      switch (action) {
-        case 'setup:start':
-          data = startSetup();
-          break;
-        case 'setup:cancel':
-          data = cancelSetup();
-          break;
-        case 'setup:status':
-          data = getStatus();
-          break;
-        case 'setup:isReady':
-          data = checkReady();
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-      return { success: true, data };
-    } catch (error) {
-      logger.error('pii ipc handler error', { action, error: error instanceof Error ? error.message : String(error) });
-      return {
-        success: false,
-        error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) },
-      };
-    }
-  });
+  installDomainRoutes(ipcMain, piiRoutes, undefined);
   logger.info('PII IPC handlers registered');
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerLoopHandlers.routes 先例）
+registerPiiHandlers.routes = piiRoutes;

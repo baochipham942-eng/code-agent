@@ -6,6 +6,7 @@ import {
 } from '../../../src/web/helpers/sessionCache';
 import {
   createWebSessionStore,
+  isPlaceholderSessionTitle,
   deleteSessionProjection,
   getSessionMessageCount,
   getSessionMessagesProjection,
@@ -34,6 +35,15 @@ const logger = {
   warn: vi.fn(),
   error: vi.fn(),
 };
+
+describe('placeholder session titles', () => {
+  it('treats generated and mobile one-tap names as placeholders, not user names', () => {
+    expect(isPlaceholderSessionTitle('新会话')).toBe(true);
+    expect(isPlaceholderSessionTitle('New conversation')).toBe(true);
+    expect(isPlaceholderSessionTitle('New Session')).toBe(true);
+    expect(isPlaceholderSessionTitle('ask-plan-live-a')).toBe(false);
+  });
+});
 
 describe('WebSessionStore', () => {
   beforeEach(() => {
@@ -220,6 +230,83 @@ describe('WebSessionStore', () => {
       'Pre-persist user message to DB failed (continuing run):',
       'Message update missed for session session-core-b and id forced-core-collision',
     );
+  });
+
+  it('commitTurn 落库 user 侧保留 isMeta（meta 轮不混进可见历史）', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'meta-turn', title: 'Existing' });
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => null,
+      logger,
+      getDatabase: async () => db as unknown as DatabaseService,
+    });
+    await store.commitTurn({
+      sessionId: 'meta-turn',
+      title: 'approved plan',
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      historyLength: 0,
+      userMessagePrePersistedDb: false,
+      userMessage: {
+        id: 'user-meta',
+        role: 'user',
+        content: '<approved-plan>…</approved-plan>',
+        timestamp: 1,
+        isMeta: true,
+      },
+      turn: {
+        assistantText: '',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: undefined,
+        contentParts: [],
+        runCancelled: false,
+        hasAssistantOutput: () => false,
+        hasInterleaving: () => false,
+      },
+    });
+    expect(db.addMessage).toHaveBeenCalledWith(
+      'meta-turn',
+      expect.objectContaining({ id: 'user-meta', isMeta: true }),
+    );
+  });
+
+  it('commitTurn does not rewrite a custom session title on the first user message', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'named', title: 'ask-plan-live-a' });
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => null,
+      logger,
+      getDatabase: async () => db as unknown as DatabaseService,
+    });
+    await store.commitTurn({
+      sessionId: 'named',
+      title: 'Force AskUserQuestion with flavor tea',
+      modelConfig: { provider: 'longcat', model: 'LongCat-2.0' },
+      historyLength: 0,
+      userMessagePrePersistedDb: true,
+      userMessage: {
+        id: 'user-1',
+        role: 'user',
+        content: 'Force AskUserQuestion with flavor tea',
+        timestamp: 1,
+      },
+      turn: {
+        assistantText: '',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: undefined,
+        contentParts: [],
+        runCancelled: false,
+        hasAssistantOutput: () => false,
+        hasInterleaving: () => false,
+      },
+    });
+    expect(db.updateSession).toHaveBeenCalledWith('named', expect.objectContaining({ updatedAt: expect.any(Number) }));
+    expect(db.updateSession).not.toHaveBeenCalledWith('named', expect.objectContaining({ title: 'Force AskUserQuestion with flavor tea' }));
   });
 
   it('commitTurn persists through the shared DB fallback when SessionManager is unavailable', async () => {

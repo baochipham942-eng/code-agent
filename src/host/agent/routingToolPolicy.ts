@@ -50,6 +50,29 @@ export const READONLY_TOOL_DENYLIST: readonly string[] = [
   'Edit',
 ];
 
+/**
+ * disableAutoAgent 轮次要收掉的委派类工具。桌面消费点在 agentOrchestrator
+ * （options.disableAutoAgent 禁分析器扇出/delegate 改道），而 web /api/run 路径
+ * 不经 orchestrator——宿主侧本就没有自动扇出可禁，这条路径上模型唯一的委派出口
+ * 就是工具表里的 spawn/驱动类工具。桌面语义「不扇出代理、顺序执行」在此落成：
+ * 把这些工具收出本轮工具面（deniedToolNames），批准的计划由本循环顺序执行。
+ * 名单与 tools/modules 批 6 multiagent 的注册名一一对应（含 Task/AgentSpawn 命名变体）；
+ * plan_review 不在列：它走 PlanApprovalGate，不产生子代理。
+ */
+export const AUTO_DELEGATION_TOOL_NAMES: readonly string[] = [
+  'Task',
+  'teammate',
+  'spawn_agent',
+  'AgentSpawn',
+  'wait_agent',
+  'collect_agent',
+  'close_agent',
+  'send_input',
+  'agent_message',
+  'workflow',
+  'workflow_orchestrate',
+];
+
 /** 按显式路由到的 agent 构造工具 denylist；非 readonly 不加约束 */
 export function buildRoutingToolDenylist(
   agent: { readonly?: boolean } | null | undefined,

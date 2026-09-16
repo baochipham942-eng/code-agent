@@ -33,6 +33,7 @@ cases:
 
   - id: bash-echo
     type: tool
+    category: basic_tool
     description: "bash 工具 - 输出文本"
     prompt: "执行 echo 命令输出 'Hello Test'"
     reference_solution: "调用 bash 执行 echo 'Hello Test'，输出中包含 Hello Test"
@@ -42,12 +43,14 @@ cases:
   # --------------------------------------------------------------------------
   - id: read-file-exists
     type: tool
+    category: basic_tool
     description: "read_file 工具 - 读取存在的文件"
     prompt: "读取 package.json 文件的内容"
     reference_solution: "调用 read_file 读取 package.json，输出包含 name 和 version 字段"
 
   - id: read-file-not-exists
     type: error_handling
+    category: error_recovery
     description: "read_file 工具 - 读取不存在的文件"
     prompt: "读取 this-file-does-not-exist-12345.txt 文件"
     reference_solution: "读取不存在的文件时，agent 应优雅处理错误而非崩溃"
@@ -83,6 +86,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: glob-find-ts
     type: tool
+    category: basic_tool
     description: "glob 工具 - 查找 TypeScript 文件"
     prompt: "查找 src 目录下所有的 .ts 文件"
 

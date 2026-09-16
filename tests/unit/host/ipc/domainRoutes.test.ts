@@ -222,6 +222,124 @@ describe('installDomainRoutes', () => {
     });
   });
 
+  it('unknownActionCode / mapError / rawResponse：既有域错误契约与带 data 的失败响应逐字透传（DESKTOP 刀）', async () => {
+    const table = defineDomainRoutes(
+      channelSchema({ channel: 'domain:test-raw', payload: EnumRequestSchema }),
+      {
+        echo: async () => ({ success: false, error: { code: 'AUDIO_START_FAILED', message: 'no sox' }, data: { capturing: false } }),
+        ping: async () => {
+          throw 'not-an-error';
+        },
+      },
+      {
+        rawResponse: true,
+        unknownActionCode: 'UNKNOWN_ACTION',
+        mapError: (error, action) => ({ code: 'DESKTOP_ERROR', message: `${String(action)}:${error instanceof Error ? error.message : 'Unknown error'}` }),
+      },
+    );
+    const { registered, target } = createTarget();
+    installDomainRoutes(target, table, { prefix: 'neo' });
+    const call = registered.get('domain:test-raw');
+
+    await expect(call?.(undefined, { action: 'echo' })).resolves.toEqual({
+      success: false,
+      error: { code: 'AUDIO_START_FAILED', message: 'no sox' },
+      data: { capturing: false },
+    });
+    await expect(call?.(undefined, { action: 'ping' })).resolves.toEqual({
+      success: false,
+      error: { code: 'DESKTOP_ERROR', message: 'ping:Unknown error' },
+    });
+    await expect(call?.(undefined, { action: 'nope' })).resolves.toEqual({
+      success: false,
+      error: { code: 'UNKNOWN_ACTION', message: 'Unknown action: nope' },
+    });
+  });
+
+  it('mapError 返回 details 时原样透传；不返回 details 时 error 无 details 键（AGENT_ENGINE 刀）', async () => {
+    const table = defineDomainRoutes(
+      channelSchema({ channel: 'domain:test-details', payload: EnumRequestSchema }),
+      {
+        echo: async () => {
+          throw Object.assign(new Error('no fork'), { engine: 'codex' });
+        },
+        ping: async () => {
+          throw new Error('plain');
+        },
+      },
+      {
+        rawResponse: true,
+        mapError: (error) => (
+          error instanceof Error && 'engine' in error
+            ? { code: 'CAPABILITY_UNSUPPORTED', message: error.message, details: { engine: error.engine } }
+            : { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) }
+        ),
+      },
+    );
+    const { registered, target } = createTarget();
+    installDomainRoutes(target, table, { prefix: 'neo' });
+    const call = registered.get('domain:test-details');
+
+    await expect(call?.(undefined, { action: 'echo' })).resolves.toEqual({
+      success: false,
+      error: { code: 'CAPABILITY_UNSUPPORTED', message: 'no fork', details: { engine: 'codex' } },
+    });
+    const plain = await call?.(undefined, { action: 'ping' }) as { error: Record<string, unknown> };
+    expect(plain.error).toEqual({ code: 'INTERNAL_ERROR', message: 'plain' });
+    expect(Object.keys(plain.error)).toEqual(['code', 'message']);
+  });
+
+  it('guard：分发前拦截（未知 action 也先过门）；放行后照常分发；门抛错走错误映射（PROMPT 刀）；门收到装配 ctx（TASK 刀）', async () => {
+    let mode: 'block' | 'pass' | 'throw' = 'block';
+    let seenCtx: unknown;
+    const table = defineDomainRoutes(
+      channelSchema({ channel: 'domain:test-guard', payload: EnumRequestSchema }),
+      { echo: async () => 'echoed', ping: async () => null },
+      {
+        guard: (action, ctx) => {
+          seenCtx = ctx;
+          if (mode === 'throw') throw new Error(`guard boom ${String(action)}`);
+          return mode === 'block' ? { success: false, error: { code: 'FORBIDDEN', message: 'nope' } } : null;
+        },
+      },
+    );
+    const { registered, target } = createTarget();
+    installDomainRoutes(target, table, { prefix: 'neo' });
+    const call = registered.get('domain:test-guard');
+
+    await expect(call?.(undefined, { action: 'echo' })).resolves.toEqual({ success: false, error: { code: 'FORBIDDEN', message: 'nope' } });
+    await expect(call?.(undefined, { action: 'bogus' })).resolves.toEqual({ success: false, error: { code: 'FORBIDDEN', message: 'nope' } });
+    mode = 'pass';
+    await expect(call?.(undefined, { action: 'echo' })).resolves.toEqual({ success: true, data: 'echoed' });
+    await expect(call?.(undefined, { action: 'bogus' })).resolves.toEqual({ success: false, error: { code: 'INVALID_ACTION', message: 'Unknown action: bogus' } });
+    mode = 'throw';
+    await expect(call?.(undefined, { action: 'echo' })).resolves.toEqual({ success: false, error: { code: 'INTERNAL_ERROR', message: 'guard boom echo' } });
+    expect(seenCtx).toEqual({ prefix: 'neo' });
+  });
+
+  it('guard 收到请求 payload（SETTINGS 刀：门按 payload 判定）；未知 action 与缺 payload 同样传入', async () => {
+    const seen: unknown[] = [];
+    const table = defineDomainRoutes(
+      channelSchema({ channel: 'domain:test-guard-payload', payload: EnumRequestSchema }),
+      { echo: async () => 'echoed', ping: async () => null },
+      {
+        guard: (_action, _ctx, payload) => {
+          seen.push(payload);
+          return (payload as { admin?: boolean } | undefined)?.admin ? { success: false, error: { code: 'FORBIDDEN', message: 'admin only' } } : null;
+        },
+      },
+    );
+    const { registered, target } = createTarget();
+    installDomainRoutes(target, table, { prefix: 'neo' });
+    const call = registered.get('domain:test-guard-payload');
+
+    await expect(call?.(undefined, { action: 'echo', payload: { admin: true } })).resolves.toEqual({ success: false, error: { code: 'FORBIDDEN', message: 'admin only' } });
+    await expect(call?.(undefined, { action: 'echo', payload: { admin: false } })).resolves.toEqual({ success: true, data: 'echoed' });
+    await expect(call?.(undefined, { action: 'bogus', payload: { admin: true } })).resolves.toEqual({ success: false, error: { code: 'FORBIDDEN', message: 'admin only' } });
+    await call?.(undefined, { action: 'echo' });
+    expect(seen).toEqual([{ admin: true }, { admin: false }, { admin: true }, undefined]);
+  });
+
   it('表带 schema 未声明的 action → 拒绝装配', () => {
     const { target } = createTarget();
     const drifted = {

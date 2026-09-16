@@ -96,10 +96,6 @@ export function registerSessionHandlers(
       return null;
     }
   });
-
-  ipcMain.handle(IPC_CHANNELS.SESSION_GET_TASKS, async (_, sessionId: string) => {
-    return requireAppService().getSessionTasks(sessionId);
-  });
 }
 
 function listReviewItemsBySession(payload: SessionReviewItemsRequest): Record<string, AdminReviewQueueItem[]> {

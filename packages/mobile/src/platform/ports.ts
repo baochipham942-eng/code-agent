@@ -1,5 +1,6 @@
 import type { FileCache } from './fileCache';
 import type { HistoryCache } from './historyCache';
+import type { RelayDialSocket } from './relayCompanionClient';
 
 type Dispose = () => void;
 
@@ -38,6 +39,8 @@ export interface NotificationPort {
   permission: { read(): Promise<OsPermission>; request(): Promise<OsPermission> };
   token: { current(): Promise<TokenResult>; subscribe(onChange: (result: TokenResult) => void): Dispose };
   tap: { subscribe(onTap: (routeToken: string) => void): Promise<Dispose> };
+  /** 前台来推送时问一句要不要弹（decide 回 false = 不弹）；只有 iOS 第一方插件提供。 */
+  foreground?: { subscribe(decide: (routeToken: string | null) => Promise<boolean>): Promise<Dispose> };
   openSettings(): Promise<void>;
   network: { read(): NetworkStatus };
 }
@@ -49,10 +52,22 @@ export interface PlatformPorts {
     startPcm?(): Promise<{ sampleRate: number }>;
     stopPcm?(): Promise<void>;
     subscribePcm?(onFrame: (frame: { pcm: string; durationMs: number }) => void): () => void;
+    /**
+     * 起录因 MICROPHONE_BUSY 失败后，盯着麦克风什么时候被占用方放掉；放掉时回调一次。返回取消盯守。
+     * 只有 iOS 第一方插件提供（它能读音频会话状态）。
+     */
+    watchMicrophoneRelease?(onReleased: () => void): () => void;
   };
   companion?: {
     read(): Promise<string | null>; write(value: string): Promise<void>;
     scan(): Promise<string>; post(url: string, body: unknown): Promise<unknown>;
+    /** One-shot mDNS resolve of a `.local` hostname to a private IPv4 (fix4-⑤). Null = use the old address. */
+    resolveHost?(host: string): Promise<string | null>;
+    /**
+     * 拨 relay WSS（N-MOBILE-RELAY-PHONE）。headers 由能设头的运行时消费；WebView 的
+     * WebSocket 设不了头，部署侧前置层注入凭据。缺省走 browserRelayDial。
+     */
+    dialRelay?(url: string, headers: { authorization: string }): RelayDialSocket;
   };
   files?: FilePorts;
   /** App-private conversation body cache. Separate from pairing identity and drafts. */

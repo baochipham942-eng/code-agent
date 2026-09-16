@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import express from 'express';
 import http from 'http';
 import { mkdtemp, rm } from 'fs/promises';
@@ -504,6 +505,7 @@ describe('createAgentRouter', () => {
     await closeServer();
     if (tempDataDir) {
       await rm(tempDataDir, { recursive: true, force: true });
+      await rm(`${tempDataDir}-work`, { recursive: true, force: true });
       tempDataDir = undefined;
     }
     queuedInputTestDb?.close();
@@ -530,6 +532,57 @@ describe('createAgentRouter', () => {
     expect(runRegistry.getBySessionId('companion-activation')?.context.runId).toBe(activation.runId);
     expect(publish).toHaveBeenCalledWith('companion-activation', 'run_started', { event: {}, runId: activation.runId });
     await runRegistry.getBySessionId('companion-activation')!.cancel('user');
+  });
+
+  // N-MOBILE-SOURCE-CONTEXT：手机发起的轮次模型要知道用户在手机上；桌面发起的不能带
+  it('companion runs carry the mobile source context into the model-facing prompt; desktop runs do not', async () => {
+    await closeServer();
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    await startAgentApi({ registerCompanionRun: value => { start = value; } });
+    const SOURCE_LINE = '来源端：用户这一轮是在手机上发起的';
+    const lastUserContent = () => {
+      const messages = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+      return String(messages.filter(m => m.role === 'user').at(-1)!.content);
+    };
+    mockCreateAgentLoop.mockClear();
+    await start!({ version: 1, sessionId: 'companion-source-phone', prompt: '手机上的问题' });
+    await vi.waitFor(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+    expect(lastUserContent()).toContain('<user_request>\n手机上的问题');
+    expect(lastUserContent()).toContain(SOURCE_LINE);
+    // 爸 2026-09-16 真机：旧句「产出做成文件交付」让问答也去写文件
+    expect(lastUserContent()).toContain('不要为问答另写文件');
+    expect(lastUserContent()).not.toContain('产出做成文件交付');
+    await runRegistry.getBySessionId('companion-source-phone')!.cancel('user');
+
+    mockCreateAgentLoop.mockClear();
+    const controller = new AbortController();
+    try {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '桌面上的问题', sessionId: 'desktop-source', context: { selectedSkillIds: ['skill-a'] } }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await vi.waitFor(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+      // 前提自证：桌面这轮确实拼了 turnSystemContext（不是因为没包装才「没有」）
+      expect(lastUserContent()).toContain('<user_request>\n桌面上的问题');
+      expect(lastUserContent()).not.toContain(SOURCE_LINE);
+    } finally { controller.abort(); }
+  });
+
+  // 爸 2026-09-16 真机：回复早已显示，手机执行条还挂 3 秒——agent_complete 排在执行后的云端同步之后，
+  // 未登录时云端访问要先失败一轮恢复登录。夹具里的执行跑不到收尾，这里钉源码顺序（static-contract）；
+  // 运行时证据是真机数据库里 message 与 agent_complete 两个事件的时间差。
+  it('publishes the terminal companion event before the post-run cloud sync', () => {
+    const source = readFileSync('src/web/routes/agent.ts', 'utf8');
+    const commit = source.indexOf('await sessionStore.commitTurn({');
+    const terminal = source.indexOf("finalStatus === 'interrupted' ? 'agent_cancelled' : finalStatus === 'error' ? 'error' : 'agent_complete'", commit);
+    const cloud = source.indexOf('// ── 持久化到 Supabase（Web 模式云端同步）──', commit);
+    // 前提自证：三个锚点都在
+    expect(commit).toBeGreaterThan(0);
+    expect(terminal).toBeGreaterThan(commit);
+    expect(cloud).toBeGreaterThan(commit);
+    expect(terminal).toBeLessThan(cloud);
   });
 
   it('cancelling a companion run releases its real pending approval with denial', async () => {
@@ -1265,8 +1318,10 @@ describe('createAgentRouter', () => {
         allowedToolNames?: string[];
         maxIterations?: number;
         taskManagerToolsEnabled?: boolean;
+        foregroundToolFace?: boolean;
       };
       expect(config.taskManagerToolsEnabled).toBe(true);
+      expect(config.foregroundToolFace).toBe(true);
       expect(config.allowedToolNames).toEqual(expect.arrayContaining(['Read', 'Edit', 'Write']));
       expect(config.allowedToolNames).not.toEqual(expect.arrayContaining(['Append', 'Bash']));
       expect(config.maxIterations).toBe(8);
@@ -1299,6 +1354,86 @@ describe('createAgentRouter', () => {
       };
       expect(config.thinkingEnabled).toBe(false);
       expect(config.effortLevel).toBe('low');
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    it('body 带 disableAutoAgent=true → 委派类工具收进 deniedToolNames（批准计划顺序执行）', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '<approved-plan>…</approved-plan> Execute this approved plan now.',
+          sessionId: 'session-disable-auto-agent-on',
+          disableAutoAgent: true,
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        deniedToolNames?: string[];
+      };
+      expect(config.deniedToolNames).toEqual(expect.arrayContaining([
+        'Task', 'spawn_agent', 'AgentSpawn', 'teammate', 'workflow', 'workflow_orchestrate',
+      ]));
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    it('body 不带 disableAutoAgent → 工具面不因委派收窄（deniedToolNames 无 spawn 类工具）', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'hi',
+          sessionId: 'session-disable-auto-agent-off',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        deniedToolNames?: string[];
+      };
+      expect(config.deniedToolNames ?? []).not.toEqual(expect.arrayContaining(['spawn_agent', 'Task']));
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    it('body 带 historyVisibility=meta → pre-persist 落库的 user message 带 isMeta（计划内部 prompt 不混进可见历史）', async () => {
+      setDbAvailable(true);
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '<approved-plan>…</approved-plan> Execute this approved plan now.',
+          sessionId: 'session-meta-prepersist',
+          historyVisibility: 'meta',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockDb.addMessage).toHaveBeenCalled();
+      });
+      expect(mockDb.addMessage).toHaveBeenCalledWith(
+        'session-meta-prepersist',
+        expect.objectContaining({ role: 'user', isMeta: true }),
+      );
       controller.abort();
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
@@ -3949,8 +4084,31 @@ describe('createAgentRouter', () => {
     await response.text();
 
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
-      project: join(tempDataDir, 'work'),
+      // 默认目录不在数据目录里（后台写边界按设计拒绝数据目录）：嵌套数据目录放在旁边
+      project: `${tempDataDir}-work`,
     }));
+  });
+
+  // grok ai-review PR#1911 Nit：旧默认目录已经存进会话（Dev 槽 5 个、正式版 18 个），只修空 cwd 的话这些会话派后台任务照样失败
+  it('treats a session still pinned to the legacy <dataDir>/work as having no directory and uses the new default', async () => {
+    await closeServer();
+    setDbAvailable(true);
+    tempDataDir = await mkdtemp(join(tmpdir(), 'code-agent-data-'));
+    process.env.CODE_AGENT_DATA_DIR = tempDataDir;
+    mockCreateAgentLoop.mockImplementationOnce(() => ({ run: vi.fn(async () => undefined), cancel: mockCancel }));
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({ workingDirectory: join(tempDataDir!, 'work') })),
+      }),
+    });
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '普通聊天', sessionId: 'session-legacy-work' }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
   });
 
   it('persists assistant output when loop message events were not actually stored', async () => {

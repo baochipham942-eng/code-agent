@@ -119,6 +119,27 @@ describe('handleScreenshot whitelist', () => {
     expect(pipe).toHaveBeenCalledOnce();
   });
 
+  it('serves agent images from the default work dir outside the data dir (~/Neo), legacy userData/work still served above', () => {
+    const saved = { home: process.env.CODE_AGENT_HOME, data: process.env.CODE_AGENT_DATA_DIR };
+    process.env.CODE_AGENT_HOME = '/fake/home';
+    delete process.env.CODE_AGENT_DATA_DIR;
+    try {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+      const pipe = vi.fn();
+      vi.spyOn(fs, 'createReadStream').mockReturnValue({ pipe } as unknown as fs.ReadStream);
+      const res = mockRes();
+      handleScreenshot(mockReq('/fake/home/Neo/chart.png'), res);
+      expect(res.statusCode).toBe(0);
+      expect(pipe).toHaveBeenCalledOnce();
+      const outside = mockRes();
+      handleScreenshot(mockReq('/fake/home/Neo-other/chart.png'), outside);
+      expect(outside.statusCode).toBe(403);
+    } finally {
+      if (saved.home === undefined) delete process.env.CODE_AGENT_HOME; else process.env.CODE_AGENT_HOME = saved.home;
+      if (saved.data === undefined) delete process.env.CODE_AGENT_DATA_DIR; else process.env.CODE_AGENT_DATA_DIR = saved.data;
+    }
+  });
+
   it('denies traversal that escapes the work dir', () => {
     const res = mockRes();
     handleScreenshot(mockReq('/fake/userdata/work/../../etc/secret.png'), res);

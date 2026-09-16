@@ -3,7 +3,8 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { AuthSchemas, type AuthDomainRequest } from '../../shared/ipc/schemas/auth';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type { AuthUser, AuthStatus } from '../../shared/contract';
 import { getAuthService } from '../services';
 import { getSecureStorage } from '../services/core/secureStorage';
@@ -122,84 +123,58 @@ async function handlePasswordResetCallback(payload: { accessToken: string; refre
 // ----------------------------------------------------------------------------
 
 /**
+ * auth 域单源路由表（RQ-183 续作·AUTH 刀）：原 domain switch 逐 case 平移（handler 返回 data，装配器包
+ * { success: true, data }；四个无返回的 action 显式返回 null）；未知 action → INVALID_ACTION `Unknown action: <action>`
+ * （装配器缺省）；抛错 → mapError：getAuthIpcErrorMessage 提取文案 + 带 action 的 warn（不记 payload，防凭据入日志）
+ * + INTERNAL_ERROR。请求体为 null / 非对象时，原实现在 try 外解构抛错（IPC reject），现返回 INVALID_ACTION。
+ */
+const authRoutes = defineDomainRoutes<AuthDomainRequest, void>(
+  AuthSchemas.REQUEST,
+  {
+    getStatus: () => handleGetStatus(),
+    signInEmail: (_ctx, payload) => handleSignInEmail(payload as { email: string; password: string }),
+    signUpEmail: (_ctx, payload) => handleSignUpEmail(payload as { email: string; password: string; inviteCode?: string }),
+    signInOAuth: async (_ctx, payload) => {
+      await handleSignInOAuth(payload as { provider: 'github' | 'google' });
+      return null;
+    },
+    signInToken: (_ctx, payload) => handleSignInToken(payload as { token: string }),
+    signOut: async () => {
+      await handleSignOut();
+      return null;
+    },
+    getUser: () => handleGetUser(),
+    updateProfile: (_ctx, payload) => handleUpdateProfile(payload as { updates: Partial<AuthUser> }),
+    generateQuickToken: () => handleGenerateQuickToken(),
+    saveCredentials: (_ctx, payload) => {
+      handleSaveCredentials(payload as { email: string; password: string });
+      return null;
+    },
+    getSavedCredentials: () => handleGetSavedCredentials(),
+    clearSavedCredentials: () => {
+      handleClearSavedCredentials();
+      return null;
+    },
+    resetPassword: (_ctx, payload) => handleResetPassword(payload as { email: string }),
+    updatePassword: (_ctx, payload) => handleUpdatePassword(payload as { password: string }),
+    passwordResetCallback: (_ctx, payload) =>
+      handlePasswordResetCallback(payload as { accessToken: string; refreshToken: string }),
+  },
+  {
+    mapError: (error, action) => {
+      const message = getAuthIpcErrorMessage(error);
+      logger.warn('Auth IPC action failed', { action, error: message });
+      return { code: 'INTERNAL_ERROR', message };
+    },
+  },
+);
+
+/**
  * 注册 Auth 相关 IPC handlers
  */
 export function registerAuthHandlers(ipcMain: IpcMain): void {
-  // ========== New Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.AUTH, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action, payload } = request;
-
-    try {
-      let data: unknown;
-
-      switch (action) {
-        case 'getStatus':
-          data = await handleGetStatus();
-          break;
-        case 'signInEmail':
-          data = await handleSignInEmail(payload as { email: string; password: string });
-          break;
-        case 'signUpEmail':
-          data = await handleSignUpEmail(payload as { email: string; password: string; inviteCode?: string });
-          break;
-        case 'signInOAuth':
-          await handleSignInOAuth(payload as { provider: 'github' | 'google' });
-          data = null;
-          break;
-        case 'signInToken':
-          data = await handleSignInToken(payload as { token: string });
-          break;
-        case 'signOut':
-          await handleSignOut();
-          data = null;
-          break;
-        case 'getUser':
-          data = await handleGetUser();
-          break;
-        case 'updateProfile':
-          data = await handleUpdateProfile(payload as { updates: Partial<AuthUser> });
-          break;
-        case 'generateQuickToken':
-          data = await handleGenerateQuickToken();
-          break;
-        case 'saveCredentials':
-          handleSaveCredentials(payload as { email: string; password: string });
-          data = null;
-          break;
-        case 'getSavedCredentials':
-          data = handleGetSavedCredentials();
-          break;
-        case 'clearSavedCredentials':
-          handleClearSavedCredentials();
-          data = null;
-          break;
-        case 'resetPassword':
-          data = await handleResetPassword(payload as { email: string });
-          break;
-        case 'updatePassword':
-          data = await handleUpdatePassword(payload as { password: string });
-          break;
-        case 'passwordResetCallback':
-          data = await handlePasswordResetCallback(payload as { accessToken: string; refreshToken: string });
-          break;
-        default:
-          return {
-            success: false,
-            error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` },
-          };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      const message = getAuthIpcErrorMessage(error);
-      logger.warn('Auth IPC action failed', { action, error: message });
-      return {
-        success: false,
-        error: { code: 'INTERNAL_ERROR', message },
-      };
-    }
-  });
-
-  // ========== Legacy Handlers (Deprecated) ==========
-
+  installDomainRoutes(ipcMain, authRoutes, undefined);
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）
+registerAuthHandlers.routes = authRoutes;

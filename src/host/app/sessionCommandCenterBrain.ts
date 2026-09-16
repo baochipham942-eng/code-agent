@@ -38,6 +38,7 @@ export function withSessionCommandCenterBrain(
       SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
     ),
     allowedToolNames: getTextForegroundToolNames(),
+    foregroundToolFace: true,
     turnSystemContext: [
       ...(options?.turnSystemContext ?? []),
       SESSION_COMMAND_CENTER_BRAIN_CONTEXT,

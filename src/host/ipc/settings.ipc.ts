@@ -4,7 +4,7 @@
 
 import type { IpcMain } from '../platform';
 import { app, broadcastToRenderer } from '../platform';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import type { AppSettings, ModelEntrySettings, ModelProvider, ModelProviderSettings } from '../../shared/contract';
 import type { ServiceApiKey } from '../../shared/contract/configService';
 import { MASKED_SERVICE_KEY_LIST, type MaskedServiceKeyMap } from '../../shared/contract/configService';
@@ -17,6 +17,10 @@ import { resolveProviderIconAsset, saveProviderIconAsset } from '../services/pro
 import { handleDiscoverModels, type DiscoveredProviderModel, type DiscoverModelsResult } from './provider.ipc';
 import { refreshRegisteredVoiceInstructions } from '../services/capabilities/hostCapabilityPorts';
 import { createLogger } from '../services/infra/logger';
+import type { DomainRouteHandlers } from '../../shared/ipc/domainRoutes';
+import { SettingsSchemas, type SettingsDomainRequest } from '../../shared/ipc/schemas/settings';
+import { WindowSchemas, type WindowDomainRequest } from '../../shared/ipc/schemas/window';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
 import {
   resolveSheetCoordinate,
@@ -471,9 +475,109 @@ async function handleSetBudgetConfig(
   syncBudgetServiceFromConfig(configService.getBudgetConfig());
 }
 
+/** 按请求取聚焦窗口（保留原动态 import，不改模块加载顺序） */
+async function getFocusedAppWindow() {
+  const { AppWindow } = await import('../platform');
+  return AppWindow.getFocusedWindow();
+}
+
+/**
+ * window 域单源路由表（RQ-183 续作·WINDOW 刀）：原 domain switch 逐 case 平移（handler 返回 null，装配器包
+ * { success: true, data: null }）；聚焦窗口按请求取（原 switch 在 try 外取、抛错即 reject，现落 INTERNAL_ERROR）；
+ * 未知 action → INVALID_ACTION `Unknown action: <action>`、抛错 → INTERNAL_ERROR（Error 取 message、非 Error 取
+ * String(error)），均为装配器缺省。
+ */
+const windowRoutes = defineDomainRoutes<WindowDomainRequest, void>(WindowSchemas.REQUEST, {
+  minimize: async () => {
+    (await getFocusedAppWindow())?.minimize();
+    return null;
+  },
+  maximize: async () => {
+    const mainWindow = await getFocusedAppWindow();
+    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
+    else mainWindow?.maximize();
+    return null;
+  },
+  close: async () => {
+    (await getFocusedAppWindow())?.close();
+    return null;
+  },
+});
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
+
+type SettingsRouteCtx = () => ConfigService | null;
+
+/**
+ * settings 域单源路由表（RQ-183 续作·SETTINGS 刀）：原 domain switch 13 个 case 手工平移为默认模式 handler（返回 data，装配器包
+ * { success: true, data }）；装配 ctx 就是 getConfigService，handler 首参同名、体内零改名。get 在取值后仍按 isCurrentUserAdmin 脱敏，
+ * 故保留 `let data` 两段赋值再 return（不能把首个 data= 改成 return，否则脱敏变死代码）。admin 门走 guard：判定仍是单源的
+ * settingsActionRequiresAdmin(action, payload)（set 看更新里是否带敏感 key，另五个固定 action 恒门控），guard 在查 handler 之前执行，
+ * 与原「先过门再 switch」同序；未知 action 判定为不需要门 → 放行 → INVALID_ACTION。未知 action 与抛错走装配器缺省
+ * （INVALID_ACTION `Unknown action:` / INTERNAL_ERROR + Error.message 或 String(error)），与原实现逐字一致。请求体为 null / 非对象时，
+ * 原实现在 try 外解构抛错（IPC reject），现返回 INVALID_ACTION。
+ */
+const settingsHandlers: DomainRouteHandlers<SettingsDomainRequest, SettingsRouteCtx> = {
+  get: async (getConfigService) => {
+    let data: unknown = await handleGet(getConfigService);
+    if (!isCurrentUserAdmin()) {
+      data = sanitizeSettingsForUser(data as AppSettings);
+    }
+    return data;
+  },
+  set: async (getConfigService, payload) => {
+    await handleSet(getConfigService, payload as { settings: Partial<AppSettings> });
+    return null;
+  },
+  testApiKey: async (_getConfigService, payload) => {
+    return await handleTestApiKey(payload as { provider: string; apiKey: string });
+  },
+  getDevMode: async () => {
+    return await handleGetDevMode();
+  },
+  setDevMode: async (getConfigService, payload) => {
+    await handleSetDevMode(getConfigService, payload as { enabled: boolean });
+    return null;
+  },
+  checkApiKeyConfigured: async (getConfigService) => {
+    return await handleCheckApiKeyConfigured(getConfigService);
+  },
+  saveProviderIconAsset: async (_getConfigService, payload) => {
+    const iconPayload = payload as { provider?: string; dataUrl?: string };
+    return await saveProviderIconAsset({
+      provider: iconPayload.provider ?? '',
+      dataUrl: iconPayload.dataUrl ?? '',
+    });
+  },
+  resolveProviderIconAsset: async (_getConfigService, payload) => {
+    return await resolveProviderIconAsset((payload as { icon?: string })?.icon ?? '');
+  },
+  setServiceApiKey: async (getConfigService, payload) => {
+    await handleSetServiceApiKey(getConfigService, payload as { service: ServiceApiKey; apiKey: string });
+    return null;
+  },
+  getServiceApiKey: async (getConfigService, payload) => {
+    return await handleGetServiceApiKey(getConfigService, payload as { service: ServiceApiKey });
+  },
+  getAllServiceKeys: async (getConfigService) => {
+    return await handleGetAllServiceKeys(getConfigService);
+  },
+  getBudgetStatus: async () => {
+    return await handleGetBudgetStatus();
+  },
+  setBudgetConfig: async (getConfigService, payload) => {
+    await handleSetBudgetConfig(getConfigService, payload as Parameters<typeof handleSetBudgetConfig>[1]);
+    return null;
+  },
+};
+
+const settingsRoutes = defineDomainRoutes<SettingsDomainRequest, SettingsRouteCtx>(SettingsSchemas.REQUEST, settingsHandlers, {
+  guard: (action, _getConfigService, payload) => (
+    settingsActionRequiresAdmin(String(action), payload) ? getAdminAccessIpcError('Settings') : null
+  ),
+});
 
 /**
  * 注册 Settings 相关 IPC handlers
@@ -482,107 +586,10 @@ export function registerSettingsHandlers(
   ipcMain: IpcMain,
   getConfigService: () => ConfigService | null
 ): void {
-  // ========== New Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.SETTINGS, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action, payload } = request;
+  installDomainRoutes(ipcMain, settingsRoutes, getConfigService);
 
-    try {
-      if (settingsActionRequiresAdmin(action, payload)) {
-        const accessError = getAdminAccessIpcError('Settings');
-        if (accessError) return accessError;
-      }
-
-      let data: unknown;
-
-      switch (action) {
-        case 'get':
-          data = await handleGet(getConfigService);
-          if (!isCurrentUserAdmin()) {
-            data = sanitizeSettingsForUser(data as AppSettings);
-          }
-          break;
-        case 'set':
-          await handleSet(getConfigService, payload as { settings: Partial<AppSettings> });
-          data = null;
-          break;
-        case 'testApiKey':
-          data = await handleTestApiKey(payload as { provider: string; apiKey: string });
-          break;
-        case 'getDevMode':
-          data = await handleGetDevMode();
-          break;
-        case 'setDevMode':
-          await handleSetDevMode(getConfigService, payload as { enabled: boolean });
-          data = null;
-          break;
-        case 'checkApiKeyConfigured':
-          data = await handleCheckApiKeyConfigured(getConfigService);
-          break;
-        case 'saveProviderIconAsset':
-          {
-            const iconPayload = payload as { provider?: string; dataUrl?: string };
-            data = await saveProviderIconAsset({
-              provider: iconPayload.provider ?? '',
-              dataUrl: iconPayload.dataUrl ?? '',
-            });
-          }
-          break;
-        case 'resolveProviderIconAsset':
-          data = await resolveProviderIconAsset((payload as { icon?: string })?.icon ?? '');
-          break;
-        case 'setServiceApiKey':
-          await handleSetServiceApiKey(getConfigService, payload as { service: ServiceApiKey; apiKey: string });
-          data = null;
-          break;
-        case 'getServiceApiKey':
-          data = await handleGetServiceApiKey(getConfigService, payload as { service: ServiceApiKey });
-          break;
-        case 'getAllServiceKeys':
-          data = await handleGetAllServiceKeys(getConfigService);
-          break;
-        case 'getBudgetStatus':
-          data = await handleGetBudgetStatus();
-          break;
-        case 'setBudgetConfig':
-          await handleSetBudgetConfig(getConfigService, payload as Parameters<typeof handleSetBudgetConfig>[1]);
-          data = null;
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
-    }
-  });
-
-  // ========== Window Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.WINDOW, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action } = request;
-    const { AppWindow } = await import('../platform');
-    const mainWindow = AppWindow.getFocusedWindow();
-
-    try {
-      switch (action) {
-        case 'minimize':
-          mainWindow?.minimize();
-          break;
-        case 'maximize':
-          if (mainWindow?.isMaximized()) mainWindow.unmaximize();
-          else mainWindow?.maximize();
-          break;
-        case 'close':
-          mainWindow?.close();
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-      return { success: true, data: null };
-    } catch (error) {
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
-    }
-  });
+  // window 域：单源路由表装配（RQ-183 续作·WINDOW 刀）
+  installDomainRoutes(ipcMain, windowRoutes, undefined);
 
   // ========== Legacy Handlers (Deprecated) ==========
 
@@ -595,26 +602,6 @@ export function registerSettingsHandlers(
   ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_INTEGRATION, async (_, payload: { integration: string; config: Record<string, string> }) => {
     assertAdminAccess('Integration settings');
     return handleSetIntegration(getConfigService, payload);
-  });
-
-  /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'minimize' */
-  ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, async () => {
-    const { AppWindow } = await import('../platform');
-    AppWindow.getFocusedWindow()?.minimize();
-  });
-
-  /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'maximize' */
-  ipcMain.handle(IPC_CHANNELS.WINDOW_MAXIMIZE, async () => {
-    const { AppWindow } = await import('../platform');
-    const mainWindow = AppWindow.getFocusedWindow();
-    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
-    else mainWindow?.maximize();
-  });
-
-  /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'close' */
-  ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE, async () => {
-    const { AppWindow } = await import('../platform');
-    AppWindow.getFocusedWindow()?.close();
   });
 
   ipcMain.handle(IPC_CHANNELS.APP_GET_VERSION, async (): Promise<string> => app.getVersion());
@@ -876,3 +863,9 @@ export function registerSettingsHandlers(
     return result;
   });
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerSyncHandlers.deviceRoutes 先例）
+registerSettingsHandlers.windowRoutes = windowRoutes;
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）
+registerSettingsHandlers.routes = settingsRoutes;

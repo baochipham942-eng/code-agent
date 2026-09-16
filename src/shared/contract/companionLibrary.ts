@@ -21,14 +21,28 @@ export type CompanionRead = z.infer<typeof companionReadSchema>;
 // File-local: only CompanionLibrary below refers to it.
 interface CompanionSessionSummary {
   id: string; title: string; projectId: string | null; updatedAt: number; archived: boolean;
+  /** 下一次执行真正会用的模型（会话 override 否则电脑默认），不是建会话时的快照。 */
   provider: string; model: string;
 }
 export interface CompanionLibrary {
   nextOffset: number | null;
-  projects: { id: string; name: string; canCreate: boolean }[];
+  /**
+   * workspacePath = 电脑上这个项目的工作目录（fix5-③，2026-09-15 build 36 反馈⑦：4 个同名
+   * workspace 无消歧）。可缺省——旧 Host 不带它，手机侧消歧标签跟着降级为不显示。
+   */
+  projects: {
+    id: string; name: string; workspacePath?: string | null;
+    /** 此刻能不能在这个项目里新建会话（授权 + 宿主前提都满足）。旧 Host 只按授权给。 */
+    canCreate: boolean;
+    /** 建不了的原因，缺省 = 能建或旧 Host 没说。not_granted = 这台设备没有项目授权；no_workspace = 电脑上没设工作目录。 */
+    createBlocked?: 'not_granted' | 'no_workspace';
+  }[];
   sessions: CompanionSessionSummary[];
-  /** isDefault = 电脑自己新建会话会用的那个模型；手机的下拉默认必须跟着它，不是跟着列表顺序。 */
-  models: { provider: string; model: string; label: string; providerLabel: string; isDefault?: true }[];
+  /**
+   * isDefault = 电脑自己新建会话会用的那个模型；手机的下拉默认必须跟着它，不是跟着列表顺序。
+   * recentlyFailed = 这个 provider 最近在电脑上调用失败（健康度 unavailable，常见是 key 被拒）。
+   */
+  models: { provider: string; model: string; label: string; providerLabel: string; isDefault?: true; recentlyFailed?: true }[];
 }
 export interface CompanionHistory {
   sessionId: string;

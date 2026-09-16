@@ -2,65 +2,111 @@ import { useState } from 'react';
 import type { CompanionLibrary } from '../../../../../src/shared/contract/companionLibrary';
 import type { messages } from '../../i18n';
 import { AppIcon } from '../../app/AppIcon';
+import { projectDisplayName, projectRowModels } from './projectRows';
 
-export function LibrarySheet({ library, sessionId, text, busy, mode, select, manage, loadMore }: {
-  library: CompanionLibrary; sessionId: string | null; text: ReturnType<typeof messages>; busy: boolean; mode: 'projects' | 'more';
-  select(id: string): void; loadMore(): void;
+export function LibrarySheet({ library, sessionId, text, busy, mode, projectId, select, manage, loadMore, openProjectSessions }: {
+  library: CompanionLibrary; sessionId: string | null; text: ReturnType<typeof messages>; busy: boolean;
+  mode: 'projects' | 'projectSessions' | 'more' | 'model'; projectId: string | null;
+  select(id: string): void; loadMore(): void; openProjectSessions(id: string): void;
   manage(action: 'session.create' | 'session.rename' | 'session.archive' | 'session.delete' | 'session.model', payload: Record<string, unknown>, target?: string): Promise<void>;
 }) {
   const session = library.sessions.find(s => s.id === sessionId);
-  const [projectId, setProject] = useState(session?.projectId ?? library.projects[0]?.id ?? '');
-  const [title, setTitle] = useState(session?.title ?? '');
-  const [deleting, setDeleting] = useState(false);
   const project = library.projects.find(p => p.id === projectId);
-  /**
-   * 这条会话正在用的模型**可能不在列表里**：`library.models` 由电脑侧 buildRuntimeModelOptions
-   * 产出，会剔掉没配 key 的 provider。查不到就退到列表第一项的话，下拉显示的是另一个**真实**
-   * 模型名（不是「未知」），而紧挨着的「使用此模型」照样可点——用户以为在确认当前，一点就把
-   * 会话换掉了（爸 2026-09-12 真机：会话实为 custom-glm-coding/glm-5.3-flash，下拉写着
-   * DeepSeek V4.1 Flash）。所以给它补一条只读项，让下拉说真话、让那个按钮保持禁用。
-   *
-   * 只在「会话操作」这一档补：这条只读项的意思是「这条会话正在用的那个」，不是一个可选项。
-   * 项目页那档是**新建**会话，把它列进去等于让用户拿一个电脑上没配的模型去建会话，
-   * Host 会直接拒（grok ai-review Important）。
-   */
-  const options = mode === 'more' && session && !library.models.some(m => m.provider === session.provider && m.model === session.model)
-    ? [...library.models, { provider: session.provider, model: session.model, label: session.model, providerLabel: text.modelNotConfigured }]
-    : library.models;
+  // 新建会话的「会话名称」默认留空（fix5-③，2026-09-15 build 36 反馈⑦：被上一会话的 prompt
+  // 标题预填，一键建出来的会话全叫上一个会话的名字）。重命名是另一回事：预填现名才对。
+  const [newTitle, setNewTitle] = useState('');
+  const [renameTitle, setRenameTitle] = useState(session?.title ?? '');
+  const [deleting, setDeleting] = useState(false);
+  // 新建会话一步起的默认模型：电脑默认 > 列表第一项（列表顺序不代表电脑的选择，FB-141）。
+  const defaultModel = library.models.find(m => m.isDefault) ?? library.models[0];
+  // 新建会话「高级选项」里的模型下拉：会话已有的模型 > 电脑的默认模型 > 列表第一项（列表顺序不代表电脑的选择）。
   const [modelKey, setModel] = useState(() => {
-    // 会话已有的模型 > 电脑的默认模型 > 列表第一项（列表顺序不代表电脑的选择）
-    const model = options.find(m => m.provider === session?.provider && m.model === session?.model)
-      ?? library.models.find(m => m.isDefault) ?? library.models[0];
+    const model = library.models.find(m => m.provider === session?.provider && m.model === session?.model) ?? defaultModel;
     return model ? JSON.stringify([model.provider, model.model]) : '';
   });
-  const model = options.find(m => JSON.stringify([m.provider, m.model]) === modelKey);
+  const model = library.models.find(m => JSON.stringify([m.provider, m.model]) === modelKey);
+  const rows = projectRowModels(library.projects, library.sessions, {
+    recent: count => text.recentUseSessions.replace('{n}', String(count)),
+    count: count => text.sessionsCount.replace('{n}', String(count)),
+  });
+  /**
+   * 主层「点项目 = 选中并返回原输入框」（fix5-③，设计稿 project 屏的原则原文）：选中即在这
+   * 项目里一步起会话——新任务用它的资料与工作范围，草稿由 activateDraft 带进新会话不丢。
+   * 建不了（没有项目授权 / 电脑没配模型）就进项目会话前进页，那里能继续已有工作。
+   */
+  const selectProject = (target: CompanionLibrary['projects'][number]) => {
+    if (target.canCreate && defaultModel) {
+      void manage('session.create', { title: text.newSession, provider: defaultModel.provider, model: defaultModel.model }, `project:${target.id}`);
+    } else openProjectSessions(target.id);
+  };
   return <div className="library-sheet">
     {mode === 'projects' ? <>
-      <p className="caption">{text.authorizedProjects}</p>
-      <div className="settings-group">{library.projects.map(p => <button key={p.id} className="settings-row" aria-pressed={p.id === projectId} onClick={() => setProject(p.id)}><span>{p.name}</span>{p.id === projectId && <AppIcon name="check" />}</button>)}</div>
+      <div className="settings-group project-list">{rows.map(row => {
+        const target = library.projects.find(p => p.id === row.id)!;
+        // 电脑上没设工作目录 = 宿主必拒建会话：在点之前就置灰并说为什么（设计稿 projectUnavailable）。
+        // 前进页照常能进——里面已有的会话是电脑上建的，打开它们不经过「新建」这条路。
+        const noWorkspace = target.createBlocked === 'no_workspace';
+        return <div className="project-row" key={row.id} data-testid={`project-${row.id}`} data-blocked={noWorkspace || undefined}>
+          <button className="project-main" disabled={busy || noWorkspace} onClick={() => selectProject(target)}>
+            <AppIcon name="folder" />
+            <span className="flex"><p>{row.label}</p><span className="small">{noWorkspace ? text.projectNoWorkspace : row.subtitle}</span></span>
+          </button>
+          <button className="project-more" aria-label={text.openProjectSessions} disabled={busy} onClick={() => openProjectSessions(row.id)}><AppIcon name="chevron" /></button>
+        </div>;
+      })}</div>
       {!library.projects.length && <p>{text.projectGrantRequired}</p>}
-      {project && <><h3>{project.name}</h3>
-        <div className="settings-group">{library.sessions.filter(s => s.projectId === projectId).map(s => <button className="settings-row" key={s.id} disabled={busy} onClick={() => select(s.id)}>{s.title}{s.archived ? ` · ${text.archived}` : ''}</button>)}</div>
-        {!library.sessions.some(s => s.projectId === projectId) && <p>{text.emptyHistory}</p>}
-        {project.canCreate ? <>
-          <label className="group-title" htmlFor="new-title">{text.newSession}</label>
-          <input id="new-title" value={title} maxLength={160} placeholder={text.sessionName} onChange={e => setTitle(e.target.value)} />
-          <button className="primary" disabled={busy || !model} onClick={() => model && void manage('session.create', { title: title.trim() || text.newSession, provider: model.provider, model: model.model }, `project:${project.id}`)}>{text.newSession}</button>
-        </> : <p>{text.projectGrantRequired}</p>}
-      </>}
-    </> : session ? <>
+      <p className="sheet-note">{text.projectScopeNote}{library.projects.filter(p => p.createBlocked === 'no_workspace')
+        .map(p => text.projectNoWorkspaceNote.replace('{name}', projectDisplayName(p, library.projects))).join('')}</p>
+    </> : mode === 'projectSessions' ? (project ? <>
+      {project.canCreate ? <>
+        <button className="primary" data-testid="start-session" disabled={busy || !model} onClick={() => model && void manage('session.create', { title: newTitle.trim() || text.newSession, provider: model.provider, model: model.model }, `project:${project.id}`)}>{text.newSession}</button>
+        <details className="advanced">
+          <summary>{text.advancedOptions}</summary>
+          <label className="group-title" htmlFor="new-title">{text.sessionName}</label>
+          <input id="new-title" value={newTitle} maxLength={160} placeholder={text.sessionName} onChange={e => setNewTitle(e.target.value)} />
+          <label className="group-title" htmlFor="model-select">{text.model}</label>
+          <select id="model-select" value={modelKey} disabled={busy} onChange={e => setModel(e.target.value)}>
+            {library.models.map(m => <option key={JSON.stringify([m.provider, m.model])} value={JSON.stringify([m.provider, m.model])}>{m.providerLabel} · {m.label}</option>)}
+          </select>
+        </details>
+      </> : <p>{project.createBlocked === 'no_workspace' ? text.projectNoWorkspace : text.projectGrantRequired}</p>}
+      <p className="group-title">{text.recentSessions}</p>
+      <div className="settings-group">{library.sessions.filter(s => s.projectId === project.id).map(s => <button className="settings-row" key={s.id} data-testid={`session-${s.id}`} data-session-id={s.id} disabled={busy} onClick={() => select(s.id)}>{s.title}{s.archived ? ` · ${text.archived}` : ''}</button>)}</div>
+      {!library.sessions.some(s => s.projectId === project.id) && <p>{text.emptyHistory}</p>}
+      {library.nextOffset != null && <button disabled={busy} onClick={loadMore}>{text.loadHistory}</button>}
+    </> : <p>{text.projectUnavailable}</p>) : mode === 'model' ? (session ? (() => {
+      /**
+       * 选择会话模型（设计稿 model 屏；爸 2026-09-16 拍板：入口只留输入区胶囊）。只列电脑已配置的模型——
+       * 列表由电脑侧 buildRuntimeModelOptions 产出，没配 key 的 provider 本来就不在里面。
+       * 这条会话此刻会用的模型若不在列表里（电脑上没配），照实列出来、置灰、不给点：
+       * 让用户看清「现在用的就是那个用不了的」，而不是给它配一个点了必失败的确认键（build 45 真机）。
+       */
+      const configured = library.models.some(m => m.provider === session.provider && m.model === session.model);
+      return <>
+        <div className="settings-group model-list">
+          {!configured && <div className="settings-row model-row" aria-disabled="true" aria-current="true" data-testid="model-unconfigured">
+            <span className="flex"><p>{session.model}</p><span className="small">{text.modelNotConfigured}</span></span><AppIcon name="check" />
+          </div>}
+          {library.models.map(m => {
+            const current = m.provider === session.provider && m.model === session.model;
+            return <button key={JSON.stringify([m.provider, m.model])} className="settings-row model-row" data-testid={`model-${m.provider}:${m.model}`}
+              aria-current={current || undefined} disabled={busy}
+              onClick={() => { if (!current) void manage('session.model', { provider: m.provider, model: m.model }); }}>
+              <span className="flex"><p>{m.label}</p><span className="small">{m.providerLabel} · {m.recentlyFailed ? text.modelRecentlyFailed : text.modelConfigured}</span></span>
+              {current && <AppIcon name="check" />}
+            </button>;
+          })}
+        </div>
+        {!library.models.length && <p>{text.modelUnavailable}</p>}
+        <p className="sheet-note">{text.modelScopeNote}</p>
+      </>;
+    })() : <p>{text.emptyHistory}</p>) : session ? <>
       <label className="group-title" htmlFor="session-title">{text.sessionName}</label>
-      <input id="session-title" maxLength={160} value={title} onChange={e => setTitle(e.target.value)} />
-      <button className="primary" disabled={busy || !title.trim() || title.trim() === session.title} onClick={() => void manage('session.rename', { title: title.trim() })}>{text.rename}</button>
+      <input id="session-title" maxLength={160} value={renameTitle} onChange={e => setRenameTitle(e.target.value)} />
+      <button className="primary" disabled={busy || !renameTitle.trim() || renameTitle.trim() === session.title} onClick={() => void manage('session.rename', { title: renameTitle.trim() })}>{text.rename}</button>
       <button className="settings-row" disabled={busy} onClick={() => void manage('session.archive', { archived: !session.archived })}>{session.archived ? text.unarchive : text.archive}</button>
       {deleting ? <div role="alert"><p>{text.deleteConfirmation}</p><button disabled={busy} onClick={() => setDeleting(false)}>{text.keepSession}</button><button className="danger" disabled={busy} onClick={() => void manage('session.delete', {})}>{text.confirmDelete}</button></div>
         : <button className="settings-row danger" disabled={busy} onClick={() => setDeleting(true)}>{text.deleteSession}</button>}
     </> : <p>{text.emptyHistory}</p>}
-    {library.nextOffset != null && <button disabled={busy} onClick={loadMore}>{text.loadHistory}</button>}
-    <label className="group-title" htmlFor="model-select">{text.model}</label>
-    <select id="model-select" value={modelKey} disabled={busy} onChange={e => setModel(e.target.value)}>
-      {options.map(m => <option key={JSON.stringify([m.provider, m.model])} value={JSON.stringify([m.provider, m.model])}>{m.providerLabel} · {m.label}</option>)}
-    </select>
-    {mode === 'more' && session && <button className="primary" disabled={busy || !model || (model.provider === session.provider && model.model === session.model)} onClick={() => model && void manage('session.model', { provider: model.provider, model: model.model })}>{text.useModel}</button>}
   </div>;
 }

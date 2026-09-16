@@ -8,9 +8,12 @@ import { buildRuntimeModelOptions } from '../../../shared/modelRuntime';
 import { resolveSessionDefaultModelConfig } from '../core/sessionDefaults';
 import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
 import { projectGrant, type CompanionRead, type CompanionLibrary, type CompanionHistory } from '../../../shared/contract/companionLibrary';
+import { UNSORTED_PROJECT_ID } from '../../../shared/contract/project';
 import type { CompanionCommand } from '../../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
-import { MODEL_OVERRIDE_METADATA_KEY, persistModelOverride } from '../../session/modelOverridePersistence';
+import { stripInterruptionMarkers } from './projectCompanionEvent';
+import { MODEL_OVERRIDE_METADATA_KEY, persistModelOverride, readPersistedModelOverride } from '../../session/modelOverridePersistence';
+import { getProviderHealthMonitor } from '../../model/providerHealthMonitor';
 import { getModelSessionState } from '../../session/modelSessionState';
 import { createLogger } from '../infra/logger';
 import type { AppSettings } from '../../../shared/contract';
@@ -29,7 +32,20 @@ function companionModelOptions(
   return buildRuntimeModelOptions(settings).map(({ provider, model, label, providerLabel }) => ({
     provider, model, label, providerLabel,
     ...(provider === hostDefault.provider && model === hostDefault.model ? { isDefault: true as const } : {}),
+    // 配了 key 不等于能用：key 被拒（403）的 provider 照样在列表里。刚因鉴权失败要换模型的人
+    // 不该再换到它身上（build 45 真机：默认的 custom-team-relay 就是被拒的那家）。
+    ...(getProviderHealthMonitor().getHealth(provider)?.status === 'unavailable' ? { recentlyFailed: true as const } : {}),
   }));
+}
+
+/**
+ * 这条会话下一次执行**真正会用**的模型：会话 override（内存优先，重启后看持久化标记）否则电脑默认。
+ * 与 routes/agent.ts 的运行解析链同口径。不能报 sessions 表的 model 列——那是建会话时的快照，
+ * 没切换过的会话运行时跟随电脑默认（build 45 真机：胶囊写 glm-5.3-flash，实跑 custom-team-relay/LongCat-2.0）。
+ */
+function sessionRunModel(session: { id: string; metadata?: Record<string, unknown> }, hostDefault: { provider: string; model: string }) {
+  const override = getModelSessionState().getOverride(session.id) ?? readPersistedModelOverride(session);
+  return override && override.adaptive !== true ? { provider: override.provider, model: override.model } : { provider: hostDefault.provider, model: hostDefault.model };
 }
 
 /** Page-level form of canAccessSession(): grants plus the cleanup queue, so a session queued for
@@ -43,6 +59,15 @@ function sessionAccessible(grants: readonly string[], forgotten: ReadonlySet<str
   return !!session.projectId && grants.includes(projectGrant(session.projectId));
 }
 
+/**
+ * 这个项目此刻建不了会话：普通项目要有工作目录；「未分类」是无工作目录会话的保留桶，桌面端在里面新建对话
+ * 从来不要求目录（运行时兜底到应用工作目录），手机端与之一致。build 46 按「无目录即不可建」把它也挡了，
+ * 而爸的电脑只有这一个项目 ⇒ 手机上一个会话都建不了（2026-09-16 真机）。
+ */
+function missingWorkspace(project: { id: string; workspacePath?: string | null }): boolean {
+  return !project.workspacePath && project.id !== UNSORTED_PROJECT_ID;
+}
+
 /** Mobile reuses the desktop repositories, model catalogue and session services. */
 export class CompanionLibraryService {
   constructor(private readonly gateway: CompanionGateway, private readonly isRunning: (id: string) => boolean) {}
@@ -52,7 +77,9 @@ export class CompanionLibraryService {
   }
 
   projects() {
-    return getDatabase().getProjectRepo().listProjects().map(p => ({ id: p.id, name: p.name }));
+    // workspacePath 用于手机侧同名项目消歧（fix5-③）：名字可重复（不同目录各建过一个
+    // workspace），路径不会。缺路径的存量项目照发 null，手机侧降级不显示消歧标签。
+    return getDatabase().getProjectRepo().listProjects().map(p => ({ id: p.id, name: p.name, workspacePath: p.workspacePath ?? null }));
   }
 
   sessionExists(id: string): boolean { return this.session(id) !== null; }
@@ -80,15 +107,18 @@ export class CompanionLibraryService {
           AND (? = 0 OR rowid < ?) ORDER BY rowid DESC LIMIT ?`).all(request.sessionId, request.offset, request.offset, L.syncPageSize) as
           { cursor: number; id: string; role: string; content: string; timestamp: number }[];
       const messages: CompanionHistory['messages'] = [];
-      let bytes = 512; let nextOffset: number | null = null;
+      let bytes = 512; let nextOffset: number | null = null; let consumed = 0;
       for (const row of rows) {
-        const message = { id: row.id, role: row.role, content: row.content.slice(0, L.historyMessageCharacters), timestamp: row.timestamp,
-          truncated: row.content.length > L.historyMessageCharacters };
+        // 历史里的中断标记同样不出手机边界（与实时事件同一个函数）；只剩标记的助手行跳过，但分页游标照常前进
+        const content = row.role === 'assistant' ? stripInterruptionMarkers(row.content) : row.content;
+        if (row.role === 'assistant' && !content.trim() && row.content.trim()) { nextOffset = row.cursor; consumed += 1; continue; }
+        const message = { id: row.id, role: row.role, content: content.slice(0, L.historyMessageCharacters), timestamp: row.timestamp,
+          truncated: content.length > L.historyMessageCharacters };
         const size = Buffer.byteLength(JSON.stringify(message));
         if (bytes + size > L.historyByteLimit) break;
-        messages.push(message); bytes += size; nextOffset = row.cursor;
+        messages.push(message); bytes += size; nextOffset = row.cursor; consumed += 1;
       }
-      if (messages.length === rows.length && rows.length < L.syncPageSize) nextOffset = null;
+      if (consumed === rows.length && rows.length < L.syncPageSize) nextOffset = null;
       return { sessionId: request.sessionId, messages: messages.reverse(), nextOffset };
 
     }
@@ -102,11 +132,16 @@ export class CompanionLibraryService {
       }
       if (page.length < L.librarySessionLimit) break;
     }
+    // 「有没有授权」与「此刻能不能建」是两个问题。判据与 mutate() 里 session.create 的宿主前提同一个函数。
     const projects = this.projects().filter(p => grants.includes(projectGrant(p.id)) || sessions.some(s => s.projectId === p.id))
-      .map(p => ({ ...p, canCreate: grants.includes(projectGrant(p.id)) }));
-    const models = companionModelOptions(getConfigService().getSettings(), resolveSessionDefaultModelConfig());
+      .map(p => {
+        const createBlocked = !grants.includes(projectGrant(p.id)) ? 'not_granted' as const : missingWorkspace(p) ? 'no_workspace' as const : null;
+        return { ...p, canCreate: createBlocked === null, ...(createBlocked ? { createBlocked } : {}) };
+      });
+    const hostDefault = resolveSessionDefaultModelConfig();
+    const models = companionModelOptions(getConfigService().getSettings(), hostDefault);
     return { projects, models, nextOffset: request.offset + L.syncPageSize < sessions.length ? request.offset + L.syncPageSize : null, sessions: sessions.slice(request.offset, request.offset + L.syncPageSize).map(s => ({ id: s.id, title: s.title, projectId: s.projectId ?? null,
-      updatedAt: s.updatedAt, archived: s.status === 'archived', provider: s.modelConfig.provider, model: s.modelConfig.model })) };
+      updatedAt: s.updatedAt, archived: s.status === 'archived', ...sessionRunModel(s, hostDefault) })) };
   }
 
   async mutate(command: CompanionCommand): Promise<Record<string, unknown>> {
@@ -120,7 +155,7 @@ export class CompanionLibraryService {
     if (command.action === 'session.create') {
       if (!this.gateway.grants(command.deviceId).includes(command.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
       const project = getDatabase().getProjectRepo().getProject(command.sessionId.slice('project:'.length));
-      if (!project || project.status === 'archived' || !project.workspacePath) throw new Error('COMPANION_PROJECT_UNAVAILABLE');
+      if (!project || project.status === 'archived' || missingWorkspace(project)) throw new Error('COMPANION_PROJECT_UNAVAILABLE');
       const model = this.model(command.payload.provider, command.payload.model);
       // The command reservation is durable before this starts; identity is independent of response delivery.
       const id = `mobile-${createHash('sha256').update(`${command.deviceId}:${command.commandId}`).digest('hex')}`;
@@ -128,7 +163,7 @@ export class CompanionLibraryService {
         const current = getDatabase().getProjectRepo().getProject(project.id);
         if (!current || current.status === 'archived' || current.workspacePath !== project.workspacePath) throw new Error('COMPANION_PROJECT_CHANGED');
         this.gateway.commitMutation(command, write, { sessionId: id });
-      }, title: command.payload.title, workingDirectory: project.workspacePath,
+      }, title: command.payload.title, workingDirectory: project.workspacePath || undefined,
         modelConfig: { provider: model.provider, model: model.model },
         metadata: { [MODEL_OVERRIDE_METADATA_KEY]: { provider: model.provider, model: model.model, setAt: Date.now() } } });
       if (session.projectId !== project.id) throw new Error('COMPANION_PROJECT_CHANGED');

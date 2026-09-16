@@ -97,6 +97,7 @@ describe('LoopController meta history', () => {
         inputSource: 'automation',
         historyVisibility: 'meta',
         deniedToolNames: ['AskUserQuestion', 'ask_user_question'],
+        unattended: true, // ADR-068 D4：loop 轮断流续接取无人值守预算
       },
     );
   });

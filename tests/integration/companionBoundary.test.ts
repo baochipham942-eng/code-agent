@@ -159,6 +159,17 @@ describe('companion device boundary (HTTP + persistent SQLite)', () => {
     expect(projectCompanionEvent('agent_complete', null)).toEqual({});
     expect(projectCompanionEvent('agent_cancelled', null)).toEqual({});
     expect(projectCompanionEvent('error', { stack: 'private-marker' })).toEqual({ code: 'RUN_FAILED' });
+    expect(projectCompanionEvent('error', { stack: 'private-marker', failure: { code: 'PROJECT_SOURCE_TRUST', kind: 'source_missing' } }))
+      .toEqual({ code: 'PROJECT_SOURCE_MISSING' });
+    expect(projectCompanionEvent('error', { failure: { code: 'PROJECT_SOURCE_TRUST', kind: 'not_trusted' } }))
+      .toEqual({ code: 'PROJECT_SOURCE_UNTRUSTED' });
+    expect(projectCompanionEvent('error', { failure: { code: 'MODEL_AUTH', provider: 'longcat' } }))
+      .toEqual({ code: 'MODEL_AUTH' });
+    // 带上失败的是哪个模型（provider/model 两个都在才带），手机据此判断用户是否已经换走
+    expect(projectCompanionEvent('error', { failure: { code: 'MODEL_AUTH', provider: 'custom-team-relay', model: 'LongCat-2.0', apiKey: 'sk-secret' } }))
+      .toEqual({ code: 'MODEL_AUTH', provider: 'custom-team-relay', model: 'LongCat-2.0' });
+    expect(JSON.stringify(projectCompanionEvent('error', { stack: 'private-marker', failure: { code: 'PROJECT_SOURCE_TRUST', kind: 'source_missing', sourcePath: '/private/path' } })))
+      .not.toContain('private-marker');
     const generating = projectCompanionEvent('artifact_write_started', { toolCallId: 't1', filePath: '/private/secret/photo.png', token: 'secret-marker' });
     expect(generating).toEqual({ status: 'generating', toolCallId: 't1', name: 'photo.png' });
     expect(JSON.stringify(generating)).not.toContain('/private');

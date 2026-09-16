@@ -167,6 +167,9 @@ export interface InferenceOptions {
   artifactRepairFullRewritePriority?: boolean;
   disableProviderTransientRetry?: boolean;
   disableRuntimeNetworkRetry?: boolean;
+  /** 首字节后断流续接预算覆盖（ADR-068 D4）：缺省 STREAM_RECONNECT_MAX（前台）；无人值守轮由
+   *  inference 层传 UNATTENDED_STREAM_RECONNECT_MAX，熔断后传 0。disableProviderTransientRetry 仍优先。 */
+  streamReconnectMax?: number;
   maxInputTokens?: number;
   maxOutputTokens?: number;
   requestTimeoutMs?: number;

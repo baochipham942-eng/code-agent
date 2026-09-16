@@ -5,6 +5,8 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...actual, networkInterfaces: vi.fn(actual.networkInterfaces) };
 });
 import Database from 'better-sqlite3';
+import { createServer } from 'node:http';
+import { createConnection, createServer as createTcpServer, type Server as TcpServer } from 'node:net';
 import { hostname, networkInterfaces } from 'node:os';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -76,6 +78,25 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     }
   });
 
+  it('falls back to an ephemeral port when the LAN port is taken instead of failing the invite (真机首验回归 2026-09-15)', async () => {
+    // 同机另一张 Host 脸常驻 lanPort（现场：01:04 起的旧 Dev app 占着 8182，新 Host 的
+    // invite 全部 EADDRINUSE，配对入口整个消失）。占位者用 wildcard 绑定制造真冲突。
+    const squatter = createServer();
+    await new Promise<void>(resolve => squatter.listen(0, () => resolve()));
+    const takenPort = (squatter.address() as { port: number }).port;
+    const busy = new LanCompanionServer(gateway, hostIdentity, () => now);
+    await busy.start(address!, takenPort); // 修复前：这里抛 EADDRINUSE
+    const invitation = busy.invite(['shared']);
+    const boundPort = Number(new URL(invitation.endpoint).port);
+    expect(boundPort).not.toBe(takenPort); // 端点带的是实际端口
+    expect(boundPort).toBeGreaterThan(0);
+    // 换了端口也得真能配上对——端点随 QR/绑定走，手机无感。
+    const binding = await client.pair(JSON.stringify(invitation));
+    expect(binding.deviceId).toBeTruthy();
+    await busy.stop();
+    await new Promise<void>(resolve => squatter.close(() => resolve()));
+  });
+
   it('pairs over the alternate address when the primary one is dead, and remembers which worked', async () => {
     const live = server.invite(['shared']);
     // 主地址指向一个没人听的端口：这就是「宿主换了网、旧地址失效」在测试里的样子。
@@ -93,6 +114,91 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     const recovered = await client.recover({ endpoint: dead, altEndpoint: binding.endpoint, hostKey: binding.hostKey }, binding);
     expect(recovered.endpoint).toBe(binding.endpoint);
     expect(recovered.altEndpoint).toBe(dead);
+  });
+
+  /**
+   * 地址自愈（N-COMPANION-NOLANPORT，爸 2026-09-16 真机）：绑定里的地址是配对那一刻写死的，
+   * 宿主换网后就死，手机没有任何重新发现手段 ⇒ 只能删 app 重装。现在握手回执捎上
+   * 「这次实际落在宿主哪张网卡上」，手机据此把地址刷新成当前的。
+   *
+   * 测试里造不出「两个都能到达的私网地址」，所以用一个几行的 TCP 转发器当第二个入口：
+   * 手机拨转发器，宿主看到的 socket.localAddress 由转发器连向哪里决定 —— 两种情况都确定性可控。
+   */
+  const forwarder = async (to: { host: string; port: number }) => {
+    const sockets = new Set<ReturnType<typeof createConnection>>();
+    const proxy: TcpServer = createTcpServer(incoming => {
+      const upstream = createConnection(to);
+      sockets.add(incoming); sockets.add(upstream);
+      incoming.pipe(upstream); upstream.pipe(incoming);
+      const drop = () => { incoming.destroy(); upstream.destroy(); };
+      incoming.on('error', drop); upstream.on('error', drop);
+    });
+    await new Promise<void>(resolve => proxy.listen(0, address!, () => resolve()));
+    return {
+      port: (proxy.address() as { port: number }).port,
+      close: async () => { for (const s of sockets) s.destroy(); await new Promise<void>(r => proxy.close(() => r())); },
+    };
+  };
+
+  it('welcome 捎回「你够得到我的那张网卡」，手机据此把绑定刷新成宿主当前地址', async () => {
+    const live = server.invite(['shared']);
+    const realPort = Number(new URL(live.endpoint).port);
+    // 转发器连向宿主的真实网卡 ⇒ 宿主看到 localAddress = 私网地址 ⇒ 报得出地址。
+    const relay = await forwarder({ host: address!, port: realPort });
+    const dialed = `http://${address}:${relay.port}`;
+    const binding = await client.pair(JSON.stringify({ ...live, endpoint: dialed }));
+    // 存的不是我们拨的那个转发器端口，而是宿主报的当前地址。
+    expect(binding.endpoint).toBe(live.endpoint);
+    expect(binding.endpoint).not.toBe(dialed);
+    // 被挤下主位的那个**刚刚拨通过**，必须落到备用位：否则「主地址死了、经备用拨通」那一轮
+    // 会把唯一换网还能用的候选（mDNS 名）整个丢掉，宿主再换一次网就又只能重新扫码
+    // （grok ai-review PR#1904 Important）。
+    expect(binding.altEndpoint).toBe(dialed);
+    // 自愈后的地址必须真能用，否则就是把一个能用的换成不能用的。
+    expect(await client.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+    await relay.close();
+  });
+
+  /**
+   * 宿主报了个**校验不过**的地址时，手机必须原地不动。从真实路径打：把宿主的 reachedEndpoint
+   * 换掉（TS 的 private 只是编译期约束），welcome 就会捎着这个恶意值下来。
+   * 形状规则本身归 validateLanEndpoint 管，这里钉的是「有没有真的过那道校验」这条接线。
+   */
+  it.each([
+    ['公网地址', 'http://8.8.8.8:8182'],
+    ['回环地址', 'http://127.0.0.1:8182'],
+    ['https', 'https://192.168.1.9:8182'],
+    ['带路径', 'http://192.168.1.9:8182/x'],
+    ['压根不是 URL', 'not-a-url'],
+  ])('宿主报了%s：手机不采纳，留住刚拨通的那个（坏值不许换掉唯一能用的地址）', async (_label, hostile) => {
+    const invitation = server.invite(['shared']);
+    const patched = server as unknown as { reachedEndpoint: (via?: string) => string | null };
+    const original = patched.reachedEndpoint;
+    patched.reachedEndpoint = () => hostile;
+    try {
+      const solo = new LanCompanionClient(createIdentity(), post);
+      const binding = await solo.pair(JSON.stringify(invitation));
+      expect(binding.endpoint).toBe(invitation.endpoint);
+      // 前提自证：这一轮宿主确实报了那个恶意值，否则「没被换掉」是恒真判据。
+      expect(patched.reachedEndpoint()).toBe(hostile);
+      expect(await solo.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+      solo.close();
+    } finally { patched.reachedEndpoint = original; }
+  });
+
+  it('宿主拿不准对面从哪张网卡进来时不报地址——手机留住手里那个（宁可不说，不可说错）', async () => {
+    const live = server.invite(['shared']);
+    const realPort = Number(new URL(live.endpoint).port);
+    // 转发器连向 127.0.0.1 ⇒ 宿主看到 localAddress = loopback，那不是手机够得到的地址。
+    // 这一档必须**什么都不报**：报了手机就会把唯一能用的地址换成一个它永远连不上的。
+    const relay = await forwarder({ host: '127.0.0.1', port: realPort });
+    const dialed = `http://${address}:${relay.port}`;
+    const solo = new LanCompanionClient(createIdentity(), post);
+    const binding = await solo.pair(JSON.stringify({ ...live, endpoint: dialed }));
+    expect(binding.endpoint).toBe(dialed);
+    expect(await solo.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+    solo.close();
+    await relay.close();
   });
 
   it('does not spend the alternate address when the handshake itself was rejected', async () => {
@@ -312,12 +418,15 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(phone.getState().status).toBe('storageError'); expect(executions).toBe(0); expect(cleared).toBe(false);
   });
   it('phone restart reconciles a pending command using the same persisted ID', async () => {
-    let storage: string | null = null; let lose = true; let cleared = '';
-    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+    let storage: string | null = null; let lose = false; let armed = false; let cleared = '';
+    // 丢的是「命令的回执」不是「配对后第一个 exchange」——路由探针（relay.route）在配对后
+    // 也会做一次 exchange，按序号丢会误伤它。按「命令进待确认槽」武装，才与实现顺序解耦。
+    const port = { read: async () => storage, write: async (value: string) => { storage = value;
+        if ((JSON.parse(value) as { pending?: unknown }).pending) armed = true; },
       scan: async () => JSON.stringify(server.invite(['shared'])),
       post: async (url: string, body: unknown) => {
         const result = await post(url, body);
-        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        if (url.endsWith('/exchange') && armed && !lose) { lose = true; throw new Error('RECEIPT_LOST'); }
         return result;
       },
     };
@@ -358,12 +467,13 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     // grok ai-review #1764 Important：判据是「进没进待确认槽」，不是 deliver 成没成功。
     // 一旦 persist 成 saved.pending，重连后这条一定会被结算、结果会进草稿；此时若回 false，
     // 分片队列会把队头那段用新 commandId 再发一次，草稿里出现重复的字。
-    let storage: string | null = null; let lose = true;
-    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+    let storage: string | null = null; let lose = false; let armed = false;
+    const port = { read: async () => storage, write: async (value: string) => { storage = value;
+        if ((JSON.parse(value) as { pending?: unknown }).pending) armed = true; },
       scan: async () => JSON.stringify(server.invite(['shared'])),
       post: async (url: string, body: unknown) => {
         const result = await post(url, body);
-        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        if (url.endsWith('/exchange') && armed && !lose) { lose = true; throw new Error('RECEIPT_LOST'); }
         return result;
       },
     };
@@ -388,15 +498,17 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
       dispatch: () => ({ state: 'accepted', result: { text: '取消掉的那句话' } }) });
     const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
     await server2.start(address!, 0);
-    let storage: string | null = null; let lose = true;
+    let storage: string | null = null; let lose = false; let armed = false;
     const transcripts: string[] = [];
-    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+    const port = { read: async () => storage, write: async (value: string) => { storage = value;
+        if ((JSON.parse(value) as { pending?: unknown }).pending) armed = true; },
       scan: async () => JSON.stringify(server2.invite(['shared'])),
       post: async (url: string, body: unknown) => {
         const result = await post(url, body);
         // 吞掉命令回执：主机已经收下并转好了，手机这边 deliver 抛错，结算要等重连后的 status
-        // 查询——ack 于是落在两次取消**之后**，正是覆盖那个判据的窗口。
-        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        // 查询——ack 于是落在两次取消**之后**，正是覆盖那个判据的窗口。按「命令进待确认槽」
+        // 武装（路由探针的 exchange 不许被误伤），丢的就是命令那一发。
+        if (url.endsWith('/exchange') && armed && !lose) { lose = true; throw new Error('RECEIPT_LOST'); }
         return result;
       } };
     const phone = createCompanionStore(port, () => {}, async text => { transcripts.push(text); });
@@ -717,6 +829,23 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     gateway.publish('shared', 'agent_complete', { runId: 'desktop-run' });
     await phone.getState().sync();
     expect(phone.getState()).toMatchObject({ runId: null, terminal: 'complete' });
+    phone.getState().pause();
+  });
+  it('keeps a run failure out of the bottom notice so a later success cannot sit next to it (N-MOBILE-EXEC-STATUS ②)', async () => {
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
+    await phone.getState().pair();
+    gateway.publish('shared', 'message', { id: 'u1', role: 'user', content: 'first', runId: 'run-a' });
+    gateway.publish('shared', 'error', { code: 'MODEL_AUTH', runId: 'run-a' });
+    await phone.getState().sync();
+    // 失败原因随 error 事件留在会话里（CompanionConversation 挂在那次执行下面），不进全局提示条
+    expect(phone.getState()).toMatchObject({ runId: null, terminal: 'failed', commandError: null });
+    gateway.publish('shared', 'message', { id: 'u2', role: 'user', content: 'second', runId: 'run-b' });
+    gateway.publish('shared', 'agent_complete', { runId: 'run-b' });
+    await phone.getState().sync();
+    expect(phone.getState()).toMatchObject({ runId: null, terminal: 'complete', commandError: null });
+    expect(phone.getState().events.filter(event => event.kind === 'error')).toHaveLength(1);
     phone.getState().pause();
   });
   it('clears a pending file command after the transfer is interrupted so retry is possible', async () => {

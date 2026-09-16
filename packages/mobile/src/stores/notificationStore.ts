@@ -9,6 +9,10 @@ export interface NotificationSession {
   unregister(): Promise<void>;
   openRoute(routeToken: string): Promise<void>;
   reconnect(): Promise<void>;
+  /** 用户此刻在前台正看着的会话；不在会话页（后台、抽屉/弹层盖着、没连着）时给 null。 */
+  viewing?(): string | null;
+  /** 推送属于哪条会话（只读查询，不跳转）；查不到给 null。 */
+  resolveRoute?(routeToken: string): Promise<string | null>;
 }
 
 interface State {
@@ -23,6 +27,8 @@ interface State {
   refresh(): Promise<void>;
   recover(): Promise<void>;
   handleTap(routeToken: string): Promise<void>;
+  /** 前台来了一条推送，要不要弹系统横幅（N-MOBILE-EXEC-STATUS ④）。 */
+  decideForeground(routeToken: string | null): Promise<boolean>;
 }
 
 /**
@@ -108,6 +114,14 @@ export function createNotificationStore(deps: {
         }
         await deps.session.openRoute(routeToken);
         // Lock screen / notification tap must not approve. respond is never called here.
+      },
+      decideForeground: async routeToken => {
+        // 只有「正看着的就是推送那条会话」才不弹：任务完成/失败、待确认都已在会话里就地出现。
+        // 在别的会话、不在会话页、判不出推送属于哪条（没 token、查询失败/不支持）一律照弹——宁可多弹，不许吞。
+        const viewing = deps.session.viewing?.() ?? null;
+        if (!viewing || !routeToken || !deps.session.resolveRoute) return true;
+        const target = await deps.session.resolveRoute(routeToken).catch(() => null);
+        return target !== viewing;
       },
     };
   });

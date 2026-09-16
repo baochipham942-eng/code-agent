@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Composer } from '../../../packages/mobile/src/features/sessions/Composer';
@@ -17,10 +18,14 @@ function mount(overrides: {
   modelLabel?: string | null;
   attach?: (() => void) | undefined;
   recorder?: boolean;
+  running?: { stop(): void; stopDisabled: boolean } | null;
+  watchMicrophoneRelease?: (onReleased: () => void) => () => void;
+  openSettings?: () => void;
 } = {}) {
   const recorder = {
     start: overrides.start ?? (async () => {}),
     stop: overrides.stop ?? (async () => ({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1000 })),
+    ...(overrides.watchMicrophoneRelease ? { watchMicrophoneRelease: overrides.watchMicrophoneRelease } : {}),
   };
   const transcribe = vi.fn(overrides.transcribe ?? (async () => 'cmd-1'));
   const discardPendingTranscript = vi.fn();
@@ -28,14 +33,15 @@ function mount(overrides: {
   const openModel = vi.fn();
   const onVoiceState = vi.fn();
   const view = render(<Composer text={text} draft={overrides.draft ?? ''} editDraft={() => {}} offline={overrides.offline ?? false}
-    sendDisabled={!(overrides.draft ?? '').trim()} send={send}
-    modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel}
+    sendDisabled={!(overrides.draft ?? '').trim()} send={send} running={overrides.running ?? null}
+    modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel} openSettings={overrides.openSettings}
     attach={'attach' in overrides ? overrides.attach : () => {}} attachDisabled={false}
     recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe} discardPendingTranscript={discardPendingTranscript}
     voiceDisabled={false} voicePending={false} voiceResult={null} voiceReady onVoiceState={onVoiceState} />);
   return { transcribe, send, openModel, onVoiceState, discardPendingTranscript, unmount: view.unmount };
 }
 
+const voiceNotice = () => document.querySelector('.voice-notice') as HTMLElement;
 const clickMic = () => fireEvent.click(screen.getByRole('button', { name: text.voice }));
 const toolbarButtons = () => [...document.querySelectorAll('.composer-tools button')]
   .map(button => button.getAttribute('aria-label') ?? button.className);
@@ -104,10 +110,14 @@ describe('Composer 布局契约（design.html composer()）', () => {
 describe('VoiceCapture failure reporting', () => {
   afterEach(cleanup);
 
-  it('surfaces the real startRecording error code in the recording-stage copy', async () => {
+  // N-MOBILE-VOICE-ERRCODE-LEAK（build 45 真机「录音没能开始或已中断，重试后继续。 · FAILED_TO_RECORD」）：
+  // 真实错误码只进 data-reason 供取证，用户面一个内部码都不出现。
+  it('keeps the real startRecording error code for diagnosis but never shows it to the user', async () => {
     mount({ start: async () => { throw new Error('ALREADY_RECORDING'); } });
     clickMic();
-    await waitFor(() => expect(screen.getByText(`${text.voiceRecordFailed} · ALREADY_RECORDING`)).toBeTruthy());
+    await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('ALREADY_RECORDING'));
+    expect(voiceNotice().textContent).toContain(text.voiceRecordFailed);
+    expect(voiceNotice().textContent).not.toMatch(/[A-Z]{2,}_[A-Z_]+/);
     // 录音阶段的失败绝不能显示成转写阶段的文案
     expect(screen.queryByText(new RegExp(text.voiceTranscribeFailed))).toBeNull();
   });
@@ -115,20 +125,62 @@ describe('VoiceCapture failure reporting', () => {
   it('reports a non-Error rejection instead of dropping it', async () => {
     mount({ start: async () => { throw 'PLUGIN_NOT_INITIALIZED'; } });
     clickMic();
-    await waitFor(() => expect(screen.getByText(`${text.voiceRecordFailed} · PLUGIN_NOT_INITIALIZED`)).toBeTruthy());
+    await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('PLUGIN_NOT_INITIALIZED'));
+    expect(voiceNotice().textContent).not.toContain('PLUGIN_NOT_INITIALIZED');
   });
 
-  it('keeps the dedicated permission copy without an error code', async () => {
-    mount({ start: async () => { throw new Error('MICROPHONE_DENIED'); } });
+  // build 46 远端验收（真 WebKit）：.notice > :first-child 命中了按钮本身（正文是裸文本节点），
+  // flex:1 + min-width:0 把 7 个字的「去设置开麦克风」挤成一根竖条。jsdom 无布局，钉样式规则本身。
+  it('提示条里的动作按钮不参与伸缩、不换行', () => {
+    const css = readFileSync('packages/mobile/src/styles.css', 'utf8');
+    const rule = css.match(/\.inline-retry, \.task-status button\.inline-retry, \.notice button\.inline-retry \{[^}]*\}/)?.[0] ?? '';
+    expect(rule).toContain('flex: none');
+    expect(rule).toContain('white-space: nowrap');
+  });
+
+  it('没授权给「去设置开麦克风」直达系统设置，不给重试（重试只会再被拒）', async () => {
+    for (const code of ['MICROPHONE_DENIED', 'MISSING_PERMISSION']) {
+      const openSettings = vi.fn();
+      mount({ start: async () => { throw new Error(code); }, openSettings });
+      clickMic();
+      await waitFor(() => expect(voiceNotice()?.textContent).toContain(text.microphoneDenied));
+      expect(screen.queryByRole('button', { name: text.retry })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: text.openMicrophoneSettings }));
+      expect(openSettings).toHaveBeenCalledTimes(1);
+      cleanup();
+    }
+  });
+
+  it('麦克风被通话占着：说清谁占着，动作是「结束后再试」；原生报放手后翻成「继续录音」，点了真去录', async () => {
+    let busy = true;
+    const start = vi.fn(async () => { if (busy) throw new Error('MICROPHONE_BUSY'); });
+    let released: (() => void) | null = null;
+    const unwatch = vi.fn();
+    mount({ start, watchMicrophoneRelease: onReleased => { released = onReleased; return unwatch; } });
     clickMic();
-    await waitFor(() => expect(screen.getByText(text.microphoneDenied)).toBeTruthy());
+    await waitFor(() => expect(voiceNotice()?.textContent).toContain(text.microphoneBusy));
+    expect(voiceNotice().textContent).toContain(text.microphoneBusyDetail);
+    expect(voiceNotice().textContent).not.toContain('MICROPHONE_BUSY');
+    expect(screen.getByRole('button', { name: text.microphoneBusyRetry })).toBeTruthy();
+    // 前提自证：盯守真的布了防（否则「放手后翻牌」的断言是恒真）
+    expect(released).not.toBeNull();
+    busy = false;
+    act(() => released!());
+    await waitFor(() => expect(voiceNotice()?.textContent).toContain(text.microphoneReleased));
+    fireEvent.click(screen.getByRole('button', { name: text.continueRecording }));
+    await screen.findByRole('button', { name: text.stopRecording });
+    expect(start).toHaveBeenCalledTimes(2);
+    // 失败态一收，盯守就撤
+    expect(unwatch).toHaveBeenCalled();
   });
 
   it('separates a transcription failure from a recording failure', async () => {
     mount({ transcribe: async () => { throw new Error('COMPANION_CHANNEL_CLOSED'); } });
     clickMic();
     fireEvent.click(await screen.findByRole('button', { name: text.stopRecording }));
-    await waitFor(() => expect(screen.getByText(`${text.voiceTranscribeFailed} · COMPANION_CHANNEL_CLOSED`)).toBeTruthy());
+    await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('COMPANION_CHANNEL_CLOSED'));
+    expect(voiceNotice().textContent).toContain(text.voiceTranscribeFailed);
+    expect(voiceNotice().textContent).not.toContain('COMPANION_CHANNEL_CLOSED');
     expect(screen.queryByText(new RegExp(text.voiceRecordFailed))).toBeNull();
   });
 
@@ -149,7 +201,8 @@ describe('VoiceCapture failure reporting', () => {
     clickMic();
     fireEvent.click(await screen.findByRole('button', { name: text.stopRecording }));
     fireEvent.click(await screen.findByRole('button', { name: text.retry }));
-    await waitFor(() => expect(screen.getByText(`${text.voiceTranscribeFailed} · RETRY_FAILED`)).toBeTruthy());
+    await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('RETRY_FAILED'));
+    expect(voiceNotice().textContent).toContain(text.voiceTranscribeFailed);
   });
 
   it('失败落在输入区上方，输入框留给用户继续改字', async () => {
@@ -293,7 +346,8 @@ describe('ai-review #1764 回归', () => {
     mount({ stop: async () => { throw new Error('EMPTY_RECORDING'); } });
     clickMic();
     fireEvent.click(await screen.findByRole('button', { name: text.stopRecording }));
-    await waitFor(() => expect(screen.getByText(`${text.voiceRecordFailed} · EMPTY_RECORDING`)).toBeTruthy());
+    await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('EMPTY_RECORDING'));
+    expect(voiceNotice().textContent).toContain(text.voiceRecordFailed);
     expect(screen.getByTestId('draft')).toBeTruthy();
   });
 
@@ -682,5 +736,61 @@ describe('输入区附件 chip（withAttachment / fileUploading / fileUploadFail
     mountWithAttachment(attachment({ phase: 'failed', error: 'COMPANION_FILE_TYPE_DENIED' }));
     expect(screen.getByRole('button', { name: text.attachRemove })).toBeTruthy();
     expect(screen.queryByRole('button', { name: text.attachRetry })).toBeNull();
+  });
+});
+
+
+/**
+ * 停止的落点（N-MOBILE-SEND-IS-STOP，爸 2026-09-16 build 43 真机「发送按钮就是停止呀」）。
+ * 照桌面 SendButton 的三态：空闲=发送 / 处理中+无内容=停止 / 处理中+有内容=发送。
+ * 逐态遍历而不是只测「跑起来会变停止」——本单前身就是「只照顾了被选中的那一态」。
+ */
+describe('输入区那个键在跑任务时就是停止', () => {
+  afterEach(cleanup);
+
+  const rightButton = () => document.querySelector('.composer-tools button.send') as HTMLButtonElement;
+
+  it('没在跑：是发送键，点它走 send', () => {
+    const { send } = mount({ draft: '写个东西' });
+    expect(document.querySelector('[data-testid="send"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="send-stop"]')).toBeNull();
+    fireEvent.click(rightButton());
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('跑着且草稿为空：换成停止键，点它走 stop 而不是 send', () => {
+    const stop = vi.fn();
+    const { send } = mount({ draft: '', running: { stop, stopDisabled: false } });
+    const button = document.querySelector('[data-testid="send-stop"]') as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    expect(button.getAttribute('aria-label')).toBe(text.stop);
+    expect(button.querySelector('[data-name="stop"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="send"]')).toBeNull();
+    fireEvent.click(button);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('跑着但草稿里有字：仍是发送键——把这句发出去，不是把任务停掉', () => {
+    const stop = vi.fn();
+    const { send } = mount({ draft: '再补一句', running: { stop, stopDisabled: false } });
+    expect(document.querySelector('[data-testid="send"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="send-stop"]')).toBeNull();
+    fireEvent.click(rightButton());
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it('草稿只有空白也算空：那时该给停止，不是给一个点不动的发送键', () => {
+    const stop = vi.fn();
+    mount({ draft: '   ', running: { stop, stopDisabled: false } });
+    expect(document.querySelector('[data-testid="send-stop"]')).toBeTruthy();
+  });
+
+  it('停止此刻不可用（断连/命令在飞）时按钮禁用，但仍是停止键不是发送键', () => {
+    mount({ draft: '', running: { stop: vi.fn(), stopDisabled: true } });
+    const button = document.querySelector('[data-testid="send-stop"]') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(document.querySelector('[data-testid="send"]')).toBeNull();
   });
 });

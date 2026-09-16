@@ -143,6 +143,8 @@ export interface ConversationEnvelopeContext {
   designCodeHandoff?: DesignCodeHandoffContext;
   /** 设计画布当前快照（ADR-026 D1-B）：design 模式发轮时 renderer 附带，注入 agent 上下文供 ProposeCanvasOps 引用真实节点 id。运行时态，不进 DB。 */
   canvasSnapshot?: CanvasSnapshot;
+  /** 这一轮从哪一端发起。省略 = 桌面；伴随 App 发起的由宿主填 'mobile'（将来直连云端 Agent 同字段复用）。运行时态，不进 DB。 */
+  clientSurface?: 'mobile';
   executionIntent?: ConversationExecutionIntent;
   runtimeInput?: RuntimeInputIntent;
   voiceInput?: ConversationVoiceInputMetadata;

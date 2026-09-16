@@ -112,7 +112,7 @@ export function generateMarkdownReport(
 
   lines.push('## 成本与用量');
   lines.push('');
-  lines.push('> Token 与 USD 均来自 provider response usage；缺失或混入本地估算时标为 `usage_unavailable`，不以 0 代替。USD 按 `MODEL_PRICING_PER_1M` 折算。');
+  lines.push('> Token 与 USD 均来自 provider response usage；缺失或混入本地估算时标为 `usage_unavailable`，不以 0 代替。USD 按 `MODEL_PRICING_PER_1M` 折算（未收录的 custom 渠道回落 `default` 价）。Prompt tokens 含 cache read / cache write；汇总只含 case 内调用，与终端 `Actual usage (process budget)` 同价表同口径，差额 = case 外同进程记账调用。判官（quick model）调用两处都不计；报错重试的失败请求两处都不记账；本地估算的调用进程账照记、该 case 标 `usage_unavailable`。');
   lines.push('');
   lines.push('| 用例 ID | Prompt tokens | Completion tokens | Total tokens | 折算 USD |');
   lines.push('|---------|---------------|-------------------|--------------|----------|');
@@ -399,7 +399,9 @@ export function generateMarkdownReport(
   }
 
   // Expectation evidence (P1)
-  const resultsWithExpectations = summary.results.filter((r) => r.expectationResults && r.expectationResults.length > 0);
+  const resultsWithExpectations = summary.results.filter(
+    (r) => (r.expectationResults && r.expectationResults.length > 0) || (r.timeoutExpectations?.unjudged.length ?? 0) > 0,
+  );
   if (resultsWithExpectations.length > 0) {
     lines.push('## 期望断言详情');
     lines.push('');
@@ -407,15 +409,22 @@ export function generateMarkdownReport(
       const expectationResults = result.expectationResults ?? [];
       lines.push(`### ${result.testId}`);
       lines.push('');
-      lines.push('| 状态 | 描述 | 证据 |');
-      lines.push('|------|------|------|');
-      for (const er of expectationResults) {
-        const status = er.passed ? '✅' : '❌';
-        const desc = er.expectation.type.replace(/\|/g, '\\|');
-        const evidence = (er.evidence.details ?? '—').replace(/\|/g, '\\|').substring(0, 100);
-        lines.push(`| ${status} | ${desc} | ${evidence} |`);
+      if (result.timeoutExpectations) {
+        const unjudged = result.timeoutExpectations.unjudged;
+        lines.push(`> 超时题：只在被掐前的轨迹上跑负向过程断言（N-EVAL-TIMEOUT-K2 起的口径，历史轮没有）${unjudged.length > 0 ? `；未判：${unjudged.join(', ')}` : ''}`);
+        lines.push('');
       }
-      lines.push('');
+      if (expectationResults.length > 0) {
+        lines.push('| 状态 | 描述 | 证据 |');
+        lines.push('|------|------|------|');
+        for (const er of expectationResults) {
+          const status = er.passed ? '✅' : '❌';
+          const desc = er.expectation.type.replace(/\|/g, '\\|');
+          const evidence = (er.evidence.details ?? '—').replace(/\|/g, '\\|').substring(0, 100);
+          lines.push(`| ${status} | ${desc} | ${evidence} |`);
+        }
+        lines.push('');
+      }
     }
   }
 

@@ -18,6 +18,7 @@
 // 定义，无 snake_case/PascalCase 漂移（对照 Bug B / Bug C）。
 // ============================================================================
 
+import { MODEL_API_KEY_MISSING_CODE } from '../errorClassifier';
 import { generateText, streamText, jsonSchema, tool as aiTool } from 'ai';
 import { normalizeAiSdkUsage } from '../providers/wrappers/usageNormalization';
 import { extractToolCallMeta } from '../providers/toolCallMeta';
@@ -163,7 +164,10 @@ function resolveModel(
       })(config.model);
     default: {
       if (!req.baseURL) {
-        throw new Error(`[AiSdkAdapter] 无法解析 provider "${config.provider}" 的 baseURL`);
+        // 电脑上已经没有这个 provider 的配置 = 用户能换模型绕过去，与缺 key 同一档结构化码；
+        // 裸 Error 会让手机落回「电脑执行时出了问题」（build 46 远端验收：会话 override 指向已删除的 provider）。
+        throw Object.assign(new Error(`[AiSdkAdapter] 无法解析 provider "${config.provider}" 的 baseURL`),
+          { code: MODEL_API_KEY_MISSING_CODE, provider: config.provider, model: config.model });
       }
       // openai-compatible provider 默认请求流式 usage；zhipu/moonshot/xiaomi 再叠加 vendor
       // quirks。明确拒绝 stream_options 的端点由能力矩阵 requestCompat.noStreamOptions 关闭。
@@ -1007,7 +1011,8 @@ async function streamViaAiSdk(params: {
   const maxRetries = options?.disableProviderTransientRetry ? 0 : STREAM_MAX_RETRIES;
   // ADR-068 刀 1：首字节后断流续接预算，与首字节前的 maxRetries 双轨独立计数——
   // disableProviderTransientRetry（调用方自带重试循环）对本层两类重试一体生效。
-  const reconnectMax = options?.disableProviderTransientRetry ? 0 : STREAM_RECONNECT_MAX;
+  // 无人值守分档/熔断由调用方经 streamReconnectMax 传入（adapter 不识别轮次来源）。
+  const reconnectMax = options?.disableProviderTransientRetry ? 0 : (options?.streamReconnectMax ?? STREAM_RECONNECT_MAX);
   let reconnectsUsed = 0;
   // 续接 attempt 的 accumulator 断点态 seed（见 seedAccumulatorFromBreakpoint）；null = 全新累积器。
   let resumeSeed: StreamAccumulator | null = null;

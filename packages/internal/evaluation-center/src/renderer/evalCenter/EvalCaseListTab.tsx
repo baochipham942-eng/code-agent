@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Archive, FilePlus2, RefreshCw } from 'lucide-react';
+import { Archive, Copy, FilePlus2, RefreshCw } from 'lucide-react';
 import { EVALUATION_CHANNELS } from '../../shared/evaluationChannels';
 import type {
   EvalCaseListEntry,
@@ -10,8 +10,10 @@ import { invokeEvaluation } from '../evaluationRunIpc';
 import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
 import { useEvalCenterStore } from '../stores/evalCenterStore';
 import { toast } from '@renderer/hooks/useToast';
+import { Badge } from '@renderer/components/primitives/Badge';
 import { Button } from '@renderer/components/primitives/Button';
 import { EmptyState } from '@renderer/components/primitives/EmptyState';
+import { IconButton } from '@renderer/components/primitives/IconButton';
 import { Modal, ModalFooter } from '@renderer/components/primitives/Modal';
 import { Select } from '@renderer/components/primitives/Select';
 import { ConfirmDialog } from '@renderer/components/composites/ConfirmDialog';
@@ -19,8 +21,16 @@ import { ConfirmDialog } from '@renderer/components/composites/ConfirmDialog';
 // 题库 YAML 的 category 是自由文本，矩阵只认 src/host/testing/types.ts 的 TestCategory 契约四值。
 // ⚠ 这里是手抄：渲染侧进不了 host 类型，两边没有类型关联。契约加值必须同步改这里，否则新值会静默落进「其他」列。
 const TEST_CATEGORIES = ['basic_tool', 'task_completion', 'error_recovery', 'edge_case'] as const;
+// 标签列单行最多显示几个 chip（其余折成「+N」）：列定宽 w-48(192)，两个 chip 可收缩截断后仍放得下「+N」；真机 176 题里 100 题 ≤2 个标签
+const VISIBLE_TAGS = 2;
 const MATRIX_OTHER = '\u0000other';
 const MATRIX_MISSING = '\u0000missing';
+
+// 覆盖盲区的唯一判据：单元格标红、收起态摘要里的红格数都走它，别各写一份。
+// 「未填」列为 0 不算盲区——没填 category 是元数据缺口，缺口另有摘要里的 n/m 计数。
+function isBlindCell(count: number, column: string): boolean {
+  return count === 0 && column !== MATRIX_MISSING;
+}
 
 type LoadState = 'loading' | 'ready' | 'error';
 type StatusFilter = 'active' | 'all' | 'normal' | 'draft' | 'archived';
@@ -71,6 +81,8 @@ export const EvalCaseListTab: React.FC = () => {
   const [archiveItem, setArchiveItem] = useState<EvalCaseListEntry | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [highlightedCaseId, setHighlightedCaseId] = useState<string | null>(null);
+  // 矩阵不受筛选影响，所以不放在筛选栏与列表之间（FB-163）：入口是统计卡行的「分布」卡，点开弹层看。
+  const [matrixOpen, setMatrixOpen] = useState(false);
   const focusCaseId = useEvalCenterStore((state) => state.focusCaseId);
   const clearFocusCase = useEvalCenterStore((state) => state.clearCaseTarget);
 
@@ -109,11 +121,13 @@ export const EvalCaseListTab: React.FC = () => {
     () => [...new Set(validItems.map((item) => item.layer))].sort((a, b) => a.localeCompare(b)),
     [validItems],
   );
-  // 分布矩阵：行=layer、列=归一后的 category，只数在用题（排除 retired/draft）；空格=覆盖盲区。
+  // 分布矩阵：行=layer、列=归一后的 category，只数默认集在用题（排除 retired/draft/专项）；空格=覆盖盲区。
+  // 专项集不进矩阵（FB-163）：专项目录按定义只装一类题，进矩阵只会贡献一整行无意义的红格，另起一行文字报题数。
   // 列归一（FB-157）：题库 YAML 里 category 是自由文本（15 个值），直接当轴会让 165 格里 138 格标红，
   // 红的是元数据没维护不是覆盖盲区。契约四值各占一列，其余非空值合并成「其他」，没填的进「未填」列且不标红。
   const matrix = useMemo(() => {
-    const active = validItems.filter((item) => !item.retired && !item.isDraft);
+    const inUse = validItems.filter((item) => !item.retired && !item.isDraft);
+    const active = inUse.filter((item) => item.relativeDir.length === 0);
     const counts = new Map<string, number>();
     const otherValues = new Set<string>();
     let missing = 0;
@@ -134,12 +148,21 @@ export const EvalCaseListTab: React.FC = () => {
     }
     const rows = [...new Set(active.map((item) => item.layer))].sort((a, b) => a.localeCompare(b));
     const columns = [...TEST_CATEGORIES, MATRIX_OTHER, MATRIX_MISSING];
+    let blind = 0;
+    for (const layer of rows) {
+      for (const column of columns) {
+        if (isBlindCell(counts.get(`${layer}\u0000${column}`) ?? 0, column)) blind += 1;
+      }
+    }
     return {
       rows,
       columns,
+      blind,
+      cells: rows.length * columns.length,
       otherKinds: otherValues.size,
       missing,
       total: active.length,
+      special: inUse.length - active.length,
       count: (layer: string, column: string) => counts.get(`${layer}\u0000${column}`) ?? 0,
     };
   }, [validItems]);
@@ -217,7 +240,7 @@ export const EvalCaseListTab: React.FC = () => {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="eval-case-list-tab">
       <div className="shrink-0 border-b border-zinc-800 px-3 py-3">
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
           <div className="rounded-lg bg-zinc-900/70 px-3 py-2 shadow-sm">
             <div className="text-sm font-medium text-zinc-200">{c.defaultCount.replace('{n}', String(counts.defaults))}</div>
             <div className="text-[10px] text-zinc-500">{c.defaultNote}</div>
@@ -230,48 +253,23 @@ export const EvalCaseListTab: React.FC = () => {
             <div className="text-sm font-medium text-zinc-200">{c.draftCount.replace('{n}', String(counts.drafts))}</div>
             <div className="text-[10px] text-zinc-500">{c.draftNote}</div>
           </div>
+          <div className="flex items-start justify-between gap-2 rounded-lg bg-zinc-900/70 px-3 py-2 shadow-sm">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-zinc-200">
+                {c.matrixCard.replace('{blind}', String(matrix.blind)).replace('{cells}', String(matrix.cells))}
+              </div>
+              <div className="text-[10px] text-zinc-500">
+                {c.matrixCardNote.replace('{n}', String(matrix.missing)).replace('{m}', String(matrix.total))}
+              </div>
+            </div>
+            {matrix.rows.length > 0 && (
+              <Button size="sm" variant="ghost" className="shrink-0 whitespace-nowrap" data-testid="eval-case-matrix-toggle" aria-haspopup="dialog" onClick={() => setMatrixOpen(true)}>
+                {c.matrixView}
+              </Button>
+            )}
+          </div>
         </div>
         <p className="mt-2 text-xs text-zinc-500">{c.specialHint}</p>
-        {matrix.rows.length > 0 && (
-          <div className="mt-2 overflow-x-auto" data-testid="eval-case-matrix">
-            <div className="mb-1 text-[10px] text-zinc-500">{c.matrixTitle}</div>
-            <div className="mb-1 text-[10px] text-zinc-500" data-testid="eval-case-matrix-missing-note">
-              {c.matrixMissingNote.replace('{n}', String(matrix.missing)).replace('{m}', String(matrix.total))}
-            </div>
-            <table className="border-separate border-spacing-0 text-[11px]">
-              <thead>
-                <tr>
-                  <th className="border-b border-zinc-800 px-2 py-1 text-left font-medium text-zinc-500">{c.filterLayer}</th>
-                  {matrix.columns.map((column) => (
-                    <th key={column} className="whitespace-nowrap border-b border-zinc-800 px-2 py-1 text-right font-medium text-zinc-500">{matrixColumnLabel(column, c, matrix.otherKinds)}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {matrix.rows.map((layer) => (
-                  <tr key={layer}>
-                    <td className="min-w-32 whitespace-nowrap px-2 py-1 text-zinc-300">{layer}</td>
-                    {matrix.columns.map((column) => {
-                      const n = matrix.count(layer, column);
-                      // 「未填」列为 0 不标红：没填 category 不是覆盖盲区，缺口另有标题旁那行计数。
-                      const blind = n === 0 && column !== MATRIX_MISSING;
-                      return (
-                        <td
-                          key={column}
-                          data-testid={blind ? 'eval-case-matrix-empty' : 'eval-case-matrix-cell'}
-                          title={blind ? c.matrixEmptyHint : undefined}
-                          className={`px-2 py-1 text-right font-mono ${blind ? 'bg-red-500/10 text-badge-danger' : 'text-zinc-200'}`}
-                        >
-                          {n}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
 
       <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-zinc-800 px-3 py-2">
@@ -315,16 +313,33 @@ export const EvalCaseListTab: React.FC = () => {
         <Button size="sm" leftIcon={<FilePlus2 className="h-3.5 w-3.5" />} onClick={() => setDraftOpen(true)}>{c.newDraft}</Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
+      {/* 滚动容器不能带上内边距（FB-162）：sticky thead 贴的是内容区顶，py-2 会在容器顶留 8px 带子，
+          滚上来的行从带子里透出来，给 th 上底色治不到。内边距挪进各子块。 */}
+      <div className="min-h-0 flex-1 overflow-auto px-3 pb-2" data-testid="eval-case-list-scroll">
         {loadState === 'loading' && <div className="py-10 text-center text-sm text-zinc-500">{c.loading}</div>}
         {loadState === 'error' && <div className="py-10 text-center text-sm text-badge-danger">{c.loadFailed.replace('{message}', loadError)}</div>}
         {loadState === 'ready' && filteredItems.length === 0 && <EmptyState variant="inline" text={c.empty} />}
         {loadState === 'ready' && filteredItems.length > 0 && (
-          <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left text-xs">
-            <thead className="sticky top-0 bg-zinc-950 text-[10px] uppercase tracking-wide text-zinc-500">
+          // 下限要 ≤ 1440 宽窗口下滚动区可用宽（1194 − px-3 两侧 24 = 1170），否则表 + 左右内边距撑出横向滚动条
+          <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-left text-xs">
+            {/* FB-161：浅色主题下爸看到行文字透过 sticky 表头。底色原来只挂在 thead 上，
+                这一条在 1440×900 的 web 真机没能复现（thead 背景照常绘制），所以下面是加固不是已证根因：
+                底色同时挂到每个 th（sticky 表头的通行写法，不依赖引擎绘制 row-group 背景）+ z-10。
+                窄列 min-w + nowrap 针对同一条反馈里的「来源/状态/操作逐字竖排」。 */}
+            <thead className="sticky top-0 z-10 bg-zinc-950 text-[10px] uppercase tracking-wide text-zinc-500">
               <tr>
-                {[c.colId, c.colLayer, c.colTags, c.colSplits, c.colTurns, c.colExpect, c.colSource, c.colStatus, c.colActions].map((label) => (
-                  <th key={label} className="border-b border-zinc-800 px-2 py-2 font-medium">{label}</th>
+                {[
+                  [c.colId, 'w-1/5'],
+                  [c.colLayer, ''],
+                  [c.colTags, ''],
+                  [c.colSplits, ''],
+                  [c.colTurns, 'min-w-16'],
+                  [c.colExpect, 'min-w-24'],
+                  [c.colSource, 'min-w-20'],
+                  [c.colStatus, 'min-w-16'],
+                  [c.colActions, 'min-w-20'],
+                ].map(([label, width]) => (
+                  <th key={label} className={`whitespace-nowrap border-b border-zinc-800 bg-zinc-950 px-2 py-2 font-medium ${width}`}>{label}</th>
                 ))}
               </tr>
             </thead>
@@ -335,7 +350,7 @@ export const EvalCaseListTab: React.FC = () => {
                     <tr key={`parse-${item.file}`} className="text-zinc-600" data-testid="eval-case-parse-error">
                       <td className="border-b border-zinc-900 px-2 py-3 font-mono">{item.id}</td>
                       <td colSpan={7} className="border-b border-zinc-900 px-2 py-3">{c.parseFailed.replace('{message}', item.parseError)}</td>
-                      <td className="border-b border-zinc-900 px-2 py-3"><Button size="sm" variant="ghost" onClick={() => void copyPath(item.file)}>{c.copyPath}</Button></td>
+                      <td className="border-b border-zinc-900 px-2 py-3"><IconButton size="sm" variant="ghost" icon={<Copy />} aria-label={c.copyPath} title={c.copyPath} onClick={() => void copyPath(item.file)} /></td>
                     </tr>
                   );
                 }
@@ -350,19 +365,34 @@ export const EvalCaseListTab: React.FC = () => {
                     className={`${status === 'archived' ? 'opacity-55' : ''} ${unavailable ? 'opacity-60 saturate-50' : ''} ${highlightedCaseId === item.id ? 'bg-teal-500/10' : ''}`}
                     data-testid={`eval-case-row-${item.id}`}
                   >
-                    <td className="border-b border-zinc-900 px-2 py-2 font-mono text-zinc-300">{item.id}</td>
+                    {/* td 上的 max-width 在 auto 表格布局里不生效，截断挂在内层 div 上，否则多出的表宽都分给 id 列 */}
+                    <td className="border-b border-zinc-900 px-2 py-2 font-mono text-zinc-300">
+                      <div className="max-w-48 truncate" title={item.id}>{item.id}</div>
+                    </td>
                     <td className="border-b border-zinc-900 px-2 py-2">
                       <div className="text-zinc-300">{item.layer}</div>
                       <div className="max-w-48 truncate font-mono text-[10px] text-zinc-600" title={item.file}>{item.file}</div>
                     </td>
                     <td className="border-b border-zinc-900 px-2 py-2">
-                      <div className="flex max-w-64 flex-wrap gap-1">
-                        {item.tags.map((tag) => <span key={`own-${tag}`} className="rounded border border-badge-accent/30 bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-badge-accent">{tag}</span>)}
-                        {inherited.map((tag) => <span key={`inherited-${tag}`} title={c.inheritedTag} className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500">{tag}</span>)}
+                      {/* 单行不折：最多显示前 2 个（chip 可收缩截断）+「+N」，全量挂 title；折行会把整行撑到 65~107px。
+                          定宽 w-48 而不是 max-w：单元格 min-content 按 chip 文字算会到 231px，把 1440 下表格撑出横向滚动（1221 > 1194） */}
+                      <div className="flex w-48 flex-nowrap items-center gap-1 overflow-hidden whitespace-nowrap" title={[...item.tags, ...inherited].join(', ') || undefined}>
+                        {[...item.tags.map((tag) => ({ tag, own: true })), ...inherited.map((tag) => ({ tag, own: false }))].slice(0, VISIBLE_TAGS).map(({ tag, own }) => (
+                          <Badge
+                            key={`${own ? 'own' : 'inherited'}-${tag}`}
+                            className={`min-w-0 max-w-28 text-[10px] ${own ? 'border-badge-accent/30 bg-teal-500/10 text-badge-accent' : 'border-zinc-800 bg-zinc-900 text-zinc-500'}`}
+                          >
+                            <span className="truncate" title={own ? undefined : c.inheritedTag}>{tag}</span>
+                          </Badge>
+                        ))}
+                        {item.tags.length + inherited.length > VISIBLE_TAGS && (
+                          <Badge className="shrink-0 border-zinc-800 bg-zinc-900 text-[10px] text-zinc-500">+{item.tags.length + inherited.length - VISIBLE_TAGS}</Badge>
+                        )}
                       </div>
                     </td>
                     <td className="border-b border-zinc-900 px-2 py-2">
-                      <div className="flex flex-wrap items-center gap-1">
+                      {/* 同行不折：最多两个 chip + 「校准样本」，内容有限，折行会把整行撑高（59 vs 49px） */}
+                      <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
                         {item.splits.map(splitChip)}
                         {item.splits.includes('control') && <span className="text-[10px] text-zinc-600">{c.calibrationSample}</span>}
                       </div>
@@ -378,8 +408,8 @@ export const EvalCaseListTab: React.FC = () => {
                     <td className="border-b border-zinc-900 px-2 py-2 text-zinc-400">{status === 'draft' ? c.statusDraft : status === 'archived' ? c.statusArchived : c.statusNormal}</td>
                     <td className="border-b border-zinc-900 px-2 py-2">
                       <div className="flex items-center gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => void copyPath(item.file)}>{c.copyPath}</Button>
-                        {status !== 'archived' && <Button size="sm" variant="ghost" leftIcon={<Archive className="h-3.5 w-3.5" />} onClick={() => setArchiveItem(item)}>{c.archive}</Button>}
+                        <IconButton size="sm" variant="ghost" icon={<Copy />} aria-label={c.copyPath} title={c.copyPath} onClick={() => void copyPath(item.file)} />
+                        {status !== 'archived' && <IconButton size="sm" variant="ghost" icon={<Archive />} aria-label={c.archive} title={c.archive} onClick={() => setArchiveItem(item)} />}
                       </div>
                     </td>
                   </tr>
@@ -389,6 +419,61 @@ export const EvalCaseListTab: React.FC = () => {
           </table>
         )}
       </div>
+
+      <Modal
+        isOpen={matrixOpen}
+        onClose={() => setMatrixOpen(false)}
+        title={c.matrixSummary
+          .replace('{cells}', String(matrix.cells))
+          .replace('{blind}', String(matrix.blind))
+          .replace('{n}', String(matrix.missing))
+          .replace('{m}', String(matrix.total))}
+        size="full"
+      >
+        <div data-testid="eval-case-matrix">
+          <div className="mb-2 text-xs text-zinc-500" data-testid="eval-case-matrix-missing-note">
+            {c.matrixMissingNote.replace('{n}', String(matrix.missing)).replace('{m}', String(matrix.total))}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="border-separate border-spacing-0 text-[11px]">
+              <thead>
+                <tr>
+                  <th className="border-b border-zinc-800 px-2 py-1 text-left font-medium text-zinc-500">{c.filterLayer}</th>
+                  {matrix.columns.map((column) => (
+                    <th key={column} className="whitespace-nowrap border-b border-zinc-800 px-2 py-1 text-right font-medium text-zinc-500">{matrixColumnLabel(column, c, matrix.otherKinds)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.rows.map((layer) => (
+                  <tr key={layer}>
+                    <td className="min-w-32 whitespace-nowrap px-2 py-1 text-zinc-300">{layer}</td>
+                    {matrix.columns.map((column) => {
+                      const n = matrix.count(layer, column);
+                      const blind = isBlindCell(n, column);
+                      return (
+                        <td
+                          key={column}
+                          data-testid={blind ? 'eval-case-matrix-empty' : 'eval-case-matrix-cell'}
+                          title={blind ? c.matrixEmptyHint : undefined}
+                          className={`px-2 py-1 text-right font-mono ${blind ? 'bg-red-500/10 text-badge-danger' : 'text-zinc-200'}`}
+                        >
+                          {n}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {matrix.special > 0 && (
+            <div className="mt-2 text-xs text-zinc-500" data-testid="eval-case-matrix-special-note">
+              {c.matrixSpecialNote.replace('{n}', String(matrix.special))}
+            </div>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         isOpen={draftOpen}

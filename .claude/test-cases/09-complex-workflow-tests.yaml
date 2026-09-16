@@ -18,6 +18,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: workflow-read-modify-verify
     type: task
+    category: task_completion
     description: "读取代码 → 修改 → 验证闭环"
     setup:
       - |
@@ -44,6 +45,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: workflow-multi-file
     type: task
+    category: task_completion
     description: "多文件协同 - 添加接口和实现"
     setup:
       - |
@@ -75,6 +77,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: workflow-analyze-and-document
     type: task
+    category: task_completion
     description: "分析代码并生成文档"
     prompt: "分析 src/host/tools 目录的结构，列出所有工具文件及其用途，生成 test-tools-doc.md 文档"
     cleanup:
@@ -85,6 +88,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: workflow-scaffold-project
     type: task
+    category: task_completion
     description: "从零创建小型项目结构"
     prompt: |
       在 test-scaffold/ 目录下创建一个简单的 Node.js 项目：
@@ -99,6 +103,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: workflow-e2e-improve
     type: task
+    category: task_completion
     description: "端到端：分析性能问题并优化"
     setup:
       - |

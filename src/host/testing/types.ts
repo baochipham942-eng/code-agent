@@ -225,6 +225,12 @@ export interface SimTurnRecord {
   toolExecutionsBefore: number;
   /** 规则命中时已累计的 responses 数 */
   responsesBefore: number;
+  /**
+   * 应答文本真的发给了 agent（发出即算，这一轮之后被超时掐掉也算送达）。
+   * 预算在发出前就耗尽的 respond 记录、以及没有文本的 stop 记录都没有这个标记——
+   * 超时补判用它区分「拒绝送到了」和「拒绝从未送达」（K2 PR#1878 ai-review Nit 1）。
+   */
+  delivered?: boolean;
 }
 
 /** TestCase 里分层通过率要用的钥匙；tags 已合并 inheritedTags 并去重。 */
@@ -552,6 +558,13 @@ export interface TestResult {
   telemetryGate?: RealAgentRunTelemetryGate;
   /** agent 已启动，case 被 TestRunner 的超时机制终止。 */
   killedByTimeout?: boolean;
+  /** 超时题：被掐那一轮的轨迹是否已并入（false = 宽限期内没等到，toolExecutions 等只含之前的轮）。 */
+  timeoutTraceAvailable?: boolean;
+  /**
+   * 超时题在保全轨迹上补跑的负向过程断言（N-EVAL-TIMEOUT-K2-NEGASSERT 起才有；历史结果缺席 = 旧口径，不回填）。
+   * unjudged = 锚点没命中 / 没有审批记录源，不算失败。
+   */
+  timeoutExpectations?: { judged: ExpectationType[]; unjudged: ExpectationType[] };
 }
 
 /**
@@ -832,7 +845,9 @@ export interface StatisticalRunSummary {
 
 export type TestDifficulty = 'easy' | 'medium' | 'hard';
 
-export type TestCategory = 'basic_tool' | 'task_completion' | 'error_recovery' | 'edge_case';
+export const TEST_CATEGORIES = ['basic_tool', 'task_completion', 'error_recovery', 'edge_case'] as const;
+
+export type TestCategory = typeof TEST_CATEGORIES[number];
 
 export type ExpectationType =
   | 'file_exists' | 'file_not_exists'

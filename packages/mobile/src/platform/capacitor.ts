@@ -1,7 +1,7 @@
 import { VoiceRecorder } from 'capacitor-voice-recorder';
 import { App } from '@capacitor/app';
 import { Camera } from '@capacitor/camera';
-import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
+import { Capacitor, registerPlugin, SystemBars, SystemBarsStyle } from '@capacitor/core';
 
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Keyboard } from '@capacitor/keyboard';
@@ -15,7 +15,7 @@ import { bytesToArrayBuffer, bytesToBase64, FileCache } from './fileCache';
 import { HistoryCache } from './historyCache';
 import { FILE_ACCEPT, IMAGE_ACCEPT } from './fileAccept';
 import { nativeCompanionPort } from './nativeCompanion';
-import { createNotificationPort } from './notifications';
+import { createNotificationPort, type PushPresentationBridge } from './notifications';
 
 const PREFERENCES_KEY = 'neo.mobile.preferences.v1';
 const HISTORY_CACHE_KEY = 'neo.companion.history.v1';
@@ -89,6 +89,10 @@ type PcmBridge = {
   startPcmRecording(): Promise<{ value: boolean; sampleRate?: number }>;
   stopPcmRecording(): Promise<{ value: boolean }>;
   addListener(event: 'pcmFrame', cb: (frame: { pcm: string; durationMs: number }) => void): Promise<{ remove: () => Promise<void> }>;
+  addListener(event: 'microphoneAvailable', cb: () => void): Promise<{ remove: () => Promise<void> }>;
+  watchMicrophoneRelease(): Promise<{ available: boolean }>;
+  unwatchMicrophoneRelease(): Promise<void>;
+  openAppSettings(): Promise<void>;
 };
 
 const pcmBridge = VoiceRecorder as unknown as PcmBridge;
@@ -125,6 +129,19 @@ function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
     });
     return () => { closed = true; void handle?.remove(); pcmListen = null; };
   };
+  recorder.watchMicrophoneRelease = onReleased => {
+    let closed = false;
+    const release = () => { if (!closed) { closed = true; onReleased(); } };
+    // 先挂监听再布防：布防和「刚好放手」之间没有空窗。布防时已经空着就直接回调。
+    const listen = pcmBridge.addListener('microphoneAvailable', release);
+    const armed = listen.then(() => pcmBridge.watchMicrophoneRelease()).then(({ available }) => { if (available) release(); }).catch(() => {});
+    return () => {
+      closed = true;
+      void listen.then(handle => handle.remove()).catch(() => {});
+      // 撤防排在布防回包之后：否则撤防先到、布防后到，原生 2 秒定时器会一直跑到麦克风放手（grok ai-review Nit）。
+      void armed.then(() => pcmBridge.unwatchMicrophoneRelease()).catch(() => {});
+    };
+  };
   return recorder;
 }
 
@@ -134,11 +151,15 @@ export const capacitorPorts: PlatformPorts = {
   notifications: createNotificationPort(
     Capacitor.getPlatform(),
     async () => {
+      // @capacitor/app 在 iOS 上没有 openUrl（原生回 UNIMPLEMENTED，被 catch 吞掉 ⇒ 「去设置」一直是空操作，
+      // build 46 远端验收实测）。iOS 走第一方插件打开本 App 的设置页。
+      if (Capacitor.getPlatform() === 'ios') { await pcmBridge.openAppSettings().catch(() => {}); return; }
       const open = (App as { openUrl?: (opts: { url: string }) => Promise<void> }).openUrl;
       if (!open) return;
       try { await open({ url: 'app-settings:' }); } catch { /* user opens Settings by hand */ }
     },
     Capacitor.getPlatform() === 'ios' ? PushNotifications : undefined,
+    Capacitor.getPlatform() === 'ios' ? registerPlugin<PushPresentationBridge>('PushPresentation') : undefined,
   ),
   files: webFilePorts(new FileCache()),
   historyCache: new HistoryCache(undefined, undefined, Date.now, {

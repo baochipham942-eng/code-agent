@@ -113,7 +113,7 @@ describe('EvalCaseListTab', () => {
     expect(row.textContent).toContain('不会进跑分');
   });
 
-  it('分布矩阵：列按契约四值 + 其他 + 未填归一，未填列不标红，已归档/草稿不计', async () => {
+  it('分布矩阵：列按契约四值 + 其他 + 未填归一，未填列不标红，已归档/草稿/专项不计', async () => {
     const base = { file: 'x.yaml', relativeDir: '', tags: [], inheritedTags: [], splits: ['held-in' as const], turns: 1, hasExpect: true, hardened: true, source: 'manual' as const, isDraft: false };
     const items: EvalCaseListItem[] = [
       { ...base, id: 'a', layer: 'L1', category: 'basic_tool', retired: false },
@@ -126,10 +126,14 @@ describe('EvalCaseListTab', () => {
       // 已归档的题恰好落在空格上：算进去矩阵就没有盲区了
       { ...base, id: 'd-archived', layer: 'L2', category: 'task_completion', retired: true },
       { ...base, id: 'e-draft', file: 'drafts/e.yaml', relativeDir: 'drafts', layer: 'L2', category: 'task_completion', retired: false, isDraft: true },
+      // 专项目录的题：按目录单类别，不进矩阵行（FB-163），只在矩阵下方报题数
+      { ...base, id: 's-special', file: 'artifact-runnable/s.yaml', relativeDir: 'artifact-runnable', layer: '专项：产物可运行', category: 'task_completion', retired: false },
     ];
     ipc.invoke.mockImplementation(async (channel: string) =>
       (channel === EVALUATION_CHANNELS.LIST_CASES ? items : { action: 'archive', id: 'x', file: 'x' }));
     render(<EvalCaseListTab />);
+    // 默认不渲染，点「分布」卡的查看后在弹层里渲染矩阵表
+    fireEvent.click(await screen.findByTestId('eval-case-matrix-toggle'));
     await screen.findByTestId('eval-case-matrix');
 
     // 2 行 × 6 列（basic_tool / task_completion / error_recovery / edge_case / 其他 / 未填）
@@ -152,6 +156,113 @@ describe('EvalCaseListTab', () => {
 
     expect(screen.getByTestId('eval-case-matrix-missing-note').textContent)
       .toContain('未填 category 的在用题 1/5');
+
+    const rowLabels = [...screen.getByTestId('eval-case-matrix').querySelectorAll('tbody tr')].map((tr) => tr.querySelector('td')?.textContent);
+    expect(rowLabels).toEqual(['L1', 'L2']);
+    expect(screen.getByTestId('eval-case-matrix-special-note').textContent).toBe('专项集 1 题按目录单类别，不进矩阵');
+  });
+
+  it('分布矩阵入口在统计卡行，弹层里只有一处标题 + 一行未填提示（FB-160/FB-163）', async () => {
+    const base = { file: 'x.yaml', relativeDir: '', tags: [], inheritedTags: [], splits: ['held-in' as const], turns: 1, hasExpect: true, hardened: true, source: 'manual' as const, isDraft: false, retired: false };
+    const items: EvalCaseListItem[] = [
+      { ...base, id: 'a', layer: 'L1', category: 'basic_tool' },
+      { ...base, id: 'n', layer: 'L1' },
+    ];
+    ipc.invoke.mockImplementation(async (channel: string) =>
+      (channel === EVALUATION_CHANNELS.LIST_CASES ? items : { action: 'archive', id: 'x', file: 'x' }));
+    render(<EvalCaseListTab />);
+
+    const toggle = await screen.findByTestId('eval-case-matrix-toggle');
+    expect(screen.queryByTestId('eval-case-matrix')).toBeNull();
+    // 矩阵不受筛选影响，入口不能落在题目表滚动容器里
+    expect(screen.getByTestId('eval-case-list-scroll').contains(toggle)).toBe(false);
+    // 1 行 × 6 列 = 6 格；红格 4（四契约列里 basic_tool 有数，其余 3 个 + 「其他」列）；未填 1/2
+    const card = toggle.parentElement as HTMLElement;
+    expect(card.textContent).toContain('分布 · 红格 4/6');
+    expect(card.textContent).toContain('未填 category 1/2');
+
+    fireEvent.click(toggle);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).toContain('6 格 · 红格 4 · 未填 category 1/2');
+    // 去重：标题只有一处（弹层标题），原来的「分布 · 层别 × 类别（在用题…）」长标题不许回来
+    expect(dialog.textContent?.match(/分布 · 层别 × 类别/g)).toHaveLength(1);
+    expect(screen.getByTestId('eval-case-matrix').children).toHaveLength(2);
+
+    fireEvent.click(screen.getByLabelText('关闭'));
+    expect(screen.queryByTestId('eval-case-matrix')).toBeNull();
+  });
+
+  it('题目表滚动容器不带上内边距，否则 sticky 表头上方留带子透出行（FB-162）', async () => {
+    render(<EvalCaseListTab />);
+    await screen.findByTestId('eval-case-row-daily-case');
+    const scroller = screen.getByTestId('eval-case-list-scroll');
+    expect(scroller.className).toContain('overflow-auto');
+    expect(scroller.className).not.toMatch(/\bp[ty]-\d/);
+  });
+
+  // jsdom 不做布局，以下三条钉 class（static-contract）；几何实测在证据档 N-EVAL-CASELIST-IA-NITS
+  it('布局遗留三条：查看按钮不折不压、评测集 chip 同行、表格下限不超 1440 窗口可用宽', async () => {
+    render(<EvalCaseListTab />);
+    const row = await screen.findByTestId('eval-case-row-daily-case');
+
+    const toggle = screen.getByTestId('eval-case-matrix-toggle');
+    expect(toggle.className).toContain('whitespace-nowrap');
+    expect(toggle.className).toContain('shrink-0');
+
+    const splitCell = row.children[3].firstElementChild as HTMLElement;
+    expect(splitCell.textContent).toContain('校准样本');
+    expect(splitCell.className).toContain('flex-nowrap');
+    expect(splitCell.className).toContain('whitespace-nowrap');
+    expect(splitCell.className).not.toContain('flex-wrap ');
+
+    // 1440×900 下滚动区 clientWidth 1194，减 px-3 两侧 = 1170；min-w 超过它就出横向滚动条
+    const minW = Number((row.closest('table') as HTMLTableElement).className.match(/min-w-\[(\d+)px\]/)?.[1]);
+    expect(minW).toBeGreaterThan(0);
+    expect(minW).toBeLessThanOrEqual(1170);
+  });
+
+  it('标签列单行不折：超过 2 个折成「+N」，全量挂 title（static-contract，几何见真机证据）', async () => {
+    const manyTags: EvalCaseListItem = {
+      id: 'many-tags', file: 'x.yaml', relativeDir: '', layer: 'L1', tags: ['a', 'b', 'c'], inheritedTags: ['d'],
+      splits: ['held-in'], turns: 1, hasExpect: true, hardened: true, source: 'manual', retired: false, isDraft: false,
+    };
+    ipc.invoke.mockImplementation(async (channel: string) =>
+      (channel === EVALUATION_CHANNELS.LIST_CASES ? [manyTags] : { action: 'archive', id: 'x', file: 'x' }));
+    render(<EvalCaseListTab />);
+    const row = await screen.findByTestId('eval-case-row-many-tags');
+    const tagCell = row.children[2].firstElementChild as HTMLElement;
+    expect(tagCell.className).toContain('flex-nowrap');
+    expect(tagCell.className).toContain('whitespace-nowrap');
+    expect(tagCell.className).toContain('overflow-hidden');
+    expect(tagCell.className).not.toContain('flex-wrap ');
+    // 定宽而非 max-w：max-w 下单元格 min-content 按 chip 文字算，1440 下表格被撑到 1221 > 1194 出横向滚动
+    expect(tagCell.className.split(' ')).toContain('w-48');
+    expect(tagCell.getAttribute('title')).toBe('a, b, c, d');
+    expect([...tagCell.children].map((el) => el.textContent)).toEqual(['a', 'b', '+2']);
+  });
+
+  it('题目表 sticky 表头：thead 与每个 th 都带底色，表头单元格 nowrap（FB-161）', async () => {
+    render(<EvalCaseListTab />);
+    const row = await screen.findByTestId('eval-case-row-daily-case');
+    const thead = (row.closest('table') as HTMLTableElement).querySelector('thead') as HTMLTableSectionElement;
+    // 底色不能只挂 thead：真机反馈里行文字透了上来，所以每个 th 也要自带底色
+    expect(thead.className).toContain('sticky');
+    expect(thead.className).toContain('z-10');
+    expect(thead.className).toContain('bg-zinc-950');
+    const headers = [...thead.querySelectorAll('th')];
+    expect(headers).toHaveLength(9);
+    expect(headers.every((th) => th.className.includes('bg-zinc-950'))).toBe(true);
+    expect(headers.every((th) => th.className.includes('whitespace-nowrap'))).toBe(true);
+    // 来源/状态/操作等窄列给最小宽度，否则表头被挤成逐字竖排
+    expect(headers.slice(4).every((th) => /min-w-\d+/.test(th.className))).toBe(true);
+    // ID 列限宽（FB-163），长 id 截断并挂 title
+    expect(headers[0].className).toContain('w-1/5');
+    const idText = row.querySelector('td > div') as HTMLDivElement;
+    expect(idText.className).toContain('truncate');
+    expect(idText.getAttribute('title')).toBe('daily-case');
+    // 操作列图标化，不再是会折行的文字按钮
+    expect(row.querySelector('[aria-label="复制路径"]')).toBeTruthy();
+    expect(row.textContent).not.toContain('复制路径');
   });
 
   it('状态筛选可单独查看已归档题', async () => {
@@ -179,7 +290,7 @@ describe('EvalCaseListTab', () => {
       { action: 'create-draft', id: 'new-report', prompt: '生成报告', tags: ['report', 'html'] },
     ));
 
-    fireEvent.click(screen.getAllByText('归档')[0]);
+    fireEvent.click(screen.getAllByLabelText('归档')[0]);
     expect(screen.getByText('归档后会在原 YAML 中记录日期，题目仍保留，可在“已归档”筛选中找到。')).toBeTruthy();
     fireEvent.click(screen.getByText('确认归档'));
 

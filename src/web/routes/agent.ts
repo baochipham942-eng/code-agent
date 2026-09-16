@@ -2,8 +2,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import fs from 'fs/promises';
-import os from 'os';
-import path from 'path';
 import { randomUUID } from 'node:crypto';
 import type { MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
@@ -21,7 +19,7 @@ import {
   dbAvailable,
   type CachedMessage,
 } from '../helpers/sessionCache';
-import { createWebSessionStore } from '../helpers/webSessionStore';
+import { createWebSessionStore, isPlaceholderSessionTitle } from '../helpers/webSessionStore';
 import { syncSupabaseSessionRow } from '../helpers/supabaseSessionSync';
 import { buildGoalContract } from '../../host/agent/goalModeController';
 import {
@@ -34,6 +32,7 @@ import {
   SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
 } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../../host/tools/protocolRegistry';
+import { AUTO_DELEGATION_TOOL_NAMES } from '../../host/agent/routingToolPolicy';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { buildCapabilityCandidateNotice } from '../../host/agent/capabilityCandidateNotice';
 import { getLibraryService } from '../../host/services/library/libraryService';
@@ -64,6 +63,8 @@ import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '
 import { generateMessageId } from '../../shared/utils/id';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
+import { getProjectSourceTrustFailureMarker } from '../../host/services/project/projectSourceTrustError';
+import { getModelAuthFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
 import { RunRegistry, RunSessionConflictError } from '../../host/runtime/runRegistry';
 import {
@@ -86,6 +87,7 @@ import { steerOrQueue } from '../../host/runtime/steerQueueFence';
 import { QueuedInputRepository } from '../../host/services/core/repositories/QueuedInputRepository';
 import { getDatabase } from '../../host/services/core/databaseService';
 import { getLogsPath } from '../../host/platform/appPaths';
+import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../host/config/configPaths';
 import { hasInteractiveUi } from '../../host/platform';
 import { getProjectService } from '../../host/services/project/projectService';
 import { getAuthService } from '../../host/services/auth/authService';
@@ -174,8 +176,7 @@ function extractWorkingDirectory(value: unknown): string | undefined {
 }
 
 async function ensureDefaultWebWorkingDirectory(): Promise<string> {
-  const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), '.code-agent');
-  const workDir = path.join(dataDir, 'work');
+  const workDir = getDefaultWorkDirectory();
   await fs.mkdir(workDir, { recursive: true });
   return workDir;
 }
@@ -431,6 +432,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const fromSession = persistedSession?.workingDirectory?.trim();
       if (fromSession) resolvedProject = fromSession;
     }
+    // 旧默认目录 <dataDir>/work 已经存进了一批会话（请求里也可能原样带回来）：按没有目录处理，走下面的新默认目录
+    if (resolvedProject && isLegacyDefaultWorkDirectory(resolvedProject)) resolvedProject = undefined;
     if (!resolvedProject) {
       try {
         resolvedProject = await ensureDefaultWebWorkingDirectory();
@@ -825,6 +828,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
 
       const config = agent.getConfig();
+      if (body.historyVisibility) config.historyVisibility = body.historyVisibility;
+      // disableAutoAgent 透传（对照桌面 orchestrator options.disableAutoAgent 的扇出禁用）：
+      // web 路径不经 agentOrchestrator，宿主侧无自动扇出可禁，等价语义是把委派类工具收出
+      // 本轮工具面（deniedToolNames → AgentLoop filterToolsByRunPolicy）——手机批准的计划
+      // 由本循环顺序执行，模型无法再 spawn 代理执行计划外委派动作（ai-review 2026-09-14）。
+      if (body.disableAutoAgent === true) {
+        config.deniedToolNames = Array.from(new Set([
+          ...(config.deniedToolNames ?? []),
+          ...AUTO_DELEGATION_TOOL_NAMES,
+        ]));
+      }
       // recent-conversations uses the product Project identity. The cwd may move and
       // WorkspaceScope may be absent on this web-native route, so bind the persisted row.
       config.projectId = persistedSession?.projectId ?? null;
@@ -911,6 +925,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         // 文字前台由 web TaskManager 承载，免除 CLI 专用的任务工具禁用表。
         config.taskManagerToolsEnabled = true;
         config.allowedToolNames = getTextForegroundToolNames();
+        config.foregroundToolFace = true;
         config.maxIterations = Math.min(
           config.maxIterations ?? SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
           SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
@@ -989,6 +1004,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         timestamp: Date.now(),
         attachments: persistedAttachments,
         ...(userMessageMetadata ? { metadata: userMessageMetadata } : {}),
+        ...(body.historyVisibility === 'meta' ? { isMeta: true } : {}),
       };
 
       // 加载历史消息 + 当前用户消息
@@ -1102,11 +1118,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.warn(`[AgentRouter] Client disconnected before run ${runContext.runId} attached`);
       }
 
-      // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）
-      if (isNewSession) {
-        const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
-        broadcastSSE('session:updated', { sessionId, updates: { title } });
-        broadcastSSE('session:list-updated', undefined);
+      // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）。
+      // 只覆盖占位标题：手机/用户起过名的会话不能被首条 prompt 改写。
+      if (isNewSession && body.historyVisibility !== 'meta') {
+        const current = await (await deps.tryGetSessionManager())?.getSession?.(sessionId, 1);
+        if (isPlaceholderSessionTitle(current?.title)) {
+          const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
+          broadcastSSE('session:updated', { sessionId, updates: { title } });
+          broadcastSSE('session:list-updated', undefined);
+        }
       }
 
       // === pre-persist user message before agentLoop.run ===
@@ -1127,6 +1147,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           attachments: userMsg.attachments,
           // 与 commitTurn 的 user 侧对称：chip 行 metadata（workbench/locator）随 pre-persist 落库
           metadata: userMsg.metadata,
+          // 同一对称：meta 轮（手机批准计划等后台 prompt）必须落 is_meta——pre-persist
+          // 成功后 commitTurn 会跳过 user 侧重写，这里不带 isMeta 标记就永久丢失，
+          // 计划内部 prompt 混进可见历史并被下一轮当真实用户输入（ai-review 2026-09-14）。
+          ...(userMsg.isMeta ? { isMeta: true } : {}),
         },
       });
 
@@ -1184,6 +1208,27 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         turn: runEventCollector,
       });
 
+      // 本地这一轮已提交（commitTurn）即结束执行：先落终态、发 agent_complete，再做云端同步。
+      // 原来排在云同步之后——未登录时每次访问云端都要先失败一轮恢复登录，回复早已显示，
+      // 手机上的执行条却要多挂 3 秒左右（爸 2026-09-16 真机「回复都出了，正在处理没及时消失」）。
+      // 云同步自带 try/catch，失败不改变这一轮的结果。
+      const finalStatus: SessionStatus = runEventCollector.runCancelled
+        ? 'interrupted'
+        : runController.hadTerminalError
+          ? 'error'
+          : 'completed';
+      await runController.updateSessionStatus(finalStatus);
+
+      await durableRunLifecycle.markSuccess({ finalStatus });
+
+      // session:updated 和 session:list-updated 已按运行状态广播
+
+      // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
+      runController.emitAgentEvent({ type: 'agent_complete', data: null });
+      deps.publishCompanionEvent?.(sessionId,
+        finalStatus === 'interrupted' ? 'agent_cancelled' : finalStatus === 'error' ? 'error' : 'agent_complete',
+        { event: finalStatus === 'error' ? { code: 'RUN_FAILED', ...(runController.lastTerminalFailure ? { failure: runController.lastTerminalFailure } : {}) } : null, runId: runContext.runId });
+
       // ── 持久化到 Supabase（Web 模式云端同步）──
       try {
         const sb = await getSupabaseForSession();
@@ -1235,23 +1280,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       } catch (sbErr) {
         logger.warn('Failed to persist messages to Supabase:', (sbErr as Error).message);
       }
-
-      const finalStatus: SessionStatus = runEventCollector.runCancelled
-        ? 'interrupted'
-        : runController.hadTerminalError
-          ? 'error'
-          : 'completed';
-      await runController.updateSessionStatus(finalStatus);
-
-      await durableRunLifecycle.markSuccess({ finalStatus });
-
-      // session:updated 和 session:list-updated 已按运行状态广播
-
-      // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
-      runController.emitAgentEvent({ type: 'agent_complete', data: null });
-      deps.publishCompanionEvent?.(sessionId,
-        finalStatus === 'interrupted' ? 'agent_cancelled' : finalStatus === 'error' ? 'error' : 'agent_complete',
-        { event: finalStatus === 'error' ? { code: 'RUN_FAILED' } : null, runId: runContext.runId });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       if (externalEngineFailureContext) {
@@ -1266,7 +1294,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         disconnected: runController.disconnected,
         message,
       });
-      deps.publishCompanionEvent?.(sessionId, 'error', { event: { code: 'RUN_FAILED' }, runId: runContext?.runId });
+      const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error) ?? runController.lastTerminalFailure;
+      deps.publishCompanionEvent?.(sessionId, 'error', { event: { code: 'RUN_FAILED', ...(failure ? { failure } : {}) }, runId: runContext?.runId });
       if (!runController.disconnected) {
         runController.emitAgentEvent({
           type: 'error',
@@ -1306,7 +1335,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
   deps.registerCompanionRun?.((body) => new Promise((resolve, reject) => {
     let activated = false;
-    void runAgentTurn(body, createOfflineAgentRunResponseSink(), {
+    // 伴随 App 的所有运行（发消息、确认计划后续跑）都从这里进：统一标来源端
+    void runAgentTurn({ ...body, context: { ...body.context, clientSurface: 'mobile' } }, createOfflineAgentRunResponseSink(), {
       connectedClient: false,
       onDurableActivated: ({ runId }) => {
         activated = true;

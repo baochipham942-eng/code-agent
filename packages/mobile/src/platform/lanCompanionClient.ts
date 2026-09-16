@@ -5,6 +5,26 @@ import { COMPANION_LIMITS as L } from '../../../../src/shared/constants/companio
 
 export type LanPost = (url: string, body: unknown) => Promise<unknown>;
 
+/**
+ * 宿主在 welcome 里报的地址优先于「我们这次拨通的那个」（N-COMPANION-NOLANPORT）。
+ *
+ * 为什么要优先：绑定里的地址是**配对那一刻**写死的，宿主换网后就死，而手机没有任何重新
+ * 发现的手段（爸 2026-09-16 真机：主地址失效 + 备用 .local 在热点下解析不了 ⇒ 两条路一起死，
+ * 只能删 app 重装）。握手一定会发生，把宿主当前地址捎回来，就等于每次连上都自愈一次。
+ *
+ * 宿主已经过 Noise + hostKey 校验，但地址仍然过 validateLanEndpoint：形状不对就退回这次
+ * 拨通的那个——**此刻通着的地址永远比一个校验不过的新地址可信**，不能因为对面报了个坏值
+ * 就把手里唯一能用的地址丢掉。
+ *
+ * 模块级函数，**不导出**：导出只是为了让测试够得着，而生产侧没有第二个消费方 ⇒ knip 生产档
+ * 判它是新增 dead export，CI 红（2026-09-16 实付）。承重判据改从**真实路径**打：集成测试里
+ * 把宿主的 reachedEndpoint 换成恶意值，看手机认不认——那比单测这个函数更接近真机。
+ */
+function adoptEndpoint(reported: unknown, dialed: string): string {
+  if (typeof reported !== 'string' || !reported) return dialed;
+  try { return validateLanEndpoint(reported); } catch { return dialed; }
+}
+
 /** All requests on a channel are serialized because Noise records are ordered. */
 export class LanCompanionClient {
   private channel: NoiseChannel | null = null;
@@ -119,7 +139,16 @@ export class LanCompanionClient {
         !Array.isArray(v.scope) || v.scope.length < 1 || v.scope.length > L.maxScopeSessions || v.scope.some(id => typeof id !== 'string' || !id || id.length > L.idLength)) {
       throw new Error('COMPANION_INVALID_BINDING');
     }
-    return { version: 1, endpoint, ...(altEndpoint ? { altEndpoint } : {}), hostKey,
+    // 只采纳主地址。altEndpoint 由这一侧维护，宿主不该覆盖它。
+    //
+    // 采纳了新主地址时，**被挤下主位的正是刚刚拨通的那个**，它必须落到备用位——否则会丢掉
+    // 唯一换网还能用的候选（grok ai-review PR#1904 Important）：主地址死掉、经 `.local` 备用
+    // 拨通的那一轮，若把宿主报的字面量写进主位而备用位仍留着那个死字面量，`.local` 就从绑定里
+    // 整个消失；宿主再换一次网，两个字面量一起死，手机又回到只能重新扫码。
+    // 没采纳（宿主没报或报了坏值）时主位没动，备用位照旧。
+    const live = adoptEndpoint(v.endpoint, endpoint);
+    const fallback = live === endpoint ? altEndpoint : endpoint;
+    return { version: 1, endpoint: live, ...(fallback ? { altEndpoint: fallback } : {}), hostKey,
       deviceId: v.deviceId, scopeEpoch: Number(v.scopeEpoch), scope: v.scope,
       ...(v.dictation === true ? { dictation: true as const } : {}) };
   }

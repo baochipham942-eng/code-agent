@@ -1,0 +1,122 @@
+// @vitest-environment jsdom
+import React from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { MobileRoot } from '../../../packages/mobile/src/app/MobileRoot';
+import type { PlatformPorts } from '../../../packages/mobile/src/platform/ports';
+import { createIdentity } from '../../../src/shared/companion/noiseChannel';
+import { toHex } from '../../../src/shared/companion/lanProtocol';
+import { messages } from '../../../packages/mobile/src/i18n';
+
+/**
+ * N-MOBILE-SESSIONSHEET-SPLIT + N-MOBILE-RUNFAIL-REASON（爸 2026-09-16 build 45 真机）：
+ * 模型入口只留输入区胶囊，打开独立的「选择会话模型」；「会话操作」里不再有模型。
+ * 会话里模型密钥用不了的失败卡给「换一个可用模型」，落点就是同一屏（execStatusInline 覆盖卡片本身）。
+ */
+// hostFailed = 电脑那边刚把 Team Relay 标成调用失败（执行失败那一刻才发生，手机手里的库还是之前拉的）
+const reads = vi.hoisted(() => ({ library: 0, hostFailed: false }));
+vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
+  LanCompanionClient: class {
+    async recover() {
+      return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] };
+    }
+    async request(payload: unknown) {
+      const action = (payload as { action?: string }).action;
+      if (action === 'read' && (payload as { query?: { kind?: string } }).query?.kind === 'library') reads.library += 1;
+      // 两页会话：第二页那条要靠「加载更多」才进库
+      const secondPage = (payload as { query?: { offset?: number } }).query?.offset === 1;
+      if (action === 'read') return {
+        nextOffset: secondPage ? null : 1,
+        projects: [{ id: 'one', name: 'One', canCreate: true, workspacePath: '/w/one' }],
+        sessions: secondPage
+          ? [{ id: 's-old', title: '较旧的会话', projectId: 'one', updatedAt: 1, archived: false, provider: 'deepseek', model: 'deepseek-chat' }]
+          : [{ id: 's1', title: '你好', projectId: 'one', updatedAt: 2, archived: false, provider: 'custom-team-relay', model: 'LongCat-2.0' }],
+        models: [
+          { provider: 'custom-team-relay', model: 'LongCat-2.0', label: 'LongCat 2.0', providerLabel: 'Team Relay', isDefault: true, ...(reads.hostFailed ? { recentlyFailed: true } : {}) },
+          { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek Chat', providerLabel: 'DeepSeek' },
+        ],
+      };
+            return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
+    }
+    close() {}
+  },
+}));
+
+function savedWithBinding(): string {
+  const identity = createIdentity();
+  return JSON.stringify({
+    version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+    binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] },
+  });
+}
+
+const ports = (): PlatformPorts => ({
+  preferences: { get: async () => null, set: async () => {} },
+  appInfo: { read: async () => ({ version: '0.1.0', build: '46' }) },
+  lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
+  keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
+  companion: { read: async () => savedWithBinding(), write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}) },
+});
+
+const text = messages('zh');
+const title = () => (document.querySelector('#sheet-title') as HTMLElement | null)?.textContent;
+
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: false, media: query, onchange: null,
+    addEventListener: () => {}, removeEventListener: () => {},
+    addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+  }));
+  Object.defineProperty(window.navigator, 'language', { value: 'zh-CN', configurable: true });
+});
+afterEach(() => { vi.unstubAllGlobals(); cleanup(); reads.hostFailed = false; });
+
+async function mountInSession() {
+  await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+  // 只授权项目 ⇒ 连上先弹「选择项目」；收掉，从抽屉进已有会话
+  await waitFor(() => { expect(document.querySelector('.project-list')).toBeTruthy(); });
+  fireEvent.click(document.querySelector('.sheet-layer .scrim') as HTMLElement);
+  fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
+  fireEvent.click(await waitFor(() => document.querySelector('[data-testid="session-s1"]') as HTMLElement));
+  await waitFor(() => { expect(document.querySelector('.composer-tools .model')).toBeTruthy(); });
+}
+
+describe('模型入口只留输入区胶囊', () => {
+  it('胶囊打开「选择会话模型」；「会话操作」里没有模型', async () => {
+    await mountInSession();
+    expect(document.querySelector('.composer-tools .model')!.textContent).toContain('LongCat 2.0');
+    // 连上时拉的库里 Team Relay 还没失败；之后电脑才把它标上（build 46 远端验收的时序）
+    reads.hostFailed = true;
+    fireEvent.click(document.querySelector('.composer-tools .model') as HTMLElement);
+    await waitFor(() => { expect(title()).toBe(text.chooseModel); });
+    // 打开时现拉一次库，否则看到的是失败前的旧副本
+    await waitFor(() => { expect(document.querySelector('[data-testid="model-custom-team-relay:LongCat-2.0"]')!.textContent).toContain(text.modelRecentlyFailed); });
+    expect(document.querySelectorAll('button.model-row')).toHaveLength(2);
+    expect(document.querySelector('[data-testid="model-custom-team-relay:LongCat-2.0"]')!.textContent).toContain(text.modelRecentlyFailed);
+    fireEvent.click(document.querySelector('.sheet-layer .scrim') as HTMLElement);
+    fireEvent.click(document.querySelector('[data-testid="open-more"]') as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('.library-sheet')).toBeTruthy(); });
+    // 前提自证：确实是会话操作这一屏
+    expect(document.querySelector('.library-sheet')!.textContent).toContain(text.rename);
+    expect(document.querySelector('.model-row')).toBeNull();
+    expect(document.querySelector('.library-sheet select')).toBeNull();
+  });
+
+  // grok ai-review PR#1906 Important：打开模型屏若按第一页整表替换会话，「加载更多」进来的较旧会话会从库里消失
+  it('从第二页的会话打开模型屏，只刷模型表，当前会话和胶囊都还在', async () => {
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.project-list')).toBeTruthy(); });
+    fireEvent.click(document.querySelector('.sheet-layer .scrim') as HTMLElement);
+    fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
+    const found = (pick: () => Element | null | undefined) => waitFor(() => { const el = pick(); expect(el).toBeTruthy(); return el as HTMLElement; });
+    fireEvent.click(await found(() => [...document.querySelectorAll('.drawer-history button')].find(b => b.textContent === text.loadHistory)));
+    fireEvent.click(await found(() => document.querySelector('[data-testid="session-s-old"]')));
+    await waitFor(() => { expect(document.querySelector('.composer-tools .model')!.textContent).toContain('DeepSeek Chat'); });
+    reads.hostFailed = true;
+    fireEvent.click(document.querySelector('.composer-tools .model') as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="model-custom-team-relay:LongCat-2.0"]')!.textContent).toContain(text.modelRecentlyFailed); });
+    // 会话还在：模型屏不是空历史、当前模型打勾、胶囊仍显示它
+    expect(document.querySelector('[data-testid="model-deepseek:deepseek-chat"]')!.getAttribute('aria-current')).toBe('true');
+    expect(document.querySelector('.composer-tools .model')!.textContent).toContain('DeepSeek Chat');
+  });
+});

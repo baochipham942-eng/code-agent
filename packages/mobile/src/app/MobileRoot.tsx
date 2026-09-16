@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
-import { canAddressSession, createCompanionStore, needsLibraryPick } from '../stores/companionStore';
+import { canAddressSession, createCompanionStore, defaultCompanionSessionCreate, needsLibraryPick } from '../stores/companionStore';
 import { createNotificationStore } from '../stores/notificationStore';
 import { unavailableNotificationPort } from '../platform/notifications';
 import { pickAttachment } from '../platform/cameraPick';
@@ -15,7 +15,8 @@ import { QuestionCard } from '../features/sessions/QuestionCard';
 import { PlanCard } from '../features/sessions/PlanCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
 import type { CompanionLibrary } from '../../../../src/shared/contract/companionLibrary';
-import { messages, offlineHistoryCopy } from '../i18n';
+import { messages } from '../i18n';
+import { projectDisplayName } from '../features/sessions/projectRows';
 import { createBackCoordinator } from './backCoordinator';
 import { PreviewMedia } from '../features/sessions/PreviewMedia';
 import { applyKeyboardInset } from './keyboardInset';
@@ -26,6 +27,9 @@ import { deriveInvitationVerify, parseInvitation, type LanInvitation } from '../
 import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
 import { AppIcon } from './AppIcon';
+import { sheetLibraryStatus } from './sheetLibraryStatus';
+import { connectionDiagnosis, lastSyncCopy } from './connectionDiagnosis';
+import { CLICK_SWALLOW_MS, DRAWER_SETTLE_MS, EDGE_GESTURE_START_X, drawerPanOffset, drawerPanState, drawerWidthPx, gestureAxis, shouldSwallowClick } from './drawerGesture';
 
 /**
  * 连接那一行的文案与动作。合成一条的原因（2026-09-12 爸真机反馈）：原来「连接胶囊说『重新连接』」
@@ -34,9 +38,12 @@ import { AppIcon } from './AppIcon';
  */
 export function connectionCopy(
   text: ReturnType<typeof messages>,
-  companion: { status: string; paused: boolean; connectionError: string | null },
+  companion: { status: string; paused: boolean; connectionError: string | null; transport?: string | null },
 ): { label: string; connected: boolean; retry: boolean } {
-  if (companion.status === 'connected' || companion.paused) return { label: text.connected, connected: true, retry: false };
+  // 经 relay 连接是同一台电脑的另一条路：连接胶囊要能区分「直连」与「跨网中继」。
+  if (companion.status === 'connected' || companion.paused) {
+    return { label: companion.status === 'connected' && companion.transport === 'relay' ? text.connectedRelay : text.connected, connected: true, retry: false };
+  }
   if (companion.status === 'connecting') return { label: text.connecting, connected: false, retry: false };
   const label = companion.status === 'storageError' ? text.secureStorageError
     : companion.status === 'rejected' ? text.rejected
@@ -46,7 +53,8 @@ export function connectionCopy(
 }
 
 /**
- * 输入区模型胶囊的文案（design.html composer 的 .model）：显示这条会话当前在用的模型。
+ * 输入区模型胶囊的文案（design.html composer 的 .model）：显示这条会话下一次执行真正会用的模型
+ * ——电脑侧按「会话 override 否则电脑默认」算好了发过来（build 45 真机：胶囊写 glm-5.3-flash，实跑默认模型）。
  * 模型表里查不到就退回会话自己的模型 id——电脑的可用模型列表会剔掉没配 key 的 provider，
  * 而会话可能正用着其中一个（2026-09-12 build 24 真机：会话是 custom-glm-coding/glm-5.3-flash，
  * 不在列表里）。查不到只说明「没有好看的名字」，不说明「没有模型」，隐藏胶囊等于把事实藏了；
@@ -62,18 +70,31 @@ export function composerModelLabel(library: CompanionLibrary | null, sessionId: 
  * 状态行文案。待确认命令按 action 分：语音转写不是「发送」，套用「请勿重复发送」会把用户
  * 指到一个不存在的风险上（2026-09-12 真机反馈）。抽成纯函数是为了让这条分支可单测——
  * 它此前是 JSX 里的内联三元，测不到。
+ *
+ * 只说命令，不说执行（N-MOBILE-EXEC-STATUS）：「电脑正在处理」和「任务已完成/失败」归属到那次执行，
+ * 在会话里挂在对应消息下面；底栏再说一遍就是离消息流远、多次任务后互相矛盾的那一行。
  */
 export function taskStatusCopy(
   text: ReturnType<typeof messages>,
-  companion: { pending: boolean; pendingAction: string | null; runId: string | null;
-    terminal: 'complete' | 'stopped' | 'failed' | null },
+  companion: { pending: boolean; pendingAction: string | null },
+  /**
+   * 这条待确认命令是不是已经**久到该说话了**（N-MOBILE-PENDING-NOISE）。
+   * 「正在核对电脑是否已接收，请勿重复发送」是异常兜底语：正常 ack 几十毫秒就回来，
+   * 一发就显示等于每条消息都提醒用户「别乱点」，而且只闪一下——用户只来得及看见警告、
+   * 看不见原因（爸 2026-09-16 build 43 真机）。慢过阈值才说。
+   * 转写不受这条约束：「正在转写」是进度不是警告，越早说越有用。
+   *
+   * 必填而不给默认值：默认 true 等于「谁忘了传谁就回到吵的那个行为」，闸门形同虚设。
+   */
+  pendingSlow: boolean,
 ): string {
-  if (companion.pending) return companion.pendingAction === 'voice.transcribe' ? text.transcribing : text.pendingCommand;
-  if (companion.runId) return text.running;
-  return companion.terminal ? text[companion.terminal] : '';
+  if (!companion.pending) return '';
+  if (companion.pendingAction === 'voice.transcribe') return text.transcribing;
+  return pendingSlow ? text.pendingCommand : '';
 }
 
-function invitationHostLabel(invitation: LanInvitation): string | null {
+/** 电脑名：mDNS 名去掉 .local；没有 mDNS 名（Linux/Windows 宿主）时给 null，调用方退回 IP。 */
+function invitationHostLabel(invitation: { endpoint: string; altEndpoint?: string }): string | null {
   try {
     const host = new URL(invitation.altEndpoint ?? invitation.endpoint).hostname;
     return host.endsWith('.local') ? host.slice(0, -'.local'.length) : null;
@@ -86,30 +107,65 @@ function invitationHostLabel(invitation: LanInvitation): string | null {
  */
 export function commandNoticeCopy(
   text: ReturnType<typeof messages>,
-  companion: { commandError: string | null; commandErrorAction: string | null },
+  companion: { commandError: string | null; commandErrorAction: string | null; status: string; paused: boolean; connectionError: string | null },
   voiceFailureShown: boolean,
 ): string | null {
+  /**
+   * session.create 的失败要**点名什么没成**（fix6-②，build 37 爸真机「点了没反应」）：
+   * 错误码只说原因（项目不可用/没权限/…），不点名的话用户看到一句人话却不知道是
+   * 「新会话没建起来」，+ 像是没生效。
+   */
+  const named = (copy: string) => companion.commandErrorAction === 'session.create' ? `${text.sessionCreateFailed}：${copy}` : copy;
   const error = companion.commandError;
-  if (error === 'UPLOAD_TOO_LARGE') return text.uploadTooLarge;
-  if (error === 'COMPANION_FILE_TYPE_DENIED') return text.fileTypeDenied;
-  if (error === 'STORAGE_FULL') return text.storageFull;
-  if (error === 'COMPANION_EXPORT_FAILED') return text.exportFailed;
-  if (error === 'ARTIFACT_MISSING') return text.artifactMissing;
-  if (error && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(error)) return text.transferInterrupted;
-  // 转写失败由输入区那条提示负责（它带阶段和真实错误码）；这里再来一句「电脑那边拒绝了这条操作」
-  // 只是把同一件事说两遍——真机上就是上下叠着两行（2026-09-12 build 24 实测）。
-  // 按**动作**分而不是按码名列白名单：结算原样带回真实错误码之后，白名单外的转写失败会叠出两句
-  // （grok ai-review Nit）。但只有输入区**真的在显示**它时才让位：切会话会把输入区重挂、
-  // 取消后 ack 才回来，那些时候输入区手里没有这条失败，无条件让位等于让它一个落点都没有。
-  if (companion.commandErrorAction === 'voice.transcribe' && voiceFailureShown) return null;
-  return error ? text.commandRejected : null;
+  // 点 + 时连接不在（companionStore.manage 的守卫）：按连接胶囊同一套三分类诊断给句子，
+  // 不另造一套连接文案。
+  if (error === 'COMPANION_NOT_CONNECTED') return named(connectionCopy(text, companion).label);
+  // 槽被上一条未结算命令占着：说的是在飞的那条，不是这次点按。
+  if (error === 'COMPANION_COMMAND_IN_FLIGHT') return named(text.commandInFlight);
+  // 旧 Host 不认这条命令/参数时，按「电脑太旧」给人话，不报笼统的「拒绝了这条操作」。
+  if (error === 'COMPANION_UNSUPPORTED_ACTION') return named(text.hostTooOld);
+  const base = (): string | null => {
+    if (error === 'UPLOAD_TOO_LARGE') return text.uploadTooLarge;
+    if (error === 'COMPANION_FILE_TYPE_DENIED') return text.fileTypeDenied;
+    if (error === 'STORAGE_FULL') return text.storageFull;
+    if (error === 'COMPANION_EXPORT_FAILED') return text.exportFailed;
+    if (error === 'ARTIFACT_MISSING') return text.artifactMissing;
+    if (error === 'PROJECT_SOURCE_MISSING') return text.projectSourceMissing;
+    if (error === 'PROJECT_SOURCE_CHANGED') return text.projectSourceChanged;
+    if (error === 'PROJECT_SOURCE_UNTRUSTED') return text.projectSourceUntrusted;
+    if (error === 'MODEL_AUTH') return text.modelAuthMissing;
+    if (error === 'scope_denied' || error === 'COMPANION_SCOPE_DENIED') return text.commandScopeDenied;
+    if (error === 'COMPANION_PROJECT_UNAVAILABLE') return text.projectUnavailable;
+    if (error === 'COMPANION_PROJECT_CHANGED') return text.projectChanged;
+    if (error === 'COMPANION_MODEL_UNAVAILABLE') return text.modelUnavailable;
+    if (error === 'COMPANION_SESSION_BUSY') return text.sessionBusy;
+    if (error === 'RUN_FAILED') return text.runFailed;
+    if (error && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(error)) return text.transferInterrupted;
+    // 转写失败由输入区那条提示负责（它带阶段和真实错误码）；这里再来一句「电脑那边拒绝了这条操作」
+    // 只是把同一件事说两遍——真机上就是上下叠着两行（2026-09-12 build 24 实测）。
+    // 按**动作**分而不是按码名列白名单：结算原样带回真实错误码之后，白名单外的转写失败会叠出两句
+    // （grok ai-review Nit）。但只有输入区**真的在显示**它时才让位：切会话会把输入区重挂、
+    // 取消后 ack 才回来，那些时候输入区手里没有这条失败，无条件让位等于让它一个落点都没有。
+    if (companion.commandErrorAction === 'voice.transcribe' && voiceFailureShown) return null;
+    return error ? text.commandRejected : null;
+  };
+  const copy = base();
+  return copy === null ? null : named(copy);
 }
+
+/**
+ * 抽屉手势（fix4-①，2026-09-14 build 35 反馈⑥）：touchmove 阶段 1:1 跟手、松手按
+ * 速度+过半双判据落态。判定逻辑抽在 drawerGesture.ts（纯函数，可单测）；这里的
+ * swipe ref 只记起手与上一帧位置（算松手速度），pan state 驱动跟手 transform。
+ */
+type DrawerPan = { dx: number; settle: 'open' | 'close' | null };
 
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {
   const [store] = useState(() => createMobileStore(ports.preferences));
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
     return store.getState().acknowledgeDraft(acceptedText, `${hostKey}:${sessionId}`);
   }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId, continuation), ports.files, ports.historyCache));
+  const appActive = useRef(true);
   const [notifyStore] = useState(() => createNotificationStore({
     port: ports.notifications ?? unavailableNotificationPort,
     preference: {
@@ -122,6 +178,13 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       unregister: () => companionStore.getState().unregisterPush(),
       openRoute: token => companionStore.getState().openRoute(token),
       reconnect: () => companionStore.getState().reconnect(),
+      // 「正在看」= 前台、会话页没被抽屉/弹层盖着、连着电脑（离线时会话里不会就地出新状态，照常弹）。
+      viewing: () => {
+        const ui = store.getState();
+        const live = companionStore.getState();
+        return appActive.current && !ui.drawer && !ui.sheet && ui.route !== 'fixture' && live.status === 'connected' ? live.sessionId : null;
+      },
+      resolveRoute: token => companionStore.getState().resolveRoute(token),
     },
   }));
   const companion = useStore(companionStore);
@@ -140,7 +203,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const keyboardInset = useRef(0);
   const viewportFrozen = useRef<number | null>(null);
   const managing = useRef(false);
-  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const swipe = useRef<{ x: number; y: number; lastX: number; lastT: number; axis: 'horizontal' | 'vertical' | null } | null>(null);
+  /** 拖拽中的抽屉：dx 为位移、settle 非空表示松手后正带 transition 回弹到目标态。 */
+  const [pan, setPan] = useState<DrawerPan | null>(null);
+  const settleTimer = useRef(0);
+  // 锁轴拖拽后的 click 吞掉窗口（fix5-②）：拖一半松手时合成的 click 落在起手的会话行上，
+  // 会变成「点中会话」。吞一次即复位——窗口内若没有 click 跟来（拖到 scrim 上松手），
+  // 到点由定时器自清，下一次真实点按不受影响。
+  const swallowClick = useRef(false);
+  const swallowTimer = useRef(0);
+  useEffect(() => () => { clearTimeout(settleTimer.current); clearTimeout(swallowTimer.current); }, []);
   const recording = useRef(false);
   const [composerHeight, setComposerHeight] = useState(0);
   const composerObserver = useRef<ResizeObserver | null>(null);
@@ -184,6 +256,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   }, []);
   const [voiceFailureShown, setVoiceFailureShown] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<{ raw: string; invitation: LanInvitation } | null>(null);
+  // 项目会话前进页（fix5-③）当前在看的项目：主层选择器的 chevron 进来，返回弹回主层。
+  const [sessionProjectId, setSessionProjectId] = useState<string | null>(null);
+  // 刚由 session.create 建好、还没说过话的会话 id：空会话就绪态据此说「新会话已建好」而不是
+  // 通用的「已就绪」。只认 id——切走再切回的旧空会话不冒充「刚建好」（fix6-①）。
+  const [justCreated, setJustCreated] = useState<string | null>(null);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
   const pendingDecisions = useMemo(() => {
@@ -203,9 +280,26 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   // 没有会话或还没读到模型表时不显示——不拿列表第一个冒充当前模型。
   const sessionModelLabel = composerModelLabel(companion.library, companion.sessionId);
   const connection = connectionCopy(text, companion);
-  const cachedHistory = companion.sessionId ? companion.history[companion.sessionId] : undefined;
-  const hasCachedConversation = Boolean(cachedHistory?.messages.length || companion.events.some(event => event.sessionId === companion.sessionId));
-  const offlineCopy = offlineHistoryCopy(text, companion, hasCachedConversation);
+  // 反馈③（2026-09-14 build 34）：项目/会话 sheet 等电脑里的库时不许无限转圈——底层 request
+  // 没有客户端超时，连接僵死时圈会一直转；到点落「连不上电脑」失败态并给重试。
+  const librarySheetWaiting = Boolean(state.sheet && (currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more' || currentPage === 'model') && companion.binding && !companion.library);
+  const [libraryTimedOut, setLibraryTimedOut] = useState(false);
+  const [libraryRetryEpoch, setLibraryRetryEpoch] = useState(0);
+  useEffect(() => {
+    // 每当等待重新成立（新开 sheet 或点了重试）计时从零开始；不在等时清掉标记。
+    setLibraryTimedOut(false);
+    if (!librarySheetWaiting) return;
+    const timer = setTimeout(() => setLibraryTimedOut(true), COMPANION_LIMITS.librarySheetWaitMs);
+    return () => clearTimeout(timer);
+  }, [librarySheetWaiting, libraryRetryEpoch]);
+  const retrySheetLibrary = () => {
+    setLibraryRetryEpoch(epoch => epoch + 1);   // 计时归零，重新给一轮秒级等待
+    const live = companionStore.getState();
+    // 断连时 refreshLibrary 是空转（非 connected 直接 return），重连才是真动作；
+    // 连上后既有 effect 会去读库。
+    if (live.status !== 'connected') void live.reconnect();
+    else void live.refreshLibrary();
+  };
 
   // Text selections inside the composer never surface through window.getSelection on WebKit,
   // and long-press selection on WebView only lives in the element's own range.
@@ -241,6 +335,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       onNativeError: () => setNativeError(true),
     });
     register(ports.lifecycle.subscribe(active => {
+      appActive.current = active;
       if (!active) { void store.getState().flush(); companionStore.getState().pause(); }
       else {
         if (companionStore.getState().binding) void companionStore.getState().reconnect();
@@ -250,6 +345,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     register((ports.notifications ?? unavailableNotificationPort).tap.subscribe(token => {
       void notifyStore.getState().handleTap(token);
     }));
+    // 前台正看着同一条会话时不弹系统推送（N-MOBILE-EXEC-STATUS ④）：会话里已经就地显示了，横幅是重复打扰。
+    const foreground = (ports.notifications ?? unavailableNotificationPort).foreground;
+    if (foreground) register(foreground.subscribe(routeToken => notifyStore.getState().decideForeground(routeToken)));
     let frame = 0;
     const applyViewportHeight = () => {
       frame = 0;
@@ -292,6 +390,32 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     };
   }, [ports, store, companionStore, notifyStore]);
   useEffect(() => { if (state.ready) void companionStore.getState().hydrate(); }, [state.ready, companionStore]);
+  /**
+   * 待确认命令「慢到该说话了」的闸门（N-MOBILE-PENDING-NOISE）。pending 一起就开计时，
+   * 结算就复位；到点之前 taskStatusCopy 闭嘴。放在 MobileRoot 而不是 store：这是纯粹的
+   * 呈现节奏，store 那边的 pending 仍然是「有没有待确认命令」这个事实，不掺 UI 时序。
+   */
+  const [pendingSlow, setPendingSlow] = useState(false);
+  /**
+   * 录音面板是否正占着输入区。它顶掉整块 composer ⇒ 停止那个键此刻不存在，得把停止
+   * 临时交回执行条（grok ai-review PR#1903 Nit①）。用 state 而不是那个 recording ref：
+   * ref 变了不重渲染，执行条不会知道该长出按钮来。
+   */
+  const [voiceActive, setVoiceActive] = useState(false);
+  /**
+   * hydrate 从盘上带回来的待确认命令已经等了不知道多久（可能是上次开着 app 时留下的），
+   * 再从 0 憋 3 秒等于把已知的「它很慢」这个事实丢掉（grok ai-review PR#1903 Nit②）。
+   * 「是不是捡回来的」由 store 的 pendingAdopted 给，不在这里靠时序推断——
+   * 初版我用「第一次见到 pending 就为真」判断，而 store 初始 pending 恒为 false，
+   * 那个判据永远不成立，改了等于没改（实测抓到）。
+   */
+  useEffect(() => {
+    if (!companion.pending) { setPendingSlow(false); return; }
+    // 盘上捡回来的旧槽已经等了不知道多久，立刻说；本次会话亲手发的才计时。
+    if (companion.pendingAdopted) { setPendingSlow(true); return; }
+    const timer = setTimeout(() => setPendingSlow(true), COMPANION_LIMITS.pendingNoticeDelayMs);
+    return () => clearTimeout(timer);
+  }, [companion.pending, companion.pendingAction, companion.pendingAdopted]);
   useEffect(() => {
     if (companion.status !== 'connected') return;
     void notifyStore.getState().recover();
@@ -331,11 +455,35 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   }, [companion.status, companion.sessionId, store]);
   useEffect(() => { if (currentPage !== 'storage') { setCacheConfirm(false); setCacheResult(null); } }, [currentPage]);
   const commandNotice = commandNoticeCopy(text, companion, voiceFailureShown);
-  const selectSession = (id: string) => { companion.selectSession(id); state.navigate('new'); };
+  // 选中即收边栏（fix5-①，2026-09-15 build 36 反馈⑦）：抽屉会话行、别会话待确认跳转、sheet 里的
+  // 待确认跳转三处都走这里。navigate 虽也带 drawer:false，收边栏是选会话的第一意图，
+  // 显式先关——不把它押在路由切换的副作用上。
+  const selectSession = (id: string) => { companion.selectSession(id); state.closeDrawer(); state.navigate('new'); };
+  // 主层选择器 → 项目会话前进页（同弹层 push，返回弹回主层，不堆在主层里）。
+  const openProjectSessions = (id: string) => { setSessionProjectId(id); state.pushSheet('projectSessions'); };
+  /**
+   * 打开选择会话模型时现拉一次库：「最近调用失败」是电脑在执行失败那一刻才标上的，而手机手里的库是
+   * 连上或会话操作时拉的旧副本——恰好在用户点「换一个可用模型」的那一刻看不到标记（build 46 远端验收实测）。
+   */
+  const openModelSheet = () => { state.openSheet('model'); void companion.refreshModels(); };
+  // 项目会话前进页的标题 = 主层那一行的显示名（同名项目带路径消歧），点进行页标题就是刚才点的那行。
+  const sessionProject = companion.library?.projects.find(p => p.id === sessionProjectId) ?? null;
+  const startDefaultSession = () => {
+    const created = defaultCompanionSessionCreate(companion.library);
+    if (!created) { state.openSheet('projects'); return; }
+    void manage('session.create', { title: text.newSession, provider: created.provider, model: created.model }, `project:${created.projectId}`);
+  };
   const manage: typeof companion.manage = async (...args) => {
     managing.current = true;
+    const before = companionStore.getState().sessionId;
     await companion.manage(...args);
-    if (!companionStore.getState().pending && companionStore.getState().status === 'connected') state.navigate('new');
+    const live = companionStore.getState();
+    // session.create 无论成败都收层（fix6-②，build 37「点了没反应」）：成功要进新会话；
+    // 失败时抽屉/弹层正盖在提示条上，不收层失败反馈等于没有。
+    if (args[0] === 'session.create' || (!live.pending && live.status === 'connected')) {
+      if (args[0] === 'session.create' && live.sessionId && live.sessionId !== before) setJustCreated(live.sessionId);
+      state.navigate('new');
+    }
   };
   useEffect(() => {
     if (managing.current && !companion.pending && !companion.busy) {
@@ -373,35 +521,107 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     store.getState().back();
   };
 
+  const settleDrawer = (target: 'open' | 'close') => {
+    // 目标态先落（open 时层保持挂载），transform 带 transition 滑过去；动画时长后清 pan，
+    // close 到那一刻才 closeDrawer 卸载层。settle 的 260ms 窗口内忽略新手势。
+    if (target === 'open') state.openDrawer();
+    setPan(current => ({ dx: current?.dx ?? 0, settle: target }));
+    clearTimeout(settleTimer.current);
+    settleTimer.current = window.setTimeout(() => {
+      setPan(null);
+      if (target === 'close') state.closeDrawer();
+    }, DRAWER_SETTLE_MS);
+  };
   const gestureStart = (event: React.TouchEvent) => {
     const touch = event.touches[0];
-    if (!touch || event.touches.length !== 1 || state.sheet || keyboardVisible.current || recording.current ||
-      textSelected() || (event.target as Element).closest('button,input,textarea,[data-testid="history"]') || touch.clientX < 24) return;
-    swipe.current = { x: touch.clientX, y: touch.clientY };
+    if (!touch || event.touches.length !== 1 || state.sheet || pan || keyboardVisible.current || recording.current || textSelected()) return;
+    // 抽屉开着时层内任何位置（含会话按钮）都可起手左拖关闭——按钮没有横滑语义，点按不受影响
+    //（没有位移就不锁轴，touchend 直接放过）。关闭态下按钮/input 的起手仍归控件本身。
+    if ((event.target as Element).closest('button,input,textarea,[data-testid="history"]') && !state.drawer) return;
+    swipe.current = { x: touch.clientX, y: touch.clientY, lastX: touch.clientX, lastT: event.timeStamp, axis: null };
+  };
+  const gestureMove = (event: React.TouchEvent) => {
+    const track = swipe.current;
+    const touch = event.touches[0];
+    if (!track || !touch) return;
+    const dx = touch.clientX - track.x;
+    const dy = touch.clientY - track.y;
+    if (!track.axis) {
+      const axis = gestureAxis(dx, dy, track.x < EDGE_GESTURE_START_X);
+      if (!axis) return;
+      // 竖滑让位滚动：清掉跟踪，原生滚动照常吃这次手势（缘区只降横滑门槛，不抢竖滑）。
+      if (axis === 'vertical') { swipe.current = null; return; }
+      track.axis = axis;
+    }
+    track.lastX = touch.clientX; track.lastT = event.timeStamp;
+    setPan({ dx, settle: null });
   };
   const gestureEnd = (event: React.TouchEvent) => {
-    const start = swipe.current; swipe.current = null;
+    const track = swipe.current; swipe.current = null;
     const touch = event.changedTouches[0];
-    if (!start || !touch || textSelected() || Math.abs(touch.clientY - start.y) > 60) return;
-    if (state.drawer && touch.clientX - start.x < -86) state.closeDrawer();
-    else if (!state.drawer && touch.clientX - start.x > 86) state.openDrawer();
+    if (!track || !track.axis || !touch || textSelected()) return;
+    // 拖拽成立：随后的合成 click 是拖拽的副产品，吞掉（轻点没锁轴、不走这里，照常点按）。
+    if (shouldSwallowClick(track.axis)) {
+      clearTimeout(swallowTimer.current);
+      swallowClick.current = true;
+      swallowTimer.current = window.setTimeout(() => { swallowClick.current = false; }, CLICK_SWALLOW_MS);
+    }
+    const dx = touch.clientX - track.x;
+    // 末帧速度：dt 为 0（没触发过 move 或同帧松手）按慢拖处理，速度判据让位给过半。
+    const dt = event.timeStamp - track.lastT;
+    const vx = dt > 0 ? (touch.clientX - track.lastX) / dt : 0;
+    settleDrawer(drawerPanState(dx, vx, state.drawer, drawerWidthPx(window.innerWidth)));
+  };
+  const gestureCancel = () => {
+    // 系统夺走手势（来电/控制中心）：松不开也不许卡在半开——按当前态回弹。
+    swipe.current = null;
+    if (pan) settleDrawer(state.drawer ? 'open' : 'close');
   };
   if (!state.ready) return <div className="loading" role="status"><p>{state.loadError ? text.loadError : text.loading}</p>
-    {state.loadError && <button onClick={() => void state.hydrate()}>{text.retry}</button>}</div>;
+    {state.loadError && <button className="inline-retry" onClick={() => void state.hydrate()}>{text.retry}</button>}</div>;
 
-  return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchEnd={gestureEnd} onTouchCancel={() => { swipe.current = null; }}>
+  return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchMove={gestureMove} onTouchEnd={gestureEnd} onTouchCancel={gestureCancel}
+    onClickCapture={event => {
+      if (!swallowClick.current) return;
+      // capture 阶段拦在根上：拖拽副产品的 click 到不了会话按钮/scrim；吞一次即复位，
+      // 窗口内后续的真实点按不受影响。
+      event.preventDefault();
+      event.stopPropagation();
+      swallowClick.current = false;
+    }}>
     <main className="conversation" inert={state.drawer || !!state.sheet}>
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><AppIcon name="menu" /></button>
         <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           offline={companion.status !== 'connected'}
+          openModel={openModelSheet}
+          sessionModel={companion.library?.sessions.find(s => s.id === companion.sessionId) ?? null}
+          // 执行条平时只说「哪一次在跑」；停止在输入区那个键上。录音面板顶掉输入区时才把
+          // stop 交给它，避免运行中一开录音就没法停（grok ai-review PR#1903 Nit①）。
+          running={companion.runId
+            ? (voiceActive ? { stop: () => void companion.stop(), stopDisabled: companion.busy || companion.pending || companion.status !== 'connected' } : {})
+            : null}
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond}
           respondQuestion={companion.respondQuestion} respondPlan={companion.respondPlan}
           openArtifact={id => void companion.previewArtifact(id).then(() => {
             if (companionStore.getState().preview) store.getState().openSheet('preview');
           })} />
-        : <div className="welcome"><NeoBrandMark /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
+        : companion.sessionId ? (() => {
+          // 空会话就绪态（fix6-①，2026-09-15 build 37「点了没反应」）：已选中但还没说过话的
+          // 会话不许再演无会话的欢迎屏——两屏一模一样，点 + 建成后看起来就是「原地零变化」。
+          // 刚建的会话点名「新会话已建好」；其余空会话（从历史选进来的）说通用的「已就绪」。
+          // 不自动聚焦输入区：手机上未经点按就弹键盘会顶走视口，就绪态+占位符已足够指路。
+          const session = companion.library?.sessions.find(s => s.id === companion.sessionId);
+          const project = session?.projectId != null ? companion.library?.projects.find(p => p.id === session.projectId) : undefined;
+          return <div className="welcome" data-testid="session-empty">
+            <NeoBrandMark variant="mark" size={47} />
+            <h1>{justCreated === companion.sessionId ? text.sessionCreated : text.sessionReady}</h1>
+            {project && <p className="connection-next">{text.usingProject.replace('{name}', project.name)}</p>}
+            {companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}
+          </div>;
+        })()
+        : <div className="welcome"><NeoBrandMark variant="mark" size={47} /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
       <div className="composer-area" ref={composerArea}>
         {/* 本会话的审批优先在托盘里就地给控件——CompanionConversation 被传了
             hidePendingApprovals，它不会再渲染 pending 卡片，所以这里是本会话审批**唯一**的
@@ -421,15 +641,17 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           }</button>}
         </div>}
         {companion.binding && <div className="task-status" role="status">
-          <button className="connection-pill" data-connected={connection.connected} onClick={() => state.openSheet('remote')}>
-            <span aria-hidden="true" className="status-dot" />{connection.label}
-          </button>
-          <span>{taskStatusCopy(text, companion)}</span>
-          {offlineCopy && <span data-testid="offline-readonly">{offlineCopy}</span>}
-          {companion.runId && <button disabled={companion.busy || companion.pending || companion.status !== 'connected'} onClick={() => void companion.stop()}>{text.stop}</button>}
-          {connection.retry && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
+          {/* 执行条已经说明电脑正在处理，连着是不言自明的；再挂一行「已连接电脑」是重复（爸 2026-09-16 真机）。
+              没连上时照常显示——那是需要用户知道并处理的。 */}
+          {!(connection.connected && companion.runId) && <div className="connection-line">
+            <button className="connection-pill" data-connected={connection.connected} onClick={() => state.openSheet('remote')}>
+              <span aria-hidden="true" className="status-dot" />{connection.label}
+            </button>
+            {connection.retry && <button className="inline-retry" disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
+          </div>}
+          <span>{taskStatusCopy(text, companion, pendingSlow)}</span>
         </div>}
-        {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
+        {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button className="inline-retry" onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}
         {(state.saveError || nativeError || (companion.commandError && commandNotice) || (state.sendAttempted && !canAddressSession(companion))) && <p role="status" className="notice">
           {state.saveError ? text.saveError
@@ -437,7 +659,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             : commandNotice ? commandNotice
             : companion.status === 'connected' ? text.noSession
             : text.unconnected}
-          {state.saveError && <button onClick={() => void state.flush()}>{text.retry}</button>}
+          {state.saveError && <button className="inline-retry" onClick={() => void state.flush()}>{text.retry}</button>}
           {!state.saveError && !nativeError && !companion.commandError && companion.status === 'connected'
             && <button onClick={() => state.openSheet('projects')}>{text.projects}</button>}
         </p>}
@@ -447,6 +669,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           // （grok ai-review Nit，正是爸看到的那张后台快照）。
           offline={!!companion.binding && !connection.connected}
           sendDisabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
+          // 停止的落点收进输入区那个键（N-MOBILE-SEND-IS-STOP）；执行条只剩「哪一次在跑」。
+          running={companion.runId ? { stop: () => void companion.stop(), stopDisabled: companion.busy || companion.pending || companion.status !== 'connected' } : null}
           send={() => {
             // companionStore.send 在没有 sessionId 时会静默 return（只勾了项目的二维码
             // 配对就是这个形态）。不把这一档也走 attemptSend 的话，用户看到「已连接」、
@@ -454,7 +678,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             if (canAddressSession(companion) && state.route !== 'fixture') void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
             else state.attemptSend();
           }}
-          modelLabel={sessionModelLabel} openModel={() => state.openSheet('more')}
+          // 模型入口只留这一个（爸 2026-09-16 拍板）：会话操作弹窗里不再有模型那一格。
+          modelLabel={sessionModelLabel} openModel={openModelSheet}
+          openSettings={() => void (ports.notifications ?? unavailableNotificationPort).openSettings()}
           attach={ports.files && (() => state.openSheet('attachment'))}
           attachDisabled={!canAddressSession(companion) || companion.busy || companion.pending}
           attachments={companion.uploadProgress}
@@ -476,17 +702,25 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
           voicePending={companion.pending} voiceResult={companion.voiceResult}
           voiceReady={canAddressSession(companion)}
-          onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceFailureShown(failed); }} />
+          onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceActive(active); setVoiceFailureShown(failed); }} />
       </div>
     </main>
-    {state.drawer && <div className="drawer-layer" inert={!!state.sheet}>
-      <button className="scrim" aria-label={text.closeDrawer} onClick={state.closeDrawer} />
+    {(state.drawer || pan) && (() => {
+      // 拖拽/回弹期间用 --drawer-x 驱动 1:1 跟手；settle 时目标是端点（0 / -width），
+      // CSS transition 从当前视觉位置滑过去。遮罩透明度 = 可见比例。
+      const width = drawerWidthPx(window.innerWidth);
+      const offset = pan
+        ? pan.settle === 'open' ? 0 : pan.settle === 'close' ? -width : drawerPanOffset(pan.dx, width, state.drawer)
+        : 0;
+      return <div className="drawer-layer" data-testid="drawer-layer" inert={!!state.sheet} data-settling={pan?.settle ?? undefined}
+        style={(pan ? { '--drawer-x': `${offset}px`, '--scrim-alpha': String(Math.max(0, Math.min(1, 1 + offset / width))) } : {}) as React.CSSProperties}>
+        <button className="scrim" aria-label={text.closeDrawer} onClick={state.closeDrawer} />
       <aside className="drawer" aria-label={text.sessions}>
-        <div className="drawer-functions"><header><strong>{text.neo}</strong>{<button aria-label={text.newSession} data-testid="new-session" onClick={() => companion.binding ? state.openSheet('projects') : state.navigate('new')}><AppIcon name="plus" /></button>}</header>
-          <button onClick={() => companion.binding ? state.openSheet('projects') : state.navigate('new')}>{text.newSession}</button>
+        <div className="drawer-functions"><header><strong>{text.neo}</strong>{<button aria-label={text.newSession} data-testid="new-session" onClick={() => companion.binding ? startDefaultSession() : state.navigate('new')}><AppIcon name="plus" /></button>}</header>
+          <button onClick={() => companion.binding ? startDefaultSession() : state.navigate('new')}>{text.newSession}</button>
           <button onClick={() => state.openSheet('projects')}>{text.projects}</button><button onClick={() => state.openSheet('remote')}>{text.remote}</button></div>
         <nav className="drawer-history" aria-label={text.history}><p className="group-title">{text.history}</p>
-          {companion.library?.sessions.map(session => <button key={session.id} aria-current={session.id === companion.sessionId ? 'page' : undefined} onClick={() => selectSession(session.id)}>{session.title}{session.archived ? ` · ${text.archived}` : ''}</button>)}
+          {companion.library?.sessions.map(session => <button key={session.id} data-testid={`session-${session.id}`} data-session-id={session.id} aria-current={session.id === companion.sessionId ? 'page' : undefined} onClick={() => selectSession(session.id)}>{session.title}{session.archived ? ` · ${text.archived}` : ''}</button>)}
           {companion.library?.nextOffset != null && <button onClick={() => void companion.refreshLibrary(true)}>{text.loadHistory}</button>}
           {fixtures ? Array.from({ length: 60 }, (_, n) => <button key={n} onClick={() => state.navigate('fixture')} data-testid={n === 0 ? 'fixture-session' : undefined}>{text.fixture} {n + 1}</button>) : !companion.library?.sessions.length && <p className="caption">{text.emptyHistory}</p>}
         </nav>
@@ -494,8 +728,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           <span className="avatar">{(state.preferences.nickname || text.guest).slice(0, 1)}</span><strong>{state.preferences.nickname || text.guest}</strong><AppIcon name="settings" />
         </button>
       </aside>
-    </div>}
-    {state.sheet && currentPage && <SheetHost page={currentPage} title={text[currentPage]} hasParent={state.sheet.pages.length > 1}
+      </div>;
+    })()}
+    {state.sheet && currentPage && <SheetHost page={currentPage}
+      title={currentPage === 'projects' ? text.chooseProject
+        : currentPage === 'model' ? text.chooseModel
+        : currentPage === 'projectSessions' ? sessionProject && companion.library ? projectDisplayName(sessionProject, companion.library.projects) : text.projectSessions
+        : text[currentPage]}
+      hasParent={state.sheet.pages.length > 1}
       close={() => {
         if (currentPage === 'preview') companion.closePreview();
         if (currentPage === 'pairConfirm') setPendingInvite(null);
@@ -508,10 +748,23 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {pendingDecisions.length > 0 && <button className="primary" onClick={() => selectSession(String(pendingDecisions[0].sessionId))}>{
         pendingDecisions[0].kind === 'question' ? text.reviewQuestion : pendingDecisions[0].kind === 'plan' ? text.reviewPlan : text.reviewApproval
       }</button>}
-      {(currentPage === 'projects' || currentPage === 'more') && companion.binding ? <>
-        {companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text} mode={currentPage} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage} loadMore={() => void companion.refreshLibrary(true)} /> : <p>{companion.libraryError ? text.libraryError : text.loading}</p>}
-        <button onClick={() => void companion.refreshLibrary()}>{text.retry}</button>
-      </> : currentPage === 'preview' && companion.preview ? <div className="preview-pane">
+      {(currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more' || currentPage === 'model') && companion.binding ? (
+        companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text}
+          mode={currentPage === 'more' || currentPage === 'model' ? currentPage : currentPage === 'projectSessions' ? 'projectSessions' : 'projects'}
+          projectId={sessionProjectId} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage}
+          loadMore={() => void companion.refreshLibrary(true)} openProjectSessions={openProjectSessions} />
+          // fix4-④：等库 = spinner + 一句「正在连接电脑…」（秒级超时兜底，不无限转圈）；
+          // 失败 = 状态页（标题 + 诊断句 + 主按钮重新连接 + 次按钮去连接电脑），不再用
+          // 「一行文案 + 行尾 pill」。行尾重试 pill 只保留在会话页断网 banner 单行场景。
+          : sheetLibraryStatus(companion, libraryTimedOut) === 'unreachable'
+            ? <div className="sheet-fail" role="status" data-testid="sheet-unreachable">
+              <strong>{text.cannotReachComputer}</strong>
+              <p>{companion.status === 'storageError' ? text.secureStorageError : connectionDiagnosis(text, companion).sentence}</p>
+              <button className="primary" onClick={retrySheetLibrary}>{text.reconnect}</button>
+              <button className="sheet-secondary" onClick={() => state.pushSheet('remote')}>{text.goRemote}</button>
+            </div>
+            : <p className="notice sheet-wait" role="status"><span className="spinner" aria-hidden="true" />{text.libraryLoading}</p>
+      ) : currentPage === 'preview' && companion.preview ? <div className="preview-pane">
         <p className="caption">{text.previewHint}</p>
         <PreviewMedia name={companion.preview.name} mimeType={companion.preview.mimeType} bytes={companion.preview.bytes} text={text}
           onSave={companion.savedPreview ? undefined : () => void companion.savePreview()} />
@@ -519,15 +772,59 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         {!companion.savedPreview && companion.commandError && <p role="status" className="notice">{commandNotice}</p>}
         {companion.savedPreview ? <p role="status">{companion.savedPreviewName && companion.savedPreviewName !== companion.preview.name ? `${text.savedToDevice}：${companion.savedPreviewName}` : text.savedToDevice}</p>
           : <button className="primary" onClick={() => void companion.savePreview()}>{text.saveToDevice}</button>}
-      </div> : currentPage === 'remote' ? <div className="settings-group">
-        <p>{text.lanHint}</p>
-        {companion.status === 'connected' ? <div className="connection-success" role="status"><span className="connection-check"><AppIcon name="check" /></span><strong>{text.connected}</strong><p>{text.connectedNext}</p></div>
-          : <p role="status">{companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>}
-        {companion.status === 'connected' && <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>}
-        {!ports.companion && <p>{text.nativeConnectionOnly}</p>}
-        <button className={companion.status === 'connected' ? undefined : 'primary'} disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
-        {ports.companion && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>}
-      </div> : currentPage === 'pairConfirm' && pendingInvite ? <PairConfirm
+      </div> : currentPage === 'remote' ? (() => {
+        // fix4-③：连接电脑 sheet 重构成状态机，一态一主操作。Wi-Fi 说明书两段删掉——
+        // 连不上时诊断句（三分类，见 connectionDiagnosis）已把「下一步做什么」说清。
+        // 连接中只有 spinner + 一句话，不许同时出现「重新连接」按钮（按了也是重来一遍）。
+        const diagnosis = connectionDiagnosis(text, companion);
+        const hostName = companion.binding
+          ? invitationHostLabel(companion.binding) ?? new URL(companion.binding.endpoint).hostname
+          : null;
+        return <div className="settings-group remote-sheet">
+          {companion.status === 'connected' && companion.binding ? <>
+            <div className="connection-success" role="status">
+              <span className="connection-check"><AppIcon name="check" /></span>
+              <strong>{hostName}</strong>
+              <p>{lastSyncCopy(text, companion.lastSyncAt, Date.now()) ?? text.connectedNext}</p>
+              {companion.transport === 'relay' && <p className="caption">{text.connectionViaRelay}</p>}
+            </div>
+            <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>
+          </>
+          : companion.status === 'connecting' ? <div className="remote-state" role="status" data-testid="remote-connecting">
+            <span className="spinner" aria-hidden="true" />{text.libraryLoading}
+          </div>
+          : !companion.binding ? <div className="remote-failed" role="status" data-testid="remote-unpaired">
+            <strong>{text.noComputers}</strong>
+            {/* 没配对过也会失败：扫码没成、本机安全存储读不出。标题仍是「还没连接电脑」，但原因要说出来，
+                否则存储故障被说成「没有电脑」，用户照着再扫也好不了（ai-review PR#1814 Important④）。 */}
+            {(companion.status === 'storageError' || companion.connectionError) && <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>}
+            <button className="primary" disabled={!ports.companion} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
+          </div>
+          : <div className="remote-failed" role="status" data-testid="remote-unreachable">
+            <strong>{text.cannotReachComputer}</strong>
+            <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>
+            {/* 两个动作都留着，主次由诊断决定（爸 2026-09-16 build 42 真机「手机没给我扫的按钮啊」）。
+                原来按分类只渲染一个：relay 被拒判 reconnect ⇒ 只有「重新连接」。而重连试的是配对时
+                写死的 endpoint/altEndpoint，换网后两个都死，**这个主按钮永远不可能成功**，用户却
+                拿不到唯一能救的那个动作（重新扫码），只能删 app 重装。fix4-③ 要删的是 Wi-Fi 说明书，
+                不是逃生口——「一态一主操作」说的是主次，不是只留一个。 */}
+            {([diagnosis.action, diagnosis.action === 'scan' ? 'reconnect' : 'scan'] as const).map((action, index) => action === 'scan'
+              ? <button key={action} className={index === 0 ? 'primary' : 'sheet-secondary'} data-testid="remote-action-scan"
+                disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
+              : <button key={action} className={index === 0 ? 'primary' : 'sheet-secondary'} data-testid="remote-action-reconnect"
+                disabled={!ports.companion || companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>)}
+            {/* 连扫码也过不去时的底：丢掉本机存的配对，回到「尚未连接电脑」。
+                不加二次确认弹层，但**必须把代价写在旁边**：初版注释写的「误点没有东西可丢」是错的
+                （grok ai-review Nit②）——电脑只是睡着、Neo 只是没开时配对仍然有效，误点会连本机
+                会话缓存一起丢，且只能重新扫码才能回来（要人走到电脑跟前）。代价说清了，用户才
+                有得选；用一句错的理由把确认省掉，是把风险藏起来而不是降下去。 */}
+            <button className="sheet-secondary" data-testid="remote-action-forget"
+              disabled={!ports.companion || companion.busy} onClick={() => void companion.forget()}>{text.forgetComputer}</button>
+            <p className="caption" data-testid="remote-forget-caption">{text.forgetComputerHint}</p>
+          </div>}
+          {!ports.companion && <p>{text.nativeConnectionOnly}</p>}
+        </div>;
+      })() : currentPage === 'pairConfirm' && pendingInvite ? <PairConfirm
         name={invitationHostLabel(pendingInvite.invitation) ?? text.pairConfirmComputer}
         verify={deriveInvitationVerify(pendingInvite.invitation.psk, pendingInvite.invitation.hostKey)}
         text={text} onConfirm={() => void confirmPendingInvite()} onReject={dismissPendingInvite}

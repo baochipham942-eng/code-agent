@@ -50,11 +50,51 @@ describe('first-party ios voice recorder contract', () => {
     expect(swift).toContain('max(1, Int(recorder.currentTime * 1000))');
   });
 
-  it('keeps the vendor error codes, which the UI now shows verbatim', () => {
+  it('keeps the vendor error codes, which the JS side branches on (never shown to the user)', () => {
     for (const code of ['ALREADY_RECORDING', 'MISSING_PERMISSION', 'FAILED_TO_RECORD',
       'RECORDING_HAS_NOT_STARTED', 'EMPTY_RECORDING']) {
       expect(swift).toContain(`"${code}"`);
     }
+  });
+
+  // N-MOBILE-VOICE-ERRCODE-LEAK（build 45 真机：开会占着麦克风，报成 FAILED_TO_RECORD）
+  it('起录失败先判「被占用」再收尾，两条起录路径都走同一个判因', () => {
+    const voiceCapture = readFileSync('packages/mobile/src/features/sessions/VoiceCapture.tsx', 'utf8');
+    const composer = readFileSync('packages/mobile/src/features/sessions/Composer.tsx', 'utf8');
+    expect(swift).toContain('static let microphoneBusy = "MICROPHONE_BUSY"');
+    expect(voiceCapture).toContain("'MICROPHONE_BUSY'");
+    expect(composer).toContain("'MICROPHONE_BUSY'");
+    // 判因必须在 teardown 之前：收尾会停用本进程的会话
+    expect(swift.match(/let failure = Self\.startFailure\(error\)\n[\s\S]*?teardown/g)).toHaveLength(2);
+    expect(swift).not.toContain('call.reject(Failure.failedToRecord)');
+    expect(swift).toContain('.contains((error as NSError).code) || !microphoneFree() ? Failure.microphoneBusy : Failure.failedToRecord');
+    for (const code of ['insufficientPriority', 'cannotInterruptOthers', 'isBusy']) {
+      expect(swift).toContain(`AVAudioSession.ErrorCode.${code}.rawValue`);
+    }
+    // 泛化起录失败不算占用：否则无他 App 音频时提示先说「被占用」又立刻翻成「空出来了」
+    expect(swift).not.toContain('AVAudioSession.ErrorCode.cannotStartRecording.rawValue');
+  });
+
+  it('真检测麦克风释放：桥方法、事件名两边一致，盯守监听中断/恢复通知', () => {
+    for (const method of ['watchMicrophoneRelease', 'unwatchMicrophoneRelease']) {
+      expect(swift).toContain(`CAPPluginMethod(name: "${method}"`);
+      expect(swift).toContain(`@objc func ${method}(`);
+      expect(capacitorPort).toContain(`pcmBridge.${method}()`);
+    }
+    // 撤防必须排在布防回包之后，否则先撤后布，原生定时器空转
+    expect(capacitorPort).toContain('void armed.then(() => pcmBridge.unwatchMicrophoneRelease())');
+    expect(swift).toContain('notifyListeners("microphoneAvailable"');
+    expect(capacitorPort).toContain("addListener('microphoneAvailable'");
+    expect(swift).toContain('AVAudioSession.interruptionNotification');
+    expect(swift).toContain('isOtherAudioPlaying');
+  });
+
+  // build 46 远端验收：@capacitor/app 在 iOS 上没有 openUrl，原来的「去设置」是空操作（原生回 UNIMPLEMENTED 被吞）
+  it('iOS 的「去设置」走第一方插件打开本 App 设置页，不再调不存在的 App.openUrl', () => {
+    expect(swift).toContain('CAPPluginMethod(name: "openAppSettings"');
+    expect(swift).toContain('@objc func openAppSettings(');
+    expect(swift).toContain('UIApplication.openSettingsURLString');
+    expect(capacitorPort).toContain("if (Capacitor.getPlatform() === 'ios') { await pcmBridge.openAppSettings()");
   });
 
   it('stops and discards the recording when the app goes to background', () => {

@@ -298,6 +298,35 @@ describe('inferenceViaAiSdk —— 首字节后断流续接（ADR-068 刀 1+3）
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1); // 调用方自带重试循环 → 本层单次尝试
   });
 
+  it('streamReconnectMax 覆盖（无人值守分档 5）：首次 + 5 次续接后耗尽回落 throw', async () => {
+    vi.mocked(streamText).mockImplementation(() => fakeStream(BREAK_AFTER_DELTA));
+    const col = makeCollector();
+
+    const p = inferenceViaAiSdk([{ role: 'user', content: 'x' }], [], CONFIG, col.onStream, undefined, { streamReconnectMax: 5 });
+    const settled = p.then(() => 'resolved', (e: unknown) => (e instanceof Error ? e.message : String(e)));
+    await vi.advanceTimersByTimeAsync(30_000);
+    const outcome = await settled;
+
+    expect(outcome).toBe('ECONNRESET');
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(6);
+    expect(col.byType('reconnecting').map((c) => `${c.attempt}/${c.maxReconnects}`)).toEqual(['1/5', '2/5', '3/5', '4/5', '5/5']);
+  });
+
+  it('streamReconnectMax=0（熔断）：已吐 delta 后断流不续接，直接 error + throw', async () => {
+    vi.mocked(streamText).mockImplementation(() => fakeStream(BREAK_AFTER_DELTA));
+    const col = makeCollector();
+
+    const p = inferenceViaAiSdk([{ role: 'user', content: 'x' }], [], CONFIG, col.onStream, undefined, { streamReconnectMax: 0 });
+    const settled = p.then(() => 'resolved', (e: unknown) => (e instanceof Error ? e.message : String(e)));
+    await vi.advanceTimersByTimeAsync(10_000);
+    const outcome = await settled;
+
+    expect(outcome).toBe('ECONNRESET');
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+    expect(col.byType('reconnecting')).toHaveLength(0);
+    expect(col.byType('error')).toHaveLength(1);
+  });
+
   it('刀 4 信号：连续断流 reconnecting n/N 递增（1/2 → 2/2），retryEvents 同步发 reconnect；预算耗尽不再发', async () => {
     vi.mocked(streamText).mockImplementation(() => fakeStream(BREAK_AFTER_DELTA));
     const col = makeCollector();

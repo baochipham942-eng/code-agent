@@ -49,6 +49,8 @@ export const AgentRunBodySchema = z.object({
   effortLevel: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra_code']).optional(),
   context: ConversationEnvelopeContextBodySchema.optional(),
   goal: GoalBodySchema.optional(),
+  historyVisibility: z.enum(['visible', 'meta']).optional(),
+  disableAutoAgent: z.boolean().optional(),
 }).passthrough();
 
 export type AgentRunBody = z.infer<typeof AgentRunBodySchema>;

@@ -136,6 +136,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     abortSignal: input.abortSignal ?? new AbortController().signal,
     deniedToolNames: legacy?.deniedToolNames as readonly string[] | undefined,
     allowedToolNames: legacy?.allowedToolNames as readonly string[] | undefined,
+    foregroundToolFace: legacy?.foregroundToolFace === true ? true : undefined,
     skillDiscoveryService: legacy?.skillDiscoveryService,
     telemetryCollector: legacy?.telemetryCollector,
     // PTC 再入口原样透传：由 ToolExecutor 绑定，adapter 只搬运不改写

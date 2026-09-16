@@ -227,6 +227,12 @@ describe('getModelAuthFailureMarker', () => {
     expect(getModelAuthFailureMarker({ status: 403 })).toEqual({ code: 'MODEL_AUTH' });
   });
 
+  it('AI SDK APICallError 形状（HTTP 码在 statusCode）同样认得（build 45 真机 403 漏成兜底话）', () => {
+    const apiCallError = Object.assign(new Error('Forbidden'), { statusCode: 403 });
+    expect(getModelAuthFailureMarker(apiCallError)).toEqual({ code: 'MODEL_AUTH' });
+    expect(getModelAuthFailureMarker(new Error('run failed', { cause: apiCallError }))).toEqual({ code: 'MODEL_AUTH' });
+  });
+
   it('本地缺 key 的自有 code 同样认成鉴权失败', () => {
     expect(getModelAuthFailureMarker({ code: MODEL_API_KEY_MISSING_CODE, provider: 'deepseek' }))
       .toEqual({ code: 'MODEL_AUTH', provider: 'deepseek' });

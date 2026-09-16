@@ -30,7 +30,6 @@ export const IPC_CHANNELS = {
   SESSION_LOAD: 'session:load',
   SESSION_DELETE: 'session:delete',
   SESSION_GET_MESSAGES: 'session:get-messages',
-  SESSION_GET_TASKS: 'session:get-tasks',
   SESSION_EXPORT: 'session:export',
   SESSION_IMPORT: 'session:import',
   SESSION_UPDATED: 'session:updated',
@@ -44,10 +43,6 @@ export const IPC_CHANNELS = {
 
   // Memory channels
   MEMORY: 'memory:manage',
-  MEMORY_GET_CONTEXT: 'memory:get-context',
-  MEMORY_SEARCH_CODE: 'memory:search-code',
-  MEMORY_SEARCH_CONVERSATIONS: 'memory:search-conversations',
-  MEMORY_GET_STATS: 'memory:get-stats',
 
   // MCP channels
   MCP_GET_STATUS: 'mcp:get-status',
@@ -71,11 +66,6 @@ export const IPC_CHANNELS = {
   SETTINGS_SET_SERVICE_KEY: 'settings:set-service-key',
   SETTINGS_GET_INTEGRATION: 'settings:get-integration',
   SETTINGS_SET_INTEGRATION: 'settings:set-integration',
-
-  // Window channels
-  WINDOW_MINIMIZE: 'window:minimize',
-  WINDOW_MAXIMIZE: 'window:maximize',
-  WINDOW_CLOSE: 'window:close',
 
   // App channels
   APP_GET_VERSION: 'app:get-version',

@@ -18,6 +18,15 @@ export const SSE_INACTIVITY_TIMEOUT =
 export const STREAM_RECONNECT_MAX =
   (typeof process !== 'undefined' && Number(process.env?.STREAM_RECONNECT_MAX)) || 2;
 
+/** 无人值守轮（cron/heartbeat/channel 会话、async_agent、goal、loop）的断流续接预算（ADR-068 D4）：
+ *  没人盯着手动重试，续跑取高预算；前台轮仍用 STREAM_RECONNECT_MAX。env 可覆盖，形状同上。 */
+export const UNATTENDED_STREAM_RECONNECT_MAX =
+  (typeof process !== 'undefined' && Number(process.env?.UNATTENDED_STREAM_RECONNECT_MAX)) || 5;
+
+/** 无人值守轮断流熔断阈值（ADR-068 D4）：同 run 连续这么多轮推理都遇到断流，本 run 余下
+ *  推理不再续接（预算置 0），断流直接走 error 收尾成 resumable 中断态，防断流-续跑死循环烧钱。 */
+export const UNATTENDED_STREAM_BREAK_CIRCUIT = 3;
+
 /** 断流续接退避封顶（ms，ADR-068 D4）：续接是打字中的中断，要快恢复不是越等越稳——
  *  指数退避复用 computeRetryBackoffMs 但封顶压到 4s（首字节前重试封顶 16s 不变）；
  *  429 的 retry-after 优先且不受此封顶。 */

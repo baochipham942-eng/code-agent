@@ -18,7 +18,9 @@ import { createHash } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
+import { RolesSchemas, type RolesDomainRequest } from '../../shared/ipc/schemas/roles';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type {
   ExpertBindingKind,
   ExpertBindingMode,
@@ -391,252 +393,231 @@ async function handleSetProactivity(
 // 注册
 // ----------------------------------------------------------------------------
 
-export function registerRolesHandlers(ipcMain: IpcMain): void {
-  ipcMain.handle(IPC_DOMAINS.ROLES, async (_event, request: IPCRequest): Promise<IPCResponse> => {
-    const { action, payload } = request;
-    try {
-      switch (action) {
-        case 'list': {
-          return { success: true, data: await handleList() };
-        }
-
-        case 'detail': {
-          const { roleId } = (payload ?? {}) as RoleIdPayload;
-          if (!roleId) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
-          }
-          return { success: true, data: await handleDetail(roleId) };
-        }
-
-        case 'listBoundCronJobs': {
-          const { roleId } = (payload ?? {}) as RoleIdPayload;
-          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
-          return { success: true, data: handleListBoundCronJobs(roleId) };
-        }
-
-        case 'deleteMemory': {
-          const { roleId, filename } = (payload ?? {}) as DeleteMemoryPayload;
-          if (!roleId || !filename) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and filename are required' } };
-          }
-          const existed = await deleteScopedMemory({ scope: 'role', roleId }, filename);
-          return { success: true, data: { existed } };
-        }
-
-        case 'updateMemory': {
-          const { roleId, filename, name, description, content } = (payload ?? {}) as UpdateMemoryPayload;
-          if (!roleId || !filename || !name || !description || !content) {
-            return {
-              success: false,
-              error: { code: 'INVALID_ARGS', message: 'roleId, filename, name, description, content are required' },
-            };
-          }
-          const filePath = await writeScopedMemory(
-            { scope: 'role', roleId },
-            { filename, name, description, content },
-          );
-          return { success: true, data: { path: filePath } };
-        }
-
-        case 'writeProjectMemory': {
-          const { workspacePath, name, description, content } = (payload ?? {}) as WriteProjectMemoryPayload;
-          if (!workspacePath || !name || !description || !content) {
-            return {
-              success: false,
-              error: { code: 'INVALID_ARGS', message: 'workspacePath, name, description, content are required' },
-            };
-          }
-          // 文件名按 name 哈希：同一产物重复归档覆盖同一条记忆，不产生重复条目
-          const filename = `archive-${createHash('sha256').update(name).digest('hex').slice(0, 12)}.md`;
-          const filePath = await writeScopedMemory(
-            { scope: 'project', workspacePath },
-            { filename, name, description, content },
-          );
-          return { success: true, data: { path: filePath } };
-        }
-
-        case 'listBindings': {
-          const { roleId } = (payload ?? {}) as RoleIdPayload;
-          if (!roleId) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
-          }
-          return { success: true, data: await readRoleBindings(roleId) };
-        }
-
-        case 'addBinding': {
-          const { roleId, kind, target, title, mode, scope } = (payload ?? {}) as {
-            roleId?: string;
-            kind?: ExpertBindingKind;
-            target?: string;
-            title?: string;
-            mode?: ExpertBindingMode;
-            scope?: ExpertBindingScope;
-          };
-          if (!roleId || !kind || !target || !mode || !scope) {
-            return {
-              success: false,
-              error: { code: 'INVALID_ARGS', message: 'roleId, kind, target, mode, scope are required' },
-            };
-          }
-          return { success: true, data: await addRoleBinding(roleId, { kind, target, title, mode, scope }) };
-        }
-
-        case 'removeBinding': {
-          const { roleId, bindingId } = (payload ?? {}) as { roleId?: string; bindingId?: string };
-          if (!roleId || !bindingId) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and bindingId are required' } };
-          }
-          await removeRoleBinding(roleId, bindingId);
-          return { success: true, data: { removed: true } };
-        }
-
-        case 'setProactivity': {
-          const { roleId, level, cadence, quietHours } = (payload ?? {}) as SetProactivityPayload;
-          if (!roleId || !level || !PROACTIVITY_LEVELS.has(level)) {
-            return {
-              success: false,
-              error: { code: 'INVALID_ARGS', message: 'roleId and level (silent|daily|realtime) are required' },
-            };
-          }
-          if (quietHours && !(
-            /^([01]\d|2[0-3]):[0-5]\d$/.test(quietHours.start)
-            && /^([01]\d|2[0-3]):[0-5]\d$/.test(quietHours.end)
-            && quietHours.start !== quietHours.end
-          )) {
-            return {
-              success: false,
-              error: { code: 'INVALID_ARGS', message: 'quietHours must contain distinct start/end values in HH:mm format' },
-            };
-          }
-          return {
-            success: true,
-            data: await handleSetProactivity(roleId, level as RoleProactivityLevel, cadence, quietHours),
-          };
-        }
-
-        case 'updateVisual': {
-          const { roleId, visual } = (payload ?? {}) as UpdateVisualPayload;
-          if (!roleId || !visual) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and visual are required' } };
-          }
-          return { success: true, data: await handleUpdateVisual(roleId, visual) };
-        }
-
-        case 'updateEquipment': {
-          const { roleId, equipment } = (payload ?? {}) as UpdateEquipmentPayload;
-          if (!roleId || !equipment) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and equipment are required' } };
-          await handleUpdateEquipment(roleId, equipment);
-          return { success: true, data: { updated: true } };
-        }
-
-        case 'updateDefinitionBody': {
-          const { roleId, body } = (payload ?? {}) as UpdateDefinitionBodyPayload;
-          if (!roleId || typeof body !== 'string') return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and body are required' } };
-          await handleUpdateDefinitionBody(roleId, body);
-          return { success: true, data: { updated: true } };
-        }
-
-        case 'updatePersonalization': {
-          const { roleId, userExpectation, soul, boundaries } = (payload ?? {}) as UpdatePersonalizationPayload;
-          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
-          if (userExpectation === undefined && soul === undefined && boundaries === undefined) return { success: false, error: { code: 'INVALID_ARGS', message: 'nothing to update' } };
-          if ((userExpectation !== undefined && typeof userExpectation !== 'string') || (soul !== undefined && typeof soul !== 'string')) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'userExpectation and soul must be strings' } };
-          }
-          if (boundaries !== undefined && (
-            typeof boundaries !== 'object'
-            || boundaries === null
-            || typeof boundaries.disallowExternalSending !== 'boolean'
-          )) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'boundaries.disallowExternalSending must be a boolean' } };
-          }
-          writeRolePersonalization(roleId, {
-            ...(userExpectation !== undefined ? { userExpectation } : {}),
-            ...(soul !== undefined ? { soul } : {}),
-            ...(boundaries !== undefined ? { boundaries } : {}),
-          });
-          return { success: true, data: { updated: true } };
-        }
-
-        case 'restoreFactory': {
-          const { roleId } = (payload ?? {}) as RoleIdPayload;
-          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
-          await handleRestoreFactory(roleId);
-          return { success: true, data: { restored: true } };
-        }
-
-        // --- 对话式建角色：草稿队列（role-creation-flow） ---
-        case 'listDrafts': {
-          return { success: true, data: await listRoleDrafts() };
-        }
-
-        case 'confirmDraft': {
-          const { draftId } = (payload ?? {}) as DraftIdPayload;
-          if (!draftId) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'draftId is required' } };
-          }
-          const result = await confirmRoleDraft(draftId);
-          if (!result.success) {
-            return { success: false, error: { code: 'CONFIRM_FAILED', message: result.error ?? 'confirm failed' } };
-          }
-          return { success: true, data: result };
-        }
-
-        case 'rejectDraft': {
-          const { draftId } = (payload ?? {}) as DraftIdPayload;
-          if (!draftId) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'draftId is required' } };
-          }
-          const result = await rejectRoleDraft(draftId);
-          if (!result.success) {
-            return { success: false, error: { code: 'REJECT_FAILED', message: result.error ?? 'reject failed' } };
-          }
-          return { success: true, data: result };
-        }
-
-        case 'rolePackList': {
-          const { listRolePacks } = await import('../services/roleAssets/rolePackInstallService');
-          return { success: true, data: await listRolePacks() };
-        }
-
-        case 'rolePackInstall': {
-          const { roleId, acceptElevation, elevationReviewed } = (payload ?? {}) as RoleIdPayload & { acceptElevation?: boolean; elevationReviewed?: boolean };
-          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
-          const { installRolePack } = await import('../services/roleAssets/rolePackInstallService');
-          return { success: true, data: await installRolePack(roleId, { acceptElevation, elevationReviewed }) };
-        }
-
-        case 'rolePackUninstall': {
-          const { roleId } = (payload ?? {}) as RoleIdPayload;
-          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
-          const { uninstallRolePack } = await import('../services/roleAssets/rolePackInstallService');
-          return { success: true, data: await uninstallRolePack(roleId) };
-        }
-
-        case 'rolePackRetryMissingSkills': {
-          const { roleId } = (payload ?? {}) as RoleIdPayload;
-          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
-          const { retryMissingSkills } = await import('../services/roleAssets/rolePackInstallService');
-          return { success: true, data: await retryMissingSkills(roleId) };
-        }
-
-        default:
-          return {
-            success: false,
-            error: { code: 'UNKNOWN_ACTION', message: `Unknown roles action: ${action}` },
-          };
-      }
-    } catch (error) {
-      logger.error('Roles IPC error', error);
+/**
+ * roles 域单源路由表（RQ-183 续作·ROLES 刀）：原 domain switch 22 个 case 由脚本逐 case 平移（rawResponse：handler 仍返回
+ * 完整 IPCResponse，含 INVALID_ARGS / CONFIRM_FAILED / REJECT_FAILED 失败响应，case 体原文只改缩进）；未知 action →
+ * UNKNOWN_ACTION `Unknown roles action: <action>`；抛错 → ROLES_ERROR（Error 取 message、非 Error 取 'Unknown error'）+
+ * `Roles IPC error` 日志。请求体为 null / 非对象时，原实现在 try 外解构抛错（IPC reject），现返回 UNKNOWN_ACTION。
+ */
+const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
+  list: async (_ctx, _payload) => {
+    return { success: true, data: await handleList() };
+  },
+  detail: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+    }
+    return { success: true, data: await handleDetail(roleId) };
+  },
+  listBoundCronJobs: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+    return { success: true, data: handleListBoundCronJobs(roleId) };
+  },
+  deleteMemory: async (_ctx, payload) => {
+    const { roleId, filename } = (payload ?? {}) as DeleteMemoryPayload;
+    if (!roleId || !filename) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and filename are required' } };
+    }
+    const existed = await deleteScopedMemory({ scope: 'role', roleId }, filename);
+    return { success: true, data: { existed } };
+  },
+  updateMemory: async (_ctx, payload) => {
+    const { roleId, filename, name, description, content } = (payload ?? {}) as UpdateMemoryPayload;
+    if (!roleId || !filename || !name || !description || !content) {
       return {
         success: false,
-        error: {
-          code: 'ROLES_ERROR',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
+        error: { code: 'INVALID_ARGS', message: 'roleId, filename, name, description, content are required' },
       };
     }
-  });
+    const filePath = await writeScopedMemory(
+      { scope: 'role', roleId },
+      { filename, name, description, content },
+    );
+    return { success: true, data: { path: filePath } };
+  },
+  writeProjectMemory: async (_ctx, payload) => {
+    const { workspacePath, name, description, content } = (payload ?? {}) as WriteProjectMemoryPayload;
+    if (!workspacePath || !name || !description || !content) {
+      return {
+        success: false,
+        error: { code: 'INVALID_ARGS', message: 'workspacePath, name, description, content are required' },
+      };
+    }
+    // 文件名按 name 哈希：同一产物重复归档覆盖同一条记忆，不产生重复条目
+    const filename = `archive-${createHash('sha256').update(name).digest('hex').slice(0, 12)}.md`;
+    const filePath = await writeScopedMemory(
+      { scope: 'project', workspacePath },
+      { filename, name, description, content },
+    );
+    return { success: true, data: { path: filePath } };
+  },
+  listBindings: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+    }
+    return { success: true, data: await readRoleBindings(roleId) };
+  },
+  addBinding: async (_ctx, payload) => {
+    const { roleId, kind, target, title, mode, scope } = (payload ?? {}) as {
+      roleId?: string;
+      kind?: ExpertBindingKind;
+      target?: string;
+      title?: string;
+      mode?: ExpertBindingMode;
+      scope?: ExpertBindingScope;
+    };
+    if (!roleId || !kind || !target || !mode || !scope) {
+      return {
+        success: false,
+        error: { code: 'INVALID_ARGS', message: 'roleId, kind, target, mode, scope are required' },
+      };
+    }
+    return { success: true, data: await addRoleBinding(roleId, { kind, target, title, mode, scope }) };
+  },
+  removeBinding: async (_ctx, payload) => {
+    const { roleId, bindingId } = (payload ?? {}) as { roleId?: string; bindingId?: string };
+    if (!roleId || !bindingId) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and bindingId are required' } };
+    }
+    await removeRoleBinding(roleId, bindingId);
+    return { success: true, data: { removed: true } };
+  },
+  setProactivity: async (_ctx, payload) => {
+    const { roleId, level, cadence, quietHours } = (payload ?? {}) as SetProactivityPayload;
+    if (!roleId || !level || !PROACTIVITY_LEVELS.has(level)) {
+      return {
+        success: false,
+        error: { code: 'INVALID_ARGS', message: 'roleId and level (silent|daily|realtime) are required' },
+      };
+    }
+    if (quietHours && !(
+      /^([01]\d|2[0-3]):[0-5]\d$/.test(quietHours.start)
+      && /^([01]\d|2[0-3]):[0-5]\d$/.test(quietHours.end)
+      && quietHours.start !== quietHours.end
+    )) {
+      return {
+        success: false,
+        error: { code: 'INVALID_ARGS', message: 'quietHours must contain distinct start/end values in HH:mm format' },
+      };
+    }
+    return {
+      success: true,
+      data: await handleSetProactivity(roleId, level as RoleProactivityLevel, cadence, quietHours),
+    };
+  },
+  updateVisual: async (_ctx, payload) => {
+    const { roleId, visual } = (payload ?? {}) as UpdateVisualPayload;
+    if (!roleId || !visual) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and visual are required' } };
+    }
+    return { success: true, data: await handleUpdateVisual(roleId, visual) };
+  },
+  updateEquipment: async (_ctx, payload) => {
+    const { roleId, equipment } = (payload ?? {}) as UpdateEquipmentPayload;
+    if (!roleId || !equipment) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and equipment are required' } };
+    await handleUpdateEquipment(roleId, equipment);
+    return { success: true, data: { updated: true } };
+  },
+  updateDefinitionBody: async (_ctx, payload) => {
+    const { roleId, body } = (payload ?? {}) as UpdateDefinitionBodyPayload;
+    if (!roleId || typeof body !== 'string') return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and body are required' } };
+    await handleUpdateDefinitionBody(roleId, body);
+    return { success: true, data: { updated: true } };
+  },
+  updatePersonalization: async (_ctx, payload) => {
+    const { roleId, userExpectation, soul, boundaries } = (payload ?? {}) as UpdatePersonalizationPayload;
+    if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+    if (userExpectation === undefined && soul === undefined && boundaries === undefined) return { success: false, error: { code: 'INVALID_ARGS', message: 'nothing to update' } };
+    if ((userExpectation !== undefined && typeof userExpectation !== 'string') || (soul !== undefined && typeof soul !== 'string')) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'userExpectation and soul must be strings' } };
+    }
+    if (boundaries !== undefined && (
+      typeof boundaries !== 'object'
+      || boundaries === null
+      || typeof boundaries.disallowExternalSending !== 'boolean'
+    )) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'boundaries.disallowExternalSending must be a boolean' } };
+    }
+    writeRolePersonalization(roleId, {
+      ...(userExpectation !== undefined ? { userExpectation } : {}),
+      ...(soul !== undefined ? { soul } : {}),
+      ...(boundaries !== undefined ? { boundaries } : {}),
+    });
+    return { success: true, data: { updated: true } };
+  },
+  restoreFactory: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+    await handleRestoreFactory(roleId);
+    return { success: true, data: { restored: true } };
+  },
+  // --- 对话式建角色：草稿队列（role-creation-flow） ---
+  listDrafts: async (_ctx, _payload) => {
+    return { success: true, data: await listRoleDrafts() };
+  },
+  confirmDraft: async (_ctx, payload) => {
+    const { draftId } = (payload ?? {}) as DraftIdPayload;
+    if (!draftId) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'draftId is required' } };
+    }
+    const result = await confirmRoleDraft(draftId);
+    if (!result.success) {
+      return { success: false, error: { code: 'CONFIRM_FAILED', message: result.error ?? 'confirm failed' } };
+    }
+    return { success: true, data: result };
+  },
+  rejectDraft: async (_ctx, payload) => {
+    const { draftId } = (payload ?? {}) as DraftIdPayload;
+    if (!draftId) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'draftId is required' } };
+    }
+    const result = await rejectRoleDraft(draftId);
+    if (!result.success) {
+      return { success: false, error: { code: 'REJECT_FAILED', message: result.error ?? 'reject failed' } };
+    }
+    return { success: true, data: result };
+  },
+  rolePackList: async (_ctx, _payload) => {
+    const { listRolePacks } = await import('../services/roleAssets/rolePackInstallService');
+    return { success: true, data: await listRolePacks() };
+  },
+  rolePackInstall: async (_ctx, payload) => {
+    const { roleId, acceptElevation, elevationReviewed } = (payload ?? {}) as RoleIdPayload & { acceptElevation?: boolean; elevationReviewed?: boolean };
+    if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+    const { installRolePack } = await import('../services/roleAssets/rolePackInstallService');
+    return { success: true, data: await installRolePack(roleId, { acceptElevation, elevationReviewed }) };
+  },
+  rolePackUninstall: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+    const { uninstallRolePack } = await import('../services/roleAssets/rolePackInstallService');
+    return { success: true, data: await uninstallRolePack(roleId) };
+  },
+  rolePackRetryMissingSkills: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+    const { retryMissingSkills } = await import('../services/roleAssets/rolePackInstallService');
+    return { success: true, data: await retryMissingSkills(roleId) };
+  },
+};
 
+const rolesRoutes = defineDomainRoutes<RolesDomainRequest, void>(RolesSchemas.REQUEST, rolesHandlers, {
+  rawResponse: true,
+  unknownActionCode: 'UNKNOWN_ACTION',
+  unknownActionMessage: (action) => `Unknown roles action: ${String(action)}`,
+  mapError: (error) => {
+    logger.error('Roles IPC error', error);
+    return { code: 'ROLES_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+  },
+});
+
+export function registerRolesHandlers(ipcMain: IpcMain): void {
+  installDomainRoutes(ipcMain, rolesRoutes, undefined);
   logger.info('Roles IPC handlers registered');
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）
+registerRolesHandlers.routes = rolesRoutes;

@@ -67,7 +67,7 @@ describe('testRunner sandbox policy injection', () => {
       'cases:',
       '  - id: security-network',
       '    type: conversation',
-      '    category: security',
+      '    tags: [security]',
       '    description: redline network command',
       '    prompt: curl https://example.com',
       '    expect:',

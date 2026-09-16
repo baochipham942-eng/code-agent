@@ -3,7 +3,8 @@
 // ============================================================================
 
 import { ipcHost } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { SessionAutomationSchemas, type SessionAutomationDomainRequest } from '../../shared/ipc/schemas/sessionAutomation';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getSessionAutomationService } from '../services/sessionAutomation';
 import { createLogger } from '../services/infra/logger';
 
@@ -25,51 +26,61 @@ function getStringArray(source: unknown, field: string): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
-export function registerSessionAutomationHandlers(): void {
-  ipcHost.handle(IPC_DOMAINS.SESSION_AUTOMATION, async (_event, request: IPCRequest): Promise<IPCResponse> => {
+/**
+ * sessionAutomation 域单源路由表（RQ-183 续作·SESSION_AUTOMATION 刀）：原 domain switch 7 个大括号 case 平移为默认模式 handler
+ * （case 体原样，末尾 `return { success: true, data: X } satisfies IPCResponse` 改 `return X`；缺参数的 `throw new Error('缺少 …')` 原样
+ * 保留）。service 原在 try 外取（抛错即 IPC reject），现每个 handler 首行取、抛错落 SESSION_AUTOMATION_ERROR。未知 action →
+ * UNKNOWN_ACTION + `Unknown session automation action:`；抛错进 mapError：原样记日志 + SESSION_AUTOMATION_ERROR（非 Error 为
+ * 'Unknown error'）。请求体为 null / 非对象时原实现在 try 内读 request.action 抛错落 SESSION_AUTOMATION_ERROR，现返回 UNKNOWN_ACTION。
+ */
+const sessionAutomationRoutes = defineDomainRoutes<SessionAutomationDomainRequest, void>(SessionAutomationSchemas.REQUEST, {
+  listBySession: (_ctx, payload) => {
     const service = getSessionAutomationService();
-    try {
-      switch (request.action) {
-        case 'listBySession': {
-          const sessionId = getString(request.payload, 'sessionId');
-          if (!sessionId) throw new Error('缺少 sessionId');
-          return { success: true, data: service.listBySessionIds([sessionId]) } satisfies IPCResponse;
-        }
-        case 'summarizeSessions': {
-          const sessionIds = getStringArray(request.payload, 'sessionIds');
-          return { success: true, data: service.summarizeSessions(sessionIds) } satisfies IPCResponse;
-        }
-        case 'getSessionSummary': {
-          const sessionId = getString(request.payload, 'sessionId');
-          if (!sessionId) throw new Error('缺少 sessionId');
-          return { success: true, data: service.summarizeSessions([sessionId])[sessionId] } satisfies IPCResponse;
-        }
-        case 'listPendingReview': {
-          return { success: true, data: service.listPendingReview() } satisfies IPCResponse;
-        }
-        case 'listParkedApprovals': {
-          return { success: true, data: service.listParkedApprovals() } satisfies IPCResponse;
-        }
-        case 'countPendingReview': {
-          return { success: true, data: service.countPendingReview() } satisfies IPCResponse;
-        }
-        case 'markReviewed': {
-          const automationId = getString(request.payload, 'automationId');
-          if (!automationId) throw new Error('缺少 automationId');
-          return { success: true, data: service.markReviewed(automationId) } satisfies IPCResponse;
-        }
-        default:
-          return {
-            success: false,
-            error: { code: 'UNKNOWN_ACTION', message: `Unknown session automation action: ${request.action}` },
-          } satisfies IPCResponse;
-      }
-    } catch (error) {
-      logger.error('Session automation IPC error:', error);
-      return {
-        success: false,
-        error: { code: 'SESSION_AUTOMATION_ERROR', message: error instanceof Error ? error.message : 'Unknown error' },
-      } satisfies IPCResponse;
-    }
-  });
+    const sessionId = getString(payload, 'sessionId');
+    if (!sessionId) throw new Error('缺少 sessionId');
+    return service.listBySessionIds([sessionId]);
+  },
+  summarizeSessions: (_ctx, payload) => {
+    const service = getSessionAutomationService();
+    const sessionIds = getStringArray(payload, 'sessionIds');
+    return service.summarizeSessions(sessionIds);
+  },
+  getSessionSummary: (_ctx, payload) => {
+    const service = getSessionAutomationService();
+    const sessionId = getString(payload, 'sessionId');
+    if (!sessionId) throw new Error('缺少 sessionId');
+    return service.summarizeSessions([sessionId])[sessionId];
+  },
+  listPendingReview: (_ctx, _payload) => {
+    const service = getSessionAutomationService();
+    return service.listPendingReview();
+  },
+  listParkedApprovals: (_ctx, _payload) => {
+    const service = getSessionAutomationService();
+    return service.listParkedApprovals();
+  },
+  countPendingReview: (_ctx, _payload) => {
+    const service = getSessionAutomationService();
+    return service.countPendingReview();
+  },
+  markReviewed: (_ctx, payload) => {
+    const service = getSessionAutomationService();
+    const automationId = getString(payload, 'automationId');
+    if (!automationId) throw new Error('缺少 automationId');
+    return service.markReviewed(automationId);
+  },
+}, {
+  unknownActionCode: 'UNKNOWN_ACTION',
+  unknownActionMessage: (action) => `Unknown session automation action: ${String(action)}`,
+  mapError: (error) => {
+    logger.error('Session automation IPC error:', error);
+    return { code: 'SESSION_AUTOMATION_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+  },
+});
+
+export function registerSessionAutomationHandlers(): void {
+  installDomainRoutes(ipcHost, sessionAutomationRoutes, undefined);
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerLoopHandlers.routes 先例）
+registerSessionAutomationHandlers.routes = sessionAutomationRoutes;

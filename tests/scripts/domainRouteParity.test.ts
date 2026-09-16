@@ -25,14 +25,132 @@ import {
   sessionRoutes,
 } from '../../src/host/ipc/domainRoutes/sessionRoutes';
 import { defineDomainRoutes, installDomainRoutes } from '../../src/host/ipc/domainRoutes/registry';
+import { registerMemoryHandlers } from '../../src/host/ipc/memory.ipc';
+import { registerDesktopHandlers } from '../../src/host/ipc/desktop.ipc';
+import { registerTagHandlers } from '../../src/host/ipc/tag.ipc';
+import { registerCronHandlers } from '../../src/host/ipc/cron.ipc';
+import { registerPromptHandlers } from '../../src/host/ipc/prompt.ipc';
+import { registerDiagnosticsHandlers } from '../../src/host/ipc/diagnostics.ipc';
+import { registerDataHandlers } from '../../src/host/ipc/data.ipc';
+import { registerLoopHandlers } from '../../src/host/ipc/loop.ipc';
+import { registerSyncHandlers } from '../../src/host/ipc/sync.ipc';
+import { registerSettingsHandlers } from '../../src/host/ipc/settings.ipc';
+import { registerProjectHandlers } from '../../src/host/ipc/project.ipc';
+import { registerTaskHandlers } from '../../src/host/ipc/task.ipc';
+import { registerGenerativeUIHandlers } from '../../src/host/ipc/generativeUI.ipc';
+import { registerFolderTrustHandlers } from '../../src/host/ipc/folderTrust.ipc';
+import { registerHookHandlers } from '../../src/host/ipc/hook.ipc';
+import { registerWorkspaceHandlers } from '../../src/host/ipc/workspace.ipc';
+import { registerAuthHandlers } from '../../src/host/ipc/auth.ipc';
+import { registerRolesHandlers } from '../../src/host/ipc/roles.ipc';
+import { registerConnectorHandlers } from '../../src/host/ipc/connector.ipc';
+import { registerAgentHandlers } from '../../src/host/ipc/agent.ipc';
+import { registerMcpHandlers } from '../../src/host/ipc/mcp.ipc';
+import { registerLibraryHandlers } from '../../src/host/ipc/library.ipc';
+import { registerAgentEngineHandlers } from '../../src/host/ipc/agentEngine.ipc';
+import { registerCapabilityHandlers } from '../../src/host/ipc/capability.ipc';
+import { registerPiiHandlers } from '../../src/host/ipc/pii.ipc';
+import { registerActivityHandlers } from '../../src/host/ipc/activity.ipc';
+import { registerStatusHandlers } from '../../src/host/ipc/status.ipc';
+import { registerNotificationHandlers } from '../../src/host/ipc/notification.ipc';
+import { registerOpenchronicleHandlers } from '../../src/host/ipc/openchronicle.ipc';
+import { registerSoulHandlers } from '../../src/host/ipc/soul.ipc';
+import { registerPlanningHandlers } from '../../src/host/ipc/planning.ipc';
+import { registerTerminalHandlers } from '../../src/host/ipc/terminal.ipc';
+import { registerSessionAutomationHandlers } from '../../src/host/ipc/sessionAutomation.ipc';
+import { registerTeamHandlers } from '../../src/host/ipc/team.ipc';
+import { registerCaptureHandlers } from '../../src/host/ipc/capture.ipc';
+import { registerAgentRegistryHandlers } from '../../src/host/ipc/agentRegistry.ipc';
+import { registerLivePreviewHandlers } from '../../src/host/ipc/livePreview.ipc';
+import { registerUpdateHandlers } from '../../src/host/ipc/update.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
 const { extractDomainActions } = installDomainRoutes;
+const memoryRoutes = registerMemoryHandlers.routes;
+const desktopRoutes = registerDesktopHandlers.routes;
+const tagRoutes = registerTagHandlers.routes;
+const cronRoutes = registerCronHandlers.routes;
+const promptRoutes = registerPromptHandlers.routes;
+const diagnosticsRoutes = registerDiagnosticsHandlers.routes;
+const dataRoutes = registerDataHandlers.routes;
+const loopRoutes = registerLoopHandlers.routes;
+const syncRoutes = registerSyncHandlers.routes;
+const deviceRoutes = registerSyncHandlers.deviceRoutes;
+const windowRoutes = registerSettingsHandlers.windowRoutes;
+const projectRoutes = registerProjectHandlers.routes;
+const taskRoutes = registerTaskHandlers.routes;
+const generativeUIRoutes = registerGenerativeUIHandlers.routes;
+const folderTrustRoutes = registerFolderTrustHandlers.routes;
+const hookRoutes = registerHookHandlers.routes;
+const workspaceRoutes = registerWorkspaceHandlers.routes;
+const authRoutes = registerAuthHandlers.routes;
+const rolesRoutes = registerRolesHandlers.routes;
+const connectorRoutes = registerConnectorHandlers.routes;
+const agentRoutes = registerAgentHandlers.routes;
+const settingsRoutes = registerSettingsHandlers.routes;
+const mcpRoutes = registerMcpHandlers.routes;
+const libraryRoutes = registerLibraryHandlers.routes;
+const agentEngineRoutes = registerAgentEngineHandlers.routes;
+const capabilityRoutes = registerCapabilityHandlers.routes;
+const piiRoutes = registerPiiHandlers.routes;
+const activityRoutes = registerActivityHandlers.routes;
+const statusRoutes = registerStatusHandlers.routes;
+const notificationRoutes = registerNotificationHandlers.routes;
+const openchronicleRoutes = registerOpenchronicleHandlers.routes;
+const soulRoutes = registerSoulHandlers.routes;
+const planningRoutes = registerPlanningHandlers.routes;
+const terminalRoutes = registerTerminalHandlers.routes;
+const sessionAutomationRoutes = registerSessionAutomationHandlers.routes;
+const teamRoutes = registerTeamHandlers.routes;
+const captureRoutes = registerCaptureHandlers.routes;
+const agentRegistryRoutes = registerAgentRegistryHandlers.routes;
+const livePreviewRoutes = registerLivePreviewHandlers.routes;
+const updateRoutes = registerUpdateHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
   { table: sessionRoutes, manifestDomain: 'domain:session' as const },
+  { table: memoryRoutes, manifestDomain: 'domain:memory' as const },
+  { table: desktopRoutes, manifestDomain: 'domain:desktop' as const },
+  { table: tagRoutes, manifestDomain: 'domain:tag' as const },
+  { table: cronRoutes, manifestDomain: 'domain:cron' as const },
+  { table: promptRoutes, manifestDomain: 'domain:prompt' as const },
+  { table: diagnosticsRoutes, manifestDomain: 'domain:diagnostics' as const },
+  { table: dataRoutes, manifestDomain: 'domain:data' as const },
+  { table: loopRoutes, manifestDomain: 'domain:loop' as const },
+  { table: syncRoutes, manifestDomain: 'domain:sync' as const },
+  { table: deviceRoutes, manifestDomain: 'domain:device' as const },
+  { table: windowRoutes, manifestDomain: 'domain:window' as const },
+  { table: projectRoutes, manifestDomain: 'domain:project' as const },
+  { table: taskRoutes, manifestDomain: 'domain:task' as const },
+  { table: generativeUIRoutes, manifestDomain: 'domain:generativeUI' as const },
+  { table: folderTrustRoutes, manifestDomain: 'domain:folderTrust' as const },
+  { table: hookRoutes, manifestDomain: 'domain:hook' as const },
+  { table: workspaceRoutes, manifestDomain: 'domain:workspace' as const },
+  { table: authRoutes, manifestDomain: 'domain:auth' as const },
+  { table: rolesRoutes, manifestDomain: 'domain:roles' as const },
+  { table: connectorRoutes, manifestDomain: 'domain:connector' as const },
+  { table: agentRoutes, manifestDomain: 'domain:agent' as const },
+  { table: settingsRoutes, manifestDomain: 'domain:settings' as const },
+  { table: mcpRoutes, manifestDomain: 'domain:mcp' as const },
+  { table: libraryRoutes, manifestDomain: 'domain:library' as const },
+  { table: agentEngineRoutes, manifestDomain: 'domain:agentEngine' as const },
+  { table: capabilityRoutes, manifestDomain: 'domain:capability' as const },
+  { table: piiRoutes, manifestDomain: 'domain:pii' as const },
+  { table: activityRoutes, manifestDomain: 'domain:activity' as const },
+  { table: statusRoutes, manifestDomain: 'domain:status' as const },
+  { table: notificationRoutes, manifestDomain: 'domain:notification' as const },
+  { table: openchronicleRoutes, manifestDomain: 'domain:openchronicle' as const },
+  { table: soulRoutes, manifestDomain: 'domain:soul' as const },
+  { table: planningRoutes, manifestDomain: 'domain:planning' as const },
+  { table: terminalRoutes, manifestDomain: 'domain:terminal' as const },
+  { table: sessionAutomationRoutes, manifestDomain: 'domain:sessionAutomation' as const },
+  { table: teamRoutes, manifestDomain: 'domain:team' as const },
+  { table: captureRoutes, manifestDomain: 'domain:capture' as const },
+  { table: agentRegistryRoutes, manifestDomain: 'domain:agents' as const },
+  { table: livePreviewRoutes, manifestDomain: 'domain:livePreview' as const },
+  { table: updateRoutes, manifestDomain: 'domain:update' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -258,37 +376,55 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.PROVIDER, providerContributed);
   // session 域：单源路由表结构枚举（表化域不走源码提取）
   add(IPC_DOMAINS.SESSION, new Set(Object.keys(sessionRoutes.actions)));
+  add(IPC_DOMAINS.MEMORY, new Set(Object.keys(memoryRoutes.actions)));
+  add(IPC_DOMAINS.DESKTOP, new Set(Object.keys(desktopRoutes.actions)));
+  add(IPC_DOMAINS.TAG, new Set(Object.keys(tagRoutes.actions)));
+  add(IPC_DOMAINS.CRON, new Set(Object.keys(cronRoutes.actions)));
+  add(IPC_DOMAINS.PROMPT, new Set(Object.keys(promptRoutes.actions)));
+  add(IPC_DOMAINS.DIAGNOSTICS, new Set(Object.keys(diagnosticsRoutes.actions)));
+  add(IPC_DOMAINS.DATA, new Set(Object.keys(dataRoutes.actions)));
+  add(IPC_DOMAINS.LOOP, new Set(Object.keys(loopRoutes.actions)));
+  add(IPC_DOMAINS.SYNC, new Set(Object.keys(syncRoutes.actions)));
+  add(IPC_DOMAINS.DEVICE, new Set(Object.keys(deviceRoutes.actions)));
+  add(IPC_DOMAINS.WINDOW, new Set(Object.keys(windowRoutes.actions)));
+  add(IPC_DOMAINS.PROJECT, new Set(Object.keys(projectRoutes.actions)));
+  add(IPC_DOMAINS.TASK, new Set(Object.keys(taskRoutes.actions)));
+  add(IPC_DOMAINS.GENERATIVE_UI, new Set(Object.keys(generativeUIRoutes.actions)));
+  add(IPC_DOMAINS.FOLDER_TRUST, new Set(Object.keys(folderTrustRoutes.actions)));
+  add(IPC_DOMAINS.HOOK, new Set(Object.keys(hookRoutes.actions)));
+  add(IPC_DOMAINS.WORKSPACE, new Set(Object.keys(workspaceRoutes.actions)));
+  add(IPC_DOMAINS.AUTH, new Set(Object.keys(authRoutes.actions)));
+  add(IPC_DOMAINS.ROLES, new Set(Object.keys(rolesRoutes.actions)));
+  add(IPC_DOMAINS.CONNECTOR, new Set(Object.keys(connectorRoutes.actions)));
+  add(IPC_DOMAINS.AGENT, new Set(Object.keys(agentRoutes.actions)));
+  add(IPC_DOMAINS.SETTINGS, new Set(Object.keys(settingsRoutes.actions)));
+  add(IPC_DOMAINS.MCP, new Set(Object.keys(mcpRoutes.actions)));
+  add(IPC_DOMAINS.LIBRARY, new Set(Object.keys(libraryRoutes.actions)));
+  add(IPC_DOMAINS.AGENT_ENGINE, new Set(Object.keys(agentEngineRoutes.actions)));
+  add(IPC_DOMAINS.CAPABILITY, new Set(Object.keys(capabilityRoutes.actions)));
+  add(IPC_DOMAINS.PII, new Set(Object.keys(piiRoutes.actions)));
+  add(IPC_DOMAINS.ACTIVITY, new Set(Object.keys(activityRoutes.actions)));
+  add(IPC_DOMAINS.STATUS, new Set(Object.keys(statusRoutes.actions)));
+  add(IPC_DOMAINS.NOTIFICATION, new Set(Object.keys(notificationRoutes.actions)));
+  add(IPC_DOMAINS.OPENCHRONICLE, new Set(Object.keys(openchronicleRoutes.actions)));
+  add(IPC_DOMAINS.SOUL, new Set(Object.keys(soulRoutes.actions)));
+  add(IPC_DOMAINS.PLANNING, new Set(Object.keys(planningRoutes.actions)));
+  add(IPC_DOMAINS.TERMINAL, new Set(Object.keys(terminalRoutes.actions)));
+  add(IPC_DOMAINS.SESSION_AUTOMATION, new Set(Object.keys(sessionAutomationRoutes.actions)));
+  add(IPC_DOMAINS.TEAM, new Set(Object.keys(teamRoutes.actions)));
+  add(IPC_DOMAINS.CAPTURE, new Set(Object.keys(captureRoutes.actions)));
+  add(IPC_DOMAINS.AGENT_REGISTRY, new Set(Object.keys(agentRegistryRoutes.actions)));
+  add(IPC_DOMAINS.LIVE_PREVIEW, new Set(Object.keys(livePreviewRoutes.actions)));
+  add(IPC_DOMAINS.UPDATE, new Set(Object.keys(updateRoutes.actions)));
   return actual;
 }
 
 /**
- * 缺报棘轮基线（2026-09-15 建门实测，21 域 116 项）：handler 有而清单无的存量项。
- * 清单是壳兼容面、允许策略性少报——但少报集合冻结在此、只减不增：
- * 把某 action 补进 CAPABILITY_DOMAIN_ACTIONS 后必须同步从基线删掉它；
- * 新增 handler action 不登记清单 = 新缺报 = 红，要么补清单要么显式扩基线（PR 里说明理由）。
+ * 缺报棘轮基线：handler 有而清单无的存量项。现状为空（2026-09-15 已全部核销）。
+ * 新增 handler action 必须同时登记到 CAPABILITY_DOMAIN_ACTIONS 清单，否则棘轮红；确需策略性少报时显式扩基线并在 PR 说明理由。
+ * 扩基线后若再把该 action 补进清单，必须同步从基线删掉它（棘轮会以「已补进清单，从基线删掉它」报红）。
  */
-const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> = {
-  'domain:backgroundTasks': ['drainNotifications', 'getTask', 'listTasks', 'markNotificationDelivered', 'readTaskLog'],
-  'domain:cron': ['createJob', 'deleteJob', 'generateFromPrompt', 'getExecutions', 'getRecentExecutions', 'getStats', 'listJobs', 'triggerJob', 'updateJob'],
-  'domain:data': ['cacheCleanExpired', 'cacheClear', 'cacheGetStats'],
-  'domain:desktop': ['getAudioCaptureStatus', 'getAudioSegments', 'getCurrentContext', 'getStats', 'getStatus', 'listRecent', 'search', 'startAudioCapture', 'stopAudioCapture'],
-  'domain:device': ['list', 'register', 'remove'],
-  'domain:diagnostics': ['recovery', 'sessionLedger', 'swarmLedgerBackfill', 'swarmReconcile', 'swarmReconcileScan'],
-  'domain:folderTrust': ['revoke'],
-  'domain:generativeUI': ['capabilities'],
-  'domain:hook': ['setEnabled'],
-  'domain:loop': ['get', 'list', 'start', 'stop'],
-  'domain:memory': ['delete', 'deleteByCategory', 'export', 'getContext', 'getMemoryStats', 'getStats', 'import', 'lightDelete', 'lightHealth', 'lightList', 'lightRead', 'lightRebuildIndex', 'lightStats', 'list', 'memoryEntries', 'memoryEntryBatchReview', 'memoryEntryDelete', 'memoryExportV2', 'memoryHarnessImportApply', 'memoryHarnessImportConfirmDirective', 'memoryHarnessImportDryRun', 'memoryImportV2Apply', 'memoryImportV2DryRun', 'memoryPack', 'memoryRebuildMirror', 'searchCode', 'searchConversations', 'update'],
-  'domain:project': ['redeemInvite', 'revokeInvite'],
-  'domain:prompt': ['debugSystemPrompt', 'get', 'list', 'preview', 'reset', 'set', 'stackSummary'],
-  'domain:provider': ['delete_realtime_voice_provider'],
-  'domain:surfaceExecution': ['startLiveStream', 'stopLiveStream'],
-  'domain:sync': ['resolveConflict'],
-  'domain:tag': ['acceptResult', 'appendDelta', 'approve', 'approveMemoryCandidate', 'approveRevision', 'archive', 'cancel', 'continueAndRun', 'createAndRun', 'createDraft', 'get', 'list', 'listAll', 'listByProject', 'listBySourceConversation', 'read', 'reject', 'rejectMemoryCandidate', 'rejectRevision', 'requestChanges', 'updateDraftRevision', 'updateMeta', 'updateRevision'],
-  'domain:task': ['cancelBackgroundTask'],
-  'domain:voice': ['injectUserText'],
-  'domain:window': ['close', 'maximize', 'minimize'],
-  'domain:workspace': ['closeLinkInRail', 'controlUserBrowserHistory', 'dispatchUserBrowserInput', 'openExternal', 'openLinkInRail', 'setUserBrowserViewport'],};
+const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> = {};
 
 describe('全域单向门：清单 ⊆ 实际 handler（RQ-183 刀 4）', () => {
   const actual = collectActualDomainActions();

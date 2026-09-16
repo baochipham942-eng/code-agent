@@ -23,11 +23,17 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stopRecording", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startPcmRecording", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopPcmRecording", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getCurrentStatus", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getCurrentStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "watchMicrophoneRelease", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "unwatchMicrophoneRelease", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openAppSettings", returnType: CAPPluginReturnPromise)
     ]
 
-    /// 与厂商插件逐字一致：JS 侧靠这些字符串分辨失败原因，UI 直接把它显示出来。
+    /// 前五个与厂商插件逐字一致。JS 侧靠这些字符串分辨失败原因，**不再显示给用户**（build 45 真机
+    /// 「录音失败 · FAILED_TO_RECORD」）；MICROPHONE_BUSY 是第一方独有的一档：通话/会议占着麦克风，
+    /// 用户能自己解决（挂断后再录），不能和「设备出错」混成同一个码。
     private enum Failure {
+        static let microphoneBusy = "MICROPHONE_BUSY"
         static let missingPermission = "MISSING_PERMISSION"
         static let failedToRecord = "FAILED_TO_RECORD"
         static let recordingHasNotStarted = "RECORDING_HAS_NOT_STARTED"
@@ -53,6 +59,8 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     private var pcmToken = UUID()
     private var previousCategory: AVAudioSession.Category?
     private var backgroundObserver: NSObjectProtocol?
+    private var releaseObservers: [NSObjectProtocol] = []
+    private var releaseTimer: DispatchSourceTimer?
 
     override public func load() {
         // 切后台就停录并删掉已录音频：麦克风不该在用户看不见的时候还开着，
@@ -108,12 +116,14 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.fileURL = url
                 call.resolve(["value": true])
             } catch {
+                // 先判因再收尾：收尾会停用本进程的音频会话，判据要读的是失败那一刻别人占没占着。
+                let failure = Self.startFailure(error)
                 // 起录失败也要把会话和半截文件收干净，否则下一次 start 会撞上 ALREADY_RECORDING
                 // 或者读到上一次的残留音频。
                 self.recorder = nil
                 self.fileURL = url
                 self.teardown(deleteRecording: true)
-                call.reject(Failure.failedToRecord)
+                call.reject(failure)
             }
         }
     }
@@ -151,8 +161,9 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.engine = engine
                 call.resolve(["value": true, "sampleRate": Int(Self.pcmSampleRate)])
             } catch {
+                let failure = Self.startFailure(error)
                 self.teardownPcm()
-                call.reject(Failure.failedToRecord)
+                call.reject(failure)
             }
         }
     }
@@ -189,6 +200,84 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 "path": url.path
             ]])
         }
+    }
+
+    /// 起录失败之后 JS 侧来问：麦克风现在空着吗？空着直接回 true；还被占着就布防，放手时发一次
+    /// `microphoneAvailable`（爸 2026-09-16 拍板：真去检测释放，不做「点了就重试」的简单版）。
+    @objc func watchMicrophoneRelease(_ call: CAPPluginCall) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            if Self.microphoneFree() { call.resolve(["available": true]); return }
+            self.armReleaseWatch()
+            call.resolve(["available": false])
+        }
+    }
+
+    @objc func unwatchMicrophoneRelease(_ call: CAPPluginCall) {
+        queue.async { [weak self] in
+            self?.disarmReleaseWatch()
+            call.resolve()
+        }
+    }
+
+    /// 打开本 App 的系统设置页（麦克风/通知/相机开关都在那里）。放在这个插件里是因为它是 iOS 上
+    /// 一定链接进包的第一方插件；@capacitor/app 在 iOS 上没有 openUrl，原来的「去设置」一直是空操作。
+    @objc func openAppSettings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let url = URL(string: UIApplication.openSettingsURLString) else { call.reject("SETTINGS_UNAVAILABLE"); return }
+            UIApplication.shared.open(url) { opened in opened ? call.resolve() : call.reject("SETTINGS_UNAVAILABLE") }
+        }
+    }
+
+    private func armReleaseWatch() {
+        guard releaseObservers.isEmpty else { return }
+        let center = NotificationCenter.default
+        for name in [AVAudioSession.interruptionNotification, AVAudioSession.silenceSecondaryAudioHintNotification,
+                     AVAudioSession.routeChangeNotification, UIApplication.didBecomeActiveNotification] {
+            releaseObservers.append(center.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+                self?.queue.async { self?.checkRelease() }
+            })
+        }
+        // ponytail: 中断/恢复通知只发给「自己的音频会话被打断过」的进程；起录失败时我们的会话根本没激活，
+        // 会议 App（国内无 CallKit）挂断不保证通知到这里。所以布防期间再每 2 秒读一次会话状态兜底——
+        // 只读两个属性、只在「被占用」提示挂着时跑，收到放手或 JS 取消就停。
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 2, repeating: 2)
+        timer.setEventHandler { [weak self] in self?.checkRelease() }
+        timer.resume()
+        releaseTimer = timer
+    }
+
+    private func checkRelease() {
+        guard !releaseObservers.isEmpty, Self.microphoneFree() else { return }
+        disarmReleaseWatch()
+        notifyListeners("microphoneAvailable", data: [:])
+    }
+
+    private func disarmReleaseWatch() {
+        releaseObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        releaseObservers = []
+        releaseTimer?.cancel()
+        releaseTimer = nil
+    }
+
+    /// 别的 App 正以独占方式占着音频（通话、会议、语音消息）时这两个都为真。
+    private static func microphoneFree() -> Bool {
+        let session = AVAudioSession.sharedInstance()
+        return !session.isOtherAudioPlaying && !session.secondaryAudioShouldBeSilencedHint
+    }
+
+    /// 起录失败的原因：音频会话被更高优先级的占用方拒绝（通话/会议/Siri），或失败那一刻别人正独占音频，
+    /// cannotStartRecording 不进码表：它是泛化起录失败，算进占用会先说「被占用」再立刻翻成「空出来了」（grok ai-review Nit）。
+    /// 算「被占用」——用户能自己解决；其余才是说不清的 FAILED_TO_RECORD。
+    private static func startFailure(_ error: Error) -> String {
+        let busyCodes: Set<Int> = [
+            AVAudioSession.ErrorCode.insufficientPriority.rawValue,
+            AVAudioSession.ErrorCode.cannotInterruptOthers.rawValue,
+            AVAudioSession.ErrorCode.isBusy.rawValue,
+            AVAudioSession.ErrorCode.siriIsRecording.rawValue
+        ]
+        return busyCodes.contains((error as NSError).code) || !microphoneFree() ? Failure.microphoneBusy : Failure.failedToRecord
     }
 
     private func emitPcm(buffer: AVAudioPCMBuffer, token: UUID, converter: AVAudioConverter, targetFormat: AVAudioFormat) {

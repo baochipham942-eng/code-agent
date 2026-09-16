@@ -29,12 +29,26 @@ import type {
 } from '../../../shared/ipc/domainRoutes';
 import type { ChannelSchema } from '../../../shared/ipc/schemas/core';
 import type { IpcMain } from '../../platform/ipcTypes';
+import type { IPCResponse } from '../../../shared/ipc/domains';
 
 /** 领域错误 → IPC error code 的判定（如 session 域的 SessionForkError instanceof 家族） */
-export interface DomainRouteOptions {
+export interface DomainRouteOptions<Ctx = unknown> {
   resolveErrorCode?: (error: unknown) => string | undefined;
   /** 未知 action 兜底文案（默认 `Unknown action: <action>`），保持既有域错误契约逐字不变 */
   unknownActionMessage?: (action: unknown) => string;
+  /** 未知 action 兜底 code（默认 INVALID_ACTION；desktop/tag/cron 既有契约为 UNKNOWN_ACTION） */
+  unknownActionCode?: string;
+  /** handler 抛错 → 完整 error（code+message，可顺带记日志）；提供时优先于 resolveErrorCode/INTERNAL_ERROR 兜底 */
+  mapError?: (error: unknown, action: unknown) => { code: string; message: string; details?: unknown };
+  /** handler 直接返回完整 IPCResponse（含带 data 的失败响应），装配器不再包 { success: true, data } */
+  rawResponse?: boolean;
+  /**
+   * 分发前的访问门（含未知 action 也先过门，对齐 prompt 等域「先鉴权再分发」的既有顺序）：
+   * 返回响应即拦截；返回 null 放行（同步：返回类型收紧为 IPCResponse | null，防 async 门的 Promise 恒真被当拦截，#1848 Nit 1）。门抛错走与 handler 相同的错误映射。
+   * 第二参为装配 ctx（TASK 刀：门要按运行期依赖判定，如 TaskManager 缺席）。
+   * 第三参为请求 payload（SETTINGS 刀：set 是否要 admin 取决于更新里带没带敏感 key）；未知 action 时同样传入。
+   */
+  guard?: (action: unknown, ctx: Ctx, payload: unknown) => IPCResponse | null;
   /** 该表面暂缓（web:false）的 action 桩清单，parity 门棘轮对账用 */
   disabledActions?: readonly string[];
 }
@@ -46,7 +60,7 @@ export interface DomainRouteOptions {
 export function defineDomainRoutes<Req extends DomainRouteRequest, Ctx>(
   schema: ChannelSchema<z.ZodType<Req>>,
   handlers: DomainRouteHandlers<Req, Ctx>,
-  options?: DomainRouteOptions,
+  options?: DomainRouteOptions<Ctx>,
 ): DomainRouteTable<Req, Ctx> {
   return {
     channel: schema.channel,
@@ -54,6 +68,10 @@ export function defineDomainRoutes<Req extends DomainRouteRequest, Ctx>(
     actions: handlers,
     ...(options?.resolveErrorCode ? { resolveErrorCode: options.resolveErrorCode } : {}),
     ...(options?.unknownActionMessage ? { unknownActionMessage: options.unknownActionMessage } : {}),
+    ...(options?.unknownActionCode ? { unknownActionCode: options.unknownActionCode } : {}),
+    ...(options?.mapError ? { mapError: options.mapError } : {}),
+    ...(options?.rawResponse ? { rawResponse: true } : {}),
+    ...(options?.guard ? { guard: options.guard } : {}),
     ...(options?.disabledActions ? { disabledActions: options.disabledActions } : {}),
   };
 }
@@ -96,23 +114,30 @@ function installDomainRoutesImpl<Req extends DomainRouteRequest, Ctx>(
       ? (table.actions as Record<string, DomainRouteHandler<Ctx, unknown>>)[action]
       : undefined;
 
-    if (!handler) {
-      // 未知 action 兜底，对齐 session.ipc.ts:304-311 现状语义；个别域用
-      // unknownActionMessage 保持既有错误契约逐字不变（如 web session 的前缀差异）
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_ACTION',
-          message: table.unknownActionMessage
-            ? table.unknownActionMessage(action)
-            : `Unknown action: ${String(action)}`,
-        },
-      };
-    }
-
     try {
-      return { success: true, data: await handler(ctx, request?.payload) };
+      if (table.guard) {
+        const blocked = table.guard(action, ctx, request?.payload);
+        if (blocked) return blocked;
+      }
+
+      if (!handler) {
+        // 未知 action 兜底，对齐 session.ipc.ts:304-311 现状语义；个别域用
+        // unknownActionMessage 保持既有错误契约逐字不变（如 web session 的前缀差异）
+        return {
+          success: false,
+          error: {
+            code: table.unknownActionCode ?? 'INVALID_ACTION',
+            message: table.unknownActionMessage
+              ? table.unknownActionMessage(action)
+              : `Unknown action: ${String(action)}`,
+          },
+        };
+      }
+
+      const result = await handler(ctx, request?.payload);
+      return table.rawResponse ? result : { success: true, data: result };
     } catch (error) {
+      if (table.mapError) return { success: false, error: table.mapError(error, action) };
       // 错误 code 传递，对齐 session.ipc.ts:315-329：领域 code 优先、INTERNAL_ERROR 兜底
       return {
         success: false,

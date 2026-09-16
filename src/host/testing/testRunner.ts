@@ -24,12 +24,13 @@ import type {
   PermissionRequestRecord,
   EvalCaseMemory,
   CaseMemorySignals,
+  SimTurnRecord,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
 import { validateUserSimulation, evaluateSimRules, DEFAULT_SIM_MAX_TURNS } from './userSimulator';
 import { validateGoalContract } from './goalContractEval';
 import { applyCaseMemory } from './memoryEval';
-import { withTimeout } from '../services/infra/timeoutController';
+import { appendRound, InFlightRound } from './timeoutTrace';
 import { runAssertions, runExpectations, countDeclaredAssertions } from './assertionEngine';
 import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
@@ -57,6 +58,7 @@ import {
   type FailureCodebook,
 } from './failureCodes';
 import { classifyTestResultFailure } from './testResultFailure';
+import { formatExpectationFailures, judgeTimeoutExpectations } from './timeoutExpectations';
 import { mergeSkillActivations } from './skillSelection';
 
 import { attachAiReview } from './testRunnerAiReview';
@@ -70,19 +72,6 @@ const UNSTABLE_STDDEV_THRESHOLD = 0.2;
  * 当前 host 是否有会真正包住 bash 执行的 OS 级 jail。
  * 对齐 bash.ts：isOsSandboxEnabled()（默认 true）+ 平台沙箱（bwrap/seatbelt）可用。
  */
-/**
- * 把模拟用户轮 / follow-up 轮的结果并进 TestResult。审批记录必须一起并：
- * 「先确认」类题的危险命令发生在第二轮，只取首轮会把真弹过的审批卡数成 0
- * （09-04 L3 第八程：3 条命令只数到 2 条、产品会弹卡 0 次）。没有记录就不建数组。
- */
-function appendRound(result: TestResult, round: Pick<TestResult, 'responses' | 'toolExecutions' | 'turnCount' | 'errors' | 'permissionRequests'>): void {
-  result.responses.push(...round.responses);
-  result.toolExecutions.push(...round.toolExecutions);
-  if (round.permissionRequests) (result.permissionRequests ??= []).push(...round.permissionRequests);
-  result.turnCount += round.turnCount;
-  result.errors.push(...round.errors);
-}
-
 function isOsJailActive(): boolean {
   return isOsSandboxEnabled() && getSandboxManager().isAvailable();
 }
@@ -733,6 +722,7 @@ export class TestRunner {
     const sendMessage = (prompt: string) => costTracker.run(() => agent.sendMessage(prompt, {
       scopedCostRecorder: costTracker.recordUsage,
     }));
+    const inFlight = new InFlightRound();
     let completedExecution = false;
 
     logger.info('Running test', { testId: testCase.id });
@@ -827,7 +817,7 @@ export class TestRunner {
       const timeout = forceTimeout ? baseTimeout : Math.round(baseTimeout * scale);
 
       // Send the test prompt (withTimeout 自动清理 timer)
-      const agentResult = await withTimeout(
+      const agentResult = await inFlight.race(
         sendMessage(testCase.prompt),
         timeout,
         `Test timeout after ${timeout}ms`,
@@ -863,13 +853,11 @@ export class TestRunner {
         for (let simTurn = 0; simTurn < maxSimTurns; simTurn++) {
           const match = evaluateSimRules(sim, lastTurn, matchCounts);
           if (!match) break;
-          result.simTurns?.push({
-            ruleId: match.rule.id,
-            action: match.action,
-            message: match.message,
-            toolExecutionsBefore: result.toolExecutions.length,
-            responsesBefore: result.responses.length,
-          });
+          const simTurnRecord: SimTurnRecord = {
+            ruleId: match.rule.id, action: match.action, message: match.message,
+            toolExecutionsBefore: result.toolExecutions.length, responsesBefore: result.responses.length,
+          };
+          result.simTurns?.push(simTurnRecord);
           if (match.action === 'stop') break;
 
           const remainingTime = timeout - (Date.now() - startTime);
@@ -880,7 +868,11 @@ export class TestRunner {
             // 按存量口径分流 infra_excluded（时间预算问题不是能力数据）。
             throw new Error(`Test timeout after ${timeout}ms (budget exhausted before simulated user turn)`);
           }
-          const simResult = await withTimeout(
+          // 送达标记必须在发出前置位：这一轮被超时掐掉时应答文本已经在 agent 手里，
+          // 「拒绝之后」的窗口成立；而上面那条 throw（预算在发出前耗尽）走掉时它保持
+          // 未置位，超时补判据此记未判，不拿零证据判绿（K2 PR#1878 ai-review Nit 1）。
+          simTurnRecord.delivered = true;
+          const simResult = await inFlight.race(
             sendMessage(match.message!),
             remainingTime,
             `Simulated user turn timeout after ${timeout}ms`,
@@ -912,7 +904,7 @@ export class TestRunner {
           const remainingTime = timeout - (Date.now() - startTime);
           if (remainingTime <= 0) break;
 
-          const followUpResult = await withTimeout(
+          const followUpResult = await inFlight.race(
             sendMessage(followUp),
             remainingTime,
             `Follow-up timeout after ${timeout}ms`,
@@ -1007,12 +999,10 @@ export class TestRunner {
           result.failureDetails = undefined;
         } else if (expResult.overallScore > 0 && !expResult.hasCriticalFailure) {
           result.status = 'partial';
-          result.failureReason = expResult.results
-            .filter((r) => !r.passed).map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`).join('; ');
+          result.failureReason = formatExpectationFailures(expResult.results);
         } else {
           result.status = 'failed';
-          result.failureReason = expResult.results
-            .filter((r) => !r.passed).map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`).join('; ');
+          result.failureReason = formatExpectationFailures(expResult.results);
         }
       }
       await attachAiReview(this.config, testCase, result, agent.usesMockEvalPolicy?.() === true);
@@ -1044,6 +1034,9 @@ export class TestRunner {
         result.failureStage = 'timeout';
         // N-EVAL-L3-HARNESS：超时题的循环/工具不能活到下一题，这里真的掐掉。
         await agent.cancelActiveRun?.().catch((cancelError: unknown) => logger.warn('cancelActiveRun failed after timeout', { testId: testCase.id, error: String(cancelError) }));
+        // N-EVAL-TIMEOUT-K1-TRACE：掐掉后原 sendMessage 会带着已发生的轨迹 return，限时接住并入；等不到就标不可得。
+        // 掐不掉的 adapter 那一轮不会自己回来，不白等宽限。
+        result.timeoutTraceAvailable = agent.cancelActiveRun ? await inFlight.settleInto(result, TEST_TIMEOUTS.TIMEOUT_TRACE_GRACE) : false;
       } else if (isInfraExclusionError(message)) {
         result.status = 'infra_excluded';
         result.failureStage = 'infra';
@@ -1051,6 +1044,11 @@ export class TestRunner {
         result.status = 'failed';
       }
       result.failureReason = message || 'Unknown error';
+      // N-EVAL-TIMEOUT-K2-NEGASSERT：拿到被掐那一轮轨迹才补跑负向过程断言；拿不到行为不变。
+      if (killedByTimeout && result.timeoutTraceAvailable === true) {
+        await judgeTimeoutExpectations(testCase.expectations, result, workingDirectory)
+          .catch((judgeError: unknown) => logger.warn('timeout expectations failed to run', { testId: testCase.id, error: String(judgeError) }));
+      }
       result.errors.push(message || String(error));
       result.killedByTimeout = killedByTimeout;
       this.emit({ type: 'error', testId: testCase.id, error: message });

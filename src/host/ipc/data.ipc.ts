@@ -3,7 +3,8 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { DataSchemas, type DataDomainRequest } from '../../shared/ipc/schemas/data';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { createLogger } from '../services/infra/logger';
 import { getAdminAccessIpcError } from './adminGuard';
 import { getUserConfigDir } from '../config/configPaths';
@@ -150,58 +151,40 @@ async function handleDataClearToolCache(): Promise<number> {
 // ----------------------------------------------------------------------------
 
 /**
+ * data 域单源路由表（RQ-183 续作·DATA 刀）：原 domain switch 逐 case 平移（handler 返回 data，装配器包
+ * { success: true, data }）；guard 只拦快照三件套（requiresAdmin），未知 action 不过门，与原 switch 顺序一致；
+ * 未知 action → INVALID_ACTION `Unknown action: <action>`、抛错 → INTERNAL_ERROR（Error 取 message、非 Error 取 String(error)），均为装配器缺省。
+ */
+const dataRoutes = defineDomainRoutes<DataDomainRequest, void>(
+  DataSchemas.REQUEST,
+  {
+    cacheGetStats: () => handleCacheGetStats(),
+    cacheClear: async () => {
+      await handleCacheClear();
+      return null;
+    },
+    cacheCleanExpired: () => handleCacheCleanExpired(),
+    getStats: () => handleDataGetStats(),
+    clearToolCache: () => handleDataClearToolCache(),
+    getSnapshotStats: () => handleDataGetSnapshotStats(),
+    clearSnapshots: (_ctx, payload) =>
+      handleDataClearSnapshots((payload as { olderThanDays?: number; sessionId?: string }) ?? {}),
+    setSnapshotRetention: async (_ctx, payload) => {
+      await handleDataSetSnapshotRetention((payload as { days: number }) ?? { days: 1 });
+      return null;
+    },
+  },
+  {
+    guard: (action) => (requiresAdmin(String(action)) ? getAdminAccessIpcError('Debug snapshots') : null),
+  },
+);
+
+/**
  * 注册 Data/Cache 相关 IPC handlers
  */
 export function registerDataHandlers(ipcMain: IpcMain): void {
-  // ========== New Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.DATA, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action, payload } = request;
-
-    try {
-      if (requiresAdmin(action)) {
-        const accessError = getAdminAccessIpcError('Debug snapshots');
-        if (accessError) return accessError;
-      }
-
-      let data: unknown;
-
-      switch (action) {
-        case 'cacheGetStats':
-          data = await handleCacheGetStats();
-          break;
-        case 'cacheClear':
-          await handleCacheClear();
-          data = null;
-          break;
-        case 'cacheCleanExpired':
-          data = await handleCacheCleanExpired();
-          break;
-        case 'getStats':
-          data = await handleDataGetStats();
-          break;
-        case 'clearToolCache':
-          data = await handleDataClearToolCache();
-          break;
-        case 'getSnapshotStats':
-          data = await handleDataGetSnapshotStats();
-          break;
-        case 'clearSnapshots':
-          data = await handleDataClearSnapshots((payload as { olderThanDays?: number; sessionId?: string }) ?? {});
-          break;
-        case 'setSnapshotRetention':
-          await handleDataSetSnapshotRetention((payload as { days: number }) ?? { days: 1 });
-          data = null;
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
-    }
-  });
-
-  // ========== Legacy Handlers (Deprecated) ==========
-
+  installDomainRoutes(ipcMain, dataRoutes, undefined);
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）
+registerDataHandlers.routes = dataRoutes;

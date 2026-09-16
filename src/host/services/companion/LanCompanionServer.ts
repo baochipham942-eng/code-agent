@@ -135,12 +135,22 @@ export class LanCompanionServer {
    *
    * 拿不准就返回 null ⇒ welcome 不带地址 ⇒ 手机留住它手里那个。**宁可不说，不可说错**：
    * 手机手里那个至少此刻是通的，而一个错地址会把唯一能用的路也换掉。
+   *
+   * 与下面 endpoints()（二维码广告用）分开：那个答的是「谁都可以来连我」，这个答的是
+   * 「**你**够得到我的那一个」——同一台机器上这两个答案未必一样。
    */
   private reachedEndpoint(via?: string): string | null {
     const reached = via?.replace(/^::ffff:/, '');
     return reached && isPrivateIPv4(reached) ? `http://${reached}:${this.listenPort}` : null;
   }
 
+  /**
+   * 二维码里广告的地址。**每次现算**，不用 start() 冻住的那个：socket 绑的是全部接口，宿主
+   * 换网后照样能连，变的只是"该报哪个地址"。冻住它 ⇒ 换网后发出去的二维码带着一个死地址。
+   *
+   * 主地址用「此刻一定连得上」的字面量；mDNS 名只作备用，手机连不上主地址时才试它。
+   * 反过来（只广告 mDNS 名）在「电脑连手机热点」下 100% 配不上：手机解析不了宿主的 .local。
+   */
   private endpoints(): { endpoint: string; altEndpoint: string | null } {
     // 列表为空 = 此刻没有任何私网接口（掉线）。那时报 start 时那个总比报空串强：
     // 手机拿它去试顶多失败一次，而空串会让 validateLanEndpoint 直接抛。

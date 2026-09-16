@@ -150,6 +150,10 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     // 存的不是我们拨的那个转发器端口，而是宿主报的当前地址。
     expect(binding.endpoint).toBe(live.endpoint);
     expect(binding.endpoint).not.toBe(dialed);
+    // 被挤下主位的那个**刚刚拨通过**，必须落到备用位：否则「主地址死了、经备用拨通」那一轮
+    // 会把唯一换网还能用的候选（mDNS 名）整个丢掉，宿主再换一次网就又只能重新扫码
+    // （grok ai-review PR#1904 Important）。
+    expect(binding.altEndpoint).toBe(dialed);
     // 自愈后的地址必须真能用，否则就是把一个能用的换成不能用的。
     expect(await client.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
     await relay.close();

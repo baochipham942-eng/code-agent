@@ -138,10 +138,16 @@ export class LanCompanionClient {
         !Array.isArray(v.scope) || v.scope.length < 1 || v.scope.length > L.maxScopeSessions || v.scope.some(id => typeof id !== 'string' || !id || id.length > L.idLength)) {
       throw new Error('COMPANION_INVALID_BINDING');
     }
-    // 只采纳主地址。altEndpoint 记的是「我们还知道的另一个候选」，由这一侧维护
-    // （哪个拨通了哪个当主、另一个留作备用），宿主不该覆盖它。
+    // 只采纳主地址。altEndpoint 由这一侧维护，宿主不该覆盖它。
+    //
+    // 采纳了新主地址时，**被挤下主位的正是刚刚拨通的那个**，它必须落到备用位——否则会丢掉
+    // 唯一换网还能用的候选（grok ai-review PR#1904 Important）：主地址死掉、经 `.local` 备用
+    // 拨通的那一轮，若把宿主报的字面量写进主位而备用位仍留着那个死字面量，`.local` 就从绑定里
+    // 整个消失；宿主再换一次网，两个字面量一起死，手机又回到只能重新扫码。
+    // 没采纳（宿主没报或报了坏值）时主位没动，备用位照旧。
     const live = adoptEndpoint(v.endpoint, endpoint);
-    return { version: 1, endpoint: live, ...(altEndpoint ? { altEndpoint } : {}), hostKey,
+    const fallback = live === endpoint ? altEndpoint : endpoint;
+    return { version: 1, endpoint: live, ...(fallback ? { altEndpoint: fallback } : {}), hostKey,
       deviceId: v.deviceId, scopeEpoch: Number(v.scopeEpoch), scope: v.scope,
       ...(v.dictation === true ? { dictation: true as const } : {}) };
   }

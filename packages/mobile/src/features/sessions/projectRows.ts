@@ -1,4 +1,5 @@
 import type { CompanionLibrary } from '../../../../../src/shared/contract/companionLibrary';
+import { UNSORTED_PROJECT_ID } from '../../../../../src/shared/contract/project';
 
 /**
  * 项目选择器主层的行模型（fix5-③，2026-09-15 build 36 反馈⑦：项目 sheet 看不懂）。
@@ -62,4 +63,15 @@ export function projectRowModels(
       canCreate: project.canCreate,
     };
   });
+}
+
+/**
+ * 新任务默认落在哪个项目（N-MOBILE-DEFAULT-PROJECT，design.md §11，爸 09-17 拍板）：
+ * 手选过的 > 最近一次（手机或电脑）用过的 > 未分类；候选必须此刻能建，都建不了回 null（不替用户选）。
+ * 「最近用过」= updatedAt 最新那条会话的项目，库里的会话是两端共用的，所以电脑上刚用过的也算。
+ */
+export function defaultProjectId(library: CompanionLibrary, picked: string | undefined): string | null {
+  const creatable = (id: string | null | undefined) => library.projects.find(project => project.id === id && project.canCreate)?.id ?? null;
+  const recent = library.sessions.reduce<CompanionLibrary['sessions'][number] | null>((top, session) => !top || session.updatedAt > top.updatedAt ? session : top, null);
+  return creatable(picked) ?? creatable(recent?.projectId) ?? creatable(UNSORTED_PROJECT_ID);
 }

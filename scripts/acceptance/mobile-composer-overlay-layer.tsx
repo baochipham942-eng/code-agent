@@ -26,8 +26,8 @@ const conversationTree = `<div class="conversation" id="conversation">
     ${Array.from({ length: 40 }, (_, i) => `<div class="lan-message" id="m${i}">第 ${i} 条消息，用来把滚动区撑高</div>`).join('')}
   </div><button class="jump-latest" id="jump">回到最新</button></div>
   <div class="composer-area" id="area">
+    <div class="status-slot"><span class="dot"></span><span class="status-text">状态行</span></div>
     <div class="composer"><textarea id="ta" rows="1"></textarea><div class="composer-tools"><span class="spacer"></span></div></div>
-    <div class="task-status"><span>状态行</span></div>
   </div>
 </div>`;
 

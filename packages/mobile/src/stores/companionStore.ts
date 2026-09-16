@@ -147,14 +147,6 @@ export function needsLibraryPick(state: Pick<State, 'status' | 'sessionId'>): bo
   return state.status === 'connected' && !state.sessionId;
 }
 
-/** Default project + default model for one-tap session create. Null when the library cannot start one. */
-export function defaultCompanionSessionCreate(library: CompanionLibrary | null): { projectId: string; provider: string; model: string } | null {
-  const project = library?.projects.find(item => item.canCreate);
-  const model = library?.models.find(item => item.isDefault) ?? library?.models[0];
-  if (!project || !model) return null;
-  return { projectId: project.id, provider: model.provider, model: model.model };
-}
-
 /** Receipt identity: a status/result from a different command must not settle this one. */
 export function companionAckMatches(
   pending: Pick<CompanionCommand, 'commandId' | 'deviceId' | 'sessionId' | 'action'>,

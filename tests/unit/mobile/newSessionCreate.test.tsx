@@ -115,7 +115,8 @@ async function tapNewSessionPlus() {
   fireEvent.click(plus);
 }
 
-const noticeText = () => (document.querySelector('.notice') as HTMLElement | null)?.textContent ?? '';
+// 失败反馈落在输入区唯一状态位（N-MOBILE-STATUS-NOISE）。
+const noticeText = () => (document.querySelector('[data-testid="status-slot"]') as HTMLElement | null)?.textContent ?? '';
 
 describe('fix6-①：创建成功的可见结果', () => {
   it('点 + 收抽屉、顶栏切到新会话、进空会话就绪态（不再是无会话欢迎屏的原地不动）', async () => {
@@ -125,35 +126,35 @@ describe('fix6-①：创建成功的可见结果', () => {
     await waitFor(() => { expect(harness.createSessionIds).toEqual(['project:one']); });
     await waitFor(() => { expect(document.querySelector('.drawer-layer')).toBeNull(); });
     await waitFor(() => { expect((document.querySelector('.topbar strong') as HTMLElement).textContent).toBe('新会话'); });
-    // 空会话就绪态必须与无会话欢迎屏可区分：标题点名「新会话已建好」，并给出所在项目
+    // 空会话只留一句 + 项目选择器（design.md §12，爸 09-17）：与原会话可区分靠顶栏的新会话名与选择器上的项目
     await waitFor(() => { expect(document.querySelector('[data-testid="session-empty"]')).toBeTruthy(); });
-    expect((document.querySelector('[data-testid="session-empty"] h1') as HTMLElement).textContent).toBe('新会话已建好');
-    expect(document.querySelector('[data-testid="session-empty"]')!.textContent).toContain('工作项目');
-    expect(document.querySelector('[data-testid="session-empty"]')!.textContent).toContain('输入任务');
+    expect((document.querySelector('[data-testid="session-empty"] h1') as HTMLElement).textContent).toBe('有什么想交给 Neo？');
+    expect(document.querySelector('[data-testid="session-empty"] [data-testid="project-pick"]')!.textContent).toBe('工作项目');
+    expect(document.querySelector('[data-testid="session-empty"]')!.textContent).not.toContain('输入任务');
   });
 });
 
 describe('fix6-②：创建失败的可见反馈（manage 不再静默吞错）', () => {
-  it('已断连时点 +：命令没发出去也不许装没看见——收抽屉 + 「会话没建成」按三分类给诊断句', async () => {
+  // N-MOBILE-STATUS-NOISE 之后：断连期间「会话没建成」是连带后果，只说断连那一条（原因诊断在连接电脑弹层里）。
+  it('已断连时点 +：命令没发出去也不静默——收抽屉，状态位只说「连不上电脑」', async () => {
     await mountConnected();
     harness.mode = 'drop-sync';
-    // 轮询（1s 一拍）踩空后连接胶囊落到「电脑没回应」——此后抽屉照常可用，正是爸的现场
-    await waitFor(() => { expect((document.querySelector('.connection-pill') as HTMLElement).textContent).toContain('电脑没回应'); }, { timeout: 4000 });
+    // 轮询（1s 一拍）踩空后状态位落到「连不上电脑」——此后抽屉照常可用，正是爸的现场
+    await waitFor(() => { expect(noticeText()).toContain('连不上电脑'); }, { timeout: 4000 });
     await tapNewSessionPlus();
     await waitFor(() => { expect(harness.createSessionIds).toEqual([]); });   // 守卫挡下：根本没发
     await waitFor(() => { expect(document.querySelector('.drawer-layer')).toBeNull(); });
-    await waitFor(() => { expect(noticeText()).toContain('会话没建成'); });
-    expect(noticeText()).toContain('电脑没回应');
+    expect(document.querySelectorAll('[data-testid="status-slot"]')).toHaveLength(1);
+    expect(noticeText()).toBe('连不上电脑重新连接');
   });
 
-  it('点 + 那一刻断连（命令在飞时掉线）：同样给「会话没建成」+ 诊断句，不静默', async () => {
+  it('点 + 那一刻断连（命令在飞时掉线）：同样只说「连不上电脑」，不静默', async () => {
     await mountConnected();
     harness.mode = 'drop-command';
     await tapNewSessionPlus();
     await waitFor(() => { expect(harness.createSessionIds).toEqual(['project:one']); });
     await waitFor(() => { expect(document.querySelector('.drawer-layer')).toBeNull(); });
-    await waitFor(() => { expect(noticeText()).toContain('会话没建成'); });
-    expect(noticeText()).toContain('电脑没回应');
+    await waitFor(() => { expect(noticeText()).toBe('连不上电脑重新连接'); });
   });
 
   it('Host 拒绝（如项目不可用）：提示点名是「会话没建成」，会话不换', async () => {
@@ -164,6 +165,7 @@ describe('fix6-②：创建失败的可见反馈（manage 不再静默吞错）'
     await waitFor(() => { expect(document.querySelector('.drawer-layer')).toBeNull(); });
     await waitFor(() => { expect(noticeText()).toContain('会话没建成'); });
     expect(noticeText()).toContain('所选项目当前不可用');
+    expect(document.querySelector('[data-testid="status-action"]')!.textContent).toBe('重试');
     expect((document.querySelector('.topbar strong') as HTMLElement).textContent).toBe('会话一');
   });
 

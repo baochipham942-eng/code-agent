@@ -41,7 +41,8 @@ function mount(overrides: {
   return { transcribe, send, openModel, onVoiceState, discardPendingTranscript, unmount: view.unmount };
 }
 
-const voiceNotice = () => document.querySelector('.voice-notice') as HTMLElement;
+// 语音失败进输入区唯一状态位（N-MOBILE-STATUS-NOISE）：rank 3。
+const voiceNotice = () => document.querySelector('[data-testid="status-slot"][data-rank="3"]') as HTMLElement;
 const clickMic = () => fireEvent.click(screen.getByRole('button', { name: text.voice }));
 const toolbarButtons = () => [...document.querySelectorAll('.composer-tools button')]
   .map(button => button.getAttribute('aria-label') ?? button.className);
@@ -129,11 +130,10 @@ describe('VoiceCapture failure reporting', () => {
     expect(voiceNotice().textContent).not.toContain('PLUGIN_NOT_INITIALIZED');
   });
 
-  // build 46 远端验收（真 WebKit）：.notice > :first-child 命中了按钮本身（正文是裸文本节点），
-  // flex:1 + min-width:0 把 7 个字的「去设置开麦克风」挤成一根竖条。jsdom 无布局，钉样式规则本身。
-  it('提示条里的动作按钮不参与伸缩、不换行', () => {
+  // build 46 远端验收（真 WebKit）：「去设置开麦克风」被 flex 挤成一根竖条。状态位的动作胶囊同样不许伸缩、不换行。
+  it('状态位里的动作按钮不参与伸缩、不换行', () => {
     const css = readFileSync('packages/mobile/src/styles.css', 'utf8');
-    const rule = css.match(/\.inline-retry, \.task-status button\.inline-retry, \.notice button\.inline-retry \{[^}]*\}/)?.[0] ?? '';
+    const rule = css.match(/\.status-slot \.status-action \{[^}]*\}/)?.[0] ?? '';
     expect(rule).toContain('flex: none');
     expect(rule).toContain('white-space: nowrap');
   });
@@ -159,7 +159,6 @@ describe('VoiceCapture failure reporting', () => {
     mount({ start, watchMicrophoneRelease: onReleased => { released = onReleased; return unwatch; } });
     clickMic();
     await waitFor(() => expect(voiceNotice()?.textContent).toContain(text.microphoneBusy));
-    expect(voiceNotice().textContent).toContain(text.microphoneBusyDetail);
     expect(voiceNotice().textContent).not.toContain('MICROPHONE_BUSY');
     expect(screen.getByRole('button', { name: text.microphoneBusyRetry })).toBeTruthy();
     // 前提自证：盯守真的布了防（否则「放手后翻牌」的断言是恒真）
@@ -211,7 +210,7 @@ describe('VoiceCapture failure reporting', () => {
     await screen.findByText(text.microphoneDenied);
     expect(screen.getByTestId('draft')).toBeTruthy();
     expect(document.querySelector('.composer')?.className).not.toContain('voice-composer');
-    expect(document.querySelector('.voice-notice')?.compareDocumentPosition(document.querySelector('.composer')!))
+    expect(voiceNotice()?.compareDocumentPosition(document.querySelector('.composer')!))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 });
@@ -638,7 +637,7 @@ describe('build 27 真机四条（爸 2026-09-13）', () => {
     await advance(2_000);
     expect(screen.getByTestId('draft')).toBeTruthy();
     expect(document.querySelector('.voice-composer')).toBeNull();
-    expect(document.querySelector('.voice-notice')).toBeNull();
+    expect(document.querySelector('[data-testid="status-slot"]')).toBeNull();
   });
 
   it('录音面板只显示这一次识别出来的字，录音前已有的草稿不许混进识别区', async () => {

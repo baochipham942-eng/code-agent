@@ -159,10 +159,10 @@ try {
   // Composition is a controlled browser event here; the separate native IME check covers actual candidates.
   await evaluate('document.querySelector("textarea").dispatchEvent(new CompositionEvent("compositionstart",{bubbles:true})); return true;');
   await click('send');
-  check('composition-does-not-send', await evaluate('return !document.querySelector(".notice")'));
+  check('composition-does-not-send', await evaluate('return !document.querySelector("[data-testid=status-slot]")'));
   await evaluate('document.querySelector("textarea").dispatchEvent(new CompositionEvent("compositionend",{bubbles:true})); return true;');
   await click('send');
-  check('no-host-keeps-draft', await evaluate(`return document.querySelector('textarea').value === ${JSON.stringify(draft)} && !!document.querySelector('.notice')`));
+  check('no-host-keeps-draft', await evaluate(`return document.querySelector('textarea').value === ${JSON.stringify(draft)} && !!document.querySelector('[data-testid=status-slot]')`));
   await hideKeyboard();
   await click('open-drawer'); await click('open-settings'); await click('open-appearance'); await click('theme-dark');
   check('one-sheet-and-theme-change', await evaluate('return document.querySelectorAll("[role=dialog]").length === 1 && document.documentElement.dataset.theme === "dark"'));

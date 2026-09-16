@@ -39,7 +39,7 @@ describe('NeoBrandMark 对齐 design.html 线稿 / 砖块两套', () => {
 describe('会话页接线：欢迎区线稿、助手行 24px teal、关于页砖块', () => {
   it('欢迎区一步用 47px 线稿', () => {
     const root = readFileSync('packages/mobile/src/app/MobileRoot.tsx', 'utf8');
-    expect(root).toMatch(/className="welcome"><NeoBrandMark variant="mark" size=\{47\} \/>/);
+    expect(root).toMatch(/className="welcome"[^>]*>\s*<NeoBrandMark variant="mark" size=\{47\} \/>/);
   });
 
   it('关于页不改成线稿', () => {

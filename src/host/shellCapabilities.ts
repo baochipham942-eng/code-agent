@@ -254,7 +254,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
 const HIGH_RISK_CAPABILITIES = new Set([
   makeShellCapabilityId(IPC_DOMAINS.AGENT, 'send'),
   // oauthSetSecret 落用户机密、oauthSaveDescriptor 改授权与注入边界、oauthConnect 发起
-  // 对外授权；inferRisk 按动作名前缀猜会把 oauth* 判成 low，风险显示不出来。
+  // 对外授权。inferRisk 按词段猜最多给到 medium（set/save 在词中），而这三条是机密与
+  // 授权边界，要 high——判据够不着的个例才进这份清单。
   makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthConnect'),
   makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthSaveDescriptor'),
   makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthSetSecret'),
@@ -263,8 +264,8 @@ const HIGH_RISK_CAPABILITIES = new Set([
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'observeComputerSurface'),
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'openManagedBrowserUrl'),
   // recoverHistory's import action writes sessions/messages/forks and creates a
-  // receipt table; inferRisk's prefix regex doesn't match "recoverHistory" so it
-  // would silently fall through to low.
+  // receipt table; neither segment of "recoverHistory" is a mutation verb, so
+  // inferRisk would silently fall through to low without this entry.
   makeShellCapabilityId(IPC_DOMAINS.SESSION, 'recoverHistory'),
   makeShellCapabilityId(IPC_DOMAINS.SESSION, 'restoreWorkspaceFilesAtCheckpoint'),
   makeShellCapabilityId(IPC_DOMAINS.SESSION, 'turnCheckout'),
@@ -275,13 +276,54 @@ const HIGH_RISK_CAPABILITIES = new Set([
   makeTauriCommandCapabilityId('install_update'),
 ]);
 
+/** 写动作动词表：命中即至少 medium。 */
+const MUTATION_VERBS = new Set([
+  'add', 'archive', 'cancel', 'capture', 'clear', 'close', 'confirm', 'create', 'delete',
+  'disconnect', 'download', 'force', 'import', 'install', 'interrupt', 'open', 'pause',
+  'prepare', 'probe', 'refresh', 'reject', 'remove', 'rename', 'repair', 'report', 'reset',
+  'resume', 'resync', 'retry', 'save', 'select', 'send', 'set', 'sign', 'start', 'stop',
+  'switch', 'unarchive', 'update', 'write',
+]);
+
+/**
+ * 只读首词：动作名以这些词开头时整体是查询，即便后续词段里有写动词也不升级。
+ * 没有这条，getAudioCaptureStatus（含 capture）、inspectArchive（含 archive）、
+ * check_for_update（含 update）都会被误判成 medium。
+ */
+const READONLY_HEAD_VERBS = new Set([
+  'audit', 'check', 'compare', 'count', 'describe', 'detect', 'diff', 'export', 'find',
+  'get', 'has', 'inspect', 'is', 'list', 'ping', 'preview', 'query', 'read', 'resolve',
+  'search', 'stat', 'stats', 'status', 'summarize', 'trace', 'validate',
+]);
+
+/**
+ * 动作名切词：camelCase 边界 + `_` `:` `-` `.` 分隔，全部转小写。
+ * 冒号必须算分隔符——pii 的线协议动作形如 `setup:cancel`，不切就会被当成一个整词，
+ * 反而丢掉真该命中的 cancel。
+ */
+function actionSegments(action: string): string[] {
+  return action
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(/[\s_:\-.]+/)
+    .map((segment) => segment.toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * 风险档按「动词出现在动作名的哪个词段」判，不是只看词首。
+ *
+ * 旧判据是 `/^(add|…|write)/`，只锚词首 ⇒ 写库动作只要动词不在开头就静默落 low
+ * （memoryEntryDelete / lightDelete / memoryImportV2Apply / rolePackInstall / recipeDelete
+ * / cacheClear 等 30+ 条）；而它又没有词边界，`^set` 反过来把 pii 的 setup:status、
+ * setup:isReady 这两条纯查询吃成 medium。两个方向的错都来自同一个形状问题。
+ */
 function inferRisk(domain: string, action: string): ShellCapabilityRisk {
   const id = makeShellCapabilityId(domain, action);
   if (HIGH_RISK_CAPABILITIES.has(id)) return 'high';
-  if (/^(add|archive|cancel|capture|clear|close|confirm|create|delete|disconnect|download|force|import|install|interrupt|open|pause|prepare|probe|refresh|reject|remove|rename|repair|report|reset|resume|resync|retry|save|select|send|set|sign|start|stop|switch|unarchive|update|write)/i.test(action)) {
-    return 'medium';
-  }
-  return 'low';
+  const segments = actionSegments(action);
+  if (segments.length > 0 && READONLY_HEAD_VERBS.has(segments[0])) return 'low';
+  return segments.some((segment) => MUTATION_VERBS.has(segment)) ? 'medium' : 'low';
 }
 
 export function getShellCapabilities(): ShellCapability[] {

@@ -27,6 +27,31 @@ function stream(): string[] {
   });
 }
 
+import { readFileSync } from 'node:fs';
+
+// 成功不再挂文案行之后，真实宿主验收脚本就不能再等「任务已完成」——它等不到，只会超时。
+// 更要命的是 verify-host 里那道「没问审批就跑完了」的护栏原本也靠这句话触发：文案没了，
+// 护栏永远不触发且不报错（装好没接电）。所以把新判据钉住：脚本认 run-strip，组件必须真发这个 testid。
+describe('真实宿主验收脚本与「成功不挂行」保持同一套判据（ai-review PR#1898 Important）', () => {
+  const script = readFileSync('packages/mobile/scripts/verify-host.mjs', 'utf8');
+
+  it('验收脚本改用执行条消失当「这一轮结束」，不再等被删掉的成功文案', () => {
+    expect(script).toContain("page.getByTestId('run-strip').waitFor({state:'detached'})");
+    expect(script).not.toContain('任务已完成');
+    // 停止仍有文案行，那条判据不动
+    expect(script).toContain("page.getByText('任务已停止',{exact:true})");
+  });
+
+  it('「没问审批就跑完」的护栏仍然会炸，而不是静默失效', () => {
+    expect(script).toMatch(/runEnded\(\)\.then\(\(\)=>\{throw new Error\('TASK_FINISHED_WITHOUT_REQUIRED_APPROVAL'\);\}\)/);
+  });
+
+  it('组件确实发 run-strip 这个 testid——判据锚的元素必须真存在，否则 detached 恒真', () => {
+    const component = readFileSync('packages/mobile/src/features/sessions/CompanionConversation.tsx', 'utf8');
+    expect(component).toContain('data-testid="run-strip"');
+  });
+});
+
 describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①②）', () => {
   afterEach(cleanup);
 

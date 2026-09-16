@@ -5,6 +5,25 @@ import { COMPANION_LIMITS as L } from '../../../../src/shared/constants/companio
 
 export type LanPost = (url: string, body: unknown) => Promise<unknown>;
 
+/**
+ * 宿主在 welcome 里报的地址优先于「我们这次拨通的那个」（N-COMPANION-NOLANPORT）。
+ *
+ * 为什么要优先：绑定里的地址是**配对那一刻**写死的，宿主换网后就死，而手机没有任何重新
+ * 发现的手段（爸 2026-09-16 真机：主地址失效 + 备用 .local 在热点下解析不了 ⇒ 两条路一起死，
+ * 只能删 app 重装）。握手一定会发生，把宿主当前地址捎回来，就等于每次连上都自愈一次。
+ *
+ * 宿主已经过 Noise + hostKey 校验，但地址仍然过 validateLanEndpoint：形状不对就退回这次
+ * 拨通的那个——**此刻通着的地址永远比一个校验不过的新地址可信**，不能因为对面报了个坏值
+ * 就把手里唯一能用的地址丢掉。
+ *
+ * 提成模块级导出而不是 private static：它是本单的承重判据，够不着就写不出红线
+ * （反向变异实测：藏在 private 里时「盲目采纳」那个变异压根不红）。
+ */
+export function adoptEndpoint(reported: unknown, dialed: string): string {
+  if (typeof reported !== 'string' || !reported) return dialed;
+  try { return validateLanEndpoint(reported); } catch { return dialed; }
+}
+
 /** All requests on a channel are serialized because Noise records are ordered. */
 export class LanCompanionClient {
   private channel: NoiseChannel | null = null;
@@ -113,22 +132,6 @@ export class LanCompanionClient {
 
   close(): void { this.generation++; this.channel?.close(); this.channel = null; this.channelId = ''; this.binding = null; }
 
-  /**
-   * 宿主在 welcome 里报的地址优先于「我们这次拨通的那个」（N-COMPANION-NOLANPORT）。
-   *
-   * 为什么要优先：绑定里的地址是**配对那一刻**写死的，宿主换网后就死了，而手机没有任何
-   * 重新发现的手段（爸 2026-09-16 真机：主地址失效 + 备用 .local 在热点下解析不了 ⇒ 两条路
-   * 一起死，只能删 app 重装）。握手一定会发生，把宿主当前地址捎回来，就等于每次连上都自愈一次。
-   *
-   * 宿主已经过 Noise + hostKey 校验，但地址仍然过 validateLanEndpoint：形状不对就退回这次
-   * 拨通的那个——**此刻通着的地址永远比一个校验不过的新地址可信**，不能因为对面报了个坏值
-   * 就把手里唯一能用的地址丢掉。
-   */
-  private static endpointOrFallback(reported: unknown, dialed: string): string {
-    if (typeof reported !== 'string' || !reported) return dialed;
-    try { return validateLanEndpoint(reported); } catch { return dialed; }
-  }
-
   private readBinding(value: unknown, endpoint: string, hostKey: string, altEndpoint?: string): LanBinding {
     const v = value as Partial<LanBinding>;
     if (!v || typeof v.deviceId !== 'string' || v.deviceId.length > L.idLength || !Number.isSafeInteger(v.scopeEpoch) || Number(v.scopeEpoch) < 1 ||
@@ -137,7 +140,7 @@ export class LanCompanionClient {
     }
     // 只采纳主地址。altEndpoint 记的是「我们还知道的另一个候选」，由这一侧维护
     // （哪个拨通了哪个当主、另一个留作备用），宿主不该覆盖它。
-    const live = LanCompanionClient.endpointOrFallback(v.endpoint, endpoint);
+    const live = adoptEndpoint(v.endpoint, endpoint);
     return { version: 1, endpoint: live, ...(altEndpoint ? { altEndpoint } : {}), hostKey,
       deviceId: v.deviceId, scopeEpoch: Number(v.scopeEpoch), scope: v.scope,
       ...(v.dictation === true ? { dictation: true as const } : {}) };

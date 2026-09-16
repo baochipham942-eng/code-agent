@@ -213,3 +213,15 @@ describe('createRunContext 的 cwd 兜底必须过宽度校验', () => {
     expect(run.cwd).toBeTruthy();
   });
 });
+
+// 默认工作目录原来在 5 处各抄一份 <dataDir>/work，改一处漏一处就回到 WORKSPACE_REQUIRED。
+// agentEngine.ipc / workspace.ipc 的兜底分支单测够不着，这里钉源码（static-contract）：兜底只许经 getDefaultWorkDirectory。
+describe('default work directory has one source of truth', () => {
+  it('no source file re-derives <dataDir>/work by hand', { timeout: 20_000 }, async () => {
+    const { spawnSync } = await import('node:child_process');
+    // git grep 无命中时退出码 1，不当失败
+    const result = spawnSync('git', ['grep', '-nE', "(dataDir|DATA_DIR|userConfigDir).*(['\"`/]work['\"`)])", '--', 'src'], { encoding: 'utf8' });
+    expect(result.status === 0 || result.status === 1, result.stderr).toBe(true);
+    expect(result.stdout.split('\n').filter(Boolean)).toEqual([]);
+  });
+});

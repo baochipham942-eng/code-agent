@@ -44,11 +44,12 @@ describe('defaultProjectId 三档', () => {
 });
 
 const harness = vi.hoisted(() => ({
-  mode: 'ok' as 'ok' | 'reject-create' | 'reconciling' | 'blocked',
+  mode: 'ok' as 'ok' | 'reject-create' | 'blocked',
   commands: [] as [string, string | null, string?][],
-  statusPolls: 0,
+  /** 宿主 companion_commands 的模拟：commandId → 命令与已被查询的次数。 */
+  host: new Map<string, { command: { commandId: string; deviceId: string; sessionId: string | null; action: string; payload: { text?: string } }; polls: number }>(),
+  sentText: null as string | null,
   prefs: null as string | null,
-  lastCreate: null as Record<string, unknown> | null,
   unpaired: false,
 }));
 
@@ -85,24 +86,40 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
           ],
         };
       }
+      // 以下照宿主真实形状（zj032 companion_commands 09-17 实查 + CompanionGateway.submit / web/app.ts dispatch）：
+      // submit 先拒不在授权里的目标；session.* 与 message.send 一律先回 reconciling（COMMAND_RECONCILING / RUN_STARTING），
+      // 之后 status 查询才拿到 accepted + {sessionId} / {runId}；新会话的消息从 sync 事件流来。
+      const record = (command: { commandId: string; deviceId: string; sessionId: string | null; action: string }, state: string, result: Record<string, unknown>) =>
+        ({ commandId: command.commandId, deviceId: command.deviceId, sessionId: command.sessionId, action: command.action, state, createdAt: Date.now(), result });
       if (action === 'command') {
-        const command = (payload as { command: { commandId: string; deviceId: string; sessionId: string; action: string; payload: { text?: string; model?: string } } }).command;
+        const command = (payload as { command: { commandId: string; deviceId: string; sessionId: string | null; action: string; payload: { text?: string; model?: string } } }).command;
         // session.create 记模型（必须是电脑默认那个，不是列表第一项，FB-141），message.send 记正文
         harness.commands.push([command.action, command.sessionId, command.payload.text ?? command.payload.model]);
-        const record = (state: string, result: Record<string, unknown>) => ({ commandId: command.commandId, deviceId: command.deviceId, sessionId: command.sessionId, action: command.action, state, createdAt: Date.now(), result });
-        if (command.action === 'session.create') {
-          if (harness.mode === 'reject-create') return { kind: 'rejected', reason: 'COMPANION_PROJECT_UNAVAILABLE' };
-          // ack 先回「还在核对」，之后的 status 轮询才结算：send 必须等到那一刻
-          if (harness.mode === 'reconciling') { harness.lastCreate = record('resolved', { sessionId: 'new-1' }); return { kind: 'accepted', command: record('reconciling', {}) }; }
-          return { kind: 'accepted', command: record('resolved', { sessionId: 'new-1' }) };
-        }
-        return { kind: 'accepted', command: record('resolved', { runId: 'run-1' }) };
+        const target = command.sessionId ?? '';
+        const allowed = command.action === 'session.create' ? target.startsWith('project:') : target === 'new-1';
+        if (!allowed) return { kind: 'rejected', reason: 'scope_denied' };
+        harness.host.set(command.commandId, { command, polls: 0 });
+        return { kind: 'accepted', command: record(command, 'reconciling', { code: command.action === 'message.send' ? 'RUN_STARTING' : 'COMMAND_RECONCILING' }) };
       }
       if (action === 'status') {
-        harness.statusPolls += 1;
-        return harness.statusPolls >= 2 ? harness.lastCreate : null;
+        const entry = harness.host.get((payload as { commandId: string }).commandId);
+        if (!entry) return null;
+        entry.polls += 1;
+        const { command } = entry;
+        if (command.action === 'session.create') {
+          return harness.mode === 'reject-create'
+            ? record(command, 'rejected', { code: 'COMPANION_PROJECT_UNAVAILABLE' })
+            : record(command, 'accepted', { sessionId: 'new-1' });
+        }
+        harness.sentText = command.payload.text ?? '';
+        return record(command, 'accepted', { runId: 'run-1' });
       }
-      return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
+      const afterSeq = (payload as { afterSeq?: number }).afterSeq ?? 0;
+      if (action === 'sync' && harness.sentText !== null && afterSeq < 2) {
+        const event = (seq: number, role: string, content: string) => ({ eventId: `e${seq}`, epoch: 1, seq, sessionId: 'new-1', kind: 'message', payload: { id: `m${seq}`, role, content, runId: 'run-1' }, createdAt: seq });
+        return { kind: 'events', epoch: 1, nextSeq: 2, events: [event(1, 'user', harness.sentText), event(2, 'assistant', '好的，已经整理好了')] };
+      }
+      return { kind: 'events', epoch: 1, nextSeq: afterSeq, events: [] };
     }
     close() {}
   },
@@ -133,7 +150,7 @@ const ports = (): PlatformPorts => ({
 });
 
 beforeEach(() => {
-  harness.mode = 'ok'; harness.commands = []; harness.statusPolls = 0; harness.prefs = null; harness.lastCreate = null; harness.unpaired = false;
+  harness.mode = 'ok'; harness.commands = []; harness.statusPolls = 0; harness.prefs = null; harness.unpaired = false; harness.host.clear(); harness.sentText = null;
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: false, media: query, onchange: null,
     addEventListener: () => {}, removeEventListener: () => {},
@@ -214,36 +231,31 @@ describe('新任务的项目选择器', () => {
 });
 
 describe('没选会话点发送：建会话再发出', () => {
-  it('在所选项目 create，建成后把这句作为第一条消息发到新会话；全程没有报错行', async () => {
+  it('在所选项目 create，结算后切进新会话再发出：看到这条消息和回复，草稿清空，状态位消失', async () => {
     await mountNewTask();
     await typeAndSend('帮我整理三家的资料');
-    await waitFor(() => { expect(harness.commands).toEqual([['session.create', 'project:one', 'deepseek-chat'], ['message.send', 'new-1', '帮我整理三家的资料']]); });
+    await waitFor(() => { expect(harness.commands).toHaveLength(1); });
+    // create 还在 reconciling（宿主先回 COMMAND_RECONCILING）时绝不发 send：命令槽只容一条
+    expect(harness.commands).toEqual([['session.create', 'project:one', 'deepseek-chat']]);
+    await waitFor(() => { expect(harness.commands).toEqual([['session.create', 'project:one', 'deepseek-chat'], ['message.send', 'new-1', '帮我整理三家的资料']]); }, { timeout: 5000 });
+    const conversation = await waitFor(() => { const el = document.querySelector('.lan-messages') as HTMLElement; expect(el?.textContent).toContain('好的，已经整理好了'); return el; }, { timeout: 5000 });
+    expect(conversation.textContent).toContain('帮我整理三家的资料');
+    expect(document.querySelector('[data-testid="session-empty"]')).toBeNull();
+    await waitFor(() => { expect(draft().value).toBe(''); });
     expect(document.querySelector('[data-testid="status-slot"]')).toBeNull();
     expect(document.querySelector('.composer-area .notice')).toBeNull();
-    await waitFor(() => { expect(draft().value).toBe(''); });
-  });
-
-  it('create 的结算晚到（先 reconciling）：send 等 sessionId 生效后才发，不抢命令槽', async () => {
-    harness.mode = 'reconciling';
-    await mountNewTask();
-    await typeAndSend('晚一点结算');
-    await waitFor(() => { expect(harness.commands).toHaveLength(1); });
-    // 结算没到之前绝不发 send（命令槽只容一条）
-    expect(harness.statusPolls).toBeLessThan(2);
-    await waitFor(() => { expect(harness.commands).toEqual([['session.create', 'project:one', 'deepseek-chat'], ['message.send', 'new-1', '晚一点结算']]); }, { timeout: 4000 });
-    expect(harness.statusPolls).toBeGreaterThanOrEqual(2);
   });
 
   it('建会话失败：状态位「会话没建成」+ 重试，草稿留着；重试成功后照样发出', async () => {
     harness.mode = 'reject-create';
     await mountNewTask();
     await typeAndSend('这句不能丢');
-    const slot = await waitFor(() => { const el = document.querySelector('[data-testid="status-slot"]') as HTMLElement; expect(el?.textContent).toContain(text.sessionCreateFailed); return el; });
+    const slot = await waitFor(() => { const el = document.querySelector('[data-testid="status-slot"]') as HTMLElement; expect(el?.textContent).toContain(text.sessionCreateFailed); return el; }, { timeout: 5000 });
     expect(slot.textContent).toContain(text.projectUnavailable);
     expect(harness.commands).toEqual([['session.create', 'project:one', 'deepseek-chat']]);
     expect(draft().value).toBe('这句不能丢');
     harness.mode = 'ok';
     fireEvent.click(slot.querySelector('[data-testid="status-action"]')!);
-    await waitFor(() => { expect(harness.commands.slice(1)).toEqual([['session.create', 'project:one', 'deepseek-chat'], ['message.send', 'new-1', '这句不能丢']]); });
+    await waitFor(() => { expect(harness.commands.slice(1)).toEqual([['session.create', 'project:one', 'deepseek-chat'], ['message.send', 'new-1', '这句不能丢']]); }, { timeout: 6000 });
   });
 });

@@ -4,7 +4,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { CompanionGateway } from '../../../src/host/services/companion/CompanionGateway';
 import { projectGrant, type CompanionLibrary } from '../../../src/shared/contract/companionLibrary';
-import { UNSORTED_PROJECT_ID } from '../../../src/shared/contract/project';
+import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '../../../src/shared/contract/project';
 
 /**
  * 爸 2026-09-16 真机：电脑上只有「未分类」一个项目，工作目录为空；build 46 按「无目录即不可建」把它挡了 ⇒
@@ -75,6 +75,8 @@ describe('手机在「未分类」里新建会话与桌面端一致', () => {
       await expect(create(UNSORTED_PROJECT_ID)).resolves.toMatchObject({ sessionId: expect.stringMatching(/^mobile-/) });
       expect(createSession).toHaveBeenCalledTimes(1);
       expect(createSession.mock.calls[0][0].workingDirectory).toBeUndefined();
+      // 归属钉住：首轮运行兜底补目录时不许把它重算出这台手机的项目授权（09-17 模拟器实测落进 <数据目录>-work 自动项目）
+      expect(createSession.mock.calls[0][0].metadata[SESSION_PROJECT_PINNED_METADATA_KEY]).toBe(true);
       await expect(create('blank')).rejects.toThrow('COMPANION_PROJECT_UNAVAILABLE');
       expect(createSession).toHaveBeenCalledTimes(1);
     } finally { db.close(); }

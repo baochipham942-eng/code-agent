@@ -290,11 +290,21 @@ const MUTATION_VERBS = new Set([
  * 只读首词：动作名以这些词开头时整体是查询，即便后续词段里有写动词也不升级。
  * 没有这条，getAudioCaptureStatus（含 capture）、inspectArchive（含 archive）、
  * check_for_update（含 update）都会被误判成 medium。
+ *
+ * 已知天花板：resolve / export 开头的动作里混着真写的（domain:sync/resolveConflict、
+ * domain:session/exportSessionFork），它们会被这条规则判成 low。与改判据前一致（旧前缀
+ * 表里也没有 resolve/export，同样落 low），故不是回归；不把这两个词摘出去，是因为以
+ * export 开头的 10 条动作（exportMarkdown / exportDiagnostics / exportBundle 等）确实
+ * 只读，为 2 条误伤 10 条不划算。要精确就得逐条进 HIGH_RISK_CAPABILITIES。
+ * 这个天花板由 shellCapabilities.test.ts 的 readonly-head ceiling 断言钉着。
+ *
+ * 表里只留仓内真有动作用到的首词——曾塞进 describe / diff / has / is / query / stat /
+ * status 七个「常见只读动词」，实测零命中，已删。
  */
 const READONLY_HEAD_VERBS = new Set([
-  'audit', 'check', 'compare', 'count', 'describe', 'detect', 'diff', 'export', 'find',
-  'get', 'has', 'inspect', 'is', 'list', 'ping', 'preview', 'query', 'read', 'resolve',
-  'search', 'stat', 'stats', 'status', 'summarize', 'trace', 'validate',
+  'audit', 'check', 'compare', 'count', 'detect', 'export', 'find', 'get', 'inspect',
+  'list', 'ping', 'preview', 'read', 'resolve', 'search', 'stats', 'summarize', 'trace',
+  'validate',
 ]);
 
 /**

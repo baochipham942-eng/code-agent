@@ -145,4 +145,18 @@ describe('shell capabilities', () => {
     expect(riskOf('setup:start')).toBe('medium');
     expect(riskOf('setup:cancel')).toBe('medium');
   });
+
+  // 判据的已知天花板，钉在这里而不是只写进注释：resolve / export 在只读首词表里，
+  // 于是以它们开头的写动作（同步冲突解决、会话分叉导出）也判 low。与改判据前的基线
+  // 一致（旧前缀规则同样给 low），所以不是回归；但新判据是「明确判定为只读」而非
+  // 「没覆盖到」，差别要有人看着。谁将来收窄 resolve/export，这条会红并提醒他：
+  // 同时会波及 10 条真只读的 export* 动作，要连带评估。
+  it.each([
+    ['domain:sync', 'resolveConflict'],
+    ['domain:session', 'exportSessionFork'],
+  ])('documents the readonly-head ceiling: %s/%s stays low', (domain, action) => {
+    expect(getShellCapabilities().find((capability) => (
+      capability.id === makeShellCapabilityId(domain, action)
+    ))).toMatchObject({ risk: 'low' });
+  });
 });

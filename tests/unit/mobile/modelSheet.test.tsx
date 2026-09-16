@@ -23,10 +23,14 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
     async request(payload: unknown) {
       const action = (payload as { action?: string }).action;
       if (action === 'read' && (payload as { query?: { kind?: string } }).query?.kind === 'library') reads.library += 1;
+      // 两页会话：第二页那条要靠「加载更多」才进库
+      const secondPage = (payload as { query?: { offset?: number } }).query?.offset === 1;
       if (action === 'read') return {
-        nextOffset: null,
+        nextOffset: secondPage ? null : 1,
         projects: [{ id: 'one', name: 'One', canCreate: true, workspacePath: '/w/one' }],
-        sessions: [{ id: 's1', title: '你好', projectId: 'one', updatedAt: 2, archived: false, provider: 'custom-team-relay', model: 'LongCat-2.0' }],
+        sessions: secondPage
+          ? [{ id: 's-old', title: '较旧的会话', projectId: 'one', updatedAt: 1, archived: false, provider: 'deepseek', model: 'deepseek-chat' }]
+          : [{ id: 's1', title: '你好', projectId: 'one', updatedAt: 2, archived: false, provider: 'custom-team-relay', model: 'LongCat-2.0' }],
         models: [
           { provider: 'custom-team-relay', model: 'LongCat-2.0', label: 'LongCat 2.0', providerLabel: 'Team Relay', isDefault: true, ...(reads.hostFailed ? { recentlyFailed: true } : {}) },
           { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek Chat', providerLabel: 'DeepSeek' },
@@ -96,5 +100,23 @@ describe('模型入口只留输入区胶囊', () => {
     expect(document.querySelector('.library-sheet')!.textContent).toContain(text.rename);
     expect(document.querySelector('.model-row')).toBeNull();
     expect(document.querySelector('.library-sheet select')).toBeNull();
+  });
+
+  // grok ai-review PR#1906 Important：打开模型屏若按第一页整表替换会话，「加载更多」进来的较旧会话会从库里消失
+  it('从第二页的会话打开模型屏，只刷模型表，当前会话和胶囊都还在', async () => {
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.project-list')).toBeTruthy(); });
+    fireEvent.click(document.querySelector('.sheet-layer .scrim') as HTMLElement);
+    fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
+    const found = (pick: () => Element | null | undefined) => waitFor(() => { const el = pick(); expect(el).toBeTruthy(); return el as HTMLElement; });
+    fireEvent.click(await found(() => [...document.querySelectorAll('.drawer-history button')].find(b => b.textContent === text.loadHistory)));
+    fireEvent.click(await found(() => document.querySelector('[data-testid="session-s-old"]')));
+    await waitFor(() => { expect(document.querySelector('.composer-tools .model')!.textContent).toContain('DeepSeek Chat'); });
+    reads.hostFailed = true;
+    fireEvent.click(document.querySelector('.composer-tools .model') as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="model-custom-team-relay:LongCat-2.0"]')!.textContent).toContain(text.modelRecentlyFailed); });
+    // 会话还在：模型屏不是空历史、当前模型打勾、胶囊仍显示它
+    expect(document.querySelector('[data-testid="model-deepseek:deepseek-chat"]')!.getAttribute('aria-current')).toBe('true');
+    expect(document.querySelector('.composer-tools .model')!.textContent).toContain('DeepSeek Chat');
   });
 });

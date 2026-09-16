@@ -468,7 +468,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
    * 打开选择会话模型时现拉一次库：「最近调用失败」是电脑在执行失败那一刻才标上的，而手机手里的库是
    * 连上或会话操作时拉的旧副本——恰好在用户点「换一个可用模型」的那一刻看不到标记（build 46 远端验收实测）。
    */
-  const openModelSheet = () => { state.openSheet('model'); void companion.refreshLibrary(); };
+  const openModelSheet = () => { state.openSheet('model'); void companion.refreshModels(); };
   // 项目会话前进页的标题 = 主层那一行的显示名（同名项目带路径消歧），点进行页标题就是刚才点的那行。
   const sessionProject = companion.library?.projects.find(p => p.id === sessionProjectId) ?? null;
   const startDefaultSession = () => {

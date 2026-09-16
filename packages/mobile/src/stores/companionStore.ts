@@ -72,6 +72,8 @@ interface State {
   commitDictation(text: string, continuation: boolean, take: string, sentenceId: number): Promise<void>;
   library: CompanionLibrary | null; history: Record<string, CompanionHistory>; libraryError: boolean;
   refreshLibrary(more?: boolean): Promise<void>; loadHistory(id: string, more?: boolean): Promise<void>;
+  /** 只刷新模型表（含「最近调用失败」），不动会话分页——refreshLibrary 会按第一页整表替换会话。 */
+  refreshModels(): Promise<void>;
   manage(action: 'session.create' | 'session.rename' | 'session.archive' | 'session.delete' | 'session.model', payload: Record<string, unknown>, target?: string): Promise<void>;
   connectionError: ConnectionError | null;
   /** Why the last command was refused. Connection-level standing stays in `status`. */
@@ -565,6 +567,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           for (const session of library.sessions) sessions.set(session.id, session);
           set({ library: { ...library, sessions: [...sessions.values()] }, libraryError: false });
         } catch { set({ libraryError: true }); }
+      },
+      refreshModels: async () => {
+        if (!client || get().status !== 'connected') return;
+        try {
+          const fresh = await client.request({ action: 'read', query: { kind: 'library', offset: 0 } }) as CompanionLibrary;
+          const current = get().library;
+          // 只换 models：已「加载更多」进来的较旧会话不能被第一页冲掉，否则当前会话从库里消失、胶囊跟着没了（grok ai-review PR#1906 Important）。
+          if (fresh && Array.isArray(fresh.models) && current) set({ library: { ...current, models: fresh.models } });
+        } catch { /* 刷不到就用手里那份，模型屏照常能用 */ }
       },
       loadHistory: async (id, more = false) => {
         if (!client || get().status !== 'connected') return;

@@ -751,9 +751,20 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           : <div className="remote-failed" role="status" data-testid="remote-unreachable">
             <strong>{text.cannotReachComputer}</strong>
             <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>
-            {diagnosis.action === 'scan'
-              ? <button className="primary" disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
-              : <button className="primary" disabled={!ports.companion || companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>}
+            {/* 两个动作都留着，主次由诊断决定（爸 2026-09-16 build 42 真机「手机没给我扫的按钮啊」）。
+                原来按分类只渲染一个：relay 被拒判 reconnect ⇒ 只有「重新连接」。而重连试的是配对时
+                写死的 endpoint/altEndpoint，换网后两个都死，**这个主按钮永远不可能成功**，用户却
+                拿不到唯一能救的那个动作（重新扫码），只能删 app 重装。fix4-③ 要删的是 Wi-Fi 说明书，
+                不是逃生口——「一态一主操作」说的是主次，不是只留一个。 */}
+            {([diagnosis.action, diagnosis.action === 'scan' ? 'reconnect' : 'scan'] as const).map((action, index) => action === 'scan'
+              ? <button key={action} className={index === 0 ? 'primary' : 'sheet-secondary'} data-testid="remote-action-scan"
+                disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
+              : <button key={action} className={index === 0 ? 'primary' : 'sheet-secondary'} data-testid="remote-action-reconnect"
+                disabled={!ports.companion || companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>)}
+            {/* 连扫码也过不去时的底：丢掉本机存的配对，回到「尚未连接电脑」。不加二次确认——
+                这个按钮只在「已经连不上」这一态出现，误点没有东西可丢，重新扫一次码就回来了。 */}
+            <button className="sheet-secondary" data-testid="remote-action-forget"
+              disabled={!ports.companion || companion.busy} onClick={() => void companion.forget()}>{text.forgetComputer}</button>
           </div>}
           {!ports.companion && <p>{text.nativeConnectionOnly}</p>}
         </div>;

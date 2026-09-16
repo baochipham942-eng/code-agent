@@ -97,7 +97,7 @@ interface State {
   /** 待确认命令是哪一条：状态行的文案按它分——语音转写不是「发送」，不该提醒「请勿重复发送」。 */
   pendingAction: CompanionCommand['action'] | null;
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
-  hydrate(): Promise<void>; pair(raw?: string): Promise<void>; reconnect(): Promise<void>; pause(): void;
+  hydrate(): Promise<void>; pair(raw?: string): Promise<void>; reconnect(): Promise<void>; forget(): Promise<void>; pause(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
   respondQuestion(requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string): Promise<void>;
   respondPlan(requestId: string, decision: 'approved' | 'rejected', feedback?: string): Promise<void>;
@@ -485,6 +485,22 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         set({ status: 'connected', transport: 'lan', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null });
         // 趁配对的 LAN 会话还热着把 relay 路由缓存下来，LAN 断了才有路可落。
         await refreshRelayRoute();
+      }),
+      /**
+       * 丢掉本机存的配对，回到「尚未连接电脑」。留着身份密钥对——它是这台手机的身份，
+       * 重新扫码时照样用；要丢的只是「配的是哪台电脑」。
+       *
+       * 存在的理由（爸 2026-09-16 build 42 真机）：endpoint/altEndpoint 都在配对那一刻写死，
+       * 换网后两个地址一起死，reconnect 与 pair 都可能过不去；没有这条路时，用户唯一的出路是
+       * 删 app 重装（靠 nativeCompanion.ts 的 INSTALL_KEY 标记去清 Keychain）。
+       */
+      forget: () => safely(async () => {
+        client?.close(); client = null;
+        if (saved) await persist({ version: 1, publicKey: saved.publicKey, secretKey: saved.secretKey });
+        wipeHistoryCache();
+        set({ status: 'unpaired', binding: null, sessionId: null, transport: null,
+          paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
+          artifacts: [], preview: null, routeError: null });
       }),
       reconnect: () => safely(async () => {
         const savedTarget = saved?.binding ?? saved?.candidate;

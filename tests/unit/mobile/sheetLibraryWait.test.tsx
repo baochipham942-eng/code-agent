@@ -59,6 +59,11 @@ const ports = (): PlatformPorts => ({
 
 const text = messages('zh');
 
+/** 连不上那一页此刻的主按钮文案——主次会随诊断分类换位，断言要问「谁是主」而不是「有几个按钮」。 */
+function primaryLabel(scope: Element): string | null {
+  return scope.querySelector('button.primary')?.textContent ?? null;
+}
+
 beforeEach(() => {
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: false, media: query, onchange: null,
@@ -176,7 +181,7 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
     expect(sheet.textContent).not.toContain('同一 Wi-Fi');
   });
 
-  it('连不上（连接被拒绝）：诊断句「电脑上的 Neo 没在运行」+ 主按钮「重新连接」', async () => {
+  it('连不上（连接被拒绝）：诊断句「电脑上的 Neo 没在运行」+ 主按钮「重新连接」，扫码降为次按钮仍在', async () => {
     harness.mode = 'refused';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
     await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
@@ -185,12 +190,11 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
     expect(failed).toBeTruthy();
     expect(failed?.textContent).toContain('连不上电脑');
     expect(failed?.textContent).toContain('电脑上的 Neo 没在运行');
-    const buttons = [...failed?.querySelectorAll('button') ?? []].map(button => button.textContent);
-    expect(buttons).toContain(text.reconnect);
-    expect(buttons).not.toContain(text.scan);
+    // 主次由诊断决定，但两个动作都留着——见下面那条不变量。
+    expect(primaryLabel(failed!)).toBe(text.reconnect);
   });
 
-  it('连不上（配对失效）：诊断句「需要重新扫码」+ 主按钮换「扫描电脑二维码」，不给重新连接', async () => {
+  it('连不上（配对失效）：诊断句「需要重新扫码」+ 主按钮换「扫描电脑二维码」，重连降为次按钮仍在', async () => {
     harness.mode = 'rejectIdentity';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
     await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
@@ -198,9 +202,48 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
     const failed = document.querySelector('[data-testid="remote-unreachable"]');
     expect(failed?.textContent).toContain('配对信息已失效');
     expect(failed?.textContent).toContain('重新扫码');
-    const buttons = [...failed?.querySelectorAll('button') ?? []].map(button => button.textContent);
-    expect(buttons).toContain(text.scan);
-    expect(buttons).not.toContain(text.reconnect);
+    expect(primaryLabel(failed!)).toBe(text.scan);
+  });
+
+  /**
+   * 本单的不变量（爸 2026-09-16 build 42 真机「手机没给我扫的按钮啊」）：连不上这一态下，
+   * **无论诊断判成哪一类**，重连与扫码都必须在，另加一条「忘记这台电脑」兜底。
+   * 原来按分类只渲染一个，relay 被拒时只给「重新连接」——而重连试的是配对时写死的两个
+   * 地址，换网后一起死，那个主按钮永远不可能成功，用户只能删 app 重装。
+   * 逐类遍历而不是挑一类：这条洞当初就是「只测了被选中的那一类」漏掉的。
+   */
+  for (const mode of ['reject', 'refused', 'rejectIdentity'] as const) {
+    it(`连不上（${mode}）：扫码 / 重新连接 / 忘记这台电脑 三个动作都在，且主按钮唯一`, async () => {
+      harness.mode = mode;
+      await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+      await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+      await openRemoteSheetFromDrawer();
+      const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+      expect(failed).toBeTruthy();
+      expect(failed.querySelector('[data-testid="remote-action-scan"]')).toBeTruthy();
+      expect(failed.querySelector('[data-testid="remote-action-reconnect"]')).toBeTruthy();
+      expect(failed.querySelector('[data-testid="remote-action-forget"]')).toBeTruthy();
+      expect([...failed.querySelectorAll('button.primary')]).toHaveLength(1);
+    });
+  }
+
+  it('「忘记这台电脑」丢掉配对回到未配对态：本机存的配对被覆盖成只剩身份密钥，页面给回扫码', async () => {
+    harness.mode = 'refused';
+    const base = ports();
+    const written: string[] = [];
+    const recording: PlatformPorts = { ...base, companion: { ...base.companion!, write: async value => { written.push(value); } } };
+    await act(async () => { render(<MobileRoot ports={recording} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    await act(async () => {
+      fireEvent.click(document.querySelector('[data-testid="remote-action-forget"]') as HTMLElement);
+    });
+    await waitFor(() => { expect(document.querySelector('[data-testid="remote-unpaired"]')).toBeTruthy(); });
+    // 落盘的那份只剩身份密钥：binding 没了，身份还在（重新扫码用的是同一个身份）
+    const last = JSON.parse(written[written.length - 1]) as Record<string, unknown>;
+    expect(last.binding).toBeUndefined();
+    expect(typeof last.publicKey).toBe('string');
+    expect(typeof last.secretKey).toBe('string');
   });
 
   it('已连接：电脑名（mDNS 名去 .local）+ 上次同步时间，不给重连按钮', async () => {

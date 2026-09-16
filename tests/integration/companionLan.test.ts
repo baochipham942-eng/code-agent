@@ -159,6 +159,33 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     await relay.close();
   });
 
+  /**
+   * 宿主报了个**校验不过**的地址时，手机必须原地不动。从真实路径打：把宿主的 reachedEndpoint
+   * 换掉（TS 的 private 只是编译期约束），welcome 就会捎着这个恶意值下来。
+   * 形状规则本身归 validateLanEndpoint 管，这里钉的是「有没有真的过那道校验」这条接线。
+   */
+  it.each([
+    ['公网地址', 'http://8.8.8.8:8182'],
+    ['回环地址', 'http://127.0.0.1:8182'],
+    ['https', 'https://192.168.1.9:8182'],
+    ['带路径', 'http://192.168.1.9:8182/x'],
+    ['压根不是 URL', 'not-a-url'],
+  ])('宿主报了%s：手机不采纳，留住刚拨通的那个（坏值不许换掉唯一能用的地址）', async (_label, hostile) => {
+    const invitation = server.invite(['shared']);
+    const patched = server as unknown as { reachedEndpoint: (via?: string) => string | null };
+    const original = patched.reachedEndpoint;
+    patched.reachedEndpoint = () => hostile;
+    try {
+      const solo = new LanCompanionClient(createIdentity(), post);
+      const binding = await solo.pair(JSON.stringify(invitation));
+      expect(binding.endpoint).toBe(invitation.endpoint);
+      // 前提自证：这一轮宿主确实报了那个恶意值，否则「没被换掉」是恒真判据。
+      expect(patched.reachedEndpoint()).toBe(hostile);
+      expect(await solo.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+      solo.close();
+    } finally { patched.reachedEndpoint = original; }
+  });
+
   it('宿主拿不准对面从哪张网卡进来时不报地址——手机留住手里那个（宁可不说，不可说错）', async () => {
     const live = server.invite(['shared']);
     const realPort = Number(new URL(live.endpoint).port);

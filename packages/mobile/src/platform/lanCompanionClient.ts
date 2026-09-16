@@ -16,10 +16,11 @@ export type LanPost = (url: string, body: unknown) => Promise<unknown>;
  * 拨通的那个——**此刻通着的地址永远比一个校验不过的新地址可信**，不能因为对面报了个坏值
  * 就把手里唯一能用的地址丢掉。
  *
- * 提成模块级导出而不是 private static：它是本单的承重判据，够不着就写不出红线
- * （反向变异实测：藏在 private 里时「盲目采纳」那个变异压根不红）。
+ * 模块级函数，**不导出**：导出只是为了让测试够得着，而生产侧没有第二个消费方 ⇒ knip 生产档
+ * 判它是新增 dead export，CI 红（2026-09-16 实付）。承重判据改从**真实路径**打：集成测试里
+ * 把宿主的 reachedEndpoint 换成恶意值，看手机认不认——那比单测这个函数更接近真机。
  */
-export function adoptEndpoint(reported: unknown, dialed: string): string {
+function adoptEndpoint(reported: unknown, dialed: string): string {
   if (typeof reported !== 'string' || !reported) return dialed;
   try { return validateLanEndpoint(reported); } catch { return dialed; }
 }

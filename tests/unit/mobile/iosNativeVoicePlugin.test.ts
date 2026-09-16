@@ -89,6 +89,14 @@ describe('first-party ios voice recorder contract', () => {
     expect(swift).toContain('isOtherAudioPlaying');
   });
 
+  // build 46 远端验收：@capacitor/app 在 iOS 上没有 openUrl，原来的「去设置」是空操作（原生回 UNIMPLEMENTED 被吞）
+  it('iOS 的「去设置」走第一方插件打开本 App 设置页，不再调不存在的 App.openUrl', () => {
+    expect(swift).toContain('CAPPluginMethod(name: "openAppSettings"');
+    expect(swift).toContain('@objc func openAppSettings(');
+    expect(swift).toContain('UIApplication.openSettingsURLString');
+    expect(capacitorPort).toContain("if (Capacitor.getPlatform() === 'ios') { await pcmBridge.openAppSettings()");
+  });
+
   it('stops and discards the recording when the app goes to background', () => {
     // 这条行为原来靠 configure-voice 给厂商源码打补丁，而那段源码从未被编译过
     expect(swift).toContain('didEnterBackgroundNotification');

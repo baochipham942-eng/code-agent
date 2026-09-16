@@ -92,6 +92,7 @@ type PcmBridge = {
   addListener(event: 'microphoneAvailable', cb: () => void): Promise<{ remove: () => Promise<void> }>;
   watchMicrophoneRelease(): Promise<{ available: boolean }>;
   unwatchMicrophoneRelease(): Promise<void>;
+  openAppSettings(): Promise<void>;
 };
 
 const pcmBridge = VoiceRecorder as unknown as PcmBridge;
@@ -150,6 +151,9 @@ export const capacitorPorts: PlatformPorts = {
   notifications: createNotificationPort(
     Capacitor.getPlatform(),
     async () => {
+      // @capacitor/app 在 iOS 上没有 openUrl（原生回 UNIMPLEMENTED，被 catch 吞掉 ⇒ 「去设置」一直是空操作，
+      // build 46 远端验收实测）。iOS 走第一方插件打开本 App 的设置页。
+      if (Capacitor.getPlatform() === 'ios') { await pcmBridge.openAppSettings().catch(() => {}); return; }
       const open = (App as { openUrl?: (opts: { url: string }) => Promise<void> }).openUrl;
       if (!open) return;
       try { await open({ url: 'app-settings:' }); } catch { /* user opens Settings by hand */ }

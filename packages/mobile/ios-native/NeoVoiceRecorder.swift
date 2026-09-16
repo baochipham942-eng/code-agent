@@ -25,7 +25,8 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stopPcmRecording", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getCurrentStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "watchMicrophoneRelease", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "unwatchMicrophoneRelease", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "unwatchMicrophoneRelease", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openAppSettings", returnType: CAPPluginReturnPromise)
     ]
 
     /// 前五个与厂商插件逐字一致。JS 侧靠这些字符串分辨失败原因，**不再显示给用户**（build 45 真机
@@ -216,6 +217,15 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         queue.async { [weak self] in
             self?.disarmReleaseWatch()
             call.resolve()
+        }
+    }
+
+    /// 打开本 App 的系统设置页（麦克风/通知/相机开关都在那里）。放在这个插件里是因为它是 iOS 上
+    /// 一定链接进包的第一方插件；@capacitor/app 在 iOS 上没有 openUrl，原来的「去设置」一直是空操作。
+    @objc func openAppSettings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let url = URL(string: UIApplication.openSettingsURLString) else { call.reject("SETTINGS_UNAVAILABLE"); return }
+            UIApplication.shared.open(url) { opened in opened ? call.resolve() : call.reject("SETTINGS_UNAVAILABLE") }
         }
     }
 

@@ -464,6 +464,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const selectSession = (id: string) => { companion.selectSession(id); state.closeDrawer(); state.navigate('new'); };
   // 主层选择器 → 项目会话前进页（同弹层 push，返回弹回主层，不堆在主层里）。
   const openProjectSessions = (id: string) => { setSessionProjectId(id); state.pushSheet('projectSessions'); };
+  /**
+   * 打开选择会话模型时现拉一次库：「最近调用失败」是电脑在执行失败那一刻才标上的，而手机手里的库是
+   * 连上或会话操作时拉的旧副本——恰好在用户点「换一个可用模型」的那一刻看不到标记（build 46 远端验收实测）。
+   */
+  const openModelSheet = () => { state.openSheet('model'); void companion.refreshModels(); };
   // 项目会话前进页的标题 = 主层那一行的显示名（同名项目带路径消歧），点进行页标题就是刚才点的那行。
   const sessionProject = companion.library?.projects.find(p => p.id === sessionProjectId) ?? null;
   const startDefaultSession = () => {
@@ -593,7 +598,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           offline={companion.status !== 'connected'}
-          openModel={() => state.openSheet('model')}
+          openModel={openModelSheet}
           // 执行条平时只说「哪一次在跑」；停止在输入区那个键上。录音面板顶掉输入区时才把
           // stop 交给它，避免运行中一开录音就没法停（grok ai-review PR#1903 Nit①）。
           running={companion.runId
@@ -675,7 +680,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             else state.attemptSend();
           }}
           // 模型入口只留这一个（爸 2026-09-16 拍板）：会话操作弹窗里不再有模型那一格。
-          modelLabel={sessionModelLabel} openModel={() => state.openSheet('model')}
+          modelLabel={sessionModelLabel} openModel={openModelSheet}
           openSettings={() => void (ports.notifications ?? unavailableNotificationPort).openSettings()}
           attach={ports.files && (() => state.openSheet('attachment'))}
           attachDisabled={!canAddressSession(companion) || companion.busy || companion.pending}

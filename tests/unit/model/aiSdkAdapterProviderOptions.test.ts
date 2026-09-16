@@ -4,6 +4,7 @@ import axios from 'axios';
 import { generateText, streamText } from 'ai';
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
+import { getModelAuthFailureMarker } from '../../../src/host/model/errorClassifier';
 
 const providerMocks = vi.hoisted(() => ({
   createDeepSeek: vi.fn(),
@@ -462,6 +463,16 @@ describe('inferenceViaAiSdk provider options', () => {
     });
 
     expect(providerMocks.createOpenAICompatible).not.toHaveBeenCalled();
+    expect(vi.mocked(generateText)).not.toHaveBeenCalled();
+  });
+
+  // build 46 远端验收：会话 override 指向电脑上已删除的 provider，裸 Error 让手机落回「电脑执行时出了问题」。
+  it('电脑上解析不出 provider 的 baseURL = 没配这个模型，抛带鉴权标记的错（手机据此给换模型）', async () => {
+    resolutionMocks.resolveProviderBaseUrl.mockReturnValue(undefined);
+    const error = await runNonStreaming({ provider: 'custom-glm-coding', model: 'glm-5.3-flash' } as ModelConfig).catch((e: unknown) => e);
+    // 前提自证：确实是 baseURL 解析失败这条路，不是别处抛的
+    expect(String((error as Error).message)).toContain('无法解析 provider "custom-glm-coding"');
+    expect(getModelAuthFailureMarker(error)).toEqual({ code: 'MODEL_AUTH', provider: 'custom-glm-coding', model: 'glm-5.3-flash' });
     expect(vi.mocked(generateText)).not.toHaveBeenCalled();
   });
 });

@@ -1,11 +1,9 @@
 import { projectGrant } from '../../../shared/contract/companionLibrary';
-import { networkInterfaces } from 'node:os';
 import { z } from 'zod';
 import type { KeyPair } from 'noise-handshake';
 import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
-import { isPrivateIPv4 } from '../../../shared/companion/lanProtocol';
 import type { CompanionManagementResult } from '../../../shared/contract/companionManagement';
-import { LanCompanionServer } from './LanCompanionServer';
+import { LanCompanionServer, privateLanAddresses } from './LanCompanionServer';
 import type { CompanionGateway } from './CompanionGateway';
 import type { CompanionPushOutbox } from './CompanionPushOutbox';
 
@@ -25,7 +23,22 @@ export class LanCompanionManager {
     private readonly push?: CompanionPushOutbox,
     private readonly relayRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRoute | null) {}
 
-  async restore(): Promise<void> { if (this.gateway.pairedDevices().length) await this.start(); }
+  /**
+   * 开机自动起局域网服务的**唯一**入口，条件是本槽有配对设备。不满足时要留痕：
+   * 否则这台电脑对手机是隐形的，而两边都看不出原因（N-COMPANION-NOLANPORT，爸 2026-09-16
+   * 真机：跑的是 Dev 3 槽、配对在 Dev 槽，全程零对外端口、零日志，只能靠 lsof 才查得出来）。
+   */
+  async restore(): Promise<void> {
+    if (!this.gateway.pairedDevices().length) {
+      console.info('[companion] no paired device in this profile; LAN surface stays closed (phones cannot reach this host)');
+      return;
+    }
+    try { await this.start(); }
+    catch (error) {
+      console.warn('[companion] LAN surface failed to start:', error instanceof Error ? error.message : error);
+      throw error;
+    }
+  }
 
   async manage(raw: unknown): Promise<CompanionManagementResult> {
     const request = requestSchema.parse(raw);
@@ -47,8 +60,7 @@ export class LanCompanionManager {
   private start(): Promise<LanCompanionServer> {
     if (this.starting) return this.starting;
     this.starting = (async () => {
-      const addresses = Object.values(networkInterfaces()).flat()
-        .flatMap(n => n?.family === 'IPv4' && !n.internal && isPrivateIPv4(n.address) ? [n.address] : []);
+      const addresses = privateLanAddresses();
       if (this.server && this.address && addresses.includes(this.address)) return this.server;
       // A new invitation must never advertise an interface that disappeared.
       await this.server?.stop(); this.server = null; this.address = null;

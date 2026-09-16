@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { hostname } from 'node:os';
+import { hostname, networkInterfaces } from 'node:os';
 import express from 'express';
 import type Noise from 'noise-handshake';
 import type { KeyPair } from 'noise-handshake';
@@ -24,6 +24,15 @@ function dropped(event: CompanionEvent, bytes: number): CompanionEvent {
   return { ...event, kind: COMPANION_EVENT_DROPPED, payload: { reason: 'too_large', kind: event.kind, bytes } };
 }
 
+/**
+ * 本机此刻可用的私网 IPv4，按接口枚举顺序。宿主换网后这个列表就变了——
+ * 广告出去的地址必须**每次现取**，不能在 start() 那一刻冻住（N-COMPANION-NOLANPORT）。
+ */
+export function privateLanAddresses(): string[] {
+  return Object.values(networkInterfaces()).flat()
+    .flatMap(n => n?.family === 'IPv4' && !n.internal && isPrivateIPv4(n.address) ? [n.address] : []);
+}
+
 /** Dedicated LAN surface: encrypted records only, never desktop HTTP/IPC routes. */
 export class LanCompanionServer {
   private server: Server | null = null;
@@ -31,8 +40,9 @@ export class LanCompanionServer {
   private readonly pending = new Map<string, Pending>();
   private readonly channels = new Map<string, Channel>();
   private sweep: ReturnType<typeof setInterval> | null = null;
-  private endpoint = '';
-  private altEndpoint: string | null = null;
+  /** start() 那一刻选中的地址：只在现取列表为空（掉线）时当兜底用。 */
+  private startAddress = '';
+  private listenPort = 0;
   private handshakeWindow = 0;
   private handshakeCount = 0;
 
@@ -57,11 +67,12 @@ export class LanCompanionServer {
       next();
     });
     app.use(express.json({ limit: L.maxFrameBytes * L.maxRequestRecords * 2 + 512, strict: true }));
+    // socket.localAddress 一路带到 welcome：只有它才是「对面此刻够得到的那张网卡」。
     app.post('/v1/hello', (req, res) => {
-      try { res.json(this.hello(req.body as HelloBody)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
+      try { res.json(this.hello(req.body as HelloBody, req.socket.localAddress)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
     });
     app.post('/v1/finish', (req, res) => {
-      try { res.json(this.finish(req.body as ChannelBody)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
+      try { res.json(this.finish(req.body as ChannelBody, req.socket.localAddress)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
     });
     app.post('/v1/exchange', async (req, res) => {
       try { res.json(await this.exchange(req.body as ChannelBody)); } catch { res.status(403).json({ error: 'COMPANION_CHANNEL_CLOSED' }); }
@@ -98,14 +109,45 @@ export class LanCompanionServer {
       await listenAt(0);
     }
     this.server = server;
-    const listenPort = (server.address() as { port: number }).port;
-    // 主地址用「此刻一定连得上」的字面量；mDNS 名只作备用，手机连不上主地址时才试它。
-    // 反过来（只广告 mDNS 名）在「电脑连手机热点」下 100% 配不上：手机解析不了宿主的 .local。
-    this.endpoint = `http://${address}:${listenPort}`;
-    const advertised = lanAdvertisedHost(address, hostname());
-    this.altEndpoint = advertised === address ? null : `http://${advertised}:${listenPort}`;
+    this.listenPort = (server.address() as { port: number }).port;
+    this.startAddress = address;
     this.sweep = setInterval(() => this.prune(), L.handshakeTtlMs);
     this.sweep.unref();
+  }
+
+  /**
+   * 此刻该广告给手机的地址。**每次现算**，不用 start() 冻住的那个：socket 绑的是全部接口，
+   * 宿主换网后照样能连，变的只是"该报哪个地址"。冻住它 ⇒ 换网后发出去的二维码与 welcome
+   * 都带着一个已经死掉的地址，手机拿到也连不上（N-COMPANION-NOLANPORT，爸 2026-09-16 真机：
+   * 手机存的地址在配对那一刻写死，换网后两条路一起死，只能删 app 重装）。
+   *
+   * 主地址用「此刻一定连得上」的字面量；mDNS 名只作备用，手机连不上主地址时才试它。
+   * 反过来（只广告 mDNS 名）在「电脑连手机热点」下 100% 配不上：手机解析不了宿主的 .local。
+   */
+  /**
+   * welcome 里报给手机的「我此刻在哪」。只有**这次握手实际落在哪张网卡上**
+   * （`socket.localAddress`）才算数，别的一律不报：
+   *
+   * - 宿主同时挂着 Wi-Fi 与热点时，`privateLanAddresses()[0]` 可能是手机根本不在的那一张，
+   *   手机一采纳就把本来好好的连接换到一个连不上的地址上；
+   * - 走 loopback 的调用方（本机自测、集成测试）拿到的会是一个它根本够不到的局域网字面量，
+   *   下一个请求直接超时挂死——实测就是这么挂的（companionLan 两条字典用例 10s 超时）。
+   *
+   * 拿不准就返回 null ⇒ welcome 不带地址 ⇒ 手机留住它手里那个。**宁可不说，不可说错**：
+   * 手机手里那个至少此刻是通的，而一个错地址会把唯一能用的路也换掉。
+   */
+  private reachedEndpoint(via?: string): string | null {
+    const reached = via?.replace(/^::ffff:/, '');
+    return reached && isPrivateIPv4(reached) ? `http://${reached}:${this.listenPort}` : null;
+  }
+
+  private endpoints(): { endpoint: string; altEndpoint: string | null } {
+    // 列表为空 = 此刻没有任何私网接口（掉线）。那时报 start 时那个总比报空串强：
+    // 手机拿它去试顶多失败一次，而空串会让 validateLanEndpoint 直接抛。
+    const address = privateLanAddresses()[0] ?? this.startAddress;
+    const endpoint = `http://${address}:${this.listenPort}`;
+    const advertised = lanAdvertisedHost(address, hostname());
+    return { endpoint, altEndpoint: advertised === address ? null : `http://${advertised}:${this.listenPort}` };
   }
 
   invite(scope: string[]): LanInvitation {
@@ -115,7 +157,8 @@ export class LanCompanionServer {
     this.pending.clear();
     this.invitation = { id: randomUUID(), psk: randomBytes(32).toString('hex'), scope: [...new Set(scope)], expiresAt: this.now() + L.invitationTtlMs };
     const hostKey = toHex(this.identity.publicKey);
-    return { version: 1, endpoint: this.endpoint, ...(this.altEndpoint ? { altEndpoint: this.altEndpoint } : {}),
+    const { endpoint, altEndpoint } = this.endpoints();
+    return { version: 1, endpoint, ...(altEndpoint ? { altEndpoint } : {}),
       inviteId: this.invitation.id, psk: this.invitation.psk, hostKey, expiresAt: this.invitation.expiresAt,
       verify: deriveInvitationVerify(this.invitation.psk, hostKey) };
   }
@@ -158,7 +201,7 @@ export class LanCompanionServer {
     }
   }
 
-  private hello(body: HelloBody) {
+  private hello(body: HelloBody, via?: string) {
     this.prune();
     if (this.now() - this.handshakeWindow >= L.handshakeTtlMs) { this.handshakeWindow = this.now(); this.handshakeCount = 0; }
     if (++this.handshakeCount > L.maxChannels || this.channels.size >= L.maxChannels || this.pending.size >= L.maxHandshakes) {
@@ -183,10 +226,10 @@ export class LanCompanionServer {
     const frame = toHex(noise.send());
     const cipher = new NoiseChannel(noise);
     this.channels.set(channelId, { cipher, publicKey, expiresAt: this.now() + L.channelTtlMs, lastSeenAt: null });
-    return { channelId, frame, welcome: cipher.seal(this.welcome(device)) };
+    return { channelId, frame, welcome: cipher.seal(this.welcome(device, via)) };
   }
 
-  private finish(body: ChannelBody) {
+  private finish(body: ChannelBody, via?: string) {
     this.prune();
     const id = typeof body.channelId === 'string' ? body.channelId : '';
     const pending = this.pending.get(id);
@@ -199,7 +242,7 @@ export class LanCompanionServer {
     const device = this.gateway.pairIdentity(publicKey, pending.invite.scope);
     const cipher = new NoiseChannel(pending.noise);
     this.channels.set(id, { cipher, publicKey, expiresAt: this.now() + L.channelTtlMs, lastSeenAt: null });
-    return { welcome: cipher.seal(this.welcome(device)) };
+    return { welcome: cipher.seal(this.welcome(device, via)) };
   }
 
   private async exchange(body: ChannelBody) {
@@ -272,10 +315,18 @@ export class LanCompanionServer {
     }
   }
 
-  private welcome(device: { deviceId: string; scopeEpoch: number; scope: readonly string[] }) {
-    return getRegisteredCompanionDictation()
-      ? { ...device, dictation: true as const }
-      : device;
+  /**
+   * 握手回执。除了设备身份，**带上宿主此刻的 LAN 地址**：手机存的地址是配对那一刻写死的，
+   * 换网后就死了（N-COMPANION-NOLANPORT）。只要还有任何一条路连得上（旧地址仍通、mDNS 通、
+   * 将来经 relay），手机就能借这次 welcome 把地址刷新成当前的，下次直连。
+   * 这是"地址自愈"唯一不依赖额外通道的落点：握手本来就一定会发生。
+   */
+  private welcome(device: { deviceId: string; scopeEpoch: number; scope: readonly string[] }, via?: string) {
+    const endpoint = this.reachedEndpoint(via);
+    // 只捎当前地址，不动 altEndpoint：那一格记的是「我们还知道的另一个候选」，
+    // 由手机自己维护（哪个拨通了哪个当主、另一个留作备用），宿主不该覆盖它。
+    const base = endpoint ? { ...device, endpoint } : device;
+    return getRegisteredCompanionDictation() ? { ...base, dictation: true as const } : base;
   }
 
   private releaseDictation(publicKey: string): void {

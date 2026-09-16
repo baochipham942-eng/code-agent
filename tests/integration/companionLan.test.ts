@@ -6,6 +6,7 @@ vi.mock('node:os', async (importOriginal) => {
 });
 import Database from 'better-sqlite3';
 import { createServer } from 'node:http';
+import { createConnection, createServer as createTcpServer, type Server as TcpServer } from 'node:net';
 import { hostname, networkInterfaces } from 'node:os';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -113,6 +114,60 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     const recovered = await client.recover({ endpoint: dead, altEndpoint: binding.endpoint, hostKey: binding.hostKey }, binding);
     expect(recovered.endpoint).toBe(binding.endpoint);
     expect(recovered.altEndpoint).toBe(dead);
+  });
+
+  /**
+   * 地址自愈（N-COMPANION-NOLANPORT，爸 2026-09-16 真机）：绑定里的地址是配对那一刻写死的，
+   * 宿主换网后就死，手机没有任何重新发现手段 ⇒ 只能删 app 重装。现在握手回执捎上
+   * 「这次实际落在宿主哪张网卡上」，手机据此把地址刷新成当前的。
+   *
+   * 测试里造不出「两个都能到达的私网地址」，所以用一个几行的 TCP 转发器当第二个入口：
+   * 手机拨转发器，宿主看到的 socket.localAddress 由转发器连向哪里决定 —— 两种情况都确定性可控。
+   */
+  const forwarder = async (to: { host: string; port: number }) => {
+    const sockets = new Set<ReturnType<typeof createConnection>>();
+    const proxy: TcpServer = createTcpServer(incoming => {
+      const upstream = createConnection(to);
+      sockets.add(incoming); sockets.add(upstream);
+      incoming.pipe(upstream); upstream.pipe(incoming);
+      const drop = () => { incoming.destroy(); upstream.destroy(); };
+      incoming.on('error', drop); upstream.on('error', drop);
+    });
+    await new Promise<void>(resolve => proxy.listen(0, address!, () => resolve()));
+    return {
+      port: (proxy.address() as { port: number }).port,
+      close: async () => { for (const s of sockets) s.destroy(); await new Promise<void>(r => proxy.close(() => r())); },
+    };
+  };
+
+  it('welcome 捎回「你够得到我的那张网卡」，手机据此把绑定刷新成宿主当前地址', async () => {
+    const live = server.invite(['shared']);
+    const realPort = Number(new URL(live.endpoint).port);
+    // 转发器连向宿主的真实网卡 ⇒ 宿主看到 localAddress = 私网地址 ⇒ 报得出地址。
+    const relay = await forwarder({ host: address!, port: realPort });
+    const dialed = `http://${address}:${relay.port}`;
+    const binding = await client.pair(JSON.stringify({ ...live, endpoint: dialed }));
+    // 存的不是我们拨的那个转发器端口，而是宿主报的当前地址。
+    expect(binding.endpoint).toBe(live.endpoint);
+    expect(binding.endpoint).not.toBe(dialed);
+    // 自愈后的地址必须真能用，否则就是把一个能用的换成不能用的。
+    expect(await client.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+    await relay.close();
+  });
+
+  it('宿主拿不准对面从哪张网卡进来时不报地址——手机留住手里那个（宁可不说，不可说错）', async () => {
+    const live = server.invite(['shared']);
+    const realPort = Number(new URL(live.endpoint).port);
+    // 转发器连向 127.0.0.1 ⇒ 宿主看到 localAddress = loopback，那不是手机够得到的地址。
+    // 这一档必须**什么都不报**：报了手机就会把唯一能用的地址换成一个它永远连不上的。
+    const relay = await forwarder({ host: '127.0.0.1', port: realPort });
+    const dialed = `http://${address}:${relay.port}`;
+    const solo = new LanCompanionClient(createIdentity(), post);
+    const binding = await solo.pair(JSON.stringify({ ...live, endpoint: dialed }));
+    expect(binding.endpoint).toBe(dialed);
+    expect(await solo.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+    solo.close();
+    await relay.close();
   });
 
   it('does not spend the alternate address when the handshake itself was rejected', async () => {

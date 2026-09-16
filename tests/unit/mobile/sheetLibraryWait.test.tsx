@@ -118,7 +118,12 @@ describe('项目 sheet：等库 spinner，失败态是状态页（反馈③④ +
     vi.useFakeTimers();
     harness.mode = 'hang';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
-    // 配对过且只授权项目 ⇒ 连上后自动弹项目 sheet（needsLibraryPick 路径）
+    // 连上后不再自动弹项目 sheet（N-MOBILE-DEFAULT-PROJECT）；库读不到时欢迎页没有选择器，从抽屉「项目」进
+    for (let i = 0; i < 40 && document.querySelector('.topbar strong')?.textContent !== 'Neo'; i += 1) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(25); });
+    }
+    fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
+    fireEvent.click([...document.querySelectorAll('.drawer-functions button')].find(b => b.textContent === text.projects) as HTMLElement);
     for (let i = 0; i < 40 && !document.querySelector('.sheet-wait'); i += 1) {
       await act(async () => { await vi.advanceTimersByTimeAsync(25); });
     }
@@ -261,10 +266,9 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
   it('已连接：电脑名（mDNS 名去 .local）+ 上次同步时间，不给重连按钮', async () => {
     harness.mode = 'ok';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
-    // 连上 + 只授权项目 ⇒ 项目 sheet 自动弹；先关掉再从抽屉进连接电脑 sheet
-    await waitFor(() => { expect(document.querySelector('[data-testid="sheet-host"]')).toBeTruthy(); });
-    fireEvent.click(document.querySelector('.sheet-header button[aria-label="关闭弹层"]') as HTMLElement);
-    await waitFor(() => { expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull(); });
+    // 连上 + 只授权项目 ⇒ 停在欢迎页（不再自动弹项目 sheet），从抽屉进连接电脑 sheet
+    await waitFor(() => { expect(document.querySelector('[data-testid="project-pick"]')).toBeTruthy(); });
+    expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull();
     await openRemoteSheetFromDrawer();
     const success = document.querySelector('.connection-success');
     expect(success).toBeTruthy();

@@ -142,7 +142,7 @@ export function canAddressSession(state: Pick<State, 'status' | 'sessionId'>): b
   return state.status === 'connected' && Boolean(state.sessionId);
 }
 
-/** Connected with only project grants: open LibrarySheet instead of pinning a conversation. */
+/** 连着但没有会话（只授权项目的配对、或还没选会话）：发送时先在默认项目建会话（N-MOBILE-DEFAULT-PROJECT），不弹选择项目。 */
 export function needsLibraryPick(state: Pick<State, 'status' | 'sessionId'>): boolean {
   return state.status === 'connected' && !state.sessionId;
 }

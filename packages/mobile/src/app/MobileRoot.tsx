@@ -342,14 +342,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       void companionStore.getState().refreshArtifacts();
     } else if (state.route !== 'fixture') store.getState().activateDraft('new');
   }, [companion.sessionId, companion.binding?.hostKey, companion.status, state.route, store, companionStore]);
-  const previousCompanionStatus = useRef(companion.status);
-  useEffect(() => {
-    const previous = previousCompanionStatus.current;
-    previousCompanionStatus.current = companion.status;
-    if (needsLibraryPick({ status: companion.status, sessionId: companion.sessionId }) && previous !== 'connected') {
-      store.getState().openSheet('projects');
-    }
-  }, [companion.status, companion.sessionId, store]);
+  // 连上而没有会话时不再自动弹「选择项目」（N-MOBILE-DEFAULT-PROJECT ②A，爸 09-17「项目要有默认、不强制选」）：
+  // 停在新会话欢迎页，项目选择器已带默认项目；弹层只在点选择器、或都建不了时点发送才开。
   /**
    * 没选会话点发送（N-MOBILE-DEFAULT-PROJECT）：先在所选项目建会话，ack 回来、sessionId 生效后再把草稿发出。
    * 命令槽同一时刻只容一条在飞，create 可能还在 reconciling，所以等这里看到槽空了、新会话到了才 send。
@@ -429,8 +423,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const finishPair = async (raw?: string) => {
     await companionStore.getState().pair(raw);
     const result = companionStore.getState();
-    if (needsLibraryPick(result)) store.getState().openSheet('projects');
-    else if (result.status === 'connected' && result.sessionId) store.getState().navigate('new');
+    // 配对成功一律落到会话页：有会话进会话，只授权项目时是带默认项目选择器的欢迎页，不拦弹层。
+    if (result.status === 'connected') store.getState().navigate('new');
   };
   const pairAndOpenConversation = async () => {
     if (!ports.companion) return;
@@ -585,7 +579,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             if (state.route === 'fixture') state.attemptSend();
             else if (canAddressSession(companion)) void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
             // 连着但没选会话：直接在所选项目建会话再发（N-MOBILE-DEFAULT-PROJECT），不拦截、不出报错行。
-            else if (companion.status === 'connected') sendAsNewSession();
+            else if (needsLibraryPick(companion)) sendAsNewSession();
             else state.attemptSend();
           }}
           status={composerStatusItems(text, { ...companion, binding: !!companion.binding, saveError: state.saveError, nativeError, sendAttempted: state.sendAttempted, voiceFailureShown, pendingSlow }, {

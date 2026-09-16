@@ -49,10 +49,14 @@ const harness = vi.hoisted(() => ({
   statusPolls: 0,
   prefs: null as string | null,
   lastCreate: null as Record<string, unknown> | null,
+  unpaired: false,
 }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
+    async pair() {
+      return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one', 'project:two', 'project:proj_unsorted'] };
+    }
     async recover() {
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one', 'project:two', 'project:proj_unsorted'] };
     }
@@ -104,6 +108,14 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   },
 }));
 
+/** 不带 verify 的邀请：跳过核对码页，直接走 finishPair。 */
+function invitation(): string {
+  return JSON.stringify({
+    version: 1, endpoint: 'http://192.168.1.2:8182', inviteId: '123e4567-e89b-12d3-a456-426614174000',
+    psk: 'aa'.repeat(32), hostKey: 'aa'.repeat(32), expiresAt: Date.now() + 60_000,
+  });
+}
+
 function savedProjectsOnly(): string {
   const identity = createIdentity();
   return JSON.stringify({
@@ -117,11 +129,11 @@ const ports = (): PlatformPorts => ({
   appInfo: { read: async () => ({ version: '0.1.0', build: '51' }) },
   lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
   keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
-  companion: { read: async () => savedProjectsOnly(), write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}) },
+  companion: { read: async () => harness.unpaired ? null : savedProjectsOnly(), write: async () => {}, scan: async () => invitation(), post: async () => ({}) },
 });
 
 beforeEach(() => {
-  harness.mode = 'ok'; harness.commands = []; harness.statusPolls = 0; harness.prefs = null; harness.lastCreate = null;
+  harness.mode = 'ok'; harness.commands = []; harness.statusPolls = 0; harness.prefs = null; harness.lastCreate = null; harness.unpaired = false;
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: false, media: query, onchange: null,
     addEventListener: () => {}, removeEventListener: () => {},
@@ -134,11 +146,9 @@ afterEach(() => { vi.unstubAllGlobals(); cleanup(); });
 const picker = () => document.querySelector('[data-testid="project-pick"]') as HTMLElement | null;
 const draft = () => document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement;
 
-/** 挂到「连着、库读到、没选会话」的新任务屏。只授权项目时连上会自动弹项目弹层，先收掉。 */
+/** 挂到「连着、库读到、没选会话」的新任务屏（只授权项目的配对，连上不弹弹层）。 */
 async function mountNewTask() {
   await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
-  await waitFor(() => { expect(document.querySelector('.project-list')).toBeTruthy(); });
-  fireEvent.click(document.querySelector('.sheet-layer .scrim') as HTMLElement);
   await waitFor(() => { expect(picker()).toBeTruthy(); });
 }
 
@@ -146,6 +156,33 @@ async function typeAndSend(value: string) {
   fireEvent.change(draft(), { target: { value } });
   fireEvent.click(document.querySelector('[data-testid="send"]') as HTMLElement);
 }
+
+/**
+ * 爸 09-17 拍板 ②A「项目要有默认、不强制选」：连上电脑而没有会话时不再自动弹「选择项目」拦一下，
+ * 冷启动/重连与配对成功都停在欢迎页（一句 + 默认项目选择器）。
+ */
+describe('连上不拦：不自动弹选择项目', () => {
+  it('冷启动连上、没有会话：弹层没开，欢迎页有默认项目选择器', async () => {
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(picker()?.textContent).toBe('One'); });
+    // 前提自证：确实连上且库读到了（模型胶囊之外，选择器写的是按规则算出的默认项目）
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)); });
+    expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull();
+    expect(document.querySelector('.welcome h1')!.textContent).toBe(text.welcome);
+  });
+
+  it('扫码配对成功（只授权项目）：弹层都收掉，落到欢迎页 + 默认项目选择器', async () => {
+    harness.unpaired = true;
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    fireEvent.click(await waitFor(() => { const el = document.querySelector('[data-testid="open-drawer"]') as HTMLElement; expect(el).toBeTruthy(); return el; }));
+    fireEvent.click([...document.querySelectorAll('.drawer-functions button')].find(b => b.textContent === text.remote) as HTMLElement);
+    const scan = await waitFor(() => { const el = document.querySelector('[data-testid="remote-unpaired"] button.primary') as HTMLElement; expect(el).toBeTruthy(); return el; });
+    fireEvent.click(scan);
+    await waitFor(() => { expect(picker()?.textContent).toBe('One'); });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)); });
+    expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull();
+  });
+});
 
 describe('新任务的项目选择器', () => {
   it('欢迎语下方显示默认项目（最近用过的），点开是选择项目弹层', async () => {

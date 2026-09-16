@@ -67,10 +67,8 @@ const HALF = drawerWidthPx(window.innerWidth) / 2;
 async function mountWithDrawerOpen() {
   await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
   await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
-  // 只授权项目 ⇒ 连上后自动弹项目 sheet（needsLibraryPick）；sheet 挂着时抽屉开不了，先关掉
-  await waitFor(() => { expect(document.querySelector('[data-testid="sheet-host"]')).toBeTruthy(); });
-  fireEvent.click(document.querySelector('.sheet-header button[aria-label="关闭弹层"]') as HTMLElement);
-  await waitFor(() => { expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull(); });
+  // 只授权项目 ⇒ 连上停在带项目选择器的欢迎页，不再自动弹项目 sheet（N-MOBILE-DEFAULT-PROJECT）
+  await waitFor(() => { expect(document.querySelector('[data-testid="project-pick"]')).toBeTruthy(); });
   fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
   const row = await waitFor(() => {
     const el = document.querySelector('[data-testid="session-s2"]') as HTMLElement;

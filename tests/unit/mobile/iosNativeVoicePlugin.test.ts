@@ -84,6 +84,9 @@ describe('first-party ios voice recorder contract', () => {
     // 撤防必须排在布防回包之后，否则先撤后布，原生定时器空转
     expect(capacitorPort).toContain('void armed.then(() => pcmBridge.unwatchMicrophoneRelease())');
     expect(swift).toContain('notifyListeners("microphoneAvailable"');
+    expect(capacitorPort).toContain("addListener('microphoneAvailable'");
+    expect(swift).toContain('AVAudioSession.interruptionNotification');
+    expect(swift).toContain('isOtherAudioPlaying');
   });
 
   // build 46 远端验收：@capacitor/app 在 iOS 上没有 openUrl，原来的「去设置」是空操作（原生回 UNIMPLEMENTED 被吞）
@@ -92,9 +95,6 @@ describe('first-party ios voice recorder contract', () => {
     expect(swift).toContain('@objc func openAppSettings(');
     expect(swift).toContain('UIApplication.openSettingsURLString');
     expect(capacitorPort).toContain("if (Capacitor.getPlatform() === 'ios') { await pcmBridge.openAppSettings()");
-    expect(capacitorPort).toContain("addListener('microphoneAvailable'");
-    expect(swift).toContain('AVAudioSession.interruptionNotification');
-    expect(swift).toContain('isOtherAudioPlaying');
   });
 
   it('stops and discards the recording when the app goes to background', () => {

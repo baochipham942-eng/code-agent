@@ -13,7 +13,8 @@ import { messages } from '../../../packages/mobile/src/i18n';
  * 模型入口只留输入区胶囊，打开独立的「选择会话模型」；「会话操作」里不再有模型。
  * 会话里模型密钥用不了的失败卡给「换一个可用模型」，落点就是同一屏（execStatusInline 覆盖卡片本身）。
  */
-const reads = vi.hoisted(() => ({ library: 0 }));
+// hostFailed = 电脑那边刚把 Team Relay 标成调用失败（执行失败那一刻才发生，手机手里的库还是之前拉的）
+const reads = vi.hoisted(() => ({ library: 0, hostFailed: false }));
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
     async recover() {
@@ -27,7 +28,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
         projects: [{ id: 'one', name: 'One', canCreate: true, workspacePath: '/w/one' }],
         sessions: [{ id: 's1', title: '你好', projectId: 'one', updatedAt: 2, archived: false, provider: 'custom-team-relay', model: 'LongCat-2.0' }],
         models: [
-          { provider: 'custom-team-relay', model: 'LongCat-2.0', label: 'LongCat 2.0', providerLabel: 'Team Relay', isDefault: true, recentlyFailed: true },
+          { provider: 'custom-team-relay', model: 'LongCat-2.0', label: 'LongCat 2.0', providerLabel: 'Team Relay', isDefault: true, ...(reads.hostFailed ? { recentlyFailed: true } : {}) },
           { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek Chat', providerLabel: 'DeepSeek' },
         ],
       };
@@ -64,7 +65,7 @@ beforeEach(() => {
   }));
   Object.defineProperty(window.navigator, 'language', { value: 'zh-CN', configurable: true });
 });
-afterEach(() => { vi.unstubAllGlobals(); cleanup(); });
+afterEach(() => { vi.unstubAllGlobals(); cleanup(); reads.hostFailed = false; });
 
 async function mountInSession() {
   await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
@@ -80,11 +81,12 @@ describe('模型入口只留输入区胶囊', () => {
   it('胶囊打开「选择会话模型」；「会话操作」里没有模型', async () => {
     await mountInSession();
     expect(document.querySelector('.composer-tools .model')!.textContent).toContain('LongCat 2.0');
-    const before = reads.library;
+    // 连上时拉的库里 Team Relay 还没失败；之后电脑才把它标上（build 46 远端验收的时序）
+    reads.hostFailed = true;
     fireEvent.click(document.querySelector('.composer-tools .model') as HTMLElement);
     await waitFor(() => { expect(title()).toBe(text.chooseModel); });
-    // 打开时现拉一次库：「最近调用失败」是执行失败那一刻才标上的，旧副本里看不到（build 46 远端验收）
-    await waitFor(() => { expect(reads.library).toBeGreaterThan(before); });
+    // 打开时现拉一次库，否则看到的是失败前的旧副本
+    await waitFor(() => { expect(document.querySelector('[data-testid="model-custom-team-relay:LongCat-2.0"]')!.textContent).toContain(text.modelRecentlyFailed); });
     expect(document.querySelectorAll('button.model-row')).toHaveLength(2);
     expect(document.querySelector('[data-testid="model-custom-team-relay:LongCat-2.0"]')!.textContent).toContain(text.modelRecentlyFailed);
     fireEvent.click(document.querySelector('.sheet-layer .scrim') as HTMLElement);

@@ -135,6 +135,8 @@ describe('withSessionCommandCenterBrain', () => {
     const options = withSessionCommandCenterBrain(undefined);
 
     expect(options.allowedToolNames).toEqual(getTextForegroundToolNames());
+    // 这份名单只是前台 brain 自己的面，子代理不继承（N-SUBAGENT-WEBSEARCH-INHERIT）
+    expect(options.foregroundToolFace).toBe(true);
     expect(options.allowedToolNames).not.toContain('wake_noop');
     expect(options.maxIterations).toBe(SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS);
     expect(options.turnSystemContext).toContain(SESSION_COMMAND_CENTER_BRAIN_CONTEXT);

@@ -185,6 +185,7 @@ export class AgentLoop {
       unattendedTurn: config.unattendedTurn,
       deniedToolNames: config.deniedToolNames,
       allowedToolNames: config.allowedToolNames,
+      foregroundToolFace: config.foregroundToolFace,
       hookMessageBuffer: new HookMessageBuffer(),
       messageHistoryCompressor: new MessageHistoryCompressor(),
       autoCompressor: getAutoCompressor(),

@@ -31,10 +31,14 @@ describe('PlanCard', () => {
     expect(respond).toHaveBeenCalledWith('rejected', undefined);
   });
 
-  it('settled cards show the elsewhere-handled state', () => {
-    render(<PlanCard card={{ preview, status: 'rejected' }} text={text} disabled={false} respond={async () => {}} />);
-    expect(screen.getByText(text.planClosed)).toBeTruthy();
+  it('settled cards say what actually happened; only closed says elsewhere-or-expired', () => {
+    const { rerender } = render(<PlanCard card={{ preview, status: 'rejected' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByText(text.planRejected)).toBeTruthy();
     expect(screen.queryByText(text.planApprove)).toBeNull();
+    rerender(<PlanCard card={{ preview, status: 'approved' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByText(text.planApproved)).toBeTruthy();
+    rerender(<PlanCard card={{ preview, status: 'closed' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByText(text.planClosed)).toBeTruthy();
   });
 
   it('english copy is present for the same keys', () => {

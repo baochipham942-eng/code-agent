@@ -112,4 +112,20 @@ describe('protocol-native SubagentExecutionContext', () => {
     expect(context.allowedToolNames).toEqual(['Read', 'Bash']);
     expect(context.deniedToolNames).toEqual(['Bash']);
   });
+
+  // 爸 2026-09-16 真机：前台指挥 brain 派的研究子助手（溯真，声明了 WebSearch/WebFetch）被 brain 本轮的
+  // 窄工具面交集成只剩 Grep/Glob/ListDirectory/Write/Read，在本地磁盘搜 1.5 分钟、答出过时事实。
+  it('does not treat the foreground brain tool face as a hard boundary for children; denials still apply', () => {
+    const context = createProtocolSubagentExecutionContext(
+      makeProtocolContext({
+        allowedToolNames: ['Read', 'Grep', 'spawn_agent'],
+        foregroundToolFace: true,
+        deniedToolNames: ['cancel_task'],
+      }),
+      vi.fn(async () => ({ allow: true as const })),
+    );
+
+    expect(context.allowedToolNames).toBeUndefined();
+    expect(context.deniedToolNames).toEqual(['cancel_task']);
+  });
 });

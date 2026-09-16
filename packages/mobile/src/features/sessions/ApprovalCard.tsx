@@ -38,6 +38,6 @@ export function ApprovalCard({ card, text, disabled, respond }: {
     {card.status === 'pending' ? <div className="approval-actions">
       <button disabled={disabled} onClick={() => void respond('rejected')}>{text.deny}</button>
       <button disabled={disabled || !readable} onClick={() => void respond('approved')}>{text.approveOnce}</button>
-    </div> : <p role="status">{text.approvalClosed}</p>}
+    </div> : <p role="status" data-status={String(card.status)}>{card.status === 'approved' ? text.approvalApproved : card.status === 'rejected' ? text.approvalRejected : text.approvalClosed}</p>}
   </section>;
 }

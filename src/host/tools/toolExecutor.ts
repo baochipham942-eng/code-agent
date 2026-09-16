@@ -401,6 +401,8 @@ export interface ExecuteOptions {
   // Run-level tool allowlist（CLI --tools 等）。非空 = 精确白名单：名单外工具
   // 在执行层同样硬拒（schema 面过滤之外的兜底闸，覆盖嵌套/直接 executor 调用）。
   allowedToolNames?: readonly string[];
+  // 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。
+  foregroundToolFace?: boolean;
   skillDiscoveryService?: SkillDiscoveryService;
   // 内部标记：本次调用由 ctx.executeTool 发起（PTC 脚本里的一次 tools.X()）。
   // 唯一作用是不给嵌套出来的 context 再签发 executeTool —— 一层封顶，防递归。
@@ -1270,6 +1272,7 @@ export class ToolExecutor {
       abortSignal: options.abortSignal,
       deniedToolNames: options.deniedToolNames,
       allowedToolNames: options.allowedToolNames,
+      foregroundToolFace: options.foregroundToolFace,
       skillDiscoveryService: options.skillDiscoveryService,
       telemetryCollector: this.telemetryCollector,
       planningService: options.planningService,

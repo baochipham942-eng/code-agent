@@ -248,6 +248,7 @@ const agentLoopProbe = vi.hoisted(() => ({
     systemInstructions?: string[];
     deniedToolNames?: string[];
     allowedToolNames?: string[];
+    foregroundToolFace?: boolean;
     searchEnabled?: boolean;
     thinkingEnabled?: boolean;
     effortLevel?: import('../../src/shared/contract/agent').EffortLevel;
@@ -1506,11 +1507,13 @@ describe('AgentOrchestrator', () => {
       }).runStandardAgentLoop(
         '发送这封邮件', mockOnEvent, { provider: 'deepseek', model: 'deepseek-chat' },
         'boundary-session', undefined, undefined, undefined,
-        { agentOverrideId: ROLE } as AgentRunOptions,
+        { agentOverrideId: ROLE, foregroundToolFace: true } as AgentRunOptions,
       );
 
       expect(lastAgentLoopConfig()?.allowedToolNames).toEqual(['Read', 'mail_draft']);
       expect(lastAgentLoopConfig()?.allowedToolNames).not.toContain('mail_send');
+      // 交集里带着角色硬边界：即使调用方标了前台面，子代理也必须继承
+      expect(lastAgentLoopConfig()?.foregroundToolFace).toBe(false);
     });
   });
 

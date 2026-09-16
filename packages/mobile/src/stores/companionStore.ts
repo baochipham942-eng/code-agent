@@ -96,6 +96,13 @@ interface State {
   binding: LanBinding | null; sessionId: string | null; pending: boolean; busy: boolean;
   /** 待确认命令是哪一条：状态行的文案按它分——语音转写不是「发送」，不该提醒「请勿重复发送」。 */
   pendingAction: CompanionCommand['action'] | null;
+  /**
+   * 这一槽是不是 hydrate 从盘上捡回来的（而不是本次会话里刚发出去的）。捡回来的已经等了
+   * 不知道多久，UI 那边不该再从 0 憋一遍延迟（N-MOBILE-PENDING-NOISE / grok Nit②）。
+   * 放在 store 而不是 UI 侧推断：store 初始 pending 恒为 false，UI 用「第一次见到 pending」
+   * 这种时序推断必然落空——实测就是这么落空的。
+   */
+  pendingAdopted: boolean;
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
   hydrate(): Promise<void>; pair(raw?: string): Promise<void>; reconnect(): Promise<void>; forget(): Promise<void>; pause(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
@@ -240,7 +247,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 落盘记录是待确认命令的唯一真源，派生放在这一处，省得九个 set({pending}) 各自同步。
         // 两个字段必须同一拍置起：只改 pendingAction 的话，结算那一帧会是
         // pending=true + pendingAction=null，状态行闪回「请勿重复发送」——正是本单要消掉的那句。
-        set({ pending: Boolean(next.pending), pendingAction: next.pending?.action ?? null,
+        set({ pending: Boolean(next.pending), pendingAction: next.pending?.action ?? null, pendingAdopted: false,
           ...(orphanVoice ? { voiceResult: { commandId: orphanVoice, outcome: 'error' as const } } : {}) });
       }
       catch (error) { client?.close(); set({ status: 'storageError' }); throw error; }
@@ -432,7 +439,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     return {
       voiceResult: null, library: null, history: {}, libraryError: false,
-      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, events: [], runId: null, terminal: null,
+      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
       hydrate: async () => {
@@ -458,7 +465,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           set({
             busy: false, binding: value.binding ?? null,
             sessionId: value.binding?.scope.find(id => !id.startsWith('project:')) ?? null,
-            pending: !!value.pending, pendingAction: value.pending?.action ?? null,
+            pending: !!value.pending, pendingAction: value.pending?.action ?? null, pendingAdopted: !!value.pending,
             history: restored.history, events: restored.events, lastSyncAt: restored.lastSyncAt, cacheUsage: inspectBoth(),
           });
           if (value.candidate || value.binding) await get().reconnect();

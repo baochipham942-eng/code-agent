@@ -29,8 +29,14 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   composerHeight?: number;
   /** Offline reread: hide load-more (it cannot fetch) without changing the composer. */
   offline?: boolean;
-  /** 这条会话正在电脑上跑：最后一条下面给执行条。null = 没在跑，执行条不渲染（任务一结束就消失）。 */
-  running?: { stop(): void; stopDisabled: boolean } | null }) {
+  /**
+   * 这条会话正在电脑上跑：最后一条下面给执行条。null = 没在跑，执行条不渲染（任务一结束就消失）。
+   *
+   * `stop` **可选**：停止的正常落点是输入区那个键（N-MOBILE-SEND-IS-STOP），执行条只说
+   * 「哪一次在跑」。只有输入区被录音面板整块顶掉、那个键此刻不存在时，调用方才把 stop 交给
+   * 执行条——否则同一个动作会有两个落点。不传就不渲染按钮（grok ai-review PR#1903 Nit①②）。
+   */
+  running?: { stop?(): void; stopDisabled?: boolean } | null }) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
@@ -124,9 +130,13 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     {artifacts.map(artifact => <button key={artifact.artifactId} className="artifact-card" disabled={disabled} onClick={() => openArtifact(artifact.artifactId)}>
       <strong>{artifact.name}</strong><span>{artifact.origin === 'upload' ? text.fromPhone : text.artifacts}</span>
     </button>)}
-    {/* 执行条：形状照桌面 StreamingIndicator——一个呼吸点说「还活着」，一句在做什么，一个停止。 */}
+    {/* 执行条：一个呼吸点说「还活着」+ 一句在做什么。平时**不带停止按钮**——停止收进输入区
+        那个键（N-MOBILE-SEND-IS-STOP）。它留在消息流里是为了说清「是哪一次执行在跑」，这是
+        输入区那个键给不了的信息；但同一个动作不该有两个落点。
+        例外只有一个：录音面板把输入区整块顶掉时那个键不存在，停止在这里接回来，否则运行中
+        一开录音就没法停任务（grok ai-review PR#1903 Nit①）。 */}
     {running && <div className="run-strip" data-testid="run-strip"><span className="run-dot" aria-hidden="true" /><span>{text.running}</span>
-      <button disabled={running.stopDisabled} onClick={running.stop}>{text.stop}</button></div>}
+      {running.stop && <button disabled={running.stopDisabled} onClick={running.stop}>{text.stop}</button>}</div>}
   </div>{showLatest && <button className="jump-latest" onClick={() => {
     following.current = true; scroller.current!.scrollTop = scroller.current!.scrollHeight; setShowLatest(false);
   }}>{text.latest} ↓</button>}</div>;

@@ -76,9 +76,20 @@ export function composerModelLabel(library: CompanionLibrary | null, sessionId: 
 export function taskStatusCopy(
   text: ReturnType<typeof messages>,
   companion: { pending: boolean; pendingAction: string | null },
+  /**
+   * 这条待确认命令是不是已经**久到该说话了**（N-MOBILE-PENDING-NOISE）。
+   * 「正在核对电脑是否已接收，请勿重复发送」是异常兜底语：正常 ack 几十毫秒就回来，
+   * 一发就显示等于每条消息都提醒用户「别乱点」，而且只闪一下——用户只来得及看见警告、
+   * 看不见原因（爸 2026-09-16 build 43 真机）。慢过阈值才说。
+   * 转写不受这条约束：「正在转写」是进度不是警告，越早说越有用。
+   *
+   * 必填而不给默认值：默认 true 等于「谁忘了传谁就回到吵的那个行为」，闸门形同虚设。
+   */
+  pendingSlow: boolean,
 ): string {
   if (!companion.pending) return '';
-  return companion.pendingAction === 'voice.transcribe' ? text.transcribing : text.pendingCommand;
+  if (companion.pendingAction === 'voice.transcribe') return text.transcribing;
+  return pendingSlow ? text.pendingCommand : '';
 }
 
 /** 电脑名：mDNS 名去掉 .local；没有 mDNS 名（Linux/Windows 宿主）时给 null，调用方退回 IP。 */
@@ -381,6 +392,32 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     };
   }, [ports, store, companionStore, notifyStore]);
   useEffect(() => { if (state.ready) void companionStore.getState().hydrate(); }, [state.ready, companionStore]);
+  /**
+   * 待确认命令「慢到该说话了」的闸门（N-MOBILE-PENDING-NOISE）。pending 一起就开计时，
+   * 结算就复位；到点之前 taskStatusCopy 闭嘴。放在 MobileRoot 而不是 store：这是纯粹的
+   * 呈现节奏，store 那边的 pending 仍然是「有没有待确认命令」这个事实，不掺 UI 时序。
+   */
+  const [pendingSlow, setPendingSlow] = useState(false);
+  /**
+   * 录音面板是否正占着输入区。它顶掉整块 composer ⇒ 停止那个键此刻不存在，得把停止
+   * 临时交回执行条（grok ai-review PR#1903 Nit①）。用 state 而不是那个 recording ref：
+   * ref 变了不重渲染，执行条不会知道该长出按钮来。
+   */
+  const [voiceActive, setVoiceActive] = useState(false);
+  /**
+   * hydrate 从盘上带回来的待确认命令已经等了不知道多久（可能是上次开着 app 时留下的），
+   * 再从 0 憋 3 秒等于把已知的「它很慢」这个事实丢掉（grok ai-review PR#1903 Nit②）。
+   * 「是不是捡回来的」由 store 的 pendingAdopted 给，不在这里靠时序推断——
+   * 初版我用「第一次见到 pending 就为真」判断，而 store 初始 pending 恒为 false，
+   * 那个判据永远不成立，改了等于没改（实测抓到）。
+   */
+  useEffect(() => {
+    if (!companion.pending) { setPendingSlow(false); return; }
+    // 盘上捡回来的旧槽已经等了不知道多久，立刻说；本次会话亲手发的才计时。
+    if (companion.pendingAdopted) { setPendingSlow(true); return; }
+    const timer = setTimeout(() => setPendingSlow(true), COMPANION_LIMITS.pendingNoticeDelayMs);
+    return () => clearTimeout(timer);
+  }, [companion.pending, companion.pendingAction, companion.pendingAdopted]);
   useEffect(() => {
     if (companion.status !== 'connected') return;
     void notifyStore.getState().recover();
@@ -555,7 +592,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           offline={companion.status !== 'connected'}
-          running={companion.runId ? { stop: () => void companion.stop(), stopDisabled: companion.busy || companion.pending || companion.status !== 'connected' } : null}
+          // 执行条平时只说「哪一次在跑」；停止在输入区那个键上。录音面板顶掉输入区时才把
+          // stop 交给它，避免运行中一开录音就没法停（grok ai-review PR#1903 Nit①）。
+          running={companion.runId
+            ? (voiceActive ? { stop: () => void companion.stop(), stopDisabled: companion.busy || companion.pending || companion.status !== 'connected' } : {})
+            : null}
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond}
           respondQuestion={companion.respondQuestion} respondPlan={companion.respondPlan}
           openArtifact={id => void companion.previewArtifact(id).then(() => {
@@ -601,7 +642,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             </button>
             {connection.retry && <button className="inline-retry" disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
           </div>
-          <span>{taskStatusCopy(text, companion)}</span>
+          <span>{taskStatusCopy(text, companion, pendingSlow)}</span>
           {offlineCopy && <span data-testid="offline-readonly">{offlineCopy}</span>}
         </div>}
         {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button className="inline-retry" onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
@@ -622,6 +663,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           // （grok ai-review Nit，正是爸看到的那张后台快照）。
           offline={!!companion.binding && !connection.connected}
           sendDisabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
+          // 停止的落点收进输入区那个键（N-MOBILE-SEND-IS-STOP）；执行条只剩「哪一次在跑」。
+          running={companion.runId ? { stop: () => void companion.stop(), stopDisabled: companion.busy || companion.pending || companion.status !== 'connected' } : null}
           send={() => {
             // companionStore.send 在没有 sessionId 时会静默 return（只勾了项目的二维码
             // 配对就是这个形态）。不把这一档也走 attemptSend 的话，用户看到「已连接」、
@@ -651,7 +694,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
           voicePending={companion.pending} voiceResult={companion.voiceResult}
           voiceReady={canAddressSession(companion)}
-          onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceFailureShown(failed); }} />
+          onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceActive(active); setVoiceFailureShown(failed); }} />
       </div>
     </main>
     {(state.drawer || pan) && (() => {

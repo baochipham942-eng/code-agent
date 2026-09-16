@@ -10,7 +10,7 @@ const text = messages('zh');
 let seq = 0;
 const ev = (kind: string, payload: Record<string, unknown>) => ({ eventId: `e${++seq}`, sessionId: 's1', kind, payload }) as unknown as CompanionEvent;
 
-function view(events: CompanionEvent[], running: { stop(): void; stopDisabled: boolean } | null = null) {
+function view(events: CompanionEvent[], running: { stop?(): void; stopDisabled?: boolean } | null = null) {
   return <CompanionConversation events={events} artifacts={[]} sessionId="s1" text={text} loadMore={() => {}} disabled={false}
     respond={async () => {}} respondQuestion={async () => {}} respondPlan={async () => {}} openArtifact={() => {}} running={running} />;
 }
@@ -73,6 +73,15 @@ describe('真实宿主验收脚本与「成功不挂行」保持同一套判据�
     expect(script).toMatch(/runEnded\(\)\.then\(\(\)=>\{throw new Error\('TASK_FINISHED_WITHOUT_REQUIRED_APPROVAL'\);\}\)/);
   });
 
+  it('verify-lan 等那句延迟提示时必须显式给足超时，且不许改锚「草稿被清空」（那条恒不成立）', () => {
+    const lan = readFileSync('packages/mobile/scripts/verify-lan.mjs', 'utf8');
+    // 承重点一：那句提示现在要憋过 pendingNoticeDelayMs，靠 Playwright 默认 5s 只剩两秒余量。
+    expect(lan).toMatch(/正在核对电脑是否已接收[^\n]*waitFor\(\{ timeout: 15_000 \}\)/);
+    // 承重点二：丢回执那条路径故意不回 ack ⇒ 草稿永远不会被清（acknowledgeDraft 只在 ack 后跑）。
+    // 拿它当判据是**恒不成立**，整条浏览器验收会挂死（grok ai-review PR#1903 Important）。
+    expect(lan).not.toContain("[data-testid=\"draft\"]')?.value === ''");
+  });
+
   it('组件确实发 run-strip 这个 testid——判据锚的元素必须真存在，否则 detached 恒真', () => {
     const component = readFileSync('packages/mobile/src/features/sessions/CompanionConversation.tsx', 'utf8');
     expect(component).toContain('data-testid="run-strip"');
@@ -127,16 +136,28 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
     expect(stream()).toEqual(['user:写', 'neo:草稿', `outcome:${text.stopped}`]);
   });
 
-  it('处理中：执行条在最后一条下面，带停止；任务结束（running=null）即消失', () => {
+  it('处理中：执行条在最后一条下面，只说「哪一次在跑」不带停止；任务结束（running=null）即消失', () => {
     const stop = vi.fn();
     const events = [ev('message', { id: 'u1', role: 'user', content: '跑', runId: 'r1' })];
-    const rendered = render(view(events, { stop, stopDisabled: false }));
+    const rendered = render(view(events, {}));
     expect(stream()).toEqual(['user:跑', 'run-strip']);
     const strip = document.querySelector('[data-testid="run-strip"]')!;
     expect(strip.textContent).toContain(text.running);
-    fireEvent.click(strip.querySelector('button')!);
-    expect(stop).toHaveBeenCalledTimes(1);
+    // 停止收进输入区那个键（N-MOBILE-SEND-IS-STOP）：同一个动作不该有两个落点。
+    // 钉「条里没有任何按钮」而不是「没有那个文案」——换个词照样是第二个落点。
+    expect(strip.querySelectorAll('button')).toHaveLength(0);
+    expect(stop).not.toHaveBeenCalled();
     rendered.rerender(view(events, null));
     expect(document.querySelector('[data-testid="run-strip"]')).toBeNull();
+  });
+
+  it('录音面板顶掉输入区时（调用方给了 stop）执行条把停止接回来——否则运行中一开录音就没法停', () => {
+    const stop = vi.fn();
+    const events = [ev('message', { id: 'u1', role: 'user', content: '跑', runId: 'r1' })];
+    render(view(events, { stop, stopDisabled: false }));
+    const strip = document.querySelector('[data-testid="run-strip"]')!;
+    expect(strip.querySelectorAll('button')).toHaveLength(1);
+    fireEvent.click(strip.querySelector('button')!);
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 });

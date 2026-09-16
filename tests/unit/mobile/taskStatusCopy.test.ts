@@ -13,13 +13,28 @@ describe('task status copy', () => {
   it('语音转写期间说的是「正在转写」，不是给发送写的那句', () => {
     // 真机反馈：转写时状态行写「正在核对电脑是否已接收，请勿重复发送」——
     // 用户没发送什么，也不存在重复发送的风险。
-    expect(taskStatusCopy(text, state({ pending: true, pendingAction: 'voice.transcribe' }))).toBe(text.transcribing);
-    expect(taskStatusCopy(text, state({ pending: true, pendingAction: 'voice.transcribe' }))).not.toBe(text.pendingCommand);
+    // 转写不受延迟闸门约束：「正在转写」是进度不是警告，越早说越有用。
+    for (const slow of [false, true]) {
+      expect(taskStatusCopy(text, state({ pending: true, pendingAction: 'voice.transcribe' }), slow)).toBe(text.transcribing);
+      expect(taskStatusCopy(text, state({ pending: true, pendingAction: 'voice.transcribe' }), slow)).not.toBe(text.pendingCommand);
+    }
   });
 
-  it('其余命令仍然用原来的「正在核对电脑是否已接收」', () => {
+  it('其余命令慢过阈值才说「正在核对电脑是否已接收」', () => {
     for (const action of ['message.send', 'run.cancel', 'approval.respond', 'session.create', null]) {
-      expect(taskStatusCopy(text, state({ pending: true, pendingAction: action }))).toBe(text.pendingCommand);
+      expect(taskStatusCopy(text, state({ pending: true, pendingAction: action }), true)).toBe(text.pendingCommand);
+    }
+  });
+
+  /**
+   * N-MOBILE-PENDING-NOISE（爸 2026-09-16 build 43 真机「刚点消息发送，为什么要出这样一句提示」）：
+   * 那句话是防重复发送的**异常**兜底语，正常 ack 几十毫秒就回来。一发就显示等于每条消息都
+   * 提醒用户「别乱点」，而且只闪一下——用户只来得及看见警告、看不见原因。
+   * 逐 action 遍历：别只测 message.send 那一个，本单前身就是「只照顾被点名的那一个」。
+   */
+  it('阈值之内一律闭嘴——正常发送不该看到任何提示', () => {
+    for (const action of ['message.send', 'run.cancel', 'approval.respond', 'session.create', null]) {
+      expect(taskStatusCopy(text, state({ pending: true, pendingAction: action }), false)).toBe('');
     }
   });
 
@@ -29,12 +44,12 @@ describe('task status copy', () => {
       { pending: false, pendingAction: null, runId: 'run-1', terminal: null },
       { pending: false, pendingAction: null, runId: null, terminal: 'complete' as const },
       { pending: false, pendingAction: null, runId: null, terminal: 'failed' as const },
-    ]) expect(taskStatusCopy(text, live)).toBe('');
+    ]) for (const slow of [false, true]) expect(taskStatusCopy(text, live, slow)).toBe('');
   });
 
-  it('待确认命令照旧说，与有没有在跑无关', () => {
+  it('待确认命令（已慢过阈值）照旧说，与有没有在跑无关', () => {
     const live = { pending: true, pendingAction: 'message.send', runId: 'run-1', terminal: null };
-    expect(taskStatusCopy(text, live)).toBe(text.pendingCommand);
+    expect(taskStatusCopy(text, live, true)).toBe(text.pendingCommand);
   });
 });
 

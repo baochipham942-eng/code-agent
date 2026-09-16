@@ -61,8 +61,17 @@ const DESKTOP_ACTION_CONTRACT_LINES = [
   '如果权限、前台窗口、快照或坐标来源不足，返回明确 blocked reason 和下一步读取动作；动作执行后先 re-observe，再声称最终桌面状态。',
 ];
 
+// N-MOBILE-SOURCE-CONTEXT：手机发起的轮次，模型要知道用户看不到运行端的屏幕
+const MOBILE_SOURCE_CONTEXT_LINES = [
+  '来源端：用户这一轮是在手机上发起的，屏幕小，也看不到你运行所在机器的屏幕和桌面界面。',
+  '回复保持简短，先给结论；少用宽表格和大段代码。',
+  '要交付的产出做成文件交付，不要只说「已在屏幕上打开/显示」。',
+  '需要用户确认或选择时，说明可以直接在手机上确认。',
+  '不要让用户去电脑上点东西或查看界面，除非这件事确实只能在电脑上做，并说明原因。',
+];
+
 /**
- * 能力挂载提示行（已选 skills/connectors/MCP + manual scope + browser 路由契约）。
+ * 能力挂载提示行（外加手机来源说明）（已选 skills/connectors/MCP + manual scope + browser 路由契约）。
  * 桌面路径经 buildWorkbenchTurnSystemContext 全量注入；web HTTP 路径（routes/agent.ts）
  * 只需要这组能力行（设计画布等其它块 web 有自己的注入通道，不能重复拼）。
  */
@@ -73,7 +82,7 @@ export function buildWorkbenchCapabilityContextLines(
     return [];
   }
 
-  const lines: string[] = [];
+  const lines: string[] = context.clientSurface === 'mobile' ? [...MOBILE_SOURCE_CONTEXT_LINES] : [];
 
   if (context.selectedSkillIds?.length) {
     lines.push(`优先考虑这些已挂载 skills（仅在相关时使用）：${context.selectedSkillIds.join('、')}`);

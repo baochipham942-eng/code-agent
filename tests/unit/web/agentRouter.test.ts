@@ -533,6 +533,39 @@ describe('createAgentRouter', () => {
     await runRegistry.getBySessionId('companion-activation')!.cancel('user');
   });
 
+  // N-MOBILE-SOURCE-CONTEXT：手机发起的轮次模型要知道用户在手机上；桌面发起的不能带
+  it('companion runs carry the mobile source context into the model-facing prompt; desktop runs do not', async () => {
+    await closeServer();
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    await startAgentApi({ registerCompanionRun: value => { start = value; } });
+    const SOURCE_LINE = '来源端：用户这一轮是在手机上发起的';
+    const lastUserContent = () => {
+      const messages = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+      return String(messages.filter(m => m.role === 'user').at(-1)!.content);
+    };
+    mockCreateAgentLoop.mockClear();
+    await start!({ version: 1, sessionId: 'companion-source-phone', prompt: '手机上的问题' });
+    await vi.waitFor(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+    expect(lastUserContent()).toContain('<user_request>\n手机上的问题');
+    expect(lastUserContent()).toContain(SOURCE_LINE);
+    await runRegistry.getBySessionId('companion-source-phone')!.cancel('user');
+
+    mockCreateAgentLoop.mockClear();
+    const controller = new AbortController();
+    try {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '桌面上的问题', sessionId: 'desktop-source', context: { selectedSkillIds: ['skill-a'] } }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await vi.waitFor(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+      // 前提自证：桌面这轮确实拼了 turnSystemContext（不是因为没包装才「没有」）
+      expect(lastUserContent()).toContain('<user_request>\n桌面上的问题');
+      expect(lastUserContent()).not.toContain(SOURCE_LINE);
+    } finally { controller.abort(); }
+  });
+
   // 爸 2026-09-16 真机：回复早已显示，手机执行条还挂 3 秒——agent_complete 排在执行后的云端同步之后，
   // 未登录时云端访问要先失败一轮恢复登录。夹具里的执行跑不到收尾，这里钉源码顺序（static-contract）；
   // 运行时证据是真机数据库里 message 与 agent_complete 两个事件的时间差。

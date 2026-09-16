@@ -544,8 +544,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           })} />
         // 空会话与无会话都只留一句 + 项目选择器（design.md §11/§12，爸 09-17）。空会话的选择器写它自己所在的项目；
         // 不自动聚焦输入区：手机上未经点按就弹键盘会顶走视口。
-        : <div className="welcome" data-testid={companion.sessionId ? 'session-empty' : undefined}>
-          <NeoBrandMark variant="mark" size={47} />
+        : <div data-testid={companion.sessionId ? 'session-empty' : undefined} className="welcome"><NeoBrandMark variant="mark" size={47} />
           <h1>{text.welcome}</h1>
           {companion.library && (() => {
             const projectId = companion.sessionId ? companion.library.sessions.find(s => s.id === companion.sessionId)?.projectId ?? newTaskProjectId : newTaskProjectId;

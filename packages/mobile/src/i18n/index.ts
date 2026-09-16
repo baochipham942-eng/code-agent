@@ -23,7 +23,7 @@ const zh = {
   microphoneReleased: '麦克风空出来了，可以继续录音', continueRecording: '继续录音', openMicrophoneSettings: '去设置开麦克风',
 
   operation: '操作', impact: '影响', technicalDetails: '查看技术详情', writeOperation: '写入文件', readOperation: '读取文件', commandOperation: '运行命令', requestedOperation: '执行请求的操作', targetInDetails: '见操作详情', writeImpact: '将写入或替换目标内容', commandImpact: '将按下方命令操作电脑，请展开核对', operationImpact: '仅允许当前请求，后续操作仍需确认', unreadableApproval: '无法完整读取操作内容，请拒绝或回电脑处理。',
-  running: '正在处理', latest: '回到最新',
+  running: '正在处理', latest: '回到最新', copy: '复制', copied: '已复制',
 
   targetPath: '目标文件或目录', commandPreview: '将执行的命令', targetUrl: '访问地址', beforeChange: '修改前', afterChange: '写入内容',
   changePreview: '变更预览', targetService: '目标服务', targetOperation: '操作对象', operationRisk: '操作风险', affectedFiles: '影响的文件数',
@@ -157,7 +157,7 @@ const en: Record<keyof typeof zh, string> = {
   microphoneReleased: 'The microphone is free. You can record now.', continueRecording: 'Record', openMicrophoneSettings: 'Allow microphone in Settings',
 
   operation: 'Operation', impact: 'Impact', technicalDetails: 'Technical details', writeOperation: 'Write file', readOperation: 'Read file', commandOperation: 'Run command', requestedOperation: 'Perform requested operation', targetInDetails: 'See operation details', writeImpact: 'Writes or replaces the target content', commandImpact: 'Runs the command below on your computer. Expand to review.', operationImpact: 'Allows this request only. Later operations still require confirmation.', unreadableApproval: 'Cannot read the complete operation. Deny or review on your computer.',
-  running: 'Working on it', latest: 'Jump to latest',
+  running: 'Working on it', latest: 'Jump to latest', copy: 'Copy', copied: 'Copied',
 
   targetPath: 'Target file or directory', commandPreview: 'Command to execute', targetUrl: 'Destination', beforeChange: 'Before', afterChange: 'Content to write',
   changePreview: 'Change preview', targetService: 'Service', targetOperation: 'Operation target', operationRisk: 'Operation risk', affectedFiles: 'Affected files',

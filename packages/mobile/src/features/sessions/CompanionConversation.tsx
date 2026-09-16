@@ -4,6 +4,7 @@ import { NeoBrandMark } from '../brand/NeoBrandMark';
 import { ApprovalCard } from './ApprovalCard';
 import { QuestionCard } from './QuestionCard';
 import { PlanCard } from './PlanCard';
+import { Markdown } from './markdown/Markdown';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
 import { runOutcomeCopy, type messages } from '../../i18n';
 
@@ -69,7 +70,28 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   const cardAnchors = new Map<string, string | undefined>();
   let lastRow: string | undefined = history?.messages.at(-1)?.id;
   let latestRun: string | undefined;
-  for (const message of history?.messages ?? []) rows.set(message.id, { role: message.role, content: message.content, truncated: message.truncated });
+  // 历史行的宿主时间（和事件 createdAt 是同一台电脑的钟）。事件生出来的新行不记：它们只会排在历史之后，按到达顺序挂就对。
+  const stamps = new Map<string, number>();
+  for (const message of history?.messages ?? []) {
+    rows.set(message.id, { role: message.role, content: message.content, truncated: message.truncated });
+    stamps.set(message.id, message.timestamp);
+  }
+  /**
+   * 卡片与执行结果挂在「它发生时的最后一行」下面（FB-177）。实时路径事件按发生顺序到，lastRow 就是那一行。
+   * 冷启动不是：本机缓存的卡片排在 events 最前面，历史先整页铺好，处理到卡片时 lastRow 已经是会话最后一行，
+   * 卡片就全堆到末尾。事件比 lastRow 发生得早，就按时间落回：挂在第一条比它晚的行前面。
+   * 早于已加载的全部行（历史分页还没翻到）则挂在最前面，loadMore 之后重算。
+   */
+  const anchorAt = (at: number): string | undefined => {
+    const lastStamp = lastRow === undefined ? undefined : stamps.get(lastRow);
+    if (lastStamp === undefined || at >= lastStamp) return lastRow;
+    let anchor: string | undefined;
+    for (const id of rows.keys()) {
+      if ((stamps.get(id) ?? -Infinity) > at) break;
+      anchor = id;
+    }
+    return anchor;
+  };
   for (const event of events) {
     if (event.sessionId !== sessionId) continue;
     const p = event.payload;
@@ -77,7 +99,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     if (event.kind === 'question' && typeof p.requestId === 'string') questions.set(p.requestId, { ...questions.get(p.requestId), ...p });
     if (event.kind === 'plan' && typeof p.requestId === 'string') plans.set(p.requestId, { ...plans.get(p.requestId), ...p });
     if ((event.kind === 'approval' || event.kind === 'question' || event.kind === 'plan') && typeof p.requestId === 'string'
-      && !cardAnchors.has(`${event.kind}:${p.requestId}`)) cardAnchors.set(`${event.kind}:${p.requestId}`, lastRow);
+      && !cardAnchors.has(`${event.kind}:${p.requestId}`)) cardAnchors.set(`${event.kind}:${p.requestId}`, anchorAt(event.createdAt));
     const run = String(p.runId ?? sessionId);
     latestRun = run;
     const id = `${run}:${String(p.id ?? p.messageId ?? p.turnId ?? event.eventId)}`;
@@ -109,7 +131,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
       // 同一次执行先报错再收尾时失败说了算：这次任务没有完成（agent_complete 不落行，也就抹不掉这条）。
       const failedModel = typeof p.provider === 'string' && typeof p.model === 'string' ? { provider: p.provider, model: p.model } : {};
       const existing = outcomes.get(run);
-      if (existing?.kind !== 'failed') outcomes.set(run, { anchor: lastRow, kind, code: typeof p.code === 'string' ? p.code : undefined, ...failedModel });
+      if (existing?.kind !== 'failed') outcomes.set(run, { anchor: anchorAt(event.createdAt), kind, code: typeof p.code === 'string' ? p.code : undefined, ...failedModel });
       // 电脑对同一次失败会从两个出口各发一条 error，只有一条带着失败的模型（远端验收实测 seq 36 带、37 不带）；
       // 按到达顺序取第一条的话，顺序一反卡片就收不起来。哪条带就补哪条。
       else if (!existing.provider && 'provider' in failedModel) Object.assign(existing, failedModel);
@@ -140,6 +162,14 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     {Array.from(plans, ([id, card]) => cardAnchors.get(`plan:${id}`) === anchor && (!hidePendingApprovals || card.status !== 'pending') && <PlanCard key={id} card={card} text={text} disabled={disabled}
       respond={(decision, feedback) => respondPlan(id, decision, feedback)} />)}
   </>;
+  // Neo 头一段只画一次（爸 09-17 拍板 ③A）：以用户消息为界，只在其后第一段有正文的助手行上画。
+  // 中间隔着卡片、执行结果、第二次执行都不重画——只看上一条**可见**消息是不是用户，历史与实时共用这一份 rows。
+  const labelled = new Set<string>();
+  let afterUser = true;
+  for (const [id, row] of rows) {
+    if (row.role === 'user') afterUser = true;
+    else if (row.content.trim() && afterUser) { labelled.add(id); afterUser = false; }
+  }
   return <div className="message-region"><div ref={scroller} onScroll={() => {
     const el = scroller.current!;
     following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -152,8 +182,8 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
       // 正文为空的助手消息是只调了工具的那一轮（派子助手、读文件），手机不显示工具步骤，画出来就是空气泡（爸 2026-09-16 真机）。
       // 行本身不画，但挂在它下面的执行结果和卡片照常画。
       : !row.content.trim() ? null : <div className="lan-message">
-        <div className="assistant-label"><NeoBrandMark variant="mark" size={24} /><span>{text.neo}</span></div>
-        <p className="assistant-text">{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>
+        {labelled.has(id) && <div className="assistant-label"><NeoBrandMark variant="mark" size={24} /><span>{text.neo}</span></div>}
+        <div className="assistant-text md"><Markdown source={row.content} copyLabel={text.copy} copiedLabel={text.copied} />{row.truncated && <small className="notice">{text.historyTruncated}</small>}</div>
       </div>}{outcomesAt(id)}{cardsAt(id)}</Fragment>)}
     {(() => {
       // 「正在生成」只留还未完成的：tool_call_end 投影带同一 toolCallId 到达后即消失，

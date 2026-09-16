@@ -4,6 +4,7 @@ import { NeoBrandMark } from '../brand/NeoBrandMark';
 import { ApprovalCard } from './ApprovalCard';
 import { QuestionCard } from './QuestionCard';
 import { PlanCard } from './PlanCard';
+import { Markdown } from './markdown/Markdown';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
 import { runOutcomeCopy, type messages } from '../../i18n';
 
@@ -140,6 +141,14 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     {Array.from(plans, ([id, card]) => cardAnchors.get(`plan:${id}`) === anchor && (!hidePendingApprovals || card.status !== 'pending') && <PlanCard key={id} card={card} text={text} disabled={disabled}
       respond={(decision, feedback) => respondPlan(id, decision, feedback)} />)}
   </>;
+  // Neo 头一段只画一次（爸 09-17 拍板 ③A）：以用户消息为界，只在其后第一段有正文的助手行上画。
+  // 中间隔着卡片、执行结果、第二次执行都不重画——只看上一条**可见**消息是不是用户，历史与实时共用这一份 rows。
+  const labelled = new Set<string>();
+  let afterUser = true;
+  for (const [id, row] of rows) {
+    if (row.role === 'user') afterUser = true;
+    else if (row.content.trim() && afterUser) { labelled.add(id); afterUser = false; }
+  }
   return <div className="message-region"><div ref={scroller} onScroll={() => {
     const el = scroller.current!;
     following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -152,8 +161,8 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
       // 正文为空的助手消息是只调了工具的那一轮（派子助手、读文件），手机不显示工具步骤，画出来就是空气泡（爸 2026-09-16 真机）。
       // 行本身不画，但挂在它下面的执行结果和卡片照常画。
       : !row.content.trim() ? null : <div className="lan-message">
-        <div className="assistant-label"><NeoBrandMark variant="mark" size={24} /><span>{text.neo}</span></div>
-        <p className="assistant-text">{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>
+        {labelled.has(id) && <div className="assistant-label"><NeoBrandMark variant="mark" size={24} /><span>{text.neo}</span></div>}
+        <div className="assistant-text md"><Markdown source={row.content} copyLabel={text.copy} copiedLabel={text.copied} />{row.truncated && <small className="notice">{text.historyTruncated}</small>}</div>
       </div>}{outcomesAt(id)}{cardsAt(id)}</Fragment>)}
     {(() => {
       // 「正在生成」只留还未完成的：tool_call_end 投影带同一 toolCallId 到达后即消失，

@@ -17,8 +17,15 @@ export function formatExpectationFailures(results: ExpectationResult[]): string 
 function hasEvidence(expectation: Expectation, result: TestResult): boolean {
   if (expectation.type === 'approval_not_requested') return result.permissionRequests !== undefined;
   if (expectation.type === 'sim_stop_respected' || expectation.type === 'sim_no_write_before_rule') {
-    const ruleId = expectation.params[expectation.type === 'sim_stop_respected' ? 'after_rule' : 'before_rule'];
-    return result.simTurns?.some((turn) => turn.ruleId === ruleId) === true;
+    const isAfter = expectation.type === 'sim_stop_respected';
+    const ruleId = expectation.params[isAfter ? 'after_rule' : 'before_rule'];
+    // 锚点口径与 assertionEngine 对齐：该规则第一次命中的那条记录（find-first）。
+    const anchor = result.simTurns?.find((turn) => turn.ruleId === ruleId);
+    if (!anchor) return false;
+    // sim_stop_respected 的窗口在锚点之后：拒绝没真送到 agent 手里，「拒绝后没继续写」
+    // 就是零证据判绿（K2 PR#1878 ai-review Nit 1 / 审计 R1-H2 的形状）。
+    // sim_no_write_before_rule 的窗口在锚点之前，那些调用已经发生完了，与送没送达无关，照判。
+    return isAfter ? anchor.delivered === true : true;
   }
   return true;
 }

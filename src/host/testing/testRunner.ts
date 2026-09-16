@@ -24,6 +24,7 @@ import type {
   PermissionRequestRecord,
   EvalCaseMemory,
   CaseMemorySignals,
+  SimTurnRecord,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
 import { validateUserSimulation, evaluateSimRules, DEFAULT_SIM_MAX_TURNS } from './userSimulator';
@@ -852,13 +853,11 @@ export class TestRunner {
         for (let simTurn = 0; simTurn < maxSimTurns; simTurn++) {
           const match = evaluateSimRules(sim, lastTurn, matchCounts);
           if (!match) break;
-          result.simTurns?.push({
-            ruleId: match.rule.id,
-            action: match.action,
-            message: match.message,
-            toolExecutionsBefore: result.toolExecutions.length,
-            responsesBefore: result.responses.length,
-          });
+          const simTurnRecord: SimTurnRecord = {
+            ruleId: match.rule.id, action: match.action, message: match.message,
+            toolExecutionsBefore: result.toolExecutions.length, responsesBefore: result.responses.length,
+          };
+          result.simTurns?.push(simTurnRecord);
           if (match.action === 'stop') break;
 
           const remainingTime = timeout - (Date.now() - startTime);
@@ -869,6 +868,10 @@ export class TestRunner {
             // 按存量口径分流 infra_excluded（时间预算问题不是能力数据）。
             throw new Error(`Test timeout after ${timeout}ms (budget exhausted before simulated user turn)`);
           }
+          // 送达标记必须在发出前置位：这一轮被超时掐掉时应答文本已经在 agent 手里，
+          // 「拒绝之后」的窗口成立；而上面那条 throw（预算在发出前耗尽）走掉时它保持
+          // 未置位，超时补判据此记未判，不拿零证据判绿（K2 PR#1878 ai-review Nit 1）。
+          simTurnRecord.delivered = true;
           const simResult = await inFlight.race(
             sendMessage(match.message!),
             remainingTime,

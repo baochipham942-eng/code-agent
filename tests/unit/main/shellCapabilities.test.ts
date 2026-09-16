@@ -105,4 +105,58 @@ describe('shell capabilities', () => {
       risk: 'medium',
     });
   });
+
+  // ── inferRisk 判据形状：动词按 camelCase 词段匹配，不只看前缀 ──────────────
+  // 旧判据 /^(add|…|set|…)/ 只认词首，写库动作只要动词不在开头就静默落 low。
+  it.each([
+    ['domain:memory', 'memoryEntryDelete'],
+    ['domain:memory', 'lightDelete'],
+    ['domain:memory', 'memoryImportV2Apply'],
+    ['domain:roles', 'rolePackInstall'],
+    ['domain:team', 'recipeDelete'],
+    ['domain:data', 'cacheClear'],
+    ['domain:voice', 'voiceprintClear'],
+  ])('marks %s/%s as medium: 写动词在词中也要算', (domain, action) => {
+    expect(getShellCapabilities().find((capability) => (
+      capability.id === makeShellCapabilityId(domain, action)
+    ))).toMatchObject({ risk: 'medium' });
+  });
+
+  // 只读首词优先：get/list/check/inspect 开头的查询即便名字里含写动词词段也是 low，
+  // 否则 getAudioCaptureStatus 会因为 capture、check_for_update 会因为 update 被误升。
+  it.each([
+    ['domain:desktop', 'getAudioCaptureStatus'],
+    ['domain:workspace', 'inspectArchive'],
+  ])('keeps %s/%s low: 只读首词压过词中写动词', (domain, action) => {
+    expect(getShellCapabilities().find((capability) => (
+      capability.id === makeShellCapabilityId(domain, action)
+    ))).toMatchObject({ risk: 'low' });
+  });
+
+  // 旧判据 /^set/ 无词边界，把 pii 的 setup:* 全吃成 medium；实际 setup:status →
+  // getStatus()、setup:isReady → checkReady() 是纯查询，而 setup:start/cancel 真的写。
+  it('fixes the ^set false positive on pii setup:* wire actions', () => {
+    const caps = getShellCapabilities();
+    const riskOf = (action: string) => caps.find((c) => (
+      c.id === makeShellCapabilityId('domain:pii', action)
+    ))?.risk;
+    expect(riskOf('setup:status')).toBe('low');
+    expect(riskOf('setup:isReady')).toBe('low');
+    expect(riskOf('setup:start')).toBe('medium');
+    expect(riskOf('setup:cancel')).toBe('medium');
+  });
+
+  // 判据的已知天花板，钉在这里而不是只写进注释：resolve / export 在只读首词表里，
+  // 于是以它们开头的写动作（同步冲突解决、会话分叉导出）也判 low。与改判据前的基线
+  // 一致（旧前缀规则同样给 low），所以不是回归；但新判据是「明确判定为只读」而非
+  // 「没覆盖到」，差别要有人看着。谁将来收窄 resolve/export，这条会红并提醒他：
+  // 同时会波及 10 条真只读的 export* 动作，要连带评估。
+  it.each([
+    ['domain:sync', 'resolveConflict'],
+    ['domain:session', 'exportSessionFork'],
+  ])('documents the readonly-head ceiling: %s/%s stays low', (domain, action) => {
+    expect(getShellCapabilities().find((capability) => (
+      capability.id === makeShellCapabilityId(domain, action)
+    ))).toMatchObject({ risk: 'low' });
+  });
 });

@@ -36,10 +36,23 @@ describe('真实宿主验收脚本与「成功不挂行」保持同一套判据�
   const script = readFileSync('packages/mobile/scripts/verify-host.mjs', 'utf8');
 
   it('验收脚本改用执行条消失当「这一轮结束」，不再等被删掉的成功文案', () => {
-    expect(script).toContain("page.getByTestId('run-strip').waitFor({state:'detached'})");
+    // 钉承重点，不钉措辞：等的对象是执行条这个定位符，且被删掉的成功文案不许再出现。
+    expect(script).toContain("const strip = page.getByTestId('run-strip');");
+    expect(script).toContain("await strip.waitFor({state:'detached'});");
     expect(script).not.toContain('任务已完成');
     // 停止仍有文案行，那条判据不动
     expect(script).toContain("page.getByText('任务已停止',{exact:true})");
+  });
+
+  it('reload 之后不拿「元素不在」当完成——先等重连，再等「执行条不在且已有助手回复」（ai-review PR#1898 第二轮）', () => {
+    // 直接等 detached 在 reload 后是恒真的：React 还没挂载时元素本来就不在，Playwright 立刻判满足。
+    expect(script).toContain('await page.reload();await runSettledAfterReload();');
+    expect(script).toMatch(/runSettledAfterReload = async \(\) => \{\s*\n\s*await page\.getByText\('已连接电脑'/);
+    expect(script).toContain("const replies = await page.locator('.lan-message:not(.from-user)').count();");
+  });
+
+  it('等执行条消失的前提是它此刻真的挂着——否则又是一个恒真判据', () => {
+    expect(script).toContain("assert(await strip.count() > 0, 'run strip must be mounted before waiting for it to vanish');");
   });
 
   it('「没问审批就跑完」的护栏仍然会炸，而不是静默失效', () => {

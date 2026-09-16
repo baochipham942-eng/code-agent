@@ -76,7 +76,27 @@ try {
   await page.getByTestId('send').click();await waitFor(page.getByRole('button',{name:'停止任务',exact:true}));pass('durable-run-id-reaches-mobile-stop-control');
   // 会话内成功不再挂文案行（N-MOBILE-QUIET-SUCCESS）：「这一轮结束了」的可见信号改成执行条消失。
   // 护栏语义不变——没弹审批就跑完，照样当场炸，而不是等到超时。
-  const runEnded = () => page.getByTestId('run-strip').waitFor({state:'detached'});
+  const strip = page.getByTestId('run-strip');
+  // 🔴 直接等 detached 是恒真判据：元素还没挂上时 Playwright 立刻判满足（ai-review PR#1898 第二轮）。
+  // 所以等它消失的前提是「此刻它真的挂着」——这条前提只在运行中的现场成立（下面两处都是）。
+  const runEnded = async () => {
+    assert(await strip.count() > 0, 'run strip must be mounted before waiting for it to vanish');
+    await strip.waitFor({state:'detached'});
+  };
+  // reload 之后没有那个前提（React 还没挂载，元素本来就不在），改成正向收敛：
+  // 先等重连回来，再轮询到「执行条不在 + 助手回复已渲染」；失败仍然当场炸，不静默当成完成。
+  const runSettledAfterReload = async () => {
+    await page.getByText('已连接电脑',{exact:true}).last().waitFor();
+    const deadline = Date.now() + 120_000;
+    for(;;){
+      if(await page.getByText('任务失败',{exact:true}).count()) throw new Error('REAL_NEO_RUN_FAILED');
+      const live = await strip.count();
+      const replies = await page.locator('.lan-message:not(.from-user)').count();
+      if(!live && replies > 0) return;
+      assert(Date.now() < deadline, 'run did not settle after reload');
+      await pause(500);
+    }
+  };
   const allow=page.getByRole('button',{name:'允许这一次',exact:true});await Promise.race([waitFor(allow), runEnded().then(()=>{throw new Error('TASK_FINISHED_WITHOUT_REQUIRED_APPROVAL');})]);
   assert(!existsSync(resolve(project,filename)),'file must not exist before real approval');
   const approvalBounds=await allow.boundingBox();assert(approvalBounds && approvalBounds.y>=0 && approvalBounds.y+approvalBounds.height<=852,'approval must be visible without scrolling');
@@ -90,7 +110,7 @@ try {
   assert.equal(operation.type,'file_write');assert.equal(operation.tool,'Write');
   assert.equal(resolve(project,operation.details.path ?? operation.details.filePath),resolve(project,filename));
   loseReceipt=true;await allow.click();await page.getByText('正在核对电脑是否已接收，请勿重复发送',{exact:true}).waitFor();
-  await page.reload();await Promise.race([runEnded(), page.getByText('任务失败',{exact:true}).waitFor().then(()=>{throw new Error('REAL_NEO_RUN_FAILED');})]);
+  await page.reload();await runSettledAfterReload();
   assert.equal(readFileSync(resolve(project,filename),'utf8').trim(),marker);pass('mobile-approval-survives-lost-receipt-and-real-file-is-created');
   const saved=JSON.parse(storage);assert(!saved.pending);pass('pending-command-cleared-after-authoritative-reconciliation');
   const committed=db.prepare("SELECT payload_json FROM companion_events WHERE session_id=? AND kind='message'").all(sessionId).map(row=>JSON.parse(row.payload_json)).filter(row=>row.role==='assistant');

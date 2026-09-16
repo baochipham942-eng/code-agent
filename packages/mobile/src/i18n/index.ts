@@ -259,11 +259,12 @@ const en: Record<keyof typeof zh, string> = {
 export function messages(language: string) { return language.startsWith('zh') ? zh : en; }
 
 /**
- * 一次执行结束后挂在它下面的那一行（N-MOBILE-EXEC-STATUS ②）。失败带原因：信任类与模型 key
+ * 一次执行结束后挂在它下面的那一行（N-MOBILE-EXEC-STATUS ②）。只有失败与被停止会挂行——成功由回复
+ * 本身证明（爸 2026-09-16 build 41：闲聊下面也报「任务已完成」太突兀）。失败带原因：信任类与模型 key
  * 各有一句能照着做的人话，其余统一「电脑执行时出了问题，没有完成」。
  */
-export function runOutcomeCopy(text: ReturnType<typeof messages>, kind: 'complete' | 'stopped' | 'failed', code?: string): string {
-  if (kind !== 'failed') return text[kind];
+export function runOutcomeCopy(text: ReturnType<typeof messages>, kind: 'stopped' | 'failed', code?: string): string {
+  if (kind === 'stopped') return text.stopped;
   const reason = code === 'PROJECT_SOURCE_MISSING' ? text.projectSourceMissing
     : code === 'PROJECT_SOURCE_CHANGED' ? text.projectSourceChanged
     : code === 'PROJECT_SOURCE_UNTRUSTED' ? text.projectSourceUntrusted

@@ -55,7 +55,9 @@ try {
   await new Promise(resolve=>http.listen(0,'127.0.0.1',resolve));
   browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:393,height:852},locale:'zh-CN'});
   page.setDefaultTimeout(120000);
-  const waitFor = locator => Promise.race([locator.waitFor(), page.getByText('任务失败',{exact:true}).waitFor().then(()=>{throw new Error('REAL_NEO_RUN_FAILED');})]);
+  // 失败行渲染成「任务失败：<原因>」（runOutcomeCopy），exact 文案判据永远打不中——锚属性不锚措辞。
+  const failedRow = page.locator('.run-outcome[data-outcome="failed"]');
+  const waitFor = locator => Promise.race([locator.waitFor(), failedRow.waitFor().then(()=>{throw new Error('REAL_NEO_RUN_FAILED');})]);
   let storage=null,loseReceipt=false;const errors=[],wire=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.exposeFunction('lanRead',()=>storage);await page.exposeFunction('lanWrite',v=>{storage=v;});
@@ -74,7 +76,32 @@ try {
   const filename=`mobile-acceptance-${Date.now()}.txt`;const marker='NEO_MOBILE_REAL_TASK_OK';
   await page.getByTestId('draft').fill(`Use write_file to create ${filename} in this project containing exactly ${marker}. Do not run shell commands or access any other paths. Wait for my approval when requested, then report the created filename.`);
   await page.getByTestId('send').click();await waitFor(page.getByRole('button',{name:'停止任务',exact:true}));pass('durable-run-id-reaches-mobile-stop-control');
-  const allow=page.getByRole('button',{name:'允许这一次',exact:true});await Promise.race([waitFor(allow), page.getByText('任务已完成',{exact:true}).waitFor().then(()=>{throw new Error('TASK_FINISHED_WITHOUT_REQUIRED_APPROVAL');})]);
+  // 会话内成功不再挂文案行（N-MOBILE-QUIET-SUCCESS）：「这一轮结束了」的可见信号改成执行条消失。
+  // 护栏语义不变——没弹审批就跑完，照样当场炸，而不是等到超时。
+  const strip = page.getByTestId('run-strip');
+  // 🔴 直接等 detached 是恒真判据：元素还没挂上时 Playwright 立刻判满足（ai-review PR#1898 第二轮）。
+  // 所以等它消失的前提是「此刻它真的挂着」——这条前提只在运行中的现场成立（下面两处都是）。
+  const runEnded = async () => {
+    assert(await strip.count() > 0, 'run strip must be mounted before waiting for it to vanish');
+    await strip.waitFor({state:'detached'});
+  };
+  // reload 之后没有那个前提（React 还没挂载，元素本来就不在），改成正向收敛：
+  // 先等重连回来，再轮询到「执行条不在 + 助手回复已渲染」；失败仍然当场炸，不静默当成完成。
+  const assistantReplies = () => page.locator('.lan-message:not(.from-user)').count();
+  const runSettledAfterReload = async repliesBefore => {
+    await page.getByText('已连接电脑',{exact:true}).last().waitFor();
+    const deadline = Date.now() + 120_000;
+    for(;;){
+      if(await failedRow.count()) throw new Error('REAL_NEO_RUN_FAILED');
+      const live = await strip.count();
+      const replies = await assistantReplies();
+      // 只认「比点审批之前多出来的回复」——否则之前那条回复就能让判据提前收敛（ai-review 第三轮）
+      if(!live && replies > repliesBefore) return;
+      assert(Date.now() < deadline, 'run did not settle after reload');
+      await pause(500);
+    }
+  };
+  const allow=page.getByRole('button',{name:'允许这一次',exact:true});await Promise.race([waitFor(allow), runEnded().then(()=>{throw new Error('TASK_FINISHED_WITHOUT_REQUIRED_APPROVAL');})]);
   assert(!existsSync(resolve(project,filename)),'file must not exist before real approval');
   const approvalBounds=await allow.boundingBox();assert(approvalBounds && approvalBounds.y>=0 && approvalBounds.y+approvalBounds.height<=852,'approval must be visible without scrolling');
   await page.screenshot({path:resolve(directory,'approval.png')});pass('real-model-write-pauses-before-file-side-effect');
@@ -86,8 +113,9 @@ try {
   assert((await page.locator('.approval-card').last().innerText()).includes(filename));
   assert.equal(operation.type,'file_write');assert.equal(operation.tool,'Write');
   assert.equal(resolve(project,operation.details.path ?? operation.details.filePath),resolve(project,filename));
+  const repliesBeforeApproval = await assistantReplies();
   loseReceipt=true;await allow.click();await page.getByText('正在核对电脑是否已接收，请勿重复发送',{exact:true}).waitFor();
-  await page.reload();await waitFor(page.getByText('任务已完成',{exact:true}));
+  await page.reload();await runSettledAfterReload(repliesBeforeApproval);
   assert.equal(readFileSync(resolve(project,filename),'utf8').trim(),marker);pass('mobile-approval-survives-lost-receipt-and-real-file-is-created');
   const saved=JSON.parse(storage);assert(!saved.pending);pass('pending-command-cleared-after-authoritative-reconciliation');
   const committed=db.prepare("SELECT payload_json FROM companion_events WHERE session_id=? AND kind='message'").all(sessionId).map(row=>JSON.parse(row.payload_json)).filter(row=>row.role==='assistant');
@@ -105,7 +133,7 @@ try {
     assert(!existsSync(resolve(project,blockedFile)));
     await page.getByRole('button',{name:action==='deny'?'拒绝':'停止任务',exact:true}).click();
     if(action==='stop') await page.getByText('任务已停止',{exact:true}).waitFor({timeout:10000});
-    else await waitFor(page.getByText('任务已完成',{exact:true}));
+    else await Promise.race([runEnded(), failedRow.waitFor().then(()=>{throw new Error('REAL_NEO_RUN_FAILED');})]);
     assert(!existsSync(resolve(project,blockedFile)),'denied/stopped operation must not write');
     const decision=db.prepare('SELECT status FROM companion_decisions WHERE session_id=? ORDER BY rowid DESC LIMIT 1').get(sessionId);
     assert.notEqual(decision.status,'pending');

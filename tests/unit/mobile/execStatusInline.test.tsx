@@ -27,10 +27,62 @@ function stream(): string[] {
   });
 }
 
+import { readFileSync } from 'node:fs';
+
+// 成功不再挂文案行之后，真实宿主验收脚本就不能再等「任务已完成」——它等不到，只会超时。
+// 更要命的是 verify-host 里那道「没问审批就跑完了」的护栏原本也靠这句话触发：文案没了，
+// 护栏永远不触发且不报错（装好没接电）。所以把新判据钉住：脚本认 run-strip，组件必须真发这个 testid。
+describe('真实宿主验收脚本与「成功不挂行」保持同一套判据（ai-review PR#1898 Important）', () => {
+  const script = readFileSync('packages/mobile/scripts/verify-host.mjs', 'utf8');
+
+  it('验收脚本改用执行条消失当「这一轮结束」，不再等被删掉的成功文案', () => {
+    // 钉承重点，不钉措辞：等的对象是执行条这个定位符，且被删掉的成功文案不许再出现。
+    expect(script).toContain("const strip = page.getByTestId('run-strip');");
+    expect(script).toContain("await strip.waitFor({state:'detached'});");
+    expect(script).not.toContain('任务已完成');
+    // 停止仍有文案行，那条判据不动
+    expect(script).toContain("page.getByText('任务已停止',{exact:true})");
+  });
+
+  it('reload 之后不拿「元素不在」当完成——先等重连，再等「执行条不在且已有助手回复」（ai-review PR#1898 第二轮）', () => {
+    // 直接等 detached 在 reload 后是恒真的：React 还没挂载时元素本来就不在，Playwright 立刻判满足。
+    // 钉承重点不钉措辞：①reload 后必须走收敛函数，不许再回到 detached；②该函数第一步先等重连。
+    expect(script).toMatch(/await page\.reload\(\);await runSettledAfterReload\(/);
+    expect(script).not.toMatch(/page\.reload\(\);\s*await strip\.waitFor/);
+    expect(script).toMatch(/runSettledAfterReload = async [^\n]*=> \{\s*\n\s*await page\.getByText\('已连接电脑'/);
+  });
+
+  it('失败判据锚 data-outcome，不锚「任务失败」这句措辞（失败行带原因，exact 打不中）', () => {
+    expect(script).toContain("page.locator('.run-outcome[data-outcome=\"failed\"]')");
+    expect(script).not.toContain("getByText('任务失败'");
+    const component = readFileSync('packages/mobile/src/features/sessions/CompanionConversation.tsx', 'utf8');
+    expect(component).toContain('data-outcome={outcome.kind}');
+  });
+
+  it('reload 后的回复判据绑定这一轮：比点审批前的基线多才算收敛', () => {
+    expect(script).toContain('const repliesBeforeApproval = await assistantReplies();');
+    expect(script).toContain('await runSettledAfterReload(repliesBeforeApproval);');
+    expect(script).toContain('if(!live && replies > repliesBefore) return;');
+  });
+
+  it('等执行条消失的前提是它此刻真的挂着——否则又是一个恒真判据', () => {
+    expect(script).toContain("assert(await strip.count() > 0, 'run strip must be mounted before waiting for it to vanish');");
+  });
+
+  it('「没问审批就跑完」的护栏仍然会炸，而不是静默失效', () => {
+    expect(script).toMatch(/runEnded\(\)\.then\(\(\)=>\{throw new Error\('TASK_FINISHED_WITHOUT_REQUIRED_APPROVAL'\);\}\)/);
+  });
+
+  it('组件确实发 run-strip 这个 testid——判据锚的元素必须真存在，否则 detached 恒真', () => {
+    const component = readFileSync('packages/mobile/src/features/sessions/CompanionConversation.tsx', 'utf8');
+    expect(component).toContain('data-testid="run-strip"');
+  });
+});
+
 describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①②）', () => {
   afterEach(cleanup);
 
-  it('两次任务一败一成：各自的终态紧跟在各自的回复下面，不在底部并列', () => {
+  it('两次任务一败一成：失败挂在它那次回复下面，成功不挂行（爸 09-16 build 41）', () => {
     render(view([
       ev('message', { id: 'u1', role: 'user', content: '做表', runId: 'r1' }),
       ev('message', { id: 'a1', role: 'assistant', content: '开始', runId: 'r1' }),
@@ -42,8 +94,18 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
     ]));
     expect(stream()).toEqual([
       'user:做表', 'neo:开始', `outcome:${runOutcomeCopy(text, 'failed', 'MODEL_AUTH')}`,
-      'user:再试', 'neo:好了', `outcome:${text.complete}`,
+      'user:再试', 'neo:好了',
     ]);
+  });
+
+  it('只成功的一轮：回复下面什么都不挂——回复本身就是成功的证据', () => {
+    render(view([
+      ev('message', { id: 'u1', role: 'user', content: '你好', runId: 'r1' }),
+      ev('message', { id: 'a1', role: 'assistant', content: '你好，有什么可以帮你的？', runId: 'r1' }),
+      ev('agent_complete', { runId: 'r1' }),
+    ]));
+    expect(stream()).toEqual(['user:你好', 'neo:你好，有什么可以帮你的？']);
+    expect(document.querySelector('.run-outcome')).toBeNull();
   });
 
   it('失败行带原因；同一次执行先报错后收尾，失败说了算', () => {

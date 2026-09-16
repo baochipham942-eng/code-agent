@@ -7,7 +7,7 @@ import { PlanCard } from './PlanCard';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
 import { runOutcomeCopy, type messages } from '../../i18n';
 
-type RunOutcome = { anchor: string | undefined; kind: 'complete' | 'stopped' | 'failed'; code?: string };
+type RunOutcome = { anchor: string | undefined; kind: 'stopped' | 'failed'; code?: string };
 
 /**
  * 「跟到底」只滚到刚好露出最后一个元素的下沿为止（build 40 真机：进会话第一条上半被顶栏裁掉）。
@@ -50,6 +50,9 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   const rows = new Map<string, { role: string; content: string; truncated?: boolean }>();
   // 终态按执行（runId）归属，挂在那次执行当时的最后一行下面：多次任务各行其是，
   // 不再按到达顺序堆在会话底部互相矛盾（build 40 真机：「任务已完成」和「没有完成」两行并列）。
+  // **成功不挂行**（爸 2026-09-16 build 41 真机）：每一轮回复在协议上都是一次 run，成功就挂「任务已完成」
+  // 等于闲聊「你好」下面也报一句任务完成——回复本身就是成功的证据。只有失败与被停止必须说，
+  // 那两种沉默了用户不知道发生过什么。推送正文仍保留完成句：人在后台时需要那一下。
   const outcomes = new Map<string, RunOutcome>();
   let lastRow: string | undefined = history?.messages.at(-1)?.id;
   for (const message of history?.messages ?? []) rows.set(message.id, { role: message.role, content: message.content, truncated: message.truncated });
@@ -83,9 +86,9 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
         const old = rows.get(key)?.content ?? '';
         rows.set(key, { role: 'assistant', content: p.op === 'append' ? old + p.text : p.text }); lastRow = key;
       }
-    } else if (event.kind === 'agent_complete' || event.kind === 'agent_cancelled' || event.kind === 'error') {
-      const kind = event.kind === 'agent_complete' ? 'complete' : event.kind === 'agent_cancelled' ? 'stopped' : 'failed';
-      // 同一次执行先报错再收尾时失败说了算：这次任务没有完成。
+    } else if (event.kind === 'agent_cancelled' || event.kind === 'error') {
+      const kind = event.kind === 'agent_cancelled' ? 'stopped' : 'failed';
+      // 同一次执行先报错再收尾时失败说了算：这次任务没有完成（agent_complete 不落行，也就抹不掉这条）。
       if (outcomes.get(run)?.kind !== 'failed') outcomes.set(run, { anchor: lastRow, kind, code: typeof p.code === 'string' ? p.code : undefined });
     }
   }

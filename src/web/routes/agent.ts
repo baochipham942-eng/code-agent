@@ -1207,6 +1207,27 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         turn: runEventCollector,
       });
 
+      // 本地这一轮已提交（commitTurn）即结束执行：先落终态、发 agent_complete，再做云端同步。
+      // 原来排在云同步之后——未登录时每次访问云端都要先失败一轮恢复登录，回复早已显示，
+      // 手机上的执行条却要多挂 3 秒左右（爸 2026-09-16 真机「回复都出了，正在处理没及时消失」）。
+      // 云同步自带 try/catch，失败不改变这一轮的结果。
+      const finalStatus: SessionStatus = runEventCollector.runCancelled
+        ? 'interrupted'
+        : runController.hadTerminalError
+          ? 'error'
+          : 'completed';
+      await runController.updateSessionStatus(finalStatus);
+
+      await durableRunLifecycle.markSuccess({ finalStatus });
+
+      // session:updated 和 session:list-updated 已按运行状态广播
+
+      // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
+      runController.emitAgentEvent({ type: 'agent_complete', data: null });
+      deps.publishCompanionEvent?.(sessionId,
+        finalStatus === 'interrupted' ? 'agent_cancelled' : finalStatus === 'error' ? 'error' : 'agent_complete',
+        { event: finalStatus === 'error' ? { code: 'RUN_FAILED', ...(runController.lastTerminalFailure ? { failure: runController.lastTerminalFailure } : {}) } : null, runId: runContext.runId });
+
       // ── 持久化到 Supabase（Web 模式云端同步）──
       try {
         const sb = await getSupabaseForSession();
@@ -1258,23 +1279,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       } catch (sbErr) {
         logger.warn('Failed to persist messages to Supabase:', (sbErr as Error).message);
       }
-
-      const finalStatus: SessionStatus = runEventCollector.runCancelled
-        ? 'interrupted'
-        : runController.hadTerminalError
-          ? 'error'
-          : 'completed';
-      await runController.updateSessionStatus(finalStatus);
-
-      await durableRunLifecycle.markSuccess({ finalStatus });
-
-      // session:updated 和 session:list-updated 已按运行状态广播
-
-      // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
-      runController.emitAgentEvent({ type: 'agent_complete', data: null });
-      deps.publishCompanionEvent?.(sessionId,
-        finalStatus === 'interrupted' ? 'agent_cancelled' : finalStatus === 'error' ? 'error' : 'agent_complete',
-        { event: finalStatus === 'error' ? { code: 'RUN_FAILED', ...(runController.lastTerminalFailure ? { failure: runController.lastTerminalFailure } : {}) } : null, runId: runContext.runId });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       if (externalEngineFailureContext) {

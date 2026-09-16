@@ -658,9 +658,6 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           {state.saveError && <button className="inline-retry" onClick={() => void state.flush()}>{text.retry}</button>}
           {!state.saveError && !nativeError && !companion.commandError && companion.status === 'connected'
             && <button onClick={() => state.openSheet('projects')}>{text.projects}</button>}
-          {/* 模型密钥用不了是用户能自己绕过去的：给「换一个可用模型」，直达选择会话模型（设计稿 modelAuthFailed）。 */}
-          {!state.saveError && !nativeError && companion.commandError === 'MODEL_AUTH' && commandNotice && companion.sessionId
-            && <button className="inline-retry" data-testid="notice-switch-model" onClick={() => state.openSheet('model')}>{text.switchModel}</button>}
         </p>}
         <Composer key={`${companion.binding?.hostKey}:${companion.sessionId}`} text={text}
           draft={state.preferences.drafts[state.draftKey] ?? ''} editDraft={state.editDraft}

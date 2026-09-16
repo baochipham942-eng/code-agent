@@ -68,9 +68,11 @@ describe('first-party ios voice recorder contract', () => {
     expect(swift.match(/let failure = Self\.startFailure\(error\)\n[\s\S]*?teardown/g)).toHaveLength(2);
     expect(swift).not.toContain('call.reject(Failure.failedToRecord)');
     expect(swift).toContain('.contains((error as NSError).code) || !microphoneFree() ? Failure.microphoneBusy : Failure.failedToRecord');
-    for (const code of ['insufficientPriority', 'cannotInterruptOthers', 'cannotStartRecording', 'isBusy']) {
+    for (const code of ['insufficientPriority', 'cannotInterruptOthers', 'isBusy']) {
       expect(swift).toContain(`AVAudioSession.ErrorCode.${code}.rawValue`);
     }
+    // 泛化起录失败不算占用：否则无他 App 音频时提示先说「被占用」又立刻翻成「空出来了」
+    expect(swift).not.toContain('AVAudioSession.ErrorCode.cannotStartRecording.rawValue');
   });
 
   it('真检测麦克风释放：桥方法、事件名两边一致，盯守监听中断/恢复通知', () => {

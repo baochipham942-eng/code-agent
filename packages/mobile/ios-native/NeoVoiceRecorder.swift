@@ -258,12 +258,12 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// 起录失败的原因：音频会话被更高优先级的占用方拒绝（通话/会议/Siri），或失败那一刻别人正独占音频，
+    /// cannotStartRecording 不进码表：它是泛化起录失败，算进占用会先说「被占用」再立刻翻成「空出来了」（grok ai-review Nit）。
     /// 算「被占用」——用户能自己解决；其余才是说不清的 FAILED_TO_RECORD。
     private static func startFailure(_ error: Error) -> String {
         let busyCodes: Set<Int> = [
             AVAudioSession.ErrorCode.insufficientPriority.rawValue,
             AVAudioSession.ErrorCode.cannotInterruptOthers.rawValue,
-            AVAudioSession.ErrorCode.cannotStartRecording.rawValue,
             AVAudioSession.ErrorCode.isBusy.rawValue,
             AVAudioSession.ErrorCode.siriIsRecording.rawValue
         ]

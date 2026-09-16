@@ -11,7 +11,7 @@ import { messages } from '../../../packages/mobile/src/i18n';
 /**
  * N-MOBILE-SESSIONSHEET-SPLIT + N-MOBILE-RUNFAIL-REASON（爸 2026-09-16 build 45 真机）：
  * 模型入口只留输入区胶囊，打开独立的「选择会话模型」；「会话操作」里不再有模型。
- * 模型密钥用不了的失败提示给「换一个可用模型」，落点就是同一屏——两处不许是两个互不相认的入口。
+ * 会话里模型密钥用不了的失败卡给「换一个可用模型」，落点就是同一屏（execStatusInline 覆盖卡片本身）。
  */
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
@@ -29,8 +29,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
           { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek Chat', providerLabel: 'DeepSeek' },
         ],
       };
-      if (action === 'command') return { kind: 'rejected', reason: 'MODEL_AUTH' };
-      return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
+            return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
     }
     close() {}
   },
@@ -90,20 +89,5 @@ describe('模型入口只留输入区胶囊', () => {
     expect(document.querySelector('.library-sheet')!.textContent).toContain(text.rename);
     expect(document.querySelector('.model-row')).toBeNull();
     expect(document.querySelector('.library-sheet select')).toBeNull();
-  });
-
-  it('发送被拒为模型密钥用不了：提示说真因，并给「换一个可用模型」直达同一屏', async () => {
-    await mountInSession();
-    fireEvent.change(document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement, { target: { value: '你好' } });
-    fireEvent.click(document.querySelector('[data-testid="send"]') as HTMLElement);
-    const button = await waitFor(() => {
-      const found = document.querySelector('[data-testid="notice-switch-model"]') as HTMLElement | null;
-      expect(found).toBeTruthy();
-      return found!;
-    });
-    expect(button.closest('.notice')!.textContent).toContain(text.modelAuthMissing);
-    expect(button.closest('.notice')!.textContent).not.toContain(text.runFailed);
-    fireEvent.click(button);
-    await waitFor(() => { expect(title()).toBe(text.chooseModel); });
   });
 });

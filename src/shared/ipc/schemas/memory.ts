@@ -2,7 +2,7 @@
 // Memory Domain Schemas - memory 域 action 集合真源（RQ-183 续作·MEMORY 刀）
 // ============================================================================
 //
-// 最小表形态（方案 2.1/2.5，同 session 域）：action 用 z.enum 钉死合法字面量，payload
+// 最小表形态（方案 2.1/2.5）：action 用 z.enum 钉死合法字面量，payload
 // 保持 z.unknown（表化迁移期行为严格不变，payload zod 细化是表立之后的增量）。集合与
 // shellCapabilities 的 memory 域、handler 表（src/host/ipc/memory.ipc.ts memoryRoutes）
 // 三面由 tests/scripts/domainRouteParity.test.ts 做结构枚举对账——新 action 三处一起改。

@@ -604,9 +604,6 @@ export function registerSettingsHandlers(
     return handleSetIntegration(getConfigService, payload);
   });
 
-  // window:minimize / maximize / close 三条纯别名通道已删（RQ-183 尾刀）：
-  // 上面 installDomainRoutes(windowRoutes) 装的 window 域表是唯一入口，零调用方。
-
   ipcMain.handle(IPC_CHANNELS.APP_GET_VERSION, async (): Promise<string> => app.getVersion());
 
   ipcMain.handle('extract-pdf-text', async (_, filePath: string) => {

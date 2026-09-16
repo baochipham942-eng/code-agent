@@ -122,7 +122,10 @@ export class HistoryCache {
     const byKey = new Map(bucket.cards.map(card => [cardKey(card), card]));
     for (const card of cards) {
       if (!isCardEvent(card) || card.sessionId !== sessionId) continue;
-      byKey.set(cardKey(card), card);
+      // 同一张卡只留最新一版，但 createdAt 留第一次出现的时间：会话里按它把卡挂回原来那一轮（FB-177），
+      // 用收尾那版的时间，隔很久才被关掉的卡会挂到后面的轮次里。
+      const first = byKey.get(cardKey(card));
+      byKey.set(cardKey(card), first && first.createdAt < card.createdAt ? { ...card, createdAt: first.createdAt } : card);
     }
     bucket.cards = [...byKey.values()];
     this.touch(bucket);

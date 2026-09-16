@@ -35,8 +35,9 @@ describe('手机会话时间线（爸 2026-09-16 build 49 真机）', () => {
     // 前提自证：两条有正文的助手消息确实渲染了
     expect(container.textContent).toContain('我先把这件事交给后台执行。');
     expect(container.textContent).toContain('对比报告在这里。');
+    // 两段有正文的回复之间隔着审批卡：Neo 头一段只画一次（爸 09-17 ③A），见 assistantLabelMerge.test.tsx
     const labels = container.querySelectorAll('.assistant-label');
-    expect(labels).toHaveLength(2);
+    expect(labels).toHaveLength(1);
     for (const bubble of container.querySelectorAll('.lan-message:not(.from-user)')) expect(bubble.textContent!.replace(text.neo, '').trim()).not.toBe('');
   });
 

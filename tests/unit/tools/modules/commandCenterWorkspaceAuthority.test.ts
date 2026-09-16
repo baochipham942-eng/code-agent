@@ -13,6 +13,7 @@ import {
 } from '../../../../src/host/runtime/workspaceAuthority';
 import { executeDelegateTask } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
+import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../../../src/host/config/configPaths';
 
 function workspaceScope(path: string) {
   return createWorkspaceScope(`project-${path}`, [{
@@ -105,6 +106,33 @@ describe('delegate_task workspace authority', () => {
     )).toBeUndefined();
   });
 
+  // 爸 2026-09-16 真机：「未分类」会话派后台任务必然 WORKSPACE_REQUIRED——默认工作目录原来是 <dataDir>/work，
+  // 恰好落在上面这条按设计拒绝的数据目录里。默认目录挪到主目录下（~/Neo、测试槽 ~/Neo-dev）后必须能当写边界。
+  it('the default work directory for project-less sessions is an acceptable background write boundary', () => {
+    const home = '/tmp/test-home';
+    for (const dataName of ['.code-agent', '.code-agent-dev']) {
+      const env = { CODE_AGENT_HOME: home, CODE_AGENT_DATA_DIR: `${home}/${dataName}` };
+      const workDir = getDefaultWorkDirectory(env);
+      expect(workDir).toBe(dataName === '.code-agent' ? `${home}/Neo` : `${home}/Neo-dev`);
+      expect(resolveBackgroundWorkspaceAuthority(
+        { workspace: workDir, workspaceScope: workspaceScope(workDir) },
+        { homeDirectories: [home], dataDirectory: env.CODE_AGENT_DATA_DIR },
+      ), `${workDir} 应当能当后台写边界`).toBeDefined();
+    }
+    // 已存进会话的旧默认目录要认得出来（尾斜杠同样算），别的目录不误伤
+    const devEnv = { CODE_AGENT_HOME: home, CODE_AGENT_DATA_DIR: `${home}/.code-agent-dev` };
+    expect(isLegacyDefaultWorkDirectory(`${home}/.code-agent-dev/work/`, devEnv)).toBe(true);
+    expect(isLegacyDefaultWorkDirectory(`${home}/.code-agent-dev/work/sub`, devEnv)).toBe(false);
+    expect(isLegacyDefaultWorkDirectory(`${home}/Neo-dev`, devEnv)).toBe(false);
+    // 嵌套数据目录（测试临时目录、远端验收宿主）：放在数据目录旁边，不往真实主目录写，也不进数据目录
+    const nested = { CODE_AGENT_HOME: home, CODE_AGENT_DATA_DIR: '/tmp/verify-host/data' };
+    expect(getDefaultWorkDirectory(nested)).toBe('/tmp/verify-host/data-work');
+    expect(resolveBackgroundWorkspaceAuthority(
+      { workspace: '/tmp/verify-host/data-work', workspaceScope: workspaceScope('/tmp/verify-host/data-work') },
+      { homeDirectories: [home], dataDirectory: nested.CODE_AGENT_DATA_DIR },
+    )).toBeDefined();
+  });
+
   // 对抗审查实测出来的绕过：只查「root 在敏感目录里面」，不查「root 包含敏感目录」。
   // $HOME 本身被挡住，但它的父目录和文件系统根都被 ACCEPTED——一旦成为 workspace，
   // $HOME/.code-agent 又落回「项目目录内」，W1 照常自动放行，整条拒绝清单被祖先路径绕开。
@@ -188,5 +216,17 @@ describe('createRunContext 的 cwd 兜底必须过宽度校验', () => {
     const run = createRunContext({ ...base, workspace: os.homedir() });
     expect(run.runId).toBe(base.runId);
     expect(run.cwd).toBeTruthy();
+  });
+});
+
+// 默认工作目录原来在 5 处各抄一份 <dataDir>/work，改一处漏一处就回到 WORKSPACE_REQUIRED。
+// agentEngine.ipc / workspace.ipc 的兜底分支单测够不着，这里钉源码（static-contract）：兜底只许经 getDefaultWorkDirectory。
+describe('default work directory has one source of truth', () => {
+  it('no source file re-derives <dataDir>/work by hand', { timeout: 20_000 }, async () => {
+    const { spawnSync } = await import('node:child_process');
+    // git grep 无命中时退出码 1，不当失败
+    const result = spawnSync('git', ['grep', '-nE', "(dataDir|DATA_DIR|userConfigDir|userData|homedir\\(\\)|getUserDataPath\\(\\)).*(['\"`/]work['\"`)])", '--', 'src', ':!src/host/config/configPaths.ts'], { encoding: 'utf8' });
+    expect(result.status === 0 || result.status === 1, result.stderr).toBe(true);
+    expect(result.stdout.split('\n').filter(Boolean)).toEqual([]);
   });
 });

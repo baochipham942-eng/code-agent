@@ -505,6 +505,7 @@ describe('createAgentRouter', () => {
     await closeServer();
     if (tempDataDir) {
       await rm(tempDataDir, { recursive: true, force: true });
+      await rm(`${tempDataDir}-work`, { recursive: true, force: true });
       tempDataDir = undefined;
     }
     queuedInputTestDb?.close();
@@ -4083,8 +4084,31 @@ describe('createAgentRouter', () => {
     await response.text();
 
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
-      project: join(tempDataDir, 'work'),
+      // 默认目录不在数据目录里（后台写边界按设计拒绝数据目录）：嵌套数据目录放在旁边
+      project: `${tempDataDir}-work`,
     }));
+  });
+
+  // grok ai-review PR#1911 Nit：旧默认目录已经存进会话（Dev 槽 5 个、正式版 18 个），只修空 cwd 的话这些会话派后台任务照样失败
+  it('treats a session still pinned to the legacy <dataDir>/work as having no directory and uses the new default', async () => {
+    await closeServer();
+    setDbAvailable(true);
+    tempDataDir = await mkdtemp(join(tmpdir(), 'code-agent-data-'));
+    process.env.CODE_AGENT_DATA_DIR = tempDataDir;
+    mockCreateAgentLoop.mockImplementationOnce(() => ({ run: vi.fn(async () => undefined), cancel: mockCancel }));
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({ workingDirectory: join(tempDataDir!, 'work') })),
+      }),
+    });
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '普通聊天', sessionId: 'session-legacy-work' }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
   });
 
   it('persists assistant output when loop message events were not actually stored', async () => {

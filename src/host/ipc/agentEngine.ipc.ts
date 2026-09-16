@@ -32,8 +32,7 @@ import {
 } from '../services/agentEngine/agentEngineHistoryImport';
 import { getSessionManager } from '../services/infra/sessionManager';
 import * as fsp from 'node:fs/promises';
-import * as os from 'node:os';
-import * as nodePath from 'node:path';
+import { getDefaultWorkDirectory } from '../config/configPaths';
 
 function isExternalEngineKind(kind: AgentEngineKind | undefined): kind is ExternalAgentEngineKind {
   // 单一真源：external engine 列表统一由 agentEngineGuards.isExternalAgentEngine 维护，
@@ -109,11 +108,9 @@ const agentEngineHandlers: RawDomainRouteHandlers<AgentEngineDomainRequest, void
       : undefined;
     let effectiveWorkingDirectory = payload.workingDirectory?.trim() || session?.workingDirectory?.trim() || '';
     if (!effectiveWorkingDirectory && isExternalEngineKind(payload.kind)) {
-      // 快速对话 + app 级都没有目录：兜到默认工作目录 <dataDir>/work
-      // （与 web /api/run 的 ensureDefaultWebWorkingDirectory 同一真相源；
+      // 快速对话 + app 级都没有目录：兜到默认工作目录（getDefaultWorkDirectory 唯一真相源；
       // 产品负责人 2026-08-05 拍板：不弹目录选择器，直接用通用默认夹）。
-      const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || nodePath.join(os.homedir(), '.code-agent');
-      effectiveWorkingDirectory = nodePath.join(nodePath.resolve(dataDir), 'work');
+      effectiveWorkingDirectory = getDefaultWorkDirectory();
       await fsp.mkdir(effectiveWorkingDirectory, { recursive: true });
     }
     const sessionForSelection = session && effectiveWorkingDirectory

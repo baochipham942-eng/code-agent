@@ -56,6 +56,7 @@ import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { IMAGE_MODELS, VIDEO_MODELS } from '../../shared/constants/visualModels';
 import { getConfigService } from '../services/core/configService';
+import { getDefaultWorkDirectory } from '../config/configPaths';
 import {
   getDashscopeApiKey,
   getZhipuOfficialApiKey,
@@ -785,7 +786,7 @@ async function handleExtractBrandFromImage(payload: { dataUrl?: string; imagePat
 
 /**
  * 用户浏览器链路（open / history / 画面透传）的 workspace 解析。
- * 快速对话常无 workingDirectory：按会话目录 → 数据目录下 work/ 兜底，
+ * 快速对话常无 workingDirectory：按会话目录 → getDefaultWorkDirectory() 兜底，
  * 三条 IPC 必须同口径，否则「能开页看得见画面，却点不动/退不了」
  * （2026-08-05 R2 真机：open 有兜底、dispatch/history 没有）。
  */
@@ -804,11 +805,8 @@ async function resolveUserBrowserWorkspace(
     }
   }
   if (!resolved) {
-    const pathMod = await import('path');
-    const osMod = await import('os');
     const fsMod = await import('fs');
-    const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || pathMod.join(osMod.homedir(), '.code-agent');
-    resolved = pathMod.join(dataDir, 'work');
+    resolved = getDefaultWorkDirectory();
     await fsMod.promises.mkdir(resolved, { recursive: true });
   }
   return resolved;

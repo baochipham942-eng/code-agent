@@ -1,6 +1,5 @@
-import os from 'node:os';
-import path from 'node:path';
 import type { IpcMain } from '../platform';
+import { getDefaultWorkDirectory } from '../config/configPaths';
 import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { FolderTrustSchemas, type FolderTrustDomainRequest } from '../../shared/ipc/schemas/folderTrust';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
@@ -36,12 +35,12 @@ async function defaultResolveSessionWorkingDirectory(sessionId: string): Promise
  * 信任评估对象解析优先级：
  * 1. payload.workingDirectory（显式，调用方已知道目标目录）
  * 2. payload.sessionId → 会话绑定 workingDirectory
- * 3. WEB_MODE 兜底 → <dataDir>/work（无会话时的快速对话默认）
+ * 3. WEB_MODE 兜底 → getDefaultWorkDirectory()（无会话时的快速对话默认）
  * 4. app 级 getWorkingDirectory
  * 5. process.cwd()
  *
  * 注意：桌面 app 经 webServer 恒 CODE_AGENT_WEB_MODE=true，所以「会话优先」
- * 必须排在 WEB_MODE 分支之前，否则项目会话永远评到 <dataDir>/work。
+ * 必须排在 WEB_MODE 分支之前，否则项目会话永远评到 默认工作目录。
  */
 export async function resolveWorkingDirectory(
   payload: unknown,
@@ -69,9 +68,8 @@ export async function resolveWorkingDirectory(
   }
 
   if (env.CODE_AGENT_WEB_MODE === 'true') {
-    const dataDir = env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), '.code-agent');
-    // 与 web /api/run 的 ensureDefaultWebWorkingDirectory 保持同一真相源。
-    return path.join(path.resolve(dataDir), 'work');
+    // 与 web /api/run 的默认工作目录同一真相源。
+    return getDefaultWorkDirectory(env);
   }
   const appWorkingDirectory = getAppService()?.getWorkingDirectory();
   if (appWorkingDirectory) return appWorkingDirectory;

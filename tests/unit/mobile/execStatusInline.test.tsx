@@ -30,7 +30,7 @@ function stream(): string[] {
 describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①②）', () => {
   afterEach(cleanup);
 
-  it('两次任务一败一成：各自的终态紧跟在各自的回复下面，不在底部并列', () => {
+  it('两次任务一败一成：失败挂在它那次回复下面，成功不挂行（爸 09-16 build 41）', () => {
     render(view([
       ev('message', { id: 'u1', role: 'user', content: '做表', runId: 'r1' }),
       ev('message', { id: 'a1', role: 'assistant', content: '开始', runId: 'r1' }),
@@ -42,8 +42,18 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
     ]));
     expect(stream()).toEqual([
       'user:做表', 'neo:开始', `outcome:${runOutcomeCopy(text, 'failed', 'MODEL_AUTH')}`,
-      'user:再试', 'neo:好了', `outcome:${text.complete}`,
+      'user:再试', 'neo:好了',
     ]);
+  });
+
+  it('只成功的一轮：回复下面什么都不挂——回复本身就是成功的证据', () => {
+    render(view([
+      ev('message', { id: 'u1', role: 'user', content: '你好', runId: 'r1' }),
+      ev('message', { id: 'a1', role: 'assistant', content: '你好，有什么可以帮你的？', runId: 'r1' }),
+      ev('agent_complete', { runId: 'r1' }),
+    ]));
+    expect(stream()).toEqual(['user:你好', 'neo:你好，有什么可以帮你的？']);
+    expect(document.querySelector('.run-outcome')).toBeNull();
   });
 
   it('失败行带原因；同一次执行先报错后收尾，失败说了算', () => {

@@ -62,7 +62,7 @@ const DESKTOP_ACTION_CONTRACT_LINES = [
 ];
 
 // N-MOBILE-SOURCE-CONTEXT：手机发起的轮次，模型要知道用户看不到运行端的屏幕
-export const MOBILE_SOURCE_CONTEXT_LINES = [
+const MOBILE_SOURCE_CONTEXT_LINES = [
   '来源端：用户这一轮是在手机上发起的，屏幕小，也看不到你运行所在机器的屏幕和桌面界面。',
   '回复保持简短，先给结论；少用宽表格和大段代码。',
   '要交付的产出做成文件交付，不要只说「已在屏幕上打开/显示」。',

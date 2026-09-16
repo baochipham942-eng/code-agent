@@ -12,7 +12,6 @@ import { createCLIAgent } from '../../../src/cli/adapter';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { HostReasonCode, type Message } from '../../../src/shared/contract';
-import { MOBILE_SOURCE_CONTEXT_LINES } from '../../../src/host/app/workbenchTurnContext';
 import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
 import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
 import {
@@ -539,6 +538,7 @@ describe('createAgentRouter', () => {
     await closeServer();
     let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
     await startAgentApi({ registerCompanionRun: value => { start = value; } });
+    const SOURCE_LINE = '来源端：用户这一轮是在手机上发起的';
     const lastUserContent = () => {
       const messages = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
       return String(messages.filter(m => m.role === 'user').at(-1)!.content);
@@ -547,7 +547,7 @@ describe('createAgentRouter', () => {
     await start!({ version: 1, sessionId: 'companion-source-phone', prompt: '手机上的问题' });
     await vi.waitFor(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
     expect(lastUserContent()).toContain('<user_request>\n手机上的问题');
-    expect(lastUserContent()).toContain(MOBILE_SOURCE_CONTEXT_LINES[0]);
+    expect(lastUserContent()).toContain(SOURCE_LINE);
     await runRegistry.getBySessionId('companion-source-phone')!.cancel('user');
 
     mockCreateAgentLoop.mockClear();
@@ -562,7 +562,7 @@ describe('createAgentRouter', () => {
       await vi.waitFor(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
       // 前提自证：桌面这轮确实拼了 turnSystemContext（不是因为没包装才「没有」）
       expect(lastUserContent()).toContain('<user_request>\n桌面上的问题');
-      expect(lastUserContent()).not.toContain(MOBILE_SOURCE_CONTEXT_LINES[0]);
+      expect(lastUserContent()).not.toContain(SOURCE_LINE);
     } finally { controller.abort(); }
   });
 

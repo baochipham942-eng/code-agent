@@ -159,3 +159,28 @@ describe('uploadProgress 从既有 upload 循环导出且不进 persist', () => 
     expect(store.getState().uploadProgress[0]?.phase).toBe('complete');
   });
 });
+
+describe('forget() 把绑在上一台电脑上的输入区状态一起清掉（grok ai-review PR#1902 Nit①）', () => {
+  it('忘记电脑后 uploadProgress 清空，且盘上只剩身份密钥', async () => {
+    const writes: string[] = [];
+    const { store } = await connected(writes);
+    await store.getState().upload(txt(new Uint8Array(8)));
+    // 前提先自证：不先有这几样，下面那些「被清空」的断言就全是恒真判据。
+    expect(store.getState().uploadProgress).toHaveLength(1);
+    store.setState({ voiceResult: { commandId: 'cmd-1', outcome: 'done' }, savedPreview: true, savedPreviewName: 'note.txt' });
+    expect(store.getState().voiceResult).not.toBeNull();
+    expect(store.getState().savedPreview).toBe(true);
+
+    await store.getState().forget();
+
+    expect(store.getState().uploadProgress).toEqual([]);
+    expect(store.getState().voiceResult).toBeNull();
+    expect(store.getState().savedPreview).toBe(false);
+    expect(store.getState().savedPreviewName).toBeNull();
+    expect(store.getState().binding).toBeNull();
+    expect(store.getState().status).toBe('unpaired');
+    const last = JSON.parse(writes[writes.length - 1]) as Record<string, unknown>;
+    expect(last.binding).toBeUndefined();
+    expect(typeof last.publicKey).toBe('string');
+  });
+});

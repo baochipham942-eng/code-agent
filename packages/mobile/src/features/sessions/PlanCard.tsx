@@ -35,6 +35,6 @@ export function PlanCard({ card, text, disabled, respond }: {
     {card.status === 'pending' ? <div className="approval-actions">
       <button disabled={disabled} onClick={() => void respond('rejected', feedback.trim() || undefined)}>{text.planReject}</button>
       <button disabled={disabled || !readable} onClick={() => void respond('approved', feedback.trim() || undefined)}>{text.planApprove}</button>
-    </div> : <p role="status">{text.planClosed}</p>}
+    </div> : <p role="status" data-status={String(card.status)}>{card.status === 'approved' ? text.planApproved : card.status === 'rejected' ? text.planRejected : text.planClosed}</p>}
   </section>;
 }

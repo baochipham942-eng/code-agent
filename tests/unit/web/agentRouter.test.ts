@@ -548,6 +548,9 @@ describe('createAgentRouter', () => {
     await vi.waitFor(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
     expect(lastUserContent()).toContain('<user_request>\n手机上的问题');
     expect(lastUserContent()).toContain(SOURCE_LINE);
+    // 爸 2026-09-16 真机：旧句「产出做成文件交付」让问答也去写文件
+    expect(lastUserContent()).toContain('不要为问答另写文件');
+    expect(lastUserContent()).not.toContain('产出做成文件交付');
     await runRegistry.getBySessionId('companion-source-phone')!.cancel('user');
 
     mockCreateAgentLoop.mockClear();

@@ -64,6 +64,9 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   // 等于闲聊「你好」下面也报一句任务完成——回复本身就是成功的证据。只有失败与被停止必须说，
   // 那两种沉默了用户不知道发生过什么。推送正文仍保留完成句：人在后台时需要那一下。
   const outcomes = new Map<string, RunOutcome>();
+  // 审批/提问/计划卡按**第一次出现**时的最后一行挂载，和执行结果同一套锚点（爸 2026-09-16 真机：
+  // 卡片原来统一画在全部消息之后，后到的回复跑到卡片上面，看着像先写了产物才回复）。
+  const cardAnchors = new Map<string, string | undefined>();
   let lastRow: string | undefined = history?.messages.at(-1)?.id;
   let latestRun: string | undefined;
   for (const message of history?.messages ?? []) rows.set(message.id, { role: message.role, content: message.content, truncated: message.truncated });
@@ -73,6 +76,8 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     if (event.kind === 'approval' && typeof p.requestId === 'string') approvals.set(p.requestId, { ...approvals.get(p.requestId), ...p });
     if (event.kind === 'question' && typeof p.requestId === 'string') questions.set(p.requestId, { ...questions.get(p.requestId), ...p });
     if (event.kind === 'plan' && typeof p.requestId === 'string') plans.set(p.requestId, { ...plans.get(p.requestId), ...p });
+    if ((event.kind === 'approval' || event.kind === 'question' || event.kind === 'plan') && typeof p.requestId === 'string'
+      && !cardAnchors.has(`${event.kind}:${p.requestId}`)) cardAnchors.set(`${event.kind}:${p.requestId}`, lastRow);
     const run = String(p.runId ?? sessionId);
     latestRun = run;
     const id = `${run}:${String(p.id ?? p.messageId ?? p.turnId ?? event.eventId)}`;
@@ -87,6 +92,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
       if (stream) {
         aliases.set(id, key); aliases.set(stream, key); committedStreams.add(stream); committedStreams.add(key); activeStreams.delete(run);
         for (const outcome of outcomes.values()) if (outcome.anchor === stream) outcome.anchor = key;
+        for (const [card, anchor] of cardAnchors) if (anchor === stream) cardAnchors.set(card, key);
       }
     } else if (event.kind === 'message_snapshot' || event.kind === 'message_delta') {
       const key = aliases.get(id) ?? id;
@@ -126,25 +132,29 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
         <button className="primary" onClick={openModel}>{text.switchModel}</button>
       </div>}
     </Fragment>);
+  const cardsAt = (anchor: string | undefined) => <>
+    {Array.from(approvals, ([id, card]) => cardAnchors.get(`approval:${id}`) === anchor && (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
+      respond={decision => respond(id, decision)} />)}
+    {Array.from(questions, ([id, card]) => cardAnchors.get(`question:${id}`) === anchor && (!hidePendingApprovals || card.status !== 'pending') && <QuestionCard key={id} card={card} text={text} disabled={disabled}
+      respond={answers => respondQuestion(id, answers)} skip={reason => respondQuestion(id, {}, true, reason)} />)}
+    {Array.from(plans, ([id, card]) => cardAnchors.get(`plan:${id}`) === anchor && (!hidePendingApprovals || card.status !== 'pending') && <PlanCard key={id} card={card} text={text} disabled={disabled}
+      respond={(decision, feedback) => respondPlan(id, decision, feedback)} />)}
+  </>;
   return <div className="message-region"><div ref={scroller} onScroll={() => {
     const el = scroller.current!;
     following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     setShowLatest(!following.current);
   }} className="lan-messages" aria-label={text.history} aria-live="polite">
     {history?.nextOffset != null && !offline && <button onClick={loadMore}>{text.loadHistory}</button>}
-    {outcomesAt(undefined)}
+    {outcomesAt(undefined)}{cardsAt(undefined)}
     {Array.from(rows, ([id, row]) => <Fragment key={id}>{row.role === 'user'
       ? <p className="lan-message from-user">{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>
-      : <div className="lan-message">
+      // 正文为空的助手消息是只调了工具的那一轮（派子助手、读文件），手机不显示工具步骤，画出来就是空气泡（爸 2026-09-16 真机）。
+      // 行本身不画，但挂在它下面的执行结果和卡片照常画。
+      : !row.content.trim() ? null : <div className="lan-message">
         <div className="assistant-label"><NeoBrandMark variant="mark" size={24} /><span>{text.neo}</span></div>
         <p className="assistant-text">{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>
-      </div>}{outcomesAt(id)}</Fragment>)}
-    {Array.from(approvals, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
-      respond={decision => respond(id, decision)} />)}
-    {Array.from(questions, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <QuestionCard key={id} card={card} text={text} disabled={disabled}
-      respond={answers => respondQuestion(id, answers)} skip={reason => respondQuestion(id, {}, true, reason)} />)}
-    {Array.from(plans, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <PlanCard key={id} card={card} text={text} disabled={disabled}
-      respond={(decision, feedback) => respondPlan(id, decision, feedback)} />)}
+      </div>}{outcomesAt(id)}{cardsAt(id)}</Fragment>)}
     {(() => {
       // 「正在生成」只留还未完成的：tool_call_end 投影带同一 toolCallId 到达后即消失，
       // 不再长期挂在只增不减的 events 流里。

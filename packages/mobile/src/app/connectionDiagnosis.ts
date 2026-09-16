@@ -5,7 +5,12 @@ import type { messages } from '../i18n';
  * ②连接被拒绝 ③握手/身份校验失败 ④relay 路失败（LAN 与中继都没走通）。
  * 分类由连接层上抛的 connectionError 决定（nativeCompanion 把原生网络错误分成
  * COMPANION_CONNECTION_REFUSED / 其余网络失败，companionStore 再映射到 connectionError），
- * UI 只按这里的分类给一句人话 + 一个主动作，不再铺 Wi-Fi 说明书。
+ * UI 按这里的分类给一句人话 + 决定**哪个动作当主按钮**，不再铺 Wi-Fi 说明书。
+ *
+ * `action` 只挑主次，**不决定渲染几个按钮**（2026-09-16 N-MOBILE-RESCAN-DEADLOCK）：
+ * 原来这句写的是「一个主动作」，落地时被读成「只渲染一个按钮」——relay 被拒判 reconnect
+ * 于是只给「重新连接」，而重连试的是配对时写死的地址，换网后必败，用户拿不到唯一能救的
+ * 「重新扫码」，只能删 app 重装。连不上那一态现在恒定渲染扫码 + 重连 + 忘记这台电脑三个动作。
  */
 export type ConnectionDiagnosis = { sentence: string; action: 'scan' | 'reconnect' };
 

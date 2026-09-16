@@ -165,12 +165,18 @@ describe('forget() 把绑在上一台电脑上的输入区状态一起清掉（g
     const writes: string[] = [];
     const { store } = await connected(writes);
     await store.getState().upload(txt(new Uint8Array(8)));
-    // 前提先自证：不先有一条 chip，下面那句 toEqual([]) 就是恒真判据。
+    // 前提先自证：不先有这几样，下面那些「被清空」的断言就全是恒真判据。
     expect(store.getState().uploadProgress).toHaveLength(1);
+    store.setState({ voiceResult: { commandId: 'cmd-1', outcome: 'done' }, savedPreview: true, savedPreviewName: 'note.txt' });
+    expect(store.getState().voiceResult).not.toBeNull();
+    expect(store.getState().savedPreview).toBe(true);
 
     await store.getState().forget();
 
     expect(store.getState().uploadProgress).toEqual([]);
+    expect(store.getState().voiceResult).toBeNull();
+    expect(store.getState().savedPreview).toBe(false);
+    expect(store.getState().savedPreviewName).toBeNull();
     expect(store.getState().binding).toBeNull();
     expect(store.getState().status).toBe('unpaired');
     const last = JSON.parse(writes[writes.length - 1]) as Record<string, unknown>;

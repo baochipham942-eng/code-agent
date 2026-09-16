@@ -133,11 +133,12 @@ function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
     const release = () => { if (!closed) { closed = true; onReleased(); } };
     // 先挂监听再布防：布防和「刚好放手」之间没有空窗。布防时已经空着就直接回调。
     const listen = pcmBridge.addListener('microphoneAvailable', release);
-    void listen.then(() => pcmBridge.watchMicrophoneRelease()).then(({ available }) => { if (available) release(); }).catch(() => {});
+    const armed = listen.then(() => pcmBridge.watchMicrophoneRelease()).then(({ available }) => { if (available) release(); }).catch(() => {});
     return () => {
       closed = true;
       void listen.then(handle => handle.remove()).catch(() => {});
-      void pcmBridge.unwatchMicrophoneRelease().catch(() => {});
+      // 撤防排在布防回包之后：否则撤防先到、布防后到，原生 2 秒定时器会一直跑到麦克风放手（grok ai-review Nit）。
+      void armed.then(() => pcmBridge.unwatchMicrophoneRelease()).catch(() => {});
     };
   };
   return recorder;

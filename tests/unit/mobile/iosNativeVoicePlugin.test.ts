@@ -81,6 +81,8 @@ describe('first-party ios voice recorder contract', () => {
       expect(swift).toContain(`@objc func ${method}(`);
       expect(capacitorPort).toContain(`pcmBridge.${method}()`);
     }
+    // 撤防必须排在布防回包之后，否则先撤后布，原生定时器空转
+    expect(capacitorPort).toContain('void armed.then(() => pcmBridge.unwatchMicrophoneRelease())');
     expect(swift).toContain('notifyListeners("microphoneAvailable"');
     expect(capacitorPort).toContain("addListener('microphoneAvailable'");
     expect(swift).toContain('AVAudioSession.interruptionNotification');

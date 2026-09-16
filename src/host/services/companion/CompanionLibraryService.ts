@@ -8,6 +8,7 @@ import { buildRuntimeModelOptions } from '../../../shared/modelRuntime';
 import { resolveSessionDefaultModelConfig } from '../core/sessionDefaults';
 import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
 import { projectGrant, type CompanionRead, type CompanionLibrary, type CompanionHistory } from '../../../shared/contract/companionLibrary';
+import { UNSORTED_PROJECT_ID } from '../../../shared/contract/project';
 import type { CompanionCommand } from '../../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
 import { MODEL_OVERRIDE_METADATA_KEY, persistModelOverride, readPersistedModelOverride } from '../../session/modelOverridePersistence';
@@ -55,6 +56,15 @@ function sessionAccessible(grants: readonly string[], forgotten: ReadonlySet<str
   if (session.id.startsWith('project:') || forgotten.has(session.id)) return false;
   if (grants.includes(session.id)) return true;
   return !!session.projectId && grants.includes(projectGrant(session.projectId));
+}
+
+/**
+ * 这个项目此刻建不了会话：普通项目要有工作目录；「未分类」是无工作目录会话的保留桶，桌面端在里面新建对话
+ * 从来不要求目录（运行时兜底到应用工作目录），手机端与之一致。build 46 按「无目录即不可建」把它也挡了，
+ * 而爸的电脑只有这一个项目 ⇒ 手机上一个会话都建不了（2026-09-16 真机）。
+ */
+function missingWorkspace(project: { id: string; workspacePath?: string | null }): boolean {
+  return !project.workspacePath && project.id !== UNSORTED_PROJECT_ID;
 }
 
 /** Mobile reuses the desktop repositories, model catalogue and session services. */
@@ -118,11 +128,10 @@ export class CompanionLibraryService {
       }
       if (page.length < L.librarySessionLimit) break;
     }
-    // 「有没有授权」与「此刻能不能建」是两个问题（build 45 真机：未分类没有工作目录，却按授权放行，点了必失败）。
-    // 判据与 mutate() 里 session.create 的宿主前提同口径：没有工作目录就建不了。
+    // 「有没有授权」与「此刻能不能建」是两个问题。判据与 mutate() 里 session.create 的宿主前提同一个函数。
     const projects = this.projects().filter(p => grants.includes(projectGrant(p.id)) || sessions.some(s => s.projectId === p.id))
       .map(p => {
-        const createBlocked = !grants.includes(projectGrant(p.id)) ? 'not_granted' as const : !p.workspacePath ? 'no_workspace' as const : null;
+        const createBlocked = !grants.includes(projectGrant(p.id)) ? 'not_granted' as const : missingWorkspace(p) ? 'no_workspace' as const : null;
         return { ...p, canCreate: createBlocked === null, ...(createBlocked ? { createBlocked } : {}) };
       });
     const hostDefault = resolveSessionDefaultModelConfig();
@@ -142,7 +151,7 @@ export class CompanionLibraryService {
     if (command.action === 'session.create') {
       if (!this.gateway.grants(command.deviceId).includes(command.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
       const project = getDatabase().getProjectRepo().getProject(command.sessionId.slice('project:'.length));
-      if (!project || project.status === 'archived' || !project.workspacePath) throw new Error('COMPANION_PROJECT_UNAVAILABLE');
+      if (!project || project.status === 'archived' || missingWorkspace(project)) throw new Error('COMPANION_PROJECT_UNAVAILABLE');
       const model = this.model(command.payload.provider, command.payload.model);
       // The command reservation is durable before this starts; identity is independent of response delivery.
       const id = `mobile-${createHash('sha256').update(`${command.deviceId}:${command.commandId}`).digest('hex')}`;
@@ -150,7 +159,7 @@ export class CompanionLibraryService {
         const current = getDatabase().getProjectRepo().getProject(project.id);
         if (!current || current.status === 'archived' || current.workspacePath !== project.workspacePath) throw new Error('COMPANION_PROJECT_CHANGED');
         this.gateway.commitMutation(command, write, { sessionId: id });
-      }, title: command.payload.title, workingDirectory: project.workspacePath,
+      }, title: command.payload.title, workingDirectory: project.workspacePath || undefined,
         modelConfig: { provider: model.provider, model: model.model },
         metadata: { [MODEL_OVERRIDE_METADATA_KEY]: { provider: model.provider, model: model.model, setAt: Date.now() } } });
       if (session.projectId !== project.id) throw new Error('COMPANION_PROJECT_CHANGED');

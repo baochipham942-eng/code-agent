@@ -119,7 +119,7 @@ configureIosLan();
 for (const [region, language] of LOCALIZABLE_REGIONS) {
   mkdirSync(`ios/App/App/${region}.lproj`, { recursive: true });
   const text = messages(language);
-  writeFileSync(`ios/App/App/${region}.lproj/Localizable.strings`, localizableStrings(pushAlertStrings(text, runOutcomeCopy(text, 'failed'))));
+  writeFileSync(`ios/App/App/${region}.lproj/Localizable.strings`, localizableStrings(pushAlertStrings(text, runOutcomeCopy(text, 'failed'), runOutcomeCopy(text, 'failed', 'MODEL_AUTH'))));
 }
 writeFileSync(pbxproj, withLocalizableStrings(readFileSync(pbxproj, 'utf8')));
 const appDelegate = 'ios/App/App/AppDelegate.swift';

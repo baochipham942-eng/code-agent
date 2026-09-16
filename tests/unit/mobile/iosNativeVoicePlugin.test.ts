@@ -67,6 +67,7 @@ describe('first-party ios voice recorder contract', () => {
     // 判因必须在 teardown 之前：收尾会停用本进程的会话
     expect(swift.match(/let failure = Self\.startFailure\(error\)\n[\s\S]*?teardown/g)).toHaveLength(2);
     expect(swift).not.toContain('call.reject(Failure.failedToRecord)');
+    expect(swift).toContain('.contains((error as NSError).code) || !microphoneFree() ? Failure.microphoneBusy : Failure.failedToRecord');
     for (const code of ['insufficientPriority', 'cannotInterruptOthers', 'cannotStartRecording', 'isBusy']) {
       expect(swift).toContain(`AVAudioSession.ErrorCode.${code}.rawValue`);
     }

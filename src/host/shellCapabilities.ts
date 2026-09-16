@@ -291,20 +291,21 @@ const MUTATION_VERBS = new Set([
  * 没有这条，getAudioCaptureStatus（含 capture）、inspectArchive（含 archive）、
  * check_for_update（含 update）都会被误判成 medium。
  *
- * 已知天花板：resolve / export 开头的动作里混着真写的（domain:sync/resolveConflict、
- * domain:session/exportSessionFork），它们会被这条规则判成 low。与改判据前一致（旧前缀
- * 表里也没有 resolve/export，同样落 low），故不是回归；不把这两个词摘出去，是因为以
- * export 开头的 10 条动作（exportMarkdown / exportDiagnostics / exportBundle 等）确实
- * 只读，为 2 条误伤 10 条不划算。要精确就得逐条进 HIGH_RISK_CAPABILITIES。
- * 这个天花板由 shellCapabilities.test.ts 的 readonly-head ceiling 断言钉着。
+ * 表里只留**实测会改变判定**的首词，两轮清理：
+ * - describe / diff / has / is / query / stat / status：仓内零命中，从没参与过判定；
+ * - export / resolve：仓内虽有 16 条动作以它们开头，但那 16 条的后续词段**全无写动词**
+ *   （实测命中 0 条），不靠这条规则也判 low —— 同样是死条目。
+ * 两次删除都用全量对拍证过：575 条 risk 判定逐条不变。
  *
- * 表里只留仓内真有动作用到的首词——曾塞进 describe / diff / has / is / query / stat /
- * status 七个「常见只读动词」，实测零命中，已删。
+ * 已知天花板（与本表无关，删干净后依然存在）：domain:sync/resolveConflict、
+ * domain:session/exportSessionFork 是写动作却判 low，真因是 resolve / conflict / export /
+ * fork 都不在 MUTATION_VERBS 里，**判据天然够不着**，不是被只读首词规则保护的。要让它们
+ * 升档只能逐条进 HIGH_RISK_CAPABILITIES，或往写动词表加词（那会波及同词根的其他动作，
+ * 要先跑对拍）。shellCapabilities.test.ts 钉着这两条当前为 low，升档会红。
  */
 const READONLY_HEAD_VERBS = new Set([
-  'audit', 'check', 'compare', 'count', 'detect', 'export', 'find', 'get', 'inspect',
-  'list', 'ping', 'preview', 'read', 'resolve', 'search', 'stats', 'summarize', 'trace',
-  'validate',
+  'audit', 'check', 'compare', 'count', 'detect', 'find', 'get', 'inspect', 'list',
+  'ping', 'preview', 'read', 'search', 'stats', 'summarize', 'trace', 'validate',
 ]);
 
 /**

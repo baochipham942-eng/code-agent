@@ -146,15 +146,16 @@ describe('shell capabilities', () => {
     expect(riskOf('setup:cancel')).toBe('medium');
   });
 
-  // 判据的已知天花板，钉在这里而不是只写进注释：resolve / export 在只读首词表里，
-  // 于是以它们开头的写动作（同步冲突解决、会话分叉导出）也判 low。与改判据前的基线
-  // 一致（旧前缀规则同样给 low），所以不是回归；但新判据是「明确判定为只读」而非
-  // 「没覆盖到」，差别要有人看着。谁将来收窄 resolve/export，这条会红并提醒他：
-  // 同时会波及 10 条真只读的 export* 动作，要连带评估。
+  // 判据够不着的写动作，钉在这里当回归保护：resolveConflict（同步冲突解决）与
+  // exportSessionFork（会话分叉导出）都是写动作，却判 low —— 真因是 resolve / conflict /
+  // export / fork 都不在 MUTATION_VERBS 里，判据天然给不出 medium；与改判据前的基线一致
+  // （旧前缀规则同样给 low），不是回归。
+  // 这条断言钉的是「它们目前是 low」这个事实：谁往写动词表加 resolve/export/fork，或把
+  // 它们补进 HIGH_RISK_CAPABILITIES，这条会红，提醒他同步更新文档并跑一次全量对拍。
   it.each([
     ['domain:sync', 'resolveConflict'],
     ['domain:session', 'exportSessionFork'],
-  ])('documents the readonly-head ceiling: %s/%s stays low', (domain, action) => {
+  ])('pins the known under-classification: %s/%s stays low', (domain, action) => {
     expect(getShellCapabilities().find((capability) => (
       capability.id === makeShellCapabilityId(domain, action)
     ))).toMatchObject({ risk: 'low' });

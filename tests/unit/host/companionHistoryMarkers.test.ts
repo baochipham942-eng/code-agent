@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import { CompanionGateway } from '../../../src/host/services/companion/CompanionGateway';
 import { projectCompanionEvent } from '../../../src/host/services/companion/projectCompanionEvent';
 import type { CompanionHistory } from '../../../src/shared/contract/companionLibrary';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 
 /**
  * 爸 2026-09-16 build 47 真机：会话里出现一条只写着 [cancelled] 的助手消息。
@@ -14,7 +15,6 @@ const store = vi.hoisted(() => ({ db: null as unknown as import('better-sqlite3'
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({ getDb: () => store.db, getSession: () => ({ id: 's1' }), listSessions: () => [], getProjectRepo: () => ({ listProjects: () => [] }) }),
 }));
-vi.mock('../../../src/host/services/core/repositories/sessionRepositoryParsers', () => ({ visibleHistoryMessageWhere: () => '1 = 1' }));
 vi.mock('../../../src/host/services/auth/authService', () => ({ getAuthService: () => ({ getCurrentUser: () => ({ id: 'owner-1' }) }) }));
 
 import { CompanionLibraryService } from '../../../src/host/services/companion/CompanionLibraryService';
@@ -36,8 +36,9 @@ describe('中断协议标记不出手机边界', () => {
   it('历史读取：剥标记、只剩标记的行跳过，且分页照常收尾（不留一个永远的「加载更多」）', async () => {
     store.db = new Database(':memory:');
     try {
-      store.db.exec('CREATE TABLE messages (id TEXT, session_id TEXT, role TEXT, content TEXT, timestamp INTEGER)');
-      const insert = store.db.prepare('INSERT INTO messages VALUES (?, ?, ?, ?, ?)');
+      applyTestSessionSchema(store.db);
+      store.db.prepare(`INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at) VALUES ('s1', 't', 'p', 'm', 1, 1)`).run();
+      const insert = store.db.prepare('INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)');
       insert.run('u1', 's1', 'user', '你好', 1);
       insert.run('a1', 's1', 'assistant', '\n\n[cancelled]', 2);
       insert.run('u2', 's1', 'user', '再试', 3);

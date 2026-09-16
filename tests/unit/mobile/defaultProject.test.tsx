@@ -46,8 +46,8 @@ describe('defaultProjectId 三档', () => {
 const harness = vi.hoisted(() => ({
   mode: 'ok' as 'ok' | 'reject-create' | 'blocked',
   commands: [] as [string, string | null, string?][],
-  /** 宿主 companion_commands 的模拟：commandId → 命令与已被查询的次数。 */
-  host: new Map<string, { command: { commandId: string; deviceId: string; sessionId: string | null; action: string; payload: { text?: string } }; polls: number }>(),
+  /** 宿主 companion_commands 的模拟：commandId → 命令。 */
+  host: new Map<string, { commandId: string; deviceId: string; sessionId: string | null; action: string; payload: { text?: string } }>(),
   sentText: null as string | null,
   prefs: null as string | null,
   unpaired: false,
@@ -98,14 +98,12 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
         const target = command.sessionId ?? '';
         const allowed = command.action === 'session.create' ? target.startsWith('project:') : target === 'new-1';
         if (!allowed) return { kind: 'rejected', reason: 'scope_denied' };
-        harness.host.set(command.commandId, { command, polls: 0 });
+        harness.host.set(command.commandId, command);
         return { kind: 'accepted', command: record(command, 'reconciling', { code: command.action === 'message.send' ? 'RUN_STARTING' : 'COMMAND_RECONCILING' }) };
       }
       if (action === 'status') {
-        const entry = harness.host.get((payload as { commandId: string }).commandId);
-        if (!entry) return null;
-        entry.polls += 1;
-        const { command } = entry;
+        const command = harness.host.get((payload as { commandId: string }).commandId);
+        if (!command) return null;
         if (command.action === 'session.create') {
           return harness.mode === 'reject-create'
             ? record(command, 'rejected', { code: 'COMPANION_PROJECT_UNAVAILABLE' })
@@ -150,7 +148,7 @@ const ports = (): PlatformPorts => ({
 });
 
 beforeEach(() => {
-  harness.mode = 'ok'; harness.commands = []; harness.statusPolls = 0; harness.prefs = null; harness.unpaired = false; harness.host.clear(); harness.sentText = null;
+  harness.mode = 'ok'; harness.commands = []; harness.prefs = null; harness.unpaired = false; harness.host.clear(); harness.sentText = null;
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: false, media: query, onchange: null,
     addEventListener: () => {}, removeEventListener: () => {},

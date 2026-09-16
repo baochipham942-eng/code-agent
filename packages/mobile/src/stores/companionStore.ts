@@ -498,9 +498,13 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         client?.close(); client = null;
         if (saved) await persist({ version: 1, publicKey: saved.publicKey, secretKey: saved.secretKey });
         wipeHistoryCache();
+        // 输入区那几样也要跟着清（grok ai-review Nit①）：附件 chip / 上传进度 / 语音结果都绑在
+        // 上一台电脑那条会话上，留着就会在「尚未连接电脑」页底下挂着一台已经忘掉的电脑的东西。
+        heldAttachments.clear();
         set({ status: 'unpaired', binding: null, sessionId: null, transport: null,
           paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
-          artifacts: [], preview: null, routeError: null });
+          artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, routeError: null,
+          uploadProgress: [], voiceResult: null });
       }),
       reconnect: () => safely(async () => {
         const savedTarget = saved?.binding ?? saved?.candidate;

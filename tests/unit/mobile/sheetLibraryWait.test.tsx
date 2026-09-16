@@ -246,6 +246,18 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
     expect(typeof last.secretKey).toBe('string');
   });
 
+  it('「忘记这台电脑」把代价写在旁边——不弹确认就必须说清丢什么（grok ai-review Nit②）', async () => {
+    harness.mode = 'refused';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    const caption = document.querySelector('[data-testid="remote-forget-caption"]');
+    expect(caption?.textContent).toBe(text.forgetComputerHint);
+    // 承重点：代价那句必须同时点到「丢配对」「丢缓存」和「只能重新扫码」，
+    // 否则它就退化成一句安慰话，等于又回到「误点没有东西可丢」那个假理由。
+    for (const part of ['配对', '会话缓存', '重新扫码']) expect(caption?.textContent).toContain(part);
+  });
+
   it('已连接：电脑名（mDNS 名去 .local）+ 上次同步时间，不给重连按钮', async () => {
     harness.mode = 'ok';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });

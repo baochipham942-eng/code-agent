@@ -306,7 +306,8 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
         } catch (error) {
           t.unsub?.(); t.unsub = null;
           const code = error instanceof Error ? error.message : String(error);
-          if (code === 'MICROPHONE_DENIED' || code === 'MISSING_PERMISSION') { fail(t, 'record', error); return; }
+          // 没授权 / 麦克风被通话占着：换分段录音也一样起不来，退过去只会把真因换成 FAILED_TO_RECORD。
+          if (code === 'MICROPHONE_DENIED' || code === 'MISSING_PERMISSION' || code === 'MICROPHONE_BUSY') { fail(t, 'record', error); return; }
           t.degraded = true;
         }
         if (t.pcmLive) {

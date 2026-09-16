@@ -10,7 +10,8 @@ import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
 import { projectGrant, type CompanionRead, type CompanionLibrary, type CompanionHistory } from '../../../shared/contract/companionLibrary';
 import type { CompanionCommand } from '../../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
-import { MODEL_OVERRIDE_METADATA_KEY, persistModelOverride } from '../../session/modelOverridePersistence';
+import { MODEL_OVERRIDE_METADATA_KEY, persistModelOverride, readPersistedModelOverride } from '../../session/modelOverridePersistence';
+import { getProviderHealthMonitor } from '../../model/providerHealthMonitor';
 import { getModelSessionState } from '../../session/modelSessionState';
 import { createLogger } from '../infra/logger';
 import type { AppSettings } from '../../../shared/contract';
@@ -29,7 +30,20 @@ function companionModelOptions(
   return buildRuntimeModelOptions(settings).map(({ provider, model, label, providerLabel }) => ({
     provider, model, label, providerLabel,
     ...(provider === hostDefault.provider && model === hostDefault.model ? { isDefault: true as const } : {}),
+    // 配了 key 不等于能用：key 被拒（403）的 provider 照样在列表里。刚因鉴权失败要换模型的人
+    // 不该再换到它身上（build 45 真机：默认的 custom-team-relay 就是被拒的那家）。
+    ...(getProviderHealthMonitor().getHealth(provider)?.status === 'unavailable' ? { recentlyFailed: true as const } : {}),
   }));
+}
+
+/**
+ * 这条会话下一次执行**真正会用**的模型：会话 override（内存优先，重启后看持久化标记）否则电脑默认。
+ * 与 routes/agent.ts 的运行解析链同口径。不能报 sessions 表的 model 列——那是建会话时的快照，
+ * 没切换过的会话运行时跟随电脑默认（build 45 真机：胶囊写 glm-5.3-flash，实跑 custom-team-relay/LongCat-2.0）。
+ */
+function sessionRunModel(session: { id: string; metadata?: Record<string, unknown> }, hostDefault: { provider: string; model: string }) {
+  const override = getModelSessionState().getOverride(session.id) ?? readPersistedModelOverride(session);
+  return override && override.adaptive !== true ? { provider: override.provider, model: override.model } : { provider: hostDefault.provider, model: hostDefault.model };
 }
 
 /** Page-level form of canAccessSession(): grants plus the cleanup queue, so a session queued for
@@ -104,11 +118,17 @@ export class CompanionLibraryService {
       }
       if (page.length < L.librarySessionLimit) break;
     }
+    // 「有没有授权」与「此刻能不能建」是两个问题（build 45 真机：未分类没有工作目录，却按授权放行，点了必失败）。
+    // 判据与 mutate() 里 session.create 的宿主前提同口径：没有工作目录就建不了。
     const projects = this.projects().filter(p => grants.includes(projectGrant(p.id)) || sessions.some(s => s.projectId === p.id))
-      .map(p => ({ ...p, canCreate: grants.includes(projectGrant(p.id)) }));
-    const models = companionModelOptions(getConfigService().getSettings(), resolveSessionDefaultModelConfig());
+      .map(p => {
+        const createBlocked = !grants.includes(projectGrant(p.id)) ? 'not_granted' as const : !p.workspacePath ? 'no_workspace' as const : null;
+        return { ...p, canCreate: createBlocked === null, ...(createBlocked ? { createBlocked } : {}) };
+      });
+    const hostDefault = resolveSessionDefaultModelConfig();
+    const models = companionModelOptions(getConfigService().getSettings(), hostDefault);
     return { projects, models, nextOffset: request.offset + L.syncPageSize < sessions.length ? request.offset + L.syncPageSize : null, sessions: sessions.slice(request.offset, request.offset + L.syncPageSize).map(s => ({ id: s.id, title: s.title, projectId: s.projectId ?? null,
-      updatedAt: s.updatedAt, archived: s.status === 'archived', provider: s.modelConfig.provider, model: s.modelConfig.model })) };
+      updatedAt: s.updatedAt, archived: s.status === 'archived', ...sessionRunModel(s, hostDefault) })) };
   }
 
   async mutate(command: CompanionCommand): Promise<Record<string, unknown>> {

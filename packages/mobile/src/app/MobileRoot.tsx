@@ -53,7 +53,8 @@ export function connectionCopy(
 }
 
 /**
- * 输入区模型胶囊的文案（design.html composer 的 .model）：显示这条会话当前在用的模型。
+ * 输入区模型胶囊的文案（design.html composer 的 .model）：显示这条会话下一次执行真正会用的模型
+ * ——电脑侧按「会话 override 否则电脑默认」算好了发过来（build 45 真机：胶囊写 glm-5.3-flash，实跑默认模型）。
  * 模型表里查不到就退回会话自己的模型 id——电脑的可用模型列表会剔掉没配 key 的 provider，
  * 而会话可能正用着其中一个（2026-09-12 build 24 真机：会话是 custom-glm-coding/glm-5.3-flash，
  * 不在列表里）。查不到只说明「没有好看的名字」，不说明「没有模型」，隐藏胶囊等于把事实藏了；
@@ -284,7 +285,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const offlineCopy = offlineHistoryCopy(text, companion, hasCachedConversation);
   // 反馈③（2026-09-14 build 34）：项目/会话 sheet 等电脑里的库时不许无限转圈——底层 request
   // 没有客户端超时，连接僵死时圈会一直转；到点落「连不上电脑」失败态并给重试。
-  const librarySheetWaiting = Boolean(state.sheet && (currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more') && companion.binding && !companion.library);
+  const librarySheetWaiting = Boolean(state.sheet && (currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more' || currentPage === 'model') && companion.binding && !companion.library);
   const [libraryTimedOut, setLibraryTimedOut] = useState(false);
   const [libraryRetryEpoch, setLibraryRetryEpoch] = useState(0);
   useEffect(() => {
@@ -592,6 +593,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           offline={companion.status !== 'connected'}
+          openModel={() => state.openSheet('model')}
           // 执行条平时只说「哪一次在跑」；停止在输入区那个键上。录音面板顶掉输入区时才把
           // stop 交给它，避免运行中一开录音就没法停（grok ai-review PR#1903 Nit①）。
           running={companion.runId
@@ -672,7 +674,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             if (canAddressSession(companion) && state.route !== 'fixture') void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
             else state.attemptSend();
           }}
-          modelLabel={sessionModelLabel} openModel={() => state.openSheet('more')}
+          // 模型入口只留这一个（爸 2026-09-16 拍板）：会话操作弹窗里不再有模型那一格。
+          modelLabel={sessionModelLabel} openModel={() => state.openSheet('model')}
+          openSettings={() => void (ports.notifications ?? unavailableNotificationPort).openSettings()}
           attach={ports.files && (() => state.openSheet('attachment'))}
           attachDisabled={!canAddressSession(companion) || companion.busy || companion.pending}
           attachments={companion.uploadProgress}
@@ -724,6 +728,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     })()}
     {state.sheet && currentPage && <SheetHost page={currentPage}
       title={currentPage === 'projects' ? text.chooseProject
+        : currentPage === 'model' ? text.chooseModel
         : currentPage === 'projectSessions' ? sessionProject && companion.library ? projectDisplayName(sessionProject, companion.library.projects) : text.projectSessions
         : text[currentPage]}
       hasParent={state.sheet.pages.length > 1}
@@ -739,9 +744,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {pendingDecisions.length > 0 && <button className="primary" onClick={() => selectSession(String(pendingDecisions[0].sessionId))}>{
         pendingDecisions[0].kind === 'question' ? text.reviewQuestion : pendingDecisions[0].kind === 'plan' ? text.reviewPlan : text.reviewApproval
       }</button>}
-      {(currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more') && companion.binding ? (
+      {(currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more' || currentPage === 'model') && companion.binding ? (
         companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text}
-          mode={currentPage === 'more' ? 'more' : currentPage === 'projectSessions' ? 'projectSessions' : 'projects'}
+          mode={currentPage === 'more' || currentPage === 'model' ? currentPage : currentPage === 'projectSessions' ? 'projectSessions' : 'projects'}
           projectId={sessionProjectId} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage}
           loadMore={() => void companion.refreshLibrary(true)} openProjectSessions={openProjectSessions} />
           // fix4-④：等库 = spinner + 一句「正在连接电脑…」（秒级超时兜底，不无限转圈）；

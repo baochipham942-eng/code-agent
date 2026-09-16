@@ -118,6 +118,39 @@ describe('RunFinalizer 失败事件', () => {
     });
   });
 
+  it('引擎内吞掉的 403 推理失败带 MODEL_AUTH 标记出去（手机据此给「换一个可用模型」，不是兜底话）', async () => {
+    const events: AgentEvent[] = [];
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-auth-failed',
+      onEvent: (event: AgentEvent) => events.push(event),
+      modelConfig: { provider: 'custom-team-relay', model: 'LongCat-2.0' },
+      messages: [],
+      maxIterations: 10,
+      stats: { traceId: 'trace-auth', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules({ generateId: () => 'msg-auth', addAndPersistMessage: vi.fn() } as never, { runPostRun: vi.fn() } as never);
+    // AI SDK APICallError 的真实形状：message 只剩 statusText，HTTP 码在 statusCode
+    const forbidden = Object.assign(new Error('Forbidden'), { statusCode: 403 });
+    await finalizer.finalizeRun(1, '你好', { endTrace: vi.fn() } as never, 8, { status: 'failed', error: forbidden }).catch(() => undefined);
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({ code: 'RUN_FAILED', failure: { code: 'MODEL_AUTH' } });
+
+    // 反面：非鉴权失败不冒充
+    const other: AgentEvent[] = [];
+    const plain = new RunFinalizer({
+      sessionId: 'sess-other-failed', onEvent: (event: AgentEvent) => other.push(event),
+      modelConfig: { provider: 'deepseek', model: 'deepseek-chat' }, messages: [], maxIterations: 10,
+      stats: { traceId: 'trace-other', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() }, turn: { currentTurnId: null },
+    } as never);
+    plain.setModules({ generateId: () => 'msg-other', addAndPersistMessage: vi.fn() } as never, { runPostRun: vi.fn() } as never);
+    await plain.finalizeRun(1, '你好', { endTrace: vi.fn() } as never, 8, { status: 'failed', error: Object.assign(new Error('Bad Gateway'), { statusCode: 502 }) }).catch(() => undefined);
+    expect(other.find((event) => event.type === 'error')?.data).not.toHaveProperty('failure');
+  });
+
   it('goal runtime failure emits a structured abort and marks the single error presentation', async () => {
     const events: AgentEvent[] = [];
     const goalMode = new GoalModeController(buildGoalContract({

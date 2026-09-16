@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PlatformPorts } from '../../platform/ports';
 import type { messages } from '../../i18n';
 import { AppIcon } from '../../app/AppIcon';
@@ -29,7 +29,7 @@ function attachmentStatus(text: ReturnType<typeof messages>, item: UploadProgres
  * 顺带让 tests/unit/mobile/composer.test.tsx 能直接钉这份布局。
  */
 export function Composer({
-  text, draft, editDraft, offline, sendDisabled, send, running, modelLabel, openModel,
+  text, draft, editDraft, offline, sendDisabled, send, running, modelLabel, openModel, openSettings,
   attach, attachDisabled, attachments, retryAttachment, removeAttachment,
   recorder, transcribe, discardPendingTranscript, commitSpoken, dictation, voiceDisabled, voicePending, voiceResult, voiceReady, onVoiceState,
 }: {
@@ -48,6 +48,8 @@ export function Composer({
   running?: { stop(): void; stopDisabled: boolean } | null;
   modelLabel: string | null;
   openModel(): void;
+  /** 打开系统设置里本 App 那一页（麦克风开关在那里）。 */
+  openSettings?(): void;
   attach?: () => void;
   attachDisabled: boolean;
   attachments?: UploadProgress[];
@@ -86,13 +88,33 @@ export function Composer({
   useEffect(() => { onVoiceState({ recording: voice.panelOpen, failed: !!voice.failure }); },
     [voice.panelOpen, voice.failure, onVoiceState]);
   useEffect(() => { if (!voice.panelOpen) spokenFrom.current = draft.length; }, [voice.panelOpen, draft]);
-  const notice = voice.failure?.reason === 'MICROPHONE_DENIED' ? text.microphoneDenied
+  /**
+   * 麦克风被通话/会议占着（N-MOBILE-VOICE-ERRCODE-LEAK，爸 2026-09-16 拍板真检测）：原生侧盯着音频会话，
+   * 占用方一放手就回调，这里把提示从「被占用」翻成「空出来了」，并给「继续录音」。不自动开录——
+   * 没经用户点按就开麦克风不行。没有这个口的平台（安卓厂商插件）只剩「结束后再试」手动一档。
+   */
+  const [micReleased, setMicReleased] = useState(false);
+  const busy = voice.failure?.reason === 'MICROPHONE_BUSY';
+  useEffect(() => {
+    setMicReleased(false);
+    if (!busy || !recorder?.watchMicrophoneRelease) return;
+    return recorder.watchMicrophoneRelease(() => setMicReleased(true));
+  }, [busy, recorder]);
+  const denied = voice.failure?.reason === 'MICROPHONE_DENIED' || voice.failure?.reason === 'MISSING_PERMISSION';
+  // 用户面不出现内部错误码：reason 只进 data-reason 供取证（build 45 真机「录音失败 · FAILED_TO_RECORD」）。
+  const notice = denied ? text.microphoneDenied
+    : busy ? (micReleased ? text.microphoneReleased : `${text.microphoneBusy}。${text.microphoneBusyDetail}`)
     // 部分成功：其余几段已经在草稿里了，说成「转写未完成」是把整次录音都判死
-    : voice.failure?.partial ? `${text.voiceChunkDropped} · ${voice.failure.reason}`
-    : voice.failure ? `${voice.failure.stage === 'record' ? text.voiceRecordFailed : text.voiceTranscribeFailed} · ${voice.failure.reason}`
+    : voice.failure?.partial ? text.voiceChunkDropped
+    : voice.failure ? (voice.failure.stage === 'record' ? text.voiceRecordFailed : text.voiceTranscribeFailed)
     : null;
+  // 每一种失败给一个直指修复处的动作：没授权 → 去系统设置（重试只会再被拒）；被占用 → 等它放手再录；其余 → 重试。
+  const noticeAction = denied ? (openSettings && { label: text.openMicrophoneSettings, run: openSettings })
+    : busy ? { label: micReleased ? text.continueRecording : text.microphoneBusyRetry, run: voice.retry }
+    : { label: text.retry, run: voice.retry };
   return <>
-    {notice && <p className="notice voice-notice" role="status">{notice}<button className="inline-retry" onClick={voice.retry}>{text.retry}</button></p>}
+    {notice && <p className="notice voice-notice" role="status" data-reason={voice.failure?.reason}>{notice}
+      {noticeAction && <button className="inline-retry" onClick={noticeAction.run}>{noticeAction.label}</button>}</p>}
     <div className={voice.panelOpen ? 'composer voice-composer' : 'composer'}>
       {voice.panelOpen
         ? <VoicePanel text={text} phase={voice.phase} pending={voicePending} elapsedMs={voice.elapsedMs}

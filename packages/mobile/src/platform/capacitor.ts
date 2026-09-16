@@ -89,6 +89,9 @@ type PcmBridge = {
   startPcmRecording(): Promise<{ value: boolean; sampleRate?: number }>;
   stopPcmRecording(): Promise<{ value: boolean }>;
   addListener(event: 'pcmFrame', cb: (frame: { pcm: string; durationMs: number }) => void): Promise<{ remove: () => Promise<void> }>;
+  addListener(event: 'microphoneAvailable', cb: () => void): Promise<{ remove: () => Promise<void> }>;
+  watchMicrophoneRelease(): Promise<{ available: boolean }>;
+  unwatchMicrophoneRelease(): Promise<void>;
 };
 
 const pcmBridge = VoiceRecorder as unknown as PcmBridge;
@@ -124,6 +127,19 @@ function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
       return listener;
     });
     return () => { closed = true; void handle?.remove(); pcmListen = null; };
+  };
+  recorder.watchMicrophoneRelease = onReleased => {
+    let closed = false;
+    const release = () => { if (!closed) { closed = true; onReleased(); } };
+    // 先挂监听再布防：布防和「刚好放手」之间没有空窗。布防时已经空着就直接回调。
+    const listen = pcmBridge.addListener('microphoneAvailable', release);
+    const armed = listen.then(() => pcmBridge.watchMicrophoneRelease()).then(({ available }) => { if (available) release(); }).catch(() => {});
+    return () => {
+      closed = true;
+      void listen.then(handle => handle.remove()).catch(() => {});
+      // 撤防排在布防回包之后：否则撤防先到、布防后到，原生 2 秒定时器会一直跑到麦克风放手（grok ai-review Nit）。
+      void armed.then(() => pcmBridge.unwatchMicrophoneRelease()).catch(() => {});
+    };
   };
   return recorder;
 }

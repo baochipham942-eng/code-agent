@@ -28,6 +28,7 @@ import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { resolveContextWindow } from '../../model/modelLimits';
 import { getModelErrorStatus, summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
+import { getModelAuthFailureMarker } from '../../model/errorClassifier';
 
 // Import refactored modules
 import type {
@@ -384,6 +385,7 @@ export class RunFinalizer {
         });
       }
       logger.error('[AgentLoop] Loop exited due to runtime error', terminalError);
+      const authFailure = getModelAuthFailureMarker(terminalError);
       logCollector.agent('ERROR', `Agent run failed: ${errorMessage}`);
       this.ctx.onEvent({
         type: 'error',
@@ -399,6 +401,9 @@ export class RunFinalizer {
             model: this.ctx.modelConfig.model,
           },
           goalAbort: this.ctx.goalMode?.getStatus() === 'aborted',
+          // 引擎内吞掉的推理失败只从这里出去：不挂鉴权标记，手机/renderer 只能说「执行时出了问题」，
+          // 用户拿不到「换一个可用模型」这条路（build 45 真机 403）。
+          ...(authFailure ? { failure: authFailure } : {}),
         },
       });
 

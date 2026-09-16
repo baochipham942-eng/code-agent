@@ -26,6 +26,8 @@ function RealtimeHarness({
   transcribe,
   available = true,
   stopPcm,
+  startPcm,
+  start,
 }: {
   dictation: {
     open: () => Promise<CompanionDictationOpenResult>;
@@ -38,13 +40,15 @@ function RealtimeHarness({
   transcribe?: () => Promise<string | null>;
   available?: boolean;
   stopPcm?: () => Promise<void>;
+  startPcm?: () => Promise<{ sampleRate: number }>;
+  start?: () => Promise<void>;
 }) {
   const [draft, setDraft] = React.useState('');
   const listeners = React.useRef<Array<(frame: { pcm: string; durationMs: number }) => void>>([]);
   const recorder = React.useRef({
-    start: async () => {},
+    start: start ?? (async () => {}),
     stop: async () => ({ audioData: 'chunk1', mimeType: 'audio/aac' as const, durationMs: 4000 }),
-    startPcm: async () => ({ sampleRate: COMPANION_LIMITS.voicePcmSampleRate }),
+    startPcm: startPcm ?? (async () => ({ sampleRate: COMPANION_LIMITS.voicePcmSampleRate })),
     stopPcm: async () => { await stopPcm?.(); },
     subscribePcm: (onFrame: (frame: { pcm: string; durationMs: number }) => void) => {
       listeners.current.push(onFrame);
@@ -246,6 +250,22 @@ describe('realtime dictation', () => {
     expect(audio).not.toHaveBeenCalled();
     await advance(5_000);
     expect(transcribe).toHaveBeenCalled();
+  });
+});
+
+describe('麦克风被通话占着（N-MOBILE-VOICE-ERRCODE-LEAK）', () => {
+  afterEach(cleanup);
+
+  // build 45 真机：实时路径起录报占用 → 退回分段录音再起一次 → 真因被换成 FAILED_TO_RECORD。
+  it('实时起录报 MICROPHONE_BUSY 就地报占用，不退分段再撞一次', async () => {
+    const start = vi.fn(async () => { throw new Error('FAILED_TO_RECORD'); });
+    render(<RealtimeHarness start={start}
+      startPcm={async () => { throw new Error('MICROPHONE_BUSY'); }}
+      dictation={{ open: async () => ({ ok: false, code: 'UNUSED' }), audio: async () => ({ ok: true, events: [] }), stop: async () => ({ ok: true, events: [] }), close: async () => {} }} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    const notice = await screen.findByText(new RegExp(text.microphoneBusy));
+    expect(notice.closest('.voice-notice')!.getAttribute('data-reason')).toBe('MICROPHONE_BUSY');
+    expect(start).not.toHaveBeenCalled();
   });
 });
 

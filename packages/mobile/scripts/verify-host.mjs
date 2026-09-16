@@ -55,7 +55,9 @@ try {
   await new Promise(resolve=>http.listen(0,'127.0.0.1',resolve));
   browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:393,height:852},locale:'zh-CN'});
   page.setDefaultTimeout(120000);
-  const waitFor = locator => Promise.race([locator.waitFor(), page.getByText('任务失败',{exact:true}).waitFor().then(()=>{throw new Error('REAL_NEO_RUN_FAILED');})]);
+  // 失败行渲染成「任务失败：<原因>」（runOutcomeCopy），exact 文案判据永远打不中——锚属性不锚措辞。
+  const failedRow = page.locator('.run-outcome[data-outcome="failed"]');
+  const waitFor = locator => Promise.race([locator.waitFor(), failedRow.waitFor().then(()=>{throw new Error('REAL_NEO_RUN_FAILED');})]);
   let storage=null,loseReceipt=false;const errors=[],wire=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.exposeFunction('lanRead',()=>storage);await page.exposeFunction('lanWrite',v=>{storage=v;});
@@ -85,14 +87,16 @@ try {
   };
   // reload 之后没有那个前提（React 还没挂载，元素本来就不在），改成正向收敛：
   // 先等重连回来，再轮询到「执行条不在 + 助手回复已渲染」；失败仍然当场炸，不静默当成完成。
-  const runSettledAfterReload = async () => {
+  const assistantReplies = () => page.locator('.lan-message:not(.from-user)').count();
+  const runSettledAfterReload = async repliesBefore => {
     await page.getByText('已连接电脑',{exact:true}).last().waitFor();
     const deadline = Date.now() + 120_000;
     for(;;){
-      if(await page.getByText('任务失败',{exact:true}).count()) throw new Error('REAL_NEO_RUN_FAILED');
+      if(await failedRow.count()) throw new Error('REAL_NEO_RUN_FAILED');
       const live = await strip.count();
-      const replies = await page.locator('.lan-message:not(.from-user)').count();
-      if(!live && replies > 0) return;
+      const replies = await assistantReplies();
+      // 只认「比点审批之前多出来的回复」——否则之前那条回复就能让判据提前收敛（ai-review 第三轮）
+      if(!live && replies > repliesBefore) return;
       assert(Date.now() < deadline, 'run did not settle after reload');
       await pause(500);
     }
@@ -109,8 +113,9 @@ try {
   assert((await page.locator('.approval-card').last().innerText()).includes(filename));
   assert.equal(operation.type,'file_write');assert.equal(operation.tool,'Write');
   assert.equal(resolve(project,operation.details.path ?? operation.details.filePath),resolve(project,filename));
+  const repliesBeforeApproval = await assistantReplies();
   loseReceipt=true;await allow.click();await page.getByText('正在核对电脑是否已接收，请勿重复发送',{exact:true}).waitFor();
-  await page.reload();await runSettledAfterReload();
+  await page.reload();await runSettledAfterReload(repliesBeforeApproval);
   assert.equal(readFileSync(resolve(project,filename),'utf8').trim(),marker);pass('mobile-approval-survives-lost-receipt-and-real-file-is-created');
   const saved=JSON.parse(storage);assert(!saved.pending);pass('pending-command-cleared-after-authoritative-reconciliation');
   const committed=db.prepare("SELECT payload_json FROM companion_events WHERE session_id=? AND kind='message'").all(sessionId).map(row=>JSON.parse(row.payload_json)).filter(row=>row.role==='assistant');
@@ -128,7 +133,7 @@ try {
     assert(!existsSync(resolve(project,blockedFile)));
     await page.getByRole('button',{name:action==='deny'?'拒绝':'停止任务',exact:true}).click();
     if(action==='stop') await page.getByText('任务已停止',{exact:true}).waitFor({timeout:10000});
-    else await Promise.race([runEnded(), page.getByText('任务失败',{exact:true}).waitFor().then(()=>{throw new Error('REAL_NEO_RUN_FAILED');})]);
+    else await Promise.race([runEnded(), failedRow.waitFor().then(()=>{throw new Error('REAL_NEO_RUN_FAILED');})]);
     assert(!existsSync(resolve(project,blockedFile)),'denied/stopped operation must not write');
     const decision=db.prepare('SELECT status FROM companion_decisions WHERE session_id=? ORDER BY rowid DESC LIMIT 1').get(sessionId);
     assert.notEqual(decision.status,'pending');

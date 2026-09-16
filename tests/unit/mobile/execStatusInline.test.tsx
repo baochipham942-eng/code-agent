@@ -46,9 +46,23 @@ describe('真实宿主验收脚本与「成功不挂行」保持同一套判据�
 
   it('reload 之后不拿「元素不在」当完成——先等重连，再等「执行条不在且已有助手回复」（ai-review PR#1898 第二轮）', () => {
     // 直接等 detached 在 reload 后是恒真的：React 还没挂载时元素本来就不在，Playwright 立刻判满足。
-    expect(script).toContain('await page.reload();await runSettledAfterReload();');
-    expect(script).toMatch(/runSettledAfterReload = async \(\) => \{\s*\n\s*await page\.getByText\('已连接电脑'/);
-    expect(script).toContain("const replies = await page.locator('.lan-message:not(.from-user)').count();");
+    // 钉承重点不钉措辞：①reload 后必须走收敛函数，不许再回到 detached；②该函数第一步先等重连。
+    expect(script).toMatch(/await page\.reload\(\);await runSettledAfterReload\(/);
+    expect(script).not.toMatch(/page\.reload\(\);\s*await strip\.waitFor/);
+    expect(script).toMatch(/runSettledAfterReload = async [^\n]*=> \{\s*\n\s*await page\.getByText\('已连接电脑'/);
+  });
+
+  it('失败判据锚 data-outcome，不锚「任务失败」这句措辞（失败行带原因，exact 打不中）', () => {
+    expect(script).toContain("page.locator('.run-outcome[data-outcome=\"failed\"]')");
+    expect(script).not.toContain("getByText('任务失败'");
+    const component = readFileSync('packages/mobile/src/features/sessions/CompanionConversation.tsx', 'utf8');
+    expect(component).toContain('data-outcome={outcome.kind}');
+  });
+
+  it('reload 后的回复判据绑定这一轮：比点审批前的基线多才算收敛', () => {
+    expect(script).toContain('const repliesBeforeApproval = await assistantReplies();');
+    expect(script).toContain('await runSettledAfterReload(repliesBeforeApproval);');
+    expect(script).toContain('if(!live && replies > repliesBefore) return;');
   });
 
   it('等执行条消失的前提是它此刻真的挂着——否则又是一个恒真判据', () => {

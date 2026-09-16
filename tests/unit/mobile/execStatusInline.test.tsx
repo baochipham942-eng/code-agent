@@ -127,15 +127,17 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
     expect(stream()).toEqual(['user:写', 'neo:草稿', `outcome:${text.stopped}`]);
   });
 
-  it('处理中：执行条在最后一条下面，带停止；任务结束（running=null）即消失', () => {
+  it('处理中：执行条在最后一条下面，只说「哪一次在跑」不带停止；任务结束（running=null）即消失', () => {
     const stop = vi.fn();
     const events = [ev('message', { id: 'u1', role: 'user', content: '跑', runId: 'r1' })];
     const rendered = render(view(events, { stop, stopDisabled: false }));
     expect(stream()).toEqual(['user:跑', 'run-strip']);
     const strip = document.querySelector('[data-testid="run-strip"]')!;
     expect(strip.textContent).toContain(text.running);
-    fireEvent.click(strip.querySelector('button')!);
-    expect(stop).toHaveBeenCalledTimes(1);
+    // 停止收进输入区那个键（N-MOBILE-SEND-IS-STOP）：同一个动作不该有两个落点。
+    // 钉「条里没有任何按钮」而不是「没有那个文案」——换个词照样是第二个落点。
+    expect(strip.querySelectorAll('button')).toHaveLength(0);
+    expect(stop).not.toHaveBeenCalled();
     rendered.rerender(view(events, null));
     expect(document.querySelector('[data-testid="run-strip"]')).toBeNull();
   });

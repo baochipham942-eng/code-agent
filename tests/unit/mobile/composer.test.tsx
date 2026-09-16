@@ -17,6 +17,7 @@ function mount(overrides: {
   modelLabel?: string | null;
   attach?: (() => void) | undefined;
   recorder?: boolean;
+  running?: { stop(): void; stopDisabled: boolean } | null;
 } = {}) {
   const recorder = {
     start: overrides.start ?? (async () => {}),
@@ -28,7 +29,7 @@ function mount(overrides: {
   const openModel = vi.fn();
   const onVoiceState = vi.fn();
   const view = render(<Composer text={text} draft={overrides.draft ?? ''} editDraft={() => {}} offline={overrides.offline ?? false}
-    sendDisabled={!(overrides.draft ?? '').trim()} send={send}
+    sendDisabled={!(overrides.draft ?? '').trim()} send={send} running={overrides.running ?? null}
     modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel}
     attach={'attach' in overrides ? overrides.attach : () => {}} attachDisabled={false}
     recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe} discardPendingTranscript={discardPendingTranscript}
@@ -682,5 +683,61 @@ describe('输入区附件 chip（withAttachment / fileUploading / fileUploadFail
     mountWithAttachment(attachment({ phase: 'failed', error: 'COMPANION_FILE_TYPE_DENIED' }));
     expect(screen.getByRole('button', { name: text.attachRemove })).toBeTruthy();
     expect(screen.queryByRole('button', { name: text.attachRetry })).toBeNull();
+  });
+});
+
+
+/**
+ * 停止的落点（N-MOBILE-SEND-IS-STOP，爸 2026-09-16 build 43 真机「发送按钮就是停止呀」）。
+ * 照桌面 SendButton 的三态：空闲=发送 / 处理中+无内容=停止 / 处理中+有内容=发送。
+ * 逐态遍历而不是只测「跑起来会变停止」——本单前身就是「只照顾了被选中的那一态」。
+ */
+describe('输入区那个键在跑任务时就是停止', () => {
+  afterEach(cleanup);
+
+  const rightButton = () => document.querySelector('.composer-tools button.send') as HTMLButtonElement;
+
+  it('没在跑：是发送键，点它走 send', () => {
+    const { send } = mount({ draft: '写个东西' });
+    expect(document.querySelector('[data-testid="send"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="send-stop"]')).toBeNull();
+    fireEvent.click(rightButton());
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('跑着且草稿为空：换成停止键，点它走 stop 而不是 send', () => {
+    const stop = vi.fn();
+    const { send } = mount({ draft: '', running: { stop, stopDisabled: false } });
+    const button = document.querySelector('[data-testid="send-stop"]') as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    expect(button.getAttribute('aria-label')).toBe(text.stop);
+    expect(button.querySelector('[data-name="stop"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="send"]')).toBeNull();
+    fireEvent.click(button);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('跑着但草稿里有字：仍是发送键——把这句发出去，不是把任务停掉', () => {
+    const stop = vi.fn();
+    const { send } = mount({ draft: '再补一句', running: { stop, stopDisabled: false } });
+    expect(document.querySelector('[data-testid="send"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="send-stop"]')).toBeNull();
+    fireEvent.click(rightButton());
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it('草稿只有空白也算空：那时该给停止，不是给一个点不动的发送键', () => {
+    const stop = vi.fn();
+    mount({ draft: '   ', running: { stop, stopDisabled: false } });
+    expect(document.querySelector('[data-testid="send-stop"]')).toBeTruthy();
+  });
+
+  it('停止此刻不可用（断连/命令在飞）时按钮禁用，但仍是停止键不是发送键', () => {
+    mount({ draft: '', running: { stop: vi.fn(), stopDisabled: true } });
+    const button = document.querySelector('[data-testid="send-stop"]') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(document.querySelector('[data-testid="send"]')).toBeNull();
   });
 });

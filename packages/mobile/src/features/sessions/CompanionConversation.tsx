@@ -124,9 +124,10 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     {artifacts.map(artifact => <button key={artifact.artifactId} className="artifact-card" disabled={disabled} onClick={() => openArtifact(artifact.artifactId)}>
       <strong>{artifact.name}</strong><span>{artifact.origin === 'upload' ? text.fromPhone : text.artifacts}</span>
     </button>)}
-    {/* 执行条：形状照桌面 StreamingIndicator——一个呼吸点说「还活着」，一句在做什么，一个停止。 */}
-    {running && <div className="run-strip" data-testid="run-strip"><span className="run-dot" aria-hidden="true" /><span>{text.running}</span>
-      <button disabled={running.stopDisabled} onClick={running.stop}>{text.stop}</button></div>}
+    {/* 执行条：一个呼吸点说「还活着」+ 一句在做什么。**不带停止按钮**——停止收进输入区那个键
+        （N-MOBILE-SEND-IS-STOP）。它留在消息流里是为了说清「是哪一次执行在跑」，这是输入区
+        那个键给不了的信息；但同一个动作不该有两个落点。 */}
+    {running && <div className="run-strip" data-testid="run-strip"><span className="run-dot" aria-hidden="true" /><span>{text.running}</span></div>}
   </div>{showLatest && <button className="jump-latest" onClick={() => {
     following.current = true; scroller.current!.scrollTop = scroller.current!.scrollHeight; setShowLatest(false);
   }}>{text.latest} ↓</button>}</div>;

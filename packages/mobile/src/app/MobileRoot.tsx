@@ -76,9 +76,20 @@ export function composerModelLabel(library: CompanionLibrary | null, sessionId: 
 export function taskStatusCopy(
   text: ReturnType<typeof messages>,
   companion: { pending: boolean; pendingAction: string | null },
+  /**
+   * 这条待确认命令是不是已经**久到该说话了**（N-MOBILE-PENDING-NOISE）。
+   * 「正在核对电脑是否已接收，请勿重复发送」是异常兜底语：正常 ack 几十毫秒就回来，
+   * 一发就显示等于每条消息都提醒用户「别乱点」，而且只闪一下——用户只来得及看见警告、
+   * 看不见原因（爸 2026-09-16 build 43 真机）。慢过阈值才说。
+   * 转写不受这条约束：「正在转写」是进度不是警告，越早说越有用。
+   *
+   * 必填而不给默认值：默认 true 等于「谁忘了传谁就回到吵的那个行为」，闸门形同虚设。
+   */
+  pendingSlow: boolean,
 ): string {
   if (!companion.pending) return '';
-  return companion.pendingAction === 'voice.transcribe' ? text.transcribing : text.pendingCommand;
+  if (companion.pendingAction === 'voice.transcribe') return text.transcribing;
+  return pendingSlow ? text.pendingCommand : '';
 }
 
 /** 电脑名：mDNS 名去掉 .local；没有 mDNS 名（Linux/Windows 宿主）时给 null，调用方退回 IP。 */
@@ -381,6 +392,17 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     };
   }, [ports, store, companionStore, notifyStore]);
   useEffect(() => { if (state.ready) void companionStore.getState().hydrate(); }, [state.ready, companionStore]);
+  /**
+   * 待确认命令「慢到该说话了」的闸门（N-MOBILE-PENDING-NOISE）。pending 一起就开计时，
+   * 结算就复位；到点之前 taskStatusCopy 闭嘴。放在 MobileRoot 而不是 store：这是纯粹的
+   * 呈现节奏，store 那边的 pending 仍然是「有没有待确认命令」这个事实，不掺 UI 时序。
+   */
+  const [pendingSlow, setPendingSlow] = useState(false);
+  useEffect(() => {
+    if (!companion.pending) { setPendingSlow(false); return; }
+    const timer = setTimeout(() => setPendingSlow(true), COMPANION_LIMITS.pendingNoticeDelayMs);
+    return () => clearTimeout(timer);
+  }, [companion.pending, companion.pendingAction]);
   useEffect(() => {
     if (companion.status !== 'connected') return;
     void notifyStore.getState().recover();
@@ -601,7 +623,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             </button>
             {connection.retry && <button className="inline-retry" disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
           </div>
-          <span>{taskStatusCopy(text, companion)}</span>
+          <span>{taskStatusCopy(text, companion, pendingSlow)}</span>
           {offlineCopy && <span data-testid="offline-readonly">{offlineCopy}</span>}
         </div>}
         {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button className="inline-retry" onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
@@ -622,6 +644,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           // （grok ai-review Nit，正是爸看到的那张后台快照）。
           offline={!!companion.binding && !connection.connected}
           sendDisabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
+          // 停止的落点收进输入区那个键（N-MOBILE-SEND-IS-STOP）；执行条只剩「哪一次在跑」。
+          running={companion.runId ? { stop: () => void companion.stop(), stopDisabled: companion.busy || companion.pending || companion.status !== 'connected' } : null}
           send={() => {
             // companionStore.send 在没有 sessionId 时会静默 return（只勾了项目的二维码
             // 配对就是这个形态）。不把这一档也走 attemptSend 的话，用户看到「已连接」、

@@ -29,7 +29,7 @@ function attachmentStatus(text: ReturnType<typeof messages>, item: UploadProgres
  * 顺带让 tests/unit/mobile/composer.test.tsx 能直接钉这份布局。
  */
 export function Composer({
-  text, draft, editDraft, offline, sendDisabled, send, modelLabel, openModel,
+  text, draft, editDraft, offline, sendDisabled, send, running, modelLabel, openModel,
   attach, attachDisabled, attachments, retryAttachment, removeAttachment,
   recorder, transcribe, discardPendingTranscript, commitSpoken, dictation, voiceDisabled, voicePending, voiceResult, voiceReady, onVoiceState,
 }: {
@@ -40,6 +40,12 @@ export function Composer({
   offline: boolean;
   sendDisabled: boolean;
   send(): void;
+  /**
+   * 这条会话正在跑的那次执行（null = 没在跑）。有它且草稿为空时，右下角那个键**就是停止**
+   * ——照桌面 SendButton 的三态（空闲=发送 / 处理中+无内容=停止 / 处理中+有内容=发送）。
+   * 爸 2026-09-16 build 43 真机：「为什么要展示 1 个停止任务的按钮？发送按钮就是停止呀」。
+   */
+  running?: { stop(): void; stopDisabled: boolean } | null;
   modelLabel: string | null;
   openModel(): void;
   attach?: () => void;
@@ -124,8 +130,11 @@ export function Composer({
               <span className="model-name">{modelLabel}</span><AppIcon name="down" /></button>}
             <span className="spacer" />
             {recorder && <button aria-label={text.voice} disabled={voiceDisabled} onClick={() => void voice.start()}><AppIcon name="mic" /></button>}
-            <button className="send" aria-label={text.send} data-testid="send" disabled={sendDisabled}
-              onClick={() => { if (!composing.current) send(); }}><AppIcon name="arrow" /></button>
+            {running && !draft.trim()
+              ? <button className="send stop" aria-label={text.stop} data-testid="send-stop" disabled={running.stopDisabled}
+                onClick={running.stop}><AppIcon name="stop" /></button>
+              : <button className="send" aria-label={text.send} data-testid="send" disabled={sendDisabled}
+                onClick={() => { if (!composing.current) send(); }}><AppIcon name="arrow" /></button>}
           </div>
         </>}
     </div>

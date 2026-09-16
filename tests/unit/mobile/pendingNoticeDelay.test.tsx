@@ -16,7 +16,7 @@ import { messages } from '../../../packages/mobile/src/i18n';
  * 纯函数怎么改都绿，而真机上照旧一发就弹。
  * 命令发出去就吊着（Host 不回 ack），pending 一直为真，闸门是唯一决定说不说的东西。
  */
-const harness = vi.hoisted(() => ({ hangCommand: true }));
+const harness = vi.hoisted(() => ({ hangCommand: true, savedPending: false }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
@@ -45,11 +45,13 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   },
 }));
 
-function saved(): string {
+function saved(pending = false): string {
   const identity = createIdentity();
   return JSON.stringify({
     version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
     binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
+    // 盘上留着一条没结算的命令：上次开着 app 时发出去、至今没等到回执的那种。
+    ...(pending ? { pending: { version: 1, deviceId: 'phone-1', scopeEpoch: 1, commandId: 'cmd-old', sessionId: 's1', action: 'message.send', payload: { text: '上次没发完的' } } } : {}),
   });
 }
 
@@ -58,7 +60,7 @@ const ports = (): PlatformPorts => ({
   appInfo: { read: async () => ({ version: '0.1.0', build: '44' }) },
   lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
   keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
-  companion: { read: async () => saved(), write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}) },
+  companion: { read: async () => saved(harness.savedPending), write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}) },
 });
 
 const text = messages('zh');
@@ -66,6 +68,7 @@ const statusRow = () => document.querySelector('.task-status')?.textContent ?? '
 
 beforeEach(() => {
   harness.hangCommand = true;
+  harness.savedPending = false;
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: false, media: query, onchange: null,
     addEventListener: () => {}, removeEventListener: () => {},
@@ -92,5 +95,16 @@ describe('「正在核对电脑是否已接收」要憋过阈值才说（接线�
 
     await act(async () => { await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.pendingNoticeDelayMs + 50); });
     expect(statusRow()).toContain(text.pendingCommand);
+  });
+
+  /**
+   * hydrate 捡回来的旧槽已经等了不知道多久（可能是上次开着 app 时留下的），再从 0 憋 3 秒
+   * 等于把已知的「它很慢」这个事实丢掉（grok ai-review PR#1903 Nit②）。
+   * 不推时钟就断言它在——推了时钟就分不清「立刻说」和「憋满才说」。
+   */
+  it('盘上捡回来的待确认命令立刻说，不再从 0 计时', async () => {
+    harness.savedPending = true;
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(statusRow()).toContain(text.pendingCommand); });
   });
 });

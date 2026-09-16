@@ -73,11 +73,13 @@ describe('真实宿主验收脚本与「成功不挂行」保持同一套判据�
     expect(script).toMatch(/runEnded\(\)\.then\(\(\)=>\{throw new Error\('TASK_FINISHED_WITHOUT_REQUIRED_APPROVAL'\);\}\)/);
   });
 
-  it('verify-lan 不再等那句延迟 3 秒才出现的提示——贴着默认超时就是随机红线', () => {
+  it('verify-lan 等那句延迟提示时必须显式给足超时，且不许改锚「草稿被清空」（那条恒不成立）', () => {
     const lan = readFileSync('packages/mobile/scripts/verify-lan.mjs', 'utf8');
-    // 钉承重点：①旧文案判据不许再出现 ②改锚的是「草稿被清空」这个发送已落槽的直接后果
-    expect(lan).not.toContain('正在核对电脑是否已接收');
-    expect(lan).toContain("document.querySelector('[data-testid=\"draft\"]')?.value === ''");
+    // 承重点一：那句提示现在要憋过 pendingNoticeDelayMs，靠 Playwright 默认 5s 只剩两秒余量。
+    expect(lan).toMatch(/正在核对电脑是否已接收[^\n]*waitFor\(\{ timeout: 15_000 \}\)/);
+    // 承重点二：丢回执那条路径故意不回 ack ⇒ 草稿永远不会被清（acknowledgeDraft 只在 ack 后跑）。
+    // 拿它当判据是**恒不成立**，整条浏览器验收会挂死（grok ai-review PR#1903 Important）。
+    expect(lan).not.toContain("[data-testid=\"draft\"]')?.value === ''");
   });
 
   it('组件确实发 run-strip 这个 testid——判据锚的元素必须真存在，否则 detached 恒真', () => {

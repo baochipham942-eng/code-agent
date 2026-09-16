@@ -404,11 +404,20 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
    * ref 变了不重渲染，执行条不会知道该长出按钮来。
    */
   const [voiceActive, setVoiceActive] = useState(false);
+  /**
+   * hydrate 从盘上带回来的待确认命令已经等了不知道多久（可能是上次开着 app 时留下的），
+   * 再从 0 憋 3 秒等于把已知的「它很慢」这个事实丢掉（grok ai-review PR#1903 Nit②）。
+   * 「是不是捡回来的」由 store 的 pendingAdopted 给，不在这里靠时序推断——
+   * 初版我用「第一次见到 pending 就为真」判断，而 store 初始 pending 恒为 false，
+   * 那个判据永远不成立，改了等于没改（实测抓到）。
+   */
   useEffect(() => {
     if (!companion.pending) { setPendingSlow(false); return; }
+    // 盘上捡回来的旧槽已经等了不知道多久，立刻说；本次会话亲手发的才计时。
+    if (companion.pendingAdopted) { setPendingSlow(true); return; }
     const timer = setTimeout(() => setPendingSlow(true), COMPANION_LIMITS.pendingNoticeDelayMs);
     return () => clearTimeout(timer);
-  }, [companion.pending, companion.pendingAction]);
+  }, [companion.pending, companion.pendingAction, companion.pendingAdopted]);
   useEffect(() => {
     if (companion.status !== 'connected') return;
     void notifyStore.getState().recover();

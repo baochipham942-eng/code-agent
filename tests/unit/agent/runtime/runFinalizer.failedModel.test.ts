@@ -135,7 +135,8 @@ describe('RunFinalizer 失败事件', () => {
     // AI SDK APICallError 的真实形状：message 只剩 statusText，HTTP 码在 statusCode
     const forbidden = Object.assign(new Error('Forbidden'), { statusCode: 403 });
     await finalizer.finalizeRun(1, '你好', { endTrace: vi.fn() } as never, 8, { status: 'failed', error: forbidden }).catch(() => undefined);
-    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({ code: 'RUN_FAILED', failure: { code: 'MODEL_AUTH' } });
+    // 带上这一轮真正跑的模型（APICallError 自己不带 provider）
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({ code: 'RUN_FAILED', failure: { code: 'MODEL_AUTH', provider: 'custom-team-relay', model: 'LongCat-2.0' } });
 
     // 反面：非鉴权失败不冒充
     const other: AgentEvent[] = [];

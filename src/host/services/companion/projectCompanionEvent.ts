@@ -38,7 +38,11 @@ export function projectCompanionEvent(kind: string, value: unknown): Record<stri
         if (failure.kind === 'identity_changed') return { code: 'PROJECT_SOURCE_CHANGED' };
         if (failure.kind === 'not_trusted') return { code: 'PROJECT_SOURCE_UNTRUSTED' };
       }
-      if (failure?.code === 'MODEL_AUTH') return { code: 'MODEL_AUTH' };
+      if (failure?.code === 'MODEL_AUTH') {
+        const auth = failure as { provider?: unknown; model?: unknown };
+        return { code: 'MODEL_AUTH',
+          ...(typeof auth.provider === 'string' && typeof auth.model === 'string' ? { provider: auth.provider, model: auth.model } : {}) };
+      }
       return { code: 'RUN_FAILED' };
     }
     case 'artifact_write_started': {

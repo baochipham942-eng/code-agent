@@ -138,6 +138,28 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
     expect(document.querySelector('[data-testid="model-auth-failed"]')).toBeNull();
   });
 
+  // 爸 2026-09-16 真机：已经换成能用的模型，「换一个可用模型」还挂着
+  it('失败的模型已经被换走就收起换模型卡；换回同一个坏模型会再出现；旧宿主不带模型照旧显示', () => {
+    const conv = (events: CompanionEvent[], sessionModel: { provider: string; model: string } | null) => <CompanionConversation events={events} artifacts={[]} sessionId="s1" text={text} loadMore={() => {}} disabled={false}
+      respond={async () => {}} respondQuestion={async () => {}} respondPlan={async () => {}} openArtifact={() => {}} openModel={() => {}} sessionModel={sessionModel} />;
+    const failed = [
+      ev('message', { id: 'u1', role: 'user', content: '你好', runId: 'r1' }),
+      ev('error', { code: 'MODEL_AUTH', provider: 'custom-team-relay', model: 'LongCat-2.0', runId: 'r1' }),
+    ];
+    const card = () => document.querySelector('[data-testid="model-auth-failed"]');
+    const { rerender } = render(conv(failed, { provider: 'custom-team-relay', model: 'LongCat-2.0' }));
+    // 前提自证：还是那个坏模型时卡片在
+    expect(card()).not.toBeNull();
+    rerender(conv(failed, { provider: 'longcat', model: 'LongCat-2.0' }));
+    expect(card()).toBeNull();
+    // 失败原因那一行留着——那次执行确实失败了
+    expect(stream()).toContain(`outcome:${runOutcomeCopy(text, 'failed', 'MODEL_AUTH')}`);
+    rerender(conv(failed, { provider: 'custom-team-relay', model: 'LongCat-2.0' }));
+    expect(card()).not.toBeNull();
+    rerender(conv([failed[0], ev('error', { code: 'MODEL_AUTH', runId: 'r1' })], { provider: 'longcat', model: 'LongCat-2.0' }));
+    expect(card()).not.toBeNull();
+  });
+
   it('只成功的一轮：回复下面什么都不挂——回复本身就是成功的证据', () => {
     render(view([
       ev('message', { id: 'u1', role: 'user', content: '你好', runId: 'r1' }),

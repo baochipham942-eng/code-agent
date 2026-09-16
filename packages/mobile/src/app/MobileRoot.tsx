@@ -599,6 +599,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           offline={companion.status !== 'connected'}
           openModel={openModelSheet}
+          sessionModel={companion.library?.sessions.find(s => s.id === companion.sessionId) ?? null}
           // 执行条平时只说「哪一次在跑」；停止在输入区那个键上。录音面板顶掉输入区时才把
           // stop 交给它，避免运行中一开录音就没法停（grok ai-review PR#1903 Nit①）。
           running={companion.runId
@@ -643,12 +644,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           }</button>}
         </div>}
         {companion.binding && <div className="task-status" role="status">
-          <div className="connection-line">
+          {/* 执行条已经说明电脑正在处理，连着是不言自明的；再挂一行「已连接电脑」是重复（爸 2026-09-16 真机）。
+              没连上时照常显示——那是需要用户知道并处理的。 */}
+          {!(connection.connected && companion.runId) && <div className="connection-line">
             <button className="connection-pill" data-connected={connection.connected} onClick={() => state.openSheet('remote')}>
               <span aria-hidden="true" className="status-dot" />{connection.label}
             </button>
             {connection.retry && <button className="inline-retry" disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
-          </div>
+          </div>}
           <span>{taskStatusCopy(text, companion, pendingSlow)}</span>
           {offlineCopy && <span data-testid="offline-readonly">{offlineCopy}</span>}
         </div>}

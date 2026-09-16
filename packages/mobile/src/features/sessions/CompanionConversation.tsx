@@ -7,7 +7,7 @@ import { PlanCard } from './PlanCard';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
 import { runOutcomeCopy, type messages } from '../../i18n';
 
-type RunOutcome = { anchor: string | undefined; kind: 'stopped' | 'failed'; code?: string };
+type RunOutcome = { anchor: string | undefined; kind: 'stopped' | 'failed'; code?: string; provider?: string; model?: string };
 
 /**
  * 「跟到底」只滚到刚好露出最后一个元素的下沿为止（build 40 真机：进会话第一条上半被顶栏裁掉）。
@@ -24,7 +24,7 @@ function followTop(el: HTMLElement, composerHeight: number): number {
   return Math.min(el.scrollHeight, Math.max(0, Math.ceil(bottom - (el.clientHeight - composerHeight - keyboard))));
 }
 
-export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0, offline = false, running = null, openModel }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
+export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0, offline = false, running = null, openModel, sessionModel }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
   /** 输入区那一层的实测高度：它一变，滚动区的底部内边距跟着变，贴底的人得重新贴一次。 */
   composerHeight?: number;
   /** Offline reread: hide load-more (it cannot fetch) without changing the composer. */
@@ -38,7 +38,9 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
    */
   running?: { stop?(): void; stopDisabled?: boolean } | null;
   /** 打开「选择会话模型」。模型密钥用不了的失败态靠它给出路（设计稿 modelAuthFailed）。 */
-  openModel?(): void }) {
+  openModel?(): void;
+  /** 这条会话下一次执行会用的模型。失败的那个模型已经被换掉，就不再挂「换一个可用模型」。 */
+  sessionModel?: { provider: string; model: string } | null }) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
@@ -99,7 +101,8 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     } else if (event.kind === 'agent_cancelled' || event.kind === 'error') {
       const kind = event.kind === 'agent_cancelled' ? 'stopped' : 'failed';
       // 同一次执行先报错再收尾时失败说了算：这次任务没有完成（agent_complete 不落行，也就抹不掉这条）。
-      if (outcomes.get(run)?.kind !== 'failed') outcomes.set(run, { anchor: lastRow, kind, code: typeof p.code === 'string' ? p.code : undefined });
+      if (outcomes.get(run)?.kind !== 'failed') outcomes.set(run, { anchor: lastRow, kind, code: typeof p.code === 'string' ? p.code : undefined,
+        ...(typeof p.provider === 'string' && typeof p.model === 'string' ? { provider: p.provider, model: p.model } : {}) });
     }
   }
   /**
@@ -107,10 +110,14 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
    * 「换一个可用模型」直达模型选择。只挂在会话里最近那次执行上：之后又跑过（哪怕成功了）就说明已经绕过去了，
    * 每条旧失败都挂一个按钮是噪音。
    */
+  // 爸 2026-09-16 真机：已经换成能用的模型，卡片还挂着。失败事件带着那次跑的模型，当前模型不是它就收起；
+  // 换回同一个坏模型会再出现。旧宿主不带模型时照旧显示。
+  const switchedAway = (outcome: RunOutcome) => Boolean(outcome.provider && sessionModel
+    && (sessionModel.provider !== outcome.provider || sessionModel.model !== outcome.model));
   const outcomesAt = (anchor: string | undefined) => Array.from(outcomes).filter(([, outcome]) => outcome.anchor === anchor)
     .map(([run, outcome]) => <Fragment key={`outcome:${run}`}>
       <p className="run-outcome" data-outcome={outcome.kind}>{runOutcomeCopy(text, outcome.kind, outcome.code)}</p>
-      {run === latestRun && outcome.code === 'MODEL_AUTH' && openModel && <div className="decision" data-testid="model-auth-failed">
+      {run === latestRun && outcome.code === 'MODEL_AUTH' && openModel && !switchedAway(outcome) && <div className="decision" data-testid="model-auth-failed">
         <h3>{text.modelAuthTitle}</h3><p>{text.modelAuthDetail}</p>
         <button className="primary" onClick={openModel}>{text.switchModel}</button>
       </div>}

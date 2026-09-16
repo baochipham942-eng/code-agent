@@ -114,8 +114,10 @@ export function createProtocolSubagentExecutionContext(
       ?? ctx.suppressBackgroundSubagentIdleWake,
     toolScope: ctx.toolScope,
     executionIntent: ctx.executionIntent,
-    // Run 级工具面（CLI --tools/--disallowed-tools）：spawn 链硬边界，子代理只能收窄
-    allowedToolNames: ctx.allowedToolNames,
+    // Run 级工具面（CLI --tools/--disallowed-tools）：spawn 链硬边界，子代理只能收窄。
+    // 前台 brain 的本轮工具面不算硬边界（爸 2026-09-16 真机：研究子助手被收窄到只剩本地读写、拿不到 WebSearch）；
+    // deniedToolNames、toolScope、角色边界与审批照旧生效。
+    allowedToolNames: ctx.foregroundToolFace ? undefined : ctx.allowedToolNames,
     deniedToolNames: ctx.deniedToolNames,
     telemetryCollector: ctx.telemetryCollector as TelemetryCollector | undefined,
   };

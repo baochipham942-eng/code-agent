@@ -38,10 +38,15 @@ describe('QuestionCard', () => {
     expect(respond).toHaveBeenCalledWith({ 方向: '换个方案' });
   });
 
-  it('settled cards lose their actions', () => {
-    render(<QuestionCard card={{ preview, status: 'approved' }} text={text} disabled={false} respond={async () => {}} skip={async () => {}} />);
-    expect(screen.getByText(text.questionClosed)).toBeTruthy();
+  // 爸 2026-09-16 真机：在手机上答完/允许完，卡片却说「已在另一端…或已失效」，像是失败了。结果按状态如实说
+  it('settled cards lose their actions and say what actually happened', () => {
+    const { rerender } = render(<QuestionCard card={{ preview, status: 'approved' }} text={text} disabled={false} respond={async () => {}} skip={async () => {}} />);
+    expect(screen.getByText(text.questionAnswered)).toBeTruthy();
     expect(screen.queryByText(text.questionSubmit)).toBeNull();
+    rerender(<QuestionCard card={{ preview, status: 'rejected' }} text={text} disabled={false} respond={async () => {}} skip={async () => {}} />);
+    expect(screen.getByText(text.questionSkipped)).toBeTruthy();
+    rerender(<QuestionCard card={{ preview, status: 'closed' }} text={text} disabled={false} respond={async () => {}} skip={async () => {}} />);
+    expect(screen.getByText(text.questionClosed)).toBeTruthy();
   });
 
   it('english copy is present for the same keys', () => {

@@ -108,6 +108,6 @@ export function QuestionCard({ card, text, disabled, respond, skip }: {
     {card.status === 'pending' ? <div className="approval-actions">
       <button disabled={disabled} onClick={() => void skip()}>{text.questionSkip}</button>
       <button disabled={disabled || !readable || !answered} onClick={submit}>{text.questionSubmit}</button>
-    </div> : <p role="status">{text.questionClosed}</p>}
+    </div> : <p role="status" data-status={String(card.status)}>{card.status === 'approved' ? text.questionAnswered : card.status === 'rejected' ? text.questionSkipped : text.questionClosed}</p>}
   </section>;
 }

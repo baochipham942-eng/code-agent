@@ -67,7 +67,6 @@ const zh = {
   profile: '个人信息', nickname: '昵称', save: '保存', about: '关于 Neo', help: '帮助',
   aboutDescription: '连接自己的电脑，让协作随身同行。', unavailableVersion: '版本信息暂不可用',
   version: '版本', send: '发送', unconnected: '电脑尚未连接，草稿已保留',
-  offlineReadonly: '离线只读', lastSynced: '上次同步',
   noSession: '还没有选会话，草稿已保留。请先从项目里选一个会话，或新建会话再发。',
   commandRejected: '这条操作没有被接受',
   projectSourceMissing: '项目文件夹已被删除或移动，请在电脑上重新选择位置后再试',
@@ -199,7 +198,6 @@ const en: Record<keyof typeof zh, string> = {
   save: 'Save', about: 'About Neo', help: 'Help', aboutDescription: 'Stay connected to your own computer.',
   unavailableVersion: 'Version information unavailable', version: 'Version', send: 'Send',
   unconnected: 'Computer disconnected. Your draft is retained.',
-  offlineReadonly: 'Offline, read-only', lastSynced: 'Last synced',
   noSession: 'No conversation selected. Your draft is retained. Pick one from a project, or start a new conversation first.',
   commandRejected: 'That action was not accepted.',
   projectSourceMissing: 'The project folder was deleted or moved. Choose its location again on your computer, then retry.',
@@ -287,18 +285,4 @@ export function runOutcomeCopy(text: ReturnType<typeof messages>, kind: 'stopped
     : code === 'MODEL_AUTH' ? text.modelAuthMissing
     : text.runFailed;
   return `${text.failed}${text === zh ? '：' : ': '}${reason}`;
-}
-
-/**
- * Offline reread banner. Pause still looks connected (background snapshot must not say
- * "read-only"); live connected hides it. Only the true disconnected cache path shows it.
- */
-export function offlineHistoryCopy(
-  text: ReturnType<typeof messages>,
-  companion: { status: string; paused: boolean; lastSyncAt: number | null },
-  hasCache: boolean,
-): string | null {
-  if (!hasCache || companion.paused || companion.status !== 'offline') return null;
-  const when = companion.lastSyncAt != null ? ` · ${text.lastSynced} ${new Date(companion.lastSyncAt).toLocaleString()}` : '';
-  return `${text.offlineReadonly}${when}`;
 }

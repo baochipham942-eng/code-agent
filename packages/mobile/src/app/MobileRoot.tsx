@@ -15,7 +15,7 @@ import { QuestionCard } from '../features/sessions/QuestionCard';
 import { PlanCard } from '../features/sessions/PlanCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
 import type { CompanionLibrary } from '../../../../src/shared/contract/companionLibrary';
-import { messages, offlineHistoryCopy } from '../i18n';
+import { messages } from '../i18n';
 import { projectDisplayName } from '../features/sessions/projectRows';
 import { createBackCoordinator } from './backCoordinator';
 import { PreviewMedia } from '../features/sessions/PreviewMedia';
@@ -280,9 +280,6 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   // 没有会话或还没读到模型表时不显示——不拿列表第一个冒充当前模型。
   const sessionModelLabel = composerModelLabel(companion.library, companion.sessionId);
   const connection = connectionCopy(text, companion);
-  const cachedHistory = companion.sessionId ? companion.history[companion.sessionId] : undefined;
-  const hasCachedConversation = Boolean(cachedHistory?.messages.length || companion.events.some(event => event.sessionId === companion.sessionId));
-  const offlineCopy = offlineHistoryCopy(text, companion, hasCachedConversation);
   // 反馈③（2026-09-14 build 34）：项目/会话 sheet 等电脑里的库时不许无限转圈——底层 request
   // 没有客户端超时，连接僵死时圈会一直转；到点落「连不上电脑」失败态并给重试。
   const librarySheetWaiting = Boolean(state.sheet && (currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more' || currentPage === 'model') && companion.binding && !companion.library);
@@ -653,7 +650,6 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             {connection.retry && <button className="inline-retry" disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
           </div>}
           <span>{taskStatusCopy(text, companion, pendingSlow)}</span>
-          {offlineCopy && <span data-testid="offline-readonly">{offlineCopy}</span>}
         </div>}
         {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button className="inline-retry" onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}

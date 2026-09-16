@@ -6,7 +6,6 @@ import { createCompanionStore } from '../../../packages/mobile/src/stores/compan
 import { createMobileStore } from '../../../packages/mobile/src/stores/mobileStore';
 import { FileCache } from '../../../packages/mobile/src/platform/fileCache';
 import { HistoryCache } from '../../../packages/mobile/src/platform/historyCache';
-import { messages, offlineHistoryCopy } from '../../../packages/mobile/src/i18n';
 import type { CompanionCommand, CompanionEvent } from '../../../src/shared/contract/companion';
 
 const harness = vi.hoisted(() => ({
@@ -158,9 +157,6 @@ describe('offline conversation cache', () => {
       expect.objectContaining({ id: 'm1', role: 'user', content: 'cached body' }),
     ]);
     expect(cold.getState().events).toEqual([expect.objectContaining({ kind: 'approval', payload: expect.objectContaining({ requestId: 'req-1' }) })]);
-    const text = messages('zh');
-    expect(offlineHistoryCopy(text, cold.getState(), true)).toContain(text.offlineReadonly);
-    expect(offlineHistoryCopy(text, cold.getState(), true)).toContain(text.lastSynced);
   });
 
   it('does not cache streaming deltas or tool arguments that are not in the projection', async () => {
@@ -317,12 +313,3 @@ describe('offline conversation cache', () => {
   });
 });
 
-describe('offlineHistoryCopy', () => {
-  const text = messages('zh');
-  it('names the cache as offline read-only and does not pretend the computer is connected', () => {
-    expect(offlineHistoryCopy(text, { status: 'offline', paused: false, lastSyncAt: 1_700_000_000_000 }, true)).toContain(text.offlineReadonly);
-    expect(offlineHistoryCopy(text, { status: 'connected', paused: false, lastSyncAt: 1 }, true)).toBeNull();
-    expect(offlineHistoryCopy(text, { status: 'offline', paused: true, lastSyncAt: 1 }, true)).toBeNull();
-    expect(offlineHistoryCopy(text, { status: 'offline', paused: false, lastSyncAt: null }, false)).toBeNull();
-  });
-});

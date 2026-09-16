@@ -4,6 +4,7 @@
 
 import type { ModelAuthFailureMarker } from '../../shared/contract/model';
 import { hasInsufficientBalanceSignal } from '../../shared/utils/providerError';
+import { getModelErrorStatus } from '../../shared/modelErrorDiagnostics';
 
 /** 引擎侧「本地就没有 key」的自有错误码，与上游 401/403 归同一类。 */
 export const MODEL_API_KEY_MISSING_CODE = 'MODEL_API_KEY_MISSING';
@@ -105,7 +106,8 @@ export function getModelAuthFailureMarker(error: unknown): ModelAuthFailureMarke
   let cursor = error;
   for (let depth = 0; depth < 4 && cursor && typeof cursor === 'object'; depth += 1) {
     const candidate = cursor as { code?: unknown; status?: unknown; provider?: unknown; model?: unknown; cause?: unknown };
-    const status = typeof candidate.status === 'number' ? candidate.status : undefined;
+    // AI SDK 的 APICallError 把 HTTP 码放在 statusCode，不是 status（build 45 真机：403 漏成兜底话）。
+    const status = getModelErrorStatus(candidate);
     if (candidate.code === MODEL_API_KEY_MISSING_CODE || status === 401 || status === 403) {
       return {
         code: 'MODEL_AUTH',

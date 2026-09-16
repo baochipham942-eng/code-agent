@@ -84,6 +84,14 @@ describe('first-party ios voice recorder contract', () => {
     // 撤防必须排在布防回包之后，否则先撤后布，原生定时器空转
     expect(capacitorPort).toContain('void armed.then(() => pcmBridge.unwatchMicrophoneRelease())');
     expect(swift).toContain('notifyListeners("microphoneAvailable"');
+  });
+
+  // build 46 远端验收：@capacitor/app 在 iOS 上没有 openUrl，原来的「去设置」是空操作（原生回 UNIMPLEMENTED 被吞）
+  it('iOS 的「去设置」走第一方插件打开本 App 设置页，不再调不存在的 App.openUrl', () => {
+    expect(swift).toContain('CAPPluginMethod(name: "openAppSettings"');
+    expect(swift).toContain('@objc func openAppSettings(');
+    expect(swift).toContain('UIApplication.openSettingsURLString');
+    expect(capacitorPort).toContain("if (Capacitor.getPlatform() === 'ios') { await pcmBridge.openAppSettings()");
     expect(capacitorPort).toContain("addListener('microphoneAvailable'");
     expect(swift).toContain('AVAudioSession.interruptionNotification');
     expect(swift).toContain('isOtherAudioPlaying');

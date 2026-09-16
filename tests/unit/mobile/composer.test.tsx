@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Composer } from '../../../packages/mobile/src/features/sessions/Composer';
@@ -126,6 +127,15 @@ describe('VoiceCapture failure reporting', () => {
     clickMic();
     await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('PLUGIN_NOT_INITIALIZED'));
     expect(voiceNotice().textContent).not.toContain('PLUGIN_NOT_INITIALIZED');
+  });
+
+  // build 46 远端验收（真 WebKit）：.notice > :first-child 命中了按钮本身（正文是裸文本节点），
+  // flex:1 + min-width:0 把 7 个字的「去设置开麦克风」挤成一根竖条。jsdom 无布局，钉样式规则本身。
+  it('提示条里的动作按钮不参与伸缩、不换行', () => {
+    const css = readFileSync('packages/mobile/src/styles.css', 'utf8');
+    const rule = css.match(/\.inline-retry, \.task-status button\.inline-retry, \.notice button\.inline-retry \{[^}]*\}/)?.[0] ?? '';
+    expect(rule).toContain('flex: none');
+    expect(rule).toContain('white-space: nowrap');
   });
 
   it('没授权给「去设置开麦克风」直达系统设置，不给重试（重试只会再被拒）', async () => {

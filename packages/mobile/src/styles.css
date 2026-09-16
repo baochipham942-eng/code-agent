@@ -124,7 +124,7 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
    仍贴文案行尾不独占一行（反馈①的形状保持）。 */
 .inline-retry, .task-status button.inline-retry, .notice button.inline-retry {
   min-width: 0; min-height: 32px; height: auto; padding: 0 14px; font-size: 13px; line-height: 1;
-  color: var(--accent); flex-shrink: 0; align-self: center;
+  color: var(--accent); flex: none; white-space: nowrap; align-self: center;
   background: var(--group); border: 1px solid var(--line); border-radius: 16px;
 }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }

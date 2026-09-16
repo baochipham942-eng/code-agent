@@ -13,7 +13,7 @@ import {
 } from '../../../../src/host/runtime/workspaceAuthority';
 import { executeDelegateTask } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
-import { getDefaultWorkDirectory } from '../../../../src/host/config/configPaths';
+import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../../../src/host/config/configPaths';
 
 function workspaceScope(path: string) {
   return createWorkspaceScope(`project-${path}`, [{
@@ -119,6 +119,11 @@ describe('delegate_task workspace authority', () => {
         { homeDirectories: [home], dataDirectory: env.CODE_AGENT_DATA_DIR },
       ), `${workDir} 应当能当后台写边界`).toBeDefined();
     }
+    // 已存进会话的旧默认目录要认得出来（尾斜杠同样算），别的目录不误伤
+    const devEnv = { CODE_AGENT_HOME: home, CODE_AGENT_DATA_DIR: `${home}/.code-agent-dev` };
+    expect(isLegacyDefaultWorkDirectory(`${home}/.code-agent-dev/work/`, devEnv)).toBe(true);
+    expect(isLegacyDefaultWorkDirectory(`${home}/.code-agent-dev/work/sub`, devEnv)).toBe(false);
+    expect(isLegacyDefaultWorkDirectory(`${home}/Neo-dev`, devEnv)).toBe(false);
     // 嵌套数据目录（测试临时目录、远端验收宿主）：放在数据目录旁边，不往真实主目录写，也不进数据目录
     const nested = { CODE_AGENT_HOME: home, CODE_AGENT_DATA_DIR: '/tmp/verify-host/data' };
     expect(getDefaultWorkDirectory(nested)).toBe('/tmp/verify-host/data-work');
@@ -220,7 +225,7 @@ describe('default work directory has one source of truth', () => {
   it('no source file re-derives <dataDir>/work by hand', { timeout: 20_000 }, async () => {
     const { spawnSync } = await import('node:child_process');
     // git grep 无命中时退出码 1，不当失败
-    const result = spawnSync('git', ['grep', '-nE', "(dataDir|DATA_DIR|userConfigDir).*(['\"`/]work['\"`)])", '--', 'src'], { encoding: 'utf8' });
+    const result = spawnSync('git', ['grep', '-nE', "(dataDir|DATA_DIR|userConfigDir|userData|homedir\\(\\)|getUserDataPath\\(\\)).*(['\"`/]work['\"`)])", '--', 'src', ':!src/host/config/configPaths.ts'], { encoding: 'utf8' });
     expect(result.status === 0 || result.status === 1, result.stderr).toBe(true);
     expect(result.stdout.split('\n').filter(Boolean)).toEqual([]);
   });

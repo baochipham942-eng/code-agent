@@ -87,7 +87,7 @@ import { steerOrQueue } from '../../host/runtime/steerQueueFence';
 import { QueuedInputRepository } from '../../host/services/core/repositories/QueuedInputRepository';
 import { getDatabase } from '../../host/services/core/databaseService';
 import { getLogsPath } from '../../host/platform/appPaths';
-import { getDefaultWorkDirectory } from '../../host/config/configPaths';
+import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../host/config/configPaths';
 import { hasInteractiveUi } from '../../host/platform';
 import { getProjectService } from '../../host/services/project/projectService';
 import { getAuthService } from '../../host/services/auth/authService';
@@ -432,6 +432,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const fromSession = persistedSession?.workingDirectory?.trim();
       if (fromSession) resolvedProject = fromSession;
     }
+    // 旧默认目录 <dataDir>/work 已经存进了一批会话（请求里也可能原样带回来）：按没有目录处理，走下面的新默认目录
+    if (resolvedProject && isLegacyDefaultWorkDirectory(resolvedProject)) resolvedProject = undefined;
     if (!resolvedProject) {
       try {
         resolvedProject = await ensureDefaultWebWorkingDirectory();

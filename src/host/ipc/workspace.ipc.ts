@@ -786,7 +786,7 @@ async function handleExtractBrandFromImage(payload: { dataUrl?: string; imagePat
 
 /**
  * 用户浏览器链路（open / history / 画面透传）的 workspace 解析。
- * 快速对话常无 workingDirectory：按会话目录 → 数据目录下 work/ 兜底，
+ * 快速对话常无 workingDirectory：按会话目录 → getDefaultWorkDirectory() 兜底，
  * 三条 IPC 必须同口径，否则「能开页看得见画面，却点不动/退不了」
  * （2026-08-05 R2 真机：open 有兜底、dispatch/history 没有）。
  */

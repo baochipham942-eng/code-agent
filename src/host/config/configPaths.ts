@@ -63,6 +63,25 @@ export function getUserConfigDir(): string {
   return path.join(getHomeDir(), CONFIG_DIR_NEW);
 }
 
+function resolveHomeAndDataDir(env: NodeJS.ProcessEnv): { home: string; dataDir: string } {
+  const home = path.resolve(env.CODE_AGENT_HOME || os.homedir());
+  return { home, dataDir: path.resolve(env.CODE_AGENT_DATA_DIR?.trim() || path.join(home, CONFIG_DIR_NEW)) };
+}
+
+/** 2026-09-16 前的默认工作目录 <dataDir>/work。只用于认出已经存进会话的旧路径、放行旧产物缩略图。 */
+export function getLegacyDefaultWorkDirectory(dataDir: string): string {
+  return path.join(dataDir, 'work');
+}
+
+/**
+ * 会话里存的是不是旧默认工作目录。是就当作「没有目录」，改走 getDefaultWorkDirectory——
+ * 否则旧会话（Dev 槽 5 个、正式版 18 个）派后台任务照样 WORKSPACE_REQUIRED（grok ai-review PR#1911 Nit）。
+ * 旧目录里的文件不迁移，按绝对路径照样能读。
+ */
+export function isLegacyDefaultWorkDirectory(dir: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  return path.resolve(dir) === getLegacyDefaultWorkDirectory(resolveHomeAndDataDir(env).dataDir);
+}
+
 /**
  * 没有项目目录的会话（「未分类」、快速对话）默认工作目录。所有兜底点共用这一个函数。
  *
@@ -73,8 +92,7 @@ export function getUserConfigDir(): string {
  * - 其余嵌套数据目录（测试临时目录、远端验收宿主）：放在数据目录旁边 <dataDir>-work，不往真实主目录写
  */
 export function getDefaultWorkDirectory(env: NodeJS.ProcessEnv = process.env): string {
-  const home = path.resolve(env.CODE_AGENT_HOME || os.homedir());
-  const dataDir = path.resolve(env.CODE_AGENT_DATA_DIR?.trim() || path.join(home, CONFIG_DIR_NEW));
+  const { home, dataDir } = resolveHomeAndDataDir(env);
   if (path.dirname(dataDir) !== home) return `${dataDir}-work`;
   const slot = path.basename(dataDir).replace(/^\.+/, '').replace(/^code-agent-?/, '');
   return path.join(home, slot ? `Neo-${slot}` : 'Neo');

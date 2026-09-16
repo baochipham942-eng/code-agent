@@ -24,7 +24,7 @@ function followTop(el: HTMLElement, composerHeight: number): number {
   return Math.min(el.scrollHeight, Math.max(0, Math.ceil(bottom - (el.clientHeight - composerHeight - keyboard))));
 }
 
-export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0, offline = false, running = null }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
+export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0, offline = false, running = null, openModel }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
   /** 输入区那一层的实测高度：它一变，滚动区的底部内边距跟着变，贴底的人得重新贴一次。 */
   composerHeight?: number;
   /** Offline reread: hide load-more (it cannot fetch) without changing the composer. */
@@ -36,7 +36,9 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
    * 「哪一次在跑」。只有输入区被录音面板整块顶掉、那个键此刻不存在时，调用方才把 stop 交给
    * 执行条——否则同一个动作会有两个落点。不传就不渲染按钮（grok ai-review PR#1903 Nit①②）。
    */
-  running?: { stop?(): void; stopDisabled?: boolean } | null }) {
+  running?: { stop?(): void; stopDisabled?: boolean } | null;
+  /** 打开「选择会话模型」。模型密钥用不了的失败态靠它给出路（设计稿 modelAuthFailed）。 */
+  openModel?(): void }) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
@@ -61,6 +63,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   // 那两种沉默了用户不知道发生过什么。推送正文仍保留完成句：人在后台时需要那一下。
   const outcomes = new Map<string, RunOutcome>();
   let lastRow: string | undefined = history?.messages.at(-1)?.id;
+  let latestRun: string | undefined;
   for (const message of history?.messages ?? []) rows.set(message.id, { role: message.role, content: message.content, truncated: message.truncated });
   for (const event of events) {
     if (event.sessionId !== sessionId) continue;
@@ -69,6 +72,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     if (event.kind === 'question' && typeof p.requestId === 'string') questions.set(p.requestId, { ...questions.get(p.requestId), ...p });
     if (event.kind === 'plan' && typeof p.requestId === 'string') plans.set(p.requestId, { ...plans.get(p.requestId), ...p });
     const run = String(p.runId ?? sessionId);
+    latestRun = run;
     const id = `${run}:${String(p.id ?? p.messageId ?? p.turnId ?? event.eventId)}`;
     if (event.kind === 'message' && typeof p.content === 'string') {
       // The engine's durable message ID can differ from its streamed turn ID.
@@ -98,8 +102,19 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
       if (outcomes.get(run)?.kind !== 'failed') outcomes.set(run, { anchor: lastRow, kind, code: typeof p.code === 'string' ? p.code : undefined });
     }
   }
+  /**
+   * 失败态要带出路（爸 2026-09-16）：模型密钥用不了是用户当场能绕过去的，在**最近那次**失败下面给
+   * 「换一个可用模型」直达模型选择。只挂在会话里最近那次执行上：之后又跑过（哪怕成功了）就说明已经绕过去了，
+   * 每条旧失败都挂一个按钮是噪音。
+   */
   const outcomesAt = (anchor: string | undefined) => Array.from(outcomes).filter(([, outcome]) => outcome.anchor === anchor)
-    .map(([run, outcome]) => <p key={`outcome:${run}`} className="run-outcome" data-outcome={outcome.kind}>{runOutcomeCopy(text, outcome.kind, outcome.code)}</p>);
+    .map(([run, outcome]) => <Fragment key={`outcome:${run}`}>
+      <p className="run-outcome" data-outcome={outcome.kind}>{runOutcomeCopy(text, outcome.kind, outcome.code)}</p>
+      {run === latestRun && outcome.code === 'MODEL_AUTH' && openModel && <div className="decision" data-testid="model-auth-failed">
+        <h3>{text.modelAuthTitle}</h3><p>{text.modelAuthDetail}</p>
+        <button className="primary" onClick={openModel}>{text.switchModel}</button>
+      </div>}
+    </Fragment>);
   return <div className="message-region"><div ref={scroller} onScroll={() => {
     const el = scroller.current!;
     following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;

@@ -93,6 +93,33 @@ describe('项目选择器主层（fix5-③：行=名称+副标题，会话在前
     fireEvent.click(screen.getByLabelText(text.openProjectSessions));
     expect(second.openProjectSessions).toHaveBeenCalledWith('one');
   });
+
+  // N-COMPANION-CANCREATE-SEMANTICS（build 45 真机：未分类没有工作目录，看起来完全正常、点了才失败）
+  it('电脑上没设工作目录的项目：在点之前就置灰并说为什么，点了不建会话；已有会话仍能从前进页进', () => {
+    const { manage, openProjectSessions } = mount({ projects: [
+      { id: 'one', name: 'One', canCreate: true },
+      { id: 'unsorted', name: '未分类', canCreate: false, createBlocked: 'no_workspace' },
+    ] });
+    const blocked = screen.getByTestId('project-unsorted');
+    const main = blocked.querySelector('.project-main') as HTMLButtonElement;
+    expect(main.disabled).toBe(true);
+    expect(blocked.textContent).toContain(text.projectNoWorkspace);
+    expect(screen.getByText(new RegExp(text.projectNoWorkspaceNote.replace('{name}', '未分类')))).toBeTruthy();
+    fireEvent.click(main);
+    expect(manage).not.toHaveBeenCalled();
+    // 对照：能建的那行不置灰、不带原因
+    const ok = screen.getByTestId('project-one');
+    expect((ok.querySelector('.project-main') as HTMLButtonElement).disabled).toBe(false);
+    expect(ok.textContent).not.toContain(text.projectNoWorkspace);
+    fireEvent.click(blocked.querySelector('.project-more')!);
+    expect(openProjectSessions).toHaveBeenCalledWith('unsorted');
+    cleanup();
+    // 前进页里也说同一个原因，不再拿「需要重新配对」冒充（那是没授权的原因）
+    mount({ projects: [{ id: 'unsorted', name: '未分类', canCreate: false, createBlocked: 'no_workspace' }] }, 'projectSessions', 'unsorted');
+    expect(screen.getByText(text.projectNoWorkspace)).toBeTruthy();
+    expect(screen.queryByText(text.projectGrantRequired)).toBeNull();
+    expect(screen.queryByTestId('start-session')).toBeNull();
+  });
 });
 
 describe('项目会话前进页（projectSessions：继续已有工作或新建会话，带返回）', () => {
@@ -172,46 +199,66 @@ describe('同名消歧标签的路径判定', () => {
   });
 });
 
-describe('会话操作里的模型下拉必须说真话（N-MOBILE-MODELPICK-LIES）', () => {
+describe('选择会话模型是独立一屏，入口只留输入区胶囊（N-MOBILE-SESSIONSHEET-SPLIT，爸 2026-09-16 拍板）', () => {
   afterEach(cleanup);
 
-  // 爸 2026-09-12 真机：会话实为 custom-glm-coding/glm-5.3-flash，下拉却写着
-  // "DeepSeek · DeepSeek V4.1 Flash"，而紧挨着就是「使用此模型」——一点就把会话换掉了。
-  // 根因：library.models 由电脑侧 buildRuntimeModelOptions 产出，会剔掉没配 key 的 provider。
+  // 爸 2026-09-12/09-16 真机：会话实为 custom-glm-coding/glm-5.3-flash（电脑上没配 key），
+  // 「会话操作」里却给它配了「使用此模型」——明知用不了的选项配了确认键。
   const offListSession = {
     sessions: [{ id: 's1', title: '用一句话说明 cowork 是什么', projectId: 'one',
       provider: 'custom-glm-coding', model: 'glm-5.3-flash' }],
   } as unknown as Partial<CompanionLibrary>;
 
-  function mountMore() {
+  function mountMode(mode: 'more' | 'model', overrides: Partial<CompanionLibrary> = offListSession) {
     const manage = vi.fn(async () => {});
-    render(<LibrarySheet library={{ ...library, ...offListSession }} sessionId="s1" text={text} busy={false} mode="more"
+    render(<LibrarySheet library={{ ...library, ...overrides }} sessionId="s1" text={text} busy={false} mode={mode}
       projectId={null} select={() => {}} loadMore={() => {}} manage={manage} openProjectSessions={() => {}} />);
-    return { manage, select: screen.getByLabelText(text.model) as HTMLSelectElement };
+    return { manage };
   }
 
-  it('会话用的模型不在列表里时，下拉显示的是它本身，不是拿别的模型冒充', () => {
-    const { select } = mountMore();
-    expect(select.value).toBe(key('custom-glm-coding', 'glm-5.3-flash'));
-    // 显示文案要让人看懂它为什么不在列表里，而不是假装一切正常
-    expect(screen.getByText(`${text.modelNotConfigured} · glm-5.3-flash`)).toBeTruthy();
-    // 绝不能显示成列表里那两个真实模型中的任何一个
-    expect(select.value).not.toBe(key('deepseek', 'deepseek-chat'));
-    expect(select.value).not.toBe(key('moonshot', 'kimi-k2.6'));
+  it('会话操作弹窗里不再有模型：没有模型标签、没有下拉、没有「使用」键', () => {
+    mountMode('more');
+    // 前提自证：弹窗确实渲染出了会话操作本身
+    expect(screen.getByText(text.rename)).toBeTruthy();
+    expect(screen.queryByLabelText(text.model)).toBeNull();
+    expect(document.querySelector('select')).toBeNull();
+    expect(document.querySelector('.model-row')).toBeNull();
   });
 
-  it('「使用此模型」在没真正改选之前保持禁用——它不是「确认当前」', () => {
-    mountMore();
-    expect((screen.getByRole('button', { name: text.useModel }) as HTMLButtonElement).disabled).toBe(true);
+  it('只列电脑已配置的模型；会话此刻用的那个没配时照实列出、置灰、点了什么都不发', () => {
+    const { manage } = mountMode('model');
+    const unconfigured = screen.getByTestId('model-unconfigured');
+    expect(unconfigured.textContent).toContain('glm-5.3-flash');
+    expect(unconfigured.textContent).toContain(text.modelNotConfigured);
+    expect(unconfigured.getAttribute('aria-disabled')).toBe('true');
+    // 它不是按钮：没有可点的「使用」入口
+    expect(unconfigured.tagName).not.toBe('BUTTON');
+    fireEvent.click(unconfigured);
+    expect(manage).not.toHaveBeenCalled();
+    // 可选项正好是电脑配置的那几个
+    expect(document.querySelectorAll('button.model-row')).toHaveLength(library.models.length);
   });
 
-  it('真的改选了别的模型，按钮才可点，且按改选的那个提交', () => {
-    const { manage, select } = mountMore();
-    fireEvent.change(select, { target: { value: key('deepseek', 'deepseek-chat') } });
-    const use = screen.getByRole('button', { name: text.useModel }) as HTMLButtonElement;
-    expect(use.disabled).toBe(false);
-    fireEvent.click(use);
-    expect(manage).toHaveBeenCalledWith('session.model', { provider: 'deepseek', model: 'deepseek-chat' });
+  it('点一个已配置的模型就切过去；点当前那个不重复提交', () => {
+    const inList = { sessions: [{ id: 's1', title: 'x', projectId: 'one', provider: 'deepseek', model: 'deepseek-chat' }] } as unknown as Partial<CompanionLibrary>;
+    const { manage } = mountMode('model', inList);
+    expect(screen.queryByTestId('model-unconfigured')).toBeNull();
+    const current = screen.getByTestId('model-deepseek:deepseek-chat');
+    expect(current.getAttribute('aria-current')).toBe('true');
+    fireEvent.click(current);
+    expect(manage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('model-moonshot:kimi-k2.6'));
+    expect(manage).toHaveBeenCalledWith('session.model', { provider: 'moonshot', model: 'kimi-k2.6' });
+  });
+
+  it('电脑上最近调用失败的模型标出来，别让刚被拒的人又换到它身上', () => {
+    mountMode('model', { ...offListSession, models: [
+      { provider: 'custom-team-relay', model: 'LongCat-2.0', label: 'LongCat 2.0', providerLabel: 'Team Relay', isDefault: true, recentlyFailed: true },
+      { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek Chat', providerLabel: 'DeepSeek' },
+    ] });
+    expect(screen.getByTestId('model-custom-team-relay:LongCat-2.0').textContent).toContain(text.modelRecentlyFailed);
+    expect(screen.getByTestId('model-deepseek:deepseek-chat').textContent).toContain(text.modelConfigured);
+    expect(screen.getByTestId('model-deepseek:deepseek-chat').textContent).not.toContain(text.modelRecentlyFailed);
   });
 
   it('未配置的只读项不许出现在「新建会话」那一档——那是可选项，不是当前项', () => {
@@ -225,11 +272,4 @@ describe('会话操作里的模型下拉必须说真话（N-MOBILE-MODELPICK-LIE
     // vi.fn manage 断言放 mount 返回值里——这里重挂后重新取
   });
 
-  it('会话用的模型在列表里时不许多长出一条只读项', () => {
-    const inList = { sessions: [{ id: 's1', title: 'x', projectId: 'one', provider: 'deepseek', model: 'deepseek-chat' }] } as unknown as Partial<CompanionLibrary>;
-    render(<LibrarySheet library={{ ...library, ...inList }} sessionId="s1" text={text} busy={false} mode="more"
-      projectId={null} select={() => {}} loadMore={() => {}} manage={vi.fn(async () => {})} openProjectSessions={() => {}} />);
-    expect(document.querySelectorAll('#model-select option').length).toBe(library.models.length);
-    expect(screen.queryByText(new RegExp(text.modelNotConfigured))).toBeNull();
-  });
 });

@@ -52,6 +52,11 @@ export interface PlatformPorts {
     startPcm?(): Promise<{ sampleRate: number }>;
     stopPcm?(): Promise<void>;
     subscribePcm?(onFrame: (frame: { pcm: string; durationMs: number }) => void): () => void;
+    /**
+     * 起录因 MICROPHONE_BUSY 失败后，盯着麦克风什么时候被占用方放掉；放掉时回调一次。返回取消盯守。
+     * 只有 iOS 第一方插件提供（它能读音频会话状态）。
+     */
+    watchMicrophoneRelease?(onReleased: () => void): () => void;
   };
   companion?: {
     read(): Promise<string | null>; write(value: string): Promise<void>;

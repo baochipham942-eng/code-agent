@@ -107,6 +107,37 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
     ]);
   });
 
+  // N-MOBILE-RUNFAIL-REASON（build 45 真机 403 被说成「电脑执行时出了问题」）：失败态要带出路。
+  it('模型密钥用不了：最近那次失败下面给「换一个可用模型」，点了直达模型选择；兜底失败不给这个动作', () => {
+    const openModel = vi.fn();
+    const withModel = (events: CompanionEvent[]) => <CompanionConversation events={events} artifacts={[]} sessionId="s1" text={text} loadMore={() => {}} disabled={false}
+      respond={async () => {}} respondQuestion={async () => {}} respondPlan={async () => {}} openArtifact={() => {}} openModel={openModel} />;
+    const failed = [
+      ev('message', { id: 'u1', role: 'user', content: '你好', runId: 'r1' }),
+      ev('error', { code: 'MODEL_AUTH', runId: 'r1' }),
+      ev('agent_complete', { runId: 'r1' }),
+    ];
+    const { rerender } = render(withModel(failed));
+    expect(stream()).toContain(`outcome:${runOutcomeCopy(text, 'failed', 'MODEL_AUTH')}`);
+    expect(runOutcomeCopy(text, 'failed', 'MODEL_AUTH')).not.toContain(text.runFailed);
+    const card = document.querySelector('[data-testid="model-auth-failed"]')!;
+    expect(card.textContent).toContain(text.modelAuthTitle);
+    fireEvent.click(card.querySelector('button')!);
+    expect(openModel).toHaveBeenCalledTimes(1);
+    // 之后又跑成功了一轮：旧失败只留文字，不再挂按钮
+    rerender(withModel([...failed,
+      ev('message', { id: 'u2', role: 'user', content: '再试', runId: 'r2' }),
+      ev('message', { id: 'a2', role: 'assistant', content: '好了', runId: 'r2' }),
+      ev('agent_complete', { runId: 'r2' }),
+    ]));
+    expect(stream()).toContain(`outcome:${runOutcomeCopy(text, 'failed', 'MODEL_AUTH')}`);
+    expect(document.querySelector('[data-testid="model-auth-failed"]')).toBeNull();
+    // 兜底失败说不出原因，也就给不出「换模型」这条路
+    rerender(withModel([ev('message', { id: 'u3', role: 'user', content: 'x', runId: 'r3' }), ev('error', { code: 'RUN_FAILED', runId: 'r3' })]));
+    expect(stream()).toContain(`outcome:${runOutcomeCopy(text, 'failed', 'RUN_FAILED')}`);
+    expect(document.querySelector('[data-testid="model-auth-failed"]')).toBeNull();
+  });
+
   it('只成功的一轮：回复下面什么都不挂——回复本身就是成功的证据', () => {
     render(view([
       ev('message', { id: 'u1', role: 'user', content: '你好', runId: 'r1' }),

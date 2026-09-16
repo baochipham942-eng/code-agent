@@ -50,11 +50,38 @@ describe('first-party ios voice recorder contract', () => {
     expect(swift).toContain('max(1, Int(recorder.currentTime * 1000))');
   });
 
-  it('keeps the vendor error codes, which the UI now shows verbatim', () => {
+  it('keeps the vendor error codes, which the JS side branches on (never shown to the user)', () => {
     for (const code of ['ALREADY_RECORDING', 'MISSING_PERMISSION', 'FAILED_TO_RECORD',
       'RECORDING_HAS_NOT_STARTED', 'EMPTY_RECORDING']) {
       expect(swift).toContain(`"${code}"`);
     }
+  });
+
+  // N-MOBILE-VOICE-ERRCODE-LEAK（build 45 真机：开会占着麦克风，报成 FAILED_TO_RECORD）
+  it('起录失败先判「被占用」再收尾，两条起录路径都走同一个判因', () => {
+    const voiceCapture = readFileSync('packages/mobile/src/features/sessions/VoiceCapture.tsx', 'utf8');
+    const composer = readFileSync('packages/mobile/src/features/sessions/Composer.tsx', 'utf8');
+    expect(swift).toContain('static let microphoneBusy = "MICROPHONE_BUSY"');
+    expect(voiceCapture).toContain("'MICROPHONE_BUSY'");
+    expect(composer).toContain("'MICROPHONE_BUSY'");
+    // 判因必须在 teardown 之前：收尾会停用本进程的会话
+    expect(swift.match(/let failure = Self\.startFailure\(error\)\n[\s\S]*?teardown/g)).toHaveLength(2);
+    expect(swift).not.toContain('call.reject(Failure.failedToRecord)');
+    for (const code of ['insufficientPriority', 'cannotInterruptOthers', 'cannotStartRecording', 'isBusy']) {
+      expect(swift).toContain(`AVAudioSession.ErrorCode.${code}.rawValue`);
+    }
+  });
+
+  it('真检测麦克风释放：桥方法、事件名两边一致，盯守监听中断/恢复通知', () => {
+    for (const method of ['watchMicrophoneRelease', 'unwatchMicrophoneRelease']) {
+      expect(swift).toContain(`CAPPluginMethod(name: "${method}"`);
+      expect(swift).toContain(`@objc func ${method}(`);
+      expect(capacitorPort).toContain(`pcmBridge.${method}()`);
+    }
+    expect(swift).toContain('notifyListeners("microphoneAvailable"');
+    expect(capacitorPort).toContain("addListener('microphoneAvailable'");
+    expect(swift).toContain('AVAudioSession.interruptionNotification');
+    expect(swift).toContain('isOtherAudioPlaying');
   });
 
   it('stops and discards the recording when the app goes to background', () => {

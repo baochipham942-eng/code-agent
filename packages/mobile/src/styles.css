@@ -137,8 +137,10 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 /* message-region 现在一直铺到会话底边（输入区是浮层，不占流），所以这颗按钮也要避开那一层，
    否则它正好落在输入区后面，用户滚上去看历史时点不到（grok ai-review Important）。 */
 .jump-latest { position: absolute; bottom: calc(10px + var(--composer-h, 132px) + var(--keyboard-h, 0px)); left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line); box-shadow: 0 3px 12px #0001; border-radius: 24px; font-size: 13px; padding: 6px 16px; }
-/* 执行状态归属到那次执行（N-MOBILE-EXEC-STATUS）：处理中是最后一条下面的执行条（形状照桌面 StreamingIndicator：
-   呼吸点 + 一句 + 停止），结束即消失；终态是挂在那次执行最后一行下面的一行小字，多次任务各行其是。 */
+/* 执行状态归属到那次执行（N-MOBILE-EXEC-STATUS）：处理中是最后一条下面的执行条（呼吸点 + 一句在做什么），
+   结束即消失；终态是挂在那次执行最后一行下面的一行小字，多次任务各行其是。
+   停止**不在**这条上，在输入区那个键上（N-MOBILE-SEND-IS-STOP）；下面那条 button 规则不是死样式——
+   录音面板顶掉输入区时停止会临时回到这条上，那时要它。 */
 .run-strip { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; font-size: 13px; color: var(--muted); }
 .run-strip .run-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; animation: breathe 1.5s ease-in-out infinite; }
 .run-strip button { min-height: 36px; margin-left: auto; padding: 4px 14px; border-radius: 18px; background: var(--group); font-size: 13px; color: var(--text); }

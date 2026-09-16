@@ -10,7 +10,7 @@ const text = messages('zh');
 let seq = 0;
 const ev = (kind: string, payload: Record<string, unknown>) => ({ eventId: `e${++seq}`, sessionId: 's1', kind, payload }) as unknown as CompanionEvent;
 
-function view(events: CompanionEvent[], running: { stop(): void; stopDisabled: boolean } | null = null) {
+function view(events: CompanionEvent[], running: { stop?(): void; stopDisabled?: boolean } | null = null) {
   return <CompanionConversation events={events} artifacts={[]} sessionId="s1" text={text} loadMore={() => {}} disabled={false}
     respond={async () => {}} respondQuestion={async () => {}} respondPlan={async () => {}} openArtifact={() => {}} running={running} />;
 }
@@ -73,6 +73,13 @@ describe('真实宿主验收脚本与「成功不挂行」保持同一套判据�
     expect(script).toMatch(/runEnded\(\)\.then\(\(\)=>\{throw new Error\('TASK_FINISHED_WITHOUT_REQUIRED_APPROVAL'\);\}\)/);
   });
 
+  it('verify-lan 不再等那句延迟 3 秒才出现的提示——贴着默认超时就是随机红线', () => {
+    const lan = readFileSync('packages/mobile/scripts/verify-lan.mjs', 'utf8');
+    // 钉承重点：①旧文案判据不许再出现 ②改锚的是「草稿被清空」这个发送已落槽的直接后果
+    expect(lan).not.toContain('正在核对电脑是否已接收');
+    expect(lan).toContain("document.querySelector('[data-testid=\"draft\"]')?.value === ''");
+  });
+
   it('组件确实发 run-strip 这个 testid——判据锚的元素必须真存在，否则 detached 恒真', () => {
     const component = readFileSync('packages/mobile/src/features/sessions/CompanionConversation.tsx', 'utf8');
     expect(component).toContain('data-testid="run-strip"');
@@ -130,7 +137,7 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
   it('处理中：执行条在最后一条下面，只说「哪一次在跑」不带停止；任务结束（running=null）即消失', () => {
     const stop = vi.fn();
     const events = [ev('message', { id: 'u1', role: 'user', content: '跑', runId: 'r1' })];
-    const rendered = render(view(events, { stop, stopDisabled: false }));
+    const rendered = render(view(events, {}));
     expect(stream()).toEqual(['user:跑', 'run-strip']);
     const strip = document.querySelector('[data-testid="run-strip"]')!;
     expect(strip.textContent).toContain(text.running);
@@ -140,5 +147,15 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
     expect(stop).not.toHaveBeenCalled();
     rendered.rerender(view(events, null));
     expect(document.querySelector('[data-testid="run-strip"]')).toBeNull();
+  });
+
+  it('录音面板顶掉输入区时（调用方给了 stop）执行条把停止接回来——否则运行中一开录音就没法停', () => {
+    const stop = vi.fn();
+    const events = [ev('message', { id: 'u1', role: 'user', content: '跑', runId: 'r1' })];
+    render(view(events, { stop, stopDisabled: false }));
+    const strip = document.querySelector('[data-testid="run-strip"]')!;
+    expect(strip.querySelectorAll('button')).toHaveLength(1);
+    fireEvent.click(strip.querySelector('button')!);
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 });

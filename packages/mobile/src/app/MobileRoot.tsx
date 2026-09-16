@@ -398,6 +398,12 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
    * 呈现节奏，store 那边的 pending 仍然是「有没有待确认命令」这个事实，不掺 UI 时序。
    */
   const [pendingSlow, setPendingSlow] = useState(false);
+  /**
+   * 录音面板是否正占着输入区。它顶掉整块 composer ⇒ 停止那个键此刻不存在，得把停止
+   * 临时交回执行条（grok ai-review PR#1903 Nit①）。用 state 而不是那个 recording ref：
+   * ref 变了不重渲染，执行条不会知道该长出按钮来。
+   */
+  const [voiceActive, setVoiceActive] = useState(false);
   useEffect(() => {
     if (!companion.pending) { setPendingSlow(false); return; }
     const timer = setTimeout(() => setPendingSlow(true), COMPANION_LIMITS.pendingNoticeDelayMs);
@@ -577,7 +583,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           offline={companion.status !== 'connected'}
-          running={companion.runId ? { stop: () => void companion.stop(), stopDisabled: companion.busy || companion.pending || companion.status !== 'connected' } : null}
+          // 执行条平时只说「哪一次在跑」；停止在输入区那个键上。录音面板顶掉输入区时才把
+          // stop 交给它，避免运行中一开录音就没法停（grok ai-review PR#1903 Nit①）。
+          running={companion.runId
+            ? (voiceActive ? { stop: () => void companion.stop(), stopDisabled: companion.busy || companion.pending || companion.status !== 'connected' } : {})
+            : null}
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond}
           respondQuestion={companion.respondQuestion} respondPlan={companion.respondPlan}
           openArtifact={id => void companion.previewArtifact(id).then(() => {
@@ -675,7 +685,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
           voicePending={companion.pending} voiceResult={companion.voiceResult}
           voiceReady={canAddressSession(companion)}
-          onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceFailureShown(failed); }} />
+          onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceActive(active); setVoiceFailureShown(failed); }} />
       </div>
     </main>
     {(state.drawer || pan) && (() => {

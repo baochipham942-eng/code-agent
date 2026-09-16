@@ -98,7 +98,10 @@ try {
   await page.screenshot({ path: resolve(directory, 'connected.png') });
   loseReceipt = true;
   await page.getByTestId('draft').fill('browser-private-retry'); await page.getByTestId('send').click();
-  await page.getByText('正在核对电脑是否已接收，请勿重复发送', { exact: true }).waitFor();
+  // 别等那句提示：它现在要憋过 pendingNoticeDelayMs 才出现（N-MOBILE-PENDING-NOISE），
+  // 贴着这里的默认超时就是一道随机红线。锚「命令真的发出去了」这个事实——草稿被清空，
+  // 是发送成功落进待确认槽的直接后果，且与提示的节奏无关（grok ai-review PR#1903 Nit④）。
+  await page.waitForFunction(() => document.querySelector('[data-testid="draft"]')?.value === '');
   await page.reload();
   await page.getByText('LAN fixture response 2', { exact: true }).waitFor();
   assert.equal(await page.getByTestId('draft').inputValue(), ''); assert.equal(fixture.count(), 2); checks.push('reload-reconciles-without-duplicate');

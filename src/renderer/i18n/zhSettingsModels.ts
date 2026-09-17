@@ -65,7 +65,7 @@ export const zhSettingsModels = {
       taskStrategy: {
         loading: '任务策略配置还没有加载完成。',
         toggleTitle: '开启自动切换',
-        toggleDescription: '开启后快速 / 深度 / 视觉任务可用不同模型；关闭则全部用默认模型。',
+        toggleDescription: '开启后主任务 / 快速 / 深度 / 视觉任务可用不同模型；关闭则全部用默认模型。',
         toggleAriaLabel: '开启自动按任务切换模型',
         autoSaveBadge: '自动保存',
         unavailableBadge: '不可用',
@@ -81,6 +81,8 @@ export const zhSettingsModels = {
           description: '用于会话落卡、复盘与记忆合并；未单独配置时跟随快速模型。',
           followFast: '跟随快速模型（默认）',
           costHint: '升到更强模型会消耗更高额度，按量计费 API 会产生更高费用。',
+          unavailableHint: '这个模型不在已启用的模型列表里（可能是手动写入的配置，或服务商、模型已停用）。记忆整理仍会直接调用它，调不通时这一轮整理会失败。可以改为跟随快速模型，或到服务商里启用这个模型。',
+          resetToFollowFast: '改为跟随快速模型',
         },
       },
       providerSection: {

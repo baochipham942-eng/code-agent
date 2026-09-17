@@ -1,3 +1,4 @@
+import type { CompanionTranscriptionReadiness } from '../../../../src/shared/companion/lanProtocol';
 import type { messages } from '../../i18n';
 
 /** 电脑没开转写 / 没配密钥：重试不会好，给「怎么开」。 */
@@ -48,6 +49,22 @@ export function isVoiceSetupCode(reason: string | undefined): boolean {
 
 export function isVoiceTooLargeCode(reason: string | undefined): boolean {
   return inSet(VOICE_TOO_LARGE_CODES, reason);
+}
+
+/**
+ * 中继握手不刷新 binding.transcription：用 voice.transcribe 的真实回执把本地三态追上。
+ * UNAVAILABLE / NO_CHANNEL 写成对应未就绪；DISABLED 不动（仍是「没开」但不是那两态）；
+ * 其余回执（含 accepted）说明宿主已经能接转写，记 ready。
+ */
+export function transcriptionReadinessFromResult(
+  accepted: boolean,
+  code?: string,
+): CompanionTranscriptionReadiness | null {
+  if (code === 'COMPANION_TRANSCRIPTION_UNAVAILABLE' || code === 'UNAVAILABLE') return 'not-installed';
+  if (code === 'SPEECH_NO_CHANNEL' || code === 'NO_CHANNEL') return 'no-key';
+  if (code === 'DISABLED') return null;
+  if (accepted || code) return 'ready';
+  return null;
 }
 
 export function classifyVoiceFailure(

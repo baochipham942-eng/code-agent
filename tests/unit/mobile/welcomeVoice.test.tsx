@@ -18,8 +18,10 @@ const harness = vi.hoisted(() => ({
   commands: [] as { action: string; sessionId: string | null }[],
   host: new Map<string, { commandId: string; deviceId: string; sessionId: string | null; action: string; payload: { text?: string; model?: string; provider?: string } }>(),
   transcribeAccepted: true,
+  transcribeCode: 'COMPANION_TRANSCRIPTION_FAILED',
   sessionless: true,
   transcription: 'ready' as 'ready' | 'not-installed' | 'no-key' | undefined,
+  recorderStart: async () => {},
 }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
@@ -65,7 +67,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
         if (!command) return null;
         return harness.transcribeAccepted
           ? record(command, 'accepted', { text: '欢迎页口述' })
-          : record(command, 'rejected', { code: 'COMPANION_TRANSCRIPTION_FAILED' });
+          : record(command, 'rejected', { code: harness.transcribeCode });
       }
       return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
     }
@@ -91,7 +93,7 @@ const ports = (recorder = true): PlatformPorts => ({
   keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
   companion: { read: async () => savedProjectsOnly(), write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}) },
   recorder: recorder ? {
-    start: async () => {},
+    start: () => harness.recorderStart(),
     stop: async () => ({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1000 }),
   } : undefined,
 });
@@ -100,7 +102,9 @@ const textOf = (selector: string) => document.querySelector(selector)?.textConte
 
 beforeEach(() => {
   harness.commands = []; harness.host.clear(); harness.transcribeAccepted = true;
+  harness.transcribeCode = 'COMPANION_TRANSCRIPTION_FAILED';
   harness.sessionless = true; harness.transcription = 'ready';
+  harness.recorderStart = async () => {};
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: false, media: query, onchange: null,
     addEventListener: () => {}, removeEventListener: () => {},
@@ -175,3 +179,64 @@ describe('欢迎页麦克风与模型胶囊', () => {
     expect(document.querySelector('.welcome h1')!.textContent).toBe(text.welcome);
   });
 });
+
+const statusNotice = () => document.querySelector('[data-testid="status-slot"]') as HTMLElement | null;
+const micButton = () => document.querySelector(`[aria-label="${text.voice}"]`) as HTMLButtonElement | null;
+
+describe('MobileRoot 把 binding.transcription 传到输入区', () => {
+  it('未就绪点麦克风不开录，状态位「电脑上还没开语音转写」', async () => {
+    harness.transcription = 'not-installed';
+    const start = vi.fn(async () => {});
+    harness.recorderStart = start;
+    await mountWelcome();
+    fireEvent.click(micButton()!);
+    await waitFor(() => expect(statusNotice()?.textContent).toContain('电脑上还没开语音转写'));
+    expect(start).not.toHaveBeenCalled();
+    expect(document.querySelector('.voice-composer')).toBeNull();
+    expect(document.querySelector(`[aria-label="${text.stopRecording}"]`)).toBeNull();
+  });
+
+  it('stale not-installed → 开好了 → 再点麦克风真的开录', async () => {
+    harness.transcription = 'not-installed';
+    const start = vi.fn(async () => {});
+    harness.recorderStart = start;
+    await mountWelcome();
+    fireEvent.click(micButton()!);
+    await waitFor(() => expect(statusNotice()?.textContent).toContain('电脑上还没开语音转写'));
+    fireEvent.click(document.querySelector('[data-testid="status-action"]') as HTMLElement);
+    await waitFor(() => expect(document.querySelector('[data-testid="voice-setup"]')).toBeTruthy());
+    fireEvent.click(document.querySelector('[data-testid="voice-setup-done"]') as HTMLElement);
+    await waitFor(() => expect(document.querySelector('[data-testid="voice-setup"]')).toBeNull());
+    await waitFor(() => expect(micButton()?.disabled).toBe(false));
+    fireEvent.click(micButton()!);
+    await waitFor(() => expect(document.querySelector(`[aria-label="${text.stopRecording}"]`)).toBeTruthy());
+    expect(start).toHaveBeenCalled();
+  });
+
+  it('accepted 后状态位不再拦下一次开录', async () => {
+    harness.transcription = 'not-installed';
+    const start = vi.fn(async () => {});
+    harness.recorderStart = start;
+    await mountWelcome();
+    fireEvent.click(micButton()!);
+    await waitFor(() => expect(statusNotice()?.textContent).toContain('电脑上还没开语音转写'));
+    fireEvent.click(document.querySelector('[data-testid="status-action"]') as HTMLElement);
+    fireEvent.click(await waitFor(() => document.querySelector('[data-testid="voice-setup-done"]') as HTMLElement));
+    await waitFor(() => expect(document.querySelector('[data-testid="voice-setup"]')).toBeNull());
+    await waitFor(() => expect(micButton()?.disabled).toBe(false));
+    fireEvent.click(micButton()!);
+    fireEvent.click(await waitFor(() => {
+      const stop = document.querySelector(`[aria-label="${text.stopRecording}"]`) as HTMLElement | null;
+      expect(stop).toBeTruthy();
+      return stop!;
+    }));
+    await waitFor(() => {
+      expect((document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement).value).toContain('欢迎页口述');
+    });
+    expect(statusNotice()?.textContent ?? '').not.toContain('电脑上还没开语音转写');
+    fireEvent.click(micButton()!);
+    await waitFor(() => expect(document.querySelector(`[aria-label="${text.stopRecording}"]`)).toBeTruthy());
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+});
+

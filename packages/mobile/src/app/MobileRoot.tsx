@@ -622,6 +622,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           voicePending={companion.pending} voiceResult={companion.voiceResult}
           voiceReady={companion.status === 'connected' && (!!companion.sessionId || companion.binding?.sessionlessTranscribe === true)}
           transcription={companion.binding?.transcription}
+          skipTranscriptionPreflight={companion.skipTranscriptionPreflight}
+          onSkipTranscriptionPreflight={companion.consumeTranscriptionPreflight}
           openVoiceSetup={() => state.openSheet('voiceSetup')}
           onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceActive(active); setVoiceFailureShown(failed); }} />
       </div>
@@ -759,6 +761,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           <li>{text.voiceSetupStep3}</li>
         </ol>
         <button className="primary" data-testid="voice-setup-done" onClick={() => {
+          companion.allowTranscriptionOnce();
           state.closeSheet();
           void companion.reconnect();
         }}>{text.voiceSetupDone}</button>

@@ -24,6 +24,8 @@ function mount(overrides: {
   openSettings?: () => void;
   transcription?: CompanionTranscriptionReadiness;
   openVoiceSetup?: () => void;
+  skipTranscriptionPreflight?: boolean;
+  onSkipTranscriptionPreflight?: () => void;
   startPcm?: () => Promise<{ sampleRate: number }>;
 } = {}) {
   const recorder = {
@@ -50,7 +52,9 @@ function mount(overrides: {
       close: async () => {},
     } : undefined}
     voiceDisabled={false} voicePending={false} voiceResult={null} voiceReady onVoiceState={onVoiceState}
-    transcription={overrides.transcription} openVoiceSetup={overrides.openVoiceSetup} />);
+    transcription={overrides.transcription} openVoiceSetup={overrides.openVoiceSetup}
+    skipTranscriptionPreflight={overrides.skipTranscriptionPreflight}
+    onSkipTranscriptionPreflight={overrides.onSkipTranscriptionPreflight} />);
   return { transcribe, send, openModel, onVoiceState, discardPendingTranscript, unmount: view.unmount };
 }
 
@@ -248,6 +252,31 @@ describe('VoiceCapture failure reporting', () => {
     expect(voiceNotice().textContent).toContain('电脑上还没开语音转写');
     expect(start).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: text.retry })).toBeNull();
+  });
+
+  it('跳过预判一次：stale not-installed 也开录，且只跳过这一次', async () => {
+    const start = vi.fn(async () => {});
+    let skip = true;
+    const onSkip = vi.fn(() => { skip = false; });
+    const { unmount } = mount({
+      start, transcription: 'not-installed', skipTranscriptionPreflight: true,
+      onSkipTranscriptionPreflight: onSkip, openVoiceSetup: () => {},
+    });
+    clickMic();
+    await screen.findByRole('button', { name: text.stopRecording });
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(onSkip).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: text.cancelRecording }));
+    await waitFor(() => expect(screen.getByRole('button', { name: text.voice })).toBeTruthy());
+    unmount();
+    mount({
+      start, transcription: 'not-installed', skipTranscriptionPreflight: skip,
+      onSkipTranscriptionPreflight: onSkip, openVoiceSetup: () => {},
+    });
+    clickMic();
+    await waitFor(() => expect(voiceNotice()?.textContent).toContain('电脑上还没开语音转写'));
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.voice-composer')).toBeNull();
   });
 
   it('麦克风暂时用不了：不降级分段，状态位与被占用分开', async () => {

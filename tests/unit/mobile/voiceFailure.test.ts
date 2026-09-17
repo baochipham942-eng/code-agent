@@ -3,6 +3,7 @@ import {
   classifyVoiceFailure,
   isVoiceSetupCode,
   isVoiceTooLargeCode,
+  transcriptionReadinessFromResult,
   voiceFailureAction,
   voiceFailureMessage,
   VOICE_RETRYABLE_TRANSCRIBE_CODES,
@@ -44,6 +45,16 @@ describe('转写失败文案与动作（逐错误码）', () => {
     expect(classifyVoiceFailure('BACKGROUND_INTERRUPTED', 'record')).toBe('interrupted');
     expect(voiceFailureMessage(text, 'interrupted')).toBe('切到后台，录音停了');
     expect(voiceFailureAction(text, 'interrupted', act)?.label).toBe('重新录');
+  });
+
+  it('voice.transcribe 回执把本地就绪态追上', () => {
+    expect(transcriptionReadinessFromResult(true)).toBe('ready');
+    expect(transcriptionReadinessFromResult(false, 'COMPANION_TRANSCRIPTION_FAILED')).toBe('ready');
+    expect(transcriptionReadinessFromResult(false, 'COMPANION_TRANSCRIPTION_UNAVAILABLE')).toBe('not-installed');
+    expect(transcriptionReadinessFromResult(false, 'UNAVAILABLE')).toBe('not-installed');
+    expect(transcriptionReadinessFromResult(false, 'SPEECH_NO_CHANNEL')).toBe('no-key');
+    expect(transcriptionReadinessFromResult(false, 'NO_CHANNEL')).toBe('no-key');
+    expect(transcriptionReadinessFromResult(false, 'DISABLED')).toBeNull();
   });
 
   it('无输入与被占用分开', () => {

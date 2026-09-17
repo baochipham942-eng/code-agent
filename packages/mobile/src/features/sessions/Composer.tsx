@@ -35,7 +35,7 @@ export function Composer({
   text, draft, editDraft, offline, sendDisabled, send, running, modelLabel, openModel, openSettings,
   attach, attachDisabled, attachments, retryAttachment, removeAttachment,
   recorder, transcribe, discardPendingTranscript, commitSpoken, dictation, voiceDisabled, voicePending, voiceResult, voiceReady, onVoiceState, status = [],
-  transcription, openVoiceSetup,
+  transcription, openVoiceSetup, skipTranscriptionPreflight, onSkipTranscriptionPreflight,
 }: {
   text: ReturnType<typeof messages>;
   draft: string;
@@ -76,9 +76,14 @@ export function Composer({
   status?: StatusItem[];
   transcription?: CompanionTranscriptionReadiness;
   openVoiceSetup?(): void;
+  /** 「开好了，再试一次」之后下一次点麦克风跳过本地三态预判，交给宿主判定。 */
+  skipTranscriptionPreflight?: boolean;
+  onSkipTranscriptionPreflight?(): void;
 }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
+  const skipPreflight = useRef(false);
+  skipPreflight.current = !!skipTranscriptionPreflight;
   /**
    * 这次录音开始前草稿已经有多长——面板里的「识别文字」只显示这之后追加的部分。
    * 直接把整条 draft 显示出去的话，用户录音前自己打的字会出现在识别区，
@@ -88,6 +93,11 @@ export function Composer({
   const spokenFrom = useRef(0);
   const voice = useVoiceCapture({ recorder, pending: voicePending, result: voiceResult, ready: voiceReady, transcribe, discardPending: discardPendingTranscript, dictation, commitSpoken,
     preflight: () => {
+      if (skipPreflight.current) {
+        skipPreflight.current = false;
+        onSkipTranscriptionPreflight?.();
+        return null;
+      }
       if (transcription === 'not-installed') return { stage: 'transcribe', reason: 'COMPANION_TRANSCRIPTION_UNAVAILABLE' };
       if (transcription === 'no-key') return { stage: 'transcribe', reason: 'SPEECH_NO_CHANNEL' };
       return null;

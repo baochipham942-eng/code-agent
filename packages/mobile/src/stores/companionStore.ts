@@ -17,6 +17,7 @@ import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
 import { HistoryCache } from '../platform/historyCache';
 import { mdnsRefreshedEndpoint } from '../platform/mdnsEndpoint';
+import { transcriptionReadinessFromResult } from '../features/sessions/voiceFailure';
 
 interface Saved {
   version: 1; publicKey: string; secretKey: string;
@@ -106,6 +107,13 @@ interface State {
    */
   pendingAdopted: boolean;
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
+  /**
+   * 中继不刷新 binding.transcription。「开好了，再试一次」之后下一次点麦克风跳过本地预判。
+   * 不进 persist：只对紧接着那一次手势有效。
+   */
+  skipTranscriptionPreflight: boolean;
+  allowTranscriptionOnce(): void;
+  consumeTranscriptionPreflight(): void;
   hydrate(): Promise<void>; pair(raw?: string): Promise<void>; reconnect(): Promise<void>; forget(): Promise<void>; pause(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
   respondQuestion(requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string): Promise<void>;
@@ -326,16 +334,21 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 用户已经取消了这次录音：这条是晚到结果，不许再往草稿里写（screen-contract「取消过滤晚到结果」）。
         // 代号不在这里清：一次取消可能有好几段在飞/在途，被第一条 ack 消耗掉的话，
         // 后面那几段照样写进草稿（grok ai-review Important）。下一段自带新代号，不会误伤。
+        const code = typeof record.result.code === 'string' ? record.result.code : undefined;
         if (record.state === 'accepted' && typeof record.result.text === 'string' && onTranscript && !discardedVoice) {
           await onTranscript(record.result.text, pending.sessionId ?? null, saved!.binding!.hostKey, pending.commandId, transcriptContinuation);
           set({ voiceResult: { commandId: pending.commandId, outcome: 'done' } });
         } else {
           // 「这段没人说话」是第三种结局：分片下停顿段本来就是空的，当失败就是每隔几秒报一次错。
-          const code = typeof record.result.code === 'string' ? record.result.code : undefined;
           // 「这段没人说话」由主机在结算时给出结论（`silent`），手机不自己再判一次码——
           // 两边各判各的，码一变就漂。
           silentVoice = record.result.silent === true;
           set({ voiceResult: { commandId: pending.commandId, outcome: silentVoice ? 'silent' : 'error', code } });
+        }
+        const next = transcriptionReadinessFromResult(record.state === 'accepted', code);
+        if (next && saved?.binding && saved.binding.transcription !== next) {
+          saved = { ...saved, binding: { ...saved.binding, transcription: next } };
+          set({ binding: saved.binding });
         }
       }
       await persist({ ...saved!, pending: undefined });
@@ -433,6 +446,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     return {
       voiceResult: null, library: null, history: {}, libraryError: false,
+      skipTranscriptionPreflight: false,
+      allowTranscriptionOnce: () => set({ skipTranscriptionPreflight: true }),
+      consumeTranscriptionPreflight: () => { if (get().skipTranscriptionPreflight) set({ skipTranscriptionPreflight: false }); },
       connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
@@ -505,7 +521,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         set({ status: 'unpaired', binding: null, sessionId: null, transport: null,
           paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
           artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, routeError: null,
-          uploadProgress: [], voiceResult: null });
+          uploadProgress: [], voiceResult: null, skipTranscriptionPreflight: false });
       }),
       reconnect: () => safely(async () => {
         const savedTarget = saved?.binding ?? saved?.candidate;

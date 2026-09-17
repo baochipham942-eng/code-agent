@@ -83,4 +83,49 @@ describe('ProviderHealthMonitor', () => {
     expect(Date.now() - Date.parse('2026-09-17T10:00:00Z')).toBeGreaterThan(AVAILABILITY_MARK_TTL_MS - 1);
     expect(monitor.getAvailabilityMark('longcat', 'LongCat-2.0-Preview')).toBeNull();
   });
+
+  /**
+   * ai-review R7（Nit）：网络类（5xx/断网）一笔最终失败不给整家打 30 分钟标记——那会把手机
+   * 默认模型切到别家且难以自愈（默认已换走，不再有请求来清标记）。门槛沿用错误率阈值：
+   * 只有健康态已被此前失败推到 unavailable，这笔网络失败才升格成供应商级标记。
+   * auth/quota 是持久性问题（key 无效/余额耗尽），维持一次即标。
+   */
+  it('网络类：单次 503 不标整家；连发到错误率把健康态推过阈值后才标', () => {
+    const monitor = getProviderHealthMonitor();
+    monitor.recordFailure('longcat', {
+      model: 'LongCat-2.0',
+      error: Object.assign(new Error('Service unavailable'), { status: 503 }),
+    });
+    // 第一笔 503：这笔之前的健康态还是 healthy，不打供应商标记
+    expect(monitor.getProviderMark('longcat')).toBeNull();
+    expect(monitor.getAvailabilityMark('longcat', 'LongCat-2.0')).toBeNull();
+    // 第一笔已把错误率推到 100%（≥70% 阈值），健康态落 unavailable；第二笔起才标
+    expect(monitor.getHealth('longcat')?.status).toBe('unavailable');
+    monitor.recordFailure('longcat', {
+      model: 'LongCat-2.0',
+      error: Object.assign(new Error('Service unavailable'), { status: 503 }),
+    });
+    expect(monitor.getProviderMark('longcat')).toMatchObject({ scope: 'provider', kind: 'network' });
+    expect(monitor.getAvailabilityMark('longcat', 'LongCat-2.0')).toMatchObject({ kind: 'network' });
+  });
+
+  it('网络类：供应商有成功历史时单次 5xx 不标（错误率远未过阈值）', () => {
+    const monitor = getProviderHealthMonitor();
+    for (let i = 0; i < 5; i += 1) monitor.recordSuccess('deepseek', 20, { model: 'deepseek-chat' });
+    monitor.recordFailure('deepseek', {
+      model: 'deepseek-chat',
+      error: Object.assign(new Error('Bad gateway'), { status: 502 }),
+    });
+    expect(monitor.getHealth('deepseek')?.status).toBe('healthy');
+    expect(monitor.getProviderMark('deepseek')).toBeNull();
+  });
+
+  it('auth 维持一次即标：单次 401 不等错误率', () => {
+    const monitor = getProviderHealthMonitor();
+    monitor.recordFailure('moonshot', {
+      model: 'kimi-k2.5',
+      error: Object.assign(new Error('Unauthorized'), { status: 401 }),
+    });
+    expect(monitor.getProviderMark('moonshot')).toMatchObject({ scope: 'provider', kind: 'auth' });
+  });
 });

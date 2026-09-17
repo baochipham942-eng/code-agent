@@ -385,8 +385,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const createInDefaultProject = () => {
     // 没有能用的模型（列表为空）：草稿留着、不弹项目弹层（N-MOBILE-NO-USABLE-MODEL）。
     // 旧版电脑端不标 isDefault 时上面已回落列表第一项，不再静默建不了。
-    if (!newTaskModel) return false;
-    if (!newTaskProjectId) { state.openSheet('projects'); return false; }
+    // 库还没读到（library 为 null）不算「没有模型」——那会儿状态位也出不来（它要求库非空），
+    // 照旧打开项目弹层给等待态，不能零反馈（ai-review R7：build 37「点了没反应」不能回来）。
+    if (companion.library && !newTaskModel) return false;
+    // 库没读到（模型与默认项目都还定不下来）或定不下默认项目：打开项目弹层（等库 / 换选项目）。
+    if (!newTaskModel || !newTaskProjectId) { state.openSheet('projects'); return false; }
     void manage('session.create', { title: text.newSession, provider: newTaskModel.provider, model: newTaskModel.model }, `project:${newTaskProjectId}`).then(() => {
       const live = companionStore.getState();
       if (live.commandError && live.commandErrorAction === 'session.create') firstSend.current = null;

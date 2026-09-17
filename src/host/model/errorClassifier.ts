@@ -76,7 +76,7 @@ const MESSAGE_PATTERNS: Array<[RegExp, ErrorClass]> = [
   [/x-ratelimit-remaining.*\b0\b/i, 'quota_exhaustion'],
   [/content.?filter|content.?policy|safety|harmful|violat(?:es?|ion)|moderation/i, 'content_policy'],
   [/unexpected.?token|JSON\.parse|invalid json|SyntaxError|tool_use.*corrupt|malformed.*json/i, 'malformed_response'],
-  [/unsupported\s+model|model.*(?:not.?found|not\s+supported|does not exist|deprecated|decommission|retired)|(?:deprecated|retired).*model/i, 'model_deprecated'],
+  [/model.*(?:not.?found|deprecated|decommission|retired|does not exist)|(?:deprecated|retired).*model/i, 'model_deprecated'],
   [/rate limit|too many requests|quota exceeded/i, 'rate_limit'],
   [/invalid_api_key|authentication_error|invalid token|unauthorized|forbidden/i, 'auth'],
   [/econnreset|econnrefused|etimedout|socket hang up|network error|fetch failed/i, 'network'],
@@ -188,7 +188,10 @@ export function classifyError(error: unknown): ErrorClass {
       if (/content.?filter|content.?policy|safety|harmful|violat|moderation/i.test(msg)) return 'content_policy';
       // 「Unsupported model」是模型下线，不是 content policy，也不是笼统 400。
       // 不认 bare "unsupported"（会误伤 Unsupported value: temperature）。
-      if (/unsupported\s+model/i.test(msg) || /model.*(?:not.?found|does not exist|not\s+supported)/i.test(msg)) {
+      // 「模型不支持/不存在」只在这个状态码分支里判，且 model 一律词边界锚定（\bmodel\b）：
+      // 「model_xxx parameter not supported」说的是参数不支持，参数名带 model 前缀
+      // 不代表模型停用（ai-review R7，别再让 loopDecision 建议切模型）。
+      if (/\bunsupported\s+model\b/i.test(msg) || /\bmodel\b[^\n]*?\b(?:not\.?found|does\s+not\s+exist|not\s+supported)\b/i.test(msg)) {
         return 'model_deprecated';
       }
     }

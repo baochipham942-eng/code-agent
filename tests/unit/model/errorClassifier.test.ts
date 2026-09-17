@@ -244,11 +244,31 @@ describe('400 Unsupported model → 模型不可用，不误伤 temperature', ()
     expect(getModelUnavailableMarker(error)).toBeUndefined();
   });
 
-  it('明确指向模型的句式仍认：Unsupported model / model … not supported / does not exist / not found', () => {
-    expect(classifyError(new Error('Unsupported model: LongCat-2.0-Preview'))).toBe<ErrorClass>('model_deprecated');
-    expect(classifyError(new Error('The model glm-4-flash is not supported'))).toBe<ErrorClass>('model_deprecated');
-    expect(classifyError(new Error('model LongCat-2.0-Preview does not exist'))).toBe<ErrorClass>('model_deprecated');
-    expect(classifyError(new Error('model glm-4 not found'))).toBe<ErrorClass>('model_deprecated');
+  it('明确指向模型的句式仍认（HTTP 400）：Unsupported model / model … not supported / does not exist / not found', () => {
+    expect(classifyError(Object.assign(new Error('Unsupported model: LongCat-2.0-Preview'), { status: 400 }))).toBe<ErrorClass>('model_deprecated');
+    expect(classifyError(Object.assign(new Error('The model glm-4-flash is not supported'), { status: 400 }))).toBe<ErrorClass>('model_deprecated');
+    expect(classifyError(Object.assign(new Error('model LongCat-2.0-Preview does not exist'), { status: 400 }))).toBe<ErrorClass>('model_deprecated');
+    expect(classifyError(Object.assign(new Error('model glm-4 not found'), { status: 400 }))).toBe<ErrorClass>('model_deprecated');
+  });
+
+  /**
+   * ai-review R7（Nit）：「模型不支持/不存在」的判决收进 HTTP 400/404 分支并词边界锚定——
+   * 不带状态码的 `model.*not\s+supported` 宽匹配会把「model_xxx parameter not supported」
+   * 这类参数不支持错认成模型停用，loopDecision 就会建议切模型、打 30 分钟停用标记。
+   * 参数名带 model 前缀（\bmodel\b 不认 model_ 前缀）不是模型停用。
+   */
+  it('「model_xxx parameter not supported」是参数不支持，不带状态码也不判成模型停用', () => {
+    const noStatus = new Error('model_max_tokens parameter not supported');
+    expect(classifyError(noStatus)).not.toBe<ErrorClass>('model_deprecated');
+    expect(getModelUnavailableMarker(noStatus)).toBeUndefined();
+    expect(resolveAvailabilityFailure(noStatus)).toBeUndefined();
+  });
+
+  it('「model_xxx parameter not supported」带 HTTP 400 同样不判成模型停用', () => {
+    const with400 = Object.assign(new Error('model_max_tokens parameter not supported'), { status: 400 });
+    expect(classifyError(with400)).not.toBe<ErrorClass>('model_deprecated');
+    expect(getModelUnavailableMarker(with400)).toBeUndefined();
+    expect(resolveAvailabilityFailure(with400)).toBeUndefined();
   });
 
   it('401 仍是供应商级鉴权，不是模型停用', () => {

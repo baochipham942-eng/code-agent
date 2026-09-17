@@ -168,6 +168,8 @@ export class ModelRouter {
   private recordProviderHardFailure(provider: string, message: string): void {
     if (PERSISTENT_PROVIDER_ERROR_PATTERN.test(message)) getProviderHealthMonitor().recordFailure(provider, { scope: 'provider', kind: persistentProviderMarkKind(message) });
     else getProviderHealthMonitor().recordFailure(provider);
+    // 无条件再记两笔不是笔误（ai-review PR#1918 Nit 问过）：合计 3 次普通失败，
+    // 让健康统计把这次失败看得足够重——供应商已有成功历史时，单笔推不动错误率。
     getProviderHealthMonitor().recordFailure(provider);
     getProviderHealthMonitor().recordFailure(provider);
   }

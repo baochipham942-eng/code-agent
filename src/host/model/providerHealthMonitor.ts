@@ -109,7 +109,14 @@ class ProviderHealthMonitor {
       return;
     }
     if (classified?.scope === 'provider') {
-      this.providerMarks.set(provider, { scope: 'provider', kind: classified.kind, at });
+      // 网络类（5xx/断网）一次失败就给整家打 30 分钟标记，会把手机默认模型切到别家且难以
+      // 自愈——默认已换走，不再有请求来清标记。所以网络类只在错误率已把健康态推到 unavailable
+      // （下面的 updateStatus 沿用 UNAVAILABLE_THRESHOLD 阈值，此刻读的是这笔失败之前的态）
+      // 时才升格成供应商级标记；auth/quota 是持久性问题（key 无效/余额耗尽），一次即标。
+      const persistent = classified.kind === 'auth' || classified.kind === 'quota';
+      if (persistent || this.getOrCreate(provider).status === 'unavailable') {
+        this.providerMarks.set(provider, { scope: 'provider', kind: classified.kind, at });
+      }
     }
     const state = this.getOrCreate(provider);
     state.observationCount++;

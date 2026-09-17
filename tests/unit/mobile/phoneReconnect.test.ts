@@ -1,10 +1,17 @@
+// @vitest-environment jsdom
+import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render } from '@testing-library/react';
 import { createIdentity } from '../../../src/shared/companion/noiseChannel';
 import { toHex } from '../../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS } from '../../../src/shared/constants/companion';
 import { connectionBlocksAutoRetry, handshakeNeedsRescan, phoneReconnectDelayMs, phoneReconnectJitterMs } from '../../../packages/mobile/src/app/phoneReconnect';
+import { StatusSlot, composerStatusItems } from '../../../packages/mobile/src/app/StatusSlot';
 import { createCompanionStore } from '../../../packages/mobile/src/stores/companionStore';
+import { messages } from '../../../packages/mobile/src/i18n';
 import type { PlatformPorts } from '../../../packages/mobile/src/platform/ports';
+
+const text = messages('zh');
 
 /**
  * N-MOBILE-AUTO-RECONNECT（design.md §13）：前台退避自动重连。
@@ -54,6 +61,22 @@ function storeOf() {
   return createCompanionStore(companion, () => {});
 }
 
+function slotFrom(store: ReturnType<typeof storeOf>) {
+  const s = store.getState();
+  return composerStatusItems(text, {
+    saveError: false, nativeError: false, sendAttempted: false,
+    binding: Boolean(s.binding), status: s.status, paused: s.paused, connectionError: s.connectionError, busy: s.busy,
+    commandError: s.commandError, commandErrorAction: s.commandErrorAction, voiceFailureShown: false, sessionId: s.sessionId,
+    libraryError: s.libraryError, pending: s.pending, pendingAction: s.pendingAction, pendingSlow: false,
+    autoRetrying: s.autoRetrying, abandonedPending: s.abandonedPending,
+  }, { flush() {}, reconnect() {}, scan() {}, openRemote() {}, retryCreate() {}, switchModel() {} });
+}
+
+async function flushUntilHung(ticks = 30) {
+  for (let i = 0; i < ticks && !harness.releaseHang; i += 1) await Promise.resolve();
+  expect(harness.releaseHang, 'recover 应已挂起未决').toBeTruthy();
+}
+
 describe('phoneReconnectDelayMs 节奏', () => {
   it('立即、2/4/8/16/30s，之后每 30s，10 分钟后每 60s', () => {
     expect(phoneReconnectDelayMs(0, 0)).toBe(0);
@@ -91,6 +114,7 @@ describe('companionStore 前台退避自动重连', () => {
     vi.useFakeTimers();
   });
   afterEach(() => {
+    cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -188,6 +212,29 @@ describe('companionStore 前台退避自动重连', () => {
     store.getState().pause();
   });
 
+  it('定时器触发的自动重连进行中：status 保持 offline，状态位不闪正在连接', async () => {
+    const store = storeOf();
+    await store.getState().hydrate();
+    expect(store.getState()).toMatchObject({ status: 'offline', autoRetrying: true, connectionError: 'connectionUnavailable' });
+    expect(harness.recoverCalls).toBe(1);
+    harness.hangRecover = true;
+    // 同步推进：async 版会等挂起的 recover Promise，测的就是未决那一拍。
+    vi.advanceTimersByTime(2000);
+    await flushUntilHung();
+    expect(harness.recoverCalls).toBe(2);
+    expect(store.getState()).toMatchObject({ status: 'offline', autoRetrying: true, paused: false });
+    const { container } = render(React.createElement(StatusSlot, { items: slotFrom(store) }));
+    expect(container.querySelector('.status-text')?.textContent).toBe(text.autoRetrying);
+    expect(container.querySelector('[data-testid="status-action"]')?.textContent).toBe(text.reconnect);
+    expect(container.querySelector('[data-testid="status-slot"]')?.getAttribute('data-reason')).toBe('auto-retry');
+    expect(container.textContent).not.toContain(text.connecting);
+    harness.hangRecover = false;
+    harness.releaseHang?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    store.getState().pause();
+  });
+
   it('从后台恢复健康连接：握手期间是 connecting，不是自动重试', async () => {
     vi.useRealTimers();
     harness.recoverError = null;
@@ -198,9 +245,11 @@ describe('companionStore 前台退避自动重连', () => {
     expect(store.getState()).toMatchObject({ status: 'offline', paused: true, autoRetrying: false });
     harness.hangRecover = true;
     const pending = store.getState().reconnect();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushUntilHung();
     expect(store.getState()).toMatchObject({ status: 'connecting', autoRetrying: false, paused: false });
+    const { container } = render(React.createElement(StatusSlot, { items: slotFrom(store) }));
+    expect(container.querySelector('.status-text')?.textContent).toBe(text.connecting);
+    expect(container.textContent).not.toContain(text.autoRetrying);
     harness.hangRecover = false;
     harness.releaseHang?.();
     await pending;

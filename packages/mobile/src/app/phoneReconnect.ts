@@ -4,7 +4,7 @@ import { COMPANION_LIMITS as L } from '../../../../src/shared/constants/companio
  * LAN/relay 握手里「电脑身份变了」——重连救不回来，必须重新扫码。
  * 不能落成 connectionFailed（「电脑没回应」）否则前台退避会无限重试。
  */
-export const HANDSHAKE_RESCAN_CODES = new Set([
+const HANDSHAKE_RESCAN_CODES = new Set([
   'COMPANION_HOST_KEY_MISMATCH',
   'COMPANION_BINDING_CHANGED',
 ]);

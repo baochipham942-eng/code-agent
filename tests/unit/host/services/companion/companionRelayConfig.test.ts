@@ -1,6 +1,7 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { startCompanionRelayIfConfigured } from '../../../../../src/host/services/companion/CompanionRelayClient';
 import {
@@ -13,6 +14,7 @@ import { COMPANION_LIMITS as L } from '../../../../../src/shared/constants/compa
 import type { CompanionGateway } from '../../../../../src/host/services/companion/CompanionGateway';
 
 const gateway = {} as CompanionGateway;
+const FIXTURE_CA = join(dirname(fileURLToPath(import.meta.url)), '../../../../fixtures/companion-relay-tls/ca.pem');
 const SECRET = 'CREDENTIAL_VALUE_MUST_NOT_APPEAR';
 const SHORT_SECRET = 'TOOSHORT';
 const ENABLED = {
@@ -62,7 +64,8 @@ describe('companion relay config', () => {
     const dir = await mkdtemp(join(tmpdir(), 'companion-relay-'));
     const logs = collectLogger();
     expect(loadCompanionRelayConfig(dir, logs.logger)).toBeNull();
-    expect(logs.warn).toEqual([`Companion relay config file missing: ${resolve(dir, L.relayConfigFile)}`]);
+    expect(logs.info).toEqual([`Companion relay config file missing: ${resolve(dir, L.relayConfigFile)}`]);
+    expect(logs.warn).toEqual([]);
     const startLogs = collectLogger();
     await expect(startCompanionRelayIfConfigured({
       dataDirectory: dir,
@@ -70,7 +73,8 @@ describe('companion relay config', () => {
       loadIdentity: async () => { throw new Error('should not load identity'); },
       logger: startLogs.logger,
     })).resolves.toBeNull();
-    expect(startLogs.warn).toEqual([`Companion relay config file missing: ${resolve(dir, L.relayConfigFile)}`]);
+    expect(startLogs.info).toEqual([`Companion relay config file missing: ${resolve(dir, L.relayConfigFile)}`]);
+    expect(startLogs.warn).toEqual([]);
   });
 
   it('is inert when enabled is false', async () => {
@@ -80,7 +84,8 @@ describe('companion relay config', () => {
       v: 1, enabled: false, url: 'wss://relay.example.invalid/companion', credentialRef: 'companion-relay',
     });
     expect(loadCompanionRelayConfig(dir, logs.logger)).toBeNull();
-    expect(logs.warn).toEqual(['Companion relay config enabled is not true']);
+    expect(logs.info).toEqual(['Companion relay config enabled is not true']);
+    expect(logs.warn).toEqual([]);
     await expect(startCompanionRelayIfConfigured({
       dataDirectory: dir,
       gateway,
@@ -152,10 +157,10 @@ describe('companion relay config', () => {
   it('reads caFile relative to the data directory', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'companion-relay-'));
     const logs = collectLogger();
-    await writeFile(join(dir, 'ca.pem'), '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n');
+    await copyFile(FIXTURE_CA, join(dir, 'ca.pem'));
     await writeConfig(dir, { ...ENABLED, caFile: 'ca.pem' });
     const config = loadCompanionRelayConfig(dir, logs.logger);
-    expect(config?.caPem).toContain('BEGIN CERTIFICATE');
+    expect(config?.caPem).toBe(await readFile(join(dir, 'ca.pem'), 'utf8'));
     expect(logs.warn).toEqual([]);
   });
 

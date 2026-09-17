@@ -13,6 +13,12 @@ export interface CompanionRelayLogger {
   info?(message: string): void;
 }
 
+/** 有 info 走 info，否则回落到 warn。 */
+export function logCompanionRelayInfo(logger: CompanionRelayLogger | undefined, message: string): void {
+  if (logger?.info) logger.info(message);
+  else logger?.warn(message);
+}
+
 export type CompanionRelayKeytarLoader = () => {
   getPassword(service: string, account: string): Promise<string | null>;
 } | null;
@@ -54,7 +60,7 @@ export function loadCompanionRelayConfig(
   try {
     text = readFileSync(configPath, 'utf8');
   } catch {
-    logger?.warn(`Companion relay config file missing: ${configPath}`);
+    logCompanionRelayInfo(logger, `Companion relay config file missing: ${configPath}`);
     return null;
   }
   let raw: unknown;
@@ -70,7 +76,7 @@ export function loadCompanionRelayConfig(
     return null;
   }
   if (parsed.data.enabled !== true) {
-    logger?.warn('Companion relay config enabled is not true');
+    logCompanionRelayInfo(logger, 'Companion relay config enabled is not true');
     return null;
   }
   if (!parsed.data.url) {

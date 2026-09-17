@@ -46,6 +46,32 @@ interface TlsRelay {
   stop(): Promise<void>;
 }
 
+function startHttpRejectingTlsRelay(): Promise<TlsRelay> {
+  const authorizations: Array<string | undefined> = [];
+  const server: Server = createServer({
+    cert: readFileSync(LEAF_PEM),
+    key: readFileSync(LEAF_KEY),
+  });
+  server.on('upgrade', (request, sock) => {
+    authorizations.push(request.headers.authorization);
+    sock.end('HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject);
+      const port = (server.address() as { port: number }).port;
+      resolve({
+        url: `wss://127.0.0.1:${port}`,
+        authorizations,
+        async stop() {
+          await new Promise<void>(done => server.close(() => done()));
+        },
+      });
+    });
+  });
+}
+
 function startTlsRelay(): Promise<TlsRelay> {
   const authorizations: Array<string | undefined> = [];
   const server: Server = createServer({
@@ -126,6 +152,33 @@ async function writeRelayConfig(url: string, caFile?: string): Promise<string> {
     expect(relay.authorizations).toEqual([]);
     expect(logs.all().join('\n')).not.toContain(SECRET);
     expect(logs.all().join('\n')).not.toMatch(/Bearer /);
+  });
+
+  it('fails HTTP 401 immediately as HTTP 401 instead of waiting for connect timeout', async () => {
+    relay = await startHttpRejectingTlsRelay();
+    const logs = collectLogger();
+    const dir = await writeRelayConfig(relay.url, CA_PEM);
+    const started = Date.now();
+    client = await startCompanionRelayIfConfigured({
+      dataDirectory: dir,
+      gateway,
+      loadIdentity: async () => createIdentity(),
+      credential: SECRET,
+      logger: logs.logger,
+      jitter: () => 0.5,
+    });
+    const elapsed = Date.now() - started;
+    expect(client).not.toBeNull();
+    expect(elapsed).toBeLessThan(1000);
+    expect(logs.warn.filter(line => line.startsWith('Companion relay dial failed:'))).toEqual([
+      'Companion relay dial failed: HTTP 401; reconnect in 50ms',
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(logs.warn.filter(line => line.startsWith('Companion relay dial failed:'))).toEqual([
+      'Companion relay dial failed: HTTP 401; reconnect in 50ms',
+    ]);
+    expect(logs.all().join('\n')).not.toContain('COMPANION_RELAY_CONNECT_TIMEOUT');
+    expect(logs.all().join('\n')).not.toContain(SECRET);
   });
 
   it('connects when caFile points at the test CA and logs the connected line', async () => {

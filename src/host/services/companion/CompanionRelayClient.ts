@@ -19,6 +19,7 @@ import {
   errorHead,
   loadCompanionRelayConfig,
   loadCompanionRelayCredential,
+  logCompanionRelayInfo,
   type CompanionRelayKeytarLoader,
   type CompanionRelayLogger,
 } from './companionRelayConfig';
@@ -200,11 +201,6 @@ export class CompanionRelayClient {
     this.buffer.enqueue(frame);
   }
 
-  private logInfo(message: string): void {
-    if (this.logger?.info) this.logger.info(message);
-    else this.logger?.warn(message);
-  }
-
   private peekReconnectDelay(): number {
     const steps = this.deps.config.reconnectBackoffMs;
     return (steps[Math.min(this.attempt, steps.length - 1)] ?? L.relayReconnectBackoffMs[0]) * (0.5 + this.jitter());
@@ -261,6 +257,10 @@ export class CompanionRelayClient {
       socket.once('unexpected-response', (request, response) => {
         httpStatus = response.statusCode;
         request.destroy();
+        clearTimeout(timer);
+        const errorCode = this.dialErrorCode(lastError, 0, httpStatus);
+        this.failDial(errorCode);
+        finish(new Error(errorCode));
       });
       socket.once('error', error => { lastError = error; });
       socket.once('open', () => {
@@ -282,7 +282,7 @@ export class CompanionRelayClient {
           this.heartbeat.unref();
         }
         for (const waiter of this.openWaiters.splice(0)) waiter();
-        this.logInfo(`Companion relay connected: ${this.deps.config.url}`);
+        logCompanionRelayInfo(this.logger, `Companion relay connected: ${this.deps.config.url}`);
         finish();
       });
       socket.on('message', data => {

@@ -1,5 +1,6 @@
 import type { AppSettings, BillingMode, ModelCapability, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from './contract';
 import {
+  DEFAULT_MODELS,
   MODEL_FEATURES,
   PROVIDER_MODELS,
   PROVIDER_MODELS_MAP,
@@ -849,6 +850,22 @@ export function hasConfiguredDefaultRuntimeModel(settings?: AppSettings | null):
   const providerConfig = settings.models.providers?.[providerId];
   if (!providerConfig || providerConfig.enabled === false) return false;
   return isRuntimeProviderAvailable(providerId, providerConfig);
+}
+
+/**
+ * 供应商默认模型回落（N-COMPANION-DEFAULT-MODEL-FAILING）：
+ * providers[p].model → 登记默认 getProviderInfo(p)?.defaultModel（内置与 main 一致）
+ * → 该供应商运行时列表第一项（只有没登记默认时才走到，即 custom-*）
+ * → DEFAULT_MODELS.chat。
+ */
+export function fallbackModelForProvider(provider: string, settings?: { models?: unknown } | null): string {
+  const configured = (settings as AppSettings | null | undefined)?.models?.providers?.[provider as ModelProvider]?.model;
+  if (configured) return configured;
+  const registered = getProviderInfo(provider)?.defaultModel;
+  if (registered) return registered;
+  const listed = buildRuntimeModelOptions(settings as AppSettings | null | undefined).find(option => option.provider === provider)?.model;
+  if (listed) return listed;
+  return DEFAULT_MODELS.chat;
 }
 
 function compareProviderOptionSource(

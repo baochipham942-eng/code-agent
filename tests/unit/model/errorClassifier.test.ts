@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { classifyError, getModelAuthFailureMarker, MODEL_API_KEY_MISSING_CODE } from '../../../src/host/model/errorClassifier';
+import { classifyError, getModelAuthFailureMarker, getModelQuotaFailureMarker, getModelUnavailableMarker, resolveAvailabilityFailure, MODEL_API_KEY_MISSING_CODE } from '../../../src/host/model/errorClassifier';
 import type { ErrorClass } from '../../../src/host/model/errorClassifier';
 
 // --------------------------------------------------------------------------
@@ -217,6 +217,67 @@ describe('classifyError – unknown and edge cases', () => {
 // message 是上游自由文案，按文本认必然漏，漏了还静默（deny-list 教训）。
 // --------------------------------------------------------------------------
 
+describe('400 Unsupported model → 模型不可用，不误伤 temperature', () => {
+  it('HTTP 400 Unsupported model 归类为 model_deprecated，并产出 MODEL_UNAVAILABLE 标记', () => {
+    const error = Object.assign(new Error('Unsupported model'), { status: 400, provider: 'longcat', model: 'LongCat-2.0-Preview' });
+    expect(classifyError(error)).toBe<ErrorClass>('model_deprecated');
+    expect(getModelUnavailableMarker(error)).toEqual({
+      code: 'MODEL_UNAVAILABLE',
+      provider: 'longcat',
+      model: 'LongCat-2.0-Preview',
+    });
+    expect(resolveAvailabilityFailure(error)).toEqual({ scope: 'model', kind: 'model' });
+    expect(getModelAuthFailureMarker(error)).toBeUndefined();
+  });
+
+  it('Unsupported value: temperature 不认成模型停用', () => {
+    const error = Object.assign(new Error("Unsupported value: 'temperature' does not support 0.7 with this model."), { status: 400 });
+    expect(classifyError(error)).not.toBe<ErrorClass>('model_deprecated');
+    expect(getModelUnavailableMarker(error)).toBeUndefined();
+  });
+
+  it('message 里 model 后面的 Unsupported value 参数错误也不认成模型停用（收窄 model.*unsupported）', () => {
+    // ai-review PR#1918 Nit：model.*unsupported 宽匹配会把带模型名的参数错误吞进 model_deprecated，
+    // 进而让 loopDecision 走 fallback + 打 30 分钟停用标记。收窄后只剩明确指向模型的句式。
+    const error = new Error("Invalid request to model glm-5: Unsupported value: 'temperature'");
+    expect(classifyError(error)).not.toBe<ErrorClass>('model_deprecated');
+    expect(getModelUnavailableMarker(error)).toBeUndefined();
+  });
+
+  it('明确指向模型的句式仍认（HTTP 400）：Unsupported model / model … not supported / does not exist / not found', () => {
+    expect(classifyError(Object.assign(new Error('Unsupported model: LongCat-2.0-Preview'), { status: 400 }))).toBe<ErrorClass>('model_deprecated');
+    expect(classifyError(Object.assign(new Error('The model glm-4-flash is not supported'), { status: 400 }))).toBe<ErrorClass>('model_deprecated');
+    expect(classifyError(Object.assign(new Error('model LongCat-2.0-Preview does not exist'), { status: 400 }))).toBe<ErrorClass>('model_deprecated');
+    expect(classifyError(Object.assign(new Error('model glm-4 not found'), { status: 400 }))).toBe<ErrorClass>('model_deprecated');
+  });
+
+  /**
+   * ai-review R7（Nit）：「模型不支持/不存在」的判决收进 HTTP 400/404 分支并词边界锚定——
+   * 不带状态码的 `model.*not\s+supported` 宽匹配会把「model_xxx parameter not supported」
+   * 这类参数不支持错认成模型停用，loopDecision 就会建议切模型、打 30 分钟停用标记。
+   * 参数名带 model 前缀（\bmodel\b 不认 model_ 前缀）不是模型停用。
+   */
+  it('「model_xxx parameter not supported」是参数不支持，不带状态码也不判成模型停用', () => {
+    const noStatus = new Error('model_max_tokens parameter not supported');
+    expect(classifyError(noStatus)).not.toBe<ErrorClass>('model_deprecated');
+    expect(getModelUnavailableMarker(noStatus)).toBeUndefined();
+    expect(resolveAvailabilityFailure(noStatus)).toBeUndefined();
+  });
+
+  it('「model_xxx parameter not supported」带 HTTP 400 同样不判成模型停用', () => {
+    const with400 = Object.assign(new Error('model_max_tokens parameter not supported'), { status: 400 });
+    expect(classifyError(with400)).not.toBe<ErrorClass>('model_deprecated');
+    expect(getModelUnavailableMarker(with400)).toBeUndefined();
+    expect(resolveAvailabilityFailure(with400)).toBeUndefined();
+  });
+
+  it('401 仍是供应商级鉴权，不是模型停用', () => {
+    const error = Object.assign(new Error('Forbidden'), { statusCode: 403 });
+    expect(resolveAvailabilityFailure(error)).toEqual({ scope: 'provider', kind: 'auth' });
+    expect(getModelUnavailableMarker(error)).toBeUndefined();
+  });
+});
+
 describe('getModelAuthFailureMarker', () => {
   it('HTTP 401 / 403 认成鉴权失败，并带上认得出的 provider/model', () => {
     expect(getModelAuthFailureMarker({ status: 401, provider: 'openai', model: 'gpt-4o' })).toEqual({
@@ -252,5 +313,49 @@ describe('getModelAuthFailureMarker', () => {
     expect(getModelAuthFailureMarker({ status: 500 })).toBeUndefined();
     expect(getModelAuthFailureMarker({ status: 429 })).toBeUndefined();
     expect(getModelAuthFailureMarker(undefined)).toBeUndefined();
+  });
+});
+
+describe('quota_exhaustion → 供应商级 quota（余额或额度用完了），不再冒充密钥', () => {
+  it('402 / 余额不足文案 / x-ratelimit-remaining 0 标 {scope:provider, kind:quota}', () => {
+    expect(resolveAvailabilityFailure(Object.assign(new Error('Payment required'), { status: 402 })))
+      .toEqual({ scope: 'provider', kind: 'quota' });
+    expect(resolveAvailabilityFailure(new Error('Insufficient balance, please top up')))
+      .toEqual({ scope: 'provider', kind: 'quota' });
+    expect(resolveAvailabilityFailure(Object.assign(new Error('rate limited'), { headers: { 'x-ratelimit-remaining': '0' } })))
+      .toEqual({ scope: 'provider', kind: 'quota' });
+  });
+
+  it('401/403 仍是 auth（mimo 曾用 401 表达额度耗尽，单凭响应分不出 key 与余额）', () => {
+    expect(resolveAvailabilityFailure(Object.assign(new Error('Unauthorized'), { status: 401 })))
+      .toEqual({ scope: 'provider', kind: 'auth' });
+    expect(resolveAvailabilityFailure(Object.assign(new Error('Forbidden'), { statusCode: 403 })))
+      .toEqual({ scope: 'provider', kind: 'auth' });
+  });
+});
+
+// 模拟器验收 O2：402 的失败态要带出路（手机卡片「余额或额度用完了」），先在这里给出结构化标记。
+describe('getModelQuotaFailureMarker', () => {
+  it('402 / 余额不足文案 / remaining 0 认成 MODEL_QUOTA，带上认得出的 provider/model', () => {
+    expect(getModelQuotaFailureMarker({ status: 402, provider: 'custom-team-relay', model: 'gpt-5.5' }))
+      .toEqual({ code: 'MODEL_QUOTA', provider: 'custom-team-relay', model: 'gpt-5.5' });
+    expect(getModelQuotaFailureMarker({ statusCode: 402 })).toEqual({ code: 'MODEL_QUOTA' });
+    expect(getModelQuotaFailureMarker(new Error('Insufficient balance, please top up'))).toEqual({ code: 'MODEL_QUOTA' });
+    expect(getModelQuotaFailureMarker(Object.assign(new Error('rate limited'), { headers: { 'x-ratelimit-remaining': '0' } })))
+      .toEqual({ code: 'MODEL_QUOTA' });
+  });
+
+  it('沿 cause 链上溯（引擎内吞掉的推理失败只剩包装错误）', () => {
+    const wrapped = new Error('run failed', { cause: new Error('inference failed', { cause: { status: 402, provider: 'zhipu' } }) });
+    expect(getModelQuotaFailureMarker(wrapped)).toEqual({ code: 'MODEL_QUOTA', provider: 'zhipu' });
+  });
+
+  it('其他类别不冒充余额不足（auth / 停用 / 网络各归各）', () => {
+    expect(getModelQuotaFailureMarker({ status: 401 })).toBeUndefined();
+    expect(getModelQuotaFailureMarker({ status: 403 })).toBeUndefined();
+    expect(getModelQuotaFailureMarker(Object.assign(new Error('Unsupported model'), { status: 400 }))).toBeUndefined();
+    expect(getModelQuotaFailureMarker(Object.assign(new Error('Bad Gateway'), { status: 502 }))).toBeUndefined();
+    expect(getModelQuotaFailureMarker(new Error('quota exceeded for this month'))).toBeUndefined();
+    expect(getModelQuotaFailureMarker(undefined)).toBeUndefined();
   });
 });

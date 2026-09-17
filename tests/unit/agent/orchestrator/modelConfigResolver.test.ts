@@ -10,6 +10,7 @@ import type { ModelConfig } from '../../../../src/shared/contract';
 import type { RoutingResolution } from '../../../../src/shared/contract/agentRouting';
 import type { ConfigService } from '../../../../src/host/services/core/configService';
 import type { PermissionRequest } from '../../../../src/shared/contract';
+import { getDefaultModelForProvider } from '../../../../src/shared/constants';
 import { getModelSessionState, resetModelSessionState } from '../../../../src/host/session/modelSessionState';
 
 describe('modelConfigResolver', () => {
@@ -33,6 +34,12 @@ describe('modelConfigResolver', () => {
   });
 
   describe('getDefaultModelByProvider', () => {
+    it('内置供应商未配 model 时与 getDefaultModelForProvider 等值', () => {
+      for (const provider of ['longcat', 'deepseek'] as const) {
+        expect(getDefaultModelByProvider(provider)).toBe(getDefaultModelForProvider(provider));
+      }
+    });
+
     it('已知 provider 返回非空模型名', () => {
       const model = getDefaultModelByProvider('deepseek');
       expect(typeof model).toBe('string');

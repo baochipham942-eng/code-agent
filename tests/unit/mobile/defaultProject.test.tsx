@@ -47,7 +47,7 @@ describe('defaultProjectId 三档', () => {
 });
 
 const harness = vi.hoisted(() => ({
-  mode: 'ok' as 'ok' | 'reject-create' | 'blocked' | 'only-two',
+  mode: 'ok' as 'ok' | 'reject-create' | 'blocked' | 'only-two' | 'no-models',
   commands: [] as [string, string | null, string?][],
   /** 宿主 companion_commands 的模拟：commandId → 命令。 */
   host: new Map<string, { commandId: string; deviceId: string; sessionId: string | null; action: string; payload: { text?: string } }>(),
@@ -85,7 +85,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
             { id: 'old', title: '旧会话', projectId: 'two', updatedAt: 3, archived: false, provider: 'deepseek', model: 'deepseek-chat' },
             { id: 'recent', title: '最近会话', projectId: 'one', updatedAt: 9, archived: false, provider: 'deepseek', model: 'deepseek-chat' },
           ],
-          models: [
+          models: harness.mode === 'no-models' ? [] : [
             { provider: 'moonshot', model: 'kimi-k2.6', label: 'Kimi', providerLabel: 'Kimi' },
             { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek Chat', providerLabel: 'DeepSeek', isDefault: true },
           ],
@@ -211,6 +211,42 @@ describe('新任务的项目选择器', () => {
     expect(picker()!.textContent).toBe('One');
     fireEvent.click(picker()!);
     await waitFor(() => { expect(document.querySelector('.project-list')).toBeTruthy(); });
+  });
+
+  it('库读成功但没有模型：状态位全文+怎么配置；点发送草稿留着、不弹项目弹层', async () => {
+    harness.mode = 'no-models';
+    await mountNewTask();
+    const slot = await waitFor(() => {
+      const el = document.querySelector('[data-testid="status-slot"]') as HTMLElement | null;
+      expect(el?.textContent).toContain('电脑上还没有能用的模型');
+      return el!;
+    });
+    expect(slot.querySelector('[data-testid="status-action"]')!.textContent).toBe('怎么配置');
+    await typeAndSend('帮我查一下明天上海的天气');
+    expect(harness.commands).toEqual([]);
+    expect(draft().value).toBe('帮我查一下明天上海的天气');
+    expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull();
+    fireEvent.click(slot.querySelector('[data-testid="status-action"]')!);
+    await waitFor(() => { expect(document.querySelector('[data-testid="model-setup"]')).toBeTruthy(); });
+    expect(document.querySelector('#sheet-title')!.textContent).toBe('配置模型');
+    expect(document.querySelector('[data-testid="model-setup"]')!.textContent).toContain('在电脑上打开 Neo');
+    expect(document.querySelector('[data-testid="model-setup"]')!.textContent).toContain('设置 → 模型');
+    expect(document.querySelector('[data-testid="model-setup"]')!.textContent).toContain('给任意一个模型填好密钥');
+    expect(document.querySelector('[data-testid="model-setup-reload"]')!.textContent).toBe('配好了，重新读取');
+  });
+
+  it('配好了重新读取后状态位消失、发送能建会话', async () => {
+    harness.mode = 'no-models';
+    await mountNewTask();
+    await waitFor(() => { expect(document.querySelector('[data-testid="status-slot"]')?.textContent).toContain('电脑上还没有能用的模型'); });
+    fireEvent.click(document.querySelector('[data-testid="status-action"]')!);
+    await waitFor(() => { expect(document.querySelector('[data-testid="model-setup-reload"]')).toBeTruthy(); });
+    harness.mode = 'ok';
+    fireEvent.click(document.querySelector('[data-testid="model-setup-reload"]') as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="status-slot"]')).toBeNull(); });
+    expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull();
+    await typeAndSend('配好了再发');
+    await waitFor(() => { expect(harness.commands[0]).toEqual(['session.create', 'project:one', 'deepseek-chat']); });
   });
 
   it('都建不了：选择器上说清，点发送不建会话、打开选择项目弹层，草稿不丢', async () => {

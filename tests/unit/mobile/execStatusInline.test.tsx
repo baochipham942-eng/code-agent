@@ -118,13 +118,16 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
       ev('agent_complete', { runId: 'r1' }),
     ];
     const { rerender } = render(withModel(failed));
-    expect(stream()).toContain(`outcome:${runOutcomeCopy(text, 'failed', 'MODEL_AUTH')}`);
     expect(runOutcomeCopy(text, 'failed', 'MODEL_AUTH')).not.toContain(text.runFailed);
+    // 卡片显示时消息流不出红字行（N-MOBILE-RUNFAIL-DUP）
+    expect(stream()).not.toContain(`outcome:${runOutcomeCopy(text, 'failed', 'MODEL_AUTH')}`);
     const card = document.querySelector('[data-testid="model-auth-failed"]')!;
     expect(card.textContent).toContain(text.modelAuthTitle);
+    expect(card.textContent).toContain(text.modelAuthDetail);
+    expect(card.querySelector('button')!.textContent).toBe(text.switchModel);
     fireEvent.click(card.querySelector('button')!);
     expect(openModel).toHaveBeenCalledTimes(1);
-    // 之后又跑成功了一轮：旧失败只留文字，不再挂按钮
+    // 之后又跑成功了一轮：卡片收起，留一行「任务失败：…」当记录
     rerender(withModel([...failed,
       ev('message', { id: 'u2', role: 'user', content: '再试', runId: 'r2' }),
       ev('message', { id: 'a2', role: 'assistant', content: '好了', runId: 'r2' }),
@@ -148,8 +151,9 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
     ];
     const card = () => document.querySelector('[data-testid="model-auth-failed"]');
     const { rerender } = render(conv(failed, { provider: 'custom-team-relay', model: 'LongCat-2.0' }));
-    // 前提自证：还是那个坏模型时卡片在
+    // 前提自证：还是那个坏模型时卡片在，红字行不在
     expect(card()).not.toBeNull();
+    expect(stream()).not.toContain(`outcome:${runOutcomeCopy(text, 'failed', 'MODEL_AUTH')}`);
     rerender(conv(failed, { provider: 'longcat', model: 'LongCat-2.0' }));
     expect(card()).toBeNull();
     // 失败原因那一行留着——那次执行确实失败了
@@ -171,6 +175,73 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
     ]));
     expect(stream()).toEqual(['user:你好', 'neo:你好，有什么可以帮你的？']);
     expect(document.querySelector('.run-outcome')).toBeNull();
+  });
+
+  it('模型停用：卡片文案一字不差，显示时不出红字；换走后留记录行', () => {
+    const openModel = vi.fn();
+    const conv = (events: CompanionEvent[], sessionModel: { provider: string; model: string } | null) => <CompanionConversation events={events} artifacts={[]} sessionId="s1" text={text} loadMore={() => {}} disabled={false}
+      respond={async () => {}} respondQuestion={async () => {}} respondPlan={async () => {}} openArtifact={() => {}} openModel={openModel} sessionModel={sessionModel}
+      models={[{ provider: 'longcat', model: 'LongCat-2.0-Preview', label: 'LongCat 2.0 Preview' }]} />;
+    const failed = [
+      ev('message', { id: 'u1', role: 'user', content: '你好', runId: 'r1' }),
+      ev('error', { code: 'MODEL_UNAVAILABLE', provider: 'longcat', model: 'LongCat-2.0-Preview', runId: 'r1' }),
+    ];
+    const { rerender } = render(conv(failed, { provider: 'longcat', model: 'LongCat-2.0-Preview' }));
+    const card = document.querySelector('[data-testid="model-unavailable"]')!;
+    expect(card.querySelector('h3')!.textContent).toBe('这个模型用不了了');
+    expect(card.querySelector('p')!.textContent).toBe('供应商已经停用 LongCat 2.0 Preview。换一个模型就能继续。');
+    expect(card.querySelector('button')!.textContent).toBe('换一个可用模型');
+    expect(stream()).not.toContain(`outcome:${runOutcomeCopy(text, 'failed', 'MODEL_UNAVAILABLE')}`);
+    fireEvent.click(card.querySelector('button')!);
+    expect(openModel).toHaveBeenCalledTimes(1);
+    rerender(conv(failed, { provider: 'longcat', model: 'LongCat-2.0' }));
+    expect(document.querySelector('[data-testid="model-unavailable"]')).toBeNull();
+    expect(stream()).toContain(`outcome:${text.failed}：${text.modelGoneLabel}`);
+  });
+
+  // 模拟器验收 O2：余额不足（402）那一轮此前只有红字「执行时出了问题」没有出路。
+  // 与密钥/停用同一套卡片：标题+说明+「换一个可用模型」，显示时不出红字，换走后留一行记录。
+  it('余额或额度用完了：给卡片和「换一个可用模型」，不是只有红字；换走后留记录行', () => {
+    const openModel = vi.fn();
+    const conv = (events: CompanionEvent[], sessionModel: { provider: string; model: string } | null) => <CompanionConversation events={events} artifacts={[]} sessionId="s1" text={text} loadMore={() => {}} disabled={false}
+      respond={async () => {}} respondQuestion={async () => {}} respondPlan={async () => {}} openArtifact={() => {}} openModel={openModel} sessionModel={sessionModel} />;
+    const failed = [
+      ev('message', { id: 'u1', role: 'user', content: '你好', runId: 'r1' }),
+      ev('error', { code: 'MODEL_QUOTA', provider: 'custom-team-relay', model: 'gpt-5.5', runId: 'r1' }),
+    ];
+    const { rerender } = render(conv(failed, { provider: 'custom-team-relay', model: 'gpt-5.5' }));
+    const card = document.querySelector('[data-testid="model-quota-failed"]')!;
+    expect(card.querySelector('h3')!.textContent).toBe('余额或额度用完了');
+    expect(card.querySelector('p')!.textContent)
+      .toBe('这个模型所在的供应商额度不够了，可以先换一个可用模型；也可以在电脑上 Neo 的模型设置里检查额度。');
+    expect(card.querySelector('button')!.textContent).toBe('换一个可用模型');
+    // 卡片显示时消息流不出红字行
+    expect(stream()).not.toContain(`outcome:${runOutcomeCopy(text, 'failed', 'MODEL_QUOTA')}`);
+    fireEvent.click(card.querySelector('button')!);
+    expect(openModel).toHaveBeenCalledTimes(1);
+    // 换走（或又跑过一轮）后卡片收起，留一行「任务失败：余额或额度用完了」当记录
+    rerender(conv(failed, { provider: 'longcat', model: 'LongCat-2.0' }));
+    expect(document.querySelector('[data-testid="model-quota-failed"]')).toBeNull();
+    expect(stream()).toContain(`outcome:${text.failed}：${text.modelQuotaExhausted}`);
+  });
+
+  it('RUN_FAILED / PROJECT_SOURCE_* / stopped 仍挂执行结果行，不走模型卡', () => {
+    for (const code of ['RUN_FAILED', 'PROJECT_SOURCE_MISSING', 'PROJECT_SOURCE_CHANGED', 'PROJECT_SOURCE_UNTRUSTED'] as const) {
+      cleanup();
+      render(view([
+        ev('message', { id: 'a1', role: 'assistant', content: '处理中', runId: 'r1' }),
+        ev('error', { code, runId: 'r1' }),
+      ], null));
+      expect(stream()).toEqual(['neo:处理中', `outcome:${runOutcomeCopy(text, 'failed', code)}`]);
+      expect(document.querySelector('[data-testid="model-auth-failed"]')).toBeNull();
+      expect(document.querySelector('[data-testid="model-unavailable"]')).toBeNull();
+    }
+    cleanup();
+    render(view([
+      ev('message', { id: 'a1', role: 'assistant', content: '处理中', runId: 'r1' }),
+      ev('agent_cancelled', { runId: 'r1' }),
+    ]));
+    expect(stream()).toEqual(['neo:处理中', `outcome:${text.stopped}`]);
   });
 
   it('失败行带原因；同一次执行先报错后收尾，失败说了算', () => {

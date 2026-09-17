@@ -23,20 +23,22 @@ const quiet: Input = {
   binding: true, status: 'connected', paused: false, connectionError: null, busy: false,
   commandError: null, commandErrorAction: null, voiceFailureShown: false, sessionId: 's1',
   libraryError: false, pending: false, pendingAction: null, pendingSlow: false,
+  library: { models: [{}] },
 };
-const acts = () => ({ flush: vi.fn(), reconnect: vi.fn(), scan: vi.fn(), openRemote: vi.fn(), retryCreate: vi.fn(), switchModel: vi.fn() });
+const acts = () => ({ flush: vi.fn(), reconnect: vi.fn(), scan: vi.fn(), openRemote: vi.fn(), retryCreate: vi.fn(), switchModel: vi.fn(), openModelSetup: vi.fn() });
 const items = (patch: Partial<Input> = {}, act = acts()) => composerStatusItems(text, { ...quiet, ...patch }, act);
-const voiceFailure: StatusItem = { rank: 3, message: text.microphoneDenied };
+const voiceFailure: StatusItem = { rank: 4, message: text.microphoneDenied };
 
-/** 每一档优先级各自的触发条件（语音那档在 Composer 里，用一条 rank 3 候选代替）。 */
+/** 每一档优先级各自的触发条件（语音那档在 Composer 里，用一条 rank 4 候选代替）。 */
 const triggers: Record<number, { patch: Partial<Input>; voice?: true; message: string }> = {
   1: { patch: { saveError: true }, message: text.saveError },
   2: { patch: { status: 'offline', connectionError: 'connectionUnavailable' }, message: text.cannotReachComputer },
-  3: { patch: {}, voice: true, message: text.microphoneDenied },
-  4: { patch: { commandError: 'MODEL_AUTH', commandErrorAction: 'message.send' }, message: text.modelAuthMissing },
-  5: { patch: { libraryError: true }, message: text.libraryError },
-  6: { patch: { pending: true, pendingAction: 'message.send', pendingSlow: true }, message: text.pendingCommand },
-  7: { patch: { pending: true, pendingAction: 'voice.transcribe' }, message: `${text.transcribing}…` },
+  3: { patch: { library: { models: [] } }, message: text.noUsableModel },
+  4: { patch: {}, voice: true, message: text.microphoneDenied },
+  5: { patch: { commandError: 'MODEL_AUTH', commandErrorAction: 'message.send' }, message: text.modelAuthMissing },
+  6: { patch: { libraryError: true }, message: text.libraryError },
+  7: { patch: { pending: true, pendingAction: 'message.send', pendingSlow: true }, message: text.pendingCommand },
+  8: { patch: { pending: true, pendingAction: 'voice.transcribe' }, message: `${text.transcribing}…` },
 };
 
 afterEach(cleanup);
@@ -49,8 +51,8 @@ function shown(patch: Partial<Input>, voice = false) {
 }
 
 describe('优先级：同时触发只露高的那条（逐对遍历）', () => {
-  // 6 与 7 互斥（同一个待确认槽只可能是转写或别的命令），不成对。
-  const pairs = [1, 2, 3, 4, 5, 6, 7].flatMap(high => [1, 2, 3, 4, 5, 6, 7].filter(low => low > high && !(high === 6 && low === 7)).map(low => [high, low] as const));
+  // 7 与 8 互斥（同一个待确认槽只可能是转写或别的命令），不成对。
+  const pairs = [1, 2, 3, 4, 5, 6, 7, 8].flatMap(high => [1, 2, 3, 4, 5, 6, 7, 8].filter(low => low > high && !(high === 7 && low === 8)).map(low => [high, low] as const));
   it.each(pairs)('%i 压住 %i', (high, low) => {
     const a = triggers[high]; const b = triggers[low];
     // 前提自证：低的那条单独触发时确实会出现，否则「没露出来」是恒真判据
@@ -116,6 +118,20 @@ describe('连接那一条：一句话 + 一个动作，点文字打开连接电�
   });
 });
 
+describe('电脑上没有能用的模型（N-MOBILE-NO-USABLE-MODEL）', () => {
+  it('连着、库读成功且 models 为空：状态位第 3 档全文 + 怎么配置', () => {
+    const act = acts();
+    const [item] = items({ library: { models: [] } }, act);
+    expect(item).toMatchObject({ rank: 3, message: '电脑上还没有能用的模型' });
+    expect(item.action?.label).toBe('怎么配置');
+    item.action!.run();
+    expect(act.openModelSetup).toHaveBeenCalledTimes(1);
+  });
+  it('读取失败（library null + libraryError）不说成没有模型', () => {
+    expect(items({ library: null, libraryError: true }).map(item => item.message)).toEqual([text.libraryError]);
+  });
+});
+
 describe('刚才的操作没成功：按码一句 + 一个动作', () => {
   it('会话没建成：带前缀，动作是重试（重做建会话的那个动作）', () => {
     const act = acts();
@@ -175,6 +191,7 @@ describe('commandNoticeCopy（预览面板也用它）', () => {
     expect(notice('scope_denied', 'message.send', false)).toBe(text.commandScopeDenied);
     expect(notice('COMPANION_SCOPE_DENIED', 'message.send', false)).toBe(text.commandScopeDenied);
     expect(notice('RUN_FAILED', 'message.send', false)).toBe(text.runFailed);
+    expect(notice('MODEL_UNAVAILABLE', 'message.send', false)).toBe(text.modelGoneLabel);
   });
   it('只有 session.create 的失败加「会话没建成」前缀', () => {
     expect(notice('COMPANION_PROJECT_UNAVAILABLE', 'session.create', false)).toBe(`${text.sessionCreateFailed}：${text.projectUnavailable}`);

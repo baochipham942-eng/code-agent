@@ -45,6 +45,8 @@ let engineSourcesCache: AgentEngineSourceDescriptor[] = [];
 import {
   buildProviderBillingSummary,
   buildProviderHealthSummary,
+  buildModelRowHealthSummary,
+  healthSnapshotForProviderSort,
   buildProviderMetaTitle,
   CAPABILITY_CONFIG,
   ENGINE_SHORT_LABEL,
@@ -272,7 +274,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     ).map((group) => ({
       ...group,
       billingSummary: buildProviderBillingSummary(group.providerBillingMode),
-      healthSummary: buildProviderHealthSummary(groupProviderHealth(group)),
+      healthSummary: buildProviderHealthSummary(healthSnapshotForProviderSort(groupProviderHealth(group))),
       options: group.options.map((option) => ({
         option,
         index: nextIndex++,
@@ -928,9 +930,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                         </div>
                         {group.options.map(({ option: opt, index }) => {
                           const selected = displayModel === opt.model && displayProvider === opt.provider;
-                          const rowHealthSummary = healthMap[opt.provider]
-                            ? buildProviderHealthSummary(healthMap[opt.provider])
-                            : null;
+                          const rowHealthSummary = buildModelRowHealthSummary(healthMap[opt.provider], opt.model);
                           return (
                             <button
                               key={`${opt.provider}/${opt.model}`}

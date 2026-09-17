@@ -48,7 +48,7 @@ export function resolveNeoTagModelIntent(
 
   if (modelIntent.mode === 'adaptive_auto') {
     const provider = modelIntent.provider || baseConfig.provider;
-    const model = modelIntent.model || baseConfig.model || getDefaultModelByProvider(provider);
+    const model = modelIntent.model || baseConfig.model || getDefaultModelByProvider(provider, configService?.getSettings());
     const config = withProviderCredentials(
       {
         ...baseConfig,

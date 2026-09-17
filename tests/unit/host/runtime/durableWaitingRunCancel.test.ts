@@ -273,7 +273,8 @@ describe('durable waiting-run cancellation after recovery', () => {
       ]);
       expect(results).toEqual([
         { status: 'fulfilled', value: { runId: 'run-concurrent-root', sessionId: 'session-concurrent' } },
-        { status: 'fulfilled', value: { runId: 'run-concurrent-root', sessionId: 'session-concurrent' } },
+        // 后到者标 joined：调用方据此不再补发第二条 agent_cancelled。
+        { status: 'fulfilled', value: { runId: 'run-concurrent-root', sessionId: 'session-concurrent', joined: true } },
       ]);
       expect(await fixture.repository.get('run-concurrent-root')).toMatchObject({ status: 'cancelled' });
       const events = await fixture.repository.read('run-concurrent-root', 0, 100);

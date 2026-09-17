@@ -667,13 +667,14 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   async terminalRecoveredWaitingRun(
     selector: { runId?: string; sessionId?: string },
     now = Date.now(),
-  ): Promise<{ runId: string; sessionId: string } | undefined> {
+  ): Promise<{ runId: string; sessionId: string; joined?: true } | undefined> {
     const recovered = this.findRecoveredWaitingRun(selector);
     if (!recovered) return undefined;
     // 桌面「放弃」与手机「停止」可能同时到：两边都在终态提交前查到了它。后到的一方
     // 并到同一次提交上，而不是再提交一次撞 cancelled -> cancelled 冲突抛错（桌面 500）。
+    // joined 标给后到者：终态事件只由真正提交的一方补发，手机不会收两条 agent_cancelled。
     const inFlight = this.recoveredWaitingCancels.get(recovered.runId);
-    if (inFlight) return inFlight;
+    if (inFlight) return inFlight.then((settled) => ({ ...settled, joined: true as const }));
     const cancel = this.terminalDurable(recovered.runId, {
       now,
       status: 'cancelled',

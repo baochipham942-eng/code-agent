@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -105,6 +105,32 @@ describe('AgentDurableRouteRunLifecycle durable start', () => {
       }));
       expect(runHandle.context.workspaceScope?.projectId).toBe('project-from-session');
       expect(runHandle.context.cwd).toBe(workspace);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('widens a sub-folder session to the Project root while keeping cwd on the session folder', async () => {
+    const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'durable-scope-nested-')));
+    const nested = path.join(workspace, 'pkg');
+    mkdirSync(nested);
+    try {
+      const scope = projectScope(workspace, 'project-nested');
+      const { registry } = fakeRegistry((input) => createRunHandle(createRunContext(input)));
+      const { runHandle } = await createAgentDurableRouteRunLifecycle({
+        runRegistry: registry,
+        sessionId: 'session-nested',
+        workspace: nested,
+        workspaceScope: resolveNativeRunWorkspaceScope({ sessionScope: scope, workspace: nested }),
+        durableActivation: true,
+        logger,
+      }).start();
+
+      // 与 orchestrator 路径一致：run 的 workspace（工具缓存 / 账本 / policy 根）取 Project 根，
+      // 相对路径与进程目录仍落在会话文件夹。
+      expect(runHandle.context.workspace).toBe(workspace);
+      expect(runHandle.context.cwd).toBe(nested);
+      expect(runHandle.context.workspaceScope?.projectId).toBe('project-nested');
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }

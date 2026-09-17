@@ -53,7 +53,7 @@ export function registerAgentCancelRoute(
       // 路由只会回 "No active agent"，run 永远到不了终态，同一会话也起不了新 run。
       const recovered = await runRegistry.terminalRecoveredWaitingRun({ runId, sessionId });
       if (recovered) {
-        onRecoveredWaitingCancelled?.(recovered);
+        if (!recovered.joined) onRecoveredWaitingCancelled?.({ runId: recovered.runId, sessionId: recovered.sessionId });
         res.json({ message: 'Cancelled', runId: recovered.runId, sessionId: recovered.sessionId });
         return;
       }

@@ -350,6 +350,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       }
       if (pending.action === 'session.create' && typeof record.result.sessionId === 'string') set({ sessionId: record.result.sessionId, runId: null, terminal: null });
       if (pending.action === 'session.delete' && get().sessionId === pending.sessionId) set({ sessionId: null, runId: null, terminal: null });
+      if (pending.action === 'run.cancel' && record.result.alreadyTerminal === true && get().runId === pending.payload.runId) {
+        // 宿主结算 alreadyTerminal（run 早已终态，含恢复成 waiting 后被宿主规范终态化的那种）：
+        // 事件流里未必还有一条 agent_cancelled 可等，就地清 runId 结束「正在处理」。
+        set({ runId: null, terminal: 'stopped' });
+      }
       if (pending.action.startsWith('session.')) await get().refreshLibrary();
       if (pending.action === 'message.send' && get().sessionId === pending.sessionId) {
         const runId = typeof record.result.runId === 'string' ? record.result.runId : null;

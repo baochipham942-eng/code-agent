@@ -1363,7 +1363,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     });
   });
 
-  registerAgentCancelRoute(router, runRegistry, deps.getDurableRunReadService);
+  registerAgentCancelRoute(router, runRegistry, deps.getDurableRunReadService, (recovered) => {
+    // 桌面经本次 HTTP 响应收尾；手机没有 ack 可吃，补发 agent_cancelled 让事件流
+    // 把「正在处理」清掉（payload 形状与正常终局 agent.ts 的发布保持一致）。
+    deps.publishCompanionEvent?.(recovered.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
+  });
 
   registerAgentLifecycleControlRoutes(router, runRegistry, deps.getDurableRunReadService?.());
 

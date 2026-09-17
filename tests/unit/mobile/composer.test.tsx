@@ -41,8 +41,8 @@ function mount(overrides: {
   return { transcribe, send, openModel, onVoiceState, discardPendingTranscript, unmount: view.unmount };
 }
 
-// 语音失败进输入区唯一状态位（N-MOBILE-STATUS-NOISE）：rank 3。
-const voiceNotice = () => document.querySelector('[data-testid="status-slot"][data-rank="3"]') as HTMLElement;
+// 语音失败进输入区唯一状态位（N-MOBILE-STATUS-NOISE）：rank 4（§13 没有能用的模型占了第 3 档）。
+const voiceNotice = () => document.querySelector('[data-testid="status-slot"][data-rank="4"]') as HTMLElement;
 const clickMic = () => fireEvent.click(screen.getByRole('button', { name: text.voice }));
 const toolbarButtons = () => [...document.querySelectorAll('.composer-tools button')]
   .map(button => button.getAttribute('aria-label') ?? button.className);

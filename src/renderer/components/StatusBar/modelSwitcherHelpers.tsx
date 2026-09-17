@@ -293,6 +293,14 @@ export interface ProviderHealthSnapshot {
   status?: string;
   latencyP50?: number;
   errorRate?: number;
+  /** 供显示口径用（与宿主 ProviderHealthMonitor.isProviderDown 同一判据）：成功一次后旧的
+   * unavailable 不再当坏。旧 Host 不带这两个字段——那时 unavailable 照实显示（429 熔断未成功
+   * 不能改写成健康）。 */
+  lastSuccessAt?: number;
+  lastErrorAt?: number;
+  /** 供应商级失败（密钥/网络/余额）才整家沉底；模型级停用不带这个。 */
+  providerMark?: { kind: 'auth' | 'network' | 'quota' };
+  modelMarks?: Record<string, { kind: 'model' | 'auth' | 'network' | 'quota' }>;
 }
 
 export type ProviderAvailabilityState = 'healthy' | 'recovering' | 'unknown' | 'degraded' | 'unavailable';
@@ -370,8 +378,25 @@ function normalizeProviderAvailabilityState(status?: string): ProviderAvailabili
   }
 }
 
+/**
+ * 显示口径：unavailable 但最近一次事件是成功（lastSuccessAt 不早于 lastErrorAt）→ 按「恢复中」的
+ * 中性样式显示，不再当坏。与宿主 ProviderHealthMonitor.isProviderDown（手机 companionModelOptions
+ * 的 providerDown）同一判据——成功一次即清，路由的恢复节奏（RECOVERY_SUCCESS_COUNT）只管选路，
+ * 不拖住显示（同毫秒并列算已清，与宿主一致）。旧 Host 不带时间戳时照实显示 unavailable
+ * （R6：429 连发且未再成功不许改写成健康）。
+ */
+function displayAvailabilityState(health: ProviderHealthSnapshot): ProviderAvailabilityState {
+  const state = normalizeProviderAvailabilityState(health.status);
+  if (state === 'unavailable'
+    && typeof health.lastSuccessAt === 'number' && typeof health.lastErrorAt === 'number'
+    && health.lastSuccessAt >= health.lastErrorAt) {
+    return 'recovering';
+  }
+  return state;
+}
+
 export function buildProviderHealthSummary(health?: ProviderHealthSnapshot | null): ProviderHealthSummary {
-  const state = normalizeProviderAvailabilityState(health?.status);
+  const state = health ? displayAvailabilityState(health) : 'unknown';
   const label = state === 'unknown' && health?.status ? '未知' : PROVIDER_HEALTH_LABEL[state];
   const latencyLine = typeof health?.latencyP50 === 'number' && Number.isFinite(health.latencyP50)
     ? `P50 ${Math.round(health.latencyP50)}ms`
@@ -399,6 +424,14 @@ export function compareProviderHealth(
   return buildProviderHealthSummary(left).rank - buildProviderHealthSummary(right).rank;
 }
 
+export function healthSnapshotForProviderSort(snapshot?: ProviderHealthSnapshot | null): ProviderHealthSnapshot | null | undefined {
+  if (!snapshot) return snapshot;
+  if (snapshot.providerMark) return { ...snapshot, status: 'unavailable' };
+  // 不改写 unavailable：429 连发/超时这类不打标记的供应商级熔断要照常沉底显示，
+  // 与路由的跳过行为一致。模型级失败不进 errorRate，不会误伤整家。
+  return snapshot;
+}
+
 export function sortProviderGroupsByModelStrategy<T extends RuntimeModelOptionGroup>(
   groups: readonly T[],
   healthMap: Record<string, ProviderHealthSnapshot | undefined>,
@@ -409,8 +442,35 @@ export function sortProviderGroupsByModelStrategy<T extends RuntimeModelOptionGr
 
     const leftProvider = left.options[0]?.provider ?? left.provider;
     const rightProvider = right.options[0]?.provider ?? right.provider;
-    return compareProviderHealth(healthMap[leftProvider], healthMap[rightProvider]);
+    return compareProviderHealth(healthSnapshotForProviderSort(healthMap[leftProvider]), healthSnapshotForProviderSort(healthMap[rightProvider]));
   });
+}
+
+const AVAILABILITY_KIND_LABEL: Record<'model' | 'auth' | 'network' | 'quota', string> = {
+  model: '这个模型用不了了',
+  auth: '密钥用不了',
+  network: '最近连不上',
+  quota: '余额或额度用完了',
+};
+
+export function buildModelRowHealthSummary(
+  snapshot: ProviderHealthSnapshot | undefined,
+  modelId: string,
+): ProviderHealthSummary | null {
+  const kind = snapshot?.providerMark?.kind ?? snapshot?.modelMarks?.[modelId]?.kind;
+  if (kind) {
+    return {
+      state: 'unavailable',
+      label: AVAILABILITY_KIND_LABEL[kind],
+      detail: AVAILABILITY_KIND_LABEL[kind],
+      rank: PROVIDER_HEALTH_RANK.unavailable,
+      dotClass: HEALTH_DOT_COLOR.unavailable,
+      badgeClass: PROVIDER_HEALTH_BADGE_CLASS.unavailable,
+    };
+  }
+  if (!snapshot) return null;
+  // 无标记的 unavailable 照实显示（429/超时熔断）：模型行不再改写成健康，界面与路由一致。
+  return buildProviderHealthSummary(snapshot);
 }
 
 export function buildProviderBillingSummary(mode?: BillingMode | null): ProviderBillingSummary {

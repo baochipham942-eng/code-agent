@@ -4,6 +4,19 @@ import type { messages } from '../../i18n';
 import { AppIcon } from '../../app/AppIcon';
 import { projectDisplayName, projectRowModels } from './projectRows';
 
+function modelRowStatus(model: CompanionLibrary['models'][number], text: ReturnType<typeof messages>): string {
+  if (model.recentlyFailed) {
+    if (model.failureKind === 'model') return text.modelGoneLabel;
+    if (model.failureKind === 'auth') return text.modelKeyBroken;
+    if (model.failureKind === 'network') return text.modelUnreachable;
+    if (model.failureKind === 'quota') return text.modelQuotaExhausted;
+    return text.modelRecentlyFailed;
+  }
+  // 「电脑默认」只标电脑真正的默认；默认用不了回落到这行时电脑端默认没变，写中性说法（O1）。
+  if (model.isDefault) return model.defaultFallback ? text.modelSwitchedForYou : text.modelComputerDefault;
+  return text.modelConfigured;
+}
+
 export function LibrarySheet({ library, sessionId, text, busy, mode, projectId, select, manage, loadMore, openProjectSessions }: {
   library: CompanionLibrary; sessionId: string | null; text: ReturnType<typeof messages>; busy: boolean;
   mode: 'projects' | 'projectSessions' | 'more' | 'model'; projectId: string | null;
@@ -17,7 +30,8 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, projectId, 
   const [newTitle, setNewTitle] = useState('');
   const [renameTitle, setRenameTitle] = useState(session?.title ?? '');
   const [deleting, setDeleting] = useState(false);
-  // 新建会话一步起的默认模型：电脑默认 > 列表第一项（列表顺序不代表电脑的选择，FB-141）。
+  // 新建会话一步起的默认模型：电脑标的 isDefault；旧版电脑端不标 isDefault（列表非空但一个都没有）
+  // 时回落列表第一项（旧行为），不静默建不了，也别让「电脑上还没有能用的模型」跟明明列着的模型打架。
   const defaultModel = library.models.find(m => m.isDefault) ?? library.models[0];
   // 新建会话「高级选项」里的模型下拉：会话已有的模型 > 电脑的默认模型 > 列表第一项（列表顺序不代表电脑的选择）。
   const [modelKey, setModel] = useState(() => {
@@ -60,6 +74,7 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, projectId, 
     </> : mode === 'projectSessions' ? (project ? <>
       {project.canCreate ? <>
         <button className="primary" data-testid="start-session" disabled={busy || !model} onClick={() => model && void manage('session.create', { title: newTitle.trim() || text.newSession, provider: model.provider, model: model.model }, `project:${project.id}`)}>{text.newSession}</button>
+        {!model && <p className="sheet-note" data-testid="no-usable-model-hint">{text.noUsableModelCreateHint}</p>}
         <details className="advanced">
           <summary>{text.advancedOptions}</summary>
           <label className="group-title" htmlFor="new-title">{text.sessionName}</label>
@@ -92,7 +107,7 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, projectId, 
             return <button key={JSON.stringify([m.provider, m.model])} className="settings-row model-row" data-testid={`model-${m.provider}:${m.model}`}
               aria-current={current || undefined} disabled={busy}
               onClick={() => { if (!current) void manage('session.model', { provider: m.provider, model: m.model }); }}>
-              <span className="flex"><p>{m.label}</p><span className="small">{m.providerLabel} · {m.recentlyFailed ? text.modelRecentlyFailed : text.modelConfigured}</span></span>
+              <span className="flex"><p>{m.label}</p><span className="small">{m.providerLabel} · {modelRowStatus(m, text)}</span></span>
               {current && <AppIcon name="check" />}
             </button>;
           })}

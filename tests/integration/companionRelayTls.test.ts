@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
 import { createServer, type Server } from 'node:https';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, writeFile } from 'node:fs/promises';
@@ -6,9 +8,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
+import { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
 import { startCompanionRelayIfConfigured } from '../../src/host/services/companion/CompanionRelayClient';
 import type { CompanionRelayClient } from '../../src/host/services/companion/CompanionRelayClient';
-import type { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
 import { createIdentity } from '../../src/shared/companion/noiseChannel';
 import { COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 import type { CompanionRelayLogger } from '../../src/host/services/companion/companionRelayConfig';
@@ -20,7 +22,9 @@ const LEAF_PEM = join(FIXTURE_DIR, 'leaf.pem');
 const LEAF_KEY = join(FIXTURE_DIR, 'leaf-key.pem');
 const CERT_ERROR = /UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT_LOCALLY|CERT_UNTRUSTED|unable to verify/i;
 
-const gateway = { pairedDevices: () => [] } as CompanionGateway;
+describe('companion relay: private CA trust on host dial-out', () => {
+  let db: Database.Database;
+  let gateway: CompanionGateway;
 
 function collectLogger(): { logger: CompanionRelayLogger; warn: string[]; info: string[]; all(): string[] } {
   const warn: string[] = [];
@@ -83,15 +87,22 @@ async function writeRelayConfig(url: string, caFile?: string): Promise<string> {
   return dir;
 }
 
-describe('companion relay: private CA trust on host dial-out', () => {
   let relay: TlsRelay | undefined;
   let client: CompanionRelayClient | null = null;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    gateway = new CompanionGateway(db, {
+      dispatch: () => ({ state: 'accepted', result: { runId: 'test-run' } }),
+    });
+  });
 
   afterEach(async () => {
     await client?.stop();
     client = null;
     await relay?.stop();
     relay = undefined;
+    db.close();
   });
 
   it('fails TLS without caFile and logs the cert error only once across retries', async () => {

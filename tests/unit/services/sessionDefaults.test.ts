@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelProviderSettings } from '../../../src/shared/contract/settings';
+import { getDefaultModelForProvider } from '../../../src/shared/constants';
 
 const settingsState = vi.hoisted(() => ({
   settings: {
@@ -79,6 +80,35 @@ describe('resolveSessionDefaultModelConfig', () => {
     expect(config.model).toBe('mimo-v2.5-pro');
 
     delete (settingsState.settings as Record<string, unknown>).model;
+  });
+
+  it('内置供应商未配 model 时回落登记默认，与 getDefaultModelForProvider 等值', () => {
+    const providers = settingsState.settings.models.providers as Record<string, ModelProviderSettings>;
+    try {
+      for (const provider of ['longcat', 'deepseek'] as const) {
+        settingsState.settings.models.default = provider;
+        settingsState.settings.models.defaultProvider = provider;
+        providers[provider] = {
+          enabled: true,
+          apiKeyConfigured: true,
+          ...(provider === 'longcat'
+            ? {
+                models: {
+                  'LongCat-2.0-Preview': { enabled: true },
+                  'LongCat-2.0': { enabled: true },
+                },
+              }
+            : {}),
+        };
+
+        const config = resolveSessionDefaultModelConfig();
+        expect(config.provider).toBe(provider);
+        expect(config.model).toBe(getDefaultModelForProvider(provider));
+      }
+    } finally {
+      delete providers.longcat;
+      delete providers.deepseek;
+    }
   });
 
   it('custom provider without model falls back to that provider\'s first listed model, not DEFAULT_MODELS.chat', () => {

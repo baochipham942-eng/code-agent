@@ -848,13 +848,19 @@ export function hasConfiguredDefaultRuntimeModel(settings?: AppSettings | null):
 }
 
 /**
- * 供应商未单独配 model 时的回落：该供应商运行时列表的第一项，而不是全局 DEFAULT_MODELS.chat。
- * custom-* 不在内置表里，旧链路会把「团队中转」落成它根本没有的 LongCat-2.0（N-COMPANION-DEFAULT-MODEL-FAILING）。
+ * 供应商默认模型回落（N-COMPANION-DEFAULT-MODEL-FAILING）：
+ * providers[p].model → 登记默认 getProviderInfo(p)?.defaultModel（内置与 main 一致）
+ * → 该供应商运行时列表第一项（只有没登记默认时才走到，即 custom-*）
+ * → DEFAULT_MODELS.chat。
  */
 export function fallbackModelForProvider(provider: string, settings?: { models?: unknown } | null): string {
+  const configured = (settings as AppSettings | null | undefined)?.models?.providers?.[provider as ModelProvider]?.model;
+  if (configured) return configured;
+  const registered = getProviderInfo(provider)?.defaultModel;
+  if (registered) return registered;
   const listed = buildRuntimeModelOptions(settings as AppSettings | null | undefined).find(option => option.provider === provider)?.model;
   if (listed) return listed;
-  return getProviderInfo(provider)?.defaultModel ?? DEFAULT_MODELS.chat;
+  return DEFAULT_MODELS.chat;
 }
 
 function compareProviderOptionSource(

@@ -26,7 +26,7 @@ interface Saved {
   relay?: CompanionRelayRoute;
 }
 type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionRefused' | 'connectionUnavailable' | 'connectionFailed'
-  | 'connectionRelayUnavailable' | 'connectionRelayRejected';
+  | 'connectionRelayUnavailable' | 'connectionRelayRejected' | 'connectionRelayNoHost';
 /** 双径（N-MOBILE-RELAY-PHONE）：LAN 直连优先；relay 是跨网回落路。UI 据此区分「经中继」。 */
 type CompanionTransport = 'lan' | 'relay';
 
@@ -467,6 +467,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if (deletedHostKey) options?.forgetSessionTitles?.(deletedHostKey, pending.sessionId);
         if (get().sessionId === pending.sessionId) set({ sessionId: null, runId: null, terminal: null });
       }
+      if (pending.action === 'run.cancel' && record.result.alreadyTerminal === true && get().runId === pending.payload.runId) {
+        // 宿主结算 alreadyTerminal（run 早已终态，含恢复成 waiting 后被宿主规范终态化的那种）：
+        // 事件流里未必还有一条 agent_cancelled 可等，就地清 runId 结束「正在处理」。
+        set({ runId: null, terminal: 'stopped' });
+      }
       if (pending.action.startsWith('session.')) await get().refreshLibrary();
       if (pending.action === 'message.send' && get().sessionId === pending.sessionId) {
         const runId = typeof record.result.runId === 'string' ? record.result.runId : null;
@@ -565,6 +570,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           : code === 'COMPANION_PAIRING_REJECTED' || handshakeNeedsRescan(code) ? 'connectionRejected'
           : code === 'COMPANION_CONNECTION_REFUSED' ? 'connectionRefused'
           : code === 'COMPANION_RELAY_AUTH_REJECTED' ? 'connectionRelayRejected'
+          : code === 'COMPANION_RELAY_NO_HOST' ? 'connectionRelayNoHost'
           : code === 'COMPANION_RELAY_UNAVAILABLE' || code === 'COMPANION_RELAY_CONNECT_TIMEOUT' ? 'connectionRelayUnavailable'
           : code === 'COMPANION_NETWORK_UNAVAILABLE' || code === 'COMPANION_NO_RESPONSE' ? 'connectionUnavailable' : 'connectionFailed';
         if (get().status !== 'storageError') set({ status: 'offline', connectionError, transport: null });

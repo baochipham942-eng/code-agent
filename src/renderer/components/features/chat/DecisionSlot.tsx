@@ -11,7 +11,10 @@ import { isEditableTool } from '@shared/contract';
 import { AlertTriangle } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
+import { useRunControlStore } from '../../../stores/runControlStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useTaskStore } from '../../../stores/taskStore';
+import { useToast } from '../../../stores/uiStore';
 import { buildStreamRecoveryMessage } from '../../../utils/streamRecoveryMessage';
 import { humanizeInterruptedToolAction } from '../../../utils/streamInterruptionPresentation';
 import { Button } from '../../primitives';
@@ -88,7 +91,9 @@ const StreamInterruptionDecisionRow: React.FC<{
   onResolved: (turnId: string) => void;
 }> = ({ decision, sessionId, onResolved }) => {
   const { t } = useI18n();
+  const toast = useToast();
   const [isContinuing, setIsContinuing] = useState(false);
+  const [isAbandoning, setIsAbandoning] = useState(false);
   const summary = interruptionSummary(decision.snapshot, decision.retryMessage, t);
   const resolve = useCallback((result: 'continued' | 'abandoned') => {
     writeInterruptionDecision(sessionId, decision.snapshot.turnId, result);
@@ -104,6 +109,28 @@ const StreamInterruptionDecisionRow: React.FC<{
       setIsContinuing(false);
     }
   }, [decision, isContinuing, resolve]);
+  const handleAbandon = useCallback(async () => {
+    if (isContinuing || isAbandoning) return;
+    setIsAbandoning(true);
+    try {
+      // 放弃必须走真实取消：恢复后停在 waiting 的 durable run 没有 SSE 流可等，
+      // 只有宿主的取消链路（agent:cancel → /api/cancel）能把它终态化、放开同会话新 run。
+      // 只写本地水位不清宿主，重启后这个会话就再也起不了新 run。
+      const interrupt = useRunControlStore.getState().actions?.interrupt;
+      if (!interrupt) throw new Error('RUN_CONTROL_UNAVAILABLE');
+      await interrupt();
+      // useAgent.cancel 吞异常也不回传成败；成功（HTTP 确认或 SSE agent_cancelled）
+      // 都会把任务状态落到 'cancelled'，停在 'cancelling'/'idle' 即失败——给可见反馈。
+      if (sessionId && useTaskStore.getState().getSessionState(sessionId).status !== 'cancelled') {
+        throw new Error('CANCEL_NOT_SETTLED');
+      }
+      resolve('abandoned');
+    } catch {
+      toast.error(t.chat.abandonInterruptedFailed);
+    } finally {
+      setIsAbandoning(false);
+    }
+  }, [isAbandoning, isContinuing, resolve, sessionId, t, toast]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -141,8 +168,9 @@ const StreamInterruptionDecisionRow: React.FC<{
         size="sm"
         variant="ghost"
         className="h-7 shrink-0 rounded-md py-1"
+        loading={isAbandoning}
         disabled={isContinuing}
-        onClick={() => resolve('abandoned')}
+        onClick={() => void handleAbandon()}
       >
         {t.chat.abandonInterrupted}
       </Button>

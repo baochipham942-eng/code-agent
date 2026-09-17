@@ -25,6 +25,12 @@ import type { PermissionAskResult } from '../../../src/shared/contract/permissio
 import type { ToolContext as ProtocolToolContext, ToolSchema } from '../../../src/host/protocol/tools';
 import type { SwarmRunScope } from '../../../src/shared/contract/swarm';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
+import { createRunHandle } from '../../../src/host/runtime/runContext';
+import { RunRegistry } from '../../../src/host/runtime/runRegistry';
+import {
+  createAgentDurableRouteRunLifecycle,
+  resolveNativeRunWorkspaceScope,
+} from '../../../src/web/routes/agentDurableRouteLifecycle';
 
 const preApprovedRunTools = new Set(['Bash', 'Write']);
 
@@ -305,6 +311,91 @@ describe('ToolExecutor per-run workspace isolation', () => {
       }),
     });
     await expect(fs.access(path.join(docs, 'blocked.md'))).rejects.toThrow();
+  });
+
+  // N-DURABLE-FOLLOWUPS-0917：web 路由的 native run（durable 与非 durable）按会话 Project scope 定写边界。
+  // 同一份输入分别走两支，越界写（写进只读 Source）都必须被拒；不带 scope 的 legacy 回落是改前行为，对照用。
+  describe.each([
+    { branch: 'durable', durableActivation: true },
+    { branch: 'non-durable', durableActivation: false },
+  ])('web native route run ($branch) write boundary', ({ durableActivation }) => {
+    async function startRouteRun(input: { runId: string; workspace: string; withSessionScope: boolean }) {
+      const primary = path.join(tempRoot, `${input.runId}-primary`);
+      const docs = path.join(tempRoot, `${input.runId}-docs`);
+      await Promise.all([fs.mkdir(primary), fs.mkdir(docs)]);
+      const sessionScope = createWorkspaceScope(`proj-${input.runId}`, [
+        { sourceId: 'primary', path: primary, role: 'primary', access: 'read_write' },
+        { sourceId: 'docs', path: docs, role: 'additional', access: 'read_only' },
+      ]);
+      const registry = new RunRegistry();
+      // durable kernel 不是这里要验的对象：startDurable 与 start 用同一份 createRunContext 语义。
+      vi.spyOn(registry, 'startDurable').mockImplementation(async (runInput) => {
+        const handle = createRunHandle(createRunContext({ ...runInput, runId: input.runId }));
+        registry.register(handle);
+        return handle;
+      });
+      const workspace = input.workspace === 'primary' ? primary : input.workspace;
+      const scope = input.withSessionScope
+        ? resolveNativeRunWorkspaceScope({ sessionScope, workspace })
+        : undefined;
+      const { runHandle } = await createAgentDurableRouteRunLifecycle({
+        runRegistry: registry,
+        sessionId: `session-${input.runId}`,
+        workspace,
+        ...(scope ? { workspaceScope: scope } : {}),
+        durableActivation,
+        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      }).start();
+      return { run: runHandle.context, primary, docs, sessionScope };
+    }
+
+    it('rejects a write into a read-only Project Source of the session', async () => {
+      const { run, primary, docs, sessionScope } = await startRouteRun({
+        runId: `run-route-ro-${durableActivation}`,
+        workspace: 'primary',
+        withSessionScope: true,
+      });
+      expect(run.workspaceScope?.projectId).toBe(sessionScope.projectId);
+      expect(run.cwd).toBe(resolveCanonicalRunPath(primary));
+
+      const write = await baseExecutor.forRun(run).execute(
+        'Write',
+        { file_path: path.join(docs, 'blocked.md'), content: 'blocked\n' },
+        executionOptions(run),
+      );
+      expect(write).toMatchObject({
+        success: false,
+        metadata: expect.objectContaining({ code: 'PROJECT_SOURCE_READ_ONLY', sourceId: 'docs' }),
+      });
+      await expect(fs.access(path.join(docs, 'blocked.md'))).rejects.toThrow();
+    });
+
+    it('legacy fallback (before) roots the boundary at cwd and does not guard the read-only Source', async () => {
+      const { run, docs } = await startRouteRun({
+        runId: `run-route-legacy-${durableActivation}`,
+        workspace: 'primary',
+        withSessionScope: false,
+      });
+      expect(run.workspaceScope?.projectId).toBe('legacy-background-authority');
+      const write = await baseExecutor.forRun(run).execute(
+        'Write',
+        { file_path: path.join(docs, 'leaked.md'), content: 'leaked\n' },
+        executionOptions(run),
+      );
+      expect(write).toMatchObject({ success: true });
+    });
+
+    it('keeps the legacy fallback when the session cwd left the Project boundary', async () => {
+      const elsewhere = path.join(tempRoot, `elsewhere-${durableActivation}`);
+      await fs.mkdir(elsewhere);
+      const { run } = await startRouteRun({
+        runId: `run-route-outside-${durableActivation}`,
+        workspace: elsewhere,
+        withSessionScope: true,
+      });
+      expect(run.workspaceScope?.projectId).toBe('legacy-background-authority');
+      expect(run.workspaceScope?.primaryRoot).toBe(resolveCanonicalRunPath(elsewhere));
+    });
   });
 
   it('uses cwd for relative targets while retaining workspace as the boundary', async () => {

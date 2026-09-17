@@ -156,6 +156,26 @@ describe('RelayCompanionClient：动作面与帧纪律', () => {
     expect(socket.closed).toBe(true);
   });
 
+  it('relay 回 no-host 帧 ⇒ 在飞握手立刻以 COMPANION_RELAY_NO_HOST 结算并关连接，不等握手超时', async () => {
+    const socket = new ScriptedSocket();
+    const { client } = clientWith(() => socket.socket);
+    const connected = client.connect();
+    socket.fireOpen();
+    await connected;
+    const pending = client.resume({ hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['shared'] });
+    socket.deliver(JSON.stringify({
+      v: 1, kind: 'no-host',
+      envelope: { routeToken: 'route-token-aaaaaa', deviceRef: 'relay', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    await expect(pending).rejects.toThrow('COMPANION_RELAY_NO_HOST');
+    expect(socket.closed).toBe(true);
+    // relay 随后关 socket：失败原因不许被改写成「凭据被拒」。
+    socket.fireClose();
+    await expect(client.resume({ hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['shared'] }))
+      .rejects.toThrow('COMPANION_RELAY_NO_HOST');
+  });
+
   it('过期帧直接丢弃（信封 TTL 纪律与 Host/relay 同源）', async () => {
     const socket = new ScriptedSocket();
     const { client } = clientWith(() => socket.socket);

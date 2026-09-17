@@ -40,6 +40,8 @@ const zh = {
   // relay 档（N-MOBILE-RELAY-PHONE）：LAN 与跨网中继都没走通时的两句人话。键名与 ConnectionError 一一对应。
   connectionRelayUnavailable: '连不上电脑。先确认电脑开着、Neo 在运行；还是不行就在电脑上重新生成二维码扫一次。',
   connectionRelayRejected: '和电脑的连接已经失效。点「重新连接」再试一次；还是不行就在电脑上重新生成二维码扫一次。',
+  // 跨网找不到在线的电脑（N-COMPANION-RELAY-NOHOST-FASTFAIL）：Neo 没开，或手机存的连接信息过期——回到同一个网络重连会顺手刷新它。
+  connectionRelayNoHost: '电脑现在不在线。确认电脑上的 Neo 开着，再让手机和电脑连同一个网络，点「重新连接」刷新一次；还是不行就在电脑上重新生成二维码扫一次。',
   connectedNext: '输入任务，Neo 会执行，并把结果同步到这里。', enterConversation: '进入会话',
   cannotReachComputer: '连不上电脑', goRemote: '去连接电脑',
   libraryLoading: '正在连接电脑…',
@@ -179,6 +181,7 @@ const en: Record<keyof typeof zh, string> = {
   connectedNext: 'Enter a task. Neo will run it and sync the result here.', enterConversation: 'Open conversation',
   connectionRelayUnavailable: 'Cannot reach your computer. Check that it is awake and Neo is running; if that does not help, generate a new code on your computer and scan it.',
   connectionRelayRejected: 'The connection to your computer has expired. Tap Reconnect to try again; if that does not help, generate a new code on your computer and scan it.',
+  connectionRelayNoHost: 'Your computer is not online. Make sure Neo is running, put your phone on the same network as your computer and tap Reconnect to refresh; if that does not help, generate a new code on your computer and scan it.',
   connectionViaRelay: 'Connected through the relay: tasks, approvals and sync work; live dictation and notifications are unavailable.',
   cannotReachComputer: 'Cannot reach your computer', goRemote: 'Connect a computer',
   libraryLoading: 'Connecting to your computer…',

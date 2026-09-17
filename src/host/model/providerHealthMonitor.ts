@@ -13,11 +13,10 @@ import {
 const logger = createLogger('ProviderHealthMonitor');
 
 export type HealthStatus = 'healthy' | 'degraded' | 'unavailable' | 'recovering';
-export type { AvailabilityKind, AvailabilityScope };
 
 export const AVAILABILITY_MARK_TTL_MS = 30 * 60_000;
 
-export interface AvailabilityMark {
+interface AvailabilityMark {
   scope: AvailabilityScope;
   kind: AvailabilityKind;
   at: number;

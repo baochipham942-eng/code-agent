@@ -24,7 +24,7 @@ const logger = createLogger('CompanionLibrary');
  * 电脑一处算默认：电脑默认（在列表且未失败）＞同供应商第一个未失败＞列表第一个未失败＞全失败取第一个。
  * 手机只读 isDefault，不再自己拿 models[0]（FB-141 / N-COMPANION-DEFAULT-MODEL-FAILING）。
  */
-export function pickCompanionDefaultModel<T extends { provider: string; model: string; recentlyFailed?: true }>(
+function pickCompanionDefaultModel<T extends { provider: string; model: string; recentlyFailed?: true }>(
   models: readonly T[],
   hostDefault: { provider: string; model: string },
 ): T | undefined {

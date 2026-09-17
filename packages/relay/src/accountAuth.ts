@@ -138,7 +138,8 @@ export class SupabaseJwtVerifier {
     const nowS = this.now() / 1000;
     const aud = payload.aud;
     const audOk = aud === 'authenticated' || (Array.isArray(aud) && aud.includes('authenticated'));
-    if (payload.iss !== this.issuer || !audOk || payload.role !== 'authenticated') return null;
+    // Supabase 匿名登录签出的令牌 role 同为 authenticated，只多一个 is_anonymous：不算账号。
+    if (payload.iss !== this.issuer || !audOk || payload.role !== 'authenticated' || payload.is_anonymous === true) return null;
     if (typeof payload.exp !== 'number' || payload.exp + CLOCK_SKEW_S <= nowS) return null;
     if (payload.nbf !== undefined && (typeof payload.nbf !== 'number' || payload.nbf - CLOCK_SKEW_S > nowS)) return null;
     if (typeof payload.sub !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(payload.sub)) return null;

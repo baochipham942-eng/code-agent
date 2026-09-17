@@ -224,6 +224,36 @@ describe('companion relay account binding (slice 1)', () => {
     await roundTrip(token('local'), SECRET);
   });
 
+  it('keeps account routes in their own capacity so many accounts cannot crowd out the shared-credential channel', async () => {
+    await vi.waitFor(() => expect(relay.currentStats.routes).toBe(2));
+    const perAccount = L.relayMaxRoutesPerAccount;
+    const accounts = Math.ceil(L.relayMaxAccountRoutes / perAccount) + 1;
+    for (let a = 0; a < accounts; a += 1) {
+      const squatter = new WebSocket(url, { headers: { authorization: `Bearer ${accessToken(`stranger-${a}`)}` } });
+      sockets.push(squatter);
+      await new Promise<void>(resolve => squatter.once('open', () => resolve()));
+      for (let i = 0; i < perAccount; i += 1) {
+        squatter.send(JSON.stringify({
+          v: 1, kind: 'register', role: 'host',
+          envelope: { routeToken: `squat-${a}-route-token-${String(i).padStart(4, '0')}`, deviceRef: 'probe', seq: i, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+          ciphertext: '',
+        }));
+      }
+    }
+    // 账号路由合计封顶（user-1 自己那条也算在内）
+    await vi.waitFor(() => expect(relay.currentStats.routes).toBe(1 + L.relayMaxAccountRoutes));
+    // 共享凭据通道仍能新建路由：Host 重启后重新登记、老手机照常连
+    await legacyHost.stop();
+    legacyHost = new CompanionRelayClient({
+      gateway, identity: hostIdentity, jitter: () => 0.5, credential: SECRET,
+      config: { url, credentialRef: 'companion-relay', reconnectBackoffMs: [30, 60, 120] },
+    });
+    await legacyHost.start();
+    await legacyHost.whenConnected();
+    await roundTrip(token('local'), SECRET);
+    expect(relay.currentStats.droppedNoRoute).toBe(0);
+  });
+
   it('follows sign-in state: switching user re-registers under the new namespace, signing out drops the channel', async () => {
     await vi.waitFor(() => expect(relay.currentStats.accountConnections).toBe(1));
     auth.switchTo('user-2');

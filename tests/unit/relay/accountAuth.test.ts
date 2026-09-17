@@ -68,6 +68,8 @@ describe('SupabaseJwtVerifier', () => {
     expect(verifier.verify(jwt(key, { nbf: Math.floor(NOW / 1000) + 120 }))).toBeNull();
     expect(verifier.verify(jwt(key, { nbf: Math.floor(NOW / 1000) + 30 }))).toBe('user-0001');
     expect(verifier.verify(jwt(key, { role: 'anon' }))).toBeNull();
+    expect(verifier.verify(jwt(key, { is_anonymous: true }))).toBeNull();
+    expect(verifier.verify(jwt(key, { is_anonymous: false }))).toBe('user-0001');
     expect(verifier.verify(jwt(key, { role: 'service_role' }))).toBeNull();
     expect(verifier.verify(jwt(key, { sub: '' }))).toBeNull();
     expect(verifier.verify(jwt(key, {}, { alg: 'HS256' }))).toBeNull();

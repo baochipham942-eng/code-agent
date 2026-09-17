@@ -247,7 +247,11 @@ export class CompanionRelayClient {
   private async dial(): Promise<void> {
     if (this.stopped) return;
     const provided = this.deps.credential;
-    const credential = typeof provided === 'string' ? provided : await provided().catch(() => null);
+    // 取令牌会走 supabase-js 刷新，网络挂住时不能把拨号（以及关停时等它的 stop）一起挂死。
+    const credential = typeof provided === 'string' ? provided : await Promise.race([
+      provided().catch(() => null),
+      new Promise<null>(resolve => { setTimeout(() => resolve(null), L.relayConnectTimeoutMs).unref(); }),
+    ]);
     if (this.stopped) return;
     if (!credential) {
       this.failDial('COMPANION_RELAY_ACCOUNT_TOKEN_UNAVAILABLE');
@@ -333,10 +337,10 @@ export class CompanionRelayClient {
           finish(new Error(errorCode));
           return;
         }
-        if (wasLive && !stable && errorCode === 'COMPANION_RELAY_CONNECT_FAILED') {
-          // open 后没撑过稳定期、且不带关闭码就被关：relay 验凭据不通过就是这个形状（账号令牌被拒、
-          // relay 没开账号鉴权）。按拨号失败走递增退避 + 同因去重，不按「掉线」秒级重连刷屏。
-          // 带关闭码的主动断开（relay 重启 1001、测试里的 1000）仍按掉线记。
+        if (wasLive && !stable && code === 1005 && !lastError) {
+          // open 后没撑过稳定期、收到不带关闭码的关闭帧（1005）：relay 验凭据不通过就是这个形状（账号令牌
+          // 被拒、relay 没开账号鉴权）。按拨号失败走递增退避 + 同因去重，不按「掉线」秒级重连刷屏。
+          // 网络断（1006）与带关闭码的主动断开（relay 重启 1001、测试里的 1000）仍按掉线记。
           this.failDial('COMPANION_RELAY_CLOSED_AFTER_OPEN');
           return;
         }

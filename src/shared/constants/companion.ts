@@ -134,6 +134,8 @@ export const COMPANION_LIMITS = {
   relayMaxRoutes: 256,
   /** 单个 Neo 账号在 relay 上最多占的路由数（每台已配对手机 1 条，多台电脑累加）；共享凭据不受此限。 */
   relayMaxRoutesPerAccount: 32,
+  /** 所有账号路由合计上限，与共享凭据的 relayMaxRoutes 分开算，账号用户挤不掉旧通道。 */
+  relayMaxAccountRoutes: 256,
   /** relay 服务端：过期 route / 空闲连接清扫周期。 */
   relaySweepMs: 15_000,
 } as const;

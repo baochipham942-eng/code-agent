@@ -279,9 +279,16 @@ export class CompanionRelayServer {
     }
     const token = frame.envelope.routeToken;
     if (frame.kind === 'register') {
-      if (!this.routes.has(token) && this.routes.size >= L.relayMaxRoutes) {
-        this.stats.droppedNoRoute += 1;
-        this.options.logger?.warn('route_capacity_reached', { routes: this.routes.size });
+      const principal = this.principals.get(socket) ?? LEGACY_PRINCIPAL;
+      const known = this.routes.get(token);
+      if (!known && this.capacityReached(principal)) {
+        if (principal === LEGACY_PRINCIPAL) {
+          this.stats.droppedNoRoute += 1;
+          this.options.logger?.warn('route_capacity_reached', { routes: this.routes.size });
+        } else {
+          this.stats.rejectedOwner += 1;
+          this.options.logger?.warn('account_route_quota_reached', { role: frame.role });
+        }
         return;
       }
       const existing = this.bindings.get(socket);
@@ -290,16 +297,6 @@ export class CompanionRelayServer {
         // host mid-connection would hand it the revoke path.
         this.stats.droppedNoRoute += 1;
         this.options.logger?.warn('register_role_mismatch', { role: frame.role, token: tokenPrefix(token) });
-        return;
-      }
-      const principal = this.principals.get(socket) ?? LEGACY_PRINCIPAL;
-      const known = this.routes.get(token);
-      // 账号令牌谁注册都能拿到，全局路由上限不能让一个账号占满（ai-review PR#1926）：新建路由按主人限额。
-      // ponytail: 每次新建线性数一遍（上限 relayMaxRoutes 条），量级上去再换按主人计数的表。
-      if (!known && principal !== LEGACY_PRINCIPAL
-        && [...this.routes.values()].filter(route => route.owner === principal).length >= L.relayMaxRoutesPerAccount) {
-        this.stats.rejectedOwner += 1;
-        this.options.logger?.warn('account_route_quota_reached', { role: frame.role });
         return;
       }
       if (known && known.owner !== principal) {
@@ -398,6 +395,18 @@ export class CompanionRelayServer {
       this.options.logger?.info('no_host_notified', { token: tokenPrefix(token) });
     }, this.options.noHostGraceMs ?? L.relayNoHostGraceMs);
     timer.unref();
+  }
+
+  /**
+   * 新建路由的容量：共享凭据与账号各算各的，账号再按主人限额。账号令牌谁注册都能拿到，
+   * 既不能让一个账号占满、也不能让一群账号挤掉共享凭据通道（ai-review PR#1926 第 2、3 轮）。
+   * ponytail: 新建路由时线性数一遍（总量 ≤ relayMaxRoutes + relayMaxAccountRoutes），量级上去再换计数表。
+   */
+  private capacityReached(principal: Principal): boolean {
+    const owners = [...this.routes.values()].map(route => route.owner);
+    if (principal === LEGACY_PRINCIPAL) return owners.filter(owner => owner === LEGACY_PRINCIPAL).length >= L.relayMaxRoutes;
+    return owners.filter(owner => owner !== LEGACY_PRINCIPAL).length >= L.relayMaxAccountRoutes
+      || owners.filter(owner => owner === principal).length >= L.relayMaxRoutesPerAccount;
   }
 
   private flushWaiting(token: string, route: Route): void {

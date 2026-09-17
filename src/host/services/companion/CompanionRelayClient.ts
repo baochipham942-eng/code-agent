@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import { randomBytes } from 'node:crypto';
+import { rootCertificates } from 'node:tls';
 import type { KeyPair } from 'noise-handshake';
 import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
 import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseChannel';
@@ -14,7 +15,13 @@ import {
 } from '../../../shared/contract/companionRelay';
 import type { CompanionGateway } from './CompanionGateway';
 import { RelayOutboundBuffer, RelaySeqBuffer } from './companionRelayBuffer';
-import { loadCompanionRelayConfig, loadCompanionRelayCredential } from './companionRelayConfig';
+import {
+  errorHead,
+  loadCompanionRelayConfig,
+  loadCompanionRelayCredential,
+  type CompanionRelayKeytarLoader,
+  type CompanionRelayLogger,
+} from './companionRelayConfig';
 
 /** Host 侧路由表条目（deviceRef → routeToken）；与下发给手机的 CompanionRelayRoute 契约区分名。 */
 interface RelayRouteEntry {
@@ -47,10 +54,12 @@ export class CompanionRelayClient {
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   private attempt = 0;
   private live = false;
+  private lastDialErrorCode: string | null = null;
   private openWaiters: Array<() => void> = [];
   private readonly now: () => number;
   private readonly jitter: () => number;
   private readonly WebSocketImpl: typeof WebSocket;
+  private readonly logger?: CompanionRelayLogger;
 
   constructor(private readonly deps: {
     gateway: CompanionGateway;
@@ -60,10 +69,12 @@ export class CompanionRelayClient {
     now?: () => number;
     jitter?: () => number;
     WebSocket?: typeof WebSocket;
+    logger?: CompanionRelayLogger;
   }) {
     this.now = deps.now ?? Date.now;
     this.jitter = deps.jitter ?? Math.random;
     this.WebSocketImpl = deps.WebSocket ?? WebSocket;
+    this.logger = deps.logger;
   }
 
   advertise(route: RelayRouteEntry): void {
@@ -189,18 +200,75 @@ export class CompanionRelayClient {
     this.buffer.enqueue(frame);
   }
 
+  private logInfo(message: string): void {
+    if (this.logger?.info) this.logger.info(message);
+    else this.logger?.warn(message);
+  }
+
+  private peekReconnectDelay(): number {
+    const steps = this.deps.config.reconnectBackoffMs;
+    return (steps[Math.min(this.attempt, steps.length - 1)] ?? L.relayReconnectBackoffMs[0]) * (0.5 + this.jitter());
+  }
+
+  private logDialFailure(code: string, delayMs: number): void {
+    if (this.lastDialErrorCode === code) return;
+    this.lastDialErrorCode = code;
+    this.logger?.warn(`Companion relay dial failed: ${code}; reconnect in ${Math.round(delayMs)}ms`);
+  }
+
+  private failDial(code: string): void {
+    const delay = this.peekReconnectDelay();
+    this.logDialFailure(code, delay);
+    this.scheduleReconnect(delay);
+  }
+
+  private dialErrorCode(lastError: unknown, closeCode: number, httpStatus?: number): string {
+    if (httpStatus) return `HTTP ${httpStatus}`;
+    if (lastError && typeof lastError === 'object') {
+      const code = 'code' in lastError && typeof lastError.code === 'string' && lastError.code
+        ? lastError.code
+        : lastError instanceof Error ? errorHead(lastError) : '';
+      if (code) return code;
+    }
+    if (closeCode && closeCode !== 1005 && closeCode !== 1006) return `close ${closeCode}`;
+    return 'COMPANION_RELAY_CONNECT_FAILED';
+  }
+
   private async dial(): Promise<void> {
     if (this.stopped) return;
     await new Promise<void>((resolve, reject) => {
-      const socket = new this.WebSocketImpl(this.deps.config.url, {
+      let settled = false;
+      let lastError: unknown;
+      let httpStatus: number | undefined;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        if (error) reject(error);
+        else resolve();
+      };
+      const options: WebSocket.ClientOptions = {
         headers: { authorization: `Bearer ${this.deps.credential}` },
+      };
+      // 追加信任，不替换系统根：没配 caFile 时与现在完全一致。
+      if (this.deps.config.caPem) options.ca = [...rootCertificates, this.deps.config.caPem];
+      const socket = new this.WebSocketImpl(this.deps.config.url, options);
+      const timer = setTimeout(() => {
+        lastError = new Error('COMPANION_RELAY_CONNECT_TIMEOUT');
+        socket.terminate();
+        this.failDial('COMPANION_RELAY_CONNECT_TIMEOUT');
+        finish(new Error('COMPANION_RELAY_CONNECT_TIMEOUT'));
+      }, L.relayConnectTimeoutMs);
+      socket.once('unexpected-response', (request, response) => {
+        httpStatus = response.statusCode;
+        request.destroy();
       });
-      const timer = setTimeout(() => { socket.terminate(); reject(new Error('COMPANION_RELAY_CONNECT_TIMEOUT')); }, L.relayConnectTimeoutMs);
+      socket.once('error', error => { lastError = error; });
       socket.once('open', () => {
         clearTimeout(timer);
         this.socket = socket;
         this.live = true;
         this.attempt = 0;
+        this.lastDialErrorCode = null;
         this.controlSeq = 0;
         this.peerSeq.clear();
         this.dropSessions();
@@ -214,25 +282,31 @@ export class CompanionRelayClient {
           this.heartbeat.unref();
         }
         for (const waiter of this.openWaiters.splice(0)) waiter();
-        resolve();
+        this.logInfo(`Companion relay connected: ${this.deps.config.url}`);
+        finish();
       });
       socket.on('message', data => {
         try { this.onMessage(String(data)); } catch { /* per-frame forget handles poison */ }
       });
-      socket.once('close', () => {
+      socket.once('close', code => {
         clearTimeout(timer);
+        const wasLive = this.live && this.socket === socket;
         if (this.socket === socket) { this.socket = null; this.live = false; }
         this.dropSessions();
-        this.scheduleReconnect();
+        const errorCode = this.dialErrorCode(lastError, code, httpStatus);
+        if (!settled) {
+          this.failDial(errorCode);
+          finish(new Error(errorCode));
+          return;
+        }
+        if (wasLive) this.failDial(errorCode);
       });
-      socket.once('error', () => { /* close follows */ });
     });
   }
 
-  private scheduleReconnect(): void {
+  private scheduleReconnect(delayMs?: number): void {
     if (this.stopped || !this.allowReconnect || this.reconnectTimer) return;
-    const steps = this.deps.config.reconnectBackoffMs;
-    const delay = (steps[Math.min(this.attempt, steps.length - 1)] ?? L.relayReconnectBackoffMs[0]) * (0.5 + this.jitter());
+    const delay = delayMs ?? this.peekReconnectDelay();
     this.attempt += 1;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -335,23 +409,34 @@ export async function startCompanionRelayIfConfigured(opts: {
   dataDirectory: string;
   gateway: CompanionGateway;
   loadIdentity: () => Promise<KeyPair>;
-  logger?: { warn: (message: string) => void };
+  logger?: CompanionRelayLogger;
   credential?: string;
   now?: () => number;
+  jitter?: () => number;
+  loadKeytar?: CompanionRelayKeytarLoader;
 }): Promise<CompanionRelayClient | null> {
-  const config = loadCompanionRelayConfig(opts.dataDirectory);
+  const config = loadCompanionRelayConfig(opts.dataDirectory, opts.logger);
   if (!config) return null;
-  const credential = opts.credential ?? await loadCompanionRelayCredential(config.credentialRef);
-  if (!credential) {
-    opts.logger?.warn('Companion relay credential missing; dial-out skipped');
+  const credential = opts.credential ?? await loadCompanionRelayCredential(config.credentialRef, {
+    logger: opts.logger,
+    loadKeytar: opts.loadKeytar,
+  });
+  if (!credential) return null;
+  let identity: KeyPair;
+  try {
+    identity = await opts.loadIdentity();
+  } catch (error) {
+    opts.logger?.warn(`Companion relay identity load failed: ${errorHead(error)}`);
     return null;
   }
   const client = new CompanionRelayClient({
     gateway: opts.gateway,
-    identity: await opts.loadIdentity(),
+    identity,
     config,
     credential,
     now: opts.now,
+    jitter: opts.jitter,
+    logger: opts.logger,
   });
   await client.start();
   return client;

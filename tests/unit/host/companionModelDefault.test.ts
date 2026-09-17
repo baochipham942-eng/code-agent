@@ -34,8 +34,22 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => settings }),
 }));
 
-import { CompanionLibraryService } from '../../../src/host/services/companion/CompanionLibraryService';
-import { getProviderHealthMonitor, resetProviderHealthMonitorForTests } from '../../../src/host/model/providerHealthMonitor';
+type MonitorModule = typeof import('../../../src/host/model/providerHealthMonitor');
+
+let monitor: MonitorModule;
+let CompanionLibraryService: typeof import('../../../src/host/services/companion/CompanionLibraryService')['CompanionLibraryService'];
+
+// 单例 monitor 没有测试专用重置出口：重载模块图拿新单例。
+// CompanionLibraryService 静态引用同一个 monitor 模块，必须一起重载，读到的才是同一个实例。
+async function loadFreshModules(): Promise<void> {
+  vi.resetModules();
+  [monitor, { CompanionLibraryService }] = await Promise.all([
+    import('../../../src/host/model/providerHealthMonitor'),
+    import('../../../src/host/services/companion/CompanionLibraryService'),
+  ]);
+}
+
+beforeEach(() => loadFreshModules());
 
 async function readModels() {
   const db = new Database(':memory:');
@@ -79,7 +93,6 @@ describe('companion model list marks the computer default', () => {
 describe('爸配置形状：custom 供应商无 model + 列表首项已失败', () => {
   const original = structuredClone(settings.models);
   beforeEach(() => {
-    resetProviderHealthMonitorForTests();
     settings.models = {
       default: 'custom-team-relay',
       providers: {
@@ -105,11 +118,10 @@ describe('爸配置形状：custom 供应商无 model + 列表首项已失败', 
   });
   afterEach(() => {
     settings.models = original;
-    resetProviderHealthMonitorForTests();
   });
 
   it('isDefault 落在同供应商可用模型 gpt-5.5，不拿列表第一个 Preview', async () => {
-    getProviderHealthMonitor().recordFailure('longcat', {
+    monitor.getProviderHealthMonitor().recordFailure('longcat', {
       model: 'LongCat-2.0-Preview',
       error: Object.assign(new Error('Unsupported model'), { status: 400 }),
     });
@@ -123,7 +135,7 @@ describe('爸配置形状：custom 供应商无 model + 列表首项已失败', 
   });
 
   it('供应商级 401 标整家；Preview 的模型级失败不连累 LongCat-2.0', async () => {
-    getProviderHealthMonitor().recordFailure('longcat', {
+    monitor.getProviderHealthMonitor().recordFailure('longcat', {
       model: 'LongCat-2.0-Preview',
       error: Object.assign(new Error('Unsupported model'), { status: 400 }),
     });
@@ -131,8 +143,8 @@ describe('爸配置形状：custom 供应商无 model + 列表首项已失败', 
     expect(models.find(model => model.model === 'LongCat-2.0-Preview')?.failureKind).toBe('model');
     expect(models.find(model => model.model === 'LongCat-2.0')?.recentlyFailed).toBeUndefined();
 
-    resetProviderHealthMonitorForTests();
-    getProviderHealthMonitor().recordFailure('longcat', {
+    await loadFreshModules();
+    monitor.getProviderHealthMonitor().recordFailure('longcat', {
       model: 'LongCat-2.0-Preview',
       error: Object.assign(new Error('Forbidden'), { status: 403 }),
     });

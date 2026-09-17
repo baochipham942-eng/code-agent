@@ -1,10 +1,20 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AVAILABILITY_MARK_TTL_MS, getProviderHealthMonitor, resetProviderHealthMonitorForTests } from '../../../src/host/model/providerHealthMonitor';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// 标记 TTL 的规格值（拍板 30 分钟）：测试直接钉住这个数字，靠 fake timers 推过边界。
+const AVAILABILITY_MARK_TTL_MS = 30 * 60_000;
+
+type MonitorModule = typeof import('../../../src/host/model/providerHealthMonitor');
+let getProviderHealthMonitor: MonitorModule['getProviderHealthMonitor'];
 
 describe('ProviderHealthMonitor', () => {
+  beforeEach(async () => {
+    // 单例没有测试专用重置出口：每个测试重载模块图，拿全新的 monitor 实例。
+    vi.resetModules();
+    ({ getProviderHealthMonitor } = await import('../../../src/host/model/providerHealthMonitor'));
+  });
+
   afterEach(() => {
     vi.useRealTimers();
-    resetProviderHealthMonitorForTests();
   });
 
   it('取消失败不改变错误率或健康状态', () => {

@@ -14,7 +14,7 @@ const logger = createLogger('ProviderHealthMonitor');
 
 export type HealthStatus = 'healthy' | 'degraded' | 'unavailable' | 'recovering';
 
-export const AVAILABILITY_MARK_TTL_MS = 30 * 60_000;
+const AVAILABILITY_MARK_TTL_MS = 30 * 60_000;
 
 interface AvailabilityMark {
   scope: AvailabilityScope;
@@ -252,8 +252,4 @@ let instance: ProviderHealthMonitor | null = null;
 export function getProviderHealthMonitor(): ProviderHealthMonitor {
   if (!instance) instance = new ProviderHealthMonitor();
   return instance;
-}
-
-export function resetProviderHealthMonitorForTests(): void {
-  instance = null;
 }

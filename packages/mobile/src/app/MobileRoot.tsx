@@ -68,6 +68,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId, continuation), ports.files, ports.historyCache, {
     lastSession: hostKey => store.getState().preferences.lastSessions?.[hostKey],
     rememberSession: (hostKey, sessionId) => store.getState().rememberSession(hostKey, sessionId),
+    forgetSessionTitles: (hostKey, sessionId) => store.getState().forgetSessionTitles(hostKey, sessionId),
   }));
   const appActive = useRef(true);
   const [notifyStore] = useState(() => createNotificationStore({
@@ -345,6 +346,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       void companionStore.getState().refreshArtifacts();
     } else if (state.route !== 'fixture') store.getState().activateDraft('new');
   }, [companion.sessionId, companion.binding?.hostKey, companion.status, state.route, store, companionStore]);
+  // lastSessions 双写入口的渲染侧那处（ai-review Nit，刻意保留）：store 内 rememberSession
+  // 管 companionStore 内部时点（配对/撤销/会话消失）；这里管「会话或绑定变化、偏好盘就绪后
+  // 跟随渲染同步一次」。
   useEffect(() => {
     const hostKey = companion.binding?.hostKey;
     if (!hostKey || !state.ready) return;

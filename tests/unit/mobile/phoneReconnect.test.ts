@@ -6,6 +6,7 @@ import { createIdentity } from '../../../src/shared/companion/noiseChannel';
 import { toHex } from '../../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS } from '../../../src/shared/constants/companion';
 import { connectionBlocksAutoRetry, handshakeNeedsRescan, phoneReconnectDelayMs, phoneReconnectJitterMs } from '../../../packages/mobile/src/app/phoneReconnect';
+import { connectionDiagnosis } from '../../../packages/mobile/src/app/connectionDiagnosis';
 import { StatusSlot, composerStatusItems } from '../../../packages/mobile/src/app/StatusSlot';
 import { createCompanionStore } from '../../../packages/mobile/src/stores/companionStore';
 import { messages } from '../../../packages/mobile/src/i18n';
@@ -27,6 +28,7 @@ const harness = vi.hoisted(() => ({
   releaseHangs: [] as (() => void)[],
   pairError: null as string | null,
   syncError: null as string | null,
+  closeCalls: 0,
 }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
@@ -47,9 +49,13 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
       if (action === 'sync' && harness.revoked) {
         return { kind: 'revoked', epoch: 1, nextSeq: 0, events: [] };
       }
+      // 命令直发回执：原样带回这条命令（ack 校验要四元组全等），session.delete 的清理链靠它走通。
+      if (action === 'command') {
+        return { kind: 'accepted', command: { ...(payload as { command: object }).command, state: 'resolved', result: {} } };
+      }
       return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
     }
-    close() { harness.releaseHang?.(); }
+    close() { harness.closeCalls += 1; harness.releaseHang?.(); }
   },
 }));
 
@@ -130,6 +136,7 @@ describe('companionStore 前台退避自动重连', () => {
     harness.releaseHangs = [];
     harness.pairError = null;
     harness.syncError = null;
+    harness.closeCalls = 0;
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     vi.useFakeTimers();
   });
@@ -318,16 +325,34 @@ describe('companionStore 前台退避自动重连', () => {
     store.getState().pause();
   });
 
-  it('扫码配对失败前原绑定没动过（扫码本身失败）：不恢复也不重试，停在失败态', async () => {
-    // pair 在第一次 persist 之前就抛（scan 环节失败用握手码模拟路径不同，这里直接让 scan 抛）。
+  it('有原绑定时扫到无效二维码：提示照常显示，自动重试不停、宿主回来即连上（ai-review Nit）', async () => {
+    // pair 在第一次 persist 之前就抛（二维码解不开），原绑定没被清掉。
     const store = storeOf();
     await store.getState().hydrate();
     const callsAfterHydrate = harness.recoverCalls;
-    await store.getState().pair('not-an-invitation');   // 二维码解不开：清绑定那步还没走到
+    await store.getState().pair('not-an-invitation');
     expect(store.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionQrInvalid', binding: expect.anything() });
-    expect(store.getState().autoRetrying).toBe(false);
+    // 无效二维码的提示照常显示（诊断句 + 主动作仍是重新扫码），但不得把前台自动重连永久停掉。
+    expect(connectionDiagnosis(text, store.getState())).toEqual({ sentence: text.connectionQrInvalid, action: 'scan' });
+    expect(store.getState().autoRetrying).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);   // 重挂的是 0 延迟那拍：宿主仍停机 → 继续按退避走
+    expect(harness.recoverCalls).toBeGreaterThan(callsAfterHydrate);
+    expect(store.getState().autoRetrying).toBe(true);
+    harness.recoverError = null;   // 宿主回来了
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(harness.recoverCalls).toBe(callsAfterHydrate);
+    expect(store.getState().status).toBe('connected');
+    store.getState().pause();
+  });
+
+  it('有原绑定时扫码取消：同样重挂自动重试，不停在失败态（ai-review Nit）', async () => {
+    const store = storeOf();   // scan 口直接抛：模拟用户取消原生扫码
+    await store.getState().hydrate();
+    const callsAfterHydrate = harness.recoverCalls;
+    await store.getState().pair();
+    expect(store.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionScanFailed', binding: expect.anything() });
+    expect(store.getState().autoRetrying).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(harness.recoverCalls).toBeGreaterThan(callsAfterHydrate);
     store.getState().pause();
   });
 
@@ -371,6 +396,79 @@ describe('companionStore 前台退避自动重连', () => {
     harness.releaseHangs[1]();
     await manual;
     expect(store.getState()).toMatchObject({ status: 'connected', busy: false });
+    store.getState().pause();
+  });
+
+  it('自动尝试卡在 mDNS 解析时扫码：迟到的旧尝试不得关掉扫码建立的连接（ai-review Important）', async () => {
+    harness.recoverError = null;
+    let releaseResolve: (() => void) | null = null;
+    const identity = createIdentity();
+    const store = createCompanionStore({
+      read: async () => JSON.stringify({
+        version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+        binding: { version: 1, endpoint: 'http://192.168.1.2:8182', altEndpoint: 'http://imac.local:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
+      }),
+      write: async () => {},
+      scan: async () => { throw new Error('unused'); },
+      post: async () => ({}),
+      // mDNS 重解析挂起不放行（真机最长 3s 超时），自动尝试悬在 mdnsRefreshedEndpoint 上。
+      resolveHost: () => new Promise<string | null>(resolve => { releaseResolve = () => resolve(null); }),
+    }, () => {});
+    const hydrating = store.getState().hydrate();
+    for (let i = 0; i < 30 && !releaseResolve; i += 1) await Promise.resolve();
+    expect(releaseResolve, 'resolveHost 应已挂起未决').toBeTruthy();
+    expect(store.getState().busy).toBe(true);   // 自动尝试在途占着 busy
+    await store.getState().pair(invitation());  // 扫码抢占并配对成功
+    expect(store.getState().status).toBe('connected');
+    const closedAtPair = harness.closeCalls;
+    releaseResolve!();   // 放行 mDNS：被抢占的旧自动尝试此刻迟到的续跑
+    await hydrating;
+    await vi.advanceTimersByTimeAsync(0);
+    // 旧尝试既没关掉扫码刚建立的客户端（配对通道完好），也没把状态打回 connecting/正在自动重试。
+    expect(harness.closeCalls).toBe(closedAtPair);
+    expect(store.getState()).toMatchObject({ status: 'connected', autoRetrying: false, busy: false });
+    store.getState().pause();
+  });
+
+  it('被撤销后扫到非 Neo 二维码：connectionError 补回 connectionRejected，诊断仍是重新扫码（ai-review Nit）', async () => {
+    harness.recoverError = null;
+    const store = storeOf();
+    await store.getState().hydrate();
+    expect(store.getState().status).toBe('connected');
+    harness.revoked = true;
+    await store.getState().sync();
+    expect(store.getState()).toMatchObject({ status: 'rejected', connectionError: 'connectionRejected' });
+    await store.getState().pair('not-an-invitation');
+    // safely 进场已把 connectionError 清成 null：撤销态的早退必须补回，否则诊断落「电脑没回应」。
+    expect(store.getState()).toMatchObject({ status: 'rejected', connectionError: 'connectionRejected' });
+    expect(connectionDiagnosis(text, store.getState()).action).toBe('scan');
+    store.getState().pause();
+  });
+
+  it('会话删除清单条标题记忆、配对撤销清整台（ai-review Nit：sessionTitles 只增不删）', async () => {
+    harness.recoverError = null;
+    // 盘上绑定与 mock recover 回的罐头绑定同 hostKey：连上后 saved.binding 才还是这个键。
+    const hostKey = 'aa'.repeat(32);
+    const identity = createIdentity();
+    const forgotten: Array<[string, string | undefined]> = [];
+    const store = createCompanionStore({
+      read: async () => JSON.stringify({
+        version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+        binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey, deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
+      }),
+      write: async () => {},
+      scan: async () => { throw new Error('unused'); },
+      post: async () => ({}),
+    }, () => {}, undefined, undefined, undefined, {
+      forgetSessionTitles: (host, sessionId) => { forgotten.push([host, sessionId]); },
+    });
+    await store.getState().hydrate();
+    expect(store.getState().status).toBe('connected');
+    await store.getState().manage('session.delete', {}, 's1');
+    expect(forgotten).toEqual([[hostKey, 's1']]);
+    harness.revoked = true;
+    await store.getState().sync();
+    expect(forgotten.at(-1)).toEqual([hostKey, undefined]);
     store.getState().pause();
   });
 

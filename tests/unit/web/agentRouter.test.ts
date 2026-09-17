@@ -534,6 +534,33 @@ describe('createAgentRouter', () => {
     await runRegistry.getBySessionId('companion-activation')!.cancel('user');
   });
 
+  // FB-193（爸 build 51 真机 09-17 20:21）：引擎失败时 runFinalizer 先发终态 error 再抛出，路由收尾又发一条，
+  // 手机事件表同一 runId 两条 error ⇒ 两条「任务失败」推送。两个失败出口（抛出 / 发完正常返回）都只许一条，
+  // 且留下的那条要带引擎给的失败模型（手机据此判断用户是否已换走模型）。
+  it.each([
+    ['engine emits terminal error then throws', true],
+    ['engine emits terminal error then returns', false],
+  ])('companion run failure publishes exactly one error: %s', async (_label, throws) => {
+    await closeServer();
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    const publish = vi.fn();
+    const failure = { code: 'MODEL_AUTH', provider: 'longcat', model: 'LongCat-2.0-Preview' };
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: unknown }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({ type: 'error', data: { message: 'Unsupported model', code: 'RUN_FAILED', failure } });
+        if (throws) throw Object.assign(new Error('Unsupported model'), { statusCode: 403 });
+      }),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({ registerCompanionRun: value => { start = value; }, publishCompanionEvent: publish });
+    const sessionId = `companion-fail-once-${String(throws)}`;
+    await start!({ version: 1, sessionId, prompt: 'fails' }).catch(() => undefined);
+    await vi.waitFor(() => expect(runRegistry.getBySessionId(sessionId)).toBeUndefined());
+    const errors = publish.mock.calls.filter(([, kind]) => kind === 'error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0][2]).toMatchObject({ event: { code: 'RUN_FAILED', failure } });
+  });
+
   // N-MOBILE-SOURCE-CONTEXT：手机发起的轮次模型要知道用户在手机上；桌面发起的不能带
   it('companion runs carry the mobile source context into the model-facing prompt; desktop runs do not', async () => {
     await closeServer();

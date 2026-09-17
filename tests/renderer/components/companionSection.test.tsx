@@ -105,8 +105,8 @@ describe('CompanionSection pairing UI', () => {
   it('lists device name, pairing time, scope, and the legacy re-pair hint', async () => {
     mockManage(status({
       devices: [
-        { deviceId: 'phone-old', scope: ['s1'], name: 'Pixel 7', pairedAt: 1_700_000_000_000 },
-        { deviceId: 'phone-new', scope: ['project:one', 'project:two'], name: 'Pixel 8', pairedAt: 1_700_000_100_000 },
+        { deviceId: 'phone-old', scope: ['s1'], scopeEpoch: 1, name: 'Pixel 7', pairedAt: 1_700_000_000_000 },
+        { deviceId: 'phone-new', scope: ['project:one', 'project:two'], scopeEpoch: 1, name: 'Pixel 8', pairedAt: 1_700_000_100_000 },
       ],
     }));
     render(<CompanionSection />);

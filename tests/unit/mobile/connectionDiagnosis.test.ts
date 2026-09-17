@@ -49,6 +49,11 @@ describe('connectionDiagnosis：三分类 → 一句人话 + 主动作', () => {
       .toEqual({ sentence: text.connectionRelayUnavailable, action: 'reconnect' });
     expect(connectionDiagnosis(text, state('connectionRelayRejected')))
       .toEqual({ sentence: text.connectionRelayRejected, action: 'reconnect' });
+    // relay 回 no-host（N-COMPANION-RELAY-NOHOST-FASTFAIL）：出路是回同一个网络重连刷新，主动作仍是重连。
+    expect(connectionDiagnosis(text, state('connectionRelayNoHost')))
+      .toEqual({ sentence: text.connectionRelayNoHost, action: 'reconnect' });
+    expect(text.connectionRelayNoHost).toContain('同一个网络');
+    expect(text.connectionRelayNoHost).toContain('重新连接');
     expect(text.connectionRelayUnavailable).toContain('连不上电脑');
     expect(text.connectionRelayRejected).toContain('电脑');
   });
@@ -102,7 +107,7 @@ describe('连接失败文案：说人话，且给的动作得做得到', () => {
   const zh = messages('zh');
   const en = messages('en');
   const keys = ['connectionQrInvalid', 'connectionScanFailed', 'connectionRejected',
-    'connectionRefused', 'connectionUnavailable', 'connectionRelayUnavailable', 'connectionRelayRejected'] as const;
+    'connectionRefused', 'connectionUnavailable', 'connectionRelayUnavailable', 'connectionRelayRejected', 'connectionRelayNoHost'] as const;
 
   it('零内部实现词', () => {
     // 「中继 / 路由 / relay / mDNS / .local / 端口」都是实现细节，用户没有任何办法对它们做事。
@@ -127,7 +132,7 @@ describe('连接失败文案：说人话，且给的动作得做得到', () => {
   });
 
   it('两条「彻底连不上」的文案都给出重新扫码这条一定有效的出路', () => {
-    for (const key of ['connectionRelayUnavailable', 'connectionRelayRejected'] as const) {
+    for (const key of ['connectionRelayUnavailable', 'connectionRelayRejected', 'connectionRelayNoHost'] as const) {
       expect(zh[key]).toContain('二维码');
       expect(en[key]).toMatch(/scan it/);
     }

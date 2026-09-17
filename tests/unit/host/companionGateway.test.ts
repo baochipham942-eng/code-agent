@@ -143,7 +143,7 @@ describe('CompanionGateway', () => {
   it('pairedDevices exposes pairing time without rewriting stored scope', () => {
     gateway = new CompanionGateway(db, { now: () => 1000 });
     const device = gateway.pairIdentity('ab'.repeat(32), ['session-1']);
-    expect(gateway.pairedDevices()).toEqual([{ deviceId: device.deviceId, scope: ['session-1'], pairedAt: 1000 }]);
+    expect(gateway.pairedDevices()).toEqual([{ deviceId: device.deviceId, scope: ['session-1'], scopeEpoch: device.scopeEpoch, pairedAt: 1000 }]);
     expect(gateway.canAccessSession(device.deviceId, 'session-1')).toBe(true);
     expect(gateway.canAccessSession(device.deviceId, 'session-2')).toBe(false);
   });

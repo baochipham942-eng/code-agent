@@ -534,6 +534,33 @@ describe('createAgentRouter', () => {
     await runRegistry.getBySessionId('companion-activation')!.cancel('user');
   });
 
+  // FB-193（爸 build 51 真机 09-17 20:21）：引擎失败时 runFinalizer 先发终态 error 再抛出，路由收尾又发一条，
+  // 手机事件表同一 runId 两条 error ⇒ 两条「任务失败」推送。两个失败出口（抛出 / 发完正常返回）都只许一条，
+  // 且留下的那条要带引擎给的失败模型（手机据此判断用户是否已换走模型）。
+  it.each([
+    ['engine emits terminal error then throws', true],
+    ['engine emits terminal error then returns', false],
+  ])('companion run failure publishes exactly one error: %s', async (_label, throws) => {
+    await closeServer();
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    const publish = vi.fn();
+    const failure = { code: 'MODEL_AUTH', provider: 'longcat', model: 'LongCat-2.0-Preview' };
+    mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: unknown }) => void) => ({
+      run: vi.fn(async () => {
+        onEvent({ type: 'error', data: { message: 'Unsupported model', code: 'RUN_FAILED', failure } });
+        if (throws) throw Object.assign(new Error('Unsupported model'), { statusCode: 403 });
+      }),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({ registerCompanionRun: value => { start = value; }, publishCompanionEvent: publish });
+    const sessionId = `companion-fail-once-${String(throws)}`;
+    await start!({ version: 1, sessionId, prompt: 'fails' }).catch(() => undefined);
+    await vi.waitFor(() => expect(runRegistry.getBySessionId(sessionId)).toBeUndefined());
+    const errors = publish.mock.calls.filter(([, kind]) => kind === 'error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0][2]).toMatchObject({ event: { code: 'RUN_FAILED', failure } });
+  });
+
   // N-MOBILE-SOURCE-CONTEXT：手机发起的轮次模型要知道用户在手机上；桌面发起的不能带
   it('companion runs carry the mobile source context into the model-facing prompt; desktop runs do not', async () => {
     await closeServer();
@@ -965,6 +992,65 @@ describe('createAgentRouter', () => {
     await waitForAssertion(() => {
       expect(mockCancel).toHaveBeenCalledWith('user');
     });
+  });
+
+  it('binds the session Project WorkspaceScope onto the durable native run', async () => {
+    await closeServer();
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-durable-project-scope-'));
+    // 真 Project scope（非 isolated-v1 派生 version），会话工作目录就是项目根。
+    const workspaceScope = Object.freeze({
+      projectId: 'project-native-run',
+      primaryRoot: workspaceRoot,
+      roots: Object.freeze([Object.freeze({
+        sourceId: 'source-primary',
+        path: workspaceRoot,
+        role: 'primary' as const,
+        access: 'read_write' as const,
+      })]),
+      version: 'durable-scope-v1',
+    });
+    const getSession = vi.fn(async () => ({
+      id: 'session-project-scope',
+      title: 'Project session',
+      projectId: 'project-native-run',
+      workingDirectory: workspaceRoot,
+    }));
+    projectServiceMocks.getWorkspaceScope.mockReturnValue(workspaceScope);
+
+    try {
+      await startAgentApi({
+        tryGetSessionManager: async () => ({ getSession, updateSession: vi.fn(async () => undefined) }),
+      });
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '在项目里干活',
+          sessionId: 'session-project-scope',
+          context: { workingDirectory: workspaceRoot },
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      await waitForAssertion(() => {
+        expect(runRegistry.hasSession('session-project-scope')).toBe(true);
+      });
+      // durable run 的写边界钉成会话真实项目，不再回落 legacy-background-authority
+      // （N-DURABLE-NATIVE-SCOPE-DRIFT-FALSE：假 id 查项目库必空 → 恢复恒判 drift）。
+      expect(runRegistry.getBySessionId('session-project-scope')?.context.workspaceScope?.projectId)
+        .toBe('project-native-run');
+
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalledWith('user');
+      });
+      await response.text().catch(() => undefined);
+    } finally {
+      projectServiceMocks.getWorkspaceScope.mockReset();
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
   });
 
   it('persists both messages when disconnect cancellation releases the session and drains its queued turn', async () => {

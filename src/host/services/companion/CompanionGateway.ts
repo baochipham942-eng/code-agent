@@ -160,11 +160,13 @@ export class CompanionGateway {
   }
 
   pairedDevices(): CompanionPairedDevice[] {
-    return (this.db.prepare(`SELECT d.device_id, d.scope_json, d.created_at FROM companion_identity_keys k
+    return (this.db.prepare(`SELECT d.device_id, d.scope_json, d.scope_epoch, d.created_at FROM companion_identity_keys k
       JOIN companion_devices d ON d.device_id = k.device_id WHERE d.revoked_at IS NULL`).all() as SqlRow[])
       .map(row => ({
         deviceId: String(row.device_id),
         scope: JSON.parse(String(row.scope_json)) as string[],
+        // routeToken 派生的输入之一（companionRelayRouteToken.ts）：epoch 变 token 跟着变。
+        scopeEpoch: Number(row.scope_epoch),
         ...(row.created_at == null ? {} : { pairedAt: Number(row.created_at) }),
       }));
   }

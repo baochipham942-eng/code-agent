@@ -87,6 +87,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   private readonly durableEnvelopes = new Map<string, RunEnvelope>();
   private readonly durableCheckpointStates = new Map<string, unknown>();
   private readonly modelSpecsByRunId = new Map<string, ConversationModelSpec>();
+  private readonly recoveredWaitingCancels = new Map<string, Promise<{ runId: string; sessionId: string }>>();
   private kernel: RunKernelAdapter | null = null;
 
   configureDurableKernel(kernel: RunKernelAdapter): void {
@@ -632,6 +633,62 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       this.endAttemptSpan(runId, 'cancelled', { 'terminal.status': 'released' });
     }
     return released;
+  }
+
+  /**
+   * 恢复后被停在 waiting、且没有任何控制 handle 的 durable run 的查找。
+   *
+   * recoverDurable 只登记 durable owner + 心跳，不注册 handle；引擎恢复器把 run
+   * checkpoint 成 waiting（requires_review）后它就成了一个 resolve() 查不到、却仍持
+   * 租约挡住同会话新 run 的「只进不出」状态。有 handle 的 waiting run 不算——它们
+   * 走 resolve() → handle.cancel 的正常链路。同步方法：companion dispatch 等同步
+   * 入口先探测，再异步走 terminalRecoveredWaitingRun。
+   *
+   * 只给 sessionId 时只认根 run：子 run（parentRunId）同会话可以有多个 waiting，
+   * 根 run 由 idx_durable_runs_active_session 保证每会话至多一个，取消对象才确定。
+   */
+  findRecoveredWaitingRun(selector: { runId?: string; sessionId?: string }): { runId: string; sessionId: string } | undefined {
+    const runId = selector.runId?.trim();
+    const sessionId = selector.sessionId?.trim();
+    if (!runId && !sessionId) return undefined;
+    for (const envelope of this.durableEnvelopes.values()) {
+      if (envelope.status !== 'waiting') continue;
+      if (runId && envelope.runId !== runId) continue;
+      if (sessionId && envelope.sessionId !== sessionId) continue;
+      if (!runId && envelope.parentRunId) continue;
+      if (this.handlesByRunId.has(envelope.runId)) continue;
+      if (!this.durableOwners.has(envelope.runId)) continue;
+      return { runId: envelope.runId, sessionId: envelope.sessionId };
+    }
+    return undefined;
+  }
+
+  /** 把 findRecoveredWaitingRun 命中的 run 沿 terminalDurable 规范路径（owner/attempt fence + 事件序号）终态化成 cancelled。 */
+  async terminalRecoveredWaitingRun(
+    selector: { runId?: string; sessionId?: string },
+    now = Date.now(),
+  ): Promise<{ runId: string; sessionId: string; joined?: true } | undefined> {
+    const recovered = this.findRecoveredWaitingRun(selector);
+    if (!recovered) return undefined;
+    // 桌面「放弃」与手机「停止」可能同时到：两边都在终态提交前查到了它。后到的一方
+    // 并到同一次提交上，而不是再提交一次撞 cancelled -> cancelled 冲突抛错（桌面 500）。
+    // joined 标给后到者：终态事件只由真正提交的一方补发，手机不会收两条 agent_cancelled。
+    const inFlight = this.recoveredWaitingCancels.get(recovered.runId);
+    if (inFlight) return inFlight.then((settled) => ({ ...settled, joined: true as const }));
+    const cancel = this.terminalDurable(recovered.runId, {
+      now,
+      status: 'cancelled',
+      reason: 'recovered_waiting_run_cancelled',
+      event: {
+        type: 'run_cancelled',
+        payload: { sessionId: recovered.sessionId, reason: 'recovered_waiting_run_cancelled' },
+        recordedAt: now,
+      },
+    }).then(() => recovered).finally(() => {
+      this.recoveredWaitingCancels.delete(recovered.runId);
+    });
+    this.recoveredWaitingCancels.set(recovered.runId, cancel);
+    return cancel;
   }
 
   async recoverDurable(now = Date.now()): Promise<RunRehydrationPlan[]> {

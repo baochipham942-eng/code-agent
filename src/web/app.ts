@@ -74,7 +74,8 @@ import { approvalAnswerFromPermission, noteCompanionApprovalSettlement } from '.
 import { getPlanApprovalGate } from '../host/agent/planApproval';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
-import { startCompanionRelayIfConfigured } from '../host/services/companion/CompanionRelayClient';
+import { startCompanionRelayAccountIfConfigured, startCompanionRelayIfConfigured } from '../host/services/companion/CompanionRelayClient';
+import { getAuthService } from '../host/services/auth/authService';
 import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
 import { loadLanIdentity } from '../host/services/companion/lanIdentity';
 import { COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
@@ -274,6 +275,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   let companionLan: { stop(): Promise<void> } | undefined;
   let companionRelay: { stop(): Promise<void>; routeFor(deviceId: string): import('../shared/contract/companionRelay').CompanionRelayRoute | null } | undefined;
   let companionRelayAbandoned = false;
+  let companionRelayAccount: ReturnType<typeof startCompanionRelayAccountIfConfigured> = null;
   const idleSleepInhibitor = new IdleSleepInhibitor(
     () => runRegistry.size > 0,
     () => (inhibitorGateway?.pairedDevices().length ?? 0) > 0,
@@ -285,6 +287,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     cleanupQuestionRoute();
     await idleSleepInhibitor.stop();
     companionRelayAbandoned = true;
+    await companionRelayAccount?.stop();
     await companionRelay?.stop();
     await companionLan?.stop();
   });
@@ -326,7 +329,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
           return { kind: 'rejected', reason: 'unsupported_action' };
         },
         onPublish: event => { services.push?.enqueue(event); void services.push?.flush(); },
-        onRevoke: deviceId => { services.push?.forgetDevice(deviceId); services.relay?.revoke(deviceId); },
+        onRevoke: deviceId => { services.push?.forgetDevice(deviceId); services.relay?.revoke(deviceId); companionRelayAccount?.revoke(deviceId); },
         dispatch: (command) => {
           if (command.action.startsWith('files.')) {
             return services.files?.dispatch(command) ?? { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
@@ -352,7 +355,33 @@ export function createApp(deps: CreateAppDeps): express.Express {
           }
           if (command.action === 'run.cancel' && command.sessionId) {
             const target = runRegistry.resolve({ sessionId: command.sessionId });
-            if (!target) return { state: 'resolved', result: { alreadyTerminal: true } };
+            if (!target) {
+              // 恢复成 waiting 的 durable run 没有 handle（recoverDurable 只登记 owner + 心跳），
+              // resolve() 查不到。先同步探测有没有这种 run，有就在规范路径上终态化并补发
+              // agent_cancelled，再按 alreadyTerminal 结算——手机据此清 runId 收尾。
+              const waiting = runRegistry.findRecoveredWaitingRun({
+                sessionId: command.sessionId,
+                runId: command.payload.runId,
+              });
+              if (waiting) {
+                void runRegistry.terminalRecoveredWaitingRun({ runId: waiting.runId })
+                  .then((recovered) => {
+                    if (recovered && !recovered.joined) {
+                      publishCompanionEvent?.(command.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
+                    }
+                    gateway.settleCommand(command.deviceId, command.commandId, 'accepted', {
+                      alreadyTerminal: true,
+                      ...(recovered ? { runId: recovered.runId } : {}),
+                    });
+                  })
+                  .catch((error) => {
+                    logger.warn('Companion waiting-run cancel failed', error);
+                    gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'COMPANION_OPERATION_FAILED' });
+                  });
+                return { state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } };
+              }
+              return { state: 'resolved', result: { alreadyTerminal: true } };
+            }
             if (target.context.runId !== command.payload.runId) return { state: 'rejected', result: { code: 'RUN_NOT_ACTIVE' } };
             void target.cancel('user');
             return { state: 'accepted', result: { stopping: true, runId: target.context.runId } };
@@ -517,6 +546,14 @@ export function createApp(deps: CreateAppDeps): express.Express {
         'Companion relay dial-out skipped',
         error instanceof Error ? error.message : String(error),
       ));
+      // 账号通道与上面的共享凭据通道并行（N-COMPANION-RELAY-ACCOUNT-BIND）：没登录就什么都不做。
+      companionRelayAccount = startCompanionRelayAccountIfConfigured({
+        dataDirectory: resolveCodeAgentDataDir(),
+        gateway,
+        loadIdentity: () => loadLanIdentity(resolveCodeAgentDataDir()),
+        auth: getAuthService(),
+        logger,
+      });
       app.use('/companion', createCompanionRouter({
         gateway,
         authenticate: (deviceId, credential) => gateway.authenticateDevice(deviceId, credential),

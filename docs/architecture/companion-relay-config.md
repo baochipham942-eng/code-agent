@@ -31,6 +31,7 @@ Host 侧 loader / 拨号把每条跳过或失败打成一行（凭据、Authoriz
 | 日志 | 含义 |
 |---|---|
 | `Companion relay config file missing: <绝对路径>` | 数据目录里没有 `companion-relay.json`。路径就是当时解析出的完整配置文件路径，用来判断数据目录对不对。 |
+| `Companion relay config file unreadable: <错误码>: <绝对路径>` | 配置文件存在但读不了（如 `EACCES` 权限、`EISDIR` 是目录）。只有 `ENOENT` 才记成 missing。 |
 | `Companion relay config JSON parse failed: <绝对路径>` | 配置文件不是合法 JSON。 |
 | `Companion relay config schema invalid: <zod path>` | 字段不合法或多了未知键。只带 issue 的 path，不带值。 |
 | `Companion relay config enabled is not true` | `enabled` 不是 `true`，保持只走 LAN。 |
@@ -44,4 +45,5 @@ Host 侧 loader / 拨号把每条跳过或失败打成一行（凭据、Authoriz
 | `Companion relay identity load failed: <message 首行>` | `loadIdentity` 抛错。 |
 | `Companion relay connected: <url>` | 拨号成功。 |
 | `Companion relay dial failed: <错误码>; reconnect in <ms>ms` | 拨号失败或连接关闭。错误码来自 `error` / `unexpected-response`（如 `UNABLE_TO_VERIFY_LEAF_SIGNATURE`、`ECONNREFUSED`、`HTTP 401`）。同一错误码连续出现只打第一次；错误码变了或中间成功连上过才再打。 |
+| `Companion relay disconnected: <错误码>; reconnect in <ms>ms` | 已连上的连接被中继或网络断开（不是拨号失败），随后按退避重连。 |
 | `Companion relay dial-out skipped` | `startCompanionRelayIfConfigured` 本身抛错（带 error message）。 |

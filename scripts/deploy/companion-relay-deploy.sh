@@ -12,11 +12,14 @@
 # 用法：scripts/deploy/companion-relay-deploy.sh
 #   NEO_RELAY_SSH_HOST  缺省 root@8.153.206.118
 #   NEO_RELAY_PORT      缺省 8791
+#   NEO_RELAY_SUPABASE_URL  缺省 Neo 生产 Supabase 项目；设为空串则 relay 不开账号鉴权（只认共享凭据）
 # ============================================================================
 set -euo pipefail
 
 REMOTE_HOST="${NEO_RELAY_SSH_HOST:-root@8.153.206.118}"
 REMOTE_PORT="${NEO_RELAY_PORT:-8791}"
+# 账号鉴权（N-COMPANION-RELAY-ACCOUNT-BIND）：与 src/shared/constants/network.ts DEFAULT_SUPABASE_URL 同一项目。
+SUPABASE_URL="${NEO_RELAY_SUPABASE_URL-https://xepbunahzbmexsmmiqyq.supabase.co}"
 REMOTE_APP_DIR=/opt/neo-relay
 REMOTE_ENV_DIR=/etc/neo-relay
 LOCAL_SECRET="${NEO_RELAY_CREDENTIAL_FILE:-$HOME/.ship/secrets/neo-relay-credential}"
@@ -62,7 +65,7 @@ echo "==> writing env file (credential via stdin pipe, never in argv)"
 # 注意：不能把 printf 管道和 heredoc 混在同一个 ssh 上——heredoc 会抢占 stdin，
 # 远端 cat 会把剩余脚本吃掉（首版部署实测：relay.env 没落地、unit 起不来）。
 # 所以这里用独立的 ssh 连接，env 内容走 /dev/stdin 管道。
-printf 'NEO_RELAY_PORT=%s\nNEO_RELAY_BIND=127.0.0.1\nNEO_RELAY_CREDENTIAL=%s\n' "$REMOTE_PORT" "$CREDENTIAL" \
+printf 'NEO_RELAY_PORT=%s\nNEO_RELAY_BIND=127.0.0.1\nNEO_RELAY_CREDENTIAL=%s\nNEO_RELAY_SUPABASE_URL=%s\n' "$REMOTE_PORT" "$CREDENTIAL" "$SUPABASE_URL" \
   | ssh "$REMOTE_HOST" "install -o neorelay -g neorelay -m 0600 /dev/stdin $REMOTE_ENV_DIR/relay.env.new"
 ssh "$REMOTE_HOST" REMOTE_ENV_DIR="$REMOTE_ENV_DIR" bash -s <<'REMOTE'
 set -euo pipefail

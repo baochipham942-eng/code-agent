@@ -23,6 +23,7 @@ const harness = vi.hoisted(() => ({
   revoked: false,
   hangRecover: false,
   releaseHang: null as null | (() => void),
+  syncError: null as string | null,
 }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
@@ -34,7 +35,9 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] };
     }
     async request(payload: unknown) {
-      if ((payload as { action?: string }).action === 'sync' && harness.revoked) {
+      const action = (payload as { action?: string }).action;
+      if (action === 'sync' && harness.syncError) throw new Error(harness.syncError);
+      if (action === 'sync' && harness.revoked) {
         return { kind: 'revoked', epoch: 1, nextSeq: 0, events: [] };
       }
       return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
@@ -110,6 +113,7 @@ describe('companionStore 前台退避自动重连', () => {
     harness.revoked = false;
     harness.hangRecover = false;
     harness.releaseHang = null;
+    harness.syncError = null;
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     vi.useFakeTimers();
   });
@@ -254,6 +258,32 @@ describe('companionStore 前台退避自动重连', () => {
     harness.releaseHang?.();
     await pending;
     expect(store.getState()).toMatchObject({ status: 'connected', autoRetrying: false });
+    store.getState().pause();
+  });
+
+  it('握手成功但 sync 恒失败：退避升档，不 0 延迟原地打转', async () => {
+    harness.recoverError = null;
+    harness.syncError = 'COMPANION_INVALID_SYNC';
+    const store = storeOf();
+    await store.getState().hydrate();
+    expect(store.getState().status).toBe('connected');
+    // 每次握手成功还会 probe.recover 刷 relay 路由，所以一次重连 +2。
+    const afterHydrate = harness.recoverCalls;
+    await store.getState().sync();
+    expect(store.getState()).toMatchObject({ status: 'offline', autoRetrying: true });
+    expect(harness.recoverCalls).toBe(afterHydrate);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(harness.recoverCalls).toBe(afterHydrate);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(harness.recoverCalls).toBe(afterHydrate + 2);
+    expect(store.getState().status).toBe('connected');
+    await store.getState().sync();
+    expect(store.getState().status).toBe('offline');
+    expect(harness.recoverCalls).toBe(afterHydrate + 2);
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(harness.recoverCalls).toBe(afterHydrate + 2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(harness.recoverCalls).toBe(afterHydrate + 4);
     store.getState().pause();
   });
 

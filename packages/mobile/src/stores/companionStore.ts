@@ -208,6 +208,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     let retryGeneration = 0;
     let appInBackground = false;
     let reconnectInFlight = false;
+    /** 这次连接已经成功 sync 过。握手成功不算数，否则 sync 一失败就会把档位清零再 0 延迟重连。 */
+    let syncOk = false;
     const clearRetryTimer = () => {
       if (retryTimer === null) return;
       clearTimeout(retryTimer);
@@ -218,7 +220,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       clearRetryTimer();
       retryAttempt = 0;
       retryStartedAt = null;
+      syncOk = false;
       if (get().autoRetrying) set({ autoRetrying: false });
+    };
+    const markSyncOk = () => {
+      stopAutoRetry();
+      syncOk = true;
     };
     const remember = (sessionId: string | null) => {
       const hostKey = saved?.binding?.hostKey ?? get().binding?.hostKey;
@@ -626,7 +633,6 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           const lanCode = lanError instanceof Error ? lanError.message : '';
           if (handshakeNeedsRescan(lanCode) || !saved?.relay || !saved?.binding) throw lanError;
           await dialRelay();
-          stopAutoRetry();
           set({ status: 'connected', transport: 'relay', paused: false });
           await reconcilePending();
           return;
@@ -637,8 +643,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch;
         pruneUnscopedHistory(previousScope, binding.scope);
-        stopAutoRetry();
-        set({ status: 'connected', transport: 'lan', binding, sessionId: get().sessionId ?? binding.scope.find(id => !id.startsWith('project:')) ?? null });
+        // lastSession === '' 是欢迎页记忆；null ?? scope 第一条会把它盖掉。
+        const remembered = options?.lastSession?.(binding.hostKey);
+        set({
+          status: 'connected', transport: 'lan', binding,
+          sessionId: get().sessionId ?? (remembered === '' ? null : (binding.scope.find(id => !id.startsWith('project:')) ?? null)),
+        });
         await refreshRelayRoute();
         await reconcilePending();
           });
@@ -868,7 +878,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         syncing = true;
         try {
           const result = await client.request({ action: 'sync', epoch, afterSeq: cursor }) as CompanionSyncResult;
-          if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); return; }
+          if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); markSyncOk(); return; }
           // 被撤销不是网络问题：混进通用 offline 会让这台设备一直重试、永远不知道自己已被踢。
           if (result.kind === 'revoked') { client?.close(); if (relayClient) { relayClient.close(); relayClient = null; } wipeHistoryCache(); stopAutoRetry(); remember(null); set({ status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null }); return; }
           if (result.kind !== 'events' || result.epoch !== epoch || !Number.isSafeInteger(result.nextSeq) || result.nextSeq < cursor || !Array.isArray(result.events)) throw new Error('COMPANION_INVALID_SYNC');
@@ -899,7 +909,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             const record = await client.request({ action: 'status', commandId: pendingId }) as CompanionCommandRecord | null;
             if (record && saved?.pending?.commandId === pendingId && !(await recoverStalePending(record))) await accepted(record);
           }
-        } catch { client?.close(); if (relayClient && client === relayClient) relayClient = null; if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable', transport: null }); armAutoRetry(false); }
+          markSyncOk();
+        } catch {
+          client?.close();
+          if (relayClient && client === relayClient) relayClient = null;
+          const escalate = !syncOk;
+          syncOk = false;
+          if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable', transport: null });
+          armAutoRetry(escalate);
+        }
         finally { syncing = false; }
       },
       refreshArtifacts: async () => {

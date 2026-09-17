@@ -21,7 +21,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
     async recover() {
       if (harness.recoverError) throw new Error(harness.recoverError);
-      return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: HOST, deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] };
+      return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: HOST, deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one', 's1'] };
     }
     async request(payload: unknown) {
       const action = (payload as { action?: string }).action;
@@ -107,6 +107,14 @@ describe('companionStore 冷启动回到上次会话', () => {
     });
     await store.getState().hydrate();
     expect(store.getState().sessionId).toBeNull();
+    expect(store.getState().status).toBe('connected');
+    store.getState().pause();
+  });
+
+  it('旧客户端没有 lastSession：连上后打开 scope 第一条会话', async () => {
+    const store = createCompanionStore(companionPort(identityRecord()), () => {});
+    await store.getState().hydrate();
+    expect(store.getState().sessionId).toBe('s1');
     store.getState().pause();
   });
 

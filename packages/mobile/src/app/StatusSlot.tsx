@@ -89,7 +89,7 @@ export function composerStatusItems(
     binding: boolean; status: string; paused: boolean; connectionError: string | null; busy: boolean;
     commandError: string | null; commandErrorAction: string | null; voiceFailureShown: boolean; sessionId: string | null;
     libraryError: boolean; pending: boolean; pendingAction: string | null; pendingSlow: boolean;
-    autoRetrying?: boolean; abandonedPending?: boolean;
+    autoRetrying?: boolean; autoAttempt?: boolean; abandonedPending?: boolean;
   },
   act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; dismissAbandoned?(): void },
 ): StatusItem[] {
@@ -97,10 +97,13 @@ export function composerStatusItems(
   if (s.saveError) items.push({ rank: 1, message: text.saveError, action: { label: text.retry, run: act.flush } });
   if (s.nativeError) items.push({ rank: 1, message: text.nativeError });
   const live = s.status === 'connected';
+  // 自动重试在途不锁「重新连接/扫码」（D3）：在途 hello 可达 10s，锁了等于八成时间没有逃生口；
+  // 手动点按发起的连接/扫码仍锁（防重复点击），那部分用 busy && !autoAttempt 表达。
+  const escapeDisabled = s.busy && !s.autoAttempt;
   if (s.binding && !live && !s.paused) {
     const open = act.openRemote;
-    const reconnect = { label: text.reconnect, run: act.reconnect, disabled: s.busy };
-    items.push(s.status === 'rejected' || connectionDiagnosis(text, s).action === 'scan' ? { rank: 2, message: text.rescanNeeded, open, action: { label: text.scanShort, run: act.scan, disabled: s.busy } }
+    const reconnect = { label: text.reconnect, run: act.reconnect, disabled: escapeDisabled };
+    items.push(s.status === 'rejected' || connectionDiagnosis(text, s).action === 'scan' ? { rank: 2, message: text.rescanNeeded, open, action: { label: text.scanShort, run: act.scan, disabled: escapeDisabled } }
       : s.autoRetrying ? { rank: 2, message: text.autoRetrying, open, action: reconnect, reason: 'auto-retry' }
       : s.status === 'connecting' ? { rank: 2, message: text.connecting, neutral: true, open }
       : s.connectionError === 'connectionRefused' ? { rank: 2, message: text.neoNotRunning, open, action: reconnect }

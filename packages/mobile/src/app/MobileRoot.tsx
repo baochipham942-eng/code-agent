@@ -350,6 +350,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     if (!hostKey || !state.ready) return;
     store.getState().rememberSession(hostKey, companion.sessionId);
   }, [companion.sessionId, companion.binding?.hostKey, state.ready, store]);
+  // 当前会话的标题随库一起记（O1）：冷启动宿主停机时 library 还没到，缓存会话的标题从这里取，
+  // 不再坠到「共享会话 N」这种谁也认不出的占位。
+  useEffect(() => {
+    const hostKey = companion.binding?.hostKey;
+    if (!hostKey || !companion.sessionId || !companion.library) return;
+    const title = companion.library.sessions.find(s => s.id === companion.sessionId)?.title;
+    if (title) store.getState().rememberSessionTitle(hostKey, companion.sessionId, title);
+  }, [companion.sessionId, companion.binding?.hostKey, companion.library, store]);
   // 连上而没有会话时不再自动弹「选择项目」（N-MOBILE-DEFAULT-PROJECT ②A，爸 09-17「项目要有默认、不强制选」）：
   // 停在新会话欢迎页，项目选择器已带默认项目；弹层只在点选择器、或都建不了时点发送才开。
   /**
@@ -538,7 +546,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     }}>
     <main className="conversation" inert={state.drawer || !!state.sheet}>
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><AppIcon name="menu" /></button>
-        <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
+        <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? (hostKey ? state.preferences.sessionTitles?.[`${hostKey}:${companion.sessionId}`] : undefined) ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           offline={companion.status !== 'connected'}
@@ -736,11 +744,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
                 写死的 endpoint/altEndpoint，换网后两个都死，**这个主按钮永远不可能成功**，用户却
                 拿不到唯一能救的那个动作（重新扫码），只能删 app 重装。fix4-③ 要删的是 Wi-Fi 说明书，
                 不是逃生口——「一态一主操作」说的是主次，不是只留一个。 */}
+            {/* 自动重试的在途连接不锁这两个键（D3）：在途 hello 约 10s 才超时，锁着等于约八成时间
+                没有逃生口。扫码走 preempt 抢占；「重新连接」立即开新尝试，旧在途尝试按代号丢弃
+                迟到结果。手动点按发起的连接/扫码仍锁（防重复点击）。 */}
             {([diagnosis.action, diagnosis.action === 'scan' ? 'reconnect' : 'scan'] as const).map((action, index) => action === 'scan'
               ? <button key={action} className={index === 0 ? 'primary' : 'sheet-secondary'} data-testid="remote-action-scan"
-                disabled={!ports.companion || companion.busy} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
+                disabled={!ports.companion || (companion.busy && !companion.autoAttempt)} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
               : <button key={action} className={index === 0 ? 'primary' : 'sheet-secondary'} data-testid="remote-action-reconnect"
-                disabled={!ports.companion || companion.busy} onClick={() => void companionStore.getState().reconnect({ resetBackoff: true })}>{text.reconnect}</button>)}
+                disabled={!ports.companion || (companion.busy && !companion.autoAttempt)} onClick={() => void companionStore.getState().reconnect({ resetBackoff: true })}>{text.reconnect}</button>)}
             {/* 连扫码也过不去时的底：丢掉本机存的配对，回到「尚未连接电脑」。
                 不加二次确认弹层，但**必须把代价写在旁边**：初版注释写的「误点没有东西可丢」是错的
                 （grok ai-review Nit②）——电脑只是睡着、Neo 只是没开时配对仍然有效，误点会连本机

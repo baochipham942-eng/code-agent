@@ -112,6 +112,12 @@ interface State {
   reconnect(opts?: { resetBackoff?: boolean }): Promise<void>; forget(): Promise<void>; pause(): void;
   /** 前台断线后正在按退避自动重试。状态位据此保持「正在自动重试」，不闪「正在连接…」。 */
   autoRetrying: boolean;
+  /**
+   * 眼下占着 busy 的连接尝试是不是自动发起的（重试定时器/冷启动/回前台）。自动尝试在途
+   * 不锁「重新连接/扫描电脑二维码」两个按钮（N-MOBILE-AUTO-RECONNECT-R3 D3）：在途 hello
+   * 可达 10s，照旧置灰等于八成时间没给用户逃生口。手动点按（扫码、手动重连）仍占 busy 锁键。
+   */
+  autoAttempt: boolean;
   /** 扫码重新配对时丢掉了未确认操作：状态位一次性「上一条操作没送到…」直到点「知道了」。 */
   abandonedPending: boolean;
   dismissAbandonedPending(): void;
@@ -208,6 +214,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     let retryGeneration = 0;
     let appInBackground = false;
     let reconnectInFlight = false;
+    /**
+     * 连接尝试代号（pair / reconnect 各领一个）：手动「重新连接」/扫码抢过在途的自动尝试后，
+     * 旧尝试迟到的失败/成功都按代号丢弃——不打回 offline、不关新客户端、不释放新尝试的 busy
+     * （N-MOBILE-AUTO-RECONNECT-R3 D3）。
+     */
+    let connectSeq = 0;
     /** 用户正在扫码配对：自动重连不得清 busy、不得把 status 打回 offline。 */
     let userPairing = false;
     /** 这次连接已经成功 sync 过。握手成功不算数，否则 sync 一失败就会把档位清零再 0 延迟重连。 */
@@ -347,7 +359,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
      * 绑定身份以 LAN 配对时的缓存为准逐字段校验——relay 只换路，不换身份；
      * resume 成功后 `client` 指到 relay 通道，LAN 客户端此刻必然已关（recover 失败即关）。
      */
-    const dialRelay = async (): Promise<RelayCompanionClient> => {
+    const dialRelay = async (attempt?: number): Promise<RelayCompanionClient> => {
       if (!saved?.relay || !saved.binding) throw new Error('COMPANION_RELAY_UNCONFIGURED');
       relayClient?.close();
       const relay = new RelayCompanionClient({
@@ -366,6 +378,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       });
       await relay.connect();
       await relay.resume({ hostKey: saved.binding.hostKey, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch, scope: saved.binding.scope });
+      // 拨号期间被更新的尝试抢占了：这条通道不留（同一时刻只有一条活通道），交给抢占者。
+      if (attempt !== undefined && attempt !== connectSeq) {
+        relay.close();
+        throw new Error('COMPANION_ATTEMPT_PREEMPTED');
+      }
       relayClient = relay;
       client = relay;
       return relay;
@@ -485,13 +502,26 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       if (saved?.pending) await persist({ ...saved, pending: undefined });
       set({ pending: false });
     };
-    const safely = async <T>(work: () => Promise<T>, opts?: { preempt?: boolean }): Promise<T | undefined> => {
+    const safely = async <T>(work: (attempt: number | undefined) => Promise<T>, opts?: {
+      preempt?: boolean;
+      /** 连接尝试（pair/reconnect）传 true：过 busy 守卫后领代号，work 收到自己的代号。 */
+      claim?: boolean;
+      /** 这次 busy 是自动发起的尝试（D3）：UI 据此不锁「重新连接/扫码」按钮。 */
+      autoAttempt?: boolean;
+    }): Promise<T | undefined> => {
       if (get().busy && !opts?.preempt) return undefined;
-      set({ busy: true, connectionError: null, commandError: null, commandErrorAction: null });
-      try { return await work(); } catch (error) {
+      const attempt = opts?.claim === true ? (connectSeq += 1) : undefined;
+      set({ busy: true, autoAttempt: opts?.autoAttempt === true, connectionError: null, commandError: null, commandErrorAction: null });
+      try { return await work(attempt); } catch (error) {
+        // 被更新的尝试抢占了：迟到的旧失败整体作废——不关新客户端、不打回 offline、不挂重试、不释放新尝试的 busy。
+        if (attempt !== undefined && attempt !== connectSeq) return;
         // 扫码抢占后，过期的自动重连失败不能把刚配上的连接打回 offline。
         if (!opts?.preempt && (userPairing || (reconnectInFlight && get().status === 'connected'))) return;
         client?.close();
+        // 设备已被撤销/拒绝（rejected）时，这条失败只是撤销的连带（relay revoke 帧先 drop 再
+        // onRevoked，sync 的失败随后到）：不把 rejected 打回 offline、不挂自动重试，否则状态位
+        // 先闪「正在自动重试」再变回「需要重新扫码」（N-MOBILE-AUTO-RECONNECT-R3 O2）。
+        if (get().status === 'rejected') return;
         const code = error instanceof Error ? error.message : '';
         // 三分类（fix4-②）+ relay 档（N-MOBILE-RELAY-PHONE）：握手/身份失败、连接被拒绝、
         // 超时/无响应、relay 路失败（连不上/凭据被拒）——其余网络码都归「没回应」那一类，
@@ -506,7 +536,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if (get().status !== 'storageError') set({ status: 'offline', connectionError, transport: null });
         armAutoRetry(reconnectInFlight);
       }
-      finally { if (!(userPairing && !opts?.preempt)) set({ busy: false }); }
+      finally {
+        if (attempt !== undefined && attempt !== connectSeq) return;
+        if (!(userPairing && !opts?.preempt)) set({ busy: false });
+      }
     };
     /** （重）连上后结算待确认命令：两条路（LAN/relay）共用同一套 status 查询与补投。 */
     const reconcilePending = async () => {
@@ -517,7 +550,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     return {
       voiceResult: null, library: null, history: {}, libraryError: false,
-      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, autoRetrying: false, abandonedPending: false, events: [], runId: null, terminal: null,
+      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, autoRetrying: false, autoAttempt: false, abandonedPending: false, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
       hydrate: async () => {
@@ -553,14 +586,19 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         } catch { set({ busy: false, status: 'storageError' }); }
       },
       pair: async (raw?: string) => {
+        // 扫码前原本就有的绑定：握手失败时恢复它，前台退避自动重连接着跑（D1）——
+        // 用户只是扫了一下码，不该把原本能用的配对弄丢后卡死在「电脑没回应」。
+        const previousBinding = saved?.binding;
         // 扫码必须抢过自动重连占着的 busy：否则扫完 finishPair→pair 被静默丢掉。
         userPairing = true;
         stopAutoRetry();
         appInBackground = false;
         set({ paused: false, autoRetrying: false });
         client?.close();
+        let attempt = 0;
         try {
-          return await safely(async () => {
+          return await safely(async seq => {
+            attempt = seq ?? 0;
             if (!port) return;
             const dropPending = Boolean(saved?.pending);
             const payload = raw ?? await port.scan().catch(() => { throw new Error('COMPANION_SCAN_FAILED'); });
@@ -582,9 +620,19 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             remember(null);
             set({ status: 'connected', transport: 'lan', binding, sessionId: null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null, abandonedPending: dropPending });
             await refreshRelayRoute();
-          }, { preempt: true });
+          }, { preempt: true, claim: true });
         } finally {
           userPairing = false;
+          // 配对没成（offline）且途中把原绑定清掉了：恢复原绑定并继续前台退避自动重试（D1）。
+          // 原本就没有绑定的（首次扫码失败）不进这里——停在扫码失败态，不空转。
+          // 已有更新的连接尝试（再扫一次/手动重连）时不抢它的状态。safely 失败那拍的
+          // armAutoRetry 因 userPairing 直接 return 了，重挂只能补在这里。
+          if (previousBinding && attempt !== 0 && attempt === connectSeq && saved && !saved.binding && get().status === 'offline') {
+            try {
+              await persist({ ...saved, binding: previousBinding, candidate: undefined });
+              armAutoRetry(false);
+            } catch { /* persist 失败已把状态打成 storageError；停在失败态 */ }
+          }
         }
       },
       /**
@@ -613,7 +661,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       dismissAbandonedPending: () => set({ abandonedPending: false }),
       reconnect: async (opts) => {
         appInBackground = false;
-        if (opts?.resetBackoff) {
+        const manual = Boolean(opts?.resetBackoff);
+        // 手动「重新连接」立即发起新尝试并抢过自动重试的在途连接（D3）：旧尝试迟到的失败/
+        // 成功按代号丢弃。busy 被手动操作（扫码、上一次手动重连）占着时不抢——safely 的
+        // 去重守卫照旧拦重复点按。
+        const preempt = manual && get().busy && get().autoAttempt;
+        if (manual) {
           retryGeneration += 1;
           clearRetryTimer();
           retryAttempt = 0;
@@ -622,7 +675,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         }
         reconnectInFlight = true;
         try {
-          return await safely(async () => {
+          return await safely(async attempt => {
         const savedTarget = saved?.binding ?? saved?.candidate;
         if (!savedTarget) return;
         // mDNS 重解析治旧 IP（fix4-⑤）：先用绑定里的主机名重新解析，解析到则用新地址拨，
@@ -640,13 +693,17 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         try {
           binding = await createClient().recover(target, saved?.binding);
         } catch (lanError) {
+          // 被更新的尝试抢占了：这次失败交给抢占者结算，这里不再落 relay。
+          if (attempt !== undefined && attempt !== connectSeq) return;
           // 双径（N-MOBILE-RELAY-PHONE）：LAN 失败/不可达且有缓存路由时落 relay。
           // recover 失败已把 LAN 客户端关掉，此刻起只有 relay 一条活通道——不双跑。
           // 没有路由就原样抛 LAN 的错误：那是用户看得懂的那句。
           // 身份变化不是网络问题：落 relay 同一身份也会被拒，且会让自动重连空转。
           const lanCode = lanError instanceof Error ? lanError.message : '';
           if (handshakeNeedsRescan(lanCode) || !saved?.relay || !saved?.binding) throw lanError;
-          await dialRelay();
+          await dialRelay(attempt);
+          // relay 握手期间也可能被抢占：这次成功不落状态。
+          if (attempt !== undefined && attempt !== connectSeq) return;
           set({ status: 'connected', transport: 'relay', paused: false });
           await reconcilePending();
           return;
@@ -654,6 +711,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // LAN 恢复即收敛到直连：createClient 的 client?.close() 已把 relay 通道关掉
         //（同一时刻只有一条活通道），这里只清记账。
         relayClient = null;
+        // 被更新的尝试抢占了：迟到的成功作废——不落盘、不打 connected（D3）。
+        if (attempt !== undefined && attempt !== connectSeq) return;
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch;
         pruneUnscopedHistory(previousScope, binding.scope);
@@ -665,7 +724,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         });
         await refreshRelayRoute();
         await reconcilePending();
-          });
+          }, { preempt, claim: true, autoAttempt: !manual });
         } finally {
           reconnectInFlight = false;
         }
@@ -927,6 +986,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         } catch {
           client?.close();
           if (relayClient && client === relayClient) relayClient = null;
+          // 撤销已在同一次处理里把设备翻成 rejected（relay 的 revoke 帧先 drop 再 onRevoked，
+          // 这条 sync 的失败随后才到）：不得打回 offline、不得挂自动重试——否则状态位先闪
+          // 「正在自动重试」再变回「需要重新扫码」（N-MOBILE-AUTO-RECONNECT-R3 O2）。
+          if (get().status === 'rejected') { syncOk = false; return; }
           const escalate = !syncOk;
           syncOk = false;
           if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable', transport: null });

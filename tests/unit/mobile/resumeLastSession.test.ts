@@ -77,6 +77,26 @@ describe('mobileStore.lastSessions 按电脑持久化', () => {
     await third.getState().hydrate();
     expect(third.getState().preferences.lastSessions?.[HOST]).toBe('');
   });
+
+  it('sessionTitles 随 lastSessions 一起持久化，冷启动可读；没变不写盘（O1）', async () => {
+    let writes = 0;
+    const port = disk();
+    const write = port.set;
+    port.set = async (next: string) => { writes += 1; await write(next); };
+    const first = createMobileStore(port);
+    await first.getState().hydrate();
+    first.getState().rememberSessionTitle(HOST, 's-keep', '上次会话');
+    await first.getState().flush();
+    first.getState().rememberSessionTitle(HOST, 's-keep', '上次会话');   // 同值：不再写盘
+    await first.getState().flush();
+    first.getState().rememberSessionTitle(HOST, 's-keep', '改名了');
+    await first.getState().flush();
+    expect(JSON.parse(port.snapshot()!).sessionTitles).toEqual({ [`${HOST}:s-keep`]: '改名了' });
+    const second = createMobileStore(port);
+    await second.getState().hydrate();
+    expect(second.getState().preferences.sessionTitles?.[`${HOST}:s-keep`]).toBe('改名了');
+    expect(writes).toBe(2);
+  });
 });
 
 describe('companionStore 冷启动回到上次会话', () => {

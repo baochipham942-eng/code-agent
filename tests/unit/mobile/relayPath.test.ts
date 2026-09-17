@@ -19,6 +19,9 @@ const harness = vi.hoisted(() => ({
   onRevoked: null as null | (() => void),
   relayRequests: [] as Record<string, unknown>[],
   lanRequests: [] as Record<string, unknown>[],
+  /** O2：sync 挂起待撤销帧（真客户端里 revoke 帧 drop 等待者先于 onRevoked）。 */
+  hangSync: false,
+  rejectSync: null as null | ((error: Error) => void),
   relayDials: [] as { url: string; authorization: string }[],
   /** 每个 mock LAN 客户端实例的存活标记——断言「会话通道没陪葬」用。 */
   lanClients: [] as { alive: boolean }[],
@@ -71,6 +74,9 @@ vi.mock('../../../packages/mobile/src/platform/relayCompanionClient', () => ({
     async resume() { if (harness.relayError) throw new Error(harness.relayError); }
     async request(payload: Record<string, unknown>) {
       harness.relayRequests.push(payload);
+      if (payload.action === 'sync' && harness.hangSync) {
+        return new Promise((_, reject) => { harness.rejectSync = reject; });
+      }
       if (payload.action === 'sync') return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
       return { kind: 'accepted', command: { commandId: 'x', state: 'accepted', result: {} } };
     }
@@ -170,6 +176,31 @@ describe('companionStore 双径：LAN 优先、relay 回落、恢复收敛', () 
     expect(harness.onRevoked).toBeTruthy();
     harness.onRevoked?.();
     expect(store.getState()).toMatchObject({ status: 'rejected', connectionError: 'connectionRejected', transport: null });
+  });
+
+  it('撤销时有 sync 在飞（revoke 帧先 drop 再 onRevoked）：rejected 不被打回 offline、不闪自动重试（O2）', async () => {
+    harness.lanError = 'COMPANION_NETWORK_UNAVAILABLE';
+    harness.relayError = null;
+    harness.hangSync = true;
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    await store.getState().hydrate();
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay' });
+    // 记录撤销之后看到的每拍（status, autoRetrying）：序列里不许出现 autoRetrying=true。
+    const seen: { status: string; autoRetrying: boolean }[] = [];
+    const unsubscribe = store.subscribe(state => seen.push({ status: state.status, autoRetrying: state.autoRetrying }));
+    const syncing = store.getState().sync();          // 这条 sync 挂起（宿主正在撤销）
+    await new Promise(resolve => setTimeout(resolve, 0));
+    // 真客户端的顺序：drop() 先结算等待者（sync 失败），同一帧里 onRevoked 把设备翻成 rejected。
+    const settleSync = harness.rejectSync;
+    if (!settleSync) throw new Error('sync 未挂起：rejectSync 缺失');
+    settleSync(new Error('COMPANION_DEVICE_REVOKED'));
+    harness.onRevoked?.();
+    await syncing;
+    expect(store.getState()).toMatchObject({ status: 'rejected', connectionError: 'connectionRejected' });
+    expect(seen.filter(state => state.autoRetrying)).toEqual([]);
+    unsubscribe();
+    store.getState().pause();
+    harness.hangSync = false; harness.rejectSync = null;
   });
 
   it('配对盘里坏掉的 relay 路由被丢弃，配对身份不受连累', async () => {

@@ -11,11 +11,26 @@ import { toHex } from '../../../src/shared/companion/lanProtocol';
 /**
  * N-MOBILE-PROJECTPICK-HITAREA（FB-181）：胶囊外观 36pt 不变，::after 上下各扩 4pt。
  * 模拟器验收用 elementFromPoint 在胶囊外上下 3pt 命中；这里钉 CSS（getBoundingClientRect 不含伪元素）。
+ * R3-D4：绝对定位伪元素的包含块是 padding box，外扩必须把边框宽度一并补进 inset，
+ * 否则下沿只扩 3pt、总高 42.75 < 44（模拟器实测）。jsdom 没有布局，换算在 CSS 规则上断言。
  */
 const css = readFileSync('packages/mobile/src/styles.css', 'utf8');
 
+/** 从规则里解析「超出视觉矩形（border box）每侧多少 px」：inset 外扩减去边框宽。 */
+function hitReachPx(): number {
+  const rule = css.match(/\.project-pick \{[^}]+\}/)?.[0] ?? '';
+  const after = css.match(/\.project-pick::after \{[^}]+\}/)?.[0] ?? '';
+  const border = Number(rule.match(/border: (\d+)px/)?.[1] ?? NaN);
+  const inset = after.match(/inset: calc\(-(\d+)px - (\d+)px\) 0/);
+  expect(Number.isFinite(border)).toBe(true);
+  expect(inset).toBeTruthy();
+  // inset 的第二项就是边框宽度的换算：包含块（padding box）比视觉矩形每侧小一个边框。
+  expect(Number(inset![2])).toBe(border);
+  return Number(inset![1]) + Number(inset![2]) - border;
+}
+
 describe('project-pick 点按区', () => {
-  it('视觉仍是 36pt 胶囊（padding/边框/底色不变），不可见点按区上下各扩 4pt', () => {
+  it('视觉仍是 36pt 胶囊（padding/边框/底色不变），不可见点按区上下各扩 ≥4pt、总高 ≥44pt', () => {
     const rule = css.match(/\.project-pick \{[^}]+\}/)?.[0] ?? '';
     expect(rule).toContain('position: relative');
     expect(rule).toContain('min-height: 36px');
@@ -26,7 +41,11 @@ describe('project-pick 点按区', () => {
     const after = css.match(/\.project-pick::after \{[^}]+\}/)?.[0] ?? '';
     expect(after).toMatch(/content: ''/);
     expect(after).toContain('position: absolute');
-    expect(after).toContain('inset: -4px 0');
+    expect(after).toContain('inset: calc(-4px - 1px) 0');
+    const reach = hitReachPx();
+    const minHeight = Number(rule.match(/min-height: (\d+)px/)?.[1] ?? NaN);
+    expect(reach).toBeGreaterThanOrEqual(4);
+    expect(minHeight + 2 * reach).toBeGreaterThanOrEqual(44);
   });
 });
 
@@ -72,10 +91,11 @@ const ports = (): PlatformPorts => ({
 
 /**
  * 验收合同：胶囊 getBoundingClientRect 不含伪元素，点在上下 3pt 处仍应命中 project-pick。
- * jsdom 没有布局，用与 ::after inset:-4px 0 等价的命中判定钉这个几何。
+ * jsdom 没有布局，用与 ::after inset:calc(-4px - 1px) 0（减边框后每侧外扩 4px）等价的命中判定钉这个几何。
  */
 function hitsProjectPick(rect: { top: number; bottom: number; left: number; right: number }, x: number, y: number): boolean {
-  return x >= rect.left && x <= rect.right && y >= rect.top - 4 && y <= rect.bottom + 4;
+  const reach = hitReachPx();
+  return x >= rect.left && x <= rect.right && y >= rect.top - reach && y <= rect.bottom + reach;
 }
 
 describe('欢迎页 project-pick 可定位，上下 3pt 落在扩展点按区', () => {

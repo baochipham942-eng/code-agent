@@ -19,6 +19,11 @@ const harness = vi.hoisted(() => ({
   pairCalls: 0,
   statusCalls: 0,
   commandCalls: 0,
+  recoverCalls: 0,
+  hangRecover: false,
+  releaseHang: null as null | (() => void),
+  /** read.library 回的会话行（O1 标题记忆链用）。 */
+  librarySessions: [] as { id: string; title: string; projectId: string | null; updatedAt: number; archived: boolean; provider: string; model: string }[],
 }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
@@ -28,6 +33,8 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-2', scopeEpoch: 1, scope: ['project:one'] };
     }
     async recover() {
+      harness.recoverCalls += 1;
+      if (harness.hangRecover) await new Promise<void>(resolve => { harness.releaseHang = resolve; });
       if (harness.recoverError) throw new Error(harness.recoverError);
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] };
     }
@@ -39,7 +46,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
         const query = (payload as { query?: { kind?: string; sessionId?: string } }).query;
         if (query?.kind === 'history') return { sessionId: query.sessionId, messages: [], nextOffset: null };
         if (query?.kind === 'artifacts') return { sessionId: query.sessionId, artifacts: [] };
-        return { nextOffset: null, projects: [{ id: 'one', name: 'One', canCreate: true, workspacePath: '/w' }], sessions: [], models: [] };
+        return { nextOffset: null, projects: [{ id: 'one', name: 'One', canCreate: true, workspacePath: '/w' }], sessions: harness.librarySessions, models: [] };
       }
       return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
     }
@@ -79,6 +86,7 @@ const ports = (written: string[] = []): PlatformPorts => ({
 beforeEach(() => {
   harness.recoverError = 'COMPANION_NETWORK_UNAVAILABLE';
   harness.pairCalls = 0; harness.statusCalls = 0; harness.commandCalls = 0;
+  harness.recoverCalls = 0; harness.hangRecover = false; harness.releaseHang = null; harness.librarySessions = [];
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: false, media: query, onchange: null,
     addEventListener: () => {}, removeEventListener: () => {},
@@ -174,5 +182,104 @@ describe('连接弹层扫码不受 pending 限制', () => {
     expect((document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement).value).toBe('帮我查天气');
     expect(harness.commandCalls).toBe(0);
     expect(JSON.parse(written.at(-1)!).pending).toBeUndefined();
+  });
+});
+
+describe('自动重试在途：连接弹层两个键不置灰（D3）', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('自动尝试在途两键 enabled，点「重新连接」立即开新尝试并回锁防重复', async () => {
+    harness.recoverError = 'COMPANION_NO_RESPONSE';   // 「电脑没回应」：在途 hello 约 10s 才超时
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });   // 冷启动首连失败 → offline + autoRetrying
+    expect(document.querySelector('.app')).toBeTruthy();
+    harness.hangRecover = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); }); // 退避第一拍：自动尝试在途（占 busy）
+    await act(async () => { fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement); });
+    await act(async () => { fireEvent.click([...document.querySelectorAll('.drawer-functions button')].find(b => b.textContent === text.remote) as HTMLElement); });
+    const scan = document.querySelector('[data-testid="remote-action-scan"]') as HTMLButtonElement;
+    const reconnect = document.querySelector('[data-testid="remote-action-reconnect"]') as HTMLButtonElement;
+    // 自动尝试在途不得锁这两个逃生口（D3）；此前约 80% 时间两键 disabled:true。
+    expect(scan?.disabled).toBe(false);
+    expect(reconnect?.disabled).toBe(false);
+    const before = harness.recoverCalls;
+    await act(async () => { fireEvent.click(reconnect); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(harness.recoverCalls).toBe(before + 1);   // 点击立即生效，没被 busy 静默丢掉
+    // 换成手动尝试占 busy：回锁，防重复点击。
+    expect((document.querySelector('[data-testid="remote-action-scan"]') as HTMLButtonElement).disabled).toBe(true);
+    harness.hangRecover = false;
+    harness.releaseHang?.();
+  });
+});
+
+describe('冷启动宿主停机：缓存会话标题取上次记下的那份（O1）', () => {
+  // mock recover 回的罐头绑定 hostKey 是 'aa'.repeat(32)：盘上的 binding.hostKey 与它一致，
+  // 离线（用盘上绑定）与在线（用 recover 回的绑定）两条路才落在同一个记忆键上。
+  const HOST = 'aa'.repeat(32);
+  function coldStartPorts(prefs: { sessionTitles?: Record<string, string> }): PlatformPorts {
+    const identity = createIdentity();
+    return {
+      preferences: {
+        get: async () => JSON.stringify({
+          schema: 1, drafts: { new: '', fixture: '' }, appearance: 'system', nickname: '', notifyEnabled: false,
+          lastSessions: { [HOST]: 's-live' }, ...(prefs.sessionTitles ? { sessionTitles: prefs.sessionTitles } : {}),
+        }),
+        set: async () => {},
+      },
+      appInfo: { read: async () => ({ version: '0.1.0', build: '51' }) },
+      lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
+      keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
+      companion: {
+        read: async () => JSON.stringify({
+          version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: HOST, deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
+        }),
+        write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}),
+      },
+    };
+  }
+
+  it('有记忆标题：顶栏显示真名，不落「共享会话 0」', async () => {
+    await act(async () => { render(<MobileRoot ports={coldStartPorts({ sessionTitles: { [`${HOST}:s-live`]: '真名叫这个' } })} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.topbar strong')?.textContent).toBe('真名叫这个'); });
+  });
+
+  it('没记过标题：占位「共享会话」仍在（会话不在 scope 里序号从 0 起）', async () => {
+    await act(async () => { render(<MobileRoot ports={coldStartPorts({})} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.topbar strong')?.textContent).toBe(`${text.sharedSession} 0`); });
+  });
+
+  it('连着时标题随 library 记进偏好盘，重启后宿主停机可读（O1 记忆链）', async () => {
+    const identity = createIdentity();
+    let prefs = JSON.stringify({
+      schema: 1, drafts: { new: '', fixture: '' }, appearance: 'system', nickname: '', notifyEnabled: false,
+      lastSessions: { [HOST]: 's-live' },
+    });
+    const companionDisk = JSON.stringify({
+      version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+      binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: HOST, deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
+    });
+    const mount = async () => {
+      const instance: PlatformPorts = {
+        preferences: { get: async () => prefs, set: async value => { prefs = value; } },
+        appInfo: { read: async () => ({ version: '0.1.0', build: '51' }) },
+        lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
+        keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
+        companion: { read: async () => companionDisk, write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}) },
+      };
+      await act(async () => { render(<MobileRoot ports={instance} fixtures={false} />); });
+    };
+    // 第一段：宿主在线，库里带真名 → 记忆落盘。
+    harness.recoverError = null;
+    harness.librarySessions = [{ id: 's-live', title: '真名叫这个', projectId: 'one', updatedAt: 9, archived: false, provider: 'deepseek', model: 'deepseek-chat' }];
+    await mount();
+    await waitFor(() => { expect(JSON.parse(prefs).sessionTitles?.[`${HOST}:s-live`]).toBe('真名叫这个'); });
+    cleanup();
+    // 第二段：宿主停机冷启动，同一块偏好盘 → 标题还是真名。
+    harness.recoverError = 'COMPANION_NO_RESPONSE';
+    await mount();
+    await waitFor(() => { expect(document.querySelector('.topbar strong')?.textContent).toBe('真名叫这个'); });
   });
 });

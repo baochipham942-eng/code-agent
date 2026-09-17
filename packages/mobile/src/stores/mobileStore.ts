@@ -8,7 +8,9 @@ type Preferences = { schema: 1; drafts: Record<string, string>; transcriptComman
   /** 新任务项目选择器上手选过的项目，按电脑（hostKey）记（N-MOBILE-DEFAULT-PROJECT）。 */
   projectPicks?: Record<string, string>;
   /** 上次打开的会话，按电脑（hostKey）记。空串 = 欢迎页（N-MOBILE-RESUME-LAST-SESSION）。 */
-  lastSessions?: Record<string, string> };
+  lastSessions?: Record<string, string>;
+  /** 上次见到的会话标题（`${hostKey}:${sessionId}` → title）：冷启动宿主停机时，缓存会话的标题从这里取（O1）。 */
+  sessionTitles?: Record<string, string> };
 type Sheet = { origin: 'root' | 'drawer'; pages: SheetPage[] };
 interface State {
   preferences: Preferences; ready: boolean; loadError: boolean; saveError: boolean; saving: boolean;
@@ -18,6 +20,7 @@ interface State {
   setNotifyEnabled(value: boolean): void;
   pickProject(hostKey: string, projectId: string): void;
   rememberSession(hostKey: string, sessionId: string | null): void;
+  rememberSessionTitle(hostKey: string, sessionId: string, title: string): void;
   editProfile(value: string): void; saveProfile(): void; flush(): Promise<void>;
   openDrawer(): void; closeDrawer(): void; navigate(route: Route): void;
   openSheet(page: SheetPage): void; pushSheet(page: SheetPage): void; closeSheet(): void; back(): boolean;
@@ -38,7 +41,8 @@ function decode(raw: string | null): Preferences {
   }
   return { schema: 1, transcriptCommands: v.transcriptCommands ?? {}, drafts: Object.fromEntries(Object.entries(v.drafts).filter(([, value]) => typeof value === 'string')), appearance: v.appearance!, nickname: v.nickname, notifyEnabled: v.notifyEnabled === true,
     projectPicks: Object.fromEntries(Object.entries(v.projectPicks ?? {}).filter(([, value]) => typeof value === 'string')),
-    lastSessions: Object.fromEntries(Object.entries(v.lastSessions ?? {}).filter(([, value]) => typeof value === 'string')) };
+    lastSessions: Object.fromEntries(Object.entries(v.lastSessions ?? {}).filter(([, value]) => typeof value === 'string')),
+    sessionTitles: Object.fromEntries(Object.entries(v.sessionTitles ?? {}).filter(([, value]) => typeof value === 'string')) };
 }
 
 /**
@@ -117,6 +121,13 @@ export function createMobileStore(port: PlatformPorts['preferences']) {
       rememberSession: (hostKey, sessionId) => {
         if (!get().ready) return;
         set({ preferences: { ...get().preferences, lastSessions: { ...get().preferences.lastSessions, [hostKey]: sessionId ?? '' } } }); persist();
+      },
+      rememberSessionTitle: (hostKey, sessionId, title) => {
+        if (!get().ready) return;
+        const key = `${hostKey}:${sessionId}`;
+        // 没变不写盘：库每次刷新都会走这里，照写会让偏好盘跟着每次 sync 抖动。
+        if (get().preferences.sessionTitles?.[key] === title) return;
+        set({ preferences: { ...get().preferences, sessionTitles: { ...get().preferences.sessionTitles, [key]: title } } }); persist();
       },
       editProfile: profileDraft => set({ profileDraft }),
       saveProfile: () => {

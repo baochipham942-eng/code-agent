@@ -23,17 +23,21 @@ const harness = vi.hoisted(() => ({
   revoked: false,
   hangRecover: false,
   releaseHang: null as null | (() => void),
+  /** 每个挂起的 recover 的放行闸，按挂起顺序排（D3 抢占测试用）。 */
+  releaseHangs: [] as (() => void)[],
+  pairError: null as string | null,
   syncError: null as string | null,
 }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
     async pair() {
+      if (harness.pairError) throw new Error(harness.pairError);
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-2', scopeEpoch: 1, scope: ['project:one'] };
     }
     async recover() {
       harness.recoverCalls += 1;
-      if (harness.hangRecover) await new Promise<void>(resolve => { harness.releaseHang = resolve; });
+      if (harness.hangRecover) await new Promise<void>(resolve => { harness.releaseHang = resolve; harness.releaseHangs.push(resolve); });
       if (harness.recoverError) throw new Error(harness.recoverError);
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] };
     }
@@ -81,7 +85,7 @@ function slotFrom(store: ReturnType<typeof storeOf>) {
     binding: Boolean(s.binding), status: s.status, paused: s.paused, connectionError: s.connectionError, busy: s.busy,
     commandError: s.commandError, commandErrorAction: s.commandErrorAction, voiceFailureShown: false, sessionId: s.sessionId,
     libraryError: s.libraryError, pending: s.pending, pendingAction: s.pendingAction, pendingSlow: false,
-    autoRetrying: s.autoRetrying, abandonedPending: s.abandonedPending,
+    autoRetrying: s.autoRetrying, autoAttempt: s.autoAttempt, abandonedPending: s.abandonedPending,
   }, { flush() {}, reconnect() {}, scan() {}, openRemote() {}, retryCreate() {}, switchModel() {} });
 }
 
@@ -123,6 +127,8 @@ describe('companionStore 前台退避自动重连', () => {
     harness.revoked = false;
     harness.hangRecover = false;
     harness.releaseHang = null;
+    harness.releaseHangs = [];
+    harness.pairError = null;
     harness.syncError = null;
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     vi.useFakeTimers();
@@ -282,6 +288,89 @@ describe('companionStore 前台退避自动重连', () => {
     harness.hangRecover = false;
     await store.getState().pair(invitation());
     expect(store.getState()).toMatchObject({ status: 'connected', autoRetrying: false, busy: false });
+    store.getState().pause();
+  });
+
+  it('扫码配对失败（宿主停机）：恢复原绑定，宿主恢复后自动重连成功（D1）', async () => {
+    harness.pairError = 'COMPANION_NO_RESPONSE';
+    const written: string[] = [];
+    const store = createCompanionStore({
+      read: async () => savedBinding(),
+      write: async value => { written.push(value); },
+      scan: async () => { throw new Error('unused'); },
+      post: async () => ({}),
+    }, () => {});
+    await store.getState().hydrate();
+    expect(store.getState()).toMatchObject({ status: 'offline', autoRetrying: true });
+    const callsAfterHydrate = harness.recoverCalls;
+    await store.getState().pair(invitation());
+    // 配对没成，但原绑定恢复进了盘上，前台退避自动重试接着跑——不是卡死在失败态。
+    expect(store.getState().binding).toBeTruthy();
+    expect(JSON.parse(written.at(-1)!).binding).toBeTruthy();
+    expect(store.getState().autoRetrying).toBe(true);
+    expect(store.getState().status).toBe('offline');
+    harness.pairError = null;
+    harness.recoverError = null;   // 宿主回来了
+    await vi.advanceTimersByTimeAsync(0);
+    // 恢复原绑定那一拍挂的是 0 延迟重试（握手成功还会 probe.recover 刷 relay 路由，+2 是常态）。
+    expect(harness.recoverCalls).toBeGreaterThan(callsAfterHydrate);
+    expect(store.getState().status).toBe('connected');
+    store.getState().pause();
+  });
+
+  it('扫码配对失败前原绑定没动过（扫码本身失败）：不恢复也不重试，停在失败态', async () => {
+    // pair 在第一次 persist 之前就抛（scan 环节失败用握手码模拟路径不同，这里直接让 scan 抛）。
+    const store = storeOf();
+    await store.getState().hydrate();
+    const callsAfterHydrate = harness.recoverCalls;
+    await store.getState().pair('not-an-invitation');   // 二维码解不开：清绑定那步还没走到
+    expect(store.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionQrInvalid', binding: expect.anything() });
+    expect(store.getState().autoRetrying).toBe(false);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(harness.recoverCalls).toBe(callsAfterHydrate);
+    store.getState().pause();
+  });
+
+  it('没有原绑定的扫码失败：停在失败态不空转（D1）', async () => {
+    harness.pairError = 'COMPANION_NO_RESPONSE';
+    const identity = createIdentity();
+    const raw = JSON.stringify({ version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey) });
+    const store = createCompanionStore({
+      read: async () => raw,
+      write: async () => {},
+      scan: async () => { throw new Error('unused'); },
+      post: async () => ({}),
+    }, () => {});
+    await store.getState().hydrate();
+    expect(store.getState().status).toBe('unpaired');
+    await store.getState().pair(invitation());
+    expect(store.getState()).toMatchObject({ status: 'offline', autoRetrying: false });
+    expect(store.getState().binding).toBeNull();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(harness.recoverCalls).toBe(0);
+  });
+
+  it('自动重试在途点「重新连接」：立即开新尝试，旧尝试迟到的失败不作废新连接（D3）', async () => {
+    const store = storeOf();
+    await store.getState().hydrate();                     // 首次尝试失败 → offline + autoRetrying
+    harness.hangRecover = true;
+    vi.advanceTimersByTime(2000);
+    await flushUntilHung();                               // 自动尝试挂起：占 busy 但 autoAttempt
+    expect(store.getState()).toMatchObject({ status: 'offline', busy: true, autoAttempt: true, autoRetrying: true });
+    // 状态位的「重新连接」动作此刻必须可点（D3：自动尝试不锁逃生口）。
+    expect(slotFrom(store).find(item => item?.rank === 2)?.action?.disabled).toBe(false);
+    const calls = harness.recoverCalls;
+    const manual = store.getState().reconnect({ resetBackoff: true });
+    await vi.advanceTimersByTimeAsync(0);                 // 冲微任务：新（手动）尝试也已挂起
+    expect(harness.recoverCalls).toBe(calls + 1);         // 没被 busy 丢掉
+    expect(store.getState().autoAttempt).toBe(false);     // 手动尝试占 busy → 防重复点击
+    expect(slotFrom(store).find(item => item?.rank === 2)?.action?.disabled).toBe(true);
+    // 宿主其实回来了：放行手动尝试 → 连上。旧自动尝试的迟到失败（客户端被抢占者关闭）不得把新连接打回 offline。
+    harness.recoverError = null;
+    harness.hangRecover = false;   // 连上后的 relay 路由探针也要能走完
+    harness.releaseHangs[1]();
+    await manual;
+    expect(store.getState()).toMatchObject({ status: 'connected', busy: false });
     store.getState().pause();
   });
 

@@ -81,6 +81,7 @@ import {
   cancelDisconnectedAgentRouteRun,
   createAgentDurableRouteRunLifecycle,
   resolveAgentDurableActivation,
+  resolveNativeRunWorkspaceScope,
 } from './agentDurableRouteLifecycle';
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
 import { steerOrQueue } from '../../host/runtime/steerQueueFence';
@@ -461,6 +462,21 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // context and the legacy session cwd are only source provenance here.
       resolvedProject = runWorkspaceScope.primaryRoot;
     }
+    // 会话有真实 Project scope 时把 native run（durable 与非 durable 同一份）的写边界钉成该项目，
+    // 与 orchestrator 路径（cron/唤醒/IPC）和外部引擎一致。此前只传 workspace 字符串，
+    // createRunContext 兜底铸造 legacy-background-authority：只读 Source 不设防、Additional
+    // Source 不在界内，恢复侧拿假 id 查项目库还会误判 scope drift（N-DURABLE-FOLLOWUPS-0917）。
+    const nativeRunWorkspaceScope = resolveNativeRunWorkspaceScope({
+      sessionScope: runWorkspaceScope,
+      workspace: resolvedProject,
+    });
+    if (runWorkspaceScope && !nativeRunWorkspaceScope) {
+      logger.info('[AgentRouter] Session WorkspaceScope not bindable to the native run, keeping legacy fallback', {
+        sessionId,
+        projectId: runWorkspaceScope.projectId,
+        isolatedFork: runWorkspaceScope.version.startsWith('isolated-v1:'),
+      });
+    }
     const explicitForkLineage = isExternalAgentEngine(selectedEngine.kind) && dbAvailable
       ? getDatabase().getSessionForkLineage(
           sessionId,
@@ -496,6 +512,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       runRegistry,
       sessionId,
       workspace: resolvedProject,
+      ...(nativeRunWorkspaceScope ? { workspaceScope: nativeRunWorkspaceScope } : {}),
       durableActivation,
       externalEngine: isExternalAgentEngine(selectedEngine.kind) ? selectedEngine.kind : undefined,
       externalSessionId: persistedForkExternalSessionId,
@@ -1097,7 +1114,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const agentLoop = createAgentLoop(config, (event) => {
         const emitted = runController.emitAgentEvent(event);
         runEventCollector.observe(event, emitted);
-        if (event.type !== 'agent_complete' && event.type !== 'agent_cancelled') {
+        // 终态（完成/取消/失败）只由本路由收尾处发一次：引擎失败时 runFinalizer 先发 error 再抛出，
+        // 这里再转一遍手机就收到两条 error ⇒ 两条「任务失败」推送（FB-193，爸 build 51 真机）。
+        if (event.type !== 'agent_complete' && event.type !== 'agent_cancelled' && event.type !== 'error') {
           deps.publishCompanionEvent?.(sessionId, event.type, { event: event.data, runId: runContext.runId });
         }
       }, messages, sessionId, undefined, runToolExecutor, runContext, runHandle.traceContext);
@@ -1294,7 +1313,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         disconnected: runController.disconnected,
         message,
       });
-      const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error) ?? runController.lastTerminalFailure;
+      // 引擎发过终态 error 时它的 failure 优先：那条带着这一轮真正跑的模型（provider/model），
+      // 抛出的原始错误上通常没有——这里是手机唯一收到的那条 error，丢了「换走失败模型收起卡片」就失效。
+      const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error);
       deps.publishCompanionEvent?.(sessionId, 'error', { event: { code: 'RUN_FAILED', ...(failure ? { failure } : {}) }, runId: runContext?.runId });
       if (!runController.disconnected) {
         runController.emitAgentEvent({
@@ -1363,7 +1384,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     });
   });
 
-  registerAgentCancelRoute(router, runRegistry, deps.getDurableRunReadService);
+  registerAgentCancelRoute(router, runRegistry, deps.getDurableRunReadService, (recovered) => {
+    // 桌面经本次 HTTP 响应收尾；手机没有 ack 可吃，补发 agent_cancelled 让事件流
+    // 把「正在处理」清掉（payload 形状与正常终局 agent.ts 的发布保持一致）。
+    deps.publishCompanionEvent?.(recovered.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
+  });
 
   registerAgentLifecycleControlRoutes(router, runRegistry, deps.getDurableRunReadService?.());
 

@@ -128,6 +128,10 @@ describe('companionStore 双径：LAN 优先、relay 回落、恢复收敛', () 
     const other = storeWith(storageWith({ relay: RELAY_ROUTE }));
     await other.getState().hydrate();
     expect(other.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionRelayRejected' });
+    harness.relayError = 'COMPANION_RELAY_NO_HOST';
+    const noHost = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    await noHost.getState().hydrate();
+    expect(noHost.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionRelayNoHost' });
   });
 
   it('LAN 失败 + 没有缓存路由 ⇒ 只报 LAN 的错误（行为不劣化）', async () => {

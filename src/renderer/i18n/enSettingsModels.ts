@@ -65,7 +65,7 @@ export const enSettingsModels = {
       taskStrategy: {
         loading: 'Task strategy configuration is still loading.',
         toggleTitle: 'Enable automatic switching',
-        toggleDescription: 'When enabled, fast / deep / vision tasks can use different models. When disabled, everything uses the default model.',
+        toggleDescription: 'When enabled, main / fast / deep / vision tasks can use different models. When disabled, everything uses the default model.',
         toggleAriaLabel: 'Enable automatic model switching by task',
         autoSaveBadge: 'Auto-saved',
         unavailableBadge: 'Unavailable',
@@ -81,6 +81,8 @@ export const enSettingsModels = {
           description: 'Used for conversation capture, review, and memory consolidation. It follows the fast model until configured separately.',
           followFast: 'Follow fast model (default)',
           costHint: 'Choosing a stronger model consumes more quota and may increase pay-as-you-go API charges.',
+          unavailableHint: 'This model is not in the enabled model list (it may have been written by hand, or its provider or model is disabled). Memory organization still calls it directly, and a round fails when the call fails. Follow the fast model instead, or enable this model in its provider.',
+          resetToFollowFast: 'Follow fast model instead',
         },
       },
       providerSection: {

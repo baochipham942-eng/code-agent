@@ -9,7 +9,12 @@ import { createIdentity } from '../../src/shared/companion/noiseChannel';
 import { toHex } from '../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 import { CompanionRelayServer } from '../../packages/relay/src/server';
+import {
+  COMPANION_RELAY_WS_PROTOCOL,
+  companionRelayCredentialSubprotocol,
+} from '../../src/shared/contract/companionRelay';
 import { RelayPhoneStub } from './companion/relayPhoneStub';
+import { RelayCompanionClient, type RelayDial } from '../../packages/mobile/src/platform/relayCompanionClient';
 
 const SECRET = 'test-relay-credential';
 const TOKEN = 'route-token-aaaaaa';
@@ -23,6 +28,21 @@ function freePort(): Promise<number> {
     });
   });
 }
+
+const nodeDial: RelayDial = (dialUrl, headers) => {
+  const socket = new WebSocket(dialUrl, { headers });
+  return {
+    send: data => socket.send(data),
+    close: () => socket.close(),
+    onOpen: handler => socket.once('open', handler),
+    onMessage: handler => socket.on('message', data => handler(String(data))),
+    onClose: handler => socket.once('close', handler),
+    onError: handler => socket.once('error', handler),
+  };
+};
+
+// 前缀只在 shared 契约里定义（不导出）：空凭据编码即前缀。
+const AUTH_PREFIX = companionRelayCredentialSubprotocol('');
 
 describe('companion relay: production server + host dial-out', () => {
   let db: Database.Database;
@@ -96,7 +116,8 @@ describe('companion relay: production server + host dial-out', () => {
     const stats = await health.json() as Record<string, unknown>;
     expect(Object.keys(stats).sort()).toEqual([
       'connections', 'droppedBacklog', 'droppedBackpressure', 'droppedExpired', 'droppedNoRoute',
-      'forwarded', 'queuedFrames', 'rejectedAuth', 'revoked', 'routes',
+      'forwarded', 'notifiedNoHost', 'queuedFrames', 'rejectedAuth', 'revoked', 'routes',
+      'accountConnections', 'rejectedOwner',
     ].sort());
     const missing = await fetch(`http://127.0.0.1:${port}/nope`);
     expect(missing.status).toBe(404);
@@ -111,6 +132,96 @@ describe('companion relay: production server + host dial-out', () => {
     expect(relay.currentStats.rejectedAuth).toBeGreaterThan(statsBefore.rejectedAuth);
     expect(relay.currentStats.connections).toBe(statsBefore.connections);
     expect(relay.currentStats.routes).toBe(statsBefore.routes);
+  });
+
+  // 手机 WebView 设不了 Authorization 头，凭据走 WebSocket 子协议
+  // （N-COMPANION-RELAY-PHONE-AUTH）。以下四例覆盖浏览器形态的过闸矩阵。
+  it('accepts a subprotocol credential dial, selects the fixed protocol, and completes registration', async () => {
+    const statsBefore = relay.currentStats;
+    const socket = new WebSocket(url, [COMPANION_RELAY_WS_PROTOCOL, companionRelayCredentialSubprotocol(SECRET)]);
+    // close 也放行：客户端在「发了子协议、服务端没选」时会直接断开，别让等待挂到测试超时。
+    await new Promise<void>(resolve => { socket.once('open', resolve); socket.once('close', () => resolve()); });
+    // 服务端只回选固定协议名——凭据项绝不回选或回显（回显等于把凭据发回给所有人）。
+    expect(socket.protocol).toBe(COMPANION_RELAY_WS_PROTOCOL);
+    socket.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'device',
+      envelope: { routeToken: 'route-token-subauth', deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    await vi.waitFor(() => expect(relay.currentStats.routes).toBe(statsBefore.routes + 1));
+    expect(relay.currentStats.rejectedAuth).toBe(statsBefore.rejectedAuth);
+    socket.close();
+  });
+
+  it('rejects a subprotocol dial with the wrong credential', async () => {
+    const statsBefore = relay.currentStats;
+    await new Promise<void>(resolve => {
+      const socket = new WebSocket(url, [COMPANION_RELAY_WS_PROTOCOL, companionRelayCredentialSubprotocol('wrong-credential-x')]);
+      socket.once('close', () => resolve());
+    });
+    expect(relay.currentStats.rejectedAuth).toBeGreaterThan(statsBefore.rejectedAuth);
+    expect(relay.currentStats.connections).toBe(statsBefore.connections);
+    expect(relay.currentStats.routes).toBe(statsBefore.routes);
+  });
+
+  it('rejects a dial carrying neither a credential header nor a credential subprotocol', async () => {
+    const statsBefore = relay.currentStats;
+    await new Promise<void>(resolve => {
+      const socket = new WebSocket(url, [COMPANION_RELAY_WS_PROTOCOL]);
+      socket.once('close', () => resolve());
+    });
+    expect(relay.currentStats.rejectedAuth).toBeGreaterThan(statsBefore.rejectedAuth);
+    expect(relay.currentStats.connections).toBe(statsBefore.connections);
+  });
+
+  it('rejects a credential subprotocol whose encoding is invalid base64url', async () => {
+    const statsBefore = relay.currentStats;
+    const dials = ['neo-relay-auth.!!!not-base64!!!', `${AUTH_PREFIX}abcde`].map(encoded =>
+      new Promise<void>(resolve => {
+        const socket = new WebSocket(url, [COMPANION_RELAY_WS_PROTOCOL, encoded]);
+        socket.once('close', () => resolve());
+      }));
+    await Promise.all(dials);
+    expect(relay.currentStats.rejectedAuth).toBeGreaterThanOrEqual(statsBefore.rejectedAuth + 2);
+    expect(relay.currentStats.connections).toBe(statsBefore.connections);
+  });
+
+  it('never writes the credential or its subprotocol encoding into logs or stats', async () => {
+    const events: string[] = [];
+    const logging = new CompanionRelayServer({
+      credential: SECRET,
+      port: await freePort(),
+      logger: {
+        info: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+        warn: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+      },
+    });
+    const loggingUrl = `ws://127.0.0.1:${(await logging.listen()).port}`;
+    const encoded = companionRelayCredentialSubprotocol(SECRET);
+    // 对：子协议拨通 + 注册一条 route；错/无：各拒一发，让 rejectedAuth 路径也过一遍日志。
+    const good = new WebSocket(loggingUrl, [COMPANION_RELAY_WS_PROTOCOL, encoded]);
+    await new Promise<void>(resolve => { good.once('open', resolve); good.once('close', () => resolve()); });
+    good.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'device',
+      envelope: { routeToken: 'route-token-sublog', deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    await vi.waitFor(() => expect(logging.currentStats.routes).toBe(1));
+    await new Promise<void>(resolve => {
+      const bad = new WebSocket(loggingUrl, [COMPANION_RELAY_WS_PROTOCOL, companionRelayCredentialSubprotocol('wrong-credential-x')]);
+      bad.once('close', () => resolve());
+    });
+    await new Promise<void>(resolve => {
+      const bare = new WebSocket(loggingUrl, [COMPANION_RELAY_WS_PROTOCOL]);
+      bare.once('close', () => resolve());
+    });
+    await vi.waitFor(() => expect(logging.currentStats.rejectedAuth).toBe(2));
+    const wire = [...events, JSON.stringify(logging.currentStats)].join('\n');
+    expect(wire).not.toContain(SECRET);
+    expect(wire).not.toContain(encoded);
+    expect(wire).not.toContain(encoded.slice(AUTH_PREFIX.length));
+    good.close();
+    await logging.stop();
   });
 
   it('does not buffer without bound while the peer is absent', async () => {
@@ -137,6 +248,60 @@ describe('companion relay: production server + host dial-out', () => {
       expect(stats.droppedBacklog).toBe(4);
     });
     intruder.close();
+  });
+
+  // N-COMPANION-RELAY-NOHOST-FASTFAIL（FB-194）：手机连到没有 host 的 route，relay 宽限期后回
+  // no-host 帧，产品里的手机客户端据此秒级失败，而不是排着队干等自己的握手超时。
+  it('tells a device on a hostless route to give up after the grace window, well before the handshake timeout', async () => {
+    const graced = new CompanionRelayServer({ credential: SECRET, port: await freePort(), noHostGraceMs: 150 });
+    const gracedUrl = `ws://127.0.0.1:${(await graced.listen()).port}`;
+    const lonely = new RelayCompanionClient({
+      identity: createIdentity(),
+      route: { v: 1, url: gracedUrl, routeToken: 'route-token-nohost1', credential: SECRET },
+      deviceRef: 'phone-1',
+      dial: nodeDial,
+    });
+    const started = Date.now();
+    await lonely.connect();
+    await expect(lonely.resume({ hostKey: toHex(hostIdentity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['shared'] }))
+      .rejects.toThrow('COMPANION_RELAY_NO_HOST');
+    expect(Date.now() - started).toBeLessThan(L.requestTimeoutMs / 2);
+    expect(graced.currentStats).toMatchObject({ notifiedNoHost: 1, queuedFrames: 0 });
+    await graced.stop();
+  });
+
+  it('does not report no-host when the host re-registers inside the grace window', async () => {
+    const graced = new CompanionRelayServer({ credential: SECRET, port: await freePort(), noHostGraceMs: 400 });
+    const gracedUrl = `ws://127.0.0.1:${(await graced.listen()).port}`;
+    const identity = createIdentity();
+    const device = gateway.pairIdentity(toHex(identity.publicKey), ['shared']);
+    const lateHost = new CompanionRelayClient({
+      gateway,
+      identity: hostIdentity,
+      config: { url: gracedUrl, credentialRef: 'companion-relay', reconnectBackoffMs: [30, 60, 120] },
+      credential: SECRET,
+      jitter: () => 0.5,
+    });
+    lateHost.advertise({ deviceRef: device.deviceId, routeToken: 'route-token-nohost2' });
+    const client = new RelayCompanionClient({
+      identity,
+      route: { v: 1, url: gracedUrl, routeToken: 'route-token-nohost2', credential: SECRET },
+      deviceRef: device.deviceId,
+      dial: nodeDial,
+    });
+    await client.connect();
+    // 手机先到、握手排队；host 在宽限期内（模拟 Host 重连退避第一档）才注册上来。
+    const resumed = client.resume({ hostKey: toHex(hostIdentity.publicKey), deviceId: device.deviceId, scopeEpoch: device.scopeEpoch, scope: device.scope });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await lateHost.start();
+    await resumed;
+    // 等过宽限期：定时器到点看到 host 在，什么都不发。
+    await new Promise(resolve => setTimeout(resolve, 500));
+    expect(client.connected).toBe(true);
+    expect(graced.currentStats.notifiedNoHost).toBe(0);
+    client.close();
+    await lateHost.stop();
+    await graced.stop();
   });
 
   it('breaks the device side when the host revokes', async () => {

@@ -1,8 +1,16 @@
 import express from 'express';
 import http from 'http';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
+import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
+import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
+
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
 
 vi.mock('../../../src/shared/constants', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/shared/constants')>();
@@ -30,17 +38,66 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
     }
   });
 
-  async function start(registry: RunRegistry, readService?: DurableRunReadService) {
+  async function start(
+    registry: RunRegistry,
+    readService?: DurableRunReadService,
+    onRecoveredWaitingCancelled?: (input: { runId: string; sessionId: string }) => void,
+  ) {
     const app = express();
     app.use(express.json());
     const router = express.Router();
-    registerAgentCancelRoute(router, registry, () => readService);
+    registerAgentCancelRoute(router, registry, () => readService, onRecoveredWaitingCancelled);
     app.use('/api', router);
     server = http.createServer(app);
     await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
     const addr = server.address();
     if (!addr || typeof addr === 'string') throw new Error('no port');
     baseUrl = `http://127.0.0.1:${addr.port}`;
+  }
+
+  /** N-DURABLE-WAITING-NO-EXIT 现场：重启恢复成 waiting 的 native run——有 owner 没 handle。 */
+  async function recoveredWaitingRegistry(input: { runId: string; sessionId: string }) {
+    const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'cancel-route-waiting-')));
+    const db = new Database(':memory:');
+    const repository = new DurableRunRepository(db);
+    repository.migrate();
+    const kernel = (processInstanceId: string) => new DurableRunKernel({
+      stores: repository,
+      ownerId: 'route-test',
+      processInstanceId,
+      leaseDurationMs: 100,
+    });
+    const first = new RunRegistry();
+    first.configureDurableKernel(kernel('before-crash'));
+    await first.startDurable({
+      runId: input.runId,
+      sessionId: input.sessionId,
+      workspace,
+      cwd: workspace,
+    }, 1_000);
+    await first.checkpointNativeModelOperation({
+      runId: input.runId,
+      sourceMessageId: 'message-route',
+      provider: 'provider',
+      model: 'model',
+      logicalOperationId: 'route-turn',
+      phase: 'after_model_dispatch',
+      status: 'dispatched',
+      now: 1_010,
+    });
+    first.clear();
+    const recovered = new RunRegistry();
+    recovered.configureDurableKernel(kernel('after-crash'));
+    await recovered.recoverDurable(2_000);
+    await recovered.checkpointDurable(input.runId, {
+      now: 2_000,
+      status: 'waiting',
+      state: null,
+      pendingOperations: [],
+      childRuns: [],
+      events: [{ type: 'native_recovery_requires_review', payload: { reason: 'fixture' }, recordedAt: 2_000 }],
+    });
+    return { registry: recovered, db, repository, workspace };
   }
 
   it('returns Cancelled only after the run leaves the active registry', async () => {
@@ -179,5 +236,64 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
       code: 'CANCEL_REQUESTED',
     });
     expect(registry.hasSession('session-pre')).toBe(true);
+  });
+
+  it('terminalizes a recovered waiting durable run that resolve() cannot see', async () => {
+    const { registry, db, repository, workspace } = await recoveredWaitingRegistry({
+      runId: 'run-route-waiting',
+      sessionId: 'session-route-waiting',
+    });
+    const cancelledEvents: { runId: string; sessionId: string }[] = [];
+    try {
+      await start(registry, undefined, (input) => cancelledEvents.push(input));
+
+      const response = await fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: 'session-route-waiting' }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        message: 'Cancelled',
+        runId: 'run-route-waiting',
+        sessionId: 'session-route-waiting',
+      });
+      expect(await repository.get('run-route-waiting')).toMatchObject({
+        status: 'cancelled',
+        terminal: { status: 'cancelled', reason: 'recovered_waiting_run_cancelled' },
+      });
+      expect(registry.hasDurableOwner('run-route-waiting')).toBe(false);
+      expect(cancelledEvents).toEqual([{ runId: 'run-route-waiting', sessionId: 'session-route-waiting' }]);
+    } finally {
+      registry.clear();
+      db.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps a mismatched runId from touching the session waiting run', async () => {
+    const { registry, db, repository, workspace } = await recoveredWaitingRegistry({
+      runId: 'run-route-fence',
+      sessionId: 'session-route-fence',
+    });
+    try {
+      await start(registry);
+      const response = await fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ runId: 'run-someone-else', sessionId: 'session-route-fence' }),
+      });
+
+      // runId 对不上：不动那个 waiting run，也不谎报 Cancelled。
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({ message: 'No active agent to cancel' });
+      expect(await repository.get('run-route-fence')).toMatchObject({ status: 'waiting' });
+      expect(registry.hasDurableOwner('run-route-fence')).toBe(true);
+    } finally {
+      registry.clear();
+      db.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
 });

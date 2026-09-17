@@ -634,6 +634,50 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return released;
   }
 
+  /**
+   * 恢复后被停在 waiting、且没有任何控制 handle 的 durable run 的查找。
+   *
+   * recoverDurable 只登记 durable owner + 心跳，不注册 handle；引擎恢复器把 run
+   * checkpoint 成 waiting（requires_review）后它就成了一个 resolve() 查不到、却仍持
+   * 租约挡住同会话新 run 的「只进不出」状态。有 handle 的 waiting run 不算——它们
+   * 走 resolve() → handle.cancel 的正常链路。同步方法：companion dispatch 等同步
+   * 入口先探测，再异步走 terminalRecoveredWaitingRun。
+   */
+  findRecoveredWaitingRun(selector: { runId?: string; sessionId?: string }): { runId: string; sessionId: string } | undefined {
+    const runId = selector.runId?.trim();
+    const sessionId = selector.sessionId?.trim();
+    if (!runId && !sessionId) return undefined;
+    for (const envelope of this.durableEnvelopes.values()) {
+      if (envelope.status !== 'waiting') continue;
+      if (runId && envelope.runId !== runId) continue;
+      if (sessionId && envelope.sessionId !== sessionId) continue;
+      if (this.handlesByRunId.has(envelope.runId)) continue;
+      if (!this.durableOwners.has(envelope.runId)) continue;
+      return { runId: envelope.runId, sessionId: envelope.sessionId };
+    }
+    return undefined;
+  }
+
+  /** 把 findRecoveredWaitingRun 命中的 run 沿 terminalDurable 规范路径（owner/attempt fence + 事件序号）终态化成 cancelled。 */
+  async terminalRecoveredWaitingRun(
+    selector: { runId?: string; sessionId?: string },
+    now = Date.now(),
+  ): Promise<{ runId: string; sessionId: string } | undefined> {
+    const recovered = this.findRecoveredWaitingRun(selector);
+    if (!recovered) return undefined;
+    await this.terminalDurable(recovered.runId, {
+      now,
+      status: 'cancelled',
+      reason: 'recovered_waiting_run_cancelled',
+      event: {
+        type: 'run_cancelled',
+        payload: { sessionId: recovered.sessionId, reason: 'recovered_waiting_run_cancelled' },
+        recordedAt: now,
+      },
+    });
+    return recovered;
+  }
+
   async recoverDurable(now = Date.now()): Promise<RunRehydrationPlan[]> {
     const plans = await this.requireKernel().recoverOnStartup(now);
     for (const plan of plans) {

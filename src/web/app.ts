@@ -336,7 +336,33 @@ export function createApp(deps: CreateAppDeps): express.Express {
           }
           if (command.action === 'run.cancel' && command.sessionId) {
             const target = runRegistry.resolve({ sessionId: command.sessionId });
-            if (!target) return { state: 'resolved', result: { alreadyTerminal: true } };
+            if (!target) {
+              // 恢复成 waiting 的 durable run 没有 handle（recoverDurable 只登记 owner + 心跳），
+              // resolve() 查不到。先同步探测有没有这种 run，有就在规范路径上终态化并补发
+              // agent_cancelled，再按 alreadyTerminal 结算——手机据此清 runId 收尾。
+              const waiting = runRegistry.findRecoveredWaitingRun({
+                sessionId: command.sessionId,
+                runId: command.payload.runId,
+              });
+              if (waiting) {
+                void runRegistry.terminalRecoveredWaitingRun({ runId: waiting.runId })
+                  .then((recovered) => {
+                    if (recovered) {
+                      publishCompanionEvent?.(command.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
+                    }
+                    gateway.settleCommand(command.deviceId, command.commandId, 'accepted', {
+                      alreadyTerminal: true,
+                      ...(recovered ? { runId: recovered.runId } : {}),
+                    });
+                  })
+                  .catch((error) => {
+                    logger.warn('Companion waiting-run cancel failed', error);
+                    gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'COMPANION_OPERATION_FAILED' });
+                  });
+                return { state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } };
+              }
+              return { state: 'resolved', result: { alreadyTerminal: true } };
+            }
             if (target.context.runId !== command.payload.runId) return { state: 'rejected', result: { code: 'RUN_NOT_ACTIVE' } };
             void target.cancel('user');
             return { state: 'accepted', result: { stopping: true, runId: target.context.runId } };

@@ -38,6 +38,7 @@ export function registerAgentCancelRoute(
   router: Router,
   runRegistry: RunRegistry,
   getReadService?: () => DurableRunReadService | undefined,
+  onRecoveredWaitingCancelled?: (input: { runId: string; sessionId: string }) => void,
 ): void {
   router.post('/cancel', async (req, res) => {
     const parsedBody = AgentCancelBodySchema.safeParse(req.body ?? {});
@@ -48,6 +49,14 @@ export function registerAgentCancelRoute(
     const { runId, sessionId } = parsedBody.data;
     const target = runRegistry.resolve({ runId, sessionId });
     if (!target) {
+      // 恢复成 waiting 的 durable run 没有 handle，resolve() 查不到；不兜底的话
+      // 路由只会回 "No active agent"，run 永远到不了终态，同一会话也起不了新 run。
+      const recovered = await runRegistry.terminalRecoveredWaitingRun({ runId, sessionId });
+      if (recovered) {
+        onRecoveredWaitingCancelled?.(recovered);
+        res.json({ message: 'Cancelled', runId: recovered.runId, sessionId: recovered.sessionId });
+        return;
+      }
       if (await isDurableTerminalNativeControl({
         readService: getReadService?.(),
         runRegistry,

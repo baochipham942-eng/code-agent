@@ -65,7 +65,8 @@ export interface PlatformPorts {
     resolveHost?(host: string): Promise<string | null>;
     /**
      * 拨 relay WSS（N-MOBILE-RELAY-PHONE）。headers 由能设头的运行时消费；WebView 的
-     * WebSocket 设不了头，部署侧前置层注入凭据。缺省走 browserRelayDial。
+     * WebSocket 设不了头，缺省的 browserRelayDial 把凭据编码进 WebSocket 子协议。缺省走
+     * browserRelayDial。
      */
     dialRelay?(url: string, headers: { authorization: string }): RelayDialSocket;
   };

@@ -3,6 +3,8 @@ import { timingSafeEqual } from 'node:crypto';
 import WebSocket, { WebSocketServer } from 'ws';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import {
+  COMPANION_RELAY_WS_PROTOCOL,
+  companionRelayCredentialFromSubprotocols,
   companionRelayFrameExpired,
   parseCompanionRelayFrame,
   type CompanionRelayFrame,
@@ -102,7 +104,13 @@ export class CompanionRelayServer {
   async listen(): Promise<{ host: string; port: number }> {
     if (this.server) return this.address;
     const server = createServer((request, response) => this.onHttpRequest(request, response));
-    const wss = new WebSocketServer({ server, maxPayload: L.relayMaxWireFrameBytes });
+    const wss = new WebSocketServer({
+      server,
+      maxPayload: L.relayMaxWireFrameBytes,
+      // 手机侧凭据走子协议：客户端发了协议名必须回选（浏览器在「发了子协议、服务端没选」时
+      // 直接断开），但只回选固定协议名——凭据项绝不回选或回显。
+      handleProtocols: protocols => protocols.has(COMPANION_RELAY_WS_PROTOCOL) ? COMPANION_RELAY_WS_PROTOCOL : false,
+    });
     wss.on('connection', (socket, request) => this.accept(socket, request));
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -163,11 +171,16 @@ export class CompanionRelayServer {
   }
 
   private accept(socket: WebSocket, request: IncomingMessage): void {
+    // 鉴权顺序：先 Authorization 头（Host 继续用它），没有再从子协议里解凭据（手机 WebView
+    // 设不了请求头）。via 只进日志的来源标记，凭据与其编码绝不落日志。
     const header = request.headers.authorization;
-    const auth = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
+    const headerAuth = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
+    const subprotocolAuth = headerAuth ? null : companionRelayCredentialFromSubprotocols(request.headers['sec-websocket-protocol']);
+    const via: 'header' | 'subprotocol' | 'none' = headerAuth ? 'header' : subprotocolAuth !== null ? 'subprotocol' : 'none';
+    const auth = headerAuth || subprotocolAuth || '';
     if (!sameSecret(auth, this.options.credential)) {
       this.stats.rejectedAuth += 1;
-      this.options.logger?.warn('auth_rejected', {});
+      this.options.logger?.warn('auth_rejected', { via });
       socket.close();
       return;
     }

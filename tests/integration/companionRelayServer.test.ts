@@ -9,6 +9,11 @@ import { createIdentity } from '../../src/shared/companion/noiseChannel';
 import { toHex } from '../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 import { CompanionRelayServer } from '../../packages/relay/src/server';
+import {
+  COMPANION_RELAY_WS_AUTH_PREFIX,
+  COMPANION_RELAY_WS_PROTOCOL,
+  companionRelayCredentialSubprotocol,
+} from '../../src/shared/contract/companionRelay';
 import { RelayPhoneStub } from './companion/relayPhoneStub';
 
 const SECRET = 'test-relay-credential';
@@ -111,6 +116,95 @@ describe('companion relay: production server + host dial-out', () => {
     expect(relay.currentStats.rejectedAuth).toBeGreaterThan(statsBefore.rejectedAuth);
     expect(relay.currentStats.connections).toBe(statsBefore.connections);
     expect(relay.currentStats.routes).toBe(statsBefore.routes);
+  });
+
+  // 手机 WebView 设不了 Authorization 头，凭据走 WebSocket 子协议
+  // （N-COMPANION-RELAY-PHONE-AUTH）。以下四例覆盖浏览器形态的过闸矩阵。
+  it('accepts a subprotocol credential dial, selects the fixed protocol, and completes registration', async () => {
+    const statsBefore = relay.currentStats;
+    const socket = new WebSocket(url, [COMPANION_RELAY_WS_PROTOCOL, companionRelayCredentialSubprotocol(SECRET)]);
+    await new Promise<void>(resolve => socket.once('open', resolve));
+    // 服务端只回选固定协议名——凭据项绝不回选或回显（回显等于把凭据发回给所有人）。
+    expect(socket.protocol).toBe(COMPANION_RELAY_WS_PROTOCOL);
+    socket.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'device',
+      envelope: { routeToken: 'route-token-subauth', deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    await vi.waitFor(() => expect(relay.currentStats.routes).toBe(statsBefore.routes + 1));
+    expect(relay.currentStats.rejectedAuth).toBe(statsBefore.rejectedAuth);
+    socket.close();
+  });
+
+  it('rejects a subprotocol dial with the wrong credential', async () => {
+    const statsBefore = relay.currentStats;
+    await new Promise<void>(resolve => {
+      const socket = new WebSocket(url, [COMPANION_RELAY_WS_PROTOCOL, companionRelayCredentialSubprotocol('wrong-credential-x')]);
+      socket.once('close', () => resolve());
+    });
+    expect(relay.currentStats.rejectedAuth).toBeGreaterThan(statsBefore.rejectedAuth);
+    expect(relay.currentStats.connections).toBe(statsBefore.connections);
+    expect(relay.currentStats.routes).toBe(statsBefore.routes);
+  });
+
+  it('rejects a dial carrying neither a credential header nor a credential subprotocol', async () => {
+    const statsBefore = relay.currentStats;
+    await new Promise<void>(resolve => {
+      const socket = new WebSocket(url, [COMPANION_RELAY_WS_PROTOCOL]);
+      socket.once('close', () => resolve());
+    });
+    expect(relay.currentStats.rejectedAuth).toBeGreaterThan(statsBefore.rejectedAuth);
+    expect(relay.currentStats.connections).toBe(statsBefore.connections);
+  });
+
+  it('rejects a credential subprotocol whose encoding is invalid base64url', async () => {
+    const statsBefore = relay.currentStats;
+    const dials = ['neo-relay-auth.!!!not-base64!!!', `${COMPANION_RELAY_WS_AUTH_PREFIX}abcde`].map(encoded =>
+      new Promise<void>(resolve => {
+        const socket = new WebSocket(url, [COMPANION_RELAY_WS_PROTOCOL, encoded]);
+        socket.once('close', () => resolve());
+      }));
+    await Promise.all(dials);
+    expect(relay.currentStats.rejectedAuth).toBeGreaterThanOrEqual(statsBefore.rejectedAuth + 2);
+    expect(relay.currentStats.connections).toBe(statsBefore.connections);
+  });
+
+  it('never writes the credential or its subprotocol encoding into logs or stats', async () => {
+    const events: string[] = [];
+    const logging = new CompanionRelayServer({
+      credential: SECRET,
+      port: await freePort(),
+      logger: {
+        info: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+        warn: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+      },
+    });
+    const loggingUrl = `ws://127.0.0.1:${(await logging.listen()).port}`;
+    const encoded = companionRelayCredentialSubprotocol(SECRET);
+    // 对：子协议拨通 + 注册一条 route；错/无：各拒一发，让 rejectedAuth 路径也过一遍日志。
+    const good = new WebSocket(loggingUrl, [COMPANION_RELAY_WS_PROTOCOL, encoded]);
+    await new Promise<void>(resolve => good.once('open', resolve));
+    good.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'device',
+      envelope: { routeToken: 'route-token-sublog', deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    await vi.waitFor(() => expect(logging.currentStats.routes).toBe(1));
+    await new Promise<void>(resolve => {
+      const bad = new WebSocket(loggingUrl, [COMPANION_RELAY_WS_PROTOCOL, companionRelayCredentialSubprotocol('wrong-credential-x')]);
+      bad.once('close', () => resolve());
+    });
+    await new Promise<void>(resolve => {
+      const bare = new WebSocket(loggingUrl, [COMPANION_RELAY_WS_PROTOCOL]);
+      bare.once('close', () => resolve());
+    });
+    await vi.waitFor(() => expect(logging.currentStats.rejectedAuth).toBe(2));
+    const wire = [...events, JSON.stringify(logging.currentStats)].join('\n');
+    expect(wire).not.toContain(SECRET);
+    expect(wire).not.toContain(encoded);
+    expect(wire).not.toContain(encoded.slice(COMPANION_RELAY_WS_AUTH_PREFIX.length));
+    good.close();
+    await logging.stop();
   });
 
   it('does not buffer without bound while the peer is absent', async () => {

@@ -11,10 +11,19 @@ export interface LanInvitation {
   /** 6-digit check code derived from psk‖hostKey. Absent on older hosts; older phones ignore it. */
   verify?: string;
 }
+export type CompanionTranscriptionReadiness = 'ready' | 'not-installed' | 'no-key';
+
 export interface LanBinding {
   version: 1; endpoint: string; altEndpoint?: string; hostKey: string; deviceId: string; scopeEpoch: number; scope: string[];
   /** Host advertises the dictation exchange action. Absent on older hosts — phone must not send it. */
   dictation?: true;
+  /**
+   * 转写就绪三态（N-MOBILE-VOICE-TRANSCRIBE-FIX）。旧宿主不声明：手机按「未知」处理，
+   * 已有会话仍可开录（旧行为）；欢迎页麦克风另看 sessionlessTranscribe。
+   */
+  transcription?: CompanionTranscriptionReadiness;
+  /** Host accepts voice.transcribe without a session. Absent on older hosts — welcome page hides the mic. */
+  sessionlessTranscribe?: true;
 }
 export const LAN_PROLOGUE = 'neo-companion/lan/v1';
 export function toHex(value: Uint8Array): string {

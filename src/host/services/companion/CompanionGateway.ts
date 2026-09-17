@@ -192,7 +192,13 @@ export class CompanionGateway {
     if (!device) return { kind: 'rejected', reason: 'device_unknown' };
     if (device.revokedAt !== null) return { kind: 'rejected', reason: 'device_revoked' };
     if (command.scopeEpoch !== device.scopeEpoch) return { kind: 'conflict', reason: 'scope_epoch_mismatch' };
-    if (!command.sessionId || !(command.action === 'session.create' ? command.sessionId.startsWith('project:') && device.scope.includes(command.sessionId) : this.canAccessSession(command.deviceId, command.sessionId))) {
+    if (command.action === 'voice.transcribe') {
+      // 欢迎页转写按设备 grants 授权，不绑会话（N-MOBILE-WELCOME-VOICE）。有 sessionId 时仍要能看见那个会话。
+      if (!this.grants(command.deviceId).length) return { kind: 'rejected', reason: 'scope_denied' };
+      if (command.sessionId && !this.canAccessSession(command.deviceId, command.sessionId)) {
+        return { kind: 'rejected', reason: 'scope_denied' };
+      }
+    } else if (!command.sessionId || !(command.action === 'session.create' ? command.sessionId.startsWith('project:') && device.scope.includes(command.sessionId) : this.canAccessSession(command.deviceId, command.sessionId))) {
       return { kind: 'rejected', reason: 'scope_denied' };
     }
 
@@ -317,7 +323,11 @@ export class CompanionGateway {
     const device = this.getDevice(deviceId);
     if (device?.revokedAt !== null) return null;
     const command = this.getCommand(deviceId, commandId);
-    const allowed = command?.sessionId && (command.action === 'session.create' ? device.scope.includes(command.sessionId) : this.canAccessSession(deviceId, command.sessionId)) ? command : null;
+    const allowed = !command ? null
+      : command.action === 'voice.transcribe'
+        ? (this.grants(deviceId).length && (!command.sessionId || this.canAccessSession(deviceId, command.sessionId)) ? command : null)
+      : command.sessionId && (command.action === 'session.create' ? device.scope.includes(command.sessionId) : this.canAccessSession(deviceId, command.sessionId))
+        ? command : null;
     return allowed ? this.deliverCommand(allowed) : null;
   }
 

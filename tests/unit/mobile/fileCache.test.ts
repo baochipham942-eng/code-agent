@@ -69,5 +69,9 @@ describe('mobile file cache quota and cleanup', () => {
     const pending = { commandId: 'cmd-1', deviceId: 'phone-1', sessionId: 'session-1', action: 'files.commit' as const };
     expect(companionAckMatches(pending, { ...pending, commandId: 'other' })).toBe(false);
     expect(companionAckMatches(pending, pending)).toBe(true);
+    expect(companionAckMatches(
+      { commandId: 'cmd-1', deviceId: 'phone-1', sessionId: undefined, action: 'voice.transcribe' },
+      { commandId: 'cmd-1', deviceId: 'phone-1', sessionId: null, action: 'voice.transcribe' },
+    )).toBe(true);
   });
 });

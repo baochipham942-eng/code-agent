@@ -56,6 +56,29 @@ describe('CompanionGateway', () => {
     expect(decide).toHaveBeenCalledTimes(1);
   });
 
+  it('accepts voice.transcribe without a session when the device has grants', () => {
+    const dispatch = vi.fn(() => ({ state: 'accepted' as const, result: { text: '你好' } }));
+    gateway = new CompanionGateway(db, { now: () => 1000, dispatch });
+    gateway.registerDevice({ deviceId: 'phone-1', credentialHash: 'hash-phone-1', scopeEpoch: 1, scope: ['session-1'], revokedAt: null });
+    const command = {
+      version: 1 as const, commandId: 'voice-1', deviceId: 'phone-1', scopeEpoch: 1,
+      action: 'voice.transcribe' as const,
+      payload: { audioData: 'YXVkaW8=', mimeType: 'audio/aac' as const, durationMs: 1000 },
+    };
+    expect(gateway.submit(command).kind).toBe('accepted');
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(gateway.commandStatus('phone-1', 'voice-1')?.action).toBe('voice.transcribe');
+  });
+
+  it('rejects sessionless voice.transcribe when the device has no grants', () => {
+    gateway.registerDevice({ deviceId: 'phone-empty', credentialHash: 'hash-empty', scopeEpoch: 1, scope: [], revokedAt: null });
+    expect(gateway.submit({
+      version: 1, commandId: 'voice-2', deviceId: 'phone-empty', scopeEpoch: 1,
+      action: 'voice.transcribe',
+      payload: { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1000 },
+    })).toEqual({ kind: 'rejected', reason: 'scope_denied' });
+  });
+
   it('rejects revoked devices before dispatch', () => {
     gateway.revokeDevice('phone-1', 1100);
     expect(gateway.submit({ version: 1, commandId: 'cmd-1', deviceId: 'phone-1', scopeEpoch: 2, sessionId: 'session-1', action: 'run.cancel', payload: { runId: 'run-1' } })).toEqual({ kind: 'rejected', reason: 'device_revoked' });

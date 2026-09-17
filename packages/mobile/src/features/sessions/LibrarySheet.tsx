@@ -4,11 +4,14 @@ import type { messages } from '../../i18n';
 import { AppIcon } from '../../app/AppIcon';
 import { projectDisplayName, projectRowModels } from './projectRows';
 
-export function LibrarySheet({ library, sessionId, text, busy, mode, projectId, select, manage, loadMore, openProjectSessions }: {
+export function LibrarySheet({ library, sessionId, text, busy, mode, projectId, select, manage, loadMore, openProjectSessions, pendingModel, onPickNewTaskModel }: {
   library: CompanionLibrary; sessionId: string | null; text: ReturnType<typeof messages>; busy: boolean;
   mode: 'projects' | 'projectSessions' | 'more' | 'model'; projectId: string | null;
   select(id: string): void; loadMore(): void; openProjectSessions(id: string): void;
   manage(action: 'session.create' | 'session.rename' | 'session.archive' | 'session.delete' | 'session.model', payload: Record<string, unknown>, target?: string): Promise<void>;
+  /** 欢迎页（没选会话）正在用的新任务模型；点选只记在手机，不发 session.model。 */
+  pendingModel?: { provider: string; model: string } | null;
+  onPickNewTaskModel?(provider: string, model: string): void;
 }) {
   const session = library.sessions.find(s => s.id === sessionId);
   const project = library.projects.find(p => p.id === projectId);
@@ -100,7 +103,21 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, projectId, 
         {!library.models.length && <p>{text.modelUnavailable}</p>}
         <p className="sheet-note">{text.modelScopeNote}</p>
       </>;
-    })() : <p>{text.emptyHistory}</p>) : session ? <>
+    })() : pendingModel ? <>
+      <div className="settings-group model-list">
+        {library.models.map(m => {
+          const current = m.provider === pendingModel.provider && m.model === pendingModel.model;
+          return <button key={JSON.stringify([m.provider, m.model])} className="settings-row model-row" data-testid={`model-${m.provider}:${m.model}`}
+            aria-current={current || undefined} disabled={busy}
+            onClick={() => { if (!current) onPickNewTaskModel?.(m.provider, m.model); }}>
+            <span className="flex"><p>{m.label}</p><span className="small">{m.providerLabel} · {m.recentlyFailed ? text.modelRecentlyFailed : text.modelConfigured}</span></span>
+            {current && <AppIcon name="check" />}
+          </button>;
+        })}
+      </div>
+      {!library.models.length && <p>{text.modelUnavailable}</p>}
+      <p className="sheet-note">{text.modelScopeNote}</p>
+    </> : <p>{text.emptyHistory}</p>) : session ? <>
       <label className="group-title" htmlFor="session-title">{text.sessionName}</label>
       <input id="session-title" maxLength={160} value={renameTitle} onChange={e => setRenameTitle(e.target.value)} />
       <button className="primary" disabled={busy || !renameTitle.trim() || renameTitle.trim() === session.title} onClick={() => void manage('session.rename', { title: renameTitle.trim() })}>{text.rename}</button>

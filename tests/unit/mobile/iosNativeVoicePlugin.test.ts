@@ -75,6 +75,17 @@ describe('first-party ios voice recorder contract', () => {
     expect(swift).not.toContain('AVAudioSession.ErrorCode.cannotStartRecording.rawValue');
   });
 
+  it('开录前校验输入格式：0 通道或 0Hz 报 MICROPHONE_UNAVAILABLE，两条路径都不降级到分段', () => {
+    const voiceCapture = readFileSync('packages/mobile/src/features/sessions/VoiceCapture.tsx', 'utf8');
+    expect(swift).toContain('static let microphoneUnavailable = "MICROPHONE_UNAVAILABLE"');
+    expect(swift).toContain('func inputUnavailable');
+    expect(swift).toContain('format.channelCount == 0 || format.sampleRate == 0');
+    expect(swift).toContain('session.inputNumberOfChannels == 0 || session.sampleRate == 0');
+    expect(swift.match(/call\.reject\(Failure\.microphoneUnavailable\)/g)).toHaveLength(2);
+    expect(voiceCapture).toContain("'MICROPHONE_UNAVAILABLE'");
+    expect(voiceCapture).toMatch(/MICROPHONE_BUSY[\s\S]*MICROPHONE_UNAVAILABLE/);
+  });
+
   it('真检测麦克风释放：桥方法、事件名两边一致，盯守监听中断/恢复通知', () => {
     for (const method of ['watchMicrophoneRelease', 'unwatchMicrophoneRelease']) {
       expect(swift).toContain(`CAPPluginMethod(name: "${method}"`);

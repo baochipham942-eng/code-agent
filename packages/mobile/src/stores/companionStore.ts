@@ -62,7 +62,7 @@ export type UploadProgress = {
 interface State {
   voiceResult: VoiceResult | null;
   /** 返回这条命令的 commandId（已进待确认槽）；没发出去回 null，分片队列据此重排队，不静默丢片。 */
-  transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string, hostKey: string, continuation?: boolean, take?: string | null): Promise<string | null>;
+  transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string | null, hostKey: string, continuation?: boolean, take?: string | null): Promise<string | null>;
   /** 取消这次录音：晚到的结果不进草稿。按录音代号点名。 */
   discardPendingTranscript(take: string): void;
   dictationOpen(): Promise<CompanionDictationOpenResult>;
@@ -153,7 +153,7 @@ export function companionAckMatches(
   record: Pick<CompanionCommandRecord, 'commandId' | 'deviceId' | 'sessionId' | 'action'>,
 ): boolean {
   return record.commandId === pending.commandId && record.deviceId === pending.deviceId
-    && record.sessionId === pending.sessionId && record.action === pending.action;
+    && (record.sessionId ?? null) === (pending.sessionId ?? null) && record.action === pending.action;
 }
 
 /** LAN 与 relay 两个客户端共同的最小面：所有 store 路径只认这两个动作。 */
@@ -162,7 +162,7 @@ interface CompanionChannel {
   close(): void;
 }
 
-export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts, historyCache?: HistoryCache) {
+export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string | null, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts, historyCache?: HistoryCache) {
   let saved: Saved | null = null;
   let client: CompanionChannel | null = null;
   /** 双径不双跑：任一时刻只有一条活通道，另一条的句柄只用来收尾 close。 */
@@ -327,7 +327,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 代号不在这里清：一次取消可能有好几段在飞/在途，被第一条 ack 消耗掉的话，
         // 后面那几段照样写进草稿（grok ai-review Important）。下一段自带新代号，不会误伤。
         if (record.state === 'accepted' && typeof record.result.text === 'string' && onTranscript && !discardedVoice) {
-          await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId, transcriptContinuation);
+          await onTranscript(record.result.text, pending.sessionId ?? null, saved!.binding!.hostKey, pending.commandId, transcriptContinuation);
           set({ voiceResult: { commandId: pending.commandId, outcome: 'done' } });
         } else {
           // 「这段没人说话」是第三种结局：分片下停顿段本来就是空的，当失败就是每隔几秒报一次错。
@@ -622,10 +622,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 草稿里出现重复的字（grok ai-review Important）。
         let commandId: string | null = null;
         await safely(async () => {
-          if (get().sessionId !== sessionId || get().binding?.hostKey !== hostKey) return;
-          if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
+          if ((get().sessionId ?? null) !== (sessionId ?? null) || get().binding?.hostKey !== hostKey) return;
+          if (!saved?.binding || !client || saved.pending || get().status !== 'connected') return;
           const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
-            commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'voice.transcribe', payload: audio });
+            commandId: crypto.randomUUID(), ...(sessionId ? { sessionId } : {}), action: 'voice.transcribe', payload: audio });
           // 这一条是不是「同一次录音的后续分片」只活在内存里：进程被杀后重放那条 pending 命令
           // 最多让草稿多一个换行，不会丢字，所以不进持久化结构。
           transcriptContinuation = continuation;
@@ -665,10 +665,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         await client.request({ action: 'dictation', op: 'close' });
       },
       commitDictation: async (text, continuation, take, sentenceId) => {
-        const sessionId = get().sessionId;
-        if (!onTranscript || !saved?.binding || !sessionId) return;
+        if (!onTranscript || !saved?.binding) return;
         if (discardedTakes.has(take)) return;
-        await onTranscript(text, sessionId, saved.binding.hostKey, `dictation:${take}:${sentenceId}`, continuation);
+        await onTranscript(text, get().sessionId, saved.binding.hostKey, `dictation:${take}:${sentenceId}`, continuation);
       },
       send: text => safely(async () => {
         if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;

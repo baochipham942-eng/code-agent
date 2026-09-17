@@ -5,6 +5,8 @@ import { AppIcon } from '../../app/AppIcon';
 import { StatusSlot, type StatusItem } from '../../app/StatusSlot';
 import { useVoiceCapture, VoicePanel } from './VoiceCapture';
 import type { DictationPort } from './VoiceCapture';
+import { classifyVoiceFailure, voiceFailureAction, voiceFailureMessage } from './voiceFailure';
+import type { CompanionTranscriptionReadiness } from '../../../../src/shared/companion/lanProtocol';
 import type { UploadProgress, VoiceResult } from '../../stores/companionStore';
 import { joinTranscript } from '../../stores/mobileStore';
 
@@ -33,6 +35,7 @@ export function Composer({
   text, draft, editDraft, offline, sendDisabled, send, running, modelLabel, openModel, openSettings,
   attach, attachDisabled, attachments, retryAttachment, removeAttachment,
   recorder, transcribe, discardPendingTranscript, commitSpoken, dictation, voiceDisabled, voicePending, voiceResult, voiceReady, onVoiceState, status = [],
+  transcription, openVoiceSetup,
 }: {
   text: ReturnType<typeof messages>;
   draft: string;
@@ -71,6 +74,8 @@ export function Composer({
   onVoiceState(state: { recording: boolean; failed: boolean }): void;
   /** 输入框上方唯一状态位里 MobileRoot 那几条候选；语音失败由这里补进去，按 rank 只露最急的一条。 */
   status?: StatusItem[];
+  transcription?: CompanionTranscriptionReadiness;
+  openVoiceSetup?(): void;
 }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
@@ -81,7 +86,12 @@ export function Composer({
    * 面板关着时一直跟着草稿走，面板一开就冻住——录音期间输入框不在场，草稿只会被转写追加。
    */
   const spokenFrom = useRef(0);
-  const voice = useVoiceCapture({ recorder, pending: voicePending, result: voiceResult, ready: voiceReady, transcribe, discardPending: discardPendingTranscript, dictation, commitSpoken });
+  const voice = useVoiceCapture({ recorder, pending: voicePending, result: voiceResult, ready: voiceReady, transcribe, discardPending: discardPendingTranscript, dictation, commitSpoken,
+    preflight: () => {
+      if (transcription === 'not-installed') return { stage: 'transcribe', reason: 'COMPANION_TRANSCRIPTION_UNAVAILABLE' };
+      if (transcription === 'no-key') return { stage: 'transcribe', reason: 'SPEECH_NO_CHANNEL' };
+      return null;
+    } });
   useEffect(() => {
     const input = textarea.current;
     if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; }
@@ -103,18 +113,17 @@ export function Composer({
     if (!busy || !recorder?.watchMicrophoneRelease) return;
     return recorder.watchMicrophoneRelease(() => setMicReleased(true));
   }, [busy, recorder]);
-  const denied = voice.failure?.reason === 'MICROPHONE_DENIED' || voice.failure?.reason === 'MISSING_PERMISSION';
-  // 用户面不出现内部错误码：reason 只进 data-reason 供取证（build 45 真机「录音失败 · FAILED_TO_RECORD」）。
-  const notice = denied ? text.microphoneDenied
-    : busy ? (micReleased ? text.microphoneReleased : text.microphoneBusy)
-    // 部分成功：其余几段已经在草稿里了，说成「转写未完成」是把整次录音都判死
-    : voice.failure?.partial ? text.voiceChunkDropped
-    : voice.failure ? (voice.failure.stage === 'record' ? text.voiceRecordFailed : text.voiceTranscribeFailed)
+  const kind = voice.failure
+    ? classifyVoiceFailure(voice.failure.reason, voice.failure.stage, voice.failure.partial)
     : null;
-  // 每一种失败给一个直指修复处的动作：没授权 → 去系统设置（重试只会再被拒）；被占用 → 等它放手再录；其余 → 重试。
-  const noticeAction = denied ? (openSettings ? { label: text.openMicrophoneSettings, run: openSettings } : undefined)
-    : busy ? { label: micReleased ? text.continueRecording : text.microphoneBusyRetry, run: voice.retry }
-    : { label: text.retry, run: voice.retry };
+  // 用户面不出现内部错误码：reason 只进 data-reason 供取证（build 45 真机「录音失败 · FAILED_TO_RECORD」）。
+  const notice = !voice.failure || !kind ? null
+    : busy && micReleased ? text.microphoneReleased
+    : voiceFailureMessage(text, kind);
+  const noticeAction = !kind || !voice.failure ? undefined
+    : voiceFailureAction(text, kind, {
+      retry: voice.retry, start: () => void voice.start(), openSettings, openVoiceSetup, micReleased,
+    });
   return <>
     <StatusSlot items={[...status, notice ? { rank: 3, message: notice, action: noticeAction, reason: voice.failure?.reason } : null]} />
     <div className={voice.panelOpen ? 'composer voice-composer' : 'composer'}>

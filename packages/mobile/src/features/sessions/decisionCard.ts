@@ -5,7 +5,7 @@ export function cardOutcome(card: Record<string, unknown>): CardOutcome | undefi
   return value === 'answered' || value === 'expired' || value === 'cancelled' ? value : undefined;
 }
 
-export function cardAnswer(card: Record<string, unknown>): Record<string, unknown> | undefined {
+function cardAnswer(card: Record<string, unknown>): Record<string, unknown> | undefined {
   const value = card.answer;
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }

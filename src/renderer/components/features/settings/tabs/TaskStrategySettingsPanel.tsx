@@ -15,9 +15,10 @@ import { useI18n } from '../../../../hooks/useI18n';
 
 // 自动模式下四档都要可见可改：代码/文件/产物任务运行时走 profiles.main（modelDecision.applyStrategySlot），
 // 它不跟随默认模型，藏起来就是一个看不见、改不了却在生效的配置。
-// 主模型与另三档一样自愈：指向不可用模型时运行时本来就会失败，回到默认模型不冤枉；
-// 记忆整理不同，它的「不可用」可能只是中转站提供了目录外模型，所以只提示不改写。
 const AUTO_PROFILES: TaskStrategyProfileId[] = ['main', 'fast', 'deep', 'vision'];
+// 自愈只覆盖原有三档：回退目标是详情页当前浏览的 provider（config），不是已保存的默认模型，
+// 主模型决定大多数任务走哪，不把它交给这个回退，不可用时只标徽章让用户自己选。记忆整理同理只提示不改写。
+const SELF_HEAL_PROFILES: TaskStrategyProfileId[] = ['fast', 'deep', 'vision'];
 
 function optionValue(provider: string, model: string): string {
   return `${provider}:::${model}`;
@@ -111,7 +112,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     if (!available.has(fallback)) return;
     let changed = false;
     const profiles = { ...strategy.profiles };
-    for (const profile of AUTO_PROFILES) {
+    for (const profile of SELF_HEAL_PROFILES) {
       const slot = strategy.profiles[profile];
       if (!available.has(optionValue(slot.provider, slot.model))) {
         profiles[profile] = { ...slot, provider: config.provider, model: config.model };

@@ -137,7 +137,7 @@ describe('TaskStrategySettingsPanel 记忆整理模型跟随快速模型', () =>
 });
 
 describe('TaskStrategySettingsPanel 任务主模型', () => {
-  it('任务主模型指向不可用模型时与另三档一样自愈到默认模型', () => {
+  it('任务主模型指向不可用模型时标「不可用」、不自愈改写', () => {
     const settings = buildSettings(null);
     const onChange = vi.fn();
     const brokenMain = { ...strategy, profiles: { ...strategy.profiles, main: { ...strategy.profiles.main, provider: 'openai' as const, model: 'gone-model' } } };
@@ -152,12 +152,9 @@ describe('TaskStrategySettingsPanel 任务主模型', () => {
       />,
     );
 
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
-      profiles: expect.objectContaining({
-        main: expect.objectContaining({ provider: 'zhipu', model: DEFAULT_MODELS.quick }),
-        fast: strategy.profiles.fast,
-      }),
-    }));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText('不可用')).toBeTruthy();
+    expect((screen.getAllByRole('combobox')[0] as HTMLSelectElement).value).toBe('openai:::gone-model');
   });
 
   it('同为 GLM 家族的中转来源（GLM Coding Plan）不被去重误判不可用，也不被自愈改写（FB-195：Dev 槽快速/深度被改成 LongCat）', () => {

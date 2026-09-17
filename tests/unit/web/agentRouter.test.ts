@@ -994,6 +994,65 @@ describe('createAgentRouter', () => {
     });
   });
 
+  it('binds the session Project WorkspaceScope onto the durable native run', async () => {
+    await closeServer();
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-durable-project-scope-'));
+    // 真 Project scope（非 isolated-v1 派生 version），会话工作目录就是项目根。
+    const workspaceScope = Object.freeze({
+      projectId: 'project-native-run',
+      primaryRoot: workspaceRoot,
+      roots: Object.freeze([Object.freeze({
+        sourceId: 'source-primary',
+        path: workspaceRoot,
+        role: 'primary' as const,
+        access: 'read_write' as const,
+      })]),
+      version: 'durable-scope-v1',
+    });
+    const getSession = vi.fn(async () => ({
+      id: 'session-project-scope',
+      title: 'Project session',
+      projectId: 'project-native-run',
+      workingDirectory: workspaceRoot,
+    }));
+    projectServiceMocks.getWorkspaceScope.mockReturnValue(workspaceScope);
+
+    try {
+      await startAgentApi({
+        tryGetSessionManager: async () => ({ getSession, updateSession: vi.fn(async () => undefined) }),
+      });
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '在项目里干活',
+          sessionId: 'session-project-scope',
+          context: { workingDirectory: workspaceRoot },
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      await waitForAssertion(() => {
+        expect(runRegistry.hasSession('session-project-scope')).toBe(true);
+      });
+      // durable run 的写边界钉成会话真实项目，不再回落 legacy-background-authority
+      // （N-DURABLE-NATIVE-SCOPE-DRIFT-FALSE：假 id 查项目库必空 → 恢复恒判 drift）。
+      expect(runRegistry.getBySessionId('session-project-scope')?.context.workspaceScope?.projectId)
+        .toBe('project-native-run');
+
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalledWith('user');
+      });
+      await response.text().catch(() => undefined);
+    } finally {
+      projectServiceMocks.getWorkspaceScope.mockReset();
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
   it('persists both messages when disconnect cancellation releases the session and drains its queued turn', async () => {
     await closeServer();
     setDbAvailable(true);

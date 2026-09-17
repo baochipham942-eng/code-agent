@@ -16,7 +16,8 @@ describe('waiting durable run cancellation wiring', () => {
     const source = read('app.ts');
     expect(source).toMatch(/findRecoveredWaitingRun\(\{\s*sessionId: command\.sessionId,\s*runId: command\.payload\.runId,/);
     expect(source).toMatch(/terminalRecoveredWaitingRun\(\{ runId: waiting\.runId \}\)/);
-    expect(source).toMatch(/publishCompanionEvent\?\.\(command\.sessionId, 'agent_cancelled'/);
+    // 并入另一端进行中取消的（joined）不再补发，手机只收一条 agent_cancelled。
+    expect(source).toMatch(/if \(recovered && !recovered\.joined\) \{\s*publishCompanionEvent\?\.\(command\.sessionId, 'agent_cancelled'/);
     expect(source).toMatch(/settleCommand\(command\.deviceId, command\.commandId, 'accepted', \{\s*alreadyTerminal: true,/);
   });
 

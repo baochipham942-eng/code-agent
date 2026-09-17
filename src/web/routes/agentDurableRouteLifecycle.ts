@@ -2,10 +2,12 @@ import type { Response } from 'express';
 import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
 import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine';
 import type { SessionStatus } from '../../shared/contract';
+import type { WorkspaceScope } from '../../shared/contract/project';
 import type { DurableRunReadService } from '../../host/app/durableRunReadService';
 import type { DurableRunRolloutPolicy } from '../../host/app/durableRunRollout';
 import type { RunHandle } from '../../host/runtime/runContext';
 import type { RunRegistry } from '../../host/runtime/runRegistry';
+import { resolveWorkspacePath } from '../../host/runtime/workspaceScope';
 import {
   ExternalEngineDurableLifecycle,
   type ExternalEngineTerminalStatus,
@@ -21,6 +23,11 @@ interface AgentDurableRouteRunLifecycleDeps {
   runRegistry: RunRegistry;
   sessionId: string;
   workspace: string;
+  /**
+   * 会话真实 Project 的 scope。传入后 native run 的写边界从 legacy 兜底升级为该项目，
+   * 恢复时的 scope drift 判定也改为对项目库重derive。undefined = 维持 legacy 回落。
+   */
+  workspaceScope?: WorkspaceScope;
   durableActivation: boolean;
   externalEngine?: ExternalAgentEngineKind;
   externalSessionId?: string;
@@ -147,15 +154,18 @@ class AgentDurableRouteRunLifecycle {
           workspace: this.deps.workspace,
         });
     } else {
+      // durable 与非 durable 两支必须拿同一份写边界，否则同一会话里两种 run 权限面不一致。
+      const nativeInput = {
+        sessionId: this.deps.sessionId,
+        workspace: this.deps.workspace,
+        ...(this.deps.workspaceScope ? { workspaceScope: this.deps.workspaceScope } : {}),
+        // cwd 显式钉在会话工作目录上：带 Project scope 时 RunContext.workspace 会
+        // 取 scope.primaryRoot，不传 cwd 会把进程目录也挪到项目根。
+        cwd: this.deps.workspace,
+      };
       this.runHandle = this.deps.durableActivation
-        ? await this.deps.runRegistry.startDurable({
-          sessionId: this.deps.sessionId,
-          workspace: this.deps.workspace,
-        })
-        : this.deps.runRegistry.start({
-          sessionId: this.deps.sessionId,
-          workspace: this.deps.workspace,
-        });
+        ? await this.deps.runRegistry.startDurable(nativeInput)
+        : this.deps.runRegistry.start(nativeInput);
     }
     return {
       runHandle: this.runHandle,
@@ -177,6 +187,26 @@ export function createAgentDurableRouteRunLifecycle(
   deps: AgentDurableRouteRunLifecycleDeps,
 ): AgentDurableRouteRunLifecycle {
   return new AgentDurableRouteRunLifecycle(deps);
+}
+
+/**
+ * 会话的 WorkspaceScope 能不能钉成 web 路由 native run 的写边界（durable / 非 durable 共用）。
+ *
+ * - isolated Fork scope 不行：它的 version 是 `isolated-v1:` 派生串，恢复侧对项目库
+ *   重derive 永远对不上，钉进去等于给每次重启预定一次 scope drift；这类会话维持
+ *   legacy 兜底（恢复侧按 primaryRoot 重算，见 nativeRecoveryHost 端口）。
+ * - 会话工作目录必须仍在 scope 界内：createRunContext 会拒绝界外 cwd，这里先降级
+ *   回 legacy，别把一次普通发送变成 500。
+ */
+export function resolveNativeRunWorkspaceScope(input: {
+  sessionScope?: WorkspaceScope;
+  workspace: string;
+}): WorkspaceScope | undefined {
+  const { sessionScope } = input;
+  if (!sessionScope) return undefined;
+  if (sessionScope.version.startsWith('isolated-v1:')) return undefined;
+  if (!resolveWorkspacePath(sessionScope, input.workspace, 'read')) return undefined;
+  return sessionScope;
 }
 
 /**

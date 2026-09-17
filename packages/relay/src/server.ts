@@ -4,7 +4,8 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import {
   COMPANION_RELAY_WS_PROTOCOL,
-  companionRelayCredentialFromSubprotocols,
+  COMPANION_RELAY_WS_AUTH_PREFIX,
+  companionRelayCredentialSubprotocol,
   companionRelayFrameExpired,
   parseCompanionRelayFrame,
   type CompanionRelayFrame,
@@ -47,6 +48,32 @@ interface QueuedFrame {
   payload: string;
   bytes: number;
   expiresAt: number;
+}
+
+/**
+ * 只有 relay 服务端解码，所以放这里不进 shared 契约（knip 死导出棘轮不扫 packages/relay）。
+ * 从 `Sec-WebSocket-Protocol` 头里解凭据（node http 把重复头合并成逗号串）：取第一个带
+ * 前缀的项，base64url 解码回 UTF-8。没有凭据项或编码非法都返回 null——调用方按无凭据拒。
+ */
+function companionRelayCredentialFromSubprotocols(header: string | undefined): string | null {
+  if (typeof header !== 'string') return null;
+  for (const item of header.split(',')) {
+    const protocol = item.trim();
+    if (!protocol.startsWith(COMPANION_RELAY_WS_AUTH_PREFIX)) continue;
+    const encoded = protocol.slice(COMPANION_RELAY_WS_AUTH_PREFIX.length);
+    if (!/^[A-Za-z0-9_-]*$/.test(encoded) || encoded.length % 4 === 1) return null;
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (encoded.length % 4)) % 4);
+    try {
+      const binary = atob(base64);
+      const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+      const decoded = new TextDecoder().decode(bytes);
+      // 解码结果必须能原样重新编码回去，否则按非法编码拒（防宽容解码吃掉坏输入）。
+      return companionRelayCredentialSubprotocol(decoded) === protocol ? decoded : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function sameSecret(left: string, right: string): boolean {

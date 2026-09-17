@@ -25,7 +25,7 @@ function followTop(el: HTMLElement, composerHeight: number): number {
   return Math.min(el.scrollHeight, Math.max(0, Math.ceil(bottom - (el.clientHeight - composerHeight - keyboard))));
 }
 
-export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0, offline = false, running = null, openModel, sessionModel }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
+export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0, offline = false, running = null, openModel, sessionModel, models }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
   /** 输入区那一层的实测高度：它一变，滚动区的底部内边距跟着变，贴底的人得重新贴一次。 */
   composerHeight?: number;
   /** Offline reread: hide load-more (it cannot fetch) without changing the composer. */
@@ -38,10 +38,12 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
    * 执行条——否则同一个动作会有两个落点。不传就不渲染按钮（grok ai-review PR#1903 Nit①②）。
    */
   running?: { stop?(): void; stopDisabled?: boolean } | null;
-  /** 打开「选择会话模型」。模型密钥用不了的失败态靠它给出路（设计稿 modelAuthFailed）。 */
+  /** 打开「选择会话模型」。模型密钥用不了 / 模型停用的失败态靠它给出路。 */
   openModel?(): void;
   /** 这条会话下一次执行会用的模型。失败的那个模型已经被换掉，就不再挂「换一个可用模型」。 */
-  sessionModel?: { provider: string; model: string } | null }) {
+  sessionModel?: { provider: string; model: string } | null;
+  /** 用来把失败卡片里的模型 id 换成列表上的显示名。 */
+  models?: { provider: string; model: string; label: string }[] }) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
@@ -146,14 +148,24 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   // 换回同一个坏模型会再出现。旧宿主不带模型时照旧显示。
   const switchedAway = (outcome: RunOutcome) => Boolean(outcome.provider && sessionModel
     && (sessionModel.provider !== outcome.provider || sessionModel.model !== outcome.model));
+  const modelCard = (outcome: RunOutcome) => outcome.code === 'MODEL_AUTH' || outcome.code === 'MODEL_UNAVAILABLE' || outcome.code === 'MODEL_QUOTA';
+  const modelName = (outcome: RunOutcome) => models?.find(item => item.provider === outcome.provider && item.model === outcome.model)?.label
+    ?? outcome.model ?? '';
   const outcomesAt = (anchor: string | undefined) => Array.from(outcomes).filter(([, outcome]) => outcome.anchor === anchor)
-    .map(([run, outcome]) => <Fragment key={`outcome:${run}`}>
-      <p className="run-outcome" data-outcome={outcome.kind}>{runOutcomeCopy(text, outcome.kind, outcome.code)}</p>
-      {run === latestRun && outcome.code === 'MODEL_AUTH' && openModel && !switchedAway(outcome) && <div className="decision" data-testid="model-auth-failed">
-        <h3>{text.modelAuthTitle}</h3><p>{text.modelAuthDetail}</p>
-        <button className="primary" onClick={openModel}>{text.switchModel}</button>
-      </div>}
-    </Fragment>);
+    .map(([run, outcome]) => {
+      const showCard = run === latestRun && modelCard(outcome) && Boolean(openModel) && !switchedAway(outcome);
+      return <Fragment key={`outcome:${run}`}>
+        {!showCard && <p className="run-outcome" data-outcome={outcome.kind}>{runOutcomeCopy(text, outcome.kind, outcome.code)}</p>}
+        {showCard && <div className="decision" data-testid={outcome.code === 'MODEL_UNAVAILABLE' ? 'model-unavailable' : outcome.code === 'MODEL_QUOTA' ? 'model-quota-failed' : 'model-auth-failed'}>
+          {outcome.code === 'MODEL_UNAVAILABLE'
+            ? <><h3>{text.modelGoneTitle}</h3><p>{text.modelGoneDetail.replace('{model}', modelName(outcome))}</p></>
+            : outcome.code === 'MODEL_QUOTA'
+              ? <><h3>{text.modelQuotaTitle}</h3><p>{text.modelQuotaDetail}</p></>
+              : <><h3>{text.modelAuthTitle}</h3><p>{text.modelAuthDetail}</p></>}
+          <button className="primary" onClick={openModel}>{text.switchModel}</button>
+        </div>}
+      </Fragment>;
+    });
   const cardsAt = (anchor: string | undefined) => <>
     {Array.from(approvals, ([id, card]) => cardAnchors.get(`approval:${id}`) === anchor && (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
       respond={decision => respond(id, decision)} />)}

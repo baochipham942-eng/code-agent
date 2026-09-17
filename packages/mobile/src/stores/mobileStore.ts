@@ -2,7 +2,7 @@ import { createStore } from 'zustand/vanilla';
 import type { PlatformPorts } from '../platform/ports';
 
 export type Appearance = 'system' | 'light' | 'dark';
-export type SheetPage = 'settings' | 'appearance' | 'profile' | 'about' | 'help' | 'more' | 'model' | 'projects' | 'projectSessions' | 'remote' | 'storage' | 'preview' | 'notifications' | 'attachment' | 'cameraDenied' | 'pairConfirm' | 'voiceSetup';
+export type SheetPage = 'settings' | 'appearance' | 'profile' | 'about' | 'help' | 'more' | 'model' | 'modelSetup' | 'projects' | 'projectSessions' | 'remote' | 'storage' | 'preview' | 'notifications' | 'attachment' | 'cameraDenied' | 'pairConfirm' | 'voiceSetup';
 type Route = 'new' | 'fixture';
 type Preferences = { schema: 1; drafts: Record<string, string>; transcriptCommands?: Record<string, string>; appearance: Appearance; nickname: string; notifyEnabled: boolean;
   /** 新任务项目选择器上手选过的项目，按电脑（hostKey）记（N-MOBILE-DEFAULT-PROJECT）。 */

@@ -259,6 +259,8 @@ export function extractRetryAfterMs(err: unknown): number | null {
 export interface RetryOptions {
   /** Provider 名称，用于日志 */
   providerName: string;
+  /** 这次请求的模型，失败标记按模型/供应商分流时用 */
+  model?: string;
   /** 最大重试次数（不含首次） */
   maxRetries?: number;
   /** 基础延迟 ms，实际延迟 = baseDelay * 2^attempt（指数退避），retry-after 提示优先 */
@@ -328,14 +330,14 @@ export async function withTransientRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions
 ): Promise<T> {
-  const { providerName, maxRetries = 2, baseDelay = 1000, signal, onRetry } = options;
+  const { providerName, model, maxRetries = 2, baseDelay = 1000, signal, onRetry } = options;
   const healthMonitor = getProviderHealthMonitor();
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const startTime = Date.now();
     try {
       const result = await fn();
-      healthMonitor.recordSuccess(providerName, Date.now() - startTime);
+      healthMonitor.recordSuccess(providerName, Date.now() - startTime, { model });
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -353,6 +355,8 @@ export async function withTransientRetry<T>(
         if (signal?.aborted) {
           healthMonitor.recordFailure(providerName, {
             cancelled: isCancellationError(err, signal),
+            model,
+            error: err,
           });
           throw err;
         }
@@ -360,6 +364,8 @@ export async function withTransientRetry<T>(
       }
       healthMonitor.recordFailure(providerName, {
         cancelled: isCancellationError(err, signal),
+        model,
+        error: err,
       });
       throw err;
     }

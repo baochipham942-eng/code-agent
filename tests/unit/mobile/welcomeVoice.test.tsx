@@ -121,6 +121,18 @@ async function mountWelcome() {
 }
 
 describe('欢迎页麦克风与模型胶囊', () => {
+  // R8 合并自查：语音组加的麦克风（转写不绑会话）与 #1918 加的默认模型胶囊必须同屏共存，
+  // 谁也不能把谁挤掉；胶囊读电脑标的 isDefault（deepseek-chat），不是列表第一项（Kimi）。
+  it('三件套同屏：麦克风 + 模型胶囊 + 项目选择器，胶囊读电脑默认模型', async () => {
+    await mountWelcome();
+    expect(document.querySelector(`[aria-label="${text.voice}"]`)).toBeTruthy();
+    const capsule = document.querySelector('.composer-tools .model') as HTMLElement | null;
+    expect(capsule).toBeTruthy();
+    expect(capsule!.textContent).toContain('DeepSeek Chat');
+    expect(capsule!.textContent).not.toContain('Kimi');
+    expect(document.querySelector('[data-testid="project-pick"]')).toBeTruthy();
+  });
+
   it('没选会话也有麦克风，录完文字进欢迎页草稿、不自动发送、不建会话', async () => {
     await mountWelcome();
     expect(document.querySelector('.welcome h1')!.textContent).toBe(text.welcome);

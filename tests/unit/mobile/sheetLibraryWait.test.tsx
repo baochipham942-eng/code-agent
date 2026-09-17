@@ -154,6 +154,36 @@ describe('项目 sheet：等库 spinner，失败态是状态页（反馈③④ +
     expect(failed?.textContent).not.toContain('正在连接电脑');
   });
 
+  /**
+   * ai-review R7（Important）：库还没读到（library 为 null）不是「没有能用的模型」——那会儿
+   * 状态位也出不来（它要求库非空）。点新会话入口必须照旧打开项目弹层给等待态，
+   * 零反馈等于把 build 37「点了没反应」请回来。库读到且模型为空那条路（状态位、不弹层）
+   * 由 defaultProject.test.tsx「库读成功但没有模型」覆盖。
+   */
+  it('连着但库迟迟读不到：点抽屉 + 打开项目 sheet 等待态，不是零反馈', async () => {
+    harness.mode = 'hang';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.topbar strong')?.textContent).toBe('Neo'); });
+    fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
+    fireEvent.click(document.querySelector('[data-testid="new-session"]') as HTMLElement);
+    const waiting = document.querySelector('.sheet-wait');
+    expect(waiting).toBeTruthy();
+    expect(waiting?.textContent).toContain('正在连接电脑…');
+    expect(waiting?.querySelector('.spinner')).toBeTruthy();
+  });
+
+  it('同一状态没选会话点发送：同样打开项目 sheet 等待态，草稿留着', async () => {
+    harness.mode = 'hang';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.topbar strong')?.textContent).toBe('Neo'); });
+    fireEvent.change(document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement, { target: { value: '先建会话再发' } });
+    fireEvent.click(document.querySelector('[data-testid="send"]') as HTMLElement);
+    const waiting = document.querySelector('.sheet-wait');
+    expect(waiting).toBeTruthy();
+    expect(waiting?.textContent).toContain('正在连接电脑…');
+    expect((document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement).value).toBe('先建会话再发');
+  });
+
   it('「去连接电脑」次按钮跳到连接电脑 sheet（不替换项目 sheet，可返回）', async () => {
     harness.mode = 'refused';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });

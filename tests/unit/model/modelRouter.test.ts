@@ -109,9 +109,11 @@ vi.mock('../../../src/host/model/adaptiveRouter', () => ({
   }),
 }));
 
-vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
-  getProviderHealthMonitor: () => healthMonitorMock,
-}));
+// 只桩 getProviderHealthMonitor；persistentProviderMarkKind 用真实现（分类语义是断言对象）
+vi.mock('../../../src/host/model/providerHealthMonitor', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/model/providerHealthMonitor')>();
+  return { ...actual, getProviderHealthMonitor: () => healthMonitorMock };
+});
 
 const broadcastToRendererMock = vi.fn();
 vi.mock('../../../src/host/platform/windowBridge', () => ({
@@ -2146,6 +2148,69 @@ describe('ModelRouter', () => {
       expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('xiaomi');
       expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('zhipu');
       expect(moonshotProvider.inference).toHaveBeenCalledTimes(1);
+    });
+
+    it('空内容失败只记普通失败，不再带 provider 级 auth/quota 分类（ai-review PR#1918 Important 2）', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: '', finishReason: 'stop' }),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: '', finishReason: 'stop' }),
+      } as any;
+      const moonshotProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [{ id: 'call-1', name: 'Write', arguments: {} }], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+      (router as any).providers.set('moonshot', moonshotProvider);
+      // openai/deepseek 没挂 mock：用健康监控的 unavailable 让路由跳过它们，
+      // 流程里只剩空内容失败——deepseek 真实解析路径会合成 401（PERSISTENT，带分类是应有行为）
+      healthMonitorMock.getHealth.mockImplementation((provider: string) => {
+        if (provider === 'openai' || provider === 'deepseek') return { status: 'unavailable' };
+        return null;
+      });
+
+      await router.inference(
+        [{ role: 'user', content: '请生成一个单文件 HTML 游戏，并保存到 /tmp/game.html' }],
+        [],
+        { provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'test-key', maxTokens: 1000, adaptive: true },
+        vi.fn(),
+      );
+
+      expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('xiaomi');
+      // 一次空内容不该让整家 30 分钟显示「密钥用不了」/「余额或额度用完了」
+      const classified = healthMonitorMock.recordFailure.mock.calls
+        .filter(([, options]) => (options as { scope?: string } | undefined)?.scope === 'provider');
+      expect(classified).toEqual([]);
+    });
+
+    it('持久错误（401/余额）命中 PERSISTENT_PROVIDER_ERROR_PATTERN 才带 provider 级分类；余额归 quota', async () => {
+      const okFallback = { inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback ok', finishReason: 'stop' }) } as any;
+      (router as any).providers.set('zhipu', okFallback);
+      (router as any).providers.set('openai', okFallback);
+      (router as any).providers.set('deepseek', okFallback);
+      const unauthorized = { inference: vi.fn().mockRejectedValue(new Error('Unauthorized: invalid api key')) } as any;
+      (router as any).providers.set('xiaomi', unauthorized);
+
+      await router.inference(
+        [{ role: 'user', content: 'hello' }],
+        [],
+        { provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'test-key', maxTokens: 1000, adaptive: true },
+        vi.fn(),
+      ).catch(() => undefined);
+      expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('xiaomi', { scope: 'provider', kind: 'auth' });
+
+      healthMonitorMock.recordFailure.mockClear();
+      const balance = { inference: vi.fn().mockRejectedValue(new Error('402 insufficient balance')) } as any;
+      (router as any).providers.set('xiaomi', balance);
+      await router.inference(
+        [{ role: 'user', content: 'hello' }],
+        [],
+        { provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'test-key', maxTokens: 1000, adaptive: true },
+        vi.fn(),
+      ).catch(() => undefined);
+      // 余额不足是 quota（「余额或额度用完了」），不冒充密钥
+      expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('xiaomi', { scope: 'provider', kind: 'quota' });
     });
   });
 

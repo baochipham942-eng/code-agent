@@ -28,8 +28,21 @@ const zh = {
   // 欢迎页（还没开会话）那一版（R7）：改的不是某条会话，是下一发新任务要用的模型，措辞不提「本会话」。
   chooseModelNewTask: '选择模型', modelScopeNoteNewTask: '模型与可选项来自电脑上 Neo 的模型配置。选好后，发出的新任务会用这个模型。',
   modelConfigured: '已配置', modelRecentlyFailed: '最近调用失败，可能用不了',
+  modelComputerDefault: '电脑默认', modelSwitchedForYou: '已为你换成这个', modelKeyBroken: '密钥用不了', modelUnreachable: '最近连不上', modelQuotaExhausted: '余额或额度用完了',
+  modelGoneLabel: '这个模型用不了了',
   // 设计稿 modelAuthFailed 屏（N-MOBILE-RUNFAIL-REASON）：主动作直接进模型选择。
   modelAuthTitle: '模型密钥用不了', modelAuthDetail: '可以先换一个可用的模型继续；也可以在 Neo 的模型设置里配置或更新这个模型的密钥。', switchModel: '换一个可用模型',
+  // 设计稿 modelUnavailable 屏（N-MOBILE-RUNFAIL-DUP）：只留卡片，文案一字不差。
+  modelGoneTitle: '这个模型用不了了', modelGoneDetail: '供应商已经停用 {model}。换一个模型就能继续。',
+  // 余额或额度用完（模拟器验收 O2）：与密钥/停用同一套卡片，出路是换模型或回电脑检查额度。
+  modelQuotaTitle: '余额或额度用完了', modelQuotaDetail: '这个模型所在的供应商额度不够了，可以先换一个可用模型；也可以在电脑上 Neo 的模型设置里检查额度。',
+  // 设计稿 noUsableModel / noUsableModelHow（N-MOBILE-NO-USABLE-MODEL）。
+  noUsableModel: '电脑上还没有能用的模型', noUsableModelHow: '怎么配置',
+  noUsableModelBody: '手机用的是电脑上 Neo 的模型。电脑上还没有填好密钥的模型，所以发不出去。',
+  noUsableModelStep1: '在电脑上打开 Neo', noUsableModelStep2: '设置 → 模型', noUsableModelStep3: '给任意一个模型填好密钥',
+  noUsableModelReload: '配好了，重新读取',
+  noUsableModelCreateHint: '电脑上还没有能用的模型，配好后才能新建。',
+  modelSetup: '配置模型',
   // 设计稿 voiceBusy 屏（N-MOBILE-VOICE-ERRCODE-LEAK）：说清谁占着麦克风，用户面不出现内部码。
   microphoneBusy: '麦克风被占用，通话结束后再录', microphoneBusyRetry: '结束后再试',
   microphoneReleased: '麦克风空出来了', continueRecording: '继续录音', openMicrophoneSettings: '去设置开麦克风',
@@ -178,7 +191,17 @@ const en: Record<keyof typeof zh, string> = {
   chooseModel: 'Choose a model', modelScopeNote: 'Models come from Neo model settings. Changes apply to later runs in this conversation only.',
   chooseModelNewTask: 'Choose a model', modelScopeNoteNewTask: 'Models come from Neo model settings on your computer. New tasks you send will use the model you pick.',
   modelConfigured: 'Configured', modelRecentlyFailed: 'Recently failed, may not work',
+  modelComputerDefault: 'Computer default', modelSwitchedForYou: 'Switched to this for you', modelKeyBroken: 'Key does not work', modelUnreachable: 'Recently unreachable', modelQuotaExhausted: 'Balance or quota is used up',
+  modelGoneLabel: 'This model no longer works',
   modelAuthTitle: 'The model key does not work', modelAuthDetail: 'Switch to another model that works, or add or update this model\'s key in Neo model settings.', switchModel: 'Switch to a working model',
+  modelGoneTitle: 'This model no longer works', modelGoneDetail: 'The provider has retired {model}. Switch to another model to continue.',
+  modelQuotaTitle: 'Balance or quota is used up', modelQuotaDetail: 'The provider behind this model is out of credit. Switch to another model that works, or check the quota in Neo model settings on your computer.',
+  noUsableModel: 'No usable model on your computer yet', noUsableModelHow: 'How to set up',
+  noUsableModelBody: 'The phone uses models from Neo on your computer. None of them have a key yet, so nothing can be sent.',
+  noUsableModelStep1: 'Open Neo on your computer', noUsableModelStep2: 'Settings → Models', noUsableModelStep3: 'Add a key for any model',
+  noUsableModelReload: 'Done, reload',
+  noUsableModelCreateHint: 'No usable model on your computer yet. Set one up before starting a conversation.',
+  modelSetup: 'Set up a model',
   microphoneBusy: 'Microphone in use. Record after the call ends', microphoneBusyRetry: 'Try again after it ends',
   microphoneReleased: 'The microphone is free', continueRecording: 'Record', openMicrophoneSettings: 'Allow microphone in Settings',
 
@@ -309,6 +332,8 @@ export function runOutcomeCopy(text: ReturnType<typeof messages>, kind: 'stopped
     : code === 'PROJECT_SOURCE_CHANGED' ? text.projectSourceChanged
     : code === 'PROJECT_SOURCE_UNTRUSTED' ? text.projectSourceUntrusted
     : code === 'MODEL_AUTH' ? text.modelAuthMissing
+    : code === 'MODEL_UNAVAILABLE' ? text.modelGoneLabel
+    : code === 'MODEL_QUOTA' ? text.modelQuotaExhausted
     : text.runFailed;
   return `${text.failed}${text === zh ? '：' : ': '}${reason}`;
 }

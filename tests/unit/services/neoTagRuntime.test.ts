@@ -169,6 +169,29 @@ describe('Neo Tag runtime helpers', () => {
     });
   });
 
+  /**
+   * ai-review R7（Nit）：getDefaultModelByProvider 以前没把 settings 传进去，custom-* 供应商
+   * 的回落永远落 DEFAULT_MODELS.chat，没用上「该供应商在设置里配的模型 / 运行时列表第一项」。
+   */
+  it('adaptive_auto 无模型可继时，回落读 settings 里该供应商配的模型，custom-* 不再落全局默认', () => {
+    const configService = {
+      getApiKey: vi.fn(() => 'team-key'),
+      getSettings: vi.fn(() => ({
+        models: {
+          providers: {
+            'custom-team': { model: 'gpt-5.5' },
+          },
+        },
+      } as unknown as AppSettings)),
+    };
+
+    expect(resolveNeoTagModelIntent({
+      baseConfig: { provider: 'custom-team', model: '', apiKey: 'base-key', adaptive: true },
+      modelIntent: { mode: 'adaptive_auto', taskStrategy: 'main' },
+      configService,
+    })).toMatchObject({ modelConfig: { provider: 'custom-team', model: 'gpt-5.5', adaptive: true }, fixedModel: false });
+  });
+
   it('builds a bounded context pack with selected files, memory placeholders, and exclusions', () => {
     const messages: Message[] = [
       { id: 'old_1', role: 'user', content: 'old', timestamp: 1 },

@@ -150,7 +150,7 @@ describe('realtime dictation', () => {
     />);
     fireEvent.click(screen.getByRole('button', { name: text.voice }));
     await advance(50);
-    expect(document.querySelector('[data-testid="status-slot"][data-rank="3"]')?.textContent).toContain('电脑上还没开语音转写');
+    expect(document.querySelector('[data-testid="status-slot"][data-rank="4"]')?.textContent).toContain('电脑上还没开语音转写');
     expect(open).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });

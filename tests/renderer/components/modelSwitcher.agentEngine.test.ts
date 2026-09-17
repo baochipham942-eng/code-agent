@@ -25,6 +25,7 @@ import {
   ProviderSourceBadge,
   ProviderTransportBadge,
   sortProviderGroupsByModelStrategy,
+  buildModelRowHealthSummary,
   buildEngineBillingSummary,
   resolveEngineModelCompatReason,
   EngineBillingBadge,
@@ -191,6 +192,78 @@ describe('ModelSwitcher Agent Engine selection', () => {
       'qwen',
       'claude',
     ]);
+  });
+
+  it('模型级失败不把整家沉底；供应商级标记才沉底', () => {
+    const longcat = {
+      provider: 'longcat',
+      providerLabel: 'LongCat',
+      options: [
+        { provider: 'longcat', model: 'LongCat-2.0-Preview', label: 'Preview', providerLabel: 'LongCat', features: [] },
+        { provider: 'longcat', model: 'LongCat-2.0', label: '2.0', providerLabel: 'LongCat', features: [] },
+      ],
+    };
+    const deepseek = {
+      provider: 'deepseek',
+      providerLabel: 'DeepSeek',
+      options: [{ provider: 'deepseek', model: 'deepseek-chat', label: 'Chat', providerLabel: 'DeepSeek', features: [] }],
+    };
+    const modelOnly = sortProviderGroupsByModelStrategy([longcat, deepseek], {
+      longcat: { status: 'healthy', modelMarks: { 'LongCat-2.0-Preview': { kind: 'model' } } },
+      deepseek: { status: 'healthy' },
+    });
+    expect(modelOnly.map(group => group.provider)).toEqual(['longcat', 'deepseek']);
+    const providerMarked = sortProviderGroupsByModelStrategy([longcat, deepseek], {
+      longcat: { status: 'healthy', providerMark: { kind: 'auth' } },
+      deepseek: { status: 'healthy' },
+    });
+    expect(providerMarked.map(group => group.provider)).toEqual(['deepseek', 'longcat']);
+  });
+
+  it('无标记的供应商级熔断（429 连发/超时）照常沉底显示，不改写成健康', () => {
+    const longcat = {
+      provider: 'longcat',
+      providerLabel: 'LongCat',
+      options: [
+        { provider: 'longcat', model: 'LongCat-2.0-Preview', label: 'Preview', providerLabel: 'LongCat', features: [] },
+        { provider: 'longcat', model: 'LongCat-2.0', label: '2.0', providerLabel: 'LongCat', features: [] },
+      ],
+    };
+    const deepseek = {
+      provider: 'deepseek',
+      providerLabel: 'DeepSeek',
+      options: [{ provider: 'deepseek', model: 'deepseek-chat', label: 'Chat', providerLabel: 'DeepSeek', features: [] }],
+    };
+    const sorted = sortProviderGroupsByModelStrategy([longcat, deepseek], {
+      longcat: { status: 'unavailable', errorRate: 1 },
+      deepseek: { status: 'healthy' },
+    });
+    expect(sorted.map(group => group.provider)).toEqual(['deepseek', 'longcat']);
+    // 模型行同样照实显示不可用——路由已跳过这家，界面不能还在亮绿点
+    expect(buildModelRowHealthSummary({ status: 'unavailable', errorRate: 1 }, 'LongCat-2.0')).toMatchObject({
+      state: 'unavailable',
+      label: '不可用',
+    });
+  });
+
+  // 模拟器验收 D1：成功一次后手机口径即清，电脑面板同口径——不再显示为不可用，
+  // 路由恢复中给中性样式（恢复中），别让两端一个亮红一个照常用。
+  it('unavailable 但最近一次事件是成功：显示成「恢复中」中性样式，不再标不可用', () => {
+    const recovered = { status: 'unavailable', errorRate: 0.8, lastSuccessAt: 200, lastErrorAt: 100 };
+    expect(buildProviderHealthSummary(recovered)).toMatchObject({ state: 'recovering', label: '恢复中' });
+    expect(buildModelRowHealthSummary(recovered, 'LongCat-2.0')).toMatchObject({ state: 'recovering', label: '恢复中' });
+    // 成功之后又失败（最近一次事件是失败）：照实显示不可用（R6 的 429 用例保持）
+    const stillDown = { status: 'unavailable', errorRate: 1, lastSuccessAt: 100, lastErrorAt: 200 };
+    expect(buildModelRowHealthSummary(stillDown, 'LongCat-2.0')).toMatchObject({ state: 'unavailable', label: '不可用' });
+    // 旧 Host 不带两个时间戳：照实显示，不改写
+    expect(buildModelRowHealthSummary({ status: 'unavailable', errorRate: 1 }, 'LongCat-2.0')).toMatchObject({ state: 'unavailable' });
+  });
+
+  it('quota 标记（余额/额度耗尽）有自己的话，不冒充密钥', () => {
+    expect(buildModelRowHealthSummary({ status: 'healthy', providerMark: { kind: 'quota' } }, 'LongCat-2.0')).toMatchObject({
+      state: 'unavailable',
+      label: '余额或额度用完了',
+    });
   });
 
   it('summarizes provider billing mode for model strategy badges', () => {

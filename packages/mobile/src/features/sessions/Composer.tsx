@@ -144,7 +144,7 @@ export function Composer({
       retry: voice.retry, start: () => void voice.start(), openSettings, openVoiceSetup, micReleased,
     });
   return <>
-    <StatusSlot items={[...status, notice ? { rank: 3, message: notice, action: noticeAction, reason: voice.failure?.reason } : null]} />
+    <StatusSlot items={[...status, notice ? { rank: 4, message: notice, action: noticeAction, reason: voice.failure?.reason } : null]} />
     <div className={voice.panelOpen ? 'composer voice-composer' : 'composer'}>
       {voice.panelOpen
         ? <VoicePanel text={text} phase={voice.phase} pending={voicePending} elapsedMs={voice.elapsedMs}

@@ -30,7 +30,7 @@ const strategy: TaskModelStrategySettings = {
   rules: [],
 };
 
-function buildSettings(memoryRoute: { provider: 'deepseek'; model: string } | null): AppSettings {
+function buildSettings(memoryRoute: { provider: 'deepseek' | 'zhipu'; model: string } | null): AppSettings {
   return {
     models: {
       default: 'xiaomi',
@@ -96,5 +96,107 @@ describe('TaskStrategySettingsPanel 记忆整理模型跟随快速模型', () =>
 
     fireEvent.change(select, { target: { value: '__follow_fast__' } });
     expect(onMemoryRouteChange).toHaveBeenCalledWith(null);
+  });
+
+  it('routing.memory 指向不在可选列表的组合（FB-195 zhipu/DeepSeek-V4-Flash-0731）→ 说明原因并一键回到跟随快速模型', () => {
+    const settings = buildSettings({ provider: 'zhipu', model: 'DeepSeek-V4-Flash-0731' });
+    const onMemoryRouteChange = vi.fn();
+    render(
+      <TaskStrategySettingsPanel
+        settings={settings}
+        providerConfigs={settings.models.providers}
+        config={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
+        strategy={strategy}
+        onChange={vi.fn()}
+        onMemoryRouteChange={onMemoryRouteChange}
+      />,
+    );
+
+    expect((screen.getByLabelText('记忆整理模型') as HTMLSelectElement).value).toBe('zhipu:::DeepSeek-V4-Flash-0731');
+    const warning = screen.getByTestId('memory-route-unavailable');
+    expect(warning.textContent).toContain('不在已启用的模型列表里');
+    fireEvent.click(screen.getByRole('button', { name: '改为跟随快速模型' }));
+    expect(onMemoryRouteChange).toHaveBeenCalledWith(null);
+  });
+
+  it('routing.memory 可用时不出不可用提示', () => {
+    const settings = buildSettings({ provider: 'deepseek', model: DEFAULT_MODELS.reasoning });
+    render(
+      <TaskStrategySettingsPanel
+        settings={settings}
+        providerConfigs={settings.models.providers}
+        config={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
+        strategy={strategy}
+        onChange={vi.fn()}
+        onMemoryRouteChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId('memory-route-unavailable')).toBeNull();
+  });
+});
+
+describe('TaskStrategySettingsPanel 任务主模型', () => {
+  it('任务主模型指向不可用模型时与另三档一样自愈到默认模型', () => {
+    const settings = buildSettings(null);
+    const onChange = vi.fn();
+    const brokenMain = { ...strategy, profiles: { ...strategy.profiles, main: { ...strategy.profiles.main, provider: 'openai' as const, model: 'gone-model' } } };
+    render(
+      <TaskStrategySettingsPanel
+        settings={settings}
+        providerConfigs={settings.models.providers}
+        config={{ provider: 'zhipu', model: DEFAULT_MODELS.quick }}
+        strategy={brokenMain}
+        onChange={onChange}
+        onMemoryRouteChange={vi.fn()}
+      />,
+    );
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      profiles: expect.objectContaining({
+        main: expect.objectContaining({ provider: 'zhipu', model: DEFAULT_MODELS.quick }),
+        fast: strategy.profiles.fast,
+      }),
+    }));
+  });
+
+  it('同为 GLM 家族的中转来源（GLM Coding Plan）不被去重误判不可用，也不被自愈改写（FB-195：爸 Dev 槽快速/深度被改成 LongCat）', () => {
+    const settings = buildSettings(null);
+    const providers = {
+      ...settings.models.providers,
+      // zhipu updatedAt 更新 → 对话切换器的家族去重只留 zhipu，GLM Coding Plan 整组被丢
+      zhipu: { enabled: true, apiKeyConfigured: true, updatedAt: 1782787397380 },
+      'custom-glm-coding': {
+        enabled: true,
+        apiKeyConfigured: true,
+        displayName: 'GLM Coding Plan',
+        baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+        protocol: 'openai',
+        model: 'glm-5.3-flash',
+        models: { 'glm-5.3-flash': { enabled: true, label: 'GLM-5.3 Flash', capabilities: ['general', 'code', 'fast'] } },
+      },
+    } as unknown as AppSettings['models']['providers'];
+    const glmStrategy = {
+      ...strategy,
+      profiles: {
+        ...strategy.profiles,
+        main: { ...strategy.profiles.main, provider: 'custom-glm-coding' as const, model: 'glm-5.3-flash' },
+        fast: { ...strategy.profiles.fast, provider: 'custom-glm-coding' as const, model: 'glm-5.3-flash' },
+      },
+    };
+    const onChange = vi.fn();
+    render(
+      <TaskStrategySettingsPanel
+        settings={{ ...settings, models: { ...settings.models, providers } }}
+        providerConfigs={providers}
+        config={{ provider: 'zhipu', model: DEFAULT_MODELS.quick }}
+        strategy={glmStrategy}
+        onChange={onChange}
+        onMemoryRouteChange={vi.fn()}
+      />,
+    );
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByText('不可用')).toBeNull();
   });
 });

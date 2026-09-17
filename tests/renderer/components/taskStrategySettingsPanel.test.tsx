@@ -45,7 +45,7 @@ const settings = {
 } as unknown as AppSettings; // 面板只读 settings.models，其余 AppSettings 顶层字段本用例不需要
 
 describe('TaskStrategySettingsPanel', () => {
-  it('renders auto-switch toggle and the three task profiles (auto mode)', () => {
+  it('renders auto-switch toggle and all four task profiles incl. main (auto mode)', () => {
     const html = renderToStaticMarkup(
       <TaskStrategySettingsPanel
         settings={settings}
@@ -58,6 +58,9 @@ describe('TaskStrategySettingsPanel', () => {
     );
 
     expect(html).toContain('开启自动切换');
+    // 任务主模型运行时真在生效（代码/文件/产物任务走 profiles.main），必须可见可改
+    expect(html).toContain('任务主模型');
+    expect(html).toContain(`xiaomi:::${DEFAULT_MODELS.chat}`);
     expect(html).toContain('快速任务模型');
     expect(html).toContain('深度任务模型');
     expect(html).toContain('视觉任务模型');
@@ -65,9 +68,8 @@ describe('TaskStrategySettingsPanel', () => {
     expect(html).toContain('未单独配置时跟随快速模型');
     expect(html).toContain('跟随快速模型（默认）');
     expect(html).toContain('按量计费 API 会产生更高费用');
-    // 改动即存：无保存按钮；不展示主任务档（主=默认模型）、fallback/规则。
+    // 改动即存：无保存按钮；不展示 fallback/规则。
     expect(html).not.toContain('保存策略');
-    expect(html).not.toContain('任务主模型');
     expect(html).not.toContain('研究 / 规划 / 重构');
   });
 });

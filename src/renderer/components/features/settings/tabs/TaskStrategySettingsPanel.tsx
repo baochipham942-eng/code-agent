@@ -10,11 +10,12 @@ import type {
 } from '@shared/contract';
 import { PROVIDER_MODELS } from '@shared/constants';
 import { buildRuntimeModelOptions } from '@shared/modelRuntime';
-import { Select, Toggle } from '../../../primitives';
+import { Button, Select, Toggle } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
 
-// 自动模式下只让用户挑这三类；主任务用「默认模型」（在上方模型列表设默认），不在这里重复配置。
-const AUTO_PROFILES: TaskStrategyProfileId[] = ['fast', 'deep', 'vision'];
+// 自动模式下四档都要可见可改：代码/文件/产物任务运行时走 profiles.main（modelDecision.applyStrategySlot），
+// 它不跟随默认模型，藏起来就是一个看不见、改不了却在生效的配置。
+const AUTO_PROFILES: TaskStrategyProfileId[] = ['main', 'fast', 'deep', 'vision'];
 
 function optionValue(provider: string, model: string): string {
   return `${provider}:::${model}`;
@@ -85,7 +86,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   const modelOptions = useMemo(() => buildRuntimeModelOptions(
     effectiveSettings,
     PROVIDER_MODELS.map((provider) => provider.id),
-    { includeDisabledProviders: Array.from(new Set([...profileProviders, config.provider])) },
+    { includeDisabledProviders: Array.from(new Set([...profileProviders, config.provider])), dedupeProviderGroups: false },
   ), [config.provider, effectiveSettings, profileProviders]);
 
   // 按 Provider 分组（optgroup）：避免所有已配模型平铺成一长串，effort 噪音靠分组收敛。
@@ -140,6 +141,8 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   };
 
   const selectedOptionSet = new Set(modelOptions.map((option) => optionValue(option.provider, option.model)));
+  // 记忆整理不自愈（爸显式选过的路由不静默改写），但要说清原因并给一键回到跟随快速模型。
+  const memoryRouteUnavailable = Boolean(memoryRoute && !selectedOptionSet.has(optionValue(memoryRoute.provider, memoryRoute.model)));
   return (
     <div className="space-y-4">
       <label className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
@@ -162,7 +165,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
       </label>
 
       {strategy.mode === 'auto' && (
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           {AUTO_PROFILES.map((profile) => {
             const slot = strategy.profiles[profile];
             const value = optionValue(slot.provider, slot.model);
@@ -226,7 +229,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
             aria-label={strategyText.memory.label}
           >
             <option value={FOLLOW_FAST_VALUE}>{strategyText.memory.followFast}</option>
-            {memoryRoute && !selectedOptionSet.has(optionValue(memoryRoute.provider, memoryRoute.model)) ? (
+            {memoryRoute && memoryRouteUnavailable ? (
               <option value={optionValue(memoryRoute.provider, memoryRoute.model)}>
                 {modelLabel(memoryRoute.provider, memoryRoute.model)}{strategyText.unavailableSuffix}
               </option>
@@ -241,6 +244,14 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
               </optgroup>
             ))}
           </Select>
+          {memoryRouteUnavailable ? (
+            <div data-testid="memory-route-unavailable" className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-badge-warning/30 bg-badge-warning px-2.5 py-2">
+              <p className="min-w-0 flex-1 text-xs text-badge-warning">{strategyText.memory.unavailableHint}</p>
+              <Button size="sm" variant="secondary" onClick={() => onMemoryRouteChange(null)} disabled={disabled}>
+                {strategyText.memory.resetToFollowFast}
+              </Button>
+            </div>
+          ) : null}
           <p className="text-xs text-badge-warning/90">{strategyText.memory.costHint}</p>
         </div>
       ) : null}

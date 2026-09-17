@@ -160,7 +160,7 @@ describe('TaskStrategySettingsPanel 任务主模型', () => {
     }));
   });
 
-  it('同为 GLM 家族的中转来源（GLM Coding Plan）不被去重误判不可用，也不被自愈改写（FB-195：爸 Dev 槽快速/深度被改成 LongCat）', () => {
+  it('同为 GLM 家族的中转来源（GLM Coding Plan）不被去重误判不可用，也不被自愈改写（FB-195：Dev 槽快速/深度被改成 LongCat）', () => {
     const settings = buildSettings(null);
     const providers = {
       ...settings.models.providers,

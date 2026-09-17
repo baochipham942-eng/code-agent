@@ -143,7 +143,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   };
 
   const selectedOptionSet = new Set(modelOptions.map((option) => optionValue(option.provider, option.model)));
-  // 记忆整理不自愈（爸显式选过的路由不静默改写），但要说清原因并给一键回到跟随快速模型。
+  // 记忆整理不自愈（用户显式选过的路由不静默改写），但要说清原因并给一键回到跟随快速模型。
   const memoryRouteUnavailable = Boolean(memoryRoute && !selectedOptionSet.has(optionValue(memoryRoute.provider, memoryRoute.model)));
   return (
     <div className="space-y-4">

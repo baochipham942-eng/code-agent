@@ -13,6 +13,7 @@ import type { PlatformPorts } from '../../../packages/mobile/src/platform/ports'
 const HOST = 'aa'.repeat(32);
 const harness = vi.hoisted(() => ({
   recoverError: null as string | null,
+  libraryNextOffset: null as number | null,
   librarySessions: [{ id: 's-keep', title: '上次会话', projectId: 'one', updatedAt: 9, archived: false, provider: 'deepseek', model: 'deepseek-chat' }] as { id: string; title: string; projectId: string | null; updatedAt: number; archived: boolean; provider: string; model: string }[],
 }));
 
@@ -29,7 +30,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
         if (query?.kind === 'history') return { sessionId: query.sessionId, messages: [{ id: 'm1', role: 'user', content: 'cached', timestamp: 1 }], nextOffset: null };
         if (query?.kind === 'artifacts') return { sessionId: query.sessionId, artifacts: [] };
         return {
-          nextOffset: null,
+          nextOffset: harness.libraryNextOffset,
           projects: [{ id: 'one', name: 'One', canCreate: true, workspacePath: '/w' }],
           sessions: harness.librarySessions,
           models: [{ provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek', providerLabel: 'DeepSeek', isDefault: true }],
@@ -81,6 +82,7 @@ describe('mobileStore.lastSessions 按电脑持久化', () => {
 describe('companionStore 冷启动回到上次会话', () => {
   beforeEach(() => {
     harness.recoverError = null;
+    harness.libraryNextOffset = null;
     harness.librarySessions = [{ id: 's-keep', title: '上次会话', projectId: 'one', updatedAt: 9, archived: false, provider: 'deepseek', model: 'deepseek-chat' }];
   });
   afterEach(() => { harness.recoverError = null; });
@@ -122,6 +124,29 @@ describe('companionStore 冷启动回到上次会话', () => {
     await store.getState().refreshLibrary();
     expect(store.getState().sessionId).toBeNull();
     expect(remembered.at(-1)).toBeNull();
+    store.getState().pause();
+  });
+
+  it('加载更多后的会话，第一页刷新未完结时不当成电脑删除', async () => {
+    const page1 = { id: 'page-1', title: '第一页', projectId: 'one', updatedAt: 9, archived: false, provider: 'deepseek', model: 'deepseek-chat' };
+    const older = { id: 's-old', title: '较老', projectId: 'one', updatedAt: 1, archived: false, provider: 'deepseek', model: 'deepseek-chat' };
+    harness.librarySessions = [page1];
+    harness.libraryNextOffset = 1;
+    const history = new HistoryCache();
+    history.putMessages('s-old', [{ id: 'm1', role: 'user', content: 'older', timestamp: 1 }]);
+    const store = createCompanionStore(companionPort(identityRecord()), () => {}, undefined, undefined, history, {
+      lastSession: () => 's-old',
+    });
+    await store.getState().hydrate();
+    await store.getState().refreshLibrary();
+    expect(store.getState().sessionId).toBe('s-old');
+    harness.librarySessions = [older];
+    await store.getState().refreshLibrary(true);
+    expect(store.getState().library?.sessions.map(s => s.id)).toEqual(['page-1', 's-old']);
+    harness.librarySessions = [page1];
+    harness.libraryNextOffset = 1;
+    await store.getState().refreshLibrary();
+    expect(store.getState().sessionId).toBe('s-old');
     store.getState().pause();
   });
 

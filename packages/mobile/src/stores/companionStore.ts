@@ -225,8 +225,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       if (hostKey) options?.rememberSession?.(hostKey, sessionId);
     };
     const armAutoRetry = (fromFailedAttempt: boolean) => {
-      if (appInBackground || connectionBlocksAutoRetry(get().status, get().connectionError) || !saved?.binding) {
-        if (connectionBlocksAutoRetry(get().status, get().connectionError) || !saved?.binding) stopAutoRetry();
+      const blocked = connectionBlocksAutoRetry(get().status, get().connectionError) || !saved?.binding;
+      if (appInBackground || blocked) {
+        if (blocked) stopAutoRetry();
         else { retryGeneration += 1; clearRetryTimer(); if (get().autoRetrying) set({ autoRetrying: false }); }
         return;
       }
@@ -240,13 +241,21 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       const wait = fromFailedAttempt
         ? phoneReconnectJitterMs(phoneReconnectDelayMs(retryAttempt, Date.now() - retryStartedAt))
         : 0;
-      clearRetryTimer();
-      const gen = retryGeneration;
-      retryTimer = setTimeout(() => {
-        if (gen !== retryGeneration || appInBackground) return;
-        retryTimer = null;
-        void get().reconnect();
-      }, wait);
+      const schedule = (delay: number) => {
+        clearRetryTimer();
+        const gen = retryGeneration;
+        retryTimer = setTimeout(() => {
+          if (gen !== retryGeneration || appInBackground) return;
+          retryTimer = null;
+          // 扫码等 safely 占着时这一拍不能空消耗：不递增档位，按当前等待再挂一次。
+          if (get().busy) {
+            schedule(delay || phoneReconnectJitterMs(phoneReconnectDelayMs(Math.max(retryAttempt, 1), Date.now() - (retryStartedAt ?? Date.now()))));
+            return;
+          }
+          void get().reconnect();
+        }, delay);
+      };
+      schedule(wait);
     };
     const inspectBoth = (): CacheInspect => {
       const preview = files?.cache.inspect() ?? { previewBytes: 0, conversationBytes: 0, protectedBytes: 0 };
@@ -600,9 +609,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // persist 会把它写回绑定——地址更新、身份不动（hostKey/deviceId/scope 照旧校验）。
         const target = await mdnsRefreshedEndpoint(port, savedTarget) ?? savedTarget;
         const previousScope = get().binding?.scope ?? saved?.binding?.scope ?? [];
-        // 已配对后的重试不把 status 打成 connecting：状态位要保持「正在自动重试」，
-        // 连接弹层也要留着扫码按钮（N-MOBILE-SCAN-ESCAPE）。首次 hydrate / 中途配对才亮 connecting。
-        const silent = get().autoRetrying || get().status === 'offline' || Boolean(opts?.resetBackoff);
+        // 已在自动重试 / 点了「重新连接」才保持 offline 文案。从后台恢复（pause 留下
+        // status=offline + paused）必须走 connecting：否则健康连接回前台也会报「正在自动重试」。
+        const silent = get().autoRetrying || Boolean(opts?.resetBackoff)
+          || (get().status === 'offline' && !get().paused);
         if (silent) set({ paused: false, autoRetrying: true });
         else set({ status: 'connecting', paused: false });
         let binding: LanBinding;
@@ -663,9 +673,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           for (const session of library.sessions) sessions.set(session.id, session);
           set({ library: { ...library, sessions: [...sessions.values()] }, libraryError: false });
           // 连上后发现当前会话已在电脑删除：静默回欢迎页（N-MOBILE-RESUME-LAST-SESSION ④）。
-          if (current && !more && !sessions.has(current)) {
+          if (current && !more && !sessions.has(current) && library.nextOffset == null) {
             const previousHad = previous?.sessions.some(s => s.id === current) === true;
-            const coldMiss = !previous && library.nextOffset == null;
+            const coldMiss = !previous;
             if (previousHad || coldMiss) {
               remember(null);
               set({ sessionId: null, runId: null, terminal: null, artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, uploadProgress: [] });

@@ -14,12 +14,15 @@ const harness = vi.hoisted(() => ({
   recoverError: 'COMPANION_NETWORK_UNAVAILABLE' as string | null,
   recoverCalls: 0,
   revoked: false,
+  hangRecover: false,
+  releaseHang: null as null | (() => void),
 }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
     async recover() {
       harness.recoverCalls += 1;
+      if (harness.hangRecover) await new Promise<void>(resolve => { harness.releaseHang = resolve; });
       if (harness.recoverError) throw new Error(harness.recoverError);
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] };
     }
@@ -82,6 +85,8 @@ describe('companionStore 前台退避自动重连', () => {
     harness.recoverError = 'COMPANION_NETWORK_UNAVAILABLE';
     harness.recoverCalls = 0;
     harness.revoked = false;
+    harness.hangRecover = false;
+    harness.releaseHang = null;
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     vi.useFakeTimers();
   });
@@ -180,6 +185,26 @@ describe('companionStore 前台退避自动重连', () => {
     const calls = harness.recoverCalls;
     await vi.advanceTimersByTimeAsync(30_000);
     expect(harness.recoverCalls).toBe(calls);
+    store.getState().pause();
+  });
+
+  it('从后台恢复健康连接：握手期间是 connecting，不是自动重试', async () => {
+    vi.useRealTimers();
+    harness.recoverError = null;
+    const store = storeOf();
+    await store.getState().hydrate();
+    expect(store.getState().status).toBe('connected');
+    store.getState().pause();
+    expect(store.getState()).toMatchObject({ status: 'offline', paused: true, autoRetrying: false });
+    harness.hangRecover = true;
+    const pending = store.getState().reconnect();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.getState()).toMatchObject({ status: 'connecting', autoRetrying: false, paused: false });
+    harness.hangRecover = false;
+    harness.releaseHang?.();
+    await pending;
+    expect(store.getState()).toMatchObject({ status: 'connected', autoRetrying: false });
     store.getState().pause();
   });
 

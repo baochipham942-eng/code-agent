@@ -1,5 +1,4 @@
 import WebSocket from 'ws';
-import { randomBytes } from 'node:crypto';
 import { rootCertificates } from 'node:tls';
 import type { KeyPair } from 'noise-handshake';
 import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
@@ -15,6 +14,7 @@ import {
 } from '../../../shared/contract/companionRelay';
 import type { CompanionGateway } from './CompanionGateway';
 import { RelayOutboundBuffer, RelaySeqBuffer } from './companionRelayBuffer';
+import { deriveCompanionRelayRouteToken } from './companionRelayRouteToken';
 import {
   errorHead,
   loadCompanionRelayConfig,
@@ -89,8 +89,8 @@ export class CompanionRelayClient {
 
   /**
    * 给一台已配对手机的完整 relay 路由（url + routeToken + 共享凭据），经 Noise 信封下发给它缓存。
-   * 没有 route 就当场铸造并注册——手机不该为等下一次 heartbeat（20s）而拿不到路由。
-   * socket 暂时断开时照常返回：token 不变，host 重连后会重新注册全部 route。
+   * 没有 route 就当场派生并注册——手机不该为等下一次 heartbeat（20s）而拿不到路由。
+   * socket 暂时断开时照常返回：token 不变（确定性派生，连 Host 重启都不变），重连后重新注册全部 route。
    */
   routeFor(deviceRef: string): CompanionRelayRoute | null {
     if (this.stopped) return null;
@@ -107,9 +107,11 @@ export class CompanionRelayClient {
   private bindPairedDevices(): void {
     for (const device of this.deps.gateway.pairedDevices()) {
       if (this.routes.has(device.deviceId)) continue;
+      // 确定性派生（不再 randomBytes）：Host 重启后同一设备拿到同一 token，手机缓存的
+      // 路由不必等回到同一 Wi-Fi 刷新。撤销/换 epoch ⇒ 派生结果变，旧 token 不再注册。
       this.advertise({
         deviceRef: device.deviceId,
-        routeToken: randomBytes(24).toString('base64url'),
+        routeToken: deriveCompanionRelayRouteToken(this.deps.identity.secretKey, device.deviceId, device.scopeEpoch),
       });
     }
   }

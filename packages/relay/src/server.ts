@@ -3,6 +3,8 @@ import { timingSafeEqual } from 'node:crypto';
 import WebSocket, { WebSocketServer } from 'ws';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import {
+  COMPANION_RELAY_WS_PROTOCOL,
+  companionRelayCredentialSubprotocol,
   companionRelayFrameExpired,
   parseCompanionRelayFrame,
   type CompanionRelayFrame,
@@ -45,6 +47,35 @@ interface QueuedFrame {
   payload: string;
   bytes: number;
   expiresAt: number;
+}
+
+// 前缀只在 shared 契约里定义一次：对空凭据编码得到的就是前缀本身，避免两端各抄一份常量。
+const COMPANION_RELAY_WS_AUTH_PREFIX = companionRelayCredentialSubprotocol('');
+
+/**
+ * 只有 relay 服务端解码，所以放这里不进 shared 契约（knip 死导出棘轮不扫 packages/relay）。
+ * 从 `Sec-WebSocket-Protocol` 头里解凭据（node http 把重复头合并成逗号串）：取第一个带
+ * 前缀的项，base64url 解码回 UTF-8。没有凭据项或编码非法都返回 null——调用方按无凭据拒。
+ */
+function companionRelayCredentialFromSubprotocols(header: string | undefined): string | null {
+  if (typeof header !== 'string') return null;
+  for (const item of header.split(',')) {
+    const protocol = item.trim();
+    if (!protocol.startsWith(COMPANION_RELAY_WS_AUTH_PREFIX)) continue;
+    const encoded = protocol.slice(COMPANION_RELAY_WS_AUTH_PREFIX.length);
+    if (!/^[A-Za-z0-9_-]*$/.test(encoded) || encoded.length % 4 === 1) return null;
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (encoded.length % 4)) % 4);
+    try {
+      const binary = atob(base64);
+      const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+      const decoded = new TextDecoder().decode(bytes);
+      // 解码结果必须能原样重新编码回去，否则按非法编码拒（防宽容解码吃掉坏输入）。
+      return companionRelayCredentialSubprotocol(decoded) === protocol ? decoded : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function sameSecret(left: string, right: string): boolean {
@@ -102,7 +133,13 @@ export class CompanionRelayServer {
   async listen(): Promise<{ host: string; port: number }> {
     if (this.server) return this.address;
     const server = createServer((request, response) => this.onHttpRequest(request, response));
-    const wss = new WebSocketServer({ server, maxPayload: L.relayMaxWireFrameBytes });
+    const wss = new WebSocketServer({
+      server,
+      maxPayload: L.relayMaxWireFrameBytes,
+      // 手机侧凭据走子协议：客户端发了协议名必须回选（浏览器在「发了子协议、服务端没选」时
+      // 直接断开），但只回选固定协议名——凭据项绝不回选或回显。
+      handleProtocols: protocols => protocols.has(COMPANION_RELAY_WS_PROTOCOL) ? COMPANION_RELAY_WS_PROTOCOL : false,
+    });
     wss.on('connection', (socket, request) => this.accept(socket, request));
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -163,11 +200,16 @@ export class CompanionRelayServer {
   }
 
   private accept(socket: WebSocket, request: IncomingMessage): void {
+    // 鉴权顺序：先 Authorization 头（Host 继续用它），没有再从子协议里解凭据（手机 WebView
+    // 设不了请求头）。via 只进日志的来源标记，凭据与其编码绝不落日志。
     const header = request.headers.authorization;
-    const auth = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
+    const headerAuth = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
+    const subprotocolAuth = headerAuth ? null : companionRelayCredentialFromSubprotocols(request.headers['sec-websocket-protocol']);
+    const via: 'header' | 'subprotocol' | 'none' = headerAuth ? 'header' : subprotocolAuth !== null ? 'subprotocol' : 'none';
+    const auth = headerAuth || subprotocolAuth || '';
     if (!sameSecret(auth, this.options.credential)) {
       this.stats.rejectedAuth += 1;
-      this.options.logger?.warn('auth_rejected', {});
+      this.options.logger?.warn('auth_rejected', { via });
       socket.close();
       return;
     }

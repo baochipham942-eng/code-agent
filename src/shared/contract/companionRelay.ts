@@ -96,8 +96,9 @@ export function resolveCompanionRelayConfig(raw: unknown): CompanionRelayResolve
 
 /**
  * 一台已配对手机的 relay 路由：Host 经 Noise 加密信道下发给手机缓存，LAN 不可达时按它拨 relay。
- * routeToken 是 Host 进程内铸造的短 TTL 路由凭据；credential 与 Host 拨 relay 用的是同一个
- * 共享路由凭据（不是长期内容密钥）。手机缓存它进配对盘（设备上是 Keychain）。
+ * routeToken 由 Host 持久身份密钥确定性派生（重启不变，见 companionRelayRouteToken.ts），在
+ * relay 侧的存活期是短 TTL；credential 与 Host 拨 relay 用的是同一个共享路由凭据（不是长期
+ * 内容密钥）。手机缓存它进配对盘（设备上是 Keychain）。
  */
 const companionRelayRouteSchema = z.object({
   v: z.literal(COMPANION_RELAY_PROTOCOL_VERSION),
@@ -111,4 +112,21 @@ export function parseCompanionRelayRoute(raw: unknown): CompanionRelayRoute {
   const parsed = companionRelayRouteSchema.safeParse(raw);
   if (!parsed.success) throw new Error('COMPANION_RELAY_INVALID_ROUTE');
   return { ...parsed.data, url: parseCompanionRelayUrl(parsed.data.url) };
+}
+
+/**
+ * 凭据子协议（N-COMPANION-RELAY-PHONE-AUTH）：WebView 的 WebSocket 设不了请求头，手机
+ * 侧把共享凭据放进 `Sec-WebSocket-Protocol`。客户端固定发两项：协议名 + 凭据项；服务端
+ * `handleProtocols` 只回选协议名，凭据项解出来后与 `Authorization` 头同一口径比较，绝不
+ * 回选或回显。生产凭据含 `=` 等不合法的 token 字符，必须编码后才能进协议头。
+ */
+export const COMPANION_RELAY_WS_PROTOCOL = 'neo-relay.v1';
+const COMPANION_RELAY_WS_AUTH_PREFIX = 'neo-relay-auth.';
+
+/** 凭据 → `neo-relay-auth.<base64url>`：trim 后取 UTF-8 字节，无 padding 的 base64url。 */
+export function companionRelayCredentialSubprotocol(credential: string): string {
+  const bytes = new TextEncoder().encode(credential.trim());
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return COMPANION_RELAY_WS_AUTH_PREFIX + btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }

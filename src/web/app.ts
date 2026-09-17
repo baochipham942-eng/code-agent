@@ -471,7 +471,10 @@ export function createApp(deps: CreateAppDeps): express.Express {
         }
         services.relay = client;
         companionRelay = client;
-      }).catch(() => logger.warn('Companion relay dial-out skipped'));
+      }).catch((error) => logger.warn(
+        'Companion relay dial-out skipped',
+        error instanceof Error ? error.message : String(error),
+      ));
       app.use('/companion', createCompanionRouter({
         gateway,
         authenticate: (deviceId, credential) => gateway.authenticateDevice(deviceId, credential),

@@ -119,6 +119,10 @@ export const COMPANION_LIMITS = {
   relayConnectTimeoutMs: 10_000,
   relaySeqHold: 16,
   relayAuthLength: 16,
+  /** companion-relay.json `caFile` path length (absolute or relative to dataDirectory). */
+  relayCaFileLength: 4_096,
+  /** Extra CA PEM size cap; a typical CA cert is ~1–2 KiB. */
+  relayCaPemMaxBytes: 65_536,
   /** relay 服务端：单条 WS 入站帧的字节上限（schema 密文上限 + 信封余量）。 */
   relayMaxWireFrameBytes: MAX_FRAME_BYTES * MAX_REQUEST_RECORDS + RELAY_WIRE_HEADROOM_BYTES,
   /** relay 服务端：并发 route（token）上限，超出的新注册直接丢弃。 */

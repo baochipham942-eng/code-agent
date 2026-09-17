@@ -39,17 +39,21 @@ const companionRelayFrameSchema = z.discriminatedUnion('kind', [
 ]);
 export type CompanionRelayFrame = z.infer<typeof companionRelayFrameSchema>;
 
-const companionRelayConfigSchema = z.object({
+export const companionRelayConfigSchema = z.object({
   v: z.literal(COMPANION_RELAY_PROTOCOL_VERSION),
   enabled: z.boolean(),
   url: z.string().trim().min(1).max(2_048).optional(),
   credentialRef: z.string().trim().min(1).max(L.idLength).optional(),
   reconnectBackoffMs: z.array(z.number().int().positive().max(L.relayIdleMs).safe()).min(1).max(8).optional(),
+  /** Extra CA file for this Host dial only; PEM is read by the Host loader, not sent to the relay. */
+  caFile: z.string().trim().min(1).max(L.relayCaFileLength).optional(),
 }).strict();
 export interface CompanionRelayResolved {
   url: string;
   credentialRef: string;
   reconnectBackoffMs: readonly number[];
+  /** Extra CA PEM appended to Node's trust store for this dial only. */
+  caPem?: string;
 }
 
 export function parseCompanionRelayFrame(raw: unknown): CompanionRelayFrame {

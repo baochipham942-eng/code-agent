@@ -293,9 +293,9 @@ export interface ProviderHealthSnapshot {
   status?: string;
   latencyP50?: number;
   errorRate?: number;
-  /** 供应商级失败（密钥/网络）才整家沉底；模型级停用不带这个。 */
-  providerMark?: { kind: 'auth' | 'network' };
-  modelMarks?: Record<string, { kind: 'model' | 'auth' | 'network' }>;
+  /** 供应商级失败（密钥/网络/余额）才整家沉底；模型级停用不带这个。 */
+  providerMark?: { kind: 'auth' | 'network' | 'quota' };
+  modelMarks?: Record<string, { kind: 'model' | 'auth' | 'network' | 'quota' }>;
 }
 
 export type ProviderAvailabilityState = 'healthy' | 'recovering' | 'unknown' | 'degraded' | 'unavailable';
@@ -405,8 +405,8 @@ export function compareProviderHealth(
 export function healthSnapshotForProviderSort(snapshot?: ProviderHealthSnapshot | null): ProviderHealthSnapshot | null | undefined {
   if (!snapshot) return snapshot;
   if (snapshot.providerMark) return { ...snapshot, status: 'unavailable' };
-  // 模型级失败不能把整家沉底；路由窗口的 unavailable 也不再当作家级失败。
-  if (snapshot.status === 'unavailable') return { ...snapshot, status: 'healthy' };
+  // 不改写 unavailable：429 连发/超时这类不打标记的供应商级熔断要照常沉底显示，
+  // 与路由的跳过行为一致。模型级失败不进 errorRate，不会误伤整家。
   return snapshot;
 }
 
@@ -424,10 +424,11 @@ export function sortProviderGroupsByModelStrategy<T extends RuntimeModelOptionGr
   });
 }
 
-const AVAILABILITY_KIND_LABEL: Record<'model' | 'auth' | 'network', string> = {
+const AVAILABILITY_KIND_LABEL: Record<'model' | 'auth' | 'network' | 'quota', string> = {
   model: '这个模型用不了了',
   auth: '密钥用不了',
   network: '最近连不上',
+  quota: '余额或额度用完了',
 };
 
 export function buildModelRowHealthSummary(
@@ -446,7 +447,7 @@ export function buildModelRowHealthSummary(
     };
   }
   if (!snapshot) return null;
-  if (snapshot.status === 'unavailable') return buildProviderHealthSummary({ ...snapshot, status: 'healthy' });
+  // 无标记的 unavailable 照实显示（429/超时熔断）：模型行不再改写成健康，界面与路由一致。
   return buildProviderHealthSummary(snapshot);
 }
 

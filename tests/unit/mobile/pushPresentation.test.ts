@@ -167,6 +167,17 @@ describe('推送正文走 i18n，不再是裸事件 key（N-MOBILE-EXEC-STATUS �
     expect(pushAlertStrings('zh').task_failed_model_auth).not.toContain(zh.runFailed);
   });
 
+  it('模型停用的推送正文必须显式传入：漏传直接抛，不再默认回落成密钥文案（ai-review PR#1918 Nit）', () => {
+    const zh = messages('zh');
+    // .d.mts 已把第 4 参定为必传，TS 侧漏传编译期就红；这里的断言模拟真实 JS 调用方
+    // （build-ios.mjs 无类型）漏传时的运行时行为：直接抛，不是默默用密钥文案顶上。
+    const jsCallerOmitsArg = mapPushAlerts as (text: Record<string, string>, failedLine: string, authLine: string) => Record<string, string>;
+    expect(() => jsCallerOmitsArg(zh, runOutcomeCopy(zh, 'failed'), runOutcomeCopy(zh, 'failed', 'MODEL_AUTH')))
+      .toThrow('IOS_PUSH_MODEL_UNAVAILABLE_LINE_REQUIRED');
+    expect(pushAlertStrings('zh').task_failed_model_unavailable).toBe(`${zh.failed}：${zh.modelGoneLabel}`);
+    expect(pushAlertStrings('zh').task_failed_model_unavailable).not.toContain(zh.modelAuthMissing);
+  });
+
   it('.strings 转义引号、反斜杠、换行', () => {
     expect(localizableStrings({ a: 'x"y\\z\nw' })).toBe('"a" = "x\\"y\\\\z\\nw";\n');
   });

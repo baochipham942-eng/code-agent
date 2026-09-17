@@ -379,11 +379,12 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   // 新任务的项目与模型（N-MOBILE-DEFAULT-PROJECT）：手选过的 > 最近用过的 > 未分类；模型 = 电脑默认 > 列表第一项（FB-141）。
   const hostKey = companion.binding?.hostKey;
   const newTaskProjectId = companion.library ? defaultProjectId(companion.library, hostKey ? state.preferences.projectPicks?.[hostKey] : undefined) : null;
-  const newTaskModel = companion.library?.models.find(m => m.isDefault);
+  const newTaskModel = companion.library?.models.find(m => m.isDefault) ?? companion.library?.models[0];
   /** 「会话没建成」那条状态的重试：重做最近一次建会话的那个动作（+、没选会话发送、弹层里选项目）。 */
   const lastCreate = useRef<(() => void) | null>(null);
   const createInDefaultProject = () => {
-    // 没有能用的模型：草稿留着、不弹项目弹层（N-MOBILE-NO-USABLE-MODEL）。
+    // 没有能用的模型（列表为空）：草稿留着、不弹项目弹层（N-MOBILE-NO-USABLE-MODEL）。
+    // 旧版电脑端不标 isDefault 时上面已回落列表第一项，不再静默建不了。
     if (!newTaskModel) return false;
     if (!newTaskProjectId) { state.openSheet('projects'); return false; }
     void manage('session.create', { title: text.newSession, provider: newTaskModel.provider, model: newTaskModel.model }, `project:${newTaskProjectId}`).then(() => {

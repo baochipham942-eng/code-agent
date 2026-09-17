@@ -193,10 +193,14 @@ export const LOCALIZABLE_REGIONS = [['en', 'en'], ['zh-Hans', 'zh']];
  * 推送横幅正文（N-MOBILE-EXEC-STATUS ⑤）。Host 只发 APNs 的 loc-key（= titleKey），iOS 在 app 包里的
  * Localizable.strings 查正文；包里没有这张表时系统把 key 原样当正文——build 40 真机横幅写着 task_complete。
  * 文案全部取自 src/i18n（text 与 failedLine 由 build-ios 传入），这里只把 Host 的 titleKey 对到文案上。
- * 只有构建脚本用，所以放脚本侧，不从 i18n 导出。推送里不带失败码，失败只能给通用原因；唯一例外是模型密钥用不了，
- * Host 发单独的 task_failed_model_auth（用户能当场换模型，横幅不该把原因藏起来）。
+ * 只有构建脚本用，所以放脚本侧，不从 i18n 导出。推送里不带失败码，失败只能给通用原因；唯一例外是模型密钥用不了
+ * 与模型停用，Host 发单独的 task_failed_model_auth / task_failed_model_unavailable（用户能当场换模型，
+ * 横幅不该把原因藏起来）。modelUnavailableFailedLine 必传：默认回落密钥文案会把「模型停用」错说成「密钥用不了」。
  */
-export function pushAlertStrings(text, failedLine, modelAuthFailedLine, modelUnavailableFailedLine = modelAuthFailedLine) {
+export function pushAlertStrings(text, failedLine, modelAuthFailedLine, modelUnavailableFailedLine) {
+  if (typeof modelUnavailableFailedLine !== 'string' || modelUnavailableFailedLine.trim() === '') {
+    throw new Error('IOS_PUSH_MODEL_UNAVAILABLE_LINE_REQUIRED');
+  }
   return {
     task_complete: text.complete,
     task_stopped: text.stopped,

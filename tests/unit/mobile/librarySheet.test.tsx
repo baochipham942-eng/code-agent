@@ -182,11 +182,14 @@ describe('mobile model picker default', () => {
     expect(select.value).toBe(key('deepseek', 'deepseek-chat'));
   });
 
-  it('电脑没标 isDefault 时不拿列表第一项去建会话', () => {
+  it('旧版电脑端没标 isDefault（列表非空）：回落列表第一项建会话，不静默失败', () => {
     const { manage } = mountProjectSessions({ models: library.models.map(({ isDefault: _drop, ...model }) => model) });
-    expect((screen.getByTestId('start-session') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId('start-session') as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByTestId('start-session'));
-    expect(manage).not.toHaveBeenCalled();
+    expect(manage).toHaveBeenCalledWith('session.create',
+      { title: text.newSession, provider: 'moonshot', model: 'kimi-k2.6' }, 'project:one');
+    // 列表里明明有模型，就不显示「电脑上还没有能用的模型」
+    expect(screen.queryByTestId('no-usable-model-hint')).toBeNull();
   });
 });
 
@@ -222,6 +225,20 @@ describe('选择会话模型副标题（电脑默认 / 这个模型用不了了 
       projectId="one" select={() => {}} loadMore={() => {}} manage={vi.fn(async () => {})} openProjectSessions={() => {}} />);
     expect(screen.getByTestId('model-longcat:LongCat-2.0-Preview').textContent).toContain('密钥用不了');
     expect(screen.getByTestId('model-longcat:LongCat-2.0').textContent).toContain('密钥用不了');
+  });
+
+  it('余额或额度用完了（quota）有自己的话，不冒充密钥', () => {
+    render(<LibrarySheet library={{
+      ...library,
+      sessions: [{ id: 's1', title: 'Talk', projectId: 'one', updatedAt: 1, archived: false, provider: 'deepseek', model: 'deepseek-chat' }],
+      models: [
+        { provider: 'longcat', model: 'LongCat-2.0', label: 'LongCat-2.0', providerLabel: 'LongCat', recentlyFailed: true, failureKind: 'quota' },
+      ],
+    }} sessionId="s1" text={text} busy={false} mode="model"
+      projectId="one" select={() => {}} loadMore={() => {}} manage={vi.fn(async () => {})} openProjectSessions={() => {}} />);
+    const row = screen.getByTestId('model-longcat:LongCat-2.0');
+    expect(row.textContent).toContain('余额或额度用完了');
+    expect(row.textContent).not.toContain('密钥用不了');
   });
 });
 

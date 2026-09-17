@@ -152,4 +152,19 @@ describe('爸配置形状：custom 供应商无 model + 列表首项已失败', 
     expect(models.filter(model => model.provider === 'longcat').every(model => model.failureKind === 'auth' && model.recentlyFailed)).toBe(true);
     expect(models.find(model => model.provider === 'custom-team-relay' && model.model === 'gpt-5.5')?.recentlyFailed).toBeUndefined();
   });
+
+  it('429 连发把供应商打成 unavailable（无标记）：整家照标 recentlyFailed/network，默认挪走', async () => {
+    // 429/超时不打可用性标记，但连发会把健康监控推到 unavailable——手机不能把路由已熔断的
+    // 家当好选择（ai-review PR#1918 Important 1：电脑面板照实显示，手机也要标失败）。
+    for (let i = 0; i < 4; i += 1) {
+      monitor.getProviderHealthMonitor().recordFailure('longcat', {
+        model: 'LongCat-2.0-Preview',
+        error: Object.assign(new Error('Too many requests'), { status: 429 }),
+      });
+    }
+    const models = await readModels();
+    expect(models.filter(model => model.provider === 'longcat')
+      .every(model => model.recentlyFailed === true && model.failureKind === 'network')).toBe(true);
+    expect(models.find(model => model.provider === 'custom-team-relay' && model.model === 'gpt-5.5')?.isDefault).toBe(true);
+  });
 });

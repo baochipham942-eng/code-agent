@@ -16,7 +16,7 @@ const zh = {
   // 设计稿 model 屏（N-MOBILE-SESSIONSHEET-SPLIT）：只列电脑已配置的模型。
   chooseModel: '选择会话模型', modelScopeNote: '模型与可选项来自 Neo 的模型配置。更改只作用于本会话后续执行。',
   modelConfigured: '已配置', modelRecentlyFailed: '最近调用失败，可能用不了',
-  modelComputerDefault: '电脑默认', modelKeyBroken: '密钥用不了', modelUnreachable: '最近连不上',
+  modelComputerDefault: '电脑默认', modelKeyBroken: '密钥用不了', modelUnreachable: '最近连不上', modelQuotaExhausted: '余额或额度用完了',
   modelGoneLabel: '这个模型用不了了',
   // 设计稿 modelAuthFailed 屏（N-MOBILE-RUNFAIL-REASON）：主动作直接进模型选择。
   modelAuthTitle: '模型密钥用不了', modelAuthDetail: '可以先换一个可用的模型继续；也可以在 Neo 的模型设置里配置或更新这个模型的密钥。', switchModel: '换一个可用模型',
@@ -164,7 +164,7 @@ const en: Record<keyof typeof zh, string> = {
   projectNoWorkspace: 'No working folder on your computer yet, so you cannot start one here', projectNoWorkspaceNote: 'To use "{name}", set a working folder for it on your computer first.',
   chooseModel: 'Choose a model', modelScopeNote: 'Models come from Neo model settings. Changes apply to later runs in this conversation only.',
   modelConfigured: 'Configured', modelRecentlyFailed: 'Recently failed, may not work',
-  modelComputerDefault: 'Computer default', modelKeyBroken: 'Key does not work', modelUnreachable: 'Recently unreachable',
+  modelComputerDefault: 'Computer default', modelKeyBroken: 'Key does not work', modelUnreachable: 'Recently unreachable', modelQuotaExhausted: 'Balance or quota is used up',
   modelGoneLabel: 'This model no longer works',
   modelAuthTitle: 'The model key does not work', modelAuthDetail: 'Switch to another model that works, or add or update this model\'s key in Neo model settings.', switchModel: 'Switch to a working model',
   modelGoneTitle: 'This model no longer works', modelGoneDetail: 'The provider has retired {model}. Switch to another model to continue.',

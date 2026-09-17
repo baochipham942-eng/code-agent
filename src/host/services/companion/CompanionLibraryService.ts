@@ -48,9 +48,13 @@ function companionModelOptions(
   const monitor = getProviderHealthMonitor();
   const listed = buildRuntimeModelOptions(settings).map(({ provider, model, label, providerLabel }) => {
     const mark = monitor.getAvailabilityMark(provider, model);
+    // 无标记但整家被健康监控熔断（429 连发/超时这类不打标记的失败）：照标失败，
+    // kind 用 network（手机显示「最近连不上」），别让手机把路由已跳过的家当好选择。
+    const providerDown = !mark && monitor.getHealth(provider)?.status === 'unavailable';
     return {
       provider, model, label, providerLabel,
       ...(mark ? { recentlyFailed: true as const, failureKind: mark.kind } : {}),
+      ...(providerDown ? { recentlyFailed: true as const, failureKind: 'network' as const } : {}),
     };
   });
   const picked = pickCompanionDefaultModel(listed, hostDefault);

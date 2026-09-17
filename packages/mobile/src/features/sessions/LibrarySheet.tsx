@@ -9,6 +9,7 @@ function modelRowStatus(model: CompanionLibrary['models'][number], text: ReturnT
     if (model.failureKind === 'model') return text.modelGoneLabel;
     if (model.failureKind === 'auth') return text.modelKeyBroken;
     if (model.failureKind === 'network') return text.modelUnreachable;
+    if (model.failureKind === 'quota') return text.modelQuotaExhausted;
     return text.modelRecentlyFailed;
   }
   return model.isDefault ? text.modelComputerDefault : text.modelConfigured;
@@ -27,8 +28,9 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, projectId, 
   const [newTitle, setNewTitle] = useState('');
   const [renameTitle, setRenameTitle] = useState(session?.title ?? '');
   const [deleting, setDeleting] = useState(false);
-  // 新建会话一步起的默认模型：只读电脑标的 isDefault，不再拿列表第一项冒充（N-COMPANION-DEFAULT-MODEL-FAILING）。
-  const defaultModel = library.models.find(m => m.isDefault);
+  // 新建会话一步起的默认模型：电脑标的 isDefault；旧版电脑端不标 isDefault（列表非空但一个都没有）
+  // 时回落列表第一项（旧行为），不静默建不了，也别让「电脑上还没有能用的模型」跟明明列着的模型打架。
+  const defaultModel = library.models.find(m => m.isDefault) ?? library.models[0];
   // 新建会话「高级选项」里的模型下拉：会话已有的模型 > 电脑的默认模型 > 列表第一项（列表顺序不代表电脑的选择）。
   const [modelKey, setModel] = useState(() => {
     const model = library.models.find(m => m.provider === session?.provider && m.model === session?.model) ?? defaultModel;

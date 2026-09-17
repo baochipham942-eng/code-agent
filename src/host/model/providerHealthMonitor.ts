@@ -5,6 +5,7 @@
 
 import { createLogger } from '../services/infra/logger';
 import {
+  classifyError,
   resolveAvailabilityFailure,
   type AvailabilityKind,
   type AvailabilityScope,
@@ -38,6 +39,14 @@ const ERROR_WINDOW_MS = 5 * 60_000; // 5 minutes for error rate
 const DEGRADED_THRESHOLD = 0.3;     // 30% error rate
 const UNAVAILABLE_THRESHOLD = 0.7;  // 70% error rate
 const RECOVERY_SUCCESS_COUNT = 3;   // consecutive successes to recover
+
+/**
+ * 路由持久供应商错误（PERSISTENT_PROVIDER_ERROR_PATTERN：401/403/余额）整家打标记用的 kind：
+ * 余额归 quota（「余额或额度用完了」），其余归 auth。空内容等非持久失败不打标记，不走这里。
+ */
+export function persistentProviderMarkKind(message: string): AvailabilityKind {
+  return classifyError(message) === 'quota_exhaustion' ? 'quota' : 'auth';
+}
 
 interface ProviderState {
   observationCount: number;

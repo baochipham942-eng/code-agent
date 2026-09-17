@@ -40,11 +40,11 @@ export interface CompanionLibrary {
   sessions: CompanionSessionSummary[];
   /**
    * isDefault = 电脑一处算好的默认（电脑默认且未失败 ＞ 同供应商第一个未失败 ＞ 列表第一个未失败 ＞ 全失败取第一个）。
-   * recentlyFailed = 最近调用失败；failureKind 区分模型级停用 / 供应商密钥 / 网络，旧 Host 可能只带 recentlyFailed。
+   * recentlyFailed = 最近调用失败；failureKind 区分模型级停用 / 供应商密钥 / 网络 / 余额额度，旧 Host 可能只带 recentlyFailed。
    */
   models: {
     provider: string; model: string; label: string; providerLabel: string;
-    isDefault?: true; recentlyFailed?: true; failureKind?: 'model' | 'auth' | 'network';
+    isDefault?: true; recentlyFailed?: true; failureKind?: 'model' | 'auth' | 'network' | 'quota';
   }[];
 }
 export interface CompanionHistory {

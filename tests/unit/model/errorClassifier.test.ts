@@ -236,6 +236,21 @@ describe('400 Unsupported model → 模型不可用，不误伤 temperature', ()
     expect(getModelUnavailableMarker(error)).toBeUndefined();
   });
 
+  it('message 里 model 后面的 Unsupported value 参数错误也不认成模型停用（收窄 model.*unsupported）', () => {
+    // ai-review PR#1918 Nit：model.*unsupported 宽匹配会把带模型名的参数错误吞进 model_deprecated，
+    // 进而让 loopDecision 走 fallback + 打 30 分钟停用标记。收窄后只剩明确指向模型的句式。
+    const error = new Error("Invalid request to model glm-5: Unsupported value: 'temperature'");
+    expect(classifyError(error)).not.toBe<ErrorClass>('model_deprecated');
+    expect(getModelUnavailableMarker(error)).toBeUndefined();
+  });
+
+  it('明确指向模型的句式仍认：Unsupported model / model … not supported / does not exist / not found', () => {
+    expect(classifyError(new Error('Unsupported model: LongCat-2.0-Preview'))).toBe<ErrorClass>('model_deprecated');
+    expect(classifyError(new Error('The model glm-4-flash is not supported'))).toBe<ErrorClass>('model_deprecated');
+    expect(classifyError(new Error('model LongCat-2.0-Preview does not exist'))).toBe<ErrorClass>('model_deprecated');
+    expect(classifyError(new Error('model glm-4 not found'))).toBe<ErrorClass>('model_deprecated');
+  });
+
   it('401 仍是供应商级鉴权，不是模型停用', () => {
     const error = Object.assign(new Error('Forbidden'), { statusCode: 403 });
     expect(resolveAvailabilityFailure(error)).toEqual({ scope: 'provider', kind: 'auth' });
@@ -278,5 +293,23 @@ describe('getModelAuthFailureMarker', () => {
     expect(getModelAuthFailureMarker({ status: 500 })).toBeUndefined();
     expect(getModelAuthFailureMarker({ status: 429 })).toBeUndefined();
     expect(getModelAuthFailureMarker(undefined)).toBeUndefined();
+  });
+});
+
+describe('quota_exhaustion → 供应商级 quota（余额或额度用完了），不再冒充密钥', () => {
+  it('402 / 余额不足文案 / x-ratelimit-remaining 0 标 {scope:provider, kind:quota}', () => {
+    expect(resolveAvailabilityFailure(Object.assign(new Error('Payment required'), { status: 402 })))
+      .toEqual({ scope: 'provider', kind: 'quota' });
+    expect(resolveAvailabilityFailure(new Error('Insufficient balance, please top up')))
+      .toEqual({ scope: 'provider', kind: 'quota' });
+    expect(resolveAvailabilityFailure(Object.assign(new Error('rate limited'), { headers: { 'x-ratelimit-remaining': '0' } })))
+      .toEqual({ scope: 'provider', kind: 'quota' });
+  });
+
+  it('401/403 仍是 auth（mimo 曾用 401 表达额度耗尽，单凭响应分不出 key 与余额）', () => {
+    expect(resolveAvailabilityFailure(Object.assign(new Error('Unauthorized'), { status: 401 })))
+      .toEqual({ scope: 'provider', kind: 'auth' });
+    expect(resolveAvailabilityFailure(Object.assign(new Error('Forbidden'), { statusCode: 403 })))
+      .toEqual({ scope: 'provider', kind: 'auth' });
   });
 });

@@ -48,7 +48,7 @@ export function assertBinaryPushEntitlement(dump: string | Buffer): string;
 /** Host 推送 titleKey → i18n 文案；按 titleKey 全集定型，Host 新增一种推送而这里没跟上时 typecheck 红。 */
 export declare function pushAlertStrings(
   text: { complete: string; stopped: string; approval: string }, failedLine: string, modelAuthFailedLine: string,
-  modelUnavailableFailedLine?: string,
+  modelUnavailableFailedLine: string,
 ): Record<import('../../../src/shared/contract/companionPush').CompanionPushTitleKey, string>;
 /** 推送正文本地化的区：[lproj 目录名, i18n 语言]。 */
 export declare const LOCALIZABLE_REGIONS: [string, string][];

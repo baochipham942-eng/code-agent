@@ -76,7 +76,7 @@ const MESSAGE_PATTERNS: Array<[RegExp, ErrorClass]> = [
   [/x-ratelimit-remaining.*\b0\b/i, 'quota_exhaustion'],
   [/content.?filter|content.?policy|safety|harmful|violat(?:es?|ion)|moderation/i, 'content_policy'],
   [/unexpected.?token|JSON\.parse|invalid json|SyntaxError|tool_use.*corrupt|malformed.*json/i, 'malformed_response'],
-  [/unsupported\s+model|model.*(?:not.?found|deprecated|decommission|retired|does not exist|unsupported)|(?:deprecated|retired).*model/i, 'model_deprecated'],
+  [/unsupported\s+model|model.*(?:not.?found|not\s+supported|does not exist|deprecated|decommission|retired)|(?:deprecated|retired).*model/i, 'model_deprecated'],
   [/rate limit|too many requests|quota exceeded/i, 'rate_limit'],
   [/invalid_api_key|authentication_error|invalid token|unauthorized|forbidden/i, 'auth'],
   [/econnreset|econnrefused|etimedout|socket hang up|network error|fetch failed/i, 'network'],
@@ -145,14 +145,18 @@ export function getModelUnavailableMarker(error: unknown): ModelUnavailableMarke
   return undefined;
 }
 
-export type AvailabilityKind = 'model' | 'auth' | 'network';
+export type AvailabilityKind = 'model' | 'auth' | 'network' | 'quota';
 export type AvailabilityScope = 'model' | 'provider';
 export type AvailabilityFailure = { scope: AvailabilityScope; kind: AvailabilityKind };
 
 /** 把一次调用失败分成「只标这个模型」还是「标整家供应商」，给健康监控用。 */
 export function resolveAvailabilityFailure(error: unknown): AvailabilityFailure | undefined {
   if (error == null) return undefined;
-  if (getModelAuthFailureMarker(error) || classifyError(error) === 'auth' || classifyError(error) === 'quota_exhaustion') {
+  // 余额/额度耗尽是供应商级，但不是密钥问题：标 quota（「余额或额度用完了」），别误导用户重填 key。
+  if (classifyError(error) === 'quota_exhaustion') {
+    return { scope: 'provider', kind: 'quota' };
+  }
+  if (getModelAuthFailureMarker(error) || classifyError(error) === 'auth') {
     return { scope: 'provider', kind: 'auth' };
   }
   if (getModelUnavailableMarker(error) || classifyError(error) === 'model_deprecated') {

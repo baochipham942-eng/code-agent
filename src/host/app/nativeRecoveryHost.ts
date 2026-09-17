@@ -13,6 +13,11 @@ import type {
   NativeRecoveryResultEvidence,
 } from '../runtime/nativeRecoveryHost';
 import { getProjectService } from '../services/project/projectService';
+import {
+  isLegacyBackgroundAuthorityScope,
+  resolveBackgroundWorkspaceAuthority,
+} from '../runtime/workspaceAuthority';
+import type { WorkspaceScope } from '../../shared/contract/project';
 import type { ToolDefinition, ToolReplaySafety, ToolResult } from '../../shared/contract';
 import { ToolExecutor } from '../tools/toolExecutor';
 import type { ToolExecutionResult } from '../tools/types';
@@ -224,9 +229,16 @@ export function createApplicationNativeRecoveryPorts(
         return { ok: false, reason: 'native_workspace_unavailable' };
       }
     },
-    async resolveWorkspaceScopeVersion(projectId) {
+    async resolveWorkspaceScopeVersion(scope: WorkspaceScope) {
       try {
-        return getProjectService().getWorkspaceScope(projectId)?.version ?? null;
+        // 合成 legacy scope 不在任何项目库里（查库必得 null → 恒判 drift，把同机普通重启
+        // 误伤成人工审查）。它唯一的真相来源是 primaryRoot 本身：按当前文件系统重算一遍
+        // 兜底权威，根没漂移就得到同一个 version；根变得不安全（如落进 $HOME/数据目录）
+        // 时重算返回 undefined → null → 照旧判 drift。
+        if (isLegacyBackgroundAuthorityScope(scope)) {
+          return resolveBackgroundWorkspaceAuthority({ workspace: scope.primaryRoot })?.version ?? null;
+        }
+        return getProjectService().getWorkspaceScope(scope.projectId)?.version ?? null;
       } catch {
         return null;
       }

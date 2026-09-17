@@ -13,9 +13,9 @@ import {
 } from './bundledHostCapabilityInstallState';
 
 /** v1 读错了 voiceInput 路径并漏掉密钥/手机用量；v2 用同一套写入路径重判误卸。 */
-export const VOICE_CAPABILITY_MIGRATION_SCHEMA = 2;
+const VOICE_CAPABILITY_MIGRATION_SCHEMA = 2;
 
-export interface LegacyVoiceInputEvidence {
+interface LegacyVoiceInputEvidence {
   messageMetadata: boolean;
   nonDefaultSpeechSettings: boolean;
   retainedFailureAudio: boolean;
@@ -23,7 +23,7 @@ export interface LegacyVoiceInputEvidence {
   companionTranscribe: boolean;
 }
 
-export interface LegacyVoiceLiveEvidence {
+interface LegacyVoiceLiveEvidence {
   voiceCallHistory: boolean;
   nonDefaultRealtimeSettings: boolean;
   realtimeKey: boolean;
@@ -107,7 +107,7 @@ export function hasConfiguredTranscriptionKey(getKey: (provider: string) => stri
   return Boolean(getKey('groq') || getKey('dashscope') || getKey('qwen'));
 }
 
-export function hasConfiguredRealtimeKey(getKey: (provider: string) => string | undefined): boolean {
+function hasConfiguredRealtimeKey(getKey: (provider: string) => string | undefined): boolean {
   return Boolean(getKey('dashscope') || getKey('qwen'));
 }
 

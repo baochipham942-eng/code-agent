@@ -71,4 +71,14 @@ describe('QuestionCard', () => {
     render(<QuestionCard card={{ preview, status: 'closed', outcome: 'expired' }} text={en} disabled={false} respond={async () => {}} skip={async () => {}} />);
     expect(screen.getByText(en.questionExpired)).toBeTruthy();
   });
+
+  it('closed cards without outcome say 这张卡已结束 and do not mark a choice', () => {
+    render(<QuestionCard card={{ preview, status: 'closed' }} text={text} disabled={false} respond={async () => {}} skip={async () => {}} />);
+    expect(screen.getByTestId('question-outcome').textContent).toBe('这张卡已结束');
+    expect(screen.queryByText('任务已停止，这张卡作废了')).toBeNull();
+    expect(screen.queryByTestId('question-choice-check')).toBeNull();
+    expect(text.questionClosed).toBe(text.approvalClosed);
+    expect(text.questionClosed).toBe(text.planClosed);
+    expect(messages('en').questionClosed).toBe('This card has ended.');
+  });
 });

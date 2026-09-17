@@ -91,7 +91,7 @@ export function composerStatusItems(
     commandError: string | null; commandErrorAction: string | null; voiceFailureShown: boolean; sessionId: string | null;
     libraryError: boolean; pending: boolean; pendingAction: string | null; pendingSlow: boolean;
   },
-  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void },
+  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; retrySend?: () => void },
 ): StatusItem[] {
   const items: StatusItem[] = [];
   if (s.saveError) items.push({ rank: 1, message: text.saveError, action: { label: text.retry, run: act.flush } });
@@ -111,9 +111,12 @@ export function composerStatusItems(
   if (!live) return items;
   const command = s.commandError === 'COMPANION_NOT_CONNECTED' ? null : commandNoticeCopy(text, s, s.voiceFailureShown);
   if (command) {
+    const retrySend = (s.commandError === 'RUN_START_FAILED' || s.commandError === 'HOST_UNAVAILABLE')
+      && s.commandErrorAction === 'message.send' && act.retrySend
+      ? { label: text.retry, run: act.retrySend } : undefined;
     const action = s.commandErrorAction === 'session.create' && s.commandError !== 'COMPANION_COMMAND_IN_FLIGHT' && act.retryCreate ? { label: text.retry, run: act.retryCreate }
       : s.commandError === 'MODEL_AUTH' && s.sessionId ? { label: text.switchModel, run: act.switchModel }
-      : undefined;
+      : retrySend;
     items.push({ rank: 4, message: command, action, reason: s.commandError ?? undefined });
   }
   if (s.libraryError) items.push({ rank: 5, message: text.libraryError, action: { label: text.reload, run: act.reconnect, disabled: s.busy } });

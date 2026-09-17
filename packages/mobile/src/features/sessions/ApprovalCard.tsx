@@ -24,14 +24,16 @@ export function ApprovalCard({ card, text, disabled, respond }: {
   const pending = card.status === 'pending';
   const outcome = cardOutcome(card);
   const decision = approvalDecision(card);
+  const ended = !pending && !outcome && !decision;
   const resultCopy = outcome === 'expired' ? text.approvalExpired
-    : outcome === 'cancelled' || (!pending && !outcome && !decision) ? text.approvalCancelled
-      : decision === 'allow_session' ? text.approvalAllowedSession
-        : decision === 'rejected' ? text.approvalRejected
-          : text.approvalApproved;
-  const mark = outcome === 'expired' || outcome === 'cancelled' || (!pending && !decision) ? null
+    : outcome === 'cancelled' ? text.approvalCancelled
+      : ended ? text.approvalClosed
+        : decision === 'allow_session' ? text.approvalAllowedSession
+          : decision === 'rejected' ? text.approvalRejected
+            : text.approvalApproved;
+  const mark = outcome === 'expired' || outcome === 'cancelled' || ended ? null
     : decision === 'rejected' ? '✕' : '✓';
-  return <section className="approval-card" aria-label={text.approval} data-testid="approval-card" data-outcome={outcome ?? (pending ? 'pending' : 'answered')}>
+  return <section className="approval-card" aria-label={text.approval} data-testid="approval-card" data-outcome={outcome ?? (pending ? 'pending' : ended ? 'closed' : 'answered')}>
     <strong>{text.approval}</strong>
     <div className="approval-details">
     <dl className="approval-summary">

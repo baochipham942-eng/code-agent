@@ -36,7 +36,8 @@ export function QuestionCard({ card, text, disabled, respond, skip }: {
   const settledAnswers = questionAnswers(card);
   const declined = !pending && questionDeclined(card);
   const expired = outcome === 'expired';
-  const cancelled = outcome === 'cancelled' || (!pending && !outcome && !settledAnswers && !declined && card.status === 'closed');
+  const cancelled = outcome === 'cancelled';
+  const ended = !pending && !outcome && !settledAnswers && !declined && card.status === 'closed';
   const shownAnswers = pending ? answers : (settledAnswers ?? {});
 
   const headerOf = (question: Question, index: number) => question.header || `q-${index}`;
@@ -88,12 +89,13 @@ export function QuestionCard({ card, text, disabled, respond, skip }: {
   };
   const resultCopy = expired ? text.questionExpired
     : cancelled ? text.questionCancelled
-      : declined ? text.questionSkipped
-        : settledAnswers ? null
-          : card.status === 'approved' ? text.questionAnswered
-            : null;
+      : ended ? text.questionClosed
+        : declined ? text.questionSkipped
+          : settledAnswers ? null
+            : card.status === 'approved' ? text.questionAnswered
+              : null;
 
-  return <section className="approval-card" aria-label={text.question} data-testid="question-card" data-outcome={outcome ?? (pending ? 'pending' : 'answered')}>
+  return <section className="approval-card" aria-label={text.question} data-testid="question-card" data-outcome={outcome ?? (pending ? 'pending' : ended ? 'closed' : 'answered')}>
     <strong>{text.question}</strong>
     <div className="approval-details">
       {!readable && <p role="status">{text.unreadableQuestion}</p>}
@@ -106,7 +108,7 @@ export function QuestionCard({ card, text, disabled, respond, skip }: {
           {(question.options ?? []).map(option => {
             if (typeof option.label !== 'string') return null;
             const isOn = selected(header, option.label, question.multiSelect);
-            const fade = !pending && (expired || cancelled || declined || Boolean(settledAnswers && !isOn) || (!settledAnswers && card.status === 'approved' && !isOn));
+            const fade = !pending && (expired || cancelled || ended || declined || Boolean(settledAnswers && !isOn) || (!settledAnswers && card.status === 'approved' && !isOn));
             return <button
               key={option.label}
               type="button"

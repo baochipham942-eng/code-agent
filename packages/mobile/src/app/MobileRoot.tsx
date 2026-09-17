@@ -585,6 +585,10 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           status={composerStatusItems(text, { ...companion, binding: !!companion.binding, saveError: state.saveError, nativeError, sendAttempted: state.sendAttempted, voiceFailureShown, pendingSlow }, {
             flush: () => void state.flush(), reconnect: () => void companion.reconnect(), scan: () => void pairAndOpenConversation(),
             openRemote: () => state.openSheet('remote'), retryCreate: lastCreate.current, switchModel: openModelSheet,
+            retrySend: () => {
+              const draft = state.preferences.drafts[state.draftKey] ?? '';
+              if (canAddressSession(companion) && draft.trim()) void companion.send(draft);
+            },
           })}
           // 模型入口只留这一个（爸 2026-09-16 拍板）：会话操作弹窗里不再有模型那一格。
           modelLabel={sessionModelLabel} openModel={openModelSheet}

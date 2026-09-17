@@ -18,13 +18,15 @@ export function PlanCard({ card, text, disabled, respond }: {
   const pending = card.status === 'pending';
   const outcome = cardOutcome(card);
   const decision = planDecision(card);
+  const ended = !pending && !outcome && !decision;
   const resultCopy = outcome === 'expired' ? text.questionExpired
-    : outcome === 'cancelled' || (!pending && !outcome && !decision) ? text.questionCancelled
-      : decision?.decision === 'approved' ? text.planApproved
-        : decision?.feedback ? `${text.planRevision}${decision.feedback}`
-          : text.planRejected;
+    : outcome === 'cancelled' ? text.questionCancelled
+      : ended ? text.planClosed
+        : decision?.decision === 'approved' ? text.planApproved
+          : decision?.feedback ? `${text.planRevision}${decision.feedback}`
+            : text.planRejected;
 
-  return <section className="approval-card" aria-label={text.plan} data-testid="plan-card" data-outcome={outcome ?? (pending ? 'pending' : 'answered')}>
+  return <section className="approval-card" aria-label={text.plan} data-testid="plan-card" data-outcome={outcome ?? (pending ? 'pending' : ended ? 'closed' : 'answered')}>
     <strong>{text.plan}</strong>
     <div className="approval-details">
       {!readable && <p role="status">{text.unreadablePlan}</p>}

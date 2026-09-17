@@ -43,4 +43,15 @@ describe('ApprovalCard', () => {
     rerender(<ApprovalCard card={{ preview, status: 'closed', outcome: 'cancelled' }} text={text} disabled={false} respond={async () => {}} />);
     expect(screen.getByTestId('approval-result').textContent).toBe('任务已停止，这张卡作废了');
   });
+
+  it('closed cards without outcome say 这张卡已结束 and do not mark ✓/✕', () => {
+    render(<ApprovalCard card={{ preview, status: 'closed' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('approval-result').textContent).toBe('这张卡已结束');
+    expect(screen.queryByText('任务已停止，这张卡作废了')).toBeNull();
+    expect(screen.getByTestId('approval-result').textContent).not.toMatch(/[✓✕]/);
+    const en = messages('en');
+    expect(en.approvalClosed).toBe('This card has ended.');
+    expect(en.approvalClosed).toBe(en.questionClosed);
+    expect(en.approvalClosed).toBe(en.planClosed);
+  });
 });

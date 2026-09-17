@@ -51,4 +51,12 @@ describe('PlanCard', () => {
     render(<PlanCard card={{ preview, status: 'closed', outcome: 'cancelled' }} text={en} disabled={false} respond={async () => {}} />);
     expect(screen.getByText(en.questionCancelled)).toBeTruthy();
   });
+
+  it('closed cards without outcome say 这张卡已结束 and do not mark ✓/✕', () => {
+    render(<PlanCard card={{ preview, status: 'closed' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe('这张卡已结束');
+    expect(screen.queryByText('任务已停止，这张卡作废了')).toBeNull();
+    expect(screen.getByTestId('plan-result').textContent).not.toMatch(/[✓✕]/);
+    expect(messages('en').planClosed).toBe('This card has ended.');
+  });
 });

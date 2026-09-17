@@ -34,6 +34,7 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     /// 用户能自己解决（挂断后再录），不能和「设备出错」混成同一个码。
     private enum Failure {
         static let microphoneBusy = "MICROPHONE_BUSY"
+        static let microphoneUnavailable = "MICROPHONE_UNAVAILABLE"
         static let missingPermission = "MISSING_PERMISSION"
         static let failedToRecord = "FAILED_TO_RECORD"
         static let recordingHasNotStarted = "RECORDING_HAS_NOT_STARTED"
@@ -110,6 +111,12 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.previousCategory = session.category
                 try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
                 try session.setActive(true)
+                guard !Self.inputUnavailable() else {
+                    self.fileURL = url
+                    self.teardown(deleteRecording: true)
+                    call.reject(Failure.microphoneUnavailable)
+                    return
+                }
                 let recorder = try AVAudioRecorder(url: url, settings: Self.recordingSettings)
                 guard recorder.record() else { throw CocoaError(.fileWriteUnknown) }
                 self.recorder = recorder
@@ -141,6 +148,11 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 let engine = AVAudioEngine()
                 let input = engine.inputNode
                 let inputFormat = input.outputFormat(forBus: 0)
+                guard !Self.inputUnavailable(inputFormat) else {
+                    self.teardownPcm()
+                    call.reject(Failure.microphoneUnavailable)
+                    return
+                }
                 guard let targetFormat = AVAudioFormat(
                     commonFormat: .pcmFormatInt16,
                     sampleRate: Self.pcmSampleRate,
@@ -259,6 +271,13 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         releaseObservers = []
         releaseTimer?.cancel()
         releaseTimer = nil
+    }
+
+    /// 0 通道 / 0Hz：installTapOnBus 会抛 NSException，Swift catch 接不住（FB-182）。
+    private static func inputUnavailable(_ format: AVAudioFormat? = nil) -> Bool {
+        if let format { return format.channelCount == 0 || format.sampleRate == 0 }
+        let session = AVAudioSession.sharedInstance()
+        return session.inputNumberOfChannels == 0 || session.sampleRate == 0
     }
 
     /// 别的 App 正以独占方式占着音频（通话、会议、语音消息）时这两个都为真。

@@ -17,6 +17,7 @@ import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
 import { HistoryCache } from '../platform/historyCache';
 import { mdnsRefreshedEndpoint } from '../platform/mdnsEndpoint';
+import { transcriptionReadinessFromResult } from '../features/sessions/voiceFailure';
 
 interface Saved {
   version: 1; publicKey: string; secretKey: string;
@@ -62,7 +63,7 @@ export type UploadProgress = {
 interface State {
   voiceResult: VoiceResult | null;
   /** 返回这条命令的 commandId（已进待确认槽）；没发出去回 null，分片队列据此重排队，不静默丢片。 */
-  transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string, hostKey: string, continuation?: boolean, take?: string | null): Promise<string | null>;
+  transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string | null, hostKey: string, continuation?: boolean, take?: string | null): Promise<string | null>;
   /** 取消这次录音：晚到的结果不进草稿。按录音代号点名。 */
   discardPendingTranscript(take: string): void;
   dictationOpen(): Promise<CompanionDictationOpenResult>;
@@ -106,6 +107,13 @@ interface State {
    */
   pendingAdopted: boolean;
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
+  /**
+   * 中继不刷新 binding.transcription。「开好了，再试一次」之后下一次点麦克风跳过本地预判。
+   * 不进 persist：只对紧接着那一次手势有效。
+   */
+  skipTranscriptionPreflight: boolean;
+  allowTranscriptionOnce(): void;
+  consumeTranscriptionPreflight(): void;
   hydrate(): Promise<void>; pair(raw?: string): Promise<void>; reconnect(): Promise<void>; forget(): Promise<void>; pause(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
   respondQuestion(requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string): Promise<void>;
@@ -153,7 +161,7 @@ export function companionAckMatches(
   record: Pick<CompanionCommandRecord, 'commandId' | 'deviceId' | 'sessionId' | 'action'>,
 ): boolean {
   return record.commandId === pending.commandId && record.deviceId === pending.deviceId
-    && record.sessionId === pending.sessionId && record.action === pending.action;
+    && (record.sessionId ?? null) === (pending.sessionId ?? null) && record.action === pending.action;
 }
 
 /** LAN 与 relay 两个客户端共同的最小面：所有 store 路径只认这两个动作。 */
@@ -162,7 +170,7 @@ interface CompanionChannel {
   close(): void;
 }
 
-export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts, historyCache?: HistoryCache) {
+export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string | null, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts, historyCache?: HistoryCache) {
   let saved: Saved | null = null;
   let client: CompanionChannel | null = null;
   /** 双径不双跑：任一时刻只有一条活通道，另一条的句柄只用来收尾 close。 */
@@ -326,16 +334,21 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 用户已经取消了这次录音：这条是晚到结果，不许再往草稿里写（screen-contract「取消过滤晚到结果」）。
         // 代号不在这里清：一次取消可能有好几段在飞/在途，被第一条 ack 消耗掉的话，
         // 后面那几段照样写进草稿（grok ai-review Important）。下一段自带新代号，不会误伤。
+        const code = typeof record.result.code === 'string' ? record.result.code : undefined;
         if (record.state === 'accepted' && typeof record.result.text === 'string' && onTranscript && !discardedVoice) {
-          await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId, transcriptContinuation);
+          await onTranscript(record.result.text, pending.sessionId ?? null, saved!.binding!.hostKey, pending.commandId, transcriptContinuation);
           set({ voiceResult: { commandId: pending.commandId, outcome: 'done' } });
         } else {
           // 「这段没人说话」是第三种结局：分片下停顿段本来就是空的，当失败就是每隔几秒报一次错。
-          const code = typeof record.result.code === 'string' ? record.result.code : undefined;
           // 「这段没人说话」由主机在结算时给出结论（`silent`），手机不自己再判一次码——
           // 两边各判各的，码一变就漂。
           silentVoice = record.result.silent === true;
           set({ voiceResult: { commandId: pending.commandId, outcome: silentVoice ? 'silent' : 'error', code } });
+        }
+        const next = transcriptionReadinessFromResult(record.state === 'accepted', code);
+        if (next && saved?.binding && saved.binding.transcription !== next) {
+          saved = { ...saved, binding: { ...saved.binding, transcription: next } };
+          set({ binding: saved.binding });
         }
       }
       await persist({ ...saved!, pending: undefined });
@@ -439,6 +452,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     return {
       voiceResult: null, library: null, history: {}, libraryError: false,
+      skipTranscriptionPreflight: false,
+      allowTranscriptionOnce: () => set({ skipTranscriptionPreflight: true }),
+      consumeTranscriptionPreflight: () => { if (get().skipTranscriptionPreflight) set({ skipTranscriptionPreflight: false }); },
       connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
@@ -511,7 +527,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         set({ status: 'unpaired', binding: null, sessionId: null, transport: null,
           paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
           artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, routeError: null,
-          uploadProgress: [], voiceResult: null });
+          uploadProgress: [], voiceResult: null, skipTranscriptionPreflight: false });
       }),
       reconnect: () => safely(async () => {
         const savedTarget = saved?.binding ?? saved?.candidate;
@@ -628,10 +644,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 草稿里出现重复的字（grok ai-review Important）。
         let commandId: string | null = null;
         await safely(async () => {
-          if (get().sessionId !== sessionId || get().binding?.hostKey !== hostKey) return;
-          if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
+          if ((get().sessionId ?? null) !== (sessionId ?? null) || get().binding?.hostKey !== hostKey) return;
+          if (!saved?.binding || !client || saved.pending || get().status !== 'connected') return;
           const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
-            commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'voice.transcribe', payload: audio });
+            commandId: crypto.randomUUID(), ...(sessionId ? { sessionId } : {}), action: 'voice.transcribe', payload: audio });
           // 这一条是不是「同一次录音的后续分片」只活在内存里：进程被杀后重放那条 pending 命令
           // 最多让草稿多一个换行，不会丢字，所以不进持久化结构。
           transcriptContinuation = continuation;
@@ -652,7 +668,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if (!client || get().status !== 'connected' || get().transport === 'relay' || get().binding?.dictation !== true) {
           return { ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE' };
         }
-        return await client.request({ action: 'dictation', op: 'open' }) as CompanionDictationOpenResult;
+        const result = await client.request({ action: 'dictation', op: 'open' }) as CompanionDictationOpenResult;
+        // 实时听写真开起来了：宿主端语音这条路是通的。中继/长连不刷新 binding 的就绪三态，
+        // 就地把这格追上——否则「开好了，再试一次」只放行一次，下一次点麦克风又被旧的 no-key 拦住。
+        const binding = saved?.binding;
+        if (result.ok && binding?.dictation === true && binding.dictationTranscription !== 'ready') {
+          saved = { ...saved!, binding: { ...binding, dictationTranscription: 'ready' } };
+          set({ binding: saved.binding });
+        }
+        return result;
       },
       dictationAudio: async (streamId, pcm) => {
         if (!client || get().status !== 'connected' || get().transport === 'relay') {
@@ -671,10 +695,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         await client.request({ action: 'dictation', op: 'close' });
       },
       commitDictation: async (text, continuation, take, sentenceId) => {
-        const sessionId = get().sessionId;
-        if (!onTranscript || !saved?.binding || !sessionId) return;
+        if (!onTranscript || !saved?.binding) return;
         if (discardedTakes.has(take)) return;
-        await onTranscript(text, sessionId, saved.binding.hostKey, `dictation:${take}:${sentenceId}`, continuation);
+        await onTranscript(text, get().sessionId, saved.binding.hostKey, `dictation:${take}:${sentenceId}`, continuation);
       },
       send: text => safely(async () => {
         if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;

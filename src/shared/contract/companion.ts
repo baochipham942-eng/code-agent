@@ -58,7 +58,7 @@ export const companionCommandSchema = z.discriminatedUnion('action', [
   z.object({ ...commandFields, action: z.literal('session.model'),
     payload: z.object({ provider: id, model: id }).strict(),
   }).strict(),
-  z.object({ ...commandFields, action: z.literal('voice.transcribe'),
+  z.object({ ...commandFields, sessionId: id.optional(), action: z.literal('voice.transcribe'),
     payload: z.object({ audioData: z.string().min(1).max(COMPANION_LIMITS.voiceBase64Limit).regex(/^[A-Za-z0-9+/]+={0,2}$/),
       mimeType: z.enum(['audio/aac', 'audio/mp4', 'audio/webm', 'audio/ogg', 'audio/wav']),
       durationMs: z.number().positive().max(COMPANION_LIMITS.voiceDurationMs + 5_000) }).strict(),

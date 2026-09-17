@@ -148,8 +148,14 @@ export class LanCompanionClient {
     // 没采纳（宿主没报或报了坏值）时主位没动，备用位照旧。
     const live = adoptEndpoint(v.endpoint, endpoint);
     const fallback = live === endpoint ? altEndpoint : endpoint;
+    const transcription = v.transcription;
+    const dictationTranscription = v.dictationTranscription;
     return { version: 1, endpoint: live, ...(fallback ? { altEndpoint: fallback } : {}), hostKey,
       deviceId: v.deviceId, scopeEpoch: Number(v.scopeEpoch), scope: v.scope,
-      ...(v.dictation === true ? { dictation: true as const } : {}) };
+      ...(v.dictation === true ? { dictation: true as const } : {}),
+      ...(transcription === 'ready' || transcription === 'not-installed' || transcription === 'no-key' ? { transcription } : {}),
+      ...(v.dictation === true && (dictationTranscription === 'ready' || dictationTranscription === 'not-installed' || dictationTranscription === 'no-key')
+        ? { dictationTranscription } : {}),
+      ...(v.sessionlessTranscribe === true ? { sessionlessTranscribe: true as const } : {}) };
   }
 }

@@ -177,16 +177,18 @@ export class CompanionLibraryService {
   }
 
   async mutate(command: CompanionCommand): Promise<Record<string, unknown>> {
+    if (!command.sessionId) throw new Error('COMPANION_SCOPE_DENIED');
+    const sessionId = command.sessionId;
     const sm = getSessionManager();
     const guard = () => {
-      const allowed = command.action === 'session.create' ? this.gateway.grants(command.deviceId).includes(command.sessionId) : this.gateway.canAccessSession(command.deviceId, command.sessionId);
+      const allowed = command.action === 'session.create' ? this.gateway.grants(command.deviceId).includes(sessionId) : this.gateway.canAccessSession(command.deviceId, sessionId);
       if (!allowed) throw new Error('COMPANION_SCOPE_DENIED');
-      if (command.action !== 'session.create' && this.isRunning(command.sessionId)) throw new Error('COMPANION_SESSION_BUSY');
+      if (command.action !== 'session.create' && this.isRunning(sessionId)) throw new Error('COMPANION_SESSION_BUSY');
     };
-    const commit = (write: () => void) => { guard(); this.gateway.commitMutation(command, write, { sessionId: command.sessionId }); };
+    const commit = (write: () => void) => { guard(); this.gateway.commitMutation(command, write, { sessionId }); };
     if (command.action === 'session.create') {
-      if (!this.gateway.grants(command.deviceId).includes(command.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
-      const project = getDatabase().getProjectRepo().getProject(command.sessionId.slice('project:'.length));
+      if (!this.gateway.grants(command.deviceId).includes(sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
+      const project = getDatabase().getProjectRepo().getProject(sessionId.slice('project:'.length));
       if (!project || project.status === 'archived' || missingWorkspace(project)) throw new Error('COMPANION_PROJECT_UNAVAILABLE');
       const model = this.model(command.payload.provider, command.payload.model);
       // The command reservation is durable before this starts; identity is independent of response delivery.
@@ -206,19 +208,19 @@ export class CompanionLibraryService {
       getModelSessionState().setOverride(session.id, { provider: model.provider, model: model.model });
       return { sessionId: session.id };
     }
-    if (!this.gateway.canAccessSession(command.deviceId, command.sessionId) || !this.session(command.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
-    if (this.isRunning(command.sessionId)) throw new Error('COMPANION_SESSION_BUSY');
-    if (command.action === 'session.rename') await sm.updateSession(command.sessionId, { title: command.payload.title }, { commit });
+    if (!this.gateway.canAccessSession(command.deviceId, sessionId) || !this.session(sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
+    if (this.isRunning(sessionId)) throw new Error('COMPANION_SESSION_BUSY');
+    if (command.action === 'session.rename') await sm.updateSession(sessionId, { title: command.payload.title }, { commit });
     else if (command.action === 'session.archive') {
-      if (command.payload.archived) await sm.archiveSession(command.sessionId, commit); else await sm.unarchiveSession(command.sessionId, commit);
-    } else if (command.action === 'session.delete') { await sm.deleteSession(command.sessionId, commit); await this.cleanup(); }
+      if (command.payload.archived) await sm.archiveSession(sessionId, commit); else await sm.unarchiveSession(sessionId, commit);
+    } else if (command.action === 'session.delete') { await sm.deleteSession(sessionId, commit); await this.cleanup(); }
     else if (command.action === 'session.model') {
       const model = this.model(command.payload.provider, command.payload.model);
       const override = { provider: model.provider, model: model.model };
-      if (!await persistModelOverride(command.sessionId, override, commit)) throw new Error('COMPANION_MODEL_NOT_SAVED');
-      getModelSessionState().setOverride(command.sessionId, override);
+      if (!await persistModelOverride(sessionId, override, commit)) throw new Error('COMPANION_MODEL_NOT_SAVED');
+      getModelSessionState().setOverride(sessionId, override);
     } else throw new Error('COMPANION_UNSUPPORTED_ACTION');
-    return { sessionId: command.sessionId };
+    return { sessionId };
   }
 
   async cleanup(): Promise<void> {

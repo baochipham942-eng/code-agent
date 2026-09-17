@@ -1041,6 +1041,16 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     }
   }
 
+  /** 手机 companion 是否发过某类命令（语音能力迁移把用量当使用证据）。表不存在或库未开则 false。 */
+  hasCompanionCommandAction(action: string): boolean {
+    if (!this.db) return false;
+    try {
+      return Boolean(this.db.prepare('SELECT 1 FROM companion_commands WHERE action = ? LIMIT 1').get(action));
+    } catch {
+      return false;
+    }
+  }
+
   /** 全库通话摘要卡（语音审计时间线入口，N-L7-AUDIT）。fail-safe，失败返回空。 */
   listVoiceCallSummaries(limit = 50): VoiceAuditMessage[] {
     if (!this.db || !this.voiceCallAuditRepo) return [];

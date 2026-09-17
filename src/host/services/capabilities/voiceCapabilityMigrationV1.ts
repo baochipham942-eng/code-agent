@@ -12,15 +12,21 @@ import {
   writeBundledHostCapabilityInstallState,
 } from './bundledHostCapabilityInstallState';
 
+/** v1 读错了 voiceInput 路径并漏掉密钥/手机用量；v2 用同一套写入路径重判误卸。 */
+const VOICE_CAPABILITY_MIGRATION_SCHEMA = 2;
+
 interface LegacyVoiceInputEvidence {
   messageMetadata: boolean;
   nonDefaultSpeechSettings: boolean;
   retainedFailureAudio: boolean;
+  transcriptionKey: boolean;
+  companionTranscribe: boolean;
 }
 
 interface LegacyVoiceLiveEvidence {
   voiceCallHistory: boolean;
   nonDefaultRealtimeSettings: boolean;
+  realtimeKey: boolean;
 }
 
 interface EvidenceReader<T> {
@@ -34,9 +40,9 @@ type MigrationHalf<T> = {
 };
 
 interface VoiceCapabilityMigrationMarker {
-  schemaVersion: 1;
-  voiceInput: MigrationHalf<LegacyVoiceInputEvidence>;
-  voiceLive: MigrationHalf<LegacyVoiceLiveEvidence> | { status: 'pending' };
+  schemaVersion: 1 | 2;
+  voiceInput: MigrationHalf<LegacyVoiceInputEvidence> | MigrationHalf<Omit<LegacyVoiceInputEvidence, 'transcriptionKey' | 'companionTranscribe'>>;
+  voiceLive: MigrationHalf<LegacyVoiceLiveEvidence> | MigrationHalf<Omit<LegacyVoiceLiveEvidence, 'realtimeKey'>> | { status: 'pending' };
   updatedAt: number;
 }
 
@@ -54,11 +60,14 @@ const EMPTY_INPUT_EVIDENCE: LegacyVoiceInputEvidence = {
   messageMetadata: false,
   nonDefaultSpeechSettings: false,
   retainedFailureAudio: false,
+  transcriptionKey: false,
+  companionTranscribe: false,
 };
 
 const EMPTY_LIVE_EVIDENCE: LegacyVoiceLiveEvidence = {
   voiceCallHistory: false,
   nonDefaultRealtimeSettings: false,
+  realtimeKey: false,
 };
 
 function markerPath(dataDir: string): string {
@@ -68,7 +77,7 @@ function markerPath(dataDir: string): string {
 async function readMarker(dataDir: string): Promise<VoiceCapabilityMigrationMarker | null> {
   try {
     const value = JSON.parse(await fs.readFile(markerPath(dataDir), 'utf8')) as VoiceCapabilityMigrationMarker;
-    return value.schemaVersion === 1 && value.voiceInput?.status && value.voiceLive?.status ? value : null;
+    return (value.schemaVersion === 1 || value.schemaVersion === 2) && value.voiceInput?.status && value.voiceLive?.status ? value : null;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     return null;
@@ -87,6 +96,21 @@ async function writeMarker(dataDir: string, marker: VoiceCapabilityMigrationMark
   }
 }
 
+/** 写入端是 metadata.workbench.voiceInput（agentAppService.getMessageMetadata / web agent 路由）。顶层 metadata.voiceInput 是读错的路径。 */
+function messageHasVoiceInputUsage(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false;
+  const workbench = (metadata as { workbench?: unknown }).workbench;
+  return Boolean(workbench && typeof workbench === 'object' && (workbench as { voiceInput?: unknown }).voiceInput);
+}
+
+function hasConfiguredTranscriptionKey(getKey: (provider: string) => string | undefined): boolean {
+  return Boolean(getKey('groq') || getKey('dashscope') || getKey('qwen'));
+}
+
+function hasConfiguredRealtimeKey(getKey: (provider: string) => string | undefined): boolean {
+  return Boolean(getKey('dashscope') || getKey('qwen'));
+}
+
 function hasLegacyVoiceInputMessage(): boolean {
   const database = getDatabase();
   if (!database.isReady) throw new Error('database unavailable while scanning legacy voice-input evidence');
@@ -97,7 +121,7 @@ function hasLegacyVoiceInputMessage(): boolean {
     for (const session of sessions) {
       for (let messageOffset = 0; ; messageOffset += messagePageSize) {
         const messages = database.getMessages(session.id, messagePageSize, messageOffset, { includeRewound: true });
-        if (messages.some((message) => Boolean((message.metadata as Record<string, unknown> | undefined)?.voiceInput))) {
+        if (messages.some((message) => messageHasVoiceInputUsage(message.metadata))) {
           return true;
         }
         if (messages.length < messagePageSize) break;
@@ -108,15 +132,34 @@ function hasLegacyVoiceInputMessage(): boolean {
   return false;
 }
 
+function companionTranscribeUsed(): boolean {
+  try {
+    const database = getDatabase();
+    if (!database.isReady) return false;
+    return database.hasCompanionCommandAction('voice.transcribe');
+  } catch {
+    return false;
+  }
+}
+
 const productionInputEvidenceReader: EvidenceReader<LegacyVoiceInputEvidence> = {
   async read() {
     const speech = { ...DEFAULT_SPEECH_INPUT_SETTINGS, ...(getConfigService().getSettings().speech ?? {}) };
     const retainedDir = path.join(os.tmpdir(), 'code-agent-speech-retained');
+    const getKey = (provider: string) => {
+      try {
+        return getConfigService().getApiKey(provider as 'groq');
+      } catch {
+        return undefined;
+      }
+    };
     return {
       messageMetadata: hasLegacyVoiceInputMessage(),
       nonDefaultSpeechSettings: !isDeepStrictEqual(speech, DEFAULT_SPEECH_INPUT_SETTINGS),
       retainedFailureAudio: fsSync.existsSync(retainedDir)
         && fsSync.readdirSync(retainedDir).some((entry) => fsSync.statSync(path.join(retainedDir, entry)).isFile()),
+      transcriptionKey: hasConfiguredTranscriptionKey(getKey),
+      companionTranscribe: companionTranscribeUsed(),
     };
   },
 };
@@ -129,16 +172,38 @@ const productionLiveEvidenceReader: EvidenceReader<LegacyVoiceLiveEvidence> = {
     if (!database.isReady) {
       throw new Error('database unavailable while scanning legacy voice-live evidence');
     }
+    const getKey = (provider: string) => {
+      try {
+        return getConfigService().getApiKey(provider as 'dashscope');
+      } catch {
+        return undefined;
+      }
+    };
     return {
       voiceCallHistory: database.listVoiceCallSummaries(1).length > 0,
       nonDefaultRealtimeSettings: !isDeepStrictEqual(live, { enabled: VOICE_LIVE_ENABLED_DEFAULT })
         || settings.voice?.turnDetection !== undefined,
+      realtimeKey: hasConfiguredRealtimeKey(getKey),
     };
   },
 };
 
 function explicitlyRemoved(source: string | undefined, state: string | undefined): boolean {
   return state === 'removed' && (source === 'user' || source === undefined);
+}
+
+function migrationRemoved(source: string | undefined, state: string | undefined): boolean {
+  return state === 'removed' && (source === 'migration' || source === 'migration-failed');
+}
+
+function shouldReconsiderHalf(
+  half: { status: string },
+  snapshot: { record?: { source?: string; state?: string } | null },
+  schemaVersion: number,
+): boolean {
+  if (explicitlyRemoved(snapshot.record?.source, snapshot.record?.state)) return false;
+  if (half.status !== 'completed') return true;
+  return schemaVersion < VOICE_CAPABILITY_MIGRATION_SCHEMA && migrationRemoved(snapshot.record?.source, snapshot.record?.state);
 }
 
 export async function runVoiceCapabilityMigrationV1({
@@ -152,17 +217,19 @@ export async function runVoiceCapabilityMigrationV1({
 }: RunVoiceCapabilityMigrationOptions): Promise<void> {
   const existing = await readMarker(dataDir);
   let marker: VoiceCapabilityMigrationMarker = existing ?? {
-    schemaVersion: 1,
+    schemaVersion: VOICE_CAPABILITY_MIGRATION_SCHEMA,
     voiceInput: { status: 'failed', evidence: EMPTY_INPUT_EVIDENCE, detail: 'pending' },
     voiceLive: { status: 'pending' },
     updatedAt: Date.now(),
   };
+  const schemaVersion = marker.schemaVersion === 2 ? 2 : 1;
 
-  if (marker.voiceInput.status !== 'completed') {
-    const snapshot = await readBundledHostCapabilityInstallSnapshot(dataDir, 'builtin.voice-input');
-    if (explicitlyRemoved(snapshot.record?.source, snapshot.record?.state)) {
+  const inputSnapshot = await readBundledHostCapabilityInstallSnapshot(dataDir, 'builtin.voice-input');
+  if (shouldReconsiderHalf(marker.voiceInput, inputSnapshot, schemaVersion)) {
+    if (explicitlyRemoved(inputSnapshot.record?.source, inputSnapshot.record?.state)) {
       marker = {
         ...marker,
+        schemaVersion,
         voiceInput: { status: 'completed', evidence: EMPTY_INPUT_EVIDENCE, detail: 'explicit-removal-preserved' },
         updatedAt: Date.now(),
       };
@@ -175,21 +242,23 @@ export async function runVoiceCapabilityMigrationV1({
         else {
           await writeBundledHostCapabilityInstallState(
             dataDir, 'builtin.voice-input', 'removed', version,
-            (snapshot.record?.revision ?? 0) + 1, 'migration',
+            (inputSnapshot.record?.revision ?? 0) + 1, 'migration',
           );
         }
         marker = {
           ...marker,
+          schemaVersion,
           voiceInput: { status: 'completed', evidence, detail: hasUsage ? 'migration:legacy-usage' : 'no-legacy-usage' },
           updatedAt: Date.now(),
         };
       } catch (error) {
         await writeBundledHostCapabilityInstallState(
           dataDir, 'builtin.voice-input', 'removed', version,
-          (snapshot.record?.revision ?? 0) + 1, 'migration-failed',
+          (inputSnapshot.record?.revision ?? 0) + 1, 'migration-failed',
         );
         marker = {
           ...marker,
+          schemaVersion,
           voiceInput: { status: 'failed', evidence, detail: error instanceof Error ? error.message : String(error) },
           updatedAt: Date.now(),
         };
@@ -198,11 +267,16 @@ export async function runVoiceCapabilityMigrationV1({
     await writeMarker(dataDir, marker);
   }
 
-  if (marker.voiceLive.status !== 'completed') {
-    const snapshot = await readBundledHostCapabilityInstallSnapshot(dataDir, 'builtin.voice-live');
-    if (explicitlyRemoved(snapshot.record?.source, snapshot.record?.state)) {
+  const liveSnapshot = await readBundledHostCapabilityInstallSnapshot(dataDir, 'builtin.voice-live');
+  if (shouldReconsiderHalf(
+    marker.voiceLive.status === 'pending' ? { status: 'pending' } : marker.voiceLive,
+    liveSnapshot,
+    schemaVersion,
+  )) {
+    if (explicitlyRemoved(liveSnapshot.record?.source, liveSnapshot.record?.state)) {
       marker = {
         ...marker,
+        schemaVersion,
         voiceLive: { status: 'completed', evidence: EMPTY_LIVE_EVIDENCE, detail: 'explicit-removal-preserved' },
         updatedAt: Date.now(),
       };
@@ -215,26 +289,36 @@ export async function runVoiceCapabilityMigrationV1({
         else {
           await writeBundledHostCapabilityInstallState(
             dataDir, 'builtin.voice-live', 'removed', liveVersion,
-            (snapshot.record?.revision ?? 0) + 1, 'migration',
+            (liveSnapshot.record?.revision ?? 0) + 1, 'migration',
           );
         }
         marker = {
           ...marker,
+          schemaVersion,
           voiceLive: { status: 'completed', evidence, detail: hasUsage ? 'migration:legacy-usage' : 'no-legacy-usage' },
           updatedAt: Date.now(),
         };
       } catch (error) {
         await writeBundledHostCapabilityInstallState(
           dataDir, 'builtin.voice-live', 'removed', liveVersion,
-          (snapshot.record?.revision ?? 0) + 1, 'migration-failed',
+          (liveSnapshot.record?.revision ?? 0) + 1, 'migration-failed',
         );
         marker = {
           ...marker,
+          schemaVersion,
           voiceLive: { status: 'failed', evidence, detail: error instanceof Error ? error.message : String(error) },
           updatedAt: Date.now(),
         };
       }
     }
+    await writeMarker(dataDir, marker);
+  }
+
+  // schema 2 只在两半都落定后统一写：中途写的话，进程恰好死在两半之间，
+  // 下次启动按 schema 2 判「voice-live 已纠正过」，被 v1 误卸的 voice-live 就永远漏判了
+  // （ai-review Nit）。中途被杀的代价只是重判一次对应的半边，幂等。
+  if (marker.schemaVersion !== VOICE_CAPABILITY_MIGRATION_SCHEMA) {
+    marker = { ...marker, schemaVersion: VOICE_CAPABILITY_MIGRATION_SCHEMA, updatedAt: Date.now() };
     await writeMarker(dataDir, marker);
   }
 }

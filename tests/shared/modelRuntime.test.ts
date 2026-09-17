@@ -760,7 +760,7 @@ describe('fallbackModelForProvider', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     for (const provider of ['longcat', 'deepseek'] as const) {
       expect(fallbackModelForProvider(provider, settings)).toBe(getDefaultModelForProvider(provider));
@@ -785,7 +785,7 @@ describe('fallbackModelForProvider', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     expect(fallbackModelForProvider('custom-team-relay', settings)).toBe('gpt-5.5');
   });
@@ -810,7 +810,7 @@ describe('fallbackModelForProvider', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     expect(fallbackModelForProvider('longcat', settings)).toBe('LongCat-2.0-Preview');
     expect(fallbackModelForProvider('custom-team-relay', settings)).toBe('gpt-5.4-mini');

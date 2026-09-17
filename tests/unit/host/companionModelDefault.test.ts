@@ -4,10 +4,11 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { CompanionGateway } from '../../../src/host/services/companion/CompanionGateway';
 import { projectGrant, type CompanionLibrary } from '../../../src/shared/contract/companionLibrary';
+import type { ModelProviderSettings } from '../../../src/shared/contract/settings';
 
 // 电脑的默认是 deepseek，但 moonshot 在桌面切换面板的 provider 常量序里排第一——
 // 这个 fixture 就是 FB-141 的现场：列表顺序与电脑的选择相反。
-const settings = {
+const settings: { models: { default: string; providers: Record<string, ModelProviderSettings> } } = {
   models: {
     default: 'deepseek',
     providers: {

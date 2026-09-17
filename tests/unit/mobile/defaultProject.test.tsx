@@ -33,6 +33,9 @@ describe('defaultProjectId 三档', () => {
     expect(defaultProjectId(lib({ projects: all }), undefined)).toBe('proj_unsorted');
     expect(defaultProjectId(lib({ projects: [project('one', 'One', false), ...all.slice(1)], sessions: [session('b', 'one', 9)] }), undefined)).toBe('proj_unsorted');
   });
+  it('未分类建不了、授权的项目下还没有会话 → 列表里第一个能建的', () => {
+    expect(defaultProjectId(lib({ projects: [project('one', 'One', false), project('two', 'Two'), project('proj_unsorted', '未分类', false)] }), undefined)).toBe('two');
+  });
   it('都建不了 → 不选', () => {
     expect(defaultProjectId(lib({ projects: all.map(p => ({ ...p, canCreate: false })), sessions: [session('b', 'one', 9)] }), undefined)).toBeNull();
   });
@@ -44,7 +47,7 @@ describe('defaultProjectId 三档', () => {
 });
 
 const harness = vi.hoisted(() => ({
-  mode: 'ok' as 'ok' | 'reject-create' | 'blocked',
+  mode: 'ok' as 'ok' | 'reject-create' | 'blocked' | 'only-two',
   commands: [] as [string, string | null, string?][],
   /** 宿主 companion_commands 的模拟：commandId → 命令。 */
   host: new Map<string, { commandId: string; deviceId: string; sessionId: string | null; action: string; payload: { text?: string } }>(),
@@ -68,15 +71,17 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
         if (query?.kind === 'history') return { sessionId: query.sessionId, messages: [], nextOffset: null };
         if (query?.kind === 'artifacts') return { sessionId: query.sessionId, artifacts: [] };
         const blocked = harness.mode === 'blocked';
+        // only-two：手机只被授权了 Two，且 Two 下还没有会话（One 与未分类都建不了）
+        const onlyTwo = harness.mode === 'only-two';
         return {
           nextOffset: null,
           projects: [
-            { id: 'one', name: 'One', canCreate: !blocked, workspacePath: '/w/one' },
+            { id: 'one', name: 'One', canCreate: !blocked && !onlyTwo, workspacePath: '/w/one' },
             { id: 'two', name: 'Two', canCreate: !blocked, workspacePath: '/w/two' },
-            { id: 'proj_unsorted', name: '未分类', canCreate: !blocked },
+            { id: 'proj_unsorted', name: '未分类', canCreate: !blocked && !onlyTwo },
           ],
           // 电脑上最近用的是 One（updatedAt 最大），列表顺序故意把 Two 放前面
-          sessions: [
+          sessions: onlyTwo ? [] : [
             { id: 'old', title: '旧会话', projectId: 'two', updatedAt: 3, archived: false, provider: 'deepseek', model: 'deepseek-chat' },
             { id: 'recent', title: '最近会话', projectId: 'one', updatedAt: 9, archived: false, provider: 'deepseek', model: 'deepseek-chat' },
           ],
@@ -216,6 +221,14 @@ describe('新任务的项目选择器', () => {
     await waitFor(() => { expect(document.querySelector('.project-list')).toBeTruthy(); });
     expect(harness.commands).toEqual([]);
     expect(document.querySelector('[data-testid="status-slot"]')).toBeNull();
+  });
+
+  it('只授权了一个项目、那里还没有会话：默认就是它，发送直接在它下面建会话', async () => {
+    harness.mode = 'only-two';
+    await mountNewTask();
+    expect(picker()!.textContent).toBe('Two');
+    await typeAndSend('先放这里');
+    await waitFor(() => { expect(harness.commands[0]).toEqual(['session.create', 'project:two', 'deepseek-chat']); });
   });
 
   it('弹层里手选的项目按这台电脑记住', async () => {

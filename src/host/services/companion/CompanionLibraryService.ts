@@ -167,6 +167,8 @@ export class CompanionLibraryService {
         modelConfig: { provider: model.provider, model: model.model },
         // 归属是手机明确选的：「未分类」没有工作目录，首轮运行兜底补目录时 sessionManager 会把未分类会话重算进
         // 自动项目，会话就跑出这台设备的项目授权（命令回执/事件/历史全被拒，手机卡在「还没收到电脑确认」）。
+        // 边界：手机建的每个会话都钉、且没有解钉途径——之后在电脑上给它设工作目录也不会再归进对应项目；
+        // 这是有意的：会话必须留在建它的那台手机的授权范围里。
         metadata: { [MODEL_OVERRIDE_METADATA_KEY]: { provider: model.provider, model: model.model, setAt: Date.now() }, [SESSION_PROJECT_PINNED_METADATA_KEY]: true } });
       if (session.projectId !== project.id) throw new Error('COMPANION_PROJECT_CHANGED');
       getModelSessionState().setOverride(session.id, { provider: model.provider, model: model.model });

@@ -20,6 +20,8 @@ const harness = vi.hoisted(() => ({
   statusCalls: 0,
   commandCalls: 0,
   recoverCalls: 0,
+  /** sync 轮询抛什么；null = 正常回执。「宿主挂了」的模拟口（phoneReconnect harness 同款）。 */
+  syncError: null as string | null,
   hangRecover: false,
   releaseHang: null as null | (() => void),
   /** read.library 回的会话行（O1 标题记忆链用）。 */
@@ -41,6 +43,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
     async request(payload: unknown) {
       const action = (payload as { action?: string }).action;
       if (action === 'status') { harness.statusCalls += 1; return null; }
+      if (action === 'sync' && harness.syncError) throw new Error(harness.syncError);
       if (action === 'command') { harness.commandCalls += 1; return { kind: 'rejected', reason: 'device_unknown' }; }
       if (action === 'read') {
         const query = (payload as { query?: { kind?: string; sessionId?: string } }).query;
@@ -86,7 +89,7 @@ const ports = (written: string[] = []): PlatformPorts => ({
 beforeEach(() => {
   harness.recoverError = 'COMPANION_NETWORK_UNAVAILABLE';
   harness.pairCalls = 0; harness.statusCalls = 0; harness.commandCalls = 0;
-  harness.recoverCalls = 0; harness.hangRecover = false; harness.releaseHang = null; harness.librarySessions = [];
+  harness.recoverCalls = 0; harness.syncError = null; harness.hangRecover = false; harness.releaseHang = null; harness.librarySessions = [];
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: false, media: query, onchange: null,
     addEventListener: () => {}, removeEventListener: () => {},
@@ -219,6 +222,45 @@ describe('连接弹层扫码不受 pending 限制', () => {
       expect((document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement).value).toBe('欢迎页刚打的字\n帮我查天气');
     });
   });
+
+  it('草稿搬到欢迎页后旧会话键清空：回旧会话不看到同一段字两次（ai-review Nit）', async () => {
+    const written: string[] = [];
+    const prefsWritten: string[] = [];
+    const identity = createIdentity();
+    const hostKey = toHex(identity.publicKey);
+    const draftPorts: PlatformPorts = {
+      ...ports(written),
+      preferences: {
+        get: async () => JSON.stringify({
+          schema: 1, drafts: { new: '', fixture: '', [`${hostKey}:s1`]: '帮我查天气' },
+          appearance: 'system', nickname: '', notifyEnabled: false,
+        }),
+        set: async value => { prefsWritten.push(value); },
+      },
+      companion: {
+        read: async () => JSON.stringify({
+          version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey, deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
+          pending: pendingCommand,
+        }),
+        write: async value => { written.push(value); },
+        scan: async () => invitation(),
+        post: async () => ({}),
+      },
+    };
+    await act(async () => { render(<MobileRoot ports={draftPorts} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
+    fireEvent.click([...document.querySelectorAll('.drawer-functions button')].find(b => b.textContent === text.remote) as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="remote-action-scan"]')).toBeTruthy(); });
+    await act(async () => { fireEvent.click(document.querySelector('[data-testid="remote-action-scan"]') as HTMLElement); });
+    // 搬走之后旧会话键必须清空：不清的话回到旧会话，同一段字出现两次。
+    await waitFor(() => {
+      const prefs = JSON.parse(prefsWritten.at(-1) ?? '{}');
+      expect(prefs.drafts?.new).toBe('帮我查天气');
+      expect(prefs.drafts?.[`${hostKey}:s1`]).toBe('');
+    });
+  });
 });
 
 describe('自动重试在途：连接弹层两个键不置灰（D3）', () => {
@@ -273,6 +315,75 @@ describe('自动重试在途：连接弹层两个键不置灰（D3）', () => {
     harness.releaseHang?.();
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(document.querySelector('[data-testid="remote-unpaired"]')).toBeTruthy();
+  });
+});
+
+describe('扫码取消走 UI 真实路径：MobileRoot 的 scan catch（ai-review Important / Nit）', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  /** 原生扫码器「打开中」的端口：scan 一直未决，拿到 cancel 才以失败收场；盘上只放绑定（无 pending）。 */
+  function openScannerPorts(): { ports: PlatformPorts; cancel: () => void } {
+    const identity = createIdentity();
+    let cancel: ((error: Error) => void) | null = null;
+    const scanner: PlatformPorts = {
+      ...ports(),
+      companion: {
+        read: async () => JSON.stringify({
+          version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
+        }),
+        write: async () => {},
+        scan: () => new Promise<string>((_resolve, reject) => { cancel = error => reject(error); }),
+        post: async () => ({}),
+      },
+    };
+    return { ports: scanner, cancel: () => cancel!(new Error('cancelled')) };
+  }
+
+  async function openRemoteSheet(target: PlatformPorts) {
+    await act(async () => { render(<MobileRoot ports={target} fixtures={false} />); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });   // 冷启动首连失败 → offline + autoRetrying
+    await act(async () => { fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement); });
+    await act(async () => { fireEvent.click([...document.querySelectorAll('.drawer-functions button')].find(b => b.textContent === text.remote) as HTMLElement); });
+  }
+
+  it('扫码器开着时自动重连连上：取消后仍连着，宿主再挂自动重试照常挂上', async () => {
+    harness.recoverError = 'COMPANION_NO_RESPONSE';
+    const { ports: scanner, cancel } = openScannerPorts();
+    await openRemoteSheet(scanner);
+    await act(async () => { fireEvent.click(document.querySelector('[data-testid="remote-action-scan"]') as HTMLElement); });
+    // 扫码器开着（scan 未决）期间宿主醒来：退避那一拍（2s±50% 抖动，3s 内必发）把通道连上，
+    // 定时器随之收口是正常行为。
+    harness.recoverError = null;
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(document.querySelector('.connection-success')).toBeTruthy();
+    // 用户取消扫码：不得把这条活连接覆盖成「扫码失败/离线」——否则发送/审批/语音全置灰且不自愈。
+    await act(async () => { cancel(); await vi.advanceTimersByTimeAsync(0); });
+    expect(document.querySelector('.connection-success')).toBeTruthy();
+    expect(document.querySelector('[data-testid="remote-unreachable"]')).toBeNull();
+    expect((document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement).placeholder).not.toBe(text.offlinePlaceholder);
+    // 宿主随后挂了（sync 轮询先失败、0 延迟重试的 recover 也失败）：落 offline 且自动重试
+    // 重新挂上——取消没留下任何卡死态。
+    harness.syncError = 'COMPANION_NO_RESPONSE';
+    harness.recoverError = 'COMPANION_NO_RESPONSE';
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    expect(document.querySelector('[data-testid="remote-unreachable"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="status-slot"] .status-text')?.textContent).toBe(text.autoRetrying);
+  });
+
+  it('没有连接时取消扫码：仍落扫码失败态，且不杀死已挂的自动重试', async () => {
+    harness.recoverError = 'COMPANION_NO_RESPONSE';
+    const { ports: scanner, cancel } = openScannerPorts();
+    await openRemoteSheet(scanner);
+    await act(async () => { fireEvent.click(document.querySelector('[data-testid="remote-action-scan"]') as HTMLElement); });
+    await act(async () => { cancel(); await vi.advanceTimersByTimeAsync(0); });
+    expect(document.querySelector('[data-testid="remote-unreachable"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="remote-unreachable"] p')?.textContent).toBe(text.connectionScanFailed);
+    // 提示是「这次扫码没成」，不是「这台电脑不能重试」：下一拍（≤3s）宿主回来即连上。
+    harness.recoverError = null;
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(document.querySelector('.connection-success')).toBeTruthy();
   });
 });
 

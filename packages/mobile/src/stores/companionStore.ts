@@ -184,6 +184,14 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
   forgetSessionTitles?(hostKey: string, sessionId?: string): void;
 }) {
   let saved: Saved | null = null;
+  /**
+   * 落盘串行链（ai-review Nit）：port.write 不保证完成顺序。旧尝试已过代号校验、正在落盘的
+   * 窄窗口里 forget/新尝试抢占，若旧写后落，绑定会被写回磁盘——冷启动复活已忘掉的配对。
+   * 所有写排成一条链：调用顺序即落盘顺序，抢占者的写永远在它前面的旧写之后落地；`saved`
+   * 的赋值同样沿链序发生，最后一次调用的记录最终同时留在内存与盘上。前一个写失败不断链
+   * （失败只交给它自己的调用方），否则一次存储故障会堵死 forget 之后的每一次清理写。
+   */
+  let persistQueue: Promise<void> = Promise.resolve();
   let client: CompanionChannel | null = null;
   /** 双径不双跑：任一时刻只有一条活通道，另一条的句柄只用来收尾 close。 */
   let relayClient: RelayCompanionClient | null = null;
@@ -339,7 +347,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       const orphanVoice = saved?.pending?.action === 'voice.transcribe' && !next.pending
         && get().voiceResult?.commandId !== saved.pending.commandId ? saved.pending.commandId : null;
       try {
-        await port.write(JSON.stringify(record)); saved = record;
+        const write = persistQueue.then(() => port.write(JSON.stringify(record)));
+        persistQueue = write.then(() => undefined, () => undefined);
+        await write; saved = record;
         // 落盘记录是待确认命令的唯一真源，派生放在这一处，省得九个 set({pending}) 各自同步。
         // 两个字段必须同一拍置起：只改 pendingAction 的话，结算那一帧会是
         // pending=true + pendingAction=null，状态行闪回「请勿重复发送」——正是本单要消掉的那句。

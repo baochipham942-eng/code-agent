@@ -454,6 +454,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         // 欢迎页输入框里已经打着的字不整段盖掉：旧会话草稿换行接在后面，为空才直接写入
         // （ai-review Nit）。扫码前就停在欢迎页（同一键取的草稿）不复读一遍。
         const current = store.getState().preferences.drafts.new ?? '';
+        if (draftKey !== 'new') {
+          // 搬走后清掉旧键的草稿：不清的话回到旧会话/演示页，同一段字出现两次（ai-review Nit）。
+          store.getState().activateDraft(draftKey);
+          store.getState().editDraft('');
+        }
         store.getState().activateDraft('new');
         store.getState().editDraft(current && draftKey !== 'new' ? `${current}\n${draft}` : draft);
       }
@@ -463,7 +468,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     if (!ports.companion) return;
     let raw: string;
     try { raw = await ports.companion.scan(); }
-    catch { companionStore.setState({ status: 'offline', connectionError: 'connectionScanFailed' }); return; }
+    catch {
+      // 扫码器开着的那段时间，前台自动重连可能已把通道连上（连上后 markSyncOk 停定时器）：
+      // 此刻取消扫码若无条件落 offline+connectionScanFailed，会把活连接覆盖成离线，且
+      // 定时器已停、connectionScanFailed 又挡 armAutoRetry，卡死到手动操作（ai-review Important）。
+      // 取消本身不说明连接死了：只在确实没有可用连接时才落扫码失败态，连着就当无事发生。
+      if (companionStore.getState().status !== 'connected') {
+        companionStore.setState({ status: 'offline', connectionError: 'connectionScanFailed' });
+      }
+      return;
+    }
     let invitation: LanInvitation;
     try { invitation = parseInvitation(raw); }
     catch { await finishPair(raw); return; }

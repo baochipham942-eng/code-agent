@@ -515,6 +515,54 @@ describe('companionStore 前台退避自动重连', () => {
     store.getState().pause();
   });
 
+  it('forget 与在途重连的落盘并发：清理写后落，盘上无绑定、冷启动不复活（ai-review Nit）', async () => {
+    harness.recoverError = null;
+    const identity = createIdentity();
+    /** 只按完成序记录：断言的是「最后落在盘上的那份」，不是调用序。 */
+    const settled: string[] = [];
+    let releaseFirstWrite: (() => void) | null = null;
+    let writeCalls = 0;
+    const store = createCompanionStore({
+      read: async () => savedBinding(),
+      write: value => {
+        writeCalls += 1;
+        return new Promise<void>(resolve => {
+          // 第一笔写（在途尝试的绑定写）挂起不放行，制造「已过代号校验、正在 persist」的窄窗口。
+          if (writeCalls === 1) releaseFirstWrite = () => { settled.push(value); resolve(); };
+          else { settled.push(value); resolve(); }
+        });
+      },
+      scan: async () => { throw new Error('unused'); },
+      post: async () => ({}),
+    }, () => {});
+    const hydrating = store.getState().hydrate();
+    for (let i = 0; i < 30 && !releaseFirstWrite; i += 1) await Promise.resolve();
+    expect(releaseFirstWrite, '在途尝试的绑定写应已挂起未决').toBeTruthy();
+    expect(store.getState().busy).toBe(true);   // 自动尝试在途（占 busy）→ forget 走抢占
+    const callsBeforeForget = harness.recoverCalls;
+    const forgetting = store.getState().forget();   // 清理写排进链上，等链头（旧绑定写）先落
+    // 冲几拍微任务：无串行链时 forget 的清理写此刻已抢跑落盘（旧绑定写还挂着、会后落）；
+    // 有链时它仍被链头挡住，谁的写都没落盘。
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    expect(settled.length).toBe(0);
+    releaseFirstWrite!();
+    await hydrating;
+    await forgetting;
+    expect(settled.length).toBe(2);
+    expect(JSON.parse(settled[0]!).binding).toBeTruthy();   // 先落的是旧尝试的绑定写
+    expect(JSON.parse(settled.at(-1)!).binding).toBeUndefined();   // 最后在盘上的必须是清理写
+    // 冷启动读这块盘：不复活配对，也不起重连。
+    const cold = createCompanionStore({
+      read: async () => settled.at(-1)!,
+      write: async () => {},
+      scan: async () => { throw new Error('unused'); },
+      post: async () => ({}),
+    }, () => {});
+    await cold.getState().hydrate();
+    expect(cold.getState()).toMatchObject({ status: 'unpaired', binding: null });
+    expect(harness.recoverCalls).toBe(callsBeforeForget);
+  });
+
   it('被撤销后扫到非 Neo 二维码：connectionError 补回 connectionRejected，诊断仍是重新扫码（ai-review Nit）', async () => {
     harness.recoverError = null;
     const store = storeOf();

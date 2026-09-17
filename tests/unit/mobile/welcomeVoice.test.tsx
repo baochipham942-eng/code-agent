@@ -6,6 +6,7 @@ import { MobileRoot } from '../../../packages/mobile/src/app/MobileRoot';
 import type { PlatformPorts } from '../../../packages/mobile/src/platform/ports';
 import { createIdentity } from '../../../src/shared/companion/noiseChannel';
 import { toHex } from '../../../src/shared/companion/lanProtocol';
+import type { CompanionRead } from '../../../src/shared/contract/companionLibrary';
 import { messages } from '../../../packages/mobile/src/i18n';
 
 /**
@@ -37,7 +38,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
     async request(payload: unknown) {
       const action = (payload as { action?: string }).action;
       if (action === 'read') {
-        const query = (payload as { query?: { kind?: string } }).query;
+        const query = (payload as { query?: CompanionRead }).query;
         if (query?.kind === 'history') return { sessionId: query.sessionId, messages: [], nextOffset: null };
         if (query?.kind === 'artifacts') return { sessionId: query.sessionId, artifacts: [] };
         return {

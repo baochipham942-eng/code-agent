@@ -119,7 +119,7 @@ export function composerStatusItems(
   if (command) {
     const action = s.commandErrorAction === 'session.create' && s.commandError !== 'COMPANION_COMMAND_IN_FLIGHT' && act.retryCreate ? { label: text.retry, run: act.retryCreate }
       : s.commandError === 'MODEL_AUTH' && s.sessionId ? { label: text.switchModel, run: act.switchModel }
-      : s.commandErrorAction === 'voice.transcribe' && isVoiceSetupCode(s.commandError) && act.openVoiceSetup
+      : s.commandErrorAction === 'voice.transcribe' && isVoiceSetupCode(s.commandError ?? undefined) && act.openVoiceSetup
         ? { label: text.voiceHowToEnable, run: act.openVoiceSetup }
       : undefined;
     items.push({ rank: 4, message: command, action, reason: s.commandError ?? undefined });

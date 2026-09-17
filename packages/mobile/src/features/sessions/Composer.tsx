@@ -6,7 +6,7 @@ import { StatusSlot, type StatusItem } from '../../app/StatusSlot';
 import { useVoiceCapture, VoicePanel } from './VoiceCapture';
 import type { DictationPort } from './VoiceCapture';
 import { classifyVoiceFailure, voiceFailureAction, voiceFailureMessage } from './voiceFailure';
-import type { CompanionTranscriptionReadiness } from '../../../../src/shared/companion/lanProtocol';
+import type { CompanionTranscriptionReadiness } from '../../../../../src/shared/companion/lanProtocol';
 import type { UploadProgress, VoiceResult } from '../../stores/companionStore';
 import { joinTranscript } from '../../stores/mobileStore';
 

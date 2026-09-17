@@ -44,7 +44,7 @@ describe('CompanionGateway', () => {
   });
 
   it('allows only the first approval decision for a revision', () => {
-    const decide = vi.fn((cmd: import('../../../src/shared/contract/companion').CompanionCommand) => {
+    const decide = vi.fn((cmd: import('../../../src/shared/contract/companion').CompanionDecisionCommand) => {
       gateway.registerDecision({ requestId: 'req-1', sessionId: 'session-1', revision: 4, status: 'approved', resolvedBy: cmd.deviceId, operationDigest: 'digest-1' });
       return { kind: 'accepted' as const, command: { deviceId: cmd.deviceId, commandId: cmd.commandId, payloadHash: '', action: cmd.action, sessionId: cmd.sessionId, state: 'resolved' as const, result: { approved: true }, createdAt: 1000 } };
     });

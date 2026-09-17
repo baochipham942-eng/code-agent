@@ -1,4 +1,4 @@
-import type { CompanionTranscriptionReadiness } from '../../../../src/shared/companion/lanProtocol';
+import type { CompanionTranscriptionReadiness } from '../../../../../src/shared/companion/lanProtocol';
 import type { messages } from '../../i18n';
 
 /** 电脑没开转写 / 没配密钥：重试不会好，给「怎么开」。 */

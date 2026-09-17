@@ -66,7 +66,10 @@ export class CompanionRelayClient {
     gateway: CompanionGateway;
     identity: KeyPair;
     config: CompanionRelayResolved;
-    credential: string;
+    /** 共享凭据原文；或每次拨号现取的账号令牌（N-COMPANION-RELAY-ACCOUNT-BIND，令牌 1h 过期，不能缓存）。 */
+    credential: string | (() => Promise<string | null>);
+    /** routeToken 派生的命名空间：缺省 local（共享凭据通道），账号通道为 acct:<Supabase 用户 id>。 */
+    namespace?: string;
     now?: () => number;
     jitter?: () => number;
     WebSocket?: typeof WebSocket;
@@ -93,7 +96,8 @@ export class CompanionRelayClient {
    * socket 暂时断开时照常返回：token 不变（确定性派生，连 Host 重启都不变），重连后重新注册全部 route。
    */
   routeFor(deviceRef: string): CompanionRelayRoute | null {
-    if (this.stopped) return null;
+    // 账号通道的路由暂不下发给手机（第三刀用新动作 relay.routes 下发，旧契约 credential 必填）。
+    if (this.stopped || typeof this.deps.credential !== 'string') return null;
     if (!this.routes.has(deviceRef)) {
       this.bindPairedDevices();
       const minted = this.routes.get(deviceRef);
@@ -111,7 +115,7 @@ export class CompanionRelayClient {
       // 路由不必等回到同一 Wi-Fi 刷新。撤销/换 epoch ⇒ 派生结果变，旧 token 不再注册。
       this.advertise({
         deviceRef: device.deviceId,
-        routeToken: deriveCompanionRelayRouteToken(this.deps.identity.secretKey, device.deviceId, device.scopeEpoch),
+        routeToken: deriveCompanionRelayRouteToken(this.deps.identity.secretKey, device.deviceId, device.scopeEpoch, this.deps.namespace),
       });
     }
   }
@@ -211,7 +215,7 @@ export class CompanionRelayClient {
   private logDialFailure(code: string, delayMs: number): void {
     if (this.lastDialErrorCode === code) return;
     this.lastDialErrorCode = code;
-    this.logger?.warn(`Companion relay dial failed: ${code}; reconnect in ${Math.round(delayMs)}ms`);
+    this.logger?.warn(`Companion relay${this.label} dial failed: ${code}; reconnect in ${Math.round(delayMs)}ms`);
   }
 
   private failDial(code: string): void {
@@ -232,8 +236,19 @@ export class CompanionRelayClient {
     return 'COMPANION_RELAY_CONNECT_FAILED';
   }
 
+  private get label(): string {
+    return typeof this.deps.credential === 'string' ? '' : ' (account)';
+  }
+
   private async dial(): Promise<void> {
     if (this.stopped) return;
+    const provided = this.deps.credential;
+    const credential = typeof provided === 'string' ? provided : await provided().catch(() => null);
+    if (this.stopped) return;
+    if (!credential) {
+      this.failDial('COMPANION_RELAY_ACCOUNT_TOKEN_UNAVAILABLE');
+      throw new Error('COMPANION_RELAY_ACCOUNT_TOKEN_UNAVAILABLE');
+    }
     await new Promise<void>((resolve, reject) => {
       let settled = false;
       let lastError: unknown;
@@ -245,7 +260,7 @@ export class CompanionRelayClient {
         else resolve();
       };
       const options: WebSocket.ClientOptions = {
-        headers: { authorization: `Bearer ${this.deps.credential}` },
+        headers: { authorization: `Bearer ${credential}` },
       };
       // 追加信任，不替换系统根：没配 caFile 时与现在完全一致。
       if (this.deps.config.caPem) options.ca = [...rootCertificates, this.deps.config.caPem];
@@ -284,7 +299,7 @@ export class CompanionRelayClient {
           this.heartbeat.unref();
         }
         for (const waiter of this.openWaiters.splice(0)) waiter();
-        logCompanionRelayInfo(this.logger, `Companion relay connected: ${this.deps.config.url}`);
+        logCompanionRelayInfo(this.logger, `Companion relay connected${this.label}: ${this.deps.config.url}`);
         finish();
       });
       socket.on('message', data => {
@@ -304,7 +319,7 @@ export class CompanionRelayClient {
         if (wasLive) {
           // 已连上的连接被断开不是「拨号失败」，单独一行，免得排障时误读成握手/鉴权问题。
           const delay = this.peekReconnectDelay();
-          this.logger?.warn(`Companion relay disconnected: ${errorCode}; reconnect in ${Math.round(delay)}ms`);
+          this.logger?.warn(`Companion relay${this.label} disconnected: ${errorCode}; reconnect in ${Math.round(delay)}ms`);
           this.scheduleReconnect(delay);
         }
       });
@@ -447,4 +462,78 @@ export async function startCompanionRelayIfConfigured(opts: {
   });
   await client.start();
   return client;
+}
+
+/** 账号通道只需要这三样；authService 单例满足它，测试可直接喂假对象。 */
+export interface CompanionRelayAccountSource {
+  getCurrentUser(): { id: string } | null;
+  getAccessToken(): Promise<string | null>;
+  addAuthChangeCallback(callback: (user: { id: string } | null) => void): () => void;
+}
+
+/**
+ * 账号通道（N-COMPANION-RELAY-ACCOUNT-BIND 第一刀）：电脑登录了 Neo 账号就再开一条 relay 连接，用
+ * Supabase access token 鉴权、按 acct:<用户 id> 派生路由并登记。与共享凭据通道完全并行，那条一字不改；
+ * 本刀不下发给手机，只让 relay 侧的离线验签与账号路由在生产里有真实消费方。
+ * 登录 / 退出 / 换账号时按用户 id 起停；同一用户的令牌刷新不重连（每次拨号现取令牌）。
+ */
+export function startCompanionRelayAccountIfConfigured(opts: {
+  dataDirectory: string;
+  gateway: CompanionGateway;
+  loadIdentity: () => Promise<KeyPair>;
+  auth: CompanionRelayAccountSource;
+  logger?: CompanionRelayLogger;
+  now?: () => number;
+  jitter?: () => number;
+  WebSocket?: typeof WebSocket;
+}): { stop(): Promise<void>; revoke(deviceId: string): void } | null {
+  // 共享凭据通道已按同一份配置记过缺失/非法的日志，这里不重复记。
+  const config = loadCompanionRelayConfig(opts.dataDirectory);
+  if (!config) return null;
+  let client: CompanionRelayClient | null = null;
+  let userId: string | null = null;
+  let stopped = false;
+  let chain = Promise.resolve();
+  const follow = (user: { id: string } | null) => {
+    const next = user?.id ?? null;
+    if (stopped || next === userId) return;
+    userId = next;
+    chain = chain.then(async () => {
+      await client?.stop();
+      client = null;
+      if (stopped || !next || userId !== next) return;
+      let identity: KeyPair;
+      try {
+        identity = await opts.loadIdentity();
+      } catch (error) {
+        opts.logger?.warn(`Companion relay (account) identity load failed: ${errorHead(error)}`);
+        return;
+      }
+      if (stopped || userId !== next) return;
+      client = new CompanionRelayClient({
+        gateway: opts.gateway,
+        identity,
+        config,
+        credential: () => opts.auth.getAccessToken(),
+        namespace: `acct:${next}`,
+        now: opts.now,
+        jitter: opts.jitter,
+        WebSocket: opts.WebSocket,
+        logger: opts.logger,
+      });
+      await client.start();
+    });
+  };
+  const unsubscribe = opts.auth.addAuthChangeCallback(follow);
+  follow(opts.auth.getCurrentUser());
+  return {
+    revoke: deviceId => client?.revoke(deviceId),
+    stop: async () => {
+      stopped = true;
+      unsubscribe();
+      await chain;
+      await client?.stop();
+      client = null;
+    },
+  };
 }

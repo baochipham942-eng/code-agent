@@ -192,7 +192,10 @@ describe('durable Native recovery lifecycle', () => {
       firstRegistry.clear();
 
       const [plan] = await recoveredRegistry.recoverDurable(2_000);
-      const applicationPorts = createApplicationNativeRecoveryPorts(recoveredRegistry, {
+      // 不再覆写 resolveWorkspaceScopeVersion：startDurable 没带 Project scope，checkpoint
+      // 里落的是 legacy-background-authority 合成 scope。这里必须走生产端口按 primaryRoot
+      // 重算，同机重启不得误判 native_workspace_scope_drift（N-DURABLE-NATIVE-SCOPE-DRIFT-FALSE）。
+      const ports: NativeRecoveryHostPorts = createApplicationNativeRecoveryPorts(recoveredRegistry, {
         sessions: {
           getMessages: vi.fn(async () => messages),
           updateMessage: vi.fn(async (messageId: string, updates: Partial<Message>) => {
@@ -207,11 +210,6 @@ describe('durable Native recovery lifecycle', () => {
         },
         now: () => 2_000,
       });
-      const descriptor = plan.checkpoint?.state as NativeRecoveryDescriptor;
-      const ports: NativeRecoveryHostPorts = {
-        ...applicationPorts,
-        resolveWorkspaceScopeVersion: vi.fn(async () => descriptor.workspace.scope?.version ?? null),
-      };
 
       await expect(new NativeRecoveryHost(recoveredRegistry, ports).createHandler().recover(plan, 2_000))
         .resolves.toMatchObject({
@@ -280,6 +278,7 @@ describe('durable Native recovery lifecycle', () => {
       firstRegistry.clear();
 
       const [recoveryPlan] = await recoveredRegistry.recoverDurable(2_000);
+      // 同上：legacy 合成 scope 走生产端口重算，不得误判 scope drift。
       const applicationPorts = createApplicationNativeRecoveryPorts(recoveredRegistry, {
         sessions: {
           getMessages: vi.fn(async () => messages),
@@ -303,12 +302,6 @@ describe('durable Native recovery lifecycle', () => {
       });
       const ports: NativeRecoveryHostPorts = {
         ...applicationPorts,
-        resolveWorkspaceScopeVersion: vi.fn(async (projectId) => (
-          recoveryPlan.checkpoint?.state
-          && (recoveryPlan.checkpoint.state as NativeRecoveryDescriptor).workspace.scope?.projectId === projectId
-            ? (recoveryPlan.checkpoint.state as NativeRecoveryDescriptor).workspace.scope?.version ?? null
-            : null
-        )),
         tool: {
           ...applicationPorts.tool,
           queryResult: vi.fn(async () => null),

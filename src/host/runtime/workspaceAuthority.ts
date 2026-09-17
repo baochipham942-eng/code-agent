@@ -8,6 +8,18 @@ import {
   isPathWithinRoot,
 } from '../runtime/workspaceScope';
 
+/**
+ * 无显式 Project Source 时兜底铸造的合成 scope id。它永远不在 projects 表里，
+ * 消费方（如 native 恢复的 scope drift 判定）必须按 primaryRoot 重算，不能拿它去查项目库。
+ */
+const LEGACY_BACKGROUND_AUTHORITY_PROJECT_ID = 'legacy-background-authority';
+
+export function isLegacyBackgroundAuthorityScope(
+  scope: Pick<WorkspaceScope, 'projectId'>,
+): boolean {
+  return scope.projectId === LEGACY_BACKGROUND_AUTHORITY_PROJECT_ID;
+}
+
 interface BackgroundWorkspaceInput {
   workspace?: string;
   workspaceScope?: WorkspaceScope;
@@ -68,7 +80,7 @@ export function resolveBackgroundWorkspaceAuthority(
   if (sensitiveRoots.some((sensitive) => isPathWithinRoot(sensitive, root))) return undefined;
 
   if (input.workspaceScope) return input.workspaceScope;
-  return createWorkspaceScope('legacy-background-authority', [{
+  return createWorkspaceScope(LEGACY_BACKGROUND_AUTHORITY_PROJECT_ID, [{
     sourceId: 'legacy-background-primary',
     path: root,
     role: 'primary',

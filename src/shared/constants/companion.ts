@@ -117,6 +117,9 @@ export const COMPANION_LIMITS = {
   relayHeartbeatMs: 20_000,
   relayIdleMs: 60_000,
   relayConnectTimeoutMs: 10_000,
+  /** relay 服务端：设备注册到没有 host 的 route 后等这么久，host 仍没来就回 no-host 帧让手机秒级失败。
+   * 盖住 Host 重连退避的前两档（1s+2s），更长的 Host 缺席按「电脑不在线」报。 */
+  relayNoHostGraceMs: 5_000,
   relaySeqHold: 16,
   relayAuthLength: 16,
   /** companion-relay.json `caFile` path length (absolute or relative to dataDirectory). */

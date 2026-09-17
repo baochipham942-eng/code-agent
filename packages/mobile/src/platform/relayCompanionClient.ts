@@ -310,6 +310,8 @@ export class RelayCompanionClient {
       this.onRevoked?.();
       return;
     }
+    // relay 宽限期内等不到 host（N-COMPANION-RELAY-NOHOST-FASTFAIL）：立刻结算，别等握手超时。
+    if (frame.kind === 'no-host') { this.drop(new Error('COMPANION_RELAY_NO_HOST')); return; }
     if (frame.kind === 'handshake') { this.receiveHandshake(frame); return; }
     if (frame.kind !== 'forward') return;
     this.inboundFrames += 1;

@@ -4,7 +4,6 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import {
   COMPANION_RELAY_WS_PROTOCOL,
-  COMPANION_RELAY_WS_AUTH_PREFIX,
   companionRelayCredentialSubprotocol,
   companionRelayFrameExpired,
   parseCompanionRelayFrame,
@@ -49,6 +48,9 @@ interface QueuedFrame {
   bytes: number;
   expiresAt: number;
 }
+
+// 前缀只在 shared 契约里定义一次：对空凭据编码得到的就是前缀本身，避免两端各抄一份常量。
+const COMPANION_RELAY_WS_AUTH_PREFIX = companionRelayCredentialSubprotocol('');
 
 /**
  * 只有 relay 服务端解码，所以放这里不进 shared 契约（knip 死导出棘轮不扫 packages/relay）。

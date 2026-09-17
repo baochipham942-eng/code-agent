@@ -121,7 +121,7 @@ export function parseCompanionRelayRoute(raw: unknown): CompanionRelayRoute {
  * 回选或回显。生产凭据含 `=` 等不合法的 token 字符，必须编码后才能进协议头。
  */
 export const COMPANION_RELAY_WS_PROTOCOL = 'neo-relay.v1';
-export const COMPANION_RELAY_WS_AUTH_PREFIX = 'neo-relay-auth.';
+const COMPANION_RELAY_WS_AUTH_PREFIX = 'neo-relay-auth.';
 
 /** 凭据 → `neo-relay-auth.<base64url>`：trim 后取 UTF-8 字节，无 padding 的 base64url。 */
 export function companionRelayCredentialSubprotocol(credential: string): string {

@@ -10,7 +10,6 @@ import { toHex } from '../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 import { CompanionRelayServer } from '../../packages/relay/src/server';
 import {
-  COMPANION_RELAY_WS_AUTH_PREFIX,
   COMPANION_RELAY_WS_PROTOCOL,
   companionRelayCredentialSubprotocol,
 } from '../../src/shared/contract/companionRelay';
@@ -28,6 +27,9 @@ function freePort(): Promise<number> {
     });
   });
 }
+
+// 前缀只在 shared 契约里定义（不导出）：空凭据编码即前缀。
+const AUTH_PREFIX = companionRelayCredentialSubprotocol('');
 
 describe('companion relay: production server + host dial-out', () => {
   let db: Database.Database;
@@ -160,7 +162,7 @@ describe('companion relay: production server + host dial-out', () => {
 
   it('rejects a credential subprotocol whose encoding is invalid base64url', async () => {
     const statsBefore = relay.currentStats;
-    const dials = ['neo-relay-auth.!!!not-base64!!!', `${COMPANION_RELAY_WS_AUTH_PREFIX}abcde`].map(encoded =>
+    const dials = ['neo-relay-auth.!!!not-base64!!!', `${AUTH_PREFIX}abcde`].map(encoded =>
       new Promise<void>(resolve => {
         const socket = new WebSocket(url, [COMPANION_RELAY_WS_PROTOCOL, encoded]);
         socket.once('close', () => resolve());
@@ -203,7 +205,7 @@ describe('companion relay: production server + host dial-out', () => {
     const wire = [...events, JSON.stringify(logging.currentStats)].join('\n');
     expect(wire).not.toContain(SECRET);
     expect(wire).not.toContain(encoded);
-    expect(wire).not.toContain(encoded.slice(COMPANION_RELAY_WS_AUTH_PREFIX.length));
+    expect(wire).not.toContain(encoded.slice(AUTH_PREFIX.length));
     good.close();
     await logging.stop();
   });

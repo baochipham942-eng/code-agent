@@ -208,6 +208,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     let retryGeneration = 0;
     let appInBackground = false;
     let reconnectInFlight = false;
+    /** 用户正在扫码配对：自动重连不得清 busy、不得把 status 打回 offline。 */
+    let userPairing = false;
     /** 这次连接已经成功 sync 过。握手成功不算数，否则 sync 一失败就会把档位清零再 0 延迟重连。 */
     let syncOk = false;
     const clearRetryTimer = () => {
@@ -232,6 +234,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       if (hostKey) options?.rememberSession?.(hostKey, sessionId);
     };
     const armAutoRetry = (fromFailedAttempt: boolean) => {
+      if (userPairing) return;
       const blocked = connectionBlocksAutoRetry(get().status, get().connectionError) || !saved?.binding;
       if (appInBackground || blocked) {
         if (blocked) stopAutoRetry();
@@ -482,10 +485,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       if (saved?.pending) await persist({ ...saved, pending: undefined });
       set({ pending: false });
     };
-    const safely = async <T>(work: () => Promise<T>): Promise<T | undefined> => {
-      if (get().busy) return undefined;
+    const safely = async <T>(work: () => Promise<T>, opts?: { preempt?: boolean }): Promise<T | undefined> => {
+      if (get().busy && !opts?.preempt) return undefined;
       set({ busy: true, connectionError: null, commandError: null, commandErrorAction: null });
       try { return await work(); } catch (error) {
+        // 扫码抢占后，过期的自动重连失败不能把刚配上的连接打回 offline。
+        if (!opts?.preempt && (userPairing || (reconnectInFlight && get().status === 'connected'))) return;
         client?.close();
         const code = error instanceof Error ? error.message : '';
         // 三分类（fix4-②）+ relay 档（N-MOBILE-RELAY-PHONE）：握手/身份失败、连接被拒绝、
@@ -501,7 +506,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if (get().status !== 'storageError') set({ status: 'offline', connectionError, transport: null });
         armAutoRetry(reconnectInFlight);
       }
-      finally { set({ busy: false }); }
+      finally { if (!(userPairing && !opts?.preempt)) set({ busy: false }); }
     };
     /** （重）连上后结算待确认命令：两条路（LAN/relay）共用同一套 status 查询与补投。 */
     const reconcilePending = async () => {
@@ -547,32 +552,41 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (value.candidate || value.binding) await get().reconnect();
         } catch { set({ busy: false, status: 'storageError' }); }
       },
-      pair: (raw?: string) => safely(async () => {
-        set({ paused: false });
-        appInBackground = false;
-        if (!port) return;
-        const dropPending = Boolean(saved?.pending);
-        const payload = raw ?? await port.scan().catch(() => { throw new Error('COMPANION_SCAN_FAILED'); });
-        let invitation;
-        try { invitation = parseInvitation(payload); } catch { throw new Error('COMPANION_INVALID_INVITATION'); }
-        set({ status: 'connecting' });
-        if (!saved) {
-          const identity = createIdentity();
-          await persist({ version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey) });
-          identity.secretKey.fill(0);
-        }
-        await persist({ ...saved!, candidate: { endpoint: invitation.endpoint, ...(invitation.altEndpoint ? { altEndpoint: invitation.altEndpoint } : {}), hostKey: invitation.hostKey }, binding: undefined });
-        const binding = await createClient().pair(payload);
-        await persist({ ...saved!, binding, candidate: undefined, pending: undefined });
-        epoch = binding.scopeEpoch; cursor = 0;
-        heldAttachments.clear();
-        wipeHistoryCache();
+      pair: async (raw?: string) => {
+        // 扫码必须抢过自动重连占着的 busy：否则扫完 finishPair→pair 被静默丢掉。
+        userPairing = true;
         stopAutoRetry();
-        remember(null);
-        set({ status: 'connected', transport: 'lan', binding, sessionId: null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null, abandonedPending: dropPending });
-        // 趁配对的 LAN 会话还热着把 relay 路由缓存下来，LAN 断了才有路可落。
-        await refreshRelayRoute();
-      }),
+        appInBackground = false;
+        set({ paused: false, autoRetrying: false });
+        client?.close();
+        try {
+          return await safely(async () => {
+            if (!port) return;
+            const dropPending = Boolean(saved?.pending);
+            const payload = raw ?? await port.scan().catch(() => { throw new Error('COMPANION_SCAN_FAILED'); });
+            let invitation;
+            try { invitation = parseInvitation(payload); } catch { throw new Error('COMPANION_INVALID_INVITATION'); }
+            set({ status: 'connecting' });
+            if (!saved) {
+              const identity = createIdentity();
+              await persist({ version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey) });
+              identity.secretKey.fill(0);
+            }
+            await persist({ ...saved!, candidate: { endpoint: invitation.endpoint, ...(invitation.altEndpoint ? { altEndpoint: invitation.altEndpoint } : {}), hostKey: invitation.hostKey }, binding: undefined });
+            const binding = await createClient().pair(payload);
+            await persist({ ...saved!, binding, candidate: undefined, pending: undefined });
+            epoch = binding.scopeEpoch; cursor = 0;
+            heldAttachments.clear();
+            wipeHistoryCache();
+            stopAutoRetry();
+            remember(null);
+            set({ status: 'connected', transport: 'lan', binding, sessionId: null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null, abandonedPending: dropPending });
+            await refreshRelayRoute();
+          }, { preempt: true });
+        } finally {
+          userPairing = false;
+        }
+      },
       /**
        * 丢掉本机存的配对，回到「尚未连接电脑」。留着身份密钥对——它是这台手机的身份，
        * 重新扫码时照样用；要丢的只是「配的是哪台电脑」。

@@ -28,6 +28,9 @@ const harness = vi.hoisted(() => ({
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
+    async pair() {
+      return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-2', scopeEpoch: 1, scope: ['project:one'] };
+    }
     async recover() {
       harness.recoverCalls += 1;
       if (harness.hangRecover) await new Promise<void>(resolve => { harness.releaseHang = resolve; });
@@ -42,9 +45,16 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
       }
       return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
     }
-    close() {}
+    close() { harness.releaseHang?.(); }
   },
 }));
+
+function invitation(): string {
+  return JSON.stringify({
+    version: 1, endpoint: 'http://192.168.1.2:8182', inviteId: '123e4567-e89b-12d3-a456-426614174000',
+    psk: 'aa'.repeat(32), hostKey: 'aa'.repeat(32), expiresAt: Date.now() + 60_000,
+  });
+}
 
 function savedBinding(): string {
   const identity = createIdentity();
@@ -258,6 +268,20 @@ describe('companionStore 前台退避自动重连', () => {
     harness.releaseHang?.();
     await pending;
     expect(store.getState()).toMatchObject({ status: 'connected', autoRetrying: false });
+    store.getState().pause();
+  });
+
+  it('自动重连进行中扫码：pair 不被 busy 丢掉', async () => {
+    const store = storeOf();
+    await store.getState().hydrate();
+    expect(store.getState().autoRetrying).toBe(true);
+    harness.hangRecover = true;
+    vi.advanceTimersByTime(2000);
+    await flushUntilHung();
+    expect(store.getState().busy).toBe(true);
+    harness.hangRecover = false;
+    await store.getState().pair(invitation());
+    expect(store.getState()).toMatchObject({ status: 'connected', autoRetrying: false, busy: false });
     store.getState().pause();
   });
 

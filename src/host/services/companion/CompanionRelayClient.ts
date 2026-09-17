@@ -54,6 +54,8 @@ export class CompanionRelayClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   private attempt = 0;
+  /** open 之后撑过 relayStableConnectionMs 才算真连上：relay 在 upgrade 完成后才验凭据、不通过就立刻关。 */
+  private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private live = false;
   private lastDialErrorCode: string | null = null;
   private openWaiters: Array<() => void> = [];
@@ -134,6 +136,8 @@ export class CompanionRelayClient {
     this.reconnectTimer = null;
     if (this.heartbeat) clearInterval(this.heartbeat);
     this.heartbeat = null;
+    if (this.stableTimer) clearTimeout(this.stableTimer);
+    this.stableTimer = null;
     this.dropSessions();
     this.buffer.clear();
     const socket = this.socket;
@@ -284,8 +288,15 @@ export class CompanionRelayClient {
         clearTimeout(timer);
         this.socket = socket;
         this.live = true;
-        this.attempt = 0;
-        this.lastDialErrorCode = null;
+        // attempt / 失败去重不在 open 时清：被 relay 拒的连接也会先 open 再立刻关（ai-review PR#1926）。
+        this.stableTimer = setTimeout(() => {
+          this.stableTimer = null;
+          if (this.socket !== socket) return;
+          this.attempt = 0;
+          if (this.lastDialErrorCode !== null) logCompanionRelayInfo(this.logger, `Companion relay connected${this.label}: ${this.deps.config.url}`);
+          this.lastDialErrorCode = null;
+        }, L.relayStableConnectionMs);
+        this.stableTimer.unref();
         this.controlSeq = 0;
         this.peerSeq.clear();
         this.dropSessions();
@@ -299,7 +310,7 @@ export class CompanionRelayClient {
           this.heartbeat.unref();
         }
         for (const waiter of this.openWaiters.splice(0)) waiter();
-        logCompanionRelayInfo(this.logger, `Companion relay connected${this.label}: ${this.deps.config.url}`);
+        if (this.lastDialErrorCode === null) logCompanionRelayInfo(this.logger, `Companion relay connected${this.label}: ${this.deps.config.url}`);
         finish();
       });
       socket.on('message', data => {
@@ -308,12 +319,25 @@ export class CompanionRelayClient {
       socket.once('close', code => {
         clearTimeout(timer);
         const wasLive = this.live && this.socket === socket;
-        if (this.socket === socket) { this.socket = null; this.live = false; }
+        const stable = wasLive && this.stableTimer === null;
+        if (this.socket === socket) {
+          this.socket = null;
+          this.live = false;
+          if (this.stableTimer) clearTimeout(this.stableTimer);
+          this.stableTimer = null;
+        }
         this.dropSessions();
         const errorCode = this.dialErrorCode(lastError, code, httpStatus);
         if (!settled) {
           this.failDial(errorCode);
           finish(new Error(errorCode));
+          return;
+        }
+        if (wasLive && !stable && errorCode === 'COMPANION_RELAY_CONNECT_FAILED') {
+          // open 后没撑过稳定期、且不带关闭码就被关：relay 验凭据不通过就是这个形状（账号令牌被拒、
+          // relay 没开账号鉴权）。按拨号失败走递增退避 + 同因去重，不按「掉线」秒级重连刷屏。
+          // 带关闭码的主动断开（relay 重启 1001、测试里的 1000）仍按掉线记。
+          this.failDial('COMPANION_RELAY_CLOSED_AFTER_OPEN');
           return;
         }
         if (wasLive) {

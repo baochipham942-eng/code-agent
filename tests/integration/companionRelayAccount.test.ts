@@ -231,6 +231,32 @@ describe('companion relay account binding (slice 1)', () => {
     await roundTrip(token('local'), SECRET);
   });
 
+  it('a relay that turns the account token away gets backed-off, deduplicated retries, not a reconnect storm', async () => {
+    // 部署顺序反了（Dev 先于 relay）或 relay 没开账号鉴权：upgrade 完成后才被关（ai-review PR#1926 Important）。
+    await account?.stop();
+    const bare = new CompanionRelayServer({ credential: SECRET, port: await freePort() });
+    const bareUrl = `ws://127.0.0.1:${(await bare.listen()).port}`;
+    const bareDir = mkdtempSync(join(tmpdir(), 'relay-account-bare-'));
+    writeFileSync(join(bareDir, L.relayConfigFile), JSON.stringify({ v: 1, enabled: true, url: bareUrl, credentialRef: 'companion-relay', reconnectBackoffMs: [30, 60, 120] }));
+    const warns: string[] = [];
+    const rejected = startCompanionRelayAccountIfConfigured({
+      dataDirectory: bareDir, gateway, loadIdentity: async () => hostIdentity, auth: fakeAuth('user-1'), jitter: () => 0.5,
+      logger: { warn: message => warns.push(message), info: () => {} },
+    });
+    await vi.waitFor(() => expect(bare.currentStats.rejectedAuth).toBeGreaterThanOrEqual(4), { timeout: 5_000 });
+    const before = bare.currentStats.rejectedAuth;
+    await new Promise(resolve => setTimeout(resolve, 600));
+    // 退避封顶 120ms×0.5：600ms 内至多约 10 次；秒级回到首档 15ms 的风暴会是 40 次上下
+    expect(bare.currentStats.rejectedAuth - before).toBeLessThanOrEqual(12);
+    expect(warns.filter(line => line.includes('disconnected'))).toEqual([]);
+    expect(warns.filter(line => line.includes('dial failed'))).toEqual([
+      expect.stringContaining('Companion relay (account) dial failed: COMPANION_RELAY_CLOSED_AFTER_OPEN'),
+    ]);
+    await rejected?.stop();
+    await bare.stop();
+    rmSync(bareDir, { recursive: true, force: true });
+  });
+
   it('without an account verifier the relay stays shared-credential only', async () => {
     const bare = new CompanionRelayServer({ credential: SECRET, port: await freePort() });
     const bareUrl = `ws://127.0.0.1:${(await bare.listen()).port}`;

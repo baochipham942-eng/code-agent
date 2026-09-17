@@ -67,6 +67,7 @@ export class SupabaseJwtVerifier {
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private inFlight: Promise<void> | null = null;
   private lastUnknownKidRefresh = -Infinity;
+  private unusableLogged = false;
   private readonly issuer: string;
   private readonly jwksUrl: string;
   private readonly now: () => number;
@@ -122,7 +123,9 @@ export class SupabaseJwtVerifier {
     const signature = decodeSegment(parts[2]);
     if (!header || !payload || !signature || header.alg !== 'ES256' || typeof header.kid !== 'string') return null;
     if (this.fetchedAt === null || this.now() - this.fetchedAt > (this.options.maxStaleMs ?? 30 * 24 * 60 * 60_000)) {
-      this.options.logger?.warn('jwks_stale', { fetchedAt: this.fetchedAt });
+      // 每个令牌形状的连接都会走到这里：只在进入该状态时记一次，别让未鉴权的客户端刷日志。
+      if (!this.unusableLogged) this.options.logger?.warn(this.fetchedAt === null ? 'jwks_unavailable' : 'jwks_stale', { fetchedAt: this.fetchedAt });
+      this.unusableLogged = true;
       return null;
     }
     const key = this.keys.get(header.kid);
@@ -137,6 +140,7 @@ export class SupabaseJwtVerifier {
     const audOk = aud === 'authenticated' || (Array.isArray(aud) && aud.includes('authenticated'));
     if (payload.iss !== this.issuer || !audOk || payload.role !== 'authenticated') return null;
     if (typeof payload.exp !== 'number' || payload.exp + CLOCK_SKEW_S <= nowS) return null;
+    if (payload.nbf !== undefined && (typeof payload.nbf !== 'number' || payload.nbf - CLOCK_SKEW_S > nowS)) return null;
     if (typeof payload.sub !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(payload.sub)) return null;
     return payload.sub;
   }
@@ -160,6 +164,7 @@ export class SupabaseJwtVerifier {
     this.rawKeys = keys.filter(jwk => next.has(jwk.kid));
     this.fetchedAt = fetchedAt;
     this.source = source;
+    this.unusableLogged = false;
     return true;
   }
 

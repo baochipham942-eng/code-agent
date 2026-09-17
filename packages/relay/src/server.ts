@@ -229,6 +229,8 @@ export class CompanionRelayServer {
     const via: 'header' | 'subprotocol' | 'none' = headerAuth ? 'header' : subprotocolAuth !== null ? 'subprotocol' : 'none';
     const auth = headerAuth || subprotocolAuth || '';
     // 共享凭据先比（常量时间）；不是它再按账号令牌验签。sub 不进日志。
+    // 令牌只在 upgrade 时验：连接存活期间过期或电脑退出登录都不断开——Host 退出登录会自己关账号连接，
+    // 每次重连都换新令牌；relay 主动踢过期连接只会制造重连风暴。要做按账号封禁时再补连接级复核。
     const legacy = sameSecret(auth, this.options.credential);
     const sub = legacy ? null : this.options.accountVerifier?.verify(auth) ?? null;
     const principal = legacy ? LEGACY_PRINCIPAL : sub ? `acct:${sub}` : null;

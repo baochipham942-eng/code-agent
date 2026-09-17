@@ -65,6 +65,8 @@ describe('SupabaseJwtVerifier', () => {
     expect(verifier.verify(jwt(key, { iss: 'https://other.supabase.co/auth/v1' }))).toBeNull();
     expect(verifier.verify(jwt(key, { aud: 'anon' }))).toBeNull();
     expect(verifier.verify(jwt(key, { aud: ['x', 'authenticated'] }))).toBe('user-0001');
+    expect(verifier.verify(jwt(key, { nbf: Math.floor(NOW / 1000) + 120 }))).toBeNull();
+    expect(verifier.verify(jwt(key, { nbf: Math.floor(NOW / 1000) + 30 }))).toBe('user-0001');
     expect(verifier.verify(jwt(key, { role: 'anon' }))).toBeNull();
     expect(verifier.verify(jwt(key, { role: 'service_role' }))).toBeNull();
     expect(verifier.verify(jwt(key, { sub: '' }))).toBeNull();
@@ -112,9 +114,15 @@ describe('SupabaseJwtVerifier', () => {
     expect(verifier.verify(jwt(key))).toBeNull();
   });
 
-  it('with no keys at all rejects instead of throwing', () => {
-    const verifier = new SupabaseJwtVerifier({ supabaseUrl: SUPABASE, fetch: jwksFetch({ keys: [], fail: true, calls: 0 }), now: () => NOW });
+  it('with no keys at all rejects instead of throwing, and logs that once, not per connection', () => {
+    const warns: string[] = [];
+    const verifier = new SupabaseJwtVerifier({
+      supabaseUrl: SUPABASE, fetch: jwksFetch({ keys: [], fail: true, calls: 0 }), now: () => NOW,
+      logger: { info: () => {}, warn: event => warns.push(event) },
+    });
     expect(verifier.verify(jwt(makeKey('k1')))).toBeNull();
+    expect(verifier.verify(jwt(makeKey('k1')))).toBeNull();
+    expect(warns).toEqual(['jwks_unavailable']);
     expect(verifier.stats).toEqual({ keys: 0, fetchedAt: null, source: 'none' });
   });
 

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import process from 'node:process';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
-import { join } from 'node:path';
 import { SupabaseJwtVerifier } from './accountAuth';
 import { CompanionRelayServer, type CompanionRelayLogger } from './server';
 

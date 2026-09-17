@@ -139,6 +139,7 @@ const zh = {
   plan: '确认执行计划', planApprove: '按此计划执行', planReject: '拒绝',
   planFeedback: '调整说明', planFeedbackPlaceholder: '要调整计划，可以写在这里',
   planClosed: '这张卡已结束', planApproved: '已批准', planRejected: '已拒绝这个计划', planRevision: '已要求修改：', planRisk: '风险',
+  planExpired: '已超时，这个计划没有执行',
   unreadablePlan: '无法完整读取计划内容，请拒绝或回电脑处理。',
   reviewPlan: '有待确认的计划，返回会话处理',
 };
@@ -275,6 +276,7 @@ const en: Record<keyof typeof zh, string> = {
   plan: 'Confirm this plan', planApprove: 'Start this plan', planReject: 'Reject',
   planFeedback: 'How to change it', planFeedbackPlaceholder: 'Describe how the plan should change',
   planClosed: 'This card has ended.', planApproved: 'Approved', planRejected: 'Plan rejected', planRevision: 'Changes requested: ', planRisk: 'Risk',
+  planExpired: 'Timed out. This plan was not executed.',
   unreadablePlan: 'Cannot read the complete plan. Reject it or review on your computer.',
   reviewPlan: 'Review the pending plan in your conversation',
 };

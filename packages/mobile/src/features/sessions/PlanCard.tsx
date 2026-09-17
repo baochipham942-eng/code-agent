@@ -19,7 +19,7 @@ export function PlanCard({ card, text, disabled, respond }: {
   const outcome = cardOutcome(card);
   const decision = planDecision(card);
   const ended = !pending && !outcome && !decision;
-  const resultCopy = outcome === 'expired' ? text.questionExpired
+  const resultCopy = outcome === 'expired' ? text.planExpired
     : outcome === 'cancelled' ? text.questionCancelled
       : ended ? text.planClosed
         : decision?.decision === 'approved' ? text.planApproved

@@ -9,7 +9,7 @@ import { getTaskManager } from '../../task/TaskManager';
 import { resolvePlanApproval } from '../planning/planApprovalService';
 import { createLogger } from '../infra/logger';
 import type { CompanionDecisionOutcome, CompanionPlanAnswer } from '../../../shared/contract/companion';
-import type { CompanionPlanRequest } from './CompanionPlanService';
+import { companionRequestId, type CompanionPlanRequest } from './CompanionPlanService';
 
 export type CompanionPlanInspection = {
   outcome: CompanionDecisionOutcome;
@@ -90,7 +90,27 @@ export function noteCompanionUserPlan(sessionId: string, event: Record<string, u
   return true;
 }
 
+/**
+ * 手机上真挂着这张卡的 pending 行时，结算桥才有消费者（take）。
+ * 没配对手机/卡从未发布的结算没有人 take，记下来只会在进程内只增不减（ai-review R5）。
+ * 表读不出来（companion 未接线/表不存在）= 不可能有手机卡，跳过同样正确。
+ */
+function hasPendingPhoneCard(requestId: string): boolean {
+  const db = readyDb();
+  if (!db) return false;
+  try {
+    const row = db.getDb()?.prepare(
+      "SELECT 1 FROM companion_decisions WHERE request_id = ? AND status = 'pending' AND kind = 'plan'",
+    ).get(companionRequestId(requestId));
+    return row !== undefined;
+  } catch (error) {
+    logger.warn('Companion plan card probe failed, skipping settlement', { requestId, error });
+    return false;
+  }
+}
+
 function rememberUserPlanSettlement(requestId: string, status: unknown, feedback: unknown): void {
+  if (!hasPendingPhoneCard(requestId)) return;
   const text = typeof feedback === 'string' && feedback.trim() ? feedback : undefined;
   if (status === 'approved') {
     settlements.set(requestId, { outcome: 'answered', answer: { decision: 'approved', ...(text ? { feedback: text } : {}) } });

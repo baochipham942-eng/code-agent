@@ -42,14 +42,29 @@ describe('PlanCard', () => {
       text={text} disabled={false} respond={async () => {}} />);
     expect(screen.getByTestId('plan-result').textContent).toBe('已要求修改：先改标题');
     rerender(<PlanCard card={{ preview, status: 'closed', outcome: 'expired' }} text={text} disabled={false} respond={async () => {}} />);
-    expect(screen.getByTestId('plan-result').textContent).toBe('已超时，Neo 没用上这个问题');
+    expect(screen.getByTestId('plan-result').textContent).toBe('已超时，这个计划没有执行');
+    expect(text.planExpired).toBe('已超时，这个计划没有执行');
     expect(screen.queryByText(/另一端/)).toBeNull();
+  });
+
+  it('旧宿主只带 status 的卡：已批准 / 已拒绝这个计划', () => {
+    const { rerender } = render(<PlanCard card={{ preview, status: 'approved' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe(text.planApproved);
+    expect(text.planApproved).toBe('已批准');
+    expect(screen.queryByText(text.planApprove)).toBeNull();
+    rerender(<PlanCard card={{ preview, status: 'rejected' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe(text.planRejected);
+    expect(text.planRejected).toBe('已拒绝这个计划');
+    expect(screen.queryByText(text.planApprove)).toBeNull();
   });
 
   it('english copy is present for the same keys', () => {
     const en = messages('en');
-    render(<PlanCard card={{ preview, status: 'closed', outcome: 'cancelled' }} text={en} disabled={false} respond={async () => {}} />);
+    const { rerender } = render(<PlanCard card={{ preview, status: 'closed', outcome: 'cancelled' }} text={en} disabled={false} respond={async () => {}} />);
     expect(screen.getByText(en.questionCancelled)).toBeTruthy();
+    rerender(<PlanCard card={{ preview, status: 'closed', outcome: 'expired' }} text={en} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe(en.planExpired);
+    expect(en.planExpired).toBe('Timed out. This plan was not executed.');
   });
 
   it('closed cards without outcome say 这张卡已结束 and do not mark ✓/✕', () => {

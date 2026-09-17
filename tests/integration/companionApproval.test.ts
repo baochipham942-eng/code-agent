@@ -67,6 +67,17 @@ describe('companion uses the desktop live approval authority', () => {
     await expect(promise).resolves.toEqual({ approved: true, approvalSource: 'user' });
     expect(published.has(request.id)).toBe(false);
   });
+  it('a phone decision publishes exactly one resolved approval event, carrying resolvedBy', async () => {
+    const { promise, request, command } = pending();
+    expect(gateway.submit(command).kind).toBe('accepted');
+    await expect(promise).resolves.toEqual({ approved: true, approvalSource: 'user' });
+    // deliver 内部宿主结算（settleFromHost）与 respond 各发一条 ⇒ 同一次手机决定两条事件（ai-review R5）。
+    const resolved = gateway.syncForDevice('phone', 1, 0).events
+      .filter(event => event.kind === 'approval' && event.payload.requestId === request.id && event.payload.status !== 'pending');
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].payload.resolvedBy).toBe('phone');
+    expect(gateway.getDecision(request.id)).toMatchObject({ status: 'approved', resolvedBy: 'phone' });
+  });
   it('desktop winning first prevents a stale mobile approval', async () => {
     const { promise, request, command } = pending();
     await handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, request.id, 'deny', sessionId);

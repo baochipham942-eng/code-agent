@@ -3,6 +3,8 @@ import { PLAN_APPROVAL_CONFIRMATION_TYPE } from '../../../src/shared/contract/pl
 
 const getRecentMessages = vi.hoisted(() => vi.fn((_sessionId: string, _limit: number) => [] as unknown[]));
 const getMessages = vi.hoisted(() => vi.fn((_sessionId: string) => [] as unknown[]));
+// companion_decisions 探针的返回值：undefined = 没有挂起的手机卡；有行 = 手机上挂着 pending 计划卡。
+const pendingPhoneCard = vi.hoisted(() => vi.fn((): unknown => undefined));
 
 type ResolveApprovalFn = (
   request: unknown,
@@ -15,6 +17,9 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
     isReady: true,
     getRecentMessages: (sessionId: string, limit: number) => getRecentMessages(sessionId, limit),
     getMessages: (sessionId: string) => getMessages(sessionId),
+    getDb: () => ({
+      prepare: (_sql: string) => ({ get: () => pendingPhoneCard() }),
+    }),
   }),
 }));
 vi.mock('../../../src/host/services/planning/planApprovalService', () => ({
@@ -28,6 +33,7 @@ import {
   deliverCompanionUserPlan,
   listCompanionUserPlans,
   noteCompanionUserPlan,
+  takeCompanionUserPlanSettlement,
 } from '../../../src/host/services/companion/companionUserPlan';
 
 const PLAN = 'do the work';
@@ -175,5 +181,27 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
     // 修剪读失败 ≠ 列表接口失败：返回内存投影，卡保留，下一拍轮询再修。
     expect(() => listCompanionUserPlans()).not.toThrow();
     expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
+  });
+
+  it('结算只记挂在手机上的卡：无 pending 手机卡不记，有则 take 能取走（ai-review R5）', () => {
+    const id = `settle-${Date.now()}`;
+    const note = (approval: unknown) => noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: approval,
+      },
+    });
+    // 1) 手机上没有这张卡的 pending 行（从未发布/没配对手机）：结算不进桥——这是只增不减的来源。
+    pendingPhoneCard.mockReturnValueOnce(undefined);
+    note({ status: 'approved', originalPlan: PLAN, steps: STEPS });
+    expect(takeCompanionUserPlanSettlement(id)).toBeNull();
+    // 2) 手机挂着 pending 卡：结算要被记录且能被 take 走，闭环把结果投给手机。
+    pendingPhoneCard.mockReturnValueOnce({ request_id: id });
+    note({ status: 'revision_requested', originalPlan: PLAN, steps: STEPS, feedback: '先改标题' });
+    expect(takeCompanionUserPlanSettlement(id)).toEqual({ outcome: 'answered', answer: { decision: 'rejected', feedback: '先改标题' } });
+    expect(takeCompanionUserPlanSettlement(id)).toBeNull();
   });
 });

@@ -12,7 +12,7 @@ const preview = JSON.stringify({
     question: '这份提案主要给谁看？',
     header: '读者',
     options: [
-      { label: '内部产品团队' },
+      { label: '内部产品团队', recommended: true },
       { label: '品牌与市场团队' },
       { label: '客户或合作伙伴' },
     ],
@@ -26,6 +26,7 @@ describe('QuestionCard', () => {
     const respond = vi.fn(async () => {});
     render(<QuestionCard card={{ preview, status: 'pending' }} text={text} disabled={false} respond={respond} skip={async () => {}} />);
     expect(screen.getByText('这份提案主要给谁看？')).toBeTruthy();
+    expect(screen.getByText(text.questionRecommended)).toBeTruthy();
     fireEvent.click(screen.getByText('品牌与市场团队'));
     fireEvent.click(screen.getByText(text.questionSubmit));
     expect(respond).toHaveBeenCalledWith({ 读者: '品牌与市场团队' });
@@ -100,6 +101,16 @@ describe('QuestionCard', () => {
     const en = messages('en');
     render(<QuestionCard card={{ preview, status: 'closed', outcome: 'expired' }} text={en} disabled={false} respond={async () => {}} skip={async () => {}} />);
     expect(screen.getByText(en.questionExpired)).toBeTruthy();
+  });
+
+  it('旧宿主只带 status 的卡按状态如实说：已回答 / 已跳过', () => {
+    const { rerender } = render(<QuestionCard card={{ preview, status: 'approved' }} text={text} disabled={false} respond={async () => {}} skip={async () => {}} />);
+    expect(screen.getByTestId('question-outcome').textContent).toBe(text.questionAnswered);
+    expect(text.questionAnswered).toBe('已回答');
+    expect(screen.queryByText(text.questionSubmit)).toBeNull();
+    rerender(<QuestionCard card={{ preview, status: 'rejected' }} text={text} disabled={false} respond={async () => {}} skip={async () => {}} />);
+    expect(screen.getByTestId('question-outcome').textContent).toBe(text.questionSkipped);
+    expect(text.questionSkipped).toBe('已跳过');
   });
 
   it('closed cards without outcome say 这张卡已结束 and do not mark a choice', () => {

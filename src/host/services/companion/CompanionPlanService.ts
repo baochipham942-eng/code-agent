@@ -27,7 +27,7 @@ export interface CompanionPlanRequest {
  * Phone plan cards are a projection of PlanApprovalGate pending submissions.
  * Desktop ChatView's swarm TaskPanel reads the same getPendingPlans() list.
  */
-function companionRequestId(sourceId: string): string {
+export function companionRequestId(sourceId: string): string {
   return sourceId.length <= COMPANION_LIMITS.idLength
     ? sourceId
     : createHash('sha256').update(sourceId).digest('hex');

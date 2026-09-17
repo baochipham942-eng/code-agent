@@ -451,8 +451,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     if (result.status === 'connected') {
       store.getState().navigate('new');
       if (result.abandonedPending && draft) {
+        // 欢迎页输入框里已经打着的字不整段盖掉：旧会话草稿换行接在后面，为空才直接写入
+        // （ai-review Nit）。扫码前就停在欢迎页（同一键取的草稿）不复读一遍。
+        const current = store.getState().preferences.drafts.new ?? '';
         store.getState().activateDraft('new');
-        store.getState().editDraft(draft);
+        store.getState().editDraft(current && draftKey !== 'new' ? `${current}\n${draft}` : draft);
       }
     }
   };
@@ -760,9 +763,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
                 不加二次确认弹层，但**必须把代价写在旁边**：初版注释写的「误点没有东西可丢」是错的
                 （grok ai-review Nit②）——电脑只是睡着、Neo 只是没开时配对仍然有效，误点会连本机
                 会话缓存一起丢，且只能重新扫码才能回来（要人走到电脑跟前）。代价说清了，用户才
-                有得选；用一句错的理由把确认省掉，是把风险藏起来而不是降下去。 */}
+                有得选；用一句错的理由把确认省掉，是把风险藏起来而不是降下去。
+                置灰判据与上面两个键一致（busy && !autoAttempt，ai-review Nit）：自动重连在途的
+                时间占比高，兜底键跟着 busy 时灰时亮等于时有时无；自动尝试在途时点击走抢占。 */}
             <button className="sheet-secondary" data-testid="remote-action-forget"
-              disabled={!ports.companion || companion.busy} onClick={() => void companion.forget()}>{text.forgetComputer}</button>
+              disabled={!ports.companion || (companion.busy && !companion.autoAttempt)} onClick={() => void companion.forget()}>{text.forgetComputer}</button>
             <p className="caption" data-testid="remote-forget-caption">{text.forgetComputerHint}</p>
           </div>}
           {!ports.companion && <p>{text.nativeConnectionOnly}</p>}

@@ -215,7 +215,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     let retryStartedAt: number | null = null;
     let retryGeneration = 0;
     let appInBackground = false;
-    let reconnectInFlight = false;
+    /**
+     * 在途 reconnect 的**计数**而不是布尔：重连在途时再调一次 reconnect()（回前台等）会在
+     * safely 的 busy 守卫处早退，早退那次的 finally 若把共享布尔清掉，真正在途的尝试失败时
+     * 就被当成「不是重连失败」——0 延迟重试且不升退避档（ai-review Nit）。计数到 0 才算没有。
+     */
+    let reconnectDepth = 0;
     /**
      * 连接尝试代号（pair / reconnect 各领一个）：手动「重新连接」/扫码抢过在途的自动尝试后，
      * 旧尝试迟到的失败/成功都按代号丢弃——不打回 offline、不关新客户端、不释放新尝试的 busy
@@ -250,7 +255,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     /**
      * `ignoreBlocked`：有原绑定时「扫码本身失败」（二维码解不开/扫码取消）后重挂用的——
      * connectionQrInvalid/ScanFailed 本该停机，但那是给**没有原绑定**的首扫失败定的规矩；
-     * 「这次扫码没成」不等于「这台电脑不能重试」，提示照常显示到下一拍重试为止。
+     * 「这次扫码没成」不等于「这台电脑不能重试」。提示不靠重挂节奏续命：safely 的静默保留
+     * 让它活到这次重试自己给出新结论（新错误码或连上）为止。
      */
     const armAutoRetry = (fromFailedAttempt: boolean, ignoreBlocked = false) => {
       if (userPairing) return;
@@ -528,12 +534,21 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     }): Promise<T | undefined> => {
       if (get().busy && !opts?.preempt) return undefined;
       const attempt = opts?.claim === true ? (connectSeq += 1) : undefined;
-      set({ busy: true, autoAttempt: opts?.autoAttempt === true, connectionError: null, commandError: null, commandErrorAction: null });
+      // 静默自动重试不清「二维码无效/扫码失败」：这两句说的是用户上一次扫码，重连本身推翻不了
+      // 它——保留到这次重试自己产生新的错误码（catch 整拍覆盖）或连上（成功路径显式清）为止。
+      // 否则已配对用户扫到非 Neo 码，提示只在 0 延迟重挂那一拍存在，随即被清成「电脑没回应」
+      // （ai-review Important，相对 main 的回归）。
+      const heldError = opts?.autoAttempt === true
+        && (get().connectionError === 'connectionQrInvalid' || get().connectionError === 'connectionScanFailed')
+        ? get().connectionError : null;
+      set({ busy: true, autoAttempt: opts?.autoAttempt === true, connectionError: heldError, commandError: null, commandErrorAction: null });
       try { return await work(attempt); } catch (error) {
         // 被更新的尝试抢占了：迟到的旧失败整体作废——不关新客户端、不打回 offline、不挂重试、不释放新尝试的 busy。
         if (attempt !== undefined && attempt !== connectSeq) return;
         // 扫码抢占后，过期的自动重连失败不能把刚配上的连接打回 offline。
-        if (!opts?.preempt && (userPairing || (reconnectInFlight && get().status === 'connected'))) return;
+        // 「自己已连上后的失败」（如核对待确认命令超时）不再吞：代号比对已覆盖抢占场景，
+        // 吞掉会让一条死通道停在 connected（ai-review Nit）。
+        if (!opts?.preempt && userPairing) return;
         client?.close();
         // 设备已被撤销/拒绝（rejected）时，这条失败只是撤销的连带（relay revoke 帧先 drop 再
         // onRevoked，sync 的失败随后到）：不把 rejected 打回 offline、不挂自动重试，否则状态位
@@ -553,7 +568,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           : code === 'COMPANION_RELAY_UNAVAILABLE' || code === 'COMPANION_RELAY_CONNECT_TIMEOUT' ? 'connectionRelayUnavailable'
           : code === 'COMPANION_NETWORK_UNAVAILABLE' || code === 'COMPANION_NO_RESPONSE' ? 'connectionUnavailable' : 'connectionFailed';
         if (get().status !== 'storageError') set({ status: 'offline', connectionError, transport: null });
-        armAutoRetry(reconnectInFlight);
+        armAutoRetry(reconnectDepth > 0);
       }
       finally {
         if (attempt !== undefined && attempt !== connectSeq) return;
@@ -656,15 +671,17 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           // armAutoRetry 因 userPairing 直接 return 了，重挂只能补在这里。
           // 扫码阶段的失败（二维码解不开/取消）没走到清绑定那步，原绑定还在：connectionQrInvalid/
           // ScanFailed 会挡住 armAutoRetry，但「这次扫码没成」不等于「这台电脑不能重试」——同样
-          // 重挂（ai-review Nit：否则有原绑定时前台自动重连被一次误扫永久停掉），无效二维码的
-          // 提示照常显示到下一拍重试为止。
+          // 重挂（ai-review Nit：否则有原绑定时前台自动重连被一次误扫永久停掉）。
+          // 按失败尝试计档（首拍约 2s ±50%），不再 0 延迟：提示交给 safely 的静默保留机制
+          // 存活到这次重试自己给出新结论，用 0 延迟换「提示多留一拍」只会把它瞬间清掉
+          // （ai-review Important）。
           const scanStageFailure = Boolean(saved?.binding)
             && (get().connectionError === 'connectionQrInvalid' || get().connectionError === 'connectionScanFailed');
           if (previousBinding && attempt !== 0 && attempt === connectSeq && saved && get().status === 'offline'
             && (!saved.binding || scanStageFailure)) {
             try {
               if (!saved.binding) await persist({ ...saved, binding: previousBinding, candidate: undefined });
-              armAutoRetry(false, scanStageFailure);
+              armAutoRetry(true, scanStageFailure);
             } catch { /* persist 失败已把状态打成 storageError；停在失败态 */ }
           }
         }
@@ -677,24 +694,30 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
        * 换网后两个地址一起死，reconnect 与 pair 都可能过不去；没有这条路时，用户唯一的出路是
        * 删 app 重装（靠 nativeCompanion.ts 的 INSTALL_KEY 标记去清 Keychain）。
        */
-      forget: () => safely(async () => {
-        stopAutoRetry();
-        appInBackground = false;
-        remember(null);
-        // 忘掉这台电脑：标题记忆一并清（此刻 saved 还没被下面的 persist 重写，hostKey 先取）。
-        const forgottenHostKey = saved?.binding?.hostKey;
-        if (forgottenHostKey) options?.forgetSessionTitles?.(forgottenHostKey);
-        client?.close(); client = null;
-        if (saved) await persist({ version: 1, publicKey: saved.publicKey, secretKey: saved.secretKey });
-        wipeHistoryCache();
-        // 输入区那几样也要跟着清（grok ai-review Nit①）：附件 chip / 上传进度 / 语音结果都绑在
-        // 上一台电脑那条会话上，留着就会在「尚未连接电脑」页底下挂着一台已经忘掉的电脑的东西。
-        heldAttachments.clear();
-        set({ status: 'unpaired', binding: null, sessionId: null, transport: null,
-          paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
-          artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, routeError: null,
-          uploadProgress: [], voiceResult: null, autoRetrying: false, abandonedPending: false });
-      }),
+      forget: () => {
+        // 与另两个逃生口同一纪律（D3）：自动尝试占着 busy 时「忘记这台电脑」也必须真能执行——
+        // 只放开按钮置灰会是死键（safely 的 busy 守卫把点按静默吞掉）。抢占 + 领代号：在途尝试
+        // 迟到的失败/成功按代号丢弃，不把刚清干净的未配对态打回 offline。
+        const preempt = get().busy && get().autoAttempt;
+        return safely(async () => {
+          stopAutoRetry();
+          appInBackground = false;
+          remember(null);
+          // 忘掉这台电脑：标题记忆一并清（此刻 saved 还没被下面的 persist 重写，hostKey 先取）。
+          const forgottenHostKey = saved?.binding?.hostKey;
+          if (forgottenHostKey) options?.forgetSessionTitles?.(forgottenHostKey);
+          client?.close(); client = null;
+          if (saved) await persist({ version: 1, publicKey: saved.publicKey, secretKey: saved.secretKey });
+          wipeHistoryCache();
+          // 输入区那几样也要跟着清（grok ai-review Nit①）：附件 chip / 上传进度 / 语音结果都绑在
+          // 上一台电脑那条会话上，留着就会在「尚未连接电脑」页底下挂着一台已经忘掉的电脑的东西。
+          heldAttachments.clear();
+          set({ status: 'unpaired', binding: null, sessionId: null, transport: null,
+            paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
+            artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, routeError: null,
+            uploadProgress: [], voiceResult: null, autoRetrying: false, abandonedPending: false });
+        }, preempt ? { preempt: true, claim: true } : undefined);
+      },
       dismissAbandonedPending: () => set({ abandonedPending: false }),
       reconnect: async (opts) => {
         appInBackground = false;
@@ -712,7 +735,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           retryStartedAt = Date.now();
           set({ autoRetrying: true });
         }
-        reconnectInFlight = true;
+        reconnectDepth += 1;
         try {
           return await safely(async attempt => {
         const savedTarget = saved?.binding ?? saved?.candidate;
@@ -747,7 +770,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           await dialRelay(attempt);
           // relay 握手期间也可能被抢占：这次成功不落状态。
           if (attempt !== undefined && attempt !== connectSeq) return;
-          set({ status: 'connected', transport: 'relay', paused: false });
+          // 静默重试保留到「连上为止」的那两句（二维码无效/扫码失败）在这里清。
+          set({ status: 'connected', transport: 'relay', paused: false, connectionError: null });
           await reconcilePending();
           return;
         }
@@ -764,7 +788,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // lastSession === '' 是欢迎页记忆；null ?? scope 第一条会把它盖掉。
         const remembered = options?.lastSession?.(binding.hostKey);
         set({
-          status: 'connected', transport: 'lan', binding,
+          status: 'connected', transport: 'lan', binding, connectionError: null,
           sessionId: get().sessionId ?? (remembered === '' ? null : (binding.scope.find(id => !id.startsWith('project:')) ?? null)),
         });
         await refreshRelayRoute();
@@ -773,7 +797,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         await reconcilePending();
           }, { preempt, claim: true, autoAttempt: !manual });
         } finally {
-          reconnectInFlight = false;
+          reconnectDepth -= 1;
         }
       },
       pause: () => {

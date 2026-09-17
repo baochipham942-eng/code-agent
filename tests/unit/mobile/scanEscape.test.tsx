@@ -183,6 +183,42 @@ describe('连接弹层扫码不受 pending 限制', () => {
     expect(harness.commandCalls).toBe(0);
     expect(JSON.parse(written.at(-1)!).pending).toBeUndefined();
   });
+
+  it('欢迎页输入框已有字：丢弃旧操作的草稿换行接在后面，不整段覆盖（ai-review Nit）', async () => {
+    const written: string[] = [];
+    const identity = createIdentity();
+    const hostKey = toHex(identity.publicKey);
+    const draftPorts: PlatformPorts = {
+      ...ports(written),
+      preferences: {
+        get: async () => JSON.stringify({
+          schema: 1, drafts: { new: '欢迎页刚打的字', fixture: '', [`${hostKey}:s1`]: '帮我查天气' },
+          appearance: 'system', nickname: '', notifyEnabled: false,
+        }),
+        set: async () => {},
+      },
+      companion: {
+        read: async () => JSON.stringify({
+          version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey, deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
+          pending: pendingCommand,
+        }),
+        write: async value => { written.push(value); },
+        scan: async () => invitation(),
+        post: async () => ({}),
+      },
+    };
+    await act(async () => { render(<MobileRoot ports={draftPorts} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
+    fireEvent.click([...document.querySelectorAll('.drawer-functions button')].find(b => b.textContent === text.remote) as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="remote-action-scan"]')).toBeTruthy(); });
+    await act(async () => { fireEvent.click(document.querySelector('[data-testid="remote-action-scan"]') as HTMLElement); });
+    // 扫码前欢迎页输入框里已经打着的字不能被旧会话草稿盖掉：两段都在，换行分隔。
+    await waitFor(() => {
+      expect((document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement).value).toBe('欢迎页刚打的字\n帮我查天气');
+    });
+  });
 });
 
 describe('自动重试在途：连接弹层两个键不置灰（D3）', () => {
@@ -211,6 +247,32 @@ describe('自动重试在途：连接弹层两个键不置灰（D3）', () => {
     expect((document.querySelector('[data-testid="remote-action-scan"]') as HTMLButtonElement).disabled).toBe(true);
     harness.hangRecover = false;
     harness.releaseHang?.();
+  });
+
+  it('自动尝试在途「忘记这台电脑」可点且真能执行：抢占旧尝试，未配对态不被迟到失败打回（ai-review Nit）', async () => {
+    harness.recoverError = 'COMPANION_NO_RESPONSE';
+    const written: string[] = [];
+    await act(async () => { render(<MobileRoot ports={ports(written)} fixtures={false} />); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });   // 冷启动首连失败 → offline + autoRetrying
+    expect(document.querySelector('.app')).toBeTruthy();
+    harness.hangRecover = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); }); // 自动尝试在途（占 busy，任意抖动档 ≤3s 都已出发）
+    await act(async () => { fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement); });
+    await act(async () => { fireEvent.click([...document.querySelectorAll('.drawer-functions button')].find(b => b.textContent === text.remote) as HTMLElement); });
+    // 置灰判据与另两个键一致（busy && !autoAttempt）：自动尝试在途不灰这个兜底键。
+    const forget = document.querySelector('[data-testid="remote-action-forget"]') as HTMLButtonElement;
+    expect(forget.disabled).toBe(false);
+    await act(async () => { fireEvent.click(forget); });
+    // 点了就要真执行（不是亮着的死键）：配对被丢掉、页面回「尚未连接电脑」。
+    // （fake timers 下不用 waitFor——它的轮询定时器也被假时钟冻住。）
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(document.querySelector('[data-testid="remote-unpaired"]')).toBeTruthy();
+    expect(JSON.parse(written.at(-1)!).binding).toBeUndefined();
+    // 在途尝试迟到的失败按代号丢弃：不得把刚清干净的未配对态打回 offline。
+    harness.hangRecover = false;
+    harness.releaseHang?.();
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(document.querySelector('[data-testid="remote-unpaired"]')).toBeTruthy();
   });
 });
 

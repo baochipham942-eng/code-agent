@@ -25,6 +25,8 @@ const zh = {
   projectNoWorkspace: '电脑上还没设工作目录，暂时不能在这里新建', projectNoWorkspaceNote: '要用「{name}」，先在电脑上给它设一个工作目录。',
   // 设计稿 model 屏（N-MOBILE-SESSIONSHEET-SPLIT）：只列电脑已配置的模型。
   chooseModel: '选择会话模型', modelScopeNote: '模型与可选项来自 Neo 的模型配置。更改只作用于本会话后续执行。',
+  // 欢迎页（还没开会话）那一版（R7）：改的不是某条会话，是下一发新任务要用的模型，措辞不提「本会话」。
+  chooseModelNewTask: '选择模型', modelScopeNoteNewTask: '模型与可选项来自电脑上 Neo 的模型配置。选好后，发出的新任务会用这个模型。',
   modelConfigured: '已配置', modelRecentlyFailed: '最近调用失败，可能用不了',
   // 设计稿 modelAuthFailed 屏（N-MOBILE-RUNFAIL-REASON）：主动作直接进模型选择。
   modelAuthTitle: '模型密钥用不了', modelAuthDetail: '可以先换一个可用的模型继续；也可以在 Neo 的模型设置里配置或更新这个模型的密钥。', switchModel: '换一个可用模型',
@@ -172,6 +174,7 @@ const en: Record<keyof typeof zh, string> = {
   recentUseSessions: 'Recent · {n} conversations', sessionsCount: '{n} conversations', recentSessions: 'Recent', openProjectSessions: 'Open project conversations',
   projectNoWorkspace: 'No working folder on your computer yet, so you cannot start one here', projectNoWorkspaceNote: 'To use "{name}", set a working folder for it on your computer first.',
   chooseModel: 'Choose a model', modelScopeNote: 'Models come from Neo model settings. Changes apply to later runs in this conversation only.',
+  chooseModelNewTask: 'Choose a model', modelScopeNoteNewTask: 'Models come from Neo model settings on your computer. New tasks you send will use the model you pick.',
   modelConfigured: 'Configured', modelRecentlyFailed: 'Recently failed, may not work',
   modelAuthTitle: 'The model key does not work', modelAuthDetail: 'Switch to another model that works, or add or update this model\'s key in Neo model settings.', switchModel: 'Switch to a working model',
   microphoneBusy: 'Microphone in use. Record after the call ends', microphoneBusyRetry: 'Try again after it ends',

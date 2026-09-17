@@ -656,7 +656,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     })()}
     {state.sheet && currentPage && <SheetHost page={currentPage}
       title={currentPage === 'projects' ? text.chooseProject
-        : currentPage === 'model' ? text.chooseModel
+        // 模型屏的标题跟着胶囊入口走（R7）：无会话时它选的是「下一发新任务」的模型，不叫「会话模型」。
+        : currentPage === 'model' ? (companion.sessionId ? text.chooseModel : text.chooseModelNewTask)
         : currentPage === 'projectSessions' ? sessionProject && companion.library ? projectDisplayName(sessionProject, companion.library.projects) : text.projectSessions
         : text[currentPage]}
       hasParent={state.sheet.pages.length > 1}

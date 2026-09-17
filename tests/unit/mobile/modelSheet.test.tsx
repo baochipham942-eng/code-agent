@@ -88,6 +88,8 @@ describe('模型入口只留输入区胶囊', () => {
     reads.hostFailed = true;
     fireEvent.click(document.querySelector('.composer-tools .model') as HTMLElement);
     await waitFor(() => { expect(title()).toBe(text.chooseModel); });
+    // 会话页文案保持原文（R7 只改欢迎页那一版）：标题与说明句全文都钉死
+    expect(document.querySelector('.sheet-note')?.textContent).toBe(text.modelScopeNote);
     // 打开时现拉一次库，否则看到的是失败前的旧副本
     await waitFor(() => { expect(document.querySelector('[data-testid="model-custom-team-relay:LongCat-2.0"]')!.textContent).toContain(text.modelRecentlyFailed); });
     expect(document.querySelectorAll('button.model-row')).toHaveLength(2);
@@ -99,6 +101,18 @@ describe('模型入口只留输入区胶囊', () => {
     expect(document.querySelector('.library-sheet')!.textContent).toContain(text.rename);
     expect(document.querySelector('.model-row')).toBeNull();
     expect(document.querySelector('.library-sheet select')).toBeNull();
+  });
+
+  // R7：欢迎页（还没开会话）点胶囊，选的是「下一发新任务」用的模型——标题与说明句都不提「本会话」
+  it('欢迎页胶囊打开「选择模型」，说明句说的是发出的新任务', async () => {
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    // 连上停在欢迎页（无会话），不进任何会话
+    await waitFor(() => { expect(document.querySelector('[data-testid="project-pick"]')).toBeTruthy(); });
+    fireEvent.click(document.querySelector('.composer-tools .model') as HTMLElement);
+    await waitFor(() => { expect(title()).toBe(text.chooseModelNewTask); });
+    expect(document.querySelector('.sheet-note')?.textContent).toBe(text.modelScopeNoteNewTask);
+    // 还是那张模型表：默认模型打勾
+    expect(document.querySelector('[data-testid="model-custom-team-relay:LongCat-2.0"]')!.getAttribute('aria-current')).toBe('true');
   });
 
   // grok ai-review PR#1906 Important：打开模型屏若按第一页整表替换会话，「加载更多」进来的较旧会话会从库里消失

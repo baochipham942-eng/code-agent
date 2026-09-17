@@ -116,7 +116,8 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, projectId, 
         })}
       </div>
       {!library.models.length && <p>{text.modelUnavailable}</p>}
-      <p className="sheet-note">{text.modelScopeNote}</p>
+      {/* 欢迎页（无会话）选的是新任务的模型，说明句不提「本会话」（R7）。 */}
+      <p className="sheet-note">{text.modelScopeNoteNewTask}</p>
     </> : <p>{text.emptyHistory}</p>) : session ? <>
       <label className="group-title" htmlFor="session-title">{text.sessionName}</label>
       <input id="session-title" maxLength={160} value={renameTitle} onChange={e => setRenameTitle(e.target.value)} />

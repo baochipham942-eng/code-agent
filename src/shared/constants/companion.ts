@@ -117,6 +117,8 @@ export const COMPANION_LIMITS = {
   relayHeartbeatMs: 20_000,
   relayIdleMs: 60_000,
   relayConnectTimeoutMs: 10_000,
+  /** Host 拨 relay：open 后撑过这么久才清退避计数；更早被关按拨号失败退避（relay 在 upgrade 后才验凭据）。 */
+  relayStableConnectionMs: 5_000,
   /** relay 服务端：设备注册到没有 host 的 route 后等这么久，host 仍没来就回 no-host 帧让手机秒级失败。
    * 盖住 Host 重连退避的前两档（1s+2s），更长的 Host 缺席按「电脑不在线」报。 */
   relayNoHostGraceMs: 5_000,
@@ -130,6 +132,10 @@ export const COMPANION_LIMITS = {
   relayMaxWireFrameBytes: MAX_FRAME_BYTES * MAX_REQUEST_RECORDS + RELAY_WIRE_HEADROOM_BYTES,
   /** relay 服务端：并发 route（token）上限，超出的新注册直接丢弃。 */
   relayMaxRoutes: 256,
+  /** 单个 Neo 账号在 relay 上最多占的路由数（每台已配对手机 1 条，多台电脑累加）；共享凭据不受此限。 */
+  relayMaxRoutesPerAccount: 32,
+  /** 所有账号路由合计上限，与共享凭据的 relayMaxRoutes 分开算，账号用户挤不掉旧通道。 */
+  relayMaxAccountRoutes: 256,
   /** relay 服务端：过期 route / 空闲连接清扫周期。 */
   relaySweepMs: 15_000,
 } as const;

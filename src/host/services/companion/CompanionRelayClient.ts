@@ -299,7 +299,12 @@ export class CompanionRelayClient {
           finish(new Error(errorCode));
           return;
         }
-        if (wasLive) this.failDial(errorCode);
+        if (wasLive) {
+          // 已连上的连接被断开不是「拨号失败」，单独一行，免得排障时误读成握手/鉴权问题。
+          const delay = this.peekReconnectDelay();
+          this.logger?.warn(`Companion relay disconnected: ${errorCode}; reconnect in ${Math.round(delay)}ms`);
+          this.scheduleReconnect(delay);
+        }
       });
     });
   }

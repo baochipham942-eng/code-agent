@@ -59,8 +59,11 @@ export function loadCompanionRelayConfig(
   let text: string;
   try {
     text = readFileSync(configPath, 'utf8');
-  } catch {
-    logCompanionRelayInfo(logger, `Companion relay config file missing: ${configPath}`);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // 只有 ENOENT 才是「没配」；权限/是目录之类要按真实错误码归因，不能冒充默认关闭。
+    if (code === 'ENOENT') logCompanionRelayInfo(logger, `Companion relay config file missing: ${configPath}`);
+    else logger?.warn(`Companion relay config file unreadable: ${code ?? errorHead(error)}: ${configPath}`);
     return null;
   }
   let raw: unknown;

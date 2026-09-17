@@ -72,7 +72,7 @@ function startHttpRejectingTlsRelay(): Promise<TlsRelay> {
   });
 }
 
-function startTlsRelay(): Promise<TlsRelay> {
+function startTlsRelay(): Promise<TlsRelay & { closeClients(code: number): void }> {
   const authorizations: Array<string | undefined> = [];
   const server: Server = createServer({
     cert: readFileSync(LEAF_PEM),
@@ -90,6 +90,9 @@ function startTlsRelay(): Promise<TlsRelay> {
       resolve({
         url: `wss://127.0.0.1:${port}`,
         authorizations,
+        closeClients(code) {
+          for (const client of wss.clients) client.close(code);
+        },
         async stop() {
           for (const client of wss.clients) client.terminate();
           await new Promise<void>(done => wss.close(() => done()));
@@ -200,5 +203,28 @@ async function writeRelayConfig(url: string, caFile?: string): Promise<string> {
     expect(logs.warn.filter(line => line.startsWith('Companion relay dial failed:'))).toEqual([]);
     expect(logs.all().join('\n')).not.toContain(SECRET);
     expect(logs.info.join('\n')).not.toMatch(/Bearer /);
+  });
+
+  it('logs a live connection dropped by the relay as disconnected, not as a dial failure', async () => {
+    const live = await startTlsRelay();
+    relay = live;
+    const logs = collectLogger();
+    const dir = await writeRelayConfig(live.url, CA_PEM);
+    client = await startCompanionRelayIfConfigured({
+      dataDirectory: dir,
+      gateway,
+      loadIdentity: async () => createIdentity(),
+      credential: SECRET,
+      logger: logs.logger,
+      jitter: () => 0.5,
+    });
+    await client?.whenConnected();
+    live.closeClients(1000);
+    await vi.waitFor(() => {
+      expect(logs.warn.filter(line => line.startsWith('Companion relay disconnected:'))).toEqual([
+        'Companion relay disconnected: close 1000; reconnect in 50ms',
+      ]);
+    });
+    expect(logs.warn.filter(line => line.startsWith('Companion relay dial failed:'))).toEqual([]);
   });
 });

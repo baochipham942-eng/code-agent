@@ -1,4 +1,4 @@
-import { copyFile, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,6 +75,15 @@ describe('companion relay config', () => {
     })).resolves.toBeNull();
     expect(startLogs.info).toEqual([`Companion relay config file missing: ${resolve(dir, L.relayConfigFile)}`]);
     expect(startLogs.warn).toEqual([]);
+  });
+
+  it('attributes an unreadable config path by its errno instead of calling it missing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'companion-relay-'));
+    await mkdir(join(dir, L.relayConfigFile));
+    const logs = collectLogger();
+    expect(loadCompanionRelayConfig(dir, logs.logger)).toBeNull();
+    expect(logs.info).toEqual([]);
+    expect(logs.warn).toEqual([`Companion relay config file unreadable: EISDIR: ${resolve(dir, L.relayConfigFile)}`]);
   });
 
   it('is inert when enabled is false', async () => {

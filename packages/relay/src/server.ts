@@ -32,7 +32,7 @@ export interface CompanionRelayServerStats {
   notifiedNoHost: number;
   /** 以 Supabase 账号令牌鉴权、当前在线的连接数（N-COMPANION-RELAY-ACCOUNT-BIND）。 */
   accountConnections: number;
-  /** 登记到别人名下路由而被拒的次数。 */
+  /** 登记到别人名下路由、或账号超出路由限额而被拒的次数。 */
   rejectedOwner: number;
   jwks?: JwksStats;
 }
@@ -188,6 +188,7 @@ export class CompanionRelayServer {
     const server = this.server; this.server = null;
     if (server) await new Promise<void>(resolve => server.close(() => resolve()));
     this.stats.connections = 0;
+    this.stats.accountConnections = 0;
     this.options.logger?.info('relay_stopped', {});
   }
 
@@ -293,6 +294,14 @@ export class CompanionRelayServer {
       }
       const principal = this.principals.get(socket) ?? LEGACY_PRINCIPAL;
       const known = this.routes.get(token);
+      // 账号令牌谁注册都能拿到，全局路由上限不能让一个账号占满（ai-review PR#1926）：新建路由按主人限额。
+      // ponytail: 每次新建线性数一遍（上限 relayMaxRoutes 条），量级上去再换按主人计数的表。
+      if (!known && principal !== LEGACY_PRINCIPAL
+        && [...this.routes.values()].filter(route => route.owner === principal).length >= L.relayMaxRoutesPerAccount) {
+        this.stats.rejectedOwner += 1;
+        this.options.logger?.warn('account_route_quota_reached', { role: frame.role });
+        return;
+      }
       if (known && known.owner !== principal) {
         // 路由 token 本身是秘密，走到这里说明有人拿着别人的 token 换身份来登记：拒，不动原路由。
         this.stats.rejectedOwner += 1;

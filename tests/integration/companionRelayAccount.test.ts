@@ -204,6 +204,26 @@ describe('companion relay account binding (slice 1)', () => {
     await roundTrip(legacyRoute, SECRET);
   });
 
+  it('caps how many routes one account may own, so a signed-up stranger cannot fill the relay', async () => {
+    await vi.waitFor(() => expect(relay.currentStats.routes).toBe(2));
+    const before = relay.currentStats.rejectedOwner;
+    const squatter = new WebSocket(url, { headers: { authorization: `Bearer ${accessToken('stranger')}` } });
+    sockets.push(squatter);
+    await new Promise<void>(resolve => squatter.once('open', () => resolve()));
+    for (let i = 0; i < L.relayMaxRoutesPerAccount + 5; i += 1) {
+      squatter.send(JSON.stringify({
+        v: 1, kind: 'register', role: 'host',
+        envelope: { routeToken: `squat-route-token-${String(i).padStart(4, '0')}`, deviceRef: 'probe', seq: i, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+        ciphertext: '',
+      }));
+    }
+    await vi.waitFor(() => expect(relay.currentStats.rejectedOwner).toBe(before + 5));
+    expect(relay.currentStats.routes).toBe(2 + L.relayMaxRoutesPerAccount);
+    // 其他账号与共享凭据不受这个账号限额影响
+    await roundTrip(token('acct:user-1'), accessToken('user-1'));
+    await roundTrip(token('local'), SECRET);
+  });
+
   it('follows sign-in state: switching user re-registers under the new namespace, signing out drops the channel', async () => {
     await vi.waitFor(() => expect(relay.currentStats.accountConnections).toBe(1));
     auth.switchTo('user-2');

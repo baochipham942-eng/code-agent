@@ -132,6 +132,8 @@ export const COMPANION_LIMITS = {
   relayMaxWireFrameBytes: MAX_FRAME_BYTES * MAX_REQUEST_RECORDS + RELAY_WIRE_HEADROOM_BYTES,
   /** relay 服务端：并发 route（token）上限，超出的新注册直接丢弃。 */
   relayMaxRoutes: 256,
+  /** 单个 Neo 账号在 relay 上最多占的路由数（每台已配对手机 1 条，多台电脑累加）；共享凭据不受此限。 */
+  relayMaxRoutesPerAccount: 32,
   /** relay 服务端：过期 route / 空闲连接清扫周期。 */
   relaySweepMs: 15_000,
 } as const;

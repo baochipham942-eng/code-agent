@@ -229,7 +229,7 @@ export async function runVoiceCapabilityMigrationV1({
     if (explicitlyRemoved(inputSnapshot.record?.source, inputSnapshot.record?.state)) {
       marker = {
         ...marker,
-        schemaVersion: VOICE_CAPABILITY_MIGRATION_SCHEMA,
+        schemaVersion,
         voiceInput: { status: 'completed', evidence: EMPTY_INPUT_EVIDENCE, detail: 'explicit-removal-preserved' },
         updatedAt: Date.now(),
       };
@@ -247,7 +247,7 @@ export async function runVoiceCapabilityMigrationV1({
         }
         marker = {
           ...marker,
-          schemaVersion: VOICE_CAPABILITY_MIGRATION_SCHEMA,
+          schemaVersion,
           voiceInput: { status: 'completed', evidence, detail: hasUsage ? 'migration:legacy-usage' : 'no-legacy-usage' },
           updatedAt: Date.now(),
         };
@@ -258,7 +258,7 @@ export async function runVoiceCapabilityMigrationV1({
         );
         marker = {
           ...marker,
-          schemaVersion: VOICE_CAPABILITY_MIGRATION_SCHEMA,
+          schemaVersion,
           voiceInput: { status: 'failed', evidence, detail: error instanceof Error ? error.message : String(error) },
           updatedAt: Date.now(),
         };
@@ -276,7 +276,7 @@ export async function runVoiceCapabilityMigrationV1({
     if (explicitlyRemoved(liveSnapshot.record?.source, liveSnapshot.record?.state)) {
       marker = {
         ...marker,
-        schemaVersion: VOICE_CAPABILITY_MIGRATION_SCHEMA,
+        schemaVersion,
         voiceLive: { status: 'completed', evidence: EMPTY_LIVE_EVIDENCE, detail: 'explicit-removal-preserved' },
         updatedAt: Date.now(),
       };
@@ -294,7 +294,7 @@ export async function runVoiceCapabilityMigrationV1({
         }
         marker = {
           ...marker,
-          schemaVersion: VOICE_CAPABILITY_MIGRATION_SCHEMA,
+          schemaVersion,
           voiceLive: { status: 'completed', evidence, detail: hasUsage ? 'migration:legacy-usage' : 'no-legacy-usage' },
           updatedAt: Date.now(),
         };
@@ -305,7 +305,7 @@ export async function runVoiceCapabilityMigrationV1({
         );
         marker = {
           ...marker,
-          schemaVersion: VOICE_CAPABILITY_MIGRATION_SCHEMA,
+          schemaVersion,
           voiceLive: { status: 'failed', evidence, detail: error instanceof Error ? error.message : String(error) },
           updatedAt: Date.now(),
         };
@@ -314,6 +314,9 @@ export async function runVoiceCapabilityMigrationV1({
     await writeMarker(dataDir, marker);
   }
 
+  // schema 2 只在两半都落定后统一写：中途写的话，进程恰好死在两半之间，
+  // 下次启动按 schema 2 判「voice-live 已纠正过」，被 v1 误卸的 voice-live 就永远漏判了
+  // （ai-review Nit）。中途被杀的代价只是重判一次对应的半边，幂等。
   if (marker.schemaVersion !== VOICE_CAPABILITY_MIGRATION_SCHEMA) {
     marker = { ...marker, schemaVersion: VOICE_CAPABILITY_MIGRATION_SCHEMA, updatedAt: Date.now() };
     await writeMarker(dataDir, marker);

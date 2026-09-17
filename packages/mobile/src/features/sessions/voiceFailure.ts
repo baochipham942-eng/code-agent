@@ -13,6 +13,19 @@ const VOICE_SETUP_CODES = [
 
 const VOICE_TOO_LARGE_CODES = ['AUDIO_TOO_LARGE'] as const;
 
+/**
+ * 这些码说的是「这条命令没走完」——没送达 / 通道被关 / 传输中断 / 被打断 / 结局不明：
+ * 它们既不证明宿主能转写、也不证明不能，本地就绪态原地不动（ai-review Nit：
+ * 网络断一下不该把三态追成 ready）。
+ */
+const VOICE_UNSETTLED_TRANSPORT_CODES = [
+  'COMPANION_NETWORK_UNAVAILABLE',
+  'COMPANION_CHANNEL_CLOSED',
+  'COMPANION_TRANSFER_INTERRUPTED',
+  'COMPANION_INTERRUPTED',
+  'COMPANION_COMMAND_RECONCILING_TIMEOUT',
+] as const;
+
 /** 临时失败（网络 / 限流 / 超时 / 主机转写出错）：给重试。 */
 const VOICE_RETRYABLE_TRANSCRIBE_CODES = [
   'COMPANION_TRANSCRIPTION_FAILED',
@@ -54,7 +67,8 @@ export function isVoiceTooLargeCode(reason: string | undefined): boolean {
 /**
  * 中继握手不刷新 binding.transcription：用 voice.transcribe 的真实回执把本地三态追上。
  * UNAVAILABLE / NO_CHANNEL 写成对应未就绪；DISABLED 不动（仍是「没开」但不是那两态）；
- * 其余回执（含 accepted）说明宿主已经能接转写，记 ready。
+ * 网络/中断类不动（见 VOICE_UNSETTLED_TRANSPORT_CODES）；
+ * 其余回执（含 accepted，或错误出自转写管线本身——引擎/限流/参数/音频）说明宿主已经能接转写，记 ready。
  */
 export function transcriptionReadinessFromResult(
   accepted: boolean,
@@ -63,6 +77,7 @@ export function transcriptionReadinessFromResult(
   if (code === 'COMPANION_TRANSCRIPTION_UNAVAILABLE' || code === 'UNAVAILABLE') return 'not-installed';
   if (code === 'SPEECH_NO_CHANNEL' || code === 'NO_CHANNEL') return 'no-key';
   if (code === 'DISABLED') return null;
+  if (inSet(VOICE_UNSETTLED_TRANSPORT_CODES, code)) return null;
   if (accepted || code) return 'ready';
   return null;
 }

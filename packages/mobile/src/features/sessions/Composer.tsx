@@ -35,7 +35,7 @@ export function Composer({
   text, draft, editDraft, offline, sendDisabled, send, running, modelLabel, openModel, openSettings,
   attach, attachDisabled, attachments, retryAttachment, removeAttachment,
   recorder, transcribe, discardPendingTranscript, commitSpoken, dictation, voiceDisabled, voicePending, voiceResult, voiceReady, onVoiceState, status = [],
-  transcription, openVoiceSetup, skipTranscriptionPreflight, onSkipTranscriptionPreflight,
+  transcription, dictationTranscription, openVoiceSetup, skipTranscriptionPreflight, onSkipTranscriptionPreflight,
 }: {
   text: ReturnType<typeof messages>;
   draft: string;
@@ -75,6 +75,8 @@ export function Composer({
   /** 输入框上方唯一状态位里 MobileRoot 那几条候选；语音失败由这里补进去，按 rank 只露最急的一条。 */
   status?: StatusItem[];
   transcription?: CompanionTranscriptionReadiness;
+  /** 实时听写（百炼密钥）的就绪三态；旧宿主不报——预检按未知处理，不因缺它拦实时听写。 */
+  dictationTranscription?: CompanionTranscriptionReadiness;
   openVoiceSetup?(): void;
   /** 「开好了，再试一次」之后下一次点麦克风跳过本地三态预判，交给宿主判定。 */
   skipTranscriptionPreflight?: boolean;
@@ -99,7 +101,14 @@ export function Composer({
         return null;
       }
       if (transcription === 'not-installed') return { stage: 'transcribe', reason: 'COMPANION_TRANSCRIPTION_UNAVAILABLE' };
-      if (transcription === 'no-key') return { stage: 'transcribe', reason: 'SPEECH_NO_CHANNEL' };
+      if (transcription === 'no-key') {
+        // 分段转写没密钥不等于不能语音输入：将走实时听写（百炼密钥，手机有 PCM 录音口且宿主广告了
+        // dictation）就放行——两条路各用各的密钥，只看 Groq 会把只配百炼的电脑拦死（ai-review Important）。
+        // 旧宿主不报 dictationTranscription：按未知处理，维持「实时听写本就能用」的旧行为。
+        const dictationUsable = dictation?.available === true && !!recorder?.startPcm
+          && dictationTranscription !== 'no-key' && dictationTranscription !== 'not-installed';
+        if (!dictationUsable) return { stage: 'transcribe', reason: 'SPEECH_NO_CHANNEL' };
+      }
       return null;
     } });
   useEffect(() => {

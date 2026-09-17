@@ -10,7 +10,7 @@ import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseCh
 import { companionCommandSchema, type CompanionEvent } from '../../../shared/contract/companion';
 import { getRegisteredCompanionDictation } from '../capabilities/hostCapabilityPorts';
 import type { CompanionGateway } from './CompanionGateway';
-import { companionTranscriptionReadiness } from './transcriptionReadiness';
+import { companionDictationReadiness, companionTranscriptionReadiness } from './transcriptionReadiness';
 import type { CompanionPushOutbox } from './CompanionPushOutbox';
 
 interface Invitation { id: string; psk: string; expiresAt: number; scope: string[] }
@@ -333,7 +333,7 @@ export class LanCompanionServer {
       ...base,
       transcription: companionTranscriptionReadiness(),
       sessionlessTranscribe: true as const,
-      ...(getRegisteredCompanionDictation() ? { dictation: true as const } : {}),
+      ...(getRegisteredCompanionDictation() ? { dictation: true as const, dictationTranscription: companionDictationReadiness() } : {}),
     };
   }
 

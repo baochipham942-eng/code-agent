@@ -9,6 +9,7 @@ import { messages } from '../../../packages/mobile/src/i18n';
 import { COMPANION_LIMITS } from '../../../src/shared/constants/companion';
 import { GUMMY_REALTIME_SAMPLE_RATE } from '../../../src/shared/constants/voice';
 import type { CompanionDictationEvent, CompanionDictationOpenResult } from '../../../src/shared/contract/companionDictation';
+import type { CompanionTranscriptionReadiness } from '../../../src/shared/companion/lanProtocol';
 import type { DictationPort } from '../../../packages/mobile/src/features/sessions/VoiceCapture';
 
 const text = messages('zh');
@@ -28,6 +29,8 @@ function RealtimeHarness({
   stopPcm,
   startPcm,
   start,
+  transcription,
+  dictationTranscription,
 }: {
   dictation: {
     open: () => Promise<CompanionDictationOpenResult>;
@@ -42,6 +45,9 @@ function RealtimeHarness({
   stopPcm?: () => Promise<void>;
   startPcm?: () => Promise<{ sampleRate: number }>;
   start?: () => Promise<void>;
+  /** 分段转写（Groq）三态：'no-key' 时预检要看实时听写这条路。 */
+  transcription?: CompanionTranscriptionReadiness;
+  dictationTranscription?: CompanionTranscriptionReadiness;
 }) {
   const [draft, setDraft] = React.useState('');
   const listeners = React.useRef<Array<(frame: { pcm: string; durationMs: number }) => void>>([]);
@@ -73,6 +79,8 @@ function RealtimeHarness({
       setDraft(previous => previous ? `${previous}${spoken}` : spoken);
     }}
     dictation={port}
+    transcription={transcription}
+    dictationTranscription={dictationTranscription}
     voiceReady voiceDisabled={false} voicePending={false} voiceResult={null} onVoiceState={() => {}} />;
 }
 
@@ -96,6 +104,55 @@ describe('realtime dictation', () => {
     await advance(5_000);
     expect(open).not.toHaveBeenCalled();
     expect(transcribe).toHaveBeenCalled();
+  });
+
+  // N-MOBILE-VOICE-TRANSCRIBE-FIX-R6 ai-review Important：两条转写路各用各的密钥——
+  // 只配百炼（分段 no-key、实时听写 ready）的电脑，手机实时听写不能被 Groq 的三态拦死。
+  it('只配百炼（transcription=no-key、dictationTranscription=ready）：点麦克风不拦，直接开实时听写', async () => {
+    vi.useFakeTimers();
+    const open = vi.fn(async () => ({ ok: true as const, streamId: 'stream-1', sampleRate: COMPANION_LIMITS.voicePcmSampleRate }));
+    const transcribe = vi.fn(async () => 'cmd-1');
+    render(<RealtimeHarness
+      transcription="no-key" dictationTranscription="ready"
+      dictation={{ open, audio: async () => ({ ok: true, events: [] }), stop: async () => ({ ok: true, events: [] }), close: async () => {} }}
+      transcribe={transcribe}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(200);
+    expect(open).toHaveBeenCalledOnce();
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: text.stopRecording })).toBeTruthy();
+    // 不出「电脑上还没开语音转写」——那条指引会让只配百炼的用户去填错密钥
+    expect(document.querySelector('[data-testid="status-slot"]')).toBeNull();
+  });
+
+  it('旧宿主不报 dictationTranscription：分段 no-key 也不拦实时听写（旧行为不破）', async () => {
+    vi.useFakeTimers();
+    const open = vi.fn(async () => ({ ok: true as const, streamId: 'stream-1', sampleRate: COMPANION_LIMITS.voicePcmSampleRate }));
+    render(<RealtimeHarness
+      transcription="no-key"
+      dictation={{ open, audio: async () => ({ ok: true, events: [] }), stop: async () => ({ ok: true, events: [] }), close: async () => {} }}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(200);
+    expect(open).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: text.stopRecording })).toBeTruthy();
+    expect(document.querySelector('[data-testid="status-slot"]')).toBeNull();
+  });
+
+  it('宿主广告了听写但没配百炼（dictationTranscription=no-key）且分段也没密钥 → 仍拦', async () => {
+    vi.useFakeTimers();
+    const open = vi.fn(async () => ({ ok: true as const, streamId: 'stream-1', sampleRate: COMPANION_LIMITS.voicePcmSampleRate }));
+    const start = vi.fn(async () => {});
+    render(<RealtimeHarness
+      transcription="no-key" dictationTranscription="no-key" start={start}
+      dictation={{ open, audio: async () => ({ ok: true, events: [] }), stop: async () => ({ ok: true, events: [] }), close: async () => {} }}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(50);
+    expect(document.querySelector('[data-testid="status-slot"][data-rank="3"]')?.textContent).toContain('电脑上还没开语音转写');
+    expect(open).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
   });
 
   it('shows partials as they arrive and replaces them instead of appending', async () => {

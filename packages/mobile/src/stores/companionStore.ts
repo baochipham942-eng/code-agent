@@ -662,7 +662,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if (!client || get().status !== 'connected' || get().transport === 'relay' || get().binding?.dictation !== true) {
           return { ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE' };
         }
-        return await client.request({ action: 'dictation', op: 'open' }) as CompanionDictationOpenResult;
+        const result = await client.request({ action: 'dictation', op: 'open' }) as CompanionDictationOpenResult;
+        // 实时听写真开起来了：宿主端语音这条路是通的。中继/长连不刷新 binding 的就绪三态，
+        // 就地把这格追上——否则「开好了，再试一次」只放行一次，下一次点麦克风又被旧的 no-key 拦住。
+        const binding = saved?.binding;
+        if (result.ok && binding?.dictation === true && binding.dictationTranscription !== 'ready') {
+          saved = { ...saved!, binding: { ...binding, dictationTranscription: 'ready' } };
+          set({ binding: saved.binding });
+        }
+        return result;
       },
       dictationAudio: async (streamId, pcm) => {
         if (!client || get().status !== 'connected' || get().transport === 'relay') {

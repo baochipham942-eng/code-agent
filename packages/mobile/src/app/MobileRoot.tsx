@@ -622,6 +622,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           voicePending={companion.pending} voiceResult={companion.voiceResult}
           voiceReady={companion.status === 'connected' && (!!companion.sessionId || companion.binding?.sessionlessTranscribe === true)}
           transcription={companion.binding?.transcription}
+          dictationTranscription={companion.binding?.dictationTranscription}
           skipTranscriptionPreflight={companion.skipTranscriptionPreflight}
           onSkipTranscriptionPreflight={companion.consumeTranscriptionPreflight}
           openVoiceSetup={() => state.openSheet('voiceSetup')}

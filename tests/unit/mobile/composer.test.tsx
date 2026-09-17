@@ -23,6 +23,7 @@ function mount(overrides: {
   watchMicrophoneRelease?: (onReleased: () => void) => () => void;
   openSettings?: () => void;
   transcription?: CompanionTranscriptionReadiness;
+  dictationTranscription?: CompanionTranscriptionReadiness;
   openVoiceSetup?: () => void;
   skipTranscriptionPreflight?: boolean;
   onSkipTranscriptionPreflight?: () => void;
@@ -52,7 +53,7 @@ function mount(overrides: {
       close: async () => {},
     } : undefined}
     voiceDisabled={false} voicePending={false} voiceResult={null} voiceReady onVoiceState={onVoiceState}
-    transcription={overrides.transcription} openVoiceSetup={overrides.openVoiceSetup}
+    transcription={overrides.transcription} dictationTranscription={overrides.dictationTranscription} openVoiceSetup={overrides.openVoiceSetup}
     skipTranscriptionPreflight={overrides.skipTranscriptionPreflight}
     onSkipTranscriptionPreflight={overrides.onSkipTranscriptionPreflight} />);
   return { transcribe, send, openModel, onVoiceState, discardPendingTranscript, unmount: view.unmount };
@@ -254,6 +255,34 @@ describe('VoiceCapture failure reporting', () => {
     expect(screen.queryByRole('button', { name: text.retry })).toBeNull();
   });
 
+  // N-MOBILE-VOICE-TRANSCRIBE-FIX-R6：两条路都没密钥（分段 no-key 且宿主没配百炼）才拦——
+  // 预检按手机将走的路径判，不能让「广告了听写口」绕过没密钥的事实。
+  it('宿主广告了听写但百炼也没配（dictationTranscription=no-key）且分段无密钥：仍拦、仍给怎么开', async () => {
+    const start = vi.fn(async () => {});
+    const startPcm = vi.fn(async () => ({ sampleRate: 16000 }));
+    const openVoiceSetup = vi.fn();
+    mount({ start, startPcm, transcription: 'no-key', dictationTranscription: 'no-key', openVoiceSetup });
+    clickMic();
+    await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('SPEECH_NO_CHANNEL'));
+    expect(voiceNotice().textContent).toContain('电脑上还没开语音转写');
+    expect(startPcm).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '怎么开' }));
+    expect(openVoiceSetup).toHaveBeenCalled();
+  });
+
+  it('只配 Groq（听写口不在场）：分段转写照常开录、照常逐段上送', async () => {
+    vi.useFakeTimers();
+    try {
+      const { transcribe } = mount({ transcription: 'ready', transcribe: async () => 'cmd-1' });
+      clickMic();
+      await advance(5_000);
+      expect(transcribe).toHaveBeenCalled();
+      expect(document.querySelector('.voice-composer')).toBeTruthy();
+      expect(screen.getByRole('button', { name: text.stopRecording })).toBeTruthy();
+    } finally { vi.useRealTimers(); }
+  });
+
   it('跳过预判一次：stale not-installed 也开录，且只跳过这一次', async () => {
     const start = vi.fn(async () => {});
     let skip = true;
@@ -451,6 +480,60 @@ describe('分片伪流式语音输入', () => {
     expect(screen.getByTestId('draft')).toBeTruthy();
     expect(document.querySelector('.composer')?.className).not.toContain('voice-composer');
     expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
+  });
+});
+
+// ——— N-MOBILE-VOICE-TRANSCRIBE-FIX-R6 ai-review Nit：预检拦下时，上一次录音的在途结果要点名丢弃 ———
+// 第一段已进待确认槽（ack 还在飞），第二段起录失败把面板收进错误态；此时预检条件恶化，
+// 再点麦克风被拦——拦下的同时必须 discardPending，否则那段晚到的 ack 照样写进草稿。
+function BlockedPreflightHarness({ transcription, sent, ackDelay = 30_000 }: {
+  transcription?: CompanionTranscriptionReadiness;
+  sent: (audioData: string) => void;
+  ackDelay?: number;
+}) {
+  const [pending, setPending] = React.useState(false);
+  const [result, setResult] = React.useState<VoiceResult | null>(null);
+  const [draft, setDraft] = React.useState('');
+  const starts = React.useRef(0);
+  const discarded = React.useRef<string | null>(null);
+  const recorder = React.useRef({
+    start: async () => { starts.current += 1; if (starts.current === 2) throw new Error('FAILED_TO_RECORD'); },
+    stop: async () => ({ audioData: 'chunk1', mimeType: 'audio/aac', durationMs: 4000 }),
+  }).current;
+  const transcribe = async (audio: { audioData: string }, _continuation: boolean, take: string) => {
+    sent(audio.audioData);
+    setPending(true);
+    setTimeout(() => {
+      if (discarded.current !== take) setDraft(previous => previous + '段1');
+      setResult({ commandId: 'cmd-1', outcome: 'done' }); setPending(false);
+    }, ackDelay);
+    return 'cmd-1';
+  };
+  return <Composer text={text} draft={draft} editDraft={setDraft} offline={false} sendDisabled={!draft} send={() => {}}
+    modelLabel="DeepSeek V4.1 Flash" openModel={() => {}} attach={() => {}} attachDisabled={false}
+    recorder={recorder} transcribe={transcribe} discardPendingTranscript={take => { discarded.current = take; }}
+    voiceReady voiceDisabled={false} voicePending={pending} voiceResult={result} onVoiceState={() => {}}
+    transcription={transcription} />;
+}
+
+describe('预检拦下时丢弃上一次录音的在途结果（ai-review PR#1919 Nit）', () => {
+  afterEach(() => { vi.useRealTimers(); cleanup(); });
+
+  it('拦下的那次点按先 discardPending，晚到的结果不进草稿', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    const view = render(<BlockedPreflightHarness sent={sent} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(9_000);   // 第一段在飞（ack 30s），第二段起录失败 → 面板收进错误态，麦克风键回到台面
+    expect(sent).toHaveBeenCalledTimes(1);
+    // 预检条件恶化（电脑端把密钥清了）：再点麦克风被拦
+    view.rerender(<BlockedPreflightHarness sent={sent} transcription="no-key" />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(1_000);
+    expect(document.querySelector('[data-testid="status-slot"][data-rank="3"]')?.textContent).toContain('电脑上还没开语音转写');
+    // 在途那段的结果这时才回来：已被点名丢弃，一个字都不许进草稿
+    await advance(31_000);
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toBe('');
   });
 });
 

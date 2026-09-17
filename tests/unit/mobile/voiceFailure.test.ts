@@ -81,6 +81,18 @@ describe('转写失败文案与动作（逐错误码）', () => {
     expect(transcriptionReadinessFromResult(false, 'DISABLED')).toBeNull();
   });
 
+  // ai-review PR#1919 Nit：网络断开 / 中断类错误不证明宿主能转写，就绪态原地不动（null）。
+  it('网络/中断类回执不改本地就绪态', () => {
+    expect(transcriptionReadinessFromResult(false, 'COMPANION_NETWORK_UNAVAILABLE')).toBeNull();
+    expect(transcriptionReadinessFromResult(false, 'COMPANION_CHANNEL_CLOSED')).toBeNull();
+    expect(transcriptionReadinessFromResult(false, 'COMPANION_TRANSFER_INTERRUPTED')).toBeNull();
+    expect(transcriptionReadinessFromResult(false, 'COMPANION_INTERRUPTED')).toBeNull();
+    expect(transcriptionReadinessFromResult(false, 'COMPANION_COMMAND_RECONCILING_TIMEOUT')).toBeNull();
+    // 转写管线自己的错误（引擎/限流/音频）仍算「宿主能接转写」——那是跑过之后的失败，不是没配上
+    expect(transcriptionReadinessFromResult(false, 'GROQ_RATE_LIMITED')).toBe('ready');
+    expect(transcriptionReadinessFromResult(false, 'AUDIO_TOO_SHORT')).toBe('ready');
+  });
+
   it('无输入与被占用分开', () => {
     expect(classifyVoiceFailure('MICROPHONE_UNAVAILABLE', 'record')).toBe('mic-unavailable');
     expect(voiceFailureMessage(text, 'mic-unavailable')).toBe('麦克风暂时用不了');

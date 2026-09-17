@@ -288,7 +288,11 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     if (!recorder) return;
     const blocked = preflight?.();
     if (blocked) {
-      take.current?.wake?.();
+      // 拦下的同时把上一次录音点名丢弃（与取消同一条纪律）：它已进待确认槽的那段
+      // 晚到时不许再写进草稿——只摘身份挡不住 onTranscript 那一侧（ai-review Nit）。
+      const previous = take.current;
+      if (previous) discardPending(previous.id);
+      previous?.wake?.();
       if (running.current) await running.current;
       take.current = null;
       setFailure(blocked);

@@ -18,10 +18,16 @@ export interface LanBinding {
   /** Host advertises the dictation exchange action. Absent on older hosts — phone must not send it. */
   dictation?: true;
   /**
-   * 转写就绪三态（N-MOBILE-VOICE-TRANSCRIBE-FIX）。旧宿主不声明：手机按「未知」处理，
-   * 已有会话仍可开录（旧行为）；欢迎页麦克风另看 sessionlessTranscribe。
+   * 分段转写（voice.transcribe，Groq 密钥）的就绪三态（N-MOBILE-VOICE-TRANSCRIBE-FIX）。
+   * 旧宿主不声明：手机按「未知」处理，已有会话仍可开录（旧行为）；欢迎页麦克风另看 sessionlessTranscribe。
    */
   transcription?: CompanionTranscriptionReadiness;
+  /**
+   * 实时听写（百炼密钥）的就绪三态。只在宿主广告了 dictation 时随之下发——两条转写路各用各的密钥，
+   * 手机预检要按它将走的那条判，不能拿 Groq 的三态拦实时听写（N-MOBILE-VOICE-TRANSCRIBE-FIX-R6）。
+   * 旧宿主不声明：手机按「未知」处理，维持「实时听写本就能用」的旧行为。
+   */
+  dictationTranscription?: CompanionTranscriptionReadiness;
   /** Host accepts voice.transcribe without a session. Absent on older hosts — welcome page hides the mic. */
   sessionlessTranscribe?: true;
 }

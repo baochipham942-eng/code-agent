@@ -57,6 +57,8 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   const plans = new Map<string, Record<string, unknown>>();
   const activeStreams = new Map<string, string>();
   const committedStreams = new Set<string>();
+  // 流式行第一次出现时的事件时间：冷启动重放去重要用它判断「这半段是不是在流开始之后才落库的」。
+  const streamStarts = new Map<string, number>();
   const aliases = new Map<string, string>();
   const rows = new Map<string, { role: string; content: string; truncated?: boolean; queued?: boolean }>();
   // 终态按执行（runId）归属，挂在那次执行当时的最后一行下面：多次任务各行其是，
@@ -119,6 +121,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     } else if (event.kind === 'message_snapshot' || event.kind === 'message_delta') {
       const key = aliases.get(id) ?? id;
       if (committedStreams.has(key)) continue;
+      if (!streamStarts.has(key)) streamStarts.set(key, event.createdAt);
       if (event.kind === 'message_snapshot' && typeof p.content === 'string') {
         activeStreams.set(run, key); rows.set(key, { role: 'assistant', content: p.content }); lastRow = key;
       } else if (event.kind === 'message_delta' && typeof p.text === 'string') {
@@ -136,6 +139,27 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
       // 按到达顺序取第一条的话，顺序一反卡片就收不起来。哪条带就补哪条。
       else if (!existing.provider && 'provider' in failedModel) Object.assign(existing, failedModel);
     }
+  }
+  /**
+   * 冷启动重放去重（2026-09-17 R4 模拟器验收 D2）：插话或点停止打断的流，宿主会把已吐出的半段落库
+   * （conversationRuntime.preserveStreamedPartial，正文尾巴带 [已被新消息打断]/[cancelled] 类标记，
+   * 出手机边界前剥掉），但**不发终结 message 事件**——重放时 delta 堆出来的流式行没人收编，就成了一条
+   * 追在会话末尾的重复段（实时 6 行、冷启动 8 行，DB 只有 6 条）。落库半段拿的是**新 id**，与流的
+   * turnId 对不上号，只能按内容对齐：流式行内容 === 历史助手消息内容（标记剥掉后就是半段原文），
+   * 或历史侧被 64k 截成了前缀；并要求这条历史消息不早于流的第一个事件，防把仍在生成的流错配到
+   * 更早的同文消息上（同一个模型每轮开头常是同一句话）。删行时把挂在它下面的执行结果与卡片
+   * 迁回那条历史行——与实时路径 message 事件收编流式行（上面的 aliases/committedStreams）同一套搬家。
+   */
+  for (const [key, startedAt] of streamStarts) {
+    if (committedStreams.has(key)) continue;
+    const streamed = rows.get(key);
+    if (!streamed) continue;
+    const persisted = (history?.messages ?? []).find(message => message.role === 'assistant' && message.content.trim()
+      && message.timestamp >= startedAt && (message.content === streamed.content || streamed.content.startsWith(message.content)));
+    if (!persisted) continue;
+    rows.delete(key);
+    for (const outcome of outcomes.values()) if (outcome.anchor === key) outcome.anchor = persisted.id;
+    for (const [card, anchor] of cardAnchors) if (anchor === key) cardAnchors.set(card, persisted.id);
   }
   /**
    * 失败态要带出路（爸 2026-09-16）：模型密钥用不了是用户当场能绕过去的，在**最近那次**失败下面给

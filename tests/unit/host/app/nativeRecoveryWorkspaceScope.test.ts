@@ -4,7 +4,6 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createApplicationNativeRecoveryPorts } from '../../../../src/host/app/nativeRecoveryHost';
 import {
-  LEGACY_BACKGROUND_AUTHORITY_PROJECT_ID,
   resolveBackgroundWorkspaceAuthority,
 } from '../../../../src/host/runtime/workspaceAuthority';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
@@ -23,6 +22,9 @@ function legacyScope(root: string): WorkspaceScope {
   if (!scope) throw new Error(`expected a legacy authority scope for ${root}`);
   return scope;
 }
+
+// 合成 scope id 不导出（生产无外部消费方）；测试按字面钉住它。
+const LEGACY_BACKGROUND_AUTHORITY_PROJECT_ID = 'legacy-background-authority';
 
 describe('application native recovery workspace scope version', () => {
   it('recomputes a legacy synthetic scope from its primaryRoot instead of the Project library', async () => {

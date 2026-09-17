@@ -108,7 +108,10 @@ export function QuestionCard({ card, text, disabled, respond, skip }: {
           {(question.options ?? []).map(option => {
             if (typeof option.label !== 'string') return null;
             const isOn = selected(header, option.label, question.multiSelect);
-            const fade = !pending && (expired || cancelled || ended || declined || Boolean(settledAnswers && !isOn) || (!settledAnswers && card.status === 'approved' && !isOn));
+            // 定稿卡（设计稿 questionAnswered）：选中项保持高亮，其余变淡；只有超时作废是整卡变淡——
+            // 它没记过任何答案，本来也没有可高亮的项。选中项的 opacity 由 .option.selected 兜住，
+            // 不能再吃全局 button:disabled 的 .45（R4 验收 O1：已答卡的选中项整块发灰，和未选项分不清）。
+            const fade = !pending && (expired || !isOn);
             return <button
               key={option.label}
               type="button"

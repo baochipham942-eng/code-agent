@@ -190,7 +190,8 @@ span.status-text { display: flex; align-items: center; }
 .approval-actions button:last-child { background: var(--text); color: var(--bg); }
 .question-block { margin: 8px 0; }
 .question-block .option { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; width: 100%; text-align: left; border-radius: 16px; background: var(--group); padding: 10px 14px; margin: 6px 0; }
-.question-block .option.selected { background: var(--text); color: var(--bg); }
+/* opacity:1 盖过全局 button:disabled 的 .45（R4 验收 O1）：已答卡的选中项要高亮，不再跟未选项一起发灰。 */
+.question-block .option.selected { background: var(--text); color: var(--bg); opacity: 1; }
 .question-block .option.faded { opacity: .4; }
 .question-block .option .option-check { margin-left: auto; font-size: 14px; }
 .question-block .option small { display: block; width: 100%; color: var(--muted); font-size: 12px; }

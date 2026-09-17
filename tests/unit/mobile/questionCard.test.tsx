@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QuestionCard } from '../../../packages/mobile/src/features/sessions/QuestionCard';
@@ -55,6 +56,35 @@ describe('QuestionCard', () => {
       card={{ preview, status: 'approved', outcome: 'answered', answer: { answers: { 读者: '经销商伙伴' } } }}
       text={text} disabled={false} respond={async () => {}} skip={async () => {}} />);
     expect(screen.getByTestId('question-your-answer').textContent).toBe(`${text.questionYourAnswer}经销商伙伴`);
+  });
+
+  it('已答卡的选中项高亮不发灰（R4 验收 O1）：反色填充 + ✓，未选项才 .4', () => {
+    render(<QuestionCard
+      card={{ preview, status: 'approved', outcome: 'answered', answer: { answers: { 读者: '品牌与市场团队' } } }}
+      text={text} disabled={false} respond={async () => {}} skip={async () => {}} />);
+    const chosen = screen.getByText('品牌与市场团队').closest('button')!;
+    expect(chosen.dataset.selected).toBe('true');
+    expect(chosen.dataset.faded).toBeUndefined();
+    expect(screen.getByTestId('question-choice-check').textContent).toBe('✓');
+    // 视觉档位钉在样式表上：定稿卡的选项按钮是 disabled，选中项靠 .option.selected 的 opacity:1
+    // 盖过全局 button:disabled 的 .45——没有这条，选中项整块发灰、与未选项(.4)分不清。
+    const css = readFileSync('packages/mobile/src/styles.css', 'utf8');
+    const rule = css.match(/\.question-block \.option\.selected \{[^}]*\}/)?.[0] ?? '';
+    expect(rule).toContain('opacity: 1');
+    expect(screen.getByText('内部产品团队').closest('button')?.dataset.faded).toBe('true');
+  });
+
+  it('作废卡记过答案的选中项同样保持高亮，超时作废整卡变淡不变', () => {
+    const { rerender } = render(<QuestionCard
+      card={{ preview, status: 'closed', outcome: 'cancelled', answer: { answers: { 读者: '品牌与市场团队' } } }}
+      text={text} disabled={false} respond={async () => {}} skip={async () => {}} />);
+    const chosen = screen.getByText('品牌与市场团队').closest('button')!;
+    expect(chosen.dataset.selected).toBe('true');
+    expect(chosen.dataset.faded).toBeUndefined();
+    rerender(<QuestionCard card={{ preview, status: 'closed', outcome: 'expired' }} text={text} disabled={false} respond={async () => {}} skip={async () => {}} />);
+    expect(screen.getByText('品牌与市场团队').closest('button')?.dataset.faded).toBe('true');
+    expect(screen.getByText('内部产品团队').closest('button')?.dataset.faded).toBe('true');
+    expect(screen.queryByTestId('question-choice-check')).toBeNull();
   });
 
   it('expired and cancelled cards fade every option and say the real reason', () => {

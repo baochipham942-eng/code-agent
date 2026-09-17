@@ -1097,7 +1097,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const agentLoop = createAgentLoop(config, (event) => {
         const emitted = runController.emitAgentEvent(event);
         runEventCollector.observe(event, emitted);
-        if (event.type !== 'agent_complete' && event.type !== 'agent_cancelled') {
+        // 终态（完成/取消/失败）只由本路由收尾处发一次：引擎失败时 runFinalizer 先发 error 再抛出，
+        // 这里再转一遍手机就收到两条 error ⇒ 两条「任务失败」推送（FB-193，爸 build 51 真机）。
+        if (event.type !== 'agent_complete' && event.type !== 'agent_cancelled' && event.type !== 'error') {
           deps.publishCompanionEvent?.(sessionId, event.type, { event: event.data, runId: runContext.runId });
         }
       }, messages, sessionId, undefined, runToolExecutor, runContext, runHandle.traceContext);
@@ -1294,7 +1296,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         disconnected: runController.disconnected,
         message,
       });
-      const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error) ?? runController.lastTerminalFailure;
+      // 引擎发过终态 error 时它的 failure 优先：那条带着这一轮真正跑的模型（provider/model），
+      // 抛出的原始错误上通常没有——这里是手机唯一收到的那条 error，丢了「换走失败模型收起卡片」就失效。
+      const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error);
       deps.publishCompanionEvent?.(sessionId, 'error', { event: { code: 'RUN_FAILED', ...(failure ? { failure } : {}) }, runId: runContext?.runId });
       if (!runController.disconnected) {
         runController.emitAgentEvent({

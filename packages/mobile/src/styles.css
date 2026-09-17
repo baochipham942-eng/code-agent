@@ -52,7 +52,6 @@ textarea::placeholder { color: var(--muted); }
 .send,.primary { background: var(--text); color: var(--bg); }
 /* 发送禁用是「还不能发」，不是「坏了」：设计稿用浅底浅箭头，不用整体半透明。 */
 .send:disabled { opacity: 1; color: var(--muted); background: var(--group); }
-.voice-notice { display: flex; align-items: center; gap: 8px; }
 .caption,.notice,.group-title { color: var(--muted); font-size: 14px; }.caption { margin: 4px 4px 8px; text-align: center; }
 /* banner 文案折行时 pill 与整段文字垂直居中（baseline 会让 pill 贴第一行基线、第二行悬空——2026-09-15 爸两次真机反馈的对齐问题）。 */
 .notice { margin: 4px 8px 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -101,7 +100,7 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 
 .approval-card{padding:16px;border:1px solid var(--border,#ddd);border-radius:16px;margin:12px 0}.approval-card pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:13px;max-height:280px;overflow:auto}.approval-actions{display:flex;justify-content:flex-end;gap:20px}
 
-.connection-next{max-width:280px;color:var(--muted);font-size:16px;line-height:1.6;margin:0}.connection-success{padding:18px;border:1px solid #27a57b;border-radius:16px;background:var(--surface)}.connection-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-right:10px;border-radius:50%;background:#168365;color:white}.connection-success p{font-size:15px;line-height:1.6;margin:12px 0 0}
+.connection-success{padding:18px;border:1px solid #27a57b;border-radius:16px;background:var(--surface)}.connection-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-right:10px;border-radius:50%;background:#168365;color:white}.connection-success p{font-size:15px;line-height:1.6;margin:12px 0 0}
 .pair-confirm h3{margin:8px 0 8px;font-size:21px;letter-spacing:-.4px}
 .pair-confirm .caption{color:var(--muted);font-size:13px;line-height:1.6;margin:0 0 12px}
 .pair-device{text-align:center;border:1px solid var(--line);border-radius:16px;padding:20px 16px;margin:8px 0 16px;background:var(--surface)}
@@ -114,22 +113,27 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 
 /* R5: quiet connection chrome, readable messages and reachable approval actions. */
 .topbar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; }
-.task-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 32px; font-size: 12px; color: var(--muted); }
-.task-status > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.task-status button { min-height: 36px; padding: 4px 6px; font-size: 12px; flex-shrink: 0; }
-.connection-line { display: flex; align-items: baseline; gap: 8px; width: 100%; min-width: 0; }
-.connection-pill { display: inline-flex; align-items: baseline; gap: 5px; flex: 1; min-width: 0; min-height: 0; max-width: 100%; text-align: left; white-space: normal; }
 /* 反馈②（2026-09-14 build 34）：行尾「重试」是裸文字，不像按钮。改成小 pill——描边+底色、
    字号小一档、可点高度 ≥32px（对齐 design.html .banner button 的 min-height:32px），
    仍贴文案行尾不独占一行（反馈①的形状保持）。 */
-.inline-retry, .task-status button.inline-retry, .notice button.inline-retry {
+.inline-retry, .notice button.inline-retry {
   min-width: 0; min-height: 32px; height: auto; padding: 0 14px; font-size: 13px; line-height: 1;
   color: var(--accent); flex: none; white-space: nowrap; align-self: center;
   background: var(--group); border: 1px solid var(--line); border-radius: 16px;
 }
-/* flex: none：连接文案换行时圆点不许被横向挤成椭圆（爸 2026-09-16 真机） */
-.status-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
-[data-connected='true'] .status-dot { background: #168365; }
+/* 输入区唯一状态位（N-MOBILE-STATUS-NOISE，design.html .status-slot）：输入框正上方一行，间距 8px；
+   左内边距 6 + 圆点 7 + 间隔 8 = 21，加上 .composer-area 的 15 = 36，正好是输入框里文字的左沿（边框 1 + 内边距 10 + textarea 10），
+   圆点悬在文字左侧。动作是右侧胶囊，点按区 36px。 */
+.status-slot { display: flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 0 8px; padding: 0 0 0 6px; font-size: 14px; color: var(--text); }
+.status-slot .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #d97706; }
+.status-slot[data-neutral] .dot { background: var(--muted); }
+.status-slot .status-text { flex: 1; min-width: 0; min-height: 36px; padding: 0; text-align: left; font-size: 14px; overflow-wrap: anywhere; }
+span.status-text { display: flex; align-items: center; }
+.status-slot .status-action { flex: none; min-width: 0; min-height: 36px; padding: 0 12px; border-radius: 18px; background: var(--group); color: var(--accent); font-size: 14px; font-weight: 600; white-space: nowrap; }
+/* 新任务的项目选择器（design.html .project-pick）。 */
+.project-pick { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; min-height: 36px; padding: 6px 12px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); font-size: 14px; }
+.project-pick .app-icon { width: 15px; height: 15px; color: var(--muted); }
+.project-pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .message-region { position: relative; display: flex; flex: 1; min-height: 0; }
 /* 底部让出输入区那一层的高度。--composer-h 还没量到时用一个够大的兜底，宁可多留白也别被盖住。 */
 .lan-messages { overscroll-behavior: contain; padding: 8px 20px calc(20px + var(--composer-h, 132px) + var(--keyboard-h, 0px)); }
@@ -191,7 +195,7 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .question-block .option.selected small { color: inherit; opacity: .75; }
 .question-other { display: block; margin: 8px 0; font-size: 13px; color: var(--muted); }
 .question-other input, .question-other textarea { display: block; width: 100%; margin-top: 6px; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
-@media (max-height: 520px) { .composer-area, .composer-area[data-keyboard-inset] { padding-bottom: 4px; } .approval-tray .approval-card { max-height: 36dvh; padding: 8px; } .approval-summary > div { padding: 1px 0; } .task-status { min-height: 28px; } .task-status button { min-height: 28px; } .task-status button.inline-retry { min-height: 0; } }
+@media (max-height: 520px) { .composer-area, .composer-area[data-keyboard-inset] { padding-bottom: 4px; } .approval-tray .approval-card { max-height: 36dvh; padding: 8px; } .approval-summary > div { padding: 1px 0; } }
 
 select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: var(--surface); font: inherit; }
 .library-sheet .settings-group { margin: 10px 0; } .danger { color: #c43b38; } .drawer-history [aria-current='page'] { background: var(--group); }

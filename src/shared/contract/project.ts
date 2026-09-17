@@ -232,6 +232,11 @@ export interface ProjectArtifact {
 /** 保留项目 ID：无 workspace 的存量会话归入此项目 */
 export const UNSORTED_PROJECT_ID = 'proj_unsorted';
 export const UNSORTED_PROJECT_NAME = '未分类';
+/**
+ * 会话 metadata 键：项目归属是用户明确选的（手机端在「未分类」里建会话），运行时兜底补工作目录时不重算归桶。
+ * 不钉的话会话会被挪进 `<数据目录>-work` 的自动项目，跑出手机的项目授权（N-MOBILE-DEFAULT-PROJECT，09-17 模拟器实测）。
+ */
+export const SESSION_PROJECT_PINNED_METADATA_KEY = 'projectPinned';
 
 /** 新建项目入参 */
 export interface CreateProjectInput {

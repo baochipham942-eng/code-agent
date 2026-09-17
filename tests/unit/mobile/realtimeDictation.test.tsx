@@ -264,7 +264,7 @@ describe('麦克风被通话占着（N-MOBILE-VOICE-ERRCODE-LEAK）', () => {
       dictation={{ open: async () => ({ ok: false, code: 'UNUSED' }), audio: async () => ({ ok: true, events: [] }), stop: async () => ({ ok: true, events: [] }), close: async () => {} }} />);
     fireEvent.click(screen.getByRole('button', { name: text.voice }));
     const notice = await screen.findByText(new RegExp(text.microphoneBusy));
-    expect(notice.closest('.voice-notice')!.getAttribute('data-reason')).toBe('MICROPHONE_BUSY');
+    expect(notice.closest('[data-testid="status-slot"]')!.getAttribute('data-reason')).toBe('MICROPHONE_BUSY');
     expect(start).not.toHaveBeenCalled();
   });
 });

@@ -8,7 +8,7 @@ import { buildRuntimeModelOptions } from '../../../shared/modelRuntime';
 import { resolveSessionDefaultModelConfig } from '../core/sessionDefaults';
 import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
 import { projectGrant, type CompanionRead, type CompanionLibrary, type CompanionHistory } from '../../../shared/contract/companionLibrary';
-import { UNSORTED_PROJECT_ID } from '../../../shared/contract/project';
+import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '../../../shared/contract/project';
 import type { CompanionCommand } from '../../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
 import { stripInterruptionMarkers } from './projectCompanionEvent';
@@ -165,7 +165,11 @@ export class CompanionLibraryService {
         this.gateway.commitMutation(command, write, { sessionId: id });
       }, title: command.payload.title, workingDirectory: project.workspacePath || undefined,
         modelConfig: { provider: model.provider, model: model.model },
-        metadata: { [MODEL_OVERRIDE_METADATA_KEY]: { provider: model.provider, model: model.model, setAt: Date.now() } } });
+        // 归属是手机明确选的：「未分类」没有工作目录，首轮运行兜底补目录时 sessionManager 会把未分类会话重算进
+        // 自动项目，会话就跑出这台设备的项目授权（命令回执/事件/历史全被拒，手机卡在「还没收到电脑确认」）。
+        // 边界：手机建的每个会话都钉、且没有解钉途径——之后在电脑上给它设工作目录也不会再归进对应项目；
+        // 这是有意的：会话必须留在建它的那台手机的授权范围里。
+        metadata: { [MODEL_OVERRIDE_METADATA_KEY]: { provider: model.provider, model: model.model, setAt: Date.now() }, [SESSION_PROJECT_PINNED_METADATA_KEY]: true } });
       if (session.projectId !== project.id) throw new Error('COMPANION_PROJECT_CHANGED');
       getModelSessionState().setOverride(session.id, { provider: model.provider, model: model.model });
       return { sessionId: session.id };

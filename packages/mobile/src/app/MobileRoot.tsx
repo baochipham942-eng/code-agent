@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
-import { canAddressSession, createCompanionStore, defaultCompanionSessionCreate, needsLibraryPick } from '../stores/companionStore';
+import { canAddressSession, createCompanionStore, needsLibraryPick } from '../stores/companionStore';
 import { createNotificationStore } from '../stores/notificationStore';
 import { unavailableNotificationPort } from '../platform/notifications';
 import { pickAttachment } from '../platform/cameraPick';
@@ -16,7 +16,7 @@ import { PlanCard } from '../features/sessions/PlanCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
 import type { CompanionLibrary } from '../../../../src/shared/contract/companionLibrary';
 import { messages } from '../i18n';
-import { projectDisplayName } from '../features/sessions/projectRows';
+import { defaultProjectId, projectDisplayName } from '../features/sessions/projectRows';
 import { createBackCoordinator } from './backCoordinator';
 import { PreviewMedia } from '../features/sessions/PreviewMedia';
 import { applyKeyboardInset } from './keyboardInset';
@@ -28,29 +28,9 @@ import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
 import { AppIcon } from './AppIcon';
 import { sheetLibraryStatus } from './sheetLibraryStatus';
+import { commandNoticeCopy, composerStatusItems } from './StatusSlot';
 import { connectionDiagnosis, lastSyncCopy } from './connectionDiagnosis';
 import { CLICK_SWALLOW_MS, DRAWER_SETTLE_MS, EDGE_GESTURE_START_X, drawerPanOffset, drawerPanState, drawerWidthPx, gestureAxis, shouldSwallowClick } from './drawerGesture';
-
-/**
- * 连接那一行的文案与动作。合成一条的原因（2026-09-12 爸真机反馈）：原来「连接胶囊说『重新连接』」
- * 与「下面一行说『电脑尚未连接，草稿已保留』+ 重试」是同一件事说两遍，用户看到两行提示。
- * 后台暂停期间（paused）不报错：那时没有任何事需要用户做，报「请重试」是假警报。
- */
-export function connectionCopy(
-  text: ReturnType<typeof messages>,
-  companion: { status: string; paused: boolean; connectionError: string | null; transport?: string | null },
-): { label: string; connected: boolean; retry: boolean } {
-  // 经 relay 连接是同一台电脑的另一条路：连接胶囊要能区分「直连」与「跨网中继」。
-  if (companion.status === 'connected' || companion.paused) {
-    return { label: companion.status === 'connected' && companion.transport === 'relay' ? text.connectedRelay : text.connected, connected: true, retry: false };
-  }
-  if (companion.status === 'connecting') return { label: text.connecting, connected: false, retry: false };
-  const label = companion.status === 'storageError' ? text.secureStorageError
-    : companion.status === 'rejected' ? text.rejected
-    : companion.connectionError ? text[companion.connectionError as keyof typeof text]
-    : text.unconnected;
-  return { label, connected: false, retry: true };
-}
 
 /**
  * 输入区模型胶囊的文案（design.html composer 的 .model）：显示这条会话下一次执行真正会用的模型
@@ -66,91 +46,12 @@ export function composerModelLabel(library: CompanionLibrary | null, sessionId: 
   return library.models.find(m => m.provider === session.provider && m.model === session.model)?.label ?? session.model;
 }
 
-/**
- * 状态行文案。待确认命令按 action 分：语音转写不是「发送」，套用「请勿重复发送」会把用户
- * 指到一个不存在的风险上（2026-09-12 真机反馈）。抽成纯函数是为了让这条分支可单测——
- * 它此前是 JSX 里的内联三元，测不到。
- *
- * 只说命令，不说执行（N-MOBILE-EXEC-STATUS）：「电脑正在处理」和「任务已完成/失败」归属到那次执行，
- * 在会话里挂在对应消息下面；底栏再说一遍就是离消息流远、多次任务后互相矛盾的那一行。
- */
-export function taskStatusCopy(
-  text: ReturnType<typeof messages>,
-  companion: { pending: boolean; pendingAction: string | null },
-  /**
-   * 这条待确认命令是不是已经**久到该说话了**（N-MOBILE-PENDING-NOISE）。
-   * 「正在核对电脑是否已接收，请勿重复发送」是异常兜底语：正常 ack 几十毫秒就回来，
-   * 一发就显示等于每条消息都提醒用户「别乱点」，而且只闪一下——用户只来得及看见警告、
-   * 看不见原因（爸 2026-09-16 build 43 真机）。慢过阈值才说。
-   * 转写不受这条约束：「正在转写」是进度不是警告，越早说越有用。
-   *
-   * 必填而不给默认值：默认 true 等于「谁忘了传谁就回到吵的那个行为」，闸门形同虚设。
-   */
-  pendingSlow: boolean,
-): string {
-  if (!companion.pending) return '';
-  if (companion.pendingAction === 'voice.transcribe') return text.transcribing;
-  return pendingSlow ? text.pendingCommand : '';
-}
-
 /** 电脑名：mDNS 名去掉 .local；没有 mDNS 名（Linux/Windows 宿主）时给 null，调用方退回 IP。 */
 function invitationHostLabel(invitation: { endpoint: string; altEndpoint?: string }): string | null {
   try {
     const host = new URL(invitation.altEndpoint ?? invitation.endpoint).hostname;
     return host.endsWith('.local') ? host.slice(0, -'.local'.length) : null;
   } catch { return null; }
-}
-
-/**
- * 通用提示条的文案。抽成纯函数是为了让「让不让位给输入区那条提示」这条分支可单测——
- * 它此前是 JSX 里的内联三元，测不到（照 taskStatusCopy 的先例）。
- */
-export function commandNoticeCopy(
-  text: ReturnType<typeof messages>,
-  companion: { commandError: string | null; commandErrorAction: string | null; status: string; paused: boolean; connectionError: string | null },
-  voiceFailureShown: boolean,
-): string | null {
-  /**
-   * session.create 的失败要**点名什么没成**（fix6-②，build 37 爸真机「点了没反应」）：
-   * 错误码只说原因（项目不可用/没权限/…），不点名的话用户看到一句人话却不知道是
-   * 「新会话没建起来」，+ 像是没生效。
-   */
-  const named = (copy: string) => companion.commandErrorAction === 'session.create' ? `${text.sessionCreateFailed}：${copy}` : copy;
-  const error = companion.commandError;
-  // 点 + 时连接不在（companionStore.manage 的守卫）：按连接胶囊同一套三分类诊断给句子，
-  // 不另造一套连接文案。
-  if (error === 'COMPANION_NOT_CONNECTED') return named(connectionCopy(text, companion).label);
-  // 槽被上一条未结算命令占着：说的是在飞的那条，不是这次点按。
-  if (error === 'COMPANION_COMMAND_IN_FLIGHT') return named(text.commandInFlight);
-  // 旧 Host 不认这条命令/参数时，按「电脑太旧」给人话，不报笼统的「拒绝了这条操作」。
-  if (error === 'COMPANION_UNSUPPORTED_ACTION') return named(text.hostTooOld);
-  const base = (): string | null => {
-    if (error === 'UPLOAD_TOO_LARGE') return text.uploadTooLarge;
-    if (error === 'COMPANION_FILE_TYPE_DENIED') return text.fileTypeDenied;
-    if (error === 'STORAGE_FULL') return text.storageFull;
-    if (error === 'COMPANION_EXPORT_FAILED') return text.exportFailed;
-    if (error === 'ARTIFACT_MISSING') return text.artifactMissing;
-    if (error === 'PROJECT_SOURCE_MISSING') return text.projectSourceMissing;
-    if (error === 'PROJECT_SOURCE_CHANGED') return text.projectSourceChanged;
-    if (error === 'PROJECT_SOURCE_UNTRUSTED') return text.projectSourceUntrusted;
-    if (error === 'MODEL_AUTH') return text.modelAuthMissing;
-    if (error === 'scope_denied' || error === 'COMPANION_SCOPE_DENIED') return text.commandScopeDenied;
-    if (error === 'COMPANION_PROJECT_UNAVAILABLE') return text.projectUnavailable;
-    if (error === 'COMPANION_PROJECT_CHANGED') return text.projectChanged;
-    if (error === 'COMPANION_MODEL_UNAVAILABLE') return text.modelUnavailable;
-    if (error === 'COMPANION_SESSION_BUSY') return text.sessionBusy;
-    if (error === 'RUN_FAILED') return text.runFailed;
-    if (error && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(error)) return text.transferInterrupted;
-    // 转写失败由输入区那条提示负责（它带阶段和真实错误码）；这里再来一句「电脑那边拒绝了这条操作」
-    // 只是把同一件事说两遍——真机上就是上下叠着两行（2026-09-12 build 24 实测）。
-    // 按**动作**分而不是按码名列白名单：结算原样带回真实错误码之后，白名单外的转写失败会叠出两句
-    // （grok ai-review Nit）。但只有输入区**真的在显示**它时才让位：切会话会把输入区重挂、
-    // 取消后 ack 才回来，那些时候输入区手里没有这条失败，无条件让位等于让它一个落点都没有。
-    if (companion.commandErrorAction === 'voice.transcribe' && voiceFailureShown) return null;
-    return error ? text.commandRejected : null;
-  };
-  const copy = base();
-  return copy === null ? null : named(copy);
 }
 
 /**
@@ -258,9 +159,6 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [pendingInvite, setPendingInvite] = useState<{ raw: string; invitation: LanInvitation } | null>(null);
   // 项目会话前进页（fix5-③）当前在看的项目：主层选择器的 chevron 进来，返回弹回主层。
   const [sessionProjectId, setSessionProjectId] = useState<string | null>(null);
-  // 刚由 session.create 建好、还没说过话的会话 id：空会话就绪态据此说「新会话已建好」而不是
-  // 通用的「已就绪」。只认 id——切走再切回的旧空会话不冒充「刚建好」（fix6-①）。
-  const [justCreated, setJustCreated] = useState<string | null>(null);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
   const pendingDecisions = useMemo(() => {
@@ -279,7 +177,6 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   // 输入区的模型胶囊（design.html composer 的 .model）：显示这条会话当前在用的模型，
   // 没有会话或还没读到模型表时不显示——不拿列表第一个冒充当前模型。
   const sessionModelLabel = composerModelLabel(companion.library, companion.sessionId);
-  const connection = connectionCopy(text, companion);
   // 反馈③（2026-09-14 build 34）：项目/会话 sheet 等电脑里的库时不许无限转圈——底层 request
   // 没有客户端超时，连接僵死时圈会一直转；到点落「连不上电脑」失败态并给重试。
   const librarySheetWaiting = Boolean(state.sheet && (currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more' || currentPage === 'model') && companion.binding && !companion.library);
@@ -392,7 +289,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   useEffect(() => { if (state.ready) void companionStore.getState().hydrate(); }, [state.ready, companionStore]);
   /**
    * 待确认命令「慢到该说话了」的闸门（N-MOBILE-PENDING-NOISE）。pending 一起就开计时，
-   * 结算就复位；到点之前 taskStatusCopy 闭嘴。放在 MobileRoot 而不是 store：这是纯粹的
+   * 结算就复位；到点之前状态位不说「还没收到电脑确认」。放在 MobileRoot 而不是 store：这是纯粹的
    * 呈现节奏，store 那边的 pending 仍然是「有没有待确认命令」这个事实，不掺 UI 时序。
    */
   const [pendingSlow, setPendingSlow] = useState(false);
@@ -445,14 +342,25 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       void companionStore.getState().refreshArtifacts();
     } else if (state.route !== 'fixture') store.getState().activateDraft('new');
   }, [companion.sessionId, companion.binding?.hostKey, companion.status, state.route, store, companionStore]);
-  const previousCompanionStatus = useRef(companion.status);
+  // 连上而没有会话时不再自动弹「选择项目」（N-MOBILE-DEFAULT-PROJECT ②A，爸 09-17「项目要有默认、不强制选」）：
+  // 停在新会话欢迎页，项目选择器已带默认项目；弹层只在点选择器、或都建不了时点发送才开。
+  /**
+   * 没选会话点发送（N-MOBILE-DEFAULT-PROJECT）：先在所选项目建会话，ack 回来、sessionId 生效后再把草稿发出。
+   * 命令槽同一时刻只容一条在飞，create 可能还在 reconciling，所以等这里看到槽空了、新会话到了才 send。
+   * 放在 activateDraft 那个 effect 之后：它先把 'new' 草稿搬进新会话的键，这里读到的才是那份草稿。
+   */
+  const firstSend = useRef<{ before: string | null } | null>(null);
   useEffect(() => {
-    const previous = previousCompanionStatus.current;
-    previousCompanionStatus.current = companion.status;
-    if (needsLibraryPick({ status: companion.status, sessionId: companion.sessionId }) && previous !== 'connected') {
-      store.getState().openSheet('projects');
-    }
-  }, [companion.status, companion.sessionId, store]);
+    const waiting = firstSend.current;
+    if (!waiting) return;
+    // 断连或建会话失败：不留「连上后自动发出」的尾巴（design：草稿不在恢复连接后自动发出），草稿原样留着。
+    if (companion.status !== 'connected' || (companion.commandError && companion.commandErrorAction === 'session.create')) { firstSend.current = null; return; }
+    if (companion.pending || companion.busy || !companion.sessionId || companion.sessionId === waiting.before) return;
+    firstSend.current = null;
+    const ui = store.getState();
+    const draft = ui.preferences.drafts[ui.draftKey] ?? '';
+    if (draft.trim()) void companionStore.getState().send(draft);
+  }, [companion.status, companion.commandError, companion.commandErrorAction, companion.pending, companion.busy, companion.sessionId, store, companionStore]);
   useEffect(() => { if (currentPage !== 'storage') { setCacheConfirm(false); setCacheResult(null); } }, [currentPage]);
   const commandNotice = commandNoticeCopy(text, companion, voiceFailureShown);
   // 选中即收边栏（fix5-①，2026-09-15 build 36 反馈⑦）：抽屉会话行、别会话待确认跳转、sheet 里的
@@ -468,20 +376,41 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const openModelSheet = () => { state.openSheet('model'); void companion.refreshModels(); };
   // 项目会话前进页的标题 = 主层那一行的显示名（同名项目带路径消歧），点进行页标题就是刚才点的那行。
   const sessionProject = companion.library?.projects.find(p => p.id === sessionProjectId) ?? null;
-  const startDefaultSession = () => {
-    const created = defaultCompanionSessionCreate(companion.library);
-    if (!created) { state.openSheet('projects'); return; }
-    void manage('session.create', { title: text.newSession, provider: created.provider, model: created.model }, `project:${created.projectId}`);
+  // 新任务的项目与模型（N-MOBILE-DEFAULT-PROJECT）：手选过的 > 最近用过的 > 未分类；模型 = 电脑默认 > 列表第一项（FB-141）。
+  const hostKey = companion.binding?.hostKey;
+  const newTaskProjectId = companion.library ? defaultProjectId(companion.library, hostKey ? state.preferences.projectPicks?.[hostKey] : undefined) : null;
+  const newTaskModel = companion.library?.models.find(m => m.isDefault) ?? companion.library?.models[0];
+  /** 「会话没建成」那条状态的重试：重做最近一次建会话的那个动作（+、没选会话发送、弹层里选项目）。 */
+  const lastCreate = useRef<(() => void) | null>(null);
+  const createInDefaultProject = () => {
+    if (!newTaskProjectId || !newTaskModel) { state.openSheet('projects'); return false; }
+    void manage('session.create', { title: text.newSession, provider: newTaskModel.provider, model: newTaskModel.model }, `project:${newTaskProjectId}`).then(() => {
+      const live = companionStore.getState();
+      if (live.commandError && live.commandErrorAction === 'session.create') firstSend.current = null;
+    });
+    return true;
+  };
+  const startDefaultSession = () => { lastCreate.current = startDefaultSession; createInDefaultProject(); };
+  const sendAsNewSession = () => {
+    lastCreate.current = sendAsNewSession;
+    firstSend.current = { before: companion.sessionId };
+    if (!createInDefaultProject()) firstSend.current = null;
+  };
+  /** 弹层里点项目 / 在项目里新建 = 手选，按这台电脑记住，之后的新任务默认落在这里。 */
+  const sheetManage: typeof companion.manage = (...args) => {
+    if (args[0] === 'session.create') {
+      lastCreate.current = () => void sheetManage(...args);
+      if (hostKey && args[2]?.startsWith('project:')) state.pickProject(hostKey, args[2].slice('project:'.length));
+    }
+    return manage(...args);
   };
   const manage: typeof companion.manage = async (...args) => {
     managing.current = true;
-    const before = companionStore.getState().sessionId;
     await companion.manage(...args);
     const live = companionStore.getState();
     // session.create 无论成败都收层（fix6-②，build 37「点了没反应」）：成功要进新会话；
     // 失败时抽屉/弹层正盖在提示条上，不收层失败反馈等于没有。
     if (args[0] === 'session.create' || (!live.pending && live.status === 'connected')) {
-      if (args[0] === 'session.create' && live.sessionId && live.sessionId !== before) setJustCreated(live.sessionId);
       state.navigate('new');
     }
   };
@@ -494,8 +423,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const finishPair = async (raw?: string) => {
     await companionStore.getState().pair(raw);
     const result = companionStore.getState();
-    if (needsLibraryPick(result)) store.getState().openSheet('projects');
-    else if (result.status === 'connected' && result.sessionId) store.getState().navigate('new');
+    // 配对成功一律落到会话页：有会话进会话，只授权项目时是带默认项目选择器的欢迎页，不拦弹层。
+    if (result.status === 'connected') store.getState().navigate('new');
   };
   const pairAndOpenConversation = async () => {
     if (!ports.companion) return;
@@ -607,21 +536,18 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           openArtifact={id => void companion.previewArtifact(id).then(() => {
             if (companionStore.getState().preview) store.getState().openSheet('preview');
           })} />
-        : companion.sessionId ? (() => {
-          // 空会话就绪态（fix6-①，2026-09-15 build 37「点了没反应」）：已选中但还没说过话的
-          // 会话不许再演无会话的欢迎屏——两屏一模一样，点 + 建成后看起来就是「原地零变化」。
-          // 刚建的会话点名「新会话已建好」；其余空会话（从历史选进来的）说通用的「已就绪」。
-          // 不自动聚焦输入区：手机上未经点按就弹键盘会顶走视口，就绪态+占位符已足够指路。
-          const session = companion.library?.sessions.find(s => s.id === companion.sessionId);
-          const project = session?.projectId != null ? companion.library?.projects.find(p => p.id === session.projectId) : undefined;
-          return <div className="welcome" data-testid="session-empty">
-            <NeoBrandMark variant="mark" size={47} />
-            <h1>{justCreated === companion.sessionId ? text.sessionCreated : text.sessionReady}</h1>
-            {project && <p className="connection-next">{text.usingProject.replace('{name}', project.name)}</p>}
-            {companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}
-          </div>;
-        })()
-        : <div className="welcome"><NeoBrandMark variant="mark" size={47} /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
+        // 空会话与无会话都只留一句 + 项目选择器（design.md §11/§12，爸 09-17）。空会话的选择器写它自己所在的项目；
+        // 不自动聚焦输入区：手机上未经点按就弹键盘会顶走视口。
+        : <div data-testid={companion.sessionId ? 'session-empty' : undefined} className="welcome"><NeoBrandMark variant="mark" size={47} />
+          <h1>{text.welcome}</h1>
+          {companion.library && (() => {
+            const projectId = companion.sessionId ? companion.library.sessions.find(s => s.id === companion.sessionId)?.projectId ?? newTaskProjectId : newTaskProjectId;
+            const project = companion.library.projects.find(p => p.id === projectId);
+            const label = project ? projectDisplayName(project, companion.library.projects) : text.noCreatableProject;
+            return <button className="project-pick" data-testid="project-pick" aria-label={`${text.chooseProject} · ${label}`} onClick={() => state.openSheet('projects')}>
+              <AppIcon name="folder" /><span>{label}</span><AppIcon name="down" /></button>;
+          })()}
+        </div>}
       <div className="composer-area" ref={composerArea}>
         {/* 本会话的审批优先在托盘里就地给控件——CompanionConversation 被传了
             hidePendingApprovals，它不会再渲染 pending 卡片，所以这里是本会话审批**唯一**的
@@ -640,44 +566,26 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             otherDecision.kind === 'question' ? text.reviewQuestion : otherDecision.kind === 'plan' ? text.reviewPlan : text.reviewApproval
           }</button>}
         </div>}
-        {companion.binding && <div className="task-status" role="status">
-          {/* 执行条已经说明电脑正在处理，连着是不言自明的；再挂一行「已连接电脑」是重复（爸 2026-09-16 真机）。
-              没连上时照常显示——那是需要用户知道并处理的。 */}
-          {!(connection.connected && companion.runId) && <div className="connection-line">
-            <button className="connection-pill" data-connected={connection.connected} onClick={() => state.openSheet('remote')}>
-              <span aria-hidden="true" className="status-dot" />{connection.label}
-            </button>
-            {connection.retry && <button className="inline-retry" disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
-          </div>}
-          <span>{taskStatusCopy(text, companion, pendingSlow)}</span>
-        </div>}
-        {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button className="inline-retry" onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}
-        {(state.saveError || nativeError || (companion.commandError && commandNotice) || (state.sendAttempted && !canAddressSession(companion))) && <p role="status" className="notice">
-          {state.saveError ? text.saveError
-            : nativeError ? text.nativeError
-            : commandNotice ? commandNotice
-            : companion.status === 'connected' ? text.noSession
-            : text.unconnected}
-          {state.saveError && <button className="inline-retry" onClick={() => void state.flush()}>{text.retry}</button>}
-          {!state.saveError && !nativeError && !companion.commandError && companion.status === 'connected'
-            && <button onClick={() => state.openSheet('projects')}>{text.projects}</button>}
-        </p>}
         <Composer key={`${companion.binding?.hostKey}:${companion.sessionId}`} text={text}
           draft={state.preferences.drafts[state.draftKey] ?? ''} editDraft={state.editDraft}
           // 暂停不是离线：胶囊那边显示已连接，占位却说「先写下来，连接后再发送」就自相矛盾
           // （grok ai-review Nit，正是爸看到的那张后台快照）。
-          offline={!!companion.binding && !connection.connected}
+          offline={!!companion.binding && companion.status !== 'connected' && !companion.paused}
           sendDisabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
           // 停止的落点收进输入区那个键（N-MOBILE-SEND-IS-STOP）；执行条只剩「哪一次在跑」。
           running={companion.runId ? { stop: () => void companion.stop(), stopDisabled: companion.busy || companion.pending || companion.status !== 'connected' } : null}
           send={() => {
-            // companionStore.send 在没有 sessionId 时会静默 return（只勾了项目的二维码
-            // 配对就是这个形态）。不把这一档也走 attemptSend 的话，用户看到「已连接」、
-            // 点发送却什么都不发生——无报错、无 pending、草稿不清，只能反复点。
-            if (canAddressSession(companion) && state.route !== 'fixture') void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
+            if (state.route === 'fixture') state.attemptSend();
+            else if (canAddressSession(companion)) void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
+            // 连着但没选会话：直接在所选项目建会话再发（N-MOBILE-DEFAULT-PROJECT），不拦截、不出报错行。
+            else if (needsLibraryPick(companion)) sendAsNewSession();
             else state.attemptSend();
           }}
+          status={composerStatusItems(text, { ...companion, binding: !!companion.binding, saveError: state.saveError, nativeError, sendAttempted: state.sendAttempted, voiceFailureShown, pendingSlow }, {
+            flush: () => void state.flush(), reconnect: () => void companion.reconnect(), scan: () => void pairAndOpenConversation(),
+            openRemote: () => state.openSheet('remote'), retryCreate: lastCreate.current, switchModel: openModelSheet,
+          })}
           // 模型入口只留这一个（爸 2026-09-16 拍板）：会话操作弹窗里不再有模型那一格。
           modelLabel={sessionModelLabel} openModel={openModelSheet}
           openSettings={() => void (ports.notifications ?? unavailableNotificationPort).openSettings()}
@@ -751,7 +659,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {(currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more' || currentPage === 'model') && companion.binding ? (
         companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text}
           mode={currentPage === 'more' || currentPage === 'model' ? currentPage : currentPage === 'projectSessions' ? 'projectSessions' : 'projects'}
-          projectId={sessionProjectId} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage}
+          projectId={sessionProjectId} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={sheetManage}
           loadMore={() => void companion.refreshLibrary(true)} openProjectSessions={openProjectSessions} />
           // fix4-④：等库 = spinner + 一句「正在连接电脑…」（秒级超时兜底，不无限转圈）；
           // 失败 = 状态页（标题 + 诊断句 + 主按钮重新连接 + 次按钮去连接电脑），不再用
@@ -769,7 +677,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         <PreviewMedia name={companion.preview.name} mimeType={companion.preview.mimeType} bytes={companion.preview.bytes} text={text}
           onSave={companion.savedPreview ? undefined : () => void companion.savePreview()} />
         {/* 保存失败必须报在预览面板里——composer 区的提示被模态弹层遮住且 inert，用户看不到。 */}
-        {!companion.savedPreview && companion.commandError && <p role="status" className="notice">{commandNotice}</p>}
+        {!companion.savedPreview && commandNotice && <p role="status" className="notice">{commandNotice}</p>}
         {companion.savedPreview ? <p role="status">{companion.savedPreviewName && companion.savedPreviewName !== companion.preview.name ? `${text.savedToDevice}：${companion.savedPreviewName}` : text.savedToDevice}</p>
           : <button className="primary" onClick={() => void companion.savePreview()}>{text.saveToDevice}</button>}
       </div> : currentPage === 'remote' ? (() => {

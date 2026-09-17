@@ -4,7 +4,9 @@ import type { PlatformPorts } from '../platform/ports';
 export type Appearance = 'system' | 'light' | 'dark';
 export type SheetPage = 'settings' | 'appearance' | 'profile' | 'about' | 'help' | 'more' | 'model' | 'projects' | 'projectSessions' | 'remote' | 'storage' | 'preview' | 'notifications' | 'attachment' | 'cameraDenied' | 'pairConfirm';
 type Route = 'new' | 'fixture';
-type Preferences = { schema: 1; drafts: Record<string, string>; transcriptCommands?: Record<string, string>; appearance: Appearance; nickname: string; notifyEnabled: boolean };
+type Preferences = { schema: 1; drafts: Record<string, string>; transcriptCommands?: Record<string, string>; appearance: Appearance; nickname: string; notifyEnabled: boolean;
+  /** 新任务项目选择器上手选过的项目，按电脑（hostKey）记（N-MOBILE-DEFAULT-PROJECT）。 */
+  projectPicks?: Record<string, string> };
 type Sheet = { origin: 'root' | 'drawer'; pages: SheetPage[] };
 interface State {
   preferences: Preferences; ready: boolean; loadError: boolean; saveError: boolean; saving: boolean;
@@ -12,6 +14,7 @@ interface State {
   route: Route; drawer: boolean; sheet: Sheet | null; profileDraft: string; sendAttempted: boolean;
   hydrate(): Promise<void>; editDraft(value: string): void; setAppearance(value: Appearance): void;
   setNotifyEnabled(value: boolean): void;
+  pickProject(hostKey: string, projectId: string): void;
   editProfile(value: string): void; saveProfile(): void; flush(): Promise<void>;
   openDrawer(): void; closeDrawer(): void; navigate(route: Route): void;
   openSheet(page: SheetPage): void; pushSheet(page: SheetPage): void; closeSheet(): void; back(): boolean;
@@ -30,7 +33,8 @@ function decode(raw: string | null): Preferences {
       !['system', 'light', 'dark'].includes(v.appearance ?? '') || typeof v.nickname !== 'string') {
     throw new Error('INVALID_PREFERENCES');
   }
-  return { schema: 1, transcriptCommands: v.transcriptCommands ?? {}, drafts: Object.fromEntries(Object.entries(v.drafts).filter(([, value]) => typeof value === 'string')), appearance: v.appearance!, nickname: v.nickname, notifyEnabled: v.notifyEnabled === true };
+  return { schema: 1, transcriptCommands: v.transcriptCommands ?? {}, drafts: Object.fromEntries(Object.entries(v.drafts).filter(([, value]) => typeof value === 'string')), appearance: v.appearance!, nickname: v.nickname, notifyEnabled: v.notifyEnabled === true,
+    projectPicks: Object.fromEntries(Object.entries(v.projectPicks ?? {}).filter(([, value]) => typeof value === 'string')) };
 }
 
 /**
@@ -101,6 +105,10 @@ export function createMobileStore(port: PlatformPorts['preferences']) {
       setNotifyEnabled: notifyEnabled => {
         if (!get().ready) return;
         set({ preferences: { ...get().preferences, notifyEnabled } }); persist();
+      },
+      pickProject: (hostKey, projectId) => {
+        if (!get().ready) return;
+        set({ preferences: { ...get().preferences, projectPicks: { ...get().preferences.projectPicks, [hostKey]: projectId } } }); persist();
       },
       editProfile: profileDraft => set({ profileDraft }),
       saveProfile: () => {

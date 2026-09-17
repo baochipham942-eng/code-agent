@@ -74,9 +74,10 @@ beforeEach(() => {
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); harness.createSessionIds = []; cleanup(); });
 
-/** 只授权项目 ⇒ 连上后自动弹「选择项目」主层（needsLibraryPick）。 */
+/** 只授权项目 ⇒ 连上停在欢迎页；点项目选择器打开「选择项目」主层（N-MOBILE-DEFAULT-PROJECT：不再自动弹）。 */
 async function mountOnProjectPicker() {
   await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+  fireEvent.click(await waitFor(() => { const el = document.querySelector('[data-testid="project-pick"]') as HTMLElement; expect(el).toBeTruthy(); return el; }));
   await waitFor(() => { expect(document.querySelector('.project-list')).toBeTruthy(); });
   return document.querySelector('.sheet-layer') as HTMLElement;
 }

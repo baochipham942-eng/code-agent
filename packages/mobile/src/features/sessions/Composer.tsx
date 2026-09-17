@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { PlatformPorts } from '../../platform/ports';
 import type { messages } from '../../i18n';
 import { AppIcon } from '../../app/AppIcon';
+import { StatusSlot, type StatusItem } from '../../app/StatusSlot';
 import { useVoiceCapture, VoicePanel } from './VoiceCapture';
 import type { DictationPort } from './VoiceCapture';
 import type { UploadProgress, VoiceResult } from '../../stores/companionStore';
@@ -31,7 +32,7 @@ function attachmentStatus(text: ReturnType<typeof messages>, item: UploadProgres
 export function Composer({
   text, draft, editDraft, offline, sendDisabled, send, running, modelLabel, openModel, openSettings,
   attach, attachDisabled, attachments, retryAttachment, removeAttachment,
-  recorder, transcribe, discardPendingTranscript, commitSpoken, dictation, voiceDisabled, voicePending, voiceResult, voiceReady, onVoiceState,
+  recorder, transcribe, discardPendingTranscript, commitSpoken, dictation, voiceDisabled, voicePending, voiceResult, voiceReady, onVoiceState, status = [],
 }: {
   text: ReturnType<typeof messages>;
   draft: string;
@@ -68,6 +69,8 @@ export function Composer({
   voiceReady: boolean;
   /** 上报输入区自己的状态：录音中（禁横滑）、以及「转写失败正由我显示」（通用提示条据此让位）。 */
   onVoiceState(state: { recording: boolean; failed: boolean }): void;
+  /** 输入框上方唯一状态位里 MobileRoot 那几条候选；语音失败由这里补进去，按 rank 只露最急的一条。 */
+  status?: StatusItem[];
 }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
@@ -103,18 +106,17 @@ export function Composer({
   const denied = voice.failure?.reason === 'MICROPHONE_DENIED' || voice.failure?.reason === 'MISSING_PERMISSION';
   // 用户面不出现内部错误码：reason 只进 data-reason 供取证（build 45 真机「录音失败 · FAILED_TO_RECORD」）。
   const notice = denied ? text.microphoneDenied
-    : busy ? (micReleased ? text.microphoneReleased : `${text.microphoneBusy}。${text.microphoneBusyDetail}`)
+    : busy ? (micReleased ? text.microphoneReleased : text.microphoneBusy)
     // 部分成功：其余几段已经在草稿里了，说成「转写未完成」是把整次录音都判死
     : voice.failure?.partial ? text.voiceChunkDropped
     : voice.failure ? (voice.failure.stage === 'record' ? text.voiceRecordFailed : text.voiceTranscribeFailed)
     : null;
   // 每一种失败给一个直指修复处的动作：没授权 → 去系统设置（重试只会再被拒）；被占用 → 等它放手再录；其余 → 重试。
-  const noticeAction = denied ? (openSettings && { label: text.openMicrophoneSettings, run: openSettings })
+  const noticeAction = denied ? (openSettings ? { label: text.openMicrophoneSettings, run: openSettings } : undefined)
     : busy ? { label: micReleased ? text.continueRecording : text.microphoneBusyRetry, run: voice.retry }
     : { label: text.retry, run: voice.retry };
   return <>
-    {notice && <p className="notice voice-notice" role="status" data-reason={voice.failure?.reason}>{notice}
-      {noticeAction && <button className="inline-retry" onClick={noticeAction.run}>{noticeAction.label}</button>}</p>}
+    <StatusSlot items={[...status, notice ? { rank: 3, message: notice, action: noticeAction, reason: voice.failure?.reason } : null]} />
     <div className={voice.panelOpen ? 'composer voice-composer' : 'composer'}>
       {voice.panelOpen
         ? <VoicePanel text={text} phase={voice.phase} pending={voicePending} elapsedMs={voice.elapsedMs}

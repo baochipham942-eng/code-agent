@@ -142,17 +142,9 @@ export function canAddressSession(state: Pick<State, 'status' | 'sessionId'>): b
   return state.status === 'connected' && Boolean(state.sessionId);
 }
 
-/** Connected with only project grants: open LibrarySheet instead of pinning a conversation. */
+/** 连着但没有会话（只授权项目的配对、或还没选会话）：发送时先在默认项目建会话（N-MOBILE-DEFAULT-PROJECT），不弹选择项目。 */
 export function needsLibraryPick(state: Pick<State, 'status' | 'sessionId'>): boolean {
   return state.status === 'connected' && !state.sessionId;
-}
-
-/** Default project + default model for one-tap session create. Null when the library cannot start one. */
-export function defaultCompanionSessionCreate(library: CompanionLibrary | null): { projectId: string; provider: string; model: string } | null {
-  const project = library?.projects.find(item => item.canCreate);
-  const model = library?.models.find(item => item.isDefault) ?? library?.models[0];
-  if (!project || !model) return null;
-  return { projectId: project.id, provider: model.provider, model: model.model };
 }
 
 /** Receipt identity: a status/result from a different command must not settle this one. */

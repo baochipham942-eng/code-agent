@@ -39,22 +39,7 @@
     },
     {
       "file": "packages/mobile/src/app/MobileRoot.tsx",
-      "name": "commandNoticeCopy",
-      "kind": "export"
-    },
-    {
-      "file": "packages/mobile/src/app/MobileRoot.tsx",
       "name": "composerModelLabel",
-      "kind": "export"
-    },
-    {
-      "file": "packages/mobile/src/app/MobileRoot.tsx",
-      "name": "connectionCopy",
-      "kind": "export"
-    },
-    {
-      "file": "packages/mobile/src/app/MobileRoot.tsx",
-      "name": "taskStatusCopy",
       "kind": "export"
     },
     {

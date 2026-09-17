@@ -1,8 +1,9 @@
-// 图标契约真源是设计稿 design.html 的 ICONS 映射（stroke-width 1.7、圆头圆角）；
-// 菜单两线来自设计稿导航条内联 SVG。新增图标先从设计稿抄路径，不要自绘。
+// 图标契约真源是设计稿 design.html 的 ICONS 映射（stroke-width 1.7、圆头圆角）与 icon() 的渲染分支；
+// 菜单两线来自设计稿导航条内联 SVG。「更多」是三个 r=1.7 实心圆，照 icon() 用 fill 画、不描边
+// （N-MOBILE-HEADER-ICON-STYLE，爸 09-17：零长度描边点在真机上又小又虚）。新增图标先从设计稿抄路径，不要自绘。
 const PATHS = {
   menu: 'M4 8h16M4 15h10',
-  more: 'M5 12h.01M12 12h.01M19 12h.01',
+  more: 'M3.3 12a1.7 1.7 0 1 0 3.4 0a1.7 1.7 0 1 0-3.4 0M10.3 12a1.7 1.7 0 1 0 3.4 0a1.7 1.7 0 1 0-3.4 0M17.3 12a1.7 1.7 0 1 0 3.4 0a1.7 1.7 0 1 0-3.4 0',
   plus: 'M12 5v14M5 12h14',
   arrow: 'M12 19V5m-6 6 6-6 6 6',
   back: 'm15 18-6-6 6-6',
@@ -21,6 +22,7 @@ const PATHS = {
 } as const;
 
 export function AppIcon({ name }: { name: keyof typeof PATHS }) {
+  if (name === 'more') return <svg className="app-icon" data-name={name} viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d={PATHS[name]} /></svg>;
   return <svg className="app-icon" data-name={name} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
     strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PATHS[name]} /></svg>;
 }

@@ -11,7 +11,7 @@ import { messages } from '../../../packages/mobile/src/i18n';
 
 /**
  * N-MOBILE-PENDING-NOISE（爸 2026-09-16 build 43 真机「刚点消息发送，为什么要出这样一句提示」）。
- * taskStatusCopy 的纯函数分支已在 taskStatusCopy.test.ts 钉住；这里钉的是**接线**：
+ * composerStatusItems 的纯函数分支已在 statusSlot.test.tsx 钉住；这里钉的是**接线**：
  * MobileRoot 真的会先闭嘴、到点才说。少了这一层，闸门就是「装好没接电」——
  * 纯函数怎么改都绿，而真机上照旧一发就弹。
  * 命令发出去就吊着（Host 不回 ack），pending 一直为真，闸门是唯一决定说不说的东西。
@@ -64,7 +64,7 @@ const ports = (): PlatformPorts => ({
 });
 
 const text = messages('zh');
-const statusRow = () => document.querySelector('.task-status')?.textContent ?? '';
+const statusRow = () => document.querySelector('[data-testid="status-slot"]')?.textContent ?? '';
 
 beforeEach(() => {
   harness.hangCommand = true;

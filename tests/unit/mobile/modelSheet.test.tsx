@@ -73,9 +73,8 @@ afterEach(() => { vi.unstubAllGlobals(); cleanup(); reads.hostFailed = false; })
 
 async function mountInSession() {
   await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
-  // 只授权项目 ⇒ 连上先弹「选择项目」；收掉，从抽屉进已有会话
-  await waitFor(() => { expect(document.querySelector('.project-list')).toBeTruthy(); });
-  fireEvent.click(document.querySelector('.sheet-layer .scrim') as HTMLElement);
+  // 只授权项目 ⇒ 连上停在带项目选择器的欢迎页（不再自动弹「选择项目」，N-MOBILE-DEFAULT-PROJECT）；从抽屉进已有会话
+  await waitFor(() => { expect(document.querySelector('[data-testid="project-pick"]')).toBeTruthy(); });
   fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
   fireEvent.click(await waitFor(() => document.querySelector('[data-testid="session-s1"]') as HTMLElement));
   await waitFor(() => { expect(document.querySelector('.composer-tools .model')).toBeTruthy(); });
@@ -105,8 +104,7 @@ describe('模型入口只留输入区胶囊', () => {
   // grok ai-review PR#1906 Important：打开模型屏若按第一页整表替换会话，「加载更多」进来的较旧会话会从库里消失
   it('从第二页的会话打开模型屏，只刷模型表，当前会话和胶囊都还在', async () => {
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
-    await waitFor(() => { expect(document.querySelector('.project-list')).toBeTruthy(); });
-    fireEvent.click(document.querySelector('.sheet-layer .scrim') as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="project-pick"]')).toBeTruthy(); });
     fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
     const found = (pick: () => Element | null | undefined) => waitFor(() => { const el = pick(); expect(el).toBeTruthy(); return el as HTMLElement; });
     fireEvent.click(await found(() => [...document.querySelectorAll('.drawer-history button')].find(b => b.textContent === text.loadHistory)));

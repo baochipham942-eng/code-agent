@@ -5,9 +5,9 @@ import { AppIcon } from '../../../packages/mobile/src/app/AppIcon';
 
 // 图标契约真源：docs/features/neo-mobile-companion/design.html 的 ICONS 映射（私档）。
 // 这里钉死每条路径与描边参数，改设计稿时要同步改这里，防止实现悄悄漂移回自绘/字符图标。
+// 「更多」是三个 r=1.7 实心圆：design.html icon() 对 more 用 fill、不描边（N-MOBILE-HEADER-ICON-STYLE）。
 const DESIGN_PATHS = {
   menu: 'M4 8h16M4 15h10',
-  more: 'M5 12h.01M12 12h.01M19 12h.01',
   plus: 'M12 5v14M5 12h14',
   arrow: 'M12 19V5m-6 6 6-6 6 6',
   back: 'm15 18-6-6 6-6',
@@ -34,8 +34,16 @@ describe('AppIcon（对齐 design.html 图标契约）', () => {
     });
   }
 
+  it('more 渲染设计稿的实心圆弧路径：fill=currentColor、无描边', () => {
+    const html = renderToStaticMarkup(createElement(AppIcon, { name: 'more' }));
+    expect(html).toContain('d="M3.3 12a1.7 1.7 0 1 0 3.4 0a1.7 1.7 0 1 0-3.4 0M10.3 12a1.7 1.7 0 1 0 3.4 0a1.7 1.7 0 1 0-3.4 0M17.3 12a1.7 1.7 0 1 0 3.4 0a1.7 1.7 0 1 0-3.4 0"');
+    expect(html).toContain('fill="currentColor"');
+    expect(html).toContain('stroke="none"');
+    expect(html).not.toContain('stroke-width');
+  });
+
   it('不渲染字符字形（emoji/文本符号回退）', () => {
-    for (const name of Object.keys(DESIGN_PATHS) as (keyof typeof DESIGN_PATHS)[]) {
+    for (const name of [...Object.keys(DESIGN_PATHS), 'more'] as (keyof typeof DESIGN_PATHS | 'more')[]) {
       const html = renderToStaticMarkup(createElement(AppIcon, { name }));
       expect(html).not.toMatch(/[☰↑＋⚙✓›×■]|···/);
     }

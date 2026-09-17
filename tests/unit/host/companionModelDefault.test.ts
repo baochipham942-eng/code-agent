@@ -70,6 +70,8 @@ describe('companion model list marks the computer default', () => {
     const marked = models.filter(model => model.isDefault);
     expect(marked).toHaveLength(1);
     expect(marked[0]).toMatchObject({ provider: 'deepseek', model: 'deepseek-chat' });
+    // 电脑默认可用：isDefault 就是真的默认，不带 defaultFallback（手机才标「电脑默认」）
+    expect(marked[0].defaultFallback).toBeUndefined();
   });
 
   it('still lists only providers the computer can actually use', async () => {
@@ -166,5 +168,47 @@ describe('爸配置形状：custom 供应商无 model + 列表首项已失败', 
     expect(models.filter(model => model.provider === 'longcat')
       .every(model => model.recentlyFailed === true && model.failureKind === 'network')).toBe(true);
     expect(models.find(model => model.provider === 'custom-team-relay' && model.model === 'gpt-5.5')?.isDefault).toBe(true);
+  });
+
+  // 模拟器验收 D1：Alpha 回 500×5 后成功 1 次，手机仍两行「最近连不上」、isDefault 挂在别家，
+  // 而电脑端同时刻新建会话还是原默认——两端不一致。验收条款：成功一次立即清除该级标记。
+  it('网络类熔断后成功 1 次：整家标记即清，isDefault 回到电脑默认（不依赖连续成功 3 次）', async () => {
+    for (let i = 0; i < 4; i += 1) {
+      monitor.getProviderHealthMonitor().recordFailure('custom-team-relay', {
+        model: 'gpt-5.5',
+        error: Object.assign(new Error('Internal Server Error'), { status: 500 }),
+      });
+    }
+    let models = await readModels();
+    // 熔断中：整家标 network，默认挪去未失败的 longcat
+    expect(models.filter(model => model.provider === 'custom-team-relay')
+      .every(model => model.recentlyFailed === true && model.failureKind === 'network')).toBe(true);
+    expect(models.find(model => model.provider === 'custom-team-relay' && model.model === 'gpt-5.5')?.isDefault).toBeUndefined();
+    // 成功一次立即清（此刻健康态仍 unavailable：要连续成功 3 次才 recovering，路由恢复节奏不变）
+    expect(monitor.getProviderHealthMonitor().getHealth('custom-team-relay')?.status).toBe('unavailable');
+    monitor.getProviderHealthMonitor().recordSuccess('custom-team-relay', 120, { model: 'gpt-5.5' });
+    expect(monitor.getProviderHealthMonitor().getHealth('custom-team-relay')?.status).toBe('unavailable');
+    models = await readModels();
+    expect(models.filter(model => model.provider === 'custom-team-relay')
+      .every(model => model.recentlyFailed === undefined)).toBe(true);
+    expect(models.find(model => model.provider === 'custom-team-relay' && model.model === 'gpt-5.5')?.isDefault).toBe(true);
+  });
+
+  // 模拟器验收 O1：电脑默认用不了、默认回落到别的模型时，那个模型副标题曾写「电脑默认」——
+  // 字面误导（电脑端真正默认没变）。回落选中的模型保留 isDefault（新会话预选），另标 defaultFallback。
+  it('默认回落：isDefault 落到回落行并带 defaultFallback；真正默认行不再冒充', async () => {
+    monitor.getProviderHealthMonitor().recordFailure('custom-team-relay', {
+      model: 'gpt-5.5',
+      error: Object.assign(new Error('Unauthorized'), { status: 401 }),
+    });
+    const models = await readModels();
+    // 真正的默认：整家被标坏，不 isDefault
+    expect(models.find(model => model.provider === 'custom-team-relay' && model.model === 'gpt-5.5'))
+      .toMatchObject({ recentlyFailed: true, failureKind: 'auth' });
+    expect(models.find(model => model.provider === 'custom-team-relay' && model.model === 'gpt-5.5')?.isDefault).toBeUndefined();
+    // 回落选中的：isDefault + defaultFallback（手机写「已为你换成这个」，不写「电脑默认」）
+    const fallback = models.find(model => model.isDefault);
+    expect(fallback).toMatchObject({ provider: 'longcat', defaultFallback: true });
+    expect(models.filter(model => model.defaultFallback)).toHaveLength(1);
   });
 });

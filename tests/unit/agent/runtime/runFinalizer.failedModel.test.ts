@@ -174,6 +174,30 @@ describe('RunFinalizer 失败事件', () => {
     });
   });
 
+  // 模拟器验收 O2：宿主已能把余额不足归为 quota（弹层副标题），但那一轮消息流只有红字没卡片。
+  // 402 也要沿 failure 标记出去，手机才有「余额或额度用完了」卡和「换一个可用模型」出路。
+  it('402 余额不足带 MODEL_QUOTA 标记出去（带上这一轮真正跑的模型）', async () => {
+    const events: AgentEvent[] = [];
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-quota-failed',
+      onEvent: (event: AgentEvent) => events.push(event),
+      modelConfig: { provider: 'custom-team-relay', model: 'gpt-5.5' },
+      messages: [],
+      maxIterations: 10,
+      stats: { traceId: 'trace-quota', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules({ generateId: () => 'msg-quota', addAndPersistMessage: vi.fn() } as never, { runPostRun: vi.fn() } as never);
+    const paymentRequired = Object.assign(new Error('Insufficient Balance'), { statusCode: 402 });
+    await finalizer.finalizeRun(1, '你好', { endTrace: vi.fn() } as never, 8, { status: 'failed', error: paymentRequired }).catch(() => undefined);
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({
+      code: 'RUN_FAILED',
+      failure: { code: 'MODEL_QUOTA', provider: 'custom-team-relay', model: 'gpt-5.5' },
+    });
+  });
+
   it('goal runtime failure emits a structured abort and marks the single error presentation', async () => {
     const events: AgentEvent[] = [];
     const goalMode = new GoalModeController(buildGoalContract({

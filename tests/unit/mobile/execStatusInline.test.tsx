@@ -199,6 +199,32 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
     expect(stream()).toContain(`outcome:${text.failed}：${text.modelGoneLabel}`);
   });
 
+  // 模拟器验收 O2：余额不足（402）那一轮此前只有红字「执行时出了问题」没有出路。
+  // 与密钥/停用同一套卡片：标题+说明+「换一个可用模型」，显示时不出红字，换走后留一行记录。
+  it('余额或额度用完了：给卡片和「换一个可用模型」，不是只有红字；换走后留记录行', () => {
+    const openModel = vi.fn();
+    const conv = (events: CompanionEvent[], sessionModel: { provider: string; model: string } | null) => <CompanionConversation events={events} artifacts={[]} sessionId="s1" text={text} loadMore={() => {}} disabled={false}
+      respond={async () => {}} respondQuestion={async () => {}} respondPlan={async () => {}} openArtifact={() => {}} openModel={openModel} sessionModel={sessionModel} />;
+    const failed = [
+      ev('message', { id: 'u1', role: 'user', content: '你好', runId: 'r1' }),
+      ev('error', { code: 'MODEL_QUOTA', provider: 'custom-team-relay', model: 'gpt-5.5', runId: 'r1' }),
+    ];
+    const { rerender } = render(conv(failed, { provider: 'custom-team-relay', model: 'gpt-5.5' }));
+    const card = document.querySelector('[data-testid="model-quota-failed"]')!;
+    expect(card.querySelector('h3')!.textContent).toBe('余额或额度用完了');
+    expect(card.querySelector('p')!.textContent)
+      .toBe('这个模型所在的供应商额度不够了，可以先换一个可用模型；也可以在电脑上 Neo 的模型设置里检查额度。');
+    expect(card.querySelector('button')!.textContent).toBe('换一个可用模型');
+    // 卡片显示时消息流不出红字行
+    expect(stream()).not.toContain(`outcome:${runOutcomeCopy(text, 'failed', 'MODEL_QUOTA')}`);
+    fireEvent.click(card.querySelector('button')!);
+    expect(openModel).toHaveBeenCalledTimes(1);
+    // 换走（或又跑过一轮）后卡片收起，留一行「任务失败：余额或额度用完了」当记录
+    rerender(conv(failed, { provider: 'longcat', model: 'LongCat-2.0' }));
+    expect(document.querySelector('[data-testid="model-quota-failed"]')).toBeNull();
+    expect(stream()).toContain(`outcome:${text.failed}：${text.modelQuotaExhausted}`);
+  });
+
   it('RUN_FAILED / PROJECT_SOURCE_* / stopped 仍挂执行结果行，不走模型卡', () => {
     for (const code of ['RUN_FAILED', 'PROJECT_SOURCE_MISSING', 'PROJECT_SOURCE_CHANGED', 'PROJECT_SOURCE_UNTRUSTED'] as const) {
       cleanup();

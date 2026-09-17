@@ -53,7 +53,7 @@ export function projectCompanionEvent(kind: string, value: unknown): Record<stri
         if (failure.kind === 'identity_changed') return { code: 'PROJECT_SOURCE_CHANGED' };
         if (failure.kind === 'not_trusted') return { code: 'PROJECT_SOURCE_UNTRUSTED' };
       }
-      if (failure?.code === 'MODEL_AUTH' || failure?.code === 'MODEL_UNAVAILABLE') {
+      if (failure?.code === 'MODEL_AUTH' || failure?.code === 'MODEL_UNAVAILABLE' || failure?.code === 'MODEL_QUOTA') {
         const marked = failure as { code: string; provider?: unknown; model?: unknown };
         return { code: marked.code,
           ...(typeof marked.provider === 'string' && typeof marked.model === 'string' ? { provider: marked.provider, model: marked.model } : {}) };

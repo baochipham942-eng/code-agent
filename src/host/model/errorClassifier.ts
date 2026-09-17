@@ -2,7 +2,7 @@
 // Error Classifier - Categorise API and runtime errors into known classes
 // ============================================================================
 
-import type { ModelAuthFailureMarker, ModelUnavailableMarker } from '../../shared/contract/model';
+import type { ModelAuthFailureMarker, ModelQuotaFailureMarker, ModelUnavailableMarker } from '../../shared/contract/model';
 import { hasInsufficientBalanceSignal } from '../../shared/utils/providerError';
 import { getModelErrorStatus } from '../../shared/modelErrorDiagnostics';
 
@@ -142,6 +142,23 @@ export function getModelUnavailableMarker(error: unknown): ModelUnavailableMarke
     cursor = candidate.cause;
   }
   if (classifyError(error) === 'model_deprecated') return { code: 'MODEL_UNAVAILABLE' };
+  return undefined;
+}
+
+/**
+ * 供应商余额或额度耗尽（classifyError === quota_exhaustion：402 / 余额不足文案 / remaining 0）。
+ * 与 auth / unavailable 互斥（classifyError 只落一类），runFinalizer 按同一链条带出手机卡片。
+ */
+export function getModelQuotaFailureMarker(error: unknown): ModelQuotaFailureMarker | undefined {
+  let cursor = error;
+  for (let depth = 0; depth < 4 && cursor && typeof cursor === 'object'; depth += 1) {
+    const candidate = cursor as { provider?: unknown; model?: unknown; cause?: unknown };
+    if (classifyError(candidate) === 'quota_exhaustion') {
+      return { code: 'MODEL_QUOTA', ...identityFields(candidate) };
+    }
+    cursor = candidate.cause;
+  }
+  if (classifyError(error) === 'quota_exhaustion') return { code: 'MODEL_QUOTA' };
   return undefined;
 }
 

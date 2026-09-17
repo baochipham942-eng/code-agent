@@ -49,6 +49,17 @@ export interface ModelUnavailableMarker {
   model?: string;
 }
 
+/**
+ * 供应商余额或额度耗尽（HTTP 402 / 明确余额不足文案 / x-ratelimit-remaining: 0）。
+ * 是供应商级问题但不是密钥问题：失败态给「换一个可用模型 / 去检查额度」的出路，
+ * 不冒充密钥让用户去重填 key（模拟器验收 O2：此前只有红字「执行时出了问题」没有出路）。
+ */
+export interface ModelQuotaFailureMarker {
+  code: 'MODEL_QUOTA';
+  provider?: string;
+  model?: string;
+}
+
 export type ModelReasoningEffort = 'low' | 'medium' | 'high';
 
 /** 模型原生 thinking 控制形态；调用方必须按 kind 渲染和写入对应参数。 */

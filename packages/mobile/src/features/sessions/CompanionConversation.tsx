@@ -148,7 +148,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   // 换回同一个坏模型会再出现。旧宿主不带模型时照旧显示。
   const switchedAway = (outcome: RunOutcome) => Boolean(outcome.provider && sessionModel
     && (sessionModel.provider !== outcome.provider || sessionModel.model !== outcome.model));
-  const modelCard = (outcome: RunOutcome) => outcome.code === 'MODEL_AUTH' || outcome.code === 'MODEL_UNAVAILABLE';
+  const modelCard = (outcome: RunOutcome) => outcome.code === 'MODEL_AUTH' || outcome.code === 'MODEL_UNAVAILABLE' || outcome.code === 'MODEL_QUOTA';
   const modelName = (outcome: RunOutcome) => models?.find(item => item.provider === outcome.provider && item.model === outcome.model)?.label
     ?? outcome.model ?? '';
   const outcomesAt = (anchor: string | undefined) => Array.from(outcomes).filter(([, outcome]) => outcome.anchor === anchor)
@@ -156,10 +156,12 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
       const showCard = run === latestRun && modelCard(outcome) && Boolean(openModel) && !switchedAway(outcome);
       return <Fragment key={`outcome:${run}`}>
         {!showCard && <p className="run-outcome" data-outcome={outcome.kind}>{runOutcomeCopy(text, outcome.kind, outcome.code)}</p>}
-        {showCard && <div className="decision" data-testid={outcome.code === 'MODEL_UNAVAILABLE' ? 'model-unavailable' : 'model-auth-failed'}>
+        {showCard && <div className="decision" data-testid={outcome.code === 'MODEL_UNAVAILABLE' ? 'model-unavailable' : outcome.code === 'MODEL_QUOTA' ? 'model-quota-failed' : 'model-auth-failed'}>
           {outcome.code === 'MODEL_UNAVAILABLE'
             ? <><h3>{text.modelGoneTitle}</h3><p>{text.modelGoneDetail.replace('{model}', modelName(outcome))}</p></>
-            : <><h3>{text.modelAuthTitle}</h3><p>{text.modelAuthDetail}</p></>}
+            : outcome.code === 'MODEL_QUOTA'
+              ? <><h3>{text.modelQuotaTitle}</h3><p>{text.modelQuotaDetail}</p></>
+              : <><h3>{text.modelAuthTitle}</h3><p>{text.modelAuthDetail}</p></>}
           <button className="primary" onClick={openModel}>{text.switchModel}</button>
         </div>}
       </Fragment>;

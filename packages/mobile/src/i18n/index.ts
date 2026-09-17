@@ -16,12 +16,14 @@ const zh = {
   // 设计稿 model 屏（N-MOBILE-SESSIONSHEET-SPLIT）：只列电脑已配置的模型。
   chooseModel: '选择会话模型', modelScopeNote: '模型与可选项来自 Neo 的模型配置。更改只作用于本会话后续执行。',
   modelConfigured: '已配置', modelRecentlyFailed: '最近调用失败，可能用不了',
-  modelComputerDefault: '电脑默认', modelKeyBroken: '密钥用不了', modelUnreachable: '最近连不上', modelQuotaExhausted: '余额或额度用完了',
+  modelComputerDefault: '电脑默认', modelSwitchedForYou: '已为你换成这个', modelKeyBroken: '密钥用不了', modelUnreachable: '最近连不上', modelQuotaExhausted: '余额或额度用完了',
   modelGoneLabel: '这个模型用不了了',
   // 设计稿 modelAuthFailed 屏（N-MOBILE-RUNFAIL-REASON）：主动作直接进模型选择。
   modelAuthTitle: '模型密钥用不了', modelAuthDetail: '可以先换一个可用的模型继续；也可以在 Neo 的模型设置里配置或更新这个模型的密钥。', switchModel: '换一个可用模型',
   // 设计稿 modelUnavailable 屏（N-MOBILE-RUNFAIL-DUP）：只留卡片，文案一字不差。
   modelGoneTitle: '这个模型用不了了', modelGoneDetail: '供应商已经停用 {model}。换一个模型就能继续。',
+  // 余额或额度用完（模拟器验收 O2）：与密钥/停用同一套卡片，出路是换模型或回电脑检查额度。
+  modelQuotaTitle: '余额或额度用完了', modelQuotaDetail: '这个模型所在的供应商额度不够了，可以先换一个可用模型；也可以在电脑上 Neo 的模型设置里检查额度。',
   // 设计稿 noUsableModel / noUsableModelHow（N-MOBILE-NO-USABLE-MODEL）。
   noUsableModel: '电脑上还没有能用的模型', noUsableModelHow: '怎么配置',
   noUsableModelBody: '手机用的是电脑上 Neo 的模型。电脑上还没有填好密钥的模型，所以发不出去。',
@@ -164,10 +166,11 @@ const en: Record<keyof typeof zh, string> = {
   projectNoWorkspace: 'No working folder on your computer yet, so you cannot start one here', projectNoWorkspaceNote: 'To use "{name}", set a working folder for it on your computer first.',
   chooseModel: 'Choose a model', modelScopeNote: 'Models come from Neo model settings. Changes apply to later runs in this conversation only.',
   modelConfigured: 'Configured', modelRecentlyFailed: 'Recently failed, may not work',
-  modelComputerDefault: 'Computer default', modelKeyBroken: 'Key does not work', modelUnreachable: 'Recently unreachable', modelQuotaExhausted: 'Balance or quota is used up',
+  modelComputerDefault: 'Computer default', modelSwitchedForYou: 'Switched to this for you', modelKeyBroken: 'Key does not work', modelUnreachable: 'Recently unreachable', modelQuotaExhausted: 'Balance or quota is used up',
   modelGoneLabel: 'This model no longer works',
   modelAuthTitle: 'The model key does not work', modelAuthDetail: 'Switch to another model that works, or add or update this model\'s key in Neo model settings.', switchModel: 'Switch to a working model',
   modelGoneTitle: 'This model no longer works', modelGoneDetail: 'The provider has retired {model}. Switch to another model to continue.',
+  modelQuotaTitle: 'Balance or quota is used up', modelQuotaDetail: 'The provider behind this model is out of credit. Switch to another model that works, or check the quota in Neo model settings on your computer.',
   noUsableModel: 'No usable model on your computer yet', noUsableModelHow: 'How to set up',
   noUsableModelBody: 'The phone uses models from Neo on your computer. None of them have a key yet, so nothing can be sent.',
   noUsableModelStep1: 'Open Neo on your computer', noUsableModelStep2: 'Settings → Models', noUsableModelStep3: 'Add a key for any model',
@@ -304,6 +307,7 @@ export function runOutcomeCopy(text: ReturnType<typeof messages>, kind: 'stopped
     : code === 'PROJECT_SOURCE_UNTRUSTED' ? text.projectSourceUntrusted
     : code === 'MODEL_AUTH' ? text.modelAuthMissing
     : code === 'MODEL_UNAVAILABLE' ? text.modelGoneLabel
+    : code === 'MODEL_QUOTA' ? text.modelQuotaExhausted
     : text.runFailed;
   return `${text.failed}${text === zh ? '：' : ': '}${reason}`;
 }

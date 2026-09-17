@@ -170,6 +170,11 @@ describe('companion device boundary (HTTP + persistent SQLite)', () => {
       .toEqual({ code: 'MODEL_AUTH', provider: 'custom-team-relay', model: 'LongCat-2.0' });
     expect(projectCompanionEvent('error', { failure: { code: 'MODEL_UNAVAILABLE', provider: 'longcat', model: 'LongCat-2.0-Preview', stack: 'secret' } }))
       .toEqual({ code: 'MODEL_UNAVAILABLE', provider: 'longcat', model: 'LongCat-2.0-Preview' });
+    // 余额或额度用完（模拟器验收 O2）：与 AUTH/UNAVAILABLE 同一套贯通，手机据此给「换一个可用模型」卡
+    expect(projectCompanionEvent('error', { failure: { code: 'MODEL_QUOTA', provider: 'custom-team-relay', model: 'gpt-5.5', apiKey: 'sk-secret' } }))
+      .toEqual({ code: 'MODEL_QUOTA', provider: 'custom-team-relay', model: 'gpt-5.5' });
+    expect(projectCompanionEvent('error', { failure: { code: 'MODEL_QUOTA', provider: 'longcat' } }))
+      .toEqual({ code: 'MODEL_QUOTA' });
     expect(JSON.stringify(projectCompanionEvent('error', { stack: 'private-marker', failure: { code: 'PROJECT_SOURCE_TRUST', kind: 'source_missing', sourcePath: '/private/path' } })))
       .not.toContain('private-marker');
     const generating = projectCompanionEvent('artifact_write_started', { toolCallId: 't1', filePath: '/private/secret/photo.png', token: 'secret-marker' });

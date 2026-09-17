@@ -240,6 +240,39 @@ describe('选择会话模型副标题（电脑默认 / 这个模型用不了了 
     expect(row.textContent).toContain('余额或额度用完了');
     expect(row.textContent).not.toContain('密钥用不了');
   });
+
+  // 模拟器验收 O1：电脑默认用不了、默认回落到别的模型时，回落行副标题曾写「电脑默认」——
+  // 电脑端真正默认没变，字面误导。「电脑默认」只标真正的默认行；回落行写中性说法。
+  it('默认回落：「电脑默认」不跟到回落选中的模型上，那行写「已为你换成这个」', () => {
+    render(<LibrarySheet library={{
+      ...library,
+      sessions: [{ id: 's1', title: 'Talk', projectId: 'one', updatedAt: 1, archived: false, provider: 'longcat', model: 'LongCat-2.0' }],
+      models: [
+        { provider: 'custom-team-relay', model: 'gpt-5.5', label: 'gpt-5.5', providerLabel: '团队中转', recentlyFailed: true, failureKind: 'auth' },
+        { provider: 'longcat', model: 'LongCat-2.0', label: 'LongCat 2.0', providerLabel: 'Longcat', isDefault: true, defaultFallback: true },
+      ],
+    }} sessionId="s1" text={text} busy={false} mode="model"
+      projectId="one" select={() => {}} loadMore={() => {}} manage={vi.fn(async () => {})} openProjectSessions={() => {}} />);
+    expect(screen.getByTestId('model-longcat:LongCat-2.0').textContent).toContain('已为你换成这个');
+    expect(screen.getByTestId('model-longcat:LongCat-2.0').textContent).not.toContain('电脑默认');
+    // 真正的默认行挂着失败原因，也不冒充回落语义
+    expect(screen.getByTestId('model-custom-team-relay:gpt-5.5').textContent).toContain('密钥用不了');
+    expect(screen.getByTestId('model-custom-team-relay:gpt-5.5').textContent).not.toContain('电脑默认');
+    expect(screen.getByTestId('model-custom-team-relay:gpt-5.5').textContent).not.toContain('已为你换成这个');
+  });
+
+  it('电脑默认可用时默认行照旧标「电脑默认」（不带 defaultFallback 的 isDefault 不改口）', () => {
+    render(<LibrarySheet library={{
+      ...library,
+      sessions: [{ id: 's1', title: 'Talk', projectId: 'one', updatedAt: 1, archived: false, provider: 'deepseek', model: 'deepseek-chat' }],
+      models: [
+        { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek Chat', providerLabel: 'DeepSeek', isDefault: true },
+      ],
+    }} sessionId="s1" text={text} busy={false} mode="model"
+      projectId="one" select={() => {}} loadMore={() => {}} manage={vi.fn(async () => {})} openProjectSessions={() => {}} />);
+    expect(screen.getByTestId('model-deepseek:deepseek-chat').textContent).toContain('电脑默认');
+    expect(screen.getByTestId('model-deepseek:deepseek-chat').textContent).not.toContain('已为你换成这个');
+  });
 });
 
 /** 消歧标签的路径判定经 projectDisplayName（MobileRoot 前进页标题也走它）覆盖。 */

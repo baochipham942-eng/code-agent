@@ -597,6 +597,7 @@ export function registerProviderHandlers(ipcMain: IpcMain): void {
           const healthMap = monitor.getHealthMap();
           const data: Record<string, {
             status: string; latencyP50: number; errorRate: number;
+            lastSuccessAt: number; lastErrorAt: number;
             providerMark?: { kind: 'auth' | 'network' | 'quota' };
             modelMarks?: Record<string, { kind: 'model' | 'auth' | 'network' | 'quota' }>;
           }> = {};
@@ -608,6 +609,8 @@ export function registerProviderHandlers(ipcMain: IpcMain): void {
               status: health?.status ?? 'healthy',
               latencyP50: health?.latencyP50 ?? 0,
               errorRate: health?.errorRate ?? 0,
+              lastSuccessAt: health?.lastSuccessAt ?? 0,
+              lastErrorAt: health?.lastErrorAt ?? 0,
               ...(providerMark && (providerMark.kind === 'auth' || providerMark.kind === 'network' || providerMark.kind === 'quota')
                 ? { providerMark: { kind: providerMark.kind } } : {}),
               ...(Object.keys(modelMarks).length ? { modelMarks } : {}),

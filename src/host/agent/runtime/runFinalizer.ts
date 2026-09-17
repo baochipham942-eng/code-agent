@@ -28,7 +28,7 @@ import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { resolveContextWindow } from '../../model/modelLimits';
 import { getModelErrorStatus, summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
-import { getModelAuthFailureMarker, getModelUnavailableMarker } from '../../model/errorClassifier';
+import { getModelAuthFailureMarker, getModelQuotaFailureMarker, getModelUnavailableMarker } from '../../model/errorClassifier';
 
 // Import refactored modules
 import type {
@@ -385,9 +385,9 @@ export class RunFinalizer {
         });
       }
       logger.error('[AgentLoop] Loop exited due to runtime error', terminalError);
-      const marker = getModelAuthFailureMarker(terminalError) ?? getModelUnavailableMarker(terminalError);
+      const marker = getModelAuthFailureMarker(terminalError) ?? getModelUnavailableMarker(terminalError) ?? getModelQuotaFailureMarker(terminalError);
       // 带上这一轮真正跑的模型：手机据此判断用户是否已经换走，换了就不再挂「换一个可用模型」。
-      const authFailure = marker && { ...marker, provider: marker.provider ?? this.ctx.modelConfig.provider, model: marker.model ?? this.ctx.modelConfig.model };
+      const modelFailure = marker && { ...marker, provider: marker.provider ?? this.ctx.modelConfig.provider, model: marker.model ?? this.ctx.modelConfig.model };
       logCollector.agent('ERROR', `Agent run failed: ${errorMessage}`);
       this.ctx.onEvent({
         type: 'error',
@@ -403,9 +403,9 @@ export class RunFinalizer {
             model: this.ctx.modelConfig.model,
           },
           goalAbort: this.ctx.goalMode?.getStatus() === 'aborted',
-          // 引擎内吞掉的推理失败只从这里出去：不挂鉴权标记，手机/renderer 只能说「执行时出了问题」，
-          // 用户拿不到「换一个可用模型」这条路（build 45 真机 403）。
-          ...(authFailure ? { failure: authFailure } : {}),
+          // 引擎内吞掉的推理失败只从这里出去：不挂鉴权/停用/余额标记，手机/renderer 只能说
+          // 「执行时出了问题」，用户拿不到「换一个可用模型」这条路（build 45 真机 403；O2：402 同病）。
+          ...(modelFailure ? { failure: modelFailure } : {}),
         },
       });
 

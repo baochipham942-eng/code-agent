@@ -12,7 +12,9 @@ function modelRowStatus(model: CompanionLibrary['models'][number], text: ReturnT
     if (model.failureKind === 'quota') return text.modelQuotaExhausted;
     return text.modelRecentlyFailed;
   }
-  return model.isDefault ? text.modelComputerDefault : text.modelConfigured;
+  // 「电脑默认」只标电脑真正的默认；默认用不了回落到这行时电脑端默认没变，写中性说法（O1）。
+  if (model.isDefault) return model.defaultFallback ? text.modelSwitchedForYou : text.modelComputerDefault;
+  return text.modelConfigured;
 }
 
 export function LibrarySheet({ library, sessionId, text, busy, mode, projectId, select, manage, loadMore, openProjectSessions }: {

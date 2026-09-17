@@ -50,7 +50,8 @@ function companionModelOptions(
     const mark = monitor.getAvailabilityMark(provider, model);
     // 无标记但整家被健康监控熔断（429 连发/超时这类不打标记的失败）：照标失败，
     // kind 用 network（手机显示「最近连不上」），别让手机把路由已跳过的家当好选择。
-    const providerDown = !mark && monitor.getHealth(provider)?.status === 'unavailable';
+    // isProviderDown 要求「最近一次事件是失败」：成功一次即清（D1），不被路由的恢复节奏拖住。
+    const providerDown = !mark && monitor.isProviderDown(provider);
     return {
       provider, model, label, providerLabel,
       ...(mark ? { recentlyFailed: true as const, failureKind: mark.kind } : {}),
@@ -58,9 +59,14 @@ function companionModelOptions(
     };
   });
   const picked = pickCompanionDefaultModel(listed, hostDefault);
+  const hostRow = listed.find(item => item.provider === hostDefault.provider && item.model === hostDefault.model);
   return listed.map(item => ({
     ...item,
     ...(picked?.provider === item.provider && picked?.model === item.model ? { isDefault: true as const } : {}),
+    // 电脑真正的默认（resolveSessionDefaultModelConfig，含回落规则）最近失败或不在列表时，isDefault
+    // 落到回落选中的模型上（新会话预选仍要有一个）。那不是电脑默认：再标 defaultFallback，手机副标题
+    // 写「已为你换成这个」，不冒充「电脑默认」（模拟器验收 O1：字面误导——电脑端默认根本没变）。
+    ...(picked && hostRow !== picked && picked.provider === item.provider && picked.model === item.model ? { defaultFallback: true as const } : {}),
   }));
 }
 

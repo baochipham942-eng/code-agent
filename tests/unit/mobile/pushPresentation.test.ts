@@ -9,7 +9,7 @@ import { LOCALIZABLE_REGIONS, localizableStrings, pushAlertStrings as mapPushAle
 /** 与 build-ios 同一种拼法：文案全部取自 i18n。 */
 const pushAlertStrings = (language: string) => {
   const text = messages(language);
-  return mapPushAlerts(text, runOutcomeCopy(text, 'failed'), runOutcomeCopy(text, 'failed', 'MODEL_AUTH'), runOutcomeCopy(text, 'failed', 'MODEL_UNAVAILABLE'));
+  return mapPushAlerts(text, runOutcomeCopy(text, 'failed'), runOutcomeCopy(text, 'failed', 'MODEL_AUTH'), runOutcomeCopy(text, 'failed', 'MODEL_UNAVAILABLE'), runOutcomeCopy(text, 'failed', 'MODEL_QUOTA'));
 };
 import { companionPushTitleKey } from '../../../src/shared/contract/companionPush';
 
@@ -138,7 +138,8 @@ describe('推送正文走 i18n，不再是裸事件 key（N-MOBILE-EXEC-STATUS �
   const hostKeys = ['agent_complete', 'agent_cancelled', 'error'].map(kind => companionPushTitleKey(kind, {}))
     .concat(companionPushTitleKey('approval', { status: 'pending' }))
     .concat(companionPushTitleKey('error', { code: 'MODEL_AUTH' }))
-    .concat(companionPushTitleKey('error', { code: 'MODEL_UNAVAILABLE' }));
+    .concat(companionPushTitleKey('error', { code: 'MODEL_UNAVAILABLE' }))
+    .concat(companionPushTitleKey('error', { code: 'MODEL_QUOTA' }));
 
   it.each(['zh', 'en'])('%s：Host 会发的每个 loc-key 都有人话正文', language => {
     const strings = pushAlertStrings(language);
@@ -176,6 +177,21 @@ describe('推送正文走 i18n，不再是裸事件 key（N-MOBILE-EXEC-STATUS �
       .toThrow('IOS_PUSH_MODEL_UNAVAILABLE_LINE_REQUIRED');
     expect(pushAlertStrings('zh').task_failed_model_unavailable).toBe(`${zh.failed}：${zh.modelGoneLabel}`);
     expect(pushAlertStrings('zh').task_failed_model_unavailable).not.toContain(zh.modelAuthMissing);
+  });
+
+  // 模拟器验收 O2：余额不足的失败推送也说真因（用户能当场换模型），正文必须显式传入。
+  it('余额或额度用完（MODEL_QUOTA）的推送说真因；漏传 quota 正文直接抛', () => {
+    const zh = messages('zh');
+    expect(companionPushTitleKey('error', { code: 'MODEL_QUOTA' })).toBe('task_failed_model_quota');
+    expect(pushAlertStrings('zh').task_failed_model_quota).toBe(`${zh.failed}：${zh.modelQuotaExhausted}`);
+    expect(pushAlertStrings('zh').task_failed_model_quota).not.toContain(zh.runFailed);
+    expect(pushAlertStrings('zh').task_failed_model_quota).not.toContain(zh.modelAuthMissing);
+    const en = messages('en');
+    expect(pushAlertStrings('en').task_failed_model_quota).toBe(`${en.failed}: ${en.modelQuotaExhausted}`);
+    // JS 调用方带了停用句但漏了 quota 句：直接抛，不许拿密钥/停用文案顶替
+    const jsCallerOmitsQuota = mapPushAlerts as (text: Record<string, string>, failedLine: string, authLine: string, unavailableLine: string) => Record<string, string>;
+    expect(() => jsCallerOmitsQuota(zh, runOutcomeCopy(zh, 'failed'), runOutcomeCopy(zh, 'failed', 'MODEL_AUTH'), runOutcomeCopy(zh, 'failed', 'MODEL_UNAVAILABLE')))
+      .toThrow('IOS_PUSH_MODEL_QUOTA_LINE_REQUIRED');
   });
 
   it('.strings 转义引号、反斜杠、换行', () => {

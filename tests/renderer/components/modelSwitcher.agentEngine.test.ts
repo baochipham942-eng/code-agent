@@ -246,6 +246,19 @@ describe('ModelSwitcher Agent Engine selection', () => {
     });
   });
 
+  // 模拟器验收 D1：成功一次后手机口径即清，电脑面板同口径——不再显示为不可用，
+  // 路由恢复中给中性样式（恢复中），别让两端一个亮红一个照常用。
+  it('unavailable 但最近一次事件是成功：显示成「恢复中」中性样式，不再标不可用', () => {
+    const recovered = { status: 'unavailable', errorRate: 0.8, lastSuccessAt: 200, lastErrorAt: 100 };
+    expect(buildProviderHealthSummary(recovered)).toMatchObject({ state: 'recovering', label: '恢复中' });
+    expect(buildModelRowHealthSummary(recovered, 'LongCat-2.0')).toMatchObject({ state: 'recovering', label: '恢复中' });
+    // 成功之后又失败（最近一次事件是失败）：照实显示不可用（R6 的 429 用例保持）
+    const stillDown = { status: 'unavailable', errorRate: 1, lastSuccessAt: 100, lastErrorAt: 200 };
+    expect(buildModelRowHealthSummary(stillDown, 'LongCat-2.0')).toMatchObject({ state: 'unavailable', label: '不可用' });
+    // 旧 Host 不带两个时间戳：照实显示，不改写
+    expect(buildModelRowHealthSummary({ status: 'unavailable', errorRate: 1 }, 'LongCat-2.0')).toMatchObject({ state: 'unavailable' });
+  });
+
   it('quota 标记（余额/额度耗尽）有自己的话，不冒充密钥', () => {
     expect(buildModelRowHealthSummary({ status: 'healthy', providerMark: { kind: 'quota' } }, 'LongCat-2.0')).toMatchObject({
       state: 'unavailable',

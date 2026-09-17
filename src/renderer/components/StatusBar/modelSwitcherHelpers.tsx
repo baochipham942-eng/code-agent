@@ -293,6 +293,11 @@ export interface ProviderHealthSnapshot {
   status?: string;
   latencyP50?: number;
   errorRate?: number;
+  /** 供显示口径用（与宿主 ProviderHealthMonitor.isProviderDown 同一判据）：成功一次后旧的
+   * unavailable 不再当坏。旧 Host 不带这两个字段——那时 unavailable 照实显示（429 熔断未成功
+   * 不能改写成健康）。 */
+  lastSuccessAt?: number;
+  lastErrorAt?: number;
   /** 供应商级失败（密钥/网络/余额）才整家沉底；模型级停用不带这个。 */
   providerMark?: { kind: 'auth' | 'network' | 'quota' };
   modelMarks?: Record<string, { kind: 'model' | 'auth' | 'network' | 'quota' }>;
@@ -373,8 +378,25 @@ function normalizeProviderAvailabilityState(status?: string): ProviderAvailabili
   }
 }
 
+/**
+ * 显示口径：unavailable 但最近一次事件是成功（lastSuccessAt 不早于 lastErrorAt）→ 按「恢复中」的
+ * 中性样式显示，不再当坏。与宿主 ProviderHealthMonitor.isProviderDown（手机 companionModelOptions
+ * 的 providerDown）同一判据——成功一次即清，路由的恢复节奏（RECOVERY_SUCCESS_COUNT）只管选路，
+ * 不拖住显示（同毫秒并列算已清，与宿主一致）。旧 Host 不带时间戳时照实显示 unavailable
+ * （R6：429 连发且未再成功不许改写成健康）。
+ */
+function displayAvailabilityState(health: ProviderHealthSnapshot): ProviderAvailabilityState {
+  const state = normalizeProviderAvailabilityState(health.status);
+  if (state === 'unavailable'
+    && typeof health.lastSuccessAt === 'number' && typeof health.lastErrorAt === 'number'
+    && health.lastSuccessAt >= health.lastErrorAt) {
+    return 'recovering';
+  }
+  return state;
+}
+
 export function buildProviderHealthSummary(health?: ProviderHealthSnapshot | null): ProviderHealthSummary {
-  const state = normalizeProviderAvailabilityState(health?.status);
+  const state = health ? displayAvailabilityState(health) : 'unknown';
   const label = state === 'unknown' && health?.status ? '未知' : PROVIDER_HEALTH_LABEL[state];
   const latencyLine = typeof health?.latencyP50 === 'number' && Number.isFinite(health.latencyP50)
     ? `P50 ${Math.round(health.latencyP50)}ms`

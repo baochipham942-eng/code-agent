@@ -175,6 +175,20 @@ class ProviderHealthMonitor {
     return [...names];
   }
 
+  /**
+   * 显示口径的「整家连不上」：健康态被熔断成 unavailable **且最近一次事件是失败**（lastErrorAt 严格晚于
+   * lastSuccessAt）。成功一次就清——recordSuccess 已删标记，这里不能还被旧的 unavailable 拖住
+   * （RECOVERY_SUCCESS_COUNT 只管路由的恢复节奏；模拟器验收 D1：500×5 后成功 1 次，手机两行仍
+   * 「最近连不上」、默认挂到别家，电脑端同时刻新建会话却还是原默认，两端不一致）。
+   * 时间戳同毫秒并列算已清：真实调用一轮不可能同毫秒成对出现；会走到这支（无存活标记）的并列，
+   * 只可能是成功刚删掉标记——失败若在其后必会再留下标记，就走标记那支了。
+   */
+  isProviderDown(provider: string): boolean {
+    const state = this.providers.get(provider);
+    if (!state) return false;
+    return state.status === 'unavailable' && state.lastErrorAt > state.lastSuccessAt;
+  }
+
   /** Get health for all providers */
   getHealthMap(): Map<string, ProviderHealth> {
     const result = new Map<string, ProviderHealth>();

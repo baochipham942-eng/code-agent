@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { classifyError, getModelAuthFailureMarker, getModelUnavailableMarker, resolveAvailabilityFailure, MODEL_API_KEY_MISSING_CODE } from '../../../src/host/model/errorClassifier';
+import { classifyError, getModelAuthFailureMarker, getModelQuotaFailureMarker, getModelUnavailableMarker, resolveAvailabilityFailure, MODEL_API_KEY_MISSING_CODE } from '../../../src/host/model/errorClassifier';
 import type { ErrorClass } from '../../../src/host/model/errorClassifier';
 
 // --------------------------------------------------------------------------
@@ -331,5 +331,31 @@ describe('quota_exhaustion → 供应商级 quota（余额或额度用完了）�
       .toEqual({ scope: 'provider', kind: 'auth' });
     expect(resolveAvailabilityFailure(Object.assign(new Error('Forbidden'), { statusCode: 403 })))
       .toEqual({ scope: 'provider', kind: 'auth' });
+  });
+});
+
+// 模拟器验收 O2：402 的失败态要带出路（手机卡片「余额或额度用完了」），先在这里给出结构化标记。
+describe('getModelQuotaFailureMarker', () => {
+  it('402 / 余额不足文案 / remaining 0 认成 MODEL_QUOTA，带上认得出的 provider/model', () => {
+    expect(getModelQuotaFailureMarker({ status: 402, provider: 'custom-team-relay', model: 'gpt-5.5' }))
+      .toEqual({ code: 'MODEL_QUOTA', provider: 'custom-team-relay', model: 'gpt-5.5' });
+    expect(getModelQuotaFailureMarker({ statusCode: 402 })).toEqual({ code: 'MODEL_QUOTA' });
+    expect(getModelQuotaFailureMarker(new Error('Insufficient balance, please top up'))).toEqual({ code: 'MODEL_QUOTA' });
+    expect(getModelQuotaFailureMarker(Object.assign(new Error('rate limited'), { headers: { 'x-ratelimit-remaining': '0' } })))
+      .toEqual({ code: 'MODEL_QUOTA' });
+  });
+
+  it('沿 cause 链上溯（引擎内吞掉的推理失败只剩包装错误）', () => {
+    const wrapped = new Error('run failed', { cause: new Error('inference failed', { cause: { status: 402, provider: 'zhipu' } }) });
+    expect(getModelQuotaFailureMarker(wrapped)).toEqual({ code: 'MODEL_QUOTA', provider: 'zhipu' });
+  });
+
+  it('其他类别不冒充余额不足（auth / 停用 / 网络各归各）', () => {
+    expect(getModelQuotaFailureMarker({ status: 401 })).toBeUndefined();
+    expect(getModelQuotaFailureMarker({ status: 403 })).toBeUndefined();
+    expect(getModelQuotaFailureMarker(Object.assign(new Error('Unsupported model'), { status: 400 }))).toBeUndefined();
+    expect(getModelQuotaFailureMarker(Object.assign(new Error('Bad Gateway'), { status: 502 }))).toBeUndefined();
+    expect(getModelQuotaFailureMarker(new Error('quota exceeded for this month'))).toBeUndefined();
+    expect(getModelQuotaFailureMarker(undefined)).toBeUndefined();
   });
 });

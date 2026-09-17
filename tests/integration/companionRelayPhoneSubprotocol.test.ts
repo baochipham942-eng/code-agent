@@ -6,7 +6,7 @@ import { CompanionGateway } from '../../src/host/services/companion/CompanionGat
 import { CompanionRelayClient } from '../../src/host/services/companion/CompanionRelayClient';
 import { LanCompanionServer } from '../../src/host/services/companion/LanCompanionServer';
 import { createIdentity } from '../../src/shared/companion/noiseChannel';
-import { isPrivateIPv4, toHex } from '../../src/shared/companion/lanProtocol';
+import { isPrivateIPv4 } from '../../src/shared/companion/lanProtocol';
 import { CompanionRelayServer } from '../../packages/relay/src/server';
 import { createCompanionStore } from '../../packages/mobile/src/stores/companionStore';
 import { browserRelayDial } from '../../packages/mobile/src/platform/relayCompanionClient';

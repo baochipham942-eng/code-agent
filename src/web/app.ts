@@ -347,7 +347,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
               if (waiting) {
                 void runRegistry.terminalRecoveredWaitingRun({ runId: waiting.runId })
                   .then((recovered) => {
-                    if (recovered) {
+                    if (recovered && !recovered.joined) {
                       publishCompanionEvent?.(command.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
                     }
                     gateway.settleCommand(command.deviceId, command.commandId, 'accepted', {

@@ -272,6 +272,44 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
     }
   });
 
+  it('answers Cancelled to a caller that joined an in-flight waiting cancel without re-publishing the event', async () => {
+    const { registry, db, workspace } = await recoveredWaitingRegistry({
+      runId: 'run-route-joined',
+      sessionId: 'session-route-joined',
+    });
+    const cancelledEvents: { runId: string; sessionId: string }[] = [];
+    try {
+      // 另一端（手机）的取消正在提交中（终态提交被卡住）：这次 HTTP 调用只并入它。
+      let releaseCommit!: () => void;
+      const commitGate = new Promise<void>((resolve) => { releaseCommit = resolve; });
+      const terminalDurable = registry.terminalDurable.bind(registry);
+      vi.spyOn(registry, 'terminalDurable').mockImplementation(async (...args) => {
+        await commitGate;
+        return terminalDurable(...args);
+      });
+      const inFlight = registry.terminalRecoveredWaitingRun({ runId: 'run-route-joined' });
+      await start(registry, undefined, (input) => cancelledEvents.push(input));
+      const pending = fetch(`${baseUrl}/api/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: 'session-route-joined' }),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      releaseCommit();
+      const response = await pending;
+      await expect(inFlight).resolves.toEqual({ runId: 'run-route-joined', sessionId: 'session-route-joined' });
+      expect(registry.terminalDurable).toHaveBeenCalledTimes(1);
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({ message: 'Cancelled', runId: 'run-route-joined' });
+      expect(cancelledEvents).toEqual([]);
+    } finally {
+      registry.clear();
+      db.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
   it('keeps a mismatched runId from touching the session waiting run', async () => {
     const { registry, db, repository, workspace } = await recoveredWaitingRegistry({
       runId: 'run-route-fence',

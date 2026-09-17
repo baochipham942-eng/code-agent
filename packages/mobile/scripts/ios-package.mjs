@@ -196,8 +196,15 @@ export const LOCALIZABLE_REGIONS = [['en', 'en'], ['zh-Hans', 'zh']];
  * 只有构建脚本用，所以放脚本侧，不从 i18n 导出。推送里不带失败码，失败只能给通用原因；唯一例外是模型密钥用不了，
  * Host 发单独的 task_failed_model_auth（用户能当场换模型，横幅不该把原因藏起来）。
  */
-export function pushAlertStrings(text, failedLine, modelAuthFailedLine) {
-  return { task_complete: text.complete, task_stopped: text.stopped, task_failed: failedLine, task_failed_model_auth: modelAuthFailedLine, approval_needed: text.approval };
+export function pushAlertStrings(text, failedLine, modelAuthFailedLine, modelUnavailableFailedLine = modelAuthFailedLine) {
+  return {
+    task_complete: text.complete,
+    task_stopped: text.stopped,
+    task_failed: failedLine,
+    task_failed_model_auth: modelAuthFailedLine,
+    task_failed_model_unavailable: modelUnavailableFailedLine,
+    approval_needed: text.approval,
+  };
 }
 
 /** Apple .strings 表：每行 "key" = "value";，引号、反斜杠、换行转义。 */

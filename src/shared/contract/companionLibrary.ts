@@ -39,10 +39,13 @@ export interface CompanionLibrary {
   }[];
   sessions: CompanionSessionSummary[];
   /**
-   * isDefault = 电脑自己新建会话会用的那个模型；手机的下拉默认必须跟着它，不是跟着列表顺序。
-   * recentlyFailed = 这个 provider 最近在电脑上调用失败（健康度 unavailable，常见是 key 被拒）。
+   * isDefault = 电脑一处算好的默认（电脑默认且未失败 ＞ 同供应商第一个未失败 ＞ 列表第一个未失败 ＞ 全失败取第一个）。
+   * recentlyFailed = 最近调用失败；failureKind 区分模型级停用 / 供应商密钥 / 网络，旧 Host 可能只带 recentlyFailed。
    */
-  models: { provider: string; model: string; label: string; providerLabel: string; isDefault?: true; recentlyFailed?: true }[];
+  models: {
+    provider: string; model: string; label: string; providerLabel: string;
+    isDefault?: true; recentlyFailed?: true; failureKind?: 'model' | 'auth' | 'network';
+  }[];
 }
 export interface CompanionHistory {
   sessionId: string;

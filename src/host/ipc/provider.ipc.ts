@@ -595,9 +595,23 @@ export function registerProviderHandlers(ipcMain: IpcMain): void {
         case 'getHealthStatus': {
           const monitor = getProviderHealthMonitor();
           const healthMap = monitor.getHealthMap();
-          const data: Record<string, { status: string; latencyP50: number; errorRate: number }> = {};
-          for (const [name, health] of healthMap) {
-            data[name] = { status: health.status, latencyP50: health.latencyP50, errorRate: health.errorRate };
+          const data: Record<string, {
+            status: string; latencyP50: number; errorRate: number;
+            providerMark?: { kind: 'auth' | 'network' };
+            modelMarks?: Record<string, { kind: 'model' | 'auth' | 'network' }>;
+          }> = {};
+          for (const name of monitor.listKnownProviders()) {
+            const health = healthMap.get(name);
+            const providerMark = monitor.getProviderMark(name);
+            const modelMarks = monitor.getModelMarks(name);
+            data[name] = {
+              status: health?.status ?? 'healthy',
+              latencyP50: health?.latencyP50 ?? 0,
+              errorRate: health?.errorRate ?? 0,
+              ...(providerMark && (providerMark.kind === 'auth' || providerMark.kind === 'network')
+                ? { providerMark: { kind: providerMark.kind } } : {}),
+              ...(Object.keys(modelMarks).length ? { modelMarks } : {}),
+            };
           }
           return { success: true, data };
         }

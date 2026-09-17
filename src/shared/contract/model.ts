@@ -39,6 +39,16 @@ export interface ModelAuthFailureMarker {
   model?: string;
 }
 
+/**
+ * 模型被供应商停用 / 不存在（HTTP 400 Unsupported model、404 指向模型）。
+ * 只标这一个模型，不把同供应商的其他模型标坏。
+ */
+export interface ModelUnavailableMarker {
+  code: 'MODEL_UNAVAILABLE';
+  provider?: string;
+  model?: string;
+}
+
 export type ModelReasoningEffort = 'low' | 'medium' | 'high';
 
 /** 模型原生 thinking 控制形态；调用方必须按 kind 渲染和写入对应参数。 */

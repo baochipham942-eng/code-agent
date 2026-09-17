@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { classifyError, getModelAuthFailureMarker, MODEL_API_KEY_MISSING_CODE } from '../../../src/host/model/errorClassifier';
+import { classifyError, getModelAuthFailureMarker, getModelUnavailableMarker, resolveAvailabilityFailure, MODEL_API_KEY_MISSING_CODE } from '../../../src/host/model/errorClassifier';
 import type { ErrorClass } from '../../../src/host/model/errorClassifier';
 
 // --------------------------------------------------------------------------
@@ -216,6 +216,32 @@ describe('classifyError – unknown and edge cases', () => {
 // 与 classifyError 刻意不同：这个结果直接决定用户看到的那句人话，所以**只认字段**。
 // message 是上游自由文案，按文本认必然漏，漏了还静默（deny-list 教训）。
 // --------------------------------------------------------------------------
+
+describe('400 Unsupported model → 模型不可用，不误伤 temperature', () => {
+  it('HTTP 400 Unsupported model 归类为 model_deprecated，并产出 MODEL_UNAVAILABLE 标记', () => {
+    const error = Object.assign(new Error('Unsupported model'), { status: 400, provider: 'longcat', model: 'LongCat-2.0-Preview' });
+    expect(classifyError(error)).toBe<ErrorClass>('model_deprecated');
+    expect(getModelUnavailableMarker(error)).toEqual({
+      code: 'MODEL_UNAVAILABLE',
+      provider: 'longcat',
+      model: 'LongCat-2.0-Preview',
+    });
+    expect(resolveAvailabilityFailure(error)).toEqual({ scope: 'model', kind: 'model' });
+    expect(getModelAuthFailureMarker(error)).toBeUndefined();
+  });
+
+  it('Unsupported value: temperature 不认成模型停用', () => {
+    const error = Object.assign(new Error("Unsupported value: 'temperature' does not support 0.7 with this model."), { status: 400 });
+    expect(classifyError(error)).not.toBe<ErrorClass>('model_deprecated');
+    expect(getModelUnavailableMarker(error)).toBeUndefined();
+  });
+
+  it('401 仍是供应商级鉴权，不是模型停用', () => {
+    const error = Object.assign(new Error('Forbidden'), { statusCode: 403 });
+    expect(resolveAvailabilityFailure(error)).toEqual({ scope: 'provider', kind: 'auth' });
+    expect(getModelUnavailableMarker(error)).toBeUndefined();
+  });
+});
 
 describe('getModelAuthFailureMarker', () => {
   it('HTTP 401 / 403 认成鉴权失败，并带上认得出的 provider/model', () => {

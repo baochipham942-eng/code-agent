@@ -81,6 +81,31 @@ describe('resolveSessionDefaultModelConfig', () => {
     delete (settingsState.settings as Record<string, unknown>).model;
   });
 
+  it('custom provider without model falls back to that provider\'s first listed model, not DEFAULT_MODELS.chat', () => {
+    settingsState.settings.models.default = 'custom-team-relay';
+    settingsState.settings.models.defaultProvider = 'custom-team-relay';
+    (settingsState.settings.models.providers as Record<string, ModelProviderSettings>)['custom-team-relay'] = {
+      enabled: true,
+      apiKeyConfigured: true,
+      models: {
+        'gpt-5.5': { enabled: true },
+        'gpt-5.4-mini': { enabled: true },
+      },
+    };
+
+    const config = resolveSessionDefaultModelConfig();
+
+    expect(config.provider).toBe('custom-team-relay');
+    expect(config.model).toBe('gpt-5.5');
+    expect(config.model).not.toBe('LongCat-2.0');
+  });
+
+  it('provider with an explicit model keeps that model', () => {
+    const config = resolveSessionDefaultModelConfig();
+    expect(config.provider).toBe('xiaomi');
+    expect(config.model).toBe('mimo-v2.5-pro');
+  });
+
   it('uses models.default when the legacy defaultProvider alias disagrees', () => {
     settingsState.settings.models.default = 'xiaomi';
     settingsState.settings.models.defaultProvider = 'claude';

@@ -149,6 +149,13 @@ describe('项目会话前进页（projectSessions：继续已有工作或新建�
     expect(screen.getByText(text.advancedOptions)).toBeTruthy();
   });
 
+  it('没有能用的模型：「新会话」灰掉，下面写原因全文', () => {
+    mountProjectSessions({ models: [] });
+    const start = screen.getByTestId('start-session') as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
+    expect(screen.getByTestId('no-usable-model-hint').textContent).toBe('电脑上还没有能用的模型，配好后才能新建。');
+  });
+
   it('一键新建用电脑默认模型；填了名称才用名称', () => {
     const { manage } = mountProjectSessions();
     fireEvent.click(screen.getByTestId('start-session'));
@@ -175,9 +182,46 @@ describe('mobile model picker default', () => {
     expect(select.value).toBe(key('deepseek', 'deepseek-chat'));
   });
 
-  it('falls back to the first entry when the computer default is not selectable', () => {
-    const { select } = mountProjectSessions({ models: library.models.map(({ isDefault: _drop, ...model }) => model) });
-    expect(select.value).toBe(key('moonshot', 'kimi-k2.6'));
+  it('电脑没标 isDefault 时不拿列表第一项去建会话', () => {
+    const { manage } = mountProjectSessions({ models: library.models.map(({ isDefault: _drop, ...model }) => model) });
+    expect((screen.getByTestId('start-session') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('start-session'));
+    expect(manage).not.toHaveBeenCalled();
+  });
+});
+
+describe('选择会话模型副标题（电脑默认 / 这个模型用不了了 / 密钥用不了）', () => {
+  afterEach(cleanup);
+
+  it('默认行标电脑默认；模型级失败只标这一行', () => {
+    render(<LibrarySheet library={{
+      ...library,
+      sessions: [{ id: 's1', title: 'Talk', projectId: 'one', updatedAt: 1, archived: false, provider: 'deepseek', model: 'deepseek-chat' }],
+      models: [
+        { provider: 'longcat', model: 'LongCat-2.0-Preview', label: 'LongCat 2.0 Preview', providerLabel: 'LongCat', recentlyFailed: true, failureKind: 'model' },
+        { provider: 'longcat', model: 'LongCat-2.0', label: 'LongCat-2.0', providerLabel: 'LongCat' },
+        { provider: 'custom-team-relay', model: 'gpt-5.5', label: 'gpt-5.5', providerLabel: '团队中转', isDefault: true },
+      ],
+    }} sessionId="s1" text={text} busy={false} mode="model"
+      projectId="one" select={() => {}} loadMore={() => {}} manage={vi.fn(async () => {})} openProjectSessions={() => {}} />);
+    expect(screen.getByTestId('model-custom-team-relay:gpt-5.5').textContent).toContain('电脑默认');
+    expect(screen.getByTestId('model-longcat:LongCat-2.0-Preview').textContent).toContain('这个模型用不了了');
+    expect(screen.getByTestId('model-longcat:LongCat-2.0').textContent).toContain('已配置');
+    expect(screen.getByTestId('model-longcat:LongCat-2.0').textContent).not.toContain('这个模型用不了了');
+  });
+
+  it('供应商级密钥失败标整家', () => {
+    render(<LibrarySheet library={{
+      ...library,
+      sessions: [{ id: 's1', title: 'Talk', projectId: 'one', updatedAt: 1, archived: false, provider: 'deepseek', model: 'deepseek-chat' }],
+      models: [
+        { provider: 'longcat', model: 'LongCat-2.0-Preview', label: 'LongCat 2.0 Preview', providerLabel: 'LongCat', recentlyFailed: true, failureKind: 'auth' },
+        { provider: 'longcat', model: 'LongCat-2.0', label: 'LongCat-2.0', providerLabel: 'LongCat', recentlyFailed: true, failureKind: 'auth' },
+      ],
+    }} sessionId="s1" text={text} busy={false} mode="model"
+      projectId="one" select={() => {}} loadMore={() => {}} manage={vi.fn(async () => {})} openProjectSessions={() => {}} />);
+    expect(screen.getByTestId('model-longcat:LongCat-2.0-Preview').textContent).toContain('密钥用不了');
+    expect(screen.getByTestId('model-longcat:LongCat-2.0').textContent).toContain('密钥用不了');
   });
 });
 

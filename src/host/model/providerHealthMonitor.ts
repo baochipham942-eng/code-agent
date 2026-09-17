@@ -4,10 +4,24 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import {
+  resolveAvailabilityFailure,
+  type AvailabilityKind,
+  type AvailabilityScope,
+} from './errorClassifier';
 
 const logger = createLogger('ProviderHealthMonitor');
 
 export type HealthStatus = 'healthy' | 'degraded' | 'unavailable' | 'recovering';
+export type { AvailabilityKind, AvailabilityScope };
+
+export const AVAILABILITY_MARK_TTL_MS = 30 * 60_000;
+
+export interface AvailabilityMark {
+  scope: AvailabilityScope;
+  kind: AvailabilityKind;
+  at: number;
+}
 
 export interface ProviderHealth {
   provider: string;
@@ -37,11 +51,19 @@ interface ProviderState {
   status: HealthStatus;
 }
 
+function modelKey(provider: string, model: string): string {
+  return `${provider}\0${model}`;
+}
+
 class ProviderHealthMonitor {
   private providers = new Map<string, ProviderState>();
+  /** 供应商级失败（401/403、余额、网络）：标整家。 */
+  private providerMarks = new Map<string, AvailabilityMark>();
+  /** 模型级失败（停用 / 不存在）：只标这一个模型。 */
+  private modelMarks = new Map<string, AvailabilityMark>();
 
   /** Call after each successful request */
-  recordSuccess(provider: string, latencyMs: number): void {
+  recordSuccess(provider: string, latencyMs: number, options?: { model?: string }): void {
     const state = this.getOrCreate(provider);
     state.observationCount++;
     state.latencies.push(latencyMs);
@@ -52,12 +74,35 @@ class ProviderHealthMonitor {
     state.lastSuccessAt = Date.now();
     this.pruneEvents(state);
     this.updateStatus(provider, state);
+    // 成功一次立即清该级标记：这个模型的模型级标记 + 这家的供应商级标记。
+    if (options?.model) this.modelMarks.delete(modelKey(provider, options.model));
+    this.providerMarks.delete(provider);
   }
 
   /** Call after each failed request */
-  recordFailure(provider: string, options?: { cancelled?: boolean }): void {
+  recordFailure(provider: string, options?: {
+    cancelled?: boolean;
+    model?: string;
+    error?: unknown;
+    scope?: AvailabilityScope;
+    kind?: AvailabilityKind;
+  }): void {
     // 用户主动取消不是 provider 故障，不参与健康统计，也不记作成功。
     if (options?.cancelled === true) return;
+    const classified = options?.scope && options?.kind
+      ? { scope: options.scope, kind: options.kind }
+      : resolveAvailabilityFailure(options?.error);
+    const at = Date.now();
+    if (classified?.scope === 'model' && options?.model) {
+      this.modelMarks.set(modelKey(provider, options.model), { scope: 'model', kind: classified.kind, at });
+      // 模型级失败不把整家打成 unavailable（Preview 下线不能连累 LongCat-2.0）。
+      const state = this.getOrCreate(provider);
+      state.observationCount++;
+      return;
+    }
+    if (classified?.scope === 'provider') {
+      this.providerMarks.set(provider, { scope: 'provider', kind: classified.kind, at });
+    }
     const state = this.getOrCreate(provider);
     state.observationCount++;
     state.events.push({ time: Date.now(), success: false });
@@ -66,6 +111,53 @@ class ProviderHealthMonitor {
     state.lastErrorAt = Date.now();
     this.pruneEvents(state);
     this.updateStatus(provider, state);
+  }
+
+  private expired(at: number, now = Date.now()): boolean {
+    return now - at >= AVAILABILITY_MARK_TTL_MS;
+  }
+
+  getAvailabilityMark(provider: string, model: string): AvailabilityMark | null {
+    const now = Date.now();
+    const providerMark = this.providerMarks.get(provider);
+    if (providerMark && !this.expired(providerMark.at, now)) return providerMark;
+    if (providerMark) this.providerMarks.delete(provider);
+    const mark = this.modelMarks.get(modelKey(provider, model));
+    if (mark && !this.expired(mark.at, now)) return mark;
+    if (mark) this.modelMarks.delete(modelKey(provider, model));
+    return null;
+  }
+
+  getProviderMark(provider: string): AvailabilityMark | null {
+    const mark = this.providerMarks.get(provider);
+    if (!mark) return null;
+    if (this.expired(mark.at)) {
+      this.providerMarks.delete(provider);
+      return null;
+    }
+    return mark;
+  }
+
+  getModelMarks(provider: string): Record<string, { kind: AvailabilityKind }> {
+    const now = Date.now();
+    const out: Record<string, { kind: AvailabilityKind }> = {};
+    const prefix = `${provider}\0`;
+    for (const [key, mark] of this.modelMarks) {
+      if (!key.startsWith(prefix)) continue;
+      if (this.expired(mark.at, now)) {
+        this.modelMarks.delete(key);
+        continue;
+      }
+      out[key.slice(prefix.length)] = { kind: mark.kind };
+    }
+    return out;
+  }
+
+  listKnownProviders(): string[] {
+    const names = new Set(this.providers.keys());
+    for (const name of this.providerMarks.keys()) names.add(name);
+    for (const key of this.modelMarks.keys()) names.add(key.slice(0, key.indexOf('\0')));
+    return [...names];
   }
 
   /** Get health for all providers */
@@ -161,4 +253,8 @@ let instance: ProviderHealthMonitor | null = null;
 export function getProviderHealthMonitor(): ProviderHealthMonitor {
   if (!instance) instance = new ProviderHealthMonitor();
   return instance;
+}
+
+export function resetProviderHealthMonitorForTests(): void {
+  instance = null;
 }

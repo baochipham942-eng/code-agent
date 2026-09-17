@@ -8,13 +8,11 @@ import type { RoutingResolution } from '../../../shared/contract/agentRouting';
 import type { ConfigService } from '../../services/core/configService';
 import { getModelSessionState } from '../../session/modelSessionState';
 import {
-  DEFAULT_MODELS,
   DEFAULT_PROVIDER,
-  getDefaultModelForProvider,
   getModelMaxOutputTokens,
   normalizeProviderId,
 } from '../../../shared/constants';
-import { PROVIDER_REGISTRY } from '../../model/providerRegistry';
+import { fallbackModelForProvider } from '../../../shared/modelRuntime';
 import { createLogger } from '../../services/infra/logger';
 import { resolveConfiguredDefaultProvider } from '../../../shared/modelDefaults';
 
@@ -33,7 +31,7 @@ export function resolveModelConfig(
   const providerConfig =
     settings.models?.providers?.[normalizedProvider]
     ?? settings.models?.providers?.[userProviderStr];
-  const userModel = providerConfig?.model || getDefaultModelByProvider(normalizedProvider);
+  const userModel = providerConfig?.model || getDefaultModelByProvider(normalizedProvider, settings);
   const maxTokens = providerConfig?.models?.[userModel]?.maxTokens
     ?? providerConfig?.maxTokens
     ?? getModelMaxOutputTokens(userModel, normalizedProvider);
@@ -115,19 +113,8 @@ export function resolveRunModelConfig(
 /**
  * 获取 provider 的默认模型
  */
-export function getDefaultModelByProvider(provider: string): string {
-  const normalizedProvider = normalizeProviderId(provider) ?? provider;
-  const sharedDefaultModel = getDefaultModelForProvider(normalizedProvider);
-  if (sharedDefaultModel) {
-    return sharedDefaultModel;
-  }
-
-  // 从 PROVIDER_REGISTRY 获取每个 provider 的第一个模型作为默认
-  const reg = PROVIDER_REGISTRY[normalizedProvider];
-  if (reg && reg.models.length > 0) {
-    return reg.models[0].id;
-  }
-  return DEFAULT_MODELS.chat;
+export function getDefaultModelByProvider(provider: string, settings?: Parameters<typeof fallbackModelForProvider>[1]): string {
+  return fallbackModelForProvider(provider, settings);
 }
 
 /**

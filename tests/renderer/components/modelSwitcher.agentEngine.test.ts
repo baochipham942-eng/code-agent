@@ -193,6 +193,32 @@ describe('ModelSwitcher Agent Engine selection', () => {
     ]);
   });
 
+  it('模型级失败不把整家沉底；供应商级标记才沉底', () => {
+    const longcat = {
+      provider: 'longcat',
+      providerLabel: 'LongCat',
+      options: [
+        { provider: 'longcat', model: 'LongCat-2.0-Preview', label: 'Preview', providerLabel: 'LongCat', features: [] },
+        { provider: 'longcat', model: 'LongCat-2.0', label: '2.0', providerLabel: 'LongCat', features: [] },
+      ],
+    };
+    const deepseek = {
+      provider: 'deepseek',
+      providerLabel: 'DeepSeek',
+      options: [{ provider: 'deepseek', model: 'deepseek-chat', label: 'Chat', providerLabel: 'DeepSeek', features: [] }],
+    };
+    const modelOnly = sortProviderGroupsByModelStrategy([longcat, deepseek], {
+      longcat: { status: 'healthy', modelMarks: { 'LongCat-2.0-Preview': { kind: 'model' } } },
+      deepseek: { status: 'healthy' },
+    });
+    expect(modelOnly.map(group => group.provider)).toEqual(['longcat', 'deepseek']);
+    const providerMarked = sortProviderGroupsByModelStrategy([longcat, deepseek], {
+      longcat: { status: 'healthy', providerMark: { kind: 'auth' } },
+      deepseek: { status: 'healthy' },
+    });
+    expect(providerMarked.map(group => group.provider)).toEqual(['deepseek', 'longcat']);
+  });
+
   it('summarizes provider billing mode for model strategy badges', () => {
     expect(buildProviderBillingSummary('payg')).toMatchObject({
       mode: 'payg',

@@ -21,20 +21,42 @@ import type { AppSettings } from '../../../shared/contract';
 const logger = createLogger('CompanionLibrary');
 
 /**
+ * 电脑一处算默认：电脑默认（在列表且未失败）＞同供应商第一个未失败＞列表第一个未失败＞全失败取第一个。
+ * 手机只读 isDefault，不再自己拿 models[0]（FB-141 / N-COMPANION-DEFAULT-MODEL-FAILING）。
+ */
+export function pickCompanionDefaultModel<T extends { provider: string; model: string; recentlyFailed?: true }>(
+  models: readonly T[],
+  hostDefault: { provider: string; model: string },
+): T | undefined {
+  if (models.length === 0) return undefined;
+  const usable = (item: T) => !item.recentlyFailed;
+  const host = models.find(item => item.provider === hostDefault.provider && item.model === hostDefault.model);
+  if (host && usable(host)) return host;
+  const sameProvider = models.find(item => item.provider === hostDefault.provider && usable(item));
+  if (sameProvider) return sameProvider;
+  return models.find(usable) ?? models[0];
+}
+
+/**
  * 手机的模型下拉直接吃这个列表。可用性由 buildRuntimeModelOptions 负责（没配 key 的 provider
- * 不进列表），默认项由电脑自己的新会话默认模型决定——列表顺序是桌面切换面板的 provider 常量序
- * （moonshot 排第一），拿它当默认等于让手机替用户挑了一家他从没选过的（FB-141）。
+ * 不进列表），默认项由 pickCompanionDefaultModel 标 isDefault。
  */
 function companionModelOptions(
   settings: AppSettings | null | undefined,
   hostDefault: { provider: string; model: string },
 ): CompanionLibrary['models'] {
-  return buildRuntimeModelOptions(settings).map(({ provider, model, label, providerLabel }) => ({
-    provider, model, label, providerLabel,
-    ...(provider === hostDefault.provider && model === hostDefault.model ? { isDefault: true as const } : {}),
-    // 配了 key 不等于能用：key 被拒（403）的 provider 照样在列表里。刚因鉴权失败要换模型的人
-    // 不该再换到它身上（build 45 真机：默认的 custom-team-relay 就是被拒的那家）。
-    ...(getProviderHealthMonitor().getHealth(provider)?.status === 'unavailable' ? { recentlyFailed: true as const } : {}),
+  const monitor = getProviderHealthMonitor();
+  const listed = buildRuntimeModelOptions(settings).map(({ provider, model, label, providerLabel }) => {
+    const mark = monitor.getAvailabilityMark(provider, model);
+    return {
+      provider, model, label, providerLabel,
+      ...(mark ? { recentlyFailed: true as const, failureKind: mark.kind } : {}),
+    };
+  });
+  const picked = pickCompanionDefaultModel(listed, hostDefault);
+  return listed.map(item => ({
+    ...item,
+    ...(picked?.provider === item.provider && picked?.model === item.model ? { isDefault: true as const } : {}),
   }));
 }
 

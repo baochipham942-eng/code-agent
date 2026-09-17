@@ -293,6 +293,9 @@ export interface ProviderHealthSnapshot {
   status?: string;
   latencyP50?: number;
   errorRate?: number;
+  /** 供应商级失败（密钥/网络）才整家沉底；模型级停用不带这个。 */
+  providerMark?: { kind: 'auth' | 'network' };
+  modelMarks?: Record<string, { kind: 'model' | 'auth' | 'network' }>;
 }
 
 export type ProviderAvailabilityState = 'healthy' | 'recovering' | 'unknown' | 'degraded' | 'unavailable';
@@ -399,6 +402,14 @@ export function compareProviderHealth(
   return buildProviderHealthSummary(left).rank - buildProviderHealthSummary(right).rank;
 }
 
+export function healthSnapshotForProviderSort(snapshot?: ProviderHealthSnapshot | null): ProviderHealthSnapshot | null | undefined {
+  if (!snapshot) return snapshot;
+  if (snapshot.providerMark) return { ...snapshot, status: 'unavailable' };
+  // 模型级失败不能把整家沉底；路由窗口的 unavailable 也不再当作家级失败。
+  if (snapshot.status === 'unavailable') return { ...snapshot, status: 'healthy' };
+  return snapshot;
+}
+
 export function sortProviderGroupsByModelStrategy<T extends RuntimeModelOptionGroup>(
   groups: readonly T[],
   healthMap: Record<string, ProviderHealthSnapshot | undefined>,
@@ -409,8 +420,34 @@ export function sortProviderGroupsByModelStrategy<T extends RuntimeModelOptionGr
 
     const leftProvider = left.options[0]?.provider ?? left.provider;
     const rightProvider = right.options[0]?.provider ?? right.provider;
-    return compareProviderHealth(healthMap[leftProvider], healthMap[rightProvider]);
+    return compareProviderHealth(healthSnapshotForProviderSort(healthMap[leftProvider]), healthSnapshotForProviderSort(healthMap[rightProvider]));
   });
+}
+
+const AVAILABILITY_KIND_LABEL: Record<'model' | 'auth' | 'network', string> = {
+  model: '这个模型用不了了',
+  auth: '密钥用不了',
+  network: '最近连不上',
+};
+
+export function buildModelRowHealthSummary(
+  snapshot: ProviderHealthSnapshot | undefined,
+  modelId: string,
+): ProviderHealthSummary | null {
+  const kind = snapshot?.providerMark?.kind ?? snapshot?.modelMarks?.[modelId]?.kind;
+  if (kind) {
+    return {
+      state: 'unavailable',
+      label: AVAILABILITY_KIND_LABEL[kind],
+      detail: AVAILABILITY_KIND_LABEL[kind],
+      rank: PROVIDER_HEALTH_RANK.unavailable,
+      dotClass: HEALTH_DOT_COLOR.unavailable,
+      badgeClass: PROVIDER_HEALTH_BADGE_CLASS.unavailable,
+    };
+  }
+  if (!snapshot) return null;
+  if (snapshot.status === 'unavailable') return buildProviderHealthSummary({ ...snapshot, status: 'healthy' });
+  return buildProviderHealthSummary(snapshot);
 }
 
 export function buildProviderBillingSummary(mode?: BillingMode | null): ProviderBillingSummary {

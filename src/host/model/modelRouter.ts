@@ -160,7 +160,7 @@ export class ModelRouter {
   private loggedProtocolOverrides = new Set<string>();
 
   private recordProviderHardFailure(provider: string): void {
-    getProviderHealthMonitor().recordFailure(provider);
+    getProviderHealthMonitor().recordFailure(provider, { scope: 'provider', kind: 'auth' });
     getProviderHealthMonitor().recordFailure(provider);
     getProviderHealthMonitor().recordFailure(provider);
   }
@@ -905,15 +905,14 @@ export class ModelRouter {
       // Legacy providers do not all use the shared retry wrapper. Fill the
       // canonical provider key only when the inner path recorded nothing.
       if (healthMonitor.getObservationCount(config.provider) === observationCount) {
-        healthMonitor.recordSuccess(config.provider, Date.now() - startedAt);
+        healthMonitor.recordSuccess(config.provider, Date.now() - startedAt, { model: config.model });
       }
       return response;
     } catch (error) {
       if (healthMonitor.getObservationCount(config.provider) === observationCount) {
-        healthMonitor.recordFailure(config.provider, {
+        healthMonitor.recordFailure(config.provider, { model: config.model, error,
           cancelled: signal?.aborted === true
-            || (timedAbort?.controller.signal.aborted !== true && isCancellationError(error)),
-        });
+            || (timedAbort?.controller.signal.aborted !== true && isCancellationError(error)) });
       }
       if (timedAbort?.controller.signal.aborted && !signal?.aborted) {
         throw new Error(`${config.provider} request timeout after ${timeoutMs}ms`, { cause: error });

@@ -168,6 +168,8 @@ describe('companion device boundary (HTTP + persistent SQLite)', () => {
     // 带上失败的是哪个模型（provider/model 两个都在才带），手机据此判断用户是否已经换走
     expect(projectCompanionEvent('error', { failure: { code: 'MODEL_AUTH', provider: 'custom-team-relay', model: 'LongCat-2.0', apiKey: 'sk-secret' } }))
       .toEqual({ code: 'MODEL_AUTH', provider: 'custom-team-relay', model: 'LongCat-2.0' });
+    expect(projectCompanionEvent('error', { failure: { code: 'MODEL_UNAVAILABLE', provider: 'longcat', model: 'LongCat-2.0-Preview', stack: 'secret' } }))
+      .toEqual({ code: 'MODEL_UNAVAILABLE', provider: 'longcat', model: 'LongCat-2.0-Preview' });
     expect(JSON.stringify(projectCompanionEvent('error', { stack: 'private-marker', failure: { code: 'PROJECT_SOURCE_TRUST', kind: 'source_missing', sourcePath: '/private/path' } })))
       .not.toContain('private-marker');
     const generating = projectCompanionEvent('artifact_write_started', { toolCallId: 't1', filePath: '/private/secret/photo.png', token: 'secret-marker' });

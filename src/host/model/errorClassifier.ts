@@ -2,7 +2,7 @@
 // Error Classifier - Categorise API and runtime errors into known classes
 // ============================================================================
 
-import type { ModelAuthFailureMarker } from '../../shared/contract/model';
+import type { ModelAuthFailureMarker, ModelUnavailableMarker } from '../../shared/contract/model';
 import { hasInsufficientBalanceSignal } from '../../shared/utils/providerError';
 import { getModelErrorStatus } from '../../shared/modelErrorDiagnostics';
 
@@ -76,7 +76,7 @@ const MESSAGE_PATTERNS: Array<[RegExp, ErrorClass]> = [
   [/x-ratelimit-remaining.*\b0\b/i, 'quota_exhaustion'],
   [/content.?filter|content.?policy|safety|harmful|violat(?:es?|ion)|moderation/i, 'content_policy'],
   [/unexpected.?token|JSON\.parse|invalid json|SyntaxError|tool_use.*corrupt|malformed.*json/i, 'malformed_response'],
-  [/model.*(?:not.?found|deprecated|decommission|retired|does not exist)|(?:deprecated|retired).*model/i, 'model_deprecated'],
+  [/unsupported\s+model|model.*(?:not.?found|deprecated|decommission|retired|does not exist|unsupported)|(?:deprecated|retired).*model/i, 'model_deprecated'],
   [/rate limit|too many requests|quota exceeded/i, 'rate_limit'],
   [/invalid_api_key|authentication_error|invalid token|unauthorized|forbidden/i, 'auth'],
   [/econnreset|econnrefused|etimedout|socket hang up|network error|fetch failed/i, 'network'],
@@ -120,6 +120,50 @@ export function getModelAuthFailureMarker(error: unknown): ModelAuthFailureMarke
   return undefined;
 }
 
+function identityFields(candidate: { provider?: unknown; model?: unknown }): { provider?: string; model?: string } {
+  return {
+    ...(typeof candidate.provider === 'string' && candidate.provider ? { provider: candidate.provider } : {}),
+    ...(typeof candidate.model === 'string' && candidate.model ? { model: candidate.model } : {}),
+  };
+}
+
+/**
+ * 模型被供应商停用 / 不存在。认 classifyError === model_deprecated，或 400 Unsupported model / 404 指向模型。
+ * 鉴权失败走 getModelAuthFailureMarker，这里让位。
+ */
+export function getModelUnavailableMarker(error: unknown): ModelUnavailableMarker | undefined {
+  if (getModelAuthFailureMarker(error)) return undefined;
+  let cursor = error;
+  for (let depth = 0; depth < 4 && cursor && typeof cursor === 'object'; depth += 1) {
+    const candidate = cursor as { provider?: unknown; model?: unknown; cause?: unknown };
+    if (classifyError(candidate) === 'model_deprecated') {
+      return { code: 'MODEL_UNAVAILABLE', ...identityFields(candidate) };
+    }
+    cursor = candidate.cause;
+  }
+  if (classifyError(error) === 'model_deprecated') return { code: 'MODEL_UNAVAILABLE' };
+  return undefined;
+}
+
+export type AvailabilityKind = 'model' | 'auth' | 'network';
+export type AvailabilityScope = 'model' | 'provider';
+export type AvailabilityFailure = { scope: AvailabilityScope; kind: AvailabilityKind };
+
+/** 把一次调用失败分成「只标这个模型」还是「标整家供应商」，给健康监控用。 */
+export function resolveAvailabilityFailure(error: unknown): AvailabilityFailure | undefined {
+  if (error == null) return undefined;
+  if (getModelAuthFailureMarker(error) || classifyError(error) === 'auth' || classifyError(error) === 'quota_exhaustion') {
+    return { scope: 'provider', kind: 'auth' };
+  }
+  if (getModelUnavailableMarker(error) || classifyError(error) === 'model_deprecated') {
+    return { scope: 'model', kind: 'model' };
+  }
+  if (classifyError(error) === 'network' || classifyError(error) === 'unavailable') {
+    return { scope: 'provider', kind: 'network' };
+  }
+  return undefined;
+}
+
 export function classifyError(error: unknown): ErrorClass {
   const status = getStatus(error);
 
@@ -138,6 +182,11 @@ export function classifyError(error: unknown): ErrorClass {
     if (status === 400) {
       const msg = getMessage(error);
       if (/content.?filter|content.?policy|safety|harmful|violat|moderation/i.test(msg)) return 'content_policy';
+      // 「Unsupported model」是模型下线，不是 content policy，也不是笼统 400。
+      // 不认 bare "unsupported"（会误伤 Unsupported value: temperature）。
+      if (/unsupported\s+model/i.test(msg) || /model.*(?:not.?found|does not exist|not\s+supported)/i.test(msg)) {
+        return 'model_deprecated';
+      }
     }
   }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -34,6 +34,7 @@ vi.mock('../../../src/host/services/core/configService', () => ({
 }));
 
 import { CompanionLibraryService } from '../../../src/host/services/companion/CompanionLibraryService';
+import { getProviderHealthMonitor, resetProviderHealthMonitorForTests } from '../../../src/host/model/providerHealthMonitor';
 
 async function readModels() {
   const db = new Database(':memory:');
@@ -71,5 +72,71 @@ describe('companion model list marks the computer default', () => {
     // 而那个返回值里带 apiKey / baseUrl / maxTokens
     const marked = models.find(model => model.isDefault);
     expect(Object.keys(marked ?? {}).sort()).toEqual(['isDefault', 'label', 'model', 'provider', 'providerLabel']);
+  });
+});
+
+describe('爸配置形状：custom 供应商无 model + 列表首项已失败', () => {
+  const original = structuredClone(settings.models);
+  beforeEach(() => {
+    resetProviderHealthMonitorForTests();
+    settings.models = {
+      default: 'custom-team-relay',
+      providers: {
+        longcat: {
+          enabled: true,
+          apiKeyConfigured: true,
+          models: {
+            'LongCat-2.0-Preview': { enabled: true },
+            'LongCat-2.0': { enabled: true },
+          },
+        },
+        'custom-team-relay': {
+          enabled: true,
+          apiKeyConfigured: true,
+          displayName: '团队中转',
+          models: {
+            'gpt-5.5': { enabled: true, label: 'gpt-5.5' },
+            'gpt-5.4-mini': { enabled: true, label: 'gpt-5.4-mini' },
+          },
+        },
+      },
+    };
+  });
+  afterEach(() => {
+    settings.models = original;
+    resetProviderHealthMonitorForTests();
+  });
+
+  it('isDefault 落在同供应商可用模型 gpt-5.5，不拿列表第一个 Preview', async () => {
+    getProviderHealthMonitor().recordFailure('longcat', {
+      model: 'LongCat-2.0-Preview',
+      error: Object.assign(new Error('Unsupported model'), { status: 400 }),
+    });
+    const models = await readModels();
+    expect(models[0]).toMatchObject({ provider: 'longcat', model: 'LongCat-2.0-Preview', recentlyFailed: true, failureKind: 'model' });
+    expect(models.find(model => model.model === 'LongCat-2.0')).toMatchObject({ provider: 'longcat' });
+    expect(models.find(model => model.model === 'LongCat-2.0')?.recentlyFailed).toBeUndefined();
+    const marked = models.filter(model => model.isDefault);
+    expect(marked).toHaveLength(1);
+    expect(marked[0]).toMatchObject({ provider: 'custom-team-relay', model: 'gpt-5.5' });
+  });
+
+  it('供应商级 401 标整家；Preview 的模型级失败不连累 LongCat-2.0', async () => {
+    getProviderHealthMonitor().recordFailure('longcat', {
+      model: 'LongCat-2.0-Preview',
+      error: Object.assign(new Error('Unsupported model'), { status: 400 }),
+    });
+    let models = await readModels();
+    expect(models.find(model => model.model === 'LongCat-2.0-Preview')?.failureKind).toBe('model');
+    expect(models.find(model => model.model === 'LongCat-2.0')?.recentlyFailed).toBeUndefined();
+
+    resetProviderHealthMonitorForTests();
+    getProviderHealthMonitor().recordFailure('longcat', {
+      model: 'LongCat-2.0-Preview',
+      error: Object.assign(new Error('Forbidden'), { status: 403 }),
+    });
+    models = await readModels();
+    expect(models.filter(model => model.provider === 'longcat').every(model => model.failureKind === 'auth' && model.recentlyFailed)).toBe(true);
+    expect(models.find(model => model.provider === 'custom-team-relay' && model.model === 'gpt-5.5')?.recentlyFailed).toBeUndefined();
   });
 });

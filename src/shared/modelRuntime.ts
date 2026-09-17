@@ -1,5 +1,6 @@
 import type { AppSettings, BillingMode, ModelCapability, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from './contract';
 import {
+  DEFAULT_MODELS,
   MODEL_FEATURES,
   PROVIDER_MODELS,
   PROVIDER_MODELS_MAP,
@@ -844,6 +845,16 @@ export function hasConfiguredDefaultRuntimeModel(settings?: AppSettings | null):
   const providerConfig = settings.models.providers?.[providerId];
   if (!providerConfig || providerConfig.enabled === false) return false;
   return isRuntimeProviderAvailable(providerId, providerConfig);
+}
+
+/**
+ * 供应商未单独配 model 时的回落：该供应商运行时列表的第一项，而不是全局 DEFAULT_MODELS.chat。
+ * custom-* 不在内置表里，旧链路会把「团队中转」落成它根本没有的 LongCat-2.0（N-COMPANION-DEFAULT-MODEL-FAILING）。
+ */
+export function fallbackModelForProvider(provider: string, settings?: { models?: unknown } | null): string {
+  const listed = buildRuntimeModelOptions(settings as AppSettings | null | undefined).find(option => option.provider === provider)?.model;
+  if (listed) return listed;
+  return getProviderInfo(provider)?.defaultModel ?? DEFAULT_MODELS.chat;
 }
 
 function compareProviderOptionSource(

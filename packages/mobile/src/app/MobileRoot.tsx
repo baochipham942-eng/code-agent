@@ -379,11 +379,13 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   // 新任务的项目与模型（N-MOBILE-DEFAULT-PROJECT）：手选过的 > 最近用过的 > 未分类；模型 = 电脑默认 > 列表第一项（FB-141）。
   const hostKey = companion.binding?.hostKey;
   const newTaskProjectId = companion.library ? defaultProjectId(companion.library, hostKey ? state.preferences.projectPicks?.[hostKey] : undefined) : null;
-  const newTaskModel = companion.library?.models.find(m => m.isDefault) ?? companion.library?.models[0];
+  const newTaskModel = companion.library?.models.find(m => m.isDefault);
   /** 「会话没建成」那条状态的重试：重做最近一次建会话的那个动作（+、没选会话发送、弹层里选项目）。 */
   const lastCreate = useRef<(() => void) | null>(null);
   const createInDefaultProject = () => {
-    if (!newTaskProjectId || !newTaskModel) { state.openSheet('projects'); return false; }
+    // 没有能用的模型：草稿留着、不弹项目弹层（N-MOBILE-NO-USABLE-MODEL）。
+    if (!newTaskModel) return false;
+    if (!newTaskProjectId) { state.openSheet('projects'); return false; }
     void manage('session.create', { title: text.newSession, provider: newTaskModel.provider, model: newTaskModel.model }, `project:${newTaskProjectId}`).then(() => {
       const live = companionStore.getState();
       if (live.commandError && live.commandErrorAction === 'session.create') firstSend.current = null;
@@ -526,6 +528,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           offline={companion.status !== 'connected'}
           openModel={openModelSheet}
           sessionModel={companion.library?.sessions.find(s => s.id === companion.sessionId) ?? null}
+          models={companion.library?.models}
           // 执行条平时只说「哪一次在跑」；停止在输入区那个键上。录音面板顶掉输入区时才把
           // stop 交给它，避免运行中一开录音就没法停（grok ai-review PR#1903 Nit①）。
           running={companion.runId
@@ -585,6 +588,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           status={composerStatusItems(text, { ...companion, binding: !!companion.binding, saveError: state.saveError, nativeError, sendAttempted: state.sendAttempted, voiceFailureShown, pendingSlow }, {
             flush: () => void state.flush(), reconnect: () => void companion.reconnect(), scan: () => void pairAndOpenConversation(),
             openRemote: () => state.openSheet('remote'), retryCreate: lastCreate.current, switchModel: openModelSheet,
+            openModelSetup: () => state.openSheet('modelSetup'),
           })}
           // 模型入口只留这一个（爸 2026-09-16 拍板）：会话操作弹窗里不再有模型那一格。
           modelLabel={sessionModelLabel} openModel={openModelSheet}
@@ -641,6 +645,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     {state.sheet && currentPage && <SheetHost page={currentPage}
       title={currentPage === 'projects' ? text.chooseProject
         : currentPage === 'model' ? text.chooseModel
+        : currentPage === 'modelSetup' ? text.modelSetup
         : currentPage === 'projectSessions' ? sessionProject && companion.library ? projectDisplayName(sessionProject, companion.library.projects) : text.projectSessions
         : text[currentPage]}
       hasParent={state.sheet.pages.length > 1}
@@ -736,7 +741,19 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         name={invitationHostLabel(pendingInvite.invitation) ?? text.pairConfirmComputer}
         verify={deriveInvitationVerify(pendingInvite.invitation.psk, pendingInvite.invitation.hostKey)}
         text={text} onConfirm={() => void confirmPendingInvite()} onReject={dismissPendingInvite}
-      /> : (currentPage === 'attachment' || currentPage === 'cameraDenied') ? <AttachmentSheet
+      /> : currentPage === 'modelSetup' ? <div className="how-model" data-testid="model-setup">
+        <p className="sheet-note">{text.noUsableModelBody}</p>
+        <ol>
+          <li>{text.noUsableModelStep1}</li>
+          <li>{text.noUsableModelStep2}</li>
+          <li>{text.noUsableModelStep3}</li>
+        </ol>
+        <button className="primary" data-testid="model-setup-reload" disabled={companion.busy} onClick={() => {
+          void companion.refreshLibrary().then(() => {
+            if ((companionStore.getState().library?.models.length ?? 0) > 0) store.getState().closeSheet();
+          });
+        }}>{text.noUsableModelReload}</button>
+      </div> : (currentPage === 'attachment' || currentPage === 'cameraDenied') ? <AttachmentSheet
         mode={currentPage} text={text}
         onPick={kind => {
           if (!ports.files) return;

@@ -6,11 +6,11 @@ import { connectionDiagnosis } from './connectionDiagnosis';
  * build 50 真机：一次「电脑没回应」在输入框上方叠出四行（连接胶囊 / 未确认送达 / 读取失败 / 会话没建成），
  * 左沿各不相同还压字。现在只有这一个位置：同一时刻一条、一条一个动作、没有状态不占高度。
  *
- * rank 越小越急（§12 优先级）：1 草稿没存上 > 2 连不上电脑 > 3 语音失败 > 4 刚才的操作没成功
- * > 5 项目和历史没读全 > 6 还没收到电脑确认 > 7 正在转写。
+ * rank 越小越急（§12 + §13）：1 草稿没存上 > 2 连不上电脑 > 3 电脑上没有能用的模型
+ * > 4 语音失败 > 5 刚才的操作没成功 > 6 项目和历史没读全 > 7 还没收到电脑确认 > 8 正在转写。
  */
 export type StatusItem = {
-  rank: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  rank: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   message: string;
   /** 点文字打开的解释（连接类 = 连接电脑弹层，原因诊断都在那里）。 */
   open?(): void;
@@ -60,6 +60,7 @@ export function commandNoticeCopy(
     if (error === 'PROJECT_SOURCE_CHANGED') return text.projectSourceChanged;
     if (error === 'PROJECT_SOURCE_UNTRUSTED') return text.projectSourceUntrusted;
     if (error === 'MODEL_AUTH') return text.modelAuthMissing;
+    if (error === 'MODEL_UNAVAILABLE') return text.modelGoneLabel;
     if (error === 'scope_denied' || error === 'COMPANION_SCOPE_DENIED') return text.commandScopeDenied;
     if (error === 'COMPANION_PROJECT_UNAVAILABLE') return text.projectUnavailable;
     if (error === 'COMPANION_PROJECT_CHANGED') return text.projectChanged;
@@ -89,8 +90,9 @@ export function composerStatusItems(
     binding: boolean; status: string; paused: boolean; connectionError: string | null; busy: boolean;
     commandError: string | null; commandErrorAction: string | null; voiceFailureShown: boolean; sessionId: string | null;
     libraryError: boolean; pending: boolean; pendingAction: string | null; pendingSlow: boolean;
+    library: { models: readonly unknown[] } | null;
   },
-  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void },
+  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; openModelSetup(): void },
 ): StatusItem[] {
   const items: StatusItem[] = [];
   if (s.saveError) items.push({ rank: 1, message: text.saveError, action: { label: text.retry, run: act.flush } });
@@ -108,16 +110,19 @@ export function composerStatusItems(
     items.push({ rank: 2, message: text.cannotReachComputer, action: { label: text.remote, run: act.openRemote } });
   }
   if (!live) return items;
+  if (s.library && s.library.models.length === 0) {
+    items.push({ rank: 3, message: text.noUsableModel, action: { label: text.noUsableModelHow, run: act.openModelSetup }, reason: 'NO_USABLE_MODEL' });
+  }
   const command = s.commandError === 'COMPANION_NOT_CONNECTED' ? null : commandNoticeCopy(text, s, s.voiceFailureShown);
   if (command) {
     const action = s.commandErrorAction === 'session.create' && s.commandError !== 'COMPANION_COMMAND_IN_FLIGHT' && act.retryCreate ? { label: text.retry, run: act.retryCreate }
-      : s.commandError === 'MODEL_AUTH' && s.sessionId ? { label: text.switchModel, run: act.switchModel }
+      : (s.commandError === 'MODEL_AUTH' || s.commandError === 'MODEL_UNAVAILABLE') && s.sessionId ? { label: text.switchModel, run: act.switchModel }
       : undefined;
-    items.push({ rank: 4, message: command, action, reason: s.commandError ?? undefined });
+    items.push({ rank: 5, message: command, action, reason: s.commandError ?? undefined });
   }
-  if (s.libraryError) items.push({ rank: 5, message: text.libraryError, action: { label: text.reload, run: act.reconnect, disabled: s.busy } });
-  if (s.pending && s.pendingAction === 'voice.transcribe') items.push({ rank: 7, message: `${text.transcribing}…`, neutral: true });
+  if (s.libraryError) items.push({ rank: 6, message: text.libraryError, action: { label: text.reload, run: act.reconnect, disabled: s.busy } });
+  if (s.pending && s.pendingAction === 'voice.transcribe') items.push({ rank: 8, message: `${text.transcribing}…`, neutral: true });
   // 正常 ack 几十毫秒就回来：慢过阈值才说（N-MOBILE-PENDING-NOISE）。「请勿重复发送」删了——确认前发送键本就不可点。
-  else if (s.pending && s.pendingSlow) items.push({ rank: 6, message: text.pendingCommand, neutral: true });
+  else if (s.pending && s.pendingSlow) items.push({ rank: 7, message: text.pendingCommand, neutral: true });
   return items;
 }

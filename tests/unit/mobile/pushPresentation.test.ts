@@ -9,7 +9,7 @@ import { LOCALIZABLE_REGIONS, localizableStrings, pushAlertStrings as mapPushAle
 /** 与 build-ios 同一种拼法：文案全部取自 i18n。 */
 const pushAlertStrings = (language: string) => {
   const text = messages(language);
-  return mapPushAlerts(text, runOutcomeCopy(text, 'failed'), runOutcomeCopy(text, 'failed', 'MODEL_AUTH'));
+  return mapPushAlerts(text, runOutcomeCopy(text, 'failed'), runOutcomeCopy(text, 'failed', 'MODEL_AUTH'), runOutcomeCopy(text, 'failed', 'MODEL_UNAVAILABLE'));
 };
 import { companionPushTitleKey } from '../../../src/shared/contract/companionPush';
 
@@ -137,7 +137,8 @@ describe('iOS 前台判定接线：willPresent → decide', () => {
 describe('推送正文走 i18n，不再是裸事件 key（N-MOBILE-EXEC-STATUS ⑤）', () => {
   const hostKeys = ['agent_complete', 'agent_cancelled', 'error'].map(kind => companionPushTitleKey(kind, {}))
     .concat(companionPushTitleKey('approval', { status: 'pending' }))
-    .concat(companionPushTitleKey('error', { code: 'MODEL_AUTH' }));
+    .concat(companionPushTitleKey('error', { code: 'MODEL_AUTH' }))
+    .concat(companionPushTitleKey('error', { code: 'MODEL_UNAVAILABLE' }));
 
   it.each(['zh', 'en'])('%s：Host 会发的每个 loc-key 都有人话正文', language => {
     const strings = pushAlertStrings(language);
@@ -159,6 +160,7 @@ describe('推送正文走 i18n，不再是裸事件 key（N-MOBILE-EXEC-STATUS �
   // 爸 2026-09-16 真机：模型 key 被拒，横幅却写「电脑执行时出了问题」
   it('模型密钥用不了的失败推送说真因，其余失败仍是通用句', () => {
     expect(companionPushTitleKey('error', { code: 'MODEL_AUTH' })).toBe('task_failed_model_auth');
+    expect(companionPushTitleKey('error', { code: 'MODEL_UNAVAILABLE' })).toBe('task_failed_model_unavailable');
     expect(companionPushTitleKey('error', { code: 'RUN_FAILED' })).toBe('task_failed');
     const zh = messages('zh');
     expect(pushAlertStrings('zh').task_failed_model_auth).toBe(`${zh.failed}：${zh.modelAuthMissing}`);

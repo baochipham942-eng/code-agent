@@ -66,7 +66,8 @@ import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
-import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getDefaultModelForProvider, getProviderEndpointForProtocol } from '@shared/constants';
+import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } from '@shared/constants';
+import { fallbackModelForProvider } from '@shared/modelRuntime';
 import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './utils/logger';
@@ -402,7 +403,7 @@ export const App: React.FC = () => {
       const defaultProvider = resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
       const providerConfig = settings.models.providers?.[defaultProvider];
       if (!providerConfig) return;
-      const model = providerConfig.model || getDefaultModelForProvider(defaultProvider) || DEFAULT_MODEL;
+      const model = providerConfig.model || fallbackModelForProvider(defaultProvider, settings) || DEFAULT_MODEL;
       const modelSettings = providerConfig.models?.[model];
       setModelConfig({
         provider: defaultProvider,
@@ -497,7 +498,7 @@ export const App: React.FC = () => {
           const providerConfig = settings.models.providers?.[defaultProvider];
 
           if (providerConfig) {
-            const model = providerConfig.model || getDefaultModelForProvider(defaultProvider) || DEFAULT_MODEL;
+            const model = providerConfig.model || fallbackModelForProvider(defaultProvider, settings) || DEFAULT_MODEL;
             const modelSettings = providerConfig.models?.[model];
             setModelConfig({
               provider: defaultProvider,

@@ -152,6 +152,28 @@ describe('RunFinalizer 失败事件', () => {
     expect(other.find((event) => event.type === 'error')?.data).not.toHaveProperty('failure');
   });
 
+  it('400 Unsupported model 带 MODEL_UNAVAILABLE 标记出去', async () => {
+    const events: AgentEvent[] = [];
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-model-gone',
+      onEvent: (event: AgentEvent) => events.push(event),
+      modelConfig: { provider: 'longcat', model: 'LongCat-2.0-Preview' },
+      messages: [],
+      maxIterations: 10,
+      stats: { traceId: 'trace-gone', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules({ generateId: () => 'msg-gone', addAndPersistMessage: vi.fn() } as never, { runPostRun: vi.fn() } as never);
+    const unsupported = Object.assign(new Error('Unsupported model'), { status: 400 });
+    await finalizer.finalizeRun(1, '你好', { endTrace: vi.fn() } as never, 8, { status: 'failed', error: unsupported }).catch(() => undefined);
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({
+      code: 'RUN_FAILED',
+      failure: { code: 'MODEL_UNAVAILABLE', provider: 'longcat', model: 'LongCat-2.0-Preview' },
+    });
+  });
+
   it('goal runtime failure emits a structured abort and marks the single error presentation', async () => {
     const events: AgentEvent[] = [];
     const goalMode = new GoalModeController(buildGoalContract({

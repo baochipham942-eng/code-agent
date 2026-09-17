@@ -3,14 +3,35 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  hasConfiguredTranscriptionKey,
-  messageHasVoiceInputUsage,
   runVoiceCapabilityMigrationV1,
 } from '../../../../src/host/services/capabilities/voiceCapabilityMigrationV1';
 import {
   readBundledHostCapabilityInstallSnapshot,
   writeBundledHostCapabilityInstallState,
 } from '../../../../src/host/services/capabilities/bundledHostCapabilityInstallState';
+
+// 「真实读取器路径」用例的服务边界 mock（同仓 companionLibraryRead.test.ts 惯用法）：
+// 不注入 evidenceReader，让默认生产读取器真跑，判据落在结果 marker 的 evidence 上。
+const readerDb = vi.hoisted(() => ({
+  messages: [] as Array<{ metadata: unknown }>,
+}));
+const readerGetApiKey = vi.hoisted(() => vi.fn<(provider: string) => string | undefined>());
+
+vi.mock('../../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({
+    isReady: true,
+    listSessions: () => [{ id: 'legacy' }],
+    getMessages: () => readerDb.messages,
+    hasCompanionCommandAction: () => false,
+    listVoiceCallSummaries: () => [],
+  }),
+}));
+vi.mock('../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({
+    getSettings: () => ({}),
+    getApiKey: (provider: string) => readerGetApiKey(provider),
+  }),
+}));
 
 const dataDirs: string[] = [];
 
@@ -207,16 +228,79 @@ describe('voice-capability-migration-v1 voice-input half', () => {
 });
 
 describe('voice-input 真实读取器路径（非只注入 evidenceReader）', () => {
-  it('读 workbench.voiceInput，不把顶层 metadata.voiceInput 当证据', () => {
-    expect(messageHasVoiceInputUsage({ voiceInput: { source: 'dictation' } })).toBe(false);
-    expect(messageHasVoiceInputUsage({ workbench: { voiceInput: { source: 'dictation' } } })).toBe(true);
-    expect(messageHasVoiceInputUsage(undefined)).toBe(false);
+  /** 不传 evidenceReader → 默认生产读取器真跑；观察点是结果 marker 的 evidence。 */
+  async function runWithProductionInputReader() {
+    const dataDir = await makeDataDir();
+    const installVoiceInput = vi.fn(async () => undefined);
+    await runVoiceCapabilityMigrationV1({
+      dataDir,
+      version: '1.0.0',
+      installVoiceInput,
+      installVoiceLive: vi.fn(),
+      liveEvidenceReader: { read: async () => ({ voiceCallHistory: false, nonDefaultRealtimeSettings: false, realtimeKey: false }) },
+    });
+    const marker = JSON.parse(await fs.readFile(
+      path.join(dataDir, 'capabilities', 'voice-capability-migration-v1.json'),
+      'utf8',
+    ));
+    return { installVoiceInput, marker };
+  }
+
+  /** os.tmpdir 钉到空目录：retainedFailureAudio 不随机上机器状态。 */
+  async function isolateTmpdir(): Promise<void> {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-voice-reader-'));
+    dataDirs.push(root);
+    vi.spyOn(os, 'tmpdir').mockReturnValue(root);
+  }
+
+  it('读 workbench.voiceInput，不把顶层 metadata.voiceInput 当证据', async () => {
+    await isolateTmpdir();
+    try {
+      readerDb.messages = [
+        { metadata: { voiceInput: { source: 'dictation' } } },
+        { metadata: undefined },
+      ];
+      readerGetApiKey.mockReturnValue(undefined);
+      const withoutUsage = await runWithProductionInputReader();
+      expect(withoutUsage.marker.voiceInput).toMatchObject({
+        status: 'completed',
+        evidence: {
+          messageMetadata: false,
+          nonDefaultSpeechSettings: false,
+          retainedFailureAudio: false,
+          transcriptionKey: false,
+          companionTranscribe: false,
+        },
+        detail: 'no-legacy-usage',
+      });
+      expect(withoutUsage.installVoiceInput).not.toHaveBeenCalled();
+
+      readerDb.messages = [{ metadata: { workbench: { voiceInput: { source: 'dictation' } } } }];
+      const withUsage = await runWithProductionInputReader();
+      expect(withUsage.marker.voiceInput.evidence.messageMetadata).toBe(true);
+      expect(withUsage.marker.voiceInput.detail).toBe('migration:legacy-usage');
+      expect(withUsage.installVoiceInput).toHaveBeenCalledOnce();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
-  it('Groq / DashScope 密钥算作使用证据', () => {
-    expect(hasConfiguredTranscriptionKey(() => undefined)).toBe(false);
-    expect(hasConfiguredTranscriptionKey(provider => provider === 'groq' ? 'gsk_x' : undefined)).toBe(true);
-    expect(hasConfiguredTranscriptionKey(provider => provider === 'dashscope' ? 'sk_x' : undefined)).toBe(true);
+  it('Groq / DashScope 密钥算作使用证据', async () => {
+    await isolateTmpdir();
+    try {
+      readerDb.messages = [];
+      readerGetApiKey.mockImplementation(provider => provider === 'groq' ? 'gsk_x' : undefined);
+      const groq = await runWithProductionInputReader();
+      expect(groq.marker.voiceInput.evidence.transcriptionKey).toBe(true);
+      expect(groq.installVoiceInput).toHaveBeenCalledOnce();
+
+      readerGetApiKey.mockImplementation(provider => provider === 'dashscope' ? 'sk_x' : undefined);
+      const dashscope = await runWithProductionInputReader();
+      expect(dashscope.marker.voiceInput.evidence.transcriptionKey).toBe(true);
+      expect(dashscope.installVoiceInput).toHaveBeenCalledOnce();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
 

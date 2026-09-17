@@ -97,13 +97,13 @@ async function writeMarker(dataDir: string, marker: VoiceCapabilityMigrationMark
 }
 
 /** 写入端是 metadata.workbench.voiceInput（agentAppService.getMessageMetadata / web agent 路由）。顶层 metadata.voiceInput 是读错的路径。 */
-export function messageHasVoiceInputUsage(metadata: unknown): boolean {
+function messageHasVoiceInputUsage(metadata: unknown): boolean {
   if (!metadata || typeof metadata !== 'object') return false;
   const workbench = (metadata as { workbench?: unknown }).workbench;
   return Boolean(workbench && typeof workbench === 'object' && (workbench as { voiceInput?: unknown }).voiceInput);
 }
 
-export function hasConfiguredTranscriptionKey(getKey: (provider: string) => string | undefined): boolean {
+function hasConfiguredTranscriptionKey(getKey: (provider: string) => string | undefined): boolean {
   return Boolean(getKey('groq') || getKey('dashscope') || getKey('qwen'));
 }
 

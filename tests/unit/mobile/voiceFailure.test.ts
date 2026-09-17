@@ -6,11 +6,35 @@ import {
   transcriptionReadinessFromResult,
   voiceFailureAction,
   voiceFailureMessage,
-  VOICE_RETRYABLE_TRANSCRIBE_CODES,
-  VOICE_SETUP_CODES,
-  VOICE_TOO_LARGE_CODES,
 } from '../../../packages/mobile/src/features/sessions/voiceFailure';
 import { messages } from '../../../packages/mobile/src/i18n';
+
+// 期望输入在测试侧钉死（独立于生产常量）：生产表里删掉任何一个码，这里必须跟红。
+const VOICE_SETUP_CODES = [
+  'COMPANION_TRANSCRIPTION_UNAVAILABLE',
+  'SPEECH_NO_CHANNEL',
+  'DISABLED',
+  'NOT_INITIALIZED',
+  'UNAVAILABLE',
+  'NO_CHANNEL',
+] as const;
+
+const VOICE_TOO_LARGE_CODES = ['AUDIO_TOO_LARGE'] as const;
+
+const VOICE_RETRYABLE_TRANSCRIBE_CODES = [
+  'COMPANION_TRANSCRIPTION_FAILED',
+  'TRANSCRIPTION_FAILED',
+  'COMPANION_COMMAND_RECONCILING_TIMEOUT',
+  'COMPANION_NETWORK_UNAVAILABLE',
+  'COMPANION_CHANNEL_CLOSED',
+  'COMPANION_TRANSFER_INTERRUPTED',
+  'COMPANION_INTERRUPTED',
+  'GROQ_RATE_LIMITED',
+  'INVALID_ARGS',
+  'AUDIO_TOO_SHORT',
+  'LOCAL_TRANSCRIPTION_FAILED',
+  'UNKNOWN',
+] as const;
 
 const text = messages('zh');
 const act = {

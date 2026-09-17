@@ -2,7 +2,7 @@ import type { CompanionTranscriptionReadiness } from '../../../../../src/shared/
 import type { messages } from '../../i18n';
 
 /** 电脑没开转写 / 没配密钥：重试不会好，给「怎么开」。 */
-export const VOICE_SETUP_CODES = [
+const VOICE_SETUP_CODES = [
   'COMPANION_TRANSCRIPTION_UNAVAILABLE',
   'SPEECH_NO_CHANNEL',
   'DISABLED',
@@ -11,10 +11,10 @@ export const VOICE_SETUP_CODES = [
   'NO_CHANNEL',
 ] as const;
 
-export const VOICE_TOO_LARGE_CODES = ['AUDIO_TOO_LARGE'] as const;
+const VOICE_TOO_LARGE_CODES = ['AUDIO_TOO_LARGE'] as const;
 
 /** 临时失败（网络 / 限流 / 超时 / 主机转写出错）：给重试。 */
-export const VOICE_RETRYABLE_TRANSCRIBE_CODES = [
+const VOICE_RETRYABLE_TRANSCRIBE_CODES = [
   'COMPANION_TRANSCRIPTION_FAILED',
   'TRANSCRIPTION_FAILED',
   'COMPANION_COMMAND_RECONCILING_TIMEOUT',

@@ -67,8 +67,10 @@ import { CompanionPushOutbox, loadPushWrapKeySync } from '../host/services/compa
 import { projectCompanionEvent } from '../host/services/companion/projectCompanionEvent';
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
 import { CompanionQuestionService } from '../host/services/companion/CompanionQuestionService';
-import { CompanionPlanService } from '../host/services/companion/CompanionPlanService';
-import { deliverCompanionUserPlan, listCompanionUserPlans, noteCompanionUserPlan } from '../host/services/companion/companionUserPlan';
+import { CompanionPlanService, type CompanionPlanInspection } from '../host/services/companion/CompanionPlanService';
+import { deliverCompanionUserPlan, listCompanionUserPlans, noteCompanionUserPlan, takeCompanionUserPlanSettlement } from '../host/services/companion/companionUserPlan';
+import { companionSteerMessagePayload, steerOrQueueCompanionMessage } from '../host/services/companion/companionMessageSend';
+import { approvalAnswerFromPermission, noteCompanionApprovalSettlement } from '../host/services/companion/companionDecisionSink';
 import { getPlanApprovalGate } from '../host/agent/planApproval';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
@@ -113,6 +115,20 @@ export interface CreateAppDeps {
     sessionId: string;
     envelope: ConversationEnvelope;
   }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
+}
+
+function inspectCompanionPlan(planId: string): CompanionPlanInspection | null {
+  const plan = getPlanApprovalGate().getPlan(planId);
+  if (plan && plan.status !== 'pending') {
+    if (plan.status === 'approved') {
+      return { outcome: 'answered', answer: { decision: 'approved', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
+    }
+    const feedback = plan.feedback ?? '';
+    if (feedback.startsWith('Auto-rejected after timeout')) return { outcome: 'expired' };
+    if (feedback.startsWith('Cancelled:')) return { outcome: 'cancelled' };
+    return { outcome: 'answered', answer: { decision: 'rejected', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
+  }
+  return takeCompanionUserPlanSettlement(planId);
 }
 
 /**
@@ -341,9 +357,24 @@ export function createApp(deps: CreateAppDeps): express.Express {
             void target.cancel('user');
             return { state: 'accepted', result: { stopping: true, runId: target.context.runId } };
           }
-          if (command.action !== 'message.send' || !companionRun) return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
+          if (command.action !== 'message.send') return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
           const payload = command.payload as { text?: unknown };
           const text = typeof payload.text === 'string' ? payload.text : '';
+          const activeRun = command.sessionId ? runRegistry.resolve({ sessionId: command.sessionId }) : undefined;
+          if (activeRun && command.sessionId) {
+            const sessionId = command.sessionId;
+            void steerOrQueueCompanionMessage(activeRun, { sessionId, commandId: command.commandId, text })
+              .then(({ runId, outcome }) => {
+                gateway.publish(sessionId, 'message', companionSteerMessagePayload({
+                  commandId: command.commandId, text, runId, outcome,
+                }));
+                gateway.settleCommand(command.deviceId, command.commandId, 'accepted', { runId, outcome });
+              }, () => {
+                gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'RUN_START_FAILED' });
+              }).catch(() => logger.warn('Companion steer receipt unavailable'));
+            return { state: 'reconciling', result: { code: 'RUN_STARTING' } };
+          }
+          if (!companionRun) return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
           const activation = companionRun({
             version: 1,
             prompt: text,
@@ -370,7 +401,18 @@ export function createApp(deps: CreateAppDeps): express.Express {
         logger.warn('Companion deleted-session cleanup unavailable', error);
       });
       if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
-        services.approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
+        const deliver = deps.deliverCompanionPermission;
+        services.approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, (requestId, response, sessionId) => {
+          const result = deliver(requestId, response, sessionId);
+          if (result.success && !result.data?.closed) {
+            noteCompanionApprovalSettlement({
+              requestId,
+              outcome: 'answered',
+              answer: approvalAnswerFromPermission(response),
+            });
+          }
+          return result;
+        });
       }
       services.questions = new CompanionQuestionService(gateway);
       cleanupQuestionRoute = registerUserQuestionRoute(services.questions);
@@ -397,7 +439,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
             ...(options?.disableAutoAgent ? { disableAutoAgent: true } : {}),
           });
         });
-      });
+      }, inspectCompanionPlan);
       publishCompanionEvent = (sessionId, kind, payload) => {
         const raw = payload.event && typeof payload.event === 'object' && !Array.isArray(payload.event)
           ? payload.event as Record<string, unknown> : null;

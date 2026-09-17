@@ -8,7 +8,13 @@ import { getDatabase } from '../core/databaseService';
 import { getTaskManager } from '../../task/TaskManager';
 import { resolvePlanApproval } from '../planning/planApprovalService';
 import { createLogger } from '../infra/logger';
+import type { CompanionDecisionOutcome, CompanionPlanAnswer } from '../../../shared/contract/companion';
 import type { CompanionPlanRequest } from './CompanionPlanService';
+
+export type CompanionPlanInspection = {
+  outcome: CompanionDecisionOutcome;
+  answer?: CompanionPlanAnswer;
+};
 
 const logger = createLogger('CompanionUserPlan');
 
@@ -23,6 +29,7 @@ const logger = createLogger('CompanionUserPlan');
  * deliver window marks it closed.
  */
 const pending = new Map<string, { sessionId: string; toolCallId: string; plan: string }>();
+const settlements = new Map<string, CompanionPlanInspection>();
 
 export type CompanionPlanRunOptions = { historyVisibility?: 'meta'; disableAutoAgent?: boolean };
 
@@ -74,10 +81,32 @@ export function noteCompanionUserPlan(sessionId: string, event: Record<string, u
     : 'pending';
   if (status !== 'pending') {
     pending.delete(toolCallId);
-    return false;
+    rememberUserPlanSettlement(toolCallId, status, approval && typeof approval === 'object' && !Array.isArray(approval)
+      ? (approval as { feedback?: unknown }).feedback
+      : undefined);
+    return true;
   }
   pending.set(toolCallId, { sessionId, toolCallId, plan });
   return true;
+}
+
+function rememberUserPlanSettlement(requestId: string, status: unknown, feedback: unknown): void {
+  const text = typeof feedback === 'string' && feedback.trim() ? feedback : undefined;
+  if (status === 'approved') {
+    settlements.set(requestId, { outcome: 'answered', answer: { decision: 'approved', ...(text ? { feedback: text } : {}) } });
+    return;
+  }
+  if (status === 'revision_requested') {
+    settlements.set(requestId, { outcome: 'answered', answer: { decision: 'rejected', ...(text ? { feedback: text } : {}) } });
+    return;
+  }
+  settlements.set(requestId, { outcome: 'cancelled' });
+}
+
+export function takeCompanionUserPlanSettlement(requestId: string): CompanionPlanInspection | null {
+  const next = settlements.get(requestId) ?? null;
+  if (next) settlements.delete(requestId);
+  return next;
 }
 
 export function listCompanionUserPlans(): CompanionPlanRequest[] {
@@ -95,6 +124,8 @@ export function listCompanionUserPlans(): CompanionPlanRequest[] {
       }
       const toolCall = messages.flatMap(message => message.toolCalls ?? []).find(call => call.id === item.toolCallId);
       if (toolCall && !readPendingApproval(toolCall)) {
+        const approval = toolCall.result?.metadata?.planApproval as { status?: unknown; feedback?: unknown } | undefined;
+        rememberUserPlanSettlement(id, approval?.status, approval?.feedback);
         pending.delete(id);
         continue;
       }

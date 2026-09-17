@@ -55,6 +55,13 @@ describe('companion_decisions.kind column migration', () => {
     expect(columnNames(db, 'companion_decisions')).toContain('kind');
   });
 
+  it('adds outcome and answer_json to a legacy companion_decisions table', () => {
+    db = new Database(':memory:');
+    db.exec(LEGACY_DECISIONS_DDL);
+    applyCompanionSchema(db);
+    expect(columnNames(db, 'companion_decisions')).toEqual(expect.arrayContaining(['outcome', 'answer_json', 'kind']));
+  });
+
   it('rethrows ALTER failures that are not duplicate-column', () => {
     db = new Database(':memory:');
     const originalExec = db.exec.bind(db);

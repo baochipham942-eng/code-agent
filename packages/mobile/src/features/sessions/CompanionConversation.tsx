@@ -58,7 +58,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   const activeStreams = new Map<string, string>();
   const committedStreams = new Set<string>();
   const aliases = new Map<string, string>();
-  const rows = new Map<string, { role: string; content: string; truncated?: boolean }>();
+  const rows = new Map<string, { role: string; content: string; truncated?: boolean; queued?: boolean }>();
   // 终态按执行（runId）归属，挂在那次执行当时的最后一行下面：多次任务各行其是，
   // 不再按到达顺序堆在会话底部互相矛盾（build 40 真机：「任务已完成」和「没有完成」两行并列）。
   // **成功不挂行**（爸 2026-09-16 build 41 真机）：每一轮回复在协议上都是一次 run，成功就挂「任务已完成」
@@ -73,7 +73,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   // 历史行的宿主时间（和事件 createdAt 是同一台电脑的钟）。事件生出来的新行不记：它们只会排在历史之后，按到达顺序挂就对。
   const stamps = new Map<string, number>();
   for (const message of history?.messages ?? []) {
-    rows.set(message.id, { role: message.role, content: message.content, truncated: message.truncated });
+    rows.set(message.id, { role: message.role, content: message.content, truncated: message.truncated, queued: message.queued === true });
     stamps.set(message.id, message.timestamp);
   }
   /**
@@ -109,7 +109,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
       const durableId = String(p.id ?? p.messageId ?? event.eventId);
       const key = durableId;
       if (stream) rows.delete(stream);
-      rows.set(key, { role: String(p.role), content: p.content });
+      rows.set(key, { role: String(p.role), content: p.content, queued: p.queued === true });
       lastRow = key;
       if (stream) {
         aliases.set(id, key); aliases.set(stream, key); committedStreams.add(stream); committedStreams.add(key); activeStreams.delete(run);
@@ -178,7 +178,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     {history?.nextOffset != null && !offline && <button onClick={loadMore}>{text.loadHistory}</button>}
     {outcomesAt(undefined)}{cardsAt(undefined)}
     {Array.from(rows, ([id, row]) => <Fragment key={id}>{row.role === 'user'
-      ? <p className="lan-message from-user">{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>
+      ? <p className="lan-message from-user">{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}{row.queued && <small className="notice" data-testid="supplement-queued">{text.supplementQueued}</small>}</p>
       // 正文为空的助手消息是只调了工具的那一轮（派子助手、读文件），手机不显示工具步骤，画出来就是空气泡（爸 2026-09-16 真机）。
       // 行本身不画，但挂在它下面的执行结果和卡片照常画。
       : !row.content.trim() ? null : <div className="lan-message">

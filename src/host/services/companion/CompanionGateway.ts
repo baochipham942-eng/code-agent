@@ -3,12 +3,13 @@ import type { CompanionPairedDevice } from '../../../shared/contract/companionMa
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyCompanionSchema } from '../core/database/migrations/companion';
-import { companionCommandSchema, isCompanionDecisionCommand } from '../../../shared/contract/companion';
+import { companionCommandSchema, isCompanionDecisionCommand, isCompanionDecisionOutcome } from '../../../shared/contract/companion';
 import { COMPANION_LIMITS } from '../../../shared/constants/companion';
 import type {
   CompanionCommand,
   CompanionCommandRecord,
   CompanionDecision,
+  CompanionDecisionAnswer,
   CompanionDecisionCommand,
   CompanionDecisionKind,
   CompanionDeviceCredential,
@@ -39,6 +40,16 @@ function equalCredentialDigest(left: string, right: string): boolean {
   const leftBytes = Buffer.from(left, 'utf8');
   const rightBytes = Buffer.from(right, 'utf8');
   return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
+}
+
+function parseDecisionAnswer(raw: unknown): CompanionDecisionAnswer | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined;
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as CompanionDecisionAnswer : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export interface CompanionDispatchResult {
@@ -367,15 +378,17 @@ export class CompanionGateway {
   registerDecision(decision: CompanionDecision): void {
     this.db.prepare(`
       INSERT INTO companion_decisions
-        (request_id, session_id, revision, status, resolved_by, operation_digest, kind)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (request_id, session_id, revision, status, resolved_by, operation_digest, kind, outcome, answer_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(request_id) DO UPDATE SET
         session_id = excluded.session_id,
         revision = excluded.revision,
         status = excluded.status,
         resolved_by = excluded.resolved_by,
         operation_digest = excluded.operation_digest,
-        kind = excluded.kind
+        kind = excluded.kind,
+        outcome = excluded.outcome,
+        answer_json = excluded.answer_json
     `).run(
       decision.requestId,
       decision.sessionId,
@@ -384,6 +397,8 @@ export class CompanionGateway {
       decision.resolvedBy,
       decision.operationDigest,
       decision.kind ?? 'approval',
+      decision.outcome ?? null,
+      decision.answer === undefined ? null : JSON.stringify(decision.answer),
     );
   }
 
@@ -450,7 +465,18 @@ export class CompanionGateway {
   getDecision(requestId: string): CompanionDecision | null {
     const row = this.db.prepare('SELECT * FROM companion_decisions WHERE request_id = ?').get(requestId) as SqlRow | undefined;
     if (!row) return null;
-    return { requestId: String(row.request_id), sessionId: String(row.session_id), revision: Number(row.revision), status: row.status as CompanionDecision['status'], resolvedBy: row.resolved_by == null ? null : String(row.resolved_by), operationDigest: row.operation_digest == null ? null : String(row.operation_digest), kind: row.kind === 'question' || row.kind === 'plan' ? row.kind : 'approval' };
+    const answer = parseDecisionAnswer(row.answer_json);
+    return {
+      requestId: String(row.request_id),
+      sessionId: String(row.session_id),
+      revision: Number(row.revision),
+      status: row.status as CompanionDecision['status'],
+      resolvedBy: row.resolved_by == null ? null : String(row.resolved_by),
+      operationDigest: row.operation_digest == null ? null : String(row.operation_digest),
+      kind: row.kind === 'question' || row.kind === 'plan' ? row.kind : 'approval',
+      ...(isCompanionDecisionOutcome(row.outcome) ? { outcome: row.outcome } : {}),
+      ...(answer ? { answer } : {}),
+    };
   }
 
   private nextSeq(): number {

@@ -40,7 +40,9 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
       status TEXT NOT NULL,
       resolved_by TEXT,
       operation_digest TEXT,
-      kind TEXT NOT NULL DEFAULT 'approval'
+      kind TEXT NOT NULL DEFAULT 'approval',
+      outcome TEXT,
+      answer_json TEXT
     );
     CREATE TABLE IF NOT EXISTS companion_decision_claims (
       request_id TEXT NOT NULL,
@@ -120,6 +122,20 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
   }
   try {
     db.exec(`ALTER TABLE companion_devices ADD COLUMN created_at INTEGER`);
+  } catch (error) {
+    if (!/duplicate column name/i.test(error instanceof Error ? error.message : String(error))) {
+      throw error;
+    }
+  }
+  try {
+    db.exec(`ALTER TABLE companion_decisions ADD COLUMN outcome TEXT`);
+  } catch (error) {
+    if (!/duplicate column name/i.test(error instanceof Error ? error.message : String(error))) {
+      throw error;
+    }
+  }
+  try {
+    db.exec(`ALTER TABLE companion_decisions ADD COLUMN answer_json TEXT`);
   } catch (error) {
     if (!/duplicate column name/i.test(error instanceof Error ? error.message : String(error))) {
       throw error;

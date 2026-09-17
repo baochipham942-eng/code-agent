@@ -31,19 +31,24 @@ describe('PlanCard', () => {
     expect(respond).toHaveBeenCalledWith('rejected', undefined);
   });
 
-  it('settled cards say what actually happened; only closed says elsewhere-or-expired', () => {
-    const { rerender } = render(<PlanCard card={{ preview, status: 'rejected' }} text={text} disabled={false} respond={async () => {}} />);
-    expect(screen.getByText(text.planRejected)).toBeTruthy();
+  it('settled cards show 已批准 or 已要求修改 with the feedback', () => {
+    const { rerender } = render(<PlanCard
+      card={{ preview, status: 'approved', outcome: 'answered', answer: { decision: 'approved' } }}
+      text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe('已批准');
     expect(screen.queryByText(text.planApprove)).toBeNull();
-    rerender(<PlanCard card={{ preview, status: 'approved' }} text={text} disabled={false} respond={async () => {}} />);
-    expect(screen.getByText(text.planApproved)).toBeTruthy();
-    rerender(<PlanCard card={{ preview, status: 'closed' }} text={text} disabled={false} respond={async () => {}} />);
-    expect(screen.getByText(text.planClosed)).toBeTruthy();
+    rerender(<PlanCard
+      card={{ preview, status: 'rejected', outcome: 'answered', answer: { decision: 'rejected', feedback: '先改标题' } }}
+      text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe('已要求修改：先改标题');
+    rerender(<PlanCard card={{ preview, status: 'closed', outcome: 'expired' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe('已超时，Neo 没用上这个问题');
+    expect(screen.queryByText(/另一端/)).toBeNull();
   });
 
   it('english copy is present for the same keys', () => {
     const en = messages('en');
-    render(<PlanCard card={{ preview, status: 'closed' }} text={en} disabled={false} respond={async () => {}} />);
-    expect(screen.getByText(en.planClosed)).toBeTruthy();
+    render(<PlanCard card={{ preview, status: 'closed', outcome: 'cancelled' }} text={en} disabled={false} respond={async () => {}} />);
+    expect(screen.getByText(en.questionCancelled)).toBeTruthy();
   });
 });

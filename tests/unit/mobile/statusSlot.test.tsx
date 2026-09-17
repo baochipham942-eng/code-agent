@@ -175,6 +175,9 @@ describe('commandNoticeCopy（预览面板也用它）', () => {
     expect(notice('scope_denied', 'message.send', false)).toBe(text.commandScopeDenied);
     expect(notice('COMPANION_SCOPE_DENIED', 'message.send', false)).toBe(text.commandScopeDenied);
     expect(notice('RUN_FAILED', 'message.send', false)).toBe(text.runFailed);
+    expect(notice('RUN_START_FAILED', 'message.send', false)).toBe(text.runStartFailed);
+    expect(notice('HOST_UNAVAILABLE', 'message.send', false)).toBe(text.runStartFailed);
+    expect(notice('RUN_START_FAILED', 'message.send', false)).not.toBe(text.commandRejected);
   });
   it('只有 session.create 的失败加「会话没建成」前缀', () => {
     expect(notice('COMPANION_PROJECT_UNAVAILABLE', 'session.create', false)).toBe(`${text.sessionCreateFailed}：${text.projectUnavailable}`);
@@ -208,8 +211,15 @@ describe('composerModelLabel', () => {
 
 // 爸 2026-09-16：「不要特别强调电脑正在做什么」。执行/模型/上传类文案不点名电脑；连接与送达确认不在此列
 // （「还没收到电脑确认」是 09-17 对齐页拍板的原文，说的是连接那一端）。
+describe('卡片与状态位不写「另一端」', () => {
+  it.each(['zh', 'en'])('%s copy has no 另一端 / elsewhere', language => {
+    const copy = messages(language);
+    expect(Object.values(copy).join('\n')).not.toMatch(/另一端|elsewhere/i);
+  });
+});
+
 describe('执行与模型文案不绑定「电脑」', () => {
-  const agentNeutralKeys = ['running', 'runFailed', 'connectedNext', 'artifactWriting', 'sessionBusy', 'modelAuthMissing', 'modelAuthTitle',
+  const agentNeutralKeys = ['running', 'runFailed', 'runStartFailed', 'connectedNext', 'artifactWriting', 'sessionBusy', 'modelAuthMissing', 'modelAuthTitle',
     'modelAuthDetail', 'modelConfigured', 'modelNotConfigured', 'modelRecentlyFailed', 'modelUnavailable', 'modelScopeNote',
     'commandRejected', 'attachTransferring', 'attachComplete', 'attachDestinationHint', 'transferInterrupted',
     'historyTruncated', 'deleteConfirmation'] as const;

@@ -145,6 +145,32 @@ export function isCompanionDecisionCommand(command: CompanionCommand): command i
   return command.action === 'approval.respond' || command.action === 'question.respond' || command.action === 'plan.respond';
 }
 
+export type CompanionDecisionOutcome = 'answered' | 'expired' | 'cancelled';
+
+export interface CompanionQuestionAnswer {
+  answers?: Record<string, string | string[]>;
+  declined?: boolean;
+  reason?: string;
+}
+
+export interface CompanionApprovalAnswer {
+  decision: 'approved' | 'rejected' | 'allow_session';
+}
+
+export interface CompanionPlanAnswer {
+  decision: 'approved' | 'rejected';
+  feedback?: string;
+}
+
+export type CompanionDecisionAnswer =
+  | CompanionQuestionAnswer
+  | CompanionApprovalAnswer
+  | CompanionPlanAnswer;
+
+export function isCompanionDecisionOutcome(value: unknown): value is CompanionDecisionOutcome {
+  return value === 'answered' || value === 'expired' || value === 'cancelled';
+}
+
 export interface CompanionDecision {
   requestId: string;
   sessionId: string;
@@ -153,6 +179,10 @@ export interface CompanionDecision {
   resolvedBy: string | null;
   operationDigest: string | null;
   kind?: CompanionDecisionKind;
+  /** Terminal cards only. Old phones ignore this field. */
+  outcome?: CompanionDecisionOutcome;
+  /** Terminal cards only. Shape depends on kind. Old phones ignore this field. */
+  answer?: CompanionDecisionAnswer;
 }
 
 export type CompanionSubmitResult =

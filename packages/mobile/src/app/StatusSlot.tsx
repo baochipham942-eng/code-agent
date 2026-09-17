@@ -66,6 +66,7 @@ export function commandNoticeCopy(
     if (error === 'COMPANION_MODEL_UNAVAILABLE') return text.modelUnavailable;
     if (error === 'COMPANION_SESSION_BUSY') return text.sessionBusy;
     if (error === 'RUN_FAILED') return text.runFailed;
+    if (error === 'RUN_START_FAILED' || error === 'HOST_UNAVAILABLE') return text.runStartFailed;
     if (error && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(error)) return text.transferInterrupted;
     // 转写失败由输入区的语音那条负责（它带阶段和真实错误码）；按**动作**让位而不是按码名列白名单。
     // 只有输入区**真的在显示**它时才让位：切会话会把输入区重挂，那时输入区手里没有这条失败。

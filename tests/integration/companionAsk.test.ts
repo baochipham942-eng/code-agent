@@ -74,6 +74,14 @@ describe('companion question and plan cards use the desktop decision points', ()
       }
       const ok = approved ? gate.approve(planId, feedback) : gate.reject(planId, feedback ?? 'Rejected');
       return { success: ok };
+    }, planId => {
+      const plan = gate.getPlan(planId);
+      if (!plan || plan.status === 'pending') return null;
+      if (plan.status === 'approved') return { outcome: 'answered', answer: { decision: 'approved', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
+      const feedback = plan.feedback ?? '';
+      if (feedback.startsWith('Auto-rejected after timeout')) return { outcome: 'expired' };
+      if (feedback.startsWith('Cancelled:')) return { outcome: 'cancelled' };
+      return { outcome: 'answered', answer: { decision: 'rejected', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
     });
     cleanupQuestion = registerUserQuestionRoute(questions);
     gateway.registerDevice({ deviceId: 'phone', credentialHash: 'hash', scope: [sessionId], scopeEpoch: 1, revokedAt: null });
@@ -94,8 +102,30 @@ describe('companion question and plan cards use the desktop decision points', ()
     };
     expect(gateway.submit(command).kind).toBe('accepted');
     expect(settled).toEqual({ requestId: 'q-1', answers: { 方向: '继续' } });
-    expect(gateway.getDecision('q-1')).toMatchObject({ status: 'approved', resolvedBy: 'phone' });
+    expect(gateway.getDecision('q-1')).toMatchObject({
+      status: 'approved', resolvedBy: 'phone', outcome: 'answered', answer: { answers: { 方向: '继续' } },
+    });
     expect(gateway.submit({ ...command, commandId: 'q-cmd-2' }).kind).toBe('approval_conflict');
+  });
+
+  it('desktop answers publish outcome=answered with the chosen option, not a bare closed', () => {
+    questions.offer(questionRequest, () => {});
+    cancelRegisteredUserQuestion('q-1', { outcome: 'answered', answer: { answers: { 方向: '品牌与市场团队' } } });
+    expect(gateway.getDecision('q-1')).toMatchObject({
+      status: 'approved', outcome: 'answered', answer: { answers: { 方向: '品牌与市场团队' } },
+    });
+    const event = gateway.syncForDevice('phone', 1, 0).events.filter(item => item.kind === 'question').at(-1);
+    expect(event?.payload).toMatchObject({ status: 'approved', outcome: 'answered', answer: { answers: { 方向: '品牌与市场团队' } } });
+    expect(JSON.stringify(event?.payload)).not.toMatch(/另一端/);
+  });
+
+  it('question timeout is expired and abort is cancelled', () => {
+    questions.offer(questionRequest, () => {});
+    cancelRegisteredUserQuestion('q-1', { outcome: 'expired' });
+    expect(gateway.getDecision('q-1')).toMatchObject({ status: 'closed', outcome: 'expired' });
+    questions.offer({ ...questionRequest, id: 'q-2' }, () => {});
+    cancelRegisteredUserQuestion('q-2', { outcome: 'cancelled' });
+    expect(gateway.getDecision('q-2')).toMatchObject({ status: 'closed', outcome: 'cancelled' });
   });
 
   it('plan projection appears, phone respond releases PlanApprovalGate pendingResolvers', async () => {
@@ -211,6 +241,7 @@ describe('companion question and plan cards use the desktop decision points', ()
     await vi.advanceTimersByTimeAsync(31_000);
     await expect(pending).resolves.toMatchObject({ approved: false, autoApproved: true });
     plans.refresh();
+    expect(gateway.getDecision(planId)).toMatchObject({ status: 'closed', outcome: 'expired' });
     expect(gateway.submit({
       version: 1, deviceId: 'phone', scopeEpoch: 1, commandId: 'expired', sessionId,
       action: 'plan.respond', expectedRevision: card.revision,

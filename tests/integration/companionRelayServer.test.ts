@@ -123,7 +123,8 @@ describe('companion relay: production server + host dial-out', () => {
   it('accepts a subprotocol credential dial, selects the fixed protocol, and completes registration', async () => {
     const statsBefore = relay.currentStats;
     const socket = new WebSocket(url, [COMPANION_RELAY_WS_PROTOCOL, companionRelayCredentialSubprotocol(SECRET)]);
-    await new Promise<void>(resolve => socket.once('open', resolve));
+    // close 也放行：客户端在「发了子协议、服务端没选」时会直接断开，别让等待挂到测试超时。
+    await new Promise<void>(resolve => { socket.once('open', resolve); socket.once('close', () => resolve()); });
     // 服务端只回选固定协议名——凭据项绝不回选或回显（回显等于把凭据发回给所有人）。
     expect(socket.protocol).toBe(COMPANION_RELAY_WS_PROTOCOL);
     socket.send(JSON.stringify({
@@ -183,7 +184,7 @@ describe('companion relay: production server + host dial-out', () => {
     const encoded = companionRelayCredentialSubprotocol(SECRET);
     // 对：子协议拨通 + 注册一条 route；错/无：各拒一发，让 rejectedAuth 路径也过一遍日志。
     const good = new WebSocket(loggingUrl, [COMPANION_RELAY_WS_PROTOCOL, encoded]);
-    await new Promise<void>(resolve => good.once('open', resolve));
+    await new Promise<void>(resolve => { good.once('open', resolve); good.once('close', () => resolve()); });
     good.send(JSON.stringify({
       v: 1, kind: 'register', role: 'device',
       envelope: { routeToken: 'route-token-sublog', deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },

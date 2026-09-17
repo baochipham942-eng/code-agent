@@ -1,4 +1,4 @@
-import { createPublicKey, verify as verifySignature, type JsonWebKey, type KeyObject } from 'node:crypto';
+import { createPublicKey, verify as verifySignature, type KeyObject, type webcrypto } from 'node:crypto';
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 
 /**
@@ -22,9 +22,11 @@ export interface JwksStats {
   source: 'network' | 'disk' | 'none';
 }
 
+type Jwk = webcrypto.JsonWebKey & { kid: string };
+
 interface CachedJwks {
   fetchedAt: number;
-  keys: JsonWebKey[];
+  keys: Jwk[];
 }
 
 const MAX_KEYS = 16;
@@ -45,10 +47,10 @@ function parseJson(buffer: Buffer | null): Record<string, unknown> | null {
 }
 
 /** 只留 P-256 签名公钥；其余（RSA、对称、用途不符）静默忽略。 */
-function usableKeys(raw: unknown): JsonWebKey[] {
+function usableKeys(raw: unknown): Jwk[] {
   const keys = raw && typeof raw === 'object' ? (raw as { keys?: unknown }).keys : undefined;
   if (!Array.isArray(keys)) return [];
-  return keys.filter((key): key is JsonWebKey => {
+  return keys.filter((key): key is Jwk => {
     if (!key || typeof key !== 'object') return false;
     const k = key as Record<string, unknown>;
     return k.kty === 'EC' && k.crv === 'P-256' && typeof k.kid === 'string' && typeof k.x === 'string'
@@ -59,7 +61,7 @@ function usableKeys(raw: unknown): JsonWebKey[] {
 export class SupabaseJwtVerifier {
   private keys = new Map<string, KeyObject>();
   /** 与 keys 同步的原始 JWK，只为落盘。 */
-  private rawKeys: JsonWebKey[] = [];
+  private rawKeys: Jwk[] = [];
   private fetchedAt: number | null = null;
   private source: JwksStats['source'] = 'none';
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -146,16 +148,16 @@ export class SupabaseJwtVerifier {
     void this.refresh();
   }
 
-  private install(keys: JsonWebKey[], fetchedAt: number, source: JwksStats['source']): boolean {
+  private install(keys: Jwk[], fetchedAt: number, source: JwksStats['source']): boolean {
     const next = new Map<string, KeyObject>();
     for (const jwk of keys) {
       try {
-        next.set(jwk.kid as string, createPublicKey({ key: jwk, format: 'jwk' }));
+        next.set(jwk.kid, createPublicKey({ key: jwk, format: 'jwk' }));
       } catch { /* 坏公钥跳过 */ }
     }
     if (next.size === 0) return false;
     this.keys = next;
-    this.rawKeys = keys.filter(jwk => next.has(jwk.kid as string));
+    this.rawKeys = keys.filter(jwk => next.has(jwk.kid));
     this.fetchedAt = fetchedAt;
     this.source = source;
     return true;

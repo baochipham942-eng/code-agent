@@ -9,6 +9,7 @@ import {
   parseCompanionRelayFrame,
   type CompanionRelayFrame,
 } from '../../../src/shared/contract/companionRelay';
+import type { JwksStats } from './accountAuth';
 
 type CompanionRelayRole = 'host' | 'device';
 
@@ -29,9 +30,20 @@ export interface CompanionRelayServerStats {
   revoked: number;
   rejectedAuth: number;
   notifiedNoHost: number;
+  /** 以 Supabase 账号令牌鉴权、当前在线的连接数（N-COMPANION-RELAY-ACCOUNT-BIND）。 */
+  accountConnections: number;
+  /** 登记到别人名下路由而被拒的次数。 */
+  rejectedOwner: number;
+  jwks?: JwksStats;
 }
 
+/** 连接的主人：共享凭据 ⇒ legacy；账号令牌 ⇒ acct:<Supabase 用户 id>。 */
+type Principal = string;
+const LEGACY_PRINCIPAL: Principal = 'legacy';
+
 interface Route {
+  /** 第一次登记这条路由的连接的主人；换主人来登记（任一角色）一律拒。 */
+  owner: Principal;
   host?: WebSocket;
   device?: WebSocket;
   expiresAt: number;
@@ -102,6 +114,7 @@ export class CompanionRelayServer {
   private readonly host: string;
   private readonly routes = new Map<string, Route>();
   private readonly bindings = new WeakMap<WebSocket, Binding>();
+  private readonly principals = new WeakMap<WebSocket, Principal>();
   private readonly lastSeen = new WeakMap<WebSocket, number>();
   private readonly waiting = new Map<string, QueuedFrame[]>();
   private readonly waitingBytes = new Map<string, number>();
@@ -109,7 +122,7 @@ export class CompanionRelayServer {
   private readonly stats: CompanionRelayServerStats = {
     connections: 0, routes: 0, queuedFrames: 0, forwarded: 0,
     droppedExpired: 0, droppedNoRoute: 0, droppedBacklog: 0, droppedBackpressure: 0,
-    revoked: 0, rejectedAuth: 0, notifiedNoHost: 0,
+    revoked: 0, rejectedAuth: 0, notifiedNoHost: 0, accountConnections: 0, rejectedOwner: 0,
   };
   private readonly now: () => number;
 
@@ -120,6 +133,8 @@ export class CompanionRelayServer {
     now?: () => number;
     sweepIntervalMs?: number;
     noHostGraceMs?: number;
+    /** 配了就同时认 Supabase access token；不配则只认共享凭据（与账号绑定之前完全一致）。 */
+    accountVerifier?: { verify(token: string): string | null; readonly stats: JwksStats };
     logger?: CompanionRelayLogger;
   }) {
     this.host = options.host ?? '127.0.0.1';
@@ -130,7 +145,11 @@ export class CompanionRelayServer {
   }
 
   get address(): { host: string; port: number } { return { host: this.host, port: this.port }; }
-  get currentStats(): CompanionRelayServerStats { return { ...this.stats, routes: this.routes.size, queuedFrames: this.queueSize() }; }
+  get currentStats(): CompanionRelayServerStats {
+    const stats: CompanionRelayServerStats = { ...this.stats, routes: this.routes.size, queuedFrames: this.queueSize() };
+    if (this.options.accountVerifier) stats.jwks = this.options.accountVerifier.stats;
+    return stats;
+  }
 
   async listen(): Promise<{ host: string; port: number }> {
     if (this.server) return this.address;
@@ -209,12 +228,18 @@ export class CompanionRelayServer {
     const subprotocolAuth = headerAuth ? null : companionRelayCredentialFromSubprotocols(request.headers['sec-websocket-protocol']);
     const via: 'header' | 'subprotocol' | 'none' = headerAuth ? 'header' : subprotocolAuth !== null ? 'subprotocol' : 'none';
     const auth = headerAuth || subprotocolAuth || '';
-    if (!sameSecret(auth, this.options.credential)) {
+    // 共享凭据先比（常量时间）；不是它再按账号令牌验签。sub 不进日志。
+    const legacy = sameSecret(auth, this.options.credential);
+    const sub = legacy ? null : this.options.accountVerifier?.verify(auth) ?? null;
+    const principal = legacy ? LEGACY_PRINCIPAL : sub ? `acct:${sub}` : null;
+    if (!principal) {
       this.stats.rejectedAuth += 1;
       this.options.logger?.warn('auth_rejected', { via });
       socket.close();
       return;
     }
+    this.principals.set(socket, principal);
+    if (sub) this.stats.accountConnections += 1;
     this.stats.connections += 1;
     this.lastSeen.set(socket, this.now());
     socket.on('message', data => {
@@ -227,6 +252,7 @@ export class CompanionRelayServer {
     });
     socket.on('close', () => {
       this.stats.connections = Math.max(0, this.stats.connections - 1);
+      if (sub) this.stats.accountConnections = Math.max(0, this.stats.accountConnections - 1);
       this.detach(socket);
     });
     socket.on('error', () => { /* close follows */ });
@@ -263,7 +289,15 @@ export class CompanionRelayServer {
         this.options.logger?.warn('register_role_mismatch', { role: frame.role, token: tokenPrefix(token) });
         return;
       }
-      const route: Route = this.routes.get(token) ?? { expiresAt: this.now() + L.relayRouteTokenTtlMs };
+      const principal = this.principals.get(socket) ?? LEGACY_PRINCIPAL;
+      const known = this.routes.get(token);
+      if (known && known.owner !== principal) {
+        // 路由 token 本身是秘密，走到这里说明有人拿着别人的 token 换身份来登记：拒，不动原路由。
+        this.stats.rejectedOwner += 1;
+        this.options.logger?.warn('route_owner_mismatch', { role: frame.role, token: tokenPrefix(token) });
+        return;
+      }
+      const route: Route = known ?? { owner: principal, expiresAt: this.now() + L.relayRouteTokenTtlMs };
       route[frame.role] = socket;
       route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
       this.routes.set(token, route);

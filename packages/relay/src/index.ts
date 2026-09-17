@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
+import { join } from 'node:path';
+import { SupabaseJwtVerifier } from './accountAuth';
 import { CompanionRelayServer, type CompanionRelayLogger } from './server';
 
 /**
@@ -11,6 +13,9 @@ import { CompanionRelayServer, type CompanionRelayLogger } from './server';
  *                              开了 ProtectHome=true，/home 下的路径读不到——文件放 /etc 一类
  *                              系统路径，或在 unit 里放宽 ProtectHome
  *   NEO_RELAY_BIND             监听地址，只接受回环地址，缺省 127.0.0.1
+ *   NEO_RELAY_SUPABASE_URL     可选。配了就同时认该 Supabase 项目的 access token（ES256 离线验签）；
+ *                              JWKS 缓存落 $STATE_DIRECTORY/jwks.json（systemd StateDirectory 提供）
+ *   NEO_RELAY_JWKS_MAX_STALE_MS 可选。JWKS 最后一次成功拉取超过这么久就拒所有账号令牌，缺省 30 天
  * 日志为 JSON 行打到 stdout，由 journald 接管。TLS 终止与公网暴露是反代层（Caddy）的活。
  */
 
@@ -45,12 +50,23 @@ const credential = process.env.NEO_RELAY_CREDENTIAL
 if (!credential) fail('NEO_RELAY_CREDENTIAL or NEO_RELAY_CREDENTIAL_FILE is required');
 if (credential.length < L.relayAuthLength) fail(`credential shorter than ${L.relayAuthLength} chars`);
 
-const server = new CompanionRelayServer({ credential, host: bind, port, logger: jsonLogger() });
+const logger = jsonLogger();
+const supabaseUrl = process.env.NEO_RELAY_SUPABASE_URL?.trim();
+const maxStaleRaw = process.env.NEO_RELAY_JWKS_MAX_STALE_MS;
+const maxStaleMs = maxStaleRaw ? Number(maxStaleRaw) : undefined;
+if (maxStaleMs !== undefined && !(Number.isSafeInteger(maxStaleMs) && maxStaleMs > 0)) fail(`NEO_RELAY_JWKS_MAX_STALE_MS is not a positive integer: ${maxStaleRaw}`);
+const stateDirectory = process.env.STATE_DIRECTORY?.split(':')[0];
+const accountVerifier = supabaseUrl
+  ? new SupabaseJwtVerifier({ supabaseUrl, cacheFile: stateDirectory ? join(stateDirectory, 'jwks.json') : undefined, maxStaleMs, logger })
+  : undefined;
+accountVerifier?.start();
+const server = new CompanionRelayServer({ credential, host: bind, port, logger, accountVerifier });
 let stopping = false;
 
 async function shutdown(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
+  accountVerifier?.stop();
   await server.stop();
   process.stdout.write(`${JSON.stringify({ ts: new Date().toISOString(), level: 'info', event: 'relay_exit', signal })}\n`);
   process.exit(0);

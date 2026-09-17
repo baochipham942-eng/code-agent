@@ -179,6 +179,55 @@ describe('NativeRecoveryHost production recovery', () => {
     }));
     expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
+
+  it('recovers a legacy synthetic scope when the recomputed version still matches', async () => {
+    const pending = operation({ status: 'prepared' });
+    const recoveryPlan = plan(pending);
+    const descriptor = recoveryPlan.checkpoint!.state as NativeRecoveryDescriptor;
+    // startDurable 未带 Project scope 时 checkpoint 落的就是这个合成 scope。
+    descriptor.workspace.scope = {
+      projectId: 'legacy-background-authority',
+      primaryRoot: '/repo',
+      roots: [{
+        sourceId: 'legacy-background-primary',
+        path: '/repo',
+        role: 'primary',
+        access: 'read_write',
+      }],
+      version: 'legacy-v1',
+    };
+    const resolveWorkspaceScopeVersion = vi.fn(async () => 'legacy-v1');
+    const { handler, registry } = fixture({ resolveWorkspaceScopeVersion });
+
+    await expect(handler.recover(recoveryPlan, 10)).resolves.toMatchObject({
+      status: 'recovered',
+      reason: 'execute_prepared_model_once',
+    });
+    // 端口契约：入参是整个 scope（恢复侧据 projectId 分流重算/查库），不是裸 id。
+    expect(resolveWorkspaceScopeVersion).toHaveBeenCalledWith(descriptor.workspace.scope);
+    expect(registry.terminalDurable).toHaveBeenCalledOnce();
+  });
+
+  it('still reviews when the Project behind a real scope was deleted', async () => {
+    const pending = operation({ status: 'prepared' });
+    const recoveryPlan = plan(pending);
+    const descriptor = recoveryPlan.checkpoint!.state as NativeRecoveryDescriptor;
+    descriptor.workspace.scope = {
+      projectId: 'project-deleted',
+      primaryRoot: '/repo',
+      roots: [],
+      version: 'scope-v1',
+    };
+    const { handler, registry } = fixture({
+      resolveWorkspaceScopeVersion: vi.fn(async () => null),
+    });
+
+    await expect(handler.recover(recoveryPlan, 10)).resolves.toMatchObject({
+      status: 'requires_review',
+      reason: 'native_workspace_scope_drift',
+    });
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
+  });
 });
 
 describe('NativeRecoveryHost interrupted goal run (P0 false-completion止血)', () => {

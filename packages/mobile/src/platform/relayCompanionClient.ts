@@ -3,6 +3,8 @@ import { createHandshake, NoiseChannel } from '../../../../src/shared/companion/
 import { fromHex, toHex } from '../../../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS as L } from '../../../../src/shared/constants/companion';
 import {
+  COMPANION_RELAY_WS_PROTOCOL,
+  companionRelayCredentialSubprotocol,
   companionRelayFrameExpired,
   parseCompanionRelayFrame,
   type CompanionRelayFrame,
@@ -32,12 +34,16 @@ export interface RelayDialSocket {
 export type RelayDial = (url: string, headers: { authorization: string }) => RelayDialSocket;
 
 /**
- * WebView 的 WebSocket 不能带 Authorization 头（平台限制，不是疏漏）。生产 relay 的前置层
- * 在部署侧注入共享凭据（N-MOBILE-RELAY-PHONE 证据档 §2），浏览器裸拨即可过闸；headers
- * 参数留给能设头的运行时（node/测试侧的 ws dial），签名保持一致。
+ * WebView 的 WebSocket 不能带 Authorization 头（平台限制，不是疏漏），凭据走 WebSocket
+ * 子协议（N-COMPANION-RELAY-PHONE-AUTH）：固定协议名 + `neo-relay-auth.<base64url(凭据)>`
+ * 两项一起发，服务端只回选固定协议名、从凭据项解出共享凭据。headers 参数留给能设头的
+ * 运行时（node/测试侧的 ws dial），签名保持一致。
  */
-export const browserRelayDial: RelayDial = url => {
-  const socket = new WebSocket(url);
+export const browserRelayDial: RelayDial = (url, headers) => {
+  const credential = headers.authorization.replace(/^Bearer\s+/i, '').trim();
+  const protocols = [COMPANION_RELAY_WS_PROTOCOL];
+  if (credential) protocols.push(companionRelayCredentialSubprotocol(credential));
+  const socket = new WebSocket(url, protocols);
   return {
     send: data => socket.send(data),
     close: () => socket.close(),
@@ -304,6 +310,8 @@ export class RelayCompanionClient {
       this.onRevoked?.();
       return;
     }
+    // relay 宽限期内等不到 host（N-COMPANION-RELAY-NOHOST-FASTFAIL）：立刻结算，别等握手超时。
+    if (frame.kind === 'no-host') { this.drop(new Error('COMPANION_RELAY_NO_HOST')); return; }
     if (frame.kind === 'handshake') { this.receiveHandshake(frame); return; }
     if (frame.kind !== 'forward') return;
     this.inboundFrames += 1;

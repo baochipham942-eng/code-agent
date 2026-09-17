@@ -186,12 +186,13 @@ describe('companion relay phone: dual-path over real gateway + LAN server + fake
     expect(deviceId).toBeTruthy();
   });
 
-  it('refreshes a stale route token over LAN (host restart heals while LAN is up)', async () => {
+  it('keeps the route token across a host restart, and heals a changed host identity over LAN', async () => {
     const store = phone();
     await store.getState().pair();
     const deviceId = store.getState().binding!.deviceId;
     const before = saved().relay?.routeToken;
-    // Host 进程重启 = 新 relay 客户端 + 新铸造的 routeToken（routes 不落盘，这是已知边界）。
+    // Host 进程重启 = 新 relay 客户端，但身份密钥与 gateway DB 不变。routeToken 是确定性
+    // 派生（N-COMPANION-RELAY-PHONE-AUTH），重启不再换 token——手机缓存的路由照常可用。
     await hostRelay.stop();
     hostRelay = new CompanionRelayClient({
       gateway,
@@ -201,11 +202,24 @@ describe('companion relay phone: dual-path over real gateway + LAN server + fake
       jitter: () => 0.5,
     });
     await hostRelay.start();
+    expect(hostRelay.routeTokenFor(deviceId)).toBe(before);
     await store.getState().reconnect();
-    const after = saved().relay?.routeToken;
-    expect(after).toBeTruthy();
-    expect(after).not.toBe(before);
-    expect(after).toBe(hostRelay.routeTokenFor(deviceId));
+    expect(saved().relay?.routeToken).toBe(before);
+    // 换持久身份（换机器/重铸身份）⇒ token 跟着变；LAN 连着时手机重连把新 token 刷回配对盘。
+    await hostRelay.stop();
+    hostRelay = new CompanionRelayClient({
+      gateway,
+      identity: createIdentity(),
+      config: { url: relay.url, credentialRef: 'companion-relay', reconnectBackoffMs: [30, 60, 120] },
+      credential: SECRET,
+      jitter: () => 0.5,
+    });
+    await hostRelay.start();
+    const reKeyed = hostRelay.routeTokenFor(deviceId);
+    expect(reKeyed).toBeTruthy();
+    expect(reKeyed).not.toBe(before);
+    await store.getState().reconnect();
+    expect(saved().relay?.routeToken).toBe(reKeyed);
     store.getState().pause();
   });
 

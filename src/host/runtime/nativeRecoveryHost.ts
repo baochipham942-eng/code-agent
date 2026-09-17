@@ -40,8 +40,13 @@ export interface NativeRecoveryHostPorts {
     | { ok: true; root: string; cwd: string; fingerprint: string }
     | { ok: false; reason: string }
   >;
-  /** Resolve the current Project scope so recovery cannot silently regain or retain stale permissions. */
-  resolveWorkspaceScopeVersion?(projectId: string): Promise<string | null>;
+  /**
+   * Resolve the current version of the checkpointed scope so recovery cannot silently
+   * regain or retain stale permissions. Receives the whole scope: synthetic scopes
+   * (e.g. legacy-background-authority) are recomputed from their roots, real Project
+   * scopes are re-derived from the Project library.
+   */
+  resolveWorkspaceScopeVersion?(scope: WorkspaceScope): Promise<string | null>;
   model: {
     dispatchPrepared(input: NativeRecoveryOperationInput): Promise<NativeRecoveryResultEvidence>;
     queryResult(input: NativeRecoveryOperationInput & { providerOperationId: string }): Promise<NativeRecoveryResultEvidence | null>;
@@ -128,7 +133,7 @@ export class NativeRecoveryHost {
     }
     if (descriptor.workspace.scope) {
       const currentScopeVersion = await this.ports.resolveWorkspaceScopeVersion?.(
-        descriptor.workspace.scope.projectId,
+        descriptor.workspace.scope,
       );
       if (!currentScopeVersion || currentScopeVersion !== descriptor.workspace.scope.version) {
         return this.review(plan, now, 'native_workspace_scope_drift');

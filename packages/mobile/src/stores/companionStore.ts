@@ -17,6 +17,7 @@ import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
 import { HistoryCache } from '../platform/historyCache';
 import { mdnsRefreshedEndpoint } from '../platform/mdnsEndpoint';
+import { connectionBlocksAutoRetry, handshakeNeedsRescan, phoneReconnectDelayMs, phoneReconnectJitterMs } from '../app/phoneReconnect';
 
 interface Saved {
   version: 1; publicKey: string; secretKey: string;
@@ -106,7 +107,14 @@ interface State {
    */
   pendingAdopted: boolean;
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
-  hydrate(): Promise<void>; pair(raw?: string): Promise<void>; reconnect(): Promise<void>; forget(): Promise<void>; pause(): void;
+  hydrate(): Promise<void>; pair(raw?: string): Promise<void>;
+  /** `resetBackoff`：点「重新连接」立即试并重置节奏。回前台不传，只立即试、10 分钟钟继续走。 */
+  reconnect(opts?: { resetBackoff?: boolean }): Promise<void>; forget(): Promise<void>; pause(): void;
+  /** 前台断线后正在按退避自动重试。状态位据此保持「正在自动重试」，不闪「正在连接…」。 */
+  autoRetrying: boolean;
+  /** 扫码重新配对时丢掉了未确认操作：状态位一次性「上一条操作没送到…」直到点「知道了」。 */
+  abandonedPending: boolean;
+  dismissAbandonedPending(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
   respondQuestion(requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string): Promise<void>;
   respondPlan(requestId: string, decision: 'approved' | 'rejected', feedback?: string): Promise<void>;
@@ -162,7 +170,11 @@ interface CompanionChannel {
   close(): void;
 }
 
-export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts, historyCache?: HistoryCache) {
+export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts, historyCache?: HistoryCache, options?: {
+  /** 这台电脑上次打开的会话。`''` = 欢迎页；缺省 = 沿用 scope 里第一条会话（旧客户端）。 */
+  lastSession?(hostKey: string): string | undefined;
+  rememberSession?(hostKey: string, sessionId: string | null): void;
+}) {
   let saved: Saved | null = null;
   let client: CompanionChannel | null = null;
   /** 双径不双跑：任一时刻只有一条活通道，另一条的句柄只用来收尾 close。 */
@@ -190,6 +202,52 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
   const history = historyCache ?? new HistoryCache();
 
   const store = createStore<State>((set, get) => {
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryAttempt = 0;
+    let retryStartedAt: number | null = null;
+    let retryGeneration = 0;
+    let appInBackground = false;
+    let reconnectInFlight = false;
+    const clearRetryTimer = () => {
+      if (retryTimer === null) return;
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    };
+    const stopAutoRetry = () => {
+      retryGeneration += 1;
+      clearRetryTimer();
+      retryAttempt = 0;
+      retryStartedAt = null;
+      if (get().autoRetrying) set({ autoRetrying: false });
+    };
+    const remember = (sessionId: string | null) => {
+      const hostKey = saved?.binding?.hostKey ?? get().binding?.hostKey;
+      if (hostKey) options?.rememberSession?.(hostKey, sessionId);
+    };
+    const armAutoRetry = (fromFailedAttempt: boolean) => {
+      if (appInBackground || connectionBlocksAutoRetry(get().status, get().connectionError) || !saved?.binding) {
+        if (connectionBlocksAutoRetry(get().status, get().connectionError) || !saved?.binding) stopAutoRetry();
+        else { retryGeneration += 1; clearRetryTimer(); if (get().autoRetrying) set({ autoRetrying: false }); }
+        return;
+      }
+      if (!fromFailedAttempt && !get().autoRetrying) {
+        retryAttempt = 0;
+        retryStartedAt = Date.now();
+      }
+      if (fromFailedAttempt) retryAttempt += 1;
+      if (retryStartedAt == null) retryStartedAt = Date.now();
+      set({ autoRetrying: true });
+      const wait = fromFailedAttempt
+        ? phoneReconnectJitterMs(phoneReconnectDelayMs(retryAttempt, Date.now() - retryStartedAt))
+        : 0;
+      clearRetryTimer();
+      const gen = retryGeneration;
+      retryTimer = setTimeout(() => {
+        if (gen !== retryGeneration || appInBackground) return;
+        retryTimer = null;
+        void get().reconnect();
+      }, wait);
+    };
     const inspectBoth = (): CacheInspect => {
       const preview = files?.cache.inspect() ?? { previewBytes: 0, conversationBytes: 0, protectedBytes: 0 };
       return { previewBytes: preview.previewBytes, conversationBytes: history.inspect().conversationBytes, protectedBytes: preview.protectedBytes };
@@ -282,7 +340,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           relayClient?.close();
           client?.close();
           wipeHistoryCache();
-          set({ status: 'rejected', connectionError: 'connectionRejected', transport: null });
+          stopAutoRetry();
+          remember(null);
+          set({ status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null });
         },
       });
       await relay.connect();
@@ -389,7 +449,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if (typeof result.reason === 'string' && DEVICE_LEVEL_REASONS.has(result.reason)) {
           // 设备级的拒绝照报：那是「这台设备不能用了」，与用户撤没撤这次录音无关。
           wipeHistoryCache();
-          set({ pending: false, status: 'rejected', connectionError: 'connectionRejected', transport: null });
+          stopAutoRetry();
+          remember(null);
+          set({ pending: false, status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null });
         } else if (discardedVoice) {
           set({ pending: false });
         } else {
@@ -415,12 +477,13 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // UI 按类给人话，不再一律「无法连接电脑」。
         const connectionError: ConnectionError = code === 'COMPANION_INVALID_INVITATION' ? 'connectionQrInvalid'
           : code === 'COMPANION_SCAN_FAILED' ? 'connectionScanFailed'
-          : code === 'COMPANION_PAIRING_REJECTED' ? 'connectionRejected'
+          : code === 'COMPANION_PAIRING_REJECTED' || handshakeNeedsRescan(code) ? 'connectionRejected'
           : code === 'COMPANION_CONNECTION_REFUSED' ? 'connectionRefused'
           : code === 'COMPANION_RELAY_AUTH_REJECTED' ? 'connectionRelayRejected'
           : code === 'COMPANION_RELAY_UNAVAILABLE' || code === 'COMPANION_RELAY_CONNECT_TIMEOUT' ? 'connectionRelayUnavailable'
           : code === 'COMPANION_NETWORK_UNAVAILABLE' || code === 'COMPANION_NO_RESPONSE' ? 'connectionUnavailable' : 'connectionFailed';
         if (get().status !== 'storageError') set({ status: 'offline', connectionError, transport: null });
+        armAutoRetry(reconnectInFlight);
       }
       finally { set({ busy: false }); }
     };
@@ -433,7 +496,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     return {
       voiceResult: null, library: null, history: {}, libraryError: false,
-      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, events: [], runId: null, terminal: null,
+      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, autoRetrying: false, abandonedPending: false, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
       hydrate: async () => {
@@ -456,9 +519,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           saved = value;
           try { await history.hydrate(); } catch { /* conversation cache is best-effort and must not fail pairing identity */ }
           const restored = history.snapshot();
+          const last = value.binding ? options?.lastSession?.(value.binding.hostKey) : undefined;
+          const fromScope = value.binding?.scope.find(id => !id.startsWith('project:')) ?? null;
+          const sessionId = last === '' ? null : (last || fromScope);
           set({
             busy: false, binding: value.binding ?? null,
-            sessionId: value.binding?.scope.find(id => !id.startsWith('project:')) ?? null,
+            sessionId,
             pending: !!value.pending, pendingAction: value.pending?.action ?? null, pendingAdopted: !!value.pending,
             history: restored.history, events: restored.events, lastSyncAt: restored.lastSyncAt, cacheUsage: inspectBoth(),
           });
@@ -467,7 +533,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       },
       pair: (raw?: string) => safely(async () => {
         set({ paused: false });
-        if (!port || saved?.pending) return;
+        appInBackground = false;
+        if (!port) return;
+        const dropPending = Boolean(saved?.pending);
         const payload = raw ?? await port.scan().catch(() => { throw new Error('COMPANION_SCAN_FAILED'); });
         let invitation;
         try { invitation = parseInvitation(payload); } catch { throw new Error('COMPANION_INVALID_INVITATION'); }
@@ -479,11 +547,13 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         }
         await persist({ ...saved!, candidate: { endpoint: invitation.endpoint, ...(invitation.altEndpoint ? { altEndpoint: invitation.altEndpoint } : {}), hostKey: invitation.hostKey }, binding: undefined });
         const binding = await createClient().pair(payload);
-        await persist({ ...saved!, binding, candidate: undefined });
+        await persist({ ...saved!, binding, candidate: undefined, pending: undefined });
         epoch = binding.scopeEpoch; cursor = 0;
         heldAttachments.clear();
         wipeHistoryCache();
-        set({ status: 'connected', transport: 'lan', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null });
+        stopAutoRetry();
+        remember(null);
+        set({ status: 'connected', transport: 'lan', binding, sessionId: null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null, abandonedPending: dropPending });
         // 趁配对的 LAN 会话还热着把 relay 路由缓存下来，LAN 断了才有路可落。
         await refreshRelayRoute();
       }),
@@ -496,6 +566,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
        * 删 app 重装（靠 nativeCompanion.ts 的 INSTALL_KEY 标记去清 Keychain）。
        */
       forget: () => safely(async () => {
+        stopAutoRetry();
+        appInBackground = false;
+        remember(null);
         client?.close(); client = null;
         if (saved) await persist({ version: 1, publicKey: saved.publicKey, secretKey: saved.secretKey });
         wipeHistoryCache();
@@ -505,9 +578,21 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         set({ status: 'unpaired', binding: null, sessionId: null, transport: null,
           paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
           artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, routeError: null,
-          uploadProgress: [], voiceResult: null });
+          uploadProgress: [], voiceResult: null, autoRetrying: false, abandonedPending: false });
       }),
-      reconnect: () => safely(async () => {
+      dismissAbandonedPending: () => set({ abandonedPending: false }),
+      reconnect: async (opts) => {
+        appInBackground = false;
+        if (opts?.resetBackoff) {
+          retryGeneration += 1;
+          clearRetryTimer();
+          retryAttempt = 0;
+          retryStartedAt = Date.now();
+          set({ autoRetrying: true });
+        }
+        reconnectInFlight = true;
+        try {
+          return await safely(async () => {
         const savedTarget = saved?.binding ?? saved?.candidate;
         if (!savedTarget) return;
         // mDNS 重解析治旧 IP（fix4-⑤）：先用绑定里的主机名重新解析，解析到则用新地址拨，
@@ -515,7 +600,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // persist 会把它写回绑定——地址更新、身份不动（hostKey/deviceId/scope 照旧校验）。
         const target = await mdnsRefreshedEndpoint(port, savedTarget) ?? savedTarget;
         const previousScope = get().binding?.scope ?? saved?.binding?.scope ?? [];
-        set({ status: 'connecting', paused: false });
+        // 已配对后的重试不把 status 打成 connecting：状态位要保持「正在自动重试」，
+        // 连接弹层也要留着扫码按钮（N-MOBILE-SCAN-ESCAPE）。首次 hydrate / 中途配对才亮 connecting。
+        const silent = get().autoRetrying || get().status === 'offline' || Boolean(opts?.resetBackoff);
+        if (silent) set({ paused: false, autoRetrying: true });
+        else set({ status: 'connecting', paused: false });
         let binding: LanBinding;
         try {
           binding = await createClient().recover(target, saved?.binding);
@@ -523,8 +612,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           // 双径（N-MOBILE-RELAY-PHONE）：LAN 失败/不可达且有缓存路由时落 relay。
           // recover 失败已把 LAN 客户端关掉，此刻起只有 relay 一条活通道——不双跑。
           // 没有路由就原样抛 LAN 的错误：那是用户看得懂的那句。
-          if (!saved?.relay || !saved?.binding) throw lanError;
+          // 身份变化不是网络问题：落 relay 同一身份也会被拒，且会让自动重连空转。
+          const lanCode = lanError instanceof Error ? lanError.message : '';
+          if (handshakeNeedsRescan(lanCode) || !saved?.relay || !saved?.binding) throw lanError;
           await dialRelay();
+          stopAutoRetry();
           set({ status: 'connected', transport: 'relay', paused: false });
           await reconcilePending();
           return;
@@ -535,11 +627,21 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch;
         pruneUnscopedHistory(previousScope, binding.scope);
+        stopAutoRetry();
         set({ status: 'connected', transport: 'lan', binding, sessionId: get().sessionId ?? binding.scope.find(id => !id.startsWith('project:')) ?? null });
         await refreshRelayRoute();
         await reconcilePending();
-      }),
+          });
+        } finally {
+          reconnectInFlight = false;
+        }
+      },
       pause: () => {
+        // 后台/锁屏不跑自动重连定时器（N-MOBILE-AUTO-RECONNECT ②），与「paused 假警报」是两件事：
+        // 已经 offline 时 paused 仍是 false（断连文案要留着），但定时器必须停。
+        appInBackground = true;
+        retryGeneration += 1;
+        clearRetryTimer();
         // 只有「本来连着」才算暂停：原本就断着的话，报错该继续留在界面上。
         // 必须幂等：iOS 退后台会连发两次生命周期回调，第二次时 status 已经是 offline，
         // 按「当前是否连着」重算就会把 paused 打回 false——爸报的那个假警报原样回来
@@ -548,16 +650,27 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // client 即当前活通道（LAN 或 relay），关它就够；relayClient 只是记账。
         client?.close();
         relayClient = null;
-        if (get().binding) set({ status: 'offline', paused: live, transport: null });
+        if (get().binding) set({ status: 'offline', paused: live, transport: null, autoRetrying: false });
       },
       refreshLibrary: async (more = false) => {
         if (!client || get().status !== 'connected') return;
         try {
           const library = await client.request({ action: 'read', query: { kind: 'library', offset: more ? get().library?.nextOffset ?? 0 : 0 } }) as CompanionLibrary;
           if (!library || !Array.isArray(library.sessions) || !Array.isArray(library.projects) || !Array.isArray(library.models)) throw new Error('COMPANION_INVALID_LIBRARY');
-          const sessions = new Map((more ? get().library?.sessions ?? [] : []).map(s => [s.id, s]));
+          const previous = get().library;
+          const current = get().sessionId;
+          const sessions = new Map((more ? previous?.sessions ?? [] : []).map(s => [s.id, s]));
           for (const session of library.sessions) sessions.set(session.id, session);
           set({ library: { ...library, sessions: [...sessions.values()] }, libraryError: false });
+          // 连上后发现当前会话已在电脑删除：静默回欢迎页（N-MOBILE-RESUME-LAST-SESSION ④）。
+          if (current && !more && !sessions.has(current)) {
+            const previousHad = previous?.sessions.some(s => s.id === current) === true;
+            const coldMiss = !previous && library.nextOffset == null;
+            if (previousHad || coldMiss) {
+              remember(null);
+              set({ sessionId: null, runId: null, terminal: null, artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, uploadProgress: [] });
+            }
+          }
         } catch { set({ libraryError: true }); }
       },
       refreshModels: async () => {
@@ -606,7 +719,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         });
       },
       selectSession: sessionId => {
-        if ((get().library?.sessions.some(s => s.id === sessionId) || get().binding?.scope.includes(sessionId) || get().events.some(e => e.sessionId === sessionId && (e.kind === 'approval' || e.kind === 'question' || e.kind === 'plan'))) && !get().busy) {
+        const known = get().library?.sessions.some(s => s.id === sessionId)
+          || get().binding?.scope.includes(sessionId)
+          || get().events.some(e => e.sessionId === sessionId && (e.kind === 'approval' || e.kind === 'question' || e.kind === 'plan'))
+          || Boolean(get().history[sessionId]);
+        if (known && !get().busy) {
           const events = get().events.filter(e => e.sessionId === sessionId);
           const last = events.filter(e => ['run_started', 'agent_complete', 'agent_cancelled', 'error'].includes(e.kind)).at(-1);
           // artifacts/preview 是当前会话作用域：切会话必须清掉，否则 offline 时
@@ -743,7 +860,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           const result = await client.request({ action: 'sync', epoch, afterSeq: cursor }) as CompanionSyncResult;
           if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); return; }
           // 被撤销不是网络问题：混进通用 offline 会让这台设备一直重试、永远不知道自己已被踢。
-          if (result.kind === 'revoked') { client?.close(); if (relayClient) { relayClient.close(); relayClient = null; } wipeHistoryCache(); set({ status: 'rejected', connectionError: 'connectionRejected', transport: null }); return; }
+          if (result.kind === 'revoked') { client?.close(); if (relayClient) { relayClient.close(); relayClient = null; } wipeHistoryCache(); stopAutoRetry(); remember(null); set({ status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null }); return; }
           if (result.kind !== 'events' || result.epoch !== epoch || !Number.isSafeInteger(result.nextSeq) || result.nextSeq < cursor || !Array.isArray(result.events)) throw new Error('COMPANION_INVALID_SYNC');
           set({ events: [...get().events, ...result.events] }); cursor = result.nextSeq;
           history.ingestEvents(result.events);
@@ -772,7 +889,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             const record = await client.request({ action: 'status', commandId: pendingId }) as CompanionCommandRecord | null;
             if (record && saved?.pending?.commandId === pendingId && !(await recoverStalePending(record))) await accepted(record);
           }
-        } catch { client?.close(); if (relayClient && client === relayClient) relayClient = null; if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable', transport: null }); }
+        } catch { client?.close(); if (relayClient && client === relayClient) relayClient = null; if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable', transport: null }); armAutoRetry(false); }
         finally { syncing = false; }
       },
       refreshArtifacts: async () => {

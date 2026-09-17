@@ -24,7 +24,7 @@ const quiet: Input = {
   commandError: null, commandErrorAction: null, voiceFailureShown: false, sessionId: 's1',
   libraryError: false, pending: false, pendingAction: null, pendingSlow: false,
 };
-const acts = () => ({ flush: vi.fn(), reconnect: vi.fn(), scan: vi.fn(), openRemote: vi.fn(), retryCreate: vi.fn(), switchModel: vi.fn() });
+const acts = () => ({ flush: vi.fn(), reconnect: vi.fn(), scan: vi.fn(), openRemote: vi.fn(), retryCreate: vi.fn(), switchModel: vi.fn(), dismissAbandoned: vi.fn() });
 const items = (patch: Partial<Input> = {}, act = acts()) => composerStatusItems(text, { ...quiet, ...patch }, act);
 const voiceFailure: StatusItem = { rank: 3, message: text.microphoneDenied };
 
@@ -106,6 +106,22 @@ describe('连接那一条：一句话 + 一个动作，点文字打开连接电�
     expect(act.openRemote).toHaveBeenCalledTimes(1);
     if (action === text.scanShort) { fireEvent.click(document.querySelector('[data-testid="status-action"]')!); expect(act.scan).toHaveBeenCalled(); }
     if (action === text.reconnect) { fireEvent.click(document.querySelector('[data-testid="status-action"]')!); expect(act.reconnect).toHaveBeenCalled(); }
+  });
+  it('自动重试期间不闪「正在连接…」，文案恒为正在自动重试', () => {
+    const act = acts();
+    const [item] = items({ status: 'connecting', autoRetrying: true, connectionError: 'connectionUnavailable' }, act);
+    expect(item.message).toBe(text.autoRetrying);
+    expect(item.action?.label).toBe(text.reconnect);
+    expect(item.reason).toBe('auto-retry');
+  });
+  it('扫码丢掉未确认操作后：一次性「上一条操作没送到…」+「知道了」', () => {
+    const act = acts();
+    act.dismissAbandoned = vi.fn();
+    const [item] = items({ abandonedPending: true }, act);
+    expect(item.message).toBe(text.abandonedPending);
+    expect(item.action?.label).toBe(text.gotIt);
+    item.action!.run();
+    expect(act.dismissAbandoned).toHaveBeenCalled();
   });
   it('没配对过就点发送：去连接电脑', () => {
     const act = acts();
@@ -231,6 +247,7 @@ const harness = vi.hoisted(() => ({ offline: false }));
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
     async recover() {
+      if (harness.offline) throw new Error('COMPANION_NO_RESPONSE');
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one', 's1'] };
     }
     async request(payload: unknown) {
@@ -325,12 +342,12 @@ describe('MobileRoot 接线', () => {
       await waitFor(() => { expect(document.querySelector('.composer-tools .model')).toBeTruthy(); });
       harness.offline = true;
       // 轮询（1 秒一拍）踩空把连接收成 offline
-      await waitFor(() => { expect(slots()[0]?.textContent).toContain(text.cannotReachComputer); }, { timeout: 4000 });
+      await waitFor(() => { expect(slots()[0]?.textContent).toContain(text.autoRetrying); }, { timeout: 4000 });
       fireEvent.change(document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement, { target: { value: '整理一下' } });
       fireEvent.click(document.querySelector('[data-testid="send"]') as HTMLElement);
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
       expect(slots()).toHaveLength(1);
-      expect(slots()[0].querySelector('.status-text')!.textContent).toBe(text.cannotReachComputer);
+      expect(slots()[0].querySelector('.status-text')!.textContent).toBe(text.autoRetrying);
       expect(slots()[0].querySelector('[data-testid="status-action"]')!.textContent).toBe(text.reconnect);
       expect(legacyRows()).toBe(0);
       // 草稿没丢

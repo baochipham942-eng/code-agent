@@ -114,6 +114,14 @@ export const COMPANION_LIMITS = {
   relayMaxBufferedFrames: 32,
   relayMaxBufferedBytes: 256 * 1024,
   relayReconnectBackoffMs: [1_000, 2_000, 4_000, 8_000, 16_000, 30_000],
+  /**
+   * 手机前台断线自动重连（N-MOBILE-AUTO-RECONNECT）：第一次立即试，之后按这档
+   * 2/4/8/16/30s（±50% 抖动），再之后每 30s，累计 10 分钟后每 60s。后台不跑。
+   */
+  phoneReconnectBackoffMs: [2_000, 4_000, 8_000, 16_000, 30_000],
+  phoneReconnectSteadyMs: 30_000,
+  phoneReconnectSlowMs: 60_000,
+  phoneReconnectSlowAfterMs: 600_000,
   relayHeartbeatMs: 20_000,
   relayIdleMs: 60_000,
   relayConnectTimeoutMs: 10_000,

@@ -89,8 +89,9 @@ export function composerStatusItems(
     binding: boolean; status: string; paused: boolean; connectionError: string | null; busy: boolean;
     commandError: string | null; commandErrorAction: string | null; voiceFailureShown: boolean; sessionId: string | null;
     libraryError: boolean; pending: boolean; pendingAction: string | null; pendingSlow: boolean;
+    autoRetrying?: boolean; abandonedPending?: boolean;
   },
-  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void },
+  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; dismissAbandoned?(): void },
 ): StatusItem[] {
   const items: StatusItem[] = [];
   if (s.saveError) items.push({ rank: 1, message: text.saveError, action: { label: text.retry, run: act.flush } });
@@ -99,8 +100,9 @@ export function composerStatusItems(
   if (s.binding && !live && !s.paused) {
     const open = act.openRemote;
     const reconnect = { label: text.reconnect, run: act.reconnect, disabled: s.busy };
-    items.push(s.status === 'connecting' ? { rank: 2, message: text.connecting, neutral: true, open }
-      : s.status === 'rejected' || connectionDiagnosis(text, s).action === 'scan' ? { rank: 2, message: text.rescanNeeded, open, action: { label: text.scanShort, run: act.scan, disabled: s.busy } }
+    items.push(s.status === 'rejected' || connectionDiagnosis(text, s).action === 'scan' ? { rank: 2, message: text.rescanNeeded, open, action: { label: text.scanShort, run: act.scan, disabled: s.busy } }
+      : s.autoRetrying ? { rank: 2, message: text.autoRetrying, open, action: reconnect, reason: 'auto-retry' }
+      : s.status === 'connecting' ? { rank: 2, message: text.connecting, neutral: true, open }
       : s.connectionError === 'connectionRefused' ? { rank: 2, message: text.neoNotRunning, open, action: reconnect }
       : { rank: 2, message: text.cannotReachComputer, open, action: reconnect });
   } else if (!s.binding && s.sendAttempted) {
@@ -108,6 +110,7 @@ export function composerStatusItems(
     items.push({ rank: 2, message: text.cannotReachComputer, action: { label: text.remote, run: act.openRemote } });
   }
   if (!live) return items;
+  if (s.abandonedPending) items.push({ rank: 4, message: text.abandonedPending, action: { label: text.gotIt, run: act.dismissAbandoned ?? (() => {}) } });
   const command = s.commandError === 'COMPANION_NOT_CONNECTED' ? null : commandNoticeCopy(text, s, s.voiceFailureShown);
   if (command) {
     const action = s.commandErrorAction === 'session.create' && s.commandError !== 'COMPANION_COMMAND_IN_FLIGHT' && act.retryCreate ? { label: text.retry, run: act.retryCreate }

@@ -65,7 +65,10 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [store] = useState(() => createMobileStore(ports.preferences));
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
     return store.getState().acknowledgeDraft(acceptedText, `${hostKey}:${sessionId}`);
-  }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId, continuation), ports.files, ports.historyCache));
+  }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId, continuation), ports.files, ports.historyCache, {
+    lastSession: hostKey => store.getState().preferences.lastSessions?.[hostKey],
+    rememberSession: (hostKey, sessionId) => store.getState().rememberSession(hostKey, sessionId),
+  }));
   const appActive = useRef(true);
   const [notifyStore] = useState(() => createNotificationStore({
     port: ports.notifications ?? unavailableNotificationPort,
@@ -342,6 +345,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       void companionStore.getState().refreshArtifacts();
     } else if (state.route !== 'fixture') store.getState().activateDraft('new');
   }, [companion.sessionId, companion.binding?.hostKey, companion.status, state.route, store, companionStore]);
+  useEffect(() => {
+    const hostKey = companion.binding?.hostKey;
+    if (!hostKey || !state.ready) return;
+    store.getState().rememberSession(hostKey, companion.sessionId);
+  }, [companion.sessionId, companion.binding?.hostKey, state.ready, store]);
   // 连上而没有会话时不再自动弹「选择项目」（N-MOBILE-DEFAULT-PROJECT ②A，爸 09-17「项目要有默认、不强制选」）：
   // 停在新会话欢迎页，项目选择器已带默认项目；弹层只在点选择器、或都建不了时点发送才开。
   /**
@@ -421,10 +429,20 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     }
   }, [companion.pending, companion.busy, companion.status, store]);
   const finishPair = async (raw?: string) => {
+    const ui = store.getState();
+    const draftKey = ui.draftKey;
+    const draft = ui.preferences.drafts[draftKey] ?? '';
     await companionStore.getState().pair(raw);
     const result = companionStore.getState();
     // 配对成功一律落到会话页：有会话进会话，只授权项目时是带默认项目选择器的欢迎页，不拦弹层。
-    if (result.status === 'connected') store.getState().navigate('new');
+    // 扫码逃生口丢掉未确认操作后，草稿要从旧会话键搬到欢迎页输入框（design.md §13）。
+    if (result.status === 'connected') {
+      store.getState().navigate('new');
+      if (result.abandonedPending && draft) {
+        store.getState().activateDraft('new');
+        store.getState().editDraft(draft);
+      }
+    }
   };
   const pairAndOpenConversation = async () => {
     if (!ports.companion) return;
@@ -583,8 +601,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             else state.attemptSend();
           }}
           status={composerStatusItems(text, { ...companion, binding: !!companion.binding, saveError: state.saveError, nativeError, sendAttempted: state.sendAttempted, voiceFailureShown, pendingSlow }, {
-            flush: () => void state.flush(), reconnect: () => void companion.reconnect(), scan: () => void pairAndOpenConversation(),
+            flush: () => void state.flush(), reconnect: () => void companionStore.getState().reconnect({ resetBackoff: true }), scan: () => void pairAndOpenConversation(),
             openRemote: () => state.openSheet('remote'), retryCreate: lastCreate.current, switchModel: openModelSheet,
+            dismissAbandoned: () => companionStore.getState().dismissAbandonedPending(),
           })}
           // 模型入口只留这一个（爸 2026-09-16 拍板）：会话操作弹窗里不再有模型那一格。
           modelLabel={sessionModelLabel} openModel={openModelSheet}
@@ -698,7 +717,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             </div>
             <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>
           </>
-          : companion.status === 'connecting' ? <div className="remote-state" role="status" data-testid="remote-connecting">
+          : companion.status === 'connecting' && !companion.autoRetrying ? <div className="remote-state" role="status" data-testid="remote-connecting">
             <span className="spinner" aria-hidden="true" />{text.libraryLoading}
           </div>
           : !companion.binding ? <div className="remote-failed" role="status" data-testid="remote-unpaired">
@@ -711,6 +730,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           : <div className="remote-failed" role="status" data-testid="remote-unreachable">
             <strong>{text.cannotReachComputer}</strong>
             <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>
+            {companion.pending && <p className="caption" data-testid="remote-pending-hint">{text.pendingScanHint}</p>}
             {/* 两个动作都留着，主次由诊断决定（爸 2026-09-16 build 42 真机「手机没给我扫的按钮啊」）。
                 原来按分类只渲染一个：relay 被拒判 reconnect ⇒ 只有「重新连接」。而重连试的是配对时
                 写死的 endpoint/altEndpoint，换网后两个都死，**这个主按钮永远不可能成功**，用户却
@@ -718,9 +738,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
                 不是逃生口——「一态一主操作」说的是主次，不是只留一个。 */}
             {([diagnosis.action, diagnosis.action === 'scan' ? 'reconnect' : 'scan'] as const).map((action, index) => action === 'scan'
               ? <button key={action} className={index === 0 ? 'primary' : 'sheet-secondary'} data-testid="remote-action-scan"
-                disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
+                disabled={!ports.companion || companion.busy} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
               : <button key={action} className={index === 0 ? 'primary' : 'sheet-secondary'} data-testid="remote-action-reconnect"
-                disabled={!ports.companion || companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>)}
+                disabled={!ports.companion || companion.busy} onClick={() => void companionStore.getState().reconnect({ resetBackoff: true })}>{text.reconnect}</button>)}
             {/* 连扫码也过不去时的底：丢掉本机存的配对，回到「尚未连接电脑」。
                 不加二次确认弹层，但**必须把代价写在旁边**：初版注释写的「误点没有东西可丢」是错的
                 （grok ai-review Nit②）——电脑只是睡着、Neo 只是没开时配对仍然有效，误点会连本机

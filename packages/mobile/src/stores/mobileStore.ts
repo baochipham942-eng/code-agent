@@ -6,7 +6,9 @@ export type SheetPage = 'settings' | 'appearance' | 'profile' | 'about' | 'help'
 type Route = 'new' | 'fixture';
 type Preferences = { schema: 1; drafts: Record<string, string>; transcriptCommands?: Record<string, string>; appearance: Appearance; nickname: string; notifyEnabled: boolean;
   /** 新任务项目选择器上手选过的项目，按电脑（hostKey）记（N-MOBILE-DEFAULT-PROJECT）。 */
-  projectPicks?: Record<string, string> };
+  projectPicks?: Record<string, string>;
+  /** 上次打开的会话，按电脑（hostKey）记。空串 = 欢迎页（N-MOBILE-RESUME-LAST-SESSION）。 */
+  lastSessions?: Record<string, string> };
 type Sheet = { origin: 'root' | 'drawer'; pages: SheetPage[] };
 interface State {
   preferences: Preferences; ready: boolean; loadError: boolean; saveError: boolean; saving: boolean;
@@ -15,6 +17,7 @@ interface State {
   hydrate(): Promise<void>; editDraft(value: string): void; setAppearance(value: Appearance): void;
   setNotifyEnabled(value: boolean): void;
   pickProject(hostKey: string, projectId: string): void;
+  rememberSession(hostKey: string, sessionId: string | null): void;
   editProfile(value: string): void; saveProfile(): void; flush(): Promise<void>;
   openDrawer(): void; closeDrawer(): void; navigate(route: Route): void;
   openSheet(page: SheetPage): void; pushSheet(page: SheetPage): void; closeSheet(): void; back(): boolean;
@@ -34,7 +37,8 @@ function decode(raw: string | null): Preferences {
     throw new Error('INVALID_PREFERENCES');
   }
   return { schema: 1, transcriptCommands: v.transcriptCommands ?? {}, drafts: Object.fromEntries(Object.entries(v.drafts).filter(([, value]) => typeof value === 'string')), appearance: v.appearance!, nickname: v.nickname, notifyEnabled: v.notifyEnabled === true,
-    projectPicks: Object.fromEntries(Object.entries(v.projectPicks ?? {}).filter(([, value]) => typeof value === 'string')) };
+    projectPicks: Object.fromEntries(Object.entries(v.projectPicks ?? {}).filter(([, value]) => typeof value === 'string')),
+    lastSessions: Object.fromEntries(Object.entries(v.lastSessions ?? {}).filter(([, value]) => typeof value === 'string')) };
 }
 
 /**
@@ -109,6 +113,10 @@ export function createMobileStore(port: PlatformPorts['preferences']) {
       pickProject: (hostKey, projectId) => {
         if (!get().ready) return;
         set({ preferences: { ...get().preferences, projectPicks: { ...get().preferences.projectPicks, [hostKey]: projectId } } }); persist();
+      },
+      rememberSession: (hostKey, sessionId) => {
+        if (!get().ready) return;
+        set({ preferences: { ...get().preferences, lastSessions: { ...get().preferences.lastSessions, [hostKey]: sessionId ?? '' } } }); persist();
       },
       editProfile: profileDraft => set({ profileDraft }),
       saveProfile: () => {

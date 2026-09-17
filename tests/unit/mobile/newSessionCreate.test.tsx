@@ -23,6 +23,7 @@ const harness = vi.hoisted(() => ({
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
     async recover() {
+      if (harness.mode === 'drop-sync' || harness.mode === 'drop-command') throw new Error('COMPANION_NO_RESPONSE');
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', altEndpoint: 'http://imac.local:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one', 's1'] };
     }
     async request(payload: unknown) {
@@ -145,7 +146,7 @@ describe('fix6-②：创建失败的可见反馈（manage 不再静默吞错）'
     await waitFor(() => { expect(harness.createSessionIds).toEqual([]); });   // 守卫挡下：根本没发
     await waitFor(() => { expect(document.querySelector('.drawer-layer')).toBeNull(); });
     expect(document.querySelectorAll('[data-testid="status-slot"]')).toHaveLength(1);
-    expect(noticeText()).toBe('连不上电脑重新连接');
+    expect(noticeText()).toBe('连不上电脑，正在自动重试重新连接');
   });
 
   it('点 + 那一刻断连（命令在飞时掉线）：同样只说「连不上电脑」，不静默', async () => {
@@ -154,7 +155,7 @@ describe('fix6-②：创建失败的可见反馈（manage 不再静默吞错）'
     await tapNewSessionPlus();
     await waitFor(() => { expect(harness.createSessionIds).toEqual(['project:one']); });
     await waitFor(() => { expect(document.querySelector('.drawer-layer')).toBeNull(); });
-    await waitFor(() => { expect(noticeText()).toBe('连不上电脑重新连接'); });
+    await waitFor(() => { expect(noticeText()).toBe('连不上电脑，正在自动重试重新连接'); });
   });
 
   it('Host 拒绝（如项目不可用）：提示点名是「会话没建成」，会话不换', async () => {

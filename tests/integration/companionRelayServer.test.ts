@@ -14,6 +14,7 @@ import {
   companionRelayCredentialSubprotocol,
 } from '../../src/shared/contract/companionRelay';
 import { RelayPhoneStub } from './companion/relayPhoneStub';
+import { RelayCompanionClient, type RelayDial } from '../../packages/mobile/src/platform/relayCompanionClient';
 
 const SECRET = 'test-relay-credential';
 const TOKEN = 'route-token-aaaaaa';
@@ -27,6 +28,18 @@ function freePort(): Promise<number> {
     });
   });
 }
+
+const nodeDial: RelayDial = (dialUrl, headers) => {
+  const socket = new WebSocket(dialUrl, { headers });
+  return {
+    send: data => socket.send(data),
+    close: () => socket.close(),
+    onOpen: handler => socket.once('open', handler),
+    onMessage: handler => socket.on('message', data => handler(String(data))),
+    onClose: handler => socket.once('close', handler),
+    onError: handler => socket.once('error', handler),
+  };
+};
 
 // 前缀只在 shared 契约里定义（不导出）：空凭据编码即前缀。
 const AUTH_PREFIX = companionRelayCredentialSubprotocol('');
@@ -103,7 +116,7 @@ describe('companion relay: production server + host dial-out', () => {
     const stats = await health.json() as Record<string, unknown>;
     expect(Object.keys(stats).sort()).toEqual([
       'connections', 'droppedBacklog', 'droppedBackpressure', 'droppedExpired', 'droppedNoRoute',
-      'forwarded', 'queuedFrames', 'rejectedAuth', 'revoked', 'routes',
+      'forwarded', 'notifiedNoHost', 'queuedFrames', 'rejectedAuth', 'revoked', 'routes',
     ].sort());
     const missing = await fetch(`http://127.0.0.1:${port}/nope`);
     expect(missing.status).toBe(404);
@@ -234,6 +247,60 @@ describe('companion relay: production server + host dial-out', () => {
       expect(stats.droppedBacklog).toBe(4);
     });
     intruder.close();
+  });
+
+  // N-COMPANION-RELAY-NOHOST-FASTFAIL（FB-194）：手机连到没有 host 的 route，relay 宽限期后回
+  // no-host 帧，产品里的手机客户端据此秒级失败，而不是排着队干等自己的握手超时。
+  it('tells a device on a hostless route to give up after the grace window, well before the handshake timeout', async () => {
+    const graced = new CompanionRelayServer({ credential: SECRET, port: await freePort(), noHostGraceMs: 150 });
+    const gracedUrl = `ws://127.0.0.1:${(await graced.listen()).port}`;
+    const lonely = new RelayCompanionClient({
+      identity: createIdentity(),
+      route: { v: 1, url: gracedUrl, routeToken: 'route-token-nohost1', credential: SECRET },
+      deviceRef: 'phone-1',
+      dial: nodeDial,
+    });
+    const started = Date.now();
+    await lonely.connect();
+    await expect(lonely.resume({ hostKey: toHex(hostIdentity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['shared'] }))
+      .rejects.toThrow('COMPANION_RELAY_NO_HOST');
+    expect(Date.now() - started).toBeLessThan(L.requestTimeoutMs / 2);
+    expect(graced.currentStats).toMatchObject({ notifiedNoHost: 1, queuedFrames: 0 });
+    await graced.stop();
+  });
+
+  it('does not report no-host when the host re-registers inside the grace window', async () => {
+    const graced = new CompanionRelayServer({ credential: SECRET, port: await freePort(), noHostGraceMs: 400 });
+    const gracedUrl = `ws://127.0.0.1:${(await graced.listen()).port}`;
+    const identity = createIdentity();
+    const device = gateway.pairIdentity(toHex(identity.publicKey), ['shared']);
+    const lateHost = new CompanionRelayClient({
+      gateway,
+      identity: hostIdentity,
+      config: { url: gracedUrl, credentialRef: 'companion-relay', reconnectBackoffMs: [30, 60, 120] },
+      credential: SECRET,
+      jitter: () => 0.5,
+    });
+    lateHost.advertise({ deviceRef: device.deviceId, routeToken: 'route-token-nohost2' });
+    const client = new RelayCompanionClient({
+      identity,
+      route: { v: 1, url: gracedUrl, routeToken: 'route-token-nohost2', credential: SECRET },
+      deviceRef: device.deviceId,
+      dial: nodeDial,
+    });
+    await client.connect();
+    // 手机先到、握手排队；host 在宽限期内（模拟 Host 重连退避第一档）才注册上来。
+    const resumed = client.resume({ hostKey: toHex(hostIdentity.publicKey), deviceId: device.deviceId, scopeEpoch: device.scopeEpoch, scope: device.scope });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await lateHost.start();
+    await resumed;
+    // 等过宽限期：定时器到点看到 host 在，什么都不发。
+    await new Promise(resolve => setTimeout(resolve, 500));
+    expect(client.connected).toBe(true);
+    expect(graced.currentStats.notifiedNoHost).toBe(0);
+    client.close();
+    await lateHost.stop();
+    await graced.stop();
   });
 
   it('breaks the device side when the host revokes', async () => {

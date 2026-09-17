@@ -28,6 +28,7 @@ export interface CompanionRelayServerStats {
   droppedBackpressure: number;
   revoked: number;
   rejectedAuth: number;
+  notifiedNoHost: number;
 }
 
 interface Route {
@@ -108,7 +109,7 @@ export class CompanionRelayServer {
   private readonly stats: CompanionRelayServerStats = {
     connections: 0, routes: 0, queuedFrames: 0, forwarded: 0,
     droppedExpired: 0, droppedNoRoute: 0, droppedBacklog: 0, droppedBackpressure: 0,
-    revoked: 0, rejectedAuth: 0,
+    revoked: 0, rejectedAuth: 0, notifiedNoHost: 0,
   };
   private readonly now: () => number;
 
@@ -118,6 +119,7 @@ export class CompanionRelayServer {
     port?: number;
     now?: () => number;
     sweepIntervalMs?: number;
+    noHostGraceMs?: number;
     logger?: CompanionRelayLogger;
   }) {
     this.host = options.host ?? '127.0.0.1';
@@ -270,6 +272,7 @@ export class CompanionRelayServer {
       this.bindings.set(socket, binding);
       this.options.logger?.info('registered', { role: frame.role, token: tokenPrefix(token) });
       this.flushWaiting(token, route);
+      if (frame.role === 'device' && !route.host) this.notifyNoHostAfterGrace(token, socket);
       return;
     }
     if (frame.kind === 'heartbeat') {
@@ -328,6 +331,28 @@ export class CompanionRelayServer {
     }
     peer.send(raw);
     this.stats.forwarded += 1;
+  }
+
+  /**
+   * 设备注册到没有 host 的 route（Host 没开，或手机缓存的 token 已不是 Host 在用的那个）：宽限期
+   * 后 host 仍不在就回 no-host 帧，并丢掉这台设备排着的帧——否则手机要干等自己的握手超时
+   * （FB-194）。宽限期内 host 重连上来，flushWaiting 照常转发，定时器到点时看到 host 在就什么都不做。
+   */
+  private notifyNoHostAfterGrace(token: string, device: WebSocket): void {
+    const timer = setTimeout(() => {
+      const route = this.routes.get(token);
+      if (!route || route.host || route.device !== device || device.readyState !== WebSocket.OPEN) return;
+      this.purgeWaiting(token);
+      const now = this.now();
+      device.send(JSON.stringify({
+        v: 1, kind: 'no-host',
+        envelope: { routeToken: token, deviceRef: 'relay', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: now },
+        ciphertext: '',
+      } satisfies CompanionRelayFrame));
+      this.stats.notifiedNoHost += 1;
+      this.options.logger?.info('no_host_notified', { token: tokenPrefix(token) });
+    }, this.options.noHostGraceMs ?? L.relayNoHostGraceMs);
+    timer.unref();
   }
 
   private flushWaiting(token: string, route: Route): void {

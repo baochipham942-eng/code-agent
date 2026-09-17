@@ -81,6 +81,7 @@ import {
   cancelDisconnectedAgentRouteRun,
   createAgentDurableRouteRunLifecycle,
   resolveAgentDurableActivation,
+  resolveNativeRunWorkspaceScope,
 } from './agentDurableRouteLifecycle';
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
 import { steerOrQueue } from '../../host/runtime/steerQueueFence';
@@ -461,6 +462,21 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // context and the legacy session cwd are only source provenance here.
       resolvedProject = runWorkspaceScope.primaryRoot;
     }
+    // 会话有真实 Project scope 时把 native run（durable 与非 durable 同一份）的写边界钉成该项目，
+    // 与 orchestrator 路径（cron/唤醒/IPC）和外部引擎一致。此前只传 workspace 字符串，
+    // createRunContext 兜底铸造 legacy-background-authority：只读 Source 不设防、Additional
+    // Source 不在界内，恢复侧拿假 id 查项目库还会误判 scope drift（N-DURABLE-FOLLOWUPS-0917）。
+    const nativeRunWorkspaceScope = resolveNativeRunWorkspaceScope({
+      sessionScope: runWorkspaceScope,
+      workspace: resolvedProject,
+    });
+    if (runWorkspaceScope && !nativeRunWorkspaceScope) {
+      logger.info('[AgentRouter] Session WorkspaceScope not bindable to the native run, keeping legacy fallback', {
+        sessionId,
+        projectId: runWorkspaceScope.projectId,
+        isolatedFork: runWorkspaceScope.version.startsWith('isolated-v1:'),
+      });
+    }
     const explicitForkLineage = isExternalAgentEngine(selectedEngine.kind) && dbAvailable
       ? getDatabase().getSessionForkLineage(
           sessionId,
@@ -496,6 +512,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       runRegistry,
       sessionId,
       workspace: resolvedProject,
+      ...(nativeRunWorkspaceScope ? { workspaceScope: nativeRunWorkspaceScope } : {}),
       durableActivation,
       externalEngine: isExternalAgentEngine(selectedEngine.kind) ? selectedEngine.kind : undefined,
       externalSessionId: persistedForkExternalSessionId,

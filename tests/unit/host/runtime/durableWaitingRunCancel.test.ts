@@ -206,4 +206,83 @@ describe('durable waiting-run cancellation after recovery', () => {
       db.close();
     }
   });
+  /** 两个恢复成 waiting 的 run：同会话里一个子 run（先恢复）+ 一个根 run，都没有 handle。 */
+  async function recoveredRootAndChild(label: string) {
+    const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), `durable-waiting-${label}-`)));
+    const { db, repository } = createRepository();
+    const beforeCrash = kernel(repository, `${label}-before-crash`);
+    const firstRegistry = new RunRegistry();
+    firstRegistry.configureDurableKernel(beforeCrash);
+    // 子 run 先落库（updated_at 更早 → 恢复顺序在前），复现「只按 sessionId 取第一个」命中子 run。
+    await beforeCrash.createNativeRun({
+      runId: `run-${label}-child`,
+      sessionId: `session-${label}`,
+      parentRunId: `run-${label}-root`,
+      now: 900,
+    });
+    await firstRegistry.startDurable({
+      runId: `run-${label}-root`,
+      sessionId: `session-${label}`,
+      workspace,
+      cwd: workspace,
+    }, 1_000);
+    firstRegistry.clear();
+
+    const recoveredRegistry = new RunRegistry();
+    recoveredRegistry.configureDurableKernel(kernel(repository, `${label}-after-crash`));
+    await recoveredRegistry.recoverDurable(2_000);
+    for (const runId of [`run-${label}-child`, `run-${label}-root`]) {
+      await recoveredRegistry.checkpointDurable(runId, {
+        now: 2_000,
+        status: 'waiting',
+        state: null,
+        pendingOperations: [],
+        childRuns: [],
+        events: [{ type: 'native_recovery_requires_review', payload: { reason: 'fixture' }, recordedAt: 2_000 }],
+      });
+    }
+    return { workspace, db, repository, firstRegistry, recoveredRegistry };
+  }
+
+  it('resolves a session-only selector to the root waiting run, never an arbitrary child', async () => {
+    const fixture = await recoveredRootAndChild('root-child');
+    try {
+      expect(fixture.recoveredRegistry.findRecoveredWaitingRun({ sessionId: 'session-root-child' }))
+        .toEqual({ runId: 'run-root-child-root', sessionId: 'session-root-child' });
+      await expect(fixture.recoveredRegistry.terminalRecoveredWaitingRun({ sessionId: 'session-root-child' }, 3_000))
+        .resolves.toEqual({ runId: 'run-root-child-root', sessionId: 'session-root-child' });
+      expect(await fixture.repository.get('run-root-child-root')).toMatchObject({ status: 'cancelled' });
+      // 显式 runId 仍能精确命中子 run。
+      expect(fixture.recoveredRegistry.findRecoveredWaitingRun({ runId: 'run-root-child-child' }))
+        .toEqual({ runId: 'run-root-child-child', sessionId: 'session-root-child' });
+    } finally {
+      fixture.recoveredRegistry.clear();
+      fixture.firstRegistry.clear();
+      rmSync(fixture.workspace, { recursive: true, force: true });
+      fixture.db.close();
+    }
+  });
+
+  it('settles concurrent cancels of the same waiting run once and reports both as cancelled', async () => {
+    const fixture = await recoveredRootAndChild('concurrent');
+    try {
+      // 桌面「放弃」与手机「停止」同时到：两边都查得到这个 run，后到的一方不能因 terminal 冲突抛错。
+      const results = await Promise.allSettled([
+        fixture.recoveredRegistry.terminalRecoveredWaitingRun({ sessionId: 'session-concurrent', runId: 'run-concurrent-root' }, 3_000),
+        fixture.recoveredRegistry.terminalRecoveredWaitingRun({ runId: 'run-concurrent-root' }, 3_001),
+      ]);
+      expect(results).toEqual([
+        { status: 'fulfilled', value: { runId: 'run-concurrent-root', sessionId: 'session-concurrent' } },
+        { status: 'fulfilled', value: { runId: 'run-concurrent-root', sessionId: 'session-concurrent' } },
+      ]);
+      expect(await fixture.repository.get('run-concurrent-root')).toMatchObject({ status: 'cancelled' });
+      const events = await fixture.repository.read('run-concurrent-root', 0, 100);
+      expect(events.filter((event) => event.type === 'run_cancelled')).toHaveLength(1);
+    } finally {
+      fixture.recoveredRegistry.clear();
+      fixture.firstRegistry.clear();
+      rmSync(fixture.workspace, { recursive: true, force: true });
+      fixture.db.close();
+    }
+  });
 });

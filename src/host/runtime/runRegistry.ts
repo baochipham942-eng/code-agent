@@ -87,6 +87,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   private readonly durableEnvelopes = new Map<string, RunEnvelope>();
   private readonly durableCheckpointStates = new Map<string, unknown>();
   private readonly modelSpecsByRunId = new Map<string, ConversationModelSpec>();
+  private readonly recoveredWaitingCancels = new Map<string, Promise<{ runId: string; sessionId: string }>>();
   private kernel: RunKernelAdapter | null = null;
 
   configureDurableKernel(kernel: RunKernelAdapter): void {
@@ -642,6 +643,9 @@ export class RunRegistry implements AgentTeamDurableParentHost {
    * 租约挡住同会话新 run 的「只进不出」状态。有 handle 的 waiting run 不算——它们
    * 走 resolve() → handle.cancel 的正常链路。同步方法：companion dispatch 等同步
    * 入口先探测，再异步走 terminalRecoveredWaitingRun。
+   *
+   * 只给 sessionId 时只认根 run：子 run（parentRunId）同会话可以有多个 waiting，
+   * 根 run 由 idx_durable_runs_active_session 保证每会话至多一个，取消对象才确定。
    */
   findRecoveredWaitingRun(selector: { runId?: string; sessionId?: string }): { runId: string; sessionId: string } | undefined {
     const runId = selector.runId?.trim();
@@ -651,6 +655,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       if (envelope.status !== 'waiting') continue;
       if (runId && envelope.runId !== runId) continue;
       if (sessionId && envelope.sessionId !== sessionId) continue;
+      if (!runId && envelope.parentRunId) continue;
       if (this.handlesByRunId.has(envelope.runId)) continue;
       if (!this.durableOwners.has(envelope.runId)) continue;
       return { runId: envelope.runId, sessionId: envelope.sessionId };
@@ -665,7 +670,11 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   ): Promise<{ runId: string; sessionId: string } | undefined> {
     const recovered = this.findRecoveredWaitingRun(selector);
     if (!recovered) return undefined;
-    await this.terminalDurable(recovered.runId, {
+    // 桌面「放弃」与手机「停止」可能同时到：两边都在终态提交前查到了它。后到的一方
+    // 并到同一次提交上，而不是再提交一次撞 cancelled -> cancelled 冲突抛错（桌面 500）。
+    const inFlight = this.recoveredWaitingCancels.get(recovered.runId);
+    if (inFlight) return inFlight;
+    const cancel = this.terminalDurable(recovered.runId, {
       now,
       status: 'cancelled',
       reason: 'recovered_waiting_run_cancelled',
@@ -674,8 +683,11 @@ export class RunRegistry implements AgentTeamDurableParentHost {
         payload: { sessionId: recovered.sessionId, reason: 'recovered_waiting_run_cancelled' },
         recordedAt: now,
       },
+    }).then(() => recovered).finally(() => {
+      this.recoveredWaitingCancels.delete(recovered.runId);
     });
-    return recovered;
+    this.recoveredWaitingCancels.set(recovered.runId, cancel);
+    return cancel;
   }
 
   async recoverDurable(now = Date.now()): Promise<RunRehydrationPlan[]> {

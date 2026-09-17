@@ -15,6 +15,8 @@ import { useI18n } from '../../../../hooks/useI18n';
 
 // 自动模式下四档都要可见可改：代码/文件/产物任务运行时走 profiles.main（modelDecision.applyStrategySlot），
 // 它不跟随默认模型，藏起来就是一个看不见、改不了却在生效的配置。
+// 主模型与另三档一样自愈：指向不可用模型时运行时本来就会失败，回到默认模型不冤枉；
+// 记忆整理不同，它的「不可用」可能只是中转站提供了目录外模型，所以只提示不改写。
 const AUTO_PROFILES: TaskStrategyProfileId[] = ['main', 'fast', 'deep', 'vision'];
 
 function optionValue(provider: string, model: string): string {
@@ -41,7 +43,7 @@ export interface TaskStrategySettingsPanelProps {
   config: ModelConfig;
   strategy: TaskModelStrategySettings | null;
   disabled?: boolean;
-  /** 改动即存：开关 / 三类模型修改后立即调用持久化 */
+  /** 改动即存：开关 / 四档模型修改后立即调用持久化 */
   onChange: (strategy: TaskModelStrategySettings) => void;
   /** 记忆整理只有这一处配置入口；传 null 清除覆盖、回到跟随 routing.fast。 */
   onMemoryRouteChange: (route: { provider: ModelProvider; model: string } | null) => void;

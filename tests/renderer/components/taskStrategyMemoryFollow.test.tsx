@@ -198,5 +198,7 @@ describe('TaskStrategySettingsPanel 任务主模型', () => {
 
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.queryByText('不可用')).toBeNull();
+    const fastSelect = screen.getAllByRole('combobox')[1] as HTMLSelectElement;
+    expect([...fastSelect.options].map((option) => option.value)).toContain('custom-glm-coding:::glm-5.3-flash');
   });
 });

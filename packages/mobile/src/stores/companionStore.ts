@@ -25,7 +25,7 @@ interface Saved {
   relay?: CompanionRelayRoute;
 }
 type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionRefused' | 'connectionUnavailable' | 'connectionFailed'
-  | 'connectionRelayUnavailable' | 'connectionRelayRejected';
+  | 'connectionRelayUnavailable' | 'connectionRelayRejected' | 'connectionRelayNoHost';
 /** 双径（N-MOBILE-RELAY-PHONE）：LAN 直连优先；relay 是跨网回落路。UI 据此区分「经中继」。 */
 type CompanionTransport = 'lan' | 'relay';
 
@@ -423,6 +423,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           : code === 'COMPANION_PAIRING_REJECTED' ? 'connectionRejected'
           : code === 'COMPANION_CONNECTION_REFUSED' ? 'connectionRefused'
           : code === 'COMPANION_RELAY_AUTH_REJECTED' ? 'connectionRelayRejected'
+          : code === 'COMPANION_RELAY_NO_HOST' ? 'connectionRelayNoHost'
           : code === 'COMPANION_RELAY_UNAVAILABLE' || code === 'COMPANION_RELAY_CONNECT_TIMEOUT' ? 'connectionRelayUnavailable'
           : code === 'COMPANION_NETWORK_UNAVAILABLE' || code === 'COMPANION_NO_RESPONSE' ? 'connectionUnavailable' : 'connectionFailed';
         if (get().status !== 'storageError') set({ status: 'offline', connectionError, transport: null });

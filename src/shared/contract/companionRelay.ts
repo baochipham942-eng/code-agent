@@ -34,6 +34,11 @@ const companionRelayFrameSchema = z.discriminatedUnion('kind', [
   z.object({ ...frameBase, kind: z.literal('ack'), ciphertext: controlCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('revoke'), ciphertext: controlCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('disconnect'), ciphertext: controlCiphertext }).strict(),
+  /**
+   * relay → device only（N-COMPANION-RELAY-NOHOST-FASTFAIL）：设备注册后宽限期内这条 route 上一直
+   * 没有 host。新手机据此秒级失败；旧手机不认识这个 kind，按非法帧断开——同样秒级失败，只是文案泛化。
+   */
+  z.object({ ...frameBase, kind: z.literal('no-host'), ciphertext: controlCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('handshake'), ciphertext: opaqueCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('forward'), ciphertext: opaqueCiphertext }).strict(),
 ]);

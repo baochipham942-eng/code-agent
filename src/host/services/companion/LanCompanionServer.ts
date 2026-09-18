@@ -223,7 +223,7 @@ export class LanCompanionServer {
    * 的注释同款场景），热点下 .local 又解析不了 ⇒ 两个候选全灭。candidates 把**全部**私网
    * 字面量带出去（含 [0]，手机侧去重保序），socket 绑的就是全部接口，每一张都真的能连进来。
    */
-  private endpoints(): { endpoint: string; altEndpoint: string | null; candidates: string[] } {
+  endpoints(): { endpoint: string; altEndpoint: string | null; candidates: string[] } {
     // 列表为空 = 此刻没有任何私网接口（掉线）。那时报 start 时那个总比报空串强：
     // 手机拿它去试顶多失败一次，而空串会让 validateLanEndpoint 直接抛。
     const addresses = privateLanAddresses();

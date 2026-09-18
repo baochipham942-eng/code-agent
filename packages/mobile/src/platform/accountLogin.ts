@@ -26,8 +26,12 @@ function sameAccount(left: string, right: string): boolean {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
-/** Supabase 密码换令牌。响应里的 access token 只活在本次调用的栈上，绝不外带。 */
-async function passwordGrant(email: string, password: string, fetchImpl: typeof fetch): Promise<{ accessToken: string; userId: string; email: string } | { error: 'invalidCredentials' | 'unreachable' }> {
+/**
+ * Supabase 密码换令牌。响应里的 access token 只活在本次调用的栈上，绝不外带。
+ * 导出给找回流（N-COMPANION-RELAY-ACCOUNT-RECOVER）复用：密码换 token 后不停在换票，
+ * token 进内存里的找回会话，连 relay 列电脑/发起配对。
+ */
+export async function passwordGrant(email: string, password: string, fetchImpl: typeof fetch): Promise<{ accessToken: string; userId: string; email: string } | { error: 'invalidCredentials' | 'unreachable' }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), L.accountLoginTimeoutMs);
   try {

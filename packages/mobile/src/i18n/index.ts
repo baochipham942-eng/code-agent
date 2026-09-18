@@ -177,6 +177,29 @@ const zh = {
   needLoginBody: '登录后，手机不在电脑的网络里也能连回电脑。',
   needLoginHint: '回到和电脑同一个 Wi-Fi 也能直接用，不登录也行。',
   goLogin: '去登录',
+  // 「换了手机？登录找回我的电脑」（N-COMPANION-RELAY-ACCOUNT-RECOVER）：S3 入口、S4 登录、S5 选电脑、S6 等同意。
+  recoverEntry: '换了手机？登录找回我的电脑',
+  recoverEntryHint: '登录只用来找到你的电脑，找到后手机上不保留账号。',
+  /** 弹层标题的兜底键（SettingsPage 按 SheetPage 索引 text；实际标题按步进另取）。 */
+  recover: '找回我的电脑',
+  recoverLoginTitle: '登录 Neo 账号',
+  recoverHostsTitle: '选择你的电脑',
+  recoverWaitTitle: '等电脑上同意',
+  recoverHint: '换了手机或重装后，用电脑上那个 Neo 账号找回你的电脑。',
+  recoverFooter: '登录只用来找到你的电脑，找到后手机上不保留账号。',
+  recoverHostsHint: '这个账号下登录过 Neo 的电脑：',
+  recoverHostOnline: '在线',
+  recoverHostUpgrade: '电脑上的 Neo 需要升级后才能找回',
+  recoverFallbackName: '这台电脑',
+  recoverNoHosts: '这个账号下现在没有在线的电脑。打开电脑上的 Neo 后再试。',
+  recoverSentTo: '已发给 {name}',
+  recoverCodeHint: '电脑上会弹出「新手机请求连接」。核对电脑上显示的数字和下面一致，再点同意。',
+  recoverCodeLabel: '核对码',
+  recoverDeclined: '电脑上拒绝了这次连接。',
+  recoverTimeout: '电脑上长时间没有响应。电脑上的 Neo 一直没弹卡片的话，可能是版本太旧，升级后才能找回。',
+  recoverHostOffline: '这台电脑现在不在线，稍后再试。',
+  recoverRateLimited: '操作有点频繁，稍等几秒再试。',
+  recoverHostMismatch: '电脑身份核对不上，已中止。可以再试一次；还不行就在电脑上重新生成二维码扫码配对。',
   loadError: '本机数据暂时读不到，重试后继续编辑。', retry: '重试', loading: '正在打开 Neo…',
   saveError: '草稿没存上', saved: '已保存在此设备',
   nativeError: '需要重新打开 Neo',
@@ -359,6 +382,29 @@ const en: Record<keyof typeof zh, string> = {
   needLoginBody: 'Once signed in, this phone can reach the computer even outside its network.',
   needLoginHint: 'You can also keep using it on the same Wi-Fi as the computer without signing in.',
   goLogin: 'Sign in',
+  // "Changed phones? Sign in to recover your computer" (S3 entry / S4 login / S5 pick / S6 wait).
+  recoverEntry: 'Changed phones? Sign in to recover your computer',
+  recoverEntryHint: 'Sign-in is only used to find your computer; no account stays on this phone afterwards.',
+  /** Fallback sheet-title key (SettingsPage indexes text by SheetPage). */
+  recover: 'Recover computer',
+  recoverLoginTitle: 'Sign in to your Neo account',
+  recoverHostsTitle: 'Choose your computer',
+  recoverWaitTitle: 'Waiting for approval',
+  recoverHint: 'After changing phones or reinstalling, use the Neo account from your computer to recover it.',
+  recoverFooter: 'Sign-in is only used to find your computer; no account stays on this phone afterwards.',
+  recoverHostsHint: 'Computers signed in to this account:',
+  recoverHostOnline: 'Online',
+  recoverHostUpgrade: 'Neo on this computer needs an update before it can be recovered',
+  recoverFallbackName: 'This computer',
+  recoverNoHosts: 'No computer on this account is online right now. Open Neo on your computer and retry.',
+  recoverSentTo: 'Sent to {name}',
+  recoverCodeHint: 'A "New phone requesting access" card will appear on the computer. Check that the number there matches the one below, then allow it.',
+  recoverCodeLabel: 'Check code',
+  recoverDeclined: 'The connection was denied on the computer.',
+  recoverTimeout: 'The computer did not respond for a long time. If no card ever appeared on it, Neo there may be too old — update it before recovering.',
+  recoverHostOffline: 'This computer is not online right now. Try again later.',
+  recoverRateLimited: 'That was a bit fast. Wait a few seconds and try again.',
+  recoverHostMismatch: 'The computer could not be verified, so this was stopped. Try again; if it keeps failing, pair by scanning a fresh code on the computer.',
   loadError: 'Unable to read local data. Retry before editing.',
   retry: 'Retry', loading: 'Opening Neo…', saveError: 'Draft not saved',
   saved: 'Saved on this device', nativeError: 'Reopen Neo',
@@ -379,6 +425,20 @@ const en: Record<keyof typeof zh, string> = {
   reviewPlan: 'Review the pending plan in your conversation',
 };
 export function messages(language: string) { return language.startsWith('zh') ? zh : en; }
+
+/**
+ * 找回流的具名失败 → 人话（N-COMPANION-RELAY-ACCOUNT-RECOVER）：S5 横幅一句说清下一步。
+ * invalidCredentials/unreachable 不进这里——前者在 S4 行内报，后者走 S7 形状。
+ */
+export function recoverErrorCopy(text: ReturnType<typeof messages>, error: string): string {
+  if (error === 'declined') return text.recoverDeclined;
+  if (error === 'timeout') return text.recoverTimeout;
+  if (error === 'hostOffline') return text.recoverHostOffline;
+  if (error === 'rateLimited') return text.recoverRateLimited;
+  if (error === 'hostUpgrade') return text.recoverHostUpgrade;
+  if (error === 'noHosts') return text.recoverNoHosts;
+  return text.recoverHostMismatch;
+}
 
 /**
  * 一次执行结束后挂在它下面的那一行（N-MOBILE-EXEC-STATUS ②）。只有失败与被停止会挂行——成功由回复

@@ -67,6 +67,15 @@ export class LanCompanionManager {
 
   hasApprovalUi(sessionId: string): boolean { return this.server?.hasApprovalUi(sessionId) ?? false; }
 
+  /**
+   * LAN 地址三件套（N-COMPANION-RELAY-ACCOUNT-RECOVER）：relay 找回配对载荷随 welcome 等值内容
+   * 下发，与二维码邀请同源（每次现取，不冻住）。LAN 面没起（这台电脑还没有配对设备）时 null，
+   * 手机侧 binding 的 LAN 地址留空、仅中继可达。
+   */
+  lanAdvertisement(): { endpoint: string; altEndpoint: string | null; candidates: string[] } | null {
+    return this.server ? this.server.endpoints() : null;
+  }
+
   async stop(): Promise<void> { await this.starting?.catch(() => {}); await this.server?.stop(); this.server = null; this.address = null; }
 
   private start(): Promise<LanCompanionServer> {

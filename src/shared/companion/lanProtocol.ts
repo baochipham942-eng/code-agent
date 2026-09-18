@@ -155,7 +155,8 @@ const SHA256_K = new Uint32Array([
   0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
   0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ]);
-function sha256(message: Uint8Array): Uint8Array {
+/** 纯 JS SHA-256（手机 WebView 与 Host 同一份）：邀请核对码与 relay 找回核对码的共用原语。 */
+export function sha256(message: Uint8Array): Uint8Array {
   const rotr = (x: number, n: number) => (x >>> n) | (x << (32 - n));
   let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
   let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;

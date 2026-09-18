@@ -4,6 +4,8 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import {
   COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN,
+  COMPANION_RELAY_LIST_HOSTS_ROUTE_TOKEN,
+  COMPANION_RELAY_PAIR_ROUTE_TOKEN,
   COMPANION_RELAY_SENTINEL_DEVICE_REF,
   COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN,
   COMPANION_RELAY_WS_PROTOCOL,
@@ -47,6 +49,16 @@ export interface CompanionRelayServerStats {
   terminatedNoPong: number;
   /** 同 token 不同实例顶替 host 槽被拒的次数（N-COMPANION-RELAY-ROUTE-TAKEOVER）。 */
   rejectedTakeover: number;
+  /** list-hosts 回帧下发次数（N-COMPANION-RELAY-ACCOUNT-RECOVER）；只数真回了的。 */
+  listHosts: number;
+  /** legacy 连接发起 list-hosts 被拒次数（找回是账号面，共享凭据连接没有「我的电脑」）。 */
+  rejectedListHosts: number;
+  /** 初次 pair-request 转发到 Host 连接的次数。 */
+  pairRequests: number;
+  /** pair-request 被拒次数（legacy 发起 / 限流 / 目标不在线 / 续帧对不上挂起态）。 */
+  rejectedPairRequests: number;
+  /** 回到手机的 pair-result 帧数（Host 发的 + relay 合成的 timeout/host-offline）。 */
+  pairResults: number;
   jwks?: JwksStats;
 }
 
@@ -61,8 +73,23 @@ interface Route {
   /** host 槽当前占用者的实例身份（register.instanceId，N-COMPANION-RELAY-ROUTE-TAKEOVER）：
    *  顶替判据只认「两侧 instanceId 都在且不同」——缺任一侧（旧客户端）判不了，放行留痕。 */
   hostInstanceId?: string;
+  /** Host register 自报的电脑名 / 主机公钥指纹（N-COMPANION-RELAY-ACCOUNT-RECOVER）：list-hosts
+   *  列表行的展示材料，旧 Host 不带（列表行降级为空串，手机按「需要升级」处理）。 */
+  hostName?: string;
+  hostKeyFingerprint?: string;
   device?: WebSocket;
   expiresAt: number;
+}
+
+/**
+ * 一次 relay 找回配对交换的挂起态（N-COMPANION-RELAY-ACCOUNT-RECOVER）：手机发出初次
+ * pair-request 后 relay 记住「哪条手机连接在等哪条 Host 连接」，Host 的 pair-result 靠
+ * requestId 找回手机；到点（relayPairTtlMs）Host 还没给结论就替它回 timeout。
+ */
+interface PendingPair {
+  phone: WebSocket;
+  host: WebSocket;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 interface Binding {
@@ -153,7 +180,12 @@ export class CompanionRelayServer {
     droppedExpired: 0, droppedNoRoute: 0, droppedBacklog: 0, droppedBackpressure: 0,
     revoked: 0, rejectedAuth: 0, notifiedNoHost: 0, accountConnections: 0, rejectedOwner: 0,
     ticketsIssued: 0, ticketConnections: 0, terminatedNoPong: 0, rejectedTakeover: 0,
+    listHosts: 0, rejectedListHosts: 0, pairRequests: 0, rejectedPairRequests: 0, pairResults: 0,
   };
+  private readonly pendingPairs = new Map<string, PendingPair>();
+  /** pair-request 初次请求的限流记账：每连接（WeakMap 随连接回收）与每账号（写时清过期项）。 */
+  private readonly pairRateBySocket = new WeakMap<WebSocket, number>();
+  private readonly pairRateByAccount = new Map<Principal, number>();
   private readonly now: () => number;
 
   constructor(private readonly options: {
@@ -216,6 +248,8 @@ export class CompanionRelayServer {
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = null;
     for (const token of this.waiting.keys()) this.purgeWaiting(token);
+    for (const pending of this.pendingPairs.values()) clearTimeout(pending.timer);
+    this.pendingPairs.clear();
     this.routes.clear();
     const wss = this.wss; this.wss = null;
     if (wss) {
@@ -359,6 +393,7 @@ export class CompanionRelayServer {
         uptimeMs: this.now() - openedAt,
       });
       this.detach(socket);
+      this.detachPairs(socket);
     });
     socket.on('error', () => { /* close follows */ });
   }
@@ -458,7 +493,11 @@ export class CompanionRelayServer {
       // 占着（顶替者活着），说明 host 在位，什么都不发——不许踢一个 host 在位的健康对。
       const displacedHost = frame.role === 'host' ? known?.host : undefined;
       route[frame.role] = socket;
-      if (frame.role === 'host') route.hostInstanceId = frame.instanceId;
+      if (frame.role === 'host') {
+        route.hostInstanceId = frame.instanceId;
+        route.hostName = frame.hostName;
+        route.hostKeyFingerprint = frame.hostKeyFingerprint;
+      }
       route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
       this.routes.set(token, route);
       const binding = existing ?? { role: frame.role, tokens: new Set<string>() };
@@ -505,6 +544,9 @@ export class CompanionRelayServer {
       return;
     }
     if (frame.kind === 'ack') return;
+    if (frame.kind === 'list-hosts') { this.onListHosts(socket); return; }
+    if (frame.kind === 'pair-request') { this.onPairRequest(socket, frame, raw); return; }
+    if (frame.kind === 'pair-result') { this.onPairResult(socket, frame, raw); return; }
     const route = this.routes.get(token);
     const binding = this.bindings.get(socket);
     if (!route || !binding || route.expiresAt <= this.now()
@@ -532,6 +574,163 @@ export class CompanionRelayServer {
     }
     peer.send(raw);
     this.stats.forwarded += 1;
+  }
+
+  /**
+   * list-hosts（N-COMPANION-RELAY-ACCOUNT-RECOVER）：只认账号主人（JWT 或票据鉴权的连接——两者
+   * 都是同一位账号主人，共享凭据的 legacy 连接没有「我的电脑」可言，发起即拒并记 stats）。
+   * 遍历该主人名下 host 槽在位且 OPEN 的路由，按 hostInstanceId 去重（一台电脑为每台已配对
+   * 手机登记一条路由），回 register 自报的 name/fingerprint/instanceId。路由表是内存短 TTL，
+   * 这里只能列**此刻在线**的电脑——离线置灰行由手机侧产品层另想办法，本刀不做。
+   */
+  private onListHosts(socket: WebSocket): void {
+    const principal = this.principals.get(socket) ?? LEGACY_PRINCIPAL;
+    if (principal === LEGACY_PRINCIPAL) {
+      this.stats.rejectedListHosts += 1;
+      this.options.logger?.warn('list_hosts_rejected', { auth: 'legacy' });
+      return;
+    }
+    const byInstance = new Map<string, { name: string; fingerprint: string; instanceId: string }>();
+    for (const route of this.routes.values()) {
+      if (route.owner !== principal || !route.hostInstanceId) continue;
+      if (route.host?.readyState !== WebSocket.OPEN) continue;
+      const known = byInstance.get(route.hostInstanceId);
+      // 去重时优先留带自报名的那条（Host 新旧版本混跑的路由行都指向同一实例）。
+      if (known && known.name) continue;
+      byInstance.set(route.hostInstanceId, {
+        name: route.hostName ?? '',
+        fingerprint: route.hostKeyFingerprint ?? '',
+        instanceId: route.hostInstanceId,
+      });
+    }
+    socket.send(JSON.stringify({
+      v: 1, kind: 'list-hosts',
+      envelope: { routeToken: COMPANION_RELAY_LIST_HOSTS_ROUTE_TOKEN, deviceRef: COMPANION_RELAY_SENTINEL_DEVICE_REF, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: this.now() },
+      ciphertext: JSON.stringify([...byInstance.values()]),
+    } satisfies CompanionRelayFrame));
+    this.stats.listHosts += 1;
+    this.options.logger?.info('list_hosts_served', { hosts: byInstance.size });
+  }
+
+  /**
+   * pair-request（N-COMPANION-RELAY-ACCOUNT-RECOVER）。带 instanceId 的是初次请求：发起方必须是
+   * 账号主人、过限流（每连接与每账号，防卡片轰炸电脑），目标实例不在主人名下的在线 host 槽 ⇒
+   * 立刻回具名 host-offline（照 no-host 哲学，手机秒级失败）；在 ⇒ 原样投递到该 Host 连接并挂起
+   * pending，relayPairTtlMs 内 Host 没给结论就替它回 timeout。不带 instanceId 的是同一交换的续帧
+   * （XX 第三条消息）：只认挂起态里的原手机连接，原样转发、不计限流。
+   */
+  private onPairRequest(socket: WebSocket, frame: Extract<CompanionRelayFrame, { kind: 'pair-request' }>, raw: string): void {
+    const principal = this.principals.get(socket) ?? LEGACY_PRINCIPAL;
+    if (principal === LEGACY_PRINCIPAL) {
+      this.stats.rejectedPairRequests += 1;
+      this.options.logger?.warn('pair_request_rejected', { auth: 'legacy' });
+      return;
+    }
+    const requestId = frame.requestId;
+    if (!frame.instanceId) {
+      const pending = this.pendingPairs.get(requestId);
+      if (!pending || pending.phone !== socket) {
+        this.stats.rejectedPairRequests += 1;
+        this.options.logger?.warn('pair_request_unmatched', {});
+        return;
+      }
+      if (pending.host.readyState !== WebSocket.OPEN) {
+        clearTimeout(pending.timer);
+        this.pendingPairs.delete(requestId);
+        this.stats.pairResults += 1;
+        this.sendPairResult(pending.phone, requestId, 'host-offline');
+        return;
+      }
+      pending.host.send(raw);
+      return;
+    }
+    if (this.pendingPairs.has(requestId)) {
+      this.stats.rejectedPairRequests += 1;
+      this.options.logger?.warn('pair_request_rejected', { reason: 'duplicate' });
+      return;
+    }
+    const now = this.now();
+    if (now - (this.pairRateBySocket.get(socket) ?? 0) < L.relayPairRequestMinIntervalMs
+      || now - (this.pairRateByAccount.get(principal) ?? 0) < L.relayPairRequestMinIntervalMs) {
+      this.stats.rejectedPairRequests += 1;
+      this.options.logger?.warn('pair_request_rejected', { reason: 'rate-limited' });
+      this.sendPairResult(socket, requestId, 'rate-limited');
+      return;
+    }
+    let host: WebSocket | undefined;
+    for (const route of this.routes.values()) {
+      if (route.owner !== principal || route.hostInstanceId !== frame.instanceId) continue;
+      if (route.host?.readyState === WebSocket.OPEN) { host = route.host; break; }
+    }
+    if (!host) {
+      this.stats.rejectedPairRequests += 1;
+      this.options.logger?.info('pair_request_no_host', { target: frame.instanceId.slice(0, 8) });
+      this.sendPairResult(socket, requestId, 'host-offline');
+      return;
+    }
+    this.pairRateBySocket.set(socket, now);
+    // 写时顺手清过期项：这张表的量级 = 真实发起过找回的账号数，不清才会被轮换 sub 撑大。
+    for (const [account, at] of this.pairRateByAccount) {
+      if (now - at >= L.relayPairRequestMinIntervalMs) this.pairRateByAccount.delete(account);
+    }
+    this.pairRateByAccount.set(principal, now);
+    const timer = setTimeout(() => {
+      this.pendingPairs.delete(requestId);
+      this.stats.pairResults += 1;
+      this.sendPairResult(socket, requestId, 'timeout');
+      this.options.logger?.info('pair_request_timeout', {});
+    }, L.relayPairTtlMs);
+    timer.unref();
+    this.pendingPairs.set(requestId, { phone: socket, host, timer });
+    host.send(raw);
+    this.stats.pairRequests += 1;
+    this.options.logger?.info('pair_request_forwarded', { target: frame.instanceId.slice(0, 8) });
+  }
+
+  /** Host 的 pair-result：只认挂起态里那条 Host 连接发的，原样回手机并销账；迟到的丢掉留痕。 */
+  private onPairResult(socket: WebSocket, frame: Extract<CompanionRelayFrame, { kind: 'pair-result' }>, raw: string): void {
+    const pending = this.pendingPairs.get(frame.requestId);
+    if (!pending || pending.host !== socket) {
+      this.stats.rejectedPairRequests += 1;
+      this.options.logger?.warn('pair_result_unmatched', {});
+      return;
+    }
+    clearTimeout(pending.timer);
+    this.pendingPairs.delete(frame.requestId);
+    if (pending.phone.readyState !== WebSocket.OPEN) return;
+    pending.phone.send(raw);
+    this.stats.pairResults += 1;
+  }
+
+  /** relay 合成的具名拒绝回帧（host-offline / timeout / rate-limited）：sentinel 信封，与 Host 发的同一形状。 */
+  private sendPairResult(socket: WebSocket, requestId: string, reason: 'host-offline' | 'timeout' | 'rate-limited'): void {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({
+      v: 1, kind: 'pair-result',
+      envelope: { routeToken: COMPANION_RELAY_PAIR_ROUTE_TOKEN, deviceRef: COMPANION_RELAY_SENTINEL_DEVICE_REF, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: this.now() },
+      requestId, accepted: false, reason, ciphertext: '',
+    } satisfies CompanionRelayFrame));
+  }
+
+  /**
+   * 配对挂起态随连接断开清理：手机腿没了 ⇒ 直接销账（没人等结论了）；Host 腿断了 ⇒ 替它回
+   * host-offline，别让手机干等自己的握手超时。
+   */
+  private detachPairs(socket: WebSocket): void {
+    for (const [requestId, pending] of this.pendingPairs) {
+      if (pending.phone === socket) {
+        clearTimeout(pending.timer);
+        this.pendingPairs.delete(requestId);
+        continue;
+      }
+      if (pending.host === socket) {
+        clearTimeout(pending.timer);
+        this.pendingPairs.delete(requestId);
+        this.stats.pairResults += 1;
+        this.sendPairResult(pending.phone, requestId, 'host-offline');
+        this.options.logger?.info('pair_host_leg_closed', {});
+      }
+    }
   }
 
   /**

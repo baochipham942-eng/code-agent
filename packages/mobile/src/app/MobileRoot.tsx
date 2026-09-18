@@ -25,6 +25,7 @@ import { SheetHost } from './SheetHost';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { PairConfirm } from '../features/settings/PairConfirm';
 import { AccountSheet } from '../features/settings/AccountSheet';
+import { RecoverSheet } from '../features/settings/RecoverSheet';
 import { deriveInvitationVerify, parseInvitation, type LanInvitation } from '../../../../src/shared/companion/lanProtocol';
 import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
@@ -210,6 +211,17 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     if (live.status !== 'connected') void live.reconnect();
     else void live.refreshLibrary();
   };
+  /**
+   * 找回完成即「已配对」（N-COMPANION-RELAY-ACCOUNT-RECOVER）：binding 落盘、步进归零时收掉
+   * 找回弹层落到会话页——连接由 store 发起的 reconnect 接手（外网下 relay 先通）。取消路径
+   * binding 仍是 null，不会误触。
+   */
+  useEffect(() => {
+    if (state.sheet?.pages.at(-1) === 'recover' && companion.recoverStep === 'idle' && companion.binding) {
+      store.getState().closeSheet();
+      store.getState().navigate('new');
+    }
+  }, [companion.recoverStep, companion.binding, state.sheet, store]);
 
   // Text selections inside the composer never surface through window.getSelection on WebKit,
   // and long-press selection on WebView only lives in the element's own range.
@@ -765,15 +777,22 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         : currentPage === 'model' ? (companion.sessionId ? text.chooseModel : text.chooseModelNewTask)
         : currentPage === 'modelSetup' ? text.modelSetup
         : currentPage === 'projectSessions' ? sessionProject && companion.library ? projectDisplayName(sessionProject, companion.library.projects) : text.projectSessions
+        // 找回流的标题跟步走（S4 登录 / S5 选电脑 / S6 等同意，N-COMPANION-RELAY-ACCOUNT-RECOVER）。
+        : currentPage === 'recover'
+          ? companion.recoverStep === 'hosts' ? text.recoverHostsTitle
+            : companion.recoverStep === 'pairing' ? text.recoverWaitTitle
+            : text.recoverLoginTitle
         : text[currentPage]}
       hasParent={state.sheet.pages.length > 1}
       close={() => {
         if (currentPage === 'preview') companion.closePreview();
         if (currentPage === 'pairConfirm') setPendingInvite(null);
+        if (currentPage === 'recover' && companion.recoverStep !== 'idle') companionStore.getState().recoverCancel();
         state.closeSheet();
       }} back={() => {
         if (currentPage === 'preview') companion.closePreview();
         if (currentPage === 'pairConfirm') setPendingInvite(null);
+        if (currentPage === 'recover' && companion.recoverStep !== 'idle') companionStore.getState().recoverCancel();
         state.back();
       }} text={text}>
       {pendingDecisions.length > 0 && <button className="primary" onClick={() => selectSession(String(pendingDecisions[0].sessionId))}>{
@@ -840,6 +859,10 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
                 否则存储故障被说成「没有电脑」，用户照着再扫也好不了（ai-review PR#1814 Important④）。 */}
             {(companion.status === 'storageError' || companion.connectionError) && <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>}
             <button className="primary" disabled={!ports.companion} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
+            {/* S3 找回入口（N-COMPANION-RELAY-ACCOUNT-RECOVER，D5）：主按钮仍是扫码，找回是文字次入口。 */}
+            <button className="sheet-secondary" data-testid="remote-recover-entry" disabled={!ports.companion}
+              onClick={() => state.openSheet('recover')}>{text.recoverEntry}</button>
+            <p className="caption" data-testid="remote-recover-hint">{text.recoverEntryHint}</p>
           </div>
           : <div className="remote-failed" role="status" data-testid="remote-unreachable">
             <strong>{text.cannotReachComputer}</strong>
@@ -933,6 +956,19 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           }).catch(() => { /* camera plugin failures are not upload failures */ });
         }}
         onOpenSettings={() => void (ports.notifications ?? unavailableNotificationPort).openSettings()}
+      /> : currentPage === 'recover' ? <RecoverSheet
+        step={companion.recoverStep}
+        error={companion.recoverError}
+        hosts={companion.recoverHosts}
+        targetName={companion.recoverTargetName}
+        code={companion.recoverCode}
+        login={(email, password) => companionStore.getState().recoverLogin(email, password)}
+        selectHost={entry => companionStore.getState().recoverSelectHost(entry)}
+        cancel={() => {
+          companionStore.getState().recoverCancel();
+          store.getState().back();
+        }}
+        text={text}
       /> : currentPage === 'account' ? <AccountSheet
         account={companion.account}
         hostEmail={companion.binding?.hostAccountEmail ?? null}

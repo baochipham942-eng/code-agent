@@ -9,10 +9,12 @@ import type {
 } from '../../../../src/shared/contract/companionDictation';
 import type { CompanionPushRegister, CompanionPushRegisterResult, CompanionPushOpenResult } from '../../../../src/shared/contract/companionPush';
 import { companionCommandSchema } from '../../../../src/shared/contract/companion';
-import { parseCompanionRelayRoute, parseCompanionRelayRoutes, type CompanionRelayRoute, type CompanionRelayRouteRef } from '../../../../src/shared/contract/companionRelay';
+import { parseCompanionRelayRoute, parseCompanionRelayRoutes, type CompanionRelayHostEntry, type CompanionRelayRoute, type CompanionRelayRouteRef } from '../../../../src/shared/contract/companionRelay';
+import { DEFAULT_COMPANION_RELAY_URL } from '../../../../src/shared/constants/network';
 import { LanCompanionClient } from '../platform/lanCompanionClient';
 import { RelayCompanionClient, browserRelayDial, type RelayDialRoute } from '../platform/relayCompanionClient';
 import { loginNeoAccount, type AccountLoginResult } from '../platform/accountLogin';
+import { openRelayRecoverSession, type RelayRecoverSession } from '../platform/relayRecover';
 
 /**
  * store 级登录结果：成功只报 ok——票据落进配对盘（Keychain），不进 React 状态、不进 UI 调用方
@@ -44,6 +46,15 @@ interface Saved {
 }
 type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionRefused' | 'connectionUnavailable' | 'connectionFailed'
   | 'connectionRelayUnavailable' | 'connectionRelayRejected' | 'connectionRelayNoHost';
+
+/**
+ * 找回流步进（N-COMPANION-RELAY-ACCOUNT-RECOVER，UI 稿 S3-S6）：idle=S4 登录表单（含行内报错），
+ * opening=登录/列电脑在途， hosts=S5 选择你的电脑（recoverError 是上一轮配对的具名失败横幅），
+ * pairing=S6 等电脑上同意。成功直接归零回 idle（配对与登录态已落盘，UI 按 binding 出现收层）。
+ */
+export type RecoverStep = 'idle' | 'opening' | 'hosts' | 'pairing';
+/** 找回流的具名失败：S4 行内（凭据/服务连不上）/ S5 横幅（配对被拒/超时/离线/限流/需升级/身份不符）。 */
+export type RecoverError = 'invalidCredentials' | 'unreachable' | 'noHosts' | 'declined' | 'timeout' | 'hostOffline' | 'rateLimited' | 'hostUpgrade' | 'hostMismatch';
 /** 双径（N-MOBILE-RELAY-PHONE）：LAN 直连优先；relay 是跨网回落路。UI 据此区分「经中继」。 */
 type CompanionTransport = 'lan' | 'relay';
 
@@ -117,6 +128,21 @@ interface State {
   /** 退出登录 = 删票据与账号信息；配对与 LAN 使用不受影响。 */
   logout(): Promise<void>;
   dismissLoginPrompt(): void;
+  /**
+   * 「换了手机？登录找回我的电脑」（N-COMPANION-RELAY-ACCOUNT-RECOVER）：S3 入口 → S4 登录 →
+   * S5 列在线电脑 → S6 等电脑上同意。配对落盘与扫码同一存储形状；access token 与密码不落盘（D11）。
+   */
+  recoverStep: RecoverStep;
+  recoverError: RecoverError | null;
+  recoverHosts: readonly CompanionRelayHostEntry[];
+  /** S6「已发给 <名称>」的电脑名（无名电脑给 null，UI 用兜底名）。 */
+  recoverTargetName: string | null;
+  /** S6 的 4 位核对码：两端各自从同一份 XX 握手材料派生，人眼比对（D2 的核对面）。 */
+  recoverCode: string | null;
+  recoverLogin(email: string, password: string): Promise<void>;
+  recoverSelectHost(entry: CompanionRelayHostEntry): Promise<void>;
+  /** 取消找回 / 退出找回流：关协议会话，挂起的配对结果按代号丢弃。 */
+  recoverCancel(): void;
   /** Why the last command was refused. Connection-level standing stays in `status`. */
   commandError: string | null;
   /**
@@ -273,6 +299,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
   let client: CompanionChannel | null = null;
   /** 双径不双跑：任一时刻只有一条活通道，另一条的句柄只用来收尾 close。 */
   let relayClient: RelaySessionChannel | null = null;
+  /**
+   * 找回会话（N-COMPANION-RELAY-ACCOUNT-RECOVER）：S4 登录成功后持有到配对完成/取消/断线。
+   * recoverSeq 是找回流的尝试代号（照 connectSeq 的纪律）：取消/新登录后，迟到的旧结果按代号丢弃。
+   */
+  let recoverSession: RelayRecoverSession | null = null;
+  let recoverSeq = 0;
   let epoch = 1; let cursor = 0;
   let syncing = false;
   /** 在飞的这条转写是不是「同一次录音的后续分片」——只影响草稿里要不要换行，故不持久化。 */
@@ -1025,6 +1057,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       consumeTranscriptionPreflight: () => { if (get().skipTranscriptionPreflight) set({ skipTranscriptionPreflight: false }); },
       connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, autoRetrying: false, autoAttempt: false, relayNoHostWaiting: false, abandonedPending: false, events: [], runId: null, terminal: null,
       account: null, loginPrompt: false,
+      recoverStep: 'idle', recoverError: null, recoverHosts: [], recoverTargetName: null, recoverCode: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
       hydrate: async () => {
@@ -1093,6 +1126,97 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         } catch { /* storageError 已置起：账号信息保留，下次退出再试 */ }
       },
       dismissLoginPrompt: () => set({ loginPrompt: false }),
+      recoverLogin: async (email, password) => {
+        if (!port || get().recoverStep === 'opening' || get().recoverStep === 'pairing') return;
+        const attempt = ++recoverSeq;
+        set({ recoverStep: 'opening', recoverError: null });
+        // 身份密钥对是这台手机的长期身份（扫码配对同一条纪律）：先落盘再谈配对。
+        if (!saved) {
+          const identity = createIdentity();
+          await persist({ version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey) });
+          identity.secretKey.fill(0);
+          if (attempt !== recoverSeq) return;
+        }
+        // 找回时手机还没有配对路由：默认 relay 地址兜底（已配对的怪状态照旧用缓存里的真实地址）。
+        const relayUrl = saved?.relay?.url ?? saved?.relayAccount?.url ?? DEFAULT_COMPANION_RELAY_URL;
+        const outcome = await openRelayRecoverSession({ email, password, relayUrl, dial: port.dialRelay ?? browserRelayDial });
+        if (attempt !== recoverSeq) { if (outcome.ok) outcome.session.close(); return; }
+        if (!outcome.ok) { set({ recoverStep: 'idle', recoverError: outcome.kind }); return; }
+        recoverSession = outcome.session;
+        set({ recoverStep: 'hosts', recoverHosts: outcome.session.hosts, recoverError: null, recoverCode: null, recoverTargetName: null });
+      },
+      recoverSelectHost: async entry => {
+        const session = recoverSession;
+        if (!session || !saved || get().recoverStep !== 'hosts') return;
+        // 旧 Host（register 不带指纹）确定性降级：不发 pair-request——旧 Host 会静默丢帧，
+        // 发出去只能换来两分钟无应答超时，还可能被重试放大成风暴。
+        if (!entry.fingerprint) { set({ recoverError: 'hostUpgrade' }); return; }
+        const attempt = ++recoverSeq;
+        const identity = { publicKey: fromHex(saved.publicKey, 32), secretKey: fromHex(saved.secretKey, 32) };
+        const { code, result } = session.pair(entry, identity);
+        set({ recoverStep: 'pairing', recoverError: null, recoverTargetName: entry.name || null, recoverCode: code });
+        const outcome = await result;
+        // 用户已取消/重开找回：迟到的结果不碰现场。
+        if (attempt !== recoverSeq) return;
+        if (!outcome.ok) {
+          // 连接已断的失败会话已不可用：关掉回 S4；其余具名失败回 S5 横幅，还能选别的电脑再试。
+          if (outcome.kind === 'unreachable') {
+            session.close();
+            if (recoverSession === session) recoverSession = null;
+            set({ recoverStep: 'idle', recoverError: 'unreachable', recoverHosts: [], recoverCode: null, recoverTargetName: null });
+            return;
+          }
+          set({ recoverStep: 'hosts', recoverError: outcome.kind, recoverCode: null, recoverTargetName: null });
+          return;
+        }
+        // 配对完成：与扫码配对同一存储形状落盘（binding + 双路由 + account 票据）。
+        // access token 与密码从不经过这里——落盘的票据是 relay 签的 30 天凭据，不是 Supabase 会话（D11）。
+        session.close();
+        if (recoverSession === session) recoverSession = null;
+        const payload = outcome.payload;
+        const binding: LanBinding = {
+          version: 1,
+          // LAN 地址三件套与二维码邀请同源；Host 的 LAN 面没开时留空——重连的 LAN 段会快速
+          // 失败后落 relay（双径竞速本就为此设计），不算错报：此刻确实没有局域网路径。
+          endpoint: payload.lan?.endpoint ?? '',
+          ...(payload.lan?.altEndpoint ? { altEndpoint: payload.lan.altEndpoint } : {}),
+          ...(payload.lan?.candidates?.length ? { candidates: payload.lan.candidates } : {}),
+          hostKey: outcome.hostKey,
+          deviceId: payload.deviceId, scopeEpoch: payload.scopeEpoch, scope: payload.scope,
+          ...(payload.hostAccountEmail ? { hostAccountEmail: payload.hostAccountEmail } : {}),
+          ...(payload.transcription ? { transcription: payload.transcription } : {}),
+          ...(payload.sessionlessTranscribe ? { sessionlessTranscribe: true } : {}),
+          ...(payload.dictation ? { dictation: true, ...(payload.dictationTranscription ? { dictationTranscription: payload.dictationTranscription } : {}) } : {}),
+        };
+        await persist(live => ({
+          ...live,
+          binding,
+          // 双路由按 Host 下发的现值整份替换（legacy 缺席 = Host 没配共享凭据通道，旧缓存作废）。
+          ...(payload.legacyRoute ? { relay: payload.legacyRoute } : { relay: undefined }),
+          ...(payload.accountRoute ? { relayAccount: payload.accountRoute } : { relayAccount: undefined }),
+          ...(session.ticket ? { account: { ticket: session.ticket, email: session.email, userId: session.userId } } : {}),
+          candidate: undefined,
+        }));
+        epoch = binding.scopeEpoch; cursor = 0;
+        wipeHistoryCache();
+        stopAutoRetry();
+        remember(null);
+        set({
+          recoverStep: 'idle', recoverError: null, recoverHosts: [], recoverCode: null, recoverTargetName: null,
+          status: 'connecting', transport: null, connectionError: null, paused: false,
+          binding, sessionId: null, library: null, history: {}, events: [], artifacts: [], preview: null,
+          savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null,
+          ...(session.ticket ? { account: { email: session.email, userId: session.userId }, loginPrompt: false } : {}),
+        });
+        // 找回完成即「已配对」：走既有双径重连把会话通道建起来（外网下 relay 先通）。
+        void get().reconnect();
+      },
+      recoverCancel: () => {
+        recoverSeq += 1;
+        recoverSession?.close();
+        recoverSession = null;
+        set({ recoverStep: 'idle', recoverError: null, recoverHosts: [], recoverCode: null, recoverTargetName: null });
+      },
       pair: async (raw?: string) => {
         // 扫码前原本就有的绑定：握手失败时恢复它，前台退避自动重连接着跑（D1）——
         // 用户只是扫了一下码，不该把原本能用的配对弄丢后卡死在「电脑没回应」。

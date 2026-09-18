@@ -204,6 +204,15 @@ export const COMPANION_LIMITS = {
   accountLoginTimeoutMs: 15_000,
   /** 账号邮箱长度上限（RFC 5321 上限），登录表单与配对信息里带的电脑账号邮箱同用这一档。 */
   accountEmailMaxLength: 254,
+  /**
+   * relay 找回（N-COMPANION-RELAY-ACCOUNT-RECOVER）：pair-request 挂起时长（relay 侧 pending、
+   * Host 侧待同意卡片同用一档）。照邀请 TTL 120s 的量级——电脑前的人要读 4 位码再点同意。
+   */
+  relayPairTtlMs: 120_000,
+  /** pair-request 初次请求的限流间隔（每连接与每账号同判）：防「卡片轰炸电脑」。续帧不计。 */
+  relayPairRequestMinIntervalMs: 5_000,
+  /** register 自报 hostName 的长度上限（列表行显示用，超出按非法帧拒）。 */
+  relayHostNameLength: 64,
 } as const;
 
 const RETRYABLE_FILE_CODES = new Set([

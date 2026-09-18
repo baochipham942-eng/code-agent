@@ -419,6 +419,9 @@ export const IPC_CHANNELS = {
   // Agent notice broadcast (host 主动通知用户的结构化事件 → renderer toast，比照 budget:alert)
   AGENT_NOTICE: 'agent:notice',
 
+  // Companion relay pair-request broadcast（手机「登录找回电脑」的配对请求 → renderer 全局卡片）
+  COMPANION_PAIR_REQUEST: 'companion:pair-request',
+
   // Agent Registry change broadcast (custom .md agents 热加载推送到所有窗口)
   AGENTS_CHANGED: 'agents:changed',
 } as const;

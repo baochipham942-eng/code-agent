@@ -353,5 +353,13 @@ export const RENDERER_BUNDLE_ENDPOINTS = {
 /** 默认 Supabase URL */
 export const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
 
+/**
+ * 未配对手机「登录找回电脑」（N-COMPANION-RELAY-ACCOUNT-RECOVER）拨的默认 relay 地址：找回时
+ * 手机还没有任何配对路由，只能用编译期常量。已配对手机始终用配对缓存里的路由地址（Host 自报，
+ * 兼容自建 relay），常量只兜「刚装好/刚清空」的那一次。⚠️ 值必须与生产 companion relay 的部署
+ * 地址一致才能真用——占位值表示生产域名尚未进仓，发版前替换（见证据档「未做与原因」）。
+ */
+export const DEFAULT_COMPANION_RELAY_URL = 'wss://relay.example.invalid/companion';
+
 /** 默认 Supabase Anonymous Key */
 export const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';

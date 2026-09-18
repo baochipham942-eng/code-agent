@@ -729,6 +729,22 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_NOTICE]: (event: AgentNoticeEvent) => void;
   // Agent Registry change broadcast (custom .md agents 热加载推送)
   [IPC_CHANNELS.AGENTS_CHANGED]: (event: AgentsChangedEvent) => void;
+  // Companion relay pair-request（手机「登录找回电脑」：到达出全局卡片 / 消账收卡片）
+  [IPC_CHANNELS.COMPANION_PAIR_REQUEST]: (event: CompanionPairRequestEvent) => void;
+}
+
+/**
+ * companion:pair-request —— relay 找回配对（N-COMPANION-RELAY-ACCOUNT-RECOVER）在桌面上的
+ * 「新手机请求连接」卡片事件。request = 到达（带 4 位核对码，人眼与手机屏比对后表态）；
+ * gone = 挂起态消账（拒绝/超时/完成/连接断），卡片自收。
+ */
+export interface CompanionPairRequestEvent {
+  type: 'request' | 'gone';
+  requestId: string;
+  /** request 事件必带：XX 握手材料派生的 4 位核对码。 */
+  code?: string;
+  /** request 事件必带：卡片到点自收的本地期限。 */
+  expiresAt?: number;
 }
 
 export interface ProviderFallbackEvent {

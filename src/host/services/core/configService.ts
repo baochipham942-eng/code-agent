@@ -189,6 +189,7 @@ export class ConfigService implements IReadConfigService {
     // Try to restore settings from Keychain (survives app reinstall)
     await this.restoreFromKeychain();
     this.migrateLegacyLongCatProvider();
+    this.migrateRetiredLongCatPreviewModel();
     this.enableDefaultLocalProvider();
 
     // Save merged settings
@@ -386,9 +387,9 @@ export class ConfigService implements IReadConfigService {
     const looksLikeLongCat = baseUrl.includes('api.longcat.chat') || displayName === 'longcat';
     if (!looksLikeLongCat) return;
 
-    const legacyModel = legacy.model || 'LongCat-2.0-Preview';
+    const legacyModel = legacy.model || 'LongCat-2.0';
     const canonicalModel = legacyModel.toLowerCase() === 'longcat-2.0-preview'
-      ? 'LongCat-2.0-Preview'
+      ? 'LongCat-2.0'
       : legacyModel;
     const legacyModelSettings = legacy.models?.[legacyModel] ?? legacy.models?.[canonicalModel];
 
@@ -403,7 +404,7 @@ export class ConfigService implements IReadConfigService {
         ...legacy.models,
         [canonicalModel]: {
           enabled: true,
-          label: 'LongCat 2.0 Preview',
+          label: 'LongCat 2.0',
           capabilities: ['general', 'code', 'reasoning', 'longContext'],
           supportsTool: true,
           supportsVision: false,
@@ -432,7 +433,7 @@ export class ConfigService implements IReadConfigService {
       if (route.provider === 'custom') {
         route.provider = 'longcat';
         if (route.model.toLowerCase() === 'longcat-2.0-preview') {
-          route.model = 'LongCat-2.0-Preview';
+          route.model = 'LongCat-2.0';
         }
       }
     }
@@ -448,6 +449,64 @@ export class ConfigService implements IReadConfigService {
     }
 
     logger.info('Migrated legacy custom LongCat provider to official longcat provider');
+  }
+
+  /**
+   * LongCat-2.0-Preview 已被上游下线（2026-09-12 起 GET /models 只剩 LongCat-2.0）。
+   * 把存量配置里指向 Preview 的档位迁到 GA 名：providers.longcat.model 与其 models
+   * map key、routing 各档、taskStrategy.profiles。models.default 存的是 provider
+   * 指针（'longcat'），不含模型 id，无需迁移。
+   * 幂等：第二遍找不到 Preview 即空跑。只动官方 longcat——第三方 provider
+   * （custom-* 中转）自报的同名模型是它们自己的事，不写死禁用。
+   */
+  private migrateRetiredLongCatPreviewModel(): void {
+    const RETIRED_MODEL = 'LongCat-2.0-Preview';
+    const GA_MODEL = 'LongCat-2.0';
+    const isRetiredLongCatPreview = (provider: string, model: string | undefined): boolean =>
+      provider === 'longcat' && !!model && model.toLowerCase() === 'longcat-2.0-preview';
+
+    let migrated = 0;
+
+    const longcat = this.settings.models.providers.longcat;
+    if (longcat) {
+      if (isRetiredLongCatPreview('longcat', longcat.model)) {
+        longcat.model = GA_MODEL;
+        migrated += 1;
+      }
+      const retiredEntry = longcat.models?.[RETIRED_MODEL];
+      if (retiredEntry) {
+        // 丢掉旧名 label（含本仓 legacy 迁移写过的 'LongCat 2.0 Preview'），回落 catalog
+        // 新 label；thinking/maxTokens 等用户档位保留。已有 GA 条目优先，不被旧条目覆盖。
+        const { label: _retiredLabel, ...retiredSettings } = retiredEntry;
+        longcat.models = {
+          ...longcat.models,
+          [GA_MODEL]: { ...retiredSettings, ...longcat.models?.[GA_MODEL] },
+        };
+        delete longcat.models[RETIRED_MODEL];
+        migrated += 1;
+      }
+    }
+
+    for (const route of Object.values(this.settings.models.routing)) {
+      if (isRetiredLongCatPreview(route.provider, route.model)) {
+        route.model = GA_MODEL;
+        migrated += 1;
+      }
+    }
+
+    const profiles = this.settings.models.taskStrategy?.profiles;
+    if (profiles) {
+      for (const slot of Object.values(profiles)) {
+        if (isRetiredLongCatPreview(slot.provider, slot.model)) {
+          slot.model = GA_MODEL;
+          migrated += 1;
+        }
+      }
+    }
+
+    if (migrated > 0) {
+      logger.info('Migrated retired LongCat-2.0-Preview references to LongCat-2.0', { count: migrated });
+    }
   }
 
   private enableDefaultLocalProvider(): void {

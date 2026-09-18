@@ -80,6 +80,8 @@ export const MODEL_MIGRATIONS: Record<string, string> = {
   'doubao-1.5-pro-256k': 'doubao-seed-1-6',
   'doubao-1.5-thinking-pro': 'doubao-seed-1-6-thinking',
   'doubao-seed-1-6-vision-250815': 'doubao-seed-1-6',
+  // LongCat — 2026-09-12 上游下线 Preview（/models 只剩 LongCat-2.0），存量配置迁到 GA 名
+  'LongCat-2.0-Preview': 'LongCat-2.0',
 };
 
 /**
@@ -175,7 +177,6 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'mimo-v2-omni': 131_072,
   // LongCat（开放平台 registry maxTokens 上限 32768）
   'LongCat-2.0': 32_768,
-  'LongCat-2.0-Preview': 32_768,
 };
 
 /**
@@ -266,7 +267,6 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'mimo-v2-omni': 262_144,    // 256k，多模态版上下文较短
   // LongCat（longcat.chat 开放平台）
   'LongCat-2.0': 131_072,
-  'LongCat-2.0-Preview': 131_072,
 };
 
 /** 默认上下文窗口（未知模型 fallback） */

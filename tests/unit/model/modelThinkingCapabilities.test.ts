@@ -22,7 +22,8 @@ describe('per-model thinking capabilities', () => {
       levels: ['low', 'medium', 'high'],
     });
     expect(model('zhipu', 'glm-5').thinking).toEqual({ kind: 'toggle', defaultEnabled: true });
-    expect(model('longcat', 'LongCat-2.0-Preview').thinking).toEqual({ kind: 'toggle', defaultEnabled: true });
+    // LongCat-2.0-Preview 已下线；GA 名继承同一 toggle 控制
+    expect(model('longcat', 'LongCat-2.0').thinking).toEqual({ kind: 'toggle', defaultEnabled: true });
   });
 
   it('keeps known non-thinking and unknown models explicit', () => {

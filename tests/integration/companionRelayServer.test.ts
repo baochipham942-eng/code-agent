@@ -304,6 +304,110 @@ describe('companion relay: production server + host dial-out', () => {
     await graced.stop();
   });
 
+  // N-COMPANION-RELAY-RECONNECT-DROPSESSIONS：Host 换实例重连后本连接的会话表已清，手机还握着
+  // 旧实例谈好的会话密钥——host 腿断开时 route 与设备腿都还活着，relay 必须给设备腿一个重拨
+  // 重握手的推力，而不是让它干等自己的请求超时。宽限模式与 notifyNoHostAfterGrace 同款。
+  it('tells a live device leg to re-dial after the host leg drops and the grace window lapses', async () => {
+    const events: string[] = [];
+    const graced = new CompanionRelayServer({
+      credential: SECRET,
+      port: await freePort(),
+      noHostGraceMs: 150,
+      logger: {
+        info: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+        warn: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+      },
+    });
+    const gracedUrl = `ws://127.0.0.1:${(await graced.listen()).port}`;
+    const identity = createIdentity();
+    const device = gateway.pairIdentity(toHex(identity.publicKey), ['shared']);
+    const flakyHost = new CompanionRelayClient({
+      gateway,
+      identity: hostIdentity,
+      config: { url: gracedUrl, credentialRef: 'companion-relay', reconnectBackoffMs: [30, 60, 120] },
+      credential: SECRET,
+      jitter: () => 0.5,
+    });
+    flakyHost.advertise({ deviceRef: device.deviceId, routeToken: 'route-token-dropd1' });
+    const client = new RelayCompanionClient({
+      identity,
+      route: { url: gracedUrl, routeToken: 'route-token-dropd1', credential: SECRET },
+      deviceRef: device.deviceId,
+      dial: nodeDial,
+    });
+    await flakyHost.start();
+    await flakyHost.whenConnected();
+    await client.connect();
+    await client.resume({ hostKey: toHex(hostIdentity.publicKey), deviceId: device.deviceId, scopeEpoch: device.scopeEpoch, scope: device.scope });
+    // Host 实例掉线：relay 处理 close → host 槽清空，route 与设备腿都还在（事故现场形状）。
+    await flakyHost.stop();
+    // 手机的请求在无 host 的 route 上排队；宽限到点 relay 回 no-host 并清掉排队帧，手机据此断开。
+    const pending = client.request({ action: 'read' });
+    await vi.waitFor(() => expect(graced.currentStats.queuedFrames).toBe(1));
+    await expect(pending).rejects.toThrow('COMPANION_RELAY_NO_HOST');
+    expect(client.connected).toBe(false);
+    expect(graced.currentStats).toMatchObject({ notifiedNoHost: 1, queuedFrames: 0 });
+    expect(events).toContain(`host_leg_detached_notify ${JSON.stringify({ token: 'route-to' })}`);
+    client.close();
+    await graced.stop();
+  });
+
+  it('does not disturb the device leg when the host re-registers inside the grace window after dropping', async () => {
+    const events: string[] = [];
+    const graced = new CompanionRelayServer({
+      credential: SECRET,
+      port: await freePort(),
+      noHostGraceMs: 400,
+      logger: {
+        info: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+        warn: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+      },
+    });
+    const gracedUrl = `ws://127.0.0.1:${(await graced.listen()).port}`;
+    const token = 'route-token-dropd2';
+    const opened = (socket: WebSocket) => new Promise<void>(resolve => socket.once('open', () => resolve()));
+    const register = (socket: WebSocket, role: 'host' | 'device') => socket.send(JSON.stringify({
+      v: 1, kind: 'register', role,
+      envelope: { routeToken: token, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    const forward = (socket: WebSocket, seq: number) => socket.send(JSON.stringify({
+      v: 1, kind: 'forward',
+      envelope: { routeToken: token, deviceRef: 'phone-1', seq, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: 'x'.repeat(64),
+    }));
+    const hostLeg1 = new WebSocket(gracedUrl, { headers: { authorization: `Bearer ${SECRET}` } });
+    await opened(hostLeg1);
+    register(hostLeg1, 'host');
+    const deviceLeg = new WebSocket(gracedUrl, { headers: { authorization: `Bearer ${SECRET}` } });
+    await opened(deviceLeg);
+    register(deviceLeg, 'device');
+    forward(deviceLeg, 0);
+    await vi.waitFor(() => expect(graced.currentStats.forwarded).toBe(1));
+    // host 腿断开 → 宽限起算；设备腿随后发的帧在无 host 期间排队。
+    hostLeg1.close();
+    await new Promise<void>(resolve => hostLeg1.once('close', () => resolve()));
+    forward(deviceLeg, 1);
+    await vi.waitFor(() => expect(graced.currentStats.queuedFrames).toBe(1));
+    // 新 host 实例在宽限期内重注册：排队帧经 flushWaiting 照常倒给新 socket。
+    const hostLeg2 = new WebSocket(gracedUrl, { headers: { authorization: `Bearer ${SECRET}` } });
+    const flushed = new Promise<void>(resolve => hostLeg2.once('message', data => {
+      expect(JSON.parse(String(data)).envelope.seq).toBe(1);
+      resolve();
+    }));
+    await opened(hostLeg2);
+    register(hostLeg2, 'host');
+    await flushed;
+    // 等过宽限期：host 在位，定时器到点什么都不发，设备腿不受惊。
+    await new Promise(resolve => setTimeout(resolve, 500));
+    expect(deviceLeg.readyState).toBe(WebSocket.OPEN);
+    expect(graced.currentStats).toMatchObject({ notifiedNoHost: 0, queuedFrames: 0 });
+    expect(events.join('\n')).not.toContain('host_leg_detached_notify');
+    deviceLeg.close();
+    hostLeg2.close();
+    await graced.stop();
+  });
+
   it('breaks the device side when the host revokes', async () => {
     const binding = await pair();
     gateway.revokeDevice(binding.deviceId);

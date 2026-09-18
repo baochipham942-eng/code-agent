@@ -231,8 +231,11 @@ export class CompanionRelayClient {
     this.peerSeq.delete(deviceRef);
   }
 
-  private dropSessions(): void {
-    for (const id of [...this.sessions.keys()]) this.forget(id);
+  /** 清掉全部 Noise 会话并返回条数；close/open 路径据此留痕（stop 关停不打扰日志）。 */
+  private dropSessions(): number {
+    const ids = [...this.sessions.keys()];
+    for (const id of ids) this.forget(id);
+    return ids.length;
   }
 
   private controlEnvelope(route: RelayRouteEntry) {
@@ -372,7 +375,10 @@ export class CompanionRelayClient {
         this.controlSeq = 0;
         this.peerSeq.clear();
         this.ticketIssuedOnSocket = false;
-        this.dropSessions();
+        const droppedOnReconnect = this.dropSessions();
+        if (droppedOnReconnect > 0) {
+          logCompanionRelayInfo(this.logger, `Companion relay${this.label} sessions dropped on reconnect: ${droppedOnReconnect}`);
+        }
         this.bindPairedDevices();
         for (const route of this.routes.values()) this.sendRegister(route);
         if (this.socket?.readyState === WebSocket.OPEN) {
@@ -407,7 +413,10 @@ export class CompanionRelayClient {
           this.stableTimer = null;
           if (this.pongPending === socket) this.pongPending = null;
         }
-        this.dropSessions();
+        const droppedOnDisconnect = this.dropSessions();
+        if (droppedOnDisconnect > 0) {
+          logCompanionRelayInfo(this.logger, `Companion relay${this.label} sessions dropped on disconnect: ${droppedOnDisconnect}`);
+        }
         const errorCode = this.dialErrorCode(lastError, code, httpStatus);
         if (!settled) {
           this.failDial(errorCode);
@@ -545,7 +554,13 @@ export class CompanionRelayClient {
     if (frame.kind !== 'forward') return;
     const session = this.sessions.get(frame.envelope.deviceRef);
     const route = this.routes.get(frame.envelope.deviceRef);
-    if (!session || !route) return;
+    if (!session || !route) {
+      // 手机还握着旧 Host 实例谈好的会话密钥、而本连接的会话表已清（close/open 都会清）时，
+      // forward 到这里只能被吞——留一行 warn 让「静默丢消息」有迹可循（deviceRef 只给前缀，
+      // 原文不进日志）。relay 侧的 host 腿断开宽限通知会让手机重拨重握手，这里负责剩下的留痕。
+      this.logger?.warn(`Companion relay${this.label} forward dropped: ${session ? 'no route' : 'no session'} for deviceRef ${frame.envelope.deviceRef.slice(0, 8)}`);
+      return;
+    }
     const device = this.deps.gateway.identityDevice(session.publicKey);
     if (!device) { this.revoke(frame.envelope.deviceRef); return; }
     const request = session.cipher.open(JSON.parse(frame.ciphertext) as unknown) as {

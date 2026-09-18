@@ -4,6 +4,8 @@ import { toHex } from '../../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import { RelayCompanionClient, type RelayDial, type RelayDialSocket } from '../../../packages/mobile/src/platform/relayCompanionClient';
 
+const TICKET = 'neo1.payload.mac';
+
 /**
  * N-MOBILE-RELAY-PHONE 手机 relay 客户端的连接分类与帧纪律。传输层用脚本化 fake dial：
  * 不依赖 socket，把「open 之后立刻被关（凭据闸）」「error 在 open 之前（连不上）」
@@ -34,7 +36,8 @@ function clientWith(dial: RelayDial, onRevoked?: () => void) {
     hostKey: toHex(identity.publicKey),
     client: new RelayCompanionClient({
       identity,
-      route: { v: 1, url: 'ws://127.0.0.1:8791', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential' },
+      // RelayDialRoute 只认拨号真正用到的三样（url/routeToken/凭据形态）；配对盘里的 v 由 parse 层管。
+      route: { url: 'ws://127.0.0.1:8791', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential' },
       deviceRef: 'phone-1',
       dial,
       onRevoked,
@@ -192,6 +195,116 @@ describe('RelayCompanionClient：动作面与帧纪律', () => {
     }));
     await new Promise(resolve => setTimeout(resolve, 20));
     expect(settled).toBe('pending'); // 过期帧没人理，等待继续（由超时收口）
+    client.close();
+  });
+});
+
+/**
+ * N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE：账号路由拨号——票据进凭据子协议那条 dial（authorization
+ * 里带的就是票据原文，browserRelayDial 会把它编进 `neo-relay-auth.<base64url>` 子协议项）；relay 在
+ * 本连接上续签的 ticket 帧按 sentinel 校验后交给 onTicket，信封过期不拦它（与 Host 同序）。
+ */
+describe('RelayCompanionClient：账号票据拨号与续签帧', () => {
+  const ticketRoute = { url: 'ws://127.0.0.1:8791', routeToken: 'account-token-aaaaaa', ticket: TICKET };
+
+  it('有票据 ⇒ 拨号凭据就是票据（M3 守卫）：authorization = Bearer <ticket>', async () => {
+    const socket = new ScriptedSocket();
+    let headers: { authorization: string } | undefined;
+    const identity = createIdentity();
+    const client = new RelayCompanionClient({
+      identity, route: ticketRoute, deviceRef: 'phone-1',
+      dial: (url, h) => { headers = h; return socket.socket; },
+    });
+    const connected = client.connect();
+    socket.fireOpen();
+    await connected;
+    expect(headers?.authorization).toBe(`Bearer ${TICKET}`);
+    // register 帧仍带账号路由的 token，票据绝不进帧。
+    const register = JSON.parse(socket.sent[0]) as { envelope: { routeToken: string } };
+    expect(register.envelope.routeToken).toBe('account-token-aaaaaa');
+    expect(socket.sent.join('')).not.toContain(TICKET);
+    client.close();
+  });
+
+  it('relay 续签的 ticket 帧（sentinel 对上）⇒ onTicket 收到票据原文，连接不受影响', async () => {
+    const onTicket = vi.fn();
+    const socket = new ScriptedSocket();
+    const identity = createIdentity();
+    const client = new RelayCompanionClient({
+      identity, route: ticketRoute, deviceRef: 'phone-1', dial: () => socket.socket, onTicket,
+    });
+    const connected = client.connect();
+    socket.fireOpen();
+    await connected;
+    socket.deliver(JSON.stringify({
+      v: 1, kind: 'ticket',
+      envelope: { routeToken: 'neo-relay-ticket-issue', deviceRef: 'relay', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: 'neo1.renewed.mac',
+    }));
+    expect(onTicket).toHaveBeenCalledWith('neo1.renewed.mac');
+    expect(socket.closed).toBe(false); // 续签帧不是任何人的失败，连接照旧
+    client.close();
+  });
+
+  it('收到续签 ticket 后、channel 建立前断线 ⇒ 传输断开（COMPANION_NOT_CONNECTED），不误判凭据被拒（ai-review Important）', async () => {
+    const onTicket = vi.fn();
+    const socket = new ScriptedSocket();
+    const identity = createIdentity();
+    const client = new RelayCompanionClient({
+      identity, route: ticketRoute, deviceRef: 'phone-1', dial: () => socket.socket, onTicket,
+    });
+    const connected = client.connect();
+    socket.fireOpen();
+    await connected;
+    // 票据进续签窗（relay 必发新票）、Noise channel 建起前 socket 被关（relay 重启/蜂窝切换）：
+    // ticket 帧只发给鉴权通过的连接，此刻的关闭是传输断开——若分类成 AUTH_REJECTED，
+    // store 会删掉刚续签落盘的有效票据、翻 S8，用户被静默登出。
+    socket.deliver(JSON.stringify({
+      v: 1, kind: 'ticket',
+      envelope: { routeToken: 'neo-relay-ticket-issue', deviceRef: 'relay', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: 'neo1.renewed.mac',
+    }));
+    expect(onTicket).toHaveBeenCalledWith('neo1.renewed.mac');
+    socket.fireClose();
+    await expect(client.resume({ hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['shared'] }))
+      .rejects.toThrow('COMPANION_NOT_CONNECTED');
+  });
+
+  it('ticket 帧信封不是 sentinel（别人路由上的转发形状）⇒ 忽略，不喂给 onTicket', async () => {
+    const onTicket = vi.fn();
+    const socket = new ScriptedSocket();
+    const identity = createIdentity();
+    const client = new RelayCompanionClient({
+      identity, route: ticketRoute, deviceRef: 'phone-1', dial: () => socket.socket, onTicket,
+    });
+    const connected = client.connect();
+    socket.fireOpen();
+    await connected;
+    socket.deliver(JSON.stringify({
+      v: 1, kind: 'ticket',
+      envelope: { routeToken: 'route-token-aaaaaa', deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: 'neo1.forged.mac',
+    }));
+    expect(onTicket).not.toHaveBeenCalled();
+    client.close();
+  });
+
+  it('信封 TTL 已过的续签帧也照收：票据帧先于过期判定（与 Host 侧同序，时钟偏差不吞续签）', async () => {
+    const onTicket = vi.fn();
+    const socket = new ScriptedSocket();
+    const identity = createIdentity();
+    const client = new RelayCompanionClient({
+      identity, route: ticketRoute, deviceRef: 'phone-1', dial: () => socket.socket, onTicket,
+    });
+    const connected = client.connect();
+    socket.fireOpen();
+    await connected;
+    socket.deliver(JSON.stringify({
+      v: 1, kind: 'ticket',
+      envelope: { routeToken: 'neo-relay-ticket-issue', deviceRef: 'relay', seq: 0, ttlMs: 1, issuedAt: Date.now() - 10_000 },
+      ciphertext: 'neo1.renewed.mac',
+    }));
+    expect(onTicket).toHaveBeenCalledWith('neo1.renewed.mac');
     client.close();
   });
 });

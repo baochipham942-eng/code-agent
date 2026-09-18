@@ -164,6 +164,11 @@ export const COMPANION_LIMITS = {
   relayMaxAccountRoutes: 256,
   /** relay 服务端：过期 route / 空闲连接清扫周期。 */
   relaySweepMs: 15_000,
+  /** 手机登录 Neo 账号（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：Supabase 密码换令牌、relay 换票
+   *  两段各要等的上限；到点按「账号服务连不上」给重试，不无限转圈。 */
+  accountLoginTimeoutMs: 15_000,
+  /** 账号邮箱长度上限（RFC 5321 上限），登录表单与配对信息里带的电脑账号邮箱同用这一档。 */
+  accountEmailMaxLength: 254,
 } as const;
 
 const RETRYABLE_FILE_CODES = new Set([

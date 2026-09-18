@@ -137,6 +137,43 @@ export function parseCompanionRelayRoute(raw: unknown): CompanionRelayRoute {
 }
 
 /**
+ * 账号路由引用（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：只有 url + routeToken，不带凭据——
+ * 旧路由的共享凭据随配对整份下发，账号路由的凭据（设备票据）由手机自己登录账号换取、
+ * 随配对记录里的 `account` 另存，两条凭据形态不同路。Host 登录了 Neo 账号才有这一条。
+ */
+const companionRelayRouteRefSchema = z.object({
+  v: z.literal(COMPANION_RELAY_PROTOCOL_VERSION),
+  url: z.string().trim().min(1).max(2_048),
+  routeToken,
+}).strict();
+export type CompanionRelayRouteRef = z.infer<typeof companionRelayRouteRefSchema>;
+
+/**
+ * 双路由下发契约（`relay.routes` 动作的 routes 载荷）：`legacy` 是既有路由契约原样（含共享
+ * 凭据，build 53 老手机缓存的就是它），`account` 是不带凭据的账号路由引用。两者都可选——
+ * Host 没配中继或没登录账号时对应条目缺席，手机据此知道哪条路可用。
+ * schema 本体不导出（与既有 companionRelayRouteSchema 同一纪律）：外部消费方只认 parse 函数。
+ */
+const companionRelayRoutesSchema = z.object({
+  v: z.literal(COMPANION_RELAY_PROTOCOL_VERSION),
+  account: companionRelayRouteRefSchema.optional(),
+  legacy: companionRelayRouteSchema.optional(),
+}).strict();
+export type CompanionRelayRoutes = z.infer<typeof companionRelayRoutesSchema>;
+
+/** 缺字段的旧记录/坏载荷不得作废整份：解析失败抛 COMPANION_RELAY_INVALID_ROUTES，调用方按条丢弃。 */
+export function parseCompanionRelayRoutes(raw: unknown): CompanionRelayRoutes {
+  const parsed = companionRelayRoutesSchema.safeParse(raw);
+  if (!parsed.success) throw new Error('COMPANION_RELAY_INVALID_ROUTES');
+  const data = parsed.data;
+  return {
+    v: COMPANION_RELAY_PROTOCOL_VERSION,
+    ...(data.account ? { account: { ...data.account, url: parseCompanionRelayUrl(data.account.url) } } : {}),
+    ...(data.legacy ? { legacy: { ...data.legacy, url: parseCompanionRelayUrl(data.legacy.url) } } : {}),
+  };
+}
+
+/**
  * 凭据子协议（N-COMPANION-RELAY-PHONE-AUTH）：WebView 的 WebSocket 设不了请求头，手机
  * 侧把共享凭据放进 `Sec-WebSocket-Protocol`。客户端固定发两项：协议名 + 凭据项；服务端
  * `handleProtocols` 只回选协议名，凭据项解出来后与 `Authorization` 头同一口径比较，绝不

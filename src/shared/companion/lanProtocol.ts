@@ -30,6 +30,12 @@ export interface LanBinding {
   dictationTranscription?: CompanionTranscriptionReadiness;
   /** Host accepts voice.transcribe without a session. Absent on older hosts — welcome page hides the mic. */
   sessionlessTranscribe?: true;
+  /**
+   * 电脑当前登录的 Neo 账号邮箱（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：手机登录页预填与
+   * 「这台电脑属于谁」的账号一致性核对都从这里取。旧宿主不下发；每次握手随 welcome 刷新，
+   * 电脑登录/退出/换账号都会在下一次恢复连接时反映进来。
+   */
+  hostAccountEmail?: string;
 }
 export const LAN_PROLOGUE = 'neo-companion/lan/v1';
 export function toHex(value: Uint8Array): string {

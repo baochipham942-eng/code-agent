@@ -3,6 +3,8 @@ import { createHandshake, NoiseChannel } from '../../../../src/shared/companion/
 import { fromHex, toHex } from '../../../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS as L } from '../../../../src/shared/constants/companion';
 import {
+  COMPANION_RELAY_SENTINEL_DEVICE_REF,
+  COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN,
   COMPANION_RELAY_WS_PROTOCOL,
   companionRelayCredentialSubprotocol,
   companionRelayFrameExpired,
@@ -32,6 +34,14 @@ export interface RelayDialSocket {
 }
 
 export type RelayDial = (url: string, headers: { authorization: string }) => RelayDialSocket;
+
+/**
+ * 拨号要用的路由（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：两种凭据形态——旧共享凭据
+ * （`credential`，随配对整份下发）与账号设备票据（`ticket`，手机登录账号后自己换得）。
+ * 有票据用票据，只有共享凭据就照旧；两种凭据都走同一个凭据子协议项（relay 对 `neo1.`
+ * 开头的值按票据验，服务端无需改动）。
+ */
+export type RelayDialRoute = Pick<CompanionRelayRoute, 'url' | 'routeToken'> & { credential?: string; ticket?: string };
 
 /**
  * WebView 的 WebSocket 不能带 Authorization 头（平台限制，不是疏漏），凭据走 WebSocket
@@ -90,18 +100,22 @@ export class RelayCompanionClient {
   private readonly now: () => number;
   private readonly dial: RelayDial;
   private readonly identity: KeyPair;
-  private readonly route: CompanionRelayRoute;
+  private readonly route: RelayDialRoute;
   private readonly deviceRef: string;
   private readonly onRevoked?: () => void;
+  /** relay 在本连接上续签的设备票据（sentinel 校验通过才回调；store 落盘换新）。 */
+  private readonly onTicket?: (ticket: string) => void;
 
   constructor(deps: {
     identity: KeyPair;
-    route: CompanionRelayRoute;
+    route: RelayDialRoute;
     deviceRef: string;
     dial: RelayDial;
     now?: () => number;
     /** Host 经 relay 推 revoke/disconnect 帧时触发（store 把设备翻成 rejected）。 */
     onRevoked?: () => void;
+    /** relay 下发/续签设备票据帧时触发（账号路由连接上才会有；store 持久化新票）。 */
+    onTicket?: (ticket: string) => void;
   }) {
     this.identity = deps.identity;
     this.route = deps.route;
@@ -109,6 +123,7 @@ export class RelayCompanionClient {
     this.dial = deps.dial;
     this.now = deps.now ?? Date.now;
     this.onRevoked = deps.onRevoked;
+    this.onTicket = deps.onTicket;
   }
 
   get connected(): boolean { return this.socket != null && this.channel != null; }
@@ -121,8 +136,11 @@ export class RelayCompanionClient {
   async connect(): Promise<void> {
     this.close();
     this.failure = null;
+    // 有票据用票据（账号路由），只有共享凭据就照旧；两者都进同一个凭据子协议项，relay 侧
+    // 对 `neo1.` 开头的值按票据验——服务端不需要为手机改一行。
+    const credential = this.route.ticket ?? this.route.credential ?? '';
     await new Promise<void>((resolve, reject) => {
-      const socket = this.dial(this.route.url, { authorization: `Bearer ${this.route.credential}` });
+      const socket = this.dial(this.route.url, { authorization: `Bearer ${credential}` });
       this.socket = socket;
       let opened = false;
       const failConnect = (code: string) => {
@@ -304,6 +322,19 @@ export class RelayCompanionClient {
 
   private onMessage(raw: string): void {
     const frame = parseCompanionRelayFrame(JSON.parse(raw) as unknown);
+    // relay 在本连接上续签的设备票据（sentinel 与 Host 同源校验）：不走路由、与会话无关，也必须
+    // 先于过期判定处理——票据信封是 60s TTL 的 sentinel，时钟偏差大时按过期丢掉会把续签静默吞掉。
+    if (frame.kind === 'ticket') {
+      if (frame.envelope.routeToken !== COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN
+        || frame.envelope.deviceRef !== COMPANION_RELAY_SENTINEL_DEVICE_REF) return;
+      // 续签票只发给鉴权通过的连接（relay 验凭据通过后才发 ticket 帧）：收到它就是凭据没被拒
+      // 的证明，计入鉴权计数——否则票据续签落盘后、Noise channel 建立前 socket 被关（relay
+      // 重启/蜂窝切换），关闭分类会把好票误判成凭据被拒（AUTH_REJECTED），store 侧随之删掉
+      // 刚续签的有效票据并翻 S8（ai-review Important）。
+      this.inboundFrames += 1;
+      this.onTicket?.(frame.ciphertext);
+      return;
+    }
     if (companionRelayFrameExpired(frame, this.now())) return;
     if (frame.kind === 'revoke' || frame.kind === 'disconnect') {
       this.drop(new Error('COMPANION_DEVICE_REVOKED'));

@@ -4,6 +4,7 @@ import {
   companionRelayFrameExpired,
   parseCompanionRelayFrame,
   parseCompanionRelayRoute,
+  parseCompanionRelayRoutes,
   resolveCompanionRelayConfig,
 } from '../../../../src/shared/contract/companionRelay';
 
@@ -107,5 +108,33 @@ describe('companion relay contract', () => {
     expect(parseCompanionRelayRoute({
       v: 1, url: 'ws://127.0.0.1:8791', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
     }).url).toContain('127.0.0.1');
+  });
+
+  // N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE：relay.routes 的双路由载荷。既有 route 契约一个字
+  // 不改（legacy 原样复用）；account 是不带凭据的路由引用；两条都可选，缺条目不得作废另一条。
+  it('parses dual routes: account ref without credential, legacy route unchanged', () => {
+    const routes = parseCompanionRelayRoutes({
+      v: 1,
+      account: { v: 1, url: 'wss://relay.example.invalid:8443', routeToken: 'account-token-aaaaaa' },
+      legacy: { v: 1, url: 'wss://relay.example.invalid:8443', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential' },
+    });
+    expect(routes).toEqual({
+      v: 1,
+      account: { v: 1, url: 'wss://relay.example.invalid:8443/', routeToken: 'account-token-aaaaaa' },
+      legacy: { v: 1, url: 'wss://relay.example.invalid:8443/', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential' },
+    });
+    // 缺哪条都行：只有旧通道 / 只有账号通道 / 两条都没有，都是合法载荷。
+    expect(parseCompanionRelayRoutes({ v: 1, legacy: { v: 1, url: 'wss://relay.example.invalid:8443', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential' } }).account).toBeUndefined();
+    expect(parseCompanionRelayRoutes({ v: 1 }).legacy).toBeUndefined();
+    // 账号引用带凭据＝形状不对：凭据不随路由下发。
+    expect(() => parseCompanionRelayRoutes({
+      v: 1, account: { v: 1, url: 'wss://relay.example.invalid:8443', routeToken: 'account-token-aaaaaa', credential: 'relay-shared-credential' },
+    })).toThrow('COMPANION_RELAY_INVALID_ROUTES');
+    // URL 纪律与既有契约同源：明文非环回拒。
+    expect(() => parseCompanionRelayRoutes({
+      v: 1, account: { v: 1, url: 'ws://relay.example.invalid:8443', routeToken: 'account-token-aaaaaa' },
+    })).toThrow('COMPANION_RELAY_INSECURE_URL');
+    expect(() => parseCompanionRelayRoutes({ v: 2 })).toThrow('COMPANION_RELAY_INVALID_ROUTES');
+    expect(() => parseCompanionRelayRoutes({ v: 1, extra: true })).toThrow('COMPANION_RELAY_INVALID_ROUTES');
   });
 });

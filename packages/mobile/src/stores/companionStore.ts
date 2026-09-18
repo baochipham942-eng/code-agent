@@ -9,9 +9,16 @@ import type {
 } from '../../../../src/shared/contract/companionDictation';
 import type { CompanionPushRegister, CompanionPushRegisterResult, CompanionPushOpenResult } from '../../../../src/shared/contract/companionPush';
 import { companionCommandSchema } from '../../../../src/shared/contract/companion';
-import { parseCompanionRelayRoute, type CompanionRelayRoute } from '../../../../src/shared/contract/companionRelay';
+import { parseCompanionRelayRoute, parseCompanionRelayRoutes, type CompanionRelayRoute, type CompanionRelayRouteRef } from '../../../../src/shared/contract/companionRelay';
 import { LanCompanionClient } from '../platform/lanCompanionClient';
-import { RelayCompanionClient, browserRelayDial } from '../platform/relayCompanionClient';
+import { RelayCompanionClient, browserRelayDial, type RelayDialRoute } from '../platform/relayCompanionClient';
+import { loginNeoAccount, type AccountLoginResult } from '../platform/accountLogin';
+
+/**
+ * store 级登录结果：成功只报 ok——票据落进配对盘（Keychain），不进 React 状态、不进 UI 调用方
+ * 的手里；失败态与 platform 层一致（凭据错 / 账号服务连不上 / 账号不一致点名）。
+ */
+type AccountLoginOutcome = { ok: true } | Extract<AccountLoginResult, { ok: false }>;
 import type { FilePorts, PlatformPorts, PickedFile } from '../platform/ports';
 import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
@@ -25,6 +32,15 @@ interface Saved {
   candidate?: { endpoint: string; altEndpoint?: string; hostKey: string }; binding?: LanBinding; pending?: CompanionCommand;
   /** LAN 连着时从 Host 拿到的 relay 路由（含共享凭据，随整份配对记录进 Keychain）。 */
   relay?: CompanionRelayRoute;
+  /** Host 下发的账号 relay 路由（不带凭据，N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：手机拿自己登录换的票据拨。 */
+  relayAccount?: CompanionRelayRouteRef;
+  /**
+   * 本机登录的 Neo 账号：设备票据（30 天 bearer 凭据）+ 账号邮箱 + 用户 id。票据随配对记录进
+   * Keychain；access token 与密码绝不落盘。忘记电脑时保留——账号是人的，不是这台电脑的。
+   */
+  account?: { ticket: string; email: string; userId: string };
+  /** S8「在外面用需要先登录」提醒已出过一次：跳过登录后只再提醒这一次，之后不反复弹（D-1）。 */
+  loginReminded?: true;
 }
 type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionRefused' | 'connectionUnavailable' | 'connectionFailed'
   | 'connectionRelayUnavailable' | 'connectionRelayRejected' | 'connectionRelayNoHost';
@@ -38,6 +54,14 @@ type CompanionTransport = 'lan' | 'relay';
  * `status` 描述连接，命令结果写 `commandError`；两条 ack 路径共用这一个判据，别再各判各的。
  */
 const DEVICE_LEVEL_REASONS = new Set(['device_revoked', 'device_unknown', 'scope_denied', 'scope_epoch_mismatch']);
+
+/**
+ * S8（D-1）只认「够不着电脑」的失败类：超时/无响应、其余网络码、relay 路也没走通。host 主动
+ * 回过话的失败——端口关着（connectionRefused = Neo 没在运行）、握手/配对被拒
+ * （connectionRejected / 二维码问题）——不是离网，登录救不了那些态，它们的既有失败面
+ * （重新连接 / 扫描电脑二维码）不许被登录引导抢占主按钮。
+ */
+const OFF_NETWORK_ERRORS = new Set(['connectionUnavailable', 'connectionFailed', 'connectionRelayUnavailable', 'connectionRelayRejected', 'connectionRelayNoHost']);
 
 /**
  * 一条转写命令的结局，**带着它是哪一条**。
@@ -78,6 +102,21 @@ interface State {
   refreshModels(): Promise<void>;
   manage(action: 'session.create' | 'session.rename' | 'session.archive' | 'session.delete' | 'session.model', payload: Record<string, unknown>, target?: string): Promise<void>;
   connectionError: ConnectionError | null;
+  /**
+   * 本机登录的 Neo 账号（只有邮箱与用户 id——票据留在配对盘里，不进 React 状态/日志）。
+   * 登录与否不影响配对、LAN 使用与历史；只决定离开 Wi-Fi 后能不能走账号中继。
+   */
+  account: { email: string; userId: string } | null;
+  /**
+   * 「在外面用需要先登录」当前可见：配对完成后引导一次（D9，欢迎页可忽略提示，不弹层）；
+   * 跳过后第一次**离网**连不上时再置起（S8，仅一次，见 OFF_NETWORK_ERRORS 的门控）；登录/退出清。
+   */
+  loginPrompt: boolean;
+  /** 登录 Neo 账号（邮箱+密码）：换回设备票据与账号信息存进配对盘；失败态两类 + 账号不一致点名。 */
+  login(email: string, password: string): Promise<AccountLoginOutcome>;
+  /** 退出登录 = 删票据与账号信息；配对与 LAN 使用不受影响。 */
+  logout(): Promise<void>;
+  dismissLoginPrompt(): void;
   /** Why the last command was refused. Connection-level standing stays in `status`. */
   commandError: string | null;
   /**
@@ -349,33 +388,51 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       const current = get().sessionId;
       applyHistoryView(nextHistory, nextEvents, current && !keep(current) ? (explicitSessionIds(nextScope)[0] ?? null) : current);
     };
-    const persist = async (next: Saved) => {
+    const persist = async (next: Saved | ((current: Saved) => Saved)) => {
       if (!port) throw new Error('COMPANION_NATIVE_REQUIRED');
-      // 只写 Saved 的已知字段：hydrate 的 JSON.parse 可能带上盘里多出来的键
-      // （比如误写入的 uploadProgress），spread next 会把瞬态字段写进配对盘。
-      const record: Saved = {
-        version: 1, publicKey: next.publicKey, secretKey: next.secretKey,
-        ...(next.candidate ? { candidate: next.candidate } : {}),
-        ...(next.binding ? { binding: next.binding } : {}),
-        ...(next.pending ? { pending: next.pending } : {}),
-        ...(next.relay ? { relay: next.relay } : {}),
+      /**
+       * 整份记录原样落；函数补丁在**轮到落盘的那一刻**对最新记录求值（ai-review Important①）：
+       * 路由探针 / 登录 / 退出都不走 busy 守卫，可与彼此真并发——提前抓的整份快照在 await 之后
+       * 落盘，会把别人的写入整份抹掉（登录在途被探针覆盖 ⇒ 票据从盘上消失、UI 还显示已登录、
+       * 重启变未登录；退出在途被探针覆盖 ⇒ 票据留盘继续用于拨号，退出等于没退）。补丁只声明
+       * 自己名下的字段，读-改-写收敛在这里一处，谁的写都不整份覆盖。
+       */
+      const materialize = (): { record: Saved; orphanVoice: string | null } => {
+        const source = typeof next === 'function' ? next(saved!) : next;
+        // 只写 Saved 的已知字段：hydrate 的 JSON.parse 可能带上盘里多出来的键
+        // （比如误写入的 uploadProgress），spread next 会把瞬态字段写进配对盘。
+        const record: Saved = {
+          version: 1, publicKey: source.publicKey, secretKey: source.secretKey,
+          ...(source.candidate ? { candidate: source.candidate } : {}),
+          ...(source.binding ? { binding: source.binding } : {}),
+          ...(source.pending ? { pending: source.pending } : {}),
+          ...(source.relay ? { relay: source.relay } : {}),
+          ...(source.relayAccount ? { relayAccount: source.relayAccount } : {}),
+          ...(source.account ? { account: source.account } : {}),
+          ...(source.loginReminded ? { loginReminded: true } : {}),
+        };
+        // 待确认槽被清掉、而这条语音还没有任何结论 ⇒ 给它一个终局。
+        // 清槽的路不止「结算」一条：被拒（scope_denied / scope_epoch_mismatch…）、抢答冲突、
+        // reconciling 超时回收，都在别处清槽而不写结果；分片队列等的就是这条命令的结果，
+        // 等不到就一直 awaiting，语音面板永不收口（grok ai-review Important）。
+        // 结算那条路在调用本函数之前已经给**这个 commandId**写好结果了，不会被这里覆盖。
+        const orphanVoice = saved?.pending?.action === 'voice.transcribe' && !record.pending
+          && get().voiceResult?.commandId !== saved.pending.commandId ? saved.pending.commandId : null;
+        return { record, orphanVoice };
       };
-      // 待确认槽被清掉、而这条语音还没有任何结论 ⇒ 给它一个终局。
-      // 清槽的路不止「结算」一条：被拒（scope_denied / scope_epoch_mismatch…）、抢答冲突、
-      // reconciling 超时回收，都在别处清槽而不写结果；分片队列等的就是这条命令的结果，
-      // 等不到就一直 awaiting，语音面板永不收口（grok ai-review Important）。
-      // 结算那条路在调用本函数之前已经给**这个 commandId**写好结果了，不会被这里覆盖。
-      const orphanVoice = saved?.pending?.action === 'voice.transcribe' && !next.pending
-        && get().voiceResult?.commandId !== saved.pending.commandId ? saved.pending.commandId : null;
       try {
-        const write = persistQueue.then(() => port.write(JSON.stringify(record)));
+        const write = persistQueue.then(() => {
+          const { record, orphanVoice } = materialize();
+          return port.write(JSON.stringify(record)).then(() => ({ record, orphanVoice }));
+        });
         persistQueue = write.then(() => undefined, () => undefined);
-        await write; saved = record;
+        const done = await write;
         // 落盘记录是待确认命令的唯一真源，派生放在这一处，省得九个 set({pending}) 各自同步。
         // 两个字段必须同一拍置起：只改 pendingAction 的话，结算那一帧会是
         // pending=true + pendingAction=null，状态行闪回「请勿重复发送」——正是本单要消掉的那句。
-        set({ pending: Boolean(next.pending), pendingAction: next.pending?.action ?? null, pendingAdopted: false,
-          ...(orphanVoice ? { voiceResult: { commandId: orphanVoice, outcome: 'error' as const } } : {}) });
+        saved = done.record;
+        set({ pending: Boolean(done.record.pending), pendingAction: done.record.pending?.action ?? null, pendingAdopted: false,
+          ...(done.orphanVoice ? { voiceResult: { commandId: done.orphanVoice, outcome: 'error' as const } } : {}) });
       }
       catch (error) { client?.close(); set({ status: 'storageError' }); throw error; }
     };
@@ -403,12 +460,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
      * 绑定身份以 LAN 配对时的缓存为准逐字段校验——relay 只换路，不换身份；
      * resume 成功后 `client` 指到 relay 通道，LAN 客户端此刻必然已关（recover 失败即关）。
      */
-    const dialRelay = async (attempt?: number): Promise<RelayCompanionClient> => {
-      if (!saved?.relay || !saved.binding) throw new Error('COMPANION_RELAY_UNCONFIGURED');
+    const dialRelayRoute = async (route: RelayDialRoute, attempt?: number): Promise<RelayCompanionClient> => {
+      if (!saved?.binding) throw new Error('COMPANION_RELAY_UNCONFIGURED');
       relayClient?.close();
       const relay = new RelayCompanionClient({
         identity: { publicKey: fromHex(saved.publicKey, 32), secretKey: fromHex(saved.secretKey, 32) },
-        route: saved.relay,
+        route,
         deviceRef: saved.binding.deviceId,
         dial: port?.dialRelay ?? browserRelayDial,
         onRevoked: () => {
@@ -422,6 +479,14 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (revokedHostKey) options?.forgetSessionTitles?.(revokedHostKey);
           set({ status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null });
         },
+        onTicket: ticket => {
+          // relay 在账号连接上续签的票据（剩余有效期进 7 天窗口）：就地换新落盘，别等它过期当失效重登。
+          // 补丁形态 + 仍在登录态才写：退出/重登在途时不把已删（或已换人）的账号复活。
+          const stale = saved?.account?.ticket;
+          if (stale == null || stale === ticket) return;
+          void persist(live => live.account?.ticket === stale ? { ...live, account: { ...live.account, ticket } } : live)
+            .catch(() => { /* storageError 已由 persist 置起 */ });
+        },
       });
       await relay.connect();
       await relay.resume({ hostKey: saved.binding.hostKey, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch, scope: saved.binding.scope });
@@ -434,23 +499,101 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       client = relay;
       return relay;
     };
-    /** 趁 LAN 连着刷新缓存的 relay 路由（Host 重启会换 routeToken）。尽力而为，不许打断 LAN 会话。 */
-    const refreshRelayRoute = async () => {
-      if (!client || client === relayClient || !saved?.binding || !port) return;
-      // 路由探针走自己的一条短命 resume 通道，绝不碰会话通道：relay.route 是新动作，旧 Host
-      // 的 exchange 对未知动作的处置是「关 channel」——在会话通道上问一句，整条会话陪葬
-      // （2026-09-15 真机首验：配对后首次 sync 即掉线，重连-再陪葬死循环，relay 永远没机会开火）。
-      // 探针死了只是没路由可缓存；会话通道毫发无损。
-      const probe = new LanCompanionClient({ publicKey: fromHex(saved.publicKey, 32), secretKey: fromHex(saved.secretKey, 32) }, port.post);
+    /**
+     * 账号路由失败后允许**当次立刻**回落旧路由的失败码（设计 C：没 host / 被拒 / 连不上 / 超时）。
+     * NO_RESPONSE 在列：relay 对 register 的 owner 不匹配是静默丢帧（不 close、不回 no-host），
+     * 手机等到握手超时——那是「这条账号路由没人应答」，不是凭据被拒，票据不许动、当次改拨
+     * 旧路由仍可连（ai-review Important②：电脑换账号登录后，派生自旧账号的路由照此自愈）。
+     */
+    const RELAY_FALLBACK_CODES = new Set(['COMPANION_RELAY_NO_HOST', 'COMPANION_RELAY_AUTH_REJECTED', 'COMPANION_RELAY_UNAVAILABLE', 'COMPANION_RELAY_CONNECT_TIMEOUT', 'COMPANION_NO_RESPONSE']);
+    /** 票据被 relay 拒（过期/被作废）：删本地票据与账号信息并翻回「需要登录」（S8），不静默重试登录。 */
+    const invalidateAccountTicket = async () => {
+      const rejected = saved?.account?.ticket;
+      if (rejected == null) return;
       try {
-        await probe.recover(saved.binding);
-        const result = await probe.request({ action: 'relay.route' }) as { kind?: unknown; url?: unknown; routeToken?: unknown; credential?: unknown };
-        if (result?.kind !== 'ok' || typeof result.url !== 'string' || typeof result.routeToken !== 'string' || typeof result.credential !== 'string') return;
-        const route = parseCompanionRelayRoute({ v: 1, url: result.url, routeToken: result.routeToken, credential: result.credential });
-        if (saved.relay?.url === route.url && saved.relay.routeToken === route.routeToken) return;
-        await persist({ ...saved, relay: route });
-      } catch { /* 路由刷新失败不影响 LAN 会话；下一次重连再试 */ }
-      finally { probe.close(); }
+        // 只作废**被拒的那张票**：探针/重登在途换上的新票不陪葬（补丁在落盘那一刻判）。
+        await persist(live => live.account?.ticket === rejected ? { ...live, account: undefined } : live);
+        // 补丁没删（在途重登已换上新票）时不动 React 态：盘上是新票，UI 也该显示已登录。
+        if (saved?.account == null || saved.account.ticket === rejected) set({ account: null, loginPrompt: true });
+      } catch { /* storageError 已置起；下一次拨号还会走到这，重试置失效 */ }
+    };
+    /**
+     * 双路由拨号（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：有账号路由且有票据先拨它（票据进
+     * 凭据子协议），没 host / 被拒 / 连不上 / 超时就在同一次连接动作里立刻改拨旧路由；两条都
+     * 失败才按现有分类报错。没票据就直接走旧路由（等同今天，老配对记录零差异）。
+     */
+    const dialRelay = async (attempt?: number): Promise<RelayCompanionClient> => {
+      if (!saved?.binding) throw new Error('COMPANION_RELAY_UNCONFIGURED');
+      if (saved.relayAccount && saved.account?.ticket) {
+        try {
+          return await dialRelayRoute({ ...saved.relayAccount, ticket: saved.account.ticket }, attempt);
+        } catch (error) {
+          // 被更新的尝试抢占了：回落留给抢占者，这里不能再拨。
+          if (attempt !== undefined && attempt !== connectSeq) throw error;
+          if (error instanceof Error && error.message === 'COMPANION_RELAY_AUTH_REJECTED') await invalidateAccountTicket();
+          if (!saved.relay || !(error instanceof Error) || !RELAY_FALLBACK_CODES.has(error.message)) throw error;
+          return await dialRelayRoute(saved.relay, attempt);
+        }
+      }
+      if (!saved.relay) throw new Error('COMPANION_RELAY_UNCONFIGURED');
+      return await dialRelayRoute(saved.relay, attempt);
+    };
+    /** 趁 LAN 连着刷新缓存的双路由（Host 重启会换 routeToken；登录/退出会增删账号路由）。尽力而为，不许打断 LAN 会话。 */
+    const refreshRelayRoute = async () => {
+      const current = saved;
+      if (!client || client === relayClient || !current?.binding || !port) return;
+      const identity = { publicKey: fromHex(current.publicKey, 32), secretKey: fromHex(current.secretKey, 32) };
+      // 路由探针走自己的短命 resume 通道，绝不碰会话通道：旧 Host 的 exchange 对未知动作的处置是
+      // 「关 channel」——在会话通道上问一句，整条会话陪葬（2026-09-15 真机首验）。探针死了只是没
+      // 路由可缓存；会话通道毫发无损。问没问上由返回值交代：false = 探针被拒杀（旧 Host 未知动作）。
+      const askRoute = async (action: 'relay.routes' | 'relay.route'): Promise<boolean> => {
+        const probe = new LanCompanionClient(identity, port.post);
+        try {
+          await probe.recover(current.binding!);
+          if (!saved) return true;
+          const result = await probe.request({ action }) as { kind?: unknown; url?: unknown; routeToken?: unknown; credential?: unknown; routes?: unknown };
+          // request 在飞的窗口里 login/logout 可能已落盘（不走 busy 守卫）：快照在返回后重取，
+          // 且只经函数补丁改路由字段（读-改-写收敛，见 persist 的注释），不整份覆盖别人的写入。
+          if (action === 'relay.route') {
+            // 旧动作（今天的行为）：只有 ok + 三字段齐才写回；没配中继回 unavailable，缓存不动。
+            if (result?.kind !== 'ok' || typeof result.url !== 'string' || typeof result.routeToken !== 'string' || typeof result.credential !== 'string') return true;
+            const route = parseCompanionRelayRoute({ v: 1, url: result.url, routeToken: result.routeToken, credential: result.credential });
+            if (saved.relay?.url === route.url && saved.relay.routeToken === route.routeToken) return true;
+            await persist(live => live.binding ? { ...live, relay: route } : live);
+            return true;
+          }
+          if (result?.kind !== 'ok') return true; // unavailable：问到了，缓存不动，也不回落
+          const routes = parseCompanionRelayRoutes(result.routes);
+          const legacyRoute = routes.legacy ? parseCompanionRelayRoute(routes.legacy) : null;
+          const plan = (live: Saved): Saved => {
+            if (!live.binding) return live;   // 探针在飞期间电脑被忘掉：不往已清的记录里回写路由
+            let changed = false;
+            const next: Saved = { ...live };
+            // 账号路由按条进出：Host 登录了才出现，退出/换账号即消失——缓存跟着现值走，不抱死路由。
+            if (routes.account && (live.relayAccount?.url !== routes.account.url || live.relayAccount.routeToken !== routes.account.routeToken)) {
+              next.relayAccount = routes.account; changed = true;
+            } else if (!routes.account && live.relayAccount) {
+              next.relayAccount = undefined; changed = true;
+            }
+            if (legacyRoute && (live.relay?.url !== legacyRoute.url || live.relay.routeToken !== legacyRoute.routeToken)) {
+              next.relay = legacyRoute; changed = true;
+            }
+            // legacy 缺席 ≠ 已退役（ai-review Important②）：Host 的共享凭据通道是异步拨起的，
+            // 启动期问路时它必然缺席（app.ts 的取值闭包读当前值，没就绪即不给）——按缺席删缓存
+            // 会把「还没拨好」当「已经没了」，电脑刚开机手机就丢了旧路由，此后离开 Wi-Fi 直接
+            // 连不上（同场景在 main 上经旧路由能连）。协议给出明确的退役信号之前，缓存保持。
+            return changed ? next : live;
+          };
+          if (plan(saved) === saved) return true;   // 与现值一致：不空写一次盘
+          await persist(plan);
+          return true;
+        } catch {
+          return false; // 探针通道被关（旧 Host 未知动作）或网络失败：缓存不动，relay.routes 时由调用方回落
+        }
+        finally { probe.close(); }
+      };
+      // 先问双路由；旧 Host 不认识 relay.routes（探针被拒杀）时回落问一次 relay.route，保持今天的行为。
+      if (!(await askRoute('relay.routes'))) await askRoute('relay.route');
     };
     const accepted = async (record: CompanionCommandRecord) => {
       const pending = saved?.pending;
@@ -636,6 +779,18 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           || connectionError === 'connectionQrInvalid' || connectionError === 'connectionScanFailed';
         const keepHeld = opts?.autoAttempt === true && !identityClass && heldError !== null;
         if (get().status !== 'storageError') set({ status: 'offline', connectionError: keepHeld && heldError !== null ? heldError : connectionError, transport: null });
+        // S8（D-1）：配对着、没登录、第一次「离开 Wi-Fi 连不上」——提醒一次去登录，之后不再反复弹。
+        // 票据被拒不走这里（那由 invalidateAccountTicket 单独翻 S8）；这里只管「从没登录过」的第一次。
+        // 离网判据见 OFF_NETWORK_ERRORS：连接被拒/配对失效/Neo 没在运行这些 host 回过话的失败态
+        // 不置提醒——它们的既有主按钮（重新连接/扫描电脑二维码）不许被登录引导抢占。
+        // 判据读**本次失败**的 connectionError（局部量）：上面的 keepHeld 会把展示码换回保留中的
+        // 二维码类提示，get() 那份在那种拍是旧结论，不能拿来判这一次是不是离网。
+        if (get().status === 'offline' && OFF_NETWORK_ERRORS.has(connectionError) && saved?.binding && !saved.account && !saved.loginReminded) {
+          try {
+            await persist(live => ({ ...live, loginReminded: true }));
+            set({ loginPrompt: true });
+          } catch { /* storageError 已置起：提醒这拍不弹，状态先保住 */ }
+        }
         // 补回 qrInvalid/ScanFailed 后 connectionBlocksAutoRetry 为真，按原样重挂会被它停掉——
         // 「一次误扫不得永久停掉自动重连」（ai-review Nit），这条路径走 ignoreBlocked 重挂。
         armAutoRetry(reconnectDepth > 0, keepHeld);
@@ -676,6 +831,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       allowTranscriptionOnce: () => set({ skipTranscriptionPreflight: true }),
       consumeTranscriptionPreflight: () => { if (get().skipTranscriptionPreflight) set({ skipTranscriptionPreflight: false }); },
       connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, autoRetrying: false, autoAttempt: false, abandonedPending: false, events: [], runId: null, terminal: null,
+      account: null, loginPrompt: false,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
       hydrate: async () => {
@@ -695,6 +851,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           // 缓存的 relay 路由不整份拒绝配对盘：坏一条路由丢一条，配对身份不该跟着陪葬。
           try { if (value.relay) value.relay = parseCompanionRelayRoute(value.relay); }
           catch { delete value.relay; }
+          // 账号路由与账号记录同样按条丢弃（旧记录没有它们是常态，缺字段不得作废整份配对）。
+          try {
+            if (value.relayAccount) value.relayAccount = parseCompanionRelayRoutes({ v: 1, account: value.relayAccount }).account;
+          } catch { delete value.relayAccount; }
+          if (value.account && (typeof value.account.ticket !== 'string' || !value.account.ticket
+            || typeof value.account.email !== 'string' || typeof value.account.userId !== 'string')) delete value.account;
           saved = value;
           try { await history.hydrate(); } catch { /* conversation cache is best-effort and must not fail pairing identity */ }
           const restored = history.snapshot();
@@ -705,11 +867,39 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             busy: false, binding: value.binding ?? null,
             sessionId,
             pending: !!value.pending, pendingAction: value.pending?.action ?? null, pendingAdopted: !!value.pending,
+            account: value.account ? { email: value.account.email, userId: value.account.userId } : null,
             history: restored.history, events: restored.events, lastSyncAt: restored.lastSyncAt, cacheUsage: inspectBoth(),
           });
           if (value.candidate || value.binding) await get().reconnect();
         } catch { set({ busy: false, status: 'storageError' }); }
       },
+      login: async (email, password) => {
+        if (!port || !saved) return { ok: false, kind: 'unreachable' } as const;
+        const result = await loginNeoAccount({
+          email, password,
+          // 配对信息里带的电脑账号邮箱（D-2）：不是同一个账号直接拒，文案点名这台电脑属于谁。
+          hostAccountEmail: saved.binding?.hostAccountEmail ?? null,
+          // 两条路由的 url 指向同一个 relay；账号路由优先，没有它就用旧路由的。
+          relayUrl: saved.relayAccount?.url ?? saved.relay?.url ?? null,
+          dial: port.dialRelay ?? browserRelayDial,
+        });
+        if (!result.ok) return result;
+        // 只落票据 + 账号邮箱 + 用户 id；access token 与密码不进任何持久化（测试 M4 的守卫对象）。
+        // 经补丁在落盘那一刻合进最新记录：登录在途时路由探针可能已写盘，整份快照会互相覆盖。
+        await persist(live => ({ ...live, account: { ticket: result.ticket, email: result.email, userId: result.userId } }));
+        set({ account: { email: result.email, userId: result.userId }, loginPrompt: false });
+        return { ok: true as const };
+      },
+      logout: async () => {
+        if (!saved?.account) { set({ account: null, loginPrompt: false }); return; }
+        try {
+          // loginReminded 一并清：退出等于回到「还没登录」的引导周期，下次离网连不上时
+          // S8 提醒要能再触发一次，而不是被上一轮的「只提醒一次」永久压掉（ai-review Nit）。
+          await persist(live => ({ ...live, account: undefined, loginReminded: undefined }));
+          set({ account: null, loginPrompt: false });
+        } catch { /* storageError 已置起：账号信息保留，下次退出再试 */ }
+      },
+      dismissLoginPrompt: () => set({ loginPrompt: false }),
       pair: async (raw?: string) => {
         // 扫码前原本就有的绑定：握手失败时恢复它，前台退避自动重连接着跑（D1）——
         // 用户只是扫了一下码，不该把原本能用的配对弄丢后卡死在「电脑没回应」。
@@ -802,7 +992,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           const forgottenHostKey = saved?.binding?.hostKey;
           if (forgottenHostKey) options?.forgetSessionTitles?.(forgottenHostKey);
           client?.close(); client = null;
-          if (saved) await persist({ version: 1, publicKey: saved.publicKey, secretKey: saved.secretKey });
+          // 账号是人的不是这台电脑的：忘掉电脑保留登录（票据对同一账号换台电脑照样换得到路由）。
+          // loginReminded 不保留——重新配对算一次新的引导周期（D-1：配对完成后引导一次）。
+          if (saved) await persist({ version: 1, publicKey: saved.publicKey, secretKey: saved.secretKey,
+            ...(saved.account ? { account: saved.account } : {}) });
           wipeHistoryCache();
           // 输入区那几样也要跟着清（grok ai-review Nit①）：附件 chip / 上传进度 / 语音结果都绑在
           // 上一台电脑那条会话上，留着就会在「尚未连接电脑」页底下挂着一台已经忘掉的电脑的东西。
@@ -812,7 +1005,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           set({ status: 'unpaired', binding: null, sessionId: null, transport: null,
             paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
             artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, routeError: null,
-            uploadProgress: [], voiceResult: null, autoRetrying: false, abandonedPending: false, skipTranscriptionPreflight: false });
+            uploadProgress: [], voiceResult: null, autoRetrying: false, abandonedPending: false, skipTranscriptionPreflight: false,
+            // 未登录时忘掉电脑：过期的登录引导一并清（重新配对算新的引导周期，finishPair 会再置起）。
+            loginPrompt: false });
         }, preempt ? { preempt: true, claim: true } : undefined);
       },
       dismissAbandonedPending: () => set({ abandonedPending: false }),
@@ -876,8 +1071,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           // recover 失败已把 LAN 客户端关掉，此刻起只有 relay 一条活通道——不双跑。
           // 没有路由就原样抛 LAN 的错误：那是用户看得懂的那句。
           // 身份变化不是网络问题：落 relay 同一身份也会被拒，且会让自动重连空转。
+          // 旧路由与账号路由任一可拨即可落 relay（账号路由+票据的组合 Host 没配共享凭据时也存在）。
           const lanCode = lanError instanceof Error ? lanError.message : '';
-          if (handshakeNeedsRescan(lanCode) || !saved?.relay || !saved?.binding) throw lanError;
+          const relayDialable = Boolean(saved?.relay || (saved?.relayAccount && saved?.account?.ticket));
+          if (handshakeNeedsRescan(lanCode) || !relayDialable || !saved?.binding) throw lanError;
           await dialRelay(attempt);
           // relay 握手期间也可能被抢占：这次成功不落状态。
           if (attempt !== undefined && attempt !== connectSeq) return;

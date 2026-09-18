@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PLAN_APPROVAL_CONFIRMATION_TYPE } from '../../../src/shared/contract/planApproval';
 
 const getRecentMessages = vi.hoisted(() => vi.fn((_sessionId: string, _limit: number) => [] as unknown[]));
@@ -41,6 +41,10 @@ const STEPS = [{ id: 'step-1', content: PLAN, originalContent: PLAN }];
 const APPROVAL = { status: 'pending', originalPlan: PLAN, steps: STEPS };
 
 describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('notes a pending plan_approval tool result and lists it', () => {
     const id = `plan-${Date.now()}`;
     expect(noteCompanionUserPlan('session-a', {
@@ -71,7 +75,7 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
     })).toBe(false);
   });
 
-  it('refuses deliver when the message is not in the database yet', () => {
+  it('refuses deliver when the message is not in the database yet', async () => {
     const id = `missing-${Date.now()}`;
     noteCompanionUserPlan('session-a', {
       toolCallId: id,
@@ -82,12 +86,12 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
         planApproval: APPROVAL,
       },
     });
-    expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', async () => {
+    await expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', async () => {
       throw new Error('must not start a run');
-    })).toEqual({ success: false, data: { closed: true } });
+    })).resolves.toEqual({ success: false, data: { closed: true } });
   });
 
-  it('forwards hidden plan-turn options so the follow-up is not a visible user message', () => {
+  it('forwards hidden plan-turn options so the follow-up is not a visible user message', async () => {
     const id = `deliver-${Date.now()}`;
     noteCompanionUserPlan('session-a', {
       toolCallId: id,
@@ -112,11 +116,11 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
       });
       return { approval: null, tasks: [] };
     });
-    expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', startRun)).toEqual({ success: true });
+    await expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', startRun)).resolves.toEqual({ success: true });
     expect(startRun).toHaveBeenCalledWith('session-a', prompt, { historyVisibility: 'meta', disableAutoAgent: true });
   });
 
-  it('回读走全量消息而非固定窗口：审批卡滑出最近消息后仍可处理（不僵尸）', () => {
+  it('回读走全量消息而非固定窗口：审批卡滑出最近消息后仍可处理（不僵尸）', async () => {
     const id = `stale-window-${Date.now()}`;
     noteCompanionUserPlan('session-a', {
       toolCallId: id,
@@ -138,12 +142,12 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
       await deps.appService.sendMessage({ content: PLAN, sessionId: 'session-a' });
       return { approval: null, tasks: [] };
     });
-    expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', startRun)).toEqual({ success: true });
+    await expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', startRun)).resolves.toEqual({ success: true });
     expect(getMessages).toHaveBeenCalledWith('session-a');
     expect(startRun).toHaveBeenCalled();
   });
 
-  it('DB 读瞬时故障不打断审批路径：转成可控关闭', () => {
+  it('DB 读瞬时故障不打断审批路径：转成可控关闭', async () => {
     const id = `db-fault-${Date.now()}`;
     noteCompanionUserPlan('session-a', {
       toolCallId: id,
@@ -157,9 +161,9 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
     getMessages.mockImplementationOnce(() => {
       throw new Error('SQLITE_BUSY');
     });
-    expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', async () => {
+    await expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', async () => {
       throw new Error('must not start a run');
-    })).toEqual({ success: false, data: { closed: true } });
+    })).resolves.toEqual({ success: false, data: { closed: true } });
     // 卡片保留：瞬时故障不等于计划被解决。
     expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
   });
@@ -203,5 +207,164 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
     note({ status: 'revision_requested', originalPlan: PLAN, steps: STEPS, feedback: '先改标题' });
     expect(takeCompanionUserPlanSettlement(id)).toEqual({ outcome: 'answered', answer: { decision: 'rejected', feedback: '先改标题' } });
     expect(takeCompanionUserPlanSettlement(id)).toBeNull();
+  });
+
+  it('启动失败：卡片保留、带失败原因重新可见、可再批准（同一记录）', async () => {
+    const id = `failed-${Date.now()}`;
+    noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: APPROVAL,
+      },
+    });
+    const failed = { ...APPROVAL, status: 'failed', failureReason: 'Session s1 is already running', failedAt: 1234 };
+    const startRun = vi.fn(async () => {});
+    getMessages.mockReturnValueOnce([{ id: 'msg-1', toolCalls: [{ id, result: { metadata: { planApproval: APPROVAL } } }] }]);
+    resolveApproval.mockImplementationOnce(async () => ({ approval: null, tasks: [] }));
+    await expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', startRun)).resolves.toEqual({ success: true });
+    // 启动失败落定后：DB 记录转 failed（真实链路由 planApprovalService.finalize 写入）。
+    getRecentMessages.mockReturnValue([{ id: 'msg-plan', toolCalls: [{ id, result: { metadata: { planApproval: failed } } }] }]);
+    const listed = listCompanionUserPlans();
+    const card = listed.find(plan => plan.id === id);
+    expect(card).toBeDefined();
+    expect(card?.failureReason).toBe('Session s1 is already running');
+    expect(card?.failedAt).toBe(1234);
+    // 重试：failed 仍可决定，走同一条 approval 记录。
+    getMessages.mockReturnValueOnce([{ id: 'msg-1', toolCalls: [{ id, result: { metadata: { planApproval: failed } } }] }]);
+    resolveApproval.mockImplementationOnce(async (_request: unknown, deps: { appService: { sendMessage: (envelope: unknown) => Promise<void> } }) => {
+      await deps.appService.sendMessage({ content: PLAN, sessionId: 'session-a' });
+      return { approval: null, tasks: [] };
+    });
+    await expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', startRun)).resolves.toEqual({ success: true });
+    expect(resolveApproval).toHaveBeenCalledTimes(2);
+  });
+
+  it('starting 已认领：deliver 直接关闭，不发起第二次决定（不双跑）', async () => {
+    const id = `starting-${Date.now()}`;
+    noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: APPROVAL,
+      },
+    });
+    getMessages.mockReturnValueOnce([{
+      id: 'msg-1',
+      toolCalls: [{ id, result: { metadata: { planApproval: { ...APPROVAL, status: 'starting' } } } }],
+    }]);
+    await expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', async () => {
+      throw new Error('must not start a run');
+    })).resolves.toEqual({ success: false, data: { closed: true } });
+    expect(resolveApproval).not.toHaveBeenCalled();
+    // 卡在 starting 期间仍被投影；重试认领保留失败字段，投影 digest 与失败态一致（不误重发布）。
+    getRecentMessages.mockReturnValue([{ id: 'msg-1', toolCalls: [{ id, result: { metadata: { planApproval: { ...APPROVAL, status: 'starting', failureReason: 'Session s1 is already running', failedAt: 1234 } } } }] }]);
+    const projected = listCompanionUserPlans().find(plan => plan.id === id);
+    expect(projected?.failureReason).toBe('Session s1 is already running');
+    expect(projected?.failedAt).toBe(1234);
+  });
+
+  it('启动成功：startRun 确认后卡片从 pending 撤下', async () => {
+    const id = `succeeded-${Date.now()}`;
+    noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: APPROVAL,
+      },
+    });
+    const startRun = vi.fn(async () => {});
+    getMessages.mockReturnValueOnce([{ id: 'msg-1', toolCalls: [{ id, result: { metadata: { planApproval: APPROVAL } } }] }]);
+    resolveApproval.mockImplementationOnce(async (_request: unknown, deps: { appService: { sendMessage: (envelope: unknown) => Promise<void> } }) => {
+      await deps.appService.sendMessage({ content: PLAN, sessionId: 'session-a' });
+      return { approval: null, tasks: [] };
+    });
+    await expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', startRun)).resolves.toEqual({ success: true });
+    expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(false);
+  });
+
+  it('claim 失败：返回可控关闭（手机拿到 approval_conflict 而不是假 resolved）', async () => {
+    const id = `claim-fail-${Date.now()}`;
+    noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: APPROVAL,
+      },
+    });
+    getMessages.mockReturnValueOnce([{
+      id: 'msg-1',
+      toolCalls: [{ id, result: { metadata: { planApproval: APPROVAL } } }],
+    }]);
+    resolveApproval.mockRejectedValueOnce(new Error('ALREADY_RESOLVED'));
+    await expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', async () => {
+      throw new Error('must not start a run');
+    })).resolves.toEqual({ success: false, data: { closed: true } });
+    // 卡片保留原状态，可重试。
+    expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
+  });
+
+  it('桌面批准后整轮仍在跑：记录已 approved，手机侧一次轮询即收敛（撤卡 + answered 结算）', () => {
+    const id = `desktop-approved-${Date.now()}`;
+    noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: APPROVAL,
+      },
+    });
+    // 桌面侧在启动确认时点（task_started）已把记录落成 approved，整轮运行还要继续很久。
+    // 手机挂着这张卡的 pending 行：轮询修剪时结算桥必须能取到 answered。
+    pendingPhoneCard.mockReturnValue({ request_id: id });
+    try {
+      getRecentMessages.mockReturnValue([{
+        id: 'msg-plan',
+        toolCalls: [{ id, result: { metadata: { planApproval: { ...APPROVAL, status: 'approved' } } } }],
+      }]);
+      expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(false);
+      expect(takeCompanionUserPlanSettlement(id)).toEqual({ outcome: 'answered', answer: { decision: 'approved' } });
+    } finally {
+      pendingPhoneCard.mockReturnValue(undefined);
+    }
+  });
+
+  it('starting/failed 的 tool_call_end 重放不结算不撤卡；approved 照常 answered 结算', () => {
+    const id = `replay-${Date.now()}`;
+    const note = (planApproval: unknown) => noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval,
+      },
+    });
+    note(APPROVAL);
+    // 手机挂着这张卡的 pending 行：若 starting/failed 被误当终态，结算桥会记成 cancelled。
+    pendingPhoneCard.mockReturnValue({ request_id: id });
+    try {
+      note({ ...APPROVAL, status: 'starting', failureReason: 'Session s1 is already running', failedAt: 1234 });
+      expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
+      expect(takeCompanionUserPlanSettlement(id)).toBeNull();
+      note({ ...APPROVAL, status: 'failed', failureReason: 'Session s1 is already running', failedAt: 1234 });
+      expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
+      expect(takeCompanionUserPlanSettlement(id)).toBeNull();
+      // 真终态不受影响：approved 撤卡并记 answered 结算。
+      note({ ...APPROVAL, status: 'approved' });
+      expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(false);
+      expect(takeCompanionUserPlanSettlement(id)).toEqual({ outcome: 'answered', answer: { decision: 'approved' } });
+    } finally {
+      pendingPhoneCard.mockReturnValue(undefined);
+    }
   });
 });

@@ -2,6 +2,8 @@
 import { useEffect, useRef } from 'react';
 import { generateMessageId } from '@shared/utils/id';
 import type { Message, ToolCall } from '@shared/contract';
+import type { PlanApprovalRecord } from '@shared/contract/planApproval';
+import { applyPlanApprovalToMessage } from '../../../utils/planApprovalView';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
@@ -170,6 +172,23 @@ export function applyConversationStreamEvent(
   switch (event.type) {
     case 'input_redirected':
       // 事件继续供账本 / Inspector / trace 消费；聊天流由用户原话气泡和助理正文承接。
+      break;
+
+    case 'plan_approval_update':
+      {
+        // 审批异步落定（启动确认 → approved / 启动失败 → failed）在宿主侧改写的是
+        // 消息 toolCalls 元数据，聊天流不会重放消息，这里把记录合进本地副本：
+        // failed 卡因此带着原因重新出现并可重试。
+        const data = event.data;
+        if (!data || typeof data !== 'object') break;
+        const { messageId, toolCallId, approval } = data as {
+          messageId?: unknown; toolCallId?: unknown; approval?: unknown;
+        };
+        if (typeof messageId !== 'string' || typeof toolCallId !== 'string' || !approval || typeof approval !== 'object') break;
+        const target = getFreshMessages().find((message) => message.id === messageId);
+        if (!target) break;
+        actions.updateMessage(messageId, applyPlanApprovalToMessage(target, toolCallId, approval as PlanApprovalRecord));
+      }
       break;
 
     case 'turn_start':
@@ -736,6 +755,7 @@ export const useConversationStreamEffects = ({
         case 'message_delta':
         case 'message_snapshot':
         case 'model_decision':
+        case 'plan_approval_update':
         case 'stream_usage':
         case 'stream_reconnecting':
           lastEventAtRef.current = Date.now();

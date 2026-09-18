@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { messages } from '../../i18n';
 import { cardOutcome, planDecision } from './decisionCard';
 
-type PlanPreview = { plan?: string; agentName?: string; risk?: { level?: string; reasons?: string[] } };
+type PlanPreview = { plan?: string; agentName?: string; risk?: { level?: string; reasons?: string[] }; failureReason?: string };
 
 export function PlanCard({ card, text, disabled, respond }: {
   card: Record<string, unknown>;
@@ -15,6 +15,7 @@ export function PlanCard({ card, text, disabled, respond }: {
   const [feedback, setFeedback] = useState('');
   const readable = typeof preview?.plan === 'string' && preview.plan.trim().length > 0;
   const reasons = Array.isArray(preview?.risk?.reasons) ? preview.risk.reasons.filter((reason: string) => typeof reason === 'string') : [];
+  const failed = typeof preview?.failureReason === 'string' && preview.failureReason.length > 0;
   const pending = card.status === 'pending';
   const outcome = cardOutcome(card);
   const decision = planDecision(card);
@@ -30,6 +31,7 @@ export function PlanCard({ card, text, disabled, respond }: {
     <strong>{text.plan}</strong>
     <div className="approval-details">
       {!readable && <p role="status">{text.unreadablePlan}</p>}
+      {failed && <p role="alert" className="danger">{text.planStartFailed}{preview!.failureReason}</p>}
       {preview?.agentName && <p>{preview.agentName}</p>}
       {preview?.risk?.level && <p>{text.planRisk}: {preview.risk.level}</p>}
       {reasons.map(reason => <p key={reason} className="caption">{reason}</p>)}

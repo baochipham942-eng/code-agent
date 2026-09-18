@@ -5,7 +5,7 @@
       "$ref": "#/$defs/__schema0"
     },
     {
-      "$ref": "#/$defs/__schema232"
+      "$ref": "#/$defs/__schema236"
     }
   ],
   "title": "AgentEventEnvelope",
@@ -71,169 +71,172 @@
           "$ref": "#/$defs/__schema60"
         },
         {
-          "$ref": "#/$defs/__schema63"
+          "$ref": "#/$defs/__schema64"
         },
         {
-          "$ref": "#/$defs/__schema66"
+          "$ref": "#/$defs/__schema67"
         },
         {
           "$ref": "#/$defs/__schema70"
         },
         {
-          "$ref": "#/$defs/__schema73"
+          "$ref": "#/$defs/__schema74"
         },
         {
-          "$ref": "#/$defs/__schema76"
+          "$ref": "#/$defs/__schema77"
         },
         {
-          "$ref": "#/$defs/__schema79"
+          "$ref": "#/$defs/__schema80"
         },
         {
-          "$ref": "#/$defs/__schema82"
+          "$ref": "#/$defs/__schema83"
         },
         {
           "$ref": "#/$defs/__schema86"
         },
         {
-          "$ref": "#/$defs/__schema89"
+          "$ref": "#/$defs/__schema90"
         },
         {
-          "$ref": "#/$defs/__schema92"
+          "$ref": "#/$defs/__schema93"
         },
         {
-          "$ref": "#/$defs/__schema95"
+          "$ref": "#/$defs/__schema96"
         },
         {
-          "$ref": "#/$defs/__schema98"
+          "$ref": "#/$defs/__schema99"
         },
         {
-          "$ref": "#/$defs/__schema101"
+          "$ref": "#/$defs/__schema102"
         },
         {
-          "$ref": "#/$defs/__schema104"
+          "$ref": "#/$defs/__schema105"
         },
         {
-          "$ref": "#/$defs/__schema107"
+          "$ref": "#/$defs/__schema108"
         },
         {
-          "$ref": "#/$defs/__schema110"
+          "$ref": "#/$defs/__schema111"
         },
         {
-          "$ref": "#/$defs/__schema113"
+          "$ref": "#/$defs/__schema114"
         },
         {
-          "$ref": "#/$defs/__schema116"
+          "$ref": "#/$defs/__schema117"
         },
         {
-          "$ref": "#/$defs/__schema123"
+          "$ref": "#/$defs/__schema120"
         },
         {
-          "$ref": "#/$defs/__schema126"
+          "$ref": "#/$defs/__schema127"
         },
         {
-          "$ref": "#/$defs/__schema129"
+          "$ref": "#/$defs/__schema130"
         },
         {
-          "$ref": "#/$defs/__schema132"
+          "$ref": "#/$defs/__schema133"
         },
         {
-          "$ref": "#/$defs/__schema135"
+          "$ref": "#/$defs/__schema136"
         },
         {
-          "$ref": "#/$defs/__schema138"
+          "$ref": "#/$defs/__schema139"
         },
         {
-          "$ref": "#/$defs/__schema141"
+          "$ref": "#/$defs/__schema142"
         },
         {
-          "$ref": "#/$defs/__schema144"
+          "$ref": "#/$defs/__schema145"
         },
         {
-          "$ref": "#/$defs/__schema147"
+          "$ref": "#/$defs/__schema148"
         },
         {
-          "$ref": "#/$defs/__schema150"
+          "$ref": "#/$defs/__schema151"
         },
         {
-          "$ref": "#/$defs/__schema153"
+          "$ref": "#/$defs/__schema154"
         },
         {
-          "$ref": "#/$defs/__schema156"
+          "$ref": "#/$defs/__schema157"
         },
         {
-          "$ref": "#/$defs/__schema159"
+          "$ref": "#/$defs/__schema160"
         },
         {
-          "$ref": "#/$defs/__schema162"
+          "$ref": "#/$defs/__schema163"
         },
         {
-          "$ref": "#/$defs/__schema165"
+          "$ref": "#/$defs/__schema166"
         },
         {
-          "$ref": "#/$defs/__schema168"
+          "$ref": "#/$defs/__schema169"
         },
         {
-          "$ref": "#/$defs/__schema171"
+          "$ref": "#/$defs/__schema172"
         },
         {
-          "$ref": "#/$defs/__schema174"
+          "$ref": "#/$defs/__schema175"
         },
         {
-          "$ref": "#/$defs/__schema177"
-        },
-        {
-          "$ref": "#/$defs/__schema179"
+          "$ref": "#/$defs/__schema178"
         },
         {
           "$ref": "#/$defs/__schema181"
         },
         {
-          "$ref": "#/$defs/__schema184"
+          "$ref": "#/$defs/__schema183"
         },
         {
-          "$ref": "#/$defs/__schema187"
+          "$ref": "#/$defs/__schema185"
         },
         {
-          "$ref": "#/$defs/__schema190"
+          "$ref": "#/$defs/__schema188"
         },
         {
-          "$ref": "#/$defs/__schema193"
+          "$ref": "#/$defs/__schema191"
         },
         {
-          "$ref": "#/$defs/__schema196"
+          "$ref": "#/$defs/__schema194"
         },
         {
-          "$ref": "#/$defs/__schema199"
+          "$ref": "#/$defs/__schema197"
         },
         {
-          "$ref": "#/$defs/__schema202"
+          "$ref": "#/$defs/__schema200"
         },
         {
-          "$ref": "#/$defs/__schema205"
+          "$ref": "#/$defs/__schema203"
         },
         {
-          "$ref": "#/$defs/__schema208"
+          "$ref": "#/$defs/__schema206"
         },
         {
-          "$ref": "#/$defs/__schema211"
+          "$ref": "#/$defs/__schema209"
         },
         {
-          "$ref": "#/$defs/__schema214"
+          "$ref": "#/$defs/__schema212"
         },
         {
-          "$ref": "#/$defs/__schema217"
+          "$ref": "#/$defs/__schema215"
         },
         {
-          "$ref": "#/$defs/__schema220"
+          "$ref": "#/$defs/__schema218"
         },
         {
-          "$ref": "#/$defs/__schema223"
+          "$ref": "#/$defs/__schema221"
         },
         {
-          "$ref": "#/$defs/__schema226"
+          "$ref": "#/$defs/__schema224"
         },
         {
-          "$ref": "#/$defs/__schema229"
+          "$ref": "#/$defs/__schema227"
+        },
+        {
+          "$ref": "#/$defs/__schema230"
+        },
+        {
+          "$ref": "#/$defs/__schema233"
         }
       ],
       "title": "AgentEvent",
@@ -2143,9 +2146,127 @@
     },
     "__schema61": {
       "type": "string",
-      "const": "turn_diff"
+      "const": "plan_approval_update"
     },
     "__schema62": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "toolCallId": {
+          "type": "string"
+        },
+        "approval": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "starting",
+                "approved",
+                "failed",
+                "cancelled",
+                "revision_requested"
+              ]
+            },
+            "originalPlan": {
+              "type": "string"
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema63"
+              }
+            },
+            "removedSteps": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema63"
+              }
+            },
+            "reordered": {
+              "type": "boolean"
+            },
+            "decidedAt": {
+              "type": "number"
+            },
+            "feedback": {
+              "type": "string"
+            },
+            "failureReason": {
+              "type": "string"
+            },
+            "failedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "originalPlan",
+            "steps"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "sessionId",
+        "messageId",
+        "toolCallId",
+        "approval"
+      ],
+      "additionalProperties": false
+    },
+    "__schema63": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "originalContent": {
+          "type": "string"
+        },
+        "edited": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "content",
+        "originalContent"
+      ],
+      "additionalProperties": false
+    },
+    "__schema64": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/__schema65"
+        },
+        "data": {
+          "$ref": "#/$defs/__schema66"
+        }
+      },
+      "required": [
+        "type",
+        "data"
+      ],
+      "additionalProperties": false,
+      "stability": "experimental",
+      "description": "Experimental event. Its shape may change or be removed."
+    },
+    "__schema65": {
+      "type": "string",
+      "const": "turn_diff"
+    },
+    "__schema66": {
       "type": "object",
       "properties": {
         "turnId": {
@@ -2206,14 +2327,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema63": {
+    "__schema67": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema64"
+          "$ref": "#/$defs/__schema68"
         },
         "data": {
-          "$ref": "#/$defs/__schema65"
+          "$ref": "#/$defs/__schema69"
         }
       },
       "required": [
@@ -2224,11 +2345,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema64": {
+    "__schema68": {
       "type": "string",
       "const": "notification"
     },
-    "__schema65": {
+    "__schema69": {
       "type": "object",
       "properties": {
         "message": {
@@ -2243,14 +2364,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema66": {
+    "__schema70": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema67"
+          "$ref": "#/$defs/__schema71"
         },
         "data": {
-          "$ref": "#/$defs/__schema68"
+          "$ref": "#/$defs/__schema72"
         }
       },
       "required": [
@@ -2261,11 +2382,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema67": {
+    "__schema71": {
       "type": "string",
       "const": "routing_resolved"
     },
-    "__schema68": {
+    "__schema72": {
       "type": "object",
       "properties": {
         "mode": {
@@ -2287,7 +2408,7 @@
               "type": "string"
             },
             {
-              "$ref": "#/$defs/__schema69"
+              "$ref": "#/$defs/__schema73"
             }
           ]
         },
@@ -2313,7 +2434,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema69": {
+    "__schema73": {
       "type": "object",
       "properties": {
         "code": {
@@ -2351,14 +2472,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema70": {
+    "__schema74": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema71"
+          "$ref": "#/$defs/__schema75"
         },
         "data": {
-          "$ref": "#/$defs/__schema72"
+          "$ref": "#/$defs/__schema76"
         }
       },
       "required": [
@@ -2369,11 +2490,11 @@
       "stability": "stable",
       "description": "Stable event. Its shape is additive-only: fields may be added, but existing fields are not changed or removed."
     },
-    "__schema71": {
+    "__schema75": {
       "type": "string",
       "const": "artifact_locator"
     },
-    "__schema72": {
+    "__schema76": {
       "type": "object",
       "properties": {
         "state": {
@@ -2403,14 +2524,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema73": {
+    "__schema77": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema74"
+          "$ref": "#/$defs/__schema78"
         },
         "data": {
-          "$ref": "#/$defs/__schema75"
+          "$ref": "#/$defs/__schema79"
         }
       },
       "required": [
@@ -2421,21 +2542,21 @@
       "stability": "stable",
       "description": "Stable event. Its shape is additive-only: fields may be added, but existing fields are not changed or removed."
     },
-    "__schema74": {
+    "__schema78": {
       "type": "string",
       "const": "agent_complete"
     },
-    "__schema75": {
+    "__schema79": {
       "type": "null"
     },
-    "__schema76": {
+    "__schema80": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema77"
+          "$ref": "#/$defs/__schema81"
         },
         "data": {
-          "$ref": "#/$defs/__schema78"
+          "$ref": "#/$defs/__schema82"
         }
       },
       "required": [
@@ -2446,21 +2567,21 @@
       "stability": "stable",
       "description": "Stable event. Its shape is additive-only: fields may be added, but existing fields are not changed or removed."
     },
-    "__schema77": {
+    "__schema81": {
       "type": "string",
       "const": "agent_cancelled"
     },
-    "__schema78": {
+    "__schema82": {
       "type": "null"
     },
-    "__schema79": {
+    "__schema83": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema80"
+          "$ref": "#/$defs/__schema84"
         },
         "data": {
-          "$ref": "#/$defs/__schema81"
+          "$ref": "#/$defs/__schema85"
         }
       },
       "required": [
@@ -2471,11 +2592,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema80": {
+    "__schema84": {
       "type": "string",
       "const": "goal_iteration"
     },
-    "__schema81": {
+    "__schema85": {
       "type": "object",
       "properties": {
         "turn": {
@@ -2521,14 +2642,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema82": {
+    "__schema86": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema83"
+          "$ref": "#/$defs/__schema87"
         },
         "data": {
-          "$ref": "#/$defs/__schema84"
+          "$ref": "#/$defs/__schema88"
         }
       },
       "required": [
@@ -2539,11 +2660,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema83": {
+    "__schema87": {
       "type": "string",
       "const": "goal_gate"
     },
-    "__schema84": {
+    "__schema88": {
       "type": "object",
       "properties": {
         "gate": {
@@ -2612,7 +2733,7 @@
         "skippedChecks": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema85"
+            "$ref": "#/$defs/__schema89"
           }
         },
         "plannedOptionalCommands": {
@@ -2785,7 +2906,7 @@
             "skippedChecks": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema85"
+                "$ref": "#/$defs/__schema89"
               }
             }
           },
@@ -2807,7 +2928,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema85": {
+    "__schema89": {
       "type": "object",
       "properties": {
         "id": {
@@ -2830,14 +2951,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema86": {
+    "__schema90": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema87"
+          "$ref": "#/$defs/__schema91"
         },
         "data": {
-          "$ref": "#/$defs/__schema88"
+          "$ref": "#/$defs/__schema92"
         }
       },
       "required": [
@@ -2848,11 +2969,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema87": {
+    "__schema91": {
       "type": "string",
       "const": "goal_complete"
     },
-    "__schema88": {
+    "__schema92": {
       "type": "object",
       "properties": {
         "status": {
@@ -2868,7 +2989,7 @@
               "type": "string"
             },
             {
-              "$ref": "#/$defs/__schema69"
+              "$ref": "#/$defs/__schema73"
             }
           ]
         },
@@ -2895,14 +3016,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema89": {
+    "__schema93": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema90"
+          "$ref": "#/$defs/__schema94"
         },
         "data": {
-          "$ref": "#/$defs/__schema91"
+          "$ref": "#/$defs/__schema95"
         }
       },
       "required": [
@@ -2913,11 +3034,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema90": {
+    "__schema94": {
       "type": "string",
       "const": "agent_thinking"
     },
-    "__schema91": {
+    "__schema95": {
       "type": "object",
       "properties": {
         "message": {
@@ -2938,14 +3059,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema92": {
+    "__schema96": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema93"
+          "$ref": "#/$defs/__schema97"
         },
         "data": {
-          "$ref": "#/$defs/__schema94"
+          "$ref": "#/$defs/__schema98"
         }
       },
       "required": [
@@ -2956,11 +3077,11 @@
       "stability": "stable",
       "description": "Stable event. Its shape is additive-only: fields may be added, but existing fields are not changed or removed."
     },
-    "__schema93": {
+    "__schema97": {
       "type": "string",
       "const": "turn_start"
     },
-    "__schema94": {
+    "__schema98": {
       "type": "object",
       "properties": {
         "turnId": {
@@ -2984,14 +3105,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema95": {
+    "__schema99": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema96"
+          "$ref": "#/$defs/__schema100"
         },
         "data": {
-          "$ref": "#/$defs/__schema97"
+          "$ref": "#/$defs/__schema101"
         }
       },
       "required": [
@@ -3002,11 +3123,11 @@
       "stability": "stable",
       "description": "Stable event. Its shape is additive-only: fields may be added, but existing fields are not changed or removed."
     },
-    "__schema96": {
+    "__schema100": {
       "type": "string",
       "const": "turn_end"
     },
-    "__schema97": {
+    "__schema101": {
       "type": "object",
       "properties": {
         "turnId": {
@@ -3027,14 +3148,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema98": {
+    "__schema102": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema99"
+          "$ref": "#/$defs/__schema103"
         },
         "data": {
-          "$ref": "#/$defs/__schema100"
+          "$ref": "#/$defs/__schema104"
         }
       },
       "required": [
@@ -3045,11 +3166,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema99": {
+    "__schema103": {
       "type": "string",
       "const": "subagent_activity"
     },
-    "__schema100": {
+    "__schema104": {
       "type": "object",
       "properties": {
         "agentId": {
@@ -3075,14 +3196,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema101": {
+    "__schema105": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema102"
+          "$ref": "#/$defs/__schema106"
         },
         "data": {
-          "$ref": "#/$defs/__schema103"
+          "$ref": "#/$defs/__schema107"
         }
       },
       "required": [
@@ -3093,11 +3214,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema102": {
+    "__schema106": {
       "type": "string",
       "const": "subagent_run_end"
     },
-    "__schema103": {
+    "__schema107": {
       "type": "object",
       "properties": {
         "agentId": {
@@ -3128,14 +3249,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema104": {
+    "__schema108": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema105"
+          "$ref": "#/$defs/__schema109"
         },
         "data": {
-          "$ref": "#/$defs/__schema106"
+          "$ref": "#/$defs/__schema110"
         }
       },
       "required": [
@@ -3146,11 +3267,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema105": {
+    "__schema109": {
       "type": "string",
       "const": "skill_activated"
     },
-    "__schema106": {
+    "__schema110": {
       "type": "object",
       "properties": {
         "name": {
@@ -3162,14 +3283,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema107": {
+    "__schema111": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema108"
+          "$ref": "#/$defs/__schema112"
         },
         "data": {
-          "$ref": "#/$defs/__schema109"
+          "$ref": "#/$defs/__schema113"
         }
       },
       "required": [
@@ -3180,11 +3301,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema108": {
+    "__schema112": {
       "type": "string",
       "const": "memory_injected"
     },
-    "__schema109": {
+    "__schema113": {
       "type": "object",
       "properties": {
         "id": {
@@ -3199,14 +3320,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema110": {
+    "__schema114": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema111"
+          "$ref": "#/$defs/__schema115"
         },
         "data": {
-          "$ref": "#/$defs/__schema112"
+          "$ref": "#/$defs/__schema116"
         }
       },
       "required": [
@@ -3217,11 +3338,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema111": {
+    "__schema115": {
       "type": "string",
       "const": "memory_written"
     },
-    "__schema112": {
+    "__schema116": {
       "type": "object",
       "properties": {
         "files": {
@@ -3237,14 +3358,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema113": {
+    "__schema117": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema114"
+          "$ref": "#/$defs/__schema118"
         },
         "data": {
-          "$ref": "#/$defs/__schema115"
+          "$ref": "#/$defs/__schema119"
         }
       },
       "required": [
@@ -3255,11 +3376,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema114": {
+    "__schema118": {
       "type": "string",
       "const": "tool_schema_snapshot"
     },
-    "__schema115": {
+    "__schema119": {
       "type": "object",
       "properties": {
         "turnId": {
@@ -3302,14 +3423,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema116": {
+    "__schema120": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema117"
+          "$ref": "#/$defs/__schema121"
         },
         "data": {
-          "$ref": "#/$defs/__schema118"
+          "$ref": "#/$defs/__schema122"
         }
       },
       "required": [
@@ -3320,11 +3441,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema117": {
+    "__schema121": {
       "type": "string",
       "const": "model_response"
     },
-    "__schema118": {
+    "__schema122": {
       "type": "object",
       "properties": {
         "model": {
@@ -3391,10 +3512,10 @@
               "additionalProperties": false
             },
             "fromIdentity": {
-              "$ref": "#/$defs/__schema119"
+              "$ref": "#/$defs/__schema123"
             },
             "toIdentity": {
-              "$ref": "#/$defs/__schema119"
+              "$ref": "#/$defs/__schema123"
             },
             "reason": {
               "type": "string"
@@ -3403,22 +3524,22 @@
               "type": "string"
             },
             "strategy": {
-              "$ref": "#/$defs/__schema120"
+              "$ref": "#/$defs/__schema124"
             },
             "tried": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema121"
+                "$ref": "#/$defs/__schema125"
               }
             },
             "skipped": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema121"
+                "$ref": "#/$defs/__schema125"
               }
             },
             "toolPolicy": {
-              "$ref": "#/$defs/__schema122"
+              "$ref": "#/$defs/__schema126"
             }
           },
           "required": [
@@ -3548,7 +3669,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema119": {
+    "__schema123": {
       "type": "object",
       "properties": {
         "provider": {
@@ -3575,7 +3696,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema120": {
+    "__schema124": {
       "type": "string",
       "enum": [
         "adaptive-provider-fallback",
@@ -3583,7 +3704,7 @@
         "adaptive-main-task-recovery"
       ]
     },
-    "__schema121": {
+    "__schema125": {
       "type": "object",
       "properties": {
         "provider": {
@@ -3593,7 +3714,7 @@
           "type": "string"
         },
         "providerIdentity": {
-          "$ref": "#/$defs/__schema119"
+          "$ref": "#/$defs/__schema123"
         },
         "status": {
           "type": "string",
@@ -3621,7 +3742,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema122": {
+    "__schema126": {
       "type": "object",
       "properties": {
         "status": {
@@ -3653,14 +3774,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema123": {
+    "__schema127": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema124"
+          "$ref": "#/$defs/__schema128"
         },
         "data": {
-          "$ref": "#/$defs/__schema125"
+          "$ref": "#/$defs/__schema129"
         }
       },
       "required": [
@@ -3671,11 +3792,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema124": {
+    "__schema128": {
       "type": "string",
       "const": "model_fallback"
     },
-    "__schema125": {
+    "__schema129": {
       "type": "object",
       "properties": {
         "reason": {
@@ -3691,28 +3812,28 @@
           "type": "string"
         },
         "strategy": {
-          "$ref": "#/$defs/__schema120"
+          "$ref": "#/$defs/__schema124"
         },
         "tried": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema121"
+            "$ref": "#/$defs/__schema125"
           }
         },
         "skipped": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema121"
+            "$ref": "#/$defs/__schema125"
           }
         },
         "toolPolicy": {
-          "$ref": "#/$defs/__schema122"
+          "$ref": "#/$defs/__schema126"
         },
         "fromIdentity": {
-          "$ref": "#/$defs/__schema119"
+          "$ref": "#/$defs/__schema123"
         },
         "toIdentity": {
-          "$ref": "#/$defs/__schema119"
+          "$ref": "#/$defs/__schema123"
         },
         "turnId": {
           "type": "string"
@@ -3725,14 +3846,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema126": {
+    "__schema130": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema127"
+          "$ref": "#/$defs/__schema131"
         },
         "data": {
-          "$ref": "#/$defs/__schema128"
+          "$ref": "#/$defs/__schema132"
         }
       },
       "required": [
@@ -3743,11 +3864,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema127": {
+    "__schema131": {
       "type": "string",
       "const": "api_key_required"
     },
-    "__schema128": {
+    "__schema132": {
       "type": "object",
       "properties": {
         "provider": {
@@ -3767,14 +3888,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema129": {
+    "__schema133": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema130"
+          "$ref": "#/$defs/__schema134"
         },
         "data": {
-          "$ref": "#/$defs/__schema131"
+          "$ref": "#/$defs/__schema135"
         }
       },
       "required": [
@@ -3785,11 +3906,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema130": {
+    "__schema134": {
       "type": "string",
       "const": "task_progress"
     },
-    "__schema131": {
+    "__schema135": {
       "type": "object",
       "properties": {
         "turnId": {
@@ -3831,14 +3952,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema132": {
+    "__schema136": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema133"
+          "$ref": "#/$defs/__schema137"
         },
         "data": {
-          "$ref": "#/$defs/__schema134"
+          "$ref": "#/$defs/__schema138"
         }
       },
       "required": [
@@ -3849,11 +3970,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema133": {
+    "__schema137": {
       "type": "string",
       "const": "task_complete"
     },
-    "__schema134": {
+    "__schema138": {
       "type": "object",
       "properties": {
         "turnId": {
@@ -3879,14 +4000,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema135": {
+    "__schema139": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema136"
+          "$ref": "#/$defs/__schema140"
         },
         "data": {
-          "$ref": "#/$defs/__schema137"
+          "$ref": "#/$defs/__schema141"
         }
       },
       "required": [
@@ -3897,11 +4018,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema136": {
+    "__schema140": {
       "type": "string",
       "const": "background_task_ledger_changed"
     },
-    "__schema137": {
+    "__schema141": {
       "type": "object",
       "properties": {
         "taskId": {
@@ -3916,14 +4037,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema138": {
+    "__schema142": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema139"
+          "$ref": "#/$defs/__schema143"
         },
         "data": {
-          "$ref": "#/$defs/__schema140"
+          "$ref": "#/$defs/__schema144"
         }
       },
       "required": [
@@ -3934,11 +4055,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema139": {
+    "__schema143": {
       "type": "string",
       "const": "memory_learned"
     },
-    "__schema140": {
+    "__schema144": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -3962,14 +4083,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema141": {
+    "__schema145": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema142"
+          "$ref": "#/$defs/__schema146"
         },
         "data": {
-          "$ref": "#/$defs/__schema143"
+          "$ref": "#/$defs/__schema147"
         }
       },
       "required": [
@@ -3980,11 +4101,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema142": {
+    "__schema146": {
       "type": "string",
       "const": "skill_draft_pending"
     },
-    "__schema143": {
+    "__schema147": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -4036,14 +4157,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema144": {
+    "__schema148": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema145"
+          "$ref": "#/$defs/__schema149"
         },
         "data": {
-          "$ref": "#/$defs/__schema146"
+          "$ref": "#/$defs/__schema150"
         }
       },
       "required": [
@@ -4054,11 +4175,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema145": {
+    "__schema149": {
       "type": "string",
       "const": "role_draft_pending"
     },
-    "__schema146": {
+    "__schema150": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -4104,14 +4225,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema147": {
+    "__schema151": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema148"
+          "$ref": "#/$defs/__schema152"
         },
         "data": {
-          "$ref": "#/$defs/__schema149"
+          "$ref": "#/$defs/__schema153"
         }
       },
       "required": [
@@ -4122,11 +4243,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema148": {
+    "__schema152": {
       "type": "string",
       "const": "team_recipe_draft_pending"
     },
-    "__schema149": {
+    "__schema153": {
       "type": "object",
       "properties": {
         "sessionId": {
@@ -4204,14 +4325,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema150": {
+    "__schema154": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema151"
+          "$ref": "#/$defs/__schema155"
         },
         "data": {
-          "$ref": "#/$defs/__schema152"
+          "$ref": "#/$defs/__schema156"
         }
       },
       "required": [
@@ -4222,11 +4343,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema151": {
+    "__schema155": {
       "type": "string",
       "const": "research_mode_started"
     },
-    "__schema152": {
+    "__schema156": {
       "type": "object",
       "properties": {
         "topic": {
@@ -4257,14 +4378,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema153": {
+    "__schema157": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema154"
+          "$ref": "#/$defs/__schema158"
         },
         "data": {
-          "$ref": "#/$defs/__schema155"
+          "$ref": "#/$defs/__schema159"
         }
       },
       "required": [
@@ -4275,11 +4396,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema154": {
+    "__schema158": {
       "type": "string",
       "const": "research_progress"
     },
-    "__schema155": {
+    "__schema159": {
       "type": "object",
       "properties": {
         "phase": {
@@ -4349,14 +4470,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema156": {
+    "__schema160": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema157"
+          "$ref": "#/$defs/__schema161"
         },
         "data": {
-          "$ref": "#/$defs/__schema158"
+          "$ref": "#/$defs/__schema162"
         }
       },
       "required": [
@@ -4367,11 +4488,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema157": {
+    "__schema161": {
       "type": "string",
       "const": "research_complete"
     },
-    "__schema158": {
+    "__schema162": {
       "type": "object",
       "properties": {
         "success": {
@@ -4419,14 +4540,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema159": {
+    "__schema163": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema160"
+          "$ref": "#/$defs/__schema164"
         },
         "data": {
-          "$ref": "#/$defs/__schema161"
+          "$ref": "#/$defs/__schema165"
         }
       },
       "required": [
@@ -4437,11 +4558,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema160": {
+    "__schema164": {
       "type": "string",
       "const": "research_error"
     },
-    "__schema161": {
+    "__schema165": {
       "type": "object",
       "properties": {
         "error": {
@@ -4453,14 +4574,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema162": {
+    "__schema166": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema163"
+          "$ref": "#/$defs/__schema167"
         },
         "data": {
-          "$ref": "#/$defs/__schema164"
+          "$ref": "#/$defs/__schema168"
         }
       },
       "required": [
@@ -4471,11 +4592,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema163": {
+    "__schema167": {
       "type": "string",
       "const": "research_detected"
     },
-    "__schema164": {
+    "__schema168": {
       "type": "object",
       "properties": {
         "intent": {
@@ -4504,130 +4625,72 @@
       ],
       "additionalProperties": false
     },
-    "__schema165": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "$ref": "#/$defs/__schema166"
-        },
-        "data": {
-          "$ref": "#/$defs/__schema167"
-        }
-      },
-      "required": [
-        "type",
-        "data"
-      ],
-      "additionalProperties": false,
-      "stability": "experimental",
-      "description": "Experimental event. Its shape may change or be removed."
-    },
-    "__schema166": {
-      "type": "string",
-      "const": "budget_warning"
-    },
-    "__schema167": {
-      "type": "object",
-      "properties": {
-        "currentCost": {
-          "type": "number"
-        },
-        "maxBudget": {
-          "type": "number"
-        },
-        "usagePercentage": {
-          "type": "number"
-        },
-        "remaining": {
-          "type": "number"
-        },
-        "alertLevel": {
-          "type": "string",
-          "enum": [
-            "silent",
-            "warning",
-            "blocked"
-          ]
-        },
-        "message": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "currentCost",
-        "maxBudget",
-        "usagePercentage",
-        "remaining",
-        "alertLevel"
-      ],
-      "additionalProperties": false
-    },
-    "__schema168": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "$ref": "#/$defs/__schema169"
-        },
-        "data": {
-          "$ref": "#/$defs/__schema170"
-        }
-      },
-      "required": [
-        "type",
-        "data"
-      ],
-      "additionalProperties": false,
-      "stability": "experimental",
-      "description": "Experimental event. Its shape may change or be removed."
-    },
     "__schema169": {
-      "type": "string",
-      "const": "budget_exceeded"
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/__schema170"
+        },
+        "data": {
+          "$ref": "#/$defs/__schema171"
+        }
+      },
+      "required": [
+        "type",
+        "data"
+      ],
+      "additionalProperties": false,
+      "stability": "experimental",
+      "description": "Experimental event. Its shape may change or be removed."
     },
     "__schema170": {
-      "type": "object",
-      "properties": {
-        "currentCost": {
-          "type": "number"
-        },
-        "maxBudget": {
-          "type": "number"
-        },
-        "usagePercentage": {
-          "type": "number"
-        },
-        "remaining": {
-          "type": "number"
-        },
-        "alertLevel": {
-          "type": "string",
-          "enum": [
-            "silent",
-            "warning",
-            "blocked"
-          ]
-        },
-        "message": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "currentCost",
-        "maxBudget",
-        "usagePercentage",
-        "remaining",
-        "alertLevel"
-      ],
-      "additionalProperties": false
+      "type": "string",
+      "const": "budget_warning"
     },
     "__schema171": {
       "type": "object",
       "properties": {
+        "currentCost": {
+          "type": "number"
+        },
+        "maxBudget": {
+          "type": "number"
+        },
+        "usagePercentage": {
+          "type": "number"
+        },
+        "remaining": {
+          "type": "number"
+        },
+        "alertLevel": {
+          "type": "string",
+          "enum": [
+            "silent",
+            "warning",
+            "blocked"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "currentCost",
+        "maxBudget",
+        "usagePercentage",
+        "remaining",
+        "alertLevel"
+      ],
+      "additionalProperties": false
+    },
+    "__schema172": {
+      "type": "object",
+      "properties": {
         "type": {
-          "$ref": "#/$defs/__schema172"
+          "$ref": "#/$defs/__schema173"
         },
         "data": {
-          "$ref": "#/$defs/__schema173"
+          "$ref": "#/$defs/__schema174"
         }
       },
       "required": [
@@ -4638,11 +4701,69 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema172": {
+    "__schema173": {
+      "type": "string",
+      "const": "budget_exceeded"
+    },
+    "__schema174": {
+      "type": "object",
+      "properties": {
+        "currentCost": {
+          "type": "number"
+        },
+        "maxBudget": {
+          "type": "number"
+        },
+        "usagePercentage": {
+          "type": "number"
+        },
+        "remaining": {
+          "type": "number"
+        },
+        "alertLevel": {
+          "type": "string",
+          "enum": [
+            "silent",
+            "warning",
+            "blocked"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "currentCost",
+        "maxBudget",
+        "usagePercentage",
+        "remaining",
+        "alertLevel"
+      ],
+      "additionalProperties": false
+    },
+    "__schema175": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/__schema176"
+        },
+        "data": {
+          "$ref": "#/$defs/__schema177"
+        }
+      },
+      "required": [
+        "type",
+        "data"
+      ],
+      "additionalProperties": false,
+      "stability": "experimental",
+      "description": "Experimental event. Its shape may change or be removed."
+    },
+    "__schema176": {
       "type": "string",
       "const": "context_compressed"
     },
-    "__schema173": {
+    "__schema177": {
       "type": "object",
       "properties": {
         "savedTokens": {
@@ -4661,14 +4782,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema174": {
+    "__schema178": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema175"
+          "$ref": "#/$defs/__schema179"
         },
         "data": {
-          "$ref": "#/$defs/__schema176"
+          "$ref": "#/$defs/__schema180"
         }
       },
       "required": [
@@ -4679,11 +4800,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema175": {
+    "__schema179": {
       "type": "string",
       "const": "interrupt_start"
     },
-    "__schema176": {
+    "__schema180": {
       "type": "object",
       "properties": {
         "message": {
@@ -4698,50 +4819,6 @@
       ],
       "additionalProperties": false
     },
-    "__schema177": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "$ref": "#/$defs/__schema178"
-        },
-        "data": {
-          "$ref": "#/$defs/__schema176"
-        }
-      },
-      "required": [
-        "type",
-        "data"
-      ],
-      "additionalProperties": false,
-      "stability": "experimental",
-      "description": "Experimental event. Its shape may change or be removed."
-    },
-    "__schema178": {
-      "type": "string",
-      "const": "interrupt_acknowledged"
-    },
-    "__schema179": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "$ref": "#/$defs/__schema180"
-        },
-        "data": {
-          "$ref": "#/$defs/__schema176"
-        }
-      },
-      "required": [
-        "type",
-        "data"
-      ],
-      "additionalProperties": false,
-      "stability": "experimental",
-      "description": "Experimental event. Its shape may change or be removed."
-    },
-    "__schema180": {
-      "type": "string",
-      "const": "interrupt_complete"
-    },
     "__schema181": {
       "type": "object",
       "properties": {
@@ -4749,7 +4826,7 @@
           "$ref": "#/$defs/__schema182"
         },
         "data": {
-          "$ref": "#/$defs/__schema183"
+          "$ref": "#/$defs/__schema180"
         }
       },
       "required": [
@@ -4762,9 +4839,53 @@
     },
     "__schema182": {
       "type": "string",
-      "const": "input_redirected"
+      "const": "interrupt_acknowledged"
     },
     "__schema183": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/__schema184"
+        },
+        "data": {
+          "$ref": "#/$defs/__schema180"
+        }
+      },
+      "required": [
+        "type",
+        "data"
+      ],
+      "additionalProperties": false,
+      "stability": "experimental",
+      "description": "Experimental event. Its shape may change or be removed."
+    },
+    "__schema184": {
+      "type": "string",
+      "const": "interrupt_complete"
+    },
+    "__schema185": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/__schema186"
+        },
+        "data": {
+          "$ref": "#/$defs/__schema187"
+        }
+      },
+      "required": [
+        "type",
+        "data"
+      ],
+      "additionalProperties": false,
+      "stability": "experimental",
+      "description": "Experimental event. Its shape may change or be removed."
+    },
+    "__schema186": {
+      "type": "string",
+      "const": "input_redirected"
+    },
+    "__schema187": {
       "type": "object",
       "properties": {
         "receiptId": {
@@ -4805,14 +4926,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema184": {
+    "__schema188": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema185"
+          "$ref": "#/$defs/__schema189"
         },
         "data": {
-          "$ref": "#/$defs/__schema186"
+          "$ref": "#/$defs/__schema190"
         }
       },
       "required": [
@@ -4823,11 +4944,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema185": {
+    "__schema189": {
       "type": "string",
       "const": "citations_updated"
     },
-    "__schema186": {
+    "__schema190": {
       "type": "object",
       "properties": {
         "citations": {
@@ -4895,14 +5016,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema187": {
+    "__schema191": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema188"
+          "$ref": "#/$defs/__schema192"
         },
         "data": {
-          "$ref": "#/$defs/__schema189"
+          "$ref": "#/$defs/__schema193"
         }
       },
       "required": [
@@ -4913,11 +5034,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema188": {
+    "__schema192": {
       "type": "string",
       "const": "model_switched"
     },
-    "__schema189": {
+    "__schema193": {
       "type": "object",
       "properties": {
         "from": {
@@ -4936,14 +5057,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema190": {
+    "__schema194": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema191"
+          "$ref": "#/$defs/__schema195"
         },
         "data": {
-          "$ref": "#/$defs/__schema192"
+          "$ref": "#/$defs/__schema196"
         }
       },
       "required": [
@@ -4954,11 +5075,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema191": {
+    "__schema195": {
       "type": "string",
       "const": "tool_progress"
     },
-    "__schema192": {
+    "__schema196": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -4981,14 +5102,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema193": {
+    "__schema197": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema194"
+          "$ref": "#/$defs/__schema198"
         },
         "data": {
-          "$ref": "#/$defs/__schema195"
+          "$ref": "#/$defs/__schema199"
         }
       },
       "required": [
@@ -4999,11 +5120,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema194": {
+    "__schema198": {
       "type": "string",
       "const": "tool_output_delta"
     },
-    "__schema195": {
+    "__schema199": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -5037,14 +5158,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema196": {
+    "__schema200": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema197"
+          "$ref": "#/$defs/__schema201"
         },
         "data": {
-          "$ref": "#/$defs/__schema198"
+          "$ref": "#/$defs/__schema202"
         }
       },
       "required": [
@@ -5055,11 +5176,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema197": {
+    "__schema201": {
       "type": "string",
       "const": "tool_timeout"
     },
-    "__schema198": {
+    "__schema202": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -5083,14 +5204,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema199": {
+    "__schema203": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema200"
+          "$ref": "#/$defs/__schema204"
         },
         "data": {
-          "$ref": "#/$defs/__schema201"
+          "$ref": "#/$defs/__schema205"
         }
       },
       "required": [
@@ -5101,11 +5222,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema200": {
+    "__schema204": {
       "type": "string",
       "const": "plan_mode_entered"
     },
-    "__schema201": {
+    "__schema205": {
       "type": "object",
       "properties": {
         "reason": {
@@ -5117,14 +5238,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema202": {
+    "__schema206": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema203"
+          "$ref": "#/$defs/__schema207"
         },
         "data": {
-          "$ref": "#/$defs/__schema204"
+          "$ref": "#/$defs/__schema208"
         }
       },
       "required": [
@@ -5135,11 +5256,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema203": {
+    "__schema207": {
       "type": "string",
       "const": "plan_mode_exited"
     },
-    "__schema204": {
+    "__schema208": {
       "type": "object",
       "properties": {
         "plan": {
@@ -5151,14 +5272,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema205": {
+    "__schema209": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema206"
+          "$ref": "#/$defs/__schema210"
         },
         "data": {
-          "$ref": "#/$defs/__schema207"
+          "$ref": "#/$defs/__schema211"
         }
       },
       "required": [
@@ -5169,11 +5290,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema206": {
+    "__schema210": {
       "type": "string",
       "const": "task_stats"
     },
-    "__schema207": {
+    "__schema211": {
       "type": "object",
       "properties": {
         "elapsed_ms": {
@@ -5205,14 +5326,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema208": {
+    "__schema212": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema209"
+          "$ref": "#/$defs/__schema213"
         },
         "data": {
-          "$ref": "#/$defs/__schema210"
+          "$ref": "#/$defs/__schema214"
         }
       },
       "required": [
@@ -5223,11 +5344,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema209": {
+    "__schema213": {
       "type": "string",
       "const": "context_compacting"
     },
-    "__schema210": {
+    "__schema214": {
       "type": "object",
       "properties": {
         "tokensBefore": {
@@ -5243,14 +5364,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema211": {
+    "__schema215": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema212"
+          "$ref": "#/$defs/__schema216"
         },
         "data": {
-          "$ref": "#/$defs/__schema213"
+          "$ref": "#/$defs/__schema217"
         }
       },
       "required": [
@@ -5261,11 +5382,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema212": {
+    "__schema216": {
       "type": "string",
       "const": "context_compacted"
     },
-    "__schema213": {
+    "__schema217": {
       "type": "object",
       "properties": {
         "tokensBefore": {
@@ -5289,14 +5410,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema214": {
+    "__schema218": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema215"
+          "$ref": "#/$defs/__schema219"
         },
         "data": {
-          "$ref": "#/$defs/__schema216"
+          "$ref": "#/$defs/__schema220"
         }
       },
       "required": [
@@ -5307,11 +5428,11 @@
       "stability": "stable",
       "description": "Stable event. Its shape is additive-only: fields may be added, but existing fields are not changed or removed."
     },
-    "__schema215": {
+    "__schema219": {
       "type": "string",
       "const": "stream_usage"
     },
-    "__schema216": {
+    "__schema220": {
       "type": "object",
       "properties": {
         "inputTokens": {
@@ -5336,14 +5457,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema217": {
+    "__schema221": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema218"
+          "$ref": "#/$defs/__schema222"
         },
         "data": {
-          "$ref": "#/$defs/__schema219"
+          "$ref": "#/$defs/__schema223"
         }
       },
       "required": [
@@ -5354,11 +5475,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema218": {
+    "__schema222": {
       "type": "string",
       "const": "stream_token_estimate"
     },
-    "__schema219": {
+    "__schema223": {
       "type": "object",
       "properties": {
         "inputTokens": {
@@ -5377,14 +5498,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema220": {
+    "__schema224": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema221"
+          "$ref": "#/$defs/__schema225"
         },
         "data": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema226"
         }
       },
       "required": [
@@ -5395,11 +5516,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema221": {
+    "__schema225": {
       "type": "string",
       "const": "tool_call_local"
     },
-    "__schema222": {
+    "__schema226": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -5447,14 +5568,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema223": {
+    "__schema227": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema224"
+          "$ref": "#/$defs/__schema228"
         },
         "data": {
-          "$ref": "#/$defs/__schema225"
+          "$ref": "#/$defs/__schema229"
         }
       },
       "required": [
@@ -5465,11 +5586,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema224": {
+    "__schema228": {
       "type": "string",
       "const": "tool_cancel_local"
     },
-    "__schema225": {
+    "__schema229": {
       "type": "object",
       "properties": {
         "toolCallId": {
@@ -5489,14 +5610,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema226": {
+    "__schema230": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema227"
+          "$ref": "#/$defs/__schema231"
         },
         "data": {
-          "$ref": "#/$defs/__schema228"
+          "$ref": "#/$defs/__schema232"
         }
       },
       "required": [
@@ -5507,11 +5628,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema227": {
+    "__schema231": {
       "type": "string",
       "const": "suggestions_update"
     },
-    "__schema228": {
+    "__schema232": {
       "type": "array",
       "items": {
         "type": "object",
@@ -5534,14 +5655,14 @@
         "additionalProperties": false
       }
     },
-    "__schema229": {
+    "__schema233": {
       "type": "object",
       "properties": {
         "type": {
-          "$ref": "#/$defs/__schema230"
+          "$ref": "#/$defs/__schema234"
         },
         "data": {
-          "$ref": "#/$defs/__schema231"
+          "$ref": "#/$defs/__schema235"
         }
       },
       "required": [
@@ -5552,11 +5673,11 @@
       "stability": "experimental",
       "description": "Experimental event. Its shape may change or be removed."
     },
-    "__schema230": {
+    "__schema234": {
       "type": "string",
       "const": "stream_reconnecting"
     },
-    "__schema231": {
+    "__schema235": {
       "type": "object",
       "properties": {
         "turnId": {
@@ -5587,7 +5708,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema232": {
+    "__schema236": {
       "type": "object",
       "properties": {
         "streamEpoch": {

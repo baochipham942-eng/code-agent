@@ -3,6 +3,7 @@ import type { Message, ToolCall } from '../../../shared/contract';
 import {
   createPendingPlanApproval,
   formatApprovedPlan,
+  isRetryablePlanApprovalStatus,
   PLAN_APPROVAL_CONFIRMATION_TYPE,
   type PlanApprovalRecord,
   type PlanApprovalRequest,
@@ -11,12 +12,19 @@ import {
 } from '../../../shared/contract/planApproval';
 import type { TaskManager } from '../../task';
 import { getSessionManager } from '../infra/sessionManager';
-import { replaceTasksAtomically } from './taskStore';
+import { getDatabase } from '../core/databaseService';
+import { demoteInProgressTasks, replaceTasksAtomically } from './taskStore';
 import { createLogger } from '../infra/logger';
 
 const MAX_PLAN_STEPS = 50;
 const MAX_STEP_LENGTH = 2_000;
 const MAX_FEEDBACK_LENGTH = 8_000;
+const MAX_FAILURE_REASON_LENGTH = 500;
+/** 崩溃残留对账落定的失败原因：宿主在启动确认到达前退出。 */
+const RESTART_ORPHAN_FAILURE_REASON = 'Host exited during plan startup';
+/** 启动对账扫描的近期会话数 / 每会话近期消息数：认领总在崩溃前一刻，浅窗口足够。 */
+const RECONCILE_SESSION_SCAN_LIMIT = 20;
+const RECONCILE_MESSAGE_WINDOW = 20;
 const logger = createLogger('PlanApprovalService');
 
 export class PlanApprovalError extends Error {
@@ -76,7 +84,10 @@ function readApproval(toolCall: ToolCall): PlanApprovalRecord {
   return createPendingPlanApproval(metadata.plan);
 }
 
-async function loadApprovalTarget(request: PlanApprovalRequest): Promise<{
+async function loadApprovalTarget(
+  request: PlanApprovalRequest,
+  deps: { taskManager: TaskManager },
+): Promise<{
   message: Message;
   toolCall: ToolCall;
   approval: PlanApprovalRecord;
@@ -88,10 +99,147 @@ async function loadApprovalTarget(request: PlanApprovalRequest): Promise<{
     throw new PlanApprovalError('APPROVAL_NOT_FOUND', 'Plan approval request no longer exists');
   }
   const approval = readApproval(toolCall);
-  if (approval.status !== 'pending') {
+  // 崩溃残留对账：上个进程认领 starting 后没等到启动确认就退出了。先落成 failed
+  // （可重试）再重读，让这次决定走正常重试路径，而不是 ALREADY_RESOLVED 死路。
+  if (isOrphanedPlanApprovalStart(approval)) {
+    if (await finalizePlanApprovalStart(deps, {
+      sessionId: request.sessionId,
+      messageId: message.id,
+      toolCallId: toolCall.id,
+    }, { status: 'failed', failureReason: RESTART_ORPHAN_FAILURE_REASON })) {
+      return loadApprovalTarget(request, deps);
+    }
+  }
+  if (!isRetryablePlanApprovalStatus(approval.status)) {
     throw new PlanApprovalError('ALREADY_RESOLVED', `Plan approval is already ${approval.status}`);
   }
   return { message, toolCall, approval };
+}
+
+/**
+ * 异步落定 starting 之后的终态（启动确认 → approved/revision_requested；启动失败 → failed）。
+ * 必须重读消息拿新鲜副本再写，不能复用 claim 时的 message——启动确认到达时轮次可能已经
+ * 追加/改写过消息。只迁移仍处于 starting 的记录：已被后续决定（重试/取消）接管的记录不动。
+ * 返回是否真的落定（对账计数用；目标缺失/已被接管/出错都返回 false）。
+ */
+async function finalizePlanApprovalStart(
+  deps: { taskManager: TaskManager },
+  target: { sessionId: string; messageId: string; toolCallId: string },
+  outcome: { status: 'approved' | 'revision_requested' | 'failed'; failureReason?: string },
+): Promise<boolean> {
+  try {
+    const messages = await getSessionManager().getMessages(target.sessionId);
+    const message = messages.find((candidate) => candidate.id === target.messageId);
+    const toolCall = message?.toolCalls?.find((candidate) => candidate.id === target.toolCallId);
+    if (!message || !toolCall) return false;
+    const current = readApproval(toolCall);
+    if (current.status !== 'starting') return false;
+    const finalized: PlanApprovalRecord = {
+      ...current,
+      status: outcome.status,
+      ...(outcome.failureReason
+        ? { failureReason: outcome.failureReason, failedAt: Date.now() }
+        : {}),
+    };
+    await persistApproval(message, target.toolCallId, finalized);
+    deps.taskManager.emitAgentEventForSession(target.sessionId, {
+      type: 'plan_approval_update',
+      data: { sessionId: target.sessionId, messageId: target.messageId, toolCallId: target.toolCallId, approval: finalized },
+    });
+    if (outcome.status === 'failed') {
+      const tasks = demoteInProgressTasks(target.sessionId);
+      if (tasks) {
+        deps.taskManager.emitAgentEventForSession(target.sessionId, {
+          type: 'task_update',
+          data: {
+            tasks,
+            action: 'sync',
+            taskIds: tasks.map((task) => task.id),
+            source: 'plan_approval',
+          },
+        });
+      }
+    }
+    return true;
+  } catch (error) {
+    logger.error('Plan approval start finalization failed', error);
+    return false;
+  }
+}
+
+/** 本进程的启动墙钟时刻（按 uptime 反推，与模块加载时机无关）。 */
+function processStartWallClock(): number {
+  return Date.now() - process.uptime() * 1000;
+}
+
+/**
+ * starting 认领是否是上个进程的崩溃残留：认领时刻早于本进程启动，不可能是本进程
+ * 挂起的启动确认——宿主轮内退出后记录才会这样卡死（ai-review Important 后果②）。
+ */
+function isOrphanedPlanApprovalStart(approval: PlanApprovalRecord): boolean {
+  return approval.status === 'starting'
+    && typeof approval.decidedAt === 'number'
+    && approval.decidedAt < processStartWallClock();
+}
+
+/**
+ * 消息窗口内的崩溃残留对账：把孤儿 starting 认领落成 failed（可重试），复用
+ * finalize 的「只迁移仍处于 starting」守卫。返回落定条数。
+ */
+async function reconcileOrphanedPlanApprovalStarts(
+  deps: { taskManager: TaskManager },
+  sessionId: string,
+  messages: readonly Message[],
+): Promise<number> {
+  let settled = 0;
+  for (const message of messages) {
+    for (const toolCall of message.toolCalls ?? []) {
+      const metadata = toolCall.result?.metadata;
+      if (metadata?.confirmationType !== PLAN_APPROVAL_CONFIRMATION_TYPE || typeof metadata.plan !== 'string') continue;
+      const approval = readApproval(toolCall);
+      if (!isOrphanedPlanApprovalStart(approval)) continue;
+      if (await finalizePlanApprovalStart(deps, {
+        sessionId,
+        messageId: message.id,
+        toolCallId: toolCall.id,
+      }, { status: 'failed', failureReason: RESTART_ORPHAN_FAILURE_REASON })) {
+        settled += 1;
+      }
+    }
+  }
+  return settled;
+}
+
+/**
+ * 启动对账（宿主进程启动时调一次）：认领总发生在崩溃前一刻，残留记录必在最近活跃
+ * 会话的近期消息里。DB 未就绪/读失败只记日志——对账是恢复路径，不许拖死启动。
+ */
+export async function reconcileRecentPlanApprovalStarts(deps: { taskManager: TaskManager }): Promise<number> {
+  let db: ReturnType<typeof getDatabase>;
+  try {
+    db = getDatabase();
+  } catch {
+    return 0;
+  }
+  if (!db?.isReady) return 0;
+  let settled = 0;
+  for (const session of db.listSessions(RECONCILE_SESSION_SCAN_LIMIT)) {
+    try {
+      settled += await reconcileOrphanedPlanApprovalStarts(
+        deps,
+        session.id,
+        db.getRecentMessages(session.id, RECONCILE_MESSAGE_WINDOW),
+      );
+    } catch (error) {
+      logger.warn('Plan approval start reconciliation skipped a session', { sessionId: session.id, error });
+    }
+  }
+  return settled;
+}
+
+function failureReasonOf(error: unknown): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  return reason.length > MAX_FAILURE_REASON_LENGTH ? `${reason.slice(0, MAX_FAILURE_REASON_LENGTH)}…` : reason;
 }
 
 async function persistApproval(
@@ -126,7 +274,8 @@ function hiddenPlanTurn(content: string) {
 export async function resolvePlanApproval(
   request: PlanApprovalRequest,
   deps: {
-    appService: AgentApplicationService;
+    /** 服务只消费 sendMessage；companion 路径传的是窄面内联实现，桌面 IPC 传启动确认作用域包装。 */
+    appService: Pick<AgentApplicationService, 'sendMessage'>;
     taskManager: TaskManager;
   },
 ): Promise<PlanApprovalResponse> {
@@ -136,7 +285,7 @@ export async function resolvePlanApproval(
     messageId: requiredId(request.messageId, 'messageId'),
     toolCallId: requiredId(request.toolCallId, 'toolCallId'),
   };
-  const target = await loadApprovalTarget(normalizedRequest);
+  const target = await loadApprovalTarget(normalizedRequest, deps);
   const decidedAt = Date.now();
 
   if (normalizedRequest.decision === 'approve') {
@@ -152,7 +301,7 @@ export async function resolvePlanApproval(
     const reordered = originalRetainedOrder.some((id, index) => submittedRetainedOrder[index] !== id);
     const approval: PlanApprovalRecord = {
       ...target.approval,
-      status: 'approved',
+      status: 'starting',
       steps,
       ...(removedSteps.length > 0 ? { removedSteps } : {}),
       ...(reordered ? { reordered: true } : {}),
@@ -178,9 +327,16 @@ export async function resolvePlanApproval(
         'Execute this approved plan now. Keep the TaskManager session ledger updated as steps progress.',
       ].join('\n')),
       sessionId: normalizedRequest.sessionId,
-    }).catch((error) => {
-      logger.error('Approved plan turn failed to start', error);
-    });
+    }).then(
+      () => void finalizePlanApprovalStart(deps, normalizedRequest, { status: 'approved' }),
+      (error) => {
+        logger.error('Approved plan turn failed to start', error);
+        void finalizePlanApprovalStart(deps, normalizedRequest, {
+          status: 'failed',
+          failureReason: failureReasonOf(error),
+        });
+      },
+    );
     return { approval, tasks };
   }
 
@@ -191,7 +347,7 @@ export async function resolvePlanApproval(
     }
     const approval: PlanApprovalRecord = {
       ...target.approval,
-      status: 'revision_requested',
+      status: 'starting',
       feedback,
       decidedAt,
     };
@@ -205,9 +361,16 @@ export async function resolvePlanApproval(
         '</plan-revision-request>',
       ].join('\n')),
       sessionId: normalizedRequest.sessionId,
-    }).catch((error) => {
-      logger.error('Plan revision turn failed to start', error);
-    });
+    }).then(
+      () => void finalizePlanApprovalStart(deps, normalizedRequest, { status: 'revision_requested' }),
+      (error) => {
+        logger.error('Plan revision turn failed to start', error);
+        void finalizePlanApprovalStart(deps, normalizedRequest, {
+          status: 'failed',
+          failureReason: failureReasonOf(error),
+        });
+      },
+    );
     return { approval };
   }
 

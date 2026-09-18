@@ -33,6 +33,7 @@ import { initPostHogNode } from '../host/observability/posthogNode';
 import type { AuthUser } from '../shared/contract';
 import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from '../host/services/core/repositories/PendingApprovalRepository';
+import { reconcileRecentPlanApprovalStarts } from '../host/services/planning/planApprovalService';
 import { getTaskManager } from '../host/task/TaskManager';
 import { installLocalWebAuthStatusHandler } from './webLocalAuth';
 import {
@@ -849,6 +850,23 @@ function registerHandlers(): void {
       } catch (err) {
         logger.warn('PendingApproval hydration failed (web):', (err as Error).message);
       }
+    }
+
+    try {
+      // ChatView 计划审批 starting 认领的崩溃残留对账：上个进程认领后没等到启动确认就
+      // 退出，记录会永久卡 starting（不可重试/不可取消）。落成 failed 恢复可决定性。
+      // 不阻塞启动：对账走 DB 读，异步跑完即可。
+      void reconcileRecentPlanApprovalStarts({ taskManager: getTaskManager() })
+        .then((settledStarts) => {
+          if (settledStarts > 0) {
+            logger.warn(`Closed ${settledStarts} orphaned plan approval start claim(s) from previous process`);
+          }
+        })
+        .catch((err: unknown) => {
+          logger.warn('Plan approval start reconciliation failed (web):', (err as Error).message);
+        });
+    } catch (err) {
+      logger.warn('Plan approval start reconciliation failed (web):', (err as Error).message);
     }
 
     registerSwarmServices({

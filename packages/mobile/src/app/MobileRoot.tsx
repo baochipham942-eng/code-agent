@@ -13,6 +13,7 @@ import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { ApprovalCard } from '../features/sessions/ApprovalCard';
 import { QuestionCard } from '../features/sessions/QuestionCard';
 import { PlanCard } from '../features/sessions/PlanCard';
+import { mergeCardPayload } from '../features/sessions/decisionCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
 import type { CompanionLibrary } from '../../../../src/shared/contract/companionLibrary';
 import { messages } from '../i18n';
@@ -175,7 +176,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     const cards = new Map<string, Record<string, unknown>>();
     for (const event of companion.events) {
       if ((event.kind === 'approval' || event.kind === 'question' || event.kind === 'plan') && typeof event.payload.requestId === 'string') {
-        cards.set(`${event.kind}:${event.payload.requestId}`, { ...cards.get(`${event.kind}:${event.payload.requestId}`), ...event.payload, sessionId: event.sessionId, kind: event.kind });
+        const key = `${event.kind}:${event.payload.requestId}`;
+        cards.set(key, { ...mergeCardPayload(cards.get(key), event.payload), sessionId: event.sessionId, kind: event.kind });
       }
     }
     return [...cards.values()].filter(card => card.status === 'pending');

@@ -98,12 +98,12 @@ describe('companion question and plan cards use the desktop decision points', ()
       action: 'question.respond', expectedRevision: card.revision,
       payload: { requestId: 'q-1', operationDigest: card.operationDigest!, answers: { 方向: '继续' } },
     };
-    expect(gateway.submit(command).kind).toBe('accepted');
+    expect((await gateway.submit(command)).kind).toBe('accepted');
     expect(settled).toEqual({ requestId: 'q-1', answers: { 方向: '继续' } });
     expect(gateway.getDecision('q-1')).toMatchObject({
       status: 'approved', resolvedBy: 'phone', outcome: 'answered', answer: { answers: { 方向: '继续' } },
     });
-    expect(gateway.submit({ ...command, commandId: 'q-cmd-2' }).kind).toBe('approval_conflict');
+    expect((await gateway.submit({ ...command, commandId: 'q-cmd-2' })).kind).toBe('approval_conflict');
   });
 
   it('desktop answers publish outcome=answered with the chosen option, not a bare closed', () => {
@@ -144,13 +144,13 @@ describe('companion question and plan cards use the desktop decision points', ()
       action: 'plan.respond', expectedRevision: card.revision,
       payload: { requestId: planId, operationDigest: card.operationDigest!, decision: 'approved', feedback: 'go' },
     };
-    expect(gateway.submit(command).kind).toBe('accepted');
+    expect((await gateway.submit(command)).kind).toBe('accepted');
     await expect(pending).resolves.toMatchObject({ approved: true, feedback: 'go', autoApproved: false });
     expect(gate.getPendingPlans()).toEqual([]);
     vi.useRealTimers();
   });
 
-  it('a second command ID cannot redispatch a question whose first outcome is unknown', () => {
+  it('a second command ID cannot redispatch a question whose first outcome is unknown', async () => {
     questions.offer(questionRequest, () => {});
     const card = gateway.getDecision('q-1')!;
     const decide = vi.fn(() => { throw new Error('side effect outcome unknown'); });
@@ -161,13 +161,13 @@ describe('companion question and plan cards use the desktop decision points', ()
       action: 'question.respond', expectedRevision: card.revision,
       payload: { requestId: 'q-1', operationDigest: card.operationDigest!, answers: { 方向: '继续' } },
     };
-    expect(racing.submit(command).kind).toBe('replayed');
-    expect(racing.submit({ ...command, commandId: 'q-unknown-2' })).toMatchObject({ kind: 'replayed', command: { state: 'reconciling' } });
+    expect((await racing.submit(command)).kind).toBe('replayed');
+    expect(await racing.submit({ ...command, commandId: 'q-unknown-2' })).toMatchObject({ kind: 'replayed', command: { state: 'reconciling' } });
     expect(decide).toHaveBeenCalledTimes(1);
     expect(db.prepare('SELECT COUNT(*) AS n FROM companion_decision_claims').get()).toEqual({ n: 1 });
   });
 
-  it('two phones racing the same question: only the first CAS claim settles the decision point', () => {
+  it('two phones racing the same question: only the first CAS claim settles the decision point', async () => {
     let calls = 0;
     questions.offer(questionRequest, () => { calls += 1; });
     const card = gateway.getDecision('q-1')!;
@@ -176,8 +176,8 @@ describe('companion question and plan cards use the desktop decision points', ()
       expectedRevision: card.revision,
       payload: { requestId: 'q-1', operationDigest: card.operationDigest!, answers: { 方向: '继续' } },
     };
-    expect(gateway.submit({ ...base, deviceId: 'phone', commandId: 'first' }).kind).toBe('accepted');
-    expect(gateway.submit({ ...base, deviceId: 'phone-two', commandId: 'second' }).kind).toBe('approval_conflict');
+    expect((await gateway.submit({ ...base, deviceId: 'phone', commandId: 'first' })).kind).toBe('accepted');
+    expect((await gateway.submit({ ...base, deviceId: 'phone-two', commandId: 'second' })).kind).toBe('approval_conflict');
     expect(calls).toBe(1);
   });
 
@@ -197,27 +197,27 @@ describe('companion question and plan cards use the desktop decision points', ()
       expectedRevision: card.revision,
       payload: { requestId: planId, operationDigest: card.operationDigest!, decision: 'approved' as const },
     };
-    expect(gateway.submit({ ...base, deviceId: 'phone', commandId: 'plan-first' }).kind).toBe('accepted');
-    expect(gateway.submit({ ...base, deviceId: 'phone-two', commandId: 'plan-second' }).kind).toBe('approval_conflict');
+    expect((await gateway.submit({ ...base, deviceId: 'phone', commandId: 'plan-first' })).kind).toBe('accepted');
+    expect((await gateway.submit({ ...base, deviceId: 'phone-two', commandId: 'plan-second' })).kind).toBe('approval_conflict');
     await expect(pending).resolves.toMatchObject({ approved: true });
     vi.useRealTimers();
   });
 
-  it('revoked device cannot respond to a live question', () => {
+  it('revoked device cannot respond to a live question', async () => {
     questions.offer(questionRequest, () => {});
     const card = gateway.getDecision('q-1')!;
     gateway.revokeDevice('phone', 2_000);
-    expect(gateway.submit({
+    expect((await gateway.submit({
       version: 1, deviceId: 'phone', scopeEpoch: 2, commandId: 'revoked', sessionId,
       action: 'question.respond', expectedRevision: card.revision,
       payload: { requestId: 'q-1', operationDigest: card.operationDigest!, answers: { 方向: '继续' } },
-    }).kind).toBe('rejected');
+    })).kind).toBe('rejected');
   });
 
-  it('wrong session scope is rejected before the decision point is touched', () => {
+  it('wrong session scope is rejected before the decision point is touched', async () => {
     questions.offer(questionRequest, () => {});
     const card = gateway.getDecision('q-1')!;
-    expect(gateway.submit({
+    expect(await gateway.submit({
       version: 1, deviceId: 'phone', scopeEpoch: 1, commandId: 'wrong-scope', sessionId: 'unshared',
       action: 'question.respond', expectedRevision: card.revision,
       payload: { requestId: 'q-1', operationDigest: card.operationDigest!, answers: { 方向: '继续' } },
@@ -240,11 +240,11 @@ describe('companion question and plan cards use the desktop decision points', ()
     await expect(pending).resolves.toMatchObject({ approved: false, autoApproved: true });
     plans.refresh();
     expect(gateway.getDecision(planId)).toMatchObject({ status: 'closed', outcome: 'expired' });
-    expect(gateway.submit({
+    expect((await gateway.submit({
       version: 1, deviceId: 'phone', scopeEpoch: 1, commandId: 'expired', sessionId,
       action: 'plan.respond', expectedRevision: card.revision,
       payload: { requestId: planId, operationDigest: card.operationDigest!, decision: 'approved' },
-    }).kind).toBe('approval_conflict');
+    })).kind).toBe('approval_conflict');
     vi.useRealTimers();
   });
 

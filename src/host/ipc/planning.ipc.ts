@@ -109,6 +109,76 @@ async function handleGetErrors(
   return await planningService.errors.getAll();
 }
 
+/** TaskManager 的 EventEmitter 面（测试桩可能没有，判齐了才挂 task_started 监听）。 */
+type StartListenerTarget = {
+  on: (event: 'task_started', listener: (payload: unknown) => void) => unknown;
+  removeListener: (event: 'task_started', listener: (payload: unknown) => void) => unknown;
+};
+
+function asStartListenerTarget(taskManager: unknown): StartListenerTarget | null {
+  const tm = taskManager as Partial<StartListenerTarget> | null;
+  return tm && typeof tm.on === 'function' && typeof tm.removeListener === 'function'
+    ? (tm as StartListenerTarget)
+    : null;
+}
+
+/**
+ * 桌面 IPC 路径的「启动确认」作用域：AgentAppService.sendMessage 的 promise 语义是
+ * 整轮跑完（末尾 await tm.startTask → executeTask → await orchestrator.sendMessage，轮内
+ * 异常被它自己 catch），直接拿它的 settle 当启动确认会让 starting 覆盖整轮运行——手机端
+ * 同一张计划卡整轮 pending 可点、宿主轮内退出后记录永久卡 starting（ai-review Important）。
+ * 这里折算到主 run 真正开始的 task_started（与 companion 路径的 durable activation 同款
+ * 时点）：task_started 之前 sendMessage 先拒绝（会话占用等）→ 原样上抛落 failed；
+ * 启动后整轮的成败不再门控审批落定。taskManager 没有 EventEmitter 面（测试桩）或
+ * envelope 没带 sessionId → 退回 sendMessage settle 的旧时点（行为不变）。
+ */
+function startScopedAppService(
+  appService: AgentApplicationService,
+  taskManager: TaskManager,
+): Pick<AgentApplicationService, 'sendMessage'> {
+  return {
+    sendMessage: (envelope) => {
+      const sessionId = typeof envelope.sessionId === 'string' && envelope.sessionId.trim()
+        ? envelope.sessionId
+        : null;
+      const tm = asStartListenerTarget(taskManager);
+      if (!sessionId || !tm) {
+        return appService.sendMessage(envelope);
+      }
+      let started = false;
+      let dispose = () => {};
+      const startSignal = new Promise<void>((resolveStart) => {
+        // 主 run 的 task_started 不带 data；后台 run（startBackgroundTask）带 taskId，不算。
+        const listener = (event: unknown) => {
+          const record = event as { sessionId?: unknown; data?: { taskId?: unknown } } | undefined;
+          if (record?.sessionId !== sessionId || record?.data?.taskId !== undefined) return;
+          started = true;
+          dispose();
+          resolveStart();
+        };
+        tm.on('task_started', listener);
+        dispose = () => tm.removeListener('task_started', listener);
+      });
+      const underlying = appService.sendMessage(envelope);
+      return (async () => {
+        try {
+          await Promise.race([startSignal, underlying]);
+        } catch (error) {
+          dispose();
+          throw error;
+        }
+        dispose();
+        if (started) {
+          // 启动确认已到：整轮结果不再门控审批落定；轮内错误由会话流自己呈现。
+          underlying.catch(() => {});
+          return;
+        }
+        return underlying;
+      })();
+    },
+  };
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -151,7 +221,7 @@ const planningHandlers: RawDomainRouteHandlers<PlanningDomainRequest, PlanningRo
       return { success: false, error: { code: 'NOT_INITIALIZED', message: 'Agent runtime is not initialized' } };
     }
     const data = await resolvePlanApproval(requestPayload as PlanApprovalRequest, {
-      appService,
+      appService: startScopedAppService(appService, taskManager),
       taskManager,
     });
     return { success: true, data };

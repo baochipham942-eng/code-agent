@@ -56,7 +56,7 @@ interface DeviceSession {
 }
 
 /** commandId must survive the relay hop; do not mint a new id here. */
-function submitRelayedCommand(gateway: CompanionGateway, command: CompanionCommand): CompanionSubmitResult {
+function submitRelayedCommand(gateway: CompanionGateway, command: CompanionCommand): Promise<CompanionSubmitResult> {
   return gateway.submit(command);
 }
 
@@ -510,7 +510,7 @@ export class CompanionRelayClient {
     if (request.action === 'command') {
       const command = companionCommandSchema.parse(request.command);
       if (command.deviceId !== device.deviceId) throw new Error('COMPANION_IDENTITY_MISMATCH');
-      result = submitRelayedCommand(this.deps.gateway, command);
+      result = await submitRelayedCommand(this.deps.gateway, command);
     } else if (request.action === 'read') {
       // 与 LAN exchange 同一个读口：手机经 relay 也能读库/历史/成果列表（N-MOBILE-RELAY-PHONE）。
       result = await this.deps.gateway.read(frame.envelope.deviceRef, request.query);

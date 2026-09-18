@@ -66,7 +66,7 @@ export interface CompanionGatewayDeps {
   refreshDecisions?: () => void;
   dispatch?: (command: CompanionCommand) => CompanionDispatchResult;
   /** Must resolve through the same authoritative service used by the desktop. */
-  decide?: (command: CompanionDecisionCommand) => CompanionSubmitResult;
+  decide?: (command: CompanionDecisionCommand) => CompanionSubmitResult | Promise<CompanionSubmitResult>;
   onPublish?: (event: CompanionEvent) => void;
   onRevoke?: (deviceId: string) => void;
 }
@@ -197,7 +197,7 @@ export class CompanionGateway {
       .map(row => ({ deviceId: String(row.device_id) }));
   }
 
-  submit(rawCommand: unknown): CompanionSubmitResult {
+  async submit(rawCommand: unknown): Promise<CompanionSubmitResult> {
     const parsed = companionCommandSchema.safeParse(rawCommand);
     if (!parsed.success) return { kind: 'rejected', reason: 'invalid_command' };
     const command = parsed.data;
@@ -266,7 +266,7 @@ export class CompanionGateway {
           (request_id, revision, operation_digest) VALUES (?, ?, ?)`).run(
             decisionCommand.payload.requestId, decisionCommand.expectedRevision, decisionCommand.payload.operationDigest);
         if (!claimed.changes) return { kind: 'replayed', command: record };
-        const decision = decide(decisionCommand);
+        const decision = await decide(decisionCommand);
         if (decision.kind !== 'accepted' && decision.kind !== 'replayed') {
           // The claim exists to stop a *second* command ID from redispatching a decision
           // whose outcome is unknown. A definite non-decision is not that: nothing was

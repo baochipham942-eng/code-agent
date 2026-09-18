@@ -108,7 +108,11 @@ describe('planning.ipc dispatch 特征：respondApproval', () => {
   it('payload 原样交 resolvePlanApproval 并回传；PlanApprovalError 取自带 code', async () => {
     const req = { requestId: 'r1', decision: 'approve' };
     expect(await call('respondApproval', req)).toEqual({ success: true, data: { approved: true } });
-    expect(h.resolvePlanApproval).toHaveBeenCalledWith(req, { appService: { id: 'app' }, taskManager: { id: 'tm' } });
+    // appService 换成启动确认作用域包装（只带 sendMessage 窄面）；taskManager 原样透传。
+    expect(h.resolvePlanApproval).toHaveBeenCalledWith(req, {
+      appService: expect.objectContaining({ sendMessage: expect.any(Function) }),
+      taskManager: { id: 'tm' },
+    });
     h.resolvePlanApproval.mockRejectedValueOnce(Object.assign(Object.create(h.PlanApprovalError.prototype), { code: 'APPROVAL_NOT_FOUND', message: 'gone' }));
     expect(await call('respondApproval', req)).toEqual({ success: false, error: { code: 'APPROVAL_NOT_FOUND', message: 'gone' } });
   });

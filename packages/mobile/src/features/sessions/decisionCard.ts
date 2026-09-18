@@ -1,5 +1,21 @@
 export type CardOutcome = 'answered' | 'expired' | 'cancelled';
 
+/**
+ * 同 requestId 的卡片事件按到达顺序浅合并。终态字段（outcome/answer）不跨发布继承：
+ * 重发布的 pending 重试卡（启动失败后带原因重现）不带这两个键，若从旧 payload 继承，
+ * pending 卡会渲染出 data-outcome="answered"。结算事件自带这两个键，照常合并进去。
+ */
+export function mergeCardPayload(
+  previous: Record<string, unknown> | undefined,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!previous) return payload;
+  const base = { ...previous };
+  delete base.outcome;
+  delete base.answer;
+  return { ...base, ...payload };
+}
+
 export function cardOutcome(card: Record<string, unknown>): CardOutcome | undefined {
   const value = card.outcome;
   return value === 'answered' || value === 'expired' || value === 'cancelled' ? value : undefined;

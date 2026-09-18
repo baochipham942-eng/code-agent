@@ -204,6 +204,41 @@ describe('连上不拦：不自动弹选择项目', () => {
   });
 });
 
+/**
+ * D9 登录引导（本单修正后的形态）：配对完成**不弹账号页**——配对从 remote 弹层发起，再 openSheet
+ * 会把「弹层按原流程收掉」顶住（上方那条既有契约）。引导降级为欢迎页上一条可忽略提示：
+ * 点「去登录」才进账号页，「稍后再说」整条消失。
+ */
+describe('配对后的登录引导：欢迎页可忽略提示', () => {
+  async function pairToWelcome() {
+    harness.unpaired = true;
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    fireEvent.click(await waitFor(() => { const el = document.querySelector('[data-testid="open-drawer"]') as HTMLElement; expect(el).toBeTruthy(); return el; }));
+    fireEvent.click([...document.querySelectorAll('.drawer-functions button')].find(b => b.textContent === text.remote) as HTMLElement);
+    const scan = await waitFor(() => { const el = document.querySelector('[data-testid="remote-unpaired"] button.primary') as HTMLElement; expect(el).toBeTruthy(); return el; });
+    fireEvent.click(scan);
+    await waitFor(() => { expect(picker()?.textContent).toBe('One'); });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)); });
+  }
+
+  it('配对成功（未登录）：弹层收掉、欢迎页出登录提示；点「去登录」才进账号页', async () => {
+    await pairToWelcome();
+    expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull();
+    const notice = document.querySelector('[data-testid="welcome-login-notice"]');
+    expect(notice).toBeTruthy();
+    expect(notice?.textContent).toContain(text.needLoginTitle);
+    fireEvent.click(notice!.querySelector('[data-testid="welcome-login-go"]')!);
+    await waitFor(() => { expect(document.querySelector('[data-testid="account-login"]')).toBeTruthy(); });
+  });
+
+  it('「稍后再说」可跳过：提示整条消失，不自动弹账号页', async () => {
+    await pairToWelcome();
+    fireEvent.click(document.querySelector('[data-testid="welcome-login-dismiss"]')!);
+    expect(document.querySelector('[data-testid="welcome-login-notice"]')).toBeNull();
+    expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull();
+  });
+});
+
 describe('新任务的项目选择器', () => {
   it('欢迎语下方显示默认项目（最近用过的），点开是选择项目弹层', async () => {
     await mountNewTask();

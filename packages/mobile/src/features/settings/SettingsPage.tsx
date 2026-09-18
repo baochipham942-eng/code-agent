@@ -5,7 +5,7 @@ import type { RegistrationStatus } from '../../stores/notificationStore';
 import { NeoBrandMark } from '../brand/NeoBrandMark';
 import { AppIcon } from '../../app/AppIcon';
 
-export function SettingsPage({ page, text, appearance, nickname, profileDraft, appInfo, open, chooseAppearance, editProfile, saveProfile, storage, notifications }: {
+export function SettingsPage({ page, text, appearance, nickname, profileDraft, appInfo, open, chooseAppearance, editProfile, saveProfile, storage, notifications, account }: {
   page: SheetPage; text: ReturnType<typeof messages>; appearance: Appearance; nickname: string;
   profileDraft: string; appInfo: { version: string; build: string } | null;
   open(page: SheetPage): void; chooseAppearance(value: Appearance): void; editProfile(value: string): void; saveProfile(): void;
@@ -14,6 +14,8 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
     preference: boolean; osPermission: OsPermission; registration: RegistrationStatus; lastFailure: string | null;
     onToggle(value: boolean): void; onRequest(): void; onOpenSettings(): void;
   };
+  /** 已登录的 Neo 账号（null = 未登录）：设置页那一行显示邮箱。 */
+  account?: { email: string } | null;
 }) {
   const row = (target: SheetPage, detail?: string) => <button className="settings-row" data-testid={`open-${target}`} onClick={() => open(target)}>
     <span>{text[target]}</span><span className="row-detail">{detail}<AppIcon name="chevron" /></span>
@@ -23,7 +25,7 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
       <button className="profile-card" onClick={() => open('profile')} data-testid="open-profile">
         <span className="avatar">{(nickname || text.guest).slice(0, 1)}</span><strong>{nickname || text.guest}</strong><AppIcon name="chevron" />
       </button>
-      <p className="group-title">{text.preferences}</p><div className="settings-group">{row('appearance', text[appearance])}{row('storage')}{row('notifications', notifications?.preference ? text.notificationOn : text.notificationOff)}</div>
+      <p className="group-title">{text.preferences}</p><div className="settings-group">{row('appearance', text[appearance])}{row('storage')}{row('notifications', notifications?.preference ? text.notificationOn : text.notificationOff)}{row('account', account?.email ?? text.accountNotLoggedIn)}</div>
       <p className="group-title">{text.support}</p><div className="settings-group">{row('help')}{row('about')}</div>
     </>;
     case 'appearance': return <div className="settings-group" role="group" aria-label={text.appearance}>

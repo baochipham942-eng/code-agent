@@ -11,6 +11,10 @@ import UIKit
 /// （FB-140，2026-09-12 真机 build 22 实测）。Android 仍走厂商插件（gradle 不受 SPM 影响），
 /// JS 侧接口与错误码保持不变。构建期由 `build-ios.mjs` 的 IOS_PLUGINS_NOT_LINKED 闸守着，
 /// 不让同类问题再静默一次。
+///
+/// 切后台继续录（爸 2026-09-18 拍板，翻掉「麦克风不该在用户看不见的时候还开着」的旧拍板）：
+/// 进程保活交给 Info.plist 的 audio 后台模式（configure-lan.mjs 幂等合入），这里不再挂
+/// didEnterBackground 停录删文件；来电等真中断由既有 interruptionNotification 盯守兜底。
 @objc(NeoVoiceRecorderPlugin)
 public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NeoVoiceRecorderPlugin"
@@ -59,25 +63,8 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     private var converter: AVAudioConverter?
     private var pcmToken = UUID()
     private var previousCategory: AVAudioSession.Category?
-    private var backgroundObserver: NSObjectProtocol?
     private var releaseObservers: [NSObjectProtocol] = []
     private var releaseTimer: DispatchSourceTimer?
-
-    override public func load() {
-        // 切后台就停录并删掉已录音频：麦克风不该在用户看不见的时候还开着，
-        // 半截录音也不该留在磁盘上等下一次 stop 把它当成本次结果。
-        backgroundObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didEnterBackgroundNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.queue.async { self?.teardown(deleteRecording: true) }
-        }
-    }
-
-    deinit {
-        if let observer = backgroundObserver { NotificationCenter.default.removeObserver(observer) }
-    }
 
     @objc func canDeviceVoiceRecord(_ call: CAPPluginCall) {
         call.resolve(["value": true])

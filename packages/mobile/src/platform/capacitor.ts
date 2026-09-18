@@ -8,6 +8,7 @@ import { Keyboard } from '@capacitor/keyboard';
 import { Preferences } from '@capacitor/preferences';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
+import { messages } from '../i18n';
 import type { FilePorts, PlatformPorts } from './ports';
 import { pickFromCamera, toPickedFile, type CameraBridge } from './cameraPick';
 import { createKeyboardPort } from './keyboardPort';
@@ -97,14 +98,54 @@ type PcmBridge = {
 
 const pcmBridge = VoiceRecorder as unknown as PcmBridge;
 
+/**
+ * Android 录音前台服务桥（N-MOBILE-BG-RECORDING）：Android 12+ 后台用麦克风必须有
+ * microphone 类型的前台服务。iOS 靠 Info.plist 的 audio 后台模式保活，不走这个插件。
+ */
+type VoiceKeepAliveBridge = {
+  start(options: { title: string; text: string }): Promise<void>;
+  stop(): Promise<void>;
+};
+
+const voiceKeepAlive = Capacitor.getPlatform() === 'android'
+  ? registerPlugin<VoiceKeepAliveBridge>('VoiceKeepAlive', { web: async () => ({ start: async () => {}, stop: async () => {} }) })
+  : null;
+
 function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
+  // 前台服务按「一次录音」的粒度挂，不跟分段走：recorder.stop/start 每段都来一遍，服务若
+  // 跟着段走，通知每 4s 闪一次，且后台一旦停了就再起不来（Android 12+ 禁止后台 startForegroundService）。
+  // 停服务带防抖：最后一次 stop 之后没有新 start（切段之间的间隔远小于宽限值）才真停。
+  let stopTimer: ReturnType<typeof setTimeout> | null = null;
+  const keepAliveStart = async () => {
+    if (!voiceKeepAlive) return;
+    if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
+    // fail-open：服务起不来不该毁掉前台录音，但降级要留痕（哪个平台、什么错）。
+    const text = messages(typeof navigator === 'undefined' ? 'en' : navigator.language);
+    try { await voiceKeepAlive.start({ title: text.voice, text: text.voiceListening }); }
+    catch (error) { console.warn('[voice-keepalive] start failed', error); }
+  };
+  const keepAliveStop = () => {
+    if (!voiceKeepAlive) return;
+    if (stopTimer) clearTimeout(stopTimer);
+    stopTimer = setTimeout(() => {
+      stopTimer = null;
+      void voiceKeepAlive.stop().catch(error => console.warn('[voice-keepalive] stop failed', error));
+    }, COMPANION_LIMITS.voiceServiceStopGraceMs);
+  };
   const recorder: NonNullable<PlatformPorts['recorder']> = {
     start: async () => {
       if (!(await VoiceRecorder.requestAudioRecordingPermission()).value) throw new Error('MICROPHONE_DENIED');
-      await VoiceRecorder.startRecording();
+      await keepAliveStart();
+      try {
+        await VoiceRecorder.startRecording();
+      } catch (error) {
+        keepAliveStop();   // 起录失败即这次录音到头了：服务收尾别等下一次 stop
+        throw error;
+      }
     },
     stop: async () => {
       const { value } = await VoiceRecorder.stopRecording();
+      keepAliveStop();
       if (!value.recordDataBase64) throw new Error('EMPTY_RECORDING');
       return { audioData: value.recordDataBase64, mimeType: value.mimeType.split(';')[0], durationMs: value.msDuration };
     },

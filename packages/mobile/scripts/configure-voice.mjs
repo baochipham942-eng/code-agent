@@ -6,7 +6,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
  * iOS 侧不再打补丁：那两处（CustomMediaRecorder.stopRecording / VoiceRecorder 的 neoBackgroundObserver）
  * 补的是厂商插件的 iOS 源码，而这份源码在 SPM 工程里**从未被编译过**——插件没有 Package.swift，
  * cap sync 只 warn 就把它排除了（FB-140 真机实测：运行时 "plugin is not implemented on ios"）。
- * iOS 录音现在由 ios-native/NeoVoiceRecorder.swift 自己实现，切后台停录与会话释放在那里。
+ * iOS 录音现在由 ios-native/NeoVoiceRecorder.swift 自己实现。
+ *
+ * N-MOBILE-BG-RECORDING（爸 2026-09-18 拍板）：切后台不再杀录音（保活交给 microphone 前台服务），
+ * 只保留 handleOnDestroy 清场——进程死了录音文件不该留着等下次 stop 当本次结果。
  */
 export function configureVoiceRelease(root = 'node_modules/capacitor-voice-recorder') {
   const android = `${root}/android/src/main/java/com/tchvu3/capacitorvoicerecorder/CustomMediaRecorder.java`;
@@ -43,7 +46,6 @@ export function configureVoiceRelease(root = 'node_modules/capacitor-voice-recor
             mediaRecorder = null;
         }
     }
-    @Override protected void handleOnPause() { neoReleaseRecording(); }
     @Override protected void handleOnDestroy() { neoReleaseRecording(); }`);
     writeFileSync(androidPlugin, native);
   }

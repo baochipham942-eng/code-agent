@@ -84,6 +84,10 @@ describe('configureVoiceRelease', () => {
     expect(javaPlugin).toContain('neoReleaseRecording');
     expect(javaPlugin).toContain('public synchronized void startRecording(');
     expect(javaPlugin).toContain('public synchronized void stopRecording(');
+    // N-MOBILE-BG-RECORDING（爸 2026-09-18）：切后台不再杀录音（保活交给 microphone 前台服务），
+    // 只留 handleOnDestroy 清场——进程死了录音文件不该留着等下次 stop 当本次结果。
+    expect(javaPlugin).not.toContain('handleOnPause');
+    expect(javaPlugin).toContain('handleOnDestroy');
     expect(read(root, `${JAVA_DIR}/CustomMediaRecorder.java`)).toContain('finally { currentRecordingStatus = CurrentRecordingStatus.NONE; }');
     expect(() => configureVoiceRelease(root)).not.toThrow();
     expect(read(root, `${JAVA_DIR}/VoiceRecorder.java`)).toBe(javaPlugin);

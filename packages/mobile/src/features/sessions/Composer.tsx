@@ -141,7 +141,7 @@ export function Composer({
     : voiceFailureMessage(text, kind);
   const noticeAction = !kind || !voice.failure ? undefined
     : voiceFailureAction(text, kind, {
-      retry: voice.retry, start: () => void voice.start(), openSettings, openVoiceSetup, micReleased,
+      retry: voice.retry, openSettings, openVoiceSetup, micReleased,
     });
   return <>
     <StatusSlot items={[...status, notice ? { rank: 4, message: notice, action: noticeAction, reason: voice.failure?.reason } : null]} />

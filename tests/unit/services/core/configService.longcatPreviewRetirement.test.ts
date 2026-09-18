@@ -8,11 +8,18 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  CONTEXT_WINDOWS,
+  MODEL_ABBREV,
+  MODEL_FEATURES,
+  MODEL_MAX_OUTPUT_TOKENS,
+  MODEL_MIGRATIONS,
+  MODEL_PRICING_PER_1M,
   PROVIDER_MODELS,
   getContextWindow,
   getModelMaxOutputTokens,
   normalizeModelId,
 } from '../../../../src/shared/constants';
+import modelCatalog from '../../../../src/shared/model-catalog.json';
 import { PROVIDER_REGISTRY } from '../../../../src/host/model/providerRegistry';
 import { normalizeLongCatModelId } from '../../../../src/renderer/components/features/settings/tabs/ModelSettings.helpers';
 import type { AppSettings } from '../../../../src/shared/contract';
@@ -80,6 +87,31 @@ describe('①② 内建目录与归一化已摘 LongCat-2.0-Preview', () => {
     // 摘表后老值靠 MODEL_MIGRATIONS 归一命中，不落 128k/16k 兜底
     expect(getContextWindow('LongCat-2.0-Preview')).toBe(131_072);
     expect(getModelMaxOutputTokens('LongCat-2.0-Preview')).toBe(32_768);
+  });
+});
+
+// R2 钉子：R1 摘表后目录/常量表对 Preview 零守护（把 catalog default 改回 Preview 时 33 例全绿），
+// 这里按数据源逐张遍历，谁把 Preview 塞回任何槽位都必须红；迁移表是唯一合法宿主，也钉死不许删。
+describe('①R2 目录与常量表防回流：任何数据源不得再含 LongCat-2.0-Preview', () => {
+  const RETIRED_ID = 'LongCat-2.0-Preview';
+
+  it('model-catalog.json 的 longcat：default 与 models[].id 均无 Preview', () => {
+    const longcat = modelCatalog.providers.find((provider) => provider.id === 'longcat');
+    expect(longcat).toBeDefined();
+    expect(longcat?.default).not.toBe(RETIRED_ID);
+    expect(longcat?.models.map((model) => model.id)).not.toContain(RETIRED_ID);
+  });
+
+  it('五张常量表的 key 均无 Preview（maxTokens/上下文/能力/缩写/定价）', () => {
+    expect(Object.keys(MODEL_MAX_OUTPUT_TOKENS)).not.toContain(RETIRED_ID);
+    expect(Object.keys(CONTEXT_WINDOWS)).not.toContain(RETIRED_ID);
+    expect(Object.keys(MODEL_FEATURES)).not.toContain(RETIRED_ID);
+    expect(Object.keys(MODEL_ABBREV)).not.toContain(RETIRED_ID);
+    expect(Object.keys(MODEL_PRICING_PER_1M)).not.toContain(RETIRED_ID);
+  });
+
+  it('MODEL_MIGRATIONS 仍保留 Preview → GA 映射（存量配置归一靠它，不许顺手清掉）', () => {
+    expect(MODEL_MIGRATIONS[RETIRED_ID]).toBe('LongCat-2.0');
   });
 });
 

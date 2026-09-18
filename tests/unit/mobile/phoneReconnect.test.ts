@@ -592,6 +592,43 @@ describe('companionStore 前台退避自动重连', () => {
     store.getState().pause();
   });
 
+  it('手动重连只锁一个周期：一周期内置灰防重复点击，越过 requestTimeoutMs 解锁且点按真能抢占', async () => {
+    const store = storeOf();
+    await store.getState().hydrate();          // 首连失败 → offline + autoRetrying
+    harness.hangRecover = true;
+    const first = store.getState().reconnect({ resetBackoff: true });
+    await flushUntilHung();
+    expect(store.getState()).toMatchObject({ status: 'offline', busy: true, autoAttempt: false });
+    // 第一周期内：手动尝试占 busy → 逃生口置灰（防重复点击照旧，D3 钉的那半不变）。
+    expect(slotFrom(store).find(item => item?.rank === 2)?.action?.disabled).toBe(true);
+    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.requestTimeoutMs - 1);
+    expect(slotFrom(store).find(item => item?.rank === 2)?.action?.disabled).toBe(true);
+    // 越过一个周期即解锁：一次手动尝试最长烧两个 LAN 地址各一拍再落 relay（约 20s+），
+    // 整段锁死等于长时间没有逃生口（爸实测约 20s，设计只锁一个周期）。
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.getState().autoAttempt).toBe(true);
+    expect(slotFrom(store).find(item => item?.rank === 2)?.action?.disabled).toBe(false);
+    // 解锁后点「重新连接」真能抢占：新尝试进场（recoverCalls 增加）、重新锁一个周期；
+    // 旧尝试迟到结果按代号丢弃（D3 不变式不回归）。
+    const calls = harness.recoverCalls;
+    const second = store.getState().reconnect({ resetBackoff: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(harness.recoverCalls).toBe(calls + 1);
+    expect(store.getState().autoAttempt).toBe(false);
+    expect(slotFrom(store).find(item => item?.rank === 2)?.action?.disabled).toBe(true);
+    // 宿主回来了：放行第二个（在途的）尝试 → 连上；第一个的迟到失败不得把新连接打回 offline。
+    harness.recoverError = null;
+    harness.hangRecover = false;
+    harness.releaseHangs.at(-1)!();
+    await second;
+    expect(store.getState()).toMatchObject({ status: 'connected', busy: false });
+    expect(harness.recoverCalls).toBe(calls + 2);   // 连上后的 relay 路由探针也走了一拍 recover
+    // 两个尝试都收尾：解锁定时器清干净，不残留（此刻无退避拍在挂）。
+    expect(vi.getTimerCount()).toBe(0);
+    void first;   // 第一个尝试的 recover 还挂着（测试代管），pause 会顺带放行
+    store.getState().pause();
+  });
+
   it('自动尝试卡在 mDNS 解析时扫码：迟到的旧尝试不得关掉扫码建立的连接（ai-review Important）', async () => {
     harness.recoverError = null;
     let releaseResolve: (() => void) | null = null;

@@ -583,6 +583,20 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         && (get().connectionError === 'connectionQrInvalid' || get().connectionError === 'connectionScanFailed')
         ? get().connectionError : null;
       set({ busy: true, autoAttempt: opts?.autoAttempt === true, connectionError: heldError, commandError: null, commandErrorAction: null });
+      /**
+       * 手动连接尝试只锁一个周期（N-MOBILE-CONN-POLISH-R3 ②）：一次手动重连最长烧两个
+       * LAN 地址各一个 requestTimeoutMs、再落 relay 一个——照旧置灰等于约 20s 没有逃生口
+       * （爸实测），设计只锁一个周期。到点把 autoAttempt 翻真解锁，此后的点按走既有
+       * preempt/claim 抢占链（D3 机制现成）；第一周期内「手动占 busy 防重复点击」照旧成立。
+       * finally 里必须清（含被抢占的早退路径）：旧尝试的定时器不得提前解锁别人的锁。
+       */
+      let unlockTimer: ReturnType<typeof setTimeout> | null = null;
+      if (attempt !== undefined && opts?.autoAttempt !== true) {
+        unlockTimer = setTimeout(() => {
+          unlockTimer = null;
+          if (get().busy) set({ autoAttempt: true });
+        }, COMPANION_LIMITS.requestTimeoutMs);
+      }
       try {
         const r = await work(attempt);
         // 被更新的尝试抢占了：迟到的旧成功整体作废，返回 undefined（等价原 finally 里 return 的覆盖语义）。
@@ -618,6 +632,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         armAutoRetry(reconnectDepth > 0);
       }
       finally {
+        // unlockTimer 无条件清（含被抢占的早退）：旧尝试的定时器不得解锁别人的锁。
+        if (unlockTimer !== null) clearTimeout(unlockTimer);
         // 被抢占的尝试不在这里释放 busy（busy 属于新尝试）；finally 里 return 触 no-unsafe-finally，改条件守卫。
         if ((attempt === undefined || attempt === connectSeq) && !(userPairing && !opts?.preempt)) set({ busy: false });
       }
@@ -810,9 +826,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         clearPauseGrace();
         // 手动「重新连接」立即发起新尝试并抢过自动重试的在途连接（D3）：旧尝试迟到的失败/
         // 成功按代号丢弃。busy 被手动操作（扫码、上一次手动重连）占着时不抢——safely 的
-        // 去重守卫照旧拦重复点按。此态下面 manual 分支已清定时器而 safely 随后放弃、不重挂；
-        // 不变式靠 UI 撑着——连接页按钮在手动 busy 期间置灰，用户点不到（ai-review Nit，
-        // 按原样保留）。
+        // 去重守卫照旧拦重复点按。此态下面 manual 分支已清定时器而 safely 随后放弃、不重挂。
+        // 手动 busy 只锁一个周期（safely 的一周期解锁定时器）：越过 requestTimeoutMs 后
+        // autoAttempt 翻真，这里的抢占判据随之放行——连接页按钮不再是长时间死键。
         const preempt = manual && get().busy && get().autoAttempt;
         if (manual) {
           retryGeneration += 1;

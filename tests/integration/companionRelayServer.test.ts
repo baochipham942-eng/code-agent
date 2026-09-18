@@ -117,7 +117,7 @@ describe('companion relay: production server + host dial-out', () => {
     expect(Object.keys(stats).sort()).toEqual([
       'connections', 'droppedBacklog', 'droppedBackpressure', 'droppedExpired', 'droppedNoRoute',
       'forwarded', 'notifiedNoHost', 'queuedFrames', 'rejectedAuth', 'revoked', 'routes',
-      'accountConnections', 'rejectedOwner', 'ticketsIssued', 'ticketConnections',
+      'accountConnections', 'rejectedOwner', 'ticketsIssued', 'ticketConnections', 'terminatedNoPong',
     ].sort());
     const missing = await fetch(`http://127.0.0.1:${port}/nope`);
     expect(missing.status).toBe(404);
@@ -348,6 +348,70 @@ describe('companion relay: production server + host dial-out', () => {
     await sweptHost.stop();
     sweptPhone.close();
     await sweeping.stop();
+  });
+
+  // N-COMPANION-RELAY-KEEPALIVE：连接活性由 WS 协议层 ping/pong 把关，不绑 route 生命周期。
+  // 下面两例用注入时钟 + 手动 ping()/sweep() 驱动：真实 ping 定时器（relayPingMs=30s）在测试的
+  // 真实时长内不会自燃。
+  it('keeps a routeless pong-answering connection alive across idle sweeps', async () => {
+    let fakeNow = Date.now();
+    const events: string[] = [];
+    const probing = new CompanionRelayServer({
+      credential: SECRET,
+      port: await freePort(),
+      now: () => fakeNow,
+      logger: { info: event => events.push(event), warn: () => {} },
+    });
+    const probingUrl = `ws://127.0.0.1:${(await probing.listen()).port}`;
+    // 零 route 连接（不 register 任何 token），只有 ws 自动回 pong。
+    const loner = new WebSocket(probingUrl, { headers: { authorization: `Bearer ${SECRET}` } });
+    const received: string[] = [];
+    loner.on('message', data => received.push(String(data)));
+    await new Promise<void>(resolve => loner.once('open', () => resolve()));
+    const connectionsAtOpen = probing.currentStats.connections;
+    // 三个完整周期：每轮先把注入时钟推远超 relayIdleMs，靠 ping→pong 刷新 lastSeen，idle 清扫
+    // 永远够不到这条连接（旧代码里 pong 不刷 lastSeen，这里第一轮就会被 connection_idle_closed 杀）。
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      fakeNow += L.relayIdleMs + 1_000;
+      probing.ping();
+      await new Promise(resolve => setTimeout(resolve, 100)); // loopback 上 ping→pong 毫秒级
+      probing.sweep();
+      probing.sweep();
+      expect(loner.readyState).toBe(WebSocket.OPEN);
+    }
+    expect(received).toEqual([]); // 只答控制帧，不吃任何应用帧
+    expect(probing.currentStats.connections).toBe(connectionsAtOpen);
+    expect(probing.currentStats.terminatedNoPong).toBe(0);
+    expect(events).not.toContain('connection_idle_closed');
+    loner.close();
+    await probing.stop();
+  });
+
+  it('terminates a connection that never answers pings, counted separately from idle sweeps', async () => {
+    const events: string[] = [];
+    const probing = new CompanionRelayServer({
+      credential: SECRET,
+      port: await freePort(),
+      logger: {
+        info: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+        warn: () => {},
+      },
+    });
+    const probingUrl = `ws://127.0.0.1:${(await probing.listen()).port}`;
+    // autoPong: false —— 模拟链路半开/TCP 已死：ping 发得出去，pong 永远回不来。
+    const silent = new WebSocket(probingUrl, { headers: { authorization: `Bearer ${SECRET}` }, autoPong: false });
+    await new Promise<void>(resolve => silent.once('open', () => resolve()));
+    probing.ping(); // 第一轮：发探活，不判死——给 pong 留满一个完整周期
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(silent.readyState).toBe(WebSocket.OPEN);
+    expect(probing.currentStats.terminatedNoPong).toBe(0);
+    probing.ping(); // 一个完整周期仍无 pong → terminate（不是 close：半开连接等不到关闭帧握手）
+    await new Promise(resolve => setTimeout(resolve, 200));
+    expect(silent.readyState).toBe(WebSocket.CLOSED);
+    expect(probing.currentStats.terminatedNoPong).toBe(1);
+    expect(events).toContain('connection_pong_timeout {}');
+    expect(events).not.toContain('connection_idle_closed');
+    await probing.stop();
   });
 
   it('drops frames whose envelope TTL has expired', async () => {

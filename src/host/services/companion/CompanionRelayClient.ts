@@ -42,6 +42,11 @@ function submitRelayedCommand(gateway: CompanionGateway, command: CompanionComma
   return gateway.submit(command);
 }
 
+/** ws close 事件的 reason 是可空的 Buffer：空 Buffer（对端没给说明）→ null；协议上限 123 字节，无需截断。 */
+function closeReasonText(reason: Buffer): string | null {
+  return reason.length ? reason.toString('utf8') : null;
+}
+
 export class CompanionRelayClient {
   private socket: WebSocket | null = null;
   private readonly buffer = new RelayOutboundBuffer();
@@ -159,8 +164,9 @@ export class CompanionRelayClient {
 
   get bufferedCount(): number { return this.buffer.size; }
   get droppedCount(): number { return this.buffer.dropped; }
-  /** 只读连接态：open 后撑过稳定期前也算 true（与 whenConnected 同判据），设置页状态块用它。 */
-  get connected(): boolean { return this.live; }
+  /** 只读连接态：live 且已撑过稳定期（stableTimer 清空）才算 true。relay 拒证是 open 后立刻关，
+   *  那个窗口里若报 true，设置页会闪一下「已开通」；whenConnected 仍在 open 即返回（收发不等稳定期）。 */
+  get connected(): boolean { return this.live && this.stableTimer === null; }
   /** 最近一次拨号失败的码（连上后清空）；只进日志语义，不直接展示给用户。 */
   get lastDialError(): string | null { return this.lastDialErrorCode; }
 
@@ -241,7 +247,9 @@ export class CompanionRelayClient {
         : lastError instanceof Error ? errorHead(lastError) : '';
       if (code) return code;
     }
-    if (closeCode && closeCode !== 1005 && closeCode !== 1006) return `close ${closeCode}`;
+    // 1005（对端发了不带状态码的关闭帧）与 1006（没有关闭帧、TCP 层断）各自成码，不再折叠进兜底码：
+    // 排障要分清是中继主动关还是链路断（N-COMPANION-RELAY-CLOSE-DIAG）。
+    if (closeCode) return `close ${closeCode}`;
     return 'COMPANION_RELAY_CONNECT_FAILED';
   }
 
@@ -266,6 +274,8 @@ export class CompanionRelayClient {
       let settled = false;
       let lastError: unknown;
       let httpStatus: number | undefined;
+      // 本次 socket 的 open 时刻：disconnected 行里的存活时长用它实测，不用重连计数推。
+      let openedAt: number | null = null;
       const finish = (error?: Error) => {
         if (settled) return;
         settled = true;
@@ -295,6 +305,7 @@ export class CompanionRelayClient {
       socket.once('error', error => { lastError = error; });
       socket.once('open', () => {
         clearTimeout(timer);
+        openedAt = this.now();
         this.socket = socket;
         this.live = true;
         // attempt / 失败去重不在 open 时清：被 relay 拒的连接也会先 open 再立刻关（ai-review PR#1926）。
@@ -325,7 +336,7 @@ export class CompanionRelayClient {
       socket.on('message', data => {
         try { this.onMessage(String(data)); } catch { /* per-frame forget handles poison */ }
       });
-      socket.once('close', code => {
+      socket.once('close', (code, reason) => {
         clearTimeout(timer);
         const wasLive = this.live && this.socket === socket;
         const stable = wasLive && this.stableTimer === null;
@@ -351,8 +362,12 @@ export class CompanionRelayClient {
         }
         if (wasLive) {
           // 已连上的连接被断开不是「拨号失败」，单独一行，免得排障时误读成握手/鉴权问题。
+          // 原始 close code / reason / 实测存活时长随行打出：errorCode 可能折叠不同物理事实（本单前
+          // 1005 与 1006 同码），这三样才是分诊依据（1005=对端主动关、1006=链路断、reason=对端关闭说明）。
+          const reasonText = closeReasonText(reason);
+          const uptimeMs = openedAt === null ? -1 : this.now() - openedAt;
           const delay = this.peekReconnectDelay();
-          this.logger?.warn(`Companion relay${this.label} disconnected: ${errorCode}; reconnect in ${Math.round(delay)}ms`);
+          this.logger?.warn(`Companion relay${this.label} disconnected: ${errorCode}; closeCode=${code} reason=${JSON.stringify(reasonText ?? '')} uptimeMs=${uptimeMs}; reconnect in ${Math.round(delay)}ms`);
           this.scheduleReconnect(delay);
         }
       });
@@ -504,14 +519,15 @@ export interface CompanionRelayAccountSource {
   addAuthChangeCallback(callback: (user: { id: string } | null) => void): () => void;
 }
 
-/** 账号通道对设置页自报的状态（CompanionRelayStatus 的 account 部分，由装配层拼上 configured/legacy）。 */
+/** 账号通道对设置页自报的状态（CompanionRelayStatus 的 account 部分，由装配层拼上 legacy）。 */
 export type CompanionRelayAccountStatus = Pick<CompanionRelayStatus, 'account' | 'accountError'>;
 
 /**
  * 账号通道（N-COMPANION-RELAY-ACCOUNT-BIND 第一刀）：电脑登录了 Neo 账号就再开一条 relay 连接，用
  * Supabase access token 鉴权、按 acct:<用户 id> 派生路由并登记。与共享凭据通道完全并行，那条一字不改；
  * 本刀不下发给手机，只让 relay 侧的离线验签与账号路由在生产里有真实消费方。
- * 登录 / 退出 / 换账号时按用户 id 起停；同一用户的令牌刷新不重连（每次拨号现取令牌）。
+ * 登录 / 退出 / 换账号时按用户 id 起停；同一用户的令牌刷新不重连（每次拨号现取令牌）——
+ * 例外：上次身份加载失败会回退已记的用户 id，同一用户的下一次登录态变化会重试。
  */
 export function startCompanionRelayAccountIfConfigured(opts: {
   dataDirectory: string;
@@ -549,7 +565,11 @@ export function startCompanionRelayAccountIfConfigured(opts: {
       try {
         identity = await opts.loadIdentity();
       } catch (error) {
-        opts.logger?.warn(`Companion relay (account) identity load failed: ${errorHead(error)}`);
+        opts.logger?.warn(`Companion relay (account) identity load failed: ${errorHead(error)}; retrying on next auth change`);
+        // 身份加载失败后 follow 链里没有自动重试，把 userId 回退掉，让同一用户的下一次登录态
+        // 变化（token 刷新/后台 session 验证/重新登录都会发）能重新走这条链——否则设置页的
+        // connecting 文案宣称「稍后自动重试」就成了假话。被更新的登录态顶掉时不能回退。
+        if (userId === next) userId = null;
         return;
       }
       if (stopped || userId !== next) return;

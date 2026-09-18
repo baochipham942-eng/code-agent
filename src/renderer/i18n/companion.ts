@@ -37,7 +37,6 @@ export const companionText = {
     crossnetConnected: '跨网连接：已开通 · 通过 Neo 账号',
     crossnetConnectedHint: '手机离开这个 Wi‑Fi 也能连回来；内容在手机和电脑之间端到端加密，中继看不到。',
     crossnetLegacyConnected: '旧通道：已连接',
-    crossnetLegacyDisconnected: '旧通道：未连接',
   },
   en: {
     title: 'Connect a phone',
@@ -77,7 +76,6 @@ export const companionText = {
     crossnetConnected: 'Cross-network: enabled · via your Neo account',
     crossnetConnectedHint: 'Your phone can reach this computer from other networks; content stays end-to-end encrypted between phone and computer, invisible to the relay.',
     crossnetLegacyConnected: 'Legacy channel: connected',
-    crossnetLegacyDisconnected: 'Legacy channel: disconnected',
   },
 };
 

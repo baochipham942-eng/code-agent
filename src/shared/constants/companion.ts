@@ -134,6 +134,12 @@ export const COMPANION_LIMITS = {
   phoneReconnectSteadyMs: 30_000,
   phoneReconnectSlowMs: 60_000,
   phoneReconnectSlowAfterMs: 600_000,
+  /**
+   * 退后台不立即拆连接（N-MOBILE-BG-KEEPALIVE-GRACE）：宽限这么久才关，覆盖「切出去看一眼
+   * 就回来」的量级。必须 < channelTtlMs（300s，LAN 逻辑通道在 Host 侧的寿命），宽限内回前台
+   * 连一次握手都省掉；relay 的后台 socket 死活不靠它保——回前台用 sync 探活兜底。
+   */
+  backgroundKeepaliveGraceMs: 30_000,
   relayHeartbeatMs: 20_000,
   relayIdleMs: 60_000,
   relayConnectTimeoutMs: 10_000,

@@ -10,6 +10,7 @@ import {
   type AvailabilityKind,
   type AvailabilityScope,
 } from './errorClassifier';
+import { createModelMarkFileStore, type ModelMarkStore } from './availabilityMarkPersistence';
 
 const logger = createLogger('ProviderHealthMonitor');
 
@@ -17,7 +18,7 @@ export type HealthStatus = 'healthy' | 'degraded' | 'unavailable' | 'recovering'
 
 const AVAILABILITY_MARK_TTL_MS = 30 * 60_000;
 
-interface AvailabilityMark {
+export interface AvailabilityMark {
   scope: AvailabilityScope;
   kind: AvailabilityKind;
   at: number;
@@ -65,10 +66,15 @@ function modelKey(provider: string, model: string): string {
 
 class ProviderHealthMonitor {
   private providers = new Map<string, ProviderState>();
-  /** 供应商级失败（401/403、余额、网络）：标整家。 */
+  /** 供应商级失败（401/403、余额、网络）：标整家。内存 + 30 分钟 TTL，不持久化（瞬态）。 */
   private providerMarks = new Map<string, AvailabilityMark>();
-  /** 模型级失败（停用 / 不存在）：只标这一个模型。 */
+  /**
+   * 模型级失败（停用 / 不存在）：只标这一个模型。不吃 TTL——「停用」不自愈，供应商真
+   * 重新上架时下一次成功调用（recordSuccess）会清；挂上持久化 store 后跨重启生效
+   * （N-MOBILE-CONN-POLISH-R3 ④：重启即空会让回落链把已停用模型当好模型选中）。
+   */
   private modelMarks = new Map<string, AvailabilityMark>();
+  private modelMarkStore: ModelMarkStore | null = null;
 
   /** Call after each successful request */
   recordSuccess(provider: string, latencyMs: number, options?: { model?: string }): void {
@@ -82,8 +88,8 @@ class ProviderHealthMonitor {
     state.lastSuccessAt = Date.now();
     this.pruneEvents(state);
     this.updateStatus(provider, state);
-    // 成功一次立即清该级标记：这个模型的模型级标记 + 这家的供应商级标记。
-    if (options?.model) this.modelMarks.delete(modelKey(provider, options.model));
+    // 成功一次立即清该级标记：这个模型的模型级标记 + 这家的供应商级标记。落盘跟同一拍。
+    if (options?.model && this.modelMarks.delete(modelKey(provider, options.model))) this.persistModelMarks();
     this.providerMarks.delete(provider);
   }
 
@@ -103,6 +109,7 @@ class ProviderHealthMonitor {
     const at = Date.now();
     if (classified?.scope === 'model' && options?.model) {
       this.modelMarks.set(modelKey(provider, options.model), { scope: 'model', kind: classified.kind, at });
+      this.persistModelMarks();
       // 模型级失败不把整家打成 unavailable（Preview 下线不能连累 LongCat-2.0）。
       const state = this.getOrCreate(provider);
       state.observationCount++;
@@ -137,10 +144,8 @@ class ProviderHealthMonitor {
     const providerMark = this.providerMarks.get(provider);
     if (providerMark && !this.expired(providerMark.at, now)) return providerMark;
     if (providerMark) this.providerMarks.delete(provider);
-    const mark = this.modelMarks.get(modelKey(provider, model));
-    if (mark && !this.expired(mark.at, now)) return mark;
-    if (mark) this.modelMarks.delete(modelKey(provider, model));
-    return null;
+    // 模型级标记不查 TTL：停用不自愈，只有该模型成功一次（recordSuccess）才清。
+    return this.modelMarks.get(modelKey(provider, model)) ?? null;
   }
 
   getProviderMark(provider: string): AvailabilityMark | null {
@@ -154,15 +159,10 @@ class ProviderHealthMonitor {
   }
 
   getModelMarks(provider: string): Record<string, { kind: AvailabilityKind }> {
-    const now = Date.now();
     const out: Record<string, { kind: AvailabilityKind }> = {};
     const prefix = `${provider}\0`;
     for (const [key, mark] of this.modelMarks) {
       if (!key.startsWith(prefix)) continue;
-      if (this.expired(mark.at, now)) {
-        this.modelMarks.delete(key);
-        continue;
-      }
       out[key.slice(prefix.length)] = { kind: mark.kind };
     }
     return out;
@@ -226,6 +226,23 @@ class ProviderHealthMonitor {
     };
   }
 
+  /**
+   * 挂上模型级标记的持久化：回灌盘上标记（内存里已有的更新鲜，不覆盖），此后每次
+   * modelMarks 变更（recordFailure 写 / recordSuccess 删）跟同一拍落盘。生产由宿主
+   * 启动时 armModelMarkPersistence() 接线；不挂 store 时纯内存，行为与本单之前一致。
+   */
+  attachModelMarkStore(store: ModelMarkStore): void {
+    this.modelMarkStore = store;
+    const stored = store.load();
+    if (!stored) return;
+    for (const [key, mark] of stored) if (!this.modelMarks.has(key)) this.modelMarks.set(key, mark);
+  }
+
+  /** 内存为真源：每次变更把整份模型级标记交给 store 串行落盘（provider 级不持久化）。 */
+  private persistModelMarks(): void {
+    this.modelMarkStore?.persist([...this.modelMarks]);
+  }
+
   private getOrCreate(provider: string): ProviderState {
     let state = this.providers.get(provider);
     if (!state) {
@@ -282,4 +299,16 @@ let instance: ProviderHealthMonitor | null = null;
 export function getProviderHealthMonitor(): ProviderHealthMonitor {
   if (!instance) instance = new ProviderHealthMonitor();
   return instance;
+}
+
+/**
+ * 生产接线：宿主启动时给单例挂上模型级标记持久化（读盘回灌 + 变更落盘，默认落数据目录
+ * model-availability-marks.json）。刻意不在 getProviderHealthMonitor() 里默认挂：单测
+ * （modelRouter / aiSdkAdapter / companionModelDefault 等 8+ 个文件）靠 vi.resetModules
+ * 拿互不串盘的纯内存实例，工厂挂盘会让上一条用例的标记漏进下一条。
+ */
+export function armModelMarkPersistence(store: ModelMarkStore = createModelMarkFileStore()): ProviderHealthMonitor {
+  const monitor = getProviderHealthMonitor();
+  monitor.attachModelMarkStore(store);
+  return monitor;
 }

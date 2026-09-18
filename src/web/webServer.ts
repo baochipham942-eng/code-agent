@@ -554,6 +554,17 @@ async function initializeServices(): Promise<void> {
   }
   bootMark('database');
 
+  // 4.6 模型级可用性标记回灌（N-MOBILE-CONN-POLISH-R3 ④）：停用/不存在的模型标记持久化
+  // 在数据目录，重启后继续生效——否则手机默认模型的回落链会把「从未调用过」的已停用模型
+  // 当好模型选中，下一次执行必炸。provider 级标记维持内存 + TTL，不受影响。
+  try {
+    const { armModelMarkPersistence } = await import('../host/model/providerHealthMonitor');
+    armModelMarkPersistence();
+  } catch (error) {
+    logger.warn('Model availability mark persistence unavailable (non-blocking):', (error as Error).message);
+  }
+  bootMark('model-marks');
+
   // 4.5 Loop 启动收口（N-LOOP-DURABLE 刀1 + 修复棒）：归属进程已确认消失的 loop 残留
   // 在 session_automations 里永远停在 running，侧栏徽标继续谎报「运行中」。
   // 在 renderer 连上来之前把残留收成终态并发一条人话通知（判据 = loopOwnership

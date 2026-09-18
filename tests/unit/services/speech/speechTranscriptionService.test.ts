@@ -3,15 +3,25 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SPEECH_INPUT_SETTINGS, type SpeechInputSettings } from '../../../../src/shared/contract';
 
-const { execFileMock, getConfigServiceMock, transcribeWithWhisperCppMock, groqCreateMock } = vi.hoisted(() => ({
+const { execFileMock, getConfigServiceMock, transcribeWithWhisperCppMock, groqCreateMock, loggerMock } = vi.hoisted(() => ({
   execFileMock: vi.fn(),
   getConfigServiceMock: vi.fn(),
   transcribeWithWhisperCppMock: vi.fn(),
   groqCreateMock: vi.fn(),
+  loggerMock: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
 vi.mock('child_process', () => ({
   execFile: execFileMock,
+}));
+
+vi.mock('../../../../src/host/services/infra/logger', () => ({
+  createLogger: () => loggerMock,
 }));
 
 vi.mock('../../../../src/host/services/core/configService', () => ({
@@ -186,6 +196,74 @@ describe('SpeechTranscriptionService', () => {
       expect.any(Function),
     );
     expect(transcribeWithWhisperCppMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('cloud-only 不按时长分段：121s 小文件不 spawn ffmpeg，整段直送 Groq', async () => {
+    // 2026-09-12 台账真因：cloud-only 下按时长把 ffmpeg 拽进云链路，ffmpeg 一崩整条链死在
+    // UNKNOWN。Groq 按文件大小收、不按时长，长而小的录音没有分段的理由。
+    configureSpeech({ mode: 'cloud-only' });
+    const service = new SpeechTranscriptionService();
+
+    const result = await service.transcribe({
+      audioData: makeAudioData(),
+      mimeType: 'audio/aac',
+      source: 'composer',
+      durationSeconds: 121,
+    });
+
+    expect(result).toMatchObject({ success: true, text: '云端转写结果', engine: 'groq' });
+    expect(execFileMock).not.toHaveBeenCalled();
+    expect(groqCreateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('cloud-only 超过 24MB 仍分段，每片走 Groq（对齐 Groq 25MB 单文件上限）', async () => {
+    configureSpeech({ mode: 'cloud-only' });
+    const service = new SpeechTranscriptionService();
+
+    const result = await service.transcribe({
+      audioBuffer: Buffer.alloc(24 * 1024 * 1024 + 1, 1),
+      mimeType: 'audio/aac',
+      source: 'composer',
+    });
+
+    expect(result).toMatchObject({ success: true, engine: 'groq', chunkCount: 2 });
+    expect(transcribeWithWhisperCppMock).not.toHaveBeenCalled();
+    expect(groqCreateMock).toHaveBeenCalledTimes(2);
+    expect(execFileMock).toHaveBeenCalledWith(
+      'ffmpeg',
+      expect.arrayContaining(['-f', 'segment']),
+      expect.objectContaining({ timeout: 120000 }),
+      expect.any(Function),
+    );
+  });
+
+  it('ffmpeg 分段失败回具名码 SEGMENT_FAILED（不是 UNKNOWN），stderr 落日志', async () => {
+    configureSpeech({ mode: 'cloud-only', preserveAudioOnFailure: false });
+    execFileMock.mockImplementation((command: string, _args: string[], options: unknown, callback?: (...args: unknown[]) => void) => {
+      const cb = typeof options === 'function' ? options : callback;
+      if (command === 'ffmpeg') {
+        // ffmpeg 在、但跑砸：execFile 把 stderr 挂在 error 上，message 只带截断版本
+        cb?.(Object.assign(new Error('Command failed: ffmpeg'), { stderr: 'Invalid data found when processing input' }));
+        return { on: vi.fn(), kill: vi.fn() };
+      }
+      cb?.(null, { stdout: '', stderr: '' }); // which ffmpeg 成功 → 不是缺件，是跑砸
+      return { on: vi.fn(), kill: vi.fn() };
+    });
+    const service = new SpeechTranscriptionService();
+
+    const result = await service.transcribe({
+      audioBuffer: Buffer.alloc(24 * 1024 * 1024 + 1, 1),
+      mimeType: 'audio/aac',
+      source: 'composer',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('SEGMENT_FAILED');
+    expect(result.error).toContain('长语音分段失败');
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      'ffmpeg 长语音分段失败',
+      expect.objectContaining({ stderr: expect.stringContaining('Invalid data found') }),
+    );
   });
 
   it('returns raw text and applies optional transcript post-processing', async () => {

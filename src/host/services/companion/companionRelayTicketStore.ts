@@ -22,7 +22,7 @@ interface StoredRelayTicket {
 }
 
 /** 只解 payload 读 sub/exp，不验 mac；前缀/分段/形状任一不对返回 null。 */
-export function parseRelayTicketClaim(ticket: string): { sub: string; exp: number } | null {
+function parseRelayTicketClaim(ticket: string): { sub: string; exp: number } | null {
   const rest = ticket.startsWith(TICKET_PREFIX) ? ticket.slice(TICKET_PREFIX.length) : '';
   const dot = rest.indexOf('.');
   if (dot <= 0 || rest.indexOf('.', dot + 1) !== -1) return null;

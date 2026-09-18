@@ -305,6 +305,23 @@ describe('companionStore 双路由：账号优先、当次回落、老记录零�
     store.getState().pause();
   });
 
+  it('logout 清 loginReminded：退出后再次离网连不上 ⇒ S8 提醒重新触发一次（ai-review Nit）', async () => {
+    harness.lanError = 'COMPANION_NETWORK_UNAVAILABLE';
+    // 上一轮引导周期已提醒过（loginReminded 已置）且登录着：这轮离网失败不该弹。
+    const { store, writes } = storeWith(storageWith({ account: ACCOUNT, loginReminded: true }));
+    await store.getState().hydrate();
+    expect(store.getState().status).toBe('offline');
+    expect(store.getState().loginPrompt).toBe(false);
+    await store.getState().logout();
+    // 退出后再次离网连不上：S8 再触发一次，loginReminded 重新置起（新的引导周期）。
+    await store.getState().reconnect({ resetBackoff: true });
+    expect(store.getState().loginPrompt).toBe(true);
+    const last = JSON.parse(writes.at(-1) ?? '{}');
+    expect(last.account).toBeUndefined();
+    expect(last.loginReminded).toBe(true);
+    store.getState().pause();
+  });
+
   it('并发①：探针在飞时登录 ⇒ 落盘路由与票据都在（读-改-写不整份覆盖，后者为准）', async () => {
     harness.lanError = null;
     harness.routesResult = { v: 1 as const, legacy: RELAY_ROUTE };

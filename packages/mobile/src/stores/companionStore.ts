@@ -891,10 +891,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         return { ok: true as const };
       },
       logout: async () => {
-        const base = saved;
-        if (!base?.account) { set({ account: null, loginPrompt: false }); return; }
+        if (!saved?.account) { set({ account: null, loginPrompt: false }); return; }
         try {
-          await persist(live => ({ ...live, account: undefined }));
+          // loginReminded 一并清：退出等于回到「还没登录」的引导周期，下次离网连不上时
+          // S8 提醒要能再触发一次，而不是被上一轮的「只提醒一次」永久压掉（ai-review Nit）。
+          await persist(live => ({ ...live, account: undefined, loginReminded: undefined }));
           set({ account: null, loginPrompt: false });
         } catch { /* storageError 已置起：账号信息保留，下次退出再试 */ }
       },

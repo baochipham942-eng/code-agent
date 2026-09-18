@@ -103,7 +103,7 @@ const pcmBridge = VoiceRecorder as unknown as PcmBridge;
  * microphone 类型的前台服务。iOS 靠 Info.plist 的 audio 后台模式保活，不走这个插件。
  */
 type VoiceKeepAliveBridge = {
-  start(options: { title: string; text: string }): Promise<void>;
+  start(options: { title: string; text: string; channelName: string }): Promise<void>;
   stop(): Promise<void>;
 };
 
@@ -114,14 +114,21 @@ const voiceKeepAlive = Capacitor.getPlatform() === 'android'
 function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
   // 前台服务按「一次录音」的粒度挂，不跟分段走：recorder.stop/start 每段都来一遍，服务若
   // 跟着段走，通知每 4s 闪一次，且后台一旦停了就再起不来（Android 12+ 禁止后台 startForegroundService）。
-  // 停服务带防抖：最后一次 stop 之后没有新 start（切段之间的间隔远小于宽限值）才真停。
+  // 起服务只认 running 标记：切段那声 start 不再重复 startForegroundService；
+  // 停服务带防抖：最后一次 stop 之后没有新 start（切段之间的间隔远小于宽限值）才真停，真停时复位 running。
   let stopTimer: ReturnType<typeof setTimeout> | null = null;
+  let running = false;
   const keepAliveStart = async () => {
     if (!voiceKeepAlive) return;
     if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
+    if (running) return;
     // fail-open：服务起不来不该毁掉前台录音，但降级要留痕（哪个平台、什么错）。
     const text = messages(typeof navigator === 'undefined' ? 'en' : navigator.language);
-    try { await voiceKeepAlive.start({ title: text.voice, text: text.voiceListening }); }
+    // 常驻通知标题用专门的「正在录音」，不复用麦克风按钮的「语音输入」；通道名同走 i18n（PR#1944 ai-review Nit）。
+    try {
+      await voiceKeepAlive.start({ title: text.voiceRecording, text: text.voiceListening, channelName: text.voiceRecordingChannel });
+      running = true;
+    }
     catch (error) { console.warn('[voice-keepalive] start failed', error); }
   };
   const keepAliveStop = () => {
@@ -129,6 +136,7 @@ function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
     if (stopTimer) clearTimeout(stopTimer);
     stopTimer = setTimeout(() => {
       stopTimer = null;
+      running = false;
       void voiceKeepAlive.stop().catch(error => console.warn('[voice-keepalive] stop failed', error));
     }, COMPANION_LIMITS.voiceServiceStopGraceMs);
   };
@@ -144,10 +152,16 @@ function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
       }
     },
     stop: async () => {
-      const { value } = await VoiceRecorder.stopRecording();
-      keepAliveStop();
-      if (!value.recordDataBase64) throw new Error('EMPTY_RECORDING');
-      return { audioData: value.recordDataBase64, mimeType: value.mimeType.split(';')[0], durationMs: value.msDuration };
+      // stopRecording 在 RECORDING_HAS_NOT_STARTED / FAILED_TO_FETCH_RECORDING 等状态下会 reject，
+      // 而调用方（VoiceCapture.run）在调 stop 前已把 live 落 false、不会再补一次 stop——
+      // 回收必须兜在 finally，否则「正在听你说」常驻通知永久留在通知栏（PR#1944 ai-review Important）。
+      try {
+        const { value } = await VoiceRecorder.stopRecording();
+        if (!value.recordDataBase64) throw new Error('EMPTY_RECORDING');
+        return { audioData: value.recordDataBase64, mimeType: value.mimeType.split(';')[0], durationMs: value.msDuration };
+      } finally {
+        keepAliveStop();
+      }
     },
   };
   // PCM tap is first-party iOS only. Android still uses the vendor file recorder.

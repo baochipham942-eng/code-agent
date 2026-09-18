@@ -283,6 +283,9 @@ const manifestPath = 'android/app/src/main/AndroidManifest.xml';
 // manifest 权限与 <service> 声明由 configure-lan.mjs 的 ensureAndroidVoiceForegroundService 注入。
 writeFileSync('android/app/src/main/java/dev/neo/companion/preview/VoiceKeepAlivePlugin.java', `package dev.neo.companion.preview;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.Context;
 import android.content.Intent;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -298,6 +301,13 @@ public class VoiceKeepAlivePlugin extends Plugin {
 
     @PluginMethod
     public void start(PluginCall call) {
+        // The channel name shows up in system notification settings, so it follows the app language
+        // like the title/text: created (or renamed — same channel id — on language switch) here,
+        // before every take. The service keeps an English fallback for a start without JS.
+        String channelName = call.getString("channelName", "Recording");
+        NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        manager.createNotificationChannel(new NotificationChannel(
+                CHANNEL_ID, channelName, NotificationManager.IMPORTANCE_LOW));
         Intent intent = new Intent(getContext(), VoiceRecordingService.class)
                 .putExtra(VoiceRecordingService.EXTRA_TITLE, call.getString("title", "Neo"))
                 .putExtra(VoiceRecordingService.EXTRA_TEXT, call.getString("text", ""));
@@ -346,6 +356,7 @@ public class VoiceRecordingService extends Service {
     public void onCreate() {
         super.onCreate();
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        // Fallback only: the plugin creates the channel with the app-language name before every start.
         if (manager.getNotificationChannel(VoiceKeepAlivePlugin.CHANNEL_ID) == null) {
             manager.createNotificationChannel(new NotificationChannel(
                     VoiceKeepAlivePlugin.CHANNEL_ID,

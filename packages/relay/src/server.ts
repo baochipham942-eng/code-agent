@@ -373,6 +373,13 @@ export class CompanionRelayServer {
       if (!route) continue;
       if (route[binding.role] === socket) delete route[binding.role];
       if (!route.host && !route.device) this.routes.delete(token);
+      // host 腿断开而设备腿还在：手机仍握着与旧 Host 实例谈好的会话密钥，Host 重连后会话表
+      // 已清，它的 forward 只能被吞——照 no-host 宽限模式给它一个重拨重握手的推力
+      // （N-COMPANION-RELAY-RECONNECT-DROPSESSIONS）。槽位已被新 socket 顶替时这里不挂
+      // （换实例场景由 register 分支的顶替检测覆盖）。
+      if (binding.role === 'host' && !route.host && route.device && route.device.readyState === WebSocket.OPEN) {
+        this.notifyHostLegDetachAfterGrace(token, route.device);
+      }
     }
   }
 
@@ -410,6 +417,10 @@ export class CompanionRelayServer {
         return;
       }
       const route: Route = known ?? { owner: principal, expiresAt: this.now() + L.relayRouteTokenTtlMs };
+      // 同 token 的 host 槽被另一条 socket 顶替（Host 换实例重连、旧 socket 的关闭还没到）：
+      // 对设备腿来说谈判对象已经换了，照 host 腿断开同款宽限处理。到期复查时 host 槽若仍被
+      // 占着（顶替者活着），说明 host 在位，什么都不发——不许踢一个 host 在位的健康对。
+      const displacedHost = frame.role === 'host' ? known?.host : undefined;
       route[frame.role] = socket;
       route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
       this.routes.set(token, route);
@@ -417,6 +428,9 @@ export class CompanionRelayServer {
       binding.tokens.add(token);
       this.bindings.set(socket, binding);
       this.options.logger?.info('registered', { role: frame.role, token: tokenPrefix(token) });
+      if (displacedHost && displacedHost !== socket && route.device && route.device.readyState === WebSocket.OPEN) {
+        this.notifyHostLegDetachAfterGrace(token, route.device);
+      }
       this.flushWaiting(token, route);
       if (frame.role === 'device' && !route.host) this.notifyNoHostAfterGrace(token, socket);
       return;
@@ -497,6 +511,31 @@ export class CompanionRelayServer {
       } satisfies CompanionRelayFrame));
       this.stats.notifiedNoHost += 1;
       this.options.logger?.info('no_host_notified', { token: tokenPrefix(token) });
+    }, this.options.noHostGraceMs ?? L.relayNoHostGraceMs);
+    timer.unref();
+  }
+
+  /**
+   * host 腿断开/被顶替，route 上还挂着设备腿（N-COMPANION-RELAY-RECONNECT-DROPSESSIONS）：
+   * 手机握着的会话密钥属于旧 host 实例，Host 重连后会话表已清，forward 只能被静默吞。照
+   * notifyNoHostAfterGrace 同款宽限：期内 host 重新注册回来（host 槽非空）就什么都不做——
+   * 与它的计时器通过 route 表互见，host 回来了谁都不许再踢设备；到点复查 host 槽确实仍空、
+   * 设备腿还是原来那条且在线，才回 no-host 帧并丢掉这台设备排着的帧，手机据此重拨重握手
+   * （帧形状与 notifyNoHostAfterGrace 完全一致，手机端零改动）。
+   */
+  private notifyHostLegDetachAfterGrace(token: string, device: WebSocket): void {
+    const timer = setTimeout(() => {
+      const route = this.routes.get(token);
+      if (!route || route.host || route.device !== device || device.readyState !== WebSocket.OPEN) return;
+      this.purgeWaiting(token);
+      const now = this.now();
+      device.send(JSON.stringify({
+        v: 1, kind: 'no-host',
+        envelope: { routeToken: token, deviceRef: COMPANION_RELAY_SENTINEL_DEVICE_REF, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: now },
+        ciphertext: '',
+      } satisfies CompanionRelayFrame));
+      this.stats.notifiedNoHost += 1;
+      this.options.logger?.info('host_leg_detached_notify', { token: tokenPrefix(token) });
     }, this.options.noHostGraceMs ?? L.relayNoHostGraceMs);
     timer.unref();
   }

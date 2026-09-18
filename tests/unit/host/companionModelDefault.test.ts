@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { createModelMarkFileStore } from '../../../src/host/model/availabilityMarkPersistence';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -153,6 +158,30 @@ describe('爸配置形状：custom 供应商无 model + 列表首项已失败', 
     models = await readModels();
     expect(models.filter(model => model.provider === 'longcat').every(model => model.failureKind === 'auth' && model.recentlyFailed)).toBe(true);
     expect(models.find(model => model.provider === 'custom-team-relay' && model.model === 'gpt-5.5')?.recentlyFailed).toBeUndefined();
+  });
+
+  it('模型级停用标记跨重启仍在：回落继续跳过该模型（N-MOBILE-CONN-POLISH-R3 ④）', async () => {
+    const file = path.join(tmpdir(), `model-marks-${randomUUID()}.json`);
+    try {
+      // 宿主第一次运行：标一个模型级停用（生产接线后 recordFailure 落盘）。
+      monitor.armModelMarkPersistence(createModelMarkFileStore(file));
+      monitor.getProviderHealthMonitor().recordFailure('longcat', {
+        model: 'LongCat-2.0-Preview',
+        error: Object.assign(new Error('Unsupported model'), { status: 400 }),
+      });
+      // 模拟重启：换新模块图（新单例、新 CompanionLibraryService），同一份存储回灌。
+      await loadFreshModules();
+      monitor.armModelMarkPersistence(createModelMarkFileStore(file));
+      const models = await readModels();
+      expect(models.find(model => model.model === 'LongCat-2.0-Preview')).toMatchObject({ provider: 'longcat', recentlyFailed: true, failureKind: 'model' });
+      expect(models.find(model => model.model === 'LongCat-2.0')?.recentlyFailed).toBeUndefined();
+      // 回落不落停用模型：isDefault 仍指向同供应商可用项（爸配置形状下是 custom-team-relay/gpt-5.5）。
+      const marked = models.filter(model => model.isDefault);
+      expect(marked).toHaveLength(1);
+      expect(marked[0]).toMatchObject({ provider: 'custom-team-relay', model: 'gpt-5.5' });
+    } finally {
+      rmSync(file, { force: true });
+    }
   });
 
   it('429 连发把供应商打成 unavailable（无标记）：整家照标 recentlyFailed/network，默认挪走', async () => {

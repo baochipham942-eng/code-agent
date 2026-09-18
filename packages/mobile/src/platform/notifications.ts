@@ -1,4 +1,4 @@
-import type { NotificationPort, OsPermission, TokenResult } from './ports';
+import type { ForegroundPushDecision, NotificationPort, OsPermission, TokenResult } from './ports';
 
 type ListenerHandle = { remove: () => Promise<void> };
 
@@ -17,11 +17,11 @@ interface PushNotificationBridge {
 
 /**
  * 第一方 iOS 插件（ios-native/NeoPushPresentationPlugin.swift）：前台来推送时先发 willPresent 问 JS，
- * JS 用 decide 回话要不要弹。插件那头有超时兜底，JS 回不了话就照常弹。
+ * JS 用 decide 回话 present（横幅）/ list（通知中心列表）两位。插件那头有超时兜底，JS 回不了话就照常弹。
  */
 export interface PushPresentationBridge {
   enable(): Promise<void>;
-  decide(options: { id: string; present: boolean }): Promise<void>;
+  decide(options: { id: string } & ForegroundPushDecision): Promise<void>;
   addListener(event: 'willPresent', cb: (event: { id: string; routeToken?: string }) => void): Promise<ListenerHandle>;
 }
 
@@ -193,11 +193,11 @@ export function createNotificationPort(
     },
     ...(presentation ? {
       foreground: {
-        subscribe: async (decide: (routeToken: string | null) => Promise<boolean>) => {
+        subscribe: async (decide: (routeToken: string | null) => Promise<ForegroundPushDecision>) => {
           const handle = await presentation.addListener('willPresent', ({ id, routeToken }) => {
             void decide(typeof routeToken === 'string' && routeToken ? routeToken : null)
-              .catch(() => true)
-              .then(present => presentation.decide({ id, present }))
+              .catch(() => ({ present: true, list: true }) as ForegroundPushDecision)
+              .then(({ present, list }) => presentation.decide({ id, present, list }))
               .catch(() => {});
           });
           // 旧包里没有这个插件：退回「前台照常弹」，不当成原生错误（那会把整页标成系统交互不可用）。

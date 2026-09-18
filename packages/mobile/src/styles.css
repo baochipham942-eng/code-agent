@@ -207,6 +207,20 @@ span.status-text { display: flex; align-items: center; }
 
 select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: var(--surface); font: inherit; }
 .library-sheet .settings-group { margin: 10px 0; } .danger { color: #c43b38; } .drawer-history [aria-current='page'] { background: var(--group); }
+/* 抽屉未读点（N-MOBILE-FOREGROUND-PUSH）：前台被吞的横幅落在会话行上；进会话即清。 */
+.unread-dot { display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+/* 前台轻提示（N-MOBILE-FOREGROUND-PUSH，R2 浮层化）：必须长在 <main> 外的独立浮层——main 在
+   抽屉/弹层开着时 inert 且被 scrim 盖住，留在里面 = relay+开抽屉时通知被吞。层叠高于 drawer(10)/
+   sheet(20)（R3 Nit④ 保留层级：压不过盖层它就又在 scrim 底下了）；只占顶部一条，pointer-events 收在
+   提示自己身上，浮层其余区域放行底下层的点按。盖层顶条只被压 foregroundAlertAutoHideMs（5s）——
+   R3 起提示一律到点自隐（持久痕迹在系统通知中心），不再赖着盖住抽屉直到点掉。
+   top = 安全区 + 顶栏高（.topbar 6px×2 padding + 25px 图标 ≈ 48px），落在顶栏下方——与原先在
+   .conversation 流内出现的位置一致。 */
+.foreground-alert-layer { position: fixed; top: 0; left: 0; right: 0; z-index: 30; padding-top: calc(var(--safe-top) + 48px); pointer-events: none; }
+.foreground-alert-layer .foreground-alert { pointer-events: auto; }
+/* 浮层化后不再有 .conversation 的底色托底：实底+圆角，滚动内容/半透明 scrim 之上仍可读；accent 色示意可点。
+   R3 Nit①：元素是 <button>（可激活要给无障碍/键盘），吃全局 button 基线的 48px 触达高，文字色随 .foreground-alert。 */
+.foreground-alert { margin: 4px 8px; padding: 8px 12px; cursor: pointer; color: var(--accent); background: var(--surface); border-radius: 10px; }
 /* 项目选择器主层（fix5-③，2026-09-15）：行=文件夹图标+名称/副标题两行+会话前进 chevron，
    形状照设计稿 design.html 的 pickRow（list-row + .flex + .small）。 */
 .project-row { display: flex; align-items: stretch; }

@@ -29,11 +29,12 @@ import {
 } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
 import { getDeferredContentStyle } from '../../../utils/turnContentVisibility';
-import { getPlanApprovalRecord } from '../../../utils/planApprovalView';
+import { findPendingPlanApproval, getPlanApprovalRecord } from '../../../utils/planApprovalView';
 import { PlanApprovalEvidence } from '../../PlanApprovalCard';
 import { isDelegationTool } from '../../../utils/agentActivity';
 import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 import { useAppStore } from '../../../stores/appStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { Button } from '../../primitives/Button';
 import { redactCredentialText } from '@shared/security/secretPatterns';
@@ -307,6 +308,15 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     () => toolCalls.map(getPlanApprovalRecord).find((record) => record !== null) ?? null,
     [toolCalls],
   );
+  // 待决交互卡槽一次只挂最新一张可决定的卡（ChatView 的 findPendingPlanApproval 同款
+  // 计算）：被更新的 pending/failed 顶替的旧 failed 卡没有任何表面接管——无交互卡也
+  // 无存证条，整条从聊天里消失。用它判「这张 failed 卡归谁」。组里没有 failed 计划卡
+  // 时选择器 O(1) 返回，不随每次 store 更新扫全量消息。
+  const pendingPlanApprovalToolCallId = useSessionStore((state) => (
+    planApproval?.status === 'failed'
+      ? findPendingPlanApproval(state.messages, state.currentSessionId)?.toolCallId ?? null
+      : null
+  ));
 
   // 组里是否存在需要用户介入的失败（鉴权失效/额度耗尽/限流），而非 agent 试错的
   // 探索性失败（工具未安装、非零退出码、反爬墙/限流类瞬态噪音等未分类错误）。
@@ -383,11 +393,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
 
   // 纯内部动作组：不渲染主流行（对齐「内部流水不进用户主视角」）。
   // 必须放在全部 hooks 之后，避免条件性调用 hooks。
-  // failed 与 pending 一样交还交互卡（带失败原因、可重试），不落成只读存证。
+  // pending 与「是当前待决目标」的 failed 交还交互卡（带失败原因、可重试），不落成
+  // 只读存证；被更新 pending 顶替的旧 failed 卡补一条只读终态存证，别整条消失。
   if (planApproval && toolCalls.length === 1) {
-    return planApproval.status === 'pending' || planApproval.status === 'failed'
-      ? null
-      : <PlanApprovalEvidence approval={planApproval} />;
+    if (planApproval.status === 'pending') return null;
+    if (planApproval.status === 'failed' && toolCalls[0].id === pendingPlanApprovalToolCallId) {
+      return null;
+    }
+    return <PlanApprovalEvidence approval={planApproval} />;
   }
   if (streamVisibleNodes.length === 0 || !label) {
     return null;

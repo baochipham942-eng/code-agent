@@ -312,6 +312,32 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
     expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
   });
 
+  it('桌面批准后整轮仍在跑：记录已 approved，手机侧一次轮询即收敛（撤卡 + answered 结算）', () => {
+    const id = `desktop-approved-${Date.now()}`;
+    noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: APPROVAL,
+      },
+    });
+    // 桌面侧在启动确认时点（task_started）已把记录落成 approved，整轮运行还要继续很久。
+    // 手机挂着这张卡的 pending 行：轮询修剪时结算桥必须能取到 answered。
+    pendingPhoneCard.mockReturnValue({ request_id: id });
+    try {
+      getRecentMessages.mockReturnValue([{
+        id: 'msg-plan',
+        toolCalls: [{ id, result: { metadata: { planApproval: { ...APPROVAL, status: 'approved' } } } }],
+      }]);
+      expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(false);
+      expect(takeCompanionUserPlanSettlement(id)).toEqual({ outcome: 'answered', answer: { decision: 'approved' } });
+    } finally {
+      pendingPhoneCard.mockReturnValue(undefined);
+    }
+  });
+
   it('starting/failed 的 tool_call_end 重放不结算不撤卡；approved 照常 answered 结算', () => {
     const id = `replay-${Date.now()}`;
     const note = (planApproval: unknown) => noteCompanionUserPlan('session-a', {

@@ -7,6 +7,7 @@ import { PlanCard } from './PlanCard';
 import { Markdown } from './markdown/Markdown';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
 import { runOutcomeCopy, type messages } from '../../i18n';
+import { mergeCardPayload } from './decisionCard';
 
 type RunOutcome = { anchor: string | undefined; kind: 'stopped' | 'failed'; code?: string; provider?: string; model?: string };
 
@@ -99,9 +100,9 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   for (const event of events) {
     if (event.sessionId !== sessionId) continue;
     const p = event.payload;
-    if (event.kind === 'approval' && typeof p.requestId === 'string') approvals.set(p.requestId, { ...approvals.get(p.requestId), ...p });
-    if (event.kind === 'question' && typeof p.requestId === 'string') questions.set(p.requestId, { ...questions.get(p.requestId), ...p });
-    if (event.kind === 'plan' && typeof p.requestId === 'string') plans.set(p.requestId, { ...plans.get(p.requestId), ...p });
+    if (event.kind === 'approval' && typeof p.requestId === 'string') approvals.set(p.requestId, mergeCardPayload(approvals.get(p.requestId), p));
+    if (event.kind === 'question' && typeof p.requestId === 'string') questions.set(p.requestId, mergeCardPayload(questions.get(p.requestId), p));
+    if (event.kind === 'plan' && typeof p.requestId === 'string') plans.set(p.requestId, mergeCardPayload(plans.get(p.requestId), p));
     if ((event.kind === 'approval' || event.kind === 'question' || event.kind === 'plan') && typeof p.requestId === 'string'
       && !cardAnchors.has(`${event.kind}:${p.requestId}`)) cardAnchors.set(`${event.kind}:${p.requestId}`, anchorAt(event.createdAt));
     const run = String(p.runId ?? sessionId);

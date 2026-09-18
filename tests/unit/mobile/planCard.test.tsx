@@ -3,6 +3,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PlanCard } from '../../../packages/mobile/src/features/sessions/PlanCard';
+import { mergeCardPayload } from '../../../packages/mobile/src/features/sessions/decisionCard';
 import { messages } from '../../../packages/mobile/src/i18n';
 
 const text = messages('zh');
@@ -97,5 +98,43 @@ describe('PlanCard', () => {
     expect(screen.queryByText('任务已停止，这张卡作废了')).toBeNull();
     expect(screen.getByTestId('plan-result').textContent).not.toMatch(/[✓✕]/);
     expect(messages('en').planClosed).toBe('This card has ended.');
+  });
+
+  it('重发布的 pending 重试卡不继承旧 payload 的终态字段（data-outcome 不再误标 answered）', () => {
+    // 事件序列：首次 pending → 结算 answered → 启动失败后带原因重发布 pending（不带 outcome/answer）。
+    const republishedPreview = JSON.stringify({ plan: '1. Read host', failureReason: 'Session s1 is already running' });
+    const merged = [
+      { requestId: 'plan-1', status: 'pending', revision: 1 },
+      { requestId: 'plan-1', status: 'approved', revision: 1, outcome: 'answered', answer: { decision: 'approved' } },
+      { requestId: 'plan-1', status: 'pending', revision: 2, preview: republishedPreview },
+    ].reduce(
+      (card, payload) => mergeCardPayload(card, payload as Record<string, unknown>),
+      undefined as Record<string, unknown> | undefined,
+    );
+    // 终态字段不跨发布继承：pending 卡不该带 outcome/answer。
+    expect(merged).toEqual({
+      requestId: 'plan-1',
+      status: 'pending',
+      revision: 2,
+      preview: republishedPreview,
+    });
+    render(<PlanCard card={merged!} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-card').getAttribute('data-outcome')).toBe('pending');
+    // 失败原因可见且仍可批准（同一记录重试）。
+    expect(screen.getByRole('alert').textContent).toContain('Session s1 is already running');
+    expect(screen.getByText(text.planApprove)).toBeTruthy();
+  });
+
+  it('结算事件自带的 outcome/answer 照常合并进去（不误伤正常结算渲染）', () => {
+    const merged = [
+      { requestId: 'plan-2', status: 'pending', revision: 1 },
+      { requestId: 'plan-2', status: 'rejected', revision: 1, outcome: 'answered', answer: { decision: 'rejected', feedback: '先改标题' } },
+    ].reduce(
+      (card, payload) => mergeCardPayload(card, payload as Record<string, unknown>),
+      undefined as Record<string, unknown> | undefined,
+    );
+    render(<PlanCard card={merged!} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-card').getAttribute('data-outcome')).toBe('answered');
+    expect(screen.getByTestId('plan-result').textContent).toBe('已要求修改：先改标题');
   });
 });

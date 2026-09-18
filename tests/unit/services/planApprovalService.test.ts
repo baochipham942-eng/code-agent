@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   updateMessage: vi.fn(),
   replaceTasksAtomically: vi.fn(),
   demoteInProgressTasks: vi.fn(),
+  listSessions: vi.fn(),
+  getRecentMessages: vi.fn(),
+  dbReady: true,
 }));
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
@@ -20,11 +23,22 @@ vi.mock('../../../src/host/services/planning/taskStore', () => ({
   demoteInProgressTasks: mocks.demoteInProgressTasks,
 }));
 
-import { resolvePlanApproval } from '../../../src/host/services/planning/planApprovalService';
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({
+    get isReady() { return mocks.dbReady; },
+    listSessions: mocks.listSessions,
+    getRecentMessages: mocks.getRecentMessages,
+  }),
+}));
+
+import {
+  reconcileRecentPlanApprovalStarts,
+  resolvePlanApproval,
+} from '../../../src/host/services/planning/planApprovalService';
 
 function planMessage(
   status: 'pending' | 'starting' | 'approved' | 'failed' | 'cancelled' = 'pending',
-  extra: { failureReason?: string; failedAt?: number; feedback?: string } = {},
+  extra: { failureReason?: string; failedAt?: number; feedback?: string; decidedAt?: number } = {},
 ): Message {
   return {
     id: 'message-plan',
@@ -334,5 +348,143 @@ describe('resolvePlanApproval', () => {
       appService: { sendMessage: vi.fn() } as never,
       taskManager: { emitAgentEventForSession: vi.fn() } as never,
     })).rejects.toMatchObject({ code: 'ALREADY_RESOLVED' });
+  });
+
+  it('本进程刚认领的 starting 不是孤儿：对账只收早于本进程启动的认领', async () => {
+    const freshClaim = planMessage('starting', { decidedAt: Date.now() });
+    mocks.listSessions.mockReturnValue([{ id: 'session-1' }]);
+    mocks.getRecentMessages.mockReturnValue([freshClaim]);
+    mocks.getMessages.mockResolvedValue([freshClaim]);
+
+    const settled = await reconcileRecentPlanApprovalStarts({ taskManager: { emitAgentEventForSession: vi.fn() } as never });
+
+    expect(settled).toBe(0);
+    expect(mocks.updateMessage).not.toHaveBeenCalled();
+    expect(mocks.demoteInProgressTasks).not.toHaveBeenCalled();
+  });
+});
+
+describe('starting 崩溃残留对账（宿主轮内退出后的恢复出口）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.dbReady = true;
+    mocks.updateMessage.mockResolvedValue(undefined);
+    mocks.replaceTasksAtomically.mockReturnValue([]);
+    mocks.demoteInProgressTasks.mockReturnValue(null);
+  });
+
+  it('reconcileRecentPlanApprovalStarts 把残留 starting 落成 failed（可重试）并广播', async () => {
+    const emitAgentEventForSession = vi.fn();
+    const orphan = planMessage('starting', { decidedAt: Date.now() - 3_600_000 });
+    mocks.listSessions.mockReturnValue([{ id: 'session-1' }]);
+    mocks.getRecentMessages.mockReturnValue([orphan]);
+    // finalize 重读拿到的就是这条记录（仍 starting）→ 落 failed。
+    mocks.getMessages.mockResolvedValue([orphan]);
+    mocks.demoteInProgressTasks.mockReturnValue([]);
+
+    const settled = await reconcileRecentPlanApprovalStarts({ taskManager: { emitAgentEventForSession } as never });
+
+    expect(settled).toBe(1);
+    const finalized = mocks.updateMessage.mock.calls[0][1].toolCalls[0].result.metadata.planApproval;
+    expect(finalized.status).toBe('failed');
+    expect(finalized.failureReason).toBe('Host exited during plan startup');
+    expect(typeof finalized.failedAt).toBe('number');
+    expect(emitAgentEventForSession.mock.calls.some(
+      ([, event]) => (event as { type?: string }).type === 'plan_approval_update',
+    )).toBe(true);
+    expect(mocks.demoteInProgressTasks).toHaveBeenCalledWith('session-1');
+  });
+
+  it('终态记录不动，非计划工具跳过', async () => {
+    const approved = planMessage('approved', { decidedAt: Date.now() - 3_600_000 });
+    const plainTool: Message = {
+      id: 'message-plain',
+      role: 'assistant',
+      content: '',
+      timestamp: 1,
+      toolCalls: [{ id: 'tool-plain', name: 'Read', arguments: {}, result: { toolCallId: 'tool-plain', success: true, metadata: { filePath: '/tmp' } } }],
+    };
+    mocks.listSessions.mockReturnValue([{ id: 'session-1' }]);
+    mocks.getRecentMessages.mockReturnValue([approved, plainTool]);
+
+    const settled = await reconcileRecentPlanApprovalStarts({ taskManager: { emitAgentEventForSession: vi.fn() } as never });
+
+    expect(settled).toBe(0);
+    expect(mocks.updateMessage).not.toHaveBeenCalled();
+    expect(mocks.demoteInProgressTasks).not.toHaveBeenCalled();
+  });
+
+  it('决定路径上的对账：孤儿 starting 先落 failed，本次决定走重试而不是 ALREADY_RESOLVED', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const orphanStarting = planMessage('starting', { decidedAt: Date.now() - 3_600_000 });
+    const failed = {
+      ...orphanStarting,
+      toolCalls: [{
+        ...orphanStarting.toolCalls![0],
+        result: {
+          ...orphanStarting.toolCalls![0].result!,
+          metadata: {
+            ...orphanStarting.toolCalls![0].result!.metadata!,
+            planApproval: {
+              ...(orphanStarting.toolCalls![0].result!.metadata!.planApproval as Record<string, unknown>),
+              status: 'failed' as const,
+              failureReason: 'Host exited during plan startup',
+            },
+          },
+        },
+      }],
+    };
+    mocks.getMessages
+      // 1) loadApprovalTarget 首读：孤儿 starting。
+      .mockResolvedValueOnce([orphanStarting])
+      // 2) finalize 重读：仍 starting → 落 failed。
+      .mockResolvedValueOnce([orphanStarting])
+      // 3) 对账后重读：failed，可决定。
+      .mockResolvedValueOnce([failed])
+      // 4) sendMessage settle 后的 finalize 重读：重试认领的 starting → 落 approved。
+      .mockResolvedValue([planMessage('starting', { decidedAt: Date.now() })]);
+
+    const response = await resolvePlanApproval(approveRequest, {
+      appService: { sendMessage } as never,
+      taskManager: { emitAgentEventForSession: vi.fn() } as never,
+    });
+
+    // 对账把孤儿收成 failed 后本次决定照常认领（不抛 ALREADY_RESOLVED），sendMessage 真的跑了。
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(response.approval.status).toBe('starting');
+    await flush();
+    const writes = mocks.updateMessage.mock.calls.map(
+      (call) => call[1].toolCalls[0].result.metadata.planApproval.status,
+    );
+    expect(writes).toEqual(['failed', 'starting', 'approved']);
+  });
+
+  it('reconcileRecentPlanApprovalStarts 扫最近会话的近期消息窗口并返回落定数', async () => {
+    const orphan = planMessage('starting', { decidedAt: Date.now() - 3_600_000 });
+    mocks.listSessions.mockReturnValue([{ id: 'session-crashed' }, { id: 'session-idle' }]);
+    mocks.getRecentMessages.mockImplementation((sessionId: string) => (
+      sessionId === 'session-crashed' ? [orphan] : []
+    ));
+    mocks.getMessages.mockResolvedValue([orphan]);
+    mocks.demoteInProgressTasks.mockReturnValue([]);
+
+    const settled = await reconcileRecentPlanApprovalStarts({ taskManager: { emitAgentEventForSession: vi.fn() } as never });
+
+    expect(settled).toBe(1);
+    expect(mocks.getRecentMessages).toHaveBeenCalledWith('session-crashed', 20);
+    expect(mocks.getRecentMessages).toHaveBeenCalledWith('session-idle', 20);
+    expect(mocks.updateMessage).toHaveBeenCalledOnce();
+    expect(mocks.updateMessage.mock.calls[0][1].toolCalls[0].result.metadata.planApproval.status).toBe('failed');
+  });
+
+  it('DB 未就绪时启动对账直接跳过（对账是恢复路径，不拖死启动）', async () => {
+    mocks.dbReady = false;
+    try {
+      const settled = await reconcileRecentPlanApprovalStarts({ taskManager: { emitAgentEventForSession: vi.fn() } as never });
+      expect(settled).toBe(0);
+      expect(mocks.listSessions).not.toHaveBeenCalled();
+    } finally {
+      mocks.dbReady = true;
+    }
   });
 });

@@ -31,9 +31,9 @@ export interface PlanApprovalRecord {
   reordered?: boolean;
   decidedAt?: number;
   feedback?: string;
-  /** 启动轮次失败的原因，仅 status === 'failed' 时出现。重试认领（starting）不清除。 */
+  /** 最近一次启动失败的原因：failed 落定时写入；重试认领（starting）与重试成功（approved）都不清除，会残留。 */
   failureReason?: string;
-  /** 最近一次启动失败的落定时刻。重试再败必换新值，是卡片投影 digest 的稳定判据。 */
+  /** 最近一次启动失败的落定时刻：failed 落定时写入并残留；重试再败必换新值，是卡片投影 digest 的稳定判据。 */
   failedAt?: number;
 }
 

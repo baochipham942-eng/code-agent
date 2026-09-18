@@ -499,8 +499,13 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       client = relay;
       return relay;
     };
-    /** 账号路由失败后允许**当次立刻**回落旧路由的失败码（设计 C：没 host / 被拒 / 连不上 / 超时）。 */
-    const RELAY_FALLBACK_CODES = new Set(['COMPANION_RELAY_NO_HOST', 'COMPANION_RELAY_AUTH_REJECTED', 'COMPANION_RELAY_UNAVAILABLE', 'COMPANION_RELAY_CONNECT_TIMEOUT']);
+    /**
+     * 账号路由失败后允许**当次立刻**回落旧路由的失败码（设计 C：没 host / 被拒 / 连不上 / 超时）。
+     * NO_RESPONSE 在列：relay 对 register 的 owner 不匹配是静默丢帧（不 close、不回 no-host），
+     * 手机等到握手超时——那是「这条账号路由没人应答」，不是凭据被拒，票据不许动、当次改拨
+     * 旧路由仍可连（ai-review Important②：电脑换账号登录后，派生自旧账号的路由照此自愈）。
+     */
+    const RELAY_FALLBACK_CODES = new Set(['COMPANION_RELAY_NO_HOST', 'COMPANION_RELAY_AUTH_REJECTED', 'COMPANION_RELAY_UNAVAILABLE', 'COMPANION_RELAY_CONNECT_TIMEOUT', 'COMPANION_NO_RESPONSE']);
     /** 票据被 relay 拒（过期/被作废）：删本地票据与账号信息并翻回「需要登录」（S8），不静默重试登录。 */
     const invalidateAccountTicket = async () => {
       const rejected = saved?.account?.ticket;

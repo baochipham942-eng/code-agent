@@ -162,6 +162,23 @@ describe('companionStore 双路由：账号优先、当次回落、老记录零�
     store.getState().pause();
   });
 
+  it('②′ 账号路由无应答超时（owner 不匹配被 relay 静默丢帧）⇒ 当次改拨旧路由连上，票据不动（ai-review Important②）', async () => {
+    harness.lanError = 'COMPANION_NETWORK_UNAVAILABLE';
+    harness.accountRouteError = 'COMPANION_NO_RESPONSE';
+    const { store, writes } = storeWith(storageWith({ relay: RELAY_ROUTE, relayAccount: ACCOUNT_ROUTE, account: ACCOUNT }));
+    await store.getState().hydrate();
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay' });
+    expect(harness.relayRoutes).toEqual([
+      { ...ACCOUNT_ROUTE, ticket: ACCOUNT.ticket },
+      RELAY_ROUTE,
+    ]);
+    // 无应答不是凭据被拒：不删票据、不翻 S8，账号信息在盘上与 React 态原样保留。
+    expect(store.getState().account).toEqual({ email: ACCOUNT.email, userId: ACCOUNT.userId });
+    expect(store.getState().loginPrompt).toBe(false);
+    for (const write of writes) expect(JSON.parse(write).account).toEqual(ACCOUNT);
+    store.getState().pause();
+  });
+
   it('③ 只有旧路由的老配对记录 ⇒ 拨号路由与凭据形态逐字节照旧，落盘不添新键', async () => {
     harness.lanError = 'COMPANION_NETWORK_UNAVAILABLE';
     const { store, writes } = storeWith(storageWith({ relay: RELAY_ROUTE }));

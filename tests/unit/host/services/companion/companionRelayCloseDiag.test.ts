@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
+import type WebSocket from 'ws';
 import { CompanionRelayClient } from '../../../../../src/host/services/companion/CompanionRelayClient';
 import { createIdentity } from '../../../../../src/shared/companion/noiseChannel';
 import { COMPANION_LIMITS as L } from '../../../../../src/shared/constants/companion';

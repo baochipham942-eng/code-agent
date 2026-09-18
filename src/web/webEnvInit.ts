@@ -8,7 +8,7 @@
 
 // channelDataDir 只依赖 devSlot/configPaths（无 keytar 等 native 副作用），安全前置。
 import * as os from 'os';
-import { resolveChannelDataDir, expandDataDirLongPath } from './channelDataDir';
+import { resolveChannelDataDir, resolveChannelWebPort, expandDataDirLongPath } from './channelDataDir';
 import { detectDevSlotRuntime } from './devSlotRuntime';
 import { devSlotDataDirName, devSlotWebPort } from '../shared/devSlot';
 
@@ -20,11 +20,22 @@ process.env.CODE_AGENT_WEB_MODE = 'true';
 // 槽位规则见 channelDataDir.ts：主检出 → 槽 1；git 工作树 → 空闲最小槽（2..9），
 // 全占 fail-closed 退出，绝不静默回落槽 1（爸的槽，2026-09-18 拍板）。
 // 打包测试包由 Rust 显式注入 CODE_AGENT_DATA_DIR，此处会因已设置而跳过。
+// 端口同步注入 WEB_PORT / CODE_AGENT_WEB_PORT（webServer 绑定读 WEB_PORT，auth /
+// desktopShellDiagnostics 兜底读 CODE_AGENT_WEB_PORT）：数据目录去了槽 N 而端口停在生产
+// 8180 等于白换槽。显式端口照办不覆盖，仅与槽端口不一致时提示（口径同数据目录）。
 try {
   const decision = resolveChannelDataDir(process.env, os.homedir(), detectDevSlotRuntime());
   if (decision.dataDir) {
     process.env.CODE_AGENT_DATA_DIR = decision.dataDir;
     console.log(`[dev-slot] ${decision.reason} → dev 槽 ${decision.slot}（${decision.dataDir}）`);
+  }
+  const webPort = resolveChannelWebPort(process.env, decision);
+  if (webPort.port !== undefined) {
+    process.env.WEB_PORT = String(webPort.port);
+    process.env.CODE_AGENT_WEB_PORT = String(webPort.port);
+    console.log(`[dev-slot] 端口 → ${webPort.port}（devSlotWebPort(槽 ${decision.slot})）`);
+  } else if (webPort.explicitPortMismatch) {
+    console.warn(`⚠️  ${webPort.explicitPortMismatch}`);
   }
   // 显式要槽 1（NEO_SLOT=1 / CODE_AGENT_DATA_DIR 指向槽 1 目录）照办，但打醒目提示让人
   // 当场看见。Tauri 托管的 spawn（有 boot token，槽位由 Rust 真源注入）不打扰。

@@ -36,6 +36,14 @@ export interface ChannelDataDirDecision {
   slot1Notice?: boolean;
 }
 
+/** resolveChannelWebPort 的决策结果；字段缺省 = 不动 process.env 的端口。 */
+export interface ChannelWebPortDecision {
+  /** 要写入 WEB_PORT / CODE_AGENT_WEB_PORT 的槽位端口；undefined = 有显式端口或无槽位决策。 */
+  port?: number;
+  /** 显式端口与所选槽端口不一致时的一行提示（由调用方打出来）。 */
+  explicitPortMismatch?: string;
+}
+
 /** 缺省探测上下文 = 主检出的语义：不是工作树（→ 槽 1），槽位恒视为空闲。 */
 const MAIN_CHECKOUT_PROBE: DevSlotProbeContext = {
   isGitWorktree: () => false,
@@ -115,6 +123,39 @@ export function resolveChannelDataDir(
       `槽 2..${MAX_DEV_SLOT} 又全被占用：\n${busyDetail.join('\n')}\n` +
       `  → 显式指定 NEO_SLOT=<n> 或 CODE_AGENT_DATA_DIR=<path> 再跑。`,
   );
+}
+
+/**
+ * 决定当前 node 进程的 webServer 端口要不要跟着槽位决策走。
+ *
+ * 数据目录切到了槽 N 而端口还停在生产默认 8180 等于白换槽：照样和生产包抢 8180、
+ * 两个工作树撞同一端口、tauri-slot-process-guard 与 isSlotFree 的「本槽端口 8180+N
+ * 有没有 LISTEN」判据永远探不到本进程（守卫空转）。与 CODE_AGENT_DATA_DIR 同口径：
+ *  1. 无槽位决策（生产通道 / 显式数据目录未指向槽 1）→ 不动端口；
+ *  2. 已显式设置 WEB_PORT（webServer 的绑定读法）或 CODE_AGENT_WEB_PORT（Rust
+ *     apply_channel_env 的注入口径）→ 照办不覆盖，但与所选槽端口不一致时给一行提示；
+ *  3. 其余 → 注入 devSlotWebPort(slot)，不在消费方重算 8180+N（单一真源，两处各算
+ *     一遍就会在换槽时错开）。
+ *
+ * 纯函数，不读写真实环境，便于单测。
+ */
+export function resolveChannelWebPort(
+  env: NodeJS.ProcessEnv,
+  decision: ChannelDataDirDecision,
+): ChannelWebPortDecision {
+  if (decision.slot === undefined) return {};
+  const slotPort = devSlotWebPort(decision.slot);
+  const explicitRaw = env.WEB_PORT?.trim() || env.CODE_AGENT_WEB_PORT?.trim() || '';
+  if (!explicitRaw) return { port: slotPort };
+  const explicitPort = parseInt(explicitRaw, 10);
+  if (Number.isFinite(explicitPort) && explicitPort !== slotPort) {
+    return {
+      explicitPortMismatch:
+        `[dev-slot] 显式端口 ${explicitRaw} 与槽 ${decision.slot} 的端口 ${slotPort} 不一致，` +
+        `按显式值照办——若非有意指定，去掉显式端口让槽位端口接管。`,
+    };
+  }
+  return {};
 }
 
 /**

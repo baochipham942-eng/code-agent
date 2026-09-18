@@ -20,8 +20,8 @@ import * as path from 'node:path';
 import type { DevSlotProbeContext } from './channelDataDir';
 import { devSlotDataDirName, devSlotWebPort } from '../shared/devSlot';
 
-/** 可注入的同步执行器（单测用假实现替换 lsof/git/ps）。 */
-export type ProbeExec = (file: string, args: string[]) => string;
+/** 可注入的同步执行器（单测用假实现替换 lsof/git/ps）。模块内型别，不导出。 */
+type ProbeExec = (file: string, args: string[]) => string;
 
 const defaultExec: ProbeExec = (file, args) => execFileSync(file, args, { encoding: 'utf-8' });
 

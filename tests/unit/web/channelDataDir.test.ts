@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { resolveChannelDataDir, expandDataDirLongPath } from '../../../src/web/channelDataDir';
+import { resolveChannelDataDir, resolveChannelWebPort, expandDataDirLongPath } from '../../../src/web/channelDataDir';
 import { MAX_DEV_SLOT } from '../../../src/shared/devSlot';
 
 const HOME = '/Users/test';
@@ -136,6 +136,47 @@ describe('resolveChannelDataDir — 槽位默认决策', () => {
   it('NODE_ENV=production → 行为不变（不切目录），工作树逻辑只在 dev 通道生效', () => {
     expect(resolveChannelDataDir({ NODE_ENV: 'production' }, HOME)).toEqual({});
     expect(resolveChannelDataDir({ NODE_ENV: 'production' }, HOME, worktreeCtx(() => false))).toEqual({});
+  });
+});
+
+describe('resolveChannelWebPort — 端口跟着槽位决策走', () => {
+  it('有槽位决策且无显式端口 → 注入 devSlotWebPort(slot)（工作树槽 3 → 8183，不是生产 8180）', () => {
+    expect(resolveChannelWebPort({}, { slot: 3, reason: 'worktree-auto' })).toEqual({ port: 8183 });
+    expect(resolveChannelWebPort({}, { dataDir: DEV2_DIR, slot: 2, reason: 'worktree-auto' })).toEqual({ port: 8182 });
+  });
+
+  it('主检出槽 1 → 8181（dev 槽 1 端口，不再占生产 8180）', () => {
+    expect(resolveChannelWebPort({}, { dataDir: DEV_DIR, slot: 1, reason: 'main-checkout' })).toEqual({ port: 8181 });
+  });
+
+  it('显式数据目录未指向槽 1 → 无槽位决策 → 不动端口（显式目录的使用方自管端口）', () => {
+    expect(resolveChannelWebPort({ WEB_PORT: '9999' }, {})).toEqual({});
+    expect(resolveChannelWebPort({}, {})).toEqual({});
+  });
+
+  it('显式 WEB_PORT 照办不覆盖（与 CODE_AGENT_DATA_DIR 同口径）', () => {
+    expect(resolveChannelWebPort({ WEB_PORT: '9999' }, { slot: 3, reason: 'worktree-auto' })).toEqual({
+      explicitPortMismatch: expect.stringContaining('9999'),
+    });
+    expect(resolveChannelWebPort({ WEB_PORT: '9999' }, { slot: 3 }).port).toBeUndefined();
+  });
+
+  it('显式端口与槽端口不一致 → 提示同时带两个端口值，让人当场看清错位', () => {
+    const decision = resolveChannelWebPort({ WEB_PORT: '8180' }, { slot: 3, reason: 'worktree-auto' });
+    expect(decision.port).toBeUndefined();
+    expect(decision.explicitPortMismatch).toContain('8180');
+    expect(decision.explicitPortMismatch).toContain('8183');
+  });
+
+  it('显式端口与槽端口一致（Rust spawn 注入口径）→ 安静放行，不重写不提示', () => {
+    expect(resolveChannelWebPort({ WEB_PORT: '8183', CODE_AGENT_WEB_PORT: '8183' }, { slot: 3 })).toEqual({});
+  });
+
+  it('只显式 CODE_AGENT_WEB_PORT（无 WEB_PORT）→ 同样视为显式，不覆盖', () => {
+    expect(resolveChannelWebPort({ CODE_AGENT_WEB_PORT: '8183' }, { slot: 3 })).toEqual({});
+    expect(
+      resolveChannelWebPort({ CODE_AGENT_WEB_PORT: '9199' }, { slot: 3, reason: 'explicit-slot' }).port,
+    ).toBeUndefined();
   });
 });
 

@@ -33,6 +33,24 @@ describe('resolveChannelDataDir — 显式指定永远优先', () => {
     expect(decision.slot1Notice).toBe(true);
   });
 
+  it('显式 CODE_AGENT_DATA_DIR 经 symlink 指向槽 1 目录 → realpath 等值照判槽 1（notice/端口跟随不丢）', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'slot1-symlink-'));
+    try {
+      const realHome = path.join(base, 'real-home');
+      fs.mkdirSync(path.join(realHome, '.code-agent-dev'), { recursive: true });
+      const linkHome = path.join(base, 'link-home');
+      fs.symlinkSync(realHome, linkHome);
+      const decision = resolveChannelDataDir(
+        { CODE_AGENT_DATA_DIR: path.join(linkHome, '.code-agent-dev') },
+        realHome,
+        mainCtx(),
+      );
+      expect(decision).toEqual({ slot: 1, slot1Notice: true });
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
   it('空字符串 CODE_AGENT_DATA_DIR 视为未设置（production 下照走生产通道）', () => {
     expect(resolveChannelDataDir({ CODE_AGENT_DATA_DIR: '   ', NODE_ENV: 'production' }, HOME)).toEqual({});
   });

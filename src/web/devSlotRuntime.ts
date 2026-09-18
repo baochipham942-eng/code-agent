@@ -41,6 +41,9 @@ function listPids(output: string): number[] {
 
 /** 本槽端口有没有 LISTEN 进程。lsof 无匹配时 exit 1 → 视为无。 */
 function portListenerPids(port: number, exec: ProbeExec): number[] {
+  // ponytail: 探测是尽力而为的快照——lsof 缺失/失败一律视为「无监听」（fail-open），且
+  // 探测与实际 bind 之间无原子性，两个工作树同时启动可能判到同一槽。最终仲裁是 bind
+  // 本身：后来者 EADDRINUSE 即失败，数据目录侧还有 db 文件持有判据兜底，不会静默双写。
   try {
     return listPids(exec('lsof', ['-t', '-nP', `-iTCP:${port}`, '-sTCP:LISTEN']));
   } catch {

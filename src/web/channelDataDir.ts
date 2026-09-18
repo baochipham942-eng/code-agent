@@ -51,6 +51,22 @@ const MAIN_CHECKOUT_PROBE: DevSlotProbeContext = {
 };
 
 /**
+ * 目录等值判定：realpath 展开后比较，symlink/别名拼写指向同一物理目录也算相等
+ * （macOS 的 /var→/private/var 一类）；路径尚不存在（首启）无法解析时退回字面
+ * resolve 比较（旧行为）——判定本身不建目录，副作用留给 expandDataDirLongPath。
+ */
+function sameRealDir(a: string, b: string): boolean {
+  const realOrLiteral = (dir: string): string => {
+    try {
+      return fs.realpathSync.native(dir);
+    } catch {
+      return path.resolve(dir);
+    }
+  };
+  return realOrLiteral(a) === realOrLiteral(b);
+}
+
+/**
  * 决定当前 node 进程应把数据目录切到测试/开发通道的哪个槽。
  *
  * 优先级（显式永远优先；挑不到就 fail-closed，绝不静默回落槽 1）：
@@ -73,8 +89,9 @@ export function resolveChannelDataDir(
   const explicit = env.CODE_AGENT_DATA_DIR?.trim();
   if (explicit) {
     // 已显式指定，不覆盖。显式要槽 1 照办，但标记出来让人当场看见。
+    // 等值用 realpath 判（symlink 拼写也算指向槽 1），否则 slot1Notice 与端口跟随双双失效。
     const slot1Dir = path.join(homedir, devSlotDataDirName(1));
-    const isSlot1 = path.resolve(explicit) === path.resolve(slot1Dir);
+    const isSlot1 = sameRealDir(explicit, slot1Dir);
     return isSlot1 ? { slot: 1, slot1Notice: true } : {};
   }
 

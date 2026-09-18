@@ -583,7 +583,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         && (get().connectionError === 'connectionQrInvalid' || get().connectionError === 'connectionScanFailed')
         ? get().connectionError : null;
       set({ busy: true, autoAttempt: opts?.autoAttempt === true, connectionError: heldError, commandError: null, commandErrorAction: null });
-      try { return await work(attempt); } catch (error) {
+      try {
+        const r = await work(attempt);
+        // 被更新的尝试抢占了：迟到的旧成功整体作废，返回 undefined（等价原 finally 里 return 的覆盖语义）。
+        if (attempt !== undefined && attempt !== connectSeq) return undefined;
+        return r;
+      } catch (error) {
         // 被更新的尝试抢占了：迟到的旧失败整体作废——不关新客户端、不打回 offline、不挂重试、不释放新尝试的 busy。
         if (attempt !== undefined && attempt !== connectSeq) return;
         // 扫码抢占后，过期的自动重连失败不能把刚配上的连接打回 offline。
@@ -613,8 +618,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         armAutoRetry(reconnectDepth > 0);
       }
       finally {
-        if (attempt !== undefined && attempt !== connectSeq) return;
-        if (!(userPairing && !opts?.preempt)) set({ busy: false });
+        // 被抢占的尝试不在这里释放 busy（busy 属于新尝试）；finally 里 return 触 no-unsafe-finally，改条件守卫。
+        if ((attempt === undefined || attempt === connectSeq) && !(userPairing && !opts?.preempt)) set({ busy: false });
       }
     };
     /** （重）连上后结算待确认命令：两条路（LAN/relay）共用同一套 status 查询与补投。 */

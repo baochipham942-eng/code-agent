@@ -625,7 +625,6 @@ describe('companionStore 前台退避自动重连', () => {
 
   it('forget 与在途重连的落盘并发：清理写后落，盘上无绑定、冷启动不复活（ai-review Nit）', async () => {
     harness.recoverError = null;
-    const identity = createIdentity();
     /** 只按完成序记录：断言的是「最后落在盘上的那份」，不是调用序。 */
     const settled: string[] = [];
     let releaseFirstWrite: (() => void) | null = null;

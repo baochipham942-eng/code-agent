@@ -859,10 +859,15 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
                 否则存储故障被说成「没有电脑」，用户照着再扫也好不了（ai-review PR#1814 Important④）。 */}
             {(companion.status === 'storageError' || companion.connectionError) && <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>}
             <button className="primary" disabled={!ports.companion} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
-            {/* S3 找回入口（N-COMPANION-RELAY-ACCOUNT-RECOVER，D5）：主按钮仍是扫码，找回是文字次入口。 */}
-            <button className="sheet-secondary" data-testid="remote-recover-entry" disabled={!ports.companion}
+            {/* S3 找回入口（N-COMPANION-RELAY-ACCOUNT-RECOVER，D5）：主按钮仍是扫码，找回是文字次入口。
+                渲染前提 = relay 地址已配置为真实地址（R2 Important①）：占位值下入口置灰换「未开通」
+                说明——拨占位域名只会 DNS 失败成泛化的「服务连不上」，没配好就不开门。 */}
+            <button className="sheet-secondary" data-testid="remote-recover-entry"
+              disabled={!ports.companion || !companion.recoverEntryAvailable}
               onClick={() => state.openSheet('recover')}>{text.recoverEntry}</button>
-            <p className="caption" data-testid="remote-recover-hint">{text.recoverEntryHint}</p>
+            <p className="caption" data-testid="remote-recover-hint">
+              {companion.recoverEntryAvailable ? text.recoverEntryHint : text.recoverUnavailable}
+            </p>
           </div>
           : <div className="remote-failed" role="status" data-testid="remote-unreachable">
             <strong>{text.cannotReachComputer}</strong>

@@ -55,13 +55,6 @@ function accessToken(sub = SUB, key: { kid: string; privateKey: KeyObject } = si
 
 const jwksFetch = (async () => new Response(JSON.stringify({ keys: [signingKey.jwk] }), { status: 200 })) as typeof fetch;
 
-/** 调试标记：写到文件（vitest 会吞 console.log），生产用例不依赖它。 */
-const DEBUG_CHAIN = process.env.RECOVER_DEBUG === '1';
-function note(mark: string): void {
-  if (!DEBUG_CHAIN) return;
-  import('node:fs').then(fs => fs.appendFileSync('/tmp/rec-chain.log', `${mark}\n`)).catch(() => {});
-}
-
 /** 脚本化的账号侧 WS：收帧按 kind 等待，发帧带 sentinel 信封。 */
 class ScriptSocket {
   private socket: WebSocket | null = null;
@@ -195,6 +188,24 @@ describe('companion relay：找回（list-hosts / pair-request / pair-result）'
     socket.close();
   });
 
+  it('② 拒单也计频（R2 Nit5）：指向不存在 instanceId 的 pair-request 挨个被拒，短窗内第二个 ⇒ rate-limited', async () => {
+    const socket = await ScriptSocket.connect(url, token);
+    socket.send({
+      v: 1, kind: 'pair-request', requestId: 'request-id-ghosthost01', instanceId: 'instance-id-not-there0',
+      envelope: pairEnvelope(), ciphertext: 'ab'.repeat(96),
+    });
+    const first = await socket.wait(frame => frame.kind === 'pair-result' && frame.requestId === 'request-id-ghosthost01');
+    expect(first).toMatchObject({ accepted: false, reason: 'host-offline' });
+    // 同一短窗内再来（探测/轰炸节奏）：拒单同样占频次——不能免限流地反复打不存在的 instanceId。
+    socket.send({
+      v: 1, kind: 'pair-request', requestId: 'request-id-ghosthost02', instanceId: 'instance-id-not-there0',
+      envelope: pairEnvelope(), ciphertext: 'ab'.repeat(96),
+    });
+    const second = await socket.wait(frame => frame.kind === 'pair-result' && frame.requestId === 'request-id-ghosthost02');
+    expect(second).toMatchObject({ accepted: false, reason: 'rate-limited' });
+    socket.close();
+  });
+
   it('② 同一交换：未经电脑同意 ⇒ 设备不登记；同意后续帧落地才登记（全链路）', async () => {
     const socket = await ScriptSocket.connect(url, token);
     const hosts = await acctListHosts(socket);
@@ -214,18 +225,13 @@ describe('companion relay：找回（list-hosts / pair-request / pair-result）'
     expect(gateway.pairedDevices()).toHaveLength(2);
     // 电脑同意 ⇒ pair-result(reply) 回到手机。
     expect(host.respondPair(pairRequests[0].requestId, true)).toBe(true);
-    note('reply-wait');
     const reply = await socket.wait(frame => frame.kind === 'pair-result' && frame.requestId === requestId);
-    note('reply-got');
     expect(reply).toMatchObject({ accepted: true, stage: 'reply' });
     expect(initiator.recv(fromHex((reply as Extract<CompanionRelayFrame, { kind: 'pair-result' }>).ciphertext)).length).toBe(0);
     expect(toHex(initiator.rs!)).toBe(toHex(hostIdentity.publicKey));
     // 手机补完第三条消息 ⇒ Host 登记新设备并回 complete。
-    note('msg3-sent');
     socket.send({ v: 1, kind: 'pair-request', requestId, envelope: pairEnvelope(), ciphertext: toHex(initiator.send()) });
-    note('complete-wait');
     const complete = await socket.wait(frame => frame.kind === 'pair-result' && frame.requestId === requestId && frame.stage === 'complete');
-    note('complete-got');
     const devices = gateway.pairedDevices();
     expect(devices).toHaveLength(3);
     const channel = new NoiseChannel(initiator);

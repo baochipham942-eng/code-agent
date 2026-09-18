@@ -10,7 +10,7 @@ import type {
 import type { CompanionPushRegister, CompanionPushRegisterResult, CompanionPushOpenResult } from '../../../../src/shared/contract/companionPush';
 import { companionCommandSchema } from '../../../../src/shared/contract/companion';
 import { parseCompanionRelayRoute, parseCompanionRelayRoutes, type CompanionRelayHostEntry, type CompanionRelayRoute, type CompanionRelayRouteRef } from '../../../../src/shared/contract/companionRelay';
-import { DEFAULT_COMPANION_RELAY_URL } from '../../../../src/shared/constants/network';
+import { DEFAULT_COMPANION_RELAY_URL, isCompanionRelayUrlConfigured } from '../../../../src/shared/constants/network';
 import { LanCompanionClient } from '../platform/lanCompanionClient';
 import { RelayCompanionClient, browserRelayDial, type RelayDialRoute } from '../platform/relayCompanionClient';
 import { loginNeoAccount, type AccountLoginResult } from '../platform/accountLogin';
@@ -43,6 +43,16 @@ interface Saved {
   account?: { ticket: string; email: string; userId: string };
   /** S8「在外面用需要先登录」提醒已出过一次：跳过登录后只再提醒这一次，之后不反复弹（D-1）。 */
   loginReminded?: true;
+}
+
+/**
+ * S3 找回入口的渲染前提（N-COMPANION-RELAY-ACCOUNT-RECOVER-R2 Important①）：手机此刻能拿到的
+ * relay 地址（配对缓存优先，占位常量兜底）仍是占位值 ⇒ 生产 relay 尚未部署，入口不开门——拨
+ * 占位域名只会 DNS 失败成泛化的「服务连不上」。已配对的怪状态（绑定丢了但路由缓存还在）照旧
+ * 用缓存里的真实地址，入口照开。
+ */
+function recoverEntryVisible(record: Saved | null): boolean {
+  return isCompanionRelayUrlConfigured(record?.relay?.url ?? record?.relayAccount?.url ?? DEFAULT_COMPANION_RELAY_URL);
 }
 type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionRefused' | 'connectionUnavailable' | 'connectionFailed'
   | 'connectionRelayUnavailable' | 'connectionRelayRejected' | 'connectionRelayNoHost';
@@ -139,6 +149,8 @@ interface State {
   recoverTargetName: string | null;
   /** S6 的 4 位核对码：两端各自从同一份 XX 握手材料派生，人眼比对（D2 的核对面）。 */
   recoverCode: string | null;
+  /** S3 找回入口是否开门：relay 地址还是占位值（生产未部署）时 false，入口置灰换「未开通」说明。 */
+  recoverEntryAvailable: boolean;
   recoverLogin(email: string, password: string): Promise<void>;
   recoverSelectHost(entry: CompanionRelayHostEntry): Promise<void>;
   /** 取消找回 / 退出找回流：关协议会话，挂起的配对结果按代号丢弃。 */
@@ -575,7 +587,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 两个字段必须同一拍置起：只改 pendingAction 的话，结算那一帧会是
         // pending=true + pendingAction=null，状态行闪回「请勿重复发送」——正是本单要消掉的那句。
         saved = done.record;
-        set({ pending: Boolean(done.record.pending), pendingAction: done.record.pending?.action ?? null, pendingAdopted: false,
+        set({ pending: Boolean(done.record.pending), pendingAction: done.record.pending?.action ?? null, pendingAdopted: false, recoverEntryAvailable: recoverEntryVisible(done.record),
           ...(done.orphanVoice ? { voiceResult: { commandId: done.orphanVoice, outcome: 'error' as const } } : {}) });
       }
       catch (error) { client?.close(); set({ status: 'storageError' }); throw error; }
@@ -1057,7 +1069,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       consumeTranscriptionPreflight: () => { if (get().skipTranscriptionPreflight) set({ skipTranscriptionPreflight: false }); },
       connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, autoRetrying: false, autoAttempt: false, relayNoHostWaiting: false, abandonedPending: false, events: [], runId: null, terminal: null,
       account: null, loginPrompt: false,
-      recoverStep: 'idle', recoverError: null, recoverHosts: [], recoverTargetName: null, recoverCode: null,
+      recoverStep: 'idle', recoverError: null, recoverHosts: [], recoverTargetName: null, recoverCode: null, recoverEntryAvailable: recoverEntryVisible(null),
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
       hydrate: async () => {
@@ -1095,6 +1107,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             pending: !!value.pending, pendingAction: value.pending?.action ?? null, pendingAdopted: !!value.pending,
             account: value.account ? { email: value.account.email, userId: value.account.userId } : null,
             history: restored.history, events: restored.events, lastSyncAt: restored.lastSyncAt, cacheUsage: inspectBoth(),
+            recoverEntryAvailable: recoverEntryVisible(value),
           });
           if (value.candidate || value.binding) await get().reconnect();
         } catch { set({ busy: false, status: 'storageError' }); }
@@ -1129,6 +1142,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       recoverLogin: async (email, password) => {
         if (!port || get().recoverStep === 'opening' || get().recoverStep === 'pairing') return;
         const attempt = ++recoverSeq;
+        // hosts 步不挡重入（回 S4 重新登录是正常出路）：旧 recoverSession 的活 WS 先关再覆盖，
+        // 不关的话它挂到进程退出，relay 侧也陪着一台幽灵手机（ai-review R2 Nit3）。
+        recoverSession?.close();
+        recoverSession = null;
         set({ recoverStep: 'opening', recoverError: null });
         // 身份密钥对是这台手机的长期身份（扫码配对同一条纪律）：先落盘再谈配对。
         if (!saved) {

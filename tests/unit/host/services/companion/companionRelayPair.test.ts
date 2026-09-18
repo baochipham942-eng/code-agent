@@ -56,6 +56,8 @@ describe('companion relay client：找回配对（同意守卫 + XX 三消息）
   let settled: string[] = [];
   let socket: FakeWebSocket;
   let client: CompanionRelayClient;
+  /** 零库电脑用例（R2 Important②）把 scope 换成 []：pairScope 的取值面在测试里可变。 */
+  let scope = SCOPE;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -63,6 +65,7 @@ describe('companion relay client：找回配对（同意守卫 + XX 三消息）
     gateway = new CompanionGateway(db, {});
     pairRequests = [];
     settled = [];
+    scope = SCOPE;
     FakeWebSocket.last = null;
     client = new CompanionRelayClient({
       gateway,
@@ -72,7 +75,7 @@ describe('companion relay client：找回配对（同意守卫 + XX 三消息）
       hostName: "Lin's MacBook Pro",
       onPairRequest: request => { pairRequests.push(request); },
       onPairSettled: requestId => { settled.push(requestId); },
-      pairScope: () => SCOPE,
+      pairScope: () => scope,
       pairLegacyRoute: deviceId => ({ v: 1, url: 'wss://relay.example.invalid/companion', routeToken: `legacy-${deviceId}`, credential: 'shared-secret' }),
       pairLanAdvertisement: () => ({ endpoint: 'http://192.168.1.4:8182', altEndpoint: 'http://mac.local:8182', candidates: ['http://192.168.1.4:8182'] }),
       hostAccountEmail: () => 'lin@example.com',
@@ -132,6 +135,7 @@ describe('companion relay client：找回配对（同意守卫 + XX 三消息）
 
   it('同意 ⇒ 回 XX 第二条消息；续帧落地 ⇒ 登记设备并下发加密配对载荷（手机发起端可解）', () => {
     const { requestId, initiator } = sendInitialPairRequest();
+    expect(pairRequests[0].scopeEmpty).toBe(false);
     expect(client.respondPair(requestId, true)).toBe(true);
     const reply = socket.lastOf('pair-result');
     expect(reply).toMatchObject({ kind: 'pair-result', requestId, accepted: true, stage: 'reply' });
@@ -188,5 +192,44 @@ describe('companion relay client：找回配对（同意守卫 + XX 三消息）
     });
     expect(pairRequests).toHaveLength(0);
     expect(gateway.pairedDevices()).toHaveLength(0);
+  });
+
+  it('零库电脑（R2 Important②）：卡片带 scopeEmpty 给「先建项目」出路；同意被守卫拒 ⇒ 不登记零 scope 僵尸设备', () => {
+    scope = [];
+    const { requestId } = sendInitialPairRequest();
+    expect(pairRequests[0].scopeEmpty).toBe(true);
+    // 桌面点了同意（UI 置灰挡不住的兜底路径）：守卫不通过就不登记，手机在 reply 之前就收到具名拒绝。
+    expect(client.respondPair(requestId, true)).toBe(true);
+    expect(socket.lastOf('pair-result')).toMatchObject({ kind: 'pair-result', requestId, accepted: false, reason: 'declined' });
+    // 不再产生零 scope 设备（原 bug：pairIdentity 登记零授权设备，每重试一次多一台僵尸）。
+    expect(gateway.pairedDevices()).toHaveLength(0);
+    expect(settled).toContain(requestId);
+    // 挂起态已销账：续帧怼过来也不登记。
+    socket.deliver({ v: 1, kind: 'pair-request', requestId, envelope: pairEnvelope(), ciphertext: 'ab'.repeat(48) });
+    expect(gateway.pairedDevices()).toHaveLength(0);
+    // 库里建了项目后再来一次：守卫放行，正常登记（出路真的通）。
+    scope = ['project:main'];
+    const retry = sendInitialPairRequest();
+    expect(client.respondPair(retry.requestId, true)).toBe(true);
+    const retryReply = socket.lastOf('pair-result');
+    expect(retry.initiator.recv(fromHex((retryReply as Extract<CompanionRelayFrame, { kind: 'pair-result' }>).ciphertext)).length).toBe(0);
+    socket.deliver({ v: 1, kind: 'pair-request', requestId: retry.requestId, envelope: pairEnvelope(), ciphertext: toHex(retry.initiator.send()) });
+    expect(gateway.pairedDevices()).toHaveLength(1);
+    expect(gateway.pairedDevices()[0].scope).toEqual(['project:main']);
+  });
+
+  it('重复同意 ⇒ 幂等（Nit4）：不再对已推进的 XX 握手 send()，第二条 reply 不出现', () => {
+    const { requestId, initiator } = sendInitialPairRequest();
+    expect(client.respondPair(requestId, true)).toBe(true);
+    // 第二次同意（卡片重复表态/旧 renderer 重发）：受理但什么都不补发——responder 的 send() 已推进
+    // 到传输态，再调一次只会把传输密文当握手第二条消息发给手机（手机 recv 直接炸）。
+    expect(client.respondPair(requestId, true)).toBe(true);
+    const replies = socket.frames().filter(frame => frame.kind === 'pair-result' && frame.stage === 'reply');
+    expect(replies).toHaveLength(1);
+    // 手机按（唯一的）那条 reply 正常续完：全链路不受重复同意影响。
+    expect(initiator.recv(fromHex((replies[0] as Extract<CompanionRelayFrame, { kind: 'pair-result' }>).ciphertext)).length).toBe(0);
+    socket.deliver({ v: 1, kind: 'pair-request', requestId, envelope: pairEnvelope(), ciphertext: toHex(initiator.send()) });
+    expect(gateway.pairedDevices()).toHaveLength(1);
+    expect(socket.lastOf('pair-result')).toMatchObject({ kind: 'pair-result', requestId, accepted: true, stage: 'complete' });
   });
 });

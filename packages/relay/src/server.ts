@@ -164,6 +164,10 @@ export class CompanionRelayServer {
   private port = 0;
   private readonly host: string;
   private readonly routes = new Map<string, Route>();
+  /** pair-request 找 host 的二级索引（R2 Nit5）：`principal|instanceId` → route tokens，写入/摘除
+   *  收敛在 putRoute/dropRoute。查找命中后仍以 routes 行复核——索引即使失配也只多一次校验，
+   *  不会把离线电脑误报在线。 */
+  private readonly routesByAccountInstance = new Map<string, Set<string>>();
   private readonly bindings = new WeakMap<WebSocket, Binding>();
   private readonly principals = new WeakMap<WebSocket, Principal>();
   private readonly lastSeen = new WeakMap<WebSocket, number>();
@@ -255,6 +259,7 @@ export class CompanionRelayServer {
     for (const pending of this.pendingPairs.values()) clearTimeout(pending.timer);
     this.pendingPairs.clear();
     this.routes.clear();
+    this.routesByAccountInstance.clear();
     const wss = this.wss; this.wss = null;
     if (wss) {
       for (const client of wss.clients) client.terminate();
@@ -273,7 +278,7 @@ export class CompanionRelayServer {
     const now = this.now();
     for (const [token, route] of this.routes) {
       if (route.expiresAt > now) continue;
-      this.routes.delete(token);
+      this.dropRoute(token);
       this.purgeWaiting(token);
       this.options.logger?.info('route_expired', { token: tokenPrefix(token) });
     }
@@ -416,6 +421,41 @@ export class CompanionRelayServer {
     this.options.logger?.info(renewed ? 'ticket_renewed' : 'ticket_issued');
   }
 
+  /** routes 的写入唯一入口：主表 set 的同时维护 account×instance 二级索引（R2 Nit5）。 */
+  private putRoute(token: string, route: Route): void {
+    this.routes.set(token, route);
+    if (!route.hostInstanceId) return;
+    const key = `${route.owner}|${route.hostInstanceId}`;
+    const tokens = this.routesByAccountInstance.get(key) ?? new Set<string>();
+    tokens.add(token);
+    this.routesByAccountInstance.set(key, tokens);
+  }
+
+  /** routes 的删除唯一入口（stop 的整表清空除外）：连带从二级索引摘除（R2 Nit5）。 */
+  private dropRoute(token: string): void {
+    const route = this.routes.get(token);
+    if (!route) return;
+    this.routes.delete(token);
+    if (!route.hostInstanceId) return;
+    const key = `${route.owner}|${route.hostInstanceId}`;
+    const tokens = this.routesByAccountInstance.get(key);
+    if (!tokens) return;
+    tokens.delete(token);
+    if (!tokens.size) this.routesByAccountInstance.delete(key);
+  }
+
+  /** pair-request 的目标查找：索引直达 + routes 行复核，替代逐帧全表扫（R2 Nit5）。 */
+  private onlineHostFor(principal: Principal, instanceId: string): WebSocket | undefined {
+    const tokens = this.routesByAccountInstance.get(`${principal}|${instanceId}`);
+    if (!tokens) return undefined;
+    for (const token of tokens) {
+      const route = this.routes.get(token);
+      if (!route || route.owner !== principal || route.hostInstanceId !== instanceId) continue;
+      if (route.host?.readyState === WebSocket.OPEN) return route.host;
+    }
+    return undefined;
+  }
+
   private detach(socket: WebSocket): void {
     const binding = this.bindings.get(socket);
     if (!binding) return;
@@ -423,7 +463,7 @@ export class CompanionRelayServer {
       const route = this.routes.get(token);
       if (!route) continue;
       if (route[binding.role] === socket) delete route[binding.role];
-      if (!route.host && !route.device) this.routes.delete(token);
+      if (!route.host && !route.device) this.dropRoute(token);
       // host 腿断开而设备腿还在：手机仍握着与旧 Host 实例谈好的会话密钥，Host 重连后会话表
       // 已清，它的 forward 只能被吞——照 no-host 宽限模式给它一个重拨重握手的推力
       // （N-COMPANION-RELAY-RECONNECT-DROPSESSIONS）。槽位已被新 socket 顶替时这里不挂
@@ -503,7 +543,7 @@ export class CompanionRelayServer {
         route.hostKeyFingerprint = frame.hostKeyFingerprint;
       }
       route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
-      this.routes.set(token, route);
+      this.putRoute(token, route);
       const binding = existing ?? { role: frame.role, tokens: new Set<string>() };
       binding.tokens.add(token);
       this.bindings.set(socket, binding);
@@ -543,7 +583,7 @@ export class CompanionRelayServer {
       if (route && binding?.tokens.has(token) && route[binding.role] === socket) {
         delete route[binding.role];
         binding.tokens.delete(token);
-        if (!route.host && !route.device) this.routes.delete(token);
+        if (!route.host && !route.device) this.dropRoute(token);
       }
       return;
     }
@@ -662,23 +702,21 @@ export class CompanionRelayServer {
       this.sendPairResult(socket, requestId, 'rate-limited');
       return;
     }
-    let host: WebSocket | undefined;
-    for (const route of this.routes.values()) {
-      if (route.owner !== principal || route.hostInstanceId !== frame.instanceId) continue;
-      if (route.host?.readyState === WebSocket.OPEN) { host = route.host; break; }
-    }
-    if (!host) {
-      this.stats.rejectedPairRequests += 1;
-      this.options.logger?.info('pair_request_no_host', { target: frame.instanceId.slice(0, 8) });
-      this.sendPairResult(socket, requestId, 'host-offline');
-      return;
-    }
+    // 记账紧随限流检查（R2 Nit5）：过检的初次请求无论后面成不成都占频次——指向不存在
+    // instanceId 的探测/轰炸与真实请求同一节奏，不能免限流地反复打进来。
     this.pairRateBySocket.set(socket, now);
     // 写时顺手清过期项：这张表的量级 = 真实发起过找回的账号数，不清才会被轮换 sub 撑大。
     for (const [account, at] of this.pairRateByAccount) {
       if (now - at >= minIntervalMs) this.pairRateByAccount.delete(account);
     }
     this.pairRateByAccount.set(principal, now);
+    const host = this.onlineHostFor(principal, frame.instanceId);
+    if (!host) {
+      this.stats.rejectedPairRequests += 1;
+      this.options.logger?.info('pair_request_no_host', { target: frame.instanceId.slice(0, 8) });
+      this.sendPairResult(socket, requestId, 'host-offline');
+      return;
+    }
     const timer = setTimeout(() => {
       this.pendingPairs.delete(requestId);
       this.stats.pairResults += 1;
@@ -844,7 +882,7 @@ export class CompanionRelayServer {
     if (!route) return;
     const device = route.device;
     delete route.device;
-    if (!route.host) this.routes.delete(token);
+    if (!route.host) this.dropRoute(token);
     if (device && device.readyState < WebSocket.CLOSING) device.close();
     this.stats.revoked += 1;
     this.options.logger?.warn('revoked', { token: tokenPrefix(token) });

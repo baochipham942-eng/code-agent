@@ -20,13 +20,13 @@ import { Button } from './primitives/Button';
 export function CompanionPairRequestCard() {
   const { language } = useI18n();
   const text = companionText[language];
-  const [pending, setPending] = useState<{ requestId: string; code: string; expiresAt: number } | null>(null);
+  const [pending, setPending] = useState<{ requestId: string; code: string; expiresAt: number; scopeEmpty: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.COMPANION_PAIR_REQUEST, (event: CompanionPairRequestEvent) => {
       if (event.type === 'request' && event.code && event.expiresAt) {
-        setPending({ requestId: event.requestId, code: event.code, expiresAt: event.expiresAt });
+        setPending({ requestId: event.requestId, code: event.code, expiresAt: event.expiresAt, scopeEmpty: event.scopeEmpty === true });
       } else if (event.type === 'gone') {
         setPending(current => current?.requestId === event.requestId ? null : current);
       }
@@ -62,10 +62,11 @@ export function CompanionPairRequestCard() {
     title={text.pairRequestTitle} headerIcon={<Smartphone className="w-5 h-5" />}
     footer={<>
       <Button variant="secondary" size="sm" disabled={busy} onClick={() => void respond(false)}>{text.pairRequestDeny}</Button>
-      <Button variant="primary" size="sm" loading={busy} onClick={() => void respond(true)}>{text.pairRequestApprove}</Button>
+      <Button variant="primary" size="sm" loading={busy} disabled={pending.scopeEmpty} onClick={() => void respond(true)}>{text.pairRequestApprove}</Button>
     </>}>
     <div className="space-y-3" data-testid="companion-pair-card">
-      <p className="text-sm text-zinc-300">{text.pairRequestHint}</p>
+      {/* 零库电脑（R2 Important②）：同意置灰 + 「先建项目」出路文案——同意只会登记零授权设备。 */}
+      <p className="text-sm text-zinc-300">{pending.scopeEmpty ? text.pairRequestNoScope : text.pairRequestHint}</p>
       <div className="space-y-1">
         <p className="text-xs text-zinc-500">{text.pairRequestCodeLabel}</p>
         <p className="font-mono text-3xl tracking-[0.35em] text-zinc-100" data-testid="companion-pair-code">

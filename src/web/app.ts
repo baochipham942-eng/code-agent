@@ -597,6 +597,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
         hostAccountEmail: () => getAuthService().getCurrentUser()?.email ?? null,
         onPairRequest: request => broadcastToRenderer(IPC_CHANNELS.COMPANION_PAIR_REQUEST, {
           type: 'request', requestId: request.requestId, code: request.code, expiresAt: request.expiresAt,
+          scopeEmpty: request.scopeEmpty,
         }),
         onPairSettled: requestId => broadcastToRenderer(IPC_CHANNELS.COMPANION_PAIR_REQUEST, {
           type: 'gone', requestId,

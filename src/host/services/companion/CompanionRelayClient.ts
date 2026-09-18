@@ -83,6 +83,9 @@ export interface CompanionRelayPairRequest {
   /** 4 位核对码：两端各自从同一份 XX 握手材料派生，人眼比对。 */
   code: string;
   expiresAt: number;
+  /** 此刻电脑上零个项目（pairScope 空）：同意只会登记零授权设备，卡片要给「先建项目」的出路
+   * （R2 Important②），同意按钮置灰；同意路径的守卫同判，UI 挡不住的兜底。 */
+  scopeEmpty: boolean;
 }
 
 /** commandId must survive the relay hop; do not mint a new id here. */
@@ -687,7 +690,8 @@ export class CompanionRelayClient {
     }, L.relayPairTtlMs);
     timer.unref();
     this.pendingPairs.set(requestId, { requestId, noise, approved: false, timer });
-    this.deps.onPairRequest?.({ requestId, code: deriveRelayPairVerify(noise.re), expiresAt });
+    this.deps.onPairRequest?.({ requestId, code: deriveRelayPairVerify(noise.re), expiresAt,
+      scopeEmpty: (this.deps.pairScope?.() ?? []).length < 1 });
     logCompanionRelayInfo(this.logger, `Companion relay${this.label} pair request awaiting approval: request=${requestId.slice(0, 8)}`);
   }
 
@@ -695,10 +699,22 @@ export class CompanionRelayClient {
   respondPair(requestId: string, approve: boolean): boolean {
     const pending = this.pendingPairs.get(requestId);
     if (!pending) return false;
+    // 重复同意幂等（ai-review R2 Nit4）：XX responder 的 send() 已在第一次同意时推进到传输态，
+    // 再调一次只会把传输密文当握手第二条消息发给手机（手机 recv 直接炸）——什么都不补发。
+    if (approve && pending.approved) return true;
     if (!approve) {
       this.clearPendingPair(requestId);
       this.pushPairResult(requestId, { accepted: false, reason: 'declined' });
       logCompanionRelayInfo(this.logger, `Companion relay${this.label} pair declined: request=${requestId.slice(0, 8)}`);
+      return true;
+    }
+    // 零 scope 守卫（R2 Important②，与 LanCompanionServer.invite 的 scope.length<1 同一条纪律）：
+    // 项目库为空时同意只会登记零授权设备——手机侧 readRecoverPayload 判非法，每重试一次多一台
+    // 僵尸设备（还顶掉同公钥上一台登记）。不登记，具名拒绝，桌面卡片以 scopeEmpty 给「先建项目」出路。
+    if ((this.deps.pairScope?.() ?? []).length < 1) {
+      this.clearPendingPair(requestId);
+      this.pushPairResult(requestId, { accepted: false, reason: 'declined' });
+      logCompanionRelayInfo(this.logger, `Companion relay${this.label} pair declined: empty scope for request=${requestId.slice(0, 8)}`);
       return true;
     }
     pending.approved = true;

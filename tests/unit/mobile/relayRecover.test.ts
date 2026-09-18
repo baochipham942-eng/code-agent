@@ -5,6 +5,8 @@ import { NoiseChannel } from '../../../src/shared/companion/noiseChannel';
 import { fromHex, sha256, toHex } from '../../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import { createCompanionStore } from '../../../packages/mobile/src/stores/companionStore';
+import { COMPANION_RELAY_PLACEHOLDER_URL } from '../../../src/shared/constants/network';
+import { messages, recoverErrorCopy } from '../../../packages/mobile/src/i18n';
 import type { PlatformPorts } from '../../../packages/mobile/src/platform/ports';
 import type { RelayDialSocket } from '../../../packages/mobile/src/platform/relayCompanionClient';
 import type { CompanionRelayFrame } from '../../../src/shared/contract/companionRelay';
@@ -87,10 +89,10 @@ const recoverPayload = {
   routes: { v: 1 as const, account: ACCOUNT_ROUTE, legacy: LEGACY_ROUTE },
 };
 
-function storeWith(socket: RecoverSocket) {
+function storeWith(socket: RecoverSocket, savedRaw: string | null = null) {
   const writes: string[] = [];
   const companion: NonNullable<PlatformPorts['companion']> = {
-    read: async () => null,
+    read: async () => savedRaw,
     write: async value => { writes.push(value); },
     scan: async () => { throw new Error('unused'); },
     post: async () => ({}),
@@ -228,8 +230,7 @@ describe('relayRecover：登录 → 列电脑 → 配对落盘（与扫码同形
     expect(store.getState().recoverError).toBe('unreachable');
   });
 
-  it('取消：S6 在途取消 ⇒ 会话关闭、步进归零、迟到的同意结果不落盘', async () => {
-    await loginToListHosts({ name: 'Mac', fingerprint: HOST_FINGERPRINT, instanceId: 'instance-id-1234567890' });
+  it('取消：S6 在途取消 ⇒ 会话关闭、步进归零、迟到的同意结果不落盘', async () => {    await loginToListHosts({ name: 'Mac', fingerprint: HOST_FINGERPRINT, instanceId: 'instance-id-1234567890' });
     void store.getState().recoverSelectHost(store.getState().recoverHosts![0]);
     await vi.waitFor(() => expect(store.getState().recoverStep).toBe('pairing'));
     const first = socket.frames().find(frame => frame.kind === 'pair-request' && frame.instanceId) as Extract<CompanionRelayFrame, { kind: 'pair-request' }>;
@@ -250,5 +251,44 @@ describe('relayRecover：登录 → 列电脑 → 配对落盘（与扫码同形
     await new Promise(resolve => setTimeout(resolve, 20));
     expect(writes.filter(write => write.includes('phone-recovered-1'))).toHaveLength(0);
     expect(store.getState().binding).toBeNull();
+  });
+
+  it('S3 入口门（R2 Important①）：relay 地址还是占位值 ⇒ recoverEntryAvailable=false，缓存到真实地址才开门', async () => {
+    // 未配对、无缓存（刚装好/刚清空）：占位常量兜底 ⇒ 不开门——拨占位域名只会 DNS 失败成
+    // 泛化的「服务连不上」，入口置灰换「未开通」说明。
+    expect(store.getState().recoverEntryAvailable).toBe(false);
+
+    // 已配对的怪状态（绑定丢了但路由缓存还在）：缓存里的真实地址照常用，入口照开。
+    const identity = createIdentity();
+    const cachedRoute = { v: 1 as const, url: 'wss://relay.real.example.com/companion', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential' };
+    const cachedStore = storeWith(new RecoverSocket(), JSON.stringify({
+      version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey), relay: cachedRoute,
+    }));
+    await cachedStore.store.getState().hydrate();
+    expect(cachedStore.store.getState().recoverEntryAvailable).toBe(true);
+
+    // 缓存里的地址本身是占位值：仍不开门（判据认地址，不认「有没有缓存」）。
+    const placeholderStore = storeWith(new RecoverSocket(), JSON.stringify({
+      version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+      relay: { ...cachedRoute, url: COMPANION_RELAY_PLACEHOLDER_URL },
+    }));
+    await placeholderStore.store.getState().hydrate();
+    expect(placeholderStore.store.getState().recoverEntryAvailable).toBe(false);
+  });
+
+  it('hosts 步重入 recoverLogin ⇒ 旧 recoverSession 的活 WS 先关再覆盖（Nit3）', async () => {
+    await loginToListHosts({ name: 'Mac', fingerprint: HOST_FINGERPRINT, instanceId: 'instance-id-1234567890' });
+    expect(store.getState().recoverStep).toBe('hosts');
+    expect(socket.closed).toBe(false);
+    // hosts 步不挡重入（回 S4 重新登录是正常出路）：旧会话的 WS 必须关掉，不能挂着陪跑到进程退出。
+    void store.getState().recoverLogin('lin@example.com', PASSWORD);
+    expect(socket.closed).toBe(true);
+  });
+
+  it('S5 横幅兜底（Nit2）：未登记的失败值渲染中性「没成功」，不冒充「电脑身份核对不上」', () => {
+    const text = messages('zh');
+    expect(recoverErrorCopy(text, 'hostMismatch')).toBe(text.recoverHostMismatch);
+    expect(recoverErrorCopy(text, 'unlisted-future-value')).toBe(text.recoverGeneric);
+    expect(recoverErrorCopy(text, 'unlisted-future-value')).not.toContain('核对不上');
   });
 });

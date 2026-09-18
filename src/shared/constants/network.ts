@@ -354,12 +354,26 @@ export const RENDERER_BUNDLE_ENDPOINTS = {
 export const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
 
 /**
+ * companion relay 的占位地址（RFC 2606 保留域，永不解析）：生产部署域名进仓前
+ * DEFAULT_COMPANION_RELAY_URL 停在这个值上。手机找回入口以此判「跨网还没开通」
+ * （N-COMPANION-RELAY-ACCOUNT-RECOVER-R2 Important①）：拨一个占位域名只会 DNS 失败，
+ * 用户看到的是泛化的「服务连不上」——没配好就不开门。真实地址由部署单
+ * （N-MOBILE-RELAY-DEPLOY）替换 DEFAULT_COMPANION_RELAY_URL，本占位常量保留作判据。
+ */
+export const COMPANION_RELAY_PLACEHOLDER_URL = 'wss://relay.example.invalid/companion';
+
+/**
  * 未配对手机「登录找回电脑」（N-COMPANION-RELAY-ACCOUNT-RECOVER）拨的默认 relay 地址：找回时
  * 手机还没有任何配对路由，只能用编译期常量。已配对手机始终用配对缓存里的路由地址（Host 自报，
  * 兼容自建 relay），常量只兜「刚装好/刚清空」的那一次。⚠️ 值必须与生产 companion relay 的部署
  * 地址一致才能真用——占位值表示生产域名尚未进仓，发版前替换（见证据档「未做与原因」）。
  */
-export const DEFAULT_COMPANION_RELAY_URL = 'wss://relay.example.invalid/companion';
+export const DEFAULT_COMPANION_RELAY_URL = COMPANION_RELAY_PLACEHOLDER_URL;
+
+/** relay 地址是否已配置为真实地址：占位值（生产 relay 未部署）一律 false，是找回入口的渲染前提。 */
+export function isCompanionRelayUrlConfigured(url: string): boolean {
+  return url !== COMPANION_RELAY_PLACEHOLDER_URL;
+}
 
 /** 默认 Supabase Anonymous Key */
 export const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';

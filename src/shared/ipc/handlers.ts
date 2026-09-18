@@ -745,6 +745,9 @@ export interface CompanionPairRequestEvent {
   code?: string;
   /** request 事件必带：卡片到点自收的本地期限。 */
   expiresAt?: number;
+  /** request 事件必带：此刻电脑零个项目——同意只会登记零授权设备，卡片给「先建项目」出路、
+   * 同意置灰（R2 Important②）。旧 Host 不带（卡片按未置灰渲染，同意路径的守卫兜底）。 */
+  scopeEmpty?: boolean;
 }
 
 export interface ProviderFallbackEvent {

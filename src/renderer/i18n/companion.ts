@@ -43,6 +43,8 @@ export const companionText = {
     pairRequestCodeLabel: '核对码',
     pairRequestApprove: '同意连接',
     pairRequestDeny: '拒绝',
+    /** 零库电脑的出路文案（R2 Important②）：同意只会登记零授权设备，先建项目再来。 */
+    pairRequestNoScope: '这台电脑上还没有任何项目：先新建一个项目，再允许手机连接——现在同意的话，手机连上也没有可用的内容。',
   },
   en: {
     title: 'Connect a phone',
@@ -88,6 +90,7 @@ export const companionText = {
     pairRequestCodeLabel: 'Check code',
     pairRequestApprove: 'Allow',
     pairRequestDeny: 'Deny',
+    pairRequestNoScope: 'There are no projects on this computer yet. Create a project first, then allow the phone — allowing now would connect it to nothing usable.',
   },
 };
 

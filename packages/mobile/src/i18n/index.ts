@@ -180,6 +180,8 @@ const zh = {
   // 「换了手机？登录找回我的电脑」（N-COMPANION-RELAY-ACCOUNT-RECOVER）：S3 入口、S4 登录、S5 选电脑、S6 等同意。
   recoverEntry: '换了手机？登录找回我的电脑',
   recoverEntryHint: '登录只用来找到你的电脑，找到后手机上不保留账号。',
+  /** S3 入口的「未开通」说明（R2 Important①）：relay 地址还是占位值 ⇒ 入口置灰，说明给出路。 */
+  recoverUnavailable: '跨网找回还没开通：请走到电脑前，扫电脑上显示的二维码连接。',
   /** 弹层标题的兜底键（SettingsPage 按 SheetPage 索引 text；实际标题按步进另取）。 */
   recover: '找回我的电脑',
   recoverLoginTitle: '登录 Neo 账号',
@@ -200,6 +202,8 @@ const zh = {
   recoverHostOffline: '这台电脑现在不在线，稍后再试。',
   recoverRateLimited: '操作有点频繁，稍等几秒再试。',
   recoverHostMismatch: '电脑身份核对不上，已中止。可以再试一次；还不行就在电脑上重新生成二维码扫码配对。',
+  /** S5 横幅的中性兜底（ai-review R2 Nit2）：未登记的失败值不许冒充「核对不上」。 */
+  recoverGeneric: '这次找回没有完成，请再试一次。',
   loadError: '本机数据暂时读不到，重试后继续编辑。', retry: '重试', loading: '正在打开 Neo…',
   saveError: '草稿没存上', saved: '已保存在此设备',
   nativeError: '需要重新打开 Neo',
@@ -385,6 +389,7 @@ const en: Record<keyof typeof zh, string> = {
   // "Changed phones? Sign in to recover your computer" (S3 entry / S4 login / S5 pick / S6 wait).
   recoverEntry: 'Changed phones? Sign in to recover your computer',
   recoverEntryHint: 'Sign-in is only used to find your computer; no account stays on this phone afterwards.',
+  recoverUnavailable: 'Cross-network recovery is not available yet. Go to your computer and scan the QR code it shows.',
   /** Fallback sheet-title key (SettingsPage indexes text by SheetPage). */
   recover: 'Recover computer',
   recoverLoginTitle: 'Sign in to your Neo account',
@@ -405,6 +410,7 @@ const en: Record<keyof typeof zh, string> = {
   recoverHostOffline: 'This computer is not online right now. Try again later.',
   recoverRateLimited: 'That was a bit fast. Wait a few seconds and try again.',
   recoverHostMismatch: 'The computer could not be verified, so this was stopped. Try again; if it keeps failing, pair by scanning a fresh code on the computer.',
+  recoverGeneric: 'This recovery did not complete. Please try again.',
   loadError: 'Unable to read local data. Retry before editing.',
   retry: 'Retry', loading: 'Opening Neo…', saveError: 'Draft not saved',
   saved: 'Saved on this device', nativeError: 'Reopen Neo',
@@ -429,6 +435,8 @@ export function messages(language: string) { return language.startsWith('zh') ? 
 /**
  * 找回流的具名失败 → 人话（N-COMPANION-RELAY-ACCOUNT-RECOVER）：S5 横幅一句说清下一步。
  * invalidCredentials/unreachable 不进这里——前者在 S4 行内报，后者走 S7 形状。
+ * 兜底是中性「没成功」（ai-review R2 Nit2）：未登记的失败值不许渲染成「电脑身份核对不上」，
+ * hostMismatch 只给真核对失败的那个登记值。
  */
 export function recoverErrorCopy(text: ReturnType<typeof messages>, error: string): string {
   if (error === 'declined') return text.recoverDeclined;
@@ -437,7 +445,8 @@ export function recoverErrorCopy(text: ReturnType<typeof messages>, error: strin
   if (error === 'rateLimited') return text.recoverRateLimited;
   if (error === 'hostUpgrade') return text.recoverHostUpgrade;
   if (error === 'noHosts') return text.recoverNoHosts;
-  return text.recoverHostMismatch;
+  if (error === 'hostMismatch') return text.recoverHostMismatch;
+  return text.recoverGeneric;
 }
 
 /**

@@ -1,16 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { createModelMarkFileStore } from '../../../src/host/model/availabilityMarkPersistence';
 
 // 标记 TTL 的规格值（拍板 30 分钟）：测试直接钉住这个数字，靠 fake timers 推过边界。
 const AVAILABILITY_MARK_TTL_MS = 30 * 60_000;
 
 type MonitorModule = typeof import('../../../src/host/model/providerHealthMonitor');
 let getProviderHealthMonitor: MonitorModule['getProviderHealthMonitor'];
+let armModelMarkPersistence: MonitorModule['armModelMarkPersistence'];
 
 describe('ProviderHealthMonitor', () => {
   beforeEach(async () => {
     // 单例没有测试专用重置出口：每个测试重载模块图，拿全新的 monitor 实例。
     vi.resetModules();
-    ({ getProviderHealthMonitor } = await import('../../../src/host/model/providerHealthMonitor'));
+    ({ getProviderHealthMonitor, armModelMarkPersistence } = await import('../../../src/host/model/providerHealthMonitor'));
   });
 
   afterEach(() => {
@@ -70,7 +76,7 @@ describe('ProviderHealthMonitor', () => {
     expect(monitor.getAvailabilityMark('longcat', 'LongCat-2.0')).toBeNull();
   });
 
-  it('30 分钟后标记自动消失，不依赖连续成功 3 次', () => {
+  it('模型级标记不吃 30 分钟 TTL（停用不自愈）；provider 级标记照旧过 TTL 消失（N-MOBILE-CONN-POLISH-R3 ④）', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-17T10:00:00Z'));
     const monitor = getProviderHealthMonitor();
@@ -78,10 +84,17 @@ describe('ProviderHealthMonitor', () => {
       model: 'LongCat-2.0-Preview',
       error: Object.assign(new Error('Unsupported model'), { status: 400 }),
     });
+    monitor.recordFailure('moonshot', {
+      error: Object.assign(new Error('Unauthorized'), { status: 401 }),
+    });
     expect(monitor.getAvailabilityMark('longcat', 'LongCat-2.0-Preview')).not.toBeNull();
     vi.setSystemTime(new Date('2026-09-17T10:30:00.001Z'));
     expect(Date.now() - Date.parse('2026-09-17T10:00:00Z')).toBeGreaterThan(AVAILABILITY_MARK_TTL_MS - 1);
-    expect(monitor.getAvailabilityMark('longcat', 'LongCat-2.0-Preview')).toBeNull();
+    // 模型级仍在：清它只有一条路——该模型成功一次（recordSuccess）。TTL 一到就自愈的话，
+    // 回落链会把「从未调用过」的已停用模型当好模型选中。
+    expect(monitor.getAvailabilityMark('longcat', 'LongCat-2.0-Preview')).toMatchObject({ scope: 'model', kind: 'model' });
+    // provider 级照旧：网络/auth/quota 是瞬态，30 分钟自动消失。
+    expect(monitor.getProviderMark('moonshot')).toBeNull();
   });
 
   /**
@@ -127,5 +140,61 @@ describe('ProviderHealthMonitor', () => {
       error: Object.assign(new Error('Unauthorized'), { status: 401 }),
     });
     expect(monitor.getProviderMark('moonshot')).toMatchObject({ scope: 'provider', kind: 'auth' });
+  });
+});
+
+describe('模型级标记持久化（内存为真源 + 变更落盘 + 重启回灌，N-MOBILE-CONN-POLISH-R3 ④）', () => {
+  const unsupported = () => Object.assign(new Error('Unsupported model'), { status: 400 });
+
+  it('recordFailure 落盘；换新 monitor 实例、同一存储（模拟重启）回灌，标记与回落判据仍在', async () => {
+    const file = path.join(tmpdir(), `model-marks-${randomUUID()}.json`);
+    try {
+      vi.resetModules();
+      ({ getProviderHealthMonitor, armModelMarkPersistence } = await import('../../../src/host/model/providerHealthMonitor'));
+      armModelMarkPersistence(createModelMarkFileStore(file));
+      getProviderHealthMonitor().recordFailure('longcat', { model: 'LongCat-2.0-Preview', error: unsupported() });
+      expect(existsSync(file)).toBe(true);
+      // 模拟重启：重载模块图拿全新单例（生产里就是新进程），同一份存储 = 同一个文件。
+      vi.resetModules();
+      ({ getProviderHealthMonitor, armModelMarkPersistence } = await import('../../../src/host/model/providerHealthMonitor'));
+      armModelMarkPersistence(createModelMarkFileStore(file));
+      expect(getProviderHealthMonitor().getAvailabilityMark('longcat', 'LongCat-2.0-Preview'))
+        .toMatchObject({ scope: 'model', kind: 'model' });
+      expect(getProviderHealthMonitor().getAvailabilityMark('longcat', 'LongCat-2.0')).toBeNull();
+      // provider 级标记不落盘：重启后没有（瞬态，本就该内存 + TTL）。
+      expect(getProviderHealthMonitor().getProviderMark('longcat')).toBeNull();
+      // recordSuccess 清标记连盘一起清：供应商真重新上架后能自愈。
+      getProviderHealthMonitor().recordSuccess('longcat', 10, { model: 'LongCat-2.0-Preview' });
+      expect(getProviderHealthMonitor().getAvailabilityMark('longcat', 'LongCat-2.0-Preview')).toBeNull();
+      expect((JSON.parse(readFileSync(file, 'utf-8')) as { marks: Record<string, unknown> }).marks).toEqual({});
+    } finally {
+      rmSync(file, { force: true });
+    }
+  });
+
+  it('盘上文件坏了不带病回灌：按空处理，新标记照常写', async () => {
+    const file = path.join(tmpdir(), `model-marks-${randomUUID()}.json`);
+    try {
+      writeFileSync(file, 'not json', 'utf-8');
+      vi.resetModules();
+      ({ getProviderHealthMonitor, armModelMarkPersistence } = await import('../../../src/host/model/providerHealthMonitor'));
+      armModelMarkPersistence(createModelMarkFileStore(file));
+      expect(getProviderHealthMonitor().getAvailabilityMark('longcat', 'LongCat-2.0-Preview')).toBeNull();
+      getProviderHealthMonitor().recordFailure('longcat', { model: 'LongCat-2.0-Preview', error: unsupported() });
+      const marks = (JSON.parse(readFileSync(file, 'utf-8')) as { marks: Record<string, unknown> }).marks;
+      expect(marks).toMatchObject({ 'longcat\0LongCat-2.0-Preview': { scope: 'model', kind: 'model' } });
+    } finally {
+      rmSync(file, { force: true });
+    }
+  });
+
+  it('不挂 store 的单例保持纯内存：行为与接线前一致（单测隔离的根基）', async () => {
+    vi.resetModules();
+    ({ getProviderHealthMonitor } = await import('../../../src/host/model/providerHealthMonitor'));
+    getProviderHealthMonitor().recordFailure('longcat', { model: 'LongCat-2.0-Preview', error: unsupported() });
+    expect(getProviderHealthMonitor().getAvailabilityMark('longcat', 'LongCat-2.0-Preview')).not.toBeNull();
+    // 没挂 store 不碰默认路径：run 级数据目录里不该出现标记文件。
+    const { getUserConfigDir } = await import('../../../src/host/config/configPaths');
+    expect(existsSync(path.join(getUserConfigDir(), 'model-availability-marks.json'))).toBe(false);
   });
 });

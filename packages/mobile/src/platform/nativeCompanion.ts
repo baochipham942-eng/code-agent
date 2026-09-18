@@ -40,6 +40,13 @@ export const nativeCompanionPort: NonNullable<PlatformPorts['companion']> = {
       // 失败分类（fix4-②）：拒绝/超时/其余分三路上抛，store 再映射成用户可分辨的诊断。
     }).catch((error: unknown) => { throw new Error(classifyHttpFailure(error)); });
     if (response.url === url && response.status === 403 && target.pathname !== '/v1/exchange') throw new Error('COMPANION_PAIRING_REJECTED');
+    // exchange 的 403 读 body：宿主把「设备已撤销」从笼统 403 里拆出来单独点名（新宿主）。
+    // 手机据此把 sync 直接按 revoked 结算，不当传输失败闪一拍「正在自动重试」；旧宿主/其余
+    // 形状（含 TTL 过期的 CHANNEL_CLOSED）落回「没回应」那一类，维持原行为。
+    if (response.url === url && response.status === 403 && target.pathname === '/v1/exchange'
+      && (response.data as { error?: unknown } | null)?.error === 'COMPANION_DEVICE_REVOKED') {
+      throw new Error('COMPANION_DEVICE_REVOKED');
+    }
     if (response.status !== 200 || response.url !== url) throw new Error('COMPANION_NETWORK_UNAVAILABLE');
     return response.data as unknown;
   },

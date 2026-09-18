@@ -583,6 +583,20 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         && (get().connectionError === 'connectionQrInvalid' || get().connectionError === 'connectionScanFailed')
         ? get().connectionError : null;
       set({ busy: true, autoAttempt: opts?.autoAttempt === true, connectionError: heldError, commandError: null, commandErrorAction: null });
+      /**
+       * 手动连接尝试只锁一个周期（N-MOBILE-CONN-POLISH-R3 ②）：一次手动重连最长烧两个
+       * LAN 地址各一个 requestTimeoutMs、再落 relay 一个——照旧置灰等于约 20s 没有逃生口
+       * （爸实测），设计只锁一个周期。到点把 autoAttempt 翻真解锁，此后的点按走既有
+       * preempt/claim 抢占链（D3 机制现成）；第一周期内「手动占 busy 防重复点击」照旧成立。
+       * finally 里必须清（含被抢占的早退路径）：旧尝试的定时器不得提前解锁别人的锁。
+       */
+      let unlockTimer: ReturnType<typeof setTimeout> | null = null;
+      if (attempt !== undefined && opts?.autoAttempt !== true) {
+        unlockTimer = setTimeout(() => {
+          unlockTimer = null;
+          if (get().busy) set({ autoAttempt: true });
+        }, COMPANION_LIMITS.requestTimeoutMs);
+      }
       try {
         const r = await work(attempt);
         // 被更新的尝试抢占了：迟到的旧成功整体作废，返回 undefined（等价原 finally 里 return 的覆盖语义）。
@@ -614,10 +628,21 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           : code === 'COMPANION_RELAY_NO_HOST' ? 'connectionRelayNoHost'
           : code === 'COMPANION_RELAY_UNAVAILABLE' || code === 'COMPANION_RELAY_CONNECT_TIMEOUT' ? 'connectionRelayUnavailable'
           : code === 'COMPANION_NETWORK_UNAVAILABLE' || code === 'COMPANION_NO_RESPONSE' ? 'connectionUnavailable' : 'connectionFailed';
-        if (get().status !== 'storageError') set({ status: 'offline', connectionError, transport: null });
-        armAutoRetry(reconnectDepth > 0);
+        // 静默自动重试的传输类失败不接管保留中的「二维码无效/扫码失败」（N-MOBILE-CONN-POLISH-R3 ③）：
+        // 宿主停机时一次重试约 10ms 就失败，新码整拍覆盖会把提示寿命压成一个退避首档（爸实测
+        // 2.39s）。只有身份类新结论（被拒/新的扫码类失败）才接管；传输类把进场存下的 heldError
+        // 补回去。手动点按（用户手势）失败不在保留之列，照旧用新码接管。
+        const identityClass = connectionError === 'connectionRejected'
+          || connectionError === 'connectionQrInvalid' || connectionError === 'connectionScanFailed';
+        const keepHeld = opts?.autoAttempt === true && !identityClass && heldError !== null;
+        if (get().status !== 'storageError') set({ status: 'offline', connectionError: keepHeld && heldError !== null ? heldError : connectionError, transport: null });
+        // 补回 qrInvalid/ScanFailed 后 connectionBlocksAutoRetry 为真，按原样重挂会被它停掉——
+        // 「一次误扫不得永久停掉自动重连」（ai-review Nit），这条路径走 ignoreBlocked 重挂。
+        armAutoRetry(reconnectDepth > 0, keepHeld);
       }
       finally {
+        // unlockTimer 无条件清（含被抢占的早退）：旧尝试的定时器不得解锁别人的锁。
+        if (unlockTimer !== null) clearTimeout(unlockTimer);
         // 被抢占的尝试不在这里释放 busy（busy 属于新尝试）；finally 里 return 触 no-unsafe-finally，改条件守卫。
         if ((attempt === undefined || attempt === connectSeq) && !(userPairing && !opts?.preempt)) set({ busy: false });
       }
@@ -628,6 +653,22 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       const record = await client.request({ action: 'status', commandId: saved.pending.commandId }) as CompanionCommandRecord | null;
       if (record && !(await recoverStalePending(record))) await accepted(record);
       else if (!record) await deliver();
+    };
+    /**
+     * 撤销的统一结算：sync 的 kind==='revoked' 与 LAN exchange 的 COMPANION_DEVICE_REVOKED
+     * 两条路共用（N-MOBILE-CONN-POLISH-R3 ①），不许各自复制九个字段。被撤销不是网络问题——
+     * 翻 rejected、关两条通道、清缓存与重试、抹会话记忆，让状态位直接落到「需要重新扫码」。
+     */
+    const settleRevoked = () => {
+      client?.close();
+      if (relayClient) { relayClient.close(); relayClient = null; }
+      wipeHistoryCache();
+      stopAutoRetry();
+      remember(null);
+      // 撤销即清这台电脑的标题记忆：会话已不属于这台手机，重新配对后随使用再记。
+      const revokedHostKey = saved?.binding?.hostKey;
+      if (revokedHostKey) options?.forgetSessionTitles?.(revokedHostKey);
+      set({ status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null });
     };
     return {
       voiceResult: null, library: null, history: {}, libraryError: false,
@@ -794,9 +835,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         clearPauseGrace();
         // 手动「重新连接」立即发起新尝试并抢过自动重试的在途连接（D3）：旧尝试迟到的失败/
         // 成功按代号丢弃。busy 被手动操作（扫码、上一次手动重连）占着时不抢——safely 的
-        // 去重守卫照旧拦重复点按。此态下面 manual 分支已清定时器而 safely 随后放弃、不重挂；
-        // 不变式靠 UI 撑着——连接页按钮在手动 busy 期间置灰，用户点不到（ai-review Nit，
-        // 按原样保留）。
+        // 去重守卫照旧拦重复点按。此态下面 manual 分支已清定时器而 safely 随后放弃、不重挂。
+        // 手动 busy 只锁一个周期（safely 的一周期解锁定时器）：越过 requestTimeoutMs 后
+        // autoAttempt 翻真，这里的抢占判据随之放行——连接页按钮不再是长时间死键。
         const preempt = manual && get().busy && get().autoAttempt;
         if (manual) {
           retryGeneration += 1;
@@ -1128,10 +1169,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); markSyncOk(); return; }
           // 被撤销不是网络问题：混进通用 offline 会让这台设备一直重试、永远不知道自己已被踢。
           if (result.kind === 'revoked') {
-            client?.close(); if (relayClient) { relayClient.close(); relayClient = null; } wipeHistoryCache(); stopAutoRetry(); remember(null);
-            const revokedHostKey = saved?.binding?.hostKey;
-            if (revokedHostKey) options?.forgetSessionTitles?.(revokedHostKey);
-            set({ status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null });
+            settleRevoked();
             return;
           }
           if (result.kind !== 'events' || result.epoch !== epoch || !Number.isSafeInteger(result.nextSeq) || result.nextSeq < cursor || !Array.isArray(result.events)) throw new Error('COMPANION_INVALID_SYNC');
@@ -1163,13 +1201,22 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             if (record && saved?.pending?.commandId === pendingId && !(await recoverStalePending(record))) await accepted(record);
           }
           markSyncOk();
-        } catch {
+        } catch (error) {
           client?.close();
           if (relayClient && client === relayClient) relayClient = null;
           // 撤销已在同一次处理里把设备翻成 rejected（relay 的 revoke 帧先 drop 再 onRevoked，
           // 这条 sync 的失败随后才到）：不得打回 offline、不得挂自动重试——否则状态位先闪
           // 「正在自动重试」再变回「需要重新扫码」（N-MOBILE-AUTO-RECONNECT-R3 O2）。
           if (get().status === 'rejected') { syncOk = false; return; }
+          // LAN 路撤销（N-MOBILE-CONN-POLISH-R3 ①）：宿主 exchange 的 403 点了名（新宿主把
+          // 「设备已撤销」从笼统 403 里拆出来）。与 kind==='revoked' 同一套结算，绝不走
+          // 「传输失败 + 0 延迟重试」那条路——那会先闪一拍「正在自动重试」，再经 hello 才翻成
+          // 「需要重新扫码」。TTL 过期等其余失败码不进这里，照旧按「电脑没回应」处理。
+          if (error instanceof Error && error.message === 'COMPANION_DEVICE_REVOKED') {
+            syncOk = false;
+            settleRevoked();
+            return;
+          }
           const escalate = !syncOk;
           syncOk = false;
           if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable', transport: null });

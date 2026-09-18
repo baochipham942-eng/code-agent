@@ -296,6 +296,38 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     await expect(client.resume(binding)).rejects.toThrow('HTTP_403');
     expect(executions).toBe(0);
   });
+  it('revocation lands the phone on rejected without an auto-retry flash (LAN exchange names the revoked device)', async () => {
+    // post 助手按 nativeCompanion.post 的口径折叠 403（exchange 读 body 点名撤销，其余 403 原样）。
+    // 那段映射的真身由 tests/unit/mobile/nativeCompanionExchange.test.ts 钉住，这里只复刻。
+    const nativeMappedPost: LanPost = async (url, body) => {
+      const res = await fetch(url, { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => null) as { error?: unknown } | null;
+      if (res.status === 403 && url.endsWith('/v1/exchange') && data?.error === 'COMPANION_DEVICE_REVOKED') throw new Error('COMPANION_DEVICE_REVOKED');
+      if (res.status === 403 && !url.endsWith('/v1/exchange')) throw new Error('COMPANION_PAIRING_REJECTED');
+      if (!res.ok) throw new Error('COMPANION_NETWORK_UNAVAILABLE');
+      return data;
+    };
+    const raw = JSON.stringify(server.invite(['shared']));
+    let storage: string | null = null;
+    const port = {
+      read: async () => storage,
+      write: async (value: string) => { storage = value; },
+      scan: async () => raw,
+      post: nativeMappedPost,
+    };
+    const store = createCompanionStore(port, () => {});
+    await store.getState().pair();
+    expect(store.getState().status).toBe('connected');
+    // 记录撤销之后看到的每拍（status, autoRetrying）：序列里不许出现 autoRetrying=true
+    // （记法对照 relayPath.test.ts 的 O2 用例——那一拍就是爸真机看到的「正在自动重试」一闪）。
+    const seen: { status: string; autoRetrying: boolean }[] = [];
+    const unsubscribe = store.subscribe(state => seen.push({ status: state.status, autoRetrying: state.autoRetrying }));
+    server.revoke(store.getState().binding!.deviceId);
+    await store.getState().sync();
+    expect(store.getState()).toMatchObject({ status: 'rejected', connectionError: 'connectionRejected' });
+    expect(seen.filter(state => state.autoRetrying)).toEqual([]);
+    unsubscribe();
+  });
   it('rejects cross-session actions and cross-device body substitution', async () => {
     const binding = await pair();
     expect(await client.request({ action: 'command', command: command(binding, 'bad', 'hidden') })).toMatchObject({ kind: 'rejected', reason: 'scope_denied' });

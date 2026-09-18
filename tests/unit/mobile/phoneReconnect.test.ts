@@ -469,7 +469,7 @@ describe('companionStore 前台退避自动重连', () => {
     store.getState().pause();
   });
 
-  it('有原绑定时扫到无效二维码：提示跨重试保留（0ms/1s/在途都仍是二维码无效），新错误码才接管、连上才清（ai-review Important）', async () => {
+  it('有原绑定时扫到无效二维码：提示跨重试保留（0ms/1s/在途/重试失败都仍是二维码无效），身份类新结论才接管、连上才清（N-MOBILE-CONN-POLISH-R3 ③）', async () => {
     const store = storeOf();
     await store.getState().hydrate();
     const callsAfterHydrate = harness.recoverCalls;
@@ -488,17 +488,38 @@ describe('companionStore 前台退避自动重连', () => {
     expect(harness.recoverCalls).toBe(callsAfterHydrate + 1);
     expect(store.getState().connectionError).toBe('connectionQrInvalid');
     expect(connectionDiagnosis(text, store.getState())).toEqual({ sentence: text.connectionQrInvalid, action: 'scan' });
-    // 这次重试自己失败（宿主仍停机）→ 新错误码接管诊断，不再提扫码。
+    // 这次重试自己失败（宿主仍停机，10ms 级）→ 传输类新码不接管：提示仍是「二维码无效」、
+    // 诊断仍指向扫码、自动重试不停（blocksAutoRetry 走 ignoreBlocked 重挂）——提示寿命
+    // 不再被压成「一个退避首档 + 10ms」（爸实测 2.39s 那个）。
     harness.hangRecover = false;
     harness.releaseHang?.();
     await vi.advanceTimersByTimeAsync(0);
-    expect(store.getState().connectionError).toBe('connectionUnavailable');
-    expect(connectionDiagnosis(text, store.getState())).toEqual({ sentence: text.connectionUnavailable, action: 'reconnect' });
-    // 下一拍连上 → 提示清掉。
+    expect(store.getState().connectionError).toBe('connectionQrInvalid');
+    expect(store.getState().autoRetrying).toBe(true);
+    expect(connectionDiagnosis(text, store.getState())).toEqual({ sentence: text.connectionQrInvalid, action: 'scan' });
+    // 下一拍重试照常挂上（失败后升档 4s）。
+    await vi.advanceTimersByTimeAsync(3999);
+    const callsAfterFailure = harness.recoverCalls;
+    await vi.advanceTimersByTimeAsync(1);
+    expect(harness.recoverCalls).toBeGreaterThan(callsAfterFailure);
+    // 宿主回来了 → 连上 → 提示清掉。
     harness.recoverError = null;
-    await vi.advanceTimersByTimeAsync(4000);
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(store.getState().status).toBe('connected');
     expect(store.getState().connectionError).toBeNull();
+    store.getState().pause();
+  });
+
+  it('静默重试遇身份类失败仍接管：被拒的新结论盖过保留中的二维码提示并停住重试', async () => {
+    const store = storeOf();
+    await store.getState().hydrate();
+    await store.getState().pair('not-an-invitation');
+    expect(store.getState().connectionError).toBe('connectionQrInvalid');
+    harness.recoverError = 'COMPANION_PAIRING_REJECTED';
+    await vi.advanceTimersByTimeAsync(2000);   // 首拍重试出发并失败：身份类新码接管
+    expect(store.getState().connectionError).toBe('connectionRejected');
+    expect(connectionDiagnosis(text, store.getState())).toEqual({ sentence: text.connectionRejected, action: 'scan' });
+    expect(store.getState().autoRetrying).toBe(false);   // blocksAutoRetry 照常停机
     store.getState().pause();
   });
 
@@ -589,6 +610,43 @@ describe('companionStore 前台退避自动重连', () => {
     harness.releaseHangs[1]();
     await manual;
     expect(store.getState()).toMatchObject({ status: 'connected', busy: false });
+    store.getState().pause();
+  });
+
+  it('手动重连只锁一个周期：一周期内置灰防重复点击，越过 requestTimeoutMs 解锁且点按真能抢占', async () => {
+    const store = storeOf();
+    await store.getState().hydrate();          // 首连失败 → offline + autoRetrying
+    harness.hangRecover = true;
+    const first = store.getState().reconnect({ resetBackoff: true });
+    await flushUntilHung();
+    expect(store.getState()).toMatchObject({ status: 'offline', busy: true, autoAttempt: false });
+    // 第一周期内：手动尝试占 busy → 逃生口置灰（防重复点击照旧，D3 钉的那半不变）。
+    expect(slotFrom(store).find(item => item?.rank === 2)?.action?.disabled).toBe(true);
+    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.requestTimeoutMs - 1);
+    expect(slotFrom(store).find(item => item?.rank === 2)?.action?.disabled).toBe(true);
+    // 越过一个周期即解锁：一次手动尝试最长烧两个 LAN 地址各一拍再落 relay（约 20s+），
+    // 整段锁死等于长时间没有逃生口（爸实测约 20s，设计只锁一个周期）。
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.getState().autoAttempt).toBe(true);
+    expect(slotFrom(store).find(item => item?.rank === 2)?.action?.disabled).toBe(false);
+    // 解锁后点「重新连接」真能抢占：新尝试进场（recoverCalls 增加）、重新锁一个周期；
+    // 旧尝试迟到结果按代号丢弃（D3 不变式不回归）。
+    const calls = harness.recoverCalls;
+    const second = store.getState().reconnect({ resetBackoff: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(harness.recoverCalls).toBe(calls + 1);
+    expect(store.getState().autoAttempt).toBe(false);
+    expect(slotFrom(store).find(item => item?.rank === 2)?.action?.disabled).toBe(true);
+    // 宿主回来了：放行第二个（在途的）尝试 → 连上；第一个的迟到失败不得把新连接打回 offline。
+    harness.recoverError = null;
+    harness.hangRecover = false;
+    harness.releaseHangs.at(-1)!();
+    await second;
+    expect(store.getState()).toMatchObject({ status: 'connected', busy: false });
+    expect(harness.recoverCalls).toBe(calls + 2);   // 连上后的 relay 路由探针也走了一拍 recover
+    // 两个尝试都收尾：解锁定时器清干净，不残留（此刻无退避拍在挂）。
+    expect(vi.getTimerCount()).toBe(0);
+    void first;   // 第一个尝试的 recover 还挂着（测试代管），pause 会顺带放行
     store.getState().pause();
   });
 

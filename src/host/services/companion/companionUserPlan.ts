@@ -8,7 +8,13 @@ import { getDatabase } from '../core/databaseService';
 import { getTaskManager } from '../../task/TaskManager';
 import { resolvePlanApproval } from '../planning/planApprovalService';
 import { createLogger } from '../infra/logger';
-import type { CompanionPlanRequest } from './CompanionPlanService';
+import type { CompanionDecisionOutcome, CompanionPlanAnswer } from '../../../shared/contract/companion';
+import { companionRequestId, type CompanionPlanRequest } from './CompanionPlanService';
+
+export type CompanionPlanInspection = {
+  outcome: CompanionDecisionOutcome;
+  answer?: CompanionPlanAnswer;
+};
 
 const logger = createLogger('CompanionUserPlan');
 
@@ -23,6 +29,7 @@ const logger = createLogger('CompanionUserPlan');
  * deliver window marks it closed.
  */
 const pending = new Map<string, { sessionId: string; toolCallId: string; plan: string }>();
+const settlements = new Map<string, CompanionPlanInspection>();
 
 export type CompanionPlanRunOptions = { historyVisibility?: 'meta'; disableAutoAgent?: boolean };
 
@@ -74,10 +81,52 @@ export function noteCompanionUserPlan(sessionId: string, event: Record<string, u
     : 'pending';
   if (status !== 'pending') {
     pending.delete(toolCallId);
-    return false;
+    rememberUserPlanSettlement(toolCallId, status, approval && typeof approval === 'object' && !Array.isArray(approval)
+      ? (approval as { feedback?: unknown }).feedback
+      : undefined);
+    return true;
   }
   pending.set(toolCallId, { sessionId, toolCallId, plan });
   return true;
+}
+
+/**
+ * 手机上真挂着这张卡的 pending 行时，结算桥才有消费者（take）。
+ * 没配对手机/卡从未发布的结算没有人 take，记下来只会在进程内只增不减（ai-review R5）。
+ * 表读不出来（companion 未接线/表不存在）= 不可能有手机卡，跳过同样正确。
+ */
+function hasPendingPhoneCard(requestId: string): boolean {
+  const db = readyDb();
+  if (!db) return false;
+  try {
+    const row = db.getDb()?.prepare(
+      "SELECT 1 FROM companion_decisions WHERE request_id = ? AND status = 'pending' AND kind = 'plan'",
+    ).get(companionRequestId(requestId));
+    return row !== undefined;
+  } catch (error) {
+    logger.warn('Companion plan card probe failed, skipping settlement', { requestId, error });
+    return false;
+  }
+}
+
+function rememberUserPlanSettlement(requestId: string, status: unknown, feedback: unknown): void {
+  if (!hasPendingPhoneCard(requestId)) return;
+  const text = typeof feedback === 'string' && feedback.trim() ? feedback : undefined;
+  if (status === 'approved') {
+    settlements.set(requestId, { outcome: 'answered', answer: { decision: 'approved', ...(text ? { feedback: text } : {}) } });
+    return;
+  }
+  if (status === 'revision_requested') {
+    settlements.set(requestId, { outcome: 'answered', answer: { decision: 'rejected', ...(text ? { feedback: text } : {}) } });
+    return;
+  }
+  settlements.set(requestId, { outcome: 'cancelled' });
+}
+
+export function takeCompanionUserPlanSettlement(requestId: string): CompanionPlanInspection | null {
+  const next = settlements.get(requestId) ?? null;
+  if (next) settlements.delete(requestId);
+  return next;
 }
 
 export function listCompanionUserPlans(): CompanionPlanRequest[] {
@@ -95,6 +144,8 @@ export function listCompanionUserPlans(): CompanionPlanRequest[] {
       }
       const toolCall = messages.flatMap(message => message.toolCalls ?? []).find(call => call.id === item.toolCallId);
       if (toolCall && !readPendingApproval(toolCall)) {
+        const approval = toolCall.result?.metadata?.planApproval as { status?: unknown; feedback?: unknown } | undefined;
+        rememberUserPlanSettlement(id, approval?.status, approval?.feedback);
         pending.delete(id);
         continue;
       }

@@ -33,13 +33,22 @@ export interface CompanionDictationPort {
   releaseAll(): void;
 }
 
+export type UserQuestionSettlement = {
+  outcome: 'answered' | 'expired' | 'cancelled';
+  answer?: {
+    answers?: Record<string, string | string[]>;
+    declined?: boolean;
+    reason?: string;
+  };
+};
+
 export interface UserQuestionRoute {
   canOffer: (sessionId: string | undefined) => boolean;
   offer: (
     request: UserQuestionRequest,
     respond: (response: UserQuestionResponse) => void,
   ) => boolean;
-  cancel: (requestId: string) => void;
+  cancel: (requestId: string, settlement?: UserQuestionSettlement) => void;
 }
 
 let turnOutcomeResolver: TurnOutcomeResolver | null = null;
@@ -115,8 +124,8 @@ export function offerRegisteredUserQuestion(
   return offered;
 }
 
-export function cancelRegisteredUserQuestion(requestId: string): void {
-  for (const route of [...userQuestionRoutes]) route.cancel(requestId);
+export function cancelRegisteredUserQuestion(requestId: string, settlement?: UserQuestionSettlement): void {
+  for (const route of [...userQuestionRoutes]) route.cancel(requestId, settlement);
 }
 
 export function registerSpeechTranscriber(transcriber: SpeechTranscriber): HostCapabilityCleanup {

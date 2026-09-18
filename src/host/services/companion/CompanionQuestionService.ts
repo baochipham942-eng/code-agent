@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { UserQuestionRequest, UserQuestionResponse } from '../../../shared/contract';
-import type { CompanionCommand, CompanionSubmitResult } from '../../../shared/contract/companion';
+import type { CompanionCommand, CompanionDecision, CompanionQuestionAnswer, CompanionSubmitResult } from '../../../shared/contract/companion';
 import { COMPANION_LIMITS } from '../../../shared/constants/companion';
-import type { UserQuestionRoute } from '../capabilities/hostCapabilityPorts';
+import type { UserQuestionRoute, UserQuestionSettlement } from '../capabilities/hostCapabilityPorts';
 import type { CompanionGateway } from './CompanionGateway';
 
 function canonical(value: unknown): string {
@@ -41,10 +41,10 @@ export class CompanionQuestionService implements UserQuestionRoute {
     return this.gateway.getDecision(request.id)?.status === 'pending';
   }
 
-  cancel(requestId: string): void {
+  cancel(requestId: string, settlement?: UserQuestionSettlement): void {
     if (!this.offered.has(requestId)) return;
     this.offered.delete(requestId);
-    this.refresh();
+    this.settle(requestId, settlement ?? { outcome: 'cancelled' });
   }
 
   /**
@@ -78,12 +78,35 @@ export class CompanionQuestionService implements UserQuestionRoute {
     }
     for (const decision of this.gateway.pendingDecisions('question')) {
       if (!displayable.has(decision.requestId)) {
-        const closed = { ...decision, status: 'closed' as const, kind: 'question' as const };
-        this.gateway.registerDecision(closed);
-        this.gateway.publish(decision.sessionId, 'question', { ...closed });
-        this.publishedEpoch.delete(decision.requestId);
+        this.settle(decision.requestId, { outcome: 'cancelled' }, decision);
       }
     }
+  }
+
+  private settle(requestId: string, settlement: UserQuestionSettlement, known?: CompanionDecision): void {
+    const current = known ?? this.gateway.getDecision(requestId);
+    if (current?.status !== 'pending') return;
+    const declined = settlement.answer?.declined === true;
+    const status = settlement.outcome === 'answered'
+      ? (declined ? 'rejected' as const : 'approved' as const)
+      : 'closed' as const;
+    const answer: CompanionQuestionAnswer | undefined = settlement.answer
+      ? {
+        ...(settlement.answer.answers ? { answers: settlement.answer.answers } : {}),
+        ...(declined ? { declined: true } : {}),
+        ...(settlement.answer.reason ? { reason: settlement.answer.reason } : {}),
+      }
+      : undefined;
+    const resolved = {
+      ...current,
+      status,
+      kind: 'question' as const,
+      outcome: settlement.outcome,
+      ...(answer ? { answer } : {}),
+    };
+    this.gateway.registerDecision(resolved);
+    this.gateway.publish(current.sessionId, 'question', { ...resolved });
+    this.publishedEpoch.delete(requestId);
   }
 
   respond(command: Extract<CompanionCommand, { action: 'question.respond' }>): CompanionSubmitResult {
@@ -99,11 +122,17 @@ export class CompanionQuestionService implements UserQuestionRoute {
       return { kind: 'approval_conflict', current: this.gateway.getDecision(current.requestId) ?? current };
     }
     this.offered.delete(current.requestId);
+    const declined = command.payload.declined === true;
+    const answer: CompanionQuestionAnswer = declined
+      ? { declined: true, ...(command.payload.reason ? { reason: command.payload.reason } : {}) }
+      : { answers: command.payload.answers ?? {} };
     const resolved = {
       ...current,
-      status: command.payload.declined === true ? 'rejected' as const : 'approved' as const,
+      status: declined ? 'rejected' as const : 'approved' as const,
       resolvedBy: command.deviceId,
       kind: 'question' as const,
+      outcome: 'answered' as const,
+      answer,
     };
     this.gateway.registerDecision(resolved);
     this.gateway.publish(current.sessionId, 'question', { ...resolved });

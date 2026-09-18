@@ -46,6 +46,30 @@ describe('手机会话时间线（爸 2026-09-16 build 49 真机）', () => {
     const flow = Array.from(container.querySelector('.lan-messages')!.children).map(node =>
       node.classList.contains('approval-card') ? 'card' : node.textContent!.includes('对比报告在这里') ? 'final' : node.textContent!.includes('交给后台') ? 'first' : null).filter(Boolean);
     expect(flow).toEqual(['first', 'card', 'final']);
-    expect(container.querySelector('.approval-card [role="status"]')!.textContent).toBe(text.approvalApproved);
+    expect(container.querySelector('.approval-card [role="status"]')!.textContent).toContain(text.approvalApproved);
+    expect(container.textContent).not.toMatch(/另一端/);
+  });
+
+  it('queued steer messages sit in the stream with 这轮做完接着做; steered ones do not', () => {
+    const { container } = render(<CompanionConversation events={[
+      ev('message', { id: 'u1', role: 'user', content: '先写大纲', runId: 'r1' }),
+      ev('message', { id: 'a1', role: 'assistant', content: '正在写。', runId: 'r1' }),
+      ev('message', { id: 'u2', role: 'user', content: '再加一页传播渠道的对比', runId: 'r1', queued: true }),
+    ]} artifacts={[]} sessionId="s1" text={text} loadMore={() => {}} disabled={false}
+      respond={vi.fn(async () => {})} respondQuestion={async () => {}} respondPlan={async () => {}} openArtifact={() => {}} />);
+    expect(container.textContent).toContain('再加一页传播渠道的对比');
+    expect(container.querySelector('[data-testid="supplement-queued"]')!.textContent).toBe('这轮做完接着做');
+    expect(container.textContent).not.toMatch(/已补充/);
+  });
+
+  it('cold start history queued flag matches the live event', () => {
+    const { container } = render(<CompanionConversation
+      history={{ sessionId: 's1', nextOffset: null, messages: [
+        { id: 'u1', role: 'user', content: '先写大纲', timestamp: 1 },
+        { id: 'u2', role: 'user', content: '再加一页传播渠道的对比', timestamp: 2, queued: true },
+      ] }}
+      events={[]} artifacts={[]} sessionId="s1" text={text} loadMore={() => {}} disabled={false}
+      respond={vi.fn(async () => {})} respondQuestion={async () => {}} respondPlan={async () => {}} openArtifact={() => {}} />);
+    expect(container.querySelector('[data-testid="supplement-queued"]')!.textContent).toBe('这轮做完接着做');
   });
 });

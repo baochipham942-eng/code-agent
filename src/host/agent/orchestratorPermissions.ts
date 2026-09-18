@@ -19,6 +19,7 @@ import { approvalParkEvents } from './approvalParkEvents';
 import { getConfirmationGate } from './confirmationGate';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
+import { approvalAnswerFromPermission, noteCompanionApprovalSettlement } from '../services/companion/companionDecisionSink';
 
 const logger = createLogger('AgentOrchestrator');
 
@@ -141,6 +142,11 @@ export class OrchestratorPermissionIsland {
     // 2026-07-26 那次排查整整卡在这个区分上。
     logger.info('Permission response delivered', { requestId, response, tool: pending.request?.tool, edited: Boolean(updatedArgs) });
     this.pendingPermissions.delete(requestId);
+    noteCompanionApprovalSettlement({
+      requestId,
+      outcome: 'answered',
+      answer: approvalAnswerFromPermission(response),
+    });
     pending.resolve(response, undefined, updatedArgs);
     return 'delivered';
   }
@@ -215,6 +221,11 @@ export class OrchestratorPermissionIsland {
       this.mintStandingGrantFromRequest(pending.request);
     }
     this.pendingPermissions.delete(id);
+    noteCompanionApprovalSettlement({
+      requestId: id,
+      outcome: machineDenial === 'timeout' ? 'expired' : machineDenial === 'cancelled' ? 'cancelled' : 'answered',
+      answer: approvalAnswerFromPermission(response),
+    });
     pending.resolve(response, machineDenial);
     return 'resolved';
   }
@@ -254,6 +265,9 @@ export class OrchestratorPermissionIsland {
     if (this.pendingPermissions.size === 0) return;
     const count = this.pendingPermissions.size;
     const repo = this.getPendingApprovalRepo();
+    for (const [id] of this.pendingPermissions.entries()) {
+      noteCompanionApprovalSettlement({ requestId: id, outcome: 'cancelled' });
+    }
     for (const [id, entry] of this.pendingPermissions.entries()) {
       if (entry.parked && repo) {
         try {
@@ -395,6 +409,7 @@ export class OrchestratorPermissionIsland {
       const settleTimedOut = (): void => {
         clearInterval(watchdog);
         this.pendingPermissions.delete(fullRequest.id);
+        noteCompanionApprovalSettlement({ requestId: fullRequest.id, outcome: 'expired' });
         safeWarn(`Timeout for ${request.type} on ${request.tool}, denying`);
         try {
           // 同一稳定 permission_request 事件做加法回传终态；renderer 以 host 结果为准，

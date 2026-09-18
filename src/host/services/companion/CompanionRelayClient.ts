@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { randomBytes } from 'node:crypto';
 import { rootCertificates } from 'node:tls';
 import type { KeyPair } from 'noise-handshake';
 import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
@@ -6,6 +7,7 @@ import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseCh
 import { fromHex, toHex } from '../../../shared/companion/lanProtocol';
 import { companionCommandSchema, type CompanionCommand, type CompanionSubmitResult } from '../../../shared/contract/companion';
 import {
+  COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN,
   COMPANION_RELAY_SENTINEL_DEVICE_REF,
   COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN,
   companionRelayFrameExpired,
@@ -68,6 +70,13 @@ function closeReasonText(reason: Buffer): string | null {
 
 export class CompanionRelayClient {
   private socket: WebSocket | null = null;
+  /**
+   * 本客户端实例的启动 nonce（N-COMPANION-RELAY-ROUTE-TAKEOVER）：routeToken 是持久身份确定性
+   * 派生的，共用数据目录的另一个进程算出同一批 token——relay 靠这个内存态 nonce 分辨「同实例
+   * 重连」（nonce 相同，放行）与「不同实例顶替」（nonce 不同，拒绝）。**绝不落盘**：落盘后共用
+   * 数据目录的两个进程又拿到同一 nonce，洞白补。同一实例生命周期内不变，重连重注册与顶替才分得开。
+   */
+  private readonly instanceId = randomBytes(16).toString('base64url');
   private readonly buffer = new RelayOutboundBuffer();
   private readonly routes = new Map<string, RelayRouteEntry>();
   private readonly sessions = new Map<string, DeviceSession>();
@@ -256,7 +265,7 @@ export class CompanionRelayClient {
   }
 
   private sendRegister(route: RelayRouteEntry): void {
-    this.push({ v: 1, kind: 'register', role: 'host', envelope: this.controlEnvelope(route), ciphertext: '' });
+    this.push({ v: 1, kind: 'register', role: 'host', instanceId: this.instanceId, envelope: this.controlEnvelope(route), ciphertext: '' });
   }
 
   private push(frame: CompanionRelayFrame): void {
@@ -283,6 +292,10 @@ export class CompanionRelayClient {
 
   private dialErrorCode(lastError: unknown, closeCode: number, httpStatus?: number): string {
     if (httpStatus) return `HTTP ${httpStatus}`;
+    // 顶替拒绝（N-COMPANION-RELAY-ROUTE-TAKEOVER）：register 之后被 relay 以 4000 段自定 code 关闭
+    // ＝本实例的路由被另一个 Host 实例持有。单列具名码，不折叠进 `close <code>` 泛化码——
+    // 排障要能一眼分清「被中继顶掉」与「对端/链路普通断开」。
+    if (closeCode === COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN) return 'COMPANION_RELAY_ROUTE_TAKEN';
     if (lastError && typeof lastError === 'object') {
       const code = 'code' in lastError && typeof lastError.code === 'string' && lastError.code
         ? lastError.code
@@ -442,7 +455,13 @@ export class CompanionRelayClient {
           const reasonText = closeReasonText(reason);
           const uptimeMs = openedAt === null ? -1 : this.now() - openedAt;
           const delay = this.peekReconnectDelay();
-          this.logger?.warn(`Companion relay${this.label} disconnected: ${errorCode}; closeCode=${code} reason=${JSON.stringify(reasonText ?? '')} uptimeMs=${uptimeMs}; reconnect in ${Math.round(delay)}ms`);
+          if (code === COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN) {
+            // 本实例的 route 被另一实例持有（共用数据目录的副本进程顶替被 relay 拒）：具名报警行，
+            // 不与普通掉线混同一条文案。照常退避重连——relay 每次都会拒并留痕，两侧都有迹可循。
+            this.logger?.warn(`Companion relay${this.label} route taken over: ${errorCode}; another host instance holds this route; closeCode=${code} reason=${JSON.stringify(reasonText ?? '')} uptimeMs=${uptimeMs}; reconnect in ${Math.round(delay)}ms`);
+          } else {
+            this.logger?.warn(`Companion relay${this.label} disconnected: ${errorCode}; closeCode=${code} reason=${JSON.stringify(reasonText ?? '')} uptimeMs=${uptimeMs}; reconnect in ${Math.round(delay)}ms`);
+          }
           this.scheduleReconnect(delay);
         }
       });

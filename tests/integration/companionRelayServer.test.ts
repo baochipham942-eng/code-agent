@@ -10,6 +10,7 @@ import { toHex } from '../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 import { CompanionRelayServer } from '../../packages/relay/src/server';
 import {
+  COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN,
   COMPANION_RELAY_WS_PROTOCOL,
   companionRelayCredentialSubprotocol,
 } from '../../src/shared/contract/companionRelay';
@@ -118,6 +119,7 @@ describe('companion relay: production server + host dial-out', () => {
       'connections', 'droppedBacklog', 'droppedBackpressure', 'droppedExpired', 'droppedNoRoute',
       'forwarded', 'notifiedNoHost', 'queuedFrames', 'rejectedAuth', 'revoked', 'routes',
       'accountConnections', 'rejectedOwner', 'ticketsIssued', 'ticketConnections', 'terminatedNoPong',
+      'rejectedTakeover',
     ].sort());
     const missing = await fetch(`http://127.0.0.1:${port}/nope`);
     expect(missing.status).toBe(404);
@@ -406,6 +408,170 @@ describe('companion relay: production server + host dial-out', () => {
     deviceLeg.close();
     hostLeg2.close();
     await graced.stop();
+  });
+
+  // N-COMPANION-RELAY-ROUTE-TAKEOVER：routeToken 是持久身份确定性派生的，共用数据目录的两个
+  // Host 进程算出同一批 token——relay 必须按 register 带的实例身份分辨「顶替」与「同实例重连」，
+  // 顶替不再静默覆盖 host 槽，被顶的在位实例零感知的洞从这里堵。
+  describe('route takeover rejection by instanceId', () => {
+    const opened = (socket: WebSocket) => new Promise<void>(resolve => socket.once('open', () => resolve()));
+    const closed = (socket: WebSocket) => new Promise<{ code: number; reason: string }>(resolve =>
+      socket.once('close', (code, reason) => resolve({ code, reason: reason.toString('utf8') })));
+    const registerHost = (socket: WebSocket, token: string, instanceId?: string) => socket.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'host',
+      ...(instanceId ? { instanceId } : {}),
+      envelope: { routeToken: token, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    const registerDevice = (socket: WebSocket, token: string) => socket.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'device',
+      envelope: { routeToken: token, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    const forward = (socket: WebSocket, token: string, seq: number) => socket.send(JSON.stringify({
+      v: 1, kind: 'forward',
+      envelope: { routeToken: token, deviceRef: 'phone-1', seq, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: 'x'.repeat(64),
+    }));
+    const message = (socket: WebSocket) => new Promise<string>(resolve => socket.once('message', data => resolve(String(data))));
+
+    async function startLoggingRelay(): Promise<{ relay: CompanionRelayServer; url: string; events: string[] }> {
+      const events: string[] = [];
+      const relay = new CompanionRelayServer({
+        credential: SECRET,
+        port: await freePort(),
+        logger: {
+          info: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+          warn: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+        },
+      });
+      const url = `ws://127.0.0.1:${(await relay.listen()).port}`;
+      return { relay, url, events };
+    }
+
+    it('rejects a different-instance takeover: challenger closed with the contract code, incumbent slot untouched', async () => {
+      const { relay, url, events } = await startLoggingRelay();
+      const token = 'route-token-takeover1';
+      const incumbent = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+      await opened(incumbent);
+      registerHost(incumbent, token, 'alpha-instance-00000001');
+      await vi.waitFor(() => expect(events).toContain(`registered ${JSON.stringify({ role: 'host', token: 'route-to' })}`));
+      const device = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+      await opened(device);
+      registerDevice(device, token);
+      const challenger = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+      await opened(challenger);
+      registerHost(challenger, token, 'beta-instance-000000002');
+      const challengerClose = closed(challenger);
+      // 顶替被拒的留痕：事件名 + token 前缀 + 两侧 instanceId 前缀，与正常注册可分辨。
+      await vi.waitFor(() => expect(relay.currentStats.rejectedTakeover).toBe(1));
+      expect(await challengerClose).toMatchObject({ code: COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN, reason: 'ROUTE_TAKEN_OVER' });
+      expect(events).toContain(`route_takeover_rejected ${JSON.stringify({
+        role: 'host', token: 'route-to', incumbent: 'alpha-in', challenger: 'beta-ins',
+      })}`);
+      // 原 host 槽不动：在位连接还开着，设备腿的帧仍转发给在位实例。
+      expect(incumbent.readyState).toBe(WebSocket.OPEN);
+      const toIncumbent = message(incumbent);
+      forward(device, token, 0);
+      const received = JSON.parse(await toIncumbent) as { envelope: { seq: number } };
+      expect(received.envelope.seq).toBe(0);
+      device.close();
+      incumbent.close();
+      await relay.stop();
+    });
+
+    it('allows the same instance to re-register from a new socket (reconnect path stays open)', async () => {
+      const { relay, url, events } = await startLoggingRelay();
+      const token = 'route-token-takeover2';
+      const leg1 = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+      await opened(leg1);
+      registerHost(leg1, token, 'alpha-instance-00000001');
+      await vi.waitFor(() => expect(relay.currentStats.routes).toBe(1));
+      const device = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+      await opened(device);
+      registerDevice(device, token);
+      // 同实例换 socket 重注册（旧 socket 的关闭还没到）：放行，host 槽换到新连接。
+      const leg2 = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+      await opened(leg2);
+      registerHost(leg2, token, 'alpha-instance-00000001');
+      await vi.waitFor(() => expect(events.filter(line => line.startsWith('registered')).length).toBe(3));
+      const toLeg2 = message(leg2);
+      forward(device, token, 0);
+      const received = JSON.parse(await toLeg2) as { envelope: { seq: number } };
+      expect(received.envelope.seq).toBe(0);
+      expect(relay.currentStats.rejectedTakeover).toBe(0);
+      expect(events.join('\n')).not.toContain('route_takeover_rejected');
+      device.close();
+      leg1.close();
+      leg2.close();
+      await relay.stop();
+    });
+
+    it('lets a legacy host without instanceId displace, warning once per connection', async () => {
+      const { relay, url, events } = await startLoggingRelay();
+      const tokenA = 'route-token-takeover3a';
+      const tokenB = 'route-token-takeover3b';
+      const incumbent = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+      await opened(incumbent);
+      registerHost(incumbent, tokenA, 'alpha-instance-00000001');
+      registerHost(incumbent, tokenB, 'alpha-instance-00000001');
+      await vi.waitFor(() => expect(relay.currentStats.routes).toBe(2));
+      const legacy = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+      await opened(legacy);
+      registerHost(legacy, tokenA);
+      await vi.waitFor(() => expect(events.filter(line => line.startsWith('register_without_instance_id')).length).toBe(1));
+      // 同一连接第二次顶到无实例身份的判不了的路由：不再重复 warn。
+      registerHost(legacy, tokenB);
+      await vi.waitFor(() => expect(relay.currentStats.routes).toBe(2));
+      await new Promise(resolve => setTimeout(resolve, 150));
+      expect(events.filter(line => line.startsWith('register_without_instance_id')).length).toBe(1);
+      expect(events).toContain(`register_without_instance_id ${JSON.stringify({ role: 'host', token: 'route-to' })}`);
+      // 旧客户端维持现状：放行（槽被顶过去），不计入顶替拒绝。
+      expect(relay.currentStats.rejectedTakeover).toBe(0);
+      const toLegacy = message(legacy);
+      const device = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+      await opened(device);
+      registerDevice(device, tokenB);
+      forward(device, tokenB, 0);
+      expect(JSON.parse(await toLegacy).kind).toBe('forward');
+      device.close();
+      incumbent.close();
+      legacy.close();
+      await relay.stop();
+    });
+
+    it('stops a displaced host leg from refreshing the route TTL with heartbeats', async () => {
+      let fakeNow = Date.now();
+      const server = new CompanionRelayServer({ credential: SECRET, port: await freePort(), now: () => fakeNow });
+      const url = `ws://127.0.0.1:${(await server.listen()).port}`;
+      const token = 'route-token-takeover4';
+      const t0 = fakeNow;
+      const heartbeat = (socket: WebSocket) => socket.send(JSON.stringify({
+        v: 1, kind: 'heartbeat',
+        envelope: { routeToken: token, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: fakeNow },
+        ciphertext: '',
+      }));
+      // 两个都无 instanceId（旧客户端路径）：B 顶掉 A 是放行的——被顶的 A 正是守卫要管的对象。
+      const legA = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+      await opened(legA);
+      registerHost(legA, token);
+      await vi.waitFor(() => expect(server.currentStats.routes).toBe(1)); // expiresAt = t0 + TTL
+      const legB = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+      await opened(legB);
+      fakeNow = t0 + 10_000;
+      registerHost(legB, token); // 顶替放行：expiresAt = t0+10s + TTL
+      await new Promise(resolve => setTimeout(resolve, 100));
+      fakeNow = t0 + 40_000;
+      heartbeat(legA); // 被顶的 A 心跳：不许续 TTL（无守卫时会刷到 t0+40s+TTL）
+      await new Promise(resolve => setTimeout(resolve, 100));
+      // 推进到 B 的注册有效期之后、A 若续期成功的有效期之内：route 只该死于 B 的注册 TTL。
+      fakeNow = t0 + 10_000 + L.relayRouteTokenTtlMs + 1_000;
+      server.sweep();
+      expect(server.currentStats.routes).toBe(0);
+      legA.close();
+      legB.close();
+      await server.stop();
+    });
   });
 
   it('breaks the device side when the host revokes', async () => {

@@ -45,6 +45,11 @@ export const COMPANION_LIMITS = {
   maxScopeSessions: 32,
   requestTimeoutMs: 10_000,
   invitationTtlMs: 120_000,
+  /**
+   * 一份邀请里私网字面量候选（candidates）的硬上限。真实多宿主（Wi-Fi+热点+VPN 虚接口+虚拟桥）
+   * 远用不完，超出按接口枚举序截断；同时钉住数组形状，别让 candidates 把 2048 字节的二维码预算吃穿。
+   */
+  invitationMaxCandidates: 8,
   handshakeTtlMs: 15_000,
   channelTtlMs: 300_000,
   maxChannels: 32,

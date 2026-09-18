@@ -101,6 +101,33 @@ describe('companion gateway settlement diagnostics', () => {
     expect(info.filter(line => line.includes('kind=message'))).toContain('Companion gateway published: kind=message sessionId=session-1 seq=1501');
   });
 
+  it('flushes the burst summary at session end even when the last publish was a delta', () => {
+    // ai-review R4 Nit 2：flushStreamBurst 只由下一条非逐帧 publish 触发——轮子以 message_delta
+    // 收尾（没有后续非逐帧拍）时汇总行永不输出、map 条目滞留。会话终态（forgetSession）必须兜底。
+    const { logger, info } = collectLogger();
+    const gateway = new CompanionGateway(db, { now: () => 1000, logger });
+    register(gateway);
+    for (let i = 0; i < 5; i++) gateway.publish('session-1', 'message_delta', { role: 'assistant', path: 'content', op: 'append', text: 'x' });
+    expect(info.some(line => line.includes('Companion gateway stream burst:'))).toBe(false);
+    gateway.forgetSession('session-1');
+    expect(info.filter(line => line.includes('kind=message_delta'))).toHaveLength(2);
+    expect(info[1]).toMatch(/^Companion gateway stream burst: kind=message_delta sessionId=session-1 frames=5 bytes=\d+ seq=1-5$/);
+  });
+
+  it('stays silent per frame when a frame-stream publish is skipped for having no live device', () => {
+    // ai-review R4 Nit 3：skipped 打点必须在逐帧判定之后——未来不经调用方预检的逐帧 publish
+    // 在无设备时不能退回逐帧刷屏（一帧一行 skipped）。非逐帧 kind 的 skipped 行照旧。
+    const bare = collectLogger();
+    const orphanDb = new Database(':memory:');
+    const orphan = new CompanionGateway(orphanDb, { now: () => 1000, logger: bare.logger });
+    for (let i = 0; i < 10; i++) orphan.publish('session-1', 'message_delta', { role: 'assistant', path: 'content', op: 'append', text: 'x' });
+    orphan.publish('session-1', 'message', { id: 'm1', role: 'assistant', content: 'done' });
+    orphan.forgetSession('session-1');
+    orphanDb.close();
+    expect(bare.info.filter(line => line.includes('message_delta'))).toHaveLength(0);
+    expect(bare.info.some(line => line.includes('publish skipped: kind=message '))).toBe(true);
+  });
+
   it('logs the startup recovery count when a previous session left reconciling rows', async () => {
     const first = new CompanionGateway(db, {
       now: () => 1000,

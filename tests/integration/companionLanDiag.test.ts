@@ -18,6 +18,10 @@ import { COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 
 // 没有私网 IPv4 的环境（部分 CI fleet）整组跳过，不抛错拖红同批用例（ai-review R3 Nit 5）。
 const address = Object.values(networkInterfaces()).flat().find(n => n?.family === 'IPv4' && isPrivateIPv4(n.address))?.address;
+// 但静默 skip 只剩汇总里一行计数，看不出为什么整组没了（ai-review R4 Nit 4）：留一行原因。
+if (!address) {
+  console.warn('[companionLanDiag] no private IPv4 interface on this machine — skipping 13 LAN diagnostics tests (they need a LAN-bound socket)');
+}
 
 describe.skipIf(!address)('LAN companion connection diagnostics', () => {
   let db: Database.Database;
@@ -192,5 +196,24 @@ describe.skipIf(!address)('LAN companion connection diagnostics', () => {
     // 同一对端换一种错误码是新故障：仍要点名，不能被对端去重淹没。
     await post(`${endpoint}/v1/hello`, { mode: 'nonsense', frame: '00' });
     expect(warn.filter(line => line.includes('code=COMPANION_INVALID_FRAME'))).toHaveLength(1);
+  });
+
+  it('dedupes repeated /v1/finish rejections from the same peer, with the peer field', async () => {
+    // ai-review R4 Important：/v1/finish 也在鉴权之前（未知 channelId 必抛 INVITATION_EXPIRED），
+    // 未鉴权对端循环 POST 就是每请求一行 warn。照 hello 拒单的形状去重：同对端同错误码只首拍一行，
+    // 且字段与 hello 拒单行同构（mode/via/peer/code，R4 Nit 5）。
+    const endpoint = server.invite(['shared']).endpoint;
+    for (let i = 0; i < 3; i++) await post(`${endpoint}/v1/finish`, { channelId: 'unknown-channel', frame: '00' });
+    const rejected = warn.filter(line => line.includes('mode=finish'));
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toContain('code=COMPANION_INVITATION_EXPIRED');
+    expect(rejected[0]).toMatch(/ peer=\S+ /);
+    // 同一对端换一种错误码是新故障（照 hello 拒单的判据）：真 pending 撞上非十六进制 frame 抛
+    // INVALID_FRAME，仍要点名，不能被去重淹没。
+    const invitation = server.invite(['shared']);
+    const noise = createHandshake(true, phoneIdentity, invitation.inviteId, invitation.psk);
+    const hello = await post(`${invitation.endpoint}/v1/hello`, { mode: 'pair', inviteId: invitation.inviteId, frame: toHex(noise.send()) });
+    await post(`${invitation.endpoint}/v1/finish`, { channelId: hello.body.channelId, frame: 'zz' });
+    expect(warn.filter(line => line.includes('mode=finish') && line.includes('code=COMPANION_INVALID_FRAME'))).toHaveLength(1);
   });
 });

@@ -399,6 +399,9 @@ export class CompanionGateway {
   }
 
   forgetSession(sessionId: string): void {
+    // 会话终态兜底（ai-review R4 Nit 2）：以 message_delta 收尾的轮次等不到下一条非逐帧
+    // publish，汇总行永不输出且 map 条目滞留——删会话时先补出汇总、清掉账再删行。
+    this.flushStreamBurst(sessionId);
     this.db.prepare('DELETE FROM companion_events WHERE session_id = ?').run(sessionId);
     this.db.prepare('DELETE FROM companion_decisions WHERE session_id = ?').run(sessionId);
     this.db.prepare('INSERT OR IGNORE INTO companion_session_cleanup (session_id) VALUES (?)').run(sessionId);
@@ -422,18 +425,24 @@ export class CompanionGateway {
       payload,
       createdAt: now,
     };
+    const frameStream = FRAME_STREAM_KINDS.has(kind);
     if (!this.hasLiveDevices()) {
+      // 打点放在逐帧判定之后（ai-review R4 Nit 3）：逐帧 kind 连 skipped 也不逐帧打，
+      // 否则未来不经调用方预检的逐帧 publish 在无设备时会退回逐帧刷屏。非逐帧拍仍是
+      // 会话时间线上的轮末边界——先收口上一轮真实发布过的逐帧汇总，再留自己的 skipped 行。
+      if (frameStream) return { ...event, seq };
+      this.flushStreamBurst(sessionId);
       logCompanionRelayInfo(this.deps.logger, `Companion gateway publish skipped: kind=${kind} sessionId=${sessionId ?? '-'} seq=${event.seq} reason=no_live_devices`);
       return { ...event, seq };
     }
     // 逐帧流式 kind 不逐帧记：同会话下一条非逐帧 publish 先收口上一轮的汇总行。
-    if (!FRAME_STREAM_KINDS.has(kind)) this.flushStreamBurst(sessionId);
+    if (!frameStream) this.flushStreamBurst(sessionId);
     const payloadJson = JSON.stringify(event.payload);
     this.db.prepare(`
       INSERT INTO companion_events (event_id, epoch, seq, session_id, kind, payload_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(event.eventId, event.epoch, event.seq, event.sessionId, event.kind, payloadJson, event.createdAt);
-    if (FRAME_STREAM_KINDS.has(kind)) {
+    if (frameStream) {
       this.noteStreamBurst(sessionId, kind, event.seq, Buffer.byteLength(payloadJson));
     } else {
       logCompanionRelayInfo(this.deps.logger, `Companion gateway published: kind=${kind} sessionId=${sessionId ?? '-'} seq=${event.seq}`);

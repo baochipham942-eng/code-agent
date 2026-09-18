@@ -155,6 +155,9 @@ const zh = {
   notificationFailed: '后台提醒通道尚未就绪，不会用应用内标记代替。',
   notificationRegistrationError: '提醒注册失败。可稍后重试；主会话仍可使用。',
   notificationReady: '已向电脑注册提醒',
+  // 前台轻提示（N-MOBILE-FOREGROUND-PUSH）：系统横幅退场后的 app 内替身。推送 loc-key 的正文
+  // JS 拿不到，用通用句；点按跳会话（判不出归属时只收掉提示）。
+  foregroundAlert: '有任务结果，点按查看',
   enableNotifications: '开启提醒', openSystemSettings: '前往系统设置',
   loadError: '本机数据暂时读不到，重试后继续编辑。', retry: '重试', loading: '正在打开 Neo…',
   saveError: '草稿没存上', saved: '已保存在此设备',
@@ -318,6 +321,7 @@ const en: Record<keyof typeof zh, string> = {
   notificationFailed: 'The background alert channel is not ready. In-app markers are not a substitute.',
   notificationRegistrationError: 'Alert registration failed. Retry later. The conversation still works.',
   notificationReady: 'Alerts registered with your computer',
+  foregroundAlert: 'A task has an update. Tap to view',
   enableNotifications: 'Turn on alerts', openSystemSettings: 'Open system settings',
   loadError: 'Unable to read local data. Retry before editing.',
   retry: 'Retry', loading: 'Opening Neo…', saveError: 'Draft not saved',

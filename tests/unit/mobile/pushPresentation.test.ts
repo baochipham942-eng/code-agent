@@ -35,28 +35,64 @@ function notifications(viewing: string | null, resolveRoute?: (token: string) =>
   return { store, resolve };
 }
 
-describe('前台推送：正看着同一条会话才不弹（N-MOBILE-EXEC-STATUS ④）', () => {
-  it('正看着的就是推送那条会话 ⇒ 不弹', async () => {
+describe('前台推送：一律不弹系统横幅，改走 app 内提示（N-MOBILE-FOREGROUND-PUSH）', () => {
+  it('正看着的就是推送那条会话 ⇒ 不弹也不出轻提示（N-MOBILE-EXEC-STATUS ④ 不退化）', async () => {
     const { store } = notifications('s1', async () => 's1');
     await expect(store.getState().decideForeground('rt')).resolves.toBe(false);
+    expect(store.getState().foregroundAlert).toBeNull();
+    expect(store.getState().unreadSessions).toEqual([]);
   });
 
-  it('推送属于别的会话 ⇒ 弹', async () => {
+  it('推送属于别的会话 ⇒ 不弹，轻提示带 sessionId、该会话进未读', async () => {
     const { store } = notifications('s1', async () => 's2');
-    await expect(store.getState().decideForeground('rt')).resolves.toBe(true);
+    await expect(store.getState().decideForeground('rt')).resolves.toBe(false);
+    expect(store.getState().foregroundAlert).toMatchObject({ routeToken: 'rt', sessionId: 's2' });
+    expect(store.getState().unreadSessions).toEqual(['s2']);
   });
 
-  it('不在会话页（后台/抽屉/弹层盖着）⇒ 弹，且不去查', async () => {
-    const { store, resolve } = notifications(null, async () => 's1');
-    await expect(store.getState().decideForeground('rt')).resolves.toBe(true);
-    expect(resolve).not.toHaveBeenCalled();
+  it('不在会话页（欢迎页/抽屉/弹层盖着）⇒ 不弹，仍查归属给未读点上料', async () => {
+    const { store, resolve } = notifications(null, async () => 's2');
+    await expect(store.getState().decideForeground('rt')).resolves.toBe(false);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(store.getState().foregroundAlert).toMatchObject({ routeToken: 'rt', sessionId: 's2' });
+    expect(store.getState().unreadSessions).toEqual(['s2']);
   });
 
-  it('判不出属于哪条会话（查询失败 / 查不到 / 没 token / 不支持查询）⇒ 弹，宁可多弹不许吞', async () => {
-    await expect(notifications('s1', async () => { throw new Error('offline'); }).store.getState().decideForeground('rt')).resolves.toBe(true);
-    await expect(notifications('s1', async () => null).store.getState().decideForeground('rt')).resolves.toBe(true);
-    await expect(notifications('s1', async () => 's1').store.getState().decideForeground(null)).resolves.toBe(true);
-    await expect(notifications('s1').store.getState().decideForeground('rt')).resolves.toBe(true);
+  it('判不出属于哪条（查询失败 / 查不到 / 没 token / 不支持查询）⇒ 不弹，通用轻提示照出（新版不许吞）', async () => {
+    // 没 token 那条用 routeToken=null（resolveRoute 存在也无从查起），轻提示照出、routeToken 原样保留。
+    const unknown = async (store: ReturnType<typeof notifications>['store'], token: string | null) => {
+      await expect(store.getState().decideForeground(token)).resolves.toBe(false);
+      expect(store.getState().foregroundAlert).toMatchObject({ routeToken: token, sessionId: null });
+      expect(store.getState().unreadSessions).toEqual([]);
+    };
+    await unknown(notifications('s1', async () => { throw new Error('offline'); }).store, 'rt');
+    await unknown(notifications('s1', async () => null).store, 'rt');
+    await unknown(notifications('s1', async () => 's1').store, null);
+    await unknown(notifications('s1').store, 'rt');
+  });
+
+  it('判定一路都不许抛：viewing 崩了也按不弹结算并出通用轻提示', async () => {
+    const store = createNotificationStore({
+      port,
+      preference: { get: () => true, set: () => {} },
+      session: {
+        status: () => 'connected', register: async () => ({ kind: 'registered' }), unregister: async () => {},
+        openRoute: async () => {}, reconnect: async () => {},
+        viewing: () => { throw new Error('boom'); }, resolveRoute: async () => 's2',
+      },
+    });
+    await expect(store.getState().decideForeground('rt')).resolves.toBe(false);
+    expect(store.getState().foregroundAlert).toMatchObject({ routeToken: 'rt', sessionId: null });
+  });
+
+  it('轻提示到点/点按收掉，未读点进会话即清', async () => {
+    const { store } = notifications('s1', async () => 's2');
+    await store.getState().decideForeground('rt');
+    store.getState().dismissForegroundAlert();
+    expect(store.getState().foregroundAlert).toBeNull();
+    expect(store.getState().unreadSessions).toEqual(['s2']);
+    store.getState().markSessionRead('s2');
+    expect(store.getState().unreadSessions).toEqual([]);
   });
 });
 

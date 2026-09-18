@@ -77,6 +77,12 @@ export const COMPANION_LIMITS = {
    */
   pendingNoticeDelayMs: 3_000,
   /**
+   * 前台轻提示的驻留时长（N-MOBILE-FOREGROUND-PUSH）：系统横幅退场后，会话区顶部的轻提示
+   * 到点自隐；错过了也不丢——抽屉会话行上的未读点还在。UI 层（MobileRoot）消费，同
+   * pendingNoticeDelayMs 的先例：呈现节奏不放 store。
+   */
+  foregroundAlertAutoHideMs: 5_000,
+  /**
    * 单次 mDNS 重解析的超时（fix4-⑤）：到点即回退绑定里的旧地址，别把重连卡在 DNS 上。
    * 原生两侧（NeoLanDnsPlugin / LanDnsPlugin）由 JS 传参消费，这里是唯一真源。
    */

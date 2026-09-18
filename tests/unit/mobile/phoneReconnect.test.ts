@@ -267,14 +267,21 @@ describe('companionStore 前台退避自动重连', () => {
     store.getState().pause();
   });
 
-  it('从后台恢复健康连接：握手期间是 connecting，不是自动重试', async () => {
-    vi.useRealTimers();
+  it('从后台恢复健康连接（宽限已到期）：重连握手期间是 connecting，不是自动重试', async () => {
     harness.recoverError = null;
     const store = storeOf();
     await store.getState().hydrate();
     expect(store.getState().status).toBe('connected');
+    const closedBeforePause = harness.closeCalls;
     store.getState().pause();
+    // 新语义（N-MOBILE-BG-KEEPALIVE-GRACE）：退后台不立即拆连接——宽限内 status 保持
+    // connected、paused 保持 false（应用切换器快照拍到的就是真相），通道一次都不关。
+    expect(store.getState()).toMatchObject({ status: 'connected', paused: false, autoRetrying: false });
+    expect(harness.closeCalls).toBe(closedBeforePause);
+    // 宽限到期仍在后台：才执行关闭收尾，打回 offline + paused。
+    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.backgroundKeepaliveGraceMs);
     expect(store.getState()).toMatchObject({ status: 'offline', paused: true, autoRetrying: false });
+    expect(harness.closeCalls).toBe(closedBeforePause + 1);
     harness.hangRecover = true;
     const pending = store.getState().reconnect();
     await flushUntilHung();
@@ -286,6 +293,106 @@ describe('companionStore 前台退避自动重连', () => {
     harness.releaseHang?.();
     await pending;
     expect(store.getState()).toMatchObject({ status: 'connected', autoRetrying: false });
+    store.getState().pause();
+  });
+
+  it('宽限内回前台：取消延迟关闭 + 探活，不重拨（N-MOBILE-BG-KEEPALIVE-GRACE ①）', async () => {
+    harness.recoverError = null;
+    const store = storeOf();
+    await store.getState().hydrate();
+    expect(store.getState().status).toBe('connected');
+    const closed = harness.closeCalls;
+    const recoveries = harness.recoverCalls;
+    store.getState().pause();
+    await store.getState().reconnect();
+    await vi.advanceTimersByTimeAsync(0);
+    // 没有握手、没有关闭：连接压根没拆过——「看一眼微信就回来」不该再走一遍 recover。
+    expect(harness.closeCalls).toBe(closed);
+    expect(harness.recoverCalls).toBe(recoveries);
+    expect(store.getState()).toMatchObject({ status: 'connected', paused: false });
+    // 探活补拉照常走通，通道还能发命令。
+    await store.getState().sync();
+    expect(store.getState().status).toBe('connected');
+    await store.getState().send('宽限内回前台-正文');
+    expect(store.getState().pending).toBe(false);
+    store.getState().pause();
+  });
+
+  it('宽限到期仍在后台：只关一次、打回 offline+paused；回前台走全量 recover（②）', async () => {
+    harness.recoverError = null;
+    const store = storeOf();
+    await store.getState().hydrate();
+    const closed = harness.closeCalls;
+    store.getState().pause();
+    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.backgroundKeepaliveGraceMs);
+    expect(harness.closeCalls).toBe(closed + 1);
+    expect(store.getState()).toMatchObject({ status: 'offline', paused: true, autoRetrying: false });
+    const recoveries = harness.recoverCalls;
+    await store.getState().reconnect();
+    // 全量 recover 回得来（+2 是常态：主握手 + relay 路由探针）。
+    expect(harness.recoverCalls).toBeGreaterThan(recoveries);
+    expect(store.getState()).toMatchObject({ status: 'connected', paused: false });
+    store.getState().pause();
+  });
+
+  it('iOS 连发两次退后台回调：宽限不重挂，到期只关一次、paused 保持 true（③）', async () => {
+    harness.recoverError = null;
+    const store = storeOf();
+    await store.getState().hydrate();
+    const closed = harness.closeCalls;
+    store.getState().pause(); store.getState().pause();
+    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.backgroundKeepaliveGraceMs);
+    expect(harness.closeCalls).toBe(closed + 1);
+    expect(store.getState()).toMatchObject({ status: 'offline', paused: true });
+  });
+
+  it('宽限期内扫码换通道：旧通道立即关，迟到的宽限回调不碰新通道（④）', async () => {
+    harness.recoverError = null;
+    const store = storeOf();
+    await store.getState().hydrate();            // 通道 A
+    const closed = harness.closeCalls;
+    store.getState().pause();                    // 宽限挂上，A 还活着
+    await store.getState().pair(invitation());   // 换到通道 B：A 立即被关
+    expect(store.getState().status).toBe('connected');
+    const closedAfterPair = harness.closeCalls;
+    expect(closedAfterPair).toBeGreaterThan(closed);
+    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.backgroundKeepaliveGraceMs + 1_000);
+    // 迟到的回调（若逃过 clearTimeout 与身份守卫）不许关掉扫码刚建立的新通道。
+    expect(harness.closeCalls).toBe(closedAfterPair);
+    await store.getState().sync();
+    expect(store.getState().status).toBe('connected');
+    store.getState().pause();
+  });
+
+  it('宽限期内忘记这台电脑：旧通道立即关，宽限定时器随之撤销（④）', async () => {
+    harness.recoverError = null;
+    const store = storeOf();
+    await store.getState().hydrate();
+    const closed = harness.closeCalls;
+    store.getState().pause();
+    await store.getState().forget();
+    const closedAfterForget = harness.closeCalls;
+    expect(store.getState()).toMatchObject({ status: 'unpaired', paused: false });
+    expect(closedAfterForget).toBeGreaterThan(closed);
+    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.backgroundKeepaliveGraceMs + 1_000);
+    expect(harness.closeCalls).toBe(closedAfterForget);
+  });
+
+  it('宽限内回前台但连接已死：探活失败打回 offline 并挂自动重试，不带着死通道假装连着（⑤）', async () => {
+    harness.recoverError = null;
+    harness.syncError = 'COMPANION_NO_RESPONSE';   // 后台期间 relay socket 已被系统挂死
+    const store = storeOf();
+    await store.getState().hydrate();
+    const closed = harness.closeCalls;
+    store.getState().pause();
+    await store.getState().reconnect();            // 宽限分支：取消关闭 + sync 探活
+    await vi.advanceTimersByTimeAsync(0);          // 探活失败结算（sync 的 catch 老路）
+    expect(store.getState()).toMatchObject({ status: 'offline', autoRetrying: true, connectionError: 'connectionUnavailable' });
+    expect(harness.closeCalls).toBe(closed + 1);
+    // 僵尸自愈接着走：下一拍自动重试全量 recover 回得来。
+    harness.syncError = null;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(store.getState().status).toBe('connected');
     store.getState().pause();
   });
 

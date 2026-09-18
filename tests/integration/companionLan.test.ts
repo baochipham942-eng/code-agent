@@ -440,22 +440,33 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(restarted.getState().pending).toBe(false); expect(cleared).toBe('persist before dispatch'); expect(executions).toBe(1);
     restarted.getState().pause();
   });
-  it('退到后台是「暂停」不是「连不上」：pause 只在连着的时候立 paused 标记', async () => {
-    // 爸 2026-09-12 真机：Neo 还没关，应用切换器的卡片上就写着「电脑尚未连接，草稿已保留」——
-    // app 一退后台我们主动 pause() 关掉连接，界面立刻翻成报错形态，而 iOS 快照正是那一刻拍的。
+  it('退到后台是「暂停」不是「连不上」：宽限内不拆连接，回前台不重握手（N-MOBILE-BG-KEEPALIVE-GRACE）', async () => {
+    // 爸真机两件事：① 2026-09-12 Neo 还没关，切换器卡片上就写「电脑尚未连接」——那是 pause
+    // 立即拆连接逼出来的假警报；② 2026-09-18 切出去看一眼微信就回来也必重连——连接本身
+    // 没坏，是我们退后台那一刻自己拆的。现在 pause() 挂宽限：宽限内保持 connected、同一条
+    // 通道还能发；回前台只取消延迟关闭 + 探活，不重拨。（宽限到期 → offline+paused 的路径
+    // 由 phoneReconnect 单测用 fake timers 验，这里不真等 30s。）
     let storage: string | null = null;
     const phone = createCompanionStore({ read: async () => storage, write: async (value: string) => { storage = value; },
       scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
     try {
       await phone.getState().pair();
+      phone.getState().selectSession('shared');
       expect(phone.getState().status).toBe('connected');
-      // iOS 退后台会连发两次生命周期回调：第二次不能把暂停标记打回去，
-      // 否则爸看到的那个「卡片上写着未连接」的假警报原样回来。
+      const hostChannels = () => (server as unknown as { channels: Map<string, unknown> }).channels.size;
+      const dispatchedBefore = executions;
+      // iOS 退后台会连发两次生命周期回调：第二拍不得重挂宽限、更不得把连接拆了。
       phone.getState().pause(); phone.getState().pause();
-      expect(phone.getState()).toMatchObject({ status: 'offline', paused: true });
-      // 回到前台重连要把暂停标记清掉，否则真断线时界面还以为自己只是在后台
+      expect(phone.getState()).toMatchObject({ status: 'connected', paused: false });
+      // 宽限内同一条通道直接还能发：不需要任何重连动作，更不需要新握手。
+      await phone.getState().send('still-alive-正文');
+      expect(executions).toBe(dispatchedBefore + 1);
+      expect(phone.getState().pending).toBe(false);
+      // 回到前台：取消延迟关闭 + 探活，Host 侧不出现新握手（channels 不增）。
+      const channelsBeforeResume = hostChannels();
       await phone.getState().reconnect();
       expect(phone.getState()).toMatchObject({ status: 'connected', paused: false });
+      expect(hostChannels()).toBe(channelsBeforeResume);
       // 真断线之后再退后台：报错不能被「只是暂停」盖掉
       server.revoke(phone.getState().binding!.deviceId);
       await phone.getState().sync();

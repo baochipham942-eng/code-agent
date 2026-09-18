@@ -226,6 +226,43 @@ describe('companion relay: production server + host dial-out', () => {
     await logging.stop();
   });
 
+  // N-MOBILE-SEND-RESULT-LOST：设备腿断开此前只记账不打日志——跨网现场的 C 断点
+  // （relay 腿断）在 server 侧无迹可寻。close 事件一行留痕：role、token 前缀、鉴权
+  // 类别、close code、存活时长；凭据/票据/令牌全文照旧绝不进日志。
+  it('logs each socket close with role, token prefix, auth kind and uptime', async () => {
+    const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+    const logging = new CompanionRelayServer({
+      credential: SECRET,
+      port: await freePort(),
+      logger: {
+        info: (event, fields) => events.push({ event, fields: fields ?? {} }),
+        warn: (event, fields) => events.push({ event, fields: fields ?? {} }),
+      },
+    });
+    const loggingUrl = `ws://127.0.0.1:${(await logging.listen()).port}`;
+    const device = new WebSocket(loggingUrl, [COMPANION_RELAY_WS_PROTOCOL, companionRelayCredentialSubprotocol(SECRET)]);
+    await new Promise<void>(resolve => { device.once('open', resolve); });
+    const closeToken = 'route-token-close1';
+    device.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'device',
+      envelope: { routeToken: closeToken, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    await vi.waitFor(() => expect(logging.currentStats.routes).toBe(1));
+    device.close(1000, 'device-done');
+    const closed = await vi.waitFor(() => {
+      const line = events.find(entry => entry.event === 'connection_closed');
+      expect(line).toBeDefined();
+      return line!;
+    });
+    expect(closed.fields).toMatchObject({ role: 'device', auth: 'legacy', closeCode: 1000 });
+    expect(closed.fields.tokens).toEqual([closeToken.slice(0, 8)]);
+    expect(typeof closed.fields.uptimeMs).toBe('number');
+    expect(closed.fields.uptimeMs as number).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(events)).not.toContain(SECRET);
+    await logging.stop();
+  });
+
   it('does not buffer without bound while the peer is absent', async () => {
     const intruder = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
     await new Promise<void>(resolve => intruder.once('open', () => resolve()));

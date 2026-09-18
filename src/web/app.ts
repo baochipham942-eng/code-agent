@@ -324,6 +324,8 @@ export function createApp(deps: CreateAppDeps): express.Express {
         },
         onPublish: event => { services.push?.enqueue(event); void services.push?.flush(); },
         onRevoke: deviceId => { services.push?.forgetDevice(deviceId); services.relay?.revoke(deviceId); companionRelayAccount?.revoke(deviceId); },
+        // 结算链留痕（N-MOBILE-SEND-RESULT-LOST）：submit 结论/settle 迁移/publish/启动回收。
+        logger,
         dispatch: (command) => {
           if (command.action.startsWith('files.')) {
             return services.files?.dispatch(command) ?? { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
@@ -521,7 +523,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
         ...(companionRelayAccount?.status() ?? { account: 'off' as const }),
       }),
       // 配对信息随 welcome 带电脑账号邮箱：手机登录页预填 + 「这台电脑属于谁」的账号一致性核对。
-      () => getAuthService().getCurrentUser()?.email ?? null);
+      () => getAuthService().getCurrentUser()?.email ?? null,
+      // LAN 连接层留痕透传（N-MOBILE-SEND-RESULT-LOST）。
+      logger);
       // Both halves must hold: a phone is reachable for this session, AND this particular
       // card is renderable. With no approvals service there is no companion approval path.
       hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && services.approvals?.canDisplay(request) === true;

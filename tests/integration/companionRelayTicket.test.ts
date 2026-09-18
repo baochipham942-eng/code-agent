@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import WebSocket from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 import { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
 import {
   CompanionRelayClient,
@@ -14,9 +14,14 @@ import {
 } from '../../src/host/services/companion/CompanionRelayClient';
 import { deriveCompanionRelayRouteToken } from '../../src/host/services/companion/companionRelayRouteToken';
 import {
+  clearCompanionRelayTicket,
   loadCompanionRelayTicket,
   storeCompanionRelayTicket,
 } from '../../src/host/services/companion/companionRelayTicketStore';
+import {
+  COMPANION_RELAY_SENTINEL_DEVICE_REF,
+  COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN,
+} from '../../src/shared/contract/companionRelay';
 import { createIdentity } from '../../src/shared/companion/noiseChannel';
 import { toHex } from '../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
@@ -555,5 +560,60 @@ describe('companion relay device ticket (slice 3A)', () => {
     expect(relay.currentStats.rejectedAuth).toBeGreaterThanOrEqual(1);
     await vi.waitFor(() => expect(loadCompanionRelayTicket(dataDir, 'user-1', now)).not.toBeNull());
     await second.stop();
+  });
+
+  it('host: a ticket frame whose envelope is not the contract sentinel is ignored', async () => {
+    // 坏中继（或被顶替的转发路径）发来的 ticket 帧，信封不带契约 sentinel 就绝不能落盘——落盘
+    // 等于让任意来源的 ciphertext 顶掉当前票据。票据只可能来自 relay 的签发通道（固定 sentinel）。
+    const evilPort = await freePort();
+    const evilUrl = `ws://127.0.0.1:${evilPort}`;
+    const tOld = ticketAuth.issue('user-1').ticket;
+    clock += 1_000; // 换个 exp，保证 tNew 与 tOld 是不同的票
+    const tNew = ticketAuth.issue('user-1').ticket;
+    const ticketFrame = (routeToken: string, deviceRef: string, ciphertext: string) => JSON.stringify({
+      v: 1, kind: 'ticket',
+      envelope: { routeToken, deviceRef, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: clock },
+      ciphertext,
+    });
+    const evil = new WebSocketServer({ port: evilPort });
+    // connection 一到就发两帧 sentinel 不符的票据；Promise 留下 socket 引用供对照组后用。
+    const evilPeer = new Promise<WebSocket>(resolve => {
+      evil.on('connection', socket => {
+        socket.send(ticketFrame('wrong-ticket-sentinel-xx', COMPANION_RELAY_SENTINEL_DEVICE_REF, tNew));
+        socket.send(ticketFrame(COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN, 'evil-device', tNew));
+        resolve(socket);
+      });
+    });
+    let client: CompanionRelayClient | null = null;
+    try {
+      expect(storeCompanionRelayTicket(dataDir, tOld, 'user-1')).toBe(true);
+      const before = readFileSync(ticketFilePath, 'utf8');
+      client = new CompanionRelayClient({
+        gateway, identity: hostIdentity, jitter: () => 0.5, credential: 'evil-server-credential',
+        config: { url: evilUrl, credentialRef: 'companion-relay', reconnectBackoffMs: [30, 60, 120] },
+        ticket: {
+          load: () => loadCompanionRelayTicket(dataDir, 'user-1', now),
+          store: issued => { storeCompanionRelayTicket(dataDir, issued, 'user-1'); },
+          clear: () => clearCompanionRelayTicket(dataDir),
+        },
+        now,
+      });
+      await client.start();
+      await client.whenConnected();
+      await quiet(300);
+      // sentinel 不符的两帧（routeToken 错 / deviceRef 错）都被忽略：票据文件原封不动
+      expect(readFileSync(ticketFilePath, 'utf8')).toBe(before);
+      // 对照组：同一连接上信封对上契约 sentinel 的帧照常落盘——证明忽略是 sentinel 校验拦的，
+      // 不是链路没通或解析挂了
+      (await evilPeer).send(ticketFrame(COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN, COMPANION_RELAY_SENTINEL_DEVICE_REF, tNew));
+      await vi.waitFor(() => expect(readFileSync(ticketFilePath, 'utf8')).not.toBe(before));
+      expect(loadCompanionRelayTicket(dataDir, 'user-1', now)).toBe(tNew);
+      await client.stop();
+      client = null;
+    } finally {
+      if (client) await client.stop();
+      for (const peer of evil.clients) peer.terminate();
+      await new Promise<void>(resolve => evil.close(() => resolve()));
+    }
   });
 });

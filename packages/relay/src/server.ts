@@ -3,6 +3,8 @@ import { timingSafeEqual } from 'node:crypto';
 import WebSocket, { WebSocketServer } from 'ws';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import {
+  COMPANION_RELAY_SENTINEL_DEVICE_REF,
+  COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN,
   COMPANION_RELAY_WS_PROTOCOL,
   companionRelayCredentialSubprotocol,
   companionRelayFrameExpired,
@@ -71,8 +73,8 @@ interface QueuedFrame {
 const COMPANION_RELAY_WS_AUTH_PREFIX = companionRelayCredentialSubprotocol('');
 
 // 票据帧的固定信封 sentinel（与 no-host 帧同一套写法）：票据不走路由，任何真实 route 的转发
-// 都不会长这个样子。只有 relay 发它，手机/旧 Host 永远收不到，不进 shared 契约。
-const RELAY_TICKET_ISSUE_ROUTE_TOKEN = 'neo-relay-ticket-issue';
+// 都不会长这个样子。只有 relay 发它；旧 Host / 手机不认识该 kind，静默丢帧。新 Host 会校验同一
+// sentinel（常量在 shared 契约，两侧单一真源）。
 
 /**
  * 只有 relay 服务端解码，所以放这里不进 shared 契约（knip 死导出棘轮不扫 packages/relay）。
@@ -275,6 +277,9 @@ export class CompanionRelayServer {
     this.lastSeen.set(socket, this.now());
     if (sub && this.options.ticketAuth) {
       // 用 access token 进来的（ticketExp 还是 null）立刻下发新票据；用票据进来的只在剩余有效期 < 续签阈值时续签。
+      // ponytail: 续签无上限、也没有按账号吊销票据的通道——同一把密钥下 30 天票只要一直连就能无限续命；
+      // 全局作废只有删密钥文件一档（粒度是「全部账号」不是「某个账号」）。要按账号封禁时得先补连接级复核
+      // （upgrade 只验一次、连接期内不复核，见上面鉴权注释），再给验签加账号级吊销名单。
       if (ticketExp === null || ticketExp - this.now() < L.relayTicketRenewBeforeMs) this.sendTicket(socket, sub, viaTicket);
     }
     socket.on('message', data => {
@@ -301,7 +306,7 @@ export class CompanionRelayServer {
     const { ticket } = ticketAuth.issue(sub);
     socket.send(JSON.stringify({
       v: 1, kind: 'ticket',
-      envelope: { routeToken: RELAY_TICKET_ISSUE_ROUTE_TOKEN, deviceRef: 'relay', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: this.now() },
+      envelope: { routeToken: COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN, deviceRef: COMPANION_RELAY_SENTINEL_DEVICE_REF, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: this.now() },
       ciphertext: ticket,
     } satisfies CompanionRelayFrame));
     this.stats.ticketsIssued += 1;
@@ -435,7 +440,7 @@ export class CompanionRelayServer {
       const now = this.now();
       device.send(JSON.stringify({
         v: 1, kind: 'no-host',
-        envelope: { routeToken: token, deviceRef: 'relay', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: now },
+        envelope: { routeToken: token, deviceRef: COMPANION_RELAY_SENTINEL_DEVICE_REF, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: now },
         ciphertext: '',
       } satisfies CompanionRelayFrame));
       this.stats.notifiedNoHost += 1;

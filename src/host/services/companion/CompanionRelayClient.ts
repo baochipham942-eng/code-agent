@@ -6,6 +6,8 @@ import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseCh
 import { fromHex, toHex } from '../../../shared/companion/lanProtocol';
 import { companionCommandSchema, type CompanionCommand, type CompanionSubmitResult } from '../../../shared/contract/companion';
 import {
+  COMPANION_RELAY_SENTINEL_DEVICE_REF,
+  COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN,
   companionRelayFrameExpired,
   parseCompanionRelayFrame,
   type CompanionRelayFrame,
@@ -432,8 +434,15 @@ export class CompanionRelayClient {
     try { frame = parseCompanionRelayFrame(JSON.parse(raw) as unknown); } catch { return; }
     if (companionRelayFrameExpired(frame, this.now())) return;
     // relay 直接在本连接上签发的设备票据（第 3A 刀）：不走路由、与任何会话无关。必须在会话分支
-    // 之前显式处理，否则掉进「未知 kind 直接 return」被吞掉，票据永远落不了盘。
-    if (frame.kind === 'ticket') { this.deps.ticket?.store(frame.ciphertext); return; }
+    // 之前显式处理，否则掉进「未知 kind 直接 return」被吞掉，票据永远落不了盘。信封必须对上契约
+    // sentinel（routeToken/deviceRef）：票据只可能来自 relay 的签发通道，形状不对的一律忽略，
+    // 别让任意来源的 ciphertext 顶掉当前票据。
+    if (frame.kind === 'ticket') {
+      if (frame.envelope.routeToken !== COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN
+        || frame.envelope.deviceRef !== COMPANION_RELAY_SENTINEL_DEVICE_REF) return;
+      this.deps.ticket?.store(frame.ciphertext);
+      return;
+    }
     const deviceRef = frame.envelope.deviceRef;
     try {
       if (frame.kind === 'revoke' || frame.kind === 'disconnect') { this.forget(deviceRef); return; }

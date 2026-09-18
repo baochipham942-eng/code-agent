@@ -80,6 +80,15 @@ export function companionRelayFrameExpired(frame: CompanionRelayFrame, now: numb
 }
 
 /**
+ * relay 服务端帧的固定信封 sentinel（ticket / no-host 同一套写法）：这类帧不走路由，任何真实
+ * route 的转发都不会长这个样子。ticket 帧由 relay 签发、Host 消费（旧 Host 与手机不认识该
+ * kind，静默丢帧）——relay 服务端与 Host 客户端两侧都以这里为准，别在别处再抄字面量。
+ */
+export const COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN = 'neo-relay-ticket-issue';
+/** 服务端帧（ticket / no-host）的 deviceRef sentinel：帧来自 relay 本体，不是某台设备的转发。 */
+export const COMPANION_RELAY_SENTINEL_DEVICE_REF = 'relay';
+
+/**
  * Loopback `ws:` is for the in-process fake relay. Any other host must use `wss:`.
  * Credentials never belong in the URL.
  */

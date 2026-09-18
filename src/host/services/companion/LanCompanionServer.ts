@@ -34,6 +34,17 @@ function idPrefix(id: string): string {
 }
 
 /**
+ * action 是有限枚举（sync/status/dictation/relay.route/relay.routes/push.*），整名进日志：
+ * 截 8 位会把 relay.route 与 relay.routes 截成同一个 relay.ro，路由断链判据就分不开了
+ * （ai-review R3 Nit 2）。枚举名最长 push.unregister=16，32 只是防御上限；非标识符形状的
+ * 任意 wire 字段照 modeLabel 只记类型/长度/前缀，不记原文。
+ */
+function actionLabel(action: unknown): string {
+  if (typeof action === 'string' && action.length <= 32 && /^[a-z][a-z0-9._]*$/.test(action)) return action;
+  return modeLabel(action);
+}
+
+/**
  * 握手前的入站字段一律不记原文（ai-review Important）：/v1/hello 在鉴权与限流之前，
  * 同网段任意设备都能塞一个近 4MB 的 mode 字符串把宿主日志当磁盘写。照 idPrefix 的
  * 截断口径只记「类型/长度/转义前 8 字符」——够归因（pair/resume/垃圾输入）且体积有界。
@@ -74,6 +85,10 @@ export class LanCompanionServer {
   private listenPort = 0;
   private handshakeWindow = 0;
   private handshakeCount = 0;
+  /** 手机逐秒轮询的同一 ghost commandId 的 status 异常行只落一次（ai-review R3 Nit 1）。 */
+  private readonly ghostCommandIds = new Set<string>();
+  /** 未鉴权对端的 hello 拒单按「对端 IP × 错误码」去重：同一对端复读同一错误不再刷行（ai-review R3 Nit 3）。 */
+  private readonly helloRejects = new Set<string>();
 
   constructor(private readonly gateway: CompanionGateway, private readonly identity: KeyPair,
     private readonly now = Date.now, private readonly push?: CompanionPushOutbox,
@@ -107,7 +122,7 @@ export class LanCompanionServer {
     app.use(express.json({ limit: L.maxFrameBytes * L.maxRequestRecords * 2 + 512, strict: true }));
     // socket.localAddress 一路带到 welcome：只有它才是「对面此刻够得到的那张网卡」。
     app.post('/v1/hello', (req, res) => {
-      try { res.json(this.hello(req.body as HelloBody, req.socket.localAddress)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
+      try { res.json(this.hello(req.body as HelloBody, req.socket.localAddress, req.socket.remoteAddress?.replace(/^::ffff:/, '') ?? '')); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
     });
     app.post('/v1/finish', (req, res) => {
       try { res.json(this.finish(req.body as ChannelBody, req.socket.localAddress)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
@@ -251,11 +266,11 @@ export class LanCompanionServer {
     for (const [id, p] of this.pending) if (p.expiresAt <= now || p.invite !== this.invitation) this.pending.delete(id);
     for (const [id, c] of this.channels) {
       if (c.expiresAt <= now) {
-        const device = this.gateway.identityDevice(c.publicKey);
         this.releaseDictation(c.publicKey);
         c.cipher.close(); this.channels.delete(id);
         // TTL 到期 = 手机已经 channelTtlMs 没有任何 exchange 了（正常轮询下每秒都会续期）。
-        logCompanionRelayInfo(this.logger, `Companion LAN channel closed: reason=ttl_expired channel=${idPrefix(id)} device=${device?.deviceId ?? 'unknown'}`);
+        // 不为这一行单独查 identityDevice（ai-review R3 Nit 4）：身份用 channel 自带的公钥前缀说。
+        logCompanionRelayInfo(this.logger, `Companion LAN channel closed: reason=ttl_expired channel=${idPrefix(id)} key=${idPrefix(c.publicKey)}`);
         continue;
       }
       // 身份已失效（撤销/删除）的 channel 不删、只关密文：留一个墓碑，让该设备的下一次
@@ -275,11 +290,17 @@ export class LanCompanionServer {
     }
   }
 
-  private hello(body: HelloBody, via?: string) {
+  private hello(body: HelloBody, via?: string, peer = '') {
     try {
       return this.helloChecked(body, via);
     } catch (error) {
-      this.logger?.warn(`Companion LAN handshake rejected: mode=${modeLabel(body.mode)} via=${via ?? '-'} code=${exchangeErrorCode(error)}`);
+      // /v1/hello 在鉴权之前，同网段任意设备都能打：拒单行按「对端 IP × 错误码」去重，
+      // 同一对端复读同一错误不再逐拍刷行；换了错误码（新故障）仍要点名。
+      const code = exchangeErrorCode(error);
+      if (!this.helloRejects.has(`${peer}|${code}`)) {
+        this.helloRejects.add(`${peer}|${code}`);
+        this.logger?.warn(`Companion LAN handshake rejected: mode=${modeLabel(body.mode)} via=${via ?? '-'} peer=${peer || '-'} code=${code}`);
+      }
       throw error;
     }
   }
@@ -358,7 +379,7 @@ export class LanCompanionServer {
       // 轮询型动作（sync/status 手机每秒一发）与 dictation 音频帧（100ms 一拍的实时流，
       // 60s 录音就是几百拍）只在通道首拍留痕；其余动作低频，每次一行。
       if ((request.action !== 'sync' && request.action !== 'status' && request.action !== 'dictation') || channel.lastSeenAt === null) {
-        logCompanionRelayInfo(this.logger, `Companion LAN exchange: action=${idPrefix(String(request.action))} channel=${idPrefix(id)}${channel.lastSeenAt === null ? ' first=true' : ''}`);
+        logCompanionRelayInfo(this.logger, `Companion LAN exchange: action=${actionLabel(request.action)} channel=${idPrefix(id)}${channel.lastSeenAt === null ? ' first=true' : ''}`);
       }
       let result: unknown;
       if (request.action === 'command') {
@@ -412,7 +433,11 @@ export class LanCompanionServer {
       } else if (request.action === 'status' && typeof request.commandId === 'string' && request.commandId.length <= L.idLength) {
         result = this.gateway.commandStatus(device.deviceId, request.commandId);
         // 手机在轮询的 commandId 宿主根本不认识（或已不可见）⇒ 手机 pending 只能等超时回收。
-        if (result === null) this.logger?.warn(`Companion LAN exchange anomaly: action=status channel=${idPrefix(id)} commandId=${idPrefix(request.commandId)} result=unknown`);
+        // 轮询是逐秒的：同一 ghost commandId 只点名一次，别的 ghost 仍各自点名（ai-review R3 Nit 1）。
+        if (result === null && !this.ghostCommandIds.has(request.commandId)) {
+          this.ghostCommandIds.add(request.commandId);
+          this.logger?.warn(`Companion LAN exchange anomaly: action=status channel=${idPrefix(id)} commandId=${idPrefix(request.commandId)} result=unknown`);
+        }
       } else if (request.action === 'dictation') {
         result = await this.dictation(device.deviceId, request);
       } else throw new Error('COMPANION_UNSUPPORTED_ACTION');

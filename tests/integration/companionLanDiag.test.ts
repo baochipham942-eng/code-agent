@@ -16,14 +16,16 @@ import { COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
  * fake logger 收集行、按 reason 码断言（照 companionRelayCloseDiag 的范式）。
  */
 
-describe('LAN companion connection diagnostics', () => {
+// 没有私网 IPv4 的环境（部分 CI fleet）整组跳过，不抛错拖红同批用例（ai-review R3 Nit 5）。
+const address = Object.values(networkInterfaces()).flat().find(n => n?.family === 'IPv4' && isPrivateIPv4(n.address))?.address;
+
+describe.skipIf(!address)('LAN companion connection diagnostics', () => {
   let db: Database.Database;
   let gateway: CompanionGateway;
   let server: LanCompanionServer;
   let now: number;
   const hostIdentity = createIdentity();
   const phoneIdentity = createIdentity();
-  const address = Object.values(networkInterfaces()).flat().find(n => n?.family === 'IPv4' && isPrivateIPv4(n.address))?.address;
   let info: string[];
   let warn: string[];
 
@@ -34,7 +36,7 @@ describe('LAN companion connection diagnostics', () => {
   };
 
   beforeEach(async () => {
-    if (!address) throw new Error('LAN_TEST_REQUIRES_PRIVATE_IPV4_ON_FLEET');
+    if (!address) return; // skipIf 之外只做类型收窄；到这里 address 一定有值。
     now = Date.now(); info = []; warn = [];
     const logger: CompanionRelayLogger = { info: message => info.push(message), warn: message => warn.push(message) };
     db = new Database(':memory:');
@@ -93,7 +95,8 @@ describe('LAN companion connection diagnostics', () => {
     now += L.channelTtlMs + 1;
     const res = await post(`${c.endpoint}/v1/exchange`, { channelId: c.channelId, frame: c.channel.seal({ requestId: 'req-ttl-00001', action: 'sync', epoch: 1, afterSeq: 0 }) });
     expect(res.status).toBe(403);
-    expect(info).toContain(`Companion LAN channel closed: reason=ttl_expired channel=${c.channelId.slice(0, 8)} device=${c.deviceId}`);
+    // TTL 行不再为日志单独查 identityDevice（Nit 4）：身份改用 channel 公钥前缀。
+    expect(info).toContain(`Companion LAN channel closed: reason=ttl_expired channel=${c.channelId.slice(0, 8)} key=${toHex(phoneIdentity.publicKey).slice(0, 8)}`);
   });
 
   it('logs the identity_invalid tombstone when the paired device is revoked', async () => {
@@ -142,8 +145,8 @@ describe('LAN companion connection diagnostics', () => {
     await exchange(c, { action: 'dictation', op: 'open' });
     await exchange(c, { action: 'dictation', op: 'audio', streamId: 's-1', pcm: '' });
     await exchange(c, { action: 'dictation', op: 'audio', streamId: 's-1', pcm: '' });
-    expect(info.filter(line => line.includes('action=dictatio'))).toEqual([
-      `Companion LAN exchange: action=dictatio channel=${c.channelId.slice(0, 8)} first=true`,
+    expect(info.filter(line => line.includes('action=dictation'))).toEqual([
+      `Companion LAN exchange: action=dictation channel=${c.channelId.slice(0, 8)} first=true`,
     ]);
   });
 
@@ -154,5 +157,40 @@ describe('LAN companion connection diagnostics', () => {
     // 任何入口都会先 prune：一笔无效 hello 也算一轮 sweep，复读就说明没去重。
     await post(`${endpoint}/v1/hello`, { mode: 'pair', inviteId: 'stale', frame: '00' });
     expect(warn.filter(line => line.includes('reason=identity_invalid'))).toHaveLength(1);
+  });
+
+  it('warns about a ghost commandId once across polls, not on every poll', async () => {
+    const c = await pairChannel();
+    // 手机 pendingPollIntervalMs=250 逐秒多拍轮询同一 ghost：只许第一拍点名（ai-review R3 Nit 1）。
+    await exchange(c, { action: 'status', commandId: 'ghost-cmd' });
+    await exchange(c, { action: 'status', commandId: 'ghost-cmd' });
+    await exchange(c, { action: 'status', commandId: 'ghost-cmd' });
+    expect(warn.filter(line => line.includes('result=unknown'))).toHaveLength(1);
+    // 另一个 ghost commandId 是另一条悬挂，仍要各自点名。
+    await exchange(c, { action: 'status', commandId: 'second-ghost' });
+    expect(warn.filter(line => line.includes('result=unknown'))).toHaveLength(2);
+    expect(warn.some(line => line.includes('commandId=second-g'))).toBe(true);
+  });
+
+  it('logs relay.route and relay.routes as full distinguishable action names', async () => {
+    const c = await pairChannel();
+    await exchange(c, { action: 'relay.route' });
+    await exchange(c, { action: 'relay.routes' });
+    // 截 8 位会把两者都写成 relay.ro（ai-review R3 Nit 2）；整名可区分。
+    // 首笔在 fresh channel 上（带 first=true），第二笔起只报动作名。
+    expect(info).toContain(`Companion LAN exchange: action=relay.route channel=${c.channelId.slice(0, 8)} first=true`);
+    expect(info).toContain(`Companion LAN exchange: action=relay.routes channel=${c.channelId.slice(0, 8)}`);
+    expect(info.some(line => line.includes('action=relay.ro '))).toBe(false);
+  });
+
+  it('dedupes repeated handshake rejections from the same peer by error code', async () => {
+    const endpoint = server.invite(['shared']).endpoint;
+    for (let i = 0; i < 3; i++) await post(`${endpoint}/v1/hello`, { mode: 'pair', inviteId: 'stale-invite-id', frame: '00' });
+    const expired = warn.filter(line => line.includes('code=COMPANION_INVITATION_EXPIRED'));
+    expect(expired).toHaveLength(1);
+    expect(expired[0]).toContain('peer=');
+    // 同一对端换一种错误码是新故障：仍要点名，不能被对端去重淹没。
+    await post(`${endpoint}/v1/hello`, { mode: 'nonsense', frame: '00' });
+    expect(warn.filter(line => line.includes('code=COMPANION_INVALID_FRAME'))).toHaveLength(1);
   });
 });

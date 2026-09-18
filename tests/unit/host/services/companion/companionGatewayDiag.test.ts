@@ -84,6 +84,23 @@ describe('companion gateway settlement diagnostics', () => {
     expect(bare.info).toContain('Companion gateway publish skipped: kind=message sessionId=session-1 seq=1 reason=no_live_devices');
   });
 
+  it('collapses a message_delta storm into one first-beat line and one summary line', () => {
+    const { logger, info } = collectLogger();
+    const gateway = new CompanionGateway(db, { now: () => 1000, logger });
+    register(gateway);
+    // 手机在线时 message_delta 逐流式帧 publish（routes/agent.ts 原始回调）：
+    // 一轮 1500 chunk 的回答在旧实现里就是 1500 行 INFO，诊断日志被稀释（ai-review R3 Important）。
+    for (let i = 0; i < 1500; i++) gateway.publish('session-1', 'message_delta', { role: 'assistant', path: 'content', op: 'append', text: 'x'.repeat(200) });
+    expect(info.filter(line => line.includes('kind=message_delta'))).toEqual([
+      'Companion gateway published: kind=message_delta sessionId=session-1 seq=1 first=true',
+    ]);
+    // 同会话下一条非逐帧事件收口：轮末一行汇总（帧数/字节数/seq 区间），不再有逐帧行。
+    gateway.publish('session-1', 'message', { id: 'm1', role: 'assistant', content: 'done' });
+    expect(info.filter(line => line.includes('kind=message_delta'))).toHaveLength(2);
+    expect(info[1]).toMatch(/^Companion gateway stream burst: kind=message_delta sessionId=session-1 frames=1500 bytes=\d+ seq=1-1500$/);
+    expect(info.filter(line => line.includes('kind=message'))).toContain('Companion gateway published: kind=message sessionId=session-1 seq=1501');
+  });
+
   it('logs the startup recovery count when a previous session left reconciling rows', async () => {
     const first = new CompanionGateway(db, {
       now: () => 1000,

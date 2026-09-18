@@ -43,6 +43,13 @@ function equalCredentialDigest(left: string, right: string): boolean {
   return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 }
 
+/**
+ * 逐帧流式 kind：手机在线时 message_delta 每个流式帧 publish 一次（routes/agent.ts 的原始
+ * 回调不走 eventBatcher），一轮 1500 chunk 的回答就是 1500 行 INFO——热路径上每帧还要多付一次
+ * redact+stringify+write。这类 kind 不逐帧进日志：首拍一行 + 轮末一行汇总（ai-review R3 Important）。
+ */
+const FRAME_STREAM_KINDS = new Set(['message_delta']);
+
 function parseDecisionAnswer(raw: unknown): CompanionDecisionAnswer | undefined {
   if (typeof raw !== 'string' || !raw) return undefined;
   try {
@@ -91,6 +98,8 @@ export class CompanionGateway {
   /** Events published under an older epoch are unreachable: every device re-snapshots. */
   get epoch(): number { return this.currentEpoch; }
   private readonly refreshDecisions: () => void;
+  /** 逐帧流式 kind 的轮内记账（key = sessionId）：只攒帧数/字节数，不逐帧出日志行。 */
+  private readonly streamBursts = new Map<string, { kind: string; frames: number; bytes: number; firstSeq: number; lastSeq: number }>();
 
   constructor(private readonly db: BetterSqlite3.Database, private readonly deps: CompanionGatewayDeps = {}) {
     this.now = deps.now ?? Date.now;
@@ -417,14 +426,44 @@ export class CompanionGateway {
       logCompanionRelayInfo(this.deps.logger, `Companion gateway publish skipped: kind=${kind} sessionId=${sessionId ?? '-'} seq=${event.seq} reason=no_live_devices`);
       return { ...event, seq };
     }
+    // 逐帧流式 kind 不逐帧记：同会话下一条非逐帧 publish 先收口上一轮的汇总行。
+    if (!FRAME_STREAM_KINDS.has(kind)) this.flushStreamBurst(sessionId);
+    const payloadJson = JSON.stringify(event.payload);
     this.db.prepare(`
       INSERT INTO companion_events (event_id, epoch, seq, session_id, kind, payload_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(event.eventId, event.epoch, event.seq, event.sessionId, event.kind, JSON.stringify(event.payload), event.createdAt);
-    logCompanionRelayInfo(this.deps.logger, `Companion gateway published: kind=${kind} sessionId=${sessionId ?? '-'} seq=${event.seq}`);
+    `).run(event.eventId, event.epoch, event.seq, event.sessionId, event.kind, payloadJson, event.createdAt);
+    if (FRAME_STREAM_KINDS.has(kind)) {
+      this.noteStreamBurst(sessionId, kind, event.seq, Buffer.byteLength(payloadJson));
+    } else {
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway published: kind=${kind} sessionId=${sessionId ?? '-'} seq=${event.seq}`);
+    }
     this.pruneEvents(now);
     try { this.deps.onPublish?.(event); } catch { /* push enqueue must not abort the event log */ }
     return event;
+  }
+
+  /** 首拍一行（first=true，照本 PR LAN exchange 的首拍形状）；后续帧只记账。 */
+  private noteStreamBurst(sessionId: string | null, kind: string, seq: number, bytes: number): void {
+    const key = sessionId ?? '-';
+    const burst = this.streamBursts.get(key);
+    if (!burst) {
+      this.streamBursts.set(key, { kind, frames: 1, bytes, firstSeq: seq, lastSeq: seq });
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway published: kind=${kind} sessionId=${sessionId ?? '-'} seq=${seq} first=true`);
+      return;
+    }
+    burst.frames += 1;
+    burst.bytes += bytes;
+    burst.lastSeq = seq;
+  }
+
+  /** 轮末汇总一行：帧数/字节数/seq 区间。没有开着的 burst 就是无事可做。 */
+  private flushStreamBurst(sessionId: string | null): void {
+    const key = sessionId ?? '-';
+    const burst = this.streamBursts.get(key);
+    if (!burst) return;
+    this.streamBursts.delete(key);
+    logCompanionRelayInfo(this.deps.logger, `Companion gateway stream burst: kind=${burst.kind} sessionId=${sessionId ?? '-'} frames=${burst.frames} bytes=${burst.bytes} seq=${burst.firstSeq}-${burst.lastSeq}`);
   }
 
   registerDecision(decision: CompanionDecision): void {

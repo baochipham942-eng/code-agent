@@ -42,6 +42,11 @@ function submitRelayedCommand(gateway: CompanionGateway, command: CompanionComma
   return gateway.submit(command);
 }
 
+/** ws close 事件的 reason 是可空的 Buffer：空 Buffer（对端没给说明）→ null；协议上限 123 字节，无需截断。 */
+function closeReasonText(reason: Buffer): string | null {
+  return reason.length ? reason.toString('utf8') : null;
+}
+
 export class CompanionRelayClient {
   private socket: WebSocket | null = null;
   private readonly buffer = new RelayOutboundBuffer();
@@ -241,7 +246,9 @@ export class CompanionRelayClient {
         : lastError instanceof Error ? errorHead(lastError) : '';
       if (code) return code;
     }
-    if (closeCode && closeCode !== 1005 && closeCode !== 1006) return `close ${closeCode}`;
+    // 1005（对端发了不带状态码的关闭帧）与 1006（没有关闭帧、TCP 层断）各自成码，不再折叠进兜底码：
+    // 排障要分清是中继主动关还是链路断（N-COMPANION-RELAY-CLOSE-DIAG）。
+    if (closeCode) return `close ${closeCode}`;
     return 'COMPANION_RELAY_CONNECT_FAILED';
   }
 
@@ -266,6 +273,8 @@ export class CompanionRelayClient {
       let settled = false;
       let lastError: unknown;
       let httpStatus: number | undefined;
+      // 本次 socket 的 open 时刻：disconnected 行里的存活时长用它实测，不用重连计数推。
+      let openedAt: number | null = null;
       const finish = (error?: Error) => {
         if (settled) return;
         settled = true;
@@ -295,6 +304,7 @@ export class CompanionRelayClient {
       socket.once('error', error => { lastError = error; });
       socket.once('open', () => {
         clearTimeout(timer);
+        openedAt = this.now();
         this.socket = socket;
         this.live = true;
         // attempt / 失败去重不在 open 时清：被 relay 拒的连接也会先 open 再立刻关（ai-review PR#1926）。
@@ -325,7 +335,7 @@ export class CompanionRelayClient {
       socket.on('message', data => {
         try { this.onMessage(String(data)); } catch { /* per-frame forget handles poison */ }
       });
-      socket.once('close', code => {
+      socket.once('close', (code, reason) => {
         clearTimeout(timer);
         const wasLive = this.live && this.socket === socket;
         const stable = wasLive && this.stableTimer === null;
@@ -351,8 +361,12 @@ export class CompanionRelayClient {
         }
         if (wasLive) {
           // 已连上的连接被断开不是「拨号失败」，单独一行，免得排障时误读成握手/鉴权问题。
+          // 原始 close code / reason / 实测存活时长随行打出：errorCode 可能折叠不同物理事实（本单前
+          // 1005 与 1006 同码），这三样才是分诊依据（1005=对端主动关、1006=链路断、reason=对端关闭说明）。
+          const reasonText = closeReasonText(reason);
+          const uptimeMs = openedAt === null ? -1 : this.now() - openedAt;
           const delay = this.peekReconnectDelay();
-          this.logger?.warn(`Companion relay${this.label} disconnected: ${errorCode}; reconnect in ${Math.round(delay)}ms`);
+          this.logger?.warn(`Companion relay${this.label} disconnected: ${errorCode}; closeCode=${code} reason=${JSON.stringify(reasonText ?? '')} uptimeMs=${uptimeMs}; reconnect in ${Math.round(delay)}ms`);
           this.scheduleReconnect(delay);
         }
       });

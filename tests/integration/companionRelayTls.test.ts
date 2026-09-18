@@ -72,7 +72,7 @@ function startHttpRejectingTlsRelay(): Promise<TlsRelay> {
   });
 }
 
-function startTlsRelay(): Promise<TlsRelay & { closeClients(code: number): void }> {
+function startTlsRelay(): Promise<TlsRelay & { closeClients(code?: number, reason?: string): void; terminateClients(): void }> {
   const authorizations: Array<string | undefined> = [];
   const server: Server = createServer({
     cert: readFileSync(LEAF_PEM),
@@ -90,8 +90,14 @@ function startTlsRelay(): Promise<TlsRelay & { closeClients(code: number): void 
       resolve({
         url: `wss://127.0.0.1:${port}`,
         authorizations,
-        closeClients(code) {
-          for (const client of wss.clients) client.close(code);
+        closeClients(code, reason) {
+          for (const client of wss.clients) {
+            if (code === undefined) client.close();
+            else client.close(code, reason);
+          }
+        },
+        terminateClients() {
+          for (const client of wss.clients) client.terminate();
         },
         async stop() {
           for (const client of wss.clients) client.terminate();
@@ -222,9 +228,54 @@ async function writeRelayConfig(url: string, caFile?: string): Promise<string> {
     live.closeClients(1000);
     await vi.waitFor(() => {
       expect(logs.warn.filter(line => line.startsWith('Companion relay disconnected:'))).toEqual([
-        'Companion relay disconnected: close 1000; reconnect in 50ms',
+        expect.stringMatching(/^Companion relay disconnected: close 1000; closeCode=1000 reason="" uptimeMs=\d+; reconnect in 50ms$/),
       ]);
     });
     expect(logs.warn.filter(line => line.startsWith('Companion relay dial failed:'))).toEqual([]);
+  });
+
+  it('distinguishes a frame-less TCP drop (1006) from a relay close frame in the disconnected line', async () => {
+    const live = await startTlsRelay();
+    relay = live;
+    const logs = collectLogger();
+    const dir = await writeRelayConfig(live.url, CA_PEM);
+    client = await startCompanionRelayIfConfigured({
+      dataDirectory: dir,
+      gateway,
+      loadIdentity: async () => createIdentity(),
+      credential: SECRET,
+      logger: logs.logger,
+      jitter: () => 0.5,
+    });
+    await client?.whenConnected();
+    live.terminateClients();
+    await vi.waitFor(() => {
+      expect(logs.warn.filter(line => line.startsWith('Companion relay disconnected:'))).toEqual([
+        expect.stringMatching(/^Companion relay disconnected: close 1006; closeCode=1006 reason="" uptimeMs=\d+; reconnect in 50ms$/),
+      ]);
+    });
+    expect(logs.all().join('\n')).not.toContain('COMPANION_RELAY_CONNECT_FAILED');
+  });
+
+  it('surfaces the relay close reason in the disconnected line', async () => {
+    const live = await startTlsRelay();
+    relay = live;
+    const logs = collectLogger();
+    const dir = await writeRelayConfig(live.url, CA_PEM);
+    client = await startCompanionRelayIfConfigured({
+      dataDirectory: dir,
+      gateway,
+      loadIdentity: async () => createIdentity(),
+      credential: SECRET,
+      logger: logs.logger,
+      jitter: () => 0.5,
+    });
+    await client?.whenConnected();
+    live.closeClients(1011, 'relay internal error');
+    await vi.waitFor(() => {
+      expect(logs.warn.filter(line => line.startsWith('Companion relay disconnected:'))).toEqual([
+        expect.stringMatching(/^Companion relay disconnected: close 1011; closeCode=1011 reason="relay internal error" uptimeMs=\d+; reconnect in 50ms$/),
+      ]);
+    });
   });
 });

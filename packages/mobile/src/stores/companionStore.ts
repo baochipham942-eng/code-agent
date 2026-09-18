@@ -91,10 +91,12 @@ interface State {
   /** 这次连接走的是哪条路：LAN 直连还是 relay 中继（null = 未连接）。 */
   transport: CompanionTransport | null;
   /**
-   * 「是我们自己把一条活连接停了」——app 退到后台时 pause() 会关掉客户端。
-   * 这与「连不上电脑」在 status 上都是 offline，但对用户是两件事：后台期间没有任何事
-   * 需要他做，报「电脑尚未连接，请重试」是假警报，而 iOS 的应用切换器快照恰好拍在这一刻
-   * （2026-09-12 爸真机反馈：Neo 还没关，卡片上就写着未连接）。
+   * 「是我们自己把一条活连接停了」——app 退到后台后 pause() 过完宽限期
+   * （backgroundKeepaliveGraceMs）仍在后台才关掉客户端；宽限内回前台连接压根没拆，这个
+   * 标记不置起。这与「连不上电脑」在 status 上都是 offline，但对用户是两件事：后台期间
+   * 没有任何事需要他做，报「电脑尚未连接，请重试」是假警报，而 iOS 的应用切换器快照恰好
+   * 拍在退后台那一刻（2026-09-12 爸真机反馈：Neo 还没关，卡片上就写着未连接）——所以
+   * 宽限期内 status 保持 connected 是刻意的：快照此刻拍到的就是真相（还连着）。
    */
   paused: boolean;
   binding: LanBinding | null; sessionId: string | null; pending: boolean; busy: boolean;
@@ -232,6 +234,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     let retryGeneration = 0;
     let appInBackground = false;
     /**
+     * 退后台的延迟关闭（N-MOBILE-BG-KEEPALIVE-GRACE）：连着时 pause() 不立即拆连接，挂一个
+     * 宽限定时器；宽限内回前台取消它（只探活不重拨），到期仍在后台才执行原地的关闭收尾。
+     * 与 retryTimer 分开：后台停自动重连（N-MOBILE-AUTO-RECONNECT ②）照旧，两件事互不代办。
+     */
+    let pauseGraceTimer: ReturnType<typeof setTimeout> | null = null;
+    /**
      * 在途 reconnect 的**计数**而不是布尔：重连在途时再调一次 reconnect()（回前台等）会在
      * safely 的 busy 守卫处早退，早退那次的 finally 若把共享布尔清掉，真正在途的尝试失败时
      * 就被当成「不是重连失败」——0 延迟重试且不升退避档（ai-review Nit）。计数到 0 才算没有。
@@ -251,6 +259,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       if (retryTimer === null) return;
       clearTimeout(retryTimer);
       retryTimer = null;
+    };
+    const clearPauseGrace = () => {
+      if (pauseGraceTimer === null) return;
+      clearTimeout(pauseGraceTimer);
+      pauseGraceTimer = null;
     };
     const stopAutoRetry = () => {
       retryGeneration += 1;
@@ -570,7 +583,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         && (get().connectionError === 'connectionQrInvalid' || get().connectionError === 'connectionScanFailed')
         ? get().connectionError : null;
       set({ busy: true, autoAttempt: opts?.autoAttempt === true, connectionError: heldError, commandError: null, commandErrorAction: null });
-      try { return await work(attempt); } catch (error) {
+      try {
+        const r = await work(attempt);
+        // 被更新的尝试抢占了：迟到的旧成功整体作废，返回 undefined（等价原 finally 里 return 的覆盖语义）。
+        if (attempt !== undefined && attempt !== connectSeq) return undefined;
+        return r;
+      } catch (error) {
         // 被更新的尝试抢占了：迟到的旧失败整体作废——不关新客户端、不打回 offline、不挂重试、不释放新尝试的 busy。
         if (attempt !== undefined && attempt !== connectSeq) return;
         // 扫码抢占后，过期的自动重连失败不能把刚配上的连接打回 offline。
@@ -600,8 +618,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         armAutoRetry(reconnectDepth > 0);
       }
       finally {
-        if (attempt !== undefined && attempt !== connectSeq) return;
-        if (!(userPairing && !opts?.preempt)) set({ busy: false });
+        // 被抢占的尝试不在这里释放 busy（busy 属于新尝试）；finally 里 return 触 no-unsafe-finally，改条件守卫。
+        if ((attempt === undefined || attempt === connectSeq) && !(userPairing && !opts?.preempt)) set({ busy: false });
       }
     };
     /** （重）连上后结算待确认命令：两条路（LAN/relay）共用同一套 status 查询与补投。 */
@@ -659,6 +677,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         userPairing = true;
         stopAutoRetry();
         appInBackground = false;
+        // 换通道前先撤宽限：迟到的关闭回调不许碰扫码建立的新连接（N-MOBILE-BG-KEEPALIVE-GRACE）。
+        clearPauseGrace();
         set({ paused: false, autoRetrying: false });
         client?.close();
         let attempt = 0;
@@ -734,6 +754,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         return safely(async () => {
           stopAutoRetry();
           appInBackground = false;
+          // 换通道前先撤宽限：迟到的关闭回调不许在「已忘记」之后落地（N-MOBILE-BG-KEEPALIVE-GRACE）。
+          clearPauseGrace();
           remember(null);
           // 忘掉这台电脑：标题记忆一并清（此刻 saved 还没被下面的 persist 重写，hostKey 先取）。
           const forgottenHostKey = saved?.binding?.hostKey;
@@ -756,6 +778,20 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       reconnect: async (opts) => {
         appInBackground = false;
         const manual = Boolean(opts?.resetBackoff);
+        // 宽限内回前台（N-MOBILE-BG-KEEPALIVE-GRACE）：连接没拆过，取消延迟关闭、探活补拉
+        // 事件即可，不重拨——mDNS 重解析 + Noise 握手 + 路由刷新全省掉，UI 也不闪「正在连接…」。
+        // 探活失败（后台被系统挂起的 relay 僵尸 socket）走 sync 自己的 catch 老路：关死连接、
+        // 打回 offline 并 armAutoRetry——此刻 appInBackground 已是 false，自动重试挂得上，
+        // 这条僵尸自愈路是现成的，不新造。只认「此刻还 connected」：宽限期内状态已被别的主人
+        // 接手（撤销/断线）的话没有活通道可探，照旧走下面的全量 recover。
+        if (!manual && pauseGraceTimer !== null && get().status === 'connected' && client) {
+          clearPauseGrace();
+          void get().sync();
+          return;
+        }
+        // 手动「重新连接」不走探活捷径（用户点了就是真要重拨），但同样先取消宽限定时器——
+        // 否则迟到的回调会关掉这次重拨出来的新连接。
+        clearPauseGrace();
         // 手动「重新连接」立即发起新尝试并抢过自动重试的在途连接（D3）：旧尝试迟到的失败/
         // 成功按代号丢弃。busy 被手动操作（扫码、上一次手动重连）占着时不抢——safely 的
         // 去重守卫照旧拦重复点按。此态下面 manual 分支已清定时器而 safely 随后放弃、不重挂；
@@ -845,6 +881,32 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 按「当前是否连着」重算就会把 paused 打回 false——爸报的那个假警报原样回来
         // （grok ai-review Nit）。暂停标记只由 pair / reconnect 清。
         const live = get().status === 'connected' || get().paused;
+        // 连着时不立即拆（N-MOBILE-BG-KEEPALIVE-GRACE）：爸真机「切出去看一眼微信就回来」
+        // 回前台必重连——连接本身没坏，是我们退后台那一刻自己拆的。宽限内 status 保持
+        // connected、paused 保持 false 是刻意的：应用切换器快照此刻拍到的就是真相（还连着）；
+        // 宽限到期仍在后台，才由回调执行今天这段关闭收尾。
+        if (live && client) {
+          // 幂等的另一半：宽限已在跑时第二拍直接回，不重挂不重置（iOS 连发回调）。
+          if (pauseGraceTimer !== null) return;
+          const held = client;
+          pauseGraceTimer = setTimeout(() => {
+            pauseGraceTimer = null;
+            // iOS 后台会挂起 JS 定时器，回调多半拖到回前台之后才轮到走：此刻要么已回前台
+            // （appInBackground 已翻回 false，宽限被 reconnect 取消，这里不该再关），要么通道
+            // 已被 pair/forget/reconnect 换掉。身份守卫照 lanCompanionClient 的 generation 模式：
+            // 迟到的回调只许关「当时捕获的那条」，不许关别人的连接。
+            if (!appInBackground || client !== held) return;
+            client?.close();
+            relayClient = null;
+            // 宽限期内状态可能已被别的主人接手（relay 在后台收到撤销帧 → rejected）：只把
+            // 「还是 connected」的现场翻成暂停，不覆盖别人的结论。
+            if (get().binding && get().status === 'connected') set({ status: 'offline', paused: true, transport: null, autoRetrying: false });
+          }, COMPANION_LIMITS.backgroundKeepaliveGraceMs);
+          return;
+        }
+        // 本来就断着（offline/rejected/connecting 在途）：照旧立即收尾。此刻若还挂着宽限
+        // 定时器（宽限期内连接自己死了），它已无事可守，一并清掉。
+        clearPauseGrace();
         // client 即当前活通道（LAN 或 relay），关它就够；relayClient 只是记账。
         client?.close();
         relayClient = null;

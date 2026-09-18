@@ -98,8 +98,9 @@ describe('LAN 撤销：sync 收到 COMPANION_DEVICE_REVOKED 直接落 rejected�
     harness.hangSync = true;
     const syncing = store.getState().sync();
     for (let i = 0; i < 30 && !harness.rejectSync; i += 1) await Promise.resolve();
-    expect(harness.rejectSync, 'sync 应已挂起未决').toBeTruthy();
-    harness.rejectSync(new Error('COMPANION_DEVICE_REVOKED'));
+    const settleSync = harness.rejectSync;
+    if (!settleSync) throw new Error('sync 应已挂起未决');
+    settleSync(new Error('COMPANION_DEVICE_REVOKED'));
     await syncing;
     expect(store.getState()).toMatchObject({ status: 'rejected', connectionError: 'connectionRejected' });
     expect(seen.filter(state => state.autoRetrying)).toEqual([]);

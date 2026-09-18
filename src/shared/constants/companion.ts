@@ -147,6 +147,16 @@ export const COMPANION_LIMITS = {
   backgroundKeepaliveGraceMs: 30_000,
   relayHeartbeatMs: 20_000,
   relayIdleMs: 60_000,
+  /**
+   * 连接级 WS ping/pong 探活周期（N-COMPANION-RELAY-KEEPALIVE）：relay 与 Host 都按它发协议层
+   * ping，上一次 ping 后到本次 ping 前仍无 pong/message 才判死——容忍「连续 1 次未答即
+   * terminate」，不给二次机会：半开连接多等一个周期只会把故障发现拖到 relayIdleMs 量级，
+   * 而正常链路上 loopback/内网 pong 都是毫秒级，一次未答已足够定性。必须 < relayIdleMs，
+   * 给 pong 留满一个完整周期：答 pong 的连接 lastSeen 恒新，idle 清扫永远够不到它（无 route
+   * 也活得下去，连接活性不绑 route 生命周期）。手机侧不加发送义务——休眠时答不出 pong 被
+   * terminate 是正确行为，醒来走既有重拨。
+   */
+  relayPingMs: 30_000,
   relayConnectTimeoutMs: 10_000,
   /** Host 拨 relay：open 后撑过这么久才清退避计数；更早被关按拨号失败退避（relay 在 upgrade 后才验凭据）。 */
   relayStableConnectionMs: 5_000,

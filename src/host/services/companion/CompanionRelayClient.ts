@@ -78,6 +78,9 @@ export class CompanionRelayClient {
   private allowReconnect = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  /** 上一次 ping 后还没等到 pong 的 socket：下一周期它还是本尊 → 链路已死，terminate 重连。 */
+  private pongPending: WebSocket | null = null;
   private attempt = 0;
   /** open 之后撑过 relayStableConnectionMs 才算真连上：relay 在 upgrade 完成后才验凭据、不通过就立刻关。 */
   private stableTimer: ReturnType<typeof setTimeout> | null = null;
@@ -175,6 +178,9 @@ export class CompanionRelayClient {
     this.reconnectTimer = null;
     if (this.heartbeat) clearInterval(this.heartbeat);
     this.heartbeat = null;
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
+    this.pongPending = null;
     if (this.stableTimer) clearTimeout(this.stableTimer);
     this.stableTimer = null;
     this.dropSessions();
@@ -225,8 +231,11 @@ export class CompanionRelayClient {
     this.peerSeq.delete(deviceRef);
   }
 
-  private dropSessions(): void {
-    for (const id of [...this.sessions.keys()]) this.forget(id);
+  /** 清掉全部 Noise 会话并返回条数；close/open 路径据此留痕（stop 关停不打扰日志）。 */
+  private dropSessions(): number {
+    const ids = [...this.sessions.keys()];
+    for (const id of ids) this.forget(id);
+    return ids.length;
   }
 
   private controlEnvelope(route: RelayRouteEntry) {
@@ -366,7 +375,10 @@ export class CompanionRelayClient {
         this.controlSeq = 0;
         this.peerSeq.clear();
         this.ticketIssuedOnSocket = false;
-        this.dropSessions();
+        const droppedOnReconnect = this.dropSessions();
+        if (droppedOnReconnect > 0) {
+          logCompanionRelayInfo(this.logger, `Companion relay${this.label} sessions dropped on reconnect: ${droppedOnReconnect}`);
+        }
         this.bindPairedDevices();
         for (const route of this.routes.values()) this.sendRegister(route);
         if (this.socket?.readyState === WebSocket.OPEN) {
@@ -376,6 +388,10 @@ export class CompanionRelayClient {
           this.heartbeat = setInterval(() => this.beat(), L.relayHeartbeatMs);
           this.heartbeat.unref();
         }
+        if (!this.pingTimer) {
+          this.pingTimer = setInterval(() => this.probe(), L.relayPingMs);
+          this.pingTimer.unref();
+        }
         for (const waiter of this.openWaiters.splice(0)) waiter();
         if (this.lastDialErrorCode === null) logCompanionRelayInfo(this.logger, `Companion relay connected${this.label}: ${this.deps.config.url}`);
         finish();
@@ -383,6 +399,9 @@ export class CompanionRelayClient {
       socket.on('message', data => {
         try { this.onMessage(String(data)); } catch { /* per-frame forget handles poison */ }
       });
+      // relay→Host 方向的探活回执：清掉待答标记。relay 来的 ping 由 ws 库自动回 pong（零代码），
+      // 这里只看我们主动发出去的 ping 有没有答。
+      socket.on('pong', () => { if (this.pongPending === socket) this.pongPending = null; });
       socket.once('close', (code, reason) => {
         clearTimeout(timer);
         const wasLive = this.live && this.socket === socket;
@@ -392,8 +411,12 @@ export class CompanionRelayClient {
           this.live = false;
           if (this.stableTimer) clearTimeout(this.stableTimer);
           this.stableTimer = null;
+          if (this.pongPending === socket) this.pongPending = null;
         }
-        this.dropSessions();
+        const droppedOnDisconnect = this.dropSessions();
+        if (droppedOnDisconnect > 0) {
+          logCompanionRelayInfo(this.logger, `Companion relay${this.label} sessions dropped on disconnect: ${droppedOnDisconnect}`);
+        }
         const errorCode = this.dialErrorCode(lastError, code, httpStatus);
         if (!settled) {
           this.failDial(errorCode);
@@ -443,6 +466,27 @@ export class CompanionRelayClient {
     for (const route of this.routes.values()) {
       this.push({ v: 1, kind: 'heartbeat', envelope: this.controlEnvelope(route), ciphertext: '' });
     }
+  }
+
+  /**
+   * 连接级探活（N-COMPANION-RELAY-KEEPALIVE）：每 relayPingMs 发一个 WS 协议层 ping，pong 清待答
+   * 标记；到下一周期标记还在 = relay→Host 方向已死（单向应用帧心跳证明不了这个方向），直接
+   * terminate 走既有 close(1006) → scheduleReconnect，把「内核超时（≈160s）才发现」压到一个 ping
+   * 周期。半开连接 terminate 而不是 close：close 要等对端关帧握手，死链路等不来。与 beat() 职责
+   * 分开：beat 续的是 route TTL（绑 route 生命周期），这里管的是连接本身的活性（零 route 也照发）。
+   */
+  private probe(): void {
+    const socket = this.socket;
+    if (socket?.readyState !== WebSocket.OPEN) {
+      this.pongPending = null;
+      return;
+    }
+    if (this.pongPending === socket) {
+      socket.terminate();
+      return;
+    }
+    this.pongPending = socket;
+    socket.ping();
   }
 
   private onMessage(raw: string): void {
@@ -510,7 +554,13 @@ export class CompanionRelayClient {
     if (frame.kind !== 'forward') return;
     const session = this.sessions.get(frame.envelope.deviceRef);
     const route = this.routes.get(frame.envelope.deviceRef);
-    if (!session || !route) return;
+    if (!session || !route) {
+      // 手机还握着旧 Host 实例谈好的会话密钥、而本连接的会话表已清（close/open 都会清）时，
+      // forward 到这里只能被吞——留一行 warn 让「静默丢消息」有迹可循（deviceRef 只给前缀，
+      // 原文不进日志）。relay 侧的 host 腿断开宽限通知会让手机重拨重握手，这里负责剩下的留痕。
+      this.logger?.warn(`Companion relay${this.label} forward dropped: ${session ? 'no route' : 'no session'} for deviceRef ${frame.envelope.deviceRef.slice(0, 8)}`);
+      return;
+    }
     const device = this.deps.gateway.identityDevice(session.publicKey);
     if (!device) { this.revoke(frame.envelope.deviceRef); return; }
     const request = session.cipher.open(JSON.parse(frame.ciphertext) as unknown) as {

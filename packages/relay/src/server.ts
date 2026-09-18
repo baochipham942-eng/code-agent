@@ -41,6 +41,9 @@ export interface CompanionRelayServerStats {
   ticketsIssued: number;
   /** 当前以设备票据鉴权、在线的连接数（close 减、stop() 归零；与 accountConnections 分开记账）。 */
   ticketConnections: number;
+  /** 探活失败（上一个 ping 周期无 pong/message）被 terminate 的连接数；与 idle 清扫分开记账，
+   *  排障要分清「没流量被扫」与「链路死了探不到」（N-COMPANION-RELAY-KEEPALIVE）。 */
+  terminatedNoPong: number;
   jwks?: JwksStats;
 }
 
@@ -130,11 +133,14 @@ export class CompanionRelayServer {
   private readonly waiting = new Map<string, QueuedFrame[]>();
   private readonly waitingBytes = new Map<string, number>();
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  /** 已发 ping、还没等到 pong/message 的连接：下一轮 ping 时仍在集合里 = 探活失败。 */
+  private readonly pongPending = new WeakSet<WebSocket>();
   private readonly stats: CompanionRelayServerStats = {
     connections: 0, routes: 0, queuedFrames: 0, forwarded: 0,
     droppedExpired: 0, droppedNoRoute: 0, droppedBacklog: 0, droppedBackpressure: 0,
     revoked: 0, rejectedAuth: 0, notifiedNoHost: 0, accountConnections: 0, rejectedOwner: 0,
-    ticketsIssued: 0, ticketConnections: 0,
+    ticketsIssued: 0, ticketConnections: 0, terminatedNoPong: 0,
   };
   private readonly now: () => number;
 
@@ -144,6 +150,7 @@ export class CompanionRelayServer {
     port?: number;
     now?: () => number;
     sweepIntervalMs?: number;
+    pingIntervalMs?: number;
     noHostGraceMs?: number;
     /** 配了就同时认 Supabase access token；不配则只认共享凭据（与账号绑定之前完全一致）。 */
     accountVerifier?: { verify(token: string): string | null; readonly stats: JwksStats };
@@ -185,6 +192,8 @@ export class CompanionRelayServer {
     this.port = (server.address() as { port: number }).port;
     this.sweepTimer = setInterval(() => this.sweep(), this.options.sweepIntervalMs ?? L.relaySweepMs);
     this.sweepTimer.unref();
+    this.pingTimer = setInterval(() => this.ping(), this.options.pingIntervalMs ?? L.relayPingMs);
+    this.pingTimer.unref();
     this.options.logger?.info('relay_listening', { host: this.host, port: this.port });
     return this.address;
   }
@@ -192,6 +201,8 @@ export class CompanionRelayServer {
   async stop(): Promise<void> {
     if (this.sweepTimer) clearInterval(this.sweepTimer);
     this.sweepTimer = null;
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
     for (const token of this.waiting.keys()) this.purgeWaiting(token);
     this.routes.clear();
     const wss = this.wss; this.wss = null;
@@ -223,6 +234,27 @@ export class CompanionRelayServer {
       if (binding && [...binding.tokens].some(token => this.routes.has(token))) continue;
       this.options.logger?.info('connection_idle_closed', {});
       client.close();
+    }
+  }
+
+  /**
+   * 触发一轮连接级探活（N-COMPANION-RELAY-KEEPALIVE）；测试用它配合注入时钟驱动 missed-pong 路径。
+   * 对每条 OPEN 连接发 WS 协议层 ping；上一轮 ping 后到本轮仍无 pong/message 的连接 terminate——
+   * 半开连接等不到关闭帧握手，close() 只会挂到内核超时。terminate 走既有 close → detach 清 route
+   * 槽位，不用另写清理。与 idle 清扫是两条独立判据：答 pong 的连接 lastSeen 恒新，sweep 的 idle
+   * 分支够不到它——连接活性不绑 route 生命周期（无 route 的 Host 连接也活得下去）。
+   */
+  ping(): void {
+    for (const client of this.wss?.clients ?? []) {
+      if (client.readyState !== WebSocket.OPEN) continue;
+      if (this.pongPending.has(client)) {
+        this.stats.terminatedNoPong += 1;
+        this.options.logger?.info('connection_pong_timeout', {});
+        client.terminate();
+        continue;
+      }
+      this.pongPending.add(client);
+      client.ping();
     }
   }
 
@@ -286,11 +318,18 @@ export class CompanionRelayServer {
     }
     socket.on('message', data => {
       this.lastSeen.set(socket, this.now());
+      this.pongPending.delete(socket);
       try {
         this.onFrame(socket, parseCompanionRelayFrame(JSON.parse(String(data)) as unknown), String(data));
       } catch {
         socket.close();
       }
+    });
+    // 收到 pong 与收到 message 同权刷新 lastSeen：这是「连接活性不绑 route」的关键一路——
+    // 答 pong 的连接（哪怕零 route）now - seen <= relayIdleMs 恒真，sweep 的 idle 分支够不到它。
+    socket.on('pong', () => {
+      this.lastSeen.set(socket, this.now());
+      this.pongPending.delete(socket);
     });
     socket.on('close', () => {
       this.stats.connections = Math.max(0, this.stats.connections - 1);
@@ -323,6 +362,13 @@ export class CompanionRelayServer {
       if (!route) continue;
       if (route[binding.role] === socket) delete route[binding.role];
       if (!route.host && !route.device) this.routes.delete(token);
+      // host 腿断开而设备腿还在：手机仍握着与旧 Host 实例谈好的会话密钥，Host 重连后会话表
+      // 已清，它的 forward 只能被吞——照 no-host 宽限模式给它一个重拨重握手的推力
+      // （N-COMPANION-RELAY-RECONNECT-DROPSESSIONS）。槽位已被新 socket 顶替时这里不挂
+      // （换实例场景由 register 分支的顶替检测覆盖）。
+      if (binding.role === 'host' && !route.host && route.device && route.device.readyState === WebSocket.OPEN) {
+        this.notifyHostLegDetachAfterGrace(token, route.device);
+      }
     }
   }
 
@@ -360,6 +406,10 @@ export class CompanionRelayServer {
         return;
       }
       const route: Route = known ?? { owner: principal, expiresAt: this.now() + L.relayRouteTokenTtlMs };
+      // 同 token 的 host 槽被另一条 socket 顶替（Host 换实例重连、旧 socket 的关闭还没到）：
+      // 对设备腿来说谈判对象已经换了，照 host 腿断开同款宽限处理。到期复查时 host 槽若仍被
+      // 占着（顶替者活着），说明 host 在位，什么都不发——不许踢一个 host 在位的健康对。
+      const displacedHost = frame.role === 'host' ? known?.host : undefined;
       route[frame.role] = socket;
       route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
       this.routes.set(token, route);
@@ -367,6 +417,9 @@ export class CompanionRelayServer {
       binding.tokens.add(token);
       this.bindings.set(socket, binding);
       this.options.logger?.info('registered', { role: frame.role, token: tokenPrefix(token) });
+      if (displacedHost && displacedHost !== socket && route.device && route.device.readyState === WebSocket.OPEN) {
+        this.notifyHostLegDetachAfterGrace(token, route.device);
+      }
       this.flushWaiting(token, route);
       if (frame.role === 'device' && !route.host) this.notifyNoHostAfterGrace(token, socket);
       return;
@@ -447,6 +500,31 @@ export class CompanionRelayServer {
       } satisfies CompanionRelayFrame));
       this.stats.notifiedNoHost += 1;
       this.options.logger?.info('no_host_notified', { token: tokenPrefix(token) });
+    }, this.options.noHostGraceMs ?? L.relayNoHostGraceMs);
+    timer.unref();
+  }
+
+  /**
+   * host 腿断开/被顶替，route 上还挂着设备腿（N-COMPANION-RELAY-RECONNECT-DROPSESSIONS）：
+   * 手机握着的会话密钥属于旧 host 实例，Host 重连后会话表已清，forward 只能被静默吞。照
+   * notifyNoHostAfterGrace 同款宽限：期内 host 重新注册回来（host 槽非空）就什么都不做——
+   * 与它的计时器通过 route 表互见，host 回来了谁都不许再踢设备；到点复查 host 槽确实仍空、
+   * 设备腿还是原来那条且在线，才回 no-host 帧并丢掉这台设备排着的帧，手机据此重拨重握手
+   * （帧形状与 notifyNoHostAfterGrace 完全一致，手机端零改动）。
+   */
+  private notifyHostLegDetachAfterGrace(token: string, device: WebSocket): void {
+    const timer = setTimeout(() => {
+      const route = this.routes.get(token);
+      if (!route || route.host || route.device !== device || device.readyState !== WebSocket.OPEN) return;
+      this.purgeWaiting(token);
+      const now = this.now();
+      device.send(JSON.stringify({
+        v: 1, kind: 'no-host',
+        envelope: { routeToken: token, deviceRef: COMPANION_RELAY_SENTINEL_DEVICE_REF, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: now },
+        ciphertext: '',
+      } satisfies CompanionRelayFrame));
+      this.stats.notifiedNoHost += 1;
+      this.options.logger?.info('host_leg_detached_notify', { token: tokenPrefix(token) });
     }, this.options.noHostGraceMs ?? L.relayNoHostGraceMs);
     timer.unref();
   }

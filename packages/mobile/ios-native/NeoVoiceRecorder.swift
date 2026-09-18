@@ -11,6 +11,10 @@ import UIKit
 /// （FB-140，2026-09-12 真机 build 22 实测）。Android 仍走厂商插件（gradle 不受 SPM 影响），
 /// JS 侧接口与错误码保持不变。构建期由 `build-ios.mjs` 的 IOS_PLUGINS_NOT_LINKED 闸守着，
 /// 不让同类问题再静默一次。
+///
+/// 切后台继续录（爸 2026-09-18 拍板，翻掉「麦克风不该在用户看不见的时候还开着」的旧拍板）：
+/// 进程保活交给 Info.plist 的 audio 后台模式（configure-lan.mjs 幂等合入），这里不再挂
+/// didEnterBackground 停录删文件；来电等真中断由既有 interruptionNotification 盯守兜底。
 @objc(NeoVoiceRecorderPlugin)
 public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NeoVoiceRecorderPlugin"
@@ -59,25 +63,8 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     private var converter: AVAudioConverter?
     private var pcmToken = UUID()
     private var previousCategory: AVAudioSession.Category?
-    private var backgroundObserver: NSObjectProtocol?
     private var releaseObservers: [NSObjectProtocol] = []
     private var releaseTimer: DispatchSourceTimer?
-
-    override public func load() {
-        // 切后台就停录并删掉已录音频：麦克风不该在用户看不见的时候还开着，
-        // 半截录音也不该留在磁盘上等下一次 stop 把它当成本次结果。
-        backgroundObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didEnterBackgroundNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.queue.async { self?.teardown(deleteRecording: true) }
-        }
-    }
-
-    deinit {
-        if let observer = backgroundObserver { NotificationCenter.default.removeObserver(observer) }
-    }
 
     @objc func canDeviceVoiceRecord(_ call: CAPPluginCall) {
         call.resolve(["value": true])
@@ -341,6 +328,14 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         previousCategory = nil
     }
 
+    // ponytail: 分段路径每 4 秒（COMPANION_LIMITS.voiceChunkMs）在这里走一遍 teardownPcm 的
+    // setActive(false)，下一段 startRecording 再 setActive(true)——后台态最脆的一跳。audio 后台
+    // 模式保的是「已激活的会话不因切后台被系统收走」，不保证「后台里把停掉的会话重新激活一定
+    // 成功」：interruption 还没结束、系统拒绝激活时 setActive(true) 抛错，起录失败收成
+    // FAILED_TO_RECORD（或被 startFailure 判成 MICROPHONE_BUSY），JS 录音循环随之收尾——
+    // 已知风险，不是缺陷漏修。天花板在 AVAudioRecorder 没有无缝换文件接口，切段必然过
+    // 「停会话 → 再激活」；要消掉这一跳只能整次录音单文件、停录后切片，或让 PCM tap 常驻
+    // 不切段——都压到 N-VOICE-REALTIME-STT（那条线本来就要重做切段）。
     private func teardown(deleteRecording: Bool) {
         recorder?.stop()
         recorder = nil

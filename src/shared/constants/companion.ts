@@ -148,6 +148,15 @@ export const COMPANION_LIMITS = {
   /** relay 服务端：设备注册到没有 host 的 route 后等这么久，host 仍没来就回 no-host 帧让手机秒级失败。
    * 盖住 Host 重连退避的前两档（1s+2s），更长的 Host 缺席按「电脑不在线」报。 */
   relayNoHostGraceMs: 5_000,
+  /**
+   * no-host 过渡态（N-MOBILE-NOHOST-WAKING-STATE）：手机经中继拨到 no-host 后不直接落失败页，
+   * 先进「等电脑上线」过渡态——每 relayNoHostRedialMs 重拨一次中继；relayNoHostWaitMs 内电脑上线
+   * 则直接连上（全程无失败闪态），到点才落回 connectionRelayNoHost 失败页。节拍在 store 层
+   * （companionStore），与 relay 侧 relayNoHostGraceMs 互不代办。
+   */
+  relayNoHostRedialMs: 3_000,
+  /** 见 relayNoHostRedialMs；上限盖住 Host 重连退避的头几档（1+2+4+8s）。 */
+  relayNoHostWaitMs: 15_000,
   relaySeqHold: 16,
   relayAuthLength: 16,
   /** companion-relay.json `caFile` path length (absolute or relative to dataDirectory). */

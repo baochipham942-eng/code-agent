@@ -18,7 +18,7 @@ import { loginNeoAccount, type AccountLoginResult } from '../platform/accountLog
  * store 级登录结果：成功只报 ok——票据落进配对盘（Keychain），不进 React 状态、不进 UI 调用方
  * 的手里；失败态与 platform 层一致（凭据错 / 账号服务连不上 / 账号不一致点名）。
  */
-type AccountLoginOutcome = { ok: true } | Extract<AccountLoginResult, { ok: false }>;
+export type AccountLoginOutcome = { ok: true } | Extract<AccountLoginResult, { ok: false }>;
 import type { FilePorts, PlatformPorts, PickedFile } from '../platform/ports';
 import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
@@ -167,6 +167,13 @@ interface State {
    * 可达 10s，照旧置灰等于八成时间没给用户逃生口。手动点按（扫码、手动重连）仍占 busy 锁键。
    */
   autoAttempt: boolean;
+  /**
+   * no-host 过渡态（N-MOBILE-NOHOST-WAKING-STATE）：经中继拨到 no-host 后不直接落失败页，
+   * 先每 3s 重拨等电脑上线（relayNoHostWaitMs 上限，到点才落回 connectionRelayNoHost）。
+   * 此间 status 停在 connecting、connectionError 保持 null——「全程无失败闪态」靠的就是它
+   * 一直是 null；文案见 i18n 的 connectionWaitingForHost。
+   */
+  relayNoHostWaiting: boolean;
   /** 扫码重新配对时丢掉了未确认操作：状态位一次性「上一条操作没送到…」直到点「知道了」。 */
   abandonedPending: boolean;
   dismissAbandonedPending(): void;
@@ -279,6 +286,24 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
      */
     let pauseGraceTimer: ReturnType<typeof setTimeout> | null = null;
     /**
+     * no-host 过渡态（N-MOBILE-NOHOST-WAKING-STATE）的两个节拍：3s 重拨拍 + 15s 到点拍。
+     * 与 retryTimer/pauseGraceTimer 分开：过渡态不走 armAutoRetry 档位、不计 retryAttempt，
+     * 到点落失败页之后才交还既有自动重连。
+     */
+    let noHostRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    let noHostDeadlineTimer: ReturnType<typeof setTimeout> | null = null;
+    /**
+     * 过渡态世代（照 retryGeneration 的写法）：进入/退出都翻篇，迟到的回调只许动「当时捕获的
+     * 那条」，不许覆盖抢占者刚置好的状态。
+     */
+    let noHostGeneration = 0;
+    /**
+     * 本轮 no-host 已到点认输（落过失败页）：之后的拨号照旧走 safely catch 的失败映射，不再
+     * 续过渡态——否则自动重连每次 no-host 都白拿一个新 15s，失败页永远回不来。连上 / 重新
+     * 配对 / 忘掉电脑才翻回 false，下一轮 no-host 重新给满 15s。
+     */
+    let noHostConceded = false;
+    /**
      * 在途 reconnect 的**计数**而不是布尔：重连在途时再调一次 reconnect()（回前台等）会在
      * safely 的 busy 守卫处早退，早退那次的 finally 若把共享布尔清掉，真正在途的尝试失败时
      * 就被当成「不是重连失败」——0 延迟重试且不升退避档（ai-review Nit）。计数到 0 才算没有。
@@ -304,9 +329,74 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       clearTimeout(pauseGraceTimer);
       pauseGraceTimer = null;
     };
+    const clearNoHostTimers = () => {
+      if (noHostRetryTimer !== null) { clearTimeout(noHostRetryTimer); noHostRetryTimer = null; }
+      if (noHostDeadlineTimer !== null) { clearTimeout(noHostDeadlineTimer); noHostDeadlineTimer = null; }
+    };
+    /**
+     * 结束 no-host 过渡态：翻世代、清两条定时器、摘标记。连上 / 落失败页 / 撤销 / 扫码 /
+     * 忘掉 / 退后台都必经此处——过渡态不许比它的结局活得更久（撤销尤其：revoke 结论不许被
+     * 过渡态吞掉或推迟）。
+     */
+    const exitRelayNoHostWait = () => {
+      noHostGeneration += 1;
+      clearNoHostTimers();
+      if (get().relayNoHostWaiting) set({ relayNoHostWaiting: false });
+    };
+    /** 重挂过渡态的 3s 重拨拍。世代 + 后台 + 标记三重守卫（#1935 纪律：退后台即停，不空转重拨）。 */
+    const armNoHostRedial = () => {
+      if (noHostRetryTimer !== null) clearTimeout(noHostRetryTimer);
+      const gen = noHostGeneration;
+      noHostRetryTimer = setTimeout(() => {
+        noHostRetryTimer = null;
+        if (gen !== noHostGeneration || appInBackground || !get().relayNoHostWaiting) return;
+        // 扫码/手动重连占着 busy 时这一拍不空转（照 retryTimer 的 schedule 做法），重挂再等。
+        if (get().busy) { armNoHostRedial(); return; }
+        void get().reconnect();
+      }, COMPANION_LIMITS.relayNoHostRedialMs);
+    };
+    /**
+     * 15s 到点：落回现有失败页（connectionRelayNoHost 文案与「重新连接」出路一字不改），
+     * 标记认输后交还 armAutoRetry（connectionRelayNoHost 不挡自动重连，行为照旧）。
+     */
+    const armNoHostDeadline = () => {
+      if (noHostDeadlineTimer !== null) clearTimeout(noHostDeadlineTimer);
+      const gen = noHostGeneration;
+      noHostDeadlineTimer = setTimeout(() => {
+        noHostDeadlineTimer = null;
+        if (gen !== noHostGeneration || !get().relayNoHostWaiting) return;
+        noHostConceded = true;
+        exitRelayNoHostWait();
+        if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionRelayNoHost', transport: null });
+        // 按失败尝试计档（≈2s 退避），与 safely catch 里 armAutoRetry(reconnectDepth > 0) 的节奏对齐。
+        armAutoRetry(true);
+      }, COMPANION_LIMITS.relayNoHostWaitMs);
+    };
+    /**
+     * 进 no-host 过渡态。已认输（本轮到点落过失败页）则不进——返回 false 让调用方照旧把
+     * 错误抛给 safely 的失败映射。已在过渡态里（3s 重拨又一次 no-host）只重挂下一拍，
+     * 15s 死线不跟着重拨走——它只认进入时刻与手动「重新连接」。
+     */
+    const enterRelayNoHostWait = (): boolean => {
+      if (noHostConceded) return false;
+      if (get().relayNoHostWaiting) { armNoHostRedial(); return true; }
+      noHostGeneration += 1;
+      clearNoHostTimers();
+      // 过渡态自己的节拍接管前台重连：不走 armAutoRetry 档位、不计 retryAttempt；到点落
+      // 失败页后 stopAutoRetry 的计数清零也不影响——那时按现状从首档重新起。
+      stopAutoRetry();
+      set({ relayNoHostWaiting: true, status: 'connecting', paused: false });
+      armNoHostDeadline();
+      armNoHostRedial();
+      return true;
+    };
     const stopAutoRetry = () => {
       retryGeneration += 1;
       clearRetryTimer();
+      // 过渡态的两条节拍一并停（pair/forget/pause 都经停这里或显式 exit）：迟到的重拨/到点
+      // 回调不许碰已换主的状态。
+      noHostGeneration += 1;
+      clearNoHostTimers();
       retryAttempt = 0;
       retryStartedAt = null;
       syncOk = false;
@@ -473,6 +563,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           client?.close();
           wipeHistoryCache();
           stopAutoRetry();
+          // 等待期间收到 revoke：撤销结论立即结算，过渡态与全部等待定时器当场清掉，不许推迟到 15s 到点。
+          exitRelayNoHostWait();
           remember(null);
           // 撤销即清这台电脑的标题记忆：会话已不属于这台手机，重新配对后随使用再记。
           const revokedHostKey = saved?.binding?.hostKey;
@@ -778,6 +870,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         const identityClass = connectionError === 'connectionRejected'
           || connectionError === 'connectionQrInvalid' || connectionError === 'connectionScanFailed';
         const keepHeld = opts?.autoAttempt === true && !identityClass && heldError !== null;
+        // 过渡态只罩 no-host 一种失败：期间的其他错误（relay 连不上/被拒/抢占后的真失败）照旧
+        // 落失败页，过渡态当场收场——挂着等待标记落 offline 会让 UI 继续显示等待句。
+        exitRelayNoHostWait();
         if (get().status !== 'storageError') set({ status: 'offline', connectionError: keepHeld && heldError !== null ? heldError : connectionError, transport: null });
         // S8（D-1）：配对着、没登录、第一次「离开 Wi-Fi 连不上」——提醒一次去登录，之后不再反复弹。
         // 票据被拒不走这里（那由 invalidateAccountTicket 单独翻 S8）；这里只管「从没登录过」的第一次。
@@ -819,6 +914,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       if (relayClient) { relayClient.close(); relayClient = null; }
       wipeHistoryCache();
       stopAutoRetry();
+      exitRelayNoHostWait();
       remember(null);
       // 撤销即清这台电脑的标题记忆：会话已不属于这台手机，重新配对后随使用再记。
       const revokedHostKey = saved?.binding?.hostKey;
@@ -830,7 +926,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       skipTranscriptionPreflight: false,
       allowTranscriptionOnce: () => set({ skipTranscriptionPreflight: true }),
       consumeTranscriptionPreflight: () => { if (get().skipTranscriptionPreflight) set({ skipTranscriptionPreflight: false }); },
-      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, autoRetrying: false, autoAttempt: false, abandonedPending: false, events: [], runId: null, terminal: null,
+      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, autoRetrying: false, autoAttempt: false, relayNoHostWaiting: false, abandonedPending: false, events: [], runId: null, terminal: null,
       account: null, loginPrompt: false,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
@@ -910,6 +1006,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         appInBackground = false;
         // 换通道前先撤宽限：迟到的关闭回调不许碰扫码建立的新连接（N-MOBILE-BG-KEEPALIVE-GRACE）。
         clearPauseGrace();
+        // 过渡态一并收场并翻回认输标记：扫码是全新一轮，next no-host 重新给满 15s。
+        exitRelayNoHostWait();
+        noHostConceded = false;
         set({ paused: false, autoRetrying: false });
         client?.close();
         let attempt = 0;
@@ -987,6 +1086,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           appInBackground = false;
           // 换通道前先撤宽限：迟到的关闭回调不许在「已忘记」之后落地（N-MOBILE-BG-KEEPALIVE-GRACE）。
           clearPauseGrace();
+          exitRelayNoHostWait();
+          noHostConceded = false;
           remember(null);
           // 忘掉这台电脑：标题记忆一并清（此刻 saved 还没被下面的 persist 重写，hostKey 先取）。
           const forgottenHostKey = saved?.binding?.hostKey;
@@ -1040,6 +1141,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           retryAttempt = 0;
           retryStartedAt = Date.now();
           set({ autoRetrying: true });
+          // 过渡态里的手动「重新连接」= 立即重拨一次并重置 15s 计时（不是放弃等待落失败页）：
+          // 在拨号出发前就重置，抢在旧死线前面——否则点按发生在旧死线前一刻时会先闪一拍失败页。
+          if (get().relayNoHostWaiting) armNoHostDeadline();
         }
         reconnectDepth += 1;
         try {
@@ -1075,9 +1179,22 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           const lanCode = lanError instanceof Error ? lanError.message : '';
           const relayDialable = Boolean(saved?.relay || (saved?.relayAccount && saved?.account?.ticket));
           if (handshakeNeedsRescan(lanCode) || !relayDialable || !saved?.binding) throw lanError;
-          await dialRelay(attempt);
+          try {
+            await dialRelay(attempt);
+          } catch (relayError) {
+            // 被更新的尝试抢占了：这次失败交给抢占者结算，这里不落任何状态。
+            if (attempt !== undefined && attempt !== connectSeq) return;
+            // no-host 过渡态（N-MOBILE-NOHOST-WAKING-STATE）：relay 侧没等到电脑，不在这一拍落
+            // 失败页——改进「等电脑上线」过渡态（每 3s 重拨、15s 到点才认输）。已认输的轮次
+            // enterRelayNoHostWait 回 false，照旧抛给 safely 的失败映射（行为照旧）。
+            if (relayError instanceof Error && relayError.message === 'COMPANION_RELAY_NO_HOST' && enterRelayNoHostWait()) return;
+            throw relayError;
+          }
           // relay 握手期间也可能被抢占：这次成功不落状态。
           if (attempt !== undefined && attempt !== connectSeq) return;
+          // 15s 内电脑上线：直接连上、过渡态收场；认输标记翻回，下一轮 no-host 重新给满 15s。
+          noHostConceded = false;
+          exitRelayNoHostWait();
           // 静默重试保留到「连上为止」的那两句（二维码无效/扫码失败）在这里清。
           set({ status: 'connected', transport: 'relay', paused: false, connectionError: null });
           await reconcilePending();
@@ -1095,6 +1212,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         pruneUnscopedHistory(previousScope, binding.scope);
         // lastSession === '' 是欢迎页记忆；null ?? scope 第一条会把它盖掉。
         const remembered = options?.lastSession?.(binding.hostKey);
+        // 过渡态的重拨也可能从 LAN 直接救回来：同样收场（noHostConceded 翻回）。
+        noHostConceded = false;
+        exitRelayNoHostWait();
         set({
           status: 'connected', transport: 'lan', binding, connectionError: null,
           sessionId: get().sessionId ?? (remembered === '' ? null : (binding.scope.find(id => !id.startsWith('project:')) ?? null)),
@@ -1114,6 +1234,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         appInBackground = true;
         retryGeneration += 1;
         clearRetryTimer();
+        // 过渡态的两条节拍同停（#1935 纪律）：后台不空转重拨，回前台由既有 reconnect/探活路径接手。
+        exitRelayNoHostWait();
         // 只有「本来连着」才算暂停：原本就断着的话，报错该继续留在界面上。
         // 必须幂等：iOS 退后台会连发两次生命周期回调，第二次时 status 已经是 offline，
         // 按「当前是否连着」重算就会把 paused 打回 false——爸报的那个假警报原样回来

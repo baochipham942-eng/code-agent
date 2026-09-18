@@ -99,6 +99,8 @@ export function composerStatusItems(
     commandError: string | null; commandErrorAction: string | null; voiceFailureShown: boolean; voiceActive?: boolean; sessionId: string | null;
     libraryError: boolean; pending: boolean; pendingAction: string | null; pendingSlow: boolean;
     autoRetrying?: boolean; autoAttempt?: boolean; abandonedPending?: boolean;
+    /** no-host 过渡态（N-MOBILE-NOHOST-WAKING-STATE）：rank 2 显示「等电脑上线…」，重新连接可用。 */
+    relayNoHostWaiting?: boolean;
     library: { models: readonly unknown[] } | null;
   },
   act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; retrySend?: () => void; dismissAbandoned?(): void; openVoiceSetup?(): void; openModelSetup(): void },
@@ -114,6 +116,7 @@ export function composerStatusItems(
     const open = act.openRemote;
     const reconnect = { label: text.reconnect, run: act.reconnect, disabled: escapeDisabled };
     items.push(s.status === 'rejected' || connectionDiagnosis(text, s).action === 'scan' ? { rank: 2, message: text.rescanNeeded, open, action: { label: text.scanShort, run: act.scan, disabled: escapeDisabled } }
+      : s.relayNoHostWaiting ? { rank: 2, message: text.connectionWaitingForHost, neutral: true, open, action: reconnect, reason: 'relay-no-host-wait' }
       : s.autoRetrying ? { rank: 2, message: text.autoRetrying, open, action: reconnect, reason: 'auto-retry' }
       : s.status === 'connecting' ? { rank: 2, message: text.connecting, neutral: true, open }
       : s.connectionError === 'connectionRefused' ? { rank: 2, message: text.neoNotRunning, open, action: reconnect }

@@ -262,6 +262,37 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
     });
   }
 
+  it('连不上（离网）且未登录 ⇒ S8 登录提示在：去登录是次级动作，主按钮唯一', async () => {
+    harness.mode = 'reject';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+    const notice = failed.querySelector('[data-testid="relay-login-prompt"]');
+    expect(notice).toBeTruthy();
+    expect(notice?.textContent).toContain(text.needLoginTitle);
+    // 一态一主操作：登录引导不抢主按钮——去登录是次级（sheet-secondary），主按钮仍是诊断给的那个。
+    expect(notice?.querySelector('[data-testid="relay-login-go"]')?.classList.contains('primary')).toBe(false);
+    expect([...failed.querySelectorAll('button.primary')]).toHaveLength(1);
+    expect(primaryLabel(failed)).toBe(text.reconnect);
+  });
+
+  it('连不上（连接被拒绝）⇒ 不出 S8 登录提示：端口关着不是离网，登录救不了「Neo 没在运行」', async () => {
+    harness.mode = 'refused';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    expect(document.querySelector('[data-testid="remote-unreachable"] [data-testid="relay-login-prompt"]')).toBeNull();
+  });
+
+  it('连不上（配对失效）⇒ 不出 S8 登录提示：那态的答案是重新扫码，不是登录', async () => {
+    harness.mode = 'rejectIdentity';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    expect(document.querySelector('[data-testid="remote-unreachable"] [data-testid="relay-login-prompt"]')).toBeNull();
+  });
+
   it('「忘记这台电脑」丢掉配对回到未配对态：本机存的配对被覆盖成只剩身份密钥，页面给回扫码', async () => {
     harness.mode = 'refused';
     const base = ports();

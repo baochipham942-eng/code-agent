@@ -24,6 +24,7 @@ import { applyKeyboardInset } from './keyboardInset';
 import { SheetHost } from './SheetHost';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { PairConfirm } from '../features/settings/PairConfirm';
+import { AccountSheet } from '../features/settings/AccountSheet';
 import { deriveInvitationVerify, parseInvitation, type LanInvitation } from '../../../../src/shared/companion/lanProtocol';
 import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
@@ -509,6 +510,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         store.getState().activateDraft('new');
         store.getState().editDraft(current && draftKey !== 'new' ? `${current}\n${draft}` : draft);
       }
+      // 登录引导（D9/D-1）：配对完成后引导登录一次——**不弹账号页**。配对常从 remote 弹层发起，
+      // 这里再 openSheet 会把「弹层按原流程收掉」顶住（defaultProject 既有契约：扫码配对成功后
+      // 弹层都收掉、落到欢迎页）。引导降级为欢迎页上一条可忽略提示（置 loginPrompt，见欢迎页），
+      // 点「去登录」才进账号页；跳过后第一次离开 Wi-Fi 连不上时 S8 再提示一次，之后不反复弹。
+      if (!companionStore.getState().account) companionStore.setState({ loginPrompt: true });
     }
   };
   const pairAndOpenConversation = async () => {
@@ -635,6 +641,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         // 不自动聚焦输入区：手机上未经点按就弹键盘会顶走视口。
         : <div data-testid={companion.sessionId ? 'session-empty' : undefined} className="welcome"><NeoBrandMark variant="mark" size={47} />
           <h1>{text.welcome}</h1>
+          {/* 登录引导（D9）：配对完成不弹账号页（那会把弹层收拢流程顶住），降级为这里一条可忽略
+              提示；S8 之后（第一次离网连不上）同一份提示接着可见。点「去登录」才进账号页。 */}
+          {companion.loginPrompt && !companion.account && <div className="login-notice" data-testid="welcome-login-notice" role="status">
+            <strong>{text.needLoginTitle}</strong>
+            <p>{text.needLoginBody}</p>
+            <button className="sheet-secondary" data-testid="welcome-login-go" onClick={() => state.openSheet('account')}>{text.goLogin}</button>
+            <button className="sheet-secondary" data-testid="welcome-login-dismiss" onClick={companion.dismissLoginPrompt}>{text.accountLoginLater}</button>
+          </div>}
           {companion.library && (() => {
             const projectId = companion.sessionId ? companion.library.sessions.find(s => s.id === companion.sessionId)?.projectId ?? newTaskProjectId : newTaskProjectId;
             const project = companion.library.projects.find(p => p.id === projectId);
@@ -809,6 +823,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             </div>
             <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>
           </>
+          : companion.relayNoHostWaiting && companion.binding ? <div className="remote-state" role="status" data-testid="remote-waiting-host">
+            {/* no-host 过渡态（N-MOBILE-NOHOST-WAKING-STATE）：经中继没等到电脑不落失败页——每 3s
+                自动重拨，15s 内电脑上线直接连上。「重新连接」保留可用：点了 = 立即重拨一次并重置 15s 计时。 */}
+            <span className="spinner" aria-hidden="true" />{text.connectionWaitingForHost}
+            <button className="sheet-secondary" data-testid="remote-waiting-reconnect"
+              disabled={!ports.companion || (companion.busy && !companion.autoAttempt)}
+              onClick={() => void companionStore.getState().reconnect({ resetBackoff: true })}>{text.reconnect}</button>
+          </div>
           : companion.status === 'connecting' && !companion.autoRetrying ? <div className="remote-state" role="status" data-testid="remote-connecting">
             <span className="spinner" aria-hidden="true" />{text.libraryLoading}
           </div>
@@ -822,6 +844,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           : <div className="remote-failed" role="status" data-testid="remote-unreachable">
             <strong>{text.cannotReachComputer}</strong>
             <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>
+            {/* S8（D-1/D-3）：没登录、且已到「跳过后第一次**离网**连不上」的那一次（store 的
+                loginPrompt 只置起这一次）——「在外面用需要先登录」+ 次级动作去登录；与既有扫码/
+                重连动作并存，不另起提示区。一态一主操作：诊断决定的那个主按钮不被登录引导抢占，
+                去登录恒为次级（sheet-secondary）。 */}
+            {companion.loginPrompt && !companion.account && <div className="login-notice" data-testid="relay-login-prompt" role="status">
+              <strong>{text.needLoginTitle}</strong>
+              <p>{text.needLoginBody}</p>
+              <button className="sheet-secondary" data-testid="relay-login-go" onClick={() => state.pushSheet('account')}>{text.goLogin}</button>
+              <p className="caption">{text.needLoginHint}</p>
+            </div>}
             {companion.pending && <p className="caption" data-testid="remote-pending-hint">{text.pendingScanHint}</p>}
             {/* 两个动作都留着，主次由诊断决定（爸 2026-09-16 build 42 真机「手机没给我扫的按钮啊」）。
                 原来按分类只渲染一个：relay 被拒判 reconnect ⇒ 只有「重新连接」。而重连试的是配对时
@@ -901,9 +933,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           }).catch(() => { /* camera plugin failures are not upload failures */ });
         }}
         onOpenSettings={() => void (ports.notifications ?? unavailableNotificationPort).openSettings()}
+      /> : currentPage === 'account' ? <AccountSheet
+        account={companion.account}
+        hostEmail={companion.binding?.hostAccountEmail ?? null}
+        login={(email, password) => companionStore.getState().login(email, password)}
+        logout={() => companionStore.getState().logout()}
+        dismiss={() => store.getState().closeSheet()}
+        text={text}
       /> : <SettingsPage page={currentPage} text={text} appearance={state.preferences.appearance} nickname={state.preferences.nickname}
         profileDraft={state.profileDraft} appInfo={appInfo} open={state.pushSheet} chooseAppearance={state.setAppearance}
-        editProfile={state.editProfile} saveProfile={state.saveProfile}
+        editProfile={state.editProfile} saveProfile={state.saveProfile} account={companion.account}
         storage={{ previewBytes: companion.cacheUsage?.previewBytes ?? 0, conversationBytes: companion.cacheUsage?.conversationBytes ?? 0, result: cacheResult, confirm: cacheConfirm,
           onConfirm: () => setCacheConfirm(true),
           onClear: () => { companion.clearCache(); setCacheResult('clean'); setCacheConfirm(false); } }}

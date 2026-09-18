@@ -331,10 +331,21 @@ export class CompanionRelayServer {
       this.lastSeen.set(socket, this.now());
       this.pongPending.delete(socket);
     });
-    socket.on('close', () => {
+    const openedAt = this.now();
+    socket.on('close', code => {
       this.stats.connections = Math.max(0, this.stats.connections - 1);
       if (viaTicket) this.stats.ticketConnections = Math.max(0, this.stats.ticketConnections - 1);
       else if (sub) this.stats.accountConnections = Math.max(0, this.stats.accountConnections - 1);
+      // 设备/宿主腿断开必须留痕（N-MOBILE-SEND-RESULT-LOST）：只记 role、token 前缀、存活时长、
+      // close code 与鉴权类别——票据/令牌/凭据全文照旧绝不进日志（sub 不进日志）。
+      const binding = this.bindings.get(socket);
+      this.options.logger?.info('connection_closed', {
+        role: binding?.role ?? 'unbound',
+        auth: viaTicket ? 'ticket' : sub ? 'account' : 'legacy',
+        tokens: binding ? [...binding.tokens].map(tokenPrefix) : [],
+        closeCode: code,
+        uptimeMs: this.now() - openedAt,
+      });
       this.detach(socket);
     });
     socket.on('error', () => { /* close follows */ });

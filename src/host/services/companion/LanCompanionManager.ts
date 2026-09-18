@@ -5,6 +5,7 @@ import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
 import type { CompanionManagementResult, CompanionRelayStatus } from '../../../shared/contract/companionManagement';
 import { LanCompanionServer, privateLanAddresses } from './LanCompanionServer';
 import type { CompanionGateway } from './CompanionGateway';
+import type { CompanionRelayLogger } from './companionRelayConfig';
 import type { CompanionPushOutbox } from './CompanionPushOutbox';
 
 const requestSchema = z.discriminatedUnion('action', [
@@ -27,7 +28,9 @@ export class LanCompanionManager {
     /** 跨网连接状态（legacy/account）取值回调；缺省时 status 结果不带 relay 字段（旧装配/旧测试）。 */
     private readonly relayStatus?: () => CompanionRelayStatus,
     /** 电脑当前登录的 Neo 账号邮箱；随 welcome 进配对信息（手机登录引导/账号核对用）。 */
-    private readonly hostAccountEmail?: () => string | null) {}
+    private readonly hostAccountEmail?: () => string | null,
+    /** 透传给 LanCompanionServer 的连接层留痕 logger（N-MOBILE-SEND-RESULT-LOST）。 */
+    private readonly logger?: CompanionRelayLogger) {}
 
   /**
    * 开机自动起局域网服务的**唯一**入口，条件是本槽有配对设备。不满足时要留痕：
@@ -75,7 +78,7 @@ export class LanCompanionManager {
       await this.server?.stop(); this.server = null; this.address = null;
       const address = addresses[0];
       if (!address) throw new Error('COMPANION_LAN_UNAVAILABLE');
-      const server = new LanCompanionServer(this.gateway, await this.loadIdentity(), Date.now, this.push, this.relayRoute, this.relayAccountRoute, this.hostAccountEmail);
+      const server = new LanCompanionServer(this.gateway, await this.loadIdentity(), Date.now, this.push, this.relayRoute, this.relayAccountRoute, this.hostAccountEmail, this.logger);
       await server.start(address); this.server = server; this.address = address; return server;
     })().finally(() => { this.starting = null; });
     return this.starting;

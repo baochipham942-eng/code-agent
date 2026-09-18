@@ -5,6 +5,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { applyCompanionSchema } from '../core/database/migrations/companion';
 import { companionCommandSchema, isCompanionDecisionCommand, isCompanionDecisionOutcome } from '../../../shared/contract/companion';
 import { COMPANION_LIMITS } from '../../../shared/constants/companion';
+import { logCompanionRelayInfo, type CompanionRelayLogger } from './companionRelayConfig';
 import type {
   CompanionCommand,
   CompanionCommandRecord,
@@ -69,6 +70,12 @@ export interface CompanionGatewayDeps {
   decide?: (command: CompanionDecisionCommand) => CompanionSubmitResult | Promise<CompanionSubmitResult>;
   onPublish?: (event: CompanionEvent) => void;
   onRevoke?: (deviceId: string) => void;
+  /**
+   * 结算链留痕（N-MOBILE-SEND-RESULT-LOST）：submit 结论、settleCommand 迁移、publish、
+   * 启动期回收计数。只打 action/commandId/state/code 一类枚举字段——payload 正文、凭据、
+   * 票据绝不进日志。
+   */
+  logger?: CompanionRelayLogger;
 }
 
 /**
@@ -96,8 +103,12 @@ export class CompanionGateway {
     // A reservation without a committed receipt means the host may have exited
     // before the command resolved.  Recover every action: leaving message/run/
     // approval rows reconciling strands the phone's durable pending command.
-    this.db.prepare(`UPDATE companion_commands SET state = 'rejected', result_json = ?
+    const interrupted = this.db.prepare(`UPDATE companion_commands SET state = 'rejected', result_json = ?
       WHERE state = 'reconciling'`).run(JSON.stringify({ code: 'COMPANION_INTERRUPTED' }));
+    if (interrupted.changes > 0) {
+      // 手机 pending 卡死 + 宿主重启现场里，这一行是「上次会话结算悬挂」的直接证据。
+      this.deps.logger?.warn(`Companion gateway startup recovery: interrupted=${interrupted.changes} reconciling command(s)`);
+    }
     // An approval claim belongs to the uncertain command reservation. Once that
     // reservation is explicitly recovered, release the claim so a fresh
     // command ID can retry the still-pending desktop approval.
@@ -199,8 +210,26 @@ export class CompanionGateway {
 
   async submit(rawCommand: unknown): Promise<CompanionSubmitResult> {
     const parsed = companionCommandSchema.safeParse(rawCommand);
-    if (!parsed.success) return { kind: 'rejected', reason: 'invalid_command' };
-    const command = parsed.data;
+    if (!parsed.success) {
+      this.logSubmit(null, { kind: 'rejected', reason: 'invalid_command' });
+      return { kind: 'rejected', reason: 'invalid_command' };
+    }
+    const result = await this.submitChecked(parsed.data);
+    this.logSubmit(parsed.data, result);
+    return result;
+  }
+
+  /** 结算链留痕：每个结论一行（accepted/replayed 为 info，rejected/conflict/approval_conflict 为 warn）。 */
+  private logSubmit(command: CompanionCommand | null, result: CompanionSubmitResult): void {
+    const logger = this.deps.logger;
+    if (!logger) return;
+    const reason = 'reason' in result && typeof result.reason === 'string' ? ` reason=${result.reason}` : '';
+    const line = `Companion gateway submit: action=${command?.action ?? 'invalid'} deviceId=${command?.deviceId ?? '-'} commandId=${command?.commandId ?? '-'} kind=${result.kind}${reason}`;
+    if (result.kind === 'rejected' || result.kind === 'conflict' || result.kind === 'approval_conflict') logger.warn(line);
+    else logCompanionRelayInfo(logger, line);
+  }
+
+  private async submitChecked(command: CompanionCommand): Promise<CompanionSubmitResult> {
     const device = this.getDevice(command.deviceId);
     if (!device) return { kind: 'rejected', reason: 'device_unknown' };
     if (device.revokedAt !== null) return { kind: 'rejected', reason: 'device_revoked' };
@@ -321,8 +350,14 @@ export class CompanionGateway {
   }
 
   settleCommand(deviceId: string, commandId: string, state: 'accepted' | 'rejected', result: Record<string, unknown>): void {
-    this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ?
+    const settled = this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ?
       WHERE device_id = ? AND command_id = ? AND state = 'reconciling'`).run(state, JSON.stringify(result), deviceId, commandId);
+    // 只记真迁移（changes>0）：dispatch 异步结算悬挂时 submit 有行、这里永远无行——两行对不上就是断点。
+    if (settled.changes > 0 && this.deps.logger) {
+      const action = this.getCommand(deviceId, commandId)?.action;
+      const code = typeof result.code === 'string' ? result.code : 'none';
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway settled: action=${action ?? 'unknown'} deviceId=${deviceId} commandId=${commandId} state=${state} code=${code}`);
+    }
   }
 
   pendingDecisions(kind?: CompanionDecisionKind): CompanionDecision[] {
@@ -377,11 +412,15 @@ export class CompanionGateway {
       payload,
       createdAt: now,
     };
-    if (!this.hasLiveDevices()) return { ...event, seq };
+    if (!this.hasLiveDevices()) {
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway publish skipped: kind=${kind} sessionId=${sessionId ?? '-'} seq=${event.seq} reason=no_live_devices`);
+      return { ...event, seq };
+    }
     this.db.prepare(`
       INSERT INTO companion_events (event_id, epoch, seq, session_id, kind, payload_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(event.eventId, event.epoch, event.seq, event.sessionId, event.kind, JSON.stringify(event.payload), event.createdAt);
+    logCompanionRelayInfo(this.deps.logger, `Companion gateway published: kind=${kind} sessionId=${sessionId ?? '-'} seq=${event.seq}`);
     this.pruneEvents(now);
     try { this.deps.onPublish?.(event); } catch { /* push enqueue must not abort the event log */ }
     return event;

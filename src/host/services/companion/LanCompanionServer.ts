@@ -10,6 +10,7 @@ import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseCh
 import { companionCommandSchema, type CompanionEvent } from '../../../shared/contract/companion';
 import { getRegisteredCompanionDictation } from '../capabilities/hostCapabilityPorts';
 import type { CompanionGateway } from './CompanionGateway';
+import { logCompanionRelayInfo, type CompanionRelayLogger } from './companionRelayConfig';
 import { companionDictationReadiness, companionTranscriptionReadiness } from './transcriptionReadiness';
 import type { CompanionPushOutbox } from './CompanionPushOutbox';
 
@@ -23,6 +24,21 @@ interface ChannelBody { channelId?: unknown; frame?: unknown }
 /** Keeps the seq and envelope of the event it replaces; the payload only says what was lost. */
 function dropped(event: CompanionEvent, bytes: number): CompanionEvent {
   return { ...event, kind: COMPANION_EVENT_DROPPED, payload: { reason: 'too_large', kind: event.kind, bytes } };
+}
+
+/** channelId/publicKey 都不是秘密，但整串进日志太长——照 relay 的 tokenPrefix 先例截前 8 位。 */
+function idPrefix(id: string): string {
+  return id.slice(0, 8);
+}
+
+/**
+ * exchange 出错关 channel 那行的错误字段：只认 COMPANION_* 形状的错误码；别的异常
+ * （zod parse 的 message 会内嵌收到的 payload，可能有用户消息正文）只记构造名，不记原文。
+ */
+function exchangeErrorCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/^[A-Z][A-Z0-9_]*$/.test(message)) return message;
+  return error instanceof Error ? (error.constructor.name || 'Error') : typeof error;
 }
 
 /**
@@ -54,7 +70,12 @@ export class LanCompanionServer {
     /** 账号 relay 路由（不带凭据，N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：Host 登录了 Neo 账号才有。 */
     private readonly relayAccountRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRouteRef | null,
     /** 电脑当前登录的 Neo 账号邮箱：随 welcome 进配对信息，手机用它预填登录页并核对账号一致。 */
-    private readonly hostAccountEmail?: () => string | null) {}
+    private readonly hostAccountEmail?: () => string | null,
+    /**
+     * 连接层留痕（N-MOBILE-SEND-RESULT-LOST）：握手成败、channel 三条死路（TTL/身份失效/
+     * exchange 出错）、exchange 首拍与异常。sync/status 轮询只在首拍或异常时打，不每秒刷屏。
+     */
+    private readonly logger?: CompanionRelayLogger) {}
 
   async start(address: string, port: number = L.lanPort): Promise<void> {
     if (this.server) return;
@@ -218,8 +239,11 @@ export class LanCompanionServer {
     for (const [id, p] of this.pending) if (p.expiresAt <= now || p.invite !== this.invitation) this.pending.delete(id);
     for (const [id, c] of this.channels) {
       if (c.expiresAt <= now) {
+        const device = this.gateway.identityDevice(c.publicKey);
         this.releaseDictation(c.publicKey);
         c.cipher.close(); this.channels.delete(id);
+        // TTL 到期 = 手机已经 channelTtlMs 没有任何 exchange 了（正常轮询下每秒都会续期）。
+        logCompanionRelayInfo(this.logger, `Companion LAN channel closed: reason=ttl_expired channel=${idPrefix(id)} device=${device?.deviceId ?? 'unknown'}`);
         continue;
       }
       // 身份已失效（撤销/删除）的 channel 不删、只关密文：留一个墓碑，让该设备的下一次
@@ -230,11 +254,22 @@ export class LanCompanionServer {
       if (!this.gateway.identityDevice(c.publicKey)) {
         this.releaseDictation(c.publicKey);
         c.cipher.close();
+        // 身份既然已失效，这里解不出 deviceId，只给公钥前缀。
+        this.logger?.warn(`Companion LAN channel closed: reason=identity_invalid channel=${idPrefix(id)} key=${idPrefix(c.publicKey)}`);
       }
     }
   }
 
   private hello(body: HelloBody, via?: string) {
+    try {
+      return this.helloChecked(body, via);
+    } catch (error) {
+      this.logger?.warn(`Companion LAN handshake rejected: mode=${typeof body.mode === 'string' ? body.mode : 'invalid'} via=${via ?? '-'} code=${exchangeErrorCode(error)}`);
+      throw error;
+    }
+  }
+
+  private helloChecked(body: HelloBody, via?: string) {
     this.prune();
     if (this.now() - this.handshakeWindow >= L.handshakeTtlMs) { this.handshakeWindow = this.now(); this.handshakeCount = 0; }
     if (++this.handshakeCount > L.maxChannels || this.channels.size >= L.maxChannels || this.pending.size >= L.maxHandshakes) {
@@ -248,6 +283,7 @@ export class LanCompanionServer {
       if (noise.recv(fromHex(body.frame)).length !== 0) throw new Error('COMPANION_INVALID_FRAME');
       const frame = toHex(noise.send());
       this.pending.set(channelId, { noise, invite, expiresAt: this.now() + L.handshakeTtlMs });
+      logCompanionRelayInfo(this.logger, `Companion LAN handshake: mode=pair channel=${idPrefix(channelId)} via=${via ?? '-'}`);
       return { channelId, frame };
     }
     if (body.mode !== 'resume') throw new Error('COMPANION_INVALID_FRAME');
@@ -259,10 +295,20 @@ export class LanCompanionServer {
     const frame = toHex(noise.send());
     const cipher = new NoiseChannel(noise);
     this.channels.set(channelId, { cipher, publicKey, expiresAt: this.now() + L.channelTtlMs, lastSeenAt: null });
+    logCompanionRelayInfo(this.logger, `Companion LAN handshake: mode=resume channel=${idPrefix(channelId)} device=${device.deviceId} via=${via ?? '-'}`);
     return { channelId, frame, welcome: cipher.seal(this.welcome(device, via)) };
   }
 
   private finish(body: ChannelBody, via?: string) {
+    try {
+      return this.finishChecked(body, via);
+    } catch (error) {
+      this.logger?.warn(`Companion LAN handshake rejected: mode=finish via=${via ?? '-'} code=${exchangeErrorCode(error)}`);
+      throw error;
+    }
+  }
+
+  private finishChecked(body: ChannelBody, via?: string) {
     this.prune();
     const id = typeof body.channelId === 'string' ? body.channelId : '';
     const pending = this.pending.get(id);
@@ -275,6 +321,7 @@ export class LanCompanionServer {
     const device = this.gateway.pairIdentity(publicKey, pending.invite.scope);
     const cipher = new NoiseChannel(pending.noise);
     this.channels.set(id, { cipher, publicKey, expiresAt: this.now() + L.channelTtlMs, lastSeenAt: null });
+    logCompanionRelayInfo(this.logger, `Companion LAN handshake: mode=finish channel=${idPrefix(id)} device=${device.deviceId} scope=${device.scope.length} via=${via ?? '-'}`);
     return { welcome: cipher.seal(this.welcome(device, via)) };
   }
 
@@ -293,6 +340,10 @@ export class LanCompanionServer {
         op?: unknown; pcm?: unknown; streamId?: unknown;
       };
       if (!request || typeof request.requestId !== 'string' || request.requestId.length > L.idLength) throw new Error('COMPANION_INVALID_REQUEST');
+      // 轮询型动作（sync/status 手机每秒一发）只在通道首拍留痕；其余动作低频，每次一行。
+      if ((request.action !== 'sync' && request.action !== 'status') || channel.lastSeenAt === null) {
+        logCompanionRelayInfo(this.logger, `Companion LAN exchange: action=${String(request.action)} channel=${idPrefix(id)}${channel.lastSeenAt === null ? ' first=true' : ''}`);
+      }
       let result: unknown;
       if (request.action === 'command') {
         const command = companionCommandSchema.parse(request.command);
@@ -340,8 +391,12 @@ export class LanCompanionServer {
           bytes += size + 1; events.push(event);
         }
         result = { ...page, events, nextSeq };
+        // epoch 变了（snapshot_required）或设备被撤（revoked）都是手机必须重自拍的异常拍，单独点名。
+        if (page.kind !== 'events') this.logger?.warn(`Companion LAN exchange anomaly: action=sync channel=${idPrefix(id)} result=${page.kind}`);
       } else if (request.action === 'status' && typeof request.commandId === 'string' && request.commandId.length <= L.idLength) {
         result = this.gateway.commandStatus(device.deviceId, request.commandId);
+        // 手机在轮询的 commandId 宿主根本不认识（或已不可见）⇒ 手机 pending 只能等超时回收。
+        if (result === null) this.logger?.warn(`Companion LAN exchange anomaly: action=status channel=${idPrefix(id)} commandId=${request.commandId} result=unknown`);
       } else if (request.action === 'dictation') {
         result = await this.dictation(device.deviceId, request);
       } else throw new Error('COMPANION_UNSUPPORTED_ACTION');
@@ -352,9 +407,13 @@ export class LanCompanionServer {
       return { frame };
     } catch (error) {
       // 身份还健在的按老规矩整条退场；身份已失效的留墓碑（撤销后手机可能还有几拍 poke 要认）。
-      if (this.gateway.identityDevice(channel.publicKey)) {
+      const device = this.gateway.identityDevice(channel.publicKey);
+      if (device) {
         this.releaseDictation(channel.publicKey);
         channel.cipher.close(); this.channels.delete(id);
+        // 断链取证（N-MOBILE-SEND-RESULT-LOST）：exchange 抛错当场关整条 channel 是安全纪律，
+        // 但必须留痕——手机下一拍只会拿到笼统的 CHANNEL_CLOSED，没有这行就无从归因。
+        this.logger?.warn(`Companion LAN channel closed: reason=exchange_error channel=${idPrefix(id)} device=${device.deviceId} error=${exchangeErrorCode(error)}`);
       }
       throw error;
     }

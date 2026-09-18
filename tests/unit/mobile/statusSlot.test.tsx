@@ -192,8 +192,15 @@ describe('commandNoticeCopy（预览面板也用它）', () => {
   it.each([['COMPANION_TRANSCRIPTION_FAILED'], ['COMPANION_TRANSCRIPTION_UNAVAILABLE'], ['GROQ_RATE_LIMITED']])('转写失败码 %s 在输入区正显示它时让位', code => {
     expect(notice(code, 'voice.transcribe', true)).toBeNull();
   });
-  it('输入区手里没有这条失败时不让位——否则它一个落点都没有', () => {
-    expect(notice('COMPANION_TRANSCRIPTION_FAILED', 'voice.transcribe', false)).toBe(text.commandRejected);
+  it('输入区手里没有这条失败时按码给出路，不落兜底「这条操作没有被接受」', () => {
+    expect(notice('COMPANION_TRANSCRIPTION_FAILED', 'voice.transcribe', false)).toBe(text.voiceTranscribeFailed);
+    expect(notice('COMPANION_TRANSCRIPTION_UNAVAILABLE', 'voice.transcribe', false)).toBe(text.voiceUnavailable);
+    expect(notice('SPEECH_NO_CHANNEL', 'voice.transcribe', false)).toBe(text.voiceUnavailable);
+    expect(notice('DISABLED', 'voice.transcribe', false)).toBe(text.voiceUnavailable);
+    expect(notice('AUDIO_TOO_LARGE', 'voice.transcribe', false)).toBe(text.voiceTooLong);
+  });
+  it('录音中不把转写失败再写一遍到状态位', () => {
+    expect(commandNoticeCopy(text, { commandError: 'COMPANION_TRANSCRIPTION_FAILED', commandErrorAction: 'voice.transcribe' }, false, true)).toBeNull();
   });
   it('Host 信任类失败与权限拒绝分开说', () => {
     expect(notice('PROJECT_SOURCE_MISSING', 'message.send', false)).toBe(text.projectSourceMissing);
@@ -231,8 +238,9 @@ describe('composerModelLabel', () => {
   it('模型不在列表里时退回会话自己的模型 id，不隐藏也不拿别的模型冒充', () => {
     expect(composerModelLabel(library(), 's1')).toBe('glm-5.3-flash');
   });
-  it('没有会话或还没读到库时不显示', () => {
+  it('没有会话时显示新任务将用的模型；还没读到库时不显示', () => {
     expect(composerModelLabel(library(), null)).toBeNull();
+    expect(composerModelLabel(library(), null, { label: 'Kimi', model: 'kimi-k2.6' })).toBe('Kimi');
     expect(composerModelLabel(null, 's1')).toBeNull();
   });
 });

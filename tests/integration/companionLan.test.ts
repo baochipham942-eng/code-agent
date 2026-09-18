@@ -1127,6 +1127,8 @@ describe('LAN companion dictation (not a persisted command)', () => {
   it('advertises dictation on welcome and relays frames without a command row', async () => {
     const binding = await client.pair(JSON.stringify(server.invite(['shared'])));
     expect(binding.dictation).toBe(true);
+    expect(binding.sessionlessTranscribe).toBe(true);
+    expect(binding.transcription).toBe('not-installed');
     const opened = await client.request({ action: 'dictation', op: 'open' }) as { ok: true; streamId: string };
     expect(opened).toMatchObject({ ok: true, streamId: 'stream-1', sampleRate: L.voicePcmSampleRate });
     const pcm = Buffer.alloc(4).toString('base64');
@@ -1141,6 +1143,8 @@ describe('LAN companion dictation (not a persisted command)', () => {
     unregister();
     const binding = await client.pair(JSON.stringify(server.invite(['shared'])));
     expect(binding.dictation).toBeUndefined();
+    expect(binding.sessionlessTranscribe).toBe(true);
+    expect(binding.transcription).toBe('not-installed');
     expect(await client.request({ action: 'dictation', op: 'open' }))
       .toEqual({ ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE', events: [] });
     expect(await client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq: 0 }))

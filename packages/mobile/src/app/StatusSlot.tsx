@@ -1,5 +1,6 @@
 import type { messages } from '../i18n';
 import { connectionDiagnosis } from './connectionDiagnosis';
+import { classifyVoiceFailure, isVoiceSetupCode, voiceFailureMessage } from '../features/sessions/voiceFailure';
 
 /**
  * 输入区唯一的状态位（N-MOBILE-STATUS-NOISE，design.md §12，爸 2026-09-17 选 A）。
@@ -42,6 +43,7 @@ export function commandNoticeCopy(
   text: ReturnType<typeof messages>,
   companion: { commandError: string | null; commandErrorAction: string | null },
   voiceFailureShown: boolean,
+  voiceActive = false,
 ): string | null {
   const named = (copy: string) => companion.commandErrorAction === 'session.create' ? `${text.sessionCreateFailed}：${copy}` : copy;
   const error = companion.commandError;
@@ -70,8 +72,13 @@ export function commandNoticeCopy(
     if (error === 'RUN_START_FAILED' || error === 'HOST_UNAVAILABLE') return text.runStartFailed;
     if (error && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(error)) return text.transferInterrupted;
     // 转写失败由输入区的语音那条负责（它带阶段和真实错误码）；按**动作**让位而不是按码名列白名单。
-    // 只有输入区**真的在显示**它时才让位：切会话会把输入区重挂，那时输入区手里没有这条失败。
-    if (companion.commandErrorAction === 'voice.transcribe' && voiceFailureShown) return null;
+    // 录音中或输入区正在显示时让位，避免面板「有片段没转成文字」和状态位再说一遍。
+    // 切会话会把输入区重挂：那时按码给出路，不许落兜底「这条操作没有被接受」。
+    if (companion.commandErrorAction === 'voice.transcribe') {
+      if (voiceFailureShown || voiceActive) return null;
+      if (!error) return null;
+      return voiceFailureMessage(text, classifyVoiceFailure(error, 'transcribe'));
+    }
     return error ? text.commandRejected : null;
   };
   const copy = base();
@@ -89,11 +96,11 @@ export function composerStatusItems(
   s: {
     saveError: boolean; nativeError: boolean; sendAttempted: boolean;
     binding: boolean; status: string; paused: boolean; connectionError: string | null; busy: boolean;
-    commandError: string | null; commandErrorAction: string | null; voiceFailureShown: boolean; sessionId: string | null;
+    commandError: string | null; commandErrorAction: string | null; voiceFailureShown: boolean; voiceActive?: boolean; sessionId: string | null;
     libraryError: boolean; pending: boolean; pendingAction: string | null; pendingSlow: boolean;
     library: { models: readonly unknown[] } | null;
   },
-  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; retrySend?: () => void; openModelSetup(): void },
+  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; retrySend?: () => void; openVoiceSetup?(): void; openModelSetup(): void },
 ): StatusItem[] {
   const items: StatusItem[] = [];
   if (s.saveError) items.push({ rank: 1, message: text.saveError, action: { label: text.retry, run: act.flush } });
@@ -114,13 +121,15 @@ export function composerStatusItems(
   if (s.library && s.library.models.length === 0) {
     items.push({ rank: 3, message: text.noUsableModel, action: { label: text.noUsableModelHow, run: act.openModelSetup }, reason: 'NO_USABLE_MODEL' });
   }
-  const command = s.commandError === 'COMPANION_NOT_CONNECTED' ? null : commandNoticeCopy(text, s, s.voiceFailureShown);
+  const command = s.commandError === 'COMPANION_NOT_CONNECTED' ? null : commandNoticeCopy(text, s, s.voiceFailureShown, s.voiceActive === true);
   if (command) {
     const retrySend = (s.commandError === 'RUN_START_FAILED' || s.commandError === 'HOST_UNAVAILABLE')
       && s.commandErrorAction === 'message.send' && act.retrySend
       ? { label: text.retry, run: act.retrySend } : undefined;
     const action = s.commandErrorAction === 'session.create' && s.commandError !== 'COMPANION_COMMAND_IN_FLIGHT' && act.retryCreate ? { label: text.retry, run: act.retryCreate }
       : (s.commandError === 'MODEL_AUTH' || s.commandError === 'MODEL_UNAVAILABLE') && s.sessionId ? { label: text.switchModel, run: act.switchModel }
+      : s.commandErrorAction === 'voice.transcribe' && isVoiceSetupCode(s.commandError ?? undefined) && act.openVoiceSetup
+        ? { label: text.voiceHowToEnable, run: act.openVoiceSetup }
       : retrySend;
     items.push({ rank: 5, message: command, action, reason: s.commandError ?? undefined });
   }

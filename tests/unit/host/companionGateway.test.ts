@@ -44,7 +44,7 @@ describe('CompanionGateway', () => {
   });
 
   it('allows only the first approval decision for a revision', () => {
-    const decide = vi.fn((cmd: import('../../../src/shared/contract/companion').CompanionCommand) => {
+    const decide = vi.fn((cmd: import('../../../src/shared/contract/companion').CompanionDecisionCommand) => {
       gateway.registerDecision({ requestId: 'req-1', sessionId: 'session-1', revision: 4, status: 'approved', resolvedBy: cmd.deviceId, operationDigest: 'digest-1' });
       return { kind: 'accepted' as const, command: { deviceId: cmd.deviceId, commandId: cmd.commandId, payloadHash: '', action: cmd.action, sessionId: cmd.sessionId, state: 'resolved' as const, result: { approved: true }, createdAt: 1000 } };
     });
@@ -54,6 +54,29 @@ describe('CompanionGateway', () => {
     expect(gateway.submit(command).kind).toBe('accepted');
     expect(gateway.submit({ ...command, commandId: 'approve-2' }).kind).toBe('approval_conflict');
     expect(decide).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts voice.transcribe without a session when the device has grants', () => {
+    const dispatch = vi.fn(() => ({ state: 'accepted' as const, result: { text: '你好' } }));
+    gateway = new CompanionGateway(db, { now: () => 1000, dispatch });
+    gateway.registerDevice({ deviceId: 'phone-1', credentialHash: 'hash-phone-1', scopeEpoch: 1, scope: ['session-1'], revokedAt: null });
+    const command = {
+      version: 1 as const, commandId: 'voice-1', deviceId: 'phone-1', scopeEpoch: 1,
+      action: 'voice.transcribe' as const,
+      payload: { audioData: 'YXVkaW8=', mimeType: 'audio/aac' as const, durationMs: 1000 },
+    };
+    expect(gateway.submit(command).kind).toBe('accepted');
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(gateway.commandStatus('phone-1', 'voice-1')?.action).toBe('voice.transcribe');
+  });
+
+  it('rejects sessionless voice.transcribe when the device has no grants', () => {
+    gateway.registerDevice({ deviceId: 'phone-empty', credentialHash: 'hash-empty', scopeEpoch: 1, scope: [], revokedAt: null });
+    expect(gateway.submit({
+      version: 1, commandId: 'voice-2', deviceId: 'phone-empty', scopeEpoch: 1,
+      action: 'voice.transcribe',
+      payload: { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1000 },
+    })).toEqual({ kind: 'rejected', reason: 'scope_denied' });
   });
 
   it('rejects revoked devices before dispatch', () => {

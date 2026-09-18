@@ -17,6 +17,11 @@ import type { CompanionGateway } from './CompanionGateway';
 import { RelayOutboundBuffer, RelaySeqBuffer } from './companionRelayBuffer';
 import { deriveCompanionRelayRouteToken } from './companionRelayRouteToken';
 import {
+  clearCompanionRelayTicket,
+  loadCompanionRelayTicket,
+  storeCompanionRelayTicket,
+} from './companionRelayTicketStore';
+import {
   errorHead,
   loadCompanionRelayConfig,
   loadCompanionRelayCredential,
@@ -29,6 +34,17 @@ import {
 interface RelayRouteEntry {
   deviceRef: string;
   routeToken: string;
+}
+
+/**
+ * 账号通道的本地票据存取（N-COMPANION-RELAY-DEVICE-TICKET）：load 只在票据未过期且属于当前账号时
+ * 返回原文；store 收到 relay 下发的 ticket 帧时覆盖落盘；clear 在票据被 relay 拒时作废。共享凭据
+ * 通道不配它——那条通道不发 JWT，也就永远收不到 ticket 帧。
+ */
+export interface CompanionRelayTicketStore {
+  load(): string | null;
+  store(ticket: string): void;
+  clear(): void;
 }
 
 interface DeviceSession {
@@ -78,6 +94,8 @@ export class CompanionRelayClient {
     credential: string | (() => Promise<string | null>);
     /** routeToken 派生的命名空间：缺省 local（共享凭据通道），账号通道为 acct:<Supabase 用户 id>。 */
     namespace?: string;
+    /** 账号通道的本地票据存取（第 3A 刀）：有未过期票据先票据拨号，supabase 不通也能连。 */
+    ticket?: CompanionRelayTicketStore;
     now?: () => number;
     jitter?: () => number;
     WebSocket?: typeof WebSocket;
@@ -260,11 +278,24 @@ export class CompanionRelayClient {
   private async dial(): Promise<void> {
     if (this.stopped) return;
     const provided = this.deps.credential;
-    // 取令牌会走 supabase-js 刷新，网络挂住时不能把拨号（以及关停时等它的 stop）一起挂死。
-    const credential = typeof provided === 'string' ? provided : await Promise.race([
-      provided().catch(() => null),
-      new Promise<null>(resolve => { setTimeout(() => resolve(null), L.relayConnectTimeoutMs).unref(); }),
-    ]);
+    // 账号通道先试本地票据（relay 自签的 30 天凭据，不依赖 supabase 可达）；没有或已过期才现取
+    // access token。取令牌会走 supabase-js 刷新，网络挂住时不能把拨号（以及关停时等它的 stop）一起挂死。
+    let credential: string | null;
+    let viaTicket = false;
+    if (typeof provided === 'string') {
+      credential = provided;
+    } else {
+      const ticket = this.deps.ticket?.load() ?? null;
+      if (ticket) {
+        credential = ticket;
+        viaTicket = true;
+      } else {
+        credential = await Promise.race([
+          provided().catch(() => null),
+          new Promise<null>(resolve => { setTimeout(() => resolve(null), L.relayConnectTimeoutMs).unref(); }),
+        ]);
+      }
+    }
     if (this.stopped) return;
     if (!credential) {
       this.failDial('COMPANION_RELAY_ACCOUNT_TOKEN_UNAVAILABLE');
@@ -357,6 +388,9 @@ export class CompanionRelayClient {
           // open 后没撑过稳定期、收到不带关闭码的关闭帧（1005）：relay 验凭据不通过就是这个形状（账号令牌
           // 被拒、relay 没开账号鉴权）。按拨号失败走递增退避 + 同因去重，不按「掉线」秒级重连刷屏。
           // 网络断（1006）与带关闭码的主动断开（relay 重启 1001、测试里的 1000）仍按掉线记。
+          // 拨号用的是票据时这还有一层含义：票据被 relay 作废了（换了票据密钥、或回拨了系统时钟）。
+          // 作废本地票据，下次拨号回落 access token 重新换票，别抱着死票按退避重试到自然过期。
+          if (viaTicket) this.deps.ticket?.clear();
           this.failDial('COMPANION_RELAY_CLOSED_AFTER_OPEN');
           return;
         }
@@ -397,6 +431,9 @@ export class CompanionRelayClient {
     let frame: CompanionRelayFrame;
     try { frame = parseCompanionRelayFrame(JSON.parse(raw) as unknown); } catch { return; }
     if (companionRelayFrameExpired(frame, this.now())) return;
+    // relay 直接在本连接上签发的设备票据（第 3A 刀）：不走路由、与任何会话无关。必须在会话分支
+    // 之前显式处理，否则掉进「未知 kind 直接 return」被吞掉，票据永远落不了盘。
+    if (frame.kind === 'ticket') { this.deps.ticket?.store(frame.ciphertext); return; }
     const deviceRef = frame.envelope.deviceRef;
     try {
       if (frame.kind === 'revoke' || frame.kind === 'disconnect') { this.forget(deviceRef); return; }
@@ -573,12 +610,23 @@ export function startCompanionRelayAccountIfConfigured(opts: {
         return;
       }
       if (stopped || userId !== next) return;
+      // 票据存取绑定当前账号 id：换了账号登录，旧账号的票据读不出来（sub 对不上），回落令牌拨号。
+      const ticket: CompanionRelayTicketStore = {
+        load: () => loadCompanionRelayTicket(opts.dataDirectory, next, opts.now),
+        store: issued => {
+          if (storeCompanionRelayTicket(opts.dataDirectory, issued, next)) {
+            logCompanionRelayInfo(opts.logger, 'Companion relay (account) ticket stored');
+          }
+        },
+        clear: () => clearCompanionRelayTicket(opts.dataDirectory),
+      };
       client = new CompanionRelayClient({
         gateway: opts.gateway,
         identity,
         config,
         credential: () => opts.auth.getAccessToken(),
         namespace: `acct:${next}`,
+        ticket,
         now: opts.now,
         jitter: opts.jitter,
         WebSocket: opts.WebSocket,

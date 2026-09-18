@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   deriveInvitationVerify, formatInvitationVerify, parseInvitation,
 } from '../../../../src/shared/companion/lanProtocol';
+import { COMPANION_LIMITS as L } from '../../../../src/shared/constants/companion';
 
 const psk = 'aa'.repeat(32);
 const hostKey = 'bb'.repeat(32);
@@ -47,5 +48,37 @@ describe('companion invitation verify code', () => {
 
   it.each(['47289', '4728910', '47289a', '', 472891, null])('rejects a malformed verify field %j', value => {
     expect(() => parseInvitation(raw({ verify: value }))).toThrow('COMPANION_INVALID_INVITATION');
+  });
+});
+
+describe('invitation literal candidates (N-COMPANION-MDNS-FALLBACK)', () => {
+  it('parses literal candidates through and leaves old invitations untouched', () => {
+    const candidates = ['http://10.0.0.5:8182', 'http://192.168.1.9:8182'];
+    expect(parseInvitation(raw({ candidates })).candidates).toEqual(candidates);
+    // 旧宿主不带 candidates：行为与今天完全一致（字段缺席，不抛、不造默认值）。
+    expect(parseInvitation(raw()).candidates).toBeUndefined();
+  });
+
+  it('runs every candidate through the endpoint whitelist (与 endpoint/altEndpoint 同一道校验)', () => {
+    for (const candidates of [
+      ['http://8.8.8.8:8182'], ['http://evil.example:8182'], ['http://10.0.0.5:8182/path'],
+      ['https://10.0.0.5:8182'], ['http://10.0.0.5'], ['http://10.0.0.5:8182', 'http://8.8.8.8:8182'],
+    ]) {
+      expect(() => parseInvitation(raw({ candidates }))).toThrow('COMPANION_INVALID_LAN_ENDPOINT');
+    }
+    expect(() => parseInvitation(raw({ candidates: [42] }))).toThrow('COMPANION_INVALID_INVITATION');
+  });
+
+  it('rejects a candidates field that is not a bounded non-empty array', () => {
+    const literal = 'http://10.0.0.5:8182';
+    for (const candidates of [literal, [], Array<string>(L.invitationMaxCandidates + 1).fill(literal), null]) {
+      expect(() => parseInvitation(raw({ candidates }))).toThrow('COMPANION_INVALID_INVITATION');
+    }
+    expect(parseInvitation(raw({ candidates: Array<string>(L.invitationMaxCandidates).fill(literal) }))).toBeTruthy();
+  });
+
+  it('rejects an invitation whose payload blows the 2048-byte QR budget even with candidates aboard', () => {
+    expect(() => parseInvitation(raw({ candidates: ['http://10.0.0.5:8182'], pad: 'x'.repeat(2_100) })))
+      .toThrow('COMPANION_INVALID_INVITATION');
   });
 });

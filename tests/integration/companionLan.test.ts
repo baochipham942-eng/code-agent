@@ -116,6 +116,73 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(recovered.altEndpoint).toBe(dead);
   });
 
+  // N-COMPANION-MDNS-FALLBACK：宿主多张私网接口时 endpoint 只取 [0]，可能是手机根本不在的
+  // 那一张（电脑连手机热点：Wi-Fi+热点、热点+VPN 虚接口）；热点下 .local 又解析不了 ⇒ 两个候选
+  // 全灭。candidates 把全部私网字面量带出去（含 [0]，手机侧去重保序）。
+  const iface = (addr: string) => ({ address: addr, family: 'IPv4' as const, internal: false,
+    netmask: '255.255.255.0', mac: '00:00:00:00:00:00', cidr: `${addr}/24` });
+  it('invites with every private literal aboard when multi-homed; [0] stays the primary', () => {
+    const port = Number(new URL(server.invite(['shared']).endpoint).port);
+    const interfaces = vi.mocked(networkInterfaces);
+    // 接口枚举第一张（Wi-Fi）不一定是手机在的那张（热点）：候选必须全带。
+    interfaces.mockReturnValueOnce({ en0: [iface('192.168.1.5')], bridge100: [iface('172.20.10.2')] });
+    const invitation = server.invite(['shared']);
+    expect(invitation.endpoint).toBe(`http://192.168.1.5:${port}`);
+    expect(invitation.candidates).toEqual([`http://192.168.1.5:${port}`, `http://172.20.10.2:${port}`]);
+    // 整份邀请（含 candidates 逐条白名单）要能过 parse。
+    expect(parseInvitation(JSON.stringify(invitation))).toMatchObject({ endpoint: invitation.endpoint });
+  });
+  it('omits candidates on a single-homed host: they would just repeat the endpoint', () => {
+    const port = Number(new URL(server.invite(['shared']).endpoint).port);
+    vi.mocked(networkInterfaces).mockReturnValueOnce({ en0: [iface('192.168.1.5')] });
+    const invitation = server.invite(['shared']);
+    expect(invitation.endpoint).toBe(`http://192.168.1.5:${port}`);
+    expect(invitation.candidates).toBeUndefined();
+  });
+  it('falls back to the start address with no candidates when every private interface is gone', () => {
+    const port = Number(new URL(server.invite(['shared']).endpoint).port);
+    vi.mocked(networkInterfaces).mockReturnValueOnce({});
+    const invitation = server.invite(['shared']);
+    // 列表为空的兜底行为不变：报 start 时那个，candidates 缺席。
+    expect(invitation.endpoint).toBe(`http://${address}:${port}`);
+    expect(invitation.candidates).toBeUndefined();
+  });
+  it('pairs over a later literal candidate when [0] is the network the phone is not on', async () => {
+    const live = server.invite(['shared']);
+    // 宿主多网卡：endpoint=[0] 是手机不在的那张网（用没人听的端口扮演），真正可达的那张在 candidates 里。
+    const dead = `http://${address}:${1}`;
+    const binding = await client.pair(JSON.stringify({ ...live, endpoint: dead, candidates: [dead, live.endpoint], altEndpoint: undefined }));
+    expect(binding.endpoint).toBe(live.endpoint);
+    expect(binding.altEndpoint).toBe(dead);
+    expect(await client.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+  });
+  it('persists pairing candidates and recovers through them after the first dial fails (整条链)', async () => {
+    const live = server.invite(['shared']);
+    const dead = `http://${address}:${1}`;
+    const raw = JSON.stringify({ ...live, endpoint: dead, candidates: [dead, live.endpoint], altEndpoint: undefined });
+    let storage: string | null = null;
+    let lose = true;
+    const port = {
+      read: async () => storage,
+      write: async (value: string) => { storage = value; },
+      scan: async () => raw,
+      post: async (url: string, body: unknown) => {
+        const result = await post(url, body);
+        if (url.endsWith('/finish') && String(url).startsWith(live.endpoint) && lose) { lose = false; throw new Error('PAIRING_RECEIPT_LOST'); }
+        return result;
+      },
+    };
+    const first = createCompanionStore(port, () => {});
+    await first.getState().pair();
+    expect(first.getState().status).toBe('offline');
+    // 配对失败的瞬间，候选（含 candidates）要已经落盘——重启后的自动重连靠它救。
+    expect(JSON.parse(storage!).candidate).toMatchObject({ endpoint: dead, candidates: [dead, live.endpoint] });
+    const restarted = createCompanionStore(port, () => {});
+    await restarted.getState().hydrate();
+    expect(restarted.getState().status).toBe('connected');
+    restarted.getState().pause();
+  });
+
   /**
    * 地址自愈（N-COMPANION-NOLANPORT，爸 2026-09-16 真机）：绑定里的地址是配对那一刻写死的，
    * 宿主换网后就死，手机没有任何重新发现手段 ⇒ 只能删 app 重装。现在握手回执捎上

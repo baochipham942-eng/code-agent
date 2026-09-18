@@ -5,11 +5,18 @@ import { COMPANION_LIMITS as L } from '../constants/companion';
  * 两个都给：mDNS 名换网后仍有效（宿主换网不用重扫码），但它不是哪儿都能解析——
  * 2026-09-12 真机实测，Mac 连着 iPhone 热点时手机解析不了宿主的 .local（Safari 直连同样「找不到服务器」），
  * 只广告 mDNS 名会让这个官方推荐场景 100% 配不上。
+ * endpoint 是单数是另一个坑：宿主多张私网接口时它只取接口枚举的第一张，可能是手机根本不在的
+ * 那一张，热点下 .local 又解析不了 ⇒ 两个候选全灭。candidates 把「数字 IP 候选」补成复数。
  */
 export interface LanInvitation {
   version: 1; endpoint: string; altEndpoint?: string; inviteId: string; psk: string; hostKey: string; expiresAt: number;
   /** 6-digit check code derived from psk‖hostKey. Absent on older hosts; older phones ignore it. */
   verify?: string;
+  /**
+   * 宿主此刻**全部**私网 IPv4 字面量端点，按接口枚举顺序（含 endpoint 那条，手机侧去重保序）。
+   * 旧宿主不带；旧手机按未知字段忽略——结构与本文件其余可选字段一样对额外字段不拒绝。
+   */
+  candidates?: string[];
 }
 export type CompanionTranscriptionReadiness = 'ready' | 'not-installed' | 'no-key';
 
@@ -123,6 +130,13 @@ export function parseInvitation(raw: string, now = Date.now()): LanInvitation {
   if (v.altEndpoint !== undefined) {
     if (typeof v.altEndpoint !== 'string') throw new Error('COMPANION_INVALID_INVITATION');
     validateLanEndpoint(v.altEndpoint);
+  }
+  // 每条候选过 endpoint 同一道白名单（错误分类与 altEndpoint 一致：容器形状不对是邀请级错，
+  // 单条值不合法是端点级 COMPANION_INVALID_LAN_ENDPOINT）。
+  if (v.candidates !== undefined) {
+    if (!Array.isArray(v.candidates) || v.candidates.length < 1 || v.candidates.length > L.invitationMaxCandidates ||
+        v.candidates.some(candidate => typeof candidate !== 'string')) throw new Error('COMPANION_INVALID_INVITATION');
+    for (const candidate of v.candidates) validateLanEndpoint(candidate);
   }
   fromHex(v.psk, 32); fromHex(v.hostKey, 32);
   if (v.verify !== undefined) {

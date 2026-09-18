@@ -39,7 +39,7 @@ describe('LAN companion connection diagnostics', () => {
     const logger: CompanionRelayLogger = { info: message => info.push(message), warn: message => warn.push(message) };
     db = new Database(':memory:');
     gateway = new CompanionGateway(db, { now: () => now });
-    server = new LanCompanionServer(gateway, hostIdentity, () => now, undefined, undefined, logger);
+    server = new LanCompanionServer(gateway, hostIdentity, () => now, undefined, undefined, undefined, undefined, logger);
     await server.start(address, 0);
   });
   afterEach(async () => { await server?.stop(); db?.close(); });

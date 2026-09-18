@@ -242,16 +242,7 @@ export const ADDITIONAL_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
-        costType: 'quota',
-      },
-      {
-        id: 'LongCat-2.0-Preview',
-        name: 'LongCat 2.0 Preview',
-        capabilities: ['general', 'code', 'reasoning', 'longContext'],
-        maxTokens: 32768,
-        supportsTool: true,
-        supportsVision: false,
-        supportsStreaming: true,
+        // Preview 下线前就是 thinking 开关模型；GA 名继承同一控制，避免迁移后丢开关
         thinking: { kind: 'toggle', defaultEnabled: true },
         costType: 'quota',
       },

@@ -766,9 +766,10 @@ describe('fallbackModelForProvider', () => {
       expect(fallbackModelForProvider(provider, settings)).toBe(getDefaultModelForProvider(provider));
     }
 
-    const longcatListed = buildRuntimeModelOptions(settings).find((option) => option.provider === 'longcat')?.model;
-    expect(longcatListed).toBeTruthy();
-    expect(longcatListed).not.toBe(getDefaultModelForProvider('longcat'));
+    const longcatOptions = buildRuntimeModelOptions(settings).filter((option) => option.provider === 'longcat');
+    // Preview 已从目录退役：目录首项就是 GA 默认；settings 里残留的 Preview key 会以
+    // discovered 来源回流到列表尾——configService 迁移要改 key 防的就是这个回流
+    expect(longcatOptions.map((option) => option.model)).toEqual(['LongCat-2.0', 'LongCat-2.0-Preview']);
   });
 
   it('custom-* 未配 model 时取该供应商列表第一项', () => {

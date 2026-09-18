@@ -314,8 +314,8 @@ export function isModelMetadataLocked(providerId: ModelProvider, model: RuntimeP
 
 export function normalizeLongCatModelId(modelId?: string): string {
   return modelId?.toLowerCase() === 'longcat-2.0-preview'
-    ? 'LongCat-2.0-Preview'
-    : modelId || 'LongCat-2.0-Preview';
+    ? 'LongCat-2.0'
+    : modelId || 'LongCat-2.0';
 }
 
 export function isLegacyLongCatProviderConfig(
@@ -354,7 +354,7 @@ export function buildLegacyLongCatProviderMigration(
       ...legacy?.models,
       [model]: {
         enabled: true,
-        label: 'LongCat 2.0 Preview',
+        label: 'LongCat 2.0',
         capabilities,
         supportsTool: true,
         supportsVision: false,

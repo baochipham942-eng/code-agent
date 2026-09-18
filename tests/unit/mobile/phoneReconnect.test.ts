@@ -469,7 +469,7 @@ describe('companionStore 前台退避自动重连', () => {
     store.getState().pause();
   });
 
-  it('有原绑定时扫到无效二维码：提示跨重试保留（0ms/1s/在途都仍是二维码无效），新错误码才接管、连上才清（ai-review Important）', async () => {
+  it('有原绑定时扫到无效二维码：提示跨重试保留（0ms/1s/在途/重试失败都仍是二维码无效），身份类新结论才接管、连上才清（N-MOBILE-CONN-POLISH-R3 ③）', async () => {
     const store = storeOf();
     await store.getState().hydrate();
     const callsAfterHydrate = harness.recoverCalls;
@@ -488,17 +488,38 @@ describe('companionStore 前台退避自动重连', () => {
     expect(harness.recoverCalls).toBe(callsAfterHydrate + 1);
     expect(store.getState().connectionError).toBe('connectionQrInvalid');
     expect(connectionDiagnosis(text, store.getState())).toEqual({ sentence: text.connectionQrInvalid, action: 'scan' });
-    // 这次重试自己失败（宿主仍停机）→ 新错误码接管诊断，不再提扫码。
+    // 这次重试自己失败（宿主仍停机，10ms 级）→ 传输类新码不接管：提示仍是「二维码无效」、
+    // 诊断仍指向扫码、自动重试不停（blocksAutoRetry 走 ignoreBlocked 重挂）——提示寿命
+    // 不再被压成「一个退避首档 + 10ms」（爸实测 2.39s 那个）。
     harness.hangRecover = false;
     harness.releaseHang?.();
     await vi.advanceTimersByTimeAsync(0);
-    expect(store.getState().connectionError).toBe('connectionUnavailable');
-    expect(connectionDiagnosis(text, store.getState())).toEqual({ sentence: text.connectionUnavailable, action: 'reconnect' });
-    // 下一拍连上 → 提示清掉。
+    expect(store.getState().connectionError).toBe('connectionQrInvalid');
+    expect(store.getState().autoRetrying).toBe(true);
+    expect(connectionDiagnosis(text, store.getState())).toEqual({ sentence: text.connectionQrInvalid, action: 'scan' });
+    // 下一拍重试照常挂上（失败后升档 4s）。
+    await vi.advanceTimersByTimeAsync(3999);
+    const callsAfterFailure = harness.recoverCalls;
+    await vi.advanceTimersByTimeAsync(1);
+    expect(harness.recoverCalls).toBeGreaterThan(callsAfterFailure);
+    // 宿主回来了 → 连上 → 提示清掉。
     harness.recoverError = null;
-    await vi.advanceTimersByTimeAsync(4000);
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(store.getState().status).toBe('connected');
     expect(store.getState().connectionError).toBeNull();
+    store.getState().pause();
+  });
+
+  it('静默重试遇身份类失败仍接管：被拒的新结论盖过保留中的二维码提示并停住重试', async () => {
+    const store = storeOf();
+    await store.getState().hydrate();
+    await store.getState().pair('not-an-invitation');
+    expect(store.getState().connectionError).toBe('connectionQrInvalid');
+    harness.recoverError = 'COMPANION_PAIRING_REJECTED';
+    await vi.advanceTimersByTimeAsync(2000);   // 首拍重试出发并失败：身份类新码接管
+    expect(store.getState().connectionError).toBe('connectionRejected');
+    expect(connectionDiagnosis(text, store.getState())).toEqual({ sentence: text.connectionRejected, action: 'scan' });
+    expect(store.getState().autoRetrying).toBe(false);   // blocksAutoRetry 照常停机
     store.getState().pause();
   });
 

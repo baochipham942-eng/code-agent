@@ -628,8 +628,17 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           : code === 'COMPANION_RELAY_NO_HOST' ? 'connectionRelayNoHost'
           : code === 'COMPANION_RELAY_UNAVAILABLE' || code === 'COMPANION_RELAY_CONNECT_TIMEOUT' ? 'connectionRelayUnavailable'
           : code === 'COMPANION_NETWORK_UNAVAILABLE' || code === 'COMPANION_NO_RESPONSE' ? 'connectionUnavailable' : 'connectionFailed';
-        if (get().status !== 'storageError') set({ status: 'offline', connectionError, transport: null });
-        armAutoRetry(reconnectDepth > 0);
+        // 静默自动重试的传输类失败不接管保留中的「二维码无效/扫码失败」（N-MOBILE-CONN-POLISH-R3 ③）：
+        // 宿主停机时一次重试约 10ms 就失败，新码整拍覆盖会把提示寿命压成一个退避首档（爸实测
+        // 2.39s）。只有身份类新结论（被拒/新的扫码类失败）才接管；传输类把进场存下的 heldError
+        // 补回去。手动点按（用户手势）失败不在保留之列，照旧用新码接管。
+        const identityClass = connectionError === 'connectionRejected'
+          || connectionError === 'connectionQrInvalid' || connectionError === 'connectionScanFailed';
+        const keepHeld = opts?.autoAttempt === true && !identityClass && heldError !== null;
+        if (get().status !== 'storageError') set({ status: 'offline', connectionError: keepHeld && heldError !== null ? heldError : connectionError, transport: null });
+        // 补回 qrInvalid/ScanFailed 后 connectionBlocksAutoRetry 为真，按原样重挂会被它停掉——
+        // 「一次误扫不得永久停掉自动重连」（ai-review Nit），这条路径走 ignoreBlocked 重挂。
+        armAutoRetry(reconnectDepth > 0, keepHeld);
       }
       finally {
         // unlockTimer 无条件清（含被抢占的早退）：旧尝试的定时器不得解锁别人的锁。

@@ -50,7 +50,11 @@ export class LanCompanionServer {
   constructor(private readonly gateway: CompanionGateway, private readonly identity: KeyPair,
     private readonly now = Date.now, private readonly push?: CompanionPushOutbox,
     /** 手机经 LAN 问「我的 relay 路由是什么」；没有 relay 客户端时回 unavailable。 */
-    private readonly relayRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRoute | null) {}
+    private readonly relayRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRoute | null,
+    /** 账号 relay 路由（不带凭据，N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：Host 登录了 Neo 账号才有。 */
+    private readonly relayAccountRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRouteRef | null,
+    /** 电脑当前登录的 Neo 账号邮箱：随 welcome 进配对信息，手机用它预填登录页并核对账号一致。 */
+    private readonly hostAccountEmail?: () => string | null) {}
 
   async start(address: string, port: number = L.lanPort): Promise<void> {
     if (this.server) return;
@@ -282,6 +286,14 @@ export class LanCompanionServer {
         // 路由发现：手机趁 LAN 还连着把 relay 路由缓存下来，LAN 断了才有路可落（N-MOBILE-RELAY-PHONE）。
         const route = this.relayRoute?.(device.deviceId) ?? null;
         result = route ? { kind: 'ok' as const, ...route } : { kind: 'unavailable' as const };
+      } else if (request.action === 'relay.routes') {
+        // 双路由下发（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：legacy 是既有契约原样（含共享凭据），
+        // account 是不带凭据的账号路由引用。两条都没有回 unavailable；旧动作 relay.route 原样保留。
+        const legacy = this.relayRoute?.(device.deviceId) ?? null;
+        const account = this.relayAccountRoute?.(device.deviceId) ?? null;
+        result = legacy || account
+          ? { kind: 'ok' as const, routes: { v: 1 as const, ...(account ? { account } : {}), ...(legacy ? { legacy } : {}) } }
+          : { kind: 'unavailable' as const };
       } else if (request.action === 'sync') {
         if (!Number.isSafeInteger(request.epoch) || Number(request.epoch) < 1 || !Number.isSafeInteger(request.afterSeq) || Number(request.afterSeq) < 0) throw new Error('COMPANION_INVALID_CURSOR');
         const page = this.gateway.syncForDevice(device.deviceId, Number(request.epoch), Number(request.afterSeq));
@@ -329,10 +341,14 @@ export class LanCompanionServer {
     // 只捎当前地址，不动 altEndpoint：那一格记的是「我们还知道的另一个候选」，
     // 由手机自己维护（哪个拨通了哪个当主、另一个留作备用），宿主不该覆盖它。
     const base = endpoint ? { ...device, endpoint } : device;
+    // 电脑账号邮箱（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：每次握手现取——登录/退出/换账号
+    // 都反映在下一次 welcome 里，手机侧配对信息随之自愈。没登录就不带这一格。
+    const email = this.hostAccountEmail?.() ?? null;
     return {
       ...base,
       transcription: companionTranscriptionReadiness(),
       sessionlessTranscribe: true as const,
+      ...(email ? { hostAccountEmail: email } : {}),
       ...(getRegisteredCompanionDictation() ? { dictation: true as const, dictationTranscription: companionDictationReadiness() } : {}),
     };
   }

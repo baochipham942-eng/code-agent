@@ -23,6 +23,7 @@ import { applyKeyboardInset } from './keyboardInset';
 import { SheetHost } from './SheetHost';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { PairConfirm } from '../features/settings/PairConfirm';
+import { AccountSheet } from '../features/settings/AccountSheet';
 import { deriveInvitationVerify, parseInvitation, type LanInvitation } from '../../../../src/shared/companion/lanProtocol';
 import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
@@ -478,6 +479,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         store.getState().activateDraft('new');
         store.getState().editDraft(current && draftKey !== 'new' ? `${current}\n${draft}` : draft);
       }
+      // 登录引导（D-1）：配对完成后立刻引导登录一次，可跳过（收掉弹层即跳过）；跳过后第一次
+      // 离开 Wi-Fi 连不上时再提示一次（S8，见 remote 弹层），之后不再反复弹。
+      if (!companionStore.getState().account) store.getState().openSheet('account');
     }
   };
   const pairAndOpenConversation = async () => {
@@ -791,6 +795,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           : <div className="remote-failed" role="status" data-testid="remote-unreachable">
             <strong>{text.cannotReachComputer}</strong>
             <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>
+            {/* S8（D-1/D-3）：没登录、且已到「跳过后第一次连不上」的那一次（store 的 loginPrompt 只置起
+                这一次）——「在外面用需要先登录」+ 主按钮去登录；与既有扫码/重连动作并存，不另起提示区。 */}
+            {companion.loginPrompt && !companion.account && <div className="login-notice" data-testid="relay-login-prompt" role="status">
+              <strong>{text.needLoginTitle}</strong>
+              <p>{text.needLoginBody}</p>
+              <button className="primary" data-testid="relay-login-go" onClick={() => state.pushSheet('account')}>{text.goLogin}</button>
+              <p className="caption">{text.needLoginHint}</p>
+            </div>}
             {companion.pending && <p className="caption" data-testid="remote-pending-hint">{text.pendingScanHint}</p>}
             {/* 两个动作都留着，主次由诊断决定（爸 2026-09-16 build 42 真机「手机没给我扫的按钮啊」）。
                 原来按分类只渲染一个：relay 被拒判 reconnect ⇒ 只有「重新连接」。而重连试的是配对时
@@ -870,9 +882,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           }).catch(() => { /* camera plugin failures are not upload failures */ });
         }}
         onOpenSettings={() => void (ports.notifications ?? unavailableNotificationPort).openSettings()}
+      /> : currentPage === 'account' ? <AccountSheet
+        account={companion.account}
+        hostEmail={companion.binding?.hostAccountEmail ?? null}
+        login={(email, password) => companionStore.getState().login(email, password)}
+        logout={() => companionStore.getState().logout()}
+        dismiss={() => store.getState().closeSheet()}
+        text={text}
       /> : <SettingsPage page={currentPage} text={text} appearance={state.preferences.appearance} nickname={state.preferences.nickname}
         profileDraft={state.profileDraft} appInfo={appInfo} open={state.pushSheet} chooseAppearance={state.setAppearance}
-        editProfile={state.editProfile} saveProfile={state.saveProfile}
+        editProfile={state.editProfile} saveProfile={state.saveProfile} account={companion.account}
         storage={{ previewBytes: companion.cacheUsage?.previewBytes ?? 0, conversationBytes: companion.cacheUsage?.conversationBytes ?? 0, result: cacheResult, confirm: cacheConfirm,
           onConfirm: () => setCacheConfirm(true),
           onClear: () => { companion.clearCache(); setCacheResult('clean'); setCacheConfirm(false); } }}

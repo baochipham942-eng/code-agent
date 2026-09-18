@@ -257,7 +257,7 @@ describe('companion relay: production server + host dial-out', () => {
     const gracedUrl = `ws://127.0.0.1:${(await graced.listen()).port}`;
     const lonely = new RelayCompanionClient({
       identity: createIdentity(),
-      route: { v: 1, url: gracedUrl, routeToken: 'route-token-nohost1', credential: SECRET },
+      route: { url: gracedUrl, routeToken: 'route-token-nohost1', credential: SECRET },
       deviceRef: 'phone-1',
       dial: nodeDial,
     });
@@ -285,7 +285,7 @@ describe('companion relay: production server + host dial-out', () => {
     lateHost.advertise({ deviceRef: device.deviceId, routeToken: 'route-token-nohost2' });
     const client = new RelayCompanionClient({
       identity,
-      route: { v: 1, url: gracedUrl, routeToken: 'route-token-nohost2', credential: SECRET },
+      route: { url: gracedUrl, routeToken: 'route-token-nohost2', credential: SECRET },
       deviceRef: device.deviceId,
       dial: nodeDial,
     });

@@ -22,8 +22,12 @@ export class LanCompanionManager {
     private readonly listProjects: () => { id: string; name: string }[] = () => [],
     private readonly push?: CompanionPushOutbox,
     private readonly relayRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRoute | null,
+    /** 账号 relay 路由（不带凭据）取值回调；`relay.routes` 下发用（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）。 */
+    private readonly relayAccountRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRouteRef | null,
     /** 跨网连接状态（legacy/account）取值回调；缺省时 status 结果不带 relay 字段（旧装配/旧测试）。 */
-    private readonly relayStatus?: () => CompanionRelayStatus) {}
+    private readonly relayStatus?: () => CompanionRelayStatus,
+    /** 电脑当前登录的 Neo 账号邮箱；随 welcome 进配对信息（手机登录引导/账号核对用）。 */
+    private readonly hostAccountEmail?: () => string | null) {}
 
   /**
    * 开机自动起局域网服务的**唯一**入口，条件是本槽有配对设备。不满足时要留痕：
@@ -71,7 +75,7 @@ export class LanCompanionManager {
       await this.server?.stop(); this.server = null; this.address = null;
       const address = addresses[0];
       if (!address) throw new Error('COMPANION_LAN_UNAVAILABLE');
-      const server = new LanCompanionServer(this.gateway, await this.loadIdentity(), Date.now, this.push, this.relayRoute);
+      const server = new LanCompanionServer(this.gateway, await this.loadIdentity(), Date.now, this.push, this.relayRoute, this.relayAccountRoute, this.hostAccountEmail);
       await server.start(address); this.server = server; this.address = address; return server;
     })().finally(() => { this.starting = null; });
     return this.starting;

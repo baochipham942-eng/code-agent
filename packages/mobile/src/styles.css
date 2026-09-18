@@ -292,3 +292,10 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 .preview-text { max-height: 40vh; overflow: auto; white-space: pre-wrap; background: var(--surface); padding: 12px; border-radius: 12px; font-size: 14px; }
 .preview-fallback { display: flex; flex-direction: column; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
 .preview-fallback .primary { margin-top: 8px; }
+/* 账号页与 S8 登录提醒（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：只借用既有控件样式，补间距与错误色。 */
+.account-sheet { padding: 4px 16px 16px; }
+.account-sheet [role='alert'] { margin: 10px 4px 0; color: #c43b38; font-size: 14px; }
+.login-notice { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; padding: 14px; border-radius: 16px; background: var(--surface); }
+.login-notice strong { font-size: 16px; }
+.login-notice p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.login-notice .primary { margin-top: 8px; }

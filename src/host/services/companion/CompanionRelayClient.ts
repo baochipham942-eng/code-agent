@@ -13,6 +13,7 @@ import {
   type CompanionRelayFrame,
   type CompanionRelayResolved,
   type CompanionRelayRoute,
+  type CompanionRelayRouteRef,
 } from '../../../shared/contract/companionRelay';
 import type { CompanionRelayStatus } from '../../../shared/contract/companionManagement';
 import type { CompanionGateway } from './CompanionGateway';
@@ -126,16 +127,26 @@ export class CompanionRelayClient {
    * socket 暂时断开时照常返回：token 不变（确定性派生，连 Host 重启都不变），重连后重新注册全部 route。
    */
   routeFor(deviceRef: string): CompanionRelayRoute | null {
-    // 账号通道的路由暂不下发给手机（第三刀用新动作 relay.routes 下发，旧契约 credential 必填）。
-    if (this.stopped || typeof this.deps.credential !== 'string') return null;
+    // 账号通道不下发旧契约路由（credential 必填，账号通道的凭据形态是票据，走 relay.routes）。
+    if (typeof this.deps.credential !== 'string') return null;
+    const ref = this.relayRoute(deviceRef);
+    return ref ? { ...ref, credential: this.deps.credential } : null;
+  }
+
+  /**
+   * 不带凭据的路由引用（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：url + routeToken，共享凭据与
+   * 账号两种凭据形态的通道都可用——账号通道把它交给 `relay.routes` 下发，手机拿自己登录换的
+   * 票据拨。派生/注册语义与 routeFor 完全一致，只是不把凭据拼进去。
+   */
+  relayRoute(deviceRef: string): CompanionRelayRouteRef | null {
+    if (this.stopped) return null;
     if (!this.routes.has(deviceRef)) {
       this.bindPairedDevices();
       const minted = this.routes.get(deviceRef);
       if (minted && this.socket?.readyState === WebSocket.OPEN) this.sendRegister(minted);
     }
     const route = this.routes.get(deviceRef);
-    if (!route) return null;
-    return { v: 1, url: this.deps.config.url, routeToken: route.routeToken, credential: this.deps.credential };
+    return route ? { v: 1, url: this.deps.config.url, routeToken: route.routeToken } : null;
   }
 
   private bindPairedDevices(): void {
@@ -593,7 +604,13 @@ export function startCompanionRelayAccountIfConfigured(opts: {
   now?: () => number;
   jitter?: () => number;
   WebSocket?: typeof WebSocket;
-}): { stop(): Promise<void>; revoke(deviceId: string): void; status(): CompanionRelayAccountStatus } {
+}): {
+  stop(): Promise<void>;
+  revoke(deviceId: string): void;
+  status(): CompanionRelayAccountStatus;
+  /** 账号路由引用（不带凭据）：`relay.routes` 下发给手机，手机拿自己换的票据拨（第三刀）。 */
+  relayRoute(deviceRef: string): CompanionRelayRouteRef | null;
+} {
   // 共享凭据通道已按同一份配置记过缺失/非法的日志，这里不重复记。
   const config = loadCompanionRelayConfig(opts.dataDirectory);
   // 没配中继：账号通道根本不起，但句柄仍自报 off，调用方不必特判 null。
@@ -601,6 +618,7 @@ export function startCompanionRelayAccountIfConfigured(opts: {
     return {
       status: () => ({ account: 'off' }),
       revoke: () => {},
+      relayRoute: () => null,
       stop: async () => {},
     };
   }
@@ -674,6 +692,8 @@ export function startCompanionRelayAccountIfConfigured(opts: {
   follow(opts.auth.getCurrentUser());
   return {
     revoke: deviceId => client?.revoke(deviceId),
+    // 没登录/follow 链还没落地时 client 为 null ⇒ 没有账号路由；token 确定性派生，socket 断着也照给。
+    relayRoute: deviceRef => client?.relayRoute(deviceRef) ?? null,
     // 判定顺序即优先级：没登录必然没起 client（follow 会停它），先查 user 不会把登出误报成 connecting。
     status: (): CompanionRelayAccountStatus => {
       if (!opts.auth.getCurrentUser()) return { account: 'signedOut' };

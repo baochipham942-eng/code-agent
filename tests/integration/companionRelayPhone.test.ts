@@ -5,6 +5,7 @@ import WebSocket from 'ws';
 import { networkInterfaces } from 'node:os';
 import { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
 import { CompanionRelayClient } from '../../src/host/services/companion/CompanionRelayClient';
+import { deriveCompanionRelayRouteToken } from '../../src/host/services/companion/companionRelayRouteToken';
 import { LanCompanionServer } from '../../src/host/services/companion/LanCompanionServer';
 import { FakeCompanionRelay } from './companion/fakeCompanionRelay';
 import { createIdentity } from '../../src/shared/companion/noiseChannel';
@@ -90,7 +91,7 @@ describe('companion relay phone: dual-path over real gateway + LAN server + fake
     db?.close();
   });
 
-  const saved = () => JSON.parse(storage ?? '{}') as { relay?: { url: string; routeToken: string; credential: string } };
+  const saved = () => JSON.parse(storage ?? '{}') as { relay?: { url: string; routeToken: string; credential: string }; relayAccount?: { url: string; routeToken: string } };
 
   it('pairs over LAN and caches the relay route the host hands out', async () => {
     const store = phone();
@@ -258,6 +259,8 @@ describe('companion relay phone: dual-path over real gateway + LAN server + fake
     store.getState().selectSession('shared');
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan' });
     expect(saved().relay).toBeUndefined();
+    // 两条都没有（既没配中继也没登录账号）：unavailable 不落任何一条，也不算探针被拒。
+    expect(saved().relayAccount).toBeUndefined();
     await store.getState().sync();
     expect(store.getState()).toMatchObject({ status: 'connected' });
     await store.getState().send('no-relay-host-正文');
@@ -266,17 +269,75 @@ describe('companion relay phone: dual-path over real gateway + LAN server + fake
     store.getState().pause();
   });
 
+  it('relay.routes hands out both routes when the host account channel is wired (只有旧通道/两条都有/都没有 三态)', async () => {
+    // 两条都有：账号通道句柄的 relayRoute()（不带凭据）经 relayAccountRoute 回调进动作返回；
+    // 手机配对后两条都缓存——legacy 契约原样（含共享凭据），account 只有 url+routeToken。
+    const accountStub = (deviceId: string) => {
+      const epoch = gateway.pairedDevices().find(device => device.deviceId === deviceId)?.scopeEpoch ?? 1;
+      return { v: 1 as const, url: relay.url, routeToken: deriveCompanionRelayRouteToken(hostIdentity.secretKey, deviceId, epoch, 'acct:user-1') };
+    };
+    legacyServer = new LanCompanionServer(gateway, hostIdentity, Date.now, undefined,
+      deviceId => hostRelay.routeFor(deviceId), accountStub, () => 'lin@example.com');
+    await legacyServer.start(address!, 0);
+    const store = phone(legacyServer);
+    await store.getState().pair();
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan' });
+    const record = saved();
+    expect(record.relay).toMatchObject({ credential: SECRET, url: `${relay.url}/` });
+    expect(record.relayAccount).toMatchObject({ url: `${relay.url}/`, routeToken: accountStub(store.getState().binding!.deviceId).routeToken });
+    // 账号路由不带凭据：契约里就没有那一格。
+    expect(record.relayAccount && 'credential' in record.relayAccount).toBe(false);
+    // 配对信息里带上电脑账号邮箱（welcome 下发，登录页预填/账号核对用）。
+    expect(store.getState().binding?.hostAccountEmail).toBe('lin@example.com');
+    // 只有旧通道（beforeEach 的主服务器，Host 没登录账号）：手机只缓存 legacy。
+    const legacyOnly = phone();
+    await legacyOnly.getState().pair();
+    expect(saved().relay).toBeTruthy();
+    expect(saved().relayAccount).toBeUndefined();
+    legacyOnly.getState().pause();
+    store.getState().pause();
+  });
+
+  it('falls back to relay.route when the host knows the old action but not relay.routes (probe ordering)', async () => {
+    // 探针先问 relay.routes；「只有 relay.route 的中间版本 Host」在传输层复刻：第一发
+    // exchange（= relay.routes 探针）按未知动作 403 + 关 channel，回落问 relay.route 成功——
+    // 手机照样缓存旧路由（今天的行为不因新动作缺席而退化）。
+    let routesProbeKilled = false;
+    let storage: string | null = null;
+    const partialPost = async (url: string, body: unknown) => {
+      const res = await fetch(url, { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const raw = await res.text();
+      if (!res.ok) throw new Error(`HTTP_${res.status}`);
+      if (url.endsWith('/exchange') && !routesProbeKilled) { routesProbeKilled = true; throw new Error('HTTP_403'); }
+      return JSON.parse(raw) as unknown;
+    };
+    const store = createCompanionStore({
+      read: async () => storage,
+      write: async value => { storage = value; },
+      scan: async () => JSON.stringify(lanServer.invite(['shared'])),
+      post: partialPost,
+      dialRelay: nodeDial,
+    }, () => {});
+    await store.getState().pair();
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan' });
+    expect(routesProbeKilled).toBe(true);
+    expect(JSON.parse(storage ?? '{}').relay).toMatchObject({ routeToken: hostRelay.routeTokenFor(store.getState().binding!.deviceId) });
+    expect(JSON.parse(storage ?? '{}').relayAccount).toBeUndefined();
+    store.getState().pause();
+  });
+
   it('survives a legacy host that closes the channel on relay.route: the probe dies, not the session (真机首验回归 2026-09-15)', async () => {
     // 首验现场：部署 bundle 早于 e0d38280b，exchange 没有 relay.route 分支——未知动作的
-    // 处置是 403 + 关 channel。在传输层精确复刻那一发：配对后的第一个 exchange（= 路由
-    // 探针的那发）按旧 Host 语义回 403。修复前这一问在会话通道上发出，配对后首次 sync 即
-    // 403 掉线报「电脑没回应」，重连再陪葬，死循环；修复后死的只是探针。
-    let probeKilled = false;
+    // 处置是 403 + 关 channel。探针（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE 起）先问
+    // relay.routes、被拒杀后回落问一次 relay.route——两个动作真旧 Host 都不认识，两发都
+    // 挨 403。修复前这一问在会话通道上发出，配对后首次 sync 即 403 掉线报「电脑没回应」，
+    // 重连再陪葬，死循环；修复后死的只是探针。
+    let killedExchanges = 0;
     const legacyPost = async (url: string, body: unknown) => {
       const res = await fetch(url, { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const raw = await res.text();
       if (!res.ok) throw new Error(`HTTP_${res.status}`);
-      if (url.endsWith('/exchange') && !probeKilled) { probeKilled = true; throw new Error('HTTP_403'); }
+      if (url.endsWith('/exchange') && killedExchanges < 2) { killedExchanges += 1; throw new Error('HTTP_403'); }
       return JSON.parse(raw) as unknown;
     };
     let storage: string | null = null;
@@ -291,7 +352,7 @@ describe('companion relay phone: dual-path over real gateway + LAN server + fake
     // #1915 起配对落在欢迎页（sessionId=null），send 会静默提前返回：先选中会话
     store.getState().selectSession('shared');
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan' });
-    expect(probeKilled).toBe(true); // 探针那一发确实挨了旧 Host 的 403
+    expect(killedExchanges).toBe(2); // relay.routes 探针与 relay.route 回落探针都挨了旧 Host 的 403
     expect(JSON.parse(storage ?? '{}').relay).toBeUndefined();
     // 会话通道必须活着：sync 与命令照常（修复前这里正是掉线点）。
     await store.getState().sync();

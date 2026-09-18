@@ -55,6 +55,15 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
         }
         return { kind: 'ok', v: 1, url: 'ws://127.0.0.1:8791/', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential' };
       }
+      if (payload.action === 'relay.routes') {
+        // 探针先问 relay.routes（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）。这个替身 Host 没登录
+        // 账号：只回旧路由。旧 Host 两个动作都不认识——通道照关。
+        if (harness.oldHost) {
+          this.ref.alive = false;
+          throw new Error('COMPANION_NETWORK_UNAVAILABLE');
+        }
+        return { kind: 'ok', routes: { v: 1, legacy: { v: 1, url: 'ws://127.0.0.1:8791/', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential' } } };
+      }
       if (payload.action === 'command') {
         // 结算回执：原样回带命令身份（companionAckMatches 按 commandId/deviceId/sessionId/action 认人）。
         return { kind: 'accepted', command: { ...(payload.command as Record<string, unknown>), state: 'accepted', result: {} } };
@@ -236,8 +245,8 @@ describe('companionStore 双径：LAN 优先、relay 回落、恢复收敛', () 
     };
     const store = createCompanionStore(companion, () => {});
     await store.getState().hydrate();
-    // mock 的 relay.route 永远回同一个 token ⇒ hydrate 重连走 LAN 时会请求一次路由。
-    expect(harness.lanRequests.map(payload => payload.action)).toContain('relay.route');
+    // mock 的 relay.routes 永远回同一个 token ⇒ hydrate 重连走 LAN 时会请求一次路由（探针先问双路由）。
+    expect(harness.lanRequests.map(payload => payload.action)).toContain('relay.routes');
     expect(writes.length).toBeGreaterThan(0);
     expect(JSON.parse(writes.at(-1) ?? '{}').relay).toMatchObject({ routeToken: 'route-token-aaaaaa' });
     store.getState().pause();
@@ -248,10 +257,13 @@ describe('companionStore 双径：LAN 优先、relay 回落、恢复收敛', () 
     const store = storeWith(storageWith());
     await store.getState().hydrate();
     // LAN 恢复成功、路由探针被旧 Host 拒杀——但状态仍是 connected、会话通道还活着。
+    // 探针（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE 起）先问 relay.routes、被拒杀后回落问一次
+    // relay.route、同样被拒杀——旧 Host 两个动作都不认识，死的都只是探针。
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan' });
-    expect(harness.lanClients.length).toBe(2); // 主通道 + 探针
+    expect(harness.lanClients.length).toBe(3); // 主通道 + relay.routes 探针 + relay.route 回落探针
     expect(harness.lanClients[0].alive).toBe(true); // 主通道没陪葬
     expect(harness.lanClients[1].alive).toBe(false); // 死的只是探针
+    expect(harness.lanClients[2].alive).toBe(false); // 回落探针同样只死自己
     // 首验现场正是这里：路由一问把会话通道打死，首次 sync 即掉线报「电脑没回应」。
     await store.getState().sync();
     expect(store.getState()).toMatchObject({ status: 'connected' });

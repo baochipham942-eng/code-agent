@@ -8,14 +8,16 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
-import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY, CONFIG_DIR_DEV } from '../../shared/constants/configDir';
+import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../../shared/constants/configDir';
 
 // ----------------------------------------------------------------------------
 // Constants
 // ----------------------------------------------------------------------------
 
 // 目录名常量上移到 shared 单一真值源（供 renderer 干净引用）；此处 re-export 保持现有 import 不变。
-export { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY, CONFIG_DIR_DEV };
+// CONFIG_DIR_DEV 不再从此处 re-export：最后一个消费方（channelDataDir）已改走
+// shared/devSlot，全仓无人再从 configPaths 拿它（knip dead-export 棘轮 2026-09-18）。
+export { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY };
 
 // ----------------------------------------------------------------------------
 // Types

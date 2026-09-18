@@ -28,6 +28,9 @@ const harness = vi.hoisted(() => ({
   dictationOpenResult: null as null | { ok: boolean; streamId?: string; sampleRate?: number },
   /** 每个 mock LAN 客户端实例的存活标记——断言「会话通道没陪葬」用。 */
   lanClients: [] as { alive: boolean }[],
+  /** N-MOBILE-NOHOST-WAKING-STATE：下一笔 relay connect() 挂起（一次性），releaseRelay 注入迟到结局。 */
+  hangRelayOnce: false,
+  releaseRelay: null as null | ((code: string) => void),
 }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
@@ -85,6 +88,10 @@ vi.mock('../../../packages/mobile/src/platform/relayCompanionClient', () => ({
     }
     async connect() {
       harness.relayDials.push({ url: 'captured-in-store-test', authorization: 'n/a' });
+      if (harness.hangRelayOnce) {
+        harness.hangRelayOnce = false;
+        return new Promise<void>((_, reject) => { harness.releaseRelay = code => reject(new Error(code)); });
+      }
       if (harness.relayError) throw new Error(harness.relayError);
     }
     async resume() { if (harness.relayError) throw new Error(harness.relayError); }
@@ -143,10 +150,17 @@ describe('companionStore 双径：LAN 优先、relay 回落、恢复收敛', () 
     const other = storeWith(storageWith({ relay: RELAY_ROUTE }));
     await other.getState().hydrate();
     expect(other.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionRelayRejected' });
+    // NO_HOST 那拍按 N-MOBILE-NOHOST-WAKING-STATE 改写：不再当场 offline——先进「等电脑上线」
+    // 过渡态，15s 到点才落回同一句失败码（断言不删，只是搬到它现在该在的时刻）。
     harness.relayError = 'COMPANION_RELAY_NO_HOST';
-    const noHost = storeWith(storageWith({ relay: RELAY_ROUTE }));
-    await noHost.getState().hydrate();
-    expect(noHost.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionRelayNoHost' });
+    vi.useFakeTimers();
+    try {
+      const noHost = storeWith(storageWith({ relay: RELAY_ROUTE }));
+      await noHost.getState().hydrate();
+      expect(noHost.getState()).toMatchObject({ status: 'connecting', relayNoHostWaiting: true, connectionError: null });
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(noHost.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionRelayNoHost' });
+    } finally { vi.useRealTimers(); }
   });
 
   it('LAN 失败 + 没有缓存路由 ⇒ 只报 LAN 的错误（行为不劣化）', async () => {
@@ -289,5 +303,139 @@ describe('companionStore 双径：LAN 优先、relay 回落、恢复收敛', () 
       harness.dictationAdvertised = false;
       harness.dictationOpenResult = null;
     }
+  });
+});
+
+/**
+ * N-MOBILE-NOHOST-WAKING-STATE：手机经中继拨到 no-host 不直接落失败页——store 层进「等电脑上线」
+ * 过渡态，每 3s 重拨一次，15s 内电脑上线直接连上（全程无失败闪态），到点才落回 connectionRelayNoHost。
+ * 全部用 fake timers 驱动节拍；harness 的 relayConstructed/relayError 记账用来数拨号与翻转结局。
+ */
+describe('no-host 过渡态：等电脑上线，15s 内不落失败页', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    harness.lanError = 'COMPANION_NETWORK_UNAVAILABLE';
+    harness.relayError = 'COMPANION_RELAY_NO_HOST';
+    harness.relayConstructed = 0;
+    harness.hangRelayOnce = false;
+    harness.releaseRelay = null;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    harness.lanError = null;
+    harness.relayError = null;
+  });
+
+  it('① NO_HOST 不落失败页：进过渡态（connecting + 等待标记 + connectionError 保持 null），死线内怎么拨都不 offline', async () => {
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    const samples: { status: string; connectionError: string | null }[] = [];
+    const unsubscribe = store.subscribe(s => samples.push({ status: s.status, connectionError: s.connectionError }));
+    await store.getState().hydrate();
+    expect(store.getState()).toMatchObject({ status: 'connecting', connectionError: null, transport: null, relayNoHostWaiting: true, busy: false });
+    expect(harness.relayConstructed).toBe(1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(store.getState().relayNoHostWaiting).toBe(true);
+    // 全程逐拍采样：既没有 offline，也没有 connectionRelayNoHost（「无失败闪态」靠的是它一直是 null）
+    expect(samples.filter(s => s.status === 'offline')).toEqual([]);
+    expect(samples.filter(s => s.connectionError === 'connectionRelayNoHost')).toEqual([]);
+    unsubscribe();
+  });
+
+  it('② 15s 内电脑上线直接连上：无失败闪态；relayConstructed 与 3s 节拍吻合', async () => {
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    const samples: { status: string; connectionError: string | null }[] = [];
+    const unsubscribe = store.subscribe(s => samples.push({ status: s.status, connectionError: s.connectionError }));
+    await store.getState().hydrate();
+    expect(harness.relayConstructed).toBe(1);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(harness.relayConstructed).toBe(2);
+    await vi.advanceTimersByTimeAsync(2_900);
+    expect(harness.relayConstructed).toBe(2); // 拍间不拨
+    await vi.advanceTimersByTimeAsync(100);
+    expect(harness.relayConstructed).toBe(3);
+    harness.relayError = null; // 电脑上线
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(harness.relayConstructed).toBe(4);
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay', connectionError: null, relayNoHostWaiting: false });
+    expect(samples.filter(s => s.status === 'offline')).toEqual([]);
+    expect(samples.filter(s => s.connectionError === 'connectionRelayNoHost')).toEqual([]);
+    unsubscribe();
+    store.getState().pause();
+  });
+
+  it('③ 15s 到点落回现有失败页：offline + connectionRelayNoHost；认输后自动重连照旧、不再复活过渡态', async () => {
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    await store.getState().hydrate();
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(store.getState()).toMatchObject({ status: 'connecting', relayNoHostWaiting: true });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionRelayNoHost', relayNoHostWaiting: false, transport: null });
+    // connectionRelayNoHost 不挡自动重连（行为照旧）
+    expect(store.getState().autoRetrying).toBe(true);
+    harness.relayConstructed = 0;
+    await vi.advanceTimersByTimeAsync(5_000); // 首档 2s±50% ⇒ 这里面必有一拍
+    expect(harness.relayConstructed).toBeGreaterThanOrEqual(1);
+    // 认输后的 no-host 照旧走失败映射，不复活过渡态（否则失败页永远回不来）
+    expect(store.getState().relayNoHostWaiting).toBe(false);
+    expect(store.getState().status).toBe('offline');
+  });
+
+  it('④ 过渡态点「重新连接」= 立即重拨一次 + 重置 15s 计时（不是放弃等待落失败页）', async () => {
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    await store.getState().hydrate();
+    await vi.advanceTimersByTimeAsync(9_000); // t=9：第 3 拍重拨刚结束
+    expect(harness.relayConstructed).toBe(4);
+    expect(store.getState().relayNoHostWaiting).toBe(true);
+    await store.getState().reconnect({ resetBackoff: true });
+    expect(harness.relayConstructed).toBe(5); // 立即多一次拨号，不等下一个 3s 拍
+    expect(store.getState().relayNoHostWaiting).toBe(true); // 没有点按放弃
+    await vi.advanceTimersByTimeAsync(14_999); // t≈9+15s 之内：计时被重置，不落失败页
+    expect(store.getState()).toMatchObject({ status: 'connecting', relayNoHostWaiting: true });
+    await vi.advanceTimersByTimeAsync(2); // 重置后的 15s 到点
+    expect(store.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionRelayNoHost', relayNoHostWaiting: false });
+  });
+
+  it('等待期间 relay 收到 revoke：立即 rejected，过渡态与全部等待定时器当场清掉，不被 15s 到点覆盖', async () => {
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    await store.getState().hydrate();
+    expect(store.getState().relayNoHostWaiting).toBe(true);
+    harness.onRevoked?.();
+    expect(store.getState()).toMatchObject({ status: 'rejected', connectionError: 'connectionRejected', relayNoHostWaiting: false });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(store.getState()).toMatchObject({ status: 'rejected', connectionError: 'connectionRejected' });
+  });
+
+  it('退后台即停（#1935 纪律）：过渡态收场、3s 拍不再重拨；回前台既有 reconnect 接手重新给满 15s', async () => {
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    await store.getState().hydrate();
+    expect(store.getState().relayNoHostWaiting).toBe(true);
+    store.getState().pause();
+    expect(store.getState().relayNoHostWaiting).toBe(false);
+    const before = harness.relayConstructed;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(harness.relayConstructed).toBe(before); // 后台不空转重拨
+    await store.getState().reconnect(); // 回前台的既有路径（lifecycle active 同款调用）
+    expect(store.getState().relayNoHostWaiting).toBe(true);
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(store.getState().relayNoHostWaiting).toBe(true); // 全新一轮 15s
+  });
+
+  it('在途重拨被手动重连抢占（claim 代号链）：迟到的 NO_HOST 按代号丢弃，不覆盖过渡态的新节拍', async () => {
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    await store.getState().hydrate();
+    expect(store.getState().relayNoHostWaiting).toBe(true);
+    harness.hangRelayOnce = true; // t=3 那拍自动重拨挂起在途
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(store.getState().busy).toBe(true);
+    expect(store.getState().autoAttempt).toBe(true); // 自动尝试在途 ⇒ 手动点按可抢占（D3）
+    const before = harness.relayConstructed;
+    const manual = store.getState().reconnect({ resetBackoff: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(harness.relayConstructed).toBe(before + 1); // 手动立即重拨
+    harness.releaseRelay?.('COMPANION_RELAY_NO_HOST'); // 被抢占那拍的迟到结局
+    await manual;
+    await vi.advanceTimersByTimeAsync(0);
+    // 迟到结果被代号丢弃：不落失败页、不打断手动重连后的过渡态
+    expect(store.getState()).toMatchObject({ status: 'connecting', relayNoHostWaiting: true, connectionError: null, busy: false });
   });
 });

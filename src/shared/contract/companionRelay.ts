@@ -6,6 +6,12 @@ const COMPANION_RELAY_PROTOCOL_VERSION = 1 as const;
 
 const routeToken = z.string().trim().min(16).max(L.idLength).regex(/^[A-Za-z0-9_-]+$/);
 const deviceRef = z.string().trim().min(1).max(L.idLength);
+/**
+ * 注册连接的实例身份（N-COMPANION-RELAY-ROUTE-TAKEOVER）：Host 每个进程生命周期随机生成的
+ * 内存 nonce（base64url），与 routeToken 同字符集。判「同 token 换了实例（顶替）」与「同实例
+ * 重连」全靠它——optional 是为了接住旧 Host / 手机（device 角色不发它）。
+ */
+const instanceId = z.string().trim().min(16).max(L.idLength).regex(/^[A-Za-z0-9_-]+$/).optional();
 const seq = z.number().int().nonnegative().safe();
 const ttlMs = z.number().int().positive().max(L.relayRouteTokenTtlMs).safe();
 const issuedAt = z.number().int().positive().safe();
@@ -28,7 +34,7 @@ const frameBase = {
 };
 
 const companionRelayFrameSchema = z.discriminatedUnion('kind', [
-  z.object({ ...frameBase, kind: z.literal('register'), role: z.enum(['host', 'device']), ciphertext: controlCiphertext }).strict(),
+  z.object({ ...frameBase, kind: z.literal('register'), role: z.enum(['host', 'device']), instanceId, ciphertext: controlCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('unregister'), ciphertext: controlCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('heartbeat'), ciphertext: controlCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('ack'), ciphertext: controlCiphertext }).strict(),
@@ -87,6 +93,18 @@ export function companionRelayFrameExpired(frame: CompanionRelayFrame, now: numb
 export const COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN = 'neo-relay-ticket-issue';
 /** 服务端帧（ticket / no-host）的 deviceRef sentinel：帧来自 relay 本体，不是某台设备的转发。 */
 export const COMPANION_RELAY_SENTINEL_DEVICE_REF = 'relay';
+
+/**
+ * relay 拒绝「同 token 不同实例顶替 host 槽」后关顶替者连接用的自定 close code
+ * （N-COMPANION-RELAY-ROUTE-TAKEOVER；4000 段是 WS 应用自定义区间）。Host 侧据此单具名码
+ * `COMPANION_RELAY_ROUTE_TAKEN` 报警，不折叠进 `close <code>` 泛化码。两侧（relay 关、Host 认）
+ * 都以这里为单一真源。
+ *
+ * ⚠️ 部署顺序硬约束：register 帧新增的 optional instanceId 会先于旧 relay 上线——旧 relay 的
+ * strict schema 把带新字段的 register 当非法帧直接关连接。**relay 必须先于 Host 升级**，
+ * 否则新 Host 一条路由都注册不上。
+ */
+export const COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN = 4001;
 
 /**
  * Loopback `ws:` is for the in-process fake relay. Any other host must use `wss:`.

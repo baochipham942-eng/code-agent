@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import WebSocket, { WebSocketServer } from 'ws';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import {
+  COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN,
   COMPANION_RELAY_SENTINEL_DEVICE_REF,
   COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN,
   COMPANION_RELAY_WS_PROTOCOL,
@@ -44,6 +45,8 @@ export interface CompanionRelayServerStats {
   /** 探活失败（上一个 ping 周期无 pong/message）被 terminate 的连接数；与 idle 清扫分开记账，
    *  排障要分清「没流量被扫」与「链路死了探不到」（N-COMPANION-RELAY-KEEPALIVE）。 */
   terminatedNoPong: number;
+  /** 同 token 不同实例顶替 host 槽被拒的次数（N-COMPANION-RELAY-ROUTE-TAKEOVER）。 */
+  rejectedTakeover: number;
   jwks?: JwksStats;
 }
 
@@ -55,6 +58,9 @@ interface Route {
   /** 第一次登记这条路由的连接的主人；换主人来登记（任一角色）一律拒。 */
   owner: Principal;
   host?: WebSocket;
+  /** host 槽当前占用者的实例身份（register.instanceId，N-COMPANION-RELAY-ROUTE-TAKEOVER）：
+   *  顶替判据只认「两侧 instanceId 都在且不同」——缺任一侧（旧客户端）判不了，放行留痕。 */
+  hostInstanceId?: string;
   device?: WebSocket;
   expiresAt: number;
 }
@@ -78,6 +84,10 @@ const COMPANION_RELAY_WS_AUTH_PREFIX = companionRelayCredentialSubprotocol('');
 // 票据帧的固定信封 sentinel（与 no-host 帧同一套写法）：票据不走路由，任何真实 route 的转发
 // 都不会长这个样子。只有 relay 发它；旧 Host / 手机不认识该 kind，静默丢帧。新 Host 会校验同一
 // sentinel（常量在 shared 契约，两侧单一真源）。
+
+// 关顶替者连接时 close 帧带的说明（N-COMPANION-RELAY-ROUTE-TAKEOVER）：code 在 shared 契约
+// （Host 侧要认），reason 只有 relay 发、没人比对，留在这里。
+const CLOSE_REASON_ROUTE_TAKEN = 'ROUTE_TAKEN_OVER';
 
 /**
  * 只有 relay 服务端解码，所以放这里不进 shared 契约（knip 死导出棘轮不扫 packages/relay）。
@@ -136,11 +146,13 @@ export class CompanionRelayServer {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   /** 已发 ping、还没等到 pong/message 的连接：下一轮 ping 时仍在集合里 = 探活失败。 */
   private readonly pongPending = new WeakSet<WebSocket>();
+  /** 已因「无实例身份注册」warn 过的连接（N-COMPANION-RELAY-ROUTE-TAKEOVER）：同一连接只打一次。 */
+  private readonly legacyRegisterWarned = new WeakSet<WebSocket>();
   private readonly stats: CompanionRelayServerStats = {
     connections: 0, routes: 0, queuedFrames: 0, forwarded: 0,
     droppedExpired: 0, droppedNoRoute: 0, droppedBacklog: 0, droppedBackpressure: 0,
     revoked: 0, rejectedAuth: 0, notifiedNoHost: 0, accountConnections: 0, rejectedOwner: 0,
-    ticketsIssued: 0, ticketConnections: 0, terminatedNoPong: 0,
+    ticketsIssued: 0, ticketConnections: 0, terminatedNoPong: 0, rejectedTakeover: 0,
   };
   private readonly now: () => number;
 
@@ -416,12 +428,37 @@ export class CompanionRelayServer {
         this.options.logger?.warn('route_owner_mismatch', { role: frame.role, token: tokenPrefix(token) });
         return;
       }
+      // 顶替判据（N-COMPANION-RELAY-ROUTE-TAKEOVER）：同 token 的 host 槽被另一条 OPEN 连接占着时，
+      // routeToken 是持久身份确定性派生的，共用数据目录的另一个 Host 进程算出同一批 token——
+      // 「谁在位」必须按实例身份分辨，否则顶替成功的唯一痕迹是一条与正常注册不可分辨的 info 日志。
+      // 只判 host 槽：手机（device 角色）没有实例身份，重连顶替是常态，维持原行为。
+      if (frame.role === 'host' && known?.host && known.host !== socket && known.host.readyState === WebSocket.OPEN) {
+        if (frame.instanceId && known.hostInstanceId) {
+          if (frame.instanceId !== known.hostInstanceId) {
+            // 不同实例 = 顶替：不覆盖、留痕、关顶替者（code 走 4000 段自定值，Host 侧单具名码报警）。
+            // 原路由不动：在位实例零感知地被换掉，正是本单要堵的洞。
+            this.stats.rejectedTakeover += 1;
+            this.options.logger?.warn('route_takeover_rejected', {
+              role: frame.role, token: tokenPrefix(token),
+              incumbent: known.hostInstanceId.slice(0, 8), challenger: frame.instanceId.slice(0, 8),
+            });
+            socket.close(COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN, CLOSE_REASON_ROUTE_TAKEN);
+            return;
+          }
+          // 相同 = 同实例重连（旧 socket 的关闭还没到）：放行，重连路径不许被顶替检测掐死。
+        } else if (!frame.instanceId && !this.legacyRegisterWarned.has(socket)) {
+          // 注册侧缺实例身份（旧 Host）：判不了顶替，维持放行，但 warn 一次让「无实例身份注册」有迹可循。
+          this.legacyRegisterWarned.add(socket);
+          this.options.logger?.warn('register_without_instance_id', { role: frame.role, token: tokenPrefix(token) });
+        }
+      }
       const route: Route = known ?? { owner: principal, expiresAt: this.now() + L.relayRouteTokenTtlMs };
       // 同 token 的 host 槽被另一条 socket 顶替（Host 换实例重连、旧 socket 的关闭还没到）：
       // 对设备腿来说谈判对象已经换了，照 host 腿断开同款宽限处理。到期复查时 host 槽若仍被
       // 占着（顶替者活着），说明 host 在位，什么都不发——不许踢一个 host 在位的健康对。
       const displacedHost = frame.role === 'host' ? known?.host : undefined;
       route[frame.role] = socket;
+      if (frame.role === 'host') route.hostInstanceId = frame.instanceId;
       route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
       this.routes.set(token, route);
       const binding = existing ?? { role: frame.role, tokens: new Set<string>() };
@@ -438,7 +475,11 @@ export class CompanionRelayServer {
     if (frame.kind === 'heartbeat') {
       const binding = this.bindings.get(socket);
       const route = this.routes.get(token);
-      if (route && binding?.tokens.has(token)) route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
+      // 槽主守卫（N-COMPANION-RELAY-ROUTE-TAKEOVER）：不是本 route 当前槽主的连接不许续 TTL——
+      // 被顶掉的旧 Host（顶替放行路径上）socket 还开着，它的心跳照样刷 TTL，等于替顶替者养路由。
+      if (route && binding?.tokens.has(token) && route[binding.role] === socket) {
+        route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
+      }
       return;
     }
     if (frame.kind === 'revoke') {

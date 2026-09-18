@@ -49,6 +49,23 @@ describe('companion relay contract', () => {
       .toThrow('COMPANION_RELAY_INVALID_FRAME');
   });
 
+  // N-COMPANION-RELAY-ROUTE-TAKEOVER：register 的 optional instanceId（Host 内存启动 nonce，
+  // base64url——与 routeToken 同字符集）。optional 是为了接住旧 Host 与 device 角色（手机不发它）；
+  // strict 不松，字段外的私货照拒。
+  it('parses register with and without an instanceId, rejecting bad encodings', () => {
+    const register = (instanceId?: string) => parseCompanionRelayFrame({
+      v: 1, kind: 'register', role: 'host', ...(instanceId ? { instanceId } : {}),
+      envelope, ciphertext: '',
+    });
+    expect(register('alpha-instance-00000001').kind).toBe('register');
+    expect(register().kind).toBe('register');
+    expect(() => register('short')).toThrow('COMPANION_RELAY_INVALID_FRAME');
+    expect(() => register('bad charset!!')).toThrow('COMPANION_RELAY_INVALID_FRAME');
+    expect(parseCompanionRelayFrame({
+      v: 1, kind: 'register', role: 'device', instanceId: 'alpha-instance-00000001', envelope, ciphertext: '',
+    }).kind).toBe('register');
+  });
+
   it('expires a frame by envelope TTL', () => {
     const frame = parseCompanionRelayFrame({ v: 1, kind: 'heartbeat', envelope, ciphertext: '' });
     expect(companionRelayFrameExpired(frame, envelope.issuedAt + envelope.ttlMs - 1)).toBe(false);

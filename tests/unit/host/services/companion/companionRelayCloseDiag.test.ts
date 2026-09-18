@@ -5,6 +5,7 @@ import { CompanionRelayClient } from '../../../../../src/host/services/companion
 import { createHandshake, createIdentity } from '../../../../../src/shared/companion/noiseChannel';
 import { toHex } from '../../../../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS as L } from '../../../../../src/shared/constants/companion';
+import { COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN } from '../../../../../src/shared/contract/companionRelay';
 import type { CompanionGateway } from '../../../../../src/host/services/companion/CompanionGateway';
 
 /**
@@ -17,11 +18,13 @@ import type { CompanionGateway } from '../../../../../src/host/services/companio
 class FakeWebSocket extends EventEmitter {
   static last: FakeWebSocket | null = null;
   readyState = 0;
+  /** 记录本连接发出的应用帧（N-COMPANION-RELAY-ROUTE-TAKEOVER 断言 register.instanceId 用）。 */
+  readonly sent: string[] = [];
   constructor(_url: string, _options?: unknown) {
     super();
     FakeWebSocket.last = this;
   }
-  send(): void { /* 心跳/注册帧不需要真回包 */ }
+  send(data: unknown): void { this.sent.push(String(data)); }
   close(): void {
     this.readyState = 3;
     this.emit('close', 1000, Buffer.alloc(0));
@@ -88,6 +91,96 @@ describe('companion relay disconnected diagnostics', () => {
       'Companion relay disconnected: close 1011; closeCode=1011 reason="relay internal error" uptimeMs=7000; reconnect in 50ms',
     ]);
     expect(warn.join('\n')).not.toContain('COMPANION_RELAY_CONNECT_FAILED');
+    await client.stop();
+  });
+
+  it('reports a route-taken close as a named code with its own warn line, and still reconnects', async () => {
+    const clock = { now: 0 };
+    const { client, socket, warn } = startAndStabilize(clock);
+    socket.emit('close', COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN, Buffer.from('ROUTE_TAKEN_OVER', 'utf8'));
+    expect(warn).toEqual([
+      'Companion relay route taken over: COMPANION_RELAY_ROUTE_TAKEN; another host instance holds this route;'
+        + ' closeCode=4001 reason="ROUTE_TAKEN_OVER" uptimeMs=7000; reconnect in 50ms',
+    ]);
+    // 不折叠进泛化掉线文案；scheduleReconnect 照常（退避重试无妨，relay 会每次拒+留痕）。
+    expect(warn.join('\n')).not.toContain('disconnected:');
+    void vi.advanceTimersByTime(50);
+    expect(FakeWebSocket.last).not.toBe(socket);
+    await client.stop();
+  });
+});
+
+/**
+ * 顶替拒绝的 Host 侧留痕（N-COMPANION-RELAY-ROUTE-TAKEOVER）：register 之后被 relay 以 4000 段
+ * 自定 code 关闭 ＝ 本实例的路由被另一个 Host 实例持有——单具名错误码报警，不折叠进 close <code>
+ * 泛化码，退避重连照常。这里钉住实例 nonce 的两个不变量：同一客户端跨重连不变（relay 靠它分辨
+ * 重连与顶替）、不同客户端实例不同（共用数据目录的两个进程才顶不成同一身份）。
+ */
+describe('companion relay route takeover diagnostics', () => {
+  const DEVICE_REF = 'device-ref-12345678';
+  const TOKEN = 'route-token-aaaaaa';
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeWebSocket.last = null;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function buildClient() {
+    const clock = { now: 0 };
+    const warn: string[] = [];
+    const client = new CompanionRelayClient({
+      gateway,
+      identity: createIdentity(),
+      config: { url: 'ws://relay.test', credentialRef: 'companion-relay', reconnectBackoffMs: [50, 50, 50] },
+      credential: 'shared-secret',
+      now: () => clock.now,
+      jitter: () => 0.5,
+      WebSocket: FakeWebSocket as unknown as typeof WebSocket,
+      logger: { warn: message => warn.push(message), info: () => {} },
+    });
+    return { client, clock, warn };
+  }
+
+  function openFreshSocket(): FakeWebSocket {
+    const socket = FakeWebSocket.last;
+    if (!socket) throw new Error('fake socket not constructed');
+    socket.readyState = 1;
+    socket.emit('open');
+    return socket;
+  }
+
+  function registerInstanceId(socket: FakeWebSocket): string {
+    const frame = socket.sent.map(raw => JSON.parse(raw) as { kind?: string; instanceId?: string })
+      .find(parsed => parsed.kind === 'register');
+    if (!frame?.instanceId) throw new Error('register frame without instanceId');
+    return frame.instanceId;
+  }
+
+  it('keeps the instance nonce stable across reconnects and distinct between client instances', async () => {
+    const { client, warn } = buildClient();
+    client.advertise({ deviceRef: DEVICE_REF, routeToken: TOKEN });
+    void client.start();
+    const socket1 = openFreshSocket();
+    const first = registerInstanceId(socket1);
+    expect(first).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
+    // 掉线重连（退避 50ms）：新连接重注册带的还是同一个 nonce——换了就会被 relay 当顶替拒掉。
+    socket1.emit('close', 1006, Buffer.alloc(0));
+    void vi.advanceTimersByTime(50);
+    const socket2 = openFreshSocket();
+    expect(registerInstanceId(socket2)).toBe(first);
+    // 另一个客户端实例（共用数据目录的另一个进程形状）：nonce 必须不同。
+    const second = buildClient();
+    second.client.advertise({ deviceRef: DEVICE_REF, routeToken: TOKEN });
+    void second.client.start();
+    const socket3 = openFreshSocket();
+    expect(registerInstanceId(socket3)).not.toBe(first);
+    // 1006 掉线有既有 warn 行是正常行为，本用例只关心没有顶替误报。
+    expect(warn.join('\n')).not.toContain('route taken over');
+    await second.client.stop();
     await client.stop();
   });
 });

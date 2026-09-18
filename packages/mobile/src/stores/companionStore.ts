@@ -29,7 +29,7 @@ import { transcriptionReadinessFromResult } from '../features/sessions/voiceFail
 
 interface Saved {
   version: 1; publicKey: string; secretKey: string;
-  candidate?: { endpoint: string; altEndpoint?: string; hostKey: string }; binding?: LanBinding; pending?: CompanionCommand;
+  candidate?: { endpoint: string; altEndpoint?: string; candidates?: string[]; hostKey: string }; binding?: LanBinding; pending?: CompanionCommand;
   /** LAN 连着时从 Host 拿到的 relay 路由（含共享凭据，随整份配对记录进 Keychain）。 */
   relay?: CompanionRelayRoute;
   /** Host 下发的账号 relay 路由（不带凭据，N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：手机拿自己登录换的票据拨。 */
@@ -1031,7 +1031,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
               identity.secretKey.fill(0);
             }
             if (seq !== undefined && seq !== connectSeq) return;
-            await persist({ ...saved!, candidate: { endpoint: invitation.endpoint, ...(invitation.altEndpoint ? { altEndpoint: invitation.altEndpoint } : {}), hostKey: invitation.hostKey }, binding: undefined });
+            await persist({ ...saved!, candidate: { endpoint: invitation.endpoint, ...(invitation.altEndpoint ? { altEndpoint: invitation.altEndpoint } : {}),
+              ...(invitation.candidates ? { candidates: invitation.candidates } : {}), hostKey: invitation.hostKey }, binding: undefined });
             if (seq !== undefined && seq !== connectSeq) return;
             const binding = await createClient().pair(payload);
             if (seq !== undefined && seq !== connectSeq) return;

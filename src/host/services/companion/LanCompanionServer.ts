@@ -153,14 +153,20 @@ export class LanCompanionServer {
    *
    * 主地址用「此刻一定连得上」的字面量；mDNS 名只作备用，手机连不上主地址时才试它。
    * 反过来（只广告 mDNS 名）在「电脑连手机热点」下 100% 配不上：手机解析不了宿主的 .local。
+   *
+   * 主地址是单数不够：宿主多张私网接口时 `[0]` 可能是手机根本不在的那一张（reachedEndpoint
+   * 的注释同款场景），热点下 .local 又解析不了 ⇒ 两个候选全灭。candidates 把**全部**私网
+   * 字面量带出去（含 [0]，手机侧去重保序），socket 绑的就是全部接口，每一张都真的能连进来。
    */
-  private endpoints(): { endpoint: string; altEndpoint: string | null } {
+  private endpoints(): { endpoint: string; altEndpoint: string | null; candidates: string[] } {
     // 列表为空 = 此刻没有任何私网接口（掉线）。那时报 start 时那个总比报空串强：
     // 手机拿它去试顶多失败一次，而空串会让 validateLanEndpoint 直接抛。
-    const address = privateLanAddresses()[0] ?? this.startAddress;
+    const addresses = privateLanAddresses();
+    const address = addresses[0] ?? this.startAddress;
     const endpoint = `http://${address}:${this.listenPort}`;
     const advertised = lanAdvertisedHost(address, hostname());
-    return { endpoint, altEndpoint: advertised === address ? null : `http://${advertised}:${this.listenPort}` };
+    const candidates = addresses.slice(0, L.invitationMaxCandidates).map(a => `http://${a}:${this.listenPort}`);
+    return { endpoint, altEndpoint: advertised === address ? null : `http://${advertised}:${this.listenPort}`, candidates };
   }
 
   invite(scope: string[]): LanInvitation {
@@ -170,8 +176,10 @@ export class LanCompanionServer {
     this.pending.clear();
     this.invitation = { id: randomUUID(), psk: randomBytes(32).toString('hex'), scope: [...new Set(scope)], expiresAt: this.now() + L.invitationTtlMs };
     const hostKey = toHex(this.identity.publicKey);
-    const { endpoint, altEndpoint } = this.endpoints();
+    const { endpoint, altEndpoint, candidates } = this.endpoints();
     return { version: 1, endpoint, ...(altEndpoint ? { altEndpoint } : {}),
+      // 单接口宿主的 candidates 与 endpoint 完全重合，带上只白占二维码字节：只在真有多张网卡时带。
+      ...(candidates.length > 1 ? { candidates } : {}),
       inviteId: this.invitation.id, psk: this.invitation.psk, hostKey, expiresAt: this.invitation.expiresAt,
       verify: deriveInvitationVerify(this.invitation.psk, hostKey) };
   }

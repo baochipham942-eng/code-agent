@@ -40,9 +40,12 @@ export class LanCompanionClient {
   }
 
   /**
-   * 宿主给两个地址：字面量（此刻一定连得上）和 mDNS 名（换网后仍有效）。按序试，
-   * 记住连通的那个——它们指向同一台宿主，hostKey 校验对两者一视同仁。
-   * 两个都失败时抛**第一个**错误：主地址的失败原因才是用户要看的那句。
+   * 宿主给一串地址：字面量主地址（此刻一定连得上）、多网卡时的其余字面量候选（candidates）、
+   * mDNS 名（换网后仍有效）。按「endpoint → 其余字面量候选（去重、保序）→ altEndpoint」试，
+   * 记住连通的那个——它们指向同一台宿主，hostKey 校验对每个一视同仁。
+   * `.local` 永远排最后：字面量拨一下立刻知道死活，mDNS 名在热点下解析要好几秒还多半不通
+   * （2026-09-12 真机），排前面只会白烧超时。
+   * 全部失败时抛**第一个**错误：主地址的失败原因才是用户要看的那句。
    *
    * 只有「没连上」才换地址。握手本身谈崩了（主机身份不对、绑定变了、会话被调用方换掉）
    * 说明我们**已经**够到了宿主，换个地址还是同一台机器、同样谈崩，
@@ -52,12 +55,18 @@ export class LanCompanionClient {
     'COMPANION_CHANNEL_CHANGED', 'COMPANION_HOST_KEY_MISMATCH',
     'COMPANION_BINDING_CHANGED', 'COMPANION_INVALID_BINDING', 'COMPANION_INVALID_FRAME',
   ]);
-  private async overAddresses<T>(target: { endpoint: string; altEndpoint?: string },
+  private async overAddresses<T>(target: { endpoint: string; altEndpoint?: string; candidates?: string[] },
     attempt: (endpoint: string, alternate?: string) => Promise<T>): Promise<T> {
-    const addresses = [target.endpoint, target.altEndpoint].filter((value): value is string => Boolean(value));
+    const addresses = [...new Set([target.endpoint, ...(target.candidates ?? []), target.altEndpoint]
+      .filter((value): value is string => Boolean(value)))];
     let firstError: unknown;
     for (const endpoint of addresses) {
-      try { return await attempt(endpoint, addresses.find(other => other !== endpoint)); }
+      // 绑定的备用位优先给 mDNS 名：换网后仍解析得到的那条路不能从绑定里消失（PR#1904 同款
+      // 纪律）；没有它才轮到其余字面量。旧邀请只有两个地址时与原行为逐字等价。
+      const others = addresses.filter(other => other !== endpoint);
+      const alternate = (target.altEndpoint && target.altEndpoint !== endpoint ? target.altEndpoint : undefined)
+        ?? others[0];
+      try { return await attempt(endpoint, alternate); }
       catch (error) {
         if (error instanceof Error && LanCompanionClient.FATAL.has(error.message)) throw error;
         firstError ??= error;
@@ -89,7 +98,7 @@ export class LanCompanionClient {
     await this.recover(binding, binding);
   }
 
-  async recover(target: { endpoint: string; altEndpoint?: string; hostKey: string }, binding?: LanBinding): Promise<LanBinding> {
+  async recover(target: { endpoint: string; altEndpoint?: string; candidates?: string[]; hostKey: string }, binding?: LanBinding): Promise<LanBinding> {
     return this.overAddresses(target, (endpoint, alternate) => this.recoverAt(endpoint, target.hostKey, alternate, binding));
   }
 

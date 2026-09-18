@@ -6,7 +6,11 @@ export type SheetPage = 'settings' | 'appearance' | 'profile' | 'about' | 'help'
 type Route = 'new' | 'fixture';
 type Preferences = { schema: 1; drafts: Record<string, string>; transcriptCommands?: Record<string, string>; appearance: Appearance; nickname: string; notifyEnabled: boolean;
   /** 新任务项目选择器上手选过的项目，按电脑（hostKey）记（N-MOBILE-DEFAULT-PROJECT）。 */
-  projectPicks?: Record<string, string> };
+  projectPicks?: Record<string, string>;
+  /** 上次打开的会话，按电脑（hostKey）记。空串 = 欢迎页（N-MOBILE-RESUME-LAST-SESSION）。 */
+  lastSessions?: Record<string, string>;
+  /** 上次见到的会话标题（`${hostKey}:${sessionId}` → title）：冷启动宿主停机时，缓存会话的标题从这里取（O1）。 */
+  sessionTitles?: Record<string, string> };
 type Sheet = { origin: 'root' | 'drawer'; pages: SheetPage[] };
 interface State {
   preferences: Preferences; ready: boolean; loadError: boolean; saveError: boolean; saving: boolean;
@@ -15,6 +19,10 @@ interface State {
   hydrate(): Promise<void>; editDraft(value: string): void; setAppearance(value: Appearance): void;
   setNotifyEnabled(value: boolean): void;
   pickProject(hostKey: string, projectId: string): void;
+  rememberSession(hostKey: string, sessionId: string | null): void;
+  rememberSessionTitle(hostKey: string, sessionId: string, title: string): void;
+  /** 会话删除清一条（带 sessionId）、配对撤销/忘掉电脑清整台的标题记忆。 */
+  forgetSessionTitles(hostKey: string, sessionId?: string): void;
   editProfile(value: string): void; saveProfile(): void; flush(): Promise<void>;
   openDrawer(): void; closeDrawer(): void; navigate(route: Route): void;
   openSheet(page: SheetPage): void; pushSheet(page: SheetPage): void; closeSheet(): void; back(): boolean;
@@ -24,6 +32,24 @@ interface State {
   acknowledgeDraft(text: string, key?: string): Promise<void>;
 }
 const defaults = (): Preferences => ({ schema: 1, drafts: { new: '', fixture: '' }, appearance: 'system', nickname: '', notifyEnabled: false });
+
+/** sessionTitles 每台电脑最多记多少条：按写入先后淘汰最旧的，偏好盘不随历史会话数无限增长（ai-review Nit）。 */
+const SESSION_TITLES_PER_HOST = 50;
+
+/** 键序即写入先后（旧→新）：超出上限的电脑丢最旧的条目。调用方须先删后放，改写才算最新一次写入。 */
+function capSessionTitles(titles: Record<string, string>): Record<string, string> {
+  const queues = new Map<string, string[]>();
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(titles)) {
+    const host = key.slice(0, key.indexOf(':'));
+    const queue = queues.get(host) ?? [];
+    queue.push(key);
+    queues.set(host, queue);
+    next[key] = value;
+    if (queue.length > SESSION_TITLES_PER_HOST) delete next[queue.shift()!];
+  }
+  return next;
+}
 function decode(raw: string | null): Preferences {
   if (raw === null) return defaults();
   const p: unknown = JSON.parse(raw);
@@ -34,7 +60,9 @@ function decode(raw: string | null): Preferences {
     throw new Error('INVALID_PREFERENCES');
   }
   return { schema: 1, transcriptCommands: v.transcriptCommands ?? {}, drafts: Object.fromEntries(Object.entries(v.drafts).filter(([, value]) => typeof value === 'string')), appearance: v.appearance!, nickname: v.nickname, notifyEnabled: v.notifyEnabled === true,
-    projectPicks: Object.fromEntries(Object.entries(v.projectPicks ?? {}).filter(([, value]) => typeof value === 'string')) };
+    projectPicks: Object.fromEntries(Object.entries(v.projectPicks ?? {}).filter(([, value]) => typeof value === 'string')),
+    lastSessions: Object.fromEntries(Object.entries(v.lastSessions ?? {}).filter(([, value]) => typeof value === 'string')),
+    sessionTitles: capSessionTitles(Object.fromEntries(Object.entries(v.sessionTitles ?? {}).filter(([, value]) => typeof value === 'string'))) };
 }
 
 /**
@@ -109,6 +137,36 @@ export function createMobileStore(port: PlatformPorts['preferences']) {
       pickProject: (hostKey, projectId) => {
         if (!get().ready) return;
         set({ preferences: { ...get().preferences, projectPicks: { ...get().preferences.projectPicks, [hostKey]: projectId } } }); persist();
+      },
+      // lastSessions 有两个写入口（ai-review Nit，刻意保留）：这一处管 store 内部的时点
+      // （配对成功/撤销/会话消失时 companionStore 传来的 remember(null)），MobileRoot 的
+      // effect 管跟随渲染生命周期的同步——收成一处就得把渲染周期引进 store，不值。
+      rememberSession: (hostKey, sessionId) => {
+        if (!get().ready) return;
+        set({ preferences: { ...get().preferences, lastSessions: { ...get().preferences.lastSessions, [hostKey]: sessionId ?? '' } } }); persist();
+      },
+      rememberSessionTitle: (hostKey, sessionId, title) => {
+        if (!get().ready) return;
+        const key = `${hostKey}:${sessionId}`;
+        // 没变不写盘：库每次刷新都会走这里，照写会让偏好盘跟着每次 sync 抖动。
+        if (get().preferences.sessionTitles?.[key] === title) return;
+        // 改写也算最新一次写入：先删再放，让这条排到该电脑的最新端，淘汰只动最旧的。
+        const stamped: Record<string, string> = { ...get().preferences.sessionTitles };
+        delete stamped[key];
+        stamped[key] = title;
+        set({ preferences: { ...get().preferences, sessionTitles: capSessionTitles(stamped) } }); persist();
+      },
+      forgetSessionTitles: (hostKey, sessionId) => {
+        if (!get().ready) return;
+        const titles = get().preferences.sessionTitles ?? {};
+        const exact = sessionId === undefined ? null : `${hostKey}:${sessionId}`;
+        const drop = exact === null
+          ? Object.keys(titles).filter(key => key.startsWith(`${hostKey}:`))
+          : exact in titles ? [exact] : [];
+        if (!drop.length) return;   // 没得清不写盘
+        const next = { ...titles };
+        for (const key of drop) delete next[key];
+        set({ preferences: { ...get().preferences, sessionTitles: next } }); persist();
       },
       editProfile: profileDraft => set({ profileDraft }),
       saveProfile: () => {

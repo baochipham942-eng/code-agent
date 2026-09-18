@@ -131,7 +131,10 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 span.status-text { display: flex; align-items: center; }
 .status-slot .status-action { flex: none; min-width: 0; min-height: 36px; padding: 0 12px; border-radius: 18px; background: var(--group); color: var(--accent); font-size: 14px; font-weight: 600; white-space: nowrap; }
 /* 新任务的项目选择器（design.html .project-pick）。 */
-.project-pick { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; min-height: 36px; padding: 6px 12px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); font-size: 14px; }
+.project-pick { position: relative; display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; min-height: 36px; padding: 6px 12px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); font-size: 14px; overflow: visible; }
+/* 绝对定位伪元素的包含块是 padding box：扩 4pt 必须把 1px 边框也补进去（D4，模拟器实测
+   下沿只扩 ~3pt、总高 42.75 < 44），否则视觉胶囊上下沿的外扩各亏一个边框宽。 */
+.project-pick::after { content: ''; position: absolute; inset: calc(-4px - 1px) 0; }
 .project-pick .app-icon { width: 15px; height: 15px; color: var(--muted); }
 .project-pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .message-region { position: relative; display: flex; flex: 1; min-height: 0; }
@@ -189,10 +192,15 @@ span.status-text { display: flex; align-items: center; }
 .approval-actions button { flex: 1; min-height: 44px; border-radius: 22px; background: var(--group); font-size: 14px; }
 .approval-actions button:last-child { background: var(--text); color: var(--bg); }
 .question-block { margin: 8px 0; }
-.question-block .option { display: block; width: 100%; text-align: left; border-radius: 16px; background: var(--group); padding: 10px 14px; margin: 6px 0; }
-.question-block .option.selected { background: var(--text); color: var(--bg); }
-.question-block .option small { display: block; color: var(--muted); font-size: 12px; }
+.question-block .option { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; width: 100%; text-align: left; border-radius: 16px; background: var(--group); padding: 10px 14px; margin: 6px 0; }
+/* opacity:1 盖过全局 button:disabled 的 .45（R4 验收 O1）：已答卡的选中项要高亮，不再跟未选项一起发灰。 */
+.question-block .option.selected { background: var(--text); color: var(--bg); opacity: 1; }
+.question-block .option.faded { opacity: .4; }
+.question-block .option .option-check { margin-left: auto; font-size: 14px; }
+.question-block .option small { display: block; width: 100%; color: var(--muted); font-size: 12px; }
 .question-block .option.selected small { color: inherit; opacity: .75; }
+.question-your-answer, .decision-result { margin: 8px 0 0; font-size: 13px; }
+.lan-message.from-user [data-testid="supplement-queued"] { display: block; text-align: right; margin: 4px 2px 0; font-size: 12px; color: var(--muted); }
 .question-other { display: block; margin: 8px 0; font-size: 13px; color: var(--muted); }
 .question-other input, .question-other textarea { display: block; width: 100%; margin-top: 6px; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
 @media (max-height: 520px) { .composer-area, .composer-area[data-keyboard-inset] { padding-bottom: 4px; } .approval-tray .approval-card { max-height: 36dvh; padding: 8px; } .approval-summary > div { padding: 1px 0; } }

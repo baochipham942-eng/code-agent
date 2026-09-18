@@ -52,6 +52,9 @@ describe('companion uses the desktop live approval authority', () => {
     expect(gateway.syncForDevice('phone', 1, 0).events[0].payload.preview).toContain('bounded test content');
     expect(gateway.submit(command).kind).toBe('accepted');
     await expect(promise).resolves.toEqual({ approved: true, approvalSource: 'user' });
+    expect(gateway.getDecision(request.id)).toMatchObject({
+      status: 'approved', outcome: 'answered', answer: { decision: 'approved' },
+    });
     expect(island.listPendingRequests()).toEqual([]);
     expect(await handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, request.id, 'deny', sessionId)).toMatchObject({ success: false });
     expect(gateway.submit({ ...command, commandId: 'command-two' }).kind).toBe('approval_conflict');
@@ -64,11 +67,39 @@ describe('companion uses the desktop live approval authority', () => {
     await expect(promise).resolves.toEqual({ approved: true, approvalSource: 'user' });
     expect(published.has(request.id)).toBe(false);
   });
+  it('a phone decision publishes exactly one resolved approval event, carrying resolvedBy', async () => {
+    const { promise, request, command } = pending();
+    expect(gateway.submit(command).kind).toBe('accepted');
+    await expect(promise).resolves.toEqual({ approved: true, approvalSource: 'user' });
+    // deliver 内部宿主结算（settleFromHost）与 respond 各发一条 ⇒ 同一次手机决定两条事件（ai-review R5）。
+    const resolved = gateway.syncForDevice('phone', 1, 0).events
+      .filter(event => event.kind === 'approval' && event.payload.requestId === request.id && event.payload.status !== 'pending');
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].payload.resolvedBy).toBe('phone');
+    expect(gateway.getDecision(request.id)).toMatchObject({ status: 'approved', resolvedBy: 'phone' });
+  });
   it('desktop winning first prevents a stale mobile approval', async () => {
     const { promise, request, command } = pending();
     await handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, request.id, 'deny', sessionId);
+    expect(gateway.getDecision(request.id)).toMatchObject({
+      status: 'rejected', outcome: 'answered', answer: { decision: 'rejected' },
+    });
     expect(gateway.submit(command).kind).toBe('approval_conflict');
     await expect(promise).resolves.toMatchObject({ approved: false });
+  });
+
+  it('desktop allow_session and timeout/cancel carry distinct outcomes', async () => {
+    const first = pending();
+    await handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, first.request.id, 'allow_session', sessionId);
+    expect(gateway.getDecision(first.request.id)).toMatchObject({
+      status: 'approved', outcome: 'answered', answer: { decision: 'allow_session' },
+    });
+    await expect(first.promise).resolves.toMatchObject({ approved: true });
+
+    const timed = pending();
+    island.drainPendingPermissions();
+    await expect(timed.promise).resolves.toMatchObject({ approved: false });
+    expect(gateway.getDecision(timed.request.id)).toMatchObject({ status: 'closed', outcome: 'cancelled' });
   });
   it('lost durable receipt cannot repeat the same logical approval with a new command ID', async () => {
     const { promise, command } = pending();
@@ -206,6 +237,7 @@ describe('an approval no surface can render must keep its fail-closed timeout', 
     const promise = write('bounded content');
     service.refresh();
     expect(gateway.syncForDevice('phone', 1, 0).events[0].payload.preview).toContain('bounded content');
+    const requestId = island.listPendingRequests()[0].id;
 
     let outcome: unknown = 'still-pending';
     void promise.then(value => { outcome = value; });
@@ -217,6 +249,7 @@ describe('an approval no surface can render must keep its fail-closed timeout', 
     await vi.advanceTimersByTimeAsync(60_000 + 15_000);
     expect(outcome, '手机离网后还停在创建时的 true：这次运行会永久挂在一个两端都看不见的 tool call 上')
       .toEqual({ approved: false, denialSource: 'timeout' });
+    expect(gateway.getDecision(requestId)).toMatchObject({ status: 'closed', outcome: 'expired' });
   });
 
   it('通道到点被拆之后必须重判——不能永远停在 t=0 那个 true', async () => {

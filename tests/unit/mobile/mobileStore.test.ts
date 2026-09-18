@@ -207,3 +207,55 @@ describe('needsLibraryPick', () => {
     expect(needsLibraryPick(state)).toBe(expected);
   });
 });
+
+describe('sessionTitles 上限与清理（ai-review Nit：只增不删会无限增长）', () => {
+  it('每台电脑最多保留最近 50 条，改写顶到最新端、最旧的先淘汰', async () => {
+    const store = createMobileStore(disk()); await store.getState().hydrate();
+    for (let i = 0; i < 52; i += 1) store.getState().rememberSessionTitle('host-a', `s-${i}`, `标题${i}`);
+    let titles = store.getState().preferences.sessionTitles!;
+    expect(Object.keys(titles)).toHaveLength(50);
+    expect(titles['host-a:s-0']).toBeUndefined();   // 最旧的先被淘汰
+    expect(titles['host-a:s-1']).toBeUndefined();
+    expect(titles['host-a:s-2']).toBe('标题2');
+    expect(titles['host-a:s-51']).toBe('标题51');
+    // 改写 s-2 算最新一次写入（顶到最新端）：再写一条挤出的是 s-3，刚改写的 s-2 保留
+    store.getState().rememberSessionTitle('host-a', 's-2', '改名');
+    store.getState().rememberSessionTitle('host-a', 's-52', '新条');
+    titles = store.getState().preferences.sessionTitles!;
+    expect(titles['host-a:s-2']).toBe('改名');
+    expect(titles['host-a:s-3']).toBeUndefined();
+    expect(titles['host-a:s-52']).toBe('新条');
+    expect(Object.keys(titles)).toHaveLength(50);
+  });
+  it('上限按电脑分开算：别台的条目不被挤掉；盘上超量的旧数据 hydrate 时也收口', async () => {
+    const oversized: Record<string, string> = { 'host-a:s-keep': '旧标题' };
+    for (let i = 0; i < 60; i += 1) oversized[`host-b:s-${i}`] = `B${i}`;
+    const port = disk(JSON.stringify({ schema: 1, drafts: { new: '', fixture: '' }, appearance: 'system', nickname: '', notifyEnabled: false, sessionTitles: oversized }));
+    const store = createMobileStore(port); await store.getState().hydrate();
+    const titles = store.getState().preferences.sessionTitles!;
+    expect(titles['host-a:s-keep']).toBe('旧标题');
+    expect(Object.keys(titles).filter(key => key.startsWith('host-b:'))).toHaveLength(50);
+    expect(titles['host-b:s-0']).toBeUndefined();
+    expect(titles['host-b:s-59']).toBe('B59');
+  });
+  it('forgetSessionTitles：带 sessionId 清一条，不带清整台；没得清不写盘', async () => {
+    let writes = 0;
+    const port = { get: async () => null as string | null, set: async () => { writes += 1; } };
+    const store = createMobileStore(port); await store.getState().hydrate();
+    store.getState().rememberSessionTitle('host-a', 's-1', '一');
+    store.getState().rememberSessionTitle('host-a', 's-2', '二');
+    store.getState().rememberSessionTitle('host-b', 's-1', '别台');
+    await store.getState().flush();
+    const writesSeeded = writes;
+    store.getState().forgetSessionTitles('host-c');   // 没得清：不写盘
+    expect(writes).toBe(writesSeeded);
+    store.getState().forgetSessionTitles('host-a', 's-1');
+    const titles = store.getState().preferences.sessionTitles!;
+    expect(titles['host-a:s-1']).toBeUndefined();
+    expect(titles['host-a:s-2']).toBe('二');
+    expect(titles['host-b:s-1']).toBe('别台');
+    store.getState().forgetSessionTitles('host-a');   // 整台清
+    expect(Object.keys(store.getState().preferences.sessionTitles!)).toEqual(['host-b:s-1']);
+    await store.getState().flush();
+  });
+});

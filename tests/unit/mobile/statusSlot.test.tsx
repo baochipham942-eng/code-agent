@@ -25,7 +25,7 @@ const quiet: Input = {
   libraryError: false, pending: false, pendingAction: null, pendingSlow: false,
   library: { models: [{}] },
 };
-const acts = () => ({ flush: vi.fn(), reconnect: vi.fn(), scan: vi.fn(), openRemote: vi.fn(), retryCreate: vi.fn(), switchModel: vi.fn(), openModelSetup: vi.fn() });
+const acts = () => ({ flush: vi.fn(), reconnect: vi.fn(), scan: vi.fn(), openRemote: vi.fn(), retryCreate: vi.fn(), switchModel: vi.fn(), retrySend: vi.fn(), dismissAbandoned: vi.fn(), openModelSetup: vi.fn() });
 const items = (patch: Partial<Input> = {}, act = acts()) => composerStatusItems(text, { ...quiet, ...patch }, act);
 const voiceFailure: StatusItem = { rank: 4, message: text.microphoneDenied };
 
@@ -109,6 +109,22 @@ describe('连接那一条：一句话 + 一个动作，点文字打开连接电�
     if (action === text.scanShort) { fireEvent.click(document.querySelector('[data-testid="status-action"]')!); expect(act.scan).toHaveBeenCalled(); }
     if (action === text.reconnect) { fireEvent.click(document.querySelector('[data-testid="status-action"]')!); expect(act.reconnect).toHaveBeenCalled(); }
   });
+  it('自动重试期间不闪「正在连接…」，文案恒为正在自动重试', () => {
+    const act = acts();
+    const [item] = items({ status: 'connecting', autoRetrying: true, connectionError: 'connectionUnavailable' }, act);
+    expect(item.message).toBe(text.autoRetrying);
+    expect(item.action?.label).toBe(text.reconnect);
+    expect(item.reason).toBe('auto-retry');
+  });
+  it('扫码丢掉未确认操作后：一次性「上一条操作没送到…」+「知道了」', () => {
+    const act = acts();
+    act.dismissAbandoned = vi.fn();
+    const [item] = items({ abandonedPending: true }, act);
+    expect(item.message).toBe(text.abandonedPending);
+    expect(item.action?.label).toBe(text.gotIt);
+    item.action!.run();
+    expect(act.dismissAbandoned).toHaveBeenCalled();
+  });
   it('没配对过就点发送：去连接电脑', () => {
     const act = acts();
     const [item] = items({ binding: false, status: 'unpaired', sendAttempted: true }, act);
@@ -151,6 +167,17 @@ describe('刚才的操作没成功：按码一句 + 一个动作', () => {
     expect(item.action!.label).toBe(text.switchModel);
     item.action!.run();
     expect(act.switchModel).toHaveBeenCalled();
+  });
+  it.each(['RUN_START_FAILED', 'HOST_UNAVAILABLE'] as const)('%s：全文是「这条消息没发出去」，动作是重试并会重发', (code) => {
+    const act = acts();
+    const [item] = items({ commandError: code, commandErrorAction: 'message.send' }, act);
+    expect(item.message).toBe('这条消息没发出去');
+    expect(item.action!.label).toBe(text.retry);
+    render(<StatusSlot items={[item]} />);
+    expect(document.querySelector('[data-testid="status-slot"]')!.textContent).toContain('这条消息没发出去');
+    expect(document.querySelector('[data-testid="status-action"]')!.textContent).toBe('重试');
+    fireEvent.click(document.querySelector('[data-testid="status-action"]')!);
+    expect(act.retrySend).toHaveBeenCalledTimes(1);
   });
   it('错误码只进 data-reason，不进用户面', () => {
     render(<StatusSlot items={items({ commandError: 'RUN_FAILED', commandErrorAction: 'message.send' })} />);
@@ -198,6 +225,9 @@ describe('commandNoticeCopy（预览面板也用它）', () => {
     expect(notice('scope_denied', 'message.send', false)).toBe(text.commandScopeDenied);
     expect(notice('COMPANION_SCOPE_DENIED', 'message.send', false)).toBe(text.commandScopeDenied);
     expect(notice('RUN_FAILED', 'message.send', false)).toBe(text.runFailed);
+    expect(notice('RUN_START_FAILED', 'message.send', false)).toBe(text.runStartFailed);
+    expect(notice('HOST_UNAVAILABLE', 'message.send', false)).toBe(text.runStartFailed);
+    expect(notice('RUN_START_FAILED', 'message.send', false)).not.toBe(text.commandRejected);
     expect(notice('MODEL_UNAVAILABLE', 'message.send', false)).toBe(text.modelGoneLabel);
   });
   it('只有 session.create 的失败加「会话没建成」前缀', () => {
@@ -233,8 +263,15 @@ describe('composerModelLabel', () => {
 
 // 爸 2026-09-16：「不要特别强调电脑正在做什么」。执行/模型/上传类文案不点名电脑；连接与送达确认不在此列
 // （「还没收到电脑确认」是 09-17 对齐页拍板的原文，说的是连接那一端）。
+describe('卡片与状态位不写「另一端」', () => {
+  it.each(['zh', 'en'])('%s copy has no 另一端 / elsewhere', language => {
+    const copy = messages(language);
+    expect(Object.values(copy).join('\n')).not.toMatch(/另一端|elsewhere/i);
+  });
+});
+
 describe('执行与模型文案不绑定「电脑」', () => {
-  const agentNeutralKeys = ['running', 'runFailed', 'connectedNext', 'artifactWriting', 'sessionBusy', 'modelAuthMissing', 'modelAuthTitle',
+  const agentNeutralKeys = ['running', 'runFailed', 'runStartFailed', 'connectedNext', 'artifactWriting', 'sessionBusy', 'modelAuthMissing', 'modelAuthTitle',
     'modelAuthDetail', 'modelConfigured', 'modelNotConfigured', 'modelRecentlyFailed', 'modelUnavailable', 'modelScopeNote',
     'commandRejected', 'attachTransferring', 'attachComplete', 'attachDestinationHint', 'transferInterrupted',
     'historyTruncated', 'deleteConfirmation'] as const;
@@ -251,11 +288,12 @@ describe('执行与模型文案不绑定「电脑」', () => {
  * N-MOBILE-STATUS-NOISE 接线层：MobileRoot 真的只挂一个状态位。纯函数的优先级逐对在 statusSlot.test.tsx。
  * build 50 真机 00:03：电脑没回应时输入框上方叠了四行（连接胶囊 / 未确认送达 / 读取失败 / 会话没建成）。
  */
-const harness = vi.hoisted(() => ({ offline: false }));
+const harness = vi.hoisted(() => ({ offline: false, failSend: false, sent: [] as string[] }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
     async recover() {
+      if (harness.offline) throw new Error('COMPANION_NO_RESPONSE');
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one', 's1'] };
     }
     async request(payload: unknown) {
@@ -273,7 +311,11 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
         };
       }
       if (action === 'command') {
-        const command = (payload as { command: { commandId: string; deviceId: string; sessionId: string; action: string } }).command;
+        const command = (payload as { command: { commandId: string; deviceId: string; sessionId: string; action: string; payload?: { text?: string } } }).command;
+        if (command.action === 'message.send' && typeof command.payload?.text === 'string') harness.sent.push(command.payload.text);
+        if (harness.failSend && command.action === 'message.send') {
+          return { kind: 'rejected', reason: 'RUN_START_FAILED' };
+        }
         return { kind: 'accepted', command: { ...command, state: 'resolved', createdAt: 1, result: { runId: 'run-1' } } };
       }
       if (action === 'status') return null;
@@ -306,6 +348,8 @@ const legacyRows = () => document.querySelectorAll('.composer-area .notice, .com
 describe('MobileRoot 接线', () => {
   beforeEach(() => {
     harness.offline = false;
+    harness.failSend = false;
+    harness.sent = [];
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: false, media: query, onchange: null,
       addEventListener: () => {}, removeEventListener: () => {},
@@ -350,18 +394,36 @@ describe('MobileRoot 接线', () => {
       await waitFor(() => { expect(document.querySelector('.composer-tools .model')).toBeTruthy(); });
       harness.offline = true;
       // 轮询（1 秒一拍）踩空把连接收成 offline
-      await waitFor(() => { expect(slots()[0]?.textContent).toContain(text.cannotReachComputer); }, { timeout: 4000 });
+      await waitFor(() => { expect(slots()[0]?.textContent).toContain(text.autoRetrying); }, { timeout: 4000 });
       fireEvent.change(document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement, { target: { value: '整理一下' } });
       fireEvent.click(document.querySelector('[data-testid="send"]') as HTMLElement);
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
       expect(slots()).toHaveLength(1);
-      expect(slots()[0].querySelector('.status-text')!.textContent).toBe(text.cannotReachComputer);
+      expect(slots()[0].querySelector('.status-text')!.textContent).toBe(text.autoRetrying);
       expect(slots()[0].querySelector('[data-testid="status-action"]')!.textContent).toBe(text.reconnect);
       expect(legacyRows()).toBe(0);
       // 草稿没丢
       expect((document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement).value).toBe('整理一下');
       fireEvent.click(slots()[0].querySelector('[data-testid="status-open"]')!);
       await waitFor(() => { expect(document.querySelector('[data-testid="remote-unreachable"]')).toBeTruthy(); });
+    });
+  });
+
+  describe('这条消息没发出去要带重试', () => {
+    it('RUN_START_FAILED：全文 + 重试，点了用原草稿重发', async () => {
+      harness.failSend = true;
+      await mountInSession();
+      fireEvent.change(document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement, { target: { value: '再加一页对比' } });
+      fireEvent.click(document.querySelector('[data-testid="send"]') as HTMLElement);
+      await waitFor(() => {
+        expect(slots()[0]?.querySelector('.status-text')?.textContent).toBe('这条消息没发出去');
+      });
+      expect(slots()[0].querySelector('[data-testid="status-action"]')!.textContent).toBe(text.retry);
+      expect((document.querySelector('[data-testid="draft"]') as HTMLTextAreaElement).value).toBe('再加一页对比');
+      expect(harness.sent).toEqual(['再加一页对比']);
+      harness.failSend = false;
+      fireEvent.click(slots()[0].querySelector('[data-testid="status-action"]')!);
+      await waitFor(() => { expect(harness.sent).toEqual(['再加一页对比', '再加一页对比']); });
     });
   });
 });

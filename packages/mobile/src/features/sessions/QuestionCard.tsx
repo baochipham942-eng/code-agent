@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { messages } from '../../i18n';
+import { cardOutcome, questionAnswers, questionDeclined } from './decisionCard';
 
 interface QuestionOption {
   label?: string;
@@ -30,11 +31,30 @@ export function QuestionCard({ card, text, disabled, respond, skip }: {
   const [otherText, setOtherText] = useState<Record<string, string>>({});
   const readable = questions.length > 0 && questions.every(question =>
     typeof question.question === 'string' && typeof question.header === 'string' && Array.isArray(question.options));
+  const pending = card.status === 'pending';
+  const outcome = cardOutcome(card);
+  const settledAnswers = questionAnswers(card);
+  const declined = !pending && questionDeclined(card);
+  const expired = outcome === 'expired';
+  const cancelled = outcome === 'cancelled';
+  const ended = !pending && !outcome && !settledAnswers && !declined && card.status === 'closed';
+  const shownAnswers = pending ? answers : (settledAnswers ?? {});
 
   const headerOf = (question: Question, index: number) => question.header || `q-${index}`;
   const selected = (header: string, label: string, multiSelect?: boolean) => {
-    const answer = answers[header];
+    const answer = shownAnswers[header];
     return multiSelect ? Array.isArray(answer) && answer.includes(label) : answer === label;
+  };
+  const optionLabels = (question: Question) => new Set((question.options ?? []).map(option => option.label).filter((label): label is string => typeof label === 'string'));
+  const freeText = (question: Question, index: number) => {
+    const header = headerOf(question, index);
+    const answer = shownAnswers[header];
+    const labels = optionLabels(question);
+    if (question.multiSelect && Array.isArray(answer)) {
+      const extra = answer.filter(item => !labels.has(item));
+      return extra.length > 0 ? extra.join('、') : '';
+    }
+    return typeof answer === 'string' && answer.trim() && !labels.has(answer) ? answer : '';
   };
   const toggle = (header: string, label: string, multiSelect?: boolean) => {
     setAnswers(current => {
@@ -67,31 +87,51 @@ export function QuestionCard({ card, text, disabled, respond, skip }: {
     });
     void respond(next);
   };
+  const resultCopy = expired ? text.questionExpired
+    : cancelled ? text.questionCancelled
+      : ended ? text.questionClosed
+        : declined ? text.questionSkipped
+          : settledAnswers ? null
+            : card.status === 'approved' ? text.questionAnswered
+              : null;
 
-  return <section className="approval-card" aria-label={text.question}>
+  return <section className="approval-card" aria-label={text.question} data-testid="question-card" data-outcome={outcome ?? (pending ? 'pending' : ended ? 'closed' : 'answered')}>
     <strong>{text.question}</strong>
     <div className="approval-details">
       {!readable && <p role="status">{text.unreadableQuestion}</p>}
       {questions.map((question, index) => {
         const header = headerOf(question, index);
+        const written = !pending ? freeText(question, index) : '';
         return <div key={header} className="question-block">
           <p>{question.question}</p>
-          {question.multiSelect && <p className="caption">{text.questionMultiSelect}</p>}
-          {(question.options ?? []).map(option => typeof option.label === 'string' && <button
-            key={option.label}
-            type="button"
-            className={selected(header, option.label, question.multiSelect) ? 'option selected' : 'option'}
-            disabled={disabled || card.status !== 'pending'}
-            onClick={() => { setOtherText(current => ({ ...current, [header]: '' })); toggle(header, option.label!, question.multiSelect); }}
-          >
-            <span>{option.label}</span>
-            {option.recommended && <small>{text.questionRecommended}</small>}
-            {option.description && <small>{option.description}</small>}
-          </button>)}
-          <label className="question-other">{text.questionOther}
+          {question.multiSelect && pending && <p className="caption">{text.questionMultiSelect}</p>}
+          {(question.options ?? []).map(option => {
+            if (typeof option.label !== 'string') return null;
+            const isOn = selected(header, option.label, question.multiSelect);
+            // 定稿卡（设计稿 questionAnswered）：选中项保持高亮，其余变淡；只有超时作废是整卡变淡——
+            // 它没记过任何答案，本来也没有可高亮的项。选中项的 opacity 由 .option.selected 兜住，
+            // 不能再吃全局 button:disabled 的 .45（R4 验收 O1：已答卡的选中项整块发灰，和未选项分不清）。
+            const fade = !pending && (expired || !isOn);
+            return <button
+              key={option.label}
+              type="button"
+              className={`option${isOn ? ' selected' : ''}${fade ? ' faded' : ''}`}
+              data-testid="question-option"
+              data-selected={isOn || undefined}
+              data-faded={fade || undefined}
+              disabled={disabled || !pending}
+              onClick={() => { setOtherText(current => ({ ...current, [header]: '' })); toggle(header, option.label!, question.multiSelect); }}
+            >
+              <span>{option.label}</span>
+              {isOn && !pending && <span className="option-check" data-testid="question-choice-check" aria-hidden="true">✓</span>}
+              {option.recommended && <small>{text.questionRecommended}</small>}
+              {option.description && <small>{option.description}</small>}
+            </button>;
+          })}
+          {pending ? <label className="question-other">{text.questionOther}
             <input
               value={otherText[header] ?? ''}
-              disabled={disabled || card.status !== 'pending'}
+              disabled={disabled}
               placeholder={text.questionOtherPlaceholder}
               onChange={event => {
                 const value = event.target.value;
@@ -101,13 +141,13 @@ export function QuestionCard({ card, text, disabled, respond, skip }: {
                 }
               }}
             />
-          </label>
+          </label> : written ? <p className="question-your-answer" data-testid="question-your-answer">{text.questionYourAnswer}{written}</p> : null}
         </div>;
       })}
     </div>
-    {card.status === 'pending' ? <div className="approval-actions">
+    {pending ? <div className="approval-actions">
       <button disabled={disabled} onClick={() => void skip()}>{text.questionSkip}</button>
       <button disabled={disabled || !readable || !answered} onClick={submit}>{text.questionSubmit}</button>
-    </div> : <p role="status" data-status={String(card.status)}>{card.status === 'approved' ? text.questionAnswered : card.status === 'rejected' ? text.questionSkipped : text.questionClosed}</p>}
+    </div> : resultCopy ? <p role="status" data-testid="question-outcome" data-status={String(card.status)}>{resultCopy}</p> : null}
   </section>;
 }

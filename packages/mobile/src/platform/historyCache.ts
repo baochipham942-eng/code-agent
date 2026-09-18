@@ -8,6 +8,7 @@ export interface CachedMessage {
   content: string;
   timestamp: number;
   truncated?: boolean;
+  queued?: boolean;
 }
 
 export interface HistoryCacheStore {
@@ -65,6 +66,7 @@ function cachedMessageFromEvent(event: CompanionEvent): CachedMessage | null {
     content: payload.content,
     timestamp: event.createdAt,
     ...(payload.truncated === true ? { truncated: true } : {}),
+    ...(payload.queued === true ? { queued: true } : {}),
   };
 }
 

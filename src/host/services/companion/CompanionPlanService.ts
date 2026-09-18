@@ -1,7 +1,31 @@
 import { createHash } from 'node:crypto';
-import type { CompanionCommand, CompanionSubmitResult } from '../../../shared/contract/companion';
+import type { CompanionCommand, CompanionDecisionOutcome, CompanionPlanAnswer, CompanionSubmitResult } from '../../../shared/contract/companion';
 import { COMPANION_LIMITS } from '../../../shared/constants/companion';
 import type { CompanionGateway } from './CompanionGateway';
+import type { PlanSubmission } from '../../agent/planApproval';
+
+export type CompanionPlanInspection = {
+  outcome: CompanionDecisionOutcome;
+  answer?: CompanionPlanAnswer;
+};
+
+/**
+ * 已决 PlanApprovalGate plan → 手机卡片的结算判定。
+ * 机器产生的终止（run 取消 / 审批超时 / 重启孤儿 hydrate）不是用户裁决：归
+ * cancelled/expired，feedback 一律不透给手机——那些串是宿主内部文案
+ * （Orphaned by process restart / Cancelled: … / Auto-rejected after timeout…），
+ * 只有 resolutionOrigin 为用户裁决时 feedback 才是真人写的修改意见。
+ * pending 返回 null，由调用方走自己的结算来源。
+ */
+export function inspectionFromGatePlan(plan: PlanSubmission): CompanionPlanInspection | null {
+  if (plan.status === 'pending') return null;
+  if (plan.status === 'approved') {
+    return { outcome: 'answered', answer: { decision: 'approved', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
+  }
+  if (plan.resolutionOrigin === 'cancelled' || plan.resolutionOrigin === 'orphaned') return { outcome: 'cancelled' };
+  if (plan.resolutionOrigin === 'timeout') return { outcome: 'expired' };
+  return { outcome: 'answered', answer: { decision: 'rejected', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
+}
 
 function canonical(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -22,7 +46,7 @@ export interface CompanionPlanRequest {
  * Phone plan cards are a projection of PlanApprovalGate pending submissions.
  * Desktop ChatView's swarm TaskPanel reads the same getPendingPlans() list.
  */
-function companionRequestId(sourceId: string): string {
+export function companionRequestId(sourceId: string): string {
   return sourceId.length <= COMPANION_LIMITS.idLength
     ? sourceId
     : createHash('sha256').update(sourceId).digest('hex');
@@ -36,6 +60,7 @@ export class CompanionPlanService {
     private readonly gateway: CompanionGateway,
     private readonly pending: () => CompanionPlanRequest[],
     private readonly deliver: (planId: string, approved: boolean, feedback: string | undefined, sessionId: string) => { success: boolean; data?: { closed?: boolean } },
+    private readonly inspect?: (requestId: string) => CompanionPlanInspection | null,
   ) {}
 
   /**
@@ -77,13 +102,34 @@ export class CompanionPlanService {
     }
     for (const decision of this.gateway.pendingDecisions('plan')) {
       if (!displayable.has(decision.requestId)) {
-        const closed = { ...decision, status: 'closed' as const, kind: 'plan' as const };
-        this.gateway.registerDecision(closed);
-        this.gateway.publish(decision.sessionId, 'plan', { ...closed });
-        this.publishedEpoch.delete(decision.requestId);
-        this.sourceIds.delete(decision.requestId);
+        const inspection = this.inspect?.(this.sourceIds.get(decision.requestId) ?? decision.requestId)
+          ?? { outcome: 'cancelled' as const };
+        this.finish(decision, inspection);
       }
     }
+  }
+
+  settleFromHost(requestId: string, inspection: CompanionPlanInspection): void {
+    const current = this.gateway.getDecision(requestId);
+    if (current?.status !== 'pending') return;
+    this.finish(current, inspection);
+  }
+
+  private finish(current: { requestId: string; sessionId: string; revision: number; status: 'pending' | 'approved' | 'rejected' | 'closed'; resolvedBy: string | null; operationDigest: string | null }, inspection: CompanionPlanInspection): void {
+    const status = inspection.outcome === 'answered'
+      ? (inspection.answer?.decision === 'rejected' ? 'rejected' as const : 'approved' as const)
+      : 'closed' as const;
+    const resolved = {
+      ...current,
+      status,
+      kind: 'plan' as const,
+      outcome: inspection.outcome,
+      ...(inspection.answer ? { answer: inspection.answer } : {}),
+    };
+    this.gateway.registerDecision(resolved);
+    this.gateway.publish(current.sessionId, 'plan', { ...resolved });
+    this.publishedEpoch.delete(current.requestId);
+    this.sourceIds.delete(current.requestId);
   }
 
   respond(command: Extract<CompanionCommand, { action: 'plan.respond' }>): CompanionSubmitResult {
@@ -103,7 +149,18 @@ export class CompanionPlanService {
       this.refresh();
       return { kind: 'approval_conflict', current: this.gateway.getDecision(current.requestId) ?? current };
     }
-    const resolved = { ...current, status: command.payload.decision, resolvedBy: command.deviceId, kind: 'plan' as const };
+    const answer: CompanionPlanAnswer = {
+      decision: command.payload.decision,
+      ...(command.payload.feedback ? { feedback: command.payload.feedback } : {}),
+    };
+    const resolved = {
+      ...current,
+      status: command.payload.decision,
+      resolvedBy: command.deviceId,
+      kind: 'plan' as const,
+      outcome: 'answered' as const,
+      answer,
+    };
     this.gateway.registerDecision(resolved);
     this.gateway.publish(current.sessionId, 'plan', { ...resolved });
     this.publishedEpoch.delete(current.requestId);

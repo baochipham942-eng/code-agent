@@ -319,4 +319,42 @@ describe('companion relay account binding (slice 1)', () => {
     expect(health).not.toHaveProperty('jwks');
     await bare.stop();
   });
+
+  // 第二刀（N-COMPANION-RELAY-ACCOUNT-DESKTOP-STATUS）：句柄 status() 供设置页「跨网连接」状态块。
+  it('status(): off when no relay config exists', async () => {
+    const empty = mkdtempSync(join(tmpdir(), 'relay-account-none-'));
+    const handle = startCompanionRelayAccountIfConfigured({
+      dataDirectory: empty, gateway, loadIdentity: async () => hostIdentity, auth: fakeAuth('user-1'), jitter: () => 0.5,
+    });
+    expect(handle?.status()).toEqual({ account: 'off' });
+    await handle?.stop();
+    rmSync(empty, { recursive: true, force: true });
+  });
+
+  it('status(): signedOut when no Neo account is signed in', async () => {
+    const handle = startCompanionRelayAccountIfConfigured({
+      dataDirectory: dataDir, gateway, loadIdentity: async () => hostIdentity, auth: fakeAuth(null), jitter: () => 0.5,
+    });
+    expect(handle?.status()).toEqual({ account: 'signedOut' });
+    await handle?.stop();
+  });
+
+  it('status(): connected once the account channel is up', async () => {
+    await vi.waitFor(() => expect(account.status().account).toBe('connected'));
+  });
+
+  it('status(): connecting with the last dial error while the relay keeps rejecting the token', async () => {
+    await account.stop();
+    const bare = new CompanionRelayServer({ credential: SECRET, port: await freePort() });
+    const bareUrl = `ws://127.0.0.1:${(await bare.listen()).port}`;
+    const bareDir = mkdtempSync(join(tmpdir(), 'relay-account-bare-status-'));
+    writeFileSync(join(bareDir, L.relayConfigFile), JSON.stringify({ v: 1, enabled: true, url: bareUrl, credentialRef: 'companion-relay', reconnectBackoffMs: [30, 60, 120] }));
+    const rejected = startCompanionRelayAccountIfConfigured({
+      dataDirectory: bareDir, gateway, loadIdentity: async () => hostIdentity, auth: fakeAuth('user-1'), jitter: () => 0.5,
+    });
+    await vi.waitFor(() => expect(rejected?.status()).toMatchObject({ account: 'connecting', accountError: 'COMPANION_RELAY_CLOSED_AFTER_OPEN' }), { timeout: 5_000 });
+    await rejected?.stop();
+    await bare.stop();
+    rmSync(bareDir, { recursive: true, force: true });
+  });
 });

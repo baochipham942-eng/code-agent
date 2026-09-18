@@ -17,6 +17,7 @@ import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
 import { HistoryCache } from '../platform/historyCache';
 import { mdnsRefreshedEndpoint } from '../platform/mdnsEndpoint';
+import { connectionBlocksAutoRetry, handshakeNeedsRescan, phoneReconnectDelayMs, phoneReconnectJitterMs } from '../app/phoneReconnect';
 import { transcriptionReadinessFromResult } from '../features/sessions/voiceFailure';
 
 interface Saved {
@@ -114,7 +115,20 @@ interface State {
   skipTranscriptionPreflight: boolean;
   allowTranscriptionOnce(): void;
   consumeTranscriptionPreflight(): void;
-  hydrate(): Promise<void>; pair(raw?: string): Promise<void>; reconnect(): Promise<void>; forget(): Promise<void>; pause(): void;
+  hydrate(): Promise<void>; pair(raw?: string): Promise<void>;
+  /** `resetBackoff`：点「重新连接」立即试并重置节奏。回前台不传，只立即试、10 分钟钟继续走。 */
+  reconnect(opts?: { resetBackoff?: boolean }): Promise<void>; forget(): Promise<void>; pause(): void;
+  /** 前台断线后正在按退避自动重试。状态位据此保持「正在自动重试」，不闪「正在连接…」。 */
+  autoRetrying: boolean;
+  /**
+   * 眼下占着 busy 的连接尝试是不是自动发起的（重试定时器/冷启动/回前台）。自动尝试在途
+   * 不锁「重新连接/扫描电脑二维码」两个按钮（N-MOBILE-AUTO-RECONNECT-R3 D3）：在途 hello
+   * 可达 10s，照旧置灰等于八成时间没给用户逃生口。手动点按（扫码、手动重连）仍占 busy 锁键。
+   */
+  autoAttempt: boolean;
+  /** 扫码重新配对时丢掉了未确认操作：状态位一次性「上一条操作没送到…」直到点「知道了」。 */
+  abandonedPending: boolean;
+  dismissAbandonedPending(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
   respondQuestion(requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string): Promise<void>;
   respondPlan(requestId: string, decision: 'approved' | 'rejected', feedback?: string): Promise<void>;
@@ -170,8 +184,22 @@ interface CompanionChannel {
   close(): void;
 }
 
-export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string | null, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts, historyCache?: HistoryCache) {
+export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string | null, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts, historyCache?: HistoryCache, options?: {
+  /** 这台电脑上次打开的会话。`''` = 欢迎页；缺省 = 沿用 scope 里第一条会话（旧客户端）。 */
+  lastSession?(hostKey: string): string | undefined;
+  rememberSession?(hostKey: string, sessionId: string | null): void;
+  /** 会话删除清一条、配对撤销/忘掉电脑清整台的标题记忆（sessionTitles 只增不删的补口）。 */
+  forgetSessionTitles?(hostKey: string, sessionId?: string): void;
+}) {
   let saved: Saved | null = null;
+  /**
+   * 落盘串行链（ai-review Nit）：port.write 不保证完成顺序。旧尝试已过代号校验、正在落盘的
+   * 窄窗口里 forget/新尝试抢占，若旧写后落，绑定会被写回磁盘——冷启动复活已忘掉的配对。
+   * 所有写排成一条链：调用顺序即落盘顺序，抢占者的写永远在它前面的旧写之后落地；`saved`
+   * 的赋值同样沿链序发生，最后一次调用的记录最终同时留在内存与盘上。前一个写失败不断链
+   * （失败只交给它自己的调用方），否则一次存储故障会堵死 forget 之后的每一次清理写。
+   */
+  let persistQueue: Promise<void> = Promise.resolve();
   let client: CompanionChannel | null = null;
   /** 双径不双跑：任一时刻只有一条活通道，另一条的句柄只用来收尾 close。 */
   let relayClient: RelayCompanionClient | null = null;
@@ -198,6 +226,88 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
   const history = historyCache ?? new HistoryCache();
 
   const store = createStore<State>((set, get) => {
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryAttempt = 0;
+    let retryStartedAt: number | null = null;
+    let retryGeneration = 0;
+    let appInBackground = false;
+    /**
+     * 在途 reconnect 的**计数**而不是布尔：重连在途时再调一次 reconnect()（回前台等）会在
+     * safely 的 busy 守卫处早退，早退那次的 finally 若把共享布尔清掉，真正在途的尝试失败时
+     * 就被当成「不是重连失败」——0 延迟重试且不升退避档（ai-review Nit）。计数到 0 才算没有。
+     */
+    let reconnectDepth = 0;
+    /**
+     * 连接尝试代号（pair / reconnect 各领一个）：手动「重新连接」/扫码抢过在途的自动尝试后，
+     * 旧尝试迟到的失败/成功都按代号丢弃——不打回 offline、不关新客户端、不释放新尝试的 busy
+     * （N-MOBILE-AUTO-RECONNECT-R3 D3）。
+     */
+    let connectSeq = 0;
+    /** 用户正在扫码配对：自动重连不得清 busy、不得把 status 打回 offline。 */
+    let userPairing = false;
+    /** 这次连接已经成功 sync 过。握手成功不算数，否则 sync 一失败就会把档位清零再 0 延迟重连。 */
+    let syncOk = false;
+    const clearRetryTimer = () => {
+      if (retryTimer === null) return;
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    };
+    const stopAutoRetry = () => {
+      retryGeneration += 1;
+      clearRetryTimer();
+      retryAttempt = 0;
+      retryStartedAt = null;
+      syncOk = false;
+      if (get().autoRetrying) set({ autoRetrying: false });
+    };
+    const markSyncOk = () => {
+      stopAutoRetry();
+      syncOk = true;
+    };
+    const remember = (sessionId: string | null) => {
+      const hostKey = saved?.binding?.hostKey ?? get().binding?.hostKey;
+      if (hostKey) options?.rememberSession?.(hostKey, sessionId);
+    };
+    /**
+     * `ignoreBlocked`：有原绑定时「扫码本身失败」（二维码解不开/扫码取消）后重挂用的——
+     * connectionQrInvalid/ScanFailed 本该停机，但那是给**没有原绑定**的首扫失败定的规矩；
+     * 「这次扫码没成」不等于「这台电脑不能重试」。提示不靠重挂节奏续命：safely 的静默保留
+     * 让它活到这次重试自己给出新结论（新错误码或连上）为止。
+     */
+    const armAutoRetry = (fromFailedAttempt: boolean, ignoreBlocked = false) => {
+      if (userPairing) return;
+      const blocked = connectionBlocksAutoRetry(get().status, get().connectionError) || !saved?.binding;
+      if (appInBackground || (blocked && !ignoreBlocked)) {
+        if (blocked && !ignoreBlocked) stopAutoRetry();
+        else { retryGeneration += 1; clearRetryTimer(); if (get().autoRetrying) set({ autoRetrying: false }); }
+        return;
+      }
+      if (!fromFailedAttempt && !get().autoRetrying) {
+        retryAttempt = 0;
+        retryStartedAt = Date.now();
+      }
+      if (fromFailedAttempt) retryAttempt += 1;
+      if (retryStartedAt == null) retryStartedAt = Date.now();
+      set({ autoRetrying: true });
+      const wait = fromFailedAttempt
+        ? phoneReconnectJitterMs(phoneReconnectDelayMs(retryAttempt, Date.now() - retryStartedAt))
+        : 0;
+      const schedule = (delay: number) => {
+        clearRetryTimer();
+        const gen = retryGeneration;
+        retryTimer = setTimeout(() => {
+          if (gen !== retryGeneration || appInBackground) return;
+          retryTimer = null;
+          // 扫码等 safely 占着时这一拍不能空消耗：不递增档位，按当前等待再挂一次。
+          if (get().busy) {
+            schedule(delay || phoneReconnectJitterMs(phoneReconnectDelayMs(Math.max(retryAttempt, 1), Date.now() - (retryStartedAt ?? Date.now()))));
+            return;
+          }
+          void get().reconnect();
+        }, delay);
+      };
+      schedule(wait);
+    };
     const inspectBoth = (): CacheInspect => {
       const preview = files?.cache.inspect() ?? { previewBytes: 0, conversationBytes: 0, protectedBytes: 0 };
       return { previewBytes: preview.previewBytes, conversationBytes: history.inspect().conversationBytes, protectedBytes: preview.protectedBytes };
@@ -245,7 +355,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       const orphanVoice = saved?.pending?.action === 'voice.transcribe' && !next.pending
         && get().voiceResult?.commandId !== saved.pending.commandId ? saved.pending.commandId : null;
       try {
-        await port.write(JSON.stringify(record)); saved = record;
+        const write = persistQueue.then(() => port.write(JSON.stringify(record)));
+        persistQueue = write.then(() => undefined, () => undefined);
+        await write; saved = record;
         // 落盘记录是待确认命令的唯一真源，派生放在这一处，省得九个 set({pending}) 各自同步。
         // 两个字段必须同一拍置起：只改 pendingAction 的话，结算那一帧会是
         // pending=true + pendingAction=null，状态行闪回「请勿重复发送」——正是本单要消掉的那句。
@@ -278,7 +390,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
      * 绑定身份以 LAN 配对时的缓存为准逐字段校验——relay 只换路，不换身份；
      * resume 成功后 `client` 指到 relay 通道，LAN 客户端此刻必然已关（recover 失败即关）。
      */
-    const dialRelay = async (): Promise<RelayCompanionClient> => {
+    const dialRelay = async (attempt?: number): Promise<RelayCompanionClient> => {
       if (!saved?.relay || !saved.binding) throw new Error('COMPANION_RELAY_UNCONFIGURED');
       relayClient?.close();
       const relay = new RelayCompanionClient({
@@ -290,11 +402,21 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           relayClient?.close();
           client?.close();
           wipeHistoryCache();
-          set({ status: 'rejected', connectionError: 'connectionRejected', transport: null });
+          stopAutoRetry();
+          remember(null);
+          // 撤销即清这台电脑的标题记忆：会话已不属于这台手机，重新配对后随使用再记。
+          const revokedHostKey = saved?.binding?.hostKey;
+          if (revokedHostKey) options?.forgetSessionTitles?.(revokedHostKey);
+          set({ status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null });
         },
       });
       await relay.connect();
       await relay.resume({ hostKey: saved.binding.hostKey, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch, scope: saved.binding.scope });
+      // 拨号期间被更新的尝试抢占了：这条通道不留（同一时刻只有一条活通道），交给抢占者。
+      if (attempt !== undefined && attempt !== connectSeq) {
+        relay.close();
+        throw new Error('COMPANION_ATTEMPT_PREEMPTED');
+      }
       relayClient = relay;
       client = relay;
       return relay;
@@ -362,7 +484,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         return;
       }
       if (pending.action === 'session.create' && typeof record.result.sessionId === 'string') set({ sessionId: record.result.sessionId, runId: null, terminal: null });
-      if (pending.action === 'session.delete' && get().sessionId === pending.sessionId) set({ sessionId: null, runId: null, terminal: null });
+      if (pending.action === 'session.delete') {
+        // 会话真删掉了：标题记忆跟着清，否则 sessionTitles 随历史会话数无限增长（ai-review Nit）。
+        const deletedHostKey = saved?.binding?.hostKey;
+        if (deletedHostKey) options?.forgetSessionTitles?.(deletedHostKey, pending.sessionId);
+        if (get().sessionId === pending.sessionId) set({ sessionId: null, runId: null, terminal: null });
+      }
       if (pending.action === 'run.cancel' && record.result.alreadyTerminal === true && get().runId === pending.payload.runId) {
         // 宿主结算 alreadyTerminal（run 早已终态，含恢复成 waiting 后被宿主规范终态化的那种）：
         // 事件流里未必还有一条 agent_cancelled 可等，就地清 runId 结束「正在处理」。
@@ -407,7 +534,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if (typeof result.reason === 'string' && DEVICE_LEVEL_REASONS.has(result.reason)) {
           // 设备级的拒绝照报：那是「这台设备不能用了」，与用户撤没撤这次录音无关。
           wipeHistoryCache();
-          set({ pending: false, status: 'rejected', connectionError: 'connectionRejected', transport: null });
+          stopAutoRetry();
+          remember(null);
+          const revokedHostKey = saved?.binding?.hostKey;
+          if (revokedHostKey) options?.forgetSessionTitles?.(revokedHostKey);
+          set({ pending: false, status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null });
         } else if (discardedVoice) {
           set({ pending: false });
         } else {
@@ -422,26 +553,56 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       if (saved?.pending) await persist({ ...saved, pending: undefined });
       set({ pending: false });
     };
-    const safely = async <T>(work: () => Promise<T>): Promise<T | undefined> => {
-      if (get().busy) return undefined;
-      set({ busy: true, connectionError: null, commandError: null, commandErrorAction: null });
-      try { return await work(); } catch (error) {
+    const safely = async <T>(work: (attempt: number | undefined) => Promise<T>, opts?: {
+      preempt?: boolean;
+      /** 连接尝试（pair/reconnect）传 true：过 busy 守卫后领代号，work 收到自己的代号。 */
+      claim?: boolean;
+      /** 这次 busy 是自动发起的尝试（D3）：UI 据此不锁「重新连接/扫码」按钮。 */
+      autoAttempt?: boolean;
+    }): Promise<T | undefined> => {
+      if (get().busy && !opts?.preempt) return undefined;
+      const attempt = opts?.claim === true ? (connectSeq += 1) : undefined;
+      // 静默自动重试不清「二维码无效/扫码失败」：这两句说的是用户上一次扫码，重连本身推翻不了
+      // 它——保留到这次重试自己产生新的错误码（catch 整拍覆盖）或连上（成功路径显式清）为止。
+      // 否则已配对用户扫到非 Neo 码，提示只在 0 延迟重挂那一拍存在，随即被清成「电脑没回应」
+      // （ai-review Important，相对 main 的回归）。
+      const heldError = opts?.autoAttempt === true
+        && (get().connectionError === 'connectionQrInvalid' || get().connectionError === 'connectionScanFailed')
+        ? get().connectionError : null;
+      set({ busy: true, autoAttempt: opts?.autoAttempt === true, connectionError: heldError, commandError: null, commandErrorAction: null });
+      try { return await work(attempt); } catch (error) {
+        // 被更新的尝试抢占了：迟到的旧失败整体作废——不关新客户端、不打回 offline、不挂重试、不释放新尝试的 busy。
+        if (attempt !== undefined && attempt !== connectSeq) return;
+        // 扫码抢占后，过期的自动重连失败不能把刚配上的连接打回 offline。
+        // 「自己已连上后的失败」（如核对待确认命令超时）不再吞：代号比对已覆盖抢占场景，
+        // 吞掉会让一条死通道停在 connected（ai-review Nit）。
+        if (!opts?.preempt && userPairing) return;
         client?.close();
+        // 设备已被撤销/拒绝（rejected）时，这条失败只是撤销的连带（relay revoke 帧先 drop 再
+        // onRevoked，sync 的失败随后到）：不把 rejected 打回 offline、不挂自动重试，否则状态位
+        // 先闪「正在自动重试」再变回「需要重新扫码」（N-MOBILE-AUTO-RECONNECT-R3 O2）。
+        // 但 safely 进场已把 connectionError 清成 null，不补回的话，被撤销后扫到非 Neo 二维码，
+        // 连接页诊断会从「需要重新扫码」变成「电脑没回应」（ai-review Nit）。
+        if (get().status === 'rejected') { set({ connectionError: 'connectionRejected' }); return; }
         const code = error instanceof Error ? error.message : '';
         // 三分类（fix4-②）+ relay 档（N-MOBILE-RELAY-PHONE）：握手/身份失败、连接被拒绝、
         // 超时/无响应、relay 路失败（连不上/凭据被拒）——其余网络码都归「没回应」那一类，
         // UI 按类给人话，不再一律「无法连接电脑」。
         const connectionError: ConnectionError = code === 'COMPANION_INVALID_INVITATION' ? 'connectionQrInvalid'
           : code === 'COMPANION_SCAN_FAILED' ? 'connectionScanFailed'
-          : code === 'COMPANION_PAIRING_REJECTED' ? 'connectionRejected'
+          : code === 'COMPANION_PAIRING_REJECTED' || handshakeNeedsRescan(code) ? 'connectionRejected'
           : code === 'COMPANION_CONNECTION_REFUSED' ? 'connectionRefused'
           : code === 'COMPANION_RELAY_AUTH_REJECTED' ? 'connectionRelayRejected'
           : code === 'COMPANION_RELAY_NO_HOST' ? 'connectionRelayNoHost'
           : code === 'COMPANION_RELAY_UNAVAILABLE' || code === 'COMPANION_RELAY_CONNECT_TIMEOUT' ? 'connectionRelayUnavailable'
           : code === 'COMPANION_NETWORK_UNAVAILABLE' || code === 'COMPANION_NO_RESPONSE' ? 'connectionUnavailable' : 'connectionFailed';
         if (get().status !== 'storageError') set({ status: 'offline', connectionError, transport: null });
+        armAutoRetry(reconnectDepth > 0);
       }
-      finally { set({ busy: false }); }
+      finally {
+        if (attempt !== undefined && attempt !== connectSeq) return;
+        if (!(userPairing && !opts?.preempt)) set({ busy: false });
+      }
     };
     /** （重）连上后结算待确认命令：两条路（LAN/relay）共用同一套 status 查询与补投。 */
     const reconcilePending = async () => {
@@ -455,7 +616,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       skipTranscriptionPreflight: false,
       allowTranscriptionOnce: () => set({ skipTranscriptionPreflight: true }),
       consumeTranscriptionPreflight: () => { if (get().skipTranscriptionPreflight) set({ skipTranscriptionPreflight: false }); },
-      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, events: [], runId: null, terminal: null,
+      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, pendingAdopted: false, autoRetrying: false, autoAttempt: false, abandonedPending: false, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
       hydrate: async () => {
@@ -478,37 +639,85 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           saved = value;
           try { await history.hydrate(); } catch { /* conversation cache is best-effort and must not fail pairing identity */ }
           const restored = history.snapshot();
+          const last = value.binding ? options?.lastSession?.(value.binding.hostKey) : undefined;
+          const fromScope = value.binding?.scope.find(id => !id.startsWith('project:')) ?? null;
+          const sessionId = last === '' ? null : (last || fromScope);
           set({
             busy: false, binding: value.binding ?? null,
-            sessionId: value.binding?.scope.find(id => !id.startsWith('project:')) ?? null,
+            sessionId,
             pending: !!value.pending, pendingAction: value.pending?.action ?? null, pendingAdopted: !!value.pending,
             history: restored.history, events: restored.events, lastSyncAt: restored.lastSyncAt, cacheUsage: inspectBoth(),
           });
           if (value.candidate || value.binding) await get().reconnect();
         } catch { set({ busy: false, status: 'storageError' }); }
       },
-      pair: (raw?: string) => safely(async () => {
-        set({ paused: false });
-        if (!port || saved?.pending) return;
-        const payload = raw ?? await port.scan().catch(() => { throw new Error('COMPANION_SCAN_FAILED'); });
-        let invitation;
-        try { invitation = parseInvitation(payload); } catch { throw new Error('COMPANION_INVALID_INVITATION'); }
-        set({ status: 'connecting' });
-        if (!saved) {
-          const identity = createIdentity();
-          await persist({ version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey) });
-          identity.secretKey.fill(0);
+      pair: async (raw?: string) => {
+        // 扫码前原本就有的绑定：握手失败时恢复它，前台退避自动重连接着跑（D1）——
+        // 用户只是扫了一下码，不该把原本能用的配对弄丢后卡死在「电脑没回应」。
+        const previousBinding = saved?.binding;
+        // 扫码必须抢过自动重连占着的 busy：否则扫完 finishPair→pair 被静默丢掉。
+        userPairing = true;
+        stopAutoRetry();
+        appInBackground = false;
+        set({ paused: false, autoRetrying: false });
+        client?.close();
+        let attempt = 0;
+        try {
+          return await safely(async seq => {
+            attempt = seq ?? 0;
+            if (!port) return;
+            const dropPending = Boolean(saved?.pending);
+            const payload = raw ?? await port.scan().catch(() => { throw new Error('COMPANION_SCAN_FAILED'); });
+            // 原生扫码与每次落盘都是可被抢占的窗口（再扫一次/手动重连会领新代号）：守卫不过就
+            // 整体作废，迟到的旧扫码不得覆盖抢占者的状态，更不得 createClient() 关掉抢占者
+            // 刚建立的活客户端（ai-review Important，与 reconnect 的 mDNS 窗口同一条纪律）。
+            if (seq !== undefined && seq !== connectSeq) return;
+            let invitation;
+            try { invitation = parseInvitation(payload); } catch { throw new Error('COMPANION_INVALID_INVITATION'); }
+            set({ status: 'connecting' });
+            if (!saved) {
+              const identity = createIdentity();
+              await persist({ version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey) });
+              identity.secretKey.fill(0);
+            }
+            if (seq !== undefined && seq !== connectSeq) return;
+            await persist({ ...saved!, candidate: { endpoint: invitation.endpoint, ...(invitation.altEndpoint ? { altEndpoint: invitation.altEndpoint } : {}), hostKey: invitation.hostKey }, binding: undefined });
+            if (seq !== undefined && seq !== connectSeq) return;
+            const binding = await createClient().pair(payload);
+            if (seq !== undefined && seq !== connectSeq) return;
+            await persist({ ...saved!, binding, candidate: undefined, pending: undefined });
+            if (seq !== undefined && seq !== connectSeq) return;
+            epoch = binding.scopeEpoch; cursor = 0;
+            heldAttachments.clear();
+            wipeHistoryCache();
+            stopAutoRetry();
+            remember(null);
+            set({ status: 'connected', transport: 'lan', binding, sessionId: null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null, abandonedPending: dropPending });
+            await refreshRelayRoute();
+          }, { preempt: true, claim: true });
+        } finally {
+          userPairing = false;
+          // 配对没成（offline）且回不到原绑定：恢复原绑定并继续前台退避自动重试（D1）。
+          // 原本就没有绑定的（首次扫码失败）不进这里——停在扫码失败态，不空转。
+          // 已有更新的连接尝试（再扫一次/手动重连）时不抢它的状态。safely 失败那拍的
+          // armAutoRetry 因 userPairing 直接 return 了，重挂只能补在这里。
+          // 扫码阶段的失败（二维码解不开/取消）没走到清绑定那步，原绑定还在：connectionQrInvalid/
+          // ScanFailed 会挡住 armAutoRetry，但「这次扫码没成」不等于「这台电脑不能重试」——同样
+          // 重挂（ai-review Nit：否则有原绑定时前台自动重连被一次误扫永久停掉）。
+          // 按失败尝试计档（首拍约 2s ±50%），不再 0 延迟：提示交给 safely 的静默保留机制
+          // 存活到这次重试自己给出新结论，用 0 延迟换「提示多留一拍」只会把它瞬间清掉
+          // （ai-review Important）。
+          const scanStageFailure = Boolean(saved?.binding)
+            && (get().connectionError === 'connectionQrInvalid' || get().connectionError === 'connectionScanFailed');
+          if (previousBinding && attempt !== 0 && attempt === connectSeq && saved && get().status === 'offline'
+            && (!saved.binding || scanStageFailure)) {
+            try {
+              if (!saved.binding) await persist({ ...saved, binding: previousBinding, candidate: undefined });
+              armAutoRetry(true, scanStageFailure);
+            } catch { /* persist 失败已把状态打成 storageError；停在失败态 */ }
+          }
         }
-        await persist({ ...saved!, candidate: { endpoint: invitation.endpoint, ...(invitation.altEndpoint ? { altEndpoint: invitation.altEndpoint } : {}), hostKey: invitation.hostKey }, binding: undefined });
-        const binding = await createClient().pair(payload);
-        await persist({ ...saved!, binding, candidate: undefined });
-        epoch = binding.scopeEpoch; cursor = 0;
-        heldAttachments.clear();
-        wipeHistoryCache();
-        set({ status: 'connected', transport: 'lan', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null });
-        // 趁配对的 LAN 会话还热着把 relay 路由缓存下来，LAN 断了才有路可落。
-        await refreshRelayRoute();
-      }),
+      },
       /**
        * 丢掉本机存的配对，回到「尚未连接电脑」。留着身份密钥对——它是这台手机的身份，
        * 重新扫码时照样用；要丢的只是「配的是哪台电脑」。
@@ -517,51 +726,120 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
        * 换网后两个地址一起死，reconnect 与 pair 都可能过不去；没有这条路时，用户唯一的出路是
        * 删 app 重装（靠 nativeCompanion.ts 的 INSTALL_KEY 标记去清 Keychain）。
        */
-      forget: () => safely(async () => {
-        client?.close(); client = null;
-        if (saved) await persist({ version: 1, publicKey: saved.publicKey, secretKey: saved.secretKey });
-        wipeHistoryCache();
-        // 输入区那几样也要跟着清（grok ai-review Nit①）：附件 chip / 上传进度 / 语音结果都绑在
-        // 上一台电脑那条会话上，留着就会在「尚未连接电脑」页底下挂着一台已经忘掉的电脑的东西。
-        heldAttachments.clear();
-        set({ status: 'unpaired', binding: null, sessionId: null, transport: null,
-          paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
-          artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, routeError: null,
-          uploadProgress: [], voiceResult: null, skipTranscriptionPreflight: false });
-      }),
-      reconnect: () => safely(async () => {
+      forget: () => {
+        // 与另两个逃生口同一纪律（D3）：自动尝试占着 busy 时「忘记这台电脑」也必须真能执行——
+        // 只放开按钮置灰会是死键（safely 的 busy 守卫把点按静默吞掉）。抢占 + 领代号：在途尝试
+        // 迟到的失败/成功按代号丢弃，不把刚清干净的未配对态打回 offline。
+        const preempt = get().busy && get().autoAttempt;
+        return safely(async () => {
+          stopAutoRetry();
+          appInBackground = false;
+          remember(null);
+          // 忘掉这台电脑：标题记忆一并清（此刻 saved 还没被下面的 persist 重写，hostKey 先取）。
+          const forgottenHostKey = saved?.binding?.hostKey;
+          if (forgottenHostKey) options?.forgetSessionTitles?.(forgottenHostKey);
+          client?.close(); client = null;
+          if (saved) await persist({ version: 1, publicKey: saved.publicKey, secretKey: saved.secretKey });
+          wipeHistoryCache();
+          // 输入区那几样也要跟着清（grok ai-review Nit①）：附件 chip / 上传进度 / 语音结果都绑在
+          // 上一台电脑那条会话上，留着就会在「尚未连接电脑」页底下挂着一台已经忘掉的电脑的东西。
+          // skipTranscriptionPreflight 一并清（#1919）：它是「紧接着那一次手势」的一次性放行，
+          // 电脑都忘掉了，放行不该跨过「尚未连接」页存活。
+          heldAttachments.clear();
+          set({ status: 'unpaired', binding: null, sessionId: null, transport: null,
+            paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
+            artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, routeError: null,
+            uploadProgress: [], voiceResult: null, autoRetrying: false, abandonedPending: false, skipTranscriptionPreflight: false });
+        }, preempt ? { preempt: true, claim: true } : undefined);
+      },
+      dismissAbandonedPending: () => set({ abandonedPending: false }),
+      reconnect: async (opts) => {
+        appInBackground = false;
+        const manual = Boolean(opts?.resetBackoff);
+        // 手动「重新连接」立即发起新尝试并抢过自动重试的在途连接（D3）：旧尝试迟到的失败/
+        // 成功按代号丢弃。busy 被手动操作（扫码、上一次手动重连）占着时不抢——safely 的
+        // 去重守卫照旧拦重复点按。此态下面 manual 分支已清定时器而 safely 随后放弃、不重挂；
+        // 不变式靠 UI 撑着——连接页按钮在手动 busy 期间置灰，用户点不到（ai-review Nit，
+        // 按原样保留）。
+        const preempt = manual && get().busy && get().autoAttempt;
+        if (manual) {
+          retryGeneration += 1;
+          clearRetryTimer();
+          retryAttempt = 0;
+          retryStartedAt = Date.now();
+          set({ autoRetrying: true });
+        }
+        reconnectDepth += 1;
+        try {
+          return await safely(async attempt => {
         const savedTarget = saved?.binding ?? saved?.candidate;
         if (!savedTarget) return;
         // mDNS 重解析治旧 IP（fix4-⑤）：先用绑定里的主机名重新解析，解析到则用新地址拨，
         // 解析不到回退旧地址。recover 成功后 binding.endpoint 就是这次拨通的地址，
         // persist 会把它写回绑定——地址更新、身份不动（hostKey/deviceId/scope 照旧校验）。
         const target = await mdnsRefreshedEndpoint(port, savedTarget) ?? savedTarget;
+        // 解析挂起期间被抢占（扫码/手动重连领了新代号）：迟到的旧尝试到此为止——再往下
+        // createClient() 会关掉抢占者刚建立的活客户端，有效扫码被 COMPANION_CHANNEL_CHANGED
+        // 拖死，一次性邀请已被 hello 消耗（ai-review Important）。
+        if (attempt !== undefined && attempt !== connectSeq) return;
         const previousScope = get().binding?.scope ?? saved?.binding?.scope ?? [];
-        set({ status: 'connecting', paused: false });
+        // 已在自动重试 / 点了「重新连接」才保持 offline 文案。从后台恢复（pause 留下
+        // status=offline + paused）必须走 connecting：否则健康连接回前台也会报「正在自动重试」。
+        const silent = get().autoRetrying || Boolean(opts?.resetBackoff)
+          || (get().status === 'offline' && !get().paused);
+        if (silent) set({ paused: false, autoRetrying: true });
+        else set({ status: 'connecting', paused: false });
         let binding: LanBinding;
         try {
           binding = await createClient().recover(target, saved?.binding);
         } catch (lanError) {
+          // 被更新的尝试抢占了：这次失败交给抢占者结算，这里不再落 relay。
+          if (attempt !== undefined && attempt !== connectSeq) return;
           // 双径（N-MOBILE-RELAY-PHONE）：LAN 失败/不可达且有缓存路由时落 relay。
           // recover 失败已把 LAN 客户端关掉，此刻起只有 relay 一条活通道——不双跑。
           // 没有路由就原样抛 LAN 的错误：那是用户看得懂的那句。
-          if (!saved?.relay || !saved?.binding) throw lanError;
-          await dialRelay();
-          set({ status: 'connected', transport: 'relay', paused: false });
+          // 身份变化不是网络问题：落 relay 同一身份也会被拒，且会让自动重连空转。
+          const lanCode = lanError instanceof Error ? lanError.message : '';
+          if (handshakeNeedsRescan(lanCode) || !saved?.relay || !saved?.binding) throw lanError;
+          await dialRelay(attempt);
+          // relay 握手期间也可能被抢占：这次成功不落状态。
+          if (attempt !== undefined && attempt !== connectSeq) return;
+          // 静默重试保留到「连上为止」的那两句（二维码无效/扫码失败）在这里清。
+          set({ status: 'connected', transport: 'relay', paused: false, connectionError: null });
           await reconcilePending();
           return;
         }
+        // 被更新的尝试抢占了：迟到的成功作废——不落盘、不打 connected、不动 relay 记账（D3）。
+        if (attempt !== undefined && attempt !== connectSeq) return;
         // LAN 恢复即收敛到直连：createClient 的 client?.close() 已把 relay 通道关掉
         //（同一时刻只有一条活通道），这里只清记账。
         relayClient = null;
         await persist({ ...saved!, binding, candidate: undefined });
+        // 落盘是又一次可被抢占的窗口：不校验的话，抢占者刚置好的状态会被这拍覆盖。
+        if (attempt !== undefined && attempt !== connectSeq) return;
         epoch = binding.scopeEpoch;
         pruneUnscopedHistory(previousScope, binding.scope);
-        set({ status: 'connected', transport: 'lan', binding, sessionId: get().sessionId ?? binding.scope.find(id => !id.startsWith('project:')) ?? null });
+        // lastSession === '' 是欢迎页记忆；null ?? scope 第一条会把它盖掉。
+        const remembered = options?.lastSession?.(binding.hostKey);
+        set({
+          status: 'connected', transport: 'lan', binding, connectionError: null,
+          sessionId: get().sessionId ?? (remembered === '' ? null : (binding.scope.find(id => !id.startsWith('project:')) ?? null)),
+        });
         await refreshRelayRoute();
+        // 路由刷新期间被抢占：收尾不再触碰抢占者的通道（reconcilePending 会在当前 client 上发请求）。
+        if (attempt !== undefined && attempt !== connectSeq) return;
         await reconcilePending();
-      }),
+          }, { preempt, claim: true, autoAttempt: !manual });
+        } finally {
+          reconnectDepth -= 1;
+        }
+      },
       pause: () => {
+        // 后台/锁屏不跑自动重连定时器（N-MOBILE-AUTO-RECONNECT ②），与「paused 假警报」是两件事：
+        // 已经 offline 时 paused 仍是 false（断连文案要留着），但定时器必须停。
+        appInBackground = true;
+        retryGeneration += 1;
+        clearRetryTimer();
         // 只有「本来连着」才算暂停：原本就断着的话，报错该继续留在界面上。
         // 必须幂等：iOS 退后台会连发两次生命周期回调，第二次时 status 已经是 offline，
         // 按「当前是否连着」重算就会把 paused 打回 false——爸报的那个假警报原样回来
@@ -570,16 +848,27 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // client 即当前活通道（LAN 或 relay），关它就够；relayClient 只是记账。
         client?.close();
         relayClient = null;
-        if (get().binding) set({ status: 'offline', paused: live, transport: null });
+        if (get().binding) set({ status: 'offline', paused: live, transport: null, autoRetrying: false });
       },
       refreshLibrary: async (more = false) => {
         if (!client || get().status !== 'connected') return;
         try {
           const library = await client.request({ action: 'read', query: { kind: 'library', offset: more ? get().library?.nextOffset ?? 0 : 0 } }) as CompanionLibrary;
           if (!library || !Array.isArray(library.sessions) || !Array.isArray(library.projects) || !Array.isArray(library.models)) throw new Error('COMPANION_INVALID_LIBRARY');
-          const sessions = new Map((more ? get().library?.sessions ?? [] : []).map(s => [s.id, s]));
+          const previous = get().library;
+          const current = get().sessionId;
+          const sessions = new Map((more ? previous?.sessions ?? [] : []).map(s => [s.id, s]));
           for (const session of library.sessions) sessions.set(session.id, session);
           set({ library: { ...library, sessions: [...sessions.values()] }, libraryError: false });
+          // 连上后发现当前会话已在电脑删除：静默回欢迎页（N-MOBILE-RESUME-LAST-SESSION ④）。
+          if (current && !more && !sessions.has(current) && library.nextOffset == null) {
+            const previousHad = previous?.sessions.some(s => s.id === current) === true;
+            const coldMiss = !previous;
+            if (previousHad || coldMiss) {
+              remember(null);
+              set({ sessionId: null, runId: null, terminal: null, artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, uploadProgress: [] });
+            }
+          }
         } catch { set({ libraryError: true }); }
       },
       refreshModels: async () => {
@@ -628,7 +917,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         });
       },
       selectSession: sessionId => {
-        if ((get().library?.sessions.some(s => s.id === sessionId) || get().binding?.scope.includes(sessionId) || get().events.some(e => e.sessionId === sessionId && (e.kind === 'approval' || e.kind === 'question' || e.kind === 'plan'))) && !get().busy) {
+        const known = get().library?.sessions.some(s => s.id === sessionId)
+          || get().binding?.scope.includes(sessionId)
+          || get().events.some(e => e.sessionId === sessionId && (e.kind === 'approval' || e.kind === 'question' || e.kind === 'plan'))
+          || Boolean(get().history[sessionId]);
+        if (known && !get().busy) {
           const events = get().events.filter(e => e.sessionId === sessionId);
           const last = events.filter(e => ['run_started', 'agent_complete', 'agent_cancelled', 'error'].includes(e.kind)).at(-1);
           // artifacts/preview 是当前会话作用域：切会话必须清掉，否则 offline 时
@@ -770,9 +1063,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         syncing = true;
         try {
           const result = await client.request({ action: 'sync', epoch, afterSeq: cursor }) as CompanionSyncResult;
-          if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); return; }
+          if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); markSyncOk(); return; }
           // 被撤销不是网络问题：混进通用 offline 会让这台设备一直重试、永远不知道自己已被踢。
-          if (result.kind === 'revoked') { client?.close(); if (relayClient) { relayClient.close(); relayClient = null; } wipeHistoryCache(); set({ status: 'rejected', connectionError: 'connectionRejected', transport: null }); return; }
+          if (result.kind === 'revoked') {
+            client?.close(); if (relayClient) { relayClient.close(); relayClient = null; } wipeHistoryCache(); stopAutoRetry(); remember(null);
+            const revokedHostKey = saved?.binding?.hostKey;
+            if (revokedHostKey) options?.forgetSessionTitles?.(revokedHostKey);
+            set({ status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null });
+            return;
+          }
           if (result.kind !== 'events' || result.epoch !== epoch || !Number.isSafeInteger(result.nextSeq) || result.nextSeq < cursor || !Array.isArray(result.events)) throw new Error('COMPANION_INVALID_SYNC');
           set({ events: [...get().events, ...result.events] }); cursor = result.nextSeq;
           history.ingestEvents(result.events);
@@ -801,7 +1100,19 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             const record = await client.request({ action: 'status', commandId: pendingId }) as CompanionCommandRecord | null;
             if (record && saved?.pending?.commandId === pendingId && !(await recoverStalePending(record))) await accepted(record);
           }
-        } catch { client?.close(); if (relayClient && client === relayClient) relayClient = null; if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable', transport: null }); }
+          markSyncOk();
+        } catch {
+          client?.close();
+          if (relayClient && client === relayClient) relayClient = null;
+          // 撤销已在同一次处理里把设备翻成 rejected（relay 的 revoke 帧先 drop 再 onRevoked，
+          // 这条 sync 的失败随后才到）：不得打回 offline、不得挂自动重试——否则状态位先闪
+          // 「正在自动重试」再变回「需要重新扫码」（N-MOBILE-AUTO-RECONNECT-R3 O2）。
+          if (get().status === 'rejected') { syncOk = false; return; }
+          const escalate = !syncOk;
+          syncOk = false;
+          if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable', transport: null });
+          armAutoRetry(escalate);
+        }
         finally { syncing = false; }
       },
       refreshArtifacts: async () => {

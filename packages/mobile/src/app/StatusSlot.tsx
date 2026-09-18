@@ -98,19 +98,24 @@ export function composerStatusItems(
     binding: boolean; status: string; paused: boolean; connectionError: string | null; busy: boolean;
     commandError: string | null; commandErrorAction: string | null; voiceFailureShown: boolean; voiceActive?: boolean; sessionId: string | null;
     libraryError: boolean; pending: boolean; pendingAction: string | null; pendingSlow: boolean;
+    autoRetrying?: boolean; autoAttempt?: boolean; abandonedPending?: boolean;
     library: { models: readonly unknown[] } | null;
   },
-  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; retrySend?: () => void; openVoiceSetup?(): void; openModelSetup(): void },
+  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; retrySend?: () => void; dismissAbandoned?(): void; openVoiceSetup?(): void; openModelSetup(): void },
 ): StatusItem[] {
   const items: StatusItem[] = [];
   if (s.saveError) items.push({ rank: 1, message: text.saveError, action: { label: text.retry, run: act.flush } });
   if (s.nativeError) items.push({ rank: 1, message: text.nativeError });
   const live = s.status === 'connected';
+  // 自动重试在途不锁「重新连接/扫码」（D3）：在途 hello 可达 10s，锁了等于八成时间没有逃生口；
+  // 手动点按发起的连接/扫码仍锁（防重复点击），那部分用 busy && !autoAttempt 表达。
+  const escapeDisabled = s.busy && !s.autoAttempt;
   if (s.binding && !live && !s.paused) {
     const open = act.openRemote;
-    const reconnect = { label: text.reconnect, run: act.reconnect, disabled: s.busy };
-    items.push(s.status === 'connecting' ? { rank: 2, message: text.connecting, neutral: true, open }
-      : s.status === 'rejected' || connectionDiagnosis(text, s).action === 'scan' ? { rank: 2, message: text.rescanNeeded, open, action: { label: text.scanShort, run: act.scan, disabled: s.busy } }
+    const reconnect = { label: text.reconnect, run: act.reconnect, disabled: escapeDisabled };
+    items.push(s.status === 'rejected' || connectionDiagnosis(text, s).action === 'scan' ? { rank: 2, message: text.rescanNeeded, open, action: { label: text.scanShort, run: act.scan, disabled: escapeDisabled } }
+      : s.autoRetrying ? { rank: 2, message: text.autoRetrying, open, action: reconnect, reason: 'auto-retry' }
+      : s.status === 'connecting' ? { rank: 2, message: text.connecting, neutral: true, open }
       : s.connectionError === 'connectionRefused' ? { rank: 2, message: text.neoNotRunning, open, action: reconnect }
       : { rank: 2, message: text.cannotReachComputer, open, action: reconnect });
   } else if (!s.binding && s.sendAttempted) {
@@ -121,6 +126,10 @@ export function composerStatusItems(
   if (s.library && s.library.models.length === 0) {
     items.push({ rank: 3, message: text.noUsableModel, action: { label: text.noUsableModelHow, run: act.openModelSetup }, reason: 'NO_USABLE_MODEL' });
   }
+  // abandonedPending 说的是「上一条操作没送到」——§13 的「刚才的操作没成功」族，rank 5。
+  // 本 PR 起手时它排 4，是当时第 3 位还没插进「电脑上还没有能用的模型」（#1918）；
+  // 合并后 §13 全表后移一位，这里跟着走，避免与 Composer 侧语音失败（rank 4）抢位。
+  if (s.abandonedPending) items.push({ rank: 5, message: text.abandonedPending, action: { label: text.gotIt, run: act.dismissAbandoned ?? (() => {}) } });
   const command = s.commandError === 'COMPANION_NOT_CONNECTED' ? null : commandNoticeCopy(text, s, s.voiceFailureShown, s.voiceActive === true);
   if (command) {
     const retrySend = (s.commandError === 'RUN_START_FAILED' || s.commandError === 'HOST_UNAVAILABLE')

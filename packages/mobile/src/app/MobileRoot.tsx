@@ -71,7 +71,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [store] = useState(() => createMobileStore(ports.preferences));
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
     return store.getState().acknowledgeDraft(acceptedText, `${hostKey}:${sessionId}`);
-  }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, sessionId ? `${hostKey}:${sessionId}` : 'new', commandId, continuation), ports.files, ports.historyCache));
+  }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, sessionId ? `${hostKey}:${sessionId}` : 'new', commandId, continuation), ports.files, ports.historyCache, {
+    lastSession: hostKey => store.getState().preferences.lastSessions?.[hostKey],
+    rememberSession: (hostKey, sessionId) => store.getState().rememberSession(hostKey, sessionId),
+    forgetSessionTitles: (hostKey, sessionId) => store.getState().forgetSessionTitles(hostKey, sessionId),
+  }));
   const appActive = useRef(true);
   const [notifyStore] = useState(() => createNotificationStore({
     port: ports.notifications ?? unavailableNotificationPort,
@@ -349,6 +353,22 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       void companionStore.getState().refreshArtifacts();
     } else if (state.route !== 'fixture') store.getState().activateDraft('new');
   }, [companion.sessionId, companion.binding?.hostKey, companion.status, state.route, store, companionStore]);
+  // lastSessions 双写入口的渲染侧那处（ai-review Nit，刻意保留）：store 内 rememberSession
+  // 管 companionStore 内部时点（配对/撤销/会话消失）；这里管「会话或绑定变化、偏好盘就绪后
+  // 跟随渲染同步一次」。
+  useEffect(() => {
+    const hostKey = companion.binding?.hostKey;
+    if (!hostKey || !state.ready) return;
+    store.getState().rememberSession(hostKey, companion.sessionId);
+  }, [companion.sessionId, companion.binding?.hostKey, state.ready, store]);
+  // 当前会话的标题随库一起记（O1）：冷启动宿主停机时 library 还没到，缓存会话的标题从这里取，
+  // 不再坠到「共享会话 N」这种谁也认不出的占位。
+  useEffect(() => {
+    const hostKey = companion.binding?.hostKey;
+    if (!hostKey || !companion.sessionId || !companion.library) return;
+    const title = companion.library.sessions.find(s => s.id === companion.sessionId)?.title;
+    if (title) store.getState().rememberSessionTitle(hostKey, companion.sessionId, title);
+  }, [companion.sessionId, companion.binding?.hostKey, companion.library, store]);
   // 连上而没有会话时不再自动弹「选择项目」（N-MOBILE-DEFAULT-PROJECT ②A，爸 09-17「项目要有默认、不强制选」）：
   // 停在新会话欢迎页，项目选择器已带默认项目；弹层只在点选择器、或都建不了时点发送才开。
   /**
@@ -437,16 +457,43 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     }
   }, [companion.pending, companion.busy, companion.status, store]);
   const finishPair = async (raw?: string) => {
+    const ui = store.getState();
+    const draftKey = ui.draftKey;
+    const draft = ui.preferences.drafts[draftKey] ?? '';
     await companionStore.getState().pair(raw);
     const result = companionStore.getState();
     // 配对成功一律落到会话页：有会话进会话，只授权项目时是带默认项目选择器的欢迎页，不拦弹层。
-    if (result.status === 'connected') store.getState().navigate('new');
+    // 扫码逃生口丢掉未确认操作后，草稿要从旧会话键搬到欢迎页输入框（design.md §13）。
+    if (result.status === 'connected') {
+      store.getState().navigate('new');
+      if (result.abandonedPending && draft) {
+        // 欢迎页输入框里已经打着的字不整段盖掉：旧会话草稿换行接在后面，为空才直接写入
+        // （ai-review Nit）。扫码前就停在欢迎页（同一键取的草稿）不复读一遍。
+        const current = store.getState().preferences.drafts.new ?? '';
+        if (draftKey !== 'new') {
+          // 搬走后清掉旧键的草稿：不清的话回到旧会话/演示页，同一段字出现两次（ai-review Nit）。
+          store.getState().activateDraft(draftKey);
+          store.getState().editDraft('');
+        }
+        store.getState().activateDraft('new');
+        store.getState().editDraft(current && draftKey !== 'new' ? `${current}\n${draft}` : draft);
+      }
+    }
   };
   const pairAndOpenConversation = async () => {
     if (!ports.companion) return;
     let raw: string;
     try { raw = await ports.companion.scan(); }
-    catch { companionStore.setState({ status: 'offline', connectionError: 'connectionScanFailed' }); return; }
+    catch {
+      // 扫码器开着的那段时间，前台自动重连可能已把通道连上（连上后 markSyncOk 停定时器）：
+      // 此刻取消扫码若无条件落 offline+connectionScanFailed，会把活连接覆盖成离线，且
+      // 定时器已停、connectionScanFailed 又挡 armAutoRetry，卡死到手动操作（ai-review Important）。
+      // 取消本身不说明连接死了：只在确实没有可用连接时才落扫码失败态，连着就当无事发生。
+      if (companionStore.getState().status !== 'connected') {
+        companionStore.setState({ status: 'offline', connectionError: 'connectionScanFailed' });
+      }
+      return;
+    }
     let invitation: LanInvitation;
     try { invitation = parseInvitation(raw); }
     catch { await finishPair(raw); return; }
@@ -536,7 +583,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     }}>
     <main className="conversation" inert={state.drawer || !!state.sheet}>
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><AppIcon name="menu" /></button>
-        <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
+        <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? (hostKey ? state.preferences.sessionTitles?.[`${hostKey}:${companion.sessionId}`] : undefined) ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           offline={companion.status !== 'connected'}
@@ -600,7 +647,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             else state.attemptSend();
           }}
           status={composerStatusItems(text, { ...companion, binding: !!companion.binding, saveError: state.saveError, nativeError, sendAttempted: state.sendAttempted, voiceFailureShown, voiceActive, pendingSlow }, {
-            flush: () => void state.flush(), reconnect: () => void companion.reconnect(), scan: () => void pairAndOpenConversation(),
+            flush: () => void state.flush(), reconnect: () => void companionStore.getState().reconnect({ resetBackoff: true }), scan: () => void pairAndOpenConversation(),
             openRemote: () => state.openSheet('remote'), retryCreate: lastCreate.current, switchModel: openModelSheet,
             retrySend: () => {
               const draft = state.preferences.drafts[state.draftKey] ?? '';
@@ -608,6 +655,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             },
             openVoiceSetup: () => state.openSheet('voiceSetup'),
             openModelSetup: () => state.openSheet('modelSetup'),
+            dismissAbandoned: () => companionStore.getState().dismissAbandonedPending(),
           })}
           // 模型入口只留这一个（爸 2026-09-16 拍板）：会话操作弹窗里不再有模型那一格。
           modelLabel={companion.sessionId ? sessionModelLabel : welcomeModelLabel} openModel={openModelSheet}
@@ -730,7 +778,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             </div>
             <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>
           </>
-          : companion.status === 'connecting' ? <div className="remote-state" role="status" data-testid="remote-connecting">
+          : companion.status === 'connecting' && !companion.autoRetrying ? <div className="remote-state" role="status" data-testid="remote-connecting">
             <span className="spinner" aria-hidden="true" />{text.libraryLoading}
           </div>
           : !companion.binding ? <div className="remote-failed" role="status" data-testid="remote-unpaired">
@@ -743,23 +791,29 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           : <div className="remote-failed" role="status" data-testid="remote-unreachable">
             <strong>{text.cannotReachComputer}</strong>
             <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>
+            {companion.pending && <p className="caption" data-testid="remote-pending-hint">{text.pendingScanHint}</p>}
             {/* 两个动作都留着，主次由诊断决定（爸 2026-09-16 build 42 真机「手机没给我扫的按钮啊」）。
                 原来按分类只渲染一个：relay 被拒判 reconnect ⇒ 只有「重新连接」。而重连试的是配对时
                 写死的 endpoint/altEndpoint，换网后两个都死，**这个主按钮永远不可能成功**，用户却
                 拿不到唯一能救的那个动作（重新扫码），只能删 app 重装。fix4-③ 要删的是 Wi-Fi 说明书，
                 不是逃生口——「一态一主操作」说的是主次，不是只留一个。 */}
+            {/* 自动重试的在途连接不锁这两个键（D3）：在途 hello 约 10s 才超时，锁着等于约八成时间
+                没有逃生口。扫码走 preempt 抢占；「重新连接」立即开新尝试，旧在途尝试按代号丢弃
+                迟到结果。手动点按发起的连接/扫码仍锁（防重复点击）。 */}
             {([diagnosis.action, diagnosis.action === 'scan' ? 'reconnect' : 'scan'] as const).map((action, index) => action === 'scan'
               ? <button key={action} className={index === 0 ? 'primary' : 'sheet-secondary'} data-testid="remote-action-scan"
-                disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
+                disabled={!ports.companion || (companion.busy && !companion.autoAttempt)} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
               : <button key={action} className={index === 0 ? 'primary' : 'sheet-secondary'} data-testid="remote-action-reconnect"
-                disabled={!ports.companion || companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>)}
+                disabled={!ports.companion || (companion.busy && !companion.autoAttempt)} onClick={() => void companionStore.getState().reconnect({ resetBackoff: true })}>{text.reconnect}</button>)}
             {/* 连扫码也过不去时的底：丢掉本机存的配对，回到「尚未连接电脑」。
                 不加二次确认弹层，但**必须把代价写在旁边**：初版注释写的「误点没有东西可丢」是错的
                 （grok ai-review Nit②）——电脑只是睡着、Neo 只是没开时配对仍然有效，误点会连本机
                 会话缓存一起丢，且只能重新扫码才能回来（要人走到电脑跟前）。代价说清了，用户才
-                有得选；用一句错的理由把确认省掉，是把风险藏起来而不是降下去。 */}
+                有得选；用一句错的理由把确认省掉，是把风险藏起来而不是降下去。
+                置灰判据与上面两个键一致（busy && !autoAttempt，ai-review Nit）：自动重连在途的
+                时间占比高，兜底键跟着 busy 时灰时亮等于时有时无；自动尝试在途时点击走抢占。 */}
             <button className="sheet-secondary" data-testid="remote-action-forget"
-              disabled={!ports.companion || companion.busy} onClick={() => void companion.forget()}>{text.forgetComputer}</button>
+              disabled={!ports.companion || (companion.busy && !companion.autoAttempt)} onClick={() => void companion.forget()}>{text.forgetComputer}</button>
             <p className="caption" data-testid="remote-forget-caption">{text.forgetComputerHint}</p>
           </div>}
           {!ports.companion && <p>{text.nativeConnectionOnly}</p>}

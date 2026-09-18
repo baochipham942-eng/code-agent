@@ -164,8 +164,9 @@ export class CompanionRelayClient {
 
   get bufferedCount(): number { return this.buffer.size; }
   get droppedCount(): number { return this.buffer.dropped; }
-  /** 只读连接态：open 后撑过稳定期前也算 true（与 whenConnected 同判据），设置页状态块用它。 */
-  get connected(): boolean { return this.live; }
+  /** 只读连接态：live 且已撑过稳定期（stableTimer 清空）才算 true。relay 拒证是 open 后立刻关，
+   *  那个窗口里若报 true，设置页会闪一下「已开通」；whenConnected 仍在 open 即返回（收发不等稳定期）。 */
+  get connected(): boolean { return this.live && this.stableTimer === null; }
   /** 最近一次拨号失败的码（连上后清空）；只进日志语义，不直接展示给用户。 */
   get lastDialError(): string | null { return this.lastDialErrorCode; }
 
@@ -518,14 +519,15 @@ export interface CompanionRelayAccountSource {
   addAuthChangeCallback(callback: (user: { id: string } | null) => void): () => void;
 }
 
-/** 账号通道对设置页自报的状态（CompanionRelayStatus 的 account 部分，由装配层拼上 configured/legacy）。 */
+/** 账号通道对设置页自报的状态（CompanionRelayStatus 的 account 部分，由装配层拼上 legacy）。 */
 export type CompanionRelayAccountStatus = Pick<CompanionRelayStatus, 'account' | 'accountError'>;
 
 /**
  * 账号通道（N-COMPANION-RELAY-ACCOUNT-BIND 第一刀）：电脑登录了 Neo 账号就再开一条 relay 连接，用
  * Supabase access token 鉴权、按 acct:<用户 id> 派生路由并登记。与共享凭据通道完全并行，那条一字不改；
  * 本刀不下发给手机，只让 relay 侧的离线验签与账号路由在生产里有真实消费方。
- * 登录 / 退出 / 换账号时按用户 id 起停；同一用户的令牌刷新不重连（每次拨号现取令牌）。
+ * 登录 / 退出 / 换账号时按用户 id 起停；同一用户的令牌刷新不重连（每次拨号现取令牌）——
+ * 例外：上次身份加载失败会回退已记的用户 id，同一用户的下一次登录态变化会重试。
  */
 export function startCompanionRelayAccountIfConfigured(opts: {
   dataDirectory: string;
@@ -563,7 +565,11 @@ export function startCompanionRelayAccountIfConfigured(opts: {
       try {
         identity = await opts.loadIdentity();
       } catch (error) {
-        opts.logger?.warn(`Companion relay (account) identity load failed: ${errorHead(error)}`);
+        opts.logger?.warn(`Companion relay (account) identity load failed: ${errorHead(error)}; retrying on next auth change`);
+        // 身份加载失败后 follow 链里没有自动重试，把 userId 回退掉，让同一用户的下一次登录态
+        // 变化（token 刷新/后台 session 验证/重新登录都会发）能重新走这条链——否则设置页的
+        // connecting 文案宣称「稍后自动重试」就成了假话。被更新的登录态顶掉时不能回退。
+        if (userId === next) userId = null;
         return;
       }
       if (stopped || userId !== next) return;

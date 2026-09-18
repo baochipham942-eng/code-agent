@@ -339,8 +339,11 @@ describe('companion relay account binding (slice 1)', () => {
     await handle?.stop();
   });
 
-  it('status(): connected once the account channel is up', async () => {
-    await vi.waitFor(() => expect(account.status().account).toBe('connected'));
+  it('status(): connected only after the channel survives the stability window, not at first open', async () => {
+    // relay 拒证是 open 之后立刻关：connected 判据必须等撑过稳定期，否则设置页闪「已开通」。
+    await vi.waitFor(() => expect(relay.currentStats.accountConnections).toBe(1));
+    expect(account.status().account).toBe('connecting');
+    await vi.waitFor(() => expect(account.status().account).toBe('connected'), { timeout: 8_000 });
   });
 
   it('status(): connecting with the last dial error while the relay keeps rejecting the token', async () => {
@@ -356,5 +359,26 @@ describe('companion relay account binding (slice 1)', () => {
     await rejected?.stop();
     await bare.stop();
     rmSync(bareDir, { recursive: true, force: true });
+  });
+
+  it('status(): an identity-load failure is retried when the same user fires another auth change', async () => {
+    await account.stop();
+    let failIdentity = true;
+    const warns: string[] = [];
+    const flakyAuth = fakeAuth('user-1');
+    const flaky = startCompanionRelayAccountIfConfigured({
+      dataDirectory: dataDir, gateway,
+      loadIdentity: async () => { if (failIdentity) throw new Error('boom'); return hostIdentity; },
+      auth: flakyAuth, jitter: () => 0.5,
+      logger: { warn: message => warns.push(message), info: () => {} },
+    });
+    // 第一次失败后 follow 链里没有定时器重试；确定失败已发生（而不是还没轮到）再翻开关。
+    await vi.waitFor(() => expect(warns.some(line => line.includes('identity load failed'))).toBe(true));
+    expect(flaky.status()).toEqual({ account: 'connecting' });
+    failIdentity = false;
+    // 同一用户的下一次登录态事件（token 刷新/后台 session 验证/重登都是这个形状）要能重新拉起通道。
+    flakyAuth.switchTo('user-1');
+    await vi.waitFor(() => expect(flaky.status().account).toBe('connected'), { timeout: 8_000 });
+    await flaky.stop();
   });
 });

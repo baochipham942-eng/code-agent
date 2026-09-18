@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '@shared/constants/companion';
 import { hasFullProjectScope, projectScope } from '@shared/contract/companionLibrary';
@@ -19,6 +19,7 @@ export function CompanionSection() {
   const text = companionText[language];
   const locale = language === 'en' ? 'en-US' : 'zh-CN';
   const setShowAuthModal = useAuthStore((state) => state.setShowAuthModal);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [status, setStatus] = useState<Status | null>(null);
   const [qr, setQr] = useState<{ image: string; expiresAt: number; verify?: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -54,6 +55,13 @@ export function CompanionSection() {
     });
   });
   useEffect(() => { void run(refresh); }, []);
+  // 登录态变化后重拉一次：点「去登录」成功回来，状态块不能还停在「未开通」（也不做轮询）。
+  const wasAuthenticated = useRef(isAuthenticated);
+  useEffect(() => {
+    if (wasAuthenticated.current === isAuthenticated) return;
+    wasAuthenticated.current = isAuthenticated;
+    void run(refresh);
+  }, [isAuthenticated]);
   useEffect(() => {
     if (!qr) return;
     const timer = setTimeout(() => { setExpired(true); setQr(null); }, Math.max(0, qr.expiresAt - Date.now()));
@@ -103,7 +111,7 @@ export function CompanionSection() {
   </SettingsSection>;
 }
 
-/** 跨网连接状态块：四态一句人话，只有 signedOut 有「去登录」；off 不显示旧通道小字。 */
+/** 跨网连接状态块：四态一句人话，只有 signedOut 有「去登录」；旧通道小字只在确实连着时显示。 */
 function CrossNetworkStatus({ relay, text, onSignIn }: {
   relay: CompanionRelayStatus; text: Copy; onSignIn: () => void;
 }) {
@@ -119,10 +127,8 @@ function CrossNetworkStatus({ relay, text, onSignIn }: {
         {text.crossnetSignIn}
       </Button>
     )}
-    {relay.account !== 'off' && (
-      <p className="text-xs text-zinc-500">
-        {relay.legacy === 'connected' ? text.crossnetLegacyConnected : text.crossnetLegacyDisconnected}
-      </p>
+    {relay.legacy === 'connected' && (
+      <p className="text-xs text-zinc-500">{text.crossnetLegacyConnected}</p>
     )}
   </div>;
 }

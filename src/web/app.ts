@@ -75,7 +75,6 @@ import { getPlanApprovalGate } from '../host/agent/planApproval';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
 import { startCompanionRelayAccountIfConfigured, startCompanionRelayIfConfigured } from '../host/services/companion/CompanionRelayClient';
-import { loadCompanionRelayConfig } from '../host/services/companion/companionRelayConfig';
 import { getAuthService } from '../host/services/auth/authService';
 import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
 import { loadLanIdentity } from '../host/services/companion/lanIdentity';
@@ -512,9 +511,8 @@ export function createApp(deps: CreateAppDeps): express.Express {
       // relay 客户端是异步拨起的：手机问路由时它可能还没就绪——闭包读当前值，null 即 unavailable。
       deviceId => companionRelay?.routeFor(deviceId) ?? null,
       // 跨网连接状态块（N-COMPANION-RELAY-ACCOUNT-DESKTOP-STATUS）：照 relayRoute 的方式注入取值回调。
-      // configured 每次现读配置文件（状态请求只在打开设置页时发生，频率极低）；缺省日志已由两条通道启动时打过。
+      // 「配没配中继」由 account === 'off' 表达（没配时账号通道自报 off）；缺省日志已由两条通道启动时打过。
       () => ({
-        configured: !!loadCompanionRelayConfig(resolveCodeAgentDataDir()),
         legacy: companionRelay?.connected ? 'connected' as const : 'disconnected' as const,
         // 句柄还没赋上（db 分支未接线/启动瞬间）时按没开通报：那种场景下整个 manage 口都不存在。
         ...(companionRelayAccount?.status() ?? { account: 'off' as const }),

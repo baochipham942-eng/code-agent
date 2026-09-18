@@ -329,4 +329,40 @@ describe('companion relay：找回（list-hosts / pair-request / pair-result）'
     expect(relay.currentStats.instanceIndexKeys).toBe(1);
     deviceLeg.close();
   });
+
+  // R4 Nit2：list-hosts 的过期口径与转发路径对齐——转发按 route.expiresAt 拒，列表就不能把
+  // 「过期了但还没轮到清扫」的路由报成在线，否则手机会选一台谁都够不着的电脑白等超时。
+  it('⑦ 过期未扫的路由不进 list-hosts：TTL 内可列，推过 TTL 即消失（host 腿仍 OPEN）', async () => {
+    let clock = Date.now();
+    const verifier = new SupabaseJwtVerifier({ supabaseUrl: SUPABASE, fetch: jwksFetch });
+    verifier.start();
+    await verifier.refresh();
+    const port = await freePort();
+    const relay2 = new CompanionRelayServer({
+      credential: SECRET, port, accountVerifier: verifier, now: () => clock,
+      sweepIntervalMs: 3_600_000, // 别让清扫抢跑：测的就是「过期了但还没被扫掉」的窗口
+    });
+    const address = await relay2.listen();
+    const url2 = `ws://127.0.0.1:${address.port}`;
+    // 信封 issuedAt 按注入时钟走（onFrame 的帧过期检查也用同一时钟）。
+    const envelopeAt = (routeToken: string) => ({ routeToken, deviceRef: 'relay', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: clock });
+    const hostLeg = await ScriptSocket.connect(url2, token);
+    hostLeg.send({
+      v: 1, kind: 'register', role: 'host', instanceId: 'instance-id-stalehost1', hostName: 'Stale Mac',
+      envelope: { routeToken: 'route-token-stalehost1', deviceRef: 'stale-phone', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: clock }, ciphertext: '',
+    });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const listHosts2 = async () => {
+      hostLeg.send({ v: 1, kind: 'list-hosts', envelope: envelopeAt('neo-relay-list-hosts'), ciphertext: '' });
+      const reply = await hostLeg.wait(frame => frame.kind === 'list-hosts');
+      return parseCompanionRelayHostList(JSON.parse((reply as Extract<CompanionRelayFrame, { kind: 'list-hosts' }>).ciphertext) as unknown);
+    };
+    // TTL 内：列表里有它。
+    expect((await listHosts2()).map(host => host.name)).toEqual(['Stale Mac']);
+    // 推过路由 TTL（清扫被挡在 1h 外，路由仍在表里、host 腿仍 OPEN）：列表必须与转发同步按过期拒。
+    clock += L.relayRouteTokenTtlMs + 1;
+    expect(await listHosts2()).toEqual([]);
+    hostLeg.close();
+    await relay2.stop();
+  });
 });

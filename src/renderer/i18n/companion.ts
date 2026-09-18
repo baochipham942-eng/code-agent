@@ -45,6 +45,8 @@ export const companionText = {
     pairRequestDeny: '拒绝',
     /** 零库电脑的出路文案（R2 Important②）：同意只会登记零授权设备，先建项目再来。 */
     pairRequestNoScope: '这台电脑上还没有任何项目：先新建一个项目，再允许手机连接——现在同意的话，手机连上也没有可用的内容。',
+    /** 表态没送出去的兜底提示（ai-review R4 Nit1）：挂起态有 relay/Host 侧超时收尾，这里只保证「点了有下文」。 */
+    pairRequestFailed: '这次表态没有送达：请求稍后会自动作废，手机端可以重新发起。',
   },
   en: {
     title: 'Connect a phone',
@@ -91,6 +93,7 @@ export const companionText = {
     pairRequestApprove: 'Allow',
     pairRequestDeny: 'Deny',
     pairRequestNoScope: 'There are no projects on this computer yet. Create a project first, then allow the phone — allowing now would connect it to nothing usable.',
+    pairRequestFailed: 'Your response did not go through. The request will expire shortly; it can be restarted from the phone.',
   },
 };
 

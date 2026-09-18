@@ -14,12 +14,14 @@ import { formatRelayPairVerify } from '@shared/companion/relayPair';
 import { ipcService } from '../services/ipcService';
 import { useI18n } from '../hooks/useI18n';
 import { companionText } from '../i18n/companion';
+import { useUIStore } from '../stores/uiStore';
 import { Modal } from './primitives/Modal';
 import { Button } from './primitives/Button';
 
 export function CompanionPairRequestCard() {
   const { language } = useI18n();
   const text = companionText[language];
+  const showToast = useUIStore(state => state.showToast);
   const [pending, setPending] = useState<{ requestId: string; code: string; expiresAt: number; scopeEmpty: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -51,6 +53,12 @@ export function CompanionPairRequestCard() {
         action: 'pair.respond', requestId: pending.requestId, approve,
       });
       setPending(null);
+    } catch (error) {
+      // IPC 失败时表态没送达（ai-review R4 Nit1）：同样收卡 + 兜底提示，别把 rejection 晾成
+      // unhandled；挂起态本身有 relay/Host 侧超时收尾，卡片到点也会自隐。
+      console.error('[CompanionPairRequestCard] pair respond failed', error);
+      setPending(null);
+      showToast('error', text.pairRequestFailed);
     } finally {
       setBusy(false);
     }

@@ -281,6 +281,29 @@ describe('companion relay client：找回配对（同意守卫 + XX 三消息）
     for (let index = 0; index < L.relayMaxPendingPairs + 1; index += 1) sendInitialPairRequest();
     expect(pairRequests).toHaveLength(L.relayMaxPendingPairs);
     expect(warns.some(line => line.includes('pending pairs full'))).toBe(true);
+    // 可区分计数（R4 Important）：满员日志点名其中几条是「已同意在等续帧」——全 0 = 正常堆积，
+    // 非 0 = 回收窗失灵，排障一眼可辨。
+    expect(warns.some(line => line.includes('approved awaiting continuation 0'))).toBe(true);
     expect(gateway.pairedDevices()).toHaveLength(0);
+  });
+
+  it('R4 Important：同意后续帧永不到 ⇒ approved 挂起到点回收，容量让位后新一轮请求不被静默丢', () => {
+    const { requestId } = sendInitialPairRequest();
+    expect(client.respondPair(requestId, true)).toBe(true);
+    expect(socket.lastOf('pair-result')).toMatchObject({ kind: 'pair-result', requestId, accepted: true, stage: 'reply' });
+    // 续帧永不到达（临界同意形状：relay 已到点替手机回 timeout，续帧被 relay 判 unmatched 丢掉）——
+    // 旧行为：这条 approved 挂起永不回收，攒满 8 条后所有新 pair-request 在上限检查处被静默丢。
+    void vi.advanceTimersByTime(L.relayPairApprovedTtlMs);
+    // 条目回收：桌面卡片消账、挂起态没了。
+    expect(settled).toContain(requestId);
+    expect(client.respondPair(requestId, false)).toBe(false);
+    // 回收不补发 pair-result：relay 的挂起超时已替手机收尾，Host 再发只会是迟到帧。
+    expect(socket.frames().filter(frame => frame.kind === 'pair-result')).toHaveLength(1);
+    // 容量让位：回收后再来一整轮（8 条）新请求全部出卡、无「pending pairs full」——第 9 条不再被
+    // approved 僵尸顶掉（bug 形状：桌面不弹卡、手机固定等满 120s 拿「版本太旧」）。
+    const cardsBefore = pairRequests.length;
+    for (let index = 0; index < L.relayMaxPendingPairs; index += 1) sendInitialPairRequest();
+    expect(pairRequests).toHaveLength(cardsBefore + L.relayMaxPendingPairs);
+    expect(warns.some(line => line.includes('pending pairs full'))).toBe(false);
   });
 });

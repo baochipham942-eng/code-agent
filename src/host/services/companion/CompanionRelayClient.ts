@@ -676,9 +676,11 @@ export class CompanionRelayClient {
       return;
     }
     // 挂起条数上限（R3 Nit3）：节流不能全押 relay 的 5s 限流，Host 自己也兜一层——满了拒新并
-    // 留痕（手机侧由 relay 的挂起超时收尾，不登记、不出卡片）。
+    // 留痕（手机侧由 relay 的挂起超时收尾，不登记、不出卡片）。可区分计数（ai-review R4
+    // Important）：满员时点名其中几条是「已同意在等续帧」——回收窗失灵（条目不被清）一眼可辨。
     if (this.pendingPairs.size >= L.relayMaxPendingPairs) {
-      this.logger?.warn(`Companion relay${this.label} pair request dropped: pending pairs full (${this.pendingPairs.size})`);
+      const approved = [...this.pendingPairs.values()].filter(entry => entry.approved).length;
+      this.logger?.warn(`Companion relay${this.label} pair request dropped: pending pairs full (${this.pendingPairs.size}, approved awaiting continuation ${approved})`);
       return;
     }
     const noise = createRelayPairHandshake(false, this.deps.identity);
@@ -730,6 +732,17 @@ export class CompanionRelayClient {
     // 同意的挂起清掉再补一刀 timeout，手机拿到 timeout 而非成功。手机侧的到点收尾由 relay 的
     // 挂起超时兜底；桌面卡片按自身 expiresAt 自隐，挂起态由续帧完成/断连/再拒绝销账。
     clearTimeout(pending.timer);
+    // 同意后的回收窗（ai-review R4 Important）：续帧永不到达时（临界同意形状：relay 已到点替手机
+    // 回 timeout，续帧被 relay 判 unmatched 丢掉）这条 approved 挂起曾经永不回收——攒满
+    // relayMaxPendingPairs 后该 Host 所有新 pair-request 在上限检查处被静默丢，桌面不再弹卡、手机
+    // 固定等满 120s，只有重启或断 relay 才恢复。到点只清条目并留痕，不补发 pair-result：relay 的
+    // 挂起超时已给手机收尾，再发只会是一条对不上挂起态的迟到帧。
+    pending.timer = setTimeout(() => {
+      if (this.pendingPairs.get(requestId)?.noise !== pending.noise) return;
+      this.clearPendingPair(requestId);
+      logCompanionRelayInfo(this.logger, `Companion relay${this.label} pair approved continuation never arrived: request=${requestId.slice(0, 8)}`);
+    }, L.relayPairApprovedTtlMs);
+    pending.timer.unref();
     this.pushPairResult(requestId, { accepted: true, stage: 'reply', ciphertext: toHex(pending.noise.send()) });
     return true;
   }

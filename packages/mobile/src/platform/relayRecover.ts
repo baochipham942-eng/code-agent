@@ -39,6 +39,12 @@ type RecoverPairError =
   | { kind: 'hostMismatch' }
   | { kind: 'unreachable' };
 
+/**
+ * 找回流的具名失败全集（开放 + 配对两类的并集，ai-review R4 Nit5）：定义下沉到 platform 层，
+ * i18n / stores 都从这里引——文案层不许反向依赖 stores。stores 侧转出口供既有消费方。
+ */
+export type RecoverError = RecoverOpenError['kind'] | RecoverPairError['kind'];
+
 /** pair-result(complete) 解封后的配对载荷：welcome 等值内容 + relay.routes 双路由 + LAN 地址。 */
 interface RelayRecoverPayload {
   deviceId: string;
@@ -158,7 +164,9 @@ export async function openRelayRecoverSession(input: {
     const makeSession = (hosts: CompanionRelayHostEntry[]): RelayRecoverSession => ({
       email: grant.email,
       userId: grant.userId,
-      ticket,
+      /** getter 读会话当前值（ai-review R4 Nit4）：relay 在鉴权成功后随时可能发票/续签，
+       *  makeSession 那一刻的快照会把晚到的 ticket 帧静默丢掉——配对落盘要拿最新那张。 */
+      get ticket() { return ticket; },
       hosts,
       pair: (target, identity) => {
         const noise = createRelayPairHandshake(true, identity);

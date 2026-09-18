@@ -1,4 +1,4 @@
-import type { RecoverError } from '../stores/companionStore';
+import type { RecoverError } from '../platform/relayRecover';
 
 const zh = {
   approvalTarget: '目标',

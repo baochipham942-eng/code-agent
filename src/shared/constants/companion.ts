@@ -209,6 +209,13 @@ export const COMPANION_LIMITS = {
    * Host 侧待同意卡片同用一档）。照邀请 TTL 120s 的量级——电脑前的人要读 4 位码再点同意。
    */
   relayPairTtlMs: 120_000,
+  /**
+   * 同意后等手机续帧的回收窗（ai-review R4 Important，Host 侧）：relay 的挂起在 relayPairTtlMs
+   * （初次请求起算）就到点，续帧再晚也过不去 relay；多留 60s 盖两侧时钟偏差（与票据侧
+   * CLOCK_SKEW_S 同量级）。必须严格 > relayPairTtlMs——deadline 前一刻才同意的续帧（R3 Nit4
+   * 钉住的行为）在同意后一个完整 TTL 内仍要能落地，回收窗恰好一个 TTL 会在边界误杀它。
+   */
+  relayPairApprovedTtlMs: 180_000,
   /** pair-request 初次请求的限流间隔（每连接与每账号同判）：防「卡片轰炸电脑」。续帧不计。 */
   relayPairRequestMinIntervalMs: 5_000,
   /** Host 侧找回配对的挂起条数上限（R3 Nit3）：节流不能全押 relay 的限流——Host 自己也兜一层，

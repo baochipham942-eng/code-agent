@@ -14,7 +14,7 @@ import { DEFAULT_COMPANION_RELAY_URL, isCompanionRelayUrlConfigured } from '../.
 import { LanCompanionClient } from '../platform/lanCompanionClient';
 import { RelayCompanionClient, browserRelayDial, type RelayDialRoute } from '../platform/relayCompanionClient';
 import { loginNeoAccount, type AccountLoginResult } from '../platform/accountLogin';
-import { openRelayRecoverSession, type RelayRecoverSession } from '../platform/relayRecover';
+import { openRelayRecoverSession, type RelayRecoverSession, type RecoverError } from '../platform/relayRecover';
 
 /**
  * store 级登录结果：成功只报 ok——票据落进配对盘（Keychain），不进 React 状态、不进 UI 调用方
@@ -63,8 +63,9 @@ type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connect
  * pairing=S6 等电脑上同意。成功直接归零回 idle（配对与登录态已落盘，UI 按 binding 出现收层）。
  */
 export type RecoverStep = 'idle' | 'opening' | 'hosts' | 'pairing';
-/** 找回流的具名失败：S4 行内（凭据/服务连不上）/ S5 横幅（配对被拒/超时/离线/限流/需升级/身份不符）。 */
-export type RecoverError = 'invalidCredentials' | 'unreachable' | 'noHosts' | 'declined' | 'timeout' | 'hostOffline' | 'rateLimited' | 'hostUpgrade' | 'hostMismatch';
+/** 找回流的具名失败：S4 行内（凭据/服务连不上）/ S5 横幅（配对被拒/超时/离线/限流/需升级/身份不符）。
+ *  定义下沉在 platform/relayRecover（ai-review R4 Nit5，i18n 不再反向依赖 stores）；此处转出口供既有消费方。 */
+export type { RecoverError };
 /** 双径（N-MOBILE-RELAY-PHONE）：LAN 直连优先；relay 是跨网回落路。UI 据此区分「经中继」。 */
 type CompanionTransport = 'lan' | 'relay';
 

@@ -135,14 +135,16 @@ describe('relayRecover：登录 → 列电脑 → 配对落盘（与扫码同形
     vi.stubGlobal('fetch', okFetch({ access_token: ACCESS_TOKEN, user: { id: 'user-1', email: 'lin@example.com' } }));
   });
 
-  async function loginToListHosts(hostEntry: { name: string; fingerprint: string; instanceId: string }): Promise<void> {
+  async function loginToListHosts(hostEntry: { name: string; fingerprint: string; instanceId: string }, withTicket = true): Promise<void> {
     const loginPromise = store.getState().recoverLogin('lin@example.com', PASSWORD);
     // dial 同步构造 → open/list-hosts 请求都已发出后按剧本回帧。
     await vi.waitFor(() => expect(socket.frames().some(frame => frame.kind === 'list-hosts')).toBe(true));
-    socket.deliver({
-      v: 1, kind: 'ticket',
-      envelope: envelope('neo-relay-ticket-issue'), ciphertext: TICKET,
-    });
+    if (withTicket) {
+      socket.deliver({
+        v: 1, kind: 'ticket',
+        envelope: envelope('neo-relay-ticket-issue'), ciphertext: TICKET,
+      });
+    }
     socket.deliver({
       v: 1, kind: 'list-hosts', envelope: envelope('neo-relay-list-hosts'),
       ciphertext: JSON.stringify([hostEntry]),
@@ -293,5 +295,22 @@ describe('relayRecover：登录 → 列电脑 → 配对落盘（与扫码同形
     // 「电脑身份核对不上」，用显式断言 cast 模拟登记表之外的值。
     expect(recoverErrorCopy(text, 'unlisted-future-value' as RecoverError)).toBe(text.recoverGeneric);
     expect(recoverErrorCopy(text, 'unlisted-future-value' as RecoverError)).not.toContain('核对不上');
+  });
+
+  it('R4 Nit4：list-hosts 之后才到的 ticket 帧也能被配对落盘取到（ticket 是 getter，不是 makeSession 快照）', async () => {
+    // 登录这轮先不发 ticket（relay 可能在鉴权后任意时刻发票/续签）。
+    await loginToListHosts({ name: 'Mac', fingerprint: HOST_FINGERPRINT, instanceId: 'instance-id-1234567890' }, false);
+    const selectPromise = store.getState().recoverSelectHost(store.getState().recoverHosts![0]);
+    await vi.waitFor(() => expect(store.getState().recoverStep).toBe('pairing'));
+    // 迟到的 ticket 帧：会话此刻已建好（makeSession 已跑完），快照实现会把它静默丢掉。
+    const LATE_TICKET = 'neo1.late-renewed-ticket.mac';
+    socket.deliver({ v: 1, kind: 'ticket', envelope: envelope('neo-relay-ticket-issue'), ciphertext: LATE_TICKET });
+    await playHostApproval(socket, recoverPayload);
+    await selectPromise;
+    await vi.waitFor(() => expect(store.getState().recoverStep).toBe('idle'));
+    // 配对落盘拿到的是最新那张票（account 随票据一起落 Keychain）。
+    const saved = JSON.parse(writes.at(-1)!) as Record<string, any>;
+    expect(saved.account).toEqual({ ticket: LATE_TICKET, email: 'lin@example.com', userId: 'user-1' });
+    expect(store.getState().account).toEqual({ email: 'lin@example.com', userId: 'user-1' });
   });
 });

@@ -659,6 +659,9 @@ export class CompanionRelayServer {
     const byInstance = new Map<string, { name: string; fingerprint: string; instanceId: string }>();
     for (const route of this.routes.values()) {
       if (route.owner !== principal || !route.hostInstanceId) continue;
+      // 过期口径与转发路径对齐（ai-review R4 Nit2）：转发明明白白按过期拒，列表就不能把过期
+      // 路由报成在线——「过期了但还没轮到清扫」的窗口里，手机会选一台谁都够不着的电脑。
+      if (route.expiresAt <= this.now()) continue;
       if (route.host?.readyState !== WebSocket.OPEN) continue;
       const known = byInstance.get(route.hostInstanceId);
       // 去重时优先留带自报名的那条（Host 新旧版本混跑的路由行都指向同一实例）。
@@ -738,13 +741,19 @@ export class CompanionRelayServer {
       this.sendPairResult(socket, requestId, 'host-offline');
       return;
     }
-    const timer = setTimeout(() => {
-      this.pendingPairs.delete(requestId);
-      this.sendPairResult(socket, requestId, 'timeout');
-      this.options.logger?.info('pair_request_timeout', {});
-    }, this.options.pairTtlMs ?? L.relayPairTtlMs);
-    timer.unref();
-    this.pendingPairs.set(requestId, { phone: socket, host, timer });
+    const pending: PendingPair = {
+      phone: socket, host,
+      timer: setTimeout(() => {
+        // 自检（ai-review R4 Nit3，与 Host 侧同类逻辑同款）：到点时挂起表里这条必须还是自己那
+        // 条——requestId 被复用（手机重试撞同 id 已换新挂起）时按 id 裸删会把别人的挂起误清。
+        if (this.pendingPairs.get(requestId) !== pending) return;
+        this.pendingPairs.delete(requestId);
+        this.sendPairResult(socket, requestId, 'timeout');
+        this.options.logger?.info('pair_request_timeout', {});
+      }, this.options.pairTtlMs ?? L.relayPairTtlMs),
+    };
+    pending.timer.unref();
+    this.pendingPairs.set(requestId, pending);
     host.send(raw);
     this.stats.pairRequests += 1;
     this.options.logger?.info('pair_request_forwarded', { target: frame.instanceId.slice(0, 8) });

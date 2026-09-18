@@ -291,6 +291,7 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 .sheet-fail .primary, .remote-failed .primary { margin-top: 10px; }
 .sheet-fail .sheet-secondary, .remote-failed .sheet-secondary { margin-top: 2px; color: var(--accent); }
 .remote-state { display: flex; align-items: center; gap: 10px; padding: 18px 4px; color: var(--muted); }
+.remote-state .sheet-secondary { margin-left: auto; color: var(--accent); }
 .remote-sheet { padding: 4px 16px 16px; }
 .remote-sheet > p { margin: 12px 0 0; }
 

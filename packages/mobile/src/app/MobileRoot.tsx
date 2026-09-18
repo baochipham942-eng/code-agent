@@ -823,6 +823,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             </div>
             <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>
           </>
+          : companion.relayNoHostWaiting && companion.binding ? <div className="remote-state" role="status" data-testid="remote-waiting-host">
+            {/* no-host 过渡态（N-MOBILE-NOHOST-WAKING-STATE）：经中继没等到电脑不落失败页——每 3s
+                自动重拨，15s 内电脑上线直接连上。「重新连接」保留可用：点了 = 立即重拨一次并重置 15s 计时。 */}
+            <span className="spinner" aria-hidden="true" />{text.connectionWaitingForHost}
+            <button className="sheet-secondary" data-testid="remote-waiting-reconnect"
+              disabled={!ports.companion || (companion.busy && !companion.autoAttempt)}
+              onClick={() => void companionStore.getState().reconnect({ resetBackoff: true })}>{text.reconnect}</button>
+          </div>
           : companion.status === 'connecting' && !companion.autoRetrying ? <div className="remote-state" role="status" data-testid="remote-connecting">
             <span className="spinner" aria-hidden="true" />{text.libraryLoading}
           </div>

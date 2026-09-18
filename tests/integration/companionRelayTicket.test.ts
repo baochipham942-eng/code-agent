@@ -316,8 +316,10 @@ describe('companion relay device ticket (slice 3A)', () => {
   });
 
   it('①b host: dials with the stored ticket while Supabase is unreachable, and phone traffic rides the ticket', async () => {
+    // 不等 status() 翻 connected（那要撑过 5s 稳定期，刀2-R2）：票据落盘本身就证明令牌拨号被
+    // relay 接受、票据帧已收到——比设置页状态更贴这条用例要证的事实。
     const first = startChannel(fakeAuth('user-1'));
-    await vi.waitFor(() => expect(first.status().account).toBe('connected'));
+    await vi.waitFor(() => expect(loadCompanionRelayTicket(dataDir, 'user-1', now)).not.toBeNull());
     const stored = loadCompanionRelayTicket(dataDir, 'user-1', now);
     expect(stored).toMatch(/^neo1\./);
     await first.stop();
@@ -326,9 +328,10 @@ describe('companion relay device ticket (slice 3A)', () => {
     jwksState.online = false;
     const offline = fakeAuth('user-1', { tokenFails: true });
     const second = startChannel(offline);
-    await vi.waitFor(() => expect(second.status().account).toBe('connected'));
-    expect(offline.tokenCallCount()).toBe(0); // 票据优先，根本没去取令牌
+    // relay 的票据连接账 =1 即票据拨号完成且鉴权通过；先见拨号完成再数令牌调用，
+    // 顺序反了会拿「还没轮到取令牌」冒充「票据优先」。
     await vi.waitFor(() => expect(relay.currentStats.ticketConnections).toBe(1));
+    expect(offline.tokenCallCount()).toBe(0); // 票据优先，根本没去取令牌
     // 手机凭票据（不是令牌）走账号路由完整收发
     await roundTrip(token('acct:user-1'), stored as string);
     await second.stop();
@@ -506,9 +509,10 @@ describe('companion relay device ticket (slice 3A)', () => {
     expect(storeCompanionRelayTicket(dataDir, backdated.issue('user-1').ticket, 'user-1')).toBe(true);
     const auth = fakeAuth('user-1');
     const channel = startChannel(auth);
-    await vi.waitFor(() => expect(channel.status().account).toBe('connected'));
-    expect(auth.tokenCallCount()).toBeGreaterThan(0); // 票据过期，回落令牌拨号
+    // 不等 status()（要撑 5s 稳定期）：relay 的令牌连接账 =1 就是回落令牌拨号成功；先见拨号
+    // 完成再数令牌调用次数，顺序反了会拿「还没轮到取令牌」冒充「回落没发生」。
     await vi.waitFor(() => expect(relay.currentStats.accountConnections).toBe(1));
+    expect(auth.tokenCallCount()).toBeGreaterThan(0); // 票据过期，回落令牌拨号
     expect(relay.currentStats.ticketConnections).toBe(0);
     await channel.stop();
   });
@@ -532,7 +536,7 @@ describe('companion relay device ticket (slice 3A)', () => {
 
   it('host: a ticket the relay no longer trusts is dropped and the channel falls back to the token', async () => {
     const first = startChannel(fakeAuth('user-1'));
-    await vi.waitFor(() => expect(first.status().account).toBe('connected'));
+    // 票据落盘即第一条通道拨号成功并换到票（不等 status() 的 5s 稳定期）
     await vi.waitFor(() => expect(loadCompanionRelayTicket(dataDir, 'user-1', now)).not.toBeNull());
     await first.stop();
 
@@ -542,10 +546,11 @@ describe('companion relay device ticket (slice 3A)', () => {
     await startRelay();
     expect(relay.currentStats.ticketsIssued).toBe(0);
 
-    // Host 重连：票据被拒 → 作废本地票据 → 回落令牌 → 连上并换到新票
+    // Host 重连：票据被拒 → 作废本地票据 → 回落令牌 → 连上并换到新票。
+    // 回落链每步都有账可查，不借道 status()（那要等 5s 稳定期）：拒收在前（rejectedAuth）、
+    // 令牌拨号在后（accountConnections）、新票落盘收尾；拒改密钥重拨要吃一次退避，放宽到 5s。
     const second = startChannel(fakeAuth('user-1'));
-    await vi.waitFor(() => expect(second.status().account).toBe('connected'), { timeout: 5_000 });
-    await vi.waitFor(() => expect(relay.currentStats.accountConnections).toBe(1));
+    await vi.waitFor(() => expect(relay.currentStats.accountConnections).toBe(1), { timeout: 5_000 });
     expect(relay.currentStats.ticketConnections).toBe(0);
     expect(relay.currentStats.rejectedAuth).toBeGreaterThanOrEqual(1);
     await vi.waitFor(() => expect(loadCompanionRelayTicket(dataDir, 'user-1', now)).not.toBeNull());

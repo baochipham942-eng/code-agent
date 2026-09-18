@@ -22,7 +22,7 @@ export class LanCompanionManager {
     private readonly listProjects: () => { id: string; name: string }[] = () => [],
     private readonly push?: CompanionPushOutbox,
     private readonly relayRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRoute | null,
-    /** 跨网连接状态（configured/legacy/account）取值回调；缺省时 status 结果不带 relay 字段（旧装配/旧测试）。 */
+    /** 跨网连接状态（legacy/account）取值回调；缺省时 status 结果不带 relay 字段（旧装配/旧测试）。 */
     private readonly relayStatus?: () => CompanionRelayStatus) {}
 
   /**

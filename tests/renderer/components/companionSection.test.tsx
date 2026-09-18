@@ -10,13 +10,32 @@ import type { CompanionManagementResult } from '../../../src/shared/contract/com
 const invoke = vi.hoisted(() => vi.fn());
 const toDataURL = vi.hoisted(() => vi.fn(async () => 'data:image/png;base64,qr'));
 const setShowAuthModal = vi.hoisted(() => vi.fn());
+// 极简 zustand 形状的 authStore 替身：selector hook，但登录态变化要能真触发组件重渲染。
+const authMock = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const api = {
+    state: { isAuthenticated: false, setShowAuthModal } as { isAuthenticated: boolean; setShowAuthModal: (show: boolean) => void },
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    getSnapshot: () => api.state,
+    setAuthenticated(isAuthenticated: boolean) {
+      api.state = { ...api.state, isAuthenticated };
+      for (const listener of [...listeners]) listener();
+    },
+    reset() { api.state = { isAuthenticated: false, setShowAuthModal }; },
+  };
+  return api;
+});
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({ invoke }));
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ language: 'zh' }) }));
 vi.mock('qrcode', () => ({ default: { toDataURL } }));
-vi.mock('../../../src/renderer/stores/authStore', () => ({
-  useAuthStore: (selector: (state: { setShowAuthModal: typeof setShowAuthModal }) => unknown) => selector({ setShowAuthModal }),
-}));
+vi.mock('../../../src/renderer/stores/authStore', async () => {
+  const { useSyncExternalStore } = await import('react');
+  return {
+    useAuthStore: (selector: (state: { isAuthenticated: boolean; setShowAuthModal: (show: boolean) => void }) => unknown) =>
+      selector(useSyncExternalStore(authMock.subscribe, authMock.getSnapshot)),
+  };
+});
 
 import { CompanionSection } from '../../../src/renderer/components/features/settings/sections/CompanionSection';
 
@@ -49,7 +68,7 @@ function mockManage(result: CompanionManagementResult | ((req: { action: string;
 }
 
 describe('CompanionSection pairing UI', () => {
-  afterEach(() => { cleanup(); invoke.mockReset(); toDataURL.mockClear(); });
+  afterEach(() => { cleanup(); invoke.mockReset(); toDataURL.mockClear(); authMock.reset(); });
   beforeEach(() => { mockManage(status()); });
 
   it('zh/en keys stay paired', () => {
@@ -145,10 +164,10 @@ describe('companionErrorCopy', () => {
 });
 
 describe('CompanionSection cross-network status', () => {
-  afterEach(() => { cleanup(); invoke.mockReset(); setShowAuthModal.mockClear(); });
+  afterEach(() => { cleanup(); invoke.mockReset(); setShowAuthModal.mockClear(); authMock.reset(); });
 
   function relayStatus(account: 'off' | 'signedOut' | 'connecting' | 'connected', legacy: 'connected' | 'disconnected' = 'disconnected') {
-    mockManage(status({ relay: { configured: account !== 'off', legacy, account } }));
+    mockManage(status({ relay: { legacy, account } }));
   }
 
   it('off: says local-Wi-Fi only, offers no sign-in and hides the legacy line', async () => {
@@ -159,7 +178,6 @@ describe('CompanionSection cross-network status', () => {
     expect(screen.getByText(text.crossnetOffHint)).toBeTruthy();
     expect(screen.queryByTestId('companion-crossnet-action')).toBeNull();
     expect(screen.queryByText(text.crossnetLegacyConnected)).toBeNull();
-    expect(screen.queryByText(text.crossnetLegacyDisconnected)).toBeNull();
   });
 
   it('signedOut: shows the sign-in button and the legacy line; clicking opens the auth modal', async () => {
@@ -172,12 +190,13 @@ describe('CompanionSection cross-network status', () => {
     expect(setShowAuthModal).toHaveBeenCalledWith(true);
   });
 
-  it('connecting: tells the user it retries automatically and has no button', async () => {
+  it('connecting: tells the user it retries automatically and hides the legacy line while it is down', async () => {
     relayStatus('connecting');
     render(<CompanionSection />);
     expect(await screen.findByText(text.crossnetConnecting)).toBeTruthy();
     expect(screen.getByText(text.crossnetConnectingHint)).toBeTruthy();
-    expect(screen.getByText(text.crossnetLegacyDisconnected)).toBeTruthy();
+    // 旧通道没连着就不显示那行小字：没用过旧通道的用户不该看到「未连接」以为坏了。
+    expect(screen.queryByText(text.crossnetLegacyConnected)).toBeNull();
     expect(screen.queryByTestId('companion-crossnet-action')).toBeNull();
   });
 
@@ -188,6 +207,21 @@ describe('CompanionSection cross-network status', () => {
     expect(screen.getByText(text.crossnetConnectedHint)).toBeTruthy();
     expect(screen.getByText(text.crossnetLegacyConnected)).toBeTruthy();
     expect(screen.queryByTestId('companion-crossnet-action')).toBeNull();
+  });
+
+  it('re-pulls status when the login state changes after the user signs in', async () => {
+    let pulls = 0;
+    invoke.mockImplementation(async (_channel: string, request: { action: string }) => {
+      if (request.action !== 'status') return invitation();
+      pulls += 1;
+      return status({ relay: { legacy: 'disconnected', account: pulls === 1 ? 'signedOut' : 'connecting' } });
+    });
+    render(<CompanionSection />);
+    expect(await screen.findByText(text.crossnetSignedOut)).toBeTruthy();
+    expect(pulls).toBe(1);
+    authMock.setAuthenticated(true);
+    expect(await screen.findByText(text.crossnetConnecting)).toBeTruthy();
+    expect(pulls).toBe(2);
   });
 
   it('stays hidden when the host predates the relay status field', async () => {

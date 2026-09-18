@@ -7,8 +7,6 @@ export type CompanionPairedDevice = { deviceId: string; scope: string[]; scopeEp
  * accountError 只进日志语义（最近一次账号通道拨号失败的码），不许原样展示给用户。
  */
 export type CompanionRelayStatus = {
-  /** 这台电脑是否配了中继（companion-relay.json 存在且启用）。 */
-  configured: boolean;
   /** 共享凭据通道（老手机走的那条）连接态。 */
   legacy: 'connected' | 'disconnected';
   /** 账号通道：off=没配中继；signedOut=没登录 Neo 账号；connecting=已登录未连上；connected=已连上。 */

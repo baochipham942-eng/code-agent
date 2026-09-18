@@ -157,4 +157,12 @@ describe('companion relay: loopback fake relay + host dial-out', () => {
     expect(host.droppedCount).toBe(4);
     expect(host.bufferedCount).toBe(L.relayMaxBufferedFrames);
   });
+
+  it('does not report connected until the dial survives the stability window (settings-page criterion)', async () => {
+    // beforeEach 里 start() 已 open（whenConnected 立即返回）；relay 拒证也是 open 后立刻关，
+    // 所以设置页读的 connected 在稳定期内必须是 false，撑过 L.relayStableConnectionMs 才翻 true。
+    await host.whenConnected();
+    expect(host.connected).toBe(false);
+    await vi.waitFor(() => expect(host.connected).toBe(true), { timeout: L.relayStableConnectionMs + 3_000 });
+  });
 });

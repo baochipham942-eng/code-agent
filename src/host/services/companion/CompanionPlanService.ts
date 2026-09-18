@@ -2,11 +2,30 @@ import { createHash } from 'node:crypto';
 import type { CompanionCommand, CompanionDecisionOutcome, CompanionPlanAnswer, CompanionSubmitResult } from '../../../shared/contract/companion';
 import { COMPANION_LIMITS } from '../../../shared/constants/companion';
 import type { CompanionGateway } from './CompanionGateway';
+import type { PlanSubmission } from '../../agent/planApproval';
 
 export type CompanionPlanInspection = {
   outcome: CompanionDecisionOutcome;
   answer?: CompanionPlanAnswer;
 };
+
+/**
+ * 已决 PlanApprovalGate plan → 手机卡片的结算判定。
+ * 机器产生的终止（run 取消 / 审批超时 / 重启孤儿 hydrate）不是用户裁决：归
+ * cancelled/expired，feedback 一律不透给手机——那些串是宿主内部文案
+ * （Orphaned by process restart / Cancelled: … / Auto-rejected after timeout…），
+ * 只有 resolutionOrigin 为用户裁决时 feedback 才是真人写的修改意见。
+ * pending 返回 null，由调用方走自己的结算来源。
+ */
+export function inspectionFromGatePlan(plan: PlanSubmission): CompanionPlanInspection | null {
+  if (plan.status === 'pending') return null;
+  if (plan.status === 'approved') {
+    return { outcome: 'answered', answer: { decision: 'approved', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
+  }
+  if (plan.resolutionOrigin === 'cancelled' || plan.resolutionOrigin === 'orphaned') return { outcome: 'cancelled' };
+  if (plan.resolutionOrigin === 'timeout') return { outcome: 'expired' };
+  return { outcome: 'answered', answer: { decision: 'rejected', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
+}
 
 function canonical(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);

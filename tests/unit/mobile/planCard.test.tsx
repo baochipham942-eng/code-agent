@@ -47,6 +47,18 @@ describe('PlanCard', () => {
     expect(screen.queryByText(/另一端/)).toBeNull();
   });
 
+  it('machine-cancelled cards say 任务已停止 and never read as 已要求修改', () => {
+    // 宿主机器终止（run 取消 / 重启孤儿）结算成 outcome=cancelled：手机只说卡作废，
+    // 不出现宿主内部英文串，也不谎称用户提过修改意见。
+    render(<PlanCard
+      card={{ preview, status: 'closed', outcome: 'cancelled', answer: undefined }}
+      text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe('任务已停止，这张卡作废了');
+    expect(text.questionCancelled).toBe('任务已停止，这张卡作废了');
+    expect(screen.queryByText(/已要求修改/)).toBeNull();
+    expect(screen.getByTestId('plan-result').textContent).not.toMatch(/[A-Za-z]/);
+  });
+
   it('旧宿主只带 status 的卡：已批准 / 已拒绝这个计划', () => {
     const { rerender } = render(<PlanCard card={{ preview, status: 'approved' }} text={text} disabled={false} respond={async () => {}} />);
     expect(screen.getByTestId('plan-result').textContent).toBe(text.planApproved);

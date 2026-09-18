@@ -14,8 +14,9 @@ vi.mock('../../src/host/services/infra/notificationService', () => ({ notificati
 import Database from 'better-sqlite3';
 import { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
 import { CompanionQuestionService } from '../../src/host/services/companion/CompanionQuestionService';
-import { CompanionPlanService } from '../../src/host/services/companion/CompanionPlanService';
+import { CompanionPlanService, inspectionFromGatePlan } from '../../src/host/services/companion/CompanionPlanService';
 import { PlanApprovalGate } from '../../src/host/agent/planApproval';
+import { PendingApprovalRepository } from '../../src/host/services/core/repositories/PendingApprovalRepository';
 import {
   registerUserQuestionRoute,
   canOfferRegisteredUserQuestion,
@@ -75,13 +76,10 @@ describe('companion question and plan cards use the desktop decision points', ()
       const ok = approved ? gate.approve(planId, feedback) : gate.reject(planId, feedback ?? 'Rejected');
       return { success: ok };
     }, planId => {
+      // 与 src/web/app.ts 的 inspectCompanionPlan 同款：结算判定走真分类器
+      // inspectionFromGatePlan（结构化 resolutionOrigin），不在这里复制判据。
       const plan = gate.getPlan(planId);
-      if (!plan || plan.status === 'pending') return null;
-      if (plan.status === 'approved') return { outcome: 'answered', answer: { decision: 'approved', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
-      const feedback = plan.feedback ?? '';
-      if (feedback.startsWith('Auto-rejected after timeout')) return { outcome: 'expired' };
-      if (feedback.startsWith('Cancelled:')) return { outcome: 'cancelled' };
-      return { outcome: 'answered', answer: { decision: 'rejected', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
+      return plan ? inspectionFromGatePlan(plan) : null;
     });
     cleanupQuestion = registerUserQuestionRoute(questions);
     gateway.registerDevice({ deviceId: 'phone', credentialHash: 'hash', scope: [sessionId], scopeEpoch: 1, revokedAt: null });
@@ -247,6 +245,89 @@ describe('companion question and plan cards use the desktop decision points', ()
       action: 'plan.respond', expectedRevision: card.revision,
       payload: { requestId: planId, operationDigest: card.operationDigest!, decision: 'approved' },
     }).kind).toBe('approval_conflict');
+    vi.useRealTimers();
+  });
+
+  it('a plan orphaned by host restart settles the phone card as cancelled without leaking host copy', () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pending_approvals (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        agent_id TEXT,
+        agent_name TEXT,
+        coordinator_id TEXT,
+        payload_json TEXT NOT NULL,
+        status TEXT NOT NULL,
+        submitted_at INTEGER NOT NULL,
+        resolved_at INTEGER,
+        feedback TEXT
+      );
+    `);
+    const repo = new PendingApprovalRepository(db);
+    // 上一个进程留下的 pending 行：手机端已发布过这张卡（companion_decisions 仍 pending）。
+    const orphanId = 'plan___legacy___1_1000';
+    repo.insert({
+      id: orphanId, kind: 'plan', agentId: 'agent-1', agentName: 'Coder', coordinatorId: 'coord',
+      payload: {
+        id: orphanId, agentId: 'agent-1', agentName: 'Coder', coordinatorId: 'coord',
+        plan: 'dangerous step', risk: { level: 'high', reasons: ['File deletion command'] },
+        submittedAt: 1_000, status: 'pending', scope,
+      },
+      submittedAt: 1_000,
+    });
+    gateway.registerDecision({ requestId: orphanId, sessionId, revision: 1, operationDigest: 'digest', status: 'pending', resolvedBy: null, kind: 'plan' });
+    // 宿主重启：hydrate 把残留行收成孤儿（feedback=Orphaned by process restart）。
+    expect(gate.attachPersistence(repo, 2_000)).toBe(1);
+    expect(gate.getPlan(orphanId)).toMatchObject({ status: 'rejected', resolutionOrigin: 'orphaned' });
+
+    plans.refresh();
+    expect(gateway.getDecision(orphanId)).toMatchObject({ status: 'closed', outcome: 'cancelled' });
+    const event = gateway.syncForDevice('phone', 1, 0).events.filter(item => item.kind === 'plan').at(-1);
+    expect(event?.payload).toMatchObject({ status: 'closed', outcome: 'cancelled' });
+    // 机器内部串不得当用户可见文案透传，也不得谎称用户提过修改意见。
+    expect(JSON.stringify(event?.payload)).not.toMatch(/Orphaned/);
+    expect((event?.payload as { answer?: unknown }).answer).toBeUndefined();
+  });
+
+  it('a run cancellation settles the phone plan card as cancelled without leaking Cancelled: copy', async () => {
+    vi.useFakeTimers();
+    const pending = gate.submitForApproval({
+      agentId: 'agent-1', agentName: 'Coder', coordinatorId: 'coord',
+      plan: 'rewrite launcher', risk: { level: 'medium', reasons: ['Dangerous command: rm'] },
+      scope,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    plans.refresh();
+    const planId = gate.getPendingPlans(scope)[0].id;
+    gate.cancelRun(scope, 'user stop');
+    await expect(pending).resolves.toMatchObject({ approved: false, autoApproved: true });
+    plans.refresh();
+    expect(gateway.getDecision(planId)).toMatchObject({ status: 'closed', outcome: 'cancelled' });
+    const event = gateway.syncForDevice('phone', 1, 0).events.filter(item => item.kind === 'plan').at(-1);
+    expect(event?.payload).toMatchObject({ status: 'closed', outcome: 'cancelled' });
+    expect(JSON.stringify(event?.payload)).not.toMatch(/Cancelled:/);
+    expect((event?.payload as { answer?: unknown }).answer).toBeUndefined();
+    vi.useRealTimers();
+  });
+
+  it('a desktop rejection with real user feedback still settles as answered revision', async () => {
+    vi.useFakeTimers();
+    const pending = gate.submitForApproval({
+      agentId: 'agent-1', agentName: 'Coder', coordinatorId: 'coord',
+      plan: 'batch import', risk: { level: 'medium', reasons: ['Dangerous command: rm'] },
+      scope,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    plans.refresh();
+    const planId = gate.getPendingPlans(scope)[0].id;
+    gate.reject(planId, '改用批量接口，别一条条来');
+    await expect(pending).resolves.toMatchObject({ approved: false, feedback: '改用批量接口，别一条条来', autoApproved: false });
+    plans.refresh();
+    expect(gateway.getDecision(planId)).toMatchObject({
+      status: 'rejected', outcome: 'answered', answer: { decision: 'rejected', feedback: '改用批量接口，别一条条来' },
+    });
+    const event = gateway.syncForDevice('phone', 1, 0).events.filter(item => item.kind === 'plan').at(-1);
+    expect(event?.payload).toMatchObject({ outcome: 'answered', answer: { feedback: '改用批量接口，别一条条来' } });
     vi.useRealTimers();
   });
 

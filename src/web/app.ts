@@ -25,6 +25,7 @@ import type { ConversationEnvelope } from '../shared/contract/conversationEnvelo
 import { formatError } from './helpers/utils';
 import { handleTempUpload, handleScreenshot } from './helpers/upload';
 import { dbAvailable, getPersistenceHealth } from './helpers/sessionCache';
+import { broadcastSSE } from './helpers/sse';
 
 // Middleware
 import {
@@ -67,10 +68,9 @@ import { CompanionPushOutbox, loadPushWrapKeySync } from '../host/services/compa
 import { projectCompanionEvent } from '../host/services/companion/projectCompanionEvent';
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
 import { CompanionQuestionService } from '../host/services/companion/CompanionQuestionService';
-import { CompanionPlanService, type CompanionPlanInspection } from '../host/services/companion/CompanionPlanService';
+import { CompanionPlanService, inspectionFromGatePlan, type CompanionPlanInspection } from '../host/services/companion/CompanionPlanService';
 import { deliverCompanionUserPlan, listCompanionUserPlans, noteCompanionUserPlan, takeCompanionUserPlanSettlement } from '../host/services/companion/companionUserPlan';
 import { companionSteerMessagePayload, steerOrQueueCompanionMessage } from '../host/services/companion/companionMessageSend';
-import { approvalAnswerFromPermission, noteCompanionApprovalSettlement } from '../host/services/companion/companionDecisionSink';
 import { getPlanApprovalGate } from '../host/agent/planApproval';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
@@ -119,17 +119,11 @@ export interface CreateAppDeps {
 }
 
 function inspectCompanionPlan(planId: string): CompanionPlanInspection | null {
+  // 结算判定在 inspectionFromGatePlan：按结构化 resolutionOrigin 分流，机器终止
+  // （取消/超时/重启孤儿）不走 answered，宿主内部 feedback 不透给手机。
   const plan = getPlanApprovalGate().getPlan(planId);
-  if (plan && plan.status !== 'pending') {
-    if (plan.status === 'approved') {
-      return { outcome: 'answered', answer: { decision: 'approved', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
-    }
-    const feedback = plan.feedback ?? '';
-    if (feedback.startsWith('Auto-rejected after timeout')) return { outcome: 'expired' };
-    if (feedback.startsWith('Cancelled:')) return { outcome: 'cancelled' };
-    return { outcome: 'answered', answer: { decision: 'rejected', ...(plan.feedback ? { feedback: plan.feedback } : {}) } };
-  }
-  return takeCompanionUserPlanSettlement(planId);
+  const inspection = plan ? inspectionFromGatePlan(plan) : null;
+  return inspection ?? takeCompanionUserPlanSettlement(planId);
 }
 
 /**
@@ -392,8 +386,20 @@ export function createApp(deps: CreateAppDeps): express.Express {
           const activeRun = command.sessionId ? runRegistry.resolve({ sessionId: command.sessionId }) : undefined;
           if (activeRun && command.sessionId) {
             const sessionId = command.sessionId;
+            // 手机插话与桌面 /api/interrupt 同一套事件：电脑聊天区靠这两个广播立刻
+            // 看到这条用户消息，不用等刷新（ai-review R8 Nit 3）。
+            broadcastSSE('agent:event', {
+              type: 'interrupt_start',
+              data: { message: '正在调整方向...', newUserMessage: text, runId: activeRun.context.runId },
+              sessionId,
+            });
             void steerOrQueueCompanionMessage(activeRun, { sessionId, commandId: command.commandId, text })
               .then(({ runId, outcome }) => {
+                broadcastSSE('agent:event', {
+                  type: 'interrupt_complete',
+                  data: { message: '已调整方向', newUserMessage: text, runId },
+                  sessionId,
+                });
                 gateway.publish(sessionId, 'message', companionSteerMessagePayload({
                   commandId: command.commandId, text, runId, outcome,
                 }));
@@ -430,18 +436,10 @@ export function createApp(deps: CreateAppDeps): express.Express {
         logger.warn('Companion deleted-session cleanup unavailable', error);
       });
       if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
-        const deliver = deps.deliverCompanionPermission;
-        services.approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, (requestId, response, sessionId) => {
-          const result = deliver(requestId, response, sessionId);
-          if (result.success && !result.data?.closed) {
-            noteCompanionApprovalSettlement({
-              requestId,
-              outcome: 'answered',
-              answer: approvalAnswerFromPermission(response),
-            });
-          }
-          return result;
-        });
+        // deliver 直传：respond 在 deliver 的同步窗口持有 phoneResponding（回声抑制，
+        // respond 自己会带 resolvedBy 发布结算），包一层 noteCompanionApprovalSettlement
+        // 恒不生效，是死代码（ai-review R8 Nit 2，已删）。
+        services.approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
       }
       services.questions = new CompanionQuestionService(gateway);
       cleanupQuestionRoute = registerUserQuestionRoute(services.questions);

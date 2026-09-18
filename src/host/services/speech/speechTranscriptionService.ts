@@ -33,6 +33,10 @@ const execFileAsync = promisify(execFile);
 let activeTranscriptions = 0;
 
 const MAX_SINGLE_PASS_AUDIO_BYTES = 10 * 1024 * 1024;
+// Groq 免费档单文件上限 25MB，留 1MB 余量；cloud-only 只按字节分段——按时长分段是为本地
+// whisper.cpp 的时长/内存限制存在的，把 ffmpeg 拽进云链路只会让「ffmpeg 一崩、云转写陪葬」
+//（2026-09-12 台账：57KB/60s 的 cloud-only 请求死在分段，300ms 返回 UNKNOWN）。
+const CLOUD_SINGLE_PASS_MAX_BYTES = 24 * 1024 * 1024;
 const MAX_COMPOSER_AUDIO_BYTES = 50 * 1024 * 1024;
 const MIN_COMPOSER_AUDIO_BYTES = 500;
 const CHUNK_AUDIO_AFTER_SECONDS = 60;
@@ -315,7 +319,10 @@ function logSpeechTranscriptionResult(
     ...(result.success ? {} : { error: result.error }),
     recoverable: result.recoverable,
     engine: result.engine,
-    cloud: result.engine === 'groq',
+    // 别用 `cloud: engine === 'groq'`：失败结果的 engine 缺省，它在一切失败上恒 false，
+    // 分不清「没走云」和「走了云但失败」——2026-09-12 台账把这个伪影当成了「没走云」的证据。
+    // 改记这个 mode 会尝试的通道，排查时一眼看出走没走云。
+    attempted: request.mode === 'local-only' ? 'local' : request.mode === 'cloud-only' ? 'groq' : 'local+groq',
     mode: request.mode,
     language: result.language || request.language,
     model: result.model || request.model,
@@ -327,8 +334,20 @@ function logSpeechTranscriptionResult(
 }
 
 function shouldChunkAudio(request: NormalizedSpeechRequest): boolean {
+  // cloud-only 不按时长分段：Groq 按文件大小收、不按时长，按时长切只增加一次 ffmpeg 依赖
+  //（本地模式按时长分段的判据一字未动）。
+  if (request.mode === 'cloud-only') {
+    return request.buffer.length > CLOUD_SINGLE_PASS_MAX_BYTES;
+  }
   return request.buffer.length > MAX_SINGLE_PASS_AUDIO_BYTES
     || (request.durationSeconds ?? 0) > CHUNK_AUDIO_AFTER_SECONDS;
+}
+
+/** execFile 失败时 stderr 挂在 error 上（error.message 只带截断版本，不够定位）。 */
+function getExecFileStderr(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const stderr = (error as { stderr?: unknown }).stderr;
+  return typeof stderr === 'string' && stderr.trim() ? stderr.trim() : undefined;
 }
 
 async function splitAudioIntoChunks(
@@ -360,7 +379,10 @@ async function splitAudioIntoChunks(
       throw new LocalSpeechTranscriptionError('NOT_INITIALIZED', 'ffmpeg 未安装。请运行: brew install ffmpeg', { cause: error });
     }
     const message = error instanceof Error ? error.message : String(error);
-    throw new LocalSpeechTranscriptionError('UNKNOWN', `长语音分段失败: ${message}`, { cause: error });
+    // ffmpeg 的 stderr 必须显式落日志——error.message 只带截断后的 stderr，
+    // 2026-09-12 台账那种「分段崩了、现场零线索、只能靠差分实验定位」就是它造成的。
+    logger.warn('ffmpeg 长语音分段失败', { error: message, stderr: getExecFileStderr(error) });
+    throw new LocalSpeechTranscriptionError('SEGMENT_FAILED', `长语音分段失败: ${message}`, { cause: error });
   }
 
   const chunks = fs.readdirSync(outputDir)

@@ -27,6 +27,7 @@ export type LocalSpeechErrorCode =
   | 'FS_ERROR'
   | 'INVALID_ARGS'
   | 'NOT_INITIALIZED'
+  | 'SEGMENT_FAILED'
   | 'TIMEOUT'
   | 'UNKNOWN';
 

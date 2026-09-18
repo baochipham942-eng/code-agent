@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '@shared/constants/companion';
 import { hasFullProjectScope, projectScope } from '@shared/contract/companionLibrary';
-import type { CompanionManagementResult, CompanionPairedDevice } from '@shared/contract/companionManagement';
+import type { CompanionManagementResult, CompanionPairedDevice, CompanionRelayStatus } from '@shared/contract/companionManagement';
+import { useAuthStore } from '../../../../stores/authStore';
 import { invoke } from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { companionErrorCopy, companionText } from '../../../../i18n/companion';
@@ -17,6 +18,7 @@ export function CompanionSection() {
   const { language } = useI18n();
   const text = companionText[language];
   const locale = language === 'en' ? 'en-US' : 'zh-CN';
+  const setShowAuthModal = useAuthStore((state) => state.setShowAuthModal);
   const [status, setStatus] = useState<Status | null>(null);
   const [qr, setQr] = useState<{ image: string; expiresAt: number; verify?: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -82,6 +84,9 @@ export function CompanionSection() {
       </div>
       {expired && !qr && <p role="status">{text.expired}</p>}
       <p className="text-xs text-zinc-500">{text.awayHint}</p>
+      {status?.relay && (
+        <CrossNetworkStatus relay={status.relay} text={text} onSignIn={() => setShowAuthModal(true)} />
+      )}
       <div className="space-y-2">
         <p className="text-sm font-medium text-zinc-200">{text.devices}</p>
         {status && !status.devices.length && <p className="text-sm text-zinc-400">{text.noDevices}</p>}
@@ -96,6 +101,30 @@ export function CompanionSection() {
       {error && <p role="alert">{error}</p>}
     </fieldset>
   </SettingsSection>;
+}
+
+/** 跨网连接状态块：四态一句人话，只有 signedOut 有「去登录」；off 不显示旧通道小字。 */
+function CrossNetworkStatus({ relay, text, onSignIn }: {
+  relay: CompanionRelayStatus; text: Copy; onSignIn: () => void;
+}) {
+  const [title, hint] = relay.account === 'off' ? [text.crossnetOff, text.crossnetOffHint]
+    : relay.account === 'signedOut' ? [text.crossnetSignedOut, text.crossnetSignedOutHint]
+    : relay.account === 'connecting' ? [text.crossnetConnecting, text.crossnetConnectingHint]
+    : [text.crossnetConnected, text.crossnetConnectedHint];
+  return <div className="space-y-1" data-testid="companion-crossnet">
+    <p className="text-sm font-medium text-zinc-200">{title}</p>
+    <p className="text-sm text-zinc-400">{hint}</p>
+    {relay.account === 'signedOut' && (
+      <Button variant="secondary" size="sm" onClick={onSignIn} data-testid="companion-crossnet-action">
+        {text.crossnetSignIn}
+      </Button>
+    )}
+    {relay.account !== 'off' && (
+      <p className="text-xs text-zinc-500">
+        {relay.legacy === 'connected' ? text.crossnetLegacyConnected : text.crossnetLegacyDisconnected}
+      </p>
+    )}
+  </div>;
 }
 
 function DeviceRow({ device, index, projects, text, locale, busy, onRevoke }: {

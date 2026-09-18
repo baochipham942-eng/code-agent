@@ -2,7 +2,7 @@ import { projectGrant } from '../../../shared/contract/companionLibrary';
 import { z } from 'zod';
 import type { KeyPair } from 'noise-handshake';
 import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
-import type { CompanionManagementResult } from '../../../shared/contract/companionManagement';
+import type { CompanionManagementResult, CompanionRelayStatus } from '../../../shared/contract/companionManagement';
 import { LanCompanionServer, privateLanAddresses } from './LanCompanionServer';
 import type { CompanionGateway } from './CompanionGateway';
 import type { CompanionPushOutbox } from './CompanionPushOutbox';
@@ -21,7 +21,9 @@ export class LanCompanionManager {
     private readonly listSessions: () => Promise<{ id: string; title: string }[]>,
     private readonly listProjects: () => { id: string; name: string }[] = () => [],
     private readonly push?: CompanionPushOutbox,
-    private readonly relayRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRoute | null) {}
+    private readonly relayRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRoute | null,
+    /** 跨网连接状态（configured/legacy/account）取值回调；缺省时 status 结果不带 relay 字段（旧装配/旧测试）。 */
+    private readonly relayStatus?: () => CompanionRelayStatus) {}
 
   /**
    * 开机自动起局域网服务的**唯一**入口，条件是本槽有配对设备。不满足时要留痕：
@@ -42,7 +44,10 @@ export class LanCompanionManager {
 
   async manage(raw: unknown): Promise<CompanionManagementResult> {
     const request = requestSchema.parse(raw);
-    if (request.action === 'status') return { kind: 'status', sessions: await this.listSessions(), projects: this.listProjects(), devices: this.gateway.pairedDevices() };
+    if (request.action === 'status') {
+      const relay = this.relayStatus?.();
+      return { kind: 'status', sessions: await this.listSessions(), projects: this.listProjects(), devices: this.gateway.pairedDevices(), ...(relay ? { relay } : {}) };
+    }
     if (request.action === 'revoke') {
       if (this.server) this.server.revoke(request.deviceId); else this.gateway.revokeDevice(request.deviceId);
       return { kind: 'revoked' };

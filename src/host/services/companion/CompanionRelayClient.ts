@@ -12,6 +12,7 @@ import {
   type CompanionRelayResolved,
   type CompanionRelayRoute,
 } from '../../../shared/contract/companionRelay';
+import type { CompanionRelayStatus } from '../../../shared/contract/companionManagement';
 import type { CompanionGateway } from './CompanionGateway';
 import { RelayOutboundBuffer, RelaySeqBuffer } from './companionRelayBuffer';
 import { deriveCompanionRelayRouteToken } from './companionRelayRouteToken';
@@ -158,6 +159,10 @@ export class CompanionRelayClient {
 
   get bufferedCount(): number { return this.buffer.size; }
   get droppedCount(): number { return this.buffer.dropped; }
+  /** 只读连接态：open 后撑过稳定期前也算 true（与 whenConnected 同判据），设置页状态块用它。 */
+  get connected(): boolean { return this.live; }
+  /** 最近一次拨号失败的码（连上后清空）；只进日志语义，不直接展示给用户。 */
+  get lastDialError(): string | null { return this.lastDialErrorCode; }
 
   revoke(deviceId: string): void {
     const route = this.routes.get(deviceId);
@@ -499,6 +504,9 @@ export interface CompanionRelayAccountSource {
   addAuthChangeCallback(callback: (user: { id: string } | null) => void): () => void;
 }
 
+/** 账号通道对设置页自报的状态（CompanionRelayStatus 的 account 部分，由装配层拼上 configured/legacy）。 */
+export type CompanionRelayAccountStatus = Pick<CompanionRelayStatus, 'account' | 'accountError'>;
+
 /**
  * 账号通道（N-COMPANION-RELAY-ACCOUNT-BIND 第一刀）：电脑登录了 Neo 账号就再开一条 relay 连接，用
  * Supabase access token 鉴权、按 acct:<用户 id> 派生路由并登记。与共享凭据通道完全并行，那条一字不改；
@@ -514,10 +522,17 @@ export function startCompanionRelayAccountIfConfigured(opts: {
   now?: () => number;
   jitter?: () => number;
   WebSocket?: typeof WebSocket;
-}): { stop(): Promise<void>; revoke(deviceId: string): void } | null {
+}): { stop(): Promise<void>; revoke(deviceId: string): void; status(): CompanionRelayAccountStatus } {
   // 共享凭据通道已按同一份配置记过缺失/非法的日志，这里不重复记。
   const config = loadCompanionRelayConfig(opts.dataDirectory);
-  if (!config) return null;
+  // 没配中继：账号通道根本不起，但句柄仍自报 off，调用方不必特判 null。
+  if (!config) {
+    return {
+      status: () => ({ account: 'off' }),
+      revoke: () => {},
+      stop: async () => {},
+    };
+  }
   let client: CompanionRelayClient | null = null;
   let userId: string | null = null;
   let stopped = false;
@@ -556,6 +571,14 @@ export function startCompanionRelayAccountIfConfigured(opts: {
   follow(opts.auth.getCurrentUser());
   return {
     revoke: deviceId => client?.revoke(deviceId),
+    // 判定顺序即优先级：没登录必然没起 client（follow 会停它），先查 user 不会把登出误报成 connecting。
+    status: (): CompanionRelayAccountStatus => {
+      if (!opts.auth.getCurrentUser()) return { account: 'signedOut' };
+      if (client?.connected) return { account: 'connected' };
+      // 已登录、账号通道未连上：含 follow 链未落地（client 还没建）与拨号退避中两种情况，都算开通中。
+      const accountError = client?.lastDialError;
+      return accountError ? { account: 'connecting', accountError } : { account: 'connecting' };
+    },
     stop: async () => {
       stopped = true;
       unsubscribe();

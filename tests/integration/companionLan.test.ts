@@ -395,6 +395,8 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
       scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
     try {
       await phone.getState().pair();
+      // #1915 起配对落在欢迎页（sessionId=null），send 会静默提前返回：像 App 一样先选中会话
+      phone.getState().selectSession('shared');
       const seen: { pending: boolean; action: string | null }[] = [];
       const unsubscribe = phone.subscribe(state => seen.push({ pending: state.pending, action: state.pendingAction }));
       await phone.getState().send('pending-copy-正文');
@@ -413,7 +415,7 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
       write: async value => { if (fail) throw new Error('STORAGE_FULL'); storage = value; },
       scan: async () => JSON.stringify(server.invite(['shared'])), post,
     }, () => { cleared = true; });
-    await phone.getState().pair(); fail = true;
+    await phone.getState().pair(); phone.getState().selectSession('shared'); fail = true;
     await phone.getState().send('draft must stay');
     expect(phone.getState().status).toBe('storageError'); expect(executions).toBe(0); expect(cleared).toBe(false);
   });
@@ -431,7 +433,7 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
       },
     };
     const phone = createCompanionStore(port, text => { cleared = text; });
-    await phone.getState().pair(); await phone.getState().send('persist before dispatch');
+    await phone.getState().pair(); phone.getState().selectSession('shared'); await phone.getState().send('persist before dispatch');
     expect(phone.getState().pending).toBe(true); expect(cleared).toBe('');
     const restarted = createCompanionStore(port, text => { cleared = text; });
     await restarted.getState().hydrate();
@@ -536,6 +538,8 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
       scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
     try {
       await phone.getState().pair();
+      // #1915 起配对落在欢迎页（sessionId=null），respond 会静默提前返回：先选中审批卡所在会话
+      phone.getState().selectSession('shared');
       const sessionId = phone.getState().sessionId!;
       phone.setState({ events: [{ kind: 'approval', sessionId,
         payload: { requestId: 'r1', status: 'pending', revision: 1, operationDigest: 'd1' } }] as never });
@@ -708,6 +712,8 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     });
     try {
       await phone.getState().pair();
+      // #1915 起配对落在欢迎页（sessionId=null），upload 会静默提前返回：先选中会话
+      phone.getState().selectSession('shared');
       const bytes = new TextEncoder().encode('lan-file-正文');
       await phone.getState().upload({ name: 'note.txt', mimeType: 'text/plain', size: bytes.length, bytes });
       const artifact = phone.getState().artifacts[0];
@@ -823,6 +829,8 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
       scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
     await phone.getState().pair();
+    // #1915 起配对落在欢迎页（sessionId=null），sync 的事件只落到选中会话上：先选中它
+    phone.getState().selectSession('shared');
     gateway.publish('shared', 'message', { id: 'desktop-message', role: 'user', content: 'desktop task', runId: 'desktop-run' });
     await phone.getState().sync();
     expect(phone.getState()).toMatchObject({ runId: 'desktop-run', terminal: null });
@@ -836,6 +844,8 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
       scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
     await phone.getState().pair();
+    // #1915 起配对落在欢迎页（sessionId=null），sync 的事件只落到选中会话上：先选中它
+    phone.getState().selectSession('shared');
     gateway.publish('shared', 'message', { id: 'u1', role: 'user', content: 'first', runId: 'run-a' });
     gateway.publish('shared', 'error', { code: 'MODEL_AUTH', runId: 'run-a' });
     await phone.getState().sync();
@@ -861,6 +871,8 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     }, () => {});
     await phone.getState().pair();
     expect(phone.getState().status).toBe('connected');
+    // #1915 起配对落在欢迎页（sessionId=null），upload 会静默提前返回：先选中会话
+    phone.getState().selectSession('shared');
     await phone.getState().upload({ name: 'photo.png', mimeType: 'image/png', size: 4, bytes: new Uint8Array([1, 2, 3, 4]) });
     expect(phone.getState().pending).toBe(false);
     expect(JSON.parse(storage!).pending).toBeUndefined();
@@ -917,6 +929,8 @@ describe('a lost approval race must not retire the device', () => {
     }, () => {});
     await phone.getState().pair();
     expect(phone.getState().status).toBe('connected');
+    // #1915 起配对落在欢迎页（sessionId=null），respond/send 会静默提前返回：先选中会话
+    phone.getState().selectSession('shared');
     return phone;
   }
 

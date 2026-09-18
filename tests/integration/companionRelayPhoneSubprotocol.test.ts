@@ -93,6 +93,8 @@ describe('companion relay phone: subprotocol credential dial + stable route toke
   it('dials with the credential in the subprotocol and relays traffic', async () => {
     const store = phone();
     await store.getState().pair();
+    // #1915 起配对落在欢迎页（sessionId=null），send 会静默提前返回：像 App 一样先选中会话
+    store.getState().selectSession('shared');
     const rejectedBefore = relay.currentStats.rejectedAuth;
     lanUp = false;
     await store.getState().reconnect();
@@ -108,6 +110,8 @@ describe('companion relay phone: subprotocol credential dial + stable route toke
   it('keeps the route token across a host restart: the phone resumes on the cached route without a refresh', async () => {
     const store = phone();
     await store.getState().pair();
+    // #1915 起配对落在欢迎页（sessionId=null），send 会静默提前返回：先选中会话
+    store.getState().selectSession('shared');
     const deviceId = store.getState().binding!.deviceId;
     lanUp = false;
     await store.getState().reconnect();

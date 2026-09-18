@@ -112,6 +112,8 @@ describe('companion relay phone: dual-path over real gateway + LAN server + fake
   it('falls to the relay when LAN dies, works there, and the wire stays ciphertext', async () => {
     const store = phone();
     await store.getState().pair();
+    // #1915 起配对落在欢迎页（sessionId=null），send 会静默提前返回：像 App 一样先选中会话
+    store.getState().selectSession('shared');
     lanUp = false;
     await store.getState().reconnect();
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay' });
@@ -226,6 +228,8 @@ describe('companion relay phone: dual-path over real gateway + LAN server + fake
   it('a revoked phone degrades to offline over the relay instead of hanging on it', async () => {
     const store = phone();
     await store.getState().pair();
+    // #1915 起配对落在欢迎页（sessionId=null），send 会静默提前返回：先选中会话
+    store.getState().selectSession('shared');
     lanUp = false;
     await store.getState().reconnect();
     expect(store.getState().transport).toBe('relay');
@@ -250,6 +254,8 @@ describe('companion relay phone: dual-path over real gateway + LAN server + fake
     await legacyServer.start(address!, 0);
     const store = phone(legacyServer);
     await store.getState().pair();
+    // #1915 起配对落在欢迎页（sessionId=null），send 会静默提前返回：先选中会话
+    store.getState().selectSession('shared');
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan' });
     expect(saved().relay).toBeUndefined();
     await store.getState().sync();
@@ -282,6 +288,8 @@ describe('companion relay phone: dual-path over real gateway + LAN server + fake
       dialRelay: nodeDial,
     }, () => {});
     await store.getState().pair();
+    // #1915 起配对落在欢迎页（sessionId=null），send 会静默提前返回：先选中会话
+    store.getState().selectSession('shared');
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan' });
     expect(probeKilled).toBe(true); // 探针那一发确实挨了旧 Host 的 403
     expect(JSON.parse(storage ?? '{}').relay).toBeUndefined();

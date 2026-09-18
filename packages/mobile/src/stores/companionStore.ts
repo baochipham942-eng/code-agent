@@ -629,6 +629,22 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       if (record && !(await recoverStalePending(record))) await accepted(record);
       else if (!record) await deliver();
     };
+    /**
+     * 撤销的统一结算：sync 的 kind==='revoked' 与 LAN exchange 的 COMPANION_DEVICE_REVOKED
+     * 两条路共用（N-MOBILE-CONN-POLISH-R3 ①），不许各自复制九个字段。被撤销不是网络问题——
+     * 翻 rejected、关两条通道、清缓存与重试、抹会话记忆，让状态位直接落到「需要重新扫码」。
+     */
+    const settleRevoked = () => {
+      client?.close();
+      if (relayClient) { relayClient.close(); relayClient = null; }
+      wipeHistoryCache();
+      stopAutoRetry();
+      remember(null);
+      // 撤销即清这台电脑的标题记忆：会话已不属于这台手机，重新配对后随使用再记。
+      const revokedHostKey = saved?.binding?.hostKey;
+      if (revokedHostKey) options?.forgetSessionTitles?.(revokedHostKey);
+      set({ status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null });
+    };
     return {
       voiceResult: null, library: null, history: {}, libraryError: false,
       skipTranscriptionPreflight: false,
@@ -1128,10 +1144,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); markSyncOk(); return; }
           // 被撤销不是网络问题：混进通用 offline 会让这台设备一直重试、永远不知道自己已被踢。
           if (result.kind === 'revoked') {
-            client?.close(); if (relayClient) { relayClient.close(); relayClient = null; } wipeHistoryCache(); stopAutoRetry(); remember(null);
-            const revokedHostKey = saved?.binding?.hostKey;
-            if (revokedHostKey) options?.forgetSessionTitles?.(revokedHostKey);
-            set({ status: 'rejected', connectionError: 'connectionRejected', transport: null, sessionId: null });
+            settleRevoked();
             return;
           }
           if (result.kind !== 'events' || result.epoch !== epoch || !Number.isSafeInteger(result.nextSeq) || result.nextSeq < cursor || !Array.isArray(result.events)) throw new Error('COMPANION_INVALID_SYNC');
@@ -1163,13 +1176,22 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             if (record && saved?.pending?.commandId === pendingId && !(await recoverStalePending(record))) await accepted(record);
           }
           markSyncOk();
-        } catch {
+        } catch (error) {
           client?.close();
           if (relayClient && client === relayClient) relayClient = null;
           // 撤销已在同一次处理里把设备翻成 rejected（relay 的 revoke 帧先 drop 再 onRevoked，
           // 这条 sync 的失败随后才到）：不得打回 offline、不得挂自动重试——否则状态位先闪
           // 「正在自动重试」再变回「需要重新扫码」（N-MOBILE-AUTO-RECONNECT-R3 O2）。
           if (get().status === 'rejected') { syncOk = false; return; }
+          // LAN 路撤销（N-MOBILE-CONN-POLISH-R3 ①）：宿主 exchange 的 403 点了名（新宿主把
+          // 「设备已撤销」从笼统 403 里拆出来）。与 kind==='revoked' 同一套结算，绝不走
+          // 「传输失败 + 0 延迟重试」那条路——那会先闪一拍「正在自动重试」，再经 hello 才翻成
+          // 「需要重新扫码」。TTL 过期等其余失败码不进这里，照旧按「电脑没回应」处理。
+          if (error instanceof Error && error.message === 'COMPANION_DEVICE_REVOKED') {
+            syncOk = false;
+            settleRevoked();
+            return;
+          }
           const escalate = !syncOk;
           syncOk = false;
           if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable', transport: null });

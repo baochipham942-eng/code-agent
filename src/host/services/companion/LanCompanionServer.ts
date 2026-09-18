@@ -76,7 +76,13 @@ export class LanCompanionServer {
       try { res.json(this.finish(req.body as ChannelBody, req.socket.localAddress)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
     });
     app.post('/v1/exchange', async (req, res) => {
-      try { res.json(await this.exchange(req.body as ChannelBody)); } catch { res.status(403).json({ error: 'COMPANION_CHANNEL_CLOSED' }); }
+      // 撤销要能跟「通道没了」分开说：channel 被撤当场关掉后，手机下一次 sync 只能拿到笼统的
+      // CHANNEL_CLOSED，只能当传输失败闪一拍「正在自动重试」再经 hello 才知道被踢。设备已撤销
+      // 单独回名，手机 sync 直接按 revoked 结算。其余错误形状（含 TTL 过期的 CHANNEL_CLOSED）不动。
+      try { res.json(await this.exchange(req.body as ChannelBody)); }
+      catch (error) {
+        res.status(403).json({ error: error instanceof Error && error.message === 'COMPANION_DEVICE_REVOKED' ? 'COMPANION_DEVICE_REVOKED' : 'COMPANION_CHANNEL_CLOSED' });
+      }
     });
     // Body/parser failures must never echo ciphertext, invitation material, or stack traces.
     app.use((_error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -198,9 +204,21 @@ export class LanCompanionServer {
     const now = this.now();
     if (this.invitation && this.invitation.expiresAt <= now) this.invitation = null;
     for (const [id, p] of this.pending) if (p.expiresAt <= now || p.invite !== this.invitation) this.pending.delete(id);
-    for (const [id, c] of this.channels) if (c.expiresAt <= now || !this.gateway.identityDevice(c.publicKey)) {
-      this.releaseDictation(c.publicKey);
-      c.cipher.close(); this.channels.delete(id);
+    for (const [id, c] of this.channels) {
+      if (c.expiresAt <= now) {
+        this.releaseDictation(c.publicKey);
+        c.cipher.close(); this.channels.delete(id);
+        continue;
+      }
+      // 身份已失效（撤销/删除）的 channel 不删、只关密文：留一个墓碑，让该设备的下一次
+      // exchange 还能凭 channel.publicKey 认出它、在解密之前就回 COMPANION_DEVICE_REVOKED。
+      // 删掉的话只剩匿名的 CHANNEL_CLOSED，手机无从区分「被踢」和「电脑没回应」。
+      // 密文已关 + exchange 的身份检查在 cipher.open 之前 ⇒ 墓碑不打开任何请求窗口，
+      // 也不是「放行一拍让 syncForDevice 应答」；到 TTL 自然回收。
+      if (!this.gateway.identityDevice(c.publicKey)) {
+        this.releaseDictation(c.publicKey);
+        c.cipher.close();
+      }
     }
   }
 
@@ -313,8 +331,12 @@ export class LanCompanionServer {
       channel.expiresAt = lastSeenAt + L.channelTtlMs;
       return { frame };
     } catch (error) {
-      this.releaseDictation(channel.publicKey);
-      channel.cipher.close(); this.channels.delete(id); throw error;
+      // 身份还健在的按老规矩整条退场；身份已失效的留墓碑（撤销后手机可能还有几拍 poke 要认）。
+      if (this.gateway.identityDevice(channel.publicKey)) {
+        this.releaseDictation(channel.publicKey);
+        channel.cipher.close(); this.channels.delete(id);
+      }
+      throw error;
     }
   }
 

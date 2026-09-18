@@ -328,6 +328,27 @@ public class VoiceKeepAlivePlugin extends Plugin {
     }
 }
 `);
+// 常驻通知的小图标（PR#1944 ai-review Nit）：不许再用系统通用占位图标。通知小图标只吃
+// alpha 通道（系统按状态栏色调染色），所以取 Neo 品牌字形（src-tauri/icons/agent-neo.svg 的
+// N2 星芒）纯白重绘成 vector drawable，随构建写进工程。
+mkdirSync('android/app/src/main/res/drawable', { recursive: true });
+writeFileSync('android/app/src/main/res/drawable/neo_recording_icon.xml', `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:pathData="M15,33.5L15,14.5L33,33.5L33,14.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <path
+        android:pathData="M37,6.5L38.1,10L41.6,11.1L38.1,12.2L37,15.7L35.9,12.2L32.4,11.1L35.9,10Z"
+        android:fillColor="#FFFFFFFF"/>
+</vector>
+`);
 writeFileSync('android/app/src/main/java/dev/neo/companion/preview/VoiceRecordingService.java', `package dev.neo.companion.preview;
 
 import android.app.Notification;
@@ -373,7 +394,7 @@ public class VoiceRecordingService extends Service {
         PendingIntent open = launch == null ? null : PendingIntent.getActivity(this, 0, launch,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification notification = new NotificationCompat.Builder(this, VoiceKeepAlivePlugin.CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.sym_def_app_icon)
+                .setSmallIcon(R.drawable.neo_recording_icon)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setOngoing(true)

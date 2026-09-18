@@ -93,6 +93,39 @@ describe('configureVoiceRelease', () => {
     expect(read(root, `${JAVA_DIR}/VoiceRecorder.java`)).toBe(javaPlugin);
   });
 
+  // PR#1944 ai-review 二轮 Important：已被**旧版**脚本（PR#1944 之前）打过的 node_modules 上，
+  // 旧的 handleOnPause → neoReleaseRecording 注入必须被撤掉——否则老机器/老工作树复用
+  // node_modules 产出的 APK 里切后台还是即停即删，与前台服务的「正在录音」通知自相矛盾。
+  // 夹具照抄旧版脚本（a212f0658…166f74a57 的上一版）的产物形状：带 handleOnPause 那一行。
+  const OLD_SCRIPT_INJECTED = `    private CustomMediaRecorder mediaRecorder;
+    private synchronized void neoReleaseRecording() {
+        if (mediaRecorder == null) return;
+        try { mediaRecorder.stopRecording(); } catch (Exception ignored) {}
+        finally {
+            File file = mediaRecorder.getOutputFile();
+            if (file != null) file.delete();
+            mediaRecorder = null;
+        }
+    }
+    @Override protected void handleOnPause() { neoReleaseRecording(); }
+    @Override protected void handleOnDestroy() { neoReleaseRecording(); }`;
+
+  it('removes the stale handleOnPause left by the pre-PR#1944 script on an already-patched node_modules', () => {
+    const oldPatched = JAVA_PLUGIN
+      .replace('public void startRecording(', 'public synchronized void startRecording(')
+      .replace('public void stopRecording(', 'public synchronized void stopRecording(')
+      .replace('    private CustomMediaRecorder mediaRecorder;', OLD_SCRIPT_INJECTED);
+    const root = plant({ [`${JAVA_DIR}/VoiceRecorder.java`]: oldPatched });
+    configureVoiceRelease(root);
+    const javaPlugin = read(root, `${JAVA_DIR}/VoiceRecorder.java`);
+    expect(javaPlugin).not.toContain('handleOnPause');
+    expect(javaPlugin).toContain('handleOnDestroy');
+    // 撤旧之后剩下的必须就是新终态：与「新脚本打全新夹具」的产物逐字一致
+    const fresh = plant();
+    configureVoiceRelease(fresh);
+    expect(javaPlugin).toBe(read(fresh, `${JAVA_DIR}/VoiceRecorder.java`));
+  });
+
   // iOS 侧的两处补丁打的是厂商插件的 iOS 源码，而它在 SPM 工程里从未被编译过
   // （没有 Package.swift，cap sync 只 warn 就排除，FB-140 真机实测）。iOS 录音已改第一方实现，
   // 这里钉住「幽灵补丁不许回来」：改了也白改，却会让人以为 iOS 行为被这个脚本管着。

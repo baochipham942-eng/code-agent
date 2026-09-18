@@ -116,30 +116,34 @@ function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
   // 跟着段走，通知每 4s 闪一次，且后台一旦停了就再起不来（Android 12+ 禁止后台 startForegroundService）。
   // 起服务只认 running 标记：切段那声 start 不再重复 startForegroundService；
   // 停服务带防抖：最后一次 stop 之后没有新 start（切段之间的间隔远小于宽限值）才真停，真停时复位 running。
-  let stopTimer: ReturnType<typeof setTimeout> | null = null;
-  let running = false;
-  const keepAliveStart = async () => {
-    if (!voiceKeepAlive) return;
-    if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
-    if (running) return;
-    // fail-open：服务起不来不该毁掉前台录音，但降级要留痕（哪个平台、什么错）。
-    const text = messages(typeof navigator === 'undefined' ? 'en' : navigator.language);
-    // 常驻通知标题用专门的「正在录音」，不复用麦克风按钮的「语音输入」；通道名同走 i18n（PR#1944 ai-review Nit）。
-    try {
-      await voiceKeepAlive.start({ title: text.voiceRecording, text: text.voiceListening, channelName: text.voiceRecordingChannel });
-      running = true;
-    }
-    catch (error) { console.warn('[voice-keepalive] start failed', error); }
-  };
-  const keepAliveStop = () => {
-    if (!voiceKeepAlive) return;
-    if (stopTimer) clearTimeout(stopTimer);
-    stopTimer = setTimeout(() => {
-      stopTimer = null;
-      running = false;
-      void voiceKeepAlive.stop().catch(error => console.warn('[voice-keepalive] stop failed', error));
-    }, COMPANION_LIMITS.voiceServiceStopGraceMs);
-  };
+  // 状态与实现只建在 Android（voiceKeepAlive 非空）上；iOS 走 audio 后台模式，留空实现即可
+  // （PR#1944 ai-review Nit：非 Android 平台不必也建一份防抖状态）。
+  let keepAliveStart: () => Promise<void> = async () => {};
+  let keepAliveStop: () => void = () => {};
+  if (voiceKeepAlive) {
+    let stopTimer: ReturnType<typeof setTimeout> | null = null;
+    let running = false;
+    keepAliveStart = async () => {
+      if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
+      if (running) return;
+      // fail-open：服务起不来不该毁掉前台录音，但降级要留痕（哪个平台、什么错）。
+      const text = messages(typeof navigator === 'undefined' ? 'en' : navigator.language);
+      // 常驻通知标题用专门的「正在录音」，不复用麦克风按钮的「语音输入」；通道名同走 i18n（PR#1944 ai-review Nit）。
+      try {
+        await voiceKeepAlive.start({ title: text.voiceRecording, text: text.voiceListening, channelName: text.voiceRecordingChannel });
+        running = true;
+      }
+      catch (error) { console.warn('[voice-keepalive] start failed', error); }
+    };
+    keepAliveStop = () => {
+      if (stopTimer) clearTimeout(stopTimer);
+      stopTimer = setTimeout(() => {
+        stopTimer = null;
+        running = false;
+        void voiceKeepAlive.stop().catch(error => console.warn('[voice-keepalive] stop failed', error));
+      }, COMPANION_LIMITS.voiceServiceStopGraceMs);
+    };
+  }
   const recorder: NonNullable<PlatformPorts['recorder']> = {
     start: async () => {
       if (!(await VoiceRecorder.requestAudioRecordingPermission()).value) throw new Error('MICROPHONE_DENIED');

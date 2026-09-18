@@ -328,6 +328,14 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         previousCategory = nil
     }
 
+    // ponytail: 分段路径每 4 秒（COMPANION_LIMITS.voiceChunkMs）在这里走一遍 teardownPcm 的
+    // setActive(false)，下一段 startRecording 再 setActive(true)——后台态最脆的一跳。audio 后台
+    // 模式保的是「已激活的会话不因切后台被系统收走」，不保证「后台里把停掉的会话重新激活一定
+    // 成功」：interruption 还没结束、系统拒绝激活时 setActive(true) 抛错，起录失败收成
+    // FAILED_TO_RECORD（或被 startFailure 判成 MICROPHONE_BUSY），JS 录音循环随之收尾——
+    // 已知风险，不是缺陷漏修。天花板在 AVAudioRecorder 没有无缝换文件接口，切段必然过
+    // 「停会话 → 再激活」；要消掉这一跳只能整次录音单文件、停录后切片，或让 PCM tap 常驻
+    // 不切段——都压到 N-VOICE-REALTIME-STT（那条线本来就要重做切段）。
     private func teardown(deleteRecording: Bool) {
         recorder?.stop()
         recorder = nil

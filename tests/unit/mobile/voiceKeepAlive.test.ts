@@ -85,6 +85,13 @@ describe('Android 录音前台服务（N-MOBILE-BG-RECORDING）三侧合同', ()
     expect(buildAndroid).toContain('if (manager.getNotificationChannel(VoiceKeepAlivePlugin.CHANNEL_ID) == null)');
   });
 
+  it('生成：通知小图标是 Neo 自有资源（品牌字形 vector drawable 随构建写入），不用系统通用图标', () => {
+    // PR#1944 ai-review Nit：sym_def_app_icon 是系统通用占位图标，常驻通知必须用自家资源
+    expect(buildAndroid).toContain('.setSmallIcon(R.drawable.neo_recording_icon)');
+    expect(buildAndroid).not.toContain('android.R.drawable.sym_def_app_icon');
+    expect(buildAndroid).toContain("writeFileSync('android/app/src/main/res/drawable/neo_recording_icon.xml'");
+  });
+
   it('JS 侧：仅 android 注册桥；服务起在开录前、收在停录后（带防抖），通知文案走 i18n', () => {
     expect(capacitorPort).toContain("Capacitor.getPlatform() === 'android'");
     expect(capacitorPort).toContain("registerPlugin<VoiceKeepAliveBridge>('VoiceKeepAlive'");

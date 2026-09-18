@@ -26,7 +26,13 @@ export function configureVoiceRelease(root = 'node_modules/capacitor-voice-recor
   writeFileSync(android, java.replace(before, after));
   const androidPlugin = `${root}/android/src/main/java/com/tchvu3/capacitorvoicerecorder/VoiceRecorder.java`;
   let native = readFileSync(androidPlugin, 'utf8');
-  if (!native.includes('neoReleaseRecording')) {
+  // 内容判据，不是标记位：旧版脚本（PR#1944 之前）注入过 handleOnPause——切后台即 stop+delete
+  // 录音文件，与本链「后台继续录音」相反。node_modules 是复用的，已被旧版打过的树上
+  // neoReleaseRecording 一直在，拿它当「打没打过」的标记会把撤旧动作整个跳过，旧钩子
+  // 留进 APK（PR#1944 ai-review Important）。先幂等撤掉旧行，再按新终态判要不要重打。
+  const stalePauseHook = '    @Override protected void handleOnPause() { neoReleaseRecording(); }\n';
+  native = native.replace(stalePauseHook, '');
+  if (!native.includes('handleOnDestroy() { neoReleaseRecording(); }')) {
     const fieldAnchor = '    private CustomMediaRecorder mediaRecorder;';
     if (!native.includes(fieldAnchor)) throw new Error('VOICE_ANDROID_PLUGIN_SOURCE_CHANGED');
     for (const [before, after] of [
@@ -47,7 +53,7 @@ export function configureVoiceRelease(root = 'node_modules/capacitor-voice-recor
         }
     }
     @Override protected void handleOnDestroy() { neoReleaseRecording(); }`);
-    writeFileSync(androidPlugin, native);
   }
+  writeFileSync(androidPlugin, native);
 
 }

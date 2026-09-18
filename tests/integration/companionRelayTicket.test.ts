@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { createHash, createHmac, generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,7 +34,8 @@ import { RelayPhoneStub } from './companion/relayPhoneStub';
  * 中继绑账号第 3A 刀（N-COMPANION-RELAY-DEVICE-TICKET）：账号令牌只在换票时用一次，日常连接
  * 用 relay 自签的 30 天设备票据——「能不能跨网」不再绑在「此刻连不连得上 supabase.co」上。
  * 覆盖任务书 ①-⑧（票据签发/重连/篡改/过期/续签阈值/owner 闸/共享凭据照旧/伪造不出票据）
- * 加 Host 三例（有未过期票据优先票据拨号、过期回落令牌、收到 ticket 帧写盘覆盖）。
+ * 加 Host 例（有未过期票据优先票据拨号、过期回落令牌、收到 ticket 帧写盘覆盖、sentinel 校验，
+ * 及 R4：登出/换账号清票据、落盘失败留痕、时钟偏差不吃路由 TTL、1005 不清续签新票）。
  * 时钟全走注入的 clock（过期/续签都不真等），手机 build 53 的共享凭据行为不在本刀改动面内。
  */
 
@@ -72,14 +73,15 @@ function jwks(state: { online: boolean }): typeof fetch {
 }
 
 function fakeAuth(initial: string | null, opts?: { tokenFails?: boolean }) {
-  const user = initial;
+  let user = initial;
+  const tokenFails = opts?.tokenFails ?? false;
   let tokenCalls = 0;
   const listeners: Array<(user: { id: string } | null) => void> = [];
   return {
     getCurrentUser: () => user ? { id: user } : null,
     getAccessToken: async () => {
       tokenCalls += 1;
-      if (opts?.tokenFails) return null;
+      if (tokenFails) return null;
       return user ? accessToken(user) : null;
     },
     addAuthChangeCallback: (callback: (user: { id: string } | null) => void) => {
@@ -87,6 +89,11 @@ function fakeAuth(initial: string | null, opts?: { tokenFails?: boolean }) {
       return () => { listeners.splice(listeners.indexOf(callback), 1); };
     },
     tokenCallCount: () => tokenCalls,
+    /** 模拟登录/退出/换账号：改当前用户并按 authService 同一口径广播给监听者。 */
+    setUser: (next: string | null) => {
+      user = next;
+      for (const listener of [...listeners]) listener(user ? { id: user } : null);
+    },
   };
 }
 
@@ -126,9 +133,12 @@ describe('companion relay device ticket (slice 3A)', () => {
     warn: (event: string, fields?: Record<string, unknown>) => { logLines.push(JSON.stringify({ event, ...fields })); },
   };
 
-  async function startRelay(): Promise<void> {
+  async function startRelay(sweep?: { sweepIntervalMs?: number }): Promise<void> {
     ticketAuth = new RelayTicketAuth({ keyFile: ticketKeyPath, now, logger });
-    relay = new CompanionRelayServer({ credential: SECRET, port, accountVerifier: verifier, ticketAuth, now, logger });
+    relay = new CompanionRelayServer({
+      credential: SECRET, port, accountVerifier: verifier, ticketAuth, now, logger,
+      sweepIntervalMs: sweep?.sweepIntervalMs,
+    });
     await relay.listen();
   }
 
@@ -277,9 +287,13 @@ describe('companion relay device ticket (slice 3A)', () => {
     })).toMatchObject({ kind: 'accepted' });
   }
 
-  function startChannel(auth: ReturnType<typeof fakeAuth>): { stop(): Promise<void>; status: () => { account: string } } {
+  function startChannel(
+    auth: ReturnType<typeof fakeAuth>,
+    opts?: { now?: () => number; dataDirectory?: string },
+  ): { stop(): Promise<void>; status: () => { account: string } } {
     const handle = startCompanionRelayAccountIfConfigured({
-      dataDirectory: dataDir, gateway, loadIdentity: async () => hostIdentity, auth, now, jitter: () => 0.5,
+      dataDirectory: opts?.dataDirectory ?? dataDir, gateway, loadIdentity: async () => hostIdentity, auth,
+      now: opts?.now ?? now, jitter: () => 0.5,
       logger: { warn: message => logLines.push(message), info: message => logLines.push(message) },
     });
     channels.push(handle);
@@ -615,5 +629,101 @@ describe('companion relay device ticket (slice 3A)', () => {
       for (const peer of evil.clients) peer.terminate();
       await new Promise<void>(resolve => evil.close(() => resolve()));
     }
+  });
+
+  it('host: logout and account switch invalidate the stored ticket; process shutdown does not', async () => {
+    // 票据是 30 天、能直接以 acct:<sub> 连 relay 的 bearer 凭据，relay 没有按账号吊销的通道：
+    // 登出/换账号只能靠 Host 自己销毁盘上票据。进程关停（stop）不清——票据要跨重启复用。
+    const auth = fakeAuth('user-1');
+    const channel = startChannel(auth);
+    await vi.waitFor(() => expect(loadCompanionRelayTicket(dataDir, 'user-1', now)).not.toBeNull());
+
+    // 退出登录：连接停 + 票据文件作废
+    auth.setUser(null);
+    await vi.waitFor(() => expect(existsSync(ticketFilePath)).toBe(false));
+
+    // 重新登录为另一个账号：换到新账号自己的票，旧账号的票读不回来
+    auth.setUser('user-2');
+    await vi.waitFor(() => expect(loadCompanionRelayTicket(dataDir, 'user-2', now)).not.toBeNull());
+    expect(loadCompanionRelayTicket(dataDir, 'user-1', now)).toBeNull();
+
+    // 进程关停：票据保留
+    await channel.stop();
+    expect(loadCompanionRelayTicket(dataDir, 'user-2', now)).not.toBeNull();
+
+    // 换账号且新账号取不到令牌（supabase 不通）：旧账号的票也不能幸存——清票先于新拨号，
+    // 不能拿「新票覆盖旧票」冒充「旧票被作废」
+    const offline = fakeAuth('user-2', { tokenFails: true });
+    const second = startChannel(offline);
+    await vi.waitFor(() => expect(relay.currentStats.ticketConnections).toBe(1)); // 跨重启用盘上票接上（顺带证明 stop 没清）
+    offline.setUser('user-3');
+    await vi.waitFor(() => expect(existsSync(ticketFilePath)).toBe(false));
+    await second.stop();
+  });
+
+  it('host: a ticket store failure logs a distinguishable warn instead of vanishing', async () => {
+    // 磁盘满/只读时 writeFileSync 抛错，原本被 socket.on('message') 的 catch {} 吞成零日志，
+    // 行为静默退回「每次拨号都要 supabase」（错题本：降级路径必须留痕，且原因可区分）。
+    const roDir = join(dataDir, 'ro');
+    mkdirSync(roDir);
+    writeFileSync(join(roDir, L.relayConfigFile), JSON.stringify({ v: 1, enabled: true, url, credentialRef: 'companion-relay', reconnectBackoffMs: [30, 60, 120] }));
+    chmodSync(roDir, 0o500); // 只读：票据写不进去，其余目录不受影响
+    try {
+      const channel = startChannel(fakeAuth('user-1'), { dataDirectory: roDir });
+      await vi.waitFor(() => expect(logLines.some(line => line.includes('ticket store failed'))).toBe(true), { timeout: 5_000 });
+      // 可区分：带上真实 errno，而不是一句泛化失败
+      expect(logLines.find(line => line.includes('ticket store failed'))).toMatch(/EACCES|EROFS|EISDIR/);
+      // 降级不崩连接：通道照常走令牌拨号，票据没落上盘
+      await vi.waitFor(() => expect(relay.currentStats.accountConnections).toBe(1));
+      expect(existsSync(join(roDir, L.relayTicketFile))).toBe(false);
+      await channel.stop();
+    } finally {
+      chmodSync(roDir, 0o755);
+    }
+  });
+
+  it('host: a ticket frame survives relay-host clock skew beyond the route TTL', async () => {
+    // relay 与 Host 时钟偏差 90s（> 60s 路由 TTL）：票据帧若按路由 TTL 判过期会被整族丢掉，
+    // 能力静默失效（accountAuth 自己按 CLOCK_SKEW_S=60 容忍这个量级）。sentinel 帧不走路由，
+    // 不吃路由 TTL；票据自身的 30 天 exp 由 store/load 把关。
+    const skewedNow = () => clock + 90_000;
+    const channel = startChannel(fakeAuth('user-1'), { now: skewedNow });
+    await vi.waitFor(() => expect(loadCompanionRelayTicket(dataDir, 'user-1', skewedNow)).not.toBeNull());
+    const stored = loadCompanionRelayTicket(dataDir, 'user-1', skewedNow);
+    expect(ticketAuth.verify(stored as string)).toMatchObject({ sub: 'user-1' }); // relay 认这张票
+    await channel.stop();
+  });
+
+  it('host: a 1005 right after a renewal on the same connection does not clear the renewed ticket', async () => {
+    // 稳定期内 1005 一律按「票据被拒」清票，会把本连接刚续签落盘的新票一起埋掉。本连接收到过
+    // relay 发的票据帧 = 这条连接的凭据被认过，这个 1005 不再触发清票。
+    const backdated = new RelayTicketAuth({ keyFile: ticketKeyPath, now: () => clock - 23 * DAY - 3_600_000 });
+    const aging = backdated.issue('user-1').ticket; // 剩余 6d23h < 7d 续签阈值
+    expect(storeCompanionRelayTicket(dataDir, aging, 'user-1')).toBe(true);
+    // 快扫（30ms 一轮）：连接建立后推进注入时钟越过 idle 线，relay 会用无码 close 收掉这条连接
+    await relay.stop();
+    await startRelay({ sweepIntervalMs: 30 });
+
+    const channel = startChannel(fakeAuth('user-1'));
+    const renewed = await vi.waitFor(() => {
+      const fresh = loadCompanionRelayTicket(dataDir, 'user-1', now);
+      expect(fresh).not.toBeNull();
+      expect(fresh).not.toBe(aging);
+      return fresh as string;
+    });
+    expect(relay.currentStats.ticketsIssued).toBe(1); // 续签发生在本连接上
+
+    // 推进时钟越过 idle + route TTL：下一次清扫删掉过期路由并以 idle 为由 close（无码 → Host 侧 1005）。
+    // 若 1005 清了票，重连会回落令牌（accountConnections=1）并再换一张票（ticketsIssued=2）；
+    // 不清则重连直接用续签的新票，盘上自始至终是同一张。
+    clock += L.relayIdleMs + 5_000;
+    // 先等 1005 真的收掉这条连接（Host 侧记下 CLOSED_AFTER_OPEN 拨号失败码）再看重连——不等它，
+    // 紧跟着的 ticketConnections 断言会在清扫前读到旧连接遗留的 1，拿「还没断」冒充「重连成功」。
+    await vi.waitFor(() => expect(logLines.some(line => line.includes('COMPANION_RELAY_CLOSED_AFTER_OPEN'))).toBe(true), { timeout: 5_000 });
+    await vi.waitFor(() => expect(relay.currentStats.ticketConnections).toBe(1), { timeout: 5_000 });
+    expect(relay.currentStats.accountConnections).toBe(0);
+    expect(relay.currentStats.ticketsIssued).toBe(1);
+    expect(loadCompanionRelayTicket(dataDir, 'user-1', now)).toBe(renewed);
+    await channel.stop();
   });
 });

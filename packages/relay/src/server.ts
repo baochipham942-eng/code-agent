@@ -247,8 +247,10 @@ export class CompanionRelayServer {
     // 鉴权三级：共享凭据先比（常量时间）；不是它且以 neo1. 开头按设备票据验（HMAC + 未过期）；
     // 其余按账号令牌验签。三者都不过才 auth_rejected。票据与令牌得到同一个主人 acct:<sub>，
     // 后续逻辑（路由主人隔离、容量分账）完全复用，不另开分支。sub 不进日志。
-    // 令牌只在 upgrade 时验：连接存活期间过期或电脑退出登录都不断开——Host 退出登录会自己关账号连接，
-    // 每次重连都换新令牌；relay 主动踢过期连接只会制造重连风暴。要做按账号封禁时再补连接级复核。
+    // 令牌只在 upgrade 时验：连接存活期间过期或电脑退出登录都不断开——Host 退出登录会自己关账号连接
+    // 并作废本地票据（票据是 30 天 bearer 凭据，relay 侧没有按账号吊销的通道；Host 退出时不清它，
+    // 它就会在登出后继续自动重连，「Host 自己管连接」这个前提就被掏空），每次重连都换新凭据；
+    // relay 主动踢过期连接只会制造重连风暴。要做按账号封禁时再补连接级复核。
     const legacy = sameSecret(auth, this.options.credential);
     let sub: string | null = null;
     let ticketExp: number | null = null;

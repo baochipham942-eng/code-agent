@@ -649,6 +649,10 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           status={composerStatusItems(text, { ...companion, binding: !!companion.binding, saveError: state.saveError, nativeError, sendAttempted: state.sendAttempted, voiceFailureShown, voiceActive, pendingSlow }, {
             flush: () => void state.flush(), reconnect: () => void companionStore.getState().reconnect({ resetBackoff: true }), scan: () => void pairAndOpenConversation(),
             openRemote: () => state.openSheet('remote'), retryCreate: lastCreate.current, switchModel: openModelSheet,
+            retrySend: () => {
+              const draft = state.preferences.drafts[state.draftKey] ?? '';
+              if (canAddressSession(companion) && draft.trim()) void companion.send(draft);
+            },
             openVoiceSetup: () => state.openSheet('voiceSetup'),
             openModelSetup: () => state.openSheet('modelSetup'),
             dismissAbandoned: () => companionStore.getState().dismissAbandonedPending(),

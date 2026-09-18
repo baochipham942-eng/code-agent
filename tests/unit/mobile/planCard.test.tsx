@@ -31,19 +31,59 @@ describe('PlanCard', () => {
     expect(respond).toHaveBeenCalledWith('rejected', undefined);
   });
 
-  it('settled cards say what actually happened; only closed says elsewhere-or-expired', () => {
-    const { rerender } = render(<PlanCard card={{ preview, status: 'rejected' }} text={text} disabled={false} respond={async () => {}} />);
-    expect(screen.getByText(text.planRejected)).toBeTruthy();
+  it('settled cards show 已批准 or 已要求修改 with the feedback', () => {
+    const { rerender } = render(<PlanCard
+      card={{ preview, status: 'approved', outcome: 'answered', answer: { decision: 'approved' } }}
+      text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe('已批准');
     expect(screen.queryByText(text.planApprove)).toBeNull();
-    rerender(<PlanCard card={{ preview, status: 'approved' }} text={text} disabled={false} respond={async () => {}} />);
-    expect(screen.getByText(text.planApproved)).toBeTruthy();
-    rerender(<PlanCard card={{ preview, status: 'closed' }} text={text} disabled={false} respond={async () => {}} />);
-    expect(screen.getByText(text.planClosed)).toBeTruthy();
+    rerender(<PlanCard
+      card={{ preview, status: 'rejected', outcome: 'answered', answer: { decision: 'rejected', feedback: '先改标题' } }}
+      text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe('已要求修改：先改标题');
+    rerender(<PlanCard card={{ preview, status: 'closed', outcome: 'expired' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe('已超时，这个计划没有执行');
+    expect(text.planExpired).toBe('已超时，这个计划没有执行');
+    expect(screen.queryByText(/另一端/)).toBeNull();
+  });
+
+  it('machine-cancelled cards say 任务已停止 and never read as 已要求修改', () => {
+    // 宿主机器终止（run 取消 / 重启孤儿）结算成 outcome=cancelled：手机只说卡作废，
+    // 不出现宿主内部英文串，也不谎称用户提过修改意见。
+    render(<PlanCard
+      card={{ preview, status: 'closed', outcome: 'cancelled', answer: undefined }}
+      text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe('任务已停止，这张卡作废了');
+    expect(text.questionCancelled).toBe('任务已停止，这张卡作废了');
+    expect(screen.queryByText(/已要求修改/)).toBeNull();
+    expect(screen.getByTestId('plan-result').textContent).not.toMatch(/[A-Za-z]/);
+  });
+
+  it('旧宿主只带 status 的卡：已批准 / 已拒绝这个计划', () => {
+    const { rerender } = render(<PlanCard card={{ preview, status: 'approved' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe(text.planApproved);
+    expect(text.planApproved).toBe('已批准');
+    expect(screen.queryByText(text.planApprove)).toBeNull();
+    rerender(<PlanCard card={{ preview, status: 'rejected' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe(text.planRejected);
+    expect(text.planRejected).toBe('已拒绝这个计划');
+    expect(screen.queryByText(text.planApprove)).toBeNull();
   });
 
   it('english copy is present for the same keys', () => {
     const en = messages('en');
-    render(<PlanCard card={{ preview, status: 'closed' }} text={en} disabled={false} respond={async () => {}} />);
-    expect(screen.getByText(en.planClosed)).toBeTruthy();
+    const { rerender } = render(<PlanCard card={{ preview, status: 'closed', outcome: 'cancelled' }} text={en} disabled={false} respond={async () => {}} />);
+    expect(screen.getByText(en.questionCancelled)).toBeTruthy();
+    rerender(<PlanCard card={{ preview, status: 'closed', outcome: 'expired' }} text={en} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe(en.planExpired);
+    expect(en.planExpired).toBe('Timed out. This plan was not executed.');
+  });
+
+  it('closed cards without outcome say 这张卡已结束 and do not mark ✓/✕', () => {
+    render(<PlanCard card={{ preview, status: 'closed' }} text={text} disabled={false} respond={async () => {}} />);
+    expect(screen.getByTestId('plan-result').textContent).toBe('这张卡已结束');
+    expect(screen.queryByText('任务已停止，这张卡作废了')).toBeNull();
+    expect(screen.getByTestId('plan-result').textContent).not.toMatch(/[✓✕]/);
+    expect(messages('en').planClosed).toBe('This card has ended.');
   });
 });

@@ -61,6 +61,12 @@ const pending = new Map<
 
 let handlerRegistered = false;
 
+function questionSettlement(response: UserQuestionResponse) {
+  return response.declined === true
+    ? { outcome: 'answered' as const, answer: { declined: true as const, ...(response.reason ? { reason: response.reason } : {}) } }
+    : { outcome: 'answered' as const, answer: { answers: response.answers } };
+}
+
 function settleUserQuestionResponse(response: UserQuestionResponse): void {
   const p = pending.get(response.requestId);
   if (!p) {
@@ -69,7 +75,7 @@ function settleUserQuestionResponse(response: UserQuestionResponse): void {
   }
   clearTimeout(p.timeout);
   pending.delete(response.requestId);
-  cancelRegisteredUserQuestion(response.requestId);
+  cancelRegisteredUserQuestion(response.requestId, questionSettlement(response));
   p.resolve(response);
 }
 
@@ -119,7 +125,7 @@ export async function promptUserInChat(
     const timeout = hasInteractiveRenderer
       ? setTimeout(() => {
         pending.delete(request.id);
-        cancelRegisteredUserQuestion(request.id);
+        cancelRegisteredUserQuestion(request.id, { outcome: 'expired' });
         markDecisionRequestExpired(request.id, '用户问题');
         logger.warn('Interactive user question expired after 24h backstop', {
           requestId: request.id,
@@ -129,7 +135,7 @@ export async function promptUserInChat(
       }, INTERACTION_TIMEOUTS.PARKED_APPROVAL)
       : setTimeout(() => {
         pending.delete(request.id);
-        cancelRegisteredUserQuestion(request.id);
+        cancelRegisteredUserQuestion(request.id, { outcome: 'expired' });
         markDecisionRequestExpired(request.id, '用户问题');
         reject(new Error('timeout'));
       }, timeoutMs);
@@ -143,7 +149,7 @@ export async function promptUserInChat(
           if (p) {
             clearTimeout(p.timeout);
             pending.delete(request.id);
-            cancelRegisteredUserQuestion(request.id);
+            cancelRegisteredUserQuestion(request.id, { outcome: 'cancelled' });
             reject(new Error('aborted'));
           }
         },
@@ -174,7 +180,7 @@ export async function promptUserInChat(
     if (p) {
       clearTimeout(p.timeout);
       pending.delete(request.id);
-      cancelRegisteredUserQuestion(request.id);
+      cancelRegisteredUserQuestion(request.id, { outcome: 'cancelled' });
     }
     throw error;
   }

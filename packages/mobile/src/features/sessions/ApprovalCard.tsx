@@ -1,4 +1,5 @@
 import type { messages } from '../../i18n';
+import { approvalDecision, cardOutcome } from './decisionCard';
 
 export function ApprovalCard({ card, text, disabled, respond }: {
   card: Record<string, unknown>; text: ReturnType<typeof messages>; disabled: boolean;
@@ -20,7 +21,19 @@ export function ApprovalCard({ card, text, disabled, respond }: {
   const target = details.path ?? details.filePath ?? details.affectedPath ?? details.url ?? details.server;
   const operation = preview?.type === 'file_write' ? text.writeOperation : preview?.type === 'file_read' ? text.readOperation
     : details.command ? text.commandOperation : text.requestedOperation;
-  return <section className="approval-card" aria-label={text.approval}>
+  const pending = card.status === 'pending';
+  const outcome = cardOutcome(card);
+  const decision = approvalDecision(card);
+  const ended = !pending && !outcome && !decision;
+  const resultCopy = outcome === 'expired' ? text.approvalExpired
+    : outcome === 'cancelled' ? text.approvalCancelled
+      : ended ? text.approvalClosed
+        : decision === 'allow_session' ? text.approvalAllowedSession
+          : decision === 'rejected' ? text.approvalRejected
+            : text.approvalApproved;
+  const mark = outcome === 'expired' || outcome === 'cancelled' || ended ? null
+    : decision === 'rejected' ? '✕' : '✓';
+  return <section className="approval-card" aria-label={text.approval} data-testid="approval-card" data-outcome={outcome ?? (pending ? 'pending' : ended ? 'closed' : 'answered')}>
     <strong>{text.approval}</strong>
     <div className="approval-details">
     <dl className="approval-summary">
@@ -35,9 +48,11 @@ export function ApprovalCard({ card, text, disabled, respond }: {
       {preview?.boundary !== undefined && <div><p>{text.dataBoundary}</p><pre>{value(preview.boundary)}</pre></div>}
     </details>
     </div>
-    {card.status === 'pending' ? <div className="approval-actions">
+    {pending ? <div className="approval-actions">
       <button disabled={disabled} onClick={() => void respond('rejected')}>{text.deny}</button>
       <button disabled={disabled || !readable} onClick={() => void respond('approved')}>{text.approveOnce}</button>
-    </div> : <p role="status" data-status={String(card.status)}>{card.status === 'approved' ? text.approvalApproved : card.status === 'rejected' ? text.approvalRejected : text.approvalClosed}</p>}
+    </div> : <p role="status" className="decision-result" data-testid="approval-result" data-status={String(card.status)}>
+      {mark && <span aria-hidden="true">{mark} </span>}{resultCopy}
+    </p>}
   </section>;
 }

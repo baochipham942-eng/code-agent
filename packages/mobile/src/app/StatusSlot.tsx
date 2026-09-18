@@ -69,6 +69,7 @@ export function commandNoticeCopy(
     if (error === 'COMPANION_MODEL_UNAVAILABLE') return text.modelUnavailable;
     if (error === 'COMPANION_SESSION_BUSY') return text.sessionBusy;
     if (error === 'RUN_FAILED') return text.runFailed;
+    if (error === 'RUN_START_FAILED' || error === 'HOST_UNAVAILABLE') return text.runStartFailed;
     if (error && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(error)) return text.transferInterrupted;
     // 转写失败由输入区的语音那条负责（它带阶段和真实错误码）；按**动作**让位而不是按码名列白名单。
     // 录音中或输入区正在显示时让位，避免面板「有片段没转成文字」和状态位再说一遍。
@@ -100,7 +101,7 @@ export function composerStatusItems(
     autoRetrying?: boolean; autoAttempt?: boolean; abandonedPending?: boolean;
     library: { models: readonly unknown[] } | null;
   },
-  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; dismissAbandoned?(): void; openVoiceSetup?(): void; openModelSetup(): void },
+  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; retrySend?: () => void; dismissAbandoned?(): void; openVoiceSetup?(): void; openModelSetup(): void },
 ): StatusItem[] {
   const items: StatusItem[] = [];
   if (s.saveError) items.push({ rank: 1, message: text.saveError, action: { label: text.retry, run: act.flush } });
@@ -131,11 +132,14 @@ export function composerStatusItems(
   if (s.abandonedPending) items.push({ rank: 5, message: text.abandonedPending, action: { label: text.gotIt, run: act.dismissAbandoned ?? (() => {}) } });
   const command = s.commandError === 'COMPANION_NOT_CONNECTED' ? null : commandNoticeCopy(text, s, s.voiceFailureShown, s.voiceActive === true);
   if (command) {
+    const retrySend = (s.commandError === 'RUN_START_FAILED' || s.commandError === 'HOST_UNAVAILABLE')
+      && s.commandErrorAction === 'message.send' && act.retrySend
+      ? { label: text.retry, run: act.retrySend } : undefined;
     const action = s.commandErrorAction === 'session.create' && s.commandError !== 'COMPANION_COMMAND_IN_FLIGHT' && act.retryCreate ? { label: text.retry, run: act.retryCreate }
       : (s.commandError === 'MODEL_AUTH' || s.commandError === 'MODEL_UNAVAILABLE') && s.sessionId ? { label: text.switchModel, run: act.switchModel }
       : s.commandErrorAction === 'voice.transcribe' && isVoiceSetupCode(s.commandError ?? undefined) && act.openVoiceSetup
         ? { label: text.voiceHowToEnable, run: act.openVoiceSetup }
-      : undefined;
+      : retrySend;
     items.push({ rank: 5, message: command, action, reason: s.commandError ?? undefined });
   }
   if (s.libraryError) items.push({ rank: 6, message: text.libraryError, action: { label: text.reload, run: act.reconnect, disabled: s.busy } });

@@ -51,7 +51,7 @@ export interface CompanionLibrary {
 }
 export interface CompanionHistory {
   sessionId: string;
-  messages: { id: string; role: string; content: string; timestamp: number; truncated?: boolean }[];
+  messages: { id: string; role: string; content: string; timestamp: number; truncated?: boolean; queued?: boolean }[];
   nextOffset: number | null;
 }
 

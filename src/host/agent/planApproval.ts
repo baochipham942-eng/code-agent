@@ -57,6 +57,13 @@ export interface RiskAssessment {
   reasons: string[];
 }
 
+/**
+ * 谁把这个 plan 收掉的。rejected 的 feedback 对用户可见的消费方（手机计划卡）
+ * 必须先看它：机器路径写的是宿主内部文案（Cancelled:… / Auto-rejected after timeout… /
+ * Orphaned by process restart），不是用户真写的修改意见，不得当 answered 透传。
+ */
+type PlanResolutionOrigin = 'user' | 'cancelled' | 'timeout' | 'orphaned';
+
 export interface PlanSubmission {
   id: string;
   agentId: string;
@@ -69,6 +76,7 @@ export interface PlanSubmission {
   feedback?: string;
   resolvedAt?: number;
   scope?: SwarmRunScope;
+  resolutionOrigin?: PlanResolutionOrigin;
 }
 
 export interface PlanSubmissionInput {
@@ -130,6 +138,7 @@ export class PlanApprovalGate {
           submission.status = 'rejected';
           submission.feedback = row.feedback ?? 'Orphaned by process restart';
           submission.resolvedAt = row.resolvedAt ?? now;
+          submission.resolutionOrigin = 'orphaned';
           this.pendingPlans.set(submission.id, submission);
           hydrated += 1;
         } catch (err) {
@@ -253,6 +262,7 @@ export class PlanApprovalGate {
     plan.status = 'approved';
     plan.feedback = feedback;
     plan.resolvedAt = Date.now();
+    plan.resolutionOrigin = 'user';
     logger.info(`Plan approved: ${planId} for ${plan.agentName}`);
     this.safePersistResolve(planId, 'approved', feedback ?? null, plan.resolvedAt);
     this.publishPlanDecision(plan, 'approved', feedback);
@@ -278,6 +288,7 @@ export class PlanApprovalGate {
     plan.status = 'rejected';
     plan.feedback = reason;
     plan.resolvedAt = Date.now();
+    plan.resolutionOrigin = 'user';
     logger.info(`Plan rejected: ${planId} for ${plan.agentName} — ${reason}`);
     this.safePersistResolve(planId, 'rejected', reason, plan.resolvedAt);
     this.publishPlanDecision(plan, 'rejected', reason);
@@ -313,6 +324,7 @@ export class PlanApprovalGate {
         plan.status = 'rejected';
         plan.feedback = feedback;
         plan.resolvedAt = now;
+        plan.resolutionOrigin = 'cancelled';
         this.publishPlanDecision(plan, 'rejected', feedback);
         this.notifyPlanDecision(plan, false, feedback);
       }
@@ -345,6 +357,7 @@ export class PlanApprovalGate {
       plan.status = 'rejected';
       plan.feedback = feedback;
       plan.resolvedAt = now;
+      plan.resolutionOrigin = 'cancelled';
       this.safePersistResolve(planId, 'rejected', feedback, now);
       this.publishPlanDecision(plan, 'rejected', feedback);
       this.notifyPlanDecision(plan, false, feedback);
@@ -369,6 +382,7 @@ export class PlanApprovalGate {
       plan.status = 'rejected';
       plan.feedback = feedback;
       plan.resolvedAt = now;
+      plan.resolutionOrigin = 'cancelled';
       this.safePersistResolve(planId, 'rejected', feedback, now);
       this.publishPlanDecision(plan, 'rejected', feedback);
       this.notifyPlanDecision(plan, false, feedback);
@@ -399,6 +413,7 @@ export class PlanApprovalGate {
       plan.status = 'rejected';
       plan.feedback = feedback;
       plan.resolvedAt = now;
+      plan.resolutionOrigin = 'cancelled';
       this.safePersistResolve(planId, 'rejected', feedback, now);
       this.publishPlanDecision(plan, 'rejected', feedback);
       this.notifyPlanDecision(plan, false, feedback);
@@ -554,6 +569,7 @@ export class PlanApprovalGate {
           plan.status = 'rejected';
           plan.feedback = feedback;
           plan.resolvedAt = now;
+          plan.resolutionOrigin = 'cancelled';
           this.safePersistResolve(planId, 'rejected', feedback, now);
           this.publishPlanDecision(plan, 'rejected', feedback);
           this.notifyPlanDecision(plan, false, feedback);
@@ -583,6 +599,7 @@ export class PlanApprovalGate {
           plan.status = 'rejected';
           plan.feedback = rejectFeedback;
           plan.resolvedAt = now;
+          plan.resolutionOrigin = 'timeout';
           this.publishPlanDecision(plan, 'rejected', rejectFeedback);
           this.notifyPlanDecision(plan, false, rejectFeedback);
         }

@@ -25,6 +25,7 @@ import type { ConversationEnvelope } from '../shared/contract/conversationEnvelo
 import { formatError } from './helpers/utils';
 import { handleTempUpload, handleScreenshot } from './helpers/upload';
 import { dbAvailable, getPersistenceHealth } from './helpers/sessionCache';
+import { broadcastSSE } from './helpers/sse';
 
 // Middleware
 import {
@@ -67,12 +68,14 @@ import { CompanionPushOutbox, loadPushWrapKeySync } from '../host/services/compa
 import { projectCompanionEvent } from '../host/services/companion/projectCompanionEvent';
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
 import { CompanionQuestionService } from '../host/services/companion/CompanionQuestionService';
-import { CompanionPlanService } from '../host/services/companion/CompanionPlanService';
-import { deliverCompanionUserPlan, listCompanionUserPlans, noteCompanionUserPlan } from '../host/services/companion/companionUserPlan';
+import { CompanionPlanService, inspectionFromGatePlan, type CompanionPlanInspection } from '../host/services/companion/CompanionPlanService';
+import { deliverCompanionUserPlan, listCompanionUserPlans, noteCompanionUserPlan, takeCompanionUserPlanSettlement } from '../host/services/companion/companionUserPlan';
+import { companionSteerMessagePayload, steerOrQueueCompanionMessage } from '../host/services/companion/companionMessageSend';
 import { getPlanApprovalGate } from '../host/agent/planApproval';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
 import { startCompanionRelayAccountIfConfigured, startCompanionRelayIfConfigured } from '../host/services/companion/CompanionRelayClient';
+import { loadCompanionRelayConfig } from '../host/services/companion/companionRelayConfig';
 import { getAuthService } from '../host/services/auth/authService';
 import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
 import { loadLanIdentity } from '../host/services/companion/lanIdentity';
@@ -114,6 +117,14 @@ export interface CreateAppDeps {
     sessionId: string;
     envelope: ConversationEnvelope;
   }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
+}
+
+function inspectCompanionPlan(planId: string): CompanionPlanInspection | null {
+  // 结算判定在 inspectionFromGatePlan：按结构化 resolutionOrigin 分流，机器终止
+  // （取消/超时/重启孤儿）不走 answered，宿主内部 feedback 不透给手机。
+  const plan = getPlanApprovalGate().getPlan(planId);
+  const inspection = plan ? inspectionFromGatePlan(plan) : null;
+  return inspection ?? takeCompanionUserPlanSettlement(planId);
 }
 
 /**
@@ -257,9 +268,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
   // registerCompanionShutdown 只保存一个回调（webServer.ts 的 stopCompanion 单槽），
   // 必须注册一次组合回调；companion 侧句柄在 db 分支里接线，未接线时安全跳过。
   let companionLan: { stop(): Promise<void> } | undefined;
-  let companionRelay: { stop(): Promise<void>; routeFor(deviceId: string): import('../shared/contract/companionRelay').CompanionRelayRoute | null } | undefined;
+  let companionRelay: { stop(): Promise<void>; routeFor(deviceId: string): import('../shared/contract/companionRelay').CompanionRelayRoute | null; connected: boolean } | undefined;
   let companionRelayAbandoned = false;
-  let companionRelayAccount: ReturnType<typeof startCompanionRelayAccountIfConfigured> = null;
+  let companionRelayAccount: ReturnType<typeof startCompanionRelayAccountIfConfigured> | null = null;
   const idleSleepInhibitor = new IdleSleepInhibitor(
     () => runRegistry.size > 0,
     () => (inhibitorGateway?.pairedDevices().length ?? 0) > 0,
@@ -370,9 +381,36 @@ export function createApp(deps: CreateAppDeps): express.Express {
             void target.cancel('user');
             return { state: 'accepted', result: { stopping: true, runId: target.context.runId } };
           }
-          if (command.action !== 'message.send' || !companionRun) return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
+          if (command.action !== 'message.send') return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
           const payload = command.payload as { text?: unknown };
           const text = typeof payload.text === 'string' ? payload.text : '';
+          const activeRun = command.sessionId ? runRegistry.resolve({ sessionId: command.sessionId }) : undefined;
+          if (activeRun && command.sessionId) {
+            const sessionId = command.sessionId;
+            // 手机插话与桌面 /api/interrupt 同一套事件：电脑聊天区靠这两个广播立刻
+            // 看到这条用户消息，不用等刷新（ai-review R8 Nit 3）。
+            broadcastSSE('agent:event', {
+              type: 'interrupt_start',
+              data: { message: '正在调整方向...', newUserMessage: text, runId: activeRun.context.runId },
+              sessionId,
+            });
+            void steerOrQueueCompanionMessage(activeRun, { sessionId, commandId: command.commandId, text })
+              .then(({ runId, outcome }) => {
+                broadcastSSE('agent:event', {
+                  type: 'interrupt_complete',
+                  data: { message: '已调整方向', newUserMessage: text, runId },
+                  sessionId,
+                });
+                gateway.publish(sessionId, 'message', companionSteerMessagePayload({
+                  commandId: command.commandId, text, runId, outcome,
+                }));
+                gateway.settleCommand(command.deviceId, command.commandId, 'accepted', { runId, outcome });
+              }, () => {
+                gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'RUN_START_FAILED' });
+              }).catch(() => logger.warn('Companion steer receipt unavailable'));
+            return { state: 'reconciling', result: { code: 'RUN_STARTING' } };
+          }
+          if (!companionRun) return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
           const activation = companionRun({
             version: 1,
             prompt: text,
@@ -399,6 +437,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
         logger.warn('Companion deleted-session cleanup unavailable', error);
       });
       if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
+        // deliver 直传：respond 在 deliver 的同步窗口持有 phoneResponding（回声抑制，
+        // respond 自己会带 resolvedBy 发布结算），包一层 noteCompanionApprovalSettlement
+        // 恒不生效，是死代码（ai-review R8 Nit 2，已删）。
         services.approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
       }
       services.questions = new CompanionQuestionService(gateway);
@@ -426,7 +467,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
             ...(options?.disableAutoAgent ? { disableAutoAgent: true } : {}),
           });
         });
-      });
+      }, inspectCompanionPlan);
       publishCompanionEvent = (sessionId, kind, payload) => {
         const raw = payload.event && typeof payload.event === 'object' && !Array.isArray(payload.event)
           ? payload.event as Record<string, unknown> : null;
@@ -469,7 +510,15 @@ export function createApp(deps: CreateAppDeps): express.Express {
         return sessions.map(session => ({ id: session.id, title: session.title }));
       }, () => requireLibrary().projects(), services.push,
       // relay 客户端是异步拨起的：手机问路由时它可能还没就绪——闭包读当前值，null 即 unavailable。
-      deviceId => companionRelay?.routeFor(deviceId) ?? null);
+      deviceId => companionRelay?.routeFor(deviceId) ?? null,
+      // 跨网连接状态块（N-COMPANION-RELAY-ACCOUNT-DESKTOP-STATUS）：照 relayRoute 的方式注入取值回调。
+      // configured 每次现读配置文件（状态请求只在打开设置页时发生，频率极低）；缺省日志已由两条通道启动时打过。
+      () => ({
+        configured: !!loadCompanionRelayConfig(resolveCodeAgentDataDir()),
+        legacy: companionRelay?.connected ? 'connected' as const : 'disconnected' as const,
+        // 句柄还没赋上（db 分支未接线/启动瞬间）时按没开通报：那种场景下整个 manage 口都不存在。
+        ...(companionRelayAccount?.status() ?? { account: 'off' as const }),
+      }));
       // Both halves must hold: a phone is reachable for this session, AND this particular
       // card is renderable. With no approvals service there is no companion approval path.
       hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && services.approvals?.canDisplay(request) === true;

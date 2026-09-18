@@ -9,10 +9,14 @@ import type { CompanionManagementResult } from '../../../src/shared/contract/com
 
 const invoke = vi.hoisted(() => vi.fn());
 const toDataURL = vi.hoisted(() => vi.fn(async () => 'data:image/png;base64,qr'));
+const setShowAuthModal = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({ invoke }));
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ language: 'zh' }) }));
 vi.mock('qrcode', () => ({ default: { toDataURL } }));
+vi.mock('../../../src/renderer/stores/authStore', () => ({
+  useAuthStore: (selector: (state: { setShowAuthModal: typeof setShowAuthModal }) => unknown) => selector({ setShowAuthModal }),
+}));
 
 import { CompanionSection } from '../../../src/renderer/components/features/settings/sections/CompanionSection';
 
@@ -137,5 +141,59 @@ describe('companionErrorCopy', () => {
   it('maps known codes and keeps unknown failures on the generic copy', () => {
     expect(companionErrorCopy(text, 'COMPANION_UNAVAILABLE')).toBe(`${text.errorUnavailable} (COMPANION_UNAVAILABLE)`);
     expect(companionErrorCopy(text, 'boom')).toBe(`${text.error} (UNKNOWN_ERROR)`);
+  });
+});
+
+describe('CompanionSection cross-network status', () => {
+  afterEach(() => { cleanup(); invoke.mockReset(); setShowAuthModal.mockClear(); });
+
+  function relayStatus(account: 'off' | 'signedOut' | 'connecting' | 'connected', legacy: 'connected' | 'disconnected' = 'disconnected') {
+    mockManage(status({ relay: { configured: account !== 'off', legacy, account } }));
+  }
+
+  it('off: says local-Wi-Fi only, offers no sign-in and hides the legacy line', async () => {
+    relayStatus('off');
+    render(<CompanionSection />);
+    expect(await screen.findByTestId('companion-crossnet')).toBeTruthy();
+    expect(screen.getByText(text.crossnetOff)).toBeTruthy();
+    expect(screen.getByText(text.crossnetOffHint)).toBeTruthy();
+    expect(screen.queryByTestId('companion-crossnet-action')).toBeNull();
+    expect(screen.queryByText(text.crossnetLegacyConnected)).toBeNull();
+    expect(screen.queryByText(text.crossnetLegacyDisconnected)).toBeNull();
+  });
+
+  it('signedOut: shows the sign-in button and the legacy line; clicking opens the auth modal', async () => {
+    relayStatus('signedOut', 'connected');
+    render(<CompanionSection />);
+    expect(await screen.findByText(text.crossnetSignedOut)).toBeTruthy();
+    expect(screen.getByText(text.crossnetSignedOutHint)).toBeTruthy();
+    expect(screen.getByText(text.crossnetLegacyConnected)).toBeTruthy();
+    fireEvent.click(screen.getByTestId('companion-crossnet-action'));
+    expect(setShowAuthModal).toHaveBeenCalledWith(true);
+  });
+
+  it('connecting: tells the user it retries automatically and has no button', async () => {
+    relayStatus('connecting');
+    render(<CompanionSection />);
+    expect(await screen.findByText(text.crossnetConnecting)).toBeTruthy();
+    expect(screen.getByText(text.crossnetConnectingHint)).toBeTruthy();
+    expect(screen.getByText(text.crossnetLegacyDisconnected)).toBeTruthy();
+    expect(screen.queryByTestId('companion-crossnet-action')).toBeNull();
+  });
+
+  it('connected: says cross-network is on via the Neo account and has no button', async () => {
+    relayStatus('connected', 'connected');
+    render(<CompanionSection />);
+    expect(await screen.findByText(text.crossnetConnected)).toBeTruthy();
+    expect(screen.getByText(text.crossnetConnectedHint)).toBeTruthy();
+    expect(screen.getByText(text.crossnetLegacyConnected)).toBeTruthy();
+    expect(screen.queryByTestId('companion-crossnet-action')).toBeNull();
+  });
+
+  it('stays hidden when the host predates the relay status field', async () => {
+    mockManage(status());
+    render(<CompanionSection />);
+    await waitFor(() => expect(invoke).toHaveBeenCalled());
+    expect(screen.queryByTestId('companion-crossnet')).toBeNull();
   });
 });

@@ -57,8 +57,12 @@ export interface CompanionRelayServerStats {
   pairRequests: number;
   /** pair-request 被拒次数（legacy 发起 / 限流 / 目标不在线 / 续帧对不上挂起态）。 */
   rejectedPairRequests: number;
-  /** 回到手机的 pair-result 帧数（Host 发的 + relay 合成的 timeout/host-offline）。 */
+  /** 回到手机的 pair-result 帧数（Host 发的 + relay 合成的 timeout/host-offline/rate-limited；
+   *  只数真发出去的，R3 Nit1 统一口径——初次/续帧/挂起超时/断腿各路径都进这一个数）。 */
   pairResults: number;
+  /** account×instance 二级索引的当前键数（R3 Important）：只应随「在线实例数」涨——随桌面重启
+   *  次数单调涨 = register 改写实例没摘旧键的索引泄漏，healthz 上可直接盯。 */
+  instanceIndexKeys: number;
   jwks?: JwksStats;
 }
 
@@ -185,6 +189,7 @@ export class CompanionRelayServer {
     revoked: 0, rejectedAuth: 0, notifiedNoHost: 0, accountConnections: 0, rejectedOwner: 0,
     ticketsIssued: 0, ticketConnections: 0, terminatedNoPong: 0, rejectedTakeover: 0,
     listHosts: 0, rejectedListHosts: 0, pairRequests: 0, rejectedPairRequests: 0, pairResults: 0,
+    instanceIndexKeys: 0,
   };
   private readonly pendingPairs = new Map<string, PendingPair>();
   /** pair-request 初次请求的限流记账：每连接（WeakMap 随连接回收）与每账号（写时清过期项）。 */
@@ -219,7 +224,12 @@ export class CompanionRelayServer {
 
   get address(): { host: string; port: number } { return { host: this.host, port: this.port }; }
   get currentStats(): CompanionRelayServerStats {
-    const stats: CompanionRelayServerStats = { ...this.stats, routes: this.routes.size, queuedFrames: this.queueSize() };
+    const stats: CompanionRelayServerStats = {
+      ...this.stats,
+      routes: this.routes.size,
+      queuedFrames: this.queueSize(),
+      instanceIndexKeys: this.routesByAccountInstance.size,
+    };
     if (this.options.accountVerifier) stats.jwks = this.options.accountVerifier.stats;
     return stats;
   }
@@ -421,9 +431,12 @@ export class CompanionRelayServer {
     this.options.logger?.info(renewed ? 'ticket_renewed' : 'ticket_issued');
   }
 
-  /** routes 的写入唯一入口：主表 set 的同时维护 account×instance 二级索引（R2 Nit5）。 */
-  private putRoute(token: string, route: Route): void {
+  /** routes 的写入唯一入口：主表 set 的同时维护 account×instance 二级索引（R2 Nit5）。改写
+   *  hostInstanceId（同 token 换实例重注册）必须先把 token 从旧实例键摘除（R3 Important）——
+   *  否则旧键只加不删，桌面 Neo 每重启一次就多一个永不回收的键，只能靠重启 relay 释放。 */
+  private putRoute(token: string, route: Route, prevInstanceId?: string): void {
     this.routes.set(token, route);
+    this.dropInstanceIndex(token, route.owner, prevInstanceId);
     if (!route.hostInstanceId) return;
     const key = `${route.owner}|${route.hostInstanceId}`;
     const tokens = this.routesByAccountInstance.get(key) ?? new Set<string>();
@@ -431,13 +444,20 @@ export class CompanionRelayServer {
     this.routesByAccountInstance.set(key, tokens);
   }
 
-  /** routes 的删除唯一入口（stop 的整表清空除外）：连带从二级索引摘除（R2 Nit5）。 */
+  /** routes 的删除唯一入口（stop 的整表清空除外）：连带从二级索引按当前实例键摘除（R2 Nit5）。 */
   private dropRoute(token: string): void {
     const route = this.routes.get(token);
     if (!route) return;
     this.routes.delete(token);
-    if (!route.hostInstanceId) return;
-    const key = `${route.owner}|${route.hostInstanceId}`;
+    this.dropInstanceIndex(token, route.owner, route.hostInstanceId);
+  }
+
+  /** 二级索引的摘除唯一入口：register 改写实例前（按旧 instanceId）与 dropRoute（按当前值）共用，
+   *  保证 register / unregister / 过期清扫三条路径的加删对称。owner 在路由生命周期内不变
+   *  （register 拒换主人），旧键与新键同用 route.owner 拼不会错位。 */
+  private dropInstanceIndex(token: string, owner: Principal, instanceId: string | undefined): void {
+    if (!instanceId) return;
+    const key = `${owner}|${instanceId}`;
     const tokens = this.routesByAccountInstance.get(key);
     if (!tokens) return;
     tokens.delete(token);
@@ -536,6 +556,8 @@ export class CompanionRelayServer {
       // 对设备腿来说谈判对象已经换了，照 host 腿断开同款宽限处理。到期复查时 host 槽若仍被
       // 占着（顶替者活着），说明 host 在位，什么都不发——不许踢一个 host 在位的健康对。
       const displacedHost = frame.role === 'host' ? known?.host : undefined;
+      // 改写前先留旧实例身份（R3 Important）：putRoute 要按它摘旧索引键，route 对象随后就被改写。
+      const prevInstanceId = known?.hostInstanceId;
       route[frame.role] = socket;
       if (frame.role === 'host') {
         route.hostInstanceId = frame.instanceId;
@@ -543,7 +565,7 @@ export class CompanionRelayServer {
         route.hostKeyFingerprint = frame.hostKeyFingerprint;
       }
       route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
-      this.putRoute(token, route);
+      this.putRoute(token, route, prevInstanceId);
       const binding = existing ?? { role: frame.role, tokens: new Set<string>() };
       binding.tokens.add(token);
       this.bindings.set(socket, binding);
@@ -681,7 +703,6 @@ export class CompanionRelayServer {
       if (pending.host.readyState !== WebSocket.OPEN) {
         clearTimeout(pending.timer);
         this.pendingPairs.delete(requestId);
-        this.stats.pairResults += 1;
         this.sendPairResult(pending.phone, requestId, 'host-offline');
         return;
       }
@@ -719,7 +740,6 @@ export class CompanionRelayServer {
     }
     const timer = setTimeout(() => {
       this.pendingPairs.delete(requestId);
-      this.stats.pairResults += 1;
       this.sendPairResult(socket, requestId, 'timeout');
       this.options.logger?.info('pair_request_timeout', {});
     }, this.options.pairTtlMs ?? L.relayPairTtlMs);
@@ -752,7 +772,8 @@ export class CompanionRelayServer {
     this.stats.pairResults += 1;
   }
 
-  /** relay 合成的具名拒绝回帧（host-offline / timeout / rate-limited）：sentinel 信封，与 Host 发的同一形状。 */
+  /** relay 合成的具名拒绝回帧（host-offline / timeout / rate-limited）：sentinel 信封，与 Host 发的同一形状。
+   *  计数收在这里（R3 Nit1 统一口径）：合成回帧只要真发出去了就计 pairResults，调用方不再各记各的。 */
   private sendPairResult(socket: WebSocket, requestId: string, reason: 'host-offline' | 'timeout' | 'rate-limited'): void {
     if (socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({
@@ -760,6 +781,7 @@ export class CompanionRelayServer {
       envelope: { routeToken: COMPANION_RELAY_PAIR_ROUTE_TOKEN, deviceRef: COMPANION_RELAY_SENTINEL_DEVICE_REF, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: this.now() },
       requestId, accepted: false, reason, ciphertext: '',
     } satisfies CompanionRelayFrame));
+    this.stats.pairResults += 1;
   }
 
   /**
@@ -776,7 +798,6 @@ export class CompanionRelayServer {
       if (pending.host === socket) {
         clearTimeout(pending.timer);
         this.pendingPairs.delete(requestId);
-        this.stats.pairResults += 1;
         this.sendPairResult(pending.phone, requestId, 'host-offline');
         this.options.logger?.info('pair_host_leg_closed', {});
       }

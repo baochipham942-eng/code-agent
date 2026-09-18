@@ -1,3 +1,5 @@
+import type { RecoverError } from '../stores/companionStore';
+
 const zh = {
   approvalTarget: '目标',
   voice: '语音输入', cancel: '取消', cancelRecording: '取消录音', stopRecording: '停止录音并转写', transcribing: '正在转写',
@@ -435,10 +437,11 @@ export function messages(language: string) { return language.startsWith('zh') ? 
 /**
  * 找回流的具名失败 → 人话（N-COMPANION-RELAY-ACCOUNT-RECOVER）：S5 横幅一句说清下一步。
  * invalidCredentials/unreachable 不进这里——前者在 S4 行内报，后者走 S7 形状。
+ * 形参按 RecoverError 收窄（R3 Nit5）：新增失败值时编译器把漏登分支顶到调用方，不再静默落兜底。
  * 兜底是中性「没成功」（ai-review R2 Nit2）：未登记的失败值不许渲染成「电脑身份核对不上」，
  * hostMismatch 只给真核对失败的那个登记值。
  */
-export function recoverErrorCopy(text: ReturnType<typeof messages>, error: string): string {
+export function recoverErrorCopy(text: ReturnType<typeof messages>, error: RecoverError): string {
   if (error === 'declined') return text.recoverDeclined;
   if (error === 'timeout') return text.recoverTimeout;
   if (error === 'hostOffline') return text.recoverHostOffline;

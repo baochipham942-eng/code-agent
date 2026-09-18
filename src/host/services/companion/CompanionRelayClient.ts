@@ -322,7 +322,9 @@ export class CompanionRelayClient {
     this.push({
       v: 1, kind: 'register', role: 'host', instanceId: this.instanceId,
       ...(this.hostName ? { hostName: this.hostName } : {}),
-      hostKeyFingerprint: this.hostKeyFingerprint,
+      // hostKeyFingerprint 只在账号通道发（R3 Nit2）：唯一消费方 list-hosts 拒 legacy 主体，
+      // legacy register 带这格永不被读——白占每帧 64 字节还误导排障。
+      ...(typeof this.deps.credential === 'string' ? {} : { hostKeyFingerprint: this.hostKeyFingerprint }),
       envelope: this.controlEnvelope(route), ciphertext: '',
     });
   }
@@ -673,6 +675,12 @@ export class CompanionRelayClient {
       this.logger?.warn(`Companion relay${this.label} pair request dropped: duplicate request ${requestId.slice(0, 8)}`);
       return;
     }
+    // 挂起条数上限（R3 Nit3）：节流不能全押 relay 的 5s 限流，Host 自己也兜一层——满了拒新并
+    // 留痕（手机侧由 relay 的挂起超时收尾，不登记、不出卡片）。
+    if (this.pendingPairs.size >= L.relayMaxPendingPairs) {
+      this.logger?.warn(`Companion relay${this.label} pair request dropped: pending pairs full (${this.pendingPairs.size})`);
+      return;
+    }
     const noise = createRelayPairHandshake(false, this.deps.identity);
     try {
       if (noise.recv(fromHex(frame.ciphertext)).length !== 0 || !noise.re) throw new Error('COMPANION_INVALID_FRAME');
@@ -718,6 +726,10 @@ export class CompanionRelayClient {
       return true;
     }
     pending.approved = true;
+    // 临界同意（R3 Nit4）：同意即摘「待同意」定时器——deadline 前一刻点同意，定时器到点会把已
+    // 同意的挂起清掉再补一刀 timeout，手机拿到 timeout 而非成功。手机侧的到点收尾由 relay 的
+    // 挂起超时兜底；桌面卡片按自身 expiresAt 自隐，挂起态由续帧完成/断连/再拒绝销账。
+    clearTimeout(pending.timer);
     this.pushPairResult(requestId, { accepted: true, stage: 'reply', ciphertext: toHex(pending.noise.send()) });
     return true;
   }

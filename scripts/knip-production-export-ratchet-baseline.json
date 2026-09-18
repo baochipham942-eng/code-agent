@@ -14339,6 +14339,11 @@
     },
     {
       "file": "src/shared/constants/network.ts",
+      "name": "COMPANION_RELAY_PLACEHOLDER_URL",
+      "kind": "export"
+    },
+    {
+      "file": "src/shared/constants/network.ts",
       "name": "getRendererBundleChannel",
       "kind": "export"
     },

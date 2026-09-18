@@ -7,6 +7,7 @@ import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import { createCompanionStore } from '../../../packages/mobile/src/stores/companionStore';
 import { COMPANION_RELAY_PLACEHOLDER_URL } from '../../../src/shared/constants/network';
 import { messages, recoverErrorCopy } from '../../../packages/mobile/src/i18n';
+import type { RecoverError } from '../../../packages/mobile/src/stores/companionStore';
 import type { PlatformPorts } from '../../../packages/mobile/src/platform/ports';
 import type { RelayDialSocket } from '../../../packages/mobile/src/platform/relayCompanionClient';
 import type { CompanionRelayFrame } from '../../../src/shared/contract/companionRelay';
@@ -288,7 +289,9 @@ describe('relayRecover：登录 → 列电脑 → 配对落盘（与扫码同形
   it('S5 横幅兜底（Nit2）：未登记的失败值渲染中性「没成功」，不冒充「电脑身份核对不上」', () => {
     const text = messages('zh');
     expect(recoverErrorCopy(text, 'hostMismatch')).toBe(text.recoverHostMismatch);
-    expect(recoverErrorCopy(text, 'unlisted-future-value')).toBe(text.recoverGeneric);
-    expect(recoverErrorCopy(text, 'unlisted-future-value')).not.toContain('核对不上');
+    // 形参已按 RecoverError 收窄（R3 Nit5）：运行时兜底仍要钉——跨版本旧值/异常值不许冒充
+    // 「电脑身份核对不上」，用显式断言 cast 模拟登记表之外的值。
+    expect(recoverErrorCopy(text, 'unlisted-future-value' as RecoverError)).toBe(text.recoverGeneric);
+    expect(recoverErrorCopy(text, 'unlisted-future-value' as RecoverError)).not.toContain('核对不上');
   });
 });

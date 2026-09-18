@@ -185,6 +185,8 @@ describe('companion relay：找回（list-hosts / pair-request / pair-result）'
     const reply = await socket.wait(frame => frame.kind === 'pair-result');
     expect(Date.now() - startedAt).toBeLessThan(1_000);
     expect(reply).toMatchObject({ kind: 'pair-result', requestId: 'request-id-nonexistent1', accepted: false, reason: 'host-offline' });
+    // 合成回帧计数口径统一（R3 Nit1）：初次请求路径的 host-offline 也进 pairResults。
+    expect(relay.currentStats.pairResults).toBe(1);
     socket.close();
   });
 
@@ -203,6 +205,8 @@ describe('companion relay：找回（list-hosts / pair-request / pair-result）'
     });
     const second = await socket.wait(frame => frame.kind === 'pair-result' && frame.requestId === 'request-id-ghosthost02');
     expect(second).toMatchObject({ accepted: false, reason: 'rate-limited' });
+    // 两条合成回帧（host-offline + rate-limited）都计数（R3 Nit1）。
+    expect(relay.currentStats.pairResults).toBe(2);
     socket.close();
   });
 
@@ -272,6 +276,8 @@ describe('companion relay：找回（list-hosts / pair-request / pair-result）'
     await vi.waitFor(() => expect(relay.currentStats.pairRequests).toBe(1));
     const reply = await socket.wait(frame => frame.kind === 'pair-result' && frame.requestId === 'request-id-pendingtime1', PAIR_TTL_MS + 2_000);
     expect(reply).toMatchObject({ accepted: false, reason: 'timeout' });
+    // 计数搬家后挂起超时路径不双计（R3 Nit1）：一条 timeout 回帧只进一次 pairResults。
+    expect(relay.currentStats.pairResults).toBe(1);
     socket.close();
   });
 
@@ -287,6 +293,40 @@ describe('companion relay：找回（list-hosts / pair-request / pair-result）'
     await host.stop();
     const reply = await socket.wait(frame => frame.kind === 'pair-result' && frame.requestId === 'request-id-hostlegcut1');
     expect(reply).toMatchObject({ accepted: false, reason: 'host-offline' });
+    // 断腿路径的合成回帧照旧只计一次（R3 Nit1）。
+    expect(relay.currentStats.pairResults).toBe(1);
     socket.close();
+  });
+
+  // R3 Important：register 改写 route.hostInstanceId 时必须先把 token 从旧 account×instance 索引键
+  // 摘除——否则桌面 Neo 每重启一次（instanceId 每进程重生）就多一个永不回收的键，relay 内存随
+  // 重启次数单调涨，dropRoute 只按当前 instanceId 摘不到旧键。
+  it('⑥ register 换实例重注册：旧索引键当场摘除，键数不随重启次数涨；unregister 摘除对称', async () => {
+    // 事故形状：路由要活过 host 腿断开（设备腿还挂着）才会走到「改写 instanceId」——设备腿先占住路由。
+    const deviceLeg = await ScriptSocket.connect(url, token);
+    const leakToken = 'route-token-r3leak0001';
+    deviceLeg.send({ v: 1, kind: 'register', role: 'device', envelope: { routeToken: leakToken, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() }, ciphertext: '' });
+    await vi.waitFor(() => expect(relay.currentStats.routes).toBe(3));
+    expect(relay.currentStats.instanceIndexKeys).toBe(1); // beforeEach 的 Host 一个实例
+    const restarts = 4;
+    for (let boot = 0; boot < restarts; boot += 1) {
+      const hostLeg = await ScriptSocket.connect(url, token);
+      hostLeg.send({
+        v: 1, kind: 'register', role: 'host', instanceId: `instance-id-boot000${boot}`, hostName: 'Restart Mac',
+        envelope: { routeToken: leakToken, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+        ciphertext: '',
+      });
+      await new Promise(resolve => setTimeout(resolve, 100)); // loopback 上 register 先落地
+      hostLeg.close();
+      await new Promise(resolve => setTimeout(resolve, 100)); // detach：设备腿在，路由存活、host 槽空
+    }
+    // 4 次「重启」后只多 1 个键（当前实例）；旧实现 = 1+4 个键随重启次数单调涨，只能重启 relay 释放。
+    expect(relay.currentStats.routes).toBe(3);
+    expect(relay.currentStats.instanceIndexKeys).toBe(2);
+    // 摘除对称：unregister 走 dropRoute 按当前实例键摘，键数随路由一起回落。
+    deviceLeg.send({ v: 1, kind: 'unregister', envelope: { routeToken: leakToken, deviceRef: 'phone-1', seq: 1, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() }, ciphertext: '' });
+    await vi.waitFor(() => expect(relay.currentStats.routes).toBe(2));
+    expect(relay.currentStats.instanceIndexKeys).toBe(1);
+    deviceLeg.close();
   });
 });

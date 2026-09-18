@@ -211,6 +211,9 @@ export const COMPANION_LIMITS = {
   relayPairTtlMs: 120_000,
   /** pair-request 初次请求的限流间隔（每连接与每账号同判）：防「卡片轰炸电脑」。续帧不计。 */
   relayPairRequestMinIntervalMs: 5_000,
+  /** Host 侧找回配对的挂起条数上限（R3 Nit3）：节流不能全押 relay 的限流——Host 自己也兜一层，
+   *  满了拒新并留痕（桌面卡片一次只示一张，堆积只可能是异常节奏）。 */
+  relayMaxPendingPairs: 8,
   /** register 自报 hostName 的长度上限（列表行显示用，超出按非法帧拒）。 */
   relayHostNameLength: 64,
 } as const;

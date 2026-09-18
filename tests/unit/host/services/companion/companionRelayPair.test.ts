@@ -54,6 +54,7 @@ describe('companion relay client：找回配对（同意守卫 + XX 三消息）
   const phoneIdentity = createIdentity();
   let pairRequests: CompanionRelayPairRequest[] = [];
   let settled: string[] = [];
+  let warns: string[] = [];
   let socket: FakeWebSocket;
   let client: CompanionRelayClient;
   /** 零库电脑用例（R2 Important②）把 scope 换成 []：pairScope 的取值面在测试里可变。 */
@@ -65,6 +66,7 @@ describe('companion relay client：找回配对（同意守卫 + XX 三消息）
     gateway = new CompanionGateway(db, {});
     pairRequests = [];
     settled = [];
+    warns = [];
     scope = SCOPE;
     FakeWebSocket.last = null;
     client = new CompanionRelayClient({
@@ -82,7 +84,7 @@ describe('companion relay client：找回配对（同意守卫 + XX 三消息）
       now: () => Date.now(),
       jitter: () => 0.5,
       WebSocket: FakeWebSocket as unknown as typeof WebSocket,
-      logger: { warn: () => {}, info: () => {} },
+      logger: { warn: message => { warns.push(message); }, info: () => {} },
     });
     client.advertise({ deviceRef: 'phone-old', routeToken: ROUTE });
     void client.start();
@@ -111,14 +113,39 @@ describe('companion relay client：找回配对（同意守卫 + XX 三消息）
     return { requestId, initiator, expectedCode };
   }
 
-  it('register 自报 hostName 与主机公钥指纹（sha256 hex）', () => {
+  it('register 自报 hostName；hostKeyFingerprint 只在账号通道发（R3 Nit2：legacy 上发了也没人消费）', () => {
     const register = socket.frames().find(frame => frame.kind === 'register');
     expect(register).toBeDefined();
+    expect(register).toMatchObject({ kind: 'register', role: 'host', hostName: "Lin's MacBook Pro" });
+    // 本夹具是 legacy（共享凭据）通道：list-hosts 拒 legacy 主体，指纹格永不又被读——不占这 64 字节。
+    expect(register && 'hostKeyFingerprint' in register).toBe(false);
+  });
+
+  it('账号通道的 register 带 hostKeyFingerprint（sha256 hex），list-hosts 列表行的核对材料', async () => {
+    // 账号通道 = credential 是取令牌的回调；配 ticket 让拨号同步走完（FakeWebSocket.last 当场就位）。
+    const accountClient = new CompanionRelayClient({
+      gateway,
+      identity: hostIdentity,
+      config: { url: 'ws://relay.test', credentialRef: 'companion-relay', reconnectBackoffMs: [50, 50, 50] },
+      credential: () => Promise.resolve('account-token'),
+      ticket: { load: () => 'neo1.fake-ticket', store: () => {}, clear: () => {} },
+      hostName: "Lin's MacBook Pro",
+      now: () => Date.now(),
+      jitter: () => 0.5,
+      WebSocket: FakeWebSocket as unknown as typeof WebSocket,
+      logger: { warn: () => {}, info: () => {} },
+    });
+    accountClient.advertise({ deviceRef: 'phone-old', routeToken: ROUTE });
+    void accountClient.start();
+    const accountSocket = FakeWebSocket.last!;
+    accountSocket.readyState = 1;
+    accountSocket.emit('open');
+    const register = accountSocket.frames().find(frame => frame.kind === 'register');
     expect(register).toMatchObject({
       kind: 'register', role: 'host',
-      hostName: "Lin's MacBook Pro",
       hostKeyFingerprint: createHash('sha256').update(Buffer.from(hostIdentity.publicKey)).digest('hex'),
     });
+    await accountClient.stop();
   });
 
   it('pair-request 到达 ⇒ 桌面卡片拿到握手材料派生的 4 位码；同意之前不登记设备（同意守卫）', () => {
@@ -231,5 +258,29 @@ describe('companion relay client：找回配对（同意守卫 + XX 三消息）
     socket.deliver({ v: 1, kind: 'pair-request', requestId, envelope: pairEnvelope(), ciphertext: toHex(initiator.send()) });
     expect(gateway.pairedDevices()).toHaveLength(1);
     expect(socket.lastOf('pair-result')).toMatchObject({ kind: 'pair-result', requestId, accepted: true, stage: 'complete' });
+  });
+
+  it('临界同意（R3 Nit4）：deadline 前一刻点同意 ⇒ 不再自炸 timeout，deadline 后续帧照常完成', () => {
+    const { requestId, initiator } = sendInitialPairRequest();
+    void vi.advanceTimersByTime(L.relayPairTtlMs - 1);
+    expect(client.respondPair(requestId, true)).toBe(true);
+    expect(socket.lastOf('pair-result')).toMatchObject({ kind: 'pair-result', requestId, accepted: true, stage: 'reply' });
+    // 推过原 deadline：同意时已摘待同意定时器，不许再补一刀 timeout（旧行为：手机拿到 timeout
+    // 而非成功，且挂起被清、续帧无处落地）。
+    void vi.advanceTimersByTime(L.relayPairTtlMs);
+    expect(socket.frames().filter(frame => frame.kind === 'pair-result' && frame.reason === 'timeout')).toHaveLength(0);
+    // 手机吃下 reply（XX 推进到传输态）再发第三条消息：deadline 之后落地仍完成配对。
+    const reply = socket.lastOf('pair-result');
+    expect(initiator.recv(fromHex((reply as Extract<CompanionRelayFrame, { kind: 'pair-result' }>).ciphertext)).length).toBe(0);
+    socket.deliver({ v: 1, kind: 'pair-request', requestId, envelope: pairEnvelope(), ciphertext: toHex(initiator.send()) });
+    expect(gateway.pairedDevices()).toHaveLength(1);
+    expect(socket.lastOf('pair-result')).toMatchObject({ kind: 'pair-result', requestId, accepted: true, stage: 'complete' });
+  });
+
+  it('挂起条数上限（R3 Nit3）：满 L.relayMaxPendingPairs 后拒新并留痕，不出卡片不登记', () => {
+    for (let index = 0; index < L.relayMaxPendingPairs + 1; index += 1) sendInitialPairRequest();
+    expect(pairRequests).toHaveLength(L.relayMaxPendingPairs);
+    expect(warns.some(line => line.includes('pending pairs full'))).toBe(true);
+    expect(gateway.pairedDevices()).toHaveLength(0);
   });
 });

@@ -300,11 +300,11 @@
       "description": "LongCat API 开放平台（OpenAI / Claude 兼容）",
       "apiUrl": "https://api.longcat.chat/openai/v1",
       "apiKeyHint": "sk-...",
-      "default": "LongCat-2.0-Preview",
+      "default": "LongCat-2.0",
       "models": [
         {
-          "id": "LongCat-2.0-Preview",
-          "label": "LongCat 2.0 Preview",
+          "id": "LongCat-2.0",
+          "label": "LongCat 2.0",
           "desc": "官方开放平台模型 · 支持 OpenAI / Claude 兼容协议",
           "scaffoldTier": "lite"
         }

@@ -254,7 +254,6 @@ export const MODEL_FEATURES: Record<string, ('tool' | 'vision' | 'reasoning')[]>
   'mimo-v2-omni': ['tool', 'vision', 'reasoning'],
   // LongCat
   'LongCat-2.0': ['tool', 'reasoning'],
-  'LongCat-2.0-Preview': ['tool', 'reasoning'],
   // local
   'qwen2.5-coder:7b': ['tool'],
   'qwen3:8b': ['tool'],
@@ -297,7 +296,6 @@ export const MODEL_ABBREV: Record<string, string> = {
   'kimi-k2.6': 'kimi-2.6',
   // LongCat
   'LongCat-2.0': 'LongCat',
-  'LongCat-2.0-Preview': 'LongCat',
   // zhipu
   'glm-5.1': 'glm-5.1',
   'glm-4.7': 'glm-4.7',

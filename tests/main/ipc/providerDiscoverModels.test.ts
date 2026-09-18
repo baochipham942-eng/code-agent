@@ -106,6 +106,7 @@ describe('provider model discovery parsing', () => {
         { id: 'sonar-reasoning-pro' },
         { id: 'doubao-seed-1-6' },
         { id: 'LongCat-2.0-Preview' },
+        { id: 'LongCat-2.0' },
       ],
     });
 
@@ -124,7 +125,8 @@ describe('provider model discovery parsing', () => {
     expect(idsFor('custom-commonstack-x-ai')).toEqual(['xai/grok-4-1-fast', 'grok-4-1-fast-non-reasoning']);
     expect(idsFor('custom-commonstack-sonar')).toEqual(['perplexity/sonar-pro', 'sonar-reasoning-pro']);
     expect(idsFor('custom-commonstack-doubao')).toEqual(['doubao-seed-1-6']);
-    expect(idsFor('custom-commonstack-longcat')).toEqual(['LongCat-2.0-Preview']);
+    // LongCat-2.0-Preview 只是从官方目录退役；第三方中转自报的同名模型仍按家族放行可选
+    expect(idsFor('custom-commonstack-longcat')).toEqual(['LongCat-2.0-Preview', 'LongCat-2.0']);
   });
 
   it('does not filter neutral custom providers backed by mixed relays', () => {

@@ -2,6 +2,33 @@
 :root[data-theme='dark'] { color-scheme: dark; --bg: #171719; --text: #f5f5f7; --muted: #b0b0b6; --group: #262629; --line: #3b3b3f; --surface: #212124; --scrim: #0009; --accent: #35b3a4; }
 /* Native MainActivity injects --safe-area-inset-* (Android WebView 95 has no env()); iOS falls back to env(). Single source: never combine both. */
 :root { --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)); }
+/* 字号档位（N-MOBILE-DYNAMIC-TYPE）：默认分支 = Android WebView / 一切不识别 -apple-system-body 的环境，
+   变量值就是引入变量前的 px，默认渲染逐字节不变；同档共用同一变量，全文不再出现裸 px 字号
+   （tests/unit/mobile/dynamicTypeStyles.test.ts 守卫）。 */
+:root { --fs-title: 27px; --fs-h2: 19px; --fs-body: 17px; --fs-msg: 16px; --fs-sub: 15px; --fs-cap: 14px; --fs-small: 13px; --fs-tiny: 12px; --fs-21: 21px; --fs-topbar-glyph: 25px; --fs-sheet-glyph: 29px; }
+/* iOS WKWebView 把系统 Dynamic Type 映射进 web 的唯一通道是系统字体关键字：html 用 -apple-system-body
+   后 1rem 跟随「设置→显示与亮度→文字大小 / 辅助功能→更大字体」（默认 L 档 = 17px）。各档改为
+   clamp(下限, 现值/17 rem, 上限)：默认档与上面的 px 等值（rem 取 4 位小数，偏差 <0.001px），两端把
+   极端档收住（下限约 ×0.84–0.92、上限约 ×1.23–1.35；12/13px 小字再缩不可读、再胀顶破行，收得最紧）。
+   Android 不识别该关键字，整块不命中，走上面的 px。line-height 必须显式 normal：font 简写会把系统
+   行高一并写进 html，继承链上所有未声明行高的元素都会跟着变；font-family 不用管——:root 伪类特异性
+   高于 html 元素选择器，第 1 行已盖住。 */
+@supports (font: -apple-system-body) {
+  html { font: -apple-system-body; line-height: normal; }
+  :root {
+    --fs-tiny: clamp(11px, 0.7059rem, 15px);
+    --fs-small: clamp(12px, 0.7647rem, 16px);
+    --fs-cap: clamp(12px, 0.8235rem, 18px);
+    --fs-sub: clamp(13px, 0.8824rem, 19px);
+    --fs-msg: clamp(14px, 0.9412rem, 20px);
+    --fs-body: clamp(15px, 1rem, 22px);
+    --fs-h2: clamp(16px, 1.1176rem, 24px);
+    --fs-21: clamp(18px, 1.2353rem, 27px);
+    --fs-topbar-glyph: clamp(22px, 1.4706rem, 32px);
+    --fs-title: clamp(23px, 1.5882rem, 36px);
+    --fs-sheet-glyph: clamp(25px, 1.7059rem, 37px);
+  }
+}
 @property --keyboard-h { syntax: '<length>'; inherits: true; initial-value: 0px; }
 html { transition: --keyboard-h var(--keyboard-duration, 0s) var(--keyboard-easing, linear); }
 * { box-sizing: border-box; }
@@ -10,29 +37,29 @@ button,input,textarea { font: inherit; color: inherit; }
 button { min-width: 48px; min-height: 48px; border: 0; background: transparent; cursor: pointer; touch-action: manipulation; }
 button:disabled { opacity: .45; cursor: default; }
 button:focus-visible,input:focus-visible,textarea:focus-visible { outline: 2px solid #668ded; outline-offset: 2px; }
-.app { height: var(--viewport-height, 100vh); overflow: hidden; font-size: 17px; }
+.app { height: var(--viewport-height, 100vh); overflow: hidden; font-size: var(--fs-body); }
 /* 输入区是浮在会话之上的一层：它的高矮不许改动会话区的可视高度（见 MobileRoot 的 --composer-h）。 */
 .conversation { position: relative; display: flex; flex-direction: column; height: 100%; padding-top: var(--safe-top); }
 .topbar,.drawer header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding: 6px 14px; }
-.topbar button { font-size: 25px; border-radius: 50%; }
+.topbar button { font-size: var(--fs-topbar-glyph); border-radius: 50%; }
 .welcome { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px 28px calc(16px + var(--composer-h, 132px) + var(--keyboard-h, 0px)); overflow: auto; }
 .brand-mark { display: block; flex-shrink: 0; }
 .welcome .neo-mark { color: var(--accent); margin-bottom: 17px; }
-.assistant-label { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); margin: 8px 0; }
+.assistant-label { display: flex; align-items: center; gap: 7px; font-size: var(--fs-small); color: var(--muted); margin: 8px 0; }
 .assistant-label .neo-mark { color: var(--accent); }
 .lan-message .assistant-text { margin: 0; }
-h1 { font-size: 27px; line-height: 1.3; letter-spacing: -.7px; text-align: center; font-weight: 600; }
-h2 { font-size: 19px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
+h1 { font-size: var(--fs-title); line-height: 1.3; letter-spacing: -.7px; text-align: center; font-weight: 600; }
+h2 { font-size: var(--fs-h2); line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
 p { line-height: 1.5; overflow-wrap: anywhere; }
 .composer-area { position: absolute; left: 0; right: 0; bottom: 0; background: var(--bg); padding: 12px 15px max(6px, var(--safe-bottom)); }
 .composer-area[data-keyboard-inset] { padding-bottom: 6px; }
 .composer { border: 1px solid var(--line); background: var(--surface); border-radius: 29px; padding: 14px 10px 7px; }
 .composer .attachment { display: flex; align-items: flex-start; gap: 10px; border-radius: 14px; background: var(--group); padding: 10px; margin: 0 7px 10px; }
 .composer .attachment .flex { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.composer .attachment .small { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.composer .attachment .small { font-size: var(--fs-tiny); color: var(--muted); margin-top: 2px; }
 .composer .attachment .app-icon { width: 18px; height: 18px; margin-top: 2px; color: var(--muted); }
 .composer .attachment-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.composer .attachment-actions button { min-width: 48px; min-height: 48px; font-size: 13px; color: var(--muted); }
+.composer .attachment-actions button { min-width: 48px; min-height: 48px; font-size: var(--fs-small); color: var(--muted); }
 .composer .progress-track { height: 4px; background: var(--line); border-radius: 4px; margin-top: 8px; overflow: hidden; }
 .composer .progress-track > span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
 /* 输入框聚焦**不要任何描边变化**（爸 2026-09-13 真机看过青色版后拍板）。
@@ -40,19 +67,19 @@ p { line-height: 1.5; overflow-wrap: anywhere; }
    它会套在 29px 圆角外面，而且 #668ded 根本不在调色板里。
    代价说清楚：这一个控件因此没有键盘焦点指示了；其余控件（按钮、别处的输入框）仍走全局那条。 */
 .composer textarea:focus-visible { outline: none; }
-textarea { display: block; width: 100%; min-height: 65px; max-height: 140px; border: 0; padding: 2px 10px; background: transparent; resize: none; line-height: 1.5; font-size: 17px; }
+textarea { display: block; width: 100%; min-height: 65px; max-height: 140px; border: 0; padding: 2px 10px; background: transparent; resize: none; line-height: 1.5; font-size: var(--fs-body); }
 textarea::placeholder { color: var(--muted); }
 /* 设计稿的工具行是两簇：左 [添加材料][模型 ⌄]，右 [麦克风][发送]，中间一个弹性空隙。 */
 .composer-tools { display: flex; align-items: center; gap: 0; }
 .composer-tools .spacer { flex: 1; }
 .composer-tools button { border-radius: 50%; }
-.composer-tools .model { display: flex; align-items: center; gap: 3px; min-width: 48px; max-width: 42%; padding: 0 7px; border-radius: 24px; font-size: 12px; color: var(--muted); }
+.composer-tools .model { display: flex; align-items: center; gap: 3px; min-width: 48px; max-width: 42%; padding: 0 7px; border-radius: 24px; font-size: var(--fs-tiny); color: var(--muted); }
 .composer-tools .model .app-icon { width: 12px; height: 12px; }
 .model-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .send,.primary { background: var(--text); color: var(--bg); }
 /* 发送禁用是「还不能发」，不是「坏了」：设计稿用浅底浅箭头，不用整体半透明。 */
 .send:disabled { opacity: 1; color: var(--muted); background: var(--group); }
-.caption,.notice,.group-title { color: var(--muted); font-size: 14px; }.caption { margin: 4px 4px 8px; text-align: center; }
+.caption,.notice,.group-title { color: var(--muted); font-size: var(--fs-cap); }.caption { margin: 4px 4px 8px; text-align: center; }
 /* banner 文案折行时 pill 与整段文字垂直居中（baseline 会让 pill 贴第一行基线、第二行悬空——2026-09-15 爸两次真机反馈的对齐问题）。 */
 .notice { margin: 4px 8px 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .notice > :first-child { flex: 1; min-width: 0; }
@@ -76,33 +103,35 @@ textarea::placeholder { color: var(--muted); }
 .sheet { position: absolute; bottom: var(--keyboard-h, 0px); width: 100%; max-height: calc(100% - max(16px, var(--safe-top)) - var(--keyboard-h, 0px)); min-height: 230px; display: flex; flex-direction: column; background: var(--group); border-radius: 28px 28px 0 0; padding-bottom: max(16px, var(--safe-bottom)); outline: none; }
 html[data-keyboard-inset] .sheet { padding-bottom: 16px; }
 .drag-handle { height: 24px; flex-shrink: 0; display: grid; place-items: center; touch-action: none; }.drag-handle span { width: 36px; height: 5px; border-radius: 4px; background: var(--muted); opacity: .5; }
-.sheet-header { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; gap: 10px; padding: 0 12px 8px; text-align: center; flex-shrink: 0; }.sheet-header button { font-size: 29px; }
+.sheet-header { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; gap: 10px; padding: 0 12px 8px; text-align: center; flex-shrink: 0; }.sheet-header button { font-size: var(--fs-sheet-glyph); }
 .sheet-content { padding: 0 20px 24px; overflow: auto; overscroll-behavior: contain; min-height: 0; }
 .settings-group { border-radius: 16px; background: var(--surface); overflow: hidden; }.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 14px 16px; text-align: left; }.settings-row + .settings-row { border-top: 1px solid var(--line); }.row-detail { color: var(--muted); }
 .attach-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; text-align: left; }
 .attach-row + .attach-row { border-top: 1px solid var(--line); }
 .attach-row-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.attach-row-copy .row-detail { font-size: 13px; }
+.attach-row-copy .row-detail { font-size: var(--fs-small); }
 .attach-row .app-icon { width: 22px; height: 22px; color: var(--text); flex-shrink: 0; }
 .attach-row .app-icon[data-name='chevron'] { width: 16px; height: 16px; color: var(--muted); }
 .camera-denied-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .camera-denied-actions .primary { margin-top: 0; }
 .profile-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 18px 10px; text-align: left; }.profile-card strong { flex: 1; overflow-wrap: anywhere; }
-input { width: 100%; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: 17px; }.primary { border-radius: 24px; width: 100%; margin-top: 18px; }
+input { width: 100%; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: var(--fs-body); }.primary { border-radius: 24px; width: 100%; margin-top: 18px; }
 .about { text-align: center; padding: 18px 8px; }.about p { color: var(--muted); }
-.virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding-bottom: calc(var(--composer-h, 132px) + var(--keyboard-h, 0px)); }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: 15px; }
+.virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding-bottom: calc(var(--composer-h, 132px) + var(--keyboard-h, 0px)); }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: var(--fs-sub); }
 .loading { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }
+/* 启动屏在 .app 之外，<p> 此前吃浏览器默认 16px；html 接系统字号后不钉一档的话 iOS 默认档会 16→17px。 */
+.loading p { font-size: var(--fs-msg); }
 /* 矮屏也要给浮层留底：只压上下留白，不能把 --composer-h 那份让位一起压掉（grok ai-review Nit）。 */
-@media (max-height: 520px) { .welcome { padding: 4px 20px calc(4px + var(--composer-h, 132px) + var(--keyboard-h, 0px)); }.welcome .brand-mark { display: none; }h1 { font-size: 21px; margin: 10px; }.composer textarea { min-height: 28px; max-height: 80px; }.composer { padding-top: 8px; } }
+@media (max-height: 520px) { .welcome { padding: 4px 20px calc(4px + var(--composer-h, 132px) + var(--keyboard-h, 0px)); }.welcome .brand-mark { display: none; }h1 { font-size: var(--fs-21); margin: 10px; }.composer textarea { min-height: 28px; max-height: 80px; }.composer { padding-top: 8px; } }
 .lan-messages { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
 .lan-message { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; line-height: 1.6; }
 .lan-message.from-user { margin-left: 24px; background: var(--surface); border-radius: 16px; }
 
-.approval-card{padding:16px;border:1px solid var(--border,#ddd);border-radius:16px;margin:12px 0}.approval-card pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:13px;max-height:280px;overflow:auto}.approval-actions{display:flex;justify-content:flex-end;gap:20px}
+.approval-card{padding:16px;border:1px solid var(--border,#ddd);border-radius:16px;margin:12px 0}.approval-card pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size: var(--fs-small);max-height:280px;overflow:auto}.approval-actions{display:flex;justify-content:flex-end;gap:20px}
 
-.connection-success{padding:18px;border:1px solid #27a57b;border-radius:16px;background:var(--surface)}.connection-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-right:10px;border-radius:50%;background:#168365;color:white}.connection-success p{font-size:15px;line-height:1.6;margin:12px 0 0}
-.pair-confirm h3{margin:8px 0 8px;font-size:21px;letter-spacing:-.4px}
-.pair-confirm .caption{color:var(--muted);font-size:13px;line-height:1.6;margin:0 0 12px}
+.connection-success{padding:18px;border:1px solid #27a57b;border-radius:16px;background:var(--surface)}.connection-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-right:10px;border-radius:50%;background:#168365;color:white}.connection-success p{font-size: var(--fs-sub);line-height:1.6;margin:12px 0 0}
+.pair-confirm h3{margin:8px 0 8px;font-size: var(--fs-21);letter-spacing:-.4px}
+.pair-confirm .caption{color:var(--muted);font-size: var(--fs-small);line-height:1.6;margin:0 0 12px}
 .pair-device{text-align:center;border:1px solid var(--line);border-radius:16px;padding:20px 16px;margin:8px 0 16px;background:var(--surface)}
 .pair-code{font:32px ui-monospace,monospace;letter-spacing:6px;text-align:center;padding:8px 0 4px;margin:0}
 
@@ -112,26 +141,26 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .approval-tray .approval-actions{padding-top:8px;border-top:1px solid var(--border,#ddd)}
 
 /* R5: quiet connection chrome, readable messages and reachable approval actions. */
-.topbar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; }
+.topbar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-body); }
 /* 反馈②（2026-09-14 build 34）：行尾「重试」是裸文字，不像按钮。改成小 pill——描边+底色、
    字号小一档、可点高度 ≥32px（对齐 design.html .banner button 的 min-height:32px），
    仍贴文案行尾不独占一行（反馈①的形状保持）。 */
 .inline-retry, .notice button.inline-retry {
-  min-width: 0; min-height: 32px; height: auto; padding: 0 14px; font-size: 13px; line-height: 1;
+  min-width: 0; min-height: 32px; height: auto; padding: 0 14px; font-size: var(--fs-small); line-height: 1;
   color: var(--accent); flex: none; white-space: nowrap; align-self: center;
   background: var(--group); border: 1px solid var(--line); border-radius: 16px;
 }
 /* 输入区唯一状态位（N-MOBILE-STATUS-NOISE，design.html .status-slot）：输入框正上方一行，间距 8px；
    左内边距 6 + 圆点 7 + 间隔 8 = 21，加上 .composer-area 的 15 = 36，正好是输入框里文字的左沿（边框 1 + 内边距 10 + textarea 10），
    圆点悬在文字左侧。动作是右侧胶囊，点按区 36px。 */
-.status-slot { display: flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 0 8px; padding: 0 0 0 6px; font-size: 14px; color: var(--text); }
+.status-slot { display: flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 0 8px; padding: 0 0 0 6px; font-size: var(--fs-cap); color: var(--text); }
 .status-slot .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #d97706; }
 .status-slot[data-neutral] .dot { background: var(--muted); }
-.status-slot .status-text { flex: 1; min-width: 0; min-height: 36px; padding: 0; text-align: left; font-size: 14px; overflow-wrap: anywhere; }
+.status-slot .status-text { flex: 1; min-width: 0; min-height: 36px; padding: 0; text-align: left; font-size: var(--fs-cap); overflow-wrap: anywhere; }
 span.status-text { display: flex; align-items: center; }
-.status-slot .status-action { flex: none; min-width: 0; min-height: 36px; padding: 0 12px; border-radius: 18px; background: var(--group); color: var(--accent); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.status-slot .status-action { flex: none; min-width: 0; min-height: 36px; padding: 0 12px; border-radius: 18px; background: var(--group); color: var(--accent); font-size: var(--fs-cap); font-weight: 600; white-space: nowrap; }
 /* 新任务的项目选择器（design.html .project-pick）。 */
-.project-pick { position: relative; display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; min-height: 36px; padding: 6px 12px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); font-size: 14px; overflow: visible; }
+.project-pick { position: relative; display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; min-height: 36px; padding: 6px 12px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); font-size: var(--fs-cap); overflow: visible; }
 /* 绝对定位伪元素的包含块是 padding box：扩 4pt 必须把 1px 边框也补进去（D4，模拟器实测
    下沿只扩 ~3pt、总高 42.75 < 44），否则视觉胶囊上下沿的外扩各亏一个边框宽。 */
 .project-pick::after { content: ''; position: absolute; inset: calc(-4px - 1px) 0; }
@@ -140,7 +169,7 @@ span.status-text { display: flex; align-items: center; }
 .message-region { position: relative; display: flex; flex: 1; min-height: 0; }
 /* 底部让出输入区那一层的高度。--composer-h 还没量到时用一个够大的兜底，宁可多留白也别被盖住。 */
 .lan-messages { overscroll-behavior: contain; padding: 8px 20px calc(20px + var(--composer-h, 132px) + var(--keyboard-h, 0px)); }
-.lan-message { padding: 8px 0; margin: 12px 0 22px; line-height: 1.7; font-size: 16px; }
+.lan-message { padding: 8px 0; margin: 12px 0 22px; line-height: 1.7; font-size: var(--fs-msg); }
 .lan-message.from-user { width: fit-content; max-width: 88%; margin-left: auto; background: var(--group); padding: 12px 16px; border-radius: 22px; }
 /* 助手正文 Markdown（N-MOBILE-MARKDOWN-RENDER，design.html .md / .md-table）。标题不放大；横滑容器不画常驻滚动条，靠右缘渐隐提示可滑。 */
 .md > :first-child { margin-top: 0; }
@@ -158,50 +187,50 @@ span.status-text { display: flex; align-items: center; }
 .md .md-code { position: relative; margin: 0 0 10px; background: var(--group); border-radius: 12px; }
 .md .md-code pre { margin: 0; padding: 36px 14px 12px; overflow-x: auto; white-space: pre; line-height: 1.5; }
 .md .md-code pre code { background: none; padding: 0; }
-.md .md-copy { position: absolute; top: 2px; right: 4px; min-height: 32px; padding: 0 10px; font-size: 12px; color: var(--muted); }
+.md .md-copy { position: absolute; top: 2px; right: 4px; min-height: 32px; padding: 0 10px; font-size: var(--fs-tiny); color: var(--muted); }
 .md .md-table { overflow-x: auto; margin: 6px -20px 12px 0; padding-right: 20px; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
 .md .md-table, .md .md-code pre { scrollbar-width: none; }
 .md .md-table::-webkit-scrollbar, .md .md-code pre::-webkit-scrollbar { display: none; }
-.md table { border-collapse: separate; border-spacing: 0; font-size: 14px; line-height: 1.5; }
+.md table { border-collapse: separate; border-spacing: 0; font-size: var(--fs-cap); line-height: 1.5; }
 .md th, .md td { border-bottom: 1px solid var(--line); padding: 7px 12px; white-space: nowrap; text-align: left; background: var(--bg); }
-.md th { font-weight: 600; color: var(--muted); font-size: 13px; }
+.md th { font-weight: 600; color: var(--muted); font-size: var(--fs-small); }
 .md td:first-child, .md th:first-child { position: sticky; left: 0; padding-left: 0; }
 /* message-region 现在一直铺到会话底边（输入区是浮层，不占流），所以这颗按钮也要避开那一层，
    否则它正好落在输入区后面，用户滚上去看历史时点不到（grok ai-review Important）。 */
-.jump-latest { position: absolute; bottom: calc(10px + var(--composer-h, 132px) + var(--keyboard-h, 0px)); left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line); box-shadow: 0 3px 12px #0001; border-radius: 24px; font-size: 13px; padding: 6px 16px; }
+.jump-latest { position: absolute; bottom: calc(10px + var(--composer-h, 132px) + var(--keyboard-h, 0px)); left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line); box-shadow: 0 3px 12px #0001; border-radius: 24px; font-size: var(--fs-small); padding: 6px 16px; }
 /* 执行状态归属到那次执行（N-MOBILE-EXEC-STATUS）：处理中是最后一条下面的执行条（呼吸点 + 一句在做什么），
    结束即消失；终态是挂在那次执行最后一行下面的一行小字，多次任务各行其是。
    停止**不在**这条上，在输入区那个键上（N-MOBILE-SEND-IS-STOP）；下面那条 button 规则不是死样式——
    录音面板顶掉输入区时停止会临时回到这条上，那时要它。 */
-.run-strip { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; font-size: 13px; color: var(--muted); }
+.run-strip { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; font-size: var(--fs-small); color: var(--muted); }
 .run-strip .run-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; animation: breathe 1.5s ease-in-out infinite; }
-.run-strip button { min-height: 36px; margin-left: auto; padding: 4px 14px; border-radius: 18px; background: var(--group); font-size: 13px; color: var(--text); }
-.run-outcome { margin: -14px 0 18px; font-size: 13px; color: var(--muted); }
+.run-strip button { min-height: 36px; margin-left: auto; padding: 4px 14px; border-radius: 18px; background: var(--group); font-size: var(--fs-small); color: var(--text); }
+.run-outcome { margin: -14px 0 18px; font-size: var(--fs-small); color: var(--muted); }
 .run-outcome[data-outcome='failed'] { color: #c43b38; }
 @media (prefers-reduced-motion: reduce) { .run-strip .run-dot { animation: none; } }
 .approval-card { background: var(--surface); border-color: var(--line); }
 .approval-tray .approval-card { padding: 12px; border: 1px solid var(--line); box-shadow: 0 2px 12px #0001; max-height: min(300px, 38dvh); }
-.approval-card > strong { font-size: 14px; }
-.approval-summary { margin: 0; font-size: 13px; }
+.approval-card > strong { font-size: var(--fs-cap); }
+.approval-summary { margin: 0; font-size: var(--fs-small); }
 .approval-summary > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; padding: 3px 0; }
 .approval-summary dt { color: var(--muted); }
 .approval-summary dd { margin: 0; overflow-wrap: anywhere; }
-.approval-technical summary { cursor: pointer; padding: 10px 0; font-size: 13px; color: var(--muted); }
-.approval-technical p { margin: 4px 0; font-size: 13px; }
+.approval-technical summary { cursor: pointer; padding: 10px 0; font-size: var(--fs-small); color: var(--muted); }
+.approval-technical p { margin: 4px 0; font-size: var(--fs-small); }
 .approval-actions { gap: 8px; }
-.approval-actions button { flex: 1; min-height: 44px; border-radius: 22px; background: var(--group); font-size: 14px; }
+.approval-actions button { flex: 1; min-height: 44px; border-radius: 22px; background: var(--group); font-size: var(--fs-cap); }
 .approval-actions button:last-child { background: var(--text); color: var(--bg); }
 .question-block { margin: 8px 0; }
 .question-block .option { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; width: 100%; text-align: left; border-radius: 16px; background: var(--group); padding: 10px 14px; margin: 6px 0; }
 /* opacity:1 盖过全局 button:disabled 的 .45（R4 验收 O1）：已答卡的选中项要高亮，不再跟未选项一起发灰。 */
 .question-block .option.selected { background: var(--text); color: var(--bg); opacity: 1; }
 .question-block .option.faded { opacity: .4; }
-.question-block .option .option-check { margin-left: auto; font-size: 14px; }
-.question-block .option small { display: block; width: 100%; color: var(--muted); font-size: 12px; }
+.question-block .option .option-check { margin-left: auto; font-size: var(--fs-cap); }
+.question-block .option small { display: block; width: 100%; color: var(--muted); font-size: var(--fs-tiny); }
 .question-block .option.selected small { color: inherit; opacity: .75; }
-.question-your-answer, .decision-result { margin: 8px 0 0; font-size: 13px; }
-.lan-message.from-user [data-testid="supplement-queued"] { display: block; text-align: right; margin: 4px 2px 0; font-size: 12px; color: var(--muted); }
-.question-other { display: block; margin: 8px 0; font-size: 13px; color: var(--muted); }
+.question-your-answer, .decision-result { margin: 8px 0 0; font-size: var(--fs-small); }
+.lan-message.from-user [data-testid="supplement-queued"] { display: block; text-align: right; margin: 4px 2px 0; font-size: var(--fs-tiny); color: var(--muted); }
+.question-other { display: block; margin: 8px 0; font-size: var(--fs-small); color: var(--muted); }
 .question-other input, .question-other textarea { display: block; width: 100%; margin-top: 6px; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
 @media (max-height: 520px) { .composer-area, .composer-area[data-keyboard-inset] { padding-bottom: 4px; } .approval-tray .approval-card { max-height: 36dvh; padding: 8px; } .approval-summary > div { padding: 1px 0; } }
 
@@ -230,7 +259,7 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 .project-row .project-main .app-icon { width: 18px; height: 18px; color: var(--muted); flex-shrink: 0; }
 .project-row .flex, .model-row .flex { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .project-row .flex p, .model-row .flex p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-row .flex .small, .model-row .flex .small { font-size: 12px; color: var(--muted); }
+.project-row .flex .small, .model-row .flex .small { font-size: var(--fs-tiny); color: var(--muted); }
 .project-row .project-more { padding: 8px 10px; align-self: center; flex-shrink: 0; }
 /* 建不了的项目置灰但原因要读得清：整行 .45 透明会把那句「为什么」也一起淡掉。 */
 .project-row[data-blocked] .project-main:disabled { opacity: 1; }
@@ -238,27 +267,27 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 .model-row[aria-disabled='true'] p { color: var(--muted); }
 .model-row .app-icon[data-name='check'] { width: 18px; height: 18px; flex-shrink: 0; }
 .decision { border: 1px solid var(--line); border-radius: 14px; padding: 15px; margin: -6px 0 18px; background: var(--surface); }
-.decision h3 { margin: 0; font-size: 15px; }
-.decision p { margin: 6px 0 0; font-size: 13px; color: var(--muted); line-height: 1.7; }
+.decision h3 { margin: 0; font-size: var(--fs-sub); }
+.decision p { margin: 6px 0 0; font-size: var(--fs-small); color: var(--muted); line-height: 1.7; }
 .decision .primary { margin-top: 14px; }
-.sheet-note { color: var(--muted); font-size: 13px; line-height: 1.7; margin: 14px 2px; }
+.sheet-note { color: var(--muted); font-size: var(--fs-small); line-height: 1.7; margin: 14px 2px; }
 .voice-setup { padding: 4px 0 8px; }
-.voice-setup p { color: var(--muted); font-size: 15px; line-height: 1.6; margin: 0 0 14px; }
-.voice-setup ol { margin: 0; padding-left: 22px; font-size: 16px; line-height: 1.7; }
+.voice-setup p { color: var(--muted); font-size: var(--fs-sub); line-height: 1.6; margin: 0 0 14px; }
+.voice-setup ol { margin: 0; padding-left: 22px; font-size: var(--fs-msg); line-height: 1.7; }
 .voice-setup li { margin: 8px 0; }
-.how-model ol { margin: 4px 2px 18px; padding-left: 22px; font-size: 15px; line-height: 1.7; color: var(--text); }
+.how-model ol { margin: 4px 2px 18px; padding-left: 22px; font-size: var(--fs-sub); line-height: 1.7; color: var(--text); }
 .how-model li { margin: 6px 0; }
 .how-model .primary { width: 100%; }
 .library-sheet .advanced { margin: 12px 0; }
-.library-sheet .advanced summary { cursor: pointer; padding: 10px 0; color: var(--muted); font-size: 14px; }
+.library-sheet .advanced summary { cursor: pointer; padding: 10px 0; color: var(--muted); font-size: var(--fs-cap); }
 /* fix4（2026-09-15）：sheet 等库 = spinner + 一句「正在连接电脑…」；失败 = 状态页
    （标题 + 诊断句 + 主/次按钮）。连接电脑 sheet 一态一主操作。 */
 .sheet-wait { margin: 12px 4px; display: flex; align-items: center; gap: 10px; color: var(--muted); }
 .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; display: inline-block; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .sheet-fail, .remote-failed { display: flex; flex-direction: column; gap: 6px; padding: 14px 4px 4px; }
-.sheet-fail strong, .remote-failed strong { font-size: 17px; }
-.sheet-fail p, .remote-failed p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.sheet-fail strong, .remote-failed strong { font-size: var(--fs-body); }
+.sheet-fail p, .remote-failed p { margin: 0; color: var(--muted); font-size: var(--fs-cap); line-height: 1.6; }
 .sheet-fail .primary, .remote-failed .primary { margin-top: 10px; }
 .sheet-fail .sheet-secondary, .remote-failed .sheet-secondary { margin-top: 2px; color: var(--accent); }
 .remote-state { display: flex; align-items: center; gap: 10px; padding: 18px 4px; color: var(--muted); }
@@ -266,19 +295,19 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 .remote-sheet > p { margin: 12px 0 0; }
 
 .composer.voice-composer { border-radius: 28px; padding: 17px 14px 8px; }
-.voice-source { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-.voice-label { display: flex; gap: 8px; align-items: center; font-size: 14px; margin: 0 4px 12px; }
+.voice-source { font-size: var(--fs-tiny); color: var(--muted); margin-bottom: 8px; }
+.voice-label { display: flex; gap: 8px; align-items: center; font-size: var(--fs-cap); margin: 0 4px 12px; }
 .voice-label .flex { flex: 1; min-width: 0; }
-.voice-label .small { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.voice-label .small { font-size: var(--fs-small); color: var(--muted); font-variant-numeric: tabular-nums; }
 .voice-label .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; animation: breathe 1.5s ease-in-out infinite; }
-.transcription { font-size: 17px; line-height: 1.7; margin: 8px 4px 14px; min-height: 90px; max-height: 30dvh; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.transcription { font-size: var(--fs-body); line-height: 1.7; margin: 8px 4px 14px; min-height: 90px; max-height: 30dvh; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
 .caret { display: inline-block; width: 2px; height: 16px; background: var(--accent); vertical-align: middle; animation: breathe 1s infinite; }
-.voice-dropped { margin: 0 4px 10px; font-size: 13px; color: var(--muted); }
+.voice-dropped { margin: 0 4px 10px; font-size: var(--fs-small); color: var(--muted); }
 .waveform { display: flex; height: 35px; align-items: center; justify-content: center; gap: 4px; margin: 9px 0 14px; }
 .waveform i { width: 3px; border-radius: 3px; background: var(--text); animation: wave 1.1s infinite ease-in-out alternate; }
 /* 停止键严格居中（设计稿 grid 1fr 52px 1fr），取消在左、右侧留同宽占位。 */
 .voice-controls { display: grid; grid-template-columns: 1fr 52px 1fr; align-items: center; }
-.voice-controls .text-btn { justify-self: start; min-width: 48px; padding: 8px 4px; font-size: 15px; color: var(--muted); }
+.voice-controls .text-btn { justify-self: start; min-width: 48px; padding: 8px 4px; font-size: var(--fs-sub); color: var(--muted); }
 .voice-controls .record-stop { justify-self: center; width: 52px; height: 52px; min-width: 52px; min-height: 52px; border-radius: 50%; background: var(--text); color: var(--bg); }
 .voice-controls .record-stop .app-icon { width: 18px; height: 18px; }
 .record-stop-placeholder,.voice-control-spacer { display: block; height: 48px; }
@@ -299,11 +328,11 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 .connection-check .app-icon { width: 16px; height: 16px; }
 
 .artifact-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; margin: 8px 0; padding: 12px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); text-align: left; }
-.artifact-card span { color: var(--muted); font-size: 13px; }
+.artifact-card span { color: var(--muted); font-size: var(--fs-small); }
 .preview-pane { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .preview-media { width: 100%; max-height: 50vh; object-fit: contain; background: var(--surface); border-radius: 12px; }
 .preview-pdf { min-height: 50vh; border: 0; }
-.preview-text { max-height: 40vh; overflow: auto; white-space: pre-wrap; background: var(--surface); padding: 12px; border-radius: 12px; font-size: 14px; }
+.preview-text { max-height: 40vh; overflow: auto; white-space: pre-wrap; background: var(--surface); padding: 12px; border-radius: 12px; font-size: var(--fs-cap); }
 .preview-fallback { display: flex; flex-direction: column; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
 .preview-fallback .primary { margin-top: 8px; }
 /* 账号页与 S8 登录提醒（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：只借用既有控件样式，补间距与错误色。 */

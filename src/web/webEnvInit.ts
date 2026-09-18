@@ -27,13 +27,13 @@ try {
   const decision = resolveChannelDataDir(process.env, os.homedir(), detectDevSlotRuntime());
   if (decision.dataDir) {
     process.env.CODE_AGENT_DATA_DIR = decision.dataDir;
-    console.log(`[dev-slot] ${decision.reason} → dev 槽 ${decision.slot}（${decision.dataDir}）`);
+    console.log(`[dev-slot] ${decision.reason} → dev 槽 ${decision.slot}（${decision.dataDir}）`); // console-scan-allow 启动期槽位提示：本文件先于 logger 初始化执行，须直出终端
   }
   const webPort = resolveChannelWebPort(process.env, decision);
   if (webPort.port !== undefined) {
     process.env.WEB_PORT = String(webPort.port);
     process.env.CODE_AGENT_WEB_PORT = String(webPort.port);
-    console.log(`[dev-slot] 端口 → ${webPort.port}（devSlotWebPort(槽 ${decision.slot})）`);
+    console.log(`[dev-slot] 端口 → ${webPort.port}（devSlotWebPort(槽 ${decision.slot})）`); // console-scan-allow 启动期端口提示：本文件先于 logger 初始化执行，须直出终端
   } else if (webPort.explicitPortMismatch) {
     console.warn(`⚠️  ${webPort.explicitPortMismatch}`);
   }

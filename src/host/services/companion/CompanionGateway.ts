@@ -5,6 +5,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { applyCompanionSchema } from '../core/database/migrations/companion';
 import { companionCommandSchema, isCompanionDecisionCommand, isCompanionDecisionOutcome } from '../../../shared/contract/companion';
 import { COMPANION_LIMITS } from '../../../shared/constants/companion';
+import { logCompanionRelayInfo, type CompanionRelayLogger } from './companionRelayConfig';
 import type {
   CompanionCommand,
   CompanionCommandRecord,
@@ -42,6 +43,13 @@ function equalCredentialDigest(left: string, right: string): boolean {
   return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 }
 
+/**
+ * 逐帧流式 kind：手机在线时 message_delta 每个流式帧 publish 一次（routes/agent.ts 的原始
+ * 回调不走 eventBatcher），一轮 1500 chunk 的回答就是 1500 行 INFO——热路径上每帧还要多付一次
+ * redact+stringify+write。这类 kind 不逐帧进日志：首拍一行 + 轮末一行汇总（ai-review R3 Important）。
+ */
+const FRAME_STREAM_KINDS = new Set(['message_delta']);
+
 function parseDecisionAnswer(raw: unknown): CompanionDecisionAnswer | undefined {
   if (typeof raw !== 'string' || !raw) return undefined;
   try {
@@ -69,6 +77,12 @@ export interface CompanionGatewayDeps {
   decide?: (command: CompanionDecisionCommand) => CompanionSubmitResult | Promise<CompanionSubmitResult>;
   onPublish?: (event: CompanionEvent) => void;
   onRevoke?: (deviceId: string) => void;
+  /**
+   * 结算链留痕（N-MOBILE-SEND-RESULT-LOST）：submit 结论、settleCommand 迁移、publish、
+   * 启动期回收计数。只打 action/commandId/state/code 一类枚举字段——payload 正文、凭据、
+   * 票据绝不进日志。
+   */
+  logger?: CompanionRelayLogger;
 }
 
 /**
@@ -84,6 +98,8 @@ export class CompanionGateway {
   /** Events published under an older epoch are unreachable: every device re-snapshots. */
   get epoch(): number { return this.currentEpoch; }
   private readonly refreshDecisions: () => void;
+  /** 逐帧流式 kind 的轮内记账（key = sessionId）：只攒帧数/字节数，不逐帧出日志行。 */
+  private readonly streamBursts = new Map<string, { kind: string; frames: number; bytes: number; firstSeq: number; lastSeq: number }>();
 
   constructor(private readonly db: BetterSqlite3.Database, private readonly deps: CompanionGatewayDeps = {}) {
     this.now = deps.now ?? Date.now;
@@ -96,8 +112,12 @@ export class CompanionGateway {
     // A reservation without a committed receipt means the host may have exited
     // before the command resolved.  Recover every action: leaving message/run/
     // approval rows reconciling strands the phone's durable pending command.
-    this.db.prepare(`UPDATE companion_commands SET state = 'rejected', result_json = ?
+    const interrupted = this.db.prepare(`UPDATE companion_commands SET state = 'rejected', result_json = ?
       WHERE state = 'reconciling'`).run(JSON.stringify({ code: 'COMPANION_INTERRUPTED' }));
+    if (interrupted.changes > 0) {
+      // 手机 pending 卡死 + 宿主重启现场里，这一行是「上次会话结算悬挂」的直接证据。
+      this.deps.logger?.warn(`Companion gateway startup recovery: interrupted=${interrupted.changes} reconciling command(s)`);
+    }
     // An approval claim belongs to the uncertain command reservation. Once that
     // reservation is explicitly recovered, release the claim so a fresh
     // command ID can retry the still-pending desktop approval.
@@ -199,8 +219,26 @@ export class CompanionGateway {
 
   async submit(rawCommand: unknown): Promise<CompanionSubmitResult> {
     const parsed = companionCommandSchema.safeParse(rawCommand);
-    if (!parsed.success) return { kind: 'rejected', reason: 'invalid_command' };
-    const command = parsed.data;
+    if (!parsed.success) {
+      this.logSubmit(null, { kind: 'rejected', reason: 'invalid_command' });
+      return { kind: 'rejected', reason: 'invalid_command' };
+    }
+    const result = await this.submitChecked(parsed.data);
+    this.logSubmit(parsed.data, result);
+    return result;
+  }
+
+  /** 结算链留痕：每个结论一行（accepted/replayed 为 info，rejected/conflict/approval_conflict 为 warn）。 */
+  private logSubmit(command: CompanionCommand | null, result: CompanionSubmitResult): void {
+    const logger = this.deps.logger;
+    if (!logger) return;
+    const reason = 'reason' in result && typeof result.reason === 'string' ? ` reason=${result.reason}` : '';
+    const line = `Companion gateway submit: action=${command?.action ?? 'invalid'} deviceId=${command?.deviceId ?? '-'} commandId=${command?.commandId ?? '-'} kind=${result.kind}${reason}`;
+    if (result.kind === 'rejected' || result.kind === 'conflict' || result.kind === 'approval_conflict') logger.warn(line);
+    else logCompanionRelayInfo(logger, line);
+  }
+
+  private async submitChecked(command: CompanionCommand): Promise<CompanionSubmitResult> {
     const device = this.getDevice(command.deviceId);
     if (!device) return { kind: 'rejected', reason: 'device_unknown' };
     if (device.revokedAt !== null) return { kind: 'rejected', reason: 'device_revoked' };
@@ -321,8 +359,15 @@ export class CompanionGateway {
   }
 
   settleCommand(deviceId: string, commandId: string, state: 'accepted' | 'rejected', result: Record<string, unknown>): void {
-    this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ?
-      WHERE device_id = ? AND command_id = ? AND state = 'reconciling'`).run(state, JSON.stringify(result), deviceId, commandId);
+    // RETURNING 顺带取回 action：迁移行自带这个字段，不必为了日志再查一遍命令（ai-review Nit 4）。
+    const settled = this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ?
+      WHERE device_id = ? AND command_id = ? AND state = 'reconciling' RETURNING action`)
+      .get(state, JSON.stringify(result), deviceId, commandId) as SqlRow | undefined;
+    // 只记真迁移（settled 行存在）：dispatch 异步结算悬挂时 submit 有行、这里永远无行——两行对不上就是断点。
+    if (settled && this.deps.logger) {
+      const code = typeof result.code === 'string' ? result.code : 'none';
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway settled: action=${String(settled.action ?? 'unknown')} deviceId=${deviceId} commandId=${commandId} state=${state} code=${code}`);
+    }
   }
 
   pendingDecisions(kind?: CompanionDecisionKind): CompanionDecision[] {
@@ -354,6 +399,9 @@ export class CompanionGateway {
   }
 
   forgetSession(sessionId: string): void {
+    // 会话终态兜底（ai-review R4 Nit 2）：以 message_delta 收尾的轮次等不到下一条非逐帧
+    // publish，汇总行永不输出且 map 条目滞留——删会话时先补出汇总、清掉账再删行。
+    this.flushStreamBurst(sessionId);
     this.db.prepare('DELETE FROM companion_events WHERE session_id = ?').run(sessionId);
     this.db.prepare('DELETE FROM companion_decisions WHERE session_id = ?').run(sessionId);
     this.db.prepare('INSERT OR IGNORE INTO companion_session_cleanup (session_id) VALUES (?)').run(sessionId);
@@ -377,14 +425,54 @@ export class CompanionGateway {
       payload,
       createdAt: now,
     };
-    if (!this.hasLiveDevices()) return { ...event, seq };
+    const frameStream = FRAME_STREAM_KINDS.has(kind);
+    if (!this.hasLiveDevices()) {
+      // 打点放在逐帧判定之后（ai-review R4 Nit 3）：逐帧 kind 连 skipped 也不逐帧打，
+      // 否则未来不经调用方预检的逐帧 publish 在无设备时会退回逐帧刷屏。非逐帧拍仍是
+      // 会话时间线上的轮末边界——先收口上一轮真实发布过的逐帧汇总，再留自己的 skipped 行。
+      if (frameStream) return { ...event, seq };
+      this.flushStreamBurst(sessionId);
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway publish skipped: kind=${kind} sessionId=${sessionId ?? '-'} seq=${event.seq} reason=no_live_devices`);
+      return { ...event, seq };
+    }
+    // 逐帧流式 kind 不逐帧记：同会话下一条非逐帧 publish 先收口上一轮的汇总行。
+    if (!frameStream) this.flushStreamBurst(sessionId);
+    const payloadJson = JSON.stringify(event.payload);
     this.db.prepare(`
       INSERT INTO companion_events (event_id, epoch, seq, session_id, kind, payload_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(event.eventId, event.epoch, event.seq, event.sessionId, event.kind, JSON.stringify(event.payload), event.createdAt);
+    `).run(event.eventId, event.epoch, event.seq, event.sessionId, event.kind, payloadJson, event.createdAt);
+    if (frameStream) {
+      this.noteStreamBurst(sessionId, kind, event.seq, Buffer.byteLength(payloadJson));
+    } else {
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway published: kind=${kind} sessionId=${sessionId ?? '-'} seq=${event.seq}`);
+    }
     this.pruneEvents(now);
     try { this.deps.onPublish?.(event); } catch { /* push enqueue must not abort the event log */ }
     return event;
+  }
+
+  /** 首拍一行（first=true，照本 PR LAN exchange 的首拍形状）；后续帧只记账。 */
+  private noteStreamBurst(sessionId: string | null, kind: string, seq: number, bytes: number): void {
+    const key = sessionId ?? '-';
+    const burst = this.streamBursts.get(key);
+    if (!burst) {
+      this.streamBursts.set(key, { kind, frames: 1, bytes, firstSeq: seq, lastSeq: seq });
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway published: kind=${kind} sessionId=${sessionId ?? '-'} seq=${seq} first=true`);
+      return;
+    }
+    burst.frames += 1;
+    burst.bytes += bytes;
+    burst.lastSeq = seq;
+  }
+
+  /** 轮末汇总一行：帧数/字节数/seq 区间。没有开着的 burst 就是无事可做。 */
+  private flushStreamBurst(sessionId: string | null): void {
+    const key = sessionId ?? '-';
+    const burst = this.streamBursts.get(key);
+    if (!burst) return;
+    this.streamBursts.delete(key);
+    logCompanionRelayInfo(this.deps.logger, `Companion gateway stream burst: kind=${burst.kind} sessionId=${sessionId ?? '-'} frames=${burst.frames} bytes=${burst.bytes} seq=${burst.firstSeq}-${burst.lastSeq}`);
   }
 
   registerDecision(decision: CompanionDecision): void {

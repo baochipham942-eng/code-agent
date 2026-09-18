@@ -18,7 +18,7 @@ import { loginNeoAccount, type AccountLoginResult } from '../platform/accountLog
  * store 级登录结果：成功只报 ok——票据落进配对盘（Keychain），不进 React 状态、不进 UI 调用方
  * 的手里；失败态与 platform 层一致（凭据错 / 账号服务连不上 / 账号不一致点名）。
  */
-type AccountLoginOutcome = { ok: true } | Extract<AccountLoginResult, { ok: false }>;
+export type AccountLoginOutcome = { ok: true } | Extract<AccountLoginResult, { ok: false }>;
 import type { FilePorts, PlatformPorts, PickedFile } from '../platform/ports';
 import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';

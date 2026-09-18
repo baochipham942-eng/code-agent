@@ -152,6 +152,9 @@ export class LanCompanionClient {
     const dictationTranscription = v.dictationTranscription;
     return { version: 1, endpoint: live, ...(fallback ? { altEndpoint: fallback } : {}), hostKey,
       deviceId: v.deviceId, scopeEpoch: Number(v.scopeEpoch), scope: v.scope,
+      // 电脑账号邮箱（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：每次 welcome 现带，宿主没登录就缺席。
+      ...(typeof v.hostAccountEmail === 'string' && v.hostAccountEmail.trim() && v.hostAccountEmail.length <= L.accountEmailMaxLength
+        ? { hostAccountEmail: v.hostAccountEmail } : {}),
       ...(v.dictation === true ? { dictation: true as const } : {}),
       ...(transcription === 'ready' || transcription === 'not-installed' || transcription === 'no-key' ? { transcription } : {}),
       ...(v.dictation === true && (dictationTranscription === 'ready' || dictationTranscription === 'not-installed' || dictationTranscription === 'no-key')

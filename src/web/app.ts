@@ -510,13 +510,18 @@ export function createApp(deps: CreateAppDeps): express.Express {
       }, () => requireLibrary().projects(), services.push,
       // relay 客户端是异步拨起的：手机问路由时它可能还没就绪——闭包读当前值，null 即 unavailable。
       deviceId => companionRelay?.routeFor(deviceId) ?? null,
+      // 账号路由（不带凭据，N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：Host 登录了 Neo 账号才有；
+      // 手机拿这条路由 + 自己登录换的设备票据拨 relay，凭据不随路由下发。
+      deviceId => companionRelayAccount?.relayRoute(deviceId) ?? null,
       // 跨网连接状态块（N-COMPANION-RELAY-ACCOUNT-DESKTOP-STATUS）：照 relayRoute 的方式注入取值回调。
       // 「配没配中继」由 account === 'off' 表达（没配时账号通道自报 off）；缺省日志已由两条通道启动时打过。
       () => ({
         legacy: companionRelay?.connected ? 'connected' as const : 'disconnected' as const,
         // 句柄还没赋上（db 分支未接线/启动瞬间）时按没开通报：那种场景下整个 manage 口都不存在。
         ...(companionRelayAccount?.status() ?? { account: 'off' as const }),
-      }));
+      }),
+      // 配对信息随 welcome 带电脑账号邮箱：手机登录页预填 + 「这台电脑属于谁」的账号一致性核对。
+      () => getAuthService().getCurrentUser()?.email ?? null);
       // Both halves must hold: a phone is reachable for this session, AND this particular
       // card is renderable. With no approvals service there is no companion approval path.
       hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && services.approvals?.canDisplay(request) === true;

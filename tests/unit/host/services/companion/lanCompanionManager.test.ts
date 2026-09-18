@@ -12,7 +12,7 @@ const listSessions = vi.fn(async () => [{ id: 's1', title: 'Talk' }]);
 describe('LanCompanionManager status relay block', () => {
   it('merges the injected relay status into the status result', async () => {
     const relay: CompanionRelayStatus = { legacy: 'disconnected', account: 'signedOut', accountError: 'COMPANION_RELAY_CLOSED_AFTER_OPEN' };
-    const lan = new LanCompanionManager(gateway, loadIdentity, listSessions, () => [], undefined, undefined, () => relay);
+    const lan = new LanCompanionManager(gateway, loadIdentity, listSessions, () => [], undefined, undefined, undefined, () => relay);
     expect(await lan.manage({ action: 'status' })).toEqual({
       kind: 'status',
       sessions: [{ id: 's1', title: 'Talk' }],

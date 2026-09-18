@@ -3,6 +3,8 @@ import { timingSafeEqual } from 'node:crypto';
 import WebSocket, { WebSocketServer } from 'ws';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import {
+  COMPANION_RELAY_SENTINEL_DEVICE_REF,
+  COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN,
   COMPANION_RELAY_WS_PROTOCOL,
   companionRelayCredentialSubprotocol,
   companionRelayFrameExpired,
@@ -10,6 +12,7 @@ import {
   type CompanionRelayFrame,
 } from '../../../src/shared/contract/companionRelay';
 import type { JwksStats } from './accountAuth';
+import type { RelayTicketAuth } from './ticketAuth';
 
 type CompanionRelayRole = 'host' | 'device';
 
@@ -34,6 +37,10 @@ export interface CompanionRelayServerStats {
   accountConnections: number;
   /** 登记到别人名下路由、或账号超出路由限额而被拒的次数。 */
   rejectedOwner: number;
+  /** 已下发（含续签）的设备票据帧数（N-COMPANION-RELAY-DEVICE-TICKET）。 */
+  ticketsIssued: number;
+  /** 当前以设备票据鉴权、在线的连接数（close 减、stop() 归零；与 accountConnections 分开记账）。 */
+  ticketConnections: number;
   jwks?: JwksStats;
 }
 
@@ -64,6 +71,10 @@ interface QueuedFrame {
 
 // 前缀只在 shared 契约里定义一次：对空凭据编码得到的就是前缀本身，避免两端各抄一份常量。
 const COMPANION_RELAY_WS_AUTH_PREFIX = companionRelayCredentialSubprotocol('');
+
+// 票据帧的固定信封 sentinel（与 no-host 帧同一套写法）：票据不走路由，任何真实 route 的转发
+// 都不会长这个样子。只有 relay 发它；旧 Host / 手机不认识该 kind，静默丢帧。新 Host 会校验同一
+// sentinel（常量在 shared 契约，两侧单一真源）。
 
 /**
  * 只有 relay 服务端解码，所以放这里不进 shared 契约（knip 死导出棘轮不扫 packages/relay）。
@@ -123,6 +134,7 @@ export class CompanionRelayServer {
     connections: 0, routes: 0, queuedFrames: 0, forwarded: 0,
     droppedExpired: 0, droppedNoRoute: 0, droppedBacklog: 0, droppedBackpressure: 0,
     revoked: 0, rejectedAuth: 0, notifiedNoHost: 0, accountConnections: 0, rejectedOwner: 0,
+    ticketsIssued: 0, ticketConnections: 0,
   };
   private readonly now: () => number;
 
@@ -135,6 +147,8 @@ export class CompanionRelayServer {
     noHostGraceMs?: number;
     /** 配了就同时认 Supabase access token；不配则只认共享凭据（与账号绑定之前完全一致）。 */
     accountVerifier?: { verify(token: string): string | null; readonly stats: JwksStats };
+    /** 配了就认 relay 自签设备票据并向账号连接签发/续签（N-COMPANION-RELAY-DEVICE-TICKET）。 */
+    ticketAuth?: RelayTicketAuth;
     logger?: CompanionRelayLogger;
   }) {
     this.host = options.host ?? '127.0.0.1';
@@ -189,6 +203,7 @@ export class CompanionRelayServer {
     if (server) await new Promise<void>(resolve => server.close(() => resolve()));
     this.stats.connections = 0;
     this.stats.accountConnections = 0;
+    this.stats.ticketConnections = 0;
     this.options.logger?.info('relay_stopped', {});
   }
 
@@ -229,11 +244,25 @@ export class CompanionRelayServer {
     const subprotocolAuth = headerAuth ? null : companionRelayCredentialFromSubprotocols(request.headers['sec-websocket-protocol']);
     const via: 'header' | 'subprotocol' | 'none' = headerAuth ? 'header' : subprotocolAuth !== null ? 'subprotocol' : 'none';
     const auth = headerAuth || subprotocolAuth || '';
-    // 共享凭据先比（常量时间）；不是它再按账号令牌验签。sub 不进日志。
-    // 令牌只在 upgrade 时验：连接存活期间过期或电脑退出登录都不断开——Host 退出登录会自己关账号连接，
-    // 每次重连都换新令牌；relay 主动踢过期连接只会制造重连风暴。要做按账号封禁时再补连接级复核。
+    // 鉴权三级：共享凭据先比（常量时间）；不是它且以 neo1. 开头按设备票据验（HMAC + 未过期）；
+    // 其余按账号令牌验签。三者都不过才 auth_rejected。票据与令牌得到同一个主人 acct:<sub>，
+    // 后续逻辑（路由主人隔离、容量分账）完全复用，不另开分支。sub 不进日志。
+    // 令牌只在 upgrade 时验：连接存活期间过期或电脑退出登录都不断开——Host 退出登录会自己关账号连接
+    // 并作废本地票据（票据是 30 天 bearer 凭据，relay 侧没有按账号吊销的通道；Host 退出时不清它，
+    // 它就会在登出后继续自动重连，「Host 自己管连接」这个前提就被掏空），每次重连都换新凭据；
+    // relay 主动踢过期连接只会制造重连风暴。要做按账号封禁时再补连接级复核。
     const legacy = sameSecret(auth, this.options.credential);
-    const sub = legacy ? null : this.options.accountVerifier?.verify(auth) ?? null;
+    let sub: string | null = null;
+    let ticketExp: number | null = null;
+    if (!legacy && this.options.ticketAuth && auth.startsWith('neo1.')) {
+      const ticket = this.options.ticketAuth.verify(auth);
+      if (ticket) {
+        sub = ticket.sub;
+        ticketExp = ticket.exp;
+      }
+    } else if (!legacy) {
+      sub = this.options.accountVerifier?.verify(auth) ?? null;
+    }
     const principal = legacy ? LEGACY_PRINCIPAL : sub ? `acct:${sub}` : null;
     if (!principal) {
       this.stats.rejectedAuth += 1;
@@ -242,9 +271,19 @@ export class CompanionRelayServer {
       return;
     }
     this.principals.set(socket, principal);
-    if (sub) this.stats.accountConnections += 1;
+    // 账号主人的在线连接分两本账：以票据进来的记 ticketConnections，以令牌进来的记 accountConnections。
+    const viaTicket = ticketExp !== null;
+    if (viaTicket) this.stats.ticketConnections += 1;
+    else if (sub) this.stats.accountConnections += 1;
     this.stats.connections += 1;
     this.lastSeen.set(socket, this.now());
+    if (sub && this.options.ticketAuth) {
+      // 用 access token 进来的（ticketExp 还是 null）立刻下发新票据；用票据进来的只在剩余有效期 < 续签阈值时续签。
+      // ponytail: 续签无上限、也没有按账号吊销票据的通道——同一把密钥下 30 天票只要一直连就能无限续命；
+      // 全局作废只有删密钥文件一档（粒度是「全部账号」不是「某个账号」）。要按账号封禁时得先补连接级复核
+      // （upgrade 只验一次、连接期内不复核，见上面鉴权注释），再给验签加账号级吊销名单。
+      if (ticketExp === null || ticketExp - this.now() < L.relayTicketRenewBeforeMs) this.sendTicket(socket, sub, viaTicket);
+    }
     socket.on('message', data => {
       this.lastSeen.set(socket, this.now());
       try {
@@ -255,10 +294,25 @@ export class CompanionRelayServer {
     });
     socket.on('close', () => {
       this.stats.connections = Math.max(0, this.stats.connections - 1);
-      if (sub) this.stats.accountConnections = Math.max(0, this.stats.accountConnections - 1);
+      if (viaTicket) this.stats.ticketConnections = Math.max(0, this.stats.ticketConnections - 1);
+      else if (sub) this.stats.accountConnections = Math.max(0, this.stats.accountConnections - 1);
       this.detach(socket);
     });
     socket.on('error', () => { /* close follows */ });
+  }
+
+  /** 往刚鉴权成功的账号连接发一帧设备票据（issue/renew 都走这里）。票据绝不进日志，只记事件名。 */
+  private sendTicket(socket: WebSocket, sub: string, renewed: boolean): void {
+    const ticketAuth = this.options.ticketAuth;
+    if (!ticketAuth || socket.readyState !== WebSocket.OPEN) return;
+    const { ticket } = ticketAuth.issue(sub);
+    socket.send(JSON.stringify({
+      v: 1, kind: 'ticket',
+      envelope: { routeToken: COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN, deviceRef: COMPANION_RELAY_SENTINEL_DEVICE_REF, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: this.now() },
+      ciphertext: ticket,
+    } satisfies CompanionRelayFrame));
+    this.stats.ticketsIssued += 1;
+    this.options.logger?.info(renewed ? 'ticket_renewed' : 'ticket_issued');
   }
 
   private detach(socket: WebSocket): void {
@@ -388,7 +442,7 @@ export class CompanionRelayServer {
       const now = this.now();
       device.send(JSON.stringify({
         v: 1, kind: 'no-host',
-        envelope: { routeToken: token, deviceRef: 'relay', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: now },
+        envelope: { routeToken: token, deviceRef: COMPANION_RELAY_SENTINEL_DEVICE_REF, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: now },
         ciphertext: '',
       } satisfies CompanionRelayFrame));
       this.stats.notifiedNoHost += 1;

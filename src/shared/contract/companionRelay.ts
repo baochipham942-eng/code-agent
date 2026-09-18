@@ -39,6 +39,14 @@ const companionRelayFrameSchema = z.discriminatedUnion('kind', [
    * 没有 host。新手机据此秒级失败；旧手机不认识这个 kind，按非法帧断开——同样秒级失败，只是文案泛化。
    */
   z.object({ ...frameBase, kind: z.literal('no-host'), ciphertext: controlCiphertext }).strict(),
+  /**
+   * relay → host only（N-COMPANION-RELAY-DEVICE-TICKET）：账号通道鉴权成功后 relay 直接在本连接上
+   * 下发的设备票据，放在 ciphertext——对 relay 之外的所有人是不透明串（无法伪造、无法离线验签）。
+   * 信封用固定 sentinel（routeToken 'neo-relay-ticket-issue' / deviceRef 'relay' / seq 0），与
+   * no-host 同一套写法：票据不走路由，不会与任何真实 route 的转发混淆。旧 Host 不认识该 kind，
+   * 解析失败静默丢帧，行为不受影响。
+   */
+  z.object({ ...frameBase, kind: z.literal('ticket'), ciphertext: opaqueCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('handshake'), ciphertext: opaqueCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('forward'), ciphertext: opaqueCiphertext }).strict(),
 ]);
@@ -70,6 +78,15 @@ export function parseCompanionRelayFrame(raw: unknown): CompanionRelayFrame {
 export function companionRelayFrameExpired(frame: CompanionRelayFrame, now: number): boolean {
   return frame.envelope.issuedAt + frame.envelope.ttlMs <= now;
 }
+
+/**
+ * relay 服务端帧的固定信封 sentinel（ticket / no-host 同一套写法）：这类帧不走路由，任何真实
+ * route 的转发都不会长这个样子。ticket 帧由 relay 签发、Host 消费（旧 Host 与手机不认识该
+ * kind，静默丢帧）——relay 服务端与 Host 客户端两侧都以这里为准，别在别处再抄字面量。
+ */
+export const COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN = 'neo-relay-ticket-issue';
+/** 服务端帧（ticket / no-host）的 deviceRef sentinel：帧来自 relay 本体，不是某台设备的转发。 */
+export const COMPANION_RELAY_SENTINEL_DEVICE_REF = 'relay';
 
 /**
  * Loopback `ws:` is for the in-process fake relay. Any other host must use `wss:`.

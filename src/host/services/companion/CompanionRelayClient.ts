@@ -6,6 +6,8 @@ import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseCh
 import { fromHex, toHex } from '../../../shared/companion/lanProtocol';
 import { companionCommandSchema, type CompanionCommand, type CompanionSubmitResult } from '../../../shared/contract/companion';
 import {
+  COMPANION_RELAY_SENTINEL_DEVICE_REF,
+  COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN,
   companionRelayFrameExpired,
   parseCompanionRelayFrame,
   type CompanionRelayFrame,
@@ -16,6 +18,11 @@ import type { CompanionRelayStatus } from '../../../shared/contract/companionMan
 import type { CompanionGateway } from './CompanionGateway';
 import { RelayOutboundBuffer, RelaySeqBuffer } from './companionRelayBuffer';
 import { deriveCompanionRelayRouteToken } from './companionRelayRouteToken';
+import {
+  clearCompanionRelayTicket,
+  loadCompanionRelayTicket,
+  storeCompanionRelayTicket,
+} from './companionRelayTicketStore';
 import {
   errorHead,
   loadCompanionRelayConfig,
@@ -29,6 +36,17 @@ import {
 interface RelayRouteEntry {
   deviceRef: string;
   routeToken: string;
+}
+
+/**
+ * 账号通道的本地票据存取（N-COMPANION-RELAY-DEVICE-TICKET）：load 只在票据未过期且属于当前账号时
+ * 返回原文；store 收到 relay 下发的 ticket 帧时覆盖落盘；clear 在票据被 relay 拒时作废。共享凭据
+ * 通道不配它——那条通道不发 JWT，也就永远收不到 ticket 帧。
+ */
+export interface CompanionRelayTicketStore {
+  load(): string | null;
+  store(ticket: string): void;
+  clear(): void;
 }
 
 interface DeviceSession {
@@ -63,6 +81,8 @@ export class CompanionRelayClient {
   /** open 之后撑过 relayStableConnectionMs 才算真连上：relay 在 upgrade 完成后才验凭据、不通过就立刻关。 */
   private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private live = false;
+  /** 本连接收到过 relay 下发的票据帧（每次 open 重置）：鉴权成功的铁证，1005 收尾时据此不清盘上新票。 */
+  private ticketIssuedOnSocket = false;
   private lastDialErrorCode: string | null = null;
   private openWaiters: Array<() => void> = [];
   private readonly now: () => number;
@@ -78,6 +98,8 @@ export class CompanionRelayClient {
     credential: string | (() => Promise<string | null>);
     /** routeToken 派生的命名空间：缺省 local（共享凭据通道），账号通道为 acct:<Supabase 用户 id>。 */
     namespace?: string;
+    /** 账号通道的本地票据存取（第 3A 刀）：有未过期票据先票据拨号，supabase 不通也能连。 */
+    ticket?: CompanionRelayTicketStore;
     now?: () => number;
     jitter?: () => number;
     WebSocket?: typeof WebSocket;
@@ -260,11 +282,24 @@ export class CompanionRelayClient {
   private async dial(): Promise<void> {
     if (this.stopped) return;
     const provided = this.deps.credential;
-    // 取令牌会走 supabase-js 刷新，网络挂住时不能把拨号（以及关停时等它的 stop）一起挂死。
-    const credential = typeof provided === 'string' ? provided : await Promise.race([
-      provided().catch(() => null),
-      new Promise<null>(resolve => { setTimeout(() => resolve(null), L.relayConnectTimeoutMs).unref(); }),
-    ]);
+    // 账号通道先试本地票据（relay 自签的 30 天凭据，不依赖 supabase 可达）；没有或已过期才现取
+    // access token。取令牌会走 supabase-js 刷新，网络挂住时不能把拨号（以及关停时等它的 stop）一起挂死。
+    let credential: string | null;
+    let viaTicket = false;
+    if (typeof provided === 'string') {
+      credential = provided;
+    } else {
+      const ticket = this.deps.ticket?.load() ?? null;
+      if (ticket) {
+        credential = ticket;
+        viaTicket = true;
+      } else {
+        credential = await Promise.race([
+          provided().catch(() => null),
+          new Promise<null>(resolve => { setTimeout(() => resolve(null), L.relayConnectTimeoutMs).unref(); }),
+        ]);
+      }
+    }
     if (this.stopped) return;
     if (!credential) {
       this.failDial('COMPANION_RELAY_ACCOUNT_TOKEN_UNAVAILABLE');
@@ -319,6 +354,7 @@ export class CompanionRelayClient {
         this.stableTimer.unref();
         this.controlSeq = 0;
         this.peerSeq.clear();
+        this.ticketIssuedOnSocket = false;
         this.dropSessions();
         this.bindPairedDevices();
         for (const route of this.routes.values()) this.sendRegister(route);
@@ -357,6 +393,11 @@ export class CompanionRelayClient {
           // open 后没撑过稳定期、收到不带关闭码的关闭帧（1005）：relay 验凭据不通过就是这个形状（账号令牌
           // 被拒、relay 没开账号鉴权）。按拨号失败走递增退避 + 同因去重，不按「掉线」秒级重连刷屏。
           // 网络断（1006）与带关闭码的主动断开（relay 重启 1001、测试里的 1000）仍按掉线记。
+          // 拨号用的是票据时这还有一层含义：票据被 relay 作废了（换了票据密钥、或回拨了系统时钟）。
+          // 作废本地票据，下次拨号回落 access token 重新换票，别抱着死票按退避重试到自然过期。
+          // 例外：本连接收到过 relay 新发票据（鉴权成功的铁证）就不清——这个 1005 不是凭据被拒，
+          // 清了会把刚续签落盘的新票一起埋掉，下次还得回落令牌重换一张。
+          if (viaTicket && !this.ticketIssuedOnSocket) this.deps.ticket?.clear();
           this.failDial('COMPANION_RELAY_CLOSED_AFTER_OPEN');
           return;
         }
@@ -396,6 +437,20 @@ export class CompanionRelayClient {
   private onMessage(raw: string): void {
     let frame: CompanionRelayFrame;
     try { frame = parseCompanionRelayFrame(JSON.parse(raw) as unknown); } catch { return; }
+    // relay 直接在本连接上签发的设备票据（第 3A 刀）：不走路由、与任何会话无关。必须在过期与会话
+    // 分支之前显式处理：掉进「未知 kind」会被吞掉，票据永远落不了盘；吃路由 TTL 则会在 relay 与
+    // Host 时钟偏差超 60s 时整族误判过期、能力静默失效（sentinel 不走路由，票据自身的 30 天 exp
+    // 由 store/load 把关；accountAuth 也按同量级 CLOCK_SKEW_S=60 容忍偏差）。信封必须对上契约
+    // sentinel（routeToken/deviceRef）：票据只可能来自 relay 的签发通道，形状不对的一律忽略，
+    // 别让任意来源的 ciphertext 顶掉当前票据。
+    if (frame.kind === 'ticket') {
+      if (frame.envelope.routeToken !== COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN
+        || frame.envelope.deviceRef !== COMPANION_RELAY_SENTINEL_DEVICE_REF) return;
+      // relay 只在鉴权成功后才发票据：收过票即本连接凭据被认过的铁证，1005 收尾不再按「票据被拒」清票。
+      this.ticketIssuedOnSocket = true;
+      this.deps.ticket?.store(frame.ciphertext);
+      return;
+    }
     if (companionRelayFrameExpired(frame, this.now())) return;
     const deviceRef = frame.envelope.deviceRef;
     try {
@@ -556,10 +611,18 @@ export function startCompanionRelayAccountIfConfigured(opts: {
   const follow = (user: { id: string } | null) => {
     const next = user?.id ?? null;
     if (stopped || next === userId) return;
+    const previous = userId;
     userId = next;
     chain = chain.then(async () => {
       await client?.stop();
       client = null;
+      // 登出/换账号（本通道上一个绑定的用户没了或换了）必须作废本地票据：那是一张 30 天、能直接
+      // 以 acct:<原 sub> 连 relay 的 bearer 凭据，relay 侧没有按账号吊销的通道（全局作废只有删密钥
+      // 文件一档＝连带作废所有账号），退出后只能由 Host 自己销毁。session 在 OS Keychain、登出即
+      // 销毁，令牌那边本来就没口子。初始登录（previous 为 null，本通道没有可作废的旧绑定）不清：
+      // 重启后要先读盘上票据接上（supabase 不通也能连），死票由 1005 拒收路径自己作废。
+      // 进程关停（stop()）不走这条链，也不清。
+      if (previous !== null) clearCompanionRelayTicket(opts.dataDirectory);
       if (stopped || !next || userId !== next) return;
       let identity: KeyPair;
       try {
@@ -573,12 +636,32 @@ export function startCompanionRelayAccountIfConfigured(opts: {
         return;
       }
       if (stopped || userId !== next) return;
+      // 票据存取绑定当前账号 id：换了账号登录，旧账号的票据读不出来（sub 对不上），回落令牌拨号。
+      const ticket: CompanionRelayTicketStore = {
+        load: () => loadCompanionRelayTicket(opts.dataDirectory, next, opts.now),
+        store: issued => {
+          try {
+            if (storeCompanionRelayTicket(opts.dataDirectory, issued, next)) {
+              logCompanionRelayInfo(opts.logger, 'Companion relay (account) ticket stored');
+            } else {
+              // 形状不对 / sub 不是当前账号：与落盘失败分开记，排障时能分清是哪一半没成。
+              opts.logger?.warn('Companion relay (account) ticket not stored: malformed or wrong account');
+            }
+          } catch (error) {
+            // 磁盘满/只读等落盘失败：不接住会被 socket.on('message') 的 catch {} 吞成零日志，
+            // 行为静默退回「每次拨号都要 supabase」（错题本：降级路径必须留痕）。
+            opts.logger?.warn(`Companion relay (account) ticket store failed: ${errorHead(error)}`);
+          }
+        },
+        clear: () => clearCompanionRelayTicket(opts.dataDirectory),
+      };
       client = new CompanionRelayClient({
         gateway: opts.gateway,
         identity,
         config,
         credential: () => opts.auth.getAccessToken(),
         namespace: `acct:${next}`,
+        ticket,
         now: opts.now,
         jitter: opts.jitter,
         WebSocket: opts.WebSocket,

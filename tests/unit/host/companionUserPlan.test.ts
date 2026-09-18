@@ -311,4 +311,34 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
     // 卡片保留原状态，可重试。
     expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
   });
+
+  it('starting/failed 的 tool_call_end 重放不结算不撤卡；approved 照常 answered 结算', () => {
+    const id = `replay-${Date.now()}`;
+    const note = (planApproval: unknown) => noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval,
+      },
+    });
+    note(APPROVAL);
+    // 手机挂着这张卡的 pending 行：若 starting/failed 被误当终态，结算桥会记成 cancelled。
+    pendingPhoneCard.mockReturnValue({ request_id: id });
+    try {
+      note({ ...APPROVAL, status: 'starting', failureReason: 'Session s1 is already running', failedAt: 1234 });
+      expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
+      expect(takeCompanionUserPlanSettlement(id)).toBeNull();
+      note({ ...APPROVAL, status: 'failed', failureReason: 'Session s1 is already running', failedAt: 1234 });
+      expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
+      expect(takeCompanionUserPlanSettlement(id)).toBeNull();
+      // 真终态不受影响：approved 撤卡并记 answered 结算。
+      note({ ...APPROVAL, status: 'approved' });
+      expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(false);
+      expect(takeCompanionUserPlanSettlement(id)).toEqual({ outcome: 'answered', answer: { decision: 'approved' } });
+    } finally {
+      pendingPhoneCard.mockReturnValue(undefined);
+    }
+  });
 });

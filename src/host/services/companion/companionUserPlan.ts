@@ -81,6 +81,12 @@ export function noteCompanionUserPlan(sessionId: string, event: Record<string, u
   const status = approval && typeof approval === 'object' && !Array.isArray(approval)
     ? (approval as { status?: unknown }).status
     : 'pending';
+  // starting/failed 是卡片存活态（与 readCardApproval 同款判定）：落库后 tool_call_end/
+  // 事件重放带着新 metadata 再进来时，失败卡必须保持投影、可重试——不撤卡、不记结算。
+  if (status === 'starting' || status === 'failed') {
+    pending.set(toolCallId, { sessionId, toolCallId, plan });
+    return true;
+  }
   if (status !== 'pending') {
     pending.delete(toolCallId);
     rememberUserPlanSettlement(toolCallId, status, approval && typeof approval === 'object' && !Array.isArray(approval)

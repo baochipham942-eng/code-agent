@@ -373,17 +373,24 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   /**
    * 前台轻提示到点自隐（N-MOBILE-FOREGROUND-PUSH）：计时放 UI 层——store 只记「这条提示还在」的
    * 事实，消隐节奏是呈现问题（pendingNoticeDelayMs 的先例）。未读点不清：提示闪过去后它才是持久信号。
+   * 判不出归属（relay / 离线 / 查询失败）的提示**不自隐**（R2 Important）：那种时候 resolveRoute 恒
+   * null、未读点落不下去，这条提示是唯一痕迹，5 秒清零等于把推送吞掉——保持到用户点掉或下一条顶掉。
+   * 取舍：代价是 relay 上多一条赖着不走的提示，换「用户不在家那条链路上通知绝不消失」。
    */
   useEffect(() => {
     if (!notify.foregroundAlert) return;
+    if (notify.foregroundAlert.sessionId == null) return;
     const timer = setTimeout(() => notifyStore.getState().dismissForegroundAlert(), COMPANION_LIMITS.foregroundAlertAutoHideMs);
     return () => clearTimeout(timer);
   }, [notify.foregroundAlert, notifyStore]);
   // 未读点的清除盯住选中会话（N-MOBILE-FOREGROUND-PUSH）：不走 selectSession 单点——handleTap→openRoute、
   // firstSend、抽屉/弹层选会话所有换会话路径都覆盖到；选中即视为已读。
+  // 盖层合上也清（R2 Nit①）：抽屉/弹层开着时 viewing 为 null，本会话的推送照样记一笔未读，而
+  // sessionId 没变这个 effect 不会重跑——不清的话切去别的会话后它是假未读点。合上 = 回到
+  // 「正看着这条会话」，判据与 viewing 同一形状。
   useEffect(() => {
-    if (companion.sessionId) notifyStore.getState().markSessionRead(companion.sessionId);
-  }, [companion.sessionId, notifyStore]);
+    if (companion.sessionId && !state.drawer && !state.sheet) notifyStore.getState().markSessionRead(companion.sessionId);
+  }, [companion.sessionId, state.drawer, state.sheet, notifyStore]);
   // 连上而没有会话时不再自动弹「选择项目」（N-MOBILE-DEFAULT-PROJECT ②A，爸 09-17「项目要有默认、不强制选」）：
   // 停在新会话欢迎页，项目选择器已带默认项目；弹层只在点选择器、或都建不了时点发送才开。
   /**
@@ -605,9 +612,6 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     <main className="conversation" inert={state.drawer || !!state.sheet}>
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><AppIcon name="menu" /></button>
         <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? (hostKey ? state.preferences.sessionTitles?.[`${hostKey}:${companion.sessionId}`] : undefined) ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
-      {/* 前台轻提示（N-MOBILE-FOREGROUND-PUSH）：系统横幅退场后的 app 内替身，到点自隐、点按跳会话；
-          routeToken 为 null（判不出归属）时点按只收掉提示——这就是新版「不许吞」。 */}
-      {notify.foregroundAlert && <p className="notice foreground-alert" role="status" aria-live="polite" data-testid="foreground-alert" onClick={() => tapForegroundAlert(notify.foregroundAlert?.routeToken ?? null)}>{text.foregroundAlert}</p>}
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           offline={companion.status !== 'connected'}
@@ -907,5 +911,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           onOpenSettings: () => void (ports.notifications ?? unavailableNotificationPort).openSettings(),
         }} />}
     </SheetHost>}
+    {/* 前台轻提示（N-MOBILE-FOREGROUND-PUSH）：系统横幅退场后的 app 内替身，有归属的到点自隐（无归属的
+        不自隐，见上面那个 effect）、点按跳会话；routeToken 为 null（判不出归属）时点按只收掉提示
+        ——这就是新版「不许吞」。
+        R2 Important：必须浮在 <main> 之外——抽屉/弹层开着时 main 是 inert 的（不可点、无障碍树摘除、
+        aria-live 不播报），视觉上又被 drawer/sheet 的 scrim 盖住，留在里面等于 relay+开抽屉时通知被
+        彻底吞掉。独立浮层与 drawer(10)/sheet(20) 同栈更高一层，inert 范围不含它。 */}
+    {notify.foregroundAlert && <div className="foreground-alert-layer" data-testid="foreground-alert-layer">
+      <p className="notice foreground-alert" role="status" aria-live="polite" data-testid="foreground-alert" onClick={() => tapForegroundAlert(notify.foregroundAlert?.routeToken ?? null)}>{text.foregroundAlert}</p>
+    </div>}
   </div>;
 }

@@ -10,7 +10,6 @@ export type RegistrationStatus = 'idle' | 'registering' | 'registered' | 'unregi
 interface ForegroundAlert {
   routeToken: string | null;
   sessionId: string | null;
-  at: number;
 }
 
 export interface NotificationSession {
@@ -155,7 +154,7 @@ export function createNotificationStore(deps: {
         }
         if (viewing && target === viewing) return false;
         set(state => ({
-          foregroundAlert: { routeToken, sessionId: target, at: Date.now() },
+          foregroundAlert: { routeToken, sessionId: target },
           unreadSessions: target && !state.unreadSessions.includes(target)
             ? [...state.unreadSessions, target]
             : state.unreadSessions,

@@ -16,7 +16,9 @@ import type { CompanionPushOutbox } from './CompanionPushOutbox';
 
 interface Invitation { id: string; psk: string; expiresAt: number; scope: string[] }
 interface Pending { noise: Noise; invite: Invitation; expiresAt: number }
-interface Channel { cipher: NoiseChannel; publicKey: string; expiresAt: number; lastSeenAt: number | null }
+interface Channel { cipher: NoiseChannel; publicKey: string; expiresAt: number; lastSeenAt: number | null
+  /** 墓碑的 identity_invalid warn 已落过一次：剩余 TTL 里每轮 prune 不再复读同一行。 */
+  identityLogged?: boolean }
 /** Wire bodies stay `unknown`-per-field: every handler below validates before use. */
 interface HelloBody { mode?: unknown; inviteId?: unknown; frame?: unknown }
 interface ChannelBody { channelId?: unknown; frame?: unknown }
@@ -29,6 +31,16 @@ function dropped(event: CompanionEvent, bytes: number): CompanionEvent {
 /** channelId/publicKey 都不是秘密，但整串进日志太长——照 relay 的 tokenPrefix 先例截前 8 位。 */
 function idPrefix(id: string): string {
   return id.slice(0, 8);
+}
+
+/**
+ * 握手前的入站字段一律不记原文（ai-review Important）：/v1/hello 在鉴权与限流之前，
+ * 同网段任意设备都能塞一个近 4MB 的 mode 字符串把宿主日志当磁盘写。照 idPrefix 的
+ * 截断口径只记「类型/长度/转义前 8 字符」——够归因（pair/resume/垃圾输入）且体积有界。
+ */
+function modeLabel(mode: unknown): string {
+  if (typeof mode !== 'string') return `invalid(${typeof mode})`;
+  return `string[len=${mode.length} prefix=${JSON.stringify(mode.slice(0, 8))}]`;
 }
 
 /**
@@ -254,8 +266,11 @@ export class LanCompanionServer {
       if (!this.gateway.identityDevice(c.publicKey)) {
         this.releaseDictation(c.publicKey);
         c.cipher.close();
-        // 身份既然已失效，这里解不出 deviceId，只给公钥前缀。
-        this.logger?.warn(`Companion LAN channel closed: reason=identity_invalid channel=${idPrefix(id)} key=${idPrefix(c.publicKey)}`);
+        // 身份既然已失效，这里解不出 deviceId，只给公钥前缀；且同一墓碑只在第一轮 prune 落一行。
+        if (!c.identityLogged) {
+          c.identityLogged = true;
+          this.logger?.warn(`Companion LAN channel closed: reason=identity_invalid channel=${idPrefix(id)} key=${idPrefix(c.publicKey)}`);
+        }
       }
     }
   }
@@ -264,7 +279,7 @@ export class LanCompanionServer {
     try {
       return this.helloChecked(body, via);
     } catch (error) {
-      this.logger?.warn(`Companion LAN handshake rejected: mode=${typeof body.mode === 'string' ? body.mode : 'invalid'} via=${via ?? '-'} code=${exchangeErrorCode(error)}`);
+      this.logger?.warn(`Companion LAN handshake rejected: mode=${modeLabel(body.mode)} via=${via ?? '-'} code=${exchangeErrorCode(error)}`);
       throw error;
     }
   }
@@ -340,9 +355,10 @@ export class LanCompanionServer {
         op?: unknown; pcm?: unknown; streamId?: unknown;
       };
       if (!request || typeof request.requestId !== 'string' || request.requestId.length > L.idLength) throw new Error('COMPANION_INVALID_REQUEST');
-      // 轮询型动作（sync/status 手机每秒一发）只在通道首拍留痕；其余动作低频，每次一行。
-      if ((request.action !== 'sync' && request.action !== 'status') || channel.lastSeenAt === null) {
-        logCompanionRelayInfo(this.logger, `Companion LAN exchange: action=${String(request.action)} channel=${idPrefix(id)}${channel.lastSeenAt === null ? ' first=true' : ''}`);
+      // 轮询型动作（sync/status 手机每秒一发）与 dictation 音频帧（100ms 一拍的实时流，
+      // 60s 录音就是几百拍）只在通道首拍留痕；其余动作低频，每次一行。
+      if ((request.action !== 'sync' && request.action !== 'status' && request.action !== 'dictation') || channel.lastSeenAt === null) {
+        logCompanionRelayInfo(this.logger, `Companion LAN exchange: action=${idPrefix(String(request.action))} channel=${idPrefix(id)}${channel.lastSeenAt === null ? ' first=true' : ''}`);
       }
       let result: unknown;
       if (request.action === 'command') {
@@ -396,7 +412,7 @@ export class LanCompanionServer {
       } else if (request.action === 'status' && typeof request.commandId === 'string' && request.commandId.length <= L.idLength) {
         result = this.gateway.commandStatus(device.deviceId, request.commandId);
         // 手机在轮询的 commandId 宿主根本不认识（或已不可见）⇒ 手机 pending 只能等超时回收。
-        if (result === null) this.logger?.warn(`Companion LAN exchange anomaly: action=status channel=${idPrefix(id)} commandId=${request.commandId} result=unknown`);
+        if (result === null) this.logger?.warn(`Companion LAN exchange anomaly: action=status channel=${idPrefix(id)} commandId=${idPrefix(request.commandId)} result=unknown`);
       } else if (request.action === 'dictation') {
         result = await this.dictation(device.deviceId, request);
       } else throw new Error('COMPANION_UNSUPPORTED_ACTION');

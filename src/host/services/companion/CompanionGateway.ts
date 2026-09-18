@@ -350,13 +350,14 @@ export class CompanionGateway {
   }
 
   settleCommand(deviceId: string, commandId: string, state: 'accepted' | 'rejected', result: Record<string, unknown>): void {
+    // RETURNING 顺带取回 action：迁移行自带这个字段，不必为了日志再查一遍命令（ai-review Nit 4）。
     const settled = this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ?
-      WHERE device_id = ? AND command_id = ? AND state = 'reconciling'`).run(state, JSON.stringify(result), deviceId, commandId);
-    // 只记真迁移（changes>0）：dispatch 异步结算悬挂时 submit 有行、这里永远无行——两行对不上就是断点。
-    if (settled.changes > 0 && this.deps.logger) {
-      const action = this.getCommand(deviceId, commandId)?.action;
+      WHERE device_id = ? AND command_id = ? AND state = 'reconciling' RETURNING action`)
+      .get(state, JSON.stringify(result), deviceId, commandId) as SqlRow | undefined;
+    // 只记真迁移（settled 行存在）：dispatch 异步结算悬挂时 submit 有行、这里永远无行——两行对不上就是断点。
+    if (settled && this.deps.logger) {
       const code = typeof result.code === 'string' ? result.code : 'none';
-      logCompanionRelayInfo(this.deps.logger, `Companion gateway settled: action=${action ?? 'unknown'} deviceId=${deviceId} commandId=${commandId} state=${state} code=${code}`);
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway settled: action=${String(settled.action ?? 'unknown')} deviceId=${deviceId} commandId=${commandId} state=${state} code=${code}`);
     }
   }
 

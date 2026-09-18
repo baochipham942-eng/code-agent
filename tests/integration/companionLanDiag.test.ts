@@ -106,7 +106,18 @@ describe('LAN companion connection diagnostics', () => {
     const endpoint = server.invite(['shared']).endpoint;
     const res = await post(`${endpoint}/v1/hello`, { mode: 'pair', inviteId: 'stale-invite-id', frame: '00' });
     expect(res.status).toBe(403);
-    expect(warn.some(line => line.startsWith('Companion LAN handshake rejected: mode=pair') && line.includes('code=COMPANION_INVITATION_EXPIRED'))).toBe(true);
+    expect(warn.some(line => line.startsWith('Companion LAN handshake rejected: mode=string[len=4 prefix="pair"]') && line.includes('code=COMPANION_INVITATION_EXPIRED'))).toBe(true);
+  });
+
+  it('never logs the raw mode when an oversized unauthenticated hello floods the endpoint', async () => {
+    // ai-review Important：/v1/hello 在鉴权与限流之前，同网段任意设备可塞近 4MB 的 mode
+    // 原文把宿主日志当磁盘写。原文绝不进日志，只见 len + 转义前 8 字符。
+    const flood = 'X'.repeat(1024 * 1024);
+    const endpoint = server.invite(['shared']).endpoint;
+    const res = await post(`${endpoint}/v1/hello`, { mode: flood, inviteId: 'stale', frame: '00' });
+    expect(res.status).toBe(403);
+    expect([...info, ...warn].join('\n')).not.toContain(flood);
+    expect(warn.some(line => line.includes(`mode=string[len=${flood.length} prefix="XXXXXXXX"]`))).toBe(true);
   });
 
   it('logs only the first sync beat per channel, not every poll', async () => {
@@ -122,6 +133,26 @@ describe('LAN companion connection diagnostics', () => {
     const c = await pairChannel();
     const result = await exchange(c, { action: 'status', commandId: 'ghost-cmd' });
     expect(result).toBeNull();
-    expect(warn).toContain(`Companion LAN exchange anomaly: action=status channel=${c.channelId.slice(0, 8)} commandId=ghost-cmd result=unknown`);
+    expect(warn).toContain(`Companion LAN exchange anomaly: action=status channel=${c.channelId.slice(0, 8)} commandId=ghost-cm result=unknown`);
+  });
+
+  it('logs only the first dictation beat per channel, not every audio frame', async () => {
+    const c = await pairChannel();
+    // dictation 是 100ms 一帧的实时流：60s 录音就是几百拍，不能每拍一行 info。
+    await exchange(c, { action: 'dictation', op: 'open' });
+    await exchange(c, { action: 'dictation', op: 'audio', streamId: 's-1', pcm: '' });
+    await exchange(c, { action: 'dictation', op: 'audio', streamId: 's-1', pcm: '' });
+    expect(info.filter(line => line.includes('action=dictatio'))).toEqual([
+      `Companion LAN exchange: action=dictatio channel=${c.channelId.slice(0, 8)} first=true`,
+    ]);
+  });
+
+  it('warns about an identity_invalid tombstone once, not on every prune sweep', async () => {
+    const c = await pairChannel();
+    server.revoke(c.deviceId); // revoke() 内部 prune：第一行（也是唯一一行）identity_invalid。
+    const endpoint = server.invite(['shared']).endpoint;
+    // 任何入口都会先 prune：一笔无效 hello 也算一轮 sweep，复读就说明没去重。
+    await post(`${endpoint}/v1/hello`, { mode: 'pair', inviteId: 'stale', frame: '00' });
+    expect(warn.filter(line => line.includes('reason=identity_invalid'))).toHaveLength(1);
   });
 });

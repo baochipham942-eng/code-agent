@@ -169,8 +169,6 @@ export const COMPANION_LIMITS = {
   accountLoginTimeoutMs: 15_000,
   /** 账号邮箱长度上限（RFC 5321 上限），登录表单与配对信息里带的电脑账号邮箱同用这一档。 */
   accountEmailMaxLength: 254,
-  /** 登录表单密码长度上限：只拦异常长输入，不替账号服务做密码策略。 */
-  accountPasswordMaxLength: 256,
 } as const;
 
 const RETRYABLE_FILE_CODES = new Set([

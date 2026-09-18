@@ -1,8 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 import { ensureAndroidVoiceForegroundService } from '../../../packages/mobile/scripts/configure-lan.mjs';
-import { COMPANION_LIMITS } from '../../../src/shared/constants/companion';
 
 // JS↔原生合同（照 iosNativeVoicePlugin.test.ts / mdnsReconnect.test.ts 的先例）：Java 不在本仓
 // 任何测试框架里，跨侧字符串错一个字桥就找不到实现；manifest 注入锚点漂移必须 fail-closed。
@@ -10,44 +9,6 @@ const buildAndroid = readFileSync('packages/mobile/scripts/build-android.mjs', '
 const configureLan = readFileSync('packages/mobile/scripts/configure-lan.mjs', 'utf8');
 const capacitorPort = readFileSync('packages/mobile/src/platform/capacitor.ts', 'utf8');
 const i18n = readFileSync('packages/mobile/src/i18n/index.ts', 'utf8');
-
-// —— 运行时段的桩（vi.hoisted：vi.mock 工厂先于 import 求值，拿不到普通顶层 const）——
-// capacitor 系包不在根 node_modules：mobile 依赖装好时（本机 tsc 需要）capacitor.ts 按真实路径
-// 解析，mock 必须注册同一路径才拦得住；没装时（CI 只 npm ci 根仓）双方都退回裸说明符。
-// 所以 core 与 voice-recorder 两个要控行为的包双注册，其余包裸注册（CI 侧必需，本机侧无害）。
-const { stubs, coreFactory, recorderFactory } = vi.hoisted(() => {
-  const stubs = {
-    keepAliveStart: vi.fn(async () => {}),
-    keepAliveStop: vi.fn(async () => {}),
-    stopRecording: vi.fn(),
-  };
-  const coreFactory = () => ({
-    Capacitor: { getPlatform: () => 'android', isNativePlatform: () => true },
-    registerPlugin: () => ({ start: stubs.keepAliveStart, stop: stubs.keepAliveStop }),
-    SystemBars: { setStyle: async () => {} },
-    SystemBarsStyle: { Dark: 'Dark', Light: 'Light' },
-  });
-  const recorderFactory = () => ({
-    VoiceRecorder: {
-      requestAudioRecordingPermission: async () => ({ value: true }),
-      startRecording: async () => {},
-      stopRecording: (...args: unknown[]) => stubs.stopRecording(...args),
-    },
-  });
-  return { stubs, coreFactory, recorderFactory };
-});
-// capacitor.ts 在模块加载时就按平台定型（android 才注册 VoiceKeepAlive 桥），桩必须给到 'android'。
-vi.mock('@capacitor/core', coreFactory);
-vi.mock('../../../packages/mobile/node_modules/@capacitor/core', coreFactory);
-vi.mock('capacitor-voice-recorder', recorderFactory);
-vi.mock('../../../packages/mobile/node_modules/capacitor-voice-recorder', recorderFactory);
-vi.mock('@capacitor/app', () => ({ App: {} }));
-vi.mock('@capacitor/camera', () => ({ Camera: {} }));
-vi.mock('@capacitor/filesystem', () => ({ Directory: { Documents: 'Documents' }, Filesystem: {} }));
-vi.mock('@capacitor/keyboard', () => ({ Keyboard: {} }));
-vi.mock('@capacitor/preferences', () => ({ Preferences: { get: async () => ({ value: null }), set: async () => {} } }));
-vi.mock('@capacitor/push-notifications', () => ({ PushNotifications: {} }));
-vi.mock('../../../packages/mobile/src/platform/nativeCompanion', () => ({ nativeCompanionPort: {} }));
 
 describe('Android 录音前台服务（N-MOBILE-BG-RECORDING）三侧合同', () => {
   it('manifest：幂等注入 FOREGROUND_SERVICE(+MICROPHONE) 权限与 microphone 类型的 <service>', () => {
@@ -117,47 +78,40 @@ describe('Android 录音前台服务（N-MOBILE-BG-RECORDING）三侧合同', ()
   });
 });
 
-describe('Android 录音前台服务运行时（recorder 实例上真跑，PR#1944 ai-review 修复）', () => {
-  beforeEach(() => { vi.useFakeTimers(); });
-  afterEach(() => { vi.useRealTimers(); });
-
-  it('stopRecording reject 也回收前台服务（Important）：finally 兜底，防抖到期真停', async () => {
-    stubs.stopRecording.mockRejectedValue(new Error('RECORDING_HAS_NOT_STARTED'));
-    const { capacitorPorts } = await import('../../../packages/mobile/src/platform/capacitor');
-    const recorder = capacitorPorts.recorder!;
-    const stopsBefore = stubs.keepAliveStop.mock.calls.length;
-    await expect(recorder.stop()).rejects.toThrow('RECORDING_HAS_NOT_STARTED');
-    // 防抖窗口内还没真停——但回收已经排上，宽限一过必须落地
-    expect(stubs.keepAliveStop.mock.calls.length).toBe(stopsBefore);
-    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.voiceServiceStopGraceMs);
-    expect(stubs.keepAliveStop.mock.calls.length).toBe(stopsBefore + 1);
+// 运行时段改源码契约（N-MOBILE-BG-RECORDING-R4）：capacitor 系包只活在 packages/mobile 独立锁，
+// 根测试程序（tsconfig.tests.json + 根 npm ci）里 import capacitor.ts 会把它连同不可解析的
+// capacitor 依赖一起拽进 tsc 程序（15 处 TS2307/implicit any）。照 nativeCompanionExchange.test.ts
+// 的先例改为钉住 nativeRecorder 里的代码事实——原 vitest 桩跑的三条行为（stop reject 回收 /
+// 一次录音一起服务 / EMPTY_RECORDING 照抛）所依赖的符号与调用序一点不少。
+describe('Android 录音前台服务运行时（源码契约：recorder 起停/防抖/复位，PR#1944 ai-review 修复）', () => {
+  it('stopRecording reject 也回收前台服务（Important）：finally 兜底，真停排队到期才落地', () => {
+    // try 直接收 finally（无 catch）：stopRecording 的任何结局——含 reject 原样上抛给调用方
+    // （VoiceCapture.run 已把 live 落 false、不会补 stop）——回收都已排上
+    expect(capacitorPort).toMatch(/const \{ value \} = await VoiceRecorder\.stopRecording\(\);[\s\S]*?\} finally \{\s*\n\s*keepAliveStop\(\);/);
+    // 真停不是即时的：防抖排在 setTimeout 回调里，宽限取共享常量，到期才调服务的 stop
+    expect(capacitorPort).toContain('stopTimer = setTimeout(() => {');
+    expect(capacitorPort).toContain('void voiceKeepAlive.stop()');
+    expect(capacitorPort).toMatch(/void voiceKeepAlive\.stop\(\)[\s\S]{0,120}\}, COMPANION_LIMITS\.voiceServiceStopGraceMs\);/);
   });
 
-  it('一次录音只起一次服务：切段那声 start 不重复 startForegroundService，防抖内也不真停', async () => {
-    stubs.stopRecording.mockResolvedValue({ value: { recordDataBase64: 'AAAA', mimeType: 'audio/aac', msDuration: 4000 } });
-    const { capacitorPorts } = await import('../../../packages/mobile/src/platform/capacitor');
-    const recorder = capacitorPorts.recorder!;
-    const startsBefore = stubs.keepAliveStart.mock.calls.length;
-    const stopsBefore = stubs.keepAliveStop.mock.calls.length;
-    await recorder.start();   // ① 首段：真起服务
-    await recorder.stop();    // 排防抖停
-    await recorder.start();   // ② 切段：撤掉防抖停；running 已置位 → 不重复起
-    expect(stubs.keepAliveStart.mock.calls.length).toBe(startsBefore + 1);
-    expect(stubs.keepAliveStop.mock.calls.length).toBe(stopsBefore);   // 切段间隙服务没被真停
-    await recorder.stop();    // 收尾：排防抖停，这次没有新 start 跟上
-    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.voiceServiceStopGraceMs);
-    expect(stubs.keepAliveStop.mock.calls.length).toBe(stopsBefore + 1);
-    await recorder.start();   // 新一次录音：running 已随真停复位 → 重新起服务
-    expect(stubs.keepAliveStart.mock.calls.length).toBe(startsBefore + 2);
+  it('一次录音只起一次服务：切段 start 撤防抖停、running 置位不重复起、真停才复位', () => {
+    // 切段那声 start 先撤掉挂着的防抖停：切段间隙服务没被真停，通知不闪
+    expect(capacitorPort).toMatch(/if \(stopTimer\) \{ clearTimeout\(stopTimer\); stopTimer = null; \}/);
+    // running 已置位 → 不重复 startForegroundService
+    expect(capacitorPort).toMatch(/if \(running\) return;/);
+    // 复位只发生在真停回调里：下次录音的 start 不再被挡，重新起服务
+    expect(capacitorPort).toMatch(/stopTimer = setTimeout\(\(\) => \{\s*\n\s*stopTimer = null;\s*\n\s*running = false;/);
+    // 起服务成功才置 running：start 失败（fail-open 只 warn）不算在跑
+    expect(capacitorPort).toMatch(/await voiceKeepAlive\.start\(\{ title: text\.voiceRecording[\s\S]*?\}\);\s*\n\s*running = true;/);
   });
 
-  it('EMPTY_RECORDING 分类语义不变：空段照抛、且同样排队回收', async () => {
-    stubs.stopRecording.mockResolvedValue({ value: { recordDataBase64: undefined, mimeType: 'audio/aac', msDuration: 0 } });
-    const { capacitorPorts } = await import('../../../packages/mobile/src/platform/capacitor');
-    const recorder = capacitorPorts.recorder!;
-    const stopsBefore = stubs.keepAliveStop.mock.calls.length;
-    await expect(recorder.stop()).rejects.toThrow('EMPTY_RECORDING');
-    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.voiceServiceStopGraceMs);
-    expect(stubs.keepAliveStop.mock.calls.length).toBe(stopsBefore + 1);
+  it('EMPTY_RECORDING 分类语义不变：空段照抛，且抛出点与回收同在一个 try/finally', () => {
+    expect(capacitorPort).toContain("if (!value.recordDataBase64) throw new Error('EMPTY_RECORDING');");
+    // 抛出点在 stopRecording 与 finally 之间：空段既向上抛、又照样触发排队回收
+    const stopCall = capacitorPort.indexOf('const { value } = await VoiceRecorder.stopRecording();');
+    const emptyThrow = capacitorPort.indexOf("if (!value.recordDataBase64) throw new Error('EMPTY_RECORDING');");
+    const finallyKw = capacitorPort.indexOf('} finally {', stopCall);
+    expect(emptyThrow).toBeGreaterThan(stopCall);
+    expect(emptyThrow).toBeLessThan(finallyKw);
   });
 });

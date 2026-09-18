@@ -140,7 +140,7 @@ function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
       stopTimer = setTimeout(() => {
         stopTimer = null;
         running = false;
-        void voiceKeepAlive.stop().catch(error => console.warn('[voice-keepalive] stop failed', error));
+        void voiceKeepAlive.stop().catch((error: unknown) => console.warn('[voice-keepalive] stop failed', error));
       }, COMPANION_LIMITS.voiceServiceStopGraceMs);
     };
   }
@@ -232,7 +232,7 @@ export const capacitorPorts: PlatformPorts = {
   appInfo: { read: () => App.getInfo() },
   lifecycle: {
     subscribe: async (onActive, onBack) => {
-      const active = await App.addListener('appStateChange', ({ isActive }) => onActive(isActive));
+      const active = await App.addListener('appStateChange', ({ isActive }: { isActive: boolean }) => onActive(isActive));
       try {
         const back = Capacitor.getPlatform() === 'android' ? await App.addListener('backButton', onBack) : null;
         return () => { void active.remove(); void back?.remove(); };

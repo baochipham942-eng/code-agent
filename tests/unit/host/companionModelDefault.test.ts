@@ -122,13 +122,13 @@ describe('爸配置形状：custom 供应商无 model + 列表首项已失败', 
     settings.models = original;
   });
 
-  it('isDefault 落在同供应商可用模型 gpt-5.5，不拿列表第一个 Preview', async () => {
+  it('isDefault 落在同供应商可用模型 gpt-5.5，不拿已失败的 LongCat 模型', async () => {
     monitor.getProviderHealthMonitor().recordFailure('longcat', {
       model: 'LongCat-2.0-Preview',
       error: Object.assign(new Error('Unsupported model'), { status: 400 }),
     });
     const models = await readModels();
-    expect(models[0]).toMatchObject({ provider: 'longcat', model: 'LongCat-2.0-Preview', recentlyFailed: true, failureKind: 'model' });
+    expect(models.find(model => model.model === 'LongCat-2.0-Preview')).toMatchObject({ provider: 'longcat', recentlyFailed: true, failureKind: 'model' });
     expect(models.find(model => model.model === 'LongCat-2.0')).toMatchObject({ provider: 'longcat' });
     expect(models.find(model => model.model === 'LongCat-2.0')?.recentlyFailed).toBeUndefined();
     const marked = models.filter(model => model.isDefault);

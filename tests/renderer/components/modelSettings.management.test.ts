@@ -513,8 +513,8 @@ describe('ModelSettings management helpers', () => {
     expect(providerRequiresApiKey('longcat')).toBe(true);
 
     expect(isModelMetadataLocked('longcat', {
-      id: 'LongCat-2.0-Preview',
-      label: 'LongCat 2.0 Preview',
+      id: 'LongCat-2.0',
+      label: 'LongCat 2.0',
       enabled: true,
       capabilities: ['general', 'reasoning'],
       supportsTool: true,
@@ -523,6 +523,7 @@ describe('ModelSettings management helpers', () => {
       source: 'catalog',
     })).toBe(true);
 
+    // Preview 已从官方目录下线，但第三方中转自报的同名条目仍可配置、不锁元数据
     expect(isModelMetadataLocked('custom-longcat', {
       id: 'longcat-2.0-preview',
       label: 'LongCat 2.0 Preview',
@@ -547,7 +548,9 @@ describe('ModelSettings management helpers', () => {
   });
 
   it('identifies legacy custom LongCat configs for official migration', () => {
-    expect(normalizeLongCatModelId('longcat-2.0-preview')).toBe('LongCat-2.0-Preview');
+    // Preview 已下线：归一化与兜底都指向 GA 名 LongCat-2.0
+    expect(normalizeLongCatModelId('longcat-2.0-preview')).toBe('LongCat-2.0');
+    expect(normalizeLongCatModelId(undefined)).toBe('LongCat-2.0');
     expect(isLegacyLongCatProviderConfig('custom', {
       enabled: true,
       displayName: 'LongCat',
@@ -562,6 +565,6 @@ describe('ModelSettings management helpers', () => {
       { provider: 'custom', model: 'longcat-2.0-preview' },
       { custom: { enabled: true, displayName: 'LongCat', baseUrl: 'https://api.longcat.chat/openai/v1' } },
     );
-    expect(migration?.config).toMatchObject({ provider: 'longcat', model: 'LongCat-2.0-Preview' });
+    expect(migration?.config).toMatchObject({ provider: 'longcat', model: 'LongCat-2.0' });
   });
 });

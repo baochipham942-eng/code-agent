@@ -35,33 +35,34 @@ function notifications(viewing: string | null, resolveRoute?: (token: string) =>
   return { store, resolve };
 }
 
-describe('前台推送：一律不弹系统横幅，改走 app 内提示（N-MOBILE-FOREGROUND-PUSH）', () => {
-  it('正看着的就是推送那条会话 ⇒ 不弹也不出轻提示（N-MOBILE-EXEC-STATUS ④ 不退化）', async () => {
+describe('前台推送：不弹横幅、通知中心留痕、app 内轻提示（N-MOBILE-FOREGROUND-PUSH）', () => {
+  it('正看着的就是推送那条会话 ⇒ 两位全 false：横幅不弹、通知中心也不落（N-MOBILE-EXEC-STATUS ④ 不退化）', async () => {
     const { store } = notifications('s1', async () => 's1');
-    await expect(store.getState().decideForeground('rt')).resolves.toBe(false);
+    await expect(store.getState().decideForeground('rt')).resolves.toEqual({ present: false, list: false });
     expect(store.getState().foregroundAlert).toBeNull();
     expect(store.getState().unreadSessions).toEqual([]);
   });
 
-  it('推送属于别的会话 ⇒ 不弹，轻提示带 sessionId、该会话进未读', async () => {
+  it('推送属于别的会话 ⇒ 不弹横幅但通知中心留痕，轻提示带 sessionId、该会话进未读', async () => {
     const { store } = notifications('s1', async () => 's2');
-    await expect(store.getState().decideForeground('rt')).resolves.toBe(false);
+    await expect(store.getState().decideForeground('rt')).resolves.toEqual({ present: false, list: true });
     expect(store.getState().foregroundAlert).toMatchObject({ routeToken: 'rt', sessionId: 's2' });
     expect(store.getState().unreadSessions).toEqual(['s2']);
   });
 
-  it('不在会话页（欢迎页/抽屉/弹层盖着）⇒ 不弹，仍查归属给未读点上料', async () => {
+  it('不在会话页（欢迎页/抽屉/弹层盖着）⇒ 立即回话、不做 LAN 往返（R3 Nit②），轻提示照出、归属点按时现查', async () => {
     const { store, resolve } = notifications(null, async () => 's2');
-    await expect(store.getState().decideForeground('rt')).resolves.toBe(false);
-    expect(resolve).toHaveBeenCalledTimes(1);
-    expect(store.getState().foregroundAlert).toMatchObject({ routeToken: 'rt', sessionId: 's2' });
-    expect(store.getState().unreadSessions).toEqual(['s2']);
+    await expect(store.getState().decideForeground('rt')).resolves.toEqual({ present: false, list: true });
+    // 旧代码这条路径立即返回：往返唯一收益是提前给未读点上料，却会让 decide 撞原生 1.5s 兜底双弹。
+    expect(resolve).not.toHaveBeenCalled();
+    expect(store.getState().foregroundAlert).toMatchObject({ routeToken: 'rt', sessionId: null });
+    expect(store.getState().unreadSessions).toEqual([]);
   });
 
-  it('判不出属于哪条（查询失败 / 查不到 / 没 token / 不支持查询）⇒ 不弹，通用轻提示照出（新版不许吞）', async () => {
+  it('判不出属于哪条（查询失败 / 查不到 / 没 token / 不支持查询）⇒ 横幅不弹但通知中心照落（list=true，新版不许吞）', async () => {
     // 没 token 那条用 routeToken=null（resolveRoute 存在也无从查起），轻提示照出、routeToken 原样保留。
     const unknown = async (store: ReturnType<typeof notifications>['store'], token: string | null) => {
-      await expect(store.getState().decideForeground(token)).resolves.toBe(false);
+      await expect(store.getState().decideForeground(token)).resolves.toEqual({ present: false, list: true });
       expect(store.getState().foregroundAlert).toMatchObject({ routeToken: token, sessionId: null });
       expect(store.getState().unreadSessions).toEqual([]);
     };
@@ -71,7 +72,16 @@ describe('前台推送：一律不弹系统横幅，改走 app 内提示（N-MOB
     await unknown(notifications('s1').store, 'rt');
   });
 
-  it('判定一路都不许抛：viewing 崩了也按不弹结算并出通用轻提示', async () => {
+  it('判不出归属时连来两条 ⇒ 每条都要通知中心留痕，第一条不被第二条顶没（R3 Important）', async () => {
+    // relay 同形：连着但在 relay 面上，resolveRoute 恒 null（companionStore 里 relay 直接 return null）。
+    const { store } = notifications('s1', async () => null);
+    await expect(store.getState().decideForeground('rt-a')).resolves.toEqual({ present: false, list: true });
+    await expect(store.getState().decideForeground('rt-b')).resolves.toEqual({ present: false, list: true });
+    // app 内轻提示是单槽（第二条顶掉第一条）——两条各自的持久痕迹全靠各自 list=true 落进通知中心。
+    expect(store.getState().foregroundAlert).toMatchObject({ routeToken: 'rt-b', sessionId: null });
+  });
+
+  it('判定一路都不许抛：viewing 崩了也按「不弹+留痕」结算并出通用轻提示', async () => {
     const store = createNotificationStore({
       port,
       preference: { get: () => true, set: () => {} },
@@ -81,7 +91,7 @@ describe('前台推送：一律不弹系统横幅，改走 app 内提示（N-MOB
         viewing: () => { throw new Error('boom'); }, resolveRoute: async () => 's2',
       },
     });
-    await expect(store.getState().decideForeground('rt')).resolves.toBe(false);
+    await expect(store.getState().decideForeground('rt')).resolves.toEqual({ present: false, list: true });
     expect(store.getState().foregroundAlert).toMatchObject({ routeToken: 'rt', sessionId: null });
   });
 
@@ -111,7 +121,7 @@ function presentationBridge(enableFails = false) {
   return {
     remove,
     enable: vi.fn(async () => { if (enableFails) throw new Error('not implemented'); }),
-    decide: vi.fn(async (_options: { id: string; present: boolean }) => {}),
+    decide: vi.fn(async (_options: { id: string; present: boolean; list: boolean }) => {}),
     addListener: vi.fn(async (_event: 'willPresent', cb: (event: { id: string; routeToken?: string }) => void) => { listeners.push(cb); return { remove }; }),
     fire(event: { id: string; routeToken?: string }) { for (const cb of listeners) cb(event); },
   };
@@ -120,33 +130,45 @@ function presentationBridge(enableFails = false) {
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
 describe('iOS 前台判定接线：willPresent → decide', () => {
-  it('JS 的判定原样回给插件', async () => {
+  it('JS 的判定两位原样回给插件', async () => {
     const presentation = presentationBridge();
     const notifyPort = createNotificationPort('ios', async () => {}, pushBridge() as never, presentation);
-    await notifyPort.foreground!.subscribe(async token => token !== 'same-session');
+    await notifyPort.foreground!.subscribe(async token => ({ present: false, list: token !== 'same-session' }));
     expect(presentation.enable).toHaveBeenCalledTimes(1);
     presentation.fire({ id: 'n1', routeToken: 'same-session' });
     presentation.fire({ id: 'n2', routeToken: 'other' });
     presentation.fire({ id: 'n3', routeToken: '' });
     await settle();
     expect(presentation.decide.mock.calls.map(([options]) => options)).toEqual([
-      { id: 'n1', present: false }, { id: 'n2', present: true }, { id: 'n3', present: true },
+      { id: 'n1', present: false, list: false }, { id: 'n2', present: false, list: true }, { id: 'n3', present: false, list: true },
     ]);
   });
 
-  it('判定抛错按「弹」回话', async () => {
+  it('连来两条判不出归属的：插件每条都收到 list=true——通知中心各留一份记录，第一条不丢（R3 Important）', async () => {
+    const presentation = presentationBridge();
+    const notifyPort = createNotificationPort('ios', async () => {}, pushBridge() as never, presentation);
+    await notifyPort.foreground!.subscribe(async () => ({ present: false, list: true }));
+    presentation.fire({ id: 'n1', routeToken: 'rt-a' });
+    presentation.fire({ id: 'n2', routeToken: 'rt-b' });
+    await settle();
+    expect(presentation.decide.mock.calls.map(([options]) => options)).toEqual([
+      { id: 'n1', present: false, list: true }, { id: 'n2', present: false, list: true },
+    ]);
+  });
+
+  it('判定抛错按「照常弹」回话（两位全 true）', async () => {
     const presentation = presentationBridge();
     const notifyPort = createNotificationPort('ios', async () => {}, pushBridge() as never, presentation);
     await notifyPort.foreground!.subscribe(async () => { throw new Error('boom'); });
     presentation.fire({ id: 'n1', routeToken: 'rt' });
     await settle();
-    expect(presentation.decide).toHaveBeenCalledWith({ id: 'n1', present: true });
+    expect(presentation.decide).toHaveBeenCalledWith({ id: 'n1', present: true, list: true });
   });
 
   it('旧包里没有这个插件：订阅不抛（不把页面标成原生错误），监听收回', async () => {
     const presentation = presentationBridge(true);
     const notifyPort = createNotificationPort('ios', async () => {}, pushBridge() as never, presentation);
-    await expect(notifyPort.foreground!.subscribe(async () => false)).resolves.toBeTypeOf('function');
+    await expect(notifyPort.foreground!.subscribe(async () => ({ present: false, list: true }))).resolves.toBeTypeOf('function');
     expect(presentation.remove).toHaveBeenCalledTimes(1);
   });
 
@@ -155,11 +177,16 @@ describe('iOS 前台判定接线：willPresent → decide', () => {
     expect(createNotificationPort('ios', async () => {}, pushBridge() as never).foreground).toBeUndefined();
   });
 
-  it('原生侧：超时与未订阅都照常弹，只有 JS 回 false 才吞；构建闸把类名和两张表查到产物里', () => {
+  it('原生侧：超时与未订阅都照常弹；decide 两位——present=true 走 Capacitor、present=false+list=true 落 [.list]、两位全 false 才完全静默；构建闸把类名和两张表查到产物里', () => {
     const swift = readFileSync('packages/mobile/ios-native/NeoPushPresentationPlugin.swift', 'utf8');
     expect(swift).toContain('UNUserNotificationCenter.current().delegate = self');
-    expect(swift).toMatch(/asyncAfter\(deadline: \.now\(\) \+ Self\.decisionTimeout\) \{\s*self\.finish\(id, present: true\)/);
+    expect(swift).toMatch(/asyncAfter\(deadline: \.now\(\) \+ Self\.decisionTimeout\) \{\s*self\.finish\(id, present: true, list: true\)/);
     expect(swift).toMatch(/guard isRemote, hasListeners\("willPresent"\) else \{\s*router\.userNotificationCenter/);
+    // 两位协议钉进源（R3 Important 修法 1）：list 缺省 true（JS/原生版本错配时宁留痕不吞），
+    // [.list] 是判不出归属的推送唯一的持久痕迹——摘掉它 = 第一条推送被第二条顶没。
+    expect(swift).toMatch(/let present = call\.getBool\("present"\) \?\? true/);
+    expect(swift).toMatch(/let list = call\.getBool\("list"\) \?\? true/);
+    expect(swift).toMatch(/else if list \{\s*(?:\/\/[^\n]*\n\s*)*completionHandler\(\[\.list\]\)/);
     expect(swift.match(/completionHandler\(\[\]\)/g)).toHaveLength(1);
     expect(swift).toMatch(/didReceive response[\s\S]*router\.userNotificationCenter\(center, didReceive: response/);
     const build = readFileSync('packages/mobile/scripts/build-ios.mjs', 'utf8');

@@ -35,12 +35,19 @@ export type TokenResult =
   | { kind: 'unavailable'; code: 'CHANNEL_MISSING'; missing: 'apns_entitlement' | 'gms_or_vendor' }
   | { kind: 'error'; code: 'REGISTRATION_FAILED' };
 
+/**
+ * 前台推送的系统呈现判定（N-MOBILE-FOREGROUND-PUSH-R3）：present=弹横幅（含声音），list=只落
+ * 通知中心列表。常态 present=false+list=true——前台不横幅打扰、app 内轻提示替位，但系统层一定
+ * 留痕；两位全 false 只属于「正看着的就是推送那条会话」（N-MOBILE-EXEC-STATUS ④）。
+ */
+export interface ForegroundPushDecision { present: boolean; list: boolean }
+
 export interface NotificationPort {
   permission: { read(): Promise<OsPermission>; request(): Promise<OsPermission> };
   token: { current(): Promise<TokenResult>; subscribe(onChange: (result: TokenResult) => void): Dispose };
   tap: { subscribe(onTap: (routeToken: string) => void): Promise<Dispose> };
-  /** 前台来推送时问一句要不要弹（decide 回 false = 不弹）；只有 iOS 第一方插件提供。 */
-  foreground?: { subscribe(decide: (routeToken: string | null) => Promise<boolean>): Promise<Dispose> };
+  /** 前台来推送时问一句怎么呈现（横幅/通知中心列表两位）；只有 iOS 第一方插件提供。 */
+  foreground?: { subscribe(decide: (routeToken: string | null) => Promise<ForegroundPushDecision>): Promise<Dispose> };
   openSettings(): Promise<void>;
   network: { read(): NetworkStatus };
 }

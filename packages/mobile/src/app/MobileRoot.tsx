@@ -252,8 +252,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     register((ports.notifications ?? unavailableNotificationPort).tap.subscribe(token => {
       void notifyStore.getState().handleTap(token);
     }));
-    // 前台一律不弹系统横幅，改走 app 内提示（N-MOBILE-FOREGROUND-PUSH）：decideForeground 里落轻提示
-    // + 抽屉未读点；正看着同一条会话时连轻提示也不出（N-MOBILE-EXEC-STATUS ④，会话里已就地显示）。
+    // 前台一律不弹系统横幅，改走 app 内提示 + 通知中心留痕（N-MOBILE-FOREGROUND-PUSH）：decideForeground
+    // 里落轻提示 + 抽屉未读点、给原生回 list=true；正看着同一条会话时两位全 false，什么都不出
+    // （N-MOBILE-EXEC-STATUS ④，会话里已就地显示）。
     const foreground = (ports.notifications ?? unavailableNotificationPort).foreground;
     if (foreground) register(foreground.subscribe(routeToken => notifyStore.getState().decideForeground(routeToken)));
     let frame = 0;
@@ -372,22 +373,21 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   }, [companion.sessionId, companion.binding?.hostKey, companion.library, store]);
   /**
    * 前台轻提示到点自隐（N-MOBILE-FOREGROUND-PUSH）：计时放 UI 层——store 只记「这条提示还在」的
-   * 事实，消隐节奏是呈现问题（pendingNoticeDelayMs 的先例）。未读点不清：提示闪过去后它才是持久信号。
-   * 判不出归属（relay / 离线 / 查询失败）的提示**不自隐**（R2 Important）：那种时候 resolveRoute 恒
-   * null、未读点落不下去，这条提示是唯一痕迹，5 秒清零等于把推送吞掉——保持到用户点掉或下一条顶掉。
-   * 取舍：代价是 relay 上多一条赖着不走的提示，换「用户不在家那条链路上通知绝不消失」。
+   * 事实，消隐节奏是呈现问题（pendingNoticeDelayMs 的先例）。**一律自隐**（R3 Nit④，撤 R2 的「判不出
+   * 归属不自隐」）：R2 靠它赖着不走当唯一痕迹，代价是一直盖着抽屉/弹层顶部一条；R3 起原生对每条
+   * 推送仍投 [.list]，持久痕迹在系统通知中心，app 内提示只当指针。未读点不清：提示闪过去后它才是
+   * 会话页上的持久信号。
    */
   useEffect(() => {
     if (!notify.foregroundAlert) return;
-    if (notify.foregroundAlert.sessionId == null) return;
     const timer = setTimeout(() => notifyStore.getState().dismissForegroundAlert(), COMPANION_LIMITS.foregroundAlertAutoHideMs);
     return () => clearTimeout(timer);
   }, [notify.foregroundAlert, notifyStore]);
   // 未读点的清除盯住选中会话（N-MOBILE-FOREGROUND-PUSH）：不走 selectSession 单点——handleTap→openRoute、
   // firstSend、抽屉/弹层选会话所有换会话路径都覆盖到；选中即视为已读。
-  // 盖层合上也清（R2 Nit①）：抽屉/弹层开着时 viewing 为 null，本会话的推送照样记一笔未读，而
-  // sessionId 没变这个 effect 不会重跑——不清的话切去别的会话后它是假未读点。合上 = 回到
-  // 「正看着这条会话」，判据与 viewing 同一形状。
+  // 盖层合上也清（R2 Nit①，R3 起为安全网）：未读只在会话页上记（Nit② 非会话页零往返），常态到不了
+  // 「盖着层还带着本会话未读」的形状，但清除门槛仍与 viewing 同形——合上 = 回到「正看着这条会话」，
+  // 防的是将来再有非会话页记未读的路径把假未读点漏进来。
   useEffect(() => {
     if (companion.sessionId && !state.drawer && !state.sheet) notifyStore.getState().markSessionRead(companion.sessionId);
   }, [companion.sessionId, state.drawer, state.sheet, notifyStore]);
@@ -417,7 +417,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   // 显式先关——不把它押在路由切换的副作用上。
   const selectSession = (id: string) => { companion.selectSession(id); state.closeDrawer(); state.navigate('new'); };
   // 前台轻提示的点按（N-MOBILE-FOREGROUND-PUSH）：照系统横幅点按同一条路走——断连先 reconnect、
-  // openRoute 跳会话、点按永不 approve；没有 routeToken（判不出归属）就只收掉提示。
+  // openRoute 现查归属并跳会话（归属不预存，R3 Nit② 非会话页零往返）、点按永不 approve；
+  // 没有 routeToken（判不出归属）就只收掉提示。
   const tapForegroundAlert = (routeToken: string | null) => {
     if (routeToken) void notifyStore.getState().handleTap(routeToken);
     notifyStore.getState().dismissForegroundAlert();
@@ -911,14 +912,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           onOpenSettings: () => void (ports.notifications ?? unavailableNotificationPort).openSettings(),
         }} />}
     </SheetHost>}
-    {/* 前台轻提示（N-MOBILE-FOREGROUND-PUSH）：系统横幅退场后的 app 内替身，有归属的到点自隐（无归属的
-        不自隐，见上面那个 effect）、点按跳会话；routeToken 为 null（判不出归属）时点按只收掉提示
-        ——这就是新版「不许吞」。
+    {/* 前台轻提示（N-MOBILE-FOREGROUND-PUSH）：系统横幅退场后的 app 内替身，一律到点自隐（R3 Nit④；
+        持久的那份记录在系统通知中心——decideForeground 回 list=true）、点按跳会话；routeToken 为
+        null（判不出归属）时点按只收掉提示——「不许吞」的最后落点在系统层。
         R2 Important：必须浮在 <main> 之外——抽屉/弹层开着时 main 是 inert 的（不可点、无障碍树摘除、
         aria-live 不播报），视觉上又被 drawer/sheet 的 scrim 盖住，留在里面等于 relay+开抽屉时通知被
-        彻底吞掉。独立浮层与 drawer(10)/sheet(20) 同栈更高一层，inert 范围不含它。 */}
-    {notify.foregroundAlert && <div className="foreground-alert-layer" data-testid="foreground-alert-layer">
-      <p className="notice foreground-alert" role="status" aria-live="polite" data-testid="foreground-alert" onClick={() => tapForegroundAlert(notify.foregroundAlert?.routeToken ?? null)}>{text.foregroundAlert}</p>
+        彻底吞掉。独立浮层与 drawer(10)/sheet(20) 同栈更高一层，inert 范围不含它。
+        R3 Nit①：可点的就是 <button>（整条提示是一个动作，VoiceOver 要播报「可激活」、键盘要够得着）；
+        role="status"+aria-live 挪到浮层上播报到达——按钮自身是交互件，再挂 status 会抹掉它的按钮语义。 */}
+    {notify.foregroundAlert && <div className="foreground-alert-layer" role="status" aria-live="polite" data-testid="foreground-alert-layer">
+      <button type="button" className="notice foreground-alert" data-testid="foreground-alert" onClick={() => tapForegroundAlert(notify.foregroundAlert?.routeToken ?? null)}>{text.foregroundAlert}</button>
     </div>}
   </div>;
 }

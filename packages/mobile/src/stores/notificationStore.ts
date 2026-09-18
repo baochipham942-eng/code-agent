@@ -1,11 +1,12 @@
 import { createStore } from 'zustand/vanilla';
-import type { NetworkStatus, NotificationPort, OsPermission, PushToken, TokenResult } from '../platform/ports';
+import type { ForegroundPushDecision, NetworkStatus, NotificationPort, OsPermission, PushToken, TokenResult } from '../platform/ports';
 
 export type RegistrationStatus = 'idle' | 'registering' | 'registered' | 'unregistered' | 'failed';
 
 /**
  * 前台被吞的系统横幅的 app 内替身（N-MOBILE-FOREGROUND-PUSH）：会话区顶部轻提示 + 可点跳转。
- * routeToken 为 null 表示判不出归属（没 token / 查询失败 / relay / 离线），点按只收掉提示。
+ * routeToken 为 null 表示判不出归属（没 token / 查询失败 / relay / 离线），点按只收掉提示；
+ * 有 token 时归属点按那刻现查（handleTap → openRoute），不在这条上预存。
  */
 interface ForegroundAlert {
   routeToken: string | null;
@@ -31,7 +32,7 @@ interface State {
   network: NetworkStatus;
   lastFailure: string | null;
   routeError: string | null;
-  /** 前台来推送时落下的轻提示；同刻只留最新一条（N-MOBILE-FOREGROUND-PUSH）。 */
+  /** 前台来推送时落下的轻提示；同刻只留最新一条（会被下一条顶掉——持久痕迹在系统通知中心，见 decideForeground 的 list）。 */
   foregroundAlert: ForegroundAlert | null;
   /** 前台被吞的横幅记下的未读会话（内存集合，不落盘——只补这一个信号缺口，进会话即清）。 */
   unreadSessions: string[];
@@ -44,8 +45,8 @@ interface State {
   dismissForegroundAlert(): void;
   /** 进了这条会话，未读点随之清掉。 */
   markSessionRead(sessionId: string): void;
-  /** 前台来了一条推送，要不要弹系统横幅（N-MOBILE-FOREGROUND-PUSH：一律不弹，改走 app 内提示）。 */
-  decideForeground(routeToken: string | null): Promise<boolean>;
+  /** 前台来了一条推送，系统层怎么呈现（横幅一律不弹；通知中心列表常开——N-MOBILE-FOREGROUND-PUSH-R3）。 */
+  decideForeground(routeToken: string | null): Promise<ForegroundPushDecision>;
 }
 
 /**
@@ -135,31 +136,34 @@ export function createNotificationStore(deps: {
         // Lock screen / notification tap must not approve. respond is never called here.
       },
       decideForeground: async routeToken => {
-        // N-MOBILE-FOREGROUND-PUSH（2026-09-18，爸真机「app 开着还弹横幅」）：app 在前台一律不弹
-        // 系统横幅，打扰换成 app 内提示——轻提示 + 抽屉未读点（下面两行 set）。老策略「宁可多弹，
-        // 不许吞」的前提是吞掉横幅后 app 内没有替代信号；现在替代信号就在这里，「不许吞」从系统层
-        // 挪进 app 内层：判不出归属（没 token / 查询失败 / relay / 离线）也照样出通用轻提示
-        // （sessionId 为 null、routeToken 照带，可点跳转）。
-        // 唯一什么都不做的情形：正看着的就是推送那条会话（N-MOBILE-EXEC-STATUS ④）——任务完成/
-        // 失败、待确认都已在会话里就地出现，横幅和轻提示都是重复打扰。
+        // N-MOBILE-FOREGROUND-PUSH-R3：前台一律不弹系统横幅（present=false），打扰换成 app 内提示——
+        // 轻提示 + 抽屉未读点（下面两行 set），但给原生回 list=true：通知中心仍各落一条持久、可堆叠的
+        // 记录。R2 的教训（R3 Important）：恒 false 后原生投空 options，判不出归属（relay/离线/查询失败）
+        // 时替代信号全灭——未读点要 sessionId 才落得下去，轻提示又是单槽内存态（下一条一顶、杀 app 即
+        // 没），第一条推送永久不可达。「不许吞」的最后落点必须在系统层；app 内提示只当一闪而过的指针。
+        // 唯一两位全 false 的情形：正看着的就是推送那条会话（N-MOBILE-EXEC-STATUS ④）——任务完成/
+        // 失败、待确认都已在会话里就地出现，横幅和列表记录都是重复打扰。
+        // 归属查询只在会话页做（R3 Nit②）：这次 LAN 往返是为了判「正看着的就是这条」，必须等结果才能
+        // 回话；不在会话页（欢迎页/抽屉/弹层盖着/离线）时它的唯一收益是提前给未读点上料，而 decide
+        // 在这里多等一拍，慢网上就撞原生 1.5s 兜底——系统横幅照弹 + app 内提示同时出，双份打扰。
+        // 归属挪到点按那刻现查（handleTap → openRoute），非会话页的未读缺口由通知中心 [.list] 记录兜住。
         let viewing: string | null = null;
         let target: string | null = null;
         try {
           viewing = deps.session.viewing?.() ?? null;
-          // 不在会话页也查归属：sessionId 撑起抽屉未读点；查询失败/relay/离线自然落 null，轻提示不受影响。
-          if (routeToken && deps.session.resolveRoute) target = await deps.session.resolveRoute(routeToken).catch(() => null);
+          if (viewing && routeToken && deps.session.resolveRoute) target = await deps.session.resolveRoute(routeToken).catch(() => null);
         } catch {
           // 判定自身不许抛：这里崩了只丢归属（target 留 null），轻提示照出；
-          // notifications.ts 那头的 .catch(() => true) 仍是「JS 真崩就多弹一次」的最终垫底。
+          // notifications.ts 那头的 .catch(() => ({present:true,list:true})) 仍是「JS 真崩就照常弹」的最终垫底。
         }
-        if (viewing && target === viewing) return false;
+        if (viewing && target === viewing) return { present: false, list: false };
         set(state => ({
           foregroundAlert: { routeToken, sessionId: target },
           unreadSessions: target && !state.unreadSessions.includes(target)
             ? [...state.unreadSessions, target]
             : state.unreadSessions,
         }));
-        return false;
+        return { present: false, list: true };
       },
       dismissForegroundAlert: () => set({ foregroundAlert: null }),
       markSessionRead: sessionId => set(state => ({ unreadSessions: state.unreadSessions.filter(id => id !== sessionId) })),

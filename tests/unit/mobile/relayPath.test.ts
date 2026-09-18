@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createIdentity } from '../../../src/shared/companion/noiseChannel';
 import { toHex } from '../../../src/shared/companion/lanProtocol';
 import { createCompanionStore } from '../../../packages/mobile/src/stores/companionStore';
@@ -8,6 +8,7 @@ import type { PlatformPorts } from '../../../packages/mobile/src/platform/ports'
  * N-MOBILE-RELAY-PHONE 双径策略的 store 形态（照 mdnsReconnect.test.ts 的替身法）：
  * LAN 直连优先，失败且有缓存路由才落 relay；LAN 恢复时收敛回直连，不双跑；
  * relay 面上听写/推送按「主机不支持」降级。传输两侧全部 mock，这里只测 store 的选择。
+ * FB-197 起拨号并行竞速（先成者胜）：lanGate/relayGate 是各自的手动闸，控「谁先通」。
  */
 const harness = vi.hoisted(() => ({
   lanError: null as string | null,
@@ -31,6 +32,9 @@ const harness = vi.hoisted(() => ({
   /** N-MOBILE-NOHOST-WAKING-STATE：下一笔 relay connect() 挂起（一次性），releaseRelay 注入迟到结局。 */
   hangRelayOnce: false,
   releaseRelay: null as null | ((code: string) => void),
+  /** 竞速计时（FB-197）：recover / relay connect 的手动闸——null = 不挂，立即走罐头逻辑。 */
+  lanGate: null as Promise<unknown> | null,
+  relayGate: null as Promise<unknown> | null,
 }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
@@ -39,6 +43,9 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
     constructor() { harness.lanClients.push(this.ref); }
     async pair() { throw new Error('unused'); }
     async recover() {
+      if (harness.lanGate) await harness.lanGate;
+      // close 过的客户端 recover 不再出结果：真客户端靠 generation 抛 CHANNEL_CHANGED。
+      if (!this.ref.alive) throw new Error('COMPANION_CHANNEL_CHANGED');
       if (harness.lanError) throw new Error(harness.lanError);
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32),
         deviceId: 'phone-1', scopeEpoch: 1, scope: ['shared'],
@@ -47,6 +54,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
     async request(payload: Record<string, unknown>) {
       if (!this.ref.alive) throw new Error('COMPANION_NOT_CONNECTED');
       harness.lanRequests.push(payload);
+      if (payload.action === 'status') return null;
       if (payload.action === 'dictation' && payload.op === 'open') {
         return harness.dictationOpenResult ?? { ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE', events: [] };
       }
@@ -80,6 +88,12 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
 vi.mock('../../../packages/mobile/src/platform/relayCompanionClient', () => ({
   browserRelayDial: () => { throw new Error('test must inject dialRelay'); },
   RelayCompanionClient: class {
+    private closed = false;
+    /** close 的分类码照真客户端（relayCompanionClient.close）：握手没谈完、一个帧都没收到 ⇒
+     *  AUTH_REJECTED——竞速赢方关在途拨号时 wrapper 若照字面兑现会作废好票据/回落再拨，
+     *  mock 必须把这条分类带出来，否则 store 侧的防护在测试里不可见。 */
+    private closeCode: string | null = null;
+    private established = false;
     constructor(deps: { onRevoked?: () => void; dial: (url: string, headers: { authorization: string }) => unknown }) {
       harness.relayConstructed += 1;
       harness.onRevoked = deps.onRevoked ?? null;
@@ -87,6 +101,9 @@ vi.mock('../../../packages/mobile/src/platform/relayCompanionClient', () => ({
       deps.dial('capture://dial', { authorization: '' });
     }
     async connect() {
+      if (harness.relayGate) await harness.relayGate;
+      // 被赢方/抢占者 close 过的拨号：继续走只会留第二条活通道，立即失败。
+      if (this.closed) throw new Error(this.closeCode ?? 'COMPANION_NOT_CONNECTED');
       harness.relayDials.push({ url: 'captured-in-store-test', authorization: 'n/a' });
       if (harness.hangRelayOnce) {
         harness.hangRelayOnce = false;
@@ -94,7 +111,11 @@ vi.mock('../../../packages/mobile/src/platform/relayCompanionClient', () => ({
       }
       if (harness.relayError) throw new Error(harness.relayError);
     }
-    async resume() { if (harness.relayError) throw new Error(harness.relayError); }
+    async resume() {
+      if (this.closed) throw new Error(this.closeCode ?? 'COMPANION_NOT_CONNECTED');
+      if (harness.relayError) throw new Error(harness.relayError);
+      this.established = true;
+    }
     async request(payload: Record<string, unknown>) {
       harness.relayRequests.push(payload);
       if (payload.action === 'sync' && harness.hangSync) {
@@ -103,18 +124,27 @@ vi.mock('../../../packages/mobile/src/platform/relayCompanionClient', () => ({
       if (payload.action === 'sync') return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
       return { kind: 'accepted', command: { commandId: 'x', state: 'accepted', result: {} } };
     }
-    close() { harness.relayClosed += 1; }
+    close() {
+      this.closed = true;
+      this.closeCode = this.established ? 'COMPANION_NOT_CONNECTED' : 'COMPANION_RELAY_AUTH_REJECTED';
+      harness.relayClosed += 1;
+    }
   },
 }));
 
 const identity = createIdentity();
 const RELAY_ROUTE = { v: 1 as const, url: 'ws://127.0.0.1:8791/', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential' };
+/** 竞速③的配对盘里带一条待确认命令：结算（status/deliver）只在最终胜出的通道上跑。 */
+const PENDING_COMMAND = { version: 1, deviceId: 'phone-1', scopeEpoch: 1, commandId: 'cmd-race-3', sessionId: 'shared', action: 'message.send', payload: { text: '竞速期间卡住的' } } as const;
 
-function storageWith(options: { relay?: unknown } = {}) {
+function storageWith(options: { relay?: unknown; pending?: unknown; relayAccount?: unknown; account?: unknown } = {}) {
   return JSON.stringify({
     version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
     binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['shared'] },
     ...(options.relay === undefined ? {} : { relay: options.relay }),
+    ...(options.pending === undefined ? {} : { pending: options.pending }),
+    ...(options.relayAccount === undefined ? {} : { relayAccount: options.relayAccount }),
+    ...(options.account === undefined ? {} : { account: options.account }),
   });
 }
 
@@ -437,5 +467,217 @@ describe('no-host 过渡态：等电脑上线，15s 内不落失败页', () => {
     await vi.advanceTimersByTimeAsync(0);
     // 迟到结果被代号丢弃：不落失败页、不打断手动重连后的过渡态
     expect(store.getState()).toMatchObject({ status: 'connecting', relayNoHostWaiting: true, connectionError: null, busy: false });
+  });
+});
+
+/**
+ * FB-197 并行竞速（fake timers 控时）：有缓存 relay 路由时 LAN 与 relay 同发起拨、
+ * 先成者胜；LAN 后通收敛回直连；身份类失败取消在途 relay；双败抛 relay 码；抢占不双跑。
+ */
+describe('companionStore 竞速：LAN 与 relay 并行拨号、先成者胜', () => {
+  const gate = () => {
+    let release!: () => void;
+    const promise = new Promise<void>(resolve => { release = resolve; });
+    return { promise, release };
+  };
+  beforeEach(() => {
+    harness.lanError = null; harness.relayError = null;
+    harness.relayConstructed = 0; harness.relayClosed = 0;
+    harness.relayRequests = []; harness.lanRequests = [];
+    harness.lanGate = null; harness.relayGate = null;
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('① LAN 挂住 10s、relay 100ms 通 ⇒ 1s 内 connected/relay；LAN 后败停在 relay', async () => {
+    const lan = gate();
+    const relay = gate();
+    harness.lanGate = lan.promise;
+    harness.relayGate = relay.promise;
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    const hydrating = store.getState().hydrate();
+    await vi.advanceTimersByTimeAsync(0);
+    // 竞速：relay 拨号已发起，不再等 LAN 失败。
+    expect(harness.relayConstructed).toBe(1);
+    await vi.advanceTimersByTimeAsync(100);            // relay 100ms 通
+    relay.release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay' });
+    await vi.advanceTimersByTimeAsync(900);            // 到 1s：LAN 仍挂着，状态已落 relay
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay' });
+    await vi.advanceTimersByTimeAsync(9_000);          // LAN 单地址 10s 上限也过了
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay' });
+    harness.lanError = 'COMPANION_NETWORK_UNAVAILABLE';
+    lan.release();                                      // LAN 后败：停在 relay
+    await hydrating;
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay', busy: false });
+    store.getState().pause();
+  });
+
+  it('② LAN 100ms 通、relay 慢 ⇒ connected/lan 且在途 relay 被关，从未成为通道', async () => {
+    const lan = gate();
+    const relay = gate();
+    harness.lanGate = lan.promise;
+    harness.relayGate = relay.promise;
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    const hydrating = store.getState().hydrate();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(harness.relayConstructed).toBe(1);
+    await vi.advanceTimersByTimeAsync(100);            // LAN 100ms 通
+    lan.release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan' });
+    // 输在途的 relay 拨号（从构造起记账）被 close；它没发过任何会话请求。
+    expect(harness.relayClosed).toBeGreaterThanOrEqual(1);
+    expect(harness.relayRequests).toEqual([]);
+    // 迟到的 relay 拨号在已关的通道上失败：不落状态、不双跑。
+    relay.release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan' });
+    await hydrating;
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan', busy: false });
+    store.getState().pause();
+  });
+
+  it('③ relay 先通、LAN 同次尝试后通 ⇒ 收敛回直连，结算只在 LAN 上跑一次', async () => {
+    const lan = gate();
+    const relay = gate();
+    harness.lanGate = lan.promise;
+    harness.relayGate = relay.promise;
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE, pending: PENDING_COMMAND }));
+    const hydrating = store.getState().hydrate();
+    await vi.advanceTimersByTimeAsync(0);
+    relay.release();                                    // relay 先通
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay' });
+    lan.release();                                      // LAN 同次 attempt 内后通：收敛
+    await hydrating;
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan', busy: false });
+    // 结算纪律：待确认命令只在最终胜出的通道（LAN）上结算一次，relay 上没结算过。
+    expect(harness.lanRequests.filter(payload => payload.action === 'status')).toHaveLength(1);
+    expect(harness.relayRequests.filter(payload => payload.action === 'status')).toHaveLength(0);
+    expect(store.getState().pending).toBe(false);
+    // 收敛 = relay 通道被关掉，同一时刻只有一条活通道。
+    expect(harness.relayClosed).toBeGreaterThanOrEqual(1);
+    store.getState().pause();
+  });
+
+  it('④ relay 先败 NO_HOST、LAN 后败 ⇒ 双败进「等电脑上线」过渡态不落失败页，15s 到点才认输（#1942 并入竞速）', async () => {
+    harness.relayError = 'COMPANION_RELAY_NO_HOST';    // relay 即败（无闸）
+    const lan = gate();
+    harness.lanGate = lan.promise;
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    const hydrating = store.getState().hydrate();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState().status).not.toBe('connected');   // LAN 未出结论前不提前落状态
+    expect(store.getState().relayNoHostWaiting).toBe(false); // relay 的 NO_HOST 单独不触发：等 LAN
+    harness.lanError = 'COMPANION_CONNECTION_REFUSED';
+    lan.release();                                      // LAN 后败：双败 ⇒ no-host 过渡态
+    await hydrating;
+    expect(store.getState()).toMatchObject({ status: 'connecting', relayNoHostWaiting: true, connectionError: null, busy: false });
+    // 过渡态的 3s 重拍都是双败 no-host：不复活失败页
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(store.getState()).toMatchObject({ status: 'connecting', relayNoHostWaiting: true, connectionError: null });
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(store.getState()).toMatchObject({ status: 'connecting', relayNoHostWaiting: true });
+    await vi.advanceTimersByTimeAsync(1);              // 15s 到点：认输，落回现有失败页
+    expect(store.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionRelayNoHost', relayNoHostWaiting: false, transport: null });
+  });
+
+  it('⑥ relay 先败 NO_HOST、LAN 后通 ⇒ 直接 connected/lan，不进过渡态（已连上不等电脑）', async () => {
+    harness.relayError = 'COMPANION_RELAY_NO_HOST';    // relay 即败（无闸）
+    const lan = gate();
+    harness.lanGate = lan.promise;
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    const hydrating = store.getState().hydrate();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState().relayNoHostWaiting).toBe(false); // LAN 在途：双败未成立，不进过渡态
+    lan.release();                                      // LAN 后通：relay 的 NO_HOST 不触发等待
+    await hydrating;
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan', relayNoHostWaiting: false, connectionError: null });
+    await vi.advanceTimersByTimeAsync(20_000);          // 也不会晚进：已经连上
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan', relayNoHostWaiting: false });
+    store.getState().pause();
+  });
+
+  it('LAN 出身份类错误 ⇒ 取消在途 relay 拨号直接抛，不落 relay（换路不换身份）', async () => {
+    harness.lanError = 'COMPANION_HOST_KEY_MISMATCH';  // LAN 即败（无闸）
+    const relay = gate();
+    harness.relayGate = relay.promise;
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    const hydrating = store.getState().hydrate();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(harness.relayConstructed).toBe(1);
+    await hydrating;
+    expect(store.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionRejected', autoRetrying: false });
+    // 在途 relay 拨号被取消（close 过）、从未成为通道、没发过任何请求。
+    expect(harness.relayClosed).toBeGreaterThanOrEqual(1);
+    expect(harness.relayRequests).toEqual([]);
+    // 迟到的 relay connect 在已关的通道上失败，不再改变状态。
+    relay.release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState()).toMatchObject({ status: 'offline', connectionError: 'connectionRejected' });
+  });
+
+  it('⑤ 竞速途中被手动重连抢占 ⇒ 两条通道都关掉、不双跑、不落状态', async () => {
+    const lan1 = gate();
+    const relay1 = gate();
+    harness.lanGate = lan1.promise;
+    harness.relayGate = relay1.promise;
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    const hydrating = store.getState().hydrate();      // 自动尝试 #1：两条都挂在途
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState()).toMatchObject({ busy: true, autoAttempt: true });
+    expect(harness.relayConstructed).toBe(1);
+    const firstLanIndex = harness.lanClients.length - 1;
+    // 手动重连抢占：#2 起跑（两条闸都不挂，立即出结论），#1 的 LAN 客户端被 createClient 关掉、
+    // #1 的 relay 拨号被 #2 的 dialRelay 关掉。
+    harness.lanGate = null;
+    harness.relayGate = null;
+    const manual = store.getState().reconnect({ resetBackoff: true });
+    await manual;
+    expect(harness.lanClients[firstLanIndex].alive).toBe(false);   // #1 的 LAN 被关
+    expect(store.getState()).toMatchObject({ status: 'connected', busy: false });
+    // #1 的 relay 迟到结算（已关 ⇒ 失败）与 LAN 迟到结算（已关 ⇒ 失败）都被代号丢弃。
+    relay1.release();
+    lan1.release();
+    await vi.advanceTimersByTimeAsync(0);
+    await hydrating;
+    // 最终状态只由 #2 落；#1 的 relay 从未发过请求（不双跑）。
+    expect(store.getState()).toMatchObject({ status: 'connected', busy: false });
+    expect(harness.relayRequests.filter(payload => payload.action === 'status')).toHaveLength(0);
+    store.getState().pause();
+  });
+
+  it('⑦ 账号路由在途被竞速赢方关掉 ⇒ 票据不作废、不回落旧路由再拨（败局归结算方）', async () => {
+    // 配对盘：账号路由 + 票据 + 旧路由都在（#1938 双路由形态）。有票据先拨账号路由。
+    const store = storeWith(storageWith({
+      relay: RELAY_ROUTE,
+      relayAccount: { v: 1, url: 'ws://127.0.0.1:8792/', routeToken: 'account-route-token' },
+      account: { ticket: 'neo1.device-ticket', email: 'user@example.com', userId: 'user-1' },
+    }));
+    const lan = gate();
+    const relay = gate();
+    harness.lanGate = lan.promise;
+    harness.relayGate = relay.promise;
+    const hydrating = store.getState().hydrate();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(harness.relayConstructed).toBe(1);          // 账号路由先拨（唯一一笔在途）
+    lan.release();                                      // LAN 先通：关掉在途的账号路由拨号
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan' });
+    relay.release();                                    // 被关的拨号迟到失败（close 分类 AUTH_REJECTED）
+    await vi.advanceTimersByTimeAsync(0);
+    await hydrating;
+    // close 是结算方主动收的，不是 relay 拒了凭据：票据不作废（登录态在、不翻 S8）、
+    // wrapper 不当次回落旧路由再拨（没有第二笔构造/活通道）。
+    expect(harness.relayConstructed).toBe(1);
+    expect(harness.relayClosed).toBe(1);
+    expect(store.getState().account).toMatchObject({ email: 'user@example.com' });
+    expect(store.getState().loginPrompt).toBe(false);
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan', busy: false });
+    store.getState().pause();
   });
 });

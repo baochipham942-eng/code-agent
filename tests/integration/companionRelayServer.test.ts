@@ -119,7 +119,7 @@ describe('companion relay: production server + host dial-out', () => {
       'connections', 'droppedBacklog', 'droppedBackpressure', 'droppedExpired', 'droppedNoRoute',
       'forwarded', 'notifiedNoHost', 'queuedFrames', 'rejectedAuth', 'revoked', 'routes',
       'accountConnections', 'rejectedOwner', 'ticketsIssued', 'ticketConnections', 'terminatedNoPong',
-      'rejectedTakeover',
+      'rejectedTakeover', 'listHosts', 'rejectedListHosts', 'pairRequests', 'rejectedPairRequests', 'pairResults',
     ].sort());
     const missing = await fetch(`http://127.0.0.1:${port}/nope`);
     expect(missing.status).toBe(404);

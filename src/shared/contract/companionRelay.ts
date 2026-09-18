@@ -142,7 +142,7 @@ export const COMPANION_RELAY_SENTINEL_DEVICE_REF = 'relay';
 /** relay 找回（list-hosts 请求/回帧）的固定信封 sentinel：与 ticket 同一套写法，不走路由。 */
 export const COMPANION_RELAY_LIST_HOSTS_ROUTE_TOKEN = 'neo-relay-list-hosts';
 /** relay 找回配对交换（pair-request / pair-result）的固定信封 sentinel：同一次交换两向共用。 */
-export const COMPANION_RELAY_PAIR_ROUTE_TOKEN = 'neo-relay-pair';
+export const COMPANION_RELAY_PAIR_ROUTE_TOKEN = 'neo-relay-pair-request';
 
 /**
  * list-hosts 回帧 ciphertext 的 JSON 形状（N-COMPANION-RELAY-ACCOUNT-RECOVER）：电脑在 register

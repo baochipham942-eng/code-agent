@@ -196,6 +196,10 @@ export class CompanionRelayServer {
     sweepIntervalMs?: number;
     pingIntervalMs?: number;
     noHostGraceMs?: number;
+    /** 找回配对挂起 TTL（N-COMPANION-RELAY-ACCOUNT-RECOVER）；测试注入用，缺省 COMPANION_LIMITS。 */
+    pairTtlMs?: number;
+    /** pair-request 初次请求限流间隔；测试注入用，缺省 COMPANION_LIMITS。 */
+    pairRequestMinIntervalMs?: number;
     /** 配了就同时认 Supabase access token；不配则只认共享凭据（与账号绑定之前完全一致）。 */
     accountVerifier?: { verify(token: string): string | null; readonly stats: JwksStats };
     /** 配了就认 relay 自签设备票据并向账号连接签发/续签（N-COMPANION-RELAY-DEVICE-TICKET）。 */
@@ -650,8 +654,9 @@ export class CompanionRelayServer {
       return;
     }
     const now = this.now();
-    if (now - (this.pairRateBySocket.get(socket) ?? 0) < L.relayPairRequestMinIntervalMs
-      || now - (this.pairRateByAccount.get(principal) ?? 0) < L.relayPairRequestMinIntervalMs) {
+    const minIntervalMs = this.options.pairRequestMinIntervalMs ?? L.relayPairRequestMinIntervalMs;
+    if (now - (this.pairRateBySocket.get(socket) ?? 0) < minIntervalMs
+      || now - (this.pairRateByAccount.get(principal) ?? 0) < minIntervalMs) {
       this.stats.rejectedPairRequests += 1;
       this.options.logger?.warn('pair_request_rejected', { reason: 'rate-limited' });
       this.sendPairResult(socket, requestId, 'rate-limited');
@@ -671,7 +676,7 @@ export class CompanionRelayServer {
     this.pairRateBySocket.set(socket, now);
     // 写时顺手清过期项：这张表的量级 = 真实发起过找回的账号数，不清才会被轮换 sub 撑大。
     for (const [account, at] of this.pairRateByAccount) {
-      if (now - at >= L.relayPairRequestMinIntervalMs) this.pairRateByAccount.delete(account);
+      if (now - at >= minIntervalMs) this.pairRateByAccount.delete(account);
     }
     this.pairRateByAccount.set(principal, now);
     const timer = setTimeout(() => {
@@ -679,7 +684,7 @@ export class CompanionRelayServer {
       this.stats.pairResults += 1;
       this.sendPairResult(socket, requestId, 'timeout');
       this.options.logger?.info('pair_request_timeout', {});
-    }, L.relayPairTtlMs);
+    }, this.options.pairTtlMs ?? L.relayPairTtlMs);
     timer.unref();
     this.pendingPairs.set(requestId, { phone: socket, host, timer });
     host.send(raw);
@@ -687,7 +692,11 @@ export class CompanionRelayServer {
     this.options.logger?.info('pair_request_forwarded', { target: frame.instanceId.slice(0, 8) });
   }
 
-  /** Host 的 pair-result：只认挂起态里那条 Host 连接发的，原样回手机并销账；迟到的丢掉留痕。 */
+  /**
+   * Host 的 pair-result：只认挂起态里那条 Host 连接发的，原样回手机。同意应答（stage 'reply'）
+   * **不是终局**——转发后挂起态保留，等手机的续帧与 Host 的 complete；终局（拒绝 / complete）
+   * 才销账。迟到的终局对不上挂起态 ⇒ 丢掉留痕。
+   */
   private onPairResult(socket: WebSocket, frame: Extract<CompanionRelayFrame, { kind: 'pair-result' }>, raw: string): void {
     const pending = this.pendingPairs.get(frame.requestId);
     if (!pending || pending.host !== socket) {
@@ -695,8 +704,11 @@ export class CompanionRelayServer {
       this.options.logger?.warn('pair_result_unmatched', {});
       return;
     }
-    clearTimeout(pending.timer);
-    this.pendingPairs.delete(frame.requestId);
+    const terminal = !frame.accepted || frame.stage !== 'reply';
+    if (terminal) {
+      clearTimeout(pending.timer);
+      this.pendingPairs.delete(frame.requestId);
+    }
     if (pending.phone.readyState !== WebSocket.OPEN) return;
     pending.phone.send(raw);
     this.stats.pairResults += 1;

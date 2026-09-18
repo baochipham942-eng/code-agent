@@ -30,7 +30,7 @@ import type { RelayDial, RelayDialSocket } from './relayCompanionClient';
  */
 
 export type RecoverOpenError = { kind: 'invalidCredentials' } | { kind: 'unreachable' } | { kind: 'noHosts' };
-export type RecoverPairError =
+type RecoverPairError =
   | { kind: 'declined' }
   | { kind: 'timeout' }
   | { kind: 'hostOffline' }
@@ -40,7 +40,7 @@ export type RecoverPairError =
   | { kind: 'unreachable' };
 
 /** pair-result(complete) 解封后的配对载荷：welcome 等值内容 + relay.routes 双路由 + LAN 地址。 */
-export interface RelayRecoverPayload {
+interface RelayRecoverPayload {
   deviceId: string;
   scopeEpoch: number;
   scope: string[];
@@ -54,7 +54,7 @@ export interface RelayRecoverPayload {
   accountRoute?: CompanionRelayRouteRef;
 }
 
-export type RelayRecoverPairOutcome =
+type RelayRecoverPairOutcome =
   | { ok: true; payload: RelayRecoverPayload; hostKey: string }
   | { ok: false } & RecoverPairError;
 

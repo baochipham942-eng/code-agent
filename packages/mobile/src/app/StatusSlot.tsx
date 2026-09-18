@@ -1,16 +1,17 @@
 import type { messages } from '../i18n';
 import { connectionDiagnosis } from './connectionDiagnosis';
+import { classifyVoiceFailure, isVoiceSetupCode, voiceFailureMessage } from '../features/sessions/voiceFailure';
 
 /**
  * 输入区唯一的状态位（N-MOBILE-STATUS-NOISE，design.md §12，爸 2026-09-17 选 A）。
  * build 50 真机：一次「电脑没回应」在输入框上方叠出四行（连接胶囊 / 未确认送达 / 读取失败 / 会话没建成），
  * 左沿各不相同还压字。现在只有这一个位置：同一时刻一条、一条一个动作、没有状态不占高度。
  *
- * rank 越小越急（§12 优先级）：1 草稿没存上 > 2 连不上电脑 > 3 语音失败 > 4 刚才的操作没成功
- * > 5 项目和历史没读全 > 6 还没收到电脑确认 > 7 正在转写。
+ * rank 越小越急（§12 + §13）：1 草稿没存上 > 2 连不上电脑 > 3 电脑上没有能用的模型
+ * > 4 语音失败 > 5 刚才的操作没成功 > 6 项目和历史没读全 > 7 还没收到电脑确认 > 8 正在转写。
  */
 export type StatusItem = {
-  rank: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  rank: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   message: string;
   /** 点文字打开的解释（连接类 = 连接电脑弹层，原因诊断都在那里）。 */
   open?(): void;
@@ -42,6 +43,7 @@ export function commandNoticeCopy(
   text: ReturnType<typeof messages>,
   companion: { commandError: string | null; commandErrorAction: string | null },
   voiceFailureShown: boolean,
+  voiceActive = false,
 ): string | null {
   const named = (copy: string) => companion.commandErrorAction === 'session.create' ? `${text.sessionCreateFailed}：${copy}` : copy;
   const error = companion.commandError;
@@ -60,6 +62,7 @@ export function commandNoticeCopy(
     if (error === 'PROJECT_SOURCE_CHANGED') return text.projectSourceChanged;
     if (error === 'PROJECT_SOURCE_UNTRUSTED') return text.projectSourceUntrusted;
     if (error === 'MODEL_AUTH') return text.modelAuthMissing;
+    if (error === 'MODEL_UNAVAILABLE') return text.modelGoneLabel;
     if (error === 'scope_denied' || error === 'COMPANION_SCOPE_DENIED') return text.commandScopeDenied;
     if (error === 'COMPANION_PROJECT_UNAVAILABLE') return text.projectUnavailable;
     if (error === 'COMPANION_PROJECT_CHANGED') return text.projectChanged;
@@ -68,8 +71,13 @@ export function commandNoticeCopy(
     if (error === 'RUN_FAILED') return text.runFailed;
     if (error && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(error)) return text.transferInterrupted;
     // 转写失败由输入区的语音那条负责（它带阶段和真实错误码）；按**动作**让位而不是按码名列白名单。
-    // 只有输入区**真的在显示**它时才让位：切会话会把输入区重挂，那时输入区手里没有这条失败。
-    if (companion.commandErrorAction === 'voice.transcribe' && voiceFailureShown) return null;
+    // 录音中或输入区正在显示时让位，避免面板「有片段没转成文字」和状态位再说一遍。
+    // 切会话会把输入区重挂：那时按码给出路，不许落兜底「这条操作没有被接受」。
+    if (companion.commandErrorAction === 'voice.transcribe') {
+      if (voiceFailureShown || voiceActive) return null;
+      if (!error) return null;
+      return voiceFailureMessage(text, classifyVoiceFailure(error, 'transcribe'));
+    }
     return error ? text.commandRejected : null;
   };
   const copy = base();
@@ -87,11 +95,12 @@ export function composerStatusItems(
   s: {
     saveError: boolean; nativeError: boolean; sendAttempted: boolean;
     binding: boolean; status: string; paused: boolean; connectionError: string | null; busy: boolean;
-    commandError: string | null; commandErrorAction: string | null; voiceFailureShown: boolean; sessionId: string | null;
+    commandError: string | null; commandErrorAction: string | null; voiceFailureShown: boolean; voiceActive?: boolean; sessionId: string | null;
     libraryError: boolean; pending: boolean; pendingAction: string | null; pendingSlow: boolean;
     autoRetrying?: boolean; autoAttempt?: boolean; abandonedPending?: boolean;
+    library: { models: readonly unknown[] } | null;
   },
-  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; dismissAbandoned?(): void },
+  act: { flush(): void; reconnect(): void; scan(): void; openRemote(): void; retryCreate: (() => void) | null; switchModel(): void; dismissAbandoned?(): void; openVoiceSetup?(): void; openModelSetup(): void },
 ): StatusItem[] {
   const items: StatusItem[] = [];
   if (s.saveError) items.push({ rank: 1, message: text.saveError, action: { label: text.retry, run: act.flush } });
@@ -113,17 +122,25 @@ export function composerStatusItems(
     items.push({ rank: 2, message: text.cannotReachComputer, action: { label: text.remote, run: act.openRemote } });
   }
   if (!live) return items;
-  if (s.abandonedPending) items.push({ rank: 4, message: text.abandonedPending, action: { label: text.gotIt, run: act.dismissAbandoned ?? (() => {}) } });
-  const command = s.commandError === 'COMPANION_NOT_CONNECTED' ? null : commandNoticeCopy(text, s, s.voiceFailureShown);
+  if (s.library && s.library.models.length === 0) {
+    items.push({ rank: 3, message: text.noUsableModel, action: { label: text.noUsableModelHow, run: act.openModelSetup }, reason: 'NO_USABLE_MODEL' });
+  }
+  // abandonedPending 说的是「上一条操作没送到」——§13 的「刚才的操作没成功」族，rank 5。
+  // 本 PR 起手时它排 4，是当时第 3 位还没插进「电脑上还没有能用的模型」（#1918）；
+  // 合并后 §13 全表后移一位，这里跟着走，避免与 Composer 侧语音失败（rank 4）抢位。
+  if (s.abandonedPending) items.push({ rank: 5, message: text.abandonedPending, action: { label: text.gotIt, run: act.dismissAbandoned ?? (() => {}) } });
+  const command = s.commandError === 'COMPANION_NOT_CONNECTED' ? null : commandNoticeCopy(text, s, s.voiceFailureShown, s.voiceActive === true);
   if (command) {
     const action = s.commandErrorAction === 'session.create' && s.commandError !== 'COMPANION_COMMAND_IN_FLIGHT' && act.retryCreate ? { label: text.retry, run: act.retryCreate }
-      : s.commandError === 'MODEL_AUTH' && s.sessionId ? { label: text.switchModel, run: act.switchModel }
+      : (s.commandError === 'MODEL_AUTH' || s.commandError === 'MODEL_UNAVAILABLE') && s.sessionId ? { label: text.switchModel, run: act.switchModel }
+      : s.commandErrorAction === 'voice.transcribe' && isVoiceSetupCode(s.commandError ?? undefined) && act.openVoiceSetup
+        ? { label: text.voiceHowToEnable, run: act.openVoiceSetup }
       : undefined;
-    items.push({ rank: 4, message: command, action, reason: s.commandError ?? undefined });
+    items.push({ rank: 5, message: command, action, reason: s.commandError ?? undefined });
   }
-  if (s.libraryError) items.push({ rank: 5, message: text.libraryError, action: { label: text.reload, run: act.reconnect, disabled: s.busy } });
-  if (s.pending && s.pendingAction === 'voice.transcribe') items.push({ rank: 7, message: `${text.transcribing}…`, neutral: true });
+  if (s.libraryError) items.push({ rank: 6, message: text.libraryError, action: { label: text.reload, run: act.reconnect, disabled: s.busy } });
+  if (s.pending && s.pendingAction === 'voice.transcribe') items.push({ rank: 8, message: `${text.transcribing}…`, neutral: true });
   // 正常 ack 几十毫秒就回来：慢过阈值才说（N-MOBILE-PENDING-NOISE）。「请勿重复发送」删了——确认前发送键本就不可点。
-  else if (s.pending && s.pendingSlow) items.push({ rank: 6, message: text.pendingCommand, neutral: true });
+  else if (s.pending && s.pendingSlow) items.push({ rank: 7, message: text.pendingCommand, neutral: true });
   return items;
 }

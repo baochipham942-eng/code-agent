@@ -5,6 +5,16 @@ const zh = {
   voiceChunkDropped: '有片段没转成文字，其余已经写进草稿',
   voiceDegraded: '已改回分段转写，刚才说的还在',
   offlinePlaceholder: '先写下来，连接后再发送…', microphoneDenied: '麦克风未允许', voiceRecordFailed: '录音没成功', voiceTranscribeFailed: '这段没转成文字',
+  voiceUnavailable: '电脑上还没开语音转写', voiceHowToEnable: '怎么开',
+  voiceSetup: '开启语音转写',
+  voiceSetupHint: '手机上说的话由电脑上的 Neo 转成文字。电脑上现在还没开。',
+  voiceSetupStep1: '在电脑上打开 Neo',
+  voiceSetupStep2: '设置 → 语音输入 → 安装',
+  voiceSetupStep3: '设置 → 模型 → Groq 或通义千问（百炼），任填一个密钥',
+  voiceSetupDone: '开好了，再试一次',
+  voiceTooLong: '这段太长了，分成几段录',
+  voiceInterrupted: '切到后台，录音停了', voiceRerecord: '重新录',
+  microphoneUnavailable: '麦克风暂时用不了',
   historyTruncated: '这条较长的历史消息仅显示部分内容，完整内容未同步到手机。',
   authorizedProjects: '仅显示电脑授权的项目与会话', projectGrantRequired: '需要在电脑上重新配对以覆盖全部会话后，才能在此项目新建会话。', sessionName: '会话名称', rename: '保存名称', archive: '归档会话', unarchive: '取消归档', archived: '已归档', deleteSession: '删除会话', deleteConfirmation: '将删除此会话。此操作无法撤回。', keepSession: '保留', confirmDelete: '确认删除', model: '模型', modelNotConfigured: '未配置', libraryError: '项目和历史没读全', loadHistory: '继续加载历史',
   advancedOptions: '高级选项',
@@ -15,9 +25,24 @@ const zh = {
   projectNoWorkspace: '电脑上还没设工作目录，暂时不能在这里新建', projectNoWorkspaceNote: '要用「{name}」，先在电脑上给它设一个工作目录。',
   // 设计稿 model 屏（N-MOBILE-SESSIONSHEET-SPLIT）：只列电脑已配置的模型。
   chooseModel: '选择会话模型', modelScopeNote: '模型与可选项来自 Neo 的模型配置。更改只作用于本会话后续执行。',
+  // 欢迎页（还没开会话）那一版（R7）：改的不是某条会话，是下一发新任务要用的模型，措辞不提「本会话」。
+  chooseModelNewTask: '选择模型', modelScopeNoteNewTask: '模型与可选项来自电脑上 Neo 的模型配置。选好后，发出的新任务会用这个模型。',
   modelConfigured: '已配置', modelRecentlyFailed: '最近调用失败，可能用不了',
+  modelComputerDefault: '电脑默认', modelSwitchedForYou: '已为你换成这个', modelKeyBroken: '密钥用不了', modelUnreachable: '最近连不上', modelQuotaExhausted: '余额或额度用完了',
+  modelGoneLabel: '这个模型用不了了',
   // 设计稿 modelAuthFailed 屏（N-MOBILE-RUNFAIL-REASON）：主动作直接进模型选择。
   modelAuthTitle: '模型密钥用不了', modelAuthDetail: '可以先换一个可用的模型继续；也可以在 Neo 的模型设置里配置或更新这个模型的密钥。', switchModel: '换一个可用模型',
+  // 设计稿 modelUnavailable 屏（N-MOBILE-RUNFAIL-DUP）：只留卡片，文案一字不差。
+  modelGoneTitle: '这个模型用不了了', modelGoneDetail: '供应商已经停用 {model}。换一个模型就能继续。',
+  // 余额或额度用完（模拟器验收 O2）：与密钥/停用同一套卡片，出路是换模型或回电脑检查额度。
+  modelQuotaTitle: '余额或额度用完了', modelQuotaDetail: '这个模型所在的供应商额度不够了，可以先换一个可用模型；也可以在电脑上 Neo 的模型设置里检查额度。',
+  // 设计稿 noUsableModel / noUsableModelHow（N-MOBILE-NO-USABLE-MODEL）。
+  noUsableModel: '电脑上还没有能用的模型', noUsableModelHow: '怎么配置',
+  noUsableModelBody: '手机用的是电脑上 Neo 的模型。电脑上还没有填好密钥的模型，所以发不出去。',
+  noUsableModelStep1: '在电脑上打开 Neo', noUsableModelStep2: '设置 → 模型', noUsableModelStep3: '给任意一个模型填好密钥',
+  noUsableModelReload: '配好了，重新读取',
+  noUsableModelCreateHint: '电脑上还没有能用的模型，配好后才能新建。',
+  modelSetup: '配置模型',
   // 设计稿 voiceBusy 屏（N-MOBILE-VOICE-ERRCODE-LEAK）：说清谁占着麦克风，用户面不出现内部码。
   microphoneBusy: '麦克风被占用，通话结束后再录', microphoneBusyRetry: '结束后再试',
   microphoneReleased: '麦克风空出来了', continueRecording: '继续录音', openMicrophoneSettings: '去设置开麦克风',
@@ -151,6 +176,16 @@ const en: Record<keyof typeof zh, string> = {
   voiceChunkDropped: 'Some segments were not transcribed; the rest is in your draft',
   voiceDegraded: 'Switched back to segmented transcription. What you already said is kept.',
   offlinePlaceholder: 'Write it down; send once connected…', microphoneDenied: 'Microphone not allowed', voiceRecordFailed: 'Recording did not work', voiceTranscribeFailed: 'This part was not transcribed',
+  voiceUnavailable: 'Voice transcription is not set up on your computer', voiceHowToEnable: 'How to turn on',
+  voiceSetup: 'Turn on voice transcription',
+  voiceSetupHint: 'What you say on the phone is transcribed by Neo on your computer. It is not on yet.',
+  voiceSetupStep1: 'Open Neo on your computer',
+  voiceSetupStep2: 'Settings → Voice input → Install',
+  voiceSetupStep3: 'Settings → Models → Groq or Qwen (DashScope), add either API key',
+  voiceSetupDone: 'It is on, try again',
+  voiceTooLong: 'This clip is too long. Record it in shorter parts',
+  voiceInterrupted: 'Recording stopped when you switched away', voiceRerecord: 'Record again',
+  microphoneUnavailable: 'Microphone is temporarily unavailable',
   historyTruncated: 'This long historical message is partially shown. The complete text was not synced to this phone.',
   authorizedProjects: 'Only projects and conversations shared by your computer', projectGrantRequired: 'Pair again on your computer to cover every conversation before creating one in this project.', sessionName: 'Conversation name', rename: 'Save name', archive: 'Archive conversation', unarchive: 'Unarchive', archived: 'Archived', deleteSession: 'Delete conversation', deleteConfirmation: 'This conversation will be deleted. This cannot be undone.', keepSession: 'Keep', confirmDelete: 'Confirm deletion', model: 'Model', modelNotConfigured: 'Not configured', libraryError: 'Projects and history not fully loaded', loadHistory: 'Load more history',
   advancedOptions: 'Advanced options',
@@ -158,8 +193,19 @@ const en: Record<keyof typeof zh, string> = {
   recentUseSessions: 'Recent · {n} conversations', sessionsCount: '{n} conversations', recentSessions: 'Recent', openProjectSessions: 'Open project conversations',
   projectNoWorkspace: 'No working folder on your computer yet, so you cannot start one here', projectNoWorkspaceNote: 'To use "{name}", set a working folder for it on your computer first.',
   chooseModel: 'Choose a model', modelScopeNote: 'Models come from Neo model settings. Changes apply to later runs in this conversation only.',
+  chooseModelNewTask: 'Choose a model', modelScopeNoteNewTask: 'Models come from Neo model settings on your computer. New tasks you send will use the model you pick.',
   modelConfigured: 'Configured', modelRecentlyFailed: 'Recently failed, may not work',
+  modelComputerDefault: 'Computer default', modelSwitchedForYou: 'Switched to this for you', modelKeyBroken: 'Key does not work', modelUnreachable: 'Recently unreachable', modelQuotaExhausted: 'Balance or quota is used up',
+  modelGoneLabel: 'This model no longer works',
   modelAuthTitle: 'The model key does not work', modelAuthDetail: 'Switch to another model that works, or add or update this model\'s key in Neo model settings.', switchModel: 'Switch to a working model',
+  modelGoneTitle: 'This model no longer works', modelGoneDetail: 'The provider has retired {model}. Switch to another model to continue.',
+  modelQuotaTitle: 'Balance or quota is used up', modelQuotaDetail: 'The provider behind this model is out of credit. Switch to another model that works, or check the quota in Neo model settings on your computer.',
+  noUsableModel: 'No usable model on your computer yet', noUsableModelHow: 'How to set up',
+  noUsableModelBody: 'The phone uses models from Neo on your computer. None of them have a key yet, so nothing can be sent.',
+  noUsableModelStep1: 'Open Neo on your computer', noUsableModelStep2: 'Settings → Models', noUsableModelStep3: 'Add a key for any model',
+  noUsableModelReload: 'Done, reload',
+  noUsableModelCreateHint: 'No usable model on your computer yet. Set one up before starting a conversation.',
+  modelSetup: 'Set up a model',
   microphoneBusy: 'Microphone in use. Record after the call ends', microphoneBusyRetry: 'Try again after it ends',
   microphoneReleased: 'The microphone is free', continueRecording: 'Record', openMicrophoneSettings: 'Allow microphone in Settings',
 
@@ -294,6 +340,8 @@ export function runOutcomeCopy(text: ReturnType<typeof messages>, kind: 'stopped
     : code === 'PROJECT_SOURCE_CHANGED' ? text.projectSourceChanged
     : code === 'PROJECT_SOURCE_UNTRUSTED' ? text.projectSourceUntrusted
     : code === 'MODEL_AUTH' ? text.modelAuthMissing
+    : code === 'MODEL_UNAVAILABLE' ? text.modelGoneLabel
+    : code === 'MODEL_QUOTA' ? text.modelQuotaExhausted
     : text.runFailed;
   return `${text.failed}${text === zh ? '：' : ': '}${reason}`;
 }

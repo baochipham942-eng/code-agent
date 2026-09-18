@@ -21,20 +21,52 @@ import type { AppSettings } from '../../../shared/contract';
 const logger = createLogger('CompanionLibrary');
 
 /**
+ * 电脑一处算默认：电脑默认（在列表且未失败）＞同供应商第一个未失败＞列表第一个未失败＞全失败取第一个。
+ * 手机只读 isDefault，不再自己拿 models[0]（FB-141 / N-COMPANION-DEFAULT-MODEL-FAILING）。
+ */
+function pickCompanionDefaultModel<T extends { provider: string; model: string; recentlyFailed?: true }>(
+  models: readonly T[],
+  hostDefault: { provider: string; model: string },
+): T | undefined {
+  if (models.length === 0) return undefined;
+  const usable = (item: T) => !item.recentlyFailed;
+  const host = models.find(item => item.provider === hostDefault.provider && item.model === hostDefault.model);
+  if (host && usable(host)) return host;
+  const sameProvider = models.find(item => item.provider === hostDefault.provider && usable(item));
+  if (sameProvider) return sameProvider;
+  return models.find(usable) ?? models[0];
+}
+
+/**
  * 手机的模型下拉直接吃这个列表。可用性由 buildRuntimeModelOptions 负责（没配 key 的 provider
- * 不进列表），默认项由电脑自己的新会话默认模型决定——列表顺序是桌面切换面板的 provider 常量序
- * （moonshot 排第一），拿它当默认等于让手机替用户挑了一家他从没选过的（FB-141）。
+ * 不进列表），默认项由 pickCompanionDefaultModel 标 isDefault。
  */
 function companionModelOptions(
   settings: AppSettings | null | undefined,
   hostDefault: { provider: string; model: string },
 ): CompanionLibrary['models'] {
-  return buildRuntimeModelOptions(settings).map(({ provider, model, label, providerLabel }) => ({
-    provider, model, label, providerLabel,
-    ...(provider === hostDefault.provider && model === hostDefault.model ? { isDefault: true as const } : {}),
-    // 配了 key 不等于能用：key 被拒（403）的 provider 照样在列表里。刚因鉴权失败要换模型的人
-    // 不该再换到它身上（build 45 真机：默认的 custom-team-relay 就是被拒的那家）。
-    ...(getProviderHealthMonitor().getHealth(provider)?.status === 'unavailable' ? { recentlyFailed: true as const } : {}),
+  const monitor = getProviderHealthMonitor();
+  const listed = buildRuntimeModelOptions(settings).map(({ provider, model, label, providerLabel }) => {
+    const mark = monitor.getAvailabilityMark(provider, model);
+    // 无标记但整家被健康监控熔断（429 连发/超时这类不打标记的失败）：照标失败，
+    // kind 用 network（手机显示「最近连不上」），别让手机把路由已跳过的家当好选择。
+    // isProviderDown 要求「最近一次事件是失败」：成功一次即清（D1），不被路由的恢复节奏拖住。
+    const providerDown = !mark && monitor.isProviderDown(provider);
+    return {
+      provider, model, label, providerLabel,
+      ...(mark ? { recentlyFailed: true as const, failureKind: mark.kind } : {}),
+      ...(providerDown ? { recentlyFailed: true as const, failureKind: 'network' as const } : {}),
+    };
+  });
+  const picked = pickCompanionDefaultModel(listed, hostDefault);
+  const hostRow = listed.find(item => item.provider === hostDefault.provider && item.model === hostDefault.model);
+  return listed.map(item => ({
+    ...item,
+    ...(picked?.provider === item.provider && picked?.model === item.model ? { isDefault: true as const } : {}),
+    // 电脑真正的默认（resolveSessionDefaultModelConfig，含回落规则）最近失败或不在列表时，isDefault
+    // 落到回落选中的模型上（新会话预选仍要有一个）。那不是电脑默认：再标 defaultFallback，手机副标题
+    // 写「已为你换成这个」，不冒充「电脑默认」（模拟器验收 O1：字面误导——电脑端默认根本没变）。
+    ...(picked && hostRow !== picked && picked.provider === item.provider && picked.model === item.model ? { defaultFallback: true as const } : {}),
   }));
 }
 
@@ -145,16 +177,18 @@ export class CompanionLibraryService {
   }
 
   async mutate(command: CompanionCommand): Promise<Record<string, unknown>> {
+    if (!command.sessionId) throw new Error('COMPANION_SCOPE_DENIED');
+    const sessionId = command.sessionId;
     const sm = getSessionManager();
     const guard = () => {
-      const allowed = command.action === 'session.create' ? this.gateway.grants(command.deviceId).includes(command.sessionId) : this.gateway.canAccessSession(command.deviceId, command.sessionId);
+      const allowed = command.action === 'session.create' ? this.gateway.grants(command.deviceId).includes(sessionId) : this.gateway.canAccessSession(command.deviceId, sessionId);
       if (!allowed) throw new Error('COMPANION_SCOPE_DENIED');
-      if (command.action !== 'session.create' && this.isRunning(command.sessionId)) throw new Error('COMPANION_SESSION_BUSY');
+      if (command.action !== 'session.create' && this.isRunning(sessionId)) throw new Error('COMPANION_SESSION_BUSY');
     };
-    const commit = (write: () => void) => { guard(); this.gateway.commitMutation(command, write, { sessionId: command.sessionId }); };
+    const commit = (write: () => void) => { guard(); this.gateway.commitMutation(command, write, { sessionId }); };
     if (command.action === 'session.create') {
-      if (!this.gateway.grants(command.deviceId).includes(command.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
-      const project = getDatabase().getProjectRepo().getProject(command.sessionId.slice('project:'.length));
+      if (!this.gateway.grants(command.deviceId).includes(sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
+      const project = getDatabase().getProjectRepo().getProject(sessionId.slice('project:'.length));
       if (!project || project.status === 'archived' || missingWorkspace(project)) throw new Error('COMPANION_PROJECT_UNAVAILABLE');
       const model = this.model(command.payload.provider, command.payload.model);
       // The command reservation is durable before this starts; identity is independent of response delivery.
@@ -174,19 +208,19 @@ export class CompanionLibraryService {
       getModelSessionState().setOverride(session.id, { provider: model.provider, model: model.model });
       return { sessionId: session.id };
     }
-    if (!this.gateway.canAccessSession(command.deviceId, command.sessionId) || !this.session(command.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
-    if (this.isRunning(command.sessionId)) throw new Error('COMPANION_SESSION_BUSY');
-    if (command.action === 'session.rename') await sm.updateSession(command.sessionId, { title: command.payload.title }, { commit });
+    if (!this.gateway.canAccessSession(command.deviceId, sessionId) || !this.session(sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
+    if (this.isRunning(sessionId)) throw new Error('COMPANION_SESSION_BUSY');
+    if (command.action === 'session.rename') await sm.updateSession(sessionId, { title: command.payload.title }, { commit });
     else if (command.action === 'session.archive') {
-      if (command.payload.archived) await sm.archiveSession(command.sessionId, commit); else await sm.unarchiveSession(command.sessionId, commit);
-    } else if (command.action === 'session.delete') { await sm.deleteSession(command.sessionId, commit); await this.cleanup(); }
+      if (command.payload.archived) await sm.archiveSession(sessionId, commit); else await sm.unarchiveSession(sessionId, commit);
+    } else if (command.action === 'session.delete') { await sm.deleteSession(sessionId, commit); await this.cleanup(); }
     else if (command.action === 'session.model') {
       const model = this.model(command.payload.provider, command.payload.model);
       const override = { provider: model.provider, model: model.model };
-      if (!await persistModelOverride(command.sessionId, override, commit)) throw new Error('COMPANION_MODEL_NOT_SAVED');
-      getModelSessionState().setOverride(command.sessionId, override);
+      if (!await persistModelOverride(sessionId, override, commit)) throw new Error('COMPANION_MODEL_NOT_SAVED');
+      getModelSessionState().setOverride(sessionId, override);
     } else throw new Error('COMPANION_UNSUPPORTED_ACTION');
-    return { sessionId: command.sessionId };
+    return { sessionId };
   }
 
   async cleanup(): Promise<void> {

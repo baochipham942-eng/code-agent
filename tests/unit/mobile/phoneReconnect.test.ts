@@ -95,7 +95,8 @@ function slotFrom(store: ReturnType<typeof storeOf>) {
     commandError: s.commandError, commandErrorAction: s.commandErrorAction, voiceFailureShown: false, sessionId: s.sessionId,
     libraryError: s.libraryError, pending: s.pending, pendingAction: s.pendingAction, pendingSlow: false,
     autoRetrying: s.autoRetrying, autoAttempt: s.autoAttempt, abandonedPending: s.abandonedPending,
-  }, { flush() {}, reconnect() {}, scan() {}, openRemote() {}, retryCreate() {}, switchModel() {} });
+    library: s.library,
+  }, { flush() {}, reconnect() {}, scan() {}, openRemote() {}, retryCreate() {}, switchModel() {}, openModelSetup() {} });
 }
 
 async function flushUntilHung(ticks = 30) {

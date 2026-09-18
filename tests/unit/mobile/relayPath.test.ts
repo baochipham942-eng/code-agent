@@ -23,6 +23,9 @@ const harness = vi.hoisted(() => ({
   hangSync: false,
   rejectSync: null as null | ((error: Error) => void),
   relayDials: [] as { url: string; authorization: string }[],
+  /** LAN recover 回的 binding 是否带 dictation 广告（含百炼三态）。 */
+  dictationAdvertised: false,
+  dictationOpenResult: null as null | { ok: boolean; streamId?: string; sampleRate?: number },
   /** 每个 mock LAN 客户端实例的存活标记——断言「会话通道没陪葬」用。 */
   lanClients: [] as { alive: boolean }[],
 }));
@@ -35,11 +38,15 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
     async recover() {
       if (harness.lanError) throw new Error(harness.lanError);
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32),
-        deviceId: 'phone-1', scopeEpoch: 1, scope: ['shared'] };
+        deviceId: 'phone-1', scopeEpoch: 1, scope: ['shared'],
+        ...(harness.dictationAdvertised ? { dictation: true as const, dictationTranscription: 'no-key' as const } : {}) };
     }
     async request(payload: Record<string, unknown>) {
       if (!this.ref.alive) throw new Error('COMPANION_NOT_CONNECTED');
       harness.lanRequests.push(payload);
+      if (payload.action === 'dictation' && payload.op === 'open') {
+        return harness.dictationOpenResult ?? { ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE', events: [] };
+      }
       if (payload.action === 'relay.route') {
         if (harness.oldHost) {
           // 旧 Host：未知动作 ⇒ 服务端关 channel，客户端 self-close——这条通道从此死透。
@@ -251,5 +258,24 @@ describe('companionStore 双径：LAN 优先、relay 回落、恢复收敛', () 
     await store.getState().send('old-host-正文');
     expect(store.getState()).toMatchObject({ status: 'connected', pending: false });
     store.getState().pause();
+  });
+
+  // N-MOBILE-VOICE-TRANSCRIBE-FIX-R6 ai-review Important 的收尾链：中继/长连不刷新就绪三态，
+  // 实时听写真开起来了就把 binding 的百炼三态就地追上，否则「开好了，再试一次」只放行一次。
+  it('实时听写 open 成功：binding.dictationTranscription 就地追成 ready', async () => {
+    harness.lanError = null; harness.oldHost = false;
+    harness.dictationAdvertised = true;
+    harness.dictationOpenResult = { ok: true, streamId: 'stream-1', sampleRate: 16000 };
+    try {
+      const store = storeWith(storageWith());
+      await store.getState().hydrate();
+      expect(store.getState().binding).toMatchObject({ dictation: true, dictationTranscription: 'no-key' });
+      await store.getState().dictationOpen();
+      expect(store.getState().binding).toMatchObject({ dictation: true, dictationTranscription: 'ready' });
+      store.getState().pause();
+    } finally {
+      harness.dictationAdvertised = false;
+      harness.dictationOpenResult = null;
+    }
   });
 });

@@ -15,7 +15,7 @@ import { toHex } from '../../../src/shared/companion/lanProtocol';
  * harness.mode 切换 Host 行为模拟各条失败路。
  */
 const harness = vi.hoisted(() => ({
-  mode: 'ok' as 'ok' | 'drop-sync' | 'drop-command' | 'reject-project' | 'reconciling',
+  mode: 'ok' as 'ok' | 'drop-sync' | 'drop-command' | 'reject-project' | 'reconciling' | 'old-host',
   createSessionIds: [] as string[],
   created: false,
 }));
@@ -41,7 +41,9 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
             ...(harness.created ? [{ id: 'mobile-new-1', title: '新会话', projectId: 'one', updatedAt: 3, archived: false, provider: 'deepseek', model: 'deepseek-chat' }] : []),
           ],
           projects: [{ id: 'one', name: '工作项目', canCreate: true, workspacePath: '/Users/neo/Downloads/ai/workspace' }],
-          models: [{ provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek Chat', providerLabel: 'DeepSeek', isDefault: true }],
+          models: harness.mode === 'old-host'
+            ? [{ provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek Chat', providerLabel: 'DeepSeek' }]
+            : [{ provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek Chat', providerLabel: 'DeepSeek', isDefault: true }],
         };
       }
       if (action === 'command') {
@@ -180,5 +182,15 @@ describe('fix6-②：创建失败的可见反馈（manage 不再静默吞错）'
     await waitFor(() => { expect(harness.createSessionIds).toHaveLength(1); });
     await waitFor(() => { expect(noticeText()).toContain('会话没建成'); });
     expect(noticeText()).toContain('上一条操作还没核对完');
+  });
+
+  it('旧版电脑端不标 isDefault（列表非空）：点 + 回落列表第一项建会话，不静默失败', async () => {
+    harness.mode = 'old-host';
+    await mountConnected();
+    await tapNewSessionPlus();
+    await waitFor(() => { expect(harness.createSessionIds).toEqual(['project:one']); });
+    await waitFor(() => { expect((document.querySelector('.topbar strong') as HTMLElement).textContent).toBe('新会话'); });
+    // 不显示「电脑上还没有能用的模型」——列表里明明有模型
+    expect(noticeText()).not.toContain('电脑上还没有能用的模型');
   });
 });

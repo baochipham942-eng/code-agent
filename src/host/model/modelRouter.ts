@@ -23,7 +23,7 @@ import { getInferenceCache } from './inferenceCache';
 import { getAdaptiveRouter } from './adaptiveRouter';
 import { buildModelProviderIdentity, resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from './modelDecision';
 import { getConfigService } from '../services/core/configService';
-import { getProviderHealthMonitor } from './providerHealthMonitor';
+import { getProviderHealthMonitor, persistentProviderMarkKind } from './providerHealthMonitor';
 import { resolveModelCapabilities } from './modelCapabilityMatrix';
 import { combineAbortSignals, createTimedAbortController } from '../agent/shutdownProtocol';
 import {
@@ -159,8 +159,17 @@ export class ModelRouter {
 
   private loggedProtocolOverrides = new Set<string>();
 
-  private recordProviderHardFailure(provider: string): void {
-    getProviderHealthMonitor().recordFailure(provider);
+  /**
+   * 持久供应商错误（PERSISTENT_PROVIDER_ERROR_PATTERN：401/403/余额）才整家打标记：余额归
+   * quota（「余额或额度用完了」），其余 auth。空内容（ARTIFACT_UNUSABLE_RESPONSE_PATTERN）
+   * 失败不带分类只记普通失败——一次空内容不该让整家 30 分钟显示「密钥用不了」，
+   * 误导用户去重填一把本来能用的密钥。
+   */
+  private recordProviderHardFailure(provider: string, message: string): void {
+    if (PERSISTENT_PROVIDER_ERROR_PATTERN.test(message)) getProviderHealthMonitor().recordFailure(provider, { scope: 'provider', kind: persistentProviderMarkKind(message) });
+    else getProviderHealthMonitor().recordFailure(provider);
+    // 无条件再记两笔不是笔误（ai-review PR#1918 Nit 问过）：合计 3 次普通失败，
+    // 让健康统计把这次失败看得足够重——供应商已有成功历史时，单笔推不动错误率。
     getProviderHealthMonitor().recordFailure(provider);
     getProviderHealthMonitor().recordFailure(provider);
   }
@@ -641,7 +650,7 @@ export class ModelRouter {
       const errCode = (primaryErr as NodeJS.ErrnoException).code;
 
       if (PERSISTENT_PROVIDER_ERROR_PATTERN.test(errMsg) || ARTIFACT_UNUSABLE_RESPONSE_PATTERN.test(errMsg)) {
-        this.recordProviderHardFailure(effectiveConfig.provider);
+        this.recordProviderHardFailure(effectiveConfig.provider, errMsg);
       }
 
       if (!isFallbackEligible(errMsg, errCode)) {
@@ -823,7 +832,7 @@ export class ModelRouter {
           }
           const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
           if (PERSISTENT_PROVIDER_ERROR_PATTERN.test(fbMsg) || ARTIFACT_UNUSABLE_RESPONSE_PATTERN.test(fbMsg)) {
-            this.recordProviderHardFailure(fallback.provider);
+            this.recordProviderHardFailure(fallback.provider, fbMsg);
           }
           fallbackTried.push(fallbackTraceStep(
             fallback.provider,
@@ -905,15 +914,14 @@ export class ModelRouter {
       // Legacy providers do not all use the shared retry wrapper. Fill the
       // canonical provider key only when the inner path recorded nothing.
       if (healthMonitor.getObservationCount(config.provider) === observationCount) {
-        healthMonitor.recordSuccess(config.provider, Date.now() - startedAt);
+        healthMonitor.recordSuccess(config.provider, Date.now() - startedAt, { model: config.model });
       }
       return response;
     } catch (error) {
       if (healthMonitor.getObservationCount(config.provider) === observationCount) {
-        healthMonitor.recordFailure(config.provider, {
+        healthMonitor.recordFailure(config.provider, { model: config.model, error,
           cancelled: signal?.aborted === true
-            || (timedAbort?.controller.signal.aborted !== true && isCancellationError(error)),
-        });
+            || (timedAbort?.controller.signal.aborted !== true && isCancellationError(error)) });
       }
       if (timedAbort?.controller.signal.aborted && !signal?.aborted) {
         throw new Error(`${config.provider} request timeout after ${timeoutMs}ms`, { cause: error });

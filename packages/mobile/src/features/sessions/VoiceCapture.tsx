@@ -10,6 +10,7 @@ import type {
 } from '../../../../../src/shared/contract/companionDictation';
 import { AppIcon } from '../../app/AppIcon';
 import { applyDictationEvent, dictationDisplay, emptyDictationDraft, type DictationDraft } from './dictationDraft';
+import { isVoiceSetupCode, isVoiceTooLargeCode } from './voiceFailure';
 
 /**
  * 失败必须带阶段和真实错误码：录音阶段（权限/插件/设备被占）与转写阶段（电脑没收到或没转出来）
@@ -83,7 +84,7 @@ let takeSeq = 0;
  * 所以录音走一条主循环、上传走一条队列，两边都不并发；`transcribe` 回报这条命令的 commandId，
  * 没发出去的分片留在队头等下一拍，不静默丢。
  */
-export function useVoiceCapture({ recorder, pending, result, ready, transcribe, discardPending, dictation, commitSpoken }: {
+export function useVoiceCapture({ recorder, pending, result, ready, transcribe, discardPending, dictation, commitSpoken, preflight }: {
   recorder: PlatformPorts['recorder'];
   /** 协议此刻有没有待确认命令。这是队列泵的**前置条件**（发不出去就别发），不是相位判据。 */
   pending: boolean;
@@ -97,6 +98,8 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
   discardPending(take: string): void;
   dictation?: DictationPort;
   commitSpoken?(text: string, continuation: boolean, take: string, sentenceId: number): Promise<void>;
+  /** 点麦克风时的预检（电脑没开转写）。返回失败则不开录。 */
+  preflight?(): VoiceFailure | null;
 }) {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [failure, setFailure] = useState<VoiceFailure | null>(null);
@@ -283,6 +286,19 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
 
   const start = async () => {
     if (!recorder) return;
+    const blocked = preflight?.();
+    if (blocked) {
+      // 拦下的同时把上一次录音点名丢弃（与取消同一条纪律）：它已进待确认槽的那段
+      // 晚到时不许再写进草稿——只摘身份挡不住 onTranscript 那一侧（ai-review Nit）。
+      const previous = take.current;
+      if (previous) discardPending(previous.id);
+      previous?.wake?.();
+      if (running.current) await running.current;
+      take.current = null;
+      setFailure(blocked);
+      setPhase('error');
+      return;
+    }
     // 先占住身份：上一次录音（以及它所有在途的续段）从这一行起就不算数了。
     const previous = take.current;
     const t = open();
@@ -306,8 +322,10 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
         } catch (error) {
           t.unsub?.(); t.unsub = null;
           const code = error instanceof Error ? error.message : String(error);
-          // 没授权 / 麦克风被通话占着：换分段录音也一样起不来，退过去只会把真因换成 FAILED_TO_RECORD。
-          if (code === 'MICROPHONE_DENIED' || code === 'MISSING_PERMISSION' || code === 'MICROPHONE_BUSY') { fail(t, 'record', error); return; }
+          // 没授权 / 被占用 / 无输入：换分段录音也一样起不来，退过去只会把真因换成 FAILED_TO_RECORD，
+          // 无输入路径还会撞上第二崩点 AudioRecorderAQInputCallback（FB-182）。
+          if (code === 'MICROPHONE_DENIED' || code === 'MISSING_PERMISSION' || code === 'MICROPHONE_BUSY'
+            || code === 'MICROPHONE_UNAVAILABLE') { fail(t, 'record', error); return; }
           t.degraded = true;
         }
         if (t.pcmLive) {
@@ -376,9 +394,20 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     t.wake?.();
     setFailure(null); setPhase('idle');
   };
+  const interruptBackground = () => {
+    const t = take.current;
+    if (!t) return;
+    take.current = null;
+    discardPending(t.id);
+    if (t.pcmLive || t.mode === 'realtime' || t.streamId) void dictationRef.current?.close();
+    if (t.pcmLive || t.mode === 'realtime') trackRelease(t);
+    t.wake?.();
+    setFailure({ stage: 'record', reason: 'BACKGROUND_INTERRUPTED' });
+    setPhase('error');
+  };
 
   useEffect(() => {
-    const hide = () => { if (document.hidden) cancel(); };
+    const hide = () => { if (document.hidden) interruptBackground(); };
     document.addEventListener('visibilitychange', hide);
     return () => {
       document.removeEventListener('visibilitychange', hide);
@@ -438,8 +467,16 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
       catch (error) {
         if (!mine(t)) return;
         // 抛出 = 这条命令这次没戏。记下真实原因、把这段留给重试，别把队列卡死在队头。
-        t.sending = false; t.queue.shift(); t.retry.push(chunk);
-        drop(t, { stage: 'transcribe', reason: error instanceof Error && error.message ? error.message : String(error) });
+        t.sending = false; t.queue.shift();
+        const reason = error instanceof Error && error.message ? error.message : String(error);
+        if (isVoiceSetupCode(reason) || isVoiceTooLargeCode(reason)) {
+          t.failure = { stage: 'transcribe', reason };
+          t.retry = []; t.queue = []; t.drained = true; t.stopping = true; t.wake?.();
+          bump();
+          return;
+        }
+        t.retry.push(chunk);
+        drop(t, { stage: 'transcribe', reason });
         return;
       }
       // 取消 / 换会话正落在这个 await 里：这段音频连同它的 commandId 都不再算数，
@@ -462,6 +499,12 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     // 句子之间的停顿段在 4 秒分片下是常态（真机 30 段里 13 段），把它算成丢片的话
     // 面板会一直挂着「有片段没转成文字」，重试还会把一堆静音再传一遍。
     if (result.outcome === 'silent') { t.awaiting = null; bump(); return; }
+    if (isVoiceSetupCode(result.code) || isVoiceTooLargeCode(result.code)) {
+      t.failure = { stage: 'transcribe', reason: result.code };
+      t.retry = []; t.queue = []; t.awaiting = null; t.drained = true; t.stopping = true; t.wake?.();
+      bump();
+      return;
+    }
     t.retry.push(t.awaiting.chunk); t.awaiting = null;
     drop(t, { stage: 'transcribe', reason: result.code });
   }, [result, tick]);

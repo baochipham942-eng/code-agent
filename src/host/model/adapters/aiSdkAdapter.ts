@@ -726,6 +726,7 @@ async function generateViaAiSdk(params: {
       },
       {
         providerName: config.provider,
+        model: config.model,
         signal,
         // 与流式路径同一契约：调用方自带重试循环（modelRouter fallback/artifact 修复）
         // 时本层必须单次尝试，否则候选数 × 5 放大成长时间卡死。
@@ -1188,7 +1189,7 @@ async function streamViaAiSdk(params: {
 
       stopWatchdog();
       // 正常完成：发 usage + complete（对齐 sseStream），落最终 snapshot，累积成 ModelResponse。
-      healthMonitor.recordSuccess(config.provider, Date.now() - startTime);
+      healthMonitor.recordSuccess(config.provider, Date.now() - startTime, { model: config.model });
       // usage 跨 attempt 合并记账（ADR-068 刀 3）：断流续接时各次尝试都真实计费，
       // 单轮展示 usage = Σ attempts（断流 attempt 上报过 usage 的并入，未上报的无从记起）。
       acc.usage = mergeAttemptUsage(acc.usage, usageFromBrokenAttempts);
@@ -1293,7 +1294,7 @@ async function streamViaAiSdk(params: {
         await abortableSleep(delay, signal);
         if (!signal?.aborted) continue;
       }
-      healthMonitor.recordFailure(config.provider, { cancelled: isCancellationError(err, signal) });
+      healthMonitor.recordFailure(config.provider, { cancelled: isCancellationError(err, signal), model: config.model, error: err });
       if (!signal?.aborted) {
         onStream({ type: 'error', error: summarizeModelErrorForUser(msg), ...(code ? { errorCode: code } : {}) });
       }

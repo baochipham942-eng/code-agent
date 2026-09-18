@@ -10,6 +10,7 @@ import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseCh
 import { companionCommandSchema, type CompanionEvent } from '../../../shared/contract/companion';
 import { getRegisteredCompanionDictation } from '../capabilities/hostCapabilityPorts';
 import type { CompanionGateway } from './CompanionGateway';
+import { companionDictationReadiness, companionTranscriptionReadiness } from './transcriptionReadiness';
 import type { CompanionPushOutbox } from './CompanionPushOutbox';
 
 interface Invitation { id: string; psk: string; expiresAt: number; scope: string[] }
@@ -328,7 +329,12 @@ export class LanCompanionServer {
     // 只捎当前地址，不动 altEndpoint：那一格记的是「我们还知道的另一个候选」，
     // 由手机自己维护（哪个拨通了哪个当主、另一个留作备用），宿主不该覆盖它。
     const base = endpoint ? { ...device, endpoint } : device;
-    return getRegisteredCompanionDictation() ? { ...base, dictation: true as const } : base;
+    return {
+      ...base,
+      transcription: companionTranscriptionReadiness(),
+      sessionlessTranscribe: true as const,
+      ...(getRegisteredCompanionDictation() ? { dictation: true as const, dictationTranscription: companionDictationReadiness() } : {}),
+    };
   }
 
   private releaseDictation(publicKey: string): void {

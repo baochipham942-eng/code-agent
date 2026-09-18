@@ -40,9 +40,15 @@ import { CLICK_SWALLOW_MS, DRAWER_SETTLE_MS, EDGE_GESTURE_START_X, drawerPanOffs
  * 不在列表里）。查不到只说明「没有好看的名字」，不说明「没有模型」，隐藏胶囊等于把事实藏了；
  * 同理也不拿列表第一个冒充当前模型（那正是 FB-141 那类谎）。
  */
-export function composerModelLabel(library: CompanionLibrary | null, sessionId: string | null): string | null {
-  const session = library?.sessions.find(item => item.id === sessionId);
-  if (!session || !library) return null;
+export function composerModelLabel(
+  library: CompanionLibrary | null,
+  sessionId: string | null,
+  newTaskModel?: { label: string; model: string } | null,
+): string | null {
+  if (!library) return null;
+  if (!sessionId) return newTaskModel?.label ?? newTaskModel?.model ?? null;
+  const session = library.sessions.find(item => item.id === sessionId);
+  if (!session) return null;
   return library.models.find(m => m.provider === session.provider && m.model === session.model)?.label ?? session.model;
 }
 
@@ -65,7 +71,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [store] = useState(() => createMobileStore(ports.preferences));
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
     return store.getState().acknowledgeDraft(acceptedText, `${hostKey}:${sessionId}`);
-  }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId, continuation), ports.files, ports.historyCache, {
+  }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, sessionId ? `${hostKey}:${sessionId}` : 'new', commandId, continuation), ports.files, ports.historyCache, {
     lastSession: hostKey => store.getState().preferences.lastSessions?.[hostKey],
     rememberSession: (hostKey, sessionId) => store.getState().rememberSession(hostKey, sessionId),
     forgetSessionTitles: (hostKey, sessionId) => store.getState().forgetSessionTitles(hostKey, sessionId),
@@ -180,7 +186,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     ?? pendingDecisions.find(card => card.sessionId === companion.sessionId && card.kind === 'plan');
   // 输入区的模型胶囊（design.html composer 的 .model）：显示这条会话当前在用的模型，
   // 没有会话或还没读到模型表时不显示——不拿列表第一个冒充当前模型。
-  const sessionModelLabel = composerModelLabel(companion.library, companion.sessionId);
+  const sessionModelLabel = composerModelLabel(companion.library, companion.sessionId, null);
   // 反馈③（2026-09-14 build 34）：项目/会话 sheet 等电脑里的库时不许无限转圈——底层 request
   // 没有客户端超时，连接僵死时圈会一直转；到点落「连不上电脑」失败态并给重试。
   const librarySheetWaiting = Boolean(state.sheet && (currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more' || currentPage === 'model') && companion.binding && !companion.library);
@@ -303,6 +309,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
    * ref 变了不重渲染，执行条不会知道该长出按钮来。
    */
   const [voiceActive, setVoiceActive] = useState(false);
+  const [newTaskModelPick, setNewTaskModelPick] = useState<{ provider: string; model: string } | null>(null);
   /**
    * hydrate 从盘上带回来的待确认命令已经等了不知道多久（可能是上次开着 app 时留下的），
    * 再从 0 憋 3 秒等于把已知的「它很慢」这个事实丢掉（grok ai-review PR#1903 Nit②）。
@@ -382,7 +389,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     if (draft.trim()) void companionStore.getState().send(draft);
   }, [companion.status, companion.commandError, companion.commandErrorAction, companion.pending, companion.busy, companion.sessionId, store, companionStore]);
   useEffect(() => { if (currentPage !== 'storage') { setCacheConfirm(false); setCacheResult(null); } }, [currentPage]);
-  const commandNotice = commandNoticeCopy(text, companion, voiceFailureShown);
+  const commandNotice = commandNoticeCopy(text, companion, voiceFailureShown, voiceActive);
   // 选中即收边栏（fix5-①，2026-09-15 build 36 反馈⑦）：抽屉会话行、别会话待确认跳转、sheet 里的
   // 待确认跳转三处都走这里。navigate 虽也带 drawer:false，收边栏是选会话的第一意图，
   // 显式先关——不把它押在路由切换的副作用上。
@@ -399,11 +406,20 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   // 新任务的项目与模型（N-MOBILE-DEFAULT-PROJECT）：手选过的 > 最近用过的 > 未分类；模型 = 电脑默认 > 列表第一项（FB-141）。
   const hostKey = companion.binding?.hostKey;
   const newTaskProjectId = companion.library ? defaultProjectId(companion.library, hostKey ? state.preferences.projectPicks?.[hostKey] : undefined) : null;
-  const newTaskModel = companion.library?.models.find(m => m.isDefault) ?? companion.library?.models[0];
+  const newTaskModel = (newTaskModelPick && companion.library?.models.find(m => m.provider === newTaskModelPick.provider && m.model === newTaskModelPick.model))
+    ?? companion.library?.models.find(m => m.isDefault)
+    ?? companion.library?.models[0];
+  const welcomeModelLabel = composerModelLabel(companion.library, companion.sessionId, newTaskModel);
   /** 「会话没建成」那条状态的重试：重做最近一次建会话的那个动作（+、没选会话发送、弹层里选项目）。 */
   const lastCreate = useRef<(() => void) | null>(null);
   const createInDefaultProject = () => {
-    if (!newTaskProjectId || !newTaskModel) { state.openSheet('projects'); return false; }
+    // 没有能用的模型（列表为空）：草稿留着、不弹项目弹层（N-MOBILE-NO-USABLE-MODEL）。
+    // 旧版电脑端不标 isDefault 时上面已回落列表第一项，不再静默建不了。
+    // 库还没读到（library 为 null）不算「没有模型」——那会儿状态位也出不来（它要求库非空），
+    // 照旧打开项目弹层给等待态，不能零反馈（ai-review R7：build 37「点了没反应」不能回来）。
+    if (companion.library && !newTaskModel) return false;
+    // 库没读到（模型与默认项目都还定不下来）或定不下默认项目：打开项目弹层（等库 / 换选项目）。
+    if (!newTaskModel || !newTaskProjectId) { state.openSheet('projects'); return false; }
     void manage('session.create', { title: text.newSession, provider: newTaskModel.provider, model: newTaskModel.model }, `project:${newTaskProjectId}`).then(() => {
       const live = companionStore.getState();
       if (live.commandError && live.commandErrorAction === 'session.create') firstSend.current = null;
@@ -573,6 +589,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           offline={companion.status !== 'connected'}
           openModel={openModelSheet}
           sessionModel={companion.library?.sessions.find(s => s.id === companion.sessionId) ?? null}
+          models={companion.library?.models}
           // 执行条平时只说「哪一次在跑」；停止在输入区那个键上。录音面板顶掉输入区时才把
           // stop 交给它，避免运行中一开录音就没法停（grok ai-review PR#1903 Nit①）。
           running={companion.runId
@@ -629,21 +646,23 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             else if (needsLibraryPick(companion)) sendAsNewSession();
             else state.attemptSend();
           }}
-          status={composerStatusItems(text, { ...companion, binding: !!companion.binding, saveError: state.saveError, nativeError, sendAttempted: state.sendAttempted, voiceFailureShown, pendingSlow }, {
+          status={composerStatusItems(text, { ...companion, binding: !!companion.binding, saveError: state.saveError, nativeError, sendAttempted: state.sendAttempted, voiceFailureShown, voiceActive, pendingSlow }, {
             flush: () => void state.flush(), reconnect: () => void companionStore.getState().reconnect({ resetBackoff: true }), scan: () => void pairAndOpenConversation(),
             openRemote: () => state.openSheet('remote'), retryCreate: lastCreate.current, switchModel: openModelSheet,
+            openVoiceSetup: () => state.openSheet('voiceSetup'),
+            openModelSetup: () => state.openSheet('modelSetup'),
             dismissAbandoned: () => companionStore.getState().dismissAbandonedPending(),
           })}
           // 模型入口只留这一个（爸 2026-09-16 拍板）：会话操作弹窗里不再有模型那一格。
-          modelLabel={sessionModelLabel} openModel={openModelSheet}
+          modelLabel={companion.sessionId ? sessionModelLabel : welcomeModelLabel} openModel={openModelSheet}
           openSettings={() => void (ports.notifications ?? unavailableNotificationPort).openSettings()}
           attach={ports.files && (() => state.openSheet('attachment'))}
           attachDisabled={!canAddressSession(companion) || companion.busy || companion.pending}
           attachments={companion.uploadProgress}
           retryAttachment={id => { void companion.retryUpload(id); }}
           removeAttachment={companion.removeUpload}
-          recorder={companion.sessionId ? ports.recorder : undefined}
-          transcribe={(audio, continuation, take) => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey, continuation, take)}
+          recorder={(companion.sessionId || companion.binding?.sessionlessTranscribe === true) ? ports.recorder : undefined}
+          transcribe={(audio, continuation, take) => companion.transcribe(audio, companion.sessionId, companion.binding!.hostKey, continuation, take)}
           discardPendingTranscript={companion.discardPendingTranscript}
           commitSpoken={(text, continuation, take, sentenceId) => companion.commitDictation(text, continuation, take, sentenceId)}
           dictation={companion.binding?.dictation === true && companion.status === 'connected'
@@ -657,7 +676,12 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             : undefined}
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
           voicePending={companion.pending} voiceResult={companion.voiceResult}
-          voiceReady={canAddressSession(companion)}
+          voiceReady={companion.status === 'connected' && (!!companion.sessionId || companion.binding?.sessionlessTranscribe === true)}
+          transcription={companion.binding?.transcription}
+          dictationTranscription={companion.binding?.dictationTranscription}
+          skipTranscriptionPreflight={companion.skipTranscriptionPreflight}
+          onSkipTranscriptionPreflight={companion.consumeTranscriptionPreflight}
+          openVoiceSetup={() => state.openSheet('voiceSetup')}
           onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceActive(active); setVoiceFailureShown(failed); }} />
       </div>
     </main>
@@ -688,7 +712,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     })()}
     {state.sheet && currentPage && <SheetHost page={currentPage}
       title={currentPage === 'projects' ? text.chooseProject
-        : currentPage === 'model' ? text.chooseModel
+        // 模型屏的标题跟着胶囊入口走（R7）：无会话时它选的是「下一发新任务」的模型，不叫「会话模型」。
+        : currentPage === 'model' ? (companion.sessionId ? text.chooseModel : text.chooseModelNewTask)
+        : currentPage === 'modelSetup' ? text.modelSetup
         : currentPage === 'projectSessions' ? sessionProject && companion.library ? projectDisplayName(sessionProject, companion.library.projects) : text.projectSessions
         : text[currentPage]}
       hasParent={state.sheet.pages.length > 1}
@@ -708,7 +734,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text}
           mode={currentPage === 'more' || currentPage === 'model' ? currentPage : currentPage === 'projectSessions' ? 'projectSessions' : 'projects'}
           projectId={sessionProjectId} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={sheetManage}
-          loadMore={() => void companion.refreshLibrary(true)} openProjectSessions={openProjectSessions} />
+          loadMore={() => void companion.refreshLibrary(true)} openProjectSessions={openProjectSessions}
+          pendingModel={newTaskModel ?? null}
+          onPickNewTaskModel={(provider, model) => { setNewTaskModelPick({ provider, model }); state.closeSheet(); }} />
           // fix4-④：等库 = spinner + 一句「正在连接电脑…」（秒级超时兜底，不无限转圈）；
           // 失败 = 状态页（标题 + 诊断句 + 主按钮重新连接 + 次按钮去连接电脑），不再用
           // 「一行文案 + 行尾 pill」。行尾重试 pill 只保留在会话页断网 banner 单行场景。
@@ -790,7 +818,31 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         name={invitationHostLabel(pendingInvite.invitation) ?? text.pairConfirmComputer}
         verify={deriveInvitationVerify(pendingInvite.invitation.psk, pendingInvite.invitation.hostKey)}
         text={text} onConfirm={() => void confirmPendingInvite()} onReject={dismissPendingInvite}
-      /> : (currentPage === 'attachment' || currentPage === 'cameraDenied') ? <AttachmentSheet
+      /> : currentPage === 'voiceSetup' ? <div className="voice-setup" data-testid="voice-setup">
+        <p>{text.voiceSetupHint}</p>
+        <ol>
+          <li>{text.voiceSetupStep1}</li>
+          <li>{text.voiceSetupStep2}</li>
+          <li>{text.voiceSetupStep3}</li>
+        </ol>
+        <button className="primary" data-testid="voice-setup-done" onClick={() => {
+          companion.allowTranscriptionOnce();
+          state.closeSheet();
+          void companion.reconnect();
+        }}>{text.voiceSetupDone}</button>
+      </div> : currentPage === 'modelSetup' ? <div className="how-model" data-testid="model-setup">
+        <p className="sheet-note">{text.noUsableModelBody}</p>
+        <ol>
+          <li>{text.noUsableModelStep1}</li>
+          <li>{text.noUsableModelStep2}</li>
+          <li>{text.noUsableModelStep3}</li>
+        </ol>
+        <button className="primary" data-testid="model-setup-reload" disabled={companion.busy} onClick={() => {
+          void companion.refreshLibrary().then(() => {
+            if ((companionStore.getState().library?.models.length ?? 0) > 0) store.getState().closeSheet();
+          });
+        }}>{text.noUsableModelReload}</button>
+      </div> : (currentPage === 'attachment' || currentPage === 'cameraDenied') ? <AttachmentSheet
         mode={currentPage} text={text}
         onPick={kind => {
           if (!ports.files) return;

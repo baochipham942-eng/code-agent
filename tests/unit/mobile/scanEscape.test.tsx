@@ -49,7 +49,10 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
         const query = (payload as { query?: { kind?: string; sessionId?: string } }).query;
         if (query?.kind === 'history') return { sessionId: query.sessionId, messages: [], nextOffset: null };
         if (query?.kind === 'artifacts') return { sessionId: query.sessionId, artifacts: [] };
-        return { nextOffset: null, projects: [{ id: 'one', name: 'One', canCreate: true, workspacePath: '/w' }], sessions: harness.librarySessions, models: [] };
+        // models 给一条可用的：#1918 合入后「电脑上还没有能用的模型」是 rank 3，会按 §13 压住
+        // 本文件要钉的「上一条操作没送到」（rank 5）。这里钉的是扫码逃生口，不是模型档——
+        // 夹具补一个模型让 rank 3 不出场，abandonedPending 才照旧可见。
+        return { nextOffset: null, projects: [{ id: 'one', name: 'One', canCreate: true, workspacePath: '/w' }], sessions: harness.librarySessions, models: [{ provider: 'moonshot', model: 'kimi-k2.5', label: 'Kimi' }] };
       }
       return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
     }

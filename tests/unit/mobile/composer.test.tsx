@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { Composer } from '../../../packages/mobile/src/features/sessions/Composer';
 import type { UploadProgress, VoiceResult } from '../../../packages/mobile/src/stores/companionStore';
 import { messages } from '../../../packages/mobile/src/i18n';
+import type { CompanionTranscriptionReadiness } from '../../../src/shared/companion/lanProtocol';
 
 const text = messages('zh');
 
@@ -21,11 +22,18 @@ function mount(overrides: {
   running?: { stop(): void; stopDisabled: boolean } | null;
   watchMicrophoneRelease?: (onReleased: () => void) => () => void;
   openSettings?: () => void;
+  transcription?: CompanionTranscriptionReadiness;
+  dictationTranscription?: CompanionTranscriptionReadiness;
+  openVoiceSetup?: () => void;
+  skipTranscriptionPreflight?: boolean;
+  onSkipTranscriptionPreflight?: () => void;
+  startPcm?: () => Promise<{ sampleRate: number }>;
 } = {}) {
   const recorder = {
     start: overrides.start ?? (async () => {}),
     stop: overrides.stop ?? (async () => ({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1000 })),
     ...(overrides.watchMicrophoneRelease ? { watchMicrophoneRelease: overrides.watchMicrophoneRelease } : {}),
+    ...(overrides.startPcm ? { startPcm: overrides.startPcm, stopPcm: async () => {}, subscribePcm: () => () => {} } : {}),
   };
   const transcribe = vi.fn(overrides.transcribe ?? (async () => 'cmd-1'));
   const discardPendingTranscript = vi.fn();
@@ -37,12 +45,22 @@ function mount(overrides: {
     modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel} openSettings={overrides.openSettings}
     attach={'attach' in overrides ? overrides.attach : () => {}} attachDisabled={false}
     recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe} discardPendingTranscript={discardPendingTranscript}
-    voiceDisabled={false} voicePending={false} voiceResult={null} voiceReady onVoiceState={onVoiceState} />);
+    dictation={overrides.startPcm ? {
+      available: true,
+      open: async () => ({ ok: false as const, code: 'SKIP' }),
+      audio: async () => ({ ok: true as const, events: [] }),
+      stop: async () => ({ ok: true as const, events: [] }),
+      close: async () => {},
+    } : undefined}
+    voiceDisabled={false} voicePending={false} voiceResult={null} voiceReady onVoiceState={onVoiceState}
+    transcription={overrides.transcription} dictationTranscription={overrides.dictationTranscription} openVoiceSetup={overrides.openVoiceSetup}
+    skipTranscriptionPreflight={overrides.skipTranscriptionPreflight}
+    onSkipTranscriptionPreflight={overrides.onSkipTranscriptionPreflight} />);
   return { transcribe, send, openModel, onVoiceState, discardPendingTranscript, unmount: view.unmount };
 }
 
-// 语音失败进输入区唯一状态位（N-MOBILE-STATUS-NOISE）：rank 3。
-const voiceNotice = () => document.querySelector('[data-testid="status-slot"][data-rank="3"]') as HTMLElement;
+// 语音失败进输入区唯一状态位（N-MOBILE-STATUS-NOISE）：rank 4（§13 没有能用的模型占了第 3 档）。
+const voiceNotice = () => document.querySelector('[data-testid="status-slot"][data-rank="4"]') as HTMLElement;
 const clickMic = () => fireEvent.click(screen.getByRole('button', { name: text.voice }));
 const toolbarButtons = () => [...document.querySelectorAll('.composer-tools button')]
   .map(button => button.getAttribute('aria-label') ?? button.className);
@@ -213,6 +231,109 @@ describe('VoiceCapture failure reporting', () => {
     expect(voiceNotice()?.compareDocumentPosition(document.querySelector('.composer')!))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
+
+  it('电脑没开转写：点麦克风不开录，状态位「电脑上还没开语音转写」+「怎么开」', async () => {
+    const start = vi.fn(async () => {});
+    const openVoiceSetup = vi.fn();
+    mount({ start, transcription: 'not-installed', openVoiceSetup });
+    clickMic();
+    await waitFor(() => expect(voiceNotice()?.textContent).toContain('电脑上还没开语音转写'));
+    expect(start).not.toHaveBeenCalled();
+    expect(document.querySelector('.voice-composer')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '怎么开' }));
+    expect(openVoiceSetup).toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: text.retry })).toBeNull();
+  });
+
+  it('没配密钥：同样不开录，不给重试', async () => {
+    const start = vi.fn(async () => {});
+    mount({ start, transcription: 'no-key', openVoiceSetup: () => {} });
+    clickMic();
+    await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('SPEECH_NO_CHANNEL'));
+    expect(voiceNotice().textContent).toContain('电脑上还没开语音转写');
+    expect(start).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: text.retry })).toBeNull();
+  });
+
+  // N-MOBILE-VOICE-TRANSCRIBE-FIX-R6：两条路都没密钥（分段 no-key 且宿主没配百炼）才拦——
+  // 预检按手机将走的路径判，不能让「广告了听写口」绕过没密钥的事实。
+  it('宿主广告了听写但百炼也没配（dictationTranscription=no-key）且分段无密钥：仍拦、仍给怎么开', async () => {
+    const start = vi.fn(async () => {});
+    const startPcm = vi.fn(async () => ({ sampleRate: 16000 }));
+    const openVoiceSetup = vi.fn();
+    mount({ start, startPcm, transcription: 'no-key', dictationTranscription: 'no-key', openVoiceSetup });
+    clickMic();
+    await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('SPEECH_NO_CHANNEL'));
+    expect(voiceNotice().textContent).toContain('电脑上还没开语音转写');
+    expect(startPcm).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '怎么开' }));
+    expect(openVoiceSetup).toHaveBeenCalled();
+  });
+
+  it('只配 Groq（听写口不在场）：分段转写照常开录、照常逐段上送', async () => {
+    vi.useFakeTimers();
+    try {
+      const { transcribe } = mount({ transcription: 'ready', transcribe: async () => 'cmd-1' });
+      clickMic();
+      await advance(5_000);
+      expect(transcribe).toHaveBeenCalled();
+      expect(document.querySelector('.voice-composer')).toBeTruthy();
+      expect(screen.getByRole('button', { name: text.stopRecording })).toBeTruthy();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('跳过预判一次：stale not-installed 也开录，且只跳过这一次', async () => {
+    const start = vi.fn(async () => {});
+    let skip = true;
+    const onSkip = vi.fn(() => { skip = false; });
+    const { unmount } = mount({
+      start, transcription: 'not-installed', skipTranscriptionPreflight: true,
+      onSkipTranscriptionPreflight: onSkip, openVoiceSetup: () => {},
+    });
+    clickMic();
+    await screen.findByRole('button', { name: text.stopRecording });
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(onSkip).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: text.cancelRecording }));
+    await waitFor(() => expect(screen.getByRole('button', { name: text.voice })).toBeTruthy());
+    unmount();
+    mount({
+      start, transcription: 'not-installed', skipTranscriptionPreflight: skip,
+      onSkipTranscriptionPreflight: onSkip, openVoiceSetup: () => {},
+    });
+    clickMic();
+    await waitFor(() => expect(voiceNotice()?.textContent).toContain('电脑上还没开语音转写'));
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.voice-composer')).toBeNull();
+  });
+
+  it('麦克风暂时用不了：不降级分段，状态位与被占用分开', async () => {
+    const start = vi.fn(async () => {});
+    mount({
+      start,
+      startPcm: async () => { throw new Error('MICROPHONE_UNAVAILABLE'); },
+    });
+    clickMic();
+    await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('MICROPHONE_UNAVAILABLE'));
+    expect(voiceNotice().textContent).toContain('麦克风暂时用不了');
+    expect(screen.getByRole('button', { name: text.retry })).toBeTruthy();
+    expect(screen.queryByText(new RegExp(text.microphoneBusy))).toBeNull();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('切到后台停录：回前台状态位「切到后台，录音停了」+「重新录」', async () => {
+    let hidden = false;
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+    mount();
+    clickMic();
+    await screen.findByRole('button', { name: text.stopRecording });
+    hidden = true;
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('BACKGROUND_INTERRUPTED'));
+    expect(voiceNotice().textContent).toContain('切到后台，录音停了');
+    expect(screen.getByRole('button', { name: '重新录' })).toBeTruthy();
+  });
 });
 
 // ——— 分片伪流式（N-VOICE-CHUNKED-STREAM）———
@@ -222,7 +343,7 @@ describe('VoiceCapture failure reporting', () => {
 function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true, onStart, stopDelay = 0, sendDelay = 0, initialDraft = '' }: {
   sent: (audioData: string, continuation: boolean, take?: string) => void;
   /** 'silent' = 主机回「这段没人说话」（HALLUCINATION / EMPTY_RESULT），不是失败。 */
-  verdict?: (seq: number) => 'done' | 'error' | 'silent';
+  verdict?: (seq: number) => 'done' | 'error' | 'silent' | { outcome: 'error'; code: string };
   initialDraft?: string;
   refuseFirst?: boolean; refuseAll?: boolean; ackDelay?: number; ready?: boolean; onStart?: () => void;
   /** recorder.stop() 的耗时（真机切口 ~0.32s）。 */
@@ -254,6 +375,9 @@ function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = fal
     const settle = () => {
       const outcome = verdict(n);
       if (outcome === 'done' && discarded.current !== take) setDraft(previous => previous + `段${n}`);
+      if (typeof outcome === 'object') {
+        setResult({ commandId, outcome: 'error', code: outcome.code }); setPending(false); return;
+      }
       // 静音段主机不回文本，草稿一个字都不动——分片下这是常态，不是丢片。
       setResult({ commandId, outcome }); setPending(false);
     };
@@ -321,6 +445,30 @@ describe('分片伪流式语音输入', () => {
     expect(sent.mock.calls.filter(([id]) => id === 'chunk1').length).toBeGreaterThanOrEqual(2);
   });
 
+  it('录音中收到 UNAVAILABLE：只说一次原因、不给重试、不落兜底', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} verdict={() => ({ outcome: 'error', code: 'COMPANION_TRANSCRIPTION_UNAVAILABLE' })} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(6_000);
+    expect(voiceNotice()?.dataset.reason).toBe('COMPANION_TRANSCRIPTION_UNAVAILABLE');
+    expect(voiceNotice().textContent).toContain('电脑上还没开语音转写');
+    expect(screen.queryByRole('button', { name: text.retry })).toBeNull();
+    expect(screen.queryByText(text.commandRejected)).toBeNull();
+    expect(screen.queryByText(text.voiceChunkDropped)).toBeNull();
+    expect(document.querySelector('.voice-composer')).toBeNull();
+  });
+
+  it('AUDIO_TOO_LARGE：这段太长了，分成几段录，无重试', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} verdict={() => ({ outcome: 'error', code: 'AUDIO_TOO_LARGE' })} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(6_000);
+    expect(voiceNotice()?.textContent).toContain('这段太长了，分成几段录');
+    expect(screen.queryByRole('button', { name: text.retry })).toBeNull();
+  });
+
   it('点停止后收尾：最后一段传完、面板关闭、文字留在输入框', async () => {
     vi.useFakeTimers();
     const sent = vi.fn();
@@ -332,6 +480,60 @@ describe('分片伪流式语音输入', () => {
     expect(screen.getByTestId('draft')).toBeTruthy();
     expect(document.querySelector('.composer')?.className).not.toContain('voice-composer');
     expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
+  });
+});
+
+// ——— N-MOBILE-VOICE-TRANSCRIBE-FIX-R6 ai-review Nit：预检拦下时，上一次录音的在途结果要点名丢弃 ———
+// 第一段已进待确认槽（ack 还在飞），第二段起录失败把面板收进错误态；此时预检条件恶化，
+// 再点麦克风被拦——拦下的同时必须 discardPending，否则那段晚到的 ack 照样写进草稿。
+function BlockedPreflightHarness({ transcription, sent, ackDelay = 30_000 }: {
+  transcription?: CompanionTranscriptionReadiness;
+  sent: (audioData: string) => void;
+  ackDelay?: number;
+}) {
+  const [pending, setPending] = React.useState(false);
+  const [result, setResult] = React.useState<VoiceResult | null>(null);
+  const [draft, setDraft] = React.useState('');
+  const starts = React.useRef(0);
+  const discarded = React.useRef<string | null>(null);
+  const recorder = React.useRef({
+    start: async () => { starts.current += 1; if (starts.current === 2) throw new Error('FAILED_TO_RECORD'); },
+    stop: async () => ({ audioData: 'chunk1', mimeType: 'audio/aac', durationMs: 4000 }),
+  }).current;
+  const transcribe = async (audio: { audioData: string }, _continuation: boolean, take: string) => {
+    sent(audio.audioData);
+    setPending(true);
+    setTimeout(() => {
+      if (discarded.current !== take) setDraft(previous => previous + '段1');
+      setResult({ commandId: 'cmd-1', outcome: 'done' }); setPending(false);
+    }, ackDelay);
+    return 'cmd-1';
+  };
+  return <Composer text={text} draft={draft} editDraft={setDraft} offline={false} sendDisabled={!draft} send={() => {}}
+    modelLabel="DeepSeek V4.1 Flash" openModel={() => {}} attach={() => {}} attachDisabled={false}
+    recorder={recorder} transcribe={transcribe} discardPendingTranscript={take => { discarded.current = take; }}
+    voiceReady voiceDisabled={false} voicePending={pending} voiceResult={result} onVoiceState={() => {}}
+    transcription={transcription} />;
+}
+
+describe('预检拦下时丢弃上一次录音的在途结果（ai-review PR#1919 Nit）', () => {
+  afterEach(() => { vi.useRealTimers(); cleanup(); });
+
+  it('拦下的那次点按先 discardPending，晚到的结果不进草稿', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    const view = render(<BlockedPreflightHarness sent={sent} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(9_000);   // 第一段在飞（ack 30s），第二段起录失败 → 面板收进错误态，麦克风键回到台面
+    expect(sent).toHaveBeenCalledTimes(1);
+    // 预检条件恶化（电脑端把密钥清了）：再点麦克风被拦
+    view.rerender(<BlockedPreflightHarness sent={sent} transcription="no-key" />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(1_000);
+    expect(document.querySelector('[data-testid="status-slot"][data-rank="4"]')?.textContent).toContain('电脑上还没开语音转写');
+    // 在途那段的结果这时才回来：已被点名丢弃，一个字都不许进草稿
+    await advance(31_000);
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toBe('');
   });
 });
 

@@ -223,6 +223,13 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 .decision p { margin: 6px 0 0; font-size: 13px; color: var(--muted); line-height: 1.7; }
 .decision .primary { margin-top: 14px; }
 .sheet-note { color: var(--muted); font-size: 13px; line-height: 1.7; margin: 14px 2px; }
+.voice-setup { padding: 4px 0 8px; }
+.voice-setup p { color: var(--muted); font-size: 15px; line-height: 1.6; margin: 0 0 14px; }
+.voice-setup ol { margin: 0; padding-left: 22px; font-size: 16px; line-height: 1.7; }
+.voice-setup li { margin: 8px 0; }
+.how-model ol { margin: 4px 2px 18px; padding-left: 22px; font-size: 15px; line-height: 1.7; color: var(--text); }
+.how-model li { margin: 6px 0; }
+.how-model .primary { width: 100%; }
 .library-sheet .advanced { margin: 12px 0; }
 .library-sheet .advanced summary { cursor: pointer; padding: 10px 0; color: var(--muted); font-size: 14px; }
 /* fix4（2026-09-15）：sheet 等库 = spinner + 一句「正在连接电脑…」；失败 = 状态页

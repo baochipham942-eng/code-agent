@@ -205,6 +205,7 @@ export abstract class BaseOpenAIProvider implements Provider {
         },
         {
           providerName: config.provider,
+          model: config.model,
           signal,
           maxRetries: options?.disableProviderTransientRetry ? 0 : undefined,
         },
@@ -233,6 +234,7 @@ export abstract class BaseOpenAIProvider implements Provider {
       }),
       {
         providerName: config.provider,
+        model: config.model,
         signal,
         maxRetries: options?.disableProviderTransientRetry ? 0 : undefined,
       }

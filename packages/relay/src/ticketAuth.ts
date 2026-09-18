@@ -11,11 +11,15 @@ import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
  * 票据密钥是 relay 独有、从不下发的随机秘密，绝不能由共享凭据派生：凭据随配对下发给每台手机、
  * 由手机放进 WebSocket 子协议，派生式等于任何配过对的手机都能给任意 sub 签票据、冒充别人账号，
  * 把路由主人隔离整条打穿。删掉密钥文件＝作废全部已签发票据（客户端回落 access token 重新换票）。
+ * 落盘失败（磁盘满/只读重挂载/权限被改）不炸进程：回落进程内随机密钥并 warn（ticket_key_ephemeral），
+ * 重启即作废——密钥是随机秘密，进程内续命总比整个 relay 在 listen 前崩掉强。
  */
 
 const TICKET_PREFIX = 'neo1.';
 const TICKET_MAC_DOMAIN = 'neo-relay-ticket.v1';
 const KEY_BYTES = 32;
+/** 密钥没落盘时的 warn 正文（没有 STATE_DIRECTORY 与落盘失败两条路径共用同一句后果）。 */
+const EPHEMERAL_KEY_CONSEQUENCE = 'ticket key is not persisted; every issued ticket becomes invalid once this process restarts, and clients must re-authenticate with an access token to get new tickets';
 /** 与 accountAuth.verify 对 sub 的口径一致（Supabase 用户 id 的字符集与长度）。 */
 const SUB_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
 
@@ -49,9 +53,7 @@ export class RelayTicketAuth {
     } else {
       // 本机裸跑没有 STATE_DIRECTORY：回落进程内随机密钥，并写清后果——不只是「用了回落」。
       this.key = randomBytes(KEY_BYTES);
-      options.logger?.warn('ticket_key_ephemeral', {
-        consequence: 'ticket key is not persisted; every issued ticket becomes invalid once this process restarts, and clients must re-authenticate with an access token to get new tickets',
-      });
+      options.logger?.warn('ticket_key_ephemeral', { consequence: EPHEMERAL_KEY_CONSEQUENCE });
     }
   }
 
@@ -104,7 +106,18 @@ function loadOrCreateKey(keyFile: string, logger?: TicketAuthLogger): Buffer {
   }
   const key = randomBytes(KEY_BYTES);
   const tmp = `${keyFile}.tmp`;
-  writeFileSync(tmp, key.toString('base64url'), { mode: 0o600 });
-  renameSync(tmp, keyFile);
+  try {
+    writeFileSync(tmp, key.toString('base64url'), { mode: 0o600 });
+    renameSync(tmp, keyFile);
+  } catch (error) {
+    // 落盘失败（磁盘满/只读重挂载/权限被改）不能把 relay 打死在 listen 之前：index.ts 在
+    // uncaughtException 注册之前就 new RelayTicketAuth，这里抛栈＝systemd 重启循环，连不用
+    // 票据的共享凭据通道一起断。回落进程内密钥，后果与没有 STATE_DIRECTORY 的裸跑回落完全
+    // 一致（重启即作废）；error 字段写明这次是哪种失败，别让排障只能靠猜。
+    logger?.warn('ticket_key_ephemeral', {
+      consequence: EPHEMERAL_KEY_CONSEQUENCE,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   return key;
 }

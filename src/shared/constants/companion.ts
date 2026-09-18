@@ -54,6 +54,11 @@ export const COMPANION_LIMITS = {
   channelTtlMs: 300_000,
   maxChannels: 32,
   maxHandshakes: 8,
+  /**
+   * 日志去重窗容量（ghost commandId、握手拒单键）：FIFO 淘汰最旧。没有上限的话这些 Set
+   * 随对端单调增长，且真故障复发后永久不再点名（ai-review R4 Nit 1）。
+   */
+  logDedupCapacity: 1_024,
   maxFrames: 10_000,
   maxFrameBytes: MAX_FRAME_BYTES,
   maxPayloadBytes: 60_000,

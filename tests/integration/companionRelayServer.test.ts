@@ -224,6 +224,43 @@ describe('companion relay: production server + host dial-out', () => {
     await logging.stop();
   });
 
+  // N-MOBILE-SEND-RESULT-LOST：设备腿断开此前只记账不打日志——跨网现场的 C 断点
+  // （relay 腿断）在 server 侧无迹可寻。close 事件一行留痕：role、token 前缀、鉴权
+  // 类别、close code、存活时长；凭据/票据/令牌全文照旧绝不进日志。
+  it('logs each socket close with role, token prefix, auth kind and uptime', async () => {
+    const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+    const logging = new CompanionRelayServer({
+      credential: SECRET,
+      port: await freePort(),
+      logger: {
+        info: (event, fields) => events.push({ event, fields: fields ?? {} }),
+        warn: (event, fields) => events.push({ event, fields: fields ?? {} }),
+      },
+    });
+    const loggingUrl = `ws://127.0.0.1:${(await logging.listen()).port}`;
+    const device = new WebSocket(loggingUrl, [COMPANION_RELAY_WS_PROTOCOL, companionRelayCredentialSubprotocol(SECRET)]);
+    await new Promise<void>(resolve => { device.once('open', resolve); });
+    const closeToken = 'route-token-close1';
+    device.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'device',
+      envelope: { routeToken: closeToken, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    await vi.waitFor(() => expect(logging.currentStats.routes).toBe(1));
+    device.close(1000, 'device-done');
+    const closed = await vi.waitFor(() => {
+      const line = events.find(entry => entry.event === 'connection_closed');
+      expect(line).toBeDefined();
+      return line!;
+    });
+    expect(closed.fields).toMatchObject({ role: 'device', auth: 'legacy', closeCode: 1000 });
+    expect(closed.fields.tokens).toEqual([closeToken.slice(0, 8)]);
+    expect(typeof closed.fields.uptimeMs).toBe('number');
+    expect(closed.fields.uptimeMs as number).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(events)).not.toContain(SECRET);
+    await logging.stop();
+  });
+
   it('does not buffer without bound while the peer is absent', async () => {
     const intruder = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
     await new Promise<void>(resolve => intruder.once('open', () => resolve()));
@@ -301,6 +338,110 @@ describe('companion relay: production server + host dial-out', () => {
     expect(graced.currentStats.notifiedNoHost).toBe(0);
     client.close();
     await lateHost.stop();
+    await graced.stop();
+  });
+
+  // N-COMPANION-RELAY-RECONNECT-DROPSESSIONS：Host 换实例重连后本连接的会话表已清，手机还握着
+  // 旧实例谈好的会话密钥——host 腿断开时 route 与设备腿都还活着，relay 必须给设备腿一个重拨
+  // 重握手的推力，而不是让它干等自己的请求超时。宽限模式与 notifyNoHostAfterGrace 同款。
+  it('tells a live device leg to re-dial after the host leg drops and the grace window lapses', async () => {
+    const events: string[] = [];
+    const graced = new CompanionRelayServer({
+      credential: SECRET,
+      port: await freePort(),
+      noHostGraceMs: 150,
+      logger: {
+        info: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+        warn: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+      },
+    });
+    const gracedUrl = `ws://127.0.0.1:${(await graced.listen()).port}`;
+    const identity = createIdentity();
+    const device = gateway.pairIdentity(toHex(identity.publicKey), ['shared']);
+    const flakyHost = new CompanionRelayClient({
+      gateway,
+      identity: hostIdentity,
+      config: { url: gracedUrl, credentialRef: 'companion-relay', reconnectBackoffMs: [30, 60, 120] },
+      credential: SECRET,
+      jitter: () => 0.5,
+    });
+    flakyHost.advertise({ deviceRef: device.deviceId, routeToken: 'route-token-dropd1' });
+    const client = new RelayCompanionClient({
+      identity,
+      route: { url: gracedUrl, routeToken: 'route-token-dropd1', credential: SECRET },
+      deviceRef: device.deviceId,
+      dial: nodeDial,
+    });
+    await flakyHost.start();
+    await flakyHost.whenConnected();
+    await client.connect();
+    await client.resume({ hostKey: toHex(hostIdentity.publicKey), deviceId: device.deviceId, scopeEpoch: device.scopeEpoch, scope: device.scope });
+    // Host 实例掉线：relay 处理 close → host 槽清空，route 与设备腿都还在（事故现场形状）。
+    await flakyHost.stop();
+    // 手机的请求在无 host 的 route 上排队；宽限到点 relay 回 no-host 并清掉排队帧，手机据此断开。
+    const pending = client.request({ action: 'read' });
+    await vi.waitFor(() => expect(graced.currentStats.queuedFrames).toBe(1));
+    await expect(pending).rejects.toThrow('COMPANION_RELAY_NO_HOST');
+    expect(client.connected).toBe(false);
+    expect(graced.currentStats).toMatchObject({ notifiedNoHost: 1, queuedFrames: 0 });
+    expect(events).toContain(`host_leg_detached_notify ${JSON.stringify({ token: 'route-to' })}`);
+    client.close();
+    await graced.stop();
+  });
+
+  it('does not disturb the device leg when the host re-registers inside the grace window after dropping', async () => {
+    const events: string[] = [];
+    const graced = new CompanionRelayServer({
+      credential: SECRET,
+      port: await freePort(),
+      noHostGraceMs: 400,
+      logger: {
+        info: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+        warn: (event, fields) => events.push(`${event} ${JSON.stringify(fields ?? {})}`),
+      },
+    });
+    const gracedUrl = `ws://127.0.0.1:${(await graced.listen()).port}`;
+    const token = 'route-token-dropd2';
+    const opened = (socket: WebSocket) => new Promise<void>(resolve => socket.once('open', () => resolve()));
+    const register = (socket: WebSocket, role: 'host' | 'device') => socket.send(JSON.stringify({
+      v: 1, kind: 'register', role,
+      envelope: { routeToken: token, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    const forward = (socket: WebSocket, seq: number) => socket.send(JSON.stringify({
+      v: 1, kind: 'forward',
+      envelope: { routeToken: token, deviceRef: 'phone-1', seq, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: 'x'.repeat(64),
+    }));
+    const hostLeg1 = new WebSocket(gracedUrl, { headers: { authorization: `Bearer ${SECRET}` } });
+    await opened(hostLeg1);
+    register(hostLeg1, 'host');
+    const deviceLeg = new WebSocket(gracedUrl, { headers: { authorization: `Bearer ${SECRET}` } });
+    await opened(deviceLeg);
+    register(deviceLeg, 'device');
+    forward(deviceLeg, 0);
+    await vi.waitFor(() => expect(graced.currentStats.forwarded).toBe(1));
+    // host 腿断开 → 宽限起算；设备腿随后发的帧在无 host 期间排队。
+    hostLeg1.close();
+    await new Promise<void>(resolve => hostLeg1.once('close', () => resolve()));
+    forward(deviceLeg, 1);
+    await vi.waitFor(() => expect(graced.currentStats.queuedFrames).toBe(1));
+    // 新 host 实例在宽限期内重注册：排队帧经 flushWaiting 照常倒给新 socket。
+    const hostLeg2 = new WebSocket(gracedUrl, { headers: { authorization: `Bearer ${SECRET}` } });
+    const flushed = new Promise<void>(resolve => hostLeg2.once('message', data => {
+      expect(JSON.parse(String(data)).envelope.seq).toBe(1);
+      resolve();
+    }));
+    await opened(hostLeg2);
+    register(hostLeg2, 'host');
+    await flushed;
+    // 等过宽限期：host 在位，定时器到点什么都不发，设备腿不受惊。
+    await new Promise(resolve => setTimeout(resolve, 500));
+    expect(deviceLeg.readyState).toBe(WebSocket.OPEN);
+    expect(graced.currentStats).toMatchObject({ notifiedNoHost: 0, queuedFrames: 0 });
+    expect(events.join('\n')).not.toContain('host_leg_detached_notify');
+    deviceLeg.close();
+    hostLeg2.close();
     await graced.stop();
   });
 

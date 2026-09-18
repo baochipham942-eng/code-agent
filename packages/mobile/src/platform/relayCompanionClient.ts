@@ -327,6 +327,11 @@ export class RelayCompanionClient {
     if (frame.kind === 'ticket') {
       if (frame.envelope.routeToken !== COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN
         || frame.envelope.deviceRef !== COMPANION_RELAY_SENTINEL_DEVICE_REF) return;
+      // 续签票只发给鉴权通过的连接（relay 验凭据通过后才发 ticket 帧）：收到它就是凭据没被拒
+      // 的证明，计入鉴权计数——否则票据续签落盘后、Noise channel 建立前 socket 被关（relay
+      // 重启/蜂窝切换），关闭分类会把好票误判成凭据被拒（AUTH_REJECTED），store 侧随之删掉
+      // 刚续签的有效票据并翻 S8（ai-review Important）。
+      this.inboundFrames += 1;
       this.onTicket?.(frame.ciphertext);
       return;
     }

@@ -246,6 +246,30 @@ describe('RelayCompanionClient：账号票据拨号与续签帧', () => {
     client.close();
   });
 
+  it('收到续签 ticket 后、channel 建立前断线 ⇒ 传输断开（COMPANION_NOT_CONNECTED），不误判凭据被拒（ai-review Important）', async () => {
+    const onTicket = vi.fn();
+    const socket = new ScriptedSocket();
+    const identity = createIdentity();
+    const client = new RelayCompanionClient({
+      identity, route: ticketRoute, deviceRef: 'phone-1', dial: () => socket.socket, onTicket,
+    });
+    const connected = client.connect();
+    socket.fireOpen();
+    await connected;
+    // 票据进续签窗（relay 必发新票）、Noise channel 建起前 socket 被关（relay 重启/蜂窝切换）：
+    // ticket 帧只发给鉴权通过的连接，此刻的关闭是传输断开——若分类成 AUTH_REJECTED，
+    // store 会删掉刚续签落盘的有效票据、翻 S8，用户被静默登出。
+    socket.deliver(JSON.stringify({
+      v: 1, kind: 'ticket',
+      envelope: { routeToken: 'neo-relay-ticket-issue', deviceRef: 'relay', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: 'neo1.renewed.mac',
+    }));
+    expect(onTicket).toHaveBeenCalledWith('neo1.renewed.mac');
+    socket.fireClose();
+    await expect(client.resume({ hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['shared'] }))
+      .rejects.toThrow('COMPANION_NOT_CONNECTED');
+  });
+
   it('ticket 帧信封不是 sentinel（别人路由上的转发形状）⇒ 忽略，不喂给 onTicket', async () => {
     const onTicket = vi.fn();
     const socket = new ScriptedSocket();

@@ -553,13 +553,26 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
      * 换 PREEMPTED 上抛，败局归结算方。已连成活通道的（client === relayClient）不在辖内。
      */
     const cancelledRelayDials = new Set<RelayCompanionClient>();
+    /**
+     * 在途 relay 拨号的代际记账：账号路由败局到旧路由回落之间有一段 relayClient 已被败局路
+     * 清空的窗口（实例指针不存在），取消只能按「哪一次 dialRelay」标记——route2 拨前核到
+     * 自己被标记就不再拨出。
+     */
+    const cancelledRelayDialTokens = new Set<number>();
+    let relayDialSeq = 0;
+    /** 当前在途的那次 dialRelay（从进入到 finally 全程，含回落链）；无在途拨号为 null。 */
+    let relayDialInFlight: number | null = null;
     /** 关掉「还在拨、尚未成为 client」的在途 relay 拨号并摘记账；不是在途拨号则为空操作。 */
     const cancelRelayDial = () => {
       const relay = relayClient;
-      if (!relay || relay === client) return;
-      relayClient = null;
-      cancelledRelayDials.add(relay);
-      relay.close();
+      if (relay && relay !== client) {
+        relayClient = null;
+        cancelledRelayDials.add(relay);
+        relay.close();
+      }
+      // 回落窗口（route1 败局已清 relayClient、route2 未发起）：按代际拦住 route2——否则它
+      // 会晚于结算方落地，把 client 从刚赢的 LAN 通道上顶掉（双跑/闪态）。
+      if (relayDialInFlight !== null) cancelledRelayDialTokens.add(relayDialInFlight);
     };
     /**
      * 落 relay（N-MOBILE-RELAY-PHONE）：用配对时缓存的路由拨 WSS、IK 握手回 Host。
@@ -644,19 +657,30 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
      */
     const dialRelay = async (attempt?: number): Promise<RelayCompanionClient> => {
       if (!saved?.binding) throw new Error('COMPANION_RELAY_UNCONFIGURED');
-      if (saved.relayAccount && saved.account?.ticket) {
-        try {
-          return await dialRelayRoute({ ...saved.relayAccount, ticket: saved.account.ticket }, attempt);
-        } catch (error) {
-          // 被更新的尝试抢占了：回落留给抢占者，这里不能再拨。
-          if (attempt !== undefined && attempt !== connectSeq) throw error;
-          if (error instanceof Error && error.message === 'COMPANION_RELAY_AUTH_REJECTED') await invalidateAccountTicket();
-          if (!saved.relay || !(error instanceof Error) || !RELAY_FALLBACK_CODES.has(error.message)) throw error;
-          return await dialRelayRoute(saved.relay, attempt);
+      // 全程记账（含回落链）：cancelRelayDial 在 relayClient 暂空的窗口里按这个标记拦 route2。
+      const dialToken = ++relayDialSeq;
+      relayDialInFlight = dialToken;
+      try {
+        if (saved.relayAccount && saved.account?.ticket) {
+          try {
+            return await dialRelayRoute({ ...saved.relayAccount, ticket: saved.account.ticket }, attempt);
+          } catch (error) {
+            // 被更新的尝试抢占了：回落留给抢占者，这里不能再拨。
+            if (attempt !== undefined && attempt !== connectSeq) throw error;
+            if (error instanceof Error && error.message === 'COMPANION_RELAY_AUTH_REJECTED') await invalidateAccountTicket();
+            if (!saved.relay || !(error instanceof Error) || !RELAY_FALLBACK_CODES.has(error.message)) throw error;
+            // 回落窗口可能已被结算方取消（上面的 await 期间 relayClient 记账暂空）：拨前再核，
+            // 被取消的回落不再拨出，换 PREEMPTED 上抛——败局归结算方（作废票据/回落都不做）。
+            if (cancelledRelayDialTokens.delete(dialToken)) throw new Error('COMPANION_ATTEMPT_PREEMPTED', { cause: error });
+            return await dialRelayRoute(saved.relay, attempt);
+          }
         }
+        if (!saved.relay) throw new Error('COMPANION_RELAY_UNCONFIGURED');
+        return await dialRelayRoute(saved.relay, attempt);
+      } finally {
+        if (relayDialInFlight === dialToken) relayDialInFlight = null;
+        cancelledRelayDialTokens.delete(dialToken);
       }
-      if (!saved.relay) throw new Error('COMPANION_RELAY_UNCONFIGURED');
-      return await dialRelayRoute(saved.relay, attempt);
     };
     /** 趁 LAN 连着刷新缓存的双路由（Host 重启会换 routeToken；登录/退出会增删账号路由）。尽力而为，不许打断 LAN 会话。 */
     const refreshRelayRoute = async () => {
@@ -924,6 +948,35 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 被抢占的尝试不在这里释放 busy（busy 属于新尝试）；finally 里 return 触 no-unsafe-finally，改条件守卫。
         if ((attempt === undefined || attempt === connectSeq) && !(userPairing && !opts?.preempt)) set({ busy: false });
       }
+    };
+    /**
+     * 竞速出 LAN binding 后的公共收尾（LAN 先通 / relay 先败 LAN 后通 / relay 赢后的后台收敛
+     * 三条落点共用）：清 relay 记账、落盘新 binding、会话收敛到直连、刷路由。每处可被抢占的
+     * await 之后都按代号复核，迟到的旧尝试不覆盖抢占者的现场。结算（reconcilePending）留给
+     * 调用方——work 内的直线路径收尾后立刻结算；后台收敛路径要先让位给用户的在飞操作。
+     */
+    const settleLanSession = async (confirmed: LanBinding, previousScope: readonly string[], attempt: number | undefined) => {
+      // 被更新的尝试抢占了：迟到的成功作废——不落盘、不打 connected、不动 relay 记账（D3）。
+      if (attempt !== undefined && attempt !== connectSeq) return;
+      // LAN 恢复即收敛到直连：竞速的 relay 拨号在上面已关，这里只清记账。
+      relayClient = null;
+      // 函数补丁在轮到落盘那一刻对最新记录求值（persist 的读-改-写纪律）：后台收敛不占 busy，
+      // 排队期间用户的命令可能已把 pending 写进记录，整份快照会把它抹掉。
+      await persist(live => ({ ...live, binding: confirmed, candidate: undefined }));
+      // 落盘是又一次可被抢占的窗口：不校验的话，抢占者刚置好的状态会被这拍覆盖。
+      if (attempt !== undefined && attempt !== connectSeq) return;
+      epoch = confirmed.scopeEpoch;
+      pruneUnscopedHistory(previousScope, confirmed.scope);
+      // lastSession === '' 是欢迎页记忆；null ?? scope 第一条会把它盖掉。
+      const remembered = options?.lastSession?.(confirmed.hostKey);
+      // 过渡态的重拨也可能从 LAN 直接救回来：同样收场（noHostConceded 翻回）。
+      noHostConceded = false;
+      exitRelayNoHostWait();
+      set({
+        status: 'connected', transport: 'lan', binding: confirmed, connectionError: null,
+        sessionId: get().sessionId ?? (remembered === '' ? null : (confirmed.scope.find(id => !id.startsWith('project:')) ?? null)),
+      });
+      await refreshRelayRoute();
     };
     /** （重）连上后结算待确认命令：两条路（LAN/relay）共用同一套 status 查询与补投。 */
     const reconcilePending = async () => {
@@ -1203,8 +1256,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 段结果走 promise 的值（判别联合），不落闭包赋值的 let——那类收窄过不了 await，
         // 两版 tsc 的判定还不一致。
         const lan = createClient();
-        /** 竞速出 LAN binding 的三处落点（relay 收敛 / LAN 先通 / relay 先败后 LAN 通）都在直线代码赋值。 */
-        let confirmed: LanBinding | null;
+        /** 竞速出 LAN binding 的两处直线落点（LAN 先通 / relay 先败后 LAN 通）必居其一：能走到
+         * 收尾的路径都已赋值（relay 赢的收敛在后台任务里自带 binding，不经此变量）。 */
+        let confirmed!: LanBinding;
         let relayDial: Promise<RelayCompanionClient> | null = null;
         // 旧路由与账号路由任一可拨即可并发（#1938 口径：账号路由+票据的组合 Host 没配共享
         // 凭据时也存在，单看 saved.relay 会把这类手机打回纯串行）。
@@ -1230,35 +1284,57 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (relayDone) void relayDone.then(relayOutcome => resolve({ relay: relayOutcome }));
         });
         if (first.relay?.ok) {
-          // relay 先通：立刻落 connected/relay（外网重连的快路径），LAN 段继续在后台跑完。
-          // relay 握手期间也可能被抢占：这次成功不落状态。
+          // relay 先通：立刻落 connected/relay（外网重连的快路径），work 到这里就返回——busy
+          // 当场释放，发送/语音/审批/停止/sync 立即可用，不再被 LAN 段（地址数 × 10s）锁满
+          // （FB-197）。relay 握手期间也可能被抢占：这次成功不落状态。
           if (attempt !== undefined && attempt !== connectSeq) return;
           // 15s 内电脑上线：直接连上、过渡态收场；认输标记翻回，下一轮 no-host 重新给满 15s。
           noHostConceded = false;
           exitRelayNoHostWait();
           // 静默重试保留到「连上为止」的那两句（二维码无效/扫码失败）在这里清。
           set({ status: 'connected', transport: 'relay', paused: false, connectionError: null });
-          // 结算纪律：等 LAN 段落定再 reconcilePending，且只在最终胜出的通道上跑一次——
-          // 同一次 attempt 内 LAN 也通了就收敛回直连（在 LAN 上结算）；LAN 没通（败/被关）
-          // 就停在 relay 上结算。先在 relay 上结算再收敛，等于同一命令结算两遍。
-          const lanOutcome = await lanDone;
-          if (attempt !== undefined && attempt !== connectSeq) {
+          // busy 释放前读槽：此刻非空的待确认命令必是断连前遗留（busy 占用期间用户操作全被
+          // 拦）——它与用户随后在 relay 上新发的命令归属不同，后台收敛按这个区别走两条路。
+          const leftoverPending = Boolean(saved?.pending);
+          // LAN 段的收敛与结算挪到后台继续（不占 busy）。结算纪律不破：reconcilePending 仍等
+          // LAN 段落定、只在最终胜出的通道上跑一次——LAN 也通了就收敛回直连（在 LAN 上
+          // 结算）；LAN 没通（败/被关）就停在 relay 上结算。先在 relay 上结算再收敛，等于
+          // 同一命令结算两遍。
+          // 用户新发的在途命令不收敛（保守解）：槽非空且不是遗留时，此刻关 relay 换 LAN，
+          // 在飞回帧挂在 relay 侧，命令会悬到 reconciling 超时；停在 relay 结算一次即安全，
+          // 收敛留给下一次重连。槽是单命令互斥的，停 relay 期间发不出第二条。
+          void (async () => {
+            const lanOutcome = await lanDone;
             // 抢占者已接管：LAN 此刻通了也不再会成为会话通道，关掉防孤儿活连接。
-            if (lanOutcome.ok) lan.close();
-            return;
-          }
-          if (!lanOutcome.ok) {
-            await reconcilePending();
-            return;
-          }
-          // 等待期间状态可能已被别的主人接手（relay 收到撤销帧翻成 rejected）：收敛只认
-          // 「还是 connected」的现场，LAN 通道关掉防孤儿，不覆盖别人的结论。
-          if (get().status !== 'connected') { lan.close(); return; }
-          // 收敛回直连：关 relay 通道（同一时刻只有一条活通道），LAN 客户端接回 `client`，
-          // 复用下面的既有 LAN 收尾（persist 新 binding / epoch / 路由刷新）。
-          relayClient?.close();
-          client = lan;
-          confirmed = lanOutcome.binding;
+            if (attempt !== undefined && attempt !== connectSeq) {
+              if (lanOutcome.ok) lan.close();
+              return;
+            }
+            if (!lanOutcome.ok || (!leftoverPending && saved?.pending)) {
+              // LAN 没通，或用户已在 relay 上发了在途命令：停在 relay 上结算（一次）。后者
+              // 的 LAN 通道关掉防孤儿活连接（会话在 relay 上，同一时刻只有一条活通道）。
+              // busy 被用户操作占着时让位——它的 deliver 自己会结算它写进槽里的那条，两处
+              // 并发结算会把 message.send 的正文写进草稿两遍。
+              if (lanOutcome.ok) lan.close();
+              if (!get().busy) await reconcilePending().catch(() => {});
+              return;
+            }
+            // 等待期间状态可能已被别的主人接手（relay 收到撤销帧翻成 rejected）：收敛只认
+            // 「还是 connected」的现场，LAN 通道关掉防孤儿，不覆盖别人的结论。
+            if (get().status !== 'connected') { lan.close(); return; }
+            // 收敛回直连：关 relay 通道（同一时刻只有一条活通道），LAN 客户端接回 `client`，
+            // 走公共 LAN 收尾（persist 新 binding / epoch / 路由刷新），结算在收尾后补。
+            relayClient?.close();
+            client = lan;
+            await settleLanSession(lanOutcome.binding, previousScope, attempt);
+            if (attempt !== undefined && attempt !== connectSeq) return;
+            if (!get().busy) await reconcilePending().catch(() => {});
+          })().catch(() => {
+            // 后台收敛/结算尽力而为：persist 失败已由 persist 置 storageError（留痕）；结算
+            // 失败（通道死等）不把用户正在用的会话打回 offline——死通道由下一次 sync/命令的
+            // 自愈路揭穿（关死连接、offline、自动重试），这里不重复 safely 的失败映射。
+          });
+          return;
         } else if (first.lan) {
           const lanOutcome = first.lan;
           if (!lanOutcome.ok) {
@@ -1293,8 +1369,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             await reconcilePending();
             return;
           }
-          // LAN 先通：输在途的 relay 拨号从构造起就记在 relayClient 上，此刻关得掉
-          // （不双跑）；平手拍里 dialRelay 可能已把 client 指到 relay，接回 LAN 客户端。
+          // LAN 先通：输在途的 relay 拨号从构造起就记在 relayClient 上，此刻关得掉（不双跑）。
+          // cancelRelayDial 只辖「尚未成为 client 的在途拨号」：dialRelayRoute 把 client 指到
+          // relay 发生在 relayDone 落定之前，而 first 已被 LAN 先解——走到这里的 relay 必未
+          // 连成，client 仍指本分支的 LAN 客户端，不会被它当活通道放过。
           if (relayDial) cancelRelayDial();
           client = lan;
           confirmed = lanOutcome.binding;
@@ -1314,26 +1392,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           client = lan;
           confirmed = lanOutcome.binding;
         }
-        // 被更新的尝试抢占了：迟到的成功作废——不落盘、不打 connected、不动 relay 记账（D3）。
-        if (attempt !== undefined && attempt !== connectSeq) return;
-        if (!confirmed) return;
-        // LAN 恢复即收敛到直连：竞速的 relay 拨号在上面已关，这里只清记账。
-        relayClient = null;
-        await persist({ ...saved!, binding: confirmed, candidate: undefined });
-        // 落盘是又一次可被抢占的窗口：不校验的话，抢占者刚置好的状态会被这拍覆盖。
-        if (attempt !== undefined && attempt !== connectSeq) return;
-        epoch = confirmed.scopeEpoch;
-        pruneUnscopedHistory(previousScope, confirmed.scope);
-        // lastSession === '' 是欢迎页记忆；null ?? scope 第一条会把它盖掉。
-        const remembered = options?.lastSession?.(confirmed.hostKey);
-        // 过渡态的重拨也可能从 LAN 直接救回来：同样收场（noHostConceded 翻回）。
-        noHostConceded = false;
-        exitRelayNoHostWait();
-        set({
-          status: 'connected', transport: 'lan', binding: confirmed, connectionError: null,
-          sessionId: get().sessionId ?? (remembered === '' ? null : (confirmed.scope.find(id => !id.startsWith('project:')) ?? null)),
-        });
-        await refreshRelayRoute();
+        await settleLanSession(confirmed, previousScope, attempt);
         // 路由刷新期间被抢占：收尾不再触碰抢占者的通道（reconcilePending 会在当前 client 上发请求）。
         if (attempt !== undefined && attempt !== connectSeq) return;
         await reconcilePending();

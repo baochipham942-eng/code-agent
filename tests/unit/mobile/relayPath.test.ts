@@ -35,6 +35,8 @@ const harness = vi.hoisted(() => ({
   /** 竞速计时（FB-197）：recover / relay connect 的手动闸——null = 不挂，立即走罐头逻辑。 */
   lanGate: null as Promise<unknown> | null,
   relayGate: null as Promise<unknown> | null,
+  /** relay 面补投 command 的回包状态：'accepted' 正常闭环；'reconciling' = 命令在途（槽驻留）。 */
+  relayCommandState: 'accepted' as string,
 }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
@@ -122,6 +124,12 @@ vi.mock('../../../packages/mobile/src/platform/relayCompanionClient', () => ({
         return new Promise((_, reject) => { harness.rejectSync = reject; });
       }
       if (payload.action === 'sync') return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
+      // 结算查询/补投与 LAN 面同形（status 查无记录 ⇒ 补投；command 原样带回命令身份，
+      // companionAckMatches 按 commandId/deviceId/sessionId/action 认人）。
+      if (payload.action === 'status') return null;
+      if (payload.action === 'command') {
+        return { kind: 'accepted', command: { ...(payload.command as Record<string, unknown>), state: harness.relayCommandState, result: {} } };
+      }
       return { kind: 'accepted', command: { commandId: 'x', state: 'accepted', result: {} } };
     }
     close() {
@@ -485,6 +493,7 @@ describe('companionStore 竞速：LAN 与 relay 并行拨号、先成者胜', ()
     harness.relayConstructed = 0; harness.relayClosed = 0;
     harness.relayRequests = []; harness.lanRequests = [];
     harness.lanGate = null; harness.relayGate = null;
+    harness.relayCommandState = 'accepted';
     vi.useFakeTimers();
   });
   afterEach(() => {
@@ -505,6 +514,9 @@ describe('companionStore 竞速：LAN 与 relay 并行拨号、先成者胜', ()
     relay.release();
     await vi.advanceTimersByTimeAsync(0);
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay' });
+    // work 到这里就返回（FB-197 ai-review Important）：LAN 段仍在拨，busy 已当场释放——
+    // 发送/语音/审批/停止/sync 不再被锁到 LAN 段（地址数 × 10s）跑完。
+    expect(store.getState().busy).toBe(false);
     await vi.advanceTimersByTimeAsync(900);            // 到 1s：LAN 仍挂着，状态已落 relay
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay' });
     await vi.advanceTimersByTimeAsync(9_000);          // LAN 单地址 10s 上限也过了
@@ -512,6 +524,7 @@ describe('companionStore 竞速：LAN 与 relay 并行拨号、先成者胜', ()
     harness.lanError = 'COMPANION_NETWORK_UNAVAILABLE';
     lan.release();                                      // LAN 后败：停在 relay
     await hydrating;
+    await vi.advanceTimersByTimeAsync(0);              // 推进后台收敛任务（停 relay 的结算）
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay', busy: false });
     store.getState().pause();
   });
@@ -541,7 +554,7 @@ describe('companionStore 竞速：LAN 与 relay 并行拨号、先成者胜', ()
     store.getState().pause();
   });
 
-  it('③ relay 先通、LAN 同次尝试后通 ⇒ 收敛回直连，结算只在 LAN 上跑一次', async () => {
+  it('③ relay 先通、LAN 同次尝试后通 ⇒ busy 先释放、结算等 LAN 落定且只在 LAN 上跑一次', async () => {
     const lan = gate();
     const relay = gate();
     harness.lanGate = lan.promise;
@@ -552,8 +565,15 @@ describe('companionStore 竞速：LAN 与 relay 并行拨号、先成者胜', ()
     relay.release();                                    // relay 先通
     await vi.advanceTimersByTimeAsync(0);
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay' });
+    // busy 在 LAN 段落定前已释放（FB-197 ai-review Important）；断连遗留的待确认命令此刻
+    // 还没结算——结算纪律：等 LAN 段落定，只在最终胜出的通道上跑（一次）。
+    expect(store.getState().busy).toBe(false);
+    expect(store.getState().pending).toBe(true);
+    expect(harness.lanRequests.filter(payload => payload.action === 'status')).toHaveLength(0);
+    expect(harness.relayRequests.filter(payload => payload.action === 'status')).toHaveLength(0);
     lan.release();                                      // LAN 同次 attempt 内后通：收敛
     await hydrating;
+    await vi.advanceTimersByTimeAsync(0);               // 推进后台收敛/结算链
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan', busy: false });
     // 结算纪律：待确认命令只在最终胜出的通道（LAN）上结算一次，relay 上没结算过。
     expect(harness.lanRequests.filter(payload => payload.action === 'status')).toHaveLength(1);
@@ -678,6 +698,64 @@ describe('companionStore 竞速：LAN 与 relay 并行拨号、先成者胜', ()
     expect(store.getState().account).toMatchObject({ email: 'user@example.com' });
     expect(store.getState().loginPrompt).toBe(false);
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan', busy: false });
+    store.getState().pause();
+  });
+
+  it('⑧ relay 先通、LAN 后败 ⇒ busy 先释放，遗留命令停在 relay 上结算（恰一次，LAN 上零次）', async () => {
+    const lan = gate();
+    const relay = gate();
+    harness.lanGate = lan.promise;
+    harness.relayGate = relay.promise;
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE, pending: PENDING_COMMAND }));
+    const hydrating = store.getState().hydrate();
+    await vi.advanceTimersByTimeAsync(0);
+    relay.release();                                    // relay 先通
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay' });
+    expect(store.getState().busy).toBe(false);          // LAN 段仍在拨，busy 已释放
+    expect(store.getState().pending).toBe(true);        // 遗留命令还没结算：等 LAN 落定
+    harness.lanError = 'COMPANION_NETWORK_UNAVAILABLE';
+    lan.release();                                      // LAN 后败：停在 relay
+    await hydrating;
+    await vi.advanceTimersByTimeAsync(0);               // 推进后台结算
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay', busy: false });
+    // 结算纪律：LAN 没赢，最终胜出的通道是 relay——status 查询只在 relay 上出现一次。
+    expect(harness.relayRequests.filter(payload => payload.action === 'status')).toHaveLength(1);
+    expect(harness.lanRequests.filter(payload => payload.action === 'status')).toHaveLength(0);
+    expect(store.getState().pending).toBe(false);
+    expect(harness.relayClosed).toBe(0);                // relay 是会话通道，没被关
+    store.getState().pause();
+  });
+
+  it('⑨ relay 先通后用户在 relay 上发命令、LAN 后通 ⇒ 不收敛（保守解）：停在 relay 结算，LAN 通道只被关掉', async () => {
+    const lan = gate();
+    const relay = gate();
+    harness.lanGate = lan.promise;
+    harness.relayGate = relay.promise;
+    const store = storeWith(storageWith({ relay: RELAY_ROUTE }));
+    const lanStart = harness.lanClients.length;        // 本用例的竞速 LAN 客户端从这起（数组跨用例共享）
+    const hydrating = store.getState().hydrate();
+    await vi.advanceTimersByTimeAsync(0);
+    relay.release();                                    // relay 先通
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay', busy: false });
+    // busy 已释放 ⇒ 用户当场能发命令。命令进 reconciling（电脑还在处理）：槽驻留在 relay 侧。
+    harness.relayCommandState = 'reconciling';
+    await store.getState().send('九-在途命令');
+    expect(store.getState().pending).toBe(true);
+    expect(store.getState().busy).toBe(false);
+    expect(harness.relayRequests.filter(payload => payload.action === 'status')).toHaveLength(0);
+    lan.release();                                      // LAN 同次 attempt 内后通
+    await hydrating;
+    await vi.advanceTimersByTimeAsync(0);               // 推进后台收敛任务
+    // 保守解：在途命令挂在 relay 上，不收敛——会话停在 relay，LAN 客户端只被关掉防双跑。
+    expect(store.getState()).toMatchObject({ status: 'connected', transport: 'relay', busy: false });
+    expect(harness.lanClients[lanStart].alive).toBe(false);
+    expect(harness.relayClosed).toBe(0);
+    // 结算恰一次，且在 relay 上（reconciling 驻留：槽保留，等电脑出结论）。
+    expect(harness.relayRequests.filter(payload => payload.action === 'status')).toHaveLength(1);
+    expect(harness.lanRequests.filter(payload => payload.action === 'status')).toHaveLength(0);
+    expect(store.getState().pending).toBe(true);
     store.getState().pause();
   });
 });

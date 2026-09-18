@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
+import { mergeVoiceBackgroundMode } from '../../../packages/mobile/scripts/configure-lan.mjs';
+
 // Swift 不在任何测试框架里，但 JS↔原生之间那几个字符串是真合同：名字错一个字，
 // 桥就找不到实现（FB-140 就是这个形状：原生根本没进包，JS 侧照常调）。
 const swift = readFileSync('packages/mobile/ios-native/NeoVoiceRecorder.swift', 'utf8');
@@ -108,9 +110,20 @@ describe('first-party ios voice recorder contract', () => {
     expect(capacitorPort).toContain("if (Capacitor.getPlatform() === 'ios') { await pcmBridge.openAppSettings()");
   });
 
-  it('stops and discards the recording when the app goes to background', () => {
-    // 这条行为原来靠 configure-voice 给厂商源码打补丁，而那段源码从未被编译过
-    expect(swift).toContain('didEnterBackgroundNotification');
-    expect(swift).toContain('teardown(deleteRecording: true)');
+  // N-MOBILE-BG-RECORDING（爸 2026-09-18 拍板，翻掉「麦克风不该在用户看不见的时候开着」旧拍板）。
+  // 旧契约（曾靠 configure-voice 给厂商源码打补丁、后又挂在第一方 load() 里）：
+  // didEnterBackground → teardown(deleteRecording: true)。新契约：切后台继续录。
+  it('切后台继续录：不再挂 didEnterBackground 停录，进程保活交给 Info.plist 的 audio 模式', () => {
+    expect(swift).not.toContain('didEnterBackgroundNotification');
+    expect(swift).not.toContain('backgroundObserver');
+    // teardown 本体保留：stop/起录失败路径还在用
+    expect(swift.match(/teardown\(deleteRecording: true\)/g)).toBeTruthy();
+    // configure-lan 幂等合入 audio 模式（不顶掉 remote-notification），且真接到 plist 写出
+    expect(mergeVoiceBackgroundMode([])).toEqual(['remote-notification', 'audio']);
+    expect(mergeVoiceBackgroundMode(['remote-notification'])).toEqual(['remote-notification', 'audio']);
+    expect(mergeVoiceBackgroundMode(['audio'])).toEqual(['audio', 'remote-notification']);
+    expect(mergeVoiceBackgroundMode(['audio', 'remote-notification'])).toEqual(['audio', 'remote-notification']);
+    const configureLan = readFileSync('packages/mobile/scripts/configure-lan.mjs', 'utf8');
+    expect(configureLan).toContain('mergeVoiceBackgroundMode(readBackgroundModes(plist))');
   });
 });

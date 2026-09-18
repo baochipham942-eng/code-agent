@@ -322,7 +322,10 @@ describe('VoiceCapture failure reporting', () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  it('切到后台停录：回前台状态位「切到后台，录音停了」+「重新录」', async () => {
+  // N-MOBILE-BG-RECORDING（爸 2026-09-18 拍板，翻掉「切到后台，录音停了」旧拍板）：
+  // 旧契约是 visibilitychange→hidden 就 interruptBackground（摘身份+点名丢弃+报错卡）。
+  // 新契约：切后台继续录，保活交给 iOS audio 模式 / Android 前台服务；连接断了分片留队回前台补发。
+  it('切到后台继续录：hidden 后面板仍在 recording、不报 BACKGROUND_INTERRUPTED', async () => {
     let hidden = false;
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
     mount();
@@ -330,9 +333,16 @@ describe('VoiceCapture failure reporting', () => {
     await screen.findByRole('button', { name: text.stopRecording });
     hidden = true;
     act(() => { document.dispatchEvent(new Event('visibilitychange')); });
-    await waitFor(() => expect(voiceNotice()?.dataset.reason).toBe('BACKGROUND_INTERRUPTED'));
-    expect(voiceNotice().textContent).toContain('切到后台，录音停了');
-    expect(screen.getByRole('button', { name: '重新录' })).toBeTruthy();
+    // 面板仍在录音态：失败位不出现、停止键还在、身份没被摘
+    expect(screen.getByRole('button', { name: text.stopRecording })).toBeTruthy();
+    expect(screen.getByText(text.voiceListening)).toBeTruthy();
+    expect(document.querySelector('[data-testid="status-slot"]')).toBeNull();
+    // 回前台：这次录音还活着，取消能正常收口（面板收走、麦克风键回来），全程无失败位
+    hidden = false;
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    fireEvent.click(screen.getByRole('button', { name: text.cancelRecording }));
+    await waitFor(() => expect(screen.getByRole('button', { name: text.voice })).toBeTruthy());
+    expect(document.querySelector('[data-testid="status-slot"]')).toBeNull();
   });
 });
 

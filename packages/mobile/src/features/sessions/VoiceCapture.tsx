@@ -394,23 +394,11 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     t.wake?.();
     setFailure(null); setPhase('idle');
   };
-  const interruptBackground = () => {
-    const t = take.current;
-    if (!t) return;
-    take.current = null;
-    discardPending(t.id);
-    if (t.pcmLive || t.mode === 'realtime' || t.streamId) void dictationRef.current?.close();
-    if (t.pcmLive || t.mode === 'realtime') trackRelease(t);
-    t.wake?.();
-    setFailure({ stage: 'record', reason: 'BACKGROUND_INTERRUPTED' });
-    setPhase('error');
-  };
-
+  // 切后台不打断录音（爸 2026-09-18 拍板，翻掉「切到后台，录音停了」的旧拍板）：
+  // 保活靠 iOS audio 后台模式 / Android 麦克风前台服务，连接断了分片留在队列里等回前台补发。
+  // 这里只剩组件卸载（换会话/换录音口）的清理。
   useEffect(() => {
-    const hide = () => { if (document.hidden) interruptBackground(); };
-    document.addEventListener('visibilitychange', hide);
     return () => {
-      document.removeEventListener('visibilitychange', hide);
       const t = take.current;
       if (!t) return;
       // 卸载 = 换会话（Composer 的 key 是 hostKey:sessionId）或换录音口，语义与取消一样，

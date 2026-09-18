@@ -72,6 +72,12 @@ export const COMPANION_LIMITS = {
   voiceDurationMs: 60_000,
   /** 录音期间每隔这么久切一段传一段：短了 whisper 认不准（<2s 明显变差），长了草稿追加得太慢。 */
   voiceChunkMs: 4_000,
+  /**
+   * Android 录音前台服务的收尾防抖（N-MOBILE-BG-RECORDING）：分段录音每段都 stop→start 一次，
+   * 服务若跟着段走，通知每段闪一次、且后台一旦停了就再起不来（Android 12+ 禁止后台
+   * startForegroundService）。停服务要等这一小段确认没有下一段要录。
+   */
+  voiceServiceStopGraceMs: 2_000,
   pollIntervalMs: 1_000,
   /** 有命令在飞时的轮询间隔：结算回执只能靠轮询取回，1 秒一拍等于每段转写白等半秒。 */
   pendingPollIntervalMs: 250,

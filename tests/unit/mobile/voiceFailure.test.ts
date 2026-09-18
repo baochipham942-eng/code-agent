@@ -65,11 +65,8 @@ describe('转写失败文案与动作（逐错误码）', () => {
     expect(voiceFailureAction(text, 'retryable-transcribe', act)?.label).toBe('重试');
   });
 
-  it('切后台 → 切到后台，录音停了 + 重新录', () => {
-    expect(classifyVoiceFailure('BACKGROUND_INTERRUPTED', 'record')).toBe('interrupted');
-    expect(voiceFailureMessage(text, 'interrupted')).toBe('切到后台，录音停了');
-    expect(voiceFailureAction(text, 'interrupted', act)?.label).toBe('重新录');
-  });
+  // N-MOBILE-BG-RECORDING：BACKGROUND_INTERRUPTED 的唯一生产者（visibilitychange 自杀）已删，
+  // 分类与文案一并收掉——后台继续录音不是失败，不该再有一条「切到后台，录音停了」的分支。
 
   it('voice.transcribe 回执把本地就绪态追上', () => {
     expect(transcriptionReadinessFromResult(true)).toBe('ready');

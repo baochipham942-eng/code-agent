@@ -8,6 +8,7 @@ import { Keyboard } from '@capacitor/keyboard';
 import { Preferences } from '@capacitor/preferences';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
+import { messages } from '../i18n';
 import type { FilePorts, PlatformPorts } from './ports';
 import { pickFromCamera, toPickedFile, type CameraBridge } from './cameraPick';
 import { createKeyboardPort } from './keyboardPort';
@@ -97,16 +98,74 @@ type PcmBridge = {
 
 const pcmBridge = VoiceRecorder as unknown as PcmBridge;
 
+/**
+ * Android 录音前台服务桥（N-MOBILE-BG-RECORDING）：Android 12+ 后台用麦克风必须有
+ * microphone 类型的前台服务。iOS 靠 Info.plist 的 audio 后台模式保活，不走这个插件。
+ */
+type VoiceKeepAliveBridge = {
+  start(options: { title: string; text: string; channelName: string }): Promise<void>;
+  stop(): Promise<void>;
+};
+
+const voiceKeepAlive = Capacitor.getPlatform() === 'android'
+  ? registerPlugin<VoiceKeepAliveBridge>('VoiceKeepAlive', { web: async () => ({ start: async () => {}, stop: async () => {} }) })
+  : null;
+
 function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
+  // 前台服务按「一次录音」的粒度挂，不跟分段走：recorder.stop/start 每段都来一遍，服务若
+  // 跟着段走，通知每 4s 闪一次，且后台一旦停了就再起不来（Android 12+ 禁止后台 startForegroundService）。
+  // 起服务只认 running 标记：切段那声 start 不再重复 startForegroundService；
+  // 停服务带防抖：最后一次 stop 之后没有新 start（切段之间的间隔远小于宽限值）才真停，真停时复位 running。
+  // 状态与实现只建在 Android（voiceKeepAlive 非空）上；iOS 走 audio 后台模式，留空实现即可
+  // （PR#1944 ai-review Nit：非 Android 平台不必也建一份防抖状态）。
+  let keepAliveStart: () => Promise<void> = async () => {};
+  let keepAliveStop: () => void = () => {};
+  if (voiceKeepAlive) {
+    let stopTimer: ReturnType<typeof setTimeout> | null = null;
+    let running = false;
+    keepAliveStart = async () => {
+      if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
+      if (running) return;
+      // fail-open：服务起不来不该毁掉前台录音，但降级要留痕（哪个平台、什么错）。
+      const text = messages(typeof navigator === 'undefined' ? 'en' : navigator.language);
+      // 常驻通知标题用专门的「正在录音」，不复用麦克风按钮的「语音输入」；通道名同走 i18n（PR#1944 ai-review Nit）。
+      try {
+        await voiceKeepAlive.start({ title: text.voiceRecording, text: text.voiceListening, channelName: text.voiceRecordingChannel });
+        running = true;
+      }
+      catch (error) { console.warn('[voice-keepalive] start failed', error); }
+    };
+    keepAliveStop = () => {
+      if (stopTimer) clearTimeout(stopTimer);
+      stopTimer = setTimeout(() => {
+        stopTimer = null;
+        running = false;
+        void voiceKeepAlive.stop().catch((error: unknown) => console.warn('[voice-keepalive] stop failed', error));
+      }, COMPANION_LIMITS.voiceServiceStopGraceMs);
+    };
+  }
   const recorder: NonNullable<PlatformPorts['recorder']> = {
     start: async () => {
       if (!(await VoiceRecorder.requestAudioRecordingPermission()).value) throw new Error('MICROPHONE_DENIED');
-      await VoiceRecorder.startRecording();
+      await keepAliveStart();
+      try {
+        await VoiceRecorder.startRecording();
+      } catch (error) {
+        keepAliveStop();   // 起录失败即这次录音到头了：服务收尾别等下一次 stop
+        throw error;
+      }
     },
     stop: async () => {
-      const { value } = await VoiceRecorder.stopRecording();
-      if (!value.recordDataBase64) throw new Error('EMPTY_RECORDING');
-      return { audioData: value.recordDataBase64, mimeType: value.mimeType.split(';')[0], durationMs: value.msDuration };
+      // stopRecording 在 RECORDING_HAS_NOT_STARTED / FAILED_TO_FETCH_RECORDING 等状态下会 reject，
+      // 而调用方（VoiceCapture.run）在调 stop 前已把 live 落 false、不会再补一次 stop——
+      // 回收必须兜在 finally，否则「正在听你说」常驻通知永久留在通知栏（PR#1944 ai-review Important）。
+      try {
+        const { value } = await VoiceRecorder.stopRecording();
+        if (!value.recordDataBase64) throw new Error('EMPTY_RECORDING');
+        return { audioData: value.recordDataBase64, mimeType: value.mimeType.split(';')[0], durationMs: value.msDuration };
+      } finally {
+        keepAliveStop();
+      }
     },
   };
   // PCM tap is first-party iOS only. Android still uses the vendor file recorder.
@@ -173,7 +232,7 @@ export const capacitorPorts: PlatformPorts = {
   appInfo: { read: () => App.getInfo() },
   lifecycle: {
     subscribe: async (onActive, onBack) => {
-      const active = await App.addListener('appStateChange', ({ isActive }) => onActive(isActive));
+      const active = await App.addListener('appStateChange', ({ isActive }: { isActive: boolean }) => onActive(isActive));
       try {
         const back = Capacitor.getPlatform() === 'android' ? await App.addListener('backButton', onBack) : null;
         return () => { void active.remove(); void back?.remove(); };

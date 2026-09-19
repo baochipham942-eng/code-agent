@@ -35,6 +35,7 @@ import {
 } from './browserActionResultProjection';
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
 import {
+  jevBrowserStepEmptyTaskResult,
   jevBrowserStepUnarmedResult,
   resolveBrowserJevStep,
 } from '../../agent/runtime/browser/jevBrowserStep';
@@ -360,7 +361,10 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     if (action === 'execute_goal') {
       const driver = resolveBrowserJevStep({ browserService });
       if (!driver) return jevBrowserStepUnarmedResult();
-      const task = typeof params.task === 'string' ? params.task : '';
+      if (typeof params.task !== 'string' || !params.task.trim()) {
+        return jevBrowserStepEmptyTaskResult();
+      }
+      const task = params.task;
       const assertions = Array.isArray(params.assertions)
         ? params.assertions as JevPageAssertion[]
         : undefined;

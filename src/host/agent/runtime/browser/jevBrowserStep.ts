@@ -77,7 +77,7 @@ interface JevBrowserStepResult {
 }
 
 interface JevBrowserStepRunInput {
-  task: string;
+  task?: string;
   assertions?: Array<JevPageAssertion | Record<string, unknown>>;
   jevBudgetUsd?: number;
   mutate?: 'done1' | 'empty-window';
@@ -100,7 +100,7 @@ interface JevBrowserStepDriverDeps {
   systemOne: JevSystemOneCall;
   host?: JevBrowserHost;
   browserService?: BrowserService;
-  quickType?: (prompt: string) => Promise<string | null>;
+  quickType?: ((prompt: string) => Promise<string | null>) | null;
   now?: () => number;
   mutate?: 'done1' | 'empty-window';
 }
@@ -242,12 +242,12 @@ function sameUrl(current: string, target: string): boolean {
 }
 
 function rebindTarget(prepared: PreparedJevSnapshot, previous: BrowserTargetRef): BrowserTargetRef | null {
+  const previousTag = previous.selector?.split(/[#.[]/)[0]?.toLowerCase() || '';
   const match = prepared.collected.find((candidate) => (
     candidate.targetRef.name === previous.name
     && (candidate.role || null) === (previous.role || null)
-    && candidate.tag.toLowerCase() === (previous.selector?.split(/[#.[]/)[0] || candidate.tag).toLowerCase()
-  )) || prepared.collected.find((candidate) => (
-    candidate.targetRef.name === previous.name && (candidate.role || null) === (previous.role || null)
+    && previousTag !== ''
+    && candidate.tag.toLowerCase() === previousTag
   ));
   return match?.targetRef ?? null;
 }
@@ -280,7 +280,8 @@ async function evidenceFrom(host: JevBrowserHost, captured: JevCapturedSnapshot)
 }
 
 function toToolResult(result: JevBrowserStepResult): ToolExecutionResult {
-  const success = result.status === 'done_verified' || result.status === 'fallback';
+  const success = result.status === 'done_verified'
+    || (result.status === 'fallback' && result.reason !== 'empty_task');
   return {
     success,
     output: result.output,
@@ -309,7 +310,6 @@ async function runJevBrowserStepLoop(
   const turn = getTurnState(key);
   const started = (deps.now ?? Date.now)();
   const budgetUsd = resolveBudgetUsd(input);
-  const assertions = extractJevAssertions(input.task, input.assertions);
   const mutate = deps.mutate ?? input.mutate;
   const softStepLimit = resolveSoftStepLimit();
   let spentUsd = 0;
@@ -348,12 +348,16 @@ async function runJevBrowserStepLoop(
     return result;
   };
 
+  if (typeof input.task !== 'string' || !input.task.trim()) return finish('fallback', 'empty_task');
+  const task = input.task;
+  const assertions = extractJevAssertions(task, input.assertions);
+
   if (turn.mode === 'sticky_visual') {
     return finish('fallback', 'sticky_visual');
   }
 
   if (!deps.host.isLaunched()) await deps.host.launch();
-  const taskUrl = extractTaskUrl(input.task);
+  const taskUrl = extractTaskUrl(task);
   if (taskUrl) {
     if (isBlockedSystemUrl(taskUrl)) return finish('needs_review', 'system_settings');
     if (!sameUrl(deps.host.currentUrl(), taskUrl)) await deps.host.navigate(taskUrl);
@@ -373,7 +377,7 @@ async function runJevBrowserStepLoop(
 
     const captured = carriedSnapshot ?? await deps.host.capture();
     carriedSnapshot = undefined;
-    const prepared = prepareJevBrowserSnapshot(captured, input.task, {
+    const prepared = prepareJevBrowserSnapshot(captured, task, {
       mutateEmptyWindow: mutate === 'empty-window',
     });
     const dialog = deps.host.getDialogState();
@@ -399,10 +403,10 @@ async function runJevBrowserStepLoop(
       return finish('needs_review', takeover, { captchaClass: takeover });
     }
 
-    if (prepared.sensitiveFieldsPresent && UPLOAD_TASK.test(input.task)) {
+    if (prepared.sensitiveFieldsPresent && UPLOAD_TASK.test(task)) {
       return finish(
         'needs_review',
-        '任务含上传/文件语义或页面含敏感字段（密码/文件），交回主模型走现行审批门',
+        '任务含上传/文件语义且页面含敏感字段（密码/文件），交回主模型走现行审批门',
         {
           code: 'SURFACE_APPROVAL_REQUIRED',
           userActionRequired: true,
@@ -439,7 +443,7 @@ async function runJevBrowserStepLoop(
     }
 
     const guarded = guardJevBrowserSnapshot({
-      task: input.task,
+      task,
       prepared,
       assertions: evaluated.results,
       recentSteps,
@@ -538,7 +542,7 @@ async function runJevBrowserStepLoop(
       if (applied.operation === 'click' && target) {
         await clickWithRebind(deps.host, target, prepared);
       } else if (applied.operation === 'type' && target) {
-        const value = await generateTypeValue(input.task, target, deps.quickType);
+        const value = await generateTypeValue(task, target, deps.quickType);
         if (value == null) return finish('fallback', 'type_value_unavailable');
         await typeWithRebind(deps.host, target, value, prepared);
       } else if (applied.operation === 'scroll_down') {
@@ -554,7 +558,7 @@ async function runJevBrowserStepLoop(
       }
     } catch (error) {
       if (isStaleTargetRefError(error) && target) {
-        const refreshed = prepareJevBrowserSnapshot(await deps.host.capture(), input.task, {
+        const refreshed = prepareJevBrowserSnapshot(await deps.host.capture(), task, {
           mutateEmptyWindow: mutate === 'empty-window',
         });
         const rebound = rebindTarget(refreshed, target.targetRef);
@@ -562,7 +566,7 @@ async function runJevBrowserStepLoop(
         try {
           if (applied.operation === 'click') await deps.host.clickTargetRef(rebound);
           else if (applied.operation === 'type') {
-            const value = await generateTypeValue(input.task, target, deps.quickType);
+            const value = await generateTypeValue(task, target, deps.quickType);
             if (value == null) return finish('fallback', 'type_value_unavailable');
             await deps.host.typeTargetRef(rebound, value);
           }
@@ -584,7 +588,7 @@ async function runJevBrowserStepLoop(
     if (afterFormValuesError) {
       return finish('fallback', `form_values_unavailable: ${afterFormValuesError}`);
     }
-    const inView = prepareJevBrowserSnapshot(after, input.task).collected
+    const inView = prepareJevBrowserSnapshot(after, task).collected
       .filter((candidate) => candidate.inView)
       .map((candidate) => `${candidate.name}+${candidate.role || ''}`);
     const fingerprint = pageFingerprint(afterEvidence, inView);
@@ -592,7 +596,7 @@ async function runJevBrowserStepLoop(
     else consecutiveNoProgress = 0;
     lastFingerprint = fingerprint;
     if (consecutiveNoProgress >= NO_PROGRESS_LIMIT) {
-      return finish('stalled', 'stalled', { false_done_count: falseDoneCount });
+      return finish('stalled', 'stalled');
     }
   }
 
@@ -630,7 +634,7 @@ async function typeWithRebind(
   }
 }
 
-export async function generateTypeValue(
+async function generateTypeValue(
   task: string,
   target: JevCandidate,
   quickType?: (prompt: string) => Promise<string | null>,
@@ -665,14 +669,17 @@ function createJevBrowserStepDriver(call: JevSystemOneCall, extra?: JevBrowserSt
       const host = resolveJevBrowserHost(extra, input);
       if (!host) return jevBrowserStepUnarmedResult();
       const { quickTask } = await import('../../../model/quickModel');
+      const defaultQuickType = async (prompt: string) => {
+        const generated = await quickTask(prompt, 64, context.abortSignal);
+        return generated.success ? (generated.content || '').trim() || null : null;
+      };
       const result = await runJevBrowserStepLoop(input, context, {
         systemOne: extra?.systemOne ?? call,
         host,
         mutate: extra?.mutate ?? input.mutate,
-        quickType: extra?.quickType ?? (async (prompt) => {
-          const generated = await quickTask(prompt, 64, context.abortSignal);
-          return generated.success ? (generated.content || '').trim() || null : null;
-        }),
+        quickType: extra && Object.hasOwn(extra, 'quickType')
+          ? extra.quickType ?? undefined
+          : defaultQuickType,
         now: extra?.now,
       });
       return toToolResult(result);
@@ -686,17 +693,20 @@ export function resolveBrowserJevStep(deps?: {
   host?: JevBrowserHost;
   browserService?: BrowserService;
   mutate?: 'done1' | 'empty-window';
-  quickType?: (prompt: string) => Promise<string | null>;
+  quickType?: ((prompt: string) => Promise<string | null>) | null;
   now?: () => number;
 }): JevBrowserStepDriver | undefined {
   if (!isBrowserJevStepEnabled()) return undefined;
+  const quickTypeExtra = deps && Object.hasOwn(deps, 'quickType')
+    ? { quickType: deps.quickType }
+    : {};
   if (deps?.systemOne) {
     return createJevBrowserStepDriver(deps.systemOne, {
       systemOne: deps.systemOne,
       host: deps.host,
       browserService: deps.browserService,
       mutate: deps.mutate,
-      quickType: deps.quickType,
+      ...quickTypeExtra,
       now: deps.now,
     });
   }
@@ -716,7 +726,7 @@ export function resolveBrowserJevStep(deps?: {
     host: deps?.host,
     browserService: deps?.browserService,
     mutate: deps?.mutate,
-    quickType: deps?.quickType,
+    ...quickTypeExtra,
     now: deps?.now,
   });
 }
@@ -726,5 +736,13 @@ export function jevBrowserStepUnarmedResult(): ToolExecutionResult {
     success: false,
     error: 'Jev 步选未开启或未装配',
     metadata: { status: 'fallback', fallback: true, reason: 'unarmed', browserJevMode: 'unarmed' },
+  };
+}
+
+export function jevBrowserStepEmptyTaskResult(): ToolExecutionResult {
+  return {
+    success: false,
+    error: 'Jev browser step fallback: empty_task',
+    metadata: { status: 'fallback', fallback: true, reason: 'empty_task' },
   };
 }

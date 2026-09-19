@@ -37,6 +37,10 @@ export class BrowserTargetRefRegistry {
     this.prune(now);
     // Main-model snapshots replace the table. Inner-loop Jev captures pass clear:false
     // so pre-step trefs survive fallback onto click/type.
+    // Ceiling of clear:false: a new document does not replace old identities —
+    // previous-page nodes stay until TTL. Each capture adds ≤1024 records; a
+    // 60-step loop can hold on the order of 60×1024 entries, reclaimed by the
+    // 60s TTL in prune(). Resolve still fail-closes on isConnected + documentUrl.
     if (options?.clear !== false) this.records.clear();
     for (const record of records) this.records.set(record.targetRef.refId, record);
   }

@@ -390,7 +390,7 @@ async function runJevBrowserStepLoop(
 
     const evidence = await evidenceFrom(deps.host, captured);
     const evaluated = evaluateJevAssertions(assertions, evidence);
-    if (assertions.length > 0 && evaluated.allMet) {
+    if (evaluated.allMet) {
       return finish('done_verified', undefined, { assertions: evaluated.results });
     }
 

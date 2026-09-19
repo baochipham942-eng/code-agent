@@ -364,7 +364,31 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         ? params.assertions as JevPageAssertion[]
         : undefined;
       const jevBudgetUsd = typeof params.jevBudgetUsd === 'number' ? params.jevBudgetUsd : undefined;
-      return driver.run({ task, assertions, jevBudgetUsd, browserService }, context);
+      const trace = browserService.beginTrace({
+        toolName: 'browser_action',
+        action,
+        params,
+      });
+      try {
+        const result = await driver.run({ task, assertions, jevBudgetUsd, browserService }, context);
+        const completedTrace = browserService.finishTrace(trace, {
+          success: result.success,
+          error: result.error || null,
+          screenshotPath: getScreenshotPathFromResult(result),
+        });
+        return appendBrowserWorkbenchNote(withWorkbenchTrace(result, completedTrace, context), workbenchNotes);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
+        const completedTrace = browserService.finishTrace(trace, {
+          success: false,
+          error: errorMessage,
+        });
+        return appendBrowserWorkbenchNote(withWorkbenchTrace({
+          success: false,
+          error: errorMessage,
+        }, completedTrace, context), workbenchNotes);
+      }
     }
 
     if (!useManagedSurface && workbenchPolicy.preferManagedBrowser && MANAGED_SESSION_ACTIONS.has(action)) {

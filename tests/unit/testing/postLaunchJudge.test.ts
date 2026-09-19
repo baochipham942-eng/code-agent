@@ -104,6 +104,13 @@ describe('postLaunchJudge · 无题契约', () => {
     expect(verdict.dims.goal).toBe(1);
   });
 
+  it('容忍漏掉最外层 }：四维对象都写完、整段以 permission 的 } 收尾仍能出判决', async () => {
+    const missingOuter = ALL_PASS.replace(/}$/, '');
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [] }, async () => missingOuter);
+    expect(verdict.unavailableReason).toBeUndefined();
+    expect(verdict.dims).toEqual({ goal: 1, orchestration: 1, tools: 1, permission: 1 });
+  });
+
   it('格式解析不了走 unavailable：四维全 null，不猜', async () => {
     const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [] }, async () => '我觉得还行吧');
     expect(verdict.dims).toEqual({ goal: null, orchestration: null, tools: null, permission: null });

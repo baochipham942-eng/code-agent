@@ -86,8 +86,21 @@ export interface PostLaunchSessionDenominatorInput {
  * ② 脚本/无头发起的会话（neo CLI、评测真跑桥）——它们 session_type 也是 'chat'，
  *    从 session_type 一个字都看不出来（ADR-063 §3 + K1 留给刀 2 第 1 条）。
  */
-export function isPostLaunchScorableSession(session: PostLaunchSessionDenominatorInput): boolean {
+export interface PostLaunchScorableSessionOptions {
+  /**
+   * 合成流量评分通道（CLI --include-headless）：为真时只放过「仅因 headless 被剔」的会话
+   * （含存量 cli_session_ 前缀行）；session_type ∈ {eval,subagent,schedule,heartbeat} 照剔。
+   * 生产报表（buildPostLaunchReport）不传这一项——合成流量的分数行落表也不进生产统计。
+   */
+  includeHeadless?: boolean;
+}
+
+export function isPostLaunchScorableSession(
+  session: PostLaunchSessionDenominatorInput,
+  options: PostLaunchScorableSessionOptions = {},
+): boolean {
   if (!isScorableSessionType(session.sessionType)) return false;
+  if (options.includeHeadless === true) return true;
   if (session.originKind) return session.originKind !== 'headless';
   return !session.id.startsWith(LEGACY_HEADLESS_ID_PREFIX);
 }
@@ -296,6 +309,11 @@ export interface PostLaunchScoringRequest {
   dailySampleLimit?: number;
   /** 只算信号不调模型，用于 CLI --dry-run 与预算超限后的降级路径。 */
   dryRun?: boolean;
+  /**
+   * 评合成流量（headless 起源的会话）。只经 CLI --include-headless 进来：
+   * 渲染层的 clampPostLaunchScoringRequest 会把这个键丢掉，IPC 开不了这条通道。
+   */
+  includeHeadless?: boolean;
 }
 
 export interface PostLaunchScoringResult {

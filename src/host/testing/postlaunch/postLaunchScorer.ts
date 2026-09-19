@@ -236,7 +236,7 @@ export async function runPostLaunchScoring(
       .all(session.id) as TurnRow[];
     if (turnRows.length === 0) continue;
 
-    if (!isPostLaunchScorableSession(session)) {
+    if (!isPostLaunchScorableSession(session, { includeHeadless: request.includeHeadless === true })) {
       // 剔出分母的轮只计数，一行分数都不落——它们不是真实用户会话。
       const inWindow = turnRows.filter((row) => row.start_time >= since);
       result.examinedTurns += inWindow.length;

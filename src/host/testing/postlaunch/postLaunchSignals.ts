@@ -9,6 +9,7 @@
 //   - 审批被拒：toolPermissionClassification.ts 的三种 denialSource 文案
 //   - 越权写入：sandboxFailureDiagnostics.ts 的「沙盒拒绝了工作目录外的写入」
 // ============================================================================
+import os from 'node:os';
 import path from 'node:path';
 import { shellWriteTargets } from '../../tools/writeTargets';
 import type { ReplayBlock, ReplayTurn, ReplayToolCall } from '../../../shared/contract/evaluationReplay';
@@ -21,6 +22,12 @@ import {
 const CANCEL_PATTERN = /cancel|abort|已取消|中止/i;
 const TIMEOUT_PATTERN = /timeout|timed out|超时|ETIMEDOUT/i;
 const DENIAL_PATTERN = /permission denied|denied by user|用户拒绝|被自动拒绝|拒绝了本次/i;
+/**
+ * AskUserQuestion 无头回退的开头标记（askUserQuestion.ts 的 CLI fallback 文案）。
+ * 无头会话里这个工具**不会失败**（success=true），拒绝语义只落在 result 开头的这段文案上——
+ * 锚开头而非全文匹配：正常结果中间引用这段话不该被当成「用户没答」。
+ */
+const UNANSWERED_QUESTION_PATTERN = /^\s*\[用户未响应/;
 const OUT_OF_WORKSPACE_PATTERN = /沙盒拒绝了工作目录外的写入|outside this agent's working directory|outside the workspace/i;
 /** 声称产物的动词；只有句子里出现它，后面的路径才当作「声称生成了这个文件」。 */
 const CLAIM_VERB_PATTERN = /已(?:写入|创建|生成|保存|落盘)|写到|保存到|生成了|created|wrote|written to|saved to|generated/i;
@@ -74,9 +81,23 @@ function collectClaimedPaths(text: string): string[] {
   return [...new Set(found.filter((token) => token.includes('/') || token.includes('\\') || token.startsWith('.')))];
 }
 
+/**
+ * 与 resolveToolPath 同口径展开 ~，但不碰磁盘——信号计算是纯函数，
+ * 夜跑工作区可能已经删了，不能靠 realpath。
+ */
+function expandUserPath(raw: string): string {
+  if (raw === '~') return os.homedir();
+  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
+  return raw;
+}
+
 function isOutsideWorkspace(candidate: string, workspaceDir: string): boolean {
-  const absolute = path.resolve(workspaceDir, candidate);
-  const relative = path.relative(workspaceDir, absolute);
+  // 与 toolExecutor / permissionCommandParse 同一条豁免：`2>/dev/null` 是空汇，
+  // 不是越权写。只豁免这一个字符设备，/dev/ 其它不豁免。
+  if (candidate === '/dev/null') return false;
+  const workspace = path.resolve(expandUserPath(workspaceDir));
+  const absolute = path.resolve(workspace, expandUserPath(candidate));
+  const relative = path.relative(workspace, absolute);
   return relative.startsWith('..') || path.isAbsolute(relative);
 }
 
@@ -135,8 +156,16 @@ export function computeTurnSignals(
   for (const block of toolBlocks) {
     const { toolCall } = block;
     const traceText = permissionTraceText(toolCall);
-    if (!toolCall.success && DENIAL_PATTERN.test(`${traceText} ${toolCall.result ?? ''}`)) {
-      add('approval_denied', `${toolCall.name}: ${traceText || toolCall.result || ''}`);
+    // 无头回退的拒不走 success=false：AskUserQuestion 回退 success=true、语义在 result 开头。
+    // permissionDecision meta 是更硬的证据但回放常缺（tool_call_end 事件只落 id/success/duration），
+    // 所以三个判据并成一个析取，任一命中即视为「该问的没问成」。
+    const denied = (!toolCall.success && DENIAL_PATTERN.test(`${traceText} ${toolCall.result ?? ''}`))
+      || UNANSWERED_QUESTION_PATTERN.test(toolCall.result ?? '')
+      || toolCall.resultMetadata?.permissionDecision === 'deny';
+    if (denied) {
+      const why = traceText || toolCall.result
+        || (toolCall.resultMetadata?.permissionDecision === 'deny' ? 'permissionDecision=deny' : '');
+      add('approval_denied', `${toolCall.name}: ${why}`);
       if (firstDenialAt === undefined) firstDenialAt = block.timestamp;
     }
   }

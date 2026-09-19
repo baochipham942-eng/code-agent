@@ -519,6 +519,16 @@ describe('excelAutomateModule (native)', () => {
       expect(result.ok).toBe(true);
     });
 
+    // ai-review #1952 R1：handler 读的每个 args 键都要在 schema 里，否则 additionalProperties:false 会把合法调用拒掉。
+    it('validate_formulas 带 recalc:true（handler 读、文档列出的参数）通过校验', () => {
+      const result = validateToolArgs('ExcelAutomate', excelAutomateSchema.inputSchema, {
+        action: 'validate_formulas',
+        file_path: '/abs/data.xlsx',
+        recalc: true,
+      });
+      expect(result).toEqual({ ok: true });
+    });
+
     it('未识别参数名被拒，不再静默放行', () => {
       const result = validateToolArgs('ExcelAutomate', excelAutomateSchema.inputSchema, {
         action: 'read',

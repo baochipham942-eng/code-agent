@@ -189,6 +189,12 @@ Parameters:
         type: 'boolean',
         description: '[automate] Save after write (default: true)',
       },
+      // handler 读 args.recalc（excelAutomate.ts:382）；schema 开了 additionalProperties:false
+      // 后没声明的键会被前置校验拒掉，所以 handler 读的每个键都必须在这里（ai-review #1952 R1）。
+      recalc: {
+        type: 'boolean',
+        description: '[validate_formulas] Recalculate with LibreOffice before scanning (default: false)',
+      },
     },
     required: ['action'],
     additionalProperties: false,

@@ -709,7 +709,7 @@ export class ToolExecutionEngine {
           + '创建/修改/删除/执行类工具一律被引擎拦截；只读分析与 AskUserQuestion 本身不受影响。\n'
           + '请基于当前已知信息给出分析与建议并结束本轮。\n'
           + '</awaiting-user-input-freeze>',
-          'awaiting-user-input',
+          'tool-policy-guard',
         );
       }
       return emitBlockedToolResultWithLog(toolResult);

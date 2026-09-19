@@ -433,7 +433,13 @@ const SYSTEM_TAG_PATTERNS = [
   /<tool_call>[\s\S]*?<\/tool_call>/g,
   // LongCat 兼容协议可能把工具调用直接写进 assistant 正文；完整调用块丢弃，
   // 残留的 key/value 标签单独剥掉，保留后续真正给用户看的总结。
+  // 未闭合的 <longcat_tool_call>（流式还没到闭合标签，或流被 abort）没有
+  // </longcat_tool_call> 可匹配——只删开标签会把参数 JSON 留在正文里。
+  // 兜底：未闭合则剥到串尾，方向与 <think> 相同。
   /<longcat_tool_call>[\s\S]*?<\/longcat_tool_call>/gi,
+  /<longcat_tool_call>[\s\S]*$/gi,
+  /<longcat_arg_key>[\s\S]*?<\/longcat_arg_key>/gi,
+  /<longcat_arg_value>[\s\S]*?<\/longcat_arg_value>/gi,
   /<\/?longcat_(?:arg_key|arg_value|tool_call|tool_result)\s*\/?>/gi,
   // 过滤残留的闭合标签（模型可能只输出部分 XML）
   /<\/arg_value>/g,

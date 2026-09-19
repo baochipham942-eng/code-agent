@@ -81,6 +81,58 @@ describe('确定性信号 · 九类各一真阳一真阴', () => {
     expect(readOnly).not.toContain('approval_bypassed');
   });
 
+  // 无头会话里 AskUserQuestion 不会失败（success=true），拒绝语义在 result 开头的
+  // 「[用户未响应」回退文案上——成功返回 + 该文案 = 该问的没问成（N-POSTLAUNCH-SIGNALS-DEAD）。
+  const UNANSWERED_RESULT = '[用户未响应 - CLI 模式无法交互]\n\n1. 选项一\n2. 选项二\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。';
+
+  it('③无头回退也算被拒：success=true + result 以「[用户未响应」开头，后续成功 Bash ⇒ denied + bypassed', () => {
+    const result = kinds([
+      toolBlock({ name: 'AskUserQuestion', category: 'Other', success: true, result: UNANSWERED_RESULT }, 10),
+      toolBlock({ name: 'Bash', category: 'Bash', success: true }, 20),
+    ]);
+    expect(result).toContain('approval_denied');
+    expect(result).toContain('approval_bypassed');
+  });
+
+  it('③无头回退后只有只读操作：只记 approval_denied，不记 bypassed', () => {
+    const result = kinds([
+      toolBlock({ name: 'AskUserQuestion', category: 'Other', success: true, result: UNANSWERED_RESULT }, 10),
+      toolBlock({ name: 'Read', category: 'Read', success: true }, 20),
+    ]);
+    expect(result).toContain('approval_denied');
+    expect(result).not.toContain('approval_bypassed');
+  });
+
+  it('③回退文案不在开头不算：正常作答与文中引用都不触发（锚开头，不全文模糊匹配）', () => {
+    const answered = kinds([
+      toolBlock({ name: 'AskUserQuestion', category: 'Other', success: true, result: '用户选择了 1' }, 10),
+      toolBlock({ name: 'Bash', category: 'Bash', success: true }, 20),
+    ]);
+    expect(answered).not.toContain('approval_denied');
+
+    const midText = kinds([
+      toolBlock({ name: 'Read', category: 'Read', success: true, result: '备注：[用户未响应 - CLI 模式无法交互] 出现在中间' }, 10),
+      toolBlock({ name: 'Bash', category: 'Bash', success: true }, 20),
+    ]);
+    expect(midText).not.toContain('approval_denied');
+    expect(midText).not.toContain('approval_bypassed');
+  });
+
+  it('③permissionDecision=deny 的元数据拒也记 denied；allow 不记', () => {
+    const denied = kinds([
+      toolBlock({ name: 'WebSearch', category: 'Web', success: true, resultMetadata: { permissionDecision: 'deny' } }, 10),
+      toolBlock({ name: 'Bash', category: 'Bash', success: true }, 20),
+    ]);
+    expect(denied).toContain('approval_denied');
+    expect(denied).toContain('approval_bypassed');
+
+    const allowed = kinds([
+      toolBlock({ name: 'WebSearch', category: 'Web', success: true, resultMetadata: { permissionDecision: 'allow' } }, 10),
+      toolBlock({ name: 'Bash', category: 'Bash', success: true }, 20),
+    ]);
+    expect(allowed).not.toContain('approval_denied');
+  });
+
   it('⑤超时：超时文案判出；参数非法不算超时', () => {
     expect(kinds([errorBlock('Request timeout after 30000ms')])).toContain('timeout');
     expect(kinds([errorBlock('invalid argument: path must be absolute')])).not.toContain('timeout');

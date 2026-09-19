@@ -4,8 +4,11 @@
 // ----------------------------------------------------------------------------
 // 用法：
 //   npx tsx scripts/postlaunch-score.ts --days 7 --budget 0.5 --dry-run
+//   npx tsx scripts/postlaunch-score.ts --days 3 --include-headless
 //
 // --dry-run 只算确定性信号、一次模型都不调，用来先看看这台机器上有多少轮会命中。
+// --include-headless 把 headless 起源的会话（夜跑/评测合成流量）也评了：分数落表，
+// 但 buildPostLaunchReport 不认它们，不进生产报表。
 // 直接开 SQLite 文件（默认 $CODE_AGENT_DATA_DIR/code-agent.db，未设置则 ~/.code-agent），
 // 不启 Electron、不启 DatabaseService——CLI 只需要读遥测表和写分数表。
 // ============================================================================
@@ -32,7 +35,7 @@ import { isPostLaunchScoringEnabled } from '../src/host/testing/postlaunch/postL
 import { runPostLaunchScoring, type PostLaunchSessionRow } from '../src/host/testing/postlaunch/postLaunchScorer';
 import { buildPostLaunchReport } from '../src/host/testing/postlaunch/postLaunchScoreStore';
 
-function parseArgs(): { days: number; budget: number; sampleLimit: number; dryRun: boolean } {
+function parseArgs(): { days: number; budget: number; sampleLimit: number; dryRun: boolean; includeHeadless: boolean } {
   const argv = process.argv.slice(2);
   const read = (flag: string): string | undefined => {
     const index = argv.indexOf(flag);
@@ -43,6 +46,7 @@ function parseArgs(): { days: number; budget: number; sampleLimit: number; dryRu
     budget: Number(read('--budget') ?? POST_LAUNCH_DEFAULTS.dailyBudgetUsd),
     sampleLimit: Number(read('--sample') ?? POST_LAUNCH_DEFAULTS.dailySampleLimit),
     dryRun: argv.includes('--dry-run'),
+    includeHeadless: argv.includes('--include-headless'),
   };
 }
 
@@ -58,6 +62,9 @@ function costUsd(provider: string, model: string, inputTokens: number, outputTok
 
 async function main(): Promise<void> {
   const options = parseArgs();
+  if (options.includeHeadless) {
+    console.error('合成流量评分通道：分数落表但不进生产报表');
+  }
   // 开关三态先判：关着就一步都别走——不开库、不建表，更不叫模型。
   // 读的是宿主真正用的那份配置：界面经 ConfigService 存的是 <数据目录>/config.json，
   // 不是 settings.json——两端读不同文件的话，用户按提示在界面开了、CLI 仍会拒
@@ -106,6 +113,7 @@ async function main(): Promise<void> {
     dailyBudgetUsd: options.budget,
     dailySampleLimit: options.sampleLimit,
     dryRun: options.dryRun,
+    includeHeadless: options.includeHeadless,
   });
 
   console.log(`扫到 ${result.examinedTurns} 轮；剔除 ${result.excludedTurns} 轮（eval/子代理/定时/心跳/脚本发起）`);

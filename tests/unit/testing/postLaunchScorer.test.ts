@@ -14,7 +14,7 @@ import { applyTelemetrySchema } from '../../../src/host/services/core/database/s
 import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
-import { DRY_RUN_JUDGE_VERSION, POST_LAUNCH_JUDGE_VERSION, clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
+import { DRY_RUN_JUDGE_VERSION, POST_LAUNCH_DEFAULTS, POST_LAUNCH_JUDGE_VERSION, clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
 import { estimateJudgeCost } from '../../../src/host/testing/postlaunch/postLaunchCost';
 import { resolveModelPrice } from '../../../src/shared/pricing/resolveModelPrice';
 import { acquireScoringLock, buildPostLaunchReport, getBudgetState, getUnsyncedTurnScores, localDay, markTurnScoresSynced, releaseScoringLock, renewScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
@@ -747,6 +747,99 @@ describe('上线后打分编排', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].turn_id).toBe('chat-turn-1');
     expect(JSON.parse(rows[0].signals as string)).toContain('error_terminated');
+  });
+
+  // ── N-POSTLAUNCH-SIGNALS-DEAD：生产路径合并迭代轮，判官拿到的是整轮轨迹 ──
+
+  function insertIteration(
+    database: Database.Database,
+    sessionId: string,
+    turnId: string,
+    turnNumber: number,
+    parentTurnId: string,
+    startTime: number,
+  ): void {
+    database.prepare(`
+      INSERT INTO telemetry_turns (id, session_id, turn_number, start_time, end_time, duration_ms, turn_type, parent_turn_id, total_input_tokens, total_output_tokens)
+      VALUES (?, ?, ?, ?, ?, 10, 'iteration', ?, 10, 5)
+    `).run(turnId, sessionId, turnNumber, startTime, startTime + 10, parentTurnId);
+  }
+
+  function readToolCall(name: string, path: string, timestamp: number): ReplayBlock {
+    return {
+      type: 'tool_call',
+      content: name,
+      timestamp,
+      toolCall: { id: `${name}-${timestamp}`, name, args: { path }, success: true, duration: 1, category: 'Read' },
+    };
+  }
+
+  it('judge 拿到的是合并轮：prompt 含 user 父轮的 userPrompt，也含 iteration 轮里的 toolCalls', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    insertIteration(database, 'chat-1', 'chat-turn-1-i1', 2, 'chat-turn-1', NOW - HOUR + 5);
+    insertIteration(database, 'chat-1', 'chat-turn-1-i2', 3, 'chat-turn-1', NOW - HOUR + 20);
+    const replays = {
+      'chat-1': replay('chat-1', [
+        { turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'user', content: '帮我统计销量前五的商品', timestamp: NOW - HOUR }] },
+        { turnNumber: 2, startTime: NOW - HOUR + 5, blocks: [readToolCall('Read', './sales.csv', NOW - HOUR + 5)] },
+        { turnNumber: 3, startTime: NOW - HOUR + 20, blocks: [readToolCall('Grep', 'sales', NOW - HOUR + 20)] },
+      ]),
+    };
+    const prompts: string[] = [];
+    await runPostLaunchScoring(deps(database, replays, async (prompt) => { prompts.push(prompt); return ALL_PASS; }));
+
+    // 三个 telemetry 轮并成一个 user 轮评：09-19 复现脚本把回放轮逐个喂 judge 才出现
+    // 「第二轮起 userPrompt 恒空」——生产路径不该有那个形状。
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('帮我统计销量前五的商品');
+    expect(prompts[0]).toContain('Read');
+    expect(prompts[0]).toContain('./sales.csv');
+    expect(prompts[0]).toContain('Grep');
+    expect(scoreRows(database)).toHaveLength(1);
+  });
+
+  it('repeat_loop 跨迭代轮命中：三个 iteration 轮各一次同工具同参数，合并后按默认阈值判出', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const count = POST_LAUNCH_DEFAULTS.repeatLoopThreshold;
+    const replayTurns = [];
+    for (let index = 1; index <= count; index += 1) {
+      const startTime = NOW - HOUR + index * 5;
+      insertIteration(database, 'chat-1', `chat-turn-1-i${index}`, index + 1, 'chat-turn-1', startTime);
+      // 同工具同参数：跨迭代轮的重复只在「并进同一 user 轮」后可见。
+      replayTurns.push({ turnNumber: index + 1, startTime, blocks: [readToolCall('Read', './a.ts', startTime)] });
+    }
+    const replays = { 'chat-1': replay('chat-1', replayTurns) };
+    await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS));
+
+    const rows = scoreRows(database);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].turn_id).toBe('chat-turn-1');
+    expect(JSON.parse(rows[0].signals as string)).toContain('repeat_loop');
+  });
+
+  it('includeHeadless：headless 起源（含存量 cli_ 前缀）进分母；eval 即使开着也不进；默认两者都不进', async () => {
+    const sessions: Array<[string, string, string | null]> = [
+      ['chat-headless', 'chat', 'headless'],
+      ['cli_session_1788581520765_10a7e1aa', 'chat', null],
+      ['eval-headless', 'eval', 'headless'],
+    ];
+    const replays: Record<string, ReturnType<typeof replay>> = {};
+    for (const [index, [id, type, originKind]] of sessions.entries()) {
+      insertSession(database, id, type, NOW - HOUR, originKind);
+      insertTurn(database, id, `turn-${index}`, 1, NOW - HOUR);
+      replays[id] = replay(id, [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]);
+    }
+
+    // 默认：合成流量一条都不评（生产统计的现状口径）。
+    const defaults = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS));
+    expect(scoreRows(database)).toEqual([]);
+    expect(defaults.excludedTurns).toBe(3);
+
+    const included = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { includeHeadless: true });
+    expect(scoreRows(database).map((row) => row.session_id).sort()).toEqual(['chat-headless', 'cli_session_1788581520765_10a7e1aa']);
+    expect(included.excludedTurns).toBe(1);
   });
 });
 

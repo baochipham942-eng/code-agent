@@ -150,6 +150,8 @@ describe('postLaunchJudge · 无题契约', () => {
     expect(prompt).toContain('准确指出该问题并索要正确输入');
     expect(prompt).toContain('工具输出里明明有材料却说没有');
     expect(prompt).toContain('只改口索要材料而不交付');
+    expect(prompt).toContain('也按 true');
+    expect(prompt).not.toContain('仅当');
     expect(POST_LAUNCH_JUDGE_VERSION).toBe('postlaunch-judge-v2');
   });
 });

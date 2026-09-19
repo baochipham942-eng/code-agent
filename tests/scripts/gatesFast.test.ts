@@ -97,8 +97,8 @@ describe('fast gate fail-closed contracts', () => {
     expect(extractGateIds(source)).toEqual(['inputs', 'vitest']);
     expect(() => validateGateBudgetCoverage({ ...policy, budgetsMs: { inputs: 100 } }, ['inputs', 'vitest']))
       .toThrow('missing budgetsMs key(s): vitest');
-    expect(() => validateGateBudgetCoverage({ ...policy, budgetsMs: { ...policy.budgetsMs, retired: 100 } }, extractGateIds(source)))
-      .toThrow('unknown budgetsMs key(s): provider');
+    expect(() => validateGateBudgetCoverage({ ...policy, budgetsMs: { inputs: 100, vitest: 100, retired: 100 } }, extractGateIds(source)))
+      .toThrow('unknown budgetsMs key(s): retired');
     expect(() => validateGateBudgetCoverage({ ...policy, budgetsMs: { inputs: 100, vitest: 100 } }, ['inputs', 'vitest']))
       .not.toThrow();
     expect(() => extractGateIds("await gate('inputs', true, run); await gate('inputs', false, run);"))

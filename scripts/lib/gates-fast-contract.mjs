@@ -130,6 +130,11 @@ export function validateBudgetPolicy(policy) {
  * Read the literal gate registrations from gates-fast.mjs so a new gate cannot
  * silently fall back to the total-run budget, and a retired gate cannot leave
  * a stale budget entry behind.
+ *
+ * Only single- or double-quoted string literals are recognized
+ * (`gate('inputs', ...)` / `gate("vitest", ...)`). Template strings and
+ * variable ids fail-closed as unknown — safe, but callers must keep
+ * registrations as quoted literals.
  */
 export function extractGateIds(source) {
   if (typeof source !== 'string') throw new Error('FAIL: gates-fast source must be a string');

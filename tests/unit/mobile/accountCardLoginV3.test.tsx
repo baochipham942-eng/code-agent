@@ -234,6 +234,9 @@ describe('守卫① 账号并进个人卡（SettingsPage）', () => {
   const base = {
     page: 'settings' as const, text, appearance: 'system' as const, nickname: '',
     profileDraft: '', appInfo: null, open: noop, chooseAppearance: noop, editProfile: noop, saveProfile: noop,
+    // logout 是必填 prop（R6 ai-review Nit：!logout 死判据删掉了），这两条不碰退出登录，
+    // 给个占位实现就行。
+    logout: async () => true,
   };
 
   it('未登录：偏好区没有单独的账号行，个人卡显示「未登录」+ 卡片提示文案', () => {

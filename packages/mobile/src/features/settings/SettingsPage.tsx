@@ -25,7 +25,7 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
    * （store 的 logout() 本身不回传——persist 失败时静默保留 account），调用方在 MobileRoot
    * 里退出后重读一次 store 现状换算成布尔值（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 R2）。
    */
-  logout?: () => Promise<boolean>;
+  logout: () => Promise<boolean>;
 }) {
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [logoutFailed, setLogoutFailed] = useState(false);
@@ -37,7 +37,7 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
     <span>{text[target]}</span><span className="row-detail">{detail}<AppIcon name="chevron" /></span>
   </button>;
   const handleLogout = async () => {
-    if (!logout || logoutBusy) return;
+    if (logoutBusy) return;
     setLogoutBusy(true); setLogoutFailed(false);
     const ok = await logout();
     setLogoutBusy(false);

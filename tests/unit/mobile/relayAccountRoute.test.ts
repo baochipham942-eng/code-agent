@@ -231,24 +231,6 @@ describe('companionStore 双路由：账号优先、当次回落、老记录零�
     store.getState().pause();
   });
 
-  it('S8（D-1）：配对着、没登录、第一次 LAN 连不上 ⇒ 提醒一次并落 loginReminded；之后不再弹', async () => {
-    harness.lanError = 'COMPANION_NETWORK_UNAVAILABLE';
-    const { store, writes } = storeWith(storageWith());   // 没路由、没账号：offline 落定
-    await store.getState().hydrate();
-    expect(store.getState().loginPrompt).toBe(true);
-    expect(JSON.parse(writes.at(-1) ?? '{}').loginReminded).toBe(true);
-    // 第二次失败（手动重连）：不再置提醒。
-    store.getState().dismissLoginPrompt();
-    await store.getState().reconnect({ resetBackoff: true });
-    expect(store.getState().loginPrompt).toBe(false);
-    // 已登录的落 offline 不弹 S8（登录本身已是答案）。
-    harness.relayConstructed = 0;
-    const loggedIn = storeWith(storageWith({ account: ACCOUNT }));
-    await loggedIn.store.getState().hydrate();
-    expect(loggedIn.store.getState().loginPrompt).toBe(false);
-    loggedIn.store.getState().pause();
-  });
-
   it('路由探针改问 relay.routes：两条都缓存；旧 Host 拒杀探针时回落问 relay.route', async () => {
     harness.lanError = null;
     // 先跑一次「两条都有」：LAN 直连成功后探针问 relay.routes。

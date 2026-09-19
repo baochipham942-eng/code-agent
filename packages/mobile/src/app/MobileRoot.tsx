@@ -1003,16 +1003,13 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         // 登录成功零反馈（R3①，ai-review PR#1958 Important）：AccountSheet 自己不管路由，
         // 成功后由这里收口。R4 纠正：不是无条件关掉整个弹层——从设置页个人卡进来的应该
         // 回到设置页看到已登录的个人卡（v3 稿），从 S8 薄面板「去登录」进来的应该回到连接
-        // 面（此时 account 已非空、薄面板已让位）。`back()` 弹栈顶那页；`mobileStore.back()`
-        // 的实现在 sheet 存在时恒回 true（哪怕弹到只剩一页也会整体收掉再报 true），所以
-        // `!store.getState().back()` 这条分支在这里**永远走不到**——`closeSheet()` 是纯防御
-        // 写法（R5 ai-review Nit），不是「进 account 页前可能没开过任何一页」这种真实场景。
-        // 保留它只是不假设 back() 未来永远这么实现。重连触发逻辑不动，不让用户手动再点一次
-        // 「重新连接」才看出登录生效了。
+        // 面（此时 account 已非空、薄面板已让位）。back() 弹栈顶那页（R6 ai-review Nit：
+        // 去掉了 closeSheet() 兜底——mobileStore.back() 在 sheet 存在时恒回 true，那个分支
+        // 本来就走不到）。重连触发逻辑不动，不让用户手动再点一次「重新连接」才看出登录生效了。
         login={async (email, password) => {
           const outcome = await companionStore.getState().login(email, password);
           if (outcome.ok) {
-            if (!store.getState().back()) store.getState().closeSheet();
+            store.getState().back();
             void companionStore.getState().reconnect({ resetBackoff: true });
           }
           return outcome;

@@ -148,15 +148,15 @@ interface State {
    */
   account: { email: string; userId: string } | null;
   /**
-   * 「在外面用需要先登录」当前可见：配对完成后引导一次（D9，欢迎页可忽略提示，不弹层）；
-   * 跳过后第一次**离网**连不上时再置起（S8，仅一次，见 OFF_NETWORK_ERRORS 的门控）；登录/退出清。
+   * 「在外面用需要先登录」当前可见（S8 薄面板，N-COMPANION-RELAY-ACCOUNT-LOGIN-V3）：第一次
+   * **离网**连不上时置起（仅一次，见 OFF_NETWORK_ERRORS 的门控），登录/退出清。配对完成
+   * 不再置起——欢迎页那条登录引导整段删掉了（R1 的 B），也就没有「跳过」这个动作了。
    */
   loginPrompt: boolean;
   /** 登录 Neo 账号（邮箱+密码）：换回设备票据与账号信息存进配对盘；失败态两类 + 账号不一致点名。 */
   login(email: string, password: string): Promise<AccountLoginOutcome>;
   /** 退出登录 = 删票据与账号信息；配对与 LAN 使用不受影响。 */
   logout(): Promise<void>;
-  dismissLoginPrompt(): void;
   /**
    * 「换了手机？登录找回我的电脑」（N-COMPANION-RELAY-ACCOUNT-RECOVER）：S3 入口 → S4 登录 →
    * S5 列在线电脑 → S6 等电脑上同意。配对落盘与扫码同一存储形状；access token 与密码不落盘（D11）。
@@ -1157,7 +1157,6 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           set({ account: null, loginPrompt: false });
         } catch { /* storageError 已置起：账号信息保留，下次退出再试 */ }
       },
-      dismissLoginPrompt: () => set({ loginPrompt: false }),
       recoverLogin: async (email, password) => {
         if (!port || get().recoverStep === 'opening' || get().recoverStep === 'pairing') return;
         const attempt = ++recoverSeq;

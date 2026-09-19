@@ -42,12 +42,68 @@ const URL_RE = /https?:\/\/[^\s<>"'`)]+/gi;
 const QUOTE_RE = /[“”«»『』「」]([^“”«»『』「」]{1,80})[“”«»『』「」]|"([^"]{1,80})"|'([^']{1,80})'|‘([^’]{1,80})’/g;
 const PATH_RE = /(?:^|[\s,;:（(])(\/[\w\-./]+)(?=$|[\s,;:)）])/g;
 
-function normalize(value: string): string {
-  return value.toLowerCase();
+const JEV_ASSERTION_KINDS: readonly JevAssertionKind[] = [
+  'url_includes',
+  'url_equals',
+  'title_includes',
+  'heading_includes',
+  'element_text_includes',
+  'form_value_equals',
+  'element_exists',
+  'download_artifact_present',
+  'url_not_includes',
+];
+
+function isAssertionKind(value: unknown): value is JevAssertionKind {
+  return typeof value === 'string' && (JEV_ASSERTION_KINDS as readonly string[]).includes(value);
 }
 
-function includesInsensitive(hay: string, needle: string): boolean {
+function needleRequired(kind: JevAssertionKind): boolean {
+  return kind !== 'element_exists';
+}
+
+function normalize(value: unknown): string {
+  return String(value ?? '').toLowerCase();
+}
+
+function includesInsensitive(hay: unknown, needle: unknown): boolean {
   return normalize(hay).includes(normalize(needle));
+}
+
+function traceDroppedAssertion(reason: string, index: number, kind: unknown): void {
+  console.warn(`[jevBrowserAssertions] drop assertion: ${reason} index=${index} kind=${String(kind)}`);
+}
+
+function sanitizeOverrideAssertion(raw: unknown, index: number): JevPageAssertion | null {
+  if (!raw || typeof raw !== 'object') {
+    traceDroppedAssertion('not an object', index, undefined);
+    return null;
+  }
+  const candidate = raw as {
+    id?: unknown;
+    kind?: unknown;
+    needle?: unknown;
+    role?: unknown;
+    name?: unknown;
+    selectorHint?: unknown;
+  };
+  if (!isAssertionKind(candidate.kind)) {
+    traceDroppedAssertion('kind not in whitelist', index, candidate.kind);
+    return null;
+  }
+  if (needleRequired(candidate.kind) && typeof candidate.needle !== 'string') {
+    traceDroppedAssertion('needle missing', index, candidate.kind);
+    return null;
+  }
+  const assertion: JevPageAssertion = {
+    id: typeof candidate.id === 'string' && candidate.id ? candidate.id : `a${index + 1}`,
+    kind: candidate.kind,
+    needle: typeof candidate.needle === 'string' ? candidate.needle : '',
+  };
+  if (typeof candidate.role === 'string') assertion.role = candidate.role;
+  if (typeof candidate.name === 'string') assertion.name = candidate.name;
+  if (typeof candidate.selectorHint === 'string') assertion.selectorHint = candidate.selectorHint;
+  return assertion;
 }
 
 function stripUrlQuerySecrets(raw: string): string {
@@ -70,13 +126,15 @@ function looksLikePath(value: string): boolean {
 
 export function extractJevAssertions(
   task: string,
-  override?: JevPageAssertion[],
+  override?: Array<JevPageAssertion | Record<string, unknown>>,
 ): JevPageAssertion[] {
   if (override && override.length > 0) {
-    return override.map((assertion, index) => ({
-      ...assertion,
-      id: assertion.id || `a${index + 1}`,
-    }));
+    const kept: JevPageAssertion[] = [];
+    override.forEach((assertion, index) => {
+      const sanitized = sanitizeOverrideAssertion(assertion, index);
+      if (sanitized) kept.push(sanitized);
+    });
+    return kept;
   }
 
   const found: JevPageAssertion[] = [];

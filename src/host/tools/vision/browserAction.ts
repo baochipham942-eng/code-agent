@@ -333,17 +333,6 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       });
     }
 
-    if (action === 'execute_goal') {
-      const driver = resolveBrowserJevStep();
-      if (!driver) return jevBrowserStepUnarmedResult();
-      const task = typeof params.task === 'string' ? params.task : '';
-      const assertions = Array.isArray(params.assertions)
-        ? params.assertions as JevPageAssertion[]
-        : undefined;
-      const jevBudgetUsd = typeof params.jevBudgetUsd === 'number' ? params.jevBudgetUsd : undefined;
-      return driver.run({ task, assertions, jevBudgetUsd }, context);
-    }
-
     const workbenchNotes: Array<string | null | undefined> = [workbenchPolicy.note];
     const relayDispatch = await maybeDispatchRelayBrowserAction({
       action,
@@ -366,6 +355,17 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     const browserService = useManagedSurface && surfaceIdentity
       ? managedAdapter.getBrowserService(surfaceIdentity)
       : getBrowserService(context.agentId);
+
+    if (action === 'execute_goal') {
+      const driver = resolveBrowserJevStep({ browserService });
+      if (!driver) return jevBrowserStepUnarmedResult();
+      const task = typeof params.task === 'string' ? params.task : '';
+      const assertions = Array.isArray(params.assertions)
+        ? params.assertions as JevPageAssertion[]
+        : undefined;
+      const jevBudgetUsd = typeof params.jevBudgetUsd === 'number' ? params.jevBudgetUsd : undefined;
+      return driver.run({ task, assertions, jevBudgetUsd, browserService }, context);
+    }
 
     if (!useManagedSurface && workbenchPolicy.preferManagedBrowser && MANAGED_SESSION_ACTIONS.has(action)) {
       workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({ agentId: context.agentId }));

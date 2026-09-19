@@ -1,0 +1,60 @@
+  maskedLength: 45,
+  maskCount: 0,
+  truncated: false
+  originalLength: 159,
+  maskedLength: 159,
+  maskCount: 0,
+  truncated: false
+  originalLength: 22,
+  maskedLength: 22,
+  maskCount: 0,
+  truncated: false
+  originalLength: 441,
+  maskedLength: 441,
+  maskCount: 0,
+  truncated: false
+  originalLength: 22,
+  maskedLength: 22,
+  maskCount: 0,
+  truncated: false
+  originalLength: 100,
+  maskedLength: 100,
+  maskCount: 0,
+  truncated: false
+  originalLength: 227,
+  maskedLength: 227,
+  maskCount: 0,
+  truncated: false
+  originalLength: 49,
+  maskedLength: 49,
+  maskCount: 0,
+  truncated: false
+  originalLength: 284,
+  maskedLength: 284,
+  maskCount: 0,
+  truncated: false
+  originalLength: 284,
+  maskedLength: 284,
+  maskCount: 0,
+  truncated: false
+rows=35 judged=35 skipped=0 errors=0 avg_ms=408
+userPrompt 为空的轮: 0（判官那条 :69 缺陷的受害者）
+  goal   参照通过 9/35 | Jev 弃权 0 | 决断中一致 24/35 (69%)
+  orch   参照通过 34/35 | Jev 弃权 1 | 决断中一致 33/34 (97%)
+  tools  参照通过 29/35 | Jev 弃权 11 | 决断中一致 20/24 (83%)
+  perm   参照通过 34/35 | Jev 弃权 0 | 决断中一致 34/35 (97%)
+
+== 不一致明细（goal 维）
+  86da77ac ref=0 jev=0.79 met(0.91) empty=false tools=0 | goal: 用户没有明确提出具体需求，Agent 没有提供具体帮助。；tools: 没有使用任何工具或命令。
+  5a68a17d ref=0 jev=0.94 met(1.00) empty=false tools=0 | goal: 用户没有提出具体需求，无法判断是否拿到了他要的东西；tools: 没有使用任何工具
+  c64c98d4 ref=0 jev=0.92 met(0.96) empty=false tools=0 | goal: 用户没有明确提出具体需求，Agent 没有提供具体帮助，无法判断是否拿到所需东西。
+  28285116 ref=0 jev=0.95 met(0.99) empty=false tools=0 | goal: 用户没有提出具体需求，无法判断是否拿到了他要的东西；tools: 没有使用任何工具
+  b81ce299 ref=0 jev=0.91 met(0.93) empty=false tools=0 | goal: 用户没有明确提出具体需求，回复中没有声称的结果
+  43b37c9a ref=0 jev=0.9 met(0.89) empty=false tools=0 | goal: 用户没有明确提出需要帮助的具体内容，因此无法判断是否拿到了他要的东西。
+  27746f99 ref=0 jev=0.88 met(0.96) empty=false tools=0 | goal: 用户没有提出具体任务，因此无法判断是否拿到了他要的东西。；tools: 没有使用任何工具。
+  331342e5 ref=0 jev=0.91 met(0.92) empty=false tools=0 | goal: 用户没有提出具体需求，无法判断是否拿到了他要的东西。
+  c983d815 ref=0 jev=0.92 met(0.94) empty=false tools=0 | goal: 用户没有明确提出具体需求，回复中没有声称的结果
+  cc3a6514 ref=0 jev=0.89 met(0.95) empty=false tools=0 | goal: 用户没有明确提出具体需求，回复中没有声称的结果
+  22698d48 ref=0 jev=0.91 met(0.94) empty=false tools=0 | goal: 用户没有提出具体需求，因此无法判断是否拿到了他要的东西。
+
+== goal 弃权明细

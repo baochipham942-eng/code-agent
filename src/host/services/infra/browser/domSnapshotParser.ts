@@ -42,7 +42,7 @@ export interface JevInteractiveExtras {
   accept: string | null;
 }
 
-export const DEFAULT_MAX_INTERACTIVE_ELEMENTS = 80;
+const DEFAULT_MAX_INTERACTIVE_ELEMENTS = 80;
 export const JEV_MAX_INTERACTIVE_ELEMENTS = 1024;
 
 export interface ParsedBrowserDomSnapshot {

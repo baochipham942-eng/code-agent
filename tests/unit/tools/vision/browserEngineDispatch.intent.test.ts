@@ -272,6 +272,50 @@ describe('owner-scoped Relay dispatch', () => {
     expect(JSON.stringify(forwarded)).not.toContain('raw-chrome-tab-123');
   });
 
+  it('explicit relay execute_goal reports managed-only capability error', async () => {
+    hasReadyLease.mockReturnValue(true);
+    getBinding.mockReturnValue(readyBinding({
+      lease: {
+        state: 'leased',
+        expiresAt: Date.now() + 60_000,
+        actionScopes: ['execute_goal', 'lease:return'],
+        domainScopes: ['origin:https://github.com'],
+      },
+    }));
+
+    const result = await maybeDispatchRelayBrowserAction({
+      action: 'execute_goal',
+      params: { engine: 'relay', task: 'click Go' },
+      context: toolContext(),
+    });
+    expect(result?.success).toBe(false);
+    expect(result?.error).toMatch(/managed-engine only|does not support browser_action.execute_goal/i);
+    expect(result?.metadata?.recovery).toMatchObject({ code: 'SURFACE_CAPABILITY_UNSUPPORTED' });
+    expect(executeRelayBrowserAction).not.toHaveBeenCalled();
+  });
+
+  it('execute_goal stays managed-only even when login_reuse would pick Relay', async () => {
+    hasReadyLease.mockReturnValue(true);
+    getBinding.mockReturnValue(readyBinding({
+      lease: {
+        state: 'leased',
+        expiresAt: Date.now() + 60_000,
+        actionScopes: ['execute_goal', 'get_content', 'lease:return'],
+        domainScopes: ['origin:https://github.com'],
+      },
+    }));
+
+    const result = await maybeDispatchRelayBrowserAction({
+      action: 'execute_goal',
+      params: { task: 'click Go' },
+      url: 'https://github.com/settings',
+      executionIntent: { browserSessionMode: 'desktop' },
+      context: toolContext(),
+    });
+    expect(result).toBeNull();
+    expect(executeRelayBrowserAction).not.toHaveBeenCalled();
+  });
+
   it('blocks unsupported capability and unapproved domain before Relay dispatch', async () => {
     hasReadyLease.mockReturnValue(true);
     getBinding.mockReturnValue(readyBinding());

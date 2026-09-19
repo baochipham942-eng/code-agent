@@ -138,7 +138,6 @@ function buildJevStateSkeleton(args: {
       assertions,
       injection_flag: args.injectionFlag,
       sensitive_fields_present: args.prepared.sensitiveFieldsPresent,
-      dialog_pending: false,
       unavailable_frames: args.prepared.unavailableFrames,
     },
   };

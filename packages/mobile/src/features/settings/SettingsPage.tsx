@@ -57,9 +57,11 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
           : <span className="avatar avatar-generic"><AppIcon name="profile" /></span>}
         <span className="stack">
           <strong>{account ? (nickname || account.email) : text.accountNotLoggedIn}</strong>
-          {/* 昵称为空时主标题已经在用邮箱了，副标题不能再复读一遍同一串（R3 ai-review Nit）——
-              换成一句「已登录」提示；有昵称时副标题才轮到邮箱当第二行身份信息。 */}
-          <span className="small">{account ? (nickname ? account.email : text.accountLoggedInHint) : text.accountCardHint}</span>
+          {/* 已登录且昵称为空时不再垫一句「手机在外面也能连回这台电脑。」（爸真机拍板④：
+              这句占地方且没什么信息量）——主标题已经在用邮箱了，干脆不渲染副标题；有昵称
+              时副标题才轮到邮箱当第二行身份信息（R3 ai-review Nit 的判据不变，只是空昵称
+              分支从「垫一句」改成「不渲染」）。 */}
+          {account ? (nickname && <span className="small">{account.email}</span>) : <span className="small">{text.accountCardHint}</span>}
         </span>
         <AppIcon name="chevron" />
       </button>

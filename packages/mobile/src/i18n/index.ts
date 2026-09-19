@@ -185,9 +185,6 @@ const zh = {
   /** 退出登录 persist 失败（v3 新增）：store 的失败分支不改状态、静默保留 account，UI 借这个
    *  信号报一句，不新开一条 store 失败通道。 */
   accountLogoutFailed: '退出登录没有成功，请重试。',
-  /** 已登录且没设昵称时个人卡的副标题（R3 ai-review Nit）：主标题这时用邮箱顶替昵称，
-   *  副标题不能再复读同一个邮箱，换成这句「已登录」提示。 */
-  accountLoggedInHint: '手机在外面也能连回这台电脑。',
   needLoginTitle: '在外面用需要先登录',
   needLoginBody: '登录后，手机不在电脑的网络里也能连回电脑。',
   needLoginHint: '回到和电脑同一个 Wi-Fi 也能直接用，不登录也行。',
@@ -403,7 +400,6 @@ const en: Record<keyof typeof zh, string> = {
   accountLogoutHint: 'Pairing and use on the same Wi-Fi are not affected.',
   accountLogoutConfirmTitle: 'Sign out?',
   accountLogoutFailed: "Sign-out didn't complete. Please try again.",
-  accountLoggedInHint: 'This phone can reach the computer even away from its network.',
   needLoginTitle: 'Sign in to use it outside this network',
   needLoginBody: 'Once signed in, this phone can reach the computer even outside its network.',
   needLoginHint: 'You can also keep using it on the same Wi-Fi as the computer without signing in.',

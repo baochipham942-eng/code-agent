@@ -50,8 +50,8 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
 
     /// Must match COMPANION_LIMITS.voiceEnergyDb / voiceMinSpeechMs / voiceEnergyRms / voiceMeterIntervalMs.
     private static let energyDb: Float = -40
-    private static let minSpeechMs = 280
-    private static let meterIntervalMs = 100
+    private static let minSpeechMs = 100
+    private static let meterIntervalMs = 50
     private static let pcmEnergyRms: Double = 328
 
     private static let recordingSettings: [String: Any] = [
@@ -365,6 +365,11 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func stopMeter() {
+        if let recorder {
+            recorder.updateMeters()
+            // 停录这一窗用峰值兜底：短口令可能落在两个 50ms 平均点之间，averagePower 偏低。
+            if recorder.peakPower(forChannel: 0) >= Self.energyDb { speechMs += Self.meterIntervalMs }
+        }
         meterTimer?.cancel()
         meterTimer = nil
     }

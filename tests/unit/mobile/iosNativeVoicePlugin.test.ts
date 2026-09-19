@@ -147,6 +147,7 @@ describe('first-party ios voice recorder contract', () => {
     expect(swift).toContain('speechMs >= Self.minSpeechMs');
     expect(swift).toContain('call.reject(Failure.noSpeech)');
     expect(swift).toContain('pcmRms(data) >= Self.pcmEnergyRms ? data : Data(count: data.count)');
+    expect(swift).toContain('peakPower(forChannel: 0) >= Self.energyDb');
     expect(voiceCapture).toContain("code === 'NO_SPEECH'");
     expect(voiceCapture).toContain("code === 'EMPTY_RECORDING'");
   });

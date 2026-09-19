@@ -80,8 +80,9 @@ export const COMPANION_LIMITS = {
   voiceEnergyDb: -40,
   voiceEnergyRms: 328,
   voiceEnergyPeak: 500,
-  voiceMinSpeechMs: 280,
-  voiceMeterIntervalMs: 100,
+  /** 最短近场时长：要接得住「好 / 是」这种一拍口令，不能要满三个 100ms 采样点。 */
+  voiceMinSpeechMs: 100,
+  voiceMeterIntervalMs: 50,
   /**
    * Android 录音前台服务的收尾防抖（N-MOBILE-BG-RECORDING）：分段录音每段都 stop→start 一次，
    * 服务若跟着段走，通知每段闪一次、且后台一旦停了就再起不来（Android 12+ 禁止后台

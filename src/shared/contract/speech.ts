@@ -50,8 +50,16 @@ export type SpeechAsrSegment = {
 };
 
 function isVoicedSegment(segment: SpeechAsrSegment): boolean {
-  if (typeof segment.no_speech_prob === 'number' && segment.no_speech_prob > SPEECH_NO_SPEECH_PROB_MAX) return false;
-  if (typeof segment.avg_logprob === 'number' && segment.avg_logprob < SPEECH_AVG_LOGPROB_MIN) return false;
+  const noSpeechProb = segment.no_speech_prob;
+  const avgLogprob = segment.avg_logprob;
+  const hasNoSpeech = typeof noSpeechProb === 'number';
+  const hasLogprob = typeof avgLogprob === 'number';
+  const noSpeech = hasNoSpeech && noSpeechProb > SPEECH_NO_SPEECH_PROB_MAX;
+  const lowConf = hasLogprob && avgLogprob < SPEECH_AVG_LOGPROB_MIN;
+  // Whisper 静音是「无语音概率高 *且* 平均 logprob 差」才跳过：高 no_speech_prob
+  // 但 logprob 好的分段是正常口令，丢掉会让手机把整句当静音吞掉。
+  if (hasNoSpeech && hasLogprob) return !(noSpeech && lowConf);
+  if (hasNoSpeech) return !noSpeech;
   return true;
 }
 

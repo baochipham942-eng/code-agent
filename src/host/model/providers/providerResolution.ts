@@ -37,6 +37,8 @@ const ENV_KEY_BY_PROVIDER: Record<string, string> = {
   moonshot: 'MOONSHOT_API_KEY',
   xiaomi: 'XIAOMI_API_KEY',
   longcat: 'LONGCAT_API_KEY',
+  // 判断面（System One）专用 key；typesafe 不是聊天 provider，不进聊天 provider 目录。
+  typesafe: 'TYPESAFE_API_KEY',
 };
 
 function normalizeApiKey(value?: string): string | undefined {

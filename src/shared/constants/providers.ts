@@ -54,6 +54,8 @@ export const MODEL_API_ENDPOINTS = {
   custom: 'https://api.example.com/v1',
   /** Local Ollama */
   ollama: 'http://localhost:11434/v1',
+  /** TypeSafe Jev System One（判断面专用，非聊天端点） */
+  typesafeSystemOne: 'https://api.typesafe.ai/v1/systemone',
 } as const;
 
 /** Groq 在售的低时延默认模型；判断步与通用 Groq provider 共用。 */

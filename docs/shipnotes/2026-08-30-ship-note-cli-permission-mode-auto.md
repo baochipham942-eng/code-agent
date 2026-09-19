@@ -51,3 +51,12 @@
 
 - 任务书 e2e 预期 (b)「create hello.txt 被拒绝」与实测现状不符：/tmp sandbox 内写入走分类器 W1/W2（工作区内/临时目录）本就自动批准（无 flag 亦然）。本 PR 按 spec 的功能语义执行（工作区内写入=安全类→放行），fail-closed 证据改用确定性越界写入（$HOME 探针）呈现。
 - auto 档的 handler 上下文取 `process.cwd()` 派生的 workspace 权限（与 ToolExecutor 基座 `writeWorkspaceRoot` 同一份 `resolveBackgroundWorkspaceAuthority` 宽度校验）；run 级 executor 的 workspaceScope 与 cwd 不一致的假设场景（CLI 当前不产生）下 handler 判定以 cwd 为准。
+
+## 追记（2026-09-19）：LLM 分类档接电 Jev（TypeSafe System One），默认关
+
+`permissionClassifier` 的 LLM 分类档（`ClassifierConfig.enableLlm`）从 TODO 桩接上了真实现：TypeSafe Jev `systemone` 判面，一次请求四问（风险档 choice / needs_human / touches_secrets / config_or_credential_access），问句与阈值集中在 `src/shared/constants/jevQuestions.ts`，模型 pin `jev-1.13.0`。语义边界：**只缩小「规则判不了→ask」那一桶里的 Bash**——非 Bash 工具不进 Jev；四问全过（当前收窄到 read_only 一档）才 approve，其余（包括它说 destructive/exfiltration）一律维持原 fallback ask；规则层的 deny/ask 判定、写围栏义务、`decideAutoMode` 的 fail-closed 全部不受影响。
+
+- **开关默认关**：环境变量 `CODE_AGENT_PERMISSION_LLM_CLASSIFIER=1` 显式开启（与 `CODEX_SANDBOX_ENABLED` / `CODE_AGENT_CLOUD_PROMPTS` 同一惯例）。key 走 `TYPESAFE_API_KEY`（provider→env 映射）；key 缺失时开关无效，warn 一行后保持 ask。不设该变量时分类器行为与本追记之前逐字节一致。
+- **数据出境（重要）**：开启后，走到「规则判不了」那一档的 **Bash 命令文本**会**先经 `guardSensitiveText` 脱敏（密钥/token/邮箱/家目录路径抹除）再发送到 `api.typesafe.ai`（第三方、境外，TypeSafe System One）**用于风险判断。非 Bash 工具不外发。不开启则零外发。
+- **失败行为不变**：Jev 报错 / 超时（默认 5s）/ 响应形状不对 → 回落 ask（fail-closed），不会让任何操作被拒或被放行。
+- **效果口径**：开启后**只能让部分原本要问人的操作免打断**（放行方向），不会让任何操作从「会问/会拒」变成「被拒」，也不会放宽规则层已有的任何判定。09-19 用生产槽 124 条「规则判不了→问人」样本回放：参照=拒绝被放行 **0** 条（该格必须为 0）；回放脚本 `scripts/security/jev-permclass-replay.ts` 留仓，换 Jev 版本/改问法/改阈值时必须重跑（阈值绑 `jev-1.13.0`，见 `jevQuestions.ts` 头注）。

@@ -149,11 +149,12 @@ describe('PermissionClassifier', () => {
   });
 
   it('deterministically asks before a connector write and never enters the LLM classifier', async () => {
-    const classifier = new PermissionClassifier({ enableLlm: true });
-    const classifyByLlm = vi.spyOn(
-      classifier as unknown as { classifyByLlm: () => Promise<unknown> },
-      'classifyByLlm',
-    );
+    // Jev 分类档经 ClassifierConfig.jevSystemOne 注入探针（原实现 spy 私有方法
+    // classifyByLlm，该方法已拆到 permissionClassifierJev.ts，改为在 provider 边界断言）
+    const jevSystemOne = vi.fn(async () => {
+      throw new Error('connector write must not reach the Jev classifier');
+    });
+    const classifier = new PermissionClassifier({ enableLlm: true, jevSystemOne });
 
     const result = await classifier.classify(
       'tmeetMeetingCreate',
@@ -168,7 +169,7 @@ describe('PermissionClassifier', () => {
       trustBoundary: true,
       traceStep: { rule: 'C1: connector_external_write', result: 'ask' },
     });
-    expect(classifyByLlm).not.toHaveBeenCalled();
+    expect(jevSystemOne).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -1,0 +1,21 @@
+## J2. compaction, pair form (state = {current_request, past_turn}), 8 concurrent
+  0.51  user: 帮我看看 sales.csv 有多少行
+  0.66  assistant: 有 1,204 行，列是 date/amount/region
+  0.03  user: 顺便问下今天上海天气
+  0.02  assistant: 上海今天多云 24-29 度
+  0.82  user: 按 region 汇总金额
+  0.92  assistant: 华东 45 万 / 华南 31 万 / 华北 22 万，已存 su
+  0.02  user: 帮我写个 Python 打印 hello
+  0.02  assistant: print("hello")
+  wall=1298ms
+
+## J3. compaction, object-keyed history in one request
+  0.55  user: 帮我看看 sales.csv 有多少行
+  0.48  assistant: 有 1,204 行，列是 date/amount/region
+  0.03  user: 顺便问下今天上海天气
+  0.03  assistant: 上海今天多云 24-29 度
+  0.69  user: 按 region 汇总金额
+  0.62  assistant: 华东 45 万 / 华南 31 万 / 华北 22 万，已存 su
+  0.09  user: 帮我写个 Python 打印 hello
+  0.07  assistant: print("hello")
+  365ms

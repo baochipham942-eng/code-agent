@@ -1,0 +1,32 @@
+## F. consistency ×5 (把上一版报告里的数据更新一下)
+  run0: intent=artifact(0.49) clarify=0.91 1320ms
+  run1: intent=artifact(0.52) clarify=0.91 1180ms
+  run2: intent=artifact(0.49) clarify=0.91 291ms
+  run3: intent=artifact(0.51) clarify=0.91 286ms
+  run4: intent=artifact(0.51) clarify=0.91 338ms
+
+## G. 10 concurrent
+  wall=1475ms per-call=[306,1298,1270,1204,1265,1249,1253,1474,1282,1285] status=[200,200,200,200,200,200,200,200,200,200]
+
+## H. context rot
+  clean-3k: injection=0.03 destructive=0.01 in=4240 391ms
+  inject-3k: injection=0.99 destructive=0.99 in=4308 378ms
+
+## I. memory write confidence
+  以后所有报告都用中文写，标题不要用英   durable=0.92 scope=project(0.75) sensitive=0.02 340ms
+  帮我把这段翻译成英文           durable=0.03 scope=task_only(0.94) sensitive=0.02 321ms
+  我的身份证号是 3101011990   durable=0.78 scope=user_self(1.00) sensitive=0.97 329ms
+  这个项目用 pnpm 不用 npm    durable=0.65 scope=project(1.00) sensitive=0.02 348ms
+  今天有点累，明天再弄吧          durable=0.05 scope=user_self(0.97) sensitive=0.16 300ms
+  我们公司周五不开会            durable=0.85 scope=project(0.29) sensitive=0.03 310ms
+
+## J. compaction keep/drop (one request, 8 nouls)
+  0.52  user: 帮我看看 sales.csv 有多少行
+  0.06  assistant: 有 1,204 行，列是 date/amount/regi
+  0.86  user: 顺便问下今天上海天气
+  0.20  assistant: 上海今天多云 24-29 度
+  0.66  user: 按 region 汇总金额
+  0.60  assistant: 华东 45 万 / 华南 31 万 / 华北 22 万，已
+  0.61  user: 帮我写个 Python 打印 hello
+  0.55  assistant: print("hello")
+  321ms in=653

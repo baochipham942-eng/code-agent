@@ -248,6 +248,11 @@ span.status-text { display: flex; align-items: center; }
 
 select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: var(--surface); font: inherit; }
 .library-sheet .settings-group { margin: 10px 0; } .danger { color: #c43b38; } .drawer-history [aria-current='page'] { background: var(--group); }
+/* 危险主按钮（N-COMPANION-ACCOUNT-CARD-POLISH R2）：.primary 的 background 是 var(--text)、
+   color 是 var(--bg)——`.primary.danger` 原来只让 `.danger` 的 color 覆盖掉 var(--bg)，背景
+   仍是 var(--text)，浅色下变成黑底红字、深色下是白底红字，不是「危险主按钮」该有的样子。
+   补一条组合规则，背景/字色/描边都换成同一个红，跟 .danger 单独用（红字透明底）区分开。 */
+.primary.danger { background: #c43b38; color: #fff; border-color: #c43b38; }
 /* 抽屉未读点（N-MOBILE-FOREGROUND-PUSH）：前台被吞的横幅落在会话行上；进会话即清。 */
 .unread-dot { display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
 /* 前台轻提示（N-MOBILE-FOREGROUND-PUSH，R2 浮层化）：必须长在 <main> 外的独立浮层——main 在

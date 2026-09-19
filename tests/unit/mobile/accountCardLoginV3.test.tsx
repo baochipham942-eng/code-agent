@@ -70,6 +70,17 @@ describe('守卫①（CSS）个人卡头像圆底：--avatar-bg 与描边', () =
     expect(lightMatch?.[1]).not.toBe(darkMatch?.[1]);
   });
 
+  /**
+   * R2（ai-review：确认块的「退出登录」用 `className="primary danger"`，但 `.primary` 的
+   * `background: var(--text)` 没被覆盖，只有 `color` 被 `.danger` 盖成红——变成黑底红字/
+   * 白底红字，不是危险主按钮的样子）：钉住组合规则真的把背景也换成了红。
+   */
+  it('.primary.danger 组合规则把背景/字色都换成红色（不是只覆盖 .danger 的字色）', () => {
+    const comboRule = styles.match(/\.primary\.danger\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(comboRule).toBeTruthy();
+    expect(comboRule).toContain('background: #c43b38');
+  });
+
   const base = {
     page: 'settings' as const, text, appearance: 'system' as const, nickname: '',
     profileDraft: '', appInfo: null, open: () => {}, chooseAppearance: () => {}, editProfile: () => {}, saveProfile: () => {},

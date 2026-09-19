@@ -357,7 +357,7 @@ describe('R2 个人页退出登录判定：按 logout() 回传结果，不按渲
   });
 });
 
-describe('N-COMPANION-ACCOUNT-CARD-POLISH：退出登录二次确认（爸真机看 v3：点了直接就退了，没有反悔机会）', () => {
+describe('N-COMPANION-LOGOUT-CONFIRM-DIALOG：退出登录二次确认改成模态弹窗（爸 build 57 真机拍板「退出应该是弹窗」）', () => {
   const noop = () => {};
   const base = {
     page: 'profile' as const, text, appearance: 'system' as const, nickname: '',
@@ -365,31 +365,66 @@ describe('N-COMPANION-ACCOUNT-CARD-POLISH：退出登录二次确认（爸真机
     account: { email: 'lin@example.com' },
   };
 
-  it('点「退出登录」⇒ logout 未被调，确认块出现（标题+确认按钮+取消按钮）', () => {
+  it('点「退出登录」⇒ logout 未被调，弹窗出现（role=alertdialog，标题+确认按钮+取消按钮）', () => {
     const logout = vi.fn(async () => true);
     render(<SettingsPage {...base} logout={logout} />);
-    expect(document.querySelector('[data-testid="account-logout-confirm"]')).toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
     expect(logout).not.toHaveBeenCalled();
+    const dialog = document.querySelector('[role="alertdialog"]') as HTMLElement;
+    expect(dialog).toBeTruthy();
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
     const confirmButton = document.querySelector('[data-testid="account-logout-confirm"]') as HTMLElement;
     expect(confirmButton).toBeTruthy();
     expect(confirmButton.textContent).toBe(text.accountLogout);
     expect(document.querySelector('[data-testid="account-logout-cancel"]')?.textContent).toBe(text.cancel);
-    expect(document.body.textContent).toContain(text.accountLogoutConfirmTitle);
-    expect(document.body.textContent).toContain(text.accountLogoutHint);
+    expect(dialog.textContent).toContain(text.accountLogoutConfirmTitle);
+    expect(dialog.textContent).toContain(text.accountLogoutHint);
   });
 
-  it('点「取消」⇒ 确认块消失、回到按钮态，logout 未被调', () => {
+  it('点「取消」⇒ 弹窗消失、回到按钮态，logout 未被调', () => {
     const logout = vi.fn(async () => true);
     render(<SettingsPage {...base} logout={logout} />);
     fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
     fireEvent.click(document.querySelector('[data-testid="account-logout-cancel"]')!);
     expect(logout).not.toHaveBeenCalled();
-    expect(document.querySelector('[data-testid="account-logout-confirm"]')).toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     expect(document.querySelector('[data-testid="account-logout"]')).toBeTruthy();
   });
 
-  it('点确认块里的「退出登录」⇒ logout 调一次；父层同步 account=null 后卡片回未登录', () => {
+  it('点 scrim（弹窗外的遮罩）⇒ 弹窗消失、未调 logout；点卡片内部不冒泡关闭', () => {
+    const logout = vi.fn(async () => true);
+    render(<SettingsPage {...base} logout={logout} />);
+    fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
+    // 先点卡片内部（正文段落），不该关闭——事件不冒泡到 scrim 的 onClick。
+    fireEvent.click(document.querySelector('[role="alertdialog"] p')!);
+    expect(document.querySelector('[role="alertdialog"]')).toBeTruthy();
+    fireEvent.click(document.querySelector('[data-testid="confirm-dialog-scrim"]')!);
+    expect(logout).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  it('Esc ⇒ 弹窗消失、未调 logout', () => {
+    const logout = vi.fn(async () => true);
+    render(<SettingsPage {...base} logout={logout} />);
+    fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(logout).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  it('打开时焦点在取消按钮、关闭后焦点回到「退出登录」触发按钮', () => {
+    const logout = vi.fn(async () => true);
+    render(<SettingsPage {...base} logout={logout} />);
+    const trigger = document.querySelector('[data-testid="account-logout"]') as HTMLElement;
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(document.activeElement).toBe(document.querySelector('[data-testid="account-logout-cancel"]'));
+    fireEvent.click(document.querySelector('[data-testid="account-logout-cancel"]')!);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('点弹窗里的「退出登录」⇒ logout 调一次；父层同步 account=null 后卡片回未登录', () => {
     const logout = vi.fn(async () => true);
     const { rerender } = render(<SettingsPage {...base} logout={logout} />);
     fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);

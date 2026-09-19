@@ -30,7 +30,7 @@ export type PostLaunchDimScore = 0 | 1 | null;
 export type PostLaunchDims = Record<PostLaunchDimension, PostLaunchDimScore>;
 
 /**
- * 九类确定性信号：代码能判的一律不进 LLM。
+ * 十二类确定性信号：代码能判的一律不进 LLM。
  * 命名与检测词表见 postLaunchSignals.ts，改任一类都要同步那里的真阳/真阴单测。
  */
 export type PostLaunchSignalKind =
@@ -42,7 +42,10 @@ export type PostLaunchSignalKind =
   | 'cost_anomaly'
   | 'repeat_loop'
   | 'claimed_file_missing'
-  | 'out_of_workspace_write';
+  | 'out_of_workspace_write'
+  | 'unsupported_claim'
+  | 'result_contradicted'
+  | 'source_overwritten';
 
 export interface DeterministicSignal {
   kind: PostLaunchSignalKind;
@@ -107,11 +110,10 @@ export function isPostLaunchScorableSession(
 
 /**
  * 提示词或维度定义变了就 +1；只改评分口径不改提示词时只动 POST_LAUNCH_RUBRIC_VERSION（ADR-063 §2）。不同版本的分数不可相比。
- * v3（N-POSTLAUNCH-SIGNALS-DEAD-R2）：orchestration 区分「基础设施失败的换路重试」与「空转」、
- * tools 增加「数字/事实断言须有工具输出出处、截断片段上不下全称结论」；
- * permission 绕行改「同一件事」；投影的工具结果改头+尾各留 300 字。
+ * v4（N-POSTLAUNCH-SIGNALS-DEAD-R2 漏判）：goal 补「环境挡住原请求 + 诚实替代物」例外；
+ * 生成式仍评四维，但 tools 出处/矛盾/覆盖原文由确定性信号压过 judge。
  */
-export const POST_LAUNCH_JUDGE_VERSION = 'postlaunch-judge-v3';
+export const POST_LAUNCH_JUDGE_VERSION = 'postlaunch-judge-v4';
 /** dry-run 落表用的版本号：真评按 POST_LAUNCH_JUDGE_VERSION 查跳过时看不到它 */
 export const DRY_RUN_JUDGE_VERSION = 'dry-run';
 /** judge_model 哨兵：叫了打分模型但它没给出判决（没配好 / 报错 / 返回解析不了）。 */
@@ -123,7 +125,7 @@ export const JUDGE_MODEL_UNAVAILABLE = 'unavailable';
  */
 export const JUDGE_MODEL_NOT_JUDGED = 'not-judged';
 /** 六维口径版本；与 judge 版本分开，改评分口径而不改提示词时只动这个。 */
-export const POST_LAUNCH_RUBRIC_VERSION = 'postlaunch-rubric-v2';
+export const POST_LAUNCH_RUBRIC_VERSION = 'postlaunch-rubric-v3';
 
 /**
  * 开关三态：'on' / 'off' 是用户显式选择，'auto' = 跟随槽默认

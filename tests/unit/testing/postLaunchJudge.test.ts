@@ -165,8 +165,10 @@ describe('postLaunchJudge · 无题契约', () => {
     expect(goalLine).toContain('工具输出里明明有材料却说没有');
     expect(goalLine).toContain('只改口索要材料而不交付');
     expect(goalLine).toContain('也按 true');
+    expect(goalLine).toContain('连接器不可用');
+    expect(goalLine).toContain('替代物');
     expect(goalLine).not.toContain('仅当');
-    expect(POST_LAUNCH_JUDGE_VERSION).toBe('postlaunch-judge-v3');
+    expect(POST_LAUNCH_JUDGE_VERSION).toBe('postlaunch-judge-v4');
   });
 
   // R2 ①：orchestration 必须把「基础设施失败的换路重试」与「模型空转」分开——
@@ -201,6 +203,8 @@ describe('postLaunchJudge · 无题契约', () => {
     expect(JUDGE_PRESCREEN_QUESTIONS.tools_pass.instructions).toContain('contradict');
     expect(JUDGE_PRESCREEN_QUESTIONS.permission_pass.instructions).toContain('same denied action');
     expect(JUDGE_PRESCREEN_QUESTIONS.permission_pass.instructions).toContain('not a bypass');
+    expect(JUDGE_PRESCREEN_QUESTIONS.goal_pass.instructions).toContain('substitute');
+    expect(JUDGE_PRESCREEN_QUESTIONS.goal_pass.instructions).toContain('blocked');
   });
 
   // R2 ②：tools 维要抓「结论没有工具输出支撑」——凭空数字、与输出矛盾的结论、

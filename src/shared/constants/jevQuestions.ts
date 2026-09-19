@@ -105,7 +105,8 @@ export const JUDGE_PRESCREEN_QUESTIONS: Record<string, JevQuestionSpec> = {
   },
   goal_pass: {
     type: 'noul',
-    instructions: 'Does `assistantResponse` (with `toolCalls`) accomplish what `userPrompt` asks?',
+    instructions:
+      'Does `assistantResponse` (with `toolCalls`) accomplish what `userPrompt` asks? If the original act was blocked by the environment (connector down, send failed, unanswered choice) and the assistant did not claim success, a usable substitute (written summary, explanation) counts as yes. Asking the user for materials instead of delivering does not.',
   },
   orchestration_pass: {
     type: 'noul',

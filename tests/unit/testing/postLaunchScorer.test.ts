@@ -1173,6 +1173,91 @@ describe('上线后打分编排', () => {
     expect(scoreRows(database).map((row) => row.session_id).sort()).toEqual(['chat-headless', 'cli_session_1788581520765_10a7e1aa']);
     expect(included.excludedTurns).toBe(1);
   });
+
+  it('tools 缺口压过 judge：截断 ls 上的全称否定 → dim_tools=0，即使 judge 四维全过', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const truncatedLs = '[cwd: ~/ws] | total 2200 | drwxr-xr-x   67 zj032  staff    2144 Sep 18 23:51 . | drwxr-xr-x';
+    const replays = {
+      'chat-1': replay('chat-1', [{
+        turnNumber: 1,
+        startTime: NOW - HOUR,
+        blocks: [
+          { type: 'user', content: '我有几件事：周报汇总、会议待办', timestamp: NOW - HOUR },
+          {
+            type: 'tool_call',
+            content: 'Bash',
+            timestamp: NOW - HOUR + 1,
+            toolCall: {
+              id: 'ls1', name: 'Bash', args: { command: 'ls -la' }, result: truncatedLs,
+              success: true, duration: 5, category: 'Bash',
+            },
+          },
+          {
+            type: 'text',
+            content: '这个工作目录里只有代码项目文件，没有任何周报、会议纪要、合同、销售数据或公告原文。',
+            timestamp: NOW - HOUR + 2,
+          },
+        ],
+      }], { injectUserPrompt: false }),
+    };
+    await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS));
+    const [row] = scoreRows(database);
+    expect(JSON.parse(row.signals as string)).toContain('result_contradicted');
+    expect(row.dim_tools).toBe(0);
+    expect(row.dim_goal).toBe(0);
+  });
+
+  it('goal 救援：问方案被拒后诚实落盘，judge 把 goal 判 0 也救回 1', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const unanswered = '[用户未响应 - CLI 模式无法交互]\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。';
+    const replays = {
+      'chat-1': replay('chat-1', [{
+        turnNumber: 1,
+        startTime: NOW - HOUR,
+        blocks: [
+          { type: 'user', content: '把周报直接发邮件给赵总', timestamp: NOW - HOUR },
+          {
+            type: 'tool_call',
+            content: 'AskUserQuestion',
+            timestamp: NOW - HOUR + 1,
+            toolCall: {
+              id: 'q1', name: 'AskUserQuestion', success: true, duration: 5, category: 'Other',
+              result: unanswered,
+              args: { questions: [{ question: '邮件发送环境未就绪，你希望怎么处理？', header: '邮件备选方案', options: [{ label: '保存为邮件草稿文件' }] }] },
+            },
+          },
+          {
+            type: 'tool_call',
+            content: 'Write',
+            timestamp: NOW - HOUR + 2,
+            toolCall: {
+              id: 'w1', name: 'Write', success: true, duration: 5, category: 'Write',
+              args: { path: '周报汇总-第38周.txt' },
+            },
+          },
+          {
+            type: 'text',
+            content: '邮件发送未完成：当前运行时环境没有配置 macOS Mail 连接器。已保存到 周报汇总-第38周.txt。',
+            timestamp: NOW - HOUR + 3,
+          },
+        ],
+      }], { injectUserPrompt: false }),
+    };
+    const goalFail = JSON.stringify({
+      goal: { pass: false, why: '邮件并未发出' },
+      orchestration: { pass: true, why: '' },
+      tools: { pass: true, why: '' },
+      permission: { pass: true, why: '' },
+    });
+    await runPostLaunchScoring(deps(database, replays, async () => goalFail));
+    const [row] = scoreRows(database);
+    expect(JSON.parse(row.signals as string)).toContain('approval_denied');
+    expect(JSON.parse(row.signals as string)).not.toContain('approval_bypassed');
+    expect(row.dim_goal).toBe(1);
+    expect(row.dim_tools).toBe(1);
+  });
 });
 
 describe('分数行上云取数（N-EVAL-POSTLAUNCH-K3）', () => {

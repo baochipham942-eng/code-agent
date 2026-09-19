@@ -4,12 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { configureVoiceRelease } from '../../../packages/mobile/scripts/configure-voice.mjs';
+import { COMPANION_LIMITS } from '../../../src/shared/constants/companion';
 
 // 夹具内容照抄 configure-voice.mjs 里的 before/old 锚点块（写入点就是脚本本身），
 // 上游 capacitor-voice-recorder 7.0.6 的真实文件包含这些块。
 const JAVA_RECORDER = `package com.tchvu3.capacitorvoicerecorder;
 
 public class CustomMediaRecorder {
+        mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
         mediaRecorder.stop();
         mediaRecorder.release();
         currentRecordingStatus = CurrentRecordingStatus.NONE;
@@ -46,7 +48,15 @@ const JAVA_PLUGIN = `package com.tchvu3.capacitorvoicerecorder;
 public class VoiceRecorder extends Plugin {
     private CustomMediaRecorder mediaRecorder;
     public void startRecording(PluginCall call) {}
-    public void stopRecording(PluginCall call) {}
+    public void stopRecording(PluginCall call) {
+        try {
+            mediaRecorder.stopRecording();
+        } catch (Exception exp) {
+            call.reject(Messages.FAILED_TO_FETCH_RECORDING, exp);
+        } finally {
+            mediaRecorder = null;
+        }
+    }
 }
 `;
 
@@ -89,8 +99,16 @@ describe('configureVoiceRelease', () => {
     expect(javaPlugin).not.toContain('handleOnPause');
     expect(javaPlugin).toContain('handleOnDestroy');
     expect(read(root, `${JAVA_DIR}/CustomMediaRecorder.java`)).toContain('finally { currentRecordingStatus = CurrentRecordingStatus.NONE; }');
+    expect(read(root, `${JAVA_DIR}/CustomMediaRecorder.java`)).toContain('AudioSource.VOICE_COMMUNICATION');
+    expect(read(root, `${JAVA_DIR}/CustomMediaRecorder.java`)).not.toContain('AudioSource.MIC');
+    const javaRecorder = read(root, `${JAVA_DIR}/CustomMediaRecorder.java`);
+    expect(javaRecorder).toContain(`peak < ${COMPANION_LIMITS.voiceEnergyPeak}`);
+    expect(javaRecorder).toContain('if (outputFile != null) outputFile.delete()');
+    expect(javaRecorder).toContain('throw new RuntimeException("NO_SPEECH")');
+    expect(javaPlugin).toContain('if ("NO_SPEECH".equals(exp.getMessage())) call.reject("NO_SPEECH")');
     expect(() => configureVoiceRelease(root)).not.toThrow();
     expect(read(root, `${JAVA_DIR}/VoiceRecorder.java`)).toBe(javaPlugin);
+    expect(read(root, `${JAVA_DIR}/CustomMediaRecorder.java`)).toBe(javaRecorder);
   });
 
   // PR#1944 ai-review 二轮 Important：已被**旧版**脚本（PR#1944 之前）打过的 node_modules 上，
@@ -152,6 +170,22 @@ describe('configureVoiceRelease', () => {
 
   it('throws VOICE_ANDROID_PLUGIN_SOURCE_CHANGED when a method signature anchor drifted', () => {
     const root = plant({ [`${JAVA_DIR}/VoiceRecorder.java`]: JAVA_PLUGIN.replace('public void startRecording(', 'public void beginRecording(') });
+    expect(() => configureVoiceRelease(root)).toThrow('VOICE_ANDROID_PLUGIN_SOURCE_CHANGED');
+  });
+
+  it('throws VOICE_ANDROID_SOURCE_CHANGED when the audio source anchor drifted', () => {
+    const root = plant({ [`${JAVA_DIR}/CustomMediaRecorder.java`]: JAVA_RECORDER.replace(
+      'mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);',
+      'mediaRecorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER);',
+    ) });
+    expect(() => configureVoiceRelease(root)).toThrow('VOICE_ANDROID_SOURCE_CHANGED');
+  });
+
+  it('throws VOICE_ANDROID_PLUGIN_SOURCE_CHANGED when the fetch-recording reject anchor drifted', () => {
+    const root = plant({ [`${JAVA_DIR}/VoiceRecorder.java`]: JAVA_PLUGIN.replace(
+      'call.reject(Messages.FAILED_TO_FETCH_RECORDING, exp);',
+      'call.reject(Messages.FAILED_TO_RECORD, exp);',
+    ) });
     expect(() => configureVoiceRelease(root)).toThrow('VOICE_ANDROID_PLUGIN_SOURCE_CHANGED');
   });
 });

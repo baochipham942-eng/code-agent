@@ -38,6 +38,44 @@ export function companionTranscriptionSettlement(
 
 export const SPEECH_EMPTY_RESULT_CODE = 'EMPTY_RESULT';
 export const SPEECH_HALLUCINATION_CODE = 'HALLUCINATION';
+/** Groq/whisper verbose_json：高于此视为无语音。 */
+const SPEECH_NO_SPEECH_PROB_MAX = 0.6;
+/** Groq/whisper verbose_json：低于此视为不可信（常是幻觉）。 */
+const SPEECH_AVG_LOGPROB_MIN = -1.0;
+
+export type SpeechAsrSegment = {
+  text?: string;
+  no_speech_prob?: number;
+  avg_logprob?: number;
+};
+
+function isVoicedSegment(segment: SpeechAsrSegment): boolean {
+  const noSpeechProb = segment.no_speech_prob;
+  const avgLogprob = segment.avg_logprob;
+  const hasNoSpeech = typeof noSpeechProb === 'number';
+  const hasLogprob = typeof avgLogprob === 'number';
+  const noSpeech = hasNoSpeech && noSpeechProb > SPEECH_NO_SPEECH_PROB_MAX;
+  const lowConf = hasLogprob && avgLogprob < SPEECH_AVG_LOGPROB_MIN;
+  // Whisper 静音是「无语音概率高 *且* 平均 logprob 差」才跳过：高 no_speech_prob
+  // 但 logprob 好的分段是正常口令，丢掉会让手机把整句当静音吞掉。
+  if (hasNoSpeech && hasLogprob) return !(noSpeech && lowConf);
+  if (hasNoSpeech) return !noSpeech;
+  return true;
+}
+
+/**
+ * 按分段置信度 / 无语音概率丢掉远场残渣。没有分段时（本地 whisper 或纯文本回包）原样保留，
+ * 后面的幻觉词表仍会拦字幕尾巴。
+ */
+export function keepVoicedTranscript(rawText: string, segments?: SpeechAsrSegment[]): string {
+  if (!segments?.length) return rawText.trim();
+  return segments
+    .filter(isVoicedSegment)
+    .map(segment => (typeof segment.text === 'string' ? segment.text : ''))
+    .join('')
+    .trim();
+}
+
 /**
  * 静音码的知识**只活在本模块里**，对外只经 `companionTranscriptionSettlement` 那一个出口。
  * 早先把码表和判定式一并导出、让手机自己再判一次：两边各判各的，码一变就漂；

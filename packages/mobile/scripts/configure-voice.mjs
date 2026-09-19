@@ -10,20 +10,41 @@ import { readFileSync, writeFileSync } from 'node:fs';
  *
  * N-MOBILE-BG-RECORDING（爸 2026-09-18 拍板）：切后台不再杀录音（保活交给 microphone 前台服务），
  * 只保留 handleOnDestroy 清场——进程死了录音文件不该留着等下次 stop 当本次结果。
+ *
+ * N-VOICE-AMBIENT-GATE：MIC → VOICE_COMMUNICATION（近场 + 系统降噪），停录时峰值低于
+ * COMPANION_LIMITS.voiceEnergyPeak 抛 NO_SPEECH，JS 当没发生。
  */
 export function configureVoiceRelease(root = 'node_modules/capacitor-voice-recorder') {
   const android = `${root}/android/src/main/java/com/tchvu3/capacitorvoicerecorder/CustomMediaRecorder.java`;
-  const java = readFileSync(android, 'utf8');
+  let java = readFileSync(android, 'utf8');
+  const micSource = 'mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);';
+  const voiceSource = 'mediaRecorder.setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION);';
+  if (!java.includes(micSource) && !java.includes(voiceSource)) throw new Error('VOICE_ANDROID_SOURCE_CHANGED');
+  java = java.replace(micSource, voiceSource);
   const before = `        mediaRecorder.stop();
         mediaRecorder.release();
         currentRecordingStatus = CurrentRecordingStatus.NONE;`;
-  const after = `        try { mediaRecorder.stop(); }
+  const releaseAfter = `        try { mediaRecorder.stop(); }
         finally {
             try { mediaRecorder.release(); }
             finally { currentRecordingStatus = CurrentRecordingStatus.NONE; }
         }`;
-  if (!java.includes(before) && !java.includes(after)) throw new Error('VOICE_ANDROID_RELEASE_SOURCE_CHANGED');
-  writeFileSync(android, java.replace(before, after));
+  const ambientAfter = `        int peak = 0;
+        try { peak = mediaRecorder.getMaxAmplitude(); } catch (RuntimeException ignored) {}
+        try { mediaRecorder.stop(); }
+        finally {
+            try { mediaRecorder.release(); }
+            finally { currentRecordingStatus = CurrentRecordingStatus.NONE; }
+        }
+        if (peak < 500) {
+            if (outputFile != null) outputFile.delete();
+            throw new RuntimeException("NO_SPEECH");
+        }`;
+  if (java.includes(ambientAfter)) { /* already gated */ }
+  else if (java.includes(before)) java = java.replace(before, ambientAfter);
+  else if (java.includes(releaseAfter)) java = java.replace(releaseAfter, ambientAfter);
+  else throw new Error('VOICE_ANDROID_RELEASE_SOURCE_CHANGED');
+  writeFileSync(android, java);
   const androidPlugin = `${root}/android/src/main/java/com/tchvu3/capacitorvoicerecorder/VoiceRecorder.java`;
   let native = readFileSync(androidPlugin, 'utf8');
   // 内容判据，不是标记位：旧版脚本（PR#1944 之前）注入过 handleOnPause——切后台即 stop+delete
@@ -54,6 +75,13 @@ export function configureVoiceRelease(root = 'node_modules/capacitor-voice-recor
     }
     @Override protected void handleOnDestroy() { neoReleaseRecording(); }`);
   }
+  const fetchReject = '            call.reject(Messages.FAILED_TO_FETCH_RECORDING, exp);';
+  const noSpeechReject = `            if ("NO_SPEECH".equals(exp.getMessage())) call.reject("NO_SPEECH");
+            else call.reject(Messages.FAILED_TO_FETCH_RECORDING, exp);`;
+  if (!native.includes(fetchReject) && !native.includes(noSpeechReject)) {
+    throw new Error('VOICE_ANDROID_PLUGIN_SOURCE_CHANGED');
+  }
+  native = native.replace(fetchReject, noSpeechReject);
   writeFileSync(androidPlugin, native);
 
 }

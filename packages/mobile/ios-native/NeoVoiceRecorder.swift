@@ -44,7 +44,15 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         static let recordingHasNotStarted = "RECORDING_HAS_NOT_STARTED"
         static let emptyRecording = "EMPTY_RECORDING"
         static let alreadyRecording = "ALREADY_RECORDING"
+        /// 近场能量门：这段没有足够的近场语音。JS 当没发生，不报错、不送转写。
+        static let noSpeech = "NO_SPEECH"
     }
+
+    /// Must match COMPANION_LIMITS.voiceEnergyDb / voiceMinSpeechMs / voiceEnergyRms / voiceMeterIntervalMs.
+    private static let energyDb: Float = -40
+    private static let minSpeechMs = 100
+    private static let meterIntervalMs = 50
+    private static let pcmEnergyRms: Double = 328
 
     private static let recordingSettings: [String: Any] = [
         AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
@@ -63,6 +71,10 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     private var converter: AVAudioConverter?
     private var pcmToken = UUID()
     private var previousCategory: AVAudioSession.Category?
+    private var previousMode: AVAudioSession.Mode?
+    private var previousOptions: AVAudioSession.CategoryOptions?
+    private var meterTimer: DispatchSourceTimer?
+    private var speechMs = 0
     private var releaseObservers: [NSObjectProtocol] = []
     private var releaseTimer: DispatchSourceTimer?
 
@@ -92,12 +104,9 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("neo-voice-\(UUID().uuidString).m4a")
             do {
-                let session = AVAudioSession.sharedInstance()
-                // 录音会把共享会话切成 playAndRecord；停录后要还回去，否则这个进程后续播放
+                // 录音会把共享会话切成 playAndRecord + voiceChat；停录后要还回去，否则这个进程后续播放
                 // 一直停在录音用的路由上。
-                self.previousCategory = session.category
-                try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-                try session.setActive(true)
+                try self.activateSession()
                 guard !Self.inputUnavailable() else {
                     self.fileURL = url
                     self.teardown(deleteRecording: true)
@@ -105,9 +114,11 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                     return
                 }
                 let recorder = try AVAudioRecorder(url: url, settings: Self.recordingSettings)
+                recorder.isMeteringEnabled = true
                 guard recorder.record() else { throw CocoaError(.fileWriteUnknown) }
                 self.recorder = recorder
                 self.fileURL = url
+                self.startMeter()
                 call.resolve(["value": true])
             } catch {
                 // 先判因再收尾：收尾会停用本进程的音频会话，判据要读的是失败那一刻别人占没占着。
@@ -128,10 +139,7 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             guard self.recorder == nil, self.engine == nil else { call.reject(Failure.alreadyRecording); return }
             guard Self.permissionGranted() else { call.reject(Failure.missingPermission); return }
             do {
-                let session = AVAudioSession.sharedInstance()
-                self.previousCategory = session.category
-                try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-                try session.setActive(true)
+                try self.activateSession()
                 let engine = AVAudioEngine()
                 let input = engine.inputNode
                 let inputFormat = input.outputFormat(forBus: 0)
@@ -186,7 +194,10 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             // currentTime 只在录音进行中有效，必须在 stop() 之前读；
             // Host 侧 schema 是 durationMs.positive()，截断出来的 0 会让整条 voice.transcribe 被拒。
             let durationMs = max(1, Int(recorder.currentTime * 1000))
-            self.teardown(deleteRecording: false)
+            self.stopMeter()
+            let voiced = self.speechMs >= Self.minSpeechMs
+            self.teardown(deleteRecording: !voiced)
+            guard voiced else { call.reject(Failure.noSpeech); return }
             defer { try? FileManager.default.removeItem(at: url) }
             guard let data = try? Data(contentsOf: url), !data.isEmpty else {
                 call.reject(Failure.emptyRecording)
@@ -304,28 +315,89 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         guard status != .error, let channels = out.int16ChannelData, out.frameLength > 0 else { return }
         let bytes = Int(out.frameLength) * MemoryLayout<Int16>.size
         let data = Data(bytes: channels[0], count: bytes)
+        // 低于近场门限的帧改成零帧再推：Gummy 靠连续流判句，不能把帧吞掉让时钟停住。
+        let payload = Self.pcmRms(data) >= Self.pcmEnergyRms ? data : Data(count: data.count)
         let durationMs = max(1, Int(Double(out.frameLength) / targetFormat.sampleRate * 1000))
         queue.async { [weak self] in
             guard let self, self.pcmToken == token, self.engine != nil else { return }
             self.notifyListeners("pcmFrame", data: [
-                "pcm": data.base64EncodedString(),
+                "pcm": payload.base64EncodedString(),
                 "durationMs": durationMs
             ])
         }
     }
 
+    private func activateSession() throws {
+        let session = AVAudioSession.sharedInstance()
+        previousCategory = session.category
+        previousMode = session.mode
+        previousOptions = session.categoryOptions
+        // voiceChat：系统降噪 + 语音隔离，近场拾音。options 保持 defaultToSpeaker，
+        // 不改来电/后台那组既有行为。
+        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker])
+        try session.setActive(true)
+    }
+
+    private func restoreSession() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+        if let category = previousCategory {
+            try? session.setCategory(category, mode: previousMode ?? .default, options: previousOptions ?? [])
+        }
+        previousCategory = nil
+        previousMode = nil
+        previousOptions = nil
+    }
+
+    private func startMeter() {
+        stopMeter()
+        speechMs = 0
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        let interval = DispatchTimeInterval.milliseconds(Self.meterIntervalMs)
+        timer.schedule(deadline: .now() + interval, repeating: interval)
+        timer.setEventHandler { [weak self] in
+            guard let self, let recorder = self.recorder else { return }
+            recorder.updateMeters()
+            if recorder.averagePower(forChannel: 0) >= Self.energyDb { self.speechMs += Self.meterIntervalMs }
+        }
+        timer.resume()
+        meterTimer = timer
+    }
+
+    private func stopMeter() {
+        if let recorder {
+            recorder.updateMeters()
+            // 停录这一窗用峰值兜底：短口令可能落在两个 50ms 平均点之间，averagePower 偏低。
+            if recorder.peakPower(forChannel: 0) >= Self.energyDb { speechMs += Self.meterIntervalMs }
+        }
+        meterTimer?.cancel()
+        meterTimer = nil
+    }
+
+    private static func pcmRms(_ data: Data) -> Double {
+        let count = data.count / MemoryLayout<Int16>.size
+        guard count > 0 else { return 0 }
+        var sum = 0.0
+        data.withUnsafeBytes { raw in
+            let samples = raw.bindMemory(to: Int16.self)
+            for i in 0..<count {
+                let sample = Double(samples[i])
+                sum += sample * sample
+            }
+        }
+        return (sum / Double(count)).squareRoot()
+    }
+
     private func teardownPcm() {
         pcmToken = UUID()
+        stopMeter()
         if let engine {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
         }
         engine = nil
         converter = nil
-        let session = AVAudioSession.sharedInstance()
-        try? session.setActive(false, options: [.notifyOthersOnDeactivation])
-        if let category = previousCategory { try? session.setCategory(category) }
-        previousCategory = nil
+        restoreSession()
     }
 
     // ponytail: 分段路径每 4 秒（COMPANION_LIMITS.voiceChunkMs）在这里走一遍 teardownPcm 的

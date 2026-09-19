@@ -203,9 +203,14 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
         try { chunk = await recorder!.stop(); }
         catch (error) {
           if (!mine(t)) return;
-          // 整段静音时插件抛 EMPTY_RECORDING——那只该丢这一段，不该毁掉整次录音。
-          if (!(error instanceof Error && error.message === 'EMPTY_RECORDING')) { fail(t, 'record', error); return; }
-          drop(t, { stage: 'record', reason: 'EMPTY_RECORDING' });
+          const code = error instanceof Error ? error.message : String(error);
+          // 近场能量门：这段没有足够的近场语音。当没发生——不报错、不计丢片、不送转写。
+          if (code === 'NO_SPEECH') {
+            // fall through with chunk=null
+          } else if (code === 'EMPTY_RECORDING') {
+            // 整段静音时插件抛 EMPTY_RECORDING——那只该丢这一段，不该毁掉整次录音。
+            drop(t, { stage: 'record', reason: 'EMPTY_RECORDING' });
+          } else { fail(t, 'record', error); return; }
         }
         if (!mine(t)) return;
         if (chunk) enqueue(t, chunk);

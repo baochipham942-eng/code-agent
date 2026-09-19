@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 import { mergeVoiceBackgroundMode } from '../../../packages/mobile/scripts/configure-lan.mjs';
+import { COMPANION_LIMITS } from '../../../src/shared/constants/companion';
 
 // Swift 不在任何测试框架里，但 JS↔原生之间那几个字符串是真合同：名字错一个字，
 // 桥就找不到实现（FB-140 就是这个形状：原生根本没进包，JS 侧照常调）。
@@ -125,5 +126,29 @@ describe('first-party ios voice recorder contract', () => {
     expect(mergeVoiceBackgroundMode(['audio', 'remote-notification'])).toEqual(['audio', 'remote-notification']);
     const configureLan = readFileSync('packages/mobile/scripts/configure-lan.mjs', 'utf8');
     expect(configureLan).toContain('mergeVoiceBackgroundMode(readBackgroundModes(plist))');
+  });
+
+  // N-VOICE-AMBIENT-GATE：远场环境人声（5 米外短视频）不该进草稿。
+  it('录音会话走 voiceChat，停录还原 mode，两条起录路径共用同一套', () => {
+    expect(swift).toContain('mode: .voiceChat');
+    expect(swift).not.toMatch(/setCategory\(\.playAndRecord, mode: \.default/);
+    expect(swift).toContain('previousMode = session.mode');
+    expect(swift).toContain('setCategory(category, mode: previousMode ?? .default');
+    expect(swift.match(/try self\.activateSession\(\)/g)).toHaveLength(2);
+  });
+
+  it('近场能量门阈值与 COMPANION_LIMITS 钉齐，低能量段报 NO_SPEECH', () => {
+    const voiceCapture = readFileSync('packages/mobile/src/features/sessions/VoiceCapture.tsx', 'utf8');
+    expect(swift).toContain(`energyDb: Float = ${COMPANION_LIMITS.voiceEnergyDb}`);
+    expect(swift).toContain(`minSpeechMs = ${COMPANION_LIMITS.voiceMinSpeechMs}`);
+    expect(swift).toContain(`meterIntervalMs = ${COMPANION_LIMITS.voiceMeterIntervalMs}`);
+    expect(swift).toContain(`pcmEnergyRms: Double = ${COMPANION_LIMITS.voiceEnergyRms}`);
+    expect(swift).toContain('static let noSpeech = "NO_SPEECH"');
+    expect(swift).toContain('speechMs >= Self.minSpeechMs');
+    expect(swift).toContain('call.reject(Failure.noSpeech)');
+    expect(swift).toContain('pcmRms(data) >= Self.pcmEnergyRms ? data : Data(count: data.count)');
+    expect(swift).toContain('peakPower(forChannel: 0) >= Self.energyDb');
+    expect(voiceCapture).toContain("code === 'NO_SPEECH'");
+    expect(voiceCapture).toContain("code === 'EMPTY_RECORDING'");
   });
 });

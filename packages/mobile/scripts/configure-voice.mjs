@@ -36,7 +36,7 @@ export function configureVoiceRelease(root = 'node_modules/capacitor-voice-recor
             try { mediaRecorder.release(); }
             finally { currentRecordingStatus = CurrentRecordingStatus.NONE; }
         }
-        if (peak < 500) throw new IOException("NO_SPEECH");`;
+        if (peak < 500) throw new RuntimeException("NO_SPEECH");`;
   if (java.includes(ambientAfter)) { /* already gated */ }
   else if (java.includes(before)) java = java.replace(before, ambientAfter);
   else if (java.includes(releaseAfter)) java = java.replace(releaseAfter, ambientAfter);

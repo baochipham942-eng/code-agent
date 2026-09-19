@@ -12,6 +12,13 @@ const deviceRef = z.string().trim().min(1).max(L.idLength);
  * 重连」全靠它——optional 是为了接住旧 Host / 手机（device 角色不发它）。
  */
 const instanceId = z.string().trim().min(16).max(L.idLength).regex(/^[A-Za-z0-9_-]+$/).optional();
+/**
+ * 一次 relay 找回配对交换的代号（N-COMPANION-RELAY-ACCOUNT-RECOVER）：手机生成，pair-request
+ * 与 pair-result 都带同一个；relay 靠它把电脑的应答送回发起的那条手机连接。
+ */
+const pairRequestId = z.string().trim().min(16).max(L.idLength).regex(/^[A-Za-z0-9_-]+$/);
+/** Host 自报的主机公钥指纹：sha256(32 字节公钥) 的 hex（64 字符）。旧 Host 不带。 */
+const hostKeyFingerprint = z.string().regex(/^[0-9a-f]{64}$/);
 const seq = z.number().int().nonnegative().safe();
 const ttlMs = z.number().int().positive().max(L.relayRouteTokenTtlMs).safe();
 const issuedAt = z.number().int().positive().safe();
@@ -34,7 +41,18 @@ const frameBase = {
 };
 
 const companionRelayFrameSchema = z.discriminatedUnion('kind', [
-  z.object({ ...frameBase, kind: z.literal('register'), role: z.enum(['host', 'device']), instanceId, ciphertext: controlCiphertext }).strict(),
+  /**
+   * register 自报字段（N-COMPANION-RELAY-ACCOUNT-RECOVER）：hostName 是电脑名（list-hosts 列表行
+   * 显示用），hostKeyFingerprint 是 Host 身份公钥指纹——手机选电脑时只见指纹，配对握手后与
+   * Noise 学到的对端静态公钥核对（pinned）。两者 optional：旧 Host 不带，列表相应降级（无名/
+   * 无指纹 ⇒ 手机按「电脑上的 Neo 需要升级后才能找回」降级，不发 pair-request）。
+   */
+  z.object({
+    ...frameBase, kind: z.literal('register'), role: z.enum(['host', 'device']), instanceId,
+    hostName: z.string().trim().min(1).max(L.relayHostNameLength).optional(),
+    hostKeyFingerprint: hostKeyFingerprint.optional(),
+    ciphertext: controlCiphertext,
+  }).strict(),
   z.object({ ...frameBase, kind: z.literal('unregister'), ciphertext: controlCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('heartbeat'), ciphertext: controlCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('ack'), ciphertext: controlCiphertext }).strict(),
@@ -55,6 +73,34 @@ const companionRelayFrameSchema = z.discriminatedUnion('kind', [
   z.object({ ...frameBase, kind: z.literal('ticket'), ciphertext: opaqueCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('handshake'), ciphertext: opaqueCiphertext }).strict(),
   z.object({ ...frameBase, kind: z.literal('forward'), ciphertext: opaqueCiphertext }).strict(),
+  /**
+   * relay 找回（N-COMPANION-RELAY-ACCOUNT-RECOVER）：手机→relay 请求与 relay→手机 回帧同一个
+   * kind——请求 ciphertext 为空串，回帧 ciphertext 是 JSON 数组（parseCompanionRelayHostList）。
+   * 不走路由：信封 routeToken 用 COMPANION_RELAY_LIST_HOSTS_ROUTE_TOKEN sentinel，只认
+   * acct 主人（JWT/票据鉴权的连接；legacy 连接发起被拒并记 stats）。
+   */
+  z.object({ ...frameBase, kind: z.literal('list-hosts'), ciphertext: z.string().max(L.maxFrameBytes) }).strict(),
+  /**
+   * 手机→relay→Host 的配对请求（XX 第一条消息 hex）。带 instanceId = 初次请求（目标 Host 实例）；
+   * 不带 = 同一交换的续帧（requestId 对上 relay 挂起态，内容是 XX 第三条消息——电脑同意后
+   * 手机补完握手的那一腿，relay 照原样转发、不计限流）。
+   */
+  z.object({ ...frameBase, kind: z.literal('pair-request'), requestId: pairRequestId, instanceId, ciphertext: opaqueCiphertext }).strict(),
+  /**
+   * Host→relay→手机（relay 也在目标不在/限流/挂起超时时自行合成）：accepted=false 时 reason 具名
+   * （declined 电脑拒绝 / timeout 挂起超时 / host-offline 目标不在线或腿断 / rate-limited 限流），
+   * ciphertext 为空串；accepted=true 时 stage 区分——'reply' = 同意后的 XX 第二条消息（hex），
+   * 'complete' = 第三条消息落地后用会话密钥封的配对载荷（JSON 密文记录，内含 welcome 等值内容
+   * 与 relay.routes 双路由）。
+   */
+  z.object({
+    ...frameBase, kind: z.literal('pair-result'),
+    requestId: pairRequestId,
+    accepted: z.boolean(),
+    reason: z.enum(['declined', 'timeout', 'host-offline', 'rate-limited']).optional(),
+    stage: z.enum(['reply', 'complete']).optional(),
+    ciphertext: z.string().max(L.maxFrameBytes),
+  }).strict(),
 ]);
 export type CompanionRelayFrame = z.infer<typeof companionRelayFrameSchema>;
 
@@ -93,6 +139,31 @@ export function companionRelayFrameExpired(frame: CompanionRelayFrame, now: numb
 export const COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN = 'neo-relay-ticket-issue';
 /** 服务端帧（ticket / no-host）的 deviceRef sentinel：帧来自 relay 本体，不是某台设备的转发。 */
 export const COMPANION_RELAY_SENTINEL_DEVICE_REF = 'relay';
+/** relay 找回（list-hosts 请求/回帧）的固定信封 sentinel：与 ticket 同一套写法，不走路由。 */
+export const COMPANION_RELAY_LIST_HOSTS_ROUTE_TOKEN = 'neo-relay-list-hosts';
+/** relay 找回配对交换（pair-request / pair-result）的固定信封 sentinel：同一次交换两向共用。 */
+export const COMPANION_RELAY_PAIR_ROUTE_TOKEN = 'neo-relay-pair-request';
+
+/**
+ * list-hosts 回帧 ciphertext 的 JSON 形状（N-COMPANION-RELAY-ACCOUNT-RECOVER）：电脑在 register
+ * 里自报的名称与主机公钥指纹 + 实例身份。同一台电脑为每台已配对手机登记一条路由，relay 已按
+ * hostInstanceId 去重；名称/指纹缺失（旧 Host）为空串，手机侧据此降级「需要升级」。
+ */
+export interface CompanionRelayHostEntry { name: string; fingerprint: string; instanceId: string }
+
+const companionRelayHostEntrySchema = z.object({
+  name: z.string().max(L.relayHostNameLength),
+  fingerprint: z.union([z.literal(''), hostKeyFingerprint]),
+  /** 列表行里的 instanceId 必填（只列有实例身份的 host 槽）；字符集与 register 的同源。 */
+  instanceId: z.string().trim().min(16).max(L.idLength).regex(/^[A-Za-z0-9_-]+$/),
+}).strict();
+
+/** 缺字段/多字段的列表整体按非法处理（手机侧 fail-closed，不猜列表内容）。 */
+export function parseCompanionRelayHostList(raw: unknown): CompanionRelayHostEntry[] {
+  const parsed = z.array(companionRelayHostEntrySchema).max(L.relayMaxRoutesPerAccount).safeParse(raw);
+  if (!parsed.success) throw new Error('COMPANION_RELAY_INVALID_HOST_LIST');
+  return parsed.data;
+}
 
 /**
  * relay 拒绝「同 token 不同实例顶替 host 槽」后关顶替者连接用的自定 close code
@@ -103,6 +174,13 @@ export const COMPANION_RELAY_SENTINEL_DEVICE_REF = 'relay';
  * ⚠️ 部署顺序硬约束：register 帧新增的 optional instanceId 会先于旧 relay 上线——旧 relay 的
  * strict schema 把带新字段的 register 当非法帧直接关连接。**relay 必须先于 Host 升级**，
  * 否则新 Host 一条路由都注册不上。
+ *
+ * ⚠️ 同一约束对 N-COMPANION-RELAY-ACCOUNT-RECOVER 的新面照样成立，且顺序唯一：**relay → Host →
+ * 手机**。新 Host 的 register 带 hostName/hostKeyFingerprint，旧 relay 判非法帧直接关连接（Host
+ * 侧退避重连风暴）；新手机的 list-hosts/pair-request/pair-result 到旧 relay 同样整帧非法被关。
+ * 新 relay 的 schema 是旧的超集，三个旧端先连上来行为一字不变。新手机对旧 Host 的降级不走这条
+ * 硬关断：旧 Host 的 register 不带指纹 ⇒ 列表行 fingerprint 为空 ⇒ 手机按「电脑上的 Neo 需要
+ * 升级后才能找回」降级、不发 pair-request（不会重试风暴）。
  */
 export const COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN = 4001;
 

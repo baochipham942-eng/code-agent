@@ -1,5 +1,7 @@
 import type { LanInvitation } from '../companion/lanProtocol';
-export type CompanionManagementRequest = { action: 'status' } | { action: 'invite'; scope: string[] } | { action: 'revoke'; deviceId: string };
+export type CompanionManagementRequest = { action: 'status' } | { action: 'invite'; scope: string[] } | { action: 'revoke'; deviceId: string }
+  /** relay 找回配对（N-COMPANION-RELAY-ACCOUNT-RECOVER）：桌面卡片对 pair-request 的表态。 */
+  | { action: 'pair.respond'; requestId: string; approve: boolean };
 /** Status-only device fields. Pairing write path still stores deviceId + scope. scopeEpoch feeds relay routeToken derivation. */
 export type CompanionPairedDevice = { deviceId: string; scope: string[]; scopeEpoch: number; name?: string; pairedAt?: number };
 /**
@@ -16,4 +18,6 @@ export type CompanionRelayStatus = {
 export type CompanionManagementResult =
   | { kind: 'status'; sessions: { id: string; title: string }[]; projects?: { id: string; name: string }[]; devices: CompanionPairedDevice[]; relay?: CompanionRelayStatus }
   | { kind: 'invitation'; invitation: LanInvitation }
-  | { kind: 'revoked' };
+  | { kind: 'revoked' }
+  /** pair.respond 的回执：ok=false 表示挂起态已没了（超时/连接断），卡片应自行收起。 */
+  | { kind: 'pairResponded'; ok: boolean };

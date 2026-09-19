@@ -37,6 +37,16 @@ export const companionText = {
     crossnetConnected: '跨网连接：已开通 · 通过 Neo 账号',
     crossnetConnectedHint: '手机离开这个 Wi‑Fi 也能连回来；内容在手机和电脑之间端到端加密，中继看不到。',
     crossnetLegacyConnected: '旧通道：已连接',
+    // 手机「登录找回电脑」的全局配对卡片（N-COMPANION-RELAY-ACCOUNT-RECOVER）。
+    pairRequestTitle: '新手机请求连接',
+    pairRequestHint: '有人在用你的 Neo 账号找回这台电脑（换了手机或重装后）。核对手机上显示的数字和下面一致，再点同意。',
+    pairRequestCodeLabel: '核对码',
+    pairRequestApprove: '同意连接',
+    pairRequestDeny: '拒绝',
+    /** 零库电脑的出路文案（R2 Important②）：同意只会登记零授权设备，先建项目再来。 */
+    pairRequestNoScope: '这台电脑上还没有任何项目：先新建一个项目，再允许手机连接——现在同意的话，手机连上也没有可用的内容。',
+    /** 表态没送出去的兜底提示（ai-review R4 Nit1）：挂起态有 relay/Host 侧超时收尾，这里只保证「点了有下文」。 */
+    pairRequestFailed: '这次表态没有送达：请求稍后会自动作废，手机端可以重新发起。',
   },
   en: {
     title: 'Connect a phone',
@@ -76,6 +86,14 @@ export const companionText = {
     crossnetConnected: 'Cross-network: enabled · via your Neo account',
     crossnetConnectedHint: 'Your phone can reach this computer from other networks; content stays end-to-end encrypted between phone and computer, invisible to the relay.',
     crossnetLegacyConnected: 'Legacy channel: connected',
+    // Global pairing card for "sign in to recover my computer" from a phone.
+    pairRequestTitle: 'New phone requesting access',
+    pairRequestHint: 'Someone is recovering this computer with your Neo account (after changing phones or reinstalling). Check that the number on the phone matches the one below, then allow.',
+    pairRequestCodeLabel: 'Check code',
+    pairRequestApprove: 'Allow',
+    pairRequestDeny: 'Deny',
+    pairRequestNoScope: 'There are no projects on this computer yet. Create a project first, then allow the phone — allowing now would connect it to nothing usable.',
+    pairRequestFailed: 'Your response did not go through. The request will expire shortly; it can be restarted from the phone.',
   },
 };
 

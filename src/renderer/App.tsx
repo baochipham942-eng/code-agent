@@ -43,6 +43,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { SessionExpiredNotice } from './components/SessionExpiredNotice';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
+import { CompanionPairRequestCard } from './components/CompanionPairRequestCard';
 import { VoiceBudgetAlertNotice } from './components/VoiceBudgetAlertNotice';
 import { RuntimeNotices } from './components/RuntimeNotices';
 import { FolderTrustDialog } from './components/FolderTrustDialog';
@@ -65,7 +66,7 @@ import { useAgentHalo } from './hooks/useAgentHalo';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
-import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
+import type { AppSettings, ModelConfig, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } from '@shared/constants';
 import { fallbackModelForProvider } from '@shared/modelRuntime';
 import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
@@ -687,9 +688,10 @@ export const App: React.FC = () => {
       IPC_CHANNELS.SESSION_AUTOMATION_MESSAGE,
       (payload: { sessionId?: string; message?: Message }) => {
         if (!payload?.sessionId || !payload.message?.id) return;
+        const message = payload.message;
         const store = useSessionStore.getState();
         if (payload.sessionId === store.currentSessionId) {
-          if (!store.messages.some((m) => m.id === payload.message!.id)) {
+          if (!store.messages.some((m) => m.id === message.id)) {
             store.addMessage(payload.message);
           }
         } else {
@@ -888,6 +890,7 @@ export const App: React.FC = () => {
       <ProviderStatusNotice />
       <BudgetAlertNotice />
       <VoiceBudgetAlertNotice />
+      <CompanionPairRequestCard />
       <RuntimeNotices />
       <ExpertWorkbenchAutoOpen />
       <SessionExpiredNotice />

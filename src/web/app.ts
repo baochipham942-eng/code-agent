@@ -78,7 +78,10 @@ import { startCompanionRelayAccountIfConfigured, startCompanionRelayIfConfigured
 import { getAuthService } from '../host/services/auth/authService';
 import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
 import { loadLanIdentity } from '../host/services/companion/lanIdentity';
-import { COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
+import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
+import { projectScope } from '../shared/contract/companionLibrary';
+import { IPC_CHANNELS } from '../shared/ipc';
+import { broadcastToRenderer } from '../host/platform/windowBridge';
 import { getDatabase } from '../host/services/core/databaseService';
 import type { AgentRunBody } from './routes/agentBodySchemas';
 import { wireGenerativeUiEditProjectionInvalidation } from './helpers/generativeUiEditWiring';
@@ -266,7 +269,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   let inhibitorGateway: CompanionGateway | undefined;
   // registerCompanionShutdown 只保存一个回调（webServer.ts 的 stopCompanion 单槽），
   // 必须注册一次组合回调；companion 侧句柄在 db 分支里接线，未接线时安全跳过。
-  let companionLan: { stop(): Promise<void> } | undefined;
+  let companionLan: { stop(): Promise<void>; lanAdvertisement(): { endpoint: string; altEndpoint: string | null; candidates: string[] } | null } | undefined;
   let companionRelay: { stop(): Promise<void>; routeFor(deviceId: string): import('../shared/contract/companionRelay').CompanionRelayRoute | null; connected: boolean } | undefined;
   let companionRelayAbandoned = false;
   let companionRelayAccount: ReturnType<typeof startCompanionRelayAccountIfConfigured> | null = null;
@@ -529,13 +532,29 @@ export function createApp(deps: CreateAppDeps): express.Express {
       // Both halves must hold: a phone is reachable for this session, AND this particular
       // card is renderable. With no approvals service there is no companion approval path.
       hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && services.approvals?.canDisplay(request) === true;
-      handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => lan.manage(request));
+      /**
+       * manage 口的统一包装（N-COMPANION-RELAY-ACCOUNT-RECOVER）：pair.respond 是账号通道挂起配对
+       * 的表态，不归 LanCompanionManager（它只管 LAN 面），在这里截走；其余动作原样转发。
+       */
+      const manageCompanion = (request: unknown): Promise<unknown> => {
+        if (request && typeof request === 'object' && 'action' in request && (request as { action: unknown }).action === 'pair.respond') {
+          const { requestId, approve } = request as { requestId?: unknown; approve?: unknown };
+          if (typeof requestId !== 'string' || typeof approve !== 'boolean') {
+            return Promise.reject(new Error('COMPANION_INVALID_REQUEST'));
+          }
+          return Promise.resolve(companionRelayAccount
+            ? { kind: 'pairResponded' as const, ok: companionRelayAccount.respondPair(requestId, approve) }
+            : { kind: 'pairResponded' as const, ok: false });
+        }
+        return lan.manage(request);
+      };
+      handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => manageCompanion(request));
       // Web transport sends `companion:manage` to /api/companion/manage.
       // Keep an explicit route so browser/web builds can generate invitations
       // without relying on the generic IPC fallback (which is auth-gated).
       app.post('/api/companion/manage', async (req, res) => {
         try {
-          const result = await lan.manage(req.body);
+          const result = await manageCompanion(req.body);
           res.json(result);
         } catch (error) {
           res.status(500).json({ success: false, error: { code: 'COMPANION_MANAGE_FAILED', message: error instanceof Error ? error.message : String(error) } });
@@ -561,12 +580,28 @@ export function createApp(deps: CreateAppDeps): express.Express {
         error instanceof Error ? error.message : String(error),
       ));
       // 账号通道与上面的共享凭据通道并行（N-COMPANION-RELAY-ACCOUNT-BIND）：没登录就什么都不做。
+      // 找回配对（N-COMPANION-RELAY-ACCOUNT-RECOVER）的取值面全部走闭包现取——relay 客户端是异步
+      // 拨起的，LAN 面与共享凭据通道此刻可能还没就绪，回调触发时读到的是什么就是什么。
       companionRelayAccount = startCompanionRelayAccountIfConfigured({
         dataDirectory: resolveCodeAgentDataDir(),
         gateway,
         loadIdentity: () => loadLanIdentity(resolveCodeAgentDataDir()),
         auth: getAuthService(),
         logger,
+        // 新设备的授权范围与二维码邀请同一取值面：全部项目的 grant（截到邀请同款上限）。
+        pairScope: () => projectScope(requireLibrary().projects()).slice(0, COMPANION_LIMITS.maxScopeSessions),
+        // 旧路由（含共享凭据）从共享凭据通道取：账号通道自己没有共享凭据可下发。
+        pairLegacyRoute: deviceId => companionRelay?.routeFor(deviceId) ?? null,
+        // LAN 地址三件套与二维码邀请同源；LAN 面没起（还没配对设备）就缺席，手机仅中继可达。
+        pairLanAdvertisement: () => companionLan?.lanAdvertisement() ?? null,
+        hostAccountEmail: () => getAuthService().getCurrentUser()?.email ?? null,
+        onPairRequest: request => broadcastToRenderer(IPC_CHANNELS.COMPANION_PAIR_REQUEST, {
+          type: 'request', requestId: request.requestId, code: request.code, expiresAt: request.expiresAt,
+          scopeEmpty: request.scopeEmpty,
+        }),
+        onPairSettled: requestId => broadcastToRenderer(IPC_CHANNELS.COMPANION_PAIR_REQUEST, {
+          type: 'gone', requestId,
+        }),
       });
       app.use('/companion', createCompanionRouter({
         gateway,

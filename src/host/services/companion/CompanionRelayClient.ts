@@ -1,13 +1,17 @@
 import WebSocket from 'ws';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import { hostname } from 'node:os';
 import { rootCertificates } from 'node:tls';
 import type { KeyPair } from 'noise-handshake';
+import type Noise from 'noise-handshake';
 import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
 import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseChannel';
+import { createRelayPairHandshake, deriveRelayPairVerify } from '../../../shared/companion/relayPair';
 import { fromHex, toHex } from '../../../shared/companion/lanProtocol';
 import { companionCommandSchema, type CompanionCommand, type CompanionSubmitResult } from '../../../shared/contract/companion';
 import {
   COMPANION_RELAY_CLOSE_CODE_ROUTE_TAKEN,
+  COMPANION_RELAY_PAIR_ROUTE_TOKEN,
   COMPANION_RELAY_SENTINEL_DEVICE_REF,
   COMPANION_RELAY_TICKET_ISSUE_ROUTE_TOKEN,
   companionRelayFrameExpired,
@@ -18,6 +22,8 @@ import {
   type CompanionRelayRouteRef,
 } from '../../../shared/contract/companionRelay';
 import type { CompanionRelayStatus } from '../../../shared/contract/companionManagement';
+import { getRegisteredCompanionDictation } from '../capabilities/hostCapabilityPorts';
+import { companionDictationReadiness, companionTranscriptionReadiness } from './transcriptionReadiness';
 import type { CompanionGateway } from './CompanionGateway';
 import { RelayOutboundBuffer, RelaySeqBuffer } from './companionRelayBuffer';
 import { deriveCompanionRelayRouteToken } from './companionRelayRouteToken';
@@ -58,6 +64,30 @@ interface DeviceSession {
   inbound: RelaySeqBuffer;
 }
 
+/**
+ * relay 找回配对在 Host 侧的挂起态（N-COMPANION-RELAY-ACCOUNT-RECOVER）：收到 pair-request（XX
+ * 第一条消息）后起 responder 挂着等电脑前的人表态，**同意之前绝不登记设备**——纯 XX 的第三条
+ * 消息落地（手机静态公钥此刻才交给 Host）才 pairIdentity + 下发配对载荷，登记与握手收尾同拍落定。
+ */
+interface PendingRelayPair {
+  requestId: string;
+  noise: Noise;
+  /** 已点同意（XX 第二条消息已发出）：此后到达的续帧才允许走登记路径。 */
+  approved: boolean;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/** 桌面上「新手机请求连接」卡片的事件面（app 层转 broadcastToRenderer）。 */
+export interface CompanionRelayPairRequest {
+  requestId: string;
+  /** 4 位核对码：两端各自从同一份 XX 握手材料派生，人眼比对。 */
+  code: string;
+  expiresAt: number;
+  /** 此刻电脑上零个项目（pairScope 空）：同意只会登记零授权设备，卡片要给「先建项目」的出路
+   * （R2 Important②），同意按钮置灰；同意路径的守卫同判，UI 挡不住的兜底。 */
+  scopeEmpty: boolean;
+}
+
 /** commandId must survive the relay hop; do not mint a new id here. */
 function submitRelayedCommand(gateway: CompanionGateway, command: CompanionCommand): Promise<CompanionSubmitResult> {
   return gateway.submit(command);
@@ -77,6 +107,11 @@ export class CompanionRelayClient {
    * 数据目录的两个进程又拿到同一 nonce，洞白补。同一实例生命周期内不变，重连重注册与顶替才分得开。
    */
   private readonly instanceId = randomBytes(16).toString('base64url');
+  /** register 自报的电脑名：截到契约上限，截完为空（纯符号主机名）就不带这一格。 */
+  private readonly hostName: string | undefined;
+  /** register 自报的主机公钥指纹：sha256(32 字节身份公钥) 的 hex，手机选电脑时核对的就是它。 */
+  private readonly hostKeyFingerprint: string;
+  private readonly pendingPairs = new Map<string, PendingRelayPair>();
   private readonly buffer = new RelayOutboundBuffer();
   private readonly routes = new Map<string, RelayRouteEntry>();
   private readonly sessions = new Map<string, DeviceSession>();
@@ -113,6 +148,22 @@ export class CompanionRelayClient {
     namespace?: string;
     /** 账号通道的本地票据存取（第 3A 刀）：有未过期票据先票据拨号，supabase 不通也能连。 */
     ticket?: CompanionRelayTicketStore;
+    /** register 自报的电脑名（list-hosts 列表行显示用）；缺省取 os.hostname()。 */
+    hostName?: string;
+    /**
+     * relay 找回配对（N-COMPANION-RELAY-ACCOUNT-RECOVER）：pair-request 到达时通知桌面出卡。
+     * 挂起态消账（拒绝/超时/完成/连接断）时 onPairSettled 收尾（收卡片）。
+     */
+    onPairRequest?: (request: CompanionRelayPairRequest) => void;
+    onPairSettled?: (requestId: string) => void;
+    /** 找回配对完成时新设备的授权范围（与 LAN 邀请同一取值面：全部项目的 grant）。 */
+    pairScope?: () => string[];
+    /** 旧路由（含共享凭据）取值回调——账号通道自己没有共享凭据，legacy 路由要从共享通道取。 */
+    pairLegacyRoute?: (deviceId: string) => CompanionRelayRoute | null;
+    /** 配对载荷里的 LAN 地址三件套（与二维码邀请同源）；LAN 面没开时缺席。 */
+    pairLanAdvertisement?: () => { endpoint: string; altEndpoint: string | null; candidates: string[] } | null;
+    /** 电脑当前登录的 Neo 账号邮箱（welcome 等值内容；手机登录引导/账号核对用）。 */
+    hostAccountEmail?: () => string | null;
     now?: () => number;
     jitter?: () => number;
     WebSocket?: typeof WebSocket;
@@ -122,6 +173,8 @@ export class CompanionRelayClient {
     this.jitter = deps.jitter ?? Math.random;
     this.WebSocketImpl = deps.WebSocket ?? WebSocket;
     this.logger = deps.logger;
+    this.hostName = (deps.hostName ?? hostname()).trim().slice(0, L.relayHostNameLength) || undefined;
+    this.hostKeyFingerprint = createHash('sha256').update(Buffer.from(deps.identity.publicKey)).digest('hex');
   }
 
   advertise(route: RelayRouteEntry): void {
@@ -193,6 +246,7 @@ export class CompanionRelayClient {
     if (this.stableTimer) clearTimeout(this.stableTimer);
     this.stableTimer = null;
     this.dropSessions();
+    this.clearAllPendingPairs();
     this.buffer.clear();
     const socket = this.socket;
     this.socket = null;
@@ -265,7 +319,14 @@ export class CompanionRelayClient {
   }
 
   private sendRegister(route: RelayRouteEntry): void {
-    this.push({ v: 1, kind: 'register', role: 'host', instanceId: this.instanceId, envelope: this.controlEnvelope(route), ciphertext: '' });
+    this.push({
+      v: 1, kind: 'register', role: 'host', instanceId: this.instanceId,
+      ...(this.hostName ? { hostName: this.hostName } : {}),
+      // hostKeyFingerprint 只在账号通道发（R3 Nit2）：唯一消费方 list-hosts 拒 legacy 主体，
+      // legacy register 带这格永不被读——白占每帧 64 字节还误导排障。
+      ...(typeof this.deps.credential === 'string' ? {} : { hostKeyFingerprint: this.hostKeyFingerprint }),
+      envelope: this.controlEnvelope(route), ciphertext: '',
+    });
   }
 
   private push(frame: CompanionRelayFrame): void {
@@ -430,6 +491,9 @@ export class CompanionRelayClient {
         if (droppedOnDisconnect > 0) {
           logCompanionRelayInfo(this.logger, `Companion relay${this.label} sessions dropped on disconnect: ${droppedOnDisconnect}`);
         }
+        // relay 找回的挂起配对随连接死掉：XX responder 状态不可跨连接续命，relay 侧会给手机回
+        // host-offline/timeout；这里只清自己的账并收掉桌面卡片。
+        this.clearAllPendingPairs();
         const errorCode = this.dialErrorCode(lastError, code, httpStatus);
         if (!settled) {
           this.failDial(errorCode);
@@ -530,6 +594,7 @@ export class CompanionRelayClient {
     try {
       if (frame.kind === 'revoke' || frame.kind === 'disconnect') { this.forget(deviceRef); return; }
       if (frame.kind === 'handshake') { this.handleHandshake(frame); return; }
+      if (frame.kind === 'pair-request') { this.handlePairRequest(frame); return; }
       if (frame.kind !== 'forward') return;
       const inbound = this.inbound.get(deviceRef) ?? new RelaySeqBuffer();
       this.inbound.set(deviceRef, inbound);
@@ -538,6 +603,160 @@ export class CompanionRelayClient {
     } catch {
       this.forget(deviceRef);
     }
+  }
+
+  /** pair-result / pair-request 的固定信封（sentinel 路由，与真实 route 的转发不混淆）。 */
+  private pairEnvelope() {
+    return {
+      routeToken: COMPANION_RELAY_PAIR_ROUTE_TOKEN, deviceRef: COMPANION_RELAY_SENTINEL_DEVICE_REF,
+      seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: this.now(),
+    };
+  }
+
+  private pushPairResult(requestId: string, fields: { accepted: true; stage: 'reply' | 'complete'; ciphertext: string } | { accepted: false; reason: 'declined' | 'timeout' }): void {
+    this.push({
+      v: 1, kind: 'pair-result', requestId,
+      ...(fields.accepted ? { accepted: true as const, stage: fields.stage } : { accepted: false as const, reason: fields.reason }),
+      envelope: this.pairEnvelope(),
+      ciphertext: fields.accepted ? fields.ciphertext : '',
+    });
+  }
+
+  /**
+   * relay 找回配对请求（N-COMPANION-RELAY-ACCOUNT-RECOVER）。带 instanceId 的是初次请求：起纯 XX
+   * responder、挂起等电脑表态——4 位核对码此刻就能从握手材料（手机临时公钥）派生并上卡；**同意
+   * 之前不登记任何设备**。不带 instanceId 的续帧是 XX 第三条消息：只有已同意（approved）的挂起态
+   * 才收——收完握手即 complete，此刻才 pairIdentity 登记（与 LAN 配对同一落点）、铸双路由、用会话
+   * 密钥封 welcome 等值内容 + relay.routes 下发。
+   */
+  private handlePairRequest(frame: Extract<CompanionRelayFrame, { kind: 'pair-request' }>): void {
+    if (frame.envelope.routeToken !== COMPANION_RELAY_PAIR_ROUTE_TOKEN) return;
+    const requestId = frame.requestId;
+    const pending = this.pendingPairs.get(requestId);
+    if (!frame.instanceId) {
+      if (!pending?.approved) {
+        this.logger?.warn(`Companion relay${this.label} pair continuation dropped: ${pending ? 'not approved' : 'no pending pair'} for request ${requestId.slice(0, 8)}`);
+        return;
+      }
+      let publicKey: string;
+      try {
+        if (pending.noise.recv(fromHex(frame.ciphertext)).length !== 0 || !pending.noise.complete || !pending.noise.rs) {
+          throw new Error('COMPANION_INVALID_FRAME');
+        }
+        publicKey = toHex(pending.noise.rs);
+      } catch (error) {
+        this.clearPendingPair(requestId);
+        this.pushPairResult(requestId, { accepted: false, reason: 'declined' });
+        this.logger?.warn(`Companion relay${this.label} pair completion failed: ${error instanceof Error ? error.message : 'invalid frame'}`);
+        return;
+      }
+      // 同意守卫之后才到这：登记 + 路由 + 载荷一次落定（pairIdentity 是 SQLite 事务，原子）。
+      const device = this.deps.gateway.pairIdentity(publicKey, this.deps.pairScope?.() ?? []);
+      const account = this.relayRoute(device.deviceId);
+      const legacy = this.deps.pairLegacyRoute?.(device.deviceId) ?? null;
+      const lan = this.deps.pairLanAdvertisement?.() ?? null;
+      const email = this.deps.hostAccountEmail?.() ?? null;
+      const cipher = new NoiseChannel(pending.noise);
+      const payload = {
+        deviceId: device.deviceId, scopeEpoch: device.scopeEpoch, scope: device.scope,
+        transcription: companionTranscriptionReadiness(),
+        sessionlessTranscribe: true as const,
+        ...(email ? { hostAccountEmail: email } : {}),
+        ...(getRegisteredCompanionDictation() ? { dictation: true as const, dictationTranscription: companionDictationReadiness() } : {}),
+        ...(lan ? { lan } : {}),
+        routes: { v: 1 as const, ...(account ? { account } : {}), ...(legacy ? { legacy } : {}) },
+      };
+      this.clearPendingPair(requestId);
+      this.pushPairResult(requestId, { accepted: true, stage: 'complete', ciphertext: JSON.stringify(cipher.seal(payload)) });
+      logCompanionRelayInfo(this.logger, `Companion relay${this.label} pair completed: device=${device.deviceId} scope=${device.scope.length}`);
+      return;
+    }
+    if (pending) {
+      this.logger?.warn(`Companion relay${this.label} pair request dropped: duplicate request ${requestId.slice(0, 8)}`);
+      return;
+    }
+    // 挂起条数上限（R3 Nit3）：节流不能全押 relay 的 5s 限流，Host 自己也兜一层——满了拒新并
+    // 留痕（手机侧由 relay 的挂起超时收尾，不登记、不出卡片）。可区分计数（ai-review R4
+    // Important）：满员时点名其中几条是「已同意在等续帧」——回收窗失灵（条目不被清）一眼可辨。
+    if (this.pendingPairs.size >= L.relayMaxPendingPairs) {
+      const approved = [...this.pendingPairs.values()].filter(entry => entry.approved).length;
+      this.logger?.warn(`Companion relay${this.label} pair request dropped: pending pairs full (${this.pendingPairs.size}, approved awaiting continuation ${approved})`);
+      return;
+    }
+    const noise = createRelayPairHandshake(false, this.deps.identity);
+    try {
+      if (noise.recv(fromHex(frame.ciphertext)).length !== 0 || !noise.re) throw new Error('COMPANION_INVALID_FRAME');
+    } catch (error) {
+      this.logger?.warn(`Companion relay${this.label} pair request dropped: ${error instanceof Error ? error.message : 'invalid frame'}`);
+      return;
+    }
+    const expiresAt = this.now() + L.relayPairTtlMs;
+    const timer = setTimeout(() => {
+      if (this.pendingPairs.get(requestId)?.noise === noise) {
+        this.clearPendingPair(requestId);
+        this.pushPairResult(requestId, { accepted: false, reason: 'timeout' });
+        logCompanionRelayInfo(this.logger, `Companion relay${this.label} pair request timed out: request=${requestId.slice(0, 8)}`);
+      }
+    }, L.relayPairTtlMs);
+    timer.unref();
+    this.pendingPairs.set(requestId, { requestId, noise, approved: false, timer });
+    this.deps.onPairRequest?.({ requestId, code: deriveRelayPairVerify(noise.re), expiresAt,
+      scopeEmpty: (this.deps.pairScope?.() ?? []).length < 1 });
+    logCompanionRelayInfo(this.logger, `Companion relay${this.label} pair request awaiting approval: request=${requestId.slice(0, 8)}`);
+  }
+
+  /** 桌面卡片表态入口（app 层经 manage 动作转进来）：同意 ⇒ 回 XX 第二条消息；拒绝 ⇒ 具名拒绝并销账。 */
+  respondPair(requestId: string, approve: boolean): boolean {
+    const pending = this.pendingPairs.get(requestId);
+    if (!pending) return false;
+    // 重复同意幂等（ai-review R2 Nit4）：XX responder 的 send() 已在第一次同意时推进到传输态，
+    // 再调一次只会把传输密文当握手第二条消息发给手机（手机 recv 直接炸）——什么都不补发。
+    if (approve && pending.approved) return true;
+    if (!approve) {
+      this.clearPendingPair(requestId);
+      this.pushPairResult(requestId, { accepted: false, reason: 'declined' });
+      logCompanionRelayInfo(this.logger, `Companion relay${this.label} pair declined: request=${requestId.slice(0, 8)}`);
+      return true;
+    }
+    // 零 scope 守卫（R2 Important②，与 LanCompanionServer.invite 的 scope.length<1 同一条纪律）：
+    // 项目库为空时同意只会登记零授权设备——手机侧 readRecoverPayload 判非法，每重试一次多一台
+    // 僵尸设备（还顶掉同公钥上一台登记）。不登记，具名拒绝，桌面卡片以 scopeEmpty 给「先建项目」出路。
+    if ((this.deps.pairScope?.() ?? []).length < 1) {
+      this.clearPendingPair(requestId);
+      this.pushPairResult(requestId, { accepted: false, reason: 'declined' });
+      logCompanionRelayInfo(this.logger, `Companion relay${this.label} pair declined: empty scope for request=${requestId.slice(0, 8)}`);
+      return true;
+    }
+    pending.approved = true;
+    // 临界同意（R3 Nit4）：同意即摘「待同意」定时器——deadline 前一刻点同意，定时器到点会把已
+    // 同意的挂起清掉再补一刀 timeout，手机拿到 timeout 而非成功。手机侧的到点收尾由 relay 的
+    // 挂起超时兜底；桌面卡片按自身 expiresAt 自隐，挂起态由续帧完成/断连/再拒绝销账。
+    clearTimeout(pending.timer);
+    // 同意后的回收窗（ai-review R4 Important）：续帧永不到达时（临界同意形状：relay 已到点替手机
+    // 回 timeout，续帧被 relay 判 unmatched 丢掉）这条 approved 挂起曾经永不回收——攒满
+    // relayMaxPendingPairs 后该 Host 所有新 pair-request 在上限检查处被静默丢，桌面不再弹卡、手机
+    // 固定等满 120s，只有重启或断 relay 才恢复。到点只清条目并留痕，不补发 pair-result：relay 的
+    // 挂起超时已给手机收尾，再发只会是一条对不上挂起态的迟到帧。
+    pending.timer = setTimeout(() => {
+      if (this.pendingPairs.get(requestId)?.noise !== pending.noise) return;
+      this.clearPendingPair(requestId);
+      logCompanionRelayInfo(this.logger, `Companion relay${this.label} pair approved continuation never arrived: request=${requestId.slice(0, 8)}`);
+    }, L.relayPairApprovedTtlMs);
+    pending.timer.unref();
+    this.pushPairResult(requestId, { accepted: true, stage: 'reply', ciphertext: toHex(pending.noise.send()) });
+    return true;
+  }
+
+  private clearPendingPair(requestId: string): void {
+    const pending = this.pendingPairs.get(requestId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pendingPairs.delete(requestId);
+    this.deps.onPairSettled?.(requestId);
+  }
+
+  private clearAllPendingPairs(): void {
+    for (const requestId of [...this.pendingPairs.keys()]) this.clearPendingPair(requestId);
   }
 
   private handleHandshake(frame: CompanionRelayFrame): void {
@@ -673,12 +892,27 @@ export function startCompanionRelayAccountIfConfigured(opts: {
   now?: () => number;
   jitter?: () => number;
   WebSocket?: typeof WebSocket;
+  /** register 自报的电脑名（缺省 os.hostname()）；list-hosts 列表行显示用。 */
+  hostName?: string;
+  /** relay 找回配对（N-COMPANION-RELAY-ACCOUNT-RECOVER）：桌面卡片的到达与消账广播。 */
+  onPairRequest?: (request: CompanionRelayPairRequest) => void;
+  onPairSettled?: (requestId: string) => void;
+  /** 找回配对完成时新设备的授权范围（与 LAN 邀请同一取值面：全部项目的 grant）。 */
+  pairScope?: () => string[];
+  /** 旧路由（含共享凭据）取值回调：配对载荷的 relay.routes.legacy，从共享凭据通道取。 */
+  pairLegacyRoute?: (deviceId: string) => CompanionRelayRoute | null;
+  /** 配对载荷里的 LAN 地址三件套（与二维码邀请同源）；LAN 面没开时缺席。 */
+  pairLanAdvertisement?: () => { endpoint: string; altEndpoint: string | null; candidates: string[] } | null;
+  /** 电脑当前登录的 Neo 账号邮箱（配对载荷的 welcome 等值内容）。 */
+  hostAccountEmail?: () => string | null;
 }): {
   stop(): Promise<void>;
   revoke(deviceId: string): void;
   status(): CompanionRelayAccountStatus;
   /** 账号路由引用（不带凭据）：`relay.routes` 下发给手机，手机拿自己换的票据拨（第三刀）。 */
   relayRoute(deviceRef: string): CompanionRelayRouteRef | null;
+  /** 桌面卡片对找回配对的表态（manage 动作 pair.respond 转进来）；挂起态没了回 false。 */
+  respondPair(requestId: string, approve: boolean): boolean;
 } {
   // 共享凭据通道已按同一份配置记过缺失/非法的日志，这里不重复记。
   const config = loadCompanionRelayConfig(opts.dataDirectory);
@@ -688,6 +922,7 @@ export function startCompanionRelayAccountIfConfigured(opts: {
       status: () => ({ account: 'off' }),
       revoke: () => {},
       relayRoute: () => null,
+      respondPair: () => false,
       stop: async () => {},
     };
   }
@@ -749,6 +984,13 @@ export function startCompanionRelayAccountIfConfigured(opts: {
         credential: () => opts.auth.getAccessToken(),
         namespace: `acct:${next}`,
         ticket,
+        hostName: opts.hostName,
+        onPairRequest: opts.onPairRequest,
+        onPairSettled: opts.onPairSettled,
+        pairScope: opts.pairScope,
+        pairLegacyRoute: opts.pairLegacyRoute,
+        pairLanAdvertisement: opts.pairLanAdvertisement,
+        hostAccountEmail: opts.hostAccountEmail,
         now: opts.now,
         jitter: opts.jitter,
         WebSocket: opts.WebSocket,
@@ -763,6 +1005,7 @@ export function startCompanionRelayAccountIfConfigured(opts: {
     revoke: deviceId => client?.revoke(deviceId),
     // 没登录/follow 链还没落地时 client 为 null ⇒ 没有账号路由；token 确定性派生，socket 断着也照给。
     relayRoute: deviceRef => client?.relayRoute(deviceRef) ?? null,
+    respondPair: (requestId, approve) => client?.respondPair(requestId, approve) ?? false,
     // 判定顺序即优先级：没登录必然没起 client（follow 会停它），先查 user 不会把登出误报成 connecting。
     status: (): CompanionRelayAccountStatus => {
       if (!opts.auth.getCurrentUser()) return { account: 'signedOut' };

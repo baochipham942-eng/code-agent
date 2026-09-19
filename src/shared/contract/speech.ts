@@ -39,9 +39,9 @@ export function companionTranscriptionSettlement(
 export const SPEECH_EMPTY_RESULT_CODE = 'EMPTY_RESULT';
 export const SPEECH_HALLUCINATION_CODE = 'HALLUCINATION';
 /** Groq/whisper verbose_json：高于此视为无语音。 */
-export const SPEECH_NO_SPEECH_PROB_MAX = 0.6;
+const SPEECH_NO_SPEECH_PROB_MAX = 0.6;
 /** Groq/whisper verbose_json：低于此视为不可信（常是幻觉）。 */
-export const SPEECH_AVG_LOGPROB_MIN = -1.0;
+const SPEECH_AVG_LOGPROB_MIN = -1.0;
 
 export type SpeechAsrSegment = {
   text?: string;

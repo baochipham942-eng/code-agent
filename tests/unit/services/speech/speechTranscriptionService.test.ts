@@ -60,8 +60,6 @@ import {
 import {
   companionTranscriptionSettlement,
   keepVoicedTranscript,
-  SPEECH_AVG_LOGPROB_MIN,
-  SPEECH_NO_SPEECH_PROB_MAX,
 } from '../../../../src/shared/contract/speech';
 
 function makeAudioData(size = 2048): string {
@@ -416,17 +414,17 @@ describe('SpeechTranscriptionService', () => {
 
   it('keepVoicedTranscript 丢掉无语音和高幻觉分段，留下近场口令', () => {
     expect(keepVoicedTranscript('远处电视在说话', [
-      { text: '远处电视在说话', no_speech_prob: SPEECH_NO_SPEECH_PROB_MAX + 0.2, avg_logprob: SPEECH_AVG_LOGPROB_MIN - 0.4 },
+      { text: '远处电视在说话', no_speech_prob: 0.8, avg_logprob: -1.4 },
     ])).toBe('');
     expect(keepVoicedTranscript('正常口令', [
       { text: '正常口令', no_speech_prob: 0.8, avg_logprob: -0.2 },
     ])).toBe('正常口令');
     expect(keepVoicedTranscript('谢谢观看', [
-      { text: '谢谢观看', no_speech_prob: 0.1, avg_logprob: SPEECH_AVG_LOGPROB_MIN - 0.4 },
+      { text: '谢谢观看', no_speech_prob: 0.1, avg_logprob: -1.4 },
     ])).toBe('谢谢观看');
     expect(keepVoicedTranscript('帮我写一封信谢谢观看', [
       { text: '帮我写一封信', no_speech_prob: 0.1, avg_logprob: -0.2 },
-      { text: '谢谢观看', no_speech_prob: 0.91, avg_logprob: SPEECH_AVG_LOGPROB_MIN - 0.4 },
+      { text: '谢谢观看', no_speech_prob: 0.91, avg_logprob: -1.4 },
     ])).toBe('帮我写一封信');
     expect(keepVoicedTranscript('本地没有分段', undefined)).toBe('本地没有分段');
   });

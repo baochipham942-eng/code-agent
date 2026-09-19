@@ -162,6 +162,23 @@ function collectScorableTurns(replay: StructuredReplay, turnRows: TurnRow[]): Sc
   return [...owners.values()].sort((left, right) => right.startedAt - left.startedAt);
 }
 
+function readUserPrompt(blocks: ReplayBlock[]): string | undefined {
+  const content = blocks.find((block) => block.type === 'user')?.content;
+  return typeof content === 'string' && content.trim() ? content : undefined;
+}
+
+/** 同会话更早轮（按 startedAt）里最近一个非空 user block；没有则 undefined。 */
+function findCarriedUserPrompt(turn: ScorableTurn, sessionTurns: ScorableTurn[]): string | undefined {
+  const earlier = sessionTurns
+    .filter((other) => other.startedAt < turn.startedAt)
+    .sort((left, right) => right.startedAt - left.startedAt);
+  for (const other of earlier) {
+    const content = readUserPrompt(other.blocks);
+    if (content) return content;
+  }
+  return undefined;
+}
+
 
 /** 安全 / 产物两维由信号直接映射，不问模型。 */
 function mapDeterministicDims(signals: DeterministicSignal[]): Pick<PostLaunchDims, 'safety' | 'artifact'> {
@@ -254,7 +271,9 @@ export async function runPostLaunchScoring(
     if (!replay) continue;
 
     // 窗口外的轮不评（同一条会话里，窗口内的轮照评）。
-    const scorable = collectScorableTurns(replay, turnRows).filter((turn) => turn.startedAt >= since);
+    // carriedUserPrompt 按整段会话取更早轮，不按窗口切——窗口外的 user block 仍能承接。
+    const sessionTurns = collectScorableTurns(replay, turnRows);
+    const scorable = sessionTurns.filter((turn) => turn.startedAt >= since);
     result.examinedTurns += scorable.length;
     // dry-run 的行记成 'dry-run' 版本：既不挡之后的真评，真评的行也会按 turn_id 主键覆盖它
     // dry-run 遇到任何已有行（含真评）都跳过：表按 turn_id 主键 INSERT OR REPLACE，否则会把真评覆盖成 null（ai-review #1645）
@@ -282,7 +301,8 @@ export async function runPostLaunchScoring(
       const hasSignal = signals.length > 0;
       // 预算给下一次调用留余量：判据是「已花 + 这次要花的估算 ≤ 上限」，
       // 不是「已花 < 上限」——后者总会让最后一次调用把上限冲破（K1 实测超支一次调用）。
-      const judgePrompt = dryRun ? '' : buildPostLaunchJudgePrompt(turn.turn, signals);
+      const carriedUserPrompt = findCarriedUserPrompt(turn, sessionTurns);
+      const judgePrompt = dryRun ? '' : buildPostLaunchJudgePrompt(turn.turn, signals, carriedUserPrompt);
       const nextCallUsd = dryRun ? 0 : deps.estimateJudgeCostUsd(judgePrompt).usd;
       const budgetLeft = spentUsd + nextCallUsd <= budgetLimitUsd;
       const sampleLeft = sampledToday < sampleLimit;
@@ -309,7 +329,7 @@ export async function runPostLaunchScoring(
 
       if (shouldJudge) {
         let judgeCompletion = '';
-        const verdict = await judgePostLaunchTurn({ turn: turn.turn, signals }, async (prompt) => {
+        const verdict = await judgePostLaunchTurn({ turn: turn.turn, signals, carriedUserPrompt }, async (prompt) => {
           const response = await deps.llmCall(prompt);
           judgeCompletion = typeof response === 'string' ? response : response.content;
           return response;

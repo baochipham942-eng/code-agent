@@ -65,9 +65,36 @@ function delimit(value: unknown, closingTag: string): string {
   return JSON.stringify(value, null, 2).replaceAll(`</${closingTag}>`, `<\\/${closingTag}>`);
 }
 
-/** 轨迹投影：judge 需要的最小事实集，超长一律截断。 */
-function projectTurnForJudge(turn: ReplayTurn, signals: DeterministicSignal[]): Record<string, unknown> {
-  const userPrompt = turn.blocks.find((block) => block.type === 'user')?.content;
+export type PostLaunchUserPromptSource = 'turn' | 'carried' | 'none';
+
+function readUserPrompt(blocks: ReplayTurn['blocks']): string | undefined {
+  const content = blocks.find((block) => block.type === 'user')?.content;
+  return typeof content === 'string' && content.trim() ? content : undefined;
+}
+
+/**
+ * 当前轮 user block 优先；没有则用同会话更早轮承接的 carriedUserPrompt。
+ * 两者都空时 source='none'，goal 维强制弃权（见 applyGoalAbstainWhenNone）。
+ */
+function resolveUserPrompt(
+  turn: ReplayTurn,
+  carriedUserPrompt?: string,
+): { userPrompt: string | undefined; userPromptSource: PostLaunchUserPromptSource } {
+  const fromTurn = readUserPrompt(turn.blocks);
+  if (fromTurn) return { userPrompt: fromTurn, userPromptSource: 'turn' };
+  if (typeof carriedUserPrompt === 'string' && carriedUserPrompt.trim()) {
+    return { userPrompt: carriedUserPrompt, userPromptSource: 'carried' };
+  }
+  return { userPrompt: undefined, userPromptSource: 'none' };
+}
+
+/** 轨迹投影：judge 需要的最小事实集，超长一律截断。Jev 初筛与生成式判官共用这一份。 */
+export function projectTurnForJudge(
+  turn: ReplayTurn,
+  signals: DeterministicSignal[],
+  carriedUserPrompt?: string,
+): Record<string, unknown> {
+  const { userPrompt, userPromptSource } = resolveUserPrompt(turn, carriedUserPrompt);
   const responses = turn.blocks.filter((block) => block.type === 'text').map((block) => block.content);
   const errors = turn.blocks.filter((block) => block.type === 'error').map((block) => clip(block.content, 300));
   const toolCalls = turn.blocks
@@ -82,6 +109,7 @@ function projectTurnForJudge(turn: ReplayTurn, signals: DeterministicSignal[]): 
     }));
   return {
     userPrompt: guardForJudge(userPrompt, MAX_TEXT_CHARS),
+    userPromptSource,
     assistantResponse: guardForJudge(responses.join('\n'), MAX_TEXT_CHARS),
     toolCalls,
     errors: errors.map((error) => guardForJudge(error, 300)),
@@ -90,11 +118,15 @@ function projectTurnForJudge(turn: ReplayTurn, signals: DeterministicSignal[]): 
 }
 
 /** 编排层要在发调用之前拿到提示词来估这次调用的花费（预算预留），所以是导出的。 */
-export function buildPostLaunchJudgePrompt(turn: ReplayTurn, signals: DeterministicSignal[]): string {
+export function buildPostLaunchJudgePrompt(
+  turn: ReplayTurn,
+  signals: DeterministicSignal[],
+  carriedUserPrompt?: string,
+): string {
   return [
     POST_LAUNCH_JUDGE_PROMPT,
     '<turn_trace>',
-    delimit(projectTurnForJudge(turn, signals), 'turn_trace'),
+    delimit(projectTurnForJudge(turn, signals, carriedUserPrompt), 'turn_trace'),
     '</turn_trace>',
   ].join('\n');
 }
@@ -182,16 +214,35 @@ function parseVerdict(value: PostLaunchJudgeLlmResult): PostLaunchJudgeVerdict {
   };
 }
 
+function applyGoalAbstainWhenNone(
+  verdict: PostLaunchJudgeVerdict,
+  source: PostLaunchUserPromptSource,
+): PostLaunchJudgeVerdict {
+  if (source !== 'none') return verdict;
+  return { ...verdict, dims: { ...verdict.dims, goal: null } };
+}
+
+export interface PostLaunchJudgeInput {
+  turn: ReplayTurn;
+  signals: DeterministicSignal[];
+  /** 同会话更早轮里最近一个 user block；当前轮已有 user block 时被忽略。 */
+  carriedUserPrompt?: string;
+}
+
 /**
  * 对一轮真实会话出无题判决。一次调用问完四个维度——线上轮次量大，
  * 按维度各问一次会把成本乘四。
  */
 export async function judgePostLaunchTurn(
-  input: { turn: ReplayTurn; signals: DeterministicSignal[] },
+  input: PostLaunchJudgeInput,
   llmCall: PostLaunchJudgeLlmCall,
 ): Promise<PostLaunchJudgeVerdict> {
+  const source = resolveUserPrompt(input.turn, input.carriedUserPrompt).userPromptSource;
   try {
-    return parseVerdict(await llmCall(buildPostLaunchJudgePrompt(input.turn, input.signals)));
+    const verdict = parseVerdict(
+      await llmCall(buildPostLaunchJudgePrompt(input.turn, input.signals, input.carriedUserPrompt)),
+    );
+    return applyGoalAbstainWhenNone(verdict, source);
   } catch (error) {
     return unavailable('judge_error', error instanceof Error ? error.message : String(error), 'unknown');
   }

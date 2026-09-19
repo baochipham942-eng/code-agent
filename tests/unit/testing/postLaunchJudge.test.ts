@@ -3,7 +3,7 @@
 // 这里必须能出判决——这是「上线后」这条线成立的前提。
 import { describe, expect, it, vi } from 'vitest';
 import type { ReplayBlock, ReplayTurn } from '../../../src/shared/contract/evaluationReplay';
-import { getPostLaunchPromptHash, judgePostLaunchTurn } from '../../../src/host/testing/judge/postLaunchJudge';
+import { getPostLaunchPromptHash, judgePostLaunchTurn, projectTurnForJudge } from '../../../src/host/testing/judge/postLaunchJudge';
 import type { DeterministicSignal } from '../../../src/shared/contract/postLaunchScore';
 import {
   POST_LAUNCH_JUDGE_DIMENSIONS,
@@ -196,5 +196,55 @@ describe('postLaunchJudge · 无题契约', () => {
     expect(result).not.toContain(longBody);
     expect(result?.endsWith('…')).toBe(true);
     expect(result?.length).toBe(301);
+  });
+});
+
+describe('postLaunchJudge · 跨轮承接 userPrompt', () => {
+  const ALL_FAIL_GOAL = JSON.stringify({
+    goal: { pass: false, why: '没有来源' },
+    orchestration: { pass: true, why: '' },
+    tools: { pass: true, why: '' },
+    permission: { pass: true, why: '' },
+  });
+
+  it('当前轮无 user block、给了 carried ⇒ 投影 userPrompt=carried、source=carried', async () => {
+    const turn: ReplayTurn = { ...TURN, blocks: TURN.blocks.filter((block) => block.type !== 'user') };
+    const projection = projectTurnForJudge(turn, [], '把 README 里的安装步骤补全');
+    expect(projection.userPromptSource).toBe('carried');
+    expect(projection.userPrompt).toContain('把 README 里的安装步骤补全');
+
+    const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_PASS);
+    await judgePostLaunchTurn({ turn, signals: [], carriedUserPrompt: '把 README 里的安装步骤补全' }, llmCall);
+    expect(llmCall.mock.calls[0][0]).toContain('"userPromptSource": "carried"');
+    expect(llmCall.mock.calls[0][0]).toContain('把 README 里的安装步骤补全');
+  });
+
+  it('两者都无 ⇒ source=none 且即使 llmCall 返回 goal.pass=false，verdict.dims.goal 仍是 null', async () => {
+    const turn: ReplayTurn = { ...TURN, blocks: TURN.blocks.filter((block) => block.type !== 'user') };
+    const projection = projectTurnForJudge(turn, []);
+    expect(projection.userPromptSource).toBe('none');
+
+    const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_FAIL_GOAL);
+    const verdict = await judgePostLaunchTurn({ turn, signals: [] }, llmCall);
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.dims.goal).toBeNull();
+    expect(verdict.dims.orchestration).toBe(1);
+    expect(verdict.unavailableReason).toBeUndefined();
+  });
+
+  it('当前轮有 user block ⇒ source=turn、carried 被忽略', async () => {
+    const projection = projectTurnForJudge(TURN, [], '这句不该出现在投影里');
+    expect(projection.userPromptSource).toBe('turn');
+    expect(projection.userPrompt).toContain('把 README 里的安装步骤补全');
+    expect(projection.userPrompt).not.toContain('这句不该出现在投影里');
+
+    const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_PASS);
+    const verdict = await judgePostLaunchTurn(
+      { turn: TURN, signals: [], carriedUserPrompt: '这句不该出现在投影里' },
+      llmCall,
+    );
+    expect(llmCall.mock.calls[0][0]).toContain('"userPromptSource": "turn"');
+    expect(llmCall.mock.calls[0][0]).not.toContain('这句不该出现在投影里');
+    expect(verdict.dims.goal).toBe(1);
   });
 });

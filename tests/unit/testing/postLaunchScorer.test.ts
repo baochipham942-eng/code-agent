@@ -82,13 +82,20 @@ function insertTurn(
   `).run(turnId, sessionId, turnNumber, startTime, startTime + 1000);
 }
 
-function replay(sessionId: string, turns: Array<{ turnNumber: number; startTime: number; blocks: ReplayBlock[] }>): StructuredReplay {
+function replay(
+  sessionId: string,
+  turns: Array<{ turnNumber: number; startTime: number; blocks: ReplayBlock[] }>,
+  options: { injectUserPrompt?: boolean } = {},
+): StructuredReplay {
+  const injectUserPrompt = options.injectUserPrompt !== false;
   return {
     sessionId,
     turns: turns.map((turn) => ({
       turnNumber: turn.turnNumber,
       turnType: 'user' as const,
-      blocks: turn.blocks,
+      blocks: injectUserPrompt && !turn.blocks.some((block) => block.type === 'user')
+        ? [{ type: 'user' as const, content: '帮我做这件事', timestamp: turn.startTime }, ...turn.blocks]
+        : turn.blocks,
       inputTokens: 100,
       outputTokens: 50,
       durationMs: 1000,
@@ -726,6 +733,28 @@ describe('上线后打分编排', () => {
     expect(buildPostLaunchReport(database, { now: NOW, dailyBudgetUsd: 0.25, reserveUsd: 0.1 }).budget.stopped).toBe(true);
     // 预留塞得下就仍然不算停评
     expect(buildPostLaunchReport(database, { now: NOW, dailyBudgetUsd: 0.5, reserveUsd: 0.1 }).budget.stopped).toBe(false);
+  });
+
+  it('跨轮承接：第二轮没有 user block 时传给 judge 的投影含第一轮 userPrompt 且 source=carried', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-2', 2, NOW - HOUR + 10);
+    const replays = {
+      'chat-1': replay('chat-1', [
+        { turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'user', content: '第一轮用户问题：补全 README', timestamp: NOW - HOUR }] },
+        { turnNumber: 2, startTime: NOW - HOUR + 10, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR + 10 }] },
+      ], { injectUserPrompt: false }),
+    };
+    const prompts: string[] = [];
+    await runPostLaunchScoring(deps(database, replays, async (prompt) => {
+      prompts.push(prompt);
+      return ALL_PASS;
+    }));
+
+    const second = prompts.find((prompt) => prompt.includes('"userPromptSource": "carried"'));
+    expect(second).toBeDefined();
+    expect(second).toContain('第一轮用户问题：补全 README');
+    expect(prompts.some((prompt) => prompt.includes('"userPromptSource": "turn"'))).toBe(true);
   });
 
   it('子迭代的块并进它的 user 父轮：agentic loop 不把一轮拆成多轮', async () => {

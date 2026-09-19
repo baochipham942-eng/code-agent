@@ -1,6 +1,7 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 // Pure type-only — does not pull legacy tool code at import time.
 import type { UntrustedContentToolSchema } from '../../../protocol/tools';
+import { BROWSER_JEV_STEP_DESCRIPTION_SUFFIX } from '../../../../shared/constants/jevQuestions';
 
 export const browserSchema: UntrustedContentToolSchema = {
   name: 'Browser',
@@ -35,6 +36,7 @@ Routing contract:
 - wait: Wait for elements or timeout
 - fill_form: Fill multiple form fields
 - get_logs: Get recent browser operation logs
+${BROWSER_JEV_STEP_DESCRIPTION_SUFFIX}
 
 ## Parameters:
 - action: The browser action to perform (see above)
@@ -68,6 +70,7 @@ Routing contract:
           'get_dialog_state', 'handle_dialog', 'read_clipboard', 'write_clipboard',
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+          'execute_goal',
         ],
         description: 'The browser action to perform',
       },
@@ -184,6 +187,19 @@ Routing contract:
       prompt: {
         type: 'string',
         description: '[Playwright] Custom prompt for AI analysis',
+      },
+      task: {
+        type: 'string',
+        description: 'Natural-language goal for execute_goal',
+      },
+      assertions: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+        description: 'Optional frozen gold assertions for execute_goal',
+      },
+      jevBudgetUsd: {
+        type: 'number',
+        description: 'Optional per-task Jev USD budget for execute_goal',
       },
     },
     required: ['action'],

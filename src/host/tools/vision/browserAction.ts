@@ -34,6 +34,11 @@ import {
   withWorkbenchTrace,
 } from './browserActionResultProjection';
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
+import {
+  jevBrowserStepUnarmedResult,
+  resolveBrowserJevStep,
+} from '../../agent/runtime/browser/jevBrowserStep';
+import type { JevPageAssertion } from '../../agent/runtime/browser/jevBrowserAssertions';
 
 const logger = createLogger('BrowserAction', { lane: 'browser' });
 
@@ -76,7 +81,8 @@ type BrowserActionType =
   | 'upload_file'
   | 'wait'
   | 'fill_form'
-  | 'get_logs';
+  | 'get_logs'
+  | 'execute_goal';
 
 const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
   'navigate',
@@ -136,7 +142,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
           'list_profiles', 'import_profile_cookies', 'clear_cookies',
-          'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs'
+          'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+          'execute_goal',
         ],
         description: 'The browser action to perform',
       },
@@ -269,6 +276,19 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         type: 'boolean',
         description: 'Legacy compatibility signal for import_profile_cookies. It cannot authorize import without a one-time Host permission bound to the exact profile/domain scope (ADR-041).',
       },
+      task: {
+        type: 'string',
+        description: 'Natural-language goal for execute_goal',
+      },
+      assertions: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+        description: 'Optional frozen gold assertions for execute_goal',
+      },
+      jevBudgetUsd: {
+        type: 'number',
+        description: 'Optional per-task Jev USD budget for execute_goal',
+      },
     },
     required: ['action'],
   },
@@ -311,6 +331,17 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         toolName: 'browser_action',
         action,
       });
+    }
+
+    if (action === 'execute_goal') {
+      const driver = resolveBrowserJevStep();
+      if (!driver) return jevBrowserStepUnarmedResult();
+      const task = typeof params.task === 'string' ? params.task : '';
+      const assertions = Array.isArray(params.assertions)
+        ? params.assertions as JevPageAssertion[]
+        : undefined;
+      const jevBudgetUsd = typeof params.jevBudgetUsd === 'number' ? params.jevBudgetUsd : undefined;
+      return driver.run({ task, assertions, jevBudgetUsd }, context);
     }
 
     const workbenchNotes: Array<string | null | undefined> = [workbenchPolicy.note];

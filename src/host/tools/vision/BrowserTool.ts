@@ -15,6 +15,12 @@ import {
   buildBrowserWorkbenchBlockedResult,
   evaluateBrowserWorkbenchPolicy,
 } from './browserWorkbenchIntent';
+import { BROWSER_JEV_STEP_DESCRIPTION_SUFFIX } from '../../../shared/constants/jevQuestions';
+import {
+  jevBrowserStepUnarmedResult,
+  resolveBrowserJevStep,
+} from '../../agent/runtime/browser/jevBrowserStep';
+import type { JevPageAssertion } from '../../agent/runtime/browser/jevBrowserAssertions';
 
 // Actions from browserActionTool (kept as-is since they don't conflict)
 const BROWSER_ACTION_ACTIONS = [
@@ -102,6 +108,7 @@ Routing contract:
 - wait: Wait for elements or timeout
 - fill_form: Fill multiple form fields
 - get_logs: Get recent browser operation logs
+${BROWSER_JEV_STEP_DESCRIPTION_SUFFIX}
 
 ## Parameters:
 - action: The browser action to perform (see above)
@@ -137,6 +144,7 @@ Routing contract:
           'get_dialog_state', 'handle_dialog', 'read_clipboard', 'write_clipboard',
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+          'execute_goal',
         ],
         description: 'The browser action to perform',
       },
@@ -254,6 +262,19 @@ Routing contract:
         type: 'string',
         description: '[Playwright] Custom prompt for AI analysis',
       },
+      task: {
+        type: 'string',
+        description: 'Natural-language goal for execute_goal',
+      },
+      assertions: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+        description: 'Optional frozen gold assertions for execute_goal',
+      },
+      jevBudgetUsd: {
+        type: 'number',
+        description: 'Optional per-task Jev USD budget for execute_goal',
+      },
     },
     required: ['action'],
   },
@@ -292,6 +313,17 @@ Routing contract:
         toolName: 'Browser',
         action,
       });
+    }
+
+    if (action === 'execute_goal') {
+      const driver = resolveBrowserJevStep();
+      if (!driver) return jevBrowserStepUnarmedResult();
+      const task = typeof params.task === 'string' ? params.task : '';
+      const assertions = Array.isArray(params.assertions)
+        ? params.assertions as JevPageAssertion[]
+        : undefined;
+      const jevBudgetUsd = typeof params.jevBudgetUsd === 'number' ? params.jevBudgetUsd : undefined;
+      return driver.run({ task, assertions, jevBudgetUsd }, context);
     }
 
     // --- OS-level browser_navigate actions ---

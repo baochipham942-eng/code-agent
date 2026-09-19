@@ -39,6 +39,9 @@ import { connectorExternalWriteReason, isConnectorToolName } from '../../shared/
 import { isProtectedWritePath, isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 import { resolvedRmCriticalTarget } from '../security/recursiveRmPathSafety';
 import { anchoredAllowCommandWords } from '../security/commandAllowProof';
+import { systemOne as typesafeSystemOne } from '../model/providers/typesafeProvider';
+import type { JevSystemOneCall } from '../../shared/constants/jevQuestions';
+import { classifyByJev, isPermissionLlmClassifierEnabled } from './permissionClassifierJev';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -101,9 +104,14 @@ export interface ClassifierConfig {
   confidenceThreshold?: number;
   /** Cache TTL in ms (default: 5 min) */
   cacheTtlMs?: number;
+  /**
+   * Jev systemOne 注入点（测试/回放用替身）。生产缺省走 typesafeProvider.systemOne；
+   * 别在这里 mock 网络——桩的是函数，不是 fetch。
+   */
+  jevSystemOne?: JevSystemOneCall;
 }
 
-interface ClassificationContext {
+export interface ClassificationContext {
   /** Base directory for resolving relative tool paths. */
   workingDirectory: string;
   /** Authoritative write boundary. Absent means no write target is inside a workspace. */
@@ -556,15 +564,17 @@ function protectedWriteAsk(
 // ----------------------------------------------------------------------------
 
 export class PermissionClassifier {
-  private config: Required<ClassifierConfig>;
+  private config: Required<Omit<ClassifierConfig, 'jevSystemOne'>>;
+  private jevSystemOne: JevSystemOneCall;
   private cache = new Map<string, CacheEntry>();
 
   constructor(config?: ClassifierConfig) {
     this.config = {
-      enableLlm: config?.enableLlm ?? false,
+      enableLlm: config?.enableLlm ?? isPermissionLlmClassifierEnabled(),
       confidenceThreshold: config?.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
       cacheTtlMs: config?.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS,
     };
+    this.jevSystemOne = config?.jevSystemOne ?? typesafeSystemOne;
   }
 
   /**
@@ -612,9 +622,10 @@ export class PermissionClassifier {
 
     // 3. LLM classifier（规则无法判断时）
     if (this.config.enableLlm) {
-      const llmResult = await this.classifyByLlm(toolName, args, context);
+      const llmResult = await classifyByJev(toolName, args, context, this.jevSystemOne, startTime);
       if (llmResult && llmResult.confidence >= this.config.confidenceThreshold) {
-        const structured = classificationHostReason(llmResult, toolName);
+        // 与规则 approve 同一道后处理：写围栏义务不过关的 approve 一律降级 ask。
+        const structured = classificationHostReason(enforceWriteFenceObligation(llmResult), toolName);
         this.setCache(cacheKey, structured);
         return structured;
       }
@@ -1154,30 +1165,6 @@ export class PermissionClassifier {
     return MCP_TOOL_PREFIXES.some(
       (prefix) => toolName.startsWith(prefix) || toolName === prefix
     );
-  }
-
-  // --------------------------------------------------------------------------
-  // LLM classifier（stub — 待接入 model router）
-  // --------------------------------------------------------------------------
-
-  private async classifyByLlm(
-    _toolName: string,
-    _args: Record<string, unknown>,
-    _context: ClassificationContext
-  ): Promise<ClassificationResult | null> {
-    // TODO: 接入 model router，使用轻量模型（如 deepseek-chat）分类
-    // 预期实现：
-    // 1. 构建 compact prompt: {toolName, args_summary, workingDirectory}
-    // 2. 调用 model router 的 fast/cheap 模型
-    // 3. 解析 JSON 响应: {decision, reason, confidence}
-    // 4. 返回 ClassificationResult
-    logger.debug('LLM classifier not yet implemented, falling back to ask');
-    return {
-      decision: 'ask',
-      reason: 'LLM 分类器未实现',
-      confidence: 0,
-      cached: false,
-    };
   }
 
   // --------------------------------------------------------------------------

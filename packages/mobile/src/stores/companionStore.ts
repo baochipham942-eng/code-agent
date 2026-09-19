@@ -86,6 +86,14 @@ const DEVICE_LEVEL_REASONS = new Set(['device_revoked', 'device_unknown', 'scope
 const OFF_NETWORK_ERRORS = new Set(['connectionUnavailable', 'connectionFailed', 'connectionRelayUnavailable', 'connectionRelayRejected', 'connectionRelayNoHost']);
 
 /**
+ * 只读谓词，供 UI 层判「这个失败码是不是离网类」——不导出 OFF_NETWORK_ERRORS 本身，
+ * 判据仍然只活在这一个 Set 里（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 R2）。
+ */
+export function isOffNetworkError(code: string | null | undefined): boolean {
+  return code != null && OFF_NETWORK_ERRORS.has(code);
+}
+
+/**
  * 一条转写命令的结局，**带着它是哪一条**。
  * 之前这里是个粘着的 `voiceOutcome: 'done'|'error'|null`：上一次录音、上一个会话留下的电平，
  * 下一次录音照样读得到，于是每加一条修法就多一道交叉判据（七轮 ai-review 的共因）。

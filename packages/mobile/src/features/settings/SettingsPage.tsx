@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { messages } from '../../i18n';
 import type { Appearance, SheetPage } from '../../stores/mobileStore';
 import type { OsPermission } from '../../platform/ports';
@@ -20,22 +20,28 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
    * （N-COMPANION-RELAY-ACCOUNT-LOGIN-V3，爸 2026-09-19 拍板）。
    */
   account?: { email: string } | null;
-  /** 个人信息页内「退出登录」文字链接；只在已登录时渲染那个区块。 */
-  logout?: () => Promise<void>;
+  /**
+   * 个人信息页内「退出登录」文字链接；只在已登录时渲染那个区块。回传是否真的退出成功
+   * （store 的 logout() 本身不回传——persist 失败时静默保留 account），调用方在 MobileRoot
+   * 里退出后重读一次 store 现状换算成布尔值（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 R2）。
+   */
+  logout?: () => Promise<boolean>;
 }) {
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [logoutFailed, setLogoutFailed] = useState(false);
+  // SettingsPage 跨页切换不卸载：不能只在提交那一刻判失败，还得在进个人页 / 账号状态换了
+  // （退出成功、或换个账号重新登录）时把上一轮的失败提示复位，否则会一直粘在页面上
+  // （R2 监工复核纠正：旧实现读渲染闭包里的 account 判失败，退出成功后它仍是旧对象，恒判失败）。
+  useEffect(() => { setLogoutFailed(false); }, [page, account?.email]);
   const row = (target: SheetPage, detail?: string) => <button className="settings-row" data-testid={`open-${target}`} onClick={() => open(target)}>
     <span>{text[target]}</span><span className="row-detail">{detail}<AppIcon name="chevron" /></span>
   </button>;
   const handleLogout = async () => {
     if (!logout || logoutBusy) return;
     setLogoutBusy(true); setLogoutFailed(false);
-    await logout();
+    const ok = await logout();
     setLogoutBusy(false);
-    // companionStore.logout() 的 persist 失败分支静默保留 account、不改状态（见其注释）：
-    // 不改 store 逻辑，借这个既有信号在 UI 报一句，而不是新开一条失败通道。
-    if (account) setLogoutFailed(true);
+    setLogoutFailed(!ok);
   };
   switch (page) {
     case 'settings': return <>

@@ -288,6 +288,30 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
     expect(failed.querySelector('[data-testid="remote-action-reconnect"]')?.classList.contains('primary')).toBe(false);
   });
 
+  /**
+   * R2 监工复核纠正（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3）：薄面板门控原来只看
+   * `loginPrompt`——它是「配对着且没登录」的持续状态位，一旦被置起不会因为下一次失败
+   * 换了类别就自动清掉。补上 `isOffNetworkError(connectionError)` 这道判据前，
+   * 未登录用户先撞一次离网失败（loginPrompt 置真）、再点重连撞上「配对失效」这类
+   * host 主动回过话的失败时，薄面板会继续顶在那里，扫码/忘记这台电脑永久消失——
+   * 这条钉住「loginPrompt 留着不代表这一拍还是离网」。
+   */
+  it('先撞一次离网失败（loginPrompt 置真）、重连后转成「配对失效」⇒ 薄面板让位给扫码主按钮，不被 loginPrompt 顶住', async () => {
+    harness.mode = 'reject';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    // 先确认真的先命中过一次薄面板（loginPrompt 由此置真）。
+    await waitFor(() => { expect(document.querySelector('[data-testid="relay-login-prompt"]')).toBeTruthy(); });
+    harness.mode = 'rejectIdentity';
+    fireEvent.click(document.querySelector('[data-testid="remote-action-reconnect"]') as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="relay-login-prompt"]')).toBeNull(); });
+    const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+    expect(failed.querySelector('[data-testid="remote-action-scan"]')).toBeTruthy();
+    expect(failed.querySelector('[data-testid="remote-action-forget"]')).toBeTruthy();
+    expect(primaryLabel(failed)).toBe(text.scan);
+  });
+
   it('连不上（连接被拒绝）⇒ 不出 S8 登录提示：端口关着不是离网，登录救不了「Neo 没在运行」', async () => {
     harness.mode = 'refused';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
-import { canAddressSession, createCompanionStore, needsLibraryPick } from '../stores/companionStore';
+import { canAddressSession, createCompanionStore, isOffNetworkError, needsLibraryPick } from '../stores/companionStore';
 import { createNotificationStore } from '../stores/notificationStore';
 import { unavailableNotificationPort } from '../platform/notifications';
 import { pickAttachment } from '../platform/cameraPick';
@@ -522,11 +522,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         store.getState().activateDraft('new');
         store.getState().editDraft(current && draftKey !== 'new' ? `${current}\n${draft}` : draft);
       }
-      // 登录引导（D9/D-1）：配对完成后引导登录一次——**不弹账号页**。配对常从 remote 弹层发起，
-      // 这里再 openSheet 会把「弹层按原流程收掉」顶住（defaultProject 既有契约：扫码配对成功后
-      // 弹层都收掉、落到欢迎页）。引导降级为欢迎页上一条可忽略提示（置 loginPrompt，见欢迎页），
-      // 点「去登录」才进账号页；跳过后第一次离开 Wi-Fi 连不上时 S8 再提示一次，之后不反复弹。
-      if (!companionStore.getState().account) companionStore.setState({ loginPrompt: true });
+      // 配对完成不再无条件置 loginPrompt（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 R2）：它唯一的
+      // 消费方——欢迎页登录引导——已被拍板删除（B），这句变成纯负债：配对后 loginPrompt 恒真，
+      // 此后任何远程失败态都会被 S8 薄面板顶掉，「扫描电脑二维码」「忘记这台电脑」全部消失
+      // （监工复核抓到）。S8 第一次出现改由 companionStore 里「第一次离网失败」那条负责置起，
+      // 语义不变，只是不再从配对这里抢跑。
     }
   };
   const pairAndOpenConversation = async () => {
@@ -867,13 +867,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
               {companion.recoverEntryAvailable ? text.recoverEntryHint : text.recoverUnavailable}
             </p>
           </div>
-          : companion.loginPrompt && !companion.account ? (
+          : !companion.account && companion.loginPrompt && isOffNetworkError(companion.connectionError) ? (
             // S8 薄面板（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 C，爸 2026-09-19：原来 5 个动作 3 段
-            // 说明「过于复杂」）：没登录、且到了「跳过后第一次**离网**连不上」那一次（store 的
-            // loginPrompt 只置起这一次；离网判据即 OFF_NETWORK_ERRORS，钉在 companionStore 里
-            // 触发 loginPrompt 的那个条件上，这里不用文案猜）——整块换成四行：标题、一句说明、
-            // 主按钮「去登录」、次级「重新连接」+ 一句灰字（无动作，拍板③）。扫码/忘记这台电脑
-            // 在这一态不出现；已登录时的失败面板（下面 else 分支）一律不变。
+            // 说明「过于复杂」）：没登录、且这一拍的诊断落「离网类」——**门控必须同时看
+            // loginPrompt 和当前 connectionError**（R2 监工复核纠正）：loginPrompt 只是「配对着且
+            // 没登录」的一个持续状态位，不天然等于「这次失败是离网」；配对失效/连接被拒绝这些
+            // host 主动回过话的失败也会命中 loginPrompt，必须靠 isOffNetworkError(connectionError)
+            // （companionStore 里 OFF_NETWORK_ERRORS 的只读谓词）再筛一道，不能只看 loginPrompt。
+            // 命中时整块换成四行：标题、一句说明、主按钮「去登录」、次级「重新连接」+ 一句灰字
+            // （无动作，拍板③）。扫码/忘记这台电脑在这一态不出现；其他失败态（下面 else 分支，
+            // 含配对失效/连接被拒绝/已登录）一律不变。
             <div className="remote-failed" role="status" data-testid="remote-unreachable">
               <div data-testid="relay-login-prompt">
                 <strong>{text.needLoginTitle}</strong>
@@ -988,7 +991,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       /> : <SettingsPage page={currentPage} text={text} appearance={state.preferences.appearance} nickname={state.preferences.nickname}
         profileDraft={state.profileDraft} appInfo={appInfo} open={state.pushSheet} chooseAppearance={state.setAppearance}
         editProfile={state.editProfile} saveProfile={state.saveProfile} account={companion.account}
-        logout={() => companionStore.getState().logout()}
+        // logout() 本身不回传成不成功（persist 失败时 store 静默保留 account）：SettingsPage
+        // 判「退出登录没有成功」不能靠自己渲染闭包里的旧 account 值（那永远是退出前的对象，
+        // 恒判失败——R2 监工复核纠正），改由这里退出后重读一次 store 现状，成功与否用
+        // account 是不是变成了 null 来判定，再回传给调用方。
+        logout={async () => { await companionStore.getState().logout(); return companionStore.getState().account === null; }}
         storage={{ previewBytes: companion.cacheUsage?.previewBytes ?? 0, conversationBytes: companion.cacheUsage?.conversationBytes ?? 0, result: cacheResult, confirm: cacheConfirm,
           onConfirm: () => setCacheConfirm(true),
           onClear: () => { companion.clearCache(); setCacheResult('clean'); setCacheConfirm(false); } }}

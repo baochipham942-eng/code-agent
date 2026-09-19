@@ -51,7 +51,9 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
           : <span className="avatar avatar-generic"><AppIcon name="profile" /></span>}
         <span className="stack">
           <strong>{account ? (nickname || account.email) : text.accountNotLoggedIn}</strong>
-          <span className="small">{account ? account.email : text.accountCardHint}</span>
+          {/* 昵称为空时主标题已经在用邮箱了，副标题不能再复读一遍同一串（R3 ai-review Nit）——
+              换成一句「已登录」提示；有昵称时副标题才轮到邮箱当第二行身份信息。 */}
+          <span className="small">{account ? (nickname ? account.email : text.accountLoggedInHint) : text.accountCardHint}</span>
         </span>
         <AppIcon name="chevron" />
       </button>

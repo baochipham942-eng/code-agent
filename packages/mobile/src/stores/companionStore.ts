@@ -86,11 +86,21 @@ const DEVICE_LEVEL_REASONS = new Set(['device_revoked', 'device_unknown', 'scope
 const OFF_NETWORK_ERRORS = new Set(['connectionUnavailable', 'connectionFailed', 'connectionRelayUnavailable', 'connectionRelayRejected', 'connectionRelayNoHost']);
 
 /**
- * 只读谓词，供 UI 层判「这个失败码是不是离网类」——不导出 OFF_NETWORK_ERRORS 本身，
- * 判据仍然只活在这一个 Set 里（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 R2）。
+ * S8 薄面板的门控用这个更窄的口径，**不是** `OFF_NETWORK_ERRORS`（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3
+ * R3 ai-review Important③）：`connectionRelayNoHost`（中继通、电脑没开 Neo）与
+ * `connectionRelayRejected` 都是 host/relay 已经回过话的失败，诊断句已经把原因说清楚
+ * （比如「电脑现在不在线」），登录救不了那两态，薄面板不该把这句顶掉。这里只留手机真正
+ * 分不清「离开了 Wi‑Fi」还是「电脑换了内网 IP、重连必败」的那三类。
  */
-export function isOffNetworkError(code: string | null | undefined): boolean {
-  return code != null && OFF_NETWORK_ERRORS.has(code);
+const PHONE_OFF_NETWORK_ERRORS = new Set(['connectionUnavailable', 'connectionFailed', 'connectionRelayUnavailable']);
+
+/**
+ * 只读谓词，供 S8 薄面板门控用——判「这个失败码是不是手机分不清离网/换 IP 的那一类」。
+ * 不导出 `PHONE_OFF_NETWORK_ERRORS` 本身，也不动 `OFF_NETWORK_ERRORS`（那个仍然只服务
+ * 「第一次离网提醒」的置起逻辑，口径更宽，两个 Set 是两回事，别合并）。
+ */
+export function isPhoneOffNetworkError(code: string | null | undefined): boolean {
+  return code != null && PHONE_OFF_NETWORK_ERRORS.has(code);
 }
 
 /**

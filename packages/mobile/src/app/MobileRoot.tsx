@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
-import { canAddressSession, createCompanionStore, isOffNetworkError, needsLibraryPick } from '../stores/companionStore';
+import { canAddressSession, createCompanionStore, isPhoneOffNetworkError, needsLibraryPick } from '../stores/companionStore';
 import { createNotificationStore } from '../stores/notificationStore';
 import { unavailableNotificationPort } from '../platform/notifications';
 import { pickAttachment } from '../platform/cameraPick';
@@ -867,16 +867,21 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
               {companion.recoverEntryAvailable ? text.recoverEntryHint : text.recoverUnavailable}
             </p>
           </div>
-          : !companion.account && companion.loginPrompt && isOffNetworkError(companion.connectionError) ? (
+          : !companion.account && companion.loginPrompt && isPhoneOffNetworkError(companion.connectionError) ? (
             // S8 薄面板（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 C，爸 2026-09-19：原来 5 个动作 3 段
-            // 说明「过于复杂」）：没登录、且这一拍的诊断落「离网类」——**门控必须同时看
-            // loginPrompt 和当前 connectionError**（R2 监工复核纠正）：loginPrompt 只是「配对着且
-            // 没登录」的一个持续状态位，不天然等于「这次失败是离网」；配对失效/连接被拒绝这些
-            // host 主动回过话的失败也会命中 loginPrompt，必须靠 isOffNetworkError(connectionError)
-            // （companionStore 里 OFF_NETWORK_ERRORS 的只读谓词）再筛一道，不能只看 loginPrompt。
-            // 命中时整块换成四行：标题、一句说明、主按钮「去登录」、次级「重新连接」+ 一句灰字
-            // （无动作，拍板③）。扫码/忘记这台电脑在这一态不出现；其他失败态（下面 else 分支，
-            // 含配对失效/连接被拒绝/已登录）一律不变。
+            // 说明「过于复杂」）：没登录、且这一拍的诊断落在手机真分不清「离开了 Wi‑Fi」还是
+            // 「电脑换了内网 IP」的那一类——**门控必须同时看 loginPrompt 和当前 connectionError**
+            // （R2 监工复核纠正）：loginPrompt 只是「配对着且没登录」的一个持续状态位，不天然
+            // 等于「这次失败是离网」；配对失效/连接被拒绝这些 host 主动回过话的失败也会命中
+            // loginPrompt，必须靠 isPhoneOffNetworkError(connectionError) 再筛一道。
+            // **口径比 OFF_NETWORK_ERRORS 更窄**（R3 ai-review Important③）：relay 已回过话的
+            // no-host/被拒不算在内，那两态诊断句已经说清楚原因，登录救不了，不该被这句顶掉。
+            // **必须保留扫描电脑二维码**（R3 ai-review Important②，N-MOBILE-RESCAN-DEADLOCK 同一
+            // 条承重注释：这一类包含「电脑换了内网 IP」，重连拨的是配对时写死的地址必败，
+            // 扫码是唯一出路——爸 09-16 真机「手机没给我扫的按钮啊」）。命中时整块换成：
+            // 标题、一句说明、主按钮「去登录」、次级「重新连接」、次级「扫描电脑二维码」、一句
+            // 灰字（无动作，拍板③）。「忘记这台电脑」仍不出现；其他失败态（下面 else 分支，
+            // 含配对失效/连接被拒绝/relay no-host 或被拒/已登录）一律不变。
             <div className="remote-failed" role="status" data-testid="remote-unreachable">
               <div data-testid="relay-login-prompt">
                 <strong>{text.needLoginTitle}</strong>
@@ -886,6 +891,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
               <button className="sheet-secondary" data-testid="remote-action-reconnect"
                 disabled={!ports.companion || (companion.busy && !companion.autoAttempt)}
                 onClick={() => void companionStore.getState().reconnect({ resetBackoff: true })}>{text.reconnect}</button>
+              <button className="sheet-secondary" data-testid="remote-action-scan"
+                disabled={!ports.companion || (companion.busy && !companion.autoAttempt)}
+                onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
               <p className="caption">{text.needLoginHint}</p>
             </div>
           ) : <div className="remote-failed" role="status" data-testid="remote-unreachable">
@@ -985,7 +993,17 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         text={text}
       /> : currentPage === 'account' ? <AccountSheet
         hostEmail={companion.binding?.hostAccountEmail ?? null}
-        login={(email, password) => companionStore.getState().login(email, password)}
+        // 登录成功零反馈（R3①，ai-review PR#1958 Important）：AccountSheet 自己不管路由，
+        // 成功后由这里收口——关掉弹层回到连接面（此时 account 已非空、S8 薄面板已让位给
+        // 正常态），并立即触发一次重连，不让用户手动再点一次「重新连接」才看出登录生效了。
+        login={async (email, password) => {
+          const outcome = await companionStore.getState().login(email, password);
+          if (outcome.ok) {
+            store.getState().closeSheet();
+            void companionStore.getState().reconnect({ resetBackoff: true });
+          }
+          return outcome;
+        }}
         dismiss={() => store.getState().closeSheet()}
         text={text}
       /> : <SettingsPage page={currentPage} text={text} appearance={state.preferences.appearance} nickname={state.preferences.nickname}

@@ -47,7 +47,11 @@ export function AccountSheet({ hostEmail, login, dismiss, text }: {
   if (unreachable) {
     return <div className="sheet-fail" role="status" data-testid="account-unreachable">
       <strong>{text.accountLoginUnreachable}</strong>
-      <button className="primary" data-testid="account-retry" disabled={busy} onClick={() => { void submit(unreachable); }}>{text.retry}</button>
+      {/* S7 重试 busy 态同款 spinner+文案（R3 ai-review Nit），跟登录表单主按钮一个样式，
+          不是「按钮变灰」这一种反馈。 */}
+      <button className={busy ? 'primary busy' : 'primary'} data-testid="account-retry" disabled={busy} onClick={() => { void submit(unreachable); }}>
+        {busy ? <><span className="spinner" aria-hidden="true" />{text.accountLoginBusy}</> : text.retry}
+      </button>
       <button className="sheet-secondary" data-testid="account-later" onClick={dismiss}>{text.accountLoginLater}</button>
     </div>;
   }

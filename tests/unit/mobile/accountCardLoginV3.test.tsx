@@ -6,6 +6,7 @@ import { SettingsPage } from '../../../packages/mobile/src/features/settings/Set
 import { AccountSheet } from '../../../packages/mobile/src/features/settings/AccountSheet';
 import { MobileRoot } from '../../../packages/mobile/src/app/MobileRoot';
 import type { AccountLoginOutcome } from '../../../packages/mobile/src/stores/companionStore';
+import type { AccountLoginResult } from '../../../packages/mobile/src/platform/accountLogin';
 import type { PlatformPorts } from '../../../packages/mobile/src/platform/ports';
 import { createIdentity } from '../../../src/shared/companion/noiseChannel';
 import { toHex } from '../../../src/shared/companion/lanProtocol';
@@ -40,12 +41,19 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 /**
- * R3①：MobileRoot 级别的收口验证——只 mock 传输层与登录模块（照 relayAccountRoute.test.ts
- * 的替身法），不动 companionStore 逻辑，钉住「登录成功后关闭弹层 + 触发一次重连」。
+ * R3①/R4：MobileRoot 级别的收口验证——只 mock 传输层与登录模块（照 relayAccountRoute.test.ts
+ * 的替身法），不动 companionStore 逻辑。R3① 钉住「登录成功后触发一次重连」；R4 纠正 R3① 的
+ * 收口动作——不是无条件关掉整个弹层，是退回上一页（`back()`），弹层本身还开着：从设置页
+ * 个人卡进来的回到设置页看到已登录的个人卡（v3 稿），从 S8 薄面板「去登录」进来的回到连接面。
  */
 const loginHarness = vi.hoisted(() => ({
   recoverCalls: 0,
-  loginResult: null as null | AccountLoginOutcome,
+  // loginNeoAccount 的成功结果带 ticket/userId/email——companionStore.login() 拿这三样落盘/
+  // 入状态，只给 `{ ok: true }`（AccountLoginOutcome 那个更窄的形状）会让 account.email
+  // 变成 undefined，撞到 SettingsPage 个人卡的 `.slice`。
+  loginResult: null as null | AccountLoginResult,
+  /** 首次 recover() 是否先失败一次（离网），用来在挂载时自然触发 S8 的 loginPrompt 置起。 */
+  failFirstRecover: false,
 }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
@@ -53,6 +61,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
     async pair() { throw new Error('unused'); }
     async recover() {
       loginHarness.recoverCalls += 1;
+      if (loginHarness.failFirstRecover && loginHarness.recoverCalls === 1) throw new Error('COMPANION_NETWORK_UNAVAILABLE');
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] };
     }
     async request(payload: unknown) {
@@ -68,7 +77,7 @@ vi.mock('../../../packages/mobile/src/platform/accountLogin', () => ({
   loginNeoAccount: async () => loginHarness.loginResult ?? { ok: false, kind: 'unreachable' },
 }));
 
-describe('R3① 登录成功零反馈：MobileRoot 收口关弹层 + 触发重连（ai-review PR#1958 Important①）', () => {
+describe('R3①/R4 登录成功零反馈：MobileRoot 收口回上一页 + 触发重连（ai-review PR#1958 Important①）', () => {
   function ports(): PlatformPorts {
     const identity = createIdentity();
     return {
@@ -86,32 +95,65 @@ describe('R3① 登录成功零反馈：MobileRoot 收口关弹层 + 触发重�
     };
   }
 
-  async function mountAtLoginForm() {
+  function currentPage() {
+    return document.querySelector('.sheet-content')?.getAttribute('data-page');
+  }
+
+  /** 路径①：设置页个人卡（未登录）→ 登录页。登录成功后应该退回 `settings`。 */
+  async function mountFromSettings() {
     loginHarness.recoverCalls = 0;
+    loginHarness.failFirstRecover = false;
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
-    // 挂载即自动连一次；等它落定再进个人卡，免得把挂载那次连接算进「登录后触发的那一次」。
     await waitFor(() => { expect(loginHarness.recoverCalls).toBeGreaterThan(0); });
-    const drawerButton = document.querySelector('[data-testid="open-drawer"]') as HTMLElement;
-    fireEvent.click(drawerButton);
+    fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
     fireEvent.click(document.querySelector('[data-testid="open-settings"]') as HTMLElement);
     fireEvent.click(document.querySelector('[data-testid="open-profile"]') as HTMLElement);
     await waitFor(() => { expect(document.querySelector('[data-testid="account-login"]')).toBeTruthy(); });
+    expect(currentPage()).toBe('account');
     fireEvent.change(document.getElementById('account-email')!, { target: { value: 'lin@example.com' } });
     fireEvent.change(document.getElementById('account-password')!, { target: { value: 'password12' } });
   }
 
-  it('登录成功 ⇒ sheet-host 关闭，且额外触发了一次重连', async () => {
-    loginHarness.loginResult = { ok: true };
-    await mountAtLoginForm();
+  /** 路径②：S8 薄面板「去登录」→ 登录页。挂载时先撞一次离网失败让 loginPrompt 置真、
+   *  薄面板出现，再点「去登录」进表单。登录成功后应该退回 `remote`（连接面），不是关掉。 */
+  async function mountFromS8() {
+    loginHarness.recoverCalls = 0;
+    loginHarness.failFirstRecover = true;
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.topbar strong')).toBeTruthy(); });
+    fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
+    fireEvent.click([...document.querySelectorAll('.drawer-functions button')].find(b => b.textContent === text.remote) as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="relay-login-go"]')).toBeTruthy(); });
+    expect(currentPage()).toBe('remote');
+    fireEvent.click(document.querySelector('[data-testid="relay-login-go"]') as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="account-login"]')).toBeTruthy(); });
+    expect(currentPage()).toBe('account');
+    fireEvent.change(document.getElementById('account-email')!, { target: { value: 'lin@example.com' } });
+    fireEvent.change(document.getElementById('account-password')!, { target: { value: 'password12' } });
+  }
+
+  it('从设置页进登录页，登录成功 ⇒ 弹层仍开、退回 settings，个人卡显示邮箱', async () => {
+    loginHarness.loginResult = { ok: true, ticket: 'neo1.test-ticket', userId: 'user-1', email: 'lin@example.com' };
+    await mountFromSettings();
+    fireEvent.click(document.querySelector('[data-testid="account-submit"]')!);
+    await waitFor(() => { expect(currentPage()).toBe('settings'); });
+    expect(document.querySelector('[data-testid="sheet-host"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="open-profile"]')?.textContent).toContain('lin@example.com');
+  });
+
+  it('从 S8 薄面板「去登录」进登录页，登录成功 ⇒ 弹层仍开、退回 remote，且触发了一次重连', async () => {
+    loginHarness.loginResult = { ok: true, ticket: 'neo1.test-ticket', userId: 'user-1', email: 'lin@example.com' };
+    await mountFromS8();
     const before = loginHarness.recoverCalls;
     fireEvent.click(document.querySelector('[data-testid="account-submit"]')!);
-    await waitFor(() => { expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull(); });
+    await waitFor(() => { expect(currentPage()).toBe('remote'); });
+    expect(document.querySelector('[data-testid="sheet-host"]')).toBeTruthy();
     await waitFor(() => { expect(loginHarness.recoverCalls).toBeGreaterThan(before); });
   });
 
-  it('登录失败 ⇒ 弹层不关，行内错误提示照旧出现', async () => {
+  it('登录失败 ⇒ 弹层不关，停在登录页，行内错误提示照旧出现', async () => {
     loginHarness.loginResult = { ok: false, kind: 'invalidCredentials' };
-    await mountAtLoginForm();
+    await mountFromSettings();
     fireEvent.click(document.querySelector('[data-testid="account-submit"]')!);
     await waitFor(() => { expect(document.querySelector('[data-testid="account-invalid"]')).toBeTruthy(); });
     expect(document.querySelector('[data-testid="sheet-host"]')).toBeTruthy();

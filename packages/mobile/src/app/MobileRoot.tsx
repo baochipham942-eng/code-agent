@@ -994,12 +994,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       /> : currentPage === 'account' ? <AccountSheet
         hostEmail={companion.binding?.hostAccountEmail ?? null}
         // 登录成功零反馈（R3①，ai-review PR#1958 Important）：AccountSheet 自己不管路由，
-        // 成功后由这里收口——关掉弹层回到连接面（此时 account 已非空、S8 薄面板已让位给
-        // 正常态），并立即触发一次重连，不让用户手动再点一次「重新连接」才看出登录生效了。
+        // 成功后由这里收口。R4 纠正：不是无条件关掉整个弹层——从设置页个人卡进来的应该
+        // 回到设置页看到已登录的个人卡（v3 稿），从 S8 薄面板「去登录」进来的应该回到连接
+        // 面（此时 account 已非空、薄面板已让位）。`back()` 弹栈顶那页，只有栈已经空到
+        // 没有上一页可退时才整体关闭——那种情况理论上不会发生（进 account 页前必然先开过
+        // 至少一页），但按 back() 的返回值兜底，不假设它一定为 true。同时照旧触发一次
+        // 重连，不让用户手动再点一次「重新连接」才看出登录生效了。
         login={async (email, password) => {
           const outcome = await companionStore.getState().login(email, password);
           if (outcome.ok) {
-            store.getState().closeSheet();
+            if (!store.getState().back()) store.getState().closeSheet();
             void companionStore.getState().reconnect({ resetBackoff: true });
           }
           return outcome;

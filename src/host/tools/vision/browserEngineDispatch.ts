@@ -21,6 +21,7 @@ const MANAGED_ONLY_ACTIONS = new Set([
   'clear_cookies',
   'export_storage_state',
   'import_storage_state',
+  'execute_goal',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {

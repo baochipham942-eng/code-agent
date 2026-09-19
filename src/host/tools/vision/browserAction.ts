@@ -34,6 +34,13 @@ import {
   withWorkbenchTrace,
 } from './browserActionResultProjection';
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
+import {
+  jevBrowserStepEmptyTaskResult,
+  jevBrowserStepUnarmedResult,
+  resolveBrowserJevStep,
+} from '../../agent/runtime/browser/jevBrowserStep';
+import type { JevPageAssertion } from '../../agent/runtime/browser/jevBrowserAssertions';
+import { browserJevStepDescriptionSuffix, withBrowserJevStepActionEnum } from '../../../shared/constants/jevQuestions';
 
 const logger = createLogger('BrowserAction', { lane: 'browser' });
 
@@ -76,7 +83,8 @@ type BrowserActionType =
   | 'upload_file'
   | 'wait'
   | 'fill_form'
-  | 'get_logs';
+  | 'get_logs'
+  | 'execute_goal';
 
 const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
   'navigate',
@@ -114,16 +122,16 @@ const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
 
 export const browserActionTool: Tool = {
   name: 'browser_action',
-  description: `Control a browser for web automation and testing (tabs, click/type, screenshots, DOM/a11y snapshots, forms, uploads/downloads, account state).
+  get description() { return `Control a browser for web automation and testing (tabs, click/type, screenshots, DOM/a11y snapshots, forms, uploads/downloads, account state).
 
 Routing: prefer web_fetch/search for plain reads; use browser_action for login/session, multi-page, or visual work. After mutations, refresh DOM/a11y evidence before claiming final state.
 engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
 Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy userConfirmed signal but also requires a one-time Host approval bound to profile/domain scope; clear_cookies clears managed profile cookies. Never log cookie values.
-storageState file path: export_storage_state / import_storage_state for CI/scripts.`,
+storageState file path: export_storage_state / import_storage_state for CI/scripts.${browserJevStepDescriptionSuffix()}`; },
   requiresPermission: true,
   permissionLevel: 'execute',
   outputSchema: { type: 'string' },
-  inputSchema: {
+  get inputSchema() { return withBrowserJevStepActionEnum({
     type: 'object',
     properties: {
       action: {
@@ -136,7 +144,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
           'list_profiles', 'import_profile_cookies', 'clear_cookies',
-          'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs'
+          'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+          'execute_goal',
         ],
         description: 'The browser action to perform',
       },
@@ -269,9 +278,22 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         type: 'boolean',
         description: 'Legacy compatibility signal for import_profile_cookies. It cannot authorize import without a one-time Host permission bound to the exact profile/domain scope (ADR-041).',
       },
+      task: {
+        type: 'string',
+        description: 'Natural-language goal for execute_goal',
+      },
+      assertions: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+        description: 'Optional frozen gold assertions for execute_goal',
+      },
+      jevBudgetUsd: {
+        type: 'number',
+        description: 'Optional per-task Jev USD budget for execute_goal',
+      },
     },
     required: ['action'],
-  },
+  }); },
 
   async execute(
     params: Record<string, unknown>,
@@ -335,6 +357,44 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     const browserService = useManagedSurface && surfaceIdentity
       ? managedAdapter.getBrowserService(surfaceIdentity)
       : getBrowserService(context.agentId);
+
+    if (action === 'execute_goal') {
+      const driver = resolveBrowserJevStep({ browserService });
+      if (!driver) return jevBrowserStepUnarmedResult();
+      if (typeof params.task !== 'string' || !params.task.trim()) {
+        return jevBrowserStepEmptyTaskResult();
+      }
+      const task = params.task;
+      const assertions = Array.isArray(params.assertions)
+        ? params.assertions as JevPageAssertion[]
+        : undefined;
+      const jevBudgetUsd = typeof params.jevBudgetUsd === 'number' ? params.jevBudgetUsd : undefined;
+      const trace = browserService.beginTrace({
+        toolName: 'browser_action',
+        action,
+        params,
+      });
+      try {
+        const result = await driver.run({ task, assertions, jevBudgetUsd, browserService }, context);
+        const completedTrace = browserService.finishTrace(trace, {
+          success: result.success,
+          error: result.error || null,
+          screenshotPath: getScreenshotPathFromResult(result),
+        });
+        return appendBrowserWorkbenchNote(withWorkbenchTrace(result, completedTrace, context), workbenchNotes);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
+        const completedTrace = browserService.finishTrace(trace, {
+          success: false,
+          error: errorMessage,
+        });
+        return appendBrowserWorkbenchNote(withWorkbenchTrace({
+          success: false,
+          error: errorMessage,
+        }, completedTrace, context), workbenchNotes);
+      }
+    }
 
     if (!useManagedSurface && workbenchPolicy.preferManagedBrowser && MANAGED_SESSION_ACTIONS.has(action)) {
       workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({ agentId: context.agentId }));

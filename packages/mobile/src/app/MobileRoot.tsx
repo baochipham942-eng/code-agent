@@ -867,7 +867,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
               {companion.recoverEntryAvailable ? text.recoverEntryHint : text.recoverUnavailable}
             </p>
           </div>
-          : !companion.account && companion.loginPrompt && isPhoneOffNetworkError(companion.connectionError) ? (
+          : !companion.account && companion.loginPrompt && companion.status !== 'storageError' && isPhoneOffNetworkError(companion.connectionError) ? (
             // S8 薄面板（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 C，爸 2026-09-19：原来 5 个动作 3 段
             // 说明「过于复杂」）：没登录、且这一拍的诊断落在手机真分不清「离开了 Wi‑Fi」还是
             // 「电脑换了内网 IP」的那一类——**门控必须同时看 loginPrompt 和当前 connectionError**
@@ -879,9 +879,13 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             // **必须保留扫描电脑二维码**（R3 ai-review Important②，N-MOBILE-RESCAN-DEADLOCK 同一
             // 条承重注释：这一类包含「电脑换了内网 IP」，重连拨的是配对时写死的地址必败，
             // 扫码是唯一出路——爸 09-16 真机「手机没给我扫的按钮啊」）。命中时整块换成：
-            // 标题、一句说明、主按钮「去登录」、次级「重新连接」、次级「扫描电脑二维码」、一句
-            // 灰字（无动作，拍板③）。「忘记这台电脑」仍不出现；其他失败态（下面 else 分支，
-            // 含配对失效/连接被拒绝/relay no-host 或被拒/已登录）一律不变。
+            // 标题、一句说明、主按钮「去登录」、次级「重新连接」、次级「扫描电脑二维码」（有
+            // 待确认命令时带一句放弃提示）、一句灰字（无动作，拍板③）。「忘记这台电脑」仍不
+            // 出现；其他失败态（下面 else 分支，含配对失效/连接被拒绝/relay no-host 或被拒/
+            // 安全存储故障/已登录）一律不变。**门控排除 `status === 'storageError'`**（R5
+            // ai-review Important②）：安全存储故障时 connectionError 可能还停在离网码上，
+            // 但真正的病因是存储读不出，那句诊断（secureStorageError）与「忘记这台电脑」
+            // 出口在原失败面才有，薄面板会把它们一起藏起来。
             <div className="remote-failed" role="status" data-testid="remote-unreachable">
               <div data-testid="relay-login-prompt">
                 <strong>{text.needLoginTitle}</strong>
@@ -894,6 +898,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
               <button className="sheet-secondary" data-testid="remote-action-scan"
                 disabled={!ports.companion || (companion.busy && !companion.autoAttempt)}
                 onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
+              {/* 原失败面这句没有跟着薄面板搬过来（R5 ai-review Important①）：扫码重连会
+                  放弃盘上那条待确认命令，薄面板既然保留了扫码，就不能把这个代价藏起来。 */}
+              {companion.pending && <p className="caption" data-testid="remote-pending-hint">{text.pendingScanHint}</p>}
               <p className="caption">{text.needLoginHint}</p>
             </div>
           ) : <div className="remote-failed" role="status" data-testid="remote-unreachable">
@@ -996,10 +1003,12 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         // 登录成功零反馈（R3①，ai-review PR#1958 Important）：AccountSheet 自己不管路由，
         // 成功后由这里收口。R4 纠正：不是无条件关掉整个弹层——从设置页个人卡进来的应该
         // 回到设置页看到已登录的个人卡（v3 稿），从 S8 薄面板「去登录」进来的应该回到连接
-        // 面（此时 account 已非空、薄面板已让位）。`back()` 弹栈顶那页，只有栈已经空到
-        // 没有上一页可退时才整体关闭——那种情况理论上不会发生（进 account 页前必然先开过
-        // 至少一页），但按 back() 的返回值兜底，不假设它一定为 true。同时照旧触发一次
-        // 重连，不让用户手动再点一次「重新连接」才看出登录生效了。
+        // 面（此时 account 已非空、薄面板已让位）。`back()` 弹栈顶那页；`mobileStore.back()`
+        // 的实现在 sheet 存在时恒回 true（哪怕弹到只剩一页也会整体收掉再报 true），所以
+        // `!store.getState().back()` 这条分支在这里**永远走不到**——`closeSheet()` 是纯防御
+        // 写法（R5 ai-review Nit），不是「进 account 页前可能没开过任何一页」这种真实场景。
+        // 保留它只是不假设 back() 未来永远这么实现。重连触发逻辑不动，不让用户手动再点一次
+        // 「重新连接」才看出登录生效了。
         login={async (email, password) => {
           const outcome = await companionStore.getState().login(email, password);
           if (outcome.ok) {

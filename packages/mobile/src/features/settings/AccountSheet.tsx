@@ -35,8 +35,17 @@ export function AccountSheet({ hostEmail, login, dismiss, text }: {
     // 切回裸表单再切回失败面板，「错误提示先消失」（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 D，
     // 守卫⑤）。哪个分支亮由 await 结束后的新结局决定，不是提交那一刻决定。
     setBusy(true);
-    const outcome = await login(useEmail, usePassword);
-    setBusy(false);
+    let outcome: AccountLoginOutcome;
+    try {
+      outcome = await login(useEmail, usePassword);
+    } catch {
+      // login() 抛出（比如安全存储 persist 失败，R5 ai-review Important②）：没有 catch 的话
+      // busy 会永久卡在 true，输入框和按钮再也点不动。按「账号服务连不上」结算，不吞成功
+      // 路径——真正的成功走的是下面 try 块正常返回，这里只兜异常。
+      outcome = { ok: false, kind: 'unreachable' };
+    } finally {
+      setBusy(false);
+    }
     if (outcome.ok) { setPassword(''); setInvalid(false); setWrongAccount(null); setUnreachable(null); return; }
     if (outcome.kind === 'invalidCredentials') { setInvalid(true); setWrongAccount(null); setUnreachable(null); }
     else if (outcome.kind === 'wrongAccount') { setWrongAccount(outcome.hostEmail); setInvalid(false); setUnreachable(null); }

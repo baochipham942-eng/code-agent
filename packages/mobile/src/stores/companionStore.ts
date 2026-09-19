@@ -1365,7 +1365,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
             artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, routeError: null,
             uploadProgress: [], voiceResult: null, autoRetrying: false, abandonedPending: false, skipTranscriptionPreflight: false,
-            // 未登录时忘掉电脑：过期的登录引导一并清（重新配对算新的引导周期，finishPair 会再置起）。
+            // 未登录时忘掉电脑：过期的登录引导一并清。R2（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3）
+            // 之前这里写「finishPair 会再置起」——finishPair 配对完成后无条件置起 loginPrompt
+            // 那句已经删掉了（唯一消费方欢迎页登录引导被拍板删除），现在重新配对不会再置起，
+            // 要等下一次真实的「第一次离网连不上」（下面 OFF_NETWORK_ERRORS 那个门控）才会。
             loginPrompt: false });
         }, preempt ? { preempt: true, claim: true } : undefined);
       },

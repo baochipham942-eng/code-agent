@@ -158,6 +158,75 @@ describe('R3①/R4 登录成功零反馈：MobileRoot 收口回上一页 + 触�
     await waitFor(() => { expect(document.querySelector('[data-testid="account-invalid"]')).toBeTruthy(); });
     expect(document.querySelector('[data-testid="sheet-host"]')).toBeTruthy();
   });
+
+  /**
+   * R5②a（ai-review PR#1958 二轮 Important②）：安全存储故障时 status 变 storageError，
+   * 但 connectionError 可能还停在离网码上——真实序列是「先撞一次离网失败成功置起
+   * loginPrompt（写盘成功）→ 用户去登录，凭据本身没错，但落盘账号信息那一步写失败」。
+   * 这是 companionStore.login() 里 `persist()` 会做的事：写失败时把 status 打成
+   * storageError 并把异常原样抛给调用方（R5②b 那条 AccountSheet 的 try/finally 接住）。
+   * 门控必须排除 storageError，不然这一拍会显示「在外面用需要先登录」，把
+   * secureStorageError 那句更准确的诊断和「忘记这台电脑」出口一起藏起来。
+   */
+  it('先离网触发 loginPrompt，登录时账号落盘失败 ⇒ storageError 排除薄面板，回到 remote 显示 secureStorageError', async () => {
+    loginHarness.loginResult = { ok: true, ticket: 'neo1.test-ticket', userId: 'user-1', email: 'lin@example.com' };
+    let writeCalls = 0;
+    loginHarness.recoverCalls = 0;
+    loginHarness.failFirstRecover = true;
+    const identity = createIdentity();
+    const portsFailSecondWrite = (): PlatformPorts => ({
+      preferences: { get: async () => null, set: async () => {} },
+      appInfo: { read: async () => ({ version: '0.1.0', build: '35' }) },
+      lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
+      keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
+      companion: {
+        read: async () => JSON.stringify({
+          version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] },
+        }),
+        // 第 1 次落盘（首次离网失败要记 loginReminded）成功；第 2 次起（登录成功后落账号）
+        // 失败——模拟安全存储在两次写之间坏掉，不是一开始就坏（一开始就坏 loginPrompt 根本
+        // 不会被置起，也就复现不出这条洞）。
+        write: async () => { writeCalls += 1; if (writeCalls >= 2) throw new Error('SECURE_STORAGE_WRITE_FAILED'); },
+        scan: async () => { throw new Error('unused'); }, post: async () => ({}),
+      },
+    });
+    await act(async () => { render(<MobileRoot ports={portsFailSecondWrite()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.topbar strong')).toBeTruthy(); });
+    fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
+    fireEvent.click([...document.querySelectorAll('.drawer-functions button')].find(b => b.textContent === text.remote) as HTMLElement);
+    // 先确认薄面板真的先出现过（loginPrompt 由此置真，第 1 次写盘成功）。
+    await waitFor(() => { expect(document.querySelector('[data-testid="relay-login-go"]')).toBeTruthy(); });
+    fireEvent.click(document.querySelector('[data-testid="relay-login-go"]') as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="account-login"]')).toBeTruthy(); });
+    fireEvent.change(document.getElementById('account-email')!, { target: { value: 'lin@example.com' } });
+    fireEvent.change(document.getElementById('account-password')!, { target: { value: 'password12' } });
+    fireEvent.click(document.querySelector('[data-testid="account-submit"]')!);
+    // 落盘失败：AccountSheet 按「连不上账号服务」结算（R5②b），不是卡死或崩溃。
+    await waitFor(() => { expect(document.querySelector('[data-testid="account-unreachable"]')).toBeTruthy(); });
+    expect((document.querySelector('[data-testid="account-retry"]') as HTMLButtonElement).disabled).toBe(false);
+    // 退回连接面：storageError 已经打起，薄面板必须让位给原失败面。
+    fireEvent.click(document.querySelector('.sheet-header button[aria-label="返回上一级"]') as HTMLElement);
+    await waitFor(() => { expect(currentPage()).toBe('remote'); });
+    expect(document.querySelector('[data-testid="relay-login-prompt"]')).toBeNull();
+    expect(document.querySelector('[data-testid="remote-unreachable"]')?.textContent).toContain(text.secureStorageError);
+    expect(document.querySelector('[data-testid="remote-action-forget"]')).toBeTruthy();
+  });
+});
+
+describe('R5②b AccountSheet：login() 抛异常也要把 busy 收回来（ai-review PR#1958 二轮 Important②）', () => {
+  it('login 抛异常 ⇒ 按「连不上账号服务」结算，输入框/按钮恢复可用，不会永久冻结', async () => {
+    const login = async (): Promise<AccountLoginOutcome> => { throw new Error('SECURE_STORAGE_WRITE_FAILED'); };
+    render(<AccountSheet hostEmail={null} login={login} dismiss={() => {}} text={text} />);
+    fireEvent.change(document.getElementById('account-email')!, { target: { value: 'lin@example.com' } });
+    fireEvent.change(document.getElementById('account-password')!, { target: { value: 'password12' } });
+    fireEvent.click(document.querySelector('[data-testid="account-submit"]')!);
+    await waitFor(() => { expect(document.querySelector('[data-testid="account-unreachable"]')).toBeTruthy(); });
+    expect((document.querySelector('[data-testid="account-retry"]') as HTMLButtonElement).disabled).toBe(false);
+    // 重试同样会抛，同样不能卡死；这次走的是 submit(unreachable) 那条重发路径。
+    fireEvent.click(document.querySelector('[data-testid="account-retry"]')!);
+    await waitFor(() => { expect((document.querySelector('[data-testid="account-retry"]') as HTMLButtonElement).disabled).toBe(false); });
+  });
 });
 
 describe('守卫① 账号并进个人卡（SettingsPage）', () => {

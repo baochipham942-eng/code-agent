@@ -45,20 +45,27 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   },
 }));
 
-function savedWithProjectBinding(): string {
+/** R5 守卫①用：带一条待确认命令的配对记录，模拟扫码/重连会放弃的那种在途操作。 */
+const PENDING_COMMAND = {
+  version: 1 as const, deviceId: 'phone-1', scopeEpoch: 1, commandId: 'cmd-old', sessionId: 's1',
+  action: 'message.send' as const, payload: { text: '上次没发完的' },
+};
+
+function savedWithProjectBinding(options: { pending?: boolean } = {}): string {
   const identity = createIdentity();
   return JSON.stringify({
     version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
     binding: { version: 1, endpoint: 'http://192.168.1.2:8182', altEndpoint: 'http://imac.local:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] },
+    ...(options.pending ? { pending: PENDING_COMMAND } : {}),
   });
 }
 
-const ports = (): PlatformPorts => ({
+const ports = (options: { pending?: boolean } = {}): PlatformPorts => ({
   preferences: { get: async () => null, set: async () => {} },
   appInfo: { read: async () => ({ version: '0.1.0', build: '35' }) },
   lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
   keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
-  companion: { read: async () => savedWithProjectBinding(), write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}) },
+  companion: { read: async () => savedWithProjectBinding(options), write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}) },
 });
 
 const text = messages('zh');
@@ -312,6 +319,33 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
     expect(scan.classList.contains('primary')).toBe(false);
     expect([...failed.querySelectorAll('button.primary')]).toHaveLength(1);
     expect(primaryLabel(failed)).toBe(text.goLogin);
+  });
+
+  /**
+   * R5 ai-review PR#1958 二轮 Important①：原失败面在 `companion.pending` 非空时会渲染
+   * `remote-pending-hint`（扫码/重连会放弃盘上那条待确认命令）。薄面板保留了扫码按钮但
+   * 没搬这句警告过来——静默丢掉待确认操作。钉住这句必须跟着扫码按钮一起出现在薄面板里。
+   */
+  it('连不上（离网）且未登录，有待确认命令 ⇒ 薄面板里也有「扫码会放弃这条操作」提示', async () => {
+    harness.mode = 'reject';
+    await act(async () => { render(<MobileRoot ports={ports({ pending: true })} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+    expect(failed.querySelector('[data-testid="relay-login-prompt"]')).toBeTruthy();
+    const hint = failed.querySelector('[data-testid="remote-pending-hint"]');
+    expect(hint).toBeTruthy();
+    expect(hint?.textContent).toBe(text.pendingScanHint);
+  });
+
+  it('连不上（离网）且未登录，没有待确认命令 ⇒ 薄面板里不出现这条提示', async () => {
+    harness.mode = 'reject';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+    expect(failed.querySelector('[data-testid="relay-login-prompt"]')).toBeTruthy();
+    expect(failed.querySelector('[data-testid="remote-pending-hint"]')).toBeNull();
   });
 
   /**

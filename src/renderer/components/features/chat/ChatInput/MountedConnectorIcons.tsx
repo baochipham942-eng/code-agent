@@ -192,6 +192,16 @@ export const MountedConnectorIcons: React.FC = () => {
                 <p className="font-medium text-zinc-100">{label}</p>
                 <p className="mt-1 text-[11px] text-zinc-400">{text.addedByYou}</p>
                 {statusLine({ status: manualStatus })}
+                {oauthRepairById.get(capability.id) && (
+                  <button /* ds-allow:button: 悬停卡里的紧凑出口，Button primitive 会把卡撑高 */
+                    type="button"
+                    onClick={() => goToHub('connector', capability.id)}
+                    className="mt-1.5 text-[11px] text-badge-danger hover:underline"
+                    data-testid={`mounted-capability-source-repair-${capability.id}`}
+                  >
+                    {text.cliInstallRepair}
+                  </button>
+                )}
                 {needsHub && (
                   <button /* ds-allow:button: 悬停卡里的紧凑出口，Button primitive 会把卡撑高 */
                     type="button"

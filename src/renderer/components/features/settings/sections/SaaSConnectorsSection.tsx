@@ -182,9 +182,9 @@ function persistProviderStatuses(statuses: ConnectorOAuthProviderStatus[]): void
 }
 
 function resolveProviderState(status: ConnectorOAuthProviderStatus): ProviderPresentationState {
+  if (isCliAuthMode(status.authMode) && status.installState === 'failed') return 'install_error';
   if (status.stale) return 'unavailable';
   if (isCliAuthMode(status.authMode)) {
-    if (status.installState === 'failed') return 'install_error';
     if (status.id === 'tmeet' && status.step === 1) return 'connecting_single';
     if (status.step === 1) return 'connecting_step_1';
     if (status.step === 2) return 'connecting_step_2';

@@ -43,10 +43,12 @@ interface CliStatusCache {
   expiresAt: number;
   generation: number;
   inFlight?: Promise<CliConnectorStatus>;
+  installInFlight?: Promise<void>;
   now: () => number;
 }
 
 const STATUS_CACHE_TTL_MS = 30_000;
+const INSTALL_FAIL_COOLDOWN_MS = 10 * 60 * 1000;
 const STATUS_TIMEOUT_MS = 4_000;
 const statusCaches = new Map<string, CliStatusCache>();
 
@@ -327,19 +329,43 @@ export function createCliConnector(
 
   const ensureInstalled = async (trackConnect = false): Promise<void> => {
     const expectedPackageVersion = descriptor.packageJsonVersion ?? descriptor.version;
-    if (await installedVersion() === expectedPackageVersion && await hasExecutable()) return;
-    await mkdir(installPrefix, { recursive: true });
-    await run(
-      npmExecutable,
-      ['install', '--prefix', installPrefix, `${descriptor.npmPackage}@${descriptor.version}`],
-      `install ${descriptor.binaryName}`,
-      undefined,
-      trackConnect,
+    const alreadyInstalled = async (): Promise<boolean> => (
+      await installedVersion() === expectedPackageVersion && await hasExecutable()
     );
-    const version = await installedVersion();
-    if (version !== expectedPackageVersion || !(await hasExecutable())) {
-      throw new Error(`${descriptor.binaryName} ${descriptor.version} installation could not be verified`);
+    const runInstall = async (): Promise<void> => {
+      if (await alreadyInstalled()) return;
+      await mkdir(installPrefix, { recursive: true });
+      await run(
+        npmExecutable,
+        ['install', '--prefix', installPrefix, `${descriptor.npmPackage}@${descriptor.version}`],
+        `install ${descriptor.binaryName}`,
+        undefined,
+        trackConnect,
+      );
+      const version = await installedVersion();
+      if (version !== expectedPackageVersion || !(await hasExecutable())) {
+        throw new Error(`${descriptor.binaryName} ${descriptor.version} installation could not be verified`);
+      }
+    };
+
+    if (statusCache.installInFlight) {
+      try {
+        await statusCache.installInFlight;
+      } catch {
+        if (!trackConnect) {
+          throw new Error(`${descriptor.binaryName} installation already failed`);
+        }
+      }
+      if (await alreadyInstalled()) return;
+      if (!trackConnect) return;
     }
+
+    const work = runInstall();
+    const tracked = work.finally(() => {
+      if (statusCache.installInFlight === tracked) statusCache.installInFlight = undefined;
+    });
+    statusCache.installInFlight = tracked;
+    await tracked;
   };
 
   const readFreshStatus = async (): Promise<CliConnectorStatus> => {
@@ -369,22 +395,39 @@ export function createCliConnector(
         });
         try {
           await ensureInstalled();
-          logger.info('CLI connector self-heal install completed', {
+        } catch (installError) {
+          logger.warn('CLI connector self-heal install failed', {
             providerId: descriptor.id,
             binaryPath,
+            phase: 'install',
+            errorName: installError instanceof Error ? installError.name : typeof installError,
+            errorMessage: installError instanceof Error ? installError.message : String(installError),
           });
+          return {
+            connected: false,
+            identity: descriptor.status.disconnectedIdentity,
+            installState: 'failed',
+          };
+        }
+        logger.info('CLI connector self-heal install completed', {
+          providerId: descriptor.id,
+          binaryPath,
+        });
+        try {
           result = await runDescriptorCommand(
             descriptor.status.command,
             undefined,
             false,
             statusTimeoutMs,
           );
-        } catch (installError) {
-          logger.warn('CLI connector self-heal install failed', {
+        } catch (statusError) {
+          logger.warn('CLI connector still missing after self-heal install', {
             providerId: descriptor.id,
             binaryPath,
-            errorName: installError instanceof Error ? installError.name : typeof installError,
-            errorMessage: installError instanceof Error ? installError.message : String(installError),
+            phase: 'post-install-status',
+            errorName: statusError instanceof Error ? statusError.name : typeof statusError,
+            errorMessage: statusError instanceof Error ? statusError.message : String(statusError),
+            ...(statusError instanceof CliConnectorCommandError ? { exitCode: statusError.exitCode } : {}),
           });
           return {
             connected: false,
@@ -463,7 +506,9 @@ export function createCliConnector(
     const refresh = readFreshStatus().then((nextStatus) => {
       if (statusCache.generation === generation) {
         statusCache.value = nextStatus;
-        statusCache.expiresAt = now() + statusCacheTtlMs;
+        statusCache.expiresAt = now() + (
+          nextStatus.installState === 'failed' ? INSTALL_FAIL_COOLDOWN_MS : statusCacheTtlMs
+        );
       }
       return nextStatus;
     }).finally(() => {

@@ -113,7 +113,9 @@ export async function executeAskUserQuestion(
     return {
       ok: true,
       output: formatNoInteractiveUserOutput(questions),
-      meta: deniedDecisionMetadata(reason),
+      // awaitingUserInput 是「问句未答冻结」的引擎信号（toolExecutionEngine 消费）：
+      // 输出文案里的「不要创建、修改或删除任何文件」不能只指望模型读懂人话。
+      meta: { ...deniedDecisionMetadata(reason), awaitingUserInput: true },
     };
   }
   if (result.status === 'aborted') {

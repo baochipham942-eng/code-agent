@@ -351,6 +351,7 @@ describe('AskUserQuestion CLI fallback', () => {
       expect(result.meta).toMatchObject({
         permissionDecision: 'deny',
         permissionDecisionReason: expect.stringContaining('无头规则'),
+        awaitingUserInput: true,
       });
     }
   });
@@ -385,6 +386,7 @@ describe('AskUserQuestion CLI fallback', () => {
       expect(result.meta).toMatchObject({
         permissionDecision: 'deny',
         permissionDecisionReason: expect.stringContaining('无头规则'),
+        awaitingUserInput: true,
       });
     }
   });

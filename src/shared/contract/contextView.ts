@@ -118,6 +118,7 @@ export const CONTEXT_INJECTION_SOURCES = [
   'tool-call-repair',
   'tool-schema-repair',
   'tool-argument-repair',
+  'awaiting-user-input',
   'tool-policy-guard',
   'truncation-recovery',
   'delivery-critic',

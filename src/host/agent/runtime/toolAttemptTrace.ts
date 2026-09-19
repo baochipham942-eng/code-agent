@@ -7,10 +7,12 @@ import type { RuntimeContext } from './runtimeContext';
 class ToolAttemptTrace {
   consecutiveErrors = 0;
   noProgressStopped = false;
+  /** 本 run 内已有 AskUserQuestion 无人应答（无头回退），问句未答冻结生效中。 */
+  awaitingUserInput = false;
   private failures = new Map<string, string[]>();
   constructor(private readonly ctx: RuntimeContext) {}
 
-  reset(): void { this.consecutiveErrors = 0; this.noProgressStopped = false; this.failures.clear(); }
+  reset(): void { this.consecutiveErrors = 0; this.noProgressStopped = false; this.awaitingUserInput = false; this.failures.clear(); }
 
   begin(call: ToolCall): void {
     this.ctx.turnTrace?.record('tool_attempt', { toolCallId: call.id, toolName: call.name });
@@ -25,6 +27,7 @@ class ToolAttemptTrace {
     const rejected = !dispatched || result.metadata?.permissionDecision === 'deny'
       || result.metadata?.blocked === true
       || (typeof result.metadata?.code === 'string' && result.metadata.code.startsWith('PERMISSION_DENIED'));
+    if (result.metadata?.awaitingUserInput === true) this.awaitingUserInput = true;
     if (!cancelled && !skipped) this.consecutiveErrors = result.success ? 0 : this.consecutiveErrors + 1;
     // Recovery needs the same operation and full canonical locator, never a basename/title match.
     const rawPath = call.arguments.file_path ?? call.arguments.path;

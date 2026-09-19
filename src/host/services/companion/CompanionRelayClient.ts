@@ -634,7 +634,7 @@ export class CompanionRelayClient {
     const requestId = frame.requestId;
     const pending = this.pendingPairs.get(requestId);
     if (!frame.instanceId) {
-      if (!pending || !pending.approved) {
+      if (!pending?.approved) {
         this.logger?.warn(`Companion relay${this.label} pair continuation dropped: ${pending ? 'not approved' : 'no pending pair'} for request ${requestId.slice(0, 8)}`);
         return;
       }

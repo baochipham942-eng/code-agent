@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ReplayBlock, ReplayToolCall, ReplayTurn } from '../../../src/shared/contract/evaluationReplay';
-import { computeTurnSignals } from '../../../src/host/testing/postlaunch/postLaunchSignals';
+import { computeTurnSignals, type PostLaunchSignalContext } from '../../../src/host/testing/postlaunch/postLaunchSignals';
 import type { PostLaunchSignalKind } from '../../../src/shared/contract/postLaunchScore';
 
 const WORKSPACE = '/ws';
@@ -48,7 +48,7 @@ function toolBlock(
   return { type: 'tool_call', content: toolCall.name, timestamp, toolCall };
 }
 
-function kinds(blocks: ReplayBlock[], context = {}): PostLaunchSignalKind[] {
+function kinds(blocks: ReplayBlock[], context: PostLaunchSignalContext = {}): PostLaunchSignalKind[] {
   return computeTurnSignals(turn(blocks), 'turn-1', context).map((signal) => signal.kind);
 }
 

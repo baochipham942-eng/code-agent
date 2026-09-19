@@ -1,4 +1,5 @@
 import { AgentFailureCode, HostReasonCode, type ToolCall } from '@shared/contract';
+import { ASK_USER_QUESTION_UNANSWERED_PREFIX } from '@shared/contract/askUserQuestion';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import type { Translations } from '../i18n';
 import { classifyToolName } from './humanizeToolStep';
@@ -7,12 +8,13 @@ type PreflightKind = 'question' | 'repair' | 'approvalUnavailable' | 'approvalRe
 
 /**
  * 宿主给未送达提问写的占位符，锚在**开头**。
- * 生产里它后面还跟着问题列表与告诫（askUserQuestion.ts:48：
- * `[用户未响应 - CLI 模式无法交互]\n\n${formatted}\n\n⚠️ …`），所以不能整条匹配——
- * 我上一轮就是照着测试夹具写成了整条锚定，夹具过了、生产里一条都匹配不上。
- * 锚开头既排掉「用户自己答案里出现同样的字」，又认得真实形状。
+ * 生产里它后面还跟着问题列表与告诫（ASK_USER_QUESTION_UNANSWERED_PREFIX 之后拼
+ * 问题列表），所以不能整条 output 精确相等——锚开头既排掉「用户自己答案里出现
+ * 同样的字」，又认得真实形状。
  */
-const UNDELIVERED_QUESTION_PLACEHOLDER = /^\s*\[用户未响应[^\]\n]*\]/;
+const UNDELIVERED_QUESTION_PLACEHOLDER = new RegExp(
+  `^\\s*${ASK_USER_QUESTION_UNANSWERED_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+);
 
 // Denied-for-approval-reasons host codes: the operation reached the permission layer and was
 // rejected there (classifier/policy/hard-gate/timeout/cancel), as opposed to no approval UI

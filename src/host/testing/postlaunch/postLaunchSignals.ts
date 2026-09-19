@@ -12,6 +12,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { shellWriteTargets } from '../../tools/writeTargets';
+import { ASK_USER_QUESTION_UNANSWERED_PREFIX } from '../../../shared/contract/askUserQuestion';
 import type { ReplayBlock, ReplayTurn, ReplayToolCall } from '../../../shared/contract/evaluationReplay';
 import {
   POST_LAUNCH_DEFAULTS,
@@ -23,11 +24,13 @@ const CANCEL_PATTERN = /cancel|abort|已取消|中止/i;
 const TIMEOUT_PATTERN = /timeout|timed out|超时|ETIMEDOUT/i;
 const DENIAL_PATTERN = /permission denied|denied by user|用户拒绝|被自动拒绝|拒绝了本次/i;
 /**
- * AskUserQuestion 无头回退的开头标记（askUserQuestion.ts 的 CLI fallback 文案）。
+ * AskUserQuestion 无头回退的开头标记（与生产者 ASK_USER_QUESTION_UNANSWERED_PREFIX 同源）。
  * 无头会话里这个工具**不会失败**（success=true），拒绝语义只落在 result 开头的这段文案上——
  * 锚开头而非全文匹配：正常结果中间引用这段话不该被当成「用户没答」。
  */
-const UNANSWERED_QUESTION_PATTERN = /^\s*\[用户未响应/;
+const UNANSWERED_QUESTION_PATTERN = new RegExp(
+  `^\\s*${ASK_USER_QUESTION_UNANSWERED_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+);
 const OUT_OF_WORKSPACE_PATTERN = /沙盒拒绝了工作目录外的写入|outside this agent's working directory|outside the workspace/i;
 /** 声称产物的动词；只有句子里出现它，后面的路径才当作「声称生成了这个文件」。 */
 const CLAIM_VERB_PATTERN = /已(?:写入|创建|生成|保存|落盘)|写到|保存到|生成了|created|wrote|written to|saved to|generated/i;
@@ -159,8 +162,11 @@ export function computeTurnSignals(
     // 无头回退的拒不走 success=false：AskUserQuestion 回退 success=true、语义在 result 开头。
     // permissionDecision meta 是更硬的证据但回放常缺（tool_call_end 事件只落 id/success/duration），
     // 所以三个判据并成一个析取，任一命中即视为「该问的没问成」。
+    // 无头回退文案只认 AskUserQuestion：别的工具 result 里出现同样开头不算被拒。
+    const unansweredFallback = toolCall.name === 'AskUserQuestion'
+      && UNANSWERED_QUESTION_PATTERN.test(toolCall.result ?? '');
     const denied = (!toolCall.success && DENIAL_PATTERN.test(`${traceText} ${toolCall.result ?? ''}`))
-      || UNANSWERED_QUESTION_PATTERN.test(toolCall.result ?? '')
+      || unansweredFallback
       || toolCall.resultMetadata?.permissionDecision === 'deny';
     if (denied) {
       const why = traceText || toolCall.result
@@ -220,7 +226,11 @@ export function computeTurnSignals(
       const claimed = blocks
         .filter((block) => block.type === 'text')
         .flatMap((block) => collectClaimedPaths(block.content ?? ''));
-      const missing = claimed.find((candidate) => !fileExists(path.resolve(workspaceDir, candidate)));
+      const missing = claimed.find((candidate) => {
+        const workspace = path.resolve(expandUserPath(workspaceDir));
+        const absolute = path.resolve(workspace, expandUserPath(candidate));
+        return !fileExists(absolute);
+      });
       if (missing) add('claimed_file_missing', `声称生成 ${missing}，磁盘上不存在`);
     }
   }

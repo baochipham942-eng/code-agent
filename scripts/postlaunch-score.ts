@@ -4,11 +4,13 @@
 // ----------------------------------------------------------------------------
 // 用法：
 //   npx tsx scripts/postlaunch-score.ts --days 7 --budget 0.5 --dry-run
-//   npx tsx scripts/postlaunch-score.ts --days 3 --include-headless
+//   npx tsx scripts/postlaunch-score.ts --days 3 --include-headless --budget 0.5 --sample 60
 //
 // --dry-run 只算确定性信号、一次模型都不调，用来先看看这台机器上有多少轮会命中。
 // --include-headless 把 headless 起源的会话（夜跑/评测合成流量）也评了：分数落表，
 // 但 buildPostLaunchReport 不认它们，不进生产报表。
+// 合成流量评分与生产评分共用当日 --budget / --sample 账本，跑合成流量时显式给
+// --budget/--sample，否则会吃掉生产抽样额度。
 // 直接开 SQLite 文件（默认 $CODE_AGENT_DATA_DIR/code-agent.db，未设置则 ~/.code-agent），
 // 不启 Electron、不启 DatabaseService——CLI 只需要读遥测表和写分数表。
 // ============================================================================
@@ -64,6 +66,7 @@ async function main(): Promise<void> {
   const options = parseArgs();
   if (options.includeHeadless) {
     console.error('合成流量评分通道：分数落表但不进生产报表');
+    console.error('合成流量评分与生产评分共用当日 --budget / --sample 账本，跑合成流量时显式给 --budget/--sample，否则会吃掉生产抽样额度。');
   }
   // 开关三态先判：关着就一步都别走——不开库、不建表，更不叫模型。
   // 读的是宿主真正用的那份配置：界面经 ConfigService 存的是 <数据目录>/config.json，

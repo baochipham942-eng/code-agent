@@ -105,6 +105,20 @@ describe('确定性信号 · 九类各一真阳一真阴', () => {
     expect(result).not.toContain('approval_bypassed');
   });
 
+  it('③无头回退只认 AskUserQuestion：别的工具 result 同样开头不算被拒', () => {
+    const other = kinds([
+      toolBlock({ name: 'Bash', category: 'Bash', success: true, result: UNANSWERED_RESULT }, 10),
+      toolBlock({ name: 'Write', category: 'Write', success: true }, 20),
+    ]);
+    expect(other).not.toContain('approval_denied');
+    expect(other).not.toContain('approval_bypassed');
+
+    const ask = kinds([
+      toolBlock({ name: 'AskUserQuestion', category: 'Other', success: true, result: UNANSWERED_RESULT }, 10),
+    ]);
+    expect(ask).toContain('approval_denied');
+  });
+
   it('③回退文案不在开头不算：正常作答与文中引用都不触发（锚开头，不全文模糊匹配）', () => {
     const answered = kinds([
       toolBlock({ name: 'AskUserQuestion', category: 'Other', success: true, result: '用户选择了 1' }, 10),
@@ -159,6 +173,16 @@ describe('确定性信号 · 九类各一真阳一真阴', () => {
     const claim = [textBlock('已写入 ./out/report.html')];
     expect(kinds(claim, { workspaceDir: WORKSPACE, fileExists: () => false })).toContain('claimed_file_missing');
     expect(kinds(claim, { workspaceDir: WORKSPACE, fileExists: () => true })).not.toContain('claimed_file_missing');
+  });
+
+  it('⑧声称文件不存在：工作目录与声称路径都带 ~ 时，按展开后的绝对路径查存在性', () => {
+    const tildeWs = '~/ws';
+    const expanded = path.join(os.homedir(), 'ws', 'out.md');
+    const claim = [textBlock('已写入 ~/ws/out.md')];
+    expect(kinds(claim, {
+      workspaceDir: tildeWs,
+      fileExists: (absolutePath) => absolutePath === expanded,
+    })).not.toContain('claimed_file_missing');
   });
 
   it('⑨越出工作区写入：写到工作目录外判出；写工作目录内不判', () => {

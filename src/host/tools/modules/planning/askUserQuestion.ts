@@ -27,7 +27,10 @@ import type {
 import type {
   UserQuestion,
 } from '../../../../shared/contract';
-import { ASK_USER_QUESTION_DECLINED_OUTPUT } from '../../../../shared/contract/askUserQuestion';
+import {
+  ASK_USER_QUESTION_DECLINED_OUTPUT,
+  ASK_USER_QUESTION_UNANSWERED_PREFIX,
+} from '../../../../shared/contract/askUserQuestion';
 import { promptUserInChat } from '../../utils/userQuestionPrompt';
 import { askUserQuestionSchema as schema } from './askUserQuestion.schema';
 import {
@@ -45,7 +48,7 @@ function formatNoInteractiveUserOutput(questions: UserQuestion[]): string {
     })
     .join('\n\n');
 
-  return `[用户未响应 - CLI 模式无法交互]\n\n${formatted}\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。`;
+  return `${ASK_USER_QUESTION_UNANSWERED_PREFIX}\n\n${formatted}\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。`;
 }
 
 export async function executeAskUserQuestion(

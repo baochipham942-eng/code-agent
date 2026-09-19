@@ -235,7 +235,9 @@ function sameUrl(current: string, target: string): boolean {
   try {
     const left = new URL(current);
     const right = new URL(target);
-    return left.origin === right.origin && left.pathname.replace(/\/$/, '') === right.pathname.replace(/\/$/, '');
+    return left.origin === right.origin
+      && left.pathname.replace(/\/$/, '') === right.pathname.replace(/\/$/, '')
+      && left.search === right.search;
   } catch {
     return current === target;
   }
@@ -373,6 +375,9 @@ async function runJevBrowserStepLoop(
     }
     if (steps >= softStepLimit) {
       return finish('step_limit', 'step_limit');
+    }
+    if (isBlockedSystemUrl(deps.host.currentUrl())) {
+      return finish('needs_review', 'system_settings');
     }
 
     const captured = carriedSnapshot ?? await deps.host.capture();
@@ -538,13 +543,14 @@ async function runJevBrowserStepLoop(
     }
 
     let opResult = 'ok';
+    let typedValue: string | null = null;
     try {
       if (applied.operation === 'click' && target) {
         await clickWithRebind(deps.host, target, prepared);
       } else if (applied.operation === 'type' && target) {
-        const value = await generateTypeValue(task, target, deps.quickType);
-        if (value == null) return finish('fallback', 'type_value_unavailable');
-        await typeWithRebind(deps.host, target, value, prepared);
+        typedValue = await generateTypeValue(task, target, deps.quickType);
+        if (typedValue == null) return finish('fallback', 'type_value_unavailable');
+        await typeWithRebind(deps.host, target, typedValue, prepared);
       } else if (applied.operation === 'scroll_down') {
         await deps.host.scroll('down');
       } else if (applied.operation === 'scroll_up') {
@@ -566,9 +572,8 @@ async function runJevBrowserStepLoop(
         try {
           if (applied.operation === 'click') await deps.host.clickTargetRef(rebound);
           else if (applied.operation === 'type') {
-            const value = await generateTypeValue(task, target, deps.quickType);
-            if (value == null) return finish('fallback', 'type_value_unavailable');
-            await deps.host.typeTargetRef(rebound, value);
+            if (typedValue == null) return finish('fallback', 'type_value_unavailable');
+            await deps.host.typeTargetRef(rebound, typedValue);
           }
         } catch {
           return finish('fallback', 'stale_target');

@@ -27,7 +27,6 @@ export interface JevBrowserHost {
   getFormValues(): Promise<Record<string, string>>;
   getVisibleText(): Promise<string>;
   listDownloads(): Promise<Array<Pick<BrowserArtifactSummary, 'name' | 'sha256'>>>;
-  evaluate<T>(script: string): Promise<T>;
 }
 
 const SYSTEM_SETTINGS_URL = /^(chrome|edge|chrome-extension):\/\/|about:preferences/i;
@@ -40,13 +39,19 @@ export function isStaleTargetRefError(error: unknown): error is BrowserTargetRef
   return error instanceof BrowserTargetRefError || (error as { code?: string } | null)?.code === 'STALE_TARGET_REF';
 }
 
+const INNER_ACTION_TIMEOUT_MS = 2500;
+
 async function withHostTrace<T>(
   service: BrowserService,
   action: string,
   params: Record<string, unknown>,
   run: () => Promise<T>,
 ): Promise<T> {
-  const trace = service.beginTrace({ toolName: 'browser_action', action, params });
+  const trace = service.beginTrace({
+    toolName: 'browser_action',
+    action,
+    params: { ...params, action },
+  });
   try {
     const value = await run();
     service.logger.log('INFO', `Jev inner ${action}`);
@@ -57,6 +62,20 @@ async function withHostTrace<T>(
     service.logger.log('ERROR', `Jev inner ${action} failed: ${message}`);
     service.finishTrace(trace, { success: false, error: message });
     throw error;
+  }
+}
+
+async function raceWithTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
@@ -76,21 +95,17 @@ export function createManagedJevBrowserHost(service: BrowserService): JevBrowser
     currentUrl: () => service.getActiveTab()?.url || '',
     capture: async () => service.captureJevPage(),
     clickTargetRef: async (targetRef) => {
-      // ponytail: click/type 2.5s race 半截保护；基线同场景一样卡，不算回归
+      // Hang-protect: 2.5s then reject `timeout`. Baseline awaits Playwright; a timed-out
+      // inner click must not be recorded as ok in recent_steps.
       await withHostTrace(service, 'click', { targetRef }, async () => {
-        await Promise.race([
-          service.clickTargetRef(targetRef),
-          new Promise<void>((resolve) => setTimeout(resolve, 2500)),
-        ]);
+        await raceWithTimeout(service.clickTargetRef(targetRef), INNER_ACTION_TIMEOUT_MS);
       });
     },
     typeTargetRef: async (targetRef, text) => {
-      // ponytail: click/type 2.5s race 半截保护；基线同场景一样卡，不算回归
+      // Hang-protect: 2.5s then reject `timeout`. Baseline awaits Playwright; a timed-out
+      // inner type must not be recorded as ok in recent_steps.
       await withHostTrace(service, 'type', { targetRef, text }, async () => {
-        await Promise.race([
-          service.typeTargetRef(targetRef, text),
-          new Promise<void>((resolve) => setTimeout(resolve, 2500)),
-        ]);
+        await raceWithTimeout(service.typeTargetRef(targetRef, text), INNER_ACTION_TIMEOUT_MS);
       });
     },
     scroll: async (direction) => {
@@ -135,6 +150,5 @@ export function createManagedJevBrowserHost(service: BrowserService): JevBrowser
     },
     // ponytail: 生产态 listDownloads 恒空，download_artifact_present 永远判不过；升级路径=接 BrowserArtifactSummary / wait_for_download 产物表。12 题未用到，是已知天花板
     listDownloads: async () => [],
-    evaluate: async (script) => service.runScript(script),
   };
 }

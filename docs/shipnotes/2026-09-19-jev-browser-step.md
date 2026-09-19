@@ -9,6 +9,11 @@
 
 ## 数据出境（FolderTrust / 权限披露）
 
-开启后，**已脱敏的浏览器 DOM 文本**（页面标题、heading、窗口内候选控件短标签；密码/文件字段在窗口选择前丢弃）会经 `guardSensitiveText` 后再发到 `api.typesafe.ai`（TypeSafe System One，`jev-1.13.0`）。注入扫描命中 critical 则不调用 Jev。未开启则零出境。
+开启后，以下字段会经 `guardSensitiveText` 后再发到 `api.typesafe.ai`（TypeSafe System One，`jev-1.13.0`）。注入扫描命中 critical 则不调用 Jev。未开启则零出境。
+
+- 已脱敏的浏览器 DOM 文本：页面标题、heading、窗口内候选控件短标签；密码/文件字段在窗口选择前丢弃
+- `page.url`（截 1500）
+- `task` 正文（截 2000）
+- `recent_steps`（最近 8 步的 op / target_name / result）
 
 权限分类线的命令行出境说明仍见 `docs/shipnotes/2026-08-30-ship-note-cli-permission-mode-auto.md`。

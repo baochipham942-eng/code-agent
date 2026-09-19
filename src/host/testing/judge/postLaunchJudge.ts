@@ -9,7 +9,7 @@
 // 不问模型（ADR-063 §2「安全与产物以代码判为主，judge 不复判」）。
 //
 // 可选 Jev 初筛：同一份投影当 state，窄问决断则不再调生成式；任一应判维弃权
-// 或 Jev 抛错/形状不对则升级生成式。不新增 unavailable 出口。
+// 或 Jev 抛错/形状不对则升级生成式。抛错且预算不够升级时走既有 judge_error unavailable。
 // ============================================================================
 import { createHash } from 'node:crypto';
 import type { ReplayTurn } from '../../../shared/contract/evaluationReplay';
@@ -18,7 +18,6 @@ import {
   JUDGE_PRESCREEN_QUESTIONS,
   JEV_JUDGE_MODEL,
   estimateJevCallUsd,
-  getJudgePrescreenHash,
   type JevAnswers,
   type JevQuestionSpec,
 } from '../../../shared/constants/jevQuestions';
@@ -56,6 +55,11 @@ function sha256(value: string): string {
 
 export function getPostLaunchPromptHash(): string {
   return sha256(POST_LAUNCH_JUDGE_PROMPT);
+}
+
+/** 问法 + pin 模型的哈希，用来分辨初筛问句漂移（与生成式 POST_LAUNCH_JUDGE_PROMPT 哈希分开）。 */
+function getJudgePrescreenHash(): string {
+  return sha256(`${JSON.stringify(JUDGE_PRESCREEN_QUESTIONS)}${JEV_JUDGE_MODEL}`);
 }
 
 function clip(value: string | undefined, max: number): string {
@@ -403,6 +407,7 @@ export function estimatePostLaunchPrescreenUsd(
  *
  * 有 prescreen 时先走 Jev：全部应判维决断则不再调生成式；任一弃权或 Jev 失败则升级。
  * 升级前若 canEscalate 返回 false，不调生成式，保留 Jev 已决断维。
+ * Jev 抛错且不能升级时走既有 judge_error unavailable。
  * Jev 一经调用（决断/弃权/抛错）都把刊例估算带回 verdict.prescreenCostUsd。
  */
 export async function judgePostLaunchTurn(
@@ -427,7 +432,11 @@ export async function judgePostLaunchTurn(
         if (decided.fullyDecided) return finish(applyGoalAbstainWhenNone(decided.verdict, source));
         partial = applyGoalAbstainWhenNone(decided.verdict, source);
       } catch {
-        // Jev 抛错 / 超时 / 形状不对 ⇒ 视同全弃权。不新增 unavailable 出口。
+        // Jev 抛错 / 超时 / 形状不对：能升级则视同全弃权走生成式；预算不够升级则
+        // 走既有 judge_error，避免落库成 jev 四维全 null 且不计 judgeUnavailableTurns。
+        if (input.canEscalate && !input.canEscalate()) {
+          return finish(unavailable('judge_error', 'Jev 初筛失败且预算不够升级生成式', JEV_JUDGE_MODEL));
+        }
         partial = applyGoalAbstainWhenNone(
           jevVerdict({ goal: null, orchestration: null, tools: null, permission: null }, ''),
           source,

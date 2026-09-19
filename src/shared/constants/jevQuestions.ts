@@ -13,8 +13,6 @@
 // 那一桶里 **Bash** 的**收窄**（approve 方向），不做 deny、不扩 approve 边界；非 Bash
 // 工具不进 Jev。Jev 官方明说对抗输入能带偏、不是安全边界。
 
-import { createHash } from 'node:crypto';
-
 /** 生产 pin 的 Jev 版本。禁止换 alias（jev-latest / jev-preview）。 */
 export const JEV_MODEL = 'jev-1.13.0';
 
@@ -152,13 +150,6 @@ export function estimateJevCallUsd(stateJsonChars: number, questionsJsonChars: n
   const chars = Math.max(0, stateJsonChars) + Math.max(0, questionsJsonChars);
   const tokens = Math.ceil(chars / 4);
   return (tokens * JEV_INPUT_USD_PER_MTOK) / 1_000_000;
-}
-
-/** 问法 + pin 模型的哈希，用来分辨初筛问句漂移（与生成式 POST_LAUNCH_JUDGE_PROMPT 哈希分开）。 */
-export function getJudgePrescreenHash(): string {
-  return createHash('sha256')
-    .update(`${JSON.stringify(JUDGE_PRESCREEN_QUESTIONS)}${JEV_JUDGE_MODEL}`)
-    .digest('hex');
 }
 
 /**

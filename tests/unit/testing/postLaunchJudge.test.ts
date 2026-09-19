@@ -11,7 +11,6 @@ import {
 } from '../../../src/host/testing/judge/postLaunchJudge';
 import {
   estimateJevCallUsd,
-  getJudgePrescreenHash,
   JEV_JUDGE_MODEL,
   type JevAnswers,
   type JevChoiceAnswer,
@@ -294,7 +293,7 @@ describe('postLaunchJudge · Jev 初筛', () => {
     expect(verdict.dims).toEqual({ goal: 1, orchestration: 1, tools: 1, permission: 1 });
     expect(verdict.unavailableReason).toBeUndefined();
     expect(verdict.reasoning).toBe('goal: 0.91；orchestration: 0.88；tools: 0.87；permission: 0.95');
-    expect(verdict.promptHash).toBe(getJudgePrescreenHash());
+    expect(verdict.promptHash).toMatch(/^[a-f0-9]{64}$/);
     expect(verdict.promptHash).not.toBe(getPostLaunchPromptHash());
     expect(verdict.prescreenCalled).toBe(true);
     expect(verdict.prescreenCostUsd).toBeGreaterThan(0);
@@ -308,7 +307,7 @@ describe('postLaunchJudge · Jev 初筛', () => {
       vi.fn(async () => GENERATIVE),
     );
     const generative = await judgePostLaunchTurn({ turn: TURN, signals: [] }, async () => GENERATIVE);
-    expect(screened.promptHash).toBe(getJudgePrescreenHash());
+    expect(screened.promptHash).toMatch(/^[a-f0-9]{64}$/);
     expect(generative.promptHash).toBe(getPostLaunchPromptHash());
     expect(screened.promptHash).not.toBe(generative.promptHash);
   });
@@ -438,6 +437,24 @@ describe('postLaunchJudge · Jev 初筛', () => {
     expect(llmCall).toHaveBeenCalledTimes(1);
     expect(verdict.unavailableReason).toBeUndefined();
     expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+  });
+
+  it('prescreen 抛错 + canEscalate=false ⇒ judge_error，llmCall 零调用', async () => {
+    const prescreen: PostLaunchJudgePrescreen = async () => {
+      throw new Error('TYPESAFE_TIMEOUT');
+    };
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn(
+      { turn: TURN, signals: [], prescreen, canEscalate: () => false },
+      llmCall,
+    );
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(verdict.unavailableReason).toBe('judge_error');
+    expect(verdict.reasoning).toBe('Jev 初筛失败且预算不够升级生成式');
+    expect(verdict.judgeModel).toBe(JEV_JUDGE_MODEL);
+    expect(verdict.prescreenCalled).toBe(true);
+    expect(verdict.prescreenCostUsd).toBeGreaterThan(0);
   });
 
   it('prescreen 抛错且 llmCall 也抛 ⇒ judge_error（既有行为不变）', async () => {

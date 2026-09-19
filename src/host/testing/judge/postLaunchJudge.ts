@@ -89,8 +89,9 @@ function readUserPrompt(blocks: ReplayTurn['blocks']): string | undefined {
 }
 
 /**
- * 当前轮 user block 优先；没有则用同会话更早轮承接的 carriedUserPrompt。
- * 两者都空时 source='none'，goal 维强制弃权（见 applyGoalAbstainWhenNone）。
+ * 当前轮有非空 user block ⇒ source='turn'。
+ * 有 user block 但内容空/仅空白（例如只带附件）⇒ source='none'，不承接，goal 强制弃权。
+ * 整轮没有 user block 才承接 carriedUserPrompt。
  */
 function resolveUserPrompt(
   turn: ReplayTurn,
@@ -98,6 +99,9 @@ function resolveUserPrompt(
 ): { userPrompt: string | undefined; userPromptSource: PostLaunchUserPromptSource } {
   const fromTurn = readUserPrompt(turn.blocks);
   if (fromTurn) return { userPrompt: fromTurn, userPromptSource: 'turn' };
+  if (turn.blocks.some((block) => block.type === 'user')) {
+    return { userPrompt: undefined, userPromptSource: 'none' };
+  }
   if (typeof carriedUserPrompt === 'string' && carriedUserPrompt.trim()) {
     return { userPrompt: carriedUserPrompt, userPromptSource: 'carried' };
   }

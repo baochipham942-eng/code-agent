@@ -227,6 +227,26 @@ describe('postLaunchJudge · 跨轮承接 userPrompt', () => {
     expect(prompt).toContain('把 README 里的安装步骤补全');
   });
 
+  it('当前轮 user block content 为空 + carried 有值 ⇒ source=none、goal=null、prompt 不含 carried 文案', async () => {
+    const turn: ReplayTurn = {
+      ...TURN,
+      blocks: [
+        { type: 'user', content: '', timestamp: TURN.startTime },
+        ...TURN.blocks.filter((block) => block.type !== 'user'),
+      ],
+    };
+    const carried = '这句不该被承接的上一轮任务';
+    const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_FAIL_GOAL);
+    const verdict = await judgePostLaunchTurn(
+      { turn, signals: [], carriedUserPrompt: carried },
+      llmCall,
+    );
+    const prompt = llmCall.mock.calls[0][0];
+    expect(prompt).toContain('"userPromptSource": "none"');
+    expect(prompt).not.toContain(carried);
+    expect(verdict.dims.goal).toBeNull();
+  });
+
   it('两者都无 ⇒ source=none 且即使 llmCall 返回 goal.pass=false，verdict.dims.goal 仍是 null', async () => {
     const turn: ReplayTurn = { ...TURN, blocks: TURN.blocks.filter((block) => block.type !== 'user') };
     const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_FAIL_GOAL);

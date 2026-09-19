@@ -215,6 +215,17 @@ function resolveBudgetUsd(input: JevBrowserStepRunInput): number {
   return BROWSER_JEV_DEFAULT_BUDGET_USD;
 }
 
+function resolveSoftStepLimit(): number {
+  const envRaw = process.env.CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT;
+  if (envRaw) {
+    const parsed = Number(envRaw);
+    if (Number.isFinite(parsed) && parsed >= 1) {
+      return Math.min(Math.floor(parsed), BROWSER_JEV_HARD_STEP_LIMIT);
+    }
+  }
+  return BROWSER_JEV_SOFT_STEP_LIMIT;
+}
+
 function extractTaskUrl(task: string): string | null {
   const match = task.match(TASK_URL_RE);
   return match ? match[0] : null;
@@ -300,6 +311,7 @@ async function runJevBrowserStepLoop(
   const budgetUsd = resolveBudgetUsd(input);
   const assertions = extractJevAssertions(input.task, input.assertions);
   const mutate = deps.mutate ?? input.mutate;
+  const softStepLimit = resolveSoftStepLimit();
   let spentUsd = 0;
   let jevCalls = 0;
   let jevChars = 0;
@@ -350,7 +362,7 @@ async function runJevBrowserStepLoop(
     if ((deps.now ?? Date.now)() - started >= BROWSER_JEV_TIME_LIMIT_MS) {
       return finish('time_limit', 'time_limit');
     }
-    if (steps >= BROWSER_JEV_SOFT_STEP_LIMIT) {
+    if (steps >= softStepLimit) {
       return finish('step_limit', 'step_limit');
     }
 
@@ -384,7 +396,7 @@ async function runJevBrowserStepLoop(
     if (prepared.sensitiveFieldsPresent && UPLOAD_TASK.test(input.task)) {
       return finish(
         'needs_review',
-        'upload: hand back to main model upload_file approval gate',
+        '任务含上传/文件语义或页面含敏感字段（密码/文件），交回主模型走现行审批门',
         {
           code: 'SURFACE_APPROVAL_REQUIRED',
           userActionRequired: true,

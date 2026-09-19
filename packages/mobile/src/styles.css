@@ -1,5 +1,5 @@
-:root { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; color: var(--text); background: var(--bg); color-scheme: light; --bg: #fff; --text: #161616; --muted: #65656b; --group: #f3f3f6; --line: #e5e5ea; --surface: #fff; --scrim: #0006; --accent: #0f766e; }
-:root[data-theme='dark'] { color-scheme: dark; --bg: #171719; --text: #f5f5f7; --muted: #b0b0b6; --group: #262629; --line: #3b3b3f; --surface: #212124; --scrim: #0009; --accent: #35b3a4; }
+:root { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; color: var(--text); background: var(--bg); color-scheme: light; --bg: #fff; --text: #161616; --muted: #65656b; --group: #f3f3f6; --line: #e5e5ea; --surface: #fff; --scrim: #0006; --accent: #0f766e; --avatar-bg: #d6d6dc; }
+:root[data-theme='dark'] { color-scheme: dark; --bg: #171719; --text: #f5f5f7; --muted: #b0b0b6; --group: #262629; --line: #3b3b3f; --surface: #212124; --scrim: #0009; --accent: #35b3a4; --avatar-bg: #3b3b3f; }
 /* Native MainActivity injects --safe-area-inset-* (Android WebView 95 has no env()); iOS falls back to env(). Single source: never combine both. */
 :root { --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)); }
 /* 字号档位（N-MOBILE-DYNAMIC-TYPE）：默认分支 = Android WebView / 一切不识别 -apple-system-body 的环境，
@@ -99,7 +99,11 @@ textarea::placeholder { color: var(--muted); }
 .drawer-history { flex: 1; min-height: 0; overflow: auto; padding: 8px 10px; overscroll-behavior: contain; }
 .group-title { display: block; margin: 20px 14px 8px; }
 .personal-bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--line); text-align: left; flex-shrink: 0; }.personal-bar strong { flex: 1; overflow-wrap: anywhere; }
-.avatar { display: grid; place-items: center; background: var(--group); border-radius: 50%; width: 42px; height: 42px; flex-shrink: 0; }
+/* 头像圆底（N-COMPANION-ACCOUNT-CARD-POLISH，爸真机看 v3：深色下 .avatar 用 --group 跟个人卡
+   所在的 --surface 几乎同色，圆底不可见，只剩裸字浮着）。--avatar-bg 浅深色都单独取一个跟
+   --group/--surface 有明显对比的值（相对亮度对比度浅色 1.307、深色 1.353，均 ≥ 1.3，见证据档），
+   再加 1px 描边兜底，不依赖颜色也能看出圆形边界。 */
+.avatar { display: grid; place-items: center; background: var(--avatar-bg); border: 1px solid var(--line); border-radius: 50%; width: 42px; height: 42px; flex-shrink: 0; }
 .sheet { position: absolute; bottom: var(--keyboard-h, 0px); width: 100%; max-height: calc(100% - max(16px, var(--safe-top)) - var(--keyboard-h, 0px)); min-height: 230px; display: flex; flex-direction: column; background: var(--group); border-radius: 28px 28px 0 0; padding-bottom: max(16px, var(--safe-bottom)); outline: none; }
 html[data-keyboard-inset] .sheet { padding-bottom: 16px; }
 .drag-handle { height: 24px; flex-shrink: 0; display: grid; place-items: center; touch-action: none; }.drag-handle span { width: 36px; height: 5px; border-radius: 4px; background: var(--muted); opacity: .5; }
@@ -121,6 +125,9 @@ html[data-keyboard-inset] .sheet { padding-bottom: 16px; }
 .profile-card .stack .small { font-size: var(--fs-cap); color: var(--muted); font-weight: 400; }
 .profile-card .avatar-generic .app-icon { width: 22px; height: 22px; color: var(--muted); }
 input { width: 100%; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: var(--fs-body); }.primary { border-radius: 24px; width: 100%; margin-top: 18px; }
+/* 次级按钮（N-COMPANION-ACCOUNT-CARD-POLISH）：跟 .primary 同款药丸形状，描边代替填色——
+   退出登录从纯文字链接改成看得出是按钮的样子，用于「退出登录」触发按钮与确认块里的「取消」。 */
+.secondary { border: 1px solid var(--line); border-radius: 24px; width: 100%; margin-top: 10px; background: transparent; color: var(--text); }
 .about { text-align: center; padding: 18px 8px; }.about p { color: var(--muted); }
 .virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding-bottom: calc(var(--composer-h, 132px) + var(--keyboard-h, 0px)); }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: var(--fs-sub); }
 .loading { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }

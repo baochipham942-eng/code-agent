@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { SettingsPage } from '../../../packages/mobile/src/features/settings/SettingsPage';
@@ -39,6 +40,50 @@ beforeEach(() => {
 });
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+/**
+ * 守卫①（N-COMPANION-ACCOUNT-CARD-POLISH，爸真机看 v3：深色下 .avatar 用 --group 跟个人卡
+ * 所在的 --surface 几乎同色，圆底不可见，只剩裸字浮着）。jsdom 不跑真正的 CSS 级联，量不了
+ * 渲染后的颜色，退而求其次：直接读 styles.css 文本核对规则本身——`.avatar` 用了新 token
+ * `--avatar-bg`（不是又滑回 `--group`）、`border-radius: 50%` 还在、加了描边兜底；再核对
+ * `--avatar-bg` 在浅深色两个 `:root` 块里都定义了。渲染结构那半用 DOM 查询核对
+ * `.profile-card .avatar` 真的会出现在个人卡里（未登录通用图标、已登录首字都在同一个圆里）。
+ */
+describe('守卫①（CSS）个人卡头像圆底：--avatar-bg 与描边', () => {
+  const styles = readFileSync('packages/mobile/src/styles.css', 'utf8');
+  const avatarRule = styles.match(/\.avatar\s*\{[^}]*\}/)?.[0] ?? '';
+
+  it('.avatar 规则用 --avatar-bg 当底色、border-radius 50%、有描边兜底（不是又用回 --group）', () => {
+    expect(avatarRule).toContain('var(--avatar-bg)');
+    expect(avatarRule).not.toContain('var(--group)');
+    expect(avatarRule).toContain('border-radius: 50%');
+    expect(avatarRule).toContain('border: 1px solid var(--line)');
+  });
+
+  it('--avatar-bg 浅深色两个 :root 块都定义了，且两个取值不同（不是抄同一个数）', () => {
+    const lightRoot = styles.match(/:root\s*\{[^}]*\}/)?.[0] ?? '';
+    const darkRoot = styles.match(/:root\[data-theme='dark'\]\s*\{[^}]*\}/)?.[0] ?? '';
+    const lightMatch = lightRoot.match(/--avatar-bg:\s*(#[0-9a-fA-F]+)/);
+    const darkMatch = darkRoot.match(/--avatar-bg:\s*(#[0-9a-fA-F]+)/);
+    expect(lightMatch).toBeTruthy();
+    expect(darkMatch).toBeTruthy();
+    expect(lightMatch?.[1]).not.toBe(darkMatch?.[1]);
+  });
+
+  const base = {
+    page: 'settings' as const, text, appearance: 'system' as const, nickname: '',
+    profileDraft: '', appInfo: null, open: () => {}, chooseAppearance: () => {}, editProfile: () => {}, saveProfile: () => {},
+    logout: async () => true,
+  };
+
+  it('.profile-card .avatar 在未登录/已登录两态都渲染（结构没被这次样式改动带歪）', () => {
+    const { unmount } = render(<SettingsPage {...base} account={null} />);
+    expect(document.querySelector('.profile-card .avatar')).toBeTruthy();
+    unmount();
+    render(<SettingsPage {...base} nickname="小林" account={{ email: 'lin@example.com' }} />);
+    expect(document.querySelector('.profile-card .avatar')?.textContent).toBe('小');
+  });
+});
 
 /**
  * R3①/R4：MobileRoot 级别的收口验证——只 mock 传输层与登录模块（照 relayAccountRoute.test.ts
@@ -256,13 +301,15 @@ describe('守卫① 账号并进个人卡（SettingsPage）', () => {
     expect(card.textContent).toContain('lin@example.com');
   });
 
-  it('已登录点个人卡进个人信息页，账号区有邮箱与「退出登录」文字链接', () => {
+  it('已登录点个人卡进个人信息页，账号区有邮箱与「退出登录」按钮（N-COMPANION-ACCOUNT-CARD-POLISH：从文字链接改成按钮）', () => {
     render(<SettingsPage {...base} page="profile" profileDraft="小林" account={{ email: 'lin@example.com' }} logout={async () => true} />);
-    expect(document.querySelector('[data-testid="account-logout"]')?.textContent).toBe(text.accountLogout);
+    const logoutButton = document.querySelector('[data-testid="account-logout"]') as HTMLElement;
+    expect(logoutButton.textContent).toBe(text.accountLogout);
+    expect(logoutButton.classList.contains('secondary')).toBe(true);
     expect(document.body.textContent).toContain('lin@example.com');
     // 主按钮仍是「保存」，退出不是主按钮（拍板④）。
     expect(document.querySelector('form button.primary')?.textContent).toBe(text.save);
-    expect(document.querySelector('[data-testid="account-logout"]')?.classList.contains('primary')).toBe(false);
+    expect(logoutButton.classList.contains('primary')).toBe(false);
   });
 });
 
@@ -273,10 +320,14 @@ describe('R2 个人页退出登录判定：按 logout() 回传结果，不按渲
     profileDraft: '小林', appInfo: null, open: noop, chooseAppearance: noop, editProfile: noop, saveProfile: noop,
   };
 
+  // N-COMPANION-ACCOUNT-CARD-POLISH 之后「退出登录」多了一步二次确认：点按钮只出确认块，
+  // 点确认块里的「退出登录」（testid account-logout-confirm）才真的调 logout()。下面两条
+  // 沿用 R2 的判定逻辑，只是补上这一步点击——断言本身（回传结果决定成不成功）没有变。
   it('退出成功（logout 回传 true）：不出现「退出登录没有成功」；随后重新登录进个人页仍不出现', async () => {
     const { rerender } = render(<SettingsPage {...base} account={{ email: 'lin@example.com' }} logout={async () => true} />);
     fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
-    await waitFor(() => { expect((document.querySelector('[data-testid="account-logout"]') as HTMLButtonElement).disabled).toBe(false); });
+    fireEvent.click(document.querySelector('[data-testid="account-logout-confirm"]')!);
+    await waitFor(() => { expect((document.querySelector('[data-testid="account-logout-confirm"]') as HTMLButtonElement | null)?.disabled).not.toBe(true); });
     expect(document.querySelector('[data-testid="account-logout-failed"]')).toBeNull();
     // 父层退出成功后把 account 同步成 null（个人卡回到未登录），个人页这时不再渲染账号区。
     rerender(<SettingsPage {...base} account={null} logout={async () => true} />);
@@ -289,8 +340,54 @@ describe('R2 个人页退出登录判定：按 logout() 回传结果，不按渲
   it('退出失败（logout 回传 false，store persist 失败保留 account）：出现「退出登录没有成功」', async () => {
     render(<SettingsPage {...base} account={{ email: 'lin@example.com' }} logout={async () => false} />);
     fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
+    fireEvent.click(document.querySelector('[data-testid="account-logout-confirm"]')!);
     await waitFor(() => { expect(document.querySelector('[data-testid="account-logout-failed"]')).toBeTruthy(); });
     expect(document.querySelector('[data-testid="account-logout-failed"]')?.textContent).toBe(text.accountLogoutFailed);
+  });
+});
+
+describe('N-COMPANION-ACCOUNT-CARD-POLISH：退出登录二次确认（爸真机看 v3：点了直接就退了，没有反悔机会）', () => {
+  const noop = () => {};
+  const base = {
+    page: 'profile' as const, text, appearance: 'system' as const, nickname: '',
+    profileDraft: '小林', appInfo: null, open: noop, chooseAppearance: noop, editProfile: noop, saveProfile: noop,
+    account: { email: 'lin@example.com' },
+  };
+
+  it('点「退出登录」⇒ logout 未被调，确认块出现（标题+确认按钮+取消按钮）', () => {
+    const logout = vi.fn(async () => true);
+    render(<SettingsPage {...base} logout={logout} />);
+    expect(document.querySelector('[data-testid="account-logout-confirm"]')).toBeNull();
+    fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
+    expect(logout).not.toHaveBeenCalled();
+    const confirmButton = document.querySelector('[data-testid="account-logout-confirm"]') as HTMLElement;
+    expect(confirmButton).toBeTruthy();
+    expect(confirmButton.textContent).toBe(text.accountLogout);
+    expect(document.querySelector('[data-testid="account-logout-cancel"]')?.textContent).toBe(text.cancel);
+    expect(document.body.textContent).toContain(text.accountLogoutConfirmTitle);
+    expect(document.body.textContent).toContain(text.accountLogoutHint);
+  });
+
+  it('点「取消」⇒ 确认块消失、回到按钮态，logout 未被调', () => {
+    const logout = vi.fn(async () => true);
+    render(<SettingsPage {...base} logout={logout} />);
+    fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
+    fireEvent.click(document.querySelector('[data-testid="account-logout-cancel"]')!);
+    expect(logout).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="account-logout-confirm"]')).toBeNull();
+    expect(document.querySelector('[data-testid="account-logout"]')).toBeTruthy();
+  });
+
+  it('点确认块里的「退出登录」⇒ logout 调一次；父层同步 account=null 后卡片回未登录', () => {
+    const logout = vi.fn(async () => true);
+    const { rerender } = render(<SettingsPage {...base} logout={logout} />);
+    fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
+    fireEvent.click(document.querySelector('[data-testid="account-logout-confirm"]')!);
+    expect(logout).toHaveBeenCalledTimes(1);
+    // 退出成功后父层把 account 同步成 null（既有 R2 逻辑不动），设置页个人卡回到未登录。
+    rerender(<SettingsPage {...{ ...base, account: null }} page="settings" logout={logout} />);
+    const card = document.querySelector('[data-testid="open-profile"]') as HTMLElement;
+    expect(card.textContent).toContain(text.accountNotLoggedIn);
   });
 });
 

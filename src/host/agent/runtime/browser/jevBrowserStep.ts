@@ -16,8 +16,8 @@ import {
   type JevSystemOneCall,
 } from '../../../../shared/constants/jevQuestions';
 import { resolveProviderApiKey } from '../../../model/providers/providerResolution';
-import { getBrowserService } from '../../../services/infra/browserPool';
 import { classifyBrowserComputerManualTakeover } from '../../../../shared/utils/browserComputerRedaction';
+import type { BrowserService } from '../../../services/infra/browserService';
 import { guardJevBrowserSnapshot } from '../../../services/infra/browser/jevBrowserSnapshotGuard';
 import {
   prepareJevBrowserSnapshot,
@@ -77,9 +77,10 @@ interface JevBrowserStepResult {
 
 interface JevBrowserStepRunInput {
   task: string;
-  assertions?: JevPageAssertion[];
+  assertions?: Array<JevPageAssertion | Record<string, unknown>>;
   jevBudgetUsd?: number;
   mutate?: 'done1' | 'empty-window';
+  browserService?: BrowserService;
 }
 
 interface JevBrowserStepDriver {
@@ -94,6 +95,15 @@ interface JevBrowserStepLoopDeps {
   mutate?: 'done1' | 'empty-window';
 }
 
+interface JevBrowserStepDriverDeps {
+  systemOne: JevSystemOneCall;
+  host?: JevBrowserHost;
+  browserService?: BrowserService;
+  quickType?: (prompt: string) => Promise<string | null>;
+  now?: () => number;
+  mutate?: 'done1' | 'empty-window';
+}
+
 interface TurnState {
   mode: BrowserJevMode;
   consecutiveJevFailures: number;
@@ -101,6 +111,7 @@ interface TurnState {
 }
 
 const turnStates = new Map<string, TurnState>();
+const TURN_STATE_LIMIT = 256;
 let missingKeyWarned = false;
 
 function isBrowserJevStepEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -113,7 +124,16 @@ function turnKey(context: ToolContext): string {
 
 function getTurnState(key: string): TurnState {
   const existing = turnStates.get(key);
-  if (existing) return existing;
+  if (existing) {
+    turnStates.delete(key);
+    turnStates.set(key, existing);
+    return existing;
+  }
+  while (turnStates.size >= TURN_STATE_LIMIT) {
+    const oldest = turnStates.keys().next().value;
+    if (oldest === undefined) break;
+    turnStates.delete(oldest);
+  }
   const created: TurnState = { mode: 'try_jev', consecutiveJevFailures: 0, emptyWindowRounds: 0 };
   turnStates.set(key, created);
   return created;
@@ -245,11 +265,11 @@ async function evidenceFrom(host: JevBrowserHost, captured: JevCapturedSnapshot)
 }
 
 function toToolResult(result: JevBrowserStepResult): ToolExecutionResult {
+  const success = result.status === 'done_verified' || result.status === 'fallback';
   return {
-    success: result.status === 'done_verified' || result.status === 'needs_review' || result.status === 'stalled'
-      || result.status === 'step_limit' || result.status === 'time_limit' || result.fallback,
+    success,
     output: result.output,
-    error: result.status === 'fallback' && result.reason === 'unarmed' ? result.output : undefined,
+    error: success ? undefined : result.output,
     metadata: {
       ...result.metadata,
       status: result.status,
@@ -291,19 +311,24 @@ async function runJevBrowserStepLoop(
     status: JevBrowserStepStatus,
     reason: string | undefined,
     extra: Record<string, unknown> = {},
-  ): JevBrowserStepResult => ({
-    status,
-    fallback: status === 'fallback',
-    reason,
-    browserJevMode: turn.mode,
-    falseDoneCount,
-    jevCalls,
-    jevUsd: spentUsd,
-    jevChars,
-    steps,
-    output: reason ? `Jev browser step ${status}: ${reason}` : `Jev browser step ${status}`,
-    metadata: extra,
-  });
+  ): JevBrowserStepResult => {
+    const result: JevBrowserStepResult = {
+      status,
+      fallback: status === 'fallback',
+      reason,
+      browserJevMode: turn.mode,
+      falseDoneCount,
+      jevCalls,
+      jevUsd: spentUsd,
+      jevChars,
+      steps,
+      output: reason ? `Jev browser step ${status}: ${reason}` : `Jev browser step ${status}`,
+      metadata: extra,
+    };
+    // Keep fallback entries so sticky_visual / consecutiveJevFailures survive a later execute_goal in this turn.
+    if (status !== 'fallback') turnStates.delete(key);
+    return result;
+  };
 
   if (turn.mode === 'sticky_visual') {
     return finish('fallback', 'sticky_visual');
@@ -331,18 +356,15 @@ async function runJevBrowserStepLoop(
     });
     const dialog = deps.host.getDialogState();
     if (dialog.pending) {
-      const approved = await context.requestPermission({
-        type: 'dangerous_command',
-        tool: 'browser_action.handle_dialog',
-        forceConfirm: true,
-        dangerLevel: 'danger',
-        reason: '接受网页对话框可能确认支付、删除或授权，必须对当前动作显式批准。',
-        details: { action: 'handle_dialog', dialogType: dialog.type || 'unknown' },
-      });
-      return finish('needs_review', approved ? 'dialog_pending' : 'SURFACE_APPROVAL_REQUIRED', {
-        code: 'SURFACE_APPROVAL_REQUIRED',
-        userActionRequired: true,
-      });
+      return finish(
+        'needs_review',
+        'dialog_pending: hand back to main model handle_dialog approval gate',
+        {
+          code: 'SURFACE_APPROVAL_REQUIRED',
+          userActionRequired: true,
+          dialogType: dialog.type || 'unknown',
+        },
+      );
     }
 
     const visible = [
@@ -356,27 +378,20 @@ async function runJevBrowserStepLoop(
     }
 
     if (prepared.sensitiveFieldsPresent && UPLOAD_TASK.test(input.task)) {
-      await context.requestPermission({
-        type: 'file_read',
-        tool: 'browser_action.upload_file',
-        forceConfirm: true,
-        dangerLevel: 'warning',
-        reason: '把一个本地文件交给网页前，必须对当前文件和当前浏览器动作做一次性确认。',
-        details: { action: 'upload_file', approvalMode: 'host_one_time_exact_file' },
-      });
-      return finish('needs_review', 'SURFACE_APPROVAL_REQUIRED', {
-        code: 'SURFACE_APPROVAL_REQUIRED',
-        userActionRequired: true,
-      });
+      return finish(
+        'needs_review',
+        'upload: hand back to main model upload_file approval gate',
+        {
+          code: 'SURFACE_APPROVAL_REQUIRED',
+          userActionRequired: true,
+        },
+      );
     }
 
     const evidence = await evidenceFrom(deps.host, captured);
     const evaluated = evaluateJevAssertions(assertions, evidence);
     if (assertions.length > 0 && evaluated.allMet) {
       return finish('done_verified', undefined, { assertions: evaluated.results });
-    }
-    if (assertions.length === 0) {
-      // cannot done_verified; loop continues until stall/limit
     }
 
     if (prepared.selected.length === 0) {
@@ -471,6 +486,7 @@ async function runJevBrowserStepLoop(
       || RISK_KEYWORD.test(targetName)
       || RISK_KEYWORD.test(target?.text || '')
       || (guarded.injectionFlag && (applied.operation === 'click' || applied.operation === 'type'));
+    // ponytail: 与基线同档：injection_flag 升级不覆盖 press_enter，是已知天花板
     if (riskHit && (applied.operation === 'click' || applied.operation === 'type' || applied.operation === 'press_enter')) {
       const approved = await context.requestPermission({
         type: 'dangerous_command',
@@ -598,11 +614,21 @@ async function generateTypeValue(
   return quickType(prompt);
 }
 
-function createJevBrowserStepDriver(call: JevSystemOneCall, extra?: JevBrowserStepLoopDeps): JevBrowserStepDriver {
+function resolveJevBrowserHost(
+  extra: JevBrowserStepDriverDeps | undefined,
+  input: JevBrowserStepRunInput,
+): JevBrowserHost | undefined {
+  if (extra?.host) return extra.host;
+  const service = input.browserService ?? extra?.browserService;
+  return service ? createManagedJevBrowserHost(service) : undefined;
+}
+
+function createJevBrowserStepDriver(call: JevSystemOneCall, extra?: JevBrowserStepDriverDeps): JevBrowserStepDriver {
   return {
     async run(input, context) {
+      const host = resolveJevBrowserHost(extra, input);
+      if (!host) return jevBrowserStepUnarmedResult();
       const { quickTask } = await import('../../../model/quickModel');
-      const host = extra?.host ?? createManagedJevBrowserHost(getBrowserService(context.agentId));
       const result = await runJevBrowserStepLoop(input, context, {
         systemOne: extra?.systemOne ?? call,
         host,
@@ -613,11 +639,7 @@ function createJevBrowserStepDriver(call: JevSystemOneCall, extra?: JevBrowserSt
         }),
         now: extra?.now,
       });
-      const tool = toToolResult(result);
-      if (result.status === 'fallback' && result.reason === 'unarmed') {
-        return { success: false, error: tool.output, metadata: tool.metadata };
-      }
-      return tool;
+      return toToolResult(result);
     },
   };
 }
@@ -626,6 +648,7 @@ export function resolveBrowserJevStep(deps?: {
   systemOne?: JevSystemOneCall;
   onWarn?: (msg: string) => void;
   host?: JevBrowserHost;
+  browserService?: BrowserService;
   mutate?: 'done1' | 'empty-window';
   quickType?: (prompt: string) => Promise<string | null>;
   now?: () => number;
@@ -634,7 +657,8 @@ export function resolveBrowserJevStep(deps?: {
   if (deps?.systemOne) {
     return createJevBrowserStepDriver(deps.systemOne, {
       systemOne: deps.systemOne,
-      host: deps.host ?? createManagedJevBrowserHost(getBrowserService()),
+      host: deps.host,
+      browserService: deps.browserService,
       mutate: deps.mutate,
       quickType: deps.quickType,
       now: deps.now,
@@ -651,13 +675,14 @@ export function resolveBrowserJevStep(deps?: {
   }
   const call: JevSystemOneCall = (state, questions, options) =>
     import('../../../model/providers/typesafeProvider').then((mod) => mod.systemOne(state, questions, options));
-  return createJevBrowserStepDriver(call, deps?.host ? {
+  return createJevBrowserStepDriver(call, {
     systemOne: call,
-    host: deps.host,
-    mutate: deps.mutate,
-    quickType: deps.quickType,
-    now: deps.now,
-  } : undefined);
+    host: deps?.host,
+    browserService: deps?.browserService,
+    mutate: deps?.mutate,
+    quickType: deps?.quickType,
+    now: deps?.now,
+  });
 }
 
 export function jevBrowserStepUnarmedResult(): ToolExecutionResult {

@@ -6,9 +6,19 @@ import type { BrowserDomSnapshot, BrowserTargetRef } from '../../../../../src/ho
 import {
   resolveBrowserJevStep,
 } from '../../../../../src/host/agent/runtime/browser/jevBrowserStep';
+import {
+  evaluateJevAssertions,
+  extractJevAssertions,
+} from '../../../../../src/host/agent/runtime/browser/jevBrowserAssertions';
 import type { JevBrowserHost } from '../../../../../src/host/agent/runtime/browser/jevBrowserHost';
 import type { ToolContext } from '../../../../../src/host/tools/types';
 import { BrowserTool } from '../../../../../src/host/tools/vision/BrowserTool';
+import { browserPool } from '../../../../../src/host/services/infra/browserPool';
+import type { BrowserService } from '../../../../../src/host/services/infra/browserService';
+import {
+  managedBrowserServiceKey,
+  surfaceIdentityFromToolContext,
+} from '../../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
 
 function targetRef(id: string, name: string, rect: { x: number; y: number; width: number; height: number }): BrowserTargetRef {
   return {
@@ -135,7 +145,11 @@ function stubSystemOne(impl: (state: Record<string, unknown>) => JevAnswers | Pr
 async function runLoop(
   host: FakeHost,
   systemOne: JevSystemOneCall,
-  input: { task: string; assertions?: Array<{ id: string; kind: 'element_text_includes' | 'title_includes'; needle: string }>; mutate?: 'done1' | 'empty-window' },
+  input: {
+    task: string;
+    assertions?: Array<Record<string, unknown>>;
+    mutate?: 'done1' | 'empty-window';
+  },
   ctx: ToolContext = context(),
 ) {
   vi.stubEnv('CODE_AGENT_BROWSER_JEV_STEP', '1');
@@ -201,6 +215,8 @@ describe('jevBrowserStep', () => {
     );
     expect(result.status === 'stalled' || result.status === 'step_limit').toBe(true);
     expect(result.status).not.toBe('done_verified');
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/stalled|step_limit/);
     expect(result.falseDoneCount).toBeGreaterThanOrEqual(1);
     expect((systemOne as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThanOrEqual(3);
   });
@@ -251,6 +267,8 @@ describe('jevBrowserStep', () => {
     const result = await runLoop(host, systemOne, { task: 'click Pay now' }, context(permission));
     expect(permission).toHaveBeenCalledWith(expect.objectContaining({ forceConfirm: true, dangerLevel: 'danger' }));
     expect(result.status).toBe('needs_review');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('SURFACE_APPROVAL_REQUIRED');
     expect(host.clicks).toEqual([]);
   });
 
@@ -260,6 +278,7 @@ describe('jevBrowserStep', () => {
     const systemOne = stubSystemOne(() => answers());
     const result = await runLoop(host, systemOne, { task: 'solve the captcha' });
     expect(result.status).toBe('needs_review');
+    expect(result.success).toBe(false);
     expect(result.reason).toBe('captcha_or_risk_control');
     expect(systemOne).toHaveBeenCalledTimes(0);
     expect(host.clicks).toEqual([]);
@@ -295,4 +314,200 @@ describe('jevBrowserStep', () => {
   it('operation 白名单含 stop', () => {
     expect(Object.keys(BROWSER_STEP_OPERATIONS)).toContain('stop');
   });
+
+  it('对话框 pending 不弹框，交回 handle_dialog', async () => {
+    const host = new FakeHost([snapshot('Pay', [button('tref_go', 'OK')])]);
+    host.dialog = { pending: true, type: 'confirm' };
+    const permission = vi.fn(async () => true);
+    const systemOne = stubSystemOne(() => answers());
+    const result = await runLoop(host, systemOne, { task: 'click OK' }, context(permission));
+    expect(permission).not.toHaveBeenCalled();
+    expect(systemOne).toHaveBeenCalledTimes(0);
+    expect(result.status).toBe('needs_review');
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/handle_dialog/);
+  });
+
+  it('上传任务不弹框，交回 upload_file', async () => {
+    const page = snapshot('Upload', [button('tref_go', 'Submit', 80)]);
+    page.snapshot.interactiveElements.push({
+      tag: 'input',
+      role: 'textbox',
+      text: '',
+      ariaLabel: 'File',
+      placeholder: null,
+      selectorHint: '#file',
+      targetRef: targetRef('tref_file', 'File', { x: 0, y: 40, width: 80, height: 20 }),
+      rect: { x: 0, y: 40, width: 80, height: 20 },
+    });
+    page.extras.push({ inputType: 'file', autocomplete: null, accept: '.pdf' });
+    const host = new FakeHost([page]);
+    const permission = vi.fn(async () => true);
+    const systemOne = stubSystemOne(() => answers());
+    const result = await runLoop(host, systemOne, { task: 'upload the file' }, context(permission));
+    expect(permission).not.toHaveBeenCalled();
+    expect(systemOne).toHaveBeenCalledTimes(0);
+    expect(result.status).toBe('needs_review');
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/upload_file/);
+  });
+
+  it('模型传入缺 needle / 非法 kind 的 assertions 不抛，条目被丢弃', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+      const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+      const result = await runLoop(host, systemOne, {
+        task: 'click Go',
+        assertions: [
+          { kind: 'url_includes' },
+          { kind: 'explode', needle: 'x' },
+        ],
+      });
+      expect(result.status === 'stalled' || result.status === 'step_limit').toBe(true);
+      expect(result.success).toBe(false);
+      expect(warn).toHaveBeenCalled();
+      expect(warn.mock.calls.some((call) => String(call[0]).includes('drop assertion'))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('extractJevAssertions 丢弃非法 override，normalize 对缺 needle 不抛', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const kept = extractJevAssertions('click Go', [
+        { kind: 'url_includes' },
+        { kind: 'title_includes', needle: 'Nav' },
+        { kind: 'not_real', needle: 'x' },
+      ]);
+      expect(kept).toEqual([expect.objectContaining({ kind: 'title_includes', needle: 'Nav' })]);
+      expect(() => evaluateJevAssertions(
+        [{ id: 'a1', kind: 'url_includes', needle: undefined as unknown as string }],
+        {
+          url: 'http://127.0.0.1/page',
+          title: 'Nav',
+          headings: [],
+          elements: [],
+          formValues: {},
+          downloads: [],
+        },
+      )).not.toThrow();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('生产装配线：execute_goal 与 click 共用同一 surface 池实例', async () => {
+    vi.stubEnv('CODE_AGENT_BROWSER_JEV_STEP', '1');
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-key-not-used');
+
+    const services = new Map<string, ReturnType<typeof makePoolStubService>>();
+    const acquireSpy = vi.spyOn(browserPool, 'acquire').mockImplementation((agentId?: string | null) => {
+      const key = agentId || '__default__';
+      const existing = services.get(key);
+      if (existing) return existing as unknown as BrowserService;
+      const created = makePoolStubService();
+      services.set(key, created);
+      return created as unknown as BrowserService;
+    });
+
+    const ctx: ToolContext = {
+      workingDirectory: '/tmp',
+      sessionId: 'conv-assembly',
+      runId: 'run-assembly',
+      agentId: 'agent-assembly',
+      turnId: 'turn-assembly',
+      requestPermission: async () => true,
+    };
+    const identity = surfaceIdentityFromToolContext(ctx);
+    if (!identity) throw new Error('expected complete surface identity');
+    const surfaceKey = managedBrowserServiceKey(identity);
+
+    try {
+      await BrowserTool.execute({ action: 'click', selector: '#go' }, ctx);
+      const surface = services.get(surfaceKey);
+      if (!surface) throw new Error(`expected surface service for ${surfaceKey}; keys=${[...services.keys()].join(',')}`);
+
+      const goalResult = await BrowserTool.execute({ action: 'execute_goal', task: 'click Go' }, ctx);
+      expect(String(goalResult.error ?? '')).not.toMatch(/TypeError|Cannot read propert/i);
+      expect(surface.captureJevPage).toHaveBeenCalled();
+      expect(services.has(identity.agentId)).toBe(false);
+      expect(surface).toBe(services.get(surfaceKey));
+      expect(acquireSpy.mock.calls.some((call) => call[0] === identity.agentId)).toBe(false);
+    } finally {
+      acquireSpy.mockRestore();
+    }
+  });
 });
+
+function makePoolStubService() {
+  const emptySnapshot = {
+    snapshot: {
+      snapshotId: 'snap',
+      tabId: 'tab',
+      capturedAtMs: 1,
+      url: 'http://127.0.0.1/page',
+      title: 'Page',
+      headings: [],
+      interactiveElements: [],
+    },
+    extras: [],
+    viewport: { width: 800, height: 600 },
+    scrollY: 0,
+  };
+  const domSnapshot = {
+    snapshotId: 'snap',
+    tabId: 'tab',
+    capturedAtMs: 1,
+    url: 'http://127.0.0.1/page',
+    title: 'Page',
+    headings: [],
+    interactiveElements: [],
+  };
+  return {
+    logger: { log: vi.fn(), getLogsAsString: vi.fn(() => '') },
+    beginTrace: vi.fn((args: { toolName: string; action: string; params?: Record<string, unknown> }) => ({
+      id: 'trace-1',
+      targetKind: 'browser' as const,
+      toolName: args.toolName,
+      action: args.action,
+      params: args.params || {},
+      startedAtMs: 1,
+    })),
+    finishTrace: vi.fn((trace: Record<string, unknown>, result: { success: boolean; error?: string | null; screenshotPath?: string | null }) => ({
+      ...trace,
+      targetKind: 'browser' as const,
+      success: result.success,
+      error: result.error ?? null,
+      completedAtMs: 2,
+      screenshotPath: result.screenshotPath ?? null,
+    })),
+    isRunning: vi.fn(() => true),
+    getActiveTab: vi.fn(() => ({
+      id: 'tab',
+      url: 'http://127.0.0.1/page',
+      title: 'Page',
+      page: { evaluate: vi.fn(async () => ({})) },
+    })),
+    ensureSession: vi.fn(async () => undefined),
+    getDomSnapshot: vi.fn(async () => domSnapshot),
+    getSessionState: vi.fn(() => ({ running: true, tabCount: 1, activeTab: { id: 'tab', url: 'http://127.0.0.1/page', title: 'Page' } })),
+    importStorageState: vi.fn(async () => undefined),
+    launch: vi.fn(async () => undefined),
+    newTab: vi.fn(async () => undefined),
+    navigate: vi.fn(async () => undefined),
+    click: vi.fn(async () => undefined),
+    getElementBoundingBox: vi.fn(async () => ({ x: 0, y: 0, width: 10, height: 10 })),
+    captureJevPage: vi.fn(async () => emptySnapshot),
+    getPageContent: vi.fn(async () => ({ url: 'http://127.0.0.1/page', title: 'Page', text: '' })),
+    getDialogState: vi.fn(() => ({ pending: false })),
+    scroll: vi.fn(async () => undefined),
+    clickTargetRef: vi.fn(async () => ({})),
+    typeTargetRef: vi.fn(async () => ({})),
+    pressKey: vi.fn(async () => undefined),
+    waitForTimeout: vi.fn(async () => undefined),
+    runScript: vi.fn(async () => ({})),
+    listTabs: vi.fn(() => []),
+  };
+}

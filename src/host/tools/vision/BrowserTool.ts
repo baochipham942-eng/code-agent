@@ -16,11 +16,6 @@ import {
   evaluateBrowserWorkbenchPolicy,
 } from './browserWorkbenchIntent';
 import { BROWSER_JEV_STEP_DESCRIPTION_SUFFIX } from '../../../shared/constants/jevQuestions';
-import {
-  jevBrowserStepUnarmedResult,
-  resolveBrowserJevStep,
-} from '../../agent/runtime/browser/jevBrowserStep';
-import type { JevPageAssertion } from '../../agent/runtime/browser/jevBrowserAssertions';
 
 // Actions from browserActionTool (kept as-is since they don't conflict)
 const BROWSER_ACTION_ACTIONS = [
@@ -30,6 +25,7 @@ const BROWSER_ACTION_ACTIONS = [
   'get_dialog_state', 'handle_dialog', 'read_clipboard', 'write_clipboard',
   'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
   'get_workbench_state', 'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+  'execute_goal',
 ] as const;
 
 function remapBrowserToolActionForManagedSession(
@@ -313,17 +309,6 @@ ${BROWSER_JEV_STEP_DESCRIPTION_SUFFIX}
         toolName: 'Browser',
         action,
       });
-    }
-
-    if (action === 'execute_goal') {
-      const driver = resolveBrowserJevStep();
-      if (!driver) return jevBrowserStepUnarmedResult();
-      const task = typeof params.task === 'string' ? params.task : '';
-      const assertions = Array.isArray(params.assertions)
-        ? params.assertions as JevPageAssertion[]
-        : undefined;
-      const jevBudgetUsd = typeof params.jevBudgetUsd === 'number' ? params.jevBudgetUsd : undefined;
-      return driver.run({ task, assertions, jevBudgetUsd }, context);
     }
 
     // --- OS-level browser_navigate actions ---

@@ -14,6 +14,7 @@ import {
   getJudgePrescreenHash,
   JEV_JUDGE_MODEL,
   type JevAnswers,
+  type JevChoiceAnswer,
 } from '../../../src/shared/constants/jevQuestions';
 import type { DeterministicSignal } from '../../../src/shared/contract/postLaunchScore';
 import {
@@ -332,6 +333,34 @@ describe('postLaunchJudge · Jev 初筛', () => {
 
   it('goal_met=cannot_tell ⇒ 升级', async () => {
     const prescreen = stubPrescreen(decidingAnswers({ goal_met: { choice: 'cannot_tell', confidence: 0.4 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+  });
+
+  it("goal_met choice='garbage' ⇒ 升级", async () => {
+    // 反向变异：若 choice 不校验 criteria 键，garbage + goal_pass.noul≥0.65 会被当成完整决断。
+    const prescreen = stubPrescreen(decidingAnswers({ goal_met: { choice: 'garbage', confidence: 0.9 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+  });
+
+  it('goal_met 缺 confidence ⇒ 升级', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ goal_met: { choice: 'met' } as JevChoiceAnswer }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+  });
+
+  it('goal_met confidence=1.2 ⇒ 升级', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ goal_met: { choice: 'met', confidence: 1.2 } }));
     const llmCall = vi.fn(async () => GENERATIVE);
     const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
 

@@ -289,6 +289,18 @@ function readNoul(answers: JevAnswers, key: string): { score: PostLaunchDimScore
   return { score: noulBand(noul), noul };
 }
 
+/** choice 必须是 criteria 键，confidence 必须是 [0,1] 有限数；否则形状不对（同 noulBand 'bad'）。 */
+function readGoalMet(answers: JevAnswers): { choice: string } | 'bad' {
+  const met = answers.goal_met;
+  if (!met || typeof met !== 'object') return 'bad';
+  const choice = (met as { choice?: unknown }).choice;
+  const confidence = (met as { confidence?: unknown }).confidence;
+  const legal = Object.keys(JUDGE_PRESCREEN_QUESTIONS.goal_met.criteria ?? {});
+  if (typeof choice !== 'string' || !legal.includes(choice)) return 'bad';
+  if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) return 'bad';
+  return { choice };
+}
+
 function jevVerdict(
   dims: Record<PostLaunchJudgeDimension, PostLaunchDimScore>,
   reasoning: string,
@@ -337,10 +349,8 @@ function decidePrescreen(
   };
 
   if (source !== 'none') {
-    const met = answers.goal_met;
-    if (!met || typeof met !== 'object' || !('choice' in met) || typeof (met as { choice: unknown }).choice !== 'string') {
-      fullyDecided = false;
-    } else if ((met as { choice: string }).choice === 'cannot_tell') {
+    const met = readGoalMet(answers);
+    if (met === 'bad' || met.choice === 'cannot_tell') {
       fullyDecided = false;
     } else {
       take('goal', 'goal_pass');

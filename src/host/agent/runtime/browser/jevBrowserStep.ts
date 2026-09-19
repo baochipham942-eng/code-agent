@@ -9,6 +9,7 @@ import {
   JEV_MODEL,
   buildBrowserStepQuestions,
   estimateJevCallUsd,
+  isBrowserJevStepEnabled,
   type BrowserStepOperation,
   type JevAnswers,
   type JevChoiceAnswer,
@@ -113,10 +114,6 @@ interface TurnState {
 const turnStates = new Map<string, TurnState>();
 const TURN_STATE_LIMIT = 256;
 let missingKeyWarned = false;
-
-function isBrowserJevStepEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_BROWSER_JEV_STEP === '1';
-}
 
 function turnKey(context: ToolContext): string {
   return `${context.sessionId ?? 'anon'}::${context.turnId ?? context.runId ?? 'turn'}`;
@@ -245,7 +242,13 @@ function rebindTarget(prepared: PreparedJevSnapshot, previous: BrowserTargetRef)
 }
 
 async function evidenceFrom(host: JevBrowserHost, captured: JevCapturedSnapshot) {
-  const formValues = await host.getFormValues();
+  let formValues: Record<string, string> = {};
+  let formValuesError: string | undefined;
+  try {
+    formValues = await host.getFormValues();
+  } catch (error) {
+    formValuesError = error instanceof Error ? error.message : String(error);
+  }
   const downloads = await host.listDownloads();
   return {
     url: captured.snapshot.url,
@@ -261,6 +264,7 @@ async function evidenceFrom(host: JevBrowserHost, captured: JevCapturedSnapshot)
     })),
     formValues,
     downloads,
+    formValuesError,
   };
 }
 
@@ -388,7 +392,10 @@ async function runJevBrowserStepLoop(
       );
     }
 
-    const evidence = await evidenceFrom(deps.host, captured);
+    const { formValuesError, ...evidence } = await evidenceFrom(deps.host, captured);
+    if (formValuesError) {
+      return finish('fallback', `form_values_unavailable: ${formValuesError}`);
+    }
     const evaluated = evaluateJevAssertions(assertions, evidence);
     if (evaluated.allMet) {
       return finish('done_verified', undefined, { assertions: evaluated.results });
@@ -399,6 +406,7 @@ async function runJevBrowserStepLoop(
       if (turn.emptyWindowRounds === 1) {
         await deps.host.scroll('down');
         recentSteps.push({ op: 'scroll_down', target_name: '', result: 'micro_empty_window' });
+        steps += 1;
         continue;
       }
       if (turn.emptyWindowRounds >= 2) turn.mode = 'sticky_visual';
@@ -548,8 +556,12 @@ async function runJevBrowserStepLoop(
     recentSteps.push({ op: applied.operation, target_name: targetName, result: opResult });
     steps += 1;
 
+    // ponytail: click 弹 confirm 时步后 capture 会卡到 dialog 门，基线同场景一样卡，已知天花板
     const after = await deps.host.capture();
-    const afterEvidence = await evidenceFrom(deps.host, after);
+    const { formValuesError: afterFormValuesError, ...afterEvidence } = await evidenceFrom(deps.host, after);
+    if (afterFormValuesError) {
+      return finish('fallback', `form_values_unavailable: ${afterFormValuesError}`);
+    }
     const inView = prepareJevBrowserSnapshot(after, input.task).collected
       .filter((candidate) => candidate.inView)
       .map((candidate) => `${candidate.name}+${candidate.role || ''}`);

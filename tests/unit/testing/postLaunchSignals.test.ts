@@ -460,6 +460,33 @@ describe('确定性信号 · 十二类各一真阳一真阴', () => {
       textBlock('复购率 9 月回升到 24.0%', 20),
     ]);
     expect(sourced).not.toContain('unsupported_claim');
+
+    // xlsx 单元格是 0.21，回复写成 21.0%；result_summary 还可能在 9 月那行被截断。
+    const percentCell = kinds([
+      toolBlock({
+        name: 'read_xlsx',
+        category: 'Read',
+        result: '| 行号 | 月份 | 复购率 | 客单价 |\n| 2 | 7月 | 0.21 | 812 |\n| 3 | 8月 | 0.19 | 79',
+      }, 10),
+      textBlock('{"type":"line","data":[{"月份":"7月","复购率":21.0},{"月份":"8月","复购率":19.0}]} 9 月复购率 24.0%，客单价 845 元', 20),
+    ]);
+    expect(percentCell).not.toContain('unsupported_claim');
+
+    const money = kinds([
+      toolBlock({
+        name: 'Bash',
+        category: 'Bash',
+        result: '总行数: 241\n1. 华北: ¥614,160\n2. 华南: ¥477,419',
+      }, 10),
+      textBlock('| 1 | 华北 | ¥614,160 |\n| 2 | 华南 | ¥477,419 |\n轮胎 688件', 20),
+    ]);
+    expect(money).not.toContain('unsupported_claim');
+
+    const inventedPrice = kinds([
+      toolBlock({ name: 'WebSearch', category: 'Web', success: false, result: 'HTTP 429 rate limit' }, 10),
+      textBlock('搜索工具持续受限，我基于已有知识整理：入门付费 ~$20/月，高级版 ~$40/月。', 20),
+    ]);
+    expect(inventedPrice).toContain('unsupported_claim');
   });
 
   it('⑪数字无出处：Read 行号里的 24 不当作出处；用户提示里出现过的数字不判', () => {

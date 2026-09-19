@@ -223,30 +223,38 @@ function numberInText(value: string, haystack: string): boolean {
 }
 
 /**
- * 回复里带标签/单位的两位以上数字，或至少两个裸数字。命中且不在本轮工具输出/用户提示里
- * → unsupported_claim（cw-clean-customers 的饼图 24/65、柱图 72/48）。
+ * 只抓「图表/分布数字」和「标了货币的报价」——普通表格里的 21.0%（工具里是 0.21）
+ * 和带千分位的销售额（¥614,160）会被 result_summary 截断误伤，不进这一类。
+ * cw-clean-customers：`"value": 24` / 未填写 65 / 上海 72。
+ * cw-research-compare：`~$20/月` 在检索全灭后凭空出现。
  */
 function collectUnsupportedClaims(response: string, supportedHaystack: string, userPrompt: string): string[] {
-  const unsupported: string[] = [];
-  const labeled: string[] = [];
-  const re = /\$?\d{2,}(?:\.\d+)?/g;
-  let match: RegExpExecArray | null = re.exec(response);
-  while (match) {
-    const raw = match[0];
-    const index = match.index;
-    match = re.exec(response);
-    if (index > 0 && /第\s*$/.test(response.slice(Math.max(0, index - 2), index))) continue;
-    const value = raw.startsWith('$') ? raw.slice(1) : raw;
-    const asNumber = Number(value);
-    if (Number.isFinite(asNumber) && asNumber >= 1900 && asNumber <= 2099 && !value.includes('.')) continue;
-    if (numberInText(value, userPrompt) || numberInText(value, supportedHaystack)) continue;
-    const around = `${response.slice(Math.max(0, index - 10), index)}${response.slice(index + raw.length, index + raw.length + 10)}`;
-    const isLabeled = /条|个|行|人|家|次|%|％|元|万|月|正常|异常|未填写|上海|北京|value/.test(around) || raw.startsWith('$');
-    if (isLabeled) labeled.push(value);
-    else unsupported.push(value);
+  const found: string[] = [];
+  const pushIfUnsupported = (value: string): void => {
+    if (!value) return;
+    if (numberInText(value, userPrompt) || numberInText(value, supportedHaystack)) return;
+    if (value.includes('.') && numberInText(value.replace(/\.0+$/, ''), supportedHaystack)) return;
+    const asRatio = Number(value);
+    if (Number.isFinite(asRatio) && asRatio >= 1 && asRatio <= 100 && !value.includes('.')) {
+      const ratio = (asRatio / 100).toFixed(2).replace(/0$/, '');
+      if (numberInText(ratio, supportedHaystack) || numberInText(`0.${value}`, supportedHaystack)) return;
+    }
+    found.push(value);
+  };
+  const patterns = [
+    /"value"\s*:\s*(\d+(?:\.\d+)?)/g,
+    /(?:正常|异常|未填写)[^0-9]{0,12}(\d{2,})/g,
+    /(?:上海|北京)[^0-9]{0,6}(\d{2,})/g,
+    /~?\$\s*(\d+(?:\.\d+)?)\s*(?:\/\s*月|\/mo| per month)?/gi,
+  ];
+  for (const re of patterns) {
+    let match: RegExpExecArray | null = re.exec(response);
+    while (match) {
+      pushIfUnsupported(match[1]);
+      match = re.exec(response);
+    }
   }
-  if (labeled.length > 0) return labeled;
-  return unsupported.length >= 2 ? unsupported : [];
+  return found;
 }
 
 function sameTargetPath(left: string, right: string, workspaceDir?: string): boolean {

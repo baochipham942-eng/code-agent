@@ -32,7 +32,7 @@ export type ValidationResult = ValidationSuccess | ValidationFailure;
 
 export interface ValidationIssue {
   field: string;
-  reason: 'missing' | 'wrong_type';
+  reason: 'missing' | 'wrong_type' | 'unknown_field';
   expected?: string;
   actual?: string;
   description?: string;
@@ -64,6 +64,9 @@ export function validateToolArgs(
 
   const safeArgs = args && typeof args === 'object' ? args : {};
   const issues: ValidationIssue[] = [];
+  // 未识别参数名只在 schema 显式 additionalProperties === false 时拒（JSON Schema
+  // 默认允许额外键，全仓多数 schema 没声明全，按默认放行才不会误伤）。
+  const rejectUnknownFields = inputSchema.additionalProperties === false;
 
   // 1. missing required
   // 注意：空字符串 '' 不算 missing —— 对 type: string 的必填参数，"" 是合法值
@@ -77,7 +80,7 @@ export function validateToolArgs(
       issues.push({
         field: key,
         reason: 'missing',
-        expected: prop?.type ?? 'any',
+        expected: formatTypeDeclaration(prop?.type ?? 'any'),
         description: prop?.description,
       });
     }
@@ -85,15 +88,23 @@ export function validateToolArgs(
 
   // 2. wrong type（仅顶层，仅 args 实际传了的字段）
   for (const [key, value] of Object.entries(safeArgs)) {
-    if (value === undefined || value === null) continue;
     const propSchema = properties[key];
-    if (!propSchema?.type) continue;
+    // 未识别的参数名：此前静默跳过，工具端再静默回落默认值，两头都不吭声——
+    // 模型拿不到"参数名不存在"的事实，只能反复猜（2026-09-18 夜跑实测 6 连拒）。
+    if (propSchema === undefined) {
+      if (rejectUnknownFields) {
+        issues.push({ field: key, reason: 'unknown_field' });
+      }
+      continue;
+    }
+    if (value === undefined || value === null) continue;
+    if (!propSchema.type) continue;
     const actualType = typeOfValue(value);
     if (!isTypeCompatible(actualType, propSchema.type)) {
       issues.push({
         field: key,
         reason: 'wrong_type',
-        expected: propSchema.type,
+        expected: formatTypeDeclaration(propSchema.type),
         actual: actualType,
         description: propSchema.description,
       });
@@ -118,11 +129,21 @@ function typeOfValue(v: unknown): string {
 /**
  * JSON Schema type 与 typeof 结果的兼容关系。
  * "integer" 是 JSON Schema 特有的，typeof 是 number；其余基本对齐。
+ * union type（数组）任一命中即通过，integer 兼容 number 的规则对每个成员同样适用。
  */
-function isTypeCompatible(actual: string, expected: string): boolean {
-  if (actual === expected) return true;
-  if (expected === 'integer' && actual === 'number') return true;
-  return false;
+function isTypeCompatible(actual: string, expected: string | string[]): boolean {
+  const expectedList = Array.isArray(expected) ? expected : [expected];
+  return expectedList.some((e) => actual === e || (e === 'integer' && actual === 'number'));
+}
+
+/**
+ * 渲染 type 声明给人/模型看：union 用 " | " 连接（与 toolSchemaValidator.formatExpectedType 同口径）。
+ */
+function formatTypeDeclaration(type: string | string[]): string {
+  if (Array.isArray(type)) {
+    return type.length > 0 ? type.join(' | ') : 'any';
+  }
+  return type;
 }
 
 /**
@@ -147,7 +168,7 @@ export function formatSchemaForModel(
   );
   for (const [key, propSchema] of shown) {
     const isRequired = required.includes(key);
-    lines.push(`  - \`${key}\`: ${propSchema.type ?? 'any'} ${isRequired ? '(必填)' : '(可选)'}${propSchema.description ? ` — ${propSchema.description}` : ''}`);
+    lines.push(`  - \`${key}\`: ${formatTypeDeclaration(propSchema.type ?? 'any')} ${isRequired ? '(必填)' : '(可选)'}${propSchema.description ? ` — ${propSchema.description}` : ''}`);
   }
   return lines;
 }
@@ -164,6 +185,8 @@ function formatValidationError(
   for (const issue of issues) {
     if (issue.reason === 'missing') {
       lines.push(`  - 缺少必填参数 \`${issue.field}\` (${issue.expected})${issue.description ? ` — ${issue.description}` : ''}`);
+    } else if (issue.reason === 'unknown_field') {
+      lines.push(`  - 未识别的参数 \`${issue.field}\`，本工具只接受：${Object.keys(properties).join(', ')}`);
     } else {
       lines.push(`  - 参数 \`${issue.field}\` 类型错误：期望 ${issue.expected}，实际是 ${issue.actual}${issue.description ? ` — ${issue.description}` : ''}`);
     }

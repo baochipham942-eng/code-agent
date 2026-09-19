@@ -158,7 +158,8 @@ export interface JSONSchema {
 }
 
 export interface JSONSchemaProperty {
-  type: string;
+  /** JSON Schema 允许 union type（如 ["string","number"]），校验时任一命中即通过 */
+  type: string | string[];
   description?: string;
   enum?: string[];
   default?: unknown;

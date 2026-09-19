@@ -83,6 +83,8 @@ vi.mock('exceljs', () => {
 });
 
 import { readXlsxModule } from '../../../../../src/host/tools/modules/network/readXlsx';
+import { validateToolArgs } from '../../../../../src/host/agent/runtime/toolArgsValidator';
+import { readXlsxSchema } from '../../../../../src/host/tools/modules/network/readXlsx.schema';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -332,6 +334,37 @@ describe('readXlsxModule (native)', () => {
       await run({ file_path: '/abs/data.xlsx' }, makeCtx(), allowAll, onProgress);
       const stages = onProgress.mock.calls.map((c) => c[0].stage);
       expect(stages).toContain('starting');
+    });
+  });
+
+  // 2026-09-18 夜跑（fl-xlsx-chart-report）实录：模型 6 次调 read_xlsx 全被
+  // 参数校验拒掉——sheet:"说明"（拒）、sheet:2（拒）、sheet_name:"说明"（静默
+  // 回落第一个表）。这里用真实生产 schema 过 validateToolArgs 钉住三种形状。
+  describe('inputSchema validation (regression for the 2026-09-18 night run)', () => {
+    it('sheet 传工作表名（string）通过校验', () => {
+      const result = validateToolArgs('read_xlsx', readXlsxSchema.inputSchema, {
+        file_path: '/abs/data.xlsx',
+        sheet: '说明',
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it('sheet 传工作表索引（number）通过校验', () => {
+      const result = validateToolArgs('read_xlsx', readXlsxSchema.inputSchema, {
+        file_path: '/abs/data.xlsx',
+        sheet: 2,
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it('sheet_name（未识别参数名）被拒，不再静默回落第一个工作表', () => {
+      const result = validateToolArgs('read_xlsx', readXlsxSchema.inputSchema, {
+        file_path: '/abs/data.xlsx',
+        sheet_name: '说明',
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.message).toContain('未识别的参数 `sheet_name`，本工具只接受：file_path, sheet, format, max_rows');
     });
   });
 });

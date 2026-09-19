@@ -247,7 +247,7 @@ export interface RendererBundleEndpointResolution {
 }
 
 function getRendererBundleEndpointEnv(): RendererBundleEndpointEnv {
-  return (typeof process !== 'undefined' && process.env) || {};
+  return typeof process !== 'undefined' && process.env ? (process.env as RendererBundleEndpointEnv) : {};
 }
 
 function rendererBundleManifestUrlForChannel(channel: string): string {

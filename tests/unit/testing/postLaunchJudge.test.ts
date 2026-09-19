@@ -3,7 +3,18 @@
 // 这里必须能出判决——这是「上线后」这条线成立的前提。
 import { describe, expect, it, vi } from 'vitest';
 import type { ReplayBlock, ReplayTurn } from '../../../src/shared/contract/evaluationReplay';
-import { getPostLaunchPromptHash, judgePostLaunchTurn } from '../../../src/host/testing/judge/postLaunchJudge';
+import {
+  estimatePostLaunchPrescreenUsd,
+  getPostLaunchPromptHash,
+  judgePostLaunchTurn,
+  type PostLaunchJudgePrescreen,
+} from '../../../src/host/testing/judge/postLaunchJudge';
+import {
+  estimateJevCallUsd,
+  JEV_JUDGE_MODEL,
+  type JevAnswers,
+  type JevChoiceAnswer,
+} from '../../../src/shared/constants/jevQuestions';
 import type { DeterministicSignal } from '../../../src/shared/contract/postLaunchScore';
 import {
   POST_LAUNCH_JUDGE_DIMENSIONS,
@@ -196,5 +207,284 @@ describe('postLaunchJudge · 无题契约', () => {
     expect(result).not.toContain(longBody);
     expect(result?.endsWith('…')).toBe(true);
     expect(result?.length).toBe(301);
+  });
+});
+
+describe('postLaunchJudge · 跨轮承接 userPrompt', () => {
+  const ALL_FAIL_GOAL = JSON.stringify({
+    goal: { pass: false, why: '没有来源' },
+    orchestration: { pass: true, why: '' },
+    tools: { pass: true, why: '' },
+    permission: { pass: true, why: '' },
+  });
+
+  it('当前轮无 user block、给了 carried ⇒ 投影 userPrompt=carried、source=carried', async () => {
+    const turn: ReplayTurn = { ...TURN, blocks: TURN.blocks.filter((block) => block.type !== 'user') };
+    const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_PASS);
+    await judgePostLaunchTurn({ turn, signals: [], carriedUserPrompt: '把 README 里的安装步骤补全' }, llmCall);
+    const prompt = llmCall.mock.calls[0][0];
+    expect(prompt).toContain('"userPromptSource": "carried"');
+    expect(prompt).toContain('把 README 里的安装步骤补全');
+  });
+
+  it('当前轮 user block content 为空 + carried 有值 ⇒ source=none、goal=null、prompt 不含 carried 文案', async () => {
+    const turn: ReplayTurn = {
+      ...TURN,
+      blocks: [
+        { type: 'user', content: '', timestamp: TURN.startTime },
+        ...TURN.blocks.filter((block) => block.type !== 'user'),
+      ],
+    };
+    const carried = '这句不该被承接的上一轮任务';
+    const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_FAIL_GOAL);
+    const verdict = await judgePostLaunchTurn(
+      { turn, signals: [], carriedUserPrompt: carried },
+      llmCall,
+    );
+    const prompt = llmCall.mock.calls[0][0];
+    expect(prompt).toContain('"userPromptSource": "none"');
+    expect(prompt).not.toContain(carried);
+    expect(verdict.dims.goal).toBeNull();
+  });
+
+  it('两者都无 ⇒ source=none 且即使 llmCall 返回 goal.pass=false，verdict.dims.goal 仍是 null', async () => {
+    const turn: ReplayTurn = { ...TURN, blocks: TURN.blocks.filter((block) => block.type !== 'user') };
+    const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_FAIL_GOAL);
+    const verdict = await judgePostLaunchTurn({ turn, signals: [] }, llmCall);
+    expect(llmCall.mock.calls[0][0]).toContain('"userPromptSource": "none"');
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.dims.goal).toBeNull();
+    expect(verdict.dims.orchestration).toBe(1);
+    expect(verdict.unavailableReason).toBeUndefined();
+  });
+
+  it('当前轮有 user block ⇒ source=turn、carried 被忽略', async () => {
+    const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_PASS);
+    const verdict = await judgePostLaunchTurn(
+      { turn: TURN, signals: [], carriedUserPrompt: '这句不该出现在投影里' },
+      llmCall,
+    );
+    expect(llmCall.mock.calls[0][0]).toContain('"userPromptSource": "turn"');
+    expect(llmCall.mock.calls[0][0]).toContain('把 README 里的安装步骤补全');
+    expect(llmCall.mock.calls[0][0]).not.toContain('这句不该出现在投影里');
+    expect(verdict.dims.goal).toBe(1);
+  });
+});
+
+function decidingAnswers(overrides: JevAnswers = {}): JevAnswers {
+  return {
+    goal_met: { choice: 'met', confidence: 0.9 },
+    goal_pass: { noul: 0.91 },
+    orchestration_pass: { noul: 0.88 },
+    tools_pass: { noul: 0.87 },
+    permission_pass: { noul: 0.95 },
+    no_tools_but_needed: { noul: 0.1 },
+    ...overrides,
+  };
+}
+
+function turnWithoutTools(): ReplayTurn {
+  return {
+    ...TURN,
+    blocks: TURN.blocks.filter((block) => block.type !== 'tool_call'),
+  };
+}
+
+function stubPrescreen(answers: JevAnswers | ((state: Record<string, unknown>, questions: Record<string, unknown>) => JevAnswers)): PostLaunchJudgePrescreen & { questions: Array<Record<string, unknown>> } {
+  const questions: Array<Record<string, unknown>> = [];
+  const fn = (async (state: Record<string, unknown>, asked: Record<string, unknown>) => {
+    questions.push(asked);
+    return typeof answers === 'function' ? answers(state, asked) : answers;
+  }) as PostLaunchJudgePrescreen & { questions: Array<Record<string, unknown>> };
+  fn.questions = questions;
+  return fn;
+}
+
+const GENERATIVE = { content: ALL_PASS, judgeModel: 'zhipu/glm-4-flash' };
+
+describe('postLaunchJudge · Jev 初筛', () => {
+  it('四维全决断 ⇒ llmCall 零调用、judgeModel=typesafe/jev-1.13.0、dims 与带判一致', async () => {
+    const prescreen = stubPrescreen(decidingAnswers());
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(verdict.judgeModel).toBe(JEV_JUDGE_MODEL);
+    expect(verdict.dims).toEqual({ goal: 1, orchestration: 1, tools: 1, permission: 1 });
+    expect(verdict.unavailableReason).toBeUndefined();
+    expect(verdict.reasoning).toBe('goal: 0.91；orchestration: 0.88；tools: 0.87；permission: 0.95');
+    expect(verdict.promptHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(verdict.promptHash).not.toBe(getPostLaunchPromptHash());
+    expect(verdict.prescreenCalled).toBe(true);
+    expect(verdict.prescreenCostUsd).toBeGreaterThan(0);
+    expect(Object.keys(prescreen.questions[0] ?? {})).toContain('tools_pass');
+    expect(Object.keys(prescreen.questions[0] ?? {})).not.toContain('no_tools_but_needed');
+  });
+
+  it('Jev 决断与生成式 verdict 的 promptHash 不同', async () => {
+    const screened = await judgePostLaunchTurn(
+      { turn: TURN, signals: [], prescreen: stubPrescreen(decidingAnswers()) },
+      vi.fn(async () => GENERATIVE),
+    );
+    const generative = await judgePostLaunchTurn({ turn: TURN, signals: [] }, async () => GENERATIVE);
+    expect(screened.promptHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(generative.promptHash).toBe(getPostLaunchPromptHash());
+    expect(screened.promptHash).not.toBe(generative.promptHash);
+  });
+
+  it('estimateJevCallUsd：token=ceil(chars/4)，刊例 0.042/Mtok', () => {
+    expect(estimateJevCallUsd(0, 0)).toBe(0);
+    expect(estimateJevCallUsd(4, 0)).toBeCloseTo(0.042 / 1_000_000);
+    expect(estimateJevCallUsd(5, 0)).toBeCloseTo((2 * 0.042) / 1_000_000);
+    expect(estimatePostLaunchPrescreenUsd(TURN, [])).toBeGreaterThan(0);
+  });
+
+  it('任一维落 0.35~0.65 ⇒ llmCall 被调一次、judgeModel=生成式', async () => {
+    // 反向变异：若弃权带被改成「中间也决断」，本例会零调用生成式。
+    const prescreen = stubPrescreen(decidingAnswers({ orchestration_pass: { noul: 0.5 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+    expect(verdict.dims).toEqual({ goal: 1, orchestration: 1, tools: 1, permission: 1 });
+  });
+
+  it('goal_met=cannot_tell ⇒ 升级', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ goal_met: { choice: 'cannot_tell', confidence: 0.4 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+  });
+
+  it("goal_met choice='garbage' ⇒ 升级", async () => {
+    // 反向变异：若 choice 不校验 criteria 键，garbage + goal_pass.noul≥0.65 会被当成完整决断。
+    const prescreen = stubPrescreen(decidingAnswers({ goal_met: { choice: 'garbage', confidence: 0.9 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+  });
+
+  it('goal_met 缺 confidence ⇒ 升级', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ goal_met: { choice: 'met' } as JevChoiceAnswer }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+  });
+
+  it('goal_met confidence=1.2 ⇒ 升级', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ goal_met: { choice: 'met', confidence: 1.2 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+  });
+
+  it('toolCalls 空 ⇒ 问 no_tools_but_needed 不问 tools_pass', async () => {
+    const prescreen = stubPrescreen(decidingAnswers());
+    const llmCall = vi.fn(async () => GENERATIVE);
+    await judgePostLaunchTurn({ turn: turnWithoutTools(), signals: [], prescreen }, llmCall);
+    expect(Object.keys(prescreen.questions[0] ?? {})).not.toContain('tools_pass');
+    expect(Object.keys(prescreen.questions[0] ?? {})).toContain('no_tools_but_needed');
+  });
+
+  it('空 toolCalls + no_tools_but_needed 0.9 ⇒ tools=0 且不升级', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ no_tools_but_needed: { noul: 0.9 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: turnWithoutTools(), signals: [], prescreen }, llmCall);
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(verdict.judgeModel).toBe(JEV_JUDGE_MODEL);
+    expect(verdict.dims.tools).toBe(0);
+    expect(verdict.dims).toMatchObject({ goal: 1, orchestration: 1, permission: 1 });
+    expect(verdict.reasoning).toContain('tools: 0.90');
+  });
+
+  it('空 toolCalls + no_tools_but_needed 0.1 ⇒ tools=null 且不升级', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ no_tools_but_needed: { noul: 0.1 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: turnWithoutTools(), signals: [], prescreen }, llmCall);
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(verdict.judgeModel).toBe(JEV_JUDGE_MODEL);
+    expect(verdict.dims.tools).toBeNull();
+    expect(verdict.dims).toMatchObject({ goal: 1, orchestration: 1, permission: 1 });
+  });
+
+  it('空 toolCalls + no_tools_but_needed 0.5 ⇒ 升级生成式', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ no_tools_but_needed: { noul: 0.5 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: turnWithoutTools(), signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+    expect(verdict.prescreenCalled).toBe(true);
+    expect(verdict.prescreenCostUsd).toBeGreaterThan(0);
+  });
+
+  it('canEscalate=false 且 Jev 弃权 ⇒ 不调生成式，保留已决断维', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ orchestration_pass: { noul: 0.5 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn(
+      { turn: TURN, signals: [], prescreen, canEscalate: () => false },
+      llmCall,
+    );
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(verdict.judgeModel).toBe(JEV_JUDGE_MODEL);
+    expect(verdict.dims.goal).toBe(1);
+    expect(verdict.dims.tools).toBe(1);
+    expect(verdict.dims.permission).toBe(1);
+    expect(verdict.dims.orchestration).toBeNull();
+    expect(verdict.prescreenCalled).toBe(true);
+    expect(verdict.prescreenCostUsd).toBeGreaterThan(0);
+  });
+
+  it('prescreen 抛错 ⇒ 升级且无 unavailableReason', async () => {
+    const prescreen: PostLaunchJudgePrescreen = async () => {
+      throw new Error('TYPESAFE_TIMEOUT');
+    };
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.unavailableReason).toBeUndefined();
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+  });
+
+  it('prescreen 抛错 + canEscalate=false ⇒ judge_error，llmCall 零调用', async () => {
+    const prescreen: PostLaunchJudgePrescreen = async () => {
+      throw new Error('TYPESAFE_TIMEOUT');
+    };
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn(
+      { turn: TURN, signals: [], prescreen, canEscalate: () => false },
+      llmCall,
+    );
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(verdict.unavailableReason).toBe('judge_error');
+    expect(verdict.reasoning).toBe('Jev 初筛失败且预算不够升级生成式');
+    expect(verdict.judgeModel).toBe(JEV_JUDGE_MODEL);
+    expect(verdict.prescreenCalled).toBe(true);
+    expect(verdict.prescreenCostUsd).toBeGreaterThan(0);
+  });
+
+  it('prescreen 抛错且 llmCall 也抛 ⇒ judge_error（既有行为不变）', async () => {
+    const prescreen: PostLaunchJudgePrescreen = async () => {
+      throw new Error('jev down');
+    };
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, async () => {
+      throw new Error('quick model not configured');
+    });
+    expect(verdict.unavailableReason).toBe('judge_error');
+    expect(verdict.reasoning).toContain('quick model not configured');
   });
 });

@@ -112,7 +112,7 @@ flowchart LR
 | 账号密钥 | 只能由凭据服务按目的读取；不得作为会话响应、日志、durable checkpoint 内容外发；模型 API 鉴权本身仍使用密钥 | `src/host/services/core/secureStorage.ts`、`src/host/services/infra/sessionManager.ts`、`src/host/app/dynamicWorkflowRecoveryHost.ts` |
 | 截图、语音、活动上下文 | 用户选入的截图和语音可交模型处理；采集、渠道入站和导出各有自己的脱敏点，不能保证所有像素天然无敏感信息 | `src-tauri/src/appshots.rs`、`src/host/services/activity/screenshotPrivacyRedactor.ts`、`src/host/channels/privacy/channelPrivacyFirewall.ts` |
 | 观测与诊断 | Supabase 聚合上传默认 metadata-only；诊断包是另一条含脱敏内容的队列，Langfuse 也是独立出口，不能混称“遥测只传元数据” | `src/host/telemetry/telemetryUploaderService.ts`、`src/host/telemetry/diagnosticBundleService.ts`、`src/host/services/infra/langfuseService.ts` |
-| 上线后评分输入 | 截短、脱敏的真实轨迹交用户配置的评分模型；评分模型可能不同于本轮对话模型 | `src/host/testing/judge/postLaunchJudge.ts` |
+| 上线后评分输入 | 截短、脱敏的真实轨迹交用户配置的评分模型；评分模型可能不同于本轮对话模型。可选 Jev 初筛默认关，开启后同一份投影会发到 api.typesafe.ai | `src/host/testing/judge/postLaunchJudge.ts` |
 | 私档、题库答案、凭据与个人身份材料 | 不进入公开仓和默认客户端分发；这是仓库/发布约束，不是任意文件上传的全局 DLP 承诺 | `REVIEW.md`、`packages/internal/evaluation-center/README.md`、`scripts/release-security-scan.mjs` |
 
 ## 5. 策略
@@ -597,6 +597,8 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 | 上线后评测 | 真实轨迹无参考解地评过程；语义维与确定性安全/产物维分开，避免模型复判硬信号 | `src/host/testing/judge/postLaunchJudge.ts`、`src/shared/contract/postLaunchScore.ts` |
 | 外部 benchmark | 独立 harness 与 SWE-bench 等样本，不把外部 runner 当聊天运行时 | `packages/eval-harness/`、`benchmarks/` |
 | 产物质量 | 各 kind 自有 verifier，输出 ArtifactIssue 与质量报告；Admin Review Queue 做发布处置 | `docs/architecture/artifact-verification.md`、`src/web/routes/adminReviewQueue.ts` |
+
+**Jev 初筛（默认关）。** 环境变量 `CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN=1` 且 `TYPESAFE_API_KEY` 能经 providerResolution 解析到时，打分器把 `projectTurnForJudge` 的同一份投影发到 `api.typesafe.ai`（TypeSafe System One，`jev-1.13.0`）。问句与弃权带（noul ≥0.65 通过、≤0.35 不通过、其间弃权）集中在 `src/shared/constants/jevQuestions.ts`。四个应判维全部决断则不再调生成式判官，`judge_model` 写 `typesafe/jev-1.13.0`（不覆盖历史轮、不升 `POST_LAUNCH_JUDGE_VERSION`）；任一弃权、`goal_met=cannot_tell`、或 Jev 抛错/超时/形状不对则升级生成式——升级前再查一次预算（已花 + Jev 刊例 + 生成式估算），不够则停评并保留 Jev 已决断维。Jev 不可用**不**新增 `unavailable` 出口——生成式也失败才走既有 `judge_error` / `parse_error`。空 `toolCalls` 不问 `tools_pass`，改问 `no_tools_but_needed`（≥0.65 则 tools=0，≤0.35 则 tools 跳过，中间升级）；`userPrompt` 仍空则 goal 强制弃权。未开启时与只走生成式判官的路径一致。
 
 评测报告按 static-contract / hermetic-protocol / fault-injection / real-runtime 区分证明能力；只有结构门不能宣称运行时行为已验证，诊断评分也不自动阻断普通会话。（`docs/testing-evidence-classes.md`、`docs/architecture/v0.33-runtime-observability-control.md`）
 

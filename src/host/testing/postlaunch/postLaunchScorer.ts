@@ -23,8 +23,17 @@ import {
   type PostLaunchScoringResult,
   type PostLaunchTurnScore,
 } from '../../../shared/contract/postLaunchScore';
+import { JEV_JUDGE_MODEL, JEV_MODEL } from '../../../shared/constants/jevQuestions';
+import { resolveProviderApiKey } from '../../model/providers/providerResolution';
+import { systemOne } from '../../model/providers/typesafeProvider';
 import { classifyFailure, type FailureCodebook } from '../failureCodes';
-import { buildPostLaunchJudgePrompt, judgePostLaunchTurn, type PostLaunchJudgeLlmCall } from '../judge/postLaunchJudge';
+import {
+  buildPostLaunchJudgePrompt,
+  estimatePostLaunchPrescreenUsd,
+  judgePostLaunchTurn,
+  type PostLaunchJudgeLlmCall,
+  type PostLaunchJudgePrescreen,
+} from '../judge/postLaunchJudge';
 import { computeTurnSignals } from './postLaunchSignals';
 import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay, redactPostLaunchReason,
   acquireScoringLock,
@@ -73,6 +82,11 @@ export interface PostLaunchScorerDeps {
   now: () => number;
   failureCodebook: FailureCodebook;
   onWarn?: (message: string, error?: unknown) => void;
+  /**
+   * Jev 初筛注入点（测试打桩）。生产缺省由 resolveJudgePrescreen 按开关+key 装配；
+   * 显式传入时不再读环境变量。
+   */
+  prescreen?: PostLaunchJudgePrescreen;
 }
 
 interface TurnRow {
@@ -162,6 +176,47 @@ function collectScorableTurns(replay: StructuredReplay, turnRows: TurnRow[]): Sc
   return [...owners.values()].sort((left, right) => right.startedAt - left.startedAt);
 }
 
+function readUserPrompt(blocks: ReplayBlock[]): string | undefined {
+  const content = blocks.find((block) => block.type === 'user')?.content;
+  return typeof content === 'string' && content.trim() ? content : undefined;
+}
+
+/**
+ * Jev 判官初筛开关（默认关，与 CODE_AGENT_PERMISSION_LLM_CLASSIFIER /
+ * CODEX_SANDBOX_ENABLED 同一惯例：能力默认关，显式开启）。
+ */
+function isPostLaunchJevPrescreenEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN === '1';
+}
+
+const PRESCREEN_MISSING_KEY_WARN
+  = 'CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN 已开启但 TYPESAFE_API_KEY 缺失，Jev 初筛不生效（走生成式判官）';
+
+/** 开关 on 且 key 能解析到才装配 systemOne；否则 undefined（生成式路径）。 */
+function resolveJudgePrescreen(deps: PostLaunchScorerDeps): PostLaunchJudgePrescreen | undefined {
+  if (deps.prescreen) return deps.prescreen;
+  if (!isPostLaunchJevPrescreenEnabled()) return undefined;
+  const apiKey = resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL });
+  if (!apiKey) {
+    console.warn(PRESCREEN_MISSING_KEY_WARN);
+    deps.onWarn?.(PRESCREEN_MISSING_KEY_WARN);
+    return undefined;
+  }
+  return (state, questions) => systemOne(state, questions);
+}
+
+/** 同会话更早轮（按 startedAt）里最近一个非空 user block；没有则 undefined。 */
+function findCarriedUserPrompt(turn: ScorableTurn, sessionTurns: ScorableTurn[]): string | undefined {
+  const earlier = sessionTurns
+    .filter((other) => other.startedAt < turn.startedAt)
+    .sort((left, right) => right.startedAt - left.startedAt);
+  for (const other of earlier) {
+    const content = readUserPrompt(other.blocks);
+    if (content) return content;
+  }
+  return undefined;
+}
+
 
 /** 安全 / 产物两维由信号直接映射，不问模型。 */
 function mapDeterministicDims(signals: DeterministicSignal[]): Pick<PostLaunchDims, 'safety' | 'artifact'> {
@@ -227,6 +282,7 @@ export async function runPostLaunchScoring(
   return result;
 
   async function scoreSessions(): Promise<void> {
+  const prescreen = resolveJudgePrescreen(deps);
   for (const session of listSessions(deps.db, since)) {
     const turnRows = deps.db
       .prepare(`
@@ -254,7 +310,9 @@ export async function runPostLaunchScoring(
     if (!replay) continue;
 
     // 窗口外的轮不评（同一条会话里，窗口内的轮照评）。
-    const scorable = collectScorableTurns(replay, turnRows).filter((turn) => turn.startedAt >= since);
+    // carriedUserPrompt 按整段会话取更早轮，不按窗口切——窗口外的 user block 仍能承接。
+    const sessionTurns = collectScorableTurns(replay, turnRows);
+    const scorable = sessionTurns.filter((turn) => turn.startedAt >= since);
     result.examinedTurns += scorable.length;
     // dry-run 的行记成 'dry-run' 版本：既不挡之后的真评，真评的行也会按 turn_id 主键覆盖它
     // dry-run 遇到任何已有行（含真评）都跳过：表按 turn_id 主键 INSERT OR REPLACE，否则会把真评覆盖成 null（ai-review #1645）
@@ -282,8 +340,12 @@ export async function runPostLaunchScoring(
       const hasSignal = signals.length > 0;
       // 预算给下一次调用留余量：判据是「已花 + 这次要花的估算 ≤ 上限」，
       // 不是「已花 < 上限」——后者总会让最后一次调用把上限冲破（K1 实测超支一次调用）。
-      const judgePrompt = dryRun ? '' : buildPostLaunchJudgePrompt(turn.turn, signals);
-      const nextCallUsd = dryRun ? 0 : deps.estimateJudgeCostUsd(judgePrompt).usd;
+      const carriedUserPrompt = findCarriedUserPrompt(turn, sessionTurns);
+      const judgePrompt = dryRun ? '' : buildPostLaunchJudgePrompt(turn.turn, signals, carriedUserPrompt);
+      const jevUsd = !dryRun && prescreen
+        ? estimatePostLaunchPrescreenUsd(turn.turn, signals, carriedUserPrompt)
+        : 0;
+      const nextCallUsd = dryRun ? 0 : (prescreen ? jevUsd : deps.estimateJudgeCostUsd(judgePrompt).usd);
       const budgetLeft = spentUsd + nextCallUsd <= budgetLimitUsd;
       const sampleLeft = sampledToday < sampleLimit;
       // 信号命中的轮全评；其余按日抽样。预算不够下一次调用就当天停评，只记信号。
@@ -309,24 +371,52 @@ export async function runPostLaunchScoring(
 
       if (shouldJudge) {
         let judgeCompletion = '';
-        const verdict = await judgePostLaunchTurn({ turn: turn.turn, signals }, async (prompt) => {
-          const response = await deps.llmCall(prompt);
-          judgeCompletion = typeof response === 'string' ? response : response.content;
-          return response;
-        });
+        let escalationBlocked = false;
+        const verdict = await judgePostLaunchTurn(
+          {
+            turn: turn.turn,
+            signals,
+            carriedUserPrompt,
+            prescreen,
+            canEscalate: prescreen
+              ? () => {
+                  const genUsd = deps.estimateJudgeCostUsd(judgePrompt).usd;
+                  const ok = spentUsd + jevUsd + genUsd <= budgetLimitUsd;
+                  if (!ok) escalationBlocked = true;
+                  return ok;
+                }
+              : undefined,
+          },
+          async (prompt) => {
+            const response = await deps.llmCall(prompt);
+            judgeCompletion = typeof response === 'string' ? response : response.content;
+            return response;
+          },
+        );
         dims = { ...dims, ...verdict.dims };
         reasoning = verdict.reasoning || reasoning;
         judgeModel = verdict.unavailableReason ? JUDGE_MODEL_UNAVAILABLE : verdict.judgeModel;
         if (verdict.unavailableReason) result.judgeUnavailableTurns += 1;
+        if (escalationBlocked) result.budgetStopped = true;
         promptHash = verdict.promptHash;
         judgeVersion = verdict.judgeVersion;
         rubricVersion = verdict.rubricVersion;
-        const estimate = deps.estimateJudgeCostUsd(judgePrompt, judgeCompletion);
-        // 未知价的估算只用来守预算，不冒充刊例落库（resolveModelPrice §2「未知价不编造」）。
-        judgeCostUsd = estimate.assumed ? 0 : estimate.usd;
-        budgetCostUsd = estimate.usd;
-        spentUsd += estimate.usd;
-        result.costUsd += judgeCostUsd;
+        if (verdict.prescreenCalled) {
+          const jevCost = verdict.prescreenCostUsd ?? jevUsd;
+          judgeCostUsd += jevCost;
+          budgetCostUsd += jevCost;
+          spentUsd += jevCost;
+          result.costUsd += jevCost;
+        }
+        if (verdict.judgeModel !== JEV_JUDGE_MODEL) {
+          const estimate = deps.estimateJudgeCostUsd(judgePrompt, judgeCompletion);
+          // 未知价的估算只用来守预算，不冒充刊例落库（resolveModelPrice §2「未知价不编造」）。
+          const published = estimate.assumed ? 0 : estimate.usd;
+          judgeCostUsd += published;
+          budgetCostUsd += estimate.usd;
+          spentUsd += estimate.usd;
+          result.costUsd += published;
+        }
         if (hasSignal) result.signalTurns += 1;
         else {
           result.sampledTurns += 1;

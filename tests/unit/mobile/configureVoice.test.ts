@@ -103,6 +103,7 @@ describe('configureVoiceRelease', () => {
     expect(read(root, `${JAVA_DIR}/CustomMediaRecorder.java`)).not.toContain('AudioSource.MIC');
     const javaRecorder = read(root, `${JAVA_DIR}/CustomMediaRecorder.java`);
     expect(javaRecorder).toContain(`peak < ${COMPANION_LIMITS.voiceEnergyPeak}`);
+    expect(javaRecorder).toContain('if (outputFile != null) outputFile.delete()');
     expect(javaRecorder).toContain('throw new RuntimeException("NO_SPEECH")');
     expect(javaPlugin).toContain('if ("NO_SPEECH".equals(exp.getMessage())) call.reject("NO_SPEECH")');
     expect(() => configureVoiceRelease(root)).not.toThrow();

@@ -262,7 +262,7 @@ export function prepareJevBrowserSnapshot(
     scrollY: captured.scrollY,
     window: {
       selected: selected.length,
-      collected: captured.snapshot.interactiveElements.length,
+      collected: collected.length,
       in_view: zones.in_view,
       above: zones.above,
       below: zones.below,

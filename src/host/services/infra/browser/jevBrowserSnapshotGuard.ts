@@ -43,6 +43,11 @@ function guardString(value: string, sanitizer: JevSnapshotSanitizer): string {
   return guardSensitiveText(rewritten, { surface: 'prompt', mode: 'model-context' });
 }
 
+/** Same enumerator as state/labels. Page-sourced strings that still reach quick/type prompts. */
+export function guardJevPromptText(value: string, sanitizer?: JevSnapshotSanitizer): string {
+  return guardString(value, sanitizer ?? getInputSanitizer());
+}
+
 function walkStrings(value: unknown, sanitizer: JevSnapshotSanitizer): unknown {
   if (typeof value === 'string') return guardString(value, sanitizer);
   if (Array.isArray(value)) return value.map((child) => walkStrings(child, sanitizer));

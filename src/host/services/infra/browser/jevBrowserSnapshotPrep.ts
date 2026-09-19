@@ -304,7 +304,7 @@ export async function captureJevPageFromTab(args: {
     targetRefTtlMs: BROWSER_TARGET_REF_TTL_MS,
     maxInteractiveElements: args.maxInteractiveElements ?? JEV_MAX_INTERACTIVE_ELEMENTS,
   });
-  args.registry.addRecords(targetRefRecords, capturedAtMs);
+  args.registry.addRecords(targetRefRecords, capturedAtMs, { clear: false });
   const viewport = args.tab.page.viewportSize() || { width: 1280, height: 720 };
   const scrollY = await args.tab.page.evaluate(() => window.scrollY).catch(() => 0);
   return {

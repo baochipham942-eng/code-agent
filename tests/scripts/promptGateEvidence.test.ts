@@ -160,6 +160,21 @@ describe('prompt gate evidence checker', () => {
     expect(result.output).toContain('prompt input content hash does not match');
   });
 
+  it('prompt inputs hash includes CODE_AGENT_BROWSER_JEV_STEP', () => {
+    const { root } = createWorkspace();
+    const previous = process.env.CODE_AGENT_BROWSER_JEV_STEP;
+    delete process.env.CODE_AGENT_BROWSER_JEV_STEP;
+    const off = resolvePromptInputsHash(root, loadPromptChangePaths(root));
+    process.env.CODE_AGENT_BROWSER_JEV_STEP = '1';
+    try {
+      const on = resolvePromptInputsHash(root, loadPromptChangePaths(root));
+      expect(on).not.toBe(off);
+    } finally {
+      if (previous === undefined) delete process.env.CODE_AGENT_BROWSER_JEV_STEP;
+      else process.env.CODE_AGENT_BROWSER_JEV_STEP = previous;
+    }
+  });
+
   it('conditional CI/local mode skips unrelated changes but enforces prompt changes', () => {
     const unrelated = createWorkspace();
     write(unrelated.root, 'docs/unrelated.md', '# unrelated\n');

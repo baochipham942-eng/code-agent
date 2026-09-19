@@ -19,7 +19,7 @@ import {
 import { resolveProviderApiKey } from '../../../model/providers/providerResolution';
 import { classifyBrowserComputerManualTakeover } from '../../../../shared/utils/browserComputerRedaction';
 import type { BrowserService } from '../../../services/infra/browserService';
-import { guardJevBrowserSnapshot } from '../../../services/infra/browser/jevBrowserSnapshotGuard';
+import { guardJevBrowserSnapshot, guardJevPromptText } from '../../../services/infra/browser/jevBrowserSnapshotGuard';
 import {
   prepareJevBrowserSnapshot,
   type JevCandidate,
@@ -175,7 +175,7 @@ function applyJevAnswers(args: {
   if (!operation || !target || !done || !risk) {
     return { ok: false, reason: 'bad_shape', retryAsk: false };
   }
-  if (!(operation.choice in BROWSER_STEP_OPERATIONS)) {
+  if (!Object.hasOwn(BROWSER_STEP_OPERATIONS, operation.choice)) {
     return { ok: false, reason: 'bad_shape', retryAsk: false };
   }
   let doneNoul = done.noul;
@@ -463,11 +463,12 @@ async function runJevBrowserStepLoop(
 
     let answers: JevAnswers;
     try {
-      answers = await deps.systemOne(guarded.state, questions);
+      answers = await deps.systemOne(guarded.state, questions, { signal: context.abortSignal });
       jevCalls += 1;
       jevChars += stateChars + questionChars;
       spentUsd += nextUsd;
     } catch {
+      if (context.abortSignal?.aborted) return finish('fallback', 'aborted');
       turn.consecutiveJevFailures += 1;
       if (turn.consecutiveJevFailures >= 2) turn.mode = 'sticky_visual';
       return finish('fallback', 'jev_error');
@@ -629,20 +630,22 @@ async function typeWithRebind(
   }
 }
 
-async function generateTypeValue(
+export async function generateTypeValue(
   task: string,
   target: JevCandidate,
   quickType?: (prompt: string) => Promise<string | null>,
 ): Promise<string | null> {
   if (!quickType) {
-    const quoted = task.match(/`([^`]{1,80})`/) || task.match(/bench@[^\s]+/i);
-    return quoted ? quoted[1] || quoted[0] : task.slice(0, 80);
+    const quoted = task.match(/`([^`]{1,80})`/);
+    return quoted ? quoted[1] : task.slice(0, 80);
   }
+  const field = guardJevPromptText(target.name);
+  const placeholder = target.placeholder ? guardJevPromptText(target.placeholder) : '';
   const prompt = [
     'Generate only the literal value to type into the field. No quotes, no explanation.',
     `Task: ${task.slice(0, 500)}`,
-    `Field: ${target.name}`,
-    target.placeholder ? `Placeholder: ${target.placeholder}` : '',
+    `Field: ${field}`,
+    placeholder ? `Placeholder: ${placeholder}` : '',
   ].filter(Boolean).join('\n');
   return quickType(prompt);
 }

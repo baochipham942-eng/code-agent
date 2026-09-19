@@ -76,6 +76,8 @@ function savedWithPending(): string {
   const identity = createIdentity();
   return JSON.stringify({
     version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+    // 已过首次离网提醒周期（不是这个文件要测的场景）：不让 S8 薄面板抢走扫码/重连契约。
+    loginReminded: true,
     binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
     pending: pendingCommand,
   });
@@ -109,6 +111,8 @@ describe('pair() 不因 pending 退出', () => {
     const store = createCompanionStore({
       read: async () => JSON.stringify({
         version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+        // 已过首次离网提醒周期（不是这个文件要测的场景）：不让 S8 薄面板抢走扫码/重连契约。
+        loginReminded: true,
         binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
         pending: pendingCommand,
       }),
@@ -169,6 +173,8 @@ describe('连接弹层扫码不受 pending 限制', () => {
       companion: {
         read: async () => JSON.stringify({
           version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          // 已过首次离网提醒周期（不是这个文件要测的场景）：不让 S8 薄面板抢走扫码/重连契约。
+          loginReminded: true,
           binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey, deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
           pending: pendingCommand,
         }),
@@ -206,6 +212,8 @@ describe('连接弹层扫码不受 pending 限制', () => {
       companion: {
         read: async () => JSON.stringify({
           version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          // 已过首次离网提醒周期（不是这个文件要测的场景）：不让 S8 薄面板抢走扫码/重连契约。
+          loginReminded: true,
           binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey, deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
           pending: pendingCommand,
         }),
@@ -243,6 +251,8 @@ describe('连接弹层扫码不受 pending 限制', () => {
       companion: {
         read: async () => JSON.stringify({
           version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          // 已过首次离网提醒周期（不是这个文件要测的场景）：不让 S8 薄面板抢走扫码/重连契约。
+          loginReminded: true,
           binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey, deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
           pending: pendingCommand,
         }),
@@ -334,6 +344,8 @@ describe('扫码取消走 UI 真实路径：MobileRoot 的 scan catch（ai-revie
       companion: {
         read: async () => JSON.stringify({
           version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          // 已过首次离网提醒周期（不是这个文件要测的场景）：不让 S8 薄面板抢走扫码/重连契约。
+          loginReminded: true,
           binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
         }),
         write: async () => {},
@@ -410,6 +422,8 @@ describe('冷启动宿主停机：缓存会话标题取上次记下的那份（O
       companion: {
         read: async () => JSON.stringify({
           version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          // 已过首次离网提醒周期（不是这个文件要测的场景）：不让 S8 薄面板抢走扫码/重连契约。
+          loginReminded: true,
           binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: HOST, deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
         }),
         write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}),
@@ -435,6 +449,8 @@ describe('冷启动宿主停机：缓存会话标题取上次记下的那份（O
     });
     const companionDisk = JSON.stringify({
       version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+      // 已过首次离网提醒周期（不是这个文件要测的场景）：不让 S8 薄面板抢走扫码/重连契约。
+      loginReminded: true,
       binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: HOST, deviceId: 'phone-1', scopeEpoch: 1, scope: ['s1'] },
     });
     const mount = async () => {

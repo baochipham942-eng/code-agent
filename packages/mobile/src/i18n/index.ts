@@ -163,10 +163,15 @@ const zh = {
   // JS 拿不到，用通用句；点按跳会话（判不出归属时只收掉提示）。
   foregroundAlert: '有任务结果，点按查看',
   enableNotifications: '开启提醒', openSystemSettings: '前往系统设置',
-  // 账号登录（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：S4 登录页 / S7 账号服务连不上 / S8 在外面需要先登录。
+  // 账号登录（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE，v3 收窄见 N-COMPANION-RELAY-ACCOUNT-LOGIN-V3）：
+  // S4 登录页 / S7 账号服务连不上 / S8 在外面需要先登录；账号并进个人卡，account 现只当账号区的组标题。
   account: '账号', accountNotLoggedIn: '未登录',
+  /** 未登录时设置页个人卡的副标题（v3 新增，比 accountLoginHint 短，专给这一行用）。 */
+  accountCardHint: '登录后离开 Wi-Fi 也能连电脑',
   accountLoginHint: '登录后手机离开这个 Wi-Fi 也能连回电脑。',
   accountLoginEmail: '邮箱', accountLoginPassword: '密码', accountLoginSubmit: '登录',
+  /** 登录中态按钮文案（v3 新增：真机实测点登录后 7~8 秒才有响应，原来只置灰没有文字）。 */
+  accountLoginBusy: '登录中…',
   accountLoginFooter: '用电脑上那个 Neo 账号。登录只做一次，之后在外面用不需要再联账号服务。',
   accountLoginInvalid: '邮箱或密码不对',
   accountLoginWrongAccount: '这台电脑属于 {email}，请用那个账号登录',
@@ -174,7 +179,9 @@ const zh = {
   accountLoginLater: '稍后再说',
   accountLogout: '退出登录',
   accountLogoutHint: '退出后，配对和在同一个 Wi-Fi 里的使用不受影响。',
-  accountLoggedInHint: '手机在外面也能连回这台电脑。',
+  /** 退出登录 persist 失败（v3 新增）：store 的失败分支不改状态、静默保留 account，UI 借这个
+   *  信号报一句，不新开一条 store 失败通道。 */
+  accountLogoutFailed: '退出登录没有成功，请重试。',
   needLoginTitle: '在外面用需要先登录',
   needLoginBody: '登录后，手机不在电脑的网络里也能连回电脑。',
   needLoginHint: '回到和电脑同一个 Wi-Fi 也能直接用，不登录也行。',
@@ -372,10 +379,13 @@ const en: Record<keyof typeof zh, string> = {
   notificationReady: 'Alerts registered with your computer',
   foregroundAlert: 'A task has an update. Tap to view',
   enableNotifications: 'Turn on alerts', openSystemSettings: 'Open system settings',
-  // Account sign-in (S4 login / S7 service unreachable / S8 needed away from home).
+  // Account sign-in (S4 login / S7 service unreachable / S8 needed away from home). Sign-in now
+  // lives inside the profile card; `account` is only the section heading on the signed-in profile page.
   account: 'Account', accountNotLoggedIn: 'Not signed in',
+  accountCardHint: 'Sign in and this phone can reach your computer even off this Wi-Fi.',
   accountLoginHint: 'Sign in once, and this phone can reach your computer even off this Wi-Fi.',
   accountLoginEmail: 'Email', accountLoginPassword: 'Password', accountLoginSubmit: 'Sign in',
+  accountLoginBusy: 'Signing in…',
   accountLoginFooter: 'Use the same Neo account as on your computer. You sign in only once; after that it works anywhere without the account service.',
   accountLoginInvalid: 'That email or password is not right',
   accountLoginWrongAccount: 'This computer belongs to {email}. Sign in with that account.',
@@ -383,7 +393,7 @@ const en: Record<keyof typeof zh, string> = {
   accountLoginLater: 'Not now',
   accountLogout: 'Sign out',
   accountLogoutHint: 'Pairing and use on the same Wi-Fi are not affected.',
-  accountLoggedInHint: 'This phone can reach the computer even away from its network.',
+  accountLogoutFailed: "Sign-out didn't complete. Please try again.",
   needLoginTitle: 'Sign in to use it outside this network',
   needLoginBody: 'Once signed in, this phone can reach the computer even outside its network.',
   needLoginHint: 'You can also keep using it on the same Wi-Fi as the computer without signing in.',

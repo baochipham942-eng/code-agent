@@ -246,8 +246,11 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
    * 原来按分类只渲染一个，relay 被拒时只给「重新连接」——而重连试的是配对时写死的两个
    * 地址，换网后一起死，那个主按钮永远不可能成功，用户只能删 app 重装。
    * 逐类遍历而不是挑一类：这条洞当初就是「只测了被选中的那一类」漏掉的。
+   * `reject`（离网类）不在这个循环里断言了（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 C，
+   * 爸 2026-09-19）：那一态且未登录时整块换成 S8 薄面板，扫码/忘记这台电脑不再出现——
+   * 这不是回归，是拍板换的新契约，覆盖见下面「S8 薄面板」那组用例。
    */
-  for (const mode of ['reject', 'refused', 'rejectIdentity'] as const) {
+  for (const mode of ['refused', 'rejectIdentity'] as const) {
     it(`连不上（${mode}）：扫码 / 重新连接 / 忘记这台电脑 三个动作都在，且主按钮唯一`, async () => {
       harness.mode = mode;
       await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
@@ -262,19 +265,27 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
     });
   }
 
-  it('连不上（离网）且未登录 ⇒ S8 登录提示在：去登录是次级动作，主按钮唯一', async () => {
+  /**
+   * S8 薄面板（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 C，爸 2026-09-19：原来一个面板 5 个动作
+   * 3 段说明「过于复杂」）：离网且未登录时整块换成四行，主按钮改判「去登录」，扫码/忘记
+   * 这台电脑不再出现；已登录时的失败面板（connectionRefused/rejectIdentity）不变，见上面
+   * 那个循环——一态一主操作照旧成立，只是这一态的「一个主操作」从「重新连接」换成「去登录」。
+   */
+  it('连不上（离网）且未登录 ⇒ S8 薄面板：主按钮唯一且是「去登录」，无扫码/忘记这台电脑', async () => {
     harness.mode = 'reject';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
     await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
     await openRemoteSheetFromDrawer();
     const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+    expect(failed).toBeTruthy();
     const notice = failed.querySelector('[data-testid="relay-login-prompt"]');
     expect(notice).toBeTruthy();
     expect(notice?.textContent).toContain(text.needLoginTitle);
-    // 一态一主操作：登录引导不抢主按钮——去登录是次级（sheet-secondary），主按钮仍是诊断给的那个。
-    expect(notice?.querySelector('[data-testid="relay-login-go"]')?.classList.contains('primary')).toBe(false);
+    expect(failed.querySelector('[data-testid="remote-action-scan"]')).toBeNull();
+    expect(failed.querySelector('[data-testid="remote-action-forget"]')).toBeNull();
     expect([...failed.querySelectorAll('button.primary')]).toHaveLength(1);
-    expect(primaryLabel(failed)).toBe(text.reconnect);
+    expect(primaryLabel(failed)).toBe(text.goLogin);
+    expect(failed.querySelector('[data-testid="remote-action-reconnect"]')?.classList.contains('primary')).toBe(false);
   });
 
   it('连不上（连接被拒绝）⇒ 不出 S8 登录提示：端口关着不是离网，登录救不了「Neo 没在运行」', async () => {

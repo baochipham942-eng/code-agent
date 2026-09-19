@@ -21,7 +21,11 @@ const PATHS = {
   camera: 'M3 7h4l2-3h6l2 3h4v14H3zM16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
 } as const;
 
-export function AppIcon({ name }: { name: keyof typeof PATHS }) {
+export function AppIcon({ name }: { name: keyof typeof PATHS | 'profile' }) {
+  // 通用头像图标（未登录个人卡用，N-COMPANION-RELAY-ACCOUNT-LOGIN-V3）：圆+身形，design.html
+  // icon() 的 profile 分支是双元素（circle+path），不是单 path，走独立分支渲染。
+  if (name === 'profile') return <svg className="app-icon" data-name={name} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" /></svg>;
   if (name === 'more') return <svg className="app-icon" data-name={name} viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d={PATHS[name]} /></svg>;
   return <svg className="app-icon" data-name={name} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
     strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PATHS[name]} /></svg>;

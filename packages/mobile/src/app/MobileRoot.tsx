@@ -653,14 +653,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         // 不自动聚焦输入区：手机上未经点按就弹键盘会顶走视口。
         : <div data-testid={companion.sessionId ? 'session-empty' : undefined} className="welcome"><NeoBrandMark variant="mark" size={47} />
           <h1>{text.welcome}</h1>
-          {/* 登录引导（D9）：配对完成不弹账号页（那会把弹层收拢流程顶住），降级为这里一条可忽略
-              提示；S8 之后（第一次离网连不上）同一份提示接着可见。点「去登录」才进账号页。 */}
-          {companion.loginPrompt && !companion.account && <div className="login-notice" data-testid="welcome-login-notice" role="status">
-            <strong>{text.needLoginTitle}</strong>
-            <p>{text.needLoginBody}</p>
-            <button className="sheet-secondary" data-testid="welcome-login-go" onClick={() => state.openSheet('account')}>{text.goLogin}</button>
-            <button className="sheet-secondary" data-testid="welcome-login-dismiss" onClick={companion.dismissLoginPrompt}>{text.accountLoginLater}</button>
-          </div>}
+          {/* 登录引导欢迎页那段整段删掉（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 B，爸 2026-09-19：
+              「有什么想交给 Neo？」下面插四行过于复杂）。loginPrompt 仍留给 S8 薄面板用，
+              这里不再消费它——欢迎页恢复 3B 之前的样子。 */}
           {companion.library && (() => {
             const projectId = companion.sessionId ? companion.library.sessions.find(s => s.id === companion.sessionId)?.projectId ?? newTaskProjectId : newTaskProjectId;
             const project = companion.library.projects.find(p => p.id === projectId);
@@ -782,6 +777,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           ? companion.recoverStep === 'hosts' ? text.recoverHostsTitle
             : companion.recoverStep === 'pairing' ? text.recoverWaitTitle
             : text.recoverLoginTitle
+        // 'account' 页现在只剩「还没登录」这一条路（已登录走个人信息页），标题固定是登录页那句，
+        // 与找回流共用同一句文案（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 A，设计稿标注可共用）。
+        : currentPage === 'account' ? text.recoverLoginTitle
         : text[currentPage]}
       hasParent={state.sheet.pages.length > 1}
       close={() => {
@@ -869,19 +867,27 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
               {companion.recoverEntryAvailable ? text.recoverEntryHint : text.recoverUnavailable}
             </p>
           </div>
-          : <div className="remote-failed" role="status" data-testid="remote-unreachable">
+          : companion.loginPrompt && !companion.account ? (
+            // S8 薄面板（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 C，爸 2026-09-19：原来 5 个动作 3 段
+            // 说明「过于复杂」）：没登录、且到了「跳过后第一次**离网**连不上」那一次（store 的
+            // loginPrompt 只置起这一次；离网判据即 OFF_NETWORK_ERRORS，钉在 companionStore 里
+            // 触发 loginPrompt 的那个条件上，这里不用文案猜）——整块换成四行：标题、一句说明、
+            // 主按钮「去登录」、次级「重新连接」+ 一句灰字（无动作，拍板③）。扫码/忘记这台电脑
+            // 在这一态不出现；已登录时的失败面板（下面 else 分支）一律不变。
+            <div className="remote-failed" role="status" data-testid="remote-unreachable">
+              <div data-testid="relay-login-prompt">
+                <strong>{text.needLoginTitle}</strong>
+                <p>{text.needLoginBody}</p>
+              </div>
+              <button className="primary" data-testid="relay-login-go" onClick={() => state.pushSheet('account')}>{text.goLogin}</button>
+              <button className="sheet-secondary" data-testid="remote-action-reconnect"
+                disabled={!ports.companion || (companion.busy && !companion.autoAttempt)}
+                onClick={() => void companionStore.getState().reconnect({ resetBackoff: true })}>{text.reconnect}</button>
+              <p className="caption">{text.needLoginHint}</p>
+            </div>
+          ) : <div className="remote-failed" role="status" data-testid="remote-unreachable">
             <strong>{text.cannotReachComputer}</strong>
             <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>
-            {/* S8（D-1/D-3）：没登录、且已到「跳过后第一次**离网**连不上」的那一次（store 的
-                loginPrompt 只置起这一次）——「在外面用需要先登录」+ 次级动作去登录；与既有扫码/
-                重连动作并存，不另起提示区。一态一主操作：诊断决定的那个主按钮不被登录引导抢占，
-                去登录恒为次级（sheet-secondary）。 */}
-            {companion.loginPrompt && !companion.account && <div className="login-notice" data-testid="relay-login-prompt" role="status">
-              <strong>{text.needLoginTitle}</strong>
-              <p>{text.needLoginBody}</p>
-              <button className="sheet-secondary" data-testid="relay-login-go" onClick={() => state.pushSheet('account')}>{text.goLogin}</button>
-              <p className="caption">{text.needLoginHint}</p>
-            </div>}
             {companion.pending && <p className="caption" data-testid="remote-pending-hint">{text.pendingScanHint}</p>}
             {/* 两个动作都留着，主次由诊断决定（爸 2026-09-16 build 42 真机「手机没给我扫的按钮啊」）。
                 原来按分类只渲染一个：relay 被拒判 reconnect ⇒ 只有「重新连接」。而重连试的是配对时
@@ -975,15 +981,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         }}
         text={text}
       /> : currentPage === 'account' ? <AccountSheet
-        account={companion.account}
         hostEmail={companion.binding?.hostAccountEmail ?? null}
         login={(email, password) => companionStore.getState().login(email, password)}
-        logout={() => companionStore.getState().logout()}
         dismiss={() => store.getState().closeSheet()}
         text={text}
       /> : <SettingsPage page={currentPage} text={text} appearance={state.preferences.appearance} nickname={state.preferences.nickname}
         profileDraft={state.profileDraft} appInfo={appInfo} open={state.pushSheet} chooseAppearance={state.setAppearance}
         editProfile={state.editProfile} saveProfile={state.saveProfile} account={companion.account}
+        logout={() => companionStore.getState().logout()}
         storage={{ previewBytes: companion.cacheUsage?.previewBytes ?? 0, conversationBytes: companion.cacheUsage?.conversationBytes ?? 0, result: cacheResult, confirm: cacheConfirm,
           onConfirm: () => setCacheConfirm(true),
           onClear: () => { companion.clearCache(); setCacheResult('clean'); setCacheConfirm(false); } }}

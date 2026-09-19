@@ -115,6 +115,11 @@ html[data-keyboard-inset] .sheet { padding-bottom: 16px; }
 .camera-denied-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .camera-denied-actions .primary { margin-top: 0; }
 .profile-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 18px 10px; text-align: left; }.profile-card strong { flex: 1; overflow-wrap: anywhere; }
+/* 账号并进个人卡（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3）：未登录/已登录都要显两行（标题+副标题），
+   .stack 顶替裸 strong 撑开的单行布局；通用头像用 profile 图标而不是取字。 */
+.profile-card .stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.profile-card .stack .small { font-size: var(--fs-cap); color: var(--muted); font-weight: 400; }
+.profile-card .avatar-generic .app-icon { width: 22px; height: 22px; color: var(--muted); }
 input { width: 100%; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: var(--fs-body); }.primary { border-radius: 24px; width: 100%; margin-top: 18px; }
 .about { text-align: center; padding: 18px 8px; }.about p { color: var(--muted); }
 .virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding-bottom: calc(var(--composer-h, 132px) + var(--keyboard-h, 0px)); }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: var(--fs-sub); }
@@ -284,6 +289,9 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
    （标题 + 诊断句 + 主/次按钮）。连接电脑 sheet 一态一主操作。 */
 .sheet-wait { margin: 12px 4px; display: flex; align-items: center; gap: 10px; color: var(--muted); }
 .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; display: inline-block; flex-shrink: 0; }
+/* 登录中态（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 D）：按钮内 spinner + 文案，主按钮本身不是 flex 容器。 */
+.primary.busy { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.primary.busy .spinner { border-color: var(--bg); border-top-color: transparent; opacity: .8; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .sheet-fail, .remote-failed { display: flex; flex-direction: column; gap: 6px; padding: 14px 4px 4px; }
 .sheet-fail strong, .remote-failed strong { font-size: var(--fs-body); }
@@ -339,7 +347,3 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 /* 账号页与 S8 登录提醒（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：只借用既有控件样式，补间距与错误色。 */
 .account-sheet { padding: 4px 16px 16px; }
 .account-sheet [role='alert'] { margin: 10px 4px 0; color: #c43b38; font-size: var(--fs-cap); }
-.login-notice { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; padding: 14px; border-radius: 16px; background: var(--surface); }
-.login-notice strong { font-size: var(--fs-msg); }
-.login-notice p { margin: 0; color: var(--muted); font-size: var(--fs-cap); line-height: 1.6; }
-.login-notice button { margin-top: 8px; color: var(--accent); }

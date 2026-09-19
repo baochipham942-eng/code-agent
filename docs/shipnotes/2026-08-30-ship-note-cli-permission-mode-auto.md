@@ -59,4 +59,4 @@
 - **开关默认关**：环境变量 `CODE_AGENT_PERMISSION_LLM_CLASSIFIER=1` 显式开启（与 `CODEX_SANDBOX_ENABLED` / `CODE_AGENT_CLOUD_PROMPTS` 同一惯例）。key 走 `TYPESAFE_API_KEY`（provider→env 映射）；key 缺失时开关无效，warn 一行后保持 ask。不设该变量时分类器行为与本追记之前逐字节一致。
 - **数据出境（重要）**：开启后，走到「规则判不了」那一档的**命令文本 / 工具参数（截 300 字）**会**先经 `guardSensitiveText` 脱敏（密钥/token/邮箱/家目录路径抹除）再发送到 `api.typesafe.ai`（第三方、境外，TypeSafe System One）**用于风险判断。不开启则零外发。
 - **失败行为不变**：Jev 报错 / 超时（默认 5s）/ 响应形状不对 → 回落 ask（fail-closed），不会让任何操作被拒或被放行。
-- **效果口径**：开启后**只能让部分原本要问人的操作免打断**（放行方向），不会让任何操作从「会问/会拒」变成「被拒」，也不会放宽规则层已有的任何判定。09-19 用生产槽 124 条「规则判不了→问人」样本回放：参照=拒绝被放行 **0** 条（该格必须为 0）；回放脚本 `scripts/jev-permclass-replay.ts` 留仓，换 Jev 版本/改问法/改阈值时必须重跑（阈值绑 `jev-1.13.0`，见 `jevQuestions.ts` 头注）。
+- **效果口径**：开启后**只能让部分原本要问人的操作免打断**（放行方向），不会让任何操作从「会问/会拒」变成「被拒」，也不会放宽规则层已有的任何判定。09-19 用生产槽 124 条「规则判不了→问人」样本回放：参照=拒绝被放行 **0** 条（该格必须为 0）；回放脚本 `scripts/security/jev-permclass-replay.ts` 留仓，换 Jev 版本/改问法/改阈值时必须重跑（阈值绑 `jev-1.13.0`，见 `jevQuestions.ts` 头注）。

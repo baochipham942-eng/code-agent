@@ -8,15 +8,15 @@
 // 不重复实现 state 构造——decision 与数值同源，不会各说各话。
 //
 // 用法：set -a; source ~/.code-agent/.env; set +a   # TYPESAFE_API_KEY
-//       npx tsx scripts/jev-permclass-replay.ts <samples.json>
+//       npx tsx scripts/security/jev-permclass-replay.ts <samples.json>
 //
 // 样本来源：本机生产库「fallback→ask」脱敏样本（参照=history_outcome）+
 // tests/fixtures/jev-permclass-samples.json（20 放行 + 8 拒绝照抄 + destructive）。
 // 弃权定义沿用 09-19 回放口径：risk.confidence < 0.6。
 import fs from 'node:fs';
 
-import { getPermissionClassifier } from '../src/host/tools/permissionClassifier';
-import { systemOne } from '../src/host/model/providers/typesafeProvider';
+import { getPermissionClassifier } from '../../src/host/tools/permissionClassifier';
+import { systemOne } from '../../src/host/model/providers/typesafeProvider';
 
 interface ReplaySample {
   id: number | string;
@@ -28,7 +28,7 @@ interface ReplaySample {
 
 const file = process.argv[2];
 if (!file) {
-  console.error('用法：npx tsx scripts/jev-permclass-replay.ts <samples.json>');
+  console.error('用法：npx tsx scripts/security/jev-permclass-replay.ts <samples.json>');
   process.exit(1);
 }
 const rows = JSON.parse(fs.readFileSync(file, 'utf8')) as ReplaySample[];

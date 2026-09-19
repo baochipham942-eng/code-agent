@@ -3,7 +3,7 @@
 // ============================================================================
 // 🔴 阈值绑 JEV_MODEL（jev-1.13.0）：choice 概率与 confidence 随模型版本漂移，
 // alias（jev-latest / jev-preview）会漂到未知版本。换版本必须先重跑
-// docs/research/assets/2026-09-19-jev 的回放（scripts/jev-permclass-replay.ts +
+// docs/research/assets/2026-09-19-jev 的回放（scripts/security/jev-permclass-replay.ts +
 // tests/fixtures/jev-permclass-samples.json + 本机生产库 fallback→ask 样本），
 // 再改这里的问法或阈值——只改版本号不动阈值是禁止操作。
 //

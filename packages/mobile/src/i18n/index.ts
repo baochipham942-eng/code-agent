@@ -179,6 +179,9 @@ const zh = {
   accountLoginLater: '稍后再说',
   accountLogout: '退出登录',
   accountLogoutHint: '退出后，配对和在同一个 Wi-Fi 里的使用不受影响。',
+  /** 退出登录二次确认标题（N-COMPANION-ACCOUNT-CARD-POLISH）：跟 accountLogoutHint 拼一句
+   *  「退出登录？退出后……」，复用既有句子，不重复写一遍代价说明。 */
+  accountLogoutConfirmTitle: '退出登录？',
   /** 退出登录 persist 失败（v3 新增）：store 的失败分支不改状态、静默保留 account，UI 借这个
    *  信号报一句，不新开一条 store 失败通道。 */
   accountLogoutFailed: '退出登录没有成功，请重试。',
@@ -398,6 +401,7 @@ const en: Record<keyof typeof zh, string> = {
   accountLoginLater: 'Not now',
   accountLogout: 'Sign out',
   accountLogoutHint: 'Pairing and use on the same Wi-Fi are not affected.',
+  accountLogoutConfirmTitle: 'Sign out?',
   accountLogoutFailed: "Sign-out didn't complete. Please try again.",
   accountLoggedInHint: 'This phone can reach the computer even away from its network.',
   needLoginTitle: 'Sign in to use it outside this network',

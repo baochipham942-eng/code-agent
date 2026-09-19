@@ -21,7 +21,7 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
    */
   account?: { email: string } | null;
   /**
-   * 个人信息页内「退出登录」文字链接；只在已登录时渲染那个区块。回传是否真的退出成功
+   * 个人信息页内「退出登录」按钮；只在已登录时渲染那个区块。回传是否真的退出成功
    * （store 的 logout() 本身不回传——persist 失败时静默保留 account），调用方在 MobileRoot
    * 里退出后重读一次 store 现状换算成布尔值（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 R2）。
    */
@@ -29,10 +29,13 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
 }) {
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [logoutFailed, setLogoutFailed] = useState(false);
+  /** 二次确认（N-COMPANION-ACCOUNT-CARD-POLISH，爸真机看 v3：点了「退出登录」直接就退了，没有
+   *  反悔的机会）：点按钮先切成确认块，取消回到按钮态，确认才真的调 logout()。 */
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
   // SettingsPage 跨页切换不卸载：不能只在提交那一刻判失败，还得在进个人页 / 账号状态换了
-  // （退出成功、或换个账号重新登录）时把上一轮的失败提示复位，否则会一直粘在页面上
+  // （退出成功、或换个账号重新登录）时把上一轮的失败提示/确认块复位，否则会一直粘在页面上
   // （R2 监工复核纠正：旧实现读渲染闭包里的 account 判失败，退出成功后它仍是旧对象，恒判失败）。
-  useEffect(() => { setLogoutFailed(false); }, [page, account?.email]);
+  useEffect(() => { setLogoutFailed(false); setLogoutConfirm(false); }, [page, account?.email]);
   const row = (target: SheetPage, detail?: string) => <button className="settings-row" data-testid={`open-${target}`} onClick={() => open(target)}>
     <span>{text[target]}</span><span className="row-detail">{detail}<AppIcon name="chevron" /></span>
   </button>;
@@ -41,6 +44,7 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
     setLogoutBusy(true); setLogoutFailed(false);
     const ok = await logout();
     setLogoutBusy(false);
+    setLogoutConfirm(false);
     setLogoutFailed(!ok);
   };
   switch (page) {
@@ -75,9 +79,17 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
         <div className="settings-group">
           <div className="settings-row"><span>{text.accountLoginEmail}</span><span className="row-detail">{account.email}</span></div>
         </div>
-        <button type="button" className="sheet-secondary" data-testid="account-logout" disabled={logoutBusy} onClick={() => { void handleLogout(); }}>{text.accountLogout}</button>
+        {logoutConfirm
+          ? <div role="alert">
+              <p className="caption">{text.accountLogoutConfirmTitle}{text.accountLogoutHint}</p>
+              <button type="button" className="primary danger" data-testid="account-logout-confirm" disabled={logoutBusy} onClick={() => { void handleLogout(); }}>{text.accountLogout}</button>
+              <button type="button" className="secondary" data-testid="account-logout-cancel" disabled={logoutBusy} onClick={() => setLogoutConfirm(false)}>{text.cancel}</button>
+            </div>
+          : <>
+              <button type="button" className="secondary" data-testid="account-logout" onClick={() => setLogoutConfirm(true)}>{text.accountLogout}</button>
+              <p className="caption">{text.accountLogoutHint}</p>
+            </>}
         {logoutFailed && <p role="alert" data-testid="account-logout-failed">{text.accountLogoutFailed}</p>}
-        <p className="caption">{text.accountLogoutHint}</p>
       </>}
     </form>;
     case 'about': return <div className="about"><NeoBrandMark size={56} /><h3>{text.neo}</h3>

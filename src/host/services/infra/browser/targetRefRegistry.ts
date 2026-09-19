@@ -29,11 +29,15 @@ export class BrowserTargetRefRegistry {
     return `snapshot_${randomUUID()}`;
   }
 
-  addRecords(records: BrowserTargetRefRecord[], now = Date.now()): void {
+  addRecords(
+    records: BrowserTargetRefRecord[],
+    now = Date.now(),
+    options?: { clear?: boolean },
+  ): void {
     this.prune(now);
-    // A fresh observed document state supersedes all prior backend node identities,
-    // including same-URL DOM revisions.
-    this.records.clear();
+    // Main-model snapshots replace the table. Inner-loop Jev captures pass clear:false
+    // so pre-step trefs survive fallback onto click/type.
+    if (options?.clear !== false) this.records.clear();
     for (const record of records) this.records.set(record.targetRef.refId, record);
   }
 

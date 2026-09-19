@@ -36,8 +36,11 @@ export function loadPromptChangePaths(root: string): PromptChangePaths {
   };
 }
 
+const EXTRA_PROMPT_INPUTS = ['src/shared/constants/jevQuestions.ts'] as const;
+
 export function isPromptInputPath(relativePath: string, scope: PromptChangePaths): boolean {
   return relativePath.startsWith(scope.promptsDir)
+    || (EXTRA_PROMPT_INPUTS as readonly string[]).includes(relativePath)
     || (
       relativePath.endsWith('.schema.ts')
       && (
@@ -80,6 +83,10 @@ export function resolvePromptInputsHash(root: string, scope: PromptChangePaths):
   visit(scope.promptsDir);
   visit(scope.toolModulesDir);
   visit(scope.builtinPluginsDir);
+  for (const relativePath of EXTRA_PROMPT_INPUTS) {
+    const absolutePath = path.join(root, relativePath);
+    if (fs.existsSync(absolutePath) && fs.statSync(absolutePath).isFile()) files.push(relativePath);
+  }
 
   const hash = createHash('sha256');
   for (const relativePath of files.sort()) {
@@ -88,6 +95,10 @@ export function resolvePromptInputsHash(root: string, scope: PromptChangePaths):
     hash.update(fs.readFileSync(path.join(root, relativePath)));
     hash.update('\0');
   }
+  hash.update('CODE_AGENT_BROWSER_JEV_STEP');
+  hash.update('\0');
+  hash.update(process.env.CODE_AGENT_BROWSER_JEV_STEP === '1' ? '1' : '0');
+  hash.update('\0');
   return hash.digest('hex');
 }
 

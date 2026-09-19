@@ -14,6 +14,7 @@ import {
   DRY_RUN_JUDGE_VERSION,
   POST_LAUNCH_RUBRIC_VERSION,
   POST_LAUNCH_CONSENT_SCOPES,
+  JUDGE_MODEL_NOT_JUDGED,
   JUDGE_MODEL_UNAVAILABLE,
   isPostLaunchScorableSession,
   type PostLaunchBudgetState,
@@ -193,13 +194,31 @@ export function markTurnScoresSynced(
   })();
 }
 
-export function getScoredTurnIds(db: BetterSqlite3.Database, turnIds: string[], judgeVersions: string[] = [POST_LAUNCH_JUDGE_VERSION]): Set<string> {
+/**
+ * 「已评」只认真拿到过判决的行：judge_model 是 not-judged（抽样上限/预算停的占位行）或
+ * unavailable（叫了 judge 但没判成）的不算——否则第一趟 --sample 0 落下的占位行会把第二趟
+ * --sample 200 的补评永远挡住（FB-233：生产同理，日抽样上限外的轮永远评不上）。
+ * includeUnjudged=true 恢复「行存在即已评」：dry-run 用它——表按 turn_id 主键 INSERT OR REPLACE，
+ * 演练不得覆盖任何已有行（含占位行，免得把 unavailable 行里的预算账冲掉）。
+ */
+export function getScoredTurnIds(
+  db: BetterSqlite3.Database,
+  turnIds: string[],
+  judgeVersions: string[] = [POST_LAUNCH_JUDGE_VERSION],
+  options: { includeUnjudged?: boolean } = {},
+): Set<string> {
   if (turnIds.length === 0 || judgeVersions.length === 0) return new Set();
   const placeholders = turnIds.map(() => '?').join(', ');
   const versionPlaceholders = judgeVersions.map(() => '?').join(', ');
+  const pendingClause = options.includeUnjudged
+    ? ''
+    : ` AND COALESCE(judge_model, '') NOT IN (?, ?)`;
+  const params = options.includeUnjudged
+    ? [...judgeVersions, ...turnIds]
+    : [...judgeVersions, JUDGE_MODEL_NOT_JUDGED, JUDGE_MODEL_UNAVAILABLE, ...turnIds];
   const rows = db
-    .prepare(`SELECT turn_id FROM telemetry_turn_scores WHERE judge_version IN (${versionPlaceholders}) AND turn_id IN (${placeholders})`)
-    .all(...judgeVersions, ...turnIds) as Array<{ turn_id: string }>;
+    .prepare(`SELECT turn_id FROM telemetry_turn_scores WHERE judge_version IN (${versionPlaceholders})${pendingClause} AND turn_id IN (${placeholders})`)
+    .all(...params) as Array<{ turn_id: string }>;
   return new Set(rows.map((row) => row.turn_id));
 }
 
@@ -490,14 +509,18 @@ export function getBudgetState(
   day: string,
   limits: { limitUsd: number; sampleLimit: number; reserveUsd?: number },
 ): PostLaunchBudgetState {
+  // sampled 只数真判过判决的抽样行：占位行（not-judged/unavailable）没花抽样额度，
+  // 数进去会让同日重跑在额度还剩着的时候就停抽样（FB-233 同族）。
   const row = db
     .prepare(`
       SELECT COALESCE(SUM(budget_cost_usd), 0) AS spent,
              COALESCE(SUM(budget_cost_usd - cost_usd), 0) AS assumed,
-             COALESCE(SUM(CASE WHEN sampled_by = 'sample' THEN 1 ELSE 0 END), 0) AS sampled
+             COALESCE(SUM(CASE WHEN sampled_by = 'sample'
+                       AND COALESCE(judge_model, '') NOT IN (?, ?)
+                     THEN 1 ELSE 0 END), 0) AS sampled
       FROM telemetry_turn_scores WHERE scored_day = ? AND judge_version = ?
     `)
-    .get(day, POST_LAUNCH_JUDGE_VERSION) as { spent: number; assumed: number; sampled: number };
+    .get(JUDGE_MODEL_NOT_JUDGED, JUDGE_MODEL_UNAVAILABLE, day, POST_LAUNCH_JUDGE_VERSION) as { spent: number; assumed: number; sampled: number };
   return {
     day,
     spentUsd: row.spent,

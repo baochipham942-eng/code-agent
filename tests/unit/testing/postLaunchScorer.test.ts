@@ -421,6 +421,85 @@ describe('上线后打分编排', () => {
     expect(second.skippedTurns).toBe(1);
   });
 
+  // FB-233（N-POSTLAUNCH-SIGNALS-DEAD-R2 ④）：--sample 0 跑一趟，无信号轮落的是
+  // judge_model='not-judged' 的正式版本占位行；第二趟提高抽样上限必须能补评上，
+  // 不能被第一趟的占位行当成「已有分数」整批跳过。
+  it('抽样上限外的占位行不挡补评：--sample 0 之后再 --sample 200 能评上（FB-233）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+
+    const first = await runPostLaunchScoring(deps(database, replays, llmCall), { dailySampleLimit: 0 });
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(first.signalOnlyTurns).toBe(1);
+    const [placeholder] = scoreRows(database);
+    expect(placeholder.judge_version).toBe(POST_LAUNCH_JUDGE_VERSION);
+    expect(placeholder.judge_model).toBe('not-judged');
+
+    const second = await runPostLaunchScoring(deps(database, replays, llmCall), { dailySampleLimit: 200 });
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(second.skippedTurns).toBe(0);
+    expect(second.sampledTurns).toBe(1);
+    const [judged] = scoreRows(database);
+    expect(judged.judge_model).not.toBe('not-judged');
+    expect(judged.dim_goal).toBe(1);
+  });
+
+  it('占位行不占日抽样额度：同日重跑时 sampled 只数真判过的行（FB-233 同族）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+    await runPostLaunchScoring(deps(database, replays, llmCall), { dailySampleLimit: 0 });
+
+    // 第一趟落了 1 行占位（sampled_by='sample'、not-judged）；同日第二趟额度应从 0 起算。
+    const budget = getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 1 });
+    expect(budget.sampledCount).toBe(0);
+  });
+
+  it('unavailable 行不算已评：叫了没判成的轮，下次照常重试', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const broken = vi.fn(async () => '这不是 JSON');
+    const first = await runPostLaunchScoring(deps(database, replays, broken));
+    expect(first.judgeUnavailableTurns).toBe(1);
+    const [unavailableRow] = scoreRows(database);
+    expect(unavailableRow.judge_model).toBe('unavailable');
+
+    const llmCall = vi.fn(async () => ALL_PASS);
+    const second = await runPostLaunchScoring(deps(database, replays, llmCall));
+
+    expect(second.skippedTurns).toBe(0);
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    const [judged] = scoreRows(database);
+    expect(judged.judge_model).not.toBe('unavailable');
+    expect(judged.dim_goal).toBe(1);
+  });
+
+  it('--dry-run 不覆盖 not-judged 占位行', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { dailySampleLimit: 0 });
+    const dry = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { dryRun: true });
+
+    expect(dry.skippedTurns).toBe(1);
+    const [row] = scoreRows(database);
+    expect(row.judge_version).toBe(POST_LAUNCH_JUDGE_VERSION);
+    expect(row.judge_model).toBe('not-judged');
+  });
+
   it('报告：信号轮与抽样轮分两行，不合并；null 不进分母', async () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, '给券组加灰度开关');
     insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);

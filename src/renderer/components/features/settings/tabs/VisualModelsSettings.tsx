@@ -107,14 +107,14 @@ export const BuiltinModelList: React.FC<{
                     name={groupName}
                     checked={isSelected}
                     onChange={() => onSelect?.(m.id)}
-                    className="sr-only"
+                    className="sr-only peer"
                     aria-label={m.label}
                   />
                   <span
                     aria-hidden="true"
                     data-testid="visual-model-radio"
                     data-visual-model-radio-state={isSelected ? 'selected' : 'unselected'}
-                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors ${isSelected ? 'border-sky-400 bg-sky-400' : 'border-zinc-600 bg-transparent'}`}
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-sky-400 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-900 ${isSelected ? 'border-sky-400 bg-sky-400' : 'border-zinc-600 bg-transparent'}`}
                   >
                     {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-zinc-950" />}
                   </span>

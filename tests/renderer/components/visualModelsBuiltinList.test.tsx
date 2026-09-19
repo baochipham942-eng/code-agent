@@ -59,7 +59,7 @@ describe('BuiltinModelList 桥接 + 只读渲染', () => {
     expect(render(false)).toContain('type="radio"');
   });
 
-  it('暗色下只给当前默认模型绘制一个选中圆心', () => {
+  it('只给当前默认模型绘制一个选中圆心', () => {
     const html = renderToStaticMarkup(
       <BuiltinModelList
         title={s.builtinTitle}

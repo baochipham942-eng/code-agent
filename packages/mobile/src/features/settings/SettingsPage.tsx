@@ -5,6 +5,7 @@ import type { OsPermission } from '../../platform/ports';
 import type { RegistrationStatus } from '../../stores/notificationStore';
 import { NeoBrandMark } from '../brand/NeoBrandMark';
 import { AppIcon } from '../../app/AppIcon';
+import { ConfirmDialog } from '../../app/ConfirmDialog';
 
 export function SettingsPage({ page, text, appearance, nickname, profileDraft, appInfo, open, chooseAppearance, editProfile, saveProfile, storage, notifications, account, logout }: {
   page: SheetPage; text: ReturnType<typeof messages>; appearance: Appearance; nickname: string;
@@ -29,8 +30,9 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
 }) {
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [logoutFailed, setLogoutFailed] = useState(false);
-  /** 二次确认（N-COMPANION-ACCOUNT-CARD-POLISH，爸真机看 v3：点了「退出登录」直接就退了，没有
-   *  反悔的机会）：点按钮先切成确认块，取消回到按钮态，确认才真的调 logout()。 */
+  /** 二次确认（N-COMPANION-ACCOUNT-CARD-POLISH 起步，N-COMPANION-LOGOUT-CONFIRM-DIALOG 改成
+   *  模态弹窗——爸 build 57 真机拍板「退出应该是弹窗」，不是原来那种「点了原地切成确认块」）：
+   *  点按钮打开 ConfirmDialog，取消关掉弹窗回按钮态，确认才真的调 logout()。 */
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   // SettingsPage 跨页切换不卸载：不能只在提交那一刻判失败，还得在进个人页 / 账号状态换了
   // （退出成功、或换个账号重新登录）时把上一轮的失败提示/确认块复位，否则会一直粘在页面上
@@ -55,9 +57,11 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
           : <span className="avatar avatar-generic"><AppIcon name="profile" /></span>}
         <span className="stack">
           <strong>{account ? (nickname || account.email) : text.accountNotLoggedIn}</strong>
-          {/* 昵称为空时主标题已经在用邮箱了，副标题不能再复读一遍同一串（R3 ai-review Nit）——
-              换成一句「已登录」提示；有昵称时副标题才轮到邮箱当第二行身份信息。 */}
-          <span className="small">{account ? (nickname ? account.email : text.accountLoggedInHint) : text.accountCardHint}</span>
+          {/* 已登录且昵称为空时不再垫一句「手机在外面也能连回这台电脑。」（爸真机拍板④：
+              这句占地方且没什么信息量）——主标题已经在用邮箱了，干脆不渲染副标题；有昵称
+              时副标题才轮到邮箱当第二行身份信息（R3 ai-review Nit 的判据不变，只是空昵称
+              分支从「垫一句」改成「不渲染」）。 */}
+          {account ? (nickname && <span className="small">{account.email}</span>) : <span className="small">{text.accountCardHint}</span>}
         </span>
         <AppIcon name="chevron" />
       </button>
@@ -79,17 +83,15 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
         <div className="settings-group">
           <div className="settings-row"><span>{text.accountLoginEmail}</span><span className="row-detail">{account.email}</span></div>
         </div>
-        {logoutConfirm
-          ? <div role="alert">
-              <p className="caption">{text.accountLogoutConfirmTitle}{text.accountLogoutHint}</p>
-              <button type="button" className="primary danger" data-testid="account-logout-confirm" disabled={logoutBusy} onClick={() => { void handleLogout(); }}>{text.accountLogout}</button>
-              <button type="button" className="secondary" data-testid="account-logout-cancel" disabled={logoutBusy} onClick={() => setLogoutConfirm(false)}>{text.cancel}</button>
-            </div>
-          : <>
-              <button type="button" className="secondary" data-testid="account-logout" onClick={() => setLogoutConfirm(true)}>{text.accountLogout}</button>
-              <p className="caption">{text.accountLogoutHint}</p>
-            </>}
+        <button type="button" className="secondary" data-testid="account-logout" onClick={() => setLogoutConfirm(true)}>{text.accountLogout}</button>
+        <p className="caption">{text.accountLogoutHint}</p>
         {logoutFailed && <p role="alert" data-testid="account-logout-failed">{text.accountLogoutFailed}</p>}
+        {logoutConfirm && <ConfirmDialog
+          title={text.accountLogoutConfirmTitle} body={text.accountLogoutHint}
+          confirmLabel={text.accountLogout} cancelLabel={text.cancel} danger busy={logoutBusy}
+          confirmTestId="account-logout-confirm" cancelTestId="account-logout-cancel"
+          onConfirm={() => { void handleLogout(); }} onCancel={() => setLogoutConfirm(false)}
+        />}
       </>}
     </form>;
     case 'about': return <div className="about"><NeoBrandMark size={56} /><h3>{text.neo}</h3>

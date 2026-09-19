@@ -93,6 +93,15 @@ textarea::placeholder { color: var(--muted); }
 .drawer-layer[data-settling] .drawer { transition: transform .24s cubic-bezier(.2, .8, .3, 1); }
 .drawer-layer[data-settling] .scrim { transition: opacity .24s cubic-bezier(.2, .8, .3, 1); }
 .scrim { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--scrim); border-radius: 0; }
+/* 通用模态确认弹窗（N-COMPANION-LOGOUT-CONFIRM-DIALOG，ConfirmDialog.tsx）：不用 .sheet-layer
+   那套（那是从底部滑上来的抽屉/sheet），这是居中卡片。z-index 比 .sheet-layer（20）更高，
+   保证在个人信息页那个 sheet 打开的情况下弹窗仍然盖在最上面。 */
+.confirm-scrim { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: var(--scrim); }
+.confirm-card { width: 100%; max-width: 320px; background: var(--surface); border-radius: 16px; padding: 20px; text-align: center; }
+.confirm-card h3 { font-size: var(--fs-h2); margin: 0 0 8px; }
+.confirm-card .caption { margin: 0 0 16px; }
+.confirm-card .primary,.confirm-card .secondary { margin-top: 10px; }
+.confirm-card .primary:first-of-type { margin-top: 0; }
 .drawer { position: absolute; inset: 0 auto 0 0; width: min(86%, 360px); background: var(--surface); display: flex; flex-direction: column; padding-top: var(--safe-top); padding-bottom: var(--safe-bottom); }
 .drawer-functions { flex-shrink: 0; padding: 10px; border-bottom: 1px solid var(--line); }
 .drawer-functions > button,.drawer-history button { display: block; width: 100%; text-align: left; padding: 10px 16px; border-radius: 12px; overflow-wrap: anywhere; }
@@ -123,7 +132,9 @@ html[data-keyboard-inset] .sheet { padding-bottom: 16px; }
    .stack 顶替裸 strong 撑开的单行布局；通用头像用 profile 图标而不是取字。 */
 .profile-card .stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .profile-card .stack .small { font-size: var(--fs-cap); color: var(--muted); font-weight: 400; }
-.profile-card .avatar-generic .app-icon { width: 22px; height: 22px; color: var(--muted); }
+/* 不再只在 .profile-card 里用（N-COMPANION-LOGOUT-CONFIRM-DIALOG ③：抽屉底部 .personal-bar
+   改成跟设置页个人卡同形态，未登录也用这个通用头像图标）。 */
+.avatar-generic .app-icon { width: 22px; height: 22px; color: var(--muted); }
 input { width: 100%; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: var(--fs-body); }.primary { border-radius: 24px; width: 100%; margin-top: 18px; }
 /* 次级按钮（N-COMPANION-ACCOUNT-CARD-POLISH）：跟 .primary 同款药丸形状，描边代替填色——
    退出登录从纯文字链接改成看得出是按钮的样子，用于「退出登录」触发按钮与确认块里的「取消」。 */

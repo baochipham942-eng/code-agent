@@ -760,8 +760,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           {companion.library?.nextOffset != null && <button onClick={() => void companion.refreshLibrary(true)}>{text.loadHistory}</button>}
           {fixtures ? Array.from({ length: 60 }, (_, n) => <button key={n} onClick={() => state.navigate('fixture')} data-testid={n === 0 ? 'fixture-session' : undefined}>{text.fixture} {n + 1}</button>) : !companion.library?.sessions.length && <p className="caption">{text.emptyHistory}</p>}
         </nav>
+        {/* 抽屉底部个人入口跟设置页个人卡同形态（N-COMPANION-LOGOUT-CONFIRM-DIALOG ③，爸真机
+            拍板）：未登录=通用头像图标+「未登录」，已登录=首字圆底+昵称（无昵称用邮箱）。
+            数据来源与个人卡相同（companion.account / state.preferences.nickname）；这里不放
+            副标题，右侧设置图标、testid、点击行为都不变。 */}
         <button className="personal-bar" aria-label={text.personal} data-testid="open-settings" onClick={() => state.openSheet('settings')}>
-          <span className="avatar">{(state.preferences.nickname || text.guest).slice(0, 1)}</span><strong>{state.preferences.nickname || text.guest}</strong><AppIcon name="settings" />
+          {companion.account
+            ? <span className="avatar">{(state.preferences.nickname || companion.account.email).slice(0, 1)}</span>
+            : <span className="avatar avatar-generic"><AppIcon name="profile" /></span>}
+          <strong>{companion.account ? (state.preferences.nickname || companion.account.email) : text.accountNotLoggedIn}</strong>
+          <AppIcon name="settings" />
         </button>
       </aside>
       </div>;

@@ -322,6 +322,24 @@ describe('守卫① 账号并进个人卡（SettingsPage）', () => {
     expect(document.querySelector('form button.primary')?.textContent).toBe(text.save);
     expect(logoutButton.classList.contains('primary')).toBe(false);
   });
+
+  /**
+   * ④（爸真机追加）：已登录且没设昵称时，个人卡不该再垫一句
+   * 「手机在外面也能连回这台电脑。」（accountLoggedInHint，已从 i18n 删除，两条断言之一
+   * 顺带钉住它真的没有消费方了）——主标题已经用邮箱顶替了昵称，副标题直接不渲染。
+   */
+  it('已登录且无昵称：不渲染副标题（.small 不出现，也不含旧的 accountLoggedInHint 文案）', () => {
+    render(<SettingsPage {...base} account={{ email: 'lin@example.com' }} />);
+    const card = document.querySelector('[data-testid="open-profile"]') as HTMLElement;
+    expect(card.querySelector('.small')).toBeNull();
+    expect(card.textContent).not.toContain('手机在外面也能连回这台电脑');
+  });
+
+  it('已登录且有昵称：副标题只放邮箱', () => {
+    render(<SettingsPage {...base} nickname="小林" account={{ email: 'lin@example.com' }} />);
+    const card = document.querySelector('[data-testid="open-profile"]') as HTMLElement;
+    expect(card.querySelector('.small')?.textContent).toBe('lin@example.com');
+  });
 });
 
 describe('R2 个人页退出登录判定：按 logout() 回传结果，不按渲染闭包里的旧 account', () => {
@@ -357,7 +375,7 @@ describe('R2 个人页退出登录判定：按 logout() 回传结果，不按渲
   });
 });
 
-describe('N-COMPANION-ACCOUNT-CARD-POLISH：退出登录二次确认（爸真机看 v3：点了直接就退了，没有反悔机会）', () => {
+describe('N-COMPANION-LOGOUT-CONFIRM-DIALOG：退出登录二次确认改成模态弹窗（爸 build 57 真机拍板「退出应该是弹窗」）', () => {
   const noop = () => {};
   const base = {
     page: 'profile' as const, text, appearance: 'system' as const, nickname: '',
@@ -365,31 +383,66 @@ describe('N-COMPANION-ACCOUNT-CARD-POLISH：退出登录二次确认（爸真机
     account: { email: 'lin@example.com' },
   };
 
-  it('点「退出登录」⇒ logout 未被调，确认块出现（标题+确认按钮+取消按钮）', () => {
+  it('点「退出登录」⇒ logout 未被调，弹窗出现（role=alertdialog，标题+确认按钮+取消按钮）', () => {
     const logout = vi.fn(async () => true);
     render(<SettingsPage {...base} logout={logout} />);
-    expect(document.querySelector('[data-testid="account-logout-confirm"]')).toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
     expect(logout).not.toHaveBeenCalled();
+    const dialog = document.querySelector('[role="alertdialog"]') as HTMLElement;
+    expect(dialog).toBeTruthy();
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
     const confirmButton = document.querySelector('[data-testid="account-logout-confirm"]') as HTMLElement;
     expect(confirmButton).toBeTruthy();
     expect(confirmButton.textContent).toBe(text.accountLogout);
     expect(document.querySelector('[data-testid="account-logout-cancel"]')?.textContent).toBe(text.cancel);
-    expect(document.body.textContent).toContain(text.accountLogoutConfirmTitle);
-    expect(document.body.textContent).toContain(text.accountLogoutHint);
+    expect(dialog.textContent).toContain(text.accountLogoutConfirmTitle);
+    expect(dialog.textContent).toContain(text.accountLogoutHint);
   });
 
-  it('点「取消」⇒ 确认块消失、回到按钮态，logout 未被调', () => {
+  it('点「取消」⇒ 弹窗消失、回到按钮态，logout 未被调', () => {
     const logout = vi.fn(async () => true);
     render(<SettingsPage {...base} logout={logout} />);
     fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
     fireEvent.click(document.querySelector('[data-testid="account-logout-cancel"]')!);
     expect(logout).not.toHaveBeenCalled();
-    expect(document.querySelector('[data-testid="account-logout-confirm"]')).toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     expect(document.querySelector('[data-testid="account-logout"]')).toBeTruthy();
   });
 
-  it('点确认块里的「退出登录」⇒ logout 调一次；父层同步 account=null 后卡片回未登录', () => {
+  it('点 scrim（弹窗外的遮罩）⇒ 弹窗消失、未调 logout；点卡片内部不冒泡关闭', () => {
+    const logout = vi.fn(async () => true);
+    render(<SettingsPage {...base} logout={logout} />);
+    fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
+    // 先点卡片内部（正文段落），不该关闭——事件不冒泡到 scrim 的 onClick。
+    fireEvent.click(document.querySelector('[role="alertdialog"] p')!);
+    expect(document.querySelector('[role="alertdialog"]')).toBeTruthy();
+    fireEvent.click(document.querySelector('[data-testid="confirm-dialog-scrim"]')!);
+    expect(logout).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  it('Esc ⇒ 弹窗消失、未调 logout', () => {
+    const logout = vi.fn(async () => true);
+    render(<SettingsPage {...base} logout={logout} />);
+    fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(logout).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  it('打开时焦点在取消按钮、关闭后焦点回到「退出登录」触发按钮', () => {
+    const logout = vi.fn(async () => true);
+    render(<SettingsPage {...base} logout={logout} />);
+    const trigger = document.querySelector('[data-testid="account-logout"]') as HTMLElement;
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(document.activeElement).toBe(document.querySelector('[data-testid="account-logout-cancel"]'));
+    fireEvent.click(document.querySelector('[data-testid="account-logout-cancel"]')!);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('点弹窗里的「退出登录」⇒ logout 调一次；父层同步 account=null 后卡片回未登录', () => {
     const logout = vi.fn(async () => true);
     const { rerender } = render(<SettingsPage {...base} logout={logout} />);
     fireEvent.click(document.querySelector('[data-testid="account-logout"]')!);
@@ -399,6 +452,67 @@ describe('N-COMPANION-ACCOUNT-CARD-POLISH：退出登录二次确认（爸真机
     rerender(<SettingsPage {...{ ...base, account: null }} page="settings" logout={logout} />);
     const card = document.querySelector('[data-testid="open-profile"]') as HTMLElement;
     expect(card.textContent).toContain(text.accountNotLoggedIn);
+  });
+});
+
+/**
+ * ③（爸真机追加）：抽屉底部 .personal-bar 跟设置页个人卡同形态——未登录用通用头像图标+
+ * 「未登录」，不再是「访客」；已登录用首字圆底+昵称/邮箱。数据来源与个人卡一致
+ * （companion.account / state.preferences.nickname），右侧设置图标、testid、点击行为不变。
+ */
+describe('N-COMPANION-LOGOUT-CONFIRM-DIALOG ③ 抽屉个人入口跟个人卡同形态', () => {
+  function portsUnauthenticated(): PlatformPorts {
+    const identity = createIdentity();
+    return {
+      preferences: { get: async () => null, set: async () => {} },
+      appInfo: { read: async () => ({ version: '0.1.0', build: '35' }) },
+      lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
+      keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
+      companion: {
+        read: async () => JSON.stringify({
+          version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] },
+        }),
+        write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}),
+      },
+    };
+  }
+
+  function portsAuthenticated(): PlatformPorts {
+    const identity = createIdentity();
+    return {
+      preferences: { get: async () => null, set: async () => {} },
+      appInfo: { read: async () => ({ version: '0.1.0', build: '35' }) },
+      lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
+      keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
+      companion: {
+        read: async () => JSON.stringify({
+          version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
+          binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] },
+          account: { ticket: 'neo1.test-ticket', email: 'lin@example.com', userId: 'user-1' },
+        }),
+        write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}),
+      },
+    };
+  }
+
+  it('未登录：抽屉个人入口含通用头像图标与「未登录」，不含「访客」', async () => {
+    await act(async () => { render(<MobileRoot ports={portsUnauthenticated()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.topbar strong')).toBeTruthy(); });
+    fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
+    const bar = document.querySelector('[data-testid="open-settings"]') as HTMLElement;
+    expect(bar.querySelector('.avatar-generic')).toBeTruthy();
+    expect(bar.textContent).toContain(text.accountNotLoggedIn);
+    expect(bar.textContent).not.toContain(text.guest);
+  });
+
+  it('已登录：抽屉个人入口含邮箱（无昵称时用邮箱顶替）', async () => {
+    await act(async () => { render(<MobileRoot ports={portsAuthenticated()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.topbar strong')).toBeTruthy(); });
+    fireEvent.click(document.querySelector('[data-testid="open-drawer"]') as HTMLElement);
+    const bar = document.querySelector('[data-testid="open-settings"]') as HTMLElement;
+    expect(bar.querySelector('.avatar-generic')).toBeNull();
+    expect(bar.textContent).toContain('lin@example.com');
   });
 });
 

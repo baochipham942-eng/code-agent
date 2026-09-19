@@ -86,6 +86,24 @@ const DEVICE_LEVEL_REASONS = new Set(['device_revoked', 'device_unknown', 'scope
 const OFF_NETWORK_ERRORS = new Set(['connectionUnavailable', 'connectionFailed', 'connectionRelayUnavailable', 'connectionRelayRejected', 'connectionRelayNoHost']);
 
 /**
+ * S8 薄面板的门控用这个更窄的口径，**不是** `OFF_NETWORK_ERRORS`（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3
+ * R3 ai-review Important③）：`connectionRelayNoHost`（中继通、电脑没开 Neo）与
+ * `connectionRelayRejected` 都是 host/relay 已经回过话的失败，诊断句已经把原因说清楚
+ * （比如「电脑现在不在线」），登录救不了那两态，薄面板不该把这句顶掉。这里只留手机真正
+ * 分不清「离开了 Wi‑Fi」还是「电脑换了内网 IP、重连必败」的那三类。
+ */
+const PHONE_OFF_NETWORK_ERRORS = new Set(['connectionUnavailable', 'connectionFailed', 'connectionRelayUnavailable']);
+
+/**
+ * 只读谓词，供 S8 薄面板门控用——判「这个失败码是不是手机分不清离网/换 IP 的那一类」。
+ * 不导出 `PHONE_OFF_NETWORK_ERRORS` 本身，也不动 `OFF_NETWORK_ERRORS`（那个仍然只服务
+ * 「第一次离网提醒」的置起逻辑，口径更宽，两个 Set 是两回事，别合并）。
+ */
+export function isPhoneOffNetworkError(code: string | null | undefined): boolean {
+  return code != null && PHONE_OFF_NETWORK_ERRORS.has(code);
+}
+
+/**
  * 一条转写命令的结局，**带着它是哪一条**。
  * 之前这里是个粘着的 `voiceOutcome: 'done'|'error'|null`：上一次录音、上一个会话留下的电平，
  * 下一次录音照样读得到，于是每加一条修法就多一道交叉判据（七轮 ai-review 的共因）。
@@ -130,15 +148,15 @@ interface State {
    */
   account: { email: string; userId: string } | null;
   /**
-   * 「在外面用需要先登录」当前可见：配对完成后引导一次（D9，欢迎页可忽略提示，不弹层）；
-   * 跳过后第一次**离网**连不上时再置起（S8，仅一次，见 OFF_NETWORK_ERRORS 的门控）；登录/退出清。
+   * 「在外面用需要先登录」当前可见（S8 薄面板，N-COMPANION-RELAY-ACCOUNT-LOGIN-V3）：第一次
+   * **离网**连不上时置起（仅一次，见 OFF_NETWORK_ERRORS 的门控），登录/退出清。配对完成
+   * 不再置起——欢迎页那条登录引导整段删掉了（R1 的 B），也就没有「跳过」这个动作了。
    */
   loginPrompt: boolean;
   /** 登录 Neo 账号（邮箱+密码）：换回设备票据与账号信息存进配对盘；失败态两类 + 账号不一致点名。 */
   login(email: string, password: string): Promise<AccountLoginOutcome>;
   /** 退出登录 = 删票据与账号信息；配对与 LAN 使用不受影响。 */
   logout(): Promise<void>;
-  dismissLoginPrompt(): void;
   /**
    * 「换了手机？登录找回我的电脑」（N-COMPANION-RELAY-ACCOUNT-RECOVER）：S3 入口 → S4 登录 →
    * S5 列在线电脑 → S6 等电脑上同意。配对落盘与扫码同一存储形状；access token 与密码不落盘（D11）。
@@ -1139,7 +1157,6 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           set({ account: null, loginPrompt: false });
         } catch { /* storageError 已置起：账号信息保留，下次退出再试 */ }
       },
-      dismissLoginPrompt: () => set({ loginPrompt: false }),
       recoverLogin: async (email, password) => {
         if (!port || get().recoverStep === 'opening' || get().recoverStep === 'pairing') return;
         const attempt = ++recoverSeq;
@@ -1347,7 +1364,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             paused: false, connectionError: null, library: null, libraryError: false, runId: null, terminal: null,
             artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, routeError: null,
             uploadProgress: [], voiceResult: null, autoRetrying: false, abandonedPending: false, skipTranscriptionPreflight: false,
-            // 未登录时忘掉电脑：过期的登录引导一并清（重新配对算新的引导周期，finishPair 会再置起）。
+            // 未登录时忘掉电脑：过期的登录引导一并清。R2（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3）
+            // 之前这里写「finishPair 会再置起」——finishPair 配对完成后无条件置起 loginPrompt
+            // 那句已经删掉了（唯一消费方欢迎页登录引导被拍板删除），现在重新配对不会再置起，
+            // 要等下一次真实的「第一次离网连不上」（下面 OFF_NETWORK_ERRORS 那个门控）才会。
             loginPrompt: false });
         }, preempt ? { preempt: true, claim: true } : undefined);
       },

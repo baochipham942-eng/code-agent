@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { messages } from '../../i18n';
 import type { Appearance, SheetPage } from '../../stores/mobileStore';
 import type { OsPermission } from '../../platform/ports';
@@ -5,7 +6,7 @@ import type { RegistrationStatus } from '../../stores/notificationStore';
 import { NeoBrandMark } from '../brand/NeoBrandMark';
 import { AppIcon } from '../../app/AppIcon';
 
-export function SettingsPage({ page, text, appearance, nickname, profileDraft, appInfo, open, chooseAppearance, editProfile, saveProfile, storage, notifications, account }: {
+export function SettingsPage({ page, text, appearance, nickname, profileDraft, appInfo, open, chooseAppearance, editProfile, saveProfile, storage, notifications, account, logout }: {
   page: SheetPage; text: ReturnType<typeof messages>; appearance: Appearance; nickname: string;
   profileDraft: string; appInfo: { version: string; build: string } | null;
   open(page: SheetPage): void; chooseAppearance(value: Appearance): void; editProfile(value: string): void; saveProfile(): void;
@@ -14,18 +15,49 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
     preference: boolean; osPermission: OsPermission; registration: RegistrationStatus; lastFailure: string | null;
     onToggle(value: boolean): void; onRequest(): void; onOpenSettings(): void;
   };
-  /** 已登录的 Neo 账号（null = 未登录）：设置页那一行显示邮箱。 */
+  /**
+   * 已登录的 Neo 账号（null = 未登录）：账号并进个人卡，不再单独一行
+   * （N-COMPANION-RELAY-ACCOUNT-LOGIN-V3，爸 2026-09-19 拍板）。
+   */
   account?: { email: string } | null;
+  /**
+   * 个人信息页内「退出登录」文字链接；只在已登录时渲染那个区块。回传是否真的退出成功
+   * （store 的 logout() 本身不回传——persist 失败时静默保留 account），调用方在 MobileRoot
+   * 里退出后重读一次 store 现状换算成布尔值（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 R2）。
+   */
+  logout: () => Promise<boolean>;
 }) {
+  const [logoutBusy, setLogoutBusy] = useState(false);
+  const [logoutFailed, setLogoutFailed] = useState(false);
+  // SettingsPage 跨页切换不卸载：不能只在提交那一刻判失败，还得在进个人页 / 账号状态换了
+  // （退出成功、或换个账号重新登录）时把上一轮的失败提示复位，否则会一直粘在页面上
+  // （R2 监工复核纠正：旧实现读渲染闭包里的 account 判失败，退出成功后它仍是旧对象，恒判失败）。
+  useEffect(() => { setLogoutFailed(false); }, [page, account?.email]);
   const row = (target: SheetPage, detail?: string) => <button className="settings-row" data-testid={`open-${target}`} onClick={() => open(target)}>
     <span>{text[target]}</span><span className="row-detail">{detail}<AppIcon name="chevron" /></span>
   </button>;
+  const handleLogout = async () => {
+    if (logoutBusy) return;
+    setLogoutBusy(true); setLogoutFailed(false);
+    const ok = await logout();
+    setLogoutBusy(false);
+    setLogoutFailed(!ok);
+  };
   switch (page) {
     case 'settings': return <>
-      <button className="profile-card" onClick={() => open('profile')} data-testid="open-profile">
-        <span className="avatar">{(nickname || text.guest).slice(0, 1)}</span><strong>{nickname || text.guest}</strong><AppIcon name="chevron" />
+      <button className="profile-card" onClick={() => open(account ? 'profile' : 'account')} data-testid="open-profile">
+        {account
+          ? <span className="avatar">{(nickname || account.email).slice(0, 1)}</span>
+          : <span className="avatar avatar-generic"><AppIcon name="profile" /></span>}
+        <span className="stack">
+          <strong>{account ? (nickname || account.email) : text.accountNotLoggedIn}</strong>
+          {/* 昵称为空时主标题已经在用邮箱了，副标题不能再复读一遍同一串（R3 ai-review Nit）——
+              换成一句「已登录」提示；有昵称时副标题才轮到邮箱当第二行身份信息。 */}
+          <span className="small">{account ? (nickname ? account.email : text.accountLoggedInHint) : text.accountCardHint}</span>
+        </span>
+        <AppIcon name="chevron" />
       </button>
-      <p className="group-title">{text.preferences}</p><div className="settings-group">{row('appearance', text[appearance])}{row('storage')}{row('notifications', notifications?.preference ? text.notificationOn : text.notificationOff)}{row('account', account?.email ?? text.accountNotLoggedIn)}</div>
+      <p className="group-title">{text.preferences}</p><div className="settings-group">{row('appearance', text[appearance])}{row('storage')}{row('notifications', notifications?.preference ? text.notificationOn : text.notificationOff)}</div>
       <p className="group-title">{text.support}</p><div className="settings-group">{row('help')}{row('about')}</div>
     </>;
     case 'appearance': return <div className="settings-group" role="group" aria-label={text.appearance}>
@@ -38,6 +70,15 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
       <label className="group-title" htmlFor="nickname">{text.nickname}</label>
       <input id="nickname" autoComplete="nickname" value={profileDraft} maxLength={60} onChange={event => editProfile(event.target.value)} />
       <button type="submit" className="primary" disabled={!profileDraft.trim()}>{text.save}</button>
+      {account && <>
+        <p className="group-title">{text.account}</p>
+        <div className="settings-group">
+          <div className="settings-row"><span>{text.accountLoginEmail}</span><span className="row-detail">{account.email}</span></div>
+        </div>
+        <button type="button" className="sheet-secondary" data-testid="account-logout" disabled={logoutBusy} onClick={() => { void handleLogout(); }}>{text.accountLogout}</button>
+        {logoutFailed && <p role="alert" data-testid="account-logout-failed">{text.accountLogoutFailed}</p>}
+        <p className="caption">{text.accountLogoutHint}</p>
+      </>}
     </form>;
     case 'about': return <div className="about"><NeoBrandMark size={56} /><h3>{text.neo}</h3>
       <p>{text.aboutDescription}</p><p data-testid="app-version">{appInfo ? `${text.version} ${appInfo.version}（${appInfo.build}）` : text.unavailableVersion}</p>

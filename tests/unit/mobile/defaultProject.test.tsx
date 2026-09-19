@@ -205,12 +205,12 @@ describe('连上不拦：不自动弹选择项目', () => {
 });
 
 /**
- * D9 登录引导（本单修正后的形态）：配对完成**不弹账号页**——配对从 remote 弹层发起，再 openSheet
- * 会把「弹层按原流程收掉」顶住（上方那条既有契约）。引导降级为欢迎页上一条可忽略提示：
- * 点「去登录」才进账号页，「稍后再说」整条消失。
+ * 配对后的欢迎页不再插登录引导（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 B，爸 2026-09-19：
+ * 「有什么想交给 Neo？」下面插四行过于复杂，整段删掉，欢迎页恢复 3B 之前的样子）。
+ * loginPrompt 仍会置起（留给 S8 薄面板用），但欢迎页不再消费它——这条守卫钉住「不消费」。
  */
-describe('配对后的登录引导：欢迎页可忽略提示', () => {
-  async function pairToWelcome() {
+describe('配对后的欢迎页：不再有登录引导', () => {
+  it('配对成功（未登录）：弹层收掉，欢迎页没有登录提示', async () => {
     harness.unpaired = true;
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
     fireEvent.click(await waitFor(() => { const el = document.querySelector('[data-testid="open-drawer"]') as HTMLElement; expect(el).toBeTruthy(); return el; }));
@@ -219,23 +219,8 @@ describe('配对后的登录引导：欢迎页可忽略提示', () => {
     fireEvent.click(scan);
     await waitFor(() => { expect(picker()?.textContent).toBe('One'); });
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)); });
-  }
-
-  it('配对成功（未登录）：弹层收掉、欢迎页出登录提示；点「去登录」才进账号页', async () => {
-    await pairToWelcome();
     expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull();
-    const notice = document.querySelector('[data-testid="welcome-login-notice"]');
-    expect(notice).toBeTruthy();
-    expect(notice?.textContent).toContain(text.needLoginTitle);
-    fireEvent.click(notice!.querySelector('[data-testid="welcome-login-go"]')!);
-    await waitFor(() => { expect(document.querySelector('[data-testid="account-login"]')).toBeTruthy(); });
-  });
-
-  it('「稍后再说」可跳过：提示整条消失，不自动弹账号页', async () => {
-    await pairToWelcome();
-    fireEvent.click(document.querySelector('[data-testid="welcome-login-dismiss"]')!);
     expect(document.querySelector('[data-testid="welcome-login-notice"]')).toBeNull();
-    expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull();
   });
 });
 

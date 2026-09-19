@@ -17,7 +17,7 @@ import { messages } from '../../../packages/mobile/src/i18n';
  * LanCompanionClient 整个 mock 掉（companionProjectPair.test.ts 的形态）：recover 可控成败，
  * read 类 request 悬着就是「连接僵死」的形状。
  */
-const harness = vi.hoisted(() => ({ mode: 'hang' as 'hang' | 'reject' | 'refused' | 'rejectIdentity' | 'connectHang' | 'ok' }));
+const harness = vi.hoisted(() => ({ mode: 'hang' as 'hang' | 'reject' | 'refused' | 'rejectIdentity' | 'relayNoHost' | 'connectHang' | 'ok' }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
@@ -26,6 +26,10 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
       if (harness.mode === 'reject') throw new Error('COMPANION_NETWORK_UNAVAILABLE');
       if (harness.mode === 'refused') throw new Error('COMPANION_CONNECTION_REFUSED');
       if (harness.mode === 'rejectIdentity') throw new Error('COMPANION_PAIRING_REJECTED');
+      // relay 已经回过话的失败（R3 ai-review Important③）：分类只看错误码字面，跟哪个客户端
+      // 抛的无关——这里借同一个 mock 出口喂 relay 语义的码，验证 UI 分类分支，不需要另起
+      // relayCompanionClient 的整套 mock。
+      if (harness.mode === 'relayNoHost') throw new Error('COMPANION_RELAY_NO_HOST');
       if (harness.mode === 'connectHang') return new Promise(() => { /* 重连在飞 */ });
       return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', altEndpoint: 'http://imac.local:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] };
     }
@@ -41,20 +45,27 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   },
 }));
 
-function savedWithProjectBinding(): string {
+/** R5 守卫①用：带一条待确认命令的配对记录，模拟扫码/重连会放弃的那种在途操作。 */
+const PENDING_COMMAND = {
+  version: 1 as const, deviceId: 'phone-1', scopeEpoch: 1, commandId: 'cmd-old', sessionId: 's1',
+  action: 'message.send' as const, payload: { text: '上次没发完的' },
+};
+
+function savedWithProjectBinding(options: { pending?: boolean } = {}): string {
   const identity = createIdentity();
   return JSON.stringify({
     version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
     binding: { version: 1, endpoint: 'http://192.168.1.2:8182', altEndpoint: 'http://imac.local:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] },
+    ...(options.pending ? { pending: PENDING_COMMAND } : {}),
   });
 }
 
-const ports = (): PlatformPorts => ({
+const ports = (options: { pending?: boolean } = {}): PlatformPorts => ({
   preferences: { get: async () => null, set: async () => {} },
   appInfo: { read: async () => ({ version: '0.1.0', build: '35' }) },
   lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
   keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
-  companion: { read: async () => savedWithProjectBinding(), write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}) },
+  companion: { read: async () => savedWithProjectBinding(options), write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}) },
 });
 
 const text = messages('zh');
@@ -246,8 +257,11 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
    * 原来按分类只渲染一个，relay 被拒时只给「重新连接」——而重连试的是配对时写死的两个
    * 地址，换网后一起死，那个主按钮永远不可能成功，用户只能删 app 重装。
    * 逐类遍历而不是挑一类：这条洞当初就是「只测了被选中的那一类」漏掉的。
+   * `reject`（离网类）不在这个循环里断言了（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 C，
+   * 爸 2026-09-19）：那一态且未登录时整块换成 S8 薄面板，扫码/忘记这台电脑不再出现——
+   * 这不是回归，是拍板换的新契约，覆盖见下面「S8 薄面板」那组用例。
    */
-  for (const mode of ['reject', 'refused', 'rejectIdentity'] as const) {
+  for (const mode of ['refused', 'rejectIdentity'] as const) {
     it(`连不上（${mode}）：扫码 / 重新连接 / 忘记这台电脑 三个动作都在，且主按钮唯一`, async () => {
       harness.mode = mode;
       await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
@@ -262,19 +276,119 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
     });
   }
 
-  it('连不上（离网）且未登录 ⇒ S8 登录提示在：去登录是次级动作，主按钮唯一', async () => {
+  /**
+   * S8 薄面板（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 C，爸 2026-09-19：原来一个面板 5 个动作
+   * 3 段说明「过于复杂」）：离网且未登录时整块换成标题+说明+主按钮「去登录」+次级「重新
+   * 连接」+一句灰字，「忘记这台电脑」不再出现；已登录时的失败面板（connectionRefused/
+   * rejectIdentity）不变，见上面那个循环——一态一主操作照旧成立，只是这一态的「一个主
+   * 操作」从「重新连接」换成「去登录」。
+   * **扫码保留**（R3 ai-review Important②，N-MOBILE-RESCAN-DEADLOCK）：见下一条用例。
+   */
+  it('连不上（离网）且未登录 ⇒ S8 薄面板：主按钮唯一且是「去登录」，无忘记这台电脑', async () => {
     harness.mode = 'reject';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
     await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
     await openRemoteSheetFromDrawer();
     const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+    expect(failed).toBeTruthy();
     const notice = failed.querySelector('[data-testid="relay-login-prompt"]');
     expect(notice).toBeTruthy();
     expect(notice?.textContent).toContain(text.needLoginTitle);
-    // 一态一主操作：登录引导不抢主按钮——去登录是次级（sheet-secondary），主按钮仍是诊断给的那个。
-    expect(notice?.querySelector('[data-testid="relay-login-go"]')?.classList.contains('primary')).toBe(false);
+    expect(failed.querySelector('[data-testid="remote-action-forget"]')).toBeNull();
     expect([...failed.querySelectorAll('button.primary')]).toHaveLength(1);
-    expect(primaryLabel(failed)).toBe(text.reconnect);
+    expect(primaryLabel(failed)).toBe(text.goLogin);
+    expect(failed.querySelector('[data-testid="remote-action-reconnect"]')?.classList.contains('primary')).toBe(false);
+  });
+
+  /**
+   * R3 ai-review PR#1958 Important②：`OFF_NETWORK_ERRORS`（含 `connectionUnavailable` /
+   * `connectionFailed`）这一类包含「电脑换了内网 IP」——手机分不出这跟「人离开了 Wi-Fi」
+   * 的区别，而重连拨的是配对时写死的地址，IP 漂了必败，扫码是唯一出路（复活了 09-16
+   * 真机「手机没给我扫的按钮啊」那个死锁）。薄面板删掉扫码是回归，这里钉住它必须留着、
+   * 可点、且不抢「去登录」的主按钮位置——对应之前被删掉的 reject 循环项，单独钉一条。
+   */
+  it('连不上（离网）且未登录 ⇒ S8 薄面板里「扫描电脑二维码」仍在、可点，不抢主按钮', async () => {
+    harness.mode = 'reject';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+    const scan = failed.querySelector('[data-testid="remote-action-scan"]') as HTMLButtonElement;
+    expect(scan).toBeTruthy();
+    expect(scan.disabled).toBe(false);
+    expect(scan.classList.contains('primary')).toBe(false);
+    expect([...failed.querySelectorAll('button.primary')]).toHaveLength(1);
+    expect(primaryLabel(failed)).toBe(text.goLogin);
+  });
+
+  /**
+   * R5 ai-review PR#1958 二轮 Important①：原失败面在 `companion.pending` 非空时会渲染
+   * `remote-pending-hint`（扫码/重连会放弃盘上那条待确认命令）。薄面板保留了扫码按钮但
+   * 没搬这句警告过来——静默丢掉待确认操作。钉住这句必须跟着扫码按钮一起出现在薄面板里。
+   */
+  it('连不上（离网）且未登录，有待确认命令 ⇒ 薄面板里也有「扫码会放弃这条操作」提示', async () => {
+    harness.mode = 'reject';
+    await act(async () => { render(<MobileRoot ports={ports({ pending: true })} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+    expect(failed.querySelector('[data-testid="relay-login-prompt"]')).toBeTruthy();
+    const hint = failed.querySelector('[data-testid="remote-pending-hint"]');
+    expect(hint).toBeTruthy();
+    expect(hint?.textContent).toBe(text.pendingScanHint);
+  });
+
+  it('连不上（离网）且未登录，没有待确认命令 ⇒ 薄面板里不出现这条提示', async () => {
+    harness.mode = 'reject';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+    expect(failed.querySelector('[data-testid="relay-login-prompt"]')).toBeTruthy();
+    expect(failed.querySelector('[data-testid="remote-pending-hint"]')).toBeNull();
+  });
+
+  /**
+   * R3 ai-review PR#1958 Important③：`connectionRelayNoHost`（中继通、电脑没开 Neo）与
+   * `connectionRelayRejected` 都在旧口径 `OFF_NETWORK_ERRORS` 里，但它们是 relay 已经
+   * 回过话的失败，诊断句已经把原因说清楚（「电脑现在不在线」），登录救不了，薄面板不该
+   * 把这句顶掉——钉住这两态走原失败面，不进薄面板。
+   */
+  it('连不上（relay no-host）且未登录 ⇒ 不出 S8 薄面板：那句诊断说的是电脑不在线，登录救不了', async () => {
+    harness.mode = 'relayNoHost';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+    expect(failed).toBeTruthy();
+    expect(failed.querySelector('[data-testid="relay-login-prompt"]')).toBeNull();
+    expect(failed.textContent).toContain(text.connectionRelayNoHost);
+    expect(failed.querySelector('[data-testid="remote-action-scan"]')).toBeTruthy();
+    expect(failed.querySelector('[data-testid="remote-action-forget"]')).toBeTruthy();
+  });
+
+  /**
+   * R2 监工复核纠正（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3）：薄面板门控原来只看
+   * `loginPrompt`——它是「配对着且没登录」的持续状态位，一旦被置起不会因为下一次失败
+   * 换了类别就自动清掉。补上 `isPhoneOffNetworkError(connectionError)` 这道判据前，
+   * 未登录用户先撞一次离网失败（loginPrompt 置真）、再点重连撞上「配对失效」这类
+   * host 主动回过话的失败时，薄面板会继续顶在那里，扫码/忘记这台电脑永久消失——
+   * 这条钉住「loginPrompt 留着不代表这一拍还是离网」。
+   */
+  it('先撞一次离网失败（loginPrompt 置真）、重连后转成「配对失效」⇒ 薄面板让位给扫码主按钮，不被 loginPrompt 顶住', async () => {
+    harness.mode = 'reject';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    // 先确认真的先命中过一次薄面板（loginPrompt 由此置真）。
+    await waitFor(() => { expect(document.querySelector('[data-testid="relay-login-prompt"]')).toBeTruthy(); });
+    harness.mode = 'rejectIdentity';
+    fireEvent.click(document.querySelector('[data-testid="remote-action-reconnect"]') as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="relay-login-prompt"]')).toBeNull(); });
+    const failed = document.querySelector('[data-testid="remote-unreachable"]') as HTMLElement;
+    expect(failed.querySelector('[data-testid="remote-action-scan"]')).toBeTruthy();
+    expect(failed.querySelector('[data-testid="remote-action-forget"]')).toBeTruthy();
+    expect(primaryLabel(failed)).toBe(text.scan);
   });
 
   it('连不上（连接被拒绝）⇒ 不出 S8 登录提示：端口关着不是离网，登录救不了「Neo 没在运行」', async () => {

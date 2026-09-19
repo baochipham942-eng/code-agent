@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
-import { canAddressSession, createCompanionStore, needsLibraryPick } from '../stores/companionStore';
+import { canAddressSession, createCompanionStore, isPhoneOffNetworkError, needsLibraryPick } from '../stores/companionStore';
 import { createNotificationStore } from '../stores/notificationStore';
 import { unavailableNotificationPort } from '../platform/notifications';
 import { pickAttachment } from '../platform/cameraPick';
@@ -522,11 +522,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         store.getState().activateDraft('new');
         store.getState().editDraft(current && draftKey !== 'new' ? `${current}\n${draft}` : draft);
       }
-      // 登录引导（D9/D-1）：配对完成后引导登录一次——**不弹账号页**。配对常从 remote 弹层发起，
-      // 这里再 openSheet 会把「弹层按原流程收掉」顶住（defaultProject 既有契约：扫码配对成功后
-      // 弹层都收掉、落到欢迎页）。引导降级为欢迎页上一条可忽略提示（置 loginPrompt，见欢迎页），
-      // 点「去登录」才进账号页；跳过后第一次离开 Wi-Fi 连不上时 S8 再提示一次，之后不反复弹。
-      if (!companionStore.getState().account) companionStore.setState({ loginPrompt: true });
+      // 配对完成不再无条件置 loginPrompt（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 R2）：它唯一的
+      // 消费方——欢迎页登录引导——已被拍板删除（B），这句变成纯负债：配对后 loginPrompt 恒真，
+      // 此后任何远程失败态都会被 S8 薄面板顶掉，「扫描电脑二维码」「忘记这台电脑」全部消失
+      // （监工复核抓到）。S8 第一次出现改由 companionStore 里「第一次离网失败」那条负责置起，
+      // 语义不变，只是不再从配对这里抢跑。
     }
   };
   const pairAndOpenConversation = async () => {
@@ -653,14 +653,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         // 不自动聚焦输入区：手机上未经点按就弹键盘会顶走视口。
         : <div data-testid={companion.sessionId ? 'session-empty' : undefined} className="welcome"><NeoBrandMark variant="mark" size={47} />
           <h1>{text.welcome}</h1>
-          {/* 登录引导（D9）：配对完成不弹账号页（那会把弹层收拢流程顶住），降级为这里一条可忽略
-              提示；S8 之后（第一次离网连不上）同一份提示接着可见。点「去登录」才进账号页。 */}
-          {companion.loginPrompt && !companion.account && <div className="login-notice" data-testid="welcome-login-notice" role="status">
-            <strong>{text.needLoginTitle}</strong>
-            <p>{text.needLoginBody}</p>
-            <button className="sheet-secondary" data-testid="welcome-login-go" onClick={() => state.openSheet('account')}>{text.goLogin}</button>
-            <button className="sheet-secondary" data-testid="welcome-login-dismiss" onClick={companion.dismissLoginPrompt}>{text.accountLoginLater}</button>
-          </div>}
+          {/* 登录引导欢迎页那段整段删掉（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 B，爸 2026-09-19：
+              「有什么想交给 Neo？」下面插四行过于复杂）。loginPrompt 仍留给 S8 薄面板用，
+              这里不再消费它——欢迎页恢复 3B 之前的样子。 */}
           {companion.library && (() => {
             const projectId = companion.sessionId ? companion.library.sessions.find(s => s.id === companion.sessionId)?.projectId ?? newTaskProjectId : newTaskProjectId;
             const project = companion.library.projects.find(p => p.id === projectId);
@@ -782,6 +777,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           ? companion.recoverStep === 'hosts' ? text.recoverHostsTitle
             : companion.recoverStep === 'pairing' ? text.recoverWaitTitle
             : text.recoverLoginTitle
+        // 'account' 页现在只剩「还没登录」这一条路（已登录走个人信息页），标题固定是登录页那句，
+        // 与找回流共用同一句文案（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 A，设计稿标注可共用）。
+        : currentPage === 'account' ? text.recoverLoginTitle
         : text[currentPage]}
       hasParent={state.sheet.pages.length > 1}
       close={() => {
@@ -869,19 +867,45 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
               {companion.recoverEntryAvailable ? text.recoverEntryHint : text.recoverUnavailable}
             </p>
           </div>
-          : <div className="remote-failed" role="status" data-testid="remote-unreachable">
+          : !companion.account && companion.loginPrompt && companion.status !== 'storageError' && isPhoneOffNetworkError(companion.connectionError) ? (
+            // S8 薄面板（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 C，爸 2026-09-19：原来 5 个动作 3 段
+            // 说明「过于复杂」）：没登录、且这一拍的诊断落在手机真分不清「离开了 Wi‑Fi」还是
+            // 「电脑换了内网 IP」的那一类——**门控必须同时看 loginPrompt 和当前 connectionError**
+            // （R2 监工复核纠正）：loginPrompt 只是「配对着且没登录」的一个持续状态位，不天然
+            // 等于「这次失败是离网」；配对失效/连接被拒绝这些 host 主动回过话的失败也会命中
+            // loginPrompt，必须靠 isPhoneOffNetworkError(connectionError) 再筛一道。
+            // **口径比 OFF_NETWORK_ERRORS 更窄**（R3 ai-review Important③）：relay 已回过话的
+            // no-host/被拒不算在内，那两态诊断句已经说清楚原因，登录救不了，不该被这句顶掉。
+            // **必须保留扫描电脑二维码**（R3 ai-review Important②，N-MOBILE-RESCAN-DEADLOCK 同一
+            // 条承重注释：这一类包含「电脑换了内网 IP」，重连拨的是配对时写死的地址必败，
+            // 扫码是唯一出路——爸 09-16 真机「手机没给我扫的按钮啊」）。命中时整块换成：
+            // 标题、一句说明、主按钮「去登录」、次级「重新连接」、次级「扫描电脑二维码」（有
+            // 待确认命令时带一句放弃提示）、一句灰字（无动作，拍板③）。「忘记这台电脑」仍不
+            // 出现；其他失败态（下面 else 分支，含配对失效/连接被拒绝/relay no-host 或被拒/
+            // 安全存储故障/已登录）一律不变。**门控排除 `status === 'storageError'`**（R5
+            // ai-review Important②）：安全存储故障时 connectionError 可能还停在离网码上，
+            // 但真正的病因是存储读不出，那句诊断（secureStorageError）与「忘记这台电脑」
+            // 出口在原失败面才有，薄面板会把它们一起藏起来。
+            <div className="remote-failed" role="status" data-testid="remote-unreachable">
+              <div data-testid="relay-login-prompt">
+                <strong>{text.needLoginTitle}</strong>
+                <p>{text.needLoginBody}</p>
+              </div>
+              <button className="primary" data-testid="relay-login-go" onClick={() => state.pushSheet('account')}>{text.goLogin}</button>
+              <button className="sheet-secondary" data-testid="remote-action-reconnect"
+                disabled={!ports.companion || (companion.busy && !companion.autoAttempt)}
+                onClick={() => void companionStore.getState().reconnect({ resetBackoff: true })}>{text.reconnect}</button>
+              <button className="sheet-secondary" data-testid="remote-action-scan"
+                disabled={!ports.companion || (companion.busy && !companion.autoAttempt)}
+                onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
+              {/* 原失败面这句没有跟着薄面板搬过来（R5 ai-review Important①）：扫码重连会
+                  放弃盘上那条待确认命令，薄面板既然保留了扫码，就不能把这个代价藏起来。 */}
+              {companion.pending && <p className="caption" data-testid="remote-pending-hint">{text.pendingScanHint}</p>}
+              <p className="caption">{text.needLoginHint}</p>
+            </div>
+          ) : <div className="remote-failed" role="status" data-testid="remote-unreachable">
             <strong>{text.cannotReachComputer}</strong>
             <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>
-            {/* S8（D-1/D-3）：没登录、且已到「跳过后第一次**离网**连不上」的那一次（store 的
-                loginPrompt 只置起这一次）——「在外面用需要先登录」+ 次级动作去登录；与既有扫码/
-                重连动作并存，不另起提示区。一态一主操作：诊断决定的那个主按钮不被登录引导抢占，
-                去登录恒为次级（sheet-secondary）。 */}
-            {companion.loginPrompt && !companion.account && <div className="login-notice" data-testid="relay-login-prompt" role="status">
-              <strong>{text.needLoginTitle}</strong>
-              <p>{text.needLoginBody}</p>
-              <button className="sheet-secondary" data-testid="relay-login-go" onClick={() => state.pushSheet('account')}>{text.goLogin}</button>
-              <p className="caption">{text.needLoginHint}</p>
-            </div>}
             {companion.pending && <p className="caption" data-testid="remote-pending-hint">{text.pendingScanHint}</p>}
             {/* 两个动作都留着，主次由诊断决定（爸 2026-09-16 build 42 真机「手机没给我扫的按钮啊」）。
                 原来按分类只渲染一个：relay 被拒判 reconnect ⇒ 只有「重新连接」。而重连试的是配对时
@@ -975,15 +999,31 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         }}
         text={text}
       /> : currentPage === 'account' ? <AccountSheet
-        account={companion.account}
         hostEmail={companion.binding?.hostAccountEmail ?? null}
-        login={(email, password) => companionStore.getState().login(email, password)}
-        logout={() => companionStore.getState().logout()}
+        // 登录成功零反馈（R3①，ai-review PR#1958 Important）：AccountSheet 自己不管路由，
+        // 成功后由这里收口。R4 纠正：不是无条件关掉整个弹层——从设置页个人卡进来的应该
+        // 回到设置页看到已登录的个人卡（v3 稿），从 S8 薄面板「去登录」进来的应该回到连接
+        // 面（此时 account 已非空、薄面板已让位）。back() 弹栈顶那页（R6 ai-review Nit：
+        // 去掉了 closeSheet() 兜底——mobileStore.back() 在 sheet 存在时恒回 true，那个分支
+        // 本来就走不到）。重连触发逻辑不动，不让用户手动再点一次「重新连接」才看出登录生效了。
+        login={async (email, password) => {
+          const outcome = await companionStore.getState().login(email, password);
+          if (outcome.ok) {
+            store.getState().back();
+            void companionStore.getState().reconnect({ resetBackoff: true });
+          }
+          return outcome;
+        }}
         dismiss={() => store.getState().closeSheet()}
         text={text}
       /> : <SettingsPage page={currentPage} text={text} appearance={state.preferences.appearance} nickname={state.preferences.nickname}
         profileDraft={state.profileDraft} appInfo={appInfo} open={state.pushSheet} chooseAppearance={state.setAppearance}
         editProfile={state.editProfile} saveProfile={state.saveProfile} account={companion.account}
+        // logout() 本身不回传成不成功（persist 失败时 store 静默保留 account）：SettingsPage
+        // 判「退出登录没有成功」不能靠自己渲染闭包里的旧 account 值（那永远是退出前的对象，
+        // 恒判失败——R2 监工复核纠正），改由这里退出后重读一次 store 现状，成功与否用
+        // account 是不是变成了 null 来判定，再回传给调用方。
+        logout={async () => { await companionStore.getState().logout(); return companionStore.getState().account === null; }}
         storage={{ previewBytes: companion.cacheUsage?.previewBytes ?? 0, conversationBytes: companion.cacheUsage?.conversationBytes ?? 0, result: cacheResult, confirm: cacheConfirm,
           onConfirm: () => setCacheConfirm(true),
           onClear: () => { companion.clearCache(); setCacheResult('clean'); setCacheConfirm(false); } }}

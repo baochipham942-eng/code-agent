@@ -1,25 +1,24 @@
 import { useState } from 'react';
 import type { messages } from '../../i18n';
 import type { AccountLoginOutcome } from '../../stores/companionStore';
+import { COMPANION_LIMITS } from '../../../../../src/shared/constants/companion';
 
 /**
- * 账号页（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE，UI 稿 S4/S7）：只有邮箱+密码，没有第三方登录。
- * 已登录态显示「账号 <邮箱>」与「退出登录」；未登录态是登录表单——邮箱预填配对信息里带的电脑
- * 账号邮箱，账号服务连不上（S7）主按钮「重试」、次按钮「稍后再说」。密码只活在本地 state，
- * 提交即进 platform 层的栈上，不落盘、不进日志；成功后连 state 里的密码一起清掉。
+ * 登录页（N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE，UI 稿 S4/S7；N-COMPANION-RELAY-ACCOUNT-LOGIN-V3
+ * 收窄为纯登录表单）：只有邮箱+密码，没有第三方登录。已登录态不再走这里——设置页个人卡已登录时
+ * 直接进个人信息页（SettingsPage 'profile' 分支），账号区（邮箱 + 退出登录）画在那一页，这里只
+ * 剩「还没登录」这一条路。账号服务连不上（S7）主按钮「重试」、次按钮「稍后再说」。密码只活在
+ * 本地 state，提交即进 platform 层的栈上，不落盘、不进日志；成功后连 state 里的密码一起清掉。
  */
-export function AccountSheet({ account, hostEmail, login, logout, dismiss, text }: {
-  /** 已登录账号（无票据，票据只在配对盘里）；null = 未登录。 */
-  account: { email: string } | null;
+export function AccountSheet({ hostEmail, login, dismiss, text }: {
   /** 配对信息里带的电脑账号邮箱：预填与「这台电脑属于谁」的文案都用它。 */
   hostEmail: string | null;
   login(email: string, password: string): Promise<AccountLoginOutcome>;
-  logout(): Promise<void>;
   /** S7「稍后再说」：收掉账号页（关弹层）。 */
   dismiss(): void;
   text: ReturnType<typeof messages>;
 }) {
-  const [email, setEmail] = useState(hostEmail ?? account?.email ?? '');
+  const [email, setEmail] = useState(hostEmail ?? '');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   /** S7 态重现最近一次提交（重试不用重新打字）；凭据错/账号不一致留在表单行内报。 */
@@ -32,31 +31,36 @@ export function AccountSheet({ account, hostEmail, login, logout, dismiss, text 
     const useEmail = (creds?.email ?? email).trim();
     const usePassword = creds?.password ?? password;
     if (busy || !useEmail || !usePassword) return;
-    setBusy(true); setInvalid(false); setWrongAccount(null); setUnreachable(null);
-    const outcome = await login(useEmail, usePassword);
-    setBusy(false);
-    if (outcome.ok) { setPassword(''); return; }
-    if (outcome.kind === 'invalidCredentials') setInvalid(true);
-    else if (outcome.kind === 'wrongAccount') setWrongAccount(outcome.hostEmail);
+    // 只置 busy，既有的失败面板/行内报错留着不清——await 结束前清掉会让 S7 重试瞬间
+    // 切回裸表单再切回失败面板，「错误提示先消失」（N-COMPANION-RELAY-ACCOUNT-LOGIN-V3 D，
+    // 守卫⑤）。哪个分支亮由 await 结束后的新结局决定，不是提交那一刻决定。
+    setBusy(true);
+    let outcome: AccountLoginOutcome;
+    try {
+      outcome = await login(useEmail, usePassword);
+    } catch {
+      // login() 抛出（比如安全存储 persist 失败，R5 ai-review Important②）：没有 catch 的话
+      // busy 会永久卡在 true，输入框和按钮再也点不动。按「账号服务连不上」结算，不吞成功
+      // 路径——真正的成功走的是下面 try 块正常返回，这里只兜异常。
+      outcome = { ok: false, kind: 'unreachable' };
+    } finally {
+      setBusy(false);
+    }
+    if (outcome.ok) { setPassword(''); setInvalid(false); setWrongAccount(null); setUnreachable(null); return; }
+    if (outcome.kind === 'invalidCredentials') { setInvalid(true); setWrongAccount(null); setUnreachable(null); }
+    else if (outcome.kind === 'wrongAccount') { setWrongAccount(outcome.hostEmail); setInvalid(false); setUnreachable(null); }
     // 账号服务连不上（S7）：记住这次的输入，主按钮「重试」直接重发。
-    else setUnreachable({ email: useEmail, password: usePassword });
+    else { setUnreachable({ email: useEmail, password: usePassword }); setInvalid(false); setWrongAccount(null); }
   };
-
-  if (account) {
-    return <div className="account-sheet" data-testid="account-signed-in">
-      <p className="caption">{text.accountLoggedInHint}</p>
-      <div className="settings-group">
-        <div className="settings-row"><span>{text.account}</span><span className="row-detail">{account.email}</span></div>
-      </div>
-      <button className="primary" data-testid="account-logout" disabled={busy} onClick={() => { void logout(); }}>{text.accountLogout}</button>
-      <p className="caption">{text.accountLogoutHint}</p>
-    </div>;
-  }
 
   if (unreachable) {
     return <div className="sheet-fail" role="status" data-testid="account-unreachable">
       <strong>{text.accountLoginUnreachable}</strong>
-      <button className="primary" data-testid="account-retry" disabled={busy} onClick={() => { void submit(unreachable); }}>{text.retry}</button>
+      {/* S7 重试 busy 态同款 spinner+文案（R3 ai-review Nit），跟登录表单主按钮一个样式，
+          不是「按钮变灰」这一种反馈。 */}
+      <button className={busy ? 'primary busy' : 'primary'} data-testid="account-retry" disabled={busy} onClick={() => { void submit(unreachable); }}>
+        {busy ? <><span className="spinner" aria-hidden="true" />{text.accountLoginBusy}</> : text.retry}
+      </button>
       <button className="sheet-secondary" data-testid="account-later" onClick={dismiss}>{text.accountLoginLater}</button>
     </div>;
   }
@@ -64,14 +68,16 @@ export function AccountSheet({ account, hostEmail, login, logout, dismiss, text 
   return <form className="account-sheet" data-testid="account-login" onSubmit={event => { event.preventDefault(); void submit(); }}>
     <p className="caption">{text.accountLoginHint}</p>
     <label className="group-title" htmlFor="account-email">{text.accountLoginEmail}</label>
-    <input id="account-email" type="email" inputMode="email" autoComplete="email" value={email}
-      onChange={event => setEmail(event.target.value)} />
+    <input id="account-email" type="email" inputMode="email" autoComplete="email" value={email} disabled={busy}
+      maxLength={COMPANION_LIMITS.accountEmailMaxLength} onChange={event => setEmail(event.target.value)} />
     <label className="group-title" htmlFor="account-password">{text.accountLoginPassword}</label>
-    <input id="account-password" type="password" autoComplete="current-password" value={password}
+    <input id="account-password" type="password" autoComplete="current-password" value={password} disabled={busy}
       onChange={event => setPassword(event.target.value)} />
     {invalid && <p role="alert" data-testid="account-invalid">{text.accountLoginInvalid}</p>}
     {wrongAccount && <p role="alert" data-testid="account-wrong">{text.accountLoginWrongAccount.replace('{email}', wrongAccount)}</p>}
-    <button type="submit" className="primary" data-testid="account-submit" disabled={busy || !email.trim() || !password}>{text.accountLoginSubmit}</button>
+    <button type="submit" className={busy ? 'primary busy' : 'primary'} data-testid="account-submit" disabled={busy || !email.trim() || !password}>
+      {busy ? <><span className="spinner" aria-hidden="true" />{text.accountLoginBusy}</> : text.accountLoginSubmit}
+    </button>
     <p className="caption">{text.accountLoginFooter}</p>
   </form>;
 }

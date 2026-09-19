@@ -371,8 +371,22 @@ export async function runPostLaunchScoring(
 
       if (shouldJudge) {
         let judgeCompletion = '';
+        let escalationBlocked = false;
         const verdict = await judgePostLaunchTurn(
-          { turn: turn.turn, signals, carriedUserPrompt, prescreen },
+          {
+            turn: turn.turn,
+            signals,
+            carriedUserPrompt,
+            prescreen,
+            canEscalate: prescreen
+              ? () => {
+                  const genUsd = deps.estimateJudgeCostUsd(judgePrompt).usd;
+                  const ok = spentUsd + jevUsd + genUsd <= budgetLimitUsd;
+                  if (!ok) escalationBlocked = true;
+                  return ok;
+                }
+              : undefined,
+          },
           async (prompt) => {
             const response = await deps.llmCall(prompt);
             judgeCompletion = typeof response === 'string' ? response : response.content;
@@ -383,22 +397,25 @@ export async function runPostLaunchScoring(
         reasoning = verdict.reasoning || reasoning;
         judgeModel = verdict.unavailableReason ? JUDGE_MODEL_UNAVAILABLE : verdict.judgeModel;
         if (verdict.unavailableReason) result.judgeUnavailableTurns += 1;
+        if (escalationBlocked) result.budgetStopped = true;
         promptHash = verdict.promptHash;
         judgeVersion = verdict.judgeVersion;
         rubricVersion = verdict.rubricVersion;
-        if (verdict.judgeModel === JEV_JUDGE_MODEL) {
-          // 刊例 $0.042/M 输入（输出免费），落库 + 累加日预算。
-          judgeCostUsd = jevUsd;
-          budgetCostUsd = jevUsd;
-          spentUsd += jevUsd;
-          result.costUsd += jevUsd;
-        } else {
+        if (verdict.prescreenCalled) {
+          const jevCost = verdict.prescreenCostUsd ?? jevUsd;
+          judgeCostUsd += jevCost;
+          budgetCostUsd += jevCost;
+          spentUsd += jevCost;
+          result.costUsd += jevCost;
+        }
+        if (verdict.judgeModel !== JEV_JUDGE_MODEL) {
           const estimate = deps.estimateJudgeCostUsd(judgePrompt, judgeCompletion);
           // 未知价的估算只用来守预算，不冒充刊例落库（resolveModelPrice §2「未知价不编造」）。
-          judgeCostUsd = estimate.assumed ? 0 : estimate.usd;
-          budgetCostUsd = estimate.usd;
+          const published = estimate.assumed ? 0 : estimate.usd;
+          judgeCostUsd += published;
+          budgetCostUsd += estimate.usd;
           spentUsd += estimate.usd;
-          result.costUsd += judgeCostUsd;
+          result.costUsd += published;
         }
         if (hasSignal) result.signalTurns += 1;
         else {

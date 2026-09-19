@@ -258,7 +258,15 @@ function decidingAnswers(overrides: JevAnswers = {}): JevAnswers {
     orchestration_pass: { noul: 0.88 },
     tools_pass: { noul: 0.87 },
     permission_pass: { noul: 0.95 },
+    no_tools_but_needed: { noul: 0.1 },
     ...overrides,
+  };
+}
+
+function turnWithoutTools(): ReplayTurn {
+  return {
+    ...TURN,
+    blocks: TURN.blocks.filter((block) => block.type !== 'tool_call'),
   };
 }
 
@@ -287,6 +295,10 @@ describe('postLaunchJudge · Jev 初筛', () => {
     expect(verdict.reasoning).toBe('goal: 0.91；orchestration: 0.88；tools: 0.87；permission: 0.95');
     expect(verdict.promptHash).toBe(getJudgePrescreenHash());
     expect(verdict.promptHash).not.toBe(getPostLaunchPromptHash());
+    expect(verdict.prescreenCalled).toBe(true);
+    expect(verdict.prescreenCostUsd).toBeGreaterThan(0);
+    expect(Object.keys(prescreen.questions[0] ?? {})).toContain('tools_pass');
+    expect(Object.keys(prescreen.questions[0] ?? {})).not.toContain('no_tools_but_needed');
   });
 
   it('Jev 决断与生成式 verdict 的 promptHash 不同', async () => {
@@ -327,20 +339,64 @@ describe('postLaunchJudge · Jev 初筛', () => {
     expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
   });
 
-  it('toolCalls 空 ⇒ 发给 prescreen 的 questions 里没有 tools_pass，tools 维 null，其余三维决断则不升级', async () => {
-    const turn: ReplayTurn = {
-      ...TURN,
-      blocks: TURN.blocks.filter((block) => block.type !== 'tool_call'),
-    };
+  it('toolCalls 空 ⇒ 问 no_tools_but_needed 不问 tools_pass', async () => {
     const prescreen = stubPrescreen(decidingAnswers());
     const llmCall = vi.fn(async () => GENERATIVE);
-    const verdict = await judgePostLaunchTurn({ turn, signals: [], prescreen }, llmCall);
-
+    await judgePostLaunchTurn({ turn: turnWithoutTools(), signals: [], prescreen }, llmCall);
     expect(Object.keys(prescreen.questions[0] ?? {})).not.toContain('tools_pass');
+    expect(Object.keys(prescreen.questions[0] ?? {})).toContain('no_tools_but_needed');
+  });
+
+  it('空 toolCalls + no_tools_but_needed 0.9 ⇒ tools=0 且不升级', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ no_tools_but_needed: { noul: 0.9 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: turnWithoutTools(), signals: [], prescreen }, llmCall);
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(verdict.judgeModel).toBe(JEV_JUDGE_MODEL);
+    expect(verdict.dims.tools).toBe(0);
+    expect(verdict.dims).toMatchObject({ goal: 1, orchestration: 1, permission: 1 });
+    expect(verdict.reasoning).toContain('tools: 0.90');
+  });
+
+  it('空 toolCalls + no_tools_but_needed 0.1 ⇒ tools=null 且不升级', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ no_tools_but_needed: { noul: 0.1 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: turnWithoutTools(), signals: [], prescreen }, llmCall);
+
     expect(llmCall).not.toHaveBeenCalled();
     expect(verdict.judgeModel).toBe(JEV_JUDGE_MODEL);
     expect(verdict.dims.tools).toBeNull();
     expect(verdict.dims).toMatchObject({ goal: 1, orchestration: 1, permission: 1 });
+  });
+
+  it('空 toolCalls + no_tools_but_needed 0.5 ⇒ 升级生成式', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ no_tools_but_needed: { noul: 0.5 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: turnWithoutTools(), signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+    expect(verdict.prescreenCalled).toBe(true);
+    expect(verdict.prescreenCostUsd).toBeGreaterThan(0);
+  });
+
+  it('canEscalate=false 且 Jev 弃权 ⇒ 不调生成式，保留已决断维', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ orchestration_pass: { noul: 0.5 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn(
+      { turn: TURN, signals: [], prescreen, canEscalate: () => false },
+      llmCall,
+    );
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(verdict.judgeModel).toBe(JEV_JUDGE_MODEL);
+    expect(verdict.dims.goal).toBe(1);
+    expect(verdict.dims.tools).toBe(1);
+    expect(verdict.dims.permission).toBe(1);
+    expect(verdict.dims.orchestration).toBeNull();
+    expect(verdict.prescreenCalled).toBe(true);
+    expect(verdict.prescreenCostUsd).toBeGreaterThan(0);
   });
 
   it('prescreen 抛错 ⇒ 升级且无 unavailableReason', async () => {

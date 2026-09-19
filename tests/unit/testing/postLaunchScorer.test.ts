@@ -876,11 +876,96 @@ describe('上线后打分编排', () => {
       orchestration_pass: { noul: 0.5 },
       tools_pass: { noul: 0.5 },
       permission_pass: { noul: 0.5 },
+      no_tools_but_needed: { noul: 0.5 },
     });
     const llmCall = vi.fn(async () => ALL_PASS);
     await runPostLaunchScoring(deps(database, replays, llmCall, { prescreen: abstainAll }));
 
     expect(llmCall).toHaveBeenCalledTimes(3);
+  });
+
+  it('预算只够 Jev 不够生成式 + prescreen 全弃权 ⇒ llmCall 零调用、budgetStopped、Jev 成本计入', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const sessionReplay = replay('chat-1', [{
+      turnNumber: 1,
+      startTime: NOW - HOUR,
+      blocks: [{ type: 'error', content: 'boom', timestamp: NOW - HOUR } as ReplayBlock],
+    }]);
+    const sample = sessionReplay.turns[0];
+    const signals = computeTurnSignals(sample, 'chat-turn-1', {
+      workspaceDir: '/ws',
+      turnCostUsd: 0.001,
+      fileExists: () => true,
+    });
+    const jevUsd = estimatePostLaunchPrescreenUsd(sample, signals);
+    const genUsd = 0.1;
+    const abstainAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'cannot_tell', confidence: 0.2 },
+      goal_pass: { noul: 0.5 },
+      orchestration_pass: { noul: 0.5 },
+      tools_pass: { noul: 0.5 },
+      permission_pass: { noul: 0.5 },
+      no_tools_but_needed: { noul: 0.5 },
+    });
+    const llmCall = vi.fn(async () => ALL_PASS);
+    const result = await runPostLaunchScoring(
+      deps(database, { 'chat-1': sessionReplay }, llmCall, { prescreen: abstainAll }),
+      { dailyBudgetUsd: jevUsd + genUsd / 2 },
+    );
+
+    expect(jevUsd).toBeGreaterThan(0);
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(result.budgetStopped).toBe(true);
+    expect(result.costUsd).toBeCloseTo(jevUsd);
+    const rows = scoreRows(database);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cost_usd).toBeCloseTo(jevUsd);
+    expect(rows[0].budget_cost_usd).toBeCloseTo(jevUsd);
+    expect(rows[0].judge_model).toBe(JEV_JUDGE_MODEL);
+  });
+
+  it('prescreen 弃权且预算充足 ⇒ llmCall 一次且 costUsd = Jev 估算 + 生成式估算', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const sessionReplay = replay('chat-1', [{
+      turnNumber: 1,
+      startTime: NOW - HOUR,
+      blocks: [{ type: 'error', content: 'boom', timestamp: NOW - HOUR } as ReplayBlock],
+    }]);
+    const sample = sessionReplay.turns[0];
+    const signals = computeTurnSignals(sample, 'chat-turn-1', {
+      workspaceDir: '/ws',
+      turnCostUsd: 0.001,
+      fileExists: () => true,
+    });
+    const jevUsd = estimatePostLaunchPrescreenUsd(sample, signals);
+    const genUsd = 0.1;
+    const abstainAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'cannot_tell', confidence: 0.2 },
+      goal_pass: { noul: 0.5 },
+      orchestration_pass: { noul: 0.5 },
+      tools_pass: { noul: 0.5 },
+      permission_pass: { noul: 0.5 },
+      no_tools_but_needed: { noul: 0.5 },
+    });
+    const llmCall = vi.fn(async () => ALL_PASS);
+    const result = await runPostLaunchScoring(
+      deps(database, { 'chat-1': sessionReplay }, llmCall, {
+        prescreen: abstainAll,
+        estimateJudgeCostUsd: () => ({ usd: genUsd, assumed: false }),
+      }),
+      { dailyBudgetUsd: 1 },
+    );
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(result.budgetStopped).toBe(false);
+    expect(result.costUsd).toBeCloseTo(jevUsd + genUsd);
+    const rows = scoreRows(database);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cost_usd).toBeCloseTo(jevUsd + genUsd);
+    expect(rows[0].budget_cost_usd).toBeCloseTo(jevUsd + genUsd);
+    expect(rows[0].judge_model).not.toBe(JEV_JUDGE_MODEL);
   });
 
   it('prescreen 全决断 × N 轮，budgetLimitUsd 只够 k 轮 ⇒ 第 k+1 轮停、systemOne 调 k 次', async () => {
@@ -892,6 +977,7 @@ describe('上线后打分编排', () => {
       orchestration_pass: { noul: 0.88 },
       tools_pass: { noul: 0.87 },
       permission_pass: { noul: 0.95 },
+      no_tools_but_needed: { noul: 0.12 },
     };
     systemOneMock.mockImplementation(async () => decideAll);
     const n = 4;

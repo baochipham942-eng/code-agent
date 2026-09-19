@@ -158,6 +158,10 @@ export interface PostLaunchJudgeVerdict {
   judgeVersion: string;
   rubricVersion: string;
   unavailableReason?: PostLaunchJudgeUnavailableReason;
+  /** Jev 初筛是否实际调用过（决断、弃权、抛错都算）。 */
+  prescreenCalled?: boolean;
+  /** 该次 Jev 调用的刊例估算（USD）；未调用则不设。 */
+  prescreenCostUsd?: number;
 }
 
 function unavailable(reason: PostLaunchJudgeUnavailableReason, reasoning: string, judgeModel: string): PostLaunchJudgeVerdict {
@@ -246,6 +250,11 @@ export interface PostLaunchJudgeInput {
   carriedUserPrompt?: string;
   /** Jev 初筛。测试打桩；生产由 scorer 在开关+key 齐时装配。缺省则直接走生成式。 */
   prescreen?: PostLaunchJudgePrescreen;
+  /**
+   * 升级生成式前的第二次预算检查。返回 false 则不调 llmCall，保留 Jev 已决断维。
+   * 缺省视为可以升级。
+   */
+  canEscalate?: () => boolean;
 }
 
 function isEmptyToolCalls(state: Record<string, unknown>): boolean {
@@ -258,6 +267,7 @@ function buildPrescreenQuestions(
 ): Record<string, JevQuestionSpec> {
   const questions = { ...JUDGE_PRESCREEN_QUESTIONS };
   if (isEmptyToolCalls(state)) delete questions.tools_pass;
+  else delete questions.no_tools_but_needed;
   if (source === 'none') {
     delete questions.goal_met;
     delete questions.goal_pass;
@@ -279,51 +289,10 @@ function readNoul(answers: JevAnswers, key: string): { score: PostLaunchDimScore
   return { score: noulBand(noul), noul };
 }
 
-/**
- * 四个应判维全部决断才返回 verdict；任一弃权 / cannot_tell / 形状不对 → 抛错或返回 null 以升级。
- * toolCalls 空则 tools 不是应判维；userPromptSource=none 则 goal 不是应判维。
- */
-function decidePrescreen(
-  state: Record<string, unknown>,
-  source: PostLaunchUserPromptSource,
-  answers: JevAnswers,
-): PostLaunchJudgeVerdict | null {
-  const dims: Record<PostLaunchJudgeDimension, PostLaunchDimScore> = {
-    goal: null,
-    orchestration: null,
-    tools: null,
-    permission: null,
-  };
-  const nouls: Partial<Record<PostLaunchJudgeDimension, number>> = {};
-
-  const take = (dimension: PostLaunchJudgeDimension, key: string): boolean => {
-    const { score, noul } = readNoul(answers, key);
-    if (score === 'bad') return false;
-    nouls[dimension] = noul;
-    if (score === null) return false;
-    dims[dimension] = score;
-    return true;
-  };
-
-  if (source !== 'none') {
-    const met = answers.goal_met;
-    if (!met || typeof met !== 'object' || !('choice' in met) || typeof (met as { choice: unknown }).choice !== 'string') {
-      return null;
-    }
-    if ((met as { choice: string }).choice === 'cannot_tell') return null;
-    if (!take('goal', 'goal_pass')) return null;
-  }
-  if (!take('orchestration', 'orchestration_pass')) return null;
-  if (!isEmptyToolCalls(state) && !take('tools', 'tools_pass')) return null;
-  if (!take('permission', 'permission_pass')) return null;
-
-  const reasoning = POST_LAUNCH_JUDGE_DIMENSIONS
-    .flatMap((dimension) => {
-      const noul = nouls[dimension];
-      return noul === undefined ? [] : [`${dimension}: ${noul.toFixed(2)}`];
-    })
-    .join('；');
-
+function jevVerdict(
+  dims: Record<PostLaunchJudgeDimension, PostLaunchDimScore>,
+  reasoning: string,
+): PostLaunchJudgeVerdict {
   return {
     dims,
     reasoning,
@@ -332,6 +301,73 @@ function decidePrescreen(
     judgeVersion: POST_LAUNCH_JUDGE_VERSION,
     rubricVersion: POST_LAUNCH_RUBRIC_VERSION,
   };
+}
+
+/**
+ * 四个应判维全部决断才 fullyDecided；任一弃权 / cannot_tell / 形状不对则升级。
+ * 空 toolCalls 改问 no_tools_but_needed：≥0.65 → tools=0，≤0.35 → tools 跳过（仍算决断），中间弃权。
+ * userPromptSource=none 则 goal 不是应判维。已决断维写进 verdict，供预算停评时保留。
+ */
+function decidePrescreen(
+  state: Record<string, unknown>,
+  source: PostLaunchUserPromptSource,
+  answers: JevAnswers,
+): { verdict: PostLaunchJudgeVerdict; fullyDecided: boolean } {
+  const dims: Record<PostLaunchJudgeDimension, PostLaunchDimScore> = {
+    goal: null,
+    orchestration: null,
+    tools: null,
+    permission: null,
+  };
+  const nouls: Partial<Record<PostLaunchJudgeDimension, number>> = {};
+  let fullyDecided = true;
+
+  const take = (dimension: PostLaunchJudgeDimension, key: string): void => {
+    const { score, noul } = readNoul(answers, key);
+    if (score === 'bad') {
+      fullyDecided = false;
+      return;
+    }
+    nouls[dimension] = noul;
+    if (score === null) {
+      fullyDecided = false;
+      return;
+    }
+    dims[dimension] = score;
+  };
+
+  if (source !== 'none') {
+    const met = answers.goal_met;
+    if (!met || typeof met !== 'object' || !('choice' in met) || typeof (met as { choice: unknown }).choice !== 'string') {
+      fullyDecided = false;
+    } else if ((met as { choice: string }).choice === 'cannot_tell') {
+      fullyDecided = false;
+    } else {
+      take('goal', 'goal_pass');
+    }
+  }
+  take('orchestration', 'orchestration_pass');
+  if (isEmptyToolCalls(state)) {
+    const { score, noul } = readNoul(answers, 'no_tools_but_needed');
+    if (score === 'bad' || score === null) {
+      fullyDecided = false;
+    } else if (score === 1) {
+      dims.tools = 0;
+      nouls.tools = noul;
+    }
+  } else {
+    take('tools', 'tools_pass');
+  }
+  take('permission', 'permission_pass');
+
+  const reasoning = POST_LAUNCH_JUDGE_DIMENSIONS
+    .flatMap((dimension) => {
+      const noul = nouls[dimension];
+      return noul === undefined ? [] : [`${dimension}: ${noul.toFixed(2)}`];
+    })
+    .join('；');
+
+  return { verdict: jevVerdict(dims, reasoning), fullyDecided };
 }
 
 /**
@@ -356,6 +392,8 @@ export function estimatePostLaunchPrescreenUsd(
  * 按维度各问一次会把成本乘四。
  *
  * 有 prescreen 时先走 Jev：全部应判维决断则不再调生成式；任一弃权或 Jev 失败则升级。
+ * 升级前若 canEscalate 返回 false，不调生成式，保留 Jev 已决断维。
+ * Jev 一经调用（决断/弃权/抛错）都把刊例估算带回 verdict.prescreenCostUsd。
  */
 export async function judgePostLaunchTurn(
   input: PostLaunchJudgeInput,
@@ -363,21 +401,35 @@ export async function judgePostLaunchTurn(
 ): Promise<PostLaunchJudgeVerdict> {
   const source = resolveUserPrompt(input.turn, input.carriedUserPrompt).userPromptSource;
   const state = projectTurnForJudge(input.turn, input.signals, input.carriedUserPrompt);
+  let prescreenCalled = false;
+  let prescreenCostUsd = 0;
+  const finish = (verdict: PostLaunchJudgeVerdict): PostLaunchJudgeVerdict =>
+    prescreenCalled ? { ...verdict, prescreenCalled: true, prescreenCostUsd } : verdict;
+
   try {
     if (input.prescreen) {
+      prescreenCostUsd = estimatePostLaunchPrescreenUsd(input.turn, input.signals, input.carriedUserPrompt);
+      let partial: PostLaunchJudgeVerdict | undefined;
       try {
+        prescreenCalled = true;
         const answers = await input.prescreen(state, buildPrescreenQuestions(state, source));
-        const screened = decidePrescreen(state, source, answers);
-        if (screened) return applyGoalAbstainWhenNone(screened, source);
+        const decided = decidePrescreen(state, source, answers);
+        if (decided.fullyDecided) return finish(applyGoalAbstainWhenNone(decided.verdict, source));
+        partial = applyGoalAbstainWhenNone(decided.verdict, source);
       } catch {
-        // Jev 抛错 / 超时 / 形状不对 ⇒ 视同全弃权，升级生成式。不新增 unavailable 出口。
+        // Jev 抛错 / 超时 / 形状不对 ⇒ 视同全弃权。不新增 unavailable 出口。
+        partial = applyGoalAbstainWhenNone(
+          jevVerdict({ goal: null, orchestration: null, tools: null, permission: null }, ''),
+          source,
+        );
       }
+      if (input.canEscalate && !input.canEscalate()) return finish(partial);
     }
     const verdict = parseVerdict(
       await llmCall(buildPostLaunchJudgePrompt(input.turn, input.signals, input.carriedUserPrompt)),
     );
-    return applyGoalAbstainWhenNone(verdict, source);
+    return finish(applyGoalAbstainWhenNone(verdict, source));
   } catch (error) {
-    return unavailable('judge_error', error instanceof Error ? error.message : String(error), 'unknown');
+    return finish(unavailable('judge_error', error instanceof Error ? error.message : String(error), 'unknown'));
   }
 }

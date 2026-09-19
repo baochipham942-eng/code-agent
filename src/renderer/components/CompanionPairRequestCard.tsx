@@ -10,7 +10,7 @@ import { Smartphone } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { CompanionPairRequestEvent } from '@shared/ipc';
 import { COMPANION_MANAGE_CHANNEL } from '@shared/constants/companion';
-import { formatRelayPairVerify } from '@shared/companion/relayPair';
+import { formatRelayPairVerify } from '@shared/companion/relayPairVerify';
 import { ipcService } from '../services/ipcService';
 import { useI18n } from '../hooks/useI18n';
 import { companionText } from '../i18n/companion';

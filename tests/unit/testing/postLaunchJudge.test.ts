@@ -3,7 +3,12 @@
 // 这里必须能出判决——这是「上线后」这条线成立的前提。
 import { describe, expect, it, vi } from 'vitest';
 import type { ReplayBlock, ReplayTurn } from '../../../src/shared/contract/evaluationReplay';
-import { getPostLaunchPromptHash, judgePostLaunchTurn, projectTurnForJudge } from '../../../src/host/testing/judge/postLaunchJudge';
+import {
+  getPostLaunchPromptHash,
+  judgePostLaunchTurn,
+  type PostLaunchJudgePrescreen,
+} from '../../../src/host/testing/judge/postLaunchJudge';
+import { JEV_JUDGE_MODEL, type JevAnswers } from '../../../src/shared/constants/jevQuestions';
 import type { DeterministicSignal } from '../../../src/shared/contract/postLaunchScore';
 import {
   POST_LAUNCH_JUDGE_DIMENSIONS,
@@ -209,23 +214,18 @@ describe('postLaunchJudge · 跨轮承接 userPrompt', () => {
 
   it('当前轮无 user block、给了 carried ⇒ 投影 userPrompt=carried、source=carried', async () => {
     const turn: ReplayTurn = { ...TURN, blocks: TURN.blocks.filter((block) => block.type !== 'user') };
-    const projection = projectTurnForJudge(turn, [], '把 README 里的安装步骤补全');
-    expect(projection.userPromptSource).toBe('carried');
-    expect(projection.userPrompt).toContain('把 README 里的安装步骤补全');
-
     const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_PASS);
     await judgePostLaunchTurn({ turn, signals: [], carriedUserPrompt: '把 README 里的安装步骤补全' }, llmCall);
-    expect(llmCall.mock.calls[0][0]).toContain('"userPromptSource": "carried"');
-    expect(llmCall.mock.calls[0][0]).toContain('把 README 里的安装步骤补全');
+    const prompt = llmCall.mock.calls[0][0];
+    expect(prompt).toContain('"userPromptSource": "carried"');
+    expect(prompt).toContain('把 README 里的安装步骤补全');
   });
 
   it('两者都无 ⇒ source=none 且即使 llmCall 返回 goal.pass=false，verdict.dims.goal 仍是 null', async () => {
     const turn: ReplayTurn = { ...TURN, blocks: TURN.blocks.filter((block) => block.type !== 'user') };
-    const projection = projectTurnForJudge(turn, []);
-    expect(projection.userPromptSource).toBe('none');
-
     const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_FAIL_GOAL);
     const verdict = await judgePostLaunchTurn({ turn, signals: [] }, llmCall);
+    expect(llmCall.mock.calls[0][0]).toContain('"userPromptSource": "none"');
     expect(llmCall).toHaveBeenCalledTimes(1);
     expect(verdict.dims.goal).toBeNull();
     expect(verdict.dims.orchestration).toBe(1);
@@ -233,18 +233,111 @@ describe('postLaunchJudge · 跨轮承接 userPrompt', () => {
   });
 
   it('当前轮有 user block ⇒ source=turn、carried 被忽略', async () => {
-    const projection = projectTurnForJudge(TURN, [], '这句不该出现在投影里');
-    expect(projection.userPromptSource).toBe('turn');
-    expect(projection.userPrompt).toContain('把 README 里的安装步骤补全');
-    expect(projection.userPrompt).not.toContain('这句不该出现在投影里');
-
     const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_PASS);
     const verdict = await judgePostLaunchTurn(
       { turn: TURN, signals: [], carriedUserPrompt: '这句不该出现在投影里' },
       llmCall,
     );
     expect(llmCall.mock.calls[0][0]).toContain('"userPromptSource": "turn"');
+    expect(llmCall.mock.calls[0][0]).toContain('把 README 里的安装步骤补全');
     expect(llmCall.mock.calls[0][0]).not.toContain('这句不该出现在投影里');
     expect(verdict.dims.goal).toBe(1);
+  });
+});
+
+function decidingAnswers(overrides: JevAnswers = {}): JevAnswers {
+  return {
+    goal_met: { choice: 'met', confidence: 0.9 },
+    goal_pass: { noul: 0.91 },
+    orchestration_pass: { noul: 0.88 },
+    tools_pass: { noul: 0.87 },
+    permission_pass: { noul: 0.95 },
+    no_tools_but_needed: { noul: 0.1 },
+    ...overrides,
+  };
+}
+
+function stubPrescreen(answers: JevAnswers | ((state: Record<string, unknown>, questions: Record<string, unknown>) => JevAnswers)): PostLaunchJudgePrescreen & { questions: Array<Record<string, unknown>> } {
+  const questions: Array<Record<string, unknown>> = [];
+  const fn = (async (state: Record<string, unknown>, asked: Record<string, unknown>) => {
+    questions.push(asked);
+    return typeof answers === 'function' ? answers(state, asked) : answers;
+  }) as PostLaunchJudgePrescreen & { questions: Array<Record<string, unknown>> };
+  fn.questions = questions;
+  return fn;
+}
+
+const GENERATIVE = { content: ALL_PASS, judgeModel: 'zhipu/glm-4-flash' };
+
+describe('postLaunchJudge · Jev 初筛', () => {
+  it('四维全决断 ⇒ llmCall 零调用、judgeModel=typesafe/jev-1.13.0、dims 与带判一致', async () => {
+    const prescreen = stubPrescreen(decidingAnswers());
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(verdict.judgeModel).toBe(JEV_JUDGE_MODEL);
+    expect(verdict.dims).toEqual({ goal: 1, orchestration: 1, tools: 1, permission: 1 });
+    expect(verdict.unavailableReason).toBeUndefined();
+    expect(verdict.reasoning).toBe('goal: 0.91；orchestration: 0.88；tools: 0.87；permission: 0.95');
+  });
+
+  it('任一维落 0.35~0.65 ⇒ llmCall 被调一次、judgeModel=生成式', async () => {
+    // 反向变异：若弃权带被改成「中间也决断」，本例会零调用生成式。
+    const prescreen = stubPrescreen(decidingAnswers({ orchestration_pass: { noul: 0.5 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+    expect(verdict.dims).toEqual({ goal: 1, orchestration: 1, tools: 1, permission: 1 });
+  });
+
+  it('goal_met=cannot_tell ⇒ 升级', async () => {
+    const prescreen = stubPrescreen(decidingAnswers({ goal_met: { choice: 'cannot_tell', confidence: 0.4 } }));
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+  });
+
+  it('toolCalls 空 ⇒ 发给 prescreen 的 questions 里没有 tools_pass，tools 维 null，其余三维决断则不升级', async () => {
+    const turn: ReplayTurn = {
+      ...TURN,
+      blocks: TURN.blocks.filter((block) => block.type !== 'tool_call'),
+    };
+    const prescreen = stubPrescreen(decidingAnswers());
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn, signals: [], prescreen }, llmCall);
+
+    expect(Object.keys(prescreen.questions[0] ?? {})).not.toContain('tools_pass');
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(verdict.judgeModel).toBe(JEV_JUDGE_MODEL);
+    expect(verdict.dims.tools).toBeNull();
+    expect(verdict.dims).toMatchObject({ goal: 1, orchestration: 1, permission: 1 });
+  });
+
+  it('prescreen 抛错 ⇒ 升级且无 unavailableReason', async () => {
+    const prescreen: PostLaunchJudgePrescreen = async () => {
+      throw new Error('TYPESAFE_TIMEOUT');
+    };
+    const llmCall = vi.fn(async () => GENERATIVE);
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, llmCall);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(verdict.unavailableReason).toBeUndefined();
+    expect(verdict.judgeModel).toBe('zhipu/glm-4-flash');
+  });
+
+  it('prescreen 抛错且 llmCall 也抛 ⇒ judge_error（既有行为不变）', async () => {
+    const prescreen: PostLaunchJudgePrescreen = async () => {
+      throw new Error('jev down');
+    };
+    const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [], prescreen }, async () => {
+      throw new Error('quick model not configured');
+    });
+    expect(verdict.unavailableReason).toBe('judge_error');
+    expect(verdict.reasoning).toContain('quick model not configured');
   });
 });

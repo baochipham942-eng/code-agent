@@ -7,9 +7,19 @@
 //
 // 只问四个语义题（goal / 编排 / 工具 / 权限）。安全、产物两维由确定性信号映射，
 // 不问模型（ADR-063 §2「安全与产物以代码判为主，judge 不复判」）。
+//
+// 可选 Jev 初筛：同一份投影当 state，窄问决断则不再调生成式；任一应判维弃权
+// 或 Jev 抛错/形状不对则升级生成式。不新增 unavailable 出口。
 // ============================================================================
 import { createHash } from 'node:crypto';
 import type { ReplayTurn } from '../../../shared/contract/evaluationReplay';
+import {
+  JUDGE_PRESCREEN_BANDS,
+  JUDGE_PRESCREEN_QUESTIONS,
+  JEV_JUDGE_MODEL,
+  type JevAnswers,
+  type JevQuestionSpec,
+} from '../../../shared/constants/jevQuestions';
 import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 import {
   POST_LAUNCH_JUDGE_DIMENSIONS,
@@ -65,7 +75,7 @@ function delimit(value: unknown, closingTag: string): string {
   return JSON.stringify(value, null, 2).replaceAll(`</${closingTag}>`, `<\\/${closingTag}>`);
 }
 
-export type PostLaunchUserPromptSource = 'turn' | 'carried' | 'none';
+type PostLaunchUserPromptSource = 'turn' | 'carried' | 'none';
 
 function readUserPrompt(blocks: ReplayTurn['blocks']): string | undefined {
   const content = blocks.find((block) => block.type === 'user')?.content;
@@ -89,7 +99,7 @@ function resolveUserPrompt(
 }
 
 /** 轨迹投影：judge 需要的最小事实集，超长一律截断。Jev 初筛与生成式判官共用这一份。 */
-export function projectTurnForJudge(
+function projectTurnForJudge(
   turn: ReplayTurn,
   signals: DeterministicSignal[],
   carriedUserPrompt?: string,
@@ -222,23 +232,128 @@ function applyGoalAbstainWhenNone(
   return { ...verdict, dims: { ...verdict.dims, goal: null } };
 }
 
+export type PostLaunchJudgePrescreen = (
+  state: Record<string, unknown>,
+  questions: Record<string, JevQuestionSpec>,
+) => Promise<JevAnswers>;
+
 export interface PostLaunchJudgeInput {
   turn: ReplayTurn;
   signals: DeterministicSignal[];
   /** 同会话更早轮里最近一个 user block；当前轮已有 user block 时被忽略。 */
   carriedUserPrompt?: string;
+  /** Jev 初筛。测试打桩；生产由 scorer 在开关+key 齐时装配。缺省则直接走生成式。 */
+  prescreen?: PostLaunchJudgePrescreen;
+}
+
+function isEmptyToolCalls(state: Record<string, unknown>): boolean {
+  return !Array.isArray(state.toolCalls) || state.toolCalls.length === 0;
+}
+
+function buildPrescreenQuestions(
+  state: Record<string, unknown>,
+  source: PostLaunchUserPromptSource,
+): Record<string, JevQuestionSpec> {
+  const questions = { ...JUDGE_PRESCREEN_QUESTIONS };
+  if (isEmptyToolCalls(state)) delete questions.tools_pass;
+  if (source === 'none') {
+    delete questions.goal_met;
+    delete questions.goal_pass;
+  }
+  return questions;
+}
+
+function noulBand(noul: number): PostLaunchDimScore | 'bad' {
+  if (!Number.isFinite(noul) || noul < 0 || noul > 1) return 'bad';
+  if (noul >= JUDGE_PRESCREEN_BANDS.pass) return 1;
+  if (noul <= JUDGE_PRESCREEN_BANDS.fail) return 0;
+  return null;
+}
+
+function readNoul(answers: JevAnswers, key: string): { score: PostLaunchDimScore | 'bad'; noul: number } {
+  const answer = answers[key];
+  if (!answer || typeof answer !== 'object' || !('noul' in answer)) return { score: 'bad', noul: NaN };
+  const noul = (answer as { noul: number }).noul;
+  return { score: noulBand(noul), noul };
+}
+
+/**
+ * 四个应判维全部决断才返回 verdict；任一弃权 / cannot_tell / 形状不对 → 抛错或返回 null 以升级。
+ * toolCalls 空则 tools 不是应判维；userPromptSource=none 则 goal 不是应判维。
+ */
+function decidePrescreen(
+  state: Record<string, unknown>,
+  source: PostLaunchUserPromptSource,
+  answers: JevAnswers,
+): PostLaunchJudgeVerdict | null {
+  const dims: Record<PostLaunchJudgeDimension, PostLaunchDimScore> = {
+    goal: null,
+    orchestration: null,
+    tools: null,
+    permission: null,
+  };
+  const nouls: Partial<Record<PostLaunchJudgeDimension, number>> = {};
+
+  const take = (dimension: PostLaunchJudgeDimension, key: string): boolean => {
+    const { score, noul } = readNoul(answers, key);
+    if (score === 'bad') return false;
+    nouls[dimension] = noul;
+    if (score === null) return false;
+    dims[dimension] = score;
+    return true;
+  };
+
+  if (source !== 'none') {
+    const met = answers.goal_met;
+    if (!met || typeof met !== 'object' || !('choice' in met) || typeof (met as { choice: unknown }).choice !== 'string') {
+      return null;
+    }
+    if ((met as { choice: string }).choice === 'cannot_tell') return null;
+    if (!take('goal', 'goal_pass')) return null;
+  }
+  if (!take('orchestration', 'orchestration_pass')) return null;
+  if (!isEmptyToolCalls(state) && !take('tools', 'tools_pass')) return null;
+  if (!take('permission', 'permission_pass')) return null;
+
+  const reasoning = POST_LAUNCH_JUDGE_DIMENSIONS
+    .flatMap((dimension) => {
+      const noul = nouls[dimension];
+      return noul === undefined ? [] : [`${dimension}: ${noul.toFixed(2)}`];
+    })
+    .join('；');
+
+  return {
+    dims,
+    reasoning,
+    judgeModel: JEV_JUDGE_MODEL,
+    promptHash: getPostLaunchPromptHash(),
+    judgeVersion: POST_LAUNCH_JUDGE_VERSION,
+    rubricVersion: POST_LAUNCH_RUBRIC_VERSION,
+  };
 }
 
 /**
  * 对一轮真实会话出无题判决。一次调用问完四个维度——线上轮次量大，
  * 按维度各问一次会把成本乘四。
+ *
+ * 有 prescreen 时先走 Jev：全部应判维决断则不再调生成式；任一弃权或 Jev 失败则升级。
  */
 export async function judgePostLaunchTurn(
   input: PostLaunchJudgeInput,
   llmCall: PostLaunchJudgeLlmCall,
 ): Promise<PostLaunchJudgeVerdict> {
   const source = resolveUserPrompt(input.turn, input.carriedUserPrompt).userPromptSource;
+  const state = projectTurnForJudge(input.turn, input.signals, input.carriedUserPrompt);
   try {
+    if (input.prescreen) {
+      try {
+        const answers = await input.prescreen(state, buildPrescreenQuestions(state, source));
+        const screened = decidePrescreen(state, source, answers);
+        if (screened) return applyGoalAbstainWhenNone(screened, source);
+      } catch {
+        // Jev 抛错 / 超时 / 形状不对 ⇒ 视同全弃权，升级生成式。不新增 unavailable 出口。
+      }
+    }
     const verdict = parseVerdict(
       await llmCall(buildPostLaunchJudgePrompt(input.turn, input.signals, input.carriedUserPrompt)),
     );

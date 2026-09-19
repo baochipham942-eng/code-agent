@@ -7,6 +7,11 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 // 兜底：本用例不该产生任何数据目录访问；万一有，也只能落到临时目录。
 process.env.CODE_AGENT_DATA_DIR = path.join(os.tmpdir(), `postlaunch-scorer-${process.pid}`);
 
+const systemOneMock = vi.hoisted(() => vi.fn(async () => ({})));
+vi.mock('../../../src/host/model/providers/typesafeProvider', () => ({
+  systemOne: (...args: unknown[]) => systemOneMock(...args),
+}));
+
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { applySchema } from '../../../src/host/services/core/database/schema';
@@ -14,6 +19,7 @@ import { applyTelemetrySchema } from '../../../src/host/services/core/database/s
 import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
+import type { PostLaunchJudgePrescreen } from '../../../src/host/testing/judge/postLaunchJudge';
 import { DRY_RUN_JUDGE_VERSION, POST_LAUNCH_DEFAULTS, POST_LAUNCH_JUDGE_VERSION, clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
 import { estimateJudgeCost } from '../../../src/host/testing/postlaunch/postLaunchCost';
 import { resolveModelPrice } from '../../../src/shared/pricing/resolveModelPrice';
@@ -148,6 +154,8 @@ describe('上线后打分编排', () => {
 
   beforeEach(() => {
     database = db();
+    systemOneMock.mockClear();
+    vi.stubEnv('CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN', '');
   });
 
   it('③分母剔除：eval / 子代理 / 定时 / 心跳会话一行分数都不落', async () => {
@@ -846,6 +854,65 @@ describe('上线后打分编排', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].turn_id).toBe('chat-turn-1');
     expect(JSON.parse(rows[0].signals as string)).toContain('repeat_loop');
+  });
+
+  it('反向变异：prescreen 全部 cannot_tell / noul 0.5 ⇒ ≥3 轮 100% 走升级路径（llmCall 次数=轮数）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    for (let index = 1; index <= 3; index += 1) {
+      insertTurn(database, 'chat-1', `chat-turn-${index}`, index, NOW - HOUR + index);
+    }
+    const replays = {
+      'chat-1': replay('chat-1', [1, 2, 3].map((turnNumber) => ({
+        turnNumber,
+        startTime: NOW - HOUR + turnNumber,
+        blocks: [{ type: 'error', content: 'boom', timestamp: NOW - HOUR + turnNumber } as ReplayBlock],
+      }))),
+    };
+    const abstainAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'cannot_tell', confidence: 0.2 },
+      goal_pass: { noul: 0.5 },
+      orchestration_pass: { noul: 0.5 },
+      tools_pass: { noul: 0.5 },
+      permission_pass: { noul: 0.5 },
+      no_tools_but_needed: { noul: 0.5 },
+    });
+    const llmCall = vi.fn(async () => ALL_PASS);
+    await runPostLaunchScoring(deps(database, replays, llmCall, { prescreen: abstainAll }));
+
+    expect(llmCall).toHaveBeenCalledTimes(3);
+  });
+
+  it('开关 off ⇒ prescreen 从不装配（systemOne spy 零调用）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+    await runPostLaunchScoring(deps(database, replays, llmCall));
+
+    expect(systemOneMock).not.toHaveBeenCalled();
+    expect(llmCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('开关 on 但无 key ⇒ 同 off 且 stderr 一行 warn', async () => {
+    vi.stubEnv('CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN', '1');
+    vi.stubEnv('TYPESAFE_API_KEY', '');
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const llmCall = vi.fn(async () => ALL_PASS);
+    try {
+      await runPostLaunchScoring(deps(database, replays, llmCall));
+      expect(systemOneMock).not.toHaveBeenCalled();
+      expect(llmCall).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('TYPESAFE_API_KEY'));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('includeHeadless：headless 起源（含存量 cli_ 前缀）进分母；eval 即使开着也不进；默认两者都不进', async () => {

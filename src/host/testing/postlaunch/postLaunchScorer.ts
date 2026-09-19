@@ -23,8 +23,16 @@ import {
   type PostLaunchScoringResult,
   type PostLaunchTurnScore,
 } from '../../../shared/contract/postLaunchScore';
+import { JEV_JUDGE_MODEL, JEV_MODEL } from '../../../shared/constants/jevQuestions';
+import { resolveProviderApiKey } from '../../model/providers/providerResolution';
+import { systemOne } from '../../model/providers/typesafeProvider';
 import { classifyFailure, type FailureCodebook } from '../failureCodes';
-import { buildPostLaunchJudgePrompt, judgePostLaunchTurn, type PostLaunchJudgeLlmCall } from '../judge/postLaunchJudge';
+import {
+  buildPostLaunchJudgePrompt,
+  judgePostLaunchTurn,
+  type PostLaunchJudgeLlmCall,
+  type PostLaunchJudgePrescreen,
+} from '../judge/postLaunchJudge';
 import { computeTurnSignals } from './postLaunchSignals';
 import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay, redactPostLaunchReason,
   acquireScoringLock,
@@ -73,6 +81,11 @@ export interface PostLaunchScorerDeps {
   now: () => number;
   failureCodebook: FailureCodebook;
   onWarn?: (message: string, error?: unknown) => void;
+  /**
+   * Jev 初筛注入点（测试打桩）。生产缺省由 resolveJudgePrescreen 按开关+key 装配；
+   * 显式传入时不再读环境变量。
+   */
+  prescreen?: PostLaunchJudgePrescreen;
 }
 
 interface TurnRow {
@@ -167,6 +180,30 @@ function readUserPrompt(blocks: ReplayBlock[]): string | undefined {
   return typeof content === 'string' && content.trim() ? content : undefined;
 }
 
+/**
+ * Jev 判官初筛开关（默认关，与 CODE_AGENT_PERMISSION_LLM_CLASSIFIER /
+ * CODEX_SANDBOX_ENABLED 同一惯例：能力默认关，显式开启）。
+ */
+function isPostLaunchJevPrescreenEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN === '1';
+}
+
+const PRESCREEN_MISSING_KEY_WARN
+  = 'CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN 已开启但 TYPESAFE_API_KEY 缺失，Jev 初筛不生效（走生成式判官）';
+
+/** 开关 on 且 key 能解析到才装配 systemOne；否则 undefined（生成式路径）。 */
+function resolveJudgePrescreen(deps: PostLaunchScorerDeps): PostLaunchJudgePrescreen | undefined {
+  if (deps.prescreen) return deps.prescreen;
+  if (!isPostLaunchJevPrescreenEnabled()) return undefined;
+  const apiKey = resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL });
+  if (!apiKey) {
+    console.warn(PRESCREEN_MISSING_KEY_WARN);
+    deps.onWarn?.(PRESCREEN_MISSING_KEY_WARN);
+    return undefined;
+  }
+  return (state, questions) => systemOne(state, questions);
+}
+
 /** 同会话更早轮（按 startedAt）里最近一个非空 user block；没有则 undefined。 */
 function findCarriedUserPrompt(turn: ScorableTurn, sessionTurns: ScorableTurn[]): string | undefined {
   const earlier = sessionTurns
@@ -244,6 +281,7 @@ export async function runPostLaunchScoring(
   return result;
 
   async function scoreSessions(): Promise<void> {
+  const prescreen = resolveJudgePrescreen(deps);
   for (const session of listSessions(deps.db, since)) {
     const turnRows = deps.db
       .prepare(`
@@ -329,11 +367,14 @@ export async function runPostLaunchScoring(
 
       if (shouldJudge) {
         let judgeCompletion = '';
-        const verdict = await judgePostLaunchTurn({ turn: turn.turn, signals, carriedUserPrompt }, async (prompt) => {
-          const response = await deps.llmCall(prompt);
-          judgeCompletion = typeof response === 'string' ? response : response.content;
-          return response;
-        });
+        const verdict = await judgePostLaunchTurn(
+          { turn: turn.turn, signals, carriedUserPrompt, prescreen },
+          async (prompt) => {
+            const response = await deps.llmCall(prompt);
+            judgeCompletion = typeof response === 'string' ? response : response.content;
+            return response;
+          },
+        );
         dims = { ...dims, ...verdict.dims };
         reasoning = verdict.reasoning || reasoning;
         judgeModel = verdict.unavailableReason ? JUDGE_MODEL_UNAVAILABLE : verdict.judgeModel;
@@ -341,12 +382,18 @@ export async function runPostLaunchScoring(
         promptHash = verdict.promptHash;
         judgeVersion = verdict.judgeVersion;
         rubricVersion = verdict.rubricVersion;
-        const estimate = deps.estimateJudgeCostUsd(judgePrompt, judgeCompletion);
-        // 未知价的估算只用来守预算，不冒充刊例落库（resolveModelPrice §2「未知价不编造」）。
-        judgeCostUsd = estimate.assumed ? 0 : estimate.usd;
-        budgetCostUsd = estimate.usd;
-        spentUsd += estimate.usd;
-        result.costUsd += judgeCostUsd;
+        if (verdict.judgeModel === JEV_JUDGE_MODEL) {
+          // Jev 无刊例：走未知价路径，costUsd 0，不编 Jev 价目。预算也不拿生成式刊例冒充。
+          judgeCostUsd = 0;
+          budgetCostUsd = 0;
+        } else {
+          const estimate = deps.estimateJudgeCostUsd(judgePrompt, judgeCompletion);
+          // 未知价的估算只用来守预算，不冒充刊例落库（resolveModelPrice §2「未知价不编造」）。
+          judgeCostUsd = estimate.assumed ? 0 : estimate.usd;
+          budgetCostUsd = estimate.usd;
+          spentUsd += estimate.usd;
+          result.costUsd += judgeCostUsd;
+        }
         if (hasSignal) result.signalTurns += 1;
         else {
           result.sampledTurns += 1;

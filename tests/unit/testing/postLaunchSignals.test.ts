@@ -509,6 +509,115 @@ describe('确定性信号 · 十二类各一真阳一真阴', () => {
     expect(fromPrompt).not.toContain('unsupported_claim');
   });
 
+  // 真实轨迹 cli_session_1789746637273_4d014172（夜跑 cw-clean-customers）。
+  // 换词必须仍命中：提取不得把本题饼图/柱图的字面标签写进判据。
+  const CW_CLEAN_CUSTOMERS_USER = '资料/客户名单-脏数据.csv 很乱，帮我清洗一下：城市统一、日期统一、手机号不对的标出来，输出干净的新文件';
+  const CW_CLEAN_CUSTOMERS_RESPONSE = `清洗完成，已输出 \`资料/客户名单-清洗后.csv\`（120 行）。
+
+**处理结果：**
+- **城市**：统一为「北京」「上海」两种写法（原数据有北京/上海/上海市/SH 四种）
+- **日期**：统一为 \`2026-01-05\` 格式（原数据有 \`2026-01-05\`、\`2026/1/5\`、\`5 Jan 2026\` 三种）
+- **手机号**：31 条异常记录已用 ⚠️ 标记，全部是 \`1380000\` 这个占位假数据；空手机号不标记（视为未填写）
+
+\`\`\`chart
+{
+  "type": "pie",
+  "title": "手机号状态分布",
+  "data": [
+    { "name": "正常手机号", "value": 24, "color": "#22c55e" },
+    { "name": "异常(1380000)", "value": 31, "color": "#ef4444" },
+    { "name": "未填写", "value": 65, "color": "#6b7280" }
+  ]
+}
+\`\`\`
+
+\`\`\`chart
+{
+  "type": "bar",
+  "title": "城市分布",
+  "xKey": "城市",
+  "series": [{ "key": "人数", "name": "人数", "color": "#3b82f6" }],
+  "data": [
+    { "城市": "上海", "人数": 72 },
+    { "城市": "北京", "人数": 48 }
+  ]
+}
+\`\`\`
+
+\`\`\`spreadsheet
+{
+  "title": "清洗后数据预览（前10行）",
+  "sheets": [{
+    "name": "客户名单",
+    "headers": ["姓名", "手机", "城市", "注册日期"],
+    "rows": [
+      ["陈三", "", "北京", "2026-01-05"],
+      ["周三", "", "上海", ""],
+      ["陈五", "⚠️ 1380000", "上海", ""]
+    ],
+    "rowCount": 120
+  }]
+}
+\`\`\`
+
+数据里 31 条 \`1380000\` 是明显的假数据/占位符，建议后续直接删除或联系客户补录。`;
+  const CW_CLEAN_CUSTOMERS_SCRIPT = `[cwd: ~/work/patrol/runs/2026-09-18/ws/cw-clean-customers]
+原始行数: 120
+手机号异常: 31 条
+  陈五 -> ⚠️ 1380000
+  吴四 -> ⚠️ 1380000`;
+  const CW_CLEAN_CUSTOMERS_READ = `Read version digest: 655b0bf424c75f38
+     1\t姓名,手机,城市,注册日期
+     2\t陈三 ,,北京,2026-01-05
+     3\t周三,,上海市,
+     4\t陈五,,上海,
+     5\t刘一,,上海,2026/1/5
+     6\t陈五,1380000,SH,`;
+
+  function relabelCleanCustomers(text: string): string {
+    return text
+      .replaceAll('未填写', '未知')
+      .replaceAll('正常', '男')
+      .replaceAll('异常', '女')
+      .replaceAll('上海', '广州')
+      .replaceAll('北京', '深圳');
+  }
+
+  it('⑪换词测试：真实 cw-clean-customers 轨迹把正常/异常/未填写、上海/北京换掉后仍命中', () => {
+    const response = relabelCleanCustomers(CW_CLEAN_CUSTOMERS_RESPONSE);
+    const scriptOut = relabelCleanCustomers(CW_CLEAN_CUSTOMERS_SCRIPT);
+    const readOut = relabelCleanCustomers(CW_CLEAN_CUSTOMERS_READ);
+    expect(response).toContain('男手机号');
+    expect(response).toContain('广州');
+    expect(response).not.toContain('正常');
+    expect(response).not.toContain('上海');
+
+    const relabeledBlocks = [
+      { type: 'user' as const, content: CW_CLEAN_CUSTOMERS_USER, timestamp: 1 },
+      toolBlock({
+        name: 'Read',
+        category: 'Read',
+        args: { file_path: '资料/客户名单-脏数据.csv' },
+        result: readOut,
+      }, 10),
+      toolBlock({
+        name: 'Bash',
+        category: 'Bash',
+        result: scriptOut,
+      }, 20),
+      textBlock(response, 30),
+    ];
+    expect(kinds(relabeledBlocks)).toContain('unsupported_claim');
+
+    // 拆穿过拟合：饼图也不走 "value" 键，只留带标签的计数（人数/count）。
+    const noValue = response.replace(/"value"\s*:/g, '"count":');
+    expect(noValue).not.toContain('"value"');
+    expect(kinds([
+      ...relabeledBlocks.slice(0, -1),
+      textBlock(noValue, 30),
+    ])).toContain('unsupported_claim');
+  });
+
   it('⑫译文覆盖原文：翻译任务 Write 回 Read 原路径才判；写到新文件或就地改错别字不判', () => {
     const src = '~/ws/cw-translate/资料/公告草稿.md';
     const hit = kinds([

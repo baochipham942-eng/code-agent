@@ -223,15 +223,61 @@ function numberInText(value: string, haystack: string): boolean {
 }
 
 /**
- * 只抓「图表/分布数字」和「标了货币的报价」——普通表格里的 21.0%（工具里是 0.21）
- * 和带千分位的销售额（¥614,160）会被 result_summary 截断误伤，不进这一类。
- * cw-clean-customers：`"value": 24` / 未填写 65 / 上海 72。
+ * ```chart / ```spreadsheet / ```table 围栏里的 JSON 整数字段。
+ * 只认两位以上整数（"人数": 72），躲开 "复购率": 21.0 这种单元格百分比。
+ */
+function extractChartFenceIntegers(response: string): string[] {
+  const values: string[] = [];
+  const fence = /```(?:chart|spreadsheet|table)\b([\s\S]*?)```/gi;
+  let block = fence.exec(response);
+  while (block) {
+    const jsonInt = /"[^"]+"\s*:\s*(\d{2,})(?![0-9.])/g;
+    let match = jsonInt.exec(block[1]);
+    while (match) {
+      values.push(match[1]);
+      match = jsonInt.exec(block[1]);
+    }
+    block = fence.exec(response);
+  }
+  return values;
+}
+
+/**
+ * 非表格、非围栏行上，连续出现 ≥2 个「标签 + 整数」视为分布计数。
+ * 标签是任意汉字或拉丁词，不枚举「正常/上海」。`广州 72 / 深圳 48` 与
+ * `未知 65 男 24` 都能抓；markdown 金额表（行首 `|`）不进。
+ */
+function extractDistributionCounts(response: string): string[] {
+  const values: string[] = [];
+  const withoutFences = response.replace(/```[\s\S]*?```/g, '\n');
+  const pairRe = /(?:[\u4e00-\u9fff]{1,12}|[A-Za-z][A-Za-z0-9_-]{1,15})[^0-9\n]{0,12}(\d{2,})(?![0-9.])/g;
+  for (const line of withoutFences.split('\n')) {
+    if (line.trim().startsWith('|')) continue;
+    const pairs: string[] = [];
+    pairRe.lastIndex = 0;
+    let match = pairRe.exec(line);
+    while (match) {
+      pairs.push(match[1]);
+      match = pairRe.exec(line);
+    }
+    if (pairs.length >= 2) values.push(...pairs);
+  }
+  return values;
+}
+
+/**
+ * 只抓「图表/表格/分布结构里的带标签数字」和「标了货币的报价」——普通表格里的
+ * 21.0%（工具里是 0.21）和带千分位的销售额（¥614,160）会被 result_summary
+ * 截断误伤，不进这一类。
+ * 提取不枚举具体中文词：饼图 `"value": N`、围栏 JSON 整数字段、分布短句里的
+ * 标签计数，换「男/女/未知」「广州/深圳」仍能抓到。
  * cw-research-compare：`~$20/月` 在检索全灭后凭空出现。
  */
 function collectUnsupportedClaims(response: string, supportedHaystack: string, userPrompt: string): string[] {
   const found: string[] = [];
   const pushIfUnsupported = (value: string): void => {
     if (!value) return;
+    if (found.includes(value)) return;
     if (numberInText(value, userPrompt) || numberInText(value, supportedHaystack)) return;
     if (value.includes('.') && numberInText(value.replace(/\.0+$/, ''), supportedHaystack)) return;
     const asRatio = Number(value);
@@ -243,8 +289,6 @@ function collectUnsupportedClaims(response: string, supportedHaystack: string, u
   };
   const patterns = [
     /"value"\s*:\s*(\d+(?:\.\d+)?)/g,
-    /(?:正常|异常|未填写)[^0-9]{0,12}(\d{2,})/g,
-    /(?:上海|北京)[^0-9]{0,6}(\d{2,})/g,
     /~?\$\s*(\d+(?:\.\d+)?)\s*(?:\/\s*月|\/mo| per month)?/gi,
   ];
   for (const re of patterns) {
@@ -254,6 +298,8 @@ function collectUnsupportedClaims(response: string, supportedHaystack: string, u
       match = re.exec(response);
     }
   }
+  for (const value of extractChartFenceIntegers(response)) pushIfUnsupported(value);
+  for (const value of extractDistributionCounts(response)) pushIfUnsupported(value);
   return found;
 }
 

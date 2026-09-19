@@ -13,8 +13,20 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     baseUrl: MODEL_API_ENDPOINTS.deepseek,
     models: [
       {
+        id: 'deepseek-flash',
+        name: 'DeepSeek V4.1 Flash',
+        capabilities: ['general', 'code'],
+        maxTokens: 32768,
+        supportsTool: true,
+        // 模型本身原生视觉，但 Responses 输入转换目前会丢掉非文本 part。
+        // 在 responsesProvider 能传图之前，不能让 UI 以为能发图。
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'payg',
+      },
+      {
         id: 'deepseek-v4-flash',
-        name: 'DeepSeek V4 Flash',
+        name: 'DeepSeek V4 Flash（兼容名）',
         capabilities: ['general', 'code'],
         maxTokens: 32768,
         supportsTool: true,

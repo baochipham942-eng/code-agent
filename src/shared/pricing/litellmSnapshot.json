@@ -77,10 +77,15 @@
       "inputPerMTok": 0.3,
       "outputPerMTok": 2.5
     },
+    "deepseek/deepseek-flash": {
+      "litellmKey": "deepseek-flash",
+      "inputPerMTok": 0.3,
+      "outputPerMTok": 1.2
+    },
     "deepseek/deepseek-v4-flash": {
       "litellmKey": "deepseek-v4-flash",
-      "inputPerMTok": 0.14,
-      "outputPerMTok": 0.28
+      "inputPerMTok": 0.3,
+      "outputPerMTok": 1.2
     },
     "deepseek/deepseek-v4-pro": {
       "litellmKey": "deepseek-v4-pro",
@@ -182,10 +187,15 @@
       "inputPerMTok": 0.75,
       "outputPerMTok": 4.5
     },
+    "openrouter/deepseek/deepseek-flash": {
+      "litellmKey": "deepseek/deepseek-flash",
+      "inputPerMTok": 0.3,
+      "outputPerMTok": 1.2
+    },
     "openrouter/deepseek/deepseek-v4-flash": {
       "litellmKey": "deepseek/deepseek-v4-flash",
-      "inputPerMTok": 0.14,
-      "outputPerMTok": 0.28
+      "inputPerMTok": 0.3,
+      "outputPerMTok": 1.2
     },
     "openrouter/deepseek/deepseek-v4-pro": {
       "litellmKey": "deepseek/deepseek-v4-pro",

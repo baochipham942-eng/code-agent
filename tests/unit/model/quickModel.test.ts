@@ -321,7 +321,7 @@ describe('thinking 模型回落时自动关闭思考', () => {
     expect(body.thinking).toBeUndefined();
   });
 
-  it.each(['deepseek-v4-flash', 'deepseek-v4-pro'])(
+  it.each(['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro'])(
     '%s 用作记忆模型时关闭 thinking，正文不会被 reasoning_content 挤空',
     async (model) => {
       mockConfig({

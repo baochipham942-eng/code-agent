@@ -9,7 +9,7 @@ process.env.CODE_AGENT_DATA_DIR = path.join(os.tmpdir(), `postlaunch-scorer-${pr
 
 const systemOneMock = vi.hoisted(() => vi.fn(async () => ({})));
 vi.mock('../../../src/host/model/providers/typesafeProvider', () => ({
-  systemOne: (...args: unknown[]) => systemOneMock(...args),
+  systemOne: systemOneMock,
 }));
 
 vi.unmock('better-sqlite3');

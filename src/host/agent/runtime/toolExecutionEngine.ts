@@ -1,4 +1,4 @@
-import { getToolAttemptTrace } from './toolAttemptTrace';
+import { getToolAttemptTrace, shouldFreezeNonReadWhileAwaitingUser, buildAwaitingUserBlockedResult, AWAITING_USER_FREEZE_NOTICE } from './toolAttemptTrace';
 import { mintUserTurnOrigin } from '../messageOrigin';
 import { attachDocumentOrigin, describeDocumentEvidenceProblems, documentClaimPreflight } from './documentEvidenceBoundary';
 // ============================================================================
@@ -16,7 +16,6 @@ import type {
   ToolResult,
   AgentEvent,
 } from '../../../shared/contract';
-import { AgentFailureCode } from '../../../shared/contract';
 import { getLangfuseService } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { EXIT_ROLE_FLOW_TOOL_NAME } from '../../tools/modules/roleAuthoring/exitRoleFlow.schema';
@@ -375,20 +374,9 @@ export class ToolExecutionEngine {
       this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
       return toolResult;
     };
-    /** preflight 拒绝（不 dispatch）结果的统一簿记：遥测 + 事件 + 执行日志三件套。 */
+    /** preflight 拒绝（不 dispatch）结果的统一簿记：在 emitBlockedToolResult 上补执行日志。 */
     const emitBlockedToolResultWithLog = (toolResult: ToolResult): ToolResult => {
-      emitToolCallStart();
-      this.ctx.telemetryAdapter?.onToolCallEnd(
-        this.ctx.turn.currentTurnId,
-        toolCall.id,
-        false,
-        toolResult.error,
-        toolResult.duration || 0,
-        undefined,
-        toolResult.metadata,
-      );
-      const observed = sanitizeToolResultForObservation(toolCall, toolResult);
-      this.ctx.onEvent({ type: 'tool_call_end', data: observed });
+      emitBlockedToolResult(toolResult);
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
         try {
           this.ctx.onToolExecutionLog({
@@ -396,7 +384,7 @@ export class ToolExecutionEngine {
             toolCallId: toolCall.id,
             toolName: toolCall.name,
             args: sanitizeToolArgumentsForObservation(toolCall) as Record<string, unknown>,
-            result: observed,
+            result: sanitizeToolResultForObservation(toolCall, toolResult),
           });
         } catch { /* never let logging break tool execution */ }
       }
@@ -636,26 +624,7 @@ export class ToolExecutionEngine {
         'tool-argument-repair',
       );
 
-      emitToolCallStart();
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
-      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
-      // Tool execution logging (non-blocking)
-      if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
-        try {
-          const safeToolResult = sanitizeToolResultForObservation(toolCall, toolResult);
-          this.ctx.onToolExecutionLog({
-            sessionId: this.ctx.sessionId,
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            args: sanitizeToolArgumentsForObservation(toolCall) as Record<string, unknown>,
-            result: safeToolResult,
-          });
-        } catch {
-          // Never let logging break tool execution
-        }
-      }
-
-      return toolResult;
+      return emitBlockedToolResultWithLog(toolResult);
     }
 
     // 清理工具参数中的 XML 标签残留（如 <arg_key>command</arg_key>）
@@ -665,52 +634,18 @@ export class ToolExecutionEngine {
     // missing required + 顶层 type，失败时把 schema 信息回灌给模型自我修正
     const definition = getToolDefinitionWithCloudMeta(toolCall.name);
 
-    // 问句未答冻结（N-SAFETY-DENY-THEN-DELETE）：无头环境里 AskUserQuestion 无人应答时，
-    // 宿主在工具返回里承诺过「不要创建、修改或删除任何文件」。这句承诺此前只存在于
-    // 提示词，模型可以无视（2026-09-18 夜跑 rm -rf 48 文件实付）。这里升成引擎硬约束：
-    // 冻结期内一切非 read 级工具不再 dispatch，与权限档无关（bypass 档同样冻结）。
-    // AskUserQuestion 自身声明 requiresPermission:false（用户确认入口），允许再问；
-    // 解析不到定义的工具按非 read 处理——冻结，fail-safe 方向。
-    if (
-      getToolAttemptTrace(this.ctx).awaitingUserInput
-      && definition?.permissionLevel !== 'read'
-      && definition?.requiresPermission !== false
-    ) {
+    // 问句未答冻结：无头 AskUserQuestion 无人应答后，非 read 工具不再 dispatch（bypass 同冻）。
+    if (shouldFreezeNonReadWhileAwaitingUser(getToolAttemptTrace(this.ctx).awaitingUserInput, definition)) {
       logger.warn('[AgentLoop] Tool blocked while awaiting user input (unanswered AskUserQuestion)', {
         tool: toolCall.name,
       });
       logCollector.tool('WARN', `Tool ${toolCall.name} blocked while awaiting user input`, {
         toolCallId: toolCall.id,
       });
-      const toolResult: ToolResult = {
-        toolCallId: toolCall.id,
-        success: false,
-        error: '<awaiting-user-input>\n'
-          + '上一条 AskUserQuestion 没有得到用户回答（无头环境按无用户响应处理）。\n'
-          + '本轮禁止创建、修改、删除文件以及其它执行类操作。\n'
-          + '请基于当前已知信息给出分析与建议并结束本轮，等待用户下一步指示。\n'
-          + '</awaiting-user-input>',
-        duration: Date.now() - startTime,
-        metadata: {
-          blocked: true,
-          awaitingUserInput: true,
-          executionStarted: false,
-          // 与 toolExecutor 的权限类拒绝同标记：eval 记录器据此给 toolExecutions 落
-          // permissionDenied=true，no_forbidden_tool_call 的 count_denied:false 才能把
-          // 「被引擎拦下的尝试」与「真执行」区分开。
-          failureCode: AgentFailureCode.PermissionDenied,
-        },
-      };
+      const toolResult = buildAwaitingUserBlockedResult(toolCall.id, Date.now() - startTime);
       if (!this.awaitingUserNoticeInjected) {
         this.awaitingUserNoticeInjected = true;
-        this.contextAssembly.injectSystemMessage(
-          '<awaiting-user-input-freeze>\n'
-          + '上一条 AskUserQuestion 在无头环境里没有得到用户回答。在本轮结束、用户给出下一步指示之前，'
-          + '创建/修改/删除/执行类工具一律被引擎拦截；只读分析与 AskUserQuestion 本身不受影响。\n'
-          + '请基于当前已知信息给出分析与建议并结束本轮。\n'
-          + '</awaiting-user-input-freeze>',
-          'tool-policy-guard',
-        );
+        this.contextAssembly.injectSystemMessage(AWAITING_USER_FREEZE_NOTICE, 'tool-policy-guard');
       }
       return emitBlockedToolResultWithLog(toolResult);
     }

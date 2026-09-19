@@ -11,6 +11,9 @@
 // 但 buildPostLaunchReport 不认它们，不进生产报表。
 // 合成流量评分与生产评分共用当日 --budget / --sample 账本，跑合成流量时显式给
 // --budget/--sample，否则会吃掉生产抽样额度。
+// 升版影响：getScoredTurnIds 按 judge_version 判已评，旧版分数行留表；下次生产跑会在
+// --days 窗口内把未评当前版本的轮重新评，受当日 --budget/--sample 封顶。
+// buildPostLaunchReport 默认只读当前 judge 版本，重评完成前报表轮数会变少，不是数据丢了。
 // 直接开 SQLite 文件（默认 $CODE_AGENT_DATA_DIR/code-agent.db，未设置则 ~/.code-agent），
 // 不启 Electron、不启 DatabaseService——CLI 只需要读遥测表和写分数表。
 // ============================================================================

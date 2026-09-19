@@ -105,8 +105,8 @@ export function isPostLaunchScorableSession(
   return !session.id.startsWith(LEGACY_HEADLESS_ID_PREFIX);
 }
 
-/** judge 提示词或维度定义变了就要 +1；不同版本的分数不可相比（ADR-063 §2）。 */
-export const POST_LAUNCH_JUDGE_VERSION = 'postlaunch-judge-v1';
+/** 提示词变了就 +1；不同版本的分数不可相比（ADR-063 §2）。维度/口径变了只动 POST_LAUNCH_RUBRIC_VERSION。 */
+export const POST_LAUNCH_JUDGE_VERSION = 'postlaunch-judge-v2';
 /** dry-run 落表用的版本号：真评按 POST_LAUNCH_JUDGE_VERSION 查跳过时看不到它 */
 export const DRY_RUN_JUDGE_VERSION = 'dry-run';
 /** judge_model 哨兵：叫了打分模型但它没给出判决（没配好 / 报错 / 返回解析不了）。 */

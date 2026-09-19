@@ -618,6 +618,36 @@ describe('确定性信号 · 十二类各一真阳一真阴', () => {
     ])).toContain('unsupported_claim');
   });
 
+  // 只能由 extractDistributionCounts 抓到：普通文本行、不在 ```chart 围栏、没有 "value":。
+  // extractChartFenceIntegers 与 "value" 正则都看不见这条。
+  it('⑪分布计数：普通文本行上的标签+整数无出处才判；工具输出里有这两个数不判', () => {
+    const prose = '城市分布：广州 93 深圳 27';
+    expect(prose).not.toMatch(/```(?:chart|spreadsheet|table)\b/i);
+    expect(prose).not.toMatch(/"value"\s*:/);
+
+    const hit = kinds([
+      toolBlock({
+        name: 'Bash',
+        category: 'Bash',
+        args: { command: 'python3' },
+        result: '原始行数: 120\n手机号异常: 31 条',
+      }, 10),
+      textBlock(prose, 20),
+    ]);
+    expect(hit).toContain('unsupported_claim');
+
+    const sourced = kinds([
+      toolBlock({
+        name: 'Bash',
+        category: 'Bash',
+        args: { command: 'python3' },
+        result: '广州 93\n深圳 27',
+      }, 10),
+      textBlock(prose, 20),
+    ]);
+    expect(sourced).not.toContain('unsupported_claim');
+  });
+
   it('⑫译文覆盖原文：翻译任务 Write 回 Read 原路径才判；写到新文件或就地改错别字不判', () => {
     const src = '~/ws/cw-translate/资料/公告草稿.md';
     const hit = kinds([

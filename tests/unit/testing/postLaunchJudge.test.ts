@@ -168,7 +168,7 @@ describe('postLaunchJudge · 无题契约', () => {
     expect(goalLine).toContain('连接器不可用');
     expect(goalLine).toContain('替代物');
     expect(goalLine).not.toContain('仅当');
-    expect(POST_LAUNCH_JUDGE_VERSION).toBe('postlaunch-judge-v4');
+    expect(POST_LAUNCH_JUDGE_VERSION).toBe('postlaunch-judge-v5');
   });
 
   // R2 ①：orchestration 必须把「基础设施失败的换路重试」与「模型空转」分开——

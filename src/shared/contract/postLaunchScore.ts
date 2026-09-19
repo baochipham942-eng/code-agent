@@ -112,8 +112,11 @@ export function isPostLaunchScorableSession(
  * 提示词或维度定义变了就 +1；只改评分口径不改提示词时只动 POST_LAUNCH_RUBRIC_VERSION（ADR-063 §2）。不同版本的分数不可相比。
  * v4（N-POSTLAUNCH-SIGNALS-DEAD-R2 漏判）：goal 补「环境挡住原请求 + 诚实替代物」例外；
  * 生成式仍评四维，但 tools 出处/矛盾/覆盖原文由确定性信号压过 judge。
+ * v5（同单第四轮）：unsupported_claim 提取改为围栏 JSON 整数 + 分布标签计数，不枚举题面词。
+ * 提示词没改，但仍升 judge 版本：telemetry_turn_scores 主键是 turn_id，getScoredTurnIds
+ * 按 judge_version 跳过，同版本重评会覆盖上一轮，回归对照做不成。
  */
-export const POST_LAUNCH_JUDGE_VERSION = 'postlaunch-judge-v4';
+export const POST_LAUNCH_JUDGE_VERSION = 'postlaunch-judge-v5';
 /** dry-run 落表用的版本号：真评按 POST_LAUNCH_JUDGE_VERSION 查跳过时看不到它 */
 export const DRY_RUN_JUDGE_VERSION = 'dry-run';
 /** judge_model 哨兵：叫了打分模型但它没给出判决（没配好 / 报错 / 返回解析不了）。 */

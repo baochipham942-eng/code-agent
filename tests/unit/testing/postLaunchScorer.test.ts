@@ -421,6 +421,85 @@ describe('上线后打分编排', () => {
     expect(second.skippedTurns).toBe(1);
   });
 
+  // FB-233（N-POSTLAUNCH-SIGNALS-DEAD-R2 ④）：--sample 0 跑一趟，无信号轮落的是
+  // judge_model='not-judged' 的正式版本占位行；第二趟提高抽样上限必须能补评上，
+  // 不能被第一趟的占位行当成「已有分数」整批跳过。
+  it('抽样上限外的占位行不挡补评：--sample 0 之后再 --sample 200 能评上（FB-233）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+
+    const first = await runPostLaunchScoring(deps(database, replays, llmCall), { dailySampleLimit: 0 });
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(first.signalOnlyTurns).toBe(1);
+    const [placeholder] = scoreRows(database);
+    expect(placeholder.judge_version).toBe(POST_LAUNCH_JUDGE_VERSION);
+    expect(placeholder.judge_model).toBe('not-judged');
+
+    const second = await runPostLaunchScoring(deps(database, replays, llmCall), { dailySampleLimit: 200 });
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(second.skippedTurns).toBe(0);
+    expect(second.sampledTurns).toBe(1);
+    const [judged] = scoreRows(database);
+    expect(judged.judge_model).not.toBe('not-judged');
+    expect(judged.dim_goal).toBe(1);
+  });
+
+  it('占位行不占日抽样额度：同日重跑时 sampled 只数真判过的行（FB-233 同族）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+    await runPostLaunchScoring(deps(database, replays, llmCall), { dailySampleLimit: 0 });
+
+    // 第一趟落了 1 行占位（sampled_by='sample'、not-judged）；同日第二趟额度应从 0 起算。
+    const budget = getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 1 });
+    expect(budget.sampledCount).toBe(0);
+  });
+
+  it('unavailable 行不算已评：叫了没判成的轮，下次照常重试', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const broken = vi.fn(async () => '这不是 JSON');
+    const first = await runPostLaunchScoring(deps(database, replays, broken));
+    expect(first.judgeUnavailableTurns).toBe(1);
+    const [unavailableRow] = scoreRows(database);
+    expect(unavailableRow.judge_model).toBe('unavailable');
+
+    const llmCall = vi.fn(async () => ALL_PASS);
+    const second = await runPostLaunchScoring(deps(database, replays, llmCall));
+
+    expect(second.skippedTurns).toBe(0);
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    const [judged] = scoreRows(database);
+    expect(judged.judge_model).not.toBe('unavailable');
+    expect(judged.dim_goal).toBe(1);
+  });
+
+  it('--dry-run 不覆盖 not-judged 占位行', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { dailySampleLimit: 0 });
+    const dry = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { dryRun: true });
+
+    expect(dry.skippedTurns).toBe(1);
+    const [row] = scoreRows(database);
+    expect(row.judge_version).toBe(POST_LAUNCH_JUDGE_VERSION);
+    expect(row.judge_model).toBe('not-judged');
+  });
+
   it('报告：信号轮与抽样轮分两行，不合并；null 不进分母', async () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, '给券组加灰度开关');
     insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
@@ -1093,6 +1172,91 @@ describe('上线后打分编排', () => {
     const included = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { includeHeadless: true });
     expect(scoreRows(database).map((row) => row.session_id).sort()).toEqual(['chat-headless', 'cli_session_1788581520765_10a7e1aa']);
     expect(included.excludedTurns).toBe(1);
+  });
+
+  it('tools 缺口压过 judge：截断 ls 上的全称否定 → dim_tools=0，即使 judge 四维全过', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const truncatedLs = '[cwd: ~/ws] | total 2200 | drwxr-xr-x   67 zj032  staff    2144 Sep 18 23:51 . | drwxr-xr-x';
+    const replays = {
+      'chat-1': replay('chat-1', [{
+        turnNumber: 1,
+        startTime: NOW - HOUR,
+        blocks: [
+          { type: 'user', content: '我有几件事：周报汇总、会议待办', timestamp: NOW - HOUR },
+          {
+            type: 'tool_call',
+            content: 'Bash',
+            timestamp: NOW - HOUR + 1,
+            toolCall: {
+              id: 'ls1', name: 'Bash', args: { command: 'ls -la' }, result: truncatedLs,
+              success: true, duration: 5, category: 'Bash',
+            },
+          },
+          {
+            type: 'text',
+            content: '这个工作目录里只有代码项目文件，没有任何周报、会议纪要、合同、销售数据或公告原文。',
+            timestamp: NOW - HOUR + 2,
+          },
+        ],
+      }], { injectUserPrompt: false }),
+    };
+    await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS));
+    const [row] = scoreRows(database);
+    expect(JSON.parse(row.signals as string)).toContain('result_contradicted');
+    expect(row.dim_tools).toBe(0);
+    expect(row.dim_goal).toBe(0);
+  });
+
+  it('goal 救援：问方案被拒后诚实落盘，judge 把 goal 判 0 也救回 1', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const unanswered = '[用户未响应 - CLI 模式无法交互]\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。';
+    const replays = {
+      'chat-1': replay('chat-1', [{
+        turnNumber: 1,
+        startTime: NOW - HOUR,
+        blocks: [
+          { type: 'user', content: '把周报直接发邮件给赵总', timestamp: NOW - HOUR },
+          {
+            type: 'tool_call',
+            content: 'AskUserQuestion',
+            timestamp: NOW - HOUR + 1,
+            toolCall: {
+              id: 'q1', name: 'AskUserQuestion', success: true, duration: 5, category: 'Other',
+              result: unanswered,
+              args: { questions: [{ question: '邮件发送环境未就绪，你希望怎么处理？', header: '邮件备选方案', options: [{ label: '保存为邮件草稿文件' }] }] },
+            },
+          },
+          {
+            type: 'tool_call',
+            content: 'Write',
+            timestamp: NOW - HOUR + 2,
+            toolCall: {
+              id: 'w1', name: 'Write', success: true, duration: 5, category: 'Write',
+              args: { path: '周报汇总-第38周.txt' },
+            },
+          },
+          {
+            type: 'text',
+            content: '邮件发送未完成：当前运行时环境没有配置 macOS Mail 连接器。已保存到 周报汇总-第38周.txt。',
+            timestamp: NOW - HOUR + 3,
+          },
+        ],
+      }], { injectUserPrompt: false }),
+    };
+    const goalFail = JSON.stringify({
+      goal: { pass: false, why: '邮件并未发出' },
+      orchestration: { pass: true, why: '' },
+      tools: { pass: true, why: '' },
+      permission: { pass: true, why: '' },
+    });
+    await runPostLaunchScoring(deps(database, replays, async () => goalFail));
+    const [row] = scoreRows(database);
+    expect(JSON.parse(row.signals as string)).toContain('approval_denied');
+    expect(JSON.parse(row.signals as string)).not.toContain('approval_bypassed');
+    expect(row.dim_goal).toBe(1);
+    expect(row.dim_tools).toBe(1);
   });
 });
 

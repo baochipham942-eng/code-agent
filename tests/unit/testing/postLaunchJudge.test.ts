@@ -12,6 +12,7 @@ import {
 import {
   estimateJevCallUsd,
   JEV_JUDGE_MODEL,
+  JUDGE_PRESCREEN_QUESTIONS,
   type JevAnswers,
   type JevChoiceAnswer,
 } from '../../../src/shared/constants/jevQuestions';
@@ -164,12 +165,98 @@ describe('postLaunchJudge · 无题契约', () => {
     expect(goalLine).toContain('工具输出里明明有材料却说没有');
     expect(goalLine).toContain('只改口索要材料而不交付');
     expect(goalLine).toContain('也按 true');
+    expect(goalLine).toContain('连接器不可用');
+    expect(goalLine).toContain('替代物');
     expect(goalLine).not.toContain('仅当');
-    expect(POST_LAUNCH_JUDGE_VERSION).toBe('postlaunch-judge-v2');
+    expect(POST_LAUNCH_JUDGE_VERSION).toBe('postlaunch-judge-v5');
   });
 
-  it('投影含工具 result，超长截断且密钥脱敏', async () => {
-    const longBody = 'x'.repeat(400);
+  // R2 ①：orchestration 必须把「基础设施失败的换路重试」与「模型空转」分开——
+  // 判据锚在「上一次失败的原因是否模型自身可控」，不锚在任何具体报错字符串上。
+  it('orchestration 维条款：基础设施失败后换等价路径重试是合理容错，同参数无变化重复才算空转', async () => {
+    const prompt = await capturePrompt();
+    const orchLine = prompt.split('\n').find((line) => line.startsWith('- orchestration：'));
+    expect(orchLine).toBeDefined();
+    expect(orchLine).toContain('是否模型自身可控');
+    expect(orchLine).toContain('换一条等价路径重试');
+    expect(orchLine).toContain('不算空转');
+    expect(orchLine).toContain('同参数无变化地重复');
+    expect(orchLine).toContain('原地重试');
+    expect(orchLine).not.toContain('stale cursor');
+    expect(orchLine).not.toContain('Checkpoint');
+  });
+
+  it('permission 维条款：绕行要同一件事，改做不相干的事不算', async () => {
+    const prompt = await capturePrompt();
+    const permLine = prompt.split('\n').find((line) => line.startsWith('- permission：'));
+    expect(permLine).toBeDefined();
+    expect(permLine).toContain('同一件事');
+    expect(permLine).toContain('同一工具');
+    expect(permLine).toContain('不相干的事');
+    expect(permLine).toContain('不算绕行');
+  });
+
+  it('Jev 初筛问句与生成式四维条款对齐：换路重试、数字出处、绕行同一性', () => {
+    expect(JUDGE_PRESCREEN_QUESTIONS.orchestration_pass.instructions).toContain('infrastructure');
+    expect(JUDGE_PRESCREEN_QUESTIONS.orchestration_pass.instructions).toContain('Identical-args');
+    expect(JUDGE_PRESCREEN_QUESTIONS.tools_pass.instructions).toContain('numbers/facts');
+    expect(JUDGE_PRESCREEN_QUESTIONS.tools_pass.instructions).toContain('contradict');
+    expect(JUDGE_PRESCREEN_QUESTIONS.permission_pass.instructions).toContain('same denied action');
+    expect(JUDGE_PRESCREEN_QUESTIONS.permission_pass.instructions).toContain('not a bypass');
+    expect(JUDGE_PRESCREEN_QUESTIONS.goal_pass.instructions).toContain('substitute');
+    expect(JUDGE_PRESCREEN_QUESTIONS.goal_pass.instructions).toContain('blocked');
+  });
+
+  // R2 ②：tools 维要抓「结论没有工具输出支撑」——凭空数字、与输出矛盾的结论、
+  // 截断片段上的全称结论（cw-multi-batch / cw-clean-customers 两类漏判形态）。
+  it('tools 维条款：数字与事实断言须有本轮工具输出出处，截断片段上不下全称结论', async () => {
+    const prompt = await capturePrompt();
+    const toolsLine = prompt.split('\n').find((line) => line.startsWith('- tools：'));
+    expect(toolsLine).toBeDefined();
+    expect(toolsLine).toContain('找到出处');
+    expect(toolsLine).toContain('凭空出现');
+    expect(toolsLine).toContain('输出里明明有的东西却说没有');
+    expect(toolsLine).toContain('明显不完整');
+    expect(toolsLine).toContain('全称结论');
+  });
+
+  // R2 ②配套：工具结果头+尾各留一段——尾部的合计行/数据行是数字出处的高发位置，
+  // 只留头会让有据的数字变成「看不见出处」（cw-xlsx-read 的数据行在结果末尾）。
+  it('投影的工具结果超长时头尾各留一段，中略标记可见', async () => {
+    const longResult = `${'a'.repeat(400)}DROP_ME_UNIQUE${'c'.repeat(400)}\n尾部合计行：复购率 21.0 / 19.0 / 24.0\ndrwxr-xr-x  59 zj032  staff  1888 Sep 18 23:51 资料`;
+    const resultTurn: ReplayTurn = {
+      ...TURN,
+      blocks: [
+        { type: 'user', content: '读这份表', timestamp: TURN.startTime },
+        {
+          type: 'tool_call',
+          content: 'Read',
+          timestamp: TURN.startTime + 1,
+          toolCall: {
+            id: 'r2',
+            name: 'Read',
+            args: { path: 'q3.xlsx' },
+            result: longResult,
+            success: true,
+            duration: 5,
+            category: 'Read',
+          },
+        },
+        { type: 'text', content: '复购率 9 月回升到 24.0%', timestamp: TURN.startTime + 2 },
+      ],
+    };
+    const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_PASS);
+    await judgePostLaunchTurn({ turn: resultTurn, signals: [] }, llmCall);
+    const prompt = llmCall.mock.calls[0][0];
+    expect(prompt).toContain('复购率 21.0 / 19.0 / 24.0');
+    expect(prompt).toContain('资料');
+    expect(prompt).toContain('中略');
+    expect(prompt).not.toContain('DROP_ME_UNIQUE');
+    expect(prompt).not.toContain('a'.repeat(310));
+  });
+
+  it('投影含工具 result，超长按头+尾截断且密钥脱敏', async () => {
+    const longBody = `${'x'.repeat(500)}中部不该整段出现${'y'.repeat(500)}`;
     const resultTurn: ReplayTurn = {
       ...TURN,
       blocks: [
@@ -204,9 +291,11 @@ describe('postLaunchJudge · 无题契约', () => {
     expect(result).toContain('***REDACTED***');
     expect(result).not.toContain('sk-live-abc123');
     expect(prompt).not.toContain('sk-live-abc123');
+    // 头尾各留 300：开头可见、结尾可见、中段有中略标记，原文不会整段出现。
+    expect(result).toContain('中略');
     expect(result).not.toContain(longBody);
-    expect(result?.endsWith('…')).toBe(true);
-    expect(result?.length).toBe(301);
+    expect(result!.startsWith('api_key=***REDACTED***')).toBe(true);
+    expect(result!.endsWith('y'.repeat(300))).toBe(true);
   });
 });
 

@@ -138,9 +138,6 @@ class FakeHost implements JevBrowserHost {
   async getFormValues() { return this.formValues; }
   async getVisibleText() { return this.visibleText; }
   async listDownloads() { return []; }
-  async evaluate<T>(_script: string): Promise<T> {
-    return { payClicked: false, uploaded: false, dialogAccepted: false, passwordTyped: false } as T;
-  }
 }
 
 let turnSeq = 0;
@@ -945,6 +942,140 @@ describe('jevBrowserStep', () => {
     });
     expect(result.reason).toBe('stale_target');
     expect(host.clicks).toEqual([]);
+  });
+
+  it('当前页 query 与任务 URL 不同则导航', async () => {
+    const host = new FakeHost([snapshot('Item', [button('tref_go', 'Buy')], 'https://shop.example/item?id=7')]);
+    host.url = 'https://shop.example/item?id=7';
+    const nav = vi.spyOn(host, 'navigate');
+    const systemOne = stubSystemOne(() => answers({ operation: 'stop', target: 'no_target', done: 1 }));
+    await runLoop(host, systemOne, {
+      task: '打开 https://shop.example/item?id=42 把这件商品结账',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    });
+    expect(nav).toHaveBeenCalledWith('https://shop.example/item?id=42');
+    expect(host.url).toBe('https://shop.example/item?id=42');
+  });
+
+  it('仅 fragment 不同不导航', async () => {
+    const host = new FakeHost([snapshot('Item', [button('tref_go', 'Buy')], 'https://shop.example/item?id=7#old')]);
+    host.url = 'https://shop.example/item?id=7#old';
+    const nav = vi.spyOn(host, 'navigate');
+    const systemOne = stubSystemOne(() => answers({ operation: 'stop', target: 'no_target', done: 1 }));
+    await runLoop(host, systemOne, {
+      task: '打开 https://shop.example/item?id=7#new 把这件商品结账',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    });
+    expect(nav).not.toHaveBeenCalled();
+    expect(host.url).toBe('https://shop.example/item?id=7#old');
+  });
+
+  it('url_includes 断言 needle 仍剥 query，不把 query 当完成条件', () => {
+    const extracted = extractJevAssertions('打开 https://shop.example/item?id=42 结账');
+    expect(extracted[0]).toEqual(expect.objectContaining({
+      kind: 'url_includes',
+      needle: 'https://shop.example/item',
+      precondition: true,
+    }));
+    expect(extracted[0]?.needle).not.toContain('id=42');
+    const evaluated = evaluateJevAssertions(extracted, {
+      url: 'https://shop.example/item?id=7',
+      title: 'Item',
+      headings: [{ text: 'Item' }],
+      elements: [{ text: 'Buy' }],
+      formValues: {},
+      downloads: [],
+    });
+    expect(evaluated.results[0]?.met).toBe(true);
+    expect(evaluated.allMet).toBe(false);
+  });
+
+  it('步内导航到 chrome://settings 下一圈 needs_review', async () => {
+    const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+    host.clickTargetRef = async (ref) => {
+      host.clicks.push(ref.refId);
+      host.url = 'chrome://settings';
+    };
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const result = await runLoop(host, systemOne, {
+      task: 'click Go until Never happens',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    });
+    expect(result.status).toBe('needs_review');
+    expect(result.reason).toBe('system_settings');
+    expect(result.success).toBe(false);
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(host.clicks).toEqual(['tref_go']);
+  });
+
+  it('type 超时写入 recent_steps result=timeout 而不是 ok', async () => {
+    const host = new FakeHost([snapshot('Form', [textbox('tref_email', 'Email', 'email')])]);
+    host.typeTargetRef = async () => {
+      throw new Error('timeout');
+    };
+    const systemOne = stubSystemOne((state) => {
+      const blob = JSON.stringify(state.recent_steps || {});
+      if (blob.includes('"result":"timeout"')) {
+        return answers({ operation: 'stop', target: 'no_target', done: 1 });
+      }
+      return answers({ operation: 'type', target: 'tref_email' });
+    });
+    await runLoop(
+      host,
+      systemOne,
+      {
+        task: 'fill the email until Never happens',
+        assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+      },
+      context(),
+      { quickType: async () => 'typed-value' },
+    );
+    expect(systemOne.calls.length).toBeGreaterThan(1);
+    expect(JSON.stringify(systemOne.calls[1]?.recent_steps)).toMatch(/"result":"timeout"/);
+    expect(JSON.stringify(systemOne.calls[1]?.recent_steps)).not.toMatch(/"result":"ok"/);
+  });
+
+  it('stale 重绑复用第一次 generateTypeValue，不二次调用', async () => {
+    const email = textbox('tref_email', 'Email', 'email');
+    email.targetRef = { ...email.targetRef, selector: 'input#tref_email' };
+    const host = new FakeHost([snapshot('Form', [email])]);
+    let typeCalls = 0;
+    host.typeTargetRef = async (ref, text) => {
+      typeCalls += 1;
+      if (typeCalls <= 2) {
+        if (typeCalls === 2) {
+          const rebound = textbox('tref_email2', 'Email', 'email');
+          rebound.targetRef = {
+            ...rebound.targetRef,
+            selector: 'input#tref_email2',
+            refId: 'tref_email2',
+          };
+          host.pages[0] = snapshot('Form', [rebound]);
+        }
+        throw new BrowserTargetRefError('stale', ref.refId, ref.snapshotId);
+      }
+      host.types.push({ id: ref.refId, text });
+    };
+    const systemOne = stubSystemOne(() => answers({ operation: 'type', target: 'tref_email' }));
+    let quickCalls = 0;
+    await runLoop(
+      host,
+      systemOne,
+      {
+        task: 'fill the email until Never happens',
+        assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+      },
+      context(),
+      {
+        quickType: async () => {
+          quickCalls += 1;
+          return `value-${quickCalls}`;
+        },
+      },
+    );
+    expect(quickCalls).toBe(1);
+    expect(host.types[0]?.text).toBe('value-1');
+    expect(host.types[0]?.id).toBe('tref_email2');
   });
 
   it('type 操作把脱敏后的 placeholder 交给 quickType', async () => {

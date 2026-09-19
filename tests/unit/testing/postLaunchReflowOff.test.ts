@@ -10,7 +10,7 @@ process.env.CODE_AGENT_DATA_DIR = path.join(os.tmpdir(), `postlaunch-reflow-off-
 
 vi.unmock('better-sqlite3');
 
-import { POST_LAUNCH_REFLOW_DISABLED_MESSAGE } from '../../../src/shared/contract/postLaunchScore';
+import { POST_LAUNCH_REFLOW_DISABLED_MESSAGE, POST_LAUNCH_JUDGE_VERSION } from '../../../src/shared/contract/postLaunchScore';
 import { CONFIG_DIR_DEV, CONFIG_DIR_NEW } from '../../../src/shared/constants/configDir';
 import { TELEMETRY_CHANNELS } from '../../../src/shared/ipc/channels';
 import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
@@ -123,7 +123,7 @@ function makeDb(): Database.Database {
     scoredDay: '2026-09-07',
     appVersion: '0.33.0',
     promptVersion: null,
-    judgeVersion: 'postlaunch-judge-v1',
+    judgeVersion: POST_LAUNCH_JUDGE_VERSION,
     rubricVersion: 'postlaunch-rubric-v1',
     judgeModel: 'm',
     promptHash: 'h',

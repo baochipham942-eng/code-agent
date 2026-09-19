@@ -5,18 +5,19 @@ import { resolve } from 'node:path';
 import { redactSecrets } from '../../security/secretRedaction';
 import type { RuntimeContext } from './runtimeContext';
 
-/** AskUserQuestion 自身是 execute + requiresPermission:false，冻结期内仍允许再问。 */
+/** 冻结期内只放行 permissionLevel===read 的工具，以及工具名 AskUserQuestion（允许再问）。 */
 export function shouldFreezeNonReadWhileAwaitingUser(
   awaitingUserInput: boolean,
+  toolName: string,
   definition: { permissionLevel?: string; requiresPermission?: boolean } | null | undefined,
 ): boolean {
   return awaitingUserInput
-    && definition?.permissionLevel !== 'read'
-    && definition?.requiresPermission !== false;
+    && toolName !== 'AskUserQuestion'
+    && definition?.permissionLevel !== 'read';
 }
 
 const AWAITING_USER_BLOCKED_ERROR = '<awaiting-user-input>\n'
-  + '上一条 AskUserQuestion 没有得到用户回答（无头环境按无用户响应处理）。\n'
+  + '上一条 AskUserQuestion 没有得到用户回答（无人应答或等待超时）。\n'
   + '本轮禁止创建、修改、删除文件以及其它执行类操作。\n'
   + '请基于当前已知信息给出分析与建议并结束本轮，等待用户下一步指示。\n'
   + '</awaiting-user-input>';
@@ -45,7 +46,7 @@ export function buildAwaitingUserBlockedResult(toolCallId: string, duration: num
 class ToolAttemptTrace {
   consecutiveErrors = 0;
   noProgressStopped = false;
-  /** 本 run 内已有 AskUserQuestion 无人应答（无头回退），问句未答冻结生效中。 */
+  /** 本 run 内已有 AskUserQuestion 无人应答或等待超时，问句未答冻结生效中。 */
   awaitingUserInput = false;
   private failures = new Map<string, string[]>();
   constructor(private readonly ctx: RuntimeContext) {}

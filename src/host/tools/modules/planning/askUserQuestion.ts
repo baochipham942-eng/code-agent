@@ -127,7 +127,9 @@ export async function executeAskUserQuestion(
       ok: false,
       error: reason,
       code: USER_INPUT_TIMEOUT_CODE,
-      meta: deniedDecisionMetadata(reason),
+      // 有界面但用户超时没答：与无头无人应答同属「问句未答」，冻结非 read 工具。
+      // declined（用户明确跳过、文案让模型按默认继续）不置此位。
+      meta: { ...deniedDecisionMetadata(reason), awaitingUserInput: true },
     };
   }
   if (result.status === 'declined' || result.response?.declined === true) {

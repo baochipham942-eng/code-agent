@@ -360,7 +360,7 @@ export class ToolExecutionEngine {
         parallel,
       );
     };
-    const emitBlockedToolResult = (toolResult: ToolResult): ToolResult => {
+    const emitBlockedToolResult = (toolResult: ToolResult, observed = sanitizeToolResultForObservation(toolCall, toolResult)): ToolResult => {
       emitToolCallStart();
       this.ctx.telemetryAdapter?.onToolCallEnd(
         this.ctx.turn.currentTurnId,
@@ -371,12 +371,12 @@ export class ToolExecutionEngine {
         undefined,
         toolResult.metadata,
       );
-      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
+      this.ctx.onEvent({ type: 'tool_call_end', data: observed });
       return toolResult;
     };
     /** preflight 拒绝（不 dispatch）结果的统一簿记：在 emitBlockedToolResult 上补执行日志。 */
     const emitBlockedToolResultWithLog = (toolResult: ToolResult): ToolResult => {
-      emitBlockedToolResult(toolResult);
+      const observed = sanitizeToolResultForObservation(toolCall, toolResult); emitBlockedToolResult(toolResult, observed);
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
         try {
           this.ctx.onToolExecutionLog({
@@ -384,7 +384,7 @@ export class ToolExecutionEngine {
             toolCallId: toolCall.id,
             toolName: toolCall.name,
             args: sanitizeToolArgumentsForObservation(toolCall) as Record<string, unknown>,
-            result: sanitizeToolResultForObservation(toolCall, toolResult),
+            result: observed,
           });
         } catch { /* never let logging break tool execution */ }
       }
@@ -634,8 +634,8 @@ export class ToolExecutionEngine {
     // missing required + 顶层 type，失败时把 schema 信息回灌给模型自我修正
     const definition = getToolDefinitionWithCloudMeta(toolCall.name);
 
-    // 问句未答冻结：无头 AskUserQuestion 无人应答后，非 read 工具不再 dispatch（bypass 同冻）。
-    if (shouldFreezeNonReadWhileAwaitingUser(getToolAttemptTrace(this.ctx).awaitingUserInput, definition)) {
+    // 问句未答冻结：无人应答或等待超时后，只放行 read 级与 AskUserQuestion（bypass 同冻）。
+    if (shouldFreezeNonReadWhileAwaitingUser(getToolAttemptTrace(this.ctx).awaitingUserInput, toolCall.name, definition)) {
       logger.warn('[AgentLoop] Tool blocked while awaiting user input (unanswered AskUserQuestion)', {
         tool: toolCall.name,
       });

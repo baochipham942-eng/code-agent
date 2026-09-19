@@ -206,6 +206,13 @@ describe('问句未答冻结（awaiting-user freeze）', () => {
         inputSchema: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'] },
         permissionLevel: 'read',
       },
+      {
+        name: 'delegate_task',
+        description: 'test delegate',
+        inputSchema: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] },
+        permissionLevel: 'execute',
+        requiresPermission: false,
+      },
     ];
     setProtocolToolRegistryPort({
       register: () => {},
@@ -293,7 +300,7 @@ describe('问句未答冻结（awaiting-user freeze）', () => {
     expect(read.success).toBe(true);
     expect(execute).toHaveBeenCalledTimes(2);
 
-    // 5. AskUserQuestion 自身允许再问（requiresPermission:false 的确认入口）
+    // 5. AskUserQuestion 自身允许再问（按工具名豁免，不看 requiresPermission）
     const reask = await engine.executeSingleTool(
       { id: 'ask-2', name: 'AskUserQuestion', arguments: QUESTION_ARGS } as ToolCall, 0, 1,
     );
@@ -347,5 +354,38 @@ describe('问句未答冻结（awaiting-user freeze）', () => {
       expect.objectContaining({ toolCallId: 'ask-src', outcome: 'succeeded' }),
       expect.objectContaining({ toolCallId: 'rm-tel', outcome: 'rejected', execution: 'not_executed' }),
     ]);
+  });
+
+  it('冻结期间 delegate_task（execute + requiresPermission:false）被拒，AskUserQuestion 与 read 级放行', async () => {
+    const { engine, execute } = makeEngine();
+
+    await engine.executeSingleTool(
+      { id: 'ask-1', name: 'AskUserQuestion', arguments: QUESTION_ARGS } as ToolCall, 0, 1,
+    );
+    expect(execute).toHaveBeenCalledTimes(1);
+
+    const delegated = await engine.executeSingleTool(
+      { id: 'del-1', name: 'delegate_task', arguments: { prompt: '把资料全删了' } } as ToolCall, 0, 1,
+    );
+    expect(delegated.success).toBe(false);
+    expect(delegated.error).toContain('<awaiting-user-input>');
+    expect(delegated.metadata).toMatchObject({
+      blocked: true,
+      awaitingUserInput: true,
+      executionStarted: false,
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+
+    const reask = await engine.executeSingleTool(
+      { id: 'ask-2', name: 'AskUserQuestion', arguments: QUESTION_ARGS } as ToolCall, 0, 1,
+    );
+    expect(reask.success).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(2);
+
+    const read = await engine.executeSingleTool(
+      { id: 'read-1', name: 'Read', arguments: { file_path: '/tmp/x.txt' } } as ToolCall, 0, 1,
+    );
+    expect(read.success).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(3);
   });
 });

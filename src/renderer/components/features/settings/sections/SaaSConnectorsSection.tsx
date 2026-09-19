@@ -25,6 +25,12 @@ import { ConnectorLogo } from '../../connectors/ConnectorLogo';
 import { CustomOAuthConnectorForm, type CustomOAuthDescriptorDraft } from './CustomOAuthConnectorForm';
 import { SaaSConnectorCardFooter } from './SaaSConnectorCardFooter';
 import { SaaSConnectorFeedback } from './SaaSConnectorFeedback';
+import {
+  getInstallErrorPresentation,
+  isInstallRepairState,
+  saasConnectorDetailToneClass,
+  SaaSConnectorInstallAction,
+} from './SaaSConnectorInstallError';
 
 type LoopbackRedirectUriSupport = 'confirmed' | 'pending-verification' | 'unsupported';
 type ConnectorAuthMode = 'oauth' | 'lark-cli' | 'tmeet-cli';
@@ -291,12 +297,7 @@ function getStatePresentation(
         actionLabel: text.actions.retry,
       };
     case 'install_error':
-      return {
-        badge: text.badges.installFailed,
-        badgeClassName: 'border border-red-500/25 bg-red-500/15 text-badge-danger',
-        detail: text.details.cliInstallFailed,
-        actionLabel: text.actions.reinstall,
-      };
+      return getInstallErrorPresentation(text);
     case 'ready':
       return {
         badge: text.badges.notConnected,
@@ -763,17 +764,15 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
             {isCli && (
               <div className="mt-3 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  {(state === 'ready' || state === 'install_error') && (
-                    <Button
-                      size="sm"
-                      variant="primary"
+                  {isInstallRepairState(state) && (
+                    <SaaSConnectorInstallAction
+                      providerId={status.id}
+                      repair={state === 'install_error'}
+                      label={getCliConnectLabel(status, text)}
+                      reinstallLabel={text.actions.reinstall}
                       disabled={rowBusy}
-                      onClick={() => void connect(status.id, status.authMode)}
-                      leftIcon={<Link2 className="h-3 w-3" />}
-                      data-testid={`saas-connect-${status.id}`}
-                    >
-                      {state === 'install_error' ? text.actions.reinstall : getCliConnectLabel(status, text)}
-                    </Button>
+                      onConnect={() => void connect(status.id, status.authMode)}
+                    />
                   )}
                   {isProgress && (
                     <Button
@@ -903,16 +902,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               </div>
 
               {presentation.detail && (
-                <div className={`rounded-md border px-3 py-2 text-xs ${
-                  activeState === 'missing_client_id' || activeState === 'admin_blocked'
-                    || activeState === 'install_error'
-                    ? 'border-red-500/25 bg-red-500/10 text-badge-danger'
-                    : activeState === 'connecting_step_1'
-                        || activeState === 'connecting_step_2'
-                        || activeState === 'connecting_single'
-                      ? 'border-amber-500/25 bg-amber-500/10 text-badge-warning'
-                    : 'border-zinc-700 bg-zinc-950/40 text-zinc-400'
-                }`}>
+                <div className={`rounded-md border px-3 py-2 text-xs ${saasConnectorDetailToneClass(activeState)}`}>
                   {presentation.detail}
                 </div>
               )}
@@ -953,22 +943,18 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                 </div>
               )}
 
-              {(activeState === 'ready' || activeState === 'install_error') && (
-                <Button
-                  size="sm"
-                  variant="primary"
+              {isInstallRepairState(activeState) && (
+                <SaaSConnectorInstallAction
+                  providerId={activeStatus.id}
+                  repair={activeState === 'install_error'}
+                  label={isCli ? getCliConnectLabel(activeStatus, text) : text.actions.connect}
+                  reinstallLabel={text.actions.reinstall}
+                  connectingLabel={text.actions.connecting}
+                  connecting={isConnecting}
                   loading={isConnecting}
                   disabled={rowBusy || !canConnect}
-                  onClick={() => void connect(activeStatus.id, activeStatus.authMode)}
-                  leftIcon={!isConnecting ? <Link2 className="h-3 w-3" /> : undefined}
-                  data-testid={`saas-connect-${activeStatus.id}`}
-                >
-                  {isConnecting
-                    ? text.actions.connecting
-                    : activeState === 'install_error'
-                      ? text.actions.reinstall
-                      : isCli ? getCliConnectLabel(activeStatus, text) : text.actions.connect}
-                </Button>
+                  onConnect={() => void connect(activeStatus.id, activeStatus.authMode)}
+                />
               )}
 
               {(activeState === 'connecting_step_1'

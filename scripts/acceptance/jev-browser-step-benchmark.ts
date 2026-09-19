@@ -58,6 +58,9 @@ interface TrialRow {
   fallbackReason?: string;
   /** Jev inner-loop steps before baseline continuation. Baseline rows stay 0. */
   jevInnerSteps: number;
+  /** Main-model tokens. Unknown USD still 0; token counts are recorded as-is. */
+  tokensIn: number;
+  tokensOut: number;
 }
 
 const BROWSER_JEV_HARD_STEP_LIMIT = 60;
@@ -171,6 +174,8 @@ function trialRowFromRun(input: {
   audit: Record<string, boolean>;
   fallbackReason?: string;
   jevInnerSteps: number;
+  tokensIn?: number;
+  tokensOut?: number;
 }): TrialRow {
   return {
     id: input.spec.id,
@@ -192,6 +197,8 @@ function trialRowFromRun(input: {
     sensitiveUnauthed: sensitiveHit(input.audit, input.spec.forbidAudit),
     fallbackReason: input.fallbackReason,
     jevInnerSteps: input.jevInnerSteps,
+    tokensIn: input.tokensIn ?? 0,
+    tokensOut: input.tokensOut ?? 0,
   };
 }
 
@@ -202,9 +209,7 @@ function assertTrialRowsConsistent(rows: TrialRow[]): void {
       problems.push(`${row.id} ${row.arm} r${row.round}: steps=${row.steps} > hard cap ${BROWSER_JEV_HARD_STEP_LIMIT}`);
     }
     if (row.arm === 'jev') {
-      if (row.jevInnerSteps > row.jevCalls) {
-        problems.push(`${row.id} jev r${row.round}: innerSteps=${row.jevInnerSteps} > jevCalls=${row.jevCalls}`);
-      }
+      // Micro-fallback scroll counts as a step without a Jev call.
       if (row.jevInnerSteps > BROWSER_JEV_HARD_STEP_LIMIT) {
         problems.push(`${row.id} jev r${row.round}: innerSteps=${row.jevInnerSteps} > hard cap ${BROWSER_JEV_HARD_STEP_LIMIT}`);
       }
@@ -305,45 +310,59 @@ async function runJevArm(spec: CaseSpec, origin: string, context: ToolContext, m
   fallbackReason?: string;
   baselineUsd: number;
   jevInnerSteps: number;
+  tokensIn: number;
+  tokensOut: number;
 }> {
   const host = createManagedJevBrowserHost(browserService);
   if (!host.isLaunched()) await host.launch();
   await host.navigate(`${origin}${spec.path}`);
+  const previous = process.env.CODE_AGENT_BROWSER_JEV_STEP;
   process.env.CODE_AGENT_BROWSER_JEV_STEP = '1';
-  const driver = resolveBrowserJevStep({ host, mutate });
-  if (!driver) throw new Error('Jev step driver unarmed');
-  const tool = await driver.run({ task: spec.task, assertions: spec.assertions, jevBudgetUsd: 0.03, mutate }, context);
-  const jev = {
-    steps: Number(tool.metadata?.steps || 0),
-    jevUsd: Number(tool.metadata?.jevUsd || 0),
-    jevCalls: Number(tool.metadata?.jevCalls || 0),
-    fallback: tool.metadata?.fallback === true,
-    status: String(tool.metadata?.status || 'fallback'),
-    reason: typeof tool.metadata?.reason === 'string' ? tool.metadata.reason : undefined,
-  };
-  let steps = jev.steps;
-  let usd = jev.jevUsd;
-  const fallbacks = jev.fallback ? 1 : 0;
-  let status = jev.status;
-  let baselineUsd = 0;
-  if (jev.fallback) {
-    const rest = await runBaseline(spec, origin, context, Math.max(1, 20 - jev.steps));
-    steps += rest.steps;
-    baselineUsd = rest.usd;
-    usd += rest.usd;
-    status = rest.status;
+  try {
+    const driver = resolveBrowserJevStep({ host, mutate });
+    if (!driver) throw new Error('Jev step driver unarmed');
+    const tool = await driver.run({ task: spec.task, assertions: spec.assertions, jevBudgetUsd: 0.03, mutate }, context);
+    const jev = {
+      steps: Number(tool.metadata?.steps || 0),
+      jevUsd: Number(tool.metadata?.jevUsd || 0),
+      jevCalls: Number(tool.metadata?.jevCalls || 0),
+      fallback: tool.metadata?.fallback === true,
+      status: String(tool.metadata?.status || 'fallback'),
+      reason: typeof tool.metadata?.reason === 'string' ? tool.metadata.reason : undefined,
+    };
+    let steps = jev.steps;
+    let usd = jev.jevUsd;
+    const fallbacks = jev.fallback ? 1 : 0;
+    let status = jev.status;
+    let baselineUsd = 0;
+    let tokensIn = 0;
+    let tokensOut = 0;
+    if (jev.fallback) {
+      const rest = await runBaseline(spec, origin, context, Math.max(1, 20 - jev.steps));
+      steps += rest.steps;
+      baselineUsd = rest.usd;
+      usd += rest.usd;
+      status = rest.status;
+      tokensIn = rest.tokensIn;
+      tokensOut = rest.tokensOut;
+    }
+    return {
+      steps,
+      usd,
+      jevCalls: jev.jevCalls,
+      fallbacks,
+      pureJev: jev.status === 'done_verified',
+      status,
+      fallbackReason: jev.reason,
+      baselineUsd,
+      jevInnerSteps: jev.steps,
+      tokensIn,
+      tokensOut,
+    };
+  } finally {
+    if (previous === undefined) delete process.env.CODE_AGENT_BROWSER_JEV_STEP;
+    else process.env.CODE_AGENT_BROWSER_JEV_STEP = previous;
   }
-  return {
-    steps,
-    usd,
-    jevCalls: jev.jevCalls,
-    fallbacks,
-    pureJev: jev.status === 'done_verified',
-    status,
-    fallbackReason: jev.reason,
-    baselineUsd,
-    jevInnerSteps: jev.steps,
-  };
 }
 
 async function launchBrowser(): Promise<void> {
@@ -408,6 +427,8 @@ async function main(): Promise<void> {
                 evidenceMet: evaluated.allMet,
                 audit,
                 jevInnerSteps: 0,
+                tokensIn: result.tokensIn,
+                tokensOut: result.tokensOut,
               });
             } else {
               const result = await runJevArm(spec, originServer.origin, context, mutate);
@@ -432,6 +453,8 @@ async function main(): Promise<void> {
                 audit,
                 fallbackReason: result.fallbackReason,
                 jevInnerSteps: result.jevInnerSteps,
+                tokensIn: result.tokensIn,
+                tokensOut: result.tokensOut,
               });
             }
           } catch (error) {
@@ -450,6 +473,8 @@ async function main(): Promise<void> {
               audit: {},
               fallbackReason: error instanceof Error ? error.message : String(error),
               jevInnerSteps: 0,
+              tokensIn: 0,
+              tokensOut: 0,
             });
           }
           rows.push(trial);

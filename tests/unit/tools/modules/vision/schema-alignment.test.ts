@@ -4,7 +4,7 @@
 // 逐字对齐（非临时性脚本，永久驻留作为 regression guard）。
 // ============================================================================
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 import { browserSchema } from '../../../../../src/host/plugins/builtin/browserControl/browser.schema';
 import { computerSchema } from '../../../../../src/host/plugins/builtin/computerUse/computer.schema';
@@ -46,4 +46,18 @@ describe('vision Level 1 schemas literally aligned with legacy', () => {
       });
     });
   }
+
+  it('Browser / browser_action stay aligned when CODE_AGENT_BROWSER_JEV_STEP=1', () => {
+    vi.stubEnv('CODE_AGENT_BROWSER_JEV_STEP', '1');
+    try {
+      expect(browserSchema.description).toBe(BrowserTool.description);
+      expect(browserSchema.inputSchema).toEqual(BrowserTool.inputSchema);
+      expect(browserActionSchema.description).toBe(browserActionTool.description);
+      expect(browserActionSchema.inputSchema).toEqual(browserActionTool.inputSchema);
+      expect(browserSchema.description).toContain('execute_goal');
+      expect(browserActionSchema.inputSchema.properties?.action?.enum).toContain('execute_goal');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });

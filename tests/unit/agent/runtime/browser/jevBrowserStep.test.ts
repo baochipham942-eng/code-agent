@@ -13,6 +13,9 @@ import {
 import type { JevBrowserHost } from '../../../../../src/host/agent/runtime/browser/jevBrowserHost';
 import type { ToolContext } from '../../../../../src/host/tools/types';
 import { BrowserTool } from '../../../../../src/host/tools/vision/BrowserTool';
+import { browserActionTool } from '../../../../../src/host/tools/vision/browserAction';
+import { browserSchema } from '../../../../../src/host/plugins/builtin/browserControl/browser.schema';
+import { browserActionSchema } from '../../../../../src/host/plugins/builtin/browserControl/browserAction.schema';
 import { browserPool } from '../../../../../src/host/services/infra/browserPool';
 import type { BrowserService } from '../../../../../src/host/services/infra/browserService';
 import {
@@ -201,6 +204,34 @@ describe('jevBrowserStep', () => {
     expect(result.error).toContain('Jev 步选未开启或未装配');
   });
 
+  it('开关关时 description/枚举不暴露 execute_goal', () => {
+    expect(BrowserTool.description).not.toContain('execute_goal');
+    expect(browserSchema.description).not.toContain('execute_goal');
+    expect(browserActionTool.description).not.toContain('execute_goal');
+    expect(browserActionSchema.description).not.toContain('execute_goal');
+    expect(BrowserTool.inputSchema.properties?.action?.enum).not.toContain('execute_goal');
+    expect(browserSchema.inputSchema.properties?.action?.enum).not.toContain('execute_goal');
+    expect(browserActionTool.inputSchema.properties?.action?.enum).not.toContain('execute_goal');
+    expect(browserActionSchema.inputSchema.properties?.action?.enum).not.toContain('execute_goal');
+  });
+
+  it('开关开时 description 含回落契约且枚举含 execute_goal', () => {
+    vi.stubEnv('CODE_AGENT_BROWSER_JEV_STEP', '1');
+    expect(BrowserTool.description).toContain('execute_goal');
+    expect(BrowserTool.description).toContain('fallback=true');
+    expect(BrowserTool.description).toContain('done_verified 以调用方提供的 assertions 为准');
+    expect(browserSchema.description).toBe(BrowserTool.description);
+    expect(browserActionTool.description).toContain('execute_goal');
+    expect(browserActionTool.description).toContain('fallback=true');
+    expect(browserActionSchema.description).toBe(browserActionTool.description);
+    expect(BrowserTool.inputSchema.properties?.action?.enum).toContain('execute_goal');
+    expect(browserSchema.inputSchema.properties?.action?.enum).toContain('execute_goal');
+    expect(browserActionTool.inputSchema.properties?.action?.enum).toContain('execute_goal');
+    expect(browserActionSchema.inputSchema.properties?.action?.enum).toContain('execute_goal');
+    expect(browserSchema.inputSchema).toEqual(BrowserTool.inputSchema);
+    expect(browserActionSchema.inputSchema).toEqual(browserActionTool.inputSchema);
+  });
+
   it('done noul=1 但断言未过不得终止', async () => {
     const host = new FakeHost([snapshot('Almost there', [button('tref_go', 'Continue')])]);
     const systemOne = stubSystemOne(() => answers({
@@ -234,6 +265,23 @@ describe('jevBrowserStep', () => {
     expect(result.reason).toBe('no_candidates');
     expect(result.browserJevMode).toBe('sticky_visual');
     expect(host.scrolls.length).toBeGreaterThanOrEqual(1);
+    expect(result.metadata?.steps).toBeGreaterThanOrEqual(1);
+  });
+
+  it('getFormValues 抛 Execution context was destroyed → fallback 而非裸错', async () => {
+    const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+    host.getFormValues = async () => {
+      throw new Error('Execution context was destroyed');
+    };
+    const systemOne = stubSystemOne(() => answers());
+    const result = await runLoop(host, systemOne, { task: 'click Go' });
+    expect(result.success).toBe(true);
+    expect(result.fallback).toBe(true);
+    expect(result.metadata?.fallback).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(String(result.output)).toContain('form_values_unavailable');
+    expect(String(result.output)).toContain('Execution context was destroyed');
+    expect(systemOne).toHaveBeenCalledTimes(0);
   });
 
   it('conf<0.6 本步 yield，mode 仍 try_jev', async () => {

@@ -39,6 +39,7 @@ import {
   resolveBrowserJevStep,
 } from '../../agent/runtime/browser/jevBrowserStep';
 import type { JevPageAssertion } from '../../agent/runtime/browser/jevBrowserAssertions';
+import { browserJevStepDescriptionSuffix, withBrowserJevStepActionEnum } from '../../../shared/constants/jevQuestions';
 
 const logger = createLogger('BrowserAction', { lane: 'browser' });
 
@@ -120,16 +121,16 @@ const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
 
 export const browserActionTool: Tool = {
   name: 'browser_action',
-  description: `Control a browser for web automation and testing (tabs, click/type, screenshots, DOM/a11y snapshots, forms, uploads/downloads, account state).
+  get description() { return `Control a browser for web automation and testing (tabs, click/type, screenshots, DOM/a11y snapshots, forms, uploads/downloads, account state).
 
 Routing: prefer web_fetch/search for plain reads; use browser_action for login/session, multi-page, or visual work. After mutations, refresh DOM/a11y evidence before claiming final state.
 engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
 Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy userConfirmed signal but also requires a one-time Host approval bound to profile/domain scope; clear_cookies clears managed profile cookies. Never log cookie values.
-storageState file path: export_storage_state / import_storage_state for CI/scripts.`,
+storageState file path: export_storage_state / import_storage_state for CI/scripts.${browserJevStepDescriptionSuffix()}`; },
   requiresPermission: true,
   permissionLevel: 'execute',
   outputSchema: { type: 'string' },
-  inputSchema: {
+  get inputSchema() { return withBrowserJevStepActionEnum({
     type: 'object',
     properties: {
       action: {
@@ -291,7 +292,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       },
     },
     required: ['action'],
-  },
+  }); },
 
   async execute(
     params: Record<string, unknown>,

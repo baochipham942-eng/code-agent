@@ -13,6 +13,8 @@
 // 那一桶里 **Bash** 的**收窄**（approve 方向），不做 deny、不扩 approve 边界；非 Bash
 // 工具不进 Jev。Jev 官方明说对抗输入能带偏、不是安全边界。
 
+import type { JSONSchema } from '../contract/tool';
+
 /** 生产 pin 的 Jev 版本。禁止换 alias（jev-latest / jev-preview）。 */
 export const JEV_MODEL = 'jev-1.13.0';
 
@@ -233,10 +235,37 @@ export function buildBrowserStepQuestions(
   };
 }
 
-export const BROWSER_JEV_STEP_DESCRIPTION_SUFFIX = `
+const BROWSER_JEV_STEP_DESCRIPTION_SUFFIX = `
 
 ## Goal execution (execute_goal):
-- execute_goal: Run a natural-language \`task\` through the Host-verified browser step loop. If this action returns an error (disabled/unarmed) or fallback=true, continue with click/type/get_dom_snapshot from the current snapshot. Page evidence must pass before the task is done; Jev done is only a signal.
+- execute_goal: Run a natural-language \`task\` through the Host-verified browser step loop. If this action returns an error (disabled/unarmed) or fallback=true, continue with click/type/get_dom_snapshot from the current snapshot. Page evidence must pass before the task is done; Jev done is only a signal. done_verified 以调用方提供的 assertions 为准.
 - task: Natural-language goal for execute_goal
 - assertions: Optional frozen gold assertions for execute_goal
 - jevBudgetUsd: Optional per-task Jev USD budget`;
+
+export function isBrowserJevStepEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CODE_AGENT_BROWSER_JEV_STEP === '1';
+}
+
+export function browserJevStepDescriptionSuffix(env: NodeJS.ProcessEnv = process.env): string {
+  return isBrowserJevStepEnabled(env) ? BROWSER_JEV_STEP_DESCRIPTION_SUFFIX : '';
+}
+
+export function withBrowserJevStepActionEnum(
+  schema: JSONSchema,
+  env: NodeJS.ProcessEnv = process.env,
+): JSONSchema {
+  const action = schema.properties?.action;
+  if (!action || !Array.isArray(action.enum)) return schema;
+  const without = action.enum.filter((value) => value !== 'execute_goal');
+  return {
+    ...schema,
+    properties: {
+      ...schema.properties,
+      action: {
+        ...action,
+        enum: isBrowserJevStepEnabled(env) ? [...without, 'execute_goal'] : without,
+      },
+    },
+  };
+}

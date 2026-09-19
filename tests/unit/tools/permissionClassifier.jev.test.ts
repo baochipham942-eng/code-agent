@@ -33,8 +33,8 @@ interface StubAnswers {
   configAccess?: number;
 }
 
-function stubSystemOne(overrides: StubAnswers = {}): JevSystemOneCall & { calls: unknown[][] } {
-  const calls: unknown[][] = [];
+function stubSystemOne(overrides: StubAnswers = {}): JevSystemOneCall & { calls: unknown[] } {
+  const calls: unknown[] = [];
   const fn = vi.fn(async (state: unknown) => {
     calls.push(state);
     return {
@@ -43,7 +43,7 @@ function stubSystemOne(overrides: StubAnswers = {}): JevSystemOneCall & { calls:
       touches_secrets: { noul: overrides.secrets ?? 0.05 },
       config_or_credential_access: { noul: overrides.configAccess ?? 0.1 },
     };
-  }) as unknown as JevSystemOneCall & { calls: unknown[][] };
+  }) as unknown as JevSystemOneCall & { calls: unknown[] };
   fn.calls = calls;
   return fn;
 }

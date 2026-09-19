@@ -40,6 +40,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function abortError(): Error {
+  const error = new Error('The operation was aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+/** 把 AbortSignal 接到 response.json()：fetch 已返回后超时仍能掐断永不结束的 body。 */
+function readJsonUntilAbort(response: Response, signal: AbortSignal): Promise<unknown> {
+  if (signal.aborted) return Promise.reject(abortError());
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(abortError());
+    signal.addEventListener('abort', onAbort, { once: true });
+    void response.json().then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 /**
  * 一次 System One 判面调用。state 里的集合用命名键（数组下标引用实测判错，
  * 见 docs/research/2026-09-19-jev-typesafe-集成场景分析.md §2 G）。调用方负责
@@ -64,43 +93,51 @@ export async function systemOne(
   if (options.signal?.aborted) controller.abort();
   options.signal?.addEventListener('abort', onExternalAbort);
 
-  let response: Response;
+  const timedOutOrAborted = (error?: unknown): boolean =>
+    timedOut || (options.signal?.aborted ?? false) || isAbortError(error);
+
   try {
-    response = await fetch(MODEL_API_ENDPOINTS.typesafeSystemOne, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ state, model: JEV_MODEL, questions }),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (timedOut || (options.signal?.aborted ?? false)) {
-      fail(TYPESAFE_ERROR_CODES.timeout, `systemOne 超时（${timeoutMs}ms）或被外部中止`);
+    let response: Response;
+    try {
+      response = await fetch(MODEL_API_ENDPOINTS.typesafeSystemOne, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state, model: JEV_MODEL, questions }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (timedOutOrAborted(error)) {
+        fail(TYPESAFE_ERROR_CODES.timeout, `systemOne 超时（${timeoutMs}ms）或被外部中止`);
+      }
+      fail(TYPESAFE_ERROR_CODES.httpError, `systemOne 网络失败: ${error instanceof Error ? error.message : String(error)}`);
     }
-    fail(TYPESAFE_ERROR_CODES.httpError, `systemOne 网络失败: ${error instanceof Error ? error.message : String(error)}`);
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      fail(
+        TYPESAFE_ERROR_CODES.httpError,
+        `systemOne HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}`,
+      );
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = await readJsonUntilAbort(response, controller.signal);
+    } catch (error) {
+      if (timedOutOrAborted(error)) {
+        fail(TYPESAFE_ERROR_CODES.timeout, `systemOne 超时（${timeoutMs}ms）或被外部中止`);
+      }
+      fail(
+        TYPESAFE_ERROR_CODES.badShape,
+        `systemOne 响应不是 JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (!isRecord(parsed) || !isRecord(parsed.answers)) {
+      fail(TYPESAFE_ERROR_CODES.badShape, `systemOne 响应缺 answers 对象: ${JSON.stringify(parsed).slice(0, 200)}`);
+    }
+    return parsed.answers as JevAnswers;
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener('abort', onExternalAbort);
   }
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    fail(
-      TYPESAFE_ERROR_CODES.httpError,
-      `systemOne HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}`,
-    );
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = await response.json();
-  } catch (error) {
-    fail(
-      TYPESAFE_ERROR_CODES.badShape,
-      `systemOne 响应不是 JSON: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  if (!isRecord(parsed) || !isRecord(parsed.answers)) {
-    fail(TYPESAFE_ERROR_CODES.badShape, `systemOne 响应缺 answers 对象: ${JSON.stringify(parsed).slice(0, 200)}`);
-  }
-  return parsed.answers as JevAnswers;
 }

@@ -8,6 +8,7 @@
 // ============================================================================
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
@@ -174,33 +175,46 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     expect(result.traceStep?.rule).toBe('fallback');
   });
 
+  it.each([
+    { name: 'needs_human.noul=-1', overrides: { needsHuman: -1 } },
+    { name: 'risk.confidence=NaN', overrides: { riskConfidence: Number.NaN } },
+    { name: 'needs_human.noul=2', overrides: { needsHuman: 2 } },
+  ])('数值越界视为形状不对 ⇒ ask（$name）', async ({ overrides }) => {
+    const classifier = newClassifier(stubSystemOne(overrides));
+    const result = await classifyBash(classifier, FALLBACK_COMMAND);
+
+    expect(result.decision).toBe('ask');
+    expect(result.riskUnknown).toBe(true);
+    expect(result.traceStep?.rule).toBe('fallback');
+  });
+
   it('state 出境前脱敏：无家目录原文、无密钥形状', async () => {
     const stub = stubSystemOne();
     const classifier = newClassifier(stub);
-    const command = 'python3 -c "print(open(\'/Users/linchen/secret-notes.txt\').read()); '
-      + "print('sk-abcdefghij0123456789abcdefghij0123456789')\"";
+    const secretPath = path.join(os.homedir(), 'secret-notes.txt');
+    const fakeKey = 'sk-' + '1'.repeat(24);
+    const command = `python3 -c "print(open('${secretPath}').read()); print('${fakeKey}')"`;
     const result = await classifyBash(classifier, command);
 
     expect(stub.calls.length).toBe(1);
     const stateText = JSON.stringify(stub.calls[0]);
-    expect(stateText).not.toContain('/Users/linchen');
-    expect(stateText).not.toContain('sk-abcdefghij');
+    expect(stateText).not.toContain(os.homedir());
+    expect(stateText).not.toContain(fakeKey);
     expect(stateText).toContain('~/secret-notes.txt');
     // 脱敏不改判：命令本身仍走 Jev 判定
     expect(result.decision).toBe('approve');
   });
 
-  it('非 Bash 工具的 summary = 工具名 + 参数 JSON（截 300 字）', async () => {
+  it('非 Bash 工具 ⇒ systemOne 零调用、ask', async () => {
     const stub = stubSystemOne();
     const classifier = newClassifier(stub);
-    // mcp / propose_team_recipe / terminal_write 在规则层都落 fallback（基线验证过）
-    const result = await classifier.classify('terminal_write', { text: 'x'.repeat(400) }, { workingDirectory: '/tmp' });
-
-    expect(stub.calls.length).toBe(1);
-    const state = stub.calls[0] as { summary: string };
-    expect(state.summary.startsWith('terminal_write {')).toBe(true);
-    expect(state.summary.length).toBeLessThanOrEqual('terminal_write '.length + 300 + 3);
-    expect(result.decision).toBe('approve');
+    for (const toolName of ['terminal_write', 'mcp', 'propose_team_recipe']) {
+      const result = await classifier.classify(toolName, { text: 'x'.repeat(400) }, { workingDirectory: '/tmp' });
+      expect(result.decision).toBe('ask');
+      expect(result.riskUnknown).toBe(true);
+      expect(result.traceStep?.rule).toBe('fallback');
+    }
+    expect(stub.calls.length).toBe(0);
   });
 
   // ---------------------------------------------------------------------------

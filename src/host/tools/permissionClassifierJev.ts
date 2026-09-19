@@ -4,9 +4,9 @@
 // 从 permissionClassifier.ts 拆出（eslint max-lines 1000 有效行硬门）：
 // state 构造 + 出境脱敏 + 四问消费 + 放行判据全在这里，分类器主文件只留调用。
 //
-// ponytail: Jev 只缩小 ask 桶，不扩 approve 边界，不做 deny——它官方明说对抗输入
-// 能带偏、不是安全边界；规则层的 deny/ask 判定不受它影响，它说 destructive/exfiltration
-// 也只是继续 ask。Jev 报错/超时/形状不对同样回落 ask（fail-closed，返回 null）。
+// ponytail: Jev 只缩小 ask 桶，不扩 approve 边界，不做 deny——仅 Bash 生效。它官方明说
+// 对抗输入能带偏、不是安全边界；规则层的 deny/ask 判定不受它影响，它说 destructive/
+// exfiltration 也只是继续 ask。Jev 报错/超时/形状不对同样回落 ask（fail-closed，返回 null）。
 // ============================================================================
 
 import * as os from 'os';
@@ -39,25 +39,15 @@ export function isPermissionLlmClassifierEnabled(env: NodeJS.ProcessEnv = proces
   return env.CODE_AGENT_PERMISSION_LLM_CLASSIFIER === '1';
 }
 
-/** 非 Bash 工具的 summary：工具名 + 参数 JSON 截 300 字。 */
-function summarizeNonBashArgs(args: Record<string, unknown>): string {
-  try {
-    return JSON.stringify(args).slice(0, 300);
-  } catch {
-    return '<unserializable args>';
-  }
-}
-
 /**
  * 送 Jev 的 state：全命名键（集合不许用数组下标引用，探针实证会判错）。
- * 整份 state 每个字符串都先过 guardSensitiveText——命令文本/路径会发到
- * api.typesafe.ai（第三方、境外），密钥/家目录/邮箱必须在出境前抹掉。
+ * 仅 Bash（classifyByJev 入口已挡非 Bash）。整份 state 每个字符串都先过
+ * guardSensitiveText——命令文本/路径会发到 api.typesafe.ai（第三方、境外），
+ * 密钥/家目录/邮箱必须在出境前抹掉。
  */
 function buildJevState(toolName: string, args: Record<string, unknown>, context: JevContext): Record<string, unknown> {
   const guard = (value: string) => guardSensitiveText(value, { surface: 'telemetry', mode: 'model-context' });
-  const summary = isBashToolName(toolName) && typeof args.command === 'string'
-    ? args.command
-    : `${toolName} ${summarizeNonBashArgs(args)}`;
+  const summary = typeof args.command === 'string' ? args.command : '';
   const tempDirs = [...new Set([os.tmpdir(), '/tmp', '/private/tmp'])];
   return {
     tool: guard(toolName),
@@ -82,22 +72,26 @@ function warnJevUnavailable(error: unknown): void {
   logger.warn(`Jev 分类失败，回退 ask: ${detail}`);
 }
 
+function isUnitInterval(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
 function jevChoiceAnswer(answer: JevAnswers[string] | undefined): JevChoiceAnswer | null {
   if (!answer || typeof answer !== 'object' || !('choice' in answer)) return null;
   const { choice, confidence } = answer as JevChoiceAnswer;
-  return typeof choice === 'string' && typeof confidence === 'number' ? { choice, confidence } : null;
+  return typeof choice === 'string' && isUnitInterval(confidence) ? { choice, confidence } : null;
 }
 
 function jevNoulAnswer(answer: JevAnswers[string] | undefined): JevNoulAnswer | null {
   if (!answer || typeof answer !== 'object' || !('noul' in answer)) return null;
   const { noul } = answer as JevNoulAnswer;
-  return typeof noul === 'number' ? { noul } : null;
+  return isUnitInterval(noul) ? { noul } : null;
 }
 
 /**
- * Jev 分类：四问全过（tier + conf + needs_human + secrets + config_access）才
+ * Jev 分类：仅 Bash。四问全过（tier + conf + needs_human + secrets + config_access）才
  * approve（trace `jev_approve`、reason 带 tier 与四问数值供审批卡复盘）；
- * 不过 / 报错 / 超时 / 形状不对一律返回 null，交回主流程的 fallback ask。
+ * 非 Bash / 不过 / 报错 / 超时 / 形状不对一律返回 null，交回主流程的 fallback ask。
  */
 export async function classifyByJev(
   toolName: string,
@@ -106,6 +100,7 @@ export async function classifyByJev(
   systemOne: JevSystemOneCall,
   startTime: number,
 ): Promise<ClassificationResult | null> {
+  if (!isBashToolName(toolName)) return null;
   const state = buildJevState(toolName, args, context);
   let answers: JevAnswers;
   try {

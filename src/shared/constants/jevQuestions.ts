@@ -8,8 +8,8 @@
 // 再改这里的问法或阈值——只改版本号不动阈值是禁止操作。
 //
 // 语义边界（permissionClassifier 的 ponytail 约定）：这些问句只服务「规则判不了→ask」
-// 那一桶的**收窄**（approve 方向），不做 deny、不扩 approve 边界；Jev 官方明说对抗
-// 输入能带偏、不是安全边界。
+// 那一桶里 **Bash** 的**收窄**（approve 方向），不做 deny、不扩 approve 边界；非 Bash
+// 工具不进 Jev。Jev 官方明说对抗输入能带偏、不是安全边界。
 
 /** 生产 pin 的 Jev 版本。禁止换 alias（jev-latest / jev-preview）。 */
 export const JEV_MODEL = 'jev-1.13.0';

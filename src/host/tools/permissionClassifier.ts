@@ -39,7 +39,6 @@ import { connectorExternalWriteReason, isConnectorToolName } from '../../shared/
 import { isProtectedWritePath, isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 import { resolvedRmCriticalTarget } from '../security/recursiveRmPathSafety';
 import { anchoredAllowCommandWords } from '../security/commandAllowProof';
-import { systemOne as typesafeSystemOne } from '../model/providers/typesafeProvider';
 import type { JevSystemOneCall } from '../../shared/constants/jevQuestions';
 import { classifyByJev, isPermissionLlmClassifierEnabled } from './permissionClassifierJev';
 
@@ -98,7 +97,7 @@ function classificationHostReason(result: ClassificationResult, toolName: string
 }
 
 export interface ClassifierConfig {
-  /** Enable LLM-based classification (default: false, falls back to rules) */
+  /** Enable LLM-based classification（默认读 CODE_AGENT_PERMISSION_LLM_CLASSIFIER=1，否则 false） */
   enableLlm?: boolean;
   /** Confidence threshold for auto-approve (default: 0.8) */
   confidenceThreshold?: number;
@@ -574,7 +573,7 @@ export class PermissionClassifier {
       confidenceThreshold: config?.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
       cacheTtlMs: config?.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS,
     };
-    this.jevSystemOne = config?.jevSystemOne ?? typesafeSystemOne;
+    this.jevSystemOne = config?.jevSystemOne ?? ((state, questions, options) => import('../model/providers/typesafeProvider').then((m) => m.systemOne(state, questions, options)));
   }
 
   /**

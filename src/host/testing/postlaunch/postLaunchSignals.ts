@@ -9,6 +9,7 @@
 //   - 审批被拒：toolPermissionClassification.ts 的三种 denialSource 文案
 //   - 越权写入：sandboxFailureDiagnostics.ts 的「沙盒拒绝了工作目录外的写入」
 // ============================================================================
+import os from 'node:os';
 import path from 'node:path';
 import { shellWriteTargets } from '../../tools/writeTargets';
 import type { ReplayBlock, ReplayTurn, ReplayToolCall } from '../../../shared/contract/evaluationReplay';
@@ -80,9 +81,23 @@ function collectClaimedPaths(text: string): string[] {
   return [...new Set(found.filter((token) => token.includes('/') || token.includes('\\') || token.startsWith('.')))];
 }
 
+/**
+ * 与 resolveToolPath 同口径展开 ~，但不碰磁盘——信号计算是纯函数，
+ * 夜跑工作区可能已经删了，不能靠 realpath。
+ */
+function expandUserPath(raw: string): string {
+  if (raw === '~') return os.homedir();
+  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
+  return raw;
+}
+
 function isOutsideWorkspace(candidate: string, workspaceDir: string): boolean {
-  const absolute = path.resolve(workspaceDir, candidate);
-  const relative = path.relative(workspaceDir, absolute);
+  // 与 toolExecutor / permissionCommandParse 同一条豁免：`2>/dev/null` 是空汇，
+  // 不是越权写。只豁免这一个字符设备，/dev/ 其它不豁免。
+  if (candidate === '/dev/null') return false;
+  const workspace = path.resolve(expandUserPath(workspaceDir));
+  const absolute = path.resolve(workspace, expandUserPath(candidate));
+  const relative = path.relative(workspace, absolute);
   return relative.startsWith('..') || path.isAbsolute(relative);
 }
 

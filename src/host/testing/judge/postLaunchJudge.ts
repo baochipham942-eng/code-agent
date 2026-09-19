@@ -132,7 +132,15 @@ function extractJsonObject(content: string): unknown {
   const start = trimmed.indexOf('{');
   const end = trimmed.lastIndexOf('}');
   if (start < 0 || end <= start) throw new Error('no json object');
-  return JSON.parse(trimmed.slice(start, end + 1));
+  const slice = trimmed.slice(start, end + 1);
+  try {
+    return JSON.parse(slice);
+  } catch {
+    // LongCat 会漏掉最外层那个 `}`：四维对象都写完，整段以 permission 的 `}` 收尾。
+    // 400 与 1500 max_tokens 都是这个形状（输出 ~150 token，不是截断）。只补一次，
+    // 补完仍 parse 失败就把原错误抛给 parseVerdict → unavailable。
+    return JSON.parse(`${slice}}`);
+  }
 }
 
 function parseVerdict(value: PostLaunchJudgeLlmResult): PostLaunchJudgeVerdict {

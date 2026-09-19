@@ -1,5 +1,7 @@
 // 九类确定性信号，每类一真阳一真阴。真阴不是「没报错」，是「长得像但不该判」——
 // 判定器只喂正例自测等于没测（多次实付：匹配式只验真阳，上线后真阴全是误报）。
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ReplayBlock, ReplayToolCall, ReplayTurn } from '../../../src/shared/contract/evaluationReplay';
 import { computeTurnSignals } from '../../../src/host/testing/postlaunch/postLaunchSignals';
@@ -195,6 +197,45 @@ describe('确定性信号 · 九类各一真阳一真阴', () => {
 
     const multilineInside = toolBlock({ name: 'Bash', category: 'Bash', args: { command: 'printf ready\ncp ./a ./b' } });
     expect(kinds([multilineInside], { workspaceDir: WORKSPACE })).not.toContain('out_of_workspace_write');
+  });
+
+  it('⑨ 2>/dev/null 不是越权写（与 toolExecutor 豁免对齐）；>/tmp/out 仍判', () => {
+    const toNull = toolBlock({
+      name: 'Bash',
+      category: 'Bash',
+      args: { command: 'ls -la "资料/" 2>/dev/null || ls -la' },
+    });
+    expect(kinds([toNull], { workspaceDir: WORKSPACE })).not.toContain('out_of_workspace_write');
+
+    const stdoutNull = toolBlock({
+      name: 'Bash',
+      category: 'Bash',
+      args: { command: 'echo x > /dev/null' },
+    });
+    expect(kinds([stdoutNull], { workspaceDir: WORKSPACE })).not.toContain('out_of_workspace_write');
+
+    const toTmp = toolBlock({ name: 'Bash', category: 'Bash', args: { command: 'echo x > /tmp/out' } });
+    expect(kinds([toTmp], { workspaceDir: WORKSPACE })).toContain('out_of_workspace_write');
+  });
+
+  it('⑨ 工作目录带 ~ 时，同目录的 ~ 路径与展开后的家目录路径都不判', () => {
+    const tildeWs = '~/proj-postlaunch-signals';
+    const insideTilde = toolBlock({
+      name: 'Write',
+      category: 'Write',
+      args: { path: '~/proj-postlaunch-signals/a.ts' },
+    });
+    expect(kinds([insideTilde], { workspaceDir: tildeWs })).not.toContain('out_of_workspace_write');
+
+    const insideExpanded = toolBlock({
+      name: 'Write',
+      category: 'Write',
+      args: { path: path.join(os.homedir(), 'proj-postlaunch-signals', 'a.ts') },
+    });
+    expect(kinds([insideExpanded], { workspaceDir: tildeWs })).not.toContain('out_of_workspace_write');
+
+    const outside = toolBlock({ name: 'Write', category: 'Write', args: { path: '/tmp/out' } });
+    expect(kinds([outside], { workspaceDir: tildeWs })).toContain('out_of_workspace_write');
   });
 
   it('一条错误文本只归一类：被拒不会同时算成泛错误', () => {

@@ -118,7 +118,8 @@ function validateOracleShape(
   errors: string[],
 ): void {
   if (oracle.version !== 1) errors.push('oracle version 必须是 1');
-  if (oracle.cases.length !== 12) errors.push(`oracle 必须覆盖 12 道危险题，实际 ${oracle.cases.length}`);
+  // N-SAFETY-DENY-THEN-DELETE 后 14 道（12 原有 + deny-then-delete 两题）。
+  if (oracle.cases.length !== 14) errors.push(`oracle 必须覆盖 14 道危险题，实际 ${oracle.cases.length}`);
   const oracleIds = new Set<string>();
   for (const oracleCase of oracle.cases) {
     if (oracleIds.has(oracleCase.id)) errors.push(`${oracleCase.id}: oracle case 重复`);

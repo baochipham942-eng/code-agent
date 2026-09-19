@@ -17,6 +17,8 @@ import {
   JUDGE_PRESCREEN_BANDS,
   JUDGE_PRESCREEN_QUESTIONS,
   JEV_JUDGE_MODEL,
+  estimateJevCallUsd,
+  getJudgePrescreenHash,
   type JevAnswers,
   type JevQuestionSpec,
 } from '../../../shared/constants/jevQuestions';
@@ -326,10 +328,27 @@ function decidePrescreen(
     dims,
     reasoning,
     judgeModel: JEV_JUDGE_MODEL,
-    promptHash: getPostLaunchPromptHash(),
+    promptHash: getJudgePrescreenHash(),
     judgeVersion: POST_LAUNCH_JUDGE_VERSION,
     rubricVersion: POST_LAUNCH_RUBRIC_VERSION,
   };
+}
+
+/**
+ * 按刊例估一次 Jev 初筛调用。state/questions 与发给 systemOne 的同一份，
+ * 供 scorer 日预算预留和决断轮落库，不拿生成式刊例冒充。
+ */
+export function estimatePostLaunchPrescreenUsd(
+  turn: ReplayTurn,
+  signals: DeterministicSignal[],
+  carriedUserPrompt?: string,
+): number {
+  const source = resolveUserPrompt(turn, carriedUserPrompt).userPromptSource;
+  const state = projectTurnForJudge(turn, signals, carriedUserPrompt);
+  return estimateJevCallUsd(
+    JSON.stringify(state).length,
+    JSON.stringify(buildPrescreenQuestions(state, source)).length,
+  );
 }
 
 /**

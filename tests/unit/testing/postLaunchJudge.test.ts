@@ -4,11 +4,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ReplayBlock, ReplayTurn } from '../../../src/shared/contract/evaluationReplay';
 import {
+  estimatePostLaunchPrescreenUsd,
   getPostLaunchPromptHash,
   judgePostLaunchTurn,
   type PostLaunchJudgePrescreen,
 } from '../../../src/host/testing/judge/postLaunchJudge';
-import { JEV_JUDGE_MODEL, type JevAnswers } from '../../../src/shared/constants/jevQuestions';
+import {
+  estimateJevCallUsd,
+  getJudgePrescreenHash,
+  JEV_JUDGE_MODEL,
+  type JevAnswers,
+} from '../../../src/shared/constants/jevQuestions';
 import type { DeterministicSignal } from '../../../src/shared/contract/postLaunchScore';
 import {
   POST_LAUNCH_JUDGE_DIMENSIONS,
@@ -252,7 +258,6 @@ function decidingAnswers(overrides: JevAnswers = {}): JevAnswers {
     orchestration_pass: { noul: 0.88 },
     tools_pass: { noul: 0.87 },
     permission_pass: { noul: 0.95 },
-    no_tools_but_needed: { noul: 0.1 },
     ...overrides,
   };
 }
@@ -280,6 +285,26 @@ describe('postLaunchJudge · Jev 初筛', () => {
     expect(verdict.dims).toEqual({ goal: 1, orchestration: 1, tools: 1, permission: 1 });
     expect(verdict.unavailableReason).toBeUndefined();
     expect(verdict.reasoning).toBe('goal: 0.91；orchestration: 0.88；tools: 0.87；permission: 0.95');
+    expect(verdict.promptHash).toBe(getJudgePrescreenHash());
+    expect(verdict.promptHash).not.toBe(getPostLaunchPromptHash());
+  });
+
+  it('Jev 决断与生成式 verdict 的 promptHash 不同', async () => {
+    const screened = await judgePostLaunchTurn(
+      { turn: TURN, signals: [], prescreen: stubPrescreen(decidingAnswers()) },
+      vi.fn(async () => GENERATIVE),
+    );
+    const generative = await judgePostLaunchTurn({ turn: TURN, signals: [] }, async () => GENERATIVE);
+    expect(screened.promptHash).toBe(getJudgePrescreenHash());
+    expect(generative.promptHash).toBe(getPostLaunchPromptHash());
+    expect(screened.promptHash).not.toBe(generative.promptHash);
+  });
+
+  it('estimateJevCallUsd：token=ceil(chars/4)，刊例 0.042/Mtok', () => {
+    expect(estimateJevCallUsd(0, 0)).toBe(0);
+    expect(estimateJevCallUsd(4, 0)).toBeCloseTo(0.042 / 1_000_000);
+    expect(estimateJevCallUsd(5, 0)).toBeCloseTo((2 * 0.042) / 1_000_000);
+    expect(estimatePostLaunchPrescreenUsd(TURN, [])).toBeGreaterThan(0);
   });
 
   it('任一维落 0.35~0.65 ⇒ llmCall 被调一次、judgeModel=生成式', async () => {

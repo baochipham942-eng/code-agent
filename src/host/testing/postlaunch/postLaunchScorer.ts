@@ -29,6 +29,7 @@ import { systemOne } from '../../model/providers/typesafeProvider';
 import { classifyFailure, type FailureCodebook } from '../failureCodes';
 import {
   buildPostLaunchJudgePrompt,
+  estimatePostLaunchPrescreenUsd,
   judgePostLaunchTurn,
   type PostLaunchJudgeLlmCall,
   type PostLaunchJudgePrescreen,
@@ -341,7 +342,10 @@ export async function runPostLaunchScoring(
       // 不是「已花 < 上限」——后者总会让最后一次调用把上限冲破（K1 实测超支一次调用）。
       const carriedUserPrompt = findCarriedUserPrompt(turn, sessionTurns);
       const judgePrompt = dryRun ? '' : buildPostLaunchJudgePrompt(turn.turn, signals, carriedUserPrompt);
-      const nextCallUsd = dryRun ? 0 : deps.estimateJudgeCostUsd(judgePrompt).usd;
+      const jevUsd = !dryRun && prescreen
+        ? estimatePostLaunchPrescreenUsd(turn.turn, signals, carriedUserPrompt)
+        : 0;
+      const nextCallUsd = dryRun ? 0 : (prescreen ? jevUsd : deps.estimateJudgeCostUsd(judgePrompt).usd);
       const budgetLeft = spentUsd + nextCallUsd <= budgetLimitUsd;
       const sampleLeft = sampledToday < sampleLimit;
       // 信号命中的轮全评；其余按日抽样。预算不够下一次调用就当天停评，只记信号。
@@ -383,9 +387,11 @@ export async function runPostLaunchScoring(
         judgeVersion = verdict.judgeVersion;
         rubricVersion = verdict.rubricVersion;
         if (verdict.judgeModel === JEV_JUDGE_MODEL) {
-          // Jev 无刊例：走未知价路径，costUsd 0，不编 Jev 价目。预算也不拿生成式刊例冒充。
-          judgeCostUsd = 0;
-          budgetCostUsd = 0;
+          // 刊例 $0.042/M 输入（输出免费），落库 + 累加日预算。
+          judgeCostUsd = jevUsd;
+          budgetCostUsd = jevUsd;
+          spentUsd += jevUsd;
+          result.costUsd += jevUsd;
         } else {
           const estimate = deps.estimateJudgeCostUsd(judgePrompt, judgeCompletion);
           // 未知价的估算只用来守预算，不冒充刊例落库（resolveModelPrice §2「未知价不编造」）。

@@ -19,7 +19,9 @@ import { applyTelemetrySchema } from '../../../src/host/services/core/database/s
 import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
-import type { PostLaunchJudgePrescreen } from '../../../src/host/testing/judge/postLaunchJudge';
+import { estimatePostLaunchPrescreenUsd, type PostLaunchJudgePrescreen } from '../../../src/host/testing/judge/postLaunchJudge';
+import { computeTurnSignals } from '../../../src/host/testing/postlaunch/postLaunchSignals';
+import { JEV_JUDGE_MODEL } from '../../../src/shared/constants/jevQuestions';
 import { DRY_RUN_JUDGE_VERSION, POST_LAUNCH_DEFAULTS, POST_LAUNCH_JUDGE_VERSION, clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
 import { estimateJudgeCost } from '../../../src/host/testing/postlaunch/postLaunchCost';
 import { resolveModelPrice } from '../../../src/shared/pricing/resolveModelPrice';
@@ -874,12 +876,81 @@ describe('上线后打分编排', () => {
       orchestration_pass: { noul: 0.5 },
       tools_pass: { noul: 0.5 },
       permission_pass: { noul: 0.5 },
-      no_tools_but_needed: { noul: 0.5 },
     });
     const llmCall = vi.fn(async () => ALL_PASS);
     await runPostLaunchScoring(deps(database, replays, llmCall, { prescreen: abstainAll }));
 
     expect(llmCall).toHaveBeenCalledTimes(3);
+  });
+
+  it('prescreen 全决断 × N 轮，budgetLimitUsd 只够 k 轮 ⇒ 第 k+1 轮停、systemOne 调 k 次', async () => {
+    vi.stubEnv('CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN', '1');
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-jev-key');
+    const decideAll = {
+      goal_met: { choice: 'met', confidence: 0.9 },
+      goal_pass: { noul: 0.91 },
+      orchestration_pass: { noul: 0.88 },
+      tools_pass: { noul: 0.87 },
+      permission_pass: { noul: 0.95 },
+    };
+    systemOneMock.mockImplementation(async () => decideAll);
+    const n = 4;
+    const k = 2;
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    for (let index = 1; index <= n; index += 1) {
+      insertTurn(database, 'chat-1', `chat-turn-${index}`, index, NOW - HOUR + index);
+    }
+    const sessionReplay = replay('chat-1', [1, 2, 3, 4].map((turnNumber) => ({
+      turnNumber,
+      startTime: NOW - HOUR + turnNumber,
+      blocks: [{ type: 'error', content: 'boom', timestamp: NOW - HOUR + turnNumber } as ReplayBlock],
+    })));
+    const sample = sessionReplay.turns[0];
+    const signals = computeTurnSignals(sample, 'chat-turn-1', {
+      workspaceDir: '/ws',
+      turnCostUsd: 0.001,
+      fileExists: () => true,
+    });
+    const perCall = estimatePostLaunchPrescreenUsd(sample, signals);
+    const llmCall = vi.fn(async () => ALL_PASS);
+    try {
+      const result = await runPostLaunchScoring(
+        deps(database, { 'chat-1': sessionReplay }, llmCall),
+        { dailyBudgetUsd: perCall * k + perCall / 2 },
+      );
+
+      expect(systemOneMock).toHaveBeenCalledTimes(k);
+      expect(llmCall).not.toHaveBeenCalled();
+      expect(result.budgetStopped).toBe(true);
+      expect(perCall).toBeGreaterThan(0);
+      expect(result.costUsd).toBeCloseTo(perCall * k);
+      const judged = scoreRows(database).filter((row) => row.judge_model === JEV_JUDGE_MODEL);
+      expect(judged).toHaveLength(k);
+      for (const row of judged) {
+        expect(row.cost_usd).toBeCloseTo(perCall);
+        expect(row.budget_cost_usd).toBeCloseTo(perCall);
+      }
+    } finally {
+      systemOneMock.mockReset();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('开关 on（CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN=1）+ key 在 ⇒ 装配的 prescreen 真被调用', async () => {
+    vi.stubEnv('CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN', '1');
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-jev-key');
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+    try {
+      await runPostLaunchScoring(deps(database, replays, llmCall));
+      expect(systemOneMock).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('开关 off ⇒ prescreen 从不装配（systemOne spy 零调用）', async () => {

@@ -32,7 +32,6 @@ export async function waitForBrowserSelector(
 export async function captureBrowserDomSnapshot(
   tab: BrowserTab,
   registry: BrowserTargetRefRegistry,
-  options?: { maxInteractiveElements?: number },
 ): Promise<BrowserDomSnapshot> {
   const snapshotId = registry.createSnapshotId();
   const capturedAtMs = Date.now();
@@ -41,7 +40,6 @@ export async function captureBrowserDomSnapshot(
     snapshotId,
     capturedAtMs,
     targetRefTtlMs: BROWSER_TARGET_REF_TTL_MS,
-    maxInteractiveElements: options?.maxInteractiveElements,
   });
   registry.addRecords(targetRefRecords, capturedAtMs);
   return snapshot;

@@ -30,17 +30,26 @@ function estimateTokens(chars: number): number {
   return Math.ceil(Math.max(0, chars) / 4);
 }
 
-function guardString(value: string): string {
-  return guardSensitiveText(value, { surface: 'prompt', mode: 'model-context' });
+type JevSnapshotSanitizer = {
+  sanitize: (text: string, source: string, options?: { scope?: 'lenient' | 'strict' }) => {
+    blocked: boolean;
+    sanitized: string;
+    warnings: Array<{ description: string }>;
+  };
+};
+
+function guardString(value: string, sanitizer: JevSnapshotSanitizer): string {
+  const rewritten = sanitizer.sanitize(value, 'Browser.jev_snapshot', { scope: 'lenient' }).sanitized;
+  return guardSensitiveText(rewritten, { surface: 'prompt', mode: 'model-context' });
 }
 
-function walkStrings(value: unknown): unknown {
-  if (typeof value === 'string') return guardString(value);
-  if (Array.isArray(value)) return value.map(walkStrings);
+function walkStrings(value: unknown, sanitizer: JevSnapshotSanitizer): unknown {
+  if (typeof value === 'string') return guardString(value, sanitizer);
+  if (Array.isArray(value)) return value.map((child) => walkStrings(child, sanitizer));
   if (value && typeof value === 'object') {
     const next: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      next[key] = walkStrings(child);
+      next[key] = walkStrings(child, sanitizer);
     }
     return next;
   }
@@ -135,11 +144,7 @@ export function guardJevBrowserSnapshot(args: {
   prepared: PreparedJevSnapshot;
   assertions: Array<{ id: string; kind: string; needle: string; met: boolean }>;
   recentSteps: Array<{ op: string; target_name: string; result: string }>;
-  sanitizer?: { sanitize: (text: string, source: string, options?: { scope?: 'lenient' | 'strict' }) => {
-    blocked: boolean;
-    sanitized: string;
-    warnings: Array<{ description: string }>;
-  } };
+  sanitizer?: JevSnapshotSanitizer;
 }): JevGuardedState {
   const sanitizer = args.sanitizer ?? getInputSanitizer();
   const scan = concatScanText(args.prepared, args.task);
@@ -167,10 +172,10 @@ export function guardJevBrowserSnapshot(args: {
       targetTextChars,
       dropZones,
     });
-    const guardedState = walkStrings(built.state) as Record<string, unknown>;
+    const guardedState = walkStrings(built.state, sanitizer) as Record<string, unknown>;
     const guardedLabels: Record<string, string> = {};
     for (const [key, label] of Object.entries(built.labels)) {
-      guardedLabels[key] = guardString(label);
+      guardedLabels[key] = guardString(label, sanitizer);
     }
     const questions = buildBrowserStepQuestions(guardedLabels);
     const chars = JSON.stringify(guardedState).length + JSON.stringify(questions).length;

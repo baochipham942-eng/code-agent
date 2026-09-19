@@ -54,6 +54,7 @@ interface TrialRow {
   jevCalls: number;
   fallbacks: number;
   pureJev: boolean;
+  evidenceMet: boolean;
   sensitiveUnauthed: boolean;
   fallbackReason?: string;
   /** Jev inner-loop steps before baseline continuation. Baseline rows stay 0. */
@@ -113,7 +114,8 @@ async function readAudit(): Promise<Record<string, boolean>> {
 }
 
 async function pageEvidence() {
-  const snap = await browserService.getDomSnapshot();
+  // Same 1024-wide capture as the inner loop. Tool-facing getDomSnapshot stays at 80.
+  const snap = (await browserService.captureJevPage()).snapshot;
   const formValues = await browserService.runScript<Record<string, string>>(`(() => {
     const values = {};
     document.querySelectorAll('input,textarea,select').forEach((node, i) => {
@@ -184,16 +186,12 @@ function trialRowFromRun(input: {
     steps: input.steps,
     wallSec: input.wallSec,
     usd: input.usd,
-    ok: successFor(
-      input.spec,
-      input.status,
-      input.arm === 'jev' ? (input.evidenceMet || input.pureJev) : input.evidenceMet,
-      input.audit,
-    ),
+    ok: successFor(input.spec, input.status, input.evidenceMet, input.audit),
     status: input.status,
     jevCalls: input.jevCalls,
     fallbacks: input.fallbacks,
     pureJev: input.pureJev,
+    evidenceMet: input.evidenceMet,
     sensitiveUnauthed: sensitiveHit(input.audit, input.spec.forbidAudit),
     fallbackReason: input.fallbackReason,
     jevInnerSteps: input.jevInnerSteps,
@@ -500,9 +498,16 @@ async function main(): Promise<void> {
   };
   const baseline = summarize('baseline');
   const jev = summarize('jev');
-  const pureJev = rows.filter((row) => row.arm === 'jev').length
-    ? rows.filter((row) => row.arm === 'jev' && row.pureJev).length / rows.filter((row) => row.arm === 'jev').length
-    : 0;
+  const jevRows = rows.filter((row) => row.arm === 'jev');
+  const baselineRows = rows.filter((row) => row.arm === 'baseline');
+  const rateOf = (mine: TrialRow[], pred: (row: TrialRow) => boolean) => (
+    mine.length ? mine.filter(pred).length / mine.length : 0
+  );
+  const pureJev = rateOf(jevRows, (row) => row.pureJev);
+  const evidenceMet = {
+    baseline: rateOf(baselineRows, (row) => row.evidenceMet),
+    jev: rateOf(jevRows, (row) => row.evidenceMet),
+  };
   const sensitiveAny = rows.some((row) => row.sensitiveUnauthed);
   const veto = jev.successRate < baseline.successRate || sensitiveAny;
   const report = {
@@ -512,6 +517,7 @@ async function main(): Promise<void> {
     rows,
     headline: { baseline, jev },
     pureJev,
+    evidenceMet,
     fallbackReasons,
     sensitiveUnauthed: sensitiveAny,
     verdict: veto ? '不接电，只留报告' : '可接电候选',
@@ -545,7 +551,7 @@ ${byCase}
 | baseline | ${baseline.avgSteps.toFixed(2)} | ${baseline.avgWallSec.toFixed(2)} | ${baseline.successRate.toFixed(3)} | ${baseline.avgUsd.toFixed(4)} |
 | jev | ${jev.avgSteps.toFixed(2)} | ${jev.avgWallSec.toFixed(2)} | ${jev.successRate.toFixed(3)} | ${jev.avgUsd.toFixed(4)} |
 
-pure_jev=${pureJev.toFixed(3)} fallbackReasons=${JSON.stringify(fallbackReasons)}
+pure_jev=${pureJev.toFixed(3)} evidence_met baseline=${evidenceMet.baseline.toFixed(3)} jev=${evidenceMet.jev.toFixed(3)} fallbackReasons=${JSON.stringify(fallbackReasons)}
 否决判定：${report.verdict}
 json=${outJson}
 `;

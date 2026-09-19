@@ -14,6 +14,7 @@ import type { JevBrowserHost } from '../../../../../src/host/agent/runtime/brows
 import type { ToolContext } from '../../../../../src/host/tools/types';
 import { BrowserTool } from '../../../../../src/host/tools/vision/BrowserTool';
 import { browserActionTool } from '../../../../../src/host/tools/vision/browserAction';
+import { LLM_SPECIAL_TOKEN_PLACEHOLDER } from '../../../../../src/shared/constants/llmSpecialTokens';
 import { browserSchema } from '../../../../../src/host/plugins/builtin/browserControl/browser.schema';
 import { browserActionSchema } from '../../../../../src/host/plugins/builtin/browserControl/browserAction.schema';
 import { browserPool } from '../../../../../src/host/services/infra/browserPool';
@@ -376,7 +377,7 @@ describe('jevBrowserStep', () => {
     expect(result.error).toMatch(/handle_dialog/);
   });
 
-  it('上传任务不弹框，交回 upload_file', async () => {
+  it('上传任务不弹框，交回主模型审批门', async () => {
     const page = snapshot('Upload', [button('tref_go', 'Submit', 80)]);
     page.snapshot.interactiveElements.push({
       tag: 'input',
@@ -397,7 +398,34 @@ describe('jevBrowserStep', () => {
     expect(systemOne).toHaveBeenCalledTimes(0);
     expect(result.status).toBe('needs_review');
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/upload_file/);
+    expect(result.error).toMatch(/交回主模型走现行审批门/);
+  });
+
+  it('CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT=2 时第二步后 step_limit', async () => {
+    vi.stubEnv('CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT', '2');
+    const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const result = await runLoop(host, systemOne, {
+      task: 'click Go until Never happens',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    });
+    expect(result.status).toBe('step_limit');
+    expect(result.metadata?.steps).toBe(2);
+    expect(host.clicks).toEqual(['tref_go', 'tref_go']);
+  });
+
+  it('未 blocked 时 sanitize 改写过的文本出现在 systemOne state', async () => {
+    const token = '<|endoftext|>';
+    const host = new FakeHost([snapshot(`Nav ${token} keep`, [button('tref_go', 'Go')])]);
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    await runLoop(host, systemOne, {
+      task: 'click Go until Never happens',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    });
+    expect(systemOne.calls.length).toBeGreaterThan(0);
+    const blob = JSON.stringify(systemOne.calls[0]);
+    expect(blob).toContain(LLM_SPECIAL_TOKEN_PLACEHOLDER);
+    expect(blob).not.toContain(token);
   });
 
   it('模型传入缺 needle / 非法 kind 的 assertions 不抛，条目被丢弃', async () => {

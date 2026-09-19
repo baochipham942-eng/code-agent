@@ -133,7 +133,7 @@ export function createManagedJevBrowserHost(service: BrowserService): JevBrowser
         return '';
       }
     },
-    // ponytail: 生产态 download_artifact_present 永远判不过，12 题未用到，是已知天花板
+    // ponytail: 生产态 listDownloads 恒空，download_artifact_present 永远判不过；升级路径=接 BrowserArtifactSummary / wait_for_download 产物表。12 题未用到，是已知天花板
     listDownloads: async () => [],
     evaluate: async (script) => service.runScript(script),
   };

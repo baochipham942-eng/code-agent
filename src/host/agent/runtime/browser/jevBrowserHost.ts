@@ -40,6 +40,26 @@ export function isStaleTargetRefError(error: unknown): error is BrowserTargetRef
   return error instanceof BrowserTargetRefError || (error as { code?: string } | null)?.code === 'STALE_TARGET_REF';
 }
 
+async function withHostTrace<T>(
+  service: BrowserService,
+  action: string,
+  params: Record<string, unknown>,
+  run: () => Promise<T>,
+): Promise<T> {
+  const trace = service.beginTrace({ toolName: 'browser_action', action, params });
+  try {
+    const value = await run();
+    service.logger.log('INFO', `Jev inner ${action}`);
+    service.finishTrace(trace, { success: true, error: null });
+    return value;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    service.logger.log('ERROR', `Jev inner ${action} failed: ${message}`);
+    service.finishTrace(trace, { success: false, error: message });
+    throw error;
+  }
+}
+
 export function createManagedJevBrowserHost(service: BrowserService): JevBrowserHost {
   return {
     isLaunched: () => service.isRunning() && Boolean(service.getActiveTab()),
@@ -48,31 +68,45 @@ export function createManagedJevBrowserHost(service: BrowserService): JevBrowser
       if (!service.getActiveTab()) await service.newTab();
     },
     navigate: async (url: string) => {
-      if (!service.getActiveTab()) await service.newTab(url);
-      else await service.navigate(url);
+      await withHostTrace(service, 'navigate', { url }, async () => {
+        if (!service.getActiveTab()) await service.newTab(url);
+        else await service.navigate(url);
+      });
     },
     currentUrl: () => service.getActiveTab()?.url || '',
     capture: async () => service.captureJevPage(),
     clickTargetRef: async (targetRef) => {
-      await Promise.race([
-        service.clickTargetRef(targetRef),
-        new Promise<void>((resolve) => setTimeout(resolve, 2500)),
-      ]);
+      // ponytail: click/type 2.5s race 半截保护；基线同场景一样卡，不算回归
+      await withHostTrace(service, 'click', { targetRef }, async () => {
+        await Promise.race([
+          service.clickTargetRef(targetRef),
+          new Promise<void>((resolve) => setTimeout(resolve, 2500)),
+        ]);
+      });
     },
     typeTargetRef: async (targetRef, text) => {
-      await Promise.race([
-        service.typeTargetRef(targetRef, text),
-        new Promise<void>((resolve) => setTimeout(resolve, 2500)),
-      ]);
+      // ponytail: click/type 2.5s race 半截保护；基线同场景一样卡，不算回归
+      await withHostTrace(service, 'type', { targetRef, text }, async () => {
+        await Promise.race([
+          service.typeTargetRef(targetRef, text),
+          new Promise<void>((resolve) => setTimeout(resolve, 2500)),
+        ]);
+      });
     },
     scroll: async (direction) => {
-      await service.scroll(direction, 300);
+      await withHostTrace(service, 'scroll', { direction }, async () => {
+        await service.scroll(direction, 300);
+      });
     },
     pressEnter: async () => {
-      await service.pressKey('Enter');
+      await withHostTrace(service, 'press_key', { key: 'Enter' }, async () => {
+        await service.pressKey('Enter');
+      });
     },
     wait: async (ms = 1000) => {
-      await service.waitForTimeout(ms);
+      await withHostTrace(service, 'wait', { ms }, async () => {
+        await service.waitForTimeout(ms);
+      });
     },
     getDialogState: () => service.getDialogState(),
     getFormValues: async () => {
@@ -99,6 +133,7 @@ export function createManagedJevBrowserHost(service: BrowserService): JevBrowser
         return '';
       }
     },
+    // ponytail: 生产态 download_artifact_present 永远判不过，12 题未用到，是已知天花板
     listDownloads: async () => [],
     evaluate: async (script) => service.runScript(script),
   };

@@ -56,7 +56,12 @@ interface TrialRow {
   pureJev: boolean;
   sensitiveUnauthed: boolean;
   fallbackReason?: string;
+  /** Jev inner-loop steps before baseline continuation. Baseline rows stay 0. */
+  jevInnerSteps: number;
 }
+
+const BROWSER_JEV_HARD_STEP_LIMIT = 60;
+const STEP_COUNT_RULE = 'action_only';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CASES_PATH = path.resolve(__dirname, '../../tests/fixtures/jev-browser-step/cases.json');
@@ -148,7 +153,66 @@ function successFor(spec: CaseSpec, status: string, evidenceMet: boolean, audit:
   if (spec.success === 'stalled') {
     return status === 'stalled' && !evidenceMet;
   }
-  return evidenceMet && status !== 'done_verified' ? evidenceMet : evidenceMet;
+  return evidenceMet;
+}
+
+function trialRowFromRun(input: {
+  spec: CaseSpec;
+  arm: 'baseline' | 'jev';
+  round: number;
+  wallSec: number;
+  steps: number;
+  usd: number;
+  status: string;
+  jevCalls: number;
+  fallbacks: number;
+  pureJev: boolean;
+  evidenceMet: boolean;
+  audit: Record<string, boolean>;
+  fallbackReason?: string;
+  jevInnerSteps: number;
+}): TrialRow {
+  return {
+    id: input.spec.id,
+    arm: input.arm,
+    round: input.round,
+    steps: input.steps,
+    wallSec: input.wallSec,
+    usd: input.usd,
+    ok: successFor(
+      input.spec,
+      input.status,
+      input.arm === 'jev' ? (input.evidenceMet || input.pureJev) : input.evidenceMet,
+      input.audit,
+    ),
+    status: input.status,
+    jevCalls: input.jevCalls,
+    fallbacks: input.fallbacks,
+    pureJev: input.pureJev,
+    sensitiveUnauthed: sensitiveHit(input.audit, input.spec.forbidAudit),
+    fallbackReason: input.fallbackReason,
+    jevInnerSteps: input.jevInnerSteps,
+  };
+}
+
+function assertTrialRowsConsistent(rows: TrialRow[]): void {
+  const problems: string[] = [];
+  for (const row of rows) {
+    if (row.steps > BROWSER_JEV_HARD_STEP_LIMIT) {
+      problems.push(`${row.id} ${row.arm} r${row.round}: steps=${row.steps} > hard cap ${BROWSER_JEV_HARD_STEP_LIMIT}`);
+    }
+    if (row.arm === 'jev') {
+      if (row.jevInnerSteps > row.jevCalls) {
+        problems.push(`${row.id} jev r${row.round}: innerSteps=${row.jevInnerSteps} > jevCalls=${row.jevCalls}`);
+      }
+      if (row.jevInnerSteps > BROWSER_JEV_HARD_STEP_LIMIT) {
+        problems.push(`${row.id} jev r${row.round}: innerSteps=${row.jevInnerSteps} > hard cap ${BROWSER_JEV_HARD_STEP_LIMIT}`);
+      }
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(`benchmark row integrity failed:\n${problems.join('\n')}`);
+  }
 }
 
 async function runBaseline(spec: CaseSpec, origin: string, context: ToolContext, remaining: number): Promise<{
@@ -178,7 +242,6 @@ async function runBaseline(spec: CaseSpec, origin: string, context: ToolContext,
       break;
     }
     const snap = await browserActionTool.execute({ action: 'get_dom_snapshot' }, context);
-    steps += 1;
     messages.push({ role: 'user', content: `Current DOM snapshot (cap 80):\n${String(snap.output || '').slice(0, 12_000)}` });
     const response = await provider.inference(messages, [browserToolDef], {
       provider: DEFAULT_PROVIDER,
@@ -217,7 +280,7 @@ async function runBaseline(spec: CaseSpec, origin: string, context: ToolContext,
       toolCallId: call.id,
       toolError: !result.success,
     });
-    steps += 1;
+    steps += 1; // action_only: snapshot is not a step; only the model-selected action counts
     const dialog = browserService.getDialogState();
     if (dialog.pending) {
       await browserService.handleDialog('dismiss').catch(() => undefined);
@@ -241,6 +304,7 @@ async function runJevArm(spec: CaseSpec, origin: string, context: ToolContext, m
   status: string;
   fallbackReason?: string;
   baselineUsd: number;
+  jevInnerSteps: number;
 }> {
   const host = createManagedJevBrowserHost(browserService);
   if (!host.isLaunched()) await host.launch();
@@ -272,12 +336,13 @@ async function runJevArm(spec: CaseSpec, origin: string, context: ToolContext, m
   return {
     steps,
     usd,
-    jevCalls: Number(tool.metadata?.jevCalls || 0),
+    jevCalls: jev.jevCalls,
     fallbacks,
     pureJev: jev.status === 'done_verified',
     status,
     fallbackReason: jev.reason,
     baselineUsd,
+    jevInnerSteps: jev.steps,
   };
 }
 
@@ -319,7 +384,7 @@ async function main(): Promise<void> {
           const started = Date.now();
           const context = makeContext();
           context.turnId = `${spec.id}-${arm}-${round}`;
-          let trial: Omit<TrialRow, 'wallSec'>;
+          let trial: TrialRow;
           try {
             await browserService.close().catch(() => undefined);
             await launchBrowser();
@@ -329,19 +394,21 @@ async function main(): Promise<void> {
               const evidence = await pageEvidence();
               const evaluated = evaluateJevAssertions(spec.assertions.length ? spec.assertions : extractJevAssertions(spec.task), evidence);
               const audit = await readAudit();
-              trial = {
-                id: spec.id,
+              trial = trialRowFromRun({
+                spec,
                 arm,
                 round,
+                wallSec: (Date.now() - started) / 1000,
                 steps: result.steps,
                 usd: result.usd,
-                ok: successFor(spec, result.status, evaluated.allMet, audit),
                 status: result.status,
                 jevCalls: 0,
                 fallbacks: 0,
                 pureJev: false,
-                sensitiveUnauthed: sensitiveHit(audit, spec.forbidAudit),
-              };
+                evidenceMet: evaluated.allMet,
+                audit,
+                jevInnerSteps: 0,
+              });
             } else {
               const result = await runJevArm(spec, originServer.origin, context, mutate);
               const evidence = await pageEvidence();
@@ -350,38 +417,42 @@ async function main(): Promise<void> {
               if (result.fallbackReason) {
                 fallbackReasons[result.fallbackReason] = (fallbackReasons[result.fallbackReason] || 0) + 1;
               }
-              trial = {
-                id: spec.id,
+              trial = trialRowFromRun({
+                spec,
                 arm,
                 round,
+                wallSec: (Date.now() - started) / 1000,
                 steps: result.steps,
                 usd: result.usd,
-                ok: successFor(spec, result.status, evaluated.allMet || result.pureJev, audit),
                 status: result.status,
                 jevCalls: result.jevCalls,
                 fallbacks: result.fallbacks,
                 pureJev: result.pureJev,
-                sensitiveUnauthed: sensitiveHit(audit, spec.forbidAudit),
+                evidenceMet: evaluated.allMet,
+                audit,
                 fallbackReason: result.fallbackReason,
-              };
+                jevInnerSteps: result.jevInnerSteps,
+              });
             }
           } catch (error) {
-            trial = {
-              id: spec.id,
+            trial = trialRowFromRun({
+              spec,
               arm,
               round,
+              wallSec: (Date.now() - started) / 1000,
               steps: 0,
               usd: 0,
-              ok: false,
               status: 'error',
               jevCalls: 0,
               fallbacks: 0,
               pureJev: false,
-              sensitiveUnauthed: false,
+              evidenceMet: false,
+              audit: {},
               fallbackReason: error instanceof Error ? error.message : String(error),
-            };
+              jevInnerSteps: 0,
+            });
           }
-          rows.push({ ...trial, wallSec: (Date.now() - started) / 1000 });
+          rows.push(trial);
           console.error(`${spec.id} ${arm} r${round} status=${trial.status} ok=${trial.ok} steps=${trial.steps}`);
         }
       }
@@ -412,6 +483,7 @@ async function main(): Promise<void> {
   const report = {
     generatedAt: new Date().toISOString(),
     mutate: mutate || null,
+    stepCount: STEP_COUNT_RULE,
     rows,
     headline: { baseline, jev },
     pureJev,
@@ -419,6 +491,14 @@ async function main(): Promise<void> {
     sensitiveUnauthed: sensitiveAny,
     verdict: veto ? '不接电，只留报告' : '可接电候选',
   };
+  try {
+    assertTrialRowsConsistent(rows);
+  } catch (error) {
+    fs.mkdirSync(path.dirname(outJson), { recursive: true });
+    fs.writeFileSync(outJson, JSON.stringify(report, null, 2));
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
   fs.mkdirSync(path.dirname(outJson), { recursive: true });
   fs.writeFileSync(outJson, JSON.stringify(report, null, 2));
   const byCase = fixture.cases.map((spec) => {
@@ -430,6 +510,7 @@ async function main(): Promise<void> {
     return cells.join('\n');
   }).join('\n');
   const markdown = `## 验收③ browser-step-benchmark
+口径：执行模型选中的动作才计一步（快照不计）。jev 内环每执行一步算一步，微回落 scroll 算一步。
 | id | arm | r1步/秒/$/ok | r2 | r3 | 平均步数 | 平均墙钟s | 成功率 | 平均$/题 | 敏感未批 | 交回次数 |
 |---|---|---|---|---|---|---|---|---|---|---|
 ${byCase}

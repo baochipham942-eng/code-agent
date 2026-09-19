@@ -398,6 +398,102 @@ describe('jevBrowserStep', () => {
     }
   });
 
+  it('自抽任务 URL 的 url_includes 是前置条件，导航后第一圈不得 done_verified', async () => {
+    const host = new FakeHost([snapshot('Cart', [button('tref_go', 'Checkout')])]);
+    const systemOne = stubSystemOne(() => answers({
+      operation: 'stop',
+      target: 'no_target',
+      done: 1,
+    }));
+    const task = '打开 https://shop.example/cart 把这件商品结账';
+    const extracted = extractJevAssertions(task);
+    expect(extracted).toEqual([
+      expect.objectContaining({
+        kind: 'url_includes',
+        needle: 'https://shop.example/cart',
+        precondition: true,
+      }),
+    ]);
+    const evaluated = evaluateJevAssertions(extracted, {
+      url: 'https://shop.example/cart',
+      title: 'Cart',
+      headings: [{ text: 'Cart' }],
+      elements: [{ text: 'Checkout' }],
+      formValues: {},
+      downloads: [],
+    });
+    expect(evaluated.results[0]?.met).toBe(true);
+    expect(evaluated.allMet).toBe(false);
+
+    const result = await runLoop(host, systemOne, { task });
+    expect(result.status).not.toBe('done_verified');
+    expect(host.url).toBe('https://shop.example/cart');
+  });
+
+  it('task 含 URL + 引号片段时片段断言仍参与 allMet', async () => {
+    const host = new FakeHost([snapshot('Cart', [button('tref_go', 'Order total')])]);
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const present = await runLoop(
+      host,
+      systemOne,
+      { task: '打开 https://shop.example/cart 看 "Order total"' },
+    );
+    expect(present.status).toBe('done_verified');
+    expect(systemOne).toHaveBeenCalledTimes(0);
+
+    const missingHost = new FakeHost([snapshot('Cart', [button('tref_go', 'Checkout')])]);
+    const missingSystem = stubSystemOne(() => answers({
+      operation: 'stop',
+      target: 'no_target',
+      done: 1,
+    }));
+    const missing = await runLoop(
+      missingHost,
+      missingSystem,
+      { task: '打开 https://shop.example/cart 看 "Order total"' },
+    );
+    expect(missing.status).not.toBe('done_verified');
+  });
+
+  it('金标 override 的 url_includes 即使等于任务 URL 仍参与 allMet', async () => {
+    const host = new FakeHost([snapshot('Cart', [button('tref_go', 'Checkout')])]);
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const result = await runLoop(host, systemOne, {
+      task: '打开 https://shop.example/cart 把这件商品结账',
+      assertions: [{ id: 'a1', kind: 'url_includes', needle: 'https://shop.example/cart' }],
+    });
+    expect(result.status).toBe('done_verified');
+    expect(systemOne).toHaveBeenCalledTimes(0);
+  });
+
+  it('空 needle / 纯空白 needle 的 override 丢弃+warn，不得 done_verified', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(extractJevAssertions('click Go', [
+        { kind: 'title_includes', needle: '' },
+        { kind: 'element_text_includes', needle: '   ' },
+      ])).toEqual([]);
+      expect(warn.mock.calls.some((call) => String(call[0]).includes('needle empty'))).toBe(true);
+
+      const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+      const systemOne = stubSystemOne(() => answers({
+        operation: 'stop',
+        target: 'no_target',
+        done: 1,
+      }));
+      const result = await runLoop(host, systemOne, {
+        task: 'click Go',
+        assertions: [
+          { kind: 'title_includes', needle: '' },
+          { kind: 'title_includes', needle: '   ' },
+        ],
+      });
+      expect(result.status).not.toBe('done_verified');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('生产装配线：execute_goal 与 click 共用同一 surface 池实例', async () => {
     vi.stubEnv('CODE_AGENT_BROWSER_JEV_STEP', '1');
     vi.stubEnv('TYPESAFE_API_KEY', 'test-key-not-used');
@@ -432,6 +528,11 @@ describe('jevBrowserStep', () => {
       const goalResult = await BrowserTool.execute({ action: 'execute_goal', task: 'click Go' }, ctx);
       expect(String(goalResult.error ?? '')).not.toMatch(/TypeError|Cannot read propert/i);
       expect(surface.captureJevPage).toHaveBeenCalled();
+      expect(surface.beginTrace).toHaveBeenCalledWith(expect.objectContaining({
+        toolName: 'browser_action',
+        action: 'execute_goal',
+      }));
+      expect(surface.finishTrace).toHaveBeenCalled();
       expect(services.has(identity.agentId)).toBe(false);
       expect(surface).toBe(services.get(surfaceKey));
       expect(acquireSpy.mock.calls.some((call) => call[0] === identity.agentId)).toBe(false);

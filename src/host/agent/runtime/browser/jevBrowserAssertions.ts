@@ -20,6 +20,8 @@ export interface JevPageAssertion {
   role?: string;
   name?: string;
   selectorHint?: string;
+  /** Self-extracted navigate-target url_includes. Does not participate in allMet. */
+  precondition?: boolean;
 }
 
 export interface JevAssertionEvidence {
@@ -91,14 +93,19 @@ function sanitizeOverrideAssertion(raw: unknown, index: number): JevPageAssertio
     traceDroppedAssertion('kind not in whitelist', index, candidate.kind);
     return null;
   }
+  const trimmedNeedle = typeof candidate.needle === 'string' ? candidate.needle.trim() : '';
   if (needleRequired(candidate.kind) && typeof candidate.needle !== 'string') {
     traceDroppedAssertion('needle missing', index, candidate.kind);
+    return null;
+  }
+  if (needleRequired(candidate.kind) && !trimmedNeedle) {
+    traceDroppedAssertion('needle empty', index, candidate.kind);
     return null;
   }
   const assertion: JevPageAssertion = {
     id: typeof candidate.id === 'string' && candidate.id ? candidate.id : `a${index + 1}`,
     kind: candidate.kind,
-    needle: typeof candidate.needle === 'string' ? candidate.needle : '',
+    needle: trimmedNeedle,
   };
   if (typeof candidate.role === 'string') assertion.role = candidate.role;
   if (typeof candidate.name === 'string') assertion.name = candidate.name;
@@ -124,6 +131,17 @@ function looksLikePath(value: string): boolean {
   return /[a-z]/i.test(value);
 }
 
+function sameOriginAndPath(left: string, right: string): boolean {
+  try {
+    const a = new URL(stripUrlQuerySecrets(left));
+    const b = new URL(stripUrlQuerySecrets(right));
+    return a.origin.toLowerCase() === b.origin.toLowerCase()
+      && a.pathname.replace(/\/$/, '').toLowerCase() === b.pathname.replace(/\/$/, '').toLowerCase();
+  } catch {
+    return stripUrlQuerySecrets(left).toLowerCase() === stripUrlQuerySecrets(right).toLowerCase();
+  }
+}
+
 export function extractJevAssertions(
   task: string,
   override?: Array<JevPageAssertion | Record<string, unknown>>,
@@ -139,17 +157,26 @@ export function extractJevAssertions(
 
   const found: JevPageAssertion[] = [];
   const seen = new Set<string>();
-  const add = (kind: JevAssertionKind, needle: string) => {
+  const add = (kind: JevAssertionKind, needle: string, precondition = false) => {
     const trimmed = needle.trim();
     if (!trimmed) return;
     const key = `${kind}:${normalize(trimmed)}`;
     if (seen.has(key)) return;
     seen.add(key);
-    found.push({ id: `a${found.length + 1}`, kind, needle: trimmed });
+    found.push({
+      id: `a${found.length + 1}`,
+      kind,
+      needle: trimmed,
+      ...(precondition ? { precondition: true } : {}),
+    });
   };
 
-  for (const match of task.match(URL_RE) || []) {
-    add('url_includes', stripUrlQuerySecrets(match));
+  const taskUrls = task.match(URL_RE) || [];
+  const navigateTarget = taskUrls[0] ? stripUrlQuerySecrets(taskUrls[0]) : null;
+  for (const match of taskUrls) {
+    const needle = stripUrlQuerySecrets(match);
+    const precondition = Boolean(navigateTarget && sameOriginAndPath(needle, navigateTarget));
+    add('url_includes', needle, precondition);
   }
 
   QUOTE_RE.lastIndex = 0;
@@ -166,7 +193,8 @@ export function extractJevAssertions(
   let pathMatch: RegExpExecArray | null = PATH_RE.exec(task);
   while (pathMatch) {
     const path = pathMatch[1];
-    if (looksLikePath(path)) add('url_includes', path);
+    const fromTaskUrl = taskUrls.some((url) => url.includes(path));
+    if (looksLikePath(path) && !fromTaskUrl) add('url_includes', path);
     pathMatch = PATH_RE.exec(task);
   }
 
@@ -181,8 +209,9 @@ export function evaluateJevAssertions(
     ...assertion,
     met: matchAssertion(assertion, evidence),
   }));
+  const goal = results.filter((result) => !result.precondition);
   return {
-    allMet: assertions.length > 0 && results.every((result) => result.met),
+    allMet: goal.length > 0 && goal.every((result) => result.met),
     results,
   };
 }

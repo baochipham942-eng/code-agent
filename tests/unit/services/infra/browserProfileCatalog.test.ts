@@ -90,7 +90,7 @@ describe('browserProfileCatalog (ADR-041)', () => {
     const defaultDir = path.join(chromeRoot, 'Default');
     fs.mkdirSync(path.join(defaultDir, 'Network'), { recursive: true });
     const db = new Database(path.join(defaultDir, 'Network', 'Cookies'));
-    db.exec('CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT);');
+    db.exec('CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, expires_utc INTEGER DEFAULT 0);');
     db.prepare('INSERT INTO cookies (host_key, name, value) VALUES (?, ?, ?)').run('.Example.com', 'sid', 'secret');
     db.prepare('INSERT INTO cookies (host_key, name, value) VALUES (?, ?, ?)').run('example.com', 'prefs', 'secret');
     db.prepare('INSERT INTO cookies (host_key, name, value) VALUES (?, ?, ?)').run('github.com', 'sid', 'secret');
@@ -101,6 +101,32 @@ describe('browserProfileCatalog (ADR-041)', () => {
       .find((entry) => entry.source === 'chrome' && entry.profileId === 'Default');
     expect(profile?.cookieDomains).toEqual([
       { domain: 'example.com', cookieCount: 2 },
+      { domain: 'github.com', cookieCount: 1 },
+    ]);
+  });
+
+  it('omits expired cookies from domain counts, matching the import skip path', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-profile-catalog-expired-'));
+    tempRoots.push(home);
+    const chromeRoot = path.join(home, 'Library', 'Application Support', 'Google', 'Chrome');
+    const defaultDir = path.join(chromeRoot, 'Default');
+    fs.mkdirSync(path.join(defaultDir, 'Network'), { recursive: true });
+    const chromeEpochOffsetSeconds = 11_644_473_600;
+    const nowUnix = Math.floor(Date.now() / 1000);
+    const expiredUtc = (nowUnix - 3600 + chromeEpochOffsetSeconds) * 1_000_000;
+    const liveUtc = (nowUnix + 3600 + chromeEpochOffsetSeconds) * 1_000_000;
+    const db = new Database(path.join(defaultDir, 'Network', 'Cookies'));
+    db.exec('CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, expires_utc INTEGER);');
+    db.prepare('INSERT INTO cookies (host_key, name, value, expires_utc) VALUES (?, ?, ?, ?)').run('example.com', 'sid', 'secret', liveUtc);
+    db.prepare('INSERT INTO cookies (host_key, name, value, expires_utc) VALUES (?, ?, ?, ?)').run('example.com', 'old', 'secret', expiredUtc);
+    db.prepare('INSERT INTO cookies (host_key, name, value, expires_utc) VALUES (?, ?, ?, ?)').run('github.com', 'sid', 'secret', 0);
+    db.close();
+    fs.writeFileSync(path.join(chromeRoot, 'Local State'), JSON.stringify({ profile: { info_cache: { Default: {} } } }));
+
+    const profile = listBrowserProfiles({ homeDir: home, platform: 'darwin' })
+      .find((entry) => entry.source === 'chrome' && entry.profileId === 'Default');
+    expect(profile?.cookieDomains).toEqual([
+      { domain: 'example.com', cookieCount: 1 },
       { domain: 'github.com', cookieCount: 1 },
     ]);
   });

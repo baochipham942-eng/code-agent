@@ -111,13 +111,19 @@ export function resolveCookieDbPath(profileDir: string): string | null {
   return null;
 }
 
+const CHROME_UNIX_EPOCH_OFFSET_SECONDS = 11_644_473_600;
+
 function readCookieDomainSummaries(cookieDbPath: string): BrowserProfileCookieDomainSummary[] {
   try {
     const db = new Database(cookieDbPath, { readonly: true, fileMustExist: true });
     try {
+      const nowChromeUtc = (Math.floor(Date.now() / 1000) + CHROME_UNIX_EPOCH_OFFSET_SECONDS) * 1_000_000;
       const rows = db.prepare(
-        'SELECT host_key AS domain, COUNT(*) AS cookieCount FROM cookies GROUP BY host_key',
-      ).all() as Array<{ domain?: unknown; cookieCount?: unknown }>;
+        `SELECT host_key AS domain, COUNT(*) AS cookieCount
+         FROM cookies
+         WHERE expires_utc IS NULL OR expires_utc <= 0 OR expires_utc > ?
+         GROUP BY host_key`,
+      ).all(nowChromeUtc) as Array<{ domain?: unknown; cookieCount?: unknown }>;
       const counts = new Map<string, number>();
       for (const row of rows) {
         const domain = typeof row.domain === 'string'

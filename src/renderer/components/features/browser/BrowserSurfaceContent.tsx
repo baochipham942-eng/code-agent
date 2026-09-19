@@ -200,7 +200,7 @@ export const BrowserSurfaceContent: React.FC = () => {
       throw new Error(selected.unavailableMessage || '该 profile 当前不可用。');
     }
     if (domainAllowlist.length === 0) {
-      throw new Error('请至少选择一个站点后再导入。');
+      throw new Error(cookieCopy.importCookiesDomainRequired);
     }
     setBrowserSessionMode('managed');
     const response = await ipcService.invokeDomain<ProfileImportIpcResult>(
@@ -226,7 +226,7 @@ export const BrowserSurfaceContent: React.FC = () => {
       + (result.domainCount ? `（${result.domainCount} 个 domain）` : '')
       + '。托管浏览器已 reload。',
     );
-  }), [profiles, run, selectedProfileKey, setBrowserSessionMode]);
+  }), [cookieCopy.importCookiesDomainRequired, profiles, run, selectedProfileKey, setBrowserSessionMode]);
 
   const handleImportProfile = useCallback(() => {
     if (selectedDomains.length === 0) {
@@ -275,6 +275,9 @@ export const BrowserSurfaceContent: React.FC = () => {
     () => profiles.filter((item) => item.available),
     [profiles],
   );
+  const selectedCookieDomains = availableProfiles.find(
+    (item) => `${item.source}::${item.profileId}` === selectedProfileKey,
+  )?.cookieDomains ?? [];
 
   const isBusy = (action: BusyAction) => busyAction === action;
   const bridgeReady = bridge?.status === 'connected';
@@ -429,7 +432,7 @@ export const BrowserSurfaceContent: React.FC = () => {
                   </BrowserActionButton>
                   <BrowserActionButton
                     busy={isBusy('importProfile')}
-                    disabled={Boolean(busyAction) || !selectedProfileKey}
+                    disabled={Boolean(busyAction) || !selectedProfileKey || selectedCookieDomains.length === 0}
                     onClick={handleImportAllProfile}
                   >
                     {cookieCopy.importCookiesImportAll}

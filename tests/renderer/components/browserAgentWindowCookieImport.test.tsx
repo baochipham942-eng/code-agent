@@ -156,6 +156,29 @@ describe('BrowserAgentWindow Cookie 导入入口（P1）', () => {
     });
   });
 
+  it('disables confirm when no site is selected by default', async () => {
+    render(<BrowserAgentWindow />);
+    fireEvent.click(screen.getByTestId('browser-agent-window-more'));
+    fireEvent.click(screen.getByTestId('browser-agent-window-import-cookies'));
+    await waitFor(() => expect(screen.getByTestId('browser-agent-window-import-cookies-dialog')).toBeTruthy());
+
+    expect((screen.getByRole('button', { name: '确认导入' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(importBrowserProfileCookiesToPersonal).not.toHaveBeenCalled();
+  });
+
+  it('does not import when 导入全部 is cancelled in window.confirm', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<BrowserAgentWindow />);
+    fireEvent.click(screen.getByTestId('browser-agent-window-more'));
+    fireEvent.click(screen.getByTestId('browser-agent-window-import-cookies'));
+    await waitFor(() => expect(screen.getByTestId('browser-agent-window-import-cookies-dialog')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('browser-cookie-import-all'));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(importBrowserProfileCookiesToPersonal).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
   it('Chrome 锁库失败展示人话提示', async () => {
     importBrowserProfileCookiesToPersonal.mockResolvedValueOnce({
       ok: false,

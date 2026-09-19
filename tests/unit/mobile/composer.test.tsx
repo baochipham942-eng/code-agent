@@ -350,7 +350,7 @@ describe('VoiceCapture failure reporting', () => {
 // 这个 Harness 照搬 companionStore 的真实时序：transcribe 进了待确认槽就回 commandId、
 // pending=true，主机结算后才 pending=false + 一条**认 commandId** 的 result。
 // 协议一次只允许一条在飞，所以队列必须串行。
-function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true, onStart, stopDelay = 0, sendDelay = 0, initialDraft = '' }: {
+function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true, onStart, stopDelay = 0, sendDelay = 0, initialDraft = '', stopOutcome }: {
   sent: (audioData: string, continuation: boolean, take?: string) => void;
   /** 'silent' = 主机回「这段没人说话」（HALLUCINATION / EMPTY_RESULT），不是失败。 */
   verdict?: (seq: number) => 'done' | 'error' | 'silent' | { outcome: 'error'; code: string };
@@ -360,11 +360,14 @@ function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = fal
   stopDelay?: number;
   /** 命令进待确认槽的耗时——取消正落在这个 await 里，就是 grok 第七轮那条 Important 的窗口。 */
   sendDelay?: number;
+  /** 原生近场门：第 n 次 stop 抛 NO_SPEECH / EMPTY_RECORDING，或正常出音频。 */
+  stopOutcome?: (n: number) => 'audio' | 'NO_SPEECH' | 'EMPTY_RECORDING';
 }) {
   const [pending, setPending] = React.useState(false);
   const [result, setResult] = React.useState<VoiceResult | null>(null);
   const [draft, setDraft] = React.useState(initialDraft);
   const seq = React.useRef(0);
+  const stops = React.useRef(0);
   const refused = React.useRef(false);
   /** 照搬 companionStore 的取消语义：被取消的那**次录音**，晚到结果一律不写进草稿。 */
   const discarded = React.useRef<string | null>(null);
@@ -372,7 +375,12 @@ function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = fal
   // useVoiceCapture 的清理副作用把正在录的这次当作「录音口换了」收掉。
   const recorder = React.useRef({
     start: async () => { onStart?.(); },
-    stop: async () => { if (stopDelay) await new Promise(resolve => setTimeout(resolve, stopDelay)); return { audioData: `chunk${seq.current + 1}`, mimeType: 'audio/aac', durationMs: 4000 }; },
+    stop: async () => {
+      if (stopDelay) await new Promise(resolve => setTimeout(resolve, stopDelay));
+      const outcome = stopOutcome?.(++stops.current) ?? 'audio';
+      if (outcome !== 'audio') throw new Error(outcome);
+      return { audioData: `chunk${seq.current + 1}`, mimeType: 'audio/aac', durationMs: 4000 };
+    },
   }).current;
   const transcribe = async (audio: { audioData: string }, continuation: boolean, take: string) => {
     sent(audio.audioData, continuation, take);
@@ -836,6 +844,36 @@ describe('build 27 真机四条（爸 2026-09-13）', () => {
     expect(screen.queryByText(new RegExp(text.voiceTranscribeFailed))).toBeNull();
     expect(screen.queryByRole('button', { name: text.retry })).toBeNull();
     // 说了话的那几段照常成文
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
+  });
+
+  it('近场能量门 NO_SPEECH 当没发生：不报错、不送转写、面板干净收口', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} stopOutcome={() => 'NO_SPEECH'} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(6_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(2_000);
+    expect(sent).not.toHaveBeenCalled();
+    expect(screen.getByTestId('draft')).toBeTruthy();
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toBe('');
+    expect(document.querySelector('.voice-composer')).toBeNull();
+    expect(document.querySelector('[data-testid="status-slot"]')).toBeNull();
+    expect(screen.queryByText(new RegExp(text.voiceChunkDropped))).toBeNull();
+    expect(screen.queryByRole('button', { name: text.retry })).toBeNull();
+  });
+
+  it('近场门只拦没说话的段，说了话的段照常成文、不计丢片', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} stopOutcome={n => (n === 2 ? 'NO_SPEECH' : 'audio')} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(10_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(2_000);
+    expect(sent.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(new RegExp(text.voiceChunkDropped))).toBeNull();
     expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
   });
 

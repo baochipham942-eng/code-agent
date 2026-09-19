@@ -57,7 +57,12 @@ import {
   clearRetainedSpeechAudio,
   SpeechTranscriptionService,
 } from '../../../../src/host/services/speech/speechTranscriptionService';
-import { companionTranscriptionSettlement } from '../../../../src/shared/contract/speech';
+import {
+  companionTranscriptionSettlement,
+  keepVoicedTranscript,
+  SPEECH_AVG_LOGPROB_MIN,
+  SPEECH_NO_SPEECH_PROB_MAX,
+} from '../../../../src/shared/contract/speech';
 
 function makeAudioData(size = 2048): string {
   return Buffer.alloc(size, 1).toString('base64');
@@ -342,7 +347,7 @@ describe('SpeechTranscriptionService', () => {
     });
     expect(groqCreateMock).toHaveBeenCalledWith(expect.objectContaining({
       model: 'whisper-large-v3-turbo',
-      response_format: 'text',
+      response_format: 'verbose_json',
     }));
   });
 
@@ -407,6 +412,50 @@ describe('SpeechTranscriptionService', () => {
     const result = await service.transcribe({ audioData: makeAudioData(), mimeType: 'audio/aac', source: 'composer' });
 
     expect(result.success).toBe(true);
+  });
+
+  it('keepVoicedTranscript 丢掉无语音和高幻觉分段，留下近场口令', () => {
+    expect(keepVoicedTranscript('远处电视在说话', [
+      { text: '远处电视在说话', no_speech_prob: SPEECH_NO_SPEECH_PROB_MAX + 0.2, avg_logprob: -0.2 },
+    ])).toBe('');
+    expect(keepVoicedTranscript('谢谢观看', [
+      { text: '谢谢观看', no_speech_prob: 0.1, avg_logprob: SPEECH_AVG_LOGPROB_MIN - 0.4 },
+    ])).toBe('');
+    expect(keepVoicedTranscript('帮我写一封信谢谢观看', [
+      { text: '帮我写一封信', no_speech_prob: 0.1, avg_logprob: -0.2 },
+      { text: '谢谢观看', no_speech_prob: 0.91, avg_logprob: -0.3 },
+    ])).toBe('帮我写一封信');
+    expect(keepVoicedTranscript('本地没有分段', undefined)).toBe('本地没有分段');
+  });
+
+  it('Groq verbose_json 全段无语音时结算成 EMPTY_RESULT（手机当静音）', async () => {
+    configureSpeech({ mode: 'cloud-only' });
+    groqCreateMock.mockResolvedValueOnce({
+      text: '远处短视频的对白',
+      segments: [
+        { text: '远处短视频的对白', no_speech_prob: 0.88, avg_logprob: -0.4 },
+      ],
+    });
+    const service = new SpeechTranscriptionService();
+    const result = await service.transcribe({ audioData: makeAudioData(), mimeType: 'audio/aac', source: 'composer' });
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('EMPTY_RESULT');
+    expect(companionTranscriptionSettlement(result).result.silent).toBe(true);
+  });
+
+  it('Groq verbose_json 只丢掉无语音分段，近场口令留下来', async () => {
+    configureSpeech({ mode: 'cloud-only' });
+    groqCreateMock.mockResolvedValueOnce({
+      text: '帮我建一个待办谢谢观看',
+      segments: [
+        { text: '帮我建一个待办', no_speech_prob: 0.08, avg_logprob: -0.25 },
+        { text: '谢谢观看', no_speech_prob: 0.9, avg_logprob: -0.5 },
+      ],
+    });
+    const service = new SpeechTranscriptionService();
+    const result = await service.transcribe({ audioData: makeAudioData(), mimeType: 'audio/aac', source: 'composer' });
+    expect(result.success).toBe(true);
+    expect(result.text).toBe('帮我建一个待办');
   });
 
   it('local-first 两条通道都断时报「没有可用通道」且不可重试（不把锅记在 Groq 头上）', async () => {

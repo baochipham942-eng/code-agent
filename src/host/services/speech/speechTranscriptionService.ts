@@ -19,6 +19,8 @@ import {
   type SpeechTranscriptionMode,
   SPEECH_EMPTY_RESULT_CODE,
   SPEECH_HALLUCINATION_CODE,
+  keepVoicedTranscript,
+  type SpeechAsrSegment,
 } from '../../../shared/contract/speech';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
@@ -397,10 +399,30 @@ async function splitAudioIntoChunks(
   return chunks;
 }
 
+function parseGroqTranscription(transcription: unknown): { text: string; segments?: SpeechAsrSegment[] } {
+  if (typeof transcription === 'string') return { text: transcription };
+  if (!transcription || typeof transcription !== 'object' || Array.isArray(transcription)) {
+    return { text: getTextFromTranscriptionResult(transcription) };
+  }
+  const record = transcription as Record<string, unknown>;
+  const text = typeof record.text === 'string' ? record.text : '';
+  if (!Array.isArray(record.segments)) return { text };
+  const segments = record.segments.flatMap((entry): SpeechAsrSegment[] => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const segment = entry as Record<string, unknown>;
+    return [{
+      text: typeof segment.text === 'string' ? segment.text : undefined,
+      no_speech_prob: typeof segment.no_speech_prob === 'number' ? segment.no_speech_prob : undefined,
+      avg_logprob: typeof segment.avg_logprob === 'number' ? segment.avg_logprob : undefined,
+    }];
+  });
+  return { text, segments };
+}
+
 async function transcribeWithGroq(
   filePath: string,
   language: string,
-): Promise<string> {
+): Promise<{ text: string; segments?: SpeechAsrSegment[] }> {
   const apiKey = getConfigService().getApiKey('groq');
   if (!apiKey) {
     throw new LocalSpeechTranscriptionError('NOT_INITIALIZED', '未配置 Groq API Key');
@@ -418,9 +440,10 @@ async function transcribeWithGroq(
       file: fileStream,
       model: 'whisper-large-v3-turbo',
       ...(language && language !== 'auto' ? { language } : {}),
-      response_format: 'text',
+      // verbose_json 才带分段 no_speech_prob / avg_logprob，纯 text 拦不住远场人声。
+      response_format: 'verbose_json',
     });
-    return getTextFromTranscriptionResult(transcription);
+    return parseGroqTranscription(transcription);
   } finally {
     fileStream.destroy();
   }
@@ -462,7 +485,8 @@ async function transcribeAudioFile(
 
   try {
     const startedAt = Date.now();
-    const text = await transcribeWithGroq(filePath, language);
+    const groq = await transcribeWithGroq(filePath, language);
+    const text = keepVoicedTranscript(groq.text, groq.segments);
     return attachFailureAudio(ensureMeaningfulText(text, 'groq', {
       durationMs: Date.now() - startedAt,
       language,

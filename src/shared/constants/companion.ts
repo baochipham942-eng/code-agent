@@ -73,6 +73,16 @@ export const COMPANION_LIMITS = {
   /** 录音期间每隔这么久切一段传一段：短了 whisper 认不准（<2s 明显变差），长了草稿追加得太慢。 */
   voiceChunkMs: 4_000,
   /**
+   * 近场能量门（N-VOICE-AMBIENT-GATE）。iOS `averagePower` 是 dBFS；PCM RMS 是同一档的
+   * 16-bit 等价值（32768 × 10^(dB/20)）；Android `getMaxAmplitude` 是 0–32767 峰值。
+   * 低于门限或近场时长不够的段不送转写。原生 / 补丁脚本的字面量由 tests/unit/mobile 钉齐。
+   */
+  voiceEnergyDb: -40,
+  voiceEnergyRms: 328,
+  voiceEnergyPeak: 500,
+  voiceMinSpeechMs: 280,
+  voiceMeterIntervalMs: 100,
+  /**
    * Android 录音前台服务的收尾防抖（N-MOBILE-BG-RECORDING）：分段录音每段都 stop→start 一次，
    * 服务若跟着段走，通知每段闪一次、且后台一旦停了就再起不来（Android 12+ 禁止后台
    * startForegroundService）。停服务要等这一小段确认没有下一段要录。

@@ -47,6 +47,7 @@ vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
 }));
 
 import { askUserQuestionModule } from '../../../../../src/host/tools/modules/planning/askUserQuestion';
+import { INTERACTION_TIMEOUTS } from '../../../../../src/shared/constants';
 import {
   beginVoiceQuestionSession,
   canOfferVoiceQuestion,
@@ -449,6 +450,7 @@ describe('AskUserQuestion renderer response', () => {
         expect(result.meta).toMatchObject({
           permissionDecision: 'deny',
           permissionDecisionReason: expect.stringContaining('无头规则'),
+          awaitingUserInput: true,
         });
       }
     } finally {
@@ -475,6 +477,7 @@ describe('AskUserQuestion renderer response', () => {
       expect(output).toContain('make reasonable defaults');
       expect(output).toContain('state your assumptions');
       expect(output).toContain('do not ask the same question again');
+      expect(result.meta?.awaitingUserInput).not.toBe(true);
     }
   });
 
@@ -498,6 +501,30 @@ describe('AskUserQuestion renderer response', () => {
       expect(result.output).toContain('continue with the information you already have');
       expect(result.output).toContain('do not ask the same question again');
       expect(result.output).toContain('Reason: 现在不方便回答，稍后再说');
+      expect(result.meta?.awaitingUserInput).not.toBe(true);
+    }
+  });
+
+  it('交互环境 24h 停车超时 meta 含 awaitingUserInput，保留 denied 与超时码', async () => {
+    vi.useFakeTimers();
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    setBrowserWindowInteractionProbe(() => true);
+    hasInteractiveRendererMock.mockImplementation(realHasInteractiveUi);
+
+    const handler = await askUserQuestionModule.createHandler();
+    const promise = handler.execute({ questions }, makeCtx(), allowAll);
+    await vi.advanceTimersByTimeAsync(INTERACTION_TIMEOUTS.PARKED_APPROVAL);
+
+    const result = await promise;
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('USER_INPUT_TIMEOUT');
+      expect(result.error).toContain('等待用户回答超过 24 小时');
+      expect(result.meta).toMatchObject({
+        permissionDecision: 'deny',
+        permissionDecisionReason: expect.stringContaining('停车请求已按安全兜底拒绝'),
+        awaitingUserInput: true,
+      });
     }
   });
 

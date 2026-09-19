@@ -25,6 +25,16 @@ describe('browserProfileImportService (ADR-041)', () => {
     expect(result.failureCode).toBe('not_confirmed');
   });
 
+  it('rejects an unscoped confirmed import instead of importing the whole profile', async () => {
+    const result = await importBrowserProfileCookies({
+      source: 'chrome',
+      profileId: 'Default',
+      userConfirmed: true,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.failureCode).toBe('domain_allowlist_required');
+  });
+
   it('imports decrypted cookies through applyCookies and cleans up', async () => {
     const password = 'unit-test-password';
     const encrypted = encryptV10(password, 'cookie-value-1');
@@ -139,6 +149,7 @@ describe('browserProfileImportService (ADR-041)', () => {
         source: 'chrome',
         profileId: 'Default',
         userConfirmed: true,
+        domainAllowlist: ['example.com'],
       },
       {
         platform: 'darwin',
@@ -191,6 +202,7 @@ describe('browserProfileImportService (ADR-041)', () => {
         source: 'chrome',
         profileId: 'Default',
         userConfirmed: true,
+        domainAllowlist: ['example.com'],
       },
       {
         platform: 'darwin',

@@ -5,7 +5,9 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import Database from 'better-sqlite3';
 import type {
+  BrowserProfileCookieDomainSummary,
   BrowserProfileDescriptor,
   BrowserProfileSourceId,
   BrowserProfileUnavailableReason,
@@ -107,6 +109,34 @@ export function resolveCookieDbPath(profileDir: string): string | null {
     return legacyCookies;
   }
   return null;
+}
+
+function readCookieDomainSummaries(cookieDbPath: string): BrowserProfileCookieDomainSummary[] {
+  try {
+    const db = new Database(cookieDbPath, { readonly: true, fileMustExist: true });
+    try {
+      const rows = db.prepare(
+        'SELECT host_key AS domain, COUNT(*) AS cookieCount FROM cookies GROUP BY host_key',
+      ).all() as Array<{ domain?: unknown; cookieCount?: unknown }>;
+      const counts = new Map<string, number>();
+      for (const row of rows) {
+        const domain = typeof row.domain === 'string'
+          ? row.domain.replace(/^\./, '').trim().toLowerCase()
+          : '';
+        const cookieCount = typeof row.cookieCount === 'number' ? row.cookieCount : Number(row.cookieCount);
+        if (!domain || !Number.isInteger(cookieCount) || cookieCount <= 0) continue;
+        counts.set(domain, (counts.get(domain) || 0) + cookieCount);
+      }
+      return Array.from(counts, ([domain, cookieCount]) => ({ domain, cookieCount }))
+        .sort((left, right) => left.domain.localeCompare(right.domain));
+    } finally {
+      db.close();
+    }
+  } catch {
+    // A live/locked/old Chromium DB should not hide the profile itself. The
+    // import UI will show an empty domain list and stay fail-closed.
+    return [];
+  }
 }
 
 interface LocalStateProfileInfo {
@@ -300,6 +330,7 @@ export function listBrowserProfiles(options?: {
         profileName,
         profileDir,
         cookieDbPath,
+        cookieDomains: readCookieDomainSummaries(cookieDbPath),
         lastActiveAtMs,
         available: true,
         unavailableReason: null,

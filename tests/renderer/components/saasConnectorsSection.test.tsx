@@ -36,6 +36,7 @@ interface TestProviderStatus {
   authorizationOpened?: boolean;
   blocked?: boolean;
   stale?: boolean;
+  installState?: 'failed';
   userName?: string;
   tenantName?: string;
 }
@@ -585,6 +586,16 @@ describe('SaaSConnectorsSection five card states', () => {
 });
 
 describe('SaaSConnectorsSection actions and receipts', () => {
+  it('shows a reinstall action when a CLI connector installation failed', async () => {
+    renderTmeetCliStatus({ installState: 'failed' });
+
+    const card = await screen.findByTestId('saas-connector-tmeet');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.badges.installFailed);
+    expect(card.textContent).toContain(zh.settings.saasConnectors.details.cliInstallFailed);
+    expect(within(card).getByTestId('saas-connect-tmeet').textContent)
+      .toContain(zh.settings.saasConnectors.actions.reinstall);
+  });
+
   it('saves the untrimmed secret, refreshes, connects, and acknowledges success', async () => {
     let statusCall = 0;
     invokeDomain.mockImplementation((_domain: string, action: string, payload?: unknown) => {

@@ -431,6 +431,10 @@ const SYSTEM_TAG_PATTERNS = [
   /<loop-prevention>[\s\S]*?<\/loop-prevention>/g,
   // 工具调用 XML 格式泄漏 - 过滤完整的工具调用块
   /<tool_call>[\s\S]*?<\/tool_call>/g,
+  // LongCat 兼容协议可能把工具调用直接写进 assistant 正文；完整调用块丢弃，
+  // 残留的 key/value 标签单独剥掉，保留后续真正给用户看的总结。
+  /<longcat_tool_call>[\s\S]*?<\/longcat_tool_call>/gi,
+  /<\/?longcat_(?:arg_key|arg_value|tool_call|tool_result)\s*\/?>/gi,
   // 过滤残留的闭合标签（模型可能只输出部分 XML）
   /<\/arg_value>/g,
   /<\/tool_call>/g,

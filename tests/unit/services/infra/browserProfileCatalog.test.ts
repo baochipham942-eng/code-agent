@@ -1,7 +1,9 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import Database from 'better-sqlite3';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+vi.unmock('better-sqlite3');
 import {
   BROWSER_PROFILE_SOURCES,
   listBrowserProfiles,
@@ -64,5 +66,42 @@ describe('browserProfileCatalog (ADR-041)', () => {
     expect(chromeDefault?.profileName).toBe('Person 1');
     expect(chromeDefault?.cookieDbPath).toBe(path.join(defaultDir, 'Network', 'Cookies'));
     expect(resolveCookieDbPath(defaultDir)).toBe(path.join(defaultDir, 'Network', 'Cookies'));
+  });
+
+  it('keeps domain metadata empty when the profile database cannot be read', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-profile-catalog-invalid-db-'));
+    tempRoots.push(home);
+    const chromeRoot = path.join(home, 'Library', 'Application Support', 'Google', 'Chrome');
+    const defaultDir = path.join(chromeRoot, 'Default');
+    fs.mkdirSync(path.join(defaultDir, 'Network'), { recursive: true });
+    fs.writeFileSync(path.join(defaultDir, 'Network', 'Cookies'), 'not sqlite');
+    fs.writeFileSync(path.join(chromeRoot, 'Local State'), JSON.stringify({ profile: { info_cache: { Default: {} } } }));
+
+    const profile = listBrowserProfiles({ homeDir: home, platform: 'darwin' })
+      .find((entry) => entry.source === 'chrome' && entry.profileId === 'Default');
+    expect(profile?.available).toBe(true);
+    expect(profile?.cookieDomains).toEqual([]);
+  });
+
+  it('exposes normalized domain counts without cookie values', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-profile-catalog-domains-'));
+    tempRoots.push(home);
+    const chromeRoot = path.join(home, 'Library', 'Application Support', 'Google', 'Chrome');
+    const defaultDir = path.join(chromeRoot, 'Default');
+    fs.mkdirSync(path.join(defaultDir, 'Network'), { recursive: true });
+    const db = new Database(path.join(defaultDir, 'Network', 'Cookies'));
+    db.exec('CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT);');
+    db.prepare('INSERT INTO cookies (host_key, name, value) VALUES (?, ?, ?)').run('.Example.com', 'sid', 'secret');
+    db.prepare('INSERT INTO cookies (host_key, name, value) VALUES (?, ?, ?)').run('example.com', 'prefs', 'secret');
+    db.prepare('INSERT INTO cookies (host_key, name, value) VALUES (?, ?, ?)').run('github.com', 'sid', 'secret');
+    db.close();
+    fs.writeFileSync(path.join(chromeRoot, 'Local State'), JSON.stringify({ profile: { info_cache: { Default: {} } } }));
+
+    const profile = listBrowserProfiles({ homeDir: home, platform: 'darwin' })
+      .find((entry) => entry.source === 'chrome' && entry.profileId === 'Default');
+    expect(profile?.cookieDomains).toEqual([
+      { domain: 'example.com', cookieCount: 2 },
+      { domain: 'github.com', cookieCount: 1 },
+    ]);
   });
 });

@@ -19,11 +19,16 @@ const listImportableBrowserProfiles = vi.fn(async () => ([
     appName: 'Google Chrome',
     available: true,
     cookieDbPath: '/tmp/Cookies',
+    cookieDomains: [
+      { domain: 'example.com', cookieCount: 2 },
+      { domain: 'github.com', cookieCount: 1 },
+    ],
   },
 ]));
 const importBrowserProfileCookiesToPersonal = vi.fn(async (_args: {
   source: 'chrome';
   profileId: string;
+  domainAllowlist?: string[];
 }) => ({
   ok: true as boolean,
   source: 'chrome' as const,
@@ -71,6 +76,7 @@ vi.mock('../../../src/renderer/services/browserCookieImportClient', () => ({
   importBrowserProfileCookiesToPersonal: (args: {
     source: 'chrome';
     profileId: string;
+    domainAllowlist?: string[];
   }) => importBrowserProfileCookiesToPersonal(args),
 }));
 
@@ -135,11 +141,13 @@ describe('BrowserAgentWindow Cookie 导入入口（P1）', () => {
       expect(screen.getByTestId('browser-agent-window-import-cookies-dialog')).toBeTruthy();
     });
 
+    fireEvent.click(screen.getByTestId('browser-cookie-import-domain-example.com'));
     fireEvent.click(screen.getByText('确认导入'));
     await waitFor(() => {
       expect(importBrowserProfileCookiesToPersonal).toHaveBeenCalledWith({
         source: 'chrome',
         profileId: 'Default',
+        domainAllowlist: ['example.com'],
       });
     });
     await waitFor(() => {
@@ -169,6 +177,7 @@ describe('BrowserAgentWindow Cookie 导入入口（P1）', () => {
     fireEvent.click(screen.getByTestId('browser-agent-window-more'));
     fireEvent.click(screen.getByTestId('browser-agent-window-import-cookies'));
     await waitFor(() => expect(screen.getByTestId('browser-agent-window-import-cookies-dialog')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('browser-cookie-import-domain-example.com'));
     fireEvent.click(screen.getByText('确认导入'));
     await waitFor(() => {
       expect(screen.getByTestId('browser-cookie-import-error').textContent)

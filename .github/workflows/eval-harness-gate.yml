@@ -24,6 +24,9 @@ on:
     branches: [main]
     paths:
       - 'src/host/testing/**'
+      - 'src/host/security/**'
+      - 'src/host/tools/**'
+      - 'src/host/permissions/**'
       - 'src/host/internalFeatures/**'
       - 'src/renderer/internalFeatures/**'
       - 'src/renderer/slots/**'
@@ -60,6 +63,9 @@ on:
     branches: [main]
     paths:
       - 'src/host/testing/**'
+      - 'src/host/security/**'
+      - 'src/host/tools/**'
+      - 'src/host/permissions/**'
       - 'src/host/internalFeatures/**'
       - 'src/renderer/internalFeatures/**'
       - 'src/renderer/slots/**'

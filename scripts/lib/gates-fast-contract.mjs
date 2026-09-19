@@ -126,6 +126,44 @@ export function validateBudgetPolicy(policy) {
   }
 }
 
+/**
+ * Read the literal gate registrations from gates-fast.mjs so a new gate cannot
+ * silently fall back to the total-run budget, and a retired gate cannot leave
+ * a stale budget entry behind.
+ */
+export function extractGateIds(source) {
+  if (typeof source !== 'string') throw new Error('FAIL: gates-fast source must be a string');
+  const ids = [];
+  const seen = new Set();
+  const pattern = /\bgate\(\s*(['"])([^'"\n]+)\1/g;
+  for (const match of source.matchAll(pattern)) {
+    const id = match[2];
+    if (seen.has(id)) throw new Error(`FAIL: duplicate gate registration: ${id}`);
+    seen.add(id);
+    ids.push(id);
+  }
+  if (!ids.length) throw new Error('FAIL: gates-fast source has no literal gate registrations');
+  return ids;
+}
+
+export function validateGateBudgetCoverage(policy, gateIds) {
+  validateBudgetPolicy(policy);
+  if (!Array.isArray(gateIds) || gateIds.length === 0) {
+    throw new Error('FAIL: gateIds must contain the literal gates-fast registrations');
+  }
+  const registered = new Set(gateIds);
+  const configured = new Set(Object.keys(policy.budgetsMs ?? {}));
+  const missing = gateIds.filter((id) => !configured.has(id));
+  const extra = [...configured].filter((id) => !registered.has(id));
+  if (missing.length || extra.length) {
+    const details = [
+      ...(missing.length ? [`missing budgetsMs key(s): ${missing.join(', ')}`] : []),
+      ...(extra.length ? [`unknown budgetsMs key(s): ${extra.join(', ')}`] : []),
+    ];
+    throw new Error(`FAIL: gate/budget coverage mismatch; ${details.join('; ')}`);
+  }
+}
+
 /** 当前命令还能跑多久：取「本格剩余」与「整跑剩余」中更紧的那个，并记下是哪一层在约束 */
 export function commandDeadline(policy, gateId, runElapsedMs, gateElapsedMs) {
   const total = { limit: 'total', limitMs: policy.budgetMs, remainingMs: policy.budgetMs - runElapsedMs };

@@ -393,6 +393,7 @@ export const enSettingsSystem = {
         connected: 'Connected',
         adminRequired: 'Admin required',
         unavailable: 'Unavailable',
+        installFailed: 'Install failed · reinstall',
       },
       capabilities: {
         feishu: 'Send meeting notes, weekly updates, and progress reminders to Feishu groups as yourself without leaving Neo.',
@@ -417,6 +418,7 @@ export const enSettingsSystem = {
         adminRequired: 'Contact your organization’s app admin to install it',
         connectedIdentity: 'Connected · {user}@{tenant}',
         statusUnavailable: 'The connection status is incomplete or loopback is unavailable, so actions are disabled.',
+        cliInstallFailed: 'The connector is not installed correctly. Reinstall it to repair the connection.',
       },
       secret: {
         label: 'App Secret',
@@ -435,6 +437,7 @@ export const enSettingsSystem = {
         connectTmeet: 'Connect Tencent Meeting',
         cancel: 'Cancel',
         retry: 'Retry',
+        reinstall: 'Reinstall',
         disconnect: 'Disconnect',
         disconnecting: 'Disconnecting…',
       },

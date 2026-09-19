@@ -29,6 +29,8 @@ export interface CliConnectorStatus {
   connected: boolean;
   identity: string;
   stale?: boolean;
+  /** The connector can be repaired from settings when installation failed. */
+  installState?: 'failed';
   user?: {
     openId?: string;
     name?: string;
@@ -349,12 +351,48 @@ export function createCliConnector(
       binaryPath,
     });
     try {
-      const result = await runDescriptorCommand(
-        descriptor.status.command,
-        undefined,
-        false,
-        statusTimeoutMs,
-      );
+      let result: CliCommandResult;
+      try {
+        result = await runDescriptorCommand(
+          descriptor.status.command,
+          undefined,
+          false,
+          statusTimeoutMs,
+        );
+      } catch (error) {
+        const missingBinary = systemErrorCode(error) === 'ENOENT'
+          || (error instanceof CliConnectorCommandError && error.exitCode === 127);
+        if (!descriptor.autoInstallOnMissingStatus || !missingBinary) throw error;
+        logger.warn('CLI connector binary missing; attempting self-heal install', {
+          providerId: descriptor.id,
+          binaryPath,
+        });
+        try {
+          await ensureInstalled();
+          logger.info('CLI connector self-heal install completed', {
+            providerId: descriptor.id,
+            binaryPath,
+          });
+          result = await runDescriptorCommand(
+            descriptor.status.command,
+            undefined,
+            false,
+            statusTimeoutMs,
+          );
+        } catch (installError) {
+          logger.warn('CLI connector self-heal install failed', {
+            providerId: descriptor.id,
+            binaryPath,
+            errorName: installError instanceof Error ? installError.name : typeof installError,
+            errorMessage: installError instanceof Error ? installError.message : String(installError),
+          });
+          return {
+            connected: false,
+            identity: descriptor.status.disconnectedIdentity,
+            installState: 'failed',
+          };
+        }
+      }
       const combined = stripAnsi(`${result.stdout}\n${result.stderr}`);
       let parsed: Record<string, unknown> | undefined;
       let connected = false;

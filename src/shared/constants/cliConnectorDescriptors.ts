@@ -117,6 +117,7 @@ export const tmeetDescriptor = {
   packagePath: ['@tencentcloud', 'tmeet'],
   binaryPath: ['scripts', 'tmeet.js'],
   binaryName: 'tmeet',
+  autoInstallOnMissingStatus: true,
   env: {
     remove: ['OPENCLAW_HOME', 'HERMES_HOME'],
     add: {

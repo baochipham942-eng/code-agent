@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import policy from '../../scripts/lib/gates-fast-policy.json';
 import {
   assertExactFiles, selectTests, validateFiles, validateReport, renderReceipt, digest,
-  validateBudgetPolicy, commandDeadline, budgetFailure,
+  validateBudgetPolicy, validateGateBudgetCoverage, extractGateIds, commandDeadline, budgetFailure,
 } from '../../scripts/lib/gates-fast-contract.mjs';
 
 const root = path.resolve(__dirname, '../..');
@@ -91,6 +91,18 @@ describe('fast gate fail-closed contracts', () => {
     expect(commandDeadline(p, undefined, 40, 0)).toEqual({ limit: 'total', limitMs: 100, remainingMs: 60, gateId: null });
     expect(budgetFailure(commandDeadline(p, 'a', 10, 40), ['node', 'x'])).toBe('FAIL: gate budget 30ms exceeded (gate a) in node x');
     expect(budgetFailure(commandDeadline(p, 'a', 120, 0), ['node', 'x'])).toBe('FAIL: total budget 100ms exhausted (gate a) in node x');
+  });
+  it('对账 gates-fast.mjs 的 gate() 注册与 budgetsMs，缺项和多余项都 fail-closed', () => {
+    const source = `await gate('inputs', true, run);\nawait gate("vitest", true, run);`;
+    expect(extractGateIds(source)).toEqual(['inputs', 'vitest']);
+    expect(() => validateGateBudgetCoverage({ ...policy, budgetsMs: { inputs: 100 } }, ['inputs', 'vitest']))
+      .toThrow('missing budgetsMs key(s): vitest');
+    expect(() => validateGateBudgetCoverage({ ...policy, budgetsMs: { ...policy.budgetsMs, retired: 100 } }, extractGateIds(source)))
+      .toThrow('unknown budgetsMs key(s): provider');
+    expect(() => validateGateBudgetCoverage({ ...policy, budgetsMs: { inputs: 100, vitest: 100 } }, ['inputs', 'vitest']))
+      .not.toThrow();
+    expect(() => extractGateIds("await gate('inputs', true, run); await gate('inputs', false, run);"))
+      .toThrow('duplicate gate registration: inputs');
   });
   it('policy leaves 2x headroom over the measured agent-core PR under load (09-15 route-domains TASK run, 3 receipts)', () => {
     // 09-15 负载 ~10 下 TASK 刀逐格实测最大值（tests-typecheck 取单跑 16.7s，vitest 取工单记录的 agentOrchestrator 选中 22.6s）

@@ -16,6 +16,11 @@ const rows: BuiltinRow[] = [
   { id: 'bridged-x', label: '桥接音乐', provider: 'deepseek', available: false, source: 'bridged', sourceLabel: 'DeepSeek' },
 ];
 
+const selectedRows: BuiltinRow[] = [
+  { id: 'image-a', label: 'Image A', provider: 'test', available: true, source: 'builtin' },
+  { id: 'image-b', label: 'Image B', provider: 'test', available: true, source: 'builtin' },
+];
+
 function render(readOnly: boolean): string {
   return renderToStaticMarkup(
     <BuiltinModelList
@@ -52,5 +57,27 @@ describe('BuiltinModelList 桥接 + 只读渲染', () => {
 
   it('非只读模式渲染默认选择 radio', () => {
     expect(render(false)).toContain('type="radio"');
+  });
+
+  it('暗色下只给当前默认模型绘制一个选中圆心', () => {
+    const html = renderToStaticMarkup(
+      <BuiltinModelList
+        title={s.builtinTitle}
+        hint={s.defaultHint}
+        rows={selectedRows}
+        availableBadge={cm.availableBadge}
+        unconfiguredBadge={cm.unconfiguredBadge}
+        defaultBadge={s.defaultBadge}
+        bridgedFromBadge={s.bridgedFromBadge}
+        manageButton={cm.manage}
+        configureButton={s.configureButton}
+        selectedId="image-a"
+        groupName="visual-test"
+        onSelect={noop}
+        onConfigure={noop}
+      />,
+    );
+    expect(html.match(/data-visual-model-radio-state="selected"/g) || []).toHaveLength(1);
+    expect(html.match(/data-visual-model-radio-state="unselected"/g) || []).toHaveLength(1);
   });
 });

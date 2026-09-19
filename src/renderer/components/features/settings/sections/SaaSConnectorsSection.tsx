@@ -44,6 +44,7 @@ interface ConnectorOAuthProviderStatus {
   authorizationOpened?: boolean;
   blocked?: boolean;
   stale?: boolean;
+  installState?: 'failed';
   userName?: string;
   tenantName?: string;
 }
@@ -57,6 +58,7 @@ type ProviderPresentationState =
   | 'connecting_single'
   | 'connected'
   | 'admin_blocked'
+  | 'install_error'
   | 'unavailable';
 
 type SaaSConnectorsText = ReturnType<typeof useI18n>['t']['settings']['saasConnectors'];
@@ -100,6 +102,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     authorizationOpened,
     blocked,
     stale,
+    installState,
     userName,
     tenantName,
   } = value;
@@ -121,6 +124,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     || (authorizationOpened !== undefined && typeof authorizationOpened !== 'boolean')
     || (blocked !== undefined && typeof blocked !== 'boolean')
     || (stale !== undefined && typeof stale !== 'boolean')
+    || (installState !== undefined && installState !== 'failed')
     || (userName !== undefined && typeof userName !== 'string')
     || (tenantName !== undefined && typeof tenantName !== 'string')
   ) {
@@ -140,6 +144,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     ...(authorizationOpened === true ? { authorizationOpened: true } : {}),
     ...(typeof blocked === 'boolean' ? { blocked } : {}),
     ...(stale === true ? { stale: true } : {}),
+    ...(installState === 'failed' ? { installState } : {}),
     ...(typeof userName === 'string' && userName.trim() ? { userName } : {}),
     ...(typeof tenantName === 'string' && tenantName.trim() ? { tenantName } : {}),
   };
@@ -173,6 +178,7 @@ function persistProviderStatuses(statuses: ConnectorOAuthProviderStatus[]): void
 function resolveProviderState(status: ConnectorOAuthProviderStatus): ProviderPresentationState {
   if (status.stale) return 'unavailable';
   if (isCliAuthMode(status.authMode)) {
+    if (status.installState === 'failed') return 'install_error';
     if (status.id === 'tmeet' && status.step === 1) return 'connecting_single';
     if (status.step === 1) return 'connecting_step_1';
     if (status.step === 2) return 'connecting_step_2';
@@ -283,6 +289,13 @@ function getStatePresentation(
         badgeClassName: 'border border-red-500/25 bg-red-500/15 text-badge-danger',
         detail: text.details.adminRequired,
         actionLabel: text.actions.retry,
+      };
+    case 'install_error':
+      return {
+        badge: text.badges.installFailed,
+        badgeClassName: 'border border-red-500/25 bg-red-500/15 text-badge-danger',
+        detail: text.details.cliInstallFailed,
+        actionLabel: text.actions.reinstall,
       };
     case 'ready':
       return {
@@ -750,7 +763,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
             {isCli && (
               <div className="mt-3 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  {state === 'ready' && (
+                  {(state === 'ready' || state === 'install_error') && (
                     <Button
                       size="sm"
                       variant="primary"
@@ -759,7 +772,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                       leftIcon={<Link2 className="h-3 w-3" />}
                       data-testid={`saas-connect-${status.id}`}
                     >
-                      {getCliConnectLabel(status, text)}
+                      {state === 'install_error' ? text.actions.reinstall : getCliConnectLabel(status, text)}
                     </Button>
                   )}
                   {isProgress && (
@@ -892,6 +905,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               {presentation.detail && (
                 <div className={`rounded-md border px-3 py-2 text-xs ${
                   activeState === 'missing_client_id' || activeState === 'admin_blocked'
+                    || activeState === 'install_error'
                     ? 'border-red-500/25 bg-red-500/10 text-badge-danger'
                     : activeState === 'connecting_step_1'
                         || activeState === 'connecting_step_2'
@@ -939,7 +953,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                 </div>
               )}
 
-              {activeState === 'ready' && (
+              {(activeState === 'ready' || activeState === 'install_error') && (
                 <Button
                   size="sm"
                   variant="primary"
@@ -951,7 +965,9 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                 >
                   {isConnecting
                     ? text.actions.connecting
-                    : isCli ? getCliConnectLabel(activeStatus, text) : text.actions.connect}
+                    : activeState === 'install_error'
+                      ? text.actions.reinstall
+                      : isCli ? getCliConnectLabel(activeStatus, text) : text.actions.connect}
                 </Button>
               )}
 

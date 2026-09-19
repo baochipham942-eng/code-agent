@@ -515,7 +515,8 @@ describe('jevBrowserStep', () => {
       { task: '打开 https://shop.example/cart 看 "Order total"' },
     );
     expect(present.status).toBe('done_verified');
-    expect(systemOne).toHaveBeenCalledTimes(0);
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(present.metadata?.steps).toBeGreaterThanOrEqual(1);
 
     const missingHost = new FakeHost([snapshot('Cart', [button('tref_go', 'Checkout')])]);
     const missingSystem = stubSystemOne(() => answers({
@@ -540,6 +541,125 @@ describe('jevBrowserStep', () => {
     });
     expect(result.status).toBe('done_verified');
     expect(systemOne).toHaveBeenCalledTimes(0);
+  });
+
+  it('自抽点击引号第一圈不得 done_verified，必须先动作', async () => {
+    const task = '点 "立即购买" 完成下单';
+    const host = new FakeHost([snapshot('Shop', [button('tref_buy', '立即购买')])]);
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_buy' }));
+    const result = await runLoop(host, systemOne, { task });
+    expect(result.status).not.toBe('done_verified');
+    expect(systemOne).toHaveBeenCalled();
+    expect(result.metadata?.steps).toBeGreaterThanOrEqual(1);
+    expect(host.clicks.length + host.scrolls.length).toBeGreaterThanOrEqual(1);
+
+    const extracted = extractJevAssertions(task);
+    expect(extracted).toEqual([
+      expect.objectContaining({
+        kind: 'element_text_includes',
+        needle: '立即购买',
+        precondition: true,
+      }),
+    ]);
+    const evaluated = evaluateJevAssertions(extracted, {
+      url: 'http://127.0.0.1/shop',
+      title: 'Shop',
+      headings: [{ text: 'Shop' }],
+      elements: [{ text: '立即购买' }],
+      formValues: {},
+      downloads: [],
+    });
+    expect(evaluated.results[0]?.met).toBe(true);
+    expect(evaluated.allMet).toBe(false);
+  });
+
+  it('点击/提交类前缀的引号片段标 precondition', () => {
+    const tasks = [
+      '点 "立即购买" 完成下单',
+      '点击 "立即购买"',
+      'click "Buy now"',
+      '按 "确定"',
+      '提交 "确认"',
+      'submit "Pay"',
+    ];
+    for (const sample of tasks) {
+      const extracted = extractJevAssertions(sample);
+      expect(extracted.some((item) => item.precondition && item.kind === 'element_text_includes'), sample).toBe(true);
+    }
+    expect(extractJevAssertions('看 "立即购买"')[0]?.precondition).toBeUndefined();
+  });
+
+  it('override 金标第一圈全过仍 done_verified', async () => {
+    const host = new FakeHost([snapshot('Shop', [button('tref_buy', '立即购买')])]);
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_buy' }));
+    const result = await runLoop(host, systemOne, {
+      task: '点 "立即购买" 完成下单',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: '立即购买' }],
+    });
+    expect(result.status).toBe('done_verified');
+    expect(systemOne).toHaveBeenCalledTimes(0);
+    expect(host.clicks).toEqual([]);
+  });
+
+  it('第二圈前 abort 按 fallback 退出，不再调 systemOne', async () => {
+    const controller = new AbortController();
+    const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+    const originalClick = host.clickTargetRef.bind(host);
+    host.clickTargetRef = async (ref) => {
+      await originalClick(ref);
+      controller.abort();
+    };
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const ctx = context();
+    ctx.abortSignal = controller.signal;
+    const result = await runLoop(host, systemOne, {
+      task: 'click Go until Never happens',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    }, ctx);
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(result.fallback).toBe(true);
+    expect(result.reason).toBe('aborted');
+    expect(result.status).toBe('fallback');
+  });
+
+  it('步后 capture 留给下一圈，每步 systemOne 之外 capture 只发生一次', async () => {
+    vi.stubEnv('CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT', '2');
+    const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+    const captureSpy = vi.spyOn(host, 'capture');
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const result = await runLoop(host, systemOne, {
+      task: 'click Go until Never happens',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    });
+    expect(result.status).toBe('step_limit');
+    expect(result.metadata?.steps).toBe(2);
+    expect(systemOne).toHaveBeenCalledTimes(2);
+    expect(captureSpy).toHaveBeenCalledTimes(Number(result.metadata?.steps) + 1);
+  });
+
+  it('element_exists 无 selectorHint 且无 role+name 的 override 丢弃+warn', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(extractJevAssertions('click Go', [
+        { kind: 'element_exists' },
+        { kind: 'element_exists', needle: '', role: 'button' },
+      ])).toEqual([]);
+      expect(warn.mock.calls.some((call) => String(call[0]).includes('element_exists without locator'))).toBe(true);
+
+      const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+      const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+      const result = await runLoop(host, systemOne, {
+        task: 'click Go',
+        assertions: [
+          { kind: 'element_exists' },
+          { kind: 'title_includes', needle: 'Nav' },
+        ],
+      });
+      expect(result.status).toBe('done_verified');
+      expect(systemOne).toHaveBeenCalledTimes(0);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('空 needle / 纯空白 needle 的 override 丢弃+warn，不得 done_verified', async () => {

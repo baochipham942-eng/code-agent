@@ -64,6 +64,22 @@ function needleRequired(kind: JevAssertionKind): boolean {
   return kind !== 'element_exists';
 }
 
+function hasElementExistsLocator(candidate: {
+  role?: unknown;
+  name?: unknown;
+  selectorHint?: unknown;
+}): boolean {
+  const selector = typeof candidate.selectorHint === 'string' ? candidate.selectorHint.trim() : '';
+  if (selector) return true;
+  const role = typeof candidate.role === 'string' ? candidate.role.trim() : '';
+  const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
+  return Boolean(role && name);
+}
+
+function quotedActionPrecondition(prefix: string): boolean {
+  return /点|点击|click|按|提交|submit/i.test(prefix);
+}
+
 function normalize(value: unknown): string {
   return String(value ?? '').toLowerCase();
 }
@@ -100,6 +116,10 @@ function sanitizeOverrideAssertion(raw: unknown, index: number): JevPageAssertio
   }
   if (needleRequired(candidate.kind) && !trimmedNeedle) {
     traceDroppedAssertion('needle empty', index, candidate.kind);
+    return null;
+  }
+  if (candidate.kind === 'element_exists' && !hasElementExistsLocator(candidate)) {
+    traceDroppedAssertion('element_exists without locator', index, candidate.kind);
     return null;
   }
   const assertion: JevPageAssertion = {
@@ -185,7 +205,7 @@ export function extractJevAssertions(
     const fragment = quoted[1] || quoted[2] || quoted[3] || quoted[4] || '';
     const prefix = task.slice(Math.max(0, quoted.index - 12), quoted.index);
     if (/title|标题/i.test(prefix)) add('title_includes', fragment);
-    else add('element_text_includes', fragment);
+    else add('element_text_includes', fragment, quotedActionPrecondition(prefix));
     quoted = QUOTE_RE.exec(task);
   }
 

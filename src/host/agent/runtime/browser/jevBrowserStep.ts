@@ -322,6 +322,8 @@ async function runJevBrowserStepLoop(
   const recentSteps: Array<{ op: string; target_name: string; result: string }> = [];
   let truncatedWithoutScroll = 0;
   let incompatibleRetryUsed = false;
+  const fromOverride = Array.isArray(input.assertions) && input.assertions.length > 0;
+  let carriedSnapshot: JevCapturedSnapshot | undefined;
 
   const finish = (
     status: JevBrowserStepStatus,
@@ -359,6 +361,9 @@ async function runJevBrowserStepLoop(
   if (isBlockedSystemUrl(deps.host.currentUrl())) return finish('needs_review', 'system_settings');
 
   while (steps < BROWSER_JEV_HARD_STEP_LIMIT) {
+    if (context.abortSignal?.aborted) {
+      return finish('fallback', 'aborted');
+    }
     if ((deps.now ?? Date.now)() - started >= BROWSER_JEV_TIME_LIMIT_MS) {
       return finish('time_limit', 'time_limit');
     }
@@ -366,7 +371,8 @@ async function runJevBrowserStepLoop(
       return finish('step_limit', 'step_limit');
     }
 
-    const captured = await deps.host.capture();
+    const captured = carriedSnapshot ?? await deps.host.capture();
+    carriedSnapshot = undefined;
     const prepared = prepareJevBrowserSnapshot(captured, input.task, {
       mutateEmptyWindow: mutate === 'empty-window',
     });
@@ -409,7 +415,9 @@ async function runJevBrowserStepLoop(
       return finish('fallback', `form_values_unavailable: ${formValuesError}`);
     }
     const evaluated = evaluateJevAssertions(assertions, evidence);
-    if (evaluated.allMet) {
+    // Self-extracted assertions can match the control the task is asking to click.
+    // steps=0 (navigate-before-loop does not count) cannot done_verified without an action.
+    if (evaluated.allMet && (fromOverride || steps > 0)) {
       return finish('done_verified', undefined, { assertions: evaluated.results });
     }
 
@@ -481,13 +489,13 @@ async function runJevBrowserStepLoop(
     }
     turn.consecutiveJevFailures = 0;
 
-    if (applied.doneNoul >= BROWSER_STEP_THRESHOLDS.doneSignalLog && !evaluated.allMet) {
+    if (applied.doneNoul >= BROWSER_STEP_THRESHOLDS.doneSignalLog) {
       falseDoneCount += 1;
     }
 
     if (prepared.window.truncated && applied.operation !== 'scroll_down' && applied.operation !== 'scroll_up') {
       truncatedWithoutScroll += 1;
-      if (truncatedWithoutScroll >= 2 && !evaluated.allMet) {
+      if (truncatedWithoutScroll >= 2) {
         await deps.host.scroll('down');
         recentSteps.push({ op: 'scroll_down', target_name: '', result: 'forced_truncated' });
         truncatedWithoutScroll = 0;
@@ -570,6 +578,7 @@ async function runJevBrowserStepLoop(
 
     // ponytail: click 弹 confirm 时步后 capture 会卡到 dialog 门，基线同场景一样卡，已知天花板
     const after = await deps.host.capture();
+    carriedSnapshot = after;
     const { formValuesError: afterFormValuesError, ...afterEvidence } = await evidenceFrom(deps.host, after);
     if (afterFormValuesError) {
       return finish('fallback', `form_values_unavailable: ${afterFormValuesError}`);

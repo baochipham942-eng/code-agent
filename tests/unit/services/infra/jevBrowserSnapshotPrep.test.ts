@@ -112,6 +112,32 @@ describe('jevBrowserSnapshotPrep', () => {
     expect(checkout?.score).toBeGreaterThan(40);
   });
 
+  it('window.collected/truncated/dropped_below 用过滤后口径', () => {
+    const elements = [
+      element('tref_pw', 'Password', { x: 0, y: 10, width: 80, height: 20 }, { tag: 'input', role: 'textbox' }),
+      element('tref_file', 'Upload', { x: 0, y: 40, width: 80, height: 20 }, { tag: 'input', role: 'button' }),
+      ...Array.from({ length: 300 }, (_, index) => element(
+        `tref_${index}`,
+        `Nav ${index}`,
+        { x: 0, y: index < 20 ? index * 20 : 4000 + index, width: 40, height: 16 },
+        { role: 'link', tag: 'a' },
+      )),
+    ];
+    const extras = [
+      { inputType: 'password' as const, autocomplete: 'current-password', accept: null },
+      { inputType: 'file' as const, autocomplete: null, accept: '.txt' },
+      ...elements.slice(2).map(() => ({ inputType: null, autocomplete: null, accept: null })),
+    ];
+    const page = captured(elements, extras);
+    const prepared = prepareJevBrowserSnapshot(page, 'open nav');
+    expect(prepared.window.collected).toBe(prepared.collected.length);
+    expect(prepared.window.collected).not.toBe(page.snapshot.interactiveElements.length);
+    expect(prepared.window.truncated).toBe(prepared.collected.length > prepared.selected.length);
+    const collectedBelow = prepared.collected.filter((candidate) => candidate.zone === 'below').length;
+    const selectedBelow = prepared.selected.filter((candidate) => candidate.zone === 'below').length;
+    expect(prepared.window.dropped_below).toBe(Math.max(0, collectedBelow - selectedBelow));
+  });
+
   it('parseBrowserDomSnapshot 默认仍 80，可抬到 1024', () => {
     const strings = ['https://x.test/', 'T', 'FRAME', '#document', 'HTML', 'BODY', 'BUTTON', '#text', 'Go'];
     const indexOf = (value: string) => strings.indexOf(value);

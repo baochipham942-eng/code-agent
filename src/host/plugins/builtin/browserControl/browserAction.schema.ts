@@ -151,7 +151,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       domainAllowlist: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Optional domain allowlist for import_profile_cookies',
+        description: 'Required domain allowlist for import_profile_cookies. Provide at least one domain; an empty list is rejected.',
       },
       userConfirmed: {
         type: 'boolean',

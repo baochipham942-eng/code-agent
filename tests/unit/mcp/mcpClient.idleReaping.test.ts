@@ -6,7 +6,7 @@ import { MCPToolRegistry } from '../../../src/host/mcp/mcpToolRegistry';
 // 用这个当默认夹具——它是 isReapable() 判真的那一类。
 function connectedClient(now: () => number) {
   const client = new MCPClient({
-    idleReaping: { ttlMs: 100, scanIntervalMs: 25 },
+    idleReaping: { enabled: true, ttlMs: 100, scanIntervalMs: 25 },
     now,
   });
   const sdkClient = { close: vi.fn(async () => {}) };
@@ -73,7 +73,7 @@ describe('MCPClient idle connection reaping', () => {
 
   it('does not reap a server that cannot be lazy-loaded back (remote http-streamable)', async () => {
     let now = 0;
-    const client = new MCPClient({ idleReaping: { ttlMs: 100, scanIntervalMs: 25 }, now: () => now });
+    const client = new MCPClient({ idleReaping: { enabled: true, ttlMs: 100, scanIntervalMs: 25 }, now: () => now });
     const sdkClient = { close: vi.fn(async () => {}) };
     (client as unknown as { clients: Map<string, unknown> }).clients.set('remote', sdkClient);
     (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('remote', {
@@ -93,7 +93,7 @@ describe('MCPClient idle connection reaping', () => {
 
   it('does not reap a stdio server with lazyLoad explicitly disabled', async () => {
     let now = 0;
-    const client = new MCPClient({ idleReaping: { ttlMs: 100, scanIntervalMs: 25 }, now: () => now });
+    const client = new MCPClient({ idleReaping: { enabled: true, ttlMs: 100, scanIntervalMs: 25 }, now: () => now });
     const sdkClient = { close: vi.fn(async () => {}) };
     (client as unknown as { clients: Map<string, unknown> }).clients.set('eager', sdkClient);
     (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('eager', {

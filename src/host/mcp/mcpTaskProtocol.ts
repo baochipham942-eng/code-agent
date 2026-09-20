@@ -105,12 +105,12 @@ export class McpSdkTaskProtocol implements McpTaskProtocol {
     return client;
   }
 
-  acquireConnectionLease(input: { leaseId: string; expiresAt?: number }): void {
+  acquireConnectionLease(input: { serverIdentity: string; leaseId: string; expiresAt?: number }): void {
     this.connectionLease?.acquire(input);
   }
 
-  releaseConnectionLease(leaseId: string): void {
-    this.connectionLease?.release(leaseId);
+  releaseConnectionLease(input: { serverIdentity: string; leaseId: string }): void {
+    this.connectionLease?.release(input.leaseId);
   }
 
   async createTask(input: Parameters<McpTaskProtocol['createTask']>[0]): Promise<McpTaskSnapshot> {

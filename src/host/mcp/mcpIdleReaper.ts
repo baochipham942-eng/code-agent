@@ -37,7 +37,7 @@ export class McpIdleReaper {
   private readonly isReapable: (serverName: string) => boolean;
   private readonly markLazyAfterReap: (serverName: string) => void;
   private readonly now: () => number;
-  private idleReapingEnabled = true;
+  private idleReapingEnabled = false;
   private idleReapTtlMs: number = MCP_TIMEOUTS.IDLE_REAP_TTL;
   private idleReapScanIntervalMs: number = MCP_TIMEOUTS.IDLE_REAP_SCAN;
   readonly lastUsedAt: Map<string, number> = new Map();
@@ -57,7 +57,7 @@ export class McpIdleReaper {
   }
 
   configureIdleReaping(options?: McpIdleReapingOptions): void {
-    this.idleReapingEnabled = options?.enabled ?? true;
+    this.idleReapingEnabled = options?.enabled ?? false;
     this.idleReapTtlMs = Math.max(1, options?.ttlMs ?? MCP_TIMEOUTS.IDLE_REAP_TTL);
     this.idleReapScanIntervalMs = Math.max(1, options?.scanIntervalMs ?? MCP_TIMEOUTS.IDLE_REAP_SCAN);
     if (this.idleReaperTimer) clearInterval(this.idleReaperTimer);

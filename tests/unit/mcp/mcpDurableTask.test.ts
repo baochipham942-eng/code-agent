@@ -198,7 +198,9 @@ describe('MCP Durable Task', () => {
 
     expect(protocol.cancelTask).toHaveBeenCalledTimes(1);
     expect(protocol.cancelTask).toHaveBeenCalledWith(expect.objectContaining({ taskId: 'task-provider-1' }));
-    expect(protocol.releaseConnectionLease).toHaveBeenCalledWith('mcp-task:run-a:call-a');
+    expect(protocol.releaseConnectionLease).toHaveBeenCalledWith(expect.objectContaining({
+      leaseId: 'mcp-task:run-a:call-a',
+    }));
   });
 
   it('submits supplemental input only through a trusted bound tasks/update capability', async () => {
@@ -324,7 +326,9 @@ describe('MCP Durable Task', () => {
     expect(created.operation.status).toBe('waiting');
     expect(commits.at(-1)?.operation.status).toBe('waiting');
     expect(protocol.createTask).toHaveBeenCalledTimes(1);
-    expect(protocol.releaseConnectionLease).toHaveBeenCalledWith('mcp-task:run-a:call-a:request');
+    expect(protocol.releaseConnectionLease).toHaveBeenCalledWith(expect.objectContaining({
+      leaseId: 'mcp-task:run-a:call-a:request',
+    }));
   });
 
   it('requires review for unknown dispatch without a queryable handle and never blind-retries side effects', () => {

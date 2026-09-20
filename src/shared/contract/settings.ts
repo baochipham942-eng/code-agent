@@ -367,7 +367,13 @@ export interface AppSettings {
   };
   // MCP 配置
   mcp?: {
-    /** 连接空闲回收；缺省使用 host 的 MCP_TIMEOUTS 默认值。 */
+    /**
+     * 连接空闲回收；默认关闭（不配置就连扫描计时器都不建）。开启前置条件：
+     * 该 workspace 的 MCP server 都不持有服务端会话状态——浏览器/REPL 类
+     * server 持有登录态与页面上下文，被回收后 lazy 重连是全新进程，状态归零，
+     * 模型收不到任何重启信号会继续按旧状态操作。缺省 ttlMs/scanIntervalMs
+     * 使用 host 的 MCP_TIMEOUTS 默认值。
+     */
     idleReaping?: {
       enabled?: boolean;
       ttlMs?: number;

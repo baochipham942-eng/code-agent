@@ -31,9 +31,14 @@ export interface McpTaskSnapshot {
 }
 
 export interface McpTaskProtocol {
-  /** Keep the provider connection alive while a queryable task is active. */
-  acquireConnectionLease?(input: { leaseId: string; expiresAt?: number }): void;
-  releaseConnectionLease?(leaseId: string): void;
+  /**
+   * Keep the provider connection alive while a queryable task is active.
+   * serverIdentity is required so a multi-server facade (e.g. durable
+   * recovery, which resolves a protocol dynamically per request instead of
+   * closing over one server) can route the lease to the right connection.
+   */
+  acquireConnectionLease?(input: { serverIdentity: string; leaseId: string; expiresAt?: number }): void;
+  releaseConnectionLease?(input: { serverIdentity: string; leaseId: string }): void;
   createTask(input: {
     serverIdentity: string;
     serverName: string;
@@ -198,31 +203,35 @@ export class McpDurableTaskController {
     return updatedAt + ttl;
   }
 
-  private retainTaskLease(input: { runId: string; operationId: string }, task: McpTaskSnapshot): void {
+  private retainTaskLease(
+    input: { runId: string; operationId: string; serverIdentity: string },
+    task: McpTaskSnapshot,
+  ): void {
     if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
-      this.protocol.releaseConnectionLease?.(this.taskLeaseId(input));
+      this.protocol.releaseConnectionLease?.({ serverIdentity: input.serverIdentity, leaseId: this.taskLeaseId(input) });
       return;
     }
     this.protocol.acquireConnectionLease?.({
+      serverIdentity: input.serverIdentity,
       leaseId: this.taskLeaseId(input),
       expiresAt: this.taskLeaseExpiry(task),
     });
   }
 
-  private releaseTaskLease(input: { runId: string; operationId: string }): void {
-    this.protocol.releaseConnectionLease?.(this.taskLeaseId(input));
+  private releaseTaskLease(input: { runId: string; operationId: string; serverIdentity: string }): void {
+    this.protocol.releaseConnectionLease?.({ serverIdentity: input.serverIdentity, leaseId: this.taskLeaseId(input) });
   }
 
-  private beginTaskLease(input: { runId: string; operationId: string }): () => void {
+  private beginTaskLease(input: { runId: string; operationId: string; serverIdentity: string }): () => void {
     // The provider request itself is a running durable operation. Retain the
     // connection before dispatch so a slow tasks/call cannot be reaped midway.
     const leaseId = `${this.taskLeaseId(input)}:request`;
-    this.protocol.acquireConnectionLease?.({ leaseId });
+    this.protocol.acquireConnectionLease?.({ serverIdentity: input.serverIdentity, leaseId });
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      this.protocol.releaseConnectionLease?.(leaseId);
+      this.protocol.releaseConnectionLease?.({ serverIdentity: input.serverIdentity, leaseId });
     };
   }
 

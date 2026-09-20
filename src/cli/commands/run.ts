@@ -196,6 +196,7 @@ export const runCommand = new Command('run')
         tools: options.tools,
         disallowedTools: options.disallowedTools,
         statusFile: options.statusFile,
+        originKind: 'headless',
       });
 
       // 恢复会话（如果指定）

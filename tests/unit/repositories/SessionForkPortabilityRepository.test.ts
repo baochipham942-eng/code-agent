@@ -17,6 +17,7 @@ import {
 } from '../../../src/host/services/core/repositories/SessionForkPortabilityRepository';
 import { SessionForkPortabilitySourceReader } from '../../../src/host/services/core/repositories/SessionForkPortabilitySourceReader';
 import {
+  decodeSessionExportEnvelopeV2,
   FakeSessionForkSyncTransport,
   planSessionForkImport,
   rehashSessionExportEnvelopeV2,
@@ -796,6 +797,50 @@ describe('SessionForkPortabilityRepository', () => {
     expect(envelope?.version).toBe(3);
     expect(repository.getDurableForkTree('legacy-v2-row', 'owner-1', 'project-1').sessionId)
       .toBe('root');
+  });
+
+  it('imports the same v2-era export idempotently across two independent decodes', () => {
+    // N-FORK-PORTABILITY-IDENTITY: importSessionFork derives its idempotency key (and
+    // the target session/message/fork IDs) from envelope.payloadDigest. Model a v2-era
+    // file decoded twice on two separate occasions (e.g. re-uploaded, or re-read from a
+    // durable row) — each decode migrates and rehashes independently, and
+    // portabilityDigest is a pure function of content (canonical.ts), so both decodes
+    // must land on the exact same digest, or the second import would either
+    // false-conflict (SYNC_ID_DIGEST_CONFLICT) or silently mint a second, differently-ID'd
+    // copy of the same import.
+    const current = repository.exportSessionFork({
+      exportId: 'legacy-v2-idem-source',
+      rootSessionId: 'root',
+      ownerScopeId: 'owner-1',
+      projectId: 'project-1',
+      mode: 'subtree',
+      exportedAt: 100,
+    });
+    const { conversationHistory: _dropped, ...v3Shape } = current;
+    const legacyBytes = JSON.stringify(rehashSessionExportEnvelopeV2({ ...v3Shape, version: 2 } as never));
+
+    const firstDecode = decodeSessionExportEnvelopeV2(legacyBytes);
+    const secondDecode = decodeSessionExportEnvelopeV2(legacyBytes);
+    expect(secondDecode.payloadDigest).toBe(firstDecode.payloadDigest);
+
+    const firstImport = repository.importSessionFork({
+      envelope: firstDecode,
+      targetOwnerScopeId: 'owner-1',
+      targetProjectId: 'project-1',
+      namespace: 'device-idem-v2',
+      importedAt: 200,
+    });
+    const secondImport = repository.importSessionFork({
+      envelope: secondDecode,
+      targetOwnerScopeId: 'owner-1',
+      targetProjectId: 'project-1',
+      namespace: 'device-idem-v2',
+      importedAt: 300,
+    });
+
+    expect(secondImport).toEqual(firstImport);
+    expect(secondImport.sessionIdMap.root).toBe(firstImport.sessionIdMap.root);
+    expect(secondImport.messageIdMap).toEqual(firstImport.messageIdMap);
   });
 
   it('rejects an idempotent import lookup when its compatibility projection was tampered', () => {

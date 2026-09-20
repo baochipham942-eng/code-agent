@@ -360,15 +360,46 @@ describe('session fork portability codecs', () => {
     // The decoded envelope must be internally self-consistent even though its digest
     // necessarily differs from the stored v2 digest (the `version` field changed).
     expect(decoded.payloadDigest).not.toBe(legacy.payloadDigest);
+    // portabilityDigest is a pure function of content (see canonical.ts) — decoding the
+    // exact same v2 bytes on two independent occasions re-derives the identical migrated
+    // digest, so identity derived from payloadDigest (import/sync IDs, dedup) is stable
+    // across repeated decodes without needing to grandfather the pre-migration value.
+    expect(decodeSessionExportEnvelopeV2(JSON.stringify(legacy)).payloadDigest)
+      .toBe(decoded.payloadDigest);
     expect(() => encodeSessionExportEnvelopeV2(decoded)).not.toThrow();
   });
 
+  it('rejects a v3 envelope carrying a forged legacy-digest-skip signal', () => {
+    // N-FORK-PORTABILITY-SIGNAL-BYPASS: an earlier design let a `legacyDigest: true`
+    // field on the envelope itself tell validateSessionExportEnvelopeV2 to skip the
+    // digest recompute. That field lived on data that crosses trust boundaries — a sync
+    // transport row from another machine, a hand-built import payload — so an attacker
+    // could set version to the CURRENT version (skipping the migration branch entirely)
+    // and legacyDigest: true directly, bypassing digest verification altogether. The
+    // fix: no field on the envelope can ever skip the check, unrecognized fields are
+    // rejected outright, and this must throw either way.
+    const { conversationHistory: _dropped, ...v3Shape } = buildSessionExportEnvelopeV2(subtreeDraft());
+    const forged = {
+      ...v3Shape,
+      legacyDigest: true,
+      payloadDigest: `sha256:${'0'.repeat(64)}`,
+    };
+
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(forged))).toThrow();
+  });
+
+  it('rejects a v3 envelope with a payloadDigest that does not match its content', () => {
+    const envelope = buildSessionExportEnvelopeV2(subtreeDraft());
+    const tampered = { ...envelope, payloadDigest: `sha256:${'0'.repeat(64)}` };
+
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(tampered)))
+      .toThrow(/DIGEST_MISMATCH/u);
+  });
+
   it('rejects a v2 envelope whose content drifted after it was persisted', () => {
-    // The v2->v3 migration rehashes every digest (the `version` field participates in
-    // the hash, so a pure version bump desyncs them). rehashing on decode is required
-    // to make the migrated shape self-consistent, but it must not become a way to
-    // silently "launder" a tampered v2 payload — decode has to catch drift/corruption
-    // against the ORIGINAL v2 digest before it ever rehashes.
+    // decode rehashes a migrated envelope to make it self-consistent for the current
+    // shape, but only AFTER verifying it against the ORIGINAL v2 digests — so rehashing
+    // never becomes a way to silently "launder" a tampered v2 payload.
     const { conversationHistory: _dropped, ...v3Shape } = buildSessionExportEnvelopeV2(subtreeDraft());
     const legacy = rehashSessionExportEnvelopeV2({ ...v3Shape, version: 2 } as never);
     const tampered = {
@@ -456,6 +487,7 @@ describe('session fork portability codecs', () => {
     expect(decoded.version).toBe(3);
     expect(decoded.conversationHistory?.entries[0].message).not.toHaveProperty('metadata');
     expect(decoded.conversationHistory?.payloadDigest).not.toBe(legacyHistory.payloadDigest);
+    expect(decoded.payloadDigest).not.toBe(legacy.payloadDigest);
     expect(() => encodeSessionExportEnvelopeV2(decoded)).not.toThrow();
   });
 

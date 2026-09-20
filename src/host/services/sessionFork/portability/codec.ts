@@ -885,18 +885,32 @@ export function validateSessionExportEnvelopeV2(
   } else if (envelope.detachedProvenance) {
     fail('LINEAGE_INVALID', 'subtree exports cannot carry detached provenance');
   }
+  // Digest self-consistency is checked unconditionally — never skipped based on
+  // anything the envelope itself claims (N-FORK-PORTABILITY-IDENTITY: an earlier design
+  // let a `legacyDigest` marker on the envelope bypass this recompute for
+  // migrated/grandfathered digests, but that marker travels on data that crosses trust
+  // boundaries just like everything else here — an external caller providing a raw
+  // envelope object (a sync transport row from another machine, a hand-built IPC
+  // payload) could set it and skip verification entirely. portabilityDigest is a pure
+  // function of content, so re-deriving it on every validate call is cheap and gives no
+  // legitimate case any reason to opt out.)
   assertDigest(envelope.payloadDigest, portabilityDigest(withoutDigest(envelope)), 'session export envelope');
 }
 
 // A version migration (e.g. v2->v3) is a pure `version` bump with no other structural
 // change, so it desyncs every payloadDigest that was computed over the old version
 // number. rehashSessionExportEnvelopeV2 unconditionally recomputes those digests to
-// match the migrated shape — which is required to make the migrated envelope
-// self-consistent, but on its own means a decode of a *migrating* envelope never
-// actually checks whether the stored content was tampered with or corrupted: it just
-// recomputes digests from whatever bytes are on disk and asserts they match themselves.
-// So verify integrity against the ORIGINAL (pre-migration) digests first, using the
-// content exactly as parsed — before anything is rehashed.
+// match the migrated shape — required for the migrated envelope to pass the
+// unconditional check in validateSessionExportEnvelopeV2 above. Because
+// portabilityDigest is a pure function of content (see canonical.ts), decoding the same
+// original bytes on two separate occasions always re-derives the same migrated digest —
+// so rehashing here doesn't cost any identity stability (import/sync ID derivation,
+// dedup all key off payloadDigest and see the same value both times).
+// On its own, rehashing means a decode of a *migrating* envelope never actually checks
+// whether the stored content was tampered with or corrupted: it just recomputes digests
+// from whatever bytes are on disk and asserts they match themselves. So verify
+// integrity against the ORIGINAL (pre-migration) digests first, using the content
+// exactly as parsed — before anything is rehashed.
 // v2 envelopes were exported before N-FORK-PORTABILITY round 3 dropped
 // message.metadata from the conversationHistory projection (see the comment in
 // sanitizeMessages above and conversationHistory.ts's sanitizeMessage). The

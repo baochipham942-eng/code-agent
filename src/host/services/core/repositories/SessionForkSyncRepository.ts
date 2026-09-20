@@ -368,11 +368,10 @@ export class SessionForkSyncRepository {
   }
 
   private syncRowToRecord(row: StoredSyncRow): SessionForkSyncEnvelopeRecord {
-    // decodeSessionExportEnvelopeV2 rehashes on any version migration (e.g. the v2->v3
-    // bump), which recomputes payloadDigest over the migrated shape and therefore no
-    // longer equals the digest this row was written with. Compare against the digest
-    // actually stored in the blob (pre-migration) instead of the decoded/rehashed one —
-    // for a current-version row this is the same value, so behavior is unchanged there.
+    // row.payload_digest (the column) and the blob's embedded payloadDigest were written
+    // together, from the same encodeSessionExportEnvelopeV2() call, so they should always
+    // agree. Compare them directly as a cheap corruption check before paying for the
+    // full decode (which re-verifies content digests) below.
     const stored = parseJson<{ payloadDigest?: unknown }>(row.envelope_json, `sync envelope ${row.sync_envelope_id}`);
     if (typeof stored.payloadDigest !== 'string' || stored.payloadDigest !== row.payload_digest) {
       fail('DIGEST_MISMATCH', `sync envelope ${row.sync_envelope_id} payload drifted`);

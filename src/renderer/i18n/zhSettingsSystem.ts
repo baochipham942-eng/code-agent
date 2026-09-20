@@ -395,6 +395,7 @@ export const zhSettingsSystem = {
         connected: '已连接',
         adminRequired: '需要管理员',
         unavailable: '不可用',
+        installFailed: '没装好·重装',
       },
       capabilities: {
         feishu: '以你的身份给飞书群发消息：会议纪要、周报和进展提醒，说完就发，不用切出 Neo。',
@@ -419,6 +420,7 @@ export const zhSettingsSystem = {
         adminRequired: '需联系企业应用管理员安装',
         connectedIdentity: '已连接 · {user}@{tenant}',
         statusUnavailable: '连接状态不完整或当前回跳能力不可用，已停用操作。',
+        cliInstallFailed: '连接器没装好，可以重装。',
       },
       secret: {
         label: 'App Secret',
@@ -437,6 +439,7 @@ export const zhSettingsSystem = {
         connectTmeet: '连接腾讯会议',
         cancel: '取消',
         retry: '重试',
+        reinstall: '重装',
         disconnect: '断开',
         disconnecting: '断开中…',
       },

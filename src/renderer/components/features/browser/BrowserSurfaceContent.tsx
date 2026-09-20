@@ -16,6 +16,7 @@ import type {
   ManagedBrowserSessionState,
 } from '@shared/contract/desktop';
 import { useComposerStore } from '../../../stores/composerStore';
+import { useI18n } from '../../../hooks/useI18n';
 import { useWorkbenchBrowserSession } from '../../../hooks/useWorkbenchBrowserSession';
 import { useLiveAgentPointer } from '../../../hooks/useLiveAgentPointer';
 import { buildBrowserWorkbenchStatusRows } from '../../../utils/workbenchPresentation';
@@ -80,6 +81,8 @@ function getStatusClass(ready: boolean): string {
 // 不再自带 FullScreenPage 外壳；页面标题与关闭由外层页头负责。
 export const BrowserSurfaceContent: React.FC = () => {
   const setBrowserSessionMode = useComposerStore((state) => state.setBrowserSessionMode);
+  const { t } = useI18n();
+  const cookieCopy = t.workbenchTabs.agentWindow;
   const browserSession = useWorkbenchBrowserSession();
   const [url, setUrl] = useState('https://www.google.com/');
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
@@ -88,6 +91,7 @@ export const BrowserSurfaceContent: React.FC = () => {
   const [profiles, setProfiles] = useState<BrowserProfileDescriptor[]>([]);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [selectedProfileKey, setSelectedProfileKey] = useState<string | null>(null);
+  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [lastImport, setLastImport] = useState<BrowserCookieImportResult | null>(null);
   const livePointer = useLiveAgentPointer('browser');
 
@@ -183,16 +187,20 @@ export const BrowserSurfaceContent: React.FC = () => {
     if (firstAvailable) {
       setSelectedProfileKey(`${firstAvailable.source}::${firstAvailable.profileId}`);
     }
+    setSelectedDomains([]);
     setNotice(`已扫描 ${Array.isArray(list) ? list.length : 0} 个浏览器 profile（macOS Chromium 系）。`);
   }), [run]);
 
-  const handleImportProfile = useCallback(() => run('importProfile', async () => {
+  const importProfileWithDomains = useCallback((domainAllowlist: string[]) => run('importProfile', async () => {
     const selected = profiles.find((item) => `${item.source}::${item.profileId}` === selectedProfileKey);
     if (!selected) {
       throw new Error('请先选择一个可导入的浏览器 profile。');
     }
     if (!selected.available) {
       throw new Error(selected.unavailableMessage || '该 profile 当前不可用。');
+    }
+    if (domainAllowlist.length === 0) {
+      throw new Error(cookieCopy.importCookiesDomainRequired);
     }
     setBrowserSessionMode('managed');
     const response = await ipcService.invokeDomain<ProfileImportIpcResult>(
@@ -201,6 +209,7 @@ export const BrowserSurfaceContent: React.FC = () => {
       {
         source: selected.source,
         profileId: selected.profileId,
+        domainAllowlist,
         userConfirmed: true,
       },
     );
@@ -217,7 +226,23 @@ export const BrowserSurfaceContent: React.FC = () => {
       + (result.domainCount ? `（${result.domainCount} 个 domain）` : '')
       + '。托管浏览器已 reload。',
     );
-  }), [profiles, run, selectedProfileKey, setBrowserSessionMode]);
+  }), [cookieCopy.importCookiesDomainRequired, profiles, run, selectedProfileKey, setBrowserSessionMode]);
+
+  const handleImportProfile = useCallback(() => {
+    if (selectedDomains.length === 0) {
+      setError(cookieCopy.importCookiesDomainRequired);
+      return;
+    }
+    void importProfileWithDomains(selectedDomains);
+  }, [cookieCopy.importCookiesDomainRequired, importProfileWithDomains, selectedDomains]);
+
+  const handleImportAllProfile = useCallback(() => {
+    const selected = profiles.find((item) => `${item.source}::${item.profileId}` === selectedProfileKey);
+    const domains = selected?.cookieDomains?.map((entry) => entry.domain) || [];
+    if (domains.length === 0) return;
+    if (!window.confirm(cookieCopy.importCookiesImportAllConfirm)) return;
+    void importProfileWithDomains(domains);
+  }, [cookieCopy.importCookiesImportAllConfirm, importProfileWithDomains, profiles, selectedProfileKey]);
 
   const handleClearCookies = useCallback(() => run('clearCookies', async () => {
     await ipcService.invokeDomain<AccountClearResult>(
@@ -240,6 +265,7 @@ export const BrowserSurfaceContent: React.FC = () => {
       if (firstAvailable) {
         setSelectedProfileKey(`${firstAvailable.source}::${firstAvailable.profileId}`);
       }
+      setSelectedDomains([]);
     }).catch(() => {
       setProfilesLoaded(true);
     });
@@ -249,6 +275,9 @@ export const BrowserSurfaceContent: React.FC = () => {
     () => profiles.filter((item) => item.available),
     [profiles],
   );
+  const selectedCookieDomains = availableProfiles.find(
+    (item) => `${item.source}::${item.profileId}` === selectedProfileKey,
+  )?.cookieDomains ?? [];
 
   const isBusy = (action: BusyAction) => busyAction === action;
   const bridgeReady = bridge?.status === 'connected';
@@ -396,10 +425,17 @@ export const BrowserSurfaceContent: React.FC = () => {
                   </BrowserActionButton>
                   <BrowserActionButton
                     busy={isBusy('importProfile')}
-                    disabled={Boolean(busyAction) || !selectedProfileKey}
+                    disabled={Boolean(busyAction) || !selectedProfileKey || selectedDomains.length === 0}
                     onClick={handleImportProfile}
                   >
                     导入选中 profile
+                  </BrowserActionButton>
+                  <BrowserActionButton
+                    busy={isBusy('importProfile')}
+                    disabled={Boolean(busyAction) || !selectedProfileKey || selectedCookieDomains.length === 0}
+                    onClick={handleImportAllProfile}
+                  >
+                    {cookieCopy.importCookiesImportAll}
                   </BrowserActionButton>
                   <BrowserActionButton
                     busy={isBusy('clearCookies')}
@@ -436,7 +472,10 @@ export const BrowserSurfaceContent: React.FC = () => {
                           name="browser-profile"
                           className="mt-0.5"
                           checked={selected}
-                          onChange={() => setSelectedProfileKey(key)}
+                          onChange={() => {
+                            setSelectedProfileKey(key);
+                            setSelectedDomains([]);
+                          }}
                         />
                         <span className="min-w-0 flex-1">
                           <span className="font-medium text-zinc-100">
@@ -453,6 +492,40 @@ export const BrowserSurfaceContent: React.FC = () => {
                   })}
                 </div>
               )}
+
+              {selectedProfileKey && (() => {
+                const selectedProfile = availableProfiles.find((item) => `${item.source}::${item.profileId}` === selectedProfileKey);
+                const domains = selectedProfile?.cookieDomains || [];
+                return (
+                  <div className="mt-3 space-y-1.5" data-testid="browser-surface-cookie-domain-list">
+                    <div className="text-[11px] text-zinc-400">{cookieCopy.importCookiesDomainSelectLabel}</div>
+                    {domains.length === 0 ? (
+                      <div className="text-[11px] text-zinc-500">{cookieCopy.importCookiesDomainRequired}</div>
+                    ) : (
+                      <div className="max-h-36 space-y-1 overflow-y-auto rounded-md border border-white/[0.06] bg-black/10 p-2">
+                        {domains.map((entry) => {
+                          const checked = selectedDomains.includes(entry.domain);
+                          return (
+                            <label key={entry.domain} className="flex items-center gap-2 text-[11px] text-zinc-300">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={Boolean(busyAction)}
+                                onChange={() => setSelectedDomains((current) => checked
+                                  ? current.filter((domain) => domain !== entry.domain)
+                                  : [...current, entry.domain])}
+                                data-testid={`browser-surface-cookie-domain-${entry.domain}`}
+                              />
+                              <span className="min-w-0 flex-1 truncate">{entry.domain}</span>
+                              <span className="text-zinc-500">{entry.cookieCount}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {lastImport && (
                 <div className="mt-2 rounded-md border border-white/[0.06] bg-black/10 px-2 py-1.5 text-[11px] text-zinc-400">

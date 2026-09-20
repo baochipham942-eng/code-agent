@@ -29,6 +29,8 @@ export interface CliConnectorStatus {
   connected: boolean;
   identity: string;
   stale?: boolean;
+  /** The connector can be repaired from settings when installation failed. */
+  installState?: 'failed';
   user?: {
     openId?: string;
     name?: string;
@@ -41,10 +43,12 @@ interface CliStatusCache {
   expiresAt: number;
   generation: number;
   inFlight?: Promise<CliConnectorStatus>;
+  installInFlight?: Promise<void>;
   now: () => number;
 }
 
 const STATUS_CACHE_TTL_MS = 30_000;
+const INSTALL_FAIL_COOLDOWN_MS = 10 * 60 * 1000;
 const STATUS_TIMEOUT_MS = 4_000;
 const statusCaches = new Map<string, CliStatusCache>();
 
@@ -323,21 +327,48 @@ export function createCliConnector(
     }
   };
 
-  const ensureInstalled = async (trackConnect = false): Promise<void> => {
+  const ensureInstalled = async (trackConnect = false, forceReinstall = false): Promise<void> => {
     const expectedPackageVersion = descriptor.packageJsonVersion ?? descriptor.version;
-    if (await installedVersion() === expectedPackageVersion && await hasExecutable()) return;
-    await mkdir(installPrefix, { recursive: true });
-    await run(
-      npmExecutable,
-      ['install', '--prefix', installPrefix, `${descriptor.npmPackage}@${descriptor.version}`],
-      `install ${descriptor.binaryName}`,
-      undefined,
-      trackConnect,
+    // alreadyInstalled 只看版本号+可执行位，识别不了「同版本但运行即 127」的坏
+    // 二进制——自愈（127 触发）与用户手动重装必须 forceReinstall 跳过短路，
+    // 否则坏二进制会被永远复用（PR#1970 ai-review）。
+    const alreadyInstalled = async (): Promise<boolean> => (
+      await installedVersion() === expectedPackageVersion && await hasExecutable()
     );
-    const version = await installedVersion();
-    if (version !== expectedPackageVersion || !(await hasExecutable())) {
-      throw new Error(`${descriptor.binaryName} ${descriptor.version} installation could not be verified`);
+    const runInstall = async (): Promise<void> => {
+      if (!forceReinstall && await alreadyInstalled()) return;
+      await mkdir(installPrefix, { recursive: true });
+      await run(
+        npmExecutable,
+        ['install', '--prefix', installPrefix, `${descriptor.npmPackage}@${descriptor.version}`],
+        `install ${descriptor.binaryName}`,
+        undefined,
+        trackConnect,
+      );
+      const version = await installedVersion();
+      if (version !== expectedPackageVersion || !(await hasExecutable())) {
+        throw new Error(`${descriptor.binaryName} ${descriptor.version} installation could not be verified`);
+      }
+    };
+
+    if (statusCache.installInFlight) {
+      try {
+        await statusCache.installInFlight;
+      } catch {
+        if (!trackConnect) {
+          throw new Error(`${descriptor.binaryName} installation already failed`);
+        }
+      }
+      if (!forceReinstall && await alreadyInstalled()) return;
+      if (!trackConnect) return;
     }
+
+    const work = runInstall();
+    const tracked = work.finally(() => {
+      if (statusCache.installInFlight === tracked) statusCache.installInFlight = undefined;
+    });
+    statusCache.installInFlight = tracked;
+    await tracked;
   };
 
   const readFreshStatus = async (): Promise<CliConnectorStatus> => {
@@ -349,12 +380,71 @@ export function createCliConnector(
       binaryPath,
     });
     try {
-      const result = await runDescriptorCommand(
-        descriptor.status.command,
-        undefined,
-        false,
-        statusTimeoutMs,
-      );
+      let result: CliCommandResult;
+      try {
+        result = await runDescriptorCommand(
+          descriptor.status.command,
+          undefined,
+          false,
+          statusTimeoutMs,
+        );
+      } catch (error) {
+        const missingBinary = systemErrorCode(error) === 'ENOENT'
+          || (error instanceof CliConnectorCommandError && error.exitCode === 127);
+        if (!descriptor.autoInstallOnMissingStatus || !missingBinary) throw error;
+        logger.warn('CLI connector binary missing; attempting self-heal install', {
+          providerId: descriptor.id,
+          binaryPath,
+        });
+        try {
+          await ensureInstalled(false, true);
+        } catch (installError) {
+          logger.warn('CLI connector self-heal install failed', {
+            providerId: descriptor.id,
+            binaryPath,
+            phase: 'install',
+            errorName: installError instanceof Error ? installError.name : typeof installError,
+            errorMessage: installError instanceof Error ? installError.message : String(installError),
+          });
+          return {
+            connected: false,
+            identity: descriptor.status.disconnectedIdentity,
+            installState: 'failed',
+          };
+        }
+        logger.info('CLI connector self-heal install completed', {
+          providerId: descriptor.id,
+          binaryPath,
+        });
+        try {
+          result = await runDescriptorCommand(
+            descriptor.status.command,
+            undefined,
+            false,
+            statusTimeoutMs,
+          );
+        } catch (statusError) {
+          // 装完仍 ENOENT/127 才算安装失败；未登录等其他错误抛回外层，
+          // 走 isMissingConfiguration 等既有分类，不能误标 installState
+          // （PR#1970 ai-review：误标会把正常未登录用户打进 10 分钟冷却）。
+          const stillMissing = systemErrorCode(statusError) === 'ENOENT'
+            || (statusError instanceof CliConnectorCommandError && statusError.exitCode === 127);
+          if (!stillMissing) throw statusError;
+          logger.warn('CLI connector still missing after self-heal install', {
+            providerId: descriptor.id,
+            binaryPath,
+            phase: 'post-install-status',
+            errorName: statusError instanceof Error ? statusError.name : typeof statusError,
+            errorMessage: statusError instanceof Error ? statusError.message : String(statusError),
+            ...(statusError instanceof CliConnectorCommandError ? { exitCode: statusError.exitCode } : {}),
+          });
+          return {
+            connected: false,
+            identity: descriptor.status.disconnectedIdentity,
+            installState: 'failed',
+          };
+        }
+      }
       const combined = stripAnsi(`${result.stdout}\n${result.stderr}`);
       let parsed: Record<string, unknown> | undefined;
       let connected = false;
@@ -425,7 +515,9 @@ export function createCliConnector(
     const refresh = readFreshStatus().then((nextStatus) => {
       if (statusCache.generation === generation) {
         statusCache.value = nextStatus;
-        statusCache.expiresAt = now() + statusCacheTtlMs;
+        statusCache.expiresAt = now() + (
+          nextStatus.installState === 'failed' ? INSTALL_FAIL_COOLDOWN_MS : statusCacheTtlMs
+        );
       }
       return nextStatus;
     }).finally(() => {
@@ -555,6 +647,8 @@ export function createCliConnector(
       if (connectCancelled) throw cancelledError();
     };
     try {
+      // 坏二进制（同版本但 127）由 connect 内 status(true) 的自愈腿强制重装覆盖，
+      // connect 自身不 force——否则每次点连接都白跑一次 npm install。
       await ensureInstalled(true);
       assertNotCancelled();
       if (descriptor.checkStatusBeforeAuth) {

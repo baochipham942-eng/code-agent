@@ -391,6 +391,7 @@ interface ConnectorOAuthProviderStatus {
   authorizationOpened?: boolean;
   blocked?: boolean;
   stale?: boolean;
+  installState?: 'failed';
   userName?: string;
   tenantName?: string;
 }
@@ -444,6 +445,7 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
         authMode,
         ...(cliAdminBlocked.has(descriptor.id) ? { blocked: true } : {}),
         ...(cliStatus.stale ? { stale: true } : {}),
+        ...(cliStatus.installState ? { installState: cliStatus.installState } : {}),
         ...(cliStatus.user?.name ? { userName: cliStatus.user.name } : {}),
         ...(cliStatus.user?.tenantName ? { tenantName: cliStatus.user.tenantName } : {}),
       };

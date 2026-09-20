@@ -21,6 +21,7 @@ export async function listImportableBrowserProfiles(): Promise<BrowserProfileDes
 export async function importBrowserProfileCookiesToPersonal(args: {
   source: BrowserProfileSourceId;
   profileId: string;
+  domainAllowlist?: string[];
 }): Promise<BrowserCookieImportResult> {
   const response = await ipcService.invokeDomain<{ result?: BrowserCookieImportResult } | BrowserCookieImportResult>(
     IPC_DOMAINS.DESKTOP,
@@ -28,6 +29,7 @@ export async function importBrowserProfileCookiesToPersonal(args: {
     {
       source: args.source,
       profileId: args.profileId,
+      ...(args.domainAllowlist ? { domainAllowlist: args.domainAllowlist } : {}),
       userConfirmed: true,
     },
   );

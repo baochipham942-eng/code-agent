@@ -25,6 +25,12 @@ import { ConnectorLogo } from '../../connectors/ConnectorLogo';
 import { CustomOAuthConnectorForm, type CustomOAuthDescriptorDraft } from './CustomOAuthConnectorForm';
 import { SaaSConnectorCardFooter } from './SaaSConnectorCardFooter';
 import { SaaSConnectorFeedback } from './SaaSConnectorFeedback';
+import {
+  getInstallErrorPresentation,
+  isInstallRepairState,
+  saasConnectorDetailToneClass,
+  SaaSConnectorInstallAction,
+} from './SaaSConnectorInstallError';
 
 type LoopbackRedirectUriSupport = 'confirmed' | 'pending-verification' | 'unsupported';
 type ConnectorAuthMode = 'oauth' | 'lark-cli' | 'tmeet-cli';
@@ -44,6 +50,7 @@ interface ConnectorOAuthProviderStatus {
   authorizationOpened?: boolean;
   blocked?: boolean;
   stale?: boolean;
+  installState?: 'failed';
   userName?: string;
   tenantName?: string;
 }
@@ -57,6 +64,7 @@ type ProviderPresentationState =
   | 'connecting_single'
   | 'connected'
   | 'admin_blocked'
+  | 'install_error'
   | 'unavailable';
 
 type SaaSConnectorsText = ReturnType<typeof useI18n>['t']['settings']['saasConnectors'];
@@ -100,6 +108,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     authorizationOpened,
     blocked,
     stale,
+    installState,
     userName,
     tenantName,
   } = value;
@@ -121,6 +130,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     || (authorizationOpened !== undefined && typeof authorizationOpened !== 'boolean')
     || (blocked !== undefined && typeof blocked !== 'boolean')
     || (stale !== undefined && typeof stale !== 'boolean')
+    || (installState !== undefined && installState !== 'failed')
     || (userName !== undefined && typeof userName !== 'string')
     || (tenantName !== undefined && typeof tenantName !== 'string')
   ) {
@@ -140,6 +150,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     ...(authorizationOpened === true ? { authorizationOpened: true } : {}),
     ...(typeof blocked === 'boolean' ? { blocked } : {}),
     ...(stale === true ? { stale: true } : {}),
+    ...(installState === 'failed' ? { installState } : {}),
     ...(typeof userName === 'string' && userName.trim() ? { userName } : {}),
     ...(typeof tenantName === 'string' && tenantName.trim() ? { tenantName } : {}),
   };
@@ -171,6 +182,7 @@ function persistProviderStatuses(statuses: ConnectorOAuthProviderStatus[]): void
 }
 
 function resolveProviderState(status: ConnectorOAuthProviderStatus): ProviderPresentationState {
+  if (isCliAuthMode(status.authMode) && status.installState === 'failed') return 'install_error';
   if (status.stale) return 'unavailable';
   if (isCliAuthMode(status.authMode)) {
     if (status.id === 'tmeet' && status.step === 1) return 'connecting_single';
@@ -284,6 +296,8 @@ function getStatePresentation(
         detail: text.details.adminRequired,
         actionLabel: text.actions.retry,
       };
+    case 'install_error':
+      return getInstallErrorPresentation(text);
     case 'ready':
       return {
         badge: text.badges.notConnected,
@@ -750,17 +764,15 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
             {isCli && (
               <div className="mt-3 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  {state === 'ready' && (
-                    <Button
-                      size="sm"
-                      variant="primary"
+                  {isInstallRepairState(state) && (
+                    <SaaSConnectorInstallAction
+                      providerId={status.id}
+                      repair={state === 'install_error'}
+                      label={getCliConnectLabel(status, text)}
+                      reinstallLabel={text.actions.reinstall}
                       disabled={rowBusy}
-                      onClick={() => void connect(status.id, status.authMode)}
-                      leftIcon={<Link2 className="h-3 w-3" />}
-                      data-testid={`saas-connect-${status.id}`}
-                    >
-                      {getCliConnectLabel(status, text)}
-                    </Button>
+                      onConnect={() => void connect(status.id, status.authMode)}
+                    />
                   )}
                   {isProgress && (
                     <Button
@@ -890,15 +902,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               </div>
 
               {presentation.detail && (
-                <div className={`rounded-md border px-3 py-2 text-xs ${
-                  activeState === 'missing_client_id' || activeState === 'admin_blocked'
-                    ? 'border-red-500/25 bg-red-500/10 text-badge-danger'
-                    : activeState === 'connecting_step_1'
-                        || activeState === 'connecting_step_2'
-                        || activeState === 'connecting_single'
-                      ? 'border-amber-500/25 bg-amber-500/10 text-badge-warning'
-                    : 'border-zinc-700 bg-zinc-950/40 text-zinc-400'
-                }`}>
+                <div className={`rounded-md border px-3 py-2 text-xs ${saasConnectorDetailToneClass(activeState)}`}>
                   {presentation.detail}
                 </div>
               )}
@@ -939,20 +943,18 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                 </div>
               )}
 
-              {activeState === 'ready' && (
-                <Button
-                  size="sm"
-                  variant="primary"
+              {isInstallRepairState(activeState) && (
+                <SaaSConnectorInstallAction
+                  providerId={activeStatus.id}
+                  repair={activeState === 'install_error'}
+                  label={isCli ? getCliConnectLabel(activeStatus, text) : text.actions.connect}
+                  reinstallLabel={text.actions.reinstall}
+                  connectingLabel={text.actions.connecting}
+                  connecting={isConnecting}
                   loading={isConnecting}
                   disabled={rowBusy || !canConnect}
-                  onClick={() => void connect(activeStatus.id, activeStatus.authMode)}
-                  leftIcon={!isConnecting ? <Link2 className="h-3 w-3" /> : undefined}
-                  data-testid={`saas-connect-${activeStatus.id}`}
-                >
-                  {isConnecting
-                    ? text.actions.connecting
-                    : isCli ? getCliConnectLabel(activeStatus, text) : text.actions.connect}
-                </Button>
+                  onConnect={() => void connect(activeStatus.id, activeStatus.authMode)}
+                />
               )}
 
               {(activeState === 'connecting_step_1'

@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
+import { getConfigService } from '../src/host/services/core/configService';
 import { quickTask, getQuickModelRuntimeInfo } from '../src/host/model/quickModel';
 import {
   buildRubricPrompt,
@@ -31,7 +32,8 @@ import {
   type GdpvalRubricItem,
 } from './lib/gdpvalRubric';
 
-// 额度按「128k 上下文的一半留给资料」定：产物 + 输入 ≈ 12 万字符 ≈ 4 万 token。
+// 额度按「128k 上下文留一半给资料」定：产物标称 12 万 + 输入 6 万 = 18 万字符 ≈ 6 万 token。
+// 两个都是软上限（判断在累加之前），最坏情况各多一个 MAX_FILE_CHARS，合计约 30 万字符。
 // 8000 字那版实测把 1516 行的明细表截到 40 行，rubric 里「表里至少有一行满足 X」
 // 整片判 false，分数与产物质量脱钩。
 /** 单文件提取上限。 */
@@ -165,9 +167,24 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
       return { path: relPath, bytes, text: clip(extracted.value) };
     }
   } catch (error) {
-    return { path: relPath, bytes, text: `[提取失败：${error instanceof Error ? error.message : String(error)}]` };
+    return unseen(relPath, bytes, `提取失败 ${error instanceof Error ? error.message : String(error)}`);
   }
-  return { path: relPath, bytes, text: `[binary ${ext || 'no-ext'}，未提取正文]` };
+  return unseen(relPath, bytes, `binary ${ext || 'no-ext'}，没有解析器`);
+}
+
+/**
+ * 「这份文件的正文没给模型看」的唯一构造口。**所有出口都必须走它**：
+ * 超额度、文件数超限、二进制没解析器、提取抛错——四种原因在提示词里必须长一个样，
+ * 因为模型认的是 TRUNCATED_MARK 这个词，认不出就按「产物里没有」判 false 并计入分母，
+ * 落一个与「产物确实不合格」分不开的假零分。
+ */
+function unseen(relPath: string, bytes: number, reason: string): GdpvalArtifactFile {
+  return { path: relPath, bytes, text: `[${TRUNCATED_MARK}：${reason}]` };
+}
+
+/** 文件是不是只给了占位（没让模型看正文）。落盘证据靠它打标签。 */
+function isUnseen(file: GdpvalArtifactFile): boolean {
+  return file.text.startsWith(`[${TRUNCATED_MARK}`);
 }
 
 function safeSize(absPath: string): number {
@@ -193,7 +210,7 @@ async function collectWithinBudget(
     if (index >= maxFiles || used >= maxChars) {
       skipped += 1;
       if (skipped <= MAX_PLACEHOLDERS) {
-        files.push({ path: entry.rel, bytes: safeSize(entry.abs), text: `[${TRUNCATED_MARK}]` });
+        files.push(unseen(entry.rel, safeSize(entry.abs), '超出本题提取额度'));
       }
       continue;
     }
@@ -202,11 +219,7 @@ async function collectWithinBudget(
     files.push(file);
   }
   if (skipped > MAX_PLACEHOLDERS) {
-    files.push({
-      path: `（另有 ${skipped - MAX_PLACEHOLDERS} 个文件）`,
-      bytes: 0,
-      text: `[${TRUNCATED_MARK}]`,
-    });
+    files.push(unseen(`（另有 ${skipped - MAX_PLACEHOLDERS} 个文件）`, 0, '超出本题提取额度'));
   }
   return { files, skipped };
 }
@@ -227,6 +240,11 @@ function listFiles(root: string): string[] {
 
 async function main(): Promise<void> {
   const options = parseArgs();
+  // 不 reload 就读不到磁盘上的 config.json，routing 一路用默认值（zhipu/glm-4-flash），
+  // 在夜巡机器上那条路恒 401（N-QUICKMODEL-ZHIPU-401）——排查了半天「key 为什么失效」，
+  // 真因是这一行没写。postlaunch-score.ts 一直有它，我照抄时漏了。
+  // reloadFromDisk 刻意不做 keychain / migrate / save，不会回写用户配置。
+  await getConfigService().reloadFromDisk();
   const bankPath = path.join(options.patrol, 'gdpval.json');
   if (!fs.existsSync(bankPath)) {
     console.error(`找不到题库 ${bankPath}`);
@@ -324,8 +342,8 @@ async function main(): Promise<void> {
         const more = attempt < RETRY_BACKOFF_MS.length ? `，${RETRY_BACKOFF_MS[attempt] / 1000} 秒后重试` : '，不再重试';
         try {
           // 不给超时，模型服务挂起时整夜评分会停在这一批上，后面的题一道都不落盘。
+          calls += 1;   // 计在发起处：抛错的那次也是真花了钱的，记在 await 之后会低报付费量
           const response = await quickTask(prompt, 6000, AbortSignal.timeout(options.callTimeoutMs));
-          calls += 1;
           content = response.success && response.content ? response.content : '';
           if (!content) console.warn(`  ${task.id}：模型没返回内容（${response.error ?? '无错误信息'}）${more}`);
         } catch (error) {
@@ -336,7 +354,7 @@ async function main(): Promise<void> {
     }
 
     // 落盘的 files 标出哪些只留了占位：事后要能看出「这条判负」是不是因为文件压根没进提示词。
-    const seenPaths = new Set(files.filter((file) => file.text !== `[${TRUNCATED_MARK}]`).map((file) => file.path));
+    const seenPaths = new Set(files.filter((file) => !isUnseen(file)).map((file) => file.path));
     const fileLabels = allRels.map((rel) => (seenPaths.has(rel) ? rel : `${rel} [${TRUNCATED_MARK}]`));
     const score = summarizeTask(task.id, verdicts, fileLabels, task._occupation);
     out.write(`${JSON.stringify(score)}\n`);

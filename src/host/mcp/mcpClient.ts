@@ -891,10 +891,10 @@ export class MCPClient extends EventEmitter {
   createTaskProtocol(serverName: string, expectedServerIdentity: string): McpTaskProtocol | null {
     const actualIdentity = this.getServerIdentity(serverName);
     if (!actualIdentity || actualIdentity !== expectedServerIdentity) return null;
-    return new McpSdkTaskProtocol(() => this.getCurrentClient(serverName), actualIdentity, {}, { acquire: ({ leaseId, expiresAt }) => this.acquireConnectionLease(serverName, leaseId, expiresAt), release: (leaseId) => this.releaseConnectionLease(serverName, leaseId) });
+    return new McpSdkTaskProtocol((signal) => this.getCurrentClient(serverName, signal), actualIdentity, {}, { acquire: ({ leaseId, expiresAt }) => this.acquireConnectionLease(serverName, leaseId, expiresAt), release: (leaseId) => this.releaseConnectionLease(serverName, leaseId) });
   }
 
-  private async getCurrentClient(serverName: string): Promise<Client | undefined> { if (!this.clients.has(serverName) && !await this.ensureConnected(serverName)) return undefined; return this.clients.get(serverName); }
+  private async getCurrentClient(serverName: string, signal?: AbortSignal): Promise<Client | undefined> { if (!this.clients.has(serverName) && !await this.ensureConnected(serverName, signal)) return undefined; return this.clients.get(serverName); }
 
   buildTaskCapability(
     serverName: string,
@@ -1169,10 +1169,10 @@ export class MCPClient extends EventEmitter {
     return this.registry.getResources();
   }
 
-  async readResource(serverName: string, uri: string): Promise<string> {
+  async readResource(serverName: string, uri: string, signal?: AbortSignal): Promise<string> {
     const inProcessServer = this.inProcessServers.get(serverName);
     if (inProcessServer) return inProcessServer.readResource(uri);
-    return this.idleReaper.withExternalClient(serverName, () => this.clients.get(serverName), () => this.ensureConnected(serverName), client => this.registry.readExternalResource(client, uri));
+    return this.idleReaper.withExternalClient(serverName, () => this.clients.get(serverName), () => this.ensureConnected(serverName, signal), client => this.registry.readExternalResource(client, uri), signal);
   }
 
   // --------------------------------------------------------------------------
@@ -1184,13 +1184,11 @@ export class MCPClient extends EventEmitter {
   }
 
   async getPrompt(
-    serverName: string,
-    promptName: string,
-    args?: Record<string, string>,
+    serverName: string, promptName: string, args?: Record<string, string>, signal?: AbortSignal,
   ): Promise<string> {
     const inProcessServer = this.inProcessServers.get(serverName);
     if (inProcessServer) return inProcessServer.getPrompt(promptName, args);
-    return this.idleReaper.withExternalClient(serverName, () => this.clients.get(serverName), () => this.ensureConnected(serverName), client => this.registry.getExternalPrompt(client, promptName, args));
+    return this.idleReaper.withExternalClient(serverName, () => this.clients.get(serverName), () => this.ensureConnected(serverName, signal), client => this.registry.getExternalPrompt(client, promptName, args), signal);
   }
 
   // --------------------------------------------------------------------------

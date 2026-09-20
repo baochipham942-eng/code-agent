@@ -142,6 +142,60 @@ describe('McpSdkTaskProtocol', () => {
     );
   });
 
+  it('ends promptly with an abort error instead of blocking on a hung lazy-connect', async () => {
+    const controller = new AbortController();
+    // Models getCurrentClient()/ensureConnected(): stays pending until the connect
+    // settles or the caller aborts, whichever comes first — never resolves on its own
+    // within this test, so a prompt rejection proves the signal was actually raced.
+    const clientFn = vi.fn((signal?: AbortSignal) => new Promise<undefined>((resolve) => {
+      if (signal?.aborted) { resolve(undefined); return; }
+      signal?.addEventListener('abort', () => resolve(undefined), { once: true });
+    }));
+    const protocol = new McpSdkTaskProtocol(clientFn as never, 'server:identity', { sleep: async () => {} });
+
+    const promise = protocol.getTask({
+      serverIdentity: 'server:identity', taskId: 'task-1', signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(clientFn).toHaveBeenCalledWith(controller.signal);
+  });
+
+  it('stops polling in resolveTaskResult once aborted, without reconnecting for later attempts', async () => {
+    const controller = new AbortController();
+    let getCalls = 0;
+    // First tasks/get succeeds and returns 'working' so the loop schedules another
+    // attempt; abort fires during the inter-poll sleep. A working fix must not
+    // reconnect/re-request for that next attempt.
+    const request = vi.fn(async () => {
+      getCalls += 1;
+      return { task: { ...TASK, status: 'working' } };
+    });
+    const clientFn = vi.fn(async (signal?: AbortSignal) => {
+      if (signal?.aborted) return undefined;
+      return { request };
+    });
+    const sleep = vi.fn((_delayMs: number, signal?: AbortSignal) => new Promise<void>((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(signal.reason ?? new DOMException('Aborted', 'AbortError')), { once: true });
+    }));
+    const protocol = new McpSdkTaskProtocol(
+      clientFn as never,
+      'server:identity',
+      { maxPollAttempts: 5, initialPollDelayMs: 10, maxPollDelayMs: 20, sleep },
+    );
+
+    const promise = protocol.resolveTaskResult({
+      serverIdentity: 'server:identity', taskId: 'task-1', signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(getCalls).toBe(1));
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(getCalls).toBe(1);
+    expect(clientFn).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects connection lease acquire/release with a serverIdentity that does not match the bound server', () => {
     const acquire = vi.fn();
     const release = vi.fn();

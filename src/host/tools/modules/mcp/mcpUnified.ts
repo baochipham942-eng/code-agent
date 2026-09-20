@@ -447,7 +447,7 @@ async function actionReadResource(
   }
 
   try {
-    const content = await withAbort(mcpClient.readResource(server, uri), ctx.abortSignal);
+    const content = await withAbort(mcpClient.readResource(server, uri, ctx.abortSignal), ctx.abortSignal);
     return {
       ok: true,
       output: content,

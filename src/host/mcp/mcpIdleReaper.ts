@@ -107,11 +107,15 @@ export class McpIdleReaper {
     getClient: () => Client | undefined,
     ensureConnected: () => Promise<boolean>,
     operation: (client: Client) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T> {
     return this.withServerUse(serverName, async () => {
       let client = getClient();
       if (!client && await ensureConnected()) client = getClient();
-      if (!client) throw new Error(`MCP server ${serverName} not connected`);
+      if (!client) {
+        if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+        throw new Error(`MCP server ${serverName} not connected`);
+      }
       return operation(client);
     });
   }

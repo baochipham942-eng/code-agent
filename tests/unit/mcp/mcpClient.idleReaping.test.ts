@@ -237,4 +237,37 @@ describe('MCPClient idle connection reaping', () => {
     await vi.advanceTimersByTimeAsync(MCP_TIMEOUTS.IDLE_REAP_SCAN);
     expect(sdkClient.close).toHaveBeenCalledOnce();
   });
+
+  it('ends readResource promptly with an abort error instead of blocking on a hung lazy-connect', async () => {
+    const client = new MCPClient({});
+    const controller = new AbortController();
+    // Models a lazy-connect that never settles on its own within this test — only the
+    // caller's abort resolves it — so a prompt rejection proves the signal was raced,
+    // not that ensureConnected happened to return quickly.
+    const ensureConnected = vi.spyOn(client, 'ensureConnected').mockImplementation((_serverName, signal) => new Promise((resolve) => {
+      if (signal?.aborted) { resolve(false); return; }
+      signal?.addEventListener('abort', () => resolve(false), { once: true });
+    }));
+
+    const promise = client.readResource('local', 'mcp://resource', controller.signal);
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(ensureConnected).toHaveBeenCalledWith('local', controller.signal);
+  });
+
+  it('ends getPrompt promptly with an abort error instead of blocking on a hung lazy-connect', async () => {
+    const client = new MCPClient({});
+    const controller = new AbortController();
+    const ensureConnected = vi.spyOn(client, 'ensureConnected').mockImplementation((_serverName, signal) => new Promise((resolve) => {
+      if (signal?.aborted) { resolve(false); return; }
+      signal?.addEventListener('abort', () => resolve(false), { once: true });
+    }));
+
+    const promise = client.getPrompt('local', 'prompt', undefined, controller.signal);
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(ensureConnected).toHaveBeenCalledWith('local', controller.signal);
+  });
 });

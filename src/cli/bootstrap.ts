@@ -58,7 +58,6 @@ import { DurableRunRepository } from '../host/services/core/repositories/Durable
 import { SERVICE_TIMEOUTS } from '../shared/constants/timeouts';
 import { isComputerUseCapabilityInstalledSync } from '../host/plugins/builtin/computerUse/installState';
 import { parseToolNameListFlag } from './utils/toolListFlags';
-import { getPermissionModeManager } from '../host/permissions/modes';
 import type { ToolExecutionDelegate, ToolExecutorConfig } from '../host/tools/toolExecutor';
 import {
   createRunTraceContext,
@@ -704,8 +703,6 @@ export function createAgentLoop(
     allowedToolNames: config.allowedToolNames,
     foregroundToolFace: config.foregroundToolFace,
     historyVisibility: config.historyVisibility,
-    unattendedTurn: config.originKind === 'headless'
-      || getPermissionModeManager().isUnattendedSession(explicitSessionId),
     telemetryAdapter,
     // CLI 消息持久化回调（包含 tool_results）
     persistMessage: async (message: Message) => {

@@ -78,30 +78,6 @@ describe('RunFinalizer 失败事件', () => {
     expect(buildCompletionSummaryRecord).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
   });
 
-  it('无人值守轮允许空最终说明保持 completed', async () => {
-    const events: AgentEvent[] = [];
-    const finalizer = new RunFinalizer({
-      sessionId: 'empty-unattended', persistLongTermMemory: false,
-      nudgeManager: { getModifiedFiles: () => new Set() },
-      onEvent: (event: AgentEvent) => events.push(event),
-      modelConfig: { provider: 'claude', model: 'test' },
-      messages: [{ id: 'u1', role: 'user', content: 'hello', timestamp: 1 }],
-      maxIterations: 10,
-      stats: { traceId: 'empty-unattended', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
-      control: { isCancelled: false, isInterrupted: false },
-      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
-      turn: { currentTurnId: null },
-      unattendedTurn: true,
-    } as never);
-    finalizer.setModules({ generateId: () => 'a1', addAndPersistMessage: vi.fn() } as never,
-      { runPostRun: vi.fn(), runSessionEndLearning: vi.fn() } as never);
-    await finalizer.finalizeRun(1, 'hello', { endTrace: vi.fn(), flush: vi.fn(async () => undefined) } as never, 1, { status: 'completed' });
-    expect(events).not.toContainEqual(expect.objectContaining({
-      type: 'error', data: expect.objectContaining({ code: 'RUN_FAILED' }),
-    }));
-    expect(buildCompletionSummaryRecord).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
-  });
-
   it('RUN_FAILED 带上这一轮真正跑的 provider/model', async () => {
     const events: AgentEvent[] = [];
     const finalizer = new RunFinalizer({

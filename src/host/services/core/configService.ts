@@ -515,8 +515,6 @@ export class ConfigService implements IReadConfigService {
     }
   }
 
-
-
   private enableDefaultLocalProvider(): void {
     const local = this.settings.models.providers.local;
     if (!local) {

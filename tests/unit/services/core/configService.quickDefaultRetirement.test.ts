@@ -1,7 +1,8 @@
 // ============================================================================
 // N-QUICK-0KI-FLASH — quick 档旧默认退役钉子
 // 存量持久化 models.routing.fast 指向旧默认 zhipu/glm-4-flash（免费档官方 key 已死）
-// 时迁移到 DEFAULT_MODELS.quick；用户显式配过的其它模型一字不动。
+// 时迁移到 DEFAULT_MODELS.quick（只动 routing.fast / taskStrategy.profiles.fast）；
+// providers.zhipu.model、models map、其它档位里的同名值视为用户显式选择，一字不动。
 // ============================================================================
 import { mkdtemp, writeFile } from 'fs/promises';
 import { join } from 'path';
@@ -55,19 +56,35 @@ describe('quick 旧默认 glm-4-flash 持久化路由迁移', () => {
     vi.resetModules();
   });
 
+  // providers.zhipu.model / models map / routing.code 都填旧默认同名值：这些位置只能来自用户显式选择，
+  // glm-4-flash 仍在 catalog 可选，迁移不许碰。
   const fixtureWithFast = (fast: { provider: string; model: string }) => ({
     models: {
       default: 'longcat',
       providers: {
         longcat: { enabled: true, model: 'LongCat-2.0' },
+        zhipu: { enabled: true, model: 'glm-4-flash', models: { 'glm-4-flash': { label: '用户自定义' } } },
       },
       routing: {
-        code: { provider: 'longcat', model: 'LongCat-2.0' },
+        code: { provider: 'zhipu', model: 'glm-4-flash' },
         fast,
         vision: { provider: 'xiaomi', model: 'mimo-v2-omni' },
       },
+      taskStrategy: {
+        profiles: {
+          fast,
+          main: { provider: 'zhipu', model: 'glm-4-flash' },
+        },
+      },
     },
   });
+
+  const expectUserChoicesUntouched = (models: Record<string, any>) => {
+    expect(models.providers.zhipu.model).toBe('glm-4-flash');
+    expect(models.providers.zhipu.models).toMatchObject({ 'glm-4-flash': { label: '用户自定义' } });
+    expect(models.routing.code).toMatchObject({ provider: 'zhipu', model: 'glm-4-flash' });
+    expect(models.taskStrategy.profiles.main).toMatchObject({ provider: 'zhipu', model: 'glm-4-flash' });
+  };
 
   it('持久化 routing.fast = zhipu/glm-4-flash → 迁到 DEFAULT_MODELS.quick，幂等', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'code-agent-quick-retire-'));
@@ -80,6 +97,11 @@ describe('quick 旧默认 glm-4-flash 持久化路由迁移', () => {
       provider: 'zhipu',
       model: DEFAULT_MODELS.quick,
     });
+    expect(service.getSettings().models.taskStrategy?.profiles.fast).toMatchObject({
+      provider: 'zhipu',
+      model: DEFAULT_MODELS.quick,
+    });
+    expectUserChoicesUntouched(service.getSettings().models as Record<string, any>);
 
     // 幂等：同一 settings 再跑一遍迁移为空操作
     const second = new ConfigService();
@@ -98,5 +120,6 @@ describe('quick 旧默认 glm-4-flash 持久化路由迁移', () => {
     await service.initialize();
 
     expect(service.getSettings().models.routing.fast).toEqual({ provider: 'deepseek', model: 'deepseek-chat' });
+    expectUserChoicesUntouched(service.getSettings().models as Record<string, any>);
   });
 });

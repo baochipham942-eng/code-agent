@@ -11,6 +11,7 @@
 import { createLogger } from '../services/infra/logger';
 import { DEFAULT_MODELS, MODEL_FEATURES, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../shared/constants';
 import { getConfigService } from '../services/core/configService';
+import { normalizeApiKey } from '../services/core/configHelpers';
 import { getProviderLimiter } from './concurrencyLimiter';
 import { isZhipuFreeModel, resolveProviderApiKey, resolveProviderBaseUrl } from './providers/providerResolution';
 import { getMemoryModelOverride, type MemoryModelOverride } from './memoryModelOverrideScope';
@@ -282,8 +283,11 @@ function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): Qu
     const quickModelConfig = { provider: 'zhipu', model: DEFAULT_MODELS.quick } as ModelConfig;
     const isFreeQuick = isZhipuFreeModel(quickModelConfig);
     const envApiKey = isFreeQuick
-      ? process.env.ZHIPU_OFFICIAL_API_KEY?.trim() || process.env.ZHIPU_API_KEY?.trim()
-      : process.env.ZHIPU_API_KEY?.trim();
+      ? normalizeApiKey(process.env.ZHIPU_OFFICIAL_API_KEY) || normalizeApiKey(process.env.ZHIPU_API_KEY)
+      : normalizeApiKey(process.env.ZHIPU_API_KEY);
+    if (!envApiKey && normalizeApiKey(process.env.ZHIPU_OFFICIAL_API_KEY)) {
+      logger.warn(`Quick env fallback skipped: only ZHIPU_OFFICIAL_API_KEY set but ${DEFAULT_MODELS.quick} is not a free-tier model; set ZHIPU_API_KEY`);
+    }
     if (!isProviderExplicitlyDisabled('zhipu') && envApiKey && !isAuthBlacklisted('zhipu', DEFAULT_MODELS.quick, envApiKey)) {
       const baseUrl = resolveProviderBaseUrl({ ...quickModelConfig, apiKey: envApiKey });
       if (baseUrl) {

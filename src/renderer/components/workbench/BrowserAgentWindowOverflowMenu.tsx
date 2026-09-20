@@ -289,7 +289,7 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
                       })}
                     </div>
                   )}
-                  <button
+                  <button /* ds-allow:button: 紧凑文字链式「导入全部」入口，非通用动作按钮（同 PreviewPanel 先例） */
                     type="button"
                     className="text-[11px] text-badge-accent hover:underline disabled:opacity-50"
                     disabled={importBusy || domainOptions.length === 0}

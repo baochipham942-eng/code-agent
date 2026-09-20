@@ -456,6 +456,10 @@ export const enSettingsModels = {
         customTitle: 'Add a custom Skill library',
         customDescription: 'Enter a GitHub or ModelScope repository URL. The repository root must contain the Skill directory structure.',
         addRepo: 'Add repository',
+        exportFailed: 'Export failed',
+        exportSaveDialogTitle: 'Export Skill',
+        exportSavedPrefix: 'Exported to ',
+        exportDownloaded: 'Skill export downloaded',
       },
       installed: {
         groupLabels: {
@@ -486,6 +490,8 @@ export const enSettingsModels = {
         noDiscoveredSkill: 'No Skills found yet',
         update: 'Update',
         emptyLibrary: 'This library has no available Skills',
+        exportAction: 'Export',
+        exportAriaPrefix: 'Export ',
       },
       discover: {
         registryTitle: 'Official marketplace',

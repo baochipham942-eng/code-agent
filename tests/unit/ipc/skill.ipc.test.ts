@@ -24,7 +24,7 @@ const svc = vi.hoisted(() => {
     ensureInitialized: vi.fn(async () => {}),
     refreshLibraries: vi.fn(async () => {}),
     reload: vi.fn(async () => {}),
-    getAllSkills: vi.fn(() => [{ name: 'pdf' }, { name: 'excel' }]),
+    getAllSkills: vi.fn((): Array<{ name: string; source?: string }> => [{ name: 'pdf' }, { name: 'excel' }]),
     registerSkillsToToolSearch: vi.fn(),
     initialize: vi.fn(async () => {}),
   };
@@ -56,6 +56,13 @@ const svc = vi.hoisted(() => {
     getEntry: vi.fn(async (): Promise<SkillRegistryEntry | null> => null),
   };
   const marketplaceInstall = vi.fn(async (..._a: unknown[]) => ({ success: true }));
+  const exportInstalledSkill = vi.fn(async (..._a: unknown[]) => ({
+    fileName: 'demo.skill.zip',
+    contentHash: 'abc',
+    archive: Buffer.from('zip'),
+    skillName: 'demo',
+    skillDirName: 'demo',
+  }));
   const projectPref = {
     getOverride: vi.fn<(name: string) => boolean | undefined>(() => undefined),
     setOverride: vi.fn(),
@@ -77,6 +84,7 @@ const svc = vi.hoisted(() => {
     drafts,
     registry,
     marketplaceInstall,
+    exportInstalledSkill,
     projectPref,
     getProjectPrefStore,
     project,
@@ -123,6 +131,9 @@ vi.mock('../../../src/host/skills/marketplace/remoteSkillRegistryService', () =>
 }));
 vi.mock('../../../src/host/skills/marketplace/installService', () => ({
   installFromRegistryEntry: (...a: unknown[]) => svc.marketplaceInstall(...a),
+}));
+vi.mock('../../../src/host/skills/marketplace/exportService', () => ({
+  exportInstalledSkill: (...a: unknown[]) => svc.exportInstalledSkill(...a),
 }));
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -397,6 +408,29 @@ describe('会话挂载', () => {
       },
     ]);
     expect(second).toEqual([]);
+  });
+
+  it('SKILL_EXPORT 拒绝未信任项目目录里的 project skill', async () => {
+    const { isProjectConfigTrusted } = await import('../../../src/host/security/folderTrustService');
+    vi.mocked(isProjectConfigTrusted).mockResolvedValue(false);
+    svc.discovery.getAllSkills.mockReturnValue([{ name: 'demo', source: 'project' }]);
+
+    const result = await call(SKILL_CHANNELS.SKILL_EXPORT, 'demo');
+    expect(result).toEqual({
+      success: false,
+      error: 'SKILL_EXPORT_SOURCE_UNSUPPORTED: project folder is not trusted',
+    });
+    expect(svc.exportInstalledSkill).not.toHaveBeenCalled();
+  });
+
+  it('SKILL_EXPORT 信任目录下导出 project skill', async () => {
+    const { isProjectConfigTrusted } = await import('../../../src/host/security/folderTrustService');
+    vi.mocked(isProjectConfigTrusted).mockResolvedValue(true);
+    svc.discovery.getAllSkills.mockReturnValue([{ name: 'demo', source: 'project' }]);
+
+    const result = await call(SKILL_CHANNELS.SKILL_EXPORT, 'demo');
+    expect(result).toMatchObject({ success: true, fileName: 'demo.skill.zip' });
+    expect(svc.exportInstalledSkill).toHaveBeenCalled();
   });
 });
 

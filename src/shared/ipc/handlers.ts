@@ -261,6 +261,18 @@ export interface IpcInvokeHandlers {
   [SKILL_CHANNELS.SKILL_DISABLE]: (skillName: string) => Promise<void>;
   [SKILL_CHANNELS.SKILL_PROJECT_SET]: (skillName: string, enabled: boolean, workspacePath?: string) => Promise<void>;
   [SKILL_CHANNELS.SKILL_PROJECT_CLEAR]: (skillName: string, workspacePath?: string) => Promise<void>;
+  [SKILL_CHANNELS.SKILL_EXPORT]: (skillName: string, targetPath?: string) => Promise<{
+    success: boolean;
+    /** 建议保存文件名（<skillDirName>.skill.zip） */
+    fileName?: string;
+    /** sha256(payload zip)，不含 _meta.json */
+    contentHash?: string;
+    /** 未指定 targetPath 时返回 ZIP 内容（renderer 侧触发下载） */
+    archiveBase64?: string;
+    /** 指定 targetPath 时返回落盘路径 */
+    savedPath?: string;
+    error?: string;
+  }>;
   [SKILL_CHANNELS.SESSION_MOUNT]: (sessionId: string, skillName: string, libraryId: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_UNMOUNT]: (sessionId: string, skillName: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_LIST]: (sessionId: string) => Promise<SessionSkillMount[]>;

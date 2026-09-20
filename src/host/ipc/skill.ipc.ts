@@ -18,6 +18,7 @@ import { getComboRecorder } from '../services/skills/comboRecorder';
 import { listSkillDrafts, confirmSkillDraft, rejectSkillDraft } from '../services/skills/skillDraftQueue';
 import { getRemoteSkillRegistryService } from '../skills/marketplace/remoteSkillRegistryService';
 import { installFromRegistryEntry } from '../skills/marketplace/installService';
+import { exportInstalledSkill } from '../skills/marketplace/exportService';
 import { matchSkillRegistryDraftRecommendations } from '../skills/marketplace/skillRegistryMatcher';
 import { isProjectConfigTrusted } from '../security/folderTrustService';
 import { getProjectService } from '../services/project/projectService';
@@ -279,6 +280,53 @@ async function refreshToolSearchRegistration(): Promise<void> {
   } catch (error) {
     logger.warn('Failed to refresh ToolSearch registration after toggle', { error });
   }
+}
+
+// ----------------------------------------------------------------------------
+// Skill Export（只生产 ZIP，装回仍走现有安装链）
+// ----------------------------------------------------------------------------
+
+/**
+ * web 桥把「未传的可选参数」包成 {} / null（handler(null, {}) 是生产唯一形状），
+ * 与 resolveSkillIpcWorkingDirectory 同口径归一。
+ */
+function normalizeOptionalExportPath(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+async function handleSkillExport(
+  skillName: string,
+  targetPath?: string,
+): Promise<{
+  success: boolean;
+  fileName?: string;
+  contentHash?: string;
+  archiveBase64?: string;
+  savedPath?: string;
+  error?: string;
+}> {
+  await ensureSkillDiscoveryForIpc();
+  const discovery = getSkillDiscoveryService();
+  const skill = discovery.getAllSkills().find((candidate) => candidate.name === skillName);
+  if (skill?.source === 'project') {
+    const workingDirectory = getSkillIpcWorkingDirectory();
+    if (!(await isProjectConfigTrusted(workingDirectory, 'project-skills'))) {
+      return {
+        success: false,
+        error: 'SKILL_EXPORT_SOURCE_UNSUPPORTED: project folder is not trusted',
+      };
+    }
+  }
+  const destination = normalizeOptionalExportPath(targetPath);
+  const payload = await exportInstalledSkill(skillName, destination ? { targetPath: destination } : {});
+  return {
+    success: true,
+    fileName: payload.fileName,
+    contentHash: payload.contentHash,
+    ...(destination
+      ? { savedPath: payload.savedPath }
+      : { archiveBase64: payload.archive.toString('base64') }),
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -678,6 +726,18 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
     } catch (error) {
       logger.error('Failed to clear project skill override', { skillName, workspacePath, error });
       throw error;
+    }
+  });
+
+  ipcMain.handle(SKILL_CHANNELS.SKILL_EXPORT, async (_, skillName: string, targetPath?: string) => {
+    try {
+      return await handleSkillExport(skillName, targetPath);
+    } catch (error) {
+      logger.error('Failed to export skill', { skillName, error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   });
 

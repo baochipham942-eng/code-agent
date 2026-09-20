@@ -16,6 +16,7 @@ import type {
   DurableRunStores,
   EventAppendRequest,
   RecoveryProjectionReplace,
+  RunAbandonedLeaseClaim,
   RunLeaseClaim,
   RunLeaseClaimResult,
   RunTransition,
@@ -158,6 +159,15 @@ export class DurableRunRepository implements DurableRunStores {
     return row ? rowToEnvelope(row) : null;
   }
 
+  async getLatestActiveRootBySession(sessionId: string): Promise<RunEnvelope | null> {
+    const row = this.db.prepare(`SELECT envelope_json FROM durable_runs
+      WHERE session_id = ?
+        AND parent_run_id IS NULL
+        AND status IN ('created','running','waiting','paused','recovering')
+      ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(sessionId) as Row | undefined;
+    return row ? rowToEnvelope(row) : null;
+  }
+
   async listRecoverable(now: number, limit: number): Promise<RunEnvelope[]> {
     const rows = this.db.prepare(`SELECT envelope_json FROM durable_runs
       WHERE status IN ('running','waiting','recovering') AND lease_expires_at <= ?
@@ -166,12 +176,28 @@ export class DurableRunRepository implements DurableRunStores {
   }
 
   async claimLease(claim: RunLeaseClaim): Promise<RunLeaseClaimResult | null> {
+    return this.takeOwnerLease(claim, 'lease_expired');
+  }
+
+  async claimAbandonedLease(claim: RunAbandonedLeaseClaim): Promise<RunLeaseClaimResult | null> {
+    return this.takeOwnerLease(claim, 'process_exit');
+  }
+
+  private takeOwnerLease(
+    claim: RunLeaseClaim & { abandonedProcessInstanceId?: string },
+    recoveryReason: 'lease_expired' | 'process_exit',
+  ): RunLeaseClaimResult | null {
     return this.db.transaction(() => {
       const row = this.db.prepare('SELECT * FROM durable_runs WHERE run_id = ?').get(claim.runId) as Row | undefined;
       if (!row || isTerminalRunStatus(row.status as RunEnvelope['status'])) return null;
       const epoch = Number(row.owner_epoch);
       const expiry = row.lease_expires_at == null ? 0 : Number(row.lease_expires_at);
-      if (epoch !== (claim.expectedEpoch ?? 0) || expiry > claim.now) return null;
+      if (epoch !== (claim.expectedEpoch ?? 0)) return null;
+      if (recoveryReason === 'lease_expired') {
+        if (expiry > claim.now) return null;
+      } else if (String(row.process_instance_id) !== claim.abandonedProcessInstanceId) {
+        return null;
+      }
 
       const previous = rowToEnvelope(row);
       const nextEpoch = epoch + 1;
@@ -198,17 +224,23 @@ export class DurableRunRepository implements DurableRunStores {
         ownerEpoch: nextEpoch,
         status: 'active',
         resumedFromCheckpointSeq: previous.cursor.checkpointSeq || undefined,
-        recoveryReason: 'lease_expired',
+        recoveryReason,
         startedAt: claim.now,
       };
       this.db.prepare(`UPDATE durable_run_attempts SET status = 'lost', ended_at = ?
         WHERE run_id = ? AND attempt = ? AND status IN ('starting','active')`)
         .run(claim.now, claim.runId, previous.attempt);
-      const changed = this.db.prepare(`UPDATE durable_runs SET status = 'recovering', attempt = ?,
-        owner_id = ?, process_instance_id = ?, owner_epoch = ?, lease_expires_at = ?,
-        envelope_json = ?, updated_at = ? WHERE run_id = ? AND owner_epoch = ? AND lease_expires_at <= ?`)
-        .run(nextAttempt, owner.ownerId, owner.processInstanceId, nextEpoch, owner.leaseExpiresAt,
-          stringify(envelope), claim.now, claim.runId, epoch, claim.now);
+      const changed = recoveryReason === 'lease_expired'
+        ? this.db.prepare(`UPDATE durable_runs SET status = 'recovering', attempt = ?,
+            owner_id = ?, process_instance_id = ?, owner_epoch = ?, lease_expires_at = ?,
+            envelope_json = ?, updated_at = ? WHERE run_id = ? AND owner_epoch = ? AND lease_expires_at <= ?`)
+          .run(nextAttempt, owner.ownerId, owner.processInstanceId, nextEpoch, owner.leaseExpiresAt,
+            stringify(envelope), claim.now, claim.runId, epoch, claim.now)
+        : this.db.prepare(`UPDATE durable_runs SET status = 'recovering', attempt = ?,
+            owner_id = ?, process_instance_id = ?, owner_epoch = ?, lease_expires_at = ?,
+            envelope_json = ?, updated_at = ? WHERE run_id = ? AND owner_epoch = ? AND process_instance_id = ?`)
+          .run(nextAttempt, owner.ownerId, owner.processInstanceId, nextEpoch, owner.leaseExpiresAt,
+            stringify(envelope), claim.now, claim.runId, epoch, claim.abandonedProcessInstanceId);
       if (changed.changes !== 1) return null;
       this.insertAttempt(attempt);
       return { envelope, owner, attempt };

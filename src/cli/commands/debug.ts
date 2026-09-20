@@ -612,6 +612,7 @@ const replayCommand = new Command('replay')
       outputFormat: globalOpts.outputFormat,
       systemPrompt: globalOpts.systemPrompt,
       metrics: globalOpts.metrics,
+      originKind: 'headless',
     });
 
     let success = true;

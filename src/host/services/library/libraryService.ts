@@ -18,6 +18,7 @@ import type {
   LibraryListOptions,
   SessionContextPin,
 } from '@shared/contract/library';
+import { isLibraryLearnStatus } from '@shared/contract/library';
 import { isPathWithinRoot } from '../../runtime/workspaceScope';
 import {
   buildEvidenceFragment,
@@ -90,7 +91,9 @@ export class LibraryService {
       sourceSessionId: request.sourceSessionId,
       sourceRoleId: request.sourceRoleId,
       contentHash: request.contentHash,
-      learnStatus: request.learnStatus ?? defaultLearnStatus(request.kind, request.pathOrUri),
+      learnStatus: isLibraryLearnStatus(String(request.learnStatus ?? ''))
+        ? request.learnStatus
+        : defaultLearnStatus(request.kind, request.pathOrUri),
       createdAt: now,
       updatedAt: now,
     };

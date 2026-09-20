@@ -47,6 +47,17 @@ describe('LibraryService', () => {
     return p;
   }
 
+  it('addItem 忽略非法 learnStatus，改走 kind 默认值', () => {
+    const item = service.addItem({
+      title: 'a.txt',
+      kind: 'upload',
+      pathOrUri: path.join(tmpDir, 'a.txt'),
+      learnStatus: 'ok' as never,
+    }, 1000);
+    expect(item.learnStatus).toBe('pending');
+    expect(service.get(item.id)?.learnStatus).toBe('pending');
+  });
+
   it('importFile 拷入项目目录并登记 upload 条目，学习完成后可用', async () => {
     const src = writeSource('Brief.txt', 'pdf-bytes');
     const item = await service.importFile({ projectId: 'proj_1', sourcePath: src, tags: ['素材'] }, 1000);

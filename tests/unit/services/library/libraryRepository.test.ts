@@ -132,4 +132,15 @@ describe('LibraryRepository', () => {
     expect(repo.updateLearnStatus('learn', 'failed', { error: 'parse failed', now: 1500 })).toBe(true);
     expect(repo.getItem('learn')).toMatchObject({ learnStatus: 'failed', learnError: 'parse failed', learnUpdatedAt: 1500 });
   });
+
+  it('createItem 丢掉非法 learnStatus；库内脏值按 pending 迁移', () => {
+    repo.createItem(makeItem({ id: 'garbage', learnStatus: 'ok' as LibraryItem['learnStatus'] }));
+    expect(repo.getItem('garbage')?.learnStatus).toBe('pending');
+
+    repo.createItem(makeItem({ id: 'legacy' }));
+    db.prepare("UPDATE library_items SET learn_status = 'ok' WHERE id = 'legacy'").run();
+    expect(repo.getItem('legacy')?.learnStatus).toBe('pending');
+    expect(repo.updateLearnStatus('legacy', 'running', { now: 1100 })).toBe(true);
+    expect(repo.getItem('legacy')?.learnStatus).toBe('running');
+  });
 });

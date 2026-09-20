@@ -90,7 +90,7 @@ export class LibraryRepository {
       item.sourceSessionId ?? null,
       item.sourceRoleId ?? null,
       item.contentHash ?? null,
-      item.learnStatus ?? 'pending',
+      isLibraryLearnStatus(String(item.learnStatus ?? '')) ? item.learnStatus : 'pending',
       item.learnError ? guardLibraryText(item.learnError, 1_000) : null,
       item.learnUpdatedAt ?? null,
       item.createdAt,
@@ -190,7 +190,9 @@ export class LibraryRepository {
       .prepare('SELECT learn_status FROM library_items WHERE id = ?')
       .get(id) as SQLiteRow | undefined;
     if (!current) return false;
-    const currentStatus = (current.learn_status as LibraryLearnStatus | null) ?? 'pending';
+    const currentStatus = isLibraryLearnStatus(String(current.learn_status ?? ''))
+      ? current.learn_status as LibraryLearnStatus
+      : 'pending';
     const allowed: Record<LibraryLearnStatus, readonly LibraryLearnStatus[]> = {
       pending: ['pending', 'running', 'failed'],
       running: ['running', 'ready', 'failed'],

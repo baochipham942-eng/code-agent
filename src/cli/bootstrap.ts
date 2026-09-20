@@ -703,6 +703,7 @@ export function createAgentLoop(
     allowedToolNames: config.allowedToolNames,
     foregroundToolFace: config.foregroundToolFace,
     historyVisibility: config.historyVisibility,
+    unattendedTurn: config.originKind === 'headless',
     telemetryAdapter,
     // CLI 消息持久化回调（包含 tool_results）
     persistMessage: async (message: Message) => {

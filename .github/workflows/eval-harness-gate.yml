@@ -24,6 +24,10 @@ on:
     branches: [main]
     paths:
       - 'src/host/testing/**'
+      - 'src/host/security/**'
+      - 'src/host/tools/**'
+      - 'src/host/permissions/**'
+      - 'src/host/sandbox/**'
       - 'src/host/internalFeatures/**'
       - 'src/renderer/internalFeatures/**'
       - 'src/renderer/slots/**'
@@ -51,6 +55,7 @@ on:
       - 'tests/unit/evaluation/**'
       - 'tests/eval/**'
       - 'tests/eval-harness/**'
+      - 'tests/fixtures/approval-eval/**'
       - 'tests/e2e/internal-plugin*'
       - 'tests/renderer/components/secondaryPagesNavigationContract.test.ts'
       - 'tests/renderer/slots/**'
@@ -60,6 +65,10 @@ on:
     branches: [main]
     paths:
       - 'src/host/testing/**'
+      - 'src/host/security/**'
+      - 'src/host/tools/**'
+      - 'src/host/permissions/**'
+      - 'src/host/sandbox/**'
       - 'src/host/internalFeatures/**'
       - 'src/renderer/internalFeatures/**'
       - 'src/renderer/slots/**'
@@ -87,6 +96,7 @@ on:
       - 'tests/unit/evaluation/**'
       - 'tests/eval/**'
       - 'tests/eval-harness/**'
+      - 'tests/fixtures/approval-eval/**'
       - 'tests/e2e/internal-plugin*'
       - 'tests/renderer/components/secondaryPagesNavigationContract.test.ts'
       - 'tests/renderer/slots/**'

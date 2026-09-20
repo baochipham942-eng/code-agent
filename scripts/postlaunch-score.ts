@@ -41,6 +41,7 @@ import { estimateJudgeCost } from '../src/host/testing/postlaunch/postLaunchCost
 import { isPostLaunchScoringEnabled } from '../src/host/testing/postlaunch/postLaunchGate';
 import { runPostLaunchScoring, type PostLaunchSessionRow } from '../src/host/testing/postlaunch/postLaunchScorer';
 import { buildPostLaunchReport } from '../src/host/testing/postlaunch/postLaunchScoreStore';
+import { resolveZeroTurnHint } from './lib/postLaunchCliHints';
 
 function parseArgs(): { days: number; budget: number; sampleLimit: number; dryRun: boolean; includeHeadless: boolean } {
   const argv = process.argv.slice(2);
@@ -130,7 +131,9 @@ async function main(): Promise<void> {
   console.log(result.dryRun
     ? `dry-run 未调 judge：本可全评的信号轮 ${result.signalTurns}、抽样轮 ${result.sampledTurns}；只记信号 ${result.signalOnlyTurns}；已有分数跳过 ${result.skippedTurns}`
     : `本次调了 judge：信号轮 ${result.signalTurns} / 抽样轮 ${result.sampledTurns}；只记信号（没调 judge）${result.signalOnlyTurns}；已有分数跳过 ${result.skippedTurns}`);
-  if (result.locked) console.log('这个库上另有一次评分正在跑（30 分钟内的锁），本次一轮没评、一分没扣；等它跑完再来。');
+  // 锁 / 0 轮两种提示互斥，判据在 scripts/lib/postLaunchCliHints.ts（有测试守着）。
+  const hint = resolveZeroTurnHint(result);
+  if (hint) console.log(hint);
   if (result.judgeUnavailableTurns > 0) {
     console.log(`⚠️ 打分模型没给出判决的有 ${result.judgeUnavailableTurns} 轮（没配好 / 报错 / 返回读不了），这些轮只记了信号；去设置里配好评分模型再跑。`);
   }

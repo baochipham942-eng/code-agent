@@ -460,6 +460,17 @@ export const enSettingsModels = {
         exportSaveDialogTitle: 'Export Skill',
         exportSavedPrefix: 'Exported to ',
         exportDownloaded: 'Skill export downloaded',
+        installFromZip: 'Install from ZIP',
+        installFromZipTitle: 'Choose a Skill ZIP',
+        zipInstallSuccessPrefix: 'Installed ',
+        zipInstallMountedSuffix: ' and mounted it on this session',
+        zipMissingSkillMd: 'This ZIP has no SKILL.md',
+        zipMultipleSkillMd: 'This ZIP contains more than one SKILL.md; install one Skill at a time',
+        zipUnsafe: 'The ZIP path is not safe to read',
+        zipTooLarge: 'The ZIP exceeds the size limit',
+        zipInvalidFrontmatter: 'SKILL.md needs a valid name and description',
+        zipScanBlocked: 'Content scan blocked this ZIP',
+        zipInstallFailed: 'Local ZIP install failed',
       },
       installed: {
         groupLabels: {
@@ -492,6 +503,9 @@ export const enSettingsModels = {
         emptyLibrary: 'This library has no available Skills',
         exportAction: 'Export',
         exportAriaPrefix: 'Export ',
+        installFromZipAction: 'Install from ZIP',
+        installFromZipAria: 'Install a Skill from a local ZIP',
+        dropZipHint: 'You can also drop a Skill ZIP here',
       },
       discover: {
         registryTitle: 'Official marketplace',

@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import { UI } from '@shared/constants';
-import { collectDroppedAttachments } from './utils';
+import { collectDroppedAttachmentsAndSkillZips } from './utils';
 
 interface UseDragAndDropOptions {
   processFile: (file: File) => Promise<MessageAttachment | null>;
@@ -18,6 +18,7 @@ interface UseDragAndDropOptions {
   ) => Promise<MessageAttachment | null>;
   setAttachments: React.Dispatch<React.SetStateAction<MessageAttachment[]>>;
   setIsUploading: (uploading: boolean) => void;
+  onDroppedSkillZips?: (files: File[]) => Promise<File[]>;
 }
 
 export function useDragAndDrop({
@@ -25,6 +26,7 @@ export function useDragAndDrop({
   processFolderEntry,
   setAttachments,
   setIsUploading,
+  onDroppedSkillZips,
 }: UseDragAndDropOptions) {
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -66,7 +68,12 @@ export function useDragAndDrop({
     setIsUploading(true);
 
     try {
-      const newAttachments = await collectDroppedAttachments(e.dataTransfer, processFile, processFolderEntry);
+      const newAttachments = await collectDroppedAttachmentsAndSkillZips(
+        e.dataTransfer,
+        processFile,
+        processFolderEntry,
+        onDroppedSkillZips ?? (async () => []),
+      );
 
       if (newAttachments.length > 0) {
         setAttachments((prev) => [...prev, ...newAttachments].slice(0, UI.MAX_ATTACHMENTS_DROP));
@@ -74,7 +81,7 @@ export function useDragAndDrop({
     } finally {
       setIsUploading(false);
     }
-  }, [processFile, processFolderEntry, setAttachments, setIsUploading]);
+  }, [onDroppedSkillZips, processFile, processFolderEntry, setAttachments, setIsUploading]);
 
   return { isDragOver, handleDragOver, handleDragLeave, handleDrop };
 }

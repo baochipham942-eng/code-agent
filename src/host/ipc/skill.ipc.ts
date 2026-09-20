@@ -18,7 +18,12 @@ import { getComboRecorder } from '../services/skills/comboRecorder';
 import { listSkillDrafts, confirmSkillDraft, rejectSkillDraft } from '../services/skills/skillDraftQueue';
 import { getRemoteSkillRegistryService } from '../skills/marketplace/remoteSkillRegistryService';
 import { installFromRegistryEntry } from '../skills/marketplace/installService';
+import { installFromLocalZip } from '../skills/marketplace/localZipInstall';
 import { exportInstalledSkill } from '../skills/marketplace/exportService';
+import { MAX_GITHUB_ARCHIVE_BYTES } from '../skills/marketplace/githubArchiveSecurity';
+import fs from 'fs/promises';
+import { constants as fsConstants } from 'fs';
+import path from 'path';
 import { matchSkillRegistryDraftRecommendations } from '../skills/marketplace/skillRegistryMatcher';
 import { isProjectConfigTrusted } from '../security/folderTrustService';
 import { getProjectService } from '../services/project/projectService';
@@ -326,6 +331,85 @@ async function handleSkillExport(
     ...(destination
       ? { savedPath: payload.savedPath }
       : { archiveBase64: payload.archive.toString('base64') }),
+  };
+}
+
+async function assertNoSymlinkInPath(targetFile: string): Promise<void> {
+  let current = path.resolve(targetFile);
+  while (true) {
+    const stat = await fs.lstat(current).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') throw new Error(`SKILL_ZIP_UNSAFE_SOURCE: zip path not found`);
+      throw error;
+    });
+    if (stat.isSymbolicLink()) {
+      throw new Error('SKILL_ZIP_UNSAFE_SOURCE: refusing symlink in zip path');
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+}
+
+function normalizeLocalZipPayload(value: unknown): { zipPath?: string; archiveBase64?: string } {
+  if (typeof value === 'string' && value.trim()) return { zipPath: value };
+  if (!value || typeof value !== 'object') return {};
+  const record = value as Record<string, unknown>;
+  return {
+    zipPath: typeof record.zipPath === 'string' && record.zipPath.trim() ? record.zipPath : undefined,
+    archiveBase64: typeof record.archiveBase64 === 'string' && record.archiveBase64.trim()
+      ? record.archiveBase64
+      : undefined,
+  };
+}
+
+async function readLocalZipPath(zipPath: string): Promise<Buffer> {
+  if (!path.isAbsolute(zipPath)) {
+    throw new Error('SKILL_ZIP_UNSAFE_SOURCE: zip path must be absolute');
+  }
+  const resolved = path.resolve(zipPath);
+  if (path.extname(resolved).toLowerCase() !== '.zip') {
+    throw new Error('SKILL_ZIP_UNSAFE_SOURCE: zip path must end with .zip');
+  }
+  await assertNoSymlinkInPath(resolved);
+  const handle = await fs.open(resolved, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  try {
+    const stat = await handle.stat();
+    if (stat.size > MAX_GITHUB_ARCHIVE_BYTES) {
+      throw new Error(`SKILL_ZIP_TOO_LARGE: exceeds ${Math.floor(MAX_GITHUB_ARCHIVE_BYTES / 1024 / 1024)} MB`);
+    }
+    const archive = await handle.readFile();
+    if (archive.byteLength > MAX_GITHUB_ARCHIVE_BYTES) {
+      throw new Error(`SKILL_ZIP_TOO_LARGE: exceeds ${Math.floor(MAX_GITHUB_ARCHIVE_BYTES / 1024 / 1024)} MB`);
+    }
+    return archive;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function handleSkillInstallLocalZip(payload?: unknown): Promise<{
+  success: boolean;
+  skillName?: string;
+  pluginSpec?: string;
+  error?: string;
+}> {
+  const { zipPath, archiveBase64 } = normalizeLocalZipPayload(payload);
+  if (Boolean(zipPath) === Boolean(archiveBase64)) {
+    return { success: false, error: 'SKILL_ZIP_INVALID_SOURCE: provide zipPath or archiveBase64' };
+  }
+  const archive = zipPath
+    ? await readLocalZipPath(zipPath)
+    : Buffer.from(archiveBase64 ?? '', 'base64');
+  if (!zipPath && archive.byteLength > MAX_GITHUB_ARCHIVE_BYTES) {
+    throw new Error(`SKILL_ZIP_TOO_LARGE: exceeds ${Math.floor(MAX_GITHUB_ARCHIVE_BYTES / 1024 / 1024)} MB`);
+  }
+  // force: 与 REGISTRY_INSTALL 同口径。GUI 没有 --force，重装同一份 zip 必须覆盖。
+  const result = await installFromLocalZip(archive, { force: true, enableAfterInstall: true });
+  await getSkillDiscoveryService().reload();
+  return {
+    success: true,
+    skillName: result.skillName,
+    pluginSpec: result.pluginSpec,
   };
 }
 
@@ -734,6 +818,18 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
       return await handleSkillExport(skillName, targetPath);
     } catch (error) {
       logger.error('Failed to export skill', { skillName, error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
+  ipcMain.handle(SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP, async (_, payload?: unknown) => {
+    try {
+      return await handleSkillInstallLocalZip(payload);
+    } catch (error) {
+      logger.error('Failed to install local skill zip', { error });
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),

@@ -6,6 +6,7 @@ import type { AttachmentCategory, MessageAttachment } from '../../../../../share
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 import type { Translations } from '../../../../i18n/zh';
+import { isSkillZipFileName } from '../../../../services/skillLocalZip';
 
 const logger = createLogger('ChatInputUtils');
 
@@ -205,6 +206,7 @@ async function attachmentFromEntry(
   processFolderEntry: ProcessFolderEntry,
 ): Promise<MessageAttachment | null> {
   if (entry.isFile) {
+    if (isSkillZipFileName(entry.name)) return null;
     const fileEntry = entry as FileSystemFileEntry;
     const file = await new Promise<File>((resolve, reject) => {
       fileEntry.file(resolve, reject);
@@ -225,6 +227,7 @@ async function attachmentsFromFiles(
 ): Promise<MessageAttachment[]> {
   const attachments: MessageAttachment[] = [];
   for (const file of Array.from(files)) {
+    if (isSkillZipFileName(file.name)) continue;
     const attachment = await processFile(file);
     if (attachment) {
       attachments.push(attachment);
@@ -233,45 +236,58 @@ async function attachmentsFromFiles(
   return attachments;
 }
 
+function listDroppedZipFiles(dataTransfer: DataTransfer): File[] {
+  return Array.from(dataTransfer.files).filter((file) => isSkillZipFileName(file.name));
+}
+
 /**
  * Browser/Electron drop payloads differ:
  * - real folders need webkitGetAsEntry
  * - screenshots/media dragged from browser surfaces may expose only files
  * - some in-app browser bridges expose DataTransferItemList but no entries
  */
-export async function collectDroppedAttachments(
+export async function collectDroppedAttachmentsAndSkillZips(
   dataTransfer: DataTransfer,
   processFile: ProcessFile,
   processFolderEntry: ProcessFolderEntry,
+  onSkillZips: (zips: File[]) => Promise<File[]>,
 ): Promise<MessageAttachment[]> {
-  const items = dataTransfer.items;
+  // Drop 事件的 DataTransfer 在 await 后进入 protected 模式变空，必须先同步拍快照。
+  const zipFiles = listDroppedZipFiles(dataTransfer);
+  const droppedFiles = Array.from(dataTransfer.files);
   const entries: FileSystemEntry[] = [];
-
+  const items = dataTransfer.items;
   if (items && items.length > 0) {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      if (item.kind !== 'file') {
-        continue;
-      }
+      if (item.kind !== 'file') continue;
       const entry = item.webkitGetAsEntry?.();
-      if (entry) {
-        entries.push(entry);
-      }
+      if (entry) entries.push(entry);
     }
   }
 
-  if (entries.length === 0) {
-    return attachmentsFromFiles(dataTransfer.files, processFile);
-  }
+  const leftoverZips = await onSkillZips(zipFiles);
+  const leftoverAttachments = leftoverZips.length > 0
+    ? (await Promise.all(leftoverZips.map((file) => processFile(file)))).filter(
+      (attachment): attachment is MessageAttachment => Boolean(attachment),
+    )
+    : [];
+  const fromDrop = entries.length === 0
+    ? await attachmentsFromFiles(droppedFiles, processFile)
+    : await attachmentsFromEntries(entries, processFile, processFolderEntry);
+  return [...fromDrop, ...leftoverAttachments];
+}
 
+async function attachmentsFromEntries(
+  entries: FileSystemEntry[],
+  processFile: ProcessFile,
+  processFolderEntry: ProcessFolderEntry,
+): Promise<MessageAttachment[]> {
   const attachments: MessageAttachment[] = [];
   for (const entry of entries) {
     const attachment = await attachmentFromEntry(entry, processFile, processFolderEntry);
-    if (attachment) {
-      attachments.push(attachment);
-    }
+    if (attachment) attachments.push(attachment);
   }
-
   return attachments;
 }
 

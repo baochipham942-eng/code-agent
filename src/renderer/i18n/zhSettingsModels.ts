@@ -462,6 +462,17 @@ export const zhSettingsModels = {
         exportSaveDialogTitle: '导出 Skill',
         exportSavedPrefix: '已导出到 ',
         exportDownloaded: 'Skill 导出已下载',
+        installFromZip: '从 ZIP 安装',
+        installFromZipTitle: '选择 Skill ZIP',
+        zipInstallSuccessPrefix: '已安装 ',
+        zipInstallMountedSuffix: '，并已挂到当前会话',
+        zipMissingSkillMd: 'ZIP 里没有 SKILL.md',
+        zipMultipleSkillMd: 'ZIP 里有多份 SKILL.md，一次只能装一个 Skill',
+        zipUnsafe: 'ZIP 路径不安全',
+        zipTooLarge: 'ZIP 超过大小限制',
+        zipInvalidFrontmatter: 'SKILL.md 缺少有效的 name / description',
+        zipScanBlocked: '内容扫描未通过，已拒绝安装',
+        zipInstallFailed: '本地 ZIP 安装失败',
       },
       installed: {
         groupLabels: {
@@ -494,6 +505,9 @@ export const zhSettingsModels = {
         emptyLibrary: '该库中没有可用的 Skill',
         exportAction: '导出',
         exportAriaPrefix: '导出 ',
+        installFromZipAction: '从 ZIP 安装',
+        installFromZipAria: '从本地 ZIP 安装 Skill',
+        dropZipHint: '也可把 Skill ZIP 拖到这里安装',
       },
       discover: {
         registryTitle: '官方市场',

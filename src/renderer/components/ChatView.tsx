@@ -86,7 +86,7 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { formatChannelSessionSource } from './features/chat/chatViewSessionSource';
 import { submitSteerEnvelope } from './features/chat/chatViewSteer';
-import { collectDroppedAttachments } from './features/chat/ChatInput/utils';
+import { useChatGlobalFileDrop } from './features/chat/useChatGlobalFileDrop';
 import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProjectionOverlay';
 import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
 import { deriveStreamInterruptionDecision } from '../utils/streamInterruptionDecision';
@@ -593,17 +593,13 @@ export const ChatView: React.FC = () => {
     }
   }, [clearGlobalDragState, isDragInsideGlobalDropZone]);
 
-  const handleGlobalDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    clearGlobalDragState();
-
-    const newAttachments = await collectDroppedAttachments(e.dataTransfer, processFile, processFolderEntry);
-
-    if (newAttachments.length > 0) {
-      chatInputRef.current?.addAttachments(newAttachments);
-    }
-  }, [clearGlobalDragState, processFile, processFolderEntry]);
+  const handleGlobalDrop = useChatGlobalFileDrop({
+    processFile, processFolderEntry, sessionId: currentSessionId,
+    successPrefix: t.slashSelect.skillZipInstalledPrefix, failPrefix: t.slashSelect.skillZipInstallFailedPrefix,
+    confirmPrompt: t.slashSelect.skillZipInstallConfirm,
+    onDropStart: clearGlobalDragState,
+    onAttachments: (attachments) => chatInputRef.current?.addAttachments(attachments),
+  });
   const ensureModelConfigured = useCallback(async (): Promise<boolean> => {
     try {
       const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');

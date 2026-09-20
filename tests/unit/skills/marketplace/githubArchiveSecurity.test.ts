@@ -66,4 +66,38 @@ describe('GitHub archive extraction security', () => {
     expect(result.skippedSymlinkEntries).toEqual(['plugin/latest']);
     expect(loggerMocks.warn).toHaveBeenCalledWith('Skipping symbolic link zip entry', { entry: 'plugin/latest' });
   });
+
+  it('rejects a zip that exceeds the entry count limit before writing files', async () => {
+    const zip = new JSZip();
+    zip.file('a.txt', 'a');
+    zip.file('b.txt', 'b');
+    zip.file('c.txt', 'c');
+    const archive = await zip.generateAsync({ type: 'nodebuffer' });
+
+    await expect(extractZipSafely(archive, destDir, undefined, { maxEntries: 2 }))
+      .rejects.toThrow('Zip extraction limit exceeded: too many entries');
+    await expect(fs.stat(path.join(destDir, 'a.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects a zip whose uncompressed size exceeds the limit', async () => {
+    const zip = new JSZip();
+    zip.file('plugin/SKILL.md', 'hello world');
+    const archive = await zip.generateAsync({ type: 'nodebuffer' });
+
+    await expect(
+      extractZipSafely(archive, destDir, undefined, { maxUncompressedBytes: 4 }),
+    ).rejects.toThrow('Zip extraction limit exceeded: uncompressed size exceeds');
+    await expect(fs.stat(path.join(destDir, 'plugin/SKILL.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects a single entry that exceeds the per-file limit', async () => {
+    const zip = new JSZip();
+    zip.file('plugin/big.bin', 'abcdefghij');
+    const archive = await zip.generateAsync({ type: 'nodebuffer' });
+
+    await expect(
+      extractZipSafely(archive, destDir, undefined, { maxEntryBytes: 4 }),
+    ).rejects.toThrow('Zip extraction limit exceeded: entry exceeds');
+    await expect(fs.stat(path.join(destDir, 'plugin/big.bin'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 });

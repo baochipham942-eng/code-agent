@@ -105,6 +105,12 @@ export type BrowserProfileUnavailableReason =
   | 'schema_unsupported'
   | 'unknown';
 
+export interface BrowserProfileCookieDomainSummary {
+  /** Normalized host without the leading dot from Chromium's host_key. */
+  domain: string;
+  cookieCount: number;
+}
+
 export interface BrowserProfileDescriptor {
   source: BrowserProfileSourceId;
   appName: string;
@@ -113,6 +119,8 @@ export interface BrowserProfileDescriptor {
   /** Absolute profile directory. UI should show path tail only. */
   profileDir: string;
   cookieDbPath?: string | null;
+  /** Domain/count metadata only; cookie names and values are never exposed. */
+  cookieDomains?: BrowserProfileCookieDomainSummary[];
   lastActiveAtMs?: number | null;
   available: boolean;
   unavailableReason?: BrowserProfileUnavailableReason | null;
@@ -139,6 +147,7 @@ export type BrowserCookieImportFailureCode =
   | 'decrypt_failed'
   | 'schema_unsupported'
   | 'not_confirmed'
+  | 'domain_allowlist_required'
   | 'managed_browser_unavailable'
   | 'unknown';
 

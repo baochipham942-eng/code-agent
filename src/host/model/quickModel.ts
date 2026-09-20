@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS, MODEL_API_ENDPOINTS, MODEL_FEATURES, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_FEATURES, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../shared/constants';
 import { getConfigService } from '../services/core/configService';
 import { getProviderLimiter } from './concurrencyLimiter';
 import { isZhipuFreeModel, resolveProviderApiKey, resolveProviderBaseUrl } from './providers/providerResolution';
@@ -247,9 +247,9 @@ function pushUniqueCandidate(resolved: QuickModelConfig[], candidate: QuickModel
 
 /**
  * 解析 quick model（策略化）：
- *  1) 优先专用快模型 `routing.fast`（常态 = 智谱 glm-4.x-flash，0.5s，最省成本）
+ *  1) 优先专用快模型 `routing.fast`（常态 = 0ki glm-5.3-flash，非 thinking 真快模型）
  *  2) 无专用快模型 key → 回落主模型 `routing.code`（如 mimo）；thinking 模型自动关思考
- *  3) config 路径完全失败 → 兜底直连智谱官方（历史行为）
+ *  3) config 路径完全失败 → 兜底直连 0ki 端点 + env key（历史行为同形，端点已随 quick 切 0ki）
  *  4) 都拿不到 → null（调用方：intent 走关键词兜底，其余 quick 任务 skip）
  */
 function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): QuickModelConfig[] {
@@ -275,16 +275,27 @@ function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): Qu
   }
 
   if (resolved.length === 0) {
-    const apiKey = process.env.ZHIPU_OFFICIAL_API_KEY || process.env.ZHIPU_API_KEY;
-    if (!isProviderExplicitlyDisabled('zhipu') && apiKey && !isAuthBlacklisted('zhipu', DEFAULT_MODELS.quick, apiKey)) {
-      resolved.push({
-        apiKey,
-        baseUrl: MODEL_API_ENDPOINTS.zhipuOfficial,
-        model: DEFAULT_MODELS.quick,
-        provider: 'zhipu',
-        disableThinking: false,
-        routeSource: 'env',
-      });
+    // env 兜底按 DEFAULT_MODELS.quick 的档位走三态解析（R2）：quick 非 free（glm-5.3-flash，
+    // 0ki）⇒ ZHIPU_API_KEY，端点由 resolveProviderBaseUrl 三态解析出 0ki；quick 是 free 档
+    // 才用 bigmodel.cn + ZHIPU_OFFICIAL_API_KEY（resolveProviderApiKey 对 free 档同此优先级）。
+    // 不写死任何端点字符串，也不拿官方 key 去请求 0ki 模型（反着同样 401/404）。
+    const quickModelConfig = { provider: 'zhipu', model: DEFAULT_MODELS.quick } as ModelConfig;
+    const isFreeQuick = isZhipuFreeModel(quickModelConfig);
+    const envApiKey = isFreeQuick
+      ? process.env.ZHIPU_OFFICIAL_API_KEY?.trim() || process.env.ZHIPU_API_KEY?.trim()
+      : process.env.ZHIPU_API_KEY?.trim();
+    if (!isProviderExplicitlyDisabled('zhipu') && envApiKey && !isAuthBlacklisted('zhipu', DEFAULT_MODELS.quick, envApiKey)) {
+      const baseUrl = resolveProviderBaseUrl({ ...quickModelConfig, apiKey: envApiKey });
+      if (baseUrl) {
+        resolved.push({
+          apiKey: envApiKey,
+          baseUrl,
+          model: DEFAULT_MODELS.quick,
+          provider: 'zhipu',
+          disableThinking: false,
+          routeSource: 'env',
+        });
+      }
     }
   }
 

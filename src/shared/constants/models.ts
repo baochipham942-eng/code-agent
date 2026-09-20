@@ -303,7 +303,7 @@ export const MODEL_ABBREV: Record<string, string> = {
   'glm-4.7': 'glm-4.7',
   'glm-4.7-flash': 'glm-flash',
   'glm-4-flash': 'glm-flash',
-  'glm-5.3-flash': 'glm-flash',
+  'glm-5.3-flash': 'glm53-flash',
   // legacy / EOL — 保留 abbrev 防 historic session UI 退化（slice 截断）。
   // 新代码不应该再生成这些 model id；这些条目仅用于显示老会话状态栏（艾克斯 review LOW3）。
   'claude-3-5-sonnet': 'sonnet',

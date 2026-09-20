@@ -20,6 +20,7 @@ import type { SharedProviderConfig, SharedProviderKeyConfig, SharedServiceKeyCon
 import { isDynamicCustomProviderId } from '../../../shared/modelRuntime';
 import {
   MODEL_API_ENDPOINTS,
+  DEFAULT_MODELS,
 } from '../../../shared/constants';
 import { DEFAULT_SETTINGS } from './configDefaults';
 import {
@@ -31,6 +32,7 @@ import {
   normalizeStringRecord,
   normalizeApiKey,
   normalizeBaseUrl,
+  migrateQuickFreeTierToOkiFlash,
 } from './configHelpers';
 import { devSlotFromDataDirName } from '../../../shared/devSlot';
 
@@ -190,6 +192,10 @@ export class ConfigService implements IReadConfigService {
     await this.restoreFromKeychain();
     this.migrateLegacyLongCatProvider();
     this.migrateRetiredLongCatPreviewModel();
+    const quickMigrated = migrateQuickFreeTierToOkiFlash(this.settings.models);
+    if (quickMigrated > 0) {
+      logger.info('Migrated retired quick default glm-4-flash to 0ki model', { count: quickMigrated, model: DEFAULT_MODELS.quick });
+    }
     this.enableDefaultLocalProvider();
 
     // Save merged settings
@@ -508,6 +514,8 @@ export class ConfigService implements IReadConfigService {
       logger.info('Migrated retired LongCat-2.0-Preview references to LongCat-2.0', { count: migrated });
     }
   }
+
+
 
   private enableDefaultLocalProvider(): void {
     const local = this.settings.models.providers.local;

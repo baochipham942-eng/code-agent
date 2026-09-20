@@ -1,4 +1,6 @@
 import type { ServiceApiKey } from '../../../shared/contract/configService';
+import type { AppSettings } from '../../../shared/contract';
+import { DEFAULT_MODELS } from '../../../shared/constants';
 
 const CLOUD_MANAGED_SERVICE_KEY_PREFIX = 'cloud-service-key:';
 const CLOUD_MANAGED_SERVICE_BASE_URL_PREFIX = 'serviceBaseUrl.cloud.';
@@ -65,4 +67,62 @@ export function normalizeBaseUrl(value?: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * quick 档旧默认迁移（2026-09-20，R2 扩全）：glm-4-flash 免费档走 bigmodel.cn +
+ * ZHIPU_OFFICIAL_API_KEY，官方 key 已失效（401），quick 切到 0ki glm-5.3-flash。
+ * 旧默认值一旦随历史 save 落盘就带着旧值 → 存量安装仍在打已死的官方端点。
+ * 覆盖 providers.zhipu.model 与其 models map key、routing 各档、taskStrategy.profiles。
+ * models map 已有的 glm-5.3-flash 条目优先，不被旧条目覆盖；只迁 zhipu 官方 provider
+ * 下的 glm-4-flash，不碰用户显式选的其它模型（第三方中转自报同名是它们自己的事）。
+ * 幂等：迁完再跑找不到旧默认即空跑。
+ * 返回迁移条数（调用方决定是否记日志）。
+ */
+export function migrateQuickFreeTierToOkiFlash(models: AppSettings['models']): number {
+  const RETIRED_MODEL = 'glm-4-flash';
+  const OKI_MODEL = DEFAULT_MODELS.quick;
+  const isRetiredQuickFree = (provider: string, model: string | undefined): boolean =>
+    provider === 'zhipu' && !!model && model.toLowerCase() === RETIRED_MODEL;
+
+  let migrated = 0;
+
+  const zhipu = models.providers.zhipu;
+  if (zhipu) {
+    if (isRetiredQuickFree('zhipu', zhipu.model)) {
+      zhipu.model = OKI_MODEL;
+      migrated += 1;
+    }
+    const retiredEntry = zhipu.models?.[RETIRED_MODEL];
+    if (retiredEntry) {
+      // 丢掉旧名 label，回落 catalog 新 label；thinking/maxTokens 等用户档位保留。
+      // 已有 glm-5.3-flash 条目优先，不被旧条目覆盖。
+      const { label: _retiredLabel, ...retiredSettings } = retiredEntry;
+      zhipu.models = {
+        ...zhipu.models,
+        [OKI_MODEL]: { ...retiredSettings, ...zhipu.models?.[OKI_MODEL] },
+      };
+      delete zhipu.models[RETIRED_MODEL];
+      migrated += 1;
+    }
+  }
+
+  for (const route of Object.values(models.routing)) {
+    if (isRetiredQuickFree(route.provider, route.model)) {
+      route.model = OKI_MODEL;
+      migrated += 1;
+    }
+  }
+
+  const profiles = models.taskStrategy?.profiles;
+  if (profiles) {
+    for (const slot of Object.values(profiles)) {
+      if (isRetiredQuickFree(slot.provider, slot.model)) {
+        slot.model = OKI_MODEL;
+        migrated += 1;
+      }
+    }
+  }
+
+  return migrated;
 }

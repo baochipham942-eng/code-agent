@@ -11,6 +11,7 @@ export interface BrowserCookieImportMessageCopy {
   profileNotFound: string;
   cookieDbMissing: string;
   notConfirmed: string;
+  domainAllowlistRequired: string;
   managedBrowserUnavailable: string;
   unsupportedPlatform: string;
   decryptFailed: string;
@@ -36,6 +37,8 @@ export function humanizeBrowserCookieImportFailure(
       return copy.cookieDbMissing;
     case 'not_confirmed':
       return copy.notConfirmed;
+    case 'domain_allowlist_required':
+      return copy.domainAllowlistRequired;
     case 'managed_browser_unavailable':
       return copy.managedBrowserUnavailable;
     case 'unsupported_platform':

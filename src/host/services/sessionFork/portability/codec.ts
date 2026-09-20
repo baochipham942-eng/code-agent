@@ -52,8 +52,8 @@ const FORBIDDEN_RUNTIME_KEYS = new Set([
   'baseUrl', 'cwd', 'durableWaitingInput', 'executablePermission',
   'externalSessionId', 'lease', 'leaseId', 'logPath',
   'pendingApproval', 'pendingApprovals', 'permissionGrant', 'queuedInput',
-  'queuedInputs', 'runId', 'sourceRunId', 'streamSnapshot',
-  'taskLease', 'todo', 'todos', 'workingDirectory',
+  'queuedInputs', 'retryAttachments', 'runId', 'sourceRunId', 'streamSnapshot',
+  'taskLease', 'todo', 'todos', 'turnDiff', 'workingDirectory',
 ]);
 
 const PORTABLE_SECRET_PATTERNS = [
@@ -68,10 +68,7 @@ function normalizePortableKey(key: string): string {
 
 function isForbiddenPortableKey(key: string): boolean {
   const normalized = normalizePortableKey(key);
-  return [...FORBIDDEN_RUNTIME_KEYS].some((candidate) => {
-    const normalizedCandidate = normalizePortableKey(candidate);
-    return normalized === normalizedCandidate || normalized.includes(normalizedCandidate);
-  });
+  return [...FORBIDDEN_RUNTIME_KEYS].some((candidate) => normalized === normalizePortableKey(candidate));
 }
 
 function sanitizePortableValue(value: unknown): unknown {
@@ -259,7 +256,7 @@ function sanitizeMessages(source: SessionExportSourceV2): PortableMessageV2[] {
       sessionId: source.session.id,
       ordinal,
       role: raw.role,
-      content: raw.content,
+      content: sanitizePortableValue(raw.content) as string,
       timestamp: raw.timestamp,
     };
     if (raw.contentParts !== undefined) {

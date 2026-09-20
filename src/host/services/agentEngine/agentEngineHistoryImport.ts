@@ -8,16 +8,7 @@ import type { Dirent, Stats } from 'fs';
 import os from 'os';
 import path from 'path';
 import readline from 'readline';
-import { createHash } from 'crypto';
 import type { AgentEngineKind } from '../../../shared/contract/agentEngine';
-import type { Message, ContentPart } from '../../../shared/contract/message';
-import type {
-  PortableExternalHistoryProvenanceV1,
-  SessionExportEnvelopeV2,
-  SessionExportSourceV2,
-} from '../../../shared/contract/sessionForkPortability';
-import { buildSessionExportEnvelopeV2 } from '../sessionFork/portability/codec';
-import { portabilityDigest } from '../sessionFork/portability/canonical';
 import { CODEX_SESSION } from '../../../shared/constants';
 import {
   parseClaudeSession,
@@ -82,18 +73,6 @@ export interface AgentEngineHistoryPreviewResult {
     messages: AgentEngineNormalizedPreviewMessage[];
     diagnostics: AgentEngineHistoryDiagnostic[];
   };
-}
-
-export interface AgentEngineHistoryImportEnvelopeRequest extends AgentEngineHistoryPreviewRequest {
-  ownerScopeId: string;
-  projectId: string;
-  exportId?: string;
-}
-
-export interface AgentEngineHistoryImportEnvelopeResult {
-  summary: AgentEngineHistorySummary;
-  provenance: PortableExternalHistoryProvenanceV1;
-  envelope: SessionExportEnvelopeV2;
 }
 
 export class AgentEngineHistoryImportError extends Error {
@@ -208,119 +187,6 @@ export class AgentEngineHistoryImportService {
         },
       };
     }
-  }
-
-  /**
-   * Map an external history file into the same portable envelope consumed by
-   * session-fork import. This is preparation only: it never writes Neo state.
-   */
-  async mapHistoryForImport(
-    request: AgentEngineHistoryImportEnvelopeRequest,
-  ): Promise<AgentEngineHistoryImportEnvelopeResult> {
-    const payload = asRecord(request);
-    const engine = normalizeHistoryEngineKind(payload.engine);
-    const source = await this.resolvePreviewSource(engine, payload);
-    const summary = await this.summarizeSource(engine, source);
-    if (!summary.canImport) {
-      throw new AgentEngineHistoryImportError(
-        'HISTORY_NOT_IMPORTABLE',
-        `History session ${summary.externalSessionId} is not importable.`,
-        { diagnostics: summary.diagnostics },
-      );
-    }
-
-    const sourceDigest = await hashSourceFile(source.sourcePath);
-    const provenance: PortableExternalHistoryProvenanceV1 = {
-      kind: 'external_history',
-      engine,
-      sourceSessionId: summary.externalSessionId,
-      sourceDigest,
-      sourcePathDigest: portabilityDigest(source.sourcePath),
-    };
-    const sessionId = `external_${engine}_${sourceDigest.slice('sha256:'.length, 'sha256:'.length + 20)}`;
-    const messages = engine === 'claude_code'
-      ? await this.mapClaudeMessages(source.sourcePath, sessionId)
-      : (await this.scanCodexPreview(source.sourcePath, Number.MAX_SAFE_INTEGER)).messages
-        .map((message, index) => this.mapNormalizedMessage(message, sessionId, index, summary.updatedAt));
-    if (messages.length === 0) {
-      throw new AgentEngineHistoryImportError(
-        'NO_IMPORTABLE_MESSAGES',
-        `No importable messages were found in ${summary.externalSessionId}.`,
-        { sourcePath: source.sourcePath },
-      );
-    }
-
-    const sourceSession: SessionExportSourceV2['session'] = {
-      id: sessionId,
-      userId: request.ownerScopeId,
-      projectId: request.projectId,
-      title: summary.title,
-      modelConfig: {
-        provider: engine === 'claude_code' ? 'claude' : 'openai',
-        model: engine === 'claude_code'
-          ? 'external-claude-history'
-          : 'external-codex-history',
-      },
-      type: 'chat',
-      origin: {
-        kind: 'import',
-        name: `${engine} history`,
-        metadata: { ...provenance },
-      },
-      engine: {
-        kind: engine,
-        origin: 'import',
-      },
-      createdAt: summary.updatedAt,
-      updatedAt: summary.updatedAt,
-    };
-    const envelope = buildSessionExportEnvelopeV2({
-      exportId: request.exportId ?? `external-history-${sourceDigest.slice('sha256:'.length, 'sha256:'.length + 20)}`,
-      exportedAt: Date.now(),
-      ownerScopeId: request.ownerScopeId,
-      projectId: request.projectId,
-      rootSessionId: sessionId,
-      mode: 'subtree',
-      sessions: [{ session: sourceSession, messages }],
-    });
-    return { summary, provenance, envelope };
-  }
-
-  private async mapClaudeMessages(sourcePath: string, sessionId: string): Promise<Array<Message & Record<string, unknown>>> {
-    const parsed = await this.parsers.parseClaudeSession(sourcePath, { skipProgress: true });
-    return parsed.messages
-      .filter((message) => message.role === 'user' || message.role === 'assistant')
-      .map((message, index) => {
-        const contentParts = claudeContentParts(message.content);
-        const content = claudeVisibleText(message.content);
-        const mapped: Message & Record<string, unknown> = {
-          id: `external_message_${index + 1}`,
-          sessionId,
-          role: message.role,
-          content,
-          timestamp: message.timestamp,
-        } as Message & Record<string, unknown>;
-        if (contentParts.length > 0) mapped.contentParts = contentParts;
-        if (message.thinking) mapped.thinking = message.thinking;
-        return mapped;
-      })
-      .filter((message) => message.content.trim() || message.thinking || message.contentParts?.length);
-  }
-
-  private mapNormalizedMessage(
-    message: AgentEngineNormalizedPreviewMessage,
-    sessionId: string,
-    index: number,
-    fallbackTimestamp: number,
-  ): Message & Record<string, unknown> {
-    return {
-      id: `external_message_${index + 1}`,
-      sessionId,
-      role: message.role,
-      content: message.text,
-      timestamp: message.timestamp ?? fallbackTimestamp,
-      contentParts: [{ type: 'text', text: message.text }],
-    } as Message & Record<string, unknown>;
   }
 
   private async summarizeSource(
@@ -876,40 +742,3 @@ function dedupeAdjacentMessages<T extends AgentEngineNormalizedPreviewMessage>(m
   return deduped;
 }
 
-async function hashSourceFile(sourcePath: string): Promise<string> {
-  const hash = createHash('sha256');
-  const stream = fsSync.createReadStream(sourcePath);
-  for await (const chunk of stream) hash.update(chunk);
-  return `sha256:${hash.digest('hex')}`;
-}
-
-function claudeContentParts(content: ClaudeMessage['content']): ContentPart[] {
-  if (typeof content === 'string') {
-    return content ? [{ type: 'text', text: content }] : [];
-  }
-  const parts: ContentPart[] = [];
-  for (const block of content) {
-    if (block.type === 'text' && block.text) {
-      parts.push({ type: 'text', text: block.text });
-    } else if (block.type === 'tool_use' && block.id) {
-      parts.push({ type: 'tool_call', toolCallId: block.id });
-    } else if (block.type === 'tool_result') {
-      const text = typeof block.content === 'string'
-        ? block.content
-        : Array.isArray(block.content)
-          ? block.content.map((item) => item.text ?? '').filter(Boolean).join('\n')
-          : '';
-      if (text) parts.push({ type: 'text', text });
-    }
-  }
-  return parts;
-}
-
-function claudeVisibleText(content: ClaudeMessage['content']): string {
-  return claudeContentParts(content)
-    .filter((part) => part.type === 'text')
-    .map((part) => part.text)
-    .join(' ')
-    .replace(/\s+/gu, ' ')
-    .trim();
-}

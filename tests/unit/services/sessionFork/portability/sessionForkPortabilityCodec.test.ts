@@ -12,6 +12,7 @@ import {
   validatePortableIsolatedAnchorEvidenceV1,
 } from '../../../../../src/host/services/sessionFork/portability';
 import { PORTABLE_ANCHOR_MAX_PATCH_BYTES } from '../../../../../src/shared/contract/sessionForkPortability';
+import type { Message } from '../../../../../src/shared/contract/message';
 import { OWNER_ID, PROJECT_ID, message, session, subtreeDraft } from './fixture';
 
 describe('session fork portability codecs', () => {
@@ -102,6 +103,54 @@ describe('session fork portability codecs', () => {
       ownerScopeId: OWNER_ID,
       projectId: PROJECT_ID,
     })).toEqual(envelope);
+  });
+
+  it('strips turnDiff/retryAttachments from metadata without over-matching real keys', () => {
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    const ca1 = childEntry.messages.find((entry) => entry.id === 'ca1')!;
+    const dirtyMetadata: Message['metadata'] = {
+      ...ca1.metadata,
+      releaseNotes: 'kept because it only contains the substring "lease"',
+      turnDiff: {
+        turnId: 'turn-1',
+        files: [{
+          filePath: '/Users/private/worktrees/child/src/index.ts',
+          oldText: 'const secretMarkerOld = 1;',
+          newText: 'const secretMarkerNew = 2;',
+          added: 1,
+          removed: 1,
+          isNewFile: false,
+          editCount: 1,
+        }],
+      },
+      retryAttachments: [{
+        id: 'retry-attachment-1',
+        type: 'file',
+        category: 'text',
+        name: 'retry.txt',
+        size: 4,
+        mimeType: 'text/plain',
+        data: 'c2VjcmV0LWJhc2U2NC1wYXlsb2Fk',
+      }],
+    } as Message['metadata'];
+    ca1.metadata = dirtyMetadata;
+
+    const envelope = buildSessionExportEnvelopeV2(draft);
+    const childMessage = envelope.messages.find((item) => item.id === 'ca1');
+
+    expect(childMessage?.metadata).not.toHaveProperty('turnDiff');
+    expect(childMessage?.metadata).not.toHaveProperty('retryAttachments');
+    expect(childMessage?.metadata).toMatchObject({
+      releaseNotes: 'kept because it only contains the substring "lease"',
+    });
+
+    const serialized = encodeSessionExportEnvelopeV2(envelope);
+    expect(serialized).not.toContain('/Users/private/worktrees/child/src/index.ts');
+    expect(serialized).not.toContain('secretMarkerOld');
+    expect(serialized).not.toContain('secretMarkerNew');
+    expect(serialized).not.toContain('c2VjcmV0LWJhc2U2NC1wYXlsb2Fk');
+    expect(serialized).toContain('releaseNotes');
   });
 
   it('roundtrips a standalone lineage envelope with stable encoding', () => {

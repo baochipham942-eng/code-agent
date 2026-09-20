@@ -868,16 +868,17 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     transcriptEntries,
   );
 
-  // Project duplicate Read output only for the model request. The transcript
-  // and tool results remain unchanged for UI, audit, and programmatic callers.
-  const projectedTranscriptEntries = projectReadTranscriptEntries(interventionAdjustedEntries);
-  let contextApiView = projectedTranscriptEntries;
+  // Keep the unprojected transcript through compression. A duplicate Read
+  // receipt may refer to an earlier result, so projection must run only after
+  // compression has decided which complete results remain model-visible.
+  const compressionTranscriptEntries = interventionAdjustedEntries;
+  let contextApiView = compressionTranscriptEntries;
   const contextWindowSize = resolveContextWindow(ctx.runtime.modelConfig.model, ctx.runtime.modelConfig.provider);
   try {
     const cache = getRuntimeAssemblyCache(ctx);
     const compressionCacheKey = buildCompressionCacheKey(
       ctx,
-      projectedTranscriptEntries,
+      compressionTranscriptEntries,
       transcriptInterventions,
       contextWindowSize,
     );
@@ -905,7 +906,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
 
       const armEnabled = getCompressionPipelineOverride() ?? DEFAULT_COMPRESSION_PIPELINE_ENABLED;
       const pipelineResult = await ctx.runtime.compressionPipeline.evaluate(
-        projectedTranscriptEntries.map((entry) => ({ ...entry })),
+        compressionTranscriptEntries.map((entry) => ({ ...entry })),
         nextCompressionState,
         {
           maxTokens: contextWindowSize,
@@ -987,6 +988,9 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     ctx.runtime.contextHealth.replaceCompressionState(new CompressionState());
   }
   contextApiView = applyArchiveHydration(contextApiView, ctx.runtime.contextHealth.compressionState, ctx.runtime.sessionId);
+  // Project duplicate Read output only after compression. The transcript and
+  // persisted tool results remain unchanged for UI, audit, and callers.
+  contextApiView = projectReadTranscriptEntries(contextApiView);
 
   const currentUserMessageId = getLastUserMessage(ctx)?.id;
   const imageBudgetResult = applyHistoricalImageBudget(contextApiView, {

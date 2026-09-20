@@ -44,7 +44,11 @@ const limits = {
   // 固定注入开销棘轮，gates:local 稳定入口；基线提额必须连同理由接受评审）。
   // 2026-08-26 +2: scripts/verify-slotless.mjs（无槽 webServer + dogfood 自动登录）与
   // scripts/verify-shot.mjs（固定 headless Playwright 截图入口）是任务书默认验证入口。
-  directScriptFiles: 156,
+  // 2026-09-20 +1: scripts/gdpval-rubric-score.ts（GDPval 产物逐条 rubric 评分入口，
+  // 与 scripts/postlaunch-score.ts 同族——两者都是「打开某份库/某夜产物、调评分模型、
+  // 落分」的稳定 CLI 入口，分在两层会让人以为是两套东西。纯逻辑已抽到
+  // scripts/lib/gdpvalRubric.ts，不占直属名额）。
+  directScriptFiles: 157,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

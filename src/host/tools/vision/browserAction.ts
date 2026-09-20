@@ -34,6 +34,7 @@ import {
   withWorkbenchTrace,
 } from './browserActionResultProjection';
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
+import { enforceBrowserCaptchaTakeoverGate } from './browserCaptchaGate';
 import {
   jevBrowserStepEmptyTaskResult,
   jevBrowserStepUnarmedResult,
@@ -408,6 +409,10 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
 
     try {
       const executeManagedProviderAction = async (): Promise<ToolExecutionResult> => {
+        const captchaGate = await enforceBrowserCaptchaTakeoverGate({ action, browserService, tabId, context });
+        if (captchaGate) {
+          return captchaGate;
+        }
         const surfaceInteractionResult = await maybeExecuteBrowserSurfaceInteraction({
           action,
           browserService,

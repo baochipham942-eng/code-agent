@@ -109,7 +109,7 @@ interface CitationSummaryProps {
   onViewAll?: () => void;
 }
 
-export function CitationSummary({
+function CitationSummary({
   citations,
   maxShow = 5,
   onViewAll,

@@ -4,7 +4,7 @@
 // ----------------------------------------------------------------------------
 // 用法：
 //   npx tsx scripts/gdpval-rubric-score.ts --patrol ~/work/patrol --run 2026-09-19
-//   npx tsx scripts/gdpval-rubric-score.ts --patrol ~/work/patrol --run 2026-09-19 --only gdp-83d10b06 --batch 15
+//   npx tsx scripts/gdpval-rubric-score.ts --patrol ~/work/patrol --run 2026-09-19 --only gdp-83d10b06 --batch 20
 //
 // 评的是**产物**不是轨迹：读夜巡归档的 runs/<夜>/artifacts/<题号>/，把文件内容连同
 // 该题自带的 rubric 逐条问评分模型。与 postlaunch-score.ts 的六维无题判官各管一段，
@@ -29,12 +29,15 @@ import {
   type GdpvalRubricItem,
 } from './lib/gdpvalRubric';
 
-/** 单文件提取上限；再长对逐条核验也没增益，只是把 rubric 挤出上下文。 */
-const MAX_FILE_CHARS = 8000;
+// 额度按「128k 上下文的一半留给资料」定：产物 + 输入 ≈ 12 万字符 ≈ 4 万 token。
+// 8000 字那版实测把 1516 行的明细表截到 40 行，rubric 里「表里至少有一行满足 X」
+// 整片判 false，分数与产物质量脱钩。
+/** 单文件提取上限。 */
+const MAX_FILE_CHARS = 60000;
 /** 一题所有产物合计上限。 */
-const MAX_TASK_CHARS = 40000;
+const MAX_TASK_CHARS = 120000;
 /** 一题原始输入（题目给的参考文件）合计上限；对照类判据要用，但不该把产物挤出去。 */
-const MAX_INPUT_CHARS = 20000;
+const MAX_INPUT_CHARS = 60000;
 const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.tsv', '.json', '.html', '.htm', '.xml', '.py', '.js', '.ts', '.css', '.yaml', '.yml', '.log', '.sql']);
 
 function parseArgs(): { patrol: string; run: string; only: string[]; batch: number; out: string | null; limit: number } {
@@ -53,7 +56,7 @@ function parseArgs(): { patrol: string; run: string; only: string[]; batch: numb
     patrol: patrol.replace(/^~/, process.env.HOME ?? '~'),
     run,
     only: (read('--only') ?? '').split(',').map((value) => value.trim()).filter(Boolean),
-    batch: Number(read('--batch') ?? 20),
+    batch: Number(read('--batch') ?? 40),
     out: read('--out') ?? null,
     limit: Number(read('--limit') ?? 0),
   };
@@ -69,7 +72,13 @@ function parseArgs(): { patrol: string; run: string; only: string[]; batch: numb
 async function extractFile(absPath: string, relPath: string): Promise<GdpvalArtifactFile> {
   const bytes = fs.statSync(absPath).size;
   const ext = path.extname(absPath).toLowerCase();
-  const clip = (value: string): string => (value.length > MAX_FILE_CHARS ? `${value.slice(0, MAX_FILE_CHARS)}…` : value);
+  // 截断要说清楚截了多少：模型据此把「整表存在性」类判据填 unknown 而不是硬判 false。
+  const clip = (value: string): string => {
+    if (value.length <= MAX_FILE_CHARS) return value;
+    const lines = value.split('\n').length;
+    const kept = value.slice(0, MAX_FILE_CHARS);
+    return `${kept}…\n[本文件共 ${lines} 行，以上只给出前 ${kept.split('\n').length} 行]`;
+  };
   try {
     if (TEXT_EXT.has(ext)) return { path: relPath, bytes, text: clip(fs.readFileSync(absPath, 'utf8')) };
     if (ext === '.xlsx' || ext === '.xls' || ext === '.xlsm') {
@@ -77,10 +86,12 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
       // 每张表单独分配额度，不是整本截前 8000 字——第一张明细表动辄十几万字符，
       // 先 join 再截会把后面的表整个吃掉（自验实测：'Sample Size' 表连同它的置信水平、
       // 总体量 N、样本量全没进提示词，模型据此把三条判据全判成「没有」）。
-      const perSheet = Math.max(1500, Math.floor(MAX_FILE_CHARS / workbook.SheetNames.length));
+      const perSheet = Math.max(4000, Math.floor(MAX_FILE_CHARS / workbook.SheetNames.length));
       const sheets = workbook.SheetNames.map((name) => {
         const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[name]);
-        return `# sheet: ${name}\n${csv.length > perSheet ? `${csv.slice(0, perSheet)}…` : csv}`;
+        if (csv.length <= perSheet) return `# sheet: ${name}（共 ${csv.split('\n').length} 行）\n${csv}`;
+        const kept = csv.slice(0, perSheet);
+        return `# sheet: ${name}（共 ${csv.split('\n').length} 行，以下只给出前 ${kept.split('\n').length} 行）\n${kept}…`;
       });
       return { path: relPath, bytes, text: sheets.join('\n') };
     }
@@ -172,7 +183,7 @@ async function main(): Promise<void> {
       const prompt = buildRubricPrompt(batch, files, inputs);
       let content = '';
       try {
-        const response = await quickTask(prompt, 2000);
+        const response = await quickTask(prompt, 6000);
         calls += 1;
         content = response.success && response.content ? response.content : '';
         if (!content) console.warn(`  ${task.id}：模型没返回内容（${response.error ?? '无错误信息'}）`);
@@ -185,6 +196,7 @@ async function main(): Promise<void> {
     const score = summarizeTask(task.id, verdicts, rels, task._occupation);
     out.write(`${JSON.stringify(score)}\n`);
     console.log(`${task.id.padEnd(16)} ${(score.ratio * 100).toFixed(0).padStart(3)}%  ${score.earned}/${score.total} 分`
+      + `（满分 ${score.totalRaw}，弃权 ${score.abstained} 条已剔出分母）`
       + `  条目 ${verdicts.length}${score.unjudged > 0 ? `（漏判 ${score.unjudged}）` : ''}`
       + `  产物 ${rels.length} 个  输入 ${inputs.length} 个`);
   }

@@ -60,14 +60,37 @@ describe('parseRubricVerdicts', () => {
   });
 });
 
+describe('三值：弃权', () => {
+  it('pass="unknown" 被接受，并从分母里剔掉', () => {
+    const verdicts = parseRubricVerdicts(
+      '{"verdicts":[{"n":1,"pass":true},{"n":2,"pass":"unknown","why":"表被截断"},{"n":3,"pass":false}]}',
+      items,
+    );
+    const score = summarizeTask('gdp-x', verdicts, []);
+    expect(score.totalRaw).toBe(6);
+    expect(score.total).toBe(3);           // 6 减掉弃权那条的 3 分
+    expect(score.earned).toBe(2);
+    expect(score.ratio).toBeCloseTo(2 / 3);
+    expect(score.abstained).toBe(1);
+    expect(score.unjudged).toBe(0);
+  });
+
+  it('弃权之外的字符串仍然丢弃，不当成通过', () => {
+    const verdicts = parseRubricVerdicts('{"verdicts":[{"n":1,"pass":"maybe"},{"n":2,"pass":"true"}]}', items);
+    expect(verdicts.every((verdict) => verdict.pass === null)).toBe(true);
+  });
+});
+
 describe('summarizeTask', () => {
   it('漏判按不通过计分，但单独计数', () => {
     const verdicts = parseRubricVerdicts('{"verdicts":[{"n":1,"pass":true},{"n":3,"pass":false}]}', items);
     const score = summarizeTask('gdp-x', verdicts, ['out.xlsx'], 'Accountants');
     expect(score.total).toBe(6);
+    expect(score.totalRaw).toBe(6);
     expect(score.earned).toBe(2);
     expect(score.ratio).toBeCloseTo(2 / 6);
     expect(score.unjudged).toBe(1);
+    expect(score.abstained).toBe(0);
   });
 
   it('空 rubric 不除零', () => {

@@ -252,26 +252,11 @@ async function main(): Promise<void> {
   for (const task of tasks) {
     const taskRoot = path.join(artifactsRoot, task.id);   // 根边界已在上面的 tasks 过滤里挡过
     const allRels = listFiles(taskRoot);
-    const rels = allRels.slice(0, MAX_FILES);
-    if (allRels.length > MAX_FILES) console.warn(`  ${task.id}：产物 ${allRels.length} 个，只取前 ${MAX_FILES} 个`);
-    const files: GdpvalArtifactFile[] = [];
-    let used = 0;
-    let skippedForBudget = 0;
-    for (const rel of rels) {
-      if (used >= MAX_TASK_CHARS) {
-        // 占位必须用与截断同一套措辞，否则模型按「产物里没有」判 false 并计入分母——
-        // 那正是本分支花三个 commit 从 17% 修到 100% 的同一类失真。
-        skippedForBudget += 1;
-        let bytes = 0;
-        try { bytes = fs.statSync(path.join(taskRoot, rel)).size; } catch { /* 文件中途消失，按 0 计，不让整轮评分崩掉 */ }
-        files.push({ path: rel, bytes, text: `[${TRUNCATED_MARK}]` });
-        continue;
-      }
-      const file = await extractFile(path.join(taskRoot, rel), rel);
-      used += file.text.length;
-      files.push(file);
-    }
-
+    const { files, skipped: skippedForBudget } = await collectWithinBudget(
+      allRels.map((rel) => ({ abs: path.join(taskRoot, rel), rel })),
+      MAX_FILES,
+      MAX_TASK_CHARS,
+    );
     if (skippedForBudget > 0) {
       console.warn(`  ${task.id}：产物总量超过 ${MAX_TASK_CHARS} 字，${skippedForBudget} 个文件没给模型看正文`
         + '（这些文件相关的条目会被判弃权，不是判负）');
@@ -326,7 +311,10 @@ async function main(): Promise<void> {
       verdicts.push(...parseRubricVerdicts(content, batch));
     }
 
-    const score = summarizeTask(task.id, verdicts, allRels, task._occupation);
+    // 落盘的 files 标出哪些只留了占位：事后要能看出「这条判负」是不是因为文件压根没进提示词。
+    const seenPaths = new Set(files.filter((file) => file.text !== `[${TRUNCATED_MARK}]`).map((file) => file.path));
+    const fileLabels = allRels.map((rel) => (seenPaths.has(rel) ? rel : `${rel} [${TRUNCATED_MARK}]`));
+    const score = summarizeTask(task.id, verdicts, fileLabels, task._occupation);
     out.write(`${JSON.stringify(score)}\n`);
     console.log(`${task.id.padEnd(16)} ${(score.ratio * 100).toFixed(0).padStart(3)}%  ${score.earned}/${score.total} 分`
       + `（满分 ${score.totalRaw}，弃权 ${score.abstained} 条已剔出分母）`

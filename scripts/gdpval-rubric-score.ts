@@ -38,6 +38,14 @@ const MAX_FILE_CHARS = 60000;
 const MAX_TASK_CHARS = 120000;
 /** 一题原始输入（题目给的参考文件）合计上限；对照类判据要用，但不该把产物挤出去。 */
 const MAX_INPUT_CHARS = 60000;
+/**
+ * 不进产物清单的目录：agent 为了干活装的依赖树不是它的交付物。
+ * 实测 gdp-476db143 为了读两个 PDF 装了 `.venv`，产物清单直接变成 577 个文件——
+ * 提取额度被吃光，提示词里也全是无关文件名。
+ */
+const SKIP_DIRS = new Set(['.code-agent', '.git', '.venv', 'venv', 'node_modules', '__pycache__', '.pytest_cache', '.mypy_cache', 'dist', 'build', '.next', '.cache']);
+/** 产物文件数上限；再多也只是噪声，超出的只报数量。 */
+const MAX_FILES = 60;
 const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.tsv', '.json', '.html', '.htm', '.xml', '.py', '.js', '.ts', '.css', '.yaml', '.yml', '.log', '.sql']);
 
 /** 非法数值参数当场退出，不带着 NaN 往下跑——chunkRubric 的循环遇到 NaN 会永不前进。 */
@@ -121,7 +129,7 @@ function listFiles(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === '.code-agent' || entry.name === '.git') continue;
+      if (SKIP_DIRS.has(entry.name)) continue;
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(abs);
       else if (entry.isFile()) out.push(path.relative(root, abs));
@@ -164,7 +172,9 @@ async function main(): Promise<void> {
   let calls = 0;
   for (const task of tasks) {
     const taskRoot = path.join(artifactsRoot, task.id);
-    const rels = listFiles(taskRoot);
+    const allRels = listFiles(taskRoot);
+    const rels = allRels.slice(0, MAX_FILES);
+    if (allRels.length > MAX_FILES) console.warn(`  ${task.id}：产物 ${allRels.length} 个，只取前 ${MAX_FILES} 个`);
     const files: GdpvalArtifactFile[] = [];
     let used = 0;
     for (const rel of rels) {
@@ -194,25 +204,30 @@ async function main(): Promise<void> {
     const verdicts: GdpvalItemVerdict[] = [];
     for (const batch of chunkRubric(rubric, options.batch)) {
       const prompt = buildRubricPrompt(batch, files, inputs);
+      // 瞬时 5xx 重试一次：一次 500 会让整批条目全变未判、整题记 0 分，
+      // 那是个假信号——它看起来和「产物确实不合格」一模一样（实测撞到过一次）。
       let content = '';
-      try {
-        // 不给超时，模型服务挂起时整夜评分会停在这一批上，后面的题一道都不落盘。
-        const response = await quickTask(prompt, 6000, AbortSignal.timeout(options.callTimeoutMs));
-        calls += 1;
-        content = response.success && response.content ? response.content : '';
-        if (!content) console.warn(`  ${task.id}：模型没返回内容（${response.error ?? '无错误信息'}）`);
-      } catch (error) {
-        console.warn(`  ${task.id}：调用失败`, error);
+      for (let attempt = 0; attempt < 2 && !content; attempt += 1) {
+        if (attempt > 0) await new Promise((resolve) => { setTimeout(resolve, 3000); });
+        try {
+          // 不给超时，模型服务挂起时整夜评分会停在这一批上，后面的题一道都不落盘。
+          const response = await quickTask(prompt, 6000, AbortSignal.timeout(options.callTimeoutMs));
+          calls += 1;
+          content = response.success && response.content ? response.content : '';
+          if (!content) console.warn(`  ${task.id}：模型没返回内容（${response.error ?? '无错误信息'}）${attempt === 0 ? '，重试一次' : ''}`);
+        } catch (error) {
+          console.warn(`  ${task.id}：调用失败${attempt === 0 ? '，重试一次' : ''}`, error);
+        }
       }
       verdicts.push(...parseRubricVerdicts(content, batch));
     }
 
-    const score = summarizeTask(task.id, verdicts, rels, task._occupation);
+    const score = summarizeTask(task.id, verdicts, allRels, task._occupation);
     out.write(`${JSON.stringify(score)}\n`);
     console.log(`${task.id.padEnd(16)} ${(score.ratio * 100).toFixed(0).padStart(3)}%  ${score.earned}/${score.total} 分`
       + `（满分 ${score.totalRaw}，弃权 ${score.abstained} 条已剔出分母）`
       + `  条目 ${verdicts.length}${score.unjudged > 0 ? `（漏判 ${score.unjudged}）` : ''}`
-      + `  产物 ${rels.length} 个  输入 ${inputs.length} 个`);
+      + `  产物 ${allRels.length} 个  输入 ${inputs.length} 个`);
   }
   out.end();
   console.log(`\n结果：${outPath}；模型调用 ${calls} 次`);

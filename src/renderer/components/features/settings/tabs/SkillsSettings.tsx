@@ -456,6 +456,7 @@ export const SkillsSettings: React.FC = () => {
       return skillsText.zipUnsafe;
     }
     if (error.startsWith('SKILL_ZIP_TOO_LARGE')) return skillsText.zipTooLarge;
+    if (error.startsWith('SKILL_ZIP_INVALID_FRONTMATTER')) return skillsText.zipInvalidFrontmatter;
     if (error.startsWith('SKILL_CONTENT_SCAN_BLOCKED')) return skillsText.zipScanBlocked;
     return error;
   };

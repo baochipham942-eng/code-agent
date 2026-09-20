@@ -595,8 +595,8 @@ export const ChatView: React.FC = () => {
 
   const handleGlobalDrop = useChatGlobalFileDrop({
     processFile, processFolderEntry, sessionId: currentSessionId,
-    successPrefix: t.slashSelect.skillZipInstalledPrefix,
-    failPrefix: t.slashSelect.skillZipInstallFailedPrefix,
+    successPrefix: t.slashSelect.skillZipInstalledPrefix, failPrefix: t.slashSelect.skillZipInstallFailedPrefix,
+    confirmPrompt: t.slashSelect.skillZipInstallConfirm,
     onDropStart: clearGlobalDragState,
     onAttachments: (attachments) => chatInputRef.current?.addAttachments(attachments),
   });

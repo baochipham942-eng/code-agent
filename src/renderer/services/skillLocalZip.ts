@@ -41,11 +41,21 @@ export async function mountInstalledSkill(sessionId: string, skillName: string):
 
 export async function divertDroppedSkillZips(
   files: File[],
-  args: { sessionId?: string | null; successPrefix: string; failPrefix: string },
+  args: {
+    sessionId?: string | null;
+    successPrefix: string;
+    failPrefix: string;
+    confirmPrompt: string;
+  },
 ): Promise<File[]> {
   const leftover: File[] = [];
   for (const file of files) {
     try {
+      const confirmed = window.confirm(args.confirmPrompt.replace('{name}', file.name));
+      if (!confirmed) {
+        leftover.push(file);
+        continue;
+      }
       const result = await installLocalSkillZip(await fileToLocalZipPayload(file));
       if (!result.success && isNotASkillPackError(result.error)) {
         leftover.push(file);

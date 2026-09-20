@@ -5,6 +5,25 @@ import JSZip from 'jszip';
 import { createLogger } from '../../services/infra/logger';
 
 export const MAX_GITHUB_ARCHIVE_BYTES = 50 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 4096;
+const MAX_UNCOMPRESSED_ZIP_BYTES = 200 * 1024 * 1024;
+const MAX_ZIP_ENTRY_BYTES = 100 * 1024 * 1024;
+
+export function isZipExtractLimitError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('Zip extraction limit exceeded');
+}
+
+function declaredUncompressedSize(entry: JSZip.JSZipObject): number | null {
+  const data = (entry as JSZip.JSZipObject & { _data?: { uncompressedSize?: number } })._data;
+  if (typeof data?.uncompressedSize === 'number' && Number.isFinite(data.uncompressedSize) && data.uncompressedSize >= 0) {
+    return data.uncompressedSize;
+  }
+  return null;
+}
+
+function throwZipExtractLimit(detail: string): never {
+  throw new Error(`Zip extraction limit exceeded: ${detail}`);
+}
 
 const UNIX_FILE_TYPE_MASK = 0o170000;
 const UNIX_SYMLINK_TYPE = 0o120000;
@@ -108,11 +127,23 @@ export async function extractZipSafely(
   archive: Buffer,
   destDir: string,
   signal?: AbortSignal,
+  limits?: {
+    maxEntries?: number;
+    maxUncompressedBytes?: number;
+    maxEntryBytes?: number;
+  },
 ): Promise<ZipExtractionResult> {
   signal?.throwIfAborted();
+  const maxEntries = limits?.maxEntries ?? MAX_ZIP_ENTRIES;
+  const maxUncompressedBytes = limits?.maxUncompressedBytes ?? MAX_UNCOMPRESSED_ZIP_BYTES;
+  const maxEntryBytes = limits?.maxEntryBytes ?? MAX_ZIP_ENTRY_BYTES;
   const zip = await JSZip.loadAsync(archive);
   const entries = Object.values(zip.files);
+  if (entries.length > maxEntries) {
+    throwZipExtractLimit(`too many entries (${entries.length} > ${maxEntries})`);
+  }
   const symlinkEntries = new Set<string>();
+  let declaredTotal = 0;
 
   for (const entry of entries) {
     signal?.throwIfAborted();
@@ -122,10 +153,22 @@ export async function extractZipSafely(
     if (isSymlinkEntry(entry)) {
       symlinkEntries.add(entry.name);
       logger.warn('Skipping symbolic link zip entry', { entry: entry.name });
+      continue;
+    }
+    if (entry.dir) continue;
+    const declared = declaredUncompressedSize(entry);
+    if (declared === null) continue;
+    if (declared > maxEntryBytes) {
+      throwZipExtractLimit(`entry exceeds ${maxEntryBytes} bytes (${entry.name})`);
+    }
+    declaredTotal += declared;
+    if (declaredTotal > maxUncompressedBytes) {
+      throwZipExtractLimit(`uncompressed size exceeds ${maxUncompressedBytes} bytes`);
     }
   }
 
   await fs.mkdir(destDir, { recursive: true });
+  let writtenBytes = 0;
   for (const entry of entries) {
     signal?.throwIfAborted();
     if (symlinkEntries.has(entry.name)) continue;
@@ -135,7 +178,15 @@ export async function extractZipSafely(
       continue;
     }
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
-    await fs.writeFile(outputPath, await entry.async('nodebuffer'));
+    const content = await entry.async('nodebuffer');
+    if (content.byteLength > maxEntryBytes) {
+      throwZipExtractLimit(`entry exceeds ${maxEntryBytes} bytes (${entry.name})`);
+    }
+    writtenBytes += content.byteLength;
+    if (writtenBytes > maxUncompressedBytes) {
+      throwZipExtractLimit(`uncompressed size exceeds ${maxUncompressedBytes} bytes`);
+    }
+    await fs.writeFile(outputPath, content);
     const unixPermissions = getUnixPermissions(entry);
     if (unixPermissions !== null) {
       await fs.chmod(outputPath, unixPermissions & 0o777);

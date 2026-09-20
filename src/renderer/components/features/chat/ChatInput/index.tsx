@@ -405,8 +405,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       sessionId: currentSessionId,
       successPrefix: t.slashSelect.skillZipInstalledPrefix,
       failPrefix: t.slashSelect.skillZipInstallFailedPrefix,
+      confirmPrompt: t.slashSelect.skillZipInstallConfirm,
     });
-  }, [currentSessionId, t.slashSelect.skillZipInstallFailedPrefix, t.slashSelect.skillZipInstalledPrefix]);
+  }, [currentSessionId, t.slashSelect.skillZipInstallConfirm, t.slashSelect.skillZipInstallFailedPrefix, t.slashSelect.skillZipInstalledPrefix]);
   // 拖放附件处理（高亮状态 + 文件/文件夹拖入转附件）
   const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useDragAndDrop({
     processFile,

@@ -468,6 +468,7 @@ export const enSettingsModels = {
         zipMultipleSkillMd: 'This ZIP contains more than one SKILL.md; install one Skill at a time',
         zipUnsafe: 'The ZIP path is not safe to read',
         zipTooLarge: 'The ZIP exceeds the size limit',
+        zipInvalidFrontmatter: 'SKILL.md needs a valid name and description',
         zipScanBlocked: 'Content scan blocked this ZIP',
         zipInstallFailed: 'Local ZIP install failed',
       },

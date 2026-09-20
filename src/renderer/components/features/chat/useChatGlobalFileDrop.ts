@@ -12,6 +12,7 @@ export function useChatGlobalFileDrop(args: {
   sessionId?: string | null;
   successPrefix: string;
   failPrefix: string;
+  confirmPrompt: string;
   onAttachments: (attachments: MessageAttachment[]) => void;
   onDropStart: () => void;
 }): (event: React.DragEvent) => Promise<void> {
@@ -21,6 +22,7 @@ export function useChatGlobalFileDrop(args: {
     sessionId,
     successPrefix,
     failPrefix,
+    confirmPrompt,
     onAttachments,
     onDropStart,
   } = args;
@@ -33,8 +35,8 @@ export function useChatGlobalFileDrop(args: {
       event.dataTransfer,
       processFile,
       processFolderEntry,
-      (zips) => divertDroppedSkillZips(zips, { sessionId, successPrefix, failPrefix }),
+      (zips) => divertDroppedSkillZips(zips, { sessionId, successPrefix, failPrefix, confirmPrompt }),
     );
     if (attachments.length > 0) onAttachments(attachments);
-  }, [failPrefix, onAttachments, onDropStart, processFile, processFolderEntry, sessionId, successPrefix]);
+  }, [confirmPrompt, failPrefix, onAttachments, onDropStart, processFile, processFolderEntry, sessionId, successPrefix]);
 }

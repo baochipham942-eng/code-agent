@@ -470,6 +470,7 @@ export const zhSettingsModels = {
         zipMultipleSkillMd: 'ZIP 里有多份 SKILL.md，一次只能装一个 Skill',
         zipUnsafe: 'ZIP 路径不安全',
         zipTooLarge: 'ZIP 超过大小限制',
+        zipInvalidFrontmatter: 'SKILL.md 缺少有效的 name / description',
         zipScanBlocked: '内容扫描未通过，已拒绝安装',
         zipInstallFailed: '本地 ZIP 安装失败',
       },

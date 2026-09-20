@@ -4,9 +4,11 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { getUserConfigDir } from '../../config/configPaths';
 import type { InstallResult, PluginEntry } from './types';
+import * as yaml from 'yaml';
 import {
   extractZipSafely,
   getArchiveSha256,
+  isZipExtractLimitError,
   MAX_GITHUB_ARCHIVE_BYTES,
 } from './githubArchiveSecurity';
 import { runExclusivePluginInstall, throwIfInstallAborted } from './installConcurrency';
@@ -17,12 +19,23 @@ const SKILL_ZIP_MISSING_SKILL_MD = 'SKILL_ZIP_MISSING_SKILL_MD';
 const SKILL_ZIP_MULTIPLE_SKILL_MD = 'SKILL_ZIP_MULTIPLE_SKILL_MD';
 const SKILL_ZIP_TOO_LARGE = 'SKILL_ZIP_TOO_LARGE';
 const SKILL_ZIP_INVALID_SHAPE = 'SKILL_ZIP_INVALID_SHAPE';
+const SKILL_ZIP_INVALID_FRONTMATTER = 'SKILL_ZIP_INVALID_FRONTMATTER';
 
-function parseSkillFrontmatterName(content: string): string | null {
+function parseRequiredSkillFrontmatter(content: string): { name: string; description: string } {
   const fence = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!fence) return null;
-  const name = fence[1].match(/^name\s*:\s*["']?([A-Za-z0-9][A-Za-z0-9._-]*)["']?\s*$/m);
-  return name?.[1] ?? null;
+  if (!fence) {
+    throw new Error(`${SKILL_ZIP_INVALID_FRONTMATTER}: missing YAML frontmatter`);
+  }
+  const parsed = yaml.parse(fence[1]) as { name?: unknown; description?: unknown } | null;
+  const name = typeof parsed?.name === 'string' ? parsed.name.trim() : '';
+  const description = typeof parsed?.description === 'string' ? parsed.description.trim() : '';
+  if (!name || !description) {
+    throw new Error(`${SKILL_ZIP_INVALID_FRONTMATTER}: name and description are required`);
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+    throw new Error(`${SKILL_ZIP_INVALID_FRONTMATTER}: invalid skill name`);
+  }
+  return { name, description };
 }
 
 async function listSkillMarkdownRelPaths(rootDir: string): Promise<string[]> {
@@ -66,7 +79,7 @@ async function resolveLocalZipSkillDir(extractRoot: string): Promise<string> {
   if (dirRelative) return dirRelative;
 
   const content = await fs.readFile(path.join(extractRoot, 'SKILL.md'), 'utf8');
-  const skillName = parseSkillFrontmatterName(content) ?? 'skill';
+  const skillName = parseRequiredSkillFrontmatter(content).name;
   const destination = path.join(extractRoot, skillName);
   if (fsSync.existsSync(destination)) {
     throw new Error(`${SKILL_ZIP_INVALID_SHAPE}: cannot nest root SKILL.md under existing ${skillName}`);
@@ -100,9 +113,21 @@ async function installFromLocalZipUnlocked(
     `tmp-local-zip-${randomUUID()}`,
   );
   try {
-    await extractZipSafely(archive, tempDir, options.signal);
+    try {
+      await extractZipSafely(archive, tempDir, options.signal);
+    } catch (error) {
+      if (isZipExtractLimitError(error)) {
+        throw new Error(
+          `${SKILL_ZIP_TOO_LARGE}: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
     throwIfInstallAborted(options.signal);
     const skillDirName = await resolveLocalZipSkillDir(tempDir);
+    const skillMarkdown = await fs.readFile(path.join(tempDir, skillDirName, 'SKILL.md'), 'utf8');
+    parseRequiredSkillFrontmatter(skillMarkdown);
     const pluginSpec = `${skillDirName}@${LOCAL_ZIP_MARKETPLACE}`;
     const state = await loadInstalledPlugins();
     throwIfInstallAborted(options.signal);

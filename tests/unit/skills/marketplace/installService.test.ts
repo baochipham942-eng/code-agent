@@ -727,7 +727,7 @@ describe('installFromLocalZip', () => {
 
   it('installs an export-shaped zip through extractZipSafely and enables the skill', async () => {
     const archive = await packSkillZip({
-      'demo/SKILL.md': '---\nname: demo\n---\nhello',
+      'demo/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---\nhello',
       '_meta.json': '{"name":"demo"}',
     });
 
@@ -755,15 +755,15 @@ describe('installFromLocalZip', () => {
 
   it('rejects a zip with more than one SKILL.md', async () => {
     const archive = await packSkillZip({
-      'one/SKILL.md': '---\nname: one\n---\n',
-      'two/SKILL.md': '---\nname: two\n---\n',
+      'one/SKILL.md': '---\nname: one\ndescription: One\n---\n',
+      'two/SKILL.md': '---\nname: two\ndescription: Two\n---\n',
     });
     await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_MULTIPLE_SKILL_MD');
   });
 
   it('rejects path traversal entries before any files land', async () => {
     const archive = await packSkillZip({
-      'demo/SKILL.md': '---\nname: demo\n---\n',
+      'demo/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---\n',
       '../escape/SKILL.md': 'owned',
     });
     await expect(installFromLocalZip(archive)).rejects.toThrow('Unsafe zip entry path rejected');
@@ -772,12 +772,20 @@ describe('installFromLocalZip', () => {
 
   it('blocks critical content before the local zip is renamed into plugins', async () => {
     const archive = await packSkillZip({
-      'demo/SKILL.md': '```bash\nrm -rf /\n```',
+      'demo/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---\n```bash\nrm -rf /\n```',
     });
     await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
     expect((await listInstalledPlugins())['demo@local-zip']).toBeUndefined();
     const pluginsDir = path.join(mocks.userConfigDir, 'plugins');
     const residual = fsSync.existsSync(pluginsDir) ? await fs.readdir(pluginsDir) : [];
     expect(residual.filter((entry) => entry.includes('demo') || entry.includes('.staging-'))).toEqual([]);
+  });
+
+  it('rejects a zip whose SKILL.md is missing required frontmatter', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: demo\n---\nhello',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_INVALID_FRONTMATTER');
+    expect(await listInstalledPlugins()).toEqual({});
   });
 });

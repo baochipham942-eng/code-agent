@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { tsImport } from 'tsx/esm/api';
-import { digest, selectTests, validateFiles, validateReport, renderReceipt, validateBudgetPolicy, commandDeadline, budgetFailure } from './lib/gates-fast-contract.mjs';
+import { digest, selectTests, validateFiles, validateReport, renderReceipt, extractGateIds, validateGateBudgetCoverage, commandDeadline, budgetFailure } from './lib/gates-fast-contract.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
@@ -130,7 +130,7 @@ try {
     throw new Error('FAIL: receipt must be outside source or under .reports/gates-fast');
   }
   if (policy.maxFiles !== 12) throw new Error('FAIL: first-version policy requires 12-file maximum');
-  validateBudgetPolicy(policy);
+  validateGateBudgetCoverage(policy, extractGateIds(fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8')));
   if (options.regressions) regressions = JSON.parse(fs.readFileSync(options.regressions, 'utf8'));
   await gate('inputs', true, async () => {
     const { resolveAnswerSideRoot } = await tsImport(path.join(root, 'src/host/testing/answerSide.ts'), import.meta.url);

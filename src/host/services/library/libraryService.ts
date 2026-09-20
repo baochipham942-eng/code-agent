@@ -12,17 +12,40 @@ import { getUserConfigDir } from '../../config/configPaths';
 import type {
   LibraryItem,
   LibraryItemCreateRequest,
+  LibraryEvidenceProjection,
+  LibraryEvidenceQuery,
+  LibraryLearnStatus,
   LibraryListOptions,
   SessionContextPin,
 } from '@shared/contract/library';
+import { isLibraryLearnStatus } from '@shared/contract/library';
 import { isPathWithinRoot } from '../../runtime/workspaceScope';
+import {
+  buildEvidenceFragment,
+  extractLibraryText,
+  hasLibraryTextExtractor,
+  isTextLikeExtension,
+  readLearnedSidecar,
+  removeLearnedSidecar,
+  writeLearnedSidecar,
+  moveLearnedSidecar,
+} from './libraryIngest';
 
 const logger = createLogger('LibraryService');
 
 /** 单个导入文件上限（与 web /api/upload/temp 的 MAX_UPLOAD_SIZE 对齐） */
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const PENDING_LEARN_SWEEP_LIMIT = 20;
+
+function defaultLearnStatus(kind: LibraryItem['kind'], pathOrUri: string): LibraryLearnStatus {
+  if (kind === 'capture' || kind === 'external_ref') return 'ready';
+  if (kind === 'artifact' && !hasLibraryTextExtractor(pathOrUri)) return 'ready';
+  return 'pending';
+}
 
 export class LibraryService {
+  private sweepInFlight: Promise<number> | null = null;
+  private readonly learningIds = new Set<string>();
   // ponytail: repo 按需自建（statement 本就逐调用 prepare），不给 databaseService god-file 加行
   private get repo(): LibraryRepository {
     const raw = getDatabase().getDb();
@@ -68,6 +91,9 @@ export class LibraryService {
       sourceSessionId: request.sourceSessionId,
       sourceRoleId: request.sourceRoleId,
       contentHash: request.contentHash,
+      learnStatus: isLibraryLearnStatus(String(request.learnStatus ?? ''))
+        ? request.learnStatus
+        : defaultLearnStatus(request.kind, request.pathOrUri),
       createdAt: now,
       updatedAt: now,
     };
@@ -80,12 +106,12 @@ export class LibraryService {
    * 导入本地文件（桌面原生选择器或 web /api/upload/temp 落地的临时路径）：
    * 拷入资料库目录并登记条目。内容 sha256 去重：同项目相同内容不重复落盘。
    */
-  importFile(args: {
+  async importFile(args: {
     projectId?: string | null;
     sourcePath: string;
     tags?: string[];
     sourceSessionId?: string;
-  }, now: number = Date.now()): LibraryItem {
+  }, now: number = Date.now()): Promise<LibraryItem> {
     const projectId = args.projectId ?? null;
     const data = fs.readFileSync(args.sourcePath);
     if (data.byteLength === 0) {
@@ -113,7 +139,7 @@ export class LibraryService {
     }
     fs.writeFileSync(target, data);
 
-    return this.addItem({
+    const item = this.addItem({
       projectId,
       title: safeName,
       kind: 'upload',
@@ -122,6 +148,117 @@ export class LibraryService {
       sourceSessionId: args.sourceSessionId,
       contentHash,
     }, now);
+    return this.learnItem(item.id, now);
+  }
+
+  /** 跑单条资料的文本学习管线；失败保留真实抽取原因，绝不把失败伪装成 ready。 */
+  async learnItem(id: string, now: number = Date.now()): Promise<LibraryItem> {
+    const item = this.repo.getItem(id);
+    if (!item) throw new Error('Library item not found');
+    if (this.learningIds.has(id)) return item;
+    this.learningIds.add(id);
+    try {
+      if (item.kind !== 'upload' && item.kind !== 'artifact') {
+        if (item.learnStatus === 'ready') return item;
+        if (item.learnStatus === 'pending' || item.learnStatus === 'failed') {
+          this.repo.updateLearnStatus(id, 'running', { error: null, now });
+        }
+        this.repo.updateLearnStatus(id, 'ready', { error: null, now });
+        return this.repo.getItem(id) ?? item;
+      }
+
+      this.repo.updateLearnStatus(id, 'running', { error: null, now });
+      try {
+        if (item.kind === 'artifact' && defaultLearnStatus(item.kind, item.pathOrUri) === 'ready') {
+          this.repo.updateLearnStatus(id, 'ready', { error: null, now });
+          return this.repo.getItem(id) ?? item;
+        }
+        if (!hasLibraryTextExtractor(item.pathOrUri)) {
+          throw new Error(`不支持抽取文本的格式: ${path.extname(item.pathOrUri) || '(无后缀)'}`);
+        }
+        const extracted = await extractLibraryText(item.pathOrUri);
+        writeLearnedSidecar(this.libraryDir(item.projectId), item.id, extracted.text);
+        this.repo.updateLearnStatus(id, 'ready', { error: null, now });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.repo.updateLearnStatus(id, 'failed', { error: message, now });
+        logger.warn('Library item learning failed', { id, error });
+      }
+      return this.repo.getItem(id) ?? item;
+    } finally {
+      this.learningIds.delete(id);
+    }
+  }
+
+  retryLearn(id: string, now: number = Date.now()): Promise<LibraryItem> {
+    const item = this.repo.getItem(id);
+    if (!item) throw new Error('Library item not found');
+    if (item.learnStatus !== 'failed' && item.learnStatus !== 'pending' && item.learnStatus !== 'running') {
+      return Promise.resolve(item);
+    }
+    return this.learnItem(id, now);
+  }
+
+  /** 补跑迁移/登记后仍停在 pending 的 upload/artifact，避免旧资料永久待处理。 */
+  sweepPendingLearn(now: number = Date.now(), limit: number = PENDING_LEARN_SWEEP_LIMIT): Promise<number> {
+    if (this.sweepInFlight) return this.sweepInFlight;
+    this.sweepInFlight = this.runPendingLearnSweep(now, limit).finally(() => {
+      this.sweepInFlight = null;
+    });
+    return this.sweepInFlight;
+  }
+
+  private async runPendingLearnSweep(now: number, limit: number): Promise<number> {
+    const ids = this.repo.listPendingLearnIds(limit, now);
+    for (const id of ids) {
+      await this.learnItem(id, now);
+    }
+    return ids.length;
+  }
+
+  projectEvidence(query: LibraryEvidenceQuery): LibraryEvidenceProjection {
+    const item = this.repo.findByPathAnyProject(query.source) ?? this.findItemForSidecar(query.source);
+    if (!item) return { query, hit: false, reason: '未找到对应的资料库条目' };
+    if (item.learnStatus !== 'ready') {
+      return {
+        query,
+        hit: false,
+        item,
+        reason: item.learnStatus === 'failed'
+          ? (item.learnError ?? '资料解析失败')
+          : '资料仍在处理中，尚未生成可用依据',
+      };
+    }
+    const text = readLearnedSidecar(this.libraryDir(item.projectId), item.id)
+      ?? (isTextLikeExtension(item.pathOrUri) ? this.readTextFallback(item.pathOrUri) : null);
+    if (!text) return { query, hit: false, item, reason: '资料没有可展示的抽取文本' };
+    const window = query.lineRange
+      ? { start: Math.min(query.lineRange[0], query.lineRange[1]), end: Math.max(query.lineRange[0], query.lineRange[1]) }
+      : this.parseCitationWindow(query.location);
+    const fragment = buildEvidenceFragment(text, window);
+    if (!fragment) return { query, hit: false, item, reason: '资料没有可展示的片段' };
+    return { query, hit: true, item, fragment };
+  }
+
+  private parseCitationWindow(location?: string): { start: number; end: number } | null {
+    const match = location?.match(/^lines?:(\d+)(?:-(\d+))?$/i);
+    if (!match) return null;
+    const start = Number(match[1]);
+    const end = match[2] ? Number(match[2]) : start;
+    return { start: Math.min(start, end), end: Math.max(start, end) };
+  }
+
+  private findItemForSidecar(source: string): LibraryItem | undefined {
+    const match = source.match(/[\\/]\.extracted[\\/]([^/\\]+)\.md$/);
+    return match ? this.repo.getItem(match[1]) : undefined;
+  }
+
+  private readTextFallback(filePath: string): string | null {
+    try {
+      return fs.readFileSync(filePath, 'utf-8');
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -151,7 +288,7 @@ export class LibraryService {
     const target = path.join(dir, `${safeName}-${contentHash.slice(0, 8)}.md`);
     if (!fs.existsSync(target)) fs.writeFileSync(target, text);
 
-    return this.addItem({
+    const item = this.addItem({
       projectId,
       title: args.title,
       kind: 'artifact',
@@ -162,6 +299,19 @@ export class LibraryService {
       sourceRoleId: args.sourceRoleId,
       contentHash,
     }, now);
+    if (item.learnStatus === 'pending') {
+      this.repo.updateLearnStatus(item.id, 'running', { error: null, now });
+      try {
+        writeLearnedSidecar(this.libraryDir(projectId), item.id, text);
+        this.repo.updateLearnStatus(item.id, 'ready', { error: null, now });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.repo.updateLearnStatus(item.id, 'failed', { error: message, now });
+        throw error;
+      }
+      return this.repo.getItem(item.id) ?? item;
+    }
+    return item;
   }
 
   list(options?: LibraryListOptions): LibraryItem[] {
@@ -177,8 +327,14 @@ export class LibraryService {
     patch: { title?: string; tags?: string[]; summary?: string | null; projectId?: string | null },
     now: number = Date.now(),
   ): LibraryItem | undefined {
+    const previous = this.repo.getItem(id);
     const changed = this.repo.updateItem(id, patch, now);
-    return changed ? this.repo.getItem(id) : undefined;
+    if (!changed) return undefined;
+    const next = this.repo.getItem(id);
+    if (previous && next && previous.projectId !== next.projectId) {
+      moveLearnedSidecar(this.libraryDir(previous.projectId), this.libraryDir(next.projectId), id);
+    }
+    return next;
   }
 
   /** 删除条目；upload 类且文件在资料库目录内时一并删除文件 */
@@ -197,6 +353,7 @@ export class LibraryService {
         }
       }
     }
+    if (removed) removeLearnedSidecar(this.libraryDir(item.projectId), item.id);
     return removed;
   }
 

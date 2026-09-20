@@ -797,10 +797,20 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       source_session_id TEXT,
       source_role_id TEXT,
       content_hash TEXT,
+      learn_status TEXT NOT NULL DEFAULT 'pending',
+      learn_error TEXT,
+      learn_updated_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
   `);
+  // 学习状态列（N-LIBRARY-LEARN-STATUS）：旧行迁移视为 pending（默认值回填）——
+  // 它们没有抽取文本，标 ready 等于假装已学习；等 sweepPending 补跑解析。
+  // 枚举校验由应用层 contract（LIBRARY_LEARN_STATUSES）负责，列保持 TEXT 不加 CHECK
+  // （对齐 master_tasks.status 先例）。
+  safeAlter(db, `ALTER TABLE library_items ADD COLUMN learn_status TEXT NOT NULL DEFAULT 'pending'`, logger);
+  safeAlter(db, `ALTER TABLE library_items ADD COLUMN learn_error TEXT`, logger);
+  safeAlter(db, `ALTER TABLE library_items ADD COLUMN learn_updated_at INTEGER`, logger);
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_library_items_project ON library_items(project_id, updated_at DESC)`,
   );

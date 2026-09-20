@@ -200,4 +200,21 @@ describe('BrowserTargetRefRegistry owner and document fences', () => {
       targetRef: current,
     });
   });
+
+  it('clear:false 保留主模型步前 tref，两轮内环写入后仍可解析', async () => {
+    const registry = new BrowserTargetRefRegistry();
+    const mainRef = targetRef(registry.createSnapshotId());
+    const firstInner = targetRef(registry.createSnapshotId());
+    const secondInner = targetRef(registry.createSnapshotId());
+    registry.addRecords([record(mainRef)]);
+    registry.addRecords([record(firstInner)], Date.now(), { clear: false });
+    registry.addRecords([record(secondInner)], Date.now(), { clear: false });
+
+    await expect(registry.resolve(mainRef, () => fakeTab())).resolves.toMatchObject({
+      targetRef: mainRef,
+    });
+    await expect(registry.resolve(secondInner, () => fakeTab())).resolves.toMatchObject({
+      targetRef: secondInner,
+    });
+  });
 });

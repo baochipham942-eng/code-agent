@@ -35,9 +35,20 @@ export interface CdpDomSnapshotPayload {
   strings: string[];
 }
 
+/** Inner-loop only: parser lifts input attrs the tool-facing snapshot JSON does not expose. */
+export interface JevInteractiveExtras {
+  inputType: string | null;
+  autocomplete: string | null;
+  accept: string | null;
+}
+
+const DEFAULT_MAX_INTERACTIVE_ELEMENTS = 80;
+export const JEV_MAX_INTERACTIVE_ELEMENTS = 1024;
+
 export interface ParsedBrowserDomSnapshot {
   headings: BrowserDomSnapshot['headings'];
   interactiveElements: BrowserDomSnapshot['interactiveElements'];
+  elementExtras: JevInteractiveExtras[];
   targetRefRecords: BrowserTargetRefRecord[];
   frameDocuments: NonNullable<BrowserDomSnapshot['frameDocuments']>;
 }
@@ -210,10 +221,21 @@ export function parseBrowserDomSnapshot(args: {
   pageUrl: string;
   capturedAtMs: number;
   targetRefTtlMs: number;
+  /** Tool-facing default stays 80. Jev inner loop passes 1024. */
+  maxInteractiveElements?: number;
 }): ParsedBrowserDomSnapshot {
-  const { payload, snapshotId, tabId, pageUrl, capturedAtMs, targetRefTtlMs } = args;
+  const {
+    payload,
+    snapshotId,
+    tabId,
+    pageUrl,
+    capturedAtMs,
+    targetRefTtlMs,
+    maxInteractiveElements = DEFAULT_MAX_INTERACTIVE_ELEMENTS,
+  } = args;
   const headings: BrowserDomSnapshot['headings'] = [];
   const interactiveElements: BrowserDomSnapshot['interactiveElements'] = [];
+  const elementExtras: JevInteractiveExtras[] = [];
   const targetRefRecords: BrowserTargetRefRecord[] = [];
   const frameDocuments: NonNullable<BrowserDomSnapshot['frameDocuments']> = [];
 
@@ -248,7 +270,7 @@ export function parseBrowserDomSnapshot(args: {
           documentRevision: revision,
         });
       }
-      if (interactiveElements.length >= 80) continue;
+      if (interactiveElements.length >= maxInteractiveElements) continue;
       const attributes = attributesForNode(nodes, payload.strings, nodeIndex);
       if (!isInteractiveElement(tag, attributes, clickable, nodeIndex)) continue;
       const rect = bounds.get(nodeIndex);
@@ -287,8 +309,13 @@ export function parseBrowserDomSnapshot(args: {
         ...(shadow.open.has(nodeIndex) ? { shadowRoot: true } : {}),
         rect,
       });
+      elementExtras.push({
+        inputType: attributes.type || null,
+        autocomplete: attributes.autocomplete || null,
+        accept: attributes.accept || null,
+      });
     }
   }
 
-  return { headings, interactiveElements, targetRefRecords, frameDocuments };
+  return { headings, interactiveElements, elementExtras, targetRefRecords, frameDocuments };
 }

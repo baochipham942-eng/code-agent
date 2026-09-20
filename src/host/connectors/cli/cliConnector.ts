@@ -327,13 +327,16 @@ export function createCliConnector(
     }
   };
 
-  const ensureInstalled = async (trackConnect = false): Promise<void> => {
+  const ensureInstalled = async (trackConnect = false, forceReinstall = false): Promise<void> => {
     const expectedPackageVersion = descriptor.packageJsonVersion ?? descriptor.version;
+    // alreadyInstalled 只看版本号+可执行位，识别不了「同版本但运行即 127」的坏
+    // 二进制——自愈（127 触发）与用户手动重装必须 forceReinstall 跳过短路，
+    // 否则坏二进制会被永远复用（PR#1970 ai-review）。
     const alreadyInstalled = async (): Promise<boolean> => (
       await installedVersion() === expectedPackageVersion && await hasExecutable()
     );
     const runInstall = async (): Promise<void> => {
-      if (await alreadyInstalled()) return;
+      if (!forceReinstall && await alreadyInstalled()) return;
       await mkdir(installPrefix, { recursive: true });
       await run(
         npmExecutable,
@@ -356,7 +359,7 @@ export function createCliConnector(
           throw new Error(`${descriptor.binaryName} installation already failed`);
         }
       }
-      if (await alreadyInstalled()) return;
+      if (!forceReinstall && await alreadyInstalled()) return;
       if (!trackConnect) return;
     }
 
@@ -394,7 +397,7 @@ export function createCliConnector(
           binaryPath,
         });
         try {
-          await ensureInstalled();
+          await ensureInstalled(false, true);
         } catch (installError) {
           logger.warn('CLI connector self-heal install failed', {
             providerId: descriptor.id,
@@ -421,6 +424,12 @@ export function createCliConnector(
             statusTimeoutMs,
           );
         } catch (statusError) {
+          // 装完仍 ENOENT/127 才算安装失败；未登录等其他错误抛回外层，
+          // 走 isMissingConfiguration 等既有分类，不能误标 installState
+          // （PR#1970 ai-review：误标会把正常未登录用户打进 10 分钟冷却）。
+          const stillMissing = systemErrorCode(statusError) === 'ENOENT'
+            || (statusError instanceof CliConnectorCommandError && statusError.exitCode === 127);
+          if (!stillMissing) throw statusError;
           logger.warn('CLI connector still missing after self-heal install', {
             providerId: descriptor.id,
             binaryPath,
@@ -638,6 +647,8 @@ export function createCliConnector(
       if (connectCancelled) throw cancelledError();
     };
     try {
+      // 坏二进制（同版本但 127）由 connect 内 status(true) 的自愈腿强制重装覆盖，
+      // connect 自身不 force——否则每次点连接都白跑一次 npm install。
       await ensureInstalled(true);
       assertNotCancelled();
       if (descriptor.checkStatusBeforeAuth) {

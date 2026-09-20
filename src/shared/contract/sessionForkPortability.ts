@@ -80,15 +80,6 @@ export interface PortableAgentEngineV2 {
   origin?: 'manual' | 'import' | 'external';
 }
 
-/** Provenance for a history file imported from an external agent engine. */
-export interface PortableExternalHistoryProvenanceV1 {
-  kind: 'external_history';
-  engine: 'codex_cli' | 'claude_code';
-  sourceSessionId: string;
-  sourceDigest: string;
-  sourcePathDigest: string;
-}
-
 interface PortableForkPathMappingV1 {
   sourceRootDigest: string;
   /** Repository-relative source path. `.` denotes the target repository root. */
@@ -173,9 +164,10 @@ export interface PortableSessionV2 {
   title: string;
   modelConfig: PortableModelConfigV2;
   type?: SessionType;
-  origin?: Omit<SessionOrigin, 'metadata'> & {
-    metadata?: PortableExternalHistoryProvenanceV1;
-  };
+  // N-EXTHISTORY-IMPORT-WIRE: validatePortableSessionOrigin only allows kind/name —
+  // 'metadata' has no decode-side consumer, so the type doesn't declare a shape decode
+  // never accepts.
+  origin?: Omit<SessionOrigin, 'metadata'>;
   memoryMode?: SessionMemoryMode;
   suppressedMemoryEntryIds?: string[];
   readOnly?: boolean;

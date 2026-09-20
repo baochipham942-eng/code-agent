@@ -108,6 +108,61 @@ describe('session fork portability codecs', () => {
     })).toEqual(envelope);
   });
 
+  it('rejects a foreign envelope smuggling toolCalls[].result.outputPath past decode', () => {
+    // sanitizeToolCall never copies result.outputPath (a local filesystem path), so a
+    // real export can't produce this shape. But nothing stopped decode from accepting
+    // it from an untrusted wire envelope before this fix — the digest is self-computed,
+    // so an attacker who recomputes it after adding the field would sail through.
+    // assertOnlyKeys on the toolCalls/toolResults elements is what actually closes it.
+    const envelope = buildSessionExportEnvelopeV2(subtreeDraft());
+    const foreign = {
+      ...envelope,
+      messages: envelope.messages.map((item) => (
+        item.id === 'ca1' && item.toolCalls
+          ? {
+            ...item,
+            toolCalls: item.toolCalls.map((call) => ({
+              ...call,
+              result: { ...call.result, success: true, outputPath: '/Users/private/.env' },
+            })),
+          }
+          : item
+      )),
+    };
+
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(foreign), {
+      ownerScopeId: OWNER_ID,
+      projectId: PROJECT_ID,
+    })).toThrow(/outputPath is not part of the portable schema/u);
+  });
+
+  it('rejects a foreign envelope smuggling toolResults[].outputPath past decode', () => {
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    const ca1 = childEntry.messages.find((entry) => entry.id === 'ca1')!;
+    ca1.toolResults = [{ toolCallId: 'call-ca1', success: true }];
+    const envelope = buildSessionExportEnvelopeV2(draft);
+    const foreign = {
+      ...envelope,
+      messages: envelope.messages.map((item) => (
+        item.id === 'ca1' && item.toolResults
+          ? {
+            ...item,
+            toolResults: item.toolResults.map((result) => ({
+              ...result,
+              outputPath: '/Users/private/.env',
+            })),
+          }
+          : item
+      )),
+    };
+
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(foreign), {
+      ownerScopeId: OWNER_ID,
+      projectId: PROJECT_ID,
+    })).toThrow(/outputPath is not part of the portable schema/u);
+  });
+
   it('never exports message.metadata, including turnDiff/retryAttachments/artifactLocator/channel leaks', () => {
     const draft = subtreeDraft();
     const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
@@ -294,6 +349,25 @@ describe('session fork portability codecs', () => {
     // necessarily differs from the stored v2 digest (the `version` field changed).
     expect(decoded.payloadDigest).not.toBe(legacy.payloadDigest);
     expect(() => encodeSessionExportEnvelopeV2(decoded)).not.toThrow();
+  });
+
+  it('rejects a v2 envelope whose content drifted after it was persisted', () => {
+    // The v2->v3 migration rehashes every digest (the `version` field participates in
+    // the hash, so a pure version bump desyncs them). rehashing on decode is required
+    // to make the migrated shape self-consistent, but it must not become a way to
+    // silently "launder" a tampered v2 payload — decode has to catch drift/corruption
+    // against the ORIGINAL v2 digest before it ever rehashes.
+    const { conversationHistory: _dropped, ...v3Shape } = buildSessionExportEnvelopeV2(subtreeDraft());
+    const legacy = rehashSessionExportEnvelopeV2({ ...v3Shape, version: 2 } as never);
+    const tampered = {
+      ...legacy,
+      sessions: legacy.sessions.map((session, index) => (
+        index === 0 ? { ...session, title: `${session.title}-tampered` } : session
+      )),
+    };
+
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(tampered)))
+      .toThrow(/DIGEST_MISMATCH/u);
   });
 
   it('represents a single child as detached provenance without claiming an attached parent', () => {

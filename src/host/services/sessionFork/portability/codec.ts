@@ -888,6 +888,35 @@ export function validateSessionExportEnvelopeV2(
   assertDigest(envelope.payloadDigest, portabilityDigest(withoutDigest(envelope)), 'session export envelope');
 }
 
+// A version migration (e.g. v2->v3) is a pure `version` bump with no other structural
+// change, so it desyncs every payloadDigest that was computed over the old version
+// number. rehashSessionExportEnvelopeV2 unconditionally recomputes those digests to
+// match the migrated shape — which is required to make the migrated envelope
+// self-consistent, but on its own means a decode of a *migrating* envelope never
+// actually checks whether the stored content was tampered with or corrupted: it just
+// recomputes digests from whatever bytes are on disk and asserts they match themselves.
+// So verify integrity against the ORIGINAL (pre-migration) digests first, using the
+// content exactly as parsed — before anything is rehashed.
+function verifyLegacyEnvelopeDigests(raw: Record<string, unknown>): void {
+  if (!Array.isArray(raw.sessions)) {
+    fail('INVALID_ENVELOPE', 'sessions must be an array');
+  }
+  for (const session of raw.sessions as PortableSessionV2[]) {
+    assertObject(session, 'portable session');
+    assertDigest(
+      session.payloadDigest,
+      portabilityDigest(withoutDigest(session)),
+      `session ${session.id}`,
+    );
+  }
+  validateLineageDigests(raw.lineage as ForkLineageEnvelopeV1);
+  assertDigest(
+    raw.payloadDigest as string,
+    portabilityDigest(withoutDigest(raw as unknown as SessionExportEnvelopeV2)),
+    'session export envelope',
+  );
+}
+
 export function rehashSessionExportEnvelopeV2(
   envelope: Omit<SessionExportEnvelopeV2, 'payloadDigest'> | SessionExportEnvelopeV2,
 ): SessionExportEnvelopeV2 {
@@ -998,9 +1027,11 @@ export function decodeSessionExportEnvelopeV2(
   }
   let envelope = current as SessionExportEnvelopeV2;
   if (sourceVersion !== SESSION_EXPORT_ENVELOPE_VERSION) {
-    // The registered migration only bumps `version` (structurally a no-op otherwise);
-    // it deliberately leaves payloadDigest untouched, which desyncs it from the
-    // migrated shape. Rehash so the digest is self-consistent before validating it.
+    // Verify against the digests as originally written (pre-migration) BEFORE
+    // rehashing, so a tampered/corrupted v2 payload is rejected instead of silently
+    // re-signed. Only then bump the version and rehash so the digest is
+    // self-consistent for validation below.
+    verifyLegacyEnvelopeDigests(parsed as Record<string, unknown>);
     envelope = rehashSessionExportEnvelopeV2(envelope);
   }
   validateSessionExportEnvelopeV2(envelope, scope);

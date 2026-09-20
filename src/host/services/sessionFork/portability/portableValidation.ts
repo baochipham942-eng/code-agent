@@ -114,9 +114,29 @@ export function validateMessageOrdinals(messages: PortableMessageV2[], sessionId
       }
       for (const [callIndex, call] of message.toolCalls.entries()) {
         assertObject(call, `message ${message.id} toolCalls[${callIndex}]`);
+        assertOnlyKeys(call as unknown as Record<string, unknown>, [
+          'id', 'name', 'arguments', 'result', 'shortDescription', 'stepLabel',
+          'targetContext', 'expectedOutcome',
+        ], `message ${message.id} toolCalls[${callIndex}]`);
         assertNonEmptyString(call.id, `message ${message.id} toolCalls[${callIndex}].id`);
         assertNonEmptyString(call.name, `message ${message.id} toolCalls[${callIndex}].name`);
         assertObject(call.arguments, `message ${message.id} toolCalls[${callIndex}].arguments`);
+        if (call.result !== undefined) {
+          assertObject(call.result, `message ${message.id} toolCalls[${callIndex}].result`);
+          assertOnlyKeys(
+            call.result as unknown as Record<string, unknown>,
+            ['success', 'output', 'error', 'duration'],
+            `message ${message.id} toolCalls[${callIndex}].result`,
+          );
+        }
+        if (call.targetContext !== undefined) {
+          assertObject(call.targetContext, `message ${message.id} toolCalls[${callIndex}].targetContext`);
+          assertOnlyKeys(
+            call.targetContext as unknown as Record<string, unknown>,
+            ['kind', 'label', 'iconHint'],
+            `message ${message.id} toolCalls[${callIndex}].targetContext`,
+          );
+        }
         if (toolCallIds.has(call.id)) {
           fail('REFERENCE_NOT_CLOSED', `message ${message.id} has duplicate tool call id ${call.id}`);
         }
@@ -129,6 +149,9 @@ export function validateMessageOrdinals(messages: PortableMessageV2[], sessionId
       }
       for (const [resultIndex, result] of message.toolResults.entries()) {
         assertObject(result, `message ${message.id} toolResults[${resultIndex}]`);
+        assertOnlyKeys(result as unknown as Record<string, unknown>, [
+          'toolCallId', 'success', 'output', 'error', 'duration',
+        ], `message ${message.id} toolResults[${resultIndex}]`);
         assertNonEmptyString(result.toolCallId, `message ${message.id} toolResults[${resultIndex}].toolCallId`);
         if (typeof result.success !== 'boolean') {
           fail('INVALID_ENVELOPE', `message ${message.id} toolResults[${resultIndex}].success must be a boolean`);

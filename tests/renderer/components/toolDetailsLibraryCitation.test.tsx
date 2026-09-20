@@ -66,6 +66,17 @@ describe('ToolDetails library citations', () => {
     vi.clearAllMocks();
   });
 
+  it('cell citation without a line anchor does not project library evidence', async () => {
+    render(<ToolDetails toolCall={toolCallWith([
+      citation({ id: 'c-cell', type: 'cell', source: '/tmp/sheet.xlsx', label: 'B15' }),
+    ])} />);
+
+    screen.getByText('B15').click();
+    await waitFor(() => {
+      expect(projectLibraryEvidence).not.toHaveBeenCalled();
+    });
+  });
+
   it('URL citation keeps window.open and does not project library evidence', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
     render(<ToolDetails toolCall={toolCallWith([
@@ -119,7 +130,7 @@ describe('ToolDetails library citations', () => {
   it('evidence IPC failure shows an error instead of rejecting', async () => {
     projectLibraryEvidence.mockRejectedValue(new Error('IPC down'));
     render(<ToolDetails toolCall={toolCallWith([
-      citation({ id: 'c-err', type: 'file', source: '/tmp/a.md', label: 'a.md' }),
+      citation({ id: 'c-err', type: 'file', source: '/tmp/a.md', label: 'a.md', location: 'line:1' }),
     ])} />);
 
     screen.getByText('a.md').click();

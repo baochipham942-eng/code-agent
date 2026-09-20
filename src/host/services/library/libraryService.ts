@@ -155,6 +155,10 @@ export class LibraryService {
     this.learningIds.add(id);
     try {
       if (item.kind !== 'upload' && item.kind !== 'artifact') {
+        if (item.learnStatus === 'ready') return item;
+        if (item.learnStatus === 'pending' || item.learnStatus === 'failed') {
+          this.repo.updateLearnStatus(id, 'running', { error: null, now });
+        }
         this.repo.updateLearnStatus(id, 'ready', { error: null, now });
         return this.repo.getItem(id) ?? item;
       }

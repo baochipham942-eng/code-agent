@@ -46,7 +46,7 @@ export interface ExtractedLibraryText {
 /** 该路径是否有学习管线认识的抽取路径（无 = 登记型条目，学习环节直接 ready） */
 export function hasLibraryTextExtractor(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
-  return TEXT_EXTENSIONS.has(ext) || ext === '.pdf' || ext === '.docx' || ext === '.xlsx' || ext === '.xls';
+  return TEXT_EXTENSIONS.has(ext) || ext === '.pdf' || ext === '.docx' || ext === '.xlsx';
 }
 
 /** 文本型后缀（依据片段可直接读原件兜底） */
@@ -77,7 +77,7 @@ export async function extractLibraryText(filePath: string): Promise<ExtractedLib
     const extracted = await mammoth.extractRawText({ buffer });
     raw = extracted.value;
     method = 'mammoth';
-  } else if (ext === '.xlsx' || ext === '.xls') {
+  } else if (ext === '.xlsx') {
     raw = await extractXlsxText(filePath);
     method = 'exceljs';
   } else {

@@ -181,4 +181,22 @@ describe('LibraryService', () => {
     expect(learned?.learnStatus).toBe('ready');
     expect(service.projectEvidence({ source: artifactPath, location: 'line:1' }).hit).toBe(true);
   });
+
+  it('迁移后的 capture/external_ref pending 可由 sweep 合法变为 ready', async () => {
+    const item = service.addItem({
+      title: '网页摘录',
+      kind: 'capture',
+      pathOrUri: 'https://example.com/note',
+      learnStatus: 'pending',
+    }, 1000);
+    expect(item.learnStatus).toBe('pending');
+    await expect(service.sweepPendingLearn(2000)).resolves.toBe(1);
+    expect(service.get(item.id)?.learnStatus).toBe('ready');
+  });
+
+  it('.xls 明确不支持抽取，不得假装可学习', async () => {
+    const item = await service.importFile({ sourcePath: writeSource('old.xls', 'not-ooxml') }, 1000);
+    expect(item.learnStatus).toBe('failed');
+    expect(item.learnError).toContain('.xls');
+  });
 });

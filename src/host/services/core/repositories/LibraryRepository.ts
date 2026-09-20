@@ -215,7 +215,7 @@ export class LibraryRepository {
     const rows = this.db
       .prepare(
         `SELECT id FROM library_items
-         WHERE learn_status = 'pending' AND kind IN ('upload', 'artifact')
+         WHERE learn_status = 'pending'
          ORDER BY updated_at ASC LIMIT ?`,
       )
       .all(limit) as SQLiteRow[];

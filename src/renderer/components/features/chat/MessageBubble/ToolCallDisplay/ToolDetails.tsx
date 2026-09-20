@@ -430,6 +430,9 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
         const citations = rawCitations as Citation[];
         const handleCitationClick = async (citation: Citation): Promise<boolean> => {
           if (citation.type === 'url' || citation.type === 'memory') return false;
+          const hasLineAnchor = Boolean(citation.lineRange)
+            || /^lines?:(\d+)/i.test(citation.location ?? '');
+          if (!hasLineAnchor) return false;
           setLibraryEvidence(null);
           setLoadingLibraryEvidence(true);
           try {

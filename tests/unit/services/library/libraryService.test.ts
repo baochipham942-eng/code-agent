@@ -177,6 +177,20 @@ describe('LibraryService', () => {
     expect(outOfRange.fragment).toBeUndefined();
   });
 
+  it('无抽取器的 artifact 经 sweep 落 ready 而不是 failed', async () => {
+    const artifactPath = writeSource('deck.pptx', 'binary');
+    const item = service.addItem({
+      title: 'deck.pptx',
+      kind: 'artifact',
+      pathOrUri: artifactPath,
+      learnStatus: 'pending',
+    }, 1000);
+    expect(item.learnStatus).toBe('pending');
+    await expect(service.sweepPendingLearn(2000)).resolves.toBe(1);
+    expect(service.get(item.id)?.learnStatus).toBe('ready');
+    expect(service.get(item.id)?.learnError).toBeUndefined();
+  });
+
   it('可抽取的 artifact 不得假装 ready：先 pending，sweep 后才有 sidecar', async () => {
     const artifactPath = writeSource('notes.md', '归档正文');
     const item = service.addItem({

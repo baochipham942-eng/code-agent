@@ -169,6 +169,10 @@ export class LibraryService {
 
       this.repo.updateLearnStatus(id, 'running', { error: null, now });
       try {
+        if (item.kind === 'artifact' && defaultLearnStatus(item.kind, item.pathOrUri) === 'ready') {
+          this.repo.updateLearnStatus(id, 'ready', { error: null, now });
+          return this.repo.getItem(id) ?? item;
+        }
         if (!hasLibraryTextExtractor(item.pathOrUri)) {
           throw new Error(`不支持抽取文本的格式: ${path.extname(item.pathOrUri) || '(无后缀)'}`);
         }

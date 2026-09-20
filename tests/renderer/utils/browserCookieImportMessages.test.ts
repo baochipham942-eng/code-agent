@@ -8,6 +8,7 @@ const copy = {
   profileNotFound: 'PROFILE_NOT_FOUND',
   cookieDbMissing: 'COOKIE_DB_MISSING',
   notConfirmed: 'NOT_CONFIRMED',
+  domainAllowlistRequired: 'DOMAIN_ALLOWLIST_REQUIRED',
   managedBrowserUnavailable: 'MANAGED_UNAVAILABLE',
   unsupportedPlatform: 'UNSUPPORTED',
   decryptFailed: 'DECRYPT_FAILED',

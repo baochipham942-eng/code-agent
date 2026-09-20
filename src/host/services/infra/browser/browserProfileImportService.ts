@@ -190,6 +190,20 @@ export async function importBrowserProfileCookies(
     });
   }
 
+  const domainAllowlist = Array.from(new Set((Array.isArray(request.domainAllowlist) ? request.domainAllowlist : [])
+    .filter((domain): domain is string => typeof domain === 'string')
+    .map((domain) => domain.trim().toLowerCase())
+    .filter(Boolean)));
+  if (domainAllowlist.length === 0) {
+    return failureResult({
+      source: request.source,
+      profileId: request.profileId,
+      code: 'domain_allowlist_required',
+      message: 'Profile cookie import requires at least one approved domain.',
+      startedAt,
+    });
+  }
+
   if (platform !== 'darwin') {
     return failureResult({
       source: request.source,
@@ -330,7 +344,7 @@ export async function importBrowserProfileCookies(
         skippedCookieCount += 1;
         continue;
       }
-      if (!domainMatchesAllowlist(domain, request.domainAllowlist)) {
+      if (!domainMatchesAllowlist(domain, domainAllowlist)) {
         skippedCookieCount += 1;
         continue;
       }
@@ -421,7 +435,7 @@ export async function importBrowserProfileCookies(
       expiredSkippedCount,
       domainCount: domains.length,
       domains,
-      selectedDomainCount: request.domainAllowlist?.length ?? null,
+      selectedDomainCount: domainAllowlist.length,
       accountState,
       failureCode: null,
       failureMessage: null,

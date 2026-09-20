@@ -55,7 +55,7 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
 }));
 
 // CLI / SaaS 连接器（feishu/tmeet）的登录态走另一条 oauthStatus 通道
-const oauthStatusesState = [] as { id: string; connected: boolean; stale?: boolean }[];
+const oauthStatusesState = [] as { id: string; connected: boolean; stale?: boolean; installState?: 'failed' }[];
 const oauthEnabledCapture = vi.hoisted(() => ({ value: undefined as boolean | undefined }));
 vi.mock('../../../src/renderer/hooks/useConnectorOAuthStatuses', () => ({
   useConnectorOAuthStatuses: (_key: string, enabled?: boolean) => {
@@ -167,6 +167,21 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
 
     fireEvent.mouseLeave(chip.parentElement!);
     expect(screen.queryByTestId(hoverId)).toBeNull();
+  });
+
+  it('install_error 时 chip 和悬停卡露出没装好·重装', () => {
+    registryState.connectors = [makeConnector('tmeet', true, false)];
+    oauthStatusesState.push({ id: 'tmeet', connected: false, installState: 'failed' });
+    render(<MountedConnectorIcons />);
+
+    const repair = screen.getByTestId('mounted-capability-repair-tmeet');
+    expect(repair.textContent).toContain('没装好·重装');
+
+    fireEvent.mouseEnter(screen.getByTestId('mounted-capability-connector-tmeet').parentElement!);
+    const card = screen.getByTestId('mounted-capability-source-connector-tmeet');
+    expect(card.textContent).toContain('没装好·重装');
+    fireEvent.click(screen.getByTestId('mounted-capability-source-repair-tmeet'));
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'connector', id: 'tmeet' });
   });
 
   it('手选的那颗没连上：卡里给「去能力中心连接」，点了带 id 跳过去', () => {

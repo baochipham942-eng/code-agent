@@ -15,6 +15,10 @@ export type BrowserAgentWindowCopy = {
   importCookiesTitle: string;
   importCookiesHint: string;
   importCookiesSelectLabel: string;
+  importCookiesDomainSelectLabel: string;
+  importCookiesImportAll: string;
+  importCookiesImportAllConfirm: string;
+  importCookiesDomainRequired: string;
   importCookiesConfirm: string;
   importCookiesCancel: string;
   importCookiesScanning: string;
@@ -50,6 +54,7 @@ function cookieImportFailureCopy(copy: BrowserAgentWindowCopy) {
     profileNotFound: copy.importCookiesProfileNotFound,
     cookieDbMissing: copy.importCookiesCookieDbMissing,
     notConfirmed: copy.importCookiesNotConfirmed,
+    domainAllowlistRequired: copy.importCookiesDomainRequired,
     managedBrowserUnavailable: copy.importCookiesManagedUnavailable,
     unsupportedPlatform: copy.importCookiesUnsupportedPlatform,
     decryptFailed: copy.importCookiesDecryptFailed,
@@ -74,6 +79,7 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
   const [profiles, setProfiles] = useState<BrowserProfileDescriptor[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -105,25 +111,29 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
         setProfiles(available);
         const first = available[0];
         setSelectedKey(first ? `${first.source}::${first.profileId}` : null);
+        setSelectedDomains([]);
       })
       .catch((error) => {
         setProfiles([]);
         setSelectedKey(null);
+        setSelectedDomains([]);
         setImportError(error instanceof Error ? error.message : copy.importCookiesUnknown);
       })
       .finally(() => setProfilesLoading(false));
   }, [copy.importCookiesUnknown]);
 
   const selected = profiles.find((item) => `${item.source}::${item.profileId}` === selectedKey) || null;
+  const domainOptions = selected?.cookieDomains || [];
 
-  const confirmImport = useCallback(async () => {
-    if (!selected || importBusy) return;
+  const importWithDomains = useCallback(async (domainAllowlist: string[]) => {
+    if (!selected || importBusy || domainAllowlist.length === 0) return;
     setImportBusy(true);
     setImportError(null);
     try {
       const result = await importBrowserProfileCookiesToPersonal({
         source: selected.source,
         profileId: selected.profileId,
+        domainAllowlist,
       });
       if (!result?.ok) {
         const human = humanizeBrowserCookieImportFailure(
@@ -151,6 +161,20 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
       setImportBusy(false);
     }
   }, [copy, importBusy, onImportNotice, selected]);
+
+  const confirmImport = useCallback(async () => {
+    if (selectedDomains.length === 0) {
+      setImportError(copy.importCookiesDomainRequired);
+      return;
+    }
+    await importWithDomains(selectedDomains);
+  }, [copy.importCookiesDomainRequired, importWithDomains, selectedDomains]);
+
+  const confirmImportAll = useCallback(async () => {
+    if (domainOptions.length === 0) return;
+    if (!window.confirm(copy.importCookiesImportAllConfirm)) return;
+    await importWithDomains(domainOptions.map((entry) => entry.domain));
+  }, [copy.importCookiesImportAllConfirm, domainOptions, importWithDomains]);
 
   return (
     <div ref={wrapperRef} className="relative shrink-0">
@@ -194,7 +218,7 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
         variant="info"
         confirmText={importBusy ? copy.importCookiesBusy : copy.importCookiesConfirm}
         cancelText={copy.importCookiesCancel}
-        confirmDisabled={importBusy || profilesLoading || !selected}
+        confirmDisabled={importBusy || profilesLoading || !selected || selectedDomains.length === 0}
         onCancel={() => {
           if (importBusy) return;
           setImportOpen(false);
@@ -214,13 +238,18 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
                 {copy.importCookiesEmpty}
               </p>
             ) : (
-              <label className="block space-y-1.5">
+              <>
+                <label className="block space-y-1.5">
                 <span className="text-xs text-zinc-400">{copy.importCookiesSelectLabel}</span>
                 <select
                   className="w-full rounded-md border border-white/10 bg-zinc-950/80 px-2 py-1.5 text-sm text-zinc-100"
                   value={selectedKey || ''}
                   disabled={importBusy}
-                  onChange={(event) => setSelectedKey(event.target.value || null)}
+                  onChange={(event) => {
+                    setSelectedKey(event.target.value || null);
+                    setSelectedDomains([]);
+                    setImportError(null);
+                  }}
                   data-testid="browser-cookie-import-profile-select"
                 >
                   {profiles.map((item) => (
@@ -233,6 +262,45 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
                   ))}
                 </select>
               </label>
+              {selected && (
+                <div className="space-y-1.5" data-testid="browser-cookie-import-domain-list">
+                  <span className="text-xs text-zinc-400">{copy.importCookiesDomainSelectLabel}</span>
+                  {domainOptions.length === 0 ? (
+                    <p className="text-xs text-zinc-500">{copy.importCookiesDomainRequired}</p>
+                  ) : (
+                    <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-white/10 bg-zinc-950/50 p-2">
+                      {domainOptions.map((entry) => {
+                        const checked = selectedDomains.includes(entry.domain);
+                        return (
+                          <label key={entry.domain} className="flex items-center gap-2 text-xs text-zinc-300">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={importBusy}
+                              onChange={() => setSelectedDomains((current) => checked
+                                ? current.filter((domain) => domain !== entry.domain)
+                                : [...current, entry.domain])}
+                              data-testid={`browser-cookie-import-domain-${entry.domain}`}
+                            />
+                            <span className="min-w-0 flex-1 truncate">{entry.domain}</span>
+                            <span className="text-zinc-500">{entry.cookieCount}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <button /* ds-allow:button: 紧凑文字链式「导入全部」入口，非通用动作按钮（同 PreviewPanel 先例） */
+                    type="button"
+                    className="text-[11px] text-badge-accent hover:underline disabled:opacity-50"
+                    disabled={importBusy || domainOptions.length === 0}
+                    onClick={() => void confirmImportAll()}
+                    data-testid="browser-cookie-import-all"
+                  >
+                    {copy.importCookiesImportAll}
+                  </button>
+                </div>
+              )}
+              </>
             )}
             {importError && (
               <p className="text-xs text-badge-danger" data-testid="browser-cookie-import-error">

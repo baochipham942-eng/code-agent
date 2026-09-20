@@ -104,6 +104,8 @@ export interface CliConnectorDescriptor {
   };
   authSteps: readonly CliAuthStep[];
   checkStatusBeforeAuth?: boolean;
+  /** Attempt installation once when a missing CLI binary makes status probing fail. */
+  autoInstallOnMissingStatus?: boolean;
   status: CliStatusDescriptor;
   logout: CliCommandDescriptor;
   missingConfigurationPattern?: RegExp;

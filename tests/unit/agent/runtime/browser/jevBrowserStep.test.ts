@@ -29,7 +29,6 @@ function targetRef(id: string, name: string, rect: { x: number; y: number; width
     refId: id,
     source: 'dom',
     selector: `#${id}`,
-    role: 'button',
     name,
     textHint: name,
     frameId: 'FRAME',
@@ -47,7 +46,6 @@ function button(id: string, text: string, y = 10): BrowserDomSnapshot['interacti
   const rect = { x: 0, y, width: 80, height: 20 };
   return {
     tag: 'button',
-    role: 'button',
     text,
     ariaLabel: text,
     placeholder: null,
@@ -65,12 +63,11 @@ function textbox(
   const rect = { x: 0, y: 10, width: 160, height: 24 };
   return {
     tag: 'input',
-    role: 'textbox',
     text: '',
     ariaLabel: name,
     placeholder,
     selectorHint: `#${id}`,
-    targetRef: { ...targetRef(id, name, rect), role: 'textbox' },
+    targetRef: targetRef(id, name, rect),
     rect,
   };
 }
@@ -421,12 +418,11 @@ describe('jevBrowserStep', () => {
   it('页面仅导航条有「登录」二字不 needs_review', async () => {
     const loginLink = {
       tag: 'a',
-      role: 'link',
       text: '登录',
       ariaLabel: '登录',
       placeholder: null,
       selectorHint: '#login',
-      targetRef: { ...targetRef('tref_login', '登录', { x: 0, y: 8, width: 48, height: 16 }), role: 'link' },
+      targetRef: targetRef('tref_login', '登录', { x: 0, y: 8, width: 48, height: 16 }),
       rect: { x: 0, y: 8, width: 48, height: 16 },
     };
     const host = new FakeHost([snapshot('首页', [loginLink, button('tref_go', '阅读', 80)])]);
@@ -445,7 +441,6 @@ describe('jevBrowserStep', () => {
     const page = snapshot('请登录', [button('tref_go', 'Submit', 80)]);
     page.snapshot.interactiveElements.push({
       tag: 'input',
-      role: 'textbox',
       text: '',
       ariaLabel: 'Password',
       placeholder: 'Password',
@@ -483,7 +478,6 @@ describe('jevBrowserStep', () => {
     ]);
     page.snapshot.interactiveElements.push({
       tag: 'input',
-      role: 'textbox',
       text: '',
       ariaLabel: 'Password',
       placeholder: 'Password',
@@ -525,7 +519,6 @@ describe('jevBrowserStep', () => {
     const page = snapshot('Upload', [button('tref_go', 'Submit', 80)]);
     page.snapshot.interactiveElements.push({
       tag: 'input',
-      role: 'textbox',
       text: '',
       ariaLabel: 'File',
       placeholder: null,
@@ -818,12 +811,12 @@ describe('jevBrowserStep', () => {
     expect(captureSpy).toHaveBeenCalledTimes(Number(result.metadata?.steps) + 1);
   });
 
-  it('element_exists 无 selectorHint 且无 role+name 的 override 丢弃+warn', async () => {
+  it('element_exists 无 selectorHint 且无 name 的 override 丢弃+warn', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       expect(extractJevAssertions('click Go', [
         { kind: 'element_exists' },
-        { kind: 'element_exists', needle: '', role: 'button' },
+        { kind: 'element_exists', needle: '', name: '   ' },
       ])).toEqual([]);
       expect(warn.mock.calls.some((call) => String(call[0]).includes('element_exists without locator'))).toBe(true);
 
@@ -1021,57 +1014,51 @@ describe('jevBrowserStep', () => {
     expect(plainHost.types[0]?.text).toBe(plainTask.slice(0, 80));
   });
 
-  it('stale 重绑要求 name+role+tag 都同，不同 tag 不得重绑', async () => {
-    const goButton = button('tref_go', 'Go');
-    goButton.targetRef = { ...goButton.targetRef, selector: 'button#tref_go' };
-    const goLink: BrowserDomSnapshot['interactiveElements'][number] = {
-      tag: 'a',
-      role: 'button',
-      text: 'Go',
-      ariaLabel: 'Go',
-      placeholder: null,
-      selectorHint: 'a#tref_link',
-      targetRef: { ...targetRef('tref_link', 'Go', { x: 0, y: 40, width: 80, height: 20 }), selector: 'a#tref_link' },
-      rect: { x: 0, y: 40, width: 80, height: 20 },
-    };
-    const host = new FakeHost([snapshot('Nav', [goButton, goLink])]);
+  it('click 抛 STALE_TARGET_REF → 不重绑不重试，fallback 交回主模型重选', async () => {
+    // 重名控件场景：选中第 5 行「删除」stale 后，DOM 首个同名「删除」不得被误点
+    const firstRowDelete = button('tref_del_1', '删除');
+    const host = new FakeHost([snapshot('List', [button('tref_del_5', '删除')])]);
     host.clickTargetRef = async (ref) => {
-      if (ref.refId === 'tref_go') {
-        host.pages[0] = snapshot('Nav', [goLink]);
+      host.clicks.push(ref.refId);
+      if (ref.refId === 'tref_del_5') {
+        host.pages[0] = snapshot('List', [firstRowDelete]);
         throw new BrowserTargetRefError('stale', ref.refId, ref.snapshotId);
       }
-      host.clicks.push(ref.refId);
     };
-    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_del_5' }));
     const result = await runLoop(host, systemOne, {
-      task: 'click Go until Never happens',
+      task: '点击第 5 行的删除按钮 until Never happens',
       assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
     });
-    expect(result.reason).toBe('stale_target');
-    expect(host.clicks).toEqual([]);
+    expect(result.status).toBe('fallback');
+    expect(String(result.reason)).toContain('stale_target');
+    expect(String(result.output)).toContain('目标已失效，请重新观察页面');
+    expect(host.clicks).toEqual(['tref_del_5']);
+    expect(systemOne).toHaveBeenCalledTimes(1);
   });
 
-  it('#id 选择器（解析不出 tag）用快照记录的 tag 也能重绑', async () => {
-    const replacement = button('tref_go2', 'Go'); // selector 仍是 `#tref_go2`，选择器解析 tag 为空
-    const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
-    host.clickTargetRef = async (ref) => {
-      if (ref.refId === 'tref_go') {
-        host.pages[0] = snapshot('Nav', [replacement]);
-        throw new BrowserTargetRefError('stale', ref.refId, ref.snapshotId);
-      }
-      host.clicks.push(ref.refId);
-    };
-    let calls = 0;
-    const systemOne = stubSystemOne(() => {
-      calls += 1;
-      return calls === 1 ? answers({ target: 'tref_go' }) : answers({ operation: 'stop', target: 'no_target', done: 0.2 });
+  it('element_exists：原生 <button> 无显式 role，按 name 命中 ⇒ met', () => {
+    const assertion = [{ id: 'a1', kind: 'element_exists' as const, needle: '', name: '提交订单' }];
+    const hit = evaluateJevAssertions(assertion, {
+      url: 'http://127.0.0.1/page',
+      title: 'List',
+      headings: [{ text: 'List' }],
+      elements: [{ text: '提交订单', ariaLabel: null, role: null, selectorHint: '#submit' }],
+      formValues: {},
+      downloads: [],
     });
-    const result = await runLoop(host, systemOne, {
-      task: 'click Go until Never happens',
-      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    expect(hit.results[0]?.met).toBe(true);
+    expect(hit.allMet).toBe(true);
+    const miss = evaluateJevAssertions(assertion, {
+      url: 'http://127.0.0.1/page',
+      title: 'List',
+      headings: [{ text: 'List' }],
+      elements: [{ text: '提交其他', ariaLabel: null, role: null, selectorHint: '#other' }],
+      formValues: {},
+      downloads: [],
     });
-    expect(result.reason).not.toBe('stale_target');
-    expect(host.clicks).toEqual(['tref_go2']);
+    expect(miss.results[0]?.met).toBe(false);
+    expect(miss.allMet).toBe(false);
   });
 
   it('当前页 query 与任务 URL 不同则导航', async () => {
@@ -1203,27 +1190,6 @@ describe('jevBrowserStep', () => {
     expect(host.types).toEqual([{ id: 'tref_email', text: 'typed-once' }]);
   });
 
-  it('stale 重绑后的 click 再超时 → action_uncertain 而非 stale_target', async () => {
-    const replacement = button('tref_go2', 'Go');
-    const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
-    host.clickTargetRef = async (ref) => {
-      if (ref.refId === 'tref_go') {
-        host.pages[0] = snapshot('Nav', [replacement]);
-        throw new BrowserTargetRefError('stale', ref.refId, ref.snapshotId);
-      }
-      throw new Error('timeout');
-    };
-    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
-    const result = await runLoop(host, systemOne, {
-      task: 'click Go until Never happens',
-      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
-    });
-    expect(result.status).toBe('fallback');
-    expect(String(result.reason)).toContain('action_uncertain');
-    expect(String(result.reason)).not.toBe('stale_target');
-    expect(systemOne).toHaveBeenCalledTimes(1);
-  });
-
   it('只读动作 scroll 抛 timeout 记录后继续，recent_steps 带 result=timeout', async () => {
     const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
     host.scroll = async () => {
@@ -1244,49 +1210,6 @@ describe('jevBrowserStep', () => {
     expect(JSON.stringify(systemOne.calls[1]?.recent_steps)).toMatch(/"result":"timeout"/);
     expect(JSON.stringify(systemOne.calls[1]?.recent_steps)).not.toMatch(/"result":"ok"/);
     expect(String(result.reason)).not.toContain('action_uncertain');
-  });
-
-  it('stale 重绑复用第一次 generateTypeValue，不二次调用', async () => {
-    const email = textbox('tref_email', 'Email', 'email');
-    email.targetRef = { ...email.targetRef, selector: 'input#tref_email' };
-    const host = new FakeHost([snapshot('Form', [email])]);
-    let typeCalls = 0;
-    host.typeTargetRef = async (ref, text) => {
-      typeCalls += 1;
-      if (typeCalls <= 2) {
-        if (typeCalls === 2) {
-          const rebound = textbox('tref_email2', 'Email', 'email');
-          rebound.targetRef = {
-            ...rebound.targetRef,
-            selector: 'input#tref_email2',
-            refId: 'tref_email2',
-          };
-          host.pages[0] = snapshot('Form', [rebound]);
-        }
-        throw new BrowserTargetRefError('stale', ref.refId, ref.snapshotId);
-      }
-      host.types.push({ id: ref.refId, text });
-    };
-    const systemOne = stubSystemOne(() => answers({ operation: 'type', target: 'tref_email' }));
-    let quickCalls = 0;
-    await runLoop(
-      host,
-      systemOne,
-      {
-        task: 'fill the email until Never happens',
-        assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
-      },
-      context(),
-      {
-        quickType: async () => {
-          quickCalls += 1;
-          return `value-${quickCalls}`;
-        },
-      },
-    );
-    expect(quickCalls).toBe(1);
-    expect(host.types[0]?.text).toBe('value-1');
-    expect(host.types[0]?.id).toBe('tref_email2');
   });
 
   it('type 操作把脱敏后的 placeholder 交给 quickType', async () => {

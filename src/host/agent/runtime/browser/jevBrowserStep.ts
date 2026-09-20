@@ -26,7 +26,6 @@ import {
   type JevCapturedSnapshot,
   type PreparedJevSnapshot,
 } from '../../../services/infra/browser/jevBrowserSnapshotPrep';
-import type { BrowserTargetRef } from '../../../services/infra/browser/types';
 import type { ToolContext, ToolExecutionResult } from '../../../tools/types';
 import {
   evaluateJevAssertions,
@@ -281,24 +280,6 @@ function sameUrl(current: string, target: string): boolean {
   } catch {
     return current === target;
   }
-}
-
-function rebindTarget(
-  prepared: PreparedJevSnapshot,
-  previous: BrowserTargetRef,
-  previousTag: string,
-): BrowserTargetRef | null {
-  // `#id` 类选择器解析不出 tag；快照记录的 tag（JevCandidate.tag）才是真源，选择器解析只做兜底。
-  const tag = (previousTag || '').trim().toLowerCase()
-    || previous.selector?.split(/[#.[]/)[0]?.toLowerCase()
-    || '';
-  const match = prepared.collected.find((candidate) => (
-    candidate.targetRef.name === previous.name
-    && (candidate.role || null) === (previous.role || null)
-    && tag !== ''
-    && candidate.tag.toLowerCase() === tag
-  ));
-  return match?.targetRef ?? null;
 }
 
 async function evidenceFrom(host: JevBrowserHost, captured: JevCapturedSnapshot) {
@@ -601,15 +582,13 @@ async function runJevBrowserStepLoop(
     }
 
     let opResult = 'ok';
-    let typedValue = '';
     try {
       if (applied.operation === 'click' && target) {
-        await clickWithRebind(deps.host, target, prepared);
+        await deps.host.clickTargetRef(target.targetRef);
       } else if (applied.operation === 'type' && target) {
         const value = await generateTypeValue(task, target, deps.quickType);
         if (value == null) return finish('fallback', 'type_value_unavailable');
-        typedValue = value;
-        await typeWithRebind(deps.host, target, typedValue, prepared);
+        await deps.host.typeTargetRef(target.targetRef, value);
       } else if (applied.operation === 'scroll_down') {
         await deps.host.scroll('down');
       } else if (applied.operation === 'scroll_up') {
@@ -622,21 +601,9 @@ async function runJevBrowserStepLoop(
         opResult = 'stop_unverified';
       }
     } catch (error) {
-      if (isStaleTargetRefError(error) && target) {
-        const refreshed = prepareJevBrowserSnapshot(await deps.host.capture(), task, {
-          mutateEmptyWindow: mutate === 'empty-window',
-        });
-        const rebound = rebindTarget(refreshed, target.targetRef, target.tag);
-        if (!rebound) return finish('fallback', 'stale_target');
-        try {
-          if (applied.operation === 'click') await deps.host.clickTargetRef(rebound);
-          else if (applied.operation === 'type') {
-            await deps.host.typeTargetRef(rebound, typedValue);
-          }
-        } catch (retryError) {
-          if (isStaleTargetRefError(retryError)) return finish('fallback', 'stale_target');
-          return finish('fallback', actionUncertainReason(applied.operation, retryError));
-        }
+      if (isStaleTargetRefError(error)) {
+        // 与基线对齐：不按 name 重绑（重名控件会误点别的元素），stale 直接交回主模型重选。
+        return finish('fallback', 'stale_target: 目标已失效，请重新观察页面');
       } else if (MUTATING_OPERATIONS.has(applied.operation)) {
         // 超时/异常不代表动作未送达（如点击已提交支付但 Promise 超时）。
         // 变更动作送达状态不确定时立即回落，不再进下一圈让 Jev 选动作，避免重复执行。
@@ -678,37 +645,6 @@ async function runJevBrowserStepLoop(
   }
 
   return finish('step_limit', 'step_limit');
-}
-
-async function clickWithRebind(
-  host: JevBrowserHost,
-  target: JevCandidate,
-  prepared: PreparedJevSnapshot,
-): Promise<void> {
-  try {
-    await host.clickTargetRef(target.targetRef);
-  } catch (error) {
-    if (!isStaleTargetRefError(error)) throw error;
-    const rebound = rebindTarget(prepared, target.targetRef, target.tag);
-    if (!rebound) throw error;
-    await host.clickTargetRef(rebound);
-  }
-}
-
-async function typeWithRebind(
-  host: JevBrowserHost,
-  target: JevCandidate,
-  value: string,
-  prepared: PreparedJevSnapshot,
-): Promise<void> {
-  try {
-    await host.typeTargetRef(target.targetRef, value);
-  } catch (error) {
-    if (!isStaleTargetRefError(error)) throw error;
-    const rebound = rebindTarget(prepared, target.targetRef, target.tag);
-    if (!rebound) throw error;
-    await host.typeTargetRef(rebound, value);
-  }
 }
 
 async function generateTypeValue(

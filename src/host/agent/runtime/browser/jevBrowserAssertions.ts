@@ -17,7 +17,6 @@ export interface JevPageAssertion {
   id: string;
   kind: JevAssertionKind;
   needle: string;
-  role?: string;
   name?: string;
   selectorHint?: string;
   /** Self-extracted navigate-target url_includes. Does not participate in allMet. */
@@ -65,15 +64,13 @@ function needleRequired(kind: JevAssertionKind): boolean {
 }
 
 function hasElementExistsLocator(candidate: {
-  role?: unknown;
   name?: unknown;
   selectorHint?: unknown;
 }): boolean {
   const selector = typeof candidate.selectorHint === 'string' ? candidate.selectorHint.trim() : '';
   if (selector) return true;
-  const role = typeof candidate.role === 'string' ? candidate.role.trim() : '';
   const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
-  return Boolean(role && name);
+  return Boolean(name);
 }
 
 function quotedActionPrecondition(prefix: string): boolean {
@@ -101,7 +98,6 @@ function sanitizeOverrideAssertion(raw: unknown, index: number): JevPageAssertio
     id?: unknown;
     kind?: unknown;
     needle?: unknown;
-    role?: unknown;
     name?: unknown;
     selectorHint?: unknown;
   };
@@ -127,7 +123,6 @@ function sanitizeOverrideAssertion(raw: unknown, index: number): JevPageAssertio
     kind: candidate.kind,
     needle: trimmedNeedle,
   };
-  if (typeof candidate.role === 'string') assertion.role = candidate.role;
   if (typeof candidate.name === 'string') assertion.name = candidate.name;
   if (typeof candidate.selectorHint === 'string') assertion.selectorHint = candidate.selectorHint;
   return assertion;
@@ -265,12 +260,14 @@ function matchAssertion(assertion: JevPageAssertion, evidence: JevAssertionEvide
     case 'form_value_equals':
       return Object.values(evidence.formValues).some((value) => normalize(value) === normalize(assertion.needle));
     case 'element_exists':
+      // 只按 name（文本/aria-label）匹配：element.role 是页面显式 role= 属性，
+      // 原生 button/input 恒为 null，role 相等条件生产恒不成立，已砍。
       return evidence.elements.some((element) => {
         if (assertion.selectorHint && element.selectorHint === assertion.selectorHint) return true;
-        if (assertion.role && assertion.name) {
-          return (element.role || '') === assertion.role && includesInsensitive(element.name || element.text, assertion.name);
-        }
-        return false;
+        if (!assertion.name) return false;
+        return includesInsensitive(element.name || '', assertion.name)
+          || includesInsensitive(element.text || '', assertion.name)
+          || includesInsensitive(element.ariaLabel || '', assertion.name);
       });
     case 'download_artifact_present':
       return evidence.downloads.some((artifact) => (

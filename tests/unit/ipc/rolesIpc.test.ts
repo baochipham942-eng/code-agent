@@ -67,7 +67,7 @@ vi.mock('../../../src/host/services/core/configService', () => {
     return result;
   };
   return {
-    getConfigService: () => ({
+    getConfigService: () => ({ onSettingsUpdated: vi.fn(),
       getSettings: () => mockSettingsStore.value,
       getApiKey: () => '',
       updateSettings: mockUpdateSettings.mockImplementation(async (updates: Record<string, unknown>) => {

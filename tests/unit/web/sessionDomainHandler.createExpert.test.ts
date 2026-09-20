@@ -12,7 +12,7 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({}),
 }));
 vi.mock('../../../src/host/task', () => ({ getTaskManager: () => ({}) }));
-vi.mock('../../../src/host/services/core/configService', () => ({ getConfigService: () => ({}) }));
+vi.mock('../../../src/host/services/core/configService', () => ({ getConfigService: () => ({ onSettingsUpdated: vi.fn(),}) }));
 vi.mock('../../../src/host/app/agentAppService', () => ({
   AgentAppServiceImpl: class {
     createSession = mocks.createSession;

@@ -34,7 +34,7 @@ const env = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: env.getSettings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: env.getSettings }),
 }));
 
 vi.mock('../../../src/host/platform', () => ({

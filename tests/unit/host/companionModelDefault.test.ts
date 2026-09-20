@@ -36,7 +36,7 @@ vi.mock('../../../src/host/services/auth/authService', () => ({
   getAuthService: () => ({ getCurrentUser: () => ({ id: 'owner-1' }) }),
 }));
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => settings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => settings }),
 }));
 
 type MonitorModule = typeof import('../../../src/host/model/providerHealthMonitor');

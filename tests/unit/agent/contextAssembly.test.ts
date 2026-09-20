@@ -152,7 +152,7 @@ vi.mock('../../../src/host/telemetry/systemPromptCache', () => ({
 }));
 
 vi.mock('../../../src/host/services', () => ({
-  getConfigService: () => ({ getApiKey: vi.fn().mockReturnValue('mock-key') }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: vi.fn().mockReturnValue('mock-key') }),
   getAuthService: () => ({}),
   getLangfuseService: () => ({
     startTrace: vi.fn(),

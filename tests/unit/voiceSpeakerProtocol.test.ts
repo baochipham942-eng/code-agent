@@ -62,7 +62,7 @@ vi.mock('../../src/host/services/roleAssets/builtinRoles', () => ({
     : undefined),
 }));
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ voice: { live: {} } }) }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({ voice: { live: {} } }) }),
 }));
 vi.mock('../../src/host/services/planning/taskStore', () => ({ getIncompleteTasks: () => [] }));
 // 本文件钉的是发言人协议（念不念 / 念什么 / 署谁的名），不是完成语义证据门。

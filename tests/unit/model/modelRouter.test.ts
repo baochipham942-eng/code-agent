@@ -78,7 +78,7 @@ vi.mock('../../../src/host/model/providers/moonshotProvider', () => ({
 // Mock configService
 const mockGetSettings = vi.hoisted(() => vi.fn(() => ({} as Record<string, unknown>)));
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getApiKey: vi.fn().mockReturnValue('mock-api-key'),
     getSettings: mockGetSettings,
   }),

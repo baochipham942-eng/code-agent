@@ -35,7 +35,7 @@ const svc = vi.hoisted(() => {
     recommendSkills: vi.fn(async () => [{ name: 'excel' }]),
   };
   const cloud = { getSkillCatalog: vi.fn(() => ({ repositories: [{ id: 'cloud-repo' }], categories: [] })) };
-  const config = { getServiceApiKey: vi.fn((): string | undefined => 'key-123') };
+  const config = { onSettingsUpdated: vi.fn(), getServiceApiKey: vi.fn((): string | undefined => 'key-123') };
   const recorder = {
     startRecording: vi.fn(),
     stopRecording: vi.fn(),

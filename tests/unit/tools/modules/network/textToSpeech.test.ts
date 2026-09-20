@@ -73,7 +73,7 @@ describe('text_to_speech — execute', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     existsSyncMock.mockReturnValue(true);
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue('test-zhipu-key'),
     });
   });
@@ -239,7 +239,7 @@ describe('text_to_speech — execute', () => {
   });
 
   it('rejects when api key missing', async () => {
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue(undefined),
     });
     const result = await executeTextToSpeech(

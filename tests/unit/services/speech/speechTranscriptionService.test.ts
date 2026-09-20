@@ -71,7 +71,7 @@ function configureSpeech(settings: Partial<SpeechInputSettings> = {}) {
     ...DEFAULT_SPEECH_INPUT_SETTINGS,
     ...settings,
   };
-  getConfigServiceMock.mockReturnValue({
+  getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
     getSettings: () => ({ speech }),
     getApiKey: (provider: string) => provider === 'groq' ? 'groq-key' : undefined,
   });
@@ -474,7 +474,7 @@ describe('SpeechTranscriptionService', () => {
   it('local-first 两条通道都断时报「没有可用通道」且不可重试（不把锅记在 Groq 头上）', async () => {
     // 真机现场：本机没装 whisper-cpp，又没配 Groq key —— 旧行为只报「未配置 Groq API Key」
     // 并给一个点了没用的「重试」，把用户指到错的地方。
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getSettings: () => ({ speech: { ...DEFAULT_SPEECH_INPUT_SETTINGS, mode: 'local-first' } }),
       getApiKey: () => undefined,
     });

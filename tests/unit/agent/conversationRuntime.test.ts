@@ -47,7 +47,7 @@ vi.mock('../../../src/host/agent/runtime/turnSnapshotWriter', () => ({
 }));
 
 vi.mock('../../../src/host/services', () => ({
-  getConfigService: () => ({ getApiKey: vi.fn().mockReturnValue('mock-key') }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: vi.fn().mockReturnValue('mock-key') }),
   getAuthService: () => ({}),
   getLangfuseService: () => ({
     startTrace: vi.fn(),

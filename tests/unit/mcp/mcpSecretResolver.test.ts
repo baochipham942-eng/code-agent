@@ -28,7 +28,7 @@ describe('resolveServerConfigSecrets', () => {
   });
 
   it('resolves stdio env and remote headers without changing the source configs', () => {
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getIntegration: vi.fn(() => ({
         APP_SECRET: 'stdio-secret',
         Authorization: 'Bearer remote-secret',
@@ -88,7 +88,7 @@ describe('resolveServerConfigSecrets', () => {
   });
 
   it('resolves remote URL credentials from secure headers without forwarding them as headers', () => {
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getIntegration: vi.fn(() => ({ TENCENT_MAP_KEY: 'map/key+secret' })),
     });
     const config: MCPServerConfig = {

@@ -26,7 +26,7 @@ vi.mock('fs', () => ({
 }));
 
 const { getConfigServiceMock } = vi.hoisted(() => ({
-  getConfigServiceMock: vi.fn(() => ({ getSettings: () => null })),
+  getConfigServiceMock: vi.fn(() => ({ onSettingsUpdated: vi.fn(), getSettings: () => null })),
 }));
 
 vi.mock('../../../../../src/host/services', () => ({
@@ -83,7 +83,7 @@ describe('music_generate — execute', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     existsSyncMock.mockReturnValue(true);
-    getConfigServiceMock.mockReturnValue({ getSettings: () => null });
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(), getSettings: () => null });
     resolveMusicModelEndpointMock.mockReturnValue({
       baseUrl: 'https://api.minimax.chat/v1',
       apiKey: 'sk',

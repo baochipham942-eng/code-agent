@@ -27,7 +27,7 @@ vi.mock('fs/promises', () => ({
 const getApiKeyMock = vi.fn();
 
 vi.mock('../../../../../src/host/services', () => ({
-  getConfigService: () => ({ getApiKey: getApiKeyMock }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: getApiKeyMock }),
 }));
 
 import { readPdfModule } from '../../../../../src/host/tools/modules/network/readPdf';

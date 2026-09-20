@@ -148,7 +148,7 @@ vi.mock('../../../src/host/telemetry/telemetryCollector', () => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getSettings: () => ({ permissions: { inheritance: 'strict-inherit' } }),
   }),
 }));

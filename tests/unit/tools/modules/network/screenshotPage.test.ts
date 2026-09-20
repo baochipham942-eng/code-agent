@@ -77,7 +77,7 @@ describe('screenshot_page — execute', () => {
     vi.clearAllMocks();
     existsSyncMock.mockReturnValue(true);
     statSyncMock.mockReturnValue({ size: 4096 });
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue('test-zhipu-key'),
     });
   });
@@ -287,7 +287,7 @@ describe('screenshot_page — execute', () => {
   });
 
   it('vision analysis silently skipped without zhipu key', async () => {
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue(undefined),
     });
     global.fetch = vi.fn().mockResolvedValue({

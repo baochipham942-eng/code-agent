@@ -16,7 +16,7 @@ vi.mock('../../../src/host/cron/cronService', () => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getSettings: mocks.getSettings,
   }),
 }));

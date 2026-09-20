@@ -23,7 +23,7 @@ vi.mock('../../../src/host/services/auth/authService', () => ({
   getAuthService: () => ({ getCurrentUser: () => ({ id: 'owner-1' }) }),
 }));
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({}) }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({}) }),
 }));
 vi.mock('../../../src/shared/modelRuntime', () => ({
   buildRuntimeModelOptions: () => [],

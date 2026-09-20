@@ -13,6 +13,23 @@ function nativePathOfFile(file: File): string | undefined {
   return undefined;
 }
 
+export function pickWebZipFile(): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.zip,application/zip';
+    let settled = false;
+    const finish = (file: File | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(file);
+    };
+    input.addEventListener('cancel', () => finish(null));
+    input.addEventListener('change', () => finish(input.files?.[0] ?? null));
+    input.click();
+  });
+}
+
 export async function fileToLocalZipPayload(file: File): Promise<{ zipPath?: string; archiveBase64?: string }> {
   const zipPath = nativePathOfFile(file);
   if (zipPath) return { zipPath };

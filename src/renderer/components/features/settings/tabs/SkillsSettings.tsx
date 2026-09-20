@@ -27,6 +27,7 @@ import { pickNativeFile, saveNativeFile } from '../../../../services/tauriPlugin
 import {
   fileToLocalZipPayload,
   installLocalSkillZip,
+  pickWebZipFile,
   mountInstalledSkill,
 } from '../../../../services/skillLocalZip';
 import { toast } from '../../../../hooks/useToast';
@@ -469,13 +470,7 @@ export const SkillsSettings: React.FC = () => {
       if (file) {
         payload = await fileToLocalZipPayload(file);
       } else if (isWebMode()) {
-        const picked = await new Promise<File | null>((resolve) => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.accept = '.zip,application/zip';
-          input.onchange = () => resolve(input.files?.[0] ?? null);
-          input.click();
-        });
+        const picked = await pickWebZipFile();
         if (!picked) return;
         payload = await fileToLocalZipPayload(picked);
       } else {

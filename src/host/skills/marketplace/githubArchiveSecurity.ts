@@ -134,12 +134,13 @@ export async function extractZipSafely(
   },
 ): Promise<ZipExtractionResult> {
   signal?.throwIfAborted();
+  const enforceLimits = limits !== undefined;
   const maxEntries = limits?.maxEntries ?? MAX_ZIP_ENTRIES;
   const maxUncompressedBytes = limits?.maxUncompressedBytes ?? MAX_UNCOMPRESSED_ZIP_BYTES;
   const maxEntryBytes = limits?.maxEntryBytes ?? MAX_ZIP_ENTRY_BYTES;
   const zip = await JSZip.loadAsync(archive);
   const entries = Object.values(zip.files);
-  if (entries.length > maxEntries) {
+  if (enforceLimits && entries.length > maxEntries) {
     throwZipExtractLimit(`too many entries (${entries.length} > ${maxEntries})`);
   }
   const symlinkEntries = new Set<string>();
@@ -158,11 +159,11 @@ export async function extractZipSafely(
     if (entry.dir) continue;
     const declared = declaredUncompressedSize(entry);
     if (declared === null) continue;
-    if (declared > maxEntryBytes) {
+    if (enforceLimits && declared > maxEntryBytes) {
       throwZipExtractLimit(`entry exceeds ${maxEntryBytes} bytes (${entry.name})`);
     }
     declaredTotal += declared;
-    if (declaredTotal > maxUncompressedBytes) {
+    if (enforceLimits && declaredTotal > maxUncompressedBytes) {
       throwZipExtractLimit(`uncompressed size exceeds ${maxUncompressedBytes} bytes`);
     }
   }
@@ -179,11 +180,11 @@ export async function extractZipSafely(
     }
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     const content = await entry.async('nodebuffer');
-    if (content.byteLength > maxEntryBytes) {
+    if (enforceLimits && content.byteLength > maxEntryBytes) {
       throwZipExtractLimit(`entry exceeds ${maxEntryBytes} bytes (${entry.name})`);
     }
     writtenBytes += content.byteLength;
-    if (writtenBytes > maxUncompressedBytes) {
+    if (enforceLimits && writtenBytes > maxUncompressedBytes) {
       throwZipExtractLimit(`uncompressed size exceeds ${maxUncompressedBytes} bytes`);
     }
     await fs.writeFile(outputPath, content);

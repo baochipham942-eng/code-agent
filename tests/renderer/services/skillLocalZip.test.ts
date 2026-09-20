@@ -11,7 +11,7 @@ vi.mock('../../../src/renderer/services/invokeSkillIPC', () => ({
   invokeSkillIPC: (...args: unknown[]) => invokeSkillIPC(...args),
 }));
 
-import { divertDroppedSkillZips } from '../../../src/renderer/services/skillLocalZip';
+import { divertDroppedSkillZips, pickWebZipFile } from '../../../src/renderer/services/skillLocalZip';
 
 describe('divertDroppedSkillZips', () => {
   beforeEach(() => {
@@ -57,5 +57,26 @@ describe('divertDroppedSkillZips', () => {
     expect(toast.success).toHaveBeenCalledWith('ok demo');
     expect(leftover).toEqual([]);
     confirm.mockRestore();
+  });
+});
+
+describe('pickWebZipFile', () => {
+  it('resolves null when the file picker is cancelled', async () => {
+    const inputs: HTMLInputElement[] = [];
+    const create = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const el = create(tag, options);
+      if (tag === 'input') {
+        const input = el as HTMLInputElement;
+        input.click = vi.fn();
+        inputs.push(input);
+      }
+      return el;
+    });
+
+    const pending = pickWebZipFile();
+    expect(inputs).toHaveLength(1);
+    inputs[0]!.dispatchEvent(new Event('cancel'));
+    await expect(pending).resolves.toBeNull();
   });
 });

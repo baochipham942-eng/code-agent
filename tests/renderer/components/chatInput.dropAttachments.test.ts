@@ -76,4 +76,37 @@ describe('collectDroppedAttachmentsAndSkillZips', () => {
     expect(processFile).not.toHaveBeenCalled();
     expect(result).toEqual([]);
   });
+
+  it('keeps non-zip attachments after DataTransfer is cleared during zip install', async () => {
+    const file = new File(['hello'], 'screenshot.png', { type: 'image/png' });
+    const zip = new File(['PK'], 'demo.zip', { type: 'application/zip' });
+    const attachment: MessageAttachment = {
+      id: 'att-1',
+      type: 'image',
+      category: 'image',
+      name: 'screenshot.png',
+      size: file.size,
+      mimeType: 'image/png',
+      data: 'data:image/png;base64,abc',
+    };
+    const processFile = vi.fn(async (dropped: File) => (
+      dropped.name === 'screenshot.png' ? attachment : null
+    ));
+    const dataTransfer = dataTransferFrom([file, zip]);
+    const onSkillZips = vi.fn(async () => {
+      Object.defineProperty(dataTransfer, 'files', { value: fileListFrom([]) });
+      Object.defineProperty(dataTransfer, 'items', { value: [] });
+      return [];
+    });
+
+    const result = await collectDroppedAttachmentsAndSkillZips(
+      dataTransfer,
+      processFile,
+      vi.fn(async () => null),
+      onSkillZips,
+    );
+
+    expect(processFile).toHaveBeenCalledWith(file);
+    expect(result).toEqual([attachment]);
+  });
 });

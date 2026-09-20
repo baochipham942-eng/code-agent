@@ -252,51 +252,42 @@ export async function collectDroppedAttachmentsAndSkillZips(
   processFolderEntry: ProcessFolderEntry,
   onSkillZips: (zips: File[]) => Promise<File[]>,
 ): Promise<MessageAttachment[]> {
-  const leftoverZips = await onSkillZips(listDroppedZipFiles(dataTransfer));
+  // Drop 事件的 DataTransfer 在 await 后进入 protected 模式变空，必须先同步拍快照。
+  const zipFiles = listDroppedZipFiles(dataTransfer);
+  const droppedFiles = Array.from(dataTransfer.files);
+  const entries: FileSystemEntry[] = [];
+  const items = dataTransfer.items;
+  if (items && items.length > 0) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind !== 'file') continue;
+      const entry = item.webkitGetAsEntry?.();
+      if (entry) entries.push(entry);
+    }
+  }
+
+  const leftoverZips = await onSkillZips(zipFiles);
   const leftoverAttachments = leftoverZips.length > 0
     ? (await Promise.all(leftoverZips.map((file) => processFile(file)))).filter(
       (attachment): attachment is MessageAttachment => Boolean(attachment),
     )
     : [];
-  return [
-    ...await collectDroppedAttachments(dataTransfer, processFile, processFolderEntry),
-    ...leftoverAttachments,
-  ];
+  const fromDrop = entries.length === 0
+    ? await attachmentsFromFiles(droppedFiles, processFile)
+    : await attachmentsFromEntries(entries, processFile, processFolderEntry);
+  return [...fromDrop, ...leftoverAttachments];
 }
 
-async function collectDroppedAttachments(
-  dataTransfer: DataTransfer,
+async function attachmentsFromEntries(
+  entries: FileSystemEntry[],
   processFile: ProcessFile,
   processFolderEntry: ProcessFolderEntry,
 ): Promise<MessageAttachment[]> {
-  const items = dataTransfer.items;
-  const entries: FileSystemEntry[] = [];
-
-  if (items && items.length > 0) {
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.kind !== 'file') {
-        continue;
-      }
-      const entry = item.webkitGetAsEntry?.();
-      if (entry) {
-        entries.push(entry);
-      }
-    }
-  }
-
-  if (entries.length === 0) {
-    return attachmentsFromFiles(dataTransfer.files, processFile);
-  }
-
   const attachments: MessageAttachment[] = [];
   for (const entry of entries) {
     const attachment = await attachmentFromEntry(entry, processFile, processFolderEntry);
-    if (attachment) {
-      attachments.push(attachment);
-    }
+    if (attachment) attachments.push(attachment);
   }
-
   return attachments;
 }
 

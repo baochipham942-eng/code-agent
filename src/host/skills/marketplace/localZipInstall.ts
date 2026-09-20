@@ -114,7 +114,7 @@ async function installFromLocalZipUnlocked(
   );
   try {
     try {
-      await extractZipSafely(archive, tempDir, options.signal);
+      await extractZipSafely(archive, tempDir, options.signal, {});
     } catch (error) {
       if (isZipExtractLimitError(error)) {
         throw new Error(

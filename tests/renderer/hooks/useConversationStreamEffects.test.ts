@@ -818,6 +818,45 @@ describe('applyConversationStreamEvent model_fallback', () => {
   });
 });
 
+describe('applyConversationStreamEvent context compression signals', () => {
+  it('shows one conversation signal and ignores health-only signals', () => {
+    let messages: Message[] = [];
+    const state = {
+      currentTurnMessageId: null,
+      committedAssistantMessageIds: new Set<string>(),
+      lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
+    };
+    const actions = {
+      addMessage: (message: Message) => { messages = [...messages, message]; },
+      updateMessage: () => {},
+      setMessages: (next: Message[]) => { messages = next; },
+      getMessages: () => messages,
+      queueUpdate: () => {},
+      now: () => 100,
+      generateId: () => 'signal-message',
+    };
+    const conversationSignal = {
+      signalId: 'signal-1',
+      kind: 'overflow-recovery' as const,
+      code: 'overflow-recovery-started' as const,
+      surface: 'conversation' as const,
+      timestamp: 100,
+    };
+
+    applyConversationStreamEvent({ type: 'context_compression_signal', data: conversationSignal }, state, actions);
+    applyConversationStreamEvent({ type: 'context_compression_signal', data: conversationSignal }, state, actions);
+    applyConversationStreamEvent({
+      type: 'context_compression_signal',
+      data: { ...conversationSignal, signalId: 'signal-2', surface: 'health' as const, code: 'summary-cooldown' as const, kind: 'cooldown' as const },
+    }, state, actions);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe('system');
+    expect(messages[0].content).toContain('overflow-recovery-started');
+  });
+});
+
 describe('applyConversationStreamEvent meta turns', () => {
   it('keeps foreground turn_start behavior unchanged', () => {
     const addMessage = vi.fn();

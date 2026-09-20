@@ -76,6 +76,17 @@ describe('AgentEventSchema', () => {
         },
       },
     },
+    {
+      type: 'context_compression_signal',
+      data: {
+        signalId: 'signal-1',
+        kind: 'overflow-recovery',
+        code: 'overflow-recovery-started',
+        surface: 'conversation',
+        timestamp: 1,
+        retryable: true,
+      },
+    },
   ] as const;
 
   it('accepts representative legal events across the stable contract', () => {
@@ -105,15 +116,27 @@ describe('AgentEventSchema', () => {
     ['wrong null terminal payload', { type: 'agent_complete', data: {} }],
     ['wrong envelope field', { type: 'turn_end', data: { turnId: 'turn-1' }, seq: '1' }],
     ['missing required sequence', { type: 'turn_end', data: { turnId: 'turn-1' }, streamEpoch: 'native:host-1', sessionId: 'session-1' }],
+    ['invalid compression signal code', {
+      type: 'context_compression_signal',
+      data: {
+        signalId: 'signal-1', kind: 'failure', code: 'unknown-code', surface: 'conversation', timestamp: 1,
+      },
+    }],
+    ['invalid compression signal surface', {
+      type: 'context_compression_signal',
+      data: {
+        signalId: 'signal-1', kind: 'failure', code: 'summary-call-failed', surface: 'toast', timestamp: 1,
+      },
+    }],
   ])('rejects %s', (_label, sample) => {
     expect(() => AgentEventEnvelopeSchema.parse(sample)).toThrow();
   });
 
   it('exports stability metadata and the stable type set from the same source', () => {
     const stabilityMetadata = AgentEventSchema.options.map((schema) => schema.meta()?.stability);
-    expect(stabilityMetadata).toHaveLength(75);
+    expect(stabilityMetadata).toHaveLength(76);
     expect(stabilityMetadata.filter((stability) => stability === 'stable')).toHaveLength(12);
-    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(63);
+    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(64);
     expect(STABLE_EVENT_TYPES).toEqual(new Set([
       'message',
       'tool_call_start',

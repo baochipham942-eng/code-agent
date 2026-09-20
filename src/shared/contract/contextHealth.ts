@@ -2,6 +2,8 @@
 // Context Health Types - 上下文健康状态类型定义
 // ============================================================================
 
+import type { ContextCompressionSignalData } from './agent';
+
 /**
  * 上下文健康警告级别
  * - normal: < 70% 使用率
@@ -113,6 +115,8 @@ export interface CompressionStats {
   compressionCount: number;
   /** 累计节省的 tokens */
   totalSavedTokens: number;
+  /** 最近一次只留在健康详情/账本的压缩恢复信号。 */
+  lastSignal?: Pick<ContextCompressionSignalData, 'kind' | 'code' | 'timestamp' | 'cooldownUntil' | 'retryable'>;
 }
 
 export interface ContextCompressionConfig {

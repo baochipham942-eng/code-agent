@@ -59,6 +59,7 @@ export const IMMEDIATE_EVENT_TYPES = new Set<AgentEventType>([
   'surface_execution',
   'tool_cancel_local',
   'budget_exceeded',
+  'context_compression_signal',
 ]);
 
 // ----------------------------------------------------------------------------
@@ -98,7 +99,8 @@ export function isCompactionEvent(type: AgentEventType): boolean {
   return (
     type === 'context_compressed' ||
     type === 'context_compacting' ||
-    type === 'context_compacted'
+    type === 'context_compacted' ||
+    type === 'context_compression_signal'
   );
 }
 

@@ -303,14 +303,26 @@ function countMessageTokens(messages: Message[]): number {
 }
 
 function buildTranscript(messages: Message[]): string {
-  // The summary model is another model-facing consumer. Keep persisted/tool
-  // return values intact, but avoid spending summary context on a complete
-  // same-range Read result that is already present earlier in this span.
-  const projectedMessages = projectReadResultsForModel(messages);
-  return compactMessagesForSummary(projectedMessages.map(toTranscriptMessage), {
+  // The summary model is another model-facing consumer. First apply its
+  // message budget to the unprojected transcript; only the surviving message
+  // set may establish a Read receipt, so a receipt cannot outlive its source.
+  const budgetedMessages = compactMessagesForSummary(messages.map(toTranscriptMessage), {
     maxItemChars: TRANSCRIPT_ITEM_MAX_CHARS,
     maxTotalTokens: TRANSCRIPT_MAX_TOKENS,
-  })
+  });
+  const survivingIds = new Set(
+    budgetedMessages
+      .map((message) => message.id)
+      .filter((id): id is string => typeof id === 'string'),
+  );
+  const survivingMessages = messages.filter((message) => survivingIds.has(message.id));
+  const projectedById = new Map(
+    compactMessagesForSummary(
+      projectReadResultsForModel(survivingMessages).map(toTranscriptMessage),
+      { maxItemChars: TRANSCRIPT_ITEM_MAX_CHARS },
+    ).map((message) => [message.id, message]),
+  );
+  return budgetedMessages.map((message) => projectedById.get(message.id) ?? message)
     .map((message) => `[${message.role}${message.id ? ` ${message.id}` : ''}]: ${message.content}`)
     .join('\n\n---\n\n');
 }

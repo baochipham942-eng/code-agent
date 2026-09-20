@@ -78,6 +78,17 @@ describe('Read model-facing projection', () => {
     expect(projected[3].content).toContain('full content');
   });
 
+  it('does not seed dedupe from archived Read placeholders', () => {
+    const entries = [
+      { role: 'assistant', content: '', toolCalls: [readCall('c1')] },
+      { role: 'tool', content: '[TOOL_RESULT_ARCHIVED] Read 的完整输出已归档', toolCallId: 'c1' },
+      { role: 'assistant', content: '', toolCalls: [readCall('c2')] },
+      { role: 'tool', content: 'Read version digest: abc123\nfull content', toolCallId: 'c2' },
+    ];
+    const projected = projectReadTranscriptEntries(entries);
+    expect(projected[3].content).toContain('full content');
+  });
+
   it('projects the flattened native-subagent pair without changing its tool call', () => {
     const messages = [
       { role: 'assistant', content: '', toolCalls: [readCall('c1')] },

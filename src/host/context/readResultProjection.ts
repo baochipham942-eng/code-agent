@@ -8,6 +8,7 @@ import type { ToolCall, ToolResult } from '../../shared/contract/tool';
 const READ_RECEIPT_PREFIX = '[Read already shown';
 const READ_TOOL_NAMES = new Set(['read', 'read_file']);
 const TRUNCATION_MARKER = /\[(?:\d+\s+lines?\s+)?truncated(?:[,\]])|\b\d+\s+lines?\s+truncated\b/i;
+const ARCHIVED_OUTPUT_MARKERS = ['[TOOL_RESULT_ARCHIVED]', '[Full output saved to:'];
 
 type ReadCall = Pick<ToolCall, 'id' | 'name' | 'arguments'>;
 
@@ -76,6 +77,7 @@ function isCompleteReadOutput(content: string): boolean {
   if (!content.trim() || content.includes('[truncated]')) return false;
   if (TRUNCATION_MARKER.test(content)) return false;
   if (content.startsWith(READ_RECEIPT_PREFIX)) return false;
+  if (ARCHIVED_OUTPUT_MARKERS.some((marker) => content.includes(marker))) return false;
   return true;
 }
 

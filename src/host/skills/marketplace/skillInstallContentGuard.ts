@@ -26,7 +26,7 @@ const TEXT_FILE_EXTENSIONS = new Set([
   '.tsx', '.txt', '.vue', '.xml', '.yaml', '.yml', '.zsh', '.hook', '.command',
 ]);
 
-export class SkillContentScanBlockedError extends Error {
+class SkillContentScanBlockedError extends Error {
   readonly code = 'SKILL_CONTENT_SCAN_BLOCKED';
 
   constructor(pluginSpec: string, sourceTrust: SkillInstallSourceTrust, filePath: string) {
@@ -37,7 +37,7 @@ export class SkillContentScanBlockedError extends Error {
   }
 }
 
-export class SkillContentScanFailedError extends Error {
+class SkillContentScanFailedError extends Error {
   readonly code = 'SKILL_CONTENT_SCAN_FAILED';
 
   constructor(pluginSpec: string, sourceTrust: SkillInstallSourceTrust, filePath: string) {

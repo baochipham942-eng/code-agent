@@ -798,6 +798,14 @@ describe('installFromLocalZip', () => {
     expect(await listInstalledPlugins()).toEqual({});
   });
 
+  it('rejects a zip whose SKILL.md frontmatter fence discovery cannot parse', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_INVALID_FRONTMATTER');
+    expect(await listInstalledPlugins()).toEqual({});
+  });
+
   it('rejects a zip whose description exceeds the parser limit', async () => {
     const archive = await packSkillZip({
       'demo/SKILL.md': `---\nname: demo\ndescription: ${'x'.repeat(1025)}\n---\nhello`,

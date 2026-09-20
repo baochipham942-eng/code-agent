@@ -13,6 +13,7 @@ import {
 } from './githubArchiveSecurity';
 import { runExclusivePluginInstall, throwIfInstallAborted } from './installConcurrency';
 import { loadInstalledPlugins, performInstall } from './installService';
+import { parseSkillMetadataOnly } from '../../services/skills/skillParser';
 
 const LOCAL_ZIP_MARKETPLACE = 'local-zip';
 const SKILL_ZIP_MISSING_SKILL_MD = 'SKILL_ZIP_MISSING_SKILL_MD';
@@ -130,8 +131,15 @@ async function installFromLocalZipUnlocked(
     }
     throwIfInstallAborted(options.signal);
     const skillDirName = await resolveLocalZipSkillDir(tempDir);
-    const skillMarkdown = await fs.readFile(path.join(tempDir, skillDirName, 'SKILL.md'), 'utf8');
-    const parsed = parseRequiredSkillFrontmatter(skillMarkdown);
+    let parsed;
+    try {
+      parsed = await parseSkillMetadataOnly(path.join(tempDir, skillDirName), 'user');
+    } catch (error) {
+      throw new Error(
+        `${SKILL_ZIP_INVALID_FRONTMATTER}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
     const pluginSpec = `${skillDirName}@${LOCAL_ZIP_MARKETPLACE}`;
     const state = await loadInstalledPlugins();
     throwIfInstallAborted(options.signal);

@@ -56,6 +56,8 @@ const MAX_SHEETS = 15;
  * 用别的说法（比如「超出上限未读正文」）模型会当成「产物里没有」判 false 并计入分母。
  */
 const TRUNCATED_MARK = '未给出内容';
+/** 调用失败的重试退避；最后一档给足是因为智谱 429 通常要等几十秒才放行。 */
+const RETRY_BACKOFF_MS = [5000, 20000, 60000];
 const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.tsv', '.json', '.html', '.htm', '.xml', '.py', '.js', '.ts', '.css', '.yaml', '.yml', '.log', '.sql']);
 
 /** 非法数值参数当场退出，不带着 NaN 往下跑——chunkRubric 的循环遇到 NaN 会永不前进。 */
@@ -251,19 +253,25 @@ async function main(): Promise<void> {
     const verdicts: GdpvalItemVerdict[] = [];
     for (const batch of chunkRubric(rubric, options.batch)) {
       const prompt = buildRubricPrompt(batch, files, inputs);
-      // 瞬时 5xx 重试一次：一次 500 会让整批条目全变未判、整题记 0 分，
-      // 那是个假信号——它看起来和「产物确实不合格」一模一样（实测撞到过一次）。
+      // 失败要重试够：一次 500 或 429 会让整批条目全变未判、整题记 0 分，
+      // 那是个假信号——它看起来和「产物确实不合格」一模一样。
+      // 退避要拉开：实测智谱 429（code 1305「访问量过大」）在 3 秒后照样 429，
+      // 而夜巡一晚要为 216 道题发几百次调用，撞限流是常态不是意外。
       let content = '';
-      for (let attempt = 0; attempt < 2 && !content; attempt += 1) {
-        if (attempt > 0) await new Promise((resolve) => { setTimeout(resolve, 3000); });
+      for (let attempt = 0; attempt < RETRY_BACKOFF_MS.length + 1 && !content; attempt += 1) {
+        if (attempt > 0) {
+          const wait = RETRY_BACKOFF_MS[attempt - 1];
+          await new Promise((resolve) => { setTimeout(resolve, wait); });
+        }
+        const more = attempt < RETRY_BACKOFF_MS.length ? `，${RETRY_BACKOFF_MS[attempt] / 1000} 秒后重试` : '，不再重试';
         try {
           // 不给超时，模型服务挂起时整夜评分会停在这一批上，后面的题一道都不落盘。
           const response = await quickTask(prompt, 6000, AbortSignal.timeout(options.callTimeoutMs));
           calls += 1;
           content = response.success && response.content ? response.content : '';
-          if (!content) console.warn(`  ${task.id}：模型没返回内容（${response.error ?? '无错误信息'}）${attempt === 0 ? '，重试一次' : ''}`);
+          if (!content) console.warn(`  ${task.id}：模型没返回内容（${response.error ?? '无错误信息'}）${more}`);
         } catch (error) {
-          console.warn(`  ${task.id}：调用失败${attempt === 0 ? '，重试一次' : ''}`, error);
+          console.warn(`  ${task.id}：调用失败${more}`, error);
         }
       }
       verdicts.push(...parseRubricVerdicts(content, batch));

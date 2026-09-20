@@ -3,19 +3,19 @@ import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
 export const readPdfSchema: UntrustedContentToolSchema = {
   name: 'read_pdf',
-  description: `Read PDF files using vision model (Gemini 2.0).
+  description: `Read PDF files. With OPENROUTER_API_KEY, uses a vision model (Gemini 2.0). Without it, extracts selectable text via local pdftotext (prompt is ignored on that fallback).
 
 Parameters:
 - file_path: Absolute path to the PDF file
-- prompt: (Optional) Specific question or instruction for analyzing the PDF
+- prompt: (Optional) Specific question for the vision path; ignored by local text extract
 
 Returns:
-- AI-generated analysis/transcription of the PDF content
+- Vision analysis when OpenRouter is configured, or raw selectable text on the pdftotext fallback
 
 Best for:
 - Reading text-based PDFs (technical docs, code, reports)
-- Processing scanned documents and images
-- Analyzing PDF forms, diagrams and charts`,
+- Processing scanned documents and images (vision path)
+- Analyzing PDF forms, diagrams and charts (vision path)`,
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',

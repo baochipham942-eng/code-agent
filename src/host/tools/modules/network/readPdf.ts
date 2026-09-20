@@ -1,7 +1,8 @@
 // ============================================================================
 // read_pdf (P0-6.3 Batch 8 — network: native ToolModule rewrite)
 //
-// 使用视觉模型（Gemini 2.0）解析 PDF。需要本地 OpenRouter API Key。
+// OpenRouter 已配置：视觉模型（Gemini 2.0）解析 PDF。
+// 未配置：本地 pdftotext 抽可选中文本；prompt 不生效。
 // ============================================================================
 
 import { execFile } from 'node:child_process';
@@ -17,21 +18,49 @@ import type {
 } from '../../../protocol/tools';
 import { z } from 'zod';
 import { getConfigService } from '../../../services';
-import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
+import { MODEL_API_ENDPOINTS, NETWORK_TOOL_TIMEOUTS } from '../../../../shared/constants';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readPdfSchema as schema } from './readPdf.schema';
 import { TOOL_DEPENDENCY_HINTS } from '../_helpers/dependencyHints';
-import { resolveHelperBinary } from '../../../runtime/runtimeAssetResolver';
 
-function runPdftotext(bin: string, filePath: string): Promise<string> {
+function isAbortLike(error: unknown, abortSignal: AbortSignal): boolean {
+  if (abortSignal.aborted) return true;
+  if (!error || typeof error !== 'object') return false;
+  const code = (error as { code?: string }).code;
+  const name = (error as { name?: string }).name;
+  return code === 'ABORT_ERR' || code === 'ABORTED' || name === 'AbortError';
+}
+
+function runPdftotext(bin: string, filePath: string, abortSignal: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(bin, ['-layout', filePath, '-'], { maxBuffer: 50 * 1024 * 1024 }, (error, stdout) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(Buffer.isBuffer(stdout) ? stdout.toString('utf8') : String(stdout ?? ''));
-    });
+    if (abortSignal.aborted) {
+      reject(Object.assign(new Error('aborted'), { code: 'ABORTED' }));
+      return;
+    }
+    execFile(
+      bin,
+      ['-layout', filePath, '-'],
+      {
+        maxBuffer: 50 * 1024 * 1024,
+        timeout: NETWORK_TOOL_TIMEOUTS.PDF_TEXT_EXTRACT,
+        signal: abortSignal,
+      },
+      (error, stdout) => {
+        if (isAbortLike(error, abortSignal)) {
+          reject(Object.assign(new Error('aborted'), { code: 'ABORTED' }));
+          return;
+        }
+        if (error) {
+          if ((error as NodeJS.ErrnoException & { killed?: boolean }).killed) {
+            reject(Object.assign(new Error('pdftotext timed out'), { code: 'TIMEOUT' }));
+            return;
+          }
+          reject(error);
+          return;
+        }
+        resolve(Buffer.isBuffer(stdout) ? stdout.toString('utf8') : String(stdout ?? ''));
+      },
+    );
   });
 }
 
@@ -167,36 +196,46 @@ export async function executeReadPdf(
       stage: 'running',
       detail: `未配置 OpenRouter，改用本地文本抽取 (${fileSizeMB} MB)...`,
     });
-    const text = await extractSelectablePdfText(filePath);
+    const text = await extractSelectablePdfText(filePath, ctx.abortSignal);
     if (text.trim()) {
       return finishPdfResult(filePath, fileSizeMB, 'text', text, ctx, onProgress);
     }
     throw new Error(TOOL_DEPENDENCY_HINTS.readPdfOpenRouter);
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    if ((error as { code?: string }).code === 'ENOENT') {
+    const errCode = (error as { code?: string }).code;
+    if (errCode === 'ENOENT') {
       return { ok: false, error: `文件不存在: ${filePath}`, code: 'ENOENT' };
+    }
+    if (isAbortLike(error, ctx.abortSignal)) {
+      return { ok: false, error: 'aborted', code: 'ABORTED' };
+    }
+    if (errCode === 'TIMEOUT') {
+      return { ok: false, error: errMsg || 'pdftotext timed out', code: 'TIMEOUT' };
     }
     ctx.logger.error('PDF read failed', { error: errMsg });
     return { ok: false, error: errMsg || '读取 PDF 失败', code: 'NETWORK_ERROR' };
   }
 }
 
-async function extractSelectablePdfText(filePath: string): Promise<string> {
-  const bundled = (() => {
-    try {
-      return resolveHelperBinary(path.join('poppler', 'bin', 'pdftotext'));
-    } catch {
-      return '';
-    }
-  })();
-  const bins = [bundled, '/opt/homebrew/bin/pdftotext', '/usr/local/bin/pdftotext', 'pdftotext']
-    .filter((bin, index, all) => Boolean(bin) && all.indexOf(bin) === index);
+async function extractSelectablePdfText(filePath: string, abortSignal: AbortSignal): Promise<string> {
+  // Sidecar 只打包 pdftoppm，不把 bundled poppler/bin/pdftotext 当候选。
+  const bins = ['/opt/homebrew/bin/pdftotext', '/usr/local/bin/pdftotext', 'pdftotext']
+    .filter((bin, index, all) => all.indexOf(bin) === index);
   for (const bin of bins) {
+    if (abortSignal.aborted) {
+      throw Object.assign(new Error('aborted'), { code: 'ABORTED' });
+    }
     try {
-      const stdout = await runPdftotext(bin, filePath);
+      const stdout = await runPdftotext(bin, filePath, abortSignal);
       if (stdout.trim()) return stdout;
-    } catch {
+    } catch (error) {
+      if (isAbortLike(error, abortSignal)) {
+        throw Object.assign(new Error('aborted'), { code: 'ABORTED' });
+      }
+      if ((error as { code?: string }).code === 'TIMEOUT') {
+        throw error;
+      }
       /* try next extractor */
     }
   }

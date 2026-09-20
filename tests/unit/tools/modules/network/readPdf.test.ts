@@ -31,10 +31,6 @@ vi.mock('../../../../../src/host/services', () => ({
   getConfigService: () => ({ getApiKey: getApiKeyMock }),
 }));
 
-vi.mock('../../../../../src/host/runtime/runtimeAssetResolver', () => ({
-  resolveHelperBinary: () => '/bundled/pdftotext',
-}));
-
 vi.mock('node:child_process', () => ({
   execFile: (...args: unknown[]) => execFileMock(...args),
 }));
@@ -200,11 +196,60 @@ describe('readPdfModule (native)', () => {
       expect(result.ok).toBe(true);
       expect(fetchMock).not.toHaveBeenCalled();
       expect(execFileMock).toHaveBeenCalled();
+      const opts = execFileMock.mock.calls[0].find((value: unknown) =>
+        Boolean(value) && typeof value === 'object' && 'timeout' in (value as object),
+      ) as { timeout: number; signal: AbortSignal };
+      expect(opts.timeout).toBeGreaterThan(0);
+      expect(opts.signal).toBeInstanceOf(AbortSignal);
       if (result.ok) {
         expect(result.output).toContain('DocBench selectable body');
         expect(result.output).toContain('本地文本抽取');
         expect(result.meta).toMatchObject({ processingMethod: 'text' });
       }
+    });
+
+    it('returns ABORTED when pdftotext is cancelled mid-extract', async () => {
+      getApiKeyMock.mockReturnValue(undefined);
+      const ctrl = new AbortController();
+      execFileMock.mockImplementation((
+        _bin: string,
+        _args: string[],
+        opts: { signal?: AbortSignal },
+        cb: (err: Error | null, stdout?: string) => void,
+      ) => {
+        opts.signal?.addEventListener('abort', () => {
+          cb(Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORT_ERR' }));
+        });
+      });
+      const pending = run({ file_path: '/abs/doc.pdf' }, makeCtx({ abortSignal: ctrl.signal }));
+      await vi.waitFor(() => expect(execFileMock).toHaveBeenCalled());
+      ctrl.abort();
+      const result = await pending;
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ABORTED');
+        expect(result.error).toBe('aborted');
+      }
+      expect(execFileMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns TIMEOUT when pdftotext is killed by the extract timeout', async () => {
+      getApiKeyMock.mockReturnValue(undefined);
+      execFileMock.mockImplementation((
+        _bin: string,
+        _args: string[],
+        _opts: unknown,
+        cb: (err: Error | null, stdout?: string) => void,
+      ) => {
+        cb(Object.assign(new Error('killed'), { killed: true, signal: 'SIGTERM' }));
+      });
+      const result = await run({ file_path: '/abs/doc.pdf' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('TIMEOUT');
+        expect(result.error).toContain('timed out');
+      }
+      expect(execFileMock).toHaveBeenCalledTimes(1);
     });
 
     it('returns a configuration error when OpenRouter is missing and text extract is empty', async () => {

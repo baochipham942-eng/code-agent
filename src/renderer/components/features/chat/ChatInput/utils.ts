@@ -6,6 +6,7 @@ import type { AttachmentCategory, MessageAttachment } from '../../../../../share
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 import type { Translations } from '../../../../i18n/zh';
+import { isSkillZipFileName } from '../../../../services/skillLocalZip';
 
 const logger = createLogger('ChatInputUtils');
 
@@ -205,6 +206,7 @@ async function attachmentFromEntry(
   processFolderEntry: ProcessFolderEntry,
 ): Promise<MessageAttachment | null> {
   if (entry.isFile) {
+    if (isSkillZipFileName(entry.name)) return null;
     const fileEntry = entry as FileSystemFileEntry;
     const file = await new Promise<File>((resolve, reject) => {
       fileEntry.file(resolve, reject);
@@ -225,6 +227,7 @@ async function attachmentsFromFiles(
 ): Promise<MessageAttachment[]> {
   const attachments: MessageAttachment[] = [];
   for (const file of Array.from(files)) {
+    if (isSkillZipFileName(file.name)) continue;
     const attachment = await processFile(file);
     if (attachment) {
       attachments.push(attachment);
@@ -233,13 +236,35 @@ async function attachmentsFromFiles(
   return attachments;
 }
 
+function listDroppedZipFiles(dataTransfer: DataTransfer): File[] {
+  return Array.from(dataTransfer.files).filter((file) => isSkillZipFileName(file.name));
+}
+
 /**
  * Browser/Electron drop payloads differ:
  * - real folders need webkitGetAsEntry
  * - screenshots/media dragged from browser surfaces may expose only files
  * - some in-app browser bridges expose DataTransferItemList but no entries
  */
-export async function collectDroppedAttachments(
+export async function collectDroppedAttachmentsAndSkillZips(
+  dataTransfer: DataTransfer,
+  processFile: ProcessFile,
+  processFolderEntry: ProcessFolderEntry,
+  onSkillZips: (zips: File[]) => Promise<File[]>,
+): Promise<MessageAttachment[]> {
+  const leftoverZips = await onSkillZips(listDroppedZipFiles(dataTransfer));
+  const leftoverAttachments = leftoverZips.length > 0
+    ? (await Promise.all(leftoverZips.map((file) => processFile(file)))).filter(
+      (attachment): attachment is MessageAttachment => Boolean(attachment),
+    )
+    : [];
+  return [
+    ...await collectDroppedAttachments(dataTransfer, processFile, processFolderEntry),
+    ...leftoverAttachments,
+  ];
+}
+
+async function collectDroppedAttachments(
   dataTransfer: DataTransfer,
   processFile: ProcessFile,
   processFolderEntry: ProcessFolderEntry,

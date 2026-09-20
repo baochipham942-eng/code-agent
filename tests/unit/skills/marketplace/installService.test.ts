@@ -60,6 +60,7 @@ import {
   uninstallPlugin,
 } from '../../../../src/host/skills/marketplace/installService';
 import { getPromptCommandService } from '../../../../src/host/services/commands/promptCommandService';
+import { installFromLocalZip } from '../../../../src/host/skills/marketplace/localZipInstall';
 
 describe('marketplace install service trust defaults', () => {
   let tempRoot: string;
@@ -698,5 +699,85 @@ describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
     expect(retainedRecord.contentHash).toBe(sha256(firstZip));
     expect(retainedRecord.pluginRoot).toBe(firstRecord.pluginRoot);
     await expect(fs.readFile(firstSkillPath, 'utf8')).resolves.toBe('v1');
+  });
+});
+
+describe('installFromLocalZip', () => {
+  let tempRoot: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'code-agent-local-zip-'));
+    mocks.userConfigDir = path.join(tempRoot, 'user-config');
+    mocks.projectConfigDir = path.join(tempRoot, 'project-config');
+    mocks.reloadSkills.mockResolvedValue(undefined);
+  });
+
+  afterEach(async () => {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  });
+
+  async function packSkillZip(entries: Record<string, string>): Promise<Buffer> {
+    const zip = new JSZip();
+    for (const [name, content] of Object.entries(entries)) {
+      zip.file(name, content);
+    }
+    return zip.generateAsync({ type: 'nodebuffer' });
+  }
+
+  it('installs an export-shaped zip through extractZipSafely and enables the skill', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: demo\n---\nhello',
+      '_meta.json': '{"name":"demo"}',
+    });
+
+    const result = await installFromLocalZip(archive);
+    expect(result.pluginSpec).toBe('demo@local-zip');
+    expect(result.installedSkills).toEqual(['demo']);
+
+    const installed = await listInstalledPlugins();
+    expect(installed['demo@local-zip']).toMatchObject({
+      plugin: 'demo',
+      marketplace: 'local-zip',
+      isEnabled: true,
+      skills: ['demo'],
+    });
+    expect(
+      await fs.readFile(path.join(installed['demo@local-zip']!.pluginRoot!, 'demo', 'SKILL.md'), 'utf8'),
+    ).toContain('hello');
+  });
+
+  it('rejects a zip with no SKILL.md', async () => {
+    const archive = await packSkillZip({ 'readme.md': 'nope' });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_MISSING_SKILL_MD');
+    expect(await listInstalledPlugins()).toEqual({});
+  });
+
+  it('rejects a zip with more than one SKILL.md', async () => {
+    const archive = await packSkillZip({
+      'one/SKILL.md': '---\nname: one\n---\n',
+      'two/SKILL.md': '---\nname: two\n---\n',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_MULTIPLE_SKILL_MD');
+  });
+
+  it('rejects path traversal entries before any files land', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: demo\n---\n',
+      '../escape/SKILL.md': 'owned',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('Unsafe zip entry path rejected');
+    await expect(fs.stat(path.join(tempRoot, 'escape', 'SKILL.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('blocks critical content before the local zip is renamed into plugins', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '```bash\nrm -rf /\n```',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    expect((await listInstalledPlugins())['demo@local-zip']).toBeUndefined();
+    const pluginsDir = path.join(mocks.userConfigDir, 'plugins');
+    const residual = fsSync.existsSync(pluginsDir) ? await fs.readdir(pluginsDir) : [];
+    expect(residual.filter((entry) => entry.includes('demo') || entry.includes('.staging-'))).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { collectDroppedAttachments } from '../../../src/renderer/components/features/chat/ChatInput/utils';
+import { collectDroppedAttachmentsAndSkillZips } from '../../../src/renderer/components/features/chat/ChatInput/utils';
 import type { MessageAttachment } from '../../../src/shared/contract';
 
 function fileListFrom(files: File[]): FileList {
@@ -19,7 +19,7 @@ function dataTransferFrom(files: File[], items?: DataTransferItem[]): DataTransf
   } as DataTransfer;
 }
 
-describe('collectDroppedAttachments', () => {
+describe('collectDroppedAttachmentsAndSkillZips', () => {
   it('falls back to files when DataTransfer items expose no entries', async () => {
     const file = new File(['hello'], 'screenshot.png', { type: 'image/png' });
     const attachment: MessageAttachment = {
@@ -33,7 +33,7 @@ describe('collectDroppedAttachments', () => {
     };
     const processFile = vi.fn(async () => attachment);
 
-    const result = await collectDroppedAttachments(
+    const result = await collectDroppedAttachmentsAndSkillZips(
       dataTransferFrom([file], [
         {
           kind: 'file',
@@ -42,9 +42,38 @@ describe('collectDroppedAttachments', () => {
       ]),
       processFile,
       vi.fn(async () => null),
+      async () => [],
     );
 
     expect(processFile).toHaveBeenCalledWith(file);
     expect(result).toEqual([attachment]);
+  });
+
+  it('does not turn a dropped ZIP into a chat attachment when install consumes it', async () => {
+    const zip = new File(['PK'], 'demo.skill.zip', { type: 'application/zip' });
+    const processFile = vi.fn(async () => ({
+      id: 'att-zip',
+      type: 'file',
+      category: 'archive',
+      name: 'demo.skill.zip',
+      size: zip.size,
+      mimeType: 'application/zip',
+      data: 'data:application/zip;base64,UEs=',
+    } as MessageAttachment));
+    const onSkillZips = vi.fn(async (files: File[]) => {
+      expect(files.map((file) => file.name)).toEqual(['demo.skill.zip']);
+      return [];
+    });
+
+    const result = await collectDroppedAttachmentsAndSkillZips(
+      dataTransferFrom([zip]),
+      processFile,
+      vi.fn(async () => null),
+      onSkillZips,
+    );
+
+    expect(onSkillZips).toHaveBeenCalled();
+    expect(processFile).not.toHaveBeenCalled();
+    expect(result).toEqual([]);
   });
 });

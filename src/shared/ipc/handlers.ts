@@ -273,6 +273,15 @@ export interface IpcInvokeHandlers {
     savedPath?: string;
     error?: string;
   }>;
+  [SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP]: (payload: {
+    zipPath?: string;
+    archiveBase64?: string;
+  }) => Promise<{
+    success: boolean;
+    skillName?: string;
+    pluginSpec?: string;
+    error?: string;
+  }>;
   [SKILL_CHANNELS.SESSION_MOUNT]: (sessionId: string, skillName: string, libraryId: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_UNMOUNT]: (sessionId: string, skillName: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_LIST]: (sessionId: string) => Promise<SessionSkillMount[]>;

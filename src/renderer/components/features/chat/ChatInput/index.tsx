@@ -399,12 +399,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   const { processFile, processFolderEntry } = useFileUpload();
+  const handleDroppedSkillZips = useCallback(async (files: File[]) => {
+    const { divertDroppedSkillZips } = await import('../../../../services/skillLocalZip');
+    return divertDroppedSkillZips(files, {
+      sessionId: currentSessionId,
+      successPrefix: t.slashSelect.skillZipInstalledPrefix,
+      failPrefix: t.slashSelect.skillZipInstallFailedPrefix,
+    });
+  }, [currentSessionId, t.slashSelect.skillZipInstallFailedPrefix, t.slashSelect.skillZipInstalledPrefix]);
   // 拖放附件处理（高亮状态 + 文件/文件夹拖入转附件）
   const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useDragAndDrop({
     processFile,
     processFolderEntry,
     setAttachments,
     setIsUploading: (uploading) => setIsUploading(uploading),
+    onDroppedSkillZips: handleDroppedSkillZips,
   });
   // Composer typing stays passive for generic heuristics; only official registry skill
   // keyword/domain hits surface here, and only for not-yet-installed marketplace skills.

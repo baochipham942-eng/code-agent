@@ -23,7 +23,12 @@ import {
 } from '@shared/constants/skillCatalog';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
-import { saveNativeFile } from '../../../../services/tauriPluginFacade';
+import { pickNativeFile, saveNativeFile } from '../../../../services/tauriPluginFacade';
+import {
+  fileToLocalZipPayload,
+  installLocalSkillZip,
+  mountInstalledSkill,
+} from '../../../../services/skillLocalZip';
 import { toast } from '../../../../hooks/useToast';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
@@ -443,6 +448,67 @@ export const SkillsSettings: React.FC = () => {
     }
   };
 
+  const describeZipInstallError = (error?: string): string => {
+    if (!error) return skillsText.zipInstallFailed;
+    if (error.startsWith('SKILL_ZIP_MISSING_SKILL_MD')) return skillsText.zipMissingSkillMd;
+    if (error.startsWith('SKILL_ZIP_MULTIPLE_SKILL_MD')) return skillsText.zipMultipleSkillMd;
+    if (error.startsWith('SKILL_ZIP_UNSAFE_SOURCE') || error.startsWith('SKILL_ZIP_UNSAFE_ENTRY')) {
+      return skillsText.zipUnsafe;
+    }
+    if (error.startsWith('SKILL_ZIP_TOO_LARGE')) return skillsText.zipTooLarge;
+    if (error.startsWith('SKILL_CONTENT_SCAN_BLOCKED')) return skillsText.zipScanBlocked;
+    return error;
+  };
+
+  const handleInstallLocalZip = async (file?: File | null) => {
+    setActionLoading('install-local-zip');
+    setMessage(null);
+    try {
+      let payload: { zipPath?: string; archiveBase64?: string };
+      if (file) {
+        payload = await fileToLocalZipPayload(file);
+      } else if (isWebMode()) {
+        const picked = await new Promise<File | null>((resolve) => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.zip,application/zip';
+          input.onchange = () => resolve(input.files?.[0] ?? null);
+          input.click();
+        });
+        if (!picked) return;
+        payload = await fileToLocalZipPayload(picked);
+      } else {
+        const selectedPath = await pickNativeFile({
+          title: skillsText.installFromZipTitle,
+          extensions: ['zip'],
+        });
+        if (!selectedPath) return;
+        payload = { zipPath: selectedPath };
+      }
+      const result = await installLocalSkillZip(payload);
+      if (!result.success) {
+        setMessage({ type: 'error', text: describeZipInstallError(result.error) });
+        return;
+      }
+      let text = `${skillsText.zipInstallSuccessPrefix}${result.skillName || ''}`;
+      if (currentSessionId && result.skillName) {
+        const mounted = await mountInstalledSkill(currentSessionId, result.skillName);
+        if (mounted) text += skillsText.zipInstallMountedSuffix;
+      }
+      setMessage({ type: 'success', text });
+      setActiveTab('installed');
+      await loadData();
+    } catch (err) {
+      logger.error('Failed to install local skill zip', err);
+      setMessage({
+        type: 'error',
+        text: describeZipInstallError(err instanceof Error ? err.message : String(err)),
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleExportSkill = async (skillName: string) => {
     setActionLoading(`export-${skillName}`);
     try {
@@ -737,6 +803,8 @@ export const SkillsSettings: React.FC = () => {
           onToggleSkill={handleToggleSkill}
           onProjectOverrideChange={handleProjectOverrideChange}
           onExportSkill={handleExportSkill}
+          onInstallFromZip={() => { void handleInstallLocalZip(); }}
+          onDropZipFile={(file) => { void handleInstallLocalZip(file); }}
           onUpdateLibrary={handleUpdateLibrary}
           onRemoveLibrary={handleRemoveLibrary}
         />

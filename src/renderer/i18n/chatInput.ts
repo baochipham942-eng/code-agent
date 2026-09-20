@@ -372,6 +372,8 @@ export const chatInputZh = {
   slashSelect: {
     mountSkillNoSession: '挂载 Skill 失败：无法创建会话',
     mountSkillFailedPrefix: '挂载 Skill 失败：',
+    skillZipInstalledPrefix: '已安装 Skill ',
+    skillZipInstallFailedPrefix: 'Skill ZIP 安装失败：',
     connectFirstPrefix: '请先连接 ',
     connectMcpFirstPrefix: '请先连接 MCP：',
   },
@@ -760,6 +762,8 @@ export const chatInputEn: typeof chatInputZh = {
   slashSelect: {
     mountSkillNoSession: 'Failed to mount the Skill: could not create a session',
     mountSkillFailedPrefix: 'Failed to mount the Skill: ',
+    skillZipInstalledPrefix: 'Installed Skill ',
+    skillZipInstallFailedPrefix: 'Skill ZIP install failed: ',
     connectFirstPrefix: 'Connect ',
     connectMcpFirstPrefix: 'Connect the MCP server first: ',
   },

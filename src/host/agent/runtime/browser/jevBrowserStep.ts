@@ -314,7 +314,7 @@ async function evidenceFrom(host: JevBrowserHost, captured: JevCapturedSnapshot)
 
 function toToolResult(result: JevBrowserStepResult): ToolExecutionResult {
   const success = result.status === 'done_verified'
-    || (result.status === 'fallback' && result.reason !== 'empty_task');
+    || (result.status === 'fallback' && result.reason !== 'empty_task' && result.reason !== 'aborted');
   return {
     success,
     output: result.output,
@@ -356,6 +356,7 @@ async function runJevBrowserStepLoop(
   let truncatedWithoutScroll = 0;
   let incompatibleRetryUsed = false;
   let carriedSnapshot: JevCapturedSnapshot | undefined;
+  let carriedPrepared: PreparedJevSnapshot | undefined;
 
   const finish = (
     status: JevBrowserStepStatus,
@@ -412,9 +413,12 @@ async function runJevBrowserStepLoop(
 
     const captured = carriedSnapshot ?? await deps.host.capture();
     carriedSnapshot = undefined;
-    const prepared = prepareJevBrowserSnapshot(captured, task, {
-      mutateEmptyWindow: mutate === 'empty-window',
-    });
+    // 步后段已对同一 captured prepare 过一次（fingerprint 用），除 mutate 需重算外直接复用
+    const prepared = carriedPrepared
+      ?? prepareJevBrowserSnapshot(captured, task, {
+        mutateEmptyWindow: mutate === 'empty-window',
+      });
+    carriedPrepared = undefined;
     const dialog = deps.host.getDialogState();
     if (dialog.pending) {
       return finish(
@@ -631,7 +635,16 @@ async function runJevBrowserStepLoop(
     if (afterFormValuesError) {
       return finish('fallback', `form_values_unavailable: ${afterFormValuesError}`);
     }
-    const inView = prepareJevBrowserSnapshot(after, task).collected
+    // 完成优先于撞限：步后就地判一次断言。圈头的时限/软步顶检查先于断言评估，
+    // 恰在上限那一步完成的任务要等下一圈才被评估，而下一圈第一件事就是撞限返回。
+    // steps>0 与圈头门同形（此处 steps 必 ≥1，防止将来有人把这段挪回步前）。
+    const afterEvaluated = evaluateJevAssertions(assertions, afterEvidence);
+    if (afterEvaluated.allMet && steps > 0) {
+      return finish('done_verified', undefined, { assertions: afterEvaluated.results });
+    }
+    const afterPrepared = prepareJevBrowserSnapshot(after, task);
+    carriedPrepared = mutate === 'empty-window' ? undefined : afterPrepared;
+    const inView = afterPrepared.collected
       .filter((candidate) => candidate.inView)
       .map((candidate) => `${candidate.name}+${candidate.role || ''}`);
     const fingerprint = pageFingerprint(afterEvidence, inView);

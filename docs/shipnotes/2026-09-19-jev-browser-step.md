@@ -6,6 +6,7 @@
 
 - `CODE_AGENT_BROWSER_JEV_STEP=1` 显式开；缺 `TYPESAFE_API_KEY` 时 warn 一行且不装配。
 - `CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT` 覆盖软步顶（正整数，封顶硬顶 60；缺省 20）。
+- `CODE_AGENT_BROWSER_JEV_USD_BUDGET` 覆盖每任务 Jev 美元预算（正数；缺省 0.03，超限 fallback 回落主模型）。
 - 不拦截现有 `click` / `type` / `get_dom_snapshot`。工具面 interactive cap 仍为 80。
 
 ## 数据出境（FolderTrust / 权限披露）

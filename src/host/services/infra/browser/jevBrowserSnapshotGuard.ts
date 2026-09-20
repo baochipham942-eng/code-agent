@@ -132,7 +132,8 @@ function buildJevStateSkeleton(args: {
         title: args.prepared.snapshot.title.slice(0, 500),
       },
       headings,
-      window: args.prepared.window,
+      // selected 与 targets 同步：dropZones 裁剪后 targets 变少，window.selected 跟着裁后口径
+      window: { ...args.prepared.window, selected: selected.length },
       targets,
       recent_steps: recent,
       assertions,

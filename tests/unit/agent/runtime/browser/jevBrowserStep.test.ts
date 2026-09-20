@@ -231,6 +231,11 @@ describe('jevBrowserStep', () => {
     expect(browserSchema.inputSchema.properties?.action?.enum).not.toContain('execute_goal');
     expect(browserActionTool.inputSchema.properties?.action?.enum).not.toContain('execute_goal');
     expect(browserActionSchema.inputSchema.properties?.action?.enum).not.toContain('execute_goal');
+    for (const schema of [BrowserTool.inputSchema, browserSchema.inputSchema, browserActionTool.inputSchema, browserActionSchema.inputSchema]) {
+      expect(schema.properties?.task).toBeUndefined();
+      expect(schema.properties?.assertions).toBeUndefined();
+      expect(schema.properties?.jevBudgetUsd).toBeUndefined();
+    }
   });
 
   it('开关开时 description 含回落契约且枚举含 execute_goal', () => {
@@ -246,6 +251,11 @@ describe('jevBrowserStep', () => {
     expect(browserSchema.inputSchema.properties?.action?.enum).toContain('execute_goal');
     expect(browserActionTool.inputSchema.properties?.action?.enum).toContain('execute_goal');
     expect(browserActionSchema.inputSchema.properties?.action?.enum).toContain('execute_goal');
+    for (const schema of [BrowserTool.inputSchema, browserSchema.inputSchema, browserActionTool.inputSchema, browserActionSchema.inputSchema]) {
+      expect(schema.properties?.task).toBeTypeOf('object');
+      expect(schema.properties?.assertions).toBeTypeOf('object');
+      expect(schema.properties?.jevBudgetUsd).toBeTypeOf('object');
+    }
     expect(browserSchema.inputSchema).toEqual(BrowserTool.inputSchema);
     expect(browserActionSchema.inputSchema).toEqual(browserActionTool.inputSchema);
   });
@@ -535,7 +545,28 @@ describe('jevBrowserStep', () => {
     expect(result.error).toMatch(/交回主模型走现行审批门/);
   });
 
-  it('CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT=2 时第二步后 step_limit', async () => {
+  it('CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT=2 时恰在第 2 步完成 → done_verified 而非 step_limit', async () => {
+    vi.stubEnv('CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT', '2');
+    const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+    const originalClick = host.clickTargetRef.bind(host);
+    host.clickTargetRef = async (ref) => {
+      await originalClick(ref);
+      if (host.clicks.length === 2) {
+        host.pages[0] = snapshot('Done', [button('tref_done', 'Done')]);
+      }
+    };
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const result = await runLoop(host, systemOne, {
+      task: 'click Go until Done',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Done' }],
+    });
+    expect(result.status).toBe('done_verified');
+    expect(result.success).toBe(true);
+    expect(result.metadata?.steps).toBe(2);
+    expect(host.clicks).toEqual(['tref_go', 'tref_go']);
+  });
+
+  it('CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT=2 时第 2 步后仍未完成 → step_limit', async () => {
     vi.stubEnv('CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT', '2');
     const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
     const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
@@ -544,6 +575,7 @@ describe('jevBrowserStep', () => {
       assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
     });
     expect(result.status).toBe('step_limit');
+    expect(result.success).toBe(false);
     expect(result.metadata?.steps).toBe(2);
     expect(host.clicks).toEqual(['tref_go', 'tref_go']);
   });

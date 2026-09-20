@@ -251,20 +251,28 @@ export function browserJevStepDescriptionSuffix(env: NodeJS.ProcessEnv = process
   return isBrowserJevStepEnabled(env) ? BROWSER_JEV_STEP_DESCRIPTION_SUFFIX : '';
 }
 
+/** execute_goal 专属参数：与 action 枚举同步绑开关，关时从 schema 面一并裁掉。 */
+const BROWSER_JEV_STEP_PARAM_KEYS: readonly string[] = ['task', 'assertions', 'jevBudgetUsd'];
+
 export function withBrowserJevStepActionEnum(
   schema: JSONSchema,
   env: NodeJS.ProcessEnv = process.env,
 ): JSONSchema {
   const action = schema.properties?.action;
   if (!action || !Array.isArray(action.enum)) return schema;
+  const enabled = isBrowserJevStepEnabled(env);
   const without = action.enum.filter((value) => value !== 'execute_goal');
+  const properties = { ...schema.properties };
+  if (!enabled) {
+    for (const key of BROWSER_JEV_STEP_PARAM_KEYS) delete properties[key];
+  }
   return {
     ...schema,
     properties: {
-      ...schema.properties,
+      ...properties,
       action: {
         ...action,
-        enum: isBrowserJevStepEnabled(env) ? [...without, 'execute_goal'] : without,
+        enum: enabled ? [...without, 'execute_goal'] : without,
       },
     },
   };

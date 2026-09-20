@@ -22,7 +22,7 @@ export type LibraryItemKind = (typeof LIBRARY_ITEM_KINDS)[number];
  * - failed:  解析失败（learnError 带真实原因），可重试
  * 旧库迁移行视为 pending（无抽取文本，装 ready 就是假装已学习）。
  */
-export const LIBRARY_LEARN_STATUSES = ['pending', 'running', 'ready', 'failed'] as const;
+const LIBRARY_LEARN_STATUSES = ['pending', 'running', 'ready', 'failed'] as const;
 
 export type LibraryLearnStatus = (typeof LIBRARY_LEARN_STATUSES)[number];
 

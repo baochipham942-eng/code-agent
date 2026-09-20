@@ -17,7 +17,7 @@ import mammoth from 'mammoth';
 import ExcelJS from 'exceljs';
 import { createLogger } from '../infra/logger';
 import { LIBRARY_TIMEOUTS } from '../../../shared/constants';
-import { extractSelectablePdfText } from '../../tools/modules/network/readPdf';
+import { extractSelectablePdfText } from '../../tools/modules/network/pdfTextExtract';
 
 const logger = createLogger('LibraryIngest');
 

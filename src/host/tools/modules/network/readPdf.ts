@@ -5,7 +5,6 @@
 // 未配置：本地 pdftotext 抽可选中文本；prompt 不生效。
 // ============================================================================
 
-import { execFile } from 'node:child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import type {
@@ -18,10 +17,13 @@ import type {
 } from '../../../protocol/tools';
 import { z } from 'zod';
 import { getConfigService } from '../../../services';
-import { MODEL_API_ENDPOINTS, NETWORK_TOOL_TIMEOUTS } from '../../../../shared/constants';
+import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readPdfSchema as schema } from './readPdf.schema';
 import { TOOL_DEPENDENCY_HINTS } from '../_helpers/dependencyHints';
+import { extractSelectablePdfText } from './pdfTextExtract';
+
+export { extractSelectablePdfText };
 
 function isAbortLike(error: unknown, abortSignal: AbortSignal): boolean {
   if (abortSignal.aborted) return true;
@@ -29,58 +31,6 @@ function isAbortLike(error: unknown, abortSignal: AbortSignal): boolean {
   const code = (error as { code?: string }).code;
   const name = (error as { name?: string }).name;
   return code === 'ABORT_ERR' || code === 'ABORTED' || name === 'AbortError';
-}
-
-function isMissingBinary(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const code = (error as { code?: string }).code;
-  const rawMessage = (error as { message?: unknown }).message;
-  const message = typeof rawMessage === 'string'
-    ? rawMessage
-    : error instanceof Error
-      ? error.message
-      : String(error);
-  return code === 'ENOENT' || /\bENOENT\b/.test(message) || /not found/i.test(message);
-}
-
-function runPdftotext(bin: string, filePath: string, abortSignal: AbortSignal): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (abortSignal.aborted) {
-      reject(Object.assign(new Error('aborted'), { code: 'ABORTED' }));
-      return;
-    }
-    execFile(
-      bin,
-      ['-layout', filePath, '-'],
-      {
-        maxBuffer: 50 * 1024 * 1024,
-        timeout: NETWORK_TOOL_TIMEOUTS.PDF_TEXT_EXTRACT,
-        signal: abortSignal,
-      },
-      (error, stdout, stderr) => {
-        if (isAbortLike(error, abortSignal)) {
-          reject(Object.assign(new Error('aborted'), { code: 'ABORTED' }));
-          return;
-        }
-        if (error) {
-          const execError = error as NodeJS.ErrnoException & { killed?: boolean };
-          if (execError.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
-            reject(Object.assign(new Error('pdftotext output exceeded maxBuffer'), { code: 'MAXBUFFER' }));
-            return;
-          }
-          if (execError.killed) {
-            reject(Object.assign(new Error('pdftotext timed out'), { code: 'TIMEOUT' }));
-            return;
-          }
-          const detail = String(stderr ?? '').trim();
-          if (detail) execError.message = `${execError.message}: ${detail}`.slice(0, 500);
-          reject(execError);
-          return;
-        }
-        resolve(Buffer.isBuffer(stdout) ? stdout.toString('utf8') : String(stdout ?? ''));
-      },
-    );
-  });
 }
 
 const VisionCompletionResponseSchema = z.object({
@@ -232,46 +182,6 @@ export async function executeReadPdf(
     ctx.logger.error('PDF read failed', { error: errMsg });
     return { ok: false, error: errMsg || '读取 PDF 失败', code: 'NETWORK_ERROR' };
   }
-}
-
-// 导出复用（N-LIBRARY-LEARN-STATUS）：资料库学习管线用同一条本地 pdftotext 抽取路径，
-// 不另造一份二进制探测/attempt 记录逻辑。OpenRouter 视觉通道刻意不进学习管线——
-// 入库解析要可离线可重试，不能把「是否配了外部 API key」变成学习能否完成的前提。
-export async function extractSelectablePdfText(
-  filePath: string,
-  abortSignal: AbortSignal,
-  logger: ToolContext['logger'],
-): Promise<string> {
-  // Sidecar 只打包 pdftoppm，不把 bundled poppler/bin/pdftotext 当候选。
-  const bins = ['/opt/homebrew/bin/pdftotext', '/usr/local/bin/pdftotext', 'pdftotext'];
-  const attempts: Array<{ bin: string; code?: string; message: string }> = [];
-  for (const bin of bins) {
-    if (abortSignal.aborted) {
-      throw Object.assign(new Error('aborted'), { code: 'ABORTED' });
-    }
-    try {
-      const stdout = await runPdftotext(bin, filePath, abortSignal);
-      if (stdout.trim()) return stdout;
-      attempts.push({ bin, message: 'empty text' });
-      logger.warn('pdftotext candidate returned empty text', { bin });
-    } catch (error) {
-      if (isAbortLike(error, abortSignal)) {
-        throw Object.assign(new Error('aborted'), { code: 'ABORTED' });
-      }
-      const code = (error as { code?: string }).code;
-      if (code === 'TIMEOUT' || code === 'MAXBUFFER') {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      attempts.push({ bin, code, message });
-      logger.warn('pdftotext candidate failed', { bin, code, message });
-    }
-  }
-  const lastReal = [...attempts].reverse().find((attempt) => !isMissingBinary(attempt));
-  const detail = lastReal
-    ? `${lastReal.bin}: ${lastReal.message}`
-    : '未安装 poppler。安装：brew install poppler';
-  throw new Error(`${TOOL_DEPENDENCY_HINTS.readPdfOpenRouter} 本地 pdftotext 失败：${detail}`);
 }
 
 async function finishPdfResult(

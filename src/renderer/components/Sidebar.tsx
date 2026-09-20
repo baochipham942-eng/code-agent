@@ -27,6 +27,7 @@ import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
 import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
+import { ConfirmDialog } from './composites/ConfirmDialog';
 import { createLogger } from '../utils/logger';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import { SidebarSessionList } from './features/sidebar/SidebarSessionList';
@@ -40,6 +41,7 @@ import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
+import { toast } from '../hooks/useToast';
 import ipcService from '../services/ipcService';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
@@ -146,6 +148,7 @@ export const Sidebar: React.FC = () => {
     currentSessionId,
     isLoading,
     createSession,
+    loadSessions,
     switchSession,
     archiveSession,
     unarchiveSession,
@@ -285,6 +288,21 @@ export const Sidebar: React.FC = () => {
     y: number;
     session: SessionWithMeta;
   } | null>(null);
+  const [sessionForkConfirm, setSessionForkConfirm] = useState<{
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText: string;
+    resolve: (confirmed: boolean) => void;
+  } | null>(null);
+  const confirmImportSessionFork = useCallback((options: {
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText: string;
+  }): Promise<boolean> => new Promise((resolve) => {
+    setSessionForkConfirm({ ...options, resolve });
+  }), []);
   const [replayDialog, setReplayDialog] = useState<{
     sessionId: string;
     sessionTitle: string;
@@ -480,6 +498,25 @@ export const Sidebar: React.FC = () => {
         archiveSession,
         softDelete,
         saveExportToDownloads,
+        reloadSessions: () => loadSessions({ silent: true }),
+        switchSession,
+        locateImportedSession: async (sourceExportId, projectId) => {
+          await loadSessions({ silent: true });
+          const importedRoot = useSessionStore.getState().sessions.find((candidate) => {
+            const provenance = candidate.metadata?.portabilityImportV2;
+            return candidate.projectId === projectId
+              && !candidate.parentSessionId
+              && provenance
+              && typeof provenance === 'object'
+              && !Array.isArray(provenance)
+              && (provenance as { sourceExportId?: unknown }).sourceExportId === sourceExportId;
+          });
+          if (!importedRoot) return false;
+          await switchSession(importedRoot.id);
+          return true;
+        },
+        confirmImportSessionFork,
+        showActionToast: (message, action) => toast.error(message, action),
         showToast,
         openRuntimeLogsFolder,
         t,
@@ -495,6 +532,9 @@ export const Sidebar: React.FC = () => {
       setWorkingDirectory,
       saveWorkbenchPresetFromSession,
       saveExportToDownloads,
+      loadSessions,
+      switchSession,
+      confirmImportSessionFork,
       canOpenSessionReplay,
       handleOpenSessionReplay,
       handleOpenVoiceAudit,
@@ -910,6 +950,27 @@ export const Sidebar: React.FC = () => {
           y={contextMenu.y}
           items={getContextMenuItems(contextMenu.session)}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {sessionForkConfirm && (
+        <ConfirmDialog
+          isOpen
+          title={sessionForkConfirm.title}
+          message={sessionForkConfirm.message}
+          variant="warning"
+          confirmText={sessionForkConfirm.confirmText}
+          cancelText={sessionForkConfirm.cancelText}
+          onConfirm={() => {
+            const resolve = sessionForkConfirm.resolve;
+            setSessionForkConfirm(null);
+            resolve(true);
+          }}
+          onCancel={() => {
+            const resolve = sessionForkConfirm.resolve;
+            setSessionForkConfirm(null);
+            resolve(false);
+          }}
         />
       )}
 

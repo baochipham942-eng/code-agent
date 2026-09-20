@@ -1,8 +1,9 @@
 import { createElement } from 'react';
 import {
-  Pin, Pencil, IdCard, Undo2, Archive, Trash2, Wrench, Save, Puzzle, FlaskConical, FileText, ScrollText, Mic2,
+  Pin, Pencil, IdCard, Undo2, Archive, Trash2, Wrench, Save, Puzzle, FlaskConical, FileText, ScrollText, Mic2, GitFork,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
+import type { SessionExportEnvelopeV2, ImportSessionForkResponse } from '@shared/contract/sessionForkPortability';
 import {
   createWorkbenchRecipeMergedContext,
   getDefaultWorkbenchPresetName,
@@ -12,10 +13,12 @@ import {
 import { shortSessionIdForFileName } from '@shared/utils/id';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { ToastType } from '../../../stores/uiStore';
+import type { ToastAction } from '../../../hooks/useToast';
 import type { Translations } from '../../../i18n';
 import { createLogger } from '../../../utils/logger';
 import { copyPathToClipboard } from '../../../utils/platform';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
+import { pickNativeFile } from '../../../services/tauriPluginFacade';
 import {
   canReuseSessionWorkbench,
   formatPresetMenuLabel,
@@ -26,6 +29,24 @@ import type { ContextMenuItem } from './SessionContextMenu';
 const logger = createLogger('Sidebar');
 
 export const SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS = 12_000;
+
+const SESSION_FORK_IMPORT_ERROR_CODES = [
+  'INVALID_ENVELOPE',
+  'UNSUPPORTED_SCHEMA_VERSION',
+  'OWNER_SCOPE_MISMATCH',
+  'PROJECT_SCOPE_MISMATCH',
+  'SYNC_ID_DIGEST_CONFLICT',
+] as const;
+
+type SessionForkImportErrorCode = typeof SESSION_FORK_IMPORT_ERROR_CODES[number];
+
+type ErrorWithCode = Error & { code?: string };
+
+function errorWithCode(message: string, code?: string): ErrorWithCode {
+  const error = new Error(message) as ErrorWithCode;
+  if (code) error.code = code;
+  return error;
+}
 
 export function rejectAfter<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -58,6 +79,16 @@ export interface SessionContextMenuDeps {
   archiveSession: (sessionId: string) => void;
   softDelete: (sessionIds: string[]) => void;
   saveExportToDownloads: (fileName: string, content: string) => Promise<void>;
+  reloadSessions: () => Promise<void>;
+  switchSession: (sessionId: string) => Promise<void>;
+  locateImportedSession: (sourceExportId: string, projectId: string) => Promise<boolean>;
+  confirmImportSessionFork: (options: {
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText: string;
+  }) => Promise<boolean>;
+  showActionToast: (message: string, action: ToastAction) => void;
   showToast: (type: ToastType, message: string, duration?: number) => string;
   openRuntimeLogsFolder: () => Promise<boolean>;
   t: Translations;
@@ -91,11 +122,38 @@ export function buildSessionContextMenuItems(
     archiveSession,
     softDelete,
     saveExportToDownloads,
+    reloadSessions,
+    switchSession,
+    locateImportedSession,
+    confirmImportSessionFork,
+    showActionToast,
     showToast,
     openRuntimeLogsFolder,
     t,
   } = deps;
   const menu = t.sessionMenu;
+
+  const importErrorCode = (error: unknown): SessionForkImportErrorCode | null => {
+    const explicitCode = error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code ?? '')
+      : '';
+    if ((SESSION_FORK_IMPORT_ERROR_CODES as readonly string[]).includes(explicitCode)) {
+      return explicitCode as SessionForkImportErrorCode;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    return SESSION_FORK_IMPORT_ERROR_CODES.find((code) => message.includes(code)) ?? null;
+  };
+
+  const importErrorMessage = (code: string | null): string => {
+    switch (code) {
+      case 'INVALID_ENVELOPE': return menu.importSessionForkInvalidEnvelope;
+      case 'UNSUPPORTED_SCHEMA_VERSION': return menu.importSessionForkUnsupportedVersion;
+      case 'OWNER_SCOPE_MISMATCH': return menu.importSessionForkOwnerMismatch;
+      case 'PROJECT_SCOPE_MISMATCH': return menu.importSessionForkProjectMismatch;
+      case 'SYNC_ID_DIGEST_CONFLICT': return menu.importSessionForkDuplicate;
+      default: return menu.importSessionForkFailedGeneric;
+    }
+  };
 
   const isPinned = pinnedSessionIds.has(session.id);
   const isArchived = !!session.isArchived;
@@ -279,6 +337,146 @@ export function buildSessionContextMenuItems(
         }
       },
     },
+    {
+      label: menu.exportSessionFork,
+      icon: createElement(GitFork, { className: 'h-4 w-4' }),
+      onClick: async () => {
+        try {
+          const response = await window.domainAPI?.invoke<SessionExportEnvelopeV2>(
+            IPC_DOMAINS.SESSION,
+            'exportSessionFork',
+            {
+              sessionId: session.id,
+              exportId: typeof globalThis.crypto?.randomUUID === 'function'
+                ? globalThis.crypto.randomUUID()
+                : `${session.id}-${Date.now()}`,
+              mode: 'subtree',
+            },
+          );
+          if (!response?.success || !response.data) {
+            throw new Error(response?.error?.message || 'Failed to export session fork');
+          }
+          await saveExportToDownloads(
+            `neo-session-fork-${shortSessionIdForFileName(session.id)}.json`,
+            `${JSON.stringify(response.data, null, 2)}\n`,
+          );
+        } catch (error) {
+          logger.error('Failed to export session fork', error);
+          showToast('error', menu.exportSessionForkFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
+        }
+      },
+    },
+    ...(session.projectId ? [{
+      label: menu.importSessionFork,
+      icon: createElement(GitFork, { className: 'h-4 w-4' }),
+      onClick: async () => {
+        const projectId = session.projectId;
+        if (!projectId) return;
+        const filePath = await pickNativeFile({
+          title: menu.importSessionForkFileTitle,
+          extensions: ['json'],
+        });
+        if (!filePath) return;
+
+        let envelope: SessionExportEnvelopeV2;
+        try {
+          const file = await window.domainAPI?.invoke<string>(
+            IPC_DOMAINS.WORKSPACE,
+            'readFile',
+            { filePath },
+          );
+          if (!file?.success || typeof file.data !== 'string') {
+            throw new Error(file?.error?.message || 'Failed to read session fork file');
+          }
+          try {
+            envelope = JSON.parse(file.data) as SessionExportEnvelopeV2;
+          } catch {
+            throw new Error(menu.importSessionForkInvalidFile);
+          }
+        } catch (error) {
+          logger.error('Failed to read session fork file', error);
+          showActionToast(menu.importSessionForkInvalidFile, {
+            label: menu.importSessionForkChooseAnother,
+            onClick: () => {
+              void pickNativeFile({ title: menu.importSessionForkFileTitle, extensions: ['json'] });
+            },
+          });
+          return;
+        }
+
+        const planned = await confirmImportSessionFork({
+          title: menu.importSessionForkPlanTitle,
+          message: menu.importSessionForkPlanMessage
+            .replace('{sourceProject}', envelope.projectId)
+            .replace('{targetProject}', projectId)
+            .replace('{sessionCount}', String(envelope.sessions.length))
+            .replace('{messageCount}', String(envelope.messages.length)),
+          confirmText: menu.importSessionForkPlanConfirm,
+          cancelText: menu.importSessionForkPlanCancel,
+        });
+        if (!planned) return;
+
+        const namespace = `desktop-${shortSessionIdForFileName(session.id)}-${Date.now()}`;
+        const importFork = async (allowProjectRemap: boolean): Promise<ImportSessionForkResponse> => {
+          const response = await window.domainAPI?.invoke<ImportSessionForkResponse>(
+            IPC_DOMAINS.SESSION,
+            'importSessionFork',
+            {
+              envelope,
+              targetProjectId: projectId,
+              namespace,
+              allowProjectRemap,
+            },
+          );
+          if (!response?.success || !response.data) {
+            throw errorWithCode(
+              response?.error?.message || 'Failed to import session fork',
+              response?.error?.code,
+            );
+          }
+          return response.data;
+        };
+
+        try {
+          let imported: ImportSessionForkResponse;
+          try {
+            imported = await importFork(false);
+          } catch (error) {
+            if (importErrorCode(error) !== 'PROJECT_SCOPE_MISMATCH') throw error;
+            const remapConfirmed = await confirmImportSessionFork({
+              title: menu.importSessionForkRemapTitle,
+              message: menu.importSessionForkRemapMessage
+                .replace('{sourceProject}', envelope.projectId)
+                .replace('{targetProject}', projectId),
+              confirmText: menu.importSessionForkRemapConfirm,
+              cancelText: menu.importSessionForkRemapCancel,
+            });
+            if (!remapConfirmed) return;
+            imported = await importFork(true);
+          }
+          await reloadSessions();
+          await switchSession(imported.rootSessionId);
+          showToast('success', menu.importSessionForkSucceeded.replace('{count}', String(Object.keys(imported.sessionIdMap).length)));
+        } catch (error) {
+          const code = importErrorCode(error);
+          logger.error('Failed to import session fork', { code, error });
+          showActionToast(importErrorMessage(code), {
+            label: code === 'SYNC_ID_DIGEST_CONFLICT'
+              ? menu.importSessionForkLocateExisting
+              : menu.importSessionForkChooseAnother,
+            onClick: () => {
+              if (code === 'SYNC_ID_DIGEST_CONFLICT') {
+                void locateImportedSession(envelope.exportId, projectId).then((found) => {
+                  if (!found) showToast('error', menu.importSessionForkLocateMissing);
+                });
+              } else {
+                void pickNativeFile({ title: menu.importSessionForkFileTitle, extensions: ['json'] });
+              }
+            },
+          });
+        }
+      },
+    } satisfies ContextMenuItem] : []),
     {
       label: menu.exportSessionLog,
       icon: createElement(ScrollText, { className: 'h-4 w-4' }),

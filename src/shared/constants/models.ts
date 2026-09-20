@@ -44,6 +44,13 @@ export const DEFAULT_MODELS = {
 } as const;
 
 /**
+ * 智谱官方端点（open.bigmodel.cn + ZHIPU_OFFICIAL_API_KEY）上的免费快模型。
+ * DEFAULT_MODELS.quick 已切到 0ki 专属 glm-5.3-flash，官方端点上不存在该 id；
+ * 写死官方端点的调用方（视频提示词扩写、语音粘贴）必须用这个，不能复用 DEFAULT_MODELS.quick。
+ */
+export const ZHIPU_OFFICIAL_QUICK_MODEL = 'glm-4-flash';
+
+/**
  * 快模型鉴权失败拉黑窗口：某候选（provider+model+当前 key）401/403 后在此窗口内
  * 不再入选，解析自动降到下一级（fast → code → env 智谱）。换了 key 指纹即变、立即重试；
  * 窗口过后也会重试一次，避免上游误发 401 造成永久降级。

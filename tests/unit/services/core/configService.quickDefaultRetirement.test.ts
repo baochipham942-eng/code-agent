@@ -1,8 +1,8 @@
 // ============================================================================
 // N-QUICK-0KI-FLASH — quick 档旧默认退役钉子
 // 存量持久化 models.routing.fast 指向旧默认 zhipu/glm-4-flash（免费档官方 key 已死）
-// 时迁移到 DEFAULT_MODELS.quick（只动 routing.fast / taskStrategy.profiles.fast）；
-// providers.zhipu.model、models map、其它档位里的同名值视为用户显式选择，一字不动。
+// 时迁移到 DEFAULT_MODELS.quick（只动 routing.fast，它没有 UI 入口）；
+// taskStrategy.profiles.fast、providers.zhipu.model、models map、其它档位里的同名值视为用户显式选择，一字不动。
 // ============================================================================
 import { mkdtemp, writeFile } from 'fs/promises';
 import { join } from 'path';
@@ -97,10 +97,8 @@ describe('quick 旧默认 glm-4-flash 持久化路由迁移', () => {
       provider: 'zhipu',
       model: DEFAULT_MODELS.quick,
     });
-    expect(service.getSettings().models.taskStrategy?.profiles.fast).toMatchObject({
-      provider: 'zhipu',
-      model: DEFAULT_MODELS.quick,
-    });
+    // profiles.fast 有任务策略面板入口，同名值可能是用户刚选的：不迁
+    expect(service.getSettings().models.taskStrategy?.profiles.fast).toMatchObject({ provider: 'zhipu', model: 'glm-4-flash' });
     expectUserChoicesUntouched(service.getSettings().models as Record<string, any>);
 
     // 幂等：同一 settings 再跑一遍迁移为空操作

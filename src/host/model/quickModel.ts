@@ -92,6 +92,8 @@ const quickAuthBlacklist = new Map<string, number>();
 // 每次调用都重解析（getSettings 是内存读，成本远小于随后的 LLM 请求），
 // 只在解析结果变化时打 info，恒定结果不刷屏。
 const lastResolvedLogKeys: Partial<Record<'quick' | 'memory', string>> = {};
+// 只配官方 key 而 quick 已是 0ki 档时的提示，进程内只打一次（每次调用都重解析，不去抖会刷屏）
+let warnedOfficialKeyOnly = false;
 
 function blacklistKey(provider: string, model: string, apiKey: string): string {
   return `${provider}:${model}:${apiKey.length}:${apiKey.slice(-4)}`;
@@ -285,7 +287,8 @@ function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): Qu
     const envApiKey = isFreeQuick
       ? normalizeApiKey(process.env.ZHIPU_OFFICIAL_API_KEY) || normalizeApiKey(process.env.ZHIPU_API_KEY)
       : normalizeApiKey(process.env.ZHIPU_API_KEY);
-    if (!envApiKey && normalizeApiKey(process.env.ZHIPU_OFFICIAL_API_KEY)) {
+    if (!envApiKey && normalizeApiKey(process.env.ZHIPU_OFFICIAL_API_KEY) && !warnedOfficialKeyOnly) {
+      warnedOfficialKeyOnly = true;
       logger.warn(`Quick env fallback skipped: only ZHIPU_OFFICIAL_API_KEY set but ${DEFAULT_MODELS.quick} is not a free-tier model; set ZHIPU_API_KEY`);
     }
     if (!isProviderExplicitlyDisabled('zhipu') && envApiKey && !isAuthBlacklisted('zhipu', DEFAULT_MODELS.quick, envApiKey)) {

@@ -23,7 +23,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
-import { DEFAULT_MODELS, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
+import { MODEL_API_ENDPOINTS, ZHIPU_OFFICIAL_QUICK_MODEL } from '../../../../shared/constants';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { videoGenerateSchema as schema } from './videoGenerate.schema';
 import { TOOL_DEPENDENCY_HINTS } from '../../../tools/modules/_helpers/dependencyHints';
@@ -210,7 +210,7 @@ async function expandVideoPrompt(
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: DEFAULT_MODELS.quick,
+          model: ZHIPU_OFFICIAL_QUICK_MODEL,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: shortPrompt },

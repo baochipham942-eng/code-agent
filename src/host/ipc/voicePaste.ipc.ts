@@ -3,7 +3,7 @@ import { spawn, ChildProcess, execFile } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { DEFAULT_MODELS } from '../../shared/constants';
+import { DEFAULT_MODELS, ZHIPU_OFFICIAL_QUICK_MODEL } from '../../shared/constants';
 import type { SpeechTranscribeOptions, SpeechTranscribeResult } from '../../shared/contract/speech';
 import { summarizeUserFacingError } from '../security/userFacingError';
 import type { HostCapabilityCleanup } from '../services/capabilities/hostCapabilityPorts';
@@ -59,7 +59,7 @@ async function transcribeAudio(wavPath: string): Promise<string> {
 const MODEL_API_ENDPOINTS = {
   zhipu: {
     url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    model: DEFAULT_MODELS.quick,
+    model: ZHIPU_OFFICIAL_QUICK_MODEL,
   },
   kimi: {
     url: 'https://api.moonshot.cn/v1/chat/completions',

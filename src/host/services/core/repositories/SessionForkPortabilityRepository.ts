@@ -642,11 +642,13 @@ export class SessionForkPortabilityRepository {
   private insertImportedMessage(
     message: SessionExportEnvelopeV2['messages'][number],
   ): void {
-    const provenance: Record<string, unknown> = {};
-    if (message.source !== undefined) provenance.source = message.source;
-    if (message.subtype !== undefined) provenance.subtype = message.subtype;
+    const metadata: Record<string, unknown> = message.metadata
+      ? structuredClone(message.metadata) as Record<string, unknown>
+      : {};
+    if (message.source !== undefined) metadata.source = message.source;
+    if (message.subtype !== undefined) metadata.subtype = message.subtype;
     if (message.artifacts?.length) {
-      provenance.readOnlyArtifactProvenanceV2 = message.artifacts;
+      metadata.readOnlyArtifactProvenanceV2 = message.artifacts;
     }
     this.db.prepare(`
       INSERT INTO messages (
@@ -654,7 +656,7 @@ export class SessionForkPortabilityRepository {
         attachments, thinking, effort_level, synced_at, content_parts, metadata,
         is_meta, compaction, visibility, hidden_by_rewind_id, hidden_at
       ) VALUES (
-        ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL, ?, ?,
+        ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, NULL, ?, ?, ?,
         NULL, ?, NULL, NULL
       )
     `).run(
@@ -664,7 +666,9 @@ export class SessionForkPortabilityRepository {
       message.content,
       message.timestamp,
       message.attachments?.length ? canonicalStringify(message.attachments) : null,
-      Object.keys(provenance).length > 0 ? canonicalStringify(provenance) : null,
+      message.thinking ?? null,
+      message.contentParts ? canonicalStringify(message.contentParts) : null,
+      Object.keys(metadata).length > 0 ? canonicalStringify(metadata) : null,
       message.isMeta ? 1 : 0,
       message.visibility ?? 'active',
     );

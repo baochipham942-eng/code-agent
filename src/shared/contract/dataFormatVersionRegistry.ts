@@ -4,7 +4,7 @@ export interface DataFormatMigration {
   migrate: (value: unknown) => unknown;
 }
 
-export const SESSION_EXPORT_ENVELOPE_VERSION = 2 as const;
+export const SESSION_EXPORT_ENVELOPE_VERSION = 3 as const;
 export const FORK_LINEAGE_ENVELOPE_VERSION = 1 as const;
 export const PORTABLE_CONVERSATION_HISTORY_VERSION = 1 as const;
 export const PORTABLE_WORKSPACE_EVIDENCE_VERSION = 1 as const;

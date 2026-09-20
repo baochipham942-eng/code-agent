@@ -175,6 +175,12 @@ export function subtreeDraft() {
         messages: [
           message('cu1', 'user', 'hello', 1),
           message('ca1', 'assistant', 'world', 2, {
+            contentParts: [
+              { type: 'text', text: 'world' },
+              { type: 'tool_call', toolCallId: 'call-ca1' },
+            ],
+            thinking: 'private reasoning',
+            metadata: { thinking: 'metadata thinking' } as Message['metadata'],
             attachments: [{
               id: 'attachment-1',
               type: 'file',

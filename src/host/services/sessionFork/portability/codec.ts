@@ -1,4 +1,4 @@
-import type { MessageAttachment } from '../../../../shared/contract/message';
+import type { Message, MessageAttachment } from '../../../../shared/contract/message';
 import {
   DataFormatVersionError,
   migrateDataFormatToCurrent,
@@ -14,6 +14,7 @@ import type {
   PortableAgentEngineV2,
   PortableArtifactProvenanceV2,
   PortableAttachmentProvenanceV2,
+  PortableExternalHistoryProvenanceV1,
   PortableMessageV2,
   PortableModelConfigV2,
   PortableSessionV2,
@@ -27,7 +28,6 @@ import {
   LOCAL_SESSION_FORK_OWNER_SCOPE_ID,
   SESSION_EXPORT_ENVELOPE_SCHEMA,
   SESSION_EXPORT_ENVELOPE_VERSION,
-  SessionForkPortabilityError,
 } from '../../../../shared/contract/sessionForkPortability';
 import { canonicalJson, deepPortableClone, portabilityDigest, withoutDigest } from './canonical';
 import { validatePortableConversationHistory } from './conversationHistory';
@@ -35,6 +35,17 @@ import {
   sanitizePortableSessionWorkspaceV2,
   validatePortableSessionWorkspaceV2,
 } from './portableWorkspaceEvidence';
+import {
+  assertDigest,
+  assertInteger,
+  assertNonEmptyString,
+  assertObject,
+  assertOnlyKeys,
+  assertPortableDigest,
+  fail,
+  validateMessageOrdinals,
+  validatePortableSessionOrigin,
+} from './portableValidation';
 
 const FORBIDDEN_RUNTIME_KEYS = new Set([
   'absoluteWorktreePath', 'apiKey', 'approvalQueue', 'approvalRequests',
@@ -45,48 +56,51 @@ const FORBIDDEN_RUNTIME_KEYS = new Set([
   'taskLease', 'todo', 'todos', 'workingDirectory',
 ]);
 
-function fail(code: ConstructorParameters<typeof SessionForkPortabilityError>[0], message: string): never {
-  throw new SessionForkPortabilityError(code, message);
+const PORTABLE_SECRET_PATTERNS = [
+  /\bBearer\s+[A-Za-z0-9._~+/-]+=*/giu,
+  /\bsk-[A-Za-z0-9_-]{8,}\b/giu,
+  /\bAKIA[A-Z0-9]{16}\b/gu,
+];
+
+function normalizePortableKey(key: string): string {
+  return key.replace(/[^A-Za-z0-9]/gu, '').toLowerCase();
 }
 
-function assertObject(value: unknown, label: string): asserts value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    fail('INVALID_ENVELOPE', `${label} must be an object`);
-  }
+function isForbiddenPortableKey(key: string): boolean {
+  const normalized = normalizePortableKey(key);
+  return [...FORBIDDEN_RUNTIME_KEYS].some((candidate) => {
+    const normalizedCandidate = normalizePortableKey(candidate);
+    return normalized === normalizedCandidate || normalized.includes(normalizedCandidate);
+  });
 }
 
-function assertNonEmptyString(value: unknown, label: string): asserts value is string {
-  if (typeof value !== 'string' || value.length === 0) {
-    fail('INVALID_ENVELOPE', `${label} must be a non-empty string`);
+function sanitizePortableValue(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return PORTABLE_SECRET_PATTERNS.reduce(
+      (current, pattern) => current.replace(pattern, (match) => (
+        /^Bearer\s/iu.test(match) ? 'Bearer [REDACTED]' : '[REDACTED_SECRET]'
+      )),
+      value,
+    );
   }
+  if (Array.isArray(value)) return value.map(sanitizePortableValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key, item]) => item !== undefined && !isForbiddenPortableKey(key))
+      .map(([key, item]) => [key, sanitizePortableValue(item)]),
+  );
 }
 
-function assertInteger(value: unknown, label: string): asserts value is number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) {
-    fail('ORDINAL_INVALID', `${label} must be a non-negative safe integer`);
-  }
+function sanitizePortableMetadata(source: Message['metadata']): Message['metadata'] {
+  const sanitized = sanitizePortableValue(source) as Record<string, unknown>;
+  // This marker is recreated from the portable artifact provenance at import.
+  delete sanitized.readOnlyArtifactProvenanceV2;
+  return sanitized as Message['metadata'];
 }
 
-function assertOnlyKeys(
-  value: Record<string, unknown>,
-  allowed: readonly string[],
-  label: string,
-): void {
-  const allowedKeys = new Set(allowed);
-  for (const key of Object.keys(value)) {
-    if (!allowedKeys.has(key)) {
-      fail('INVALID_ENVELOPE', `${label}.${key} is not part of the portable schema`);
-    }
-  }
-}
-
-function assertPortableDigest(value: unknown, label: string): asserts value is string {
-  if (
-    typeof value !== 'string'
-    || !/^(?:sha256:)?[a-f0-9]{64}$/i.test(value)
-  ) {
-    fail('DIGEST_MISMATCH', `${label} must be a SHA-256 digest`);
-  }
+function sanitizePortableContentParts(source: Message['contentParts']): Message['contentParts'] {
+  return sanitizePortableValue(source) as Message['contentParts'];
 }
 
 function parseJson(value: string | unknown, label: string): unknown {
@@ -214,9 +228,16 @@ function sanitizeSession(
   };
   if (raw.type !== undefined) portable.type = raw.type;
   if (raw.origin !== undefined) {
+    const externalHistoryMetadata = raw.origin.metadata
+      && typeof raw.origin.metadata === 'object'
+      && !Array.isArray(raw.origin.metadata)
+      && (raw.origin.metadata as Record<string, unknown>).kind === 'external_history'
+      ? sanitizePortableValue(raw.origin.metadata) as PortableExternalHistoryProvenanceV1
+      : undefined;
     portable.origin = {
       kind: raw.origin.kind,
       ...(raw.origin.name !== undefined ? { name: raw.origin.name } : {}),
+      ...(externalHistoryMetadata ? { metadata: externalHistoryMetadata } : {}),
     };
   }
   if (raw.memoryMode !== undefined) portable.memoryMode = raw.memoryMode;
@@ -241,6 +262,15 @@ function sanitizeMessages(source: SessionExportSourceV2): PortableMessageV2[] {
       content: raw.content,
       timestamp: raw.timestamp,
     };
+    if (raw.contentParts !== undefined) {
+      portable.contentParts = sanitizePortableContentParts(raw.contentParts);
+    }
+    if (raw.thinking !== undefined) {
+      portable.thinking = sanitizePortableValue(raw.thinking) as string;
+    }
+    if (raw.metadata !== undefined) {
+      portable.metadata = sanitizePortableMetadata(raw.metadata);
+    }
     if (raw.visibility !== undefined) portable.visibility = raw.visibility;
     if (raw.isMeta !== undefined) portable.isMeta = raw.isMeta;
     if (raw.source !== undefined) portable.source = raw.source;
@@ -353,12 +383,6 @@ function detachedLineage(
     })],
     messageMappings: [],
   });
-}
-
-function assertDigest(actual: string, expected: string, label: string): void {
-  if (actual !== expected) {
-    fail('DIGEST_MISMATCH', `${label} digest does not match its canonical payload`);
-  }
 }
 
 function validateLineageDigests(lineage: ForkLineageEnvelopeV1): void {
@@ -616,89 +640,6 @@ export function decodeForkLineageEnvelopeV1(
   return deepPortableClone(lineage);
 }
 
-function validateMessageOrdinals(messages: PortableMessageV2[], sessionIds: ReadonlySet<string>): void {
-  const grouped = new Map<string, PortableMessageV2[]>();
-  const allMessageIds = new Set<string>();
-  for (const message of messages) {
-    assertObject(message, 'portable message');
-    assertOnlyKeys(message as unknown as Record<string, unknown>, [
-      'id',
-      'sessionId',
-      'ordinal',
-      'role',
-      'content',
-      'timestamp',
-      'visibility',
-      'isMeta',
-      'source',
-      'subtype',
-      'attachments',
-      'artifacts',
-      'payloadDigest',
-    ], `messages[${message.id}]`);
-    if (allMessageIds.has(message.id)) {
-      fail('REFERENCE_NOT_CLOSED', `duplicate message id ${message.id}`);
-    }
-    allMessageIds.add(message.id);
-    if (!sessionIds.has(message.sessionId)) {
-      fail('REFERENCE_NOT_CLOSED', `message ${message.id} references missing session ${message.sessionId}`);
-    }
-    assertInteger(message.ordinal, `message ${message.id} ordinal`);
-    const group = grouped.get(message.sessionId) ?? [];
-    group.push(message);
-    grouped.set(message.sessionId, group);
-    for (const attachment of message.attachments ?? []) {
-      assertObject(attachment, `message ${message.id} attachment`);
-      const raw = attachment as unknown as Record<string, unknown>;
-      assertOnlyKeys(raw, [
-        'id',
-        'type',
-        'category',
-        'name',
-        'size',
-        'mimeType',
-        'pageCount',
-        'sheetCount',
-        'rowCount',
-        'language',
-        'contentDigest',
-      ], `messages[${message.id}].attachments[${attachment.id}]`);
-      assertPortableDigest(
-        attachment.contentDigest,
-        `messages[${message.id}].attachments[${attachment.id}].contentDigest`,
-      );
-    }
-    for (const artifact of message.artifacts ?? []) {
-      assertObject(artifact, `message ${message.id} artifact`);
-      assertOnlyKeys(artifact as unknown as Record<string, unknown>, [
-        'id',
-        'type',
-        'title',
-        'version',
-        'parentId',
-        'contentDigest',
-      ], `messages[${message.id}].artifacts[${artifact.id}]`);
-      assertPortableDigest(artifact.contentDigest, `artifact ${artifact.id}.contentDigest`);
-    }
-  }
-  for (const sessionId of sessionIds) {
-    const entries = grouped.get(sessionId) ?? [];
-    const ordinals = entries.map((item) => item.ordinal).sort((a, b) => a - b);
-    ordinals.forEach((ordinal, index) => {
-      if (ordinal !== index) {
-        fail('ORDINAL_INVALID', `messages for ${sessionId} must use contiguous ordinals from zero`);
-      }
-    });
-  }
-  for (const message of messages) {
-    assertDigest(
-      message.payloadDigest,
-      portabilityDigest(withoutDigest(message)),
-      `message ${message.id}`,
-    );
-  }
-}
-
 export function validateSessionExportEnvelopeV2(
   envelope: SessionExportEnvelopeV2,
   expectedScope?: SessionExportDecodeScope,
@@ -790,12 +731,7 @@ export function validateSessionExportEnvelopeV2(
       );
     }
     if (session.origin) {
-      assertObject(session.origin, `sessions[${session.id}].origin`);
-      assertOnlyKeys(
-        session.origin as unknown as Record<string, unknown>,
-        ['kind', 'name'],
-        `sessions[${session.id}].origin`,
-      );
+      validatePortableSessionOrigin(session.origin, `sessions[${session.id}]`);
     }
     if (session.engine) {
       assertObject(session.engine, `sessions[${session.id}].engine`);

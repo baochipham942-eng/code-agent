@@ -19,7 +19,7 @@ describe('session fork portability codecs', () => {
     const envelope = buildSessionExportEnvelopeV2(subtreeDraft());
 
     expect(envelope.schema).toBe('neo.session-export');
-    expect(envelope.version).toBe(2);
+    expect(envelope.version).toBe(3);
     expect(envelope.lineage?.schema).toBe('neo.fork-lineage');
     expect(envelope.lineage?.version).toBe(1);
 
@@ -67,6 +67,14 @@ describe('session fork portability codecs', () => {
     expect(child?.workspace?.anchorChildMessageId).toBe('ca1');
 
     const childMessage = envelope.messages.find((item) => item.id === 'ca1');
+    expect(childMessage).toMatchObject({
+      contentParts: [
+        { type: 'text', text: 'world' },
+        { type: 'tool_call', toolCallId: 'call-ca1' },
+      ],
+      thinking: 'private reasoning',
+      metadata: { thinking: 'metadata thinking' },
+    });
     expect(childMessage?.attachments).toEqual([expect.objectContaining({
       id: 'attachment-1',
       type: 'file',
@@ -158,7 +166,7 @@ describe('session fork portability codecs', () => {
     delete legacy.version;
 
     expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(legacy))).toThrow(
-      /session export envelope version 0 has no registered migration to version 2/u,
+      /session export envelope version 0 has no registered migration to version 3/u,
     );
   });
 
@@ -169,7 +177,18 @@ describe('session fork portability codecs', () => {
     };
 
     expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(unknown))).toThrow(
-      /session export envelope has unknown version 99; current version is 2/u,
+      /session export envelope has unknown version 99; current version is 3/u,
+    );
+  });
+
+  it('rejects the previous v2 envelope after the lossless message projection upgrade', () => {
+    const legacy = {
+      ...buildSessionExportEnvelopeV2(subtreeDraft()),
+      version: 2,
+    };
+
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(legacy))).toThrow(
+      /session export envelope version 2 has no registered migration to version 3/u,
     );
   });
 

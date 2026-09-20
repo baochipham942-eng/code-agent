@@ -79,6 +79,15 @@ export interface PortableAgentEngineV2 {
   origin?: 'manual' | 'import' | 'external';
 }
 
+/** Provenance for a history file imported from an external agent engine. */
+export interface PortableExternalHistoryProvenanceV1 {
+  kind: 'external_history';
+  engine: 'codex_cli' | 'claude_code';
+  sourceSessionId: string;
+  sourceDigest: string;
+  sourcePathDigest: string;
+}
+
 interface PortableForkPathMappingV1 {
   sourceRootDigest: string;
   /** Repository-relative source path. `.` denotes the target repository root. */
@@ -163,7 +172,9 @@ export interface PortableSessionV2 {
   title: string;
   modelConfig: PortableModelConfigV2;
   type?: SessionType;
-  origin?: SessionOrigin;
+  origin?: Omit<SessionOrigin, 'metadata'> & {
+    metadata?: PortableExternalHistoryProvenanceV1;
+  };
   memoryMode?: SessionMemoryMode;
   suppressedMemoryEntryIds?: string[];
   readOnly?: boolean;
@@ -181,6 +192,12 @@ export interface PortableMessageV2 {
   role: MessageRole;
   content: string;
   timestamp: number;
+  /** Structured text/tool ordering required to rebuild the conversation projection exactly. */
+  contentParts?: Message['contentParts'];
+  /** Assistant reasoning persisted alongside the visible content. */
+  thinking?: Message['thinking'];
+  /** Portable message metadata after runtime/path/secret sanitization. */
+  metadata?: Message['metadata'];
   visibility?: MessageVisibility;
   isMeta?: boolean;
   source?: Message['source'];

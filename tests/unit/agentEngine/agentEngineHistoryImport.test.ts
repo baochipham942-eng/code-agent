@@ -138,6 +138,61 @@ describe('AgentEngineHistoryImportService', () => {
     ]);
   });
 
+  it('maps external history into a portable envelope with source provenance and thinking', async () => {
+    const roots = await createHistoryRoots();
+    const sourcePath = path.join(roots.claude, '-tmp-project', 'claude-import-1.jsonl');
+    await fs.mkdir(path.dirname(sourcePath), { recursive: true });
+    await fs.writeFile(sourcePath, [
+      JSON.stringify({
+        type: 'user', uuid: 'u1', parentUuid: null, sessionId: 'claude-import-1',
+        timestamp: '2026-05-16T11:00:00.000Z',
+        message: { content: 'Continue from the imported history' },
+      }),
+      JSON.stringify({
+        type: 'assistant', uuid: 'a1', parentUuid: 'u1', sessionId: 'claude-import-1',
+        timestamp: '2026-05-16T11:00:02.000Z',
+        message: {
+          model: 'claude-sonnet',
+          content: [
+            { type: 'thinking', thinking: 'private reasoning' },
+            { type: 'text', text: 'Imported reply' },
+            { type: 'tool_use', id: 'tool-1', name: 'Read', input: { path: 'README.md' } },
+          ],
+        },
+      }),
+    ].join('\n'));
+
+    const service = new AgentEngineHistoryImportService({
+      roots: { codexSessionsRoot: roots.codex, claudeProjectsRoot: roots.claude },
+    });
+    const result = await service.mapHistoryForImport({
+      engine: 'claude_code',
+      sourcePath,
+      ownerScopeId: 'owner-a',
+      projectId: 'project-a',
+      exportId: 'external-export-1',
+    });
+
+    expect(result.provenance).toMatchObject({
+      kind: 'external_history',
+      engine: 'claude_code',
+      sourceSessionId: 'claude-import-1',
+    });
+    expect(result.provenance.sourceDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(result.envelope).toMatchObject({
+      schema: 'neo.session-export',
+      version: 3,
+      exportId: 'external-export-1',
+      ownerScopeId: 'owner-a',
+      projectId: 'project-a',
+    });
+    expect(result.envelope.sessions[0].origin?.metadata).toEqual(result.provenance);
+    expect(result.envelope.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ content: 'Imported reply', thinking: 'private reasoning' }),
+      expect.objectContaining({ contentParts: [{ type: 'text', text: 'Imported reply' }, { type: 'tool_call', toolCallId: 'tool-1' }] }),
+    ]));
+  });
+
   it('keeps listHistory alive when a parser fails for one source file', async () => {
     const roots = await createHistoryRoots();
     const sourcePath = path.join(roots.claude, '-tmp-project', 'broken-session.jsonl');

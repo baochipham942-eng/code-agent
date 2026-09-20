@@ -134,6 +134,18 @@ function seedLineage(
     sharedAssistantAttachments,
     'active',
   );
+  db.prepare(`
+    UPDATE messages
+    SET thinking = ?, content_parts = ?, metadata = ?
+    WHERE id IN ('a1', 'ca1')
+  `).run(
+    'private reasoning',
+    JSON.stringify([
+      { type: 'text', text: 'answer' },
+      { type: 'tool_call', toolCallId: 'call-answer' },
+    ]),
+    JSON.stringify({ thinking: 'metadata thinking' }),
+  );
   insertMessage.run('cu2', 'child', 'user', 'rewind anchor', 3, null, 'active');
 
   db.prepare(`
@@ -534,7 +546,7 @@ describe('SessionForkPortabilityRepository', () => {
       .toEqual({ count: 0 });
   });
 
-  it('imports a fully remapped lineage atomically and clears runtime/task/authorization state', () => {
+  it('roundtrips rich thinking/contentParts/metadata lineage and clears runtime/task/authorization state', () => {
     const envelope = repository.exportSessionFork({
       exportId: 'export-import',
       rootSessionId: 'root',
@@ -662,6 +674,23 @@ describe('SessionForkPortabilityRepository', () => {
     expect(branchRepo.auditLineage(importedChildId, boundary)).toMatchObject({
       status: 'healthy',
       issues: [],
+    });
+    const importedRichMessage = db.prepare(`
+      SELECT thinking, content_parts, metadata
+      FROM messages
+      WHERE id = ?
+    `).get(plan.messageIdMap.ca1) as {
+      thinking: string | null;
+      content_parts: string | null;
+      metadata: string | null;
+    };
+    expect(importedRichMessage.thinking).toBe('private reasoning');
+    expect(JSON.parse(String(importedRichMessage.content_parts))).toEqual([
+      { type: 'text', text: 'answer' },
+      { type: 'tool_call', toolCallId: 'call-answer' },
+    ]);
+    expect(JSON.parse(String(importedRichMessage.metadata))).toMatchObject({
+      thinking: 'metadata thinking',
     });
     const importedRootAssistantId = plan.messageIdMap.a1;
     const importedAttachmentRow = db.prepare(`

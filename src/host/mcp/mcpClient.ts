@@ -199,8 +199,13 @@ export class MCPClient extends EventEmitter {
   /** Max cache entries */
   private static readonly MAX_CACHE_SIZE = 20;
 
+  // 只回收能懒加载回来的 server（stdio 且未关闭 lazyLoad）——远程/进程内/lazyLoad:false 断连后
+  // 没有自动重连路径，回收即永久失联。回收后打回 'lazy'（不是 disconnect() 默认的 'disconnected'），
+  // 与「还没首次连接」同一状态，才不会被 isMcpStatusUsableForScope 滤出 scope、断了重连路。
+  private isReapableServer(serverName: string): boolean { const config = this.serverConfigs.get(serverName); return !!config && isStdioConfig(config) && config.lazyLoad !== false; } private markServerLazyAfterReap(serverName: string): void { const state = this.serverStates.get(serverName); if (state) state.status = 'lazy'; }
+
   constructor(options: MCPClientOptions = {}) {
-    super(); this.idleReaper = new McpIdleReaper({ clients: this.clients, connectingServers: this.connectingServers, disconnect: (serverName) => this.disconnect(serverName), now: options.now }, options.idleReaping);
+    super(); this.idleReaper = new McpIdleReaper({ clients: this.clients, connectingServers: this.connectingServers, disconnect: (serverName) => this.disconnect(serverName), isReapable: (serverName) => this.isReapableServer(serverName), markLazyAfterReap: (serverName) => this.markServerLazyAfterReap(serverName), now: options.now }, options.idleReaping);
   }
 
   configureIdleReaping(options?: MCPClientOptions['idleReaping']): void { this.idleReaper.configureIdleReaping(options); } acquireConnectionLease(serverName: string, leaseId: string, expiresAt?: number): void { this.idleReaper.acquireConnectionLease(serverName, leaseId, expiresAt); }
@@ -790,8 +795,7 @@ export class MCPClient extends EventEmitter {
         logger.error(`Failed to lazy-load server ${serverName}:`, error);
         return false;
       }
-      const connected = this.clients.has(serverName) || this.inProcessServers.has(serverName);
-      return connected;
+      return this.clients.has(serverName) || this.inProcessServers.has(serverName);
     }
 
     const outcome = await new Promise<'settled' | 'aborted'>((resolve) => {

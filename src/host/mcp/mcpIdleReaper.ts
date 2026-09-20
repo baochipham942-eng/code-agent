@@ -16,6 +16,14 @@ interface McpIdleReaperDependencies {
   clients: ReadonlyMap<string, Client>;
   connectingServers: ReadonlyMap<string, Promise<void>>;
   disconnect: (serverName: string) => Promise<void>;
+  /**
+   * 只有能懒加载回来的 server 才能被回收——非 lazy stdio 与远程/进程内 server
+   * 断连后没有自动重连路径（ensureConnected 只在 status 'lazy'/'disconnected' 时
+   * 触发，但没有任何调用方会主动对它们重新 ensureConnected），回收即永久失联。
+   */
+  isReapable: (serverName: string) => boolean;
+  /** 回收后把状态打回 'lazy'，语义上等价于「还没首次连接」，下次调用自动懒加载。 */
+  markLazyAfterReap: (serverName: string) => void;
   now?: () => number;
 }
 
@@ -26,6 +34,8 @@ export class McpIdleReaper {
   private readonly clients: ReadonlyMap<string, Client>;
   private readonly connectingServers: ReadonlyMap<string, Promise<void>>;
   private readonly disconnect: (serverName: string) => Promise<void>;
+  private readonly isReapable: (serverName: string) => boolean;
+  private readonly markLazyAfterReap: (serverName: string) => void;
   private readonly now: () => number;
   private idleReapingEnabled = true;
   private idleReapTtlMs: number = MCP_TIMEOUTS.IDLE_REAP_TTL;
@@ -40,6 +50,8 @@ export class McpIdleReaper {
     this.clients = dependencies.clients;
     this.connectingServers = dependencies.connectingServers;
     this.disconnect = dependencies.disconnect;
+    this.isReapable = dependencies.isReapable;
+    this.markLazyAfterReap = dependencies.markLazyAfterReap;
     this.now = dependencies.now ?? Date.now;
     this.configureIdleReaping(options);
   }
@@ -124,6 +136,7 @@ export class McpIdleReaper {
     if (!this.idleReapingEnabled) return;
     const now = this.currentTime();
     for (const [serverName, expectedClient] of this.clients) {
+      if (!this.isReapable(serverName)) continue;
       if (!this.isIdleConnection(serverName, now) || this.reapingServers.has(serverName)) continue;
       this.reapingServers.add(serverName);
       try {
@@ -131,6 +144,7 @@ export class McpIdleReaper {
         // this point wins over cleanup and keeps the connection alive.
         if (this.clients.get(serverName) === expectedClient && this.isIdleConnection(serverName, now)) {
           await this.disconnect(serverName);
+          this.markLazyAfterReap(serverName);
         }
       } catch (error) {
         logger.warn(`Failed to reap idle MCP server ${serverName}`, {

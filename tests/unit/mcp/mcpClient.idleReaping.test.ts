@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MCPClient } from '../../../src/host/mcp/mcpClient';
 import { MCPToolRegistry } from '../../../src/host/mcp/mcpToolRegistry';
 
+// Reap 候选必须是「能懒加载回来」的 server：stdio 且未显式关闭 lazyLoad。
+// 用这个当默认夹具——它是 isReapable() 判真的那一类。
 function connectedClient(now: () => number) {
   const client = new MCPClient({
     idleReaping: { ttlMs: 100, scanIntervalMs: 25 },
@@ -9,15 +11,15 @@ function connectedClient(now: () => number) {
   });
   const sdkClient = { close: vi.fn(async () => {}) };
   const clients = (client as unknown as { clients: Map<string, unknown> }).clients;
-  clients.set('remote', sdkClient);
-  (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('remote', {
-    name: 'remote', type: 'http-streamable', serverUrl: 'https://example.test/mcp', enabled: true,
+  clients.set('local', sdkClient);
+  (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('local', {
+    name: 'local', type: 'stdio', command: 'echo', args: ['hi'], enabled: true,
   });
-  (client as unknown as { serverStates: Map<string, unknown> }).serverStates.set('remote', {
-    config: { name: 'remote', type: 'http-streamable', serverUrl: 'https://example.test/mcp', enabled: true },
+  (client as unknown as { serverStates: Map<string, unknown> }).serverStates.set('local', {
+    config: { name: 'local', type: 'stdio', command: 'echo', args: ['hi'], enabled: true },
     status: 'connected', toolCount: 0, resourceCount: 0,
   });
-  (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('remote', 0);
+  (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('local', 0);
   return { client, sdkClient };
 }
 
@@ -29,8 +31,11 @@ describe('MCPClient idle connection reaping', () => {
     let now = 0;
     const client = new MCPClient({ idleReaping: { enabled: false, ttlMs: 1, scanIntervalMs: 1 }, now: () => now });
     const sdkClient = { close: vi.fn(async () => {}) };
-    (client as unknown as { clients: Map<string, unknown> }).clients.set('remote', sdkClient);
-    (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('remote', 0);
+    (client as unknown as { clients: Map<string, unknown> }).clients.set('local', sdkClient);
+    (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('local', {
+      name: 'local', type: 'stdio', command: 'echo', enabled: true,
+    });
+    (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('local', 0);
     now = 100;
     await vi.advanceTimersByTimeAsync(100);
     expect(sdkClient.close).not.toHaveBeenCalled();
@@ -48,12 +53,62 @@ describe('MCPClient idle connection reaping', () => {
     now = 100;
     await vi.advanceTimersByTimeAsync(25);
     expect(sdkClient.close).toHaveBeenCalledOnce();
-    expect(client.isConnected('remote')).toBe(false);
+    expect(client.isConnected('local')).toBe(false);
 
     const registry = (client as unknown as { registry: MCPToolRegistry }).registry;
     vi.spyOn(registry, 'readExternalResource').mockResolvedValue('resource');
-    await expect(client.readResource('remote', 'mcp://resource')).resolves.toBe('resource');
+    await expect(client.readResource('local', 'mcp://resource')).resolves.toBe('resource');
     expect(connect).toHaveBeenCalledOnce();
+  });
+
+  it('flips status to lazy (not disconnected) after a reap, keeping it usable for scope', async () => {
+    let now = 0;
+    const { client } = connectedClient(() => now);
+    vi.spyOn(client, 'connect').mockResolvedValue(undefined);
+    now = 100;
+    await vi.advanceTimersByTimeAsync(25);
+    const state = client.getServerStates().find((s) => s.config.name === 'local');
+    expect(state?.status).toBe('lazy');
+  });
+
+  it('does not reap a server that cannot be lazy-loaded back (remote http-streamable)', async () => {
+    let now = 0;
+    const client = new MCPClient({ idleReaping: { ttlMs: 100, scanIntervalMs: 25 }, now: () => now });
+    const sdkClient = { close: vi.fn(async () => {}) };
+    (client as unknown as { clients: Map<string, unknown> }).clients.set('remote', sdkClient);
+    (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('remote', {
+      name: 'remote', type: 'http-streamable', serverUrl: 'https://example.test/mcp', enabled: true,
+    });
+    (client as unknown as { serverStates: Map<string, unknown> }).serverStates.set('remote', {
+      config: { name: 'remote', type: 'http-streamable', serverUrl: 'https://example.test/mcp', enabled: true },
+      status: 'connected', toolCount: 0, resourceCount: 0,
+    });
+    (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('remote', 0);
+
+    now = 500;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(sdkClient.close).not.toHaveBeenCalled();
+    expect(client.isConnected('remote')).toBe(true);
+  });
+
+  it('does not reap a stdio server with lazyLoad explicitly disabled', async () => {
+    let now = 0;
+    const client = new MCPClient({ idleReaping: { ttlMs: 100, scanIntervalMs: 25 }, now: () => now });
+    const sdkClient = { close: vi.fn(async () => {}) };
+    (client as unknown as { clients: Map<string, unknown> }).clients.set('eager', sdkClient);
+    (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('eager', {
+      name: 'eager', type: 'stdio', command: 'echo', enabled: true, lazyLoad: false,
+    });
+    (client as unknown as { serverStates: Map<string, unknown> }).serverStates.set('eager', {
+      config: { name: 'eager', type: 'stdio', command: 'echo', enabled: true, lazyLoad: false },
+      status: 'connected', toolCount: 0, resourceCount: 0,
+    });
+    (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('eager', 0);
+
+    now = 500;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(sdkClient.close).not.toHaveBeenCalled();
+    expect(client.isConnected('eager')).toBe(true);
   });
 
   it('does not reap an active request or a valid durable task lease', async () => {
@@ -64,21 +119,21 @@ describe('MCPClient idle connection reaping', () => {
     vi.spyOn(registry, 'readExternalResource').mockImplementation(() => new Promise((resolve) => {
       finish = () => resolve('resource');
     }));
-    const pending = client.readResource('remote', 'mcp://resource');
+    const pending = client.readResource('local', 'mcp://resource');
     now = 100;
     await vi.advanceTimersByTimeAsync(100);
-    expect(client.isConnected('remote')).toBe(true);
+    expect(client.isConnected('local')).toBe(true);
     finish();
     await pending;
 
-    client.acquireConnectionLease('remote', 'task-1');
+    client.acquireConnectionLease('local', 'task-1');
     now = 500;
     await vi.advanceTimersByTimeAsync(100);
-    expect(client.isConnected('remote')).toBe(true);
-    client.releaseConnectionLease('remote', 'task-1');
+    expect(client.isConnected('local')).toBe(true);
+    client.releaseConnectionLease('local', 'task-1');
     now = 700;
     await vi.advanceTimersByTimeAsync(100);
-    expect(client.isConnected('remote')).toBe(false);
+    expect(client.isConnected('local')).toBe(false);
   });
 
   it('releases request usage after a read error so close can still reap', async () => {
@@ -86,10 +141,10 @@ describe('MCPClient idle connection reaping', () => {
     const { client } = connectedClient(() => now);
     const registry = (client as unknown as { registry: MCPToolRegistry }).registry;
     vi.spyOn(registry, 'getExternalPrompt').mockRejectedValue(new Error('prompt failed'));
-    await expect(client.getPrompt('remote', 'prompt')).rejects.toThrow('prompt failed');
+    await expect(client.getPrompt('local', 'prompt')).rejects.toThrow('prompt failed');
     now = 100;
     await vi.advanceTimersByTimeAsync(25);
-    expect(client.isConnected('remote')).toBe(false);
+    expect(client.isConnected('local')).toBe(false);
   });
 
   it('reconnects lazy prompt reads after a reap without treating them as tool calls', async () => {
@@ -102,7 +157,7 @@ describe('MCPClient idle connection reaping', () => {
     vi.spyOn(registry, 'getExternalPrompt').mockResolvedValue('prompt');
     now = 100;
     await vi.advanceTimersByTimeAsync(25);
-    await expect(client.getPrompt('remote', 'prompt')).resolves.toBe('prompt');
+    await expect(client.getPrompt('local', 'prompt')).resolves.toBe('prompt');
     expect(connect).toHaveBeenCalledOnce();
   });
 
@@ -121,9 +176,9 @@ describe('MCPClient idle connection reaping', () => {
     });
     now = 100;
     await vi.advanceTimersByTimeAsync(25);
-    const identity = client.getServerIdentity('remote');
+    const identity = client.getServerIdentity('local');
     if (!identity) throw new Error('expected server identity');
-    const protocol = client.createTaskProtocol('remote', identity);
+    const protocol = client.createTaskProtocol('local', identity);
     expect(protocol).not.toBeNull();
     await expect(protocol?.getTask({ serverIdentity: identity, taskId: 'task-1' })).resolves.toMatchObject({ taskId: 'task-1' });
     expect(connect).toHaveBeenCalledOnce();
@@ -145,9 +200,9 @@ describe('MCPClient idle connection reaping', () => {
     vi.spyOn(client, 'connect').mockImplementation(async (config) => {
       (client as unknown as { clients: Map<string, unknown> }).clients.set(config.name, newClient);
     });
-    const identity = client.getServerIdentity('remote');
+    const identity = client.getServerIdentity('local');
     if (!identity) throw new Error('expected server identity');
-    const protocol = client.createTaskProtocol('remote', identity);
+    const protocol = client.createTaskProtocol('local', identity);
     expect(protocol).not.toBeNull();
 
     now = 100;

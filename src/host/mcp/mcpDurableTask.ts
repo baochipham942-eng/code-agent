@@ -3,6 +3,7 @@ import type { ChildRunRef, PendingOperation, RunOwnerLease } from '../../shared/
 import type { RunKernelAdapter } from '../runtime/durableRunKernel';
 import type { RunRehydrationPlan } from '../runtime/durableRunStores';
 import { getTelemetryService } from '../telemetry/telemetryService';
+import { MCP_TIMEOUTS } from '../../shared/constants/timeouts';
 
 export type McpToolTaskSupport = 'optional' | 'required' | 'forbidden';
 export type McpTaskStatus = 'working' | 'input_required' | 'completed' | 'failed' | 'cancelled';
@@ -189,10 +190,12 @@ export class McpDurableTaskController {
   }
 
   private taskLeaseExpiry(task: McpTaskSnapshot): number | undefined {
-    if (task.ttl == null) return undefined;
     const updatedAt = Date.parse(task.lastUpdatedAt);
     if (!Number.isFinite(updatedAt)) return undefined;
-    return updatedAt + Math.max(0, task.ttl);
+    // ttl 缺失时不给无过期租约：run 中途异常、始终不进终态会把连接钉住到进程退出。
+    // 给个兜底上限，超时后租约自然过期，回归 idle reaper 的正常 TTL 判断。
+    const ttl = task.ttl == null ? MCP_TIMEOUTS.DURABLE_LEASE_FALLBACK_TTL : Math.max(0, task.ttl);
+    return updatedAt + ttl;
   }
 
   private retainTaskLease(input: { runId: string; operationId: string }, task: McpTaskSnapshot): void {

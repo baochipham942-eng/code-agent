@@ -49,6 +49,8 @@ const NO_PROGRESS_LIMIT = 3;
 const RISK_KEYWORD = /pay|payment|checkout|购买|支付|delete|删除|authorize|oauth|授权|grant access|confirm purchase|unsubscribe/i;
 const UPLOAD_TASK = /upload|上传|file|文件|传上/i;
 const TASK_URL_RE = /https?:\/\/[^\s<>"'`)]+/i;
+const LOGIN_WALL_COPY = /登录后继续|请先登录|请登录|需要登录|sign in to continue|log in to continue|please sign in|please log in|login required|sign in required|not signed in|authentication required|needs login/i;
+const MANUAL_TAKEOVER_COPY = /manual takeover|user takeover|take over manually|requires manual|人工接管|用户接管/i;
 
 const BROWSER_JEV_MISSING_KEY_WARN =
   'CODE_AGENT_BROWSER_JEV_STEP 已开启但 TYPESAFE_API_KEY 缺失，Jev 步选不生效（走主模型逐步 Browser）';
@@ -231,6 +233,35 @@ function extractTaskUrl(task: string): string | null {
   return match ? match[0] : null;
 }
 
+function capturedHasPasswordOrForm(captured: JevCapturedSnapshot): boolean {
+  if (captured.extras.some((extra) => {
+    const type = (extra.inputType || '').toLowerCase();
+    const auto = (extra.autocomplete || '').toLowerCase();
+    return type === 'password' || auto.includes('password');
+  })) return true;
+  return captured.snapshot.interactiveElements.some((element) => {
+    const tag = element.tag.toLowerCase();
+    const role = (element.role || '').toLowerCase();
+    return tag === 'form'
+      || tag === 'input'
+      || tag === 'textarea'
+      || tag === 'select'
+      || role === 'textbox'
+      || role === 'searchbox'
+      || role === 'combobox';
+  });
+}
+
+function isJevLoginWall(captured: JevCapturedSnapshot, visibleText: string): boolean {
+  const primary = [
+    captured.snapshot.title,
+    ...captured.snapshot.headings.map((heading) => heading.text),
+    visibleText,
+  ].join('\n');
+  if (!LOGIN_WALL_COPY.test(primary)) return false;
+  return capturedHasPasswordOrForm(captured);
+}
+
 function sameUrl(current: string, target: string): boolean {
   try {
     const left = new URL(current);
@@ -324,7 +355,6 @@ async function runJevBrowserStepLoop(
   const recentSteps: Array<{ op: string; target_name: string; result: string }> = [];
   let truncatedWithoutScroll = 0;
   let incompatibleRetryUsed = false;
-  const fromOverride = Array.isArray(input.assertions) && input.assertions.length > 0;
   let carriedSnapshot: JevCapturedSnapshot | undefined;
 
   const finish = (
@@ -398,14 +428,21 @@ async function runJevBrowserStepLoop(
       );
     }
 
+    const visibleText = await deps.host.getVisibleText();
     const visible = [
       captured.snapshot.title,
       ...captured.snapshot.headings.map((heading) => heading.text),
-      await deps.host.getVisibleText(),
+      visibleText,
     ].join('\n');
     const takeover = classifyBrowserComputerManualTakeover(visible);
-    if (takeover === 'captcha_or_risk_control' || takeover === 'mfa_required' || takeover === 'login_required') {
+    if (takeover === 'captcha_or_risk_control' || takeover === 'mfa_required') {
       return finish('needs_review', takeover, { captchaClass: takeover });
+    }
+    if (takeover === 'manual_takeover_required' || MANUAL_TAKEOVER_COPY.test(visible)) {
+      return finish('needs_review', 'manual_takeover_required', { captchaClass: 'manual_takeover_required' });
+    }
+    if (isJevLoginWall(captured, visibleText)) {
+      return finish('needs_review', 'login_required', { captchaClass: 'login_required' });
     }
 
     if (prepared.sensitiveFieldsPresent && UPLOAD_TASK.test(task)) {
@@ -424,9 +461,10 @@ async function runJevBrowserStepLoop(
       return finish('fallback', `form_values_unavailable: ${formValuesError}`);
     }
     const evaluated = evaluateJevAssertions(assertions, evidence);
-    // Self-extracted assertions can match the control the task is asking to click.
-    // steps=0 (navigate-before-loop does not count) cannot done_verified without an action.
-    if (evaluated.allMet && (fromOverride || steps > 0)) {
+    // Override and self-extracted share this gate: steps=0 (navigate-before-loop
+    // does not count) cannot done_verified. Models must not pass a trivial
+    // assertion like url_includes:'/' and skip the action.
+    if (evaluated.allMet && steps > 0) {
       return finish('done_verified', undefined, { assertions: evaluated.results });
     }
 
@@ -543,13 +581,14 @@ async function runJevBrowserStepLoop(
     }
 
     let opResult = 'ok';
-    let typedValue: string | null = null;
+    let typedValue = '';
     try {
       if (applied.operation === 'click' && target) {
         await clickWithRebind(deps.host, target, prepared);
       } else if (applied.operation === 'type' && target) {
-        typedValue = await generateTypeValue(task, target, deps.quickType);
-        if (typedValue == null) return finish('fallback', 'type_value_unavailable');
+        const value = await generateTypeValue(task, target, deps.quickType);
+        if (value == null) return finish('fallback', 'type_value_unavailable');
+        typedValue = value;
         await typeWithRebind(deps.host, target, typedValue, prepared);
       } else if (applied.operation === 'scroll_down') {
         await deps.host.scroll('down');
@@ -572,7 +611,6 @@ async function runJevBrowserStepLoop(
         try {
           if (applied.operation === 'click') await deps.host.clickTargetRef(rebound);
           else if (applied.operation === 'type') {
-            if (typedValue == null) return finish('fallback', 'type_value_unavailable');
             await deps.host.typeTargetRef(rebound, typedValue);
           }
         } catch {

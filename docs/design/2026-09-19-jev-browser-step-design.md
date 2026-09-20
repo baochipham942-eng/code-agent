@@ -48,7 +48,7 @@
    │    1. 刷新 DOM 快照（Jev 内环 cap=1024，不是工具面的 80）
    │    2. 对话框 pending？→ 不进 Jev，走现有 handle_dialog 审批门
    │    3. 验证码/登录墙/MFA？→ STOP needs_review（分类器，不问 Jev）
-   │    4. 代码核对断言（§5）。全过 → DONE done_verified（Jev done 不参与）
+   │    4. 代码核对断言（§5）。全过且 steps>0 → DONE done_verified（Jev done 不参与；navigate 前置不计步）
    │    5. 候选压缩（§2）：丢密码/文件 → 窗口 ≤254 + no_target
    │    6. 注入扫描 + 脱敏（§6）。sanitizer blocked → 退出内环，sticky_visual
    │    7. 0 个候选 → 代码 scroll_down 一次并回到 1；仍 0 → 本步 yield 主模型
@@ -370,7 +370,7 @@ state 形状（命名键，示意）：
 
 Jev 的 `done` noul 是候选信号，**单独不算完成**。反向变异 §10.1 就是锁这条。
 
-完成 **当且仅当** 刷新后的快照让代码断言全过 → `done_verified`。`operation=stop` 或 `done.noul=1.0` 只增加 `false_done_count`，循环继续。
+完成 **当且仅当** 刷新后的快照让代码断言全过 **且本任务已执行至少一步**（navigate 前置不计步；override 金标与自抽同待）→ `done_verified`。`operation=stop` 或 `done.noul=1.0` 只增加 `false_done_count`，循环继续。模型不得靠自写 `[{kind:'url_includes',needle:'/'}]` 零动作过线（T1）。
 
 ### 5.1 证据算子（代码，无模型）
 
@@ -430,7 +430,7 @@ Jev 的 `risk` noul **只升级、不放行**。现有审批门一个都不绕�
 | 上传 | `requestBrowserUploadApproval` `forceConfirm: true` | 不新增 `upload_file` 为 Jev operation。任务需要上传 → `needs_review`，由主模型走现行 `upload_file`（仍要一次性精确文件批准） |
 | 接受对话框（文案含支付/删除/授权） | `handle_dialog` accept + `forceConfirm` danger | 每步先 `getDialogState`；pending 则只走这扇门，不把 accept 交给 Jev |
 | 剪贴板读写 | 同上 forceConfirm | 内环不做 clipboard operation |
-| 验证码 / 风控 | `classifyBrowserComputerManualTakeover` | 每步对 title+headings+可见文本跑；命中 `captcha_or_risk_control` / `mfa_required` / `login_required` → `needs_review`，不点 |
+| 验证码 / 风控 | `classifyBrowserComputerManualTakeover` | 每步对 title+headings+可见文本跑；命中 `captcha_or_risk_control` / `mfa_required` / `manual_takeover_required` → `needs_review`。`login_required` 收窄为登录墙语义（「请登录」/「sign in to continue」等）且伴随 password 字段或表单；裸导航「登录」不算 |
 | 系统设置 | 无独立门 | 代码拦 `chrome://` `about:preferences` `edge://` `chrome-extension://` 以及目标名匹配系统设置词；拦下后 `needs_review` |
 
 升级触发（在现有门之上多一刀，仍是人批，不是 Jev 批）：
@@ -503,6 +503,12 @@ buildJevState() → estimateJevCallUsd → systemOne   jevBrowserStep.ts
 ---
 
 ## 8. 开关与装配
+
+| 开关 | 默认 | 作用 |
+|---|---|---|
+| `CODE_AGENT_BROWSER_JEV_STEP` | 关 | `=1` 才装配；缺 `TYPESAFE_API_KEY` 时 warn 一行且不装配 |
+| `CODE_AGENT_BROWSER_JEV_USD_BUDGET` | `0.03` | 每任务 Jev 刊例上限（§7） |
+| `CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT` | `20` | 软步顶，正整数，封顶硬顶 60 |
 
 环境变量 **`CODE_AGENT_BROWSER_JEV_STEP=1`** 显式开，默认关。惯例对齐 `CODE_AGENT_PERMISSION_LLM_CLASSIFIER` / `CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN`。
 

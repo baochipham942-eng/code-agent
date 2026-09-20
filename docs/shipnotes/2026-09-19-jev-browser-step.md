@@ -5,6 +5,7 @@
 ## 开关与装配
 
 - `CODE_AGENT_BROWSER_JEV_STEP=1` 显式开；缺 `TYPESAFE_API_KEY` 时 warn 一行且不装配。
+- `CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT` 覆盖软步顶（正整数，封顶硬顶 60；缺省 20）。
 - 不拦截现有 `click` / `type` / `get_dom_snapshot`。工具面 interactive cap 仍为 80。
 
 ## 数据出境（FolderTrust / 权限披露）
@@ -15,5 +16,8 @@
 - `page.url`（截 1500）
 - `task` 正文（截 2000）
 - `recent_steps`（最近 8 步的 op / target_name / result）
+- `assertions`（kind / needle / met）
+- `window` 计数（selected / collected / in_view / above / below / truncated / dropped_below）
+- `injection_flag` / `sensitive_fields_present` / `unavailable_frames`
 
 权限分类线的命令行出境说明仍见 `docs/shipnotes/2026-08-30-ship-note-cli-permission-mode-auto.md`。

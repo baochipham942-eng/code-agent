@@ -408,6 +408,65 @@ describe('jevBrowserStep', () => {
     expect(host.clicks).toEqual([]);
   });
 
+  it('页面仅导航条有「登录」二字不 needs_review', async () => {
+    const loginLink = {
+      tag: 'a',
+      role: 'link',
+      text: '登录',
+      ariaLabel: '登录',
+      placeholder: null,
+      selectorHint: '#login',
+      targetRef: { ...targetRef('tref_login', '登录', { x: 0, y: 8, width: 48, height: 16 }), role: 'link' },
+      rect: { x: 0, y: 8, width: 48, height: 16 },
+    };
+    const host = new FakeHost([snapshot('首页', [loginLink, button('tref_go', '阅读', 80)])]);
+    host.visibleText = '欢迎来到本站\n登录\n关于我们';
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const result = await runLoop(host, systemOne, {
+      task: 'click 阅读 until Never happens',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    });
+    expect(result.status).not.toBe('needs_review');
+    expect(result.reason).not.toBe('login_required');
+    expect(systemOne).toHaveBeenCalled();
+  });
+
+  it('登录墙 password 字段加登录文案 → needs_review', async () => {
+    const page = snapshot('请登录', [button('tref_go', 'Submit', 80)]);
+    page.snapshot.interactiveElements.push({
+      tag: 'input',
+      role: 'textbox',
+      text: '',
+      ariaLabel: 'Password',
+      placeholder: 'Password',
+      selectorHint: '#pw',
+      targetRef: targetRef('tref_pw', 'Password', { x: 0, y: 40, width: 80, height: 20 }),
+      rect: { x: 0, y: 40, width: 80, height: 20 },
+    });
+    page.extras.push({ inputType: 'password', autocomplete: 'current-password', accept: null });
+    const host = new FakeHost([page]);
+    host.visibleText = '请登录后继续';
+    const systemOne = stubSystemOne(() => answers());
+    const result = await runLoop(host, systemOne, { task: 'read the page title' });
+    expect(result.status).toBe('needs_review');
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('login_required');
+    expect(systemOne).toHaveBeenCalledTimes(0);
+    expect(host.clicks).toEqual([]);
+  });
+
+  it('manual_takeover_required 命中 → needs_review', async () => {
+    const host = new FakeHost([snapshot('Help', [button('tref_go', 'Continue')])]);
+    host.visibleText = 'This page requires manual takeover';
+    const systemOne = stubSystemOne(() => answers());
+    const result = await runLoop(host, systemOne, { task: 'continue' });
+    expect(result.status).toBe('needs_review');
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('manual_takeover_required');
+    expect(systemOne).toHaveBeenCalledTimes(0);
+    expect(host.clicks).toEqual([]);
+  });
+
   it('密码字段不进 Jev state', async () => {
     const page = snapshot('Login', [
       button('tref_go', 'Submit', 80),
@@ -615,7 +674,21 @@ describe('jevBrowserStep', () => {
       assertions: [{ id: 'a1', kind: 'url_includes', needle: 'https://shop.example/cart' }],
     });
     expect(result.status).toBe('done_verified');
-    expect(systemOne).toHaveBeenCalledTimes(0);
+    expect(result.metadata?.steps).toBeGreaterThanOrEqual(1);
+    expect(systemOne).toHaveBeenCalled();
+  });
+
+  it('override 平凡 url_includes / 不得零步 done_verified', async () => {
+    const host = new FakeHost([snapshot('Home', [button('tref_go', 'Go')])]);
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const result = await runLoop(host, systemOne, {
+      task: 'click Go',
+      assertions: [{ id: 'a1', kind: 'url_includes', needle: '/' }],
+    });
+    expect(result.metadata?.steps).toBeGreaterThanOrEqual(1);
+    expect(systemOne).toHaveBeenCalled();
+    expect(host.clicks.length + host.scrolls.length).toBeGreaterThanOrEqual(1);
+    expect(result.status).toBe('done_verified');
   });
 
   it('自抽点击引号第一圈不得 done_verified，必须先动作', async () => {
@@ -664,7 +737,7 @@ describe('jevBrowserStep', () => {
     expect(extractJevAssertions('看 "立即购买"')[0]?.precondition).toBeUndefined();
   });
 
-  it('override 金标第一圈全过仍 done_verified', async () => {
+  it('override 金标须先动作，steps≥1 全过才 done_verified', async () => {
     const host = new FakeHost([snapshot('Shop', [button('tref_buy', '立即购买')])]);
     const systemOne = stubSystemOne(() => answers({ target: 'tref_buy' }));
     const result = await runLoop(host, systemOne, {
@@ -672,8 +745,9 @@ describe('jevBrowserStep', () => {
       assertions: [{ id: 'a1', kind: 'element_text_includes', needle: '立即购买' }],
     });
     expect(result.status).toBe('done_verified');
-    expect(systemOne).toHaveBeenCalledTimes(0);
-    expect(host.clicks).toEqual([]);
+    expect(result.metadata?.steps).toBeGreaterThanOrEqual(1);
+    expect(systemOne).toHaveBeenCalled();
+    expect(host.clicks).toEqual(['tref_buy']);
   });
 
   it('第二圈前 abort 按 fallback 退出，不再调 systemOne', async () => {
@@ -731,7 +805,8 @@ describe('jevBrowserStep', () => {
         ],
       });
       expect(result.status).toBe('done_verified');
-      expect(systemOne).toHaveBeenCalledTimes(0);
+      expect(result.metadata?.steps).toBeGreaterThanOrEqual(1);
+      expect(systemOne).toHaveBeenCalled();
     } finally {
       warn.mockRestore();
     }

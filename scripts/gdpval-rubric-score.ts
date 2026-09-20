@@ -73,9 +73,17 @@ function readPositiveInt(raw: string | undefined, fallback: number, flag: string
 
 function parseArgs(): { patrol: string; run: string; only: string[]; batch: number; out: string | null; limit: number; callTimeoutMs: number } {
   const argv = process.argv.slice(2);
+  // 漏写值不能静默退化：`--only` 后面跟着另一个 flag（或什么都没有）时，
+  // 旧写法会读成 undefined 然后「不过滤」，直接把整个题库开评——几百次付费调用。
   const read = (flag: string): string | undefined => {
     const index = argv.indexOf(flag);
-    return index >= 0 ? argv[index + 1] : undefined;
+    if (index < 0) return undefined;
+    const value = argv[index + 1];
+    if (value === undefined || value.startsWith('--')) {
+      console.error(`${flag} 后面要跟一个值`);
+      process.exit(2);
+    }
+    return value;
   };
   const patrol = read('--patrol');
   const run = read('--run');
@@ -136,7 +144,8 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
         const kept = csv.slice(0, perSheet);
         return `# sheet: ${name}（共 ${rows} 行，以下只给出前 ${kept.split('\n').length} 行）\n${kept}…`;
       });
-      return { path: relPath, bytes, text: sheets.join('\n') };
+      // 未展开的表也各自占一行表头，表数很多时这些行加起来能超 MAX_FILE_CHARS，兜底再 clip 一次。
+      return { path: relPath, bytes, text: clip(sheets.join('\n')) };
     }
     if (ext === '.docx') {
       const extracted = await mammoth.extractRawText({ buffer: fs.readFileSync(absPath) });
@@ -146,6 +155,38 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
     return { path: relPath, bytes, text: `[提取失败：${error instanceof Error ? error.message : String(error)}]` };
   }
   return { path: relPath, bytes, text: `[binary ${ext || 'no-ext'}，未提取正文]` };
+}
+
+function safeSize(absPath: string): number {
+  try { return fs.statSync(absPath).size; } catch { return 0; }
+}
+
+/**
+ * 按额度收文件，超出的一律留 TRUNCATED_MARK 占位——**三处截断（产物字数、产物个数、
+ * 输入字数）必须走同一个函数**。此前它们各写各的，改一处露一处：
+ * 产物字数超额留了占位、产物个数超额整条丢弃、输入超额直接 break，
+ * 三种降级三种行为，而只有留占位的那种会让模型按弃权判、从分母剔除。
+ * 对称性由这个函数保证，不靠每次记得。
+ */
+async function collectWithinBudget(
+  entries: Array<{ abs: string; rel: string }>,
+  maxFiles: number,
+  maxChars: number,
+): Promise<{ files: GdpvalArtifactFile[]; skipped: number }> {
+  const files: GdpvalArtifactFile[] = [];
+  let used = 0;
+  let skipped = 0;
+  for (const [index, entry] of entries.entries()) {
+    if (index >= maxFiles || used >= maxChars) {
+      skipped += 1;
+      files.push({ path: entry.rel, bytes: safeSize(entry.abs), text: `[${TRUNCATED_MARK}]` });
+      continue;
+    }
+    const file = await extractFile(entry.abs, entry.rel);
+    used += file.text.length;
+    files.push(file);
+  }
+  return { files, skipped };
 }
 
 function listFiles(root: string): string[] {
@@ -202,6 +243,11 @@ async function main(): Promise<void> {
   const outPath = options.out ?? path.join(options.patrol, 'runs', options.run, 'gdpval-rubric.jsonl');
   // 覆盖而不是追加：一次运行 = 这一夜这批题的结果，追加会让重跑同一夜留下重复行。
   const out = fs.createWriteStream(outPath, { flags: 'w' });
+  // 不挂 error 监听时，--out 指向不存在的目录会抛 unhandled 'error' 把进程带走。
+  out.on('error', (error) => {
+    console.error(`结果文件写不了 ${outPath}：${error.message}`);
+    process.exit(1);
+  });
   let calls = 0;
   for (const task of tasks) {
     const taskRoot = path.join(artifactsRoot, task.id);   // 根边界已在上面的 tasks 过滤里挡过
@@ -230,9 +276,7 @@ async function main(): Promise<void> {
       console.warn(`  ${task.id}：产物总量超过 ${MAX_TASK_CHARS} 字，${skippedForBudget} 个文件没给模型看正文`
         + '（这些文件相关的条目会被判弃权，不是判负）');
     }
-    const inputs: GdpvalArtifactFile[] = [];
-    let inputUsed = 0;
-    let inputsSkipped = 0;
+    const refEntries: Array<{ abs: string; rel: string }> = [];
     for (const abs of task._reference_files ?? []) {
       if (!isInsideRoot(options.patrol, abs)) {
         console.warn(`  ${task.id}：参考文件指向 patrol 根之外，跳过 ${abs}`);
@@ -242,18 +286,13 @@ async function main(): Promise<void> {
         console.warn(`  ${task.id}：参考文件不在 ${abs}`);
         continue;
       }
-      const rel = path.join(path.basename(path.dirname(abs)), path.basename(abs));
-      // 与产物侧同一套降级：超额度的输入留占位而不是整条消失，否则「与原始资料一致」
-      // 类判据会被判 false 而不是弃权，分数系统性偏低，且事后分不清「真没做到」和「没给看」。
-      if (inputUsed >= MAX_INPUT_CHARS) {
-        inputsSkipped += 1;
-        inputs.push({ path: rel, bytes: 0, text: `[${TRUNCATED_MARK}]` });
-        continue;
-      }
-      const file = await extractFile(abs, rel);
-      inputUsed += file.text.length;
-      inputs.push(file);
+      refEntries.push({ abs, rel: path.join(path.basename(path.dirname(abs)), path.basename(abs)) });
     }
+    const { files: inputs, skipped: inputsSkipped } = await collectWithinBudget(
+      refEntries,
+      MAX_FILES,
+      MAX_INPUT_CHARS,
+    );
     if (inputsSkipped > 0) {
       console.warn(`  ${task.id}：参考文件总量超过 ${MAX_INPUT_CHARS} 字，${inputsSkipped} 个没给模型看正文`
         + '（这些文件相关的条目会被判弃权，不是判负）');

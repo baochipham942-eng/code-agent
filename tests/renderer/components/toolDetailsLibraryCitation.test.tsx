@@ -53,6 +53,7 @@ function toolCallWith(citations: Citation[]): ToolCall {
     name: 'Read',
     arguments: { file_path: '/tmp/a.md' },
     result: {
+      toolCallId: 'call-1',
       success: true,
       output: 'ok',
       metadata: { citations },

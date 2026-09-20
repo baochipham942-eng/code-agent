@@ -16,6 +16,7 @@ const env = vi.hoisted(() => ({
     get: vi.fn(),
     addItem: vi.fn(),
     importFile: vi.fn(),
+    sweepPendingLearn: vi.fn(async () => 0),
     update: vi.fn(),
     delete: vi.fn(),
     getPin: vi.fn(),

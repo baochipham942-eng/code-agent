@@ -1,5 +1,6 @@
 import type { Message } from '../../shared/contract';
 import type { ToolCall, ToolResult } from '../../shared/contract/tool';
+import { TOOL_RESULT_SPILL } from '../../shared/constants';
 
 // ponytail: this currently dedupes only an exactly matching requested range (`path#start-end`).
 // A coverage-aware upgrade should compare each request with prior `shownRange` intervals;
@@ -8,7 +9,8 @@ import type { ToolCall, ToolResult } from '../../shared/contract/tool';
 const READ_RECEIPT_PREFIX = '[Read already shown';
 const READ_TOOL_NAMES = new Set(['read', 'read_file']);
 const TRUNCATION_MARKER = /\[(?:\d+\s+lines?\s+)?truncated(?:[,\]])|\b\d+\s+lines?\s+truncated\b/i;
-const ARCHIVED_OUTPUT_MARKERS = ['[TOOL_RESULT_ARCHIVED]', '[Full output saved to:'];
+const ARCHIVED_OUTPUT_MARKERS = ['[TOOL_RESULT_ARCHIVED]', TOOL_RESULT_SPILL.NOTICE_MARKER];
+const READ_DIGEST_RE = /^Read version digest:\s*([a-f0-9]+)\b/im;
 
 type ReadCall = Pick<ToolCall, 'id' | 'name' | 'arguments'>;
 
@@ -29,7 +31,12 @@ interface ReadScope {
   key: string;
   label: string;
   digest?: string;
-  forced: boolean;
+}
+
+interface FlattenedReadEnvelope {
+  prefix: string;
+  toolError: boolean;
+  digest?: string;
 }
 
 function createReadProjectionState(): ReadProjectionState {
@@ -62,21 +69,37 @@ function readScope(call: ReadCall, metadata?: Record<string, unknown>, output?: 
     : undefined;
   const digest = typeof metadata?.digest === 'string'
     ? metadata.digest
-    : /^Read version digest:\s*([a-f0-9]+)\b/i.exec(output || '')?.[1];
-  const forced = args.force === true || args.force === 'true';
+    : READ_DIGEST_RE.exec(output || '')?.[1];
   const range = `${start}-${end}${total === undefined ? '' : `/${total}`}`;
   return {
     key: `${rawPath.trim()}#${range}`,
     label: `${rawPath.trim()}#L${start}-L${end}`,
     ...(digest ? { digest } : {}),
-    forced,
+  };
+}
+
+/**
+ * Native subagent tool results are flattened into a user message
+ * (`Tool results:\nTool <name>: Success|Failed\n...` or `Error: ...`).
+ * Inspect the status line only so file contents cannot spoof success/failure.
+ */
+function inspectFlattenedRead(content: string): FlattenedReadEnvelope {
+  const digest = READ_DIGEST_RE.exec(content)?.[1];
+  const match = content.match(/^(Tool results:\n)?(Tool [^\n]+|Error:[^\n]*)(\n|$)/);
+  const statusLine = match?.[2] ?? '';
+  const toolError = statusLine.startsWith('Error:')
+    || /^Tool \S+:\s*(?:Failed\b|Error\b|Blocked by plan approval:)/.test(statusLine);
+  return {
+    prefix: match?.[0] ?? '',
+    toolError,
+    ...(digest ? { digest } : {}),
   };
 }
 
 function isCompleteReadOutput(content: string): boolean {
   if (!content.trim() || content.includes('[truncated]')) return false;
   if (TRUNCATION_MARKER.test(content)) return false;
-  if (content.startsWith(READ_RECEIPT_PREFIX)) return false;
+  if (content.includes(READ_RECEIPT_PREFIX)) return false;
   if (ARCHIVED_OUTPUT_MARKERS.some((marker) => content.includes(marker))) return false;
   return true;
 }
@@ -84,8 +107,9 @@ function isCompleteReadOutput(content: string): boolean {
 function contentFingerprint(content: string): string {
   // A digest is normally present in native Read output. This fallback keeps
   // provider-generated/legacy Read results safe without importing crypto into
-  // every context assembly path.
-  return content.replace(/\s+/g, ' ').trim();
+  // every context assembly path. Preserve internal whitespace so an indent-only
+  // edit is not collapsed into the earlier result.
+  return content.trim();
 }
 
 function projectReadContent(
@@ -96,11 +120,13 @@ function projectReadContent(
   toolError = false,
 ): string {
   const scope = call ? readScope(call, metadata, content) : undefined;
-  if (!scope || toolError || !isCompleteReadOutput(content)) return content;
+  if (!scope || toolError || inspectFlattenedRead(content).toolError || !isCompleteReadOutput(content)) {
+    return content;
+  }
 
   const fingerprint = scope.digest ?? contentFingerprint(content);
   const previous = state.shown.get(scope.key);
-  if (!scope.forced && previous === fingerprint) {
+  if (previous === fingerprint) {
     return `${READ_RECEIPT_PREFIX}: ${scope.label}; digest=${scope.digest ?? 'unchanged'}. The full content is in the earlier Read result.]`;
   }
 
@@ -166,8 +192,14 @@ export function projectReadSubagentMessages<T extends { role: string; content: u
     if (next.role !== 'user' || typeof next.content !== 'string') continue;
     const call = assistant.toolCalls[0];
     if (!isReadCall(call)) continue;
-    const content = projectReadContent(state, call, next.content);
-    if (content !== next.content) projected[index + 1] = { ...next, content } as T;
+    const envelope = inspectFlattenedRead(next.content);
+    const metadata = envelope.digest ? { digest: envelope.digest } : undefined;
+    const content = projectReadContent(state, call, next.content, metadata, envelope.toolError);
+    if (content === next.content) continue;
+    const wrapped = envelope.prefix && !content.startsWith(envelope.prefix)
+      ? `${envelope.prefix}${content}`
+      : content;
+    projected[index + 1] = { ...next, content: wrapped } as T;
   }
   return projected;
 }

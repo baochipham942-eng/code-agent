@@ -10,6 +10,20 @@ function readCall(id: string, offset = 1, limit = 2, extra: Record<string, unkno
   return { id, name: 'Read', arguments: { file_path: '/tmp/example.ts', offset, limit, ...extra } };
 }
 
+/** Production native-subagent envelope: subagentExecutor.ts:958 + :1053. */
+function flattenSubagentRead(status: 'Success' | 'Failed', body: string): string {
+  return `Tool results:\nTool Read: ${status}\n${body}`;
+}
+
+function flattenedReadPair(firstContent: string, secondContent: string) {
+  return [
+    { role: 'assistant', content: '', toolCalls: [readCall('c1')] },
+    { role: 'user', content: firstContent },
+    { role: 'assistant', content: '', toolCalls: [readCall('c2')] },
+    { role: 'user', content: secondContent },
+  ];
+}
+
 function structuredMessages(
   secondOutput: string,
   secondArgs: Record<string, unknown> = {},
@@ -44,7 +58,7 @@ describe('Read model-facing projection', () => {
     expect(messages[3].toolResults?.[0].output).toBe(output);
   });
 
-  it('keeps changed, expanded, and forced reads visible', () => {
+  it('keeps changed and expanded reads visible', () => {
     const changed = structuredMessages(
       'Read version digest: changed\n  1\tnew',
       { limit: 4 },
@@ -52,8 +66,12 @@ describe('Read model-facing projection', () => {
     );
     expect(projectReadResultsForModel(changed)[3].toolResults?.[0].output).toContain('changed');
 
-    const forced = structuredMessages('Read version digest: abc123\n  1\talpha\n  2\tbeta', { force: true });
-    expect(projectReadResultsForModel(forced)[3].toolResults?.[0].output).toContain('alpha');
+    const expanded = structuredMessages(
+      'Read version digest: abc123\n  1\talpha\n  2\tbeta\n  3\tgamma',
+      { limit: 3 },
+      { digest: 'abc123', shownRange: { startLine: 1, endLine: 3, totalLines: 3 } },
+    );
+    expect(projectReadResultsForModel(expanded)[3].toolResults?.[0].output).toContain('gamma');
   });
 
   it('does not treat a truncated prior result as the source for dedupe', () => {
@@ -90,14 +108,42 @@ describe('Read model-facing projection', () => {
   });
 
   it('projects the flattened native-subagent pair without changing its tool call', () => {
-    const messages = [
-      { role: 'assistant', content: '', toolCalls: [readCall('c1')] },
-      { role: 'user', content: 'Tool Read: Success\nalpha' },
-      { role: 'assistant', content: '', toolCalls: [readCall('c2')] },
-      { role: 'user', content: 'Tool Read: Success\nalpha' },
-    ];
-    const projected = projectReadSubagentMessages(messages);
+    const output = flattenSubagentRead('Success', 'Read version digest: abc123\n  1\talpha\n  2\tbeta');
+    const projected = projectReadSubagentMessages(flattenedReadPair(output, output));
     expect(projected[3].content).toContain('[Read already shown');
+    expect(projected[3].content).toContain('digest=abc123');
+    expect(projected[3].content).toContain('Tool results:');
+    expect(projected[3].content).toContain('Tool Read: Success');
     expect(projected[2].toolCalls?.[0].id).toBe('c2');
+  });
+
+  it('does not replace a repeated flattened Read failure with a success receipt', () => {
+    const failures = [
+      flattenSubagentRead('Failed', 'File not found: /tmp/missing.ts'),
+      'Tool results:\nError: Tool Read not available',
+      'Tool results:\nTool Read: Error - EACCES: permission denied, open \'/tmp/secret.ts\'',
+    ];
+    for (const failed of failures) {
+      const projected = projectReadSubagentMessages(flattenedReadPair(failed, failed));
+      expect(projected[3].content).toBe(failed);
+      expect(projected[3].content).not.toContain('[Read already shown');
+    }
+  });
+
+  it('keeps a whitespace-only flattened reread visible after an indent-only Edit', () => {
+    // Flattened Read output may omit a digest (legacy/provider). The fallback
+    // fingerprint must keep indent-only edits visible instead of emitting a receipt.
+    const before = flattenSubagentRead(
+      'Success',
+      '     1\tfunction f() {\n     2\t  return 1;\n     3\t}',
+    );
+    const after = flattenSubagentRead(
+      'Success',
+      '     1\tfunction f() {\n     2\t    return 1;\n     3\t}',
+    );
+    const projected = projectReadSubagentMessages(flattenedReadPair(before, after));
+    expect(projected[3].content).toBe(after);
+    expect(projected[3].content).toContain('    return 1;');
+    expect(projected[3].content).not.toContain('[Read already shown');
   });
 });

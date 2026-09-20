@@ -12,15 +12,12 @@ import type {
   ContextProvenanceCategory,
 } from '../../shared/contract/contextView';
 import { estimateTokens } from '../context/tokenEstimator';
-import { projectReadSubagentMessages } from '../context/readResultProjection';
 import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import type { ModelRouter } from '../model/modelRouter';
 import { normalizeImageData } from '../utils/imageUtils';
 import type { SubagentContextAnnotation } from '../context/subagentContextStore';
 import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInjection';
 import { buildRoleContextBlock } from '../services/roleAssets';
-
-export { projectReadSubagentMessages };
 
 export interface SubagentAttachmentInput {
   type: string;
@@ -255,11 +252,10 @@ export function buildObservation(
 }
 
 export function buildInferenceMessages(messages: RuntimeMessage[]): ProviderModelMessage[] {
-  // ponytail: legacy providerMessages need their own projection after conversion; keep this alongside the AI SDK projection above.
-  // Read dedupe belongs to the model-facing projection. The runtime history
-  // and direct tool callers continue to receive the complete tool output.
-  const projectedMessages = projectReadSubagentMessages(messages);
-  return projectedMessages.map((message) => ({
+  // Caller (subagentExecutor) already ran projectReadSubagentMessages. AI SDK
+  // consumes that projected list directly; this mapper only converts it for
+  // the legacy provider path.
+  return messages.map((message) => ({
     role: message.role,
     content: message.content,
     ...(message.toolCalls?.length

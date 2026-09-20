@@ -8,6 +8,12 @@ import { logCollector } from '../../mcp/logCollector';
 
 const logger = createLogger('CircuitBreaker');
 
+/** Durable cursor races are harness noise; counting them trips the breaker on parallel Reads. */
+export function isDurableCursorFenceError(error?: string | Error): boolean {
+  const message = error instanceof Error ? error.message : error ?? '';
+  return /fenced by stale cursor/.test(message);
+}
+
 /**
  * Circuit breaker configuration
  */
@@ -65,6 +71,10 @@ export class CircuitBreaker {
    * @returns true if the circuit breaker is now tripped
    */
   recordFailure(error?: string | Error): boolean {
+    if (isDurableCursorFenceError(error)) {
+      logger.debug('Ignoring durable cursor fence for circuit breaker');
+      return this.state.isTripped;
+    }
     this.state.consecutiveFailures++;
 
     logger.debug(

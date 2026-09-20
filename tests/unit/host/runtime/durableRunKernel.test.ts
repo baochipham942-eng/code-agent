@@ -408,6 +408,33 @@ describe('DurableRunKernel', () => {
     db.close();
   });
 
+  it('serializes concurrent checkpoints on one run so none fence on stale cursor', async () => {
+    const { db, kernel, repository } = createKernel();
+    const created = await kernel.createNativeRun({
+      runId: 'run-parallel-checkpoint', sessionId: 'session-parallel-checkpoint', now: 10,
+    });
+
+    const results = await Promise.allSettled(
+      [0, 1, 2].map((index) => kernel.checkpoint({
+        runId: 'run-parallel-checkpoint',
+        attempt: 1,
+        owner: created.owner,
+        now: 20 + index,
+        status: 'running',
+        state: { index },
+        pendingOperations: [],
+        events: [{ type: 'native_tool_operation', payload: { index }, recordedAt: 20 + index }],
+      })),
+    );
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(3);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(0);
+    const envelope = await repository.get('run-parallel-checkpoint');
+    expect(envelope?.cursor.nextEventSeq).toBe(4);
+    expect(envelope?.cursor.checkpointSeq).toBe(3);
+    db.close();
+  });
+
   it('fails closed when durable storage is unavailable', async () => {
     const kernel = new DurableRunKernel({
       stores: null,

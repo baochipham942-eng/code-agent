@@ -7,7 +7,6 @@ import {
 import {
   addChildRunRef,
   createChildRunRef,
-  DURABLE_ACTIVE_SESSION_CONFLICT_CODE,
   projectChildRunTerminal,
   type PendingOperation,
   type RunEnvelope,
@@ -50,6 +49,15 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { isNativeRecoveryDescriptor, type NativeRecoveryDescriptor } from './nativeRecoveryHost';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
+import { createKeyedSerializer } from './keyedSerializer';
+import { findRecoveredWaitingRun as matchRecoveredWaitingRun } from './recoveredWaitingRun';
+import {
+  asNativeAgentTeamProjectionState,
+  isDurableActiveSessionConstraint,
+  isHeartbeatFencingError,
+  isSqliteBusyError,
+  mergeAgentTeamProjectionState,
+} from './runRegistrySupport';
 
 const HEARTBEAT_TRANSIENT_RETRY_WINDOWS = 2;
 
@@ -88,6 +96,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   private readonly durableCheckpointStates = new Map<string, unknown>();
   private readonly modelSpecsByRunId = new Map<string, ConversationModelSpec>();
   private readonly recoveredWaitingCancels = new Map<string, Promise<{ runId: string; sessionId: string }>>();
+  private readonly serializeDurableMutation = createKeyedSerializer();
   private kernel: RunKernelAdapter | null = null;
 
   configureDurableKernel(kernel: RunKernelAdapter): void {
@@ -339,28 +348,30 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     runId: string,
     input: Omit<DurableCheckpointInput, 'runId' | 'attempt' | 'owner'>,
   ) {
-    const live = this.requireDurableOwner(runId);
-    const checkpoint = await this.requireKernel().checkpoint({
-      ...input,
-      runId,
-      attempt: live.attempt,
-      owner: live.owner,
-    });
-    const envelope = this.durableEnvelopes.get(runId);
-    if (envelope) {
-      this.durableEnvelopes.set(runId, {
-        ...envelope,
-        status: input.status,
+    return this.serializeDurableMutation(runId, async () => {
+      const live = this.requireDurableOwner(runId);
+      const checkpoint = await this.requireKernel().checkpoint({
+        ...input,
+        runId,
         attempt: live.attempt,
-        cursor: checkpoint.cursor,
         owner: live.owner,
-        pendingOperations: input.pendingOperations,
-        childRuns: input.childRuns ?? envelope.childRuns,
-        updatedAt: input.now,
       });
-    }
-    this.durableCheckpointStates.set(runId, input.state);
-    return checkpoint;
+      const envelope = this.durableEnvelopes.get(runId);
+      if (envelope) {
+        this.durableEnvelopes.set(runId, {
+          ...envelope,
+          status: input.status,
+          attempt: live.attempt,
+          cursor: checkpoint.cursor,
+          owner: live.owner,
+          pendingOperations: input.pendingOperations,
+          childRuns: input.childRuns ?? envelope.childRuns,
+          updatedAt: input.now,
+        });
+      }
+      this.durableCheckpointStates.set(runId, input.state);
+      return checkpoint;
+    });
   }
 
   async checkpointNativeModelOperation(input: {
@@ -375,6 +386,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     isGoalRun?: boolean;
     now?: number;
   }): Promise<void> {
+    return this.serializeDurableMutation(input.runId, async () => {
     const now = input.now ?? Date.now();
     const live = this.requireDurableOwner(input.runId);
     const envelope = this.durableEnvelopes.get(input.runId);
@@ -431,6 +443,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       childRuns: envelope.childRuns,
       events: [{ type: 'native_model_operation', payload: { operationId, phase: input.phase, status: input.status }, recordedAt: now }],
     });
+    });
   }
 
   async checkpointNativeToolOperation(input: {
@@ -444,6 +457,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     resultRef?: string;
     now?: number;
   }): Promise<void> {
+    return this.serializeDurableMutation(input.runId, async () => {
     const now = input.now ?? Date.now();
     const live = this.requireDurableOwner(input.runId);
     const envelope = this.durableEnvelopes.get(input.runId);
@@ -499,6 +513,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       pendingOperations,
       childRuns: envelope.childRuns,
       events: [{ type: 'native_tool_operation', payload: { operationId, status: input.status }, recordedAt: now }],
+    });
     });
   }
 
@@ -598,25 +613,39 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     input: Omit<DurableTerminalInput, 'runId' | 'attempt' | 'owner'>,
     expected?: RunHandle,
   ) {
-    if (expected && this.handlesByRunId.get(runId) !== expected) {
-      throw new Error(`Durable Run terminal fenced by stale handle: ${runId}`);
-    }
-    const live = this.requireDurableOwner(runId);
-    const envelope = await this.requireKernel().terminal({
-      ...input,
-      runId,
-      attempt: live.attempt,
-      owner: live.owner,
+    return this.serializeDurableMutation(runId, async () => {
+      if (expected && this.handlesByRunId.get(runId) !== expected) {
+        throw new Error(`Durable Run terminal fenced by stale handle: ${runId}`);
+      }
+      const live = this.requireDurableOwner(runId);
+      const envelope = await this.requireKernel().terminal({
+        ...input,
+        runId,
+        attempt: live.attempt,
+        owner: live.owner,
+      });
+      this.durableOwners.delete(runId);
+      this.durableEnvelopes.delete(runId);
+      this.durableCheckpointStates.delete(runId);
+      this.stopHeartbeat(runId);
+      this.endAttemptSpan(runId, input.status === 'completed' ? 'ok' : input.status === 'cancelled' ? 'cancelled' : 'error', {
+        'terminal.status': input.status,
+      });
+      this.unregister(runId, expected);
+      return envelope;
     });
-    this.durableOwners.delete(runId);
-    this.durableEnvelopes.delete(runId);
-    this.durableCheckpointStates.delete(runId);
-    this.stopHeartbeat(runId);
-    this.endAttemptSpan(runId, input.status === 'completed' ? 'ok' : input.status === 'cancelled' ? 'cancelled' : 'error', {
-      'terminal.status': input.status,
-    });
-    this.unregister(runId, expected);
-    return envelope;
+  }
+
+  async cancelOrphanedSessionRoot(input: {
+    sessionId: string;
+    expectedOwnerId: string;
+    processInstanceId: string;
+    now?: number;
+  }): Promise<boolean> {
+    const kernel = this.requireKernel();
+    return kernel.cancelOrphanedSessionRoot
+      ? kernel.cancelOrphanedSessionRoot(input)
+      : false;
   }
 
   async releaseDurable(runId: string, expected?: RunHandle, now = Date.now()): Promise<boolean> {
@@ -635,32 +664,13 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return released;
   }
 
-  /**
-   * 恢复后被停在 waiting、且没有任何控制 handle 的 durable run 的查找。
-   *
-   * recoverDurable 只登记 durable owner + 心跳，不注册 handle；引擎恢复器把 run
-   * checkpoint 成 waiting（requires_review）后它就成了一个 resolve() 查不到、却仍持
-   * 租约挡住同会话新 run 的「只进不出」状态。有 handle 的 waiting run 不算——它们
-   * 走 resolve() → handle.cancel 的正常链路。同步方法：companion dispatch 等同步
-   * 入口先探测，再异步走 terminalRecoveredWaitingRun。
-   *
-   * 只给 sessionId 时只认根 run：子 run（parentRunId）同会话可以有多个 waiting，
-   * 根 run 由 idx_durable_runs_active_session 保证每会话至多一个，取消对象才确定。
-   */
   findRecoveredWaitingRun(selector: { runId?: string; sessionId?: string }): { runId: string; sessionId: string } | undefined {
-    const runId = selector.runId?.trim();
-    const sessionId = selector.sessionId?.trim();
-    if (!runId && !sessionId) return undefined;
-    for (const envelope of this.durableEnvelopes.values()) {
-      if (envelope.status !== 'waiting') continue;
-      if (runId && envelope.runId !== runId) continue;
-      if (sessionId && envelope.sessionId !== sessionId) continue;
-      if (!runId && envelope.parentRunId) continue;
-      if (this.handlesByRunId.has(envelope.runId)) continue;
-      if (!this.durableOwners.has(envelope.runId)) continue;
-      return { runId: envelope.runId, sessionId: envelope.sessionId };
-    }
-    return undefined;
+    return matchRecoveredWaitingRun(
+      this.durableEnvelopes.values(),
+      (runId) => this.handlesByRunId.has(runId),
+      (runId) => this.durableOwners.has(runId),
+      selector,
+    );
   }
 
   /** 把 findRecoveredWaitingRun 命中的 run 沿 terminalDurable 规范路径（owner/attempt fence + 事件序号）终态化成 cancelled。 */
@@ -960,63 +970,4 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       // Tracing is diagnostic only and must never affect run ownership.
     }
   }
-}
-
-function isDurableActiveSessionConstraint(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const candidate = error as { code?: unknown; message?: unknown };
-  if (candidate.code === DURABLE_ACTIVE_SESSION_CONFLICT_CODE) return true;
-  // 兜底：写入侧没抬 code 时（绕过 DurableRunRepository 的写路径）仍认驱动报错，
-  // 但只认约束名/列名的正则，不做整句全等——驱动改文案不该让这条判据静默失效。
-  return typeof candidate.code === 'string'
-    && candidate.code.startsWith('SQLITE_CONSTRAINT')
-    && /durable_runs\.session_id|idx_durable_runs_active_session/i.test(String(candidate.message ?? ''));
-}
-
-function isHeartbeatFencingError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const candidate = error as Error & { code?: unknown };
-  return candidate.code === 'RUN_OWNER_FENCED'
-    || /heartbeat fenced by stale owner/i.test(candidate.message);
-}
-
-function isSqliteBusyError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === 'string'
-    && (code === 'SQLITE_BUSY' || code.startsWith('SQLITE_BUSY_'));
-}
-
-interface NativeAgentTeamProjectionState {
-  schemaVersion: 1;
-  kind: 'native_with_agent_team_projection';
-  nativeState?: unknown;
-  teams: Array<{
-    teamRunId: string;
-    treeId: string;
-    operationId: string;
-    status: string;
-    resultRef?: string;
-  }>;
-}
-
-function mergeAgentTeamProjectionState(
-  current: unknown,
-  team: NativeAgentTeamProjectionState['teams'][number],
-): NativeAgentTeamProjectionState {
-  const prior = current && typeof current === 'object'
-    && (current as { kind?: unknown }).kind === 'native_with_agent_team_projection'
-    ? current as NativeAgentTeamProjectionState
-    : { schemaVersion: 1 as const, kind: 'native_with_agent_team_projection' as const, nativeState: current, teams: [] };
-  return {
-    ...prior,
-    teams: [...prior.teams.filter((entry) => entry.teamRunId !== team.teamRunId), team],
-  };
-}
-
-function asNativeAgentTeamProjectionState(value: unknown): NativeAgentTeamProjectionState | undefined {
-  return value && typeof value === 'object'
-    && (value as { kind?: unknown }).kind === 'native_with_agent_team_projection'
-    ? value as NativeAgentTeamProjectionState
-    : undefined;
 }

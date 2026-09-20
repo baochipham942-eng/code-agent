@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   DURABLE_RUN_SCHEMA_VERSION,
+  isTerminalRunStatus,
   type ChildRunRef,
   type PendingOperation,
   type PendingOperationKind,
@@ -18,6 +19,7 @@ import type {
   RunLeaseClaimResult,
   RunRehydrationPlan,
 } from './durableRunStores';
+import { createKeyedSerializer } from './keyedSerializer';
 
 export class DurableRunPersistenceUnavailableError extends Error {
   readonly code = 'DURABLE_RUN_PERSISTENCE_UNAVAILABLE';
@@ -113,6 +115,18 @@ export interface RunKernelAdapter {
   recoverOnStartup(now: number, limit?: number): Promise<RunRehydrationPlan[]>;
   prepareOperation(input: PrepareOperationInput): PendingOperation;
   prepareToolOperation(input: PrepareToolOperationInput): PendingOperation;
+  getLatestBySession?(sessionId: string): Promise<RunEnvelope | null>;
+  stealLease?(input: {
+    runId: string;
+    expectedEpoch: number;
+    now: number;
+  }): Promise<RunLeaseClaimResult | null>;
+  cancelOrphanedSessionRoot?(input: {
+    sessionId: string;
+    expectedOwnerId: string;
+    processInstanceId: string;
+    now?: number;
+  }): Promise<boolean>;
 }
 
 export class DurableRunKernel implements RunKernelAdapter {
@@ -120,6 +134,7 @@ export class DurableRunKernel implements RunKernelAdapter {
   private readonly ownerId: string;
   private readonly processInstanceId: string;
   private readonly leaseDurationMs: number;
+  private readonly serializeRun = createKeyedSerializer();
 
   constructor(options: DurableRunKernelOptions) {
     this.stores = options.stores;
@@ -183,6 +198,70 @@ export class DurableRunKernel implements RunKernelAdapter {
   }
 
   async checkpoint(input: DurableCheckpointInput): Promise<RunCheckpoint> {
+    return this.serializeRun(input.runId, () => this.checkpointNow(input));
+  }
+
+  async terminal(input: DurableTerminalInput): Promise<RunEnvelope> {
+    return this.serializeRun(input.runId, () => this.terminalNow(input));
+  }
+
+  async getLatestBySession(sessionId: string): Promise<RunEnvelope | null> {
+    const stores = this.requireStores() as DurableRunStores & {
+      getLatestBySession?: (id: string) => Promise<RunEnvelope | null>;
+    };
+    return stores.getLatestBySession?.(sessionId) ?? null;
+  }
+
+  async stealLease(input: {
+    runId: string;
+    expectedEpoch: number;
+    now: number;
+  }): Promise<RunLeaseClaimResult | null> {
+    return this.requireStores().claimLease({
+      runId: input.runId,
+      expectedEpoch: input.expectedEpoch,
+      ownerId: this.ownerId,
+      processInstanceId: this.processInstanceId,
+      now: input.now,
+      leaseDurationMs: this.leaseDurationMs,
+    });
+  }
+
+  async cancelOrphanedSessionRoot(input: {
+    sessionId: string;
+    expectedOwnerId: string;
+    processInstanceId: string;
+    now?: number;
+  }): Promise<boolean> {
+    const now = input.now ?? Date.now();
+    const latest = await this.getLatestBySession(input.sessionId);
+    if (!latest || isTerminalRunStatus(latest.status) || latest.parentRunId) return false;
+    if (latest.owner?.ownerId !== input.expectedOwnerId) return false;
+    if (latest.owner.processInstanceId === input.processInstanceId) return false;
+    const stealNow = Math.max(now, (latest.owner.leaseExpiresAt ?? 0) + 1);
+    const claimed = await this.stealLease({
+      runId: latest.runId,
+      expectedEpoch: latest.owner.epoch,
+      now: stealNow,
+    });
+    if (!claimed) return false;
+    await this.terminal({
+      runId: latest.runId,
+      attempt: claimed.attempt.attempt,
+      owner: claimed.owner,
+      now: stealNow,
+      status: 'cancelled',
+      reason: 'orphaned_cli_session_root',
+      event: {
+        type: 'run_cancelled',
+        payload: { sessionId: input.sessionId, reason: 'orphaned_cli_session_root' },
+        recordedAt: stealNow,
+      },
+    });
+    return true;
+  }
+
+  private async checkpointNow(input: DurableCheckpointInput): Promise<RunCheckpoint> {
     const stores = this.requireStores();
     const envelope = await stores.get(input.runId);
     if (!envelope) throw new Error(`Unknown durable run: ${input.runId}`);
@@ -222,7 +301,7 @@ export class DurableRunKernel implements RunKernelAdapter {
     });
   }
 
-  async terminal(input: DurableTerminalInput): Promise<RunEnvelope> {
+  private async terminalNow(input: DurableTerminalInput): Promise<RunEnvelope> {
     const stores = this.requireStores();
     const envelope = await stores.get(input.runId);
     if (!envelope) throw new Error(`Unknown durable run: ${input.runId}`);

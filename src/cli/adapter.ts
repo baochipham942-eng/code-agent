@@ -554,10 +554,25 @@ export class CLIAgent {
     }
 
     if (durableRun) {
-      try {
-        await terminalCLIDurableRun(durableRun, result.success);
-      } catch (error) {
-        logger.warn('Failed to terminal CLI Durable Run', { error: getErrorMessage(error) });
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          await terminalCLIDurableRun(durableRun, result.success);
+          lastError = undefined;
+          break;
+        } catch (error) {
+          lastError = error;
+          logger.warn('Failed to terminal CLI Durable Run', {
+            error: getErrorMessage(error),
+            attempt: attempt + 1,
+          });
+        }
+      }
+      if (lastError) {
+        logger.warn('CLI Durable Run left non-terminal after retry; next -s start will cancel the orphan', {
+          error: getErrorMessage(lastError),
+          sessionId: durableRun.context.sessionId,
+        });
       }
     }
     resolveRun(result);

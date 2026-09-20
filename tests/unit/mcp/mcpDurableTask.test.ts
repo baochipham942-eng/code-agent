@@ -49,6 +49,8 @@ function fixture() {
     }),
   };
   const protocol: McpTaskProtocol = {
+    acquireConnectionLease: vi.fn(),
+    releaseConnectionLease: vi.fn(),
     createTask: vi.fn(async () => ({
       taskId: 'task-provider-1', status: 'working' as const, ttl: 60_000,
       createdAt: '2026-07-11T00:00:00Z', lastUpdatedAt: '2026-07-11T00:00:00Z',
@@ -109,7 +111,7 @@ describe('MCP Durable Task', () => {
   });
 
   it('creates a waiting tool_call PendingOperation for a trusted task-capable tool', async () => {
-    const { controller, commits } = fixture();
+    const { controller, commits, protocol } = fixture();
     const result = await controller.createMcpTask({
       runId: 'run-a', operationId: 'call-a', attempt: 1, serverIdentity: CAPABILITY.serverIdentity,
       serverName: 'github', toolName: 'search_code', args: { query: 'secret source text' },
@@ -125,6 +127,9 @@ describe('MCP Durable Task', () => {
     expect(result.operation.inputDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(commits)).not.toContain('secret source text');
     expect(commits.map((entry) => entry.operation.status)).toEqual(['prepared', 'waiting']);
+    expect(protocol.acquireConnectionLease).toHaveBeenCalledWith(expect.objectContaining({
+      leaseId: 'mcp-task:run-a:call-a',
+    }));
   });
 
   it('keeps tools synchronous when task execution is not declared or not trusted', async () => {
@@ -193,6 +198,7 @@ describe('MCP Durable Task', () => {
 
     expect(protocol.cancelTask).toHaveBeenCalledTimes(1);
     expect(protocol.cancelTask).toHaveBeenCalledWith(expect.objectContaining({ taskId: 'task-provider-1' }));
+    expect(protocol.releaseConnectionLease).toHaveBeenCalledWith('mcp-task:run-a:call-a');
   });
 
   it('submits supplemental input only through a trusted bound tasks/update capability', async () => {
@@ -318,6 +324,7 @@ describe('MCP Durable Task', () => {
     expect(created.operation.status).toBe('waiting');
     expect(commits.at(-1)?.operation.status).toBe('waiting');
     expect(protocol.createTask).toHaveBeenCalledTimes(1);
+    expect(protocol.releaseConnectionLease).toHaveBeenCalledWith('mcp-task:run-a:call-a:request');
   });
 
   it('requires review for unknown dispatch without a queryable handle and never blind-retries side effects', () => {

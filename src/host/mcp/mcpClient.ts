@@ -20,6 +20,7 @@ import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
+import { getConfigService } from '../services/core/configService';
 
 // Import types from the types module
 import type {
@@ -78,6 +79,7 @@ import {
 import { classifyMcpToolReplaySafety } from './mcpToolSafety';
 import { resolveServerConfigSecrets } from './mcpSecretResolver';
 import { processBatched } from './mcpSearchUtils';
+import { MCP_TIMEOUTS } from '../../shared/constants/timeouts';
 import { discoverLazyMcpServersForSearch, type McpLazySearchClient } from './mcpLazySearch';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
@@ -119,6 +121,21 @@ export interface MCPToolCallOptions {
   /** Internal capability: only the stateful CUA facade may invoke raw driver tools. */
   cuaStatefulFacade?: boolean;
   cuaLockScope?: string; // Surface Session owner for input lock and trajectory budget.
+}
+
+export interface MCPClientOptions {
+  /** Settings-backed override; omitted fields use MCP_TIMEOUTS defaults. */
+  idleReaping?: {
+    enabled?: boolean;
+    ttlMs?: number;
+    scanIntervalMs?: number;
+  };
+  /** Test/runtime clock injection. */
+  now?: () => number;
+}
+
+interface MCPConnectionLease {
+  expiresAt?: number;
 }
 function isAbortError(error: unknown): boolean {
   if (!(error instanceof Error)) {
@@ -181,6 +198,15 @@ export class MCPClient extends EventEmitter {
   private connectingServers: Map<string, Promise<void>> = new Map();
   private pendingOAuthAuthorizations: Map<string, Promise<void>> = new Map();
   private listChangedRecovery = new McpListChangedRecovery();
+  private idleReapingEnabled = true;
+  private idleReapTtlMs: number = MCP_TIMEOUTS.IDLE_REAP_TTL;
+  private idleReapScanIntervalMs: number = MCP_TIMEOUTS.IDLE_REAP_SCAN;
+  private readonly now: () => number;
+  private readonly lastUsedAt: Map<string, number> = new Map();
+  private readonly activeRequests: Map<string, number> = new Map();
+  private readonly connectionLeases: Map<string, Map<string, MCPConnectionLease>> = new Map();
+  private readonly reapingServers: Set<string> = new Set();
+  private idleReaperTimer: ReturnType<typeof setInterval> | undefined;
 
   // ========================================================================
   // LRU 缓存 + 会话管理
@@ -193,8 +219,113 @@ export class MCPClient extends EventEmitter {
   /** Max cache entries */
   private static readonly MAX_CACHE_SIZE = 20;
 
-  constructor() {
+  constructor(options: MCPClientOptions = {}) {
     super();
+    this.now = options.now ?? Date.now;
+    this.configureIdleReaping(options.idleReaping);
+  }
+
+  configureIdleReaping(options?: MCPClientOptions['idleReaping']): void {
+    this.idleReapingEnabled = options?.enabled ?? true;
+    this.idleReapTtlMs = Math.max(1, options?.ttlMs ?? MCP_TIMEOUTS.IDLE_REAP_TTL);
+    this.idleReapScanIntervalMs = Math.max(1, options?.scanIntervalMs ?? MCP_TIMEOUTS.IDLE_REAP_SCAN);
+    if (this.idleReaperTimer) clearInterval(this.idleReaperTimer);
+    this.idleReaperTimer = undefined;
+    if (!this.idleReapingEnabled) return;
+    this.idleReaperTimer = setInterval(() => {
+      void this.reapIdleConnections();
+    }, this.idleReapScanIntervalMs);
+    (this.idleReaperTimer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  private currentTime(): number {
+    return typeof this.now === 'function' ? this.now() : Date.now();
+  }
+
+  private touchServer(serverName: string, now = this.currentTime()): void {
+    this.lastUsedAt?.set(serverName, now);
+  }
+
+  private beginServerUse(serverName: string): () => void {
+    this.touchServer(serverName);
+    this.activeRequests.set(serverName, (this.activeRequests.get(serverName) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const active = this.activeRequests.get(serverName) ?? 0;
+      if (active <= 1) this.activeRequests.delete(serverName);
+      else this.activeRequests.set(serverName, active - 1);
+      this.touchServer(serverName);
+    };
+  }
+
+  private hasValidConnectionLease(serverName: string, now = this.currentTime()): boolean {
+    const leases = this.connectionLeases.get(serverName);
+    if (!leases || leases.size === 0) return false;
+    for (const [leaseId, lease] of leases) {
+      if (lease.expiresAt !== undefined && lease.expiresAt <= now) leases.delete(leaseId);
+    }
+    if (leases.size === 0) this.connectionLeases.delete(serverName);
+    return leases.size > 0;
+  }
+
+  private isIdleConnection(serverName: string, now = this.currentTime()): boolean {
+    if (this.activeRequests.get(serverName)) return false;
+    if (this.connectingServers.has(serverName)) return false;
+    if (this.hasValidConnectionLease(serverName, now)) return false;
+    const lastUsed = this.lastUsedAt.get(serverName);
+    return lastUsed !== undefined && now - lastUsed >= this.idleReapTtlMs;
+  }
+
+  private async reapIdleConnections(): Promise<void> {
+    if (!this.idleReapingEnabled) return;
+    const now = this.currentTime();
+    for (const [serverName, expectedClient] of this.clients) {
+      if (!this.isIdleConnection(serverName, now) || this.reapingServers.has(serverName)) continue;
+      this.reapingServers.add(serverName);
+      try {
+        // Re-check after marking the server. A request started between the scan and
+        // this point wins over cleanup and keeps the connection alive.
+        if (this.clients.get(serverName) === expectedClient && this.isIdleConnection(serverName, now)) {
+          await this.disconnect(serverName);
+        }
+      } catch (error) {
+        logger.warn(`Failed to reap idle MCP server ${serverName}`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        this.reapingServers.delete(serverName);
+      }
+    }
+  }
+
+  /** Explicitly retain a server for a durable provider task. */
+  acquireConnectionLease(
+    serverName: string,
+    leaseId: string,
+    expiresAt?: number,
+  ): void {
+    let leases = this.connectionLeases.get(serverName);
+    if (!leases) {
+      leases = new Map();
+      this.connectionLeases.set(serverName, leases);
+    }
+    leases.set(leaseId, { expiresAt });
+    this.touchServer(serverName);
+  }
+
+  releaseConnectionLease(serverName: string, leaseId: string): void {
+    const leases = this.connectionLeases.get(serverName);
+    leases?.delete(leaseId);
+    if (leases?.size === 0) this.connectionLeases.delete(serverName);
+    this.touchServer(serverName);
+  }
+
+  /** Stop the process-local reaper during host shutdown. */
+  stopIdleReaper(): void {
+    if (this.idleReaperTimer) clearInterval(this.idleReaperTimer);
+    this.idleReaperTimer = undefined;
   }
 
   private buildListRefreshCallbacks(
@@ -247,6 +378,7 @@ export class MCPClient extends EventEmitter {
       toolCount: 0,
       resourceCount: 0,
     });
+    this.touchServer(name);
   }
 
   /**
@@ -258,6 +390,9 @@ export class MCPClient extends EventEmitter {
     }
     this.serverConfigs.delete(serverName);
     this.serverStates.delete(serverName);
+    this.lastUsedAt.delete(serverName);
+    this.activeRequests.delete(serverName);
+    this.connectionLeases.delete(serverName);
     logger.info(`Removed MCP server: ${serverName}`);
   }
 
@@ -385,11 +520,13 @@ export class MCPClient extends EventEmitter {
     if (isInProcessConfig(config)) {
       if (this.inProcessServers.has(config.name)) {
         logger.info(`In-process MCP server ${config.name} already connected`);
+        this.touchServer(config.name);
         return;
       }
     } else {
       if (this.clients.has(config.name)) {
         logger.info(`MCP server ${config.name} already connected`);
+        this.touchServer(config.name);
         return;
       }
     }
@@ -468,6 +605,7 @@ export class MCPClient extends EventEmitter {
       this.clients.set(config.name, connected.client);
       this.transports.set(config.name, connected.transport);
       this.bumpServerConnectionGeneration(config.name);
+      this.touchServer(config.name);
       const refreshCallbacks = this.buildListRefreshCallbacks(config.name);
       void this.listChangedRecovery.monitor(config.name, connected.client, {
         shouldContinue: () => this.clients.get(config.name) === connected.client,
@@ -586,6 +724,7 @@ export class MCPClient extends EventEmitter {
 
       this.inProcessServers.set(config.name, server);
       this.bumpServerConnectionGeneration(config.name);
+      this.touchServer(config.name);
       await this.registry.discoverInProcessCapabilities(config.name, server);
 
       if (state) {
@@ -640,6 +779,7 @@ export class MCPClient extends EventEmitter {
     this.registry.removeServerCapabilities(serverName);
     // Invalidate cached tool definitions on disconnect
     this.toolDefinitionCache.delete(serverName);
+    this.activeRequests.delete(serverName);
 
     const state = this.serverStates.get(serverName);
     if (state) {
@@ -647,6 +787,7 @@ export class MCPClient extends EventEmitter {
       state.toolCount = 0;
       state.resourceCount = 0;
     }
+    this.touchServer(serverName);
   }
 
   /**
@@ -666,6 +807,7 @@ export class MCPClient extends EventEmitter {
    * 断开所有连接
    */
   async disconnectAll(): Promise<void> {
+    this.stopIdleReaper();
     for (const serverName of this.clients.keys()) {
       await this.disconnect(serverName);
     }
@@ -717,6 +859,7 @@ export class MCPClient extends EventEmitter {
    */
   async ensureConnected(serverName: string, signal?: AbortSignal): Promise<boolean> {
     if (this.clients.has(serverName) || this.inProcessServers.has(serverName)) {
+      this.touchServer(serverName);
       return true;
     }
 
@@ -777,7 +920,9 @@ export class MCPClient extends EventEmitter {
         logger.error(`Failed to lazy-load server ${serverName}:`, error);
         return false;
       }
-      return this.clients.has(serverName) || this.inProcessServers.has(serverName);
+      const connected = this.clients.has(serverName) || this.inProcessServers.has(serverName);
+      if (connected) this.touchServer(serverName);
+      return connected;
     }
 
     const outcome = await new Promise<'settled' | 'aborted'>((resolve) => {
@@ -799,7 +944,9 @@ export class MCPClient extends EventEmitter {
       logger.info(`ensureConnected wait for ${serverName} aborted by caller; shared connection continues for other waiters`);
       return false;
     }
-    return this.clients.has(serverName) || this.inProcessServers.has(serverName);
+    const connected = this.clients.has(serverName) || this.inProcessServers.has(serverName);
+    if (connected) this.touchServer(serverName);
+    return connected;
   }
 
   /**
@@ -870,10 +1017,18 @@ export class MCPClient extends EventEmitter {
   }
 
   createTaskProtocol(serverName: string, expectedServerIdentity: string): McpTaskProtocol | null {
-    const client = this.clients.get(serverName);
     const actualIdentity = this.getServerIdentity(serverName);
-    if (!client || !actualIdentity || actualIdentity !== expectedServerIdentity) return null;
-    return new McpSdkTaskProtocol(client, actualIdentity);
+    if (!actualIdentity || actualIdentity !== expectedServerIdentity) return null;
+    return new McpSdkTaskProtocol(async () => {
+      if (!this.clients.has(serverName)) {
+        const connected = await this.ensureConnected(serverName);
+        if (!connected) return undefined;
+      }
+      return this.clients.get(serverName);
+    }, actualIdentity, {}, {
+      acquire: ({ leaseId, expiresAt }) => this.acquireConnectionLease(serverName, leaseId, expiresAt),
+      release: (leaseId) => this.releaseConnectionLease(serverName, leaseId),
+    });
   }
 
   buildTaskCapability(
@@ -958,6 +1113,21 @@ export class MCPClient extends EventEmitter {
   }
 
   private async callToolInternal(
+    toolCallId: string,
+    serverName: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    options: MCPToolCallOptions | number = {},
+  ): Promise<ToolResult> {
+    const releaseUse = this.beginServerUse(serverName);
+    try {
+      return await this.callToolInternalImpl(toolCallId, serverName, toolName, args, options);
+    } finally {
+      releaseUse();
+    }
+  }
+
+  private async callToolInternalImpl(
     toolCallId: string,
     serverName: string,
     toolName: string,
@@ -1149,17 +1319,20 @@ export class MCPClient extends EventEmitter {
   }
 
   async readResource(serverName: string, uri: string): Promise<string> {
-    const inProcessServer = this.inProcessServers.get(serverName);
-    if (inProcessServer) {
-      return inProcessServer.readResource(uri);
+    const releaseUse = this.beginServerUse(serverName);
+    try {
+      const inProcessServer = this.inProcessServers.get(serverName);
+      if (inProcessServer) return await inProcessServer.readResource(uri);
+      let client = this.clients.get(serverName);
+      if (!client) {
+        const connected = await this.ensureConnected(serverName);
+        if (connected) client = this.clients.get(serverName);
+      }
+      if (!client) throw new Error(`MCP server ${serverName} not connected`);
+      return await this.registry.readExternalResource(client, uri);
+    } finally {
+      releaseUse();
     }
-
-    const client = this.clients.get(serverName);
-    if (!client) {
-      throw new Error(`MCP server ${serverName} not connected`);
-    }
-
-    return this.registry.readExternalResource(client, uri);
   }
 
   // --------------------------------------------------------------------------
@@ -1175,17 +1348,20 @@ export class MCPClient extends EventEmitter {
     promptName: string,
     args?: Record<string, string>,
   ): Promise<string> {
-    const inProcessServer = this.inProcessServers.get(serverName);
-    if (inProcessServer) {
-      return inProcessServer.getPrompt(promptName, args);
+    const releaseUse = this.beginServerUse(serverName);
+    try {
+      const inProcessServer = this.inProcessServers.get(serverName);
+      if (inProcessServer) return await inProcessServer.getPrompt(promptName, args);
+      let client = this.clients.get(serverName);
+      if (!client) {
+        const connected = await this.ensureConnected(serverName);
+        if (connected) client = this.clients.get(serverName);
+      }
+      if (!client) throw new Error(`MCP server ${serverName} not connected`);
+      return await this.registry.getExternalPrompt(client, promptName, args);
+    } finally {
+      releaseUse();
     }
-
-    const client = this.clients.get(serverName);
-    if (!client) {
-      throw new Error(`MCP server ${serverName} not connected`);
-    }
-
-    return this.registry.getExternalPrompt(client, promptName, args);
   }
 
   // --------------------------------------------------------------------------
@@ -1265,7 +1441,11 @@ let mcpClientInstance: MCPClient | null = null;
 
 export function getMCPClient(): MCPClient {
   if (!mcpClientInstance) {
-    mcpClientInstance = new MCPClient();
+    const configService = getConfigService();
+    mcpClientInstance = new MCPClient({ idleReaping: configService.getSettings().mcp?.idleReaping });
+    configService.onSettingsUpdated((settings) => {
+      mcpClientInstance?.configureIdleReaping(settings.mcp?.idleReaping);
+    });
   }
   return mcpClientInstance;
 }

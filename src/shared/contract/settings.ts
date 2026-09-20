@@ -367,7 +367,13 @@ export interface AppSettings {
   };
   // MCP 配置
   mcp?: {
-    servers: Array<{
+    /** 连接空闲回收；缺省使用 host 的 MCP_TIMEOUTS 默认值。 */
+    idleReaping?: {
+      enabled?: boolean;
+      ttlMs?: number;
+      scanIntervalMs?: number;
+    };
+    servers?: Array<{
       name: string;
       command: string;
       args?: string[];

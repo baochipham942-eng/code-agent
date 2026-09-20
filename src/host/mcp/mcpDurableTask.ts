@@ -30,6 +30,9 @@ export interface McpTaskSnapshot {
 }
 
 export interface McpTaskProtocol {
+  /** Keep the provider connection alive while a queryable task is active. */
+  acquireConnectionLease?(input: { leaseId: string; expiresAt?: number }): void;
+  releaseConnectionLease?(leaseId: string): void;
   createTask(input: {
     serverIdentity: string;
     serverName: string;
@@ -181,6 +184,45 @@ export class McpDurableTaskController {
     this.resultStore = input.resultStore;
   }
 
+  private taskLeaseId(input: { runId: string; operationId: string }): string {
+    return `mcp-task:${input.runId}:${input.operationId}`;
+  }
+
+  private taskLeaseExpiry(task: McpTaskSnapshot): number | undefined {
+    if (task.ttl == null) return undefined;
+    const updatedAt = Date.parse(task.lastUpdatedAt);
+    if (!Number.isFinite(updatedAt)) return undefined;
+    return updatedAt + Math.max(0, task.ttl);
+  }
+
+  private retainTaskLease(input: { runId: string; operationId: string }, task: McpTaskSnapshot): void {
+    if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+      this.protocol.releaseConnectionLease?.(this.taskLeaseId(input));
+      return;
+    }
+    this.protocol.acquireConnectionLease?.({
+      leaseId: this.taskLeaseId(input),
+      expiresAt: this.taskLeaseExpiry(task),
+    });
+  }
+
+  private releaseTaskLease(input: { runId: string; operationId: string }): void {
+    this.protocol.releaseConnectionLease?.(this.taskLeaseId(input));
+  }
+
+  private beginTaskLease(input: { runId: string; operationId: string }): () => void {
+    // The provider request itself is a running durable operation. Retain the
+    // connection before dispatch so a slow tasks/call cannot be reaped midway.
+    const leaseId = `${this.taskLeaseId(input)}:request`;
+    this.protocol.acquireConnectionLease?.({ leaseId });
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.protocol.releaseConnectionLease?.(leaseId);
+    };
+  }
+
   async createMcpTask(input: {
     runId: string;
     operationId: string;
@@ -221,13 +263,20 @@ export class McpDurableTaskController {
       });
 
       try {
-        const task = await this.protocol.createTask({
-          serverIdentity: input.serverIdentity,
-          serverName: input.serverName,
-          toolName: input.toolName,
-          args: input.args,
-          signal: input.signal,
-        });
+        const releaseRequestLease = this.beginTaskLease(input);
+        let task: McpTaskSnapshot;
+        try {
+          task = await this.protocol.createTask({
+            serverIdentity: input.serverIdentity,
+            serverName: input.serverName,
+            toolName: input.toolName,
+            args: input.args,
+            signal: input.signal,
+          });
+        } finally {
+          releaseRequestLease();
+        }
+        this.retainTaskLease(input, task);
         const handle = encodeHandle({
           version: 1,
           taskId: task.taskId,
@@ -254,6 +303,7 @@ export class McpDurableTaskController {
         });
         return { mode: 'task', operation: waiting, task };
       } catch (error) {
+        this.releaseTaskLease(input);
         const uncertain: PendingOperation = {
           ...operation,
           status: 'unknown',
@@ -280,12 +330,19 @@ export class McpDurableTaskController {
       if (!input.capability.trusted || !input.capability.query) {
         throw new Error('MCP task query is not trusted or supported');
       }
-      const task = await this.protocol.getTask({
-        serverIdentity: input.serverIdentity,
-        taskId: handle.taskId,
-        signal: input.signal,
-      });
+      const releaseRequestLease = this.beginTaskLease(input);
+      let task: McpTaskSnapshot;
+      try {
+        task = await this.protocol.getTask({
+          serverIdentity: input.serverIdentity,
+          taskId: handle.taskId,
+          signal: input.signal,
+        });
+      } finally {
+        releaseRequestLease();
+      }
       if (task.taskId !== handle.taskId) throw new Error('MCP task response has a stale task binding');
+      this.retainTaskLease(input, task);
       return task;
     });
   }
@@ -325,12 +382,19 @@ export class McpDurableTaskController {
       }
       const cancelHandle = encodeHandle({ ...handle, cancelRequested: true });
       try {
-        const task = await this.protocol.cancelTask({
-          serverIdentity: input.serverIdentity,
-          taskId: handle.taskId,
-          signal: input.signal,
-        });
+        const releaseRequestLease = this.beginTaskLease(input);
+        let task: McpTaskSnapshot;
+        try {
+          task = await this.protocol.cancelTask({
+            serverIdentity: input.serverIdentity,
+            taskId: handle.taskId,
+            signal: input.signal,
+          });
+        } finally {
+          releaseRequestLease();
+        }
         if (task.taskId !== handle.taskId) throw new Error('MCP cancel response has a stale task binding');
+        this.retainTaskLease(input, task);
         const cancelled = convergeOperation(input.operation, {
           status: task.status === 'failed' || task.status === 'cancelled' ? 'failed' : 'waiting',
           providerOperationId: cancelHandle,
@@ -379,13 +443,20 @@ export class McpDurableTaskController {
       if (!this.protocol.updateTask) {
         throw new Error('MCP task protocol does not implement input updates');
       }
-      const task = await this.protocol.updateTask({
-        serverIdentity: input.serverIdentity,
-        taskId: handle.taskId,
-        input: input.taskInput,
-        signal: input.signal,
-      });
+      const releaseRequestLease = this.beginTaskLease(input);
+      let task: McpTaskSnapshot;
+      try {
+        task = await this.protocol.updateTask({
+          serverIdentity: input.serverIdentity,
+          taskId: handle.taskId,
+          input: input.taskInput,
+          signal: input.signal,
+        });
+      } finally {
+        releaseRequestLease();
+      }
       if (task.taskId !== handle.taskId) throw new Error('MCP task update response has a stale task binding');
+      this.retainTaskLease(input, task);
       if (task.status === 'completed') return this.resolveMcpTaskResult(input);
 
       const nextStatus = task.status === 'failed' || task.status === 'cancelled' ? 'failed' : 'waiting';
@@ -411,11 +482,17 @@ export class McpDurableTaskController {
     if (input.operation.status === 'succeeded' && input.operation.resultRef) return input.operation;
     return withMcpTaskSpan('resolve', input.serverIdentity, input.operationId, async () => {
       const handle = assertBoundHandle(input);
-      const result = await this.protocol.resolveTaskResult({
-        serverIdentity: input.serverIdentity,
-        taskId: handle.taskId,
-        signal: input.signal,
-      });
+      const releaseRequestLease = this.beginTaskLease(input);
+      let result: unknown;
+      try {
+        result = await this.protocol.resolveTaskResult({
+          serverIdentity: input.serverIdentity,
+          taskId: handle.taskId,
+          signal: input.signal,
+        });
+      } finally {
+        releaseRequestLease();
+      }
       const resultRef = await this.resultStore.save({
         runId: input.runId,
         operationId: input.operationId,
@@ -439,6 +516,7 @@ export class McpDurableTaskController {
         },
         now: input.now,
       });
+      this.releaseTaskLease(input);
       return succeeded;
     });
   }

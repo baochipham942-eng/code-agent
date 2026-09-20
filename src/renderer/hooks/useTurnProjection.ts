@@ -16,6 +16,7 @@ import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
 import { isGoalNoticeContent } from '../components/features/chat/goalNotice';
 import { isModelFallbackNoticeContent } from '../components/features/chat/fallbackNotice';
+import { isContextCompressionSignalContent } from '../components/features/chat/contextCompressionSignal';
 import { measureStreamingPerformanceTiming } from '../utils/streamingPerformanceMetrics';
 import { isToolResultEcho } from '../utils/toolResultEcho';
 import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
@@ -312,6 +313,33 @@ export function projectTurns(
         content: msg.content,
         timestamp: msg.timestamp,
         subtype: 'model_fallback',
+        metadata: msg.metadata,
+      };
+
+      if (!currentTurn) {
+        turnCounter++;
+        currentTurn = {
+          turnNumber: turnCounter,
+          turnId: `turn-${turnCounter}`,
+          nodes: [],
+          status: 'completed',
+          startTime: msg.timestamp,
+        };
+        turns.push(currentTurn);
+      }
+
+      currentTurn.nodes.push(node);
+      currentTurn.endTime = msg.timestamp;
+      continue;
+    }
+
+    if (msg.source === 'system' && isContextCompressionSignalContent(msg.content)) {
+      const node: TraceNode = {
+        id: msg.id,
+        type: 'system',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        subtype: 'context_compression_signal',
         metadata: msg.metadata,
       };
 

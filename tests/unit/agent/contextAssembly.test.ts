@@ -8,6 +8,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { compactModelSummarizeWithMetadata } from '../../../src/host/context/compactModel';
+import * as compactionService from '../../../src/host/context/compactionService';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1939,6 +1940,95 @@ describe('ContextAssembly provider variant injection semantics (audit D-Y2)', ()
 });
 
 describe('ContextAssembly.checkAndAutoCompress()', () => {
+  const buildCompressionSignalContext = (messages: Message[]) => {
+    const sessionId = `session-compression-signal-${Date.now()}-${Math.random()}`;
+    vi.mocked(getContextHealthService).mockReturnValue({
+      get: vi.fn().mockReturnValue({ usagePercent: 95, currentTokens: 120_000, maxTokens: 128_000 }),
+      update: vi.fn(),
+    } as never);
+    return {
+      sessionId,
+      agentId: 'agent-runtime-test',
+      messages,
+      hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+      onEvent: vi.fn(),
+      modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+      toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
+      workingDirectory: process.cwd(),
+      isDefaultWorkingDirectory: true,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
+      compressionPipeline: new CompressionPipeline(),
+      contextHealth: ContextHealthState.forTest({
+        persistentSystemContext: [],
+        compressionState: new CompressionState(),
+      } as never),
+      MAX_CONSECUTIVE_COMPACTS: 2,
+      autoCompressor: {
+        shouldTriggerByTokens: vi.fn().mockReturnValue(true),
+        getConfig: vi.fn().mockReturnValue({ enabled: true, warningThreshold: 0.75, preserveRecentCount: 1 }),
+        shouldWrapUp: vi.fn().mockReturnValue(false),
+        getCompactionCount: vi.fn().mockReturnValue(0),
+        getStats: vi.fn().mockReturnValue({ compressionCount: 0, totalSavedTokens: 0 }),
+        recordCompaction: vi.fn(),
+      },
+      systemPrompt: '',
+      hookManager: undefined,
+    };
+  };
+
+  it('emits a terminal signal when compaction service rejects too few messages', async () => {
+    const ctx = buildCompressionSignalContext([
+      buildMessage('too-few-user', 'user', 'current request'),
+      buildMessage('too-few-assistant', 'assistant', 'current response'),
+    ]);
+    const assembly = new ContextAssembly(ctx as never);
+
+    await assembly.checkAndAutoCompress();
+
+    const signals = ctx.onEvent.mock.calls
+      .map(([event]) => event as { type?: string; data?: Record<string, unknown> })
+      .filter((event) => event.type === 'context_compression_signal');
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      data: {
+        kind: 'skip',
+        code: 'compaction-rejected',
+        surface: 'health',
+        retryable: false,
+      },
+    });
+  });
+
+  it('emits the same terminal fallback signal for an unclassified rejection', async () => {
+    const compactSpy = vi.spyOn(compactionService, 'compactMessagesWithSummary').mockResolvedValue({
+      success: false,
+      reason: 'summary_not_smaller',
+    } as never);
+    try {
+      const ctx = buildCompressionSignalContext(Array.from({ length: 8 }, (_, index) =>
+        buildMessage(`not-smaller-${index}`, index % 2 === 0 ? 'user' : 'assistant', 'transcript')));
+      const assembly = new ContextAssembly(ctx as never);
+
+      await assembly.checkAndAutoCompress();
+
+      expect(compactSpy).toHaveBeenCalledTimes(1);
+      const signals = ctx.onEvent.mock.calls
+        .map(([event]) => event as { type?: string; data?: Record<string, unknown> })
+        .filter((event) => event.type === 'context_compression_signal');
+      expect(signals).toHaveLength(1);
+      expect(signals[0]).toMatchObject({
+        data: {
+          kind: 'skip',
+          code: 'compaction-rejected',
+          surface: 'health',
+          retryable: false,
+        },
+      });
+    } finally {
+      compactSpy.mockRestore();
+    }
+  });
+
   it('counts image attachments when deciding hard compaction threshold', async () => {
     const sessionId = `session-autocompact-image-${Date.now()}`;
     let thresholdChecks = 0;
@@ -2415,6 +2505,16 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
         type: 'context_compressed',
         data: expect.objectContaining({
           strategy: 'compaction_block',
+        }),
+      }),
+    );
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'context_compression_signal',
+        data: expect.objectContaining({
+          kind: 'success',
+          code: 'compaction-succeeded',
+          surface: 'health',
         }),
       }),
     );

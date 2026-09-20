@@ -16,6 +16,23 @@ import type {
   DeliverableEvidenceStatus,
 } from '@shared/contract';
 import type { ContextHealthState } from '@shared/contract/contextHealth';
+
+export function preserveLatestCompressionSignal(
+  next: ContextHealthState | null | undefined,
+  previous: ContextHealthState | null | undefined,
+): ContextHealthState | null | undefined {
+  if (!next || !previous?.compression?.lastSignal) return next;
+  const nextSignal = next.compression?.lastSignal;
+  const previousSignal = previous.compression.lastSignal;
+  if (nextSignal && nextSignal.timestamp >= previousSignal.timestamp) return next;
+  return {
+    ...next,
+    compression: {
+      ...(next.compression ?? { status: 'none', compressionCount: 0, totalSavedTokens: 0 }),
+      lastSignal: previousSignal,
+    },
+  };
+}
 import type { GoalGateVerificationCard } from '@shared/contract/agent';
 import type { GoalRunInput } from '@shared/contract/appService';
 import { defaultLanguage, type Language } from '../i18n';

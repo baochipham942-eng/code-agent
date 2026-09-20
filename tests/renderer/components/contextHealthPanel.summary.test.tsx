@@ -40,6 +40,17 @@ function makeHealth(summaryTokens: number, compressionCount = 2): ContextHealthS
   };
 }
 
+function makeSuccessfulCompressionHealth(): ContextHealthState {
+  const health = makeHealth(500, 2);
+  health.compression!.lastSignal = {
+    kind: 'success',
+    code: 'compaction-succeeded',
+    timestamp: Date.now(),
+    retryable: false,
+  };
+  return health;
+}
+
 afterEach(cleanup);
 
 describe('ContextHealthPanel — bySource 摘要桶', () => {
@@ -54,6 +65,13 @@ describe('ContextHealthPanel — bySource 摘要桶', () => {
     render(<ContextHealthPanel collapsed={false} health={makeHealth(0)} />);
 
     expect(screen.queryByText(/摘要（压了/)).toBeNull();
+  });
+
+  it('renders a successful compression signal in the health panel', () => {
+    render(<ContextHealthPanel collapsed={false} health={makeSuccessfulCompressionHealth()} />);
+
+    expect(screen.getByTestId('context-compression-last-signal').textContent)
+      .toContain('上下文整理已完成');
   });
 
   // 爸 2026-08-21 真机反馈：全是 0 的桶还占位显示「0 (0.0%)」，看起来就像坏了。

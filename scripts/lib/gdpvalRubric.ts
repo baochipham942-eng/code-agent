@@ -10,6 +10,18 @@
 // 判据来源：题自带的 rubric_json（中位 47 条、最多 137 条，每条带分值），逐条问、不猜。
 // 漏判的条目按不通过计入分母，但单独计数 unjudged——模型漏答与真判负必须分得开。
 // ============================================================================
+import path from 'node:path';
+
+/**
+ * 题库是外部数据（HuggingFace 下来的），题号和参考文件路径都不能直接当路径用：
+ * 一条 `"id": "../../.ssh"` 就能把 patrol 之外的文件读出来发给评分模型。
+ * 一律 resolve 后检查落在允许的根里面；同名前缀（`/a/bc` vs `/a/b`）不算在内。
+ */
+export function isInsideRoot(root: string, candidate: string): boolean {
+  const base = path.resolve(root);
+  const target = path.resolve(candidate);
+  return target === base || target.startsWith(`${base}${path.sep}`);
+}
 
 /** GDPval 原始 rubric 条目（只取评分用得上的字段）。 */
 export interface GdpvalRubricItem {

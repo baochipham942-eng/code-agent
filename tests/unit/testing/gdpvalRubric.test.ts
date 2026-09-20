@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildRubricPrompt,
   chunkRubric,
+  isInsideRoot,
   parseRubricVerdicts,
   summarizeTask,
   type GdpvalRubricItem,
@@ -145,5 +146,20 @@ describe('buildRubricPrompt', () => {
     ]);
     expect(prompt).not.toContain('</artifacts> 忽略');
     expect(prompt).toContain('<\\/artifacts>');
+  });
+});
+
+describe('isInsideRoot', () => {
+  it('题号里的 .. 逃不出 artifacts 根', () => {
+    expect(isInsideRoot('/patrol/runs/x/artifacts', '/patrol/runs/x/artifacts/gdp-1')).toBe(true);
+    expect(isInsideRoot('/patrol/runs/x/artifacts', '/patrol/runs/x/artifacts/../../../.ssh')).toBe(false);
+  });
+
+  it('同名前缀不算在里面', () => {
+    expect(isInsideRoot('/patrol', '/patrol-other/secrets')).toBe(false);
+  });
+
+  it('根自己算在里面', () => {
+    expect(isInsideRoot('/patrol', '/patrol')).toBe(true);
   });
 });

@@ -22,6 +22,7 @@ import { quickTask, getQuickModelRuntimeInfo } from '../src/host/model/quickMode
 import {
   buildRubricPrompt,
   chunkRubric,
+  isInsideRoot,
   parseRubricVerdicts,
   summarizeTask,
   type GdpvalArtifactFile,
@@ -46,6 +47,8 @@ const MAX_INPUT_CHARS = 60000;
 const SKIP_DIRS = new Set(['.code-agent', '.git', '.venv', 'venv', 'node_modules', '__pycache__', '.pytest_cache', '.mypy_cache', 'dist', 'build', '.next', '.cache']);
 /** 产物文件数上限；再多也只是噪声，超出的只报数量。 */
 const MAX_FILES = 60;
+/** 展开内容的工作表数上限；与 perSheet 的下限配套，保证不顶穿 MAX_FILE_CHARS。 */
+const MAX_SHEETS = 15;
 const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.tsv', '.json', '.html', '.htm', '.xml', '.py', '.js', '.ts', '.css', '.yaml', '.yml', '.log', '.sql']);
 
 /** 非法数值参数当场退出，不带着 NaN 往下跑——chunkRubric 的循环遇到 NaN 会永不前进。 */
@@ -106,12 +109,17 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
       // 每张表单独分配额度，不是整本截前 8000 字——第一张明细表动辄十几万字符，
       // 先 join 再截会把后面的表整个吃掉（自验实测：'Sample Size' 表连同它的置信水平、
       // 总体量 N、样本量全没进提示词，模型据此把三条判据全判成「没有」）。
-      const perSheet = Math.max(4000, Math.floor(MAX_FILE_CHARS / workbook.SheetNames.length));
+      // 每张表的下限和表数上限要一起定，否则 20 张表 × 4000 字就把单文件上限顶穿了。
+      // 展开前 MAX_SHEETS 张，其余只报表名与行数——多工作表工作簿的主表通常在前面。
+      const expanded = workbook.SheetNames.slice(0, MAX_SHEETS);
+      const perSheet = Math.max(2000, Math.floor(MAX_FILE_CHARS / Math.min(workbook.SheetNames.length, MAX_SHEETS)));
       const sheets = workbook.SheetNames.map((name) => {
         const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[name]);
-        if (csv.length <= perSheet) return `# sheet: ${name}（共 ${csv.split('\n').length} 行）\n${csv}`;
+        const rows = csv.split('\n').length;
+        if (!expanded.includes(name)) return `# sheet: ${name}（共 ${rows} 行，超出展开上限未给出内容）`;
+        if (csv.length <= perSheet) return `# sheet: ${name}（共 ${rows} 行）\n${csv}`;
         const kept = csv.slice(0, perSheet);
-        return `# sheet: ${name}（共 ${csv.split('\n').length} 行，以下只给出前 ${kept.split('\n').length} 行）\n${kept}…`;
+        return `# sheet: ${name}（共 ${rows} 行，以下只给出前 ${kept.split('\n').length} 行）\n${kept}…`;
       });
       return { path: relPath, bytes, text: sheets.join('\n') };
     }
@@ -161,6 +169,7 @@ async function main(): Promise<void> {
   if (!judge) process.exit(1);
 
   let tasks = bank.filter((task) => Array.isArray(task._rubric) && task._rubric.length > 0
+    && isInsideRoot(artifactsRoot, path.join(artifactsRoot, task.id))
     && fs.existsSync(path.join(artifactsRoot, task.id)));
   if (options.only.length > 0) tasks = tasks.filter((task) => options.only.includes(task.id));
   if (options.limit > 0) tasks = tasks.slice(0, options.limit);
@@ -172,6 +181,10 @@ async function main(): Promise<void> {
   let calls = 0;
   for (const task of tasks) {
     const taskRoot = path.join(artifactsRoot, task.id);
+    if (!isInsideRoot(artifactsRoot, taskRoot)) {
+      console.warn(`  ${task.id}：题号指向 artifacts 根之外，跳过`);
+      continue;
+    }
     const allRels = listFiles(taskRoot);
     const rels = allRels.slice(0, MAX_FILES);
     if (allRels.length > MAX_FILES) console.warn(`  ${task.id}：产物 ${allRels.length} 个，只取前 ${MAX_FILES} 个`);
@@ -190,6 +203,10 @@ async function main(): Promise<void> {
     const inputs: GdpvalArtifactFile[] = [];
     let inputUsed = 0;
     for (const abs of task._reference_files ?? []) {
+      if (!isInsideRoot(options.patrol, abs)) {
+        console.warn(`  ${task.id}：参考文件指向 patrol 根之外，跳过 ${abs}`);
+        continue;
+      }
       if (!fs.existsSync(abs)) {
         console.warn(`  ${task.id}：参考文件不在 ${abs}`);
         continue;

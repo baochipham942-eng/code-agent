@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  TRUNCATED_MARK,
   buildRubricPrompt,
   chunkRubric,
   isInsideRoot,
@@ -134,6 +135,11 @@ describe('buildRubricPrompt', () => {
       [{ path: 'a.md', bytes: 1, text: 'x' }],
     );
     expect(prompt).toContain('"penalty": true');
+  });
+
+  it('提示词里的「没给看」措辞与提取端用的是同一个常量', () => {
+    // 两头各写各的，提取端换个说法就会让模型把「没给看」当成「产物里没有」判 false。
+    expect(buildRubricPrompt([items[0]], [])).toContain(TRUNCATED_MARK);
   });
 
   it('正分条目不带 penalty 字段', () => {

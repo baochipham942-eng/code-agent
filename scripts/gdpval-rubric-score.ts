@@ -23,6 +23,7 @@ import {
   buildRubricPrompt,
   chunkRubric,
   isInsideRoot,
+  TRUNCATED_MARK,
   parseRubricVerdicts,
   summarizeTask,
   type GdpvalArtifactFile,
@@ -35,9 +36,13 @@ import {
 // 整片判 false，分数与产物质量脱钩。
 /** 单文件提取上限。 */
 const MAX_FILE_CHARS = 60000;
-/** 一题所有产物合计上限。 */
+/**
+ * 一题所有产物合计上限。**软上限**：判断在累加之前，所以最后读进来的那个文件
+ * 可能让总量超出至多一个 MAX_FILE_CHARS。这样定是为了「最后一个文件要么整份给、
+ * 要么整份不给」，半截给会让截断标注失真。
+ */
 const MAX_TASK_CHARS = 120000;
-/** 一题原始输入（题目给的参考文件）合计上限；对照类判据要用，但不该把产物挤出去。 */
+/** 一题原始输入（题目给的参考文件）合计上限，同样是软上限；对照类判据要用，但不该把产物挤出去。 */
 const MAX_INPUT_CHARS = 60000;
 /**
  * 不进产物清单的目录：agent 为了干活装的依赖树不是它的交付物。
@@ -51,11 +56,6 @@ const SKIP_DIRS = new Set(['.code-agent', '.git', '.venv', 'venv', 'node_modules
 const MAX_FILES = 60;
 /** 展开内容的工作表数上限；与 perSheet 配套，保证不顶穿 MAX_FILE_CHARS。 */
 const MAX_SHEETS = 15;
-/**
- * 「没给模型看正文」的统一措辞。必须与提示词里 pass="unknown" 的触发形状对得上：
- * 用别的说法（比如「超出上限未读正文」）模型会当成「产物里没有」判 false 并计入分母。
- */
-const TRUNCATED_MARK = '未给出内容';
 /** 调用失败的重试退避；最后一档给足是因为智谱 429 通常要等几十秒才放行。 */
 const RETRY_BACKOFF_MS = [5000, 20000, 60000];
 const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.tsv', '.json', '.html', '.htm', '.xml', '.py', '.js', '.ts', '.css', '.yaml', '.yml', '.log', '.sql']);
@@ -88,7 +88,7 @@ function parseArgs(): { patrol: string; run: string; only: string[]; batch: numb
     run,
     only: (read('--only') ?? '').split(',').map((value) => value.trim()).filter(Boolean),
     batch: readPositiveInt(read('--batch'), 40, '--batch'),
-    out: read('--out') ?? null,
+    out: read('--out')?.replace(/^~/, process.env.HOME ?? '~') ?? null,
     limit: read('--limit') === undefined ? 0 : readPositiveInt(read('--limit'), 0, '--limit'),
     callTimeoutMs: readPositiveInt(read('--call-timeout'), 180, '--call-timeout') * 1000,
   };
@@ -204,11 +204,7 @@ async function main(): Promise<void> {
   const out = fs.createWriteStream(outPath, { flags: 'w' });
   let calls = 0;
   for (const task of tasks) {
-    const taskRoot = path.join(artifactsRoot, task.id);
-    if (!isInsideRoot(artifactsRoot, taskRoot)) {
-      console.warn(`  ${task.id}：题号指向 artifacts 根之外，跳过`);
-      continue;
-    }
+    const taskRoot = path.join(artifactsRoot, task.id);   // 根边界已在上面的 tasks 过滤里挡过
     const allRels = listFiles(taskRoot);
     const rels = allRels.slice(0, MAX_FILES);
     if (allRels.length > MAX_FILES) console.warn(`  ${task.id}：产物 ${allRels.length} 个，只取前 ${MAX_FILES} 个`);
@@ -220,7 +216,9 @@ async function main(): Promise<void> {
         // 占位必须用与截断同一套措辞，否则模型按「产物里没有」判 false 并计入分母——
         // 那正是本分支花三个 commit 从 17% 修到 100% 的同一类失真。
         skippedForBudget += 1;
-        files.push({ path: rel, bytes: fs.statSync(path.join(taskRoot, rel)).size, text: `[${TRUNCATED_MARK}]` });
+        let bytes = 0;
+        try { bytes = fs.statSync(path.join(taskRoot, rel)).size; } catch { /* 文件中途消失，按 0 计，不让整轮评分崩掉 */ }
+        files.push({ path: rel, bytes, text: `[${TRUNCATED_MARK}]` });
         continue;
       }
       const file = await extractFile(path.join(taskRoot, rel), rel);
@@ -234,6 +232,7 @@ async function main(): Promise<void> {
     }
     const inputs: GdpvalArtifactFile[] = [];
     let inputUsed = 0;
+    let inputsSkipped = 0;
     for (const abs of task._reference_files ?? []) {
       if (!isInsideRoot(options.patrol, abs)) {
         console.warn(`  ${task.id}：参考文件指向 patrol 根之外，跳过 ${abs}`);
@@ -243,10 +242,21 @@ async function main(): Promise<void> {
         console.warn(`  ${task.id}：参考文件不在 ${abs}`);
         continue;
       }
-      if (inputUsed >= MAX_INPUT_CHARS) break;
-      const file = await extractFile(abs, path.join(path.basename(path.dirname(abs)), path.basename(abs)));
+      const rel = path.join(path.basename(path.dirname(abs)), path.basename(abs));
+      // 与产物侧同一套降级：超额度的输入留占位而不是整条消失，否则「与原始资料一致」
+      // 类判据会被判 false 而不是弃权，分数系统性偏低，且事后分不清「真没做到」和「没给看」。
+      if (inputUsed >= MAX_INPUT_CHARS) {
+        inputsSkipped += 1;
+        inputs.push({ path: rel, bytes: 0, text: `[${TRUNCATED_MARK}]` });
+        continue;
+      }
+      const file = await extractFile(abs, rel);
       inputUsed += file.text.length;
       inputs.push(file);
+    }
+    if (inputsSkipped > 0) {
+      console.warn(`  ${task.id}：参考文件总量超过 ${MAX_INPUT_CHARS} 字，${inputsSkipped} 个没给模型看正文`
+        + '（这些文件相关的条目会被判弃权，不是判负）');
     }
 
     const rubric = task._rubric as GdpvalRubricItem[];

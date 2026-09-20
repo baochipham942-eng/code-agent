@@ -51,11 +51,7 @@ import {
   materializeObservedMessages,
   type RuntimeMessage,
 } from './subagentExecutorProjection';
-import {
-  applySubagentToolExitGate,
-  buildSubagentToolTable,
-  resolveSubagentToolAccess,
-} from './subagentExecutorToolDefs';
+import { applySubagentToolExitGate, buildSubagentToolTable, resolveSubagentToolAccess } from './subagentExecutorToolDefs';
 import {
   buildSubagentModelCall,
   drainSubagentMessages,

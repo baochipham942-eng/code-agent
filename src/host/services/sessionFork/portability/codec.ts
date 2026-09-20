@@ -31,7 +31,7 @@ import {
   SESSION_EXPORT_ENVELOPE_VERSION,
 } from '../../../../shared/contract/sessionForkPortability';
 import { canonicalJson, deepPortableClone, portabilityDigest, withoutDigest } from './canonical';
-import { validatePortableConversationHistory } from './conversationHistory';
+import { migrateLegacyConversationHistoryMetadata, validatePortableConversationHistory } from './conversationHistory';
 import {
   sanitizePortableSessionWorkspaceV2,
   validatePortableSessionWorkspaceV2,
@@ -897,6 +897,11 @@ export function validateSessionExportEnvelopeV2(
 // recomputes digests from whatever bytes are on disk and asserts they match themselves.
 // So verify integrity against the ORIGINAL (pre-migration) digests first, using the
 // content exactly as parsed — before anything is rehashed.
+// v2 envelopes were exported before N-FORK-PORTABILITY round 3 dropped
+// message.metadata from the conversationHistory projection (see the comment in
+// sanitizeMessages above and conversationHistory.ts's sanitizeMessage). The
+// v2->v3 migration strips that metadata and re-signs the affected entries via
+// migrateLegacyConversationHistoryMetadata (conversationHistory.ts), imported below.
 function verifyLegacyEnvelopeDigests(raw: Record<string, unknown>): void {
   if (!Array.isArray(raw.sessions)) {
     fail('INVALID_ENVELOPE', 'sessions must be an array');
@@ -1032,6 +1037,12 @@ export function decodeSessionExportEnvelopeV2(
     // re-signed. Only then bump the version and rehash so the digest is
     // self-consistent for validation below.
     verifyLegacyEnvelopeDigests(parsed as Record<string, unknown>);
+    if (envelope.conversationHistory) {
+      envelope = {
+        ...envelope,
+        conversationHistory: migrateLegacyConversationHistoryMetadata(envelope.conversationHistory),
+      };
+    }
     envelope = rehashSessionExportEnvelopeV2(envelope);
   }
   validateSessionExportEnvelopeV2(envelope, scope);

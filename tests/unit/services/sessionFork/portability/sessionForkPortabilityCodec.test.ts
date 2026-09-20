@@ -7,13 +7,25 @@ import {
   decodeSessionExportEnvelopeV2,
   encodeForkLineageEnvelopeV1,
   encodeSessionExportEnvelopeV2,
+  rehashPortableConversationHistory,
   rehashSessionExportEnvelopeV2,
   stripLegacyForkClaims,
   validatePortableIsolatedAnchorEvidenceV1,
 } from '../../../../../src/host/services/sessionFork/portability';
-import { PORTABLE_ANCHOR_MAX_PATCH_BYTES } from '../../../../../src/shared/contract/sessionForkPortability';
+import { portabilityDigest } from '../../../../../src/host/services/sessionFork/portability/canonical';
+import {
+  PORTABLE_ANCHOR_MAX_PATCH_BYTES,
+} from '../../../../../src/shared/contract/sessionForkPortability';
+import {
+  PORTABLE_CONVERSATION_HISTORY_SCHEMA,
+  PORTABLE_CONVERSATION_HISTORY_VERSION,
+} from '../../../../../src/shared/contract/conversationHistory';
 import type { Message } from '../../../../../src/shared/contract/message';
 import { OWNER_ID, PROJECT_ID, message, session, subtreeDraft } from './fixture';
+
+function signed<T extends Record<string, unknown>>(value: T): T & { payloadDigest: string } {
+  return { ...value, payloadDigest: portabilityDigest(value) };
+}
 
 describe('session fork portability codecs', () => {
   it('builds a versioned subtree envelope and strips runtime and private payloads', () => {
@@ -368,6 +380,83 @@ describe('session fork portability codecs', () => {
 
     expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(tampered)))
       .toThrow(/DIGEST_MISMATCH/u);
+  });
+
+  it('migrates a v2 envelope whose conversationHistory still carries message.metadata', () => {
+    // Unlike sessions/messages/lineage, conversationHistory on origin/main was never
+    // stripped of message.metadata (sanitizeMessage's `key === 'metadata'` exclusion is
+    // new to this PR) — so a real v2-era row can have entries[].message.metadata with
+    // keys this PR only just added to FORBIDDEN_RUNTIME_KEYS (accountName/chatName live
+    // under metadata.channel per shared/contract/message.ts; turnDiff/retryAttachments
+    // live directly on MessageMetadata). Model that shape by hand: buildPortableConversationHistory
+    // (current version) already excludes metadata, so it can't produce a legacy fixture.
+    const rootBranch = signed({
+      id: 'branch-1',
+      sessionId: 'root',
+      rootBranchId: 'branch-1',
+      parentBranchId: null,
+      forkId: null,
+      anchorEntryId: null,
+      createdAt: 1,
+    });
+    const childBranch = signed({
+      id: 'branch-2',
+      sessionId: 'child',
+      rootBranchId: 'branch-2',
+      parentBranchId: null,
+      forkId: null,
+      anchorEntryId: null,
+      createdAt: 1,
+    });
+    const metadataEntry = signed({
+      id: 'entry-1',
+      sourceSessionId: 'root',
+      sourceMessageId: 'u1',
+      sourcePayloadDigest: `sha256:${'7'.repeat(64)}`,
+      message: {
+        id: 'u1',
+        role: 'user',
+        content: 'hello',
+        timestamp: 1,
+        metadata: {
+          channel: {
+            platform: 'wechat',
+            accountId: 'account-1',
+            accountName: 'Placeholder Account',
+            chatId: 'chat-1',
+            chatName: 'Placeholder Chat',
+          },
+          turnDiff: { summary: 'placeholder diff' },
+          retryAttachments: [],
+        },
+      },
+      provenance: {},
+      createdAt: 1,
+    });
+    const legacyHistory = rehashPortableConversationHistory({
+      schema: PORTABLE_CONVERSATION_HISTORY_SCHEMA,
+      version: PORTABLE_CONVERSATION_HISTORY_VERSION,
+      ownerUserId: OWNER_ID,
+      projectId: PROJECT_ID,
+      branches: [rootBranch, childBranch],
+      entries: [metadataEntry],
+      references: [],
+      events: [],
+      evaluationAttributions: [],
+    });
+    const { conversationHistory: _dropped, ...v3Shape } = buildSessionExportEnvelopeV2(subtreeDraft());
+    const legacy = rehashSessionExportEnvelopeV2({
+      ...v3Shape,
+      version: 2,
+      conversationHistory: legacyHistory,
+    } as never);
+
+    const decoded = decodeSessionExportEnvelopeV2(JSON.stringify(legacy));
+
+    expect(decoded.version).toBe(3);
+    expect(decoded.conversationHistory?.entries[0].message).not.toHaveProperty('metadata');
+    expect(decoded.conversationHistory?.payloadDigest).not.toBe(legacyHistory.payloadDigest);
+    expect(() => encodeSessionExportEnvelopeV2(decoded)).not.toThrow();
   });
 
   it('represents a single child as detached provenance without claiming an attached parent', () => {

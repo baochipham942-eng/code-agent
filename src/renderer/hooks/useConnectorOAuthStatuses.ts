@@ -19,15 +19,21 @@ export interface ConnectorOAuthStatus {
   id: string;
   connected: boolean;
   stale?: boolean;
+  installState?: 'failed';
 }
 
 function parseStatuses(payload: unknown): ConnectorOAuthStatus[] {
   if (!Array.isArray(payload)) return [];
   return payload.flatMap((item) => {
     if (!item || typeof item !== 'object') return [];
-    const { id, connected, stale } = item as Record<string, unknown>;
+    const { id, connected, stale, installState } = item as Record<string, unknown>;
     if (typeof id !== 'string' || typeof connected !== 'boolean') return [];
-    return [{ id, connected, stale: stale === true }];
+    return [{
+      id,
+      connected,
+      stale: stale === true,
+      ...(installState === 'failed' ? { installState } : {}),
+    }];
   });
 }
 

@@ -33,6 +33,8 @@ import {
 const MAX_FILE_CHARS = 8000;
 /** 一题所有产物合计上限。 */
 const MAX_TASK_CHARS = 40000;
+/** 一题原始输入（题目给的参考文件）合计上限；对照类判据要用，但不该把产物挤出去。 */
+const MAX_INPUT_CHARS = 20000;
 const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.tsv', '.json', '.html', '.htm', '.xml', '.py', '.js', '.ts', '.css', '.yaml', '.yml', '.log', '.sql']);
 
 function parseArgs(): { patrol: string; run: string; only: string[]; batch: number; out: string | null; limit: number } {
@@ -72,8 +74,15 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
     if (TEXT_EXT.has(ext)) return { path: relPath, bytes, text: clip(fs.readFileSync(absPath, 'utf8')) };
     if (ext === '.xlsx' || ext === '.xls' || ext === '.xlsm') {
       const workbook = XLSX.read(fs.readFileSync(absPath), { type: 'buffer' });
-      const sheets = workbook.SheetNames.map((name) => `# sheet: ${name}\n${XLSX.utils.sheet_to_csv(workbook.Sheets[name])}`);
-      return { path: relPath, bytes, text: clip(sheets.join('\n')) };
+      // 每张表单独分配额度，不是整本截前 8000 字——第一张明细表动辄十几万字符，
+      // 先 join 再截会把后面的表整个吃掉（自验实测：'Sample Size' 表连同它的置信水平、
+      // 总体量 N、样本量全没进提示词，模型据此把三条判据全判成「没有」）。
+      const perSheet = Math.max(1500, Math.floor(MAX_FILE_CHARS / workbook.SheetNames.length));
+      const sheets = workbook.SheetNames.map((name) => {
+        const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[name]);
+        return `# sheet: ${name}\n${csv.length > perSheet ? `${csv.slice(0, perSheet)}…` : csv}`;
+      });
+      return { path: relPath, bytes, text: sheets.join('\n') };
     }
     if (ext === '.docx') {
       const extracted = await mammoth.extractRawText({ buffer: fs.readFileSync(absPath) });
@@ -106,7 +115,13 @@ async function main(): Promise<void> {
     console.error(`找不到题库 ${bankPath}`);
     process.exit(1);
   }
-  const bank = JSON.parse(fs.readFileSync(bankPath, 'utf8')) as Array<{ id: string; _occupation?: string; _rubric?: GdpvalRubricItem[] }>;
+  const bank = JSON.parse(fs.readFileSync(bankPath, 'utf8')) as Array<{
+    id: string;
+    _occupation?: string;
+    _rubric?: GdpvalRubricItem[];
+    /** 题目给的参考文件绝对路径；对照类判据要拿它当基准。 */
+    _reference_files?: string[];
+  }>;
   const artifactsRoot = path.join(options.patrol, 'runs', options.run, 'artifacts');
   const judge = getQuickModelRuntimeInfo();
   console.log(`题库：${bankPath}（${bank.length} 题）`);
@@ -138,10 +153,23 @@ async function main(): Promise<void> {
       files.push(file);
     }
 
+    const inputs: GdpvalArtifactFile[] = [];
+    let inputUsed = 0;
+    for (const abs of task._reference_files ?? []) {
+      if (!fs.existsSync(abs)) {
+        console.warn(`  ${task.id}：参考文件不在 ${abs}`);
+        continue;
+      }
+      if (inputUsed >= MAX_INPUT_CHARS) break;
+      const file = await extractFile(abs, path.basename(abs));
+      inputUsed += file.text.length;
+      inputs.push(file);
+    }
+
     const rubric = task._rubric as GdpvalRubricItem[];
     const verdicts: GdpvalItemVerdict[] = [];
     for (const batch of chunkRubric(rubric, options.batch)) {
-      const prompt = buildRubricPrompt(batch, files);
+      const prompt = buildRubricPrompt(batch, files, inputs);
       let content = '';
       try {
         const response = await quickTask(prompt, 2000);
@@ -157,7 +185,8 @@ async function main(): Promise<void> {
     const score = summarizeTask(task.id, verdicts, rels, task._occupation);
     out.write(`${JSON.stringify(score)}\n`);
     console.log(`${task.id.padEnd(16)} ${(score.ratio * 100).toFixed(0).padStart(3)}%  ${score.earned}/${score.total} 分`
-      + `  条目 ${verdicts.length}${score.unjudged > 0 ? `（漏判 ${score.unjudged}）` : ''}  产物 ${rels.length} 个`);
+      + `  条目 ${verdicts.length}${score.unjudged > 0 ? `（漏判 ${score.unjudged}）` : ''}`
+      + `  产物 ${rels.length} 个  输入 ${inputs.length} 个`);
   }
   out.end();
   console.log(`\n结果：${outPath}；模型调用 ${calls} 次`);

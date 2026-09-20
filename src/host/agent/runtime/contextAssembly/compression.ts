@@ -1,5 +1,5 @@
 // ContextAssembly - Context health tracking and hard-threshold compression.
-import type { AgentEvent, Message } from '../../../../shared/contract';
+import type { AgentEvent, ContextCompressionSignalData, Message } from '../../../../shared/contract';
 import { CHECKPOINT_WRITER, COMPACTION_ECONOMICS, DEFAULT_MODELS } from '../../../../shared/constants';
 import { getContextHealthService } from '../../../context/contextHealthService';
 import { CompressionState } from '../../../context/compressionState';
@@ -30,6 +30,42 @@ import { persistRuntimeState } from '../runtimeStatePersistence';
 import { getCheckpointWriterService } from '../../checkpointWriterService';
 
 let toolDefTokensCache: { signature: string; tokens: number } | null = null;
+
+export function emitContextCompressionSignal(
+  ctx: ContextAssemblyCtx,
+  signal: Omit<ContextCompressionSignalData, 'signalId' | 'timestamp'>,
+): void {
+  const data: ContextCompressionSignalData = {
+    ...signal,
+    signalId: ctx.generateId(),
+    timestamp: Date.now(),
+  };
+  ctx.runtime.onEvent({ type: 'context_compression_signal', data } as AgentEvent);
+  getContextEventLedger().upsertEvents([{
+    id: '',
+    sessionId: ctx.runtime.sessionId,
+    agentId: ctx.runtime.agentId,
+    invocationId: data.signalId,
+    category: 'compression_survivor',
+    action: 'compressed',
+    sourceKind: 'compression_survivor',
+    sourceDetail: `compression-signal:${data.code}`,
+    layer: 'autocompact',
+    reason: data.code,
+    timestamp: data.timestamp,
+  }]);
+}
+
+export function emitOverflowRecoverySignal(ctx: ContextAssemblyCtx, tokensBefore: number): void {
+  emitContextCompressionSignal(ctx, {
+    kind: 'overflow-recovery',
+    code: 'overflow-recovery-started',
+    surface: 'conversation',
+    retryable: true,
+    tokensBefore,
+    messagesCount: ctx.runtime.messages.length,
+  });
+}
 
 function getArchivedToolResults(state: CompressionState): ToolResultArchiveRef[] {
   const refs: ToolResultArchiveRef[] = [];
@@ -434,6 +470,14 @@ export async function checkAndAutoCompress(
         logger.info(
           `[AgentLoop] Lossless tool-result budgeting suffices (${currentTokens}→${prunedTokens} tokens) — skipping paid summary`,
         );
+        emitContextCompressionSignal(ctx, {
+          kind: 'skip',
+          code: 'lossless-budget-skip',
+          surface: 'health',
+          retryable: false,
+          tokensBefore: currentTokens,
+          messagesCount: ctx.runtime.messages.length,
+        });
         return;
       }
     }
@@ -476,6 +520,14 @@ export async function checkAndAutoCompress(
           writerIdle,
           writerError: writerResult?.error,
         });
+        emitContextCompressionSignal(ctx, {
+          kind: 'downgrade',
+          code: 'checkpoint-rebuild-fallback',
+          surface: 'health',
+          retryable: true,
+          fromStrategy: 'checkpoint-rebuild',
+          toStrategy: 'summary',
+        });
       } else {
         const boundary = await tryInsertCheckpointRebuildBoundary(ctx.runtime);
         if (boundary.inserted) {
@@ -490,6 +542,14 @@ export async function checkAndAutoCompress(
         logger.warn('[AgentLoop] Checkpoint rebuild boundary unavailable, falling back to summary compaction', {
           sessionId: ctx.runtime.sessionId,
           reason: boundary.reason,
+        });
+        emitContextCompressionSignal(ctx, {
+          kind: 'downgrade',
+          code: 'checkpoint-rebuild-fallback',
+          surface: 'health',
+          retryable: true,
+          fromStrategy: 'checkpoint-rebuild',
+          toStrategy: 'summary',
         });
       }
     }
@@ -508,6 +568,13 @@ export async function checkAndAutoCompress(
       logger.warn(
         `[AgentLoop] Summary compaction in failure cooldown until ${new Date(ctx.compressionRecovery._summaryCooldownUntil).toISOString()} — skipping paid summary`,
       );
+      emitContextCompressionSignal(ctx, {
+        kind: 'cooldown',
+        code: 'summary-cooldown',
+        surface: 'health',
+        retryable: true,
+        cooldownUntil: ctx.compressionRecovery._summaryCooldownUntil,
+      });
       return;
     }
 
@@ -526,6 +593,45 @@ export async function checkAndAutoCompress(
 
     // WP2-3 失败冷却记账：校验不过算失败（质量问题），净节省闸拒绝不算（经济学决策）。
     const summaryFailed = compactionResult.validation?.ok === false;
+    if (summaryFailed) {
+      emitContextCompressionSignal(ctx, {
+        kind: 'failure',
+        code: 'summary-validation-failed',
+        surface: 'conversation',
+        retryable: true,
+        tokensBefore: currentTokens,
+        messagesCount: ctx.runtime.messages.length,
+      });
+    } else if (!compactionResult.success && compactionResult.reason === 'net_savings_below_threshold') {
+      emitContextCompressionSignal(ctx, {
+        kind: 'skip',
+        code: 'lossless-budget-skip',
+        surface: 'health',
+        retryable: true,
+        tokensBefore: currentTokens,
+        messagesCount: ctx.runtime.messages.length,
+      });
+    } else if (!compactionResult.success && compactionResult.reason === 'no_safe_compaction_span') {
+      emitContextCompressionSignal(ctx, {
+        kind: 'skip',
+        code: 'no-safe-compaction-span',
+        surface: 'health',
+        retryable: false,
+        tokensBefore: currentTokens,
+        messagesCount: ctx.runtime.messages.length,
+      });
+    } else if (!compactionResult.success) {
+      // Keep every future compaction-service rejection observable without
+      // turning each newly added reason into another fragile branch here.
+      emitContextCompressionSignal(ctx, {
+        kind: 'skip',
+        code: 'compaction-rejected',
+        surface: 'health',
+        retryable: false,
+        tokensBefore: currentTokens,
+        messagesCount: ctx.runtime.messages.length,
+      });
+    }
     const failureState = nextSummaryFailureState({
       streak: ctx.compressionRecovery._summaryFailureStreak,
       failed: summaryFailed,
@@ -549,6 +655,14 @@ export async function checkAndAutoCompress(
         emitCompacted: true,
         survivorReason: `Compaction block inserted after ${decision.trigger} compaction`,
       });
+      emitContextCompressionSignal(ctx, {
+        kind: 'success',
+        code: 'compaction-succeeded',
+        surface: 'health',
+        retryable: false,
+        tokensBefore: currentTokens,
+        messagesCount: ctx.runtime.messages.length,
+      });
 
       // Item2 卡死护栏：压缩后重算 raw tokens，若仍≥触发口径（绝对阈值 OR 百分比 warning）
       // 说明窗口太小、再压也降不下去 → 连续计数；达上限即暂停自动压缩并提示模型收窄范围，
@@ -571,6 +685,14 @@ export async function checkAndAutoCompress(
         logger.warn(
           `[AgentLoop] Compaction stuck: ${guard.consecutive} consecutive compactions still over threshold — pausing auto-compaction`,
         );
+        emitContextCompressionSignal(ctx, {
+          kind: 'paused',
+          code: 'auto-compaction-paused',
+          surface: 'conversation',
+          retryable: false,
+          tokensBefore: postTokens,
+          messagesCount: ctx.runtime.messages.length,
+        });
         ctx.injectSystemMessage(
           '<context-window-too-small>\n' +
           '上下文窗口太小，连续压缩后仍接近上限，已暂停自动压缩以免反复消耗 token。\n' +
@@ -596,6 +718,13 @@ export async function checkAndAutoCompress(
     }
   } catch (error) {
     logger.error('[AgentLoop] Auto compression failed:', error);
+    emitContextCompressionSignal(ctx, {
+      kind: 'failure',
+      code: 'summary-call-failed',
+      surface: 'conversation',
+      retryable: true,
+      messagesCount: ctx.runtime.messages.length,
+    });
     // WP2-3：摘要调用异常同样计入失败冷却
     const failureState = nextSummaryFailureState({
       streak: ctx.compressionRecovery._summaryFailureStreak,

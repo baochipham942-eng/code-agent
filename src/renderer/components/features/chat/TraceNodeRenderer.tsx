@@ -27,6 +27,7 @@ import { iconForKind } from './MessageBubble/DeliverableCardList';
 import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
 import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
+import { ContextCompressionSignalBanner } from './MessageBubble/ContextCompressionSignalBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
 import { AgentErrorPresentation } from './AgentErrorCard';
@@ -1107,6 +1108,10 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
 
   if (node.subtype === 'model_fallback') {
     return <FallbackBanner content={node.content} />;
+  }
+
+  if (node.subtype === 'context_compression_signal') {
+    return <ContextCompressionSignalBanner content={node.content} />;
   }
 
   if (node.subtype === 'voice_call_summary' && node.metadata?.voiceCallSummary) {

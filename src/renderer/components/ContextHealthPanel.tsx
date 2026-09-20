@@ -302,6 +302,17 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                     />
                   )}
 
+                  {health.compression?.lastSignal && (
+                    <div
+                      className={health.compression.lastSignal.kind === 'success'
+                        ? 'rounded border border-badge-success/20 bg-emerald-500/5 px-2 py-1 text-[11px] text-badge-success'
+                        : 'rounded border border-badge-warning/20 bg-amber-500/5 px-2 py-1 text-[11px] text-badge-warning'}
+                      data-testid="context-compression-last-signal"
+                    >
+                      {t.notices.contextCompression[health.compression.lastSignal.code] ?? t.notices.contextCompression.fallback}
+                    </div>
+                  )}
+
                   {/* Conversation — 派生值 */}
                   <BreakdownItem
                     label={ch.bkConversation}
@@ -516,4 +527,3 @@ const NestedGroup: React.FC<{
     </div>
   );
 };
-

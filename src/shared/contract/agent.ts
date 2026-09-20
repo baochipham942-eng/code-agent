@@ -412,6 +412,46 @@ export interface ContextCompressedData {
   newMessageCount: number;
 }
 
+/** Structured context-compression recovery signal.
+ *
+ * `surface` is the routing contract: conversation signals may become one
+ * visible timeline notice; health/ledger signals remain diagnostic traces.
+ */
+export type ContextCompressionSignalKind =
+  | 'success'
+  | 'failure'
+  | 'downgrade'
+  | 'skip'
+  | 'cooldown'
+  | 'overflow-recovery'
+  | 'paused';
+
+export type ContextCompressionSignalCode =
+  | 'compaction-succeeded'
+  | 'summary-validation-failed'
+  | 'summary-call-failed'
+  | 'checkpoint-rebuild-fallback'
+  | 'no-safe-compaction-span'
+  | 'compaction-rejected'
+  | 'lossless-budget-skip'
+  | 'summary-cooldown'
+  | 'overflow-recovery-started'
+  | 'auto-compaction-paused';
+
+export interface ContextCompressionSignalData {
+  signalId: string;
+  kind: ContextCompressionSignalKind;
+  code: ContextCompressionSignalCode;
+  surface: 'conversation' | 'health' | 'ledger';
+  timestamp: number;
+  retryable?: boolean;
+  cooldownUntil?: number;
+  tokensBefore?: number;
+  messagesCount?: number;
+  fromStrategy?: string;
+  toStrategy?: string;
+}
+
 // 中断事件数据
 export interface InterruptEventData {
   message: string;

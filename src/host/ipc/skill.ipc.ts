@@ -403,7 +403,8 @@ async function handleSkillInstallLocalZip(payload?: unknown): Promise<{
   if (!zipPath && archive.byteLength > MAX_GITHUB_ARCHIVE_BYTES) {
     throw new Error(`SKILL_ZIP_TOO_LARGE: exceeds ${Math.floor(MAX_GITHUB_ARCHIVE_BYTES / 1024 / 1024)} MB`);
   }
-  const result = await installFromLocalZip(archive, { enableAfterInstall: true });
+  // force: 与 REGISTRY_INSTALL 同口径。GUI 没有 --force，重装同一份 zip 必须覆盖。
+  const result = await installFromLocalZip(archive, { force: true, enableAfterInstall: true });
   await getSkillDiscoveryService().reload();
   return {
     success: true,

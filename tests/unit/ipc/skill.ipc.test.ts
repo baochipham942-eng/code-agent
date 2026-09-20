@@ -452,6 +452,10 @@ describe('会话挂载', () => {
       pluginSpec: 'demo@local-zip',
     });
     expect(svc.installFromLocalZip).toHaveBeenCalledTimes(1);
+    expect(svc.installFromLocalZip).toHaveBeenCalledWith(expect.any(Buffer), {
+      force: true,
+      enableAfterInstall: true,
+    });
     expect(svc.discovery.reload).toHaveBeenCalledTimes(1);
   });
 

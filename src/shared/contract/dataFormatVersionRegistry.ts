@@ -14,7 +14,21 @@ const SESSION_SPINE_PACKAGE_VERSION = 2 as const;
 export const DATA_FORMAT_VERSION_REGISTRY = {
   sessionExportEnvelope: {
     currentVersion: SESSION_EXPORT_ENVELOPE_VERSION,
-    migrations: [],
+    // v2 envelopes are already durably persisted (session_fork_portability_exports,
+    // written by the exportSessionFork IPC route since #1554) and carry no
+    // `conversationHistory`. Structural shape is otherwise unchanged, so bumping
+    // `version` is the whole migration; the codec re-derives payloadDigest for the
+    // migrated shape (a structural bump alone would desync it from the stored digest).
+    migrations: [
+      {
+        fromVersion: 2,
+        toVersion: 3,
+        migrate: (value: unknown) => ({
+          ...(value as Record<string, unknown>),
+          version: 3,
+        }),
+      },
+    ],
   },
   forkLineageEnvelope: {
     currentVersion: FORK_LINEAGE_ENVELOPE_VERSION,

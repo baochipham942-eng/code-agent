@@ -661,7 +661,7 @@ export class SessionForkPortabilityRepository {
         attachments, thinking, effort_level, synced_at, content_parts, metadata,
         is_meta, compaction, visibility, hidden_by_rewind_id, hidden_at
       ) VALUES (
-        ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, NULL, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?,
         NULL, ?, NULL, NULL
       )
     `).run(
@@ -670,6 +670,8 @@ export class SessionForkPortabilityRepository {
       message.role,
       message.content,
       message.timestamp,
+      message.toolCalls?.length ? canonicalStringify(message.toolCalls) : null,
+      message.toolResults?.length ? canonicalStringify(message.toolResults) : null,
       message.attachments?.length ? canonicalStringify(message.attachments) : null,
       message.thinking ?? null,
       message.contentParts ? canonicalStringify(message.contentParts) : null,

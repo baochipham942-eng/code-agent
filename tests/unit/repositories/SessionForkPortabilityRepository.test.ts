@@ -136,7 +136,7 @@ function seedLineage(
   );
   db.prepare(`
     UPDATE messages
-    SET thinking = ?, content_parts = ?, metadata = ?
+    SET thinking = ?, content_parts = ?, tool_calls = ?, metadata = ?
     WHERE id IN ('a1', 'ca1')
   `).run(
     'private reasoning',
@@ -144,6 +144,7 @@ function seedLineage(
       { type: 'text', text: 'answer' },
       { type: 'tool_call', toolCallId: 'call-answer' },
     ]),
+    JSON.stringify([{ id: 'call-answer', name: 'bash', arguments: { command: 'echo answer' } }]),
     JSON.stringify({ thinking: 'metadata thinking' }),
   );
   insertMessage.run('cu2', 'child', 'user', 'rewind anchor', 3, null, 'active');
@@ -676,18 +677,24 @@ describe('SessionForkPortabilityRepository', () => {
       issues: [],
     });
     const importedRichMessage = db.prepare(`
-      SELECT thinking, content_parts, metadata
+      SELECT thinking, content_parts, tool_calls, metadata
       FROM messages
       WHERE id = ?
     `).get(plan.messageIdMap.ca1) as {
       thinking: string | null;
       content_parts: string | null;
+      tool_calls: string | null;
       metadata: string | null;
     };
     expect(importedRichMessage.thinking).toBe('private reasoning');
     expect(JSON.parse(String(importedRichMessage.content_parts))).toEqual([
       { type: 'text', text: 'answer' },
       { type: 'tool_call', toolCallId: 'call-answer' },
+    ]);
+    // The imported tool_calls column must still resolve the content_parts tool_call
+    // reference above — otherwise useTurnProjection silently drops the tool call card.
+    expect(JSON.parse(String(importedRichMessage.tool_calls))).toEqual([
+      expect.objectContaining({ id: 'call-answer', name: 'bash' }),
     ]);
     expect(JSON.parse(String(importedRichMessage.metadata))).toMatchObject({
       thinking: 'metadata thinking',
@@ -731,6 +738,56 @@ describe('SessionForkPortabilityRepository', () => {
     expect(reexported.conversationHistory?.events.map((event) => event.eventType))
       .toEqual(expect.arrayContaining(['append', 'fork', 'rewind']));
     expect(reexported.lineage.nodes).toHaveLength(2);
+  });
+
+  it('reads a v2 row durably persisted before conversationHistory/v3 existed instead of throwing', () => {
+    // exportSessionFork has written v2 envelopes (no conversationHistory, version: 2) into
+    // session_fork_portability_exports since #1554 — before this PR added
+    // conversationHistory and bumped the schema to v3. Model a genuine pre-existing row by
+    // building a current envelope, stripping conversationHistory, and rehashing for
+    // version 2 (rehash recomputes purely from structural content, reproducing exactly
+    // what a real v2-era export would have persisted), then writing it straight into the
+    // table the way the old exportSessionFork route did — bypassing the current codec.
+    const current = repository.exportSessionFork({
+      exportId: 'legacy-v2-source',
+      rootSessionId: 'root',
+      ownerScopeId: 'owner-1',
+      projectId: 'project-1',
+      mode: 'subtree',
+      exportedAt: 100,
+    });
+    const { conversationHistory: _dropped, ...v3Shape } = current;
+    const legacy = rehashSessionExportEnvelopeV2({
+      ...v3Shape,
+      exportId: 'legacy-v2-row',
+      version: 2,
+    } as never);
+    // session_fork_portability_exports rows are trigger-enforced immutable (no UPDATE);
+    // insert the row directly the way the pre-v3 codec would have written it — the row
+    // itself, not just its content, must model a genuine historical v2 persist.
+    // encodeSessionExportEnvelopeV2 now validates version === 3, so it can't serialize a
+    // genuinely v2-shaped object; JSON.stringify is what the pre-v3 codec actually wrote.
+    db.prepare(`
+      INSERT INTO session_fork_portability_exports (
+        export_id, owner_scope_id, project_id, root_session_id, mode,
+        payload_digest, envelope_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'legacy-v2-row',
+      'owner-1',
+      'project-1',
+      'root',
+      'subtree',
+      legacy.payloadDigest,
+      JSON.stringify(legacy),
+      100,
+    );
+
+    const envelope = repository.getDurableEnvelope('legacy-v2-row', 'owner-1', 'project-1');
+
+    expect(envelope?.version).toBe(3);
+    expect(repository.getDurableForkTree('legacy-v2-row', 'owner-1', 'project-1').sessionId)
+      .toBe('root');
   });
 
   it('rejects an idempotent import lookup when its compatibility projection was tampered', () => {

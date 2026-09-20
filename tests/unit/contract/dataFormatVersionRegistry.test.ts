@@ -7,7 +7,12 @@ import { DATA_FORMAT_VERSION_REGISTRY } from '../../../src/shared/contract/dataF
 describe('session data format version registry', () => {
   it('declares one current version and migration chain per importable format', () => {
     expect(DATA_FORMAT_VERSION_REGISTRY).toEqual({
-      sessionExportEnvelope: { currentVersion: 3, migrations: [] },
+      // v2 rows are already durably persisted (session_fork_portability_exports, written
+      // by exportSessionFork since #1554) — a real migration, not an empty placeholder.
+      sessionExportEnvelope: {
+        currentVersion: 3,
+        migrations: [{ fromVersion: 2, toVersion: 3, migrate: expect.any(Function) }],
+      },
       forkLineageEnvelope: { currentVersion: 1, migrations: [] },
       portableConversationHistory: { currentVersion: 1, migrations: [] },
       portableWorkspaceEvidence: { currentVersion: 1, migrations: [] },

@@ -289,15 +289,25 @@ describe('session fork portability codecs', () => {
     );
   });
 
-  it('rejects the previous v2 envelope after the lossless message projection upgrade', () => {
-    const legacy = {
-      ...buildSessionExportEnvelopeV2(subtreeDraft()),
-      version: 2,
-    };
+  it('migrates a durably-persisted v2 envelope instead of rejecting it', () => {
+    // Real v2 rows already exist in session_fork_portability_exports (written by the
+    // exportSessionFork IPC route since #1554, before this PR added conversationHistory
+    // and bumped the schema to v3). A v2 envelope never carried conversationHistory and
+    // its stored payloadDigest was computed over that v2 shape — model both here by
+    // stripping the field, setting version back to 2, and rehashing for that exact shape
+    // (rehashSessionExportEnvelopeV2 recomputes purely from structural content, so this
+    // reproduces what a genuine v2-era export would have persisted).
+    const { conversationHistory: _dropped, ...v3Shape } = buildSessionExportEnvelopeV2(subtreeDraft());
+    const legacy = rehashSessionExportEnvelopeV2({ ...v3Shape, version: 2 } as never);
 
-    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(legacy))).toThrow(
-      /session export envelope version 2 has no registered migration to version 3/u,
-    );
+    const decoded = decodeSessionExportEnvelopeV2(JSON.stringify(legacy));
+
+    expect(decoded.version).toBe(3);
+    expect(decoded).not.toHaveProperty('conversationHistory');
+    // The decoded envelope must be internally self-consistent even though its digest
+    // necessarily differs from the stored v2 digest (the `version` field changed).
+    expect(decoded.payloadDigest).not.toBe(legacy.payloadDigest);
+    expect(() => encodeSessionExportEnvelopeV2(decoded)).not.toThrow();
   });
 
   it('represents a single child as detached provenance without claiming an attached parent', () => {

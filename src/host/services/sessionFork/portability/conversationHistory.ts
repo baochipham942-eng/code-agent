@@ -39,12 +39,14 @@ const ALIAS_KINDS = new Set<ConversationReplayMessage['aliasKind']>([
 
 const FORBIDDEN_STRUCTURAL_KEYS = new Set([
   'absolutepath',
+  'accountname',
   'apikey',
   'authorization',
   'base64',
   'blob',
   'buffer',
   'bytes',
+  'chatname',
   'cookie',
   'credential',
   'credentials',

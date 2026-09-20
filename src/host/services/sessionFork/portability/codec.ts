@@ -17,6 +17,8 @@ import type {
   PortableMessageV2,
   PortableModelConfigV2,
   PortableSessionV2,
+  PortableToolCallV1,
+  PortableToolResultV1,
   SessionExportDecodeScope,
   SessionExportEnvelopeV2,
   SessionExportSourceV2,
@@ -189,6 +191,47 @@ function sanitizeAttachment(source: MessageAttachment): PortableAttachmentProven
   return attachment;
 }
 
+function sanitizeToolCall(source: NonNullable<Message['toolCalls']>[number]): PortableToolCallV1 {
+  const sanitized: PortableToolCallV1 = {
+    id: source.id,
+    name: source.name,
+    arguments: sanitizePortableValue(source.arguments) as Record<string, unknown>,
+  };
+  if (source.result) {
+    sanitized.result = {
+      success: source.result.success,
+      ...(source.result.output !== undefined
+        ? { output: sanitizePortableValue(source.result.output) as string } : {}),
+      ...(source.result.error !== undefined
+        ? { error: sanitizePortableValue(source.result.error) as string } : {}),
+      ...(source.result.duration !== undefined ? { duration: source.result.duration } : {}),
+      // outputPath/metadata dropped: local filesystem path and free-form blob (imagePath etc.)
+    };
+  }
+  if (source.shortDescription !== undefined) {
+    sanitized.shortDescription = sanitizePortableValue(source.shortDescription) as string;
+  }
+  if (source.stepLabel !== undefined) sanitized.stepLabel = source.stepLabel;
+  if (source.targetContext !== undefined) {
+    sanitized.targetContext = sanitizePortableValue(source.targetContext) as PortableToolCallV1['targetContext'];
+  }
+  if (source.expectedOutcome !== undefined) {
+    sanitized.expectedOutcome = sanitizePortableValue(source.expectedOutcome) as string;
+  }
+  return sanitized;
+}
+
+function sanitizeToolResult(source: NonNullable<Message['toolResults']>[number]): PortableToolResultV1 {
+  return {
+    toolCallId: source.toolCallId,
+    success: source.success,
+    ...(source.output !== undefined ? { output: sanitizePortableValue(source.output) as string } : {}),
+    ...(source.error !== undefined ? { error: sanitizePortableValue(source.error) as string } : {}),
+    ...(source.duration !== undefined ? { duration: source.duration } : {}),
+    // outputPath/metadata dropped: local filesystem path and free-form blob (imagePath etc.)
+  };
+}
+
 function sanitizeArtifacts(source: SessionExportSourceV2['messages'][number]['artifacts']): PortableArtifactProvenanceV2[] | undefined {
   if (!source?.length) return undefined;
   return source.map((artifact) => {
@@ -274,6 +317,12 @@ function sanitizeMessages(source: SessionExportSourceV2): PortableMessageV2[] {
     };
     if (raw.contentParts !== undefined) {
       portable.contentParts = sanitizePortableContentParts(raw.contentParts);
+    }
+    if (raw.toolCalls?.length) {
+      portable.toolCalls = raw.toolCalls.map(sanitizeToolCall);
+    }
+    if (raw.toolResults?.length) {
+      portable.toolResults = raw.toolResults.map(sanitizeToolResult);
     }
     if (raw.thinking !== undefined) {
       portable.thinking = sanitizePortableValue(raw.thinking) as string;
@@ -947,6 +996,7 @@ export function decodeSessionExportEnvelopeV2(
 ): SessionExportEnvelopeV2 {
   const parsed = parseJson(value, 'session export envelope');
   assertObject(parsed, 'session export envelope');
+  const sourceVersion = (parsed as Record<string, unknown>).version;
   let current: unknown;
   try {
     current = migrateDataFormatToCurrent('sessionExportEnvelope', parsed);
@@ -956,7 +1006,13 @@ export function decodeSessionExportEnvelopeV2(
     }
     throw error;
   }
-  const envelope = current as SessionExportEnvelopeV2;
+  let envelope = current as SessionExportEnvelopeV2;
+  if (sourceVersion !== SESSION_EXPORT_ENVELOPE_VERSION) {
+    // The registered migration only bumps `version` (structurally a no-op otherwise);
+    // it deliberately leaves payloadDigest untouched, which desyncs it from the
+    // migrated shape. Rehash so the digest is self-consistent before validating it.
+    envelope = rehashSessionExportEnvelopeV2(envelope);
+  }
   validateSessionExportEnvelopeV2(envelope, scope);
   return deepPortableClone(envelope);
 }

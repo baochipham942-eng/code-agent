@@ -179,6 +179,17 @@ export function subtreeDraft() {
               { type: 'text', text: 'world' },
               { type: 'tool_call', toolCallId: 'call-ca1' },
             ],
+            toolCalls: [{
+              id: 'call-ca1',
+              name: 'bash',
+              arguments: { command: 'echo hi', apiKey: 'must-not-export' },
+              result: {
+                success: true,
+                output: 'hi',
+                outputPath: '/Users/private/worktrees/child/out.txt',
+                metadata: { imagePath: '/Users/private/worktrees/child/out.png' },
+              },
+            }],
             thinking: 'private reasoning',
             metadata: { thinking: 'metadata thinking' } as Message['metadata'],
             attachments: [{

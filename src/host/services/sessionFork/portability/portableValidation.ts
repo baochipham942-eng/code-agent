@@ -85,6 +85,8 @@ export function validateMessageOrdinals(messages: PortableMessageV2[], sessionId
       'content',
       'timestamp',
       'contentParts',
+      'toolCalls',
+      'toolResults',
       'thinking',
       'metadata',
       'visibility',
@@ -106,6 +108,34 @@ export function validateMessageOrdinals(messages: PortableMessageV2[], sessionId
     if (message.thinking !== undefined && typeof message.thinking !== 'string') {
       fail('INVALID_ENVELOPE', `message ${message.id} thinking must be a string`);
     }
+    const toolCallIds = new Set<string>();
+    if (message.toolCalls !== undefined) {
+      if (!Array.isArray(message.toolCalls)) {
+        fail('INVALID_ENVELOPE', `message ${message.id} toolCalls must be an array`);
+      }
+      for (const [callIndex, call] of message.toolCalls.entries()) {
+        assertObject(call, `message ${message.id} toolCalls[${callIndex}]`);
+        assertNonEmptyString(call.id, `message ${message.id} toolCalls[${callIndex}].id`);
+        assertNonEmptyString(call.name, `message ${message.id} toolCalls[${callIndex}].name`);
+        assertObject(call.arguments, `message ${message.id} toolCalls[${callIndex}].arguments`);
+        if (toolCallIds.has(call.id)) {
+          fail('REFERENCE_NOT_CLOSED', `message ${message.id} has duplicate tool call id ${call.id}`);
+        }
+        toolCallIds.add(call.id);
+      }
+    }
+    if (message.toolResults !== undefined) {
+      if (!Array.isArray(message.toolResults)) {
+        fail('INVALID_ENVELOPE', `message ${message.id} toolResults must be an array`);
+      }
+      for (const [resultIndex, result] of message.toolResults.entries()) {
+        assertObject(result, `message ${message.id} toolResults[${resultIndex}]`);
+        assertNonEmptyString(result.toolCallId, `message ${message.id} toolResults[${resultIndex}].toolCallId`);
+        if (typeof result.success !== 'boolean') {
+          fail('INVALID_ENVELOPE', `message ${message.id} toolResults[${resultIndex}].success must be a boolean`);
+        }
+      }
+    }
     if (message.contentParts !== undefined) {
       if (!Array.isArray(message.contentParts)) {
         fail('INVALID_ENVELOPE', `message ${message.id} contentParts must be an array`);
@@ -121,8 +151,16 @@ export function validateMessageOrdinals(messages: PortableMessageV2[], sessionId
         if (partRecord.type === 'text' && typeof partRecord.text !== 'string') {
           fail('INVALID_ENVELOPE', `message ${message.id} text content part is invalid`);
         }
-        if (partRecord.type === 'tool_call' && typeof partRecord.toolCallId !== 'string') {
-          fail('INVALID_ENVELOPE', `message ${message.id} tool content part is invalid`);
+        if (partRecord.type === 'tool_call') {
+          if (typeof partRecord.toolCallId !== 'string') {
+            fail('INVALID_ENVELOPE', `message ${message.id} tool content part is invalid`);
+          }
+          if (!toolCallIds.has(partRecord.toolCallId)) {
+            fail(
+              'REFERENCE_NOT_CLOSED',
+              `message ${message.id} contentParts[${partIndex}] references missing tool call ${partRecord.toolCallId}`,
+            );
+          }
         }
         if (partRecord.type !== 'text' && partRecord.type !== 'tool_call') {
           fail('INVALID_ENVELOPE', `message ${message.id} content part type is invalid`);

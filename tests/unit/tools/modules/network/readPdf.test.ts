@@ -204,6 +204,7 @@ describe('readPdfModule (native)', () => {
       if (result.ok) {
         expect(result.output).toContain('DocBench selectable body');
         expect(result.output).toContain('本地文本抽取');
+        expect(result.output).toContain('prompt 未生效');
         expect(result.meta).toMatchObject({ processingMethod: 'text' });
       }
     });
@@ -231,6 +232,26 @@ describe('readPdfModule (native)', () => {
         expect(result.error).toBe('aborted');
       }
       expect(execFileMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('surfaces pdftotext password errors instead of telling the user to install poppler', async () => {
+      getApiKeyMock.mockReturnValue(undefined);
+      const ctx = makeCtx();
+      execFileMock.mockImplementation((
+        _bin: string,
+        _args: string[],
+        _opts: unknown,
+        cb: (err: Error | null, stdout?: string) => void,
+      ) => {
+        cb(Object.assign(new Error('Command Line Error: Incorrect password'), { code: 1 as unknown as string }));
+      });
+      const result = await run({ file_path: '/abs/doc.pdf' }, ctx);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('Incorrect password');
+        expect(result.error).not.toContain('brew install poppler');
+      }
+      expect(ctx.logger.warn).toHaveBeenCalled();
     });
 
     it('returns TIMEOUT when pdftotext is killed by the extract timeout', async () => {
@@ -268,6 +289,7 @@ describe('readPdfModule (native)', () => {
       if (!result.ok) {
         expect(result.error).toContain('支持 PDF/文件输入的视觉模型配置');
         expect(result.error).toContain('OPENROUTER_API_KEY');
+        expect(result.error).toContain('当前版本可识别的配置');
         expect(result.error).toContain('pdftotext');
         expect(result.error).toContain('poppler');
       }

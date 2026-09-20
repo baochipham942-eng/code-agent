@@ -140,6 +140,7 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'glm-4.7-flash': 128_000,
   'glm-4.7-flashx': 128_000,
   'glm-4-flash': 128_000,
+  'glm-5.3-flash': 128_000,
   'glm-4.6v': 32_000,
   'glm-4.6v-flash': 32_000,
   // Qwen
@@ -230,6 +231,7 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'glm-4.7-flash': 200_000,
   'glm-4.7-flashx': 200_000,
   'glm-4-flash': 128_000,
+  'glm-5.3-flash': 128_000,
   'glm-4.6v': 128_000,
   'glm-4.6v-flash': 128_000,
   // Qwen

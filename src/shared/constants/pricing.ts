@@ -62,6 +62,8 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   'glm-5': { input: 0.05, output: 0.05 },
   'glm-4.7': { input: 0.05, output: 0.05 },
   'glm-4.6v': { input: 0.05, output: 0.05 },
+  // glm-5.3-flash：按现有 GLM 档位口径填（0ki 中转实付价待核）
+  'glm-5.3-flash': { input: 0.05, output: 0.05 },
   'glm-4.7-flash': { input: 0, output: 0 },
   'glm-4-flash': { input: 0, output: 0 },
   'glm-4.6v-flash': { input: 0, output: 0 },

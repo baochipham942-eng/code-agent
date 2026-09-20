@@ -31,11 +31,12 @@ export const DEFAULT_MODELS = {
   /** 压缩/摘要模型 - Kimi K2.5 包月无成本 */
   compact: 'kimi-k2.5',
   /**
-   * 快速判断模型 - 智谱 GLM-4 Flash 免费（走 bigmodel.cn，非 0ki）。
-   * 必须用非 thinking 的真·快模型：glm-4-flash 实测 ~0.7s，满足 intent 分类 3s timeout；
-   * 不可用 glm-4.7-flash（thinking 档，实测关思考也要 27-40s，短输出额度被 reasoning 吃光返回空）。
+   * 快速判断模型 - 0ki GLM-5.3-flash（走 api.0ki.cn + ZHIPU_API_KEY）。
+   * 不用 glm-4-flash：免费档走 bigmodel.cn + ZHIPU_OFFICIAL_API_KEY，该官方 key 已失效（401）。
+   * 不可用 glm-4.7-flash：thinking 档，实测关思考也要 27-40s，短输出额度被 reasoning 吃光返回空。
+   * 必须用非 thinking 的真·快模型：glm-5.3-flash 实测短分类 ~1.6s，满足 intent 分类 3s timeout。
    */
-  quick: 'glm-4-flash',
+  quick: 'glm-5.3-flash',
   /** 长上下文模型（128k，与 DEFAULT_PROVIDER 配对；mimo 1M 档因 key 失效退役） */
   longContext: 'LongCat-2.0',
   /** 配额内免费模型 - LongCat 开放平台 */
@@ -232,6 +233,7 @@ export const MODEL_FEATURES: Record<string, ('tool' | 'vision' | 'reasoning')[]>
   'glm-4.7-flash': ['tool'],
   'glm-4.7-flashx': ['tool'],
   'glm-4-flash': ['tool'],
+  'glm-5.3-flash': ['tool'],
   'glm-4.6v': ['vision', 'reasoning'],
   'glm-4.6v-flash': ['vision'],
   'codegeex-4': ['tool'],
@@ -301,6 +303,7 @@ export const MODEL_ABBREV: Record<string, string> = {
   'glm-4.7': 'glm-4.7',
   'glm-4.7-flash': 'glm-flash',
   'glm-4-flash': 'glm-flash',
+  'glm-5.3-flash': 'glm-flash',
   // legacy / EOL — 保留 abbrev 防 historic session UI 退化（slice 截断）。
   // 新代码不应该再生成这些 model id；这些条目仅用于显示老会话状态栏（艾克斯 review LOW3）。
   'claude-3-5-sonnet': 'sonnet',

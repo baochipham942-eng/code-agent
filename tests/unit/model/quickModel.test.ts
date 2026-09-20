@@ -147,7 +147,7 @@ describe('memory model 专档与回落', () => {
     );
   });
 
-  it('zhipu 下的非免费 0ki 模型尊重配置 baseUrl，免费 quick 模型仍走官方端点', async () => {
+  it('zhipu 下的非免费 0ki 模型尊重配置 baseUrl，quick（glm-5.3-flash，非 free 档）同样尊重', async () => {
     mockConfig({
       memory: { provider: 'zhipu', model: 'DeepSeek-V4-Flash-0731' },
       keys: { zhipu: '0ki-key' },
@@ -171,7 +171,7 @@ describe('memory model 专档与回落', () => {
       },
     });
     await quickTask('分类');
-    expect(fetchMock.mock.calls[1][0]).toBe('https://open.bigmodel.cn/api/paas/v4/chat/completions');
+    expect(fetchMock.mock.calls[1][0]).toBe('https://api.0ki.example/api/paas/v4/chat/completions');
   });
 
   it('默认未配 routing.memory 时，同 prompt 与 quickTask 走同模型、同请求体', async () => {

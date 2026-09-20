@@ -56,6 +56,13 @@ const SKIP_DIRS = new Set(['.code-agent', '.git', '.venv', 'venv', 'node_modules
 const MAX_FILES = 60;
 /** 展开内容的工作表数上限；与 perSheet 配套，保证不顶穿 MAX_FILE_CHARS。 */
 const MAX_SHEETS = 15;
+/**
+ * 逐条列出的占位条数上限，超出的合并成一条汇总。
+ * 占位本身也要有上限：`.next/cache` 能有几千个文件，几千条占位就是几十万字符，
+ * 顶穿上下文后每批调用都失败，重试完记全部未判——落一个 ratio:0 的假零分，
+ * 与「产物确实不合格」分不开。
+ */
+const MAX_PLACEHOLDERS = 20;
 /** 调用失败的重试退避；最后一档给足是因为智谱 429 通常要等几十秒才放行。 */
 const RETRY_BACKOFF_MS = [5000, 20000, 60000];
 const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.tsv', '.json', '.html', '.htm', '.xml', '.py', '.js', '.ts', '.css', '.yaml', '.yml', '.log', '.sql']);
@@ -69,6 +76,12 @@ function readPositiveInt(raw: string | undefined, fallback: number, flag: string
     process.exit(2);
   }
   return value;
+}
+
+/** 只展开 `~` 与 `~/`：`~someuser/x` 是别人的家目录，改写成 $HOME + someuser/x 是个不存在的路径。 */
+function expandHome(value: string): string {
+  if (value !== '~' && !value.startsWith('~/')) return value;
+  return path.join(process.env.HOME ?? '~', value.slice(1));
 }
 
 function parseArgs(): { patrol: string; run: string; only: string[]; batch: number; out: string | null; limit: number; callTimeoutMs: number } {
@@ -92,11 +105,11 @@ function parseArgs(): { patrol: string; run: string; only: string[]; batch: numb
     process.exit(2);
   }
   return {
-    patrol: patrol.replace(/^~/, process.env.HOME ?? '~'),
+    patrol: expandHome(patrol),
     run,
     only: (read('--only') ?? '').split(',').map((value) => value.trim()).filter(Boolean),
     batch: readPositiveInt(read('--batch'), 40, '--batch'),
-    out: read('--out')?.replace(/^~/, process.env.HOME ?? '~') ?? null,
+    out: (() => { const raw = read('--out'); return raw === undefined ? null : expandHome(raw); })(),
     limit: read('--limit') === undefined ? 0 : readPositiveInt(read('--limit'), 0, '--limit'),
     callTimeoutMs: readPositiveInt(read('--call-timeout'), 180, '--call-timeout') * 1000,
   };
@@ -179,12 +192,21 @@ async function collectWithinBudget(
   for (const [index, entry] of entries.entries()) {
     if (index >= maxFiles || used >= maxChars) {
       skipped += 1;
-      files.push({ path: entry.rel, bytes: safeSize(entry.abs), text: `[${TRUNCATED_MARK}]` });
+      if (skipped <= MAX_PLACEHOLDERS) {
+        files.push({ path: entry.rel, bytes: safeSize(entry.abs), text: `[${TRUNCATED_MARK}]` });
+      }
       continue;
     }
     const file = await extractFile(entry.abs, entry.rel);
     used += file.text.length;
     files.push(file);
+  }
+  if (skipped > MAX_PLACEHOLDERS) {
+    files.push({
+      path: `（另有 ${skipped - MAX_PLACEHOLDERS} 个文件）`,
+      bytes: 0,
+      text: `[${TRUNCATED_MARK}]`,
+    });
   }
   return { files, skipped };
 }
@@ -271,7 +293,9 @@ async function main(): Promise<void> {
         console.warn(`  ${task.id}：参考文件不在 ${abs}`);
         continue;
       }
-      refEntries.push({ abs, rel: path.join(path.basename(path.dirname(abs)), path.basename(abs)) });
+      // 用相对 patrol 根的路径当标签：basename(dirname)/basename 在不同祖先下
+      // 同名父目录时会撞成同一个 path，模型就分不清两份同名输入。
+      refEntries.push({ abs, rel: path.relative(options.patrol, abs) });
     }
     const { files: inputs, skipped: inputsSkipped } = await collectWithinBudget(
       refEntries,

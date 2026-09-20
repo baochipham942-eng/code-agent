@@ -20,7 +20,7 @@ vi.mock('../../../../src/host/services/media/imageGenerationService', async (imp
 
 vi.mock('../../../../src/host/services/core/configService', async (importActual) => {
   const actual = await importActual<typeof import('../../../../src/host/services/core/configService')>();
-  return { ...actual, getConfigService: vi.fn(() => ({ getApiKey: vi.fn(() => undefined) })) };
+  return { ...actual, getConfigService: vi.fn(() => ({ onSettingsUpdated: vi.fn(), getApiKey: vi.fn(() => undefined) })) };
 });
 
 import {

@@ -63,7 +63,7 @@ const configServiceMocks = vi.hoisted(() => {
     },
     connectors: { enabledNative: [] },
   };
-  const service = {
+  const service = { onSettingsUpdated: vi.fn(),
     getSettings: vi.fn(() => settings),
     getApiKey: vi.fn(() => 'test-key'),
     getServiceApiKey: vi.fn(() => ''),

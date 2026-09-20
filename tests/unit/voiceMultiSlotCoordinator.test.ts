@@ -59,7 +59,7 @@ vi.mock('../../src/host/services/roleAssets/roleAssetService', () => ({
   buildRoleContextBlock: vi.fn(async () => null),
 }));
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' }, voice: { live: {} } }) }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({ ui: { language: 'zh' }, voice: { live: {} } }) }),
 }));
 vi.mock('../../src/host/services/planning/taskStore', () => ({ getIncompleteTasks: () => [] }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({

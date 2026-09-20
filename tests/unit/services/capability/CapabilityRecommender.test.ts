@@ -27,7 +27,7 @@ vi.mock('../../../../src/host/extension/extensionRegistry', () => ({
 const hasConfiguredKeyMock = vi.fn<(provider: string) => boolean>();
 const getApiKeyMock = vi.fn<(provider: string) => string | undefined>();
 vi.mock('../../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     hasConfiguredKey: hasConfiguredKeyMock,
     getApiKey: getApiKeyMock,
   }),
@@ -309,7 +309,7 @@ describe('findCapableModels (real PROVIDER_REGISTRY)', () => {
     vi.resetModules();
     vi.doUnmock('../../../../src/host/model/modelRouter');
     vi.doMock('../../../../src/host/services/core/configService', () => ({
-      getConfigService: () => ({
+      getConfigService: () => ({ onSettingsUpdated: vi.fn(),
         hasConfiguredKey: (p: string) => p === 'zhipu',
         getApiKey: (p: string) => (p === 'zhipu' ? 'mock-key' : undefined),
       }),
@@ -333,7 +333,7 @@ describe('findCapableModels (real PROVIDER_REGISTRY)', () => {
     vi.resetModules();
     vi.doUnmock('../../../../src/host/model/modelRouter');
     vi.doMock('../../../../src/host/services/core/configService', () => ({
-      getConfigService: () => ({
+      getConfigService: () => ({ onSettingsUpdated: vi.fn(),
         hasConfiguredKey: () => false,
         getApiKey: () => undefined,
       }),
@@ -363,7 +363,7 @@ describe('findCapableModels (real PROVIDER_REGISTRY)', () => {
     vi.resetModules();
     vi.doUnmock('../../../../src/host/model/modelRouter');
     vi.doMock('../../../../src/host/services/core/configService', () => ({
-      getConfigService: () => ({
+      getConfigService: () => ({ onSettingsUpdated: vi.fn(),
         hasConfiguredKey: () => false,
         getApiKey: () => undefined,
       }),

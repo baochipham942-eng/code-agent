@@ -159,6 +159,7 @@ const configServiceMocks = vi.hoisted(() => {
 
   const service = {
     getSettings: vi.fn(() => settings),
+    onSettingsUpdated: vi.fn(),
     getApiKey: vi.fn(() => ''),
     getServiceApiKey: vi.fn(() => ''),
     getIntegration: vi.fn(() => undefined),

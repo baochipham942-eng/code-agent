@@ -11,7 +11,7 @@ const atomicWriteState = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../../../src/host/services', () => ({
-  getConfigService: () => ({ getApiKey: () => 'test-api-key' }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: () => 'test-api-key' }),
 }));
 
 vi.mock('../../../../../src/host/tools/utils/atomicWrite', async (importOriginal) => {

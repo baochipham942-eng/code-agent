@@ -34,6 +34,7 @@ const mockSteer = vi.fn();
 const mockCreateAgentLoop = vi.fn();
 const mockCreateRunToolExecutor = vi.fn((..._args: unknown[]) => ({ execute: vi.fn() }));
 const configServiceMocks = vi.hoisted(() => ({
+  onSettingsUpdated: vi.fn(),
   getSettings: vi.fn(() => ({
     permissions: {
       autoApprove: { read: true, write: false, execute: false, network: false },

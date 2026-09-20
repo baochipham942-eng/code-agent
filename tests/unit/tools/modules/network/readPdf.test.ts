@@ -28,7 +28,7 @@ const getApiKeyMock = vi.fn();
 const execFileMock = vi.fn();
 
 vi.mock('../../../../../src/host/services', () => ({
-  getConfigService: () => ({ getApiKey: getApiKeyMock }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: getApiKeyMock }),
 }));
 
 vi.mock('node:child_process', () => ({

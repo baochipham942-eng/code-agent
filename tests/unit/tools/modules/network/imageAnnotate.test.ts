@@ -94,7 +94,7 @@ describe('image_annotate — execute', () => {
     metadataMock.mockResolvedValue({ width: 1024, height: 768 });
     toFileMock.mockResolvedValue({ size: 2048 });
     compositeMock.mockReturnValue(sharpInstanceMock);
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue(undefined),
     });
     delete process.env.BAIDU_OCR_API_KEY;
@@ -169,7 +169,7 @@ describe('image_annotate — execute', () => {
   });
 
   it('falls back to vision_llm when baidu not configured but zhipu present', async () => {
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue('zhipu-key'),
     });
 
@@ -231,7 +231,7 @@ describe('image_annotate — execute', () => {
   it('falls back to vision_llm when baidu OCR fails', async () => {
     process.env.BAIDU_OCR_API_KEY = 'baidu-key';
     process.env.BAIDU_OCR_SECRET_KEY = 'baidu-secret';
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue('zhipu-key'),
     });
 
@@ -263,7 +263,7 @@ describe('image_annotate — execute', () => {
   });
 
   it('vision_llm sniffs SSE chat completions into description, not a JSON.parse exception', async () => {
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue('zhipu-key'),
     });
     const sse = [

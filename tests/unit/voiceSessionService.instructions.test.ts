@@ -14,7 +14,7 @@ const runtime = vi.hoisted(() => ({
 const recordVoiceCall = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => runtime.settings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => runtime.settings }),
 }));
 vi.mock('../../src/host/services/media/imageGenerationService', () => ({
   getDashscopeApiKey: () => 'test-key',

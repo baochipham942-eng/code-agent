@@ -22,7 +22,7 @@ const settingsState = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getSettings: () => settingsState.settings,
     getApiKey: vi.fn(() => 'mock-key'),
   }),

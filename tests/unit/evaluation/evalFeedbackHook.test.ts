@@ -7,7 +7,7 @@ const env = vi.hoisted(() => ({ userData: '', command: '' }));
 
 vi.mock('@host/platform', () => ({ getUserDataPath: () => env.userData }));
 vi.mock('@host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ evaluation: { feedbackHookCommand: env.command } }) }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({ evaluation: { feedbackHookCommand: env.command } }) }),
 }));
 
 import { pushEvalFeedback } from '@internal-evaluation/host/evaluation/feedbackHook';

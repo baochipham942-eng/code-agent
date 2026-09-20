@@ -46,7 +46,7 @@ const getServiceApiKey = vi.hoisted(() => vi.fn().mockReturnValue(undefined));
 // 工具表初筛要读设置里的搜索 key；默认 mock 成「什么都没配」，单测不碰真实 SecureStorage。
 vi.mock('../../../src/host/services/core/configService', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  getConfigService: () => ({ getServiceApiKey }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getServiceApiKey }),
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({

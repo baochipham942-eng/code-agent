@@ -2,6 +2,7 @@ import type { Browser, CDPSession } from 'playwright';
 import {
   parseBrowserDomSnapshot,
   type CdpDomSnapshotPayload,
+  type JevInteractiveExtras,
 } from './domSnapshotParser';
 import type {
   BrowserDomSnapshot,
@@ -12,6 +13,7 @@ import type {
 export interface BrowserDomSnapshotBuildResult {
   snapshot: BrowserDomSnapshot;
   targetRefRecords: BrowserTargetRefRecord[];
+  elementExtras: JevInteractiveExtras[];
 }
 
 interface BrowserWithCdp extends Browser {
@@ -67,8 +69,9 @@ export async function buildBrowserDomSnapshot(args: {
   snapshotId: string;
   capturedAtMs: number;
   targetRefTtlMs: number;
+  maxInteractiveElements?: number;
 }): Promise<BrowserDomSnapshotBuildResult> {
-  const { tab, snapshotId, capturedAtMs, targetRefTtlMs } = args;
+  const { tab, snapshotId, capturedAtMs, targetRefTtlMs, maxInteractiveElements } = args;
   const page = tab.page;
   let session: CDPSession | null = null;
   let payload: CdpDomSnapshotPayload;
@@ -93,6 +96,7 @@ export async function buildBrowserDomSnapshot(args: {
     pageUrl,
     capturedAtMs,
     targetRefTtlMs,
+    maxInteractiveElements,
   });
   const unavailableFrames = await discoverUnavailableOopifDocuments({
     page,
@@ -112,5 +116,6 @@ export async function buildBrowserDomSnapshot(args: {
       interactiveElements: parsed.interactiveElements,
     },
     targetRefRecords: parsed.targetRefRecords,
+    elementExtras: parsed.elementExtras,
   };
 }

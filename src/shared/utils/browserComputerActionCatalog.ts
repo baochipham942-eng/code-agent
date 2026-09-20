@@ -177,6 +177,12 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
     approvalKind: "tool_executor_file",
   },
   fill_form: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  // execute_goal stays in the catalog for runtime lookup. Schema enum and
+  // description advertise it only when CODE_AGENT_BROWSER_JEV_STEP=1. Calling
+  // it while the switch is off still returns the unarmed error string. Inner
+  // loop escalates approval itself (payment/delete/auth forceConfirm); catalog
+  // matches handle_dialog: write + tool_executor, not high_risk.
+  execute_goal: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
   list_tabs: {
     ...READ_BROWSER_DEFAULTS,
     consequence: "no_external_side_effect",

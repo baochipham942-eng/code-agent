@@ -4,7 +4,7 @@
 // ----------------------------------------------------------------------------
 // 用法：
 //   npx tsx scripts/gdpval-rubric-score.ts --patrol ~/work/patrol --run 2026-09-19
-//   npx tsx scripts/gdpval-rubric-score.ts --patrol ~/work/patrol --run 2026-09-19 --only gdp-83d10b06 --batch 20
+//   npx tsx scripts/gdpval-rubric-score.ts --patrol ~/work/patrol --run 2026-09-19 --only gdp-83d10b06 --batch 20 --call-timeout 300
 //
 // 评的是**产物**不是轨迹：读夜巡归档的 runs/<夜>/artifacts/<题号>/，把文件内容连同
 // 该题自带的 rubric 逐条问评分模型。与 postlaunch-score.ts 的六维无题判官各管一段，
@@ -40,7 +40,18 @@ const MAX_TASK_CHARS = 120000;
 const MAX_INPUT_CHARS = 60000;
 const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.tsv', '.json', '.html', '.htm', '.xml', '.py', '.js', '.ts', '.css', '.yaml', '.yml', '.log', '.sql']);
 
-function parseArgs(): { patrol: string; run: string; only: string[]; batch: number; out: string | null; limit: number } {
+/** 非法数值参数当场退出，不带着 NaN 往下跑——chunkRubric 的循环遇到 NaN 会永不前进。 */
+function readPositiveInt(raw: string | undefined, fallback: number, flag: string): number {
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    console.error(`${flag} 要一个正整数，收到 ${JSON.stringify(raw)}`);
+    process.exit(2);
+  }
+  return value;
+}
+
+function parseArgs(): { patrol: string; run: string; only: string[]; batch: number; out: string | null; limit: number; callTimeoutMs: number } {
   const argv = process.argv.slice(2);
   const read = (flag: string): string | undefined => {
     const index = argv.indexOf(flag);
@@ -49,16 +60,17 @@ function parseArgs(): { patrol: string; run: string; only: string[]; batch: numb
   const patrol = read('--patrol');
   const run = read('--run');
   if (!patrol || !run) {
-    console.error('用法：--patrol <patrol 根目录> --run <夜> [--only id,id] [--batch 20] [--out file.jsonl] [--limit N]');
+    console.error('用法：--patrol <patrol 根目录> --run <夜> [--only id,id] [--batch 40] [--out file.jsonl] [--limit N] [--call-timeout 秒]');
     process.exit(2);
   }
   return {
     patrol: patrol.replace(/^~/, process.env.HOME ?? '~'),
     run,
     only: (read('--only') ?? '').split(',').map((value) => value.trim()).filter(Boolean),
-    batch: Number(read('--batch') ?? 40),
+    batch: readPositiveInt(read('--batch'), 40, '--batch'),
     out: read('--out') ?? null,
-    limit: Number(read('--limit') ?? 0),
+    limit: read('--limit') === undefined ? 0 : readPositiveInt(read('--limit'), 0, '--limit'),
+    callTimeoutMs: readPositiveInt(read('--call-timeout'), 180, '--call-timeout') * 1000,
   };
 }
 
@@ -147,7 +159,8 @@ async function main(): Promise<void> {
   console.log(`本次评 ${tasks.length} 题（题库有 rubric 且这一夜留下了产物的）\n`);
 
   const outPath = options.out ?? path.join(options.patrol, 'runs', options.run, 'gdpval-rubric.jsonl');
-  const out = fs.createWriteStream(outPath, { flags: 'a' });
+  // 覆盖而不是追加：一次运行 = 这一夜这批题的结果，追加会让重跑同一夜留下重复行。
+  const out = fs.createWriteStream(outPath, { flags: 'w' });
   let calls = 0;
   for (const task of tasks) {
     const taskRoot = path.join(artifactsRoot, task.id);
@@ -183,7 +196,8 @@ async function main(): Promise<void> {
       const prompt = buildRubricPrompt(batch, files, inputs);
       let content = '';
       try {
-        const response = await quickTask(prompt, 6000);
+        // 不给超时，模型服务挂起时整夜评分会停在这一批上，后面的题一道都不落盘。
+        const response = await quickTask(prompt, 6000, AbortSignal.timeout(options.callTimeoutMs));
         calls += 1;
         content = response.success && response.content ? response.content : '';
         if (!content) console.warn(`  ${task.id}：模型没返回内容（${response.error ?? '无错误信息'}）`);

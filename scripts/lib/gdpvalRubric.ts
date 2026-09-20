@@ -74,7 +74,8 @@ function delimit(value: unknown, closingTag: string): string {
 
 /** 按条数切批：一次问几十条会让模型漏答（漏答按不通过计分，等于白扣分）。 */
 export function chunkRubric(items: GdpvalRubricItem[], size: number): GdpvalRubricItem[][] {
-  if (size <= 0) throw new Error('batch size must be > 0');
+  // NaN 也要拦：`NaN <= 0` 是 false，放过去之后 `index += NaN` 让下面这个循环永不前进。
+  if (!Number.isInteger(size) || size <= 0) throw new Error(`batch size must be a positive integer, got ${size}`);
   const batches: GdpvalRubricItem[][] = [];
   for (let index = 0; index < items.length; index += size) {
     batches.push(items.slice(index, index + size));
@@ -109,23 +110,22 @@ export function buildRubricPrompt(
   ].join('\n');
 }
 
-/**
- * 容忍模型顺手包的 ```json 围栏，以及**输出被截断**——一批 20 条判据的回答挨着
- * max_tokens 上限，截在半路是常态。按括号栈补齐闭合符，能把已经答完的那几条救回来；
- * 补不出合法 JSON 就抛，交由调用方整批记未判。字符串内的括号与转义要跳过，
- * 否则 why 里一个 "}" 就把深度算歪。
- */
-function extractJsonObject(content: string): unknown {
-  const trimmed = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
-  const start = trimmed.indexOf('{');
-  if (start < 0) throw new Error('no json object');
-  const body = trimmed.slice(start);
+interface BalanceScan {
+  /** 顶层对象闭合处的下标；-1 = 扫到结尾都没闭合（被截断） */
+  end: number;
+  /** 还开着的闭合符，栈顶在末尾 */
+  stack: string[];
+  /** 结尾时是否停在字符串里 */
+  inString: boolean;
+}
+
+/** 括号栈扫描。字符串内的括号与转义要跳过，否则 why 里一个 "}" 就把深度算歪。 */
+function scanBalanced(text: string): BalanceScan {
   const stack: string[] = [];
   let inString = false;
   let escaped = false;
-  let endIndex = -1;
-  for (let index = 0; index < body.length; index += 1) {
-    const char = body[index];
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
     if (inString) {
       if (escaped) escaped = false;
       else if (char === '\\') escaped = true;
@@ -136,19 +136,43 @@ function extractJsonObject(content: string): unknown {
     else if (char === '{' || char === '[') stack.push(char === '{' ? '}' : ']');
     else if (char === '}' || char === ']') {
       if (stack.pop() !== char) throw new Error('unbalanced json');
-      if (stack.length === 0) { endIndex = index; break; }
+      if (stack.length === 0) return { end: index, stack, inString };
     }
   }
-  if (endIndex >= 0) return JSON.parse(body.slice(0, endIndex + 1));
-  // 截断：先关掉还开着的字符串，再按栈倒序补闭合符。
-  const closing = [...stack].reverse().join('');
-  return JSON.parse(`${body}${inString ? '"' : ''}${closing}`);
+  return { end: -1, stack, inString };
+}
+
+function closeUp(text: string, scan: BalanceScan): string {
+  return `${text}${scan.inString ? '"' : ''}${[...scan.stack].reverse().join('')}`;
 }
 
 /**
- * 把一批的模型回答对回条目。对齐键是批内序号 n（1 起）——rubric_item_id 是 uuid，
- * 让模型回抄一遍既费 token 又会抄错。越界与重复的 n 直接丢弃，对应条目留 pass=null。
+ * 容忍模型顺手包的 ```json 围栏，以及**输出被截断**——一批几十条判据的回答挨着
+ * max_tokens 上限，截在半路是常态。
+ *
+ * 截断分两种，都要救回已经答完的条目：
+ * - 截在条目之间（`…{"n":1,"pass":true},`）：直接补闭合符会留下尾逗号，JSON 不认；
+ * - 截在条目中间（`…,{"n":2,"pa`）：补出来的是个残缺对象，同样不认。
+ * 所以先按原样补一次，补不出合法 JSON 就砍到**最后一个完整对象**再补。
+ * 两次都失败才抛，交由调用方整批记未判。
  */
+function extractJsonObject(content: string): unknown {
+  const trimmed = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+  const start = trimmed.indexOf('{');
+  if (start < 0) throw new Error('no json object');
+  const body = trimmed.slice(start);
+  const scan = scanBalanced(body);
+  if (scan.end >= 0) return JSON.parse(body.slice(0, scan.end + 1));
+  try {
+    return JSON.parse(closeUp(body, scan));
+  } catch {
+    const cut = body.lastIndexOf('}');
+    if (cut < 0) throw new Error('unbalanced json');
+    const head = body.slice(0, cut + 1);
+    return JSON.parse(closeUp(head, scanBalanced(head)));
+  }
+}
+
 export function parseRubricVerdicts(content: string, items: GdpvalRubricItem[]): GdpvalItemVerdict[] {
   const out: GdpvalItemVerdict[] = items.map((item) => ({
     rubricItemId: item.rubric_item_id,

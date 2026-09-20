@@ -20,6 +20,11 @@ describe('chunkRubric', () => {
   it('批大小非正数直接报错，不静默吞成一批', () => {
     expect(() => chunkRubric(items, 0)).toThrow();
   });
+
+  it('NaN 也要拦——NaN <= 0 是 false，放过去循环永不前进', () => {
+    expect(() => chunkRubric(items, Number.NaN)).toThrow();
+    expect(() => chunkRubric(items, 1.5)).toThrow();
+  });
 });
 
 describe('parseRubricVerdicts', () => {
@@ -48,6 +53,16 @@ describe('parseRubricVerdicts', () => {
   it('输出被 max_tokens 截断时，已答完的条目照样救得回来', () => {
     const truncated = '{"verdicts":[{"n":1,"pass":true,"why":"是 xlsx"},{"n":2,"pass":false,"why":"表名写成了 Samp';
     expect(parseRubricVerdicts(truncated, items).map((verdict) => verdict.pass)).toEqual([true, false, null]);
+  });
+
+  it('截在条目之间（尾逗号）不会把整批毁掉', () => {
+    const truncated = '{"verdicts":[{"n":1,"pass":true},{"n":2,"pass":false},';
+    expect(parseRubricVerdicts(truncated, items).map((verdict) => verdict.pass)).toEqual([true, false, null]);
+  });
+
+  it('截在下一条的半截 key 上，前面答完的仍然保住', () => {
+    const truncated = '{"verdicts":[{"n":1,"pass":true},{"n":3,"pass":false},{"n":2,"pa';
+    expect(parseRubricVerdicts(truncated, items).map((verdict) => verdict.pass)).toEqual([true, null, false]);
   });
 
   it('理由里带 } 不会把括号深度算歪', () => {

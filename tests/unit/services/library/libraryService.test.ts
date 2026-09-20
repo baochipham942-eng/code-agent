@@ -199,4 +199,18 @@ describe('LibraryService', () => {
     expect(item.learnStatus).toBe('failed');
     expect(item.learnError).toContain('.xls');
   });
+
+  it('update projectId 把 sidecar 迁到新项目目录', async () => {
+    const item = await service.importFile({
+      projectId: 'proj_1',
+      sourcePath: writeSource('note.md', '依据正文'),
+    }, 1000);
+    const moved = service.update(item.id, { projectId: 'proj_2' }, 2000);
+    expect(moved?.projectId).toBe('proj_2');
+    expect(service.projectEvidence({ source: item.pathOrUri, location: 'line:1' }).hit).toBe(true);
+    const oldSidecar = path.join(tmpDir, 'library', 'proj_1', '.extracted', `${item.id}.md`);
+    const newSidecar = path.join(tmpDir, 'library', 'proj_2', '.extracted', `${item.id}.md`);
+    expect(fs.existsSync(oldSidecar)).toBe(false);
+    expect(fs.existsSync(newSidecar)).toBe(true);
+  });
 });

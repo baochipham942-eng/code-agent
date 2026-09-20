@@ -78,4 +78,19 @@ describe('LibraryService.archiveText', () => {
     expect(nullItem.id).toBe(globalItem.id);
     expect(globalItem.pathOrUri.startsWith(path.join(tmpDir, 'library', 'global'))).toBe(true);
   });
+
+  it('sidecar 写入失败时条目落到 failed 而不是卡在 running', () => {
+    fs.mkdirSync(path.join(tmpDir, 'library', 'proj_1'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'library', 'proj_1', '.extracted'), 'not-a-directory');
+
+    expect(() => service.archiveText({
+      projectId: 'proj_1',
+      title: '写失败',
+      text: 'should fail sidecar',
+    }, 1000)).toThrow();
+
+    const item = service.list({ projectId: 'proj_1' })[0];
+    expect(item?.learnStatus).toBe('failed');
+    expect(item?.learnError).toBeTruthy();
+  });
 });

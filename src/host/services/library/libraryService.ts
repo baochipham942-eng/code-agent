@@ -27,6 +27,7 @@ import {
   readLearnedSidecar,
   removeLearnedSidecar,
   writeLearnedSidecar,
+  moveLearnedSidecar,
 } from './libraryIngest';
 
 const logger = createLogger('LibraryService');
@@ -291,8 +292,14 @@ export class LibraryService {
     }, now);
     if (item.learnStatus === 'pending') {
       this.repo.updateLearnStatus(item.id, 'running', { error: null, now });
-      writeLearnedSidecar(this.libraryDir(projectId), item.id, text);
-      this.repo.updateLearnStatus(item.id, 'ready', { error: null, now });
+      try {
+        writeLearnedSidecar(this.libraryDir(projectId), item.id, text);
+        this.repo.updateLearnStatus(item.id, 'ready', { error: null, now });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.repo.updateLearnStatus(item.id, 'failed', { error: message, now });
+        throw error;
+      }
       return this.repo.getItem(item.id) ?? item;
     }
     return item;
@@ -311,8 +318,14 @@ export class LibraryService {
     patch: { title?: string; tags?: string[]; summary?: string | null; projectId?: string | null },
     now: number = Date.now(),
   ): LibraryItem | undefined {
+    const previous = this.repo.getItem(id);
     const changed = this.repo.updateItem(id, patch, now);
-    return changed ? this.repo.getItem(id) : undefined;
+    if (!changed) return undefined;
+    const next = this.repo.getItem(id);
+    if (previous && next && previous.projectId !== next.projectId) {
+      moveLearnedSidecar(this.libraryDir(previous.projectId), this.libraryDir(next.projectId), id);
+    }
+    return next;
   }
 
   /** 删除条目；upload 类且文件在资料库目录内时一并删除文件 */

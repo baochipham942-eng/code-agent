@@ -149,6 +149,16 @@ export function removeLearnedSidecar(libraryDir: string, itemId: string): void {
   }
 }
 
+/** 项目迁移时把 sidecar 跟条目走；源不存在则静默 */
+export function moveLearnedSidecar(fromDir: string, toDir: string, itemId: string): void {
+  if (fromDir === toDir) return;
+  const source = learnedSidecarPath(fromDir, itemId);
+  if (!fs.existsSync(source)) return;
+  const target = learnedSidecarPath(toDir, itemId);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.renameSync(source, target);
+}
+
 /**
  * 依据片段：围绕定位行 ±上下文行取窗口，硬 cap 40 行。
  * 全文为空、或定位完全越界时返回 null（不得把空 slice 包装成 hit）。

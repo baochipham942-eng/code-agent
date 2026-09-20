@@ -502,6 +502,14 @@ export async function checkAndAutoCompress(
             compactedMessageCount: boundary.compactedMessageCount,
             boundaryMessageId: boundary.boundaryMessageId,
           });
+          emitContextCompressionSignal(ctx, {
+            kind: 'success',
+            code: 'compaction-succeeded',
+            surface: 'health',
+            retryable: false,
+            tokensBefore: currentTokens,
+            messagesCount: ctx.runtime.messages.length,
+          });
           return;
         }
         logger.warn('[AgentLoop] Checkpoint rebuild boundary unavailable, falling back to summary compaction', {

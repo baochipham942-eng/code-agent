@@ -1128,7 +1128,7 @@ describe('jevBrowserStep', () => {
       formValues: {},
       downloads: [],
     };
-    const assertion = [{ id: 'a1', kind: 'url_equals', needle: 'https://shop.example/finish?status=paid' }];
+    const assertion = [{ id: 'a1', kind: 'url_equals' as const, needle: 'https://shop.example/finish?status=paid' }];
     const paid = evaluateJevAssertions(assertion, { ...base, url: 'https://shop.example/finish?status=paid' });
     expect(paid.results[0]?.met).toBe(true);
     expect(paid.allMet).toBe(true);

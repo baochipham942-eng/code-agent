@@ -4,6 +4,7 @@
 // 使用视觉模型（Gemini 2.0）解析 PDF。需要本地 OpenRouter API Key。
 // ============================================================================
 
+import { execFile } from 'node:child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import type {
@@ -20,6 +21,19 @@ import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readPdfSchema as schema } from './readPdf.schema';
 import { TOOL_DEPENDENCY_HINTS } from '../_helpers/dependencyHints';
+import { resolveHelperBinary } from '../../../runtime/runtimeAssetResolver';
+
+function runPdftotext(bin: string, filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(bin, ['-layout', filePath, '-'], { maxBuffer: 50 * 1024 * 1024 }, (error, stdout) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(Buffer.isBuffer(stdout) ? stdout.toString('utf8') : String(stdout ?? ''));
+    });
+  });
+}
 
 const VisionCompletionResponseSchema = z.object({
   choices: z.array(z.object({
@@ -139,37 +153,25 @@ export async function executeReadPdf(
     const stats = await fs.stat(filePath);
     const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
 
+    const apiKey = getConfigService().getApiKey('openrouter');
+    if (apiKey) {
+      onProgress?.({
+        stage: 'running',
+        detail: `正在使用视觉模型处理 PDF (${fileSizeMB} MB)...`,
+      });
+      const result = await processWithVisionModel(filePath, prompt, ctx);
+      return finishPdfResult(filePath, fileSizeMB, 'vision', result.content, ctx, onProgress);
+    }
+
     onProgress?.({
       stage: 'running',
-      detail: `正在使用视觉模型处理 PDF (${fileSizeMB} MB)...`,
+      detail: `未配置 OpenRouter，改用本地文本抽取 (${fileSizeMB} MB)...`,
     });
-
-    const result = await processWithVisionModel(filePath, prompt, ctx);
-
-    let output = `📄 PDF 分析结果\n`;
-    output += `文件: ${path.basename(filePath)} (${fileSizeMB} MB)\n`;
-    output += `处理方式: 视觉模型 (Gemini 2.0)\n\n`;
-    output += result.content;
-
-    onProgress?.({ stage: 'completing', percent: 100 });
-
-    return {
-      ok: true,
-      output,
-      meta: {
-        artifact: await createFileArtifact(filePath, schema.name, ctx, {
-          kind: 'document',
-          mimeType: 'application/pdf',
-          preview: result.content.slice(0, 500),
-          metadata: {
-            processingMethod: 'vision',
-            fileSizeMB: parseFloat(fileSizeMB),
-          },
-        }),
-        processingMethod: 'vision',
-        fileSizeMB: parseFloat(fileSizeMB),
-      },
-    };
+    const text = await extractSelectablePdfText(filePath);
+    if (text.trim()) {
+      return finishPdfResult(filePath, fileSizeMB, 'text', text, ctx, onProgress);
+    }
+    throw new Error(TOOL_DEPENDENCY_HINTS.readPdfOpenRouter);
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     if ((error as { code?: string }).code === 'ENOENT') {
@@ -178,6 +180,60 @@ export async function executeReadPdf(
     ctx.logger.error('PDF read failed', { error: errMsg });
     return { ok: false, error: errMsg || '读取 PDF 失败', code: 'NETWORK_ERROR' };
   }
+}
+
+async function extractSelectablePdfText(filePath: string): Promise<string> {
+  const bundled = (() => {
+    try {
+      return resolveHelperBinary(path.join('poppler', 'bin', 'pdftotext'));
+    } catch {
+      return '';
+    }
+  })();
+  const bins = [bundled, '/opt/homebrew/bin/pdftotext', '/usr/local/bin/pdftotext', 'pdftotext']
+    .filter((bin, index, all) => Boolean(bin) && all.indexOf(bin) === index);
+  for (const bin of bins) {
+    try {
+      const stdout = await runPdftotext(bin, filePath);
+      if (stdout.trim()) return stdout;
+    } catch {
+      /* try next extractor */
+    }
+  }
+  return '';
+}
+
+async function finishPdfResult(
+  filePath: string,
+  fileSizeMB: string,
+  method: 'vision' | 'text',
+  content: string,
+  ctx: ToolContext,
+  onProgress?: ToolProgressFn,
+): Promise<ToolResult<string>> {
+  const methodLabel = method === 'vision' ? '视觉模型 (Gemini 2.0)' : '本地文本抽取';
+  let output = `📄 PDF 分析结果\n`;
+  output += `文件: ${path.basename(filePath)} (${fileSizeMB} MB)\n`;
+  output += `处理方式: ${methodLabel}\n\n`;
+  output += content;
+  onProgress?.({ stage: 'completing', percent: 100 });
+  return {
+    ok: true,
+    output,
+    meta: {
+      artifact: await createFileArtifact(filePath, schema.name, ctx, {
+        kind: 'document',
+        mimeType: 'application/pdf',
+        preview: content.slice(0, 500),
+        metadata: {
+          processingMethod: method,
+          fileSizeMB: parseFloat(fileSizeMB),
+        },
+      }),
+      processingMethod: method,
+      fileSizeMB: parseFloat(fileSizeMB),
+    },
+  };
 }
 
 class ReadPdfHandler implements ToolHandler<Record<string, unknown>, string> {

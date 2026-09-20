@@ -25,9 +25,18 @@ vi.mock('fs/promises', () => ({
 }));
 
 const getApiKeyMock = vi.fn();
+const execFileMock = vi.fn();
 
 vi.mock('../../../../../src/host/services', () => ({
   getConfigService: () => ({ getApiKey: getApiKeyMock }),
+}));
+
+vi.mock('../../../../../src/host/runtime/runtimeAssetResolver', () => ({
+  resolveHelperBinary: () => '/bundled/pdftotext',
+}));
+
+vi.mock('node:child_process', () => ({
+  execFile: (...args: unknown[]) => execFileMock(...args),
 }));
 
 import { readPdfModule } from '../../../../../src/host/tools/modules/network/readPdf';
@@ -68,6 +77,7 @@ beforeEach(() => {
   readFileMock.mockReset();
   statMock.mockReset();
   getApiKeyMock.mockReset();
+  execFileMock.mockReset();
   fetchMock.mockReset();
 
   accessMock.mockResolvedValue(undefined);
@@ -146,6 +156,14 @@ describe('readPdfModule (native)', () => {
   describe('happy paths', () => {
     it('uses direct OpenRouter when api key present', async () => {
       getApiKeyMock.mockReturnValue('sk-test-key');
+      execFileMock.mockImplementation((
+        _bin: string,
+        _args: string[],
+        _opts: unknown,
+        cb: (err: Error | null, stdout?: string) => void,
+      ) => {
+        cb(new Error('should not extract when vision is configured'));
+      });
       fetchMock.mockResolvedValue(
         makeJsonResponse({ choices: [{ message: { content: 'PDF summary' } }] }),
       );
@@ -171,17 +189,39 @@ describe('readPdfModule (native)', () => {
       }
     });
 
-    it('returns a configuration error when no OpenRouter api key is available', async () => {
+    it('extracts selectable text when OpenRouter is not configured', async () => {
       getApiKeyMock.mockReturnValue(undefined);
-      fetchMock.mockResolvedValue(
-        makeJsonResponse({ choices: [{ message: { content: 'cloud summary' } }] }),
-      );
+      execFileMock.mockImplementation((...args: unknown[]) => {
+        const cb = args.find((value) => typeof value === 'function') as
+          ((err: Error | null, stdout?: string, stderr?: string) => void);
+        cb(null, 'DocBench selectable body', '');
+      });
+      const result = await run({ file_path: '/abs/doc.pdf' });
+      expect(result.ok).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(execFileMock).toHaveBeenCalled();
+      if (result.ok) {
+        expect(result.output).toContain('DocBench selectable body');
+        expect(result.output).toContain('本地文本抽取');
+        expect(result.meta).toMatchObject({ processingMethod: 'text' });
+      }
+    });
+
+    it('returns a configuration error when OpenRouter is missing and text extract is empty', async () => {
+      getApiKeyMock.mockReturnValue(undefined);
+      execFileMock.mockImplementation((
+        _bin: string,
+        _args: string[],
+        _opts: unknown,
+        cb: (err: Error | null, stdout?: string) => void,
+      ) => {
+        cb(new Error('ENOENT'));
+      });
       const result = await run({ file_path: '/abs/doc.pdf' });
       expect(result.ok).toBe(false);
       expect(fetchMock).not.toHaveBeenCalled();
       if (!result.ok) {
         expect(result.error).toContain('支持 PDF/文件输入的视觉模型配置');
-        expect(result.error).toContain('当前版本可识别的配置');
         expect(result.error).toContain('OPENROUTER_API_KEY');
       }
     });
@@ -222,7 +262,7 @@ describe('readPdfModule (native)', () => {
     });
 
     it('wraps fetch network errors as NETWORK_ERROR', async () => {
-      getApiKeyMock.mockReturnValue(undefined);
+      getApiKeyMock.mockReturnValue('sk-test-key');
       fetchMock.mockRejectedValue(new Error('socket hang up'));
       const result = await run({ file_path: '/abs/doc.pdf' });
       expect(result.ok).toBe(false);

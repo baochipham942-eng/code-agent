@@ -14,6 +14,7 @@ import type {
   LibraryItemCreateRequest,
   LibraryEvidenceProjection,
   LibraryEvidenceQuery,
+  LibraryLearnStatus,
   LibraryListOptions,
   SessionContextPin,
 } from '@shared/contract/library';
@@ -32,8 +33,17 @@ const logger = createLogger('LibraryService');
 
 /** 单个导入文件上限（与 web /api/upload/temp 的 MAX_UPLOAD_SIZE 对齐） */
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const PENDING_LEARN_SWEEP_LIMIT = 20;
+
+function defaultLearnStatus(kind: LibraryItem['kind'], pathOrUri: string): LibraryLearnStatus {
+  if (kind === 'capture' || kind === 'external_ref') return 'ready';
+  if (kind === 'artifact' && !hasLibraryTextExtractor(pathOrUri)) return 'ready';
+  return 'pending';
+}
 
 export class LibraryService {
+  private sweepInFlight: Promise<number> | null = null;
+  private readonly learningIds = new Set<string>();
   // ponytail: repo 按需自建（statement 本就逐调用 prepare），不给 databaseService god-file 加行
   private get repo(): LibraryRepository {
     const raw = getDatabase().getDb();
@@ -79,7 +89,7 @@ export class LibraryService {
       sourceSessionId: request.sourceSessionId,
       sourceRoleId: request.sourceRoleId,
       contentHash: request.contentHash,
-      learnStatus: request.learnStatus ?? (request.kind === 'upload' ? 'pending' : 'ready'),
+      learnStatus: request.learnStatus ?? defaultLearnStatus(request.kind, request.pathOrUri),
       createdAt: now,
       updatedAt: now,
     };
@@ -141,25 +151,31 @@ export class LibraryService {
   async learnItem(id: string, now: number = Date.now()): Promise<LibraryItem> {
     const item = this.repo.getItem(id);
     if (!item) throw new Error('Library item not found');
-    if (item.kind !== 'upload' && item.kind !== 'artifact') {
-      this.repo.updateLearnStatus(id, 'ready', { error: null, now });
-      return this.repo.getItem(id) ?? item;
-    }
-
-    this.repo.updateLearnStatus(id, 'running', { error: null, now });
+    if (this.learningIds.has(id)) return item;
+    this.learningIds.add(id);
     try {
-      if (!hasLibraryTextExtractor(item.pathOrUri)) {
-        throw new Error(`不支持抽取文本的格式: ${path.extname(item.pathOrUri) || '(无后缀)'}`);
+      if (item.kind !== 'upload' && item.kind !== 'artifact') {
+        this.repo.updateLearnStatus(id, 'ready', { error: null, now });
+        return this.repo.getItem(id) ?? item;
       }
-      const extracted = await extractLibraryText(item.pathOrUri);
-      writeLearnedSidecar(this.libraryDir(item.projectId), item.id, extracted.text);
-      this.repo.updateLearnStatus(id, 'ready', { error: null, now });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.repo.updateLearnStatus(id, 'failed', { error: message, now });
-      logger.warn('Library item learning failed', { id, error });
+
+      this.repo.updateLearnStatus(id, 'running', { error: null, now });
+      try {
+        if (!hasLibraryTextExtractor(item.pathOrUri)) {
+          throw new Error(`不支持抽取文本的格式: ${path.extname(item.pathOrUri) || '(无后缀)'}`);
+        }
+        const extracted = await extractLibraryText(item.pathOrUri);
+        writeLearnedSidecar(this.libraryDir(item.projectId), item.id, extracted.text);
+        this.repo.updateLearnStatus(id, 'ready', { error: null, now });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.repo.updateLearnStatus(id, 'failed', { error: message, now });
+        logger.warn('Library item learning failed', { id, error });
+      }
+      return this.repo.getItem(id) ?? item;
+    } finally {
+      this.learningIds.delete(id);
     }
-    return this.repo.getItem(id) ?? item;
   }
 
   retryLearn(id: string, now: number = Date.now()): Promise<LibraryItem> {
@@ -167,6 +183,23 @@ export class LibraryService {
     if (!item) throw new Error('Library item not found');
     if (item.learnStatus !== 'failed' && item.learnStatus !== 'pending') return Promise.resolve(item);
     return this.learnItem(id, now);
+  }
+
+  /** 补跑迁移/登记后仍停在 pending 的 upload/artifact，避免旧资料永久待处理。 */
+  sweepPendingLearn(now: number = Date.now(), limit: number = PENDING_LEARN_SWEEP_LIMIT): Promise<number> {
+    if (this.sweepInFlight) return this.sweepInFlight;
+    this.sweepInFlight = this.runPendingLearnSweep(now, limit).finally(() => {
+      this.sweepInFlight = null;
+    });
+    return this.sweepInFlight;
+  }
+
+  private async runPendingLearnSweep(now: number, limit: number): Promise<number> {
+    const ids = this.repo.listPendingLearnIds(limit);
+    for (const id of ids) {
+      await this.learnItem(id, now);
+    }
+    return ids.length;
   }
 
   projectEvidence(query: LibraryEvidenceQuery): LibraryEvidenceProjection {
@@ -241,7 +274,7 @@ export class LibraryService {
     const target = path.join(dir, `${safeName}-${contentHash.slice(0, 8)}.md`);
     if (!fs.existsSync(target)) fs.writeFileSync(target, text);
 
-    return this.addItem({
+    const item = this.addItem({
       projectId,
       title: args.title,
       kind: 'artifact',
@@ -252,6 +285,13 @@ export class LibraryService {
       sourceRoleId: args.sourceRoleId,
       contentHash,
     }, now);
+    if (item.learnStatus === 'pending') {
+      this.repo.updateLearnStatus(item.id, 'running', { error: null, now });
+      writeLearnedSidecar(this.libraryDir(projectId), item.id, text);
+      this.repo.updateLearnStatus(item.id, 'ready', { error: null, now });
+      return this.repo.getItem(item.id) ?? item;
+    }
+    return item;
   }
 
   list(options?: LibraryListOptions): LibraryItem[] {

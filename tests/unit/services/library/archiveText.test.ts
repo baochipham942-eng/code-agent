@@ -58,6 +58,7 @@ describe('LibraryService.archiveText', () => {
     expect(fs.readFileSync(item.pathOrUri, 'utf8')).toBe(text);
     expect(item.sourceSessionId).toBe('cron_session_1');
     expect(item.sourceRoleId).toBe('role_1');
+    expect(item.learnStatus).toBe('ready');
   });
 
   it('同项目同文本按 contentHash 幂等，不产生第二个文件或条目', () => {
@@ -65,7 +66,7 @@ describe('LibraryService.archiveText', () => {
     const second = service.archiveText({ projectId: 'proj_1', title: '第二次', text: 'same output' }, 2000);
 
     expect(second.id).toBe(first.id);
-    expect(fs.readdirSync(path.join(tmpDir, 'library', 'proj_1'))).toHaveLength(1);
+    expect(fs.readdirSync(path.join(tmpDir, 'library', 'proj_1')).filter((name) => name !== '.extracted')).toHaveLength(1);
     expect(service.list({ projectId: 'proj_1' })).toHaveLength(1);
   });
 

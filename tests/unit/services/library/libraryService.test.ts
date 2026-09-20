@@ -160,5 +160,25 @@ describe('LibraryService', () => {
     const miss = service.projectEvidence({ source: path.join(tmpDir, 'missing.md'), location: 'line:1' });
     expect(miss.hit).toBe(false);
     expect(miss.fragment).toBeUndefined();
+
+    const outOfRange = service.projectEvidence({ source: item.pathOrUri, location: 'line:99' });
+    expect(outOfRange.hit).toBe(false);
+    expect(outOfRange.fragment).toBeUndefined();
+  });
+
+  it('可抽取的 artifact 不得假装 ready：先 pending，sweep 后才有 sidecar', async () => {
+    const artifactPath = writeSource('notes.md', '归档正文');
+    const item = service.addItem({
+      title: 'notes.md',
+      kind: 'artifact',
+      pathOrUri: artifactPath,
+    }, 1000);
+    expect(item.learnStatus).toBe('pending');
+    expect(service.projectEvidence({ source: artifactPath, location: 'line:1' }).hit).toBe(false);
+
+    await expect(service.sweepPendingLearn(2000)).resolves.toBe(1);
+    const learned = service.get(item.id);
+    expect(learned?.learnStatus).toBe('ready');
+    expect(service.projectEvidence({ source: artifactPath, location: 'line:1' }).hit).toBe(true);
   });
 });

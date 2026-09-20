@@ -13,7 +13,8 @@ import { useI18n } from '../../hooks/useI18n';
 interface CitationListProps {
   citations: Citation[];
   className?: string;
-  onCitationClick?: (citation: Citation) => void;
+  /** 返回 false 时回落到 chip 默认打开 URL/文件行为 */
+  onCitationClick?: (citation: Citation) => void | boolean | Promise<void | boolean>;
 }
 
 export function CitationList({
@@ -42,7 +43,7 @@ export function CitationList({
 
 interface CitationChipProps {
   citation: Citation;
-  onClick?: (citation: Citation) => void;
+  onClick?: (citation: Citation) => void | boolean | Promise<void | boolean>;
 }
 
 const TYPE_STYLES: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
@@ -58,8 +59,8 @@ function CitationChip({ citation, onClick }: CitationChipProps) {
 
   const handleClick = async () => {
     if (onClick) {
-      onClick(citation);
-      return;
+      const handled = await onClick(citation);
+      if (handled !== false) return;
     }
     // 默认行为：文件类型尝试打开
     if (citation.type === 'file') {

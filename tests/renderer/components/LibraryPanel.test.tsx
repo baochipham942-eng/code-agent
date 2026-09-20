@@ -367,6 +367,10 @@ describe('LibraryPanel', () => {
     await waitFor(() => {
       expect(retryLibraryLearn).toHaveBeenCalledWith('lib_fail');
     });
+    fireEvent.click(screen.getByTestId('library-retry-lib_old'));
+    await waitFor(() => {
+      expect(retryLibraryLearn).toHaveBeenCalledWith('lib_old');
+    });
   });
 
 });

@@ -151,14 +151,14 @@ export function removeLearnedSidecar(libraryDir: string, itemId: string): void {
 
 /**
  * 依据片段：围绕定位行 ±上下文行取窗口，硬 cap 40 行。
- * textLines 为候选全文按行拆分的结果；返回 null 当全文为空。
+ * 全文为空、或定位完全越界时返回 null（不得把空 slice 包装成 hit）。
  */
 export function buildEvidenceFragment(
   text: string,
   window?: { start: number; end: number } | null,
 ): { startLine: number; endLine: number; totalLines: number; text: string } | null {
+  if (!text.trim()) return null;
   const lines = text.split('\n');
-  if (lines.length === 0) return null;
   const totalLines = lines.length;
   const CONTEXT = 3;
   const MAX_WINDOW = 40;
@@ -166,19 +166,22 @@ export function buildEvidenceFragment(
   let start: number;
   let end: number;
   if (window) {
+    if (window.end < 1 || window.start > totalLines) return null;
     start = Math.max(1, window.start - CONTEXT);
     end = Math.min(totalLines, window.end + CONTEXT);
   } else {
     start = 1;
     end = Math.min(totalLines, 20);
   }
+  if (end < start) return null;
   if (end - start + 1 > MAX_WINDOW) end = start + MAX_WINDOW - 1;
-  if (end < start) end = start;
 
+  const fragmentText = lines.slice(start - 1, end).join('\n');
+  if (!fragmentText.trim()) return null;
   return {
     startLine: start,
     endLine: end,
     totalLines,
-    text: lines.slice(start - 1, end).join('\n'),
+    text: fragmentText,
   };
 }

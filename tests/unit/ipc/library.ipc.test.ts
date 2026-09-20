@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     addItem: vi.fn(),
     importFile: vi.fn(),
     retryLearn: vi.fn(),
+    sweepPendingLearn: vi.fn(async () => 0),
     projectEvidence: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
@@ -60,6 +61,7 @@ describe('library IPC', () => {
     const res = await invoke('list', { projectId: 'p1' });
     expect(res).toEqual({ success: true, data: [{ id: 'a' }] });
     expect(mocks.svc.list).toHaveBeenCalledWith({ projectId: 'p1' });
+    expect(mocks.svc.sweepPendingLearn).toHaveBeenCalled();
   });
 
   it('get 缺 itemId 报 INVALID_ARGS，未命中报 NOT_FOUND', async () => {

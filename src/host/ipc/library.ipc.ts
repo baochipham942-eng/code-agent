@@ -78,6 +78,9 @@ const libraryHandlers: RawDomainRouteHandlers<LibraryDomainRequest, void> = {
   list: async (_ctx, payload) => {
     const svc = getLibraryService();
     const options = (payload ?? {}) as LibraryListOptions;
+    void svc.sweepPendingLearn().catch((error) => {
+      logger.warn('Library pending-learn sweep failed', { error });
+    });
     return { success: true, data: svc.list(options) };
   },
   get: async (_ctx, payload) => {
@@ -120,7 +123,7 @@ const libraryHandlers: RawDomainRouteHandlers<LibraryDomainRequest, void> = {
   projectEvidence: async (_ctx, payload) => {
     const svc = getLibraryService();
     const { query } = (payload ?? {}) as EvidencePayload;
-    if (!query?.source) return invalid('query.source is required');
+    if (typeof query?.source !== 'string' || !query.source.trim()) return invalid('query.source is required');
     return { success: true, data: svc.projectEvidence(query as NonNullable<EvidencePayload['query']> & { source: string }) };
   },
   update: async (_ctx, payload) => {

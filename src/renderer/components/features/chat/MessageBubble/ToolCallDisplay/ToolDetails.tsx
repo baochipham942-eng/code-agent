@@ -428,14 +428,30 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
         const rawCitations = toolCall.result?.metadata?.citations;
         if (!Array.isArray(rawCitations) || rawCitations.length === 0) return null;
         const citations = rawCitations as Citation[];
-        const handleCitationClick = async (citation: Citation) => {
+        const handleCitationClick = async (citation: Citation): Promise<boolean> => {
+          if (citation.type === 'url' || citation.type === 'memory') return false;
+          setLibraryEvidence(null);
           setLoadingLibraryEvidence(true);
           try {
-            setLibraryEvidence(await projectLibraryEvidence({
+            const projection = await projectLibraryEvidence({
               source: citation.source,
               location: citation.location,
               lineRange: citation.lineRange,
-            }));
+            });
+            if (!projection.hit) return false;
+            setLibraryEvidence(projection);
+            return true;
+          } catch (error) {
+            setLibraryEvidence({
+              query: {
+                source: citation.source,
+                location: citation.location,
+                lineRange: citation.lineRange,
+              },
+              hit: false,
+              reason: error instanceof Error ? error.message : String(error),
+            });
+            return true;
           } finally {
             setLoadingLibraryEvidence(false);
           }
@@ -445,7 +461,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
             <MemoryCitationGroup citations={citations} />
             <CitationList
               citations={citations.filter((citation) => citation.type !== 'memory')}
-              onCitationClick={(citation) => void handleCitationClick(citation)}
+              onCitationClick={handleCitationClick}
               className="mt-1.5"
             />
             <LibraryEvidenceDrawer

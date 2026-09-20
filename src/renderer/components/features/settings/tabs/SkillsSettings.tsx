@@ -486,7 +486,7 @@ export const SkillsSettings: React.FC = () => {
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
       toast.success(skillsText.exportDownloaded);
     } catch (error) {
       logger.error('Failed to export skill', error);

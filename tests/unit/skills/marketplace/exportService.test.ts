@@ -148,6 +148,15 @@ describe('skill export package', () => {
     await expect(exportInstalledSkill('demo')).rejects.toThrow('SKILL_EXPORT_UNSAFE_ENTRY');
   });
 
+  it('refuses to overwrite a non-zip path under the config dir', async () => {
+    const poison = path.join(mocks.userConfigDir, 'settings.json');
+    await fs.mkdir(path.dirname(poison), { recursive: true });
+    await fs.writeFile(poison, '{"keep":true}', 'utf8');
+    await expect(exportInstalledSkill('demo', { targetPath: poison }))
+      .rejects.toThrow('SKILL_EXPORT_UNSAFE_TARGET');
+    expect(await fs.readFile(poison, 'utf8')).toBe('{"keep":true}');
+  });
+
   it('capability-package-shaped directory is not a skill export', async () => {
     await fs.rm(path.join(skillDir, 'SKILL.md'));
     await fs.writeFile(

@@ -182,6 +182,12 @@ export const NETWORK_TOOL_TIMEOUTS = {
   PDF_TEXT_EXTRACT: 30_000,
 } as const;
 
+/** 资料库学习管线超时（N-LIBRARY-LEARN-STATUS） */
+export const LIBRARY_TIMEOUTS = {
+  /** 学习管线整体 PDF 抽取护栏（坏 PDF 不许挂死 sweep） */
+  LEARN_PDF_EXTRACT: 60_000,
+} as const;
+
 /** 浏览器操作超时 */
 export const BROWSER_TIMEOUTS = {
   /** 浏览器操作默认超时 */

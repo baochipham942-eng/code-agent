@@ -15,12 +15,12 @@
 // 用 PageContent 的 flex 容器形态（scroll/padding 关闭），布局由被嵌组件自管。
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronDown, ChevronRight, Eye, FileText, Globe, Link, Loader2, Package, Pencil, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react';
+import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Eye, FileText, Globe, Link, Loader2, Package, Pencil, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react';
 import { LIBRARY_ITEM_KINDS, type LibraryItem, type LibraryItemKind } from '@shared/contract/library';
 import type { DeliverablePublishInfo, PublishedDeliverableVersion } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { Project } from '@shared/contract/project';
-import { deleteLibraryItem, importLibraryFiles, listLibraryItems, updateLibraryItem } from '../../../services/libraryClient';
+import { deleteLibraryItem, importLibraryFiles, listLibraryItems, retryLibraryLearn, updateLibraryItem } from '../../../services/libraryClient';
 import { listProjects } from '../../../services/projectClient';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -92,6 +92,7 @@ export const LibraryPanel: React.FC = () => {
   const [editingItem, setEditingItem] = useState<LibraryItem | null>(null);
   const [draft, setDraft] = useState<LibraryItemDraft>({ title: '', tags: '', summary: '' });
   const [saving, setSaving] = useState(false);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [selectedKind, setSelectedKind] = useState<LibraryItemKind | 'all'>('all');
   const [search, setSearch] = useState('');
   const [updatedAtDescending, setUpdatedAtDescending] = useState(true);
@@ -225,6 +226,18 @@ export const LibraryPanel: React.FC = () => {
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleRetryLearn = async (item: LibraryItem) => {
+    setRetryingId(item.id);
+    try {
+      const updated = await retryLibraryLearn(item.id);
+      setItems((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
+    } catch (error) {
+      toast.error(t.library.learnRetryFailed + (error instanceof Error ? `: ${error.message}` : ''));
+    } finally {
+      setRetryingId(null);
     }
   };
 
@@ -485,8 +498,9 @@ export const LibraryPanel: React.FC = () => {
                     <th className="w-8 px-2 py-2" />
                     <th className="w-[34%] px-3 py-2 font-medium">{t.library.nameColumn}</th>
                     <th className="w-[14%] px-3 py-2 font-medium">{t.library.typeColumn}</th>
-                    <th className="w-[18%] px-3 py-2 font-medium">{t.library.sourceColumn}</th>
-                    <th className="w-[16%] px-3 py-2 font-medium">
+                    <th className="w-[15%] px-3 py-2 font-medium">{t.library.sourceColumn}</th>
+                    <th className="w-[16%] px-3 py-2 font-medium">{t.library.learnStatusColumn}</th>
+                    <th className="w-[13%] px-3 py-2 font-medium">
                       <button type="button" onClick={() => setUpdatedAtDescending((current) => !current)} className="hover:text-zinc-300" aria-label={t.library.sortByUpdatedAt}>
                         {t.library.updatedAtColumn}
                       </button>
@@ -499,7 +513,7 @@ export const LibraryPanel: React.FC = () => {
                   return (
                     <tbody key={group.id} data-testid={`library-group-${group.id}`}>
                       <tr className="border-y border-zinc-800 bg-zinc-900/70">
-                        <th colSpan={6} className="px-3 py-2 text-left font-medium text-zinc-300">
+                        <th colSpan={7} className="px-3 py-2 text-left font-medium text-zinc-300">
                           <button type="button" onClick={() => toggleGroup(group.id)} className="inline-flex items-center gap-1.5 hover:text-zinc-100" aria-expanded={!collapsed}>
                             {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                             <span>{group.name}</span>
@@ -543,13 +557,22 @@ export const LibraryPanel: React.FC = () => {
                           </td>
                           <td className="px-3 py-2.5 text-zinc-400">{kindLabels[item.kind]}</td>
                           <td className="truncate px-3 py-2.5 text-zinc-400">{item.sourceRoleId || t.library.sourceUpload}</td>
+                          <td className="px-3 py-2.5">
+                            {(() => {
+                              const status = item.learnStatus ?? 'pending';
+                              if (status === 'running') return <span className="inline-flex items-center gap-1 text-badge-info"><Loader2 className="h-3.5 w-3.5 animate-spin" />{t.library.learnRunning}</span>;
+                              if (status === 'ready') return <span className="inline-flex items-center gap-1 text-badge-success"><CheckCircle2 className="h-3.5 w-3.5" />{t.library.learnReady}</span>;
+                              if (status === 'failed') return <div className="min-w-0"><span className="inline-flex items-center gap-1 text-badge-danger" title={item.learnError ?? undefined}><AlertCircle className="h-3.5 w-3.5" />{t.library.learnFailed}</span><div className="mt-0.5 truncate text-[10px] text-badge-danger/80" title={item.learnError ?? undefined}>{item.learnError ?? t.library.learnFailedUnknown}</div><button type="button" className="mt-1 text-[10px] text-badge-info hover:underline" onClick={() => void handleRetryLearn(item)} disabled={retryingId === item.id} data-testid={`library-retry-${item.id}`}>{retryingId === item.id ? t.library.learnRetrying : t.library.learnRetry}</button></div>;
+                              return <span className="inline-flex items-center gap-1 text-zinc-500"><Loader2 className="h-3.5 w-3.5" />{t.library.learnPending}</span>;
+                            })()}
+                          </td>
                           <td className="px-3 py-2.5 text-zinc-500">{new Date(item.updatedAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US')}</td>
                           <td className="px-3 py-2.5"><div className="flex items-center gap-1"><IconButton variant="ghost" size="sm" data-testid={`library-preview-${item.id}`} onClick={() => handlePreview(item)} title={t.library.preview} aria-label={t.library.preview} icon={<Eye className="h-3.5 w-3.5" />} /><IconButton variant="ghost" size="sm" data-testid={`library-edit-${item.id}`} onClick={() => openEdit(item)} title={t.library.edit} aria-label={t.library.edit} icon={<Pencil className="h-3.5 w-3.5" />} /><IconButton variant="danger" size="sm" data-testid={`library-delete-${item.id}`} onClick={() => void handleDelete(item.id)} className={confirmingDelete === item.id ? 'bg-red-500/20 text-badge-danger' : ''} title={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} aria-label={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} icon={<Trash2 className="h-3.5 w-3.5" />} /></div></td>
                         </tr>
                         {expanded && publishModel.publishedVersions.length > 0 && (
                           <tr className="border-t border-zinc-800/80 bg-zinc-950/40" data-testid={`library-versions-${item.id}`}>
                             <td />
-                            <td colSpan={5} className="px-3 py-2.5">
+                            <td colSpan={6} className="px-3 py-2.5">
                               <div className="overflow-hidden rounded-lg border border-teal-500/40 bg-zinc-900/70">
                                 <div className="border-b border-zinc-800 px-3 py-2 text-[11px] text-zinc-500">{t.deliverable.versions}</div>
                                 {publishModel.publishedVersions.map((version, index) => (

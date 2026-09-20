@@ -12,10 +12,21 @@ import { getUserConfigDir } from '../../config/configPaths';
 import type {
   LibraryItem,
   LibraryItemCreateRequest,
+  LibraryEvidenceProjection,
+  LibraryEvidenceQuery,
   LibraryListOptions,
   SessionContextPin,
 } from '@shared/contract/library';
 import { isPathWithinRoot } from '../../runtime/workspaceScope';
+import {
+  buildEvidenceFragment,
+  extractLibraryText,
+  hasLibraryTextExtractor,
+  isTextLikeExtension,
+  readLearnedSidecar,
+  removeLearnedSidecar,
+  writeLearnedSidecar,
+} from './libraryIngest';
 
 const logger = createLogger('LibraryService');
 
@@ -68,6 +79,7 @@ export class LibraryService {
       sourceSessionId: request.sourceSessionId,
       sourceRoleId: request.sourceRoleId,
       contentHash: request.contentHash,
+      learnStatus: request.learnStatus ?? (request.kind === 'upload' ? 'pending' : 'ready'),
       createdAt: now,
       updatedAt: now,
     };
@@ -80,12 +92,12 @@ export class LibraryService {
    * 导入本地文件（桌面原生选择器或 web /api/upload/temp 落地的临时路径）：
    * 拷入资料库目录并登记条目。内容 sha256 去重：同项目相同内容不重复落盘。
    */
-  importFile(args: {
+  async importFile(args: {
     projectId?: string | null;
     sourcePath: string;
     tags?: string[];
     sourceSessionId?: string;
-  }, now: number = Date.now()): LibraryItem {
+  }, now: number = Date.now()): Promise<LibraryItem> {
     const projectId = args.projectId ?? null;
     const data = fs.readFileSync(args.sourcePath);
     if (data.byteLength === 0) {
@@ -113,7 +125,7 @@ export class LibraryService {
     }
     fs.writeFileSync(target, data);
 
-    return this.addItem({
+    const item = this.addItem({
       projectId,
       title: safeName,
       kind: 'upload',
@@ -122,6 +134,84 @@ export class LibraryService {
       sourceSessionId: args.sourceSessionId,
       contentHash,
     }, now);
+    return this.learnItem(item.id, now);
+  }
+
+  /** 跑单条资料的文本学习管线；失败保留真实抽取原因，绝不把失败伪装成 ready。 */
+  async learnItem(id: string, now: number = Date.now()): Promise<LibraryItem> {
+    const item = this.repo.getItem(id);
+    if (!item) throw new Error('Library item not found');
+    if (item.kind !== 'upload' && item.kind !== 'artifact') {
+      this.repo.updateLearnStatus(id, 'ready', { error: null, now });
+      return this.repo.getItem(id) ?? item;
+    }
+
+    this.repo.updateLearnStatus(id, 'running', { error: null, now });
+    try {
+      if (!hasLibraryTextExtractor(item.pathOrUri)) {
+        throw new Error(`不支持抽取文本的格式: ${path.extname(item.pathOrUri) || '(无后缀)'}`);
+      }
+      const extracted = await extractLibraryText(item.pathOrUri);
+      writeLearnedSidecar(this.libraryDir(item.projectId), item.id, extracted.text);
+      this.repo.updateLearnStatus(id, 'ready', { error: null, now });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.repo.updateLearnStatus(id, 'failed', { error: message, now });
+      logger.warn('Library item learning failed', { id, error });
+    }
+    return this.repo.getItem(id) ?? item;
+  }
+
+  retryLearn(id: string, now: number = Date.now()): Promise<LibraryItem> {
+    const item = this.repo.getItem(id);
+    if (!item) throw new Error('Library item not found');
+    if (item.learnStatus !== 'failed' && item.learnStatus !== 'pending') return Promise.resolve(item);
+    return this.learnItem(id, now);
+  }
+
+  projectEvidence(query: LibraryEvidenceQuery): LibraryEvidenceProjection {
+    const item = this.repo.findByPathAnyProject(query.source) ?? this.findItemForSidecar(query.source);
+    if (!item) return { query, hit: false, reason: '未找到对应的资料库条目' };
+    if (item.learnStatus !== 'ready') {
+      return {
+        query,
+        hit: false,
+        item,
+        reason: item.learnStatus === 'failed'
+          ? (item.learnError ?? '资料解析失败')
+          : '资料仍在处理中，尚未生成可用依据',
+      };
+    }
+    const text = readLearnedSidecar(this.libraryDir(item.projectId), item.id)
+      ?? (isTextLikeExtension(item.pathOrUri) ? this.readTextFallback(item.pathOrUri) : null);
+    if (!text) return { query, hit: false, item, reason: '资料没有可展示的抽取文本' };
+    const window = query.lineRange
+      ? { start: Math.min(query.lineRange[0], query.lineRange[1]), end: Math.max(query.lineRange[0], query.lineRange[1]) }
+      : this.parseCitationWindow(query.location);
+    const fragment = buildEvidenceFragment(text, window);
+    if (!fragment) return { query, hit: false, item, reason: '资料没有可展示的片段' };
+    return { query, hit: true, item, fragment };
+  }
+
+  private parseCitationWindow(location?: string): { start: number; end: number } | null {
+    const match = location?.match(/^lines?:(\d+)(?:-(\d+))?$/i);
+    if (!match) return null;
+    const start = Number(match[1]);
+    const end = match[2] ? Number(match[2]) : start;
+    return { start: Math.min(start, end), end: Math.max(start, end) };
+  }
+
+  private findItemForSidecar(source: string): LibraryItem | undefined {
+    const match = source.match(/[\\/]\.extracted[\\/]([^/\\]+)\.md$/);
+    return match ? this.repo.getItem(match[1]) : undefined;
+  }
+
+  private readTextFallback(filePath: string): string | null {
+    try {
+      return fs.readFileSync(filePath, 'utf-8');
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -197,6 +287,7 @@ export class LibraryService {
         }
       }
     }
+    if (removed) removeLearnedSidecar(this.libraryDir(item.projectId), item.id);
     return removed;
   }
 

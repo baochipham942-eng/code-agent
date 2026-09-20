@@ -22,7 +22,11 @@ import { LiveToolOutput } from './LiveToolOutput';
 import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browserComputerRedaction';
 import { getBrowserComputerActionCatalogEntry } from '@shared/utils/browserComputerActionCatalog';
 import { MemoryCitationGroup } from '../../../../citations/MemoryCitationGroup';
+import { CitationList } from '../../../../citations/CitationList';
+import { LibraryEvidenceDrawer } from '../../../../citations/LibraryEvidenceDrawer';
 import type { Citation } from '@shared/contract/citation';
+import type { LibraryEvidenceProjection } from '@shared/contract/library';
+import { projectLibraryEvidence } from '../../../../../services/libraryClient';
 import {
   humanizeToolError,
   buildToolErrorActions,
@@ -157,6 +161,8 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const { name, arguments: args, result } = toolCall;
   const [showDiff, setShowDiff] = useState(true);
   const [showRawError, setShowRawError] = useState(false);
+  const [libraryEvidence, setLibraryEvidence] = useState<LibraryEvidenceProjection | null>(null);
+  const [loadingLibraryEvidence, setLoadingLibraryEvidence] = useState(false);
   const openPreview = useAppStore((state) => state.openPreview);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const { t } = useI18n();
@@ -421,7 +427,34 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
       {(() => {
         const rawCitations = toolCall.result?.metadata?.citations;
         if (!Array.isArray(rawCitations) || rawCitations.length === 0) return null;
-        return <MemoryCitationGroup citations={rawCitations as Citation[]} />;
+        const citations = rawCitations as Citation[];
+        const handleCitationClick = async (citation: Citation) => {
+          setLoadingLibraryEvidence(true);
+          try {
+            setLibraryEvidence(await projectLibraryEvidence({
+              source: citation.source,
+              location: citation.location,
+              lineRange: citation.lineRange,
+            }));
+          } finally {
+            setLoadingLibraryEvidence(false);
+          }
+        };
+        return (
+          <>
+            <MemoryCitationGroup citations={citations} />
+            <CitationList
+              citations={citations.filter((citation) => citation.type !== 'memory')}
+              onCitationClick={(citation) => void handleCitationClick(citation)}
+              className="mt-1.5"
+            />
+            <LibraryEvidenceDrawer
+              projection={libraryEvidence}
+              loading={loadingLibraryEvidence}
+              onClose={() => setLibraryEvidence(null)}
+            />
+          </>
+        );
       })()}
     </div>
   );

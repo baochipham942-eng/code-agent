@@ -10,6 +10,8 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type {
   LibraryItem,
   LibraryItemCreateRequest,
+  LibraryEvidenceProjection,
+  LibraryEvidenceQuery,
   LibraryListOptions,
   SessionContextPin,
 } from '@shared/contract/library';
@@ -43,6 +45,14 @@ export async function importLibraryFiles(args: {
   sourceSessionId?: string;
 }): Promise<LibraryImportResult> {
   return ipcService.invokeDomain<LibraryImportResult>(IPC_DOMAINS.LIBRARY, 'importFiles', args);
+}
+
+export async function retryLibraryLearn(itemId: string): Promise<LibraryItem> {
+  return ipcService.invokeDomain<LibraryItem>(IPC_DOMAINS.LIBRARY, 'retryLearn', { itemId });
+}
+
+export async function projectLibraryEvidence(query: LibraryEvidenceQuery): Promise<LibraryEvidenceProjection> {
+  return ipcService.invokeDomain<LibraryEvidenceProjection>(IPC_DOMAINS.LIBRARY, 'projectEvidence', { query });
 }
 
 export async function deleteLibraryItem(itemId: string): Promise<void> {

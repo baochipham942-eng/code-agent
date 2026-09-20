@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
     get: vi.fn(),
     addItem: vi.fn(),
     importFile: vi.fn(),
+    retryLearn: vi.fn(),
+    projectEvidence: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
     getPin: vi.fn(),
@@ -103,5 +105,20 @@ describe('library IPC', () => {
 
   it('未知 action 报 UNKNOWN_ACTION', async () => {
     expect((await invoke('nope')).error?.code).toBe('UNKNOWN_ACTION');
+  });
+
+  it('retryLearn 缺 itemId 拒绝，有 id 透传服务', async () => {
+    expect((await invoke('retryLearn', {})).error?.code).toBe('INVALID_ARGS');
+    mocks.svc.retryLearn.mockResolvedValue({ id: 'a', learnStatus: 'ready' });
+    const res = await invoke('retryLearn', { itemId: 'a' });
+    expect(res).toEqual({ success: true, data: { id: 'a', learnStatus: 'ready' } });
+  });
+
+  it('projectEvidence 缺 source 拒绝', async () => {
+    expect((await invoke('projectEvidence', { query: {} })).error?.code).toBe('INVALID_ARGS');
+    mocks.svc.projectEvidence.mockReturnValue({ hit: false, query: { source: '/x' } });
+    const res = await invoke('projectEvidence', { query: { source: '/x', location: 'line:1' } });
+    expect(res.success).toBe(true);
+    expect(mocks.svc.projectEvidence).toHaveBeenCalledWith({ source: '/x', location: 'line:1' });
   });
 });

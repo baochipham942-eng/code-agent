@@ -19,6 +19,7 @@ function makeItem(overrides: Partial<LibraryItem> = {}): LibraryItem {
     kind: 'upload',
     pathOrUri: '/tmp/library/Brief.pdf',
     tags: [],
+    learnStatus: 'pending',
     createdAt: 1000,
     updatedAt: 1000,
     ...overrides,
@@ -120,5 +121,15 @@ describe('LibraryRepository', () => {
     repo.createItem(makeItem({ id: 'a' }));
     db.prepare("UPDATE library_items SET tags = 'not-json' WHERE id = 'a'").run();
     expect(repo.getItem('a')?.tags).toEqual([]);
+  });
+
+  it('学习状态只允许 pending/running/ready/failed 合法迁移', () => {
+    repo.createItem(makeItem({ id: 'learn' }));
+    expect(repo.updateLearnStatus('learn', 'running', { now: 1100 })).toBe(true);
+    expect(repo.updateLearnStatus('learn', 'ready', { now: 1200 })).toBe(true);
+    expect(() => repo.updateLearnStatus('learn', 'failed', { now: 1300 })).toThrow(/Invalid library learn status transition/);
+    expect(repo.updateLearnStatus('learn', 'running', { now: 1400 })).toBe(true);
+    expect(repo.updateLearnStatus('learn', 'failed', { error: 'parse failed', now: 1500 })).toBe(true);
+    expect(repo.getItem('learn')).toMatchObject({ learnStatus: 'failed', learnError: 'parse failed', learnUpdatedAt: 1500 });
   });
 });

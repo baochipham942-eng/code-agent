@@ -234,7 +234,10 @@ export async function executeReadPdf(
   }
 }
 
-async function extractSelectablePdfText(
+// 导出复用（N-LIBRARY-LEARN-STATUS）：资料库学习管线用同一条本地 pdftotext 抽取路径，
+// 不另造一份二进制探测/attempt 记录逻辑。OpenRouter 视觉通道刻意不进学习管线——
+// 入库解析要可离线可重试，不能把「是否配了外部 API key」变成学习能否完成的前提。
+export async function extractSelectablePdfText(
   filePath: string,
   abortSignal: AbortSignal,
   logger: ToolContext['logger'],

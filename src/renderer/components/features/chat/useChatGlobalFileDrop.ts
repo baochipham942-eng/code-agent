@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type { MessageAttachment } from '@shared/contract';
 import { collectDroppedAttachmentsAndSkillZips } from './ChatInput/utils';
-import { divertDroppedSkillZips } from '../../services/skillLocalZip';
+import { divertDroppedSkillZips } from '../../../services/skillLocalZip';
 
 export function useChatGlobalFileDrop(args: {
   processFile: (file: File) => Promise<MessageAttachment | null>;

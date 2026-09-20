@@ -7,6 +7,8 @@
 
 import type { ToolContext, ToolExecutionResult } from '../types';
 import { classifyBrowserComputerManualTakeover } from '../../../shared/utils/browserComputerRedaction';
+
+const GATED_TAKEOVER_CLASSES = new Set<string>(['captcha_or_risk_control', 'mfa_required']);
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('BrowserCaptchaGate', { lane: 'browser' });
@@ -54,7 +56,9 @@ export async function enforceBrowserCaptchaTakeoverGate(
     return null;
   }
   const takeover = classifyBrowserComputerManualTakeover(visibleText);
-  if (!takeover) {
+  // 只拦人机验证/风控与 MFA：login_required 的判据含裸「登录」字样，国内页面几乎都有登录入口，
+  // 拦它会把普通点击全拖进审批（工单①口径：captcha / mfa / 风控）。登录墙交给主模型正常处理。
+  if (!takeover || !GATED_TAKEOVER_CLASSES.has(takeover)) {
     return null;
   }
   const approved = await input.context.requestPermission({

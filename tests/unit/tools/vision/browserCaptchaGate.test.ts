@@ -230,6 +230,21 @@ describe('browser_action captcha takeover gate (JBS-09 主路径)', () => {
     expect(requestPermission).toHaveBeenCalledTimes(0);
   });
 
+  it('登录页（只有「登录 / 请登录」字样，分类器判 login_required）不触发审批门：国内页面几乎都有登录入口', async () => {
+    browserMocks.state.running = true;
+    await browserMocks.service.newTab('https://example.com/login');
+    const tab = browserMocks.state.tabs.find((t) => t.id === browserMocks.state.activeTabId);
+    if (tab) tab.title = '登录 - 示例站';
+    browserMocks.state.pageText = '请登录后继续。账号 密码 登录 忘记密码 注册';
+    const requestPermission = vi.fn(async () => false);
+    const result = await browserActionTool.execute(
+      { action: 'click', selector: '#login-button' },
+      makeContext(requestPermission),
+    );
+    expect(result.success).toBe(true);
+    expect(requestPermission).toHaveBeenCalledTimes(0);
+  });
+
   it('正常页面（无人机验证标记）click 不触发审批门', async () => {
     browserMocks.state.running = true;
     await browserMocks.service.newTab('https://example.com');

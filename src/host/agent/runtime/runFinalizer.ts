@@ -147,10 +147,6 @@ function formatTerminalError(error: unknown): string {
   return summarizeModelErrorForUser(raw, getModelErrorStatus(error));
 }
 
-export function allowEmptyAssistantCompletion(ctx: { unattendedTurn?: boolean }): boolean {
-  return ctx.unattendedTurn === true || process.env.CODE_AGENT_CLI_MODE === 'true';
-}
-
 function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
   let seenLastUser = false;
 
@@ -364,7 +360,7 @@ export class RunFinalizer {
       && !hasTerminalWakeNoopAfterLastUser(this.ctx.messages)
       && !this.ctx.circuitBreaker.isTripped()
       && iterations < this.ctx.maxIterations
-      && !allowEmptyAssistantCompletion(this.ctx)
+      && this.ctx.unattendedTurn !== true
     ) {
       terminalStatus = 'failed';
       terminalError = new Error('任务已结束，执行记录和产物已保留。这一轮没有生成最终说明，请直接查看上面的工具结果。');

@@ -19,6 +19,7 @@ import type {
   RunLeaseClaimResult,
   RunRehydrationPlan,
 } from './durableRunStores';
+import { canClaimOrphanedCliLease, isAbandonedCliProcess } from './cliOrphanLease';
 import { createKeyedSerializer } from './keyedSerializer';
 
 export class DurableRunPersistenceUnavailableError extends Error {
@@ -206,10 +207,11 @@ export class DurableRunKernel implements RunKernelAdapter {
   }
 
   async getLatestBySession(sessionId: string): Promise<RunEnvelope | null> {
-    const stores = this.requireStores() as DurableRunStores & {
-      getLatestBySession?: (id: string) => Promise<RunEnvelope | null>;
-    };
-    return stores.getLatestBySession?.(sessionId) ?? null;
+    return this.requireStores().getLatestBySession(sessionId);
+  }
+
+  async getLatestActiveRootBySession(sessionId: string): Promise<RunEnvelope | null> {
+    return this.requireStores().getLatestActiveRootBySession(sessionId);
   }
 
   async stealLease(input: {
@@ -234,28 +236,42 @@ export class DurableRunKernel implements RunKernelAdapter {
     now?: number;
   }): Promise<boolean> {
     const now = input.now ?? Date.now();
-    const latest = await this.getLatestBySession(input.sessionId);
+    const latest = await this.getLatestActiveRootBySession(input.sessionId);
     if (!latest || isTerminalRunStatus(latest.status) || latest.parentRunId) return false;
     if (latest.owner?.ownerId !== input.expectedOwnerId) return false;
     if (latest.owner.processInstanceId === input.processInstanceId) return false;
-    const stealNow = Math.max(now, (latest.owner.leaseExpiresAt ?? 0) + 1);
-    const claimed = await this.stealLease({
-      runId: latest.runId,
-      expectedEpoch: latest.owner.epoch,
-      now: stealNow,
-    });
+    if (!canClaimOrphanedCliLease(latest.owner.processInstanceId, latest.owner.leaseExpiresAt, now)) {
+      return false;
+    }
+    const expired = (latest.owner.leaseExpiresAt ?? 0) <= now;
+    const abandoned = isAbandonedCliProcess(latest.owner.processInstanceId);
+    const claimed = abandoned && !expired
+      ? await this.requireStores().claimAbandonedLease({
+          runId: latest.runId,
+          expectedEpoch: latest.owner.epoch,
+          ownerId: this.ownerId,
+          processInstanceId: this.processInstanceId,
+          now,
+          leaseDurationMs: this.leaseDurationMs,
+          abandonedProcessInstanceId: latest.owner.processInstanceId,
+        })
+      : await this.stealLease({
+          runId: latest.runId,
+          expectedEpoch: latest.owner.epoch,
+          now,
+        });
     if (!claimed) return false;
     await this.terminal({
       runId: latest.runId,
       attempt: claimed.attempt.attempt,
       owner: claimed.owner,
-      now: stealNow,
+      now,
       status: 'cancelled',
       reason: 'orphaned_cli_session_root',
       event: {
         type: 'run_cancelled',
         payload: { sessionId: input.sessionId, reason: 'orphaned_cli_session_root' },
-        recordedAt: stealNow,
+        recordedAt: now,
       },
     });
     return true;

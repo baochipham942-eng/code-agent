@@ -30,4 +30,40 @@ describe('createKeyedSerializer', () => {
     });
     expect(seen).toEqual(['outer', 'inner', 'after']);
   });
+
+  it('queues a sibling that arrives while the holder is awaiting', async () => {
+    const serialize = createKeyedSerializer();
+    const seen: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started!: () => void;
+    const startedGate = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+
+    const first = serialize('a', async () => {
+      started();
+      await gate;
+      seen.push('first');
+      await serialize('a', async () => {
+        seen.push('nested');
+      });
+    });
+    await startedGate;
+
+    let siblingRan = false;
+    const second = serialize('a', async () => {
+      siblingRan = true;
+      seen.push('second');
+    });
+    await Promise.resolve();
+    expect(siblingRan).toBe(false);
+    expect(seen).toEqual([]);
+
+    release();
+    await Promise.all([first, second]);
+    expect(seen).toEqual(['first', 'nested', 'second']);
+  });
 });

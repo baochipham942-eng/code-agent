@@ -30,6 +30,10 @@ export interface RunLeaseClaim {
   leaseDurationMs: number;
 }
 
+export interface RunAbandonedLeaseClaim extends RunLeaseClaim {
+  abandonedProcessInstanceId: string;
+}
+
 export interface RunTransition {
   runId: string;
   expectedStatus: RunStatus;
@@ -56,9 +60,16 @@ export interface EventAppendRequest {
 export interface RunStore {
   create(envelope: RunEnvelope, attempt: RunAttempt): Promise<void>;
   get(runId: string): Promise<RunEnvelope | null>;
+  getLatestBySession(sessionId: string): Promise<RunEnvelope | null>;
+  getLatestActiveRootBySession(sessionId: string): Promise<RunEnvelope | null>;
   listRecoverable(now: number, limit: number): Promise<RunEnvelope[]>;
   /** Claims the owner, increments attempt, and appends the attempt row in one transaction. */
   claimLease(claim: RunLeaseClaim): Promise<RunLeaseClaimResult | null>;
+  /**
+   * Take over a lease whose owning CLI process is gone, even if the wall-clock
+   * expiry has not passed. The abandoned process_instance_id must still match.
+   */
+  claimAbandonedLease(claim: RunAbandonedLeaseClaim): Promise<RunLeaseClaimResult | null>;
   renewLease(runId: string, owner: RunOwnerLease, leaseExpiresAt: number): Promise<boolean>;
   transition(input: RunTransition): Promise<RunEnvelope | null>;
   releaseLease(runId: string, owner: RunOwnerLease, now: number): Promise<boolean>;

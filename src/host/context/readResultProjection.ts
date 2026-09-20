@@ -9,7 +9,12 @@ import { TOOL_RESULT_SPILL } from '../../shared/constants';
 const READ_RECEIPT_PREFIX = '[Read already shown';
 const READ_TOOL_NAMES = new Set(['read', 'read_file']);
 const TRUNCATION_MARKER = /\[(?:\d+\s+lines?\s+)?truncated(?:[,\]])|\b\d+\s+lines?\s+truncated\b/i;
-const ARCHIVED_OUTPUT_MARKERS = ['[TOOL_RESULT_ARCHIVED]', TOOL_RESULT_SPILL.NOTICE_MARKER];
+const ARCHIVED_OUTPUT_MARKERS = [
+  '[TOOL_RESULT_ARCHIVED]',
+  TOOL_RESULT_SPILL.NOTICE_MARKER,
+  '[snipped: message compressed]',
+  '[collapsed:',
+];
 const READ_DIGEST_RE = /^Read version digest:\s*([a-f0-9]+)\b/im;
 
 type ReadCall = Pick<ToolCall, 'id' | 'name' | 'arguments'>;

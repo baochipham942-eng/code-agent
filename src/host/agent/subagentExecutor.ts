@@ -47,7 +47,8 @@ import {
   buildInitialSubagentMessages,
   buildObservation,
   buildSnapshotAnnotations,
-  createRuntimeMessage, materializeObservedMessages,
+  createRuntimeMessage,
+  materializeObservedMessages,
   type RuntimeMessage,
 } from './subagentExecutorProjection';
 import {

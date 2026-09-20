@@ -107,6 +107,27 @@ describe('Read model-facing projection', () => {
     expect(projected[3].content).toContain('full content');
   });
 
+  it('does not seed dedupe from snipped Read placeholders that still carry digest metadata', () => {
+    const entries = [
+      { role: 'assistant', content: '', toolCalls: [readCall('c1')] },
+      {
+        role: 'tool',
+        content: '[snipped: message compressed]',
+        toolCallId: 'c1',
+        toolResultMetadata: { digest: 'abc123', shownRange: { startLine: 1, endLine: 2, totalLines: 2 } },
+      },
+      { role: 'assistant', content: '', toolCalls: [readCall('c2')] },
+      {
+        role: 'tool',
+        content: 'Read version digest: abc123\nfull content',
+        toolCallId: 'c2',
+        toolResultMetadata: { digest: 'abc123', shownRange: { startLine: 1, endLine: 2, totalLines: 2 } },
+      },
+    ];
+    const projected = projectReadTranscriptEntries(entries);
+    expect(projected[3].content).toBe('Read version digest: abc123\nfull content');
+  });
+
   it('projects the flattened native-subagent pair without changing its tool call', () => {
     const output = flattenSubagentRead('Success', 'Read version digest: abc123\n  1\talpha\n  2\tbeta');
     const projected = projectReadSubagentMessages(flattenedReadPair(output, output));

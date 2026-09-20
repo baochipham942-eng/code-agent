@@ -32,9 +32,12 @@ function parseRequiredSkillFrontmatter(content: string): { name: string; descrip
   if (!name || !description) {
     throw new Error(`${SKILL_ZIP_INVALID_FRONTMATTER}: name and description are required`);
   }
-  // 与 skillParser SKILL_NAME_REGEX 同口径，否则 discovery 会静默丢掉已落盘的包。
-  if (!/^[a-z]([a-z0-9-]*[a-z0-9])?$/.test(name) || name.includes('--')) {
+  // 与 skillParser.validateSkillName + description 上限同口径，否则 discovery 会静默丢掉已落盘的包。
+  if (name.length > 64 || !/^[a-z]([a-z0-9-]*[a-z0-9])?$/.test(name) || name.includes('--')) {
     throw new Error(`${SKILL_ZIP_INVALID_FRONTMATTER}: invalid skill name`);
+  }
+  if (description.length > 1024) {
+    throw new Error(`${SKILL_ZIP_INVALID_FRONTMATTER}: description exceeds 1024 characters`);
   }
   return { name, description };
 }

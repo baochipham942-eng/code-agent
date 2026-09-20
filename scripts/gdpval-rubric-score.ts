@@ -44,11 +44,18 @@ const MAX_INPUT_CHARS = 60000;
  * 实测 gdp-476db143 为了读两个 PDF 装了 `.venv`，产物清单直接变成 577 个文件——
  * 提取额度被吃光，提示词里也全是无关文件名。
  */
-const SKIP_DIRS = new Set(['.code-agent', '.git', '.venv', 'venv', 'node_modules', '__pycache__', '.pytest_cache', '.mypy_cache', 'dist', 'build', '.next', '.cache']);
+// 只跳**依赖与缓存**树。dist / build / .next 不在表里：那是构建输出，
+// 一份网页报告、一个打包好的站点很可能正是交付物，跳掉就静默漏读、条目全判未满足。
+const SKIP_DIRS = new Set(['.code-agent', '.git', '.venv', 'venv', 'node_modules', '__pycache__', '.pytest_cache', '.mypy_cache']);
 /** 产物文件数上限；再多也只是噪声，超出的只报数量。 */
 const MAX_FILES = 60;
-/** 展开内容的工作表数上限；与 perSheet 的下限配套，保证不顶穿 MAX_FILE_CHARS。 */
+/** 展开内容的工作表数上限；与 perSheet 配套，保证不顶穿 MAX_FILE_CHARS。 */
 const MAX_SHEETS = 15;
+/**
+ * 「没给模型看正文」的统一措辞。必须与提示词里 pass="unknown" 的触发形状对得上：
+ * 用别的说法（比如「超出上限未读正文」）模型会当成「产物里没有」判 false 并计入分母。
+ */
+const TRUNCATED_MARK = '未给出内容';
 const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.tsv', '.json', '.html', '.htm', '.xml', '.py', '.js', '.ts', '.css', '.yaml', '.yml', '.log', '.sql']);
 
 /** 非法数值参数当场退出，不带着 NaN 往下跑——chunkRubric 的循环遇到 NaN 会永不前进。 */
@@ -93,7 +100,7 @@ function parseArgs(): { patrol: string; run: string; only: string[]; batch: numb
  * 要判 PDF 正文时再接 poppler pdftotext（仓里已有 sidecar，见 scripts/lib/poppler-sidecar-release.mjs）。
  */
 async function extractFile(absPath: string, relPath: string): Promise<GdpvalArtifactFile> {
-  const bytes = fs.statSync(absPath).size;
+  let bytes = 0;
   const ext = path.extname(absPath).toLowerCase();
   // 截断要说清楚截了多少：模型据此把「整表存在性」类判据填 unknown 而不是硬判 false。
   const clip = (value: string): string => {
@@ -103,6 +110,7 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
     return `${kept}…\n[本文件共 ${lines} 行，以上只给出前 ${kept.split('\n').length} 行]`;
   };
   try {
+    bytes = fs.statSync(absPath).size;
     if (TEXT_EXT.has(ext)) return { path: relPath, bytes, text: clip(fs.readFileSync(absPath, 'utf8')) };
     if (ext === '.xlsx' || ext === '.xls' || ext === '.xlsm') {
       const workbook = XLSX.read(fs.readFileSync(absPath), { type: 'buffer' });
@@ -111,12 +119,17 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
       // 总体量 N、样本量全没进提示词，模型据此把三条判据全判成「没有」）。
       // 每张表的下限和表数上限要一起定，否则 20 张表 × 4000 字就把单文件上限顶穿了。
       // 展开前 MAX_SHEETS 张，其余只报表名与行数——多工作表工作簿的主表通常在前面。
-      const expanded = workbook.SheetNames.slice(0, MAX_SHEETS);
-      const perSheet = Math.max(2000, Math.floor(MAX_FILE_CHARS / Math.min(workbook.SheetNames.length, MAX_SHEETS)));
-      const sheets = workbook.SheetNames.map((name) => {
-        const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[name]);
+      const perSheet = Math.floor(MAX_FILE_CHARS / Math.min(workbook.SheetNames.length, MAX_SHEETS));
+      const sheets = workbook.SheetNames.map((name, index) => {
+        const sheet = workbook.Sheets[name];
+        if (index >= MAX_SHEETS) {
+          // 未展开的表不做全量 sheet_to_csv，只从 !ref 读范围拿行数。
+          const ref = sheet['!ref'];
+          const rows = ref ? XLSX.utils.decode_range(ref).e.r + 1 : 0;
+          return `# sheet: ${name}（共 ${rows} 行，${TRUNCATED_MARK}）`;
+        }
+        const csv = XLSX.utils.sheet_to_csv(sheet);
         const rows = csv.split('\n').length;
-        if (!expanded.includes(name)) return `# sheet: ${name}（共 ${rows} 行，超出展开上限未给出内容）`;
         if (csv.length <= perSheet) return `# sheet: ${name}（共 ${rows} 行）\n${csv}`;
         const kept = csv.slice(0, perSheet);
         return `# sheet: ${name}（共 ${rows} 行，以下只给出前 ${kept.split('\n').length} 行）\n${kept}…`;
@@ -168,10 +181,19 @@ async function main(): Promise<void> {
   console.log(`评分模型：${judge ? `${judge.provider}/${judge.model}` : '未配置'}`);
   if (!judge) process.exit(1);
 
-  let tasks = bank.filter((task) => Array.isArray(task._rubric) && task._rubric.length > 0
-    && isInsideRoot(artifactsRoot, path.join(artifactsRoot, task.id))
+  let tasks = bank.filter((task) => Array.isArray(task._rubric) && task._rubric.length > 0);
+  if (options.only.length > 0) {
+    // --only 先生效：题号打错和「该夜没产物」要分得开，都报「本次评 0 题」查不出是哪种。
+    const missing = options.only.filter((id) => !tasks.some((task) => task.id === id));
+    if (missing.length > 0) console.warn(`题库里没有这些题（或它们没有 rubric）：${missing.join(', ')}`);
+    tasks = tasks.filter((task) => options.only.includes(task.id));
+  }
+  const withoutArtifacts = tasks.filter((task) => !fs.existsSync(path.join(artifactsRoot, task.id)));
+  if (options.only.length > 0 && withoutArtifacts.length > 0) {
+    console.warn(`这一夜没有产物，跳过：${withoutArtifacts.map((task) => task.id).join(', ')}`);
+  }
+  tasks = tasks.filter((task) => isInsideRoot(artifactsRoot, path.join(artifactsRoot, task.id))
     && fs.existsSync(path.join(artifactsRoot, task.id)));
-  if (options.only.length > 0) tasks = tasks.filter((task) => options.only.includes(task.id));
   if (options.limit > 0) tasks = tasks.slice(0, options.limit);
   console.log(`本次评 ${tasks.length} 题（题库有 rubric 且这一夜留下了产物的）\n`);
 
@@ -190,9 +212,13 @@ async function main(): Promise<void> {
     if (allRels.length > MAX_FILES) console.warn(`  ${task.id}：产物 ${allRels.length} 个，只取前 ${MAX_FILES} 个`);
     const files: GdpvalArtifactFile[] = [];
     let used = 0;
+    let skippedForBudget = 0;
     for (const rel of rels) {
       if (used >= MAX_TASK_CHARS) {
-        files.push({ path: rel, bytes: fs.statSync(path.join(taskRoot, rel)).size, text: '[超出本题提取上限，未读正文]' });
+        // 占位必须用与截断同一套措辞，否则模型按「产物里没有」判 false 并计入分母——
+        // 那正是本分支花三个 commit 从 17% 修到 100% 的同一类失真。
+        skippedForBudget += 1;
+        files.push({ path: rel, bytes: fs.statSync(path.join(taskRoot, rel)).size, text: `[${TRUNCATED_MARK}]` });
         continue;
       }
       const file = await extractFile(path.join(taskRoot, rel), rel);
@@ -200,6 +226,10 @@ async function main(): Promise<void> {
       files.push(file);
     }
 
+    if (skippedForBudget > 0) {
+      console.warn(`  ${task.id}：产物总量超过 ${MAX_TASK_CHARS} 字，${skippedForBudget} 个文件没给模型看正文`
+        + '（这些文件相关的条目会被判弃权，不是判负）');
+    }
     const inputs: GdpvalArtifactFile[] = [];
     let inputUsed = 0;
     for (const abs of task._reference_files ?? []) {
@@ -212,7 +242,7 @@ async function main(): Promise<void> {
         continue;
       }
       if (inputUsed >= MAX_INPUT_CHARS) break;
-      const file = await extractFile(abs, path.basename(abs));
+      const file = await extractFile(abs, path.join(path.basename(path.dirname(abs)), path.basename(abs)));
       inputUsed += file.text.length;
       inputs.push(file);
     }

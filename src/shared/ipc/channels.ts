@@ -51,6 +51,8 @@ export const SKILL_CHANNELS = {
   SKILL_PROJECT_SET: 'skill:project:set',
   /** 清除当前项目内的 skill 覆盖，回落全局 */
   SKILL_PROJECT_CLEAR: 'skill:project:clear',
+  /** 导出已安装 skill 为 SKILL.md ZIP（只生产，装回仍走现有安装链） */
+  SKILL_EXPORT: 'skill:export',
 
   // ------------------------------------------------------------------------
   // 会话挂载

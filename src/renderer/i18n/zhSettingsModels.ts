@@ -458,6 +458,10 @@ export const zhSettingsModels = {
         customTitle: '添加自定义 Skill 库',
         customDescription: '输入 GitHub 或魔搭（ModelScope）仓库 URL，仓库根目录需包含 skill 目录结构',
         addRepo: '添加仓库',
+        exportFailed: '导出失败',
+        exportSaveDialogTitle: '导出 Skill',
+        exportSavedPrefix: '已导出到 ',
+        exportDownloaded: 'Skill 导出已下载',
       },
       installed: {
         groupLabels: {
@@ -488,6 +492,8 @@ export const zhSettingsModels = {
         noDiscoveredSkill: '还没有发现 Skill',
         update: '更新',
         emptyLibrary: '该库中没有可用的 Skill',
+        exportAction: '导出',
+        exportAriaPrefix: '导出 ',
       },
       discover: {
         registryTitle: '官方市场',

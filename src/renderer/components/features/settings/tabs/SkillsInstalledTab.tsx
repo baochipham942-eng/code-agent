@@ -6,6 +6,7 @@ import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BookOpen,
+  Download,
   Package,
   RefreshCw,
   Search,
@@ -118,6 +119,14 @@ export function groupBuiltinSkillsByCategory(
     });
   }
   return groups;
+}
+
+/**
+ * 可导出的 skill：本机 user/project 目录里的 skill 才有导出入口
+ * （builtin/cloud 是发行内容、library/plugin 归仓库与插件链管，都不走导出）。
+ */
+export function isSkillExportable(skill: Pick<ParsedSkill, 'source'>): boolean {
+  return skill.source === 'user' || skill.source === 'project';
 }
 
 /**
@@ -273,7 +282,9 @@ interface SkillRowProps {
   labels: SkillsInstalledLabels;
   onToggle: (skillName: string, enabled: boolean) => void;
   onProjectOverrideChange: (skillName: string, value: ProjectOverrideValue) => void;
+  onExport?: (skillName: string) => void;
   toggleDisabled?: boolean;
+  exportDisabled?: boolean;
 }
 
 const SkillRow: React.FC<SkillRowProps> = ({
@@ -281,7 +292,9 @@ const SkillRow: React.FC<SkillRowProps> = ({
   labels,
   onToggle,
   onProjectOverrideChange,
+  onExport,
   toggleDisabled,
+  exportDisabled,
 }) => {
   const hasMissingDeps = skill.dependencyStatus && !skill.dependencyStatus.satisfied;
   const missingDepsTitle = hasMissingDeps
@@ -334,6 +347,20 @@ const SkillRow: React.FC<SkillRowProps> = ({
         <option value="on">{labels.projectOverrideOn}</option>
         <option value="off">{labels.projectOverrideOff}</option>
       </select>
+      {onExport && isSkillExportable(skill) && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onExport(skill.name)}
+          loading={exportDisabled}
+          leftIcon={!exportDisabled ? <Download className="h-3 w-3" /> : undefined}
+          disabled={toggleDisabled}
+          aria-label={`${labels.exportAriaPrefix}${skill.name}`}
+          className="shrink-0"
+        >
+          {labels.exportAction}
+        </Button>
+      )}
       <Toggle
         checked={globalEnabled}
         onChange={(next) => onToggle(skill.name, next)}
@@ -354,6 +381,7 @@ export interface SkillsInstalledTabProps {
   actionLoading: string | null;
   onToggleSkill: (skillName: string, enabled: boolean) => void;
   onProjectOverrideChange: (skillName: string, value: ProjectOverrideValue) => void;
+  onExportSkill: (skillName: string) => void;
   onUpdateLibrary: (repoId: string) => void;
   onRemoveLibrary: (repoId: string) => void;
 }
@@ -364,6 +392,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
   actionLoading,
   onToggleSkill,
   onProjectOverrideChange,
+  onExportSkill,
   onUpdateLibrary,
   onRemoveLibrary,
 }) => {
@@ -487,7 +516,9 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                               labels={installedText}
                               onToggle={onToggleSkill}
                               onProjectOverrideChange={onProjectOverrideChange}
+                              onExport={onExportSkill}
                               toggleDisabled={Boolean(actionLoading)}
+                              exportDisabled={actionLoading === `export-${skill.name}`}
                             />
                           ))}
                         </div>
@@ -501,10 +532,12 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                         key={`${skill.source}:${skill.basePath || skill.name}`}
                         skill={skill}
                         labels={installedText}
-                        onToggle={onToggleSkill}
-                        onProjectOverrideChange={onProjectOverrideChange}
-                        toggleDisabled={Boolean(actionLoading)}
-                      />
+                      onToggle={onToggleSkill}
+                      onProjectOverrideChange={onProjectOverrideChange}
+                      onExport={onExportSkill}
+                      toggleDisabled={Boolean(actionLoading)}
+                      exportDisabled={actionLoading === `export-${skill.name}`}
+                    />
                     ))}
                   </div>
                 )}

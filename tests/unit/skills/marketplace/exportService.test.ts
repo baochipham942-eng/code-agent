@@ -48,10 +48,7 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
-import {
-  exportInstalledSkill,
-  packageSkillDirectory,
-} from '../../../../src/host/skills/marketplace/exportService';
+import { exportInstalledSkill } from '../../../../src/host/skills/marketplace/exportService';
 import {
   installPlugin,
   listInstalledPlugins,
@@ -123,14 +120,15 @@ describe('skill export package', () => {
     expect(record?.skills).toEqual(['demo']);
 
     const installedSkillDir = path.join(record!.pluginRoot!, 'demo');
-    const repacked = await packageSkillDirectory(installedSkillDir);
+    mocks.discoveredSkills = [{ ...mocks.discoveredSkills[0]!, basePath: installedSkillDir }];
+    const repacked = await exportInstalledSkill('demo');
     expect(repacked.skillDirName).toBe(meta.name);
     expect(repacked.contentHash).toBe(meta.contentHash);
   });
 
   it('rejects a skill directory without SKILL.md', async () => {
     await fs.rm(path.join(skillDir, 'SKILL.md'));
-    await expect(packageSkillDirectory(skillDir)).rejects.toThrow('SKILL_EXPORT_INVALID_SHAPE');
+    await expect(exportInstalledSkill('demo')).rejects.toThrow('SKILL_EXPORT_INVALID_SHAPE');
   });
 
   it('rejects path traversal entry names before extraction', async () => {
@@ -147,6 +145,16 @@ describe('skill export package', () => {
     await fs.writeFile(path.join(tempRoot, 'outside.txt'), 'outside', 'utf8');
     await fs.symlink(path.join(tempRoot, 'outside.txt'), path.join(skillDir, 'linked.txt'));
 
-    await expect(packageSkillDirectory(skillDir)).rejects.toThrow('SKILL_EXPORT_UNSAFE_ENTRY');
+    await expect(exportInstalledSkill('demo')).rejects.toThrow('SKILL_EXPORT_UNSAFE_ENTRY');
+  });
+
+  it('capability-package-shaped directory is not a skill export', async () => {
+    await fs.rm(path.join(skillDir, 'SKILL.md'));
+    await fs.writeFile(
+      path.join(skillDir, 'plugin.json'),
+      JSON.stringify({ name: 'demo', skills: ['demo'] }),
+      'utf8',
+    );
+    await expect(exportInstalledSkill('demo')).rejects.toThrow('SKILL_EXPORT_INVALID_SHAPE');
   });
 });

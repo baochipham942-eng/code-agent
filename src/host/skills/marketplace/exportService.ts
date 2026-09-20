@@ -36,7 +36,7 @@ const SKILL_EXPORT_INVALID_SHAPE = 'SKILL_EXPORT_INVALID_SHAPE';
 const SKILL_EXPORT_NOT_FOUND = 'SKILL_EXPORT_NOT_FOUND';
 const SKILL_EXPORT_SOURCE_UNSUPPORTED = 'SKILL_EXPORT_SOURCE_UNSUPPORTED';
 
-export interface SkillExportMeta {
+interface SkillExportMeta {
   /** skill 目录名（装回后 installService 记录的 skill 名） */
   name: string;
   /** 来自 SKILL.md frontmatter metadata.version，缺省省略 */
@@ -168,7 +168,7 @@ async function generateZip(zip: JSZip): Promise<Buffer> {
 /**
  * 把一个 skill 目录打成导出包（不查 discovery，装回复核也用它对安装后的目录重算 hash）。
  */
-export async function packageSkillDirectory(
+async function packageSkillDirectory(
   skillDir: string,
   options: { skillName?: string; version?: string } = {},
 ): Promise<SkillExportPayload> {

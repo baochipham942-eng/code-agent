@@ -125,7 +125,7 @@ export function groupBuiltinSkillsByCategory(
  * 可导出的 skill：本机 user/project 目录里的 skill 才有导出入口
  * （builtin/cloud 是发行内容、library/plugin 归仓库与插件链管，都不走导出）。
  */
-export function isSkillExportable(skill: Pick<ParsedSkill, 'source'>): boolean {
+function isSkillExportable(skill: Pick<ParsedSkill, 'source'>): boolean {
   return skill.source === 'user' || skill.source === 'project';
 }
 

@@ -17,7 +17,7 @@ function connectedClient(now: () => number) {
     config: { name: 'remote', type: 'http-streamable', serverUrl: 'https://example.test/mcp', enabled: true },
     status: 'connected', toolCount: 0, resourceCount: 0,
   });
-  (client as unknown as { lastUsedAt: Map<string, number> }).lastUsedAt.set('remote', 0);
+  (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('remote', 0);
   return { client, sdkClient };
 }
 
@@ -30,7 +30,7 @@ describe('MCPClient idle connection reaping', () => {
     const client = new MCPClient({ idleReaping: { enabled: false, ttlMs: 1, scanIntervalMs: 1 }, now: () => now });
     const sdkClient = { close: vi.fn(async () => {}) };
     (client as unknown as { clients: Map<string, unknown> }).clients.set('remote', sdkClient);
-    (client as unknown as { lastUsedAt: Map<string, number> }).lastUsedAt.set('remote', 0);
+    (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('remote', 0);
     now = 100;
     await vi.advanceTimersByTimeAsync(100);
     expect(sdkClient.close).not.toHaveBeenCalled();

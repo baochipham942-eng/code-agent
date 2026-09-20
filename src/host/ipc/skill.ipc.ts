@@ -306,6 +306,17 @@ async function handleSkillExport(
   error?: string;
 }> {
   await ensureSkillDiscoveryForIpc();
+  const discovery = getSkillDiscoveryService();
+  const skill = discovery.getAllSkills().find((candidate) => candidate.name === skillName);
+  if (skill?.source === 'project') {
+    const workingDirectory = getSkillIpcWorkingDirectory();
+    if (!(await isProjectConfigTrusted(workingDirectory, 'project-skills'))) {
+      return {
+        success: false,
+        error: 'SKILL_EXPORT_SOURCE_UNSUPPORTED: project folder is not trusted',
+      };
+    }
+  }
   const destination = normalizeOptionalExportPath(targetPath);
   const payload = await exportInstalledSkill(skillName, destination ? { targetPath: destination } : {});
   return {

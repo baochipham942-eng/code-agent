@@ -184,6 +184,7 @@ export function subtreeDraft() {
               name: 'bash',
               arguments: { command: 'echo hi', apiKey: 'must-not-export' },
               result: {
+                toolCallId: 'call-ca1',
                 success: true,
                 output: 'hi',
                 outputPath: '/Users/private/worktrees/child/out.txt',

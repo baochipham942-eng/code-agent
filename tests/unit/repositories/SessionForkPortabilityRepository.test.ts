@@ -17,7 +17,6 @@ import {
 } from '../../../src/host/services/core/repositories/SessionForkPortabilityRepository';
 import { SessionForkPortabilitySourceReader } from '../../../src/host/services/core/repositories/SessionForkPortabilitySourceReader';
 import {
-  decodeSessionExportEnvelopeV2,
   FakeSessionForkSyncTransport,
   planSessionForkImport,
   rehashSessionExportEnvelopeV2,
@@ -749,100 +748,6 @@ describe('SessionForkPortabilityRepository', () => {
     expect(reexported.lineage.nodes).toHaveLength(2);
   });
 
-  it('reads a v2 row durably persisted before conversationHistory/v3 existed instead of throwing', () => {
-    // exportSessionFork has written v2 envelopes (no conversationHistory, version: 2) into
-    // session_fork_portability_exports since #1554 — before this PR added
-    // conversationHistory and bumped the schema to v3. Model a genuine pre-existing row by
-    // building a current envelope, stripping conversationHistory, and rehashing for
-    // version 2 (rehash recomputes purely from structural content, reproducing exactly
-    // what a real v2-era export would have persisted), then writing it straight into the
-    // table the way the old exportSessionFork route did — bypassing the current codec.
-    const current = repository.exportSessionFork({
-      exportId: 'legacy-v2-source',
-      rootSessionId: 'root',
-      ownerScopeId: 'owner-1',
-      projectId: 'project-1',
-      mode: 'subtree',
-      exportedAt: 100,
-    });
-    const { conversationHistory: _dropped, ...v3Shape } = current;
-    const legacy = rehashSessionExportEnvelopeV2({
-      ...v3Shape,
-      exportId: 'legacy-v2-row',
-      version: 2,
-    } as never);
-    // session_fork_portability_exports rows are trigger-enforced immutable (no UPDATE);
-    // insert the row directly the way the pre-v3 codec would have written it — the row
-    // itself, not just its content, must model a genuine historical v2 persist.
-    // encodeSessionExportEnvelopeV2 now validates version === 3, so it can't serialize a
-    // genuinely v2-shaped object; JSON.stringify is what the pre-v3 codec actually wrote.
-    db.prepare(`
-      INSERT INTO session_fork_portability_exports (
-        export_id, owner_scope_id, project_id, root_session_id, mode,
-        payload_digest, envelope_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      'legacy-v2-row',
-      'owner-1',
-      'project-1',
-      'root',
-      'subtree',
-      legacy.payloadDigest,
-      JSON.stringify(legacy),
-      100,
-    );
-
-    const envelope = repository.getDurableEnvelope('legacy-v2-row', 'owner-1', 'project-1');
-
-    expect(envelope?.version).toBe(3);
-    expect(repository.getDurableForkTree('legacy-v2-row', 'owner-1', 'project-1').sessionId)
-      .toBe('root');
-  });
-
-  it('imports the same v2-era export idempotently across two independent decodes', () => {
-    // N-FORK-PORTABILITY-IDENTITY: importSessionFork derives its idempotency key (and
-    // the target session/message/fork IDs) from envelope.payloadDigest. Model a v2-era
-    // file decoded twice on two separate occasions (e.g. re-uploaded, or re-read from a
-    // durable row) — each decode migrates and rehashes independently, and
-    // portabilityDigest is a pure function of content (canonical.ts), so both decodes
-    // must land on the exact same digest, or the second import would either
-    // false-conflict (SYNC_ID_DIGEST_CONFLICT) or silently mint a second, differently-ID'd
-    // copy of the same import.
-    const current = repository.exportSessionFork({
-      exportId: 'legacy-v2-idem-source',
-      rootSessionId: 'root',
-      ownerScopeId: 'owner-1',
-      projectId: 'project-1',
-      mode: 'subtree',
-      exportedAt: 100,
-    });
-    const { conversationHistory: _dropped, ...v3Shape } = current;
-    const legacyBytes = JSON.stringify(rehashSessionExportEnvelopeV2({ ...v3Shape, version: 2 } as never));
-
-    const firstDecode = decodeSessionExportEnvelopeV2(legacyBytes);
-    const secondDecode = decodeSessionExportEnvelopeV2(legacyBytes);
-    expect(secondDecode.payloadDigest).toBe(firstDecode.payloadDigest);
-
-    const firstImport = repository.importSessionFork({
-      envelope: firstDecode,
-      targetOwnerScopeId: 'owner-1',
-      targetProjectId: 'project-1',
-      namespace: 'device-idem-v2',
-      importedAt: 200,
-    });
-    const secondImport = repository.importSessionFork({
-      envelope: secondDecode,
-      targetOwnerScopeId: 'owner-1',
-      targetProjectId: 'project-1',
-      namespace: 'device-idem-v2',
-      importedAt: 300,
-    });
-
-    expect(secondImport).toEqual(firstImport);
-    expect(secondImport.sessionIdMap.root).toBe(firstImport.sessionIdMap.root);
-    expect(secondImport.messageIdMap).toEqual(firstImport.messageIdMap);
-  });
-
   it('rejects an idempotent import lookup when its compatibility projection was tampered', () => {
     const envelope = repository.exportSessionFork({
       exportId: 'export-import-tamper',
@@ -1537,40 +1442,6 @@ describe('SessionForkPortabilityRepository', () => {
     expect(transport.uploadCount).toBe(1);
     expect(restarted.getSyncRecord('outbox', 'sync-1', 'owner-1', 'project-1')?.state)
       .toBe('applied');
-  });
-
-  it('reads a v2-era sync row instead of throwing DIGEST_MISMATCH on the version bump', () => {
-    // session_fork_portability_sync rows written before #1554's v3/conversationHistory
-    // bump carry a v2-shaped envelope_json whose own payloadDigest was computed over the
-    // v2 shape. decodeSessionExportEnvelopeV2 rehashes on any version migration (the v2->v3
-    // bump included), which changes payloadDigest to match the migrated (v3) shape — so
-    // comparing that rehashed digest against the payload_digest column the row was
-    // originally written with must not be how the row is read back.
-    const current = repository.exportSessionFork({
-      exportId: 'legacy-v2-sync-source',
-      rootSessionId: 'root',
-      ownerScopeId: 'owner-1',
-      projectId: 'project-1',
-      mode: 'subtree',
-      exportedAt: 100,
-    });
-    const { conversationHistory: _dropped, ...v3Shape } = current;
-    const legacy = rehashSessionExportEnvelopeV2({
-      ...v3Shape,
-      exportId: 'legacy-v2-sync-row',
-      version: 2,
-    } as never);
-    db.prepare(`
-      INSERT INTO session_fork_portability_sync (
-        direction, sync_envelope_id, owner_scope_id, project_id, payload_digest,
-        dependency_ids_json, envelope_json, state, attempt_count, created_at, updated_at
-      ) VALUES ('outbox', 'sync-legacy-v2', 'owner-1', 'project-1', ?, '[]', ?, 'local_only', 0, 100, 100)
-    `).run(legacy.payloadDigest, JSON.stringify(legacy));
-
-    const record = repository.getSyncRecord('outbox', 'sync-legacy-v2', 'owner-1', 'project-1');
-
-    expect(record?.envelope.version).toBe(3);
-    expect(record?.payloadDigest).toBe(legacy.payloadDigest);
   });
 
   it('never returns or mutates a duplicate sync id across owner or Project boundaries', () => {

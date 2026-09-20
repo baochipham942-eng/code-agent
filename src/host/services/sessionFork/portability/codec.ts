@@ -33,7 +33,6 @@ import {
 import { canonicalJson, deepPortableClone, portabilityDigest, withoutDigest } from './canonical';
 import {
   isForbiddenStructuralKey,
-  migrateLegacyConversationHistoryMetadata,
   normalizeKey,
   redactSecretText,
   validatePortableConversationHistory,
@@ -883,45 +882,6 @@ export function validateSessionExportEnvelopeV2(
   assertDigest(envelope.payloadDigest, portabilityDigest(withoutDigest(envelope)), 'session export envelope');
 }
 
-// A version migration (e.g. v2->v3) is a pure `version` bump with no other structural
-// change, so it desyncs every payloadDigest that was computed over the old version
-// number. rehashSessionExportEnvelopeV2 unconditionally recomputes those digests to
-// match the migrated shape — required for the migrated envelope to pass the
-// unconditional check in validateSessionExportEnvelopeV2 above. Because
-// portabilityDigest is a pure function of content (see canonical.ts), decoding the same
-// original bytes on two separate occasions always re-derives the same migrated digest —
-// so rehashing here doesn't cost any identity stability (import/sync ID derivation,
-// dedup all key off payloadDigest and see the same value both times).
-// On its own, rehashing means a decode of a *migrating* envelope never actually checks
-// whether the stored content was tampered with or corrupted: it just recomputes digests
-// from whatever bytes are on disk and asserts they match themselves. So verify
-// integrity against the ORIGINAL (pre-migration) digests first, using the content
-// exactly as parsed — before anything is rehashed.
-// v2 envelopes were exported before N-FORK-PORTABILITY round 3 dropped
-// message.metadata from the conversationHistory projection (see the comment in
-// sanitizeMessages above and conversationHistory.ts's sanitizeMessage). The
-// v2->v3 migration strips that metadata and re-signs the affected entries via
-// migrateLegacyConversationHistoryMetadata (conversationHistory.ts), imported below.
-function verifyLegacyEnvelopeDigests(raw: Record<string, unknown>): void {
-  if (!Array.isArray(raw.sessions)) {
-    fail('INVALID_ENVELOPE', 'sessions must be an array');
-  }
-  for (const session of raw.sessions as PortableSessionV2[]) {
-    assertObject(session, 'portable session');
-    assertDigest(
-      session.payloadDigest,
-      portabilityDigest(withoutDigest(session)),
-      `session ${session.id}`,
-    );
-  }
-  validateLineageDigests(raw.lineage as ForkLineageEnvelopeV1);
-  assertDigest(
-    raw.payloadDigest as string,
-    portabilityDigest(withoutDigest(raw as unknown as SessionExportEnvelopeV2)),
-    'session export envelope',
-  );
-}
-
 export function rehashSessionExportEnvelopeV2(
   envelope: Omit<SessionExportEnvelopeV2, 'payloadDigest'> | SessionExportEnvelopeV2,
 ): SessionExportEnvelopeV2 {
@@ -1020,7 +980,6 @@ export function decodeSessionExportEnvelopeV2(
 ): SessionExportEnvelopeV2 {
   const parsed = parseJson(value, 'session export envelope');
   assertObject(parsed, 'session export envelope');
-  const sourceVersion = (parsed as Record<string, unknown>).version;
   let current: unknown;
   try {
     current = migrateDataFormatToCurrent('sessionExportEnvelope', parsed);
@@ -1030,21 +989,7 @@ export function decodeSessionExportEnvelopeV2(
     }
     throw error;
   }
-  let envelope = current as SessionExportEnvelopeV2;
-  if (sourceVersion !== SESSION_EXPORT_ENVELOPE_VERSION) {
-    // Verify against the digests as originally written (pre-migration) BEFORE
-    // rehashing, so a tampered/corrupted v2 payload is rejected instead of silently
-    // re-signed. Only then bump the version and rehash so the digest is
-    // self-consistent for validation below.
-    verifyLegacyEnvelopeDigests(parsed as Record<string, unknown>);
-    if (envelope.conversationHistory) {
-      envelope = {
-        ...envelope,
-        conversationHistory: migrateLegacyConversationHistoryMetadata(envelope.conversationHistory),
-      };
-    }
-    envelope = rehashSessionExportEnvelopeV2(envelope);
-  }
+  const envelope = current as SessionExportEnvelopeV2;
   validateSessionExportEnvelopeV2(envelope, scope);
   return deepPortableClone(envelope);
 }

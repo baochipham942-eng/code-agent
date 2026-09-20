@@ -18,7 +18,6 @@ import { deepPortableClone } from '../../sessionFork/portability/canonical';
 import {
   canonicalSessionForkStringify as canonicalStringify,
   failSessionForkPortability as fail,
-  parseSessionForkJson as parseJson,
   parseSessionForkStringArray as parseStringArray,
 } from './SessionForkPortabilityInternals';
 
@@ -368,18 +367,13 @@ export class SessionForkSyncRepository {
   }
 
   private syncRowToRecord(row: StoredSyncRow): SessionForkSyncEnvelopeRecord {
-    // row.payload_digest (the column) and the blob's embedded payloadDigest were written
-    // together, from the same encodeSessionExportEnvelopeV2() call, so they should always
-    // agree. Compare them directly as a cheap corruption check before paying for the
-    // full decode (which re-verifies content digests) below.
-    const stored = parseJson<{ payloadDigest?: unknown }>(row.envelope_json, `sync envelope ${row.sync_envelope_id}`);
-    if (typeof stored.payloadDigest !== 'string' || stored.payloadDigest !== row.payload_digest) {
-      fail('DIGEST_MISMATCH', `sync envelope ${row.sync_envelope_id} payload drifted`);
-    }
     const envelope = decodeSessionExportEnvelopeV2(row.envelope_json, {
       ownerScopeId: row.owner_scope_id,
       projectId: row.project_id,
     });
+    if (envelope.payloadDigest !== row.payload_digest) {
+      fail('DIGEST_MISMATCH', `sync envelope ${row.sync_envelope_id} payload drifted`);
+    }
     return {
       syncEnvelopeId: row.sync_envelope_id,
       payloadDigest: row.payload_digest,

@@ -10,7 +10,7 @@ import {
   DataFormatVersionError,
   migrateDataFormatToCurrent,
 } from '../../../../shared/contract/dataFormatVersionRegistry';
-import { canonicalJson, deepPortableClone, portabilityDigest, withoutDigest } from './canonical';
+import { canonicalJson, deepPortableClone, portabilityDigest } from './canonical';
 import {
   PortableConversationHistoryError,
   SUPPORTED_CONVERSATION_HISTORY_EVENTS as SUPPORTED_EVENTS,
@@ -795,35 +795,6 @@ export function rehashPortableConversationHistory(
     ...deepPortableClone(unsignedHistory),
     payloadDigest: portabilityDigest(unsignedHistory),
   };
-}
-
-// v2 envelopes were exported before N-FORK-PORTABILITY round 3 dropped
-// message.metadata from the conversationHistory projection (see sanitizeMessage
-// above). A v2 envelope's stored conversationHistory.entries[].message can
-// therefore still carry metadata — including keys origin/main now treats as
-// forbidden runtime identity (accountName, chatName, turnDiff, retryAttachments,
-// ...) — which would make assertNoRuntimeIdentity reject every legacy envelope
-// that happens to have one. The v2->v3 migration must therefore actually strip
-// that metadata (not just bump the version number), and re-sign the entries/
-// history it touches so digests stay self-consistent for
-// validatePortableConversationHistory above.
-export function migrateLegacyConversationHistoryMetadata(
-  history: PortableConversationHistoryV1,
-): PortableConversationHistoryV1 {
-  let changed = false;
-  const entries = history.entries.map((entry) => {
-    const message = entry.message as unknown as Record<string, unknown>;
-    if (!message || !('metadata' in message)) return entry;
-    changed = true;
-    const { metadata: _metadata, ...restMessage } = message;
-    const unsignedEntry = {
-      ...withoutDigest(entry),
-      message: restMessage as unknown as typeof entry.message,
-    };
-    return { ...unsignedEntry, payloadDigest: portabilityDigest(unsignedEntry) };
-  });
-  if (!changed) return history;
-  return rehashPortableConversationHistory({ ...history, entries });
 }
 
 export function validatePortableConversationHistory(

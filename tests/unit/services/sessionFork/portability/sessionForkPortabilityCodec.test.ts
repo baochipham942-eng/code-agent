@@ -9,25 +9,15 @@ import {
   encodeForkLineageEnvelopeV1,
   encodePortableConversationHistory,
   encodeSessionExportEnvelopeV2,
-  rehashPortableConversationHistory,
   rehashSessionExportEnvelopeV2,
   stripLegacyForkClaims,
   validatePortableIsolatedAnchorEvidenceV1,
 } from '../../../../../src/host/services/sessionFork/portability';
-import { portabilityDigest } from '../../../../../src/host/services/sessionFork/portability/canonical';
 import {
   PORTABLE_ANCHOR_MAX_PATCH_BYTES,
 } from '../../../../../src/shared/contract/sessionForkPortability';
-import {
-  PORTABLE_CONVERSATION_HISTORY_SCHEMA,
-  PORTABLE_CONVERSATION_HISTORY_VERSION,
-} from '../../../../../src/shared/contract/conversationHistory';
 import type { Message } from '../../../../../src/shared/contract/message';
 import { OWNER_ID, PROJECT_ID, message, session, subtreeDraft } from './fixture';
-
-function signed<T extends Record<string, unknown>>(value: T): T & { payloadDigest: string } {
-  return { ...value, payloadDigest: portabilityDigest(value) };
-}
 
 describe('session fork portability codecs', () => {
   it('builds a versioned subtree envelope and strips runtime and private payloads', () => {
@@ -344,50 +334,19 @@ describe('session fork portability codecs', () => {
     );
   });
 
-  it('migrates a durably-persisted v2 envelope instead of rejecting it', () => {
-    // Real v2 rows already exist in session_fork_portability_exports (written by the
-    // exportSessionFork IPC route since #1554, before this PR added conversationHistory
-    // and bumped the schema to v3). A v2 envelope never carried conversationHistory and
-    // its stored payloadDigest was computed over that v2 shape — model both here by
-    // stripping the field, setting version back to 2, and rehashing for that exact shape
-    // (rehashSessionExportEnvelopeV2 recomputes purely from structural content, so this
-    // reproduces what a genuine v2-era export would have persisted).
-    const { conversationHistory: _dropped, ...v3Shape } = buildSessionExportEnvelopeV2(subtreeDraft());
-    const legacy = rehashSessionExportEnvelopeV2({ ...v3Shape, version: 2 } as never);
-
-    const decoded = decodeSessionExportEnvelopeV2(JSON.stringify(legacy));
-
-    expect(decoded.version).toBe(3);
-    expect(decoded).not.toHaveProperty('conversationHistory');
-    // The decoded envelope must be internally self-consistent even though its digest
-    // necessarily differs from the stored v2 digest (the `version` field changed).
-    expect(decoded.payloadDigest).not.toBe(legacy.payloadDigest);
-    // portabilityDigest is a pure function of content (see canonical.ts) — decoding the
-    // exact same v2 bytes on two independent occasions re-derives the identical migrated
-    // digest, so identity derived from payloadDigest (import/sync IDs, dedup) is stable
-    // across repeated decodes without needing to grandfather the pre-migration value.
-    expect(decodeSessionExportEnvelopeV2(JSON.stringify(legacy)).payloadDigest)
-      .toBe(decoded.payloadDigest);
-    expect(() => encodeSessionExportEnvelopeV2(decoded)).not.toThrow();
-  });
-
-  it('rejects a v3 envelope carrying a forged legacy-digest-skip signal', () => {
-    // N-FORK-PORTABILITY-SIGNAL-BYPASS: an earlier design let a `legacyDigest: true`
-    // field on the envelope itself tell validateSessionExportEnvelopeV2 to skip the
-    // digest recompute. That field lived on data that crosses trust boundaries — a sync
-    // transport row from another machine, a hand-built import payload — so an attacker
-    // could set version to the CURRENT version (skipping the migration branch entirely)
-    // and legacyDigest: true directly, bypassing digest verification altogether. The
-    // fix: no field on the envelope can ever skip the check, unrecognized fields are
-    // rejected outright, and this must throw either way.
-    const { conversationHistory: _dropped, ...v3Shape } = buildSessionExportEnvelopeV2(subtreeDraft());
-    const forged = {
-      ...v3Shape,
-      legacyDigest: true,
-      payloadDigest: `sha256:${'0'.repeat(64)}`,
+  it('rejects the previous v2 envelope with an unsupported schema version error', () => {
+    const previous = {
+      ...buildSessionExportEnvelopeV2(subtreeDraft()),
+      version: 2,
     };
 
-    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(forged))).toThrow();
+    try {
+      decodeSessionExportEnvelopeV2(JSON.stringify(previous));
+      throw new Error('expected v2 envelope to be rejected');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionForkPortabilityError);
+      expect((error as SessionForkPortabilityError).code).toBe('UNSUPPORTED_SCHEMA_VERSION');
+    }
   });
 
   it('rejects a v3 envelope with a payloadDigest that does not match its content', () => {
@@ -396,101 +355,6 @@ describe('session fork portability codecs', () => {
 
     expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(tampered)))
       .toThrow(/DIGEST_MISMATCH/u);
-  });
-
-  it('rejects a v2 envelope whose content drifted after it was persisted', () => {
-    // decode rehashes a migrated envelope to make it self-consistent for the current
-    // shape, but only AFTER verifying it against the ORIGINAL v2 digests — so rehashing
-    // never becomes a way to silently "launder" a tampered v2 payload.
-    const { conversationHistory: _dropped, ...v3Shape } = buildSessionExportEnvelopeV2(subtreeDraft());
-    const legacy = rehashSessionExportEnvelopeV2({ ...v3Shape, version: 2 } as never);
-    const tampered = {
-      ...legacy,
-      sessions: legacy.sessions.map((session, index) => (
-        index === 0 ? { ...session, title: `${session.title}-tampered` } : session
-      )),
-    };
-
-    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(tampered)))
-      .toThrow(/DIGEST_MISMATCH/u);
-  });
-
-  it('migrates a v2 envelope whose conversationHistory still carries message.metadata', () => {
-    // Unlike sessions/messages/lineage, conversationHistory on origin/main was never
-    // stripped of message.metadata (sanitizeMessage's `key === 'metadata'` exclusion is
-    // new to this PR) — so a real v2-era row can have entries[].message.metadata with
-    // keys this PR only just added to FORBIDDEN_RUNTIME_KEYS (accountName/chatName live
-    // under metadata.channel per shared/contract/message.ts; turnDiff/retryAttachments
-    // live directly on MessageMetadata). Model that shape by hand: buildPortableConversationHistory
-    // (current version) already excludes metadata, so it can't produce a legacy fixture.
-    const rootBranch = signed({
-      id: 'branch-1',
-      sessionId: 'root',
-      rootBranchId: 'branch-1',
-      parentBranchId: null,
-      forkId: null,
-      anchorEntryId: null,
-      createdAt: 1,
-    });
-    const childBranch = signed({
-      id: 'branch-2',
-      sessionId: 'child',
-      rootBranchId: 'branch-2',
-      parentBranchId: null,
-      forkId: null,
-      anchorEntryId: null,
-      createdAt: 1,
-    });
-    const metadataEntry = signed({
-      id: 'entry-1',
-      sourceSessionId: 'root',
-      sourceMessageId: 'u1',
-      sourcePayloadDigest: `sha256:${'7'.repeat(64)}`,
-      message: {
-        id: 'u1',
-        role: 'user',
-        content: 'hello',
-        timestamp: 1,
-        metadata: {
-          channel: {
-            platform: 'wechat',
-            accountId: 'account-1',
-            accountName: 'Placeholder Account',
-            chatId: 'chat-1',
-            chatName: 'Placeholder Chat',
-          },
-          turnDiff: { summary: 'placeholder diff' },
-          retryAttachments: [],
-        },
-      },
-      provenance: {},
-      createdAt: 1,
-    });
-    const legacyHistory = rehashPortableConversationHistory({
-      schema: PORTABLE_CONVERSATION_HISTORY_SCHEMA,
-      version: PORTABLE_CONVERSATION_HISTORY_VERSION,
-      ownerUserId: OWNER_ID,
-      projectId: PROJECT_ID,
-      branches: [rootBranch, childBranch],
-      entries: [metadataEntry],
-      references: [],
-      events: [],
-      evaluationAttributions: [],
-    });
-    const { conversationHistory: _dropped, ...v3Shape } = buildSessionExportEnvelopeV2(subtreeDraft());
-    const legacy = rehashSessionExportEnvelopeV2({
-      ...v3Shape,
-      version: 2,
-      conversationHistory: legacyHistory,
-    } as never);
-
-    const decoded = decodeSessionExportEnvelopeV2(JSON.stringify(legacy));
-
-    expect(decoded.version).toBe(3);
-    expect(decoded.conversationHistory?.entries[0].message).not.toHaveProperty('metadata');
-    expect(decoded.conversationHistory?.payloadDigest).not.toBe(legacyHistory.payloadDigest);
-    expect(decoded.payloadDigest).not.toBe(legacy.payloadDigest);
-    expect(() => encodeSessionExportEnvelopeV2(decoded)).not.toThrow();
   });
 
   it('represents a single child as detached provenance without claiming an attached parent', () => {

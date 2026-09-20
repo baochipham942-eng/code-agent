@@ -195,8 +195,10 @@ export class McpDurableTaskController {
   }
 
   private taskLeaseExpiry(task: McpTaskSnapshot): number | undefined {
-    const updatedAt = Date.parse(task.lastUpdatedAt);
-    if (!Number.isFinite(updatedAt)) return undefined;
+    const parsedUpdatedAt = Date.parse(task.lastUpdatedAt);
+    // lastUpdatedAt 解析失败时按当前时刻兜底，而不是返回 undefined（无过期）——
+    // 解析失败本该是保守选择，不能变成最宽松的那个。
+    const updatedAt = Number.isFinite(parsedUpdatedAt) ? parsedUpdatedAt : Date.now();
     // ttl 缺失时不给无过期租约：run 中途异常、始终不进终态会把连接钉住到进程退出。
     // 给个兜底上限，超时后租约自然过期，回归 idle reaper 的正常 TTL 判断。
     const ttl = task.ttl == null ? MCP_TIMEOUTS.DURABLE_LEASE_FALLBACK_TTL : Math.max(0, task.ttl);

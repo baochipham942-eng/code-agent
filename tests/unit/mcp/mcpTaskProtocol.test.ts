@@ -141,4 +141,24 @@ describe('McpSdkTaskProtocol', () => {
       expect.anything(),
     );
   });
+
+  it('rejects connection lease acquire/release with a serverIdentity that does not match the bound server', () => {
+    const acquire = vi.fn();
+    const release = vi.fn();
+    const protocol = new McpSdkTaskProtocol(
+      { request: vi.fn() } as never,
+      'server:identity',
+      {},
+      { acquire, release },
+    );
+
+    expect(() => protocol.acquireConnectionLease({
+      serverIdentity: 'server:other', leaseId: 'lease-1',
+    })).toThrow('MCP task protocol server identity mismatch');
+    expect(() => protocol.releaseConnectionLease({
+      serverIdentity: 'server:other', leaseId: 'lease-1',
+    })).toThrow('MCP task protocol server identity mismatch');
+    expect(acquire).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
+  });
 });

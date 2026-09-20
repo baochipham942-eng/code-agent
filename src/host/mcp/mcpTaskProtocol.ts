@@ -106,10 +106,12 @@ export class McpSdkTaskProtocol implements McpTaskProtocol {
   }
 
   acquireConnectionLease(input: { serverIdentity: string; leaseId: string; expiresAt?: number }): void {
+    this.assertServer(input.serverIdentity);
     this.connectionLease?.acquire(input);
   }
 
   releaseConnectionLease(input: { serverIdentity: string; leaseId: string }): void {
+    this.assertServer(input.serverIdentity);
     this.connectionLease?.release(input.leaseId);
   }
 

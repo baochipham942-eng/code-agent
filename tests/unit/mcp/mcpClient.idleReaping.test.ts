@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MCPClient } from '../../../src/host/mcp/mcpClient';
 import { MCPToolRegistry } from '../../../src/host/mcp/mcpToolRegistry';
+import { MCP_TIMEOUTS } from '../../../src/shared/constants/timeouts';
 
 // Reap 候选必须是「能懒加载回来」的 server：stdio 且未显式关闭 lazyLoad。
 // 用这个当默认夹具——它是 isReapable() 判真的那一类。
@@ -211,5 +212,29 @@ describe('MCPClient idle connection reaping', () => {
 
     expect(oldRequest).not.toHaveBeenCalled();
     expect(newClient.request).toHaveBeenCalledOnce();
+  });
+
+  it('treats an explicit scanIntervalMs of 0 as unconfigured instead of a 1ms scan cadence', async () => {
+    let now = 0;
+    const client = new MCPClient({ idleReaping: { enabled: true, ttlMs: 100, scanIntervalMs: 0 }, now: () => now });
+    const sdkClient = { close: vi.fn(async () => {}) };
+    (client as unknown as { clients: Map<string, unknown> }).clients.set('local', sdkClient);
+    (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('local', {
+      name: 'local', type: 'stdio', command: 'echo', args: ['hi'], enabled: true,
+    });
+    (client as unknown as { serverStates: Map<string, unknown> }).serverStates.set('local', {
+      config: { name: 'local', type: 'stdio', command: 'echo', args: ['hi'], enabled: true },
+      status: 'connected', toolCount: 0, resourceCount: 0,
+    });
+    (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('local', 0);
+
+    now = 200;
+    // Well past the ttl but far short of the default scan cadence: a 0 that fell through
+    // to a 1ms interval would already have reaped many times over by here.
+    await vi.advanceTimersByTimeAsync(200);
+    expect(sdkClient.close).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(MCP_TIMEOUTS.IDLE_REAP_SCAN);
+    expect(sdkClient.close).toHaveBeenCalledOnce();
   });
 });

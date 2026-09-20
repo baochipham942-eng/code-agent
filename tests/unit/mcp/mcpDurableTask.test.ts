@@ -132,6 +132,33 @@ describe('MCP Durable Task', () => {
     }));
   });
 
+  it('falls back to a bounded lease expiry when lastUpdatedAt fails to parse, instead of an unbounded lease', async () => {
+    const { controller, protocol } = fixture();
+    (protocol.createTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      taskId: 'task-provider-1', status: 'working' as const, ttl: 60_000,
+      createdAt: '2026-07-11T00:00:00Z', lastUpdatedAt: 'not-a-valid-date',
+    });
+
+    const before = Date.now();
+    await controller.createMcpTask({
+      runId: 'run-a', operationId: 'call-a', attempt: 1, serverIdentity: CAPABILITY.serverIdentity,
+      serverName: 'github', toolName: 'search_code', args: {}, sideEffect: false,
+      capability: CAPABILITY, now: 100,
+    });
+    const after = Date.now();
+
+    expect(protocol.acquireConnectionLease).toHaveBeenCalledWith(expect.objectContaining({
+      leaseId: 'mcp-task:run-a:call-a',
+      expiresAt: expect.any(Number),
+    }));
+    // beginTaskLease also calls acquireConnectionLease (request-scoped, no expiresAt)
+    // before createTask resolves; the retained lease with a computed expiresAt comes after.
+    const calls = (protocol.acquireConnectionLease as ReturnType<typeof vi.fn>).mock.calls;
+    const retained = calls.map(([arg]) => arg).find((arg) => arg.expiresAt !== undefined);
+    expect(retained?.expiresAt).toBeGreaterThanOrEqual(before + 60_000);
+    expect(retained?.expiresAt).toBeLessThanOrEqual(after + 60_000);
+  });
+
   it('keeps tools synchronous when task execution is not declared or not trusted', async () => {
     const { controller, protocol, commits } = fixture();
     const missing = await controller.createMcpTask({

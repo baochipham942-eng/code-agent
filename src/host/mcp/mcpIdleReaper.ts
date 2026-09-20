@@ -59,7 +59,9 @@ export class McpIdleReaper {
   configureIdleReaping(options?: McpIdleReapingOptions): void {
     this.idleReapingEnabled = options?.enabled ?? false;
     this.idleReapTtlMs = Math.max(1, options?.ttlMs ?? MCP_TIMEOUTS.IDLE_REAP_TTL);
-    this.idleReapScanIntervalMs = Math.max(1, options?.scanIntervalMs ?? MCP_TIMEOUTS.IDLE_REAP_SCAN);
+    // `??` 对显式的 0 不接管（0 不是 nullish），而 0 不是「关闭扫描」的意思——
+    // 那样 Math.max(1, 0) 会得到 1ms 扫描间隔，等于把 CPU 打满。显式 0 按未配置处理，回落默认值。
+    this.idleReapScanIntervalMs = Math.max(1, (options?.scanIntervalMs || undefined) ?? MCP_TIMEOUTS.IDLE_REAP_SCAN);
     if (this.idleReaperTimer) clearInterval(this.idleReaperTimer);
     this.idleReaperTimer = undefined;
     if (!this.idleReapingEnabled) return;

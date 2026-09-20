@@ -178,6 +178,8 @@ export const NETWORK_TOOL_TIMEOUTS = {
   GIT_CLONE: 120_000,
   /** Git 操作超时 */
   GIT_OPERATION: 30_000,
+  /** 本地 pdftotext 抽取超时（无 OpenRouter 时的 read_pdf 回退） */
+  PDF_TEXT_EXTRACT: 30_000,
 } as const;
 
 /** 浏览器操作超时 */

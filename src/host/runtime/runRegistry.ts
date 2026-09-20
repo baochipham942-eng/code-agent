@@ -200,6 +200,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     childRunId: string,
     now: number,
   ): Promise<void> {
+    return this.serializeDurableMutation(parentRunId, async () => {
     const envelope = this.durableEnvelopes.get(parentRunId);
     if (!envelope) throw new Error(`Native parent projection unavailable: ${parentRunId}`);
     const operationId = `agent-team:${childRunId}`;
@@ -233,6 +234,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
         payload: { childRunId, operationId },
         recordedAt: now,
       }],
+    });
     });
   }
 
@@ -518,6 +520,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   }
 
   async prepareAgentTeamChild(input: AgentTeamParentProjectionInput): Promise<void> {
+    return this.serializeDurableMutation(input.parentRunId, async () => {
     const live = this.requireDurableOwner(input.parentRunId);
     const envelope = this.durableEnvelopes.get(input.parentRunId);
     if (!envelope) throw new Error(`Native parent projection unavailable: ${input.parentRunId}`);
@@ -564,9 +567,11 @@ export class RunRegistry implements AgentTeamDurableParentHost {
         recordedAt: input.now,
       }],
     });
+    });
   }
 
   async projectAgentTeamChildTerminal(input: AgentTeamParentTerminalInput): Promise<void> {
+    return this.serializeDurableMutation(input.parentRunId, async () => {
     const envelope = this.durableEnvelopes.get(input.parentRunId);
     if (!envelope) throw new Error(`Native parent projection unavailable: ${input.parentRunId}`);
     const projected = projectChildRunTerminal(envelope, {
@@ -605,6 +610,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
         payload: { childRunId: input.teamRunId, status: input.status, resultRef: input.resultRef },
         recordedAt: input.now,
       }],
+    });
     });
   }
 

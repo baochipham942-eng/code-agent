@@ -61,35 +61,14 @@ export function validatePortableSessionOrigin(
 ): void {
   if (!origin) return;
   assertObject(origin, `${label}.origin`);
+  // N-EXTHISTORY-IMPORT-WIRE: 'metadata' dropped from the allowed origin keys along with
+  // codec.ts's external_history branch — see the comment there. Nothing produces this
+  // field anymore, so decoding an envelope that still carries one now fails closed
+  // instead of validating a shape no writer emits.
   assertOnlyKeys(
     origin as Record<string, unknown>,
-    ['kind', 'name', 'metadata'],
+    ['kind', 'name'],
     `${label}.origin`,
-  );
-  if (!origin.metadata) return;
-  assertObject(origin.metadata, `${label}.origin.metadata`);
-  assertOnlyKeys(
-    origin.metadata as unknown as Record<string, unknown>,
-    ['kind', 'engine', 'sourceSessionId', 'sourceDigest', 'sourcePathDigest'],
-    `${label}.origin.metadata`,
-  );
-  if (origin.metadata.kind !== 'external_history') {
-    fail('INVALID_ENVELOPE', `${label}.origin.metadata.kind is invalid`);
-  }
-  if (origin.metadata.engine !== 'codex_cli' && origin.metadata.engine !== 'claude_code') {
-    fail('INVALID_ENVELOPE', `${label}.origin.metadata.engine is invalid`);
-  }
-  assertNonEmptyString(
-    origin.metadata.sourceSessionId,
-    `${label}.origin.metadata.sourceSessionId`,
-  );
-  assertPortableDigest(
-    origin.metadata.sourceDigest,
-    `${label}.origin.metadata.sourceDigest`,
-  );
-  assertPortableDigest(
-    origin.metadata.sourcePathDigest,
-    `${label}.origin.metadata.sourcePathDigest`,
   );
 }
 

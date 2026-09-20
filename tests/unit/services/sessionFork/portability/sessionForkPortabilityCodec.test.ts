@@ -133,6 +133,33 @@ describe('session fork portability codecs', () => {
         mimeType: 'text/plain',
         data: 'c2VjcmV0LWJhc2U2NC1wYXlsb2Fk',
       }],
+      // N-FORK-PORTABILITY round 2 Important 1: artifactLocator.artifact.filePath is an
+      // absolute local path (localityFeedback.ts) and channel.accountName/chatName carry
+      // real person/group names (agentAppService.ts writes ChannelMessageMetadata) — both
+      // leaked through the round-1 denylist unchanged.
+      artifactLocator: {
+        version: 1,
+        artifact: {
+          kind: 'presentation',
+          filePath: '/Users/private/worktrees/child/deck.pptx',
+          revision: { algorithm: 'sha256', value: 'a'.repeat(64) },
+        },
+        target: {
+          kind: 'ppt-slide',
+          displayIndex: 0,
+          relationshipId: 'rId2',
+          slidePartName: 'ppt/slides/slide1.xml',
+          textFingerprint: 'fp',
+        },
+        display: { label: 'Slide 1' },
+      },
+      channel: {
+        platform: 'feishu',
+        accountId: 'account-1',
+        accountName: 'Ada Placeholder',
+        chatId: 'chat-1',
+        chatName: 'Secret Working Group',
+      },
     } as Message['metadata'];
     ca1.metadata = dirtyMetadata;
 
@@ -144,13 +171,45 @@ describe('session fork portability codecs', () => {
     expect(childMessage?.metadata).toMatchObject({
       releaseNotes: 'kept because it only contains the substring "lease"',
     });
+    const artifactLocator = (childMessage?.metadata as Record<string, Record<string, unknown>>)
+      .artifactLocator.artifact as Record<string, unknown>;
+    expect(artifactLocator).not.toHaveProperty('filePath');
+    expect((childMessage?.metadata as Record<string, unknown> | undefined)?.channel)
+      .not.toHaveProperty('accountName');
+    expect((childMessage?.metadata as Record<string, unknown> | undefined)?.channel)
+      .not.toHaveProperty('chatName');
+    expect(childMessage?.metadata).toMatchObject({
+      channel: { platform: 'feishu', accountId: 'account-1', chatId: 'chat-1' },
+    });
 
     const serialized = encodeSessionExportEnvelopeV2(envelope);
     expect(serialized).not.toContain('/Users/private/worktrees/child/src/index.ts');
     expect(serialized).not.toContain('secretMarkerOld');
     expect(serialized).not.toContain('secretMarkerNew');
     expect(serialized).not.toContain('c2VjcmV0LWJhc2U2NC1wYXlsb2Fk');
+    expect(serialized).not.toContain('/Users/private/worktrees/child/deck.pptx');
+    expect(serialized).not.toContain('Ada Placeholder');
+    expect(serialized).not.toContain('Secret Working Group');
     expect(serialized).toContain('releaseNotes');
+  });
+
+  it('only redacts Bearer text that looks like real token material', () => {
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    const ca1 = childEntry.messages.find((entry) => entry.id === 'ca1')!;
+    ca1.content = 'continue with Bearer authentication for this request';
+    ca1.metadata = {
+      ...ca1.metadata,
+      retryPrompt: 'use Bearer abcdefghijklmnopqrstuvwxyz to call the api',
+    } as Message['metadata'];
+
+    const envelope = buildSessionExportEnvelopeV2(draft);
+    const childMessage = envelope.messages.find((item) => item.id === 'ca1');
+
+    expect(childMessage?.content).toBe('continue with Bearer authentication for this request');
+    expect(childMessage?.metadata).toMatchObject({
+      retryPrompt: 'use Bearer [REDACTED] to call the api',
+    });
   });
 
   it('roundtrips a standalone lineage envelope with stable encoding', () => {

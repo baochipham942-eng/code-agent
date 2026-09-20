@@ -645,7 +645,12 @@ export class SessionForkPortabilityRepository {
     const metadata: Record<string, unknown> = message.metadata
       ? structuredClone(message.metadata) as Record<string, unknown>
       : {};
-    if (message.source !== undefined) metadata.source = message.source;
+    // `message.source` (top-level MessageSource: user/skill/system/goal/model/automation)
+    // and `message.metadata.source` (voice/dictation/typed — the only value
+    // isVoiceInputMessage and the renderer's voice checks read as `metadata.source`) are
+    // two different axes that happen to share a name. Writing the former into
+    // `metadata.source` would silently clobber an already-portable voice marker.
+    if (message.source !== undefined) metadata.messageSource = message.source;
     if (message.subtype !== undefined) metadata.subtype = message.subtype;
     if (message.artifacts?.length) {
       metadata.readOnlyArtifactProvenanceV2 = message.artifacts;

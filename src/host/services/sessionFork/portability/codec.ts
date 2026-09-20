@@ -14,7 +14,6 @@ import type {
   PortableAgentEngineV2,
   PortableArtifactProvenanceV2,
   PortableAttachmentProvenanceV2,
-  PortableExternalHistoryProvenanceV1,
   PortableMessageV2,
   PortableModelConfigV2,
   PortableSessionV2,
@@ -48,16 +47,19 @@ import {
 } from './portableValidation';
 
 const FORBIDDEN_RUNTIME_KEYS = new Set([
-  'absoluteWorktreePath', 'apiKey', 'approvalQueue', 'approvalRequests',
-  'baseUrl', 'cwd', 'durableWaitingInput', 'executablePermission',
-  'externalSessionId', 'lease', 'leaseId', 'logPath',
+  'absoluteWorktreePath', 'accountName', 'apiKey', 'approvalQueue', 'approvalRequests',
+  'baseUrl', 'chatName', 'cwd', 'durableWaitingInput', 'executablePermission',
+  'externalSessionId', 'filePath', 'lease', 'leaseId', 'logPath',
   'pendingApproval', 'pendingApprovals', 'permissionGrant', 'queuedInput',
   'queuedInputs', 'retryAttachments', 'runId', 'sourceRunId', 'streamSnapshot',
   'taskLease', 'todo', 'todos', 'turnDiff', 'workingDirectory',
 ]);
 
+// Bearer token bodies are opaque (JWT/base64url) — long and containing digits or
+// token punctuation. A plain English phrase like "Bearer authentication" is neither,
+// so it's excluded from the capture group rather than rewritten as a redaction.
+const BEARER_TOKEN_PATTERN = /\bBearer\s+([A-Za-z0-9._~+/-]+=*)/giu;
 const PORTABLE_SECRET_PATTERNS = [
-  /\bBearer\s+[A-Za-z0-9._~+/-]+=*/giu,
   /\bsk-[A-Za-z0-9_-]{8,}\b/giu,
   /\bAKIA[A-Z0-9]{16}\b/gu,
 ];
@@ -71,13 +73,21 @@ function isForbiddenPortableKey(key: string): boolean {
   return [...FORBIDDEN_RUNTIME_KEYS].some((candidate) => normalized === normalizePortableKey(candidate));
 }
 
+function looksLikeBearerTokenBody(token: string): boolean {
+  return token.length >= 16 || /[0-9._~+/-]/u.test(token);
+}
+
+function redactBearerTokens(value: string): string {
+  return value.replace(BEARER_TOKEN_PATTERN, (match, token: string) => (
+    looksLikeBearerTokenBody(token) ? 'Bearer [REDACTED]' : match
+  ));
+}
+
 function sanitizePortableValue(value: unknown): unknown {
   if (typeof value === 'string') {
     return PORTABLE_SECRET_PATTERNS.reduce(
-      (current, pattern) => current.replace(pattern, (match) => (
-        /^Bearer\s/iu.test(match) ? 'Bearer [REDACTED]' : '[REDACTED_SECRET]'
-      )),
-      value,
+      (current, pattern) => current.replace(pattern, '[REDACTED_SECRET]'),
+      redactBearerTokens(value),
     );
   }
   if (Array.isArray(value)) return value.map(sanitizePortableValue);
@@ -90,6 +100,12 @@ function sanitizePortableValue(value: unknown): unknown {
 }
 
 function sanitizePortableMetadata(source: Message['metadata']): Message['metadata'] {
+  // ponytail: kept as a denylist scrub (not a top-level key whitelist — see PR discussion
+  // for N-FORK-PORTABILITY round 2 Important 1) because the existing round-1 test
+  // "strips turnDiff/retryAttachments ... without over-matching real keys" asserts
+  // arbitrary safe metadata keys must roundtrip untouched. FORBIDDEN_RUNTIME_KEYS now
+  // also covers filePath/accountName/chatName (this round's two concrete leaks), applied
+  // recursively so they're caught no matter which metadata key nests them.
   const sanitized = sanitizePortableValue(source) as Record<string, unknown>;
   // This marker is recreated from the portable artifact provenance at import.
   delete sanitized.readOnlyArtifactProvenanceV2;
@@ -225,16 +241,13 @@ function sanitizeSession(
   };
   if (raw.type !== undefined) portable.type = raw.type;
   if (raw.origin !== undefined) {
-    const externalHistoryMetadata = raw.origin.metadata
-      && typeof raw.origin.metadata === 'object'
-      && !Array.isArray(raw.origin.metadata)
-      && (raw.origin.metadata as Record<string, unknown>).kind === 'external_history'
-      ? sanitizePortableValue(raw.origin.metadata) as PortableExternalHistoryProvenanceV1
-      : undefined;
+    // N-EXTHISTORY-IMPORT-WIRE: external_history provenance had zero production writers
+    // (nothing ever set origin.metadata.kind === 'external_history'), so this branch and
+    // its matching validatePortableSessionOrigin check were removed as dead code that
+    // would silently no-op forever. Reintroduce both together with the import mapper.
     portable.origin = {
       kind: raw.origin.kind,
       ...(raw.origin.name !== undefined ? { name: raw.origin.name } : {}),
-      ...(externalHistoryMetadata ? { metadata: externalHistoryMetadata } : {}),
     };
   }
   if (raw.memoryMode !== undefined) portable.memoryMode = raw.memoryMode;

@@ -226,7 +226,7 @@ export const MountedConnectorIcons: React.FC = () => {
               />
               <span className="truncate">{label}</span>
               {capability.kind === 'connector' && oauthRepairById.get(capability.id) && (
-                <button
+                <button /* ds-allow:button: chip 内紧凑「没装好·重装」入口，Button primitive 无此尺寸 */
                   type="button"
                   className="shrink-0 text-[10px] text-badge-danger hover:underline"
                   onClick={(event) => {
@@ -284,7 +284,7 @@ export const MountedConnectorIcons: React.FC = () => {
                     </p>
                     {statusLine(item)}
                     {oauthRepairById.get(item.id) && (
-                      <button
+                      <button /* ds-allow:button: 悬停卡里的紧凑「没装好·重装」出口，Button primitive 会把卡撑高 */
                         type="button"
                         className="mt-1 text-[11px] text-badge-danger hover:underline"
                         onClick={() => goToHub('connector', item.id)}

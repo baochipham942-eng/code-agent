@@ -58,6 +58,7 @@ import { DurableRunRepository } from '../host/services/core/repositories/Durable
 import { SERVICE_TIMEOUTS } from '../shared/constants/timeouts';
 import { isComputerUseCapabilityInstalledSync } from '../host/plugins/builtin/computerUse/installState';
 import { parseToolNameListFlag } from './utils/toolListFlags';
+import { getPermissionModeManager } from '../host/permissions/modes';
 import type { ToolExecutionDelegate, ToolExecutorConfig } from '../host/tools/toolExecutor';
 import {
   createRunTraceContext,
@@ -476,6 +477,7 @@ export function buildCLIConfig(options: {
   statusFile?: string;
   tools?: string;
   disallowedTools?: string;
+  originKind?: CLIConfig['originKind'];
 }): CLIConfig {
   const config = getConfigService();
   const settings = config.getSettings();
@@ -521,6 +523,7 @@ export function buildCLIConfig(options: {
     // --tools / --disallowed-tools：run 级工具面裁剪（精确白名单，无核心工具兜底）
     allowedToolNames: parseToolNameListFlag(options.tools),
     deniedToolNames: parseToolNameListFlag(options.disallowedTools),
+    ...(options.originKind ? { originKind: options.originKind } : {}),
   };
 }
 
@@ -701,7 +704,8 @@ export function createAgentLoop(
     allowedToolNames: config.allowedToolNames,
     foregroundToolFace: config.foregroundToolFace,
     historyVisibility: config.historyVisibility,
-    unattendedTurn: config.originKind === 'headless',
+    unattendedTurn: config.originKind === 'headless'
+      || getPermissionModeManager().isUnattendedSession(explicitSessionId),
     telemetryAdapter,
     // CLI 消息持久化回调（包含 tool_results）
     persistMessage: async (message: Message) => {

@@ -79,7 +79,6 @@ describe('RunFinalizer 失败事件', () => {
   });
 
   it('无人值守轮允许空最终说明保持 completed', async () => {
-    process.env.CODE_AGENT_CLI_MODE = 'true';
     const events: AgentEvent[] = [];
     const finalizer = new RunFinalizer({
       sessionId: 'empty-unattended', persistLongTermMemory: false,

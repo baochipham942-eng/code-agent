@@ -199,6 +199,9 @@ describe('initializeCLIServices durable wiring', () => {
       `session-origin-${declared ?? 'none'}`,
       expect.objectContaining({ originKind: expected }),
     );
+    expect(mocks.agentLoopConfigs.at(-1)).toEqual(expect.objectContaining({
+      unattendedTurn: declared === 'headless',
+    }));
   });
 
   it('passes the web workbench tool scope through the CLI bootstrap adapter', async () => {

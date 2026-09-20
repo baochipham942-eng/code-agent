@@ -195,8 +195,6 @@ export class CLIAgent {
     }
     const runConfig: CLIConfig = {
       ...this.config,
-      // neo CLI 发起 = 脚本/无头；界面会话走 web /api/run，那条路不带这个标记。
-      originKind: 'headless',
       ...(persistedExpertOverride
         ? {
             agentOverride: persistedExpertOverride,

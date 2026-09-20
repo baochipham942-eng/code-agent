@@ -4,6 +4,10 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
+vi.mock('../../../../src/host/services/core/database/nativeLoader', async () => {
+  const module = await import('better-sqlite3');
+  return { loadBetterSqlite3: () => module.default };
+});
 import {
   BROWSER_PROFILE_SOURCES,
   listBrowserProfiles,

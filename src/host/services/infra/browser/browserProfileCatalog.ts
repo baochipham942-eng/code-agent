@@ -5,13 +5,20 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import Database from 'better-sqlite3';
+import { fileURLToPath } from 'url';
+import { loadBetterSqlite3 } from '../../core/database/nativeLoader';
+import { createLogger } from '../logger';
 import type {
   BrowserProfileCookieDomainSummary,
   BrowserProfileDescriptor,
   BrowserProfileSourceId,
   BrowserProfileUnavailableReason,
 } from '../../../../shared/contract/desktop';
+
+// better-sqlite3 是 native 模块，顶层 import 会让 Web/打包运行时（无兼容 ABI 的
+// node_modules binding）在模块加载期就崩——必须走惰性 nativeLoader（PR#1969 审查）。
+const moduleDir = typeof __dirname === 'string' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const logger = createLogger('BrowserProfileCatalog');
 
 export interface BrowserProfileSourceDefinition {
   source: BrowserProfileSourceId;
@@ -115,6 +122,8 @@ const CHROME_UNIX_EPOCH_OFFSET_SECONDS = 11_644_473_600;
 
 function readCookieDomainSummaries(cookieDbPath: string): BrowserProfileCookieDomainSummary[] {
   try {
+    const Database = loadBetterSqlite3(moduleDir, logger);
+    if (!Database) return [];
     const db = new Database(cookieDbPath, { readonly: true, fileMustExist: true });
     try {
       const nowChromeUtc = (Math.floor(Date.now() / 1000) + CHROME_UNIX_EPOCH_OFFSET_SECONDS) * 1_000_000;

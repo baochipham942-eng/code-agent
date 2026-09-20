@@ -547,7 +547,7 @@ describe('SessionForkPortabilityRepository', () => {
       .toEqual({ count: 0 });
   });
 
-  it('roundtrips rich thinking/contentParts/metadata lineage and clears runtime/task/authorization state', () => {
+  it('roundtrips rich thinking/contentParts lineage and clears runtime/task/authorization state', () => {
     const envelope = repository.exportSessionFork({
       exportId: 'export-import',
       rootSessionId: 'root',
@@ -696,8 +696,16 @@ describe('SessionForkPortabilityRepository', () => {
     expect(JSON.parse(String(importedRichMessage.tool_calls))).toEqual([
       expect.objectContaining({ id: 'call-answer', name: 'bash' }),
     ]);
-    expect(JSON.parse(String(importedRichMessage.metadata))).toMatchObject({
-      thinking: 'metadata thinking',
+    // message.metadata (the source row's { thinking: 'metadata thinking' } blob) is not
+    // part of the portable envelope at all (N-FORK-PORTABILITY round 3) — the imported
+    // metadata column is re-synthesized purely from message.source/subtype/artifacts. This
+    // fixture's content embeds a ```mermaid``` block, which the export path turns into
+    // readOnlyArtifactProvenance (see readPortableMessages) — so message.artifacts IS set,
+    // and that's the only thing that survives into the re-synthesized metadata column.
+    expect(JSON.parse(String(importedRichMessage.metadata))).toEqual({
+      readOnlyArtifactProvenanceV2: [
+        expect.objectContaining({ type: 'mermaid' }),
+      ],
     });
     const importedRootAssistantId = plan.messageIdMap.a1;
     const importedAttachmentRow = db.prepare(`
@@ -1484,6 +1492,40 @@ describe('SessionForkPortabilityRepository', () => {
     expect(transport.uploadCount).toBe(1);
     expect(restarted.getSyncRecord('outbox', 'sync-1', 'owner-1', 'project-1')?.state)
       .toBe('applied');
+  });
+
+  it('reads a v2-era sync row instead of throwing DIGEST_MISMATCH on the version bump', () => {
+    // session_fork_portability_sync rows written before #1554's v3/conversationHistory
+    // bump carry a v2-shaped envelope_json whose own payloadDigest was computed over the
+    // v2 shape. decodeSessionExportEnvelopeV2 rehashes on any version migration (the v2->v3
+    // bump included), which changes payloadDigest to match the migrated (v3) shape — so
+    // comparing that rehashed digest against the payload_digest column the row was
+    // originally written with must not be how the row is read back.
+    const current = repository.exportSessionFork({
+      exportId: 'legacy-v2-sync-source',
+      rootSessionId: 'root',
+      ownerScopeId: 'owner-1',
+      projectId: 'project-1',
+      mode: 'subtree',
+      exportedAt: 100,
+    });
+    const { conversationHistory: _dropped, ...v3Shape } = current;
+    const legacy = rehashSessionExportEnvelopeV2({
+      ...v3Shape,
+      exportId: 'legacy-v2-sync-row',
+      version: 2,
+    } as never);
+    db.prepare(`
+      INSERT INTO session_fork_portability_sync (
+        direction, sync_envelope_id, owner_scope_id, project_id, payload_digest,
+        dependency_ids_json, envelope_json, state, attempt_count, created_at, updated_at
+      ) VALUES ('outbox', 'sync-legacy-v2', 'owner-1', 'project-1', ?, '[]', ?, 'local_only', 0, 100, 100)
+    `).run(legacy.payloadDigest, JSON.stringify(legacy));
+
+    const record = repository.getSyncRecord('outbox', 'sync-legacy-v2', 'owner-1', 'project-1');
+
+    expect(record?.envelope.version).toBe(3);
+    expect(record?.payloadDigest).toBe(legacy.payloadDigest);
   });
 
   it('never returns or mutates a duplicate sync id across owner or Project boundaries', () => {

@@ -231,8 +231,7 @@ export interface PortableMessageV2 {
   toolResults?: PortableToolResultV1[];
   /** Assistant reasoning persisted alongside the visible content. */
   thinking?: Message['thinking'];
-  /** Portable message metadata after runtime/path/secret sanitization. */
-  metadata?: Message['metadata'];
+  // metadata is deliberately not exported — see codec.ts sanitizeMessages.
   visibility?: MessageVisibility;
   isMeta?: boolean;
   source?: Message['source'];

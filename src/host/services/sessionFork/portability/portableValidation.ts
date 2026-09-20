@@ -88,7 +88,6 @@ export function validateMessageOrdinals(messages: PortableMessageV2[], sessionId
       'toolCalls',
       'toolResults',
       'thinking',
-      'metadata',
       'visibility',
       'isMeta',
       'source',
@@ -166,9 +165,6 @@ export function validateMessageOrdinals(messages: PortableMessageV2[], sessionId
           fail('INVALID_ENVELOPE', `message ${message.id} content part type is invalid`);
         }
       }
-    }
-    if (message.metadata !== undefined) {
-      assertObject(message.metadata, `message ${message.id} metadata`);
     }
     const group = grouped.get(message.sessionId) ?? [];
     group.push(message);

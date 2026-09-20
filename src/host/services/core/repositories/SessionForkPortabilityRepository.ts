@@ -642,14 +642,13 @@ export class SessionForkPortabilityRepository {
   private insertImportedMessage(
     message: SessionExportEnvelopeV2['messages'][number],
   ): void {
-    const metadata: Record<string, unknown> = message.metadata
-      ? structuredClone(message.metadata) as Record<string, unknown>
-      : {};
+    // message.metadata is not part of the portable envelope (see codec.ts sanitizeMessages);
+    // this column is synthesized purely from the portable fields that survive export.
     // `message.source` (top-level MessageSource: user/skill/system/goal/model/automation)
-    // and `message.metadata.source` (voice/dictation/typed — the only value
-    // isVoiceInputMessage and the renderer's voice checks read as `metadata.source`) are
-    // two different axes that happen to share a name. Writing the former into
-    // `metadata.source` would silently clobber an already-portable voice marker.
+    // is written under `metadata.messageSource` — not `metadata.source` — because the
+    // latter key is read by isVoiceInputMessage/the renderer's voice checks for a
+    // different axis (voice/dictation/typed) that no longer round-trips either.
+    const metadata: Record<string, unknown> = {};
     if (message.source !== undefined) metadata.messageSource = message.source;
     if (message.subtype !== undefined) metadata.subtype = message.subtype;
     if (message.artifacts?.length) {

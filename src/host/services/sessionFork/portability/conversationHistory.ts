@@ -305,6 +305,11 @@ function sanitizeMessage(
         .includes(key)
       || ['visibility', 'hiddenByRewindId', 'hidden_by_rewind_id', 'hiddenAt', 'hidden_at']
         .includes(key)
+      // metadata is not part of the portable envelope, same as PortableMessageV2 (see
+      // codec.ts sanitizeMessages) — this is the second of two channels a message's
+      // metadata can leak through on export; both must agree or round-trip lineage
+      // audits see a real (not spurious) [metadata] diff between the two projections.
+      || key === 'metadata'
       || isForbiddenStructuralKey(key)
       || item === undefined
     ) {

@@ -74,8 +74,11 @@ describe('session fork portability codecs', () => {
         { type: 'tool_call', toolCallId: 'call-ca1' },
       ],
       thinking: 'private reasoning',
-      metadata: { thinking: 'metadata thinking' },
     });
+    // message.metadata is a free-form runtime blob and is not part of the portable
+    // envelope at all (N-FORK-PORTABILITY round 3) — contentParts/toolCalls already
+    // carry what rendering needs.
+    expect(childMessage).not.toHaveProperty('metadata');
     expect(childMessage?.attachments).toEqual([expect.objectContaining({
       id: 'attachment-1',
       type: 'file',
@@ -105,7 +108,7 @@ describe('session fork portability codecs', () => {
     })).toEqual(envelope);
   });
 
-  it('strips turnDiff/retryAttachments from metadata without over-matching real keys', () => {
+  it('never exports message.metadata, including turnDiff/retryAttachments/artifactLocator/channel leaks', () => {
     const draft = subtreeDraft();
     const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
     const ca1 = childEntry.messages.find((entry) => entry.id === 'ca1')!;
@@ -166,21 +169,9 @@ describe('session fork portability codecs', () => {
     const envelope = buildSessionExportEnvelopeV2(draft);
     const childMessage = envelope.messages.find((item) => item.id === 'ca1');
 
-    expect(childMessage?.metadata).not.toHaveProperty('turnDiff');
-    expect(childMessage?.metadata).not.toHaveProperty('retryAttachments');
-    expect(childMessage?.metadata).toMatchObject({
-      releaseNotes: 'kept because it only contains the substring "lease"',
-    });
-    const artifactLocator = (childMessage?.metadata as Record<string, Record<string, unknown>>)
-      .artifactLocator.artifact as Record<string, unknown>;
-    expect(artifactLocator).not.toHaveProperty('filePath');
-    expect((childMessage?.metadata as Record<string, unknown> | undefined)?.channel)
-      .not.toHaveProperty('accountName');
-    expect((childMessage?.metadata as Record<string, unknown> | undefined)?.channel)
-      .not.toHaveProperty('chatName');
-    expect(childMessage?.metadata).toMatchObject({
-      channel: { platform: 'feishu', accountId: 'account-1', chatId: 'chat-1' },
-    });
+    // The whole message.metadata field is excluded from the portable envelope (see
+    // codec.ts sanitizeMessages) — no denylist scrub needed because nothing crosses over.
+    expect(childMessage).not.toHaveProperty('metadata');
 
     const serialized = encodeSessionExportEnvelopeV2(envelope);
     expect(serialized).not.toContain('/Users/private/worktrees/child/src/index.ts');
@@ -190,7 +181,7 @@ describe('session fork portability codecs', () => {
     expect(serialized).not.toContain('/Users/private/worktrees/child/deck.pptx');
     expect(serialized).not.toContain('Ada Placeholder');
     expect(serialized).not.toContain('Secret Working Group');
-    expect(serialized).toContain('releaseNotes');
+    expect(serialized).not.toContain('releaseNotes');
   });
 
   it('only redacts Bearer text that looks like real token material', () => {
@@ -198,18 +189,13 @@ describe('session fork portability codecs', () => {
     const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
     const ca1 = childEntry.messages.find((entry) => entry.id === 'ca1')!;
     ca1.content = 'continue with Bearer authentication for this request';
-    ca1.metadata = {
-      ...ca1.metadata,
-      retryPrompt: 'use Bearer abcdefghijklmnopqrstuvwxyz to call the api',
-    } as Message['metadata'];
+    ca1.thinking = 'use Bearer abcdefghijklmnopqrstuvwxyz to call the api';
 
     const envelope = buildSessionExportEnvelopeV2(draft);
     const childMessage = envelope.messages.find((item) => item.id === 'ca1');
 
     expect(childMessage?.content).toBe('continue with Bearer authentication for this request');
-    expect(childMessage?.metadata).toMatchObject({
-      retryPrompt: 'use Bearer [REDACTED] to call the api',
-    });
+    expect(childMessage?.thinking).toBe('use Bearer [REDACTED] to call the api');
   });
 
   it('roundtrips a standalone lineage envelope with stable encoding', () => {

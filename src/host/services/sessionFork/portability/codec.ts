@@ -101,19 +101,6 @@ function sanitizePortableValue(value: unknown): unknown {
   );
 }
 
-function sanitizePortableMetadata(source: Message['metadata']): Message['metadata'] {
-  // ponytail: kept as a denylist scrub (not a top-level key whitelist — see PR discussion
-  // for N-FORK-PORTABILITY round 2 Important 1) because the existing round-1 test
-  // "strips turnDiff/retryAttachments ... without over-matching real keys" asserts
-  // arbitrary safe metadata keys must roundtrip untouched. FORBIDDEN_RUNTIME_KEYS now
-  // also covers filePath/accountName/chatName (this round's two concrete leaks), applied
-  // recursively so they're caught no matter which metadata key nests them.
-  const sanitized = sanitizePortableValue(source) as Record<string, unknown>;
-  // This marker is recreated from the portable artifact provenance at import.
-  delete sanitized.readOnlyArtifactProvenanceV2;
-  return sanitized as Message['metadata'];
-}
-
 function sanitizePortableContentParts(source: Message['contentParts']): Message['contentParts'] {
   return sanitizePortableValue(source) as Message['contentParts'];
 }
@@ -327,9 +314,12 @@ function sanitizeMessages(source: SessionExportSourceV2): PortableMessageV2[] {
     if (raw.thinking !== undefined) {
       portable.thinking = sanitizePortableValue(raw.thinking) as string;
     }
-    if (raw.metadata !== undefined) {
-      portable.metadata = sanitizePortableMetadata(raw.metadata);
-    }
+    // message.metadata is not exported (N-FORK-PORTABILITY round 3): it's a free-form
+    // runtime blob (turnDiff/retryAttachments/artifactLocator.filePath/channel names/...)
+    // that isn't needed for round-trip — contentParts+toolCalls already carry what
+    // rendering needs — and the denylist scrub kept leaking new key shapes every round.
+    // sanitizePortableValue below still strips FORBIDDEN_RUNTIME_KEYS from contentParts/
+    // toolCalls/toolResults, where equivalent keys (filePath, path, outputPath) can occur.
     if (raw.visibility !== undefined) portable.visibility = raw.visibility;
     if (raw.isMeta !== undefined) portable.isMeta = raw.isMeta;
     if (raw.source !== undefined) portable.source = raw.source;

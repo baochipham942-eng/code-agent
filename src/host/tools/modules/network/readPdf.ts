@@ -200,7 +200,9 @@ export async function executeReadPdf(
     if (text.trim()) {
       return finishPdfResult(filePath, fileSizeMB, 'text', text, ctx, onProgress);
     }
-    throw new Error(TOOL_DEPENDENCY_HINTS.readPdfOpenRouter);
+    throw new Error(
+      `${TOOL_DEPENDENCY_HINTS.readPdfOpenRouter} 本地 pdftotext 也没有抽出可选中文本（未安装 poppler，或 PDF 无文本层）。安装：brew install poppler`,
+    );
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     const errCode = (error as { code?: string }).code;

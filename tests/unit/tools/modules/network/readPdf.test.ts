@@ -268,6 +268,8 @@ describe('readPdfModule (native)', () => {
       if (!result.ok) {
         expect(result.error).toContain('支持 PDF/文件输入的视觉模型配置');
         expect(result.error).toContain('OPENROUTER_API_KEY');
+        expect(result.error).toContain('pdftotext');
+        expect(result.error).toContain('poppler');
       }
     });
 

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  buildInferenceMessages,
   buildInitialSubagentMessages,
+  createRuntimeMessage,
   flattenMessageContent,
 } from '../../../src/host/agent/subagentExecutorProjection';
 import {
@@ -121,5 +123,22 @@ describe('subagentExecutor helper extraction', () => {
 
     lifecycle.cleanupTimer();
     lifecycle.stopIdleWatchdog();
+  });
+
+  it('does not re-project Read results in buildInferenceMessages', () => {
+    const output = 'Tool results:\nTool Read: Success\nRead version digest: abc123\n  1\talpha';
+    const readCall = (id: string) => ({
+      id,
+      name: 'Read' as const,
+      arguments: { file_path: '/tmp/example.ts', offset: 1, limit: 2 },
+    });
+    const inferred = buildInferenceMessages([
+      createRuntimeMessage({ role: 'assistant', content: '', toolCalls: [readCall('c1')] }),
+      createRuntimeMessage({ role: 'user', content: output }),
+      createRuntimeMessage({ role: 'assistant', content: '', toolCalls: [readCall('c2')] }),
+      createRuntimeMessage({ role: 'user', content: output }),
+    ]);
+    expect(inferred[3]?.content).toBe(output);
+    expect(String(inferred[3]?.content)).not.toContain('[Read already shown');
   });
 });

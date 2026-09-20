@@ -9,7 +9,7 @@ const config = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: config.getSettings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: config.getSettings }),
 }));
 
 const {

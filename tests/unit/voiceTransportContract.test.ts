@@ -75,7 +75,7 @@ vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => logger,
 }));
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => mockConfig.settings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => mockConfig.settings }),
 }));
 vi.mock('../../src/host/telemetry/telemetryService', () => ({
   getTelemetryService: () => telemetry,

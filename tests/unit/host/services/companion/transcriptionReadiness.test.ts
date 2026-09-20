@@ -12,7 +12,7 @@ const keys = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getApiKey: (provider: string) => provider === 'groq' ? keys.groq
       : provider === 'dashscope' ? keys.dashscope
       : provider === 'qwen' ? keys.qwen : undefined,

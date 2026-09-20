@@ -8,6 +8,15 @@ export const MCP_TIMEOUTS = {
   FIRST_RUN: 180_000,
   /** 工具调用重试超时 */
   TOOL_RETRY: 30_000,
+  /** 空闲 MCP 连接回收默认等待时间。活动请求和 durable task lease 会豁免回收。 */
+  IDLE_REAP_TTL: 5 * 60_000,
+  /** 空闲 MCP 连接回收扫描间隔。 */
+  IDLE_REAP_SCAN: 30_000,
+  /**
+   * durable task 未声明 ttl 时的租约兜底上限（防连接被无过期租约钉住直到进程退出——
+   * run 中途异常中断、始终不进 completed/failed/cancelled 终态时，租约本该自然过期）。
+   */
+  DURABLE_LEASE_FALLBACK_TTL: 30 * 60_000,
 } as const;
 
 /** DAG 调度器配置 */

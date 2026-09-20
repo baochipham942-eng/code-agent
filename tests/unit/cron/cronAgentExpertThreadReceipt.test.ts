@@ -61,7 +61,7 @@ const taskManager = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../src/host/services', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getSettings: () => ({ model: { provider: 'openai', model: 'gpt-5.4' } }),
   }),
   getSessionManager: () => sessionManager,
@@ -72,7 +72,7 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getSettings: () => ({ model: { provider: 'openai', model: 'gpt-5.4' } }),
     getApiKey: () => '',
   }),

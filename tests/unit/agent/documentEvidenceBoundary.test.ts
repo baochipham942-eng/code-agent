@@ -223,7 +223,7 @@ vi.mock('../../../src/host/telemetry/toolSchemaCache', () => ({ getToolSchemaCac
 vi.mock('../../../src/host/context/contextEventLedger', () => ({ getContextEventLedger: () => ({ upsertEvents: vi.fn() }) }));
 vi.mock('../../../src/host/services/infra/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() }, createLogger: () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() }) }));
 vi.mock('../../../src/host/services', () => ({
-  getConfigService: () => ({ getApiKey: () => 'fixture', getSettings: () => ({ models: { providers: {} } }) }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: () => 'fixture', getSettings: () => ({ models: { providers: {} } }) }),
   getAuthService: () => ({ getCurrentUser: () => ({ isAdmin: false }) }),
   getLangfuseService: () => ({ startGenerationInSpan: vi.fn(), endGeneration: vi.fn() }),
 }));

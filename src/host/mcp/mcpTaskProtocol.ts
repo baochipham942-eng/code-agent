@@ -82,9 +82,13 @@ export class McpSdkTaskProtocol implements McpTaskProtocol {
   private readonly sleep: (delayMs: number, signal?: AbortSignal) => Promise<void>;
 
   constructor(
-    private readonly client: Client,
+    private readonly client: Client | ((signal?: AbortSignal) => Client | undefined | Promise<Client | undefined>),
     private readonly boundServerIdentity: string,
     options: McpTaskProtocolOptions = {},
+    private readonly connectionLease?: {
+      acquire(input: { leaseId: string; expiresAt?: number }): void;
+      release(leaseId: string): void;
+    },
   ) {
     this.maxPollAttempts = Math.max(1, options.maxPollAttempts ?? DEFAULT_MAX_POLL_ATTEMPTS);
     this.initialPollDelayMs = Math.max(0, options.initialPollDelayMs ?? DEFAULT_INITIAL_POLL_DELAY_MS);
@@ -93,6 +97,25 @@ export class McpSdkTaskProtocol implements McpTaskProtocol {
       options.maxPollDelayMs ?? DEFAULT_MAX_POLL_DELAY_MS,
     );
     this.sleep = options.sleep ?? abortableSleep;
+  }
+
+  private async currentClient(signal?: AbortSignal): Promise<Client> {
+    const client = typeof this.client === 'function' ? await this.client(signal) : this.client;
+    if (!client) {
+      if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+      throw new Error(`MCP task server ${this.boundServerIdentity} is not connected`);
+    }
+    return client;
+  }
+
+  acquireConnectionLease(input: { serverIdentity: string; leaseId: string; expiresAt?: number }): void {
+    this.assertServer(input.serverIdentity);
+    this.connectionLease?.acquire(input);
+  }
+
+  releaseConnectionLease(input: { serverIdentity: string; leaseId: string }): void {
+    this.assertServer(input.serverIdentity);
+    this.connectionLease?.release(input.leaseId);
   }
 
   async createTask(input: Parameters<McpTaskProtocol['createTask']>[0]): Promise<McpTaskSnapshot> {
@@ -105,7 +128,7 @@ export class McpSdkTaskProtocol implements McpTaskProtocol {
         _meta: input.traceMeta ?? activeTraceMeta(),
       },
     };
-    const result = await this.client.request(request, taskEnvelopeSchema, { signal: input.signal });
+    const result = await (await this.currentClient(input.signal)).request(request, taskEnvelopeSchema, { signal: input.signal });
     return result.task;
   }
 
@@ -117,7 +140,7 @@ export class McpSdkTaskProtocol implements McpTaskProtocol {
   async cancelTask(input: Parameters<McpTaskProtocol['cancelTask']>[0]): Promise<McpTaskSnapshot> {
     this.assertServer(input.serverIdentity);
     try {
-      return (await this.client.request({
+      return (await (await this.currentClient(input.signal)).request({
         method: 'tasks/cancel',
         params: { taskId: input.taskId, _meta: input.traceMeta ?? activeTraceMeta() },
       }, taskGetResultSchema, { signal: input.signal })).task;
@@ -131,7 +154,7 @@ export class McpSdkTaskProtocol implements McpTaskProtocol {
   ): Promise<McpTaskSnapshot> {
     this.assertServer(input.serverIdentity);
     try {
-      return (await this.client.request({
+      return (await (await this.currentClient(input.signal)).request({
         method: 'tasks/update',
         params: {
           taskId: input.taskId,
@@ -201,7 +224,7 @@ export class McpSdkTaskProtocol implements McpTaskProtocol {
     signal?: AbortSignal;
   }): Promise<z.infer<typeof taskGetResultSchema>> {
     try {
-      return await this.client.request({
+      return await (await this.currentClient(input.signal)).request({
         method: 'tasks/get',
         params: { taskId: input.taskId, _meta: input.traceMeta ?? activeTraceMeta() },
       }, taskGetResultSchema, { signal: input.signal });

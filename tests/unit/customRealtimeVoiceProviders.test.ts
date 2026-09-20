@@ -64,7 +64,7 @@ vi.mock('../../src/host/model/providers/providerHttp', () => ({
   getHttpsAgent: getHttpsAgentMock,
 }));
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getSettings: () => settings,
     updateSettings,
     getApiKey: vi.fn(),

@@ -32,7 +32,7 @@ vi.mock('../../../src/host/services/core/configService', async (importActual) =>
   const actual = await importActual<typeof import('../../../src/host/services/core/configService')>();
   return {
     ...actual,
-    getConfigService: () => ({
+    getConfigService: () => ({ onSettingsUpdated: vi.fn(),
       getSettings: () => ({}),
       getApiKey: () => 'sk-fallback-key', // fallback 链有 key 可走 → 暴露"带 abort 信号继续 fallback"的 bug
     }),

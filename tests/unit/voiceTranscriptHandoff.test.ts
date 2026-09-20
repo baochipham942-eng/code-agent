@@ -46,7 +46,7 @@ vi.mock('../../src/host/services/roleAssets/roleAssetService', () => ({
   buildRoleContextBlock: vi.fn(async () => null),
 }));
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => runtime.settings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => runtime.settings }),
 }));
 vi.mock('../../src/host/services/planning/taskStore', () => ({ getIncompleteTasks: () => [] }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({

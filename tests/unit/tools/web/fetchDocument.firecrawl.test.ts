@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SEARCH_API_ENDPOINTS } from '../../../../src/shared/constants';
 
 vi.mock('../../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getServiceApiKey: vi.fn(() => undefined),
   }),
 }));

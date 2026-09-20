@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // 显式 mock configService，让 getGptImageConfig 的 config 回落路径可控（不依赖测试环境恰好返回 undefined）。
 const { getApiKeyMock } = vi.hoisted(() => ({ getApiKeyMock: vi.fn() }));
 vi.mock('../../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getApiKey: getApiKeyMock }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: getApiKeyMock }),
 }));
 
 // mock logger：断言价表兜底时确有 warn 落地，且不让日志写文件/console 污染测试输出。

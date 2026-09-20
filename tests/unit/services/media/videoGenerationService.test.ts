@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { getApiKeyMock } = vi.hoisted(() => ({ getApiKeyMock: vi.fn() }));
 vi.mock('../../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getApiKey: getApiKeyMock }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: getApiKeyMock }),
 }));
 
 import { generateVideo, downloadVideoAsBuffer } from '../../../../src/host/services/media/videoGenerationService';

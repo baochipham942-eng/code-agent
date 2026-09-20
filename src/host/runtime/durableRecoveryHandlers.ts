@@ -333,6 +333,17 @@ export function createMcpOperationRecoveryHandler(input: {
       return protocol.updateTask(request);
     },
     resolveTaskResult: (request) => requireMcpProtocol(input, request.serverIdentity).resolveTaskResult(request),
+    // This facade resolves a fresh McpSdkTaskProtocol per request instead of closing
+    // over one server (recovery can touch several servers), so the per-server client
+    // methods can't be reused directly: route by serverName resolved from serverIdentity.
+    acquireConnectionLease: ({ serverIdentity, leaseId, expiresAt }) => {
+      const serverName = resolveMcpServerName(input, serverIdentity);
+      if (serverName) input.getClient().acquireConnectionLease(serverName, leaseId, expiresAt);
+    },
+    releaseConnectionLease: ({ serverIdentity, leaseId }) => {
+      const serverName = resolveMcpServerName(input, serverIdentity);
+      if (serverName) input.getClient().releaseConnectionLease(serverName, leaseId);
+    },
   };
   return {
     name: 'mcp_tool_call',
@@ -383,6 +394,17 @@ function resolveMcpRecoveryCapability(
       const capability = client.buildTaskCapability(serverName, tool.name, input.trustedServerIdentities);
       if (capability?.query) return capability;
     }
+  }
+  return undefined;
+}
+
+function resolveMcpServerName(
+  input: { getClient: () => MCPClient },
+  serverIdentity: string,
+): string | undefined {
+  const client = input.getClient();
+  for (const state of client.getServerStates()) {
+    if (client.getServerIdentity(state.config.name) === serverIdentity) return state.config.name;
   }
   return undefined;
 }

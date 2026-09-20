@@ -90,7 +90,7 @@ describe('video_generate — execute', () => {
     vi.clearAllMocks();
     existsSyncMock.mockReturnValue(true);
     process.env.ZHIPU_OFFICIAL_API_KEY = 'official-key';
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue(undefined),
     });
   });
@@ -271,7 +271,7 @@ describe('video_generate — execute', () => {
 
   it('returns NOT_INITIALIZED when no zhipu key', async () => {
     delete process.env.ZHIPU_OFFICIAL_API_KEY;
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue(undefined),
     });
     const result = await executeVideoGenerate(
@@ -291,7 +291,7 @@ describe('video_generate — execute', () => {
 
   it('rejects 0ki proxy key (only official)', async () => {
     delete process.env.ZHIPU_OFFICIAL_API_KEY;
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue('oki-proxy-key'),
     });
     const result = await executeVideoGenerate(

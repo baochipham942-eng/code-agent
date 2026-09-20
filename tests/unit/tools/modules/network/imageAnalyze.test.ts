@@ -81,7 +81,7 @@ describe('image_analyze — execute', () => {
     accessMock.mockResolvedValue(undefined);
     statMock.mockResolvedValue({ size: 1024 * 100 });
     readFileMock.mockResolvedValue(Buffer.from('img-data'));
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue('test-zhipu-key'),
     });
   });
@@ -168,7 +168,7 @@ describe('image_analyze — execute', () => {
   });
 
   it('falls back to openrouter when zhipu fails', async () => {
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn((p: string) => (p === 'openrouter' ? 'or-key' : 'zhipu-key')),
     });
 

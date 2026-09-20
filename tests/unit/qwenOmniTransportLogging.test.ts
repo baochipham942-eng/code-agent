@@ -48,7 +48,7 @@ vi.mock('../../src/host/services/infra/logger', () => ({
 }));
 
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({}) }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({}) }),
 }));
 
 const { qwenOmniTransport } = await import('../../src/host/services/voice/qwenOmniTransport');

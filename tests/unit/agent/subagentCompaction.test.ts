@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from 'vitest';
 const mockGetSettings = vi.hoisted(() => vi.fn(() => ({})));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: mockGetSettings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: mockGetSettings }),
 }));
 import {
   compactSubagentMessages,

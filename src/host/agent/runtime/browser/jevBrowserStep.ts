@@ -55,6 +55,15 @@ const MANUAL_TAKEOVER_COPY = /manual takeover|user takeover|take over manually|r
 const BROWSER_JEV_MISSING_KEY_WARN =
   'CODE_AGENT_BROWSER_JEV_STEP 已开启但 TYPESAFE_API_KEY 缺失，Jev 步选不生效（走主模型逐步 Browser）';
 
+// 会改页面状态的操作。超时/异常不代表动作未送达，这类动作一旦结果不确定必须停环回落。
+const MUTATING_OPERATIONS: ReadonlySet<BrowserStepOperation> = new Set(['click', 'type', 'press_enter']);
+const ACTION_UNCERTAIN_HINT = '上一动作可能已生效，请先核对页面再继续';
+
+function actionUncertainReason(operation: BrowserStepOperation, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `action_uncertain: ${ACTION_UNCERTAIN_HINT}（${operation}: ${message}）`;
+}
+
 type BrowserJevMode = 'try_jev' | 'sticky_visual';
 type JevBrowserStepStatus =
   | 'done_verified'
@@ -274,13 +283,20 @@ function sameUrl(current: string, target: string): boolean {
   }
 }
 
-function rebindTarget(prepared: PreparedJevSnapshot, previous: BrowserTargetRef): BrowserTargetRef | null {
-  const previousTag = previous.selector?.split(/[#.[]/)[0]?.toLowerCase() || '';
+function rebindTarget(
+  prepared: PreparedJevSnapshot,
+  previous: BrowserTargetRef,
+  previousTag: string,
+): BrowserTargetRef | null {
+  // `#id` 类选择器解析不出 tag；快照记录的 tag（JevCandidate.tag）才是真源，选择器解析只做兜底。
+  const tag = (previousTag || '').trim().toLowerCase()
+    || previous.selector?.split(/[#.[]/)[0]?.toLowerCase()
+    || '';
   const match = prepared.collected.find((candidate) => (
     candidate.targetRef.name === previous.name
     && (candidate.role || null) === (previous.role || null)
-    && previousTag !== ''
-    && candidate.tag.toLowerCase() === previousTag
+    && tag !== ''
+    && candidate.tag.toLowerCase() === tag
   ));
   return match?.targetRef ?? null;
 }
@@ -610,16 +626,21 @@ async function runJevBrowserStepLoop(
         const refreshed = prepareJevBrowserSnapshot(await deps.host.capture(), task, {
           mutateEmptyWindow: mutate === 'empty-window',
         });
-        const rebound = rebindTarget(refreshed, target.targetRef);
+        const rebound = rebindTarget(refreshed, target.targetRef, target.tag);
         if (!rebound) return finish('fallback', 'stale_target');
         try {
           if (applied.operation === 'click') await deps.host.clickTargetRef(rebound);
           else if (applied.operation === 'type') {
             await deps.host.typeTargetRef(rebound, typedValue);
           }
-        } catch {
-          return finish('fallback', 'stale_target');
+        } catch (retryError) {
+          if (isStaleTargetRefError(retryError)) return finish('fallback', 'stale_target');
+          return finish('fallback', actionUncertainReason(applied.operation, retryError));
         }
+      } else if (MUTATING_OPERATIONS.has(applied.operation)) {
+        // 超时/异常不代表动作未送达（如点击已提交支付但 Promise 超时）。
+        // 变更动作送达状态不确定时立即回落，不再进下一圈让 Jev 选动作，避免重复执行。
+        return finish('fallback', actionUncertainReason(applied.operation, error));
       } else {
         opResult = error instanceof Error ? error.message : String(error);
       }
@@ -668,7 +689,7 @@ async function clickWithRebind(
     await host.clickTargetRef(target.targetRef);
   } catch (error) {
     if (!isStaleTargetRefError(error)) throw error;
-    const rebound = rebindTarget(prepared, target.targetRef);
+    const rebound = rebindTarget(prepared, target.targetRef, target.tag);
     if (!rebound) throw error;
     await host.clickTargetRef(rebound);
   }
@@ -684,7 +705,7 @@ async function typeWithRebind(
     await host.typeTargetRef(target.targetRef, value);
   } catch (error) {
     if (!isStaleTargetRefError(error)) throw error;
-    const rebound = rebindTarget(prepared, target.targetRef);
+    const rebound = rebindTarget(prepared, target.targetRef, target.tag);
     if (!rebound) throw error;
     await host.typeTargetRef(rebound, value);
   }

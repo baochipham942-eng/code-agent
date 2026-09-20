@@ -1051,6 +1051,29 @@ describe('jevBrowserStep', () => {
     expect(host.clicks).toEqual([]);
   });
 
+  it('#id 选择器（解析不出 tag）用快照记录的 tag 也能重绑', async () => {
+    const replacement = button('tref_go2', 'Go'); // selector 仍是 `#tref_go2`，选择器解析 tag 为空
+    const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+    host.clickTargetRef = async (ref) => {
+      if (ref.refId === 'tref_go') {
+        host.pages[0] = snapshot('Nav', [replacement]);
+        throw new BrowserTargetRefError('stale', ref.refId, ref.snapshotId);
+      }
+      host.clicks.push(ref.refId);
+    };
+    let calls = 0;
+    const systemOne = stubSystemOne(() => {
+      calls += 1;
+      return calls === 1 ? answers({ target: 'tref_go' }) : answers({ operation: 'stop', target: 'no_target', done: 0.2 });
+    });
+    const result = await runLoop(host, systemOne, {
+      task: 'click Go until Never happens',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    });
+    expect(result.reason).not.toBe('stale_target');
+    expect(host.clicks).toEqual(['tref_go2']);
+  });
+
   it('当前页 query 与任务 URL 不同则导航', async () => {
     const host = new FakeHost([snapshot('Item', [button('tref_go', 'Buy')], 'https://shop.example/item?id=7')]);
     host.url = 'https://shop.example/item?id=7';
@@ -1097,6 +1120,26 @@ describe('jevBrowserStep', () => {
     expect(evaluated.allMet).toBe(false);
   });
 
+  it('url_equals 精确比对保留 query，仅去 fragment', () => {
+    const base = {
+      title: 'Finish',
+      headings: [{ text: 'Finish' }],
+      elements: [{ text: 'Done' }],
+      formValues: {},
+      downloads: [],
+    };
+    const assertion = [{ id: 'a1', kind: 'url_equals', needle: 'https://shop.example/finish?status=paid' }];
+    const paid = evaluateJevAssertions(assertion, { ...base, url: 'https://shop.example/finish?status=paid' });
+    expect(paid.results[0]?.met).toBe(true);
+    expect(paid.allMet).toBe(true);
+    const pending = evaluateJevAssertions(assertion, { ...base, url: 'https://shop.example/finish?status=pending' });
+    expect(pending.results[0]?.met).toBe(false);
+    expect(pending.allMet).toBe(false);
+    const fragmentOnly = evaluateJevAssertions(assertion, { ...base, url: 'https://shop.example/finish?status=paid#receipt' });
+    expect(fragmentOnly.results[0]?.met).toBe(true);
+    expect(fragmentOnly.allMet).toBe(true);
+  });
+
   it('步内导航到 chrome://settings 下一圈 needs_review', async () => {
     const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
     host.clickTargetRef = async (ref) => {
@@ -1115,19 +1158,34 @@ describe('jevBrowserStep', () => {
     expect(host.clicks).toEqual(['tref_go']);
   });
 
-  it('type 超时写入 recent_steps result=timeout 而不是 ok', async () => {
+  it('mutating click 抛错 → action_uncertain 即停回落，不再让 Jev 选下一动作', async () => {
+    const host = new FakeHost([snapshot('Pay', [button('tref_go', 'Go')])]);
+    host.clickTargetRef = async (ref) => {
+      // 点击可能已送达，只是 Promise 抛错：只允许发生这一次
+      host.clicks.push(ref.refId);
+      throw new Error('net reset');
+    };
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const result = await runLoop(host, systemOne, {
+      task: 'click Go until Never happens',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    });
+    expect(result.status).toBe('fallback');
+    expect(String(result.reason)).toContain('action_uncertain');
+    expect(String(result.output)).toContain('上一动作可能已生效，请先核对页面再继续');
+    expect(result.success).toBe(true);
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(host.clicks).toEqual(['tref_go']);
+  });
+
+  it('mutating type 超时 → action_uncertain 即停，不重复输入', async () => {
     const host = new FakeHost([snapshot('Form', [textbox('tref_email', 'Email', 'email')])]);
-    host.typeTargetRef = async () => {
+    host.typeTargetRef = async (ref, text) => {
+      host.types.push({ id: ref.refId, text });
       throw new Error('timeout');
     };
-    const systemOne = stubSystemOne((state) => {
-      const blob = JSON.stringify(state.recent_steps || {});
-      if (blob.includes('"result":"timeout"')) {
-        return answers({ operation: 'stop', target: 'no_target', done: 1 });
-      }
-      return answers({ operation: 'type', target: 'tref_email' });
-    });
-    await runLoop(
+    const systemOne = stubSystemOne(() => answers({ operation: 'type', target: 'tref_email' }));
+    const result = await runLoop(
       host,
       systemOne,
       {
@@ -1135,11 +1193,57 @@ describe('jevBrowserStep', () => {
         assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
       },
       context(),
-      { quickType: async () => 'typed-value' },
+      { quickType: async () => 'typed-once' },
     );
+    expect(result.status).toBe('fallback');
+    expect(String(result.reason)).toContain('action_uncertain');
+    expect(String(result.reason)).toContain('timeout');
+    expect(String(result.output)).toContain('核对');
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(host.types).toEqual([{ id: 'tref_email', text: 'typed-once' }]);
+  });
+
+  it('stale 重绑后的 click 再超时 → action_uncertain 而非 stale_target', async () => {
+    const replacement = button('tref_go2', 'Go');
+    const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+    host.clickTargetRef = async (ref) => {
+      if (ref.refId === 'tref_go') {
+        host.pages[0] = snapshot('Nav', [replacement]);
+        throw new BrowserTargetRefError('stale', ref.refId, ref.snapshotId);
+      }
+      throw new Error('timeout');
+    };
+    const systemOne = stubSystemOne(() => answers({ target: 'tref_go' }));
+    const result = await runLoop(host, systemOne, {
+      task: 'click Go until Never happens',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    });
+    expect(result.status).toBe('fallback');
+    expect(String(result.reason)).toContain('action_uncertain');
+    expect(String(result.reason)).not.toBe('stale_target');
+    expect(systemOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('只读动作 scroll 抛 timeout 记录后继续，recent_steps 带 result=timeout', async () => {
+    const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
+    host.scroll = async () => {
+      throw new Error('timeout');
+    };
+    const systemOne = stubSystemOne((state) => {
+      const blob = JSON.stringify(state.recent_steps || {});
+      if (blob.includes('"result":"timeout"')) {
+        return answers({ operation: 'stop', target: 'no_target', done: 1 });
+      }
+      return answers({ operation: 'scroll_down', target: 'no_target' });
+    });
+    const result = await runLoop(host, systemOne, {
+      task: 'click Go until Never happens',
+      assertions: [{ id: 'a1', kind: 'element_text_includes', needle: 'Never happens' }],
+    });
     expect(systemOne.calls.length).toBeGreaterThan(1);
     expect(JSON.stringify(systemOne.calls[1]?.recent_steps)).toMatch(/"result":"timeout"/);
     expect(JSON.stringify(systemOne.calls[1]?.recent_steps)).not.toMatch(/"result":"ok"/);
+    expect(String(result.reason)).not.toContain('action_uncertain');
   });
 
   it('stale 重绑复用第一次 generateTypeValue，不二次调用', async () => {

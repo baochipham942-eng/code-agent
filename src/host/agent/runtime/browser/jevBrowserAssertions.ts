@@ -144,6 +144,13 @@ function stripUrlQuerySecrets(raw: string): string {
   }
 }
 
+// url_equals 是精确匹配契约：只去 fragment，query 原样参与比较（?status=paid ≠ ?status=pending）。
+// 送 Jev 的 state 脱敏仍走 stripUrlQuerySecrets，两者不得混用。
+function stripUrlFragment(raw: string): string {
+  const hashIndex = raw.indexOf('#');
+  return hashIndex === -1 ? raw : raw.slice(0, hashIndex);
+}
+
 function looksLikePath(value: string): boolean {
   if (value.length < 2 || value.length > 80) return false;
   if (!value.startsWith('/')) return false;
@@ -241,7 +248,7 @@ function matchAssertion(assertion: JevPageAssertion, evidence: JevAssertionEvide
     case 'url_includes':
       return includesInsensitive(evidence.url, assertion.needle);
     case 'url_equals':
-      return normalize(stripUrlQuerySecrets(evidence.url)) === normalize(stripUrlQuerySecrets(assertion.needle));
+      return normalize(stripUrlFragment(evidence.url)) === normalize(stripUrlFragment(assertion.needle));
     case 'url_not_includes':
       return !includesInsensitive(evidence.url, assertion.needle);
     case 'title_includes':

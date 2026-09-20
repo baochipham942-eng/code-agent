@@ -12,6 +12,7 @@ import type {
   LibraryListOptions,
   SessionContextPin,
 } from '@shared/contract/library';
+import { isLibraryLearnStatus } from '@shared/contract/library';
 import { guardSensitiveText } from '../../../security/sensitiveDataGuard';
 
 type SQLiteRow = Record<string, unknown>;
@@ -57,7 +58,9 @@ function rowToLibraryItem(row: SQLiteRow): LibraryItem {
     sourceSessionId: (row.source_session_id as string | null) ?? undefined,
     sourceRoleId: (row.source_role_id as string | null) ?? undefined,
     contentHash: (row.content_hash as string | null) ?? undefined,
-    learnStatus: (row.learn_status as LibraryLearnStatus | null) ?? 'pending',
+    learnStatus: isLibraryLearnStatus(String(row.learn_status ?? ''))
+      ? row.learn_status as LibraryLearnStatus
+      : 'pending',
     learnError: (row.learn_error as string | null) ?? undefined,
     learnUpdatedAt: (row.learn_updated_at as number | null) ?? undefined,
     createdAt: row.created_at as number,

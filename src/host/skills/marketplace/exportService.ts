@@ -169,6 +169,22 @@ function isPathInside(root: string, candidate: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
+async function assertNoSymlinkInPath(targetFile: string): Promise<void> {
+  let current = path.resolve(targetFile);
+  while (true) {
+    const stat = await fs.lstat(current).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT' && current === path.resolve(targetFile)) return null;
+      throw error;
+    });
+    if (stat?.isSymbolicLink()) {
+      throw new Error(`${SKILL_EXPORT_UNSAFE_TARGET}: refusing symlink in export path`);
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+}
+
 /**
  * IPC 传入的落盘路径必须是绝对 .zip，且不得写入配置目录 / 跟随符号链接。
  * 保存对话框选中的路径满足这些约束；HTTP 乱传任意文件会被拒。
@@ -181,23 +197,21 @@ async function writeExportArchive(targetPath: string, archive: Buffer): Promise<
   if (path.extname(resolved).toLowerCase() !== '.zip') {
     throw new Error(`${SKILL_EXPORT_UNSAFE_TARGET}: export path must end with .zip`);
   }
-  const configDir = path.resolve(getUserConfigDir());
-  if (isPathInside(configDir, resolved)) {
+  await assertNoSymlinkInPath(resolved);
+  const parent = path.dirname(resolved);
+  const realParent = await fs.realpath(parent);
+  const configDir = await fs.realpath(getUserConfigDir()).catch(() => path.resolve(getUserConfigDir()));
+  if (isPathInside(configDir, path.join(realParent, path.basename(resolved)))) {
     throw new Error(`${SKILL_EXPORT_UNSAFE_TARGET}: refusing to write inside config dir`);
   }
-  const parent = path.dirname(resolved);
-  const parentStat = await fs.lstat(parent).catch(() => null);
-  if (!parentStat?.isDirectory() || parentStat.isSymbolicLink()) {
-    throw new Error(`${SKILL_EXPORT_UNSAFE_TARGET}: export parent is not a real directory`);
-  }
   const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW;
-  const handle = await fs.open(resolved, flags, 0o644);
+  const handle = await fs.open(path.join(realParent, path.basename(resolved)), flags, 0o644);
   try {
     await handle.writeFile(archive);
   } finally {
     await handle.close();
   }
-  return resolved;
+  return path.join(realParent, path.basename(resolved));
 }
 
 // ----------------------------------------------------------------------------

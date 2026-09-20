@@ -148,6 +148,16 @@ describe('skill export package', () => {
     await expect(exportInstalledSkill('demo')).rejects.toThrow('SKILL_EXPORT_UNSAFE_ENTRY');
   });
 
+  it('refuses a zip path whose ancestor is a symlink', async () => {
+    const real = path.join(tempRoot, 'real', 'sub');
+    await fs.mkdir(real, { recursive: true });
+    const link = path.join(tempRoot, 'link');
+    await fs.symlink(path.join(tempRoot, 'real'), link);
+    await expect(
+      exportInstalledSkill('demo', { targetPath: path.join(link, 'sub', 'out.zip') }),
+    ).rejects.toThrow('SKILL_EXPORT_UNSAFE_TARGET');
+  });
+
   it('refuses to overwrite a non-zip path under the config dir', async () => {
     const poison = path.join(mocks.userConfigDir, 'settings.json');
     await fs.mkdir(path.dirname(poison), { recursive: true });

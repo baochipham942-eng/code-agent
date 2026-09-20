@@ -14,16 +14,16 @@ function normalizeInstallKey(pluginSpec: string): string {
   return pluginSpec.trim().toLowerCase();
 }
 
-export function runExclusivePluginInstall(
+export function runExclusivePluginInstall<T extends InstallResult>(
   pluginSpec: string,
-  install: () => Promise<InstallResult>,
-): Promise<InstallResult> {
+  install: () => Promise<T>,
+): Promise<T> {
   const key = normalizeInstallKey(pluginSpec);
   if (activePluginInstalls.has(key)) {
     return Promise.reject(new Error(`Plugin '${pluginSpec.trim()}' installation is already in progress`));
   }
 
-  let tracked!: Promise<InstallResult>;
+  let tracked!: Promise<T>;
   tracked = install().finally(() => {
     if (activePluginInstalls.get(key) === tracked) {
       activePluginInstalls.delete(key);

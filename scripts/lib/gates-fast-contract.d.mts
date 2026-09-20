@@ -44,5 +44,7 @@ interface CommandDeadline {
   gateId: string | null;
 }
 export function validateBudgetPolicy(policy: BudgetPolicy): void;
+export function extractGateIds(source: string): string[];
+export function validateGateBudgetCoverage(policy: BudgetPolicy, gateIds: string[]): void;
 export function commandDeadline(policy: BudgetPolicy, gateId: string | null | undefined, runElapsedMs: number, gateElapsedMs: number): CommandDeadline;
 export function budgetFailure(deadline: CommandDeadline, argv: string[]): string;

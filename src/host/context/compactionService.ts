@@ -23,6 +23,7 @@ import {
 } from './compactionHooks';
 import { dataFingerprintStore } from '../tools/dataFingerprint';
 import { fileReadTracker } from '../tools/fileReadTracker';
+import { projectReadResultsForModel } from './readResultProjection';
 import { createLogger } from '../services/infra/logger';
 import {
   buildSurvivorManifest,
@@ -302,7 +303,11 @@ function countMessageTokens(messages: Message[]): number {
 }
 
 function buildTranscript(messages: Message[]): string {
-  return compactMessagesForSummary(messages.map(toTranscriptMessage), {
+  // The summary model is another model-facing consumer. Keep persisted/tool
+  // return values intact, but avoid spending summary context on a complete
+  // same-range Read result that is already present earlier in this span.
+  const projectedMessages = projectReadResultsForModel(messages);
+  return compactMessagesForSummary(projectedMessages.map(toTranscriptMessage), {
     maxItemChars: TRANSCRIPT_ITEM_MAX_CHARS,
     maxTotalTokens: TRANSCRIPT_MAX_TOKENS,
   })

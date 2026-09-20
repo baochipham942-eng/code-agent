@@ -46,8 +46,8 @@ import {
   buildInitialSubagentMessages,
   buildObservation,
   buildSnapshotAnnotations,
-  createRuntimeMessage,
-  materializeObservedMessages,
+  createRuntimeMessage, materializeObservedMessages,
+  projectReadSubagentMessages,
   type RuntimeMessage,
 } from './subagentExecutorProjection';
 import {
@@ -625,7 +625,8 @@ export class SubagentExecutor {
           sessionId,
           executionAgentId,
         );
-        const inferenceMessages = applyInterventionsToMessages(messages, effectiveInterventions);
+        // ponytail: AI SDK consumes this unflattened inferenceMessages; legacy conversion below projects again in buildInferenceMessages.
+        const inferenceMessages = projectReadSubagentMessages(applyInterventionsToMessages(messages, effectiveInterventions));
         const providerMessages = buildInferenceMessages(inferenceMessages);
         const telemetryTurnStartedAt = Date.now();
         const currentTelemetryTurnNumber = ++telemetryTurnNumber;

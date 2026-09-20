@@ -89,6 +89,7 @@ import { getConfigService } from '../../../services/core/configService';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
 import type { AgentNoticeEvent } from '../../../../shared/ipc/handlers';
 import { applyHistoricalImageBudget } from './imageBudget';
+import { projectReadTranscriptEntries } from '../../../context/readResultProjection';
 
 export { formatArtifactRepairToolResultContent } from './artifactRepairProjection';
 export {
@@ -867,13 +868,16 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     transcriptEntries,
   );
 
-  let contextApiView = interventionAdjustedEntries;
+  // Project duplicate Read output only for the model request. The transcript
+  // and tool results remain unchanged for UI, audit, and programmatic callers.
+  const projectedTranscriptEntries = projectReadTranscriptEntries(interventionAdjustedEntries);
+  let contextApiView = projectedTranscriptEntries;
   const contextWindowSize = resolveContextWindow(ctx.runtime.modelConfig.model, ctx.runtime.modelConfig.provider);
   try {
     const cache = getRuntimeAssemblyCache(ctx);
     const compressionCacheKey = buildCompressionCacheKey(
       ctx,
-      interventionAdjustedEntries,
+      projectedTranscriptEntries,
       transcriptInterventions,
       contextWindowSize,
     );
@@ -901,7 +905,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
 
       const armEnabled = getCompressionPipelineOverride() ?? DEFAULT_COMPRESSION_PIPELINE_ENABLED;
       const pipelineResult = await ctx.runtime.compressionPipeline.evaluate(
-        interventionAdjustedEntries.map((entry) => ({ ...entry })),
+        projectedTranscriptEntries.map((entry) => ({ ...entry })),
         nextCompressionState,
         {
           maxTokens: contextWindowSize,

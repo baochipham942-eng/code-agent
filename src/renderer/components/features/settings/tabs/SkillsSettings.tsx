@@ -29,6 +29,7 @@ import {
   installLocalSkillZip,
   pickWebZipFile,
   mountInstalledSkill,
+  unwrapSkillZipError,
 } from '../../../../services/skillLocalZip';
 import { toast } from '../../../../hooks/useToast';
 import { useAppStore } from '../../../../stores/appStore';
@@ -450,16 +451,17 @@ export const SkillsSettings: React.FC = () => {
   };
 
   const describeZipInstallError = (error?: string): string => {
-    if (!error) return skillsText.zipInstallFailed;
-    if (error.startsWith('SKILL_ZIP_MISSING_SKILL_MD')) return skillsText.zipMissingSkillMd;
-    if (error.startsWith('SKILL_ZIP_MULTIPLE_SKILL_MD')) return skillsText.zipMultipleSkillMd;
-    if (error.startsWith('SKILL_ZIP_UNSAFE_SOURCE') || error.startsWith('SKILL_ZIP_UNSAFE_ENTRY')) {
+    const text = unwrapSkillZipError(error);
+    if (!text) return skillsText.zipInstallFailed;
+    if (text.includes('SKILL_ZIP_MISSING_SKILL_MD')) return skillsText.zipMissingSkillMd;
+    if (text.includes('SKILL_ZIP_MULTIPLE_SKILL_MD')) return skillsText.zipMultipleSkillMd;
+    if (text.includes('SKILL_ZIP_UNSAFE_SOURCE') || text.includes('SKILL_ZIP_UNSAFE_ENTRY')) {
       return skillsText.zipUnsafe;
     }
-    if (error.startsWith('SKILL_ZIP_TOO_LARGE')) return skillsText.zipTooLarge;
-    if (error.startsWith('SKILL_ZIP_INVALID_FRONTMATTER')) return skillsText.zipInvalidFrontmatter;
-    if (error.startsWith('SKILL_CONTENT_SCAN_BLOCKED')) return skillsText.zipScanBlocked;
-    return error;
+    if (text.includes('SKILL_ZIP_TOO_LARGE')) return skillsText.zipTooLarge;
+    if (text.includes('SKILL_ZIP_INVALID_FRONTMATTER')) return skillsText.zipInvalidFrontmatter;
+    if (text.includes('SKILL_CONTENT_SCAN_BLOCKED')) return skillsText.zipScanBlocked;
+    return text;
   };
 
   const handleInstallLocalZip = async (file?: File | null) => {

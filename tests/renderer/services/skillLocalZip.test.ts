@@ -58,6 +58,25 @@ describe('divertDroppedSkillZips', () => {
     expect(leftover).toEqual([]);
     confirm.mockRestore();
   });
+
+  it('falls back to an attachment when install throws MISSING_SKILL_MD', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    invokeSkillIPCOrThrow.mockRejectedValueOnce(
+      new Error('"SKILL_ZIP_MISSING_SKILL_MD: zip has no SKILL.md"'),
+    );
+    const zip = new File(['PK'], 'notes.zip', { type: 'application/zip' });
+
+    const leftover = await divertDroppedSkillZips([zip], {
+      sessionId: 's1',
+      successPrefix: 'ok ',
+      failPrefix: 'fail ',
+      confirmPrompt: 'Install {name}?',
+    });
+
+    expect(leftover).toEqual([zip]);
+    expect(toast.error).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
 });
 
 describe('pickWebZipFile', () => {

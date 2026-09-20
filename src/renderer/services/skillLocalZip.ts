@@ -39,16 +39,25 @@ export async function fileToLocalZipPayload(file: File): Promise<{ zipPath?: str
   return { archiveBase64: btoa(binary) };
 }
 
+export function unwrapSkillZipError(error?: string): string {
+  return (error ?? '').trim().replace(/^["']+|["']+$/g, '');
+}
+
 function isNotASkillPackError(error?: string): boolean {
-  return Boolean(error?.startsWith('SKILL_ZIP_MISSING_SKILL_MD'));
+  return unwrapSkillZipError(error).includes('SKILL_ZIP_MISSING_SKILL_MD');
 }
 
 export async function installLocalSkillZip(payload: {
   zipPath?: string;
   archiveBase64?: string;
 }): Promise<{ success: boolean; skillName?: string; pluginSpec?: string; error?: string }> {
-  const result = await invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP, payload);
-  return result ?? { success: false, error: 'SKILL_ZIP_INSTALL_FAILED' };
+  try {
+    const result = await invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP, payload);
+    return result ?? { success: false, error: 'SKILL_ZIP_INSTALL_FAILED' };
+  } catch (error) {
+    const message = unwrapSkillZipError(error instanceof Error ? error.message : String(error));
+    return { success: false, error: message || 'SKILL_ZIP_INSTALL_FAILED' };
+  }
 }
 
 export async function mountInstalledSkill(sessionId: string, skillName: string): Promise<boolean> {

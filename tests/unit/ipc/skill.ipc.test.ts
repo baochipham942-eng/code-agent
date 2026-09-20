@@ -24,7 +24,7 @@ const svc = vi.hoisted(() => {
     ensureInitialized: vi.fn(async () => {}),
     refreshLibraries: vi.fn(async () => {}),
     reload: vi.fn(async () => {}),
-    getAllSkills: vi.fn(() => [{ name: 'pdf' }, { name: 'excel' }]),
+    getAllSkills: vi.fn((): Array<{ name: string; source?: string }> => [{ name: 'pdf' }, { name: 'excel' }]),
     registerSkillsToToolSearch: vi.fn(),
     initialize: vi.fn(async () => {}),
   };

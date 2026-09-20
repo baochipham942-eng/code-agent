@@ -69,6 +69,7 @@ export function buildContextTranscriptEntries(ctx: ContextAssemblyCtx, messages:
             preserveObservation: result.metadata?.preserveObservation === true,
             evidenceKind: typeof result.metadata?.evidenceKind === 'string' ? result.metadata.evidenceKind : undefined,
             filePath: typeof result.metadata?.filePath === 'string' ? result.metadata.filePath : undefined,
+            toolResultMetadata: result.metadata,
           })),
       );
       continue;

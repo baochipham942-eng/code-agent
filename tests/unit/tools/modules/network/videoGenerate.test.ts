@@ -129,6 +129,12 @@ describe('video_generate — execute', () => {
       allowAll,
     );
 
+    // 提示词扩写打的是智谱官方端点：model 必须是官方端点上存在的免费快模型，
+    // 不能复用已切 0ki 专属 glm-5.3-flash 的 DEFAULT_MODELS.quick（否则 model not found → 静默回落短提示词）
+    const [expandUrl, expandInit] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(expandUrl).toContain('open.bigmodel.cn');
+    expect(JSON.parse(String(expandInit.body)).model).toBe('glm-4-flash');
+
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.meta?.videoUrl).toBe('https://cdn/video.mp4');

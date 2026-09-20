@@ -495,6 +495,7 @@ describe('CLI command entrypoints', () => {
       outputFormat: undefined,
       systemPrompt: undefined,
       metrics: undefined,
+      originKind: 'headless',
     });
     expect(restoreSession).toHaveBeenCalledWith('session-old');
     expect(run).toHaveBeenCalledWith('write tests');

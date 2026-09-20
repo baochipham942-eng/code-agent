@@ -38,6 +38,7 @@ import { getSubagentContextStore } from '../context/subagentContextStore';
 import { getConfigService } from '../services/core/configService';
 import { applyInterventionsToMessages } from '../context/contextInterventionHelpers';
 import { getContextInterventionState } from '../context/contextInterventionState';
+import { projectReadSubagentMessages } from '../context/readResultProjection';
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
 import {
   buildContextSnapshot,
@@ -50,11 +51,7 @@ import {
   materializeObservedMessages,
   type RuntimeMessage,
 } from './subagentExecutorProjection';
-import {
-  applySubagentToolExitGate,
-  buildSubagentToolTable,
-  resolveSubagentToolAccess,
-} from './subagentExecutorToolDefs';
+import { applySubagentToolExitGate, buildSubagentToolTable, resolveSubagentToolAccess } from './subagentExecutorToolDefs';
 import {
   buildSubagentModelCall,
   drainSubagentMessages,
@@ -625,7 +622,7 @@ export class SubagentExecutor {
           sessionId,
           executionAgentId,
         );
-        const inferenceMessages = applyInterventionsToMessages(messages, effectiveInterventions);
+        const inferenceMessages = projectReadSubagentMessages(applyInterventionsToMessages(messages, effectiveInterventions));
         const providerMessages = buildInferenceMessages(inferenceMessages);
         const telemetryTurnStartedAt = Date.now();
         const currentTelemetryTurnNumber = ++telemetryTurnNumber;

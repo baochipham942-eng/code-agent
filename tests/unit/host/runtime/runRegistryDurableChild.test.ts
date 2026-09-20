@@ -76,4 +76,52 @@ describe('RunRegistry durable auxiliary child', () => {
     registry.clear();
     db.close();
   });
+
+  it('keeps both child projections when two auxiliary children start in parallel', async () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    const repository = new DurableRunRepository(db);
+    repository.migrate();
+    const registry = new RunRegistry();
+    registry.configureDurableKernel(new DurableRunKernel({
+      stores: repository,
+      ownerId: 'test-host',
+      processInstanceId: 'test-process',
+      leaseDurationMs: 60_000,
+    }));
+
+    const parent = await registry.startDurable({
+      runId: 'run-parent-parallel',
+      sessionId: 'session-parallel-children',
+      workspace: '/tmp/project',
+    }, 100);
+    await Promise.all([
+      registry.startAuxiliaryDurableChild({
+        runId: 'session-work-a',
+        sessionId: 'session-parallel-children',
+        workspace: '/tmp/project',
+      }, parent.context.runId, 110),
+      registry.startAuxiliaryDurableChild({
+        runId: 'session-work-b',
+        sessionId: 'session-parallel-children',
+        workspace: '/tmp/project',
+      }, parent.context.runId, 111),
+    ]);
+
+    const children = await repository.listChildRuns(parent.context.runId);
+    expect(children).toEqual(expect.arrayContaining([
+      expect.objectContaining({ childRunId: 'session-work-a', status: 'running' }),
+      expect.objectContaining({ childRunId: 'session-work-b', status: 'running' }),
+    ]));
+    expect(children).toHaveLength(2);
+    const pending = await repository.listPendingOperations(parent.context.runId);
+    expect(pending).toEqual(expect.arrayContaining([
+      expect.objectContaining({ operationId: 'agent-team:session-work-a', status: 'succeeded' }),
+      expect.objectContaining({ operationId: 'agent-team:session-work-b', status: 'succeeded' }),
+    ]));
+    expect(pending).toHaveLength(2);
+
+    registry.clear();
+    db.close();
+  });
 });

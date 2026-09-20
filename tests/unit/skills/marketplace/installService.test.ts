@@ -106,6 +106,7 @@ describe('marketplace install service trust defaults', () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
 
@@ -192,6 +193,101 @@ describe('marketplace install service trust defaults', () => {
     await expect(getEnabledSkillDirs()).resolves.toEqual([]);
     expect(fsSync.existsSync(commandPath)).toBe(false);
     expect(mocks.reloadSkills).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['critical command', '```bash\nrm -rf /\n```'],
+    ['embedded high-confidence secret', '```\nOPENAI_API_KEY=sk-proj-123456789012345678901234567890123456789012345678\n```'],
+    ['dynamic command name', '```bash\ncmd=rm; $cmd -rf /\n```'],
+  ])('blocks %s before marketplace assets are renamed', async (_label, content) => {
+    await fs.writeFile(
+      path.join(mocks.marketplaceRoot, 'skills', 'demo', 'SKILL.md'),
+      content,
+      'utf8',
+    );
+
+    await expect(installPlugin('demo@trusted-test')).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    expect((await listInstalledPlugins())['demo@trusted-test']).toBeUndefined();
+
+    const pluginsDir = path.join(mocks.userConfigDir, 'plugins');
+    const residualEntries = fsSync.existsSync(pluginsDir) ? await fs.readdir(pluginsDir) : [];
+    expect(residualEntries.filter((entry) => entry.includes('.staging-') || entry.includes('demo__trusted-test'))).toEqual([]);
+  });
+
+  it('keeps hard content blocks non-overridable and preserves the previous install', async () => {
+    await installPlugin('demo@trusted-test');
+    const first = (await listInstalledPlugins())['demo@trusted-test']!;
+    await fs.writeFile(
+      path.join(mocks.marketplaceRoot, 'skills', 'demo', 'SKILL.md'),
+      '```bash\nrm -rf /\n```',
+      'utf8',
+    );
+
+    await expect(installPlugin('demo@trusted-test', { force: true })).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    const retained = (await listInstalledPlugins())['demo@trusted-test']!;
+    expect(retained).toEqual(first);
+    await expect(fs.readFile(path.join(first.pluginRoot!, 'skills', 'demo', 'SKILL.md'), 'utf8'))
+      .resolves.toContain('name: demo');
+  });
+
+  it('scans untrusted GitHub archive commands before optional activation', async () => {
+    const zip = new JSZip();
+    zip.file('remote-repo/plugins/remote-demo/SKILL.md', 'safe');
+    zip.file('remote-repo/plugins/remote-demo/commands/run.md', '```bash\ncmd=rm; $cmd -rf /\n```');
+    mockGitHubInstall('f'.repeat(40), await zip.generateAsync({ type: 'nodebuffer' }));
+    mocks.getMarketplaceInfo.mockResolvedValue({
+      rootDir: mocks.marketplaceRoot,
+      source: { source: 'github', repo: 'owner/remote-repo' },
+      manifest: {
+        name: 'trusted-test',
+        plugins: [{
+          name: 'remote-demo',
+          source: 'plugins/remote-demo',
+          repository: 'owner/remote-repo',
+          skills: ['.'],
+          commands: ['commands/run.md'],
+        }],
+      },
+    });
+
+    await expect(installPlugin('remote-demo@trusted-test')).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    expect((await listInstalledPlugins())['remote-demo@trusted-test']).toBeUndefined();
+    const cacheDir = path.join(mocks.userConfigDir, 'marketplace-plugin-cache');
+    const cacheEntries = fsSync.existsSync(cacheDir) ? await fs.readdir(cacheDir) : [];
+    expect(cacheEntries.filter((entry) => entry.includes('tmp-'))).toEqual([]);
+  });
+
+  it('scans text payload files outside declared skill and command paths', async () => {
+    await fs.mkdir(path.join(mocks.marketplaceRoot, 'scripts'), { recursive: true });
+    await fs.writeFile(
+      path.join(mocks.marketplaceRoot, 'scripts', 'setup.sh'),
+      '#!/bin/sh\nrm -rf /\n',
+      'utf8',
+    );
+
+    await expect(installPlugin('demo@trusted-test')).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    expect((await listInstalledPlugins())['demo@trusted-test']).toBeUndefined();
+  });
+
+  it('rejects a symlink payload before it can be copied into staging', async () => {
+    await fs.mkdir(path.join(mocks.marketplaceRoot, 'hooks'), { recursive: true });
+    await fs.symlink('../skills/demo/SKILL.md', path.join(mocks.marketplaceRoot, 'hooks', 'run.sh'));
+
+    await expect(installPlugin('demo@trusted-test')).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    expect((await listInstalledPlugins())['demo@trusted-test']).toBeUndefined();
+  });
+
+  it('fails closed when a staged text file cannot be read', async () => {
+    const originalReadFile = fs.readFile.bind(fs);
+    vi.spyOn(fs, 'readFile').mockImplementation(async (filePath, options) => {
+      if (String(filePath).endsWith(`${path.sep}SKILL.md`)) {
+        throw new Error('EIO');
+      }
+      return originalReadFile(filePath, options);
+    });
+
+    await expect(installPlugin('demo@trusted-test')).rejects.toThrow('SKILL_CONTENT_SCAN_FAILED');
+    expect((await listInstalledPlugins())['demo@trusted-test']).toBeUndefined();
   });
 
   it('rejects a duplicate install while the same plugin id is still resolving', async () => {

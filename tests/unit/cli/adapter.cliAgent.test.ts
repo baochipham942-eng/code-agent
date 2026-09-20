@@ -180,7 +180,10 @@ describe('CLIAgent', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.buildCLIConfig.mockReturnValue({ ...baseConfig });
+    mocks.buildCLIConfig.mockImplementation((options: { originKind?: CLIConfig['originKind'] } = {}) => ({
+      ...baseConfig,
+      ...(options.originKind ? { originKind: options.originKind } : {}),
+    }));
     sessionManager = makeSessionManager();
     mocks.getSessionManager.mockReturnValue(sessionManager);
     mocks.getSessionSkillService.mockReturnValue({
@@ -294,15 +297,26 @@ describe('CLIAgent', () => {
     expect(getActiveRunTraceContext()).toBeUndefined();
   });
 
-  it('CLI run 显式声明 originKind=headless（上线后评测据此剔分母）', async () => {
+  it('交互式 CLIAgent.run 不替入口猜 originKind=headless', async () => {
     installLoop(async (ctl) => {
       ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
     });
 
     const agent = new CLIAgent();
+    await agent.run('interactive turn');
+
+    const config = mocks.createAgentLoop.mock.calls[0][0] as { originKind?: string };
+    expect(config.originKind).toBeUndefined();
+  });
+
+  it('无头入口声明的 originKind=headless 会传到 AgentLoop', async () => {
+    installLoop(async (ctl) => {
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+
+    const agent = new CLIAgent({ originKind: 'headless' });
     await agent.run('headless turn');
 
-    // createAgentLoop 是 CLI 与界面 /api/run 的公共路径，来源只能由入口声明。
     const config = mocks.createAgentLoop.mock.calls[0][0] as { originKind?: string };
     expect(config.originKind).toBe('headless');
   });

@@ -244,7 +244,7 @@ describe('resolveMainChatModelDecision — model_decision 事件发射（ADR-019
       resolvedProvider: 'moonshot',
       resolvedModel: 'kimi-k2.5',
       reason: 'fallback-availability',
-      fallbackFrom: 'zhipu/glm-4-flash',
+      fallbackFrom: `zhipu/${DEFAULT_MODELS.quick}`,
     });
   });
 

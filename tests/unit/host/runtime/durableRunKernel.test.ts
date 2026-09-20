@@ -408,6 +408,88 @@ describe('DurableRunKernel', () => {
     db.close();
   });
 
+  it('serializes concurrent checkpoints on one run so none fence on stale cursor', async () => {
+    const { db, kernel, repository } = createKernel();
+    const created = await kernel.createNativeRun({
+      runId: 'run-parallel-checkpoint', sessionId: 'session-parallel-checkpoint', now: 10,
+    });
+
+    const results = await Promise.allSettled(
+      [0, 1, 2].map((index) => kernel.checkpoint({
+        runId: 'run-parallel-checkpoint',
+        attempt: 1,
+        owner: created.owner,
+        now: 20 + index,
+        status: 'running',
+        state: { index },
+        pendingOperations: [],
+        events: [{ type: 'native_tool_operation', payload: { index }, recordedAt: 20 + index }],
+      })),
+    );
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(3);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(0);
+    const envelope = await repository.get('run-parallel-checkpoint');
+    expect(envelope?.cursor.nextEventSeq).toBe(4);
+    expect(envelope?.cursor.checkpointSeq).toBe(3);
+    db.close();
+  });
+
+  it('queues a later checkpoint that arrives while the first is awaiting storage', async () => {
+    const { db, kernel, repository } = createKernel();
+    const created = await kernel.createNativeRun({
+      runId: 'run-delayed-checkpoint', sessionId: 'session-delayed-checkpoint', now: 10,
+    });
+    const originalGet = repository.get.bind(repository);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const enteredGate = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let blocked = false;
+    repository.get = async (runId: string) => {
+      if (!blocked) {
+        blocked = true;
+        entered();
+        await gate;
+      }
+      return originalGet(runId);
+    };
+
+    const first = kernel.checkpoint({
+      runId: 'run-delayed-checkpoint',
+      attempt: 1,
+      owner: created.owner,
+      now: 20,
+      status: 'running',
+      state: { index: 0 },
+      pendingOperations: [],
+      events: [{ type: 'native_tool_operation', payload: { index: 0 }, recordedAt: 20 }],
+    });
+    await enteredGate;
+    const second = kernel.checkpoint({
+      runId: 'run-delayed-checkpoint',
+      attempt: 1,
+      owner: created.owner,
+      now: 21,
+      status: 'running',
+      state: { index: 1 },
+      pendingOperations: [],
+      events: [{ type: 'native_tool_operation', payload: { index: 1 }, recordedAt: 21 }],
+    });
+    release();
+    const results = await Promise.allSettled([first, second]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(0);
+    const envelope = await originalGet('run-delayed-checkpoint');
+    expect(envelope?.cursor.nextEventSeq).toBe(3);
+    expect(envelope?.cursor.checkpointSeq).toBe(2);
+    db.close();
+  });
+
   it('fails closed when durable storage is unavailable', async () => {
     const kernel = new DurableRunKernel({
       stores: null,

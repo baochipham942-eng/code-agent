@@ -11,7 +11,7 @@
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import type { ModelConfig } from '../../../src/shared/contract';
-import { MODEL_API_ENDPOINTS } from '../../../src/shared/constants';
+import { DEFAULT_MODELS, MODEL_API_ENDPOINTS } from '../../../src/shared/constants';
 import {
   resolveProviderBaseUrl,
   resolveProviderApiKey,
@@ -125,6 +125,15 @@ describe('resolveProviderBaseUrl', () => {
     expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-5'))).toBe(MODEL_API_ENDPOINTS.zhipuCoding);
     // glm-4.6v: yearly 且无 coding flag → 标准 0ki 端点
     expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-4.6v'))).toBe(MODEL_API_ENDPOINTS.zhipu);
+  });
+
+  it('quick 档模型不是 free 档，解析到 0ki 端点（免费档官方 key 已死，quick 不得再走它）', async () => {
+    const { PROVIDER_REGISTRY } = await import('../../../src/host/model/providerRegistry');
+    const quick = DEFAULT_MODELS.quick;
+    const info = PROVIDER_REGISTRY.zhipu.models.find((m) => m.id === quick);
+    expect(info).toBeDefined();
+    expect(info?.costType).not.toBe('free');
+    expect(resolveProviderBaseUrl(cfg('zhipu', quick))).toBe(MODEL_API_ENDPOINTS.zhipu);
   });
 
   it('zhipu free 仍允许 config.baseUrl 覆盖；coding 端点固定不被 config.baseUrl 覆盖', () => {

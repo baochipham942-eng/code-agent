@@ -50,6 +50,7 @@ import {
   type RunContext,
 } from '../host/runtime/runContext';
 import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
+import { RunSessionConflictError } from '../host/runtime/runRegistry';
 import { createApplicationAutoAgentRecoveryHost } from '../host/app/autoAgentRecoveryHost';
 import { createApplicationNativeRecoveryPorts } from '../host/app/nativeRecoveryHost';
 import { initializeDurableRun, type DurableRunApplicationRuntime } from '../host/app/initializeDurableRun';
@@ -93,6 +94,7 @@ let initialized = false;
 let currentTelemetrySessionId: string | null = null;
 let currentAgentLoopSessionId: string | null = null;
 let cliDurableRunRuntime: DurableRunApplicationRuntime | null = null;
+let cliDurableProcessInstanceId: string | null = null;
 /** MCP init 的后台 promise（未启用 = null）；首个 agent run 经 whenCLIMcpReady 等它就绪 */
 let mcpInitPromise: Promise<void> | null = null;
 
@@ -181,12 +183,13 @@ async function initializeCLIDurableRun(
   const repository = new DurableRunRepository(db);
   repository.migrate();
   const registry = getApplicationRunRegistry();
+  cliDurableProcessInstanceId = `cli-${process.pid}-${randomUUID()}`;
   cliDurableRunRuntime = await initializeDurableRun({
     registry,
     repository,
     dataDir,
     ownerId: 'cli-native-host',
-    processInstanceId: `cli-${process.pid}-${randomUUID()}`,
+    processInstanceId: cliDurableProcessInstanceId,
     autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(registry),
     nativeRecoveryPorts: createApplicationNativeRecoveryPorts(registry),
   });
@@ -198,7 +201,18 @@ export async function startCLIDurableRun(
   if (!cliDurableRunRuntime?.kernel) return null;
   const registry = getApplicationRunRegistry();
   if (!await registry.waitForDurableKernel(SERVICE_TIMEOUTS.BOOTSTRAP)) return null;
-  return registry.startDurable(input);
+  try {
+    return await registry.startDurable(input);
+  } catch (error) {
+    if (!(error instanceof RunSessionConflictError)) throw error;
+    const cancelled = await registry.cancelOrphanedSessionRoot({
+      sessionId: input.sessionId,
+      expectedOwnerId: 'cli-native-host',
+      processInstanceId: cliDurableProcessInstanceId ?? `cli-${process.pid}`,
+    });
+    if (!cancelled) throw error;
+    return await registry.startDurable(input);
+  }
 }
 
 export async function terminalCLIDurableRun(
@@ -462,6 +476,7 @@ export function buildCLIConfig(options: {
   statusFile?: string;
   tools?: string;
   disallowedTools?: string;
+  originKind?: CLIConfig['originKind'];
 }): CLIConfig {
   const config = getConfigService();
   const settings = config.getSettings();
@@ -507,6 +522,7 @@ export function buildCLIConfig(options: {
     // --tools / --disallowed-tools：run 级工具面裁剪（精确白名单，无核心工具兜底）
     allowedToolNames: parseToolNameListFlag(options.tools),
     deniedToolNames: parseToolNameListFlag(options.disallowedTools),
+    ...(options.originKind ? { originKind: options.originKind } : {}),
   };
 }
 
@@ -687,6 +703,7 @@ export function createAgentLoop(
     allowedToolNames: config.allowedToolNames,
     foregroundToolFace: config.foregroundToolFace,
     historyVisibility: config.historyVisibility,
+    unattendedTurn: config.originKind === 'headless',
     telemetryAdapter,
     // CLI 消息持久化回调（包含 tool_results）
     persistMessage: async (message: Message) => {

@@ -37,6 +37,11 @@ export interface CLIGlobalOptions {
   metrics?: string;
   /** Path to write run-status heartbeat JSON (--status-file), mapped from run/chat option */
   statusFile?: string;
+  /**
+   * Script/headless entries pass 'headless'. Interactive chat/TUI omit it.
+   * createAgentLoop must not guess this for the caller.
+   */
+  originKind?: SessionOriginKind;
 }
 
 /**

@@ -46,10 +46,14 @@ export async function copyDirectory(src: string, dest: string, signal?: AbortSig
     throwIfInstallAborted(signal);
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
+    const stat = await fs.lstat(srcPath);
 
-    if (entry.isDirectory()) {
+    if (stat.isSymbolicLink()) {
+      throw new Error(`SKILL_CONTENT_SCAN_BLOCKED: symbolic link rejected (${srcPath})`);
+    }
+    if (stat.isDirectory()) {
       await copyDirectory(srcPath, destPath, signal);
-    } else if (entry.isFile()) {
+    } else if (stat.isFile()) {
       await fs.copyFile(srcPath, destPath);
       throwIfInstallAborted(signal);
     }

@@ -236,7 +236,7 @@ export class ModelRouter {
     reasoning: { provider: 'zhipu', model: 'glm-5' },
     // 代码 - 默认主力包月
     code: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.code },
-    // 快速 - 智谱 GLM-4.7 Flash (免费)
+    // 快速 - 0ki GLM-5.3-flash（快速判断档，非 free）
     fast: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
     // 通用 - 默认主力包月
     general: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat },

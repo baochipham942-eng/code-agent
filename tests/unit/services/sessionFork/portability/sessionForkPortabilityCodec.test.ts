@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   SessionForkPortabilityError,
   buildForkLineageEnvelopeV1,
+  buildPortableConversationHistory,
   buildSessionExportEnvelopeV2,
   decodeForkLineageEnvelopeV1,
   decodeSessionExportEnvelopeV2,
   encodeForkLineageEnvelopeV1,
+  encodePortableConversationHistory,
   encodeSessionExportEnvelopeV2,
   rehashPortableConversationHistory,
   rehashSessionExportEnvelopeV2,
@@ -650,5 +652,82 @@ describe('session fork portability codecs', () => {
       lineage: undefined,
       detachedProvenance: undefined,
     })).toThrow(/DETACHED_PROVENANCE_REQUIRED/);
+  });
+
+  it('redacts credential-shaped keys and key=value secrets the same way in toolCalls[]/result.output/contentParts as in the conversationHistory projection', () => {
+    // Regression for N-FORK-PORTABILITY round 9: sanitizePortableValue (this file) used to
+    // be a weaker, independently-maintained rewrite of conversationHistory.ts's
+    // redactSecretText/isForbiddenStructuralKey — it caught apiKey/sk-.../AKIA... but not
+    // password/Authorization/cookie/credential or the `key=value` text form. A password in
+    // toolCalls[].arguments or an `Authorization: ...` header in result.output would
+    // therefore travel in plaintext through messages[] while the same content, exported via
+    // conversationHistory, was already redacted. Both channels now share the same
+    // key-forbidden and string-redaction primitives (see codec.ts's isForbiddenPortableKey).
+    const secretShapes = {
+      toolCalls: [{
+        id: 'call-secret',
+        name: 'http',
+        arguments: { password: 'hunter2', note: 'Authorization: abc123' },
+        result: { success: true, output: 'Authorization: abc123' },
+      }],
+      contentParts: [
+        { type: 'text', text: 'Authorization: abc123' },
+        { type: 'tool_call', toolCallId: 'call-secret', password: 'hunter2' },
+      ],
+    } as unknown as Partial<Message>;
+
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    childEntry.messages.push(message('secret-msg', 'assistant', 'plain', 3, secretShapes));
+
+    const envelope = buildSessionExportEnvelopeV2(draft);
+    const serialized = encodeSessionExportEnvelopeV2(envelope);
+    expect(serialized).not.toContain('hunter2');
+    expect(serialized).not.toContain('abc123');
+
+    const secretMessage = envelope.messages.find((item) => item.id === 'secret-msg');
+    expect(JSON.stringify(secretMessage?.toolCalls)).not.toContain('hunter2');
+    expect(JSON.stringify(secretMessage?.toolCalls)).not.toContain('abc123');
+    expect(JSON.stringify(secretMessage?.contentParts)).not.toContain('hunter2');
+    expect(JSON.stringify(secretMessage?.contentParts)).not.toContain('abc123');
+
+    // Same raw shapes, this time through the conversationHistory projection.
+    const history = buildPortableConversationHistory({
+      ownerUserId: OWNER_ID,
+      projectId: PROJECT_ID,
+      branches: [{
+        id: 'br-root',
+        session_id: 'root',
+        owner_user_id: OWNER_ID,
+        project_id: PROJECT_ID,
+        root_branch_id: 'br-root',
+        parent_branch_id: null,
+        fork_id: null,
+        anchor_entry_id: null,
+        created_at: 0,
+      }],
+      entries: [{
+        id: 'entry-secret',
+        owner_user_id: OWNER_ID,
+        project_id: PROJECT_ID,
+        source_session_id: 'root',
+        source_message_id: 'secret-msg',
+        created_at: 3,
+        payload_digest: 'source-secret',
+        message_json: JSON.stringify({
+          id: 'secret-msg',
+          role: 'assistant',
+          content: 'plain',
+          timestamp: 3,
+          ...secretShapes,
+        }),
+      }],
+      references: [],
+      events: [],
+      evaluationAttributions: [],
+    });
+    const serializedHistory = encodePortableConversationHistory(history);
+    expect(serializedHistory).not.toContain('hunter2');
+    expect(serializedHistory).not.toContain('abc123');
   });
 });

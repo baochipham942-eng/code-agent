@@ -31,7 +31,13 @@ import {
   SESSION_EXPORT_ENVELOPE_VERSION,
 } from '../../../../shared/contract/sessionForkPortability';
 import { canonicalJson, deepPortableClone, portabilityDigest, withoutDigest } from './canonical';
-import { migrateLegacyConversationHistoryMetadata, validatePortableConversationHistory } from './conversationHistory';
+import {
+  isForbiddenStructuralKey,
+  migrateLegacyConversationHistoryMetadata,
+  normalizeKey,
+  redactSecretText,
+  validatePortableConversationHistory,
+} from './conversationHistory';
 import {
   sanitizePortableSessionWorkspaceV2,
   validatePortableSessionWorkspaceV2,
@@ -48,6 +54,13 @@ import {
   validatePortableSessionOrigin,
 } from './portableValidation';
 
+// Neo's own runtime/session-management state — queues, leases, diffs, snapshots — that
+// has no export meaning even when it isn't credential-shaped. This is a distinct concern
+// from FORBIDDEN_STRUCTURAL_KEYS/MARKERS in conversationHistory.ts (which target
+// credential- and filesystem-path-shaped keys in arbitrary user/tool data): a key here
+// is forbidden because of *what it is* (process state), not *what it looks like*
+// (a secret). isForbiddenPortableKey below checks both sets through one shared
+// normalize+match so a key forbidden on one export channel is forbidden on the other.
 const FORBIDDEN_RUNTIME_KEYS = new Set([
   'absoluteWorktreePath', 'accountName', 'apiKey', 'approvalQueue', 'approvalRequests',
   'baseUrl', 'chatName', 'cwd', 'durableWaitingInput', 'executablePermission',
@@ -57,41 +70,14 @@ const FORBIDDEN_RUNTIME_KEYS = new Set([
   'taskLease', 'todo', 'todos', 'turnDiff', 'workingDirectory',
 ]);
 
-// Bearer token bodies are opaque (JWT/base64url) — long and containing digits or
-// token punctuation. A plain English phrase like "Bearer authentication" is neither,
-// so it's excluded from the capture group rather than rewritten as a redaction.
-const BEARER_TOKEN_PATTERN = /\bBearer\s+([A-Za-z0-9._~+/-]+=*)/giu;
-const PORTABLE_SECRET_PATTERNS = [
-  /\bsk-[A-Za-z0-9_-]{8,}\b/giu,
-  /\bAKIA[A-Z0-9]{16}\b/gu,
-];
-
-function normalizePortableKey(key: string): string {
-  return key.replace(/[^A-Za-z0-9]/gu, '').toLowerCase();
-}
-
 function isForbiddenPortableKey(key: string): boolean {
-  const normalized = normalizePortableKey(key);
-  return [...FORBIDDEN_RUNTIME_KEYS].some((candidate) => normalized === normalizePortableKey(candidate));
-}
-
-function looksLikeBearerTokenBody(token: string): boolean {
-  return token.length >= 16 || /[0-9._~+/-]/u.test(token);
-}
-
-function redactBearerTokens(value: string): string {
-  return value.replace(BEARER_TOKEN_PATTERN, (match, token: string) => (
-    looksLikeBearerTokenBody(token) ? 'Bearer [REDACTED]' : match
-  ));
+  if (isForbiddenStructuralKey(key)) return true;
+  const normalized = normalizeKey(key);
+  return [...FORBIDDEN_RUNTIME_KEYS].some((candidate) => normalized === normalizeKey(candidate));
 }
 
 function sanitizePortableValue(value: unknown): unknown {
-  if (typeof value === 'string') {
-    return PORTABLE_SECRET_PATTERNS.reduce(
-      (current, pattern) => current.replace(pattern, '[REDACTED_SECRET]'),
-      redactBearerTokens(value),
-    );
-  }
+  if (typeof value === 'string') return redactSecretText(value);
   if (Array.isArray(value)) return value.map(sanitizePortableValue);
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(

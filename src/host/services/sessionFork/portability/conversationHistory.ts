@@ -112,11 +112,15 @@ function fail(code: PortableConversationHistoryErrorCode, message: string): neve
   throw new PortableConversationHistoryError(code, message);
 }
 
-function normalizeKey(key: string): string {
+/** @internal Shared with codec.ts so both export channels use one key-normalization rule. */
+export function normalizeKey(key: string): string {
   return key.replace(/[^A-Za-z0-9]/gu, '').toLowerCase();
 }
 
-function isForbiddenStructuralKey(key: string): boolean {
+/** @internal Shared with codec.ts (see isForbiddenPortableKey there) so a credential- or
+ * path-shaped key is scrubbed the same way regardless of which export channel it travels
+ * through (message.metadata/provenance here vs toolCalls/toolResults/contentParts there). */
+export function isForbiddenStructuralKey(key: string): boolean {
   const normalized = normalizeKey(key);
   return FORBIDDEN_STRUCTURAL_KEYS.has(normalized)
     || FORBIDDEN_STRUCTURAL_KEY_MARKERS.some((marker) => normalized.includes(marker));
@@ -185,9 +189,20 @@ function numberArray(value: unknown, label: string): number[] {
   return parsed.map((item, index) => nonNegativeInteger(item, `${label}[${index}]`));
 }
 
-function redactSecretText(value: string): string {
+// Bearer token bodies are opaque (JWT/base64url) — long and containing digits or token
+// punctuation. A plain English phrase like "Bearer authentication" is neither, so it's
+// excluded from redaction rather than flagged as a false-positive secret.
+function looksLikeBearerTokenBody(token: string): boolean {
+  return token.length >= 16 || /[0-9._~+/-]/u.test(token);
+}
+
+/** @internal Shared with codec.ts so a Bearer/sk-/AKIA/`key=value` credential shape is
+ * redacted at the same strength no matter which export channel carries the string. */
+export function redactSecretText(value: string): string {
   return value
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/giu, 'Bearer [REDACTED]')
+    .replace(/\bBearer\s+([A-Za-z0-9._~+/-]+=*)/giu, (match, token: string) => (
+      looksLikeBearerTokenBody(token) ? 'Bearer [REDACTED]' : match
+    ))
     .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/giu, '[REDACTED_SECRET]')
     .replace(/\bAKIA[A-Z0-9]{16}\b/gu, '[REDACTED_SECRET]')
     .replace(

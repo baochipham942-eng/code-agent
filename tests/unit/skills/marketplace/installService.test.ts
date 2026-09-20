@@ -734,6 +734,7 @@ describe('installFromLocalZip', () => {
     const result = await installFromLocalZip(archive);
     expect(result.pluginSpec).toBe('demo@local-zip');
     expect(result.installedSkills).toEqual(['demo']);
+    expect(result.skillName).toBe('demo');
 
     const installed = await listInstalledPlugins();
     expect(installed['demo@local-zip']).toMatchObject({
@@ -787,5 +788,22 @@ describe('installFromLocalZip', () => {
     });
     await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_INVALID_FRONTMATTER');
     expect(await listInstalledPlugins()).toEqual({});
+  });
+
+  it('rejects a zip whose frontmatter name discovery cannot load', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: Demo_v2\ndescription: Demo skill\n---\nhello',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_INVALID_FRONTMATTER');
+    expect(await listInstalledPlugins()).toEqual({});
+  });
+
+  it('returns the frontmatter name when it differs from the zip directory', async () => {
+    const archive = await packSkillZip({
+      'pack/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---\nhello',
+    });
+    const result = await installFromLocalZip(archive);
+    expect(result.pluginSpec).toBe('pack@local-zip');
+    expect(result.skillName).toBe('demo');
   });
 });

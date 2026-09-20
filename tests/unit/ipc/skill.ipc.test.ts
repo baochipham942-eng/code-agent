@@ -59,6 +59,7 @@ const svc = vi.hoisted(() => {
   const installFromLocalZip = vi.fn(async (..._a: unknown[]) => ({
     pluginSpec: 'demo@local-zip',
     installedSkills: ['demo'],
+    skillName: 'demo',
   }));
   const exportInstalledSkill = vi.fn(async (..._a: unknown[]) => ({
     fileName: 'demo.skill.zip',

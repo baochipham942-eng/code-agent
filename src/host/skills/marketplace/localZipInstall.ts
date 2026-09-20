@@ -32,7 +32,8 @@ function parseRequiredSkillFrontmatter(content: string): { name: string; descrip
   if (!name || !description) {
     throw new Error(`${SKILL_ZIP_INVALID_FRONTMATTER}: name and description are required`);
   }
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+  // 与 skillParser SKILL_NAME_REGEX 同口径，否则 discovery 会静默丢掉已落盘的包。
+  if (!/^[a-z]([a-z0-9-]*[a-z0-9])?$/.test(name) || name.includes('--')) {
     throw new Error(`${SKILL_ZIP_INVALID_FRONTMATTER}: invalid skill name`);
   }
   return { name, description };
@@ -96,7 +97,7 @@ async function resolveLocalZipSkillDir(extractRoot: string): Promise<string> {
 async function installFromLocalZipUnlocked(
   archive: Buffer,
   options: { force?: boolean; enableAfterInstall?: boolean; signal?: AbortSignal },
-): Promise<InstallResult> {
+): Promise<InstallResult & { skillName: string }> {
   throwIfInstallAborted(options.signal);
   if (archive.byteLength === 0) {
     throw new Error(`${SKILL_ZIP_INVALID_SHAPE}: empty zip`);
@@ -127,7 +128,7 @@ async function installFromLocalZipUnlocked(
     throwIfInstallAborted(options.signal);
     const skillDirName = await resolveLocalZipSkillDir(tempDir);
     const skillMarkdown = await fs.readFile(path.join(tempDir, skillDirName, 'SKILL.md'), 'utf8');
-    parseRequiredSkillFrontmatter(skillMarkdown);
+    const parsed = parseRequiredSkillFrontmatter(skillMarkdown);
     const pluginSpec = `${skillDirName}@${LOCAL_ZIP_MARKETPLACE}`;
     const state = await loadInstalledPlugins();
     throwIfInstallAborted(options.signal);
@@ -140,7 +141,7 @@ async function installFromLocalZipUnlocked(
       source: './',
       skills: [skillDirName],
     };
-    return await performInstall({
+    const result = await performInstall({
       plugin: skillDirName,
       marketplace: LOCAL_ZIP_MARKETPLACE,
       pluginSpec,
@@ -157,6 +158,7 @@ async function installFromLocalZipUnlocked(
       enableAfterInstall: options.enableAfterInstall !== false,
       signal: options.signal,
     });
+    return { ...result, skillName: parsed.name };
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -169,7 +171,7 @@ async function installFromLocalZipUnlocked(
 export function installFromLocalZip(
   archive: Buffer,
   options: { force?: boolean; enableAfterInstall?: boolean; signal?: AbortSignal } = {},
-): Promise<InstallResult> {
+): Promise<InstallResult & { skillName: string }> {
   return runExclusivePluginInstall(
     LOCAL_ZIP_MARKETPLACE,
     () => installFromLocalZipUnlocked(archive, options),

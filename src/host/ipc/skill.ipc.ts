@@ -405,10 +405,9 @@ async function handleSkillInstallLocalZip(payload?: unknown): Promise<{
   }
   const result = await installFromLocalZip(archive, { enableAfterInstall: true });
   await getSkillDiscoveryService().reload();
-  const skillName = result.installedSkills[0];
   return {
     success: true,
-    ...(skillName ? { skillName } : {}),
+    skillName: result.skillName,
     pluginSpec: result.pluginSpec,
   };
 }

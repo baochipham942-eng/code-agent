@@ -22,6 +22,7 @@ export const CONTEXT_LEDGER = {
     PROMPT_LAYER: 'prompt_layer',
     TOOL_SCHEMA_SNAPSHOT: 'tool_schema_snapshot',
     MODEL_BINDING: 'model_binding',
+    COMPRESSION_SIGNAL: 'compression_signal',
   },
   PROMPT_LAYER_OUTCOME: {
     INCLUDED: 'included',

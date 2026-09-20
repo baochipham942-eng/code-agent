@@ -5,7 +5,7 @@ interface ContextCompressionSignalEnvelope {
   __contextCompressionSignal: ContextCompressionSignalData;
 }
 
-export function encodeContextCompressionSignal(data: ContextCompressionSignalData): string {
+function encodeContextCompressionSignal(data: ContextCompressionSignalData): string {
   return JSON.stringify({ __contextCompressionSignal: data } satisfies ContextCompressionSignalEnvelope);
 }
 

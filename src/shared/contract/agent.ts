@@ -417,7 +417,7 @@ export interface ContextCompressedData {
  * `surface` is the routing contract: conversation signals may become one
  * visible timeline notice; health/ledger signals remain diagnostic traces.
  */
-export type ContextCompressionSignalKind =
+type ContextCompressionSignalKind =
   | 'success'
   | 'failure'
   | 'downgrade'
@@ -426,7 +426,7 @@ export type ContextCompressionSignalKind =
   | 'overflow-recovery'
   | 'paused';
 
-export type ContextCompressionSignalCode =
+type ContextCompressionSignalCode =
   | 'compaction-succeeded'
   | 'summary-validation-failed'
   | 'summary-call-failed'

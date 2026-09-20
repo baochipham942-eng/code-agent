@@ -38,7 +38,7 @@ import { getAdaptiveRouter } from '../../../model/adaptiveRouter';
 import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
-import { emitOverflowRecoverySignal } from './compression';
+import { emitOverflowRecoverySignal } from './compressionSignal';
 import {
   seedArtifactRepairGuardFromContext,
 } from '../artifactRepairGuard';

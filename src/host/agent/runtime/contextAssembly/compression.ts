@@ -1,9 +1,10 @@
 // ContextAssembly - Context health tracking and hard-threshold compression.
-import type { AgentEvent, ContextCompressionSignalData, Message } from '../../../../shared/contract';
+import type { AgentEvent, Message } from '../../../../shared/contract';
 import { CHECKPOINT_WRITER, COMPACTION_ECONOMICS, DEFAULT_MODELS } from '../../../../shared/constants';
 import { getContextHealthService } from '../../../context/contextHealthService';
 import { CompressionState } from '../../../context/compressionState';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
+import { emitContextCompressionSignal } from './compressionSignal';
 import { compactMessagesWithSummary } from '../../../context/compactionService';
 import type { ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { estimateTokens } from '../../../context/tokenOptimizer';
@@ -30,42 +31,6 @@ import { persistRuntimeState } from '../runtimeStatePersistence';
 import { getCheckpointWriterService } from '../../checkpointWriterService';
 
 let toolDefTokensCache: { signature: string; tokens: number } | null = null;
-
-export function emitContextCompressionSignal(
-  ctx: ContextAssemblyCtx,
-  signal: Omit<ContextCompressionSignalData, 'signalId' | 'timestamp'>,
-): void {
-  const data: ContextCompressionSignalData = {
-    ...signal,
-    signalId: ctx.generateId(),
-    timestamp: Date.now(),
-  };
-  ctx.runtime.onEvent({ type: 'context_compression_signal', data } as AgentEvent);
-  getContextEventLedger().upsertEvents([{
-    id: '',
-    sessionId: ctx.runtime.sessionId,
-    agentId: ctx.runtime.agentId,
-    invocationId: data.signalId,
-    category: 'compression_survivor',
-    action: 'compressed',
-    sourceKind: 'compression_survivor',
-    sourceDetail: `compression-signal:${data.code}`,
-    layer: 'autocompact',
-    reason: data.code,
-    timestamp: data.timestamp,
-  }]);
-}
-
-export function emitOverflowRecoverySignal(ctx: ContextAssemblyCtx, tokensBefore: number): void {
-  emitContextCompressionSignal(ctx, {
-    kind: 'overflow-recovery',
-    code: 'overflow-recovery-started',
-    surface: 'conversation',
-    retryable: true,
-    tokensBefore,
-    messagesCount: ctx.runtime.messages.length,
-  });
-}
 
 function getArchivedToolResults(state: CompressionState): ToolResultArchiveRef[] {
   const refs: ToolResultArchiveRef[] = [];

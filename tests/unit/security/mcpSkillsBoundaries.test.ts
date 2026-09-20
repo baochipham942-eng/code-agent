@@ -25,7 +25,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: vi.fn(() => ({
+  getConfigService: vi.fn(() => ({ onSettingsUpdated: vi.fn(),
     getServiceApiKey: vi.fn(() => ''),
   })),
 }));

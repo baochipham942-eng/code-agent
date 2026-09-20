@@ -12,7 +12,7 @@ import type {
 const getIntegrationMock = vi.fn();
 
 vi.mock('../../../../../src/host/services', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getIntegration: getIntegrationMock,
   }),
 }));

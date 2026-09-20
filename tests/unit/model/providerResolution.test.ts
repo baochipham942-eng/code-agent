@@ -22,7 +22,7 @@ import {
 const mockGetApiKey = vi.fn<(provider: string) => string | undefined>();
 const mockGetSettings = vi.fn<() => unknown>();
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
 }));
 
 const cfg = (provider: string, model: string, extra: Partial<ModelConfig> = {}): ModelConfig =>

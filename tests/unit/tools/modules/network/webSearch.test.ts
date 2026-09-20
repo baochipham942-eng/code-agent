@@ -122,7 +122,7 @@ async function run(args: Record<string, unknown>, ctx = makeCtx(), canUseTool = 
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getConfigServiceMock.mockReturnValue({ getServiceApiKey: vi.fn(), getSettings: vi.fn(() => ({})) });
+  getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(), getServiceApiKey: vi.fn(), getSettings: vi.fn(() => ({})) });
   routeSourcesMock.mockReturnValue({ sources: ['exa', 'tavily'], reason: 'technical' });
   getAvailableSourcesMock.mockReturnValue(fakeSources);
   parallelSearchMock.mockResolvedValue(makeSearchResult());

@@ -23,7 +23,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   }),
 }));
 vi.mock('../../../src/host/services/auth/authService', () => ({ getAuthService: () => ({ getCurrentUser: () => ({ id: 'owner-1' }) }) }));
-vi.mock('../../../src/host/services/core/configService', () => ({ getConfigService: () => ({ getSettings: () => ({}) }) }));
+vi.mock('../../../src/host/services/core/configService', () => ({ getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({}) }) }));
 vi.mock('../../../src/shared/modelRuntime', () => ({
   buildRuntimeModelOptions: () => [{ provider: 'longcat', model: 'LongCat-2.0', label: 'LongCat-2.0', providerLabel: 'LongCat' }],
 }));

@@ -36,7 +36,7 @@ const mockSettings = vi.hoisted(() => ({
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => mockSettings.value }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => mockSettings.value }),
 }));
 vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => 'test-key' }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({

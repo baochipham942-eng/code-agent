@@ -66,7 +66,7 @@ vi.mock('../../src/host/services/roleAssets/rolePersonalization', () => ({
   buildVoiceRoleBoundaryDirective: (roleId: string) => voiceRoleBoundaries.get(roleId) ?? '',
 }));
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ voice: { live: voiceSettings.value } }) }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({ voice: { live: voiceSettings.value } }) }),
 }));
 vi.mock('../../src/host/services/planning/taskStore', () => ({
   getIncompleteTasks: () => incompleteTasks.value,

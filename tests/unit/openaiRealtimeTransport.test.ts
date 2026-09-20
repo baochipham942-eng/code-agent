@@ -67,7 +67,7 @@ vi.mock('../../src/host/services/infra/logger', () => ({
 }));
 
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({}) }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({}) }),
 }));
 
 const { createRealtimeTransport, resamplePcm16Mono } = await import(

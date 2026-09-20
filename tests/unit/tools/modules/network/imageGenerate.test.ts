@@ -91,19 +91,19 @@ describe('image_generate — engine routing', () => {
 
   it('cogview when zhipu official key present', () => {
     process.env.ZHIPU_OFFICIAL_API_KEY = 'official';
-    getConfigServiceMock.mockReturnValue({ getApiKey: vi.fn() });
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(), getApiKey: vi.fn() });
     expect(determineImageEngine()).toBe('cogview');
   });
 
   it('flux when only openrouter', () => {
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn((p: string) => (p === 'openrouter' ? 'or' : undefined)),
     });
     expect(determineImageEngine()).toBe('flux');
   });
 
   it('throws when no API key configured', () => {
-    getConfigServiceMock.mockReturnValue({ getApiKey: vi.fn().mockReturnValue(undefined) });
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(), getApiKey: vi.fn().mockReturnValue(undefined) });
     expect(() => determineImageEngine()).toThrow(/API Key/);
   });
 });
@@ -116,7 +116,7 @@ describe('image_generate — execute', () => {
     existsSyncMock.mockReturnValue(true);
     delete process.env.ZHIPU_OFFICIAL_API_KEY;
     delete process.env.CODE_AGENT_CLI_MODE;
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue(undefined),
     });
     getAuthServiceMock.mockReturnValue({
@@ -130,7 +130,7 @@ describe('image_generate — execute', () => {
 
   it('happy path cogview persists a file artifact by default', async () => {
     process.env.ZHIPU_OFFICIAL_API_KEY = 'official-key';
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue(undefined),
     });
 
@@ -267,7 +267,7 @@ describe('image_generate — execute', () => {
   });
 
   it('admin user gets FLUX Pro model', async () => {
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn((p: string) => (p === 'openrouter' ? 'or-key' : undefined)),
     });
     getAuthServiceMock.mockReturnValue({
@@ -484,7 +484,7 @@ describe('image_generate — 复述/验收/失败收口', () => {
     existsSyncMock.mockReturnValue(true);
     delete process.env.CODE_AGENT_CLI_MODE;
     process.env.ZHIPU_OFFICIAL_API_KEY = 'official-key';
-    getConfigServiceMock.mockReturnValue({ getApiKey: vi.fn().mockReturnValue(undefined) });
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(), getApiKey: vi.fn().mockReturnValue(undefined) });
     getAuthServiceMock.mockReturnValue({ getCurrentUser: vi.fn().mockReturnValue({ isAdmin: false }) });
   });
 
@@ -622,7 +622,7 @@ describe('image_generate — 扩写静默回退必须当场更正', () => {
     vi.clearAllMocks();
     existsSyncMock.mockReturnValue(true);
     process.env.ZHIPU_OFFICIAL_API_KEY = 'official-key';
-    getConfigServiceMock.mockReturnValue({ getApiKey: vi.fn().mockReturnValue('zhipu-key') });
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(), getApiKey: vi.fn().mockReturnValue('zhipu-key') });
     getAuthServiceMock.mockReturnValue({ getCurrentUser: vi.fn().mockReturnValue({ isAdmin: false }) });
   });
   afterEach(() => { process.env = { ...origEnv }; });
@@ -770,7 +770,7 @@ describe('image_generate — flux SSE 扩写', () => {
     vi.clearAllMocks();
     existsSyncMock.mockReturnValue(true);
     delete process.env.ZHIPU_OFFICIAL_API_KEY;
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn((p: string) => (p === 'openrouter' ? 'or-key' : undefined)),
     });
     getAuthServiceMock.mockReturnValue({

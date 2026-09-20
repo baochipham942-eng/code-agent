@@ -37,7 +37,7 @@ vi.mock('@host/telemetry/replay/telemetryQueryService', () => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ privacy: { postLaunchReflow: 'on' } }) }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({ privacy: { postLaunchReflow: 'on' } }) }),
 }));
 
 vi.mock('../../../src/host/platform', () => ({

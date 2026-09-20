@@ -44,7 +44,7 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
 }));
 
 vi.mock('../../../src/host/services', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getSettings: () => ({
       model: {
         provider: 'openai',

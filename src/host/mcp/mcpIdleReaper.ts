@@ -1,0 +1,197 @@
+import type { Client } from '@modelcontextprotocol/client';
+import { createLogger } from '../services/infra/logger';
+import { MCP_TIMEOUTS } from '../../shared/constants/timeouts';
+
+export interface McpIdleReapingOptions {
+  enabled?: boolean;
+  ttlMs?: number;
+  scanIntervalMs?: number;
+}
+
+interface MCPConnectionLease {
+  expiresAt?: number;
+}
+
+interface McpIdleReaperDependencies {
+  clients: ReadonlyMap<string, Client>;
+  connectingServers: ReadonlyMap<string, Promise<void>>;
+  disconnect: (serverName: string) => Promise<void>;
+  /**
+   * 只有能懒加载回来的 server 才能被回收——非 lazy stdio 与远程/进程内 server
+   * 断连后没有自动重连路径（ensureConnected 只在 status 'lazy'/'disconnected' 时
+   * 触发，但没有任何调用方会主动对它们重新 ensureConnected），回收即永久失联。
+   */
+  isReapable: (serverName: string) => boolean;
+  /** 回收后把状态打回 'lazy'，语义上等价于「还没首次连接」，下次调用自动懒加载。 */
+  markLazyAfterReap: (serverName: string) => void;
+  now?: () => number;
+}
+
+const logger = createLogger('MCPIdleReaper', { lane: 'mcp' });
+
+/** Owns idle-connection bookkeeping and invokes the MCP client's disconnect hook. */
+export class McpIdleReaper {
+  private readonly clients: ReadonlyMap<string, Client>;
+  private readonly connectingServers: ReadonlyMap<string, Promise<void>>;
+  private readonly disconnect: (serverName: string) => Promise<void>;
+  private readonly isReapable: (serverName: string) => boolean;
+  private readonly markLazyAfterReap: (serverName: string) => void;
+  private readonly now: () => number;
+  private idleReapingEnabled = false;
+  private idleReapTtlMs: number = MCP_TIMEOUTS.IDLE_REAP_TTL;
+  private idleReapScanIntervalMs: number = MCP_TIMEOUTS.IDLE_REAP_SCAN;
+  readonly lastUsedAt: Map<string, number> = new Map();
+  private readonly activeRequests: Map<string, number> = new Map();
+  private readonly connectionLeases: Map<string, Map<string, MCPConnectionLease>> = new Map();
+  private readonly reapingServers: Set<string> = new Set();
+  private idleReaperTimer: ReturnType<typeof setInterval> | undefined;
+
+  constructor(dependencies: McpIdleReaperDependencies, options?: McpIdleReapingOptions) {
+    this.clients = dependencies.clients;
+    this.connectingServers = dependencies.connectingServers;
+    this.disconnect = dependencies.disconnect;
+    this.isReapable = dependencies.isReapable;
+    this.markLazyAfterReap = dependencies.markLazyAfterReap;
+    this.now = dependencies.now ?? Date.now;
+    this.configureIdleReaping(options);
+  }
+
+  configureIdleReaping(options?: McpIdleReapingOptions): void {
+    this.idleReapingEnabled = options?.enabled ?? false;
+    this.idleReapTtlMs = Math.max(1, options?.ttlMs ?? MCP_TIMEOUTS.IDLE_REAP_TTL);
+    // `??` 对显式的 0 不接管（0 不是 nullish），而 0 不是「关闭扫描」的意思——
+    // 那样 Math.max(1, 0) 会得到 1ms 扫描间隔，等于把 CPU 打满。显式 0 按未配置处理，回落默认值。
+    this.idleReapScanIntervalMs = Math.max(1, (options?.scanIntervalMs || undefined) ?? MCP_TIMEOUTS.IDLE_REAP_SCAN);
+    if (this.idleReaperTimer) clearInterval(this.idleReaperTimer);
+    this.idleReaperTimer = undefined;
+    if (!this.idleReapingEnabled) return;
+    this.idleReaperTimer = setInterval(() => {
+      void this.reapIdleConnections();
+    }, this.idleReapScanIntervalMs);
+    (this.idleReaperTimer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  private currentTime(): number {
+    return this.now();
+  }
+
+  touchServer(serverName: string, now = this.currentTime()): void {
+    this.lastUsedAt.set(serverName, now);
+  }
+
+  beginServerUse(serverName: string): () => void {
+    this.touchServer(serverName);
+    this.activeRequests.set(serverName, (this.activeRequests.get(serverName) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const active = this.activeRequests.get(serverName) ?? 0;
+      if (active <= 1) this.activeRequests.delete(serverName);
+      else this.activeRequests.set(serverName, active - 1);
+      this.touchServer(serverName);
+    };
+  }
+
+  async withServerUse<T>(serverName: string, operation: () => Promise<T>): Promise<T> {
+    const releaseUse = this.beginServerUse(serverName);
+    try {
+      return await operation();
+    } finally {
+      releaseUse();
+    }
+  }
+
+  withExternalClient<T>(
+    serverName: string,
+    getClient: () => Client | undefined,
+    ensureConnected: () => Promise<boolean>,
+    operation: (client: Client) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    return this.withServerUse(serverName, async () => {
+      let client = getClient();
+      if (!client && await ensureConnected()) client = getClient();
+      if (!client) {
+        if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+        throw new Error(`MCP server ${serverName} not connected`);
+      }
+      return operation(client);
+    });
+  }
+
+  private hasValidConnectionLease(serverName: string, now = this.currentTime()): boolean {
+    const leases = this.connectionLeases.get(serverName);
+    if (!leases || leases.size === 0) return false;
+    for (const [leaseId, lease] of leases) {
+      if (lease.expiresAt !== undefined && lease.expiresAt <= now) leases.delete(leaseId);
+    }
+    if (leases.size === 0) this.connectionLeases.delete(serverName);
+    return leases.size > 0;
+  }
+
+  private isIdleConnection(serverName: string, now = this.currentTime()): boolean {
+    if (this.activeRequests.get(serverName)) return false;
+    if (this.connectingServers.has(serverName)) return false;
+    if (this.hasValidConnectionLease(serverName, now)) return false;
+    const lastUsed = this.lastUsedAt.get(serverName);
+    return lastUsed !== undefined && now - lastUsed >= this.idleReapTtlMs;
+  }
+
+  private async reapIdleConnections(): Promise<void> {
+    if (!this.idleReapingEnabled) return;
+    const now = this.currentTime();
+    for (const [serverName, expectedClient] of this.clients) {
+      if (!this.isReapable(serverName)) continue;
+      if (!this.isIdleConnection(serverName, now) || this.reapingServers.has(serverName)) continue;
+      this.reapingServers.add(serverName);
+      try {
+        // Re-check after marking the server. A request started between the scan and
+        // this point wins over cleanup and keeps the connection alive.
+        if (this.clients.get(serverName) === expectedClient && this.isIdleConnection(serverName, now)) {
+          await this.disconnect(serverName);
+          this.markLazyAfterReap(serverName);
+        }
+      } catch (error) {
+        logger.warn(`Failed to reap idle MCP server ${serverName}`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        this.reapingServers.delete(serverName);
+      }
+    }
+  }
+
+  acquireConnectionLease(serverName: string, leaseId: string, expiresAt?: number): void {
+    let leases = this.connectionLeases.get(serverName);
+    if (!leases) {
+      leases = new Map();
+      this.connectionLeases.set(serverName, leases);
+    }
+    leases.set(leaseId, { expiresAt });
+    this.touchServer(serverName);
+  }
+
+  releaseConnectionLease(serverName: string, leaseId: string): void {
+    const leases = this.connectionLeases.get(serverName);
+    leases?.delete(leaseId);
+    if (leases?.size === 0) this.connectionLeases.delete(serverName);
+    this.touchServer(serverName);
+  }
+
+  clearServer(serverName: string): void {
+    this.lastUsedAt.delete(serverName);
+    this.activeRequests.delete(serverName);
+    this.connectionLeases.delete(serverName);
+    this.reapingServers.delete(serverName);
+  }
+
+  clearActiveRequests(serverName: string): void {
+    this.activeRequests.delete(serverName);
+  }
+
+  stop(): void {
+    if (this.idleReaperTimer) clearInterval(this.idleReaperTimer);
+    this.idleReaperTimer = undefined;
+  }
+}

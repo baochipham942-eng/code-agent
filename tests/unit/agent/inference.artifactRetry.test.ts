@@ -33,7 +33,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 vi.mock('../../../src/host/services', () => ({
-  getConfigService: () => ({ getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
   getAuthService: () => ({ getCurrentUser: vi.fn().mockReturnValue({ isAdmin: false }) }),
   getLangfuseService: () => ({
     startGenerationInSpan: vi.fn(),

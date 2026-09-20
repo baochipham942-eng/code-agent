@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DEFAULT_MODELS, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../../src/shared/constants';
+import { DEFAULT_MODELS, MODEL_API_ENDPOINTS, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../../src/shared/constants';
 
 const { getConfigServiceMock, loggerErrorMock, loggerInfoMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(),
@@ -147,7 +147,7 @@ describe('memory model 专档与回落', () => {
     );
   });
 
-  it('zhipu 下的非免费 0ki 模型尊重配置 baseUrl，免费 quick 模型仍走官方端点', async () => {
+  it('zhipu 下的非免费 0ki 模型尊重配置 baseUrl，quick（glm-5.3-flash，非 free 档）同样尊重', async () => {
     mockConfig({
       memory: { provider: 'zhipu', model: 'DeepSeek-V4-Flash-0731' },
       keys: { zhipu: '0ki-key' },
@@ -171,7 +171,7 @@ describe('memory model 专档与回落', () => {
       },
     });
     await quickTask('分类');
-    expect(fetchMock.mock.calls[1][0]).toBe('https://open.bigmodel.cn/api/paas/v4/chat/completions');
+    expect(fetchMock.mock.calls[1][0]).toBe('https://api.0ki.example/api/paas/v4/chat/completions');
   });
 
   it('默认未配 routing.memory 时，同 prompt 与 quickTask 走同模型、同请求体', async () => {
@@ -277,13 +277,17 @@ describe('memory model 专档与回落', () => {
     }
   });
 
-  it('memory / fast / code 都无 key 时保留现有智谱环境变量兜底', async () => {
+  it('memory / fast / code 都无 key 时保留现有智谱环境变量兜底（R2：ZHIPU_API_KEY 走 0ki）', async () => {
     mockConfig({
       memory: { provider: 'openai', model: 'gpt-5.4-mini' },
       keys: {},
     });
-    const previous = process.env.ZHIPU_OFFICIAL_API_KEY;
-    process.env.ZHIPU_OFFICIAL_API_KEY = 'env-zhipu-key';
+    // R2 合同：glm-5.3-flash 是 0ki 非 free 档，env 兜底认 ZHIPU_API_KEY（0ki），
+    // 不再拿 ZHIPU_OFFICIAL_API_KEY 打 bigmodel（官方端点没有这个模型，404）
+    const prevOfficial = process.env.ZHIPU_OFFICIAL_API_KEY;
+    const prevOki = process.env.ZHIPU_API_KEY;
+    delete process.env.ZHIPU_OFFICIAL_API_KEY;
+    process.env.ZHIPU_API_KEY = 'env-zhipu-key';
     const fetchMock = mockFetchOnce('env fallback');
     try {
       await expect(memoryTask('整理')).resolves.toMatchObject({
@@ -293,8 +297,10 @@ describe('memory model 专档与回落', () => {
       });
       expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe(DEFAULT_MODELS.quick);
     } finally {
-      if (previous === undefined) delete process.env.ZHIPU_OFFICIAL_API_KEY;
-      else process.env.ZHIPU_OFFICIAL_API_KEY = previous;
+      if (prevOfficial === undefined) delete process.env.ZHIPU_OFFICIAL_API_KEY;
+      else process.env.ZHIPU_OFFICIAL_API_KEY = prevOfficial;
+      if (prevOki === undefined) delete process.env.ZHIPU_API_KEY;
+      else process.env.ZHIPU_API_KEY = prevOki;
     }
   });
 });
@@ -592,5 +598,55 @@ describe('快模型鉴权失败诊断 + 401 拉黑降级', () => {
     } finally {
       nowSpy.mockRestore();
     }
+  });
+});
+
+// ============================================================================
+// R2：env 兜底按 DEFAULT_MODELS.quick 档位走三态解析，不写死端点
+// ============================================================================
+
+describe('env 兜底走 providerResolution 三态（R2）', () => {
+  const setEnv = (official?: string, oki?: string) => {
+    if (official === undefined) delete process.env.ZHIPU_OFFICIAL_API_KEY;
+    else process.env.ZHIPU_OFFICIAL_API_KEY = official;
+    if (oki === undefined) delete process.env.ZHIPU_API_KEY;
+    else process.env.ZHIPU_API_KEY = oki;
+  };
+  let prevOfficial: string | undefined;
+  let prevOki: string | undefined;
+
+  beforeEach(() => {
+    prevOfficial = process.env.ZHIPU_OFFICIAL_API_KEY;
+    prevOki = process.env.ZHIPU_API_KEY;
+  });
+
+  afterEach(() => {
+    setEnv(prevOfficial, prevOki);
+  });
+
+  it('config 路径失败 + env 只有 ZHIPU_OFFICIAL_API_KEY → 无候选（不拿官方 key 打 0ki 模型）', () => {
+    mockConfig({ keys: {} });
+    // 让 config 解析整体失败，逼进 env 兜底分支
+    getConfigServiceMock.mockImplementation(() => {
+      throw new Error('config unavailable');
+    });
+    setEnv('official-only-key', undefined);
+    // glm-5.3-flash 是 0ki 非 free 档：官方 bigmodel key 不构成合法候选，也不允许
+    // 产出指向 bigmodel 的 glm-5.3-flash（404 model not found）→ 应无候选并 warn
+    expect(getQuickModelInfo()).toBeNull();
+  });
+
+  it('config 路径失败 + env 有 ZHIPU_API_KEY → 候选走 0ki 端点（resolveProviderBaseUrl 解析，不写死）', async () => {
+    mockConfig({ keys: {} });
+    getConfigServiceMock.mockImplementation(() => {
+      throw new Error('config unavailable');
+    });
+    setEnv(undefined, 'oki-yearly-key');
+    const fetchMock = mockFetchOnce('ok');
+    const result = await quickTask('hi');
+    expect(result.success).toBe(true);
+    expect(result.provider).toBe('zhipu');
+    expect(result.model).toBe(DEFAULT_MODELS.quick);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${MODEL_API_ENDPOINTS.zhipu}/chat/completions`);
   });
 });

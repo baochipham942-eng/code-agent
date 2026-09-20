@@ -430,6 +430,19 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
           note: '同尺寸SOTA视觉推理模型',
         },
       },
+      {
+        // quick 模型（intent 分类/标题/摘要等），走 0ki 端点 + ZHIPU_API_KEY。
+        // 非 thinking、实测短分类 ~1.6s，满足 3s timeout；不得换 glm-4.7-flash（thinking 档，27-40s）。
+        id: 'glm-5.3-flash',
+        name: 'GLM-5.3 Flash (快速判断)',
+        capabilities: ['general', 'code', 'fast'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        thinking: { kind: 'none' },
+        costType: 'yearly',
+      },
       // === 免费模型 ===
       {
         id: 'glm-4.7-flash',

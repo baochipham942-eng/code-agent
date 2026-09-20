@@ -189,7 +189,9 @@ export class LibraryService {
   retryLearn(id: string, now: number = Date.now()): Promise<LibraryItem> {
     const item = this.repo.getItem(id);
     if (!item) throw new Error('Library item not found');
-    if (item.learnStatus !== 'failed' && item.learnStatus !== 'pending') return Promise.resolve(item);
+    if (item.learnStatus !== 'failed' && item.learnStatus !== 'pending' && item.learnStatus !== 'running') {
+      return Promise.resolve(item);
+    }
     return this.learnItem(id, now);
   }
 
@@ -203,7 +205,7 @@ export class LibraryService {
   }
 
   private async runPendingLearnSweep(now: number, limit: number): Promise<number> {
-    const ids = this.repo.listPendingLearnIds(limit);
+    const ids = this.repo.listPendingLearnIds(limit, now);
     for (const id of ids) {
       await this.learnItem(id, now);
     }

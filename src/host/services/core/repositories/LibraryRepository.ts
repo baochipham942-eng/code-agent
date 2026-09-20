@@ -212,15 +212,17 @@ export class LibraryRepository {
     return result.changes > 0;
   }
 
-  /** 待学习条目 id（迁移旧行 + 登记后未跑的），供 sweep 补跑 */
-  listPendingLearnIds(limit: number): string[] {
+  /** 待学习条目 id（迁移旧行 + 卡死的 running），供 sweep 补跑 */
+  listPendingLearnIds(limit: number, now: number = Date.now(), staleRunningMs: number = 120_000): string[] {
+    const staleBefore = now - staleRunningMs;
     const rows = this.db
       .prepare(
         `SELECT id FROM library_items
          WHERE learn_status = 'pending'
+            OR (learn_status = 'running' AND (learn_updated_at IS NULL OR learn_updated_at < ?))
          ORDER BY updated_at ASC LIMIT ?`,
       )
-      .all(limit) as SQLiteRow[];
+      .all(staleBefore, limit) as SQLiteRow[];
     return rows.map((row) => row.id as string);
   }
 

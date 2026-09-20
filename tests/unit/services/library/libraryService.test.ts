@@ -193,6 +193,19 @@ describe('LibraryService', () => {
     expect(service.projectEvidence({ source: artifactPath, location: 'line:1' }).hit).toBe(true);
   });
 
+  it('retryLearn 能接手卡在 running 的条目', async () => {
+    const item = service.addItem({
+      title: 'stuck.md',
+      kind: 'upload',
+      pathOrUri: writeSource('stuck.md', '正文'),
+      learnStatus: 'pending',
+    }, 1000);
+    db.prepare("UPDATE library_items SET learn_status = 'running', learn_updated_at = 1000 WHERE id = ?").run(item.id);
+    expect(service.get(item.id)?.learnStatus).toBe('running');
+    const retried = await service.retryLearn(item.id, 2000);
+    expect(retried.learnStatus).toBe('ready');
+  });
+
   it('迁移后的 capture/external_ref pending 可由 sweep 合法变为 ready', async () => {
     const item = service.addItem({
       title: '网页摘录',

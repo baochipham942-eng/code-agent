@@ -92,6 +92,29 @@ describe('ToolDetails library citations', () => {
     open.mockRestore();
   });
 
+  it('file citation without a line anchor still projects library evidence', async () => {
+    projectLibraryEvidence.mockResolvedValue({
+      query: { source: '/tmp/doc.pdf' },
+      hit: true,
+      fragment: { startLine: 1, endLine: 20, totalLines: 40, text: 'PDF 抽取开头' },
+      item: { id: 'lib_pdf', title: 'doc.pdf' },
+    });
+    render(<ToolDetails toolCall={toolCallWith([
+      citation({ id: 'c-pdf', type: 'file', source: '/tmp/doc.pdf', label: 'doc.pdf' }),
+    ])} />);
+
+    screen.getByText('doc.pdf').click();
+    await waitFor(() => {
+      expect(projectLibraryEvidence).toHaveBeenCalledWith({
+        source: '/tmp/doc.pdf',
+        location: undefined,
+        lineRange: undefined,
+      });
+      expect(screen.getByText('PDF 抽取开头')).toBeTruthy();
+    });
+    expect(copyPathToClipboard).not.toHaveBeenCalled();
+  });
+
   it('file citation miss falls back to default open and does not keep a stale drawer', async () => {
     projectLibraryEvidence.mockResolvedValue({
       query: { source: '/tmp/a.md' },

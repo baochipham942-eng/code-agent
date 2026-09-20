@@ -143,4 +143,12 @@ describe('LibraryRepository', () => {
     expect(repo.updateLearnStatus('legacy', 'running', { now: 1100 })).toBe(true);
     expect(repo.getItem('legacy')?.learnStatus).toBe('running');
   });
+
+  it('sweep 只捞 pending 和过期 running，不捞新鲜 running', () => {
+    repo.createItem(makeItem({ id: 'fresh' }));
+    expect(repo.updateLearnStatus('fresh', 'running', { now: 10_000 })).toBe(true);
+    repo.createItem(makeItem({ id: 'stale' }));
+    expect(repo.updateLearnStatus('stale', 'running', { now: 1_000 })).toBe(true);
+    expect(repo.listPendingLearnIds(10, 130_000, 120_000)).toEqual(['stale']);
+  });
 });

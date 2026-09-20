@@ -432,7 +432,8 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
           if (citation.type === 'url' || citation.type === 'memory') return false;
           const hasLineAnchor = Boolean(citation.lineRange)
             || /^lines?:(\d+)/i.test(citation.location ?? '');
-          if (!hasLineAnchor) return false;
+          // cell 无锚点不投影（避免把表格 chip 当成前 20 行）；file 无锚点走 sidecar 开头。
+          if (citation.type === 'cell' && !hasLineAnchor) return false;
           setLibraryEvidence(null);
           setLoadingLibraryEvidence(true);
           try {

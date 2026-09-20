@@ -6,6 +6,7 @@ import type {
   BackgroundTaskLedgerChangedData,
   BudgetEventData,
   ContextCompressedData,
+  ContextCompressionSignalData,
   GoalGatePlannedCommand,
   GoalGateSkippedCheck,
   GoalGateVerificationCard,
@@ -500,6 +501,7 @@ const stabilityByType = {
   task_stats: 'experimental',
   context_compacting: 'experimental',
   context_compacted: 'experimental',
+  context_compression_signal: 'experimental',
   stream_usage: 'stable',
   stream_token_estimate: 'experimental',
   tool_call_local: 'experimental',
@@ -650,6 +652,30 @@ const ResearchDetectedEventSchema = event('research_detected', typed<ResearchDet
 const BudgetWarningEventSchema = event('budget_warning', typed<BudgetEventData>(z.object({ currentCost: z.number(), maxBudget: z.number(), usagePercentage: z.number(), remaining: z.number(), alertLevel: z.enum(['silent', 'warning', 'blocked']), message: z.string().optional() })));
 const BudgetExceededEventSchema = event('budget_exceeded', typed<BudgetEventData>(z.object({ currentCost: z.number(), maxBudget: z.number(), usagePercentage: z.number(), remaining: z.number(), alertLevel: z.enum(['silent', 'warning', 'blocked']), message: z.string().optional() })));
 const ContextCompressedEventSchema = event('context_compressed', typed<ContextCompressedData>(z.object({ savedTokens: z.number(), strategy: z.string().optional(), newMessageCount: z.number() })));
+const ContextCompressionSignalEventSchema = event('context_compression_signal', typed<ContextCompressionSignalData>(z.object({
+  signalId: z.string().min(1),
+  kind: z.enum(['success', 'failure', 'downgrade', 'skip', 'cooldown', 'overflow-recovery', 'paused']),
+  code: z.enum([
+    'compaction-succeeded',
+    'summary-validation-failed',
+    'summary-call-failed',
+    'checkpoint-rebuild-fallback',
+    'no-safe-compaction-span',
+    'compaction-rejected',
+    'lossless-budget-skip',
+    'summary-cooldown',
+    'overflow-recovery-started',
+    'auto-compaction-paused',
+  ]),
+  surface: z.enum(['conversation', 'health', 'ledger']),
+  timestamp: z.number(),
+  retryable: z.boolean().optional(),
+  cooldownUntil: z.number().optional(),
+  tokensBefore: z.number().optional(),
+  messagesCount: z.number().optional(),
+  fromStrategy: z.string().optional(),
+  toStrategy: z.string().optional(),
+})));
 const interruptSchema = typed<InterruptEventData>(z.object({ message: z.string(), newUserMessage: z.string().optional() }));
 const InterruptStartEventSchema = event('interrupt_start', interruptSchema);
 const InterruptAcknowledgedEventSchema = event('interrupt_acknowledged', interruptSchema);
@@ -702,7 +728,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   TaskProgressEventSchema, TaskCompleteEventSchema, BackgroundTaskLedgerChangedEventSchema, MemoryLearnedEventSchema,
   SkillDraftPendingEventSchema, RoleDraftPendingEventSchema, TeamRecipeDraftPendingEventSchema,
   ResearchModeStartedEventSchema, ResearchProgressEventSchema, ResearchCompleteEventSchema, ResearchErrorEventSchema,
-  ResearchDetectedEventSchema, BudgetWarningEventSchema, BudgetExceededEventSchema, ContextCompressedEventSchema,
+  ResearchDetectedEventSchema, BudgetWarningEventSchema, BudgetExceededEventSchema, ContextCompressedEventSchema, ContextCompressionSignalEventSchema,
   InterruptStartEventSchema, InterruptAcknowledgedEventSchema, InterruptCompleteEventSchema, InputRedirectedEventSchema, CitationsUpdatedEventSchema,
   ModelSwitchedEventSchema, ToolProgressEventSchema, ToolOutputDeltaEventSchema, ToolTimeoutEventSchema,
   PlanModeEnteredEventSchema, PlanModeExitedEventSchema, TaskStatsEventSchema, ContextCompactingEventSchema,

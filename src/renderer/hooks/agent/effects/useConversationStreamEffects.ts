@@ -1,7 +1,7 @@
-// useAgentConversationStreamEffects - turn_start, message_delta, message_snapshot, stream_chunk, stream_reasoning, turn_end, message, model_decision, routing_resolved, hook_trigger
+// useAgentConversationStreamEffects - turn_start, message_delta, message_snapshot, stream_chunk, stream_reasoning, turn_end, message, model_decision, routing_resolved, hook_trigger, context_compression_signal
 import { useEffect, useRef } from 'react';
 import { generateMessageId } from '@shared/utils/id';
-import type { Message, ToolCall } from '@shared/contract';
+import type { ContextCompressionSignalData, Message, ToolCall } from '@shared/contract';
 import type { PlanApprovalRecord } from '@shared/contract/planApproval';
 import { applyPlanApprovalToMessage } from '../../../utils/planApprovalView';
 import { createLogger } from '../../../utils/logger';
@@ -33,6 +33,10 @@ const LIVE_STATE_NEUTRAL_AGENT_EVENTS: ReadonlySet<string> = new Set([
 ]);
 import { buildGoalNoticeMessage } from '../../../components/features/chat/goalNotice';
 import { buildModelFallbackNoticeMessage } from '../../../components/features/chat/fallbackNotice';
+import {
+  buildContextCompressionSignalMessage,
+  parseContextCompressionSignal,
+} from '../../../components/features/chat/contextCompressionSignal';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
@@ -456,6 +460,39 @@ export function applyConversationStreamEvent(
       }
       break;
 
+    case 'context_compression_signal':
+      {
+        const data = event.data as Partial<ContextCompressionSignalData> | undefined;
+        if (typeof data?.signalId !== 'string' || typeof data.code !== 'string' || typeof data.kind !== 'string') break;
+        if (data.surface === 'health') {
+          const health = useAppStore.getState().contextHealth;
+          if (health) {
+            useAppStore.getState().setContextHealth({
+              ...health,
+              compression: {
+                ...(health.compression ?? { status: 'none', compressionCount: 0, totalSavedTokens: 0 }),
+                lastSignal: {
+                  kind: data.kind as ContextCompressionSignalData['kind'],
+                  code: data.code as ContextCompressionSignalData['code'],
+                  timestamp: data.timestamp ?? Date.now(),
+                  ...(typeof data.cooldownUntil === 'number' ? { cooldownUntil: data.cooldownUntil } : {}),
+                  ...(typeof data.retryable === 'boolean' ? { retryable: data.retryable } : {}),
+                },
+              },
+            });
+          }
+          break;
+        }
+        if (data.surface !== 'conversation') break;
+        const alreadyShown = getFreshMessages().some((message) => {
+          const signal = parseContextCompressionSignal(message.content);
+          return signal?.signalId === data.signalId;
+        });
+        if (alreadyShown) break;
+        actions.addMessage(buildContextCompressionSignalMessage(data as ContextCompressionSignalData));
+      }
+      break;
+
     // provider usage → 本轮费用估算（此前该事件只有 CLI 消费，桌面端直接丢弃）
     case 'stream_usage':
       {
@@ -758,6 +795,7 @@ export const useConversationStreamEffects = ({
         case 'plan_approval_update':
         case 'stream_usage':
         case 'stream_reconnecting':
+        case 'context_compression_signal':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
           if (!isCurrentSessionEvent) {

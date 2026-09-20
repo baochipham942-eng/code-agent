@@ -38,6 +38,7 @@ import { getAdaptiveRouter } from '../../../model/adaptiveRouter';
 import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
+import { emitOverflowRecoverySignal } from './compressionSignal';
 import {
   seedArtifactRepairGuardFromContext,
 } from '../artifactRepairGuard';
@@ -1025,6 +1026,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           newMessageCount: ctx.runtime.messages.length,
         },
       } as AgentEvent);
+      emitOverflowRecoverySignal(ctx, error.requestedTokens);
 
       // 尝试自动压缩 + 重试
       try {

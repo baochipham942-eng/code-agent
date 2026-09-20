@@ -78,7 +78,7 @@ const libraryHandlers: RawDomainRouteHandlers<LibraryDomainRequest, void> = {
   list: async (_ctx, payload) => {
     const svc = getLibraryService();
     const options = (payload ?? {}) as LibraryListOptions;
-    void svc.sweepPendingLearn().catch((error) => {
+    void svc.sweepPendingLearn().catch((error: unknown) => {
       logger.warn('Library pending-learn sweep failed', { error });
     });
     return { success: true, data: svc.list(options) };

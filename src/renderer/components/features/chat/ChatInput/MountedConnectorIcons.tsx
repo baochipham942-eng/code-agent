@@ -75,6 +75,9 @@ export const MountedConnectorIcons: React.FC = () => {
   const oauthConnectedById = new Map(
     oauthStatuses.map((status) => [status.id, status.connected && status.stale !== true]),
   );
+  const oauthRepairById = new Map(
+    oauthStatuses.map((status) => [status.id, status.installState === 'failed']),
+  );
 
   // 同一个 id 在底栏两处出现时必须同名：CLI 连接器走 SaaS 词表，原生连接器走注册表
   // 本地化名（mail →「邮件」，和手选 chip 的 capability.label 同一份），其余走连接器目录，都查不到退回 id
@@ -189,6 +192,16 @@ export const MountedConnectorIcons: React.FC = () => {
                 <p className="font-medium text-zinc-100">{label}</p>
                 <p className="mt-1 text-[11px] text-zinc-400">{text.addedByYou}</p>
                 {statusLine({ status: manualStatus })}
+                {oauthRepairById.get(capability.id) && (
+                  <button /* ds-allow:button: 悬停卡里的紧凑出口，Button primitive 会把卡撑高 */
+                    type="button"
+                    onClick={() => goToHub('connector', capability.id)}
+                    className="mt-1.5 text-[11px] text-badge-danger hover:underline"
+                    data-testid={`mounted-capability-source-repair-${capability.id}`}
+                  >
+                    {text.cliInstallRepair}
+                  </button>
+                )}
                 {needsHub && (
                   <button /* ds-allow:button: 悬停卡里的紧凑出口，Button primitive 会把卡撑高 */
                     type="button"
@@ -212,6 +225,19 @@ export const MountedConnectorIcons: React.FC = () => {
                 className="h-3 w-3"
               />
               <span className="truncate">{label}</span>
+              {capability.kind === 'connector' && oauthRepairById.get(capability.id) && (
+                <button
+                  type="button"
+                  className="shrink-0 text-[10px] text-badge-danger hover:underline"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    goToHub('connector', capability.id);
+                  }}
+                  data-testid={`mounted-capability-repair-${capability.id}`}
+                >
+                  {text.cliInstallRepair}
+                </button>
+              )}
               <button /* ds-allow:button: chip 内紧凑移除动作，Button primitive 无此尺寸 */
                 type="button"
                 onClick={() => removeCapability(capability)}
@@ -257,6 +283,16 @@ export const MountedConnectorIcons: React.FC = () => {
                         : text.expertNeeds.replace('{expert}', expertName)}
                     </p>
                     {statusLine(item)}
+                    {oauthRepairById.get(item.id) && (
+                      <button
+                        type="button"
+                        className="mt-1 text-[11px] text-badge-danger hover:underline"
+                        onClick={() => goToHub('connector', item.id)}
+                        data-testid={`expert-capability-repair-${item.id}`}
+                      >
+                        {text.cliInstallRepair}
+                      </button>
+                    )}
                     {(item.status === 'disconnected' || item.status === 'hub_off') && (
                       <button /* ds-allow:button: 悬停卡里的紧凑出口，Button primitive 会把卡撑高 */
                         type="button"

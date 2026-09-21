@@ -54,7 +54,7 @@ import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
 import { getHandoffProposalService } from '../../handoff/handoffProposalService';
 import { extractHandoffProposalTail } from '../../handoff/handoffTail';
 import {
-  buildSteerModelContent,
+  buildSteerModelContent, buildForcedFinalAssistantContent,
   hasOnlySoftValidationFailures,
   isArtifactDirectoryBootstrapOnly,
   isArtifactRepairTargetFileRead,
@@ -479,6 +479,13 @@ export class MessageProcessor {
     }
     const assistantMessage = this.buildAssistantMessageFromResponse(response, gated.content);
     const finalContent = assistantMessage.content;
+    // 强制收尾轮输出全是裸标记时，剥离后正文为空——空消息落库等于对用户断流，
+    // 回落静态收尾文案；contentParts 同步收口，防转录层优先读 parts 又拿到裸标记
+    // （ai-review PR#2006 Nit）。
+    if (isForcedFinalTextPass && !finalContent.trim()) {
+      assistantMessage.content = buildForcedFinalAssistantContent(this.ctx.control.forceFinalResponseReason ?? '');
+      assistantMessage.contentParts = [{ type: 'text', text: assistantMessage.content }];
+    }
     // 终答尾部带 handoff proposal 时，contentParts 必须收口成清洗后的正文：它没过
     // extractHandoffProposalTail，而 transcriptReplayBuilder 无条件优先用 contentParts，
     // 原样落库会把 <handoff-proposal>{...}</handoff-proposal> 里的 JSON 当正文显示给用户，

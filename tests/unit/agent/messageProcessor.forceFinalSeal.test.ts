@@ -330,4 +330,55 @@ describe('forceFinal 封口（issue #1991）', () => {
     expect(goalMode.markAborted).not.toHaveBeenCalled();
     expect(vi.mocked(ctx.onEvent).mock.calls.some(([event]) => event.type === 'goal_complete')).toBe(false);
   });
+
+  it('中止码按收尾原因映射：预算耗尽 → TOKEN_BUDGET，步数上限 → TURN_LIMIT（ai-review PR#2006 轮2 Important）', () => {
+    const makeGoalCtx = (reason: string) => ({
+      ...buildCtx({ forceFinalResponseReason: reason }),
+      goalMode: {
+        isPending: vi.fn().mockReturnValue(true),
+        markAborted: vi.fn(),
+        getSwarmTokensUsed: vi.fn().mockReturnValue(0),
+      },
+    });
+
+    const budgetCtx = makeGoalCtx('resource-limit-reached');
+    abortPendingGoalOnForcedFinalBreak(budgetCtx as never, 9);
+    let goalComplete = vi.mocked(budgetCtx.onEvent).mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === 'goal_complete');
+    expect((goalComplete?.data as { reason: { code: string } }).reason.code).toBe('GOAL_ABORT_TOKEN_BUDGET');
+
+    const stepsCtx = makeGoalCtx('max-steps-reached');
+    abortPendingGoalOnForcedFinalBreak(stepsCtx as never, 9);
+    goalComplete = vi.mocked(stepsCtx.onEvent).mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === 'goal_complete');
+    expect((goalComplete?.data as { reason: { code: string } }).reason.code).toBe('GOAL_ABORT_TURN_LIMIT');
+
+    const readLoopCtx = makeGoalCtx(READ_LOOP_REASON);
+    abortPendingGoalOnForcedFinalBreak(readLoopCtx as never, 9);
+    goalComplete = vi.mocked(readLoopCtx.onEvent).mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === 'goal_complete');
+    expect((goalComplete?.data as { reason: { code: string } }).reason.code).toBe('GOAL_ABORT_REPEATED_ACTION');
+  });
+
+  it('强制收尾轮剥离后正文为空时回落静态收尾文案（ai-review PR#2006 Nit）', async () => {
+    const ctx = buildCtx({ forceFinalResponseReason: READ_LOOP_REASON });
+    const deps = buildDeps(ctx);
+    // 模拟剥离后全空（正文全是裸标记）
+    deps.contextAssembly.stripInternalFormatMimicry.mockReturnValue('');
+    const processor = makeProcessor(ctx, deps, { executeToolsWithHooks: vi.fn() });
+    const response = {
+      type: 'text',
+      content: '<longcat_tool_call>{"name":"Read","arguments":{}}</longcat_tool_call>',
+    } as unknown as ModelResponse;
+
+    const action = await processor.handleTextResponse(response, true, 3, true, langfuse as never);
+
+    expect(action).toBe('break');
+    const finalMessage = deps.persisted.find((message) => message.role === 'assistant');
+    expect(finalMessage?.content).toBe('任务已结束，已停止继续调用工具。执行记录和产物已保留。');
+    expect(finalMessage?.contentParts).toEqual([{ type: 'text', text: finalMessage?.content }]);
+  });
 });

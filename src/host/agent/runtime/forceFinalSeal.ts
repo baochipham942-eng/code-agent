@@ -23,6 +23,7 @@ import type { RuntimeContext } from './runtimeContext';
 import { emitArtifactRepairStopError } from './artifactRepairStopError';
 import { emitGoalAbort } from './goalAbort';
 import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
+import { MAX_STEPS_REASON } from './maxStepsFallback';
 import {
   buildForcedFinalAssistantContent,
   sanitizeToolArgumentsForObservation,
@@ -207,11 +208,19 @@ export async function sealToolCallsDuringForceFinal(
  * goal 契约拒绝无痕退出——静默 break 会让 run 看似 completed、goal 永远 pending、
  * UI 目标状态收不了口。这里发 goal_complete(aborted) 把终态坐实；
  * 返回是否真发了中止（goal 非 pending 时 false，调用方据此不改 terminal）。
+ * 中止码按收尾原因映射（ai-review 轮 2 Important）：预算/步数耗尽报 RepeatedAction
+ * 会把「该加预算」误导成「改目标」。
  */
 export function abortPendingGoalOnForcedFinalBreak(ctx: RuntimeContext, turns: number): boolean {
+  const reason = ctx.control.forceFinalResponseReason ?? 'forced final';
+  const code = reason === 'resource-limit-reached'
+    ? HostReasonCode.GoalAbortTokenBudget
+    : reason === MAX_STEPS_REASON
+      ? HostReasonCode.GoalAbortTurnLimit
+      : HostReasonCode.GoalAbortRepeatedAction;
   return emitGoalAbort(ctx, {
-    code: HostReasonCode.GoalAbortRepeatedAction,
-    modelText: `强制收尾（${ctx.control.forceFinalResponseReason ?? 'forced final'}）触发时目标仍未达成`,
+    code,
+    modelText: `强制收尾（${reason}）触发时目标仍未达成`,
     turns,
     tokensUsed: goalTokensUsedWithSwarm(ctx),
   });

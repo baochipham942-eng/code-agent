@@ -97,3 +97,14 @@ TypeError: Cannot read properties of undefined (reading 'length')
   不写遥测），补 1 条事件对称断言。
 - Nit（defer 封口循环上限）：基线同样循环、非回归，留作后续项；Nit（未闭合剥到串尾/
   全局剥离误伤）：与渲染层 SYSTEM_TAG_PATTERNS、`<think>` 兜底同向，刻意对齐，不改。
+
+## ai-review 轮 2（claude/opus, head 0c1f0ef）Important 修复
+
+- Important（goal 中止码写死 RepeatedAction）：`abortPendingGoalOnForcedFinalBreak` 按
+  forceFinalResponseReason 映射——`resource-limit-reached` → GOAL_ABORT_TOKEN_BUDGET、
+  `max-steps-reached` → GOAL_ABORT_TURN_LIMIT、其余（只读硬阈值/工件修复停止）→
+  GOAL_ABORT_REPEATED_ACTION，补 1 条三原因映射单测。
+- Nit（剥离后空正文）：强制收尾轮正文全是裸标记时回落 `buildForcedFinalAssistantContent`，
+  contentParts 同步收口，补 1 条单测。
+- Nit（未闭合剥到串尾误伤 / 封口 defer 循环上限）：维持不变——前者与渲染层
+  SYSTEM_TAG_PATTERNS、`<think>` 兜底刻意同向；后者基线同样循环、非回归，留后续项。

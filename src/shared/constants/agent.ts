@@ -264,3 +264,10 @@ export const SUBAGENT_IDLE = {
   IN_TOOL_MS: 600_000,
   GRACE_MS: 5_000,
 } as const;
+
+/**
+ * host run 级错误码：撞最大执行轮次上限（max iterations）后按部分结果收尾。
+ * runFinalizer 的 error 事件带这个 code；CLI 据此把退出码映射为
+ * CLI_EXIT_PARTIAL_MAX_ITERATIONS（2），与「正常完成 0 / 异常失败 1」区分。
+ */
+export const RUN_ERROR_CODE_MAX_ITERATIONS = 'MAX_ITERATIONS_REACHED';

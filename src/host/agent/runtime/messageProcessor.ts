@@ -492,6 +492,23 @@ export class MessageProcessor {
     // survivorManifest 还会把它拼进压缩 manifest 回灌模型。
     if (handoffTail.found && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
 
+    // forced-final 落盘正文为空（原文仅内部格式标记，被 stripInternalFormatMimicry 清掉）
+    // 不算交付（ai-review R2 #2005）：不落空消息、不清 reason，保持循环尾部
+    // ensureMaxStepsWrapUp 的「reason 残留」判据有效；turn 收尾事件照发，不留半开回合。
+    // 仅限撞顶轮（iterations >= maxIterations）：非撞顶的 forced-final（只读硬阈值 /
+    // 产物修复降级等）没有 ensureMaxStepsWrapUp 接手，必须继续走 #2006 的静态收尾文案，
+    // 否则那几条路径会零收尾断流（ai-review R4 #2005）。
+    if (isForcedFinalTextPass && finalContent.trim().length === 0 && iterations >= this.ctx.maxIterations) {
+      langfuse.endSpan(this.ctx.turn.currentIterationSpanId, { type: 'text_response' });
+      this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
+      this.ctx.onEvent({
+        type: 'turn_end',
+        data: { turnId: this.ctx.turn.currentTurnId },
+      });
+      this.contextAssembly.updateContextHealth();
+      return 'break';
+    }
+
     // Artifact extraction
     const artifacts = extractArtifacts(finalContent);
     if (artifacts.length > 0) {

@@ -9,8 +9,13 @@
 
 import { getBudgetService } from '../../services';
 import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
+import { createLogger } from '../../services/infra/logger';
+import type { Message } from '../../../shared/contract';
 import type { RuntimeContext } from './runtimeContext';
+import type { ContextAssembly } from './contextAssembly';
 import type { ContextInjectionSource } from '../../../shared/contract/contextView';
+
+const logger = createLogger('MaxStepsFallback');
 
 export const MAX_STEPS_REASON = 'max-steps-reached';
 
@@ -45,6 +50,104 @@ export function activateMaxStepsFinalResponse(ctx: RuntimeContext, limitReason?:
       .replaceAll('maximum number of steps allowed for this task', 'resource allowance for this task')
       .replaceAll('maximum steps for this agent', 'resource limit for this agent') + `\nLimit reached: ${limitReason}`
     : buildMaxStepsPrompt());
+}
+
+/**
+ * 撞 max iterations 且最后一轮 forced-final 推理没产出任何可见文本时的确定性保底：
+ * 用本次运行已有的产出（改动文件 / 最近一条助手文本）合成「部分结果 + 未完成说明」，
+ * 与 forced-final 同一条收尾通道——模型有最后一轮的优先权，模型交白卷时运行时兜底，
+ * 不允许出现零收尾断流的 run（issue #1999：exit 1 + 空回复 + 无产物）。
+ */
+function buildMaxStepsPartialResultContent(ctx: RuntimeContext, maxIterations: number): string {
+  // 只认本次 run 的改动：modifiedFiles 跨 run 只增不减，必须按 runStartTime 过滤，
+  // 否则上一轮的 a.ts 会被误写进这一轮的「已完成部分」（ai-review R3 #2005）
+  const modifiedFiles = ctx.nudgeManager?.getModifiedFilesSince
+    ? ctx.nudgeManager.getModifiedFilesSince(ctx.stats.runStartTime)
+    : Array.from(ctx.nudgeManager?.getModifiedFiles?.() ?? []);
+  // 只认本次 run 的产出：会话历史里的旧 assistant 文本不能算「这次做了什么」（ai-review #2005）
+  const lastAssistantText = [...ctx.messages]
+    .reverse()
+    .find((m) => m.role === 'assistant' && m.timestamp >= ctx.stats.runStartTime
+      && typeof m.content === 'string' && m.content.trim().length > 0)
+    ?.content?.trim();
+  const goalSummary = ctx.goalTracker?.getGoalSummary?.();
+  const goal = goalSummary?.goal?.trim() ?? '';
+  const pendingActions = goalSummary?.pending ?? [];
+
+  const doneLines: string[] = [];
+  if (modifiedFiles.length > 0) {
+    const shown = modifiedFiles.slice(0, 10).join('、');
+    doneLines.push(`- 已改动文件（共 ${modifiedFiles.length} 个）：${shown}${modifiedFiles.length > 10 ? ' 等' : ''}`);
+  }
+  if (lastAssistantText) {
+    const excerpt = lastAssistantText.length > 300 ? `${lastAssistantText.slice(0, 300)}…` : lastAssistantText;
+    doneLines.push(`- 最近一次产出：${excerpt}`);
+  }
+  if (doneLines.length === 0) {
+    doneLines.push('- （本次运行没有留下可见产出，执行记录已保留在会话中）');
+  }
+
+  const remainingLines: string[] = pendingActions.slice(0, 5).map((action) => `- ${action}`);
+  remainingLines.push(
+    `- 任务在轮次上限前未能收尾，上方执行记录中未完成的步骤即为剩余工作。${goal ? `原始目标：${goal}` : ''}`,
+  );
+
+  return [
+    `⚠️ 已达最大执行轮次（${maxIterations} 轮），任务未全部完成，执行已停止。`,
+    '',
+    '**已完成的部分：**',
+    ...doneLines,
+    '',
+    '**未完成的部分：**',
+    ...remainingLines,
+    '',
+    `**为什么停：** 达到单次运行的最大执行轮次上限（${maxIterations} 轮）。可以发新指令让我从当前进度继续，或把任务拆小后重试。`,
+  ].join('\n');
+}
+
+/**
+ * Max-iterations 收尾保底（issue #1999）：以 max-iterations 完成、但最后一轮
+ * forced-final 推理没交付收尾文本（交白卷/被守卫吞掉）时，用本次运行已有产出
+ * 合成「部分结果 + 未完成说明」补一条 final 消息。与 forced-final 同一收尾
+ * 通道——模型在最后一轮有优先权，这里只兜它没交付的情况，不许零收尾断流。
+ *
+ * 「已交付」的判据是 forceFinalResponseReason 已被清除：forced-final 的所有收尾
+ * 落盘路径（文本 / forceFinal 工具分支 / unavailable-tools 内联路径）都会在持久化
+ * 收尾消息后 clearForceFinalResponse；reason 残留 = 收尾轮白跑，且对预算耗尽、
+ * 只读硬阈值等其他 forced-final 触发路径同样成立（两条触发路径行为对齐）。
+ *
+ * 不看 terminal 终态（ai-review R5 #2005）：撞顶与预算耗尽/goal 闸3 stop/
+ * markMetDegraded/noProgressStopped 同时发生时终态是 aborted/goal_met 而非
+ * completed，若按终态放行，这些组合在模型交白卷时会零收尾断流——reason 残留
+ * 本身就精确表达了「forced-final 没交付」，不需要终态再过滤一道。
+ */
+export async function ensureMaxStepsWrapUp(
+  ctx: RuntimeContext,
+  contextAssembly: Pick<ContextAssembly, 'generateId' | 'addAndPersistMessage'>,
+  iterations: number,
+): Promise<void> {
+  if (
+    ctx.maxIterations <= 1
+    || iterations < ctx.maxIterations
+    || ctx.control.isCancelled
+    || ctx.control.isInterrupted
+    || ctx.circuitBreaker.isTripped()
+    || !ctx.control.forceFinalResponseReason
+  ) {
+    return;
+  }
+  logger.warn('[AgentLoop] Max iterations reached without a final wrap-up; synthesizing partial result', {
+    sessionId: ctx.sessionId,
+    iterations,
+  });
+  const partialMessage: Message = {
+    id: contextAssembly.generateId(),
+    role: 'assistant',
+    content: buildMaxStepsPartialResultContent(ctx, ctx.maxIterations),
+    timestamp: Date.now(),
+  };
+  await contextAssembly.addAndPersistMessage(partialMessage);
+  ctx.onEvent({ type: 'message', data: partialMessage });
 }
 
 

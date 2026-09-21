@@ -136,6 +136,11 @@ export interface CLIRunResult {
   schemaValid?: boolean;
   /** Validation errors for structured-output runs. */
   schemaErrors?: Array<{ path: string; message: string }>;
+  /**
+   * 非正常完成时的终止原因。'max_iterations' = 撞最大执行轮次上限、已按
+   * 「部分结果 + 未完成说明」收尾（CLI 映射为退出码 2，见 cli/exitCodes.ts）。
+   */
+  terminationReason?: 'max_iterations';
 }
 
 /**

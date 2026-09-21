@@ -19,7 +19,7 @@ import path from 'path';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
 import type { Message, AgentEvent, PRLink, ModelConfig } from '../shared/contract';
 import { getCompactionCommandMessages } from '../shared/i18n/compactionCommand';
-import { getModelMaxOutputTokens } from '../shared/constants';
+import { getModelMaxOutputTokens, RUN_ERROR_CODE_MAX_ITERATIONS } from '../shared/constants';
 import { createLogger } from '../host/services/infra/logger';
 import { getSessionSkillService } from '../host/services/skills/sessionSkillService';
 import { MetricsCollector, type SessionMetrics } from '../host/agent/metricsCollector';
@@ -85,6 +85,8 @@ export class CLIAgent {
   private realOutputTokens: number = 0;
   /** Last run-level error event, used to keep agent_complete from masking failures. */
   private runErrorMessage: string | null = null;
+  /** Stable code of the last run-level error event (e.g. RUN_ERROR_CODE_MAX_ITERATIONS). */
+  private runErrorCode: string | null = null;
   /** Error class of a rejected agentLoop.run(), reported in the status file terminal state. */
   private runErrorClass: string | null = null;
   /** Most recently started turn; a new context is created for every run(). */
@@ -173,6 +175,7 @@ export class CLIAgent {
     this.toolCallNames.clear();
     this.turnStartTime = 0;
     this.runErrorMessage = null;
+    this.runErrorCode = null;
     this.runErrorClass = null;
 
     // 确保有会话
@@ -462,6 +465,7 @@ export class CLIAgent {
     // 错误处理：记录到 run 结果，等待 agent_complete 统一收口
     if (event.type === 'error') {
       this.runErrorMessage = event.data?.message || 'Agent run failed';
+      this.runErrorCode = (event.data as { code?: string } | undefined)?.code ?? null;
       logger.warn('Agent error event', { message: this.runErrorMessage });
     }
 
@@ -481,10 +485,18 @@ export class CLIAgent {
 
     // Agent 完成
     if (event.type === 'agent_complete') {
+      // 撞顶部分完成时兜底收尾在「最后一条助手消息」里，lastContent 是前面回合的
+      // 流式旧文本——此时必须优先返回兜底，否则 headless 拿到退出码 2 却看不到
+      // 未完成说明与停止原因（ai-review #2005）。
+      const isMaxIterationsPartial = this.runErrorCode === RUN_ERROR_CODE_MAX_ITERATIONS;
       void this.finishRun({
         success: !this.runErrorMessage,
-        output: this.lastContent || this.getLastAssistantMessage()?.content,
+        output: (isMaxIterationsPartial
+          ? this.getLastAssistantMessage()?.content || this.lastContent
+          : this.lastContent || this.getLastAssistantMessage()?.content),
         ...(this.runErrorMessage ? { error: this.runErrorMessage } : {}),
+        // 撞最大轮次的部分完成要能在退出码上与异常失败区分（issue #1999）。
+        ...(isMaxIterationsPartial ? { terminationReason: 'max_iterations' as const } : {}),
         toolsUsed: [...new Set(this.toolsUsed)],
         duration: Date.now() - this.startTime,
       });

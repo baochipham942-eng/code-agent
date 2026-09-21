@@ -653,7 +653,8 @@ export class ConversationRuntime {
         // 2b. Handle actual text response
         // forced-final 轮只回空白字符不算交付（ai-review #2005）：跳过 handleTextResponse，
         // forceFinalResponseReason 保持残留，循环尾部的 ensureMaxStepsWrapUp 兜底才会生效。
-        if (response.type === 'text' && response.content && (response.content.trim().length > 0 || !this.ctx.control.forceFinalResponseReason)) {
+        // 仅限撞顶轮（ai-review R4 #2005）：非撞顶的 forced-final 走 #2006 静态收尾文案。
+        if (response.type === 'text' && response.content && (response.content.trim().length > 0 || !this.ctx.control.forceFinalResponseReason || iterations < this.ctx.maxIterations)) {
           // 强制收尾文本轮：goal 续跑不得覆盖它的 break（否则回到带工具推理反复触发硬阈值，issue #1991）
           const forcedFinalTextPass = Boolean(this.ctx.control.forceFinalResponseReason);
           const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);

@@ -106,3 +106,7 @@ forced-final 轮原文仅含内部格式标记（`<truncation-recovery>` / `Ran:
 
 ## ship 回执
 ✓ gates:fast passed required local preflight. schema=2 head=60719be7a8d3ebca5666f92cd63941147e7356ad base=86aea2afaca05a49ff1aea378d7f4c6f7587253e receipt=60019eeb-9c46-429f-83f1-f9034a44b83a
+
+## ai-review R4（claude，Important 1 · Nit 3）修复
+
+R2/R1 的「空正文不算交付」与 main 上 #2006 的静态收尾兜底冲突：非撞顶的 forced-final（只读硬阈值/产物修复降级等）没有 ensureMaxStepsWrapUp 接手，被吞掉会零收尾断流。修复：messageProcessor 空正文跳过与 conversationRuntime 空白跳过都限定撞顶轮（`iterations >= maxIterations`）；非撞顶轮继续走 #2006 静态收尾文案。补非撞顶回归用例（静态文案落盘 + reason 正常清除）。四件套 167/167 全绿。Nit 三条（goal pending 空白续跑为 main 既有行为、runErrorCode 被覆盖、中文文案未 i18n 与同文件风格一致）按审查备注留档。

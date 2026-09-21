@@ -34,7 +34,7 @@ import {
   isolateCorruptDatabase,
   quickCheckFileSync,
 } from '../infra/dbBackup';
-import { SQLITE_INTEGRITY } from '../../../shared/constants';
+import { SQLITE_BUSY, SQLITE_INTEGRITY } from '../../../shared/constants';
 import { applySessionsMigrations, applyTelemetryTurnsMigrations, applyEvaluationCleanupMigration } from './database/migrations';
 import { applyDistillSignalsMigration } from './database/migrations/distillSignals';
 import { DurableRunDatabaseSupport } from './database/durableRunDatabaseSupport';
@@ -607,7 +607,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     if (!Database) {
       throw new Error('better-sqlite3 not available (CLI mode or native module missing)');
     }
-    this.db = new Database(this.dbPath);
+    this.db = new Database(this.dbPath, { timeout: SQLITE_BUSY.BUSY_TIMEOUT_MS });
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
   }

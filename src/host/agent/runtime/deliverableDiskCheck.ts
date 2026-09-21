@@ -14,7 +14,7 @@ import { statSync } from 'node:fs';
 import os from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { TURN_OUTCOME } from '../../../shared/constants/agent';
-import { type EvidenceRef } from '../../../shared/contract/evidence';
+import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
 import type { Message } from '../../../shared/contract';
 import type { DeclaredDeliverables } from './artifactState';
 import { currentMessages } from './documentEvidenceBoundary';
@@ -134,6 +134,16 @@ function expandUserPath(raw: string): string {
   return raw;
 }
 
+/**
+ * 声称路径归一化（~ 展开 + 相对 resolve + NFC）。turnOutcomeStamp 的「本 run 真碰过」
+ * 文件集合用同一把尺，否则同一文件以 ~/... 或 NFD/NFC 两种形态出现时，
+ * 落盘核对通过但 claimsDeliveredThisRun 为假，误记 self_claimed（ai-review #2007 Nit）。
+ */
+export function normalizeDeliverablePath(raw: string, workingDirectory: string): string {
+  const expanded = expandUserPath(raw.trim());
+  return normalizeNfc(isAbsolute(expanded) ? expanded : resolve(workingDirectory, expanded));
+}
+
 /** 本 run 最终回复正文：最后一条可见 assistant 文本。 */
 function finalReplyText(messages: readonly Message[]): string {
   const finalMessage = [...currentMessages(messages)]
@@ -159,8 +169,7 @@ export function collectDeliverableClaims(input: {
   const push = (raw: string, source: DeliverableClaim['source']) => {
     const trimmed = raw.trim();
     if (!trimmed) return;
-    const expanded = expandUserPath(trimmed);
-    const resolved = normalizeNfc(isAbsolute(expanded) ? expanded : resolve(input.workingDirectory, expanded));
+    const resolved = normalizeDeliverablePath(trimmed, input.workingDirectory);
     if (seen.has(resolved)) return;
     seen.add(resolved);
     claims.push({ claimed: trimmed, resolved, source });
@@ -179,6 +188,9 @@ export function collectDeliverableClaims(input: {
 /**
  * 落盘核对：文件存在且非空才认。macOS 盘上文件名可能是 NFD，声称串一般是 NFC，
  * 两种归一化形态都试；空的交付物（0 字节）与不存在同罪——「交付了空文件」也是幻觉。
+ * IO 有界（ai-review #2007 Important）：最多处理 TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS
+ * 条声称；回读总字节超过 TURN_OUTCOME.MAX_DELIVERABLE_READBACK_BYTES 后降级为 stat
+ * 存在性检查（candidate 证据，无 digest）——幻觉拦截不降级，回读哈希降级。
  */
 export function checkDeliverablesOnDisk(
   claims: readonly DeliverableClaim[],
@@ -187,26 +199,32 @@ export function checkDeliverablesOnDisk(
   const evidenceRefs: EvidenceRef[] = [];
   const missing: DeliverableMissing[] = [];
   const seenRefs = new Set<string>();
+  let readbackBytes = 0;
 
-  for (const claim of claims) {
+  for (const claim of claims.slice(0, TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS)) {
     const candidates = [...new Set([claim.resolved, claim.resolved.normalize('NFD')])];
-    const hit = candidates.find((candidate) => {
+    const stat = candidates.map((candidate) => {
       try {
-        return statSync(candidate).isFile();
+        return { hit: candidate, stat: statSync(candidate) };
       } catch {
-        return false;
+        return undefined;
       }
-    });
-    if (!hit) {
+    }).find((entry) => entry?.stat.isFile());
+    if (!stat) {
       missing.push({ claim, kind: 'not_on_disk' });
       continue;
     }
+    if (stat.stat.size === 0) {
+      missing.push({ claim, kind: 'empty' });
+      continue;
+    }
+    if (readbackBytes >= TURN_OUTCOME.MAX_DELIVERABLE_READBACK_BYTES) {
+      evidenceRefs.push(makeEvidenceRef({ kind: 'file', ref: stat.hit, source: 'deliverable_disk_check', state: 'candidate' }));
+      continue;
+    }
     try {
-      if (statSync(hit).size === 0) {
-        missing.push({ claim, kind: 'empty' });
-        continue;
-      }
-      const { evidence } = readbackFileEvidence(hit, workingDirectory, 'deliverable_disk_check');
+      const { evidence } = readbackFileEvidence(stat.hit, workingDirectory, 'deliverable_disk_check');
+      readbackBytes += Math.min(stat.stat.size, TURN_OUTCOME.MAX_DELIVERABLE_READBACK_BYTES - readbackBytes);
       if (!seenRefs.has(evidence.ref)) {
         seenRefs.add(evidence.ref);
         evidenceRefs.push(evidence);
@@ -215,7 +233,7 @@ export function checkDeliverablesOnDisk(
       missing.push({ claim, kind: 'not_on_disk' });
     }
   }
-  return { claims: [...claims], evidenceRefs, missing };
+  return { claims: claims.slice(0, TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS), evidenceRefs, missing };
 }
 
 /** 给 evidenceProblems 的稳定 code 行。 */

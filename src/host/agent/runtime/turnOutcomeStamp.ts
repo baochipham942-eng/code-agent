@@ -3,9 +3,9 @@ import {
   checkDeliverablesOnDisk,
   collectDeliverableClaims,
   formatDeliverableProblems,
+  normalizeDeliverablePath,
 } from './deliverableDiskCheck';
 import { readbackFileEvidence } from './fileEvidenceReadback';
-import { isAbsolute, resolve } from 'node:path';
 import type { Message, ToolResult } from '../../../shared/contract';
 import type { CompletionSummaryRecord } from '../../../shared/contract/completionSummary';
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
@@ -45,7 +45,9 @@ function successfulToolResults(messages: readonly Message[]): ToolResult[] {
  *  · nudgeManager.getModifiedFilesSince（最后一条 user 消息的时间戳）——bash/脚本/子代理
  *    的工作区变更没有 outputPath 可报，只进这条账（toolFileMutationTracking.ts），
  *    漏掉它本轮 bash 写的文档就永不回读（ai-review #1745 第 1 轮 Important）。
- * 归一化与 completionSummaryService 同为「绝对路径原样、相对路径对 workingDirectory resolve」。
+ * 归一化与 completionSummaryService 同为「绝对路径原样、相对路径对 workingDirectory resolve」，
+ * 再叠加交付物核对的 ~ 展开 + NFC（normalizeDeliverablePath）：同一文件以 ~/... 或
+ * NFD/NFC 两种形态出现时集合成员判定不能说谎（ai-review #2007 Nit）。
  */
 function currentRunFilePaths(
   messages: readonly Message[],
@@ -55,8 +57,7 @@ function currentRunFilePaths(
   const paths = new Set<string>();
   const add = (value: unknown) => {
     if (typeof value !== 'string' || !value.trim()) return;
-    const trimmed = value.trim();
-    paths.add(isAbsolute(trimmed) ? trimmed : resolve(workingDirectory, trimmed));
+    paths.add(normalizeDeliverablePath(value, workingDirectory));
   };
   for (const message of currentMessages(messages)) {
     for (const result of message.toolResults ?? []) {
@@ -110,7 +111,7 @@ async function genericEvidenceRefs(
   // 如实列出），但不回读、不断言、不报 UNREADABLE——它此刻是否存在、写了什么，是那一轮的账。
   const runPaths = currentRunFilePaths(messages, workingDirectory, nudgeManager);
   // summary 一侧生产上已是绝对路径，这里仍按同一规则归一化再比对，不吃调用方有没有归一化。
-  const inCurrentRun = (filePath: string) => runPaths.has(isAbsolute(filePath) ? filePath : resolve(workingDirectory, filePath));
+  const inCurrentRun = (filePath: string) => runPaths.has(normalizeDeliverablePath(filePath, workingDirectory));
   const canonicalPaths = new Set<string>();
   const readback = (filePath: string): boolean => {
     try {

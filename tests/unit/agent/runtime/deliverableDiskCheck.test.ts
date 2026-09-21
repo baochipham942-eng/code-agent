@@ -149,6 +149,29 @@ describe('collectDeliverableClaims', () => {
 });
 
 describe('checkDeliverablesOnDisk', () => {
+  // ai-review #2007 第三轮 Important：核对 IO 必须有界——数量上限外的声称不处理，
+  // 回读字节预算耗尽后降级 stat 存在性检查（candidate 证据），收尾不阻塞事件循环。
+  it('caps the number of processed claims and degrades readback to stat-only beyond the byte budget', () => {
+    mkdirSync(workRoot, { recursive: true });
+    const overCount = Array.from({ length: 60 }, (_, index) => {
+      const file = path.join(workRoot, `f${index}.md`);
+      writeFileSync(file, 'x');
+      return { claimed: `f${index}.md`, resolved: file, source: 'inferred' as const };
+    });
+    const capped = checkDeliverablesOnDisk(overCount, workRoot);
+    expect(capped.claims).toHaveLength(50);
+
+    const claims = Array.from({ length: 40 }, (_, index) => {
+      const file = path.join(workRoot, `big-${index}.bin`);
+      writeFileSync(file, Buffer.alloc(2 * 1024 * 1024, 1));
+      return { claimed: `big-${index}.bin`, resolved: file, source: 'inferred' as const };
+    });
+    const degraded = checkDeliverablesOnDisk(claims, workRoot);
+    expect(degraded.missing).toEqual([]);
+    expect(degraded.evidenceRefs.every((ref) => ref.freshness.state === 'candidate')).toBe(false);
+    expect(degraded.evidenceRefs.some((ref) => ref.freshness.state === 'candidate')).toBe(true);
+  });
+
   it('passes an existing non-empty file and returns a read evidence ref', () => {
     mkdirSync(workRoot, { recursive: true });
     const artifact = path.join(workRoot, 'report.md');

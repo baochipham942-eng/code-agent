@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { AgentInterface } from './testRunner';
-import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord, EvalCaseMemory, MemoryFileSnapshot, MemoryRecallRecord, CaseSkillSignals } from './types';
+import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord, EvalCaseMemory, MemoryFileSnapshot, MemoryRecallRecord, CaseSkillSignals, HandoffProposalRecord } from './types';
 import { seedCaseMemory, snapshotMemoryDir } from './memoryEval';
 import { createPermissionRequestRecorder } from './approvalRequestEval';
 import { buildPermissionDecider, narrowScriptedPermissionHandler } from './userSimulator';
@@ -627,6 +627,41 @@ export class StandaloneAgentAdapter implements AgentInterface {
     const count = this.subagentSpawns.get(testId) ?? 0;
     this.subagentSpawns.delete(testId);
     return count;
+  }
+
+  /**
+   * N-EVAL-FAILURE-AUTOHARVEST：handoff_* 断言的证据源。按需采集——只在 case 声明
+   * handoff_* 断言时由 runner 调用（无条件采集会把库炸点扩散成普通题误红，
+   * ai-review PR#2019 R2 同款教训）。读 handoff_proposals 表里本会话、run 窗口内的
+   * 落库记录（messageProcessor 的 `<handoff-proposal>` 终答尾是唯一漏斗）。
+   * 返回 undefined = 没有证据源（库不可用/读出错）⇒ 断言 fail-loud；
+   * 表都没建过 = 本产品从未落过一条提案 ⇒ 零条是事实，不是没证据。
+   */
+  async collectHandoffProposals(since: number): Promise<HandoffProposalRecord[] | undefined> {
+    if (!this.currentSessionId) return [];
+    try {
+      const db = (this.database ?? (await import('../services/core/databaseService')).getDatabase()).getDb();
+      if (!db) return undefined;
+      const rows = db.prepare(
+        `SELECT title, prompt, reason, source, status, created_at AS createdAt
+         FROM handoff_proposals WHERE session_id = ? AND created_at >= ? ORDER BY created_at ASC`,
+      ).all(this.currentSessionId, since) as Array<Omit<HandoffProposalRecord, 'reason'> & { reason: string | null }>;
+      return rows.map((row) => ({
+        title: row.title,
+        prompt: row.prompt,
+        ...(row.reason !== null ? { reason: row.reason } : {}),
+        source: row.source,
+        status: row.status,
+        createdAt: row.createdAt,
+      }));
+    } catch (error: unknown) {
+      if (String(error).includes('no such table')) return [];
+      logger.warn('collectHandoffProposals failed — handoff assertions will fail loud', {
+        sessionId: this.currentSessionId,
+        error: String(error),
+      });
+      return undefined;
+    }
   }
 
   /**

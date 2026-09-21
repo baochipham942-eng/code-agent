@@ -1,5 +1,11 @@
 import { TOOL_PROGRESS } from '../../../shared/constants';
 
+export function mcpServerForTool(toolName: string, args: Record<string, unknown> | undefined): string | undefined {
+  const current = /^mcp__(.+?)__/i.exec(toolName)?.[1] ?? /^mcp_(.+?)_/i.exec(toolName)?.[1];
+  if (current) return current;
+  return toolName.toLowerCase() === 'mcpunified' && typeof args?.serverName === 'string' ? args.serverName : undefined;
+}
+
 export async function awaitToolExecutionWithTimeout<T>(
   execution: Promise<T>,
   options: {

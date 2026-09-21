@@ -86,7 +86,8 @@ import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 import { planContextTag } from './planApprovalRunBoundary';
 import { extractToolStepTarget } from '../toolStepTarget';
-import { awaitToolExecutionWithTimeout } from './toolExecutionTimeout';
+import { awaitToolExecutionWithTimeout, mcpServerForTool } from './toolExecutionTimeout';
+import { hasPendingMcpInteraction, onPendingMcpInteractionChange } from '../../mcp/mcpPendingInteraction';
 
 const logger = createLogger('AgentLoop');
 
@@ -759,11 +760,10 @@ export class ToolExecutionEngine {
     });
 
     // Tool progress & timeout tracking
-    const timeoutThreshold = TOOL_TIMEOUT_THRESHOLDS[toolCall.name] ?? TOOL_PROGRESS.DEFAULT_THRESHOLD;
-    const executionTimeout = getToolExecutionTimeoutMs(toolCall.name);
-    let timeoutEmitted = false;
-    let lastActivityAt = startTime;
-    const progressInterval = setInterval(() => {
+    const timeoutThreshold = TOOL_TIMEOUT_THRESHOLDS[toolCall.name] ?? TOOL_PROGRESS.DEFAULT_THRESHOLD; const executionTimeout = getToolExecutionTimeoutMs(toolCall.name);
+    let timeoutEmitted = false; let lastActivityAt = startTime;
+    const mcpServer = mcpServerForTool(toolCall.name, toolCall.arguments); const unsubscribeMcpInteraction = mcpServer ? onPendingMcpInteractionChange(mcpServer, () => { lastActivityAt = Date.now(); }) : undefined;
+    if (mcpServer && hasPendingMcpInteraction(mcpServer)) lastActivityAt = Date.now(); const progressInterval = setInterval(() => {
       // 卡在人身上的时间不算工具耗时：语音态/无人值守的审批是「停车挂起」（不限时），
       // 把等人那段算进来的话，用户还在看审批卡就先被告知「工具执行超时」（2026-07-26 真机）。
       const now = Date.now();
@@ -1182,6 +1182,7 @@ export class ToolExecutionEngine {
       });
     } finally {
       if (parentAbortSignal) parentAbortSignal.removeEventListener('abort', abortFromParent);
+      unsubscribeMcpInteraction?.();
       if (toolCall.name !== 'spawn_agent' && toolCall.name !== 'AgentSpawn' || (toolCall.arguments as Record<string, unknown> | undefined)?.run_in_background !== true) toolAbortController.abort();
       this.activeToolNames.delete(toolCall.id);
     }

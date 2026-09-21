@@ -342,7 +342,7 @@ const TOOL_EXECUTION_MCP_NAMES = ['mcp', 'mcp_invoke', 'mcp_unified', 'mcpunifie
 const TOOL_EXECUTION_INTERACTION_NAMES = [
   'askuserquestion', 'ask_user_question', 'confirm_action', 'confirmaction',
   'proposecanvasops', 'proposeslidesops', 'proposevideoops', 'requestdesignautonomy',
-  'plan_review', 'wait_agent', 'workflow',
+  'plan_review', 'wait_agent', 'workflow', 'collect_agent', 'task_output', 'process',
 ] as const;
 const TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES = [
   'web_search', 'web_fetch', 'search', 'retrieve', 'read_pdf', 'read_document',

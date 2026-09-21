@@ -23,6 +23,7 @@ import { runWithSqliteBusyRetry } from '../../../src/host/services/core/database
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { SQLITE_BUSY } from '../../../src/shared/constants';
 import type { Message } from '../../../src/shared/contract';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 
 const execFileAsync = promisify(execFile);
 
@@ -41,47 +42,8 @@ afterEach(() => {
 });
 
 function createSchema(db: BetterSqlite3.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      title TEXT NOT NULL,
-      model_provider TEXT NOT NULL,
-      model_name TEXT NOT NULL,
-      working_directory TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      is_deleted INTEGER NOT NULL DEFAULT 0,
-      synced_at INTEGER,
-      status TEXT DEFAULT 'idle',
-      workspace TEXT,
-      last_token_usage TEXT,
-      git_branch TEXT
-    );
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      tool_calls TEXT,
-      tool_results TEXT,
-      responses_output TEXT,
-      attachments TEXT,
-      thinking TEXT,
-      effort_level TEXT,
-      synced_at INTEGER,
-      content_parts TEXT,
-      metadata TEXT,
-      is_meta INTEGER NOT NULL DEFAULT 0,
-      compaction TEXT,
-      visibility TEXT NOT NULL DEFAULT 'active',
-      hidden_by_rewind_id TEXT,
-      hidden_at INTEGER
-    );
-  `);
+  // 走生产 applySchema 的共享夹具（messagesSchemaFixtureGate 禁手抄 messages DDL）
+  applyTestSessionSchema(db);
 }
 
 function makeMessage(id: string): Message {

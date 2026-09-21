@@ -64,3 +64,7 @@ AssertionError: expected "vi.fn()" to be called 3 times, but got 1 times
 
 证据档位：static-contract（typecheck/eslint）+ hermetic-protocol（重试语义与协议单测）
 + fault-injection（attempts=1 变异两测真红后还原）+ real-runtime（8 真实子进程并发写共享 WAL 库）。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=501fa5043b259353aa5603252da7f61f52395709 base=a5ca056be0b1803312259441b9837698368ad8ea receipt=41dc77e2-283e-462f-a8fa-1edeb8ab937c

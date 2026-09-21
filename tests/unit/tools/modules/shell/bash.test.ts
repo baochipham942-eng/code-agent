@@ -1715,7 +1715,9 @@ describe('bash output truncation guidance (N-BASH-TRUNC-GUIDANCE)', () => {
     const result = await handler.execute({ command: overflow }, makeCtx(), allowAll);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toContain('完整输出未能留存，请缩小命令输出范围后重跑');
+    expect(result.output).toContain('完整输出未能留存');
+    expect(result.output).toContain('不要重跑可能已产生副作用的命令');
+    expect(result.output).toContain('只有确认命令只读时，才缩小输出范围后重跑');
     expect(result.output).not.toContain('Use Read tool with offset/limit');
     expect(result.output).not.toContain('Edit tool');
     expect(result.output).not.toContain('用 Read/Grep 回查');

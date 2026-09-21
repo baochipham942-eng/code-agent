@@ -176,7 +176,7 @@ function truncateOutput(
   if (!spillResult) {
     return (
       truncated +
-      `\n\n[Guidance: ${size} 完整输出未能留存，请缩小命令输出范围后重跑。]`
+      `\n\n[Guidance: ${size} 完整输出未能留存。不要重跑可能已产生副作用的命令。只有确认命令只读时，才缩小输出范围后重跑。]`
     );
   }
   const savedAt = spillResult.archiveRef.filePath;

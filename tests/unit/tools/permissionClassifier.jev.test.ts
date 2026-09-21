@@ -32,6 +32,7 @@ interface StubAnswers {
   needsHuman?: number;
   secrets?: number;
   configAccess?: number;
+  beyondScope?: number;
 }
 
 function stubSystemOne(overrides: StubAnswers = {}): JevSystemOneCall & { calls: unknown[] } {
@@ -43,6 +44,7 @@ function stubSystemOne(overrides: StubAnswers = {}): JevSystemOneCall & { calls:
       needs_human: { noul: overrides.needsHuman ?? 0.1 },
       touches_secrets: { noul: overrides.secrets ?? 0.05 },
       config_or_credential_access: { noul: overrides.configAccess ?? 0.1 },
+      beyond_scope: { noul: overrides.beyondScope ?? 0.1 },
     };
   }) as unknown as JevSystemOneCall & { calls: unknown[] };
   fn.calls = calls;
@@ -215,6 +217,42 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
       expect(result.traceStep?.rule).toBe('fallback');
     }
     expect(stub.calls.length).toBe(0);
+  });
+
+  it('扩桶工具走 Jev，并要求 beyond_scope 低于阈值', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    const result = await classifier.classify(
+      'pdf_generate',
+      { file_path: '/tmp/report.pdf', content: 'private text must not leave the machine' },
+      { workingDirectory: '/tmp' },
+    );
+
+    expect(result.decision).toBe('approve');
+    expect(stub.calls.length).toBe(1);
+    const state = JSON.stringify(stub.calls[0]);
+    expect(state).toContain('file_path=/tmp/report.pdf');
+    expect(state).toContain('content=<omitted>');
+    expect(state).not.toContain('private text must not leave the machine');
+  });
+
+  it('扩桶工具缺失 beyond_scope 或越界时保持 ask', async () => {
+    const missing = vi.fn(async () => ({
+      risk: { choice: 'read_only', confidence: 0.95 },
+      needs_human: { noul: 0.1 },
+      touches_secrets: { noul: 0.05 },
+      config_or_credential_access: { noul: 0.1 },
+    })) as unknown as JevSystemOneCall;
+    const missingResult = await newClassifier(missing).classify(
+      'image_analyze', { path: '/tmp/input.png' }, { workingDirectory: '/tmp' },
+    );
+    expect(missingResult.decision).toBe('ask');
+
+    const outside = stubSystemOne({ beyondScope: 0.3 });
+    const outsideResult = await newClassifier(outside).classify(
+      'image_analyze', { path: '/tmp/input.png' }, { workingDirectory: '/tmp' },
+    );
+    expect(outsideResult.decision).toBe('ask');
   });
 
   // ---------------------------------------------------------------------------

@@ -45,7 +45,7 @@ case "${1:-}" in
     # 起跑，相对路径在仓外安装时会解析不到（先验存在再绝对化，顺序不能反）。
     case "$INSTALL_CANDIDATE" in
       /*) ;;
-      *) INSTALL_CANDIDATE="$(cd "$(dirname "$INSTALL_CANDIDATE")" && pwd)/$(basename "$INSTALL_CANDIDATE")" ;;
+      *) INSTALL_CANDIDATE="$(cd "$(dirname "$INSTALL_CANDIDATE")" && pwd -P)/$(basename "$INSTALL_CANDIDATE")" ;;
     esac
     case "$INSTALL_CANDIDATE" in *[\&\<\>\"\']*) echo "候选路径含 XML 特殊字符，拒绝生成 plist: ${INSTALL_CANDIDATE}"; exit 1 ;; esac
     mkdir -p "$(dirname "$PLIST")" "$LOG_DIR"
@@ -115,8 +115,6 @@ esac
 DRY_RUN="${NEO_EVAL_REFLOW_DRY_RUN:-}"
 DATE="$(date +%F)"
 LOG="$LOG_DIR/$DATE.log"
-mkdir -p "$LOG_DIR" "$INBOX"
-[ -n "$DRY_RUN" ] || exec >>"$LOG" 2>&1
 cd "$REPO" || exit 1
 
 CANDIDATE="${NEO_EVAL_REFLOW_CANDIDATE:-}"
@@ -128,6 +126,12 @@ if [ ! -f "$CANDIDATE" ]; then
   echo "候选臂 yaml 不存在: $CANDIDATE"
   exit 1
 fi
+# ai-review PR#2024 R4 Important 2：校验通过后立刻规范成绝对路径——非 main 时随后
+# cd 进专用树，相对路径只对原 REPO 可解析（--install 入口同款，两处行为一致）。
+case "$CANDIDATE" in
+  /*) ;;
+  *) CANDIDATE="$(cd "$(dirname "$CANDIDATE")" && pwd -P)/$(basename "$CANDIDATE")" ;;
+esac
 
 # 对准 origin/main：主仓在 main 上就自己快进；停在别的分支就不碰它（共享地面），改用专用树。
 git fetch origin main || echo "!!! git fetch origin main 失败，用本地已有的 origin/main"
@@ -135,6 +139,7 @@ ON_MAIN=$([ "$(git branch --show-current)" = "main" ] && echo yes || echo no)
 if [ "$ON_MAIN" = yes ]; then TREE="$REPO"; else TREE="$(dirname "$REPO")/code-agent-worktrees/eval-reflow-main"; fi
 
 if [ -n "$DRY_RUN" ]; then
+  # dry-run 只打印不落盘（Nit：日志目录也不建）
   echo "=== $(date '+%FT%T%z') 回流集对比 dry-run repo=$REPO on_main=$ON_MAIN max_cases=${NEO_EVAL_REFLOW_MAX_CASES:-30}"
   echo "=== tree=$TREE"
   echo "=== head=$(git rev-parse --short origin/main) (origin/main)"
@@ -142,13 +147,26 @@ if [ -n "$DRY_RUN" ]; then
   exit 0
 fi
 
+mkdir -p "$LOG_DIR" "$INBOX"
+exec >>"$LOG" 2>&1
+
 if [ "$ON_MAIN" = yes ]; then
   git pull --ff-only origin main || echo "!!! pull --ff-only 失败，用主仓当前 HEAD 跑"
 else
+  # ai-review PR#2024 R4 Important 1：专用树要认 ownership 标记 + 工作区干净才 reset --hard——
+  # 固定路径若被别人的 checkout 占用，无脑 reset 会删掉人家的未提交改动（私档纪律同款事故）。
   if [ -e "$TREE/.git" ]; then
+    if [ ! -f "$TREE/.eval-reflow-cron-owned" ]; then
+      echo "!!! $TREE 已存在但不是本脚本建的专用树（缺 .eval-reflow-cron-owned 标记），拒绝 reset --hard，退出"
+      exit 1
+    fi
+    if [ -n "$(git -C "$TREE" status --porcelain)" ]; then
+      echo "!!! 专用树 $TREE 有未提交改动，拒绝 reset --hard，退出"
+      exit 1
+    fi
     git -C "$TREE" fetch origin main && git -C "$TREE" reset --hard origin/main
   else
-    git worktree add --detach "$TREE" origin/main
+    git worktree add --detach "$TREE" origin/main && touch "$TREE/.eval-reflow-cron-owned"
   fi || { echo "!!! 专用树准备失败：$TREE"; exit 1; }
   for M in node_modules vercel-api/node_modules admin-console/node_modules; do
     [ -e "$TREE/$M" ] || [ -L "$TREE/$M" ] || ln -s "$REPO/$M" "$TREE/$M"

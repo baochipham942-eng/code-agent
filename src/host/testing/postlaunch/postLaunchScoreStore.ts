@@ -226,6 +226,7 @@ interface ReflowScoreRow {
   turn_id: string;
   session_id: string;
   judge_version: string;
+  judge_model: string | null;
   scored_at: number;
   dim_goal: number | null;
   dim_orchestration: number | null;
@@ -279,8 +280,13 @@ export function setPostLaunchConsentScope(
 
 function candidateSources(row: ReflowScoreRow): Array<'judge' | 'signal'> {
   const sources: Array<'judge' | 'signal'> = [];
+  // ai-review PR#2024 R4 Important 3：维红 + judge 真给出过判决才算 judge 来源——
+  // signalOnly 自动扫描落的行 judge_model = not-judged（从没调过评分模型），
+  // 标成 source:judge 会让 HARVEST 草稿带上错误的失败归因。NULL/'' 按已评处理，
+  // 与 getScoredTurnIds 的 COALESCE 口径一致（FB-233）。
+  const judged = !([JUDGE_MODEL_NOT_JUDGED, JUDGE_MODEL_UNAVAILABLE] as string[]).includes(row.judge_model ?? '');
   if ([row.dim_goal, row.dim_orchestration, row.dim_tools, row.dim_permission, row.dim_safety, row.dim_artifact]
-    .some((value) => value === 0)) sources.push('judge');
+    .some((value) => value === 0) && judged) sources.push('judge');
   if (parseSignals(row.signals ?? '[]').length > 0) sources.push('signal');
   return sources;
 }
@@ -317,7 +323,7 @@ export function listReflowCandidates(
   const sessionClause = sessionId ? 'AND session_id = ?' : '';
   const scoreParams = sessionId ? [judgeVersion, sessionId, limit] : [judgeVersion, limit];
   const rows = db.prepare(`
-    SELECT turn_id, session_id, judge_version, scored_at,
+    SELECT turn_id, session_id, judge_version, judge_model, scored_at,
            dim_goal, dim_orchestration, dim_tools, dim_permission, dim_safety, dim_artifact,
            failure_class, signals
     FROM telemetry_turn_scores

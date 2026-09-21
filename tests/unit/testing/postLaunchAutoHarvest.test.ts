@@ -216,6 +216,36 @@ describe('signalOnly 扫描 → 低分自动入候选（候选视图零改动带
     expect(candidates.map((candidate) => candidate.sessionId)).toContain('chat-auto');
     expect(candidates.find((candidate) => candidate.sessionId === 'chat-auto')?.signals).toContain('repeat_loop');
 
+    // ai-review PR#2024 R4 Important 3：signalOnly 行从没调过 judge，来源不许标 judge。
+    // 加一个把维度判 0 的信号（声称产物但磁盘没有）来钉这条——纯 repeat_loop 不判维红。
+    const database2 = db();
+    insertSession(database2, 'chat-claim', startTime);
+    insertTurn(database2, 'chat-claim', 'chat-claim-turn-1', startTime);
+    const claimReplay: StructuredReplay = {
+      sessionId: 'chat-claim',
+      turns: [{
+        turnNumber: 1,
+        turnType: 'user',
+        blocks: [
+          { type: 'user', content: '生成报告', timestamp: startTime },
+          { type: 'text', content: '已写入 ./out/report.html', timestamp: startTime + 1 },
+        ],
+        inputTokens: 100,
+        outputTokens: 50,
+        durationMs: 1000,
+        startTime,
+      }],
+      summary: { totalTurns: 1 },
+    } as unknown as StructuredReplay;
+    const claimDeps = { ...scorerDeps(database2, { 'chat-claim': claimReplay }, llmCall), fileExists: () => false };
+    await runPostLaunchScoring(claimDeps, { signalOnly: true });
+    const claimCandidates = listReflowCandidates(database2);
+    const claim = claimCandidates.find((candidate) => candidate.sessionId === 'chat-claim');
+    expect(claim?.signals).toContain('claimed_file_missing');
+    expect(claim?.redDimensions.length).toBeGreaterThan(0);
+    expect(claim?.sources).toEqual(['signal']);
+    expect(claim?.sources).not.toContain('judge');
+
     // FB-233：not-judged 占位行不算已评，人手真评能补评（judge 被真叫到）
     const ALL_PASS = JSON.stringify({
       goal: { pass: true, why: '有来源' },

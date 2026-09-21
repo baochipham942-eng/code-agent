@@ -135,6 +135,23 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
     expect(out).toContain(`--compare ${candidate} --tags postlaunch`);
   });
 
+  it('候选臂相对路径（相对 REPO 解析）⇒ dry-run 打印的命令里是绝对路径（专用树 cwd 下也能解析）', () => {
+    // 相对路径统一按 REPO 解析（脚本先 cd REPO，run 入口与 --install 一致）；
+    // 打印时必须已绝对化——非 main 时会 cd 进专用树。
+    const inRepo = path.join(clone, 'candidate-in-repo.yaml');
+    fs.writeFileSync(inRepo, 'name: candidate\n');
+    const out = execFileSync('bash', [REFLOW_SCRIPT, '--dry-run'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        NEO_EVAL_REFLOW_REPO: clone,
+        HOME: path.join(root, 'home-dry-rel'),
+        NEO_EVAL_REFLOW_CANDIDATE: 'candidate-in-repo.yaml',
+      },
+    });
+    expect(out).toContain(`--compare ${fs.realpathSync(inRepo)} `);
+  });
+
   it('主仓停在别的分支：不切它的分支，改用专用树，dry-run 不建树', () => {
     git(clone, 'checkout', '-q', '-b', 'feat/somebody-elses-branch');
     const { out, status } = reflowDryRun(clone, candidate);
@@ -231,5 +248,40 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
     expect(status).toBe(1);
     expect(out).toContain('launchctl bootstrap 失败');
     expect(out).not.toContain('installed');
+  });
+
+  it('专用树被别人的 checkout 占用（无 ownership 标记/有未提交改动）⇒ 拒绝 reset --hard，现场原样保留', () => {
+    // 占用者：从 clone 加一棵没有标记的 worktree，并留一个未提交文件
+    const occupied = path.join(root, 'code-agent-worktrees', 'eval-reflow-main');
+    fs.mkdirSync(path.dirname(occupied), { recursive: true });
+    git(clone, 'worktree', 'add', '--detach', occupied, 'origin/main');
+    fs.writeFileSync(path.join(occupied, 'SOMEBODY-UNCOMMITTED.txt'), 'not yours\n');
+
+    let status = 0;
+    let out: string;
+    try {
+      out = execFileSync('bash', [REFLOW_SCRIPT], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          NEO_EVAL_REFLOW_REPO: clone,
+          HOME: path.join(root, 'home-run'),
+          NEO_EVAL_REFLOW_CANDIDATE: candidate,
+        },
+        timeout: 60000,
+      });
+    } catch (error) {
+      status = (error as { status?: number }).status ?? -1;
+      out = String((error as { stdout?: string }).stdout ?? '');
+    }
+    expect(status).toBe(1);
+    // 日志里（stdout 被 exec 重定向进日志文件，这里读日志）
+    const logDir = path.join(root, 'home-run', '.code-agent', 'eval-reflow-cron');
+    const logFile = fs.readdirSync(logDir).filter((name) => name.endsWith('.log') && name !== 'launchd.log')[0];
+    const log = fs.readFileSync(path.join(logDir, logFile!), 'utf8');
+    expect(log).toContain('缺 .eval-reflow-cron-owned 标记');
+    // 占用者的未提交文件必须原样还在
+    expect(fs.readFileSync(path.join(occupied, 'SOMEBODY-UNCOMMITTED.txt'), 'utf8')).toBe('not yours\n');
+    expect(out).toBe('');
   });
 });

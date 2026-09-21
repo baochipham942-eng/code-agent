@@ -83,3 +83,7 @@ Tests  3 failed | 2 passed (5)
 
 ## ship 回执
 ✓ gates:fast passed required local preflight. schema=2 head=213128f8db69036c9c916945ffbc32bfa6571b40 base=9a8654d2bb467dd521535c8a74541e673d4291ab receipt=2bc67b46-b5db-40a4-be8a-e9840cbbc99c
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=b00fc162182ea40dc5224785447f97603857f0e0 base=2ed9ce0993d7f99dd07ed3526caa1b31f3224c0e receipt=a75b1da8-d231-4c21-ac55-b6132e7c7825

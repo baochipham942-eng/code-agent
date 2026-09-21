@@ -650,6 +650,65 @@ describe('MessageProcessor persistence', () => {
     );
   });
 
+  it('forced-final content that strips to empty is not a delivery: reason stays for the wrap-up fallback (ai-review R2 #2005)', async () => {
+    const ctx = {
+      artifact: ArtifactState.forTest(),
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+      control: ControlState.forTest({ isCancelled: false } as never),
+      modelConfig: { model: 'mimo-v2.5-pro', maxTokens: 4096 },
+      MAX_CONSECUTIVE_TRUNCATIONS: 3,
+      hookManager: undefined,
+      planningService: undefined,
+      turn: TurnState.forTest({ effortLevel: 'medium', researchModeActive: false, toolsUsedInTurn: [], isSimpleTaskMode: false } as never),
+      nudgeManager: {
+        runNudgeChecks: vi.fn(),
+        runOutputValidation: vi.fn(),
+      },
+      onEvent: vi.fn(),
+    };
+    ctx.control.forceFinalResponse('max-steps-reached', 'prompt');
+    const contextAssembly = {
+      // 原文非空但只含内部格式标记——清洗后落盘正文为空
+      stripInternalFormatMimicry: vi.fn(() => ''),
+      generateId: vi.fn().mockReturnValue('assistant-message-1'),
+      addAndPersistMessage: vi.fn(),
+      injectSystemMessage: vi.fn(),
+      updateContextHealth: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      emitTaskComplete: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer);
+
+    const action = await processor.handleTextResponse(
+      {
+        type: 'text',
+        content: '<truncation-recovery>mimicked scaffold</truncation-recovery>',
+        finishReason: 'stop',
+      },
+      false,
+      2,
+      false,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('break');
+    // 空正文不落盘、不清 reason——循环尾部 ensureMaxStepsWrapUp 的「reason 残留」判据保持有效
+    expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
+    expect(ctx.control.forceFinalResponseReason).toBe('max-steps-reached');
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'turn_end' }),
+    );
+    expect(ctx.onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'message' }),
+    );
+  });
+
   it('treats wake_noop as a terminal hidden action with no visible assistant text or tool row', async () => {
     const ctx = {
       artifact: ArtifactState.forTest(),

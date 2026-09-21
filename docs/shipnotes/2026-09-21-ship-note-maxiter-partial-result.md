@@ -82,3 +82,11 @@ AssertionError: expected undefined to be 'max_iterations' // Object.is equality
 4. Nit（maxIterations=1 无保底）：by design——单轮上限的语义就是一枪一响，forced-final 会禁掉唯一一轮的工具调用，维持原有 `maxIterations > 1` 守卫。
 
 新增钉死用例：空白 forced-final 轮→兜底生效且不进 handleTextResponse；pre-run 历史答案→不复述、报「没有留下可见产出」；CLI 撞顶前有流式输出→最终 output 为兜底收尾。合计 126/126 全绿。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=a357bb76cf54bac061e4ad85dccb45dca6bb50fe base=460628e431b4ee2fac7e2d716732f02819d2d508 receipt=3bda4f23-b544-45a4-bcd4-2d71ec9265d9
+
+## ai-review R2（codex，Important 1）修复
+
+forced-final 轮原文仅含内部格式标记（`<truncation-recovery>` / `Ran:` 等）时，`stripInternalFormatMimicry` 清洗后落盘正文为空，但旧代码仍清掉 `forceFinalResponseReason`，保底判据失效、CLI 空 output 却带退出码 2。修复：`messageProcessor.handleTextResponse` 在 forced-final 且清洗后正文为空时不落盘、不清 reason（turn_end/telemetry 照发），reason 残留驱动 `ensureMaxStepsWrapUp` 兜底。钉死用例在 `tests/unit/agent/messageProcessor.persistence.test.ts`（39/39 全绿）。

@@ -33,12 +33,13 @@ vi.mock('../../../src/host/services/media/musicGenerationService', () => ({
   resolveMusicModelEndpoint: resolveMusicEndpointMock,
 }));
 
-const { illustrateMock, deckGenMock, outlineMock, aiOutlineMock, saveMock } = vi.hoisted(() => ({
+const { illustrateMock, deckGenMock, outlineMock, aiOutlineMock, saveMock, saveToDirMock } = vi.hoisted(() => ({
   illustrateMock: vi.fn(),
   deckGenMock: vi.fn(),
   outlineMock: vi.fn(),
   aiOutlineMock: vi.fn(),
   saveMock: vi.fn(),
+  saveToDirMock: vi.fn(),
 }));
 vi.mock('../../../src/host/services/design/slidesGenerator', () => ({
   generateSlidesDeck: deckGenMock,
@@ -46,7 +47,10 @@ vi.mock('../../../src/host/services/design/slidesGenerator', () => ({
 }));
 vi.mock('../../../src/host/services/design/slidesAiOutline', () => ({ buildAiOutline: aiOutlineMock }));
 vi.mock('../../../src/host/services/design/slidesIllustrator', () => ({ illustrateSlides: illustrateMock }));
-vi.mock('../../../src/host/ipc/workspaceSaveExport', () => ({ handleSaveBinaryToDownloads: saveMock }));
+vi.mock('../../../src/host/ipc/workspaceSaveExport', () => ({
+  handleSaveBinaryToDownloads: saveMock,
+  handleSaveBinaryToDirectory: saveToDirMock,
+}));
 
 import {
   handleGenerateDesignImage,
@@ -71,6 +75,7 @@ beforeEach(() => {
   outlineMock.mockReset();
   aiOutlineMock.mockReset();
   saveMock.mockReset();
+  saveToDirMock.mockReset();
   generateVideoMock.mockResolvedValue({ url: 'https://oss.example.com/o.mp4', actualModel: 'wan2.7-t2v', durationSec: 5 });
   downloadVideoMock.mockResolvedValue(Buffer.from('FAKEMP4'));
   generateImageMock.mockResolvedValue({ imageData: 'data:image/png;base64,QUJD', actualModel: 'wanx2.1-t2i-plus' });
@@ -165,5 +170,26 @@ describe('handleGenerateSlidesDeck commandId 幂等（付费配图收口）', ()
     expect(second.filePath).toBe(first.filePath);
     expect(second.costCny).toBe(first.costCny);
     await fsp.rm(savedPath, { force: true });
+  });
+
+  it('#1997：outputDir 在场 → 落 handleSaveBinaryToDirectory（工作区），不走 Downloads', async () => {
+    const workspace = path.join(os.tmpdir(), `idem-ws-${Date.now()}`);
+    const savedPath = path.join(workspace, 'deck.pptx');
+    saveToDirMock.mockImplementation(async ({ dir, fileName }: { dir: string; fileName: string; base64: string }) => {
+      await fsp.mkdir(dir, { recursive: true });
+      const p = path.join(dir, fileName);
+      await fsp.writeFile(p, 'PPTX');
+      return { filePath: p };
+    });
+    deckGenMock.mockResolvedValue({ buffer: Buffer.from('PPTX'), slidesCount: 2 });
+    const slides = [{ title: 'p1' }, { title: 'p2' }];
+
+    const result = await handleGenerateSlidesDeck({ slides: slides as never, outputName: 'deck.pptx', outputDir: workspace });
+
+    expect(saveToDirMock).toHaveBeenCalledTimes(1);
+    expect(saveToDirMock.mock.calls[0][0]).toMatchObject({ dir: workspace, fileName: 'deck.pptx' });
+    expect(saveMock).not.toHaveBeenCalled();
+    expect(result.filePath).toBe(savedPath);
+    await fsp.rm(workspace, { recursive: true, force: true });
   });
 });

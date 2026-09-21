@@ -82,3 +82,7 @@ TypeError: Cannot read properties of undefined (reading 'length')
 - gates:fast 回执行见 PR 描述（ship pr 复核）。
 
 证据档位：static-contract（typecheck + gates:fast 静态格）+ hermetic-protocol（单测全 mock 隔离，无真模型/真网络）。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=ebfd520177e263a1e6e755d386dcf1a6057410b0 base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=91fc25f4-2162-488c-a450-bb3b41ab40e5

@@ -27,6 +27,7 @@ import { applyOverflowRecovery } from './layers/overflowRecovery';
 import type { ContextInterventionSnapshot } from '../../shared/contract/contextView';
 import { getProtectedMessageIds } from './contextInterventionHelpers';
 import { createLogger } from '../services/infra/logger';
+import { applyJevCompaction, isJevCompactionEnabled, type JevCompactionResult } from './jevCompaction';
 
 const logger = createLogger('CompressionPipeline');
 
@@ -85,6 +86,7 @@ export interface PipelineResult {
   totalTokens: number;
   layersTriggered: string[];
   compressionState: CompressionState;
+  jevCompaction?: JevCompactionResult;
 }
 
 // Token usage thresholds (as fraction of maxTokens)
@@ -263,8 +265,25 @@ export class CompressionPipeline {
     // L4: Context Collapse — if ≥ 75%
     // -------------------------------------------------------------------------
     const postMicroUsage = totalTokens / config.maxTokens;
+    let collapseUsage = postMicroUsage;
+    let jevCompaction: JevCompactionResult | undefined;
     if (postMicroUsage >= THRESHOLDS.contextCollapse && config.enableContextCollapse) {
-      if (config.summarize !== undefined) {
+      if (isJevCompactionEnabled()) {
+        jevCompaction = await applyJevCompaction(transcript);
+        if (!jevCompaction.skipped) {
+          layersTriggered.push('jev-compaction');
+          apiView = this.projectionEngine.projectMessages(transcript, state);
+          totalTokens = countProjectedTokens(apiView, config.provider, config.model);
+          collapseUsage = totalTokens / config.maxTokens;
+          logger.info('[CompressionPipeline] Jev compaction result', {
+            compressionRatio: jevCompaction.compressionRatio,
+            droppedMessages: jevCompaction.droppedMessages,
+            truncatedResults: jevCompaction.truncatedResults,
+            spotCheckPassed: jevCompaction.spotCheckPassed,
+          });
+        }
+      }
+      if (collapseUsage >= THRESHOLDS.contextCollapse && config.summarize !== undefined) {
         const messagesWithTurnIndex = withTurnIndex(transcript);
         const collapseProtectedMessageIds = new Set(protectedMessageIds);
         for (const messageId of getPairedToolMessageIds(transcript)) {
@@ -280,11 +299,11 @@ export class CompressionPipeline {
 
         apiView = this.projectionEngine.projectMessages(transcript, state);
         totalTokens = countProjectedTokens(apiView, config.provider, config.model);
-      } else {
+      } else if (config.summarize === undefined && collapseUsage >= THRESHOLDS.contextCollapse) {
         // G12: L4 阈值已达但调用方没注入 summarize fn —— 此前是静默跳过，高压下
         // AI 摘要悄无声息地没发生。现在显式 warn + 留 skip marker，让缺配置可见。
         logger.warn(
-          `[CompressionPipeline] L4 contextCollapse threshold reached (usage ${Math.round(postMicroUsage * 100)}%) but no summarize fn configured — skipping AI summary, transcript stays hot`,
+          `[CompressionPipeline] L4 contextCollapse threshold reached (usage ${Math.round(collapseUsage * 100)}%) but no summarize fn configured — skipping AI summary, transcript stays hot`,
         );
         layersTriggered.push('contextCollapse-skipped-no-summarizer');
       }
@@ -303,6 +322,7 @@ export class CompressionPipeline {
       totalTokens,
       layersTriggered,
       compressionState: state,
+      ...(jevCompaction ? { jevCompaction } : {}),
     };
   }
 

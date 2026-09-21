@@ -213,6 +213,28 @@ export const JEV_ROUTER_THRESHOLDS = {
   needsClarification: 0.9,
   /** destructive_intent ≥ 此值：禁止 simple/free 档（安全信号，只升档）。 */
   destructiveIntent: 0.7,
+export function buildJevCompactionQuestions(
+  keys: readonly string[],
+): Record<string, JevQuestionSpec> {
+  const questions: Record<string, JevQuestionSpec> = {};
+  for (const key of keys) {
+    questions[`keep_call_${key}`] = {
+      type: 'noul',
+      instructions: 'Should this tool call be kept verbatim in context for future reasoning?',
+    };
+    questions[`keep_result_${key}`] = {
+      type: 'noul',
+      instructions: 'Should this tool result be kept verbatim in context for future reasoning?',
+    };
+  }
+  return questions;
+}
+
+export const JEV_COMPACTION_THRESHOLDS = {
+  keep: 0.5,
+  maxBatchTokens: 25_000,
+  pinnedLatestEntries: 6,
+  truncatedResultChars: 300,
 } as const;
 
 /**

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { awaitToolExecutionWithTimeout } from '../../../src/host/agent/runtime/toolExecutionTimeout';
+import { awaitToolExecutionWithTimeout, mcpServerForTool } from '../../../src/host/agent/runtime/toolExecutionTimeout';
 import {
   getToolExecutionTimeoutMs,
   TOOL_EXECUTION_TIMEOUTS,
@@ -42,6 +42,11 @@ describe('unified tool execution timeout policy', () => {
     expect(getToolExecutionTimeoutMs('collect_agent')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('task_output')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('Process')).toBeUndefined();
+  });
+
+  it('resolves server names for legacy MCP argument shapes', () => {
+    expect(mcpServerForTool('MCPUnified', { server: 'docs' })).toBe('docs');
+    expect(mcpServerForTool('mcp', { server: 'docs' })).toBe('docs');
   });
 
   it('turns an inactive execution into a model-visible failure', async () => {

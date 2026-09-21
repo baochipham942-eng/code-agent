@@ -3,7 +3,11 @@ import { TOOL_PROGRESS } from '../../../shared/constants';
 export function mcpServerForTool(toolName: string, args: Record<string, unknown> | undefined): string | undefined {
   const current = /^mcp__(.+?)__/i.exec(toolName)?.[1] ?? /^mcp_(.+?)_/i.exec(toolName)?.[1];
   if (current) return current;
-  return toolName.toLowerCase() === 'mcpunified' && typeof args?.serverName === 'string' ? args.serverName : undefined;
+  if (toolName.toLowerCase() === 'mcpunified' || toolName.toLowerCase() === 'mcp') {
+    if (typeof args?.server === 'string') return args.server;
+    if (typeof args?.serverName === 'string') return args.serverName;
+  }
+  return undefined;
 }
 
 export async function awaitToolExecutionWithTimeout<T>(

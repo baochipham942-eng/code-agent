@@ -489,6 +489,7 @@ export class MessageProcessor {
         declaredDeliverables: this.ctx.artifact?.declaredDeliverables,
         finalText: gated.content,
         repairsUsed: this.guardState.deliverableRepairCount,
+        nudgeManager: this.ctx.nudgeManager,
       });
       if (gate.action === 'repair') {
         this.guardState.deliverableRepairCount += 1;

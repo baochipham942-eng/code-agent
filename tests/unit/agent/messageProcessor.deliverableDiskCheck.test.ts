@@ -71,7 +71,15 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     sessionId: 'runtime-session-1',
     workingDirectory: workRoot,
     artifact: ArtifactState.forTest(),
-    messages: [{ id: 'user-1', role: 'user', content: '做一份周报页面', timestamp: Date.now() }],
+    // 带一条成功的 Write 调用：推断声称只在本 run 有产出类工具活动时核对（纯问答不触发）。
+    messages: [
+      { id: 'user-1', role: 'user', content: '做一份周报页面', timestamp: Date.now() },
+      {
+        id: 'wrote-1', role: 'assistant', content: '', timestamp: Date.now() + 1,
+        toolCalls: [{ id: 'write-1', name: 'Write', arguments: { file_path: 'out.html' } }],
+        toolResults: [{ toolCallId: 'write-1', success: true, output: 'ok' }],
+      },
+    ],
     modelConfig: { provider: 'zhipu', model: 'glm-5', maxTokens: 16384 },
     contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
@@ -86,6 +94,7 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
       runNudgeChecks: vi.fn(() => false),
       runOutputValidation: vi.fn(() => false),
       getModifiedFiles: vi.fn(() => new Set<string>()),
+      getModifiedFilesSince: vi.fn(() => [] as string[]),
     },
     onEvent: vi.fn(),
     telemetryAdapter: { onTurnEnd: vi.fn() },

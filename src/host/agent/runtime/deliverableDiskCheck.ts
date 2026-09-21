@@ -157,8 +157,13 @@ function finalReplyText(messages: readonly Message[]): string {
  * 「已创建 `x.ts`」这种无分隔符声称，真实文件常在子目录（src/sub/x.ts）——只按
  * workingDirectory 根 resolve 会误判 not_on_disk，诱导模型在根目录造重复/空文件
  * （ai-review #2007 第四轮 Important）。先按 basename 对到本 run 真写出的文件。
+ * bash/脚本产出没有 outputPath 可报，只进 nudgeManager 修改账（turnOutcomeStamp 同口径）。
  */
-function runTouchedBasenames(messages: readonly Message[], workingDirectory: string): Map<string, string> {
+function runTouchedBasenames(
+  messages: readonly Message[],
+  workingDirectory: string,
+  nudgeManager?: { getModifiedFilesSince(timestamp: number): string[] },
+): Map<string, string> {
   const map = new Map<string, string>();
   const add = (value: unknown) => {
     if (typeof value !== 'string' || !value.trim()) return;
@@ -174,7 +179,25 @@ function runTouchedBasenames(messages: readonly Message[], workingDirectory: str
       add(result.metadata?.outputPath);
     }
   }
+  nudgeManager?.getModifiedFilesSince(lastUserTimestamp(messages)).forEach(add);
   return map;
+}
+
+/** 写入/产出类工具名——纯问答 run 没有这些调用，正文里的「会保存到 `out.csv`」只是讲解不是声称。 */
+const PRODUCING_TOOL_PATTERN = /^(write|write_file|edit|edit_file|append|append_file|multiedit|bash|notebookedit)$/i;
+
+/**
+ * 本 run 是否有产出类动作（成功配对的写入族工具调用）。推断声称只在这种 run 里核对：
+ * 动词表里的「保存到/写到/saved to/written to」可出现在假设/讲解语境，纯问答 run
+ * 的示例文件名不该触发补轮、更不该诱导模型造出未请求的文件（ai-review #2007 第五轮 Important）。
+ */
+function runHasProducingActivity(messages: readonly Message[]): boolean {
+  const active = currentMessages(messages);
+  const succeeded = new Set(
+    active.flatMap((message) => (message.toolResults ?? []).filter((result) => result.success).map((result) => result.toolCallId)),
+  );
+  return active.some((message) =>
+    (message.toolCalls ?? []).some((call) => succeeded.has(call.id) && PRODUCING_TOOL_PATTERN.test(call.name)));
 }
 
 /**
@@ -188,10 +211,12 @@ export function collectDeliverableClaims(input: {
   declaredDeliverables?: DeclaredDeliverables;
   /** 调用方手里有待收尾的正文（messageProcessor 落库前）时直接传，否则从 messages 里取最终回复 */
   finalText?: string;
+  /** bash/脚本产出的修改账（runTouchedBasenames 的补充来源） */
+  nudgeManager?: { getModifiedFilesSince(timestamp: number): string[] };
 }): DeliverableClaim[] {
   const claims: DeliverableClaim[] = [];
   const seen = new Set<string>();
-  const basenames = runTouchedBasenames(input.messages, input.workingDirectory);
+  const basenames = runTouchedBasenames(input.messages, input.workingDirectory, input.nudgeManager);
   const push = (raw: string, source: DeliverableClaim['source']) => {
     const trimmed = raw.trim();
     if (!trimmed) return;
@@ -209,8 +234,10 @@ export function collectDeliverableClaims(input: {
     for (const artifact of declared.finalArtifacts) push(artifact, 'declared');
   }
 
-  const text = input.finalText ?? finalReplyText(input.messages);
-  for (const candidate of extractClaimedDeliverablePaths(text)) push(candidate, 'inferred');
+  if (runHasProducingActivity(input.messages)) {
+    const text = input.finalText ?? finalReplyText(input.messages);
+    for (const candidate of extractClaimedDeliverablePaths(text)) push(candidate, 'inferred');
+  }
   return claims;
 }
 
@@ -320,6 +347,7 @@ export function runDeliverableDiskCheckGate(input: {
   declaredDeliverables?: DeclaredDeliverables;
   finalText: string;
   repairsUsed: number;
+  nudgeManager?: { getModifiedFilesSince(timestamp: number): string[] };
 }): DeliverableDiskCheckGateResult {
   const check = checkDeliverablesOnDisk(
     collectDeliverableClaims({
@@ -327,6 +355,7 @@ export function runDeliverableDiskCheckGate(input: {
       workingDirectory: input.workingDirectory,
       declaredDeliverables: input.declaredDeliverables,
       finalText: input.finalText,
+      nudgeManager: input.nudgeManager,
     }),
     input.workingDirectory,
   );

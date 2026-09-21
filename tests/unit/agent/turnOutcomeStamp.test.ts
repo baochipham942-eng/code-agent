@@ -366,6 +366,7 @@ describe('turn outcome stamp', () => {
     const messages = [
       message(),
       message({ id: 'wrote-report', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-report', name: 'Write', arguments: { file_path: artifact } }],
         toolResults: [{ toolCallId: 'write-report', success: true, metadata: { outputPath: artifact } }] }),
       message({ id: 'final', role: 'assistant', content: '已生成 `report.md`，请查收。', timestamp: 1_700_000_000_100 }),
     ];
@@ -387,6 +388,9 @@ describe('turn outcome stamp', () => {
     const recorder = new TurnTraceRecorder('claim-not-this-run', traceRoot);
     const messages = [
       message(),
+      message({ id: 'activity', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-1', name: 'Write', arguments: { file_path: 'other.md' } }],
+        toolResults: [{ toolCallId: 'write-1', success: true, output: 'ok' }] }),
       message({ id: 'final', role: 'assistant', content: '已生成 `./README.md`。', timestamp: 1_700_000_000_100 }),
     ];
     await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
@@ -401,6 +405,9 @@ describe('turn outcome stamp', () => {
     const recorder = new TurnTraceRecorder('claim-missing', traceRoot);
     const messages = [
       message(),
+      message({ id: 'activity', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-1', name: 'Write', arguments: { file_path: 'other.md' } }],
+        toolResults: [{ toolCallId: 'write-1', success: true, output: 'ok' }] }),
       message({ id: 'final', role: 'assistant', content: '已生成 `ghost.md`。', timestamp: 1_700_000_000_100 }),
     ];
     await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
@@ -416,6 +423,9 @@ describe('turn outcome stamp', () => {
     const recorder = new TurnTraceRecorder('claim-empty', traceRoot);
     const messages = [
       message(),
+      message({ id: 'activity', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-1', name: 'Write', arguments: { file_path: 'empty.html' } }],
+        toolResults: [{ toolCallId: 'write-1', success: true, output: 'ok' }] }),
       message({ id: 'final', role: 'assistant', content: '已生成 `empty.html`。', timestamp: 1_700_000_000_100 }),
     ];
     await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());

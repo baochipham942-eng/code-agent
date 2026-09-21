@@ -26,9 +26,24 @@ function message(overrides: Partial<Message> = {}): Message {
   };
 }
 
-/** 抽取走生产消费方入口（knip production 口径：只测真有人 import 的导出）。 */
+/** 本 run 有产出类工具活动（推断声称只在这种 run 里核对）。 */
+function producingActivity(id = 'write-1', filePath?: string): Message {
+  return {
+    id: 'tool-activity',
+    role: 'assistant',
+    content: '',
+    timestamp: 1_700_000_000_050,
+    toolCalls: [{ id, name: 'Write', arguments: { file_path: filePath ?? 'out.txt' } }],
+    toolResults: [{ toolCallId: id, success: true, output: 'ok', metadata: filePath ? { outputPath: filePath } : undefined }],
+  };
+}
+
+/** 抽取走生产消费方入口（knip production 口径：只测真有人 import 的导出）。
+ * 推断声称只在本 run 有产出类工具活动时核对（纯问答的讲解性文件名不算声称），
+ * 夹具因此固定带一条成功的 bash 调用。 */
 function extract(text: string): string[] {
-  return collectDeliverableClaims({ messages: [message()], workingDirectory: '/wd', finalText: text })
+  const messages = [message(), producingActivity()];
+  return collectDeliverableClaims({ messages, workingDirectory: '/wd', finalText: text })
     .map((claim) => claim.claimed);
 }
 
@@ -63,7 +78,7 @@ describe('extractClaimedDeliverablePaths (via collectDeliverableClaims)', () => 
 
   it('normalizes NFD claims to NFC on the resolved path', () => {
     const nfd = 'output/周报.md'.normalize('NFD');
-    const claims = collectDeliverableClaims({ messages: [message()], workingDirectory: '/wd', finalText: `已生成 ${nfd}` });
+    const claims = collectDeliverableClaims({ messages: [message(), producingActivity()], workingDirectory: '/wd', finalText: `已生成 ${nfd}` });
     expect(claims.map((claim) => claim.resolved)).toEqual([path.join('/wd', 'output/周报.md'.normalize('NFC'))]);
   });
 
@@ -121,6 +136,7 @@ describe('collectDeliverableClaims', () => {
     mkdirSync(workRoot, { recursive: true });
     const messages = [
       message(),
+      producingActivity(),
       message({ id: 'a1', role: 'assistant', content: '已生成 output/周报.html。', timestamp: 1_700_000_000_100 }),
     ];
     const claims = collectDeliverableClaims({ messages, workingDirectory: workRoot });
@@ -139,6 +155,7 @@ describe('collectDeliverableClaims', () => {
     try {
       const messages = [
         message(),
+        producingActivity(),
         message({ id: 'a1', role: 'assistant', content: `已保存到 \`~/${path.basename(homeFile)}\`。`, timestamp: 1_700_000_000_100 }),
       ];
       const claims = collectDeliverableClaims({ messages, workingDirectory: workRoot });
@@ -161,6 +178,7 @@ describe('collectDeliverableClaims', () => {
     const messages = [
       message(),
       message({ id: 'wrote-x', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-x', name: 'Write', arguments: { file_path: artifact } }],
         toolResults: [{ toolCallId: 'write-x', success: true, metadata: { outputPath: artifact } }] }),
       message({ id: 'final', role: 'assistant', content: '已创建 `x.ts` 并完成接线。', timestamp: 1_700_000_000_100 }),
     ];
@@ -168,6 +186,16 @@ describe('collectDeliverableClaims', () => {
     expect(claims).toEqual([{ claimed: 'x.ts', resolved: artifact, source: 'inferred' }]);
     const result = checkDeliverablesOnDisk(claims, workRoot);
     expect(result.missing).toEqual([]);
+  });
+
+  // ai-review #2007 第五轮 Important：纯问答 run 的讲解性文件名（「会保存到 `out.csv`」）
+  // 是假设/讲解不是声称——没有产出类工具活动就不核对推断声称，避免诱导模型造未请求的文件。
+  it('does not extract inferred claims in a run without producing tool activity', () => {
+    const messages = [
+      message(),
+      message({ id: 'a1', role: 'assistant', content: '运行 `python a.py` 后会把结果保存到 `out.csv`。', timestamp: 1_700_000_000_100 }),
+    ];
+    expect(collectDeliverableClaims({ messages, workingDirectory: workRoot })).toEqual([]);
   });
 });
 
@@ -235,7 +263,7 @@ describe('repair prompt and undelivered note (via runDeliverableDiskCheckGate)',
   function gate(finalText: string, repairsUsed: number) {
     return runDeliverableDiskCheckGate({
       workingDirectory: workRoot,
-      messages: [message()],
+      messages: [message(), producingActivity()],
       finalText,
       repairsUsed,
     });

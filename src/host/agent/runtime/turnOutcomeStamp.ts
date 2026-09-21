@@ -4,6 +4,7 @@ import {
   collectDeliverableClaims,
   formatDeliverableProblems,
   normalizeDeliverablePath,
+  type DeliverableDiskCheckResult,
 } from './deliverableDiskCheck';
 import { readbackFileEvidence } from './fileEvidenceReadback';
 import type { Message, ToolResult } from '../../../shared/contract';
@@ -232,13 +233,20 @@ async function buildTurnOutcome(
   // 跑过验证命令时可达，而产品交付形态（网页/报告/演示稿）绝大多数不跑测试命令，
   // verdict 因此几乎全 self_claimed（605/608）。缺漏记 problems，verdict 保持 self_claimed；
   // 回喂补一轮在 messageProcessor 收尾前做（有界，TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS）。
-  const workingDirectory = ctx.workingDirectory ?? process.cwd();
-  const deliverableClaims = collectDeliverableClaims({
-    messages: ctx.messages,
-    workingDirectory,
-    declaredDeliverables: ctx.artifact?.declaredDeliverables,
-  });
-  const deliverableCheck = checkDeliverablesOnDisk(deliverableClaims, workingDirectory);
+  // workingDirectory 缺失时不核对：回落 process.cwd() 会拿宿主进程 cwd 解析相对路径，
+  // 核对结果没有语义（ai-review #2007 第五轮 Nit）。
+  const workingDirectory = ctx.workingDirectory;
+  const deliverableClaims = workingDirectory
+    ? collectDeliverableClaims({
+      messages: ctx.messages,
+      workingDirectory,
+      declaredDeliverables: ctx.artifact?.declaredDeliverables,
+      nudgeManager: ctx.nudgeManager,
+    })
+    : [];
+  const deliverableCheck: DeliverableDiskCheckResult = workingDirectory
+    ? checkDeliverablesOnDisk(deliverableClaims, workingDirectory)
+    : { claims: [], evidenceRefs: [], missing: [] };
   problems.push(...formatDeliverableProblems(deliverableCheck.missing));
   const knownRefs = new Set(evidenceRefs.map((ref) => ref.ref));
   for (const ref of deliverableCheck.evidenceRefs) {
@@ -261,7 +269,7 @@ async function buildTurnOutcome(
   // verified 提升只认「本 run 真碰过」的声称文件（与 genericEvidenceRefs 回读同一把 run 域尺）：
   // 顺带提及的既有文件（如 ./README.md）配上一个声称动词不该把 verdict 抬成 verified——
   // 它在盘上 ≠ 本 run 交付了它（ai-review #2007 Nit）。缺漏核对不受此限：声称了不存在的就是幻觉。
-  const runPaths = currentRunFilePaths(ctx.messages, workingDirectory, ctx.nudgeManager);
+  const runPaths = workingDirectory ? currentRunFilePaths(ctx.messages, workingDirectory, ctx.nudgeManager) : new Set<string>();
   const claimsDeliveredThisRun = deliverableCheck.claims.length > 0
     && deliverableCheck.missing.length === 0
     && deliverableCheck.claims.every((claim) => runPaths.has(claim.resolved));

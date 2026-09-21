@@ -190,7 +190,10 @@ function runTouchedBasenames(
       add(result.metadata?.outputPath);
     }
   }
-  nudgeManager?.getModifiedFilesSince(lastUserTimestamp(messages)).forEach(add);
+  // 防御：DeepPartial mock 里这个方法可能缺（messageProcessor 各测试文件的局部 mock）。
+  if (typeof nudgeManager?.getModifiedFilesSince === 'function') {
+    nudgeManager.getModifiedFilesSince(lastUserTimestamp(messages)).forEach(add);
+  }
   return map;
 }
 

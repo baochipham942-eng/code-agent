@@ -13,7 +13,8 @@ import { resolveProviderApiKey } from '../src/host/model/providers/providerResol
 import { systemOne } from '../src/host/model/providers/typesafeProvider';
 import { MODEL_API_ENDPOINTS } from '../src/shared/constants';
 import { JEV_MODEL, JEV_JUDGE_MODEL } from '../src/shared/constants/jevQuestions';
-import { computeCalibration, resolveCalibrationJudgeIdentity, summarizeRepeatVariance, type CalibrationLabel, type CalibrationPair } from '../src/host/testing/calibration/judgeCalibration';
+import { computeCalibration, type CalibrationLabel, type CalibrationPair } from '../src/host/testing/calibration/judgeCalibration';
+import { resolveCalibrationJudgeIdentity, summarizeRepeatVariance } from './lib/judgeCalibrationRepeat';
 import { CALIBRATION_TRUST_THRESHOLDS, isTrustedCalibration, saveCalibrationRecord } from '../src/host/testing/calibration/calibrationRegistry';
 import { judgeDimensions, getAiReviewPromptHash, type DimensionJudgePrescreen } from '../src/host/testing/judge/dimensionJudge';
 import type { TestCase, TestResult } from '../src/host/testing/types';

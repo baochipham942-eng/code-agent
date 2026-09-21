@@ -492,6 +492,11 @@ export async function executeSpawnAgent(
 
         if (raced.kind === 'timeout') {
           delegateWorktreeCleanup();
+          // The adopted task outlives this tool call; keep the parent signal
+          // listener from cancelling it when the engine settles the tool.
+          // 行为变化（相对基线）：被收养的子代理不再跟随整轮停止而取消，
+          // 与 run_in_background 的 detached 语义一致，取消走 close_agent。
+          parentAbortSignal?.removeEventListener('abort', abortFromParent);
           return adoptForegroundSubagent({
             promise,
             agentId,
@@ -602,6 +607,12 @@ Stats:
 
         // Background worktree cleanup: register onComplete callback
         delegateWorktreeCleanup();
+
+        // 后台子代理的生命周期交给 SpawnGuard / close_agent：工具调用收口时引擎会
+        // abort 本次调用的信号，不摘除监听会把已报告「后台运行中」的子代理连带取消。
+        // 代价是不再跟随整轮停止而取消（基线行为），与 run_in_background / 前台超时
+        // 收养的 detached 语义一致。
+        parentAbortSignal?.removeEventListener('abort', abortFromParent);
 
         const isolationNote = worktreeInfo
           ? `\n- Isolation: worktree (branch: ${worktreeInfo.branchName}, path: ${worktreeInfo.worktreePath})`

@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { pickNativeFile } from '../../../src/renderer/services/tauriPluginFacade';
 import {
   buildSessionContextMenuItems,
-  sessionForkImportNamespace,
   type SessionContextMenuDeps,
 } from '../../../src/renderer/components/features/sidebar/sessionContextMenuItems';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
@@ -342,7 +341,7 @@ describe('buildSessionContextMenuItems', () => {
     });
     expect(invoke).toHaveBeenNthCalledWith(3, 'domain:session', 'importSessionFork', expect.objectContaining({
       targetProjectId: 'project-1',
-      namespace: sessionForkImportNamespace('project-1', 'export-1'),
+      namespace: 'desktop-project1-export1',
     }));
   });
 
@@ -377,10 +376,7 @@ describe('buildSessionContextMenuItems', () => {
     const namespaces = invoke.mock.calls
       .filter((call) => call[1] === 'importSessionFork')
       .map((call) => (call[2] as { namespace: string }).namespace);
-    expect(namespaces).toEqual([
-      sessionForkImportNamespace('project-1', 'export-1'),
-      sessionForkImportNamespace('project-1', 'export-1'),
-    ]);
+    expect(namespaces).toEqual(['desktop-project1-export1', 'desktop-project1-export1']);
     expect(namespaces[0]).not.toContain('sess-1');
     expect(namespaces[0]).not.toContain('sess-2');
   });

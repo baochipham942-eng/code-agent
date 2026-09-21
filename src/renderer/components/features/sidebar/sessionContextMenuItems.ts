@@ -78,7 +78,7 @@ function isSessionForkEnvelopeShape(value: unknown): value is SessionExportEnvel
     && Array.isArray(record.messages);
 }
 
-export function sessionForkImportNamespace(projectId: string, exportId: string): string {
+function sessionForkImportNamespace(projectId: string, exportId: string): string {
   const projectPart = projectId.replace(/[^A-Za-z0-9]/g, '').slice(0, 16) || 'project';
   const exportPart = exportId.replace(/[^A-Za-z0-9]/g, '').slice(0, 16);
   return `desktop-${projectPart}-${exportPart}`;

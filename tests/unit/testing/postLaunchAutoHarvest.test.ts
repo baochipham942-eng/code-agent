@@ -106,7 +106,7 @@ function harvestDeps(database: Database.Database, overrides: Partial<PostLaunchA
     db: database,
     isEnabled: () => true,
     runScan: async () => ({
-      examinedTurns: 1, excludedTurns: 0, signalTurns: 0, sampledTurns: 0, signalOnlyTurns: 1,
+      examinedTurns: 1, excludedTurns: 0, signalTurns: 0, sampledTurns: 0, signalOnlyTurns: 1, sampleDeferredTurns: 0,
       skippedTurns: 0, costUsd: 0, judgeUnavailableTurns: 0, budgetStopped: false, locked: false, dryRun: false,
     }),
     now: () => NOW,
@@ -169,7 +169,7 @@ describe('maybeRunPostLaunchAutoHarvest（开关闸 + 节流 + 撞锁）', () =>
     const database = db();
     const outcome = await maybeRunPostLaunchAutoHarvest(harvestDeps(database, {
       runScan: async () => ({
-        examinedTurns: 0, excludedTurns: 0, signalTurns: 0, sampledTurns: 0, signalOnlyTurns: 0,
+        examinedTurns: 0, excludedTurns: 0, signalTurns: 0, sampledTurns: 0, signalOnlyTurns: 0, sampleDeferredTurns: 0,
         skippedTurns: 0, costUsd: 0, judgeUnavailableTurns: 0, budgetStopped: false, locked: true, dryRun: false,
       }),
     }));

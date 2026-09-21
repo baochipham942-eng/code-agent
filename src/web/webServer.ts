@@ -740,10 +740,6 @@ async function initializeServices(): Promise<void> {
     // 同一处 web/main 路径分离修复：Light Memory 整理 job 的注册也只在死路径上，
     // 发行版从未创建过它（记忆只写不整理）。仍按 DRY_RUN_DEFAULT 注册，详见该模块头注释。
     await registerMemoryConsolidationJob();
-    // N-EVAL-FAILURE-AUTOHARVEST：低分自动入候选调度（默认关，privacy.postLaunchAutoHarvest；
-    // 只跑确定性信号不调 judge）。开关关着时调度器每 tick 只 warn 一句就返回。
-    const { startPostLaunchAutoHarvestScheduler } = await import('../host/testing/postlaunch/postLaunchAutoHarvestRuntime');
-    startPostLaunchAutoHarvestScheduler();
   } catch (error) {
     logger.warn('Cron / role cadence init failed (non-blocking):', (error as Error).message);
   }

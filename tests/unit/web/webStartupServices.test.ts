@@ -38,6 +38,7 @@ const TASK_NAMES: WebStartupTaskName[] = [
   'openchronicle',
   'soulWatcher',
   'modelConsistency',
+  'postLaunchAutoHarvest',
 ];
 
 afterEach(() => {

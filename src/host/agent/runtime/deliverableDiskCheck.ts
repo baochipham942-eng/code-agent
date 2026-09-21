@@ -39,7 +39,7 @@ export interface DeliverableClaim {
   source: 'declared' | 'inferred';
 }
 
-export type DeliverableMissingKind = 'not_on_disk' | 'empty';
+type DeliverableMissingKind = 'not_on_disk' | 'empty';
 
 export interface DeliverableMissing {
   claim: DeliverableClaim;

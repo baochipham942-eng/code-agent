@@ -113,14 +113,25 @@ function buildGuardedJudgeProjection(
     },
     output: {
       responses: result.responses.map((response) => guardForPrescreen(response, PRESCREEN_MAX_TEXT_CHARS)),
-      toolExecutions: result.toolExecutions.slice(0, PRESCREEN_MAX_TOOL_CALLS).map((execution) => ({
-        tool: execution.tool,
-        input: guardForPrescreen(JSON.stringify(execution.input ?? {}), PRESCREEN_MAX_FIELD_CHARS),
-        output: guardForPrescreenEnds(execution.output, PRESCREEN_MAX_FIELD_CHARS, PRESCREEN_MAX_FIELD_CHARS),
-        success: execution.success,
-        error: guardForPrescreen(execution.error, PRESCREEN_MAX_FIELD_CHARS),
-        permissionDenied: execution.permissionDenied === true,
-      })),
+      // 超过上限保留首段+尾段（尾部常有最终验证/失败），并用兄弟字段显式标记截断——
+      // 截断本身是给 Jev 的证据，不许静默丢（postLaunchJudge clipEnds 同族约定；#2023 R7）。
+      ...(() => {
+        const all = result.toolExecutions;
+        const kept = all.length <= PRESCREEN_MAX_TOOL_CALLS
+          ? all
+          : [...all.slice(0, PRESCREEN_MAX_TOOL_CALLS / 2), ...all.slice(-PRESCREEN_MAX_TOOL_CALLS / 2)];
+        const toolExecutions = kept.map((execution) => ({
+          tool: guardForPrescreen(execution.tool, PRESCREEN_MAX_FIELD_CHARS),
+          input: guardForPrescreen(JSON.stringify(execution.input ?? {}), PRESCREEN_MAX_FIELD_CHARS),
+          output: guardForPrescreenEnds(execution.output, PRESCREEN_MAX_FIELD_CHARS, PRESCREEN_MAX_FIELD_CHARS),
+          success: execution.success,
+          error: guardForPrescreen(execution.error, PRESCREEN_MAX_FIELD_CHARS),
+          permissionDenied: execution.permissionDenied === true,
+        }));
+        return all.length <= PRESCREEN_MAX_TOOL_CALLS
+          ? { toolExecutions }
+          : { toolExecutions, toolExecutionsTruncated: true, omittedToolCalls: all.length - kept.length };
+      })(),
       errors: result.errors.map((error) => guardForPrescreen(error, PRESCREEN_MAX_FIELD_CHARS)),
       assertionResults: (result.expectationResults ?? []).map((entry) => ({
         type: entry.expectation.type,

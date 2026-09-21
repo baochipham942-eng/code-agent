@@ -258,6 +258,31 @@ describe('judgeDimensions · Jev 初筛', () => {
     expect(stateJson).toContain('TAIL_MARKER');
   });
 
+  it('工具调用超上限 ⇒ state 保留首段+尾段并显式标记截断（不许静默丢第 31+ 个调用）', async () => {
+    const busy = result();
+    busy.toolExecutions = Array.from({ length: 40 }, (_, index) => ({
+      tool: `tool_${index}`, input: {}, output: `out-${index}`, success: true, duration: 1, timestamp: index,
+    }));
+    let stateJson = '';
+    await judgeDimensions(
+      { testCase: testCase(), result: busy, dims: ['task_completed'] },
+      async () => '不该走到\n否',
+      {
+        prescreen: async (state) => {
+          stateJson = JSON.stringify(state);
+          return answersFor(['task_completed'], 0.9);
+        },
+      },
+    );
+    const output = JSON.parse(stateJson).output;
+    expect(output.toolExecutionsTruncated).toBe(true);
+    expect(output.omittedToolCalls).toBe(10);
+    expect(output.toolExecutions).toHaveLength(30);
+    expect(stateJson).toContain('tool_0');
+    expect(stateJson).toContain('tool_39');
+    expect(stateJson).not.toContain('tool_20');
+  });
+
   it('Jev 一经调用即计刊例：决断维与升级维都带 prescreenCostUsd（同一次调用同一份值）', async () => {
     const judged = await judgeDimensions(
       { testCase: testCase(), result: result(), dims: ['task_completed', 'confirmed_before_acting'] },

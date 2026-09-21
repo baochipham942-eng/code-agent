@@ -158,6 +158,7 @@ export function activateForceFinalResponse(ctx: RuntimeContext, reason: string):
     'The runtime has stopped further tool use because the session entered a repeated read loop.',
     'Use only the file evidence already present in tool results and persistent context.',
     'Do not call any tool, do not switch to Bash/Python/Grep to re-read, and do not ask the user to repeat context.',
+    'Do not emit tool-call markup or function-call syntax of any kind (no <longcat_tool_call>, <tool_call>, or JSON call blocks) — plain prose only.',
     'If exact evidence is missing, say which evidence is missing instead of inventing it.',
     'Produce the final answer now.',
     '</force-final-response>',

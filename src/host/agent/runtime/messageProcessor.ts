@@ -60,8 +60,8 @@ import {
   isArtifactRepairTargetFileRead,
   sanitizeToolArgumentsForObservation,
   sanitizeToolResultForObservation,
-  shouldDeferForcedFinalToInference,
 } from './messageProcessorHelpers';
+import { concludeForceFinalAfterToolBatch, sealToolCallsDuringForceFinal, abortPendingGoalOnForcedFinalBreak } from './forceFinalSeal';
 import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 import { generateTruncationWarning } from './truncationPrompts';
@@ -110,6 +110,11 @@ export class MessageProcessor {
     shouldContinue: boolean;
   } {
     let wasForceExecuted = false;
+    // 强制收尾生效中：工具通道已封口（issue #1991），文本里的工具调用描述不再
+    // 代执行、也不再注入格式错误重试——直接当普通文本走最终回复路径。
+    if (this.ctx.control.forceFinalResponseReason) {
+      return { response, wasForceExecuted, shouldContinue: false };
+    }
     if (response.type === 'text' && response.content) {
       const failedToolCallMatch = this.ctx.antiPatternDetector.detectFailedToolCallPattern(response.content);
       if (failedToolCallMatch) {
@@ -474,6 +479,13 @@ export class MessageProcessor {
     }
     const assistantMessage = this.buildAssistantMessageFromResponse(response, gated.content);
     const finalContent = assistantMessage.content;
+    // 强制收尾轮输出全是裸标记时，剥离后正文为空——空消息落库等于对用户断流，
+    // 回落静态收尾文案；contentParts 同步收口，防转录层优先读 parts 又拿到裸标记
+    // （ai-review PR#2006 Nit）。
+    if (isForcedFinalTextPass && !finalContent.trim()) {
+      assistantMessage.content = buildForcedFinalAssistantContent(this.ctx.control.forceFinalResponseReason ?? '');
+      assistantMessage.contentParts = [{ type: 'text', text: assistantMessage.content }];
+    }
     // 终答尾部带 handoff proposal 时，contentParts 必须收口成清洗后的正文：它没过
     // extractHandoffProposalTail，而 transcriptReplayBuilder 无条件优先用 contentParts，
     // 原样落库会把 <handoff-proposal>{...}</handoff-proposal> 里的 JSON 当正文显示给用户，
@@ -528,6 +540,10 @@ export class MessageProcessor {
 
     this.ctx.onEvent({ type: 'message', data: assistantMessage });
     if (isForcedFinalTextPass) {
+      // goal 仍 pending 不许无痕出循环：发 goal_complete(aborted) 坐实终态
+      // （ai-review PR#2006 Important 1）；terminal 由 conversationRuntime 循环后
+      // 既有映射（goalMode aborted && completed → aborted）接手。
+      abortPendingGoalOnForcedFinalBreak(this.ctx, iterations);
       this.ctx.control.clearForceFinalResponse();
     }
 
@@ -580,6 +596,17 @@ export class MessageProcessor {
     // toolCallIdUniqueness.ts。
     const toolCalls = ensureUniqueToolCallIds(response.toolCalls ?? [], this.ctx.messages).toolCalls;
     const requestedToolNames = toolCalls.map((toolCall) => toolCall.name).join(', ');
+
+    // 强制收尾生效中模型仍回了 tool_use：整轮封口——不派发 executor、不计工具失败
+    // 遥测，合成 skipped 结果落账后直接走强制收尾结论（issue #1991）。
+    if (this.ctx.control.forceFinalResponseReason) {
+      return sealToolCallsDuringForceFinal(
+        { ctx: this.ctx, contextAssembly: this.contextAssembly },
+        response,
+        toolCalls,
+        langfuse,
+      );
+    }
 
     const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name));
     if (deniedToolCalls.length > 0) {
@@ -955,55 +982,13 @@ export class MessageProcessor {
     }
 
     if (this.ctx.control.forceFinalResponseReason) {
-      if (shouldDeferForcedFinalToInference(this.ctx)) {
-        logger.warn('[AgentLoop] Read-loop hard limit reached; deferring final answer to no-tool inference', {
-          reason: this.ctx.control.forceFinalResponseReason,
-        });
-        this.contextAssembly.flushHookMessageBuffer();
-        langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
-          type: 'tool_calls',
-          toolCount: toolCalls.length,
-          successCount: toolResults.filter((r: ToolResult) => r.success).length,
-          forcedFinalResponseDeferred: true,
-        });
-        // Close this tool turn before the deferred no-tool inference starts a fresh turn.
-        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
-        this.ctx.onEvent({
-          type: 'turn_end',
-          data: { turnId: this.ctx.turn.currentTurnId },
-        });
-        return 'continue';
-      }
-
-      const finalMessage: Message = {
-        id: this.contextAssembly.generateId(),
-        role: 'assistant',
-        content: buildForcedFinalAssistantContent(this.ctx.control.forceFinalResponseReason),
-        timestamp: Date.now(),
-        effortLevel: this.ctx.turn.effortLevel,
-        metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
-      };
-      await this.contextAssembly.addAndPersistMessage(finalMessage);
-      this.ctx.onEvent({ type: 'message', data: finalMessage });
-
-      // admission_stop:在 final assistant message push 后 emit error,
-      // useSessionLifecycleEffects 会把 errorContent 合并到 lastMessage(此时 = finalMessage assistant)上显示。
-      emitArtifactRepairStopError(this.ctx, this.ctx.control.forceFinalResponseReason);
-
-      this.ctx.control.clearForceFinalResponse();
-      this.contextAssembly.flushHookMessageBuffer();
-      langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
-        type: 'tool_calls',
-        toolCount: toolCalls.length,
-        successCount: toolResults.filter((r: ToolResult) => r.success).length,
-        forcedFinalResponse: true,
-      });
-      this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
-      this.ctx.onEvent({
-        type: 'turn_end',
-        data: { turnId: this.ctx.turn.currentTurnId },
-      });
-      return 'break';
+      return concludeForceFinalAfterToolBatch(
+        { ctx: this.ctx, contextAssembly: this.contextAssembly },
+        response,
+        toolCalls,
+        toolResults,
+        langfuse,
+      );
     }
 
     // === Stagnation detection ===

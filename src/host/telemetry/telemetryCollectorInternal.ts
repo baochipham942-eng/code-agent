@@ -56,7 +56,13 @@ export function classifyError(errorMessage: string): ErrorCategory {
     return 'sandbox_denied';
   }
 
-  // 4. 网络/HTTP — 优先匹配明确状态码（429 单独走 rate_limit）
+  // 3.5 数据库锁/并发栅栏 — 基础设施类资源竞争，重试可能自愈但连续失败该熔断
+  if (msg.includes('database is locked') || msg.includes('sqlite_busy') || msg.includes('fenced by stale cursor')) {
+    return 'database_error';
+  }
+
+  // 4. 网络/HTTP — 优先匹配明确状态码（429 单独走 rate_limit，408 是瞬态超时）
+  if (/\bhttp\s*408\b/i.test(cleaned)) return 'timeout';
   if (/\bhttp\s*429\b/i.test(cleaned) || /\b429\s+too many requests\b/i.test(cleaned) || msg.includes('rate limit') || (msg.includes('quota') && msg.includes('exceeded'))) {
     return 'rate_limit';
   }

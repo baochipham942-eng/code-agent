@@ -14,7 +14,6 @@ import { statSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { TURN_OUTCOME } from '../../../shared/constants/agent';
 import { type EvidenceRef } from '../../../shared/contract/evidence';
-import type { ContextInjectionSource } from '../../../shared/contract/contextView';
 import type { Message } from '../../../shared/contract';
 import type { DeclaredDeliverables } from './artifactState';
 import { currentMessages } from './documentEvidenceBoundary';
@@ -221,12 +220,12 @@ export function appendUndeliveredNote(content: string, missing: readonly Deliver
 
 export type DeliverableDiskCheckGateResult =
   | { action: 'pass'; content: string; missing: DeliverableMissing[] }
-  | { action: 'repair'; missing: DeliverableMissing[] };
+  | { action: 'repair'; prompt: string; missing: DeliverableMissing[] };
 
 /**
  * 收尾闸（messageProcessor 落库前调用）：核对本 run 声称/声明的交付物。
- * 全过 → pass 原样放行；缺漏且补轮预算未尽 → 注入修复提示、action:'repair'（调用方
- * 回喂模型补一轮）；预算用尽 → pass，但 content 已追加未交付说明。
+ * 全过 → pass 原样放行；缺漏且补轮预算未尽 → action:'repair' 带修复提示（调用方
+ * 注入并回喂模型补一轮）；预算用尽 → pass，但 content 已追加未交付说明。
  */
 export function runDeliverableDiskCheckGate(input: {
   workingDirectory: string;
@@ -234,7 +233,6 @@ export function runDeliverableDiskCheckGate(input: {
   declaredDeliverables?: DeclaredDeliverables;
   finalText: string;
   repairsUsed: number;
-  injectSystemMessage: (message: string, source: ContextInjectionSource) => void;
 }): DeliverableDiskCheckGateResult {
   const check = checkDeliverablesOnDisk(
     collectDeliverableClaims({
@@ -247,8 +245,7 @@ export function runDeliverableDiskCheckGate(input: {
   );
   if (check.missing.length === 0) return { action: 'pass', content: input.finalText, missing: [] };
   if (input.repairsUsed < TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS) {
-    input.injectSystemMessage(buildDeliverableRepairPrompt(check.missing), 'deliverable-disk-check');
-    return { action: 'repair', missing: check.missing };
+    return { action: 'repair', prompt: buildDeliverableRepairPrompt(check.missing), missing: check.missing };
   }
   return { action: 'pass', content: appendUndeliveredNote(input.finalText, check.missing), missing: check.missing };
 }

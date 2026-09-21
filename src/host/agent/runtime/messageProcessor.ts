@@ -484,11 +484,11 @@ export class MessageProcessor {
         declaredDeliverables: this.ctx.artifact?.declaredDeliverables,
         finalText: gated.content,
         repairsUsed: this.guardState.deliverableRepairCount,
-        injectSystemMessage: (msg, source) => this.contextAssembly.injectSystemMessage(msg, source),
       });
       if (gate.action === 'repair') {
         this.guardState.deliverableRepairCount += 1;
         logger.warn('[DeliverableDiskCheck] deliverables not on disk, bounded repair round fed back', { sessionId: this.ctx.sessionId, missing: gate.missing.map((item) => item.claim.resolved) });
+        this.contextAssembly.injectSystemMessage(gate.prompt, 'deliverable-disk-check');
         return 'continue';
       }
       deliverableCheckedContent = gate.content;

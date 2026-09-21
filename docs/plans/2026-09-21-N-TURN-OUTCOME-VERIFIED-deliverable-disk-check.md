@@ -33,6 +33,10 @@ trace 里 turn_outcome 的 verdict 605/608 是 `self_claimed`、`verified` 为 0
   `TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS = 1`，常量在
   `src/shared/constants/agent.ts`）；预算用尽仍缺 → 放行但 final 追加未交付说明。
 - `src/shared/contract/contextView.ts`：注入源枚举加 `deliverable-disk-check`。
+- 注入全景表同步：`docs/architecture/injection-panorama.md` 登记
+  `messageProcessor.ts:491 <deliverable-disk-check>`（有 if 守卫、正文动态、每 run
+  至多 1 次），`scripts/attention-budget-ratchet-baseline.json` AST 106→107、
+  全景锚点 104→105，命中文件数仍 20，无守卫静态总量 86 不变。
 
 ## 反向变异
 
@@ -67,3 +71,7 @@ Tests  3 failed | 2 passed (5)
 证据档位：static-contract + hermetic-protocol + fault-injection（反向变异真红见上）。
 未做 real-runtime：闭环判定全部为本地文件系统确定性核对，单测以真实 tmp 目录夹具
 覆盖存在/缺失/空文件三态；真实模型端到端行为留待夜跑 trace 观察 verified 占比。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=eda2479cb5a2e9b1467237a5475f4529a8a619bf base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=130ca9b2-e0c7-4071-a6af-531d4ac3904f

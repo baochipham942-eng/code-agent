@@ -111,6 +111,23 @@ describe('extractClaimedDeliverablePaths (via collectDeliverableClaims)', () => 
     expect(extract('已删除旧的 `old/legacy.ts`，已创建 `new.ts`。'))
       .toEqual(['new.ts']);
   });
+
+  // ai-review #2007 第六轮 Nit：Windows 盘符绝对路径不能丢盘符。
+  it('keeps Windows drive-letter paths intact', () => {
+    expect(extract('已生成 C:\\output\\report.html。')).toEqual(['C:\\output\\report.html']);
+  });
+
+  // ai-review #2007 第六轮 Nit：产物生成工具（非写入族）靠 outputPath 元数据算产出活动。
+  it('treats a successful tool result with outputPath as producing activity', () => {
+    const messages = [
+      message(),
+      message({ id: 'gen', role: 'assistant', content: '',
+        toolCalls: [{ id: 'gen-1', name: 'text_to_speech', arguments: {} }],
+        toolResults: [{ toolCallId: 'gen-1', success: true, metadata: { outputPath: 'out/audio.mp3' } }] }),
+    ];
+    const claims = collectDeliverableClaims({ messages, workingDirectory: '/wd', finalText: '已生成 out/audio.mp3。' });
+    expect(claims.map((claim) => claim.claimed)).toEqual(['out/audio.mp3']);
+  });
 });
 
 describe('collectDeliverableClaims', () => {
@@ -196,6 +213,24 @@ describe('collectDeliverableClaims', () => {
       message({ id: 'a1', role: 'assistant', content: '运行 `python a.py` 后会把结果保存到 `out.csv`。', timestamp: 1_700_000_000_100 }),
     ];
     expect(collectDeliverableClaims({ messages, workingDirectory: workRoot })).toEqual([]);
+  });
+
+  // ai-review #2007 第六轮 Important：win32 反斜杠路径 basename 用 split('/') 取不到，
+  // 裸文件名声称永远对不上本 run 真写出的子目录文件。
+  it('maps a bare filename to a run-touched file even with win32 backslash paths', () => {
+    const winPath = 'C:\\ws\\src\\sub\\x.ts';
+    const messages = [
+      message(),
+      message({ id: 'wrote-x', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-x', name: 'Write', arguments: { file_path: winPath } }],
+        toolResults: [{ toolCallId: 'write-x', success: true, metadata: { outputPath: winPath } }] }),
+      message({ id: 'final', role: 'assistant', content: '已创建 `x.ts` 并完成接线。', timestamp: 1_700_000_000_100 }),
+    ];
+    const claims = collectDeliverableClaims({ messages, workingDirectory: workRoot });
+    expect(claims).toHaveLength(1);
+    expect(claims[0].claimed).toBe('x.ts');
+    expect(claims[0].resolved.endsWith('x.ts')).toBe(true);
+    expect(claims[0].resolved).not.toBe(path.join(workRoot, 'x.ts'));
   });
 });
 

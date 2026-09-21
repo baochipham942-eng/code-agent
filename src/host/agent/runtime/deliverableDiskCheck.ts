@@ -91,6 +91,9 @@ function looksLikeBarePath(token: string): boolean {
   return token.includes('/') || token.includes('\\') || token.startsWith('.') || token.startsWith('~');
 }
 
+/** Windows 盘符绝对路径前缀——裸 token 正则不含 ':'，先整段摘出来保住盘符（第六轮 Nit）。 */
+const WINDOWS_DRIVE_PATH_PATTERN = /[A-Za-z]:[\\/][\w.\\/\u4e00-\u9fff -]*[\w\u4e00-\u9fff-]\.[A-Za-z0-9]{1,8}/g;
+
 /**
  * 从最终回复正文抽取「声称交付」的文件路径。
  * 先剥 URL 与 host:port 链接（以扩展名结尾的链接不是本地交付物，抽出来只会误判
@@ -108,13 +111,19 @@ function extractClaimedDeliverablePaths(text: string): string[] {
   const found: string[] = [];
   for (const clause of prose.split(CLAUSE_BOUNDARY)) {
     if (!CLAIM_VERB_PATTERN.test(clause) || DELETION_CLAUSE_PATTERN.test(clause)) continue;
-    for (const match of clause.matchAll(QUOTED_PATH_PATTERN)) {
+    const windowsPaths: string[] = [];
+    const clauseWithoutDrivePaths = clause.replace(WINDOWS_DRIVE_PATH_PATTERN, (match) => {
+      windowsPaths.push(match);
+      return ' ';
+    });
+    found.push(...windowsPaths);
+    for (const match of clauseWithoutDrivePaths.matchAll(QUOTED_PATH_PATTERN)) {
       const candidate = match[1].trim();
       if (!candidate || candidate.includes('\n')) continue;
       const extension = candidate.slice(candidate.lastIndexOf('.') + 1).toLowerCase();
       if (looksLikeBarePath(candidate) || DELIVERABLE_BARE_EXTENSIONS.has(extension)) found.push(candidate);
     }
-    for (const match of clause.matchAll(BARE_PATH_TOKEN_PATTERN)) {
+    for (const match of clauseWithoutDrivePaths.matchAll(BARE_PATH_TOKEN_PATTERN)) {
       // `//host/path` 是 URL 剥剩的协议相对形态，不是本地路径。
       if (match[0].startsWith('//')) continue;
       if (looksLikeBarePath(match[0])) found.push(match[0]);
@@ -168,7 +177,9 @@ function runTouchedBasenames(
   const add = (value: unknown) => {
     if (typeof value !== 'string' || !value.trim()) return;
     const resolved = normalizeDeliverablePath(value, workingDirectory);
-    const basename = resolved.split('/').pop();
+    // 两种分隔符都切：win32 上 resolve 产出反斜杠路径，split('/') 取到的是整条路径，
+    // 裸文件名声称永远对不上本 run 真写出的子目录文件（ai-review #2007 第六轮 Important）。
+    const basename = resolved.split(/[\\/]/).pop();
     if (basename && !map.has(basename)) map.set(basename, resolved);
   };
   for (const message of currentMessages(messages)) {
@@ -187,17 +198,25 @@ function runTouchedBasenames(
 const PRODUCING_TOOL_PATTERN = /^(write|write_file|edit|edit_file|append|append_file|multiedit|bash|notebookedit)$/i;
 
 /**
- * 本 run 是否有产出类动作（成功配对的写入族工具调用）。推断声称只在这种 run 里核对：
- * 动词表里的「保存到/写到/saved to/written to」可出现在假设/讲解语境，纯问答 run
- * 的示例文件名不该触发补轮、更不该诱导模型造出未请求的文件（ai-review #2007 第五轮 Important）。
+ * 本 run 是否有产出类动作。两条线任一：成功配对的写入族工具调用（Write/Edit/Bash 等）；
+ * 或任一成功工具结果报了 outputPath/changedFiles——PPT/设计/图片/音视频等产物生成
+ * 工具不靠写入族名字，靠结果元数据报产出（ai-review #2007 第六轮 Nit）。
+ * 推断声称只在这种 run 里核对：动词表里的「保存到/写到/saved to/written to」可出现在
+ * 假设/讲解语境，纯问答 run 的示例文件名不该触发补轮、更不该诱导模型造出未请求的文件
+ * （ai-review #2007 第五轮 Important）。
  */
 function runHasProducingActivity(messages: readonly Message[]): boolean {
   const active = currentMessages(messages);
   const succeeded = new Set(
     active.flatMap((message) => (message.toolResults ?? []).filter((result) => result.success).map((result) => result.toolCallId)),
   );
+  if (active.some((message) =>
+    (message.toolCalls ?? []).some((call) => succeeded.has(call.id) && PRODUCING_TOOL_PATTERN.test(call.name)))) return true;
   return active.some((message) =>
-    (message.toolCalls ?? []).some((call) => succeeded.has(call.id) && PRODUCING_TOOL_PATTERN.test(call.name)));
+    (message.toolResults ?? []).some((result) => result.success
+      && (typeof result.outputPath === 'string'
+        || typeof result.metadata?.outputPath === 'string'
+        || (Array.isArray(result.metadata?.changedFiles) && result.metadata.changedFiles.length > 0))));
 }
 
 /**

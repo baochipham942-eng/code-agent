@@ -38,15 +38,19 @@ case "${1:-}" in
     if [ -z "$INSTALL_CANDIDATE" ]; then
       echo "--install 需要先 export NEO_EVAL_REFLOW_CANDIDATE=<候选臂 yaml 路径>（会写进 plist）"; exit 1
     fi
+    # ai-review PR#2024 R7 Nit：相对路径的解析基准与直接运行入口统一成 REPO——
+    # 安装与手跑同一配置必须指向同一份 yaml（先按 REPO 解析验存在，再绝对化写 plist）。
+    case "$INSTALL_CANDIDATE" in
+      /*) ;;
+      *) INSTALL_CANDIDATE="$REPO/$INSTALL_CANDIDATE" ;;
+    esac
     if [ ! -f "$INSTALL_CANDIDATE" ]; then
-      echo "候选臂 yaml 不存在: $INSTALL_CANDIDATE"; exit 1
+      echo "候选臂 yaml 不存在（相对路径按 REPO 解析）: $INSTALL_CANDIDATE"; exit 1
     fi
     # ai-review PR#2024 R3：写 plist 前一律规范成绝对路径——launchd 以 REPO 为工作目录
     # 起跑，相对路径在仓外安装时会解析不到（先验存在再绝对化，顺序不能反）。
-    case "$INSTALL_CANDIDATE" in
-      /*) ;;
-      *) INSTALL_CANDIDATE="$(cd "$(dirname "$INSTALL_CANDIDATE")" && pwd -P)/$(basename "$INSTALL_CANDIDATE")" ;;
-    esac
+    # REPO 前缀后的路径可能还带 ..，所以归一化无条件跑（ai-review PR#2024 R7 连带）。
+    INSTALL_CANDIDATE="$(cd "$(dirname "$INSTALL_CANDIDATE")" && pwd -P)/$(basename "$INSTALL_CANDIDATE")"
     case "$INSTALL_CANDIDATE" in *[\&\<\>\"\']*) echo "候选路径含 XML 特殊字符，拒绝生成 plist: ${INSTALL_CANDIDATE}"; exit 1 ;; esac
     mkdir -p "$(dirname "$PLIST")" "$LOG_DIR"
     cat > "$PLIST" <<PLIST

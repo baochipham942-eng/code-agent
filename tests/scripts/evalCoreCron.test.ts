@@ -199,7 +199,8 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
       'utf8',
     );
     expect(plist).toContain('<key>NEO_EVAL_REFLOW_CANDIDATE</key>');
-    expect(plist).toContain(`<string>${candidate}</string>`);
+    // 无条件 pwd -P 归一化：/var → /private/var 软链被解析，期望值按 realpath 对齐
+    expect(plist).toContain(`<string>${fs.realpathSync(candidate)}</string>`);
   });
 
   it('--install 从仓外用相对路径装：写进 plist 的是绝对路径（launchd 以 REPO 为 cwd）', () => {
@@ -207,10 +208,13 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
     fs.mkdirSync(binDir, { recursive: true });
     fs.writeFileSync(path.join(binDir, 'launchctl'), '#!/bin/bash\nexit 0\n');
     fs.chmodSync(path.join(binDir, 'launchctl'), 0o755);
-    // 从仓外 cwd 用相对路径引用候选（root/relhome 当 cwd，candidate 在其下一跳）
+    // 相对路径统一按 REPO 解析（与直接运行入口同基准，ai-review R7 Nit）：
+    // 候选只对 REPO 可解析（写在 clone 里），cwd 在仓外——按 cwd 解析会找不到文件拒装。
     const outside = path.join(root, 'outside');
     fs.mkdirSync(outside, { recursive: true });
-    const relCandidate = path.join('..', path.basename(candidate));
+    const inRepoCandidate = path.join(clone, 'install-candidate.yaml');
+    fs.writeFileSync(inRepoCandidate, 'name: install-candidate\n');
+    const relCandidate = 'install-candidate.yaml';
     execFileSync('bash', [REFLOW_SCRIPT, '--install'], {
       encoding: 'utf8',
       cwd: outside,
@@ -227,8 +231,9 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
       'utf8',
     );
     // pwd 解析 /var → /private/var 软链：期望值按真实路径对齐
-    expect(plist).toContain(`<string>${fs.realpathSync(candidate)}</string>`);
-    expect(plist).not.toContain(relCandidate);
+    expect(plist).toContain(`<string>${fs.realpathSync(inRepoCandidate)}</string>`);
+    // 负向断言：plist 里不许出现 REPO 前缀拼出来的未归一化形态（含 '..' 或相对串）
+    expect(plist).not.toContain('..');
   });
 
   it('--install 的 launchctl bootstrap 失败 ⇒ 非零退出，不报 installed', () => {

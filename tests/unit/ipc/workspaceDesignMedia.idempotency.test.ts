@@ -173,8 +173,6 @@ describe('handleGenerateSlidesDeck commandId 幂等（付费配图收口）', ()
   });
 
   it('#1997：outputDir 在场 → 落 handleSaveBinaryToDirectory（工作区），不走 Downloads', async () => {
-    saveToDirMock.mockReset();
-    saveMock.mockClear();
     const workspace = path.join(os.tmpdir(), `idem-ws-${Date.now()}`);
     const savedPath = path.join(workspace, 'deck.pptx');
     saveToDirMock.mockImplementation(async ({ dir, fileName }: { dir: string; fileName: string; base64: string }) => {

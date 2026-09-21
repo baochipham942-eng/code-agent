@@ -684,6 +684,8 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         // ~/Downloads / HOME 根 / 工作区兄弟目录（ws/gdp-772e7524 截成 ws/gdp-7724）
         // 全部写成功。run 的授权边界 ctx.workspace 落在 cwd 内时收紧到它（只收紧、
         // 不放宽：workspace 不在 cwd 内或两者相等时维持 [workingDirectory] 默认）。
+        // 收紧的已知代价：git/pip/uv 等往 HOME 下写缓存/配置会被拒（npm 有白名单
+        // 不受影响）——与有项目 cwd 时的既有行为同侧，属「更严」而非新增破坏面。
         const workspaceConfinedRoots = !scopeWriteRoots
           && canonicalWorkspace
           && canonicalWorkspace !== workingDirectory

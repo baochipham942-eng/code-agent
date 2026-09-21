@@ -94,6 +94,15 @@ describe('ProposeSlidesOps 免费大纲路径', () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.output).toContain('/tmp/ws-gdp-772e7524/slides-x.pptx');
   });
+
+  it('#1997：cwd=HOME 且 workspace 在其下 → deck 落 workspace（run 边界），不落 HOME 根', async () => {
+    const ctx = makeCtx({ workingDir: '/Users/tester', workspace: '/Users/tester/ws/gdp-772e7524' });
+    deckMock.mockResolvedValue({ filePath: '/Users/tester/ws/gdp-772e7524/slides-x.pptx', slidesCount: 8, costCny: 0 });
+    const r = await run({ topic: 'AI 产品经理转型' }, ctx);
+    expect(deckMock).toHaveBeenCalledTimes(1);
+    expect(deckMock.mock.calls[0][0].outputDir).toBe('/Users/tester/ws/gdp-772e7524');
+    expect(r.ok).toBe(true);
+  });
 });
 
 describe('ProposeSlidesOps 付费配图路径', () => {

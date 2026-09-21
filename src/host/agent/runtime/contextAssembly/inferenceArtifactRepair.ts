@@ -2,7 +2,7 @@
 // 输出 token 上限、artifact 修复模式判定/工具过滤/maxTokens 上限、等待进度心跳、assistant delta 发射等。
 import { createHash } from 'crypto';
 import type { ToolCall, ToolDefinition } from '../../../../shared/contract';
-import { CONTEXT_LEDGER } from '../../../../shared/constants';
+import { CONTEXT_LEDGER, INFERENCE_TIMEOUTS } from '../../../../shared/constants';
 import type { ModelResponse } from '../../../agent/loopTypes';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import type { InferenceOptions } from '../../../model/types';
@@ -31,6 +31,26 @@ export function capOutputTokens(config: ModelConfig, options: InferenceOptions |
   return {
     ...config,
     maxTokens: Math.min(current, maxOutputTokens),
+  };
+}
+
+/**
+ * artifact 修复 write-priority 超时后的 compact 重发选项（inference.ts god-file 守门抽出）：
+ * 更小上下文单发（forceNonStreaming + disableProviderTransientRetry），超时窗口取
+ * INFERENCE_TIMEOUTS.ARTIFACT_COMPACT_RETRY_*（仓规 §5.1：超时不许业务代码写字面量）。
+ */
+export function buildCompactArtifactRepairWriteRetryOptions(
+  artifactRepairFullRewritePriority: boolean,
+): InferenceOptions {
+  return {
+    artifactRepairActive: true,
+    artifactRepairWritePriority: true,
+    artifactRepairFullRewritePriority,
+    forceNonStreaming: true,
+    disableProviderTransientRetry: true,
+    requestTimeoutMs: INFERENCE_TIMEOUTS.ARTIFACT_COMPACT_RETRY_REQUEST_MS,
+    firstByteTimeoutMs: INFERENCE_TIMEOUTS.ARTIFACT_COMPACT_RETRY_FIRST_BYTE_MS,
+    inactivityTimeoutMs: INFERENCE_TIMEOUTS.ARTIFACT_COMPACT_RETRY_INACTIVITY_MS,
   };
 }
 

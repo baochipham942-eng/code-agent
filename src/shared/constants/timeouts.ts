@@ -1,3 +1,20 @@
+/** 模型推理客户端超时/重试护栏（issue #1989：LongCat 长挂起把整轮拖进外层看门狗） */
+export const INFERENCE_TIMEOUTS = {
+  /**
+   * 客户端超时驱动的重试上限（不含首次）。每次超时重试最坏要烧满一个整请求窗口
+   * （PROVIDER_TIMEOUT=300s）：旧预算 4 次重试意味着单轮推理最坏 5×300s=1500s，
+   * 远超外层 600s 看门狗——夜跑 2026-09-20 的 18 个「trace 止于 request_manifest」
+   * 挂死会话即此形态。普通瞬态错误（502/ECONNRESET，秒级失败）的重试预算不变。
+   */
+  TIMEOUT_RETRY_MAX: 2,
+  /** artifact 修复 compact 重发（更小上下文单发）的整请求超时 */
+  ARTIFACT_COMPACT_RETRY_REQUEST_MS: 90_000,
+  /** 同上：首字节超时 */
+  ARTIFACT_COMPACT_RETRY_FIRST_BYTE_MS: 20_000,
+  /** 同上：无数据间隔超时 */
+  ARTIFACT_COMPACT_RETRY_INACTIVITY_MS: 45_000,
+} as const;
+
 /** MCP 连接超时配置 */
 export const MCP_TIMEOUTS = {
   /** SSE 连接超时 */

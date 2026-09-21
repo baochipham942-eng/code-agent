@@ -67,7 +67,7 @@ export interface UseSidebarRowActionsParams {
 }
 
 export interface SidebarRowActions {
-  saveExportToDownloads: (fileName: string, content: string) => Promise<void>;
+  saveExportToDownloads: (fileName: string, content: string, options?: { silent?: boolean }) => Promise<void>;
   openRuntimeLogsFolder: () => Promise<boolean>;
   handleOpenSessionReplay: (session: SessionWithMeta) => Promise<void>;
   handleOpenVoiceAudit: (session: SessionWithMeta) => void;
@@ -118,7 +118,11 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
 
   // 导出落盘统一走主进程写「下载」文件夹 + 访达定位（webview 另存为对话框在
   // 打包态会静默失败，见 workspace.ipc handleSaveTextToDownloads 注释）
-  const saveExportToDownloads = useCallback(async (fileName: string, content: string) => {
+  const saveExportToDownloads = useCallback(async (
+    fileName: string,
+    content: string,
+    options?: { silent?: boolean },
+  ) => {
     const saved = await window.domainAPI?.invoke<{ filePath: string }>(
       IPC_DOMAINS.WORKSPACE,
       'saveTextToDownloads',
@@ -127,7 +131,9 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
     if (!saved?.success || !saved.data?.filePath) {
       throw new Error(saved?.error?.message || 'Failed to save export');
     }
-    showToast('success', menu.savedToDownloads.replace('{fileName}', fileName));
+    if (!options?.silent) {
+      showToast('success', menu.savedToDownloads.replace('{fileName}', fileName));
+    }
     void window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'showItemInFolder', {
       filePath: saved.data.filePath,
     });

@@ -178,7 +178,7 @@ export interface PortableSessionV2 {
   payloadDigest: string;
 }
 
-export interface PortableToolCallResultV1 {
+interface PortableToolCallResultV1 {
   success: boolean;
   output?: string;
   error?: string;

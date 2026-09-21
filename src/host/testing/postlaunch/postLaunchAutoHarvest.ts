@@ -51,7 +51,7 @@ export function getLastAutoHarvestScanDay(db: BetterSqlite3.Database): string | 
 }
 
 /** 落本次扫描的本地日；updated_at 支持可选时间戳（云端同步口径，缺省才 Date.now()）。 */
-export function markAutoHarvestScanned(db: BetterSqlite3.Database, day: string, scannedAt?: number): void {
+function markAutoHarvestScanned(db: BetterSqlite3.Database, day: string, scannedAt?: number): void {
   ensureAutoHarvestTable(db);
   db.prepare(
     `INSERT INTO postlaunch_autoharvest_state (id, last_scan_day, updated_at) VALUES (1, ?, ?)

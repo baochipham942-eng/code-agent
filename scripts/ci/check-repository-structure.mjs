@@ -48,7 +48,10 @@ const limits = {
   // 与 scripts/postlaunch-score.ts 同族——两者都是「打开某份库/某夜产物、调评分模型、
   // 落分」的稳定 CLI 入口，分在两层会让人以为是两套东西。纯逻辑已抽到
   // scripts/lib/gdpvalRubric.ts，不占直属名额）。
-  directScriptFiles: 157,
+  // 2026-09-22 +1: scripts/eval-reflow-compare-cron.sh（N-EVAL-FAILURE-AUTOHARVEST：
+  // 回流集周跑对比候选模型发车器，与 scripts/eval-core-cron.sh 同族——launchd 周跑
+  // 入口必须在 scripts/ 直属层才能被 plist 引用，下沉子目录会让人以为是两套调度）。
+  directScriptFiles: 158,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

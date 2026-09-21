@@ -3,7 +3,8 @@
 //
 //   * 大纲 + 排版免费；illustrate=true 为内容页配图是付费路径 → **会话区**确认成本后才出图
 //     （confirmGenerationCost，不弹 window.confirm / 不落画布；fail-closed 取消即不花钱）
-//   * 生成 .pptx（main 侧 handleGenerateSlidesDeck，落 Downloads）→ 单向请求 renderer 打开
+//   * 生成 .pptx（main 侧 handleGenerateSlidesDeck，落**当前工作区** ctx.workingDir，
+//     #1997：产物写 ~/Downloads = 工作区找不到 = 没交付）→ 单向请求 renderer 打开
 //     preview tab（按当前会话过滤，不抢背景会话焦点）
 //   * 文档型产物不进 konva 画布、不接 ADR-027 自主信封
 // ============================================================================
@@ -107,6 +108,8 @@ export async function executeProposeSlidesOps(
       theme,
       ...(brief ? { brief } : {}),
       outputName: safeOutputName(topic),
+      // #1997：产物必须落当前工作区（ctx.workingDir），不许逃逸 ~/Downloads。
+      outputDir: ctx.workingDir,
       // maxImages 取已确认张数（confirmedImageCount）作硬上限，保证实际配图 ≤ 已确认（审计 F1）。
       // commandId 幂等键（WP3-1）：一次成本确认 = 一个 commandId，付费配图路径专属；免费大纲不带。
       ...(imageModel
@@ -140,7 +143,7 @@ export async function executeProposeSlidesOps(
   const costNote = result.costCny > 0 ? `，配图实际花费 ¥${result.costCny.toFixed(2)}` : '（纯大纲版，免费）';
   return {
     ok: true,
-    output: `已生成 ${result.slidesCount} 页演示稿并在预览 tab 打开${costNote}。文件已保存到下载目录。`,
+    output: `已生成 ${result.slidesCount} 页演示稿并在预览 tab 打开${costNote}。文件已保存到当前工作区：${result.filePath}`,
   };
 }
 

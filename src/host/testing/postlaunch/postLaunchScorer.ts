@@ -355,11 +355,14 @@ export async function runPostLaunchScoring(
     // dry-run 遇到任何已有行（含真评）都跳过：表按 turn_id 主键 INSERT OR REPLACE，否则会把真评覆盖成 null（ai-review #1645）
     // 真评只认真判决：not-judged 占位行（抽样上限/预算停）与 unavailable 行不算已评，
     // 之后提高上限/补预算的跑要能补评它们，而不是被第一趟的占位行永久挡住（FB-233）。
+    // signalOnly 相反：把一切真版本已有行（含 unavailable / not-judged 占位）都当已评——
+    // INSERT OR REPLACE 会抹掉原行的失败判决、已花成本与 unavailable 证据
+    // （ai-review PR#2024 R2 Important 2）；自动扫描只补「还没有行」的轮。
     const alreadyScored = getScoredTurnIds(
       deps.db,
       scorable.map((turn) => turn.turnId),
       dryRun ? [DRY_RUN_JUDGE_VERSION, POST_LAUNCH_JUDGE_VERSION] : [POST_LAUNCH_JUDGE_VERSION],
-      { includeUnjudged: dryRun === true },
+      { includeUnjudged: dryRun === true || signalOnly },
     );
 
     for (const turn of scorable) {

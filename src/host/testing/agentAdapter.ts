@@ -641,7 +641,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
    * 表都没建过 = 本产品从未落过一条提案 ⇒ 零条是事实，不是没证据。
    */
   async collectHandoffProposals(since: number): Promise<HandoffProposalRecord[] | undefined> {
-    if (!this.currentSessionId) return [];
+    // 会话 id 还没落定（超时发生在 session 建立前）= 没有证据源，不是零提案——
+    // 返 [] 会让 handoff_not_proposed 假绿（ai-review PR#2024 R2 Important 3）。
+    if (!this.currentSessionId) return undefined;
     try {
       const db = (await import('../services/core/databaseService')).getDatabase().getDb();
       if (!db) return undefined;

@@ -264,6 +264,35 @@ describe('signalOnly 扫描 → 低分自动入候选（候选视图零改动带
     expect(listReflowCandidates(database)).toEqual([]);
   });
 
+  it('signalOnly 撞上 unavailable / not-judged 行也跳过不覆盖（保成本与重试证据）——ai-review PR#2024 R2 Important 2', async () => {
+    const database = db();
+    const startTime = NOW - HOUR;
+    insertSession(database, 'chat-auto', startTime);
+    insertTurn(database, 'chat-auto', 'chat-auto-turn-1', startTime);
+    const replays = { 'chat-auto': repeatLoopReplay('chat-auto', startTime) };
+    // 先真评一趟：judge 调用炸掉 ⇒ unavailable 行（带成本与不可用证据）。
+    const explodingJudge = vi.fn<PostLaunchScorerDeps['llmCall']>(async () => { throw new Error('judge down'); });
+    await runPostLaunchScoring(scorerDeps(database, replays, explodingJudge), {});
+    const before = database.prepare(`SELECT judge_model, cost_usd FROM telemetry_turn_scores WHERE turn_id = 'chat-auto-turn-1'`).get() as Record<string, unknown>;
+    expect(before.judge_model).toBe('unavailable');
+
+    const llmCall = vi.fn<PostLaunchScorerDeps['llmCall']>();
+    const again = await runPostLaunchScoring(scorerDeps(database, replays, llmCall), { signalOnly: true });
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(again.skippedTurns).toBe(1);
+    const after = database.prepare(`SELECT judge_model, cost_usd FROM telemetry_turn_scores WHERE turn_id = 'chat-auto-turn-1'`).get() as Record<string, unknown>;
+    expect(after).toEqual(before);
+
+    // 第一趟 signalOnly 落行后，第二趟 signalOnly 幂等跳过（自己的占位行也不覆盖）
+    const fresh = db();
+    insertSession(fresh, 'chat-auto', startTime);
+    insertTurn(fresh, 'chat-auto', 'chat-auto-turn-1', startTime);
+    await runPostLaunchScoring(scorerDeps(fresh, replays, llmCall), { signalOnly: true });
+    const second = await runPostLaunchScoring(scorerDeps(fresh, replays, llmCall), { signalOnly: true });
+    expect(second.skippedTurns).toBe(1);
+    expect(second.signalOnlyTurns).toBe(0);
+  });
+
   it('signalOnly 撞上已有真评行 ⇒ 跳过不覆盖（skippedTurns）', async () => {
     const database = db();
     const startTime = NOW - HOUR;

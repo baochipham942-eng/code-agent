@@ -84,6 +84,14 @@ describe('StandaloneAgentAdapter.collectHandoffProposals', () => {
     expect(await adapter.collectHandoffProposals(0)).toBeUndefined();
   });
 
+  it('会话 id 未落定（超时发生在 session 建立前）⇒ undefined，不是零提案', async () => {
+    const adapter = new StandaloneAgentAdapter({
+      workingDirectory: '/tmp',
+      modelConfig: { provider: 'mock', model: 'fake-model' },
+    } as ConstructorParameters<typeof StandaloneAgentAdapter>[0]);
+    expect(await adapter.collectHandoffProposals(0)).toBeUndefined();
+  });
+
   it('反向变异预埋：读注入的隔离库（而非写入点）时，真发出的提案会被漏掉', async () => {
     // 本用例复现 ai-review 指出的错读形状：注入库是另一条线、里面什么都没有。
     const isolated = new Database(':memory:');

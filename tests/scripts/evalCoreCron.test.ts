@@ -145,4 +145,35 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
     expect(fs.existsSync(path.join(root, 'code-agent-worktrees'))).toBe(false);
     expect(git(clone, 'branch', '--show-current')).toBe('feat/somebody-elses-branch');
   });
+
+  it('--install：候选臂写进 plist 的 EnvironmentVariables（launchd 拿不到交互 shell 环境）；缺候选拒装', () => {
+    // launchctl 装炸弹式桩：只记录调用，不碰真 launchd。
+    const binDir = path.join(root, 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(path.join(binDir, 'launchctl'), '#!/bin/bash\necho "$@" >> \"' + path.join(root, 'launchctl.log') + '\"\n');
+    fs.chmodSync(path.join(binDir, 'launchctl'), 0o755);
+    const env = {
+      ...process.env,
+      NEO_EVAL_REFLOW_REPO: clone,
+      HOME: path.join(root, 'home-install'),
+      PATH: `${binDir}:${process.env.PATH}`,
+    };
+    // 缺候选 ⇒ 拒装，plist 不落
+    let failed = false;
+    try {
+      execFileSync('bash', [REFLOW_SCRIPT, '--install'], { encoding: 'utf8', env });
+    } catch { failed = true; }
+    expect(failed).toBe(true);
+
+    execFileSync('bash', [REFLOW_SCRIPT, '--install'], {
+      encoding: 'utf8',
+      env: { ...env, NEO_EVAL_REFLOW_CANDIDATE: candidate },
+    });
+    const plist = fs.readFileSync(
+      path.join(root, 'home-install', 'Library', 'LaunchAgents', 'com.linchen.neo-eval-reflow-compare-weekly.plist'),
+      'utf8',
+    );
+    expect(plist).toContain('<key>NEO_EVAL_REFLOW_CANDIDATE</key>');
+    expect(plist).toContain(`<string>${candidate}</string>`);
+  });
 });

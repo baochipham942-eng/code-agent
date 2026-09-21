@@ -31,6 +31,18 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.npm-global/bin:$PATH"
 case "${1:-}" in
   --install)
     case "$REPO" in *[\&\<\>\"\']*) echo "REPO 含 XML 特殊字符，拒绝生成 plist: ${REPO}"; exit 1 ;; esac
+    # ai-review PR#2024 R2 Important 1：候选臂是必填项，launchd 拿不到交互 shell 的
+    # 环境变量——安装时解析成绝对路径、验证存在，并写进 plist 的 EnvironmentVariables，
+    # 否则装完每周任务都在候选检查处空退。
+    INSTALL_CANDIDATE="${NEO_EVAL_REFLOW_CANDIDATE:-}"
+    if [ -z "$INSTALL_CANDIDATE" ]; then
+      echo "--install 需要先 export NEO_EVAL_REFLOW_CANDIDATE=<候选臂 yaml 路径>（会写进 plist）"; exit 1
+    fi
+    [ -f "$INSTALL_CANDIDATE" ] || INSTALL_CANDIDATE="$REPO/$INSTALL_CANDIDATE"
+    if [ ! -f "$INSTALL_CANDIDATE" ]; then
+      echo "候选臂 yaml 不存在: $INSTALL_CANDIDATE"; exit 1
+    fi
+    case "$INSTALL_CANDIDATE" in *[\&\<\>\"\']*) echo "候选路径含 XML 特殊字符，拒绝生成 plist: ${INSTALL_CANDIDATE}"; exit 1 ;; esac
     mkdir -p "$(dirname "$PLIST")" "$LOG_DIR"
     cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -46,6 +58,11 @@ case "${1:-}" in
 		<string>/bin/bash</string>
 		<string>$REPO/scripts/eval-reflow-compare-cron.sh</string>
 	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>NEO_EVAL_REFLOW_CANDIDATE</key>
+		<string>$INSTALL_CANDIDATE</string>
+	</dict>
 	<key>WorkingDirectory</key>
 	<string>$REPO</string>
 	<key>StartCalendarInterval</key>

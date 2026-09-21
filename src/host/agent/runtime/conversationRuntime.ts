@@ -601,7 +601,8 @@ export class ConversationRuntime {
             maxIterations: this.ctx.maxIterations,
           };
 
-          const decision = decideNextAction(loopState); logger.debug(`[AgentLoop] Loop decision: ${decision.action} (${decision.execution}) - ${decision.reason}`);
+          const decision = decideNextAction(loopState);
+          logger.debug(`[AgentLoop] Loop decision: ${decision.action} (${decision.execution}) - ${decision.reason}`);
 
           if (decision.execution === 'advisory') {
             logger.info(`[AgentLoop] Advisory loop decision: ${decision.action} - ${decision.reason}`);
@@ -618,9 +619,7 @@ export class ConversationRuntime {
             contextRatio: Math.round(getContextRatio(loopState.tokenUsage.input, loopState.maxTokens) * 100) / 100,
           });
 
-          if (decision.action === 'compact') {
-            await this.contextAssembly.checkAndAutoCompress();
-          }
+          if (decision.action === 'compact') await this.contextAssembly.checkAndAutoCompress();
         }
 
         // Exactly one final inference is allowed after resource exhaustion; no tool execution or reinference.

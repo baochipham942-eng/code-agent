@@ -112,6 +112,45 @@ describe('MessageProcessor persistence', () => {
     });
   });
 
+  it('evaluates compaction pressure after a text-only response', async () => {
+    const checkAndAutoCompress = vi.fn();
+    const ctx = {
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
+      contextHealth: ContextHealthState.forTest(),
+      artifact: ArtifactState.forTest(),
+      sessionId: 'text-pressure-session',
+      messages: [{ id: 'user-1', role: 'user' as const, content: 'reply', timestamp: 1 }],
+      control: ControlState.forTest({ isCancelled: false } as never),
+      modelConfig: { model: 'mimo-v2.5-pro' },
+      turn: TurnState.forTest({ currentTurnId: 'turn-1', toolsUsedInTurn: [] } as never),
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: { runNudgeChecks: vi.fn(), runOutputValidation: vi.fn() },
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, {
+      generateId: () => 'assistant-1',
+      stripInternalFormatMimicry: (content: string) => content,
+      addAndPersistMessage: vi.fn(),
+      injectSystemMessage: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress,
+    }, {
+      emitTaskProgress: vi.fn(),
+      emitTaskComplete: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+    });
+
+    await processor.handleTextResponse(
+      { type: 'text', content: 'plain final response', finishReason: 'end_turn' } as ModelResponse,
+      true,
+      1,
+      false,
+      { endSpan: vi.fn() },
+    );
+
+    expect(checkAndAutoCompress).toHaveBeenCalledOnce();
+  });
+
   it('persists injected steer messages to the runtime session instead of the global current session', () => {
     const ctx = {
       stats: RunStatsState.forTest(),

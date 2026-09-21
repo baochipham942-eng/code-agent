@@ -66,3 +66,7 @@ AssertionError: expected "vi.fn()" to be called with arguments: [ 'echo plain-ou
 
 ## ship 回执
 ✓ gates:fast passed required local preflight. schema=2 head=805559ce90124ba6cdae8615cf36f406d263d80b base=a5ca056be0b1803312259441b9837698368ad8ea receipt=f227a95d-fa0e-4251-b2ff-d549eba99574
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=e8d42be2b8fd9dff269e05f632632621aa78485b base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=6fe50898-3d00-4935-b099-f44cce5a20f4

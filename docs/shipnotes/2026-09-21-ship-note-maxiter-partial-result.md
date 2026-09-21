@@ -98,3 +98,7 @@ forced-final 轮原文仅含内部格式标记（`<truncation-recovery>` / `Ran:
 ## ai-review R3（codex，Important 1）修复
 
 兜底摘要的 modifiedFiles 与 R1#1 同类：nudgeManager 的改动集合跨 run 只增不减，直接读会把上一轮改的 a.ts 误写进本轮「已完成部分」。改用仓内既有 `getModifiedFilesSince(ctx.stats.runStartTime)`（turnOutcomeStamp 同款口径）。钉死用例：上一轮改动文件不进本轮部分结果 + 过滤时间戳为 runStartTime（84/84 全绿）。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=ce395ee44a82306a4ca3fed99def1a222359458c base=abc698ca55be558efcaf1720263f33e3868a013c receipt=5bc54176-71b4-4b48-a0dc-1845a215f099

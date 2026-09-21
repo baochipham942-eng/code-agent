@@ -344,10 +344,16 @@ const TOOL_EXECUTION_INTERACTION_NAMES = [
   'proposecanvasops', 'proposeslidesops', 'proposevideoops', 'requestdesignautonomy',
   'plan_review', 'wait_agent', 'workflow', 'collect_agent', 'task_output', 'process',
 ] as const;
+// 名单一律小写，getToolExecutionTimeoutMs 先 toLowerCase 再比对；camelCase 工具名
+// （WebSearch/WebFetch/ReadDocument/ExternalSearch）归一化后是无下划线形式，两种写法都要收。
 const TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES = [
   'web_search', 'web_fetch', 'search', 'retrieve', 'read_pdf', 'read_document',
   'academic_search', 'youtube_transcript', 'news_search', 'image_search', 'video_search',
+  'websearch', 'webfetch', 'readdocument', 'externalsearch',
 ] as const;
+// 自带硬性等待上限的工具（同 bash 的命令级超时）：上限内轮询、到点自行返回，
+// 外层 inactivity 钟与自身上限重叠时可能先触发，把「等满并返回最近输出」误报成失败。
+const TOOL_EXECUTION_SELF_LIMITING_NAMES = ['terminal_wait'] as const;
 const TOOL_EXECUTION_LONG_RUNNING_NAMES = [
   'video_generate', 'ppt_generate', 'task', 'spawn_agent', 'workflow_orchestrate', 'explore', 'skill',
   'local_speech_to_text', 'http_request',
@@ -357,6 +363,7 @@ const TOOL_EXECUTION_LONG_RUNNING_NAMES = [
 export function getToolExecutionTimeoutMs(toolName: string): number | undefined {
   const normalizedName = toolName.toLowerCase();
   if (TOOL_EXECUTION_BASH_NAMES.some((name) => name.toLowerCase() === normalizedName)) return undefined;
+  if (TOOL_EXECUTION_SELF_LIMITING_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_SELF_LIMITING_NAMES[number])) return undefined;
   if (TOOL_EXECUTION_INTERACTION_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_INTERACTION_NAMES[number])) return undefined;
   if (TOOL_EXECUTION_MCP_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_MCP_NAMES[number])
     || normalizedName.startsWith('mcp__') || normalizedName.startsWith('mcp_')) {
@@ -370,6 +377,25 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
     return TOOL_EXECUTION_TIMEOUTS.SEARCH_RETRIEVAL;
   }
   return TOOL_EXECUTION_TIMEOUTS.DEFAULT;
+}
+
+// 有不可重放副作用的原生工具：多数只在启动前查一次 abortSignal，外层 inactivity 超时
+// 触发时副作用可能已经完成。这类工具的超时结果必须标 outcome-unknown（模型先核实状态
+// 再决定是否重试），否则模型把超时当失败直接重试会重复发送/重复创建（mail_send、
+// github_pr、calendar_create_event 等）。只读工具重试安全，不在此列。
+const TOOL_EXECUTION_OUTCOME_UNKNOWN_NAMES = [
+  'mail_send', 'github_pr', 'jira',
+  'calendar_create_event', 'calendar_update_event', 'calendar_delete_event',
+  'reminders_create', 'reminders_update', 'reminders_delete', 'tmeetmeetingcreate',
+  'write_file', 'append_file', 'edit_file',
+  'terminal_write', 'process_write', 'process_submit',
+  'browser_navigate', 'browser_action', 'gui_agent', 'xlwings_execute',
+] as const;
+
+/** True when an inactivity timeout leaves the tool's side-effect outcome unknown. */
+export function isToolExecutionOutcomeUnknown(toolName: string): boolean {
+  const normalizedName = toolName.toLowerCase();
+  return TOOL_EXECUTION_OUTCOME_UNKNOWN_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_OUTCOME_UNKNOWN_NAMES[number]);
 }
 
 /**

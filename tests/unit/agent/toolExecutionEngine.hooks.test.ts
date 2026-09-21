@@ -1606,14 +1606,21 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(executedEdit.new_text).toBe(newText);
   });
 
-  it('passes the run-level abort signal into ToolExecutor', async () => {
+  it('chains the run-level abort signal into the tool abort signal', async () => {
     const controller = new AbortController();
     const toolExecutor = {
-      execute: vi.fn(async (): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: 'read ok',
-      })),
+      execute: vi.fn(async (_name: string, _args: unknown, context: { abortSignal: AbortSignal }): Promise<ToolResult> => {
+        // 引擎给每次工具调用派生独立 controller（inactivity 超时可单独 abort 单个工具），
+        // 但必须链接 run 级信号：run abort 时工具 signal 同步 abort。
+        expect(context.abortSignal.aborted).toBe(false);
+        controller.abort();
+        expect(context.abortSignal.aborted).toBe(true);
+        return {
+          toolCallId: '',
+          success: true,
+          output: 'read ok',
+        };
+      }),
     };
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
@@ -1637,11 +1644,9 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       makeToolCall('tool-abort-signal', 'file.txt'),
     ]);
 
-    expect(toolExecutor.execute).toHaveBeenCalledWith(
-      'read_file',
-      { path: 'file.txt' },
-      expect.objectContaining({ abortSignal: controller.signal }),
-    );
+    const toolSignal = vi.mocked(toolExecutor.execute).mock.calls[0]?.[2]?.abortSignal;
+    expect(toolSignal).toBeInstanceOf(AbortSignal);
+    expect(toolSignal?.aborted).toBe(true);
   });
 
   it('injects validation feedback after writing a game HTML artifact', async () => {

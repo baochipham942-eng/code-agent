@@ -147,9 +147,36 @@ export async function summarizeCollapsedContext(
   }
 }
 
+/**
+ * 已知工具调用协议裸标记（issue #1991）：LongCat 兼容协议在工具表被清空
+ * （强制收尾禁工具推理）时会回落到把工具调用直接写进 assistant 正文。
+ * 这些标记是引擎内部协议，任何路径都不该出现在呈现给用户的文本里。
+ * 与 renderer 侧 messageContentParts.SYSTEM_TAG_PATTERNS 的 longcat 段对齐；
+ * 未闭合的 <longcat_tool_call> 按 <think> 同款兜底剥到串尾。
+ */
+const TOOL_CALL_PROTOCOL_MARKUP_PATTERNS = [
+  /<longcat_tool_call>[\s\S]*?<\/longcat_tool_call>/gi,
+  /<longcat_tool_call>[\s\S]*$/gi,
+  /<longcat_arg_key>[\s\S]*?<\/longcat_arg_key>/gi,
+  /<longcat_arg_value>[\s\S]*?<\/longcat_arg_value>/gi,
+  /<\/?longcat_(?:arg_key|arg_value|tool_call|tool_result)\s*\/?>/gi,
+];
+
+/** 剥离正文里的工具调用协议裸标记；无标记时原样返回。 */
+export function stripToolCallProtocolMarkup(content: string): string {
+  if (!content?.includes('longcat_')) return content;
+  let cleaned = content;
+  for (const pattern of TOOL_CALL_PROTOCOL_MARKUP_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export function stripInternalFormatMimicry(_ctx: ContextAssemblyCtx, content: string): string {
   if (!content) return content;
   let cleaned = content;
+  // Remove tool-call protocol markup leaked into plain text (issue #1991)
+  cleaned = stripToolCallProtocolMarkup(cleaned);
   // Remove "Ran: <command>" lines (model mimicking formatToolCallForHistory output)
   cleaned = cleaned.replace(/^Ran:\s+.+$/gm, '');
   // Remove "Tool results:" lines

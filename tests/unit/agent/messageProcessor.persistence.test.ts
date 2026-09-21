@@ -385,6 +385,7 @@ describe('MessageProcessor persistence', () => {
     const persistedMessages: unknown[] = [];
     const ctx = {
       stats: RunStatsState.forTest(),
+      control: ControlState.forTest(),
       deniedToolNames: ['AskUserQuestion'],
       maxToolCallRetries: 0,
       historyVisibility: 'meta',
@@ -435,6 +436,7 @@ describe('MessageProcessor persistence', () => {
     };
     const processor = createProcessor({
       stats: RunStatsState.forTest(),
+      control: ControlState.forTest(),
       deniedToolNames: ['Task', 'AgentSpawn'],
       maxToolCallRetries: 2,
       contextHealth: ContextHealthState.forTest(),

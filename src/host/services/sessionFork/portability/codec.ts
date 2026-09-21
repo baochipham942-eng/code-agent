@@ -86,6 +86,44 @@ function sanitizePortableValue(value: unknown): unknown {
   );
 }
 
+/** Tool argument keys the tool card must still show after export. Substring `path`
+ *  also matches file_path / notebook_path; those stay, credential-shaped keys do not. */
+const TOOL_ARGUMENT_PATH_MARKERS = [
+  'absolutepath', 'cwd', 'filepath', 'localpath', 'notebookpath', 'path', 'workingdirectory',
+] as const;
+
+function isToolArgumentPathKey(key: string): boolean {
+  const normalized = normalizeKey(key);
+  return TOOL_ARGUMENT_PATH_MARKERS.some((marker) => normalized.includes(marker));
+}
+
+/** toolCalls[].arguments keep every key. Credential-shaped keys are value-masked;
+ *  path keys keep the path (secret shapes inside the string still go through redactSecretText).
+ *  Other channels stay on sanitizePortableValue, which drops the key entirely. */
+function sanitizeToolArguments(value: unknown): unknown {
+  if (typeof value === 'string') return redactSecretText(value);
+  if (Array.isArray(value)) return value.map(sanitizeToolArguments);
+  if (!value || typeof value !== 'object') return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (item === undefined) continue;
+    // Exact runtime-identity keys (apiKey, filePath, cwd, …) still cannot appear:
+    // assertNoRuntimeIdentity rejects the key even when the value is redacted.
+    // Snake-case tool targets (file_path, notebook_path, path) are not in that set.
+    if (FORBIDDEN_RUNTIME_KEYS.has(key)) continue;
+    if (item && typeof item === 'object') {
+      result[key] = sanitizeToolArguments(item);
+      continue;
+    }
+    if (typeof item === 'string' && isForbiddenPortableKey(key) && !isToolArgumentPathKey(key)) {
+      result[key] = '[REDACTED]';
+      continue;
+    }
+    result[key] = typeof item === 'string' ? redactSecretText(item) : item;
+  }
+  return result;
+}
+
 function sanitizePortableContentParts(source: Message['contentParts']): Message['contentParts'] {
   return sanitizePortableValue(source) as Message['contentParts'];
 }
@@ -169,7 +207,7 @@ function sanitizeToolCall(source: NonNullable<Message['toolCalls']>[number]): Po
     name: source.name,
   };
   if (source.arguments !== undefined) {
-    sanitized.arguments = sanitizePortableValue(source.arguments) as Record<string, unknown>;
+    sanitized.arguments = sanitizeToolArguments(source.arguments) as Record<string, unknown>;
   }
   if (source.result) {
     sanitized.result = {

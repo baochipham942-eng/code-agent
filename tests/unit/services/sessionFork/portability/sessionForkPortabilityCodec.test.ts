@@ -559,6 +559,10 @@ describe('session fork portability codecs', () => {
     expect(JSON.stringify(secretMessage?.toolCalls)).not.toContain('abc123');
     expect(JSON.stringify(secretMessage?.contentParts)).not.toContain('hunter2');
     expect(JSON.stringify(secretMessage?.contentParts)).not.toContain('abc123');
+    // arguments keep the password key but not the value. Routing arguments back
+    // through sanitizePortableValue (whole-key delete) is what this next test pins.
+    const secretCall = secretMessage?.toolCalls?.find((call) => call.id === 'call-secret');
+    expect(secretCall?.arguments).toMatchObject({ password: '[REDACTED]' });
 
     // Same raw shapes, this time through the conversationHistory projection.
     const history = buildPortableConversationHistory({
@@ -598,5 +602,47 @@ describe('session fork portability codecs', () => {
     const serializedHistory = encodePortableConversationHistory(history);
     expect(serializedHistory).not.toContain('hunter2');
     expect(serializedHistory).not.toContain('abc123');
+  });
+
+  it('keeps Read/Edit file_path arguments across export and import', () => {
+    // N-FORK-TOOLARGS-KEYSTRIP: path-shaped argument keys used to be deleted
+    // because `path` / `filepath` are structural markers. The tool card then had
+    // no target. Reverse mutation: send arguments through sanitizePortableValue
+    // again and file_path disappears, so this assertion goes red.
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    childEntry.messages.push(message('path-call-msg', 'assistant', 'edited', 4, {
+      toolCalls: [
+        {
+          id: 'toolu_read',
+          name: 'Read',
+          arguments: {
+            file_path: '/tmp/neo-fork/readme.md',
+            password: 'hunter2',
+          },
+        },
+        {
+          id: 'toolu_edit',
+          name: 'Edit',
+          arguments: { notebook_path: '/tmp/neo-fork/notes.ipynb' },
+        },
+      ],
+    } as unknown as Partial<Message>));
+
+    const envelope = buildSessionExportEnvelopeV2(draft);
+    const encoded = encodeSessionExportEnvelopeV2(envelope);
+    expect(encoded).toContain('/tmp/neo-fork/readme.md');
+    expect(encoded).toContain('/tmp/neo-fork/notes.ipynb');
+    expect(encoded).not.toContain('hunter2');
+
+    const decoded = decodeSessionExportEnvelopeV2(encoded);
+    const calls = decoded.messages.find((item) => item.id === 'path-call-msg')?.toolCalls;
+    expect(calls?.find((call) => call.name === 'Read')?.arguments).toMatchObject({
+      file_path: '/tmp/neo-fork/readme.md',
+      password: '[REDACTED]',
+    });
+    expect(calls?.find((call) => call.name === 'Edit')?.arguments).toMatchObject({
+      notebook_path: '/tmp/neo-fork/notes.ipynb',
+    });
   });
 });

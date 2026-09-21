@@ -485,14 +485,18 @@ export class CLIAgent {
 
     // Agent 完成
     if (event.type === 'agent_complete') {
+      // 撞顶部分完成时兜底收尾在「最后一条助手消息」里，lastContent 是前面回合的
+      // 流式旧文本——此时必须优先返回兜底，否则 headless 拿到退出码 2 却看不到
+      // 未完成说明与停止原因（ai-review #2005）。
+      const isMaxIterationsPartial = this.runErrorCode === RUN_ERROR_CODE_MAX_ITERATIONS;
       void this.finishRun({
         success: !this.runErrorMessage,
-        output: this.lastContent || this.getLastAssistantMessage()?.content,
+        output: (isMaxIterationsPartial
+          ? this.getLastAssistantMessage()?.content || this.lastContent
+          : this.lastContent || this.getLastAssistantMessage()?.content),
         ...(this.runErrorMessage ? { error: this.runErrorMessage } : {}),
         // 撞最大轮次的部分完成要能在退出码上与异常失败区分（issue #1999）。
-        ...(this.runErrorCode === RUN_ERROR_CODE_MAX_ITERATIONS
-          ? { terminationReason: 'max_iterations' as const }
-          : {}),
+        ...(isMaxIterationsPartial ? { terminationReason: 'max_iterations' as const } : {}),
         toolsUsed: [...new Set(this.toolsUsed)],
         duration: Date.now() - this.startTime,
       });

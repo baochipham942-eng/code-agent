@@ -279,6 +279,40 @@ describe('CLIAgent', () => {
     expect(result.output).toContain('已达最大执行轮次');
   });
 
+  it('run hitting max iterations prefers the wrap-up message over earlier streamed text (ai-review #2005)', async () => {
+    // 撞顶前已有流式输出的场景：lastContent 是旧回合文本，最终 output 必须是
+    // 兜底收尾（含未完成说明/停止原因），否则 headless 拿到退出码 2 却看不到原因。
+    mocks.createAgentLoop.mockImplementation(
+      (_cfg: unknown, onEvent: (e: AgentEvent) => void, messages: Message[]) => ({
+        cancel: vi.fn(),
+        interrupt: vi.fn(),
+        getHookManager: vi.fn().mockReturnValue({ hooks: true }),
+        run: vi.fn(async () => {
+          onEvent({ type: 'stream_chunk', data: { content: '前面回合的流式旧文本' } } as AgentEvent);
+          messages.push({
+            id: 'm-partial',
+            role: 'assistant',
+            content: '⚠️ 已达最大执行轮次（50 轮），任务未全部完成，执行已停止。',
+            timestamp: Date.now(),
+          } as Message);
+          onEvent({
+            type: 'error',
+            data: { message: 'Max iterations reached', code: 'MAX_ITERATIONS_REACHED' },
+          } as AgentEvent);
+          onEvent({ type: 'agent_complete' } as AgentEvent);
+        }),
+      }),
+    );
+
+    const agent = new CLIAgent();
+    const result = await agent.run('long task');
+
+    expect(result.success).toBe(false);
+    expect(result.terminationReason).toBe('max_iterations');
+    expect(result.output).toContain('已达最大执行轮次');
+    expect(result.output).not.toBe('前面回合的流式旧文本');
+  });
+
   it('run failing with an uncoded error stays a plain failure', async () => {
     installLoop(async (ctl) => {
       ctl.onEvent({ type: 'error', data: { message: 'boom' } } as AgentEvent);

@@ -69,3 +69,16 @@ AssertionError: expected undefined to be 'max_iterations' // Object.is equality
 
 ## ship 回执
 ✓ gates:fast passed required local preflight. schema=2 head=887652a2c63ab65c66c2ff61d7035bc96a74d613 base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=740bf894-69e4-448f-858a-1cd762ddb778
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=cea91d5729d0214ac5920bd105bb7c01d45b37bf base=3dfe6d07dabd5d90b60ff9b3630556dba4300461 receipt=c0dfb2f1-8e8d-407d-9eae-3b2acc50ab8f
+
+## ai-review R1（codex，Important 3 · Nit 1）修复
+
+1. 兜底摘要限定本次 run：`buildMaxStepsPartialResultContent` 取最近 assistant 文本时按 `timestamp >= ctx.stats.runStartTime` 过滤，旧会话历史不再被复述成「最近一次产出」。
+2. CLI 最终 output 在 `terminationReason=max_iterations` 时优先取最后一条助手消息（兜底收尾）而非 `lastContent`（前面回合的流式旧文本）。
+3. forced-final 轮只回空白字符不算交付：`conversationRuntime` 文本分支对 forced-final 加 `content.trim()` 判据，空白收尾不再清掉 `forceFinalResponseReason`、保底判据保持有效。
+4. Nit（maxIterations=1 无保底）：by design——单轮上限的语义就是一枪一响，forced-final 会禁掉唯一一轮的工具调用，维持原有 `maxIterations > 1` 守卫。
+
+新增钉死用例：空白 forced-final 轮→兜底生效且不进 handleTextResponse；pre-run 历史答案→不复述、报「没有留下可见产出」；CLI 撞顶前有流式输出→最终 output 为兜底收尾。合计 126/126 全绿。

@@ -60,9 +60,11 @@ export function activateMaxStepsFinalResponse(ctx: RuntimeContext, limitReason?:
  */
 function buildMaxStepsPartialResultContent(ctx: RuntimeContext, maxIterations: number): string {
   const modifiedFiles = Array.from(ctx.nudgeManager?.getModifiedFiles?.() ?? []);
+  // 只认本次 run 的产出：会话历史里的旧 assistant 文本不能算「这次做了什么」（ai-review #2005）
   const lastAssistantText = [...ctx.messages]
     .reverse()
-    .find((m) => m.role === 'assistant' && typeof m.content === 'string' && m.content.trim().length > 0)
+    .find((m) => m.role === 'assistant' && m.timestamp >= ctx.stats.runStartTime
+      && typeof m.content === 'string' && m.content.trim().length > 0)
     ?.content?.trim();
   const goalSummary = ctx.goalTracker?.getGoalSummary?.();
   const goal = goalSummary?.goal?.trim() ?? '';

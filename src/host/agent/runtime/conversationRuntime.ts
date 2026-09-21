@@ -651,7 +651,9 @@ export class ConversationRuntime {
         }
 
         // 2b. Handle actual text response
-        if (response.type === 'text' && response.content) {
+        // forced-final 轮只回空白字符不算交付（ai-review #2005）：跳过 handleTextResponse，
+        // forceFinalResponseReason 保持残留，循环尾部的 ensureMaxStepsWrapUp 兜底才会生效。
+        if (response.type === 'text' && response.content && (response.content.trim().length > 0 || !this.ctx.control.forceFinalResponseReason)) {
           const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);
           if (textAction === 'continue') continue;
           if (this.ctx.goalMode?.isPending()) {

@@ -763,7 +763,7 @@ export class ToolExecutionEngine {
     const timeoutThreshold = TOOL_TIMEOUT_THRESHOLDS[toolCall.name] ?? TOOL_PROGRESS.DEFAULT_THRESHOLD; const executionTimeout = getToolExecutionTimeoutMs(toolCall.name);
     let timeoutEmitted = false; let lastActivityAt = startTime;
     const mcpServer = mcpServerForTool(toolCall.name, toolCall.arguments); const unsubscribeMcpInteraction = mcpServer ? onPendingMcpInteractionChange(mcpServer, () => { lastActivityAt = Date.now(); }) : undefined;
-    if (mcpServer && hasPendingMcpInteraction(mcpServer)) lastActivityAt = Date.now(); const progressInterval = setInterval(() => {
+    const progressInterval = setInterval(() => {
       // 卡在人身上的时间不算工具耗时：语音态/无人值守的审批是「停车挂起」（不限时），
       // 把等人那段算进来的话，用户还在看审批卡就先被告知「工具执行超时」（2026-07-26 真机）。
       const now = Date.now();
@@ -773,8 +773,7 @@ export class ToolExecutionEngine {
         data: { toolCallId: toolCall.id, toolName: toolCall.name, elapsedMs: elapsed },
       });
       if (!timeoutEmitted && elapsed > timeoutThreshold) {
-        timeoutEmitted = true;
-        this.ctx.onEvent({
+        timeoutEmitted = true; this.ctx.onEvent({
           type: 'tool_timeout',
           data: { toolCallId: toolCall.id, toolName: toolCall.name, elapsedMs: elapsed, threshold: timeoutThreshold },
         });
@@ -846,6 +845,7 @@ export class ToolExecutionEngine {
         : await awaitToolExecutionWithTimeout(execution, {
             timeoutMs: executionTimeout,
             getInactiveMs: () => {
+              if (mcpServer && hasPendingMcpInteraction(mcpServer)) return 0;
               const now = Date.now();
               return now - lastActivityAt - getApprovalWaitMs(toolCall.id, now);
             },

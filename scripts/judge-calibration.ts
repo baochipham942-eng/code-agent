@@ -142,12 +142,19 @@ async function main(): Promise<void> {
   const cases = report.results ?? report.cases ?? [];
   // 同源裁判（评审模型与被测模型同一 provider）不接受影子金标——自我偏好会让断言真值与 judge 一起偏
   // （docs/eval/annotation-guideline.md §5；ai-review #1823 Important①）。
-  // prescreen 时实际判官可能是 typesafe（Jev）：同是一种同源裁判，一并纳入比较（#2023 R3 Important）。
+  // prescreen 时按实际判官判断（#2023 R3/R5）：Jev（typesafe）与被测同家一律前置拒；
+  // quick 与被测同家只在未开 prescreen 时前置拒——开了 prescreen 且 Jev 全决断时不存在 quick 判决，
+  // 不该误拒；真升级到 quick 的混合判决由 resolveCalibrationJudgeIdentity 判 null、不写注册表。
+  const subjectProvider = typeof report.environment?.provider === 'string' ? report.environment.provider : undefined;
+  const quickSameSource = runtime !== null && subjectProvider !== undefined && subjectProvider === runtime.provider;
   const sameSource = report.stamp?.scorers?.judgeSameSource === true
-    || (runtime !== null && typeof report.environment?.provider === 'string' && report.environment.provider === runtime.provider)
-    || (prescreen && report.environment?.provider === 'typesafe');
+    || (prescreen && subjectProvider === 'typesafe')
+    || (!prescreen && quickSameSource);
   if (sameSource && gold !== 'human_annotation') {
-    throw new Error(`同源裁判（评审 ${runtime ? `${runtime.provider}/${runtime.model}` : JEV_JUDGE_MODEL} 与被测 provider ${report.environment?.provider ?? 'unknown'} 同家）只接受人标金标：加 --gold human_annotation`);
+    throw new Error(`同源裁判（评审 ${prescreen ? JEV_JUDGE_MODEL : `${runtime!.provider}/${runtime!.model}`} 与被测 provider ${subjectProvider ?? 'unknown'} 同家）只接受人标金标：加 --gold human_annotation`);
+  }
+  if (prescreen && quickSameSource) {
+    console.warn('提示：quick 判官与被测 provider 同家；若 Jev 弃权升级到 quick，本趟只能落原始报告、不写校准注册表');
   }
   const pairs: CalibrationPair[] = [];
   let abstained = 0;

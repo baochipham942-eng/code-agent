@@ -177,6 +177,57 @@ describe('cancelOrphanedSessionRoot zombie reaping', () => {
     }
   });
 
+  it('refuses to reap a recovered run parked in waiting (human review / approval pending)', async () => {
+    const workspace = createWorkspace('waiting-kept');
+    const { db, repository } = createRepository();
+    const crashedRegistry = new RunRegistry();
+    crashedRegistry.configureDurableKernel(kernel(repository, `cli-1-before-crash`));
+
+    try {
+      await crashedRegistry.startDurable({
+        runId: 'run-waiting-kept',
+        sessionId: 'session-waiting-kept',
+        workspace,
+        cwd: workspace,
+      }, 1_000);
+      crashedRegistry.clear();
+
+      const resumedRegistry = new RunRegistry();
+      const resumedInstanceId = `cli-${process.pid}-resumed`;
+      resumedRegistry.configureDurableKernel(kernel(repository, resumedInstanceId));
+      await resumedRegistry.recoverDurable(5_000);
+      // 恢复派发判 requires_review：waiting 落库、owner 在册、无 handle。
+      await resumedRegistry.checkpointDurable('run-waiting-kept', {
+        now: 5_000,
+        status: 'waiting',
+        state: null,
+        pendingOperations: [],
+        childRuns: [],
+        events: [{ type: 'native_recovery_requires_review', payload: { reason: 'fixture' }, recordedAt: 5_000 }],
+      });
+
+      // waiting 归人工复核/显式取消路径：续跑不替人做决定，保持冲突语义。
+      await expect(resumedRegistry.cancelOrphanedSessionRoot({
+        sessionId: 'session-waiting-kept',
+        expectedOwnerId: OWNER_ID,
+        processInstanceId: resumedInstanceId,
+        now: 5_100,
+      })).resolves.toBe(false);
+      expect(await repository.get('run-waiting-kept')).toMatchObject({ status: 'waiting' });
+      await expect(resumedRegistry.startDurable({
+        runId: 'run-resume-blocked',
+        sessionId: 'session-waiting-kept',
+        workspace,
+        cwd: workspace,
+      }, 5_200)).rejects.toBeInstanceOf(RunSessionConflictError);
+      resumedRegistry.clear();
+    } finally {
+      crashedRegistry.clear();
+      rmSync(workspace, { recursive: true, force: true });
+      db.close();
+    }
+  });
+
   it('refuses to reap a run this process is actively driving (live handle)', async () => {
     const workspace = createWorkspace('live-handle');
     const { db, repository } = createRepository();

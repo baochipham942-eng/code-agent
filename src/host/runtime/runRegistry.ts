@@ -664,6 +664,8 @@ export class RunRegistry implements AgentTeamDurableParentHost {
    * owner 已是本进程，跨进程僵尸判据（pid 探测 / 租约过期）必然拒收，但没有任何东西
    * 在驱动它——对新一轮 `-s` 续跑等同于僵尸。沿 terminalDurable 规范路径（owner/attempt
    * fence + 事件序号）收尸。有 handle 的（本进程真在跑的 run）不碰，保持原冲突语义。
+   * waiting / paused 有明确业务语义（待人工复核 / 待审批），归桌面复核收件箱与显式
+   * 取消路径（terminalRecoveredWaitingRun）管，CLI 续跑不替人做决定。
    */
   private async terminalSelfOwnedUnadoptedSessionRoot(input: {
     sessionId: string;
@@ -676,6 +678,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     const now = input.now ?? Date.now();
     const latest = await kernel.getLatestActiveRootBySession(input.sessionId).catch(() => null);
     if (!latest || isTerminalRunStatus(latest.status) || latest.parentRunId) return false;
+    if (latest.status === 'waiting' || latest.status === 'paused') return false;
     const owner = latest.owner;
     if (owner?.ownerId !== input.expectedOwnerId) return false;
     if (owner.processInstanceId !== input.processInstanceId) return false;

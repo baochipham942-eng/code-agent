@@ -86,3 +86,14 @@ TypeError: Cannot read properties of undefined (reading 'length')
 
 ## ship 回执
 ✓ gates:fast passed required local preflight. schema=2 head=ebfd520177e263a1e6e755d386dcf1a6057410b0 base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=91fc25f4-2162-488c-a450-bb3b41ab40e5
+
+## ai-review 轮 1（claude/opus, head 2289b0a）Important 修复
+
+- Important 1（conversationRuntime 强制收尾 break 时 goal 永远 pending）：新增
+  `abortPendingGoalOnForcedFinalBreak`（forceFinalSeal.ts），goal 仍 pending 时发
+  `goal_complete(aborted)`（code=GOAL_ABORT_REPEATED_ACTION）坐实终态，terminal=aborted；
+  补 2 条单测（pending → 发中止事件 / 非 pending → 不动终态）。
+- Nit（封口路径只发 tool_call_end）：封口改走与批内抑制同一事件形状（start+end 都发，
+  不写遥测），补 1 条事件对称断言。
+- Nit（defer 封口循环上限）：基线同样循环、非回归，留作后续项；Nit（未闭合剥到串尾/
+  全局剥离误伤）：与渲染层 SYSTEM_TAG_PATTERNS、`<think>` 兜底同向，刻意对齐，不改。

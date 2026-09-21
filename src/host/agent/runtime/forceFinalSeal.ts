@@ -14,16 +14,15 @@
 //      tool_use，完全不派发 executor，合成 skipped 结果落账后直接走强制收尾结论。
 // ============================================================================
 
-import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
+import { HostReasonCode, type Message, type ToolCall, type ToolResult } from '../../../shared/contract';
 import type { ModelResponse } from '../loopTypes';
-import {
-  sanitizeToolCallsForHistory,
-  sanitizeToolResultsForHistoryWithCalls,
-} from '../messageHandling/converter';
+import { sanitizeToolCallsForHistory } from '../messageHandling/converter';
 import { createLogger } from '../../services/infra/logger';
 import type { ContextAssembly } from './contextAssembly';
 import type { RuntimeContext } from './runtimeContext';
 import { emitArtifactRepairStopError } from './artifactRepairStopError';
+import { emitGoalAbort } from './goalAbort';
+import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
 import {
   buildForcedFinalAssistantContent,
   sanitizeToolArgumentsForObservation,
@@ -182,13 +181,14 @@ export async function sealToolCallsDuringForceFinal(
   await contextAssembly.addAndPersistMessage(assistantMessage);
   ctx.onEvent({ type: 'message', data: assistantMessage });
 
-  const suppressedResults = toolCalls.map((toolCall) => buildForceFinalSkippedToolResult(ctx, toolCall));
-  for (const result of suppressedResults) {
-    const call = toolCalls.find((candidate) => candidate.id === result.toolCallId);
-    if (!call) continue;
-    getToolAttemptTrace(ctx).begin(call);
-    getToolAttemptTrace(ctx).finish(call, result, false, 0);
-  }
+  const suppressedResults = toolCalls.map((toolCall, index) => {
+    getToolAttemptTrace(ctx).begin(toolCall);
+    // 与批内抑制同一事件形状：start + end 都发（前端按 tool_call_start 建卡），
+    // 只发 end 会留下永远 running 的孤儿卡片（ai-review PR#2006 Nit）。
+    const result = emitForceFinalSkippedToolResult(ctx, toolCall, index);
+    getToolAttemptTrace(ctx).finish(toolCall, result, false, 0);
+    return result;
+  });
   const toolMessage: Message = {
     id: contextAssembly.generateId(),
     role: 'tool',
@@ -198,15 +198,21 @@ export async function sealToolCallsDuringForceFinal(
   };
   await contextAssembly.addAndPersistMessage(toolMessage);
   ctx.onEvent({ type: 'message', data: toolMessage });
-  for (const result of sanitizeToolResultsForHistoryWithCalls(suppressedResults, toolCalls)) {
-    ctx.onEvent({
-      type: 'tool_call_end',
-      data: sanitizeToolResultForObservation(
-        toolCalls.find((toolCall) => toolCall.id === result.toolCallId),
-        result,
-      ),
-    });
-  }
 
   return concludeForceFinalAfterToolBatch(deps, response, toolCalls, suppressedResults, langfuse);
+}
+
+/**
+ * 强制收尾文本轮 break 时 goal 仍 pending 的收口（ai-review PR#2006 Important 1）：
+ * goal 契约拒绝无痕退出——静默 break 会让 run 看似 completed、goal 永远 pending、
+ * UI 目标状态收不了口。这里发 goal_complete(aborted) 把终态坐实；
+ * 返回是否真发了中止（goal 非 pending 时 false，调用方据此不改 terminal）。
+ */
+export function abortPendingGoalOnForcedFinalBreak(ctx: RuntimeContext, turns: number): boolean {
+  return emitGoalAbort(ctx, {
+    code: HostReasonCode.GoalAbortRepeatedAction,
+    modelText: `强制收尾（${ctx.control.forceFinalResponseReason ?? 'forced final'}）触发时目标仍未达成`,
+    turns,
+    tokensUsed: goalTokensUsedWithSwarm(ctx),
+  });
 }

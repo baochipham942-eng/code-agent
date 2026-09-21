@@ -61,7 +61,7 @@ import {
   sanitizeToolArgumentsForObservation,
   sanitizeToolResultForObservation,
 } from './messageProcessorHelpers';
-import { concludeForceFinalAfterToolBatch, sealToolCallsDuringForceFinal } from './forceFinalSeal';
+import { concludeForceFinalAfterToolBatch, sealToolCallsDuringForceFinal, abortPendingGoalOnForcedFinalBreak } from './forceFinalSeal';
 import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 import { generateTruncationWarning } from './truncationPrompts';
@@ -519,6 +519,10 @@ export class MessageProcessor {
 
     this.ctx.onEvent({ type: 'message', data: assistantMessage });
     if (isForcedFinalTextPass) {
+      // goal 仍 pending 不许无痕出循环：发 goal_complete(aborted) 坐实终态
+      // （ai-review PR#2006 Important 1）；terminal 由 conversationRuntime 循环后
+      // 既有映射（goalMode aborted && completed → aborted）接手。
+      abortPendingGoalOnForcedFinalBreak(this.ctx, iterations);
       this.ctx.control.clearForceFinalResponse();
     }
 

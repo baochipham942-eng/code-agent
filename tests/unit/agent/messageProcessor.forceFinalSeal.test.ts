@@ -74,6 +74,7 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
 }));
 
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
+import { abortPendingGoalOnForcedFinalBreak } from '../../../src/host/agent/runtime/forceFinalSeal';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
@@ -279,5 +280,54 @@ describe('forceFinal 封口（issue #1991）', () => {
       .map(([, data]) => data as { outcome: string });
     expect(dispatchEvents).toHaveLength(2);
     expect(dispatchEvents.every((event) => event.outcome === 'skipped')).toBe(true);
+  });
+
+  it('封口路径 UI 事件对称：每个被吞调用 start + end 都发（不写遥测）', async () => {
+    const ctx = buildCtx({ forceFinalResponseReason: READ_LOOP_REASON });
+    const deps = buildDeps(ctx);
+    const processor = makeProcessor(ctx, deps, { executeToolsWithHooks: vi.fn() });
+
+    await processor.handleToolResponse(toolUseResponse(), false, 3, langfuse as never);
+
+    const uiEvents = vi.mocked(ctx.onEvent).mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'tool_call_start' || event.type === 'tool_call_end');
+    expect(uiEvents.map((event) => event.type)).toEqual([
+      'tool_call_start', 'tool_call_end',
+      'tool_call_start', 'tool_call_end',
+    ]);
+    expect(ctx.telemetryAdapter.onToolCallStart).not.toHaveBeenCalled();
+    expect(ctx.telemetryAdapter.onToolCallEnd).not.toHaveBeenCalled();
+  });
+
+  it('goal 仍 pending 时强制收尾 break 发 goal_complete(aborted) 坐实终态（ai-review PR#2006 Important 1）', () => {
+    const goalMode = {
+      isPending: vi.fn().mockReturnValue(true),
+      markAborted: vi.fn(),
+      getSwarmTokensUsed: vi.fn().mockReturnValue(0),
+    };
+    const ctx = { ...buildCtx({ forceFinalResponseReason: READ_LOOP_REASON }), goalMode };
+
+    const emitted = abortPendingGoalOnForcedFinalBreak(ctx as never, 7);
+
+    expect(emitted).toBe(true);
+    expect(goalMode.markAborted).toHaveBeenCalledTimes(1);
+    const goalComplete = vi.mocked(ctx.onEvent).mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === 'goal_complete');
+    expect(goalComplete?.data).toMatchObject({ status: 'aborted', turns: 7 });
+  });
+
+  it('goal 非 pending 时 abortPendingGoalOnForcedFinalBreak 不动终态', () => {
+    const goalMode = {
+      isPending: vi.fn().mockReturnValue(false),
+      markAborted: vi.fn(),
+      getSwarmTokensUsed: vi.fn().mockReturnValue(0),
+    };
+    const ctx = { ...buildCtx({ forceFinalResponseReason: READ_LOOP_REASON }), goalMode };
+
+    expect(abortPendingGoalOnForcedFinalBreak(ctx as never, 7)).toBe(false);
+    expect(goalMode.markAborted).not.toHaveBeenCalled();
+    expect(vi.mocked(ctx.onEvent).mock.calls.some(([event]) => event.type === 'goal_complete')).toBe(false);
   });
 });

@@ -117,6 +117,7 @@ export interface RunKernelAdapter {
   prepareOperation(input: PrepareOperationInput): PendingOperation;
   prepareToolOperation(input: PrepareToolOperationInput): PendingOperation;
   getLatestBySession?(sessionId: string): Promise<RunEnvelope | null>;
+  getLatestActiveRootBySession?(sessionId: string): Promise<RunEnvelope | null>;
   stealLease?(input: {
     runId: string;
     expectedEpoch: number;

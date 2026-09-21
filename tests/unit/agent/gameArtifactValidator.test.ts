@@ -3489,3 +3489,206 @@ const fakeTest = "window.__GAME_TEST__ = {";`,
     expect(/window\.__GAME_META__\s*=\s*\{/.test(fake)).toBe(true);
   });
 });
+
+describe('N-GAMEVALIDATOR-REAL-PARSE', () => {
+  // 两例误报形态（09-13 判读 R4）：v1 HI-R1-r1 dino-run 的 `start: function(){…}` 形态、
+  // v1 SHO-R1-r2 lane-run 的 `start(){…}, reset(levelOrScenario){…}` 形态。
+  // 两者 __GAME_TEST__ 都是标准直接对象字面量，真 JS 解析（new Function / acorn）判定合法，
+  // 旧括号平衡算法却因方法体内的正则字面量（/{…/、/\}/g）失衡，误报
+  // 「没有形成可平衡解析的对象字面量」→ malformed_test_contract。
+  function realParseFixtureHtml(testContract: string): string {
+    return `
+      <!doctype html>
+      <html>
+      <head>
+        <style>
+          body { display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+          canvas { border: 1px solid #fff; max-width: calc(100vw - 16px); height: auto; }
+        </style>
+      </head>
+      <body>
+        <canvas id="game" width="800" height="480"></canvas>
+        <script>
+          const state = { playerX: 0, score: 0, hazard: false, level: 0 };
+          window.__GAME_META__ = {
+            domain: 'game',
+            subtype: 'arcade',
+            controls: { ArrowRight: 'Move right' },
+            levels: [{ id: 0, name: 'test' }],
+            progressPlan: [{ input: 'ArrowRight', frames: 5, metric: 'playerX', expect: 'increase' }],
+            qualityPlan: {
+              actorReadable: true,
+              mechanics: ['move'],
+              rewards: ['score'],
+              risks: ['hazard'],
+              levelsCovered: [0],
+              allAuthoredLevelsReachable: true
+            }
+          };
+          ${testContract}
+        </script>
+      </body>
+      </html>
+    `;
+  }
+
+  const MALFORMED_SIGNALS = ['可平衡解析', '游离'];
+
+  function expectNoMalformed(failures: string[]): void {
+    for (const signal of MALFORMED_SIGNALS) {
+      expect(failures.some((failure) => failure.includes(signal)), `failures=${failures.join(' | ')}`).toBe(false);
+    }
+  }
+
+  it('accepts a function-property contract with string-paren/regex/template traps (v1 HI-R1-r1 dino-run shape)', async () => {
+    const filePath = await writeTempHtml(realParseFixtureHtml(`
+          window.__GAME_TEST__ = {
+            start: function() {
+              this.reset(0);
+            },
+            reset: function(levelOrScenario) {
+              state.level = Number(levelOrScenario) || 0;
+              state.playerX = 0;
+              state.score = 0;
+              state.hazard = false;
+            },
+            snapshot: function() {
+              // 字符串内括号陷阱：'(score {' 属于字符串，不参与括号深度
+              const label = 'player(' + state.playerX + ') {score=' + state.score + '}';
+              return { ...state, label };
+            },
+            step: function(inputState, frames = 1) {
+              if (inputState && inputState.ArrowRight) {
+                state.playerX += frames * 4;
+                state.score += frames;
+                if (state.playerX > 12) state.hazard = true;
+              }
+              // 模板串陷阱
+              state.lastNote = \`step \${frames} -> x=\${state.playerX} {ok}\`;
+              return this.snapshot();
+            },
+            runSmokeTest: function() {
+              this.start();
+              const before = this.snapshot();
+              const after = this.step({ ArrowRight: true }, 5);
+              // 正则字面量陷阱：/{(\\w+)/ 里的 { 属于正则，不属于对象括号深度
+              const tag = JSON.stringify(after.score).replace(/\\{(\\w+)/g, '$1');
+              return {
+                passed: after.playerX > before.playerX && after.score > before.score,
+                checks: ['input changed playerX and score ' + tag],
+                failures: [],
+                coverage: {
+                  levelsPassed: [0],
+                  totalLevels: 1,
+                  allLevelsReachable: true,
+                  mechanics: { move: true },
+                  rewards: { scoreGain: true },
+                  risks: { hazardFeedback: after.hazard === true },
+                  stateChanges: { position: true }
+                }
+              };
+            }
+          };
+    `), 'dino-run.html');
+
+    const result = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    expect(result.shouldValidate).toBe(true);
+    expectNoMalformed(result.failures);
+    expect(result.passed, `failures=${result.failures.join(' | ')}`).toBe(true);
+  });
+
+  it('accepts a method-shorthand contract with a }-regex trap (v1 SHO-R1-r2 lane-run shape)', async () => {
+    const filePath = await writeTempHtml(realParseFixtureHtml(`
+          window.__GAME_TEST__ = {
+            start() {
+              this.reset(0);
+              // 正则字面量陷阱：/\\}/g 的 } 是正则内容，不是对象闭合
+              state.note = 'lane'.replace(/\\}/g, '');
+            },
+            reset(levelOrScenario) {
+              state.level = Number(levelOrScenario) || 0;
+              state.playerX = 0;
+              state.score = 0;
+              state.hazard = false;
+            },
+            snapshot() {
+              const label = 'lane(' + state.level + ')';
+              return { ...state, label };
+            },
+            step(inputState = {}, frames = 1) {
+              if (inputState && inputState.ArrowRight) {
+                state.playerX += frames * 4;
+                state.score += frames;
+                if (state.playerX > 12) state.hazard = true;
+              }
+              return this.snapshot();
+            },
+            runSmokeTest() {
+              this.start();
+              const before = this.snapshot();
+              const after = this.step({ ArrowRight: true }, 5);
+              return {
+                passed: after.playerX > before.playerX && after.score > before.score,
+                checks: ['input changed playerX and score'],
+                failures: [],
+                coverage: {
+                  levelsPassed: [0],
+                  totalLevels: 1,
+                  allLevelsReachable: true,
+                  mechanics: { move: true },
+                  rewards: { scoreGain: true },
+                  risks: { hazardFeedback: after.hazard === true },
+                  stateChanges: { position: true }
+                }
+              };
+            }
+          };
+    `), 'lane-run.html');
+
+    const result = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    expect(result.shouldValidate).toBe(true);
+    expectNoMalformed(result.failures);
+    expect(result.passed, `failures=${result.failures.join(' | ')}`).toBe(true);
+  });
+
+  it('still reports malformed_test_contract when the contract object never closes', async () => {
+    const filePath = await writeTempHtml(realParseFixtureHtml(`
+          window.__GAME_TEST__ = {
+            start() {
+              this.reset(0);
+            },
+            reset(levelOrScenario) {
+              state.level = Number(levelOrScenario) || 0;
+    `), 'unclosed-contract.html');
+
+    const result = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    expect(result.passed).toBe(false);
+    expect(
+      result.failures.some((failure) => failure.includes('可平衡解析')),
+      `failures=${result.failures.join(' | ')}`,
+    ).toBe(true);
+  });
+
+  it('reports malformed_test_contract for illegal syntax even when braces balance', async () => {
+    // 括号完全平衡但语法非法（const 1illegal）：旧括号平衡会放行，真解析必须拦下。
+    const filePath = await writeTempHtml(realParseFixtureHtml(`
+          window.__GAME_TEST__ = {
+            start() { this.reset(0); },
+            reset(levelOrScenario) { state.level = Number(levelOrScenario) || 0; },
+            snapshot() { return { ...state }; },
+            step(inputState = {}, frames = 1) {
+              const 1illegal = frames;
+              return this.snapshot();
+            },
+            runSmokeTest() { return { passed: true, checks: [], failures: [], coverage: {} }; }
+          };
+    `), 'illegal-syntax-contract.html');
+
+    const result = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    expect(result.passed).toBe(false);
+    expect(
+      result.failures.some((failure) => failure.includes('可平衡解析')),
+      `failures=${result.failures.join(' | ')}`,
+    ).toBe(true);
+  });
+});

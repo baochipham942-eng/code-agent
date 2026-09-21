@@ -331,8 +331,6 @@ export const TOOL_EXECUTION_TIMEOUTS = {
   SEARCH_RETRIEVAL: 120_000,
   /** Generic tools fail fast enough to let the model choose another path. */
   DEFAULT: 120_000,
-  /** MCP transport calls have their own lower-level retry/timeout policy. */
-  MCP: 60_000,
   /** Long-running generation/delegation tools retain their larger budget. */
   LONG_RUNNING: 600_000,
 } as const;
@@ -365,6 +363,8 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
   if (TOOL_EXECUTION_BASH_NAMES.some((name) => name.toLowerCase() === normalizedName)) return undefined;
   if (TOOL_EXECUTION_SELF_LIMITING_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_SELF_LIMITING_NAMES[number])) return undefined;
   if (TOOL_EXECUTION_INTERACTION_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_INTERACTION_NAMES[number])) return undefined;
+  // MCP 工具不走外层预算：lazy connect（120s，首次 180s）+ reconnect+retry 都不算
+  // progress，外层钟会在连接途中误杀；调用侧已有 MCP 层自己的 60s 调用预算兜底。
   if (TOOL_EXECUTION_MCP_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_MCP_NAMES[number])
     || normalizedName.startsWith('mcp__') || normalizedName.startsWith('mcp_')) {
     return undefined;

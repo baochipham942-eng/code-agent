@@ -5,23 +5,7 @@ import {
   isToolExecutionOutcomeUnknown,
 } from '../../../shared/constants';
 import type { AgentEvent } from '../../../shared/contract';
-import { hasPendingMcpInteraction, onPendingMcpInteractionChange } from '../../mcp/mcpPendingInteraction';
 import { clearApprovalWait, getApprovalWaitMs } from '../../tools/toolExecutionTelemetry';
-
-// host 侧 MCP 生命周期管理工具不是 server 调用：名称形似 mcp_<server>_<tool> 但
-// 段里没有真实 server，也不会有 elicitation/OAuth 交互挂起，不可解析出 server 名。
-const MCP_MANAGEMENT_TOOL_NAMES = new Set(['mcp_add_server']);
-
-export function mcpServerForTool(toolName: string, args: Record<string, unknown> | undefined): string | undefined {
-  if (MCP_MANAGEMENT_TOOL_NAMES.has(toolName.toLowerCase())) return undefined;
-  const current = /^mcp__(.+?)__/i.exec(toolName)?.[1] ?? /^mcp_(.+?)_/i.exec(toolName)?.[1];
-  if (current) return current;
-  if (toolName.toLowerCase() === 'mcpunified' || toolName.toLowerCase() === 'mcp') {
-    if (typeof args?.server === 'string') return args.server;
-    if (typeof args?.serverName === 'string') return args.serverName;
-  }
-  return undefined;
-}
 
 export interface ToolProgressClock {
   /** 有一次进展：重置 inactivity 钟，并把此前累积的审批等待封账（不再从后续 inactivity 里扣）。 */
@@ -93,7 +77,7 @@ export async function awaitToolExecutionWithTimeout<T>(
  * 触发时副作用可能已经完成——标 outcome-unknown 让模型先核实状态再决定是否重试，
  * 避免把超时当失败直接重试造成重复发送/重复创建。
  */
-export function buildToolTimeoutResult(options: {
+function buildToolTimeoutResult(options: {
   toolName: string;
   timeoutMs: number;
   elapsedMs: number;
@@ -120,7 +104,6 @@ export function buildToolTimeoutResult(options: {
 export interface ToolExecutionWatchdogOptions {
   toolCallId: string;
   toolName: string;
-  toolArgs: Record<string, unknown> | undefined;
   startedAt: number;
   onEvent: (event: AgentEvent) => void;
   onTimeoutWarn: (elapsedMs: number, thresholdMs: number) => void;
@@ -133,14 +116,15 @@ export interface ToolExecutionWatchdog {
   startProgressReporter: () => void;
   /** 等待执行完成；工具带统一 inactivity 预算时，超预算 abort 并返回超时结果。 */
   awaitExecution: <T>(execution: Promise<T>, abort: () => void) => Promise<T>;
-  /** 收口：停上报、退订 MCP 交互、清审批等待账。幂等。 */
+  /** 收口：停上报、清审批等待账。幂等。 */
   stop: () => void;
 }
 
 /**
- * 单次工具调用的进度/超时守门：progress 上报、inactivity 预算、MCP 交互挂起暂停、
- * 审批等待记账全部收口在这里，引擎只拿四个动作（markActivity / startProgressReporter /
- * awaitExecution / stop）。
+ * 单次工具调用的进度/超时守门：progress 上报、inactivity 预算、审批等待记账全部收口
+ * 在这里，引擎只拿四个动作（markActivity / startProgressReporter / awaitExecution / stop）。
+ * MCP 工具不走外层预算（getToolExecutionTimeoutMs 返回 undefined），elicitation/OAuth
+ * 挂起由 MCP 层自己的 60s 调用预算与停车挂起机制处理。
  */
 export function createToolExecutionWatchdog(options: ToolExecutionWatchdogOptions): ToolExecutionWatchdog {
   const { toolCallId, toolName, startedAt, onEvent } = options;
@@ -150,10 +134,6 @@ export function createToolExecutionWatchdog(options: ToolExecutionWatchdogOption
     startedAt,
     getApprovalWaitMs: (now) => getApprovalWaitMs(toolCallId, now),
   });
-  const mcpServer = mcpServerForTool(toolName, options.toolArgs);
-  const unsubscribeMcpInteraction = mcpServer
-    ? onPendingMcpInteractionChange(mcpServer, () => progressClock.markActivity())
-    : undefined;
   let timeoutEmitted = false;
   let progressInterval: ReturnType<typeof setInterval> | undefined;
 
@@ -183,10 +163,7 @@ export function createToolExecutionWatchdog(options: ToolExecutionWatchdogOption
       if (executionTimeoutMs === undefined) return execution;
       return awaitToolExecutionWithTimeout(execution, {
         timeoutMs: executionTimeoutMs,
-        getInactiveMs: () => {
-          if (mcpServer && hasPendingMcpInteraction(mcpServer)) return 0;
-          return progressClock.getInactiveMs();
-        },
+        getInactiveMs: () => progressClock.getInactiveMs(),
         abort,
         onTimeout: (elapsedMs) => onEvent({
           type: 'tool_timeout',
@@ -200,7 +177,6 @@ export function createToolExecutionWatchdog(options: ToolExecutionWatchdogOption
         clearInterval(progressInterval);
         progressInterval = undefined;
       }
-      unsubscribeMcpInteraction?.();
       clearApprovalWait(toolCallId);
     },
   };

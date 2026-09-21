@@ -2,8 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   awaitToolExecutionWithTimeout,
   createToolProgressClock,
-  mcpServerForTool,
 } from '../../../src/host/agent/runtime/toolExecutionTimeout';
+import {
+  beginApprovalWait,
+  clearApprovalWait,
+  endApprovalWait,
+  getApprovalWaitMs,
+} from '../../../src/host/tools/toolExecutionTelemetry';
 import {
   getToolExecutionTimeoutMs,
   isToolExecutionOutcomeUnknown,
@@ -59,19 +64,6 @@ describe('unified tool execution timeout policy', () => {
     expect(getToolExecutionTimeoutMs('Process')).toBeUndefined();
   });
 
-  it('resolves server names for legacy MCP argument shapes', () => {
-    expect(mcpServerForTool('MCPUnified', { server: 'docs' })).toBe('docs');
-    expect(mcpServerForTool('mcp', { server: 'docs' })).toBe('docs');
-    expect(mcpServerForTool('MCPUnified', { serverName: 'docs' })).toBe('docs');
-    expect(mcpServerForTool('mcp', { server: 'docs', serverName: 'other' })).toBe('docs');
-    expect(mcpServerForTool('mcp__docs__search', {})).toBe('docs');
-    expect(mcpServerForTool('mcp_docs_search', {})).toBe('docs');
-  });
-
-  it('does not derive a server from MCP management tools', () => {
-    expect(mcpServerForTool('mcp_add_server', { name: 'docs' })).toBeUndefined();
-  });
-
   it('marks non-idempotent write tools as outcome-unknown on timeout', () => {
     expect(isToolExecutionOutcomeUnknown('mail_send')).toBe(true);
     expect(isToolExecutionOutcomeUnknown('github_pr')).toBe(true);
@@ -104,14 +96,33 @@ describe('unified tool execution timeout policy', () => {
     expect(clock.getInactiveMs()).toBe(10_000);
   });
 
+  it('pauses the inactivity clock while an approval is pending', async () => {
+    vi.useFakeTimers();
+    const toolCallId = 'approval-wait-test';
+    const clock = createToolProgressClock({
+      startedAt: Date.now(),
+      getApprovalWaitMs: (now) => getApprovalWaitMs(toolCallId, now),
+    });
+    clock.markActivity();
+    // 审批挂起远超预算也不累计 inactivity（用户看卡的时间不算无进展）。
+    beginApprovalWait(toolCallId);
+    await vi.advanceTimersByTimeAsync(TOOL_EXECUTION_TIMEOUTS.DEFAULT * 2);
+    expect(clock.getInactiveMs()).toBeLessThan(TOOL_EXECUTION_TIMEOUTS.DEFAULT);
+    // 审批结束后钟恢复走时，且已结束的等待被全额抵扣。
+    endApprovalWait(toolCallId);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(clock.getInactiveMs()).toBe(1_000);
+    clearApprovalWait(toolCallId);
+  });
+
   it('turns an inactive execution into a model-visible failure', async () => {
     vi.useFakeTimers();
     const abort = vi.fn();
     const onTimeout = vi.fn();
     const pending = new Promise<{ success: boolean }>(() => undefined);
     const resultPromise = awaitToolExecutionWithTimeout(pending, {
-      timeoutMs: TOOL_EXECUTION_TIMEOUTS.MCP,
-      getInactiveMs: () => TOOL_EXECUTION_TIMEOUTS.MCP,
+      timeoutMs: TOOL_EXECUTION_TIMEOUTS.DEFAULT,
+      getInactiveMs: () => TOOL_EXECUTION_TIMEOUTS.DEFAULT,
       abort,
       onTimeout,
       buildTimeoutResult: (elapsedMs) => ({ success: false, elapsedMs }),

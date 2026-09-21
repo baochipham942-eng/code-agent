@@ -761,7 +761,6 @@ export class ToolExecutionEngine {
     const watchdog = createToolExecutionWatchdog({
       toolCallId: toolCall.id,
       toolName: toolCall.name,
-      toolArgs: toolCall.arguments,
       startedAt: startTime,
       onEvent: (event) => this.ctx.onEvent(event),
       onTimeoutWarn: (elapsed, threshold) => logger.warn(`Tool ${toolCall.name} exceeded timeout threshold ${threshold}ms (elapsed: ${elapsed}ms)`),

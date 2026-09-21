@@ -110,14 +110,18 @@ export function clearApprovalWait(toolCallId: string | undefined): void {
   if (toolCallId) approvalWaits.delete(toolCallId);
 }
 
-function beginApprovalWait(toolCallId: string | undefined): void {
+/**
+ * 记一笔「正在等人审批」的开始/结束。顶层审批走 requestPermissionWithTelemetry 内部记账；
+ * 工具内部审批（canUseTool 弹卡）由 ToolExecutor 签发的 context.requestPermission 包一层记账。
+ */
+export function beginApprovalWait(toolCallId: string | undefined): void {
   if (!toolCallId) return;
   const state = approvalWaits.get(toolCallId) ?? { accumulatedMs: 0 };
   state.waitingSince = Date.now();
   approvalWaits.set(toolCallId, state);
 }
 
-function endApprovalWait(toolCallId: string | undefined): void {
+export function endApprovalWait(toolCallId: string | undefined): void {
   if (!toolCallId) return;
   const state = approvalWaits.get(toolCallId);
   if (!state?.waitingSince) return;

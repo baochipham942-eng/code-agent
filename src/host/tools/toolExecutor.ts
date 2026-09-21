@@ -76,7 +76,7 @@ import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthori
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
-import { annotateToolExecution, getApprovalWaitMs, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
+import { annotateToolExecution, beginApprovalWait, endApprovalWait, getApprovalWaitMs, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
 import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 import { recordCachedToolReplay } from './cachedToolReplay';
 import { createToolExecutionLedger } from './toolExecutionLedger';
@@ -1268,7 +1268,16 @@ export class ToolExecutor {
       // context 形状与 main 一字不差。
       ...(this.restrictWritesToWorkspace ? { restrictWritesToWorkspace: true } : {}),
       workingDirectory: this.executionCwd,
-      requestPermission: this.requestPermissionForTools,
+      // 工具内部审批（canUseTool 弹卡）同样记审批等待：否则用户看审批卡的时间会被外层
+      // inactivity 预算算作无进展，超过预算把工具 abort 成「假失败」，审批副作用却可能照常执行。
+      requestPermission: async (request) => {
+        beginApprovalWait(options.currentToolCallId);
+        try {
+          return await this.requestPermissionForTools(request);
+        } finally {
+          endApprovalWait(options.currentToolCallId);
+        }
+      },
       abortSignal: options.abortSignal,
       deniedToolNames: options.deniedToolNames,
       allowedToolNames: options.allowedToolNames,

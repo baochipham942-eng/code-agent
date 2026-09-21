@@ -57,6 +57,11 @@ export interface FallbackStrategy {
   }): { provider: string; model: string } | null;
 }
 
+/** Context pressure ratio for one provider response (never a cumulative run total). */
+export function getContextRatio(inputTokens: number, maxTokens: number): number {
+  return maxTokens > 0 ? inputTokens / maxTokens : 0;
+}
+
 // --------------------------------------------------------------------------
 // Decision engine
 // --------------------------------------------------------------------------
@@ -163,7 +168,7 @@ export function decideNextAction(state: LoopState): LoopDecision {
   // -------------------------------------------------------------------------
 
   if (state.maxTokens > 0) {
-    const contextRatio = state.tokenUsage.input / state.maxTokens;
+    const contextRatio = getContextRatio(state.tokenUsage.input, state.maxTokens);
     if (contextRatio >= 0.85) {
       const pct = Math.round(contextRatio * 100);
       return advisory('compact', `context pressure at ${pct}%`);

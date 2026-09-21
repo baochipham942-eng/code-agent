@@ -49,7 +49,7 @@ import {
   setSessionTodos,
   syncTodosToSessionTasks,
 } from '../../agent/todoParser';
-import { decideNextAction, type LoopState } from '../loopDecision';
+import { decideNextAction, getContextRatio, type LoopState } from '../loopDecision';
 import type { RuntimeContext } from './runtimeContext';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
 import type { ContextAssembly } from './contextAssembly';
@@ -589,8 +589,8 @@ export class ConversationRuntime {
           const loopState: LoopState = {
             stopReason: response.finishReason ?? (response.truncated ? 'max_tokens' : 'end_turn'),
             tokenUsage: {
-              input: this.ctx.stats.totalInputTokens,
-              output: this.ctx.stats.totalOutputTokens,
+              input: response.usage?.inputTokens ?? 0,
+              output: response.usage?.outputTokens ?? 0,
             },
             maxTokens: getContextWindow(this.ctx.modelConfig.model),
             errorType: null,
@@ -616,10 +616,10 @@ export class ConversationRuntime {
             reason: decision.reason,
             stopReason: loopState.stopReason,
             consecutiveErrors: loopState.consecutiveErrors,
-            contextRatio: loopState.maxTokens > 0
-              ? Math.round((loopState.tokenUsage.input / loopState.maxTokens) * 100) / 100
-              : 0,
+            contextRatio: Math.round(getContextRatio(loopState.tokenUsage.input, loopState.maxTokens) * 100) / 100,
           });
+
+          if (decision.action === 'compact') await this.contextAssembly.checkAndAutoCompress();
         }
 
         // Exactly one final inference is allowed after resource exhaustion; no tool execution or reinference.

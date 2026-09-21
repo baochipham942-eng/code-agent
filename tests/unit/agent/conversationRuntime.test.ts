@@ -2033,18 +2033,18 @@ describe('ConversationRuntime', () => {
       );
     });
 
-    it('keeps compact loop decisions advisory under context pressure', async () => {
+    it('executes the compaction path when the current response is under context pressure', async () => {
       activityMocks.formatActivityPromptContext.mockReturnValueOnce({ mode: 'none' });
-      ctx.stats.addTokenUsage(120_000, 0);
       modules.contextAssembly.inference.mockResolvedValue({
         type: 'text',
         content: 'Done!',
         finishReason: 'end_turn',
+        usage: { inputTokens: 120_000, outputTokens: 1 },
       });
 
       await runtime.run('context pressure');
 
-      expect(modules.contextAssembly.checkAndAutoCompress).not.toHaveBeenCalled();
+      expect(modules.contextAssembly.checkAndAutoCompress).toHaveBeenCalled();
       expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
         'Continue from where you stopped. Do not restate or apologize.',
         'output-continuation',

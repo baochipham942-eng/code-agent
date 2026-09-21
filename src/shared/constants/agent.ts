@@ -190,6 +190,31 @@ export const STOP_HOOK = {
   USER_MAX_RETRIES: 1,
 } as const;
 
+/** turn_outcome 交付物落盘核对（issue #1998：产物幻觉闭环） */
+export const TURN_OUTCOME = {
+  /**
+   * 声称/声明的交付物盘上核对不通过（不存在或为空）时，最多回喂模型补几轮。
+   * 补轮仍缺则放行收尾，但在 final 里如实说明哪些没交付——绝不无限阻塞在补交循环里。
+   */
+  MAX_DELIVERABLE_REPAIR_ROUNDS: 1,
+  /**
+   * 输入资料目录名：路径里带这些段的文件是「引用输入」不是交付物，
+   * 最终回复提到它们（如「已读取 资料/周报.md」）不进落盘核对。
+   */
+  INPUT_MATERIALS_DIR_NAMES: ['资料'],
+  /**
+   * 单次落盘核对处理的声称路径上限。declare_deliverables 没有数量上限，
+   * 超出的声称不核对、不参与 verified 提升——收尾同步 IO 必须有界（ai-review #2007）。
+   */
+  MAX_DELIVERABLE_CLAIMS: 50,
+  /**
+   * 单次落盘核对回读（readFileSync+sha256）的总字节预算。预算内逐文件回读带 digest；
+   * 超出后降级为 stat 存在性+非空检查（幻觉拦截仍在，只是不再回读字节），
+   * 防止「声明数百个大文件」在 host 收尾同步读数 GB 阻塞事件循环。
+   */
+  MAX_DELIVERABLE_READBACK_BYTES: 64 * 1024 * 1024,
+} as const;
+
 /** System prompt 预算配置（GAP-023 动态化） */
 export const SYSTEM_PROMPT_BUDGET = {
   /** 预算下限（无模型信息/小窗口模型时的默认值，等于历史固定值 6000） */

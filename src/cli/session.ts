@@ -10,6 +10,7 @@ import type {
   TodoItem,
 } from '../shared/contract';
 import { stampAssistantMessageCorrelation } from '../host/session/assistantCorrelation';
+import { readSqliteErrorCode } from '../host/services/core/database/sqliteErrors';
 import crypto from 'crypto';
 
 // ----------------------------------------------------------------------------
@@ -346,7 +347,14 @@ export class CLISessionManager {
               db.updateMessage(message.id, message);
             }
           } else {
-            console.warn('[SessionManager] Failed to persist message:', (error as Error).message);
+            // addMessage 内部已对 SQLITE_BUSY 自动重试（issue #1992）；走到这里即最终失败，必须结构化留痕。
+            console.warn('[SessionManager] Failed to persist message', {
+              code: 'SESSION_MESSAGE_PERSIST_FAILED',
+              sessionId,
+              messageId: message.id,
+              sqliteCode: readSqliteErrorCode(error) || undefined,
+              error: (error as Error).message,
+            });
           }
         }
       }

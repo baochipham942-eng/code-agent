@@ -35,6 +35,18 @@ export function isSqliteCorruptionError(err: unknown): boolean {
 }
 
 /**
+ * SQLITE_BUSY（含 WAL 快照冲突 SQLITE_BUSY_SNAPSHOT，better-sqlite3 统一抛
+ * "database is locked"）。busy_timeout 到期与快照升级失败都归这类，可重试。
+ */
+export function isSqliteBusyError(err: unknown): boolean {
+  if (err == null || typeof err !== 'object') return false;
+  const code = readStringProp(err, 'code');
+  if (/SQLITE_BUSY/i.test(code)) return true;
+  const message = err instanceof Error ? err.message : readStringProp(err, 'message');
+  return /database is locked/i.test(message);
+}
+
+/**
  * 已知临时 IOERR 子码(WAL 共享内存映射/锁/刷盘/读写瞬时失败等)。
  * 枚举内走可重试路径;枚举外的 IOERR 子码也无法归类,同样不许隔离。
  */

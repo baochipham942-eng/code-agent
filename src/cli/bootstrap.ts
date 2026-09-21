@@ -26,6 +26,7 @@ import './config'; // 副作用：加载 .env（保持原有行为）
 import type { CLIConfigService } from './config';
 import { initConfigService as initMainConfigService } from '../host/services/core/configService';
 import { initCLIDatabase, type CLIDatabaseService } from './database';
+import { readSqliteErrorCode } from '../host/services/core/database/sqliteErrors';
 import { setToolLedgerSink } from '../host/tools/toolLedgerSink';
 import { createCliLedgerSink } from './cliLedgerSink';
 import { createCLIPermissionHandler, type CLIPermissionMode } from './permissionPolicy';
@@ -714,7 +715,12 @@ export function createAgentLoop(
           workingDirectory: config.workingDirectory,
         });
       } catch (error) {
-        console.warn('[CLI] Failed to persist message:', (error as Error).message);
+        console.warn('[CLI] Failed to persist message', {
+          code: 'SESSION_MESSAGE_PERSIST_FAILED',
+          messageId: message.id,
+          sqliteCode: readSqliteErrorCode(error) || undefined,
+          error: (error as Error).message,
+        });
       }
     },
   });

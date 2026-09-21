@@ -3,10 +3,26 @@
 // ============================================================================
 
 import type { CircuitBreakerState } from '../loopTypes';
+import type { ErrorCategory } from '../../../shared/contract/telemetry';
+import { TOOL_CIRCUIT_BREAKER } from '../../../shared/constants/circuitBreaker';
+import { classifyError } from '../../telemetry/telemetryCollectorInternal';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector';
 
 const logger = createLogger('CircuitBreaker');
+
+const TRIPPABLE_ERROR_CATEGORIES: ReadonlySet<ErrorCategory> = new Set(
+  TOOL_CIRCUIT_BREAKER.TRIPPABLE_ERROR_CATEGORIES
+);
+
+/**
+ * 只有基础设施类失败（网络 / 数据库 / 5xx / 依赖与进程资源类）计入熔断计数；
+ * 业务可预期失败（命令非零退出、参数校验失败、断言失败、文件不存在等）是模型
+ * 可修正的正常试错，不计数、不熔断，照常回喂。
+ */
+function isTrippableFailure(errorMessage: string): boolean {
+  return TRIPPABLE_ERROR_CATEGORIES.has(classifyError(errorMessage));
+}
 
 /**
  * Circuit breaker configuration
@@ -22,15 +38,18 @@ export interface CircuitBreakerConfig {
  * Default circuit breaker configuration
  */
 export const DEFAULT_CIRCUIT_BREAKER_CONFIG: CircuitBreakerConfig = {
-  maxConsecutiveFailures: 5,
+  maxConsecutiveFailures: TOOL_CIRCUIT_BREAKER.MAX_CONSECUTIVE_FAILURES,
   cooldownMs: undefined, // No auto-reset by default
 };
 
 /**
  * Circuit Breaker - Prevents runaway failure loops
  *
- * When consecutive tool calls fail repeatedly, the circuit breaker trips
- * to prevent infinite loops and resource waste.
+ * When consecutive infrastructure-class tool failures (network, database,
+ * 5xx, missing dependencies) repeat, the circuit breaker trips to prevent
+ * infinite loops and resource waste. Business-expected failures (non-zero
+ * command exits, argument validation, assertions, missing files) never
+ * trip it — they are normal model trial-and-error and stay fed back.
  */
 export class CircuitBreaker {
   private state: CircuitBreakerState;
@@ -59,12 +78,23 @@ export class CircuitBreaker {
 
   /**
    * Record a tool call failure
-   * Increments the consecutive failure counter and trips if threshold reached
+   * Only infrastructure-class failures increment the consecutive failure
+   * counter; business-expected failures are fed back to the model as usual
+   * without affecting the counter.
    *
    * @param error - Error message or object
    * @returns true if the circuit breaker is now tripped
    */
   recordFailure(error?: string | Error): boolean {
+    const errorMsg = error instanceof Error ? error.message : error || '';
+
+    if (!isTrippableFailure(errorMsg)) {
+      logger.debug(
+        `Business-class tool failure (not counted toward circuit breaker): ${errorMsg.slice(0, 120)}`
+      );
+      return false;
+    }
+
     this.state.consecutiveFailures++;
 
     logger.debug(

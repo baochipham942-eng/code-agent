@@ -339,7 +339,11 @@ export const TOOL_EXECUTION_TIMEOUTS = {
 
 const TOOL_EXECUTION_BASH_NAMES = ['bash', 'Bash', 'bash_script'] as const;
 const TOOL_EXECUTION_MCP_NAMES = ['mcp', 'mcp_invoke', 'mcp_unified'] as const;
-const TOOL_EXECUTION_INTERACTION_NAMES = ['askuserquestion', 'ask_user_question', 'confirm_action', 'confirmaction'] as const;
+const TOOL_EXECUTION_INTERACTION_NAMES = [
+  'askuserquestion', 'ask_user_question', 'confirm_action', 'confirmaction',
+  'proposecanvasops', 'proposeslidesops', 'proposevideoops', 'requestdesignautonomy',
+  'plan_review', 'wait_agent',
+] as const;
 const TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES = [
   'web_search', 'web_fetch', 'search', 'retrieve', 'read_pdf', 'read_document',
   'academic_search', 'youtube_transcript', 'news_search', 'image_search', 'video_search',
@@ -356,7 +360,7 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
     return TOOL_EXECUTION_TIMEOUTS.MCP;
   }
   if (TOOL_EXECUTION_LONG_RUNNING_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_LONG_RUNNING_NAMES[number])
-    || normalizedName === 'task' || normalizedName === 'agentspawn') {
+    || normalizedName === 'agentspawn') {
     return TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING;
   }
   if (TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES[number])) {

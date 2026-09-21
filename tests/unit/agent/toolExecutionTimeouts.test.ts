@@ -14,6 +14,12 @@ describe('unified tool execution timeout policy', () => {
     expect(getToolExecutionTimeoutMs('bash_script')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('AskUserQuestion')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('confirm_action')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('ProposeCanvasOps')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('ProposeSlidesOps')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('ProposeVideoOps')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('RequestDesignAutonomy')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('plan_review')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('wait_agent')).toBeUndefined();
   });
 
   it('uses the search/retrieval tier for web search and document retrieval', () => {

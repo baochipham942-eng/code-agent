@@ -529,6 +529,9 @@ export class MessageProcessor {
         data: { turnId: this.ctx.turn.currentTurnId },
       });
       this.contextAssembly.updateContextHealth();
+      if (typeof this.contextAssembly.checkAndAutoCompress === 'function') {
+        await this.contextAssembly.checkAndAutoCompress();
+      }
       return 'break';
     }
 
@@ -590,6 +593,12 @@ export class MessageProcessor {
     });
 
     this.contextAssembly.updateContextHealth();
+
+    // Text-only turns (including forced-final wrap-up) must participate in the
+    // same pressure evaluation as tool turns.
+    if (typeof this.contextAssembly.checkAndAutoCompress === 'function') {
+      await this.contextAssembly.checkAndAutoCompress();
+    }
 
     // PostExecution hook: trigger async health checks (GC, codebase scans)
     if (this.ctx.hookManager) {

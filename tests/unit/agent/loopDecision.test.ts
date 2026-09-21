@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { decideNextAction } from '../../../src/host/agent/loopDecision';
+import { decideNextAction, getContextRatio } from '../../../src/host/agent/loopDecision';
 import type { LoopState, LoopDecision } from '../../../src/host/agent/loopDecision';
 
 // --------------------------------------------------------------------------
@@ -164,6 +164,11 @@ describe('decideNextAction – model output (max_tokens)', () => {
 // --------------------------------------------------------------------------
 
 describe('decideNextAction – context pressure', () => {
+  it('computes pressure from the current response, not accumulated run usage', () => {
+    expect(getContextRatio(20_000, 100_000)).toBe(0.2);
+    expect(getContextRatio(20_000, 0)).toBe(0);
+  });
+
   it('input / maxTokens = 0.85 → compact', () => {
     const decision = decideNextAction(
       makeState({ tokenUsage: { input: 85_000, output: 1000 }, maxTokens: 100_000 }),

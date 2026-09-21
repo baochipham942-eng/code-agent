@@ -52,6 +52,7 @@ import {
   SSE_INACTIVITY_TIMEOUT,
   STREAM_RECONNECT_MAX,
   STREAM_RECONNECT_BACKOFF_CAP_MS,
+  INFERENCE_TIMEOUTS,
 } from '../../../shared/constants';
 import { getIncompleteToolCallIds } from '../../session/streamSnapshot';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
@@ -76,6 +77,13 @@ import {
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
 import { logger, makeAiSdkFetch } from './aiSdkFetch';
+import {
+  isInferenceClientTimeoutError,
+  makeInferenceClientTimeoutError,
+  notifyGenerateRetry,
+  notifyStreamRetry,
+  withRequestTimeout,
+} from './inferenceRetryNotify';
 import { buildVendorCompatSettings, resolveAiSdkProviderOptions } from './aiSdkVendorCompat';
 export { buildVendorCompatSettings } from './aiSdkVendorCompat';
 import {
@@ -658,25 +666,6 @@ async function runInferenceViaAiSdk(
   return generateViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, signal, options, messages });
 }
 
-// 给一次 provider 调用套 per-request 超时：组合「外部 signal + 内部超时」成一个 abortSignal。
-// AI SDK 走 fetch 默认无请求超时，旧 axios 路径有 PROVIDER_TIMEOUT，迁移时丢了——provider 偶发
-// 卡住（接受连接但响应不返回）会一直挂到外层预算耗尽（子代理 90s 硬超时），无 per-request 早退+重试。
-// 用自管 setTimeout（可被 fake timers 控制，区别于 AbortSignal.timeout）；timedOut() 让调用方区分
-// 「本超时（应重试）」与「外部 abort（父/预算取消，不应重试）」。
-function withRequestTimeout(signal: AbortSignal | undefined, timeoutMs: number): {
-  signal: AbortSignal;
-  timedOut: () => boolean;
-  cleanup: () => void;
-} {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return {
-    signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
-    timedOut: () => controller.signal.aborted,
-    cleanup: () => clearTimeout(timer),
-  };
-}
-
 // ── 非流式：generateText（服务子代理 + 主 loop 的 artifact 非流式重试）。行为与迁移 P0 一致 ──
 async function generateViaAiSdk(params: {
   model: LanguageModel;
@@ -717,7 +706,7 @@ async function generateViaAiSdk(params: {
           });
         } catch (err) {
           if (guard.timedOut() && !signal?.aborted) {
-            throw new Error(`timeout of ${requestTimeoutMs}ms exceeded`, { cause: err });
+            throw makeInferenceClientTimeoutError(requestTimeoutMs, err);
           }
           throw err;
         } finally {
@@ -732,6 +721,11 @@ async function generateViaAiSdk(params: {
         // 时本层必须单次尝试，否则候选数 × 5 放大成长时间卡死。
         maxRetries: options?.disableProviderTransientRetry ? 0 : GENERATE_MAX_RETRIES,
         baseDelay: GENERATE_RETRY_BASE_DELAY_MS,
+        // 超时重试单独封顶（issue #1989）：每次超时重试最坏烧满一个 300s 窗口，
+        // 旧 4 次预算会把单轮推理拖到 1500s，远超外层 600s 看门狗，整轮任务全灭。
+        isTimeoutError: isInferenceClientTimeoutError,
+        maxTimeoutRetries: INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX,
+        onRetry: (info) => notifyGenerateRetry(options, config, info),
       },
     );
   } catch (err) {
@@ -1015,6 +1009,9 @@ async function streamViaAiSdk(params: {
   // 无人值守分档/熔断由调用方经 streamReconnectMax 传入（adapter 不识别轮次来源）。
   const reconnectMax = options?.disableProviderTransientRetry ? 0 : (options?.streamReconnectMax ?? STREAM_RECONNECT_MAX);
   let reconnectsUsed = 0;
+  // 首字节看门狗超时驱动的重试单独计数（issue #1989，对齐非流式 maxTimeoutRetries）：
+  // 每次首字节超时最坏烧满 firstByteMs 窗口，与普通瞬态错误分开封顶。
+  let timeoutRetriesUsed = 0;
   // 续接 attempt 的 accumulator 断点态 seed（见 seedAccumulatorFromBreakpoint）；null = 全新累积器。
   let resumeSeed: StreamAccumulator | null = null;
   // 断流 attempt 已上报 usage 的累积（刀 3 合并记账）：成功时并入最终 usage = Σ attempts。
@@ -1222,15 +1219,22 @@ async function streamViaAiSdk(params: {
       // emittedOutput 闸门：已向用户吐过 delta → 绝不重试（避免重复 emit）；只在首个可见
       // delta 之前的瞬态失败才重试，复用模型调用层统一可重试判定（status 429/5xx +
       // 网络瞬态文案/code，401/403/400 等确定性错误不重试）。
-      if (!emittedOutput && attempt < maxRetries && !signal?.aborted && isRetryableModelCallError(effectiveErr)) {
+      // 看门狗超时（首字节）重试另受 INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX 封顶：
+      // 每次最坏烧满 firstByteMs 窗口，预算耗尽即落终错（provider fallback 还有机会）。
+      const timeoutCapHit = watchdogTimedOut && timeoutRetriesUsed >= INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX;
+      if (timeoutCapHit) logger.warn(`[AiSdkAdapter] 首字节超时重试已达上限 (${INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX})，放弃重试: "${msg}"`);
+      if (!emittedOutput && attempt < maxRetries && !signal?.aborted && !timeoutCapHit && isRetryableModelCallError(effectiveErr)) {
+        if (watchdogTimedOut) timeoutRetriesUsed += 1;
         // B1 续接 attempt 的首字节前瞬态失败：断点态不能随「全新累积器」重置丢掉
         // （resumeSeed 已在循环顶消费）——挂回后再 continue，重试仍是 prefix 形状。
         if (accResumedFromBreakpoint) resumeSeed = acc;
         const retryAfterMs = extractRetryAfterMs(err);
         const delay = computeRetryBackoffMs(attempt, STREAM_RETRY_BASE_DELAY_MS, retryAfterMs);
-        logger.warn(`[AiSdkAdapter] 流式瞬态错误 "${msg}" (code=${code})，${delay}ms 后首字节前重试 (${attempt + 1}/${maxRetries})${retryAfterMs != null ? ' [retry-after]' : ''}`);
+        logger.warn(`[AiSdkAdapter] 流式瞬态错误 "${msg}" (code=${code})，${delay}ms 后首字节前重试 (${attempt + 1}/${maxRetries})${retryAfterMs != null ? ' [retry-after]' : ''}${watchdogTimedOut ? ` [timeout-retry ${timeoutRetriesUsed}/${INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX}]` : ''}`);
         // CLI 可见性：与非流式 withTransientRetry 同一事件通道（adapter 订阅后打一行重试提示）
         retryEvents.emit('retry', { provider: config.provider, attempt: attempt + 1, maxRetries, delay, error: msg });
+        // 会话级 trace（issue #1989）：挂死不再静默——重试进 turn trace（inference_retry）。
+        notifyStreamRetry(options, config, { attempt: attempt + 1, maxRetries, delayMs: delay, kind: watchdogTimedOut ? 'timeout' : 'transient', error: msg });
         // 可中断退避（codex audit R2 对称应用）：abort 立即醒来，醒后已 abort 则不再重试
         await abortableSleep(delay, signal);
         if (!signal?.aborted) continue;
@@ -1289,6 +1293,8 @@ async function streamViaAiSdk(params: {
           error: msg,
           segment: isB1Segment ? 'b1' : 'b2',
         });
+        // 会话级 trace：断流续接同样进 inference_retry（kind='reconnect'）。
+        notifyStreamRetry(options, config, { attempt: reconnectsUsed, maxRetries: reconnectMax, delayMs: delay, kind: 'reconnect', error: msg });
         // abort 短路：续接退避与重发全程可中断（复用首字节前重试的 abortableSleep 先例），
         // 醒后已 abort 则不再重发，回落下方 throw 路径（与现状 abort 语义一致）。
         await abortableSleep(delay, signal);

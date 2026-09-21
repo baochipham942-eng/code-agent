@@ -146,6 +146,24 @@ describe('collectDeliverableClaims', () => {
       rmSync(homeFile, { force: true });
     }
   });
+
+  // ai-review #2007 第四轮 Important：裸文件名只查工作目录根会误判子目录产物——
+  // 先按 basename 对到本 run 真写出的文件。
+  it('maps a quoted bare filename to the same-named file this run wrote in a subdirectory', () => {
+    mkdirSync(path.join(workRoot, 'src/sub'), { recursive: true });
+    const artifact = path.join(workRoot, 'src/sub/x.ts');
+    writeFileSync(artifact, 'export const x = 1;');
+    const messages = [
+      message(),
+      message({ id: 'wrote-x', role: 'assistant', content: '',
+        toolResults: [{ toolCallId: 'write-x', success: true, metadata: { outputPath: artifact } }] }),
+      message({ id: 'final', role: 'assistant', content: '已创建 `x.ts` 并完成接线。', timestamp: 1_700_000_000_100 }),
+    ];
+    const claims = collectDeliverableClaims({ messages, workingDirectory: workRoot });
+    expect(claims).toEqual([{ claimed: 'x.ts', resolved: artifact, source: 'inferred' }]);
+    const result = checkDeliverablesOnDisk(claims, workRoot);
+    expect(result.missing).toEqual([]);
+  });
 });
 
 describe('checkDeliverablesOnDisk', () => {

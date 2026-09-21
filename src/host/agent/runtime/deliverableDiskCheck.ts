@@ -153,6 +153,31 @@ function finalReplyText(messages: readonly Message[]): string {
 }
 
 /**
+ * 本 run 成功工具结果报出的路径的 basename → 绝对路径映射。
+ * 「已创建 `x.ts`」这种无分隔符声称，真实文件常在子目录（src/sub/x.ts）——只按
+ * workingDirectory 根 resolve 会误判 not_on_disk，诱导模型在根目录造重复/空文件
+ * （ai-review #2007 第四轮 Important）。先按 basename 对到本 run 真写出的文件。
+ */
+function runTouchedBasenames(messages: readonly Message[], workingDirectory: string): Map<string, string> {
+  const map = new Map<string, string>();
+  const add = (value: unknown) => {
+    if (typeof value !== 'string' || !value.trim()) return;
+    const resolved = normalizeDeliverablePath(value, workingDirectory);
+    const basename = resolved.split('/').pop();
+    if (basename && !map.has(basename)) map.set(basename, resolved);
+  };
+  for (const message of currentMessages(messages)) {
+    for (const result of message.toolResults ?? []) {
+      if (!result.success) continue;
+      if (Array.isArray(result.metadata?.changedFiles)) result.metadata.changedFiles.forEach(add);
+      add(result.outputPath);
+      add(result.metadata?.outputPath);
+    }
+  }
+  return map;
+}
+
+/**
  * 收集本 run 的交付物声称。declared 只认本 run 内声明的（declaredAtMs 不早于最后一条
  * user 消息）：declareDeliverables 是会话级槽位，旧 run 的声明记到本轮头上，等于
  * turnOutcomeStamp 里 summary 会话级清单的同款旧账问题。
@@ -166,10 +191,14 @@ export function collectDeliverableClaims(input: {
 }): DeliverableClaim[] {
   const claims: DeliverableClaim[] = [];
   const seen = new Set<string>();
+  const basenames = runTouchedBasenames(input.messages, input.workingDirectory);
   const push = (raw: string, source: DeliverableClaim['source']) => {
     const trimmed = raw.trim();
     if (!trimmed) return;
-    const resolved = normalizeDeliverablePath(trimmed, input.workingDirectory);
+    // 无分隔符的裸文件名：先对到本 run 真写出的同名文件，对不上才按工作目录根 resolve。
+    const resolved = !trimmed.includes('/') && !trimmed.includes('\\') && !trimmed.startsWith('~')
+      ? basenames.get(normalizeNfc(trimmed)) ?? normalizeDeliverablePath(trimmed, input.workingDirectory)
+      : normalizeDeliverablePath(trimmed, input.workingDirectory);
     if (seen.has(resolved)) return;
     seen.add(resolved);
     claims.push({ claimed: trimmed, resolved, source });

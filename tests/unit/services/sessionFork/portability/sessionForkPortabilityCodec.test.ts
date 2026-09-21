@@ -2,16 +2,21 @@ import { describe, expect, it } from 'vitest';
 import {
   SessionForkPortabilityError,
   buildForkLineageEnvelopeV1,
+  buildPortableConversationHistory,
   buildSessionExportEnvelopeV2,
   decodeForkLineageEnvelopeV1,
   decodeSessionExportEnvelopeV2,
   encodeForkLineageEnvelopeV1,
+  encodePortableConversationHistory,
   encodeSessionExportEnvelopeV2,
   rehashSessionExportEnvelopeV2,
   stripLegacyForkClaims,
   validatePortableIsolatedAnchorEvidenceV1,
 } from '../../../../../src/host/services/sessionFork/portability';
-import { PORTABLE_ANCHOR_MAX_PATCH_BYTES } from '../../../../../src/shared/contract/sessionForkPortability';
+import {
+  PORTABLE_ANCHOR_MAX_PATCH_BYTES,
+} from '../../../../../src/shared/contract/sessionForkPortability';
+import type { Message } from '../../../../../src/shared/contract/message';
 import { OWNER_ID, PROJECT_ID, message, session, subtreeDraft } from './fixture';
 
 describe('session fork portability codecs', () => {
@@ -19,7 +24,7 @@ describe('session fork portability codecs', () => {
     const envelope = buildSessionExportEnvelopeV2(subtreeDraft());
 
     expect(envelope.schema).toBe('neo.session-export');
-    expect(envelope.version).toBe(2);
+    expect(envelope.version).toBe(3);
     expect(envelope.lineage?.schema).toBe('neo.fork-lineage');
     expect(envelope.lineage?.version).toBe(1);
 
@@ -67,6 +72,17 @@ describe('session fork portability codecs', () => {
     expect(child?.workspace?.anchorChildMessageId).toBe('ca1');
 
     const childMessage = envelope.messages.find((item) => item.id === 'ca1');
+    expect(childMessage).toMatchObject({
+      contentParts: [
+        { type: 'text', text: 'world' },
+        { type: 'tool_call', toolCallId: 'call-ca1' },
+      ],
+      thinking: 'private reasoning',
+    });
+    // message.metadata is a free-form runtime blob and is not part of the portable
+    // envelope at all (N-FORK-PORTABILITY round 3) — contentParts/toolCalls already
+    // carry what rendering needs.
+    expect(childMessage).not.toHaveProperty('metadata');
     expect(childMessage?.attachments).toEqual([expect.objectContaining({
       id: 'attachment-1',
       type: 'file',
@@ -94,6 +110,137 @@ describe('session fork portability codecs', () => {
       ownerScopeId: OWNER_ID,
       projectId: PROJECT_ID,
     })).toEqual(envelope);
+  });
+
+  it('rejects a foreign envelope smuggling toolCalls[].result.outputPath past decode', () => {
+    // sanitizeToolCall never copies result.outputPath (a local filesystem path), so a
+    // real export can't produce this shape. But nothing stopped decode from accepting
+    // it from an untrusted wire envelope before this fix — the digest is self-computed,
+    // so an attacker who recomputes it after adding the field would sail through.
+    // assertOnlyKeys on the toolCalls/toolResults elements is what actually closes it.
+    const envelope = buildSessionExportEnvelopeV2(subtreeDraft());
+    const foreign = {
+      ...envelope,
+      messages: envelope.messages.map((item) => (
+        item.id === 'ca1' && item.toolCalls
+          ? {
+            ...item,
+            toolCalls: item.toolCalls.map((call) => ({
+              ...call,
+              result: { ...call.result, success: true, outputPath: '/Users/private/.env' },
+            })),
+          }
+          : item
+      )),
+    };
+
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(foreign), {
+      ownerScopeId: OWNER_ID,
+      projectId: PROJECT_ID,
+    })).toThrow(/outputPath is not part of the portable schema/u);
+  });
+
+  it('rejects a foreign envelope smuggling toolResults[].outputPath past decode', () => {
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    const ca1 = childEntry.messages.find((entry) => entry.id === 'ca1')!;
+    ca1.toolResults = [{ toolCallId: 'call-ca1', success: true }];
+    const envelope = buildSessionExportEnvelopeV2(draft);
+    const foreign = {
+      ...envelope,
+      messages: envelope.messages.map((item) => (
+        item.id === 'ca1' && item.toolResults
+          ? {
+            ...item,
+            toolResults: item.toolResults.map((result) => ({
+              ...result,
+              outputPath: '/Users/private/.env',
+            })),
+          }
+          : item
+      )),
+    };
+
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(foreign), {
+      ownerScopeId: OWNER_ID,
+      projectId: PROJECT_ID,
+    })).toThrow(/outputPath is not part of the portable schema/u);
+  });
+
+  it('never exports message.metadata, including turnDiff/retryAttachments/artifactLocator/channel leaks', () => {
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    const ca1 = childEntry.messages.find((entry) => entry.id === 'ca1')!;
+    const dirtyMetadata: Message['metadata'] = {
+      ...ca1.metadata,
+      releaseNotes: 'kept because it only contains the substring "lease"',
+      turnDiff: {
+        turnId: 'turn-1',
+        files: [{
+          filePath: '/Users/private/worktrees/child/src/index.ts',
+          oldText: 'const secretMarkerOld = 1;',
+          newText: 'const secretMarkerNew = 2;',
+          added: 1,
+          removed: 1,
+          isNewFile: false,
+          editCount: 1,
+        }],
+      },
+      retryAttachments: [{
+        id: 'retry-attachment-1',
+        type: 'file',
+        category: 'text',
+        name: 'retry.txt',
+        size: 4,
+        mimeType: 'text/plain',
+        data: 'c2VjcmV0LWJhc2U2NC1wYXlsb2Fk',
+      }],
+      // N-FORK-PORTABILITY round 2 Important 1: artifactLocator.artifact.filePath is an
+      // absolute local path (localityFeedback.ts) and channel.accountName/chatName carry
+      // real person/group names (agentAppService.ts writes ChannelMessageMetadata) — both
+      // leaked through the round-1 denylist unchanged.
+      artifactLocator: {
+        version: 1,
+        artifact: {
+          kind: 'presentation',
+          filePath: '/Users/private/worktrees/child/deck.pptx',
+          revision: { algorithm: 'sha256', value: 'a'.repeat(64) },
+        },
+        target: {
+          kind: 'ppt-slide',
+          displayIndex: 0,
+          relationshipId: 'rId2',
+          slidePartName: 'ppt/slides/slide1.xml',
+          textFingerprint: 'fp',
+        },
+        display: { label: 'Slide 1' },
+      },
+      channel: {
+        platform: 'feishu',
+        accountId: 'account-1',
+        accountName: 'Ada Placeholder',
+        chatId: 'chat-1',
+        chatName: 'Secret Working Group',
+      },
+    } as Message['metadata'];
+    ca1.metadata = dirtyMetadata;
+
+    const envelope = buildSessionExportEnvelopeV2(draft);
+    const childMessage = envelope.messages.find((item) => item.id === 'ca1');
+
+    // The whole message.metadata field is excluded from the portable envelope (see
+    // codec.ts sanitizeMessages) — no denylist scrub needed because nothing crosses over.
+    expect(childMessage).not.toHaveProperty('metadata');
+
+    const serialized = encodeSessionExportEnvelopeV2(envelope);
+    expect(serialized).not.toContain('/Users/private/worktrees/child/src/index.ts');
+    expect(serialized).not.toContain('secretMarkerOld');
+    expect(serialized).not.toContain('secretMarkerNew');
+    expect(serialized).not.toContain('c2VjcmV0LWJhc2U2NC1wYXlsb2Fk');
+    expect(serialized).not.toContain('/Users/private/worktrees/child/deck.pptx');
+    expect(serialized).not.toContain('Ada Placeholder');
+    expect(serialized).not.toContain('Secret Working Group');
+    expect(serialized).not.toContain('releaseNotes');
   });
 
   it('roundtrips a standalone lineage envelope with stable encoding', () => {
@@ -158,7 +305,7 @@ describe('session fork portability codecs', () => {
     delete legacy.version;
 
     expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(legacy))).toThrow(
-      /session export envelope version 0 has no registered migration to version 2/u,
+      /session export envelope version 0 has no registered migration to version 3/u,
     );
   });
 
@@ -169,8 +316,31 @@ describe('session fork portability codecs', () => {
     };
 
     expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(unknown))).toThrow(
-      /session export envelope has unknown version 99; current version is 2/u,
+      /session export envelope has unknown version 99; current version is 3/u,
     );
+  });
+
+  it('rejects the previous v2 envelope with an unsupported schema version error', () => {
+    const previous = {
+      ...buildSessionExportEnvelopeV2(subtreeDraft()),
+      version: 2,
+    };
+
+    try {
+      decodeSessionExportEnvelopeV2(JSON.stringify(previous));
+      throw new Error('expected v2 envelope to be rejected');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionForkPortabilityError);
+      expect((error as SessionForkPortabilityError).code).toBe('UNSUPPORTED_SCHEMA_VERSION');
+    }
+  });
+
+  it('rejects a v3 envelope with a payloadDigest that does not match its content', () => {
+    const envelope = buildSessionExportEnvelopeV2(subtreeDraft());
+    const tampered = { ...envelope, payloadDigest: `sha256:${'0'.repeat(64)}` };
+
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(tampered)))
+      .toThrow(/DIGEST_MISMATCH/u);
   });
 
   it('represents a single child as detached provenance without claiming an attached parent', () => {
@@ -332,5 +502,101 @@ describe('session fork portability codecs', () => {
       lineage: undefined,
       detachedProvenance: undefined,
     })).toThrow(/DETACHED_PROVENANCE_REQUIRED/);
+  });
+
+  it('exports and round-trips a persisted {id,name}-only tool call without arguments', () => {
+    // Regression for N-FORK-PORTABILITY round 11: AgentRunEventCollector persists tool
+    // calls as {id,name} with no `arguments`; 99/1581 sessions in the production DB on
+    // 2026-09-21 had this shape. Requiring `arguments` made those sessions unexportable
+    // (INVALID_ENVELOPE) while origin/main (which did not export toolCalls) exported fine.
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    childEntry.messages.push(message('bare-call-msg', 'assistant', 'ran bash', 3, {
+      toolCalls: [{ id: 'toolu_bare', name: 'Bash' }],
+    } as unknown as Partial<Message>));
+
+    const envelope = buildSessionExportEnvelopeV2(draft);
+    const bare = envelope.messages.find((item) => item.id === 'bare-call-msg');
+    expect(bare?.toolCalls).toEqual([{ id: 'toolu_bare', name: 'Bash' }]);
+    const decoded = decodeSessionExportEnvelopeV2(encodeSessionExportEnvelopeV2(envelope));
+    expect(decoded.messages.find((item) => item.id === 'bare-call-msg')?.toolCalls)
+      .toEqual([{ id: 'toolu_bare', name: 'Bash' }]);
+  });
+
+  it('redacts credential-shaped keys and key=value secrets the same way in toolCalls[]/result.output/contentParts as in the conversationHistory projection', () => {
+    // Regression for N-FORK-PORTABILITY round 9: sanitizePortableValue (this file) used to
+    // be a weaker, independently-maintained rewrite of conversationHistory.ts's
+    // redactSecretText/isForbiddenStructuralKey — it caught apiKey/sk-.../AKIA... but not
+    // password/Authorization/cookie/credential or the `key=value` text form. A password in
+    // toolCalls[].arguments or an `Authorization: ...` header in result.output would
+    // therefore travel in plaintext through messages[] while the same content, exported via
+    // conversationHistory, was already redacted. Both channels now share the same
+    // key-forbidden and string-redaction primitives (see codec.ts's isForbiddenPortableKey).
+    const secretShapes = {
+      toolCalls: [{
+        id: 'call-secret',
+        name: 'http',
+        arguments: { password: 'hunter2', note: 'Authorization: abc123' },
+        result: { success: true, output: 'Authorization: abc123' },
+      }],
+      contentParts: [
+        { type: 'text', text: 'Authorization: abc123' },
+        { type: 'tool_call', toolCallId: 'call-secret', password: 'hunter2' },
+      ],
+    } as unknown as Partial<Message>;
+
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    childEntry.messages.push(message('secret-msg', 'assistant', 'plain', 3, secretShapes));
+
+    const envelope = buildSessionExportEnvelopeV2(draft);
+    const serialized = encodeSessionExportEnvelopeV2(envelope);
+    expect(serialized).not.toContain('hunter2');
+    expect(serialized).not.toContain('abc123');
+
+    const secretMessage = envelope.messages.find((item) => item.id === 'secret-msg');
+    expect(JSON.stringify(secretMessage?.toolCalls)).not.toContain('hunter2');
+    expect(JSON.stringify(secretMessage?.toolCalls)).not.toContain('abc123');
+    expect(JSON.stringify(secretMessage?.contentParts)).not.toContain('hunter2');
+    expect(JSON.stringify(secretMessage?.contentParts)).not.toContain('abc123');
+
+    // Same raw shapes, this time through the conversationHistory projection.
+    const history = buildPortableConversationHistory({
+      ownerUserId: OWNER_ID,
+      projectId: PROJECT_ID,
+      branches: [{
+        id: 'br-root',
+        session_id: 'root',
+        owner_user_id: OWNER_ID,
+        project_id: PROJECT_ID,
+        root_branch_id: 'br-root',
+        parent_branch_id: null,
+        fork_id: null,
+        anchor_entry_id: null,
+        created_at: 0,
+      }],
+      entries: [{
+        id: 'entry-secret',
+        owner_user_id: OWNER_ID,
+        project_id: PROJECT_ID,
+        source_session_id: 'root',
+        source_message_id: 'secret-msg',
+        created_at: 3,
+        payload_digest: 'source-secret',
+        message_json: JSON.stringify({
+          id: 'secret-msg',
+          role: 'assistant',
+          content: 'plain',
+          timestamp: 3,
+          ...secretShapes,
+        }),
+      }],
+      references: [],
+      events: [],
+      evaluationAttributions: [],
+    });
+    const serializedHistory = encodePortableConversationHistory(history);
+    expect(serializedHistory).not.toContain('hunter2');
+    expect(serializedHistory).not.toContain('abc123');
   });
 });

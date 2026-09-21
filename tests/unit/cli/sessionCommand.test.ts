@@ -15,6 +15,7 @@ vi.mock('../../../src/cli/sessionDiagnostics/sessionPackageAdapter', () => ({
 }));
 
 import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
+import { buildSessionExportEnvelopeV2 } from '../../../src/host/services/sessionFork/portability/codec';
 
 const testRequire = Module.createRequire(import.meta.url);
 const NativeDatabase = testRequire('better-sqlite3') as typeof import('better-sqlite3');
@@ -84,5 +85,54 @@ describe('session export command', () => {
     expect(path.dirname(outputPath)).toBe(outputDir);
     expect(fs.readFileSync(outputPath, 'utf8')).toBe('{"v":1}\n');
     expect(fs.statSync(outputPath).mode & 0o777).toBe(0o600);
+  });
+
+  it('plans session import in dry-run mode without opening a writable database', async () => {
+    const envelope = buildSessionExportEnvelopeV2({
+      exportId: 'export-1',
+      exportedAt: 10,
+      ownerScopeId: 'owner-a',
+      projectId: 'project-a',
+      rootSessionId: 'session-a',
+      mode: 'subtree',
+      sessions: [{
+        session: {
+          id: 'session-a', userId: 'owner-a', projectId: 'project-a', title: 'Imported',
+          modelConfig: { provider: 'openai', model: 'test-model' }, createdAt: 1, updatedAt: 2,
+        },
+        messages: [
+          { id: 'message-a', role: 'user', content: 'hello', timestamp: 1 },
+          { id: 'message-b', role: 'assistant', content: 'world', timestamp: 2 },
+        ],
+      }],
+    });
+    const envelopePath = path.join(root, 'export.json');
+    fs.writeFileSync(envelopePath, JSON.stringify(envelope));
+
+    vi.doUnmock('better-sqlite3');
+    const { sessionCommand } = await import('../../../src/cli/commands/session');
+    (sessionCommand as unknown as { parent?: Command }).parent = undefined;
+    const stdout: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: unknown) => {
+      stdout.push(String(chunk));
+      return true;
+    }) as never);
+    const program = new Command().exitOverride().addCommand(sessionCommand);
+    await program.parseAsync([
+      'node', 'neo', 'session', 'import', envelopePath,
+      '--dry-run', '--owner', 'owner-a', '--project', 'project-a', '--namespace', 'cli-test', '--json',
+    ]);
+
+    const result = JSON.parse(stdout.join('')) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      dryRun: true,
+      sourceExportId: 'export-1',
+      targetOwnerScopeId: 'owner-a',
+      targetProjectId: 'project-a',
+      sessionCount: 1,
+      messageCount: 2,
+      lineageNodeCount: 1,
+    });
+    expect(fs.existsSync(path.join(root, 'blocked'))).toBe(false);
   });
 });

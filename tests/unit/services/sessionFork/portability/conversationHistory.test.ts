@@ -394,7 +394,7 @@ describe('portable P2 conversation history', () => {
       .toThrowError(PortableConversationHistoryError);
   });
 
-  it('removes compound secret and local-path metadata keys recursively', () => {
+  it('drops message.metadata entirely and removes compound secret/local-path provenance keys recursively', () => {
     const source = sourceRows();
     const mutableEntries = source.entries.map((row) => ({ ...row }));
     source.entries = mutableEntries;
@@ -445,10 +445,9 @@ describe('portable P2 conversation history', () => {
     }
     const history = decodePortableConversationHistory(encoded);
     const entry = history.entries.find((item) => item.id === 'e-a2');
-    expect(entry?.message.metadata).toEqual({
-      safe: 'retained',
-      nested: { visible: 'retained-too' },
-    });
+    // message.metadata is not part of the portable envelope (see conversationHistory.ts
+    // normalizeEntry -> sanitizeMessage), so it is dropped in full rather than sanitized.
+    expect(entry?.message).not.toHaveProperty('metadata');
     expect(entry?.provenance).toEqual({
       kind: 'message_append',
       safe: 'retained',
@@ -571,8 +570,9 @@ describe('portable P2 conversation history', () => {
     expect(JSON.stringify(childAppend)).not.toContain('provider-secret');
     expect(childAppend.input.message).toMatchObject({
       id: 'target-c-a2',
-      metadata: { safe: 'retained' },
     });
+    // message.metadata is dropped entirely, not sanitized/retained (see above test).
+    expect(childAppend.input.message).not.toHaveProperty('metadata');
     expect(plan.payloadDigest).toMatch(/^sha256:[a-f0-9]{64}$/u);
   });
 

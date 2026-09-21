@@ -2,6 +2,7 @@ import type { AgentEngineKind, AgentEnginePermissionProfile } from './agentEngin
 import type { Artifact, Message, MessageAttachment, MessageRole, MessageVisibility } from './message';
 import type { ModelCapability, ModelProvider, ModelProviderProtocol, ModelReasoningEffort } from './model';
 import type { Session, SessionMemoryMode, SessionOrigin, SessionType } from './session';
+import type { ToolCallTargetContext, ToolStepLabelKey } from './tool';
 import type { PortableConversationHistoryV1 } from './conversationHistory';
 import {
   FORK_LINEAGE_ENVELOPE_VERSION,
@@ -163,7 +164,10 @@ export interface PortableSessionV2 {
   title: string;
   modelConfig: PortableModelConfigV2;
   type?: SessionType;
-  origin?: SessionOrigin;
+  // N-EXTHISTORY-IMPORT-WIRE: validatePortableSessionOrigin only allows kind/name —
+  // 'metadata' has no decode-side consumer, so the type doesn't declare a shape decode
+  // never accepts.
+  origin?: Omit<SessionOrigin, 'metadata'>;
   memoryMode?: SessionMemoryMode;
   suppressedMemoryEntryIds?: string[];
   readOnly?: boolean;
@@ -174,6 +178,37 @@ export interface PortableSessionV2 {
   payloadDigest: string;
 }
 
+interface PortableToolCallResultV1 {
+  success: boolean;
+  output?: string;
+  error?: string;
+  duration?: number;
+  /** Deliberately dropped: outputPath is a local filesystem path, metadata is a free-form blob. */
+}
+
+/**
+ * Sanitized projection of ToolCall. Carries what a `contentParts` `tool_call` part needs to
+ * render after import — id/name/arguments/result plus the display-only semantic fields.
+ * Drops runtime-only state (liveOutput, _streaming, _argumentsRaw) and the local
+ * `result.outputPath`/`result.metadata`, which can hold local filesystem paths.
+ */
+export interface PortableToolCallV1 {
+  id: string;
+  name: string;
+  /** Optional: AgentRunEventCollector persists {id,name}-only tool calls (99/1581 sessions on 2026-09-21). */
+  arguments?: Record<string, unknown>;
+  result?: PortableToolCallResultV1;
+  shortDescription?: string;
+  stepLabel?: ToolStepLabelKey;
+  targetContext?: ToolCallTargetContext;
+  expectedOutcome?: string;
+}
+
+/** The `role: 'tool'` message counterpart of PortableToolCallV1 — same sanitized result shape. */
+export interface PortableToolResultV1 extends PortableToolCallResultV1 {
+  toolCallId: string;
+}
+
 export interface PortableMessageV2 {
   id: string;
   sessionId: string;
@@ -181,6 +216,15 @@ export interface PortableMessageV2 {
   role: MessageRole;
   content: string;
   timestamp: number;
+  /** Structured text/tool ordering required to rebuild the conversation projection exactly. */
+  contentParts?: Message['contentParts'];
+  /** The tool calls a `contentParts` tool_call part's `toolCallId` resolves against. */
+  toolCalls?: PortableToolCallV1[];
+  /** `role: 'tool'` result rows; consumed by context assembly on a resumed session. */
+  toolResults?: PortableToolResultV1[];
+  /** Assistant reasoning persisted alongside the visible content. */
+  thinking?: Message['thinking'];
+  // metadata is deliberately not exported — see codec.ts sanitizeMessages.
   visibility?: MessageVisibility;
   isMeta?: boolean;
   source?: Message['source'];

@@ -33,7 +33,7 @@ export function extractCitations(
     case 'grep':
       return extractGrepCitations(toolCallId, output);
     case 'glob':
-      return extractGlobCitations(toolCallId, output);
+      return extractGlobCitations(toolCallId, params, output);
     case 'web_fetch':
       return extractWebFetchCitations(toolCallId, params);
     case 'web_search':
@@ -111,17 +111,34 @@ function isGlobResultPathLine(line: string): boolean {
   return true;
 }
 
+function resolveGlobCitationSource(filePath: string, searchPath: string | undefined): string | null {
+  if (path.isAbsolute(filePath)) return filePath;
+  if (searchPath && path.isAbsolute(searchPath)) return path.resolve(searchPath, filePath);
+  return null;
+}
+
 // glob → 匹配的文件列表（handler 会无条件追加 nextOffset 尾巴，不能当路径）
-function extractGlobCitations(toolCallId: string, output: string): Citation[] {
+function extractGlobCitations(
+  toolCallId: string,
+  params: Record<string, unknown>,
+  output: string,
+): Citation[] {
+  const searchPath = typeof params.path === 'string' ? params.path : undefined;
   const files = output.split('\n').filter(isGlobResultPathLine).slice(0, 10);
-  return files.map(filePath => ({
-    id: nextCitationId(),
-    type: 'file' as CitationType,
-    source: filePath.trim(),
-    label: path.basename(filePath.trim()),
-    toolCallId,
-    timestamp: Date.now(),
-  }));
+  const citations: Citation[] = [];
+  for (const filePath of files) {
+    const source = resolveGlobCitationSource(filePath.trim(), searchPath);
+    if (!source) continue;
+    citations.push({
+      id: nextCitationId(),
+      type: 'file',
+      source,
+      label: path.basename(source),
+      toolCallId,
+      timestamp: Date.now(),
+    });
+  }
+  return citations;
 }
 
 // web_fetch → URL 引用

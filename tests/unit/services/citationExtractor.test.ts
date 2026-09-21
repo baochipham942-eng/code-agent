@@ -81,10 +81,19 @@ src/host.ts
 src/utils.ts
 
 nextOffset: null`;
-      const citations = extractCitations('glob', 'tc-1', { pattern: '**/*.ts' }, output);
+      const citations = extractCitations(
+        'glob',
+        'tc-1',
+        { pattern: '**/*.ts', path: '/tmp/proj' },
+        output,
+      );
       expect(citations).toHaveLength(3);
       expect(citations.every(c => c.type === 'file')).toBe(true);
-      expect(citations.map((c) => c.source)).toEqual(['src/app.ts', 'src/host.ts', 'src/utils.ts']);
+      expect(citations.map((c) => c.source)).toEqual([
+        '/tmp/proj/src/app.ts',
+        '/tmp/proj/src/host.ts',
+        '/tmp/proj/src/utils.ts',
+      ]);
     });
 
     it('should extract file paths from protocol Glob name and ignore handler tail', () => {
@@ -92,9 +101,24 @@ nextOffset: null`;
 brief.md
 
 nextOffset: null`;
-      const citations = extractCitations('Glob', 'tc-1', { pattern: '*.md' }, output);
+      const citations = extractCitations(
+        'Glob',
+        'tc-1',
+        { pattern: '*.md', path: '/tmp/proj' },
+        output,
+      );
       expect(citations).toHaveLength(2);
-      expect(citations.map((c) => c.source)).toEqual(['notes.md', 'brief.md']);
+      expect(citations.map((c) => c.source)).toEqual(['/tmp/proj/notes.md', '/tmp/proj/brief.md']);
+    });
+
+    it('should skip relative glob hits when search path is not absolute', () => {
+      const citations = extractCitations(
+        'Glob',
+        'tc-1',
+        { pattern: '*.md' },
+        'notes.md\n\nnextOffset: null',
+      );
+      expect(citations).toHaveLength(0);
     });
 
     it('should not cite the zero-match handler sentence', () => {

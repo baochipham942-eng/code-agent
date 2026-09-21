@@ -4,6 +4,7 @@ import type { ModelMessage } from '../../../agent/loopTypes';
 import { aiSdkSupportsProvider } from '../../../model/adapters/aiSdkAdapter';
 import { getAgentVersion } from '../../../telemetry/diagnosticVersions';
 import type { TraceEventDataMap } from '../turnTrace';
+import type { InferenceRetryInfo } from '../../../model/types';
 import { emitToolSchemaSnapshot } from './inferenceArtifactRepair';
 import { buildRequestManifest, canonicalizeModelMessage } from './requestManifestBuilder';
 import type { ContextAssemblyCtx, ModelMessagesWithSources } from './shared';
@@ -71,6 +72,20 @@ export function recordRequestManifest(
   if (toolSchemaSnapshot.cacheStored === false) manifest.degraded = true;
   ctx.runtime.turnTrace?.record('request_manifest', manifest);
   return manifest;
+}
+
+/**
+ * issue #1989：推理重试/断流续接的会话 trace 回调工厂。
+ * 挂起-超时-重试此前只落 stderr，trace 止于 request_manifest；
+ * 接上后每次重试（含 kind=timeout/transient/reconnect）都进 inference_retry 事件。
+ */
+export function recordInferenceRetryTrace(
+  ctx: ContextAssemblyCtx,
+  requestId: string,
+): (info: InferenceRetryInfo) => void {
+  return (info) => {
+    ctx.runtime.turnTrace?.record('inference_retry', { requestId, ...info });
+  };
 }
 
 export function completeRequestManifest(

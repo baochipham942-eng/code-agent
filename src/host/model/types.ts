@@ -158,6 +158,22 @@ export interface StreamChunk {
 
 export type StreamCallback = (chunk: string | StreamChunk) => void | Promise<void>;
 
+/**
+ * 推理层单次重试/断流续接事件（issue #1989 可观测性）。
+ * kind：'timeout'=客户端超时（整请求/首字节看门狗）驱动；'transient'=普通瞬态错误；
+ * 'reconnect'=首字节后断流续接（ADR-068）。CLI 走 retryEvents 全局通道，
+ * 会话级 trace 记录走 InferenceOptions.onInferenceRetry（避免跨会话串话）。
+ */
+export interface InferenceRetryInfo {
+  provider: string;
+  model?: string;
+  attempt: number;
+  maxRetries: number;
+  delayMs: number;
+  kind: 'timeout' | 'transient' | 'reconnect';
+  error: string;
+}
+
 export interface InferenceOptions {
   onSnapshot?: (snapshot: import('./providers/sseStream').StreamSnapshot) => void;
   snapshotIntervalMs?: number;
@@ -175,6 +191,8 @@ export interface InferenceOptions {
   requestTimeoutMs?: number;
   firstByteTimeoutMs?: number;
   inactivityTimeoutMs?: number;
+  /** 每次推理重试/断流续接时回调（会话级 trace 用；不影响重试决策）。 */
+  onInferenceRetry?: (info: InferenceRetryInfo) => void;
   /**
    * Caller-level reasoning intensity for thinking-mode models. modelRouter
    * defaults this to 'low' on artifact generation/repair turns so reasoning

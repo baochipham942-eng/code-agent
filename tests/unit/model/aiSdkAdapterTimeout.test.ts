@@ -135,4 +135,110 @@ describe('inferenceViaAiSdk —— per-request 超时 + 重试', () => {
     expect(col.byType('stream_break')).toHaveLength(1);
     expect(col.byType('error').length).toBe(0); // 续接成功，无 error
   });
+
+  it('非流式：连续挂起 → 客户端超时重试帽（2 次）耗尽后抛错，不再烧第 3 个请求窗口（issue #1989 失败路径）', async () => {
+    let calls = 0;
+    vi.mocked(generateText).mockImplementation((opts: Parameters<typeof generateText>[0]) => {
+      calls += 1;
+      return hangUntilAbort((opts as { abortSignal?: AbortSignal }).abortSignal);
+    });
+    const retryInfos: Array<{ kind: string; attempt: number; maxRetries: number }> = [];
+
+    const p = inferenceViaAiSdk([{ role: 'user', content: 'hi' }], [], CONFIG, undefined, undefined, {
+      requestTimeoutMs: 1000,
+      onInferenceRetry: (info) => retryInfos.push(info),
+    });
+    const assertion = expect(p).rejects.toThrow('timeout of 1000ms exceeded');
+    await vi.advanceTimersByTimeAsync(1000); // 第 1 次请求超时 → 重试 1（退避 1s）
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1000); // 第 2 次请求超时 → 重试 2（退避 2s）
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(1000); // 第 3 次请求超时 → 帽满，放弃
+    await assertion;
+
+    expect(calls).toBe(3); // 1 + 2 次超时重试，不是 1 + GENERATE_MAX_RETRIES
+    expect(retryInfos).toHaveLength(2);
+    expect(retryInfos.every((i) => i.kind === 'timeout')).toBe(true);
+  });
+
+  it('非流式：普通瞬态错误（503）不受超时重试帽影响，仍按 GENERATE_MAX_RETRIES 重试', async () => {
+    let calls = 0;
+    vi.mocked(generateText).mockImplementation(() => {
+      calls += 1;
+      if (calls <= 2) return Promise.reject(Object.assign(new Error('Service Unavailable'), { status: 503 }));
+      return Promise.resolve({
+        text: 'recovered', toolCalls: [], reasoningText: '',
+        usage: { inputTokens: 1, outputTokens: 1 }, finishReason: 'stop',
+      } as unknown as Awaited<ReturnType<typeof generateText>>);
+    });
+    const retryInfos: Array<{ kind: string }> = [];
+
+    const p = inferenceViaAiSdk([{ role: 'user', content: 'hi' }], [], CONFIG, undefined, undefined, {
+      requestTimeoutMs: 60_000,
+      onInferenceRetry: (info) => retryInfos.push(info),
+    });
+    await vi.advanceTimersByTimeAsync(1000); // 第 1 次 503 → 退避 1s
+    await vi.advanceTimersByTimeAsync(2000); // 第 2 次 503 → 退避 2s
+    const result = await p;
+
+    expect(calls).toBe(3);
+    expect(result.content).toBe('recovered');
+    expect(retryInfos).toHaveLength(2);
+    expect(retryInfos.every((i) => i.kind === 'transient')).toBe(true);
+  });
+
+  it('流式：首字节连续挂起 → 首字节超时重试帽（2 次）耗尽后抛错（issue #1989 失败路径）', async () => {
+    let calls = 0;
+    vi.mocked(streamText).mockImplementation((opts: Parameters<typeof streamText>[0]) => {
+      calls += 1;
+      return hangingStream((opts as { abortSignal?: AbortSignal }).abortSignal);
+    });
+    const col = makeCollector();
+    const retryInfos: Array<{ kind: string }> = [];
+
+    const p = inferenceViaAiSdk([{ role: 'user', content: 'hi' }], [], CONFIG, col.onStream, undefined, {
+      firstByteTimeoutMs: 1000,
+      inactivityTimeoutMs: 9000,
+      onInferenceRetry: (info) => retryInfos.push(info),
+    });
+    const assertion = expect(p).rejects.toThrow('first-byte timeout');
+    await vi.advanceTimersByTimeAsync(1000); // 第 1 次首字节超时 → 重试 1（退避 1s）
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1000); // 第 2 次首字节超时 → 重试 2（退避 2s）
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(1000); // 第 3 次首字节超时 → 帽满，放弃
+    await assertion;
+
+    expect(calls).toBe(3);
+    expect(retryInfos).toHaveLength(2);
+    expect(retryInfos.every((i) => i.kind === 'timeout')).toBe(true);
+    expect(col.byType('error')).toHaveLength(1); // 终错经 streamCallback error 分支可见，不静默
+  });
+
+  it('流式：断流续接时 onInferenceRetry 以 kind=reconnect 上报（trace 可见性）', async () => {
+    let calls = 0;
+    vi.mocked(streamText).mockImplementation((opts: Parameters<typeof streamText>[0]) => {
+      calls += 1;
+      if (calls === 1) return hangingStream((opts as { abortSignal?: AbortSignal }).abortSignal, [{ type: 'text-delta', id: 't', text: 'partial' }]);
+      return streamOf([
+        { type: 'text-delta', id: 't', text: 'resumed' },
+        { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+      ]);
+    });
+    const col = makeCollector();
+    const retryInfos: Array<{ kind: string; attempt: number; maxRetries: number }> = [];
+
+    const p = inferenceViaAiSdk([{ role: 'user', content: 'hi' }], [], CONFIG, col.onStream, undefined, {
+      firstByteTimeoutMs: 9000,
+      inactivityTimeoutMs: 1000,
+      onInferenceRetry: (info) => retryInfos.push(info),
+    });
+    await vi.advanceTimersByTimeAsync(1000); // inactivity 看门狗 → 断点续接
+    await vi.advanceTimersByTimeAsync(1000); // 续接退避
+    const result = await p;
+
+    expect(result.content).toBe('resumed');
+    expect(retryInfos).toHaveLength(1);
+    expect(retryInfos[0]).toMatchObject({ kind: 'reconnect', attempt: 1 });
+  });
 });

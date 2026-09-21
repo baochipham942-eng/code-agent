@@ -45,3 +45,7 @@ AssertionError: expected false to be true // Object.is equality
 
 ## ship 回执
 ✓ gates:fast passed required local preflight. schema=2 head=5fcc1fc1605f20a196a5a13e9765efd40d60164d base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=9aea43e3-afaa-4932-a53c-a164e2598ae7
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=0a5b0675e74254d4e587015bf605f4db269ce194 base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=3f4b39e8-7c45-4551-80b4-a8be63b4b706

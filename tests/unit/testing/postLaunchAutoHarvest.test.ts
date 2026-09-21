@@ -16,7 +16,7 @@ vi.mock('../../../src/host/model/providers/typesafeProvider', () => ({
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { applySchema } from '../../../src/host/services/core/database/schema';
-import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
+import type { ReplayBlock, ReplayToolCall, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import {
   POST_LAUNCH_JUDGE_VERSION,
@@ -60,14 +60,14 @@ function insertTurn(database: Database.Database, sessionId: string, turnId: stri
 
 /** 三次同参数连续调用 ⇒ repeat_loop 确定性信号。 */
 function repeatLoopReplay(sessionId: string, startTime: number): StructuredReplay {
-  const same = { name: 'Read', args: { path: 'a.ts' } };
+  const toolCall: ReplayToolCall = { id: 'read-a', name: 'Read', args: { path: 'a.ts' }, success: true, duration: 1, category: 'Read' };
   const blocks: ReplayBlock[] = [
     { type: 'user', content: '帮我看看这个文件', timestamp: startTime },
     ...[1, 2, 3].map((offset) => ({
       type: 'tool_call' as const,
-      content: same.name,
+      content: toolCall.name,
       timestamp: startTime + offset,
-      toolCall: same,
+      toolCall,
     })),
   ];
   return {

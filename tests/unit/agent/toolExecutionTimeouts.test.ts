@@ -44,6 +44,9 @@ describe('unified tool execution timeout policy', () => {
   it('leaves self-limiting wait tools to their own bounded budget', () => {
     expect(getToolExecutionTimeoutMs('terminal_wait')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('gui_agent')).toBeUndefined();
+    // 前台 spawn_agent 由 raceForegroundBlockingBudget 到点转后台，外层不得抢先。
+    expect(getToolExecutionTimeoutMs('spawn_agent')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('AgentSpawn')).toBeUndefined();
   });
 
   it('uses the MCP tier and a bounded default for other tools', () => {
@@ -53,7 +56,6 @@ describe('unified tool execution timeout policy', () => {
     expect(getToolExecutionTimeoutMs('mcp_server_search')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('image_generate')).toBe(TOOL_EXECUTION_TIMEOUTS.DEFAULT);
     expect(getToolExecutionTimeoutMs('Task')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
-    expect(getToolExecutionTimeoutMs('AgentSpawn')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('workflow_orchestrate')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('local_speech_to_text')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('http_request')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);

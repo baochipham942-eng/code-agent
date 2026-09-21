@@ -354,9 +354,14 @@ const TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES = [
 // gui_agent 的 UI-TARS 循环用内部 AbortController 只受 timeout_ms 控制、不接
 // ctx.abortSignal，外层 abort 停不掉它——外层先判超时会让模型以为失败再发新任务，
 // 两路并发驱动同一块屏幕。
-const TOOL_EXECUTION_SELF_LIMITING_NAMES = ['terminal_wait', 'gui_agent'] as const;
+// spawn_agent/AgentSpawn 也自管计时：前台由 raceForegroundBlockingBudget 到点
+// adopt 转后台（SUBAGENT_EXECUTION_TIMEOUTS.FOREGROUND_TO_BACKGROUND_BUDGET，600s），
+// 并行模式由协调器负责。若外层给同档 600s，外层钟起点更早（审批/排槽/worktree 准备
+// 都在子代理起跑前）且子代理进度不上抛 emitEvent，外层必然先触发——在摘除监听之前
+// abort 工具信号，把本该转后台的子代理直接取消。
+const TOOL_EXECUTION_SELF_LIMITING_NAMES = ['terminal_wait', 'gui_agent', 'spawn_agent', 'agentspawn'] as const;
 const TOOL_EXECUTION_LONG_RUNNING_NAMES = [
-  'video_generate', 'ppt_generate', 'task', 'spawn_agent', 'workflow_orchestrate', 'explore', 'skill',
+  'video_generate', 'ppt_generate', 'task', 'workflow_orchestrate', 'explore', 'skill',
   'local_speech_to_text', 'http_request',
 ] as const;
 
@@ -372,8 +377,7 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
     || normalizedName.startsWith('mcp__') || normalizedName.startsWith('mcp_')) {
     return undefined;
   }
-  if (TOOL_EXECUTION_LONG_RUNNING_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_LONG_RUNNING_NAMES[number])
-    || normalizedName === 'agentspawn') {
+  if (TOOL_EXECUTION_LONG_RUNNING_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_LONG_RUNNING_NAMES[number])) {
     return TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING;
   }
   if (TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES[number])) {

@@ -12,6 +12,8 @@ const harness = vi.hoisted(() => ({
   executorExecute: vi.fn(),
   guardRegister: vi.fn(),
   guardAcquireSlot: vi.fn(),
+  raceForegroundBlockingBudget: vi.fn(),
+  adoptForegroundSubagent: vi.fn(),
 }));
 
 vi.mock('../../../src/host/agent/subagentExecutor', () => ({
@@ -38,11 +40,11 @@ vi.mock('../../../src/host/agent/agentWorktree', () => ({
 }));
 
 vi.mock('../../../src/host/agent/multiagentTools/spawnAgentForegroundBackground', () => ({
-  adoptForegroundSubagent: vi.fn(),
+  adoptForegroundSubagent: harness.adoptForegroundSubagent,
   delegateSpawnAgentWorktreeCleanup: vi.fn(),
   finalizeForegroundSpawnAgentWorktree: vi.fn(),
   publishBackgroundSubagentVisibility: vi.fn(),
-  raceForegroundBlockingBudget: vi.fn(),
+  raceForegroundBlockingBudget: harness.raceForegroundBlockingBudget,
   resolveForegroundBlockingBudgetMs: () => 600_000,
   resolveSingleSpawnRunScope: () => ({}),
   validateForegroundBlockingBudget: vi.fn(),
@@ -83,6 +85,8 @@ describe('spawn_agent waitForCompletion:false 后台分离', () => {
     harness.executorExecute.mockReset();
     harness.guardRegister.mockReset();
     harness.guardAcquireSlot.mockReset();
+    harness.raceForegroundBlockingBudget.mockReset();
+    harness.adoptForegroundSubagent.mockReset();
   });
 
   it('工具调用收口（父信号 abort）不连带取消已报告后台运行的子代理', async () => {
@@ -104,6 +108,30 @@ describe('spawn_agent waitForCompletion:false 后台分离', () => {
     // 模拟引擎 finally：工具调用收口时 abort 本次调用的信号。
     parentController.abort(new Error('tool execution settled'));
 
+    expect(subagentController?.signal.aborted).toBe(false);
+  });
+
+  it('前台子代理安静跑满预算：转后台收养而不是被取消', async () => {
+    // 子代理一直跑，转后台预算先到期（raced.kind === 'timeout'）。
+    harness.executorExecute.mockReturnValue(new Promise(() => undefined));
+    harness.guardAcquireSlot.mockResolvedValue({ release: vi.fn() });
+    harness.raceForegroundBlockingBudget.mockResolvedValue({ kind: 'timeout' });
+    harness.adoptForegroundSubagent.mockResolvedValue({ success: true, output: 'adopted-marker' });
+    const parentController = new AbortController();
+
+    const result = await executeSpawnAgent(
+      { task: '前台长任务', customPrompt: '你是前台验证代理' },
+      makeContext(parentController.signal),
+    );
+
+    // 预算是转后台，不是取消：结果来自 adoptForegroundSubagent，而非超时失败。
+    expect(harness.adoptForegroundSubagent).toHaveBeenCalledOnce();
+    expect(result.output).toBe('adopted-marker');
+    const subagentController = harness.guardRegister.mock.calls[0]?.[4] as AbortController | undefined;
+    expect(subagentController).toBeInstanceOf(AbortController);
+
+    // 收养后工具调用收口（父信号 abort）不得连带取消已转后台的子代理。
+    parentController.abort(new Error('tool execution settled'));
     expect(subagentController?.signal.aborted).toBe(false);
   });
 });

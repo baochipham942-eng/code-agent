@@ -1166,8 +1166,9 @@ export class ToolExecutionEngine {
       });
     } finally {
       if (parentAbortSignal) parentAbortSignal.removeEventListener('abort', abortFromParent);
-      // 后台 spawn_agent 用独立 AbortController（spawnAgent.ts run_in_background 分支），
-      // 这里的 abort 只作用于已收口的前台调用，无需豁免。
+      // detached 子代理（run_in_background / waitForCompletion:false / 前台超时收养）
+      // 在 spawnAgent.ts 各自路径返回前已摘除对本信号的监听；这里的 abort 只作用于
+      // 已收口的前台调用。
       toolAbortController.abort();
       this.activeToolNames.delete(toolCall.id);
     }

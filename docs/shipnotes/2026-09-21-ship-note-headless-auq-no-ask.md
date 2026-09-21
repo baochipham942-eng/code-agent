@@ -26,7 +26,7 @@ AskUserQuestion 永远无人应答。模型白问一轮后工具返回带 `await
 ## 测试证据
 
 - static-contract：`npm run typecheck` 0 错误；`npm run gates:fast` 绿
-  （receipt=7fc0c4f2-e0fe-446c-9303-da5ba7053500，绑 HEAD f85f88003）。
+  （receipt=3d96e18e-5bd0-448f-ad04-09abc0b195bd，绑 HEAD 20c2aeb87e9fc5269cef6d57f0eb57254349743f）。
 - hermetic-protocol：
   - `tests/unit/agent/toolRunPolicy.test.ts` 11 过（新增 4：unattended 滤两个
     等价名 / 白名单捞不回 / 有人值守保留 / 收窄日志点名）；
@@ -57,3 +57,7 @@ AskUserQuestion 永远无人应答。模型白问一轮后工具返回带 `await
   复跑留给出夜班跑批自然验证（原本 15 次/12 会话的拦截应归零），风险可接受。
 
 证据档位：static-contract + hermetic-protocol + fault-injection
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=20c2aeb87e9fc5269cef6d57f0eb57254349743f base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=3d96e18e-5bd0-448f-ad04-09abc0b195bd

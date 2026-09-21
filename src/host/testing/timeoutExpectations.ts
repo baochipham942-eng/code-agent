@@ -7,7 +7,7 @@
 // ============================================================================
 import { runExpectations } from './assertionEngine';
 import { isTimeoutJudgeable } from './expectationCatalog';
-import type { Expectation, ExpectationResult, TestResult } from './types';
+import type { CaseSkillSignals, Expectation, ExpectationResult, TestResult } from './types';
 
 export function formatExpectationFailures(results: ExpectationResult[]): string {
   return results.filter((r) => !r.passed).map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`).join('; ');
@@ -16,6 +16,9 @@ export function formatExpectationFailures(results: ExpectationResult[]): string 
 /** 证据源 / 锚点在被掐时还不存在：正常路径会 fail-loud，超时题窗口还没关，记未判。 */
 function hasEvidence(expectation: Expectation, result: TestResult): boolean {
   if (expectation.type === 'approval_not_requested') return result.permissionRequests !== undefined;
+  // N-SKILL-TRIGGER-EVAL：触发落账没被交出来（adapter 没接记录器）就不判——
+  // 「没记录」和「零触发」混起来负样本会假绿。
+  if (expectation.type === 'skill_not_triggered') return result.skillContext !== undefined;
   if (expectation.type === 'sim_stop_respected' || expectation.type === 'sim_no_write_before_rule') {
     const isAfter = expectation.type === 'sim_stop_respected';
     const ruleId = expectation.params[isAfter ? 'after_rule' : 'before_rule'];
@@ -34,9 +37,13 @@ export async function judgeTimeoutExpectations(
   expectations: Expectation[] | undefined,
   result: TestResult,
   workingDirectory: string,
+  collectSkillSignals?: () => Promise<CaseSkillSignals | undefined>,
 ): Promise<void> {
   const candidates = (expectations ?? []).filter((expectation) => isTimeoutJudgeable(expectation.type));
   if (candidates.length === 0) return;
+  // N-SKILL-TRIGGER-EVAL：skill_activated 落账在 adapter 侧按 testId 累积，不受掐断影响——
+  // 补判前交出，skill_not_triggered 才有证据源；交不出（thunk 缺席/返空）则进 unjudged。
+  Object.assign(result, (await collectSkillSignals?.()) ?? {});
   const judged = candidates.filter((expectation) => hasEvidence(expectation, result));
   const { results } = await runExpectations(judged, {
     toolExecutions: result.toolExecutions,
@@ -46,6 +53,8 @@ export async function judgeTimeoutExpectations(
     workingDirectory,
     simTurns: result.simTurns,
     permissionRequests: result.permissionRequests,
+    skillActivations: result.skillActivations,
+    skillContext: result.skillContext,
   });
   result.expectationResults = results;
   result.timeoutExpectations = {

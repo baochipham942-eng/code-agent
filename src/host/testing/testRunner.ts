@@ -24,6 +24,7 @@ import type {
   PermissionRequestRecord,
   EvalCaseMemory,
   CaseMemorySignals,
+  CaseSkillSignals,
   SimTurnRecord,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
@@ -145,6 +146,12 @@ export interface AgentInterface {
   consumeSkillActivations?(testId: string): Record<string, number>;
   /** N-EVAL-MEMORY：读走并清空本题的记忆落账（memory_recalled / memory_written 的证据源）。 */
   consumeMemorySignals?(testId: string): CaseMemorySignals;
+  /**
+   * N-SKILL-TRIGGER-EVAL：读本题 skill 触发落账与上下文集（skill_* 断言的证据源）。
+   * 只读不清——计数台账仍归 consumeSkillActivations 在 finally 里收口（报告/comparator 用）。
+   * 缺席 ⇒ skill_* 断言 fail-loud。
+   */
+  collectSkillSignals?(testId: string): Promise<CaseSkillSignals>;
   consumeSubagentSpawns?(testId: string): number;
   getStructuredReplay?(sessionId: string): Promise<StructuredReplay | null>;
 }
@@ -938,7 +945,9 @@ export class TestRunner {
       // N-EVAL-MEMORY：记忆落账必须在断言求值之前、且在**全部轮次**（首轮 + user_simulation /
       // follow_up_prompts）跑完之后才消费——首轮后就取会漏掉后续轮的写入与快照，
       // 把「第二轮才落盘」判成未写入、把「第二轮泄露」判成干净（审查 #1638）。
-      Object.assign(result, agent.consumeMemorySignals?.(testCase.id) ?? {});
+      // N-SKILL-TRIGGER-EVAL：skill 触发落账同时序；只读不清（计数台账仍由 finally 的
+      // consumeSkillActivations 收口进报告）。adapter 没接记录器时字段保持 undefined，fail-loud。
+      Object.assign(result, agent.consumeMemorySignals?.(testCase.id) ?? {}, (await agent.collectSkillSignals?.(testCase.id)) ?? {});
 
       const assertionResult = await runAssertions(testCase.expect ?? {}, {
         toolExecutions: result.toolExecutions,
@@ -989,7 +998,7 @@ export class TestRunner {
           goalRun: result.goalRun,
           permissionRequests: result.permissionRequests,
           memoryRecall: result.memoryRecall,
-          memorySnapshot: result.memorySnapshot,
+          memorySnapshot: result.memorySnapshot, skillActivations: result.skillActivations, skillContext: result.skillContext,
         });
         result.expectationResults = expResult.results;
         result.score = expResult.overallScore;
@@ -1046,7 +1055,8 @@ export class TestRunner {
       result.failureReason = message || 'Unknown error';
       // N-EVAL-TIMEOUT-K2-NEGASSERT：拿到被掐那一轮轨迹才补跑负向过程断言；拿不到行为不变。
       if (killedByTimeout && result.timeoutTraceAvailable === true) {
-        await judgeTimeoutExpectations(testCase.expectations, result, workingDirectory)
+        // N-SKILL-TRIGGER-EVAL：skill 证据在补判函数内交出（thunk 传入），交不出则进 unjudged。
+        await judgeTimeoutExpectations(testCase.expectations, result, workingDirectory, () => agent.collectSkillSignals?.(testCase.id) ?? Promise.resolve(undefined))
           .catch((judgeError: unknown) => logger.warn('timeout expectations failed to run', { testId: testCase.id, error: String(judgeError) }));
       }
       result.errors.push(message || String(error));
@@ -1106,7 +1116,9 @@ export class TestRunner {
 
       result.endTime = Date.now();
       result.duration = result.endTime - result.startTime;
-      result.skillActivations = agent.consumeSkillActivations?.(testCase.id) ?? {};
+      // N-SKILL-TRIGGER-EVAL：??= 不覆盖断言前 collectSkillSignals 已交出的值（同一台账，两份一致；
+      // 但 adapter 只接 collect 不接 consume 时，= 会把真值抹成 {}）。
+      result.skillActivations ??= agent.consumeSkillActivations?.(testCase.id) ?? {};
       result.subagentSpawns = agent.consumeSubagentSpawns?.(testCase.id) ?? 0;
       const usage = costTracker.getUsage();
       if (usage) {

@@ -32,6 +32,8 @@ const EXPECTATION_SUMMARIES = {
   no_stall_before_artifact: '产物动作前没有拖延',
   memory_recalled: '该被想起来的记忆真的被注进了这一轮',
   memory_written: '跑完之后记忆目录里躺着该躺的内容',
+  skill_triggered: '该触发的 skill 真的被调用了',
+  skill_not_triggered: '不该触发的 skill 没有被调用',
 } as const satisfies Record<ExpectationType, string>;
 
 /**
@@ -49,6 +51,10 @@ const TIMEOUT_VERDICT_KIND = {
   max_tool_calls: 'negative_monotone',
   response_not_contains: 'negative_monotone',
   no_crash: 'negative_monotone',
+  // N-SKILL-TRIGGER-EVAL：skill_activated 一旦 emit 就撤不回——半截轨迹里已发生的
+  // 触发是真违规（负向可判）；半截没触发不等于后面不会触发（正向不判）。
+  skill_not_triggered: 'negative_monotone',
+  skill_triggered: 'positive_monotone',
   tool_called: 'positive_monotone',
   min_tool_calls: 'positive_monotone',
   approval_requested: 'positive_monotone',

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { AgentInterface } from './testRunner';
-import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord, EvalCaseMemory, MemoryFileSnapshot, MemoryRecallRecord } from './types';
+import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord, EvalCaseMemory, MemoryFileSnapshot, MemoryRecallRecord, CaseSkillSignals } from './types';
 import { seedCaseMemory, snapshotMemoryDir } from './memoryEval';
 import { createPermissionRequestRecorder } from './approvalRequestEval';
 import { buildPermissionDecider, narrowScriptedPermissionHandler } from './userSimulator';
@@ -598,6 +598,28 @@ export class StandaloneAgentAdapter implements AgentInterface {
     const activations = this.skillActivations.get(testId) ?? {};
     this.skillActivations.delete(testId);
     return { ...activations };
+  }
+
+  /**
+   * N-SKILL-TRIGGER-EVAL：skill_* 断言的证据源。只读不清（计数台账归 consumeSkillActivations
+   * 在 finally 收口进报告）。skillContext = 本题实际装进上下文的 skill 名单：白名单
+   * （构造入参 skills）∩ 已发现 ∩ 启用——模型经 Skill 工具描述 / tool_search 看到的就是这批。
+   */
+  async collectSkillSignals(testId: string): Promise<CaseSkillSignals> {
+    const { SkillDiscoveryService } = await import('../services/skills/skillDiscoveryService');
+    const discovery = this.skillDiscoveryService ??= new SkillDiscoveryService({
+      skillNames: this.skills,
+      includeClaudeLegacySkills: this.includeClaudeLegacySkills,
+    });
+    await discovery.ensureInitialized(this.workingDirectory);
+    const skillContext = discovery.getAllSkills()
+      .filter((skill) => discovery.isSkillEnabled(skill.name))
+      .map((skill) => skill.name)
+      .sort((left, right) => left.localeCompare(right));
+    return {
+      skillActivations: { ...(this.skillActivations.get(testId) ?? {}) },
+      skillContext,
+    };
   }
 
   consumeSubagentSpawns(testId: string): number {

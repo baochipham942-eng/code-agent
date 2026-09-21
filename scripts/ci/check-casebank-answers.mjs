@@ -14,7 +14,7 @@ const sourceRepoRoot = path.resolve(scriptDir, '../..');
 const repoRoot = process.cwd();
 const requirePrivate = process.argv.slice(2).includes('--require-private');
 const unexpectedArgs = process.argv.slice(2).filter((arg) => arg !== '--require-private');
-const answerEnumeratedSubdirectories = ['artifact-runnable', 'goal-contract', 'user-simulator', 'memory'];
+const answerEnumeratedSubdirectories = ['artifact-runnable', 'goal-contract', 'user-simulator', 'memory', 'skill-trigger'];
 const securityRedlineSource = '.claude/test-cases/06-security-redline-tests.yaml';
 const gitWorkflowSource = '.claude/test-cases/10-git-workflow-tests.yaml';
 /** id 列表折叠阈值：超过就只列前几条 + 计数，别刷屏。 */
@@ -292,6 +292,7 @@ async function checkPrivate(publicBank, errors) {
     path.join(caseRoot, 'goal-contract'),
     path.join(caseRoot, 'user-simulator'),
     path.join(caseRoot, 'memory'),
+    path.join(caseRoot, 'skill-trigger'),
   ];
   const loaderErrors = [];
   const originalConsoleError = console.error;

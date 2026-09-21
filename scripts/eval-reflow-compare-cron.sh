@@ -38,10 +38,15 @@ case "${1:-}" in
     if [ -z "$INSTALL_CANDIDATE" ]; then
       echo "--install 需要先 export NEO_EVAL_REFLOW_CANDIDATE=<候选臂 yaml 路径>（会写进 plist）"; exit 1
     fi
-    [ -f "$INSTALL_CANDIDATE" ] || INSTALL_CANDIDATE="$REPO/$INSTALL_CANDIDATE"
     if [ ! -f "$INSTALL_CANDIDATE" ]; then
       echo "候选臂 yaml 不存在: $INSTALL_CANDIDATE"; exit 1
     fi
+    # ai-review PR#2024 R3：写 plist 前一律规范成绝对路径——launchd 以 REPO 为工作目录
+    # 起跑，相对路径在仓外安装时会解析不到（先验存在再绝对化，顺序不能反）。
+    case "$INSTALL_CANDIDATE" in
+      /*) ;;
+      *) INSTALL_CANDIDATE="$(cd "$(dirname "$INSTALL_CANDIDATE")" && pwd)/$(basename "$INSTALL_CANDIDATE")" ;;
+    esac
     case "$INSTALL_CANDIDATE" in *[\&\<\>\"\']*) echo "候选路径含 XML 特殊字符，拒绝生成 plist: ${INSTALL_CANDIDATE}"; exit 1 ;; esac
     mkdir -p "$(dirname "$PLIST")" "$LOG_DIR"
     cat > "$PLIST" <<PLIST
@@ -84,7 +89,11 @@ case "${1:-}" in
 </plist>
 PLIST
     launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
-    launchctl bootstrap "gui/$(id -u)" "$PLIST"
+    # ai-review PR#2024 R3：bootstrap 失败必须非零退出——否则 plist 没装上还打印 installed。
+    if ! launchctl bootstrap "gui/$(id -u)" "$PLIST"; then
+      echo "launchctl bootstrap 失败，plist 未装载: $PLIST"
+      exit 1
+    fi
     echo "installed $PLIST (repo=$REPO)"
     exec "$0" --status
     ;;

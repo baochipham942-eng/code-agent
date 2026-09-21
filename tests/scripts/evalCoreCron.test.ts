@@ -176,4 +176,60 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
     expect(plist).toContain('<key>NEO_EVAL_REFLOW_CANDIDATE</key>');
     expect(plist).toContain(`<string>${candidate}</string>`);
   });
+
+  it('--install 从仓外用相对路径装：写进 plist 的是绝对路径（launchd 以 REPO 为 cwd）', () => {
+    const binDir = path.join(root, 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(path.join(binDir, 'launchctl'), '#!/bin/bash\nexit 0\n');
+    fs.chmodSync(path.join(binDir, 'launchctl'), 0o755);
+    // 从仓外 cwd 用相对路径引用候选（root/relhome 当 cwd，candidate 在其下一跳）
+    const outside = path.join(root, 'outside');
+    fs.mkdirSync(outside, { recursive: true });
+    const relCandidate = path.join('..', path.basename(candidate));
+    execFileSync('bash', [REFLOW_SCRIPT, '--install'], {
+      encoding: 'utf8',
+      cwd: outside,
+      env: {
+        ...process.env,
+        NEO_EVAL_REFLOW_REPO: clone,
+        HOME: path.join(root, 'home-install-rel'),
+        PATH: `${binDir}:${process.env.PATH}`,
+        NEO_EVAL_REFLOW_CANDIDATE: relCandidate,
+      },
+    });
+    const plist = fs.readFileSync(
+      path.join(root, 'home-install-rel', 'Library', 'LaunchAgents', 'com.linchen.neo-eval-reflow-compare-weekly.plist'),
+      'utf8',
+    );
+    // pwd 解析 /var → /private/var 软链：期望值按真实路径对齐
+    expect(plist).toContain(`<string>${fs.realpathSync(candidate)}</string>`);
+    expect(plist).not.toContain(relCandidate);
+  });
+
+  it('--install 的 launchctl bootstrap 失败 ⇒ 非零退出，不报 installed', () => {
+    const binDir = path.join(root, 'bin-fail');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(path.join(binDir, 'launchctl'), '#!/bin/bash\nif [ "$1" = bootstrap ]; then exit 1; fi\nexit 0\n');
+    fs.chmodSync(path.join(binDir, 'launchctl'), 0o755);
+    let status = 0;
+    let out: string;
+    try {
+      out = execFileSync('bash', [REFLOW_SCRIPT, '--install'], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          NEO_EVAL_REFLOW_REPO: clone,
+          HOME: path.join(root, 'home-install-fail'),
+          PATH: `${binDir}:${process.env.PATH}`,
+          NEO_EVAL_REFLOW_CANDIDATE: candidate,
+        },
+      });
+    } catch (error) {
+      status = (error as { status?: number }).status ?? -1;
+      out = String((error as { stdout?: string }).stdout ?? '');
+    }
+    expect(status).toBe(1);
+    expect(out).toContain('launchctl bootstrap 失败');
+    expect(out).not.toContain('installed');
+  });
 });

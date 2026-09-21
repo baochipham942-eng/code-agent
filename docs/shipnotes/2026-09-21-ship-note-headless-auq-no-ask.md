@@ -35,10 +35,24 @@ AskUserQuestion 永远无人应答。模型白问一轮后工具返回带 `await
   - 相关既有套件 147 过（askUserQuestion / userQuestionPrompt / adapter.cliAgent /
     bootstrap.durableRun / serveCommand / userQuestionRoutes / agentOrchestrator）。
 - fault-injection（反向变异）：
-  - 变异 1：`toolRunPolicy.ts` 把 `ctx.unattendedTurn === true` 改成 `false` →
-    toolRunPolicy 单测 3 红（unattended 过滤与白名单捞回、收窄日志），还原后 11 全绿；
-  - 变异 2：`chatOriginKind.ts` 让函数恒返回 `undefined` → chatOriginKind 单测
-    2 红（管道/--json 判 headless 两条），还原后 3 全绿。
+  - 变异 1：`toolRunPolicy.ts` 把 `ctx.unattendedTurn === true` 改成 `false`，原始红行：
+    ```
+     FAIL  tests/unit/agent/toolRunPolicy.test.ts > toolRunPolicy > 无人值守轮 AskUserQuestion 收口 > unattendedTurn=true 时两个名字等价形都移出工具面
+    AssertionError: expected [ 'AskUserQuestion', …(3) ] to deeply equal [ 'Read', 'Bash' ]
+     FAIL  tests/unit/agent/toolRunPolicy.test.ts > toolRunPolicy > 无人值守轮 AskUserQuestion 收口 > 无人值守 + 显式白名单也不许把 AskUserQuestion 捞回来
+    AssertionError: expected [ 'AskUserQuestion', 'Read' ] to deeply equal [ 'Read' ]
+     FAIL  tests/unit/agent/toolRunPolicy.test.ts > toolRunPolicy > 无人值守轮 AskUserQuestion 收口 > 无人值守收窄也走可观测性日志（点名 removed）
+          Tests  3 failed | 8 passed (11)
+    ```
+    还原后 11 全绿；
+  - 变异 2：`chatOriginKind.ts` 让函数恒返回 `undefined`，原始红行：
+    ```
+     FAIL  tests/unit/cli/chatOriginKind.test.ts > resolveChatOriginKind > stdin 非 TTY（管道喂入）→ headless
+    AssertionError: expected undefined to be 'headless' // Object.is equality
+     FAIL  tests/unit/cli/chatOriginKind.test.ts > resolveChatOriginKind > --json 模式即使 stdin 是 TTY 也按 headless（输出给机器消费）
+          Tests  2 failed | 1 passed (3)
+    ```
+    还原后 3 全绿。
 - 未做 real-runtime：改动是工具面过滤 + 入口声明，无协议/UI 变化；headless 真机
   复跑留给出夜班跑批自然验证（原本 15 次/12 会话的拦截应归零），风险可接受。
 

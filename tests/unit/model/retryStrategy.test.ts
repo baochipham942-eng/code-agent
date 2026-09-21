@@ -654,4 +654,72 @@ describe('Retry Strategy', () => {
       expect(computeRetryBackoffMs(0, 1000, 3000)).toBe(3000);
     });
   });
+
+  // --------------------------------------------------------------------------
+  // maxTimeoutRetries（issue #1989：客户端超时驱动的重试单独封顶，不与秒级瞬态共享预算）
+  // --------------------------------------------------------------------------
+  describe('withTransientRetry — maxTimeoutRetries', () => {
+    const timeoutError = () => Object.assign(
+      new Error('timeout of 300000ms exceeded'),
+      { code: 'INFERENCE_REQUEST_TIMEOUT' },
+    );
+    const isTimeoutError = (err: unknown) =>
+      (err as NodeJS.ErrnoException | null)?.code === 'INFERENCE_REQUEST_TIMEOUT';
+
+    it('超时错误到 maxTimeoutRetries 即放弃（1+2 次调用），不烧满 maxRetries', async () => {
+      const fn = vi.fn().mockRejectedValue(timeoutError());
+      await expect(withTransientRetry(fn, {
+        providerName: 'test',
+        maxRetries: 4,
+        baseDelay: 1,
+        isTimeoutError,
+        maxTimeoutRetries: 2,
+      })).rejects.toThrow('timeout of 300000ms exceeded');
+      expect(fn).toHaveBeenCalledTimes(3);
+    });
+
+    it('普通瞬态错误不受 maxTimeoutRetries 影响，仍按 maxRetries 重试', async () => {
+      const fn = vi.fn()
+        .mockRejectedValueOnce(new Error('socket hang up'))
+        .mockRejectedValueOnce(new Error('socket hang up'))
+        .mockRejectedValueOnce(new Error('socket hang up'))
+        .mockResolvedValue('recovered');
+      const result = await withTransientRetry(fn, {
+        providerName: 'test',
+        maxRetries: 4,
+        baseDelay: 1,
+        isTimeoutError,
+        maxTimeoutRetries: 2,
+      });
+      expect(result).toBe('recovered');
+      expect(fn).toHaveBeenCalledTimes(4);
+    });
+
+    it('超时与普通瞬态混合时只有超时计入超时预算', async () => {
+      const fn = vi.fn()
+        .mockRejectedValueOnce(timeoutError())
+        .mockRejectedValueOnce(new Error('socket hang up'))
+        .mockRejectedValueOnce(timeoutError())
+        .mockRejectedValueOnce(timeoutError());
+      await expect(withTransientRetry(fn, {
+        providerName: 'test',
+        maxRetries: 4,
+        baseDelay: 1,
+        isTimeoutError,
+        maxTimeoutRetries: 2,
+      })).rejects.toThrow('timeout of 300000ms exceeded');
+      // 3 次超时错误里前 2 次触发重试，第 3 次预算耗尽直抛；中间瞬态不占超时预算
+      expect(fn).toHaveBeenCalledTimes(4);
+    });
+
+    it('缺省 maxTimeoutRetries 维持旧行为（maxRetries 全权）', async () => {
+      const fn = vi.fn().mockRejectedValue(timeoutError());
+      await expect(withTransientRetry(fn, {
+        providerName: 'test',
+        maxRetries: 4,
+        baseDelay: 1,
+      })).rejects.toThrow('timeout of 300000ms exceeded');
+      expect(fn).toHaveBeenCalledTimes(5);
+    });
+  });
 });

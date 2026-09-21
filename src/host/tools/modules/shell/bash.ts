@@ -56,6 +56,7 @@ import {
 } from '../../../sandbox/osSandboxPolicy';
 import { containWriteFenceWorkspaceRoot, isOsWriteFenceAvailable } from '../../../sandbox/writeFence';
 import { resolveCanonicalRunPath } from '../../../runtime/runContext';
+import { isPathWithinRoot } from '../../../runtime/workspaceScope';
 
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
@@ -675,6 +676,22 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         if (writeFence && (!fenceRoot || !isOsWriteFenceAvailable())) {
           throw new Error('write fence cannot contain workspace root');
         }
+        const scopeWriteRoots = ctx.workspaceScope?.roots
+          .filter((root) => root.access === 'read_write')
+          .map((root) => resolveCanonicalRunPath(root.path));
+        // #1997：workspaceScope 缺省时 jail 默认 = cwd 子树，而默认会话 cwd = HOME
+        // （agentOrchestrator.initializeWorkDirectory）→ 整棵 HOME 可写，产物逃逸
+        // ~/Downloads / HOME 根 / 工作区兄弟目录（ws/gdp-772e7524 截成 ws/gdp-7724）
+        // 全部写成功。run 的授权边界 ctx.workspace 落在 cwd 内时收紧到它（只收紧、
+        // 不放宽：workspace 不在 cwd 内或两者相等时维持 [workingDirectory] 默认）。
+        // 收紧的已知代价：git/pip/uv 等往 HOME 下写缓存/配置会被拒（npm 有白名单
+        // 不受影响）——与有项目 cwd 时的既有行为同侧，属「更严」而非新增破坏面。
+        const workspaceConfinedRoots = !scopeWriteRoots
+          && canonicalWorkspace
+          && canonicalWorkspace !== workingDirectory
+          && isPathWithinRoot(canonicalWorkspace, workingDirectory)
+          ? [canonicalWorkspace]
+          : undefined;
         const wrapped = wrapCommandForSandbox(cmd, {
           workingDirectory,
           readOnlyRoots: ctx.workspaceScope?.roots
@@ -682,9 +699,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
             .map((root) => resolveCanonicalRunPath(root.path)),
           readWriteRoots: writeFence && fenceRoot
             ? [fenceRoot]
-            : ctx.workspaceScope?.roots
-              .filter((root) => root.access === 'read_write')
-              .map((root) => resolveCanonicalRunPath(root.path)),
+            : scopeWriteRoots ?? workspaceConfinedRoots,
           deniedReadRoots: process.env.CODE_AGENT_EVAL_REAL_ROOT
             ? [process.env.CODE_AGENT_EVAL_REAL_ROOT]
             : undefined,

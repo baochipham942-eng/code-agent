@@ -23,6 +23,7 @@ import { initializeCommands, getCommandRegistry } from '../../shared/commands';
 import type { CommandContext, CommandOutput } from '../../shared/commands';
 import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
 import { resolveCLIPermissionModeFlag } from '../permissionPolicy';
+import { resolveChatOriginKind } from './chatOriginKind';
 
 /** Provider → env var name mapping */
 const PROVIDER_ENV_KEYS: Record<string, string> = {
@@ -203,6 +204,9 @@ export const chatCommand = new Command('chat')
         tools: options.tools,
         disallowedTools: options.disallowedTools,
         statusFile: options.statusFile,
+        ...(resolveChatOriginKind({ isJsonMode, stdinIsTTY: Boolean(process.stdin.isTTY) })
+          ? { originKind: 'headless' as const }
+          : {}),
       });
 
       // Ink TUI：TTY 默认界面；非 TTY / 管道 / json 模式回落 readline 线性模式。

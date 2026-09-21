@@ -5,6 +5,7 @@
 import { randomUUID } from 'crypto';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { runWithSqliteBusyRetry } from '../services/core/database/sqliteBusyRetry';
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt, TelemetryDiagnosticBundleRecord } from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION, TELEMETRY_RAW } from '../../shared/constants';
 import { deleteAgedTelemetryRows } from './telemetryRetentionSql';
@@ -105,9 +106,13 @@ export class TelemetryStorage {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       );
-      stmt.run(session.id, session.userId ?? null, guardTelemetryText(session.title, 2_000), session.modelProvider, session.modelName, guardTelemetryText(session.workingDirectory, 4_000), session.startTime, session.endTime ?? null, session.durationMs ?? null, session.turnCount, session.totalInputTokens, session.totalOutputTokens, session.totalTokens, session.estimatedCost, session.totalToolCalls, session.toolSuccessRate, session.totalErrors, session.sessionType ?? null, session.originKind ?? null, session.status, session.agentVersion ?? null, session.promptVersion ?? null, session.toolSchemaVersion ?? null);
+      runWithSqliteBusyRetry(() => stmt.run(session.id, session.userId ?? null, guardTelemetryText(session.title, 2_000), session.modelProvider, session.modelName, guardTelemetryText(session.workingDirectory, 4_000), session.startTime, session.endTime ?? null, session.durationMs ?? null, session.turnCount, session.totalInputTokens, session.totalOutputTokens, session.totalTokens, session.estimatedCost, session.totalToolCalls, session.toolSuccessRate, session.totalErrors, session.sessionType ?? null, session.originKind ?? null, session.status, session.agentVersion ?? null, session.promptVersion ?? null, session.toolSchemaVersion ?? null));
     } catch (error) {
-      logger.error('Failed to insert telemetry session:', error);
+      logger.error('Failed to insert telemetry session', {
+        code: 'TELEMETRY_SESSION_INSERT_FAILED',
+        sessionId: session.id,
+        error,
+      });
     }
   }
 
@@ -772,45 +777,27 @@ export class TelemetryStorage {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
       );
-      stmt.run(
-        turn.id,
-        turn.sessionId,
-        turn.turnNumber,
-        turn.startTime,
-        turn.endTime,
-        turn.durationMs,
-        guardTelemetryText(turn.userPrompt, TELEMETRY_TRUNCATION.USER_PROMPT),
-        turn.userPromptTokens,
-        turn.hasAttachments ? 1 : 0,
-        turn.attachmentCount,
-        turn.systemPromptHash ?? null,
-        turn.agentMode,
-        stringifyGuardedTelemetry(turn.activeSkills ?? []),
-        stringifyGuardedTelemetry(turn.activeMcpServers ?? []),
-        turn.effortLevel,
-        guardTelemetryText(turn.assistantResponse, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE),
-        turn.assistantResponseTokens,
-        guardTelemetryText(turn.thinkingContent, TELEMETRY_TRUNCATION.THINKING_CONTENT),
-        turn.totalInputTokens,
-        turn.totalOutputTokens,
-        turn.intent.primary,
-        turn.intent.secondary ?? null,
-        turn.intent.confidence,
-        turn.intent.method,
-        stringifyGuardedTelemetry(turn.intent.keywords),
-        turn.outcome.status,
-        turn.outcome.confidence,
-        turn.outcome.method,
-        stringifyGuardedTelemetry(turn.outcome.signals),
-        turn.compactionOccurred ? 1 : 0,
-        turn.compactionSavedTokens ?? null,
-        turn.iterationCount,
-        turn.agentId || 'main',
-        turn.turnType || 'user',
-        turn.parentTurnId ?? null
-      );
+      runWithSqliteBusyRetry(() => stmt.run(
+        turn.id, turn.sessionId, turn.turnNumber, turn.startTime, turn.endTime, turn.durationMs,
+        guardTelemetryText(turn.userPrompt, TELEMETRY_TRUNCATION.USER_PROMPT), turn.userPromptTokens,
+        turn.hasAttachments ? 1 : 0, turn.attachmentCount, turn.systemPromptHash ?? null, turn.agentMode,
+        stringifyGuardedTelemetry(turn.activeSkills ?? []), stringifyGuardedTelemetry(turn.activeMcpServers ?? []),
+        turn.effortLevel, guardTelemetryText(turn.assistantResponse, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE),
+        turn.assistantResponseTokens, guardTelemetryText(turn.thinkingContent, TELEMETRY_TRUNCATION.THINKING_CONTENT),
+        turn.totalInputTokens, turn.totalOutputTokens, turn.intent.primary, turn.intent.secondary ?? null,
+        turn.intent.confidence, turn.intent.method, stringifyGuardedTelemetry(turn.intent.keywords),
+        turn.outcome.status, turn.outcome.confidence, turn.outcome.method,
+        stringifyGuardedTelemetry(turn.outcome.signals), turn.compactionOccurred ? 1 : 0,
+        turn.compactionSavedTokens ?? null, turn.iterationCount, turn.agentId || 'main',
+        turn.turnType || 'user', turn.parentTurnId ?? null
+      ));
     } catch (error) {
-      logger.error('Failed to insert telemetry turn:', error);
+      logger.error('Failed to insert telemetry turn', {
+        code: 'TELEMETRY_TURN_INSERT_FAILED',
+        sessionId: turn.sessionId,
+        turnId: turn.id,
+        error,
+      });
     }
   }
 

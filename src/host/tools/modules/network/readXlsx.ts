@@ -25,12 +25,38 @@ import type {
 import { dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readXlsxSchema as schema } from './readXlsx.schema';
+import {
+  isNsPrefixedRelationshipsError,
+  normalizeXlsxRelationshipsNamespaces,
+} from './xlsxRelsNsNormalize';
 
 type XlsxFormat = 'table' | 'json' | 'csv';
 type CellValue = string | number | boolean | null;
 
 /** 输出里那一列真实 xlsx 行号的列名。模型靠它把「三月」翻译成 A1 的行号，不用数行。 */
 const ROW_NUMBER_LABEL = '行号';
+
+/**
+ * 读取工作簿。ExcelJS 4.4.0 的 rels 解析器按节点全名匹配，遇到
+ * `ns1:Relationships` 这类带命名空间前缀的部件直接抛错（#1995）——
+ * 此时剥掉 zip 内 `.rels` 部件的前缀重打包，用 load(buffer) 重试一次。
+ */
+async function loadWorkbook(absPath: string, ctx: ToolContext): Promise<ExcelJS.Workbook> {
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.readFile(absPath);
+    return workbook;
+  } catch (error: unknown) {
+    if (!isNsPrefixedRelationshipsError(error)) throw error;
+    ctx.logger.warn('[ReadXlsx] rels carry a namespace prefix; retrying with normalized rels', {
+      path: absPath,
+    });
+    const normalized = await normalizeXlsxRelationshipsNamespaces(absPath);
+    const retryWorkbook = new ExcelJS.Workbook();
+    await retryWorkbook.xlsx.load(normalized as never);
+    return retryWorkbook;
+  }
+}
 
 export async function executeReadXlsx(
   args: Record<string, unknown>,
@@ -81,8 +107,7 @@ export async function executeReadXlsx(
     onProgress?.({ stage: 'running', detail: `📊 正在读取: ${path.basename(absPath)}` });
 
     // 读取工作簿
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(absPath);
+    const workbook = await loadWorkbook(absPath, ctx);
 
     // 选择工作表
     let worksheet: ExcelJS.Worksheet | undefined;

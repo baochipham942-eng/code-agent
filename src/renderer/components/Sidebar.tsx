@@ -500,7 +500,7 @@ export const Sidebar: React.FC = () => {
         saveExportToDownloads,
         reloadSessions: () => loadSessions({ silent: true }),
         switchSession,
-        locateImportedSession: async (sourceExportId, projectId) => {
+        findImportedSession: async (sourceExportId, projectId) => {
           await loadSessions({ silent: true });
           const importedRoot = useSessionStore.getState().sessions.find((candidate) => {
             const provenance = candidate.metadata?.portabilityImportV2;
@@ -511,12 +511,34 @@ export const Sidebar: React.FC = () => {
               && !Array.isArray(provenance)
               && (provenance as { sourceExportId?: unknown }).sourceExportId === sourceExportId;
           });
-          if (!importedRoot) return false;
-          await switchSession(importedRoot.id);
+          if (!importedRoot) return null;
+          const provenance = importedRoot.metadata?.portabilityImportV2;
+          const sourcePayloadDigest = provenance
+            && typeof provenance === 'object'
+            && !Array.isArray(provenance)
+            && typeof (provenance as { sourcePayloadDigest?: unknown }).sourcePayloadDigest === 'string'
+            ? (provenance as { sourcePayloadDigest: string }).sourcePayloadDigest
+            : undefined;
+          return { id: importedRoot.id, sourcePayloadDigest };
+        },
+        locateImportedSession: async (sourceExportId, projectId) => {
+          await loadSessions({ silent: true });
+          const importedId = useSessionStore.getState().sessions.find((candidate) => {
+            const provenance = candidate.metadata?.portabilityImportV2;
+            return candidate.projectId === projectId
+              && !candidate.parentSessionId
+              && provenance
+              && typeof provenance === 'object'
+              && !Array.isArray(provenance)
+              && (provenance as { sourceExportId?: unknown }).sourceExportId === sourceExportId;
+          })?.id;
+          if (!importedId) return false;
+          await switchSession(importedId);
           return true;
         },
         confirmImportSessionFork,
         showActionToast: (message, action) => toast.error(message, action),
+        showSuccessToast: (message) => toast.success(message),
         showToast,
         openRuntimeLogsFolder,
         t,

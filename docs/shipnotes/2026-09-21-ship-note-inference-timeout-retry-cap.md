@@ -77,3 +77,7 @@
 
 证据档位：static-contract（typecheck + eslint + gates:fast）+ hermetic-protocol
 （mock streamText/generateText 的挂起-超时-重试单测，fake timers）。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=3cdba3eef6879fe001a9faa856248f953666f2b4 base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=f07554b7-68b1-4c4f-be1e-a60c752e0f96

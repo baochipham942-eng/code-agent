@@ -12,6 +12,8 @@ describe('unified tool execution timeout policy', () => {
     expect(getToolExecutionTimeoutMs('bash')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('Bash')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('bash_script')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('AskUserQuestion')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('confirm_action')).toBeUndefined();
   });
 
   it('uses the search/retrieval tier for web search and document retrieval', () => {
@@ -21,7 +23,11 @@ describe('unified tool execution timeout policy', () => {
 
   it('uses the MCP tier and a bounded default for other tools', () => {
     expect(getToolExecutionTimeoutMs('mcp')).toBe(TOOL_EXECUTION_TIMEOUTS.MCP);
+    expect(getToolExecutionTimeoutMs('mcp__server__search')).toBe(TOOL_EXECUTION_TIMEOUTS.MCP);
+    expect(getToolExecutionTimeoutMs('mcp_server_search')).toBe(TOOL_EXECUTION_TIMEOUTS.MCP);
     expect(getToolExecutionTimeoutMs('image_generate')).toBe(TOOL_EXECUTION_TIMEOUTS.DEFAULT);
+    expect(getToolExecutionTimeoutMs('Task')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
+    expect(getToolExecutionTimeoutMs('AgentSpawn')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
   });
 
   it('turns an inactive execution into a model-visible failure', async () => {

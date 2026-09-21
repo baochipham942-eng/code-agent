@@ -73,3 +73,35 @@ describe('超时题全未判也要进报告', () => {
     expect(markdown).not.toContain('### plain-no-expectations');
   });
 });
+
+// N-JEV-EVAL-JUDGE：弃权率看「无法确定」列；Jev 初筛决断/升级率与刊例估算单独汇总一行。
+describe('AI 评审小节的 Jev 初筛汇总行', () => {
+  const verdict = (prescreen: 'jev_decided' | 'escalated', prescreenCostUsd?: number) => ({
+    verdict: 'yes' as const, reasoning: 'r', judgeModel: 'm', promptHash: 'h', prescreen, prescreenCostUsd,
+  });
+
+  it('有 prescreen 标记 ⇒ 打印决断/升级维次、升级率与按题去重的刊例估算', () => {
+    const decided = result('case-decided', {
+      aiReview: { task_completed: verdict('jev_decided', 0.00001) },
+    });
+    const escalated = result('case-escalated', {
+      aiReview: {
+        task_completed: verdict('escalated', 0.00002),
+        confirmed_before_acting: verdict('escalated', 0.00002),
+      },
+    });
+    const markdown = generateMarkdownReport(summary([decided, escalated]));
+    expect(markdown).toContain('Jev 初筛：决断 1 维次 / 升级生成式 2 维次（升级率 66.7%）');
+    // 同一题两维的同一份刊例只计一次：0.00001 + 0.00002 = 0.00003，不是 0.00005
+    expect(markdown).toContain('初筛刊例估算 ≈ $0.000030');
+  });
+
+  it('无 prescreen 标记 ⇒ 不打印汇总行（默认关零变化）', () => {
+    const plain = result('case-plain', {
+      aiReview: { task_completed: { verdict: 'yes' as const, reasoning: 'r', judgeModel: 'm', promptHash: 'h' } },
+    });
+    const markdown = generateMarkdownReport(summary([plain]));
+    expect(markdown).toContain('| 维度 | 是 | 否 | 无法确定 | 不可用 |');
+    expect(markdown).not.toContain('Jev 初筛：');
+  });
+});

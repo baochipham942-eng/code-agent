@@ -35,6 +35,9 @@ import type { AppSettings } from '../../shared/contract/settings';
 
 const logger = createLogger('ContextHealthIPC');
 
+/** 同一会话的手动压缩只允许一轮在飞。渲染层的闸盖不住第五条入口。 */
+const manualCompactInFlight = new Map<string, Promise<CompactResult>>();
+
 const DEFAULT_CONTEXT_COMPRESSION_CONFIG: ContextCompressionConfig = {
   enabled: true,
   warningThreshold: 0.75,
@@ -427,13 +430,31 @@ async function compactSession(
   deps: ContextHealthDependencies,
   options: { sessionId?: string; messageId?: string; focusText?: string },
 ): Promise<CompactResult> {
-  const contextHealthService = getContextHealthService();
   const appService = deps.getAppService();
   const sessionId = resolveManualCompactSessionId(appService, options.sessionId);
   if (!sessionId) {
     logger.warn('Compact requested but no active session');
     return emptyCompactResult();
   }
+  const existing = manualCompactInFlight.get(sessionId);
+  if (existing) return existing;
+
+  const run = compactSessionOnce(deps, options, sessionId);
+  manualCompactInFlight.set(sessionId, run);
+  try {
+    return await run;
+  } finally {
+    if (manualCompactInFlight.get(sessionId) === run) manualCompactInFlight.delete(sessionId);
+  }
+}
+
+async function compactSessionOnce(
+  deps: ContextHealthDependencies,
+  options: { sessionId?: string; messageId?: string; focusText?: string },
+  sessionId: string,
+): Promise<CompactResult> {
+  const contextHealthService = getContextHealthService();
+  const appService = deps.getAppService();
 
   const messages = await resolveMessagesForSession(appService, sessionId);
   if (!messages || messages.length === 0) {

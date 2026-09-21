@@ -550,6 +550,49 @@ describe('resolveContextHealthForSession', () => {
     expect(compactMocks.compactModelSummarizeWithMetadata.mock.calls[0][0]).toContain('优先保留 /compact 命令修复线索');
   });
 
+  it('dedupes concurrent manual compact of the same session to one summary call', async () => {
+    const sessionId = 'session-compact-inflight';
+    const messages: Message[] = Array.from({ length: 14 }, (_, index) => ({
+      id: `m${index + 1}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `历史消息 ${index + 1}\n${'这是一段需要被压缩的长上下文。'.repeat(260)}`,
+      timestamp: index + 1,
+    }));
+    const appService = makeAppService(sessionId, messages, DEFAULT_MODEL);
+    let releaseSummary: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseSummary = resolve;
+    });
+    compactMocks.compactModelSummarizeWithMetadata.mockImplementation(async () => {
+      await gate;
+      return {
+        summary: '压缩摘要',
+        metadata: { provider: 'moonshot', model: 'kimi-k2.5', useMainModel: false },
+      };
+    });
+
+    registerContextHealthHandlers({
+      getAppService: () => appService,
+      getTaskManager: () => ({
+        getOrchestrator: vi.fn(() => ({ setMessages: vi.fn() })),
+      }) as any,
+      getSystemPromptForSession: () => '',
+    });
+
+    const handler = compactMocks.handlers.get('context:compact-current');
+    expect(handler).toBeDefined();
+    const first = handler!({}, sessionId);
+    const second = handler!({}, sessionId);
+    await vi.waitFor(() => {
+      expect(compactMocks.compactModelSummarizeWithMetadata).toHaveBeenCalledTimes(1);
+    });
+    releaseSummary!();
+    const [left, right] = await Promise.all([first, second]) as CompactResult[];
+    expect(compactMocks.compactModelSummarizeWithMetadata).toHaveBeenCalledTimes(1);
+    expect(left.success).toBe(true);
+    expect(right).toEqual(left);
+  });
+
   it('exposes and persists context compression config through IPC', async () => {
     registerContextHealthHandlers({
       getAppService: () => null,

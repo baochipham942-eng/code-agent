@@ -1,4 +1,5 @@
 import { getToolAttemptTrace, shouldFreezeNonReadWhileAwaitingUser, buildAwaitingUserBlockedResult, AWAITING_USER_FREEZE_NOTICE } from './toolAttemptTrace';
+import { emitForceFinalSkippedToolResult } from './forceFinalSeal';
 import { mintUserTurnOrigin } from '../messageOrigin';
 import { attachDocumentOrigin, describeDocumentEvidenceProblems, documentClaimPreflight } from './documentEvidenceBoundary';
 // ============================================================================
@@ -392,18 +393,8 @@ export class ToolExecutionEngine {
     };
 
     if (this.shouldSkipToolBecauseForceFinalWasSetInBatch()) {
-      const toolResult: ToolResult = {
-        toolCallId: toolCall.id,
-        success: false,
-        error: `Tool skipped because final response is already forced: ${this.ctx.control.forceFinalResponseReason}`,
-        duration: 0,
-        metadata: {
-          skipped: true,
-          blocked: true,
-          forceFinalResponseReason: this.ctx.control.forceFinalResponseReason,
-        },
-      };
-      return emitBlockedToolResult(toolResult);
+      // 强制收尾已置位：只发 UI 事件收口，不派发、不写遥测（不计工具失败，issue #1991）
+      return emitForceFinalSkippedToolResult(this.ctx, toolCall, index);
     }
 
     // 记录式：提醒模型，但**不拦**这次写入，也不计入连续错误去触发强制收尾
@@ -702,18 +693,8 @@ export class ToolExecutionEngine {
     }
 
     if (this.shouldSkipToolBecauseForceFinalWasSetInBatch()) {
-      const toolResult: ToolResult = {
-        toolCallId: toolCall.id,
-        success: false,
-        error: `Tool skipped because final response is already forced: ${this.ctx.control.forceFinalResponseReason}`,
-        duration: Date.now() - startTime,
-        metadata: {
-          skipped: true,
-          blocked: true,
-          forceFinalResponseReason: this.ctx.control.forceFinalResponseReason,
-        },
-      };
-      return emitBlockedToolResult(toolResult);
+      // 强制收尾已置位：只发 UI 事件收口，不派发、不写遥测（不计工具失败，issue #1991）
+      return emitForceFinalSkippedToolResult(this.ctx, toolCall, index, Date.now() - startTime);
     }
 
     const readOnlyPreflight = getReadOnlyPreflightWarning(this.ctx, toolCall);

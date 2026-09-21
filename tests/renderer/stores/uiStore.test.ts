@@ -2,12 +2,7 @@
 // uiStore.test.ts - UI 状态管理 store 测试
 // ============================================================================
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-
-// Mock @shared/constants before importing the store
-vi.mock('../../../src/shared/constants/ui', () => ({
-  UI: { TOAST_DURATION: 5000 },
-}));
+import { describe, it, expect, beforeEach } from 'vitest';
 
 import { useUIStore } from '../../../src/renderer/stores/uiStore';
 
@@ -17,7 +12,6 @@ describe('uiStore', () => {
     useUIStore.setState({
       activeModals: new Set(),
       confirmOptions: null,
-      toasts: [],
       deepResearch: {
         mode: 'normal',
         reportStyle: 'default',
@@ -98,62 +92,6 @@ describe('uiStore', () => {
 
       expect(useUIStore.getState().confirmOptions).toBeNull();
       expect(useUIStore.getState().activeModals.has('confirm')).toBe(false);
-    });
-  });
-
-  // ============================================================================
-  // Toast management
-  // ============================================================================
-
-  describe('toast management', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it('should show a toast and return its id', () => {
-      const id = useUIStore.getState().showToast('success', 'Saved!');
-      expect(id).toBeTruthy();
-      expect(useUIStore.getState().toasts).toHaveLength(1);
-      expect(useUIStore.getState().toasts[0].message).toBe('Saved!');
-      expect(useUIStore.getState().toasts[0].type).toBe('success');
-    });
-
-    it('should support all toast types', () => {
-      for (const type of ['success', 'error', 'warning', 'info'] as const) {
-        useUIStore.getState().showToast(type, `msg-${type}`);
-      }
-      expect(useUIStore.getState().toasts).toHaveLength(4);
-    });
-
-    it('should hide a specific toast', () => {
-      const id = useUIStore.getState().showToast('info', 'msg', 0);
-      useUIStore.getState().hideToast(id);
-      expect(useUIStore.getState().toasts).toHaveLength(0);
-    });
-
-    it('should clear all toasts', () => {
-      useUIStore.getState().showToast('info', 'a', 0);
-      useUIStore.getState().showToast('info', 'b', 0);
-      useUIStore.getState().clearToasts();
-      expect(useUIStore.getState().toasts).toHaveLength(0);
-    });
-
-    it('should auto-dismiss toast after duration', () => {
-      useUIStore.getState().showToast('success', 'temp', 3000);
-      expect(useUIStore.getState().toasts).toHaveLength(1);
-
-      vi.advanceTimersByTime(3000);
-      expect(useUIStore.getState().toasts).toHaveLength(0);
-    });
-
-    it('should not auto-dismiss when duration is 0', () => {
-      useUIStore.getState().showToast('success', 'permanent', 0);
-      vi.advanceTimersByTime(10000);
-      expect(useUIStore.getState().toasts).toHaveLength(1);
     });
   });
 

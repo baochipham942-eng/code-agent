@@ -83,11 +83,19 @@ export const useToastStore = create<ToastStore>((set) => ({
 
 /** Convenience function for showing toasts (can be called from non-React code) */
 export const toast = {
-  success: (msg: string) => useToastStore.getState().addToast('success', msg),
+  success: (msg: string, duration?: number) => useToastStore.getState().addToast('success', msg, duration),
   // action 可选：信任门这类「原地可修」的失败给一个动作按钮，别让用户跑到别处去解决
   error: (msg: string, action?: ToastAction, duration = 6000) =>
     useToastStore.getState().addToast('error', msg, duration, action),
-  info: (msg: string) => useToastStore.getState().addToast('info', msg),
+  info: (msg: string, duration?: number) => useToastStore.getState().addToast('info', msg, duration),
   warning: (msg: string, action?: ToastAction, duration = 5000) =>
     useToastStore.getState().addToast('warning', msg, duration, action),
+  /** Typed entry used by the old uiStore.showToast call shape. Renders here, not in uiStore. */
+  show: (type: ToastType, message: string, duration = 5000): string => {
+    if (type === 'error') toast.error(message, undefined, duration);
+    else if (type === 'warning') toast.warning(message, undefined, duration);
+    else if (type === 'info') toast.info(message, duration);
+    else toast.success(message, duration);
+    return '';
+  },
 };

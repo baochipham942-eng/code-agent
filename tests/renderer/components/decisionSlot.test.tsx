@@ -118,7 +118,7 @@ import { DecisionSlot } from '../../../src/renderer/components/features/chat/Dec
 import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
 import { useRunControlStore } from '../../../src/renderer/stores/runControlStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
-import { useUIStore } from '../../../src/renderer/stores/uiStore';
+import { useToastStore } from '../../../src/renderer/hooks/useToast';
 
 describe('DecisionSlot', () => {
   beforeEach(() => {
@@ -130,13 +130,13 @@ describe('DecisionSlot', () => {
     window.localStorage.clear();
     useTaskStore.setState({ sessionStates: {} });
     useRunControlStore.getState().publishActions(null);
-    useUIStore.getState().clearToasts();
+    useToastStore.setState({ toasts: [] });
   });
 
   afterEach(() => {
     cleanup();
     useRunControlStore.getState().publishActions(null);
-    useUIStore.getState().clearToasts();
+    useToastStore.setState({ toasts: [] });
     for (const request of [normalRequest, secondNormalRequest, dangerousRequest, writebackRequest]) {
       releaseApprovalResponse(request.id);
     }
@@ -459,7 +459,7 @@ describe('DecisionSlot', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '放弃' }));
 
-    await waitFor(() => expect(useUIStore.getState().toasts.some(toast => toast.type === 'error')).toBe(true));
+    await waitFor(() => expect(useToastStore.getState().toasts.some(toast => toast.type === 'error')).toBe(true));
     expect(screen.getByTestId('stream-interruption-decision')).toBeTruthy();
     expect(window.localStorage.getItem('neo:interrupt:resolved:session-current:interrupted-turn-unsettled')).toBeNull();
   });
@@ -486,7 +486,7 @@ describe('DecisionSlot', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '放弃' }));
 
-    await waitFor(() => expect(useUIStore.getState().toasts.some(toast => toast.type === 'error')).toBe(true));
+    await waitFor(() => expect(useToastStore.getState().toasts.some(toast => toast.type === 'error')).toBe(true));
     expect(screen.getByTestId('stream-interruption-decision')).toBeTruthy();
   });
 

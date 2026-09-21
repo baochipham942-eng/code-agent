@@ -12,7 +12,7 @@ import {
 } from '@shared/contract/workbenchPreset';
 import { shortSessionIdForFileName } from '@shared/utils/id';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
-import type { ToastType } from '../../../stores/uiStore';
+import type { ToastType } from '../../../hooks/useToast';
 import type { ToastAction } from '../../../hooks/useToast';
 import type { Translations } from '../../../i18n';
 import { createLogger } from '../../../utils/logger';

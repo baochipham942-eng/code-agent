@@ -217,9 +217,14 @@ vi.mock('../../../src/renderer/stores/taskStore', () => ({
     selector ? selector({ sessionStates: {} }) : { sessionStates: {} },
 }));
 
-vi.mock('../../../src/renderer/stores/uiStore', () => ({
-  useUIStore: (selector?: (state: { showToast: typeof showToastMock }) => unknown) =>
-    selector ? selector({ showToast: showToastMock }) : { showToast: showToastMock },
+vi.mock('../../../src/renderer/hooks/useToast', () => ({
+  toast: {
+    show: (...args: unknown[]) => showToastMock(...args),
+    success: vi.fn(),
+    error: (message: string, action?: unknown) => showToastMock('error', message, action),
+    warning: vi.fn(),
+    info: vi.fn(),
+  },
 }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({

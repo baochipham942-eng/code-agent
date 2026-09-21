@@ -3,7 +3,6 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import { UI } from '@shared/constants';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -16,8 +15,6 @@ export type ModalType =
   | 'permission'
   | 'userQuestion'
   | 'forceUpdate';
-
-export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
 // 深度研究相关类型
 export type ResearchPhase = 'planning' | 'researching' | 'reporting' | 'complete' | 'error';
@@ -44,13 +41,6 @@ export interface DeepResearchState {
   progress: ResearchProgress;
 }
 
-export interface Toast {
-  id: string;
-  type: ToastType;
-  message: string;
-  duration?: number;
-}
-
 export interface ConfirmOptions {
   title: string;
   message: string;
@@ -70,9 +60,6 @@ interface UIState {
   activeModals: Set<ModalType>;
   confirmOptions: ConfirmOptions | null;
 
-  // Toast State
-  toasts: Toast[];
-
   // Deep Research State
   deepResearch: DeepResearchState;
 
@@ -87,11 +74,6 @@ interface UIState {
   showConfirm: (options: ConfirmOptions) => void;
   hideConfirm: () => void;
 
-  // Actions - Toast
-  showToast: (type: ToastType, message: string, duration?: number) => string;
-  hideToast: (id: string) => void;
-  clearToasts: () => void;
-
   // Actions - Deep Research
   setDeepResearchMode: (mode: 'normal' | 'deep-research') => void;
   setReportStyle: (style: ReportStyle) => void;
@@ -102,10 +84,6 @@ interface UIState {
 // -----------------------------------------------------------------------------
 // Helper Functions
 // -----------------------------------------------------------------------------
-
-function generateId(): string {
-  return `${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
-}
 
 // 深度研究初始状态
 const initialDeepResearchState: DeepResearchState = {
@@ -127,7 +105,6 @@ export const useUIStore = create<UIState>((set, get) => ({
   // Initial State
   activeModals: new Set(),
   confirmOptions: null,
-  toasts: [],
   deepResearch: initialDeepResearchState,
 
   // Modal Actions
@@ -175,35 +152,6 @@ export const useUIStore = create<UIState>((set, get) => ({
     get().closeModal('confirm');
   },
 
-  // Toast Actions
-  showToast: (type, message, duration = UI.TOAST_DURATION) => {
-    const id = generateId();
-    const toast: Toast = { id, type, message, duration };
-
-    set((state) => ({
-      toasts: [...state.toasts, toast],
-    }));
-
-    // Auto-dismiss after duration
-    if (duration > 0) {
-      setTimeout(() => {
-        get().hideToast(id);
-      }, duration);
-    }
-
-    return id;
-  },
-
-  hideToast: (id) => {
-    set((state) => ({
-      toasts: state.toasts.filter((t) => t.id !== id),
-    }));
-  },
-
-  clearToasts: () => {
-    set({ toasts: [] });
-  },
-
   // Deep Research Actions
   setDeepResearchMode: (mode) =>
     set((state) => ({
@@ -239,22 +187,6 @@ export const useUIStore = create<UIState>((set, get) => ({
 // -----------------------------------------------------------------------------
 // Convenience Hooks
 // -----------------------------------------------------------------------------
-
-/**
- * Hook to get toast functions
- */
-export function useToast() {
-  const showToast = useUIStore((state) => state.showToast);
-  const hideToast = useUIStore((state) => state.hideToast);
-
-  return {
-    success: (message: string, duration?: number) => showToast('success', message, duration),
-    error: (message: string, duration?: number) => showToast('error', message, duration),
-    warning: (message: string, duration?: number) => showToast('warning', message, duration),
-    info: (message: string, duration?: number) => showToast('info', message, duration),
-    hide: hideToast,
-  };
-}
 
 /**
  * Hook to manage a specific modal

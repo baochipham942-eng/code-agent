@@ -652,9 +652,11 @@ export class ConversationRuntime {
 
         // 2b. Handle actual text response
         if (response.type === 'text' && response.content) {
+          // 强制收尾文本轮：goal 续跑不得覆盖它的 break（否则回到带工具推理反复触发硬阈值，issue #1991）
+          const forcedFinalTextPass = Boolean(this.ctx.control.forceFinalResponseReason);
           const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);
           if (textAction === 'continue') continue;
-          if (this.ctx.goalMode?.isPending()) {
+          if (!forcedFinalTextPass && this.ctx.goalMode?.isPending()) {
             this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildContinuationPrompt(), 'goal-progress');
             continue;
           }

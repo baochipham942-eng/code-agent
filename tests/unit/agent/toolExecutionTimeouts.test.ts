@@ -34,6 +34,7 @@ describe('unified tool execution timeout policy', () => {
     expect(getToolExecutionTimeoutMs('image_generate')).toBe(TOOL_EXECUTION_TIMEOUTS.DEFAULT);
     expect(getToolExecutionTimeoutMs('Task')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('AgentSpawn')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
+    expect(getToolExecutionTimeoutMs('workflow')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
   });
 
   it('turns an inactive execution into a model-visible failure', async () => {

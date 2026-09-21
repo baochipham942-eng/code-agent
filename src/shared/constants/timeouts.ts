@@ -348,7 +348,7 @@ const TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES = [
   'web_search', 'web_fetch', 'search', 'retrieve', 'read_pdf', 'read_document',
   'academic_search', 'youtube_transcript', 'news_search', 'image_search', 'video_search',
 ] as const;
-const TOOL_EXECUTION_LONG_RUNNING_NAMES = ['video_generate', 'ppt_generate', 'task', 'spawn_agent'] as const;
+const TOOL_EXECUTION_LONG_RUNNING_NAMES = ['video_generate', 'ppt_generate', 'task', 'spawn_agent', 'workflow'] as const;
 
 /** Return the unified inactivity budget, or undefined for tools with their own timeout. */
 export function getToolExecutionTimeoutMs(toolName: string): number | undefined {

@@ -62,3 +62,7 @@ AssertionError: expected "vi.fn()" to be called with arguments: [ 'echo plain-ou
 - gates:fast：`✓ gates:fast passed required local preflight. schema=2 receipt=c05684b7-b7ae-4914-abf3-9453a0cd4dac`（HEAD/tree 绑定的最新回执以 ship pr 交付前重跑为准）
 
 证据档位：static-contract + hermetic-protocol + os-jail e2e（darwin seatbelt 真机）
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=805559ce90124ba6cdae8615cf36f406d263d80b base=a5ca056be0b1803312259441b9837698368ad8ea receipt=f227a95d-fa0e-4251-b2ff-d549eba99574

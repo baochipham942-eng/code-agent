@@ -37,7 +37,7 @@ export interface ProcessAssertionEvaluation {
 /** 本模块覆盖的断言类型（assertionEngine switch 的 dispatch 键）。 */
 export type ProcessAssertionType = 'max_tool_retries' | 'handoff_proposed' | 'handoff_not_proposed' | 'required_steps';
 
-/** assertionEngine 的 dispatch 口：四个 case 共用，保持引擎在 max-lines 债务门内。 */
+/** assertionEngine 的 dispatch 口：四个 case 共用（保持引擎在 max-lines 债务门内）。三个求值函数模块内私有——生产侧唯一入口是本函数，测试也走它（knip 生产档不认测试消费方）。 */
 export function evaluateProcessAssertion(
   type: ProcessAssertionType,
   params: Record<string, unknown>,
@@ -94,7 +94,7 @@ function retrySignature(record: ToolExecutionRecord): string {
   return `${record.tool}\n${JSON.stringify(sortValue(record.input ?? {}))}`;
 }
 
-export function evaluateMaxToolRetriesExpectation(
+function evaluateMaxToolRetriesExpectation(
   params: Record<string, unknown>,
   toolExecutions: ToolExecutionRecord[],
 ): ProcessAssertionEvaluation {
@@ -157,7 +157,7 @@ function proposalMatches(record: HandoffProposalRecord, match: RegExp | null): b
   return match.test(record.title) || match.test(record.prompt) || (record.reason !== undefined && match.test(record.reason));
 }
 
-export function evaluateHandoffExpectation(
+function evaluateHandoffExpectation(
   type: 'handoff_proposed' | 'handoff_not_proposed',
   params: Record<string, unknown>,
   handoffProposals: HandoffProposalRecord[] | undefined,
@@ -191,7 +191,7 @@ export function evaluateHandoffExpectation(
   };
 }
 
-export function evaluateRequiredStepsExpectation(
+function evaluateRequiredStepsExpectation(
   params: Record<string, unknown>,
   toolExecutions: ToolExecutionRecord[],
 ): ProcessAssertionEvaluation {

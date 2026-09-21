@@ -25,7 +25,6 @@ import {
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
 import { listReflowCandidates } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
 import {
-  getLastAutoHarvestScanDay,
   maybeRunPostLaunchAutoHarvest,
   type PostLaunchAutoHarvestDeps,
 } from '../../../src/host/testing/postlaunch/postLaunchAutoHarvest';
@@ -153,7 +152,6 @@ describe('maybeRunPostLaunchAutoHarvest（开关闸 + 节流 + 撞锁）', () =>
     const runScan = vi.fn(harvestDeps(database).runScan);
     expect(await maybeRunPostLaunchAutoHarvest(harvestDeps(database, { runScan }))).toBe('scanned');
     expect(runScan).toHaveBeenCalledOnce();
-    expect(getLastAutoHarvestScanDay(database)).not.toBeNull();
     expect(await maybeRunPostLaunchAutoHarvest(harvestDeps(database, { runScan }))).toBe('already-scanned');
     expect(runScan).toHaveBeenCalledOnce();
   });
@@ -176,7 +174,8 @@ describe('maybeRunPostLaunchAutoHarvest（开关闸 + 节流 + 撞锁）', () =>
       }),
     }));
     expect(outcome).toBe('locked');
-    expect(getLastAutoHarvestScanDay(database)).toBeNull();
+    // 撞锁不记扫描日的行为级证明：换个能跑通的 runScan，同日立刻能补扫成功
+    expect(await maybeRunPostLaunchAutoHarvest(harvestDeps(database))).toBe('scanned');
   });
 
   it('扫描抛错 ⇒ failed 且 warn 留痕，不扩散成宿主故障', async () => {

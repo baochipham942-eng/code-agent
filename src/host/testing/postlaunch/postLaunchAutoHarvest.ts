@@ -41,8 +41,8 @@ function ensureAutoHarvestTable(db: BetterSqlite3.Database): void {
   `);
 }
 
-/** 本日是否已扫过（按本地日节流：启动检查 + 24h 滚动都可能同日重复触发）。 */
-export function getLastAutoHarvestScanDay(db: BetterSqlite3.Database): string | null {
+/** 本日是否已扫过（按本地日节流：启动检查 + 24h 滚动都可能同日重复触发）。模块内私有——外部只看 maybeRun 的 outcome。 */
+function getLastAutoHarvestScanDay(db: BetterSqlite3.Database): string | null {
   ensureAutoHarvestTable(db);
   const row = db.prepare(`SELECT last_scan_day FROM postlaunch_autoharvest_state WHERE id = 1`).get() as
     | { last_scan_day: string }

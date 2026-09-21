@@ -60,7 +60,3 @@ AskUserQuestion 永远无人应答。模型白问一轮后工具返回带 `await
   复跑留给出夜班跑批自然验证（原本 15 次/12 会话的拦截应归零），风险可接受。
 
 证据档位：static-contract + hermetic-protocol + fault-injection
-
-
-## ship 回执
-✓ gates:fast passed required local preflight. schema=2 head=20c2aeb87e9fc5269cef6d57f0eb57254349743f base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=3d96e18e-5bd0-448f-ad04-09abc0b195bd

@@ -17,7 +17,10 @@ export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boole
 }
 
 export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
-  const askDenied = ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
+  // unattendedTurn 时 AskUserQuestion 已被 filterToolsByRunPolicy 收出工具面
+  // （issue #1994），重试指引不许再把模型引回这个不可用工具。
+  const askDenied = ctx.unattendedTurn === true
+    || ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
   return askDenied
     ? 'Continue without those tools. If you need user input, state the blocker in your final text instead of calling an interactive tool.'
     : 'Continue without those tools. AskUserQuestion remains available; call it directly when the current task requires user input.';
@@ -27,9 +30,17 @@ export function filterToolsByRunPolicy(
   tools: ToolDefinition[],
   ctx: RuntimeContext,
 ): ToolDefinition[] {
+  // issue #1994：无人值守轮（headless 跑批 / 管道 / cron 等）没有人应答
+  // AskUserQuestion——留在工具面只会让模型白问一轮并触发问句未答冻结，整轮作废。
+  // 信号复用现有 unattendedTurn（originKind==='headless' / 会话级无人值守标记），
+  // 不新造平行判定；有人值守轮原样保留，交互行为不变。
+  const askUnattended = ctx.unattendedTurn === true;
   const hasPolicy = (ctx.deniedToolNames?.length ?? 0) > 0 || (ctx.allowedToolNames?.length ?? 0) > 0;
-  if (!hasPolicy) return tools;
-  return tools.filter((tool) => !isToolDeniedByRunPolicy(ctx, tool.name));
+  if (!hasPolicy && !askUnattended) return tools;
+  return tools.filter((tool) => {
+    if (askUnattended && ASK_USER_QUESTION_TOOL_NAMES.some((name) => name === tool.name)) return false;
+    return !isToolDeniedByRunPolicy(ctx, tool.name);
+  });
 }
 
 /**

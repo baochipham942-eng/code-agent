@@ -72,6 +72,7 @@ import {
 } from './inferenceToolStrategy';
 import {
   buildArtifactValidationAttemptCompletionResponse,
+  buildCompactArtifactRepairWriteRetryOptions,
   capArtifactRepairMaxTokens,
   capOutputTokens,
   dedupeToolDefinitions,
@@ -85,7 +86,7 @@ import {
 } from './inferenceArtifactRepair';
 import { withNativeModelOperation } from './nativeModelCheckpoint';
 import { runInferenceWithTelemetry } from './inferenceTelemetry';
-import { completeRequestManifest, recordRequestManifest, withActualModelIdentity } from './requestManifest';
+import { completeRequestManifest, recordRequestManifest, recordInferenceRetryTrace, withActualModelIdentity } from './requestManifest';
 import type { TraceEventDataMap } from '../turnTrace';
 import {
   applyCommandCenterPreannounce,
@@ -889,6 +890,9 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           turnId: ctx.runtime.turn.currentTurnId,
           workingDir: ctx.runtime.workingDirectory,
         }),
+        // issue #1989：超时/瞬态重试与断流续接进会话 trace——provider 挂起时
+        // trace 不再止于 request_manifest，能看到第几次超时、退避多久、是否续接。
+        onInferenceRetry: recordInferenceRetryTrace(ctx, llmCallId),
         artifactRepairActive: Boolean(ctx.runtime.artifact.repairGuard),
         artifactRepairWritePriority,
         artifactRepairFullRewritePriority,
@@ -1139,16 +1143,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           compactConfig,
           undefined,
           compactAbortController.signal,
-          {
-            artifactRepairActive: true,
-            artifactRepairWritePriority: true,
-            artifactRepairFullRewritePriority,
-            forceNonStreaming: true,
-            disableProviderTransientRetry: true,
-            requestTimeoutMs: 90_000,
-            firstByteTimeoutMs: 20_000,
-            inactivityTimeoutMs: 45_000,
-          },
+          buildCompactArtifactRepairWriteRetryOptions(artifactRepairFullRewritePriority),
         );
         ctx.runtime.control.setInferenceAbortController(null);
         ctx.inferenceRecovery._artifactRepairCompactWriteRetried = false;

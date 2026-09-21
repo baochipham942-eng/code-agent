@@ -6,6 +6,7 @@ import {
   canonicalizeModelMessage,
   type RequestManifestBuildInput,
 } from '../../../src/host/agent/runtime/contextAssembly/requestManifestBuilder';
+import { recordInferenceRetryTrace } from '../../../src/host/agent/runtime/contextAssembly/requestManifest';
 
 function transcriptMessage(id: string, role: 'user' | 'assistant', content: string): Message {
   return { id, role, content, timestamp: 1 } as Message;
@@ -217,5 +218,36 @@ describe('buildRequestManifest', () => {
       { kind: 'ledger_message', messageId: 'tool-1' },
       { kind: 'ledger_message', messageId: 'tool-1' },
     ]);
+  });
+});
+
+// issue #1989：推理重试进会话 trace 的接线——反向变异红线见
+// docs/shipnotes/2026-09-21-ship-note-inference-timeout-retry-cap.md（删掉
+// recordInferenceRetryTrace 的 record 调用，本测试必红）。
+describe('recordInferenceRetryTrace', () => {
+  it('把重试事件以 inference_retry 记入 turn trace 并关联 requestId', () => {
+    const record = vi.fn();
+    const ctx = { runtime: { turnTrace: { record } } } as unknown as Parameters<typeof recordInferenceRetryTrace>[0];
+
+    const onRetry = recordInferenceRetryTrace(ctx, 'llm-req-7');
+    onRetry({ provider: 'longcat', model: 'LongCat-2.0', attempt: 1, maxRetries: 2, delayMs: 1000, kind: 'timeout', error: 'timeout of 300000ms exceeded' });
+
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith('inference_retry', {
+      requestId: 'llm-req-7',
+      provider: 'longcat',
+      model: 'LongCat-2.0',
+      attempt: 1,
+      maxRetries: 2,
+      delayMs: 1000,
+      kind: 'timeout',
+      error: 'timeout of 300000ms exceeded',
+    });
+  });
+
+  it('turnTrace 缺失时静默跳过（CLI/测试环境无 trace）', () => {
+    const ctx = { runtime: {} } as unknown as Parameters<typeof recordInferenceRetryTrace>[0];
+    const onRetry = recordInferenceRetryTrace(ctx, 'llm-req-8');
+    expect(() => onRetry({ provider: 'p', attempt: 1, maxRetries: 2, delayMs: 1, kind: 'transient', error: 'x' })).not.toThrow();
   });
 });

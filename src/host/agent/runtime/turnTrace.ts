@@ -37,6 +37,7 @@ export type TraceEventType =
   | 'goal_evidence_gate'
   | 'deliverables_declaration'
   | 'request_manifest'
+  | 'inference_retry'
   | 'turn_outcome'
   | 'compensation_registered'
   | 'capability_lifecycle';
@@ -180,6 +181,23 @@ export interface TraceEventDataMap {
       replacementContentHash: string;
     }>;
     degraded: boolean;
+  };
+  /**
+   * 推理层重试/断流续接（issue #1989）：request_manifest 发出后若 provider 挂起，
+   * 客户端超时 + 重试此前只落 stderr 日志，trace 止于 request_manifest 无从分辨
+   * 「还在等」与「第几次超时重试」。kind：timeout=客户端超时驱动；transient=普通
+   * 瞬态错误；reconnect=首字节后断流续接（ADR-068）。
+   */
+  inference_retry: {
+    /** 关联 request_manifest 的 requestId。 */
+    requestId: string;
+    provider: string;
+    model?: string;
+    attempt: number;
+    maxRetries: number;
+    delayMs: number;
+    kind: 'timeout' | 'transient' | 'reconnect';
+    error: string;
   };
   turn_outcome: {
     terminal: import('./runTerminalStatus').RunTerminalStatus;

@@ -44,7 +44,7 @@ export interface ForceFinalSealDeps {
   contextAssembly: ContextAssembly;
 }
 
-export function buildForceFinalSkippedToolResult(
+function buildForceFinalSkippedToolResult(
   ctx: RuntimeContext,
   toolCall: ToolCall,
   duration = 0,

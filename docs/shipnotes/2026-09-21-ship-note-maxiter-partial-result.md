@@ -61,3 +61,7 @@ AssertionError: expected undefined to be 'max_iterations' // Object.is equality
 1. **`loop_decision.contextRatio` 是累计值，不是单请求压力**：`conversationRuntime.ts` 构造 `LoopState` 时 `tokenUsage.input = ctx.stats.totalInputTokens`，而 `runStatsState.addTokenUsage` 每次推理 `+=` 累计整个 run；除以单次上下文窗口得出 5.85。50 轮 × 平均 ~23k input / 138k 窗口 ≈ 5.85 完全正常——该 trace 字段口径误导，单凭它不能断言「压缩没跟上」，建议在压缩 issue 里改口径（用当轮 `response.usage.inputTokens`）。
 2. **loop 决策引擎的 `compact` 决策是 advisory，从不驱动真压缩**：`decideNextAction` 的 `execution: 'advisory'` 只落 trace（`loop_decision` 记录后无任何执行分支）；真压缩只有两条路径——`messageProcessor.handleToolResponse` 末尾的 `checkAndAutoCompress()`（每轮工具调用后）与 `inference.ts` 的 provider-confirmed overflow 补偿。所以「决策说 compact 但上下文没压回去」首先应查压缩审计事件（`context_compressed` / `emitContextCompressionSignal` 的 skip/lossless-budget-skip），而不是 loop_decision。
 3. **压缩检查只挂在工具轮**：`checkAndAutoCompress` 仅在 `handleToolResponse` 末尾调用；纯文本轮（含 forced-final 收尾轮）不做压力评估。撞顶会话若末段是长文本往返，压力窗口会比工具轮稀疏——是否需要在文本轮也评估，留给压缩 issue 裁决。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=4ce72953a5e14ab9928e934d10db913ee6d28c30 base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=7689b704-1c08-46ca-ac3a-ffc4aa6fdc29

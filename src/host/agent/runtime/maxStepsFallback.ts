@@ -58,7 +58,7 @@ export function activateMaxStepsFinalResponse(ctx: RuntimeContext, limitReason?:
  * 与 forced-final 同一条收尾通道——模型有最后一轮的优先权，模型交白卷时运行时兜底，
  * 不允许出现零收尾断流的 run（issue #1999：exit 1 + 空回复 + 无产物）。
  */
-export function buildMaxStepsPartialResultContent(ctx: RuntimeContext, maxIterations: number): string {
+function buildMaxStepsPartialResultContent(ctx: RuntimeContext, maxIterations: number): string {
   const modifiedFiles = Array.from(ctx.nudgeManager?.getModifiedFiles?.() ?? []);
   const lastAssistantText = [...ctx.messages]
     .reverse()

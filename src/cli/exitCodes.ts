@@ -12,9 +12,9 @@
 
 import type { CLIRunResult } from './types';
 
-export const CLI_EXIT_SUCCESS = 0;
-export const CLI_EXIT_FAILURE = 1;
-export const CLI_EXIT_PARTIAL_MAX_ITERATIONS = 2;
+const CLI_EXIT_SUCCESS = 0;
+const CLI_EXIT_FAILURE = 1;
+const CLI_EXIT_PARTIAL_MAX_ITERATIONS = 2;
 
 /** `neo run` 单次执行的退出码：部分完成（max iterations）与异常失败可区分。 */
 export function resolveRunExitCode(result: CLIRunResult): number {

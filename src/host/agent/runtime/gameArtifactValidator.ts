@@ -1,3 +1,4 @@
+import { parseExpressionAt } from 'acorn';
 import { createHash } from 'crypto';
 import { readFile } from 'fs/promises';
 import path from 'path';
@@ -151,7 +152,8 @@ interface ArtifactSourceViews {
  *   10-11 INTERACTIVE_TEST_RESET / STEP
  *   12   INTERACTIVE_TEST_SMOKE
  *   13-14 breakout `= {` 赋值闸（META 与 TEST 各一）
- *   15-16 extract META/TEST 对象字面量
+ *   15-16 extract META/TEST 对象字面量（在 code 上定位赋值；REAL-PARSE 起
+ *           用 acorn 在等长对齐的 original 上解析出右值边界）
  *
  * 注释伪造会假绿、但 token 合法地活在字符串/属性里 → comments：
  *   17-19 GAME_SIGNAL_MARKUP id="game-meta" / domain:'game' / JSON domain
@@ -429,70 +431,49 @@ function extractFunctionSnippet(content: string, functionName: string): string {
   return '';
 }
 
-function findBalancedObjectAssignmentSnippet(content: string, assignmentPattern: RegExp): ContractSnippet | null {
-  const match = assignmentPattern.exec(content);
+/**
+ * N-GAMEVALIDATOR-REAL-PARSE：提取从括号平衡换成真解析。
+ *
+ * 定位仍走 code 视图正则（`window.__GAME_TEST__ = {` 在注释/字符串里的假货在
+ * STRIP-COMMENTS 那层就剥掉了，这里不接）；找到赋值后改用 acorn
+ * `parseExpressionAt` 在 original 视图上解析对象字面量——正则里的 `{}`、字符串
+ * 内括号、模板串都不再让提取失衡。只解析不执行（acorn 纯 parser，无 codegen）。
+ * 解析失败或右值不是对象字面量才返回 null（→ malformed_test_contract）。
+ */
+function findBalancedObjectAssignmentSnippet(views: ArtifactSourceViews, assignmentPattern: RegExp): ContractSnippet | null {
+  const match = assignmentPattern.exec(views.code);
   if (!match) return null;
   const start = match.index;
-  const openBrace = findOpeningBrace(content, start);
-  if (openBrace < 0) return null;
+  // 赋值正则本身以 `\{` 收尾，match 末字符就是对象开括号；code/original 视图
+  // 等长对齐（maskArtifactSource 长度保持），original 同偏移处也是这个 `{`。
+  const openBrace = start + match[0].length - 1;
 
-  let depth = 0;
-  let quote: string | null = null;
-  let escaped = false;
-  for (let index = openBrace; index < content.length; index += 1) {
-    const char = content[index];
-    if (quote) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (char === '\\') {
-        escaped = true;
-        continue;
-      }
-      if (char === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (char === '"' || char === "'" || char === '`') {
-      quote = char;
-      continue;
-    }
-    if (char === '{') {
-      depth += 1;
-      continue;
-    }
-    if (char === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        let end = index + 1;
-        while (/\s/.test(content[end] || '')) end += 1;
-        if (content[end] === ';') end += 1;
-        return {
-          text: content.slice(start, end),
-          start,
-          end,
-        };
-      }
-    }
+  let end: number;
+  try {
+    const parsed = parseExpressionAt(views.original, openBrace, { ecmaVersion: 'latest' });
+    if (parsed.type !== 'ObjectExpression') return null;
+    end = parsed.end;
+  } catch {
+    return null;
   }
 
-  return null;
+  while (/\s/.test(views.original[end] || '')) end += 1;
+  if (views.original[end] === ';') end += 1;
+  return {
+    text: views.original.slice(start, end),
+    start,
+    end,
+  };
 }
 
 function extractInteractiveContractSnippet(views: ArtifactSourceViews): ContractSnippet | null {
-  const found = findBalancedObjectAssignmentSnippet(views.code, /window\.__INTERACTIVE_TEST__\s*=\s*\{/i)
-    || findBalancedObjectAssignmentSnippet(views.code, /window\.__GAME_TEST__\s*=\s*\{/i);
-  if (!found) return null;
-  return { start: found.start, end: found.end, text: views.original.slice(found.start, found.end) };
+  return findBalancedObjectAssignmentSnippet(views, /window\.__INTERACTIVE_TEST__\s*=\s*\{/i)
+    || findBalancedObjectAssignmentSnippet(views, /window\.__GAME_TEST__\s*=\s*\{/i);
 }
 
 function extractGameMetadataSnippet(views: ArtifactSourceViews): ContractSnippet | null {
-  const found = findBalancedObjectAssignmentSnippet(views.code, /window\.__GAME_META__\s*=\s*\{/i)
-    || findBalancedObjectAssignmentSnippet(views.code, /window\.__INTERACTIVE_META__\s*=\s*\{/i);
-  if (!found) return null;
-  return { start: found.start, end: found.end, text: views.original.slice(found.start, found.end) };
+  return findBalancedObjectAssignmentSnippet(views, /window\.__GAME_META__\s*=\s*\{/i)
+    || findBalancedObjectAssignmentSnippet(views, /window\.__INTERACTIVE_META__\s*=\s*\{/i);
 }
 
 function hasOrphanedContractTail(content: string, contractSnippet: ContractSnippet | null): boolean {

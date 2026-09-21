@@ -54,6 +54,7 @@ import {
   reconcileMessageProjectionOrderWithLedger,
 } from './sessionRepositoryMessageLedger';
 import { runTransactionWithFtsRepair, runWithFtsWriteRepair } from '../database/ftsRepair';
+import { runWithSqliteBusyRetry } from '../database/sqliteBusyRetry';
 
 export type { StoredSession, StoredMessage };
 export type {
@@ -626,7 +627,9 @@ export class SessionRepository {
       }
     };
     const useLedger = Boolean(this.conversationBranchRepo && !options?.skipConversationLedger);
-    runWithFtsWriteRepair(this.db, useLedger ? () => this.db.transaction(write)() : write);
+    // WAL 多进程下先读后写的事务必须 BEGIN IMMEDIATE（.immediate()），否则升级出 SQLITE_BUSY_SNAPSHOT
+    // 直接抛 database is locked（issue #1992）；外层 busy 重试兜底 busy_timeout 到期的普通写锁等待。
+    runWithSqliteBusyRetry(() => runWithFtsWriteRepair(this.db, useLedger ? () => this.db.transaction(write).immediate() : write));
   }
 
   replaceMessages(sessionId: string, messages: Message[], updatedAt: number = Date.now()): void {
@@ -692,7 +695,7 @@ export class SessionRepository {
         });
       }
     };
-    runTransactionWithFtsRepair(this.db, this.db.transaction(replaceBody));
+    runWithSqliteBusyRetry(() => runTransactionWithFtsRepair(this.db, () => this.db.transaction(replaceBody).immediate()));
   }
 
   reconcileMessageProjectionOrder(sessionId: string, reason: string, createdAt = Date.now()): void {
@@ -823,9 +826,9 @@ export class SessionRepository {
       }
     };
     if (this.conversationBranchRepo && recordsRevision) {
-      runTransactionWithFtsRepair(this.db, this.db.transaction(write));
+      runWithSqliteBusyRetry(() => runTransactionWithFtsRepair(this.db, () => this.db.transaction(write).immediate()));
     } else {
-      runWithFtsWriteRepair(this.db, write);
+      runWithSqliteBusyRetry(() => runWithFtsWriteRepair(this.db, write));
     }
   }
 

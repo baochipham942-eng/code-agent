@@ -1607,8 +1607,9 @@ describe('ConversationRuntime', () => {
 
       await runtime.run('long task');
 
-      const synthesized = modules.contextAssembly.addAndPersistMessage.mock.calls
-        .map((call: unknown[]) => call[0] as { role?: string; content?: string })
+      const persistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = persistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
         .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
       expect(synthesized).toBeTruthy();
       expect(synthesized!.content).toContain('已完成的部分');
@@ -1648,8 +1649,9 @@ describe('ConversationRuntime', () => {
 
       await runtime.run('long task');
 
-      const synthesized = modules.contextAssembly.addAndPersistMessage.mock.calls
-        .map((call: unknown[]) => call[0] as { role?: string; content?: string })
+      const deliveredPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = deliveredPersistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
         .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
       expect(synthesized).toBeUndefined();
     });

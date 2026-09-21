@@ -21,3 +21,7 @@ AssertionError: expected "checkAndAutoCompress" to be called 1 times, but got 0
 两处均已还原，targeted tests 全绿。
 
 证据档位：static-contract + hermetic-protocol + fault-injection（反向变异记录如上；未做 real-runtime）。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=f8b0bb63cbbb45e6792d18d8e09afa772fb92afd base=0972777573170f8751845ffd325a697ded172a1f receipt=1361388e-ca11-4498-ba37-a067895dd0d9

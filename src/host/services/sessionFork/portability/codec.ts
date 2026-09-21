@@ -86,8 +86,8 @@ function sanitizePortableValue(value: unknown): unknown {
   );
 }
 
-/** Exact tool-target keys that stay, and only on file tools. Not a substring exception. */
-const TOOL_ARGUMENT_PATH_KEYS = new Set(['path', 'filepath', 'notebookpath']);
+/** Schema spellings only. File_Path / File.Path normalize like the runtime key filePath. */
+const EXACT_TOOL_PATH_KEYS = new Set(['path', 'file_path', 'notebook_path']);
 const PATH_ARGUMENT_TOOLS = new Set([
   'read', 'readfile', 'edit', 'write', 'grep', 'glob', 'notebookedit',
 ]);
@@ -97,8 +97,12 @@ function keepsPathArguments(toolName: string | undefined): boolean {
   return PATH_ARGUMENT_TOOLS.has(toolName.replace(/[^A-Za-z0-9]/g, '').toLowerCase());
 }
 
-function isToolArgumentPathKey(key: string): boolean {
-  return TOOL_ARGUMENT_PATH_KEYS.has(normalizeKey(key));
+function isNormalizedRuntimeIdentityKey(key: string): boolean {
+  const normalized = normalizeKey(key);
+  for (const candidate of FORBIDDEN_RUNTIME_KEYS) {
+    if (normalized === normalizeKey(candidate)) return true;
+  }
+  return false;
 }
 
 /** toolCalls[].arguments keep every non-secret key. Credential-shaped keys are
@@ -113,11 +117,13 @@ function sanitizeToolArguments(value: unknown, toolName?: string): unknown {
     if (item === undefined) continue;
     // Exact runtime-identity keys (apiKey, filePath, cwd, …) still cannot appear:
     // assertNoRuntimeIdentity rejects the key even when the value is redacted.
-    // Snake-case tool targets (file_path, notebook_path, path) are not in that set.
     if (FORBIDDEN_RUNTIME_KEYS.has(key)) continue;
+    // File_Path / File.Path normalize to the same key as filePath, so they are
+    // runtime identity too. Only the schema spellings stay, and only on file tools.
+    if (isNormalizedRuntimeIdentityKey(key) && !EXACT_TOOL_PATH_KEYS.has(key)) continue;
     // Credential-shaped keys are masked before recursion, including objects and numbers.
-    // Path allowlist is exact (file_path / notebook_path / path), so api_key_path does not slip through.
-    if (isForbiddenPortableKey(key) && !(keepsPathArguments(toolName) && isToolArgumentPathKey(key))) {
+    // api_key_path is not one of the schema path spellings, so it stays masked.
+    if (isForbiddenPortableKey(key) && !(keepsPathArguments(toolName) && EXACT_TOOL_PATH_KEYS.has(key))) {
       result[key] = '[REDACTED]';
       continue;
     }

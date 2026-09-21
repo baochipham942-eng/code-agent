@@ -701,4 +701,26 @@ describe('session fork portability codecs', () => {
     expect(encoded).not.toContain('/Users/private/.ssh/id_ed25519');
     expect(encoded).not.toContain('.ssh');
   });
+
+  it('drops runtime-shaped path keys instead of exporting them from a file tool', () => {
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    childEntry.messages.push(message('shaped-path-msg', 'assistant', 'ran', 7, {
+      toolCalls: [{
+        id: 'toolu_shaped',
+        name: 'Read',
+        arguments: {
+          File_Path: '/Users/private/.ssh/id_ed25519',
+          'File.Path': '/tmp/neo-fork/also-secret',
+          file_path: '/tmp/neo-fork/readme.md',
+        },
+      }],
+    } as unknown as Partial<Message>));
+
+    const encoded = encodeSessionExportEnvelopeV2(buildSessionExportEnvelopeV2(draft));
+    expect(encoded).not.toContain('/Users/private/.ssh/id_ed25519');
+    expect(encoded).not.toContain('/tmp/neo-fork/also-secret');
+    expect(encoded).not.toContain('File_Path');
+    expect(encoded).toContain('/tmp/neo-fork/readme.md');
+  });
 });

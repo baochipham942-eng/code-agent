@@ -20,11 +20,17 @@ function isDimJudgeJevPrescreenEnabled(env: NodeJS.ProcessEnv = process.env): bo
 const DIMJUDGE_PRESCREEN_MISSING_KEY_WARN
   = 'CODE_AGENT_DIMJUDGE_JEV_PRESCREEN 已开启但 TYPESAFE_API_KEY 缺失，Jev 初筛不生效（走生成式判官）';
 
+/** 缺 key 的 warn 每进程只打一次——逐 case 打会把长评测刷屏（ai-review #2017 Nit）。 */
+let missingKeyWarned = false;
+
 function resolveDimensionPrescreen(): DimensionJudgePrescreen | undefined {
   if (!isDimJudgeJevPrescreenEnabled()) return undefined;
   const apiKey = resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL });
   if (!apiKey) {
-    console.warn(DIMJUDGE_PRESCREEN_MISSING_KEY_WARN);
+    if (!missingKeyWarned) {
+      missingKeyWarned = true;
+      console.warn(DIMJUDGE_PRESCREEN_MISSING_KEY_WARN);
+    }
     return undefined;
   }
   return (state, questions) => systemOne(state, questions);

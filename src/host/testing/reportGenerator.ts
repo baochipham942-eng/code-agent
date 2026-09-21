@@ -925,9 +925,16 @@ function generateAiReviewSection(results: TestResult[]): string {
   if (marked.length > 0) {
     const decided = marked.filter((verdict) => verdict?.prescreen === 'jev_decided').length;
     const escalated = marked.length - decided;
+    // prescreenCostUsd 同题各维是同一次调用的同一份值，按题去重后求和（刊例估算）。
+    const prescreenCostUsd = results.reduce((sum, result) => {
+      const own = AI_REVIEW_DIMENSIONS
+        .map((dimension) => result.aiReview?.[dimension]?.prescreenCostUsd)
+        .find((value) => value !== undefined);
+      return sum + (own ?? 0);
+    }, 0);
     lines.push(
       '',
-      `Jev 初筛：决断 ${decided} 维次 / 升级生成式 ${escalated} 维次（升级率 ${((escalated / marked.length) * 100).toFixed(1)}%）`,
+      `Jev 初筛：决断 ${decided} 维次 / 升级生成式 ${escalated} 维次（升级率 ${((escalated / marked.length) * 100).toFixed(1)}%）；初筛刊例估算 ≈ $${prescreenCostUsd.toFixed(6)}`,
     );
   }
   return lines.join('\n');

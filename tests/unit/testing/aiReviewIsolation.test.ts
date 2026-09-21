@@ -125,14 +125,17 @@ describe('AI 评审 Jev 初筛开关', () => {
     expect(target.aiReview?.task_completed?.prescreen).toBeUndefined();
   });
 
-  it('开关 on 但无 TYPESAFE_API_KEY ⇒ warn 一行并回落生成式', async () => {
+  it('开关 on 但无 TYPESAFE_API_KEY ⇒ warn 一行并回落生成式；同进程第二题不再重复 warn', async () => {
     vi.stubEnv('CODE_AGENT_DIMJUDGE_JEV_PRESCREEN', '1');
     vi.stubEnv('TYPESAFE_API_KEY', '');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const target = unreviewed();
-    quickTask.mockResolvedValueOnce({ success: true, content: '证据充分\n是', provider: 'p', model: 'm' });
+    const first = unreviewed();
+    const second = unreviewed();
+    quickTask.mockResolvedValue({ success: true, content: '证据充分\n是', provider: 'p', model: 'm' });
     try {
-      await attachAiReview(config, testCase, target, false);
+      await attachAiReview(config, testCase, first, false);
+      await attachAiReview(config, testCase, second, false);
+      expect(warn).toHaveBeenCalledTimes(1);
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('TYPESAFE_API_KEY'));
     } finally {
       warn.mockRestore();
@@ -140,8 +143,9 @@ describe('AI 评审 Jev 初筛开关', () => {
     }
 
     expect(systemOne).not.toHaveBeenCalled();
-    expect(quickTask).toHaveBeenCalledTimes(1);
-    expect(target.aiReview?.task_completed?.prescreen).toBeUndefined();
+    expect(quickTask).toHaveBeenCalledTimes(2);
+    expect(first.aiReview?.task_completed?.prescreen).toBeUndefined();
+    expect(second.aiReview?.task_completed?.prescreen).toBeUndefined();
   });
 
   it('开关 on 且 key 在 ⇒ 装配 systemOne，初筛决断则不调生成式', async () => {

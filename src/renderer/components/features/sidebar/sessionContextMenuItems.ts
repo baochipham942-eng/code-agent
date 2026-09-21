@@ -62,7 +62,7 @@ function errorWithCode(message: string, code?: string): ErrorWithCode {
   return error;
 }
 
-export function isSessionForkEnvelopeShape(value: unknown): value is SessionExportEnvelopeV2 {
+function isSessionForkEnvelopeShape(value: unknown): value is SessionExportEnvelopeV2 {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return false;
   }

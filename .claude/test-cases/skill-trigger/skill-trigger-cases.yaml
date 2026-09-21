@@ -1,0 +1,82 @@
+# N-SKILL-TRIGGER-EVAL：skill 触发评测——负样本（不该触发）+ 隐式触发（题面不点名但该触发）
+#
+# 判定标准按 ADR-038 在私档答案侧（eval/answers/ 下同路径文件），公开仓只放题面。
+# 判据 = skill_activated 事件（Skill 工具真实执行成功才 emit）。装进上下文不算触发，
+# 调了 Skill 工具但名不存在/被禁用也不算触发（那种调用失败、不 emit）。
+#
+# 怎么跑（这些题**不进** smoke / held-in 日常跑分）：
+#   loader 不递归子目录（testCaseLoader.loadAllTestSuites 只读 dir 下的 .yaml），
+#   --split 是白名单过滤，本目录既不会被默认题库扫到、也不会被任何 split 选中。
+#   要跑必须显式指定目录并把题目针对的 skill 装进上下文：
+#     npx tsx packages/internal/evaluation-center/scripts/eval-ci.ts \
+#       --real --event-stream --case-dir .claude/test-cases/skill-trigger \
+#       --skills xlsx,meeting-summary,data-cleaning,contract-review
+#
+# fail-loud 纪律：
+#   - 漏配 --skills（或名写错）⇒ 负样本题红在「没装进本题上下文」——没装进去的 skill
+#     证不了「该触发时忍住了」，真空绿比红更危险。
+#   - mock 模式下这些题应当**显式红**（mock adapter 不接 skill 触发记录器 ⇒ 判定没有
+#     证据源 ⇒ fail-loud）。红了是对的，不是套件坏了。
+#
+# 全部合成内容：公司名、产品名、数据都是编的，不含真人姓名或真实凭据。
+name: skill-trigger-cases
+description: "skill 触发：负样本（不该触发的没触发）+ 隐式触发（题面不点名但该触发的真触发）"
+tags:
+  - skill-trigger
+  - regression
+cases:
+  # ── 负样本 ×3（误触发会动用户工作区，必须盯住）──────────────────────────────
+  - id: skill-neg-xlsx-translation
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "负样本：装了 xlsx，但题是纯翻译，连表格都不该碰"
+    prompt: "把下面这段通知翻译成英文，直接给译文：「各位同事：第四季度全员会定于 11 月 14 日下午两点在三号会议室召开，请提前十分钟入场。」"
+    timeout: 240000
+    tags: [skill-trigger, negative]
+
+  - id: skill-neg-meeting-summary-ad-copy
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "负样本：装了 meeting-summary，但题是写营销文案，不是整理会议"
+    prompt: "我们下周要发布一款桌面便签应用 StickyNote Air，帮我写一条 50 字以内的朋友圈发布文案，语气轻快一点。"
+    timeout: 240000
+    tags: [skill-trigger, negative]
+
+  - id: skill-neg-contract-review-polish
+    type: task
+    category: task_completion
+    difficulty: medium
+    description: "负样本（语义邻近对抗）：题面带「合作/协议」字样，但只是润色宣传稿，不是审合同"
+    prompt: "帮我润色这段官网宣传稿，让语气更专业，别改事实：「蓝海厨具与星野物流达成战略合作，双方签署年度框架协议，将为全国 300 家门店提供次日达配送。」"
+    timeout: 240000
+    tags: [skill-trigger, negative]
+
+  # ── 隐式触发 ×3（题面不点名 skill，但任务落在 skill 的适用面上）─────────────
+  - id: skill-imp-xlsx-sales-table
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "隐式触发：给销售数据要一个 Excel 表，题面不说「用 xlsx skill」"
+    prompt: "这是我们门店上周的流水：周一 3200、周二 2850、周三 4100、周四 3900、周五 4600、周六 7200、周日 6800。整理成一个 Excel 表格放当前目录，一行一天，最后加一行合计。"
+    timeout: 300000
+    tags: [skill-trigger, implicit]
+
+  - id: skill-imp-meeting-summary-transcript
+    type: task
+    category: task_completion
+    difficulty: easy
+    description: "隐式触发：给一段会议转写要纪要和待办，题面不说「用 meeting-summary skill」"
+    prompt: "这是今早项目例会的转写：「甲：支付网关联调还差两个接口，周三前给。乙：官网文案我今晚定稿。丙：测试用例覆盖率还差 8 个点，周五前补完。」帮我整理成纪要，列出每个人的待办和截止时间。"
+    timeout: 300000
+    tags: [skill-trigger, implicit]
+
+  - id: skill-imp-data-cleaning-messy-csv
+    type: task
+    category: task_completion
+    difficulty: medium
+    description: "隐式触发：给一份有重复行和空值的表要清洗，题面不说「用 data-cleaning skill」"
+    prompt: "把这份数据洗干净再给我：「姓名,分数\n李雷,88\n韩梅,\n李雷,88\n王芳,91\n,67」。去掉重复行，空分数的行标出来单独列，别把空值当 0 分算进平均。"
+    timeout: 300000
+    tags: [skill-trigger, implicit]

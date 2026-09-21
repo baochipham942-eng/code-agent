@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { AgentInterface } from './testRunner';
-import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord, EvalCaseMemory, MemoryFileSnapshot, MemoryRecallRecord } from './types';
+import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord, EvalCaseMemory, MemoryFileSnapshot, MemoryRecallRecord, CaseSkillSignals } from './types';
 import { seedCaseMemory, snapshotMemoryDir } from './memoryEval';
 import { createPermissionRequestRecorder } from './approvalRequestEval';
 import { buildPermissionDecider, narrowScriptedPermissionHandler } from './userSimulator';
@@ -598,6 +598,29 @@ export class StandaloneAgentAdapter implements AgentInterface {
     const activations = this.skillActivations.get(testId) ?? {};
     this.skillActivations.delete(testId);
     return { ...activations };
+  }
+
+  /**
+   * N-SKILL-TRIGGER-EVAL：skill_* 断言的证据源。消费即清（读走本题台账并删除——
+   * 只读 peek 会把计数留给下一 trial，ai-review PR#2019 Important 1）。
+   * skillContext 必须与模型真实可见集同口径：getSkillsForContext() =
+   * 白名单 ∩ 已发现 ∩ 启用 ∩ 非 disableModelInvocation ∩ applicability('model_context')
+   * ——模型看不见的 skill 不算装进上下文，否则负样本会「未装载却判忍住」假绿
+   * （ai-review PR#2019 Important 2）。
+   */
+  async consumeSkillSignals(testId: string): Promise<CaseSkillSignals> {
+    const { SkillDiscoveryService } = await import('../services/skills/skillDiscoveryService');
+    const discovery = this.skillDiscoveryService ??= new SkillDiscoveryService({
+      skillNames: this.skills,
+      includeClaudeLegacySkills: this.includeClaudeLegacySkills,
+    });
+    await discovery.ensureInitialized(this.workingDirectory);
+    const skillContext = discovery.getSkillsForContext()
+      .map((skill) => skill.name)
+      .sort((left, right) => left.localeCompare(right));
+    const activations = { ...(this.skillActivations.get(testId) ?? {}) };
+    this.skillActivations.delete(testId);
+    return { skillActivations: activations, skillContext };
   }
 
   consumeSubagentSpawns(testId: string): number {

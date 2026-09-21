@@ -351,6 +351,17 @@ export interface CaseMemorySignals {
   memoryWrites: number;
 }
 
+/**
+ * N-SKILL-TRIGGER-EVAL：adapter 每题交回给 runner 的 skill 触发落账
+ * （字段名与 TestResult 同名，直接并进结果；skill_* 断言的证据源）。
+ */
+export interface CaseSkillSignals {
+  /** 本题 skill 真实触发计数（skill_activated 口径：真实执行成功才算，装进上下文不算） */
+  skillActivations: Record<string, number>;
+  /** 本题实际装进上下文的 skill 名（白名单 ∩ 已发现 ∩ 启用），排序去重 */
+  skillContext: string[];
+}
+
 /** 单个附件注入声明 */
 interface CaseFileInjection {
   /** 本地源文件绝对路径（支持 ~ 前缀） */
@@ -482,6 +493,13 @@ export interface TestResult {
   score: number;
   /** 本 case 内每个 skill 的真实激活次数；缺省/空对象均表示未触发。 */
   skillActivations?: Record<string, number>;
+  /**
+   * N-SKILL-TRIGGER-EVAL：本题实际装进上下文的 skill 名单（白名单 ∩ 已发现 ∩ 启用）。
+   * skill_triggered / skill_not_triggered 的证据源之一（另一半是 skillActivations）；
+   * 缺席 = adapter 没接记录器（mock / 旧 adapter），两个断言 fail-loud——
+   * 「没装任何 skill」和「没记录装了什么」混起来，负样本会真空假绿。
+   */
+  skillContext?: string[];
   /** 题目元数据快照（分层通过率用）；建 summary 时从 TestCase 抄入，报告不回读题库（题库可能已改）。 */
   caseMeta?: TestCaseMeta;
   /** N-EVAL-MEMORY：本 case 的记忆注入落账（memory_recalled 的证据源；adapter 没接记录器时缺席）。 */
@@ -923,7 +941,18 @@ export type ExpectationType =
   // 两者 deterministic 桶；非法参数、以及没有证据源（mock / 旧 adapter）一律 fail-loud，
   // 绝不静默算过——「没记录」和「记录里没有」混起来就是假绿。
   | 'memory_recalled'
-  | 'memory_written';
+  | 'memory_written'
+  // N-SKILL-TRIGGER-EVAL：skill 触发判定（实现在 skillTriggerEval，保持本文件与
+  // assertionEngine 在债务门内）。判据 = skill_activated 事件计数（Skill 工具真实执行
+  // 成功才 emit；装进上下文 / 调用失败都不算触发）。skill 名精确匹配，不用 regex。
+  // skill_triggered —— params: skills（必填非空字符串数组，精确名）、mode（'any' 默认 / 'all'）。
+  //   隐式触发题用：题面不点名 skill，但名单里的 skill 该真被调起来。
+  // skill_not_triggered —— params: skills（同上）。负样本题用：名单里的 skill 一次都不许触发。
+  // 两者 deterministic 桶。fail-loud 三层：非法参数；没有证据源（mock / 旧 adapter，
+  // skillContext 缺席）；声明的 skill 不在本题 skillContext（没装进上下文——负样本
+  // 真空通过、正向永不可能触发，都是配置错不是能力数据）。
+  | 'skill_triggered'
+  | 'skill_not_triggered';
 
 export interface Expectation {
   type: ExpectationType;

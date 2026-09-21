@@ -1,8 +1,8 @@
 // N-SKILL-TRIGGER-EVAL：StandaloneAgentAdapter 的 skill 触发信号接线。
 // AgentLoop 被替身掉，只留「事件进去 / 信号出来」两端——被测的是 adapter 自己：
-// - skill_activated 事件按 testId 计数，collectSkillSignals 读得出
-// - 只读不清：计数台账仍归 consumeSkillActivations 收口（报告/comparator 用）
-// - skillContext = 白名单 ∩ 已发现 ∩ 启用：装了 xlsx 只见 xlsx，不存在的名字不出现
+// - skill_activated 事件按 testId 计数，consumeSkillSignals 读得出
+// - 消费即清：台账不留给下一 trial（不串题）；报告侧 finally 的 ??= 兼容旧 adapter
+// - skillContext 与模型真实可见集同口径（getSkillsForContext）：装了 xlsx 只见 xlsx，不存在的名字不出现
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -68,7 +68,7 @@ function makeAdapter(skills: readonly string[]): StandaloneAgentAdapter {
   });
 }
 
-describe('StandaloneAgentAdapter.collectSkillSignals', () => {
+describe('StandaloneAgentAdapter.consumeSkillSignals', () => {
   it('skill_activated 按 testId 计数交出；skillContext 只见白名单内真实存在的 skill', async () => {
     const adapter = makeAdapter(['xlsx', 'skill-that-does-not-exist']);
     adapter.configureEvaluationCase('case-a');
@@ -78,7 +78,7 @@ describe('StandaloneAgentAdapter.collectSkillSignals', () => {
     ];
     await adapter.sendMessage('hello');
 
-    const signals = await adapter.collectSkillSignals('case-a');
+    const signals = await adapter.consumeSkillSignals('case-a');
     expect(signals.skillActivations).toEqual({ xlsx: 2 });
     expect(signals.skillContext).toContain('xlsx');
     expect(signals.skillContext).not.toContain('skill-that-does-not-exist');
@@ -86,15 +86,17 @@ describe('StandaloneAgentAdapter.collectSkillSignals', () => {
     expect(signals.skillContext).not.toContain('commit');
   });
 
-  it('只读不清：collect 之后 consumeSkillActivations 仍收得到台账（报告语义不变）', async () => {
+  it('消费即清：consumeSkillSignals 读走即清台账，下一 trial 不会继承上一题的计数（ai-review PR#2019 Important 1）', async () => {
     const adapter = makeAdapter(['xlsx']);
     adapter.configureEvaluationCase('case-a');
     scriptedEvents = [{ type: 'skill_activated', data: { name: 'xlsx' } }];
     await adapter.sendMessage('hello');
 
-    await adapter.collectSkillSignals('case-a');
-    expect(adapter.consumeSkillActivations('case-a')).toEqual({ xlsx: 1 });
-    // consume 才清：再读是空
+    const first = await adapter.consumeSkillSignals('case-a');
+    expect(first.skillActivations).toEqual({ xlsx: 1 });
+    // 已清：再读（下一 trial 的起点）是零触发，不串题
+    const second = await adapter.consumeSkillSignals('case-a');
+    expect(second.skillActivations).toEqual({});
     expect(adapter.consumeSkillActivations('case-a')).toEqual({});
   });
 
@@ -103,7 +105,7 @@ describe('StandaloneAgentAdapter.collectSkillSignals', () => {
     adapter.configureEvaluationCase('case-a');
     await adapter.sendMessage('hello');
 
-    const signals = await adapter.collectSkillSignals('case-a');
+    const signals = await adapter.consumeSkillSignals('case-a');
     expect(signals.skillActivations).toEqual({});
     expect(signals.skillContext).toEqual([]);
   });
@@ -113,7 +115,7 @@ describe('StandaloneAgentAdapter.collectSkillSignals', () => {
     adapter.configureEvaluationCase('case-a');
     await adapter.sendMessage('hello');
 
-    const signals = await adapter.collectSkillSignals('case-a');
+    const signals = await adapter.consumeSkillSignals('case-a');
     expect(signals.skillActivations).toEqual({});
     expect(signals.skillContext).toContain('meeting-summary');
   });

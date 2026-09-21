@@ -1,6 +1,6 @@
 // N-SKILL-TRIGGER-EVAL：skill 触发断言在 TestRunner 全链上的接线。
 // 走真实 YAML loader + TestRunner，agent 用脚本化 fake：
-// - collectSkillSignals 在全部轮次跑完、断言求值之前被调用（第二轮才触发也算数）
+// - consumeSkillSignals 在全部轮次跑完、断言求值之前被调用（第二轮才触发也算数）
 // - adapter 不接记录器（mock 形态）⇒ skill_* 断言 fail-loud「没有证据源」，不静默过
 // - 声明的 skill 没装进本题上下文 ⇒ fail-loud「配置错」，负样本不许真空绿
 // - 超时被掐路径：误触发已发生 ⇒ 补判红；证据交不出 ⇒ 记未判
@@ -32,7 +32,7 @@ function fakeAgent(options: {
     },
     reset: async () => undefined,
     getAgentInfo: () => ({ name: 'fake', model: 'fake-model', provider: 'mock' }),
-    ...(options.signals ? { collectSkillSignals: async () => options.signals!() } : {}),
+    ...(options.signals ? { consumeSkillSignals: async () => options.signals!() } : {}),
   };
   return agent as AgentInterface & { calls: number };
 }
@@ -143,7 +143,7 @@ describe('TestRunner skill 触发断言接线', () => {
         round += 1;
         return { responses: ['ok'], toolExecutions: [], turnCount: 1, errors: [] };
       },
-      collectSkillSignals: async () => ({
+      consumeSkillSignals: async () => ({
         skillActivations: round >= 2 ? { xlsx: 1 } : {},
         skillContext: ['xlsx'],
       }),
@@ -181,7 +181,7 @@ describe('超时被掐路径（N-EVAL-TIMEOUT-K2-NEGASSERT 同口径）', () => 
       cancelActiveRun: async () => cancel(),
       reset: async () => undefined,
       getAgentInfo: () => ({ name: 'mock', model: 'mock', provider: 'mock' }),
-      ...(signals ? { collectSkillSignals: async () => signals() } : {}),
+      ...(signals ? { consumeSkillSignals: async () => signals() } : {}),
     };
   }
 

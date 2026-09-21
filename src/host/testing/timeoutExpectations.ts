@@ -37,13 +37,13 @@ export async function judgeTimeoutExpectations(
   expectations: Expectation[] | undefined,
   result: TestResult,
   workingDirectory: string,
-  collectSkillSignals?: () => Promise<CaseSkillSignals | undefined>,
+  consumeSkillSignals?: () => Promise<CaseSkillSignals | undefined>,
 ): Promise<void> {
   const candidates = (expectations ?? []).filter((expectation) => isTimeoutJudgeable(expectation.type));
   if (candidates.length === 0) return;
   // N-SKILL-TRIGGER-EVAL：skill_activated 落账在 adapter 侧按 testId 累积，不受掐断影响——
   // 补判前交出，skill_not_triggered 才有证据源；交不出（thunk 缺席/返空）则进 unjudged。
-  Object.assign(result, (await collectSkillSignals?.()) ?? {});
+  Object.assign(result, (await consumeSkillSignals?.()) ?? {});
   const judged = candidates.filter((expectation) => hasEvidence(expectation, result));
   const { results } = await runExpectations(judged, {
     toolExecutions: result.toolExecutions,

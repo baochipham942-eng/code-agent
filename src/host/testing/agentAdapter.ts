@@ -601,25 +601,26 @@ export class StandaloneAgentAdapter implements AgentInterface {
   }
 
   /**
-   * N-SKILL-TRIGGER-EVAL：skill_* 断言的证据源。只读不清（计数台账归 consumeSkillActivations
-   * 在 finally 收口进报告）。skillContext = 本题实际装进上下文的 skill 名单：白名单
-   * （构造入参 skills）∩ 已发现 ∩ 启用——模型经 Skill 工具描述 / tool_search 看到的就是这批。
+   * N-SKILL-TRIGGER-EVAL：skill_* 断言的证据源。消费即清（读走本题台账并删除——
+   * 只读 peek 会把计数留给下一 trial，ai-review PR#2019 Important 1）。
+   * skillContext 必须与模型真实可见集同口径：getSkillsForContext() =
+   * 白名单 ∩ 已发现 ∩ 启用 ∩ 非 disableModelInvocation ∩ applicability('model_context')
+   * ——模型看不见的 skill 不算装进上下文，否则负样本会「未装载却判忍住」假绿
+   * （ai-review PR#2019 Important 2）。
    */
-  async collectSkillSignals(testId: string): Promise<CaseSkillSignals> {
+  async consumeSkillSignals(testId: string): Promise<CaseSkillSignals> {
     const { SkillDiscoveryService } = await import('../services/skills/skillDiscoveryService');
     const discovery = this.skillDiscoveryService ??= new SkillDiscoveryService({
       skillNames: this.skills,
       includeClaudeLegacySkills: this.includeClaudeLegacySkills,
     });
     await discovery.ensureInitialized(this.workingDirectory);
-    const skillContext = discovery.getAllSkills()
-      .filter((skill) => discovery.isSkillEnabled(skill.name))
+    const skillContext = discovery.getSkillsForContext()
       .map((skill) => skill.name)
       .sort((left, right) => left.localeCompare(right));
-    return {
-      skillActivations: { ...(this.skillActivations.get(testId) ?? {}) },
-      skillContext,
-    };
+    const activations = { ...(this.skillActivations.get(testId) ?? {}) };
+    this.skillActivations.delete(testId);
+    return { skillActivations: activations, skillContext };
   }
 
   consumeSubagentSpawns(testId: string): number {

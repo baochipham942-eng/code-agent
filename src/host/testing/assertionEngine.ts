@@ -31,6 +31,7 @@ import { evaluateNoStallBeforeArtifactExpectation } from './openingShapeEval';
 import { findForbiddenCallViolations } from './forbiddenCallEval';
 import { evaluateApprovalRequestExpectation } from './approvalRequestEval';
 import { evaluateMemoryRecalledExpectation, evaluateMemoryWrittenExpectation } from './memoryEval';
+import { evaluateSkillTriggerExpectation } from './skillTriggerEval';
 import { toolMatches } from './toolNameAliases';
 
 /**
@@ -694,6 +695,10 @@ interface ExpectationContext {
   memoryRecall?: MemoryRecallRecord;
   /** N-EVAL-MEMORY：跑完的记忆目录快照（memory_written 的证据源；缺席时 fail-loud） */
   memorySnapshot?: MemoryFileSnapshot[];
+  /** N-SKILL-TRIGGER-EVAL：skill 触发落账（skill_* 断言的证据源；缺席时 fail-loud） */
+  skillActivations?: Record<string, number>;
+  /** N-SKILL-TRIGGER-EVAL：本题装进上下文的 skill 名单（同上；缺席时 fail-loud） */
+  skillContext?: string[];
 }
 
 /**
@@ -1102,6 +1107,17 @@ async function evaluateExpectation(
         const evaluation = expectation.type === 'memory_recalled'
           ? evaluateMemoryRecalledExpectation(params, context.memoryRecall)
           : evaluateMemoryWrittenExpectation(params, context.memorySnapshot);
+        passed = evaluation.passed;
+        actual = evaluation.actual;
+        expected = evaluation.expected;
+        details = evaluation.details;
+        break;
+      }
+
+      case 'skill_triggered':
+      case 'skill_not_triggered': {
+        // N-SKILL-TRIGGER-EVAL：实现在 skillTriggerEval（保持本文件在债务门内）；fail-loud 口径见该模块 doc comment。
+        const evaluation = evaluateSkillTriggerExpectation(expectation.type, params, context);
         passed = evaluation.passed;
         actual = evaluation.actual;
         expected = evaluation.expected;

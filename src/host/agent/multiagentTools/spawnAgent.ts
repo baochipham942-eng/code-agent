@@ -492,6 +492,9 @@ export async function executeSpawnAgent(
 
         if (raced.kind === 'timeout') {
           delegateWorktreeCleanup();
+          // The adopted task outlives this tool call; keep the parent signal
+          // listener from cancelling it when the engine settles the tool.
+          parentAbortSignal?.removeEventListener('abort', abortFromParent);
           return adoptForegroundSubagent({
             promise,
             agentId,

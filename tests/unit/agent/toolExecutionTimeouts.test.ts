@@ -29,12 +29,13 @@ describe('unified tool execution timeout policy', () => {
 
   it('uses the MCP tier and a bounded default for other tools', () => {
     expect(getToolExecutionTimeoutMs('mcp')).toBe(TOOL_EXECUTION_TIMEOUTS.MCP);
+    expect(getToolExecutionTimeoutMs('MCPUnified')).toBe(TOOL_EXECUTION_TIMEOUTS.MCP);
     expect(getToolExecutionTimeoutMs('mcp__server__search')).toBe(TOOL_EXECUTION_TIMEOUTS.MCP);
     expect(getToolExecutionTimeoutMs('mcp_server_search')).toBe(TOOL_EXECUTION_TIMEOUTS.MCP);
     expect(getToolExecutionTimeoutMs('image_generate')).toBe(TOOL_EXECUTION_TIMEOUTS.DEFAULT);
     expect(getToolExecutionTimeoutMs('Task')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('AgentSpawn')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
-    expect(getToolExecutionTimeoutMs('workflow')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
+    expect(getToolExecutionTimeoutMs('workflow')).toBeUndefined();
   });
 
   it('turns an inactive execution into a model-visible failure', async () => {

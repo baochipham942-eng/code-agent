@@ -325,8 +325,9 @@ export const TOOL_PROGRESS = {
 /**
  * Unified tool execution inactivity budgets. Bash is intentionally excluded:
  * its command-level timeout is the authoritative cancellation boundary.
+ * 不导出：业务侧只经 getToolExecutionTimeoutMs 消费（production dead-export 棘轮）。
  */
-export const TOOL_EXECUTION_TIMEOUTS = {
+const TOOL_EXECUTION_TIMEOUTS = {
   /** Search/retrieval tools share the generic bound for now; split here when they need more. */
   SEARCH_RETRIEVAL: 120_000,
   /** Generic tools fail fast enough to let the model choose another path. */

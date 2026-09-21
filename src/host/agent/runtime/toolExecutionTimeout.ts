@@ -7,7 +7,7 @@ import {
 import type { AgentEvent } from '../../../shared/contract';
 import { clearApprovalWait, getApprovalWaitMs } from '../../tools/toolExecutionTelemetry';
 
-export interface ToolProgressClock {
+interface ToolProgressClock {
   /** 有一次进展：重置 inactivity 钟，并把此前累积的审批等待封账（不再从后续 inactivity 里扣）。 */
   markActivity: () => void;
   /** 距上次进展的「活跃外」时长：只减去上次进展之后新发生的审批等待。 */
@@ -21,7 +21,7 @@ export interface ToolProgressClock {
  * 审批全程等待」，progress 钟重置之后历史审批等待会被重复抵扣，超时被同样时长推迟；
  * 所以每次 markActivity 都把当时已累积的审批等待封账，之后只扣增量。
  */
-export function createToolProgressClock(options: {
+function createToolProgressClock(options: {
   startedAt: number;
   getApprovalWaitMs: (now: number) => number;
   now?: () => number;
@@ -45,7 +45,7 @@ export function createToolProgressClock(options: {
   };
 }
 
-export async function awaitToolExecutionWithTimeout<T>(
+async function awaitToolExecutionWithTimeout<T>(
   execution: Promise<T>,
   options: {
     timeoutMs: number;

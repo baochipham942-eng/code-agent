@@ -32,6 +32,24 @@ const QUOTED_PATH_PATTERN = /[`"'「『]([^`"'」』\n]{1,200}\.[A-Za-z0-9]{1,8}
 /** 裸路径 token：字符集带 CJK（\w 不含汉字），仍要求有分隔符或 ~/./.. 开头才算路径。 */
 const BARE_PATH_TOKEN_PATTERN = /(?:~|\.{1,2})?(?:[\w.\\/-]|[\u4e00-\u9fff])*[\w\u4e00-\u9fff-]\.[A-Za-z0-9]{1,8}/g;
 
+/**
+ * 引号候选无路径形状时的兜底：扩展名须是真交付物类型（网页/文档/表格/演示/媒体/压缩包）。
+ * 没有这条，`console.log`/`v2.1`/`Node.js`/`Vue.js` 这类引号标识符都会被抽成交付物声称
+ * （ai-review #2007 Important）：误判缺失 → 白跑补轮、修复提示诱导模型在工作区造出
+ * console.log 垃圾文件、预算用尽后 final 被追加错误的「未交付」说明。
+ */
+const DELIVERABLE_BARE_EXTENSIONS = new Set([
+  'html', 'htm', 'md', 'txt', 'csv', 'pdf', 'json', 'zip', 'ts',
+  'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp',
+  'mp4', 'mov', 'webm', 'mp3', 'wav', 'pptx', 'docx', 'xlsx',
+]);
+
+/** 删除/改写语境的子句不抽交付物——「已删除旧的 `x.ts`」里的路径不该被勒令复活。 */
+const DELETION_CLAUSE_PATTERN = /删除|移除|删掉|重命名|deleted?|removed?|renamed?/i;
+
+/** 子句边界：声称动词的管辖范围到句/逗号为止，不能按全文闸（一句「已创建」不该给整段贴标签）。 */
+const CLAUSE_BOUNDARY = /[。！？；!?\n，,、；;]/;
+
 export interface DeliverableClaim {
   /** 模型写的原始路径 */
   claimed: string;
@@ -75,26 +93,32 @@ function looksLikeBarePath(token: string): boolean {
 
 /**
  * 从最终回复正文抽取「声称交付」的文件路径。
- * 先剥 URL（以扩展名结尾的链接不是本地交付物，抽出来只会误判 not_on_disk）和
- * 闭合代码围栏（构建日志/命令回显里的 written to 不是交付声称；未闭合围栏不剥，
- * 免得一路吞到正文结尾把后面的真声称漏掉），再按 claim 动词闸门：
- * 正文里没有声称动词就一条都不抽——罗列文件、引用输入都不算声称交付。
+ * 先剥 URL 与 host:port 链接（以扩展名结尾的链接不是本地交付物，抽出来只会误判
+ * not_on_disk）和闭合代码围栏（构建日志/命令回显里的 written to 不是交付声称；
+ * 未闭合围栏不剥，免得一路吞到正文结尾把后面的真声称漏掉），再按**子句**闸：
+ * 只有含声称动词、且非删除/改写语境的子句才抽——全文闸会让一句「已创建」把
+ * 整段里的 `console.log`/`v2.1` 都贴成交付物（ai-review #2007 Important）。
  */
 export function extractClaimedDeliverablePaths(text: string): string[] {
   const prose = text
     .replace(/[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+/g, ' ')
-    .replace(/[\w.-]+:\d+\S*/g, ' ')
+    // host:port 链接（localhost:5173/index.html）；要字母打头，10:30 这种时间形状不吃。
+    .replace(/[a-zA-Z][\w.-]*:\d+\S*/g, ' ')
     .replace(/```[\s\S]*?```/g, '\n');
-  if (!CLAIM_VERB_PATTERN.test(prose)) return [];
   const found: string[] = [];
-  for (const match of prose.matchAll(QUOTED_PATH_PATTERN)) {
-    const candidate = match[1].trim();
-    if (candidate && !candidate.includes('\n')) found.push(candidate);
-  }
-  for (const match of prose.matchAll(BARE_PATH_TOKEN_PATTERN)) {
-    // `//host/path` 是 URL 剥剩的协议相对形态，不是本地路径。
-    if (match[0].startsWith('//')) continue;
-    if (looksLikeBarePath(match[0])) found.push(match[0]);
+  for (const clause of prose.split(CLAUSE_BOUNDARY)) {
+    if (!CLAIM_VERB_PATTERN.test(clause) || DELETION_CLAUSE_PATTERN.test(clause)) continue;
+    for (const match of clause.matchAll(QUOTED_PATH_PATTERN)) {
+      const candidate = match[1].trim();
+      if (!candidate || candidate.includes('\n')) continue;
+      const extension = candidate.slice(candidate.lastIndexOf('.') + 1).toLowerCase();
+      if (looksLikeBarePath(candidate) || DELIVERABLE_BARE_EXTENSIONS.has(extension)) found.push(candidate);
+    }
+    for (const match of clause.matchAll(BARE_PATH_TOKEN_PATTERN)) {
+      // `//host/path` 是 URL 剥剩的协议相对形态，不是本地路径。
+      if (match[0].startsWith('//')) continue;
+      if (looksLikeBarePath(match[0])) found.push(match[0]);
+    }
   }
   return [...new Set(found.map(normalizeNfc))].filter((candidate) => !referencesInputMaterials(candidate));
 }

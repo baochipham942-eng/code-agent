@@ -80,6 +80,17 @@ describe('extractClaimedDeliverablePaths', () => {
     const text = '```\nsome draft\n已生成 output/a.html。';
     expect(extractClaimedDeliverablePaths(text)).toEqual(['output/a.html']);
   });
+
+  // ai-review #2007 Important（复审）：引号形态无路径形状约束 + 全文动词闸，会把
+  // console.log / v2.1 / Node.js / 已删除文件抽成交付物声称，诱导模型造垃圾文件或复活已删文件。
+  it('does not pick quoted identifiers, versions, runtimes, or deleted files as deliverables', () => {
+    expect(extractClaimedDeliverablePaths('已创建 `src/a.ts`，并在里面调用了 `console.log`，依赖升级到 `v2.1`。'))
+      .toEqual(['src/a.ts']);
+    expect(extractClaimedDeliverablePaths('已生成报告 `report.md`，基于 `Node.js` 与 `Vue.js` 实现。'))
+      .toEqual(['report.md']);
+    expect(extractClaimedDeliverablePaths('已删除旧的 `old/legacy.ts`，已创建 `new.ts`。'))
+      .toEqual(['new.ts']);
+  });
 });
 
 describe('collectDeliverableClaims', () => {

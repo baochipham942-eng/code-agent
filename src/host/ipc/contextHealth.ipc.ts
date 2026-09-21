@@ -455,14 +455,18 @@ async function compactSession(
   const tail = new Promise<void>((resolve) => {
     releaseTail = resolve;
   });
-  manualCompactTail.set(sessionId, queued.then(() => tail));
+  const tailSlot = queued.then(() => tail);
+  manualCompactTail.set(sessionId, tailSlot);
 
   const run = queued.then(() => compactSessionOnce(deps, options, sessionId));
   manualCompactByIntent.set(intentKey, run);
+  // finally() returns a second promise. If run rejects, that promise rejects too,
+  // and the IPC handler only awaits run. Swallow the cleanup rejection here.
   void run.finally(() => {
     if (manualCompactByIntent.get(intentKey) === run) manualCompactByIntent.delete(intentKey);
+    if (manualCompactTail.get(sessionId) === tailSlot) manualCompactTail.delete(sessionId);
     releaseTail();
-  });
+  }).catch(() => undefined);
   return run;
 }
 

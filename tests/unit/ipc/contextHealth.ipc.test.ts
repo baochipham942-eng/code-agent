@@ -645,6 +645,40 @@ describe('resolveContextHealthForSession', () => {
     expect(prompts[0]).not.toContain('保留乙');
   });
 
+  it('returns an empty result when summary fails, without an unhandled rejection', async () => {
+    const sessionId = 'session-compact-summary-fails';
+    const messages: Message[] = Array.from({ length: 14 }, (_, index) => ({
+      id: `m${index + 1}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `历史消息 ${index + 1}\n${'这是一段需要被压缩的长上下文。'.repeat(260)}`,
+      timestamp: index + 1,
+    }));
+    const appService = makeAppService(sessionId, messages, DEFAULT_MODEL);
+    compactMocks.compactModelSummarizeWithMetadata.mockRejectedValue(new Error('summary down'));
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+    process.on('unhandledRejection', onUnhandled);
+
+    registerContextHealthHandlers({
+      getAppService: () => appService,
+      getTaskManager: () => ({
+        getOrchestrator: vi.fn(() => ({ setMessages: vi.fn() })),
+      }) as any,
+      getSystemPromptForSession: () => '',
+    });
+
+    try {
+      const handler = compactMocks.handlers.get('context:compact-current');
+      expect(handler).toBeDefined();
+      const result = await handler!({}, sessionId) as CompactResult;
+      expect(result.success).toBe(false);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
   it('exposes and persists context compression config through IPC', async () => {
     registerContextHealthHandlers({
       getAppService: () => null,

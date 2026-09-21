@@ -666,6 +666,8 @@ export class RunRegistry implements AgentTeamDurableParentHost {
    * fence + 事件序号）收尸。有 handle 的（本进程真在跑的 run）不碰，保持原冲突语义。
    * waiting / paused 有明确业务语义（待人工复核 / 待审批），归桌面复核收件箱与显式
    * 取消路径（terminalRecoveredWaitingRun）管，CLI 续跑不替人做决定。
+   * 只收 native 引擎：loop / agent_team 等引擎的 recovery driver（LoopController.adopt、
+   * 各自账本）不注册 RunHandle 却仍在驱动 run，「无 handle」对它们不等于「无驱动」。
    */
   private async terminalSelfOwnedUnadoptedSessionRoot(input: {
     sessionId: string;
@@ -679,6 +681,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     const latest = await kernel.getLatestActiveRootBySession(input.sessionId).catch(() => null);
     if (!latest || isTerminalRunStatus(latest.status) || latest.parentRunId) return false;
     if (latest.status === 'waiting' || latest.status === 'paused') return false;
+    if (latest.engine.kind !== 'native') return false;
     const owner = latest.owner;
     if (owner?.ownerId !== input.expectedOwnerId) return false;
     if (owner.processInstanceId !== input.processInstanceId) return false;

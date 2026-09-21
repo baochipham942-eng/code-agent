@@ -228,6 +228,48 @@ describe('cancelOrphanedSessionRoot zombie reaping', () => {
     }
   });
 
+  it('refuses to reap a non-native root driven by its own recovery driver (loop)', async () => {
+    const workspace = createWorkspace('loop-kept');
+    const { db, repository } = createRepository();
+    const crashedKernel = kernel(repository, `cli-1-before-crash`);
+
+    try {
+      // loop 引擎的根 run：恢复后由 LoopController.adopt 驱动（running、无 RunHandle）。
+      await crashedKernel.createRun({
+        runId: 'run-loop-kept',
+        sessionId: 'session-loop-kept',
+        engine: { kind: 'loop' },
+        now: 1_000,
+      });
+
+      const resumedRegistry = new RunRegistry();
+      const resumedInstanceId = `cli-${process.pid}-resumed`;
+      resumedRegistry.configureDurableKernel(kernel(repository, resumedInstanceId));
+      await resumedRegistry.recoverDurable(5_000);
+      await resumedRegistry.checkpointDurable('run-loop-kept', {
+        now: 5_000,
+        status: 'running',
+        state: null,
+        pendingOperations: [],
+        childRuns: [],
+        events: [{ type: 'loop_recovery_prepared', payload: { loopId: 'run-loop-kept' }, recordedAt: 5_000 }],
+      });
+      expect(resumedRegistry.resolve({ sessionId: 'session-loop-kept' })).toBeUndefined();
+
+      await expect(resumedRegistry.cancelOrphanedSessionRoot({
+        sessionId: 'session-loop-kept',
+        expectedOwnerId: OWNER_ID,
+        processInstanceId: resumedInstanceId,
+        now: 5_100,
+      })).resolves.toBe(false);
+      expect(await repository.get('run-loop-kept')).toMatchObject({ status: 'running' });
+      resumedRegistry.clear();
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+      db.close();
+    }
+  });
+
   it('refuses to reap a run this process is actively driving (live handle)', async () => {
     const workspace = createWorkspace('live-handle');
     const { db, repository } = createRepository();

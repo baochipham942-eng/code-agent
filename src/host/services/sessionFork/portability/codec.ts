@@ -86,15 +86,11 @@ function sanitizePortableValue(value: unknown): unknown {
   );
 }
 
-/** Tool argument keys the tool card must still show after export. Substring `path`
- *  also matches file_path / notebook_path; those stay, credential-shaped keys do not. */
-const TOOL_ARGUMENT_PATH_MARKERS = [
-  'absolutepath', 'cwd', 'filepath', 'localpath', 'notebookpath', 'path', 'workingdirectory',
-] as const;
+/** Exact tool-target keys that stay. Not a substring exception: api_key_path stays masked. */
+const TOOL_ARGUMENT_PATH_KEYS = new Set(['path', 'filepath', 'notebookpath']);
 
 function isToolArgumentPathKey(key: string): boolean {
-  const normalized = normalizeKey(key);
-  return TOOL_ARGUMENT_PATH_MARKERS.some((marker) => normalized.includes(marker));
+  return TOOL_ARGUMENT_PATH_KEYS.has(normalizeKey(key));
 }
 
 /** toolCalls[].arguments keep every key. Credential-shaped keys are value-masked;
@@ -111,12 +107,14 @@ function sanitizeToolArguments(value: unknown): unknown {
     // assertNoRuntimeIdentity rejects the key even when the value is redacted.
     // Snake-case tool targets (file_path, notebook_path, path) are not in that set.
     if (FORBIDDEN_RUNTIME_KEYS.has(key)) continue;
-    if (item && typeof item === 'object') {
-      result[key] = sanitizeToolArguments(item);
+    // Credential-shaped keys are masked before recursion, including objects and numbers.
+    // Path allowlist is exact (file_path / notebook_path / path), so api_key_path does not slip through.
+    if (isForbiddenPortableKey(key) && !isToolArgumentPathKey(key)) {
+      result[key] = '[REDACTED]';
       continue;
     }
-    if (typeof item === 'string' && isForbiddenPortableKey(key) && !isToolArgumentPathKey(key)) {
-      result[key] = '[REDACTED]';
+    if (item && typeof item === 'object') {
+      result[key] = sanitizeToolArguments(item);
       continue;
     }
     result[key] = typeof item === 'string' ? redactSecretText(item) : item;

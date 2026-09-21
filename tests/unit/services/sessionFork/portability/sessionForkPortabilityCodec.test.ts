@@ -645,4 +645,26 @@ describe('session fork portability codecs', () => {
       notebook_path: '/tmp/neo-fork/notes.ipynb',
     });
   });
+
+  it('masks nested and overlapping credential argument keys', () => {
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    childEntry.messages.push(message('nested-secret-msg', 'assistant', 'ran', 5, {
+      toolCalls: [{
+        id: 'toolu_nested',
+        name: 'http',
+        arguments: {
+          password: { value: 'hunter2' },
+          token: 123456,
+          api_key_path: 'hunter2',
+          file_path: '/tmp/neo-fork/keep.md',
+        },
+      }],
+    } as unknown as Partial<Message>));
+
+    const encoded = encodeSessionExportEnvelopeV2(buildSessionExportEnvelopeV2(draft));
+    expect(encoded).not.toContain('hunter2');
+    expect(encoded).not.toContain('123456');
+    expect(encoded).toContain('/tmp/neo-fork/keep.md');
+  });
 });

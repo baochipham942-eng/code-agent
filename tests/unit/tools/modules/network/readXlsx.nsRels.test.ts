@@ -20,7 +20,6 @@ import type {
 import { executeReadXlsx } from '../../../../../src/host/tools/modules/network/readXlsx';
 import {
   isNsPrefixedRelationshipsError,
-  stripRelationshipsNsPrefix,
   normalizeXlsxRelationshipsNamespaces,
 } from '../../../../../src/host/tools/modules/network/xlsxRelsNsNormalize';
 
@@ -154,22 +153,6 @@ describe('read_xlsx ns-prefixed rels (#1995)', () => {
     expect(isNsPrefixedRelationshipsError(new Error('anchors undefined'))).toBe(false);
   });
 
-  it('stripRelationshipsNsPrefix 剥前缀并换成默认命名空间，无前缀时原样返回', () => {
-    const prefixed =
-      `<ns1:Relationships xmlns:ns1="${RELS_NS_URI}">` +
-      '<ns1:Relationship Id="rId1" Type="t" Target="xl/workbook.xml"/>' +
-      '</ns1:Relationships>';
-    const stripped = stripRelationshipsNsPrefix(prefixed);
-    expect(stripped).toBe(
-      `<Relationships xmlns="${RELS_NS_URI}">` +
-        '<Relationship Id="rId1" Type="t" Target="xl/workbook.xml"/>' +
-        '</Relationships>',
-    );
-
-    const plain = `<Relationships xmlns="${RELS_NS_URI}"></Relationships>`;
-    expect(stripRelationshipsNsPrefix(plain)).toBe(plain);
-  });
-
   it('normalizeXlsxRelationshipsNamespaces 重写 zip 内所有 .rels 部件', async () => {
     const filePath = path.join(tmpDir, 'to-normalize.xlsx');
     await fs.promises.writeFile(filePath, await buildXlsxFixture({ prefixedRels: true }));
@@ -180,8 +163,21 @@ describe('read_xlsx ns-prefixed rels (#1995)', () => {
     expect(relsNames.length).toBeGreaterThan(0);
     for (const name of relsNames) {
       const xml = await zip.file(name)!.async('string');
+      // 前缀剥除 + xmlns:ns1 换成默认 xmlns（strip 行为经由 normalize 钉住）
       expect(xml).not.toContain('ns1:');
-      expect(xml).toContain('<Relationships');
+      expect(xml).toContain(`<Relationships xmlns="${RELS_NS_URI}">`);
+      expect(xml).toContain('<Relationship ');
+      expect(xml).toContain('</Relationships>');
     }
+  });
+
+  it('normalizeXlsxRelationshipsNamespaces 对无前缀文件不改写 rels 内容', async () => {
+    const filePath = path.join(tmpDir, 'plain-normalize.xlsx');
+    await fs.promises.writeFile(filePath, await buildXlsxFixture({ prefixedRels: false }));
+
+    const normalized = await normalizeXlsxRelationshipsNamespaces(filePath);
+    const zip = await JSZip.loadAsync(normalized);
+    const rootRels = await zip.file('_rels/.rels')!.async('string');
+    expect(rootRels).toContain(`<Relationships xmlns="${RELS_NS_URI}">`);
   });
 });

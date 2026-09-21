@@ -35,7 +35,7 @@ export function isNsPrefixedRelationshipsError(error: unknown): boolean {
  * 剥掉 rels XML 里 `Relationships`/`Relationship` 元素上的命名空间前缀。
  * 无前缀时原样返回（调用方靠返回值是否变化决定是否重写 zip 条目）。
  */
-export function stripRelationshipsNsPrefix(xml: string): string {
+function stripRelationshipsNsPrefix(xml: string): string {
   let out = xml;
   // 罕见情况下同一文件可能用多个前缀，循环直到没有带前缀的 Relationships 为止
   for (let guard = 0; guard < 8; guard++) {

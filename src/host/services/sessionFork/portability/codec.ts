@@ -86,19 +86,27 @@ function sanitizePortableValue(value: unknown): unknown {
   );
 }
 
-/** Exact tool-target keys that stay. Not a substring exception: api_key_path stays masked. */
+/** Exact tool-target keys that stay, and only on file tools. Not a substring exception. */
 const TOOL_ARGUMENT_PATH_KEYS = new Set(['path', 'filepath', 'notebookpath']);
+const PATH_ARGUMENT_TOOLS = new Set([
+  'read', 'readfile', 'edit', 'write', 'grep', 'glob', 'notebookedit',
+]);
+
+function keepsPathArguments(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  return PATH_ARGUMENT_TOOLS.has(toolName.replace(/[^A-Za-z0-9]/g, '').toLowerCase());
+}
 
 function isToolArgumentPathKey(key: string): boolean {
   return TOOL_ARGUMENT_PATH_KEYS.has(normalizeKey(key));
 }
 
-/** toolCalls[].arguments keep every key. Credential-shaped keys are value-masked;
- *  path keys keep the path (secret shapes inside the string still go through redactSecretText).
+/** toolCalls[].arguments keep every non-secret key. Credential-shaped keys are
+ *  value-masked. file_path / path / notebook_path stay only for file tools.
  *  Other channels stay on sanitizePortableValue, which drops the key entirely. */
-function sanitizeToolArguments(value: unknown): unknown {
+function sanitizeToolArguments(value: unknown, toolName?: string): unknown {
   if (typeof value === 'string') return redactSecretText(value);
-  if (Array.isArray(value)) return value.map(sanitizeToolArguments);
+  if (Array.isArray(value)) return value.map((item) => sanitizeToolArguments(item, toolName));
   if (!value || typeof value !== 'object') return value;
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
@@ -109,12 +117,12 @@ function sanitizeToolArguments(value: unknown): unknown {
     if (FORBIDDEN_RUNTIME_KEYS.has(key)) continue;
     // Credential-shaped keys are masked before recursion, including objects and numbers.
     // Path allowlist is exact (file_path / notebook_path / path), so api_key_path does not slip through.
-    if (isForbiddenPortableKey(key) && !isToolArgumentPathKey(key)) {
+    if (isForbiddenPortableKey(key) && !(keepsPathArguments(toolName) && isToolArgumentPathKey(key))) {
       result[key] = '[REDACTED]';
       continue;
     }
     if (item && typeof item === 'object') {
-      result[key] = sanitizeToolArguments(item);
+      result[key] = sanitizeToolArguments(item, toolName);
       continue;
     }
     result[key] = typeof item === 'string' ? redactSecretText(item) : item;
@@ -205,7 +213,7 @@ function sanitizeToolCall(source: NonNullable<Message['toolCalls']>[number]): Po
     name: source.name,
   };
   if (source.arguments !== undefined) {
-    sanitized.arguments = sanitizeToolArguments(source.arguments) as Record<string, unknown>;
+    sanitized.arguments = sanitizeToolArguments(source.arguments, source.name) as Record<string, unknown>;
   }
   if (source.result) {
     sanitized.result = {
@@ -341,8 +349,10 @@ function sanitizeMessages(source: SessionExportSourceV2): PortableMessageV2[] {
     // runtime blob (turnDiff/retryAttachments/artifactLocator.filePath/channel names/...)
     // that isn't needed for round-trip — contentParts+toolCalls already carry what
     // rendering needs — and the denylist scrub kept leaking new key shapes every round.
-    // sanitizePortableValue below still strips FORBIDDEN_RUNTIME_KEYS from contentParts/
-    // toolCalls/toolResults, where equivalent keys (filePath, path, outputPath) can occur.
+    // contentParts and toolResults still go through sanitizePortableValue, which drops
+    // forbidden keys. toolCalls[].arguments go through sanitizeToolArguments: credential
+    // values are masked, exact runtime-identity keys are dropped, and path keys stay
+    // only for file tools.
     if (raw.visibility !== undefined) portable.visibility = raw.visibility;
     if (raw.isMeta !== undefined) portable.isMeta = raw.isMeta;
     if (raw.source !== undefined) portable.source = raw.source;

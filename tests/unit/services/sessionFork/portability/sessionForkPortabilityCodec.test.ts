@@ -559,8 +559,8 @@ describe('session fork portability codecs', () => {
     expect(JSON.stringify(secretMessage?.toolCalls)).not.toContain('abc123');
     expect(JSON.stringify(secretMessage?.contentParts)).not.toContain('hunter2');
     expect(JSON.stringify(secretMessage?.contentParts)).not.toContain('abc123');
-    // arguments keep the password key but not the value. Routing arguments back
-    // through sanitizePortableValue (whole-key delete) is what this next test pins.
+    // The password key stays and its value is masked by the argument sanitizer.
+    // Reverse mutation: whole-key delete drops `password`, so the match below goes red.
     const secretCall = secretMessage?.toolCalls?.find((call) => call.id === 'call-secret');
     expect(secretCall?.arguments).toMatchObject({ password: '[REDACTED]' });
 
@@ -626,6 +626,11 @@ describe('session fork portability codecs', () => {
           name: 'Edit',
           arguments: { notebook_path: '/tmp/neo-fork/notes.ipynb' },
         },
+        {
+          id: 'toolu_read_file',
+          name: 'read_file',
+          arguments: { file_path: '/tmp/neo-fork/alias.md' },
+        },
       ],
     } as unknown as Partial<Message>));
 
@@ -633,6 +638,7 @@ describe('session fork portability codecs', () => {
     const encoded = encodeSessionExportEnvelopeV2(envelope);
     expect(encoded).toContain('/tmp/neo-fork/readme.md');
     expect(encoded).toContain('/tmp/neo-fork/notes.ipynb');
+    expect(encoded).toContain('/tmp/neo-fork/alias.md');
     expect(encoded).not.toContain('hunter2');
 
     const decoded = decodeSessionExportEnvelopeV2(encoded);
@@ -643,6 +649,9 @@ describe('session fork portability codecs', () => {
     });
     expect(calls?.find((call) => call.name === 'Edit')?.arguments).toMatchObject({
       notebook_path: '/tmp/neo-fork/notes.ipynb',
+    });
+    expect(calls?.find((call) => call.name === 'read_file')?.arguments).toMatchObject({
+      file_path: '/tmp/neo-fork/alias.md',
     });
   });
 
@@ -665,6 +674,31 @@ describe('session fork portability codecs', () => {
     const encoded = encodeSessionExportEnvelopeV2(buildSessionExportEnvelopeV2(draft));
     expect(encoded).not.toContain('hunter2');
     expect(encoded).not.toContain('123456');
-    expect(encoded).toContain('/tmp/neo-fork/keep.md');
+    // http is not a file tool, so its path argument is masked with the credentials.
+    expect(encoded).not.toContain('/tmp/neo-fork/keep.md');
+    const decoded = decodeSessionExportEnvelopeV2(encoded);
+    expect(decoded.messages.find((item) => item.id === 'nested-secret-msg')?.toolCalls?.[0]?.arguments)
+      .toMatchObject({
+        password: '[REDACTED]',
+        token: '[REDACTED]',
+        api_key_path: '[REDACTED]',
+        file_path: '[REDACTED]',
+      });
+  });
+
+  it('does not export an absolute path argument from a non-file tool', () => {
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    childEntry.messages.push(message('http-path-msg', 'assistant', 'ran', 6, {
+      toolCalls: [{
+        id: 'toolu_http',
+        name: 'http',
+        arguments: { path: '/Users/private/.ssh/id_ed25519' },
+      }],
+    } as unknown as Partial<Message>));
+
+    const encoded = encodeSessionExportEnvelopeV2(buildSessionExportEnvelopeV2(draft));
+    expect(encoded).not.toContain('/Users/private/.ssh/id_ed25519');
+    expect(encoded).not.toContain('.ssh');
   });
 });

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const configService = vi.hoisted(() => ({
+const configService = vi.hoisted(() => ({ onSettingsUpdated: vi.fn(),
   token: 'upload-token',
   baseUrl: 'https://share.test',
   getServiceApiKey: vi.fn((): string | undefined => configService.token || undefined),

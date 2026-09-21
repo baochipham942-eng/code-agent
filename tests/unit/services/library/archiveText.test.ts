@@ -58,6 +58,7 @@ describe('LibraryService.archiveText', () => {
     expect(fs.readFileSync(item.pathOrUri, 'utf8')).toBe(text);
     expect(item.sourceSessionId).toBe('cron_session_1');
     expect(item.sourceRoleId).toBe('role_1');
+    expect(item.learnStatus).toBe('ready');
   });
 
   it('同项目同文本按 contentHash 幂等，不产生第二个文件或条目', () => {
@@ -65,7 +66,7 @@ describe('LibraryService.archiveText', () => {
     const second = service.archiveText({ projectId: 'proj_1', title: '第二次', text: 'same output' }, 2000);
 
     expect(second.id).toBe(first.id);
-    expect(fs.readdirSync(path.join(tmpDir, 'library', 'proj_1'))).toHaveLength(1);
+    expect(fs.readdirSync(path.join(tmpDir, 'library', 'proj_1')).filter((name) => name !== '.extracted')).toHaveLength(1);
     expect(service.list({ projectId: 'proj_1' })).toHaveLength(1);
   });
 
@@ -76,5 +77,20 @@ describe('LibraryService.archiveText', () => {
     expect(globalItem.projectId).toBeNull();
     expect(nullItem.id).toBe(globalItem.id);
     expect(globalItem.pathOrUri.startsWith(path.join(tmpDir, 'library', 'global'))).toBe(true);
+  });
+
+  it('sidecar 写入失败时条目落到 failed 而不是卡在 running', () => {
+    fs.mkdirSync(path.join(tmpDir, 'library', 'proj_1'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'library', 'proj_1', '.extracted'), 'not-a-directory');
+
+    expect(() => service.archiveText({
+      projectId: 'proj_1',
+      title: '写失败',
+      text: 'should fail sidecar',
+    }, 1000)).toThrow();
+
+    const item = service.list({ projectId: 'proj_1' })[0];
+    expect(item?.learnStatus).toBe('failed');
+    expect(item?.learnError).toBeTruthy();
   });
 });

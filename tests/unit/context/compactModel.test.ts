@@ -51,7 +51,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 vi.mock('../../../src/host/services', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getSettings: () => compactModelMocks.settings,
     getApiKey: compactModelMocks.getApiKey,
   }),

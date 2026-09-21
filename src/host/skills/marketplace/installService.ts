@@ -101,7 +101,7 @@ function getPluginAssetDestination(scope: PluginScope, projectPath: string | und
 // Installed Plugins State
 // ----------------------------------------------------------------------------
 
-async function loadInstalledPlugins(): Promise<InstalledPluginsFile> {
+export async function loadInstalledPlugins(): Promise<InstalledPluginsFile> {
   try {
     const filePath = getInstalledPluginsPath();
     if (!fsSync.existsSync(filePath)) return {};
@@ -826,7 +826,7 @@ async function installFromRegistryEntryUnlocked(
   }
 }
 
-async function performInstall(args: {
+export async function performInstall(args: {
   plugin: string;
   marketplace: string;
   pluginSpec: string;

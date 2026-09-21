@@ -39,7 +39,7 @@ function mockConfig(opts: {
   zhipuOfficialKey?: string;
 }) {
   const keys = opts.keys ?? {};
-  getConfigServiceMock.mockReturnValue({
+  getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
     getSettings: () => ({
       models: {
         providers: opts.providers ?? {},

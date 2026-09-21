@@ -113,6 +113,7 @@ export interface ContextTranscriptEntry extends ProjectableMessage {
   preserveObservation?: boolean;
   evidenceKind?: string;
   filePath?: string;
+  toolResultMetadata?: Record<string, unknown>;
 }
 
 export type CurrentAttachment = {

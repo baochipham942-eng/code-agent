@@ -18,7 +18,7 @@ const getUserDataPath = vi.fn();
 const getDb = vi.fn();
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings }),
 }));
 // 内部槽判据只看数据目录名（devSlot.ts:99），所以这里换掉的是路径，不是插件运行时。
 vi.mock('../../../src/host/platform', () => ({ getUserDataPath }));

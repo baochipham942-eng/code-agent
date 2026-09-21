@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const getApiKey = vi.fn();
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getApiKey }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey }),
 }));
 
 import { getGeminiApiKey } from '../../../src/host/services/media/imageGenerationService';

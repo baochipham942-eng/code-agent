@@ -6,6 +6,8 @@ import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BookOpen,
+  Download,
+  FileArchive,
   Package,
   RefreshCw,
   Search,
@@ -118,6 +120,14 @@ export function groupBuiltinSkillsByCategory(
     });
   }
   return groups;
+}
+
+/**
+ * 可导出的 skill：本机 user/project 目录里的 skill 才有导出入口
+ * （builtin/cloud 是发行内容、library/plugin 归仓库与插件链管，都不走导出）。
+ */
+function isSkillExportable(skill: Pick<ParsedSkill, 'source'>): boolean {
+  return skill.source === 'user' || skill.source === 'project';
 }
 
 /**
@@ -273,7 +283,9 @@ interface SkillRowProps {
   labels: SkillsInstalledLabels;
   onToggle: (skillName: string, enabled: boolean) => void;
   onProjectOverrideChange: (skillName: string, value: ProjectOverrideValue) => void;
+  onExport?: (skillName: string) => void;
   toggleDisabled?: boolean;
+  exportDisabled?: boolean;
 }
 
 const SkillRow: React.FC<SkillRowProps> = ({
@@ -281,7 +293,9 @@ const SkillRow: React.FC<SkillRowProps> = ({
   labels,
   onToggle,
   onProjectOverrideChange,
+  onExport,
   toggleDisabled,
+  exportDisabled,
 }) => {
   const hasMissingDeps = skill.dependencyStatus && !skill.dependencyStatus.satisfied;
   const missingDepsTitle = hasMissingDeps
@@ -334,6 +348,20 @@ const SkillRow: React.FC<SkillRowProps> = ({
         <option value="on">{labels.projectOverrideOn}</option>
         <option value="off">{labels.projectOverrideOff}</option>
       </select>
+      {onExport && isSkillExportable(skill) && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onExport(skill.name)}
+          loading={exportDisabled}
+          leftIcon={!exportDisabled ? <Download className="h-3 w-3" /> : undefined}
+          disabled={toggleDisabled}
+          aria-label={`${labels.exportAriaPrefix}${skill.name}`}
+          className="shrink-0"
+        >
+          {labels.exportAction}
+        </Button>
+      )}
       <Toggle
         checked={globalEnabled}
         onChange={(next) => onToggle(skill.name, next)}
@@ -354,6 +382,9 @@ export interface SkillsInstalledTabProps {
   actionLoading: string | null;
   onToggleSkill: (skillName: string, enabled: boolean) => void;
   onProjectOverrideChange: (skillName: string, value: ProjectOverrideValue) => void;
+  onExportSkill: (skillName: string) => void;
+  onInstallFromZip: () => void;
+  onDropZipFile: (file: File) => void;
   onUpdateLibrary: (repoId: string) => void;
   onRemoveLibrary: (repoId: string) => void;
 }
@@ -364,6 +395,9 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
   actionLoading,
   onToggleSkill,
   onProjectOverrideChange,
+  onExportSkill,
+  onInstallFromZip,
+  onDropZipFile,
   onUpdateLibrary,
   onRemoveLibrary,
 }) => {
@@ -379,7 +413,20 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
   const filteredGroups = useMemo(() => filterSkillGroups(groups, query), [groups, query]);
 
   return (
-    <div className="space-y-3">
+    <div
+      className="space-y-3"
+      onDragOver={(event) => {
+        if (Array.from(event.dataTransfer.types).includes('Files')) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        const zip = Array.from(event.dataTransfer.files).find((file) => file.name.toLowerCase().endsWith('.zip'));
+        if (zip) onDropZipFile(zip);
+      }}
+    >
       {/* 摘要 + 搜索 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-zinc-500">
@@ -395,6 +442,17 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
             </span>
           )}
         </p>
+        <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onInstallFromZip}
+          disabled={Boolean(actionLoading)}
+          leftIcon={<FileArchive className="h-3.5 w-3.5" />}
+          aria-label={installedText.installFromZipAria}
+        >
+          {installedText.installFromZipAction}
+        </Button>
         <div className="relative w-56">
           <Input
             value={query}
@@ -413,7 +471,9 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
             </button>
           )}
         </div>
+        </div>
       </div>
+      <p className="text-[11px] text-zinc-600">{installedText.dropZipHint}</p>
 
       {/* 分组列表 */}
       {filteredGroups.length === 0 ? (
@@ -487,7 +547,9 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                               labels={installedText}
                               onToggle={onToggleSkill}
                               onProjectOverrideChange={onProjectOverrideChange}
+                              onExport={onExportSkill}
                               toggleDisabled={Boolean(actionLoading)}
+                              exportDisabled={actionLoading === `export-${skill.name}`}
                             />
                           ))}
                         </div>
@@ -501,10 +563,12 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                         key={`${skill.source}:${skill.basePath || skill.name}`}
                         skill={skill}
                         labels={installedText}
-                        onToggle={onToggleSkill}
-                        onProjectOverrideChange={onProjectOverrideChange}
-                        toggleDisabled={Boolean(actionLoading)}
-                      />
+                      onToggle={onToggleSkill}
+                      onProjectOverrideChange={onProjectOverrideChange}
+                      onExport={onExportSkill}
+                      toggleDisabled={Boolean(actionLoading)}
+                      exportDisabled={actionLoading === `export-${skill.name}`}
+                    />
                     ))}
                   </div>
                 )}

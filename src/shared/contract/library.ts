@@ -15,6 +15,22 @@ export const LIBRARY_ITEM_KINDS = ['upload', 'artifact', 'capture', 'external_re
 export type LibraryItemKind = (typeof LIBRARY_ITEM_KINDS)[number];
 
 /**
+ * 学习状态（N-LIBRARY-LEARN-STATUS）：条目登记后的解析/建索引生命周期。
+ * - pending: 已登记，等待解析
+ * - running: 解析进行中
+ * - ready:   文本抽取完成，可检索/可给依据
+ * - failed:  解析失败（learnError 带真实原因），可重试
+ * 旧库迁移行视为 pending（无抽取文本，装 ready 就是假装已学习）。
+ */
+const LIBRARY_LEARN_STATUSES = ['pending', 'running', 'ready', 'failed'] as const;
+
+export type LibraryLearnStatus = (typeof LIBRARY_LEARN_STATUSES)[number];
+
+export function isLibraryLearnStatus(value: string): value is LibraryLearnStatus {
+  return (LIBRARY_LEARN_STATUSES as readonly string[]).includes(value);
+}
+
+/**
  * 资料库条目
  */
 export interface LibraryItem {
@@ -33,6 +49,12 @@ export interface LibraryItem {
   sourceRoleId?: string;
   /** 内容哈希，用于去重 */
   contentHash?: string;
+  /** 学习状态；缺省（老客户端/旧 fixture）UI 按 pending，不得显示为「可用」 */
+  learnStatus?: LibraryLearnStatus;
+  /** failed 时的真实解析错误原因（不含任何 embedding 配置话术） */
+  learnError?: string;
+  /** 学习状态最近一次变更时间 */
+  learnUpdatedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -50,6 +72,8 @@ export interface LibraryItemCreateRequest {
   sourceSessionId?: string;
   sourceRoleId?: string;
   contentHash?: string;
+  /** 登记即 ready（无解析环节的条目，如 external_ref/capture）；缺省 pending 走学习管线 */
+  learnStatus?: LibraryLearnStatus;
 }
 
 /**
@@ -71,4 +95,37 @@ export interface SessionContextPin {
   sessionId: string;
   itemIds: string[];
   addedAt: number;
+}
+
+// ============================================================================
+// 依据投影（N-LIBRARY-LEARN-STATUS ④）— 消费现有 citation 合同的 source/location，
+// 把「引用了资料库条目」的 citation 投影成 条目 + 命中片段。不是第三套 chip：
+// 入参直接来自 toolResult.metadata.citations（src/shared/contract/citation.ts）。
+// ============================================================================
+
+/** 从 Citation 摘出的定位字段（source 为本地路径或 URI） */
+export interface LibraryEvidenceQuery {
+  source: string;
+  /** Citation.location，如 "line:42" / "lines:10-20" */
+  location?: string;
+  /** Citation.lineRange 结构化行号 */
+  lineRange?: [number, number];
+}
+
+/** 命中片段：抽取文本（或文本型原件）中围绕定位的行窗口 */
+interface LibraryEvidenceFragment {
+  startLine: number;
+  endLine: number;
+  totalLines: number;
+  text: string;
+}
+
+/** 单条 citation 的依据投影；hit=false 时 fragment 必为空，绝不假装有依据 */
+export interface LibraryEvidenceProjection {
+  query: LibraryEvidenceQuery;
+  hit: boolean;
+  item?: LibraryItem;
+  fragment?: LibraryEvidenceFragment | null;
+  /** 未命中/无片段的真实原因（未命中条目 / 抽取未完成 / 解析失败原因） */
+  reason?: string;
 }

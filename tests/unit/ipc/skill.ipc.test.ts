@@ -24,7 +24,7 @@ const svc = vi.hoisted(() => {
     ensureInitialized: vi.fn(async () => {}),
     refreshLibraries: vi.fn(async () => {}),
     reload: vi.fn(async () => {}),
-    getAllSkills: vi.fn(() => [{ name: 'pdf' }, { name: 'excel' }]),
+    getAllSkills: vi.fn((): Array<{ name: string; source?: string }> => [{ name: 'pdf' }, { name: 'excel' }]),
     registerSkillsToToolSearch: vi.fn(),
     initialize: vi.fn(async () => {}),
   };
@@ -35,7 +35,7 @@ const svc = vi.hoisted(() => {
     recommendSkills: vi.fn(async () => [{ name: 'excel' }]),
   };
   const cloud = { getSkillCatalog: vi.fn(() => ({ repositories: [{ id: 'cloud-repo' }], categories: [] })) };
-  const config = { getServiceApiKey: vi.fn((): string | undefined => 'key-123') };
+  const config = { onSettingsUpdated: vi.fn(), getServiceApiKey: vi.fn((): string | undefined => 'key-123') };
   const recorder = {
     startRecording: vi.fn(),
     stopRecording: vi.fn(),
@@ -56,6 +56,18 @@ const svc = vi.hoisted(() => {
     getEntry: vi.fn(async (): Promise<SkillRegistryEntry | null> => null),
   };
   const marketplaceInstall = vi.fn(async (..._a: unknown[]) => ({ success: true }));
+  const installFromLocalZip = vi.fn(async (..._a: unknown[]) => ({
+    pluginSpec: 'demo@local-zip',
+    installedSkills: ['demo'],
+    skillName: 'demo',
+  }));
+  const exportInstalledSkill = vi.fn(async (..._a: unknown[]) => ({
+    fileName: 'demo.skill.zip',
+    contentHash: 'abc',
+    archive: Buffer.from('zip'),
+    skillName: 'demo',
+    skillDirName: 'demo',
+  }));
   const projectPref = {
     getOverride: vi.fn<(name: string) => boolean | undefined>(() => undefined),
     setOverride: vi.fn(),
@@ -77,6 +89,8 @@ const svc = vi.hoisted(() => {
     drafts,
     registry,
     marketplaceInstall,
+    installFromLocalZip,
+    exportInstalledSkill,
     projectPref,
     getProjectPrefStore,
     project,
@@ -123,6 +137,12 @@ vi.mock('../../../src/host/skills/marketplace/remoteSkillRegistryService', () =>
 }));
 vi.mock('../../../src/host/skills/marketplace/installService', () => ({
   installFromRegistryEntry: (...a: unknown[]) => svc.marketplaceInstall(...a),
+}));
+vi.mock('../../../src/host/skills/marketplace/localZipInstall', () => ({
+  installFromLocalZip: (...a: unknown[]) => svc.installFromLocalZip(...a),
+}));
+vi.mock('../../../src/host/skills/marketplace/exportService', () => ({
+  exportInstalledSkill: (...a: unknown[]) => svc.exportInstalledSkill(...a),
 }));
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -397,6 +417,64 @@ describe('会话挂载', () => {
       },
     ]);
     expect(second).toEqual([]);
+  });
+
+  it('SKILL_EXPORT 拒绝未信任项目目录里的 project skill', async () => {
+    const { isProjectConfigTrusted } = await import('../../../src/host/security/folderTrustService');
+    vi.mocked(isProjectConfigTrusted).mockResolvedValue(false);
+    svc.discovery.getAllSkills.mockReturnValue([{ name: 'demo', source: 'project' }]);
+
+    const result = await call(SKILL_CHANNELS.SKILL_EXPORT, 'demo');
+    expect(result).toEqual({
+      success: false,
+      error: 'SKILL_EXPORT_SOURCE_UNSUPPORTED: project folder is not trusted',
+    });
+    expect(svc.exportInstalledSkill).not.toHaveBeenCalled();
+  });
+
+  it('SKILL_EXPORT 信任目录下导出 project skill', async () => {
+    const { isProjectConfigTrusted } = await import('../../../src/host/security/folderTrustService');
+    vi.mocked(isProjectConfigTrusted).mockResolvedValue(true);
+    svc.discovery.getAllSkills.mockReturnValue([{ name: 'demo', source: 'project' }]);
+
+    const result = await call(SKILL_CHANNELS.SKILL_EXPORT, 'demo');
+    expect(result).toMatchObject({ success: true, fileName: 'demo.skill.zip' });
+    expect(svc.exportInstalledSkill).toHaveBeenCalled();
+  });
+
+  it('SKILL_INSTALL_LOCAL_ZIP 用 archiveBase64 走 installFromLocalZip 并 reload', async () => {
+    const result = await call(SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP, {
+      archiveBase64: Buffer.from('zip').toString('base64'),
+    });
+    expect(result).toEqual({
+      success: true,
+      skillName: 'demo',
+      pluginSpec: 'demo@local-zip',
+    });
+    expect(svc.installFromLocalZip).toHaveBeenCalledTimes(1);
+    expect(svc.installFromLocalZip).toHaveBeenCalledWith(expect.any(Buffer), {
+      force: true,
+      enableAfterInstall: true,
+    });
+    expect(svc.discovery.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('SKILL_INSTALL_LOCAL_ZIP 缺源或双源时拒绝', async () => {
+    expect(await call(SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP, {})).toEqual({
+      success: false,
+      error: 'SKILL_ZIP_INVALID_SOURCE: provide zipPath or archiveBase64',
+    });
+    expect(svc.installFromLocalZip).not.toHaveBeenCalled();
+  });
+
+  it('SKILL_INSTALL_LOCAL_ZIP 安装失败返回 error 且不抛', async () => {
+    svc.installFromLocalZip.mockRejectedValueOnce(new Error('SKILL_ZIP_MISSING_SKILL_MD: zip has no SKILL.md'));
+    expect(await call(SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP, {
+      archiveBase64: Buffer.from('zip').toString('base64'),
+    })).toEqual({
+      success: false,
+      error: 'SKILL_ZIP_MISSING_SKILL_MD: zip has no SKILL.md',
+    });
   });
 });
 

@@ -51,7 +51,7 @@ vi.mock('../../../src/host/services/core/secureStorage', () => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getIntegration: getIntegrationMock,
     setIntegration: setIntegrationMock,
   }),

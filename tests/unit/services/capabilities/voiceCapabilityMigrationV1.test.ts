@@ -27,7 +27,7 @@ vi.mock('../../../../src/host/services/core/databaseService', () => ({
   }),
 }));
 vi.mock('../../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getSettings: () => ({}),
     getApiKey: (provider: string) => readerGetApiKey(provider),
   }),

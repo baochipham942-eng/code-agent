@@ -23,6 +23,15 @@ import {
 } from '@shared/constants/skillCatalog';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
+import { pickNativeFile, saveNativeFile } from '../../../../services/tauriPluginFacade';
+import {
+  fileToLocalZipPayload,
+  installLocalSkillZip,
+  pickWebZipFile,
+  mountInstalledSkill,
+  unwrapSkillZipError,
+} from '../../../../services/skillLocalZip';
+import { toast } from '../../../../hooks/useToast';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -441,6 +450,116 @@ export const SkillsSettings: React.FC = () => {
     }
   };
 
+  const describeZipInstallError = (error?: string): string => {
+    const text = unwrapSkillZipError(error);
+    if (!text) return skillsText.zipInstallFailed;
+    if (text.includes('SKILL_ZIP_MISSING_SKILL_MD')) return skillsText.zipMissingSkillMd;
+    if (text.includes('SKILL_ZIP_MULTIPLE_SKILL_MD')) return skillsText.zipMultipleSkillMd;
+    if (text.includes('SKILL_ZIP_UNSAFE_SOURCE') || text.includes('SKILL_ZIP_UNSAFE_ENTRY')) {
+      return skillsText.zipUnsafe;
+    }
+    if (text.includes('SKILL_ZIP_TOO_LARGE')) return skillsText.zipTooLarge;
+    if (text.includes('SKILL_ZIP_INVALID_FRONTMATTER')) return skillsText.zipInvalidFrontmatter;
+    if (text.includes('SKILL_CONTENT_SCAN_BLOCKED')) return skillsText.zipScanBlocked;
+    return text;
+  };
+
+  const handleInstallLocalZip = async (file?: File | null) => {
+    setActionLoading('install-local-zip');
+    setMessage(null);
+    try {
+      let payload: { zipPath?: string; archiveBase64?: string };
+      if (file) {
+        payload = await fileToLocalZipPayload(file);
+      } else if (isWebMode()) {
+        const picked = await pickWebZipFile();
+        if (!picked) return;
+        payload = await fileToLocalZipPayload(picked);
+      } else {
+        const selectedPath = await pickNativeFile({
+          title: skillsText.installFromZipTitle,
+          extensions: ['zip'],
+        });
+        if (!selectedPath) return;
+        payload = { zipPath: selectedPath };
+      }
+      const result = await installLocalSkillZip(payload);
+      if (!result.success) {
+        setMessage({ type: 'error', text: describeZipInstallError(result.error) });
+        return;
+      }
+      let text = `${skillsText.zipInstallSuccessPrefix}${result.skillName || ''}`;
+      if (currentSessionId && result.skillName) {
+        const mounted = await mountInstalledSkill(currentSessionId, result.skillName);
+        if (mounted) text += skillsText.zipInstallMountedSuffix;
+      }
+      setMessage({ type: 'success', text });
+      setActiveTab('installed');
+      await loadData();
+    } catch (err) {
+      logger.error('Failed to install local skill zip', err);
+      setMessage({
+        type: 'error',
+        text: describeZipInstallError(err instanceof Error ? err.message : String(err)),
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleExportSkill = async (skillName: string) => {
+    setActionLoading(`export-${skillName}`);
+    try {
+      const targetPath = isWebMode()
+        ? null
+        : await saveNativeFile({
+          title: skillsText.exportSaveDialogTitle,
+          defaultPath: `${skillName}.skill.zip`,
+          extensions: ['zip'],
+        });
+      if (!isWebMode() && !targetPath) return;
+
+      const result = await invokeSkillIPCOrThrow(
+        SKILL_CHANNELS.SKILL_EXPORT,
+        skillName,
+        targetPath ?? undefined,
+      );
+      if (!result?.success) {
+        toast.error(result?.error || skillsText.exportFailed);
+        return;
+      }
+
+      if (targetPath) {
+        toast.success(`${skillsText.exportSavedPrefix}${result.savedPath || targetPath}`);
+        return;
+      }
+
+      if (!result.archiveBase64 || !result.fileName) {
+        toast.error(skillsText.exportFailed);
+        return;
+      }
+      const binary = atob(result.archiveBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = result.fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      toast.success(skillsText.exportDownloaded);
+    } catch (error) {
+      logger.error('Failed to export skill', error);
+      toast.error(describeSkillIpcError(error, skillsText.exportFailed));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // 添加自定义仓库：先 stage（下载到暂存并返回装前预览），确认后才落库
   const handleAddCustom = async () => {
     const url = customUrl.trim();
@@ -681,6 +800,9 @@ export const SkillsSettings: React.FC = () => {
           actionLoading={actionLoading}
           onToggleSkill={handleToggleSkill}
           onProjectOverrideChange={handleProjectOverrideChange}
+          onExportSkill={handleExportSkill}
+          onInstallFromZip={() => { void handleInstallLocalZip(); }}
+          onDropZipFile={(file) => { void handleInstallLocalZip(file); }}
           onUpdateLibrary={handleUpdateLibrary}
           onRemoveLibrary={handleRemoveLibrary}
         />

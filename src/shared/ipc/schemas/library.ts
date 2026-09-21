@@ -18,6 +18,8 @@ const LibraryDomainRequestSchema = z.object({
     'importFiles',
     'list',
     'pinnedItems',
+    'projectEvidence',
+    'retryLearn',
     'setPin',
     'update',
   ]),

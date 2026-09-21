@@ -47,7 +47,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  initConfigService: () => ({ initialize: mocks.configInitialize }),
+  initConfigService: () => ({ onSettingsUpdated: vi.fn(), initialize: mocks.configInitialize }),
 }));
 
 vi.mock('../../../src/cli/database', () => ({

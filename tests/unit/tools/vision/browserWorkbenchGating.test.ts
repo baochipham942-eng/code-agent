@@ -279,7 +279,7 @@ vi.mock('../../../../src/host/services/cloud/featureFlagService', () => ({
 }));
 
 vi.mock('../../../../src/host/services', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getApiKey: () => null,
   }),
 }));

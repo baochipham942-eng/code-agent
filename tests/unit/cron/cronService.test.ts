@@ -48,7 +48,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ ui: { language: configState.language } }) }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({ ui: { language: configState.language } }) }),
 }));
 
 vi.mock('../../../src/host/channels/channelManager', () => ({

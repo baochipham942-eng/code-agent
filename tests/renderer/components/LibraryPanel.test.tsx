@@ -9,6 +9,7 @@ const listLibraryItems = vi.fn<() => Promise<LibraryItem[]>>();
 const deleteLibraryItem = vi.fn().mockResolvedValue(undefined);
 const importLibraryFiles = vi.fn().mockResolvedValue({ items: [], errors: [] });
 const updateLibraryItem = vi.fn();
+const retryLibraryLearn = vi.fn();
 const listBrands = vi.fn<() => Promise<{ brands: BrandMeta[]; activeId?: string }>>();
 const readBrand = vi.fn<() => Promise<BrandContract | null>>();
 const saveBrand = vi.fn<() => Promise<string | null>>();
@@ -22,6 +23,7 @@ vi.mock('../../../src/renderer/services/libraryClient', () => ({
   deleteLibraryItem: (...args: unknown[]) => deleteLibraryItem(...(args as [])),
   importLibraryFiles: (...args: unknown[]) => importLibraryFiles(...(args as [])),
   updateLibraryItem: (...args: unknown[]) => updateLibraryItem(...(args as [])),
+  retryLibraryLearn: (...args: unknown[]) => retryLibraryLearn(...(args as [])),
 }));
 
 vi.mock('../../../src/renderer/services/projectClient', () => ({
@@ -58,6 +60,7 @@ function makeItem(overrides: Partial<LibraryItem> = {}): LibraryItem {
     tags: ['素材'],
     // 默认带来源会话，按推导口径落入「AI 生成」tab（默认 tab），减少各用例的先置点击
     sourceSessionId: 'session_default',
+    learnStatus: 'ready',
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -344,6 +347,30 @@ describe('LibraryPanel', () => {
     // 返回靠 appStore 的统一让位动作（switchSession/新建会话经它收口）
     useAppStore.getState().closeSecondaryPages();
     expect(useAppStore.getState().showLibraryPanel).toBe(false);
+  });
+
+  it('学习状态列：ready 显示可用；failed 显示失败可重试；缺 learnStatus 不得显示可用', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    retryLibraryLearn.mockResolvedValue(makeItem({ id: 'lib_fail', learnStatus: 'ready', title: '坏文件.bin' }));
+    listLibraryItems.mockResolvedValue([
+      makeItem({ id: 'lib_ok', title: '可用稿.md', learnStatus: 'ready' }),
+      makeItem({ id: 'lib_fail', title: '坏文件.bin', learnStatus: 'failed', learnError: '不支持抽取文本的格式' }),
+      makeItem({ id: 'lib_old', title: '旧条目.md', learnStatus: undefined as unknown as 'pending' }),
+    ]);
+    render(<LibraryPanel />);
+    await screen.findByText('可用稿.md');
+    expect(screen.getByText('可用')).toBeTruthy();
+    expect(screen.getByText('失败')).toBeTruthy();
+    expect(screen.getByText('不支持抽取文本的格式')).toBeTruthy();
+    expect(screen.getByText('待处理')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('library-retry-lib_fail'));
+    await waitFor(() => {
+      expect(retryLibraryLearn).toHaveBeenCalledWith('lib_fail');
+    });
+    fireEvent.click(screen.getByTestId('library-retry-lib_old'));
+    await waitFor(() => {
+      expect(retryLibraryLearn).toHaveBeenCalledWith('lib_old');
+    });
   });
 
 });

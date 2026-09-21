@@ -43,6 +43,9 @@ function render(skills: InstalledSkill[]): string {
       onProjectOverrideChange: noop,
       onUpdateLibrary: noop,
       onRemoveLibrary: noop,
+      onExportSkill: noop,
+      onInstallFromZip: noop,
+      onDropZipFile: noop,
     }),
   );
 }

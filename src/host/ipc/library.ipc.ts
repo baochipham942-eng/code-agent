@@ -11,6 +11,8 @@
 // - addItem      -> 登记条目/归档产物（LibraryItemCreateRequest）
 // - importFiles  -> 导入本地文件（{ paths, projectId?, tags?, sourceSessionId? }；
 //                   web 侧先走 /api/upload/temp 拿临时路径）
+// - retryLearn   -> 重试失败/待处理条目学习（{ itemId }）
+// - projectEvidence -> 将 citation 定位投影为资料库条目 + 片段（{ query }）
 // - update       -> 局部更新（{ itemId, title?, tags?, summary?, projectId? }）
 // - delete       -> 删除条目（{ itemId }；upload 类连库内文件一起删）
 // - getPin       -> 会话 pin（{ sessionId }）
@@ -41,6 +43,13 @@ interface ImportFilesPayload {
   tags?: string[];
   sourceSessionId?: string;
 }
+interface EvidencePayload {
+  query?: {
+    source?: string;
+    location?: string;
+    lineRange?: [number, number];
+  };
+}
 interface UpdatePayload extends ItemIdPayload {
   title?: string;
   tags?: string[];
@@ -69,6 +78,9 @@ const libraryHandlers: RawDomainRouteHandlers<LibraryDomainRequest, void> = {
   list: async (_ctx, payload) => {
     const svc = getLibraryService();
     const options = (payload ?? {}) as LibraryListOptions;
+    void svc.sweepPendingLearn().catch((error: unknown) => {
+      logger.warn('Library pending-learn sweep failed', { error });
+    });
     return { success: true, data: svc.list(options) };
   },
   get: async (_ctx, payload) => {
@@ -95,12 +107,24 @@ const libraryHandlers: RawDomainRouteHandlers<LibraryDomainRequest, void> = {
     const errors: Array<{ path: string; message: string }> = [];
     for (const sourcePath of valid) {
       try {
-        items.push(svc.importFile({ projectId, sourcePath, tags, sourceSessionId }));
+        items.push(await svc.importFile({ projectId, sourcePath, tags, sourceSessionId }));
       } catch (error) {
         errors.push({ path: sourcePath, message: error instanceof Error ? error.message : String(error) });
       }
     }
     return { success: true, data: { items, errors } };
+  },
+  retryLearn: async (_ctx, payload) => {
+    const svc = getLibraryService();
+    const { itemId } = (payload ?? {}) as ItemIdPayload;
+    if (!itemId) return invalid('itemId is required');
+    return { success: true, data: await svc.retryLearn(itemId) };
+  },
+  projectEvidence: async (_ctx, payload) => {
+    const svc = getLibraryService();
+    const { query } = (payload ?? {}) as EvidencePayload;
+    if (typeof query?.source !== 'string' || !query.source.trim()) return invalid('query.source is required');
+    return { success: true, data: svc.projectEvidence(query as NonNullable<EvidencePayload['query']> & { source: string }) };
   },
   update: async (_ctx, payload) => {
     const svc = getLibraryService();

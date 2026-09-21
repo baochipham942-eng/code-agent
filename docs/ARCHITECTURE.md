@@ -593,12 +593,14 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 |---|---|---|
 | 评测中心 | 内部 evaluation-center 包包含 runner、replay、归因和 UI；默认应用不得直接 import 该目录 | `packages/internal/evaluation-center/README.md` |
 | Casebank | 公开题面在 `.claude/test-cases/`；答案和 eval-splits 在私档，缺答案保留计划并记 not_run | `packages/internal/evaluation-center/README.md`、`scripts/ci/check-casebank-answers.mjs` |
-| 发布前判分 | 确定性断言与 dimension judge 分工，judge 校准报告分歧/混淆矩阵；真实坏产物标本用于防假通过 | `src/host/testing/judge/dimensionJudge.ts`、`src/host/testing/calibration/judgeCalibration.ts`、`src/host/testing/artifactRunnableAdapter.ts` |
+| 发布前判分 | 确定性断言与 dimension judge 分工，judge 校准报告分歧/混淆矩阵；真实坏产物标本用于防假通过；可选 Jev 初筛默认关（`CODE_AGENT_DIMJUDGE_JEV_PRESCREEN`），逐断言 noul 决断、弃权带升级生成式 | `src/host/testing/judge/dimensionJudge.ts`、`src/host/testing/calibration/judgeCalibration.ts`、`src/host/testing/artifactRunnableAdapter.ts` |
 | 上线后评测 | 真实轨迹无参考解地评过程；语义维与确定性安全/产物维分开，避免模型复判硬信号 | `src/host/testing/judge/postLaunchJudge.ts`、`src/shared/contract/postLaunchScore.ts` |
 | 外部 benchmark | 独立 harness 与 SWE-bench 等样本，不把外部 runner 当聊天运行时 | `packages/eval-harness/`、`benchmarks/` |
 | 产物质量 | 各 kind 自有 verifier，输出 ArtifactIssue 与质量报告；Admin Review Queue 做发布处置 | `docs/architecture/artifact-verification.md`、`src/web/routes/adminReviewQueue.ts` |
 
 **Jev 初筛（默认关）。** 环境变量 `CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN=1` 且 `TYPESAFE_API_KEY` 能经 providerResolution 解析到时，打分器把 `projectTurnForJudge` 的同一份投影发到 `api.typesafe.ai`（TypeSafe System One，`jev-1.13.0`）。问句与弃权带（noul ≥0.65 通过、≤0.35 不通过、其间弃权）集中在 `src/shared/constants/jevQuestions.ts`。四个应判维全部决断则不再调生成式判官，`judge_model` 写 `typesafe/jev-1.13.0`（不覆盖历史轮、不升 `POST_LAUNCH_JUDGE_VERSION`）；任一弃权、`goal_met=cannot_tell`、或 Jev 抛错/超时/形状不对则升级生成式——升级前再查一次预算（已花 + Jev 刊例 + 生成式估算），不够则停评并保留 Jev 已决断维。Jev 不可用**不**新增 `unavailable` 出口——生成式也失败才走既有 `judge_error` / `parse_error`。空 `toolCalls` 不问 `tools_pass`，改问 `no_tools_but_needed`（≥0.65 则 tools=0，≤0.35 则 tools 跳过，中间升级）；`userPrompt` 仍空则 goal 强制弃权。未开启时与只走生成式判官的路径一致。
+
+发布前 dimensionJudge 有同形开关 `CODE_AGENT_DIMJUDGE_JEV_PRESCREEN`（N-JEV-EVAL-JUDGE）：五维逐断言 noul 窄问（`DIMENSION_PRESCREEN_QUESTIONS`），按维弃权升级而非整轮；决断维落 `judgeModel=typesafe/jev-1.13.0` 与 `prescreen=jev_decided`，升级维落 `prescreen=escalated`；弃权率看报告「无法确定」列，决断/升级率由报告汇总行给出。同样默认关、抛错视同全弃权升级、不新增 `unavailable` 出口。
 
 评测报告按 static-contract / hermetic-protocol / fault-injection / real-runtime 区分证明能力；只有结构门不能宣称运行时行为已验证，诊断评分也不自动阻断普通会话。（`docs/testing-evidence-classes.md`、`docs/architecture/v0.33-runtime-observability-control.md`）
 

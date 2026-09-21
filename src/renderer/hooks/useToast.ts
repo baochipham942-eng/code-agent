@@ -22,7 +22,7 @@ export interface Toast {
 
 interface ToastStore {
   toasts: Toast[];
-  addToast: (type: ToastType, message: string, duration?: number, action?: ToastAction) => void;
+  addToast: (type: ToastType, message: string, duration?: number, action?: ToastAction) => string;
   removeToast: (id: string) => void;
 }
 
@@ -68,12 +68,15 @@ export const useToastStore = create<ToastStore>((set) => ({
     set((state) => ({
       toasts: [...state.toasts, { id, type, message: dedupeRepeatedListItems(message), duration, action }],
     }));
-    // Auto-remove after duration
-    setTimeout(() => {
-      set((state) => ({
-        toasts: state.toasts.filter((t) => t.id !== id),
-      }));
-    }, duration);
+    // duration <= 0 keeps the toast until the caller removes it.
+    if (duration > 0) {
+      setTimeout(() => {
+        set((state) => ({
+          toasts: state.toasts.filter((t) => t.id !== id),
+        }));
+      }, duration);
+    }
+    return id;
   },
   removeToast: (id) =>
     set((state) => ({
@@ -92,10 +95,9 @@ export const toast = {
     useToastStore.getState().addToast('warning', msg, duration, action),
   /** Typed entry used by the old uiStore.showToast call shape. Renders here, not in uiStore. */
   show: (type: ToastType, message: string, duration = 5000): string => {
-    if (type === 'error') toast.error(message, undefined, duration);
-    else if (type === 'warning') toast.warning(message, undefined, duration);
-    else if (type === 'info') toast.info(message, duration);
-    else toast.success(message, duration);
-    return '';
+    if (type === 'error') return toast.error(message, undefined, duration);
+    if (type === 'warning') return toast.warning(message, undefined, duration);
+    if (type === 'info') return toast.info(message, duration);
+    return toast.success(message, duration);
   },
 };

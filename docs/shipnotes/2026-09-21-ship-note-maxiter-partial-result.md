@@ -90,3 +90,11 @@ AssertionError: expected undefined to be 'max_iterations' // Object.is equality
 ## ai-review R2（codex，Important 1）修复
 
 forced-final 轮原文仅含内部格式标记（`<truncation-recovery>` / `Ran:` 等）时，`stripInternalFormatMimicry` 清洗后落盘正文为空，但旧代码仍清掉 `forceFinalResponseReason`，保底判据失效、CLI 空 output 却带退出码 2。修复：`messageProcessor.handleTextResponse` 在 forced-final 且清洗后正文为空时不落盘、不清 reason（turn_end/telemetry 照发），reason 残留驱动 `ensureMaxStepsWrapUp` 兜底。钉死用例在 `tests/unit/agent/messageProcessor.persistence.test.ts`（39/39 全绿）。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=b03afbe085d0b59b6e78d1d8690e378dd414432b base=ca4a1b2fd0816e6d6ddaaad73d40ebf1f77bd1d7 receipt=b9ddd0d7-e6ef-4894-80db-85894de35d4f
+
+## ai-review R3（codex，Important 1）修复
+
+兜底摘要的 modifiedFiles 与 R1#1 同类：nudgeManager 的改动集合跨 run 只增不减，直接读会把上一轮改的 a.ts 误写进本轮「已完成部分」。改用仓内既有 `getModifiedFilesSince(ctx.stats.runStartTime)`（turnOutcomeStamp 同款口径）。钉死用例：上一轮改动文件不进本轮部分结果 + 过滤时间戳为 runStartTime（84/84 全绿）。

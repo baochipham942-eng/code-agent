@@ -1718,6 +1718,39 @@ describe('ConversationRuntime', () => {
       expect(synthesized!.content).toContain('没有留下可见产出');
     });
 
+    it('never claims files modified by earlier runs as this run\'s partial output (ai-review R3 #2005)', async () => {
+      ctx.maxIterations = 2;
+      (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      // modifiedFiles 跨 run 累积：上一轮的 old-run-a.ts 不许进本轮「已完成部分」
+      const getModifiedFilesSince = vi.fn().mockReturnValue([]);
+      ctx.nudgeManager = {
+        getModifiedFilesSince,
+        getModifiedFiles: vi.fn().mockReturnValue(new Set(['old-run-a.ts'])),
+      } as never;
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        .mockImplementationOnce(async () => ({ type: 'text', content: '' }));
+
+      await runtime.run('long task');
+
+      const crossRunPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = crossRunPersistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeTruthy();
+      expect(synthesized!.content).not.toContain('old-run-a.ts');
+      expect(getModifiedFilesSince).toHaveBeenCalledWith(ctx.stats.runStartTime);
+    });
+
     it('does not synthesize a fallback when the run completes before max iterations', async () => {
       ctx.maxIterations = 5;
       modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Done!' });

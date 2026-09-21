@@ -59,7 +59,11 @@ export function activateMaxStepsFinalResponse(ctx: RuntimeContext, limitReason?:
  * 不允许出现零收尾断流的 run（issue #1999：exit 1 + 空回复 + 无产物）。
  */
 function buildMaxStepsPartialResultContent(ctx: RuntimeContext, maxIterations: number): string {
-  const modifiedFiles = Array.from(ctx.nudgeManager?.getModifiedFiles?.() ?? []);
+  // 只认本次 run 的改动：modifiedFiles 跨 run 只增不减，必须按 runStartTime 过滤，
+  // 否则上一轮的 a.ts 会被误写进这一轮的「已完成部分」（ai-review R3 #2005）
+  const modifiedFiles = ctx.nudgeManager?.getModifiedFilesSince
+    ? ctx.nudgeManager.getModifiedFilesSince(ctx.stats.runStartTime)
+    : Array.from(ctx.nudgeManager?.getModifiedFiles?.() ?? []);
   // 只认本次 run 的产出：会话历史里的旧 assistant 文本不能算「这次做了什么」（ai-review #2005）
   const lastAssistantText = [...ctx.messages]
     .reverse()

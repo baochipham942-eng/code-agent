@@ -17,7 +17,10 @@ export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boole
 }
 
 export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
-  const askDenied = ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
+  // unattendedTurn 时 AskUserQuestion 已被 filterToolsByRunPolicy 收出工具面
+  // （issue #1994），重试指引不许再把模型引回这个不可用工具。
+  const askDenied = ctx.unattendedTurn === true
+    || ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
   return askDenied
     ? 'Continue without those tools. If you need user input, state the blocker in your final text instead of calling an interactive tool.'
     : 'Continue without those tools. AskUserQuestion remains available; call it directly when the current task requires user input.';

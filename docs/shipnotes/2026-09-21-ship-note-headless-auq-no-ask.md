@@ -25,11 +25,14 @@ AskUserQuestion 永远无人应答。模型白问一轮后工具返回带 `await
 
 ## 测试证据
 
-- static-contract：`npm run typecheck` 0 错误；`npm run gates:fast` 绿
-  （receipt=3d96e18e-5bd0-448f-ad04-09abc0b195bd，绑 HEAD 20c2aeb87e9fc5269cef6d57f0eb57254349743f）。
+- static-contract：`npm run typecheck` 0 错误；`npm run gates:fast` 绿。
+  回执由 gates/ship 流程按当时 HEAD 滚动生成、落 `.reports/gates-fast/`（ship pr/merge
+  会复核回执与 HEAD 绑定），本档不固化某个 sha 的回执号——文档后续修订会顶出新
+  HEAD，固化即过期（ai-review PR#2009 连打两次同因）。
 - hermetic-protocol：
-  - `tests/unit/agent/toolRunPolicy.test.ts` 11 过（新增 4：unattended 滤两个
-    等价名 / 白名单捞不回 / 有人值守保留 / 收窄日志点名）；
+  - `tests/unit/agent/toolRunPolicy.test.ts` 12 过（新增 5：unattended 滤两个
+    等价名 / 白名单捞不回 / 有人值守保留 / 收窄日志点名 / unattended 时重试指引
+    不再声称 AskUserQuestion 可用）；
   - `tests/unit/cli/chatOriginKind.test.ts` 3 过（管道→headless、--json→headless、
     TTY→不声明）；
   - 相关既有套件 147 过（askUserQuestion / userQuestionPrompt / adapter.cliAgent /

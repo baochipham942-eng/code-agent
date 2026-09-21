@@ -16,6 +16,7 @@ const {
   filterToolsByRunPolicy,
   filterToolsByRunPolicyObserved,
   isToolDeniedForRun,
+  deniedToolRetryGuidance,
 } = await import('../../../src/host/agent/runtime/toolRunPolicy');
 
 const tool = (name: string): ToolDefinition => ({
@@ -185,6 +186,17 @@ describe('toolRunPolicy', () => {
       const [message, payload] = infoSpy.mock.calls[0];
       expect(message).toContain('narrowed 2 -> 1');
       expect(payload.removed).toEqual(['AskUserQuestion']);
+    });
+
+    // ai-review PR#2009：无人值守时重试指引不许再把模型引回已移除的 AskUserQuestion。
+    it('无人值守时 deniedToolRetryGuidance 不再声称 AskUserQuestion 可用', () => {
+      expect(deniedToolRetryGuidance({ unattendedTurn: true } as any))
+        .toContain('state the blocker in your final text');
+      expect(deniedToolRetryGuidance({ unattendedTurn: true } as any))
+        .not.toContain('AskUserQuestion remains available');
+      // 有人值守且无显式 deny：指引保持旧行为。
+      expect(deniedToolRetryGuidance({} as any))
+        .toContain('AskUserQuestion remains available');
     });
   });
 });

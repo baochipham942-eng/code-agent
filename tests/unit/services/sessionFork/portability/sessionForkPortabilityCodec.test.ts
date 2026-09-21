@@ -243,20 +243,6 @@ describe('session fork portability codecs', () => {
     expect(serialized).not.toContain('releaseNotes');
   });
 
-  it('only redacts Bearer text that looks like real token material', () => {
-    const draft = subtreeDraft();
-    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
-    const ca1 = childEntry.messages.find((entry) => entry.id === 'ca1')!;
-    ca1.content = 'continue with Bearer authentication for this request';
-    ca1.thinking = 'use Bearer abcdefghijklmnopqrstuvwxyz to call the api';
-
-    const envelope = buildSessionExportEnvelopeV2(draft);
-    const childMessage = envelope.messages.find((item) => item.id === 'ca1');
-
-    expect(childMessage?.content).toBe('continue with Bearer authentication for this request');
-    expect(childMessage?.thinking).toBe('use Bearer [REDACTED] to call the api');
-  });
-
   it('roundtrips a standalone lineage envelope with stable encoding', () => {
     const envelope = buildSessionExportEnvelopeV2(subtreeDraft());
     const lineage = buildForkLineageEnvelopeV1(envelope.lineage!);

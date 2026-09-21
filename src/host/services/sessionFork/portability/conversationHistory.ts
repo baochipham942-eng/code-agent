@@ -189,20 +189,11 @@ function numberArray(value: unknown, label: string): number[] {
   return parsed.map((item, index) => nonNegativeInteger(item, `${label}[${index}]`));
 }
 
-// Bearer token bodies are opaque (JWT/base64url) — long and containing digits or token
-// punctuation. A plain English phrase like "Bearer authentication" is neither, so it's
-// excluded from redaction rather than flagged as a false-positive secret.
-function looksLikeBearerTokenBody(token: string): boolean {
-  return token.length >= 16 || /[0-9._~+/-]/u.test(token);
-}
-
 /** @internal Shared with codec.ts so a Bearer/sk-/AKIA/`key=value` credential shape is
  * redacted at the same strength no matter which export channel carries the string. */
 export function redactSecretText(value: string): string {
   return value
-    .replace(/\bBearer\s+([A-Za-z0-9._~+/-]+=*)/giu, (match, token: string) => (
-      looksLikeBearerTokenBody(token) ? 'Bearer [REDACTED]' : match
-    ))
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/giu, 'Bearer [REDACTED]')
     .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/giu, '[REDACTED_SECRET]')
     .replace(/\bAKIA[A-Z0-9]{16}\b/gu, '[REDACTED_SECRET]')
     .replace(

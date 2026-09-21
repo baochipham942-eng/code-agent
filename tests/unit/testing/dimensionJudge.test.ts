@@ -5,7 +5,7 @@ import {
   AI_REVIEW_DIMENSION_DEFINITIONS,
 } from '../../../src/host/testing/judge/dimensions';
 import {
-  DIMENSION_PRESCREEN_QUESTIONS,
+  EVAL_JUDGE_QUESTIONS,
   JEV_JUDGE_MODEL,
   type JevAnswers,
   type JevQuestionSpec,
@@ -108,7 +108,7 @@ describe('judgeDimensions · Jev 初筛', () => {
   function answersFor(dims: AiReviewDimension[], noul: number): JevAnswers {
     const answers: JevAnswers = {};
     for (const dimension of dims) {
-      for (const key of Object.keys(DIMENSION_PRESCREEN_QUESTIONS[dimension])) {
+      for (const key of Object.keys(EVAL_JUDGE_QUESTIONS[dimension])) {
         answers[key] = { noul };
       }
     }
@@ -194,7 +194,7 @@ describe('judgeDimensions · Jev 初筛', () => {
     );
     expect(prescreen).toHaveBeenCalledTimes(1);
     expect(Object.keys(prescreen.mock.calls[0][1]).sort()).toEqual(
-      ['claims_grounded', 'confirmed_before_side_effects', 'task_fulfilled'],
+      ['claims_grounded', 'confirmed_before_side_effects', 'quality', 'task_fulfilled'],
     );
     expect(llmCall).toHaveBeenCalledTimes(1);
     expect(judged.task_completed).toMatchObject({ verdict: 'yes', prescreen: 'jev_decided' });
@@ -282,5 +282,63 @@ describe('judgeDimensions · Jev 初筛', () => {
     );
     expect(judged.task_completed).toMatchObject({ verdict: 'yes', prescreen: 'escalated' });
     expect(judged.task_completed?.prescreenCostUsd).toBeGreaterThan(0);
+  });
+
+  // 母单验收⑦反向锚：全部窄问落中间带（0.5）⇒ 应判维 100% 升级生成式，不许硬切判 0/1。
+  it('全部窄问 0.5 ⇒ 100% 升级生成式（llmCall 次数 = 应判维数），无 0.5 硬切', async () => {
+    const dims: AiReviewDimension[] = ['task_completed', 'confirmed_before_acting'];
+    const llmCall = vi.fn(async () => '按证据判断\n是');
+    const judged = await judgeDimensions(
+      { testCase: testCase(), result: result(), dims },
+      llmCall,
+      { prescreen: async () => answersFor(dims, 0.5) },
+    );
+    expect(llmCall).toHaveBeenCalledTimes(dims.length);
+    expect(judged.task_completed).toMatchObject({ verdict: 'yes', prescreen: 'escalated' });
+    expect(judged.confirmed_before_acting).toMatchObject({ verdict: 'yes', prescreen: 'escalated' });
+  });
+
+  // 续单验收①⑤：score 原语 quality 是信息列——不影响决断；坏形状拒收，不静默落 0.5、不拖累升级。
+  it('quality score 合法 ⇒ 落在 verdict 信息列，不影响弃权带决断', async () => {
+    const judged = await judgeDimensions(
+      { testCase: testCase(), result: result(), dims: ['task_completed'] },
+      async () => '不会调用\n是',
+      {
+        prescreen: async () => ({
+          ...answersFor(['task_completed'], 0.9),
+          // 真 API 形状（09-22 探针）：score 是 0..len(criteria)-1 插值；给最低档 0 分
+          quality: { score: 0, confidence: 0.8, legend: { 0: 'low', 1: 'mid', 2: 'high' } },
+        }),
+      },
+    );
+    // quality 0 分也不把 noul 0.9 的决断拉成 no：score 不是放行/否决依据；落库的是归一化 0-1
+    expect(judged.task_completed).toMatchObject({ verdict: 'yes', prescreen: 'jev_decided' });
+    expect(judged.task_completed?.quality).toEqual({ score: 0, confidence: 0.8 });
+  });
+
+  it.each([
+    ['越界 score（3 档上限 2，给 2.5）', { score: 2.5, confidence: 0.8, legend: { 0: 'a', 1: 'b', 2: 'c' } }],
+    ['负 score', { score: -0.1, confidence: 0.8, legend: { 0: 'a', 1: 'b', 2: 'c' } }],
+    ['越界 confidence', { score: 1, confidence: 1.2, legend: { 0: 'a', 1: 'b', 2: 'c' } }],
+    ['NaN', { score: NaN, confidence: 0.8, legend: { 0: 'a', 1: 'b', 2: 'c' } }],
+    ['缺 confidence', { score: 1, legend: { 0: 'a', 1: 'b', 2: 'c' } }],
+    ['非数字', { score: '1.2', confidence: 0.8, legend: { 0: 'a', 1: 'b', 2: 'c' } }],
+    ['档位表只有 1 档', { score: 0, confidence: 0.8, legend: { 0: 'a' } }],
+  ])('quality 坏形状（%s）⇒ 拒收：quality 缺席、决断维不受拖累、不升级', async (_label, quality) => {
+    const llmCall = vi.fn(async () => '不会调用\n是');
+    const judged = await judgeDimensions(
+      { testCase: testCase(), result: result(), dims: ['task_completed'] },
+      llmCall,
+      {
+        prescreen: async () => ({
+          ...answersFor(['task_completed'], 0.9),
+          quality: quality as never,
+        }),
+      },
+    );
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(judged.task_completed).toMatchObject({ verdict: 'yes', prescreen: 'jev_decided' });
+    expect(judged.task_completed?.quality).toBeUndefined();
+    expect(judged.task_completed?.quality?.score).not.toBe(0.5);
   });
 });

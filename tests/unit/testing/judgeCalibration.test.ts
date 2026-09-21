@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { computeCalibration, type CalibrationPair } from '../../../src/host/testing/calibration/judgeCalibration';
+import { computeCalibration, summarizeRepeatVariance, type CalibrationPair } from '../../../src/host/testing/calibration/judgeCalibration';
 
 // 构造一组 judge 与金标的配对，命中已知的混淆矩阵：TP=4, TN=3, FP=2, FN=1
 function fixedPairs(): CalibrationPair[] {
@@ -80,5 +80,36 @@ describe('computeCalibration', () => {
     expect(r.total).toBe(0);
     expect(r.cohensKappa).toBe(0);
     expect(r.disagreements).toEqual([]);
+  });
+});
+
+// N-JEV-EVAL-JUDGE 母单验收⑥：冻结轨迹重复判方差汇总（judge-calibration.ts --repeat 用）。
+describe('summarizeRepeatVariance', () => {
+  it('全同判决方差 0 零翻转；一半翻转的二值序列方差 = p(1-p)', () => {
+    const summary = summarizeRepeatVariance([
+      { caseId: 'stable', scores: [1, 1, 1, 1] },
+      { caseId: 'flip', scores: [1, 0, 1, 0] },
+    ]);
+    const [stable, flip] = summary.cases;
+    expect(stable.scoreVariance).toBe(0);
+    expect(stable.flips).toBe(0);
+    expect(flip.scoreVariance).toBe(0.25);
+    expect(flip.flips).toBe(3);
+    expect(summary.meanVariance).toBe(0.125);
+    expect(summary.totalFlips).toBe(3);
+  });
+
+  it('弃权/unavailable（null）不进方差但算翻转；数值判决不足 2 次 ⇒ variance=null 不冒充 0', () => {
+    const summary = summarizeRepeatVariance([
+      { caseId: 'abstain-heavy', scores: [1, null, 1, null] },
+      { caseId: 'all-abstain', scores: [null, null] },
+    ]);
+    const [abstainHeavy, allAbstain] = summary.cases;
+    expect(abstainHeavy.flips).toBe(3);
+    expect(abstainHeavy.scoreVariance).toBe(0);
+    expect(abstainHeavy.judgedRuns).toBe(2);
+    expect(allAbstain.scoreVariance).toBeNull();
+    expect(summary.varianceCases).toBe(1);
+    expect(summary.meanVariance).toBe(0);
   });
 });

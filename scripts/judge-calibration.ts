@@ -6,12 +6,15 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { AnnotationRepository } from '../src/host/services/core/repositories/AnnotationRepository';
 import { resolveHumanGoldLabels } from './lib/humanGold';
-import type { AiReviewDimension } from '../src/shared/contract/evaluation';
+import type { AiReviewDimension, AiReviewVerdict } from '../src/shared/contract/evaluation';
 import { CONFIG_DIR_NEW } from '../src/shared/constants/configDir';
 import { quickTask, getQuickModelRuntimeInfo } from '../src/host/model/quickModel';
-import { computeCalibration, type CalibrationLabel, type CalibrationPair } from '../src/host/testing/calibration/judgeCalibration';
+import { resolveProviderApiKey } from '../src/host/model/providers/providerResolution';
+import { systemOne } from '../src/host/model/providers/typesafeProvider';
+import { JEV_MODEL } from '../src/shared/constants/jevQuestions';
+import { computeCalibration, summarizeRepeatVariance, type CalibrationLabel, type CalibrationPair } from '../src/host/testing/calibration/judgeCalibration';
 import { CALIBRATION_TRUST_THRESHOLDS, isTrustedCalibration, saveCalibrationRecord } from '../src/host/testing/calibration/calibrationRegistry';
-import { judgeDimensions, getAiReviewPromptHash } from '../src/host/testing/judge/dimensionJudge';
+import { judgeDimensions, getAiReviewPromptHash, type DimensionJudgePrescreen } from '../src/host/testing/judge/dimensionJudge';
 import type { TestCase, TestResult } from '../src/host/testing/types';
 
 type CalibratableDimension = Extract<AiReviewDimension, 'task_completed' | 'confirmed_before_acting'>;
@@ -38,18 +41,22 @@ function readFlag(args: string[], name: string): string | undefined {
   return index >= 0 ? args[index + 1] : undefined;
 }
 
-function parseArgs(): { reportPath: string; dimension: CalibratableDimension; gold: GoldSource; dataDir: string } {
+function parseArgs(): { reportPath: string; dimension: CalibratableDimension; gold: GoldSource; dataDir: string; repeat: number; prescreen: boolean } {
   const args = process.argv.slice(2);
-  const flags = ['--dimension', '--gold', '--data-dir'];
+  const flags = ['--dimension', '--gold', '--data-dir', '--repeat'];
   const reportPath = args.find((arg, index) => !arg.startsWith('--') && !flags.includes(args[index - 1] ?? ''));
   const dimension = readFlag(args, '--dimension');
   const gold = readFlag(args, '--gold') ?? 'deterministic_shadow';
   const dataDir = readFlag(args, '--data-dir') ?? process.env.CODE_AGENT_DATA_DIR?.trim() ?? path.join(homedir(), '.code-agent');
+  const repeatRaw = readFlag(args, '--repeat');
+  const repeat = repeatRaw === undefined ? 1 : Number.parseInt(repeatRaw, 10);
+  if (!Number.isInteger(repeat) || repeat < 1) throw new Error('--repeat 必须是 ≥1 的整数');
+  const prescreen = args.includes('--prescreen');
   if (!reportPath || (dimension !== 'task_completed' && dimension !== 'confirmed_before_acting')
     || (gold !== 'deterministic_shadow' && gold !== 'human_annotation')) {
-    throw new Error('用法: npx tsx scripts/judge-calibration.ts <report.json> --dimension task_completed|confirmed_before_acting [--gold deterministic_shadow|human_annotation] [--data-dir <dir>]');
+    throw new Error('用法: npx tsx scripts/judge-calibration.ts <report.json> --dimension task_completed|confirmed_before_acting [--gold deterministic_shadow|human_annotation] [--data-dir <dir>] [--repeat N] [--prescreen]');
   }
-  return { reportPath, dimension, gold, dataDir: path.resolve(dataDir) };
+  return { reportPath, dimension, gold, dataDir: path.resolve(dataDir), repeat, prescreen };
 }
 
 /**
@@ -110,10 +117,19 @@ function datasetFingerprint(caseIds: string[]): string {
 }
 
 async function main(): Promise<void> {
-  const { reportPath, dimension, gold, dataDir } = parseArgs();
+  const { reportPath, dimension, gold, dataDir, repeat, prescreen } = parseArgs();
   const runtime = getQuickModelRuntimeInfo();
   if (!runtime) throw new Error('当前没有可用的 quick 模型配置');
   const judgeModel = `${runtime.provider}/${runtime.model}`;
+  // --prescreen：Jev 初筛进校准跑量（N-JEV-EVAL-JUDGE 母单⑥的方差测量也走这条）。
+  // 没配 key 直接 fail-loud，不静默回落生成式冒充 Jev 数据。
+  let prescreenCall: DimensionJudgePrescreen | undefined;
+  if (prescreen) {
+    if (!resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL })) {
+      throw new Error('--prescreen 需要 TYPESAFE_API_KEY（或 providerResolution 可解析的 typesafe key）');
+    }
+    prescreenCall = (state, questions) => systemOne(state, questions);
+  }
   const report = JSON.parse(await fs.readFile(reportPath, 'utf8')) as {
     runId?: string;
     results?: ReportCase[];
@@ -140,19 +156,32 @@ async function main(): Promise<void> {
     if (humanGold.contested.length) console.log(`  分歧题：${humanGold.contested.join('、')}`);
   }
 
+  const repeats: Array<{ caseId: string; scores: Array<number | null> }> = [];
+  const qualityByCase: Array<{ caseId: string; qualities: number[] }> = [];
+
   for (const reportCase of cases) {
     const truth = humanGold ? humanGold.labels.get(reportCase.testId) ?? null : groundTruth(reportCase, dimension);
     if (!truth) continue;
     const input = asJudgeInput(reportCase);
-    const verdicts = await judgeDimensions(
-      { ...input, dims: [dimension] },
-      async (prompt) => {
-        const response = await quickTask(prompt, 512);
-        if (!response.success || !response.content) throw new Error(response.error ?? 'empty response');
-        return { content: response.content, judgeModel: `${response.provider}/${response.model}` };
-      },
-    );
-    const verdict = verdicts[dimension];
+    const scores: Array<number | null> = [];
+    const qualities: number[] = [];
+    let verdict: AiReviewVerdict | undefined;
+    for (let run = 0; run < repeat; run += 1) {
+      const verdicts = await judgeDimensions(
+        { ...input, dims: [dimension] },
+        async (prompt) => {
+          const response = await quickTask(prompt, 512);
+          if (!response.success || !response.content) throw new Error(response.error ?? 'empty response');
+          return { content: response.content, judgeModel: `${response.provider}/${response.model}` };
+        },
+        prescreenCall ? { prescreen: prescreenCall } : undefined,
+      );
+      verdict = verdicts[dimension];
+      scores.push(!verdict || verdict.verdict === 'unavailable' || verdict.verdict === 'abstain' ? null : verdict.verdict === 'yes' ? 1 : 0);
+      if (verdict?.quality) qualities.push(verdict.quality.score);
+    }
+    repeats.push({ caseId: reportCase.testId, scores });
+    if (qualities.length > 0) qualityByCase.push({ caseId: reportCase.testId, qualities });
     if (!verdict || verdict.verdict === 'unavailable') continue;
     if (verdict.verdict === 'abstain') {
       abstained += 1;
@@ -166,6 +195,23 @@ async function main(): Promise<void> {
       groundTruthScore: reportCase.score,
     });
     console.log(`${verdict.verdict === (truth === 'pass' ? 'yes' : 'no') ? '✓' : '✗'} ${reportCase.testId}: judge=${verdict.verdict} 金标=${truth}`);
+  }
+
+  if (repeat > 1) {
+    const summary = summarizeRepeatVariance(repeats);
+    console.log(`\n重复判 ${repeat} 次 × ${repeats.length} 题（冻结轨迹方差，N-JEV-EVAL-JUDGE ⑥）：`);
+    console.log(`  翻转总数: ${summary.totalFlips}/${summary.totalRuns}（含弃权↔硬判的切换）`);
+    console.log(`  分数方差均值: ${summary.meanVariance === null ? '无足够数值判决' : summary.meanVariance.toFixed(6)}（${summary.varianceCases} 题可计）`);
+    for (const entry of summary.cases.filter((item) => item.flips > 0)) {
+      console.log(`  ⚠ ${entry.caseId}: 翻转 ${entry.flips} 次，方差 ${entry.scoreVariance === null ? 'n/a' : entry.scoreVariance.toFixed(4)}`);
+    }
+  }
+  if (qualityByCase.length > 0) {
+    const all = qualityByCase.flatMap((entry) => entry.qualities);
+    const mean = all.reduce((sum, score) => sum + score, 0) / all.length;
+    const variance = all.length >= 2 ? all.reduce((sum, score) => sum + (score - mean) ** 2, 0) / all.length : 0;
+    // quality 是 score 原语的信息列，不进 κ 配对也不进上岗线
+    console.log(`\nquality（信息列，不作放行依据）：${qualityByCase.length} 题有读数，均值 ${mean.toFixed(3)}，总体方差 ${variance.toFixed(6)}`);
   }
 
   const calibration = computeCalibration(pairs);

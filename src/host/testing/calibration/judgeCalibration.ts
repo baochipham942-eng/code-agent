@@ -162,3 +162,54 @@ export function computeCalibration(pairs: CalibrationPair[]): CalibrationReport 
     disagreements,
   };
 }
+
+/**
+ * 冻结轨迹重复判的方差汇总（N-JEV-EVAL-JUDGE 母单验收⑥，接到 judge-calibration.ts 的 --repeat）。
+ * scores 一题多次重复判的数值分（yes=1 / no=0；弃权/unavailable 为 null 不进方差）。
+ * 方差 = 总体方差 mean((x-mean)²)；数值分不足 2 次的题 scoreVariance=null（证据不足，不冒充 0）。
+ * flips 数相邻两次判决不一致的次数（含 null 与数值之间的切换——弃权↔硬判同样是抖动）。
+ */
+export interface CaseRepeatVariance {
+  caseId: string;
+  runs: number;
+  judgedRuns: number;
+  flips: number;
+  scoreVariance: number | null;
+}
+
+export interface RepeatVarianceSummary {
+  cases: CaseRepeatVariance[];
+  /** 至少有 2 次数值判决的题数。 */
+  varianceCases: number;
+  meanVariance: number | null;
+  totalRuns: number;
+  totalFlips: number;
+}
+
+export function summarizeRepeatVariance(
+  repeats: Array<{ caseId: string; scores: Array<number | null> }>,
+): RepeatVarianceSummary {
+  const cases: CaseRepeatVariance[] = repeats.map(({ caseId, scores }) => {
+    const numeric = scores.filter((score): score is number => score !== null);
+    let flips = 0;
+    for (let index = 1; index < scores.length; index += 1) {
+      if (scores[index] !== scores[index - 1]) flips += 1;
+    }
+    let scoreVariance: number | null = null;
+    if (numeric.length >= 2) {
+      const mean = numeric.reduce((sum, score) => sum + score, 0) / numeric.length;
+      scoreVariance = numeric.reduce((sum, score) => sum + (score - mean) ** 2, 0) / numeric.length;
+    }
+    return { caseId, runs: scores.length, judgedRuns: numeric.length, flips, scoreVariance };
+  });
+  const withVariance = cases.flatMap((entry) => (entry.scoreVariance === null ? [] : [entry.scoreVariance]));
+  return {
+    cases,
+    varianceCases: withVariance.length,
+    meanVariance: withVariance.length > 0
+      ? withVariance.reduce((sum, variance) => sum + variance, 0) / withVariance.length
+      : null,
+    totalRuns: cases.reduce((sum, entry) => sum + entry.runs, 0),
+    totalFlips: cases.reduce((sum, entry) => sum + entry.flips, 0),
+  };
+}

@@ -389,7 +389,9 @@ export async function runPostLaunchScoring(
       const budgetLeft = spentUsd + nextCallUsd <= budgetLimitUsd;
       const sampleLeft = sampledToday < sampleLimit;
       // 信号命中的轮全评；其余按日抽样。预算不够下一次调用就当天停评，只记信号。
-      const shouldJudge = !dryRun && budgetLeft && (hasSignal || sampleLeft);
+      // Jev 初筛装配时无信号轮也全量走 Jev（便宜到可以全量评，N-JEV-EVAL-JUDGE 母单验收④）——
+      // dailySampleLimit 只约束「升级到生成式」的条数，不约束 Jev 初筛本身（见 canEscalate 与落库计数）。
+      const shouldJudge = !dryRun && budgetLeft && (hasSignal || sampleLeft || prescreen !== undefined);
       if (!dryRun && !budgetLeft) result.budgetStopped = true;
 
       let dims: PostLaunchDims = mapDeterministicDims(signals);
@@ -414,7 +416,10 @@ export async function runPostLaunchScoring(
             canEscalate: prescreen
               ? () => {
                   const genUsd = deps.estimateJudgeCostUsd(judgePrompt).usd;
-                  const ok = spentUsd + jevUsd + genUsd <= budgetLimitUsd;
+                  // 无信号轮的升级才占抽样额度（信号轮本来就全评，不走抽样）；
+                  // 额度耗尽时保留 Jev 已决断维，不调生成式。
+                  const sampleOk = hasSignal || sampledToday < sampleLimit;
+                  const ok = spentUsd + jevUsd + genUsd <= budgetLimitUsd && sampleOk;
                   if (!ok) escalationBlocked = true;
                   return ok;
                 }
@@ -453,7 +458,9 @@ export async function runPostLaunchScoring(
         if (hasSignal) result.signalTurns += 1;
         else {
           result.sampledTurns += 1;
-          sampledToday += 1;
+          // 抽样额度只数「真的升级到生成式」的无信号轮；Jev 初筛决断的轮不占额度
+          // （落库行 judge_model=typesafe/jev-*，getBudgetState 同样不数它，两边口径一致）。
+          if (verdict.judgeModel !== JEV_JUDGE_MODEL) sampledToday += 1;
         }
       } else {
         result.signalOnlyTurns += 1;

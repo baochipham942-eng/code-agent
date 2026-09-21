@@ -195,7 +195,8 @@ interface PortableToolCallResultV1 {
 export interface PortableToolCallV1 {
   id: string;
   name: string;
-  arguments: Record<string, unknown>;
+  /** Optional: AgentRunEventCollector persists {id,name}-only tool calls (99/1581 sessions on 2026-09-21). */
+  arguments?: Record<string, unknown>;
   result?: PortableToolCallResultV1;
   shortDescription?: string;
   stepLabel?: ToolStepLabelKey;

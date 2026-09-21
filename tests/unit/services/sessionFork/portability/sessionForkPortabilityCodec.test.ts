@@ -518,6 +518,25 @@ describe('session fork portability codecs', () => {
     })).toThrow(/DETACHED_PROVENANCE_REQUIRED/);
   });
 
+  it('exports and round-trips a persisted {id,name}-only tool call without arguments', () => {
+    // Regression for N-FORK-PORTABILITY round 11: AgentRunEventCollector persists tool
+    // calls as {id,name} with no `arguments`; 99/1581 sessions in the production DB on
+    // 2026-09-21 had this shape. Requiring `arguments` made those sessions unexportable
+    // (INVALID_ENVELOPE) while origin/main (which did not export toolCalls) exported fine.
+    const draft = subtreeDraft();
+    const childEntry = draft.sessions.find((entry) => entry.session.id === 'child')!;
+    childEntry.messages.push(message('bare-call-msg', 'assistant', 'ran bash', 3, {
+      toolCalls: [{ id: 'toolu_bare', name: 'Bash' }],
+    } as unknown as Partial<Message>));
+
+    const envelope = buildSessionExportEnvelopeV2(draft);
+    const bare = envelope.messages.find((item) => item.id === 'bare-call-msg');
+    expect(bare?.toolCalls).toEqual([{ id: 'toolu_bare', name: 'Bash' }]);
+    const decoded = decodeSessionExportEnvelopeV2(encodeSessionExportEnvelopeV2(envelope));
+    expect(decoded.messages.find((item) => item.id === 'bare-call-msg')?.toolCalls)
+      .toEqual([{ id: 'toolu_bare', name: 'Bash' }]);
+  });
+
   it('redacts credential-shaped keys and key=value secrets the same way in toolCalls[]/result.output/contentParts as in the conversationHistory projection', () => {
     // Regression for N-FORK-PORTABILITY round 9: sanitizePortableValue (this file) used to
     // be a weaker, independently-maintained rewrite of conversationHistory.ts's

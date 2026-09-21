@@ -167,8 +167,10 @@ function sanitizeToolCall(source: NonNullable<Message['toolCalls']>[number]): Po
   const sanitized: PortableToolCallV1 = {
     id: source.id,
     name: source.name,
-    arguments: sanitizePortableValue(source.arguments) as Record<string, unknown>,
   };
+  if (source.arguments !== undefined) {
+    sanitized.arguments = sanitizePortableValue(source.arguments) as Record<string, unknown>;
+  }
   if (source.result) {
     sanitized.result = {
       success: source.result.success,

@@ -120,7 +120,9 @@ export function validateMessageOrdinals(messages: PortableMessageV2[], sessionId
         ], `message ${message.id} toolCalls[${callIndex}]`);
         assertNonEmptyString(call.id, `message ${message.id} toolCalls[${callIndex}].id`);
         assertNonEmptyString(call.name, `message ${message.id} toolCalls[${callIndex}].name`);
-        assertObject(call.arguments, `message ${message.id} toolCalls[${callIndex}].arguments`);
+        if (call.arguments !== undefined) {
+          assertObject(call.arguments, `message ${message.id} toolCalls[${callIndex}].arguments`);
+        }
         if (call.result !== undefined) {
           assertObject(call.result, `message ${message.id} toolCalls[${callIndex}].result`);
           assertOnlyKeys(

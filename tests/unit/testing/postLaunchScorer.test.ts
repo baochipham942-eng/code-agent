@@ -1039,7 +1039,7 @@ describe('上线后打分编排', () => {
     expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 0 }).sampledCount).toBe(0);
   });
 
-  it('prescreen 装配 + 无信号轮 Jev 弃权 + 抽样额度耗尽 ⇒ 不升级生成式，保留 Jev 判决行', async () => {
+  it('prescreen 装配 + 无信号轮 Jev 弃权 + 抽样额度耗尽 ⇒ 落 not-judged 占位行（可补评）；提高额度后重跑补评上（ai-review #2023）', async () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR);
     insertTurn(database, 'chat-1', 't1', 1, NOW - HOUR);
     const replays = {
@@ -1052,18 +1052,36 @@ describe('上线后打分编排', () => {
       permission_pass: { noul: 0.5 },
       no_tools_but_needed: { noul: 0.5 },
     });
+    const prescreen = vi.fn(abstainAll);
     const llmCall = vi.fn(async () => ALL_PASS);
 
-    const result = await runPostLaunchScoring(
-      deps(database, replays, llmCall, { prescreen: abstainAll }),
+    const first = await runPostLaunchScoring(
+      deps(database, replays, llmCall, { prescreen }),
       { dailySampleLimit: 0 },
     );
 
     expect(llmCall).not.toHaveBeenCalled();
-    const [row] = scoreRows(database);
-    expect(row.judge_model).toBe(JEV_JUDGE_MODEL);
-    expect(row.dim_goal).toBeNull();
+    expect(first.signalOnlyTurns).toBe(1);
+    expect(first.sampledTurns).toBe(0);
+    const [placeholder] = scoreRows(database);
+    expect(placeholder.judge_model).toBe('not-judged');
+    // Jev 调用已发生：刊例计入成本与预算，但占位行不占抽样额度
+    expect(Number(placeholder.budget_cost_usd)).toBeGreaterThan(0);
     expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 0 }).sampledCount).toBe(0);
+
+    const second = await runPostLaunchScoring(
+      deps(database, replays, llmCall, { prescreen }),
+      { dailySampleLimit: 5 },
+    );
+
+    expect(second.skippedTurns).toBe(0);
+    expect(prescreen).toHaveBeenCalledTimes(2);
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    const [judged] = scoreRows(database);
+    expect(judged.judge_model).not.toBe('not-judged');
+    expect(judged.judge_model).not.toBe(JEV_JUDGE_MODEL);
+    expect(judged.dim_goal).toBe(1);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 5 }).sampledCount).toBe(1);
   });
 
   it('prescreen 装配 + 无信号轮 Jev 弃权 + 有抽样额度 ⇒ 升级生成式并占 1 条额度', async () => {

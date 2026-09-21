@@ -213,3 +213,43 @@ export function summarizeRepeatVariance(
     totalFlips: cases.reduce((sum, entry) => sum + entry.flips, 0),
   };
 }
+
+/**
+ * 校准记录的判官身份解析（ai-review #2023 Important：Jev 决断的 κ 不许写到 quick 名下，
+ * 否则未校准的生成式判官会拿着 Jev 的一致率误过校准门）。
+ * - 未开 prescreen：用 quick 生成式身份（缺 quick 配置 ⇒ null）。
+ * - 开了 prescreen：全部有效判决都出自 Jev ⇒ Jev 身份；有任何生成式判决混入或零有效判决 ⇒ null
+ *   （调用方只落原始报告、不写校准注册表——混合 κ 不给任何一侧背书）。
+ */
+export interface CalibrationJudgeIdentity {
+  judgeId: string;
+  promptHash: string;
+  endpoint: string;
+  judgeModel: string;
+}
+
+export function resolveCalibrationJudgeIdentity(input: {
+  prescreen: boolean;
+  dimension: string;
+  quick: { judgeModel: string; promptHash: string; endpoint: string } | null;
+  judged: Array<{ judgeModel: string; promptHash: string }>;
+  jev: { judgeModel: string; endpoint: string };
+}): CalibrationJudgeIdentity | null {
+  if (!input.prescreen) {
+    if (!input.quick) return null;
+    return {
+      judgeId: `${input.dimension}@${input.quick.judgeModel}`,
+      promptHash: input.quick.promptHash,
+      endpoint: input.quick.endpoint,
+      judgeModel: input.quick.judgeModel,
+    };
+  }
+  if (input.judged.length === 0) return null;
+  if (!input.judged.every((entry) => entry.judgeModel === input.jev.judgeModel)) return null;
+  return {
+    judgeId: `${input.dimension}@${input.jev.judgeModel}`,
+    promptHash: input.judged[0].promptHash,
+    endpoint: input.jev.endpoint,
+    judgeModel: input.jev.judgeModel,
+  };
+}

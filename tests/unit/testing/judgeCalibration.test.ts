@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { computeCalibration, summarizeRepeatVariance, type CalibrationPair } from '../../../src/host/testing/calibration/judgeCalibration';
+import { computeCalibration, resolveCalibrationJudgeIdentity, summarizeRepeatVariance, type CalibrationPair } from '../../../src/host/testing/calibration/judgeCalibration';
 
 // 构造一组 judge 与金标的配对，命中已知的混淆矩阵：TP=4, TN=3, FP=2, FN=1
 function fixedPairs(): CalibrationPair[] {
@@ -111,5 +111,40 @@ describe('summarizeRepeatVariance', () => {
     expect(allAbstain.scoreVariance).toBeNull();
     expect(summary.varianceCases).toBe(1);
     expect(summary.meanVariance).toBe(0);
+  });
+});
+
+// ai-review #2023 Important：校准记录身份必须是实际判决的判官，Jev 的 κ 不许写到 quick 名下。
+describe('resolveCalibrationJudgeIdentity', () => {
+  const quick = { judgeModel: 'zhipu/glm-4-flash', promptHash: 'gen-hash', endpoint: 'https://quick.example' };
+  const jev = { judgeModel: 'typesafe/jev-1.13.0', endpoint: 'https://api.typesafe.ai/v1/systemone' };
+
+  it('未开 prescreen ⇒ quick 身份；缺 quick 配置 ⇒ null', () => {
+    expect(resolveCalibrationJudgeIdentity({ prescreen: false, dimension: 'task_completed', quick, judged: [], jev }))
+      .toEqual({ judgeId: 'task_completed@zhipu/glm-4-flash', promptHash: 'gen-hash', endpoint: quick.endpoint, judgeModel: quick.judgeModel });
+    expect(resolveCalibrationJudgeIdentity({ prescreen: false, dimension: 'task_completed', quick: null, judged: [], jev })).toBeNull();
+  });
+
+  it('prescreen 且全部判决出自 Jev ⇒ Jev 身份（promptHash 用判决带回来的初筛哈希）', () => {
+    const identity = resolveCalibrationJudgeIdentity({
+      prescreen: true, dimension: 'task_completed', quick, jev,
+      judged: [{ judgeModel: jev.judgeModel, promptHash: 'jev-hash' }, { judgeModel: jev.judgeModel, promptHash: 'jev-hash' }],
+    });
+    expect(identity).toEqual({
+      judgeId: 'task_completed@typesafe/jev-1.13.0',
+      promptHash: 'jev-hash',
+      endpoint: jev.endpoint,
+      judgeModel: jev.judgeModel,
+    });
+  });
+
+  it('prescreen 但有生成式判决混入 ⇒ null（不写注册表）；零有效判决 ⇒ null', () => {
+    expect(resolveCalibrationJudgeIdentity({
+      prescreen: true, dimension: 'task_completed', quick, jev,
+      judged: [{ judgeModel: jev.judgeModel, promptHash: 'h' }, { judgeModel: quick.judgeModel, promptHash: 'g' }],
+    })).toBeNull();
+    expect(resolveCalibrationJudgeIdentity({
+      prescreen: true, dimension: 'task_completed', quick, jev, judged: [],
+    })).toBeNull();
   });
 });

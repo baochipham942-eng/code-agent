@@ -11,8 +11,9 @@ import { CONFIG_DIR_NEW } from '../src/shared/constants/configDir';
 import { quickTask, getQuickModelRuntimeInfo } from '../src/host/model/quickModel';
 import { resolveProviderApiKey } from '../src/host/model/providers/providerResolution';
 import { systemOne } from '../src/host/model/providers/typesafeProvider';
-import { JEV_MODEL } from '../src/shared/constants/jevQuestions';
-import { computeCalibration, summarizeRepeatVariance, type CalibrationLabel, type CalibrationPair } from '../src/host/testing/calibration/judgeCalibration';
+import { MODEL_API_ENDPOINTS } from '../src/shared/constants';
+import { JEV_MODEL, JEV_JUDGE_MODEL } from '../src/shared/constants/jevQuestions';
+import { computeCalibration, resolveCalibrationJudgeIdentity, summarizeRepeatVariance, type CalibrationLabel, type CalibrationPair } from '../src/host/testing/calibration/judgeCalibration';
 import { CALIBRATION_TRUST_THRESHOLDS, isTrustedCalibration, saveCalibrationRecord } from '../src/host/testing/calibration/calibrationRegistry';
 import { judgeDimensions, getAiReviewPromptHash, type DimensionJudgePrescreen } from '../src/host/testing/judge/dimensionJudge';
 import type { TestCase, TestResult } from '../src/host/testing/types';
@@ -118,9 +119,8 @@ function datasetFingerprint(caseIds: string[]): string {
 
 async function main(): Promise<void> {
   const { reportPath, dimension, gold, dataDir, repeat, prescreen } = parseArgs();
+  // quick 运行时惰性解析：--prescreen 全 Jev 决断时不应因为没有 quick 配置而失败（#2023 Important）。
   const runtime = getQuickModelRuntimeInfo();
-  if (!runtime) throw new Error('当前没有可用的 quick 模型配置');
-  const judgeModel = `${runtime.provider}/${runtime.model}`;
   // --prescreen：Jev 初筛进校准跑量（N-JEV-EVAL-JUDGE 母单⑥的方差测量也走这条）。
   // 没配 key 直接 fail-loud，不静默回落生成式冒充 Jev 数据。
   let prescreenCall: DimensionJudgePrescreen | undefined;
@@ -130,6 +130,7 @@ async function main(): Promise<void> {
     }
     prescreenCall = (state, questions) => systemOne(state, questions);
   }
+  if (!prescreen && !runtime) throw new Error('当前没有可用的 quick 模型配置');
   const report = JSON.parse(await fs.readFile(reportPath, 'utf8')) as {
     runId?: string;
     results?: ReportCase[];
@@ -141,9 +142,9 @@ async function main(): Promise<void> {
   // 同源裁判（评审模型与被测模型同一 provider）不接受影子金标——自我偏好会让断言真值与 judge 一起偏
   // （docs/eval/annotation-guideline.md §5；ai-review #1823 Important①）。
   const sameSource = report.stamp?.scorers?.judgeSameSource === true
-    || (typeof report.environment?.provider === 'string' && report.environment.provider === runtime.provider);
+    || (runtime !== null && typeof report.environment?.provider === 'string' && report.environment.provider === runtime.provider);
   if (sameSource && gold !== 'human_annotation') {
-    throw new Error(`同源裁判（评审 ${judgeModel} 与被测 provider ${report.environment?.provider ?? runtime.provider} 同家）只接受人标金标：加 --gold human_annotation`);
+    throw new Error(`同源裁判（评审 ${runtime ? `${runtime.provider}/${runtime.model}` : JEV_JUDGE_MODEL} 与被测 provider ${report.environment?.provider ?? 'unknown'} 同家）只接受人标金标：加 --gold human_annotation`);
   }
   const pairs: CalibrationPair[] = [];
   let abstained = 0;
@@ -158,6 +159,7 @@ async function main(): Promise<void> {
 
   const repeats: Array<{ caseId: string; scores: Array<number | null> }> = [];
   const qualityByCase: Array<{ caseId: string; qualities: number[] }> = [];
+  const judgedIdentities = new Set<string>();
 
   for (const reportCase of cases) {
     const truth = humanGold ? humanGold.labels.get(reportCase.testId) ?? null : groundTruth(reportCase, dimension);
@@ -177,6 +179,11 @@ async function main(): Promise<void> {
         prescreenCall ? { prescreen: prescreenCall } : undefined,
       );
       verdict = verdicts[dimension];
+      // 校准记录的身份必须是实际判决的判官——Jev 决断的 κ 写到 quick 名下会让
+      // 未校准的 quick 评审误过校准门（ai-review #2023 Important）。
+      if (verdict && verdict.verdict !== 'unavailable') {
+        judgedIdentities.add(`${verdict.judgeModel}|${verdict.promptHash}`);
+      }
       scores.push(!verdict || verdict.verdict === 'unavailable' || verdict.verdict === 'abstain' ? null : verdict.verdict === 'yes' ? 1 : 0);
       if (verdict?.quality) qualities.push(verdict.quality.score);
     }
@@ -217,34 +224,65 @@ async function main(): Promise<void> {
   const calibration = computeCalibration(pairs);
   const judged = calibration.total + abstained;
   const abstainRate = judged > 0 ? abstained / judged : 0;
-  const record = {
-    standardVersion: 2 as const,
+
+  // 身份解析：--prescreen 且全部判决出自 Jev ⇒ 以 Jev 身份落盘（endpoint/promptHash 都是 Jev 的）；
+  // 有任何生成式判决混入 ⇒ 不写校准注册表（混合 κ 不能给任何一侧背书），原始报告仍落盘。
+  const identity = resolveCalibrationJudgeIdentity({
+    prescreen,
     dimension,
-    judgeId: `${dimension}@${judgeModel}`,
-    promptHash: getAiReviewPromptHash(dimension),
-    endpoint: runtime.baseUrl,
-    judgeModel,
-    datasetFingerprint: datasetFingerprint(pairs.map((pair) => pair.caseId)),
-    goldSource: gold,
-    kappa: calibration.cohensKappa,
-    agreementRate: calibration.agreementRate,
-    pairs: calibration.total,
-    falsePositiveRate: calibration.falsePositiveRate,
-    abstainRate,
-    computedAt: new Date().toISOString(),
-  };
-  const outputPath = path.join(path.dirname(reportPath), `calibration-${dimension}-${runtime.model}.json`);
-  await fs.writeFile(outputPath, JSON.stringify({ dimension, endpoint: runtime.baseUrl, ...calibration }, null, 2), 'utf8');
-  await saveCalibrationRecord(path.join(process.cwd(), CONFIG_DIR_NEW), record);
+    quick: runtime
+      ? { judgeModel: `${runtime.provider}/${runtime.model}`, promptHash: getAiReviewPromptHash(dimension), endpoint: runtime.baseUrl }
+      : null,
+    judged: [...judgedIdentities].map((entry) => {
+      const [judgeModel, promptHash] = entry.split('|');
+      return { judgeModel, promptHash };
+    }),
+    jev: { judgeModel: JEV_JUDGE_MODEL, endpoint: MODEL_API_ENDPOINTS.typesafeSystemOne },
+  });
+  if (prescreen && !identity) {
+    console.warn(`校准身份混合（实际判官：${[...judgedIdentities].join('；') || '无有效判决'}），不写校准注册表——混合 κ 不给任何一侧背书`);
+  }
+
+  const outputPath = path.join(
+    path.dirname(reportPath),
+    `calibration-${dimension}-${identity ? (identity.judgeModel === JEV_JUDGE_MODEL ? JEV_MODEL : runtime!.model) : 'mixed'}.json`,
+  );
+  await fs.writeFile(
+    outputPath,
+    JSON.stringify({ dimension, endpoint: identity?.endpoint ?? 'mixed', judgeModel: identity?.judgeModel ?? 'mixed', ...calibration }, null, 2),
+    'utf8',
+  );
+  if (identity) {
+    const record = {
+      standardVersion: 2 as const,
+      dimension,
+      judgeId: identity.judgeId,
+      promptHash: identity.promptHash,
+      endpoint: identity.endpoint,
+      judgeModel: identity.judgeModel,
+      datasetFingerprint: datasetFingerprint(pairs.map((pair) => pair.caseId)),
+      goldSource: gold,
+      kappa: calibration.cohensKappa,
+      agreementRate: calibration.agreementRate,
+      pairs: calibration.total,
+      falsePositiveRate: calibration.falsePositiveRate,
+      abstainRate,
+      computedAt: new Date().toISOString(),
+    };
+    await saveCalibrationRecord(path.join(process.cwd(), CONFIG_DIR_NEW), record);
+    console.log(isTrustedCalibration(record)
+      ? '校准达标'
+      : `校准未达标（κ≥${CALIBRATION_TRUST_THRESHOLDS.minKappa} 且 CI 下界≥${CALIBRATION_TRUST_THRESHOLDS.minKappaLowerBound}，或 n≥${CALIBRATION_TRUST_THRESHOLDS.pairsWaiver}；弃权率≤${(CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate * 100).toFixed(0)}%）`);
+  } else {
+    console.log('校准记录未写入注册表（身份混合或非 prescreen 之外的异常路径）');
+  }
 
   console.log(`配对样本: ${calibration.total}`);
   console.log(`金标来源: ${gold}`);
   console.log(`弃权: ${abstained}/${judged}（弃权率 ${(abstainRate * 100).toFixed(1)}%，上限 ${(CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate * 100).toFixed(0)}%）`);
   console.log(`Cohen Kappa: ${calibration.cohensKappa.toFixed(3)}`);
   console.log(`κ 95% CI 下界: ${calibration.kappaLowerBound95.toFixed(3)}`);
-  console.log(isTrustedCalibration(record)
-    ? '校准达标'
-    : `校准未达标（κ≥${CALIBRATION_TRUST_THRESHOLDS.minKappa} 且 CI 下界≥${CALIBRATION_TRUST_THRESHOLDS.minKappaLowerBound}，或 n≥${CALIBRATION_TRUST_THRESHOLDS.pairsWaiver}；弃权率≤${(CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate * 100).toFixed(0)}%）`);
+  console.log(`判官身份: ${identity ? identity.judgeModel : 'mixed（未写注册表）'}`);
   console.log(`报告已存: ${outputPath}`);
 }
 

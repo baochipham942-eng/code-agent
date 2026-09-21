@@ -19,8 +19,15 @@ describe('toolNames', () => {
     expect(canonicalToolName('spawn_agent')).toBe('spawn_agent');
   });
 
+  it('canonicalizes Read/Grep/Glob to citation extractor names', () => {
+    expect(canonicalToolName('Read')).toBe('read_file');
+    expect(canonicalToolName('read_file')).toBe('read_file');
+    expect(canonicalToolName('Grep')).toBe('grep');
+    expect(canonicalToolName('Glob')).toBe('glob');
+  });
+
   it('preserves unrelated tool names instead of case-folding the whole protocol', () => {
-    expect(canonicalToolName('Read')).toBe('Read');
+    expect(canonicalToolName('Write')).toBe('Write');
     expect(canonicalToolName('MCPUnified')).toBe('MCPUnified');
     expect(canonicalToolName('custom_Tool')).toBe('custom_Tool');
   });

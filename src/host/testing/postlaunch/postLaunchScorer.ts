@@ -35,7 +35,7 @@ import {
   type PostLaunchJudgePrescreen,
 } from '../judge/postLaunchJudge';
 import { computeTurnSignals, isHonestBlockedFallback } from './postLaunchSignals';
-import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay, redactPostLaunchReason,
+import { getBudgetState, getReplaceableRowBudgetCostUsd, getScoredTurnIds, insertTurnScore, localDay, redactPostLaunchReason,
   acquireScoringLock,
   releaseScoringLock,
   renewScoringLock,
@@ -294,6 +294,7 @@ export async function runPostLaunchScoring(
     signalTurns: 0,
     sampledTurns: 0,
     signalOnlyTurns: 0,
+    sampleDeferredTurns: 0,
     skippedTurns: 0,
     costUsd: 0,
     judgeUnavailableTurns: 0,
@@ -389,7 +390,9 @@ export async function runPostLaunchScoring(
       const budgetLeft = spentUsd + nextCallUsd <= budgetLimitUsd;
       const sampleLeft = sampledToday < sampleLimit;
       // 信号命中的轮全评；其余按日抽样。预算不够下一次调用就当天停评，只记信号。
-      const shouldJudge = !dryRun && budgetLeft && (hasSignal || sampleLeft);
+      // Jev 初筛装配时无信号轮也全量走 Jev（便宜到可以全量评，N-JEV-EVAL-JUDGE 母单验收④）——
+      // dailySampleLimit 只约束「升级到生成式」的条数，不约束 Jev 初筛本身（见 canEscalate 与落库计数）。
+      const shouldJudge = !dryRun && budgetLeft && (hasSignal || sampleLeft || prescreen !== undefined);
       if (!dryRun && !budgetLeft) result.budgetStopped = true;
 
       let dims: PostLaunchDims = mapDeterministicDims(signals);
@@ -405,6 +408,7 @@ export async function runPostLaunchScoring(
       if (shouldJudge) {
         let judgeCompletion = '';
         let escalationBlocked = false;
+        let escalationBlockedBySample = false;
         const verdict = await judgePostLaunchTurn(
           {
             turn: turn.turn,
@@ -414,9 +418,13 @@ export async function runPostLaunchScoring(
             canEscalate: prescreen
               ? () => {
                   const genUsd = deps.estimateJudgeCostUsd(judgePrompt).usd;
-                  const ok = spentUsd + jevUsd + genUsd <= budgetLimitUsd;
-                  if (!ok) escalationBlocked = true;
-                  return ok;
+                  // 无信号轮的升级才占抽样额度（信号轮本来就全评，不走抽样）；
+                  // 额度耗尽时保留 Jev 已决断维，不调生成式。
+                  const budgetOk = spentUsd + jevUsd + genUsd <= budgetLimitUsd;
+                  const sampleOk = hasSignal || sampledToday < sampleLimit;
+                  if (!budgetOk || !sampleOk) escalationBlocked = true;
+                  if (budgetOk && !sampleOk) escalationBlockedBySample = true;
+                  return budgetOk && sampleOk;
                 }
               : undefined,
           },
@@ -450,10 +458,25 @@ export async function runPostLaunchScoring(
           spentUsd += estimate.usd;
           result.costUsd += published;
         }
-        if (hasSignal) result.signalTurns += 1;
+        // 抽样额度挡住升级的无信号轮：不落 Jev 部分判决行当定案——judge_model=typesafe/jev-*
+        // 的行会被 getScoredTurnIds 当成已评永久跳过，额度恢复后也补不上（ai-review #2023
+        // Important）。改落 not-judged 占位行（FB-233 同形）：不挡补评、不占抽样额度；
+        // Jev 调用已发生，刊例照计（judgeCostUsd/budgetCostUsd 保持）。预算挡住升级的
+        // 不在此列——那是当天硬停，保留 Jev 已决断维（PRESCREEN R3 口径不动）。
+        const deferForSample = escalationBlockedBySample && !hasSignal;
+        if (deferForSample) {
+          dims = mapDeterministicDims(signals);
+          reasoning = [reasoning, 'Jev 部分弃权且抽样额度耗尽，待额度恢复后补评'].filter(Boolean).join('；');
+          judgeModel = JUDGE_MODEL_NOT_JUDGED;
+          promptHash = '';
+        }
+        if (deferForSample) result.sampleDeferredTurns += 1;
+        else if (hasSignal) result.signalTurns += 1;
         else {
           result.sampledTurns += 1;
-          sampledToday += 1;
+          // 抽样额度只数「真的升级到生成式」的无信号轮；Jev 初筛决断的轮不占额度
+          // （落库行 judge_model=typesafe/jev-*，getBudgetState 同样不数它，两边口径一致）。
+          if (verdict.judgeModel !== JEV_JUDGE_MODEL) sampledToday += 1;
         }
       } else {
         result.signalOnlyTurns += 1;
@@ -482,6 +505,9 @@ export async function runPostLaunchScoring(
         budgetCostUsd,
         sampledBy: hasSignal ? 'signal' : 'sample',
       };
+      // 覆盖可重判行（not-judged/unavailable）时结转其已付预算成本，日预算账不许丢账
+      //（getReplaceableRowBudgetCostUsd 注释，ai-review #2023 R4）。
+      score.budgetCostUsd += getReplaceableRowBudgetCostUsd(deps.db, turn.turnId, judgeVersion);
       insertTurnScore(deps.db, score, turn.startedAt);
     }
   }

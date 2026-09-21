@@ -10,7 +10,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { judgeDimensions } from '../../../src/host/testing/judge/dimensionJudge';
 import {
-  DIMENSION_PRESCREEN_QUESTIONS,
+  EVAL_JUDGE_QUESTIONS,
   estimateJevCallUsd,
   type JevAnswers,
 } from '../../../src/shared/constants/jevQuestions';
@@ -64,7 +64,7 @@ function mulberry32(seed: number): () => number {
 function answersFor(dims: AiReviewDimension[], noul: number): JevAnswers {
   const answers: JevAnswers = {};
   for (const dimension of dims) {
-    for (const key of Object.keys(DIMENSION_PRESCREEN_QUESTIONS[dimension])) {
+    for (const key of Object.keys(EVAL_JUDGE_QUESTIONS[dimension])) {
       answers[key] = { noul };
     }
   }

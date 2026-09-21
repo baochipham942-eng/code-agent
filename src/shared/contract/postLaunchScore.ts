@@ -333,10 +333,19 @@ export interface PostLaunchScoringResult {
   excludedTurns: number;
   /** 命中信号、全评的轮。 */
   signalTurns: number;
-  /** 未命中信号、被抽中评的轮。 */
+  /**
+   * 未命中信号、进入评分的轮。Jev 初筛装配时无信号轮全量走 Jev（N-JEV-EVAL-JUDGE 母单④），
+   * dailySampleLimit 只约束其中「升级到生成式」的条数，不再限制 Jev 初筛本身。
+   */
   sampledTurns: number;
   /** 只记了信号、没调 judge 的轮。 */
   signalOnlyTurns: number;
+  /**
+   * Jev 初筛已调用（并计费）但部分弃权、抽样额度耗尽挡住升级生成式、落 not-judged
+   * 占位行待补评的无信号轮。与 signalOnlyTurns 分开计：这类轮调过 judge 且花了钱
+   * （ai-review #2023 R6）。
+   */
+  sampleDeferredTurns: number;
   /** 已有分数、本轮跳过的轮。 */
   skippedTurns: number;
   costUsd: number;

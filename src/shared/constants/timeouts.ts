@@ -349,7 +349,7 @@ const TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES = [
   'academic_search', 'youtube_transcript', 'news_search', 'image_search', 'video_search',
 ] as const;
 const TOOL_EXECUTION_LONG_RUNNING_NAMES = [
-  'video_generate', 'ppt_generate', 'task', 'spawn_agent', 'workflow_orchestrate',
+  'video_generate', 'ppt_generate', 'task', 'spawn_agent', 'workflow_orchestrate', 'explore', 'skill',
   'local_speech_to_text', 'http_request',
 ] as const;
 
@@ -360,7 +360,7 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
   if (TOOL_EXECUTION_INTERACTION_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_INTERACTION_NAMES[number])) return undefined;
   if (TOOL_EXECUTION_MCP_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_MCP_NAMES[number])
     || normalizedName.startsWith('mcp__') || normalizedName.startsWith('mcp_')) {
-    return TOOL_EXECUTION_TIMEOUTS.MCP;
+    return undefined;
   }
   if (TOOL_EXECUTION_LONG_RUNNING_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_LONG_RUNNING_NAMES[number])
     || normalizedName === 'agentspawn') {

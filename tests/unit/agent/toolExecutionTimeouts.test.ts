@@ -28,16 +28,18 @@ describe('unified tool execution timeout policy', () => {
   });
 
   it('uses the MCP tier and a bounded default for other tools', () => {
-    expect(getToolExecutionTimeoutMs('mcp')).toBe(TOOL_EXECUTION_TIMEOUTS.MCP);
-    expect(getToolExecutionTimeoutMs('MCPUnified')).toBe(TOOL_EXECUTION_TIMEOUTS.MCP);
-    expect(getToolExecutionTimeoutMs('mcp__server__search')).toBe(TOOL_EXECUTION_TIMEOUTS.MCP);
-    expect(getToolExecutionTimeoutMs('mcp_server_search')).toBe(TOOL_EXECUTION_TIMEOUTS.MCP);
+    expect(getToolExecutionTimeoutMs('mcp')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('MCPUnified')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('mcp__server__search')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('mcp_server_search')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('image_generate')).toBe(TOOL_EXECUTION_TIMEOUTS.DEFAULT);
     expect(getToolExecutionTimeoutMs('Task')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('AgentSpawn')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('workflow_orchestrate')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('local_speech_to_text')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('http_request')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
+    expect(getToolExecutionTimeoutMs('Explore')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
+    expect(getToolExecutionTimeoutMs('Skill')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('workflow')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('collect_agent')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('task_output')).toBeUndefined();

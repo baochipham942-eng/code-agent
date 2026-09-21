@@ -70,7 +70,8 @@ export async function handleToolExecutionError({
   logger.debug(` Tool ${toolCall.name} failed with error: ${toolResult.error}`);
 
   // Circuit breaker tracking for exceptions
-  if (ctx.circuitBreaker.recordFailure(toolResult.error)) {
+  // exception 兜底通道：未识别异常（unknown）也保守计数，防无限重试卡死会话
+  if (ctx.circuitBreaker.recordFailure(toolResult.error, { countUnknown: true })) {
     contextAssembly.injectSystemMessage(
       ctx.circuitBreaker.generateWarningMessage(toolResult.error),
       'circuit-breaker',

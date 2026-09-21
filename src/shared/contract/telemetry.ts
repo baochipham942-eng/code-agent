@@ -99,6 +99,7 @@ export type ErrorCategory =
   | 'sandbox_denied' // 沙箱拒绝
   | 'auth_failed' // 401/403/认证失败
   | 'tool_args_validation' // 工具参数 schema 校验失败
+  | 'database_error' // 数据库锁/并发栅栏（database is locked、SQLITE_BUSY、stale cursor fence）
   | 'unknown';
 
 export interface TelemetryToolCall {

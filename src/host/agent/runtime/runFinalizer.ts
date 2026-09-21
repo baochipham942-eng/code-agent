@@ -442,7 +442,7 @@ export class RunFinalizer {
       const errorMessage: Message = {
         id: this.messageWriter.generateId(),
         role: 'assistant',
-        content: '⚠️ **工具调用异常**\n\n连续多次工具调用失败，已自动停止执行。这可能是由于：\n- 文件路径不存在\n- 网络连接问题\n- 工具参数错误\n\n请检查上面的错误信息，然后告诉我如何继续。',
+        content: '⚠️ **工具调用异常**\n\n连续多次基础设施类工具调用失败，已自动停止执行。这可能是由于：\n- 网络连接问题\n- 服务暂时不可用\n- 系统资源或数据库繁忙\n\n请检查上面的错误信息，然后告诉我如何继续。',
         timestamp: Date.now(),
       };
       await this.persistTerminalMessage(errorMessage);

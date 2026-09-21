@@ -323,6 +323,44 @@ export const TOOL_PROGRESS = {
 } as const;
 
 /**
+ * Unified tool execution inactivity budgets. Bash is intentionally excluded:
+ * its command-level timeout is the authoritative cancellation boundary.
+ */
+export const TOOL_EXECUTION_TIMEOUTS = {
+  /** Search/retrieval tools get the longest bounded wait. */
+  SEARCH_RETRIEVAL: 120_000,
+  /** Generic tools fail fast enough to let the model choose another path. */
+  DEFAULT: 120_000,
+  /** MCP transport calls have their own lower-level retry/timeout policy. */
+  MCP: 60_000,
+  /** Long-running generation/delegation tools retain their larger budget. */
+  LONG_RUNNING: 600_000,
+} as const;
+
+const TOOL_EXECUTION_BASH_NAMES = ['bash', 'Bash', 'bash_script'] as const;
+const TOOL_EXECUTION_MCP_NAMES = ['mcp', 'mcp_invoke', 'mcp_unified'] as const;
+const TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES = [
+  'web_search', 'web_fetch', 'search', 'retrieve', 'read_pdf', 'read_document',
+  'academic_search', 'youtube_transcript', 'news_search', 'image_search', 'video_search',
+] as const;
+const TOOL_EXECUTION_LONG_RUNNING_NAMES = ['video_generate', 'ppt_generate', 'task', 'spawn_agent'] as const;
+
+/** Return the unified inactivity budget, or undefined for tools with their own timeout. */
+export function getToolExecutionTimeoutMs(toolName: string): number | undefined {
+  if (TOOL_EXECUTION_BASH_NAMES.includes(toolName as typeof TOOL_EXECUTION_BASH_NAMES[number])) return undefined;
+  if (TOOL_EXECUTION_MCP_NAMES.includes(toolName as typeof TOOL_EXECUTION_MCP_NAMES[number])) {
+    return TOOL_EXECUTION_TIMEOUTS.MCP;
+  }
+  if (TOOL_EXECUTION_LONG_RUNNING_NAMES.includes(toolName as typeof TOOL_EXECUTION_LONG_RUNNING_NAMES[number])) {
+    return TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING;
+  }
+  if (TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES.includes(toolName as typeof TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES[number])) {
+    return TOOL_EXECUTION_TIMEOUTS.SEARCH_RETRIEVAL;
+  }
+  return TOOL_EXECUTION_TIMEOUTS.DEFAULT;
+}
+
+/**
  * Cancellation / shutdown 协议超时配置。
  *
  * 用于 `shutdownProtocol.initiateShutdown` 和 `subagentExecutor` 的

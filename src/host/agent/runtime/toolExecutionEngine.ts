@@ -21,7 +21,7 @@ import { getLangfuseService } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { EXIT_ROLE_FLOW_TOOL_NAME } from '../../tools/modules/roleAuthoring/exitRoleFlow.schema';
 import { createLogger } from '../../services/infra/logger';
-import { TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS, DESIGN_QUALITY } from '../../../shared/constants';
+import { TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS, DESIGN_QUALITY, getToolExecutionTimeoutMs } from '../../../shared/constants';
 import { runDesignQualityReview } from '../../quality/designQualityHook';
 import { isFrontendPath } from '../../quality/detect';
 import { readFileSync } from 'node:fs';
@@ -86,6 +86,7 @@ import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 import { planContextTag } from './planApprovalRunBoundary';
 import { extractToolStepTarget } from '../toolStepTarget';
+import { awaitToolExecutionWithTimeout } from './toolExecutionTimeout';
 
 const logger = createLogger('AgentLoop');
 
@@ -759,7 +760,9 @@ export class ToolExecutionEngine {
 
     // Tool progress & timeout tracking
     const timeoutThreshold = TOOL_TIMEOUT_THRESHOLDS[toolCall.name] ?? TOOL_PROGRESS.DEFAULT_THRESHOLD;
+    const executionTimeout = getToolExecutionTimeoutMs(toolCall.name);
     let timeoutEmitted = false;
+    let lastActivityAt = startTime;
     const progressInterval = setInterval(() => {
       // 卡在人身上的时间不算工具耗时：语音态/无人值守的审批是「停车挂起」（不限时），
       // 把等人那段算进来的话，用户还在看审批卡就先被告知「工具执行超时」（2026-07-26 真机）。
@@ -780,6 +783,9 @@ export class ToolExecutionEngine {
     }, TOOL_PROGRESS.REPORT_INTERVAL);
 
     this.activeToolNames.set(toolCall.id, toolCall.name);
+    const toolAbortController = new AbortController(); const parentAbortSignal = this.ctx.control.runAbortController?.signal;
+    const abortFromParent = () => toolAbortController.abort(parentAbortSignal?.reason);
+    if (parentAbortSignal?.aborted) abortFromParent(); else parentAbortSignal?.addEventListener('abort', abortFromParent, { once: true });
     try {
       logger.debug(` Calling toolExecutor.execute for ${toolCall.name}...`);
 
@@ -790,7 +796,7 @@ export class ToolExecutionEngine {
         : undefined;
 
       this.dispatchedCalls.add(toolCall.id);
-      const result = await this.ctx.toolExecutor.execute(
+      const execution = this.ctx.toolExecutor.execute(
         toolCall.name,
         toolCall.arguments,
         {
@@ -804,7 +810,7 @@ export class ToolExecutionEngine {
           modelConfig: this.ctx.modelConfig,
           setPlanMode: this.runtimeControl.setPlanMode.bind(this.runtimeControl),
           isPlanMode: this.runtimeControl.isPlanMode.bind(this.runtimeControl),
-          emitEvent: (event: string, data: unknown) => this.ctx.onEvent({ type: event, data, sessionId: this.ctx.sessionId } as AgentEvent),
+          emitEvent: (event: string, data: unknown) => { lastActivityAt = Date.now(); this.ctx.onEvent({ type: event, data, sessionId: this.ctx.sessionId } as AgentEvent); },
           sessionId: this.ctx.sessionId,
           // Per-agent BrowserPool / ComputerSurface 隔离的关键：把 RuntimeContext.agentId
           // 透传到 ToolContext。子 agent 通过 subagent pipeline 派活时填入此字段，工具
@@ -830,11 +836,23 @@ export class ToolExecutionEngine {
           executionIntent: this.ctx.executionIntent,
           neoTag: this.ctx.neoTag,
           suppressBackgroundSubagentIdleWake: Boolean(this.ctx.goalMode?.isPending()),
-          abortSignal: this.ctx.control.runAbortController?.signal,
+          abortSignal: toolAbortController.signal,
           deniedToolNames: this.ctx.deniedToolNames,
           allowedToolNames: this.ctx.allowedToolNames, foregroundToolFace: this.ctx.foregroundToolFace,
         }
       );
+      const result = executionTimeout === undefined
+        ? await execution
+        : await awaitToolExecutionWithTimeout(execution, {
+            timeoutMs: executionTimeout,
+            getInactiveMs: () => {
+              const now = Date.now();
+              return now - lastActivityAt - getApprovalWaitMs(toolCall.id, now);
+            },
+            abort: () => toolAbortController.abort(new Error('tool execution inactivity timeout')),
+            onTimeout: (elapsedMs) => this.ctx.onEvent({ type: 'tool_timeout', data: { toolCallId: toolCall.id, toolName: toolCall.name, elapsedMs, threshold: executionTimeout } }),
+            buildTimeoutResult: (elapsedMs) => ({ success: false, error: `Tool execution timed out after ${executionTimeout}ms without progress`, metadata: { timedOut: true, inactivityTimeoutMs: executionTimeout, elapsedMs } }),
+          });
       clearInterval(progressInterval);
       clearApprovalWait(toolCall.id);
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
@@ -1163,6 +1181,8 @@ export class ToolExecutionEngine {
         toolSpanId,
       });
     } finally {
+      if (parentAbortSignal) parentAbortSignal.removeEventListener('abort', abortFromParent);
+      toolAbortController.abort();
       this.activeToolNames.delete(toolCall.id);
     }
   }

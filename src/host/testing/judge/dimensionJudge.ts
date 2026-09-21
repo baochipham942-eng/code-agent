@@ -165,7 +165,8 @@ export interface DimensionJudgeOptions {
 
 /** 初筛判决的 promptHash：该维问句表 + pin 模型，用来分辨问句漂移（与生成式指令段哈希分开）。 */
 function getDimensionPrescreenHash(dimension: AiReviewDimension): string {
-  return sha256(`${JSON.stringify(EVAL_JUDGE_QUESTIONS[dimension])}${JEV_JUDGE_MODEL}`);
+  // 含随行 quality 问句：初筛请求是一个整体，rubric 漂移必须能反映在哈希上（#2023 R3 Nit）。
+  return sha256(`${JSON.stringify(EVAL_JUDGE_QUESTIONS[dimension])}${JSON.stringify(EVAL_JUDGE_QUALITY_QUESTION)}${JEV_JUDGE_MODEL}`);
 }
 
 /**

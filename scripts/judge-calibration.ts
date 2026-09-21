@@ -141,8 +141,10 @@ async function main(): Promise<void> {
   const cases = report.results ?? report.cases ?? [];
   // 同源裁判（评审模型与被测模型同一 provider）不接受影子金标——自我偏好会让断言真值与 judge 一起偏
   // （docs/eval/annotation-guideline.md §5；ai-review #1823 Important①）。
+  // prescreen 时实际判官可能是 typesafe（Jev）：同是一种同源裁判，一并纳入比较（#2023 R3 Important）。
   const sameSource = report.stamp?.scorers?.judgeSameSource === true
-    || (runtime !== null && typeof report.environment?.provider === 'string' && report.environment.provider === runtime.provider);
+    || (runtime !== null && typeof report.environment?.provider === 'string' && report.environment.provider === runtime.provider)
+    || (prescreen && report.environment?.provider === 'typesafe');
   if (sameSource && gold !== 'human_annotation') {
     throw new Error(`同源裁判（评审 ${runtime ? `${runtime.provider}/${runtime.model}` : JEV_JUDGE_MODEL} 与被测 provider ${report.environment?.provider ?? 'unknown'} 同家）只接受人标金标：加 --gold human_annotation`);
   }

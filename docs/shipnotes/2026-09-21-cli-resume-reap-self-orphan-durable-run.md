@@ -31,3 +31,7 @@ AssertionError: expected false to be true // Object.is equality
 4. 跨进程活 run（活 pid + 有效租约）→ 拒收。
 
 存量回归：`tests/unit/host/runtime/` 全目录 25 文件 205 例 + `tests/unit/cli/bootstrap.durableRun.test.ts` + `tests/unit/cli/adapter.cliAgent.test.ts` 全绿；`npm run typecheck` 绿；`npm run gates:fast -- --regressions <json>` 绿（receipt 见 PR）。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=8d1a2cc2e257069b49ceebade3e7395ea58c6088 base=a5ca056be0b1803312259441b9837698368ad8ea receipt=cf9ad9c7-ff71-435e-a40f-80b006823bf9 runner=remote

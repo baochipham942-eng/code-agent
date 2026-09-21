@@ -106,6 +106,26 @@ export function insertTurnScore(db: BetterSqlite3.Database, score: PostLaunchTur
 }
 
 /**
+ * 可重判行（not-judged 占位 / unavailable）被 INSERT OR REPLACE 覆盖前，其已付的预算成本
+ * 必须结转进新行——否则反复补评会反复真调 Jev/生成式，而日预算账只记最后一次，
+ * 实际支出可冲破 dailyBudgetUsd（ai-review #2023 R4 Important）。
+ */
+export function getReplaceableRowBudgetCostUsd(
+  db: BetterSqlite3.Database,
+  turnId: string,
+  judgeVersion: string,
+): number {
+  const row = db
+    .prepare(`
+      SELECT COALESCE(SUM(budget_cost_usd), 0) AS carried
+      FROM telemetry_turn_scores
+      WHERE turn_id = ? AND judge_version = ? AND COALESCE(judge_model, '') IN (?, ?)
+    `)
+    .get(turnId, judgeVersion, JUDGE_MODEL_NOT_JUDGED, JUDGE_MODEL_UNAVAILABLE) as { carried: number };
+  return row.carried;
+}
+
+/**
  * 取尚未回传云端的分数行（ADR-063 §6.3）。查询留在本模块——telemetry_turn_scores 的
  * 每一条 SQL 都在这里，上传器不自己拼；telemetryStorage.ts 已经顶到 god-file 上限（999/1000
  * 有效行），往那儿加等于逼下一个人去拆它。

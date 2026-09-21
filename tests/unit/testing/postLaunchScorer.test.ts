@@ -1054,6 +1054,9 @@ describe('上线后打分编排', () => {
     });
     const prescreen = vi.fn(abstainAll);
     const llmCall = vi.fn(async () => ALL_PASS);
+    const sample = replays['chat-1'].turns[0];
+    const signals = computeTurnSignals(sample, 't1', { workspaceDir: '/ws', turnCostUsd: 0.001, fileExists: () => true });
+    const jevUsd = estimatePostLaunchPrescreenUsd(sample, signals);
 
     const first = await runPostLaunchScoring(
       deps(database, replays, llmCall, { prescreen }),
@@ -1066,7 +1069,7 @@ describe('上线后打分编排', () => {
     const [placeholder] = scoreRows(database);
     expect(placeholder.judge_model).toBe('not-judged');
     // Jev 调用已发生：刊例计入成本与预算，但占位行不占抽样额度
-    expect(Number(placeholder.budget_cost_usd)).toBeGreaterThan(0);
+    expect(Number(placeholder.budget_cost_usd)).toBeCloseTo(jevUsd, 10);
     expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 0 }).sampledCount).toBe(0);
 
     const second = await runPostLaunchScoring(
@@ -1081,7 +1084,11 @@ describe('上线后打分编排', () => {
     expect(judged.judge_model).not.toBe('not-judged');
     expect(judged.judge_model).not.toBe(JEV_JUDGE_MODEL);
     expect(judged.dim_goal).toBe(1);
+    // 补评覆盖占位行时结转历史 Jev 预算成本：第二次 Jev + 生成式 0.1 + 第一趟占位 jevUsd
+    expect(Number(judged.budget_cost_usd)).toBeCloseTo(jevUsd * 2 + 0.1, 10);
+    expect(Number(judged.cost_usd)).toBeCloseTo(jevUsd + 0.1, 10);
     expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 5 }).sampledCount).toBe(1);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 5 }).spentUsd).toBeCloseTo(jevUsd * 2 + 0.1, 10);
   });
 
   it('prescreen 装配 + 无信号轮 Jev 弃权 + 有抽样额度 ⇒ 升级生成式并占 1 条额度', async () => {

@@ -35,7 +35,7 @@ import {
   type PostLaunchJudgePrescreen,
 } from '../judge/postLaunchJudge';
 import { computeTurnSignals, isHonestBlockedFallback } from './postLaunchSignals';
-import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay, redactPostLaunchReason,
+import { getBudgetState, getReplaceableRowBudgetCostUsd, getScoredTurnIds, insertTurnScore, localDay, redactPostLaunchReason,
   acquireScoringLock,
   releaseScoringLock,
   renewScoringLock,
@@ -504,6 +504,9 @@ export async function runPostLaunchScoring(
         budgetCostUsd,
         sampledBy: hasSignal ? 'signal' : 'sample',
       };
+      // 覆盖可重判行（not-judged/unavailable）时结转其已付预算成本，日预算账不许丢账
+      //（getReplaceableRowBudgetCostUsd 注释，ai-review #2023 R4）。
+      score.budgetCostUsd += getReplaceableRowBudgetCostUsd(deps.db, turn.turnId, judgeVersion);
       insertTurnScore(deps.db, score, turn.startedAt);
     }
   }

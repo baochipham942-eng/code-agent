@@ -645,7 +645,11 @@ export class StandaloneAgentAdapter implements AgentInterface {
   async collectHandoffProposals(since: number): Promise<HandoffProposalRecord[] | undefined> {
     if (!this.currentSessionId) return undefined;
     try {
-      const db = this.database?.getDb() ?? (await import('../services/core/databaseService')).getDatabase().getDb();
+      // 先选库再取句柄：注入了隔离库但暂时不可用（getDb() 为 null）= 没有证据源，
+      // 必须返 undefined——不许回退全局库，否则同 session 的旧提案会串题
+      // （ai-review PR#2024 R6）。只有「压根没注入」才读全局（产线 / 非隔离评测的写入点）。
+      const dbService = this.database ?? (await import('../services/core/databaseService')).getDatabase();
+      const db = dbService.getDb();
       if (!db) return undefined;
       const rows = db.prepare(
         `SELECT title, prompt, reason, source, status, created_at AS createdAt

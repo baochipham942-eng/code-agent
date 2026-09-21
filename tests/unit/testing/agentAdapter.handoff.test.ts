@@ -14,11 +14,12 @@ import { getDatabase } from '../../../src/host/services/core/databaseService';
 import { HandoffProposalService } from '../../../src/host/handoff/handoffProposalService';
 import { StandaloneAgentAdapter } from '../../../src/host/testing/agentAdapter';
 
-function makeAdapter(injectedDb?: Database.Database): StandaloneAgentAdapter {
+function makeAdapter(injectedDb?: Database.Database | null): StandaloneAgentAdapter {
   const adapter = new StandaloneAgentAdapter({
     workingDirectory: '/tmp',
     modelConfig: { provider: 'mock', model: 'fake-model' },
-    ...(injectedDb ? { database: { getDb: () => injectedDb } } : {}),
+    // undefined = 没注入（读全局）；null = 注入了但库不可用（fail-loud，不许回退全局）
+    ...(injectedDb !== undefined ? { database: { getDb: () => injectedDb } } : {}),
   } as ConstructorParameters<typeof StandaloneAgentAdapter>[0]);
   // currentSessionId 由 sendMessage 落定；这里直接钉上（单测不跑 run）。
   (adapter as unknown as { currentSessionId?: string }).currentSessionId = 'sess-handoff-1';
@@ -81,6 +82,19 @@ describe('StandaloneAgentAdapter.collectHandoffProposals', () => {
   it('库不可用 ⇒ undefined（没有证据源，断言侧 fail-loud）', async () => {
     database.getDb = () => null;
     const adapter = makeAdapter();
+    expect(await adapter.collectHandoffProposals(0)).toBeUndefined();
+  });
+
+  it('注入了隔离库但暂时不可用 ⇒ undefined，不回退全局库读旧提案（ai-review PR#2024 R6）', async () => {
+    // 全局库里有同 session 的旧提案——回退读它会串题
+    new HandoffProposalService().create({
+      sessionId: 'sess-handoff-1',
+      sourceMessageId: 'assistant-old',
+      title: '上一题的旧提案',
+      prompt: '不相关',
+      createdAt: 1000,
+    });
+    const adapter = makeAdapter(null);
     expect(await adapter.collectHandoffProposals(0)).toBeUndefined();
   });
 

@@ -137,7 +137,7 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
     expect(status).toBe(0);
     expect(out).toContain('on_main=yes');
     expect(out).toContain(`tree=${clone}`);
-    expect(out).toContain(`head=${originSha} (origin/main)`);
+    expect(out).toContain(`head=${originSha} (本地已有的 origin/main，可能陈旧)`);
     expect(out).toContain(`--compare ${candidate} --tags postlaunch`);
   });
 
@@ -164,9 +164,11 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
     expect(status).toBe(0);
     expect(out).toContain('on_main=no');
     expect(out).toContain(`tree=${path.join(root, 'code-agent-worktrees', 'eval-reflow-main')}`);
-    expect(out).toContain(`head=${originSha} (origin/main)`);
+    expect(out).toContain(`head=${originSha} (本地已有的 origin/main，可能陈旧)`);
     expect(fs.existsSync(path.join(root, 'code-agent-worktrees'))).toBe(false);
     expect(git(clone, 'branch', '--show-current')).toBe('feat/somebody-elses-branch');
+    // dry-run 是纯预览：不 fetch（FETCH_HEAD 都不许写，ai-review PR#2024 R6 Nit）
+    expect(fs.existsSync(path.join(clone, '.git', 'FETCH_HEAD'))).toBe(false);
   });
 
   it('--install：候选臂写进 plist 的 EnvironmentVariables（launchd 拿不到交互 shell 环境）；缺候选拒装', () => {

@@ -134,18 +134,20 @@ case "$CANDIDATE" in
 esac
 
 # 对准 origin/main：主仓在 main 上就自己快进；停在别的分支就不碰它（共享地面），改用专用树。
-git fetch origin main || echo "!!! git fetch origin main 失败，用本地已有的 origin/main"
+# dry-run 是纯预览：不 fetch、不动 refs、不落盘（ai-review PR#2024 R6 Nit）——head 打印的是
+# 本地已有的 origin/main，可能陈旧，真实跑之前才会 fetch。
 ON_MAIN=$([ "$(git branch --show-current)" = "main" ] && echo yes || echo no)
 if [ "$ON_MAIN" = yes ]; then TREE="$REPO"; else TREE="$(dirname "$REPO")/code-agent-worktrees/eval-reflow-main"; fi
 
 if [ -n "$DRY_RUN" ]; then
-  # dry-run 只打印不落盘（Nit：日志目录也不建）
   echo "=== $(date '+%FT%T%z') 回流集对比 dry-run repo=$REPO on_main=$ON_MAIN max_cases=${NEO_EVAL_REFLOW_MAX_CASES:-30}"
   echo "=== tree=$TREE"
-  echo "=== head=$(git rev-parse --short origin/main) (origin/main)"
+  echo "=== head=$(git rev-parse --short origin/main) (本地已有的 origin/main，可能陈旧)"
   echo "=== command: eval-ci --real --compare $CANDIDATE --tags postlaunch --max-cases ${NEO_EVAL_REFLOW_MAX_CASES:-30} ${NEO_EVAL_REFLOW_EXTRA_ARGS:-}"
   exit 0
 fi
+
+git fetch origin main || echo "!!! git fetch origin main 失败，用本地已有的 origin/main"
 
 mkdir -p "$LOG_DIR" "$INBOX"
 exec >>"$LOG" 2>&1

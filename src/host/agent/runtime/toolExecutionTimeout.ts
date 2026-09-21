@@ -147,7 +147,9 @@ export function createToolExecutionWatchdog(options: ToolExecutionWatchdogOption
         const elapsed = now - startedAt - getApprovalWaitMs(toolCallId, now);
         onEvent({
           type: 'tool_progress',
-          data: { toolCallId, toolName, elapsedMs: elapsed },
+          // elapsedMs = 启动以来总耗时（扣审批等待，展示口径）；inactiveMs = 距上次进展
+          // 时长（超时判定口径）。两者语义不同，都发给 renderer 免得误读。
+          data: { toolCallId, toolName, elapsedMs: elapsed, inactiveMs: progressClock.getInactiveMs() },
         });
         if (!timeoutEmitted && elapsed > timeoutThreshold) {
           timeoutEmitted = true;

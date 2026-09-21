@@ -692,7 +692,7 @@ const InputRedirectedEventSchema = event('input_redirected', z.object({
 }));
 const CitationsUpdatedEventSchema = event('citations_updated', z.object({ citations: z.array(citationSchema) }));
 const ModelSwitchedEventSchema = event('model_switched', z.object({ from: z.string(), to: z.string(), provider: z.string().optional() }));
-const ToolProgressEventSchema = event('tool_progress', typed<ToolProgressData>(z.object({ toolCallId: z.string(), toolName: z.string(), elapsedMs: z.number(), detail: z.string().optional() })));
+const ToolProgressEventSchema = event('tool_progress', typed<ToolProgressData>(z.object({ toolCallId: z.string(), toolName: z.string(), elapsedMs: z.number(), detail: z.string().optional(), inactiveMs: z.number().optional() })));
 const ToolOutputDeltaEventSchema = event('tool_output_delta', typed<ToolOutputDeltaData>(z.object({ toolCallId: z.string(), toolName: z.string(), stream: z.enum(['stdout', 'stderr']), content: z.string(), elapsedMs: z.number().optional(), truncated: z.boolean().optional() })));
 const ToolTimeoutEventSchema = event('tool_timeout', typed<ToolTimeoutData>(z.object({ toolCallId: z.string(), toolName: z.string(), elapsedMs: z.number(), threshold: z.number() })));
 const PlanModeEnteredEventSchema = event('plan_mode_entered', z.object({ reason: z.string() }));

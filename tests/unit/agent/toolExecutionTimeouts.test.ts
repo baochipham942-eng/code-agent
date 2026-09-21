@@ -54,7 +54,7 @@ describe('unified tool execution timeout policy', () => {
     expect(getToolExecutionTimeoutMs('MCPUnified')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('mcp__server__search')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('mcp_server_search')).toBeUndefined();
-    expect(getToolExecutionTimeoutMs('image_generate')).toBe(TOOL_EXECUTION_TIMEOUTS.DEFAULT);
+    expect(getToolExecutionTimeoutMs('image_generate')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('Task')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('workflow_orchestrate')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);
     expect(getToolExecutionTimeoutMs('local_speech_to_text')).toBe(TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING);

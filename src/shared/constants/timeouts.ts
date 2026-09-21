@@ -327,7 +327,7 @@ export const TOOL_PROGRESS = {
  * its command-level timeout is the authoritative cancellation boundary.
  */
 export const TOOL_EXECUTION_TIMEOUTS = {
-  /** Search/retrieval tools get the longest bounded wait. */
+  /** Search/retrieval tools share the generic bound for now; split here when they need more. */
   SEARCH_RETRIEVAL: 120_000,
   /** Generic tools fail fast enough to let the model choose another path. */
   DEFAULT: 120_000,
@@ -363,6 +363,9 @@ const TOOL_EXECUTION_SELF_LIMITING_NAMES = ['terminal_wait', 'gui_agent', 'spawn
 const TOOL_EXECUTION_LONG_RUNNING_NAMES = [
   'video_generate', 'ppt_generate', 'task', 'workflow_orchestrate', 'explore', 'skill',
   'local_speech_to_text', 'http_request',
+  // 慢生成/自动化工具：不发进度事件、单次调用常态超过 120s，默认档会误杀。
+  'image_generate', 'docx_generate', 'excel_generate', 'chart_generate', 'pdf_generate',
+  'text_to_speech', 'xlwings_execute',
 ] as const;
 
 /** Return the unified inactivity budget, or undefined for tools with their own timeout. */

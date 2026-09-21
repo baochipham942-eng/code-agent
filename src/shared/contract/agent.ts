@@ -65,8 +65,9 @@ export interface TaskCompleteData {
 export interface ToolProgressData {
   toolCallId: string;
   toolName: string;
-  elapsedMs: number;       // 已耗时 ms
+  elapsedMs: number;       // 已耗时 ms（总耗时口径，扣审批等待）
   detail?: string;         // 可选的描述文本
+  inactiveMs?: number;     // 距上次进展 ms（inactivity 超时判定口径，与 elapsedMs 语义不同）
 }
 
 // 工具执行超时警告事件数据（超过阈值时发射）

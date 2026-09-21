@@ -18,7 +18,7 @@ import {
 describe('unified tool execution timeout policy', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('leaves bash to its command-level timeout', () => {
+  it('leaves bash and interaction tools to their own boundaries', () => {
     expect(getToolExecutionTimeoutMs('bash')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('Bash')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('bash_script')).toBeUndefined();
@@ -43,6 +43,7 @@ describe('unified tool execution timeout policy', () => {
 
   it('leaves self-limiting wait tools to their own bounded budget', () => {
     expect(getToolExecutionTimeoutMs('terminal_wait')).toBeUndefined();
+    expect(getToolExecutionTimeoutMs('gui_agent')).toBeUndefined();
   });
 
   it('uses the MCP tier and a bounded default for other tools', () => {
@@ -112,6 +113,22 @@ describe('unified tool execution timeout policy', () => {
     endApprovalWait(toolCallId);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(clock.getInactiveMs()).toBe(1_000);
+    clearApprovalWait(toolCallId);
+  });
+
+  it('counts overlapping approval waits once across their union span', async () => {
+    vi.useFakeTimers();
+    const toolCallId = 'approval-overlap-test';
+    // 并行子 agent 共用父 toolCallId 同时弹卡：先结束的卡不得清掉等待起点。
+    beginApprovalWait(toolCallId);
+    beginApprovalWait(toolCallId);
+    await vi.advanceTimersByTimeAsync(1_000);
+    endApprovalWait(toolCallId);
+    expect(getApprovalWaitMs(toolCallId, Date.now())).toBe(1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    endApprovalWait(toolCallId);
+    // 整段并集 2000ms 只记一次，不重复累计。
+    expect(getApprovalWaitMs(toolCallId, Date.now())).toBe(2_000);
     clearApprovalWait(toolCallId);
   });
 

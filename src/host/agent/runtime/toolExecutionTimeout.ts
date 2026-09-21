@@ -165,10 +165,16 @@ export function createToolExecutionWatchdog(options: ToolExecutionWatchdogOption
         timeoutMs: executionTimeoutMs,
         getInactiveMs: () => progressClock.getInactiveMs(),
         abort,
-        onTimeout: (elapsedMs) => onEvent({
-          type: 'tool_timeout',
-          data: { toolCallId, toolName, elapsedMs, threshold: executionTimeoutMs },
-        }),
+        onTimeout: (elapsedMs) => {
+          // 告警阈值已发过 tool_timeout 时不重发：renderer 按 toolCallId 提示超时，
+          // 重发只会重复提示；预算触发的失败结果本身会随 tool_call_end 送达。
+          if (timeoutEmitted) return;
+          timeoutEmitted = true;
+          onEvent({
+            type: 'tool_timeout',
+            data: { toolCallId, toolName, elapsedMs, threshold: executionTimeoutMs },
+          });
+        },
         buildTimeoutResult: (elapsedMs) => buildToolTimeoutResult({ toolName, timeoutMs: executionTimeoutMs, elapsedMs }) as T,
       });
     },

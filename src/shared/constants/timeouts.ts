@@ -349,9 +349,12 @@ const TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES = [
   'academic_search', 'youtube_transcript', 'news_search', 'image_search', 'video_search',
   'websearch', 'webfetch', 'readdocument', 'externalsearch',
 ] as const;
-// 自带硬性等待上限的工具（同 bash 的命令级超时）：上限内轮询、到点自行返回，
+// 自带硬性等待上限的工具（同 bash 的命令级超时）：上限内轮询/自管计时、到点自行返回，
 // 外层 inactivity 钟与自身上限重叠时可能先触发，把「等满并返回最近输出」误报成失败。
-const TOOL_EXECUTION_SELF_LIMITING_NAMES = ['terminal_wait'] as const;
+// gui_agent 的 UI-TARS 循环用内部 AbortController 只受 timeout_ms 控制、不接
+// ctx.abortSignal，外层 abort 停不掉它——外层先判超时会让模型以为失败再发新任务，
+// 两路并发驱动同一块屏幕。
+const TOOL_EXECUTION_SELF_LIMITING_NAMES = ['terminal_wait', 'gui_agent'] as const;
 const TOOL_EXECUTION_LONG_RUNNING_NAMES = [
   'video_generate', 'ppt_generate', 'task', 'spawn_agent', 'workflow_orchestrate', 'explore', 'skill',
   'local_speech_to_text', 'http_request',
@@ -389,7 +392,7 @@ const TOOL_EXECUTION_OUTCOME_UNKNOWN_NAMES = [
   'reminders_create', 'reminders_update', 'reminders_delete', 'tmeetmeetingcreate',
   'write_file', 'append_file', 'edit_file',
   'terminal_write', 'process_write', 'process_submit',
-  'browser_navigate', 'browser_action', 'gui_agent', 'xlwings_execute',
+  'browser_navigate', 'browser_action', 'xlwings_execute',
 ] as const;
 
 /** True when an inactivity timeout leaves the tool's side-effect outcome unknown. */

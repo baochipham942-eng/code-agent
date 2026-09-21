@@ -12,10 +12,20 @@ esbuild bundle（cli/web 两个 target）里 pdfkit 被 alias 到 `pdfkit/js/pdf
 
 ## 反向变异
 
-1. `git stash push -- src/host/tools/modules/network/pdfGenerate.ts` 后跑
-   `npx vitest run tests/unit/tools/modules/network/pdfGenerate.real.test.ts`：
-   academic 用例红（`PDF 生成失败: ENOENT: no such file or directory, open 'Times-Roman-Bold'`），
-   default/minimal 绿；stash pop 后 3/3 绿。
+1. 把 `src/host/tools/modules/network/pdfGenerate.ts` 换回修复前版本后跑
+   `npx vitest run tests/unit/tools/modules/network/pdfGenerate.real.test.ts`，原始失败输出：
+
+   ```
+   ❯ tests/unit/tools/modules/network/pdfGenerate.real.test.ts (3 tests | 1 failed) 67ms
+        × theme=academic 真实生成出合法 PDF 文件 9ms
+    FAIL  tests/unit/tools/modules/network/pdfGenerate.real.test.ts > pdfGenerate 真实生成路径（无 mock） > theme=academic 真实生成出合法 PDF 文件
+   AssertionError: expected false to be true // Object.is equality
+    Test Files  1 failed (1)
+         Tests  1 failed | 2 passed (3)
+   ```
+
+   academic 用例红（底层因是 `ENOENT: no such file or directory, open 'Times-Roman-Bold'`），
+   default/minimal 绿；还原修复后 3/3 绿。
 2. 用生产同款配置（esbuild minify + `alias: pdfkit→pdfkit/js/pdfkit.standalone.js`）打最小 bundle
    直调 `executePdfGenerate`：修复前 academic 复现原错
    `PDF 生成失败: w.readFileSync is not a function`（变量名随 build 变化，与工单 `m.` 同形），

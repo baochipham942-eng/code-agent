@@ -138,4 +138,53 @@ describe('toolRunPolicy', () => {
       expect(infoSpy).not.toHaveBeenCalled();
     });
   });
+
+  // issue #1994：headless/管道跑批里 AskUserQuestion 无人应答，白等一轮还触发
+  // 问句未答冻结，整轮作废。无人值守轮必须把它收出工具面；有人值守原样保留。
+  describe('无人值守轮 AskUserQuestion 收口', () => {
+    it('unattendedTurn=true 时两个名字等价形都移出工具面', () => {
+      const ctx = { unattendedTurn: true } as any;
+
+      expect(filterToolsByRunPolicy([
+        tool('AskUserQuestion'),
+        tool('ask_user_question'),
+        tool('Read'),
+        tool('Bash'),
+      ], ctx).map((item) => item.name)).toEqual(['Read', 'Bash']);
+    });
+
+    it('无人值守 + 显式白名单也不许把 AskUserQuestion 捞回来', () => {
+      const ctx = { unattendedTurn: true, allowedToolNames: ['AskUserQuestion', 'Read'] } as any;
+
+      expect(filterToolsByRunPolicy([
+        tool('AskUserQuestion'),
+        tool('Read'),
+      ], ctx).map((item) => item.name)).toEqual(['Read']);
+    });
+
+    it('有人值守轮（unattendedTurn 缺省/false）保留 AskUserQuestion，交互行为不变', () => {
+      for (const ctx of [{} as any, { unattendedTurn: false } as any]) {
+        expect(filterToolsByRunPolicy([
+          tool('AskUserQuestion'),
+          tool('Read'),
+        ], ctx).map((item) => item.name)).toEqual(['AskUserQuestion', 'Read']);
+      }
+    });
+
+    it('无人值守收窄也走可观测性日志（点名 removed）', () => {
+      infoSpy.mockClear();
+      const ctx = { unattendedTurn: true } as any;
+
+      const kept = filterToolsByRunPolicyObserved([
+        tool('AskUserQuestion'),
+        tool('Read'),
+      ], ctx);
+
+      expect(kept.map((item) => item.name)).toEqual(['Read']);
+      expect(infoSpy).toHaveBeenCalledTimes(1);
+      const [message, payload] = infoSpy.mock.calls[0];
+      expect(message).toContain('narrowed 2 -> 1');
+      expect(payload.removed).toEqual(['AskUserQuestion']);
+    });
+  });
 });

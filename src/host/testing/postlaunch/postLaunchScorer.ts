@@ -294,6 +294,7 @@ export async function runPostLaunchScoring(
     signalTurns: 0,
     sampledTurns: 0,
     signalOnlyTurns: 0,
+    sampleDeferredTurns: 0,
     skippedTurns: 0,
     costUsd: 0,
     judgeUnavailableTurns: 0,
@@ -469,7 +470,7 @@ export async function runPostLaunchScoring(
           judgeModel = JUDGE_MODEL_NOT_JUDGED;
           promptHash = '';
         }
-        if (deferForSample) result.signalOnlyTurns += 1;
+        if (deferForSample) result.sampleDeferredTurns += 1;
         else if (hasSignal) result.signalTurns += 1;
         else {
           result.sampledTurns += 1;

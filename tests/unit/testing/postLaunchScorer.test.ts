@@ -1064,7 +1064,8 @@ describe('上线后打分编排', () => {
     );
 
     expect(llmCall).not.toHaveBeenCalled();
-    expect(first.signalOnlyTurns).toBe(1);
+    expect(first.signalOnlyTurns).toBe(0);
+    expect(first.sampleDeferredTurns).toBe(1);
     expect(first.sampledTurns).toBe(0);
     const [placeholder] = scoreRows(database);
     expect(placeholder.judge_model).toBe('not-judged');

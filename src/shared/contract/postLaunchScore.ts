@@ -340,6 +340,12 @@ export interface PostLaunchScoringResult {
   sampledTurns: number;
   /** 只记了信号、没调 judge 的轮。 */
   signalOnlyTurns: number;
+  /**
+   * Jev 初筛已调用（并计费）但部分弃权、抽样额度耗尽挡住升级生成式、落 not-judged
+   * 占位行待补评的无信号轮。与 signalOnlyTurns 分开计：这类轮调过 judge 且花了钱
+   * （ai-review #2023 R6）。
+   */
+  sampleDeferredTurns: number;
   /** 已有分数、本轮跳过的轮。 */
   skippedTurns: number;
   costUsd: number;

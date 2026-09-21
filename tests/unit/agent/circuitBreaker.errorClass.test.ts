@@ -24,13 +24,14 @@ describe('CircuitBreaker error classification', () => {
     }
   });
 
-  it('trips on 5 consecutive infrastructure failures (network / database / 5xx)', () => {
+  it('trips on 5 consecutive infrastructure failures (network / database / 5xx / transient 408)', () => {
     const infraErrors = [
       'Failed to fetch URL: fetch failed',
       'connect ECONNREFUSED 127.0.0.1:443',
       'request ETIMEDOUT after 30000ms',
       'database is locked (SQLITE_BUSY)',
       'HTTP 503 Service Unavailable',
+      'HTTP 408 Request Timeout',
     ];
     for (const error of infraErrors) {
       const breaker = new CircuitBreaker();
@@ -53,6 +54,26 @@ describe('CircuitBreaker error classification', () => {
     expect(breaker.getFailureCount()).toBe(4);
     expect(breaker.recordFailure('Failed to fetch URL: fetch failed')).toBe(true);
     expect(breaker.isTripped()).toBe(true);
+  });
+
+  it('keeps a conservative trip path for unrecognized exceptions (countUnknown: true)', () => {
+    // exception 兜底通道：classifyError 落 unknown 的未识别异常仍计数，防无限重试
+    const breaker = new CircuitBreaker();
+    for (let index = 0; index < 4; index += 1) {
+      expect(breaker.recordFailure('Unknown error', { countUnknown: true })).toBe(false);
+    }
+    expect(breaker.recordFailure('Unknown error', { countUnknown: true })).toBe(true);
+    expect(breaker.isTripped()).toBe(true);
+  });
+
+  it('unknown-classified business results stay exempt on the default path', () => {
+    // 工具结果通道默认 countUnknown=false：断言失败等 unknown 业务失败永不熔断
+    const breaker = new CircuitBreaker();
+    for (let index = 0; index < 6; index += 1) {
+      expect(breaker.recordFailure('Unknown error')).toBe(false);
+    }
+    expect(breaker.isTripped()).toBe(false);
+    expect(breaker.getFailureCount()).toBe(0);
   });
 
   it('success still resets the consecutive failure counter', () => {

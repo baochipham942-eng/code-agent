@@ -61,7 +61,8 @@ export function classifyError(errorMessage: string): ErrorCategory {
     return 'database_error';
   }
 
-  // 4. 网络/HTTP — 优先匹配明确状态码（429 单独走 rate_limit）
+  // 4. 网络/HTTP — 优先匹配明确状态码（429 单独走 rate_limit，408 是瞬态超时）
+  if (/\bhttp\s*408\b/i.test(cleaned)) return 'timeout';
   if (/\bhttp\s*429\b/i.test(cleaned) || /\b429\s+too many requests\b/i.test(cleaned) || msg.includes('rate limit') || (msg.includes('quota') && msg.includes('exceeded'))) {
     return 'rate_limit';
   }

@@ -66,6 +66,20 @@ describe('extractClaimedDeliverablePaths', () => {
     const text = '已生成 output/a.html。\n```\nwritten to /tmp/build/log.txt\n```';
     expect(extractClaimedDeliverablePaths(text)).toEqual(['output/a.html']);
   });
+
+  // ai-review #2007 Important 2：URL 不是本地交付物，抽出来核对只会误判 not_on_disk。
+  it('ignores URLs and host:port links instead of treating them as local paths', () => {
+    expect(extractClaimedDeliverablePaths('已部署到 https://foo.vercel.app/index.html，页面已生成。')).toEqual([]);
+    expect(extractClaimedDeliverablePaths('已生成页面，见 localhost:5173/index.html。')).toEqual([]);
+    expect(extractClaimedDeliverablePaths('已生成 output/a.html，预览在 https://x.vercel.app/a.html。'))
+      .toEqual(['output/a.html']);
+  });
+
+  // ai-review #2007 Nit：未闭合围栏不剥——一路吞到结尾会把后面的真声称漏掉。
+  it('keeps scanning prose after an unclosed code fence', () => {
+    const text = '```\nsome draft\n已生成 output/a.html。';
+    expect(extractClaimedDeliverablePaths(text)).toEqual(['output/a.html']);
+  });
 });
 
 describe('collectDeliverableClaims', () => {
@@ -99,6 +113,27 @@ describe('collectDeliverableClaims', () => {
       resolved: path.join(workRoot, 'output/周报.html'),
       source: 'inferred',
     }]);
+  });
+
+  // ai-review #2007 Important 1：~ 开头不展开会 resolve 成 <wd>/~/...，真实写到家目录的文件被误判缺失。
+  it('expands ~ before resolving so home-directory deliverables check out', () => {
+    mkdirSync(workRoot, { recursive: true });
+    const homeFile = path.join(os.homedir(), `deliverable-disk-check-home-${process.pid}.md`);
+    writeFileSync(homeFile, 'home artifact');
+    try {
+      const messages = [
+        message(),
+        message({ id: 'a1', role: 'assistant', content: `已保存到 \`~/${path.basename(homeFile)}\`。`, timestamp: 1_700_000_000_100 }),
+      ];
+      const claims = collectDeliverableClaims({ messages, workingDirectory: workRoot });
+      expect(claims).toHaveLength(1);
+      expect(claims[0].resolved).toBe(homeFile);
+      const result = checkDeliverablesOnDisk(claims, workRoot);
+      expect(result.missing).toEqual([]);
+      expect(result.evidenceRefs).toHaveLength(1);
+    } finally {
+      rmSync(homeFile, { force: true });
+    }
   });
 });
 

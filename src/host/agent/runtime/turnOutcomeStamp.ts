@@ -257,6 +257,14 @@ async function buildTurnOutcome(
     });
   }
 
+  // verified 提升只认「本 run 真碰过」的声称文件（与 genericEvidenceRefs 回读同一把 run 域尺）：
+  // 顺带提及的既有文件（如 ./README.md）配上一个声称动词不该把 verdict 抬成 verified——
+  // 它在盘上 ≠ 本 run 交付了它（ai-review #2007 Nit）。缺漏核对不受此限：声称了不存在的就是幻觉。
+  const runPaths = currentRunFilePaths(ctx.messages, workingDirectory, ctx.nudgeManager);
+  const claimsDeliveredThisRun = deliverableCheck.claims.length > 0
+    && deliverableCheck.missing.length === 0
+    && deliverableCheck.claims.every((claim) => runPaths.has(claim.resolved));
+
   return {
     terminal,
     // File readback proves delivery bytes, not the truth of claims inside them.
@@ -267,7 +275,7 @@ async function buildTurnOutcome(
       && !runEvents.some((event) => event.type === 'evidence_boundary')
       && (
         evidenceRefs.some((ref) => ref.kind === 'test' && ref.freshness.state === 'read')
-        || (deliverableCheck.claims.length > 0 && deliverableCheck.missing.length === 0)
+        || claimsDeliveredThisRun
       )
       ? 'verified' : 'self_claimed',
     evidenceRefs,

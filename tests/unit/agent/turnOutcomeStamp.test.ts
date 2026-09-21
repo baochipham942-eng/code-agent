@@ -365,6 +365,8 @@ describe('turn outcome stamp', () => {
     const recorder = new TurnTraceRecorder('claim-on-disk', traceRoot);
     const messages = [
       message(),
+      message({ id: 'wrote-report', role: 'assistant', content: '',
+        toolResults: [{ toolCallId: 'write-report', success: true, metadata: { outputPath: artifact } }] }),
       message({ id: 'final', role: 'assistant', content: '已生成 `report.md`，请查收。', timestamp: 1_700_000_000_100 }),
     ];
     await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
@@ -375,6 +377,23 @@ describe('turn outcome stamp', () => {
     const declaration = recorder.getEvents().find((event) => event.type === 'deliverables_declaration');
     expect(declaration).toMatchObject({ type: 'deliverables_declaration',
       data: { status: 'inferred', finalArtifacts: ['report.md'] } });
+  });
+
+  // ai-review #2007 Nit：顺带提及的既有文件配上声称动词不该抬成 verified——它在盘上 ≠ 本 run 交付了它。
+  it('does not promote to verified on a claimed file this run never touched', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'README.md');
+    writeFileSync(artifact, 'pre-existing');
+    const recorder = new TurnTraceRecorder('claim-not-this-run', traceRoot);
+    const messages = [
+      message(),
+      message({ id: 'final', role: 'assistant', content: '已生成 `./README.md`。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.verdict).toBe('self_claimed');
+    // 文件在盘上，不是缺漏——只是不构成「本 run 交付」的证据。
+    expect(outcome.evidenceProblems).toEqual([]);
   });
 
   it('keeps self_claimed and books the gap when a claimed deliverable is not on disk', async () => {

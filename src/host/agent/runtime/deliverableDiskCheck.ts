@@ -11,7 +11,8 @@
 // ============================================================================
 
 import { statSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import os from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
 import { TURN_OUTCOME } from '../../../shared/constants/agent';
 import { type EvidenceRef } from '../../../shared/contract/evidence';
 import type { Message } from '../../../shared/contract';
@@ -74,11 +75,16 @@ function looksLikeBarePath(token: string): boolean {
 
 /**
  * 从最终回复正文抽取「声称交付」的文件路径。
- * 先剥代码围栏（构建日志/命令回显里的 written to 不是交付声称），再按 claim 动词闸门：
+ * 先剥 URL（以扩展名结尾的链接不是本地交付物，抽出来只会误判 not_on_disk）和
+ * 闭合代码围栏（构建日志/命令回显里的 written to 不是交付声称；未闭合围栏不剥，
+ * 免得一路吞到正文结尾把后面的真声称漏掉），再按 claim 动词闸门：
  * 正文里没有声称动词就一条都不抽——罗列文件、引用输入都不算声称交付。
  */
 export function extractClaimedDeliverablePaths(text: string): string[] {
-  const prose = text.replace(/```[\s\S]*?(?:```|$)/g, '\n');
+  const prose = text
+    .replace(/[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+/g, ' ')
+    .replace(/[\w.-]+:\d+\S*/g, ' ')
+    .replace(/```[\s\S]*?```/g, '\n');
   if (!CLAIM_VERB_PATTERN.test(prose)) return [];
   const found: string[] = [];
   for (const match of prose.matchAll(QUOTED_PATH_PATTERN)) {
@@ -86,6 +92,8 @@ export function extractClaimedDeliverablePaths(text: string): string[] {
     if (candidate && !candidate.includes('\n')) found.push(candidate);
   }
   for (const match of prose.matchAll(BARE_PATH_TOKEN_PATTERN)) {
+    // `//host/path` 是 URL 剥剩的协议相对形态，不是本地路径。
+    if (match[0].startsWith('//')) continue;
     if (looksLikeBarePath(match[0])) found.push(match[0]);
   }
   return [...new Set(found.map(normalizeNfc))].filter((candidate) => !referencesInputMaterials(candidate));
@@ -93,6 +101,13 @@ export function extractClaimedDeliverablePaths(text: string): string[] {
 
 function lastUserTimestamp(messages: readonly Message[]): number {
   return [...messages].reverse().find((message) => message.role === 'user')?.timestamp ?? 0;
+}
+
+/** 与 postLaunchSignals.expandUserPath 同口径展开 ~——模型写 ~/Desktop/x.md 并声称时，不展开会误判 not_on_disk。 */
+function expandUserPath(raw: string): string {
+  if (raw === '~') return os.homedir();
+  if (raw.startsWith('~/')) return join(os.homedir(), raw.slice(2));
+  return raw;
 }
 
 /** 本 run 最终回复正文：最后一条可见 assistant 文本。 */
@@ -120,7 +135,8 @@ export function collectDeliverableClaims(input: {
   const push = (raw: string, source: DeliverableClaim['source']) => {
     const trimmed = raw.trim();
     if (!trimmed) return;
-    const resolved = normalizeNfc(isAbsolute(trimmed) ? trimmed : resolve(input.workingDirectory, trimmed));
+    const expanded = expandUserPath(trimmed);
+    const resolved = normalizeNfc(isAbsolute(expanded) ? expanded : resolve(input.workingDirectory, expanded));
     if (seen.has(resolved)) return;
     seen.add(resolved);
     claims.push({ claimed: trimmed, resolved, source });

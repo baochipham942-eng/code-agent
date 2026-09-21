@@ -795,7 +795,7 @@ export class ToolExecutionEngine {
         ? await captureWorkspaceMutationSnapshot(this.ctx.workingDirectory || process.cwd())
         : undefined;
 
-      this.dispatchedCalls.add(toolCall.id);
+      lastActivityAt = Date.now(); this.dispatchedCalls.add(toolCall.id);
       const execution = this.ctx.toolExecutor.execute(
         toolCall.name,
         toolCall.arguments,
@@ -1182,7 +1182,7 @@ export class ToolExecutionEngine {
       });
     } finally {
       if (parentAbortSignal) parentAbortSignal.removeEventListener('abort', abortFromParent);
-      toolAbortController.abort();
+      if (toolCall.name !== 'spawn_agent' && toolCall.name !== 'AgentSpawn' || (toolCall.arguments as Record<string, unknown> | undefined)?.run_in_background !== true) toolAbortController.abort();
       this.activeToolNames.delete(toolCall.id);
     }
   }

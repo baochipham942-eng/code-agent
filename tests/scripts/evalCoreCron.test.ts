@@ -33,6 +33,9 @@ describe('eval-core-cron.sh --dry-run', () => {
     git(origin, 'config', 'user.email', 'test@example.com');
     git(origin, 'config', 'user.name', 'test');
     fs.writeFileSync(path.join(origin, 'README.md'), 'x\n');
+    // 真仓 gitignore 了依赖目录；fixture 不忽略的话，cron 建的 node_modules 软链会把
+    // 「工作区干净」检查误判成脏（真实仓不会）。
+    fs.writeFileSync(path.join(origin, '.gitignore'), 'node_modules/\nsrc-tauri/target/\n');
     git(origin, 'add', '-A');
     git(origin, 'commit', '-qm', 'init');
     clone = path.join(root, 'code-agent');
@@ -102,6 +105,9 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
     git(origin, 'config', 'user.email', 'test@example.com');
     git(origin, 'config', 'user.name', 'test');
     fs.writeFileSync(path.join(origin, 'README.md'), 'x\n');
+    // 真仓 gitignore 了依赖目录；fixture 不忽略的话，cron 建的 node_modules 软链会把
+    // 「工作区干净」检查误判成脏（真实仓不会）。
+    fs.writeFileSync(path.join(origin, '.gitignore'), 'node_modules/\nsrc-tauri/target/\n');
     git(origin, 'add', '-A');
     git(origin, 'commit', '-qm', 'init');
     clone = path.join(root, 'code-agent');
@@ -283,5 +289,45 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
     // 占用者的未提交文件必须原样还在
     expect(fs.readFileSync(path.join(occupied, 'SOMEBODY-UNCOMMITTED.txt'), 'utf8')).toBe('not yours\n');
     expect(out).toBe('');
+  });
+
+  it('自建专用树带标记时第二周跑不被自己的标记判脏（ownership 标记不算脏）', () => {
+    const tree = path.join(root, 'code-agent-worktrees', 'eval-reflow-main');
+    // 上一用例占用的外来树先清掉（本用例要验证的是自建树的第二跑）
+    if (fs.existsSync(path.join(tree, '.git'))) {
+      git(clone, 'worktree', 'remove', '--force', tree);
+    }
+    const env = {
+      ...process.env,
+      NEO_EVAL_REFLOW_REPO: clone,
+      HOME: path.join(root, 'home-owned'),
+      NEO_EVAL_REFLOW_CANDIDATE: candidate,
+    };
+    const runOnce = () => {
+      try {
+        execFileSync('bash', [REFLOW_SCRIPT], { encoding: 'utf8', env, timeout: 60000 });
+        return 0;
+      } catch (error) {
+        return (error as { status?: number }).status ?? -1;
+      }
+    };
+    const log = () => {
+      const dir = path.join(root, 'home-owned', '.code-agent', 'eval-reflow-cron');
+      const name = fs.readdirSync(dir).filter((n) => n.endsWith('.log') && n !== 'launchd.log')[0];
+      return fs.readFileSync(path.join(dir, name!), 'utf8');
+    };
+
+    // 第一跑：自建树 + 落标记（fixture 仓没有 eval-ci/tsconfig，跑会在 npx 处失败——无所谓，
+    // 本用例只钉 ownership 闸；tsx 走 npx 缓存离线可用，失败是即时的）。
+    expect(runOnce()).not.toBe(0);
+    if (!fs.existsSync(path.join(tree, '.eval-reflow-cron-owned'))) {
+      fs.writeFileSync('/tmp/autoharvest-debug-run1.log', `branch=${git(clone, 'branch', '--show-current')}\n` + log());
+    }
+    expect(fs.existsSync(path.join(tree, '.eval-reflow-cron-owned'))).toBe(true);
+    expect(log()).not.toContain('缺 .eval-reflow-cron-owned 标记');
+    // 第二跑：标记是未跟踪文件但不算脏 ⇒ 过闸（不被自己的标记判退出）。
+    expect(runOnce()).not.toBe(0);
+    expect(log()).not.toContain('有未提交改动');
+    expect(fs.readFileSync(path.join(tree, '.eval-reflow-cron-owned'), 'utf8')).toBe('');
   });
 });

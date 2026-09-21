@@ -92,25 +92,31 @@ describe('StandaloneAgentAdapter.collectHandoffProposals', () => {
     expect(await adapter.collectHandoffProposals(0)).toBeUndefined();
   });
 
-  it('反向变异预埋：读注入的隔离库（而非写入点）时，真发出的提案会被漏掉', async () => {
-    // 本用例复现 ai-review 指出的错读形状：注入库是另一条线、里面什么都没有。
+  it('注入隔离库时读写同库：提案落注入库（写）⇒ 采集器读注入库读得到；全局库里的不算数', async () => {
+    // ai-review PR#2024 R5：隔离臂的提案落注入库（persistHandoffProposal 回调），
+    // 采集器也必须读注入库——两端同库才一致。
     const isolated = new Database(':memory:');
     try {
-      const service = new HandoffProposalService();
-      service.create({
+      // 写入侧形状与 adapter 的 persistHandoffProposal 回调一致（注入库实例化的服务）
+      new HandoffProposalService(isolated).create({
         sessionId: 'sess-handoff-1',
         sourceMessageId: 'assistant-1',
-        title: '真发出的提案',
+        title: '隔离臂真发出的提案',
         prompt: '接力',
         createdAt: 1000,
       });
-      const rows = isolated.prepare(
-        `SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'handoff_proposals'`,
-      ).get() as { count: number };
-      expect(rows.count).toBe(0);
-      // 而采集器仍然读到写入点库里的那条。
+      // 全局库里同名会话有一条干扰提案（不该被读进来——窗口/会话过滤之外还有库隔离）
+      new HandoffProposalService().create({
+        sessionId: 'sess-handoff-1',
+        sourceMessageId: 'assistant-x',
+        title: '全局库里的干扰提案',
+        prompt: '不是这题的',
+        createdAt: 2000,
+      });
       const adapter = makeAdapter(isolated);
-      expect(await adapter.collectHandoffProposals(0)).toHaveLength(1);
+      const records = await adapter.collectHandoffProposals(0);
+      expect(records).toHaveLength(1);
+      expect(records?.[0]?.title).toBe('隔离臂真发出的提案');
     } finally {
       isolated.close();
     }

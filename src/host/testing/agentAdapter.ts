@@ -13,6 +13,7 @@ import type { ModelProvider } from '../../shared/contract';
 import type { ModelConfig } from '../../shared/contract/model';
 import type { InferenceOptions } from '../model/types';
 import type { ConversationExecutionIntent } from '../../shared/contract/conversationEnvelope';
+import { HandoffProposalService } from '../handoff/handoffProposalService';
 import { createLogger } from '../services/infra/logger';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
 import { ARTIFACT_REPAIR_PROGRESS_MARKER } from '../../shared/constants/repair';
@@ -632,20 +633,19 @@ export class StandaloneAgentAdapter implements AgentInterface {
   /**
    * N-EVAL-FAILURE-AUTOHARVEST：handoff_* 断言的证据源。按需采集——只在 case 声明
    * handoff_* 断言时由 runner 调用（无条件采集会把库炸点扩散成普通题误红，
-   * ai-review PR#2019 R2 同款教训）。读 handoff_proposals 表里本会话、run 窗口内的
-   * 落库记录（messageProcessor 的 `<handoff-proposal>` 终答尾是唯一漏斗）。
-   * 读取点必须跟写入点同一个库：handoffProposalService 始终经全局 getDatabase() 写，
-   * 这里也读全局库——隔离评测注入的 this.database 是另一条线，读它会把真发出的提案
-   * 看成不存在（ai-review PR#2024 Important 2，钉测试 agentAdapter.handoff.test.ts）。
+   * ai-review PR#2019 R2 同款教训）。
+   * 读取点跟写入点同库：隔离评测注入了 this.database 时，loop 侧 persistHandoffProposal
+   * 回调把提案落注入库（messageProcessor），这里也读注入库；没有注入库时写入与读取
+   * 都是全局单例库（产线 / 非隔离评测）。
+   * 会话 id 还没落定（超时发生在 session 建立前）= 没有证据源，不是零提案——
+   * 返 [] 会让 handoff_not_proposed 假绿（ai-review PR#2024 R2 Important 3）。
    * 返回 undefined = 没有证据源（库不可用/读出错）⇒ 断言 fail-loud；
-   * 表都没建过 = 本产品从未落过一条提案 ⇒ 零条是事实，不是没证据。
+   * 表都没建过 = 从未落过一条提案 ⇒ 零条是事实，不是没证据。
    */
   async collectHandoffProposals(since: number): Promise<HandoffProposalRecord[] | undefined> {
-    // 会话 id 还没落定（超时发生在 session 建立前）= 没有证据源，不是零提案——
-    // 返 [] 会让 handoff_not_proposed 假绿（ai-review PR#2024 R2 Important 3）。
     if (!this.currentSessionId) return undefined;
     try {
-      const db = (await import('../services/core/databaseService')).getDatabase().getDb();
+      const db = this.database?.getDb() ?? (await import('../services/core/databaseService')).getDatabase().getDb();
       if (!db) return undefined;
       const rows = db.prepare(
         `SELECT title, prompt, reason, source, status, created_at AS createdAt
@@ -875,6 +875,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
               }
             : undefined,
           turnSnapshotSink: runtimeDatabase,
+          // N-EVAL-FAILURE-AUTOHARVEST：隔离臂的 handoff 提案落同一个注入库——
+          // 提案与消息/遥测同库，collectHandoffProposals 才读得到（ai-review PR#2024 R5）。
+          ...(runtimeDatabase ? {
+            persistHandoffProposal: (input: import('../../shared/contract/handoff').CreateHandoffProposalInput) => {
+              const sqlite = runtimeDatabase.getDb();
+              if (!sqlite) throw new Error('eval isolated database not initialized');
+              new HandoffProposalService(sqlite).create(input);
+            },
+          } : {}),
           scopedCostRecorder: options?.scopedCostRecorder,
           onEvent: (event) => {
             if (this.currentSessionId) {

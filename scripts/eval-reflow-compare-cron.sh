@@ -160,7 +160,10 @@ else
       echo "!!! $TREE 已存在但不是本脚本建的专用树（缺 .eval-reflow-cron-owned 标记），拒绝 reset --hard，退出"
       exit 1
     fi
-    if [ -n "$(git -C "$TREE" status --porcelain)" ]; then
+    # 标记与三条依赖软链是脚本自己建的未跟踪文件，porcelain 检查要排除它们
+    # （否则第二周跑必被自己的产物判脏退出，ai-review PR#2024 R5 Important 1；
+    #  dangling 软链连 gitignore 的 node_modules/ 尾斜杠都盖不住——真仓主树缺依赖时同款）。
+    if [ -n "$(git -C "$TREE" status --porcelain | grep -v -E '^\?\? (\.eval-reflow-cron-owned|node_modules|vercel-api/node_modules|admin-console/node_modules)$')" ]; then
       echo "!!! 专用树 $TREE 有未提交改动，拒绝 reset --hard，退出"
       exit 1
     fi

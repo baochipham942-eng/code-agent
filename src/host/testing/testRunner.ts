@@ -946,8 +946,10 @@ export class TestRunner {
       // follow_up_prompts）跑完之后才消费——首轮后就取会漏掉后续轮的写入与快照，
       // 把「第二轮才落盘」判成未写入、把「第二轮泄露」判成干净（审查 #1638）。
       // N-SKILL-TRIGGER-EVAL：skill 触发落账同时序；消费即清（台账不留给下一 trial）。
+      // 只在题目声明了 skill_* 断言时采集（ai-review PR#2019 R2）：无条件采集会让
+      // SkillDiscoveryService 初始化/ToolSearch 同步的异常扩散成普通题误红。
       // adapter 没接记录器时字段保持 undefined，fail-loud。
-      Object.assign(result, agent.consumeMemorySignals?.(testCase.id) ?? {}, (await agent.consumeSkillSignals?.(testCase.id)) ?? {});
+      Object.assign(result, agent.consumeMemorySignals?.(testCase.id) ?? {}, (testCase.expectations ?? []).some((e) => e.type === 'skill_triggered' || e.type === 'skill_not_triggered') ? (await agent.consumeSkillSignals?.(testCase.id)) ?? {} : {});
 
       const assertionResult = await runAssertions(testCase.expect ?? {}, {
         toolExecutions: result.toolExecutions,

@@ -116,6 +116,34 @@ describe('TestRunner skill 触发断言接线', () => {
     expect(result?.expectationResults?.[0]?.evidence.details).toContain('没有证据源');
   });
 
+  it('普通题（无 skill_* 断言）不采集 skill 信号：发现初始化的炸点不扩散成误红（ai-review PR#2019 R2）', async () => {
+    let consumed = 0;
+    const base = fakeAgent({ response: 'ok' });
+    const agent = {
+      ...base,
+      consumeSkillSignals: async () => {
+        consumed += 1;
+        throw new Error('SkillDiscoveryService init exploded');
+      },
+    } as unknown as AgentInterface;
+    const summary = await runSuite([
+      'name: no-skill-assert',
+      'cases:',
+      '  - id: plain-case',
+      '    type: task',
+      '    description: 普通题，与 skill 无关',
+      '    prompt: 你好',
+      '    expectations:',
+      '      - type: response_contains',
+      '        description: 有回复',
+      '        params:',
+      '          text: ok',
+    ], agent);
+
+    expect(summary.results[0]?.status).toBe('passed');
+    expect(consumed).toBe(0);
+  });
+
   it('声明的 skill 没装进本题上下文 ⇒ 判红写明配置错，不许真空绿', async () => {
     const agent = fakeAgent({ signals: () => ({ skillActivations: {}, skillContext: ['xlsx'] }) });
     const summary = await runSuite(NEGATIVE_CASE, agent);
@@ -215,5 +243,33 @@ describe('超时被掐路径（N-EVAL-TIMEOUT-K2-NEGASSERT 同口径）', () => 
 
     expect(result.timeoutExpectations).toBeUndefined();
     expect(result.expectationResults).toBeUndefined();
+  });
+
+  it('超时题没有 skill 断言时 thunk 不被调用（无关题补判不碰技能发现初始化）', async () => {
+    let consumed = 0;
+    const agent = killedAgent();
+    agent.consumeSkillSignals = async () => {
+      consumed += 1;
+      throw new Error('should not be called');
+    };
+    const summary = await runSuite([
+      'name: timeout-no-skill',
+      'cases:',
+      '  - id: slow-no-skill',
+      '    type: task',
+      '    description: 超时题，只挂普通负向断言',
+      '    prompt: do work',
+      '    expectations:',
+      '      - type: no_forbidden_tool_call',
+      '        description: no dd',
+      '        critical: true',
+      '        params:',
+      '          forbidden_commands: ["\\\\bdd\\\\b.*of="]',
+    ], agent, 50);
+    const result = summary.results[0];
+
+    expect(result).toMatchObject({ status: 'failed', failureStage: 'timeout' });
+    expect(result.timeoutExpectations).toEqual({ judged: ['no_forbidden_tool_call'], unjudged: [] });
+    expect(consumed).toBe(0);
   });
 });

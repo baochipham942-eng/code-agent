@@ -43,7 +43,11 @@ export async function judgeTimeoutExpectations(
   if (candidates.length === 0) return;
   // N-SKILL-TRIGGER-EVAL：skill_activated 落账在 adapter 侧按 testId 累积，不受掐断影响——
   // 补判前交出，skill_not_triggered 才有证据源；交不出（thunk 缺席/返空）则进 unjudged。
-  Object.assign(result, (await consumeSkillSignals?.()) ?? {});
+  // 只有候选里真有 skill 断言才调 thunk：无关题的补判不该为技能发现初始化付出炸点
+  // （ai-review PR#2019 R2）。
+  if (candidates.some((expectation) => expectation.type === 'skill_not_triggered')) {
+    Object.assign(result, (await consumeSkillSignals?.()) ?? {});
+  }
   const judged = candidates.filter((expectation) => hasEvidence(expectation, result));
   const { results } = await runExpectations(judged, {
     toolExecutions: result.toolExecutions,

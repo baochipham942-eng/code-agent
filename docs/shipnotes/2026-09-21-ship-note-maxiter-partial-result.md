@@ -110,3 +110,7 @@ forced-final 轮原文仅含内部格式标记（`<truncation-recovery>` / `Ran:
 ## ai-review R4（claude，Important 1 · Nit 3）修复
 
 R2/R1 的「空正文不算交付」与 main 上 #2006 的静态收尾兜底冲突：非撞顶的 forced-final（只读硬阈值/产物修复降级等）没有 ensureMaxStepsWrapUp 接手，被吞掉会零收尾断流。修复：messageProcessor 空正文跳过与 conversationRuntime 空白跳过都限定撞顶轮（`iterations >= maxIterations`）；非撞顶轮继续走 #2006 静态收尾文案。补非撞顶回归用例（静态文案落盘 + reason 正常清除）。四件套 167/167 全绿。Nit 三条（goal pending 空白续跑为 main 既有行为、runErrorCode 被覆盖、中文文案未 i18n 与同文件风格一致）按审查备注留档。
+
+## ai-review R5（claude，Important 1 · Nit 3）修复
+
+R4 的「限撞顶轮」只问了轮次，没问 ensureMaxStepsWrapUp 是否真接手：撞顶与预算耗尽/goal 闸3 stop/markMetDegraded/noProgressStopped 同时发生时终态是 aborted/goal_met，wrap-up 按 terminalCompleted 放行会缺席 → 零收尾断流（比 main 的 #2006 静态文案更差）。按审查方案一修复：ensureMaxStepsWrapUp 删掉 terminalCompleted 参数，「reason 残留」本身就是精确的未交付判据。补两个用例：撞顶+预算耗尽（aborted）交白卷→兜底生效；撞顶+goal_met 交白卷→兜底生效（86/86）。Nit：maxIterations=1 的 error 事件不再带 MAX_ITERATIONS_REACHED code（无收尾语义，按普通失败退出 1）；具名布尔因 conversationRuntime 顶格 max-lines 回退为单行条件（行数硬约束优先）。

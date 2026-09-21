@@ -115,16 +115,19 @@ function buildMaxStepsPartialResultContent(ctx: RuntimeContext, maxIterations: n
  * 落盘路径（文本 / forceFinal 工具分支 / unavailable-tools 内联路径）都会在持久化
  * 收尾消息后 clearForceFinalResponse；reason 残留 = 收尾轮白跑，且对预算耗尽、
  * 只读硬阈值等其他 forced-final 触发路径同样成立（两条触发路径行为对齐）。
+ *
+ * 不看 terminal 终态（ai-review R5 #2005）：撞顶与预算耗尽/goal 闸3 stop/
+ * markMetDegraded/noProgressStopped 同时发生时终态是 aborted/goal_met 而非
+ * completed，若按终态放行，这些组合在模型交白卷时会零收尾断流——reason 残留
+ * 本身就精确表达了「forced-final 没交付」，不需要终态再过滤一道。
  */
 export async function ensureMaxStepsWrapUp(
   ctx: RuntimeContext,
   contextAssembly: Pick<ContextAssembly, 'generateId' | 'addAndPersistMessage'>,
   iterations: number,
-  terminalCompleted: boolean,
 ): Promise<void> {
   if (
-    !terminalCompleted
-    || ctx.maxIterations <= 1
+    ctx.maxIterations <= 1
     || iterations < ctx.maxIterations
     || ctx.control.isCancelled
     || ctx.control.isInterrupted

@@ -1751,6 +1751,73 @@ describe('ConversationRuntime', () => {
       expect(getModifiedFilesSince).toHaveBeenCalledWith(ctx.stats.runStartTime);
     });
 
+    it('synthesizes the wrap-up even when budget exhaustion coincides with the final round (aborted, ai-review R5 #2005)', async () => {
+      ctx.maxIterations = 2;
+      const mp = (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      // 预算恰好在最后一轮耗尽：terminal=aborted，若按终态放行兜底就没人接手，零收尾断流
+      modules.runFinalizer.checkAndEmitBudgetStatus
+        .mockReturnValueOnce(false)
+        .mockReturnValue(true);
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        .mockImplementationOnce(async () => ({ type: 'text', content: '   ' }));
+
+      await runtime.run('budget task');
+
+      const abortedPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = abortedPersistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeTruthy();
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'budget task',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'aborted' }),
+      );
+    });
+
+    it('synthesizes the wrap-up when the final forced-final round ends goal_met with a blank answer (ai-review R5 #2005)', async () => {
+      ctx.maxIterations = 2;
+      ctx.goalMode = new GoalModeController({ goal: 'finish', verifyCommand: 'true', tokenBudget: 100000, maxTurns: 20 });
+      vi.spyOn(ctx.goalMode, 'evaluateFallback').mockReturnValue({} as never);
+      // markMetDegraded 类路径：终态 goal_met（非 completed），交白卷时兜底也必须接手
+      vi.spyOn(ctx.goalMode, 'getStatus').mockReturnValue('met' as never);
+      const mp = (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        .mockImplementationOnce(async () => ({ type: 'text', content: '  ' }));
+
+      await runtime.run('goal task');
+
+      const goalMetPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = goalMetPersistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeTruthy();
+    });
+
     it('does not synthesize a fallback when the run completes before max iterations', async () => {
       ctx.maxIterations = 5;
       modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Done!' });

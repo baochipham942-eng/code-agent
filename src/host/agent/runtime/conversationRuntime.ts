@@ -651,9 +651,8 @@ export class ConversationRuntime {
         }
 
         // 2b. Handle actual text response
-        // forced-final 轮只回空白字符不算交付（ai-review #2005）：跳过 handleTextResponse，
-        // forceFinalResponseReason 保持残留，循环尾部的 ensureMaxStepsWrapUp 兜底才会生效。
-        // 仅限撞顶轮（ai-review R4 #2005）：非撞顶的 forced-final 走 #2006 静态收尾文案。
+        // forced-final 轮只回空白字符不算交付（ai-review #2005）：reason 保持残留，
+        // 循环尾部 ensureMaxStepsWrapUp 兜底才生效。仅限撞顶轮（R4）：非撞顶走 #2006 静态收尾。
         if (response.type === 'text' && response.content && (response.content.trim().length > 0 || !this.ctx.control.forceFinalResponseReason || iterations < this.ctx.maxIterations)) {
           // 强制收尾文本轮：goal 续跑不得覆盖它的 break（否则回到带工具推理反复触发硬阈值，issue #1991）
           const forcedFinalTextPass = Boolean(this.ctx.control.forceFinalResponseReason);
@@ -747,7 +746,7 @@ export class ConversationRuntime {
       if (terminal.status === 'completed' && this.toolEngine.noProgressStopped) terminal = { status: 'aborted' };
 
       // 撞顶收尾保底（issue #1999）：forced-final 轮交白卷 → 合成「部分结果 + 未完成说明」，同一收尾通道
-      await ensureMaxStepsWrapUp(this.ctx, this.contextAssembly, iterations, terminal.status === 'completed');
+      await ensureMaxStepsWrapUp(this.ctx, this.contextAssembly, iterations);
     } catch (error) {
       terminal = { status: 'failed', error };
       runError = error;

@@ -463,9 +463,14 @@ export class RunFinalizer {
       logCollector.agent('WARN', `Max iterations reached (${this.ctx.maxIterations})`);
       // 稳定 code：CLI 据此把这次 run 映射为「部分完成」退出码（2），
       // 与正常完成（0）/异常失败（1）区分（issue #1999）。
+      // maxIterations=1 无 forced-final 轮也无合成收尾（ensureMaxStepsWrapUp 早退），
+      // 「部分完成」语义不成立，不带 code 按普通失败退出（ai-review R5 Nit #2005）。
       this.ctx.onEvent({
         type: 'error',
-        data: { message: 'Max iterations reached', code: RUN_ERROR_CODE_MAX_ITERATIONS },
+        data: {
+          message: 'Max iterations reached',
+          ...(this.ctx.maxIterations > 1 ? { code: RUN_ERROR_CODE_MAX_ITERATIONS } : {}),
+        },
       });
 
       // Fire-and-forget: emit StopFailure hook

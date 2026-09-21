@@ -5,7 +5,12 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { stripToolCallProtocolMarkup } from '../../../src/host/agent/runtime/contextAssembly/transcriptProjection';
+import { stripInternalFormatMimicry } from '../../../src/host/agent/runtime/contextAssembly/transcriptProjection';
+
+// 生产侧唯一消费点是 stripInternalFormatMimicry（knip 生产档不允许只被测试引用的导出），
+// 单测走同一入口，顺带覆盖接线。
+const stripToolCallProtocolMarkup = (content: string): string =>
+  stripInternalFormatMimicry(null as never, content);
 
 describe('stripToolCallProtocolMarkup', () => {
   it('returns non-markup text unchanged', () => {

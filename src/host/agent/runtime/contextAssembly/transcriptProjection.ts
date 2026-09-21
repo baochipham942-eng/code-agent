@@ -163,7 +163,7 @@ const TOOL_CALL_PROTOCOL_MARKUP_PATTERNS = [
 ];
 
 /** 剥离正文里的工具调用协议裸标记；无标记时原样返回。 */
-export function stripToolCallProtocolMarkup(content: string): string {
+function stripToolCallProtocolMarkup(content: string): string {
   if (!content?.includes('longcat_')) return content;
   let cleaned = content;
   for (const pattern of TOOL_CALL_PROTOCOL_MARKUP_PATTERNS) {

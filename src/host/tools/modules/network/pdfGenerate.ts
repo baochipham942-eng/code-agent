@@ -47,6 +47,10 @@ interface ThemeConfig {
   bodyColor: string;
   accentColor: string;
   fontFamily: string;
+  /** PDF 标准 14 字体的完整名，不能用 fontFamily+'-Bold' 拼（Times-Roman-Bold 不存在） */
+  boldFont: string;
+  /** 同上，引用块斜体；Times 系的斜体叫 Times-Italic */
+  obliqueFont: string;
 }
 
 const THEMES: Record<PdfTheme, ThemeConfig> = {
@@ -60,6 +64,8 @@ const THEMES: Record<PdfTheme, ThemeConfig> = {
     bodyColor: '#333333',
     accentColor: '#3498db',
     fontFamily: 'Helvetica',
+    boldFont: 'Helvetica-Bold',
+    obliqueFont: 'Helvetica-Oblique',
   },
   academic: {
     titleSize: 20,
@@ -71,6 +77,8 @@ const THEMES: Record<PdfTheme, ThemeConfig> = {
     bodyColor: '#1a1a1a',
     accentColor: '#2c3e50',
     fontFamily: 'Times-Roman',
+    boldFont: 'Times-Bold',
+    obliqueFont: 'Times-Italic',
   },
   minimal: {
     titleSize: 22,
@@ -82,6 +90,8 @@ const THEMES: Record<PdfTheme, ThemeConfig> = {
     bodyColor: '#4a4a4a',
     accentColor: '#7f8c8d',
     fontFamily: 'Helvetica',
+    boldFont: 'Helvetica-Bold',
+    obliqueFont: 'Helvetica-Oblique',
   },
 };
 
@@ -218,7 +228,7 @@ export async function executePdfGenerate(
     doc.pipe(writeStream);
 
     doc
-      .font(themeConfig.fontFamily + '-Bold')
+      .font(themeConfig.boldFont)
       .fontSize(themeConfig.titleSize)
       .fillColor(themeConfig.titleColor)
       .text(title, { align: 'center' });
@@ -252,7 +262,7 @@ export async function executePdfGenerate(
       switch (block.type) {
         case 'title':
           doc
-            .font(themeConfig.fontFamily + '-Bold')
+            .font(themeConfig.boldFont)
             .fontSize(themeConfig.headingSize)
             .fillColor(themeConfig.headingColor)
             .text(block.text);
@@ -262,7 +272,7 @@ export async function executePdfGenerate(
         case 'heading':
           doc.moveDown(0.5);
           doc
-            .font(themeConfig.fontFamily + '-Bold')
+            .font(themeConfig.boldFont)
             .fontSize(themeConfig.headingSize)
             .fillColor(themeConfig.headingColor)
             .text(block.text);
@@ -272,7 +282,7 @@ export async function executePdfGenerate(
         case 'subheading':
           doc.moveDown(0.3);
           doc
-            .font(themeConfig.fontFamily + '-Bold')
+            .font(themeConfig.boldFont)
             .fontSize(themeConfig.subheadingSize)
             .fillColor(themeConfig.headingColor)
             .text(block.text);
@@ -313,7 +323,7 @@ export async function executePdfGenerate(
 
         case 'quote':
           doc
-            .font(themeConfig.fontFamily + '-Oblique')
+            .font(themeConfig.obliqueFont)
             .fontSize(themeConfig.bodySize)
             .fillColor(themeConfig.accentColor)
             .text(`"${block.text}"`, { indent: 20 });

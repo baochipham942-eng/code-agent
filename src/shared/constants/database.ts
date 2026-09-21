@@ -20,6 +20,18 @@ export const SQLITE_FTS = {
 } as const;
 
 /**
+ * 写锁并发（issue #1992）：WAL 模式下多进程共享同库，连接级 busy_timeout
+ * 只覆盖普通写锁等待；deferred 事务先读后写升级出的 SQLITE_BUSY_SNAPSHOT
+ * 不走 busy handler——写事务必须 BEGIN IMMEDIATE 并对 SQLITE_BUSY 自动重试。
+ */
+export const SQLITE_BUSY = {
+  /** 每连接 busy_timeout（毫秒），open 时生效，覆盖 WAL pragma 与日常写 */
+  BUSY_TIMEOUT_MS: 5_000,
+  /** 写操作 SQLITE_BUSY（含 WAL 快照冲突）自动重试次数（不含第一次） */
+  WRITE_RETRY_LIMIT: 2,
+} as const;
+
+/**
  * 主库完整性探针 / 备份轮转。
  * Tier 1 必须便宜（LIMIT 1），禁止把 PRAGMA integrity_check / quick_check 塞进 init 同步路径。
  */

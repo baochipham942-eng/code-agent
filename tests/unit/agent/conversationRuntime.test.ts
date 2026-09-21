@@ -479,6 +479,7 @@ function createMockModules() {
       pushPersistentSystemContext: vi.fn(),
       checkAndAutoCompress: vi.fn(),
       addAndPersistMessage: vi.fn(),
+      generateId: vi.fn().mockReturnValue('generated-msg-id'),
     } as any,
     runFinalizer: {
       finalizeRun: vi.fn(),
@@ -1584,6 +1585,82 @@ describe('ConversationRuntime', () => {
 
       expect(ctx.control.forceFinalResponseReason).toBeUndefined();
       expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
+    });
+
+    it('synthesizes a partial-result wrap-up when max iterations ends without any final text (issue #1999)', async () => {
+      ctx.maxIterations = 2;
+      const mp = (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        // 最后一轮 forced-final 推理交白卷 → 运行时兜底合成部分结果
+        .mockImplementationOnce(async () => ({ type: 'text', content: '' }));
+
+      await runtime.run('long task');
+
+      const synthesized = modules.contextAssembly.addAndPersistMessage.mock.calls
+        .map((call: unknown[]) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeTruthy();
+      expect(synthesized!.content).toContain('已完成的部分');
+      expect(synthesized!.content).toContain('未完成的部分');
+      expect(synthesized!.content).toContain('为什么停');
+      expect(synthesized!.content).toContain('2 轮');
+      // 同步上屏：message 事件把保底收尾推给 CLI/renderer
+      const messageEvents = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls
+        .filter((call: unknown[]) => (call[0] as { type?: string }).type === 'message')
+        .map((call: unknown[]) => (call[0] as { data?: { content?: string } }).data);
+      expect(messageEvents.some((m) => m?.content?.includes('已达最大执行轮次'))).toBe(true);
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'long task',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'completed' }),
+      );
+    });
+
+    it('does not synthesize a fallback when the max-iterations final turn delivered a summary', async () => {
+      ctx.maxIterations = 2;
+      // 真实 handleTextResponse 持久化收尾文本后会 clearForceFinalResponse——
+      // 「reason 已清除」就是保底通道的「已交付」判据，mock 里对齐这一行为。
+      (runtime as unknown as {
+        messageProcessor: { handleTextResponse: ReturnType<typeof vi.fn> };
+      }).messageProcessor.handleTextResponse.mockImplementation(async () => {
+        ctx.control.clearForceFinalResponse();
+        return 'break';
+      });
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        .mockImplementationOnce(async () => ({ type: 'text', content: 'Maximum steps reached. Summary of work done.' }));
+
+      await runtime.run('long task');
+
+      const synthesized = modules.contextAssembly.addAndPersistMessage.mock.calls
+        .map((call: unknown[]) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeUndefined();
+    });
+
+    it('does not synthesize a fallback when the run completes before max iterations', async () => {
+      ctx.maxIterations = 5;
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Done!' });
+
+      await runtime.run('quick task');
+
+      expect(modules.contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
     });
 
     it('does not force a summary when the run completes before max iterations', async () => {

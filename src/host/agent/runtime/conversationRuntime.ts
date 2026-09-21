@@ -35,7 +35,7 @@ import {
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
-import { activateMaxStepsFinalResponse, createResourceWarning } from './maxStepsFallback';
+import { activateMaxStepsFinalResponse, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
 import { DoomLoopGuard } from './doomLoopGuard';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
@@ -740,6 +740,9 @@ export class ConversationRuntime {
         terminal = { status: 'aborted' };
       }
       if (terminal.status === 'completed' && this.toolEngine.noProgressStopped) terminal = { status: 'aborted' };
+
+      // 撞顶收尾保底（issue #1999）：forced-final 轮交白卷 → 合成「部分结果 + 未完成说明」，同一收尾通道
+      await ensureMaxStepsWrapUp(this.ctx, this.contextAssembly, iterations, terminal.status === 'completed');
     } catch (error) {
       terminal = { status: 'failed', error };
       runError = error;

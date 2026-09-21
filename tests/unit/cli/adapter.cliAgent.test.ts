@@ -245,6 +245,53 @@ describe('CLIAgent', () => {
     );
   });
 
+  it('run hitting max iterations: partial completion keeps output and marks terminationReason', async () => {
+    // host 侧（conversationRuntime）撞顶时先走 forced-final 收尾轮，模型交白卷则
+    // 合成部分结果落进共享 messages，再由 runFinalizer 发带稳定 code 的 error。
+    mocks.createAgentLoop.mockImplementation(
+      (_cfg: unknown, onEvent: (e: AgentEvent) => void, messages: Message[]) => ({
+        cancel: vi.fn(),
+        interrupt: vi.fn(),
+        getHookManager: vi.fn().mockReturnValue({ hooks: true }),
+        run: vi.fn(async () => {
+          messages.push({
+            id: 'm-partial',
+            role: 'assistant',
+            content: '⚠️ 已达最大执行轮次（50 轮），任务未全部完成，执行已停止。',
+            timestamp: Date.now(),
+          } as Message);
+          onEvent({
+            type: 'error',
+            data: { message: 'Max iterations reached', code: 'MAX_ITERATIONS_REACHED' },
+          } as AgentEvent);
+          onEvent({ type: 'agent_complete' } as AgentEvent);
+        }),
+      }),
+    );
+
+    const agent = new CLIAgent();
+    const result = await agent.run('long task');
+
+    expect(result.success).toBe(false);
+    expect(result.terminationReason).toBe('max_iterations');
+    expect(result.error).toBe('Max iterations reached');
+    // 空 lastContent 时回退到最后一条助手消息 = 保底部分结果，不再空输出
+    expect(result.output).toContain('已达最大执行轮次');
+  });
+
+  it('run failing with an uncoded error stays a plain failure', async () => {
+    installLoop(async (ctl) => {
+      ctl.onEvent({ type: 'error', data: { message: 'boom' } } as AgentEvent);
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+
+    const agent = new CLIAgent();
+    const result = await agent.run('bad task');
+
+    expect(result.success).toBe(false);
+    expect(result.terminationReason).toBeUndefined();
+  });
+
   it('uses the CLI durable parent context and terminals it after the turn', async () => {
     const durableRun = {
       context: {

@@ -20,6 +20,7 @@ import { judgeConversation } from '../../lightMemory/conversationJudge';
 import { skipRunAutomaticMemory } from '../../memory/automaticMemoryPolicy';
 import { writeDurableFacts } from '../../lightMemory/durableFactWriter';
 import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
+import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
 import { trackNode } from '../../observability/posthogNode';
@@ -460,9 +461,11 @@ export class RunFinalizer {
     } else if (iterations >= this.ctx.maxIterations) {
       logger.debug('[AgentLoop] Max iterations reached!');
       logCollector.agent('WARN', `Max iterations reached (${this.ctx.maxIterations})`);
+      // 稳定 code：CLI 据此把这次 run 映射为「部分完成」退出码（2），
+      // 与正常完成（0）/异常失败（1）区分（issue #1999）。
       this.ctx.onEvent({
         type: 'error',
-        data: { message: 'Max iterations reached' },
+        data: { message: 'Max iterations reached', code: RUN_ERROR_CODE_MAX_ITERATIONS },
       });
 
       // Fire-and-forget: emit StopFailure hook

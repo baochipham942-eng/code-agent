@@ -65,3 +65,7 @@ AssertionError: expected undefined to be 'max_iterations' // Object.is equality
 
 ## ship 回执
 ✓ gates:fast passed required local preflight. schema=2 head=4ce72953a5e14ab9928e934d10db913ee6d28c30 base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=7689b704-1c08-46ca-ac3a-ffc4aa6fdc29
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=887652a2c63ab65c66c2ff61d7035bc96a74d613 base=7f353a4fec5d2526531dbbf93c5f086fec8ad664 receipt=740bf894-69e4-448f-858a-1cd762ddb778

@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AdaptiveRouter } from '../../../src/host/model/adaptiveRouter';
 import type { FallbackContext } from '../../../src/host/model/adaptiveRouter';
+import type { JevSystemOneCall } from '../../../src/shared/constants/jevQuestions';
 
 // --------------------------------------------------------------------------
 // Mocks
@@ -142,6 +143,57 @@ describe('AdaptiveRouter.selectFallback', () => {
       currentModel: 'grok-4-1-fast-reasoning',
     }));
     expect(result).toBeNull();
+  });
+});
+
+describe('AdaptiveRouter Jev intent router', () => {
+  beforeEach(() => vi.unstubAllEnvs());
+
+  it('is default off and preserves the heuristic without calling Jev', async () => {
+    const router = new AdaptiveRouter();
+    const systemOne = vi.fn() as unknown as JevSystemOneCall;
+    const result = await router.estimateComplexityWithJev([{ role: 'user', content: 'hello' }], systemOne);
+    expect(result.level).toBe('simple');
+    expect(systemOne).not.toHaveBeenCalled();
+  });
+
+  it('synthesizes intent and complexity, and keeps ambiguous requests out of the simple tier', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const systemOne = vi.fn(async () => ({
+      intent: { choice: 'artifact', confidence: 0.92 },
+      complexity: { choice: '1', confidence: 0.91 },
+      needs_clarification: { noul: 0.95 },
+      destructive_intent: { noul: 0.05 },
+    })) as unknown as JevSystemOneCall;
+    const result = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'update the previous report' }],
+      systemOne,
+    );
+    expect(result.level).toBe('complex');
+    expect(result.signals).toContain('jev_intent:artifact');
+    expect(result.signals).toContain('needs_clarification:0.95');
+  });
+
+  it('does not downgrade on low confidence and fails back to heuristic on provider errors', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const lowConfidence = vi.fn(async () => ({
+      intent: { choice: 'chat', confidence: 0.9 },
+      complexity: { choice: '0', confidence: 0.49 },
+      needs_clarification: { noul: 0 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const low = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'this is a long request that should not be downgraded by an uncertain classifier because it has a file.json reference' }],
+      lowConfidence,
+    );
+    expect(low.signals).not.toContain('jev_intent:chat');
+
+    const failing = vi.fn(async () => { throw new Error('jev down'); }) as unknown as JevSystemOneCall;
+    const fallback = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'hello' }],
+      failing,
+    );
+    expect(fallback.signals).toContain('short_message');
   });
 });
 

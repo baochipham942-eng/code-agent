@@ -12,6 +12,12 @@ import {
   PROVIDER_REGISTRY,
 } from '../../shared/constants';
 import { resolveBaseFallbackChain } from './modelRouterPolicy';
+import { guardSensitiveText } from '../security/sensitiveDataGuard';
+import {
+  JEV_ROUTER_QUESTIONS,
+  type JevAnswers,
+  type JevSystemOneCall,
+} from '../../shared/constants/jevQuestions';
 
 const logger = createLogger('AdaptiveRouter');
 
@@ -19,6 +25,24 @@ export interface TaskComplexity {
   level: 'simple' | 'moderate' | 'complex';
   score: number;
   signals: string[];
+}
+
+function answerNoul(answers: JevAnswers, key: string): number | null {
+  const answer = answers[key];
+  if (!answer || typeof answer !== 'object' || !('noul' in answer)) return null;
+  const value = answer.noul;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
+}
+
+function answerChoice(answers: JevAnswers, key: string): { choice: string; confidence: number } | null {
+  const answer = answers[key];
+  if (!answer || typeof answer !== 'object' || !('choice' in answer)) return null;
+  const choice = answer.choice;
+  const confidence = answer.confidence;
+  return typeof choice === 'string' && typeof confidence === 'number'
+    && Number.isFinite(confidence) && confidence >= 0 && confidence <= 1
+    ? { choice, confidence }
+    : null;
 }
 
 export interface FallbackContext {
@@ -107,6 +131,66 @@ export class AdaptiveRouter {
     const level = score < 30 ? 'simple' : score < 60 ? 'moderate' : 'complex';
 
     return { level, score, signals };
+  }
+
+  /**
+   * Optional Jev router for the automatic tier. A low-confidence answer never
+   * downgrades the requested tier; any provider failure returns the heuristic.
+   */
+  async estimateComplexityWithJev(
+    messages: ModelMessage[],
+    systemOne?: JevSystemOneCall,
+  ): Promise<TaskComplexity> {
+    const fallback = () => this.estimateComplexity(messages);
+    if (process.env.CODE_AGENT_JEV_ROUTER !== '1') return fallback();
+    const lastUserMsg = [...messages].reverse().find((message) => message.role === 'user');
+    if (!lastUserMsg) return fallback();
+    const content = typeof lastUserMsg.content === 'string'
+      ? lastUserMsg.content
+      : Array.isArray(lastUserMsg.content)
+        ? lastUserMsg.content.filter((part) => part.type === 'text').map((part) => part.text || '').join(' ')
+        : '';
+    const state = {
+      request: guardSensitiveText(content.slice(0, 12_000), { surface: 'telemetry', mode: 'model-context' }),
+      has_image: Array.isArray(lastUserMsg.content) && lastUserMsg.content.some((part) => part.type === 'image'),
+      message_count: messages.length,
+    };
+    const call = systemOne ?? (async (stateArg, questions, options) => {
+      const { systemOne: productionSystemOne } = await import('./providers/typesafeProvider');
+      return productionSystemOne(stateArg, questions, options);
+    });
+    let answers: JevAnswers;
+    try {
+      answers = await call(state, JEV_ROUTER_QUESTIONS);
+    } catch {
+      return fallback();
+    }
+    const intent = answerChoice(answers, 'intent');
+    const complexity = answerChoice(answers, 'complexity');
+    const needsClarification = answerNoul(answers, 'needs_clarification');
+    const destructiveIntent = answerNoul(answers, 'destructive_intent');
+    if (!intent || !complexity || needsClarification === null || destructiveIntent === null) return fallback();
+    const numericLevel = Number(complexity.choice);
+    if (!Number.isInteger(numericLevel) || numericLevel < 0 || numericLevel > 3 || complexity.confidence < 0.5) {
+      return fallback();
+    }
+    const signals = [
+      `jev_intent:${intent.choice}`,
+      `jev_confidence:${complexity.confidence.toFixed(2)}`,
+      `needs_clarification:${needsClarification.toFixed(2)}`,
+      `destructive_intent:${destructiveIntent.toFixed(2)}`,
+    ];
+    // Clarification and destructive intent are safety signals, never a reason to
+    // route down to the free model. The caller still keeps control of side effects.
+    const safeLevel = needsClarification >= 0.9 || destructiveIntent >= 0.7
+      ? Math.max(2, numericLevel)
+      : numericLevel;
+    const safeScore = safeLevel * (100 / 3);
+    return {
+      level: safeScore < 30 ? 'simple' : safeScore < 60 ? 'moderate' : 'complex',
+      score: Math.round(safeScore),
+      signals,
+    };
   }
 
   selectModel(complexity: TaskComplexity, defaultConfig: ModelConfig): ModelConfig {

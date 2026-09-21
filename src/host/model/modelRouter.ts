@@ -559,7 +559,7 @@ export class ModelRouter {
     // ADR-019 批 2：决策交给单一入口（含计费门控——包月/未知 provider 不做省钱路由），
     // 本路径只负责执行（API key 解析 + 调用 + 失败回退）
     const adaptiveRouter = getAdaptiveRouter();
-    const complexity = adaptiveRouter.estimateComplexity(messages);
+    const complexity = config.adaptive === true ? await adaptiveRouter.estimateComplexityWithJev(messages) : adaptiveRouter.estimateComplexity(messages);
     let simpleTaskBillingMode: BillingMode | undefined;
     let providerSettings: Record<string, ModelDecisionProviderSettings> | undefined;
     let taskStrategy: TaskModelStrategySettings | undefined;
@@ -578,7 +578,7 @@ export class ModelRouter {
       context: 'main-chat',
       billingMode: simpleTaskBillingMode,
       providerSettings,
-      taskStrategy,
+      taskStrategy, complexityOverride: complexity,
     });
     if (
       simpleTaskDecision.decision.reason === 'simple-task-free'

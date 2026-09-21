@@ -355,6 +355,93 @@ describe('turn outcome stamp', () => {
     expect(goal.evidenceRefs).toHaveLength(1);
   });
 
+  // issue #1998：交付物落盘核对是 verified 的第二条可达路径——产品交付形态（网页/报告）
+  // 不跑测试命令，旧规则（必须 test 证据 read）让 verified 在生产中几乎不可达（605/608
+  // self_claimed）。声称的交付物全部在盘上且非空 → verified；缺漏 → self_claimed + 缺漏入账。
+  it('verifies a run whose claimed deliverable exists on disk, without any test evidence', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.md');
+    writeFileSync(artifact, '# 周报');
+    const recorder = new TurnTraceRecorder('claim-on-disk', traceRoot);
+    const messages = [
+      message(),
+      message({ id: 'final', role: 'assistant', content: '已生成 `report.md`，请查收。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.verdict).toBe('verified');
+    expect(outcome.evidenceRefs.some((ref) => ref.kind === 'file' && ref.freshness.state === 'read')).toBe(true);
+    // 没调 declare_deliverables 的声称也进同一本声明账（status: 'inferred'），不起平行机制。
+    const declaration = recorder.getEvents().find((event) => event.type === 'deliverables_declaration');
+    expect(declaration).toMatchObject({ type: 'deliverables_declaration',
+      data: { status: 'inferred', finalArtifacts: ['report.md'] } });
+  });
+
+  it('keeps self_claimed and books the gap when a claimed deliverable is not on disk', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const recorder = new TurnTraceRecorder('claim-missing', traceRoot);
+    const messages = [
+      message(),
+      message({ id: 'final', role: 'assistant', content: '已生成 `ghost.md`。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceProblems).toEqual([`DELIVERABLE_NOT_ON_DISK: ${path.join(traceRoot, 'ghost.md')}`]);
+  });
+
+  it('treats a zero-byte claimed deliverable as undelivered', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'empty.html');
+    writeFileSync(artifact, '');
+    const recorder = new TurnTraceRecorder('claim-empty', traceRoot);
+    const messages = [
+      message(),
+      message({ id: 'final', role: 'assistant', content: '已生成 `empty.html`。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceProblems).toEqual([`DELIVERABLE_EMPTY: ${artifact}`]);
+  });
+
+  it('ignores claimed paths that reference the input materials directory (资料/)', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const recorder = new TurnTraceRecorder('claim-input-dir', traceRoot);
+    const messages = [
+      message(),
+      message({ id: 'final', role: 'assistant', content: '已读取 资料/周报.md 并总结如下。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.evidenceProblems).toEqual([]);
+    expect(outcome.verdict).toBe('self_claimed');
+  });
+
+  it('binds declare_deliverables declared this run, but not declarations from earlier runs', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const recorder = new TurnTraceRecorder('declared-scope', traceRoot);
+    const messages = [message(), message({ id: 'a1', role: 'assistant', content: '测试全绿', timestamp: 1_700_000_000_100 })];
+    const testEvidence = summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 },
+    ] });
+    // 本 run 声明的产物缺失 → 入账并降级。
+    await recordTurnOutcomeStamp({
+      ...context(recorder, messages), workingDirectory: traceRoot,
+      artifact: { declaredDeliverables: { finalArtifacts: ['missing-final.html'], declaredAtMs: 1_700_000_000_500 } },
+    }, 'completed', testEvidence);
+    expect(latestOutcome(recorder).verdict).toBe('self_claimed');
+    expect(latestOutcome(recorder).evidenceProblems).toEqual([`DELIVERABLE_NOT_ON_DISK: ${path.join(traceRoot, 'missing-final.html')}`]);
+    // 更早 run 的声明不记本轮账（会话级槽位，与 summary 清单同一条 run 域纪律）。
+    await recordTurnOutcomeStamp({
+      ...context(recorder, messages), workingDirectory: traceRoot,
+      artifact: { declaredDeliverables: { finalArtifacts: ['missing-final.html'], declaredAtMs: 1_699_999_999_000 } },
+    }, 'completed', testEvidence);
+    const outcome = latestOutcome(recorder);
+    expect(outcome.evidenceProblems).toEqual([]);
+    expect(outcome.verdict).toBe('verified');
+  });
+
   afterEach(() => {
     void cleanupVoiceResolver?.();
     cleanupVoiceResolver = undefined;

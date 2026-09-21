@@ -1,4 +1,9 @@
 import { checkDocumentEvidenceClaims, currentMessages } from './documentEvidenceBoundary';
+import {
+  checkDeliverablesOnDisk,
+  collectDeliverableClaims,
+  formatDeliverableProblems,
+} from './deliverableDiskCheck';
 import { readbackFileEvidence } from './fileEvidenceReadback';
 import { isAbsolute, resolve } from 'node:path';
 import type { Message, ToolResult } from '../../../shared/contract';
@@ -6,6 +11,7 @@ import type { CompletionSummaryRecord } from '../../../shared/contract/completio
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
 import { createLogger } from '../../services/infra/logger';
 import { resolveRegisteredTurnOutcome } from '../../services/capabilities/hostCapabilityPorts';
+import type { DeclaredDeliverables } from './artifactState';
 import type { RuntimeContext } from './runtimeContext';
 import type { RunTerminalStatus } from './runTerminalStatus';
 import type { TraceEvent, TraceEventDataMap, TurnTraceRecorder } from './turnTrace';
@@ -19,6 +25,8 @@ export interface TurnOutcomeStampContext {
   goalMode?: RuntimeContext['goalMode'];
   turnTrace: TurnTraceRecorder;
   nudgeManager?: RuntimeContext['nudgeManager'];
+  /** declare_deliverables 的会话级声明槽（RuntimeContext.artifact）；本 run 内声明的才进落盘核对 */
+  artifact?: { readonly declaredDeliverables?: DeclaredDeliverables };
 }
 
 function successfulToolResults(messages: readonly Message[]): ToolResult[] {
@@ -217,6 +225,38 @@ async function buildTurnOutcome(
   if (terminal !== 'completed') {
     return { terminal, verdict: 'n_a', evidenceRefs: [], source: 'generic' };
   }
+
+  // 交付物落盘核对（issue #1998）：本 run 声明（declare_deliverables）或最终回复声称的
+  // 交付物，存在且非空才认。核对通过是 verified 的另一条可达路径——此前 verified 只在
+  // 跑过验证命令时可达，而产品交付形态（网页/报告/演示稿）绝大多数不跑测试命令，
+  // verdict 因此几乎全 self_claimed（605/608）。缺漏记 problems，verdict 保持 self_claimed；
+  // 回喂补一轮在 messageProcessor 收尾前做（有界，TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS）。
+  const workingDirectory = ctx.workingDirectory ?? process.cwd();
+  const deliverableClaims = collectDeliverableClaims({
+    messages: ctx.messages,
+    workingDirectory,
+    declaredDeliverables: ctx.artifact?.declaredDeliverables,
+  });
+  const deliverableCheck = checkDeliverablesOnDisk(deliverableClaims, workingDirectory);
+  problems.push(...formatDeliverableProblems(deliverableCheck.missing));
+  const knownRefs = new Set(evidenceRefs.map((ref) => ref.ref));
+  for (const ref of deliverableCheck.evidenceRefs) {
+    if (!knownRefs.has(ref.ref)) evidenceRefs.push(ref);
+  }
+  // 模型没显式声明、但回复里声称了交付物：把抽取结果记进同一本 deliverables_declaration 账，
+  // 不另起平行机制；本 run 已有显式声明（declared/overridden）则不重复记。
+  const inferredClaims = deliverableClaims.filter((claim) => claim.source === 'inferred');
+  const runEvents = currentRunEvents(ctx.turnTrace.getEvents());
+  if (
+    inferredClaims.length > 0
+    && !runEvents.some((event) => event.type === 'deliverables_declaration' && event.data.status !== 'rejected')
+  ) {
+    ctx.turnTrace.record('deliverables_declaration', {
+      status: 'inferred',
+      finalArtifacts: inferredClaims.map((claim) => claim.claimed),
+    });
+  }
+
   return {
     terminal,
     // File readback proves delivery bytes, not the truth of claims inside them.
@@ -224,8 +264,11 @@ async function buildTurnOutcome(
     // 从不清空，扫全量等于「会话里任何一轮命中过一次，此后每轮永久降级」；按 turnIndex 过滤则
     // 挡不住上一条用户消息里同号迭代的残留（见 currentRunEvents 注释）。
     verdict: problems.length === 0
-      && !currentRunEvents(ctx.turnTrace.getEvents()).some((event) => event.type === 'evidence_boundary')
-      && evidenceRefs.some((ref) => ref.kind === 'test' && ref.freshness.state === 'read')
+      && !runEvents.some((event) => event.type === 'evidence_boundary')
+      && (
+        evidenceRefs.some((ref) => ref.kind === 'test' && ref.freshness.state === 'read')
+        || (deliverableCheck.claims.length > 0 && deliverableCheck.missing.length === 0)
+      )
       ? 'verified' : 'self_claimed',
     evidenceRefs,
     source: 'generic',

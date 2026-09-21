@@ -153,6 +153,14 @@ export interface TraceEventDataMap {
           scratchDir: string | null;
           declaredAtMs: number;
         } | null;
+      }
+    | {
+        /**
+         * 模型没调 declare_deliverables、但最终回复里声称了交付物：落盘核对的抽取结果
+         * 也进同一本声明账（issue #1998——显式声明几乎不发，只有 5/5476，不接通就是死代码）。
+         */
+        status: 'inferred';
+        finalArtifacts: string[];
       };
   request_manifest: {
     requestId: string;

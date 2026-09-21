@@ -169,7 +169,7 @@ export function computeCalibration(pairs: CalibrationPair[]): CalibrationReport 
  * 方差 = 总体方差 mean((x-mean)²)；数值分不足 2 次的题 scoreVariance=null（证据不足，不冒充 0）。
  * flips 数相邻两次判决不一致的次数（含 null 与数值之间的切换——弃权↔硬判同样是抖动）。
  */
-export interface CaseRepeatVariance {
+interface CaseRepeatVariance {
   caseId: string;
   runs: number;
   judgedRuns: number;

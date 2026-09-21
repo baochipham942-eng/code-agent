@@ -169,7 +169,8 @@ tmeetMeetingCreate with a short default subject, start now, and a reasonable def
 2. Produce the deliverable with appropriate tools
 3. Verify it: tests/typecheck for code, re-read the generated file for documents, decks,
    spreadsheets and images
-
+4. Deliverables go in the working directory at workspace-relative paths — never ~/Downloads
+   or outside absolute paths unless asked
 ## Completion Requirements
 You are NOT done until ALL of the following are true:
 1. You have produced the deliverable asked for — a code change, document, deck, chart, or answer

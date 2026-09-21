@@ -962,6 +962,68 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     }
   });
 
+  // #1997：workspaceScope 缺省时 jail 曾默认 = cwd 子树；默认会话 cwd = HOME → 整棵
+  // HOME 可写，产物逃逸 ~/Downloads、工作区兄弟目录（ws/gdp-772e7524 截成 ws/gdp-7724）。
+  // workspace 落在 cwd 内时必须收紧到 workspace 子树。
+  it('#1997：workspaceScope 缺省且 workspace 在 cwd 内 → 写根收紧到 workspace 子树', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sandbox-confine-'));
+    const workspace = join(root, 'ws', 'gdp-772e7524');
+    mkdirSync(workspace, { recursive: true });
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'echo plain-output' },
+        makeCtx({ workingDir: root, workspace }),
+        allowAll,
+      );
+      expect(wrapMock).toHaveBeenCalledTimes(1);
+      expect(wrapMock).toHaveBeenCalledWith(
+        'echo plain-output',
+        expect.objectContaining({
+          workingDirectory: resolveCanonicalRunPath(root),
+          readWriteRoots: [resolveCanonicalRunPath(workspace)],
+        }),
+      );
+      expect(result.ok).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('#1997：workspace == cwd → 维持既有默认（不显式传写根）', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sandbox-same-'));
+    try {
+      const handler = await bashModule.createHandler();
+      await handler.execute(
+        { command: 'echo plain-output' },
+        makeCtx({ workingDir: root, workspace: root }),
+        allowAll,
+      );
+      expect(wrapMock).toHaveBeenCalledTimes(1);
+      expect(wrapMock.mock.calls[0][1].readWriteRoots).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('#1997：workspace 在 cwd 外 → 不放宽，维持 cwd 默认写根', async () => {
+    const cwdRoot = mkdtempSync(join(tmpdir(), 'sandbox-cwd-'));
+    const wsRoot = mkdtempSync(join(tmpdir(), 'sandbox-ws-'));
+    try {
+      const handler = await bashModule.createHandler();
+      await handler.execute(
+        { command: 'echo plain-output' },
+        makeCtx({ workingDir: cwdRoot, workspace: wsRoot }),
+        allowAll,
+      );
+      expect(wrapMock).toHaveBeenCalledTimes(1);
+      expect(wrapMock.mock.calls[0][1].readWriteRoots).toBeUndefined();
+    } finally {
+      rmSync(cwdRoot, { recursive: true, force: true });
+      rmSync(wsRoot, { recursive: true, force: true });
+    }
+  });
+
   it('acceptEdits 档：包装命令', async () => {
     modeMgr.setMode('acceptEdits', true);
     const handler = await bashModule.createHandler();

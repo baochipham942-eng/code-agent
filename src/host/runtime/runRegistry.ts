@@ -7,6 +7,7 @@ import {
 import {
   addChildRunRef,
   createChildRunRef,
+  isTerminalRunStatus,
   projectChildRunTerminal,
   type PendingOperation,
   type RunEnvelope,
@@ -58,6 +59,9 @@ import {
   isSqliteBusyError,
   mergeAgentTeamProjectionState,
 } from './runRegistrySupport';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('RunRegistry');
 
 const HEARTBEAT_TRANSIENT_RETRY_WINDOWS = 2;
 
@@ -649,9 +653,67 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     now?: number;
   }): Promise<boolean> {
     const kernel = this.requireKernel();
+    if (await this.terminalSelfOwnedUnadoptedSessionRoot(input)) return true;
     return kernel.cancelOrphanedSessionRoot
       ? kernel.cancelOrphanedSessionRoot(input)
       : false;
+  }
+
+  /**
+   * 本进程启动恢复（recoverDurable / 清扫器）认领后没有任何活 handle 领养的主 run：
+   * owner 已是本进程，跨进程僵尸判据（pid 探测 / 租约过期）必然拒收，但没有任何东西
+   * 在驱动它——对新一轮 `-s` 续跑等同于僵尸。沿 terminalDurable 规范路径（owner/attempt
+   * fence + 事件序号）收尸。有 handle 的（本进程真在跑的 run）不碰，保持原冲突语义。
+   * waiting / paused 有明确业务语义（待人工复核 / 待审批），归桌面复核收件箱与显式
+   * 取消路径（terminalRecoveredWaitingRun）管，CLI 续跑不替人做决定。
+   * 只收 native 引擎：loop / agent_team 等引擎的 recovery driver（LoopController.adopt、
+   * 各自账本）不注册 RunHandle 却仍在驱动 run，「无 handle」对它们不等于「无驱动」。
+   */
+  private async terminalSelfOwnedUnadoptedSessionRoot(input: {
+    sessionId: string;
+    expectedOwnerId: string;
+    processInstanceId: string;
+    now?: number;
+  }): Promise<boolean> {
+    const kernel = this.requireKernel();
+    if (typeof kernel.getLatestActiveRootBySession !== 'function') return false;
+    const now = input.now ?? Date.now();
+    const latest = await kernel.getLatestActiveRootBySession(input.sessionId).catch(() => null);
+    if (!latest || isTerminalRunStatus(latest.status) || latest.parentRunId) return false;
+    if (latest.status === 'waiting' || latest.status === 'paused') return false;
+    if (latest.engine.kind !== 'native') return false;
+    const owner = latest.owner;
+    if (owner?.ownerId !== input.expectedOwnerId) return false;
+    if (owner.processInstanceId !== input.processInstanceId) return false;
+    if (this.handlesByRunId.has(latest.runId)) return false;
+    if (!this.durableOwners.has(latest.runId)) return false;
+    logger.warn('Reaping self-owned durable run orphan before session resume', {
+      sessionId: input.sessionId,
+      runId: latest.runId,
+      status: latest.status,
+      attempt: latest.attempt,
+      ownerEpoch: owner.epoch,
+    });
+    try {
+      await this.terminalDurable(latest.runId, {
+        now,
+        status: 'cancelled',
+        reason: 'cli_resume_reaped_recovered_orphan',
+        event: {
+          type: 'run_cancelled',
+          payload: { sessionId: input.sessionId, reason: 'cli_resume_reaped_recovered_orphan' },
+          recordedAt: now,
+        },
+      });
+      return true;
+    } catch (error) {
+      logger.warn('Failed to reap self-owned durable run orphan', {
+        sessionId: input.sessionId,
+        runId: latest.runId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
   }
 
   async releaseDurable(runId: string, expected?: RunHandle, now = Date.now()): Promise<boolean> {

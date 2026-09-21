@@ -918,6 +918,18 @@ function generateAiReviewSection(results: TestResult[]): string {
     });
     lines.push(`| ${result.testId} | ${cells.join(' | ')} |`);
   }
+  // Jev 初筛口径（N-JEV-EVAL-JUDGE，默认关）：弃权率看上表「无法确定」列；这里汇总决断/升级。
+  const marked = results.flatMap((result) =>
+    AI_REVIEW_DIMENSIONS.map((dimension) => result.aiReview?.[dimension])
+      .filter((verdict) => verdict?.prescreen));
+  if (marked.length > 0) {
+    const decided = marked.filter((verdict) => verdict?.prescreen === 'jev_decided').length;
+    const escalated = marked.length - decided;
+    lines.push(
+      '',
+      `Jev 初筛：决断 ${decided} 维次 / 升级生成式 ${escalated} 维次（升级率 ${((escalated / marked.length) * 100).toFixed(1)}%）`,
+    );
+  }
   return lines.join('\n');
 }
 

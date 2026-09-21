@@ -1,5 +1,7 @@
 // 厚版演示稿（二期）导出 handler——从 workspace.ipc.ts 拆出（控制 godfile 行数）。
-// topic + 页数 → slidesGenerator 真排版 deck（非图片塞 PPT）→ saveBinaryToDownloads。
+// topic + 页数 → slidesGenerator 真排版 deck（非图片塞 PPT）→ 落盘：payload.outputDir
+// 在场（agent 产物路径，如 proposeSlidesOps）落该目录（=当前工作区，#1997），缺省
+// （renderer 设计面板用户主动导出）落 saveBinaryToDownloads。
 // 不调付费模型；topic 必填。
 import { promises as fsp } from 'fs';
 import path from 'path';
@@ -10,7 +12,7 @@ import { imagesToPptx } from '../services/design/pptxExport';
 import { convertToScreenshots, isLibreOfficeAvailable } from '../tools/media/ppt/visualReview';
 import { getUserConfigDir } from '../config/configPaths';
 import type { SlideData } from '../tools/media/ppt/types';
-import { handleSaveBinaryToDownloads } from './workspaceSaveExport';
+import { handleSaveBinaryToDownloads, handleSaveBinaryToDirectory } from './workspaceSaveExport';
 import { assertWithinDesignDir } from './workspaceDesignPaths';
 
 // 画布产物多张 → 全幅 PPTX（CD-Parity §4 薄版）→ 落「下载」。每张来源二选一：
@@ -52,6 +54,8 @@ export interface GenerateSlidesDeckPayload {
   imageModel?: string;
   maxImages?: number;
   outputName?: string;
+  /** agent 产物落盘目录（=会话当前工作区，#1997）；缺省落「下载」（用户主动导出）。 */
+  outputDir?: string;
   /** 付费命令幂等键（WP3-1）：同 commandId 的自动重放返回缓存产物不再计费；缺省保持既有行为。 */
   commandId?: string;
 }
@@ -174,9 +178,17 @@ async function generateSlidesDeckOnce(
     slides: slidesOverride,
     images,
   });
-  const saved = await handleSaveBinaryToDownloads({
-    fileName: payload.outputName,
-    base64: buffer.toString('base64'),
-  });
+  // agent 产物（outputDir 在场）落当前工作区——产物不进工作区 = 没交付（#1997）；
+  // renderer 设计面板的用户主动导出缺省仍落「下载」。
+  const saved = payload.outputDir
+    ? await handleSaveBinaryToDirectory({
+      dir: payload.outputDir,
+      fileName: payload.outputName,
+      base64: buffer.toString('base64'),
+    })
+    : await handleSaveBinaryToDownloads({
+      fileName: payload.outputName,
+      base64: buffer.toString('base64'),
+    });
   return { filePath: saved.filePath, slidesCount, costCny };
 }

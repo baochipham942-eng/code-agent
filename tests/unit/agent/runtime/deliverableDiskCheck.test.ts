@@ -8,11 +8,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
-  appendUndeliveredNote,
-  buildDeliverableRepairPrompt,
   checkDeliverablesOnDisk,
   collectDeliverableClaims,
-  extractClaimedDeliverablePaths,
+  runDeliverableDiskCheckGate,
 } from '../../../../src/host/agent/runtime/deliverableDiskCheck';
 import type { Message } from '../../../../src/shared/contract';
 
@@ -28,67 +26,74 @@ function message(overrides: Partial<Message> = {}): Message {
   };
 }
 
+/** 抽取走生产消费方入口（knip production 口径：只测真有人 import 的导出）。 */
+function extract(text: string): string[] {
+  return collectDeliverableClaims({ messages: [message()], workingDirectory: '/wd', finalText: text })
+    .map((claim) => claim.claimed);
+}
+
 afterEach(() => {
   if (existsSync(workRoot)) rmSync(workRoot, { recursive: true, force: true });
 });
 
-describe('extractClaimedDeliverablePaths', () => {
+describe('extractClaimedDeliverablePaths (via collectDeliverableClaims)', () => {
   it('extracts nothing without a claim verb', () => {
-    expect(extractClaimedDeliverablePaths('文件在 output/report.html，自己看。')).toEqual([]);
+    expect(extract('文件在 output/report.html，自己看。')).toEqual([]);
   });
 
   it('extracts quoted paths with spaces and Chinese characters', () => {
     const text = '已保存为 `output/周报 最终版.md`，请查收。';
-    expect(extractClaimedDeliverablePaths(text)).toEqual(['output/周报 最终版.md']);
+    expect(extract(text)).toEqual(['output/周报 最终版.md']);
   });
 
   it('extracts bare path tokens with CJK segments', () => {
     const text = '已生成 output/周报.html 和 dist/site/index.html。';
-    expect(extractClaimedDeliverablePaths(text)).toEqual(['output/周报.html', 'dist/site/index.html']);
+    expect(extract(text)).toEqual(['output/周报.html', 'dist/site/index.html']);
   });
 
   it('ignores bare filenames without a separator unless quoted', () => {
-    expect(extractClaimedDeliverablePaths('已生成 report.html。')).toEqual([]);
-    expect(extractClaimedDeliverablePaths('已生成「report.html」。')).toEqual(['report.html']);
+    expect(extract('已生成 report.html。')).toEqual([]);
+    expect(extract('已生成「report.html」。')).toEqual(['report.html']);
   });
 
   it('excludes references to the input materials directory (资料/)', () => {
     const text = '已读取 资料/周报.md，并把汇总保存到 output/汇总.md。';
-    expect(extractClaimedDeliverablePaths(text)).toEqual(['output/汇总.md']);
+    expect(extract(text)).toEqual(['output/汇总.md']);
   });
 
-  it('normalizes NFD claims to NFC', () => {
+  it('normalizes NFD claims to NFC on the resolved path', () => {
     const nfd = 'output/周报.md'.normalize('NFD');
-    expect(extractClaimedDeliverablePaths(`已生成 ${nfd}`)).toEqual(['output/周报.md'.normalize('NFC')]);
+    const claims = collectDeliverableClaims({ messages: [message()], workingDirectory: '/wd', finalText: `已生成 ${nfd}` });
+    expect(claims.map((claim) => claim.resolved)).toEqual([path.join('/wd', 'output/周报.md'.normalize('NFC'))]);
   });
 
   it('ignores paths inside fenced code blocks', () => {
     const text = '已生成 output/a.html。\n```\nwritten to /tmp/build/log.txt\n```';
-    expect(extractClaimedDeliverablePaths(text)).toEqual(['output/a.html']);
+    expect(extract(text)).toEqual(['output/a.html']);
   });
 
   // ai-review #2007 Important 2：URL 不是本地交付物，抽出来核对只会误判 not_on_disk。
   it('ignores URLs and host:port links instead of treating them as local paths', () => {
-    expect(extractClaimedDeliverablePaths('已部署到 https://foo.vercel.app/index.html，页面已生成。')).toEqual([]);
-    expect(extractClaimedDeliverablePaths('已生成页面，见 localhost:5173/index.html。')).toEqual([]);
-    expect(extractClaimedDeliverablePaths('已生成 output/a.html，预览在 https://x.vercel.app/a.html。'))
+    expect(extract('已部署到 https://foo.vercel.app/index.html，页面已生成。')).toEqual([]);
+    expect(extract('已生成页面，见 localhost:5173/index.html。')).toEqual([]);
+    expect(extract('已生成 output/a.html，预览在 https://x.vercel.app/a.html。'))
       .toEqual(['output/a.html']);
   });
 
   // ai-review #2007 Nit：未闭合围栏不剥——一路吞到结尾会把后面的真声称漏掉。
   it('keeps scanning prose after an unclosed code fence', () => {
     const text = '```\nsome draft\n已生成 output/a.html。';
-    expect(extractClaimedDeliverablePaths(text)).toEqual(['output/a.html']);
+    expect(extract(text)).toEqual(['output/a.html']);
   });
 
   // ai-review #2007 Important（复审）：引号形态无路径形状约束 + 全文动词闸，会把
   // console.log / v2.1 / Node.js / 已删除文件抽成交付物声称，诱导模型造垃圾文件或复活已删文件。
   it('does not pick quoted identifiers, versions, runtimes, or deleted files as deliverables', () => {
-    expect(extractClaimedDeliverablePaths('已创建 `src/a.ts`，并在里面调用了 `console.log`，依赖升级到 `v2.1`。'))
+    expect(extract('已创建 `src/a.ts`，并在里面调用了 `console.log`，依赖升级到 `v2.1`。'))
       .toEqual(['src/a.ts']);
-    expect(extractClaimedDeliverablePaths('已生成报告 `report.md`，基于 `Node.js` 与 `Vue.js` 实现。'))
+    expect(extract('已生成报告 `report.md`，基于 `Node.js` 与 `Vue.js` 实现。'))
       .toEqual(['report.md']);
-    expect(extractClaimedDeliverablePaths('已删除旧的 `old/legacy.ts`，已创建 `new.ts`。'))
+    expect(extract('已删除旧的 `old/legacy.ts`，已创建 `new.ts`。'))
       .toEqual(['new.ts']);
   });
 });
@@ -226,23 +231,31 @@ describe('checkDeliverablesOnDisk', () => {
   });
 });
 
-describe('repair prompt and undelivered note', () => {
-  const missing = [{
-    claim: { claimed: 'output/周报.html', resolved: '/ws/output/周报.html', source: 'inferred' as const },
-    kind: 'not_on_disk' as const,
-  }];
+describe('repair prompt and undelivered note (via runDeliverableDiskCheckGate)', () => {
+  function gate(finalText: string, repairsUsed: number) {
+    return runDeliverableDiskCheckGate({
+      workingDirectory: workRoot,
+      messages: [message()],
+      finalText,
+      repairsUsed,
+    });
+  }
 
   it('repair prompt lists the claimed and resolved paths', () => {
-    const prompt = buildDeliverableRepairPrompt(missing);
-    expect(prompt).toContain('<deliverable-disk-check>');
-    expect(prompt).toContain('output/周报.html');
-    expect(prompt).toContain('/ws/output/周报.html');
+    mkdirSync(workRoot, { recursive: true });
+    const result = gate('已生成 output/周报.html。', 0);
+    if (result.action !== 'repair') throw new Error('expected repair action');
+    expect(result.prompt).toContain('<deliverable-disk-check>');
+    expect(result.prompt).toContain('output/周报.html');
+    expect(result.prompt).toContain(path.join(workRoot, 'output/周报.html'));
   });
 
-  it('undelivered note is appended to the final reply', () => {
-    const note = appendUndeliveredNote('已生成 output/周报.html。', missing);
-    expect(note).toContain('已生成 output/周报.html。');
-    expect(note).toContain('本轮实际未交付');
-    expect(note).toContain('output/周报.html');
+  it('undelivered note is appended to the final reply when the repair budget is exhausted', () => {
+    mkdirSync(workRoot, { recursive: true });
+    const result = gate('已生成 output/周报.html。', 1);
+    if (result.action !== 'pass') throw new Error('expected pass action');
+    expect(result.content).toContain('已生成 output/周报.html。');
+    expect(result.content).toContain('本轮实际未交付');
+    expect(result.content).toContain('output/周报.html');
   });
 });

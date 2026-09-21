@@ -99,7 +99,7 @@ function looksLikeBarePath(token: string): boolean {
  * 只有含声称动词、且非删除/改写语境的子句才抽——全文闸会让一句「已创建」把
  * 整段里的 `console.log`/`v2.1` 都贴成交付物（ai-review #2007 Important）。
  */
-export function extractClaimedDeliverablePaths(text: string): string[] {
+function extractClaimedDeliverablePaths(text: string): string[] {
   const prose = text
     .replace(/[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+/g, ' ')
     // host:port 链接（localhost:5173/index.html）；要字母打头，10:30 这种时间形状不吃。
@@ -273,7 +273,7 @@ export function formatDeliverableProblems(missing: readonly DeliverableMissing[]
 }
 
 /** 回喂补轮的系统消息：缺漏带核验后的绝对路径，模型写错相对路径时能自纠。 */
-export function buildDeliverableRepairPrompt(missing: readonly DeliverableMissing[]): string {
+function buildDeliverableRepairPrompt(missing: readonly DeliverableMissing[]): string {
   const lines = missing.map((item, index) => {
     const reason = item.kind === 'empty' ? '文件是空的（0 字节）' : '文件不存在';
     return `${index + 1}. \`${item.claim.claimed}\`（核验路径 ${item.claim.resolved}）：${reason}`;
@@ -291,7 +291,7 @@ export function buildDeliverableRepairPrompt(missing: readonly DeliverableMissin
 }
 
 /** 补轮预算用尽后追加到 final 的如实说明（用户可见）。 */
-export function appendUndeliveredNote(content: string, missing: readonly DeliverableMissing[]): string {
+function appendUndeliveredNote(content: string, missing: readonly DeliverableMissing[]): string {
   const lines = missing.map((item) => {
     const reason = item.kind === 'empty' ? '文件为空' : '文件不存在';
     return `- ${item.claim.claimed}（${reason}）`;

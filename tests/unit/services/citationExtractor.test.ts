@@ -78,16 +78,33 @@ src/host.ts:5:import { x } from './app';`;
     it('should extract file paths', () => {
       const output = `src/app.ts
 src/host.ts
-src/utils.ts`;
+src/utils.ts
+
+nextOffset: null`;
       const citations = extractCitations('glob', 'tc-1', { pattern: '**/*.ts' }, output);
       expect(citations).toHaveLength(3);
       expect(citations.every(c => c.type === 'file')).toBe(true);
+      expect(citations.map((c) => c.source)).toEqual(['src/app.ts', 'src/host.ts', 'src/utils.ts']);
     });
 
-    it('should extract file paths from protocol Glob name', () => {
-      const citations = extractCitations('Glob', 'tc-1', { pattern: '*.md' }, 'notes.md\nbrief.md');
+    it('should extract file paths from protocol Glob name and ignore handler tail', () => {
+      const output = `notes.md
+brief.md
+
+nextOffset: null`;
+      const citations = extractCitations('Glob', 'tc-1', { pattern: '*.md' }, output);
       expect(citations).toHaveLength(2);
       expect(citations.map((c) => c.source)).toEqual(['notes.md', 'brief.md']);
+    });
+
+    it('should not cite the zero-match handler sentence', () => {
+      const citations = extractCitations(
+        'Glob',
+        'tc-1',
+        { pattern: '*.nope' },
+        'No files matched the pattern',
+      );
+      expect(citations).toHaveLength(0);
     });
   });
 

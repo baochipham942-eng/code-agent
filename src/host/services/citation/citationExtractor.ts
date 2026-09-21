@@ -6,6 +6,7 @@
 
 import path from 'path';
 import type { Citation, CitationType } from '../../../shared/contract/citation';
+import { TOOL_RESULT_SPILL } from '../../../shared/constants/tools';
 import { canonicalToolName } from '../../tools/toolNames';
 
 let citationCounter = 0;
@@ -99,9 +100,20 @@ function extractGrepCitations(toolCallId: string, output: string): Citation[] {
   return citations;
 }
 
-// glob → 匹配的文件列表
+function isGlobResultPathLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (trimmed === 'No files matched the pattern' || trimmed === '(empty page)') return false;
+  if (trimmed.startsWith('nextOffset:')) return false;
+  if (trimmed.startsWith('(showing ') || trimmed.startsWith('... (')) return false;
+  if (trimmed.startsWith('[next-read]')) return false;
+  if (trimmed.includes(TOOL_RESULT_SPILL.NOTICE_MARKER)) return false;
+  return true;
+}
+
+// glob → 匹配的文件列表（handler 会无条件追加 nextOffset 尾巴，不能当路径）
 function extractGlobCitations(toolCallId: string, output: string): Citation[] {
-  const files = output.split('\n').filter(l => l.trim().length > 0).slice(0, 10);
+  const files = output.split('\n').filter(isGlobResultPathLine).slice(0, 10);
   return files.map(filePath => ({
     id: nextCitationId(),
     type: 'file' as CitationType,

@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { pickNativeFile } from '../../../src/renderer/services/tauriPluginFacade';
 import {
   buildSessionContextMenuItems,
+  sessionForkImportNamespace,
   type SessionContextMenuDeps,
 } from '../../../src/renderer/components/features/sidebar/sessionContextMenuItems';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
@@ -62,7 +63,37 @@ function makeDeps(overrides: Partial<SessionContextMenuDeps> = {}): SessionConte
   };
 }
 
+async function expectNoUnhandledRejection(run: () => Promise<unknown>): Promise<void> {
+  const rejections: unknown[] = [];
+  const onUnhandled = (reason: unknown) => {
+    rejections.push(reason);
+  };
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    await run();
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+    expect(rejections).toEqual([]);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+}
+
+const VALID_FORK_ENVELOPE = {
+  schema: 'neo.session-export',
+  version: 3,
+  exportId: 'export-1',
+  projectId: 'project-1',
+  sessions: [{ id: 'source' }],
+  messages: [{ id: 'message' }],
+};
+
 describe('buildSessionContextMenuItems', () => {
+  beforeEach(() => {
+    vi.mocked(pickNativeFile).mockReset();
+  });
+
   it('始终包含基础项：置顶/重命名/复制ID/归档/删除/导出', () => {
     const items = buildSessionContextMenuItems(makeSession(), makeDeps());
     const labels = items.map((item) => item.label);
@@ -250,6 +281,108 @@ describe('buildSessionContextMenuItems', () => {
       '所选文件不是有效的 Neo 会话分支文件',
       expect.objectContaining({ label: '选择其他文件' }),
     );
+  });
+
+  it.each([
+    { label: '{}', body: '{}' },
+    { label: 'null', body: 'null' },
+  ])('导入文件是合法 JSON $label 但不是信封时走 invalid-file toast 且无未处理 rejection', async ({ body }) => {
+    vi.mocked(pickNativeFile).mockResolvedValueOnce('/tmp/not-an-envelope.json');
+    const invoke = vi.fn().mockResolvedValueOnce({ success: true, data: body });
+    installDomainInvoke(invoke);
+    const showActionToast = vi.fn();
+    const item = buildSessionContextMenuItems(
+      makeSession({ projectId: 'project-1' }),
+      makeDeps({ showActionToast }),
+    ).find((entry) => entry.label === '从文件导入会话');
+
+    await expectNoUnhandledRejection(async () => {
+      await item?.onClick();
+    });
+
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(showActionToast).toHaveBeenCalledWith(
+      '所选文件不是有效的 Neo 会话分支文件',
+      expect.objectContaining({ label: '选择其他文件' }),
+    );
+  });
+
+  it('导入失败后选择其他文件会继续走同一套导入流程', async () => {
+    vi.mocked(pickNativeFile)
+      .mockResolvedValueOnce('/tmp/bad.json')
+      .mockResolvedValueOnce('/tmp/good.json');
+    const invoke = vi.fn()
+      .mockResolvedValueOnce({ success: true, data: '{}' })
+      .mockResolvedValueOnce({
+        success: true,
+        data: JSON.stringify(VALID_FORK_ENVELOPE),
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { rootSessionId: 'imported-root', sessionIdMap: { source: 'imported-root' } },
+      });
+    installDomainInvoke(invoke);
+    const showActionToast = vi.fn();
+    const showSuccessToast = vi.fn();
+    const item = buildSessionContextMenuItems(
+      makeSession({ projectId: 'project-1' }),
+      makeDeps({ showActionToast, showSuccessToast }),
+    ).find((entry) => entry.label === '从文件导入会话');
+
+    await item?.onClick();
+    expect(showActionToast).toHaveBeenCalledWith(
+      '所选文件不是有效的 Neo 会话分支文件',
+      expect.objectContaining({ label: '选择其他文件' }),
+    );
+
+    const action = showActionToast.mock.calls[0][1] as { onClick: () => void };
+    action.onClick();
+    await vi.waitFor(() => {
+      expect(showSuccessToast).toHaveBeenCalledWith('已导入 1 个会话');
+    });
+    expect(invoke).toHaveBeenNthCalledWith(3, 'domain:session', 'importSessionFork', expect.objectContaining({
+      targetProjectId: 'project-1',
+      namespace: sessionForkImportNamespace('project-1', 'export-1'),
+    }));
+  });
+
+  it('同项目内从不同会话入口导入同一文件使用相同 namespace', async () => {
+    vi.mocked(pickNativeFile).mockResolvedValue('/tmp/session-fork.json');
+    const invoke = vi.fn().mockImplementation(async (_domain: string, method: string) => {
+      if (method === 'readFile') {
+        return { success: true, data: JSON.stringify(VALID_FORK_ENVELOPE) };
+      }
+      if (method === 'importSessionFork') {
+        return {
+          success: true,
+          data: { rootSessionId: 'imported-root', sessionIdMap: { source: 'imported-root' } },
+        };
+      }
+      return { success: false };
+    });
+    installDomainInvoke(invoke);
+    const deps = makeDeps();
+    const fromFirstSession = buildSessionContextMenuItems(
+      makeSession({ id: 'sess-1', projectId: 'project-1' }),
+      deps,
+    ).find((entry) => entry.label === '从文件导入会话');
+    const fromSecondSession = buildSessionContextMenuItems(
+      makeSession({ id: 'sess-2', projectId: 'project-1' }),
+      deps,
+    ).find((entry) => entry.label === '从文件导入会话');
+
+    await fromFirstSession?.onClick();
+    await fromSecondSession?.onClick();
+
+    const namespaces = invoke.mock.calls
+      .filter((call) => call[1] === 'importSessionFork')
+      .map((call) => (call[2] as { namespace: string }).namespace);
+    expect(namespaces).toEqual([
+      sessionForkImportNamespace('project-1', 'export-1'),
+      sessionForkImportNamespace('project-1', 'export-1'),
+    ]);
+    expect(namespaces[0]).not.toContain('sess-1');
+    expect(namespaces[0]).not.toContain('sess-2');
   });
 
   it('重复导入由后端冲突码回显为错误', async () => {

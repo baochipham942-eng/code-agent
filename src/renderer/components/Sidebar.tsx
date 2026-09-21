@@ -288,21 +288,6 @@ export const Sidebar: React.FC = () => {
     y: number;
     session: SessionWithMeta;
   } | null>(null);
-  const [sessionForkConfirm, setSessionForkConfirm] = useState<{
-    title: string;
-    message: string;
-    confirmText: string;
-    cancelText: string;
-    resolve: (confirmed: boolean) => void;
-  } | null>(null);
-  const confirmImportSessionFork = useCallback((options: {
-    title: string;
-    message: string;
-    confirmText: string;
-    cancelText: string;
-  }): Promise<boolean> => new Promise((resolve) => {
-    setSessionForkConfirm({ ...options, resolve });
-  }), []);
   const [replayDialog, setReplayDialog] = useState<{
     sessionId: string;
     sessionTitle: string;
@@ -399,6 +384,21 @@ export const Sidebar: React.FC = () => {
   // Keep new local state after the legacy Sidebar state sequence; several renderer tests
   // intentionally inject historical context/review state by hook index.
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const [sessionForkConfirm, setSessionForkConfirm] = useState<{
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText: string;
+    resolve: (confirmed: boolean) => void;
+  } | null>(null);
+  const confirmImportSessionFork = useCallback((options: {
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText: string;
+  }): Promise<boolean> => new Promise((resolve) => {
+    setSessionForkConfirm({ ...options, resolve });
+  }), []);
   const collapseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(

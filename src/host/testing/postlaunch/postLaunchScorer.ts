@@ -382,6 +382,10 @@ export async function runPostLaunchScoring(
       });
 
       const hasSignal = signals.length > 0;
+      // signalOnly 扫描只落信号命中的低分轮：无信号的正常轮一行都不写、也不计数——
+      // 否则 not-judged 占位行会混进上线后报告分母与维度通过率，并产生不该上传的
+      // 遥测行（ai-review PR#2024 Important 1）。
+      if (signalOnly && !hasSignal) continue;
       // 预算给下一次调用留余量：判据是「已花 + 这次要花的估算 ≤ 上限」，
       // 不是「已花 < 上限」——后者总会让最后一次调用把上限冲破（K1 实测超支一次调用）。
       const carriedUserPrompt = findCarriedUserPrompt(turn, sessionTurns);

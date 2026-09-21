@@ -634,13 +634,16 @@ export class StandaloneAgentAdapter implements AgentInterface {
    * handoff_* 断言时由 runner 调用（无条件采集会把库炸点扩散成普通题误红，
    * ai-review PR#2019 R2 同款教训）。读 handoff_proposals 表里本会话、run 窗口内的
    * 落库记录（messageProcessor 的 `<handoff-proposal>` 终答尾是唯一漏斗）。
+   * 读取点必须跟写入点同一个库：handoffProposalService 始终经全局 getDatabase() 写，
+   * 这里也读全局库——隔离评测注入的 this.database 是另一条线，读它会把真发出的提案
+   * 看成不存在（ai-review PR#2024 Important 2，钉测试 agentAdapter.handoff.test.ts）。
    * 返回 undefined = 没有证据源（库不可用/读出错）⇒ 断言 fail-loud；
    * 表都没建过 = 本产品从未落过一条提案 ⇒ 零条是事实，不是没证据。
    */
   async collectHandoffProposals(since: number): Promise<HandoffProposalRecord[] | undefined> {
     if (!this.currentSessionId) return [];
     try {
-      const db = (this.database ?? (await import('../services/core/databaseService')).getDatabase()).getDb();
+      const db = (await import('../services/core/databaseService')).getDatabase().getDb();
       if (!db) return undefined;
       const rows = db.prepare(
         `SELECT title, prompt, reason, source, status, created_at AS createdAt

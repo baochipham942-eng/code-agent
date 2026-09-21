@@ -230,6 +230,40 @@ describe('signalOnly 扫描 → 低分自动入候选（候选视图零改动带
     expect(rescore.signalTurns).toBe(1);
   });
 
+  it('无信号的正常轮一行都不落（不进报告分母、不进遥测）——ai-review PR#2024 Important 1', async () => {
+    const database = db();
+    const startTime = NOW - HOUR;
+    insertSession(database, 'chat-clean', startTime);
+    insertTurn(database, 'chat-clean', 'chat-clean-turn-1', startTime);
+    const cleanReplay: StructuredReplay = {
+      sessionId: 'chat-clean',
+      turns: [{
+        turnNumber: 1,
+        turnType: 'user',
+        blocks: [
+          { type: 'user', content: '帮我润色这段文案', timestamp: startTime },
+          { type: 'text', content: '润色好了', timestamp: startTime + 1 },
+        ],
+        inputTokens: 100,
+        outputTokens: 50,
+        durationMs: 1000,
+        startTime,
+      }],
+      summary: { totalTurns: 1 },
+    } as unknown as StructuredReplay;
+    const llmCall = vi.fn<PostLaunchScorerDeps['llmCall']>();
+
+    const result = await runPostLaunchScoring(
+      scorerDeps(database, { 'chat-clean': cleanReplay }, llmCall),
+      { signalOnly: true },
+    );
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(result.signalOnlyTurns).toBe(0);
+    expect(database.prepare(`SELECT COUNT(*) AS count FROM telemetry_turn_scores`).get()).toEqual({ count: 0 });
+    expect(listReflowCandidates(database)).toEqual([]);
+  });
+
   it('signalOnly 撞上已有真评行 ⇒ 跳过不覆盖（skippedTurns）', async () => {
     const database = db();
     const startTime = NOW - HOUR;

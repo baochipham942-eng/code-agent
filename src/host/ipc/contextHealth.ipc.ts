@@ -35,8 +35,17 @@ import type { AppSettings } from '../../shared/contract/settings';
 
 const logger = createLogger('ContextHealthIPC');
 
-/** 同一会话的手动压缩只允许一轮在飞。渲染层的闸盖不住第五条入口。 */
-const manualCompactInFlight = new Map<string, Promise<CompactResult>>();
+/** 同一会话、同一锚点、同一 focus 共享一轮在飞的压缩。
+ *  同会话但 focus / 锚点不同的请求排在后面自己跑，不能拿别人的摘要当自己的结果。 */
+const manualCompactByIntent = new Map<string, Promise<CompactResult>>();
+const manualCompactTail = new Map<string, Promise<void>>();
+
+function manualCompactIntentKey(
+  sessionId: string,
+  options: { messageId?: string; focusText?: string },
+): string {
+  return `${sessionId}\0${options.messageId ?? ''}\0${options.focusText ?? ''}`;
+}
 
 const DEFAULT_CONTEXT_COMPRESSION_CONFIG: ContextCompressionConfig = {
   enabled: true,
@@ -436,16 +445,25 @@ async function compactSession(
     logger.warn('Compact requested but no active session');
     return emptyCompactResult();
   }
-  const existing = manualCompactInFlight.get(sessionId);
-  if (existing) return existing;
+  const intentKey = manualCompactIntentKey(sessionId, options);
+  const sameIntent = manualCompactByIntent.get(intentKey);
+  if (sameIntent) return sameIntent;
 
-  const run = compactSessionOnce(deps, options, sessionId);
-  manualCompactInFlight.set(sessionId, run);
-  try {
-    return await run;
-  } finally {
-    if (manualCompactInFlight.get(sessionId) === run) manualCompactInFlight.delete(sessionId);
-  }
+  const previous = manualCompactTail.get(sessionId) ?? Promise.resolve();
+  const queued = previous.catch(() => undefined);
+  let releaseTail: () => void = () => {};
+  const tail = new Promise<void>((resolve) => {
+    releaseTail = resolve;
+  });
+  manualCompactTail.set(sessionId, queued.then(() => tail));
+
+  const run = queued.then(() => compactSessionOnce(deps, options, sessionId));
+  manualCompactByIntent.set(intentKey, run);
+  void run.finally(() => {
+    if (manualCompactByIntent.get(intentKey) === run) manualCompactByIntent.delete(intentKey);
+    releaseTail();
+  });
+  return run;
 }
 
 async function compactSessionOnce(

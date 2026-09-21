@@ -593,6 +593,58 @@ describe('resolveContextHealthForSession', () => {
     expect(right).toEqual(left);
   });
 
+  it('runs a second compact with a different focus after the in-flight one, not as its result', async () => {
+    const sessionId = 'session-compact-different-focus';
+    const messages: Message[] = Array.from({ length: 14 }, (_, index) => ({
+      id: `m${index + 1}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `历史消息 ${index + 1}\n${'这是一段需要被压缩的长上下文。'.repeat(260)}`,
+      timestamp: index + 1,
+    }));
+    const appService = makeAppService(sessionId, messages, DEFAULT_MODEL);
+    let releaseFirst: (() => void) | undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    compactMocks.compactModelSummarizeWithMetadata.mockImplementation(async () => {
+      calls += 1;
+      if (calls === 1) await firstGate;
+      return {
+        summary: '压缩摘要',
+        metadata: { provider: 'moonshot', model: 'kimi-k2.5', useMainModel: false },
+      };
+    });
+
+    registerContextHealthHandlers({
+      getAppService: () => appService,
+      getTaskManager: () => ({
+        getOrchestrator: vi.fn(() => ({ setMessages: vi.fn() })),
+      }) as any,
+      getSystemPromptForSession: () => '',
+    });
+
+    const handler = compactMocks.handlers.get('context:compact-current');
+    expect(handler).toBeDefined();
+    const first = handler!({}, sessionId, '保留甲');
+    const second = handler!({}, sessionId, '保留乙');
+    await vi.waitFor(() => {
+      expect(compactMocks.compactModelSummarizeWithMetadata).toHaveBeenCalledTimes(1);
+    });
+    expect(calls).toBe(1);
+    releaseFirst!();
+    await vi.waitFor(() => {
+      expect(compactMocks.compactModelSummarizeWithMetadata).toHaveBeenCalledTimes(2);
+    });
+    const [left, right] = await Promise.all([first, second]) as CompactResult[];
+    expect(left.success).toBe(true);
+    expect(right.success).toBe(true);
+    const prompts = compactMocks.compactModelSummarizeWithMetadata.mock.calls.map((call) => String(call[0]));
+    expect(prompts[0]).toContain('保留甲');
+    expect(prompts[1]).toContain('保留乙');
+    expect(prompts[0]).not.toContain('保留乙');
+  });
+
   it('exposes and persists context compression config through IPC', async () => {
     registerContextHealthHandlers({
       getAppService: () => null,

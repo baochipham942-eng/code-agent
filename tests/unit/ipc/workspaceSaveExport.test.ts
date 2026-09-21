@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from '../../../src/host/ipc/workspaceSaveExport';
+import { handleSaveTextToDownloads, handleSaveBinaryToDownloads, handleSaveBinaryToDirectory } from '../../../src/host/ipc/workspaceSaveExport';
 
 let fakeHome: string;
 
@@ -99,5 +99,46 @@ describe('handleSaveBinaryToDownloads', () => {
       base64: Buffer.from('x').toString('base64'),
     });
     expect(path.basename(filePath)).toBe('export.bin');
+  });
+});
+
+// #1997：agent 产物落**当前工作区**而不是 ~/Downloads——产物不在工作区 = 没交付。
+describe('handleSaveBinaryToDirectory', () => {
+  it('writes the deliverable into the given workspace dir, not Downloads', async () => {
+    const workspace = path.join(fakeHome, 'ws', 'gdp-772e7524');
+    const original = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff]); // PK zip header + binary
+    const { filePath } = await handleSaveBinaryToDirectory({
+      dir: workspace,
+      fileName: 'deck.pptx',
+      base64: original.toString('base64'),
+    });
+
+    expect(filePath).toBe(path.join(workspace, 'deck.pptx'));
+    expect((await fs.readFile(filePath)).equals(original)).toBe(true);
+    // 不得外溢到 ~/Downloads
+    await expect(fs.access(path.join(fakeHome, 'Downloads', 'deck.pptx'))).rejects.toThrow();
+  });
+
+  it('creates a missing workspace dir and appends -N suffix on name clash', async () => {
+    const workspace = path.join(fakeHome, 'ws', 'gdp-new');
+    const a = Buffer.from('one').toString('base64');
+    const b = Buffer.from('two').toString('base64');
+    const first = await handleSaveBinaryToDirectory({ dir: workspace, fileName: 'report.docx', base64: a });
+    const second = await handleSaveBinaryToDirectory({ dir: workspace, fileName: 'report.docx', base64: b });
+
+    expect(path.basename(first.filePath)).toBe('report.docx');
+    expect(path.basename(second.filePath)).toBe('report-1.docx');
+    expect((await fs.readFile(second.filePath)).toString()).toBe('two');
+  });
+
+  it('strips path separators from the file name so it cannot escape the workspace dir', async () => {
+    const workspace = path.join(fakeHome, 'ws', 'gdp-772e7524');
+    const { filePath } = await handleSaveBinaryToDirectory({
+      dir: workspace,
+      fileName: '../../escape.pptx',
+      base64: Buffer.from('x').toString('base64'),
+    });
+    expect(path.dirname(filePath)).toBe(workspace);
+    expect(path.basename(filePath)).toBe('.._.._escape.pptx');
   });
 });

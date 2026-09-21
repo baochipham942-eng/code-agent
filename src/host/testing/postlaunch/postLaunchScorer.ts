@@ -281,6 +281,10 @@ export async function runPostLaunchScoring(
   const budgetLimitUsd = request.dailyBudgetUsd ?? POST_LAUNCH_DEFAULTS.dailyBudgetUsd;
   const sampleLimit = request.dailySampleLimit ?? POST_LAUNCH_DEFAULTS.dailySampleLimit;
   const dryRun = request.dryRun === true;
+  // N-EVAL-FAILURE-AUTOHARVEST：signalOnly = 永不调 judge（零成本零正文外发），
+  // 只落确定性信号 / not-judged 占位行（真 judge 版本）——候选视图照常带出，
+  // 且不挡之后的人手真评补评（FB-233：not-judged 行不算已评）。
+  const signalOnly = request.signalOnly === true;
   const day = localDay(now);
   const since = now - days * 24 * 60 * 60 * 1000;
 
@@ -381,16 +385,16 @@ export async function runPostLaunchScoring(
       // 预算给下一次调用留余量：判据是「已花 + 这次要花的估算 ≤ 上限」，
       // 不是「已花 < 上限」——后者总会让最后一次调用把上限冲破（K1 实测超支一次调用）。
       const carriedUserPrompt = findCarriedUserPrompt(turn, sessionTurns);
-      const judgePrompt = dryRun ? '' : buildPostLaunchJudgePrompt(turn.turn, signals, carriedUserPrompt);
-      const jevUsd = !dryRun && prescreen
+      const judgePrompt = dryRun || signalOnly ? '' : buildPostLaunchJudgePrompt(turn.turn, signals, carriedUserPrompt);
+      const jevUsd = !dryRun && !signalOnly && prescreen
         ? estimatePostLaunchPrescreenUsd(turn.turn, signals, carriedUserPrompt)
         : 0;
-      const nextCallUsd = dryRun ? 0 : (prescreen ? jevUsd : deps.estimateJudgeCostUsd(judgePrompt).usd);
+      const nextCallUsd = dryRun || signalOnly ? 0 : (prescreen ? jevUsd : deps.estimateJudgeCostUsd(judgePrompt).usd);
       const budgetLeft = spentUsd + nextCallUsd <= budgetLimitUsd;
       const sampleLeft = sampledToday < sampleLimit;
       // 信号命中的轮全评；其余按日抽样。预算不够下一次调用就当天停评，只记信号。
-      const shouldJudge = !dryRun && budgetLeft && (hasSignal || sampleLeft);
-      if (!dryRun && !budgetLeft) result.budgetStopped = true;
+      const shouldJudge = !dryRun && !signalOnly && budgetLeft && (hasSignal || sampleLeft);
+      if (!dryRun && !signalOnly && !budgetLeft) result.budgetStopped = true;
 
       let dims: PostLaunchDims = mapDeterministicDims(signals);
       let reasoning = hasSignal ? signals.map((signal) => signal.detail ?? signal.kind).join('；') : '';

@@ -11,6 +11,7 @@
 // ============================================================================
 
 import { hasInteractiveUi } from '../platform';
+import { holdStallClock } from './stallObserver';
 import { createLogger } from '../services/infra/logger';
 import { withApprovalTrace } from '../telemetry/telemetryService';
 import { getEventBus } from '../services/eventing/bus';
@@ -137,7 +138,8 @@ export class WorkflowLaunchApprovalGate {
     } else {
       logger.info(`Workflow launch waiting for headless policy timeout: ${request.id}`);
     }
-    return promise;
+    const releaseHold = holdStallClock(request.sessionId);
+    return promise.finally(releaseHold);
   }
 
   approve(requestId: string, feedback?: string, callerSessionId?: string): boolean {

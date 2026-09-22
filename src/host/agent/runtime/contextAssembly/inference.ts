@@ -39,6 +39,7 @@ import { getAdaptiveRouter, withClarificationHint } from '../../../model/adaptiv
 import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
+import { noteStreamProgress } from '../../stallObserver';
 import { cacheOptionsForMaxModeCall, maxModeBudgetHeadroomOk } from './maxModePolicy';
 import { emitOverflowRecoverySignal } from './compressionSignal';
 import {
@@ -810,6 +811,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           }),
         });
       } else if (chunk.type === 'tool_call_delta') {
+        noteStreamProgress(ctx.runtime.sessionId);
         ctx.runtime.onEvent({
           type: 'stream_tool_call_delta',
           data: {

@@ -344,6 +344,8 @@ export function registerAgentHandlers(
   ipcMain.handle(
     IPC_CHANNELS.AGENT_DOOM_LOOP_HANDBACK,
     async (_, sessionId: string, choice: 'retry' | 'stop') => {
+      const picked: string = choice;
+      if (typeof sessionId !== 'string' || (picked !== 'retry' && picked !== 'stop')) return false;
       const { answerDoomLoopHandback } = await import('../agent/runtime/doomLoopHandback');
       return answerDoomLoopHandback(sessionId, choice);
     },

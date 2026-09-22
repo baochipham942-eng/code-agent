@@ -695,6 +695,12 @@ export const useConversationStreamEffects = ({
           if (eventSessionId) {
             useTurnExecutionStore.getState().clearHookRunning(eventSessionId);
           }
+          {
+            const offered = useDoomLoopHandbackStore.getState().sessionId;
+            const sameSession = offered === eventSessionId
+              || (isCurrentSessionEvent && offered === currentSessionId);
+            if (offered && sameSession) useDoomLoopHandbackStore.getState().clear();
+          }
           flushRef.current();
           flushStreamingMessages();
           return;

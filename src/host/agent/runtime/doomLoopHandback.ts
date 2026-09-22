@@ -1,5 +1,6 @@
 import { INTERACTION_TIMEOUTS } from '../../../shared/constants/timeouts';
 import { HostReasonCode } from '../../../shared/contract';
+import { hasInteractiveUi } from '../../platform/windowBridge';
 import { noteUnattendedRunTerminal } from '../unattendedApprovalTerminal';
 import type { DoomLoopGuard } from './doomLoopGuard';
 import { emitGoalAbort } from './goalAbort';
@@ -30,20 +31,34 @@ export function answerDoomLoopHandback(sessionId: string, choice: DoomLoopHandba
   return true;
 }
 
-/** 交互会话等用户点卡片。超时视为停止，避免 run 挂住。 */
+export type DoomLoopHandbackWait = DoomLoopHandbackChoice | 'timeout' | 'stop';
+
+/**
+ * 交互会话等用户点卡片。取消/打断立刻停；超时也停。
+ * 同一会话上的新等待不会被上一轮的计时器清掉。
+ */
 export function waitForDoomLoopHandback(
   sessionId: string,
   timeoutMs: number = INTERACTION_TIMEOUTS.USER_QUESTION,
-): Promise<DoomLoopHandbackChoice | 'timeout'> {
+  signal?: AbortSignal,
+): Promise<DoomLoopHandbackWait> {
+  if (signal?.aborted) return Promise.resolve('stop');
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      waiters.delete(sessionId);
-      resolve('timeout');
-    }, timeoutMs);
-    waiters.set(sessionId, (choice) => {
+    let settled = false;
+    const finish = (result: DoomLoopHandbackWait) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      resolve(choice);
-    });
+      signal?.removeEventListener('abort', onAbort);
+      if (waiters.get(sessionId) === onChoice) waiters.delete(sessionId);
+      resolve(result);
+    };
+    const onChoice = (choice: DoomLoopHandbackChoice) => finish(choice);
+    const onAbort = () => finish('stop');
+    const timer = setTimeout(() => finish('timeout'), timeoutMs);
+    waiters.set(sessionId, onChoice);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
   });
 }
 
@@ -53,6 +68,7 @@ export function stopUnattendedDoomLoop(sessionId: string): void {
 }
 
 function abortGoalIfPending(ctx: RuntimeContext, iterations: number): void {
+  if (!ctx.goalMode?.isPending()) return;
   emitGoalAbort(ctx, {
     code: HostReasonCode.GoalAbortRepeatedAction,
     modelText: '相同工具调用在警告后仍反复出现，目标未达成',
@@ -73,8 +89,17 @@ export async function settleDoomLoopHandback(
     abortGoalIfPending(ctx, iterations);
     return 'stop';
   }
+  // 评测和交互式 CLI 没有能点这张卡的界面。直接停，避免白等 5 分钟。
+  if (!hasInteractiveUi()) {
+    abortGoalIfPending(ctx, iterations);
+    return 'stop';
+  }
   ctx.onEvent({ type: 'doom_loop_handback', data: { sessionId: ctx.sessionId } });
-  const choice = await waitForDoomLoopHandback(ctx.sessionId);
+  const choice = await waitForDoomLoopHandback(
+    ctx.sessionId,
+    INTERACTION_TIMEOUTS.USER_QUESTION,
+    ctx.control.runAbortController?.signal,
+  );
   if (choice === 'retry') {
     guard.resetAfterHandback();
     injectNudge(DOOM_LOOP_HANDBACK_RETRY_NUDGE);

@@ -32,7 +32,7 @@ function isJevInjectionScanEnabled(env: NodeJS.ProcessEnv = process.env): boolea
   return env.CODE_AGENT_JEV_INJECTION_SCAN === '1';
 }
 
-export function isRemoteInjectionSource(source: string): boolean {
+function isRemoteInjectionSource(source: string): boolean {
   return REMOTE_TOOL_PREFIXES.some((prefix) => source === prefix || source.startsWith(prefix));
 }
 

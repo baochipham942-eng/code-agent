@@ -102,7 +102,9 @@ const TodoStepItem: React.FC<{ step: TaskStep; index: number; sessionId: string 
   const save = () => {
     const next = (draft ?? text).trim();
     if (!next || next === step.content) {
+      setCorrection(null);
       setDraft(null);
+      if (sessionId) sessionStorage.removeItem(correctionKey(sessionId, step.id));
       return;
     }
     setCorrection(next);

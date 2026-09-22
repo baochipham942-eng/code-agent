@@ -240,6 +240,12 @@ export interface AiReviewVerdict {
    * 带的是同一次调用的同一份值——聚合时按题去重，不许逐维累加。
    */
   prescreenCostUsd?: number;
+  /**
+   * Jev score 原语的连续 quality（0-1 + confidence）：信息列，只进评测仪表/证据，
+   * 不作任何放行/断言依据（N-JEV-EVAL-JUDGE-R2）。同一题各维带同一份值，聚合按题去重。
+   * Jev 侧答案坏形状/越界被拒收时此字段缺席——缺席即「没有 quality」，不许当 0.5。
+   */
+  quality?: { score: number; confidence: number };
 }
 
 export interface EvalFailureClassification {

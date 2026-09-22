@@ -171,11 +171,19 @@ function truncateOutput(
     reason: 'bash-output-limit',
   });
   const truncated = truncateMiddleErrorAware(output, BASH.MAX_OUTPUT_LENGTH);
+  const size = `Output was ${originalLength} chars, truncated to ${BASH.MAX_OUTPUT_LENGTH}.`;
+  // 落盘失败时没有路径，不能让模型去 Read offset / Edit；成功时只指落盘文件。
+  if (!spillResult) {
+    return (
+      truncated +
+      `\n\n[Guidance: ${size} 完整输出未能留存。不要重跑可能已产生副作用的命令。只有确认命令只读时，才缩小输出范围后重跑。]`
+    );
+  }
+  const savedAt = spillResult.archiveRef.filePath;
   return (
     truncated +
-    `\n\n[Guidance: Output was ${originalLength} chars, truncated to ${BASH.MAX_OUTPUT_LENGTH}. ` +
-    `Use Read tool with offset/limit to read specific sections, or use Edit tool to make targeted changes without reading the entire file.]` +
-    (spillResult ? buildSpillNotice(spillResult.archiveRef) : '')
+    `\n\n[Guidance: ${size} 完整输出已留存于 ${savedAt}，用 Read/Grep 回查。]` +
+    buildSpillNotice(spillResult.archiveRef)
   );
 }
 

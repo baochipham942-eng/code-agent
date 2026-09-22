@@ -31,6 +31,13 @@ export class HandoffProposalService {
   private static instance: HandoffProposalService | null = null;
   private schemaReady = false;
 
+  /**
+   * N-EVAL-FAILURE-AUTOHARVEST（ai-review PR#2024 R5）：评测隔离运行时可显式绑库——
+   * 隔离臂的消息/遥测都落注入库，handoff 提案也必须落同一个库，断言采集器才读得到。
+   * 不传 = 产线原样（全局单例库）。
+   */
+  constructor(private readonly dbOverride?: Database.Database) {}
+
   static getInstance(): HandoffProposalService {
     if (!this.instance) {
       this.instance = new HandoffProposalService();
@@ -39,6 +46,10 @@ export class HandoffProposalService {
   }
 
   private getDb(): Database.Database {
+    if (this.dbOverride) {
+      this.ensureSchema(this.dbOverride);
+      return this.dbOverride;
+    }
     const db = getDatabase().getDb();
     if (!db) {
       throw new Error('Database not initialized');

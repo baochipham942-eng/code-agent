@@ -1,12 +1,15 @@
 import { createHash } from 'node:crypto';
 import type { AiReviewDimension, AiReviewVerdict } from '../../../shared/contract/evaluation';
 import {
-  DIMENSION_PRESCREEN_BANDS,
-  DIMENSION_PRESCREEN_QUESTIONS,
+  EVAL_JUDGE_BANDS,
+  EVAL_JUDGE_QUESTIONS,
+  EVAL_JUDGE_QUALITY_QUESTION,
   JEV_JUDGE_MODEL,
   estimateJevCallUsd,
+  readJevScoreAnswer,
   type JevAnswers,
   type JevQuestionSpec,
+  type JevScoreAnswer,
 } from '../../../shared/constants/jevQuestions';
 import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 import type { TestCase, TestResult } from '../types';
@@ -110,14 +113,25 @@ function buildGuardedJudgeProjection(
     },
     output: {
       responses: result.responses.map((response) => guardForPrescreen(response, PRESCREEN_MAX_TEXT_CHARS)),
-      toolExecutions: result.toolExecutions.slice(0, PRESCREEN_MAX_TOOL_CALLS).map((execution) => ({
-        tool: execution.tool,
-        input: guardForPrescreen(JSON.stringify(execution.input ?? {}), PRESCREEN_MAX_FIELD_CHARS),
-        output: guardForPrescreenEnds(execution.output, PRESCREEN_MAX_FIELD_CHARS, PRESCREEN_MAX_FIELD_CHARS),
-        success: execution.success,
-        error: guardForPrescreen(execution.error, PRESCREEN_MAX_FIELD_CHARS),
-        permissionDenied: execution.permissionDenied === true,
-      })),
+      // 超过上限保留首段+尾段（尾部常有最终验证/失败），并用兄弟字段显式标记截断——
+      // 截断本身是给 Jev 的证据，不许静默丢（postLaunchJudge clipEnds 同族约定；#2023 R7）。
+      ...(() => {
+        const all = result.toolExecutions;
+        const kept = all.length <= PRESCREEN_MAX_TOOL_CALLS
+          ? all
+          : [...all.slice(0, PRESCREEN_MAX_TOOL_CALLS / 2), ...all.slice(-PRESCREEN_MAX_TOOL_CALLS / 2)];
+        const toolExecutions = kept.map((execution) => ({
+          tool: guardForPrescreen(execution.tool, PRESCREEN_MAX_FIELD_CHARS),
+          input: guardForPrescreen(JSON.stringify(execution.input ?? {}), PRESCREEN_MAX_FIELD_CHARS),
+          output: guardForPrescreenEnds(execution.output, PRESCREEN_MAX_FIELD_CHARS, PRESCREEN_MAX_FIELD_CHARS),
+          success: execution.success,
+          error: guardForPrescreen(execution.error, PRESCREEN_MAX_FIELD_CHARS),
+          permissionDenied: execution.permissionDenied === true,
+        }));
+        return all.length <= PRESCREEN_MAX_TOOL_CALLS
+          ? { toolExecutions }
+          : { toolExecutions, toolExecutionsTruncated: true, omittedToolCalls: all.length - kept.length };
+      })(),
       errors: result.errors.map((error) => guardForPrescreen(error, PRESCREEN_MAX_FIELD_CHARS)),
       assertionResults: (result.expectationResults ?? []).map((entry) => ({
         type: entry.expectation.type,
@@ -162,7 +176,8 @@ export interface DimensionJudgeOptions {
 
 /** 初筛判决的 promptHash：该维问句表 + pin 模型，用来分辨问句漂移（与生成式指令段哈希分开）。 */
 function getDimensionPrescreenHash(dimension: AiReviewDimension): string {
-  return sha256(`${JSON.stringify(DIMENSION_PRESCREEN_QUESTIONS[dimension])}${JEV_JUDGE_MODEL}`);
+  // 含随行 quality 问句：初筛请求是一个整体，rubric 漂移必须能反映在哈希上（#2023 R3 Nit）。
+  return sha256(`${JSON.stringify(EVAL_JUDGE_QUESTIONS[dimension])}${JSON.stringify(EVAL_JUDGE_QUALITY_QUESTION)}${JEV_JUDGE_MODEL}`);
 }
 
 /**
@@ -174,7 +189,7 @@ function decideDimensionPrescreen(
   answers: JevAnswers,
 ): AiReviewVerdict | undefined {
   const nouls: Array<[string, number]> = [];
-  for (const key of Object.keys(DIMENSION_PRESCREEN_QUESTIONS[dimension])) {
+  for (const key of Object.keys(EVAL_JUDGE_QUESTIONS[dimension])) {
     const answer = answers[key];
     if (!answer || typeof answer !== 'object' || !('noul' in answer)) return undefined;
     const noul = (answer as { noul: number }).noul;
@@ -182,8 +197,8 @@ function decideDimensionPrescreen(
     nouls.push([key, noul]);
   }
   const values = nouls.map(([, noul]) => noul);
-  const fail = values.some((noul) => noul <= DIMENSION_PRESCREEN_BANDS.fail);
-  const pass = values.every((noul) => noul >= DIMENSION_PRESCREEN_BANDS.pass);
+  const fail = values.some((noul) => noul <= EVAL_JUDGE_BANDS.fail);
+  const pass = values.every((noul) => noul >= EVAL_JUDGE_BANDS.pass);
   if (!pass && !fail) return undefined;
   return {
     verdict: fail ? 'no' : 'yes',
@@ -240,30 +255,36 @@ export async function judgeDimensions(
   // （不新增 unavailable 出口——「Jev 挂了」不许记成「打分模型没配好」，PRESCREEN 同口径）。
   // Jev 一经调用（决断/弃权/抛错）都把刊例估算记进 verdict.prescreenCostUsd，
   // 报告层按题去重汇总（PRESCREEN R2/R3 口径：初筛成本不许丢）。
+  // 随行问一条 score 原语的连续 quality：只作仪表/证据信息列，不进决断；坏形状拒收（不落默认 0.5）。
   let prescreenAnswers: JevAnswers | undefined;
   let prescreenCostUsd: number | undefined;
+  let prescreenQuality: JevScoreAnswer | undefined;
   if (options?.prescreen && judgeable.length > 0) {
-    const questions: Record<string, JevQuestionSpec> = {};
+    const questions: Record<string, JevQuestionSpec> = { quality: EVAL_JUDGE_QUALITY_QUESTION };
     for (const dimension of judgeable) {
-      Object.assign(questions, DIMENSION_PRESCREEN_QUESTIONS[dimension]);
+      Object.assign(questions, EVAL_JUDGE_QUESTIONS[dimension]);
     }
     const state = buildGuardedJudgeProjection(input.testCase, input.result);
     prescreenCostUsd = estimateJevCallUsd(JSON.stringify(state).length, JSON.stringify(questions).length);
     try {
       prescreenAnswers = await options.prescreen(state, questions);
+      prescreenQuality = readJevScoreAnswer(prescreenAnswers.quality, EVAL_JUDGE_QUALITY_QUESTION) ?? undefined;
     } catch {
       prescreenAnswers = undefined;
     }
   }
-  const withPrescreenCost = (verdict: AiReviewVerdict): AiReviewVerdict =>
-    prescreenCostUsd === undefined ? verdict : { ...verdict, prescreenCostUsd };
+  const withPrescreenMeta = (verdict: AiReviewVerdict): AiReviewVerdict => ({
+    ...verdict,
+    ...(prescreenCostUsd === undefined ? {} : { prescreenCostUsd }),
+    ...(prescreenQuality === undefined ? {} : { quality: prescreenQuality }),
+  });
 
   for (const dimension of judgeable) {
     try {
       if (prescreenAnswers) {
         const decided = decideDimensionPrescreen(dimension, prescreenAnswers);
         if (decided) {
-          verdicts[dimension] = withPrescreenCost(decided);
+          verdicts[dimension] = withPrescreenMeta(decided);
           continue;
         }
       }
@@ -271,14 +292,14 @@ export async function judgeDimensions(
         dimension,
         await llmCall(buildDimensionJudgePrompt(dimension, input.testCase, input.result)),
       );
-      verdicts[dimension] = options?.prescreen ? withPrescreenCost({ ...verdict, prescreen: 'escalated' }) : verdict;
+      verdicts[dimension] = options?.prescreen ? withPrescreenMeta({ ...verdict, prescreen: 'escalated' }) : verdict;
     } catch (error) {
       const failure = unavailable(
         dimension,
         'judge_error',
         error instanceof Error ? error.message : String(error),
       );
-      verdicts[dimension] = options?.prescreen ? withPrescreenCost({ ...failure, prescreen: 'escalated' }) : failure;
+      verdicts[dimension] = options?.prescreen ? withPrescreenMeta({ ...failure, prescreen: 'escalated' }) : failure;
     }
   }
   return verdicts;

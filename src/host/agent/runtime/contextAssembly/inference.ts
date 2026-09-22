@@ -30,11 +30,12 @@ import {
   estimateTokens,
 } from '../../../context/tokenOptimizer';
 import type { ModelMessage } from '../../../agent/loopTypes';
+import type { TaskComplexity } from '../../../model/adaptiveRouter';
 import type { StreamCallback, InferenceOptions, ModelResponse as RouterModelResponse } from '../../../model/types';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import type { ModelDecisionEventData, ModelFallbackInfo } from '../../../../shared/contract/modelDecision';
 import type { TaskModelStrategySettings } from '../../../../shared/contract/settings';
-import { getAdaptiveRouter } from '../../../model/adaptiveRouter';
+import { getAdaptiveRouter, withClarificationHint } from '../../../model/adaptiveRouter';
 import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
@@ -114,8 +115,15 @@ async function runEngineInference(
   signal?: AbortSignal,
   options?: InferenceOptions,
 ): Promise<RouterModelResponse> {
-  const adaptedConfig = resolveMainChatModelDecision(ctx, messages, config, { suppressDecisionEvent: options?.suppressModelDecisionEvent === true });
+  // N-JEV-ROUTER R7：Jev 估计上移到主链路统一决策点（默认 aiSdk 引擎也走这里），不再只在
+  // legacy modelRouter 里估（ai-review R7：默认引擎不生效、legacy 只剩降档）。同轮 loop
+  // 迭代由 estimateComplexityWithJev 内部 per-turn 缓存去重。澄清提示消费方也在此（单点）。
+  const adaptiveRouter = getAdaptiveRouter();
+  const complexity = config.adaptive === true ? await adaptiveRouter.estimateComplexityWithJev(messages, undefined, signal) : undefined;
+  const adaptedConfig = resolveMainChatModelDecision(ctx, messages, config, { suppressDecisionEvent: options?.suppressModelDecisionEvent === true, complexityOverride: complexity });
   const effectiveConfig = adaptedConfig ?? config;
+  // 只作用于当次调用的消息副本，不写回会话历史。
+  const requestMessages = complexity?.suggestClarification === true ? withClarificationHint(messages) : messages;
 
   if (process.env.CODE_AGENT_E2E === '1') {
     const e2e = await import('../../../testing/e2e/e2eLocalAgentModel');
@@ -130,7 +138,7 @@ async function runEngineInference(
     if (adaptedConfig) {
       logger.info(`[AgentLoop] inference engine = aisdk (adaptive: ${config.provider}/${config.model} → ${adaptedConfig.provider}/${adaptedConfig.model})`);
       return withActualModelIdentity(
-        inferenceViaAiSdk(messages, tools, adaptedConfig, onStream, signal, options),
+        inferenceViaAiSdk(requestMessages, tools, adaptedConfig, onStream, signal, options),
         adaptedConfig,
       )
         .catch((err: unknown) => {
@@ -141,7 +149,7 @@ async function runEngineInference(
         } else {
           logger.warn(`[AdaptiveRouter] Free model failed on aisdk path, falling back to default: ${errMsg.split('\n')[0]}`);
         }
-        return inferenceViaAiSdk(messages, tools, config, onStream, signal, options)
+        return inferenceViaAiSdk(requestMessages, tools, config, onStream, signal, options)
           .then((response) => {
             response.actualProvider = config.provider;
             response.actualModel = config.model;
@@ -158,9 +166,9 @@ async function runEngineInference(
         });
     }
     logger.debug('[AgentLoop] inference engine = aisdk', { provider: effectiveConfig.provider, model: effectiveConfig.model, streaming: typeof onStream === 'function' && options?.forceNonStreaming !== true });
-    return runAiSdkInferenceWithProviderFallback(messages, tools, effectiveConfig, onStream, signal, options);
+    return runAiSdkInferenceWithProviderFallback(requestMessages, tools, effectiveConfig, onStream, signal, options);
   }
-  return ctx.runtime.modelRouter.inference(messages, tools, effectiveConfig, onStream, signal, options);
+  return ctx.runtime.modelRouter.inference(requestMessages, tools, effectiveConfig, onStream, signal, options);
 }
 
 /**
@@ -175,7 +183,7 @@ export function resolveMainChatModelDecision(
   ctx: ContextAssemblyCtx,
   messages: ModelMessage[],
   config: ModelConfig,
-  opts?: { suppressDecisionEvent?: boolean },
+  opts?: { suppressDecisionEvent?: boolean; complexityOverride?: TaskComplexity },
 ): ModelConfig | null {
   // 计费方式：用户配置 > 类型默认值（settings 不可用时缺省 payg）
   let billingMode: BillingMode | undefined;
@@ -195,6 +203,7 @@ export function resolveMainChatModelDecision(
     billingMode,
     providerSettings,
     taskStrategy,
+    complexityOverride: opts?.complexityOverride,
   });
   let emittedDecision = decision;
   let adapted: ModelConfig | null = null;

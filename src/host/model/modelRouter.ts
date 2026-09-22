@@ -20,7 +20,7 @@ import { getModelMaxOutputTokens } from '../../shared/constants';
 import { resolveModelMaxOutputTokens } from './modelLimits';
 import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
-import { getAdaptiveRouter, withClarificationHint } from './adaptiveRouter';
+import { getAdaptiveRouter } from './adaptiveRouter';
 import { buildModelProviderIdentity, resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from './modelDecision';
 import { getConfigService } from '../services/core/configService';
 import { getProviderHealthMonitor, persistentProviderMarkKind } from './providerHealthMonitor';
@@ -549,9 +549,10 @@ export class ModelRouter {
     // 本路径只负责执行（API key 解析 + 调用 + 失败回退）
     const adaptiveRouter = getAdaptiveRouter();
     const complexity = config.adaptive === true ? await adaptiveRouter.estimateComplexityWithJev(messages, undefined, signal) : adaptiveRouter.estimateComplexity(messages);
-    // Jev needs_clarification 信号的唯一消费方（N-JEV-ROUTER）：给本次 provider 调用附带
-    // 澄清提示，让主模型先问一句而不是闷头猜。只作用于当次调用的消息副本，不写回会话历史。
-    const requestMessages = complexity.suggestClarification === true ? withClarificationHint(messages) : messages;
+    // 澄清提示的消费方已上移到主链路统一决策点 runEngineInference（N-JEV-ROUTER R7，
+    // 覆盖默认 aiSdk 引擎）；这里不再叠加，避免提示重复。requestMessages 恒等于
+    // messages——推理缓存读写同 key 的不变量保持不变（ai-review R1）。
+    const requestMessages = messages;
     // Inference cache (non-streaming only) — key 必须建在 requestMessages 上：
     // 读写同 key（ai-review R1：读用 messages、写用 requestMessages 曾导致永久 miss）。
     if (!onStream) {

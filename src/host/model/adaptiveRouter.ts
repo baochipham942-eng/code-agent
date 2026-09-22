@@ -40,14 +40,15 @@ export interface TaskComplexity {
 const JEV_CLARIFICATION_HINT =
   'The user\'s request may be missing information needed to proceed. If anything essential is ambiguous, ask one concise clarifying question first instead of guessing; otherwise proceed normally.';
 
-export function withClarificationHint(messages: ModelMessage[]): ModelMessage[] {
+export function withClarificationHint<T extends { role: string; content: unknown }>(messages: T[]): T[] {
   // Claude 系 provider 只取第一条 system 消息——追加在末尾会被静默丢弃
   // （ai-review R1），所以能合并就并进首条 system；没有或内容非纯文本才追加。
+  // 泛型签名：loopTypes 与 model/types 两个 ModelMessage 都能用（ai-review R7 上移消费点）。
   const first = messages[0];
   if (first?.role === 'system' && typeof first.content === 'string') {
     return [{ ...first, content: `${first.content}\n\n${JEV_CLARIFICATION_HINT}` }, ...messages.slice(1)];
   }
-  return [...messages, { role: 'system', content: JEV_CLARIFICATION_HINT }];
+  return [...messages, { role: 'system', content: JEV_CLARIFICATION_HINT } as T];
 }
 
 function answerNoul(answers: JevAnswers, key: string): number | null {
@@ -207,8 +208,10 @@ export class AdaptiveRouter {
     let answers: JevAnswers;
     try {
       answers = await call(state, JEV_ROUTER_QUESTIONS, { signal });
-    } catch {
-      return fallback('provider_error');
+    } catch (error) {
+      // 取消不是故障：静默回启发式，不打 warn、不记 provider_error（ai-review R7 Nit）。
+      if (signal?.aborted) return this.estimateComplexity(messages);
+      return fallback(`provider_error: ${error instanceof Error ? error.message : String(error)}`);
     }
     const intent = answerChoice(answers, 'intent');
     const complexity = answerChoice(answers, 'complexity');
@@ -216,6 +219,10 @@ export class AdaptiveRouter {
     const destructiveIntent = answerNoul(answers, 'destructive_intent');
     if (!intent || !complexity || needsClarification === null || destructiveIntent === null) {
       return fallback('malformed_answers');
+    }
+    // intent 必须是问句 criteria 里的枚举值，任意字符串不进 signals（ai-review R7 Nit）。
+    if (!Object.keys(JEV_ROUTER_QUESTIONS.intent.criteria ?? {}).includes(intent.choice)) {
+      return fallback('unknown_intent_choice');
     }
     const numericLevel = Number(complexity.choice);
     if (!Number.isInteger(numericLevel) || numericLevel < 0 || numericLevel > 3 || complexity.confidence < JEV_ROUTER_THRESHOLDS.minComplexityConfidence) {

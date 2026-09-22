@@ -551,7 +551,7 @@ describe('ModelRouter', () => {
       );
     });
 
-    it('appends the Jev clarification hint to provider messages when the automatic tier flags ambiguity', async () => {
+    it('does not append the clarification hint itself — the consumer moved upstream to runEngineInference (R7)', async () => {
       adaptiveRouterMockState.jevComplexity = {
         level: 'complex',
         score: 67,
@@ -570,38 +570,8 @@ describe('ModelRouter', () => {
         maxTokens: 1000,
         adaptive: true,
       };
-      const messages: ModelMessage[] = [{ role: 'user', content: 'update the previous report' }];
-
-      await router.inference(messages, [], config);
-
-      const sentMessages = provider.inference.mock.calls[0][0] as ModelMessage[];
-      const lastMessage = sentMessages[sentMessages.length - 1];
-      expect(lastMessage.role).toBe('system');
-      expect(lastMessage.content).toContain('clarifying question');
-      // 提示只进当次 provider 调用，不污染调用方的会话历史
-      expect(messages).toHaveLength(1);
-    });
-
-    it('merges the clarification hint into the leading system message instead of appending a second one', async () => {
-      adaptiveRouterMockState.jevComplexity = {
-        level: 'complex',
-        score: 67,
-        signals: ['needs_clarification:0.95'],
-        suggestClarification: true,
-      };
-      const provider = {
-        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
-      } as any;
-      (router as any).providers.set('deepseek', provider);
-
-      const config: ModelConfig = {
-        provider: 'deepseek',
-        model: 'deepseek-chat',
-        apiKey: 'test-key',
-        maxTokens: 1000,
-        adaptive: true,
-      };
-      // Claude 系 provider 只取第一条 system——追加在末尾会被丢弃，必须合并进去
+      // R7 起澄清提示由主链路统一决策点 runEngineInference 附加（覆盖默认 aiSdk
+      // 引擎）；modelRouter 不再叠加，否则上游已附提示时会重复。
       const messages: ModelMessage[] = [
         { role: 'system', content: 'You are Neo.' },
         { role: 'user', content: 'update the previous report' },
@@ -611,12 +581,11 @@ describe('ModelRouter', () => {
 
       const sentMessages = provider.inference.mock.calls[0][0] as ModelMessage[];
       expect(sentMessages.filter((m) => m.role === 'system')).toHaveLength(1);
-      expect(sentMessages[0].content).toContain('You are Neo.');
-      expect(sentMessages[0].content).toContain('clarifying question');
-      expect(messages[0].content).toBe('You are Neo.');
+      expect(sentMessages[0].content).toBe('You are Neo.');
+      expect(sentMessages).toHaveLength(2);
     });
 
-    it('keeps inference-cache read/write keys consistent on the clarification path (repeat request hits cache)', async () => {
+    it('keeps inference-cache read/write keys consistent on the Jev path (repeat request hits cache)', async () => {
       adaptiveRouterMockState.jevComplexity = {
         level: 'complex',
         score: 67,

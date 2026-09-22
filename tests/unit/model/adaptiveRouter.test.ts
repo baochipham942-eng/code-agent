@@ -349,3 +349,28 @@ describe('AdaptiveRouter.selectModel env guards', () => {
     expect(result.provider).toBe(defaultConfig.provider);
   });
 });
+
+describe('withClarificationHint（澄清提示组装，纯函数）', () => {
+  it('首条为 string 型 system 时并入其末尾，不新增第二条 system', async () => {
+    const { withClarificationHint } = await import('../../../src/host/model/adaptiveRouter');
+    const messages = [
+      { role: 'system', content: 'You are Neo.' },
+      { role: 'user', content: 'update the previous report' },
+    ];
+    const hinted = withClarificationHint(messages);
+    expect(hinted.filter((m) => m.role === 'system')).toHaveLength(1);
+    expect(hinted[0].content).toContain('You are Neo.');
+    expect(hinted[0].content).toContain('clarifying question');
+    // 不污染调用方的消息数组
+    expect(messages[0].content).toBe('You are Neo.');
+    expect(messages).toHaveLength(2);
+  });
+
+  it('没有 system 或首条非纯文本时才追加新 system 消息', async () => {
+    const { withClarificationHint } = await import('../../../src/host/model/adaptiveRouter');
+    const hinted = withClarificationHint([{ role: 'user', content: 'hi' }]);
+    expect(hinted).toHaveLength(2);
+    expect(hinted[1].role).toBe('system');
+    expect(hinted[1].content).toContain('clarifying question');
+  });
+});

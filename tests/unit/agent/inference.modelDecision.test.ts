@@ -257,6 +257,24 @@ describe('resolveMainChatModelDecision — model_decision 事件发射（ADR-019
     expect(events[0].data.reason).toBe('user-selected');
   });
 
+  it('complexityOverride（Jev 估计）参与主链路决策：启发式判 simple 的简单消息不再进免费档（N-JEV-ROUTER R7）', () => {
+    const ctx = makeCtx();
+    // SIMPLE_MESSAGES 启发式会判 simple（本 describe 上方用例已实证 simple-task-free）；
+    // 上游 runEngineInference 传入 Jev 的 complex 估计后，决策必须尊重 override。
+    const jevComplexity = {
+      level: 'complex' as const,
+      score: 67,
+      signals: ['destructive_intent:0.90'],
+    };
+    const result = resolveMainChatModelDecision(ctx, SIMPLE_MESSAGES, makeConfig({ adaptive: true }), {
+      complexityOverride: jevComplexity,
+    });
+
+    expect(result).toBeNull();
+    const events = getDecisionEvents(ctx);
+    expect(events[0].data.reason).toBe('user-selected');
+  });
+
   it('adaptive + 简单任务 + 包月 provider → billing-gate-skip（计费门控），不切换', () => {
     mockGetSettings.mockReturnValue({
       models: {

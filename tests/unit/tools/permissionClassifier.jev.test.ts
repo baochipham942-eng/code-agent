@@ -236,6 +236,30 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     expect(state).not.toContain('private text must not leave the machine');
   });
 
+  it('扩桶工具的 Jev 放行不进缓存：同目录同长度参数也逐次问 Jev', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    // buildCacheKey 对非 Bash 把 file_path 折叠成 dirname、超 100 字符的串折叠成
+    // <string:len>——这两条 key 相同（同目录 + <string:150>），若 Jev 放行进缓存，
+    // 第二条会命中缓存绕过 Jev（反向变异实证：删掉 bypassCache 后本测试红）。
+    const first = await classifier.classify(
+      'pdf_generate',
+      { file_path: '/tmp/report-a.pdf', title: 'x'.repeat(150) },
+      { workingDirectory: '/tmp' },
+    );
+    const second = await classifier.classify(
+      'pdf_generate',
+      { file_path: '/tmp/report-b.pdf', title: 'y'.repeat(150) },
+      { workingDirectory: '/tmp' },
+    );
+
+    expect(first.decision).toBe('approve');
+    expect(first.cached).toBe(false);
+    expect(second.decision).toBe('approve');
+    expect(second.cached).toBe(false);
+    expect(stub.calls.length).toBe(2);
+  });
+
   it('扩桶工具缺失 beyond_scope 或越界时保持 ask', async () => {
     const missing = vi.fn(async () => ({
       risk: { choice: 'read_only', confidence: 0.95 },

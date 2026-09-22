@@ -76,7 +76,7 @@ export interface ClassificationResult {
   trustBoundary?: boolean;
   /** The classifier asked because no rule could determine the command risk. */
   riskUnknown?: boolean;
-  /** Do not store this result in the command-text cache (fenced in-project writes). */
+  /** Do not store this result in the command-text cache (fenced in-project writes; Jev non-Bash approvals). */
   bypassCache?: boolean;
   /** Skip-confirm approve must wrap the command in the OS write fence. Bash consumes this. */
   requiresOsWriteFence?: boolean;

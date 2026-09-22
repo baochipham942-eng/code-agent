@@ -4,9 +4,11 @@
 // 从 permissionClassifier.ts 拆出（eslint max-lines 1000 有效行硬门）：
 // state 构造 + 出境脱敏 + 四问消费 + 放行判据全在这里，分类器主文件只留调用。
 //
-// ponytail: Jev 只缩小 ask 桶，不扩 approve 边界，不做 deny——仅 Bash 生效。它官方明说
-// 对抗输入能带偏、不是安全边界；规则层的 deny/ask 判定不受它影响，它说 destructive/
-// exfiltration 也只是继续 ask。Jev 报错/超时/形状不对同样回落 ask（fail-closed，返回 null）。
+// ponytail: Jev 只缩小 ask 桶，不扩 approve 边界，不做 deny——生效范围是 Bash +
+// PERMWIDE_TOOL_NAMES 明确列出的本地产物工具（扩桶工具额外要求 beyond_scope 过关）。
+// 它官方明说对抗输入能带偏、不是安全边界；规则层的 deny/ask 判定不受它影响，它说
+// destructive/exfiltration 也只是继续 ask。Jev 报错/超时/形状不对同样回落 ask
+//（fail-closed，返回 null）。
 // ============================================================================
 
 import * as os from 'os';
@@ -174,6 +176,10 @@ export async function classifyByJev(
     reason,
     confidence: risk.confidence,
     cached: false,
+    // 非 Bash 的缓存 key 会把 file_path 折叠成 dirname、长串折叠成 <string:len>
+    //（permissionClassifier.buildCacheKey 的 normalizeArgs）——Jev 放行若进缓存，
+    // 同目录同长度的后续调用 5 分钟内绕过 Jev。Bash key 用完整命令，行为不变。
+    bypassCache: !isBashToolName(toolName),
     traceStep: createTraceStep('permission_classifier', 'jev_approve', 'allow', reason, startTime),
   };
 }

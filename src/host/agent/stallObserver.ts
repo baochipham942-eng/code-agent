@@ -1,7 +1,7 @@
 // 前台一轮里「上次有可见进展」的观察器。90s 提示，5min 升级。
-// 等审批或等用户回答时不报「等模型回响」。
+// 审批卡和提问卡盖住这行时，渲染层把提示清掉，避免卡片收起后冒出过期的「先停下」。
 
-export type StallPhase = 'tool' | 'model' | 'awaiting-approval' | 'awaiting-user';
+export type StallPhase = 'tool' | 'model';
 
 export interface StallNotice {
   level: 'hint' | 'escalated';
@@ -44,7 +44,6 @@ export class StallObserver {
   }
 
   tick(now: number, phase: StallPhase, detail: string): StallNotice | null {
-    if (phase === 'awaiting-approval' || phase === 'awaiting-user') return null;
     const idle = now - this.lastProgressAt;
     if (idle >= ESCALATE_MS && this.level !== 'escalated') {
       this.level = 'escalated';

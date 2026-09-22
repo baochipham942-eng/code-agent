@@ -31,6 +31,10 @@ export const StallNoticeLine: React.FC<{ hidden?: boolean }> = ({ hidden = false
     setNotice(null);
   }, [sessionId]);
 
+  useEffect(() => {
+    if (hidden) setNotice(null);
+  }, [hidden]);
+
   if (!notice || hidden || !notice.level) return null;
   const stuckOn = notice.phase === 'tool' ? notice.detail : '等模型回响';
   return (

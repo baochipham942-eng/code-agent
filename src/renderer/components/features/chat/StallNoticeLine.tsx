@@ -46,7 +46,7 @@ export const StallNoticeLine: React.FC<{ hidden?: boolean }> = ({ hidden = false
       className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-zinc-500"
     >
       <span>{notice.level === 'escalated' ? '还是卡住' : '卡住了'}：{stuckOn}</span>
-      <button
+      <button /* ds-allow:button: 卡住提示旁边的文字链，停掉这一轮 */
         type="button"
         className="text-zinc-300 underline-offset-2 hover:underline"
         onClick={() => {

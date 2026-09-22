@@ -418,7 +418,7 @@ export class MessageProcessor {
       if (nudgeTriggered) {
         return 'continue';
       }
-      this.ctx.nudgeManager.emitAbandonedOutputFiles((missingFiles) => this.ctx.onEvent({
+      this.ctx.nudgeManager.emitAbandonedOutputFiles?.((missingFiles) => this.ctx.onEvent({
         type: 'turn_diff',
         data: { turnId: this.ctx.turn.currentTurnId || '', files: [], missingFiles },
       }));

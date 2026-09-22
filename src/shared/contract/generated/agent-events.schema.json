@@ -2322,6 +2322,12 @@
         },
         "parentToolUseId": {
           "type": "string"
+        },
+        "missingFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [

@@ -532,7 +532,6 @@ export class ModelRouter {
   ): Promise<ModelResponse> {
     const normalizedOptions = this.normalizeInferenceOptions(messages, onStream, options);
 
-    // Check for cancellation before starting
     if (signal?.aborted) {
       throw new Error('Request was cancelled before starting');
     }
@@ -554,14 +553,9 @@ export class ModelRouter {
         return cached;
       }
     }
-
-    // Adaptive routing for simple tasks — 仅在用户选了"自动"时启用
-    // ADR-019 批 2：决策交给单一入口（含计费门控——包月/未知 provider 不做省钱路由），
-    // 本路径只负责执行（API key 解析 + 调用 + 失败回退）
     const adaptiveRouter = getAdaptiveRouter();
-    const complexity = config.adaptive === true ? await adaptiveRouter.estimateComplexityWithJev(messages) : adaptiveRouter.estimateComplexity(messages);
-    let simpleTaskBillingMode: BillingMode | undefined;
-    let providerSettings: Record<string, ModelDecisionProviderSettings> | undefined;
+    const complexity = config.adaptive === true ? await adaptiveRouter.estimateComplexityWithJev(messages, undefined, signal) : adaptiveRouter.estimateComplexity(messages);
+    let simpleTaskBillingMode: BillingMode | undefined, providerSettings: Record<string, ModelDecisionProviderSettings> | undefined;
     let taskStrategy: TaskModelStrategySettings | undefined;
     try {
       const settings = getConfigService().getSettings();
@@ -578,7 +572,8 @@ export class ModelRouter {
       context: 'main-chat',
       billingMode: simpleTaskBillingMode,
       providerSettings,
-      taskStrategy, complexityOverride: complexity,
+      taskStrategy,
+      complexityOverride: complexity,
     });
     if (
       simpleTaskDecision.decision.reason === 'simple-task-free'

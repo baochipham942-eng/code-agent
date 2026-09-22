@@ -140,11 +140,15 @@ export class AdaptiveRouter {
   async estimateComplexityWithJev(
     messages: ModelMessage[],
     systemOne?: JevSystemOneCall,
+    signal?: AbortSignal,
   ): Promise<TaskComplexity> {
-    const fallback = () => this.estimateComplexity(messages);
-    if (process.env.CODE_AGENT_JEV_ROUTER !== '1') return fallback();
+    const fallback = (reason: string) => {
+      logger.warn(`[AdaptiveRouter] Jev fallback: ${reason}`);
+      return this.estimateComplexity(messages);
+    };
+    if (process.env.CODE_AGENT_JEV_ROUTER !== '1') return this.estimateComplexity(messages);
     const lastUserMsg = [...messages].reverse().find((message) => message.role === 'user');
-    if (!lastUserMsg) return fallback();
+    if (!lastUserMsg) return fallback('no_user_message');
     const content = typeof lastUserMsg.content === 'string'
       ? lastUserMsg.content
       : Array.isArray(lastUserMsg.content)
@@ -161,18 +165,20 @@ export class AdaptiveRouter {
     });
     let answers: JevAnswers;
     try {
-      answers = await call(state, JEV_ROUTER_QUESTIONS);
+      answers = await call(state, JEV_ROUTER_QUESTIONS, { signal });
     } catch {
-      return fallback();
+      return fallback('provider_error');
     }
     const intent = answerChoice(answers, 'intent');
     const complexity = answerChoice(answers, 'complexity');
     const needsClarification = answerNoul(answers, 'needs_clarification');
     const destructiveIntent = answerNoul(answers, 'destructive_intent');
-    if (!intent || !complexity || needsClarification === null || destructiveIntent === null) return fallback();
+    if (!intent || !complexity || needsClarification === null || destructiveIntent === null) {
+      return fallback('malformed_answers');
+    }
     const numericLevel = Number(complexity.choice);
     if (!Number.isInteger(numericLevel) || numericLevel < 0 || numericLevel > 3 || complexity.confidence < 0.5) {
-      return fallback();
+      return fallback('low_confidence_or_invalid_complexity');
     }
     const signals = [
       `jev_intent:${intent.choice}`,
@@ -180,9 +186,10 @@ export class AdaptiveRouter {
       `needs_clarification:${needsClarification.toFixed(2)}`,
       `destructive_intent:${destructiveIntent.toFixed(2)}`,
     ];
+    if (state.has_image === true) signals.push('has_image');
     // Clarification and destructive intent are safety signals, never a reason to
     // route down to the free model. The caller still keeps control of side effects.
-    const safeLevel = needsClarification >= 0.9 || destructiveIntent >= 0.7
+    const safeLevel = state.has_image === true || needsClarification >= 0.9 || destructiveIntent >= 0.7
       ? Math.max(2, numericLevel)
       : numericLevel;
     const safeScore = safeLevel * (100 / 3);

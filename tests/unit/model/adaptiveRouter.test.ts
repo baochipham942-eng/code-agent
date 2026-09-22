@@ -195,6 +195,22 @@ describe('AdaptiveRouter Jev intent router', () => {
     );
     expect(fallback.signals).toContain('short_message');
   });
+
+  it('keeps image requests out of the free text-only tier even when Jev says simple', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const systemOne = vi.fn(async () => ({
+      intent: { choice: 'vision', confidence: 0.95 },
+      complexity: { choice: '0', confidence: 0.95 },
+      needs_clarification: { noul: 0 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const result = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'redacted' } }] }],
+      systemOne,
+    );
+    expect(result.level).toBe('complex');
+    expect(result.signals).toContain('has_image');
+  });
 });
 
 // --------------------------------------------------------------------------

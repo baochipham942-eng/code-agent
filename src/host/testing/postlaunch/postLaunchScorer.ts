@@ -281,6 +281,10 @@ export async function runPostLaunchScoring(
   const budgetLimitUsd = request.dailyBudgetUsd ?? POST_LAUNCH_DEFAULTS.dailyBudgetUsd;
   const sampleLimit = request.dailySampleLimit ?? POST_LAUNCH_DEFAULTS.dailySampleLimit;
   const dryRun = request.dryRun === true;
+  // N-EVAL-FAILURE-AUTOHARVEST：signalOnly = 永不调 judge（零成本零正文外发），
+  // 只落确定性信号 / not-judged 占位行（真 judge 版本）——候选视图照常带出，
+  // 且不挡之后的人手真评补评（FB-233：not-judged 行不算已评）。
+  const signalOnly = request.signalOnly === true;
   const day = localDay(now);
   const since = now - days * 24 * 60 * 60 * 1000;
 
@@ -352,11 +356,14 @@ export async function runPostLaunchScoring(
     // dry-run 遇到任何已有行（含真评）都跳过：表按 turn_id 主键 INSERT OR REPLACE，否则会把真评覆盖成 null（ai-review #1645）
     // 真评只认真判决：not-judged 占位行（抽样上限/预算停）与 unavailable 行不算已评，
     // 之后提高上限/补预算的跑要能补评它们，而不是被第一趟的占位行永久挡住（FB-233）。
+    // signalOnly 相反：把一切真版本已有行（含 unavailable / not-judged 占位）都当已评——
+    // INSERT OR REPLACE 会抹掉原行的失败判决、已花成本与 unavailable 证据
+    // （ai-review PR#2024 R2 Important 2）；自动扫描只补「还没有行」的轮。
     const alreadyScored = getScoredTurnIds(
       deps.db,
       scorable.map((turn) => turn.turnId),
       dryRun ? [DRY_RUN_JUDGE_VERSION, POST_LAUNCH_JUDGE_VERSION] : [POST_LAUNCH_JUDGE_VERSION],
-      { includeUnjudged: dryRun === true },
+      { includeUnjudged: dryRun === true || signalOnly },
     );
 
     for (const turn of scorable) {
@@ -379,21 +386,26 @@ export async function runPostLaunchScoring(
       });
 
       const hasSignal = signals.length > 0;
+      // signalOnly 扫描只落信号命中的低分轮：无信号的正常轮一行都不写、也不计数——
+      // 否则 not-judged 占位行会混进上线后报告分母与维度通过率，并产生不该上传的
+      // 遥测行（ai-review PR#2024 Important 1）。
+      if (signalOnly && !hasSignal) continue;
       // 预算给下一次调用留余量：判据是「已花 + 这次要花的估算 ≤ 上限」，
       // 不是「已花 < 上限」——后者总会让最后一次调用把上限冲破（K1 实测超支一次调用）。
       const carriedUserPrompt = findCarriedUserPrompt(turn, sessionTurns);
-      const judgePrompt = dryRun ? '' : buildPostLaunchJudgePrompt(turn.turn, signals, carriedUserPrompt);
-      const jevUsd = !dryRun && prescreen
+      const judgePrompt = dryRun || signalOnly ? '' : buildPostLaunchJudgePrompt(turn.turn, signals, carriedUserPrompt);
+      const jevUsd = !dryRun && !signalOnly && prescreen
         ? estimatePostLaunchPrescreenUsd(turn.turn, signals, carriedUserPrompt)
         : 0;
-      const nextCallUsd = dryRun ? 0 : (prescreen ? jevUsd : deps.estimateJudgeCostUsd(judgePrompt).usd);
+      const nextCallUsd = dryRun || signalOnly ? 0 : (prescreen ? jevUsd : deps.estimateJudgeCostUsd(judgePrompt).usd);
       const budgetLeft = spentUsd + nextCallUsd <= budgetLimitUsd;
       const sampleLeft = sampledToday < sampleLimit;
       // 信号命中的轮全评；其余按日抽样。预算不够下一次调用就当天停评，只记信号。
       // Jev 初筛装配时无信号轮也全量走 Jev（便宜到可以全量评，N-JEV-EVAL-JUDGE 母单验收④）——
       // dailySampleLimit 只约束「升级到生成式」的条数，不约束 Jev 初筛本身（见 canEscalate 与落库计数）。
-      const shouldJudge = !dryRun && budgetLeft && (hasSignal || sampleLeft || prescreen !== undefined);
-      if (!dryRun && !budgetLeft) result.budgetStopped = true;
+      // N-EVAL-FAILURE-AUTOHARVEST：signalOnly 永不调 judge（含 Jev 初筛），上面两条预算语义不动。
+      const shouldJudge = !dryRun && !signalOnly && budgetLeft && (hasSignal || sampleLeft || prescreen !== undefined);
+      if (!dryRun && !signalOnly && !budgetLeft) result.budgetStopped = true;
 
       let dims: PostLaunchDims = mapDeterministicDims(signals);
       let reasoning = hasSignal ? signals.map((signal) => signal.detail ?? signal.kind).join('；') : '';

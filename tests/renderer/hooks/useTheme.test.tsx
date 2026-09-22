@@ -172,3 +172,32 @@ describe('系统主题变化监听', () => {
     expect(matchMediaListeners.length).toBe(0);
   });
 });
+
+describe('挂载回写（N-SETTINGS-THEME-LEAK）', () => {
+  it('第二个实例挂载时 DOM 已是目标态则不重复改写（幂等）', () => {
+    localStorage.setItem('code-agent-theme', 'dark');
+    renderHook(() => useTheme());
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+
+    const setAttributeSpy = vi.spyOn(document.documentElement, 'setAttribute');
+    const classListAddSpy = vi.spyOn(document.documentElement.classList, 'add');
+    // 模拟外观分页挂载：第二个实例读取同一份存储主题
+    renderHook(() => useTheme());
+    expect(setAttributeSpy).not.toHaveBeenCalled();
+    expect(classListAddSpy).not.toHaveBeenCalled();
+  });
+
+  // 产品合同钉死：data-theme 的真源是 localStorage 快照（index.html bootstrap 同源），
+  // 只注入 DOM 不改 localStorage 的写法（旧巡检配方）会在下一个实例挂载时被回写覆盖。
+  // 巡检/测试切主题必须 localStorage + data-theme + class 三件套一起写
+  // （先例：tests/e2e/visual-shotbase.spec.ts）。
+  it('仅注入 DOM 不改 localStorage 时，挂载会把存储主题回写覆盖注入值', () => {
+    localStorage.setItem('code-agent-theme', 'light');
+    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.classList.add('dark');
+    renderHook(() => useTheme());
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
+});

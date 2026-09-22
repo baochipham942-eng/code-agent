@@ -22,7 +22,7 @@ export interface Toast {
 
 interface ToastStore {
   toasts: Toast[];
-  addToast: (type: ToastType, message: string, duration?: number, action?: ToastAction) => void;
+  addToast: (type: ToastType, message: string, duration?: number, action?: ToastAction) => string;
   removeToast: (id: string) => void;
 }
 
@@ -68,12 +68,15 @@ export const useToastStore = create<ToastStore>((set) => ({
     set((state) => ({
       toasts: [...state.toasts, { id, type, message: dedupeRepeatedListItems(message), duration, action }],
     }));
-    // Auto-remove after duration
-    setTimeout(() => {
-      set((state) => ({
-        toasts: state.toasts.filter((t) => t.id !== id),
-      }));
-    }, duration);
+    // duration <= 0 keeps the toast until the caller removes it.
+    if (duration > 0) {
+      setTimeout(() => {
+        set((state) => ({
+          toasts: state.toasts.filter((t) => t.id !== id),
+        }));
+      }, duration);
+    }
+    return id;
   },
   removeToast: (id) =>
     set((state) => ({
@@ -83,11 +86,18 @@ export const useToastStore = create<ToastStore>((set) => ({
 
 /** Convenience function for showing toasts (can be called from non-React code) */
 export const toast = {
-  success: (msg: string) => useToastStore.getState().addToast('success', msg),
+  success: (msg: string, duration?: number) => useToastStore.getState().addToast('success', msg, duration),
   // action 可选：信任门这类「原地可修」的失败给一个动作按钮，别让用户跑到别处去解决
   error: (msg: string, action?: ToastAction, duration = 6000) =>
     useToastStore.getState().addToast('error', msg, duration, action),
-  info: (msg: string) => useToastStore.getState().addToast('info', msg),
+  info: (msg: string, duration?: number) => useToastStore.getState().addToast('info', msg, duration),
   warning: (msg: string, action?: ToastAction, duration = 5000) =>
     useToastStore.getState().addToast('warning', msg, duration, action),
+  /** Typed entry used by the old uiStore.showToast call shape. Renders here, not in uiStore. */
+  show: (type: ToastType, message: string, duration = 5000): string => {
+    if (type === 'error') return toast.error(message, undefined, duration);
+    if (type === 'warning') return toast.warning(message, undefined, duration);
+    if (type === 'info') return toast.info(message, duration);
+    return toast.success(message, duration);
+  },
 };

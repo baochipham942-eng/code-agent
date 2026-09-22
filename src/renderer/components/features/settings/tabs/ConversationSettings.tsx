@@ -33,7 +33,6 @@ const DEFAULT_COMPRESSION_STATE: ContextCompressionChannelState = {
     warningThreshold: 0.75,
     criticalThreshold: 0.85,
     preserveRecentCount: 10,
-    triggerTokens: 100000,
     compactProvider: 'moonshot',
     compactModel: 'kimi-k2.5',
     auditEnabled: true,
@@ -280,11 +279,27 @@ export const ConversationSettings: React.FC = () => {
                         type="number"
                         min={16}
                         max={1000}
-                        value={Math.round((compressionState.config.triggerTokens ?? 100000) / 1000)}
-                        onChange={(event) => updateCompression({ triggerTokens: Number(event.target.value) * 1000 })}
+                        value={compressionState.config.triggerTokens != null
+                          ? Math.round(compressionState.config.triggerTokens / 1000)
+                          : ''}
+                        placeholder={conversationText.details.triggerTokensAuto}
+                        onChange={(event) => {
+                          const raw = event.target.value.trim();
+                          if (!raw) {
+                            void updateCompression({ triggerTokensExplicit: false });
+                            return;
+                          }
+                          const tokens = Number(raw) * 1000;
+                          if (!Number.isFinite(tokens)) return;
+                          void updateCompression({ triggerTokens: tokens, triggerTokensExplicit: true });
+                        }}
                         className="w-20 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-hidden focus:border-zinc-500"
                       />
-                      <span className="text-xs text-zinc-500">K tokens</span>
+                      <span className="text-xs text-zinc-500">
+                        {compressionState.config.triggerTokens != null
+                          ? 'K tokens'
+                          : conversationText.details.triggerTokensAuto}
+                      </span>
                     </div>
                   </label>
 

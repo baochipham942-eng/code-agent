@@ -28,6 +28,7 @@ import type { ContextInterventionSnapshot } from '../../shared/contract/contextV
 import { getProtectedMessageIds } from './contextInterventionHelpers';
 import { createLogger } from '../services/infra/logger';
 import { applyJevCompaction, isJevCompactionEnabled, type JevCompactionResult } from './jevCompaction';
+import { PIPELINE_AUTOCOMPACT_OCCUPANCY } from './compactionOccupancy';
 
 const logger = createLogger('CompressionPipeline');
 
@@ -89,12 +90,14 @@ export interface PipelineResult {
   jevCompaction?: JevCompactionResult;
 }
 
-// Token usage thresholds (as fraction of maxTokens)
+// Fractions of projected maxTokens. contextCollapse (0.75) is the L4 projection
+// layer, not the settings warning slider. autocompact is the forced signal;
+// the settings criticalThreshold slider is not read here.
 const THRESHOLDS = {
   snip: 0.50,
   microcompact: 0.60,
   contextCollapse: 0.75,
-  autocompact: 0.85,
+  autocompact: PIPELINE_AUTOCOMPACT_OCCUPANCY,
 } as const;
 
 /**

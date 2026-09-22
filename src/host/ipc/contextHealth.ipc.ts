@@ -28,6 +28,7 @@ import { getConfigService, getSessionManager } from '../services';
 import { getDatabase } from '../services/core/databaseService';
 import { getSessionSkillService } from '../services/skills/sessionSkillService';
 import { DEFAULT_MODEL, DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
+import { storedTriggerTokens } from '../context/triggerTokens';
 import type { ContextHealthState } from '../../shared/contract/contextHealth';
 import type { Message } from '../../shared/contract';
 import type { ModelConfig } from '../../shared/contract/model';
@@ -52,7 +53,6 @@ const DEFAULT_CONTEXT_COMPRESSION_CONFIG: ContextCompressionConfig = {
   warningThreshold: 0.75,
   criticalThreshold: 0.85,
   preserveRecentCount: 10,
-  triggerTokens: 100000,
   compactProvider: 'moonshot',
   compactModel: DEFAULT_MODELS.compact,
   auditEnabled: true,
@@ -81,15 +81,17 @@ function normalizeCompressionConfig(config?: Partial<ContextCompressionConfig>):
     warningThreshold,
     clampRatio(merged.criticalThreshold, DEFAULT_CONTEXT_COMPRESSION_CONFIG.criticalThreshold),
   );
-  const triggerTokens = merged.triggerTokens === undefined
+  const storedTrigger = storedTriggerTokens(merged);
+  const triggerTokens = storedTrigger === undefined
     ? undefined
-    : clampInt(merged.triggerTokens, DEFAULT_CONTEXT_COMPRESSION_CONFIG.triggerTokens ?? 100000, 16000, 1000000);
+    : clampInt(storedTrigger, storedTrigger, 16000, 1000000);
 
   return {
     enabled: merged.enabled !== false,
     warningThreshold,
     criticalThreshold,
     preserveRecentCount: clampInt(merged.preserveRecentCount, DEFAULT_CONTEXT_COMPRESSION_CONFIG.preserveRecentCount, 2, 50),
+    triggerTokensExplicit: triggerTokens !== undefined,
     ...(triggerTokens ? { triggerTokens } : {}),
     compactProvider: typeof merged.compactProvider === 'string' && merged.compactProvider.trim()
       ? merged.compactProvider.trim()
@@ -152,10 +154,14 @@ function getCompressionChannelState(config = getPersistedCompressionConfig()): C
 }
 
 async function updateCompressionConfig(patch: ContextCompressionConfigPatch): Promise<ContextCompressionChannelState> {
-  const nextConfig = normalizeCompressionConfig({
+  const nextInput: ContextCompressionConfigPatch = {
     ...getPersistedCompressionConfig(),
     ...patch,
-  });
+  };
+  if (Object.prototype.hasOwnProperty.call(patch, 'triggerTokens') && patch.triggerTokensExplicit === undefined) {
+    nextInput.triggerTokensExplicit = true;
+  }
+  const nextConfig = normalizeCompressionConfig(nextInput);
   await getConfigService().updateSettings(toAppSettingsPatch(nextConfig));
   return getCompressionChannelState(nextConfig);
 }

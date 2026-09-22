@@ -694,6 +694,11 @@ describe('resolveContextHealthForSession', () => {
     const initial = await getHandler!({}) as any;
     expect(initial.config.preserveRecentCount).toBe(10);
     expect(initial.features.manifest).toBe('enabled');
+    // The fixture's 100000 is the historical default, so it is not a live trigger.
+    expect(initial.config.triggerTokens).toBeUndefined();
+    expect(initial.config.triggerTokensExplicit).toBe(false);
+    expect(initial.config.criticalThreshold).toBe(0.85);
+    expect(initial.config.warningThreshold).toBe(0.75);
 
     const updated = await setHandler!({}, {
       enabled: false,
@@ -719,5 +724,25 @@ describe('resolveContextHealthForSession', () => {
         auditEnabled: false,
       }),
     });
+  });
+
+  it('keeps a user-saved trigger and can persist the legacy 100000 only when marked explicit', async () => {
+    registerContextHealthHandlers({
+      getAppService: () => null,
+      getTaskManager: () => null,
+      getSystemPromptForSession: () => '',
+    });
+    const setHandler = compactMocks.handlers.get('context:compression-config:set');
+    const custom = await setHandler!({}, { triggerTokens: 80_000 }) as any;
+    expect(custom.config.triggerTokens).toBe(80_000);
+    expect(custom.config.triggerTokensExplicit).toBe(true);
+
+    const legacy = await setHandler!({}, { triggerTokens: 100_000, triggerTokensExplicit: true }) as any;
+    expect(legacy.config.triggerTokens).toBe(100_000);
+    expect(legacy.config.triggerTokensExplicit).toBe(true);
+
+    const cleared = await setHandler!({}, { triggerTokensExplicit: false }) as any;
+    expect(cleared.config.triggerTokens).toBeUndefined();
+    expect(cleared.config.triggerTokensExplicit).toBe(false);
   });
 });

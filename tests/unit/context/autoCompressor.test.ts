@@ -2,14 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { AutoContextCompressor } from '../../../src/host/context/autoCompressor';
 
 describe('AutoContextCompressor token threshold', () => {
-  it('triggers at or above triggerTokens', () => {
+  it('compares with >= when an absolute override is set', () => {
+    // 100000 here is an explicit override fixture, not the default trigger.
     const compressor = new AutoContextCompressor({ triggerTokens: 100000 });
     expect(compressor.shouldTriggerByTokens(100000)).toBe(true);
     expect(compressor.shouldTriggerByTokens(150000)).toBe(true);
     expect(compressor.shouldTriggerByTokens(99999)).toBe(false);
   });
 
-  it('stays disabled without triggerTokens', () => {
+  it('does not invent a fixed trigger without an override or a window', () => {
     const compressor = new AutoContextCompressor({ triggerTokens: undefined });
     expect(compressor.shouldTriggerByTokens(10_000_000)).toBe(false);
   });
@@ -28,7 +29,7 @@ describe('AutoContextCompressor compaction accounting', () => {
     });
   });
 
-  it('does not wrap up without a complete budget configuration', () => {
+  it('does not wrap up without a budget, or without a trigger when no window is given', () => {
     const noBudget = new AutoContextCompressor({ triggerTokens: 100000 });
     expect(noBudget.shouldWrapUp()).toBe(false);
     const noTrigger = new AutoContextCompressor({
@@ -38,7 +39,8 @@ describe('AutoContextCompressor compaction accounting', () => {
     expect(noTrigger.shouldWrapUp()).toBe(false);
   });
 
-  it('wraps up when compaction count reaches the total token budget', () => {
+  it('wraps up when compaction count times the explicit trigger reaches the budget', () => {
+    // Explicit 100000 override: three compactions × 100000 cross a 300000 budget.
     const compressor = new AutoContextCompressor({
       triggerTokens: 100000,
       totalTokenBudget: 300000,

@@ -128,8 +128,13 @@ export interface ContextCompressionConfig {
   criticalThreshold: number;
   /** 压缩后保留最近消息数 */
   preserveRecentCount: number;
-  /** 绝对 token 数触发阈值 */
+  /**
+   * 绝对 token 覆盖。缺省时按模型窗口派生。
+   * 历史默认 100000 在未标 explicit 时不算用户选择。
+   */
   triggerTokens?: number;
+  /** true：triggerTokens 是用户写入的绝对覆盖。false：忽略残留数字，改走窗口派生。 */
+  triggerTokensExplicit?: boolean;
   /** 压缩摘要 provider */
   compactProvider?: string;
   /** 压缩摘要模型 */

@@ -368,6 +368,7 @@ export const enSettingsCore = {
         warningThreshold: 'Warn at',
         criticalThreshold: 'Clean at',
         triggerTokens: 'Forced cleanup point',
+        triggerTokensAuto: 'Blank follows the model window',
         auditPrefix: 'Cleanup audit ',
       },
       info: 'Context cleanup is session-level configuration. Most people set it once and do not need to adjust it again. The actual summary model is configured in the General model tab, and model routing can be switched anytime in the composer capability menu.',

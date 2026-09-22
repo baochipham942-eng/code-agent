@@ -368,6 +368,7 @@ export const zhSettingsCore = {
         warningThreshold: '开始提醒',
         criticalThreshold: '主动整理',
         triggerTokens: '强制整理点',
+        triggerTokensAuto: '留空则随模型窗口',
         auditPrefix: '整理留痕 ',
       },
       info: '上下文整理是会话级配置，多数人配一次后无需再调。摘要模型的真正配置在「通用模型」tab，模型路由在对话输入框的能力菜单里随时切换。',

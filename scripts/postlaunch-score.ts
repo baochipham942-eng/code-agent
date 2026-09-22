@@ -130,7 +130,7 @@ async function main(): Promise<void> {
   // （后者是那一周落过分数的轮数）。措辞必须自带这个限定，别让两处同名不同义（K1 留给刀 2 第 6 条）。
   console.log(result.dryRun
     ? `dry-run 未调 judge：本可全评的信号轮 ${result.signalTurns}、抽样轮 ${result.sampledTurns}；只记信号 ${result.signalOnlyTurns}；已有分数跳过 ${result.skippedTurns}`
-    : `本次调了 judge：信号轮 ${result.signalTurns} / 抽样轮 ${result.sampledTurns}；只记信号（没调 judge）${result.signalOnlyTurns}；已有分数跳过 ${result.skippedTurns}`);
+    : `本次调了 judge：信号轮 ${result.signalTurns} / 抽样轮 ${result.sampledTurns}；只记信号（没调 judge）${result.signalOnlyTurns}；Jev 弃权待补评 ${result.sampleDeferredTurns}；已有分数跳过 ${result.skippedTurns}`);
   // 锁 / 0 轮两种提示互斥，判据在 scripts/lib/postLaunchCliHints.ts（有测试守着）。
   const hint = resolveZeroTurnHint(result);
   if (hint) console.log(hint);

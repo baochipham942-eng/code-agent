@@ -39,6 +39,7 @@ import { getAdaptiveRouter, withClarificationHint } from '../../../model/adaptiv
 import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
+import { cacheOptionsForMaxModeCall, maxModeBudgetHeadroomOk } from './maxModePolicy';
 import { emitOverflowRecoverySignal } from './compressionSignal';
 import {
   seedArtifactRepairGuardFromContext,
@@ -316,34 +317,6 @@ function assertInputTokenBudget(
  * （streamHandler 累计 ctx.stats.totalInputTokens/totalOutputTokens、line ~820 的赢家估算）
  * 只见到赢家的 response.usage。
  */
-/**
- * 预算头寸闸（Codex R1-H3）：预算已到 WARNING/BLOCKED 时不做 N 倍并发扇出——
- * budgetService 的事后记账拦不住一次 step 内并发花出去的 N+1 笔调用，
- * 临界状态下直接退回正常单次调用（行为与开关关一致）。
- */
-function maxModeBudgetHeadroomOk(ctx: ContextAssemblyCtx): boolean {
-  try {
-    const { alertLevel } = getBudgetService(ctx.runtime.budgetScope).checkBudget();
-    const ok = alertLevel !== BudgetAlertLevel.WARNING && alertLevel !== BudgetAlertLevel.BLOCKED;
-    if (!ok) {
-      logger.warn(`[MaxMode] budget alertLevel=${alertLevel}; skipping best-of-N fanout for this step`);
-    }
-    return ok;
-  } catch {
-    // 测试/CLI 环境无 budget 服务 → 不拦
-    return true;
-  }
-}
-
-/** judge 旁路显式 cacheRetention none；候选调用保持原 options。cacheScopeId 只记录。 */
-function cacheOptionsForMaxModeCall(
-  options: InferenceOptions,
-  kind?: 'candidate' | 'judge',
-): InferenceOptions {
-  if (kind !== 'judge') return options;
-  return { ...options, cacheRetention: 'none', cacheScopeId: 'judge' };
-}
-
 async function runMaxModeInference(
   ctx: ContextAssemblyCtx,
   messages: ModelMessage[],

@@ -85,6 +85,7 @@ import { markDistilledSkillTurnSignal } from '../../services/skills/distillSigna
 import { emitGoalAbort } from './goalAbort';
 import { releaseDoomLoopHandbackForSteer, settleDoomLoopHandback } from './doomLoopHandback';
 import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
+import { recordInferenceTrace } from './inferenceCacheTrace';
 
 
 const logger = createLogger('AgentLoop');
@@ -559,22 +560,7 @@ export class ConversationRuntime {
 
         const cacheHit = this.messageProcessor.recordModelCallTelemetry(response, iterations, inferenceDuration);
 
-        this.ctx.turnTrace.record('inference', {
-          responseType: response.type,
-          durationMs: inferenceDuration,
-          inputTokens: response.usage?.inputTokens ?? 0,
-          outputTokens: response.usage?.outputTokens ?? 0,
-          ...(response.usage?.cacheReadTokens !== undefined
-            ? { cacheReadTokens: response.usage.cacheReadTokens }
-            : {}),
-          ...(cacheHit ? {
-            cacheHitEffective: cacheHit.cacheHitEffective,
-            cacheHitIdle: cacheHit.cacheHitIdle,
-            inferenceCacheHitRate: cacheHit.inferenceCacheHitRate,
-          } : {}),
-          finishReason: response.finishReason ?? null,
-          truncated: response.truncated ?? false,
-        });
+        recordInferenceTrace(this.ctx.turnTrace, response, inferenceDuration, cacheHit);
 
         // Debug snapshot: 落一条 turn 快照（给设置页 / debug session 用）
         // 在 post-inference 写入，token 字段反映本轮实际消耗（直接取 response.usage）

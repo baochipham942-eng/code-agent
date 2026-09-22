@@ -41,7 +41,7 @@ export function clearStreamProgress(sessionId: string): void {
 const HINT_MS = 90_000;
 const ESCALATE_MS = 5 * 60_000;
 
-export class StallObserver {
+class StallObserver {
   private lastProgressAt: number;
   private progressKey = '';
   private level: 'none' | 'hint' | 'escalated' = 'none';

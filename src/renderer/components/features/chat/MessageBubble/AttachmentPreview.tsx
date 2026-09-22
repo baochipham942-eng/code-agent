@@ -299,6 +299,11 @@ const AttachmentItem: React.FC<{
         },
         result.attachment,
       ));
+      if (result.success) {
+        // 清掉破图兜底并换 src 重新拉取——否则恢复后的图片仍被「无法预览」占位挡住。
+        setImageLoadFailed(false);
+        setPreviewRetryNonce((nonce) => nonce + 1);
+      }
     } catch (error) {
       setDisplayAttachment((current) => ({
         ...current,

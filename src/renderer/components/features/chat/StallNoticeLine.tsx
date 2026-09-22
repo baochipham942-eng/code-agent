@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ipcService } from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -14,10 +14,13 @@ interface StallNotice {
 export const StallNoticeLine: React.FC<{ hidden?: boolean }> = ({ hidden = false }) => {
   const sessionId = useSessionStore((state) => state.currentSessionId);
   const [notice, setNotice] = useState<StallNotice | null>(null);
+  const hiddenRef = useRef(hidden);
+  hiddenRef.current = hidden;
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.STALL_NOTICE, (payload: StallNotice) => {
       if (payload.sessionId && payload.sessionId !== useSessionStore.getState().currentSessionId) return;
+      if (hiddenRef.current && !payload.clear) return;
       if (payload.clear || !payload.level) {
         setNotice(null);
         return;

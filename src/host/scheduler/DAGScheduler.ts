@@ -384,6 +384,11 @@ export class DAGScheduler extends EventEmitter {
     // 标记任务开始
     dag.startTask(task.id);
 
+    // agent 任务建任务级 abort 控制器：withTimeout 只赛跑不取消，超时后内层子代理
+    // 收不到信号会活过 failTask 继续当幽灵烧预算。shell 自带 execAsync timeout kill，
+    // checkpoint 无外呼，都不建（每次执行各建各的，重试天然拿到新控制器）。
+    const taskAbort = task.type === 'agent' ? new AbortController() : undefined;
+
     try {
       // 构建执行上下文
       const execContext: TaskExecutionContext = {
@@ -396,7 +401,7 @@ export class DAGScheduler extends EventEmitter {
       // 执行任务（withTimeout 自动清理 timer，避免 race 胜者侧 timer 长留）
       const timeout = task.timeout || this.config.defaultTimeout;
       const output: TaskOutput = await withTimeout(
-        this.executeTaskByType(task, execContext),
+        this.executeTaskByType(task, execContext, taskAbort?.signal),
         timeout,
         `Task timeout after ${timeout}ms`,
       );
@@ -416,6 +421,18 @@ export class DAGScheduler extends EventEmitter {
       const message = error instanceof Error ? error.message : 'Unknown error';
       const isTimeout = message.includes('timeout');
 
+      // 超时先掐任务级信号（内层 subagentExecutor 靠 effectiveSignal 停），再走既有
+      // failTask 记账；abort 抛错只 warn，不改变超时判定。
+      if (isTimeout && taskAbort) {
+        try {
+          taskAbort.abort('timeout');
+        } catch (abortError) {
+          logger.warn(`Task timeout abort failed: ${task.id}`, {
+            error: abortError instanceof Error ? abortError.message : String(abortError),
+          });
+        }
+      }
+
       dag.failTask(task.id, {
         message,
         retryable: !isTimeout && task.metadata.retryCount < task.metadata.maxRetries,
@@ -431,11 +448,12 @@ export class DAGScheduler extends EventEmitter {
    */
   private async executeTaskByType(
     task: DAGTask,
-    context: TaskExecutionContext
+    context: TaskExecutionContext,
+    taskAbortSignal?: AbortSignal
   ): Promise<TaskOutput> {
     switch (task.type) {
       case 'agent':
-        return this.executeAgentTask(task, context);
+        return this.executeAgentTask(task, context, taskAbortSignal);
       case 'shell':
         return this.executeShellTask(task, context);
       case 'checkpoint':
@@ -450,7 +468,8 @@ export class DAGScheduler extends EventEmitter {
    */
   private async executeAgentTask(
     task: DAGTask,
-    context: TaskExecutionContext
+    context: TaskExecutionContext,
+    taskAbortSignal?: AbortSignal
   ): Promise<TaskOutput> {
     const config = task.config as AgentTaskConfig;
     const schedContext = this.context!;
@@ -491,6 +510,12 @@ export class DAGScheduler extends EventEmitter {
       },
       context: {
         ...schedContext.executionContext,
+        // 任务级信号 = run 级 abortSignal ∥ 任务级超时控制器（超时/整个 run 取消都
+        // 同步传进内层；subagentExecutor 把 context.abortSignal 桥接成 effectiveSignal，
+        // 见 subagentExecutorCancellation.ts 的 createSubagentCancellationLifecycle）
+        abortSignal: taskAbortSignal
+          ? AbortSignal.any([schedContext.executionContext.abortSignal, taskAbortSignal])
+          : schedContext.executionContext.abortSignal,
         parentToolUseId: schedContext.executionContext.currentToolCallId,
         // DAG 平面任务图的子 agent 标 teammate（2026-07-13 拍板）：禁递归 spawn_agent
         executionTopology: 'teammate' as const,

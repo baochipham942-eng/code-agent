@@ -49,6 +49,18 @@ describe('assessContextPressure', () => {
     expect(off.action).toBe('none');
   });
 
+  it('keeps the pipeline signal firing when compression is disabled', () => {
+    // Forced gate: projected autocompact is not the 75% soft warning slider.
+    const d = assessContextPressure({
+      ...BASE,
+      pipelineAutocompactNeeded: true,
+      compressionEnabled: false,
+      usageRatio: 0.9,
+    });
+    expect(d.action).toBe('execute');
+    expect(d.trigger).toBe('pipeline-signal');
+  });
+
   it('keeps the token threshold firing even when compression is disabled', () => {
     // hard threshold is "must compact" — not gated by the enable flag
     const d = assessContextPressure({ ...BASE, tokenThresholdHit: true, compressionEnabled: false });

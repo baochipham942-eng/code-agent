@@ -61,6 +61,19 @@ describe('DoomLoopGuard L1 — 同名同参连续重复', () => {
     expect(check.level).toBe('doom-loop-abort');
   });
 
+  it('换方法后连击从 1 重数，下一次相同调用不会立刻再中止', () => {
+    const guard = new DoomLoopGuard();
+    const again = () => guard.recordStep([call('Read', { path: 'a.ts' })]);
+    again();
+    again();
+    again();
+    expect(again().level).toBe('doom-loop-abort');
+    guard.resetAfterHandback();
+    expect(again().level).toBe('none');
+    expect(again().level).toBe('none');
+    expect(again().level).toBe('doom-loop');
+  });
+
   it('resets the streak when a different call appears', () => {
     const guard = new DoomLoopGuard();
     guard.recordStep([call('Read', { path: 'a.ts' })]);

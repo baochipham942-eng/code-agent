@@ -17,6 +17,7 @@ import { useTaskStore } from '../../../stores/taskStore';
 import { toast } from '../../../hooks/useToast';
 import { buildStreamRecoveryMessage } from '../../../utils/streamRecoveryMessage';
 import { humanizeInterruptedToolAction } from '../../../utils/streamInterruptionPresentation';
+import { StallNoticeLine } from './StallNoticeLine';
 import { Button } from '../../primitives';
 import { isEditableTarget } from '../../DecisionCard';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';
@@ -283,7 +284,8 @@ export function DecisionSlot({
     if (requestSignature) setCollapsed(false);
   }, [requestSignature]);
 
-  if (decisionCount === 0) return null;
+  // 有待决卡时不挂这行。等审批或提问的时间由 host 停表，不算模型卡住。
+  if (decisionCount === 0) return <StallNoticeLine />;
 
   return (
     <section

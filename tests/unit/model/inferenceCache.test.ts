@@ -4,9 +4,16 @@
 // 完全相同的请求必须产出相同 key（保护原命中功能）。
 // ============================================================================
 
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
 import type { InferenceOptions, ModelMessage } from '../../../src/host/model/types';
+import { ClaudeProvider } from '../../../src/host/model/providers/claudeProvider';
+import { electronFetch } from '../../../src/host/model/providers/shared';
+import {
+  isObservedCacheHit,
+  noteStagnationFingerprint,
+  recordSessionCacheHit,
+} from '../../../src/host/model/cacheHitObservation';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -16,6 +23,16 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
     debug: vi.fn(),
   }),
 }));
+
+vi.mock('../../../src/host/model/providers/shared', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/host/model/providers/shared')>(
+    '../../../src/host/model/providers/shared',
+  );
+  return {
+    ...actual,
+    electronFetch: vi.fn(),
+  };
+});
 
 import { InferenceCache } from '../../../src/host/model/inferenceCache';
 
@@ -206,5 +223,128 @@ describe('InferenceCache get/set 命中', () => {
       ...baseMessages.slice(1),
     ];
     expect(cache.get(cache.computeKey(differentSystem, baseConfig, baseTools, undefined))).toBeNull();
+  });
+});
+
+const mockElectronFetch = vi.mocked(electronFetch);
+
+function cacheControlledPrefix(body: Record<string, unknown>): string | null {
+  const raw = JSON.stringify(body);
+  if (!raw.includes('cache_control')) return null;
+  return JSON.stringify({ system: body.system, tools: body.tools });
+}
+
+class PrefixSlot {
+  private stored: string | null = null;
+
+  observe(body: Record<string, unknown>): 'hit' | 'miss' | 'bypass' {
+    const prefix = cacheControlledPrefix(body);
+    if (prefix === null) return 'bypass';
+    if (this.stored === prefix) return 'hit';
+    this.stored = prefix;
+    return 'miss';
+  }
+}
+
+describe('prefix stability after side-path calls', () => {
+  const tool: ToolDefinition = {
+    name: 'read',
+    description: 'Read a file',
+    inputSchema: { type: 'object', properties: {} },
+    outputSchema: { type: 'object', properties: {} },
+    requiresPermission: false,
+    permissionLevel: 'read',
+  };
+
+  beforeEach(() => {
+    mockElectronFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => '',
+      json: async () => ({
+        content: [{ type: 'text', text: 'ok' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 20, output_tokens: 2, cache_read_input_tokens: 18 },
+      }),
+    } as never);
+  });
+
+  async function captureBody(messages: ModelMessage[], options?: InferenceOptions) {
+    mockElectronFetch.mockClear();
+    await new ClaudeProvider().inference(
+      messages,
+      [tool],
+      { provider: 'claude', model: 'claude-sonnet-4-6', apiKey: 'test-key' },
+      undefined,
+      undefined,
+      options,
+    );
+    return JSON.parse(String(mockElectronFetch.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+  }
+
+  it('hits the same cache prefix when only the user turn changes', async () => {
+    const slot = new PrefixSlot();
+    const first = await captureBody([
+      { role: 'system', content: 'You are Agent Neo. Stable prefix.' },
+      { role: 'user', content: 'turn one' },
+    ]);
+    const second = await captureBody([
+      { role: 'system', content: 'You are Agent Neo. Stable prefix.' },
+      { role: 'user', content: 'turn two' },
+    ]);
+    expect(slot.observe(first)).toBe('miss');
+    expect(slot.observe(second)).toBe('hit');
+  });
+
+  it('keeps the main-session prefix hit after a cacheRetention none side path', async () => {
+    const slot = new PrefixSlot();
+    const main = await captureBody([
+      { role: 'system', content: 'You are Agent Neo. Stable prefix.' },
+      { role: 'user', content: 'continue the task' },
+    ]);
+    const sidePath = await captureBody(
+      [{ role: 'user', content: 'Summarize a different conversation for compaction.' }],
+      { cacheRetention: 'none', cacheScopeId: 'compact-summary' },
+    );
+    const after = await captureBody([
+      { role: 'system', content: 'You are Agent Neo. Stable prefix.' },
+      { role: 'user', content: 'continue the task' },
+    ]);
+    expect(JSON.stringify(sidePath)).not.toContain('cache_control');
+    expect(slot.observe(main)).toBe('miss');
+    expect(slot.observe(sidePath)).toBe('bypass');
+    expect(slot.observe(after)).toBe('hit');
+  });
+});
+
+describe('cache hit effective / idle split', () => {
+  it('does not treat cacheRead>0 as the only hit, and an unchanged fingerprint is idle', () => {
+    expect(isObservedCacheHit({ cacheReadTokens: 0 })).toBe(false);
+    expect(isObservedCacheHit({ cacheReadTokens: 0, inferenceCacheHit: true })).toBe(true);
+    expect(isObservedCacheHit({ cacheReadTokens: 0, toolCacheHit: true })).toBe(true);
+    expect(isObservedCacheHit({ cacheReadTokens: 12 })).toBe(true);
+    const untouched = `hit-untouched-${Date.now()}`;
+    expect(recordSessionCacheHit(untouched).kind).toBe('idle');
+    const repeated = `hit-repeated-${Date.now()}`;
+    recordSessionCacheHit(repeated, 'fp-a');
+    expect(recordSessionCacheHit(repeated, 'fp-a').kind).toBe('idle');
+    expect(recordSessionCacheHit(repeated, 'fp-b').kind).toBe('effective');
+  });
+
+  it('counts a tool-cache replay with the same fingerprint as idle and reads hitRate', () => {
+    const sessionId = `hit-${Date.now()}-same`;
+    noteStagnationFingerprint(sessionId, 'fp-same');
+    const first = recordSessionCacheHit(sessionId, 'fp-same');
+    const second = recordSessionCacheHit(sessionId, 'fp-same');
+    expect(first.kind).toBe('effective');
+    expect(second.kind).toBe('idle');
+    expect(second.inferenceHitRate).toMatch(/%$/);
+  });
+
+  it('counts a later hit as effective after the stagnation fingerprint changes', () => {
+    const sessionId = `hit-${Date.now()}-change`;
+    recordSessionCacheHit(sessionId, 'fp-1');
+    noteStagnationFingerprint(sessionId, 'fp-2');
+    expect(recordSessionCacheHit(sessionId).kind).toBe('effective');
   });
 });

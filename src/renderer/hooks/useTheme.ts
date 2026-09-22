@@ -53,8 +53,33 @@ function getStoredTheme(): Theme {
 /**
  * Apply theme to document
  */
+const THEME_CLASSES: readonly string[] = [
+  'light',
+  'dark',
+  'high-contrast-light',
+  'high-contrast-dark',
+];
+
+function desiredThemeClasses(resolvedTheme: ResolvedTheme): readonly string[] {
+  const classes = [resolvedTheme];
+  if (resolvedTheme === 'high-contrast-dark') classes.push('dark');
+  if (resolvedTheme === 'high-contrast-light') classes.push('light');
+  return classes;
+}
+
+function isThemeAlreadyApplied(resolvedTheme: ResolvedTheme): boolean {
+  const root = document.documentElement;
+  if (root.getAttribute('data-theme') !== resolvedTheme) return false;
+  const desired = desiredThemeClasses(resolvedTheme);
+  return THEME_CLASSES.every((cls) => root.classList.contains(cls) === desired.includes(cls));
+}
+
 function applyTheme(resolvedTheme: ResolvedTheme): void {
   const root = document.documentElement;
+
+  // 幂等：DOM 已是目标态直接返回。第二个 useTheme 实例（外观分页）挂载时的回写
+  // 不再触发 theme-switching 双帧闪烁与多余 DOM 突变（N-SETTINGS-THEME-LEAK）。
+  if (isThemeAlreadyApplied(resolvedTheme)) return;
 
   // Add class to prevent transition flash
   document.body.classList.add('theme-switching');

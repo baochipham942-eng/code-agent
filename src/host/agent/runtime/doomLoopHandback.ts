@@ -8,9 +8,9 @@ import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
 import type { RuntimeContext } from './runtimeContext';
 
 /** 无人值守卡死直接终态的原因码。cron 收尾把它写进执行记录。 */
-export const DOOM_LOOP_HANDBACK_STOP = 'DOOM_LOOP_HANDBACK_STOP';
+const DOOM_LOOP_HANDBACK_STOP = 'DOOM_LOOP_HANDBACK_STOP';
 
-export const DOOM_LOOP_HANDBACK_RETRY_NUDGE = [
+const DOOM_LOOP_HANDBACK_RETRY_NUDGE = [
   '<doom-loop-guard>',
   'The user asked you to try a different method instead of stopping.',
   'Do not repeat the same tool call with the same arguments.',
@@ -31,13 +31,13 @@ export function answerDoomLoopHandback(sessionId: string, choice: DoomLoopHandba
   return true;
 }
 
-export type DoomLoopHandbackWait = DoomLoopHandbackChoice | 'timeout' | 'stop' | 'steered';
+type DoomLoopHandbackWait = DoomLoopHandbackChoice | 'timeout' | 'stop' | 'steered';
 
 /**
  * 交互会话等用户点卡片。取消/打断立刻停；超时也停。
  * 同一会话上的新等待不会被上一轮的计时器清掉。
  */
-export function waitForDoomLoopHandback(
+function waitForDoomLoopHandback(
   sessionId: string,
   timeoutMs: number = INTERACTION_TIMEOUTS.USER_QUESTION,
   signal?: AbortSignal,
@@ -72,7 +72,7 @@ export function releaseDoomLoopHandbackForSteer(sessionId: string): boolean {
 }
 
 /** 无人值守不弹卡，直接记下终态原因码。 */
-export function stopUnattendedDoomLoop(sessionId: string): void {
+function stopUnattendedDoomLoop(sessionId: string): void {
   noteUnattendedRunTerminal(sessionId, DOOM_LOOP_HANDBACK_STOP);
 }
 
@@ -92,6 +92,7 @@ export async function settleDoomLoopHandback(
   guard: DoomLoopGuard,
   iterations: number,
   injectNudge: (text: string) => void,
+  timeoutMs: number = INTERACTION_TIMEOUTS.USER_QUESTION,
 ): Promise<'retry' | 'stop'> {
   if (ctx.unattendedTurn === true) {
     stopUnattendedDoomLoop(ctx.sessionId);
@@ -106,7 +107,7 @@ export async function settleDoomLoopHandback(
   ctx.onEvent({ type: 'doom_loop_handback', data: { sessionId: ctx.sessionId } });
   const choice = await waitForDoomLoopHandback(
     ctx.sessionId,
-    INTERACTION_TIMEOUTS.USER_QUESTION,
+    timeoutMs,
     ctx.control.runAbortController?.signal,
   );
   if (choice === 'retry' || choice === 'steered') {

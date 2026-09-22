@@ -9,6 +9,11 @@ export type SlashCandidateKind = 'command' | 'prompt' | 'agent' | 'skill' | 'con
 
 export type SlashCandidateGroup = 'suggested' | 'command' | 'prompt' | 'agent' | 'skill' | 'connector' | 'mcp';
 
+/** 空查询上截只留这些产品能力。壳层命令留给 ⌘K，不在这里造新命令。 */
+export const EMPTY_QUERY_BUILTIN_IDS = new Set([
+  'goal', 'schedule', 'loop', 'workflow', 'doctor', 'compact', 'model',
+]);
+
 export type SlashCandidateAction =
   | 'execute'
   | 'prefill-leading-command'
@@ -79,16 +84,12 @@ export interface SlashPickerCandidate {
   skillSelected?: boolean;
   skillRecommendationAction?: RecommendedSkillCandidateInput['action'];
   skillRecommendationRepoId?: string;
+  /** 用户关过这个技能。菜单里看得见，但不能选进本轮。 */
+  skillDisabled?: boolean;
   connectorId?: string;
   connectorConnected?: boolean;
   mcpServerId?: string;
   mcpConnected?: boolean;
-}
-
-export interface SlashPickerCandidateGroup<T extends SlashPickerCandidate = SlashPickerCandidate> {
-  group: SlashCandidateGroup;
-  label: string;
-  items: T[];
 }
 
 /**
@@ -289,24 +290,28 @@ export function createSkillCandidates(input: {
   const byName = new Map<string, SlashPickerCandidate>();
 
   for (const skill of input.availableSkills) {
-    if (skill.enabled === false) continue;
+    if (skill.userInvocable === false) continue;
     const mounted = mountedByName.get(skill.name);
     const recommendation = recommendations.get(skill.name);
+    const category = skill.metadata?.category || skill.source;
+    const disabled = skill.enabled === false;
     byName.set(skill.name, {
       id: `skill:${skill.name}`,
       kind: 'skill',
-      group: recommendation ? 'suggested' : 'skill',
+      group: 'skill',
       actionKind: 'select-skill',
-      label: recommendation?.displayName || skill.name,
+      label: `/${skill.name}`,
+      sublabel: category,
       description: skill.description || 'Skill',
-      slashText: `/skills:${skill.name}`,
+      skillDisabled: disabled,
+      slashText: `/${skill.name}`,
       effectLabel: mounted
         ? (labels?.selectForTurn ?? zh.slashCommands.picker.selectForTurn)
         : (labels?.mountAndSelect ?? zh.slashCommands.picker.mountAndSelect),
       source: skill.source,
       suggested: Boolean(recommendation),
-      emptyQueryVisible: Boolean(recommendation || mounted || selected.has(skill.name)),
-      emptyQueryRank: recommendation ? 15 : mounted ? 40 : 50,
+      emptyQueryVisible: true,
+      emptyQueryRank: mounted || selected.has(skill.name) ? 40 : 55,
       skillName: skill.name,
       skillLibraryId: mounted?.libraryId || recommendation?.libraryId || deriveSkillLibraryId(skill),
       skillMounted: Boolean(mounted),
@@ -319,7 +324,7 @@ export function createSkillCandidates(input: {
         recommendation?.reason,
         skill.description,
         skill.source,
-        `/skills:${skill.name}`,
+        `/${skill.name}`,
       ]),
     });
   }
@@ -330,11 +335,12 @@ export function createSkillCandidates(input: {
     byName.set(mount.skillName, {
       id: `skill:${mount.skillName}`,
       kind: 'skill',
-      group: recommendation ? 'suggested' : 'skill',
+      group: 'skill',
       actionKind: 'select-skill',
-      label: recommendation?.displayName || mount.skillName,
+      label: `/${mount.skillName}`,
+      sublabel: mount.libraryId,
       description: `${labels?.mountedSkillPrefix ?? zh.slashCommands.picker.mountedSkillPrefix} (${mount.libraryId})`,
-      slashText: `/skills:${mount.skillName}`,
+      slashText: `/${mount.skillName}`,
       effectLabel: labels?.selectForTurn ?? zh.slashCommands.picker.selectForTurn,
       source: mount.source,
       suggested: Boolean(recommendation),
@@ -352,7 +358,7 @@ export function createSkillCandidates(input: {
         recommendation?.reason,
         mount.libraryId,
         mount.source,
-        `/skills:${mount.skillName}`,
+        `/${mount.skillName}`,
       ]),
     });
   }
@@ -362,17 +368,17 @@ export function createSkillCandidates(input: {
     byName.set(recommendation.skillName, {
       id: `skill:${recommendation.skillName}`,
       kind: 'skill',
-      group: 'suggested',
+      group: 'skill',
       actionKind: 'select-skill',
-      label: recommendation.displayName || recommendation.skillName,
+      label: `/${recommendation.skillName}`,
       description: recommendation.reason,
-      slashText: `/skills:${recommendation.skillName}`,
+      slashText: `/${recommendation.skillName}`,
       effectLabel: recommendation.action === 'install'
         ? (labels?.installAndSelect ?? zh.slashCommands.picker.installAndSelect)
         : (labels?.mountAndSelect ?? zh.slashCommands.picker.mountAndSelect),
       source: recommendation.repoId,
       suggested: true,
-      emptyQueryVisible: true,
+      emptyQueryVisible: false,
       emptyQueryRank: 15,
       skillName: recommendation.skillName,
       skillLibraryId: recommendation.libraryId,
@@ -386,7 +392,7 @@ export function createSkillCandidates(input: {
         recommendation.reason,
         recommendation.libraryId,
         recommendation.repoId,
-        `/skills:${recommendation.skillName}`,
+        `/${recommendation.skillName}`,
       ]),
     });
   }
@@ -421,7 +427,7 @@ export function createWorkbenchCapabilityCandidates(
           : (labels?.connectorNeedsConnection ?? zh.slashCommands.picker.connectorNeedsConnection),
         source: capability.readiness,
         suggested: isSuggested,
-        emptyQueryVisible: isSuggested || capability.selected,
+        emptyQueryVisible: false,
         emptyQueryRank: isSuggested ? 20 : 60,
         connectorId: capability.id,
         connectorConnected: capability.connected,
@@ -450,7 +456,7 @@ export function createWorkbenchCapabilityCandidates(
         : (labels?.mcpNeedsConnection ?? zh.slashCommands.picker.mcpNeedsConnection),
       source: capability.transport,
       suggested: isSuggested,
-      emptyQueryVisible: capability.selected,
+      emptyQueryVisible: false,
       emptyQueryRank: 70,
       mcpServerId: capability.id,
       mcpConnected: capability.status === 'connected' || capability.status === 'lazy',
@@ -528,31 +534,33 @@ export function filterAndRankSlashCandidates<T extends SlashPickerCandidate>(
     .map((item) => item.candidate);
 }
 
-const GROUP_LABELS: Record<SlashCandidateGroup, string> = {
-  suggested: 'Suggested',
-  command: 'Commands',
-  prompt: 'Prompts',
-  agent: 'Agents',
-  skill: 'Skills',
-  connector: 'Connectors',
-  mcp: 'MCP',
-};
+const SKILL_MENU_KINDS = new Set<SlashPickerCandidate['kind']>(['skill', 'mcp', 'connector']);
 
-export function groupSlashCandidates<T extends SlashPickerCandidate>(
+export interface SlashMenuSection<T extends SlashPickerCandidate = SlashPickerCandidate> {
+  id: 'system' | 'skill';
+  label: string;
+  items: T[];
+}
+
+/** 空查询上截不写头；打字后只留「系统 / 技能」两级。MCP 和连接器归技能截，空查询不出现。 */
+export function presentSlashMenuGroups<T extends SlashPickerCandidate>(
   candidates: T[],
-): Array<SlashPickerCandidateGroup<T>> {
-  const groupMap = new Map<SlashCandidateGroup, SlashPickerCandidateGroup<T>>();
+  query: string,
+  labels: { system: string; skill: string },
+): Array<SlashMenuSection<T>> {
+  const typed = query.trim().replace(/^\//, '').length > 0;
+  const system: T[] = [];
+  const skill: T[] = [];
   for (const candidate of candidates) {
-    const existing = groupMap.get(candidate.group);
-    if (existing) {
-      existing.items.push(candidate);
-      continue;
-    }
-    groupMap.set(candidate.group, {
-      group: candidate.group,
-      label: GROUP_LABELS[candidate.group],
-      items: [candidate],
-    });
+    if (SKILL_MENU_KINDS.has(candidate.kind)) skill.push(candidate);
+    else system.push(candidate);
   }
-  return [...groupMap.values()];
+  const sections: Array<SlashMenuSection<T>> = [];
+  if (system.length > 0) {
+    sections.push({ id: 'system', label: typed ? labels.system : '', items: system });
+  }
+  if (skill.length > 0) {
+    sections.push({ id: 'skill', label: labels.skill, items: skill });
+  }
+  return sections;
 }

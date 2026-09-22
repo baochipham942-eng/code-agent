@@ -1013,6 +1013,9 @@ export const zh = {
       localConnector: '本地 connector',
       connectorNeedsConnection: '打开后需先连接',
       mcpNeedsConnection: '需要先连接',
+      systemSection: '系统',
+      skillSection: '技能',
+      moreSkills: '更多技能',
     },
     badges: {
       skillSelected: '已选',

@@ -12,7 +12,7 @@ import {
   extractPdfText,
   generateAttachmentId,
 } from './utils';
-import { useUIStore } from '../../../../stores/uiStore';
+import { toast } from '../../../../hooks/useToast';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 import { buildArchiveManifest, buildPresentationSummary } from './attachmentSummaries';
@@ -41,7 +41,7 @@ function readFileAsDataUrl(file: File): Promise<string | null> {
  */
 export function useFileUpload() {
   const { t } = useI18n();
-  const showToast = useUIStore((state) => state.showToast);
+  const showToast = toast.show;
 
   // 处理单个文件
   const processFile = useCallback(async (file: File): Promise<MessageAttachment | null> => {

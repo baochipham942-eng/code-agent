@@ -14,14 +14,14 @@ import { formatRelayPairVerify } from '@shared/companion/relayPairVerify';
 import { ipcService } from '../services/ipcService';
 import { useI18n } from '../hooks/useI18n';
 import { companionText } from '../i18n/companion';
-import { useUIStore } from '../stores/uiStore';
+import { toast } from '../hooks/useToast';
 import { Modal } from './primitives/Modal';
 import { Button } from './primitives/Button';
 
 export function CompanionPairRequestCard() {
   const { language } = useI18n();
   const text = companionText[language];
-  const showToast = useUIStore(state => state.showToast);
+  const showToast = toast.show;
   const [pending, setPending] = useState<{ requestId: string; code: string; expiresAt: number; scopeEmpty: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
 

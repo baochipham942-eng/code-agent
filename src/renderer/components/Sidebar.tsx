@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
-import { useUIStore } from '../stores/uiStore';
+import { toast } from '../hooks/useToast';
 import { IconButton, UndoToast } from './primitives';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { createLogger } from '../utils/logger';
@@ -41,7 +41,6 @@ import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
-import { toast } from '../hooks/useToast';
 import ipcService from '../services/ipcService';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
@@ -449,7 +448,7 @@ export const Sidebar: React.FC = () => {
     t,
   });
 
-  const showToast = useUIStore((state) => state.showToast);
+  const showToast = toast.show;
 
   const {
     saveExportToDownloads,

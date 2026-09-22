@@ -12,8 +12,8 @@ const ipc = vi.hoisted(() => ({
   unsub: vi.fn(),
 }));
 
-vi.mock('../../../src/renderer/stores/uiStore', () => ({
-  useUIStore: (selector: (s: { showToast: typeof showToast }) => unknown) => selector({ showToast }),
+vi.mock('../../../src/renderer/hooks/useToast', () => ({
+  toast: { show: (...args: unknown[]) => showToast(...args) },
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {

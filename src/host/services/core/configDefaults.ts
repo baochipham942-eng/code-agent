@@ -154,9 +154,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   contextCompression: {
     enabled: true,
     warningThreshold: 0.75,
-    criticalThreshold: 0.85,
     preserveRecentCount: 10,
-    triggerTokens: 100000,
     compactProvider: 'moonshot',
     compactModel: DEFAULT_MODELS.compact,
     auditEnabled: true,

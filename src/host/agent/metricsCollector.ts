@@ -30,6 +30,10 @@ export interface SessionMetrics {
   cacheReadTokens?: number;
   /** 同上：provider 报告的 prompt-cache 写入 token 累计。 */
   cacheCreationTokens?: number;
+  /** 命中且停滞指纹有变化的次数。缺席 = 还没有这类命中。 */
+  cacheHitEffective?: number;
+  /** 命中但停滞指纹没变的次数。 */
+  cacheHitIdle?: number;
   // Tool calls
   toolCallCount: number;
   toolCallsByName: Record<string, number>;
@@ -99,6 +103,10 @@ export class MetricsCollector implements TelemetryAdapter {
     }
     if (call.cacheCreationTokens !== undefined) {
       this.metrics.cacheCreationTokens = (this.metrics.cacheCreationTokens ?? 0) + call.cacheCreationTokens;
+    }
+    if (call.cacheHitEffective !== undefined || call.cacheHitIdle !== undefined) {
+      this.metrics.cacheHitEffective = (this.metrics.cacheHitEffective ?? 0) + (call.cacheHitEffective ?? 0);
+      this.metrics.cacheHitIdle = (this.metrics.cacheHitIdle ?? 0) + (call.cacheHitIdle ?? 0);
     }
     if (call.truncated) {
       this.metrics.truncationCount++;

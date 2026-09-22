@@ -96,6 +96,8 @@ describe('turn cost production event handler', () => {
       source: price.source,
     });
     expect(downstream).toHaveBeenCalledTimes(6);
+    expect(rows[0].cacheBreakReason).toBe('none');
+    expect(JSON.parse(JSON.stringify(rows[0])).cacheBreakReason).toBe('none');
   });
 
   it('stores NULL for an unknown model and uses model_response usage on non-streaming calls', () => {
@@ -128,6 +130,46 @@ describe('turn cost production event handler', () => {
       outputTokens: 5,
       usd: null,
       source: 'unknown',
+      cacheBreakReason: 'none',
     });
+  });
+
+  it('records cacheBreakReason from detectCacheBreak at the turn cost collection point', () => {
+    const sample: { current?: { prompt: string; modelId: string } } = {};
+    const onEvent = createTurnCostEventHandler({
+      sessionId: 'session-cache-break',
+      onEvent: vi.fn(),
+      sink: repo,
+      readCachePrompt: () => sample.current,
+    });
+
+    const finish = (turnId: string, prompt: string, modelId: string) => {
+      sample.current = { prompt, modelId };
+      onEvent({ type: 'turn_start', data: { turnId, iteration: 1 } });
+      onEvent({
+        type: 'model_response',
+        data: {
+          model: modelId,
+          provider: 'deepseek',
+          responseType: 'text',
+          duration: 1,
+          toolCalls: [],
+          textLength: 1,
+          inputTokens: 10,
+          outputTokens: 2,
+        },
+      });
+      onEvent({ type: 'turn_end', data: { turnId } });
+    };
+
+    const stable = 'stable prefix\n<!-- DYNAMIC_SECTION -->\ndynamic-a';
+    finish('turn-a', stable, 'deepseek-v4-pro');
+    finish('turn-b', stable.replace('dynamic-a', 'dynamic-b'), 'deepseek-v4-pro');
+    finish('turn-c', 'rewritten prefix\n<!-- DYNAMIC_SECTION -->\ndynamic-b', 'deepseek-v4-pro');
+    finish('turn-d', 'rewritten prefix\n<!-- DYNAMIC_SECTION -->\ndynamic-c', 'other-model');
+
+    const reasons = repo.listBySession('session-cache-break').map((row) => row.cacheBreakReason);
+    expect(reasons).toEqual(['none', 'none', 'prefix-changed', 'model-switch']);
+    expect(JSON.parse(JSON.stringify(reasons))).toEqual(reasons);
   });
 });

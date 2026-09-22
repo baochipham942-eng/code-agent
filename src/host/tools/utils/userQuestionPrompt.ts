@@ -34,6 +34,7 @@ import {
   notifyDecisionNeeded,
   notifyIfLateDecisionResponse,
 } from '../../permissions/userDecision';
+import { holdStallClock } from '../../agent/stallObserver';
 
 const logger = createLogger('UserQuestionPrompt');
 
@@ -120,6 +121,8 @@ export async function promptUserInChat(
     return { status: 'no-renderer' };
   }
 
+  const releaseHold = holdStallClock(opts.sessionId);
+  try {
   const timeoutMs = opts.timeoutMs ?? INTERACTION_TIMEOUTS.USER_QUESTION;
   const responsePromise = new Promise<UserQuestionResponse>((resolve, reject) => {
     const timeout = hasInteractiveRenderer
@@ -205,5 +208,8 @@ export async function promptUserInChat(
         ? '等待用户回答超过 24 小时，停车请求已按安全兜底拒绝。'
         : headlessDecisionTimeoutReason(timeoutMs),
     };
+  }
+  } finally {
+    releaseHold();
   }
 }

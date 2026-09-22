@@ -19,6 +19,7 @@ import { getSwarmRunScopeKey } from '../../shared/contract/swarm';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { getPermissionModeManager } from '../permissions/modes';
 import { getSwarmEventEmitter } from './swarmEventPublisher';
+import { holdStallClock } from './stallObserver';
 
 const logger = createLogger('SwarmLaunchApprovalGate');
 
@@ -164,7 +165,8 @@ export class SwarmLaunchApprovalGate {
     getSwarmEventEmitter().launchRequested(request);
 
     logger.info(`Swarm launch requested: ${request.id} (${request.agentCount} agents, mode=${permissionMode})`);
-    return this.waitForDecision(request.id);
+    const releaseHold = holdStallClock(params.scope.sessionId);
+    return this.waitForDecision(request.id).finally(releaseHold);
   }
 
   approve(requestId: string, feedback?: string, expectedScope?: SwarmRunRef): boolean {

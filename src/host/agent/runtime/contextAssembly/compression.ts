@@ -10,6 +10,7 @@ import type { ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { estimateImageTokens } from '../../../context/tokenEstimator';
 import { assessContextPressure } from '../../../context/contextPressureController';
+import { resolveContextWindow } from '../../../model/modelLimits';
 import { applyToolResultBudget } from '../../../context/layers/toolResultBudget';
 import { tryInsertCheckpointRebuildBoundary } from '../../../context/checkpoint/runtimeBoundary';
 import { readExistingCheckpointStore, resolveCheckpointStorePaths } from '../../../context/checkpoint/store';
@@ -387,6 +388,10 @@ export async function checkAndAutoCompress(
     );
 
     const compressorConfig = ctx.runtime.autoCompressor.getConfig();
+    const contextWindow = resolveContextWindow(
+      ctx.runtime.modelConfig.model,
+      ctx.runtime.modelConfig.provider,
+    );
     const health = getContextHealthService().get(ctx.runtime.sessionId);
     const paths = resolveCheckpointStorePaths({
       sessionId: ctx.runtime.sessionId,
@@ -407,7 +412,7 @@ export async function checkAndAutoCompress(
     // 注意 compressionEnabled 只 gate 百分比软触发；token 硬阈值和 pipeline 信号必须压。
     const decision = assessContextPressure({
       currentTokens,
-      tokenThresholdHit: ctx.runtime.autoCompressor.shouldTriggerByTokens(currentTokens),
+      tokenThresholdHit: ctx.runtime.autoCompressor.shouldTriggerByTokens(currentTokens, contextWindow),
       usageRatio: health ? health.usagePercent / 100 : undefined,
       warningThreshold: compressorConfig.warningThreshold,
       pipelineAutocompactNeeded: ctx.runtime.contextHealth.pipelineAutocompactNeeded,
@@ -429,7 +434,7 @@ export async function checkAndAutoCompress(
     // 故走到这里时 pipelineAutocompactNeeded 必为 false），无需重复剪枝，照常压缩。
     if (decision.action === 'execute' && decision.trigger === 'token-threshold') {
       const prunedTokens = estimatePrunedTranscriptTokens(ctx.runtime.messages);
-      if (!ctx.runtime.autoCompressor.shouldTriggerByTokens(prunedTokens)) {
+      if (!ctx.runtime.autoCompressor.shouldTriggerByTokens(prunedTokens, contextWindow)) {
         // 无损预算化即可化解，不算卡死 → 清零计数器，跳过付费摘要。
         ctx.compressionRecovery._consecutiveCompacts = 0;
         logger.info(
@@ -645,7 +650,7 @@ export async function checkAndAutoCompress(
         0,
       );
       const postRatio = health?.maxTokens ? postTokens / health.maxTokens : 0;
-      const stillOver = ctx.runtime.autoCompressor.shouldTriggerByTokens(postTokens)
+      const stillOver = ctx.runtime.autoCompressor.shouldTriggerByTokens(postTokens, contextWindow)
         || postRatio >= compressorConfig.warningThreshold;
       const guard = nextCompactionGuardState(
         ctx.compressionRecovery._consecutiveCompacts,
@@ -676,7 +681,7 @@ export async function checkAndAutoCompress(
       }
 
       // 检查是否应该收尾（总预算超限）—— 同样统一到所有触发路径
-      if (ctx.runtime.autoCompressor.shouldWrapUp()) {
+      if (ctx.runtime.autoCompressor.shouldWrapUp(contextWindow)) {
         logger.warn('[AgentLoop] Total token budget exceeded, injecting wrap-up instruction');
         ctx.injectSystemMessage(
           '<wrap-up>\n' +

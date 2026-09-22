@@ -28,7 +28,7 @@ const REMOTE_TOOL_PREFIXES = [
   'memory_write', 'remote_skill',
 ];
 
-export function isJevInjectionScanEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+function isJevInjectionScanEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.CODE_AGENT_JEV_INJECTION_SCAN === '1';
 }
 

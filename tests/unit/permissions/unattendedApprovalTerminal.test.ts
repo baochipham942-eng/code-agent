@@ -64,6 +64,7 @@ describe('无人值守审批超时进终态', () => {
     const repo = makeRepo();
     const sessionId = 'cron-terminal';
     getPermissionModeManager().markUnattendedSession(sessionId);
+    getPermissionModeManager().markUnattendedApprovalTerminal(sessionId);
     const island = makeIsland(false, repo);
     const result = island.requestPermission({
       type: 'file_write',
@@ -100,6 +101,24 @@ describe('无人值守审批超时进终态', () => {
     expect(await isStillPending(result)).toBe(true);
     expect(repo.resolve).not.toHaveBeenCalled();
     expect(takeUnattendedApprovalTimeout('chat-session')).toBeUndefined();
+  });
+
+  it('channel 会话只标 unattended，60s 仍停车', async () => {
+    const repo = makeRepo();
+    const sessionId = 'channel-session';
+    getPermissionModeManager().markUnattendedSession(sessionId);
+    const island = makeIsland(false, repo);
+    const result = island.requestPermission({
+      type: 'file_write',
+      tool: 'write_file',
+      details: { path: '/tmp/probe.txt' },
+      sessionId,
+    });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(await isStillPending(result)).toBe(true);
+    expect(repo.resolve).not.toHaveBeenCalled();
+    expect(takeUnattendedApprovalTimeout(sessionId)).toBeUndefined();
   });
 
   it('语音派过了 60s 仍停车，不记无人值守原因码', async () => {

@@ -352,10 +352,10 @@ export class OrchestratorPermissionIsland {
     // 要求他 60 秒内点一下。实测通话结束后 run 才请求审批，60s 必然超时自动拒绝，
     // 而迟到的点击又落进静默丢弃分支，用户只看到「失败」且毫无线索。
     // 判据与抬严同源（isLiveVoiceSession = 通话中 或 语音派的 run 还在飞）。
+    const approvalTerminal = getPermissionModeManager().isUnattendedApprovalTerminal(fullRequest.sessionId);
     const unattended = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId);
     const voice = getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
-    // 语音派仍停车 24h：通话里 60s 点不到，到点拒绝会把迟到的点击丢掉。
-    // cron/heartbeat 无人值守没有人看那张卡，60s 后必须进终态，不能跟语音共用 24h。
+    // 语音派和 channel 仍停车 24h。只有 cron/heartbeat 60s 进终态。
     if (unattended || voice) {
       const parkRepo = this.getPendingApprovalRepo();
       if (parkRepo) {
@@ -364,7 +364,7 @@ export class OrchestratorPermissionIsland {
           permissionLevel,
           parkRepo,
           'tool_approval',
-          unattended ? 'unattended' : 'backstop',
+          approvalTerminal ? 'unattended' : 'backstop',
         );
       }
     } else {
@@ -433,13 +433,13 @@ export class OrchestratorPermissionIsland {
           safeWarn('Permission timeout event could not be emitted; resolving fail-closed anyway', error);
         }
         // N-PERMTRACE：超时无人应答 ≠ 用户拒绝。
-        if (unattended && fullRequest.sessionId) {
+        if (approvalTerminal && fullRequest.sessionId) {
           noteUnattendedApprovalTimeout(fullRequest.sessionId);
         }
         resolve({
           approved: false,
           denialSource: 'timeout',
-          ...(unattended ? { message: UNATTENDED_APPROVAL_TIMEOUT } : {}),
+          ...(approvalTerminal ? { message: UNATTENDED_APPROVAL_TIMEOUT } : {}),
         });
       };
 
@@ -498,20 +498,20 @@ export class OrchestratorPermissionIsland {
         ? INTERACTION_TIMEOUTS.PERMISSION
         : INTERACTION_TIMEOUTS.PARKED_APPROVAL;
       const timeoutId = setTimeout(() => {
-        if (unattendedDeadline && fullRequest.sessionId) {
-          noteUnattendedApprovalTimeout(fullRequest.sessionId);
-        }
         logger.warn(
           unattendedDeadline
             ? `Unattended approval ${fullRequest.id} timed out, denying`
             : `Parked approval ${fullRequest.id} expired after 24h backstop, denying`,
         );
-        this.resolveParkedApproval(
+        const resolved = this.resolveParkedApproval(
           fullRequest.id,
           'deny',
           unattendedDeadline ? UNATTENDED_APPROVAL_TIMEOUT : 'parked approval expired',
           'timeout',
         );
+        if (resolved && unattendedDeadline && fullRequest.sessionId) {
+          noteUnattendedApprovalTimeout(fullRequest.sessionId);
+        }
       }, timeoutMs);
 
       this.pendingPermissions.set(fullRequest.id, {

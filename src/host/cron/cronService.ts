@@ -832,6 +832,8 @@ export class CronService implements Disposable {
               agentRunOptions,
             );
             result = await runWithCronJobBudget(definition.maxRunBudget, sendMessage);
+            const unattendedTimeout = (await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id);
+            if (unattendedTimeout) throw new Error(unattendedTimeout);
 
             const messages = orchestrator.getMessages();
             const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
@@ -886,7 +888,7 @@ export class CronService implements Disposable {
             }
           } catch (error) {
             runFailed = true;
-            runError = error;
+            runError = ((code: string | undefined) => code ? new Error(code) : error)((await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id));
             try {
               const lastAssistant = [...orchestrator.getMessages()]
                 .reverse()
@@ -922,8 +924,6 @@ export class CronService implements Disposable {
             );
           }
         }
-        const unattendedTimeout = (await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id);
-        if (unattendedTimeout) throw new Error(unattendedTimeout);
         if (runFailed) throw runError;
 
         await this.deliverCronResult(definition, result, executionId);

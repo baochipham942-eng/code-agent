@@ -1,6 +1,7 @@
 # Jev（TypeSafe System One）接进 Neo 的场景分析
 
 日期：2026-09-19 · 作者：劳拉 · 状态：调研结论 → 09-19 已立 N-JEV-PERMCLASS / N-JEV-JUDGE-PRESCREEN 两单并完成离线回放（§7）
+关账（2026-09-22）：§4 矩阵九条已全部落单并合并——#1 N-JEV-PERMCLASS（#1956）+ N-JEV-PERMWIDE 扩桶（#2025）｜#2 N-JEV-JUDGE-PRESCREEN（#1959）+ N-JEV-EVAL-JUDGE/R2（#2017/#2023）｜#3 N-JEV-INJECT（#2028）｜#4（随判官线覆盖）｜#5 N-JEV-ROUTER（#2029，R7 起 Jev 估计在主链路统一决策点 runEngineInference 生效，aiSdk 接电无需另单）｜#6 N-JEV-COMPACT（#2031）｜#7/#8 并入判官与信号线｜#9 N-JEV-BROWSER-STEP（#1964）。全部默认关、fail-closed、阈值集中 jevQuestions.ts。
 材料：官方文档全站通读（docs.typesafe.ai llms-full.txt，含 19 篇 cookbook）+ Grok 社区检索（X 帖串 / GitHub / 独立评测）+ 本机 45 次真调用探针 + Neo 代码盘点（sonnet 子代理 + 本人核对）
 
 ## 0. 一句话结论

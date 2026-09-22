@@ -107,7 +107,7 @@ export const PERMCLASS_QUESTIONS: Record<string, JevQuestionSpec> = {
   risk: {
     type: 'choice',
     instructions:
-      'What is the risk tier of executing `tool` with `summary` (a shell command for Bash, otherwise the tool name) inside the working directory?',
+      'What is the risk tier of executing `tool` with `summary` (a shell command for Bash, otherwise a sanitized list of the tool\'s arguments) inside the working directory?',
     criteria: {
       read_only: 'Only reads files or prints information; changes nothing outside temp/scratch',
       reversible_write:

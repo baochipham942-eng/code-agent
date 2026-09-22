@@ -12,11 +12,12 @@
 // ============================================================================
 
 import * as os from 'os';
+import * as path from 'path';
 
 import { createLogger } from '../services/infra/logger';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
-import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
+import { isProtectedWritePath, isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 import {
   PERMCLASS_APPROVE_THRESHOLDS,
   PERMCLASS_QUESTIONS,
@@ -34,7 +35,8 @@ const logger = createLogger('PermissionClassifierJev');
 /** 分类器上下文只取 Jev 需要的字段（放这里避免主文件导出整个接口）。 */
 type JevContext = Pick<ClassificationContext, 'workingDirectory'>;
 
-/** 明确列出的本地产物工具才允许进入扩桶；MCP、连接器和终端控制面继续 ask。 */
+/** 明确列出的本地产物工具才允许进入扩桶；MCP、连接器和终端控制面继续 ask。
+ * image_generate / video_generate 是付费远端生成，免确认即免审花钱——不进白名单（ai-review R2/R3）。 */
 const PERMWIDE_TOOL_NAMES = new Set([
   'image_analyze',
   'pdf_generate',
@@ -42,8 +44,6 @@ const PERMWIDE_TOOL_NAMES = new Set([
   'docx_generate',
   'excel_generate',
   'chart_generate',
-  'image_generate',
-  'video_generate',
 ]);
 
 function isJevPermissionTool(toolName: string): boolean {
@@ -73,7 +73,8 @@ function buildJevState(toolName: string, args: Record<string, unknown>, context:
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, value]) => {
         const safeKey = key.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80);
-        if (/content|body|data|prompt|text|message|token|secret|password|credential|api.?key/i.test(key)) {
+        if (/content|body|data|prompt|text|message|token|secret|password|credential|api.?key/i.test(key)
+          || /^(title|author|name|label|labels)$/i.test(key)) {
           return `${safeKey}=<omitted>`;
         }
         if (typeof value === 'string') return `${safeKey}=${value.slice(0, 256)}`;
@@ -104,20 +105,23 @@ function buildJevState(toolName: string, args: Record<string, unknown>, context:
 
 let jevKeyMissingWarned = false;
 
-/** 收集参数里命中凭据目录的路径形字符串（顶层字符串与字符串数组逐项）。 */
-function collectSensitiveArgPaths(args: Record<string, unknown>): string[] {
+/** 收集参数里命中凭据目录或受保护写路径的路径形字符串（顶层/数组/嵌套对象逐项）。 */
+function collectProtectedArgPaths(args: Record<string, unknown>, workingDirectory: string): string[] {
   const candidates: string[] = [];
   const visit = (value: unknown) => {
-    if (typeof value === 'string' && (value.includes('/') || value.startsWith('~'))) {
+    if (typeof value === 'string' && (value.includes('/') || value.startsWith('~') || value.startsWith('.'))) {
       candidates.push(value);
     } else if (Array.isArray(value)) {
       for (const item of value) visit(item);
+    } else if (value !== null && typeof value === 'object') {
+      for (const nested of Object.values(value)) visit(nested);
     }
   };
   for (const value of Object.values(args)) visit(value);
   return candidates.filter((candidate) => {
     const expanded = candidate.startsWith('~') ? os.homedir() + candidate.slice(1) : candidate;
-    return isSensitiveCredentialPath(expanded);
+    const resolved = path.isAbsolute(expanded) ? expanded : path.resolve(workingDirectory, expanded);
+    return isSensitiveCredentialPath(resolved) || isProtectedWritePath(resolved, { projectRoot: workingDirectory });
   });
 }
 
@@ -164,10 +168,11 @@ export async function classifyByJev(
   startTime: number,
 ): Promise<ClassificationResult | null> {
   if (!isJevPermissionTool(toolName)) return null;
-  // 确定性预检：任何路径形参数（含数组逐项）命中凭据目录直接 ask，不问 Jev。
-  // Jev 只缩 ask 桶，敏感路径的判断不许外包给第三方模型（ai-review R1：
-  // image_analyze 批量 paths 与工作区图片曾产生相同 state）。
-  if (collectSensitiveArgPaths(args).length > 0) return null;
+  // 确定性预检：任何路径形参数（含数组/嵌套对象逐项、~ 展开、相对路径按
+  // workingDirectory 解析）命中凭据目录或受保护写路径（.git/config、
+  // .code-agent/settings.json 等）直接 ask，不问 Jev。Jev 只缩 ask 桶，敏感与
+  // 受保护路径的判断不许外包给第三方模型（ai-review R1/R3）。
+  if (collectProtectedArgPaths(args, context.workingDirectory).length > 0) return null;
   const state = buildJevState(toolName, args, context);
   const questions = isBashToolName(toolName) ? PERMCLASS_QUESTIONS : PERMWIDE_QUESTIONS;
   let answers: JevAnswers;

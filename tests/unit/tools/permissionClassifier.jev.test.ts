@@ -315,6 +315,52 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     expect(stub.calls.length).toBe(0);
   });
 
+  it('output_path 命中受保护写路径（.git/config / .code-agent/settings.json）⇒ 确定性 ask，systemOne 零调用（ai-review R3）', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+
+    const gitConfig = await classifier.classify(
+      'pdf_generate',
+      { output_path: '.git/config', overwrite: true },
+      { workingDirectory: '/tmp/work' },
+    );
+    expect(gitConfig.decision).toBe('ask');
+
+    const agentSettings = await classifier.classify(
+      'docx_generate',
+      { output_path: '/tmp/work/.code-agent/settings.json' },
+      { workingDirectory: '/tmp/work' },
+    );
+    expect(agentSettings.decision).toBe('ask');
+    expect(stub.calls.length).toBe(0);
+  });
+
+  it('嵌套对象数组里的路径也过预检（ppt images[].image_path）', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+
+    const result = await classifier.classify(
+      'ppt_generate',
+      { output_path: '/tmp/deck.pptx', images: [{ image_path: '~/.ssh/leak.png' }] },
+      { workingDirectory: '/tmp' },
+    );
+    expect(result.decision).toBe('ask');
+    expect(stub.calls.length).toBe(0);
+  });
+
+  it('image_generate / video_generate 是付费远端生成，不进扩桶白名单 ⇒ ask，systemOne 零调用', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+
+    for (const tool of ['image_generate', 'video_generate']) {
+      const result = await classifier.classify(
+        tool, { output_path: '/tmp/out', prompt: 'a cat' }, { workingDirectory: '/tmp' },
+      );
+      expect(result.decision).toBe('ask');
+    }
+    expect(stub.calls.length).toBe(0);
+  });
+
   // ---------------------------------------------------------------------------
   // 反向变异（跑真代码）：桩模拟「被带偏/故障的 Jev」，分类器必须不放大损害。
   // 夹具 = tests/fixtures/jev-permclass-samples.json（20 放行 + 8 拒绝 + 5 destructive）。

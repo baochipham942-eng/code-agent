@@ -82,6 +82,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.AGENT_SEND_MESSAGE]: (message: string | AgentMessageRequest) => Promise<void>;
   [IPC_CHANNELS.AGENT_CANCEL]: (payload?: AgentCancelRequest) => Promise<void>;
   [IPC_CHANNELS.AGENT_PERMISSION_RESPONSE]: (requestId: string, response: PermissionResponse, sessionId?: string, updatedArgs?: Record<string, unknown>) => Promise<void>;
+  [IPC_CHANNELS.AGENT_DOOM_LOOP_HANDBACK]: (sessionId: string, choice: 'retry' | 'stop') => Promise<boolean>;
 
   // Session
   [IPC_CHANNELS.SESSION_LIST]: (options?: { includeArchived?: boolean }) => Promise<Session[]>;

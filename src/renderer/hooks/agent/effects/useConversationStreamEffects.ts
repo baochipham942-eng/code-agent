@@ -32,6 +32,7 @@ const LIVE_STATE_NEUTRAL_AGENT_EVENTS: ReadonlySet<string> = new Set([
   'input_redirected',
 ]);
 import { buildGoalNoticeMessage } from '../../../components/features/chat/goalNotice';
+import { useDoomLoopHandbackStore } from '../../../components/features/chat/DoomLoopHandbackBar';
 import { buildModelFallbackNoticeMessage } from '../../../components/features/chat/fallbackNotice';
 import {
   buildContextCompressionSignalMessage,
@@ -694,6 +695,12 @@ export const useConversationStreamEffects = ({
           if (eventSessionId) {
             useTurnExecutionStore.getState().clearHookRunning(eventSessionId);
           }
+          {
+            const offered = useDoomLoopHandbackStore.getState().sessionId;
+            const sameSession = offered === eventSessionId
+              || (isCurrentSessionEvent && offered === currentSessionId);
+            if (offered && sameSession) useDoomLoopHandbackStore.getState().clear();
+          }
           flushRef.current();
           flushStreamingMessages();
           return;
@@ -732,6 +739,13 @@ export const useConversationStreamEffects = ({
               verificationCard: d.verificationCard,
             });
           }
+          break;
+        }
+
+        case 'doom_loop_handback': {
+          logHandledEvent();
+          const offered = (event.data as { sessionId?: string }).sessionId;
+          if (offered) useDoomLoopHandbackStore.getState().offer(offered);
           break;
         }
 

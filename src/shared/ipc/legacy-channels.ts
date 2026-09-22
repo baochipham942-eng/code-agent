@@ -22,6 +22,7 @@ export const IPC_CHANNELS = {
   AGENT_EVENT_BATCH: 'agent:event:batch',
   AGENT_STREAM_SNAPSHOT_REQUIRED: 'agent:stream-snapshot-required',
   AGENT_PERMISSION_RESPONSE: 'agent:permission-response',
+  AGENT_DOOM_LOOP_HANDBACK: 'agent:doom-loop-handback',
 
 
   // Session channels

@@ -508,6 +508,7 @@ const stabilityByType = {
   tool_cancel_local: 'experimental',
   suggestions_update: 'experimental',
   stream_reconnecting: 'experimental',
+  doom_loop_handback: 'experimental',
 } as const satisfies Record<string, EventStability>;
 
 function event<T extends keyof typeof stabilityByType, S extends z.ZodType>(type: T, data: S) {
@@ -714,6 +715,9 @@ const StreamReconnectingEventSchema = event('stream_reconnecting', z.object({
   maxReconnects: z.number().int().min(1),
   segment: z.enum(['b1', 'b2']),
 }));
+const DoomLoopHandbackEventSchema = event('doom_loop_handback', z.object({
+  sessionId: z.string(),
+}));
 
 export const AgentEventSchema = z.discriminatedUnion('type', [
   MessageEventSchema, SurfaceExecutionEventSchema, ToolCallStartEventSchema, ToolCallEndEventSchema,
@@ -733,7 +737,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   ModelSwitchedEventSchema, ToolProgressEventSchema, ToolOutputDeltaEventSchema, ToolTimeoutEventSchema,
   PlanModeEnteredEventSchema, PlanModeExitedEventSchema, TaskStatsEventSchema, ContextCompactingEventSchema,
   ContextCompactedEventSchema, StreamUsageEventSchema, StreamTokenEstimateEventSchema, ToolCallLocalEventSchema,
-  ToolCancelLocalEventSchema, SuggestionsUpdateEventSchema, StreamReconnectingEventSchema,
+  ToolCancelLocalEventSchema, SuggestionsUpdateEventSchema, StreamReconnectingEventSchema, DoomLoopHandbackEventSchema,
 ]).meta({
   title: 'AgentEvent',
   description: 'Neo public agent event contract. New events default to experimental; stable event shapes are additive-only.',

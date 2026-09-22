@@ -28,6 +28,7 @@ import { useTeamRecipeStore } from '../../../../stores/teamRecipeStore';
 import { launchTeamRecipe } from '../../../../utils/launchTeamRecipe';
 import { launchRecipe } from '../../../../services/teamClient';
 import { buildGoalNoticeMessage } from '../goalNotice';
+import { useDoomLoopHandbackStore } from '../DoomLoopHandbackBar';
 import { buildAutomationNoticeMessage, formatCronScheduleLabel, formatLoopIntervalLabel } from '../automationNotice';
 import type { InputAreaRef } from './InputArea';
 import type { BuildEnvelope } from './useChatInputEnvelope';
@@ -721,6 +722,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           return applyRecord(record);
         }
         if (isProcessing && opts?.steer && onSteer) {
+          const offered = useDoomLoopHandbackStore.getState().sessionId;
+          if (offered && offered === currentSessionId) useDoomLoopHandbackStore.getState().clear();
           const outcome = await onSteer(stamped);
           if (outcome?.outcome === 'queued') onQueuedInputChanged?.();
           return outcome !== undefined;

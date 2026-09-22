@@ -62,6 +62,7 @@ describe('AgentEventSchema', () => {
       },
     },
     { type: 'agent_complete', data: null },
+    { type: 'doom_loop_handback', data: { sessionId: 'session-1' } },
     {
       type: 'plan_approval_update',
       data: {
@@ -134,9 +135,9 @@ describe('AgentEventSchema', () => {
 
   it('exports stability metadata and the stable type set from the same source', () => {
     const stabilityMetadata = AgentEventSchema.options.map((schema) => schema.meta()?.stability);
-    expect(stabilityMetadata).toHaveLength(76);
+    expect(stabilityMetadata).toHaveLength(77);
     expect(stabilityMetadata.filter((stability) => stability === 'stable')).toHaveLength(12);
-    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(64);
+    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(65);
     expect(STABLE_EVENT_TYPES).toEqual(new Set([
       'message',
       'tool_call_start',

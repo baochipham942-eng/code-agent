@@ -99,15 +99,29 @@ vi.mock('../../../src/host/model/inferenceCache', async (importActual) => {
   };
 });
 
-// Mock adaptiveRouter
-vi.mock('../../../src/host/model/adaptiveRouter', () => ({
-  getAdaptiveRouter: () => ({
-    estimateComplexity: vi.fn().mockReturnValue({ level: 'moderate', score: 50, signals: [] }),
-    selectModel: vi.fn(),
-    recordOutcome: vi.fn(),
-    disableFreeModel: vi.fn(),
-  }),
+// Mock adaptiveRouter —— withClarificationHint 等纯函数用真实现（N-JEV-ROUTER 的澄清提示
+// 消费断言依赖真实提示文案），只桩 getAdaptiveRouter 单例；Jev 复杂度经 hoisted state 按用例注入
+const adaptiveRouterMockState = vi.hoisted(() => ({
+  jevComplexity: undefined as undefined | {
+    level: 'simple' | 'moderate' | 'complex';
+    score: number;
+    signals: string[];
+    suggestClarification?: boolean;
+  },
 }));
+vi.mock('../../../src/host/model/adaptiveRouter', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/model/adaptiveRouter')>();
+  return {
+    ...actual,
+    getAdaptiveRouter: () => ({
+      estimateComplexity: vi.fn().mockReturnValue({ level: 'moderate', score: 50, signals: [] }),
+      estimateComplexityWithJev: vi.fn(async () => adaptiveRouterMockState.jevComplexity ?? { level: 'moderate', score: 50, signals: [] }),
+      selectModel: vi.fn(),
+      recordOutcome: vi.fn(),
+      disableFreeModel: vi.fn(),
+    }),
+  };
+});
 
 // 只桩 getProviderHealthMonitor；persistentProviderMarkKind 用真实现（分类语义是断言对象）
 vi.mock('../../../src/host/model/providerHealthMonitor', async (importActual) => {
@@ -134,6 +148,7 @@ describe('ModelRouter', () => {
     inferenceCacheState.reset();
     healthMonitorMock.getHealth.mockReturnValue(null);
     broadcastToRendererMock.mockReset();
+    adaptiveRouterMockState.jevComplexity = undefined;
     router = new ModelRouter();
   });
 
@@ -534,6 +549,63 @@ describe('ModelRouter', () => {
         undefined,
         options,
       );
+    });
+
+    it('appends the Jev clarification hint to provider messages when the automatic tier flags ambiguity', async () => {
+      adaptiveRouterMockState.jevComplexity = {
+        level: 'complex',
+        score: 67,
+        signals: ['needs_clarification:0.95'],
+        suggestClarification: true,
+      };
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('deepseek', provider);
+
+      const config: ModelConfig = {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+        adaptive: true,
+      };
+      const messages: ModelMessage[] = [{ role: 'user', content: 'update the previous report' }];
+
+      await router.inference(messages, [], config);
+
+      const sentMessages = provider.inference.mock.calls[0][0] as ModelMessage[];
+      const lastMessage = sentMessages[sentMessages.length - 1];
+      expect(lastMessage.role).toBe('system');
+      expect(lastMessage.content).toContain('clarifying question');
+      // 提示只进当次 provider 调用，不污染调用方的会话历史
+      expect(messages).toHaveLength(1);
+    });
+
+    it('sends no clarification hint when Jev does not flag ambiguity', async () => {
+      adaptiveRouterMockState.jevComplexity = {
+        level: 'complex',
+        score: 67,
+        signals: ['needs_clarification:0.10'],
+      };
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('deepseek', provider);
+
+      const config: ModelConfig = {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+        adaptive: true,
+      };
+
+      await router.inference([{ role: 'user', content: 'refactor the parser module' }], [], config);
+
+      const sentMessages = provider.inference.mock.calls[0][0] as ModelMessage[];
+      expect(sentMessages).toHaveLength(1);
+      expect(sentMessages[0].role).toBe('user');
     });
 
     it('should use streaming-first for explicit file artifact generation turns', async () => {

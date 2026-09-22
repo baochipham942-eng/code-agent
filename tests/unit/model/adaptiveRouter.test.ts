@@ -170,8 +170,80 @@ describe('AdaptiveRouter Jev intent router', () => {
       systemOne,
     );
     expect(result.level).toBe('complex');
+    expect(result.suggestClarification).toBe(true);
     expect(result.signals).toContain('jev_intent:artifact');
     expect(result.signals).toContain('needs_clarification:0.95');
+  });
+
+  it('does not set suggestClarification below the centralized threshold', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const systemOne = vi.fn(async () => ({
+      intent: { choice: 'chat', confidence: 0.9 },
+      complexity: { choice: '0', confidence: 0.9 },
+      needs_clarification: { noul: 0.89 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const result = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'hi' }],
+      systemOne,
+    );
+    expect(result.level).toBe('simple');
+    expect(result.suggestClarification).toBeUndefined();
+  });
+
+  it('caches the Jev estimate per last user message within a turn', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const systemOne = vi.fn(async () => ({
+      intent: { choice: 'coding', confidence: 0.9 },
+      complexity: { choice: '1', confidence: 0.9 },
+      needs_clarification: { noul: 0.1 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const router = new AdaptiveRouter();
+    const first = await router.estimateComplexityWithJev([{ role: 'user', content: 'fix the parser bug' }], systemOne);
+    // Loop iterations append tool messages; the last user message is unchanged.
+    const second = await router.estimateComplexityWithJev(
+      [
+        { role: 'user', content: 'fix the parser bug' },
+        { role: 'assistant', content: 'working on it' },
+      ],
+      systemOne,
+    );
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(second).toEqual(first);
+
+    await router.estimateComplexityWithJev([{ role: 'user', content: 'a different request' }], systemOne);
+    expect(systemOne).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails open: heuristic fallbacks are not cached, the next iteration retries Jev', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const router = new AdaptiveRouter();
+    const lowConfidence = vi.fn(async () => ({
+      intent: { choice: 'chat', confidence: 0.9 },
+      complexity: { choice: '0', confidence: 0.49 },
+      needs_clarification: { noul: 0 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const fallback = await router.estimateComplexityWithJev(
+      [{ role: 'user', content: 'hello' }],
+      lowConfidence,
+    );
+    expect(fallback.signals).toContain('short_message');
+    expect(fallback.suggestClarification).toBeUndefined();
+
+    const healthy = vi.fn(async () => ({
+      intent: { choice: 'chat', confidence: 0.9 },
+      complexity: { choice: '0', confidence: 0.9 },
+      needs_clarification: { noul: 0 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const retried = await router.estimateComplexityWithJev(
+      [{ role: 'user', content: 'hello' }],
+      healthy,
+    );
+    expect(healthy).toHaveBeenCalledTimes(1);
+    expect(retried.signals).toContain('jev_intent:chat');
   });
 
   it('does not downgrade on low confidence and fails back to heuristic on provider errors', async () => {

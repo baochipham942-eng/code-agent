@@ -202,6 +202,20 @@ export const JEV_ROUTER_QUESTIONS: Record<string, JevQuestionSpec> = {
 };
 
 /**
+ * 自动档路由阈值（绑 jev-1.13.0，同 PERMCLASS_APPROVE_THRESHOLDS / JUDGE_PRESCREEN_BANDS
+ * 口径：换 Jev 版本必须先重跑对应回放再改这里）。
+ * 方向都是「只升不降」：低置信回落启发式而不是降级档位；澄清/破坏意图只把档位往上抬。
+ */
+export const JEV_ROUTER_THRESHOLDS = {
+  /** complexity choice 的校准 confidence 下限；低于此值回落启发式估计，不采纳 Jev 档位。 */
+  minComplexityConfidence: 0.5,
+  /** needs_clarification ≥ 此值：禁止 simple/free 档，并在复杂度结果上给出 suggestClarification 信号。 */
+  needsClarification: 0.9,
+  /** destructive_intent ≥ 此值：禁止 simple/free 档（安全信号，只升档）。 */
+  destructiveIntent: 0.7,
+} as const;
+
+/**
  * 判官初筛问句（文案与 09-19 回放脚本 replay-judge.ts 对齐）。
  * 有工具时发 `tools_pass`；空 `toolCalls` 只发 `no_tools_but_needed`（二选一，见 postLaunchJudge）。
  * state 是 projectTurnForJudge 的同一份投影；集合用命名键，问法整体引用 `toolCalls`，

@@ -15,6 +15,7 @@ import { resolveBaseFallbackChain } from './modelRouterPolicy';
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
 import {
   JEV_ROUTER_QUESTIONS,
+  JEV_ROUTER_THRESHOLDS,
   type JevAnswers,
   type JevSystemOneCall,
 } from '../../shared/constants/jevQuestions';
@@ -25,6 +26,22 @@ export interface TaskComplexity {
   level: 'simple' | 'moderate' | 'complex';
   score: number;
   signals: string[];
+  /**
+   * Jev needs_clarification ≥ 阈值时置真：请求缺关键信息，调用方应让用户先澄清
+   * （如给主模型附带澄清提示），而不是闷头猜。启发式路径永不设置。
+   */
+  suggestClarification?: boolean;
+}
+
+/**
+ * 澄清提示：suggestClarification 轮发给主模型的附加 system 消息（消费方 modelRouter）。
+ * 只影响当次 provider 调用，不写回会话历史。
+ */
+const JEV_CLARIFICATION_HINT =
+  'The user\'s request may be missing information needed to proceed. If anything essential is ambiguous, ask one concise clarifying question first instead of guessing; otherwise proceed normally.';
+
+export function withClarificationHint(messages: ModelMessage[]): ModelMessage[] {
+  return [...messages, { role: 'system', content: JEV_CLARIFICATION_HINT }];
 }
 
 function answerNoul(answers: JevAnswers, key: string): number | null {
@@ -136,7 +153,16 @@ export class AdaptiveRouter {
   /**
    * Optional Jev router for the automatic tier. A low-confidence answer never
    * downgrades the requested tier; any provider failure returns the heuristic.
+   *
+   * Per-turn dedup: the agent loop re-runs inference() on every iteration with the
+   * same last user message, so the Jev estimate is cached on (content, has_image)
+   * with a short TTL. Only successful Jev estimates are cached; any doubt fails
+   * open to a fresh Jev call (which itself fails back to the heuristic).
    */
+  private static readonly JEV_CACHE_TTL_MS = 120_000;
+  private static readonly JEV_CACHE_MAX_ENTRIES = 32;
+  private jevEstimateCache = new Map<string, { value: TaskComplexity; expiresAt: number }>();
+
   async estimateComplexityWithJev(
     messages: ModelMessage[],
     systemOne?: JevSystemOneCall,
@@ -154,9 +180,18 @@ export class AdaptiveRouter {
       : Array.isArray(lastUserMsg.content)
         ? lastUserMsg.content.filter((part) => part.type === 'text').map((part) => part.text || '').join(' ')
         : '';
+    const hasImage = Array.isArray(lastUserMsg.content) && lastUserMsg.content.some((part) => part.type === 'image');
+    const cacheKey = `${hasImage ? 'img' : 'txt'}:${content.slice(0, 12_000)}`;
+    const cached = this.jevEstimateCache.get(cacheKey);
+    if (cached) {
+      if (cached.expiresAt > Date.now()) {
+        return { ...cached.value, signals: [...cached.value.signals] };
+      }
+      this.jevEstimateCache.delete(cacheKey);
+    }
     const state = {
       request: guardSensitiveText(content.slice(0, 12_000), { surface: 'telemetry', mode: 'model-context' }),
-      has_image: Array.isArray(lastUserMsg.content) && lastUserMsg.content.some((part) => part.type === 'image'),
+      has_image: hasImage,
       message_count: messages.length,
     };
     const call = systemOne ?? (async (stateArg, questions, options) => {
@@ -177,7 +212,7 @@ export class AdaptiveRouter {
       return fallback('malformed_answers');
     }
     const numericLevel = Number(complexity.choice);
-    if (!Number.isInteger(numericLevel) || numericLevel < 0 || numericLevel > 3 || complexity.confidence < 0.5) {
+    if (!Number.isInteger(numericLevel) || numericLevel < 0 || numericLevel > 3 || complexity.confidence < JEV_ROUTER_THRESHOLDS.minComplexityConfidence) {
       return fallback('low_confidence_or_invalid_complexity');
     }
     const signals = [
@@ -189,15 +224,26 @@ export class AdaptiveRouter {
     if (state.has_image === true) signals.push('has_image');
     // Clarification and destructive intent are safety signals, never a reason to
     // route down to the free model. The caller still keeps control of side effects.
-    const safeLevel = state.has_image === true || needsClarification >= 0.9 || destructiveIntent >= 0.7
+    const suggestClarification = needsClarification >= JEV_ROUTER_THRESHOLDS.needsClarification;
+    const safeLevel = state.has_image === true || suggestClarification || destructiveIntent >= JEV_ROUTER_THRESHOLDS.destructiveIntent
       ? Math.max(2, numericLevel)
       : numericLevel;
     const safeScore = safeLevel * (100 / 3);
-    return {
+    const result: TaskComplexity = {
       level: safeScore < 30 ? 'simple' : safeScore < 60 ? 'moderate' : 'complex',
       score: Math.round(safeScore),
       signals,
+      ...(suggestClarification ? { suggestClarification } : {}),
     };
+    if (this.jevEstimateCache.size >= AdaptiveRouter.JEV_CACHE_MAX_ENTRIES) {
+      const oldest = this.jevEstimateCache.keys().next();
+      if (!oldest.done) this.jevEstimateCache.delete(oldest.value);
+    }
+    this.jevEstimateCache.set(cacheKey, {
+      value: result,
+      expiresAt: Date.now() + AdaptiveRouter.JEV_CACHE_TTL_MS,
+    });
+    return { ...result, signals: [...result.signals] };
   }
 
   selectModel(complexity: TaskComplexity, defaultConfig: ModelConfig): ModelConfig {

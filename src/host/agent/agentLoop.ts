@@ -349,7 +349,8 @@ export class AgentLoop {
     for (const message of messages) toolCalls += message.toolCalls?.length ?? 0;
     const last = messages[messages.length - 1];
     const textLength = typeof last?.content === 'string' ? last.content.length : 0;
-    const progressKey = `${messages.length}:${textLength}:${toolCalls}:${streamProgressOf(this.ctx.sessionId)}`;
+    const streamed = this.ctx.turn.lastStreamedContent?.length ?? 0;
+    const progressKey = `${messages.length}:${textLength}:${toolCalls}:${streamed}:${streamProgressOf(this.ctx.sessionId)}`;
     const lastCall = last?.toolCalls?.[last.toolCalls.length - 1];
     if (last?.role === 'assistant' && lastCall?.name) {
       return { progressKey, phase: 'tool', detail: lastCall.name };

@@ -185,7 +185,7 @@ export function emitAssistantMessageDelta(
   text: string | undefined,
 ): void {
   if (!text) return;
-  if (path === 'content') noteStreamProgress(ctx.runtime.sessionId);
+  noteStreamProgress(ctx.runtime.sessionId);
   ctx.runtime.onEvent({
     type: 'message_delta',
     data: {

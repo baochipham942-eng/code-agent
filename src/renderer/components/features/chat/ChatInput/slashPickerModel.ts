@@ -562,7 +562,7 @@ export interface SlashMenuSection<T extends SlashPickerCandidate = SlashPickerCa
 export function presentSlashMenuGroups<T extends SlashPickerCandidate>(
   candidates: T[],
   query: string,
-  labels: { system: string; skill: string } = { system: '系统', skill: '技能' },
+  labels: { system: string; skill: string },
 ): Array<SlashMenuSection<T>> {
   const typed = query.trim().replace(/^\//, '').length > 0;
   const system: T[] = [];

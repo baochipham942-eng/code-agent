@@ -947,7 +947,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
               );
             })}
             {group.id === 'skill' ? (
-              <button
+              <button /* ds-allow:button: 菜单底的文字链，打开设置里的技能页 */
                 type="button"
                 data-testid="slash-more-skills"
                 onClick={() => openSettingsTab('skills')}

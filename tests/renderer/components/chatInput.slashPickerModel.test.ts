@@ -341,9 +341,10 @@ describe('slash picker model', () => {
     });
     expect(skill.find((item) => item.skillName === 'hidden')).toBeUndefined();
 
-    const sections = presentSlashMenuGroups(visible, '');
+    const labels = { system: '系统', skill: '技能' };
+    const sections = presentSlashMenuGroups(visible, '', labels);
     expect(sections.map((section) => section.label)).toEqual(['', '技能']);
-    const typed = presentSlashMenuGroups(filterAndRankSlashCandidates([builtin, shell, ...skill], 'side'), 'side');
+    const typed = presentSlashMenuGroups(filterAndRankSlashCandidates([builtin, shell, ...skill], 'side'), 'side', labels);
     expect(typed.map((section) => section.id)).toEqual(['system']);
     expect(typed[0]?.label).toBe('系统');
   });

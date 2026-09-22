@@ -4,10 +4,9 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentTreeNode } from '../../../src/shared/contract/agentTree';
 import type { LastToolStep, Task } from '../../../src/shared/contract/backgroundTask';
-import { buildAgentRows, type MemberRowSource } from '../../../src/renderer/utils/agentRows';
+import { applyMemberHolds, buildAgentRows, type MemberRowSource } from '../../../src/renderer/utils/agentRows';
 
 const step: LastToolStep = { tool: 'Read', target: '/repo/a.ts', at: 1 };
-const describeStep = (input: LastToolStep | undefined): string => (input ? `做了 ${input.tool}` : '正在整理任务…');
 
 function member(overrides: Partial<MemberRowSource>): MemberRowSource {
   return {
@@ -34,7 +33,7 @@ function task(overrides: Partial<Task>): Task {
 /** 九态→四态只在 agentRows 内部一处；对外只经 buildAgentRows 可见，所以全表走公共入口。 */
 function rowStatusOf(status: string) {
   return buildAgentRows({
-    members: [], tasks: [], describeStep: () => '',
+    members: [], tasks: [],
     nodes: [node({ id: `n-${status}`, status: status as AgentTreeNode['status'] })],
   })[0]?.status;
 }
@@ -74,16 +73,11 @@ describe('buildAgentRows 三源合并去重', () => {
       ],
       nodes: [],
       tasks: [],
-      describeStep,
     });
 
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ key: 'lead', kind: 'expert', isLead: true, status: 'working', stoppable: true });
     expect(rows[1]).toMatchObject({ key: 'extra-1', kind: 'expert', status: 'standby', stoppable: false });
-    // standby 行不带「当前一句」
-    expect(rows[1].activity).toBeUndefined();
-    // 没有真实工具步就不编造当前动作
-    expect(rows[0].activity).toBeUndefined();
   });
 
   it('agentTree 节点与 member 同 key：不重复成行，lastToolStep/tokens 并回专家行', () => {
@@ -91,13 +85,13 @@ describe('buildAgentRows 三源合并去重', () => {
       members: [member({})],
       nodes: [node({ id: 'researcher', lastToolStep: step, budgetSummary: { tokensUsed: 1200 } })],
       tasks: [],
-      describeStep,
     });
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      key: 'researcher', kind: 'expert', activity: '做了 Read', tokens: 1200,
+      key: 'researcher', kind: 'expert', tokens: 1200,
     });
+    expect(rows[0]).not.toHaveProperty('activity');
     expect(rows[0].node?.id).toBe('researcher');
   });
 
@@ -106,14 +100,14 @@ describe('buildAgentRows 三源合并去重', () => {
       members: [],
       nodes: [node({ id: 'agent-9', status: 'blocked', lastToolStep: step })],
       tasks: [],
-      describeStep,
     });
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       key: 'agent-9', kind: 'agent', name: '审阅代理', status: 'waiting', stoppable: false,
-      activity: '做了 Read',
     });
+    expect(rows[0]).not.toHaveProperty('activity');
+    expect(rows[0].node?.lastToolStep?.tool).toBe('Read');
   });
 
   it('同一代理在 agentTree 与 Task 都有：只有一行，Task 挂到节点行上', () => {
@@ -122,7 +116,6 @@ describe('buildAgentRows 三源合并去重', () => {
       members: [],
       nodes: [node({ id: 'agent-9' })],
       tasks: [shared],
-      describeStep,
     });
 
     expect(rows).toHaveLength(1);
@@ -138,7 +131,6 @@ describe('buildAgentRows 三源合并去重', () => {
       members: [],
       nodes: [node({ id: 'agent-9' })],
       tasks: [task({ id: 'task-1', ...overrides })],
-      describeStep,
     });
 
     expect(rows).toHaveLength(1);
@@ -151,7 +143,6 @@ describe('buildAgentRows 三源合并去重', () => {
       members: [],
       nodes: [node({ id: 'agent-9' })],
       tasks: [task({ id: 'task-1', status: 'completed', failure: undefined })],
-      describeStep,
     });
 
     expect(rows).toHaveLength(2);
@@ -167,12 +158,37 @@ describe('buildAgentRows 三源合并去重', () => {
         task({ id: 'task-failed', status: 'failed', failure: { message: '炸了' } as Task['failure'] }),
         task({ id: 'task-running', status: 'running' }),
       ],
-      describeStep,
     });
 
     const failed = rows.find((row) => row.key === 'task-failed');
     expect(failed).toMatchObject({ status: 'failed', failureReason: '炸了', stoppable: false });
     const running = rows.find((row) => row.key === 'task-running');
     expect(running).toMatchObject({ status: 'working', stoppable: true });
+  });
+});
+
+describe('applyMemberHolds', () => {
+  it('点名的代理改报需要授权，没点名的不动', () => {
+    const rows = buildAgentRows({
+      members: [],
+      nodes: [
+        node({ id: 'agent-9', lastToolStep: step }),
+        node({ id: 'other', role: '另一个' }),
+      ],
+      tasks: [],
+    });
+    const held = applyMemberHolds(rows, new Set(['agent-9']));
+    expect(held.find((row) => row.key === 'agent-9')?.hold).toBe('approval');
+    expect(held.find((row) => row.key === 'other')?.hold).toBeUndefined();
+  });
+
+  it('审批 id 对不上就不当需要授权', () => {
+    const rows = buildAgentRows({
+      members: [],
+      nodes: [node({ id: 'agent-9' })],
+      tasks: [],
+    });
+    expect(applyMemberHolds(rows, new Set(['someone-else']))[0]?.hold).toBeUndefined();
+    expect(applyMemberHolds(rows, new Set())[0]?.hold).toBeUndefined();
   });
 });

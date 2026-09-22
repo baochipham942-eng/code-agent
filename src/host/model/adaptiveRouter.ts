@@ -41,6 +41,12 @@ const JEV_CLARIFICATION_HINT =
   'The user\'s request may be missing information needed to proceed. If anything essential is ambiguous, ask one concise clarifying question first instead of guessing; otherwise proceed normally.';
 
 export function withClarificationHint(messages: ModelMessage[]): ModelMessage[] {
+  // Claude 系 provider 只取第一条 system 消息——追加在末尾会被静默丢弃
+  // （ai-review R1），所以能合并就并进首条 system；没有或内容非纯文本才追加。
+  const first = messages[0];
+  if (first?.role === 'system' && typeof first.content === 'string') {
+    return [{ ...first, content: `${first.content}\n\n${JEV_CLARIFICATION_HINT}` }, ...messages.slice(1)];
+  }
   return [...messages, { role: 'system', content: JEV_CLARIFICATION_HINT }];
 }
 

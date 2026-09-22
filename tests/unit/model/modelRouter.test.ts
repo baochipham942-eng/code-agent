@@ -582,6 +582,69 @@ describe('ModelRouter', () => {
       expect(messages).toHaveLength(1);
     });
 
+    it('merges the clarification hint into the leading system message instead of appending a second one', async () => {
+      adaptiveRouterMockState.jevComplexity = {
+        level: 'complex',
+        score: 67,
+        signals: ['needs_clarification:0.95'],
+        suggestClarification: true,
+      };
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('deepseek', provider);
+
+      const config: ModelConfig = {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+        adaptive: true,
+      };
+      // Claude 系 provider 只取第一条 system——追加在末尾会被丢弃，必须合并进去
+      const messages: ModelMessage[] = [
+        { role: 'system', content: 'You are Neo.' },
+        { role: 'user', content: 'update the previous report' },
+      ];
+
+      await router.inference(messages, [], config);
+
+      const sentMessages = provider.inference.mock.calls[0][0] as ModelMessage[];
+      expect(sentMessages.filter((m) => m.role === 'system')).toHaveLength(1);
+      expect(sentMessages[0].content).toContain('You are Neo.');
+      expect(sentMessages[0].content).toContain('clarifying question');
+      expect(messages[0].content).toBe('You are Neo.');
+    });
+
+    it('keeps inference-cache read/write keys consistent on the clarification path (repeat request hits cache)', async () => {
+      adaptiveRouterMockState.jevComplexity = {
+        level: 'complex',
+        score: 67,
+        signals: ['needs_clarification:0.95'],
+        suggestClarification: true,
+      };
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('deepseek', provider);
+
+      const config: ModelConfig = {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+        adaptive: true,
+      };
+      const ask = (): ModelMessage[] => [{ role: 'user', content: 'update the previous report' }];
+
+      await router.inference(ask(), [], config);
+      await router.inference(ask(), [], config);
+
+      // ai-review R1：读 key 曾建在 messages、写 key 建在 requestMessages → 永久 miss。
+      // 统一建在 requestMessages 后，第二次同请求必须命中缓存（provider 只调一次）。
+      expect(provider.inference).toHaveBeenCalledTimes(1);
+    });
+
     it('sends no clarification hint when Jev does not flag ambiguity', async () => {
       adaptiveRouterMockState.jevComplexity = {
         level: 'complex',

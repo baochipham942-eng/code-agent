@@ -337,7 +337,7 @@ describe('slash picker model', () => {
     expect(skill.find((item) => item.skillName === 'docx')).toMatchObject({
       label: '/docx',
       sublabel: '文档',
-      description: expect.stringContaining('已关闭'),
+      skillDisabled: true,
     });
     expect(skill.find((item) => item.skillName === 'hidden')).toBeUndefined();
 
@@ -346,6 +346,22 @@ describe('slash picker model', () => {
     const typed = presentSlashMenuGroups(filterAndRankSlashCandidates([builtin, shell, ...skill], 'side'), 'side');
     expect(typed.map((section) => section.id)).toEqual(['system']);
     expect(typed[0]?.label).toBe('系统');
+  });
+
+  it('内置命令排在技能前面，空查询截断也不会把 /doctor 挤掉', () => {
+    const doctor = createCommandCandidate({
+      id: 'doctor', label: 'Doctor', description: '检查', emptyQueryVisible: true, emptyQueryRank: 10,
+    });
+    const skills = Array.from({ length: 50 }, (_, index) => createCommandCandidate({
+      id: `skill-${index}`,
+      label: `Skill ${index}`,
+      description: '技能',
+      emptyQueryVisible: true,
+      emptyQueryRank: 55,
+    }));
+    const visible = filterAndRankSlashCandidates([doctor, ...skills], '', { maxEmptyItems: 48 });
+    expect(visible[0]?.id).toBe('doctor');
+    expect(visible).toHaveLength(48);
   });
 
   it('中文/标点后触发 slash（2026-08-05 放宽）：句中加第二个 skill 不被路径守卫拦', () => {

@@ -84,6 +84,8 @@ export interface SlashPickerCandidate {
   skillSelected?: boolean;
   skillRecommendationAction?: RecommendedSkillCandidateInput['action'];
   skillRecommendationRepoId?: string;
+  /** 用户关过这个技能。菜单里看得见，但不能选进本轮。 */
+  skillDisabled?: boolean;
   connectorId?: string;
   connectorConnected?: boolean;
   mcpServerId?: string;
@@ -306,7 +308,8 @@ export function createSkillCandidates(input: {
       actionKind: 'select-skill',
       label: `/${skill.name}`,
       sublabel: category,
-      description: `${skill.description || 'Skill'}${disabled ? '（已关闭）' : ''}`,
+      description: skill.description || 'Skill',
+      skillDisabled: disabled,
       slashText: `/${skill.name}`,
       effectLabel: mounted
         ? (labels?.selectForTurn ?? zh.slashCommands.picker.selectForTurn)

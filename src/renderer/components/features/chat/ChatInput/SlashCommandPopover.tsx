@@ -596,7 +596,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       description: sc.model.description,
       icon: <Cpu className="w-4 h-4" />,
       emptyQueryVisible: true,
-      emptyQueryRank: 50,
+      emptyQueryRank: 12,
       action: () => {
         const mc = useAppStore.getState().modelConfig;
         writeAssistant(t.slashDiagnostics.modelSwitchHint.replace('{provider}', mc.provider).replace('{model}', mc.model));
@@ -608,7 +608,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       description: sc.compact.description,
       icon: <Zap className="w-4 h-4" />,
       emptyQueryVisible: true,
-      emptyQueryRank: 55,
+      emptyQueryRank: 14,
       action: async () => {
         try {
           const result = await invoke(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, currentSessionId ?? undefined);
@@ -665,7 +665,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         label: def.name,
         description: def.description,
         emptyQueryVisible: EMPTY_QUERY_BUILTIN_IDS.has(def.id),
-        emptyQueryRank: 60,
+        emptyQueryRank: 10,
         icon: registryIconMap[def.id] || <Terminal className="w-4 h-4" />,
         sourceLabel: 'Command',
         action: () => {
@@ -773,6 +773,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     }),
     [filtered, filter, sc.picker.skillSection, sc.picker.systemSection],
   );
+  const ordered = useMemo(() => grouped.flatMap((group) => group.items), [grouped]);
 
   // Reset selection on filter change
   useEffect(() => {
@@ -810,15 +811,15 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         e.stopPropagation();
-        setSelectedIndex(prev => (prev < filtered.length - 1 ? prev + 1 : 0));
+        setSelectedIndex(prev => (prev < ordered.length - 1 ? prev + 1 : 0));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         e.stopPropagation();
-        setSelectedIndex(prev => (prev > 0 ? prev - 1 : filtered.length - 1));
-      } else if (e.key === 'Enter' && filtered[selectedIndex]) {
+        setSelectedIndex(prev => (prev > 0 ? prev - 1 : ordered.length - 1));
+      } else if (e.key === 'Enter' && ordered[selectedIndex]) {
         // IME 组合中的 Enter 是确认候选词（如中文选字），不能当成选择面板项
         if (isImeKeyEvent(e, isComposingRef)) return;
-        const selected = filtered[selectedIndex];
+        const selected = ordered[selectedIndex];
         const normalizedFilter = filter.trim().replace(/^\//, '').toLowerCase();
         const shouldSubmitExactCommand =
           selected.actionKind === 'prefill-leading-command' &&
@@ -840,7 +841,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isOpen, filtered, selectedIndex, onSelect, onClose]);
+  }, [isOpen, ordered, selectedIndex, onSelect, onClose]);
 
   // Scroll selected into view
   useEffect(() => {
@@ -865,7 +866,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
               </div>
             ) : null}
             {group.items.map((cmd) => {
-              const i = filtered.indexOf(cmd);
+              const i = ordered.indexOf(cmd);
               const skillStatus = cmd.kind === 'skill'
                 ? cmd.skillSelected ? sc.badges.skillSelected : cmd.skillMounted ? sc.badges.skillMounted : sc.badges.skillMountable
                 : null;
@@ -882,7 +883,13 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                   type="button"
                   data-slash-command-id={cmd.id}
                   data-selected={i === selectedIndex}
-                  onClick={() => onSelect(cmd)}
+                  onClick={() => {
+                    if (cmd.skillDisabled) {
+                      openSettingsTab('skills');
+                      return;
+                    }
+                    onSelect(cmd);
+                  }}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
                     i === selectedIndex
                       ? 'bg-zinc-800 text-zinc-200'

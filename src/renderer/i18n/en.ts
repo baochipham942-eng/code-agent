@@ -5,6 +5,7 @@ import type { Translations } from './zh';
 import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
 import { chatTranscriptEn } from './chatTranscript';
+import { attachmentPreviewEn } from './attachmentPreview';
 import { chatInputEn } from './chatInput';
 import { voiceEn } from './voice';
 import { chatInputModelStrategyEn } from './chatInputModelStrategy';
@@ -926,6 +927,7 @@ export const en = {
   ...rolePackEn,
   ...knowledgeMemoryEn,
   ...chatTranscriptEn,
+  ...attachmentPreviewEn,
   ...chatInputEn,
   ...voiceEn,
   ...chatInputModelStrategyEn,

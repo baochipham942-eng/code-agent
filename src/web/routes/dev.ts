@@ -440,6 +440,8 @@ interface DevRouterDeps {
   pendingDevPermissions: Map<string, PendingDevPermissionRequest>;
   runRegistry: RunRegistry;
   logger: WebRouteLogger;
+  /** 绑定会话的工作目录清单（每次请求现取），供 /workspace/file 白名单放行会话内附件。 */
+  resolveSessionWorkingDirectories?: () => Promise<string[]>;
 }
 
 export function createDevRouter(deps: DevRouterDeps): Router {
@@ -472,7 +474,15 @@ export function createDevRouter(deps: DevRouterDeps): Router {
     }
 
     const resolvedPath = path.resolve(requestedPath);
-    if (!isWorkspaceFileAllowed(resolvedPath)) {
+    let sessionWorkingDirectories: string[] = [];
+    if (deps.resolveSessionWorkingDirectories) {
+      try {
+        sessionWorkingDirectories = await deps.resolveSessionWorkingDirectories();
+      } catch (error) {
+        logger.warn('Failed to resolve session-bound workspace file roots', error);
+      }
+    }
+    if (!isWorkspaceFileAllowed(resolvedPath, sessionWorkingDirectories)) {
       res.status(403).json({ error: 'Access denied' });
       return;
     }

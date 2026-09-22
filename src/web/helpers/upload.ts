@@ -252,9 +252,52 @@ function isPathWithinBase(targetPath: string, basePath: string): boolean {
   return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
 }
 
-function isWorkspaceFileAllowed(targetPath: string): boolean {
-  const allowedRoots = [path.resolve(process.cwd()), path.resolve(os.tmpdir())];
-  return allowedRoots.some((root) => isPathWithinBase(targetPath, root));
+// 会话工作目录下可整目录放行的只有 artifact 子树（产物预览要 html/css/js，同
+// handleScreenshot 的 isBoundSessionArtifactPath 口径）；其余位置只放行可内联预览的
+// 媒体/文档扩展名（N-ATTACH-PREVIEW-403 的会话附件场景；ai-review PR#2030 收窄）。
+const SESSION_FILE_ALLOWED_EXT = /\.(jpe?g|png|gif|webp|svg|mp3|wav|ogg|m4a|flac|mp4|webm|mov|m4v|pdf|txt|md|json|csv)$/i;
+
+function isSessionWorkspaceFileAllowed(
+  targetPath: string,
+  sessionWorkingDirectories: readonly string[],
+): boolean {
+  for (const workingDirectory of sessionWorkingDirectories) {
+    if (!workingDirectory?.trim()) continue;
+    const root = path.resolve(workingDirectory);
+    // 过宽的根不放行：会话绑了家目录/盘根就能读 ~/.ssh、~/.code-agent 里的密钥。
+    if (root === os.homedir() || root === path.parse(root).root) continue;
+    if (!isPathWithinBase(targetPath, root)) continue;
+    if (!SESSION_FILE_ALLOWED_EXT.test(targetPath)) continue;
+    try {
+      // 词法包含挡 ../；realpath 再挡符号链接逃逸。失败一律拒（fail closed），
+      // 缺失文件表现为 403，由前端「无法预览」兜底承接。
+      if (isPathWithinBase(fs.realpathSync(targetPath), fs.realpathSync(root))) return true;
+    } catch {
+      // fail closed
+    }
+  }
+  return false;
+}
+
+function isWorkspaceFileAllowed(
+  targetPath: string,
+  sessionWorkingDirectories: readonly string[] = [],
+): boolean {
+  // 基线根（cwd / tmpdir）维持原样；agent 默认工作目录与绑定会话工作目录走同一套
+  // 收窄规则：artifact 子树不限类型，其余位置只放行媒体/文档扩展名 + realpath 双锚
+  // （ai-review PR#2030：默认工作目录不限类型直放会读到 <workDir>/.env 这类凭据）。
+  const allowedRoots = [
+    path.resolve(process.cwd()),
+    path.resolve(os.tmpdir()),
+  ];
+  if (allowedRoots.some((root) => isPathWithinBase(targetPath, root))) return true;
+  const workDirectories = [
+    getDefaultWorkDirectory(),
+    getLegacyDefaultWorkDirectory(getUserDataPath()),
+    ...sessionWorkingDirectories,
+  ];
+  if (isBoundSessionArtifactPath(targetPath, workDirectories)) return true;
+  return isSessionWorkspaceFileAllowed(targetPath, workDirectories);
 }
 
 function getContentType(filePath: string): string {

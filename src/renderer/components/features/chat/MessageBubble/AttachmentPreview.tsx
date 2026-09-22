@@ -16,6 +16,7 @@ import {
   FolderSearch,
   Globe,
   Image as ImageIcon,
+  ImageOff,
   Loader2,
   Music,
   Presentation,
@@ -47,6 +48,7 @@ import {
 } from '../../../../services/nativeCommandFacade';
 import { formatFileSize, FOLDER_SUMMARY_THRESHOLD, categoryLabels } from './utils';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
+import { useI18n } from '../../../../hooks/useI18n';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
 import { PresentationPagePicker } from '../../../PresentationPagePicker';
@@ -223,9 +225,17 @@ const AttachmentItem: React.FC<{
   mediaContext?: SessionMediaContext;
   onMediaOpen: (asset: SessionMediaAsset) => void;
 }> = ({ attachment, mediaContext, onMediaOpen }) => {
+  const { t } = useI18n();
   const [displayAttachment, setDisplayAttachment] = useState(attachment);
   const [retrying, setRetrying] = useState(false);
-  useEffect(() => setDisplayAttachment(attachment), [attachment]);
+  // 内联图片加载失败（如 /api/workspace/file 403）兜底：破图不裸奔，给「无法预览」+ 重试。
+  const [imageLoadFailed, setImageLoadFailed] = useState(false);
+  const [previewRetryNonce, setPreviewRetryNonce] = useState(0);
+  useEffect(() => {
+    setDisplayAttachment(attachment);
+    setImageLoadFailed(false);
+    setPreviewRetryNonce(0);
+  }, [attachment]);
 
   // Appshot 会话回放：ledger 只存摘要（无 data/path），截图本体仍在 appshots 目录，
   // 按 requestId 派生路径惰性还原（无绝对路径入 ledger）。仅在 image 类且 src 为空时触发。
@@ -289,6 +299,11 @@ const AttachmentItem: React.FC<{
         },
         result.attachment,
       ));
+      if (result.success) {
+        // 清掉破图兜底并换 src 重新拉取——否则恢复后的图片仍被「无法预览」占位挡住。
+        setImageLoadFailed(false);
+        setPreviewRetryNonce((nonce) => nonce + 1);
+      }
     } catch (error) {
       setDisplayAttachment((current) => ({
         ...current,
@@ -341,24 +356,45 @@ const AttachmentItem: React.FC<{
     }
     return (
       <div className="group max-w-[220px] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/80 shadow-lg">
-        {imageSrc ? (
+        {imageSrc && !imageLoadFailed ? (
           <div
             className="relative cursor-pointer"
             onClick={() => mediaAsset && onMediaOpen(mediaAsset)}
           >
             <img
-              src={imageSrc}
+              src={previewRetryNonce > 0 && imageSrc.startsWith('/api/')
+                ? `${imageSrc}${imageSrc.includes('?') ? '&' : '?'}_r=${previewRetryNonce}`
+                : imageSrc}
               alt={displayAttachment.name}
               className="max-h-[150px] w-full object-cover transition-colors group-hover:border-badge-accent/50"
+              onError={() => setImageLoadFailed(true)}
             />
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
               <ImageIcon className="w-6 h-6 text-white" />
             </div>
             <div className="absolute bottom-1 left-1">{stateBadge}</div>
           </div>
+        ) : imageSrc ? (
+          <div className="flex min-h-[84px] flex-col items-center justify-center gap-1.5 px-3 py-4 text-center">
+            <ImageOff className="h-5 w-5 text-zinc-500" />
+            <span className="text-xs text-zinc-400">{t.attachmentPreview.imageUnavailable}</span>
+            <span className="text-2xs text-zinc-600">{t.attachmentPreview.imageUnavailableHint}</span>
+            <button
+              type="button"
+              className="mt-0.5 inline-flex items-center gap-1 rounded border border-zinc-600 px-2 py-0.5 text-xs text-zinc-300 hover:border-zinc-400 hover:text-zinc-100"
+              onClick={(event) => {
+                event.stopPropagation();
+                setImageLoadFailed(false);
+                setPreviewRetryNonce((nonce) => nonce + 1);
+              }}
+            >
+              <RotateCcw className="h-3 w-3" />
+              {t.common.retry}
+            </button>
+          </div>
         ) : (
           <div className="flex min-h-[84px] items-center justify-center px-3 py-4 text-center text-xs text-zinc-500">
-            图片过大，已跳过内联预览
+            {t.attachmentPreview.imageTooLarge}
           </div>
         )}
         {(mediaAsset || stateBadge) && (

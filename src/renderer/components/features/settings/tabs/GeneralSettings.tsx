@@ -11,7 +11,7 @@
 // 用户 ack 后写 inheritanceMigrationAcked=true。
 // ============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Bot,
@@ -207,8 +207,8 @@ export function buildPermissionRuleSummary(
   };
 }
 
-function isPermissionMode(value: string): value is PermissionMode {
-  return PERMISSION_MODES.includes(value as PermissionMode);
+function isPermissionMode(value: unknown): value is PermissionMode {
+  return typeof value === 'string' && PERMISSION_MODES.includes(value as PermissionMode);
 }
 
 function isInheritanceMode(value: string): value is InheritanceMode {
@@ -291,48 +291,61 @@ export const GeneralSettings: React.FC = () => {
   const activeModeRow = permissionModeRows.find((row) => row.selected) ?? permissionModeRows[0];
   const activeInheritanceRow = inheritanceRows.find((row) => row.selected) ?? inheritanceRows[0];
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [currentMode, settings, budgetStatus] = await Promise.all([
-          ipcService.invoke(IPC_CHANNELS.PERMISSION_GET_MODE),
-          ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get'),
-          ipcService
-            .invokeDomain<BudgetStatusResponse | undefined>(IPC_DOMAINS.SETTINGS, 'getBudgetStatus')
-            .catch(() => undefined),
-        ]);
-        if (isPermissionMode(currentMode)) {
-          setPermissionMode(currentMode);
-        }
-
-        const perms = settings?.permissions;
-        if (perms?.inheritance && isInheritanceMode(perms.inheritance)) {
-          setInheritance(perms.inheritance);
-        }
-        if (perms?.deny) setDenyRules(perms.deny.join('\n'));
-        if (perms?.ask) setAskRules(perms.ask.join('\n'));
-        if (perms?.allow) setAllowRules(perms.allow.join('\n'));
-
-        if (perms?._legacyPermissions && !perms?.inheritanceMigrationAcked) {
-          setShowMigrationBanner(true);
-        }
-
-        const budget = settings?.budget;
-        setForegroundBudget(budgetValueToInput(
-          budget ? (budget.foreground?.maxBudget ?? budget.maxBudget) : DEFAULT_FOREGROUND_BUDGET,
-        ));
-        setUnattendedBudget(budgetValueToInput(
-          budget ? (budget.unattended?.maxBudget ?? budget.maxBudget) : DEFAULT_UNATTENDED_BUDGET,
-        ));
-        setUnattendedCurrentCost(budgetStatus?.scopes?.unattended?.currentCost ?? 0);
-      } catch (error) {
-        toast.error(generalText.loadFailedPrefix + getErrorMessage(error, generalText.unknownError));
-      } finally {
-        setIsLoading(false);
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [currentMode, settings, budgetStatus] = await Promise.all([
+        // 非管理员调 get-mode 必 403（settings.ipc.ts 的 assertAdminAccess），且 web 传输层
+        // 会把失败吞成 undefined 静默显示默认档（N-SETTINGS-PERM-403-TOAST）——非管理员
+        // 直接读 SET_MODE 持久化进 settings 的同一份档位。
+        isAdmin
+          ? ipcService.invoke(IPC_CHANNELS.PERMISSION_GET_MODE)
+          : Promise.resolve(undefined),
+        ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get'),
+        ipcService
+          .invokeDomain<BudgetStatusResponse | undefined>(IPC_DOMAINS.SETTINGS, 'getBudgetStatus')
+          .catch(() => undefined),
+      ]);
+      const persistedMode = settings?.permissions?.permissionMode;
+      if (isPermissionMode(currentMode)) {
+        setPermissionMode(currentMode);
+      } else if (isPermissionMode(persistedMode)) {
+        setPermissionMode(persistedMode);
       }
-    };
-    load();
-  }, []);
+
+      const perms = settings?.permissions;
+      if (perms?.inheritance && isInheritanceMode(perms.inheritance)) {
+        setInheritance(perms.inheritance);
+      }
+      if (perms?.deny) setDenyRules(perms.deny.join('\n'));
+      if (perms?.ask) setAskRules(perms.ask.join('\n'));
+      if (perms?.allow) setAllowRules(perms.allow.join('\n'));
+
+      if (perms?._legacyPermissions && !perms?.inheritanceMigrationAcked) {
+        setShowMigrationBanner(true);
+      }
+
+      const budget = settings?.budget;
+      setForegroundBudget(budgetValueToInput(
+        budget ? (budget.foreground?.maxBudget ?? budget.maxBudget) : DEFAULT_FOREGROUND_BUDGET,
+      ));
+      setUnattendedBudget(budgetValueToInput(
+        budget ? (budget.unattended?.maxBudget ?? budget.maxBudget) : DEFAULT_UNATTENDED_BUDGET,
+      ));
+      setUnattendedCurrentCost(budgetStatus?.scopes?.unattended?.currentCost ?? 0);
+    } catch (error) {
+      toast.error(
+        generalText.loadFailedPrefix + getErrorMessage(error, generalText.unknownError),
+        { label: t.common.retry, onClick: () => void load() },
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [generalText, isAdmin, t]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const handlePermissionModeChange = async (newMode: PermissionMode) => {
     try {

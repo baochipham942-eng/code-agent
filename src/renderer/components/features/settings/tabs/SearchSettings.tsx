@@ -68,25 +68,38 @@ export function SearchSettings() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get'),
-      invokeDomain<ServiceKeyMap>(IPC_DOMAINS.SETTINGS, 'getAllServiceKeys'),
-    ])
-      .then(([settings, keys]) => {
-        if (cancelled) return;
-        const prefs = settings?.search;
-        setOrderedIds(orderCatalog(prefs?.sourceOrder).map((s) => s.id));
-        setDisabled(new Set(prefs?.disabledSources ?? []));
-        setExternalSource(prefs?.externalSource ?? 'auto');
-        setServiceKeys(keys ?? {});
-        setShareBaseUrl(settings?.shareService?.baseUrl?.trim() || SHARE_SERVICE.DEFAULT_BASE_URL);
-      })
-      .catch(() => {
-        if (!cancelled) toast.error(searchText.loadFailed);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const load = () => {
+      Promise.all([
+        invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get'),
+        invokeDomain<ServiceKeyMap>(IPC_DOMAINS.SETTINGS, 'getAllServiceKeys'),
+      ])
+        .then(([settings, keys]) => {
+          if (cancelled) return;
+          const prefs = settings?.search;
+          setOrderedIds(orderCatalog(prefs?.sourceOrder).map((s) => s.id));
+          setDisabled(new Set(prefs?.disabledSources ?? []));
+          setExternalSource(prefs?.externalSource ?? 'auto');
+          setServiceKeys(keys ?? {});
+          setShareBaseUrl(settings?.shareService?.baseUrl?.trim() || SHARE_SERVICE.DEFAULT_BASE_URL);
+        })
+        .catch(() => {
+          // 失败只给关闭不给重试会让用户卡死（N-SETTINGS-PERM-403-TOAST）——toast 支持动作按钮。
+          if (!cancelled) {
+            toast.error(searchText.loadFailed, {
+              label: t.common.retry,
+              onClick: () => {
+                if (cancelled) return;
+                setLoading(true);
+                load();
+              },
+            });
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    };
+    load();
     return () => {
       cancelled = true;
     };

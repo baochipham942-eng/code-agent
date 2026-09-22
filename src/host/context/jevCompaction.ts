@@ -1,5 +1,7 @@
-// Optional fast Jev compaction for tool rounds. It preserves source text,
-// except for the explicit 300-character result truncation case.
+// Optional fast Jev compaction for tool rounds. It never rewrites or summarizes
+// text: entries are kept verbatim, dropped as whole call+result pairs (the
+// assistant text of a dropped pair goes with it), or truncated to the explicit
+// head+tail 300-character form that preserves any trailing archive pointer.
 
 import { estimateTokens } from './tokenEstimator';
 import type { ProjectableMessage } from './projectionEngine';
@@ -32,6 +34,20 @@ interface Candidate {
 }
 
 /** Safe entries are never judged, dropped, or truncated: the latest six tool entries plus user-protected messages. */
+/**
+ * 头+尾截断到 ≤300 字符：L0/L1 把 spill 归档取回指针（archive 路径 / next-read
+ * 提示）追加在正文末尾，纯 slice(0,300) 会把它切掉，模型从此找不回完整输出
+ * （ai-review R2 Important）。尾部 120 字符保底覆盖取回指针。
+ */
+function jevTruncateResult(content: string): string {
+  const budget = JEV_COMPACTION_THRESHOLDS.truncatedResultChars;
+  if (content.length <= budget) return content;
+  const marker = '\n…[jev-truncated]…\n';
+  const tail = 120;
+  const head = budget - tail - marker.length;
+  return content.slice(0, head) + marker + content.slice(-tail);
+}
+
 function isSafe(candidate: Candidate): boolean {
   return candidate.pinned || candidate.protected;
 }
@@ -196,7 +212,7 @@ export async function applyJevCompaction(
       keptChars -= message.content.length;
     } else if (truncateIds.has(message.id)) {
       keptChars -= Math.max(0, message.content.length - JEV_COMPACTION_THRESHOLDS.truncatedResultChars);
-      message.content = message.content.slice(0, JEV_COMPACTION_THRESHOLDS.truncatedResultChars);
+      message.content = jevTruncateResult(message.content);
     }
   }
   if (removeIds.size > 0) {

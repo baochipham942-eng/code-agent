@@ -96,6 +96,28 @@ describe('jevCompaction', () => {
     expect(result.spotCheckPassed).toBe(true);
   });
 
+  it('truncation preserves a trailing spill archive pointer (head+tail, ai-review R2)', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_COMPACTION', '1');
+    const messages = toolTranscript();
+    const archivePath = '/private/tmp/neo-spill/session-1/result-abc123.txt';
+    const spillTail = `\n[archived] 完整输出已归档：${archivePath}\n取回方式：用 Read 工具读上面的 archive 路径。`;
+    const result1 = messages.find((message) => message.id === 'result-1');
+    if (!result1) throw new Error('fixture missing result-1');
+    result1.content = 'x'.repeat(500) + spillTail;
+    const systemOne = vi.fn(async (_state: Record<string, unknown>, questions: Record<string, unknown>) => {
+      const answers: Record<string, { noul: number }> = {};
+      for (const key of Object.keys(questions)) {
+        answers[key] = { noul: key.includes('result-1') && key.startsWith('keep_result') ? 0.1 : 0.9 };
+      }
+      return answers;
+    }) as unknown as JevSystemOneCall;
+    await applyJevCompaction(messages, systemOne);
+    const truncated = messages.find((message) => message.id === 'result-1')?.content ?? '';
+    expect(truncated.length).toBeLessThanOrEqual(300);
+    expect(truncated).toContain(archivePath);
+    expect(truncated).toContain('[jev-truncated]');
+  });
+
   it('fails closed when Jev is unavailable', async () => {
     vi.stubEnv('CODE_AGENT_JEV_COMPACTION', '1');
     const messages = toolTranscript();

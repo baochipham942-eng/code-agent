@@ -366,7 +366,6 @@ export const zhSettingsCore = {
         preserveRecent: '最近保留',
         messagesSuffix: '条消息',
         warningThreshold: '开始提醒',
-        criticalThreshold: '主动整理',
         triggerTokens: '强制整理点',
         triggerTokensAuto: '留空则随模型窗口',
         auditPrefix: '整理留痕 ',

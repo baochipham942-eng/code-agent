@@ -366,7 +366,6 @@ export const enSettingsCore = {
         preserveRecent: 'Keep recent',
         messagesSuffix: 'messages',
         warningThreshold: 'Warn at',
-        criticalThreshold: 'Clean at',
         triggerTokens: 'Forced cleanup point',
         triggerTokensAuto: 'Blank follows the model window',
         auditPrefix: 'Cleanup audit ',

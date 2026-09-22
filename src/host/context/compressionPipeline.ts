@@ -91,8 +91,8 @@ export interface PipelineResult {
 }
 
 // Fractions of projected maxTokens. contextCollapse (0.75) is the L4 projection
-// layer, not the settings warning slider. autocompact is the forced signal;
-// the settings criticalThreshold slider is not read here.
+// layer, not the settings warning slider. autocompact is the forced signal
+// (PIPELINE_AUTOCOMPACT_OCCUPANCY). It is not a settings field.
 const THRESHOLDS = {
   snip: 0.50,
   microcompact: 0.60,

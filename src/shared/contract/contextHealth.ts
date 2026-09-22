@@ -120,12 +120,13 @@ export interface CompressionStats {
 }
 
 export interface ContextCompressionConfig {
-  /** 自动压缩是否开启 */
+  /** 自动压缩是否开启。只挡住用量百分比软门，不挡住强制整理。 */
   enabled: boolean;
-  /** 达到该使用率后开始提醒或准备压缩，0-1 */
+  /**
+   * 软门（0-1）。host 只把它用于用量百分比触发。
+   * 强制整理占用率是管线常量，不是这项设置。
+   */
   warningThreshold: number;
-  /** 达到该使用率后主动压缩，0-1 */
-  criticalThreshold: number;
   /** 压缩后保留最近消息数 */
   preserveRecentCount: number;
   /**

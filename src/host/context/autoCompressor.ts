@@ -13,11 +13,6 @@ export interface AutoCompressionConfig {
   enabled: boolean;
   /** Soft gate (0-1). Gates usage-percent triggers only; not the forced path. */
   warningThreshold: number;
-  /**
-   * Settings "Clean at" ratio. Persisted for the slider; no host decision reads it.
-   * Forced occupancy lives in PIPELINE_AUTOCOMPACT_OCCUPANCY.
-   */
-  criticalThreshold: number;
   /** 保留最近 N 条消息不压缩 */
   preserveRecentCount: number;
   /** Explicit absolute override. Absent → derive from the model window. */
@@ -29,7 +24,6 @@ export interface AutoCompressionConfig {
 const DEFAULT_CONFIG: AutoCompressionConfig = {
   enabled: true,
   warningThreshold: 0.75,
-  criticalThreshold: 0.85,
   preserveRecentCount: 10,
 };
 

@@ -51,7 +51,6 @@ function manualCompactIntentKey(
 const DEFAULT_CONTEXT_COMPRESSION_CONFIG: ContextCompressionConfig = {
   enabled: true,
   warningThreshold: 0.75,
-  criticalThreshold: 0.85,
   preserveRecentCount: 10,
   compactProvider: 'moonshot',
   compactModel: DEFAULT_MODELS.compact,
@@ -77,10 +76,6 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
 function normalizeCompressionConfig(config?: Partial<ContextCompressionConfig>): ContextCompressionConfig {
   const merged = { ...DEFAULT_CONTEXT_COMPRESSION_CONFIG, ...(config || {}) };
   const warningThreshold = clampRatio(merged.warningThreshold, DEFAULT_CONTEXT_COMPRESSION_CONFIG.warningThreshold);
-  const criticalThreshold = Math.max(
-    warningThreshold,
-    clampRatio(merged.criticalThreshold, DEFAULT_CONTEXT_COMPRESSION_CONFIG.criticalThreshold),
-  );
   const storedTrigger = storedTriggerTokens(merged);
   const triggerTokens = storedTrigger === undefined
     ? undefined
@@ -89,7 +84,6 @@ function normalizeCompressionConfig(config?: Partial<ContextCompressionConfig>):
   return {
     enabled: merged.enabled !== false,
     warningThreshold,
-    criticalThreshold,
     preserveRecentCount: clampInt(merged.preserveRecentCount, DEFAULT_CONTEXT_COMPRESSION_CONFIG.preserveRecentCount, 2, 50),
     triggerTokensExplicit: triggerTokens !== undefined,
     ...(triggerTokens ? { triggerTokens } : {}),
@@ -119,7 +113,6 @@ function applyCompressionConfig(config: ContextCompressionConfig): void {
   getAutoCompressor().updateConfig({
     enabled: config.enabled,
     warningThreshold: config.warningThreshold,
-    criticalThreshold: config.criticalThreshold,
     preserveRecentCount: config.preserveRecentCount,
     triggerTokens: config.triggerTokens,
   });

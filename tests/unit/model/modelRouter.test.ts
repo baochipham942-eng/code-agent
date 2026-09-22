@@ -99,15 +99,29 @@ vi.mock('../../../src/host/model/inferenceCache', async (importActual) => {
   };
 });
 
-// Mock adaptiveRouter
-vi.mock('../../../src/host/model/adaptiveRouter', () => ({
-  getAdaptiveRouter: () => ({
-    estimateComplexity: vi.fn().mockReturnValue({ level: 'moderate', score: 50, signals: [] }),
-    selectModel: vi.fn(),
-    recordOutcome: vi.fn(),
-    disableFreeModel: vi.fn(),
-  }),
+// Mock adaptiveRouter —— withClarificationHint 等纯函数用真实现（N-JEV-ROUTER 的澄清提示
+// 消费断言依赖真实提示文案），只桩 getAdaptiveRouter 单例；Jev 复杂度经 hoisted state 按用例注入
+const adaptiveRouterMockState = vi.hoisted(() => ({
+  jevComplexity: undefined as undefined | {
+    level: 'simple' | 'moderate' | 'complex';
+    score: number;
+    signals: string[];
+    suggestClarification?: boolean;
+  },
 }));
+vi.mock('../../../src/host/model/adaptiveRouter', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/model/adaptiveRouter')>();
+  return {
+    ...actual,
+    getAdaptiveRouter: () => ({
+      estimateComplexity: vi.fn().mockReturnValue({ level: 'moderate', score: 50, signals: [] }),
+      estimateComplexityWithJev: vi.fn(async () => adaptiveRouterMockState.jevComplexity ?? { level: 'moderate', score: 50, signals: [] }),
+      selectModel: vi.fn(),
+      recordOutcome: vi.fn(),
+      disableFreeModel: vi.fn(),
+    }),
+  };
+});
 
 // 只桩 getProviderHealthMonitor；persistentProviderMarkKind 用真实现（分类语义是断言对象）
 vi.mock('../../../src/host/model/providerHealthMonitor', async (importActual) => {
@@ -134,6 +148,7 @@ describe('ModelRouter', () => {
     inferenceCacheState.reset();
     healthMonitorMock.getHealth.mockReturnValue(null);
     broadcastToRendererMock.mockReset();
+    adaptiveRouterMockState.jevComplexity = undefined;
     router = new ModelRouter();
   });
 
@@ -534,6 +549,95 @@ describe('ModelRouter', () => {
         undefined,
         options,
       );
+    });
+
+    it('does not append the clarification hint itself — the consumer moved upstream to runEngineInference (R7)', async () => {
+      adaptiveRouterMockState.jevComplexity = {
+        level: 'complex',
+        score: 67,
+        signals: ['needs_clarification:0.95'],
+        suggestClarification: true,
+      };
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('deepseek', provider);
+
+      const config: ModelConfig = {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+        adaptive: true,
+      };
+      // R7 起澄清提示由主链路统一决策点 runEngineInference 附加（覆盖默认 aiSdk
+      // 引擎）；modelRouter 不再叠加，否则上游已附提示时会重复。
+      const messages: ModelMessage[] = [
+        { role: 'system', content: 'You are Neo.' },
+        { role: 'user', content: 'update the previous report' },
+      ];
+
+      await router.inference(messages, [], config);
+
+      const sentMessages = provider.inference.mock.calls[0][0] as ModelMessage[];
+      expect(sentMessages.filter((m) => m.role === 'system')).toHaveLength(1);
+      expect(sentMessages[0].content).toBe('You are Neo.');
+      expect(sentMessages).toHaveLength(2);
+    });
+
+    it('keeps inference-cache read/write keys consistent on the Jev path (repeat request hits cache)', async () => {
+      adaptiveRouterMockState.jevComplexity = {
+        level: 'complex',
+        score: 67,
+        signals: ['needs_clarification:0.95'],
+        suggestClarification: true,
+      };
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('deepseek', provider);
+
+      const config: ModelConfig = {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+        adaptive: true,
+      };
+      const ask = (): ModelMessage[] => [{ role: 'user', content: 'update the previous report' }];
+
+      await router.inference(ask(), [], config);
+      await router.inference(ask(), [], config);
+
+      // ai-review R1：读 key 曾建在 messages、写 key 建在 requestMessages → 永久 miss。
+      // 统一建在 requestMessages 后，第二次同请求必须命中缓存（provider 只调一次）。
+      expect(provider.inference).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends no clarification hint when Jev does not flag ambiguity', async () => {
+      adaptiveRouterMockState.jevComplexity = {
+        level: 'complex',
+        score: 67,
+        signals: ['needs_clarification:0.10'],
+      };
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('deepseek', provider);
+
+      const config: ModelConfig = {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+        adaptive: true,
+      };
+
+      await router.inference([{ role: 'user', content: 'refactor the parser module' }], [], config);
+
+      const sentMessages = provider.inference.mock.calls[0][0] as ModelMessage[];
+      expect(sentMessages).toHaveLength(1);
+      expect(sentMessages[0].role).toBe('user');
     });
 
     it('should use streaming-first for explicit file artifact generation turns', async () => {

@@ -61,6 +61,8 @@ export interface ModelDecisionInput {
   taskStrategy?: TaskModelStrategySettings;
   /** config `models.default`；仅用于区分默认路径与真实会话级手动选择。 */
   defaultProvider?: ModelProvider;
+  /** Precomputed automatic-tier complexity (Jev may supply this asynchronously). */
+  complexityOverride?: TaskComplexity;
 }
 
 export interface ModelDecisionResult {
@@ -522,7 +524,7 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
     };
   }
 
-  const complexity = getAdaptiveRouter().estimateComplexity(messages);
+  const complexity = input.complexityOverride ?? getAdaptiveRouter().estimateComplexity(messages);
 
   if (taskStrategy) {
     const intent = taskStrategy.mode === 'manual'

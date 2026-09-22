@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AdaptiveRouter } from '../../../src/host/model/adaptiveRouter';
 import type { FallbackContext } from '../../../src/host/model/adaptiveRouter';
+import type { JevSystemOneCall } from '../../../src/shared/constants/jevQuestions';
 
 // --------------------------------------------------------------------------
 // Mocks
@@ -145,6 +146,145 @@ describe('AdaptiveRouter.selectFallback', () => {
   });
 });
 
+describe('AdaptiveRouter Jev intent router', () => {
+  beforeEach(() => vi.unstubAllEnvs());
+
+  it('is default off and preserves the heuristic without calling Jev', async () => {
+    const router = new AdaptiveRouter();
+    const systemOne = vi.fn() as unknown as JevSystemOneCall;
+    const result = await router.estimateComplexityWithJev([{ role: 'user', content: 'hello' }], systemOne);
+    expect(result.level).toBe('simple');
+    expect(systemOne).not.toHaveBeenCalled();
+  });
+
+  it('synthesizes intent and complexity, and keeps ambiguous requests out of the simple tier', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const systemOne = vi.fn(async () => ({
+      intent: { choice: 'artifact', confidence: 0.92 },
+      complexity: { choice: '1', confidence: 0.91 },
+      needs_clarification: { noul: 0.95 },
+      destructive_intent: { noul: 0.05 },
+    })) as unknown as JevSystemOneCall;
+    const result = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'update the previous report' }],
+      systemOne,
+    );
+    expect(result.level).toBe('complex');
+    expect(result.suggestClarification).toBe(true);
+    expect(result.signals).toContain('jev_intent:artifact');
+    expect(result.signals).toContain('needs_clarification:0.95');
+  });
+
+  it('does not set suggestClarification below the centralized threshold', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const systemOne = vi.fn(async () => ({
+      intent: { choice: 'chat', confidence: 0.9 },
+      complexity: { choice: '0', confidence: 0.9 },
+      needs_clarification: { noul: 0.89 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const result = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'hi' }],
+      systemOne,
+    );
+    expect(result.level).toBe('simple');
+    expect(result.suggestClarification).toBeUndefined();
+  });
+
+  it('caches the Jev estimate per last user message within a turn', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const systemOne = vi.fn(async () => ({
+      intent: { choice: 'coding', confidence: 0.9 },
+      complexity: { choice: '1', confidence: 0.9 },
+      needs_clarification: { noul: 0.1 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const router = new AdaptiveRouter();
+    const first = await router.estimateComplexityWithJev([{ role: 'user', content: 'fix the parser bug' }], systemOne);
+    // Loop iterations append tool messages; the last user message is unchanged.
+    const second = await router.estimateComplexityWithJev(
+      [
+        { role: 'user', content: 'fix the parser bug' },
+        { role: 'assistant', content: 'working on it' },
+      ],
+      systemOne,
+    );
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(second).toEqual(first);
+
+    await router.estimateComplexityWithJev([{ role: 'user', content: 'a different request' }], systemOne);
+    expect(systemOne).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails open: heuristic fallbacks are not cached, the next iteration retries Jev', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const router = new AdaptiveRouter();
+    const lowConfidence = vi.fn(async () => ({
+      intent: { choice: 'chat', confidence: 0.9 },
+      complexity: { choice: '0', confidence: 0.49 },
+      needs_clarification: { noul: 0 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const fallback = await router.estimateComplexityWithJev(
+      [{ role: 'user', content: 'hello' }],
+      lowConfidence,
+    );
+    expect(fallback.signals).toContain('short_message');
+    expect(fallback.suggestClarification).toBeUndefined();
+
+    const healthy = vi.fn(async () => ({
+      intent: { choice: 'chat', confidence: 0.9 },
+      complexity: { choice: '0', confidence: 0.9 },
+      needs_clarification: { noul: 0 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const retried = await router.estimateComplexityWithJev(
+      [{ role: 'user', content: 'hello' }],
+      healthy,
+    );
+    expect(healthy).toHaveBeenCalledTimes(1);
+    expect(retried.signals).toContain('jev_intent:chat');
+  });
+
+  it('does not downgrade on low confidence and fails back to heuristic on provider errors', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const lowConfidence = vi.fn(async () => ({
+      intent: { choice: 'chat', confidence: 0.9 },
+      complexity: { choice: '0', confidence: 0.49 },
+      needs_clarification: { noul: 0 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const low = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'this is a long request that should not be downgraded by an uncertain classifier because it has a file.json reference' }],
+      lowConfidence,
+    );
+    expect(low.signals).not.toContain('jev_intent:chat');
+
+    const failing = vi.fn(async () => { throw new Error('jev down'); }) as unknown as JevSystemOneCall;
+    const fallback = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'hello' }],
+      failing,
+    );
+    expect(fallback.signals).toContain('short_message');
+  });
+
+  it('keeps image requests out of the free text-only tier even when Jev says simple', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const systemOne = vi.fn(async () => ({
+      intent: { choice: 'vision', confidence: 0.95 },
+      complexity: { choice: '0', confidence: 0.95 },
+      needs_clarification: { noul: 0 },
+      destructive_intent: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const result = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'redacted' } }] }],
+      systemOne,
+    );
+    expect(result.level).toBe('complex');
+    expect(result.signals).toContain('has_image');
+  });
+});
+
 // --------------------------------------------------------------------------
 // selectModel — CLI_MODE / WEB_MODE 守卫
 // --------------------------------------------------------------------------
@@ -207,5 +347,30 @@ describe('AdaptiveRouter.selectModel env guards', () => {
     const moderate = { level: 'moderate' as const, score: 50, signals: [] };
     const result = router.selectModel(moderate, defaultConfig);
     expect(result.provider).toBe(defaultConfig.provider);
+  });
+});
+
+describe('withClarificationHint（澄清提示组装，纯函数）', () => {
+  it('首条为 string 型 system 时并入其末尾，不新增第二条 system', async () => {
+    const { withClarificationHint } = await import('../../../src/host/model/adaptiveRouter');
+    const messages = [
+      { role: 'system', content: 'You are Neo.' },
+      { role: 'user', content: 'update the previous report' },
+    ];
+    const hinted = withClarificationHint(messages);
+    expect(hinted.filter((m) => m.role === 'system')).toHaveLength(1);
+    expect(hinted[0].content).toContain('You are Neo.');
+    expect(hinted[0].content).toContain('clarifying question');
+    // 不污染调用方的消息数组
+    expect(messages[0].content).toBe('You are Neo.');
+    expect(messages).toHaveLength(2);
+  });
+
+  it('没有 system 或首条非纯文本时才追加新 system 消息', async () => {
+    const { withClarificationHint } = await import('../../../src/host/model/adaptiveRouter');
+    const hinted = withClarificationHint([{ role: 'user', content: 'hi' }]);
+    expect(hinted).toHaveLength(2);
+    expect(hinted[1].role).toBe('system');
+    expect(hinted[1].content).toContain('clarifying question');
   });
 });

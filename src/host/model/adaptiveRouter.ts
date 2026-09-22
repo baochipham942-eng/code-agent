@@ -12,6 +12,13 @@ import {
   PROVIDER_REGISTRY,
 } from '../../shared/constants';
 import { resolveBaseFallbackChain } from './modelRouterPolicy';
+import { guardSensitiveText } from '../security/sensitiveDataGuard';
+import {
+  JEV_ROUTER_QUESTIONS,
+  JEV_ROUTER_THRESHOLDS,
+  type JevAnswers,
+  type JevSystemOneCall,
+} from '../../shared/constants/jevQuestions';
 
 const logger = createLogger('AdaptiveRouter');
 
@@ -19,6 +26,47 @@ export interface TaskComplexity {
   level: 'simple' | 'moderate' | 'complex';
   score: number;
   signals: string[];
+  /**
+   * Jev needs_clarification ≥ 阈值时置真：请求缺关键信息，调用方应让用户先澄清
+   * （如给主模型附带澄清提示），而不是闷头猜。启发式路径永不设置。
+   */
+  suggestClarification?: boolean;
+}
+
+/**
+ * 澄清提示：suggestClarification 轮发给主模型的附加 system 消息（消费方 modelRouter）。
+ * 只影响当次 provider 调用，不写回会话历史。
+ */
+const JEV_CLARIFICATION_HINT =
+  'The user\'s request may be missing information needed to proceed. If anything essential is ambiguous, ask one concise clarifying question first instead of guessing; otherwise proceed normally.';
+
+export function withClarificationHint<T extends { role: string; content: unknown }>(messages: T[]): T[] {
+  // Claude 系 provider 只取第一条 system 消息——追加在末尾会被静默丢弃
+  // （ai-review R1），所以能合并就并进首条 system；没有或内容非纯文本才追加。
+  // 泛型签名：loopTypes 与 model/types 两个 ModelMessage 都能用（ai-review R7 上移消费点）。
+  const first = messages[0];
+  if (first?.role === 'system' && typeof first.content === 'string') {
+    return [{ ...first, content: `${first.content}\n\n${JEV_CLARIFICATION_HINT}` }, ...messages.slice(1)];
+  }
+  return [...messages, { role: 'system', content: JEV_CLARIFICATION_HINT } as T];
+}
+
+function answerNoul(answers: JevAnswers, key: string): number | null {
+  const answer = answers[key];
+  if (!answer || typeof answer !== 'object' || !('noul' in answer)) return null;
+  const value = answer.noul;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
+}
+
+function answerChoice(answers: JevAnswers, key: string): { choice: string; confidence: number } | null {
+  const answer = answers[key];
+  if (!answer || typeof answer !== 'object' || !('choice' in answer)) return null;
+  const choice = answer.choice;
+  const confidence = answer.confidence;
+  return typeof choice === 'string' && typeof confidence === 'number'
+    && Number.isFinite(confidence) && confidence >= 0 && confidence <= 1
+    ? { choice, confidence }
+    : null;
 }
 
 export interface FallbackContext {
@@ -107,6 +155,108 @@ export class AdaptiveRouter {
     const level = score < 30 ? 'simple' : score < 60 ? 'moderate' : 'complex';
 
     return { level, score, signals };
+  }
+
+  /**
+   * Optional Jev router for the automatic tier. A low-confidence answer never
+   * downgrades the requested tier; any provider failure returns the heuristic.
+   *
+   * Per-turn dedup: the agent loop re-runs inference() on every iteration with the
+   * same last user message, so the Jev estimate is cached on (content, has_image)
+   * with a short TTL. Only successful Jev estimates are cached; any doubt fails
+   * open to a fresh Jev call (which itself fails back to the heuristic).
+   */
+  private static readonly JEV_CACHE_TTL_MS = 120_000;
+  private static readonly JEV_CACHE_MAX_ENTRIES = 32;
+  private jevEstimateCache = new Map<string, { value: TaskComplexity; expiresAt: number }>();
+
+  async estimateComplexityWithJev(
+    messages: ModelMessage[],
+    systemOne?: JevSystemOneCall,
+    signal?: AbortSignal,
+  ): Promise<TaskComplexity> {
+    const fallback = (reason: string) => {
+      logger.warn(`[AdaptiveRouter] Jev fallback: ${reason}`);
+      return this.estimateComplexity(messages);
+    };
+    if (process.env.CODE_AGENT_JEV_ROUTER !== '1') return this.estimateComplexity(messages);
+    const lastUserMsg = [...messages].reverse().find((message) => message.role === 'user');
+    if (!lastUserMsg) return fallback('no_user_message');
+    const content = typeof lastUserMsg.content === 'string'
+      ? lastUserMsg.content
+      : Array.isArray(lastUserMsg.content)
+        ? lastUserMsg.content.filter((part) => part.type === 'text').map((part) => part.text || '').join(' ')
+        : '';
+    const hasImage = Array.isArray(lastUserMsg.content) && lastUserMsg.content.some((part) => part.type === 'image');
+    const cacheKey = `${hasImage ? 'img' : 'txt'}:${content.slice(0, 12_000)}`;
+    const cached = this.jevEstimateCache.get(cacheKey);
+    if (cached) {
+      if (cached.expiresAt > Date.now()) {
+        return { ...cached.value, signals: [...cached.value.signals] };
+      }
+      this.jevEstimateCache.delete(cacheKey);
+    }
+    const state = {
+      request: guardSensitiveText(content.slice(0, 12_000), { surface: 'telemetry', mode: 'model-context' }),
+      has_image: hasImage,
+      message_count: messages.length,
+    };
+    const call = systemOne ?? (async (stateArg, questions, options) => {
+      const { systemOne: productionSystemOne } = await import('./providers/typesafeProvider');
+      return productionSystemOne(stateArg, questions, options);
+    });
+    let answers: JevAnswers;
+    try {
+      answers = await call(state, JEV_ROUTER_QUESTIONS, { signal });
+    } catch (error) {
+      // 取消不是故障：静默回启发式，不打 warn、不记 provider_error（ai-review R7 Nit）。
+      if (signal?.aborted) return this.estimateComplexity(messages);
+      return fallback(`provider_error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const intent = answerChoice(answers, 'intent');
+    const complexity = answerChoice(answers, 'complexity');
+    const needsClarification = answerNoul(answers, 'needs_clarification');
+    const destructiveIntent = answerNoul(answers, 'destructive_intent');
+    if (!intent || !complexity || needsClarification === null || destructiveIntent === null) {
+      return fallback('malformed_answers');
+    }
+    // intent 必须是问句 criteria 里的枚举值，任意字符串不进 signals（ai-review R7 Nit）。
+    if (!Object.keys(JEV_ROUTER_QUESTIONS.intent.criteria ?? {}).includes(intent.choice)) {
+      return fallback('unknown_intent_choice');
+    }
+    const numericLevel = Number(complexity.choice);
+    if (!Number.isInteger(numericLevel) || numericLevel < 0 || numericLevel > 3 || complexity.confidence < JEV_ROUTER_THRESHOLDS.minComplexityConfidence) {
+      return fallback('low_confidence_or_invalid_complexity');
+    }
+    const signals = [
+      `jev_intent:${intent.choice}`,
+      `jev_confidence:${complexity.confidence.toFixed(2)}`,
+      `needs_clarification:${needsClarification.toFixed(2)}`,
+      `destructive_intent:${destructiveIntent.toFixed(2)}`,
+    ];
+    if (state.has_image === true) signals.push('has_image');
+    // Clarification and destructive intent are safety signals, never a reason to
+    // route down to the free model. The caller still keeps control of side effects.
+    const suggestClarification = needsClarification >= JEV_ROUTER_THRESHOLDS.needsClarification;
+    const safeLevel = state.has_image === true || suggestClarification || destructiveIntent >= JEV_ROUTER_THRESHOLDS.destructiveIntent
+      ? Math.max(2, numericLevel)
+      : numericLevel;
+    const safeScore = safeLevel * (100 / 3);
+    const result: TaskComplexity = {
+      level: safeScore < 30 ? 'simple' : safeScore < 60 ? 'moderate' : 'complex',
+      score: Math.round(safeScore),
+      signals,
+      ...(suggestClarification ? { suggestClarification } : {}),
+    };
+    if (this.jevEstimateCache.size >= AdaptiveRouter.JEV_CACHE_MAX_ENTRIES) {
+      const oldest = this.jevEstimateCache.keys().next();
+      if (!oldest.done) this.jevEstimateCache.delete(oldest.value);
+    }
+    this.jevEstimateCache.set(cacheKey, {
+      value: result,
+      expiresAt: Date.now() + AdaptiveRouter.JEV_CACHE_TTL_MS,
+    });
+    return { ...result, signals: [...result.signals] };
   }
 
   selectModel(complexity: TaskComplexity, defaultConfig: ModelConfig): ModelConfig {

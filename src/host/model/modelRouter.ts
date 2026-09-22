@@ -544,25 +544,27 @@ export class ModelRouter {
       }
     }
 
-    // Inference cache (non-streaming only)
+    // Adaptive routing for simple tasks — 仅在用户选了"自动"时启用
+    // ADR-019 批 2：决策交给单一入口（含计费门控——包月/未知 provider 不做省钱路由），
+    // 本路径只负责执行（API key 解析 + 调用 + 失败回退）
+    const adaptiveRouter = getAdaptiveRouter();
+    const complexity = config.adaptive === true ? await adaptiveRouter.estimateComplexityWithJev(messages, undefined, signal) : adaptiveRouter.estimateComplexity(messages);
+    // 澄清提示的消费方已上移到主链路统一决策点 runEngineInference（N-JEV-ROUTER R7，
+    // 覆盖默认 aiSdk 引擎）；这里不再叠加，避免提示重复。requestMessages 恒等于
+    // messages——推理缓存读写同 key 的不变量保持不变（ai-review R1）。
+    const requestMessages = messages;
+    // Inference cache (non-streaming only) — key 必须建在 requestMessages 上：
+    // 读写同 key（ai-review R1：读用 messages、写用 requestMessages 曾导致永久 miss）。
     if (!onStream) {
       const cache = getInferenceCache();
-      const cacheKey = cache.computeKey(messages, config, tools, normalizedOptions);
+      const cacheKey = cache.computeKey(requestMessages, config, tools, normalizedOptions);
       const cached = cache.get(cacheKey);
       if (cached) {
         logger.info(`[Cache] Hit for ${config.provider}/${config.model}`);
         return cached;
       }
     }
-
-    // Adaptive routing for simple tasks — 仅在用户选了"自动"时启用
-    // ADR-019 批 2：决策交给单一入口（含计费门控——包月/未知 provider 不做省钱路由），
-    // 本路径只负责执行（API key 解析 + 调用 + 失败回退）
-    const adaptiveRouter = getAdaptiveRouter();
-    const complexity = adaptiveRouter.estimateComplexity(messages);
-    let simpleTaskBillingMode: BillingMode | undefined;
-    let providerSettings: Record<string, ModelDecisionProviderSettings> | undefined;
-    let taskStrategy: TaskModelStrategySettings | undefined;
+    let simpleTaskBillingMode: BillingMode | undefined, providerSettings: Record<string, ModelDecisionProviderSettings> | undefined, taskStrategy: TaskModelStrategySettings | undefined;
     try {
       const settings = getConfigService().getSettings();
       providerSettings = settings.models?.providers;
@@ -579,6 +581,7 @@ export class ModelRouter {
       billingMode: simpleTaskBillingMode,
       providerSettings,
       taskStrategy,
+      complexityOverride: complexity,
     });
     if (
       simpleTaskDecision.decision.reason === 'simple-task-free'
@@ -603,13 +606,13 @@ export class ModelRouter {
       }
       if (canUseAdaptedModel) {
         try {
-          const result = await this._callProviderWithArtifactFallback(messages, tools, adaptedConfig, onStream, signal, normalizedOptions);
-          this.assertUsableArtifactResponse(messages, result, adaptedConfig);
+          const result = await this._callProviderWithArtifactFallback(requestMessages, tools, adaptedConfig, onStream, signal, normalizedOptions);
+          this.assertUsableArtifactResponse(requestMessages, result, adaptedConfig);
           adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, true, 0);
           // Cache non-streaming text responses — key 归属于实际产出响应的 adaptedConfig
           if (!onStream && result.type === 'text') {
             const cache = getInferenceCache();
-            const cacheKey = cache.computeKey(messages, adaptedConfig, tools, normalizedOptions);
+            const cacheKey = cache.computeKey(requestMessages, adaptedConfig, tools, normalizedOptions);
             cache.set(cacheKey, result);
           }
           return result;
@@ -629,17 +632,17 @@ export class ModelRouter {
 
     const allowCrossProviderFallback = config.adaptive === true;
     const effectiveConfig = (allowCrossProviderFallback
-      ? this.getArtifactWriteRequiredPreferredConfig(messages, config)
+      ? this.getArtifactWriteRequiredPreferredConfig(requestMessages, config)
       : null) ?? config;
 
     try {
-      const result = await this._callProviderWithArtifactFallback(messages, tools, effectiveConfig, onStream, signal, normalizedOptions);
-      this.assertUsableArtifactResponse(messages, result, effectiveConfig);
+      const result = await this._callProviderWithArtifactFallback(requestMessages, tools, effectiveConfig, onStream, signal, normalizedOptions);
+      this.assertUsableArtifactResponse(requestMessages, result, effectiveConfig);
 
       // Cache non-streaming text responses
       if (!onStream && result.type === 'text') {
         const cache = getInferenceCache();
-        const cacheKey = cache.computeKey(messages, effectiveConfig, tools, normalizedOptions);
+        const cacheKey = cache.computeKey(requestMessages, effectiveConfig, tools, normalizedOptions);
         cache.set(cacheKey, result);
       }
 
@@ -659,7 +662,7 @@ export class ModelRouter {
 
       const fallbackCategory = classifyProviderFallbackReason(errMsg, errCode);
       const fallbackReason = formatFallbackReason(errMsg);
-      const artifactLikeRequest = isArtifactLikeRequest(messages);
+      const artifactLikeRequest = isArtifactLikeRequest(requestMessages);
       const artifactRepairActive = normalizedOptions?.artifactRepairActive === true;
 
       if (
@@ -673,9 +676,9 @@ export class ModelRouter {
         throw primaryErr;
       }
 
-      if (shouldKeepArtifactRequestOnSelectedProvider(messages, fallbackCategory)) {
+      if (shouldKeepArtifactRequestOnSelectedProvider(requestMessages, fallbackCategory)) {
         const selectedProviderRetry = await this.retrySelectedProviderForArtifactTransient(
-          messages,
+          requestMessages,
           tools,
           effectiveConfig,
           fallbackCategory,
@@ -713,7 +716,7 @@ export class ModelRouter {
         throw primaryErr;
       }
 
-      const chain = getFallbackChainForRequest(messages, effectiveConfig.provider);
+      const chain = getFallbackChainForRequest(requestMessages, effectiveConfig.provider);
       if (!chain || chain.length === 0) {
         throw primaryErr;
       }
@@ -778,8 +781,8 @@ export class ModelRouter {
           logger.warn(
             `[ModelRouter] Fallback → ${fallback.provider}/${fallback.model} (reason=${fallbackCategory})`
           );
-          const result = await this._callProviderWithArtifactFallback(messages, tools, fallbackConfig, onStream, signal, normalizedOptions);
-          this.assertUsableArtifactResponse(messages, result, fallbackConfig);
+          const result = await this._callProviderWithArtifactFallback(requestMessages, tools, fallbackConfig, onStream, signal, normalizedOptions);
+          this.assertUsableArtifactResponse(requestMessages, result, fallbackConfig);
           const selectedStep = fallbackTraceStep(
             fallback.provider,
             fallback.model,
@@ -806,7 +809,7 @@ export class ModelRouter {
           // Cache non-streaming text responses — key 归属于实际产出响应的 fallbackConfig
           if (!onStream && result.type === 'text') {
             const cache = getInferenceCache();
-            const cacheKey = cache.computeKey(messages, fallbackConfig, tools, normalizedOptions);
+            const cacheKey = cache.computeKey(requestMessages, fallbackConfig, tools, normalizedOptions);
             cache.set(cacheKey, result);
           }
 

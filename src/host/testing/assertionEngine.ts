@@ -20,9 +20,6 @@ import type {
   ExpectationType,
   ExpectationResult,
   ExpectationContext,
-  SimTurnRecord,
-  GoalRunRecord,
-  PermissionRequestRecord,
 } from './types';
 import { WRITE_EFFECT_TOOL_PATTERNS } from './userSimulator';
 import { evaluateGoalStatusExpectation, evaluateGoalEvidenceGateExpectation } from './goalContractEval';

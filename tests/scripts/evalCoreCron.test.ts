@@ -175,7 +175,7 @@ describe('eval-reflow-compare-cron.sh --dry-run', () => {
     // launchctl 装炸弹式桩：只记录调用，不碰真 launchd。
     const binDir = path.join(root, 'bin');
     fs.mkdirSync(binDir, { recursive: true });
-    fs.writeFileSync(path.join(binDir, 'launchctl'), '#!/bin/bash\necho "$@" >> \"' + path.join(root, 'launchctl.log') + '\"\n');
+    fs.writeFileSync(path.join(binDir, 'launchctl'), `#!/bin/bash\necho "$@" >> '${path.join(root, 'launchctl.log')}'\n`);
     fs.chmodSync(path.join(binDir, 'launchctl'), 0o755);
     const env = {
       ...process.env,

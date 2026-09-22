@@ -32,7 +32,7 @@ export const StallNoticeLine: React.FC<{ hidden?: boolean }> = ({ hidden = false
         type="button"
         className="text-zinc-300 underline-offset-2 hover:underline"
         onClick={() => {
-          void ipcService.invoke(IPC_CHANNELS.AGENT_CANCEL, { sessionId });
+          void ipcService.invoke(IPC_CHANNELS.AGENT_CANCEL, { sessionId: sessionId ?? undefined });
           setNotice(null);
         }}
       >

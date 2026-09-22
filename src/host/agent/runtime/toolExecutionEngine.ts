@@ -893,7 +893,9 @@ export class ToolExecutionEngine {
 
       recordSearchCandidatesFromResult(this.ctx, toolCall, normalizedResult);
 
-      handleToolResultBookkeeping({
+      // Awaited: the Jev advisory scan inside must settle before the result is
+      // emitted (tool_call_end) or persisted, so its metadata is deterministic.
+      await handleToolResultBookkeeping({
         ctx: this.ctx,
         contextAssembly: this.contextAssembly,
         runtimeControl: this.runtimeControl,
@@ -901,6 +903,7 @@ export class ToolExecutionEngine {
         normalizedResult,
         toolResult,
       });
+
 
       if (normalizedResult.success && this.ctx.artifact.repairGuard?.targetFile) {
         const readFilePath = extractReadFilePath(toolCall);

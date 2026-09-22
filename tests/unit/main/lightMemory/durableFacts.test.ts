@@ -188,7 +188,7 @@ describe('默认助手长期事实写回', () => {
         } as unknown as RuntimeContext;
         const result = { toolCallId: 'fetch-1', success: true, output: 'External article text' };
         try {
-          handleToolResultBookkeeping({ ctx,
+          await handleToolResultBookkeeping({ ctx,
             toolCall: { id: 'fetch-1', name: 'WebFetch', arguments: {} },
             normalizedResult: { success: true, output: result.output }, toolResult: result,
             contextAssembly: {} as never, runtimeControl: {} as never,

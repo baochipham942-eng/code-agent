@@ -30,6 +30,7 @@ import { archiveMemoryFile } from '../../../lightMemory/lightMemoryIpc';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { guardSensitiveText } from '../../../security/sensitiveDataGuard';
 import { admitStrictUntrustedText } from '../../../security/inputSanitizer';
+import { scanWithJevInjection } from '../../../security/jevInjectionScan';
 import { atomicWriteMemoryText } from '../../../memory/atomicMemoryFile';
 import {
   assertDirectivePersistenceAuthorized,
@@ -311,6 +312,7 @@ async function executeWrite(
   const safeName = guardMemoryText(name, 1_000);
   const safeDescription = guardMemoryText(description, 2_000);
   const safeContent = guardMemoryText(content, 50_000);
+  const jevInjectionScan = await scanWithJevInjection('memory_write', safeContent);
 
   // Build markdown with frontmatter
   const fileContent = `---
@@ -341,6 +343,7 @@ ${safeContent}
       memoryType: memType,
       description: safeDescription,
       indexPath: getMemoryIndexPath(),
+      jevInjectionScan,
     },
   });
 
@@ -357,6 +360,7 @@ ${safeContent}
       bytes: Buffer.byteLength(fileContent, 'utf8'),
       indexPath: getMemoryIndexPath(),
       artifact,
+      jevInjectionScan,
     },
   };
 }

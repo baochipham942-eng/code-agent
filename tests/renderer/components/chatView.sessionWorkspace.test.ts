@@ -93,13 +93,14 @@ vi.mock('../../../src/renderer/stores/sessionStore', async (importOriginal) => (
   ),
 }));
 
-vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: {
+vi.mock('../../../src/renderer/services/ipcService', () => {
+  const ipc = {
     invoke: ipcInvokeMock,
     invokeDomain: vi.fn(async () => { throw new Error('test boundary'); }),
     on: vi.fn(() => () => {}),
-  },
-}));
+  };
+  return { default: ipc, ipcService: ipc };
+});
 
 vi.mock('../../../src/renderer/stores/taskStore', () => ({
   useTaskStore: (selector?: (state: { sessionStates: Record<string, unknown> }) => unknown) =>

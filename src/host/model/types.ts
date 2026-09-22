@@ -106,6 +106,8 @@ export interface ModelResponse {
     artifactValidationAttemptCompletion?: {
       targetFile: string;
     };
+    /** 这次响应来自进程内 InferenceCache，与 provider cacheRead 无关。 */
+    inferenceCacheHit?: boolean;
     /** Max Mode（best-of-N）本步诊断：候选/幸存/赢家索引/是否降级/judge 是否解析成功 */
     maxMode?: {
       candidates: number;
@@ -217,6 +219,16 @@ export interface InferenceOptions {
    * 路由决策行为不变，只是不把 N 条 propose-only 调用的决策事件混进 UI/遥测。
    */
   suppressModelDecisionEvent?: boolean;
+  /**
+   * Prompt-cache 写入策略。'none' = 这次调用不打 cache_control（旁路摘要/judge）。
+   * 缺省保持原行为：provider 可以给稳定前缀打断点。
+   */
+  cacheRetention?: 'default' | 'none';
+  /**
+   * 只记录的旁路范围标签。不得参与 InferenceCache key，不得切换 cache bucket。
+   * 账本：record only, watch cacheRead curve, decide later。
+   */
+  cacheScopeId?: string;
 }
 
 // ----------------------------------------------------------------------------

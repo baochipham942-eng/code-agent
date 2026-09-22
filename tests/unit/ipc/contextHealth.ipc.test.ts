@@ -129,7 +129,7 @@ vi.mock('../../../src/host/context/compactModel', () => ({
 
 import { registerContextHealthHandlers, resolveContextHealthForSession } from '../../../src/host/ipc/contextHealth.ipc';
 import { getContextHealthService } from '../../../src/host/context/contextHealthService';
-import { initAutoCompressor } from '../../../src/host/context/autoCompressor';
+import { getAutoCompressor, initAutoCompressor } from '../../../src/host/context/autoCompressor';
 import { getSessionStateManager } from '../../../src/host/session/sessionStateManager';
 import { initTaskManager } from '../../../src/host/task/TaskManager';
 import { DEFAULT_MODEL, getContextWindow } from '../../../src/shared/constants';
@@ -691,9 +691,29 @@ describe('resolveContextHealthForSession', () => {
     expect(getHandler).toBeDefined();
     expect(setHandler).toBeDefined();
 
+    // Stale disk value from the removed Clean-at slider. It must not come back
+    // on the contract, and it must not become the window occupancy.
+    compactMocks.configService.settings.contextCompression.criticalThreshold = 0.5;
+
     const initial = await getHandler!({}) as any;
     expect(initial.config.preserveRecentCount).toBe(10);
     expect(initial.features.manifest).toBe('enabled');
+    // The fixture's 100000 is the historical default, so it is not a live trigger.
+    expect(initial.config.triggerTokens).toBeUndefined();
+    expect(initial.config.triggerTokensExplicit).toBe(false);
+    expect(initial.config).not.toHaveProperty('criticalThreshold');
+    expect(initial.config.warningThreshold).toBe(0.75);
+    const compressor = getAutoCompressor();
+    expect(compressor.getConfig()).not.toHaveProperty('criticalThreshold');
+    expect(compressor.getConfig().warningThreshold).toBe(0.75);
+    expect(compressor.getConfig().enabled).toBe(true);
+    expect(compressor.getConfig().preserveRecentCount).toBe(10);
+    const glmWindow = getContextWindow('glm-4.7');
+    expect(glmWindow).toBe(200_000);
+    // 0.5 × 200K would be the stale slider. 100000 is the legacy fixed trigger.
+    // Neither is the derived point (170000).
+    expect(compressor.shouldTriggerByTokens(100_000, glmWindow)).toBe(false);
+    expect(compressor.shouldTriggerByTokens(170_000, glmWindow)).toBe(true);
 
     const updated = await setHandler!({}, {
       enabled: false,
@@ -719,5 +739,25 @@ describe('resolveContextHealthForSession', () => {
         auditEnabled: false,
       }),
     });
+  });
+
+  it('keeps a user-saved trigger and can persist the legacy 100000 only when marked explicit', async () => {
+    registerContextHealthHandlers({
+      getAppService: () => null,
+      getTaskManager: () => null,
+      getSystemPromptForSession: () => '',
+    });
+    const setHandler = compactMocks.handlers.get('context:compression-config:set');
+    const custom = await setHandler!({}, { triggerTokens: 80_000 }) as any;
+    expect(custom.config.triggerTokens).toBe(80_000);
+    expect(custom.config.triggerTokensExplicit).toBe(true);
+
+    const legacy = await setHandler!({}, { triggerTokens: 100_000, triggerTokensExplicit: true }) as any;
+    expect(legacy.config.triggerTokens).toBe(100_000);
+    expect(legacy.config.triggerTokensExplicit).toBe(true);
+
+    const cleared = await setHandler!({}, { triggerTokensExplicit: false }) as any;
+    expect(cleared.config.triggerTokens).toBeUndefined();
+    expect(cleared.config.triggerTokensExplicit).toBe(false);
   });
 });

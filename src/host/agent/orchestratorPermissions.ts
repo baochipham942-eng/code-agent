@@ -21,6 +21,7 @@ import { getConfirmationGate } from './confirmationGate';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
 import { approvalAnswerFromPermission, noteCompanionApprovalSettlement } from '../services/companion/companionDecisionSink';
+import { holdStallClock } from './stallObserver';
 
 const logger = createLogger('AgentOrchestrator');
 
@@ -386,7 +387,8 @@ export class OrchestratorPermissionIsland {
     // 交互路径的 30min 计时器只留泄漏诊断，不删除请求、不发 timeout 终态。
     const PERMISSION_TIMEOUT = isEditableTool(request.tool) ? EDITABLE_PERMISSION_TIMEOUT_MS : 60000;
 
-    return new Promise((resolve) => {
+    const releaseHold = holdStallClock(fullRequest.sessionId);
+    return new Promise<PermissionAskResult>((resolve) => {
       // 免超时是一个**可撤回**的决定，不是 t=0 那一次问出来就永久生效的结论。
       // 判据既要对空间（这条请求渲染得出卡片吗——见 hasApprovalUi 的入参），也要对时间：
       // companion 通道建链后固定到期、被 prune() 无条件拆除，而没有任何事件回来重判。
@@ -478,7 +480,7 @@ export class OrchestratorPermissionIsland {
         request: fullRequest,
       });
       this.onEvent({ type: 'permission_request', data: fullRequest });
-    });
+    }).finally(releaseHold);
   }
 
   /**
@@ -492,7 +494,8 @@ export class OrchestratorPermissionIsland {
     kind: PendingApprovalKind = 'tool_approval',
     deadline: 'unattended' | 'backstop' = 'backstop',
   ): Promise<PermissionAskResult> {
-    return new Promise((resolve) => {
+    const releaseHold = holdStallClock(fullRequest.sessionId);
+    return new Promise<PermissionAskResult>((resolve) => {
       const unattendedDeadline = deadline === 'unattended';
       const timeoutMs = unattendedDeadline
         ? INTERACTION_TIMEOUTS.PERMISSION
@@ -580,6 +583,6 @@ export class OrchestratorPermissionIsland {
       });
 
       this.onEvent({ type: 'permission_request', data: fullRequest });
-    });
+    }).finally(releaseHold);
   }
 }

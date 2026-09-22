@@ -1,7 +1,14 @@
 import type { Message, ToolCall } from '../../../shared/contract';
 import { estimateModelMessageTokens } from '../../context/tokenOptimizer';
 import type { ModelResponse } from '../../agent/loopTypes';
+import { isObservedCacheHit, recordSessionCacheHit } from '../../model/cacheHitObservation';
 import type { RuntimeContext } from './runtimeContext';
+
+interface PromptCacheHitObservation {
+  cacheHitEffective: number;
+  cacheHitIdle: number;
+  inferenceCacheHitRate: string;
+}
 
 function serializeMessageContent(message: Message): string {
   return typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
@@ -12,8 +19,21 @@ export function recordMessageProcessorModelCallTelemetry(
   response: ModelResponse,
   iterations: number,
   inferenceDuration: number,
-): void {
-  if (!ctx.telemetryAdapter) return;
+): PromptCacheHitObservation | undefined {
+  const cacheHit = isObservedCacheHit({
+    cacheReadTokens: response.usage?.cacheReadTokens,
+    inferenceCacheHit: response.runtimeDiagnostics?.inferenceCacheHit === true,
+  })
+    ? recordSessionCacheHit(ctx.sessionId)
+    : undefined;
+  const cacheHitFields: PromptCacheHitObservation | undefined = cacheHit
+    ? {
+      cacheHitEffective: cacheHit.kind === 'effective' ? 1 : 0,
+      cacheHitIdle: cacheHit.kind === 'idle' ? 1 : 0,
+      inferenceCacheHitRate: cacheHit.inferenceHitRate,
+    }
+    : undefined;
+  if (!ctx.telemetryAdapter) return cacheHitFields;
 
   const maxPromptLength = 8000;
   const maxCompletionLength = 4000;
@@ -70,5 +90,7 @@ export function recordMessageProcessorModelCallTelemetry(
     completion: completionText.substring(0, maxCompletionLength),
     cacheReadTokens: response.usage?.cacheReadTokens,
     cacheCreationTokens: response.usage?.cacheCreationTokens,
+    ...cacheHitFields,
   });
+  return cacheHitFields;
 }

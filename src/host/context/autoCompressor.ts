@@ -6,16 +6,16 @@
 // shared runtime configuration and compaction accounting consumed by callers.
 // ============================================================================
 
+import { resolveTriggerTokens } from './triggerTokens';
+
 export interface AutoCompressionConfig {
   /** 是否启用自动压缩 */
   enabled: boolean;
-  /** 警告阈值 (0-1)，开始监控 */
+  /** Soft gate (0-1). Gates usage-percent triggers only; not the forced path. */
   warningThreshold: number;
-  /** 危急阈值 (0-1) */
-  criticalThreshold: number;
   /** 保留最近 N 条消息不压缩 */
   preserveRecentCount: number;
-  /** 绝对 token 阈值触发压缩 */
+  /** Explicit absolute override. Absent → derive from the model window. */
   triggerTokens?: number;
   /** 总 token 预算控制 */
   totalTokenBudget?: number;
@@ -24,9 +24,7 @@ export interface AutoCompressionConfig {
 const DEFAULT_CONFIG: AutoCompressionConfig = {
   enabled: true,
   warningThreshold: 0.75,
-  criticalThreshold: 0.85,
   preserveRecentCount: 10,
-  triggerTokens: 100000,
 };
 
 type CompressionStrategy = 'ai_summary';
@@ -72,17 +70,26 @@ export class AutoContextCompressor {
     this.config = { ...this.config, ...config };
   }
 
-  shouldTriggerByTokens(currentTokens: number): boolean {
-    if (!this.config.triggerTokens) return false;
-    return currentTokens >= this.config.triggerTokens;
+  private resolvedTrigger(contextWindow?: number): number | undefined {
+    const explicit = this.config.triggerTokens;
+    if (typeof explicit === 'number' && explicit > 0) return explicit;
+    if (contextWindow === undefined || !Number.isFinite(contextWindow) || contextWindow <= 0) {
+      return undefined;
+    }
+    const derived = resolveTriggerTokens(contextWindow);
+    return derived > 0 ? derived : undefined;
   }
 
-  shouldWrapUp(): boolean {
-    if (!this.config.totalTokenBudget || !this.config.triggerTokens) {
-      return false;
-    }
-    const estimatedTotalTokens = this.getCompactionCount() * this.config.triggerTokens;
-    return estimatedTotalTokens >= this.config.totalTokenBudget;
+  shouldTriggerByTokens(currentTokens: number, contextWindow?: number): boolean {
+    const trigger = this.resolvedTrigger(contextWindow);
+    if (trigger === undefined) return false;
+    return currentTokens >= trigger;
+  }
+
+  shouldWrapUp(contextWindow?: number): boolean {
+    const trigger = this.resolvedTrigger(contextWindow);
+    if (!this.config.totalTokenBudget || trigger === undefined) return false;
+    return this.getCompactionCount() * trigger >= this.config.totalTokenBudget;
   }
 
   getCompactionCount(): number {

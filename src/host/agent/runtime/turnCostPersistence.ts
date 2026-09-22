@@ -1,9 +1,10 @@
 import type { AgentEvent } from '../../../shared/contract';
-import type { TurnCostEstimateInput } from '../../../shared/contract/turnCost';
+import type { CacheBreakReason, TurnCostEstimateInput } from '../../../shared/contract/turnCost';
 import {
   estimateTurnCostUsd,
   resolveModelPrice,
 } from '../../../shared/pricing/resolveModelPrice';
+import { detectCacheBreak } from '../../prompts/cacheBreakDetection';
 import { getDatabase } from '../../services/core/databaseService';
 import { createLogger } from '../../services/infra/logger';
 
@@ -18,6 +19,12 @@ interface PendingTurnCost {
   modelId?: string;
   inputTokens?: number;
   outputTokens?: number;
+  cacheBreakReason?: CacheBreakReason;
+}
+
+interface TurnCachePromptSample {
+  prompt: string;
+  modelId: string;
 }
 
 function isTokenCount(value: unknown): value is number {
@@ -40,10 +47,25 @@ export function createTurnCostEventHandler(options: {
   sessionId: string;
   onEvent: (event: AgentEvent) => void;
   sink?: TurnCostWriteSink;
+  /** 本轮系统提示与模型。缺省时 cacheBreakReason 记 none。 */
+  readCachePrompt?: () => TurnCachePromptSample | undefined;
 }): (event: AgentEvent) => void {
   const turns = new Map<string, PendingTurnCost>();
   const sink = options.sink ?? defaultSink();
   let activeTurnId: string | null = null;
+  let previousPrompt: TurnCachePromptSample | undefined;
+
+  const cacheBreakReasonForTurn = (): CacheBreakReason => {
+    const current = options.readCachePrompt?.();
+    if (!current) return 'none';
+    const previous = previousPrompt;
+    previousPrompt = current;
+    if (!previous) return 'none';
+    return detectCacheBreak(previous.prompt, current.prompt, {
+      prevModel: previous.modelId,
+      currModel: current.modelId,
+    }).cacheBreakReason;
+  };
 
   const getTurn = (turnId: string): PendingTurnCost => {
     const existing = turns.get(turnId);
@@ -62,6 +84,7 @@ export function createTurnCostEventHandler(options: {
     const provider = turn.provider ?? 'unknown';
     const modelId = turn.modelId ?? 'unknown';
     const price = resolveModelPrice(provider, modelId);
+    const cacheBreakReason = turn.cacheBreakReason ?? cacheBreakReasonForTurn();
     try {
       sink.insert({
         sessionId: options.sessionId,
@@ -74,6 +97,7 @@ export function createTurnCostEventHandler(options: {
           outputTokens: turn.outputTokens,
         }),
         source: price.source,
+        cacheBreakReason,
       });
     } catch (error) {
       logger.warn('[TurnCostPersistence] failed to persist turn cost (ignored)', {

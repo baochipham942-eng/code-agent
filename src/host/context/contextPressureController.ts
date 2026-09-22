@@ -84,7 +84,8 @@ export function assessContextPressure(input: PressureInput): CompressionDecision
       reason: 'CompressionPipeline reported autocompact-needed (projected usage ≥ 85%)',
     };
   }
-  // 2. 绝对 token 阈值（Claude Code 风格）—— 必须压，不受 compressionEnabled 影响。
+  // 2. 绝对 token 阈值（窗口派生或显式覆盖）—— 必须压，不受 compressionEnabled 影响。
+  //    与上面的管线信号同属强制门，和 warningThreshold 软门不是同一个常量。
   if (input.tokenThresholdHit) {
     return {
       action: pressureAction(),

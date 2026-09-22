@@ -1,7 +1,7 @@
-// 60 条构造冻结轨迹（6 原型 × 10 变体）——replay-eval-judge.ts 与 wire3-compare.ts 共用。
-// 金标由构造唯一确定；生成器逻辑与 replay-eval-judge.ts 内联版逐字一致（快照脚本不改）。
+// 60 条构造冻结轨迹（6 原型 × 10 变体）——wire3-compare.ts 的轨迹源。
+// 金标由构造唯一确定；生成器逻辑与 replay-eval-judge.ts（09-22 快照，内联版）逐字一致。
 
-import type { TestCase, TestResult } from '../../../../../src/host/testing/types';
+import type { TestCase, TestResult } from '../../../../src/host/testing/types';
 
 export interface GoldTrace {
   testCase: TestCase;

@@ -65,7 +65,7 @@ async function runArm(item: GoldTrace, wire: boolean): Promise<ArmRun> {
         ? {
             judgeExpectationDims: true,
             prescreen: async (state, questions) => {
-              usd = estimateJevCallUsd(JSON.stringify(state).length, JSON.stringify(questions).length);
+              usd += estimateJevCallUsd(JSON.stringify(state).length, JSON.stringify(questions).length);
               return jevCall(state, questions);
             },
           }

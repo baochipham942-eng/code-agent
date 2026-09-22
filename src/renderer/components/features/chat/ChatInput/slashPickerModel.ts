@@ -92,12 +92,6 @@ export interface SlashPickerCandidate {
   mcpConnected?: boolean;
 }
 
-export interface SlashPickerCandidateGroup<T extends SlashPickerCandidate = SlashPickerCandidate> {
-  group: SlashCandidateGroup;
-  label: string;
-  items: T[];
-}
-
 /**
  * 候选装饰文案注入（i18n）：渲染层从 i18n 的 slashCommands.picker 传入；缺省回退中文保持既有行为。
  */
@@ -540,16 +534,6 @@ export function filterAndRankSlashCandidates<T extends SlashPickerCandidate>(
     .map((item) => item.candidate);
 }
 
-const GROUP_LABELS: Record<SlashCandidateGroup, string> = {
-  suggested: 'Suggested',
-  command: 'Commands',
-  prompt: 'Prompts',
-  agent: 'Agents',
-  skill: 'Skills',
-  connector: 'Connectors',
-  mcp: 'MCP',
-};
-
 const SKILL_MENU_KINDS = new Set<SlashPickerCandidate['kind']>(['skill', 'mcp', 'connector']);
 
 export interface SlashMenuSection<T extends SlashPickerCandidate = SlashPickerCandidate> {
@@ -579,23 +563,4 @@ export function presentSlashMenuGroups<T extends SlashPickerCandidate>(
     sections.push({ id: 'skill', label: labels.skill, items: skill });
   }
   return sections;
-}
-
-export function groupSlashCandidates<T extends SlashPickerCandidate>(
-  candidates: T[],
-): Array<SlashPickerCandidateGroup<T>> {
-  const groupMap = new Map<SlashCandidateGroup, SlashPickerCandidateGroup<T>>();
-  for (const candidate of candidates) {
-    const existing = groupMap.get(candidate.group);
-    if (existing) {
-      existing.items.push(candidate);
-      continue;
-    }
-    groupMap.set(candidate.group, {
-      group: candidate.group,
-      label: GROUP_LABELS[candidate.group],
-      items: [candidate],
-    });
-  }
-  return [...groupMap.values()];
 }

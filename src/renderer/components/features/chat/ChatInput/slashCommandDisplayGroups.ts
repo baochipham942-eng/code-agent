@@ -1,7 +1,7 @@
 // ============================================================================
 // SlashCommandDisplayGroups - 命令面板分组显示模型
 // 从 SlashCommandPopover.tsx 纯平移（god-file 债务门贴边 1000 行）。
-// 注意：当前生产渲染走 slashPickerModel 的 groupSlashCandidates，
+// 注意：当前生产渲染走 slashPickerModel 的 presentSlashMenuGroups，
 // 本模块仅被 tests/renderer/components/slashCommandPopover.test.ts 消费。
 // ============================================================================
 

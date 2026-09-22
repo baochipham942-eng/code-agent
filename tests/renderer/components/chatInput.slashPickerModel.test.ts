@@ -11,7 +11,6 @@ import {
   createWorkbenchCapabilityCandidates,
   filterAndRankSlashCandidates,
   getTrailingSlashToken,
-  groupSlashCandidates,
   presentSlashMenuGroups,
   removeTrailingSlashToken,
 } from '../../../src/renderer/components/features/chat/ChatInput/slashPickerModel';
@@ -207,17 +206,6 @@ describe('slash picker model', () => {
       emptyQueryVisible: true,
     });
     expect(filterAndRankSlashCandidates(candidates, 'doc').map((item) => item.id)).toEqual(['skill:docx']);
-  });
-
-  it('groups mixed slash results without repeating headings', () => {
-    const groups = groupSlashCandidates([
-      createCommandCandidate({ id: 'low', label: 'Low', description: 'Low effort' }),
-      createPromptCandidate({ name: 'lowdown', description: 'Explain risk', source: 'file', hints: [] }),
-      createCommandCandidate({ id: 'loop', label: 'Loop', description: 'Repeat task' }),
-    ]);
-
-    expect(groups.map((group) => group.group)).toEqual(['command', 'prompt']);
-    expect(groups[0]?.items.map((item) => item.id)).toEqual(['low', 'loop']);
   });
 
   it('effectLabel/描述装饰走注入 labels（en 传入则输出英文，缺省回退中文）', () => {

@@ -53,8 +53,7 @@ describe('compaction entry-point coordination (G11 baseline)', () => {
     const pipelineResult = await pipeline.evaluate(transcript, new CompressionState(), config);
     expect(pipelineResult.layersTriggered).toContain('autocompact-needed');
 
-    // Path B — explicit absolute override (100), not the window-derived default.
-    // Proves this entry point still fires on its own config, independent of the pipeline.
+    // Path B — AutoContextCompressor: triggerTokens well below the transcript size.
     const autoCompressor = new AutoContextCompressor({ triggerTokens: 100 });
     expect(autoCompressor.shouldTriggerByTokens(totalTokens)).toBe(true);
 

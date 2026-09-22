@@ -269,7 +269,9 @@ export class CompressionPipeline {
     let jevCompaction: JevCompactionResult | undefined;
     if (postMicroUsage >= THRESHOLDS.contextCollapse && config.enableContextCollapse) {
       if (isJevCompactionEnabled()) {
-        jevCompaction = await applyJevCompaction(transcript, undefined, { protectedMessageIds });
+        // Fresh tool results (not yet observed by the model) get the same
+        // protection L0/L1 grant them — never dropped or truncated by Jev.
+        jevCompaction = await applyJevCompaction(transcript, undefined, { protectedMessageIds: toolResultBudgetProtectedMessageIds });
         if (!jevCompaction.skipped) {
           layersTriggered.push('jev-compaction');
           apiView = this.projectionEngine.projectMessages(transcript, state);

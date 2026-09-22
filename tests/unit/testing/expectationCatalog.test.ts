@@ -11,6 +11,12 @@ const ALL_EXPECTATION_TYPES = [
   'no_stall_before_artifact',
   'memory_recalled',
   'memory_written',
+  'skill_triggered',
+  'skill_not_triggered',
+  'max_tool_retries',
+  'handoff_proposed',
+  'handoff_not_proposed',
+  'required_steps',
 ] as const;
 
 describe('EXPECTATION_TYPE_CATALOG', () => {

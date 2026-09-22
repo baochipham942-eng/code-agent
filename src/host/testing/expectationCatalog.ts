@@ -32,6 +32,12 @@ const EXPECTATION_SUMMARIES = {
   no_stall_before_artifact: '产物动作前没有拖延',
   memory_recalled: '该被想起来的记忆真的被注进了这一轮',
   memory_written: '跑完之后记忆目录里躺着该躺的内容',
+  skill_triggered: '该触发的 skill 真的被调用了',
+  skill_not_triggered: '不该触发的 skill 没有被调用',
+  max_tool_retries: '同一操作连续重试失败没有超过预算',
+  handoff_proposed: '该交接时真的发出了 handoff 提案',
+  handoff_not_proposed: '不该交接时没有发出 handoff 提案',
+  required_steps: '必经步骤真的按序走过了',
 } as const satisfies Record<ExpectationType, string>;
 
 /**
@@ -49,6 +55,17 @@ const TIMEOUT_VERDICT_KIND = {
   max_tool_calls: 'negative_monotone',
   response_not_contains: 'negative_monotone',
   no_crash: 'negative_monotone',
+  // N-SKILL-TRIGGER-EVAL：skill_activated 一旦 emit 就撤不回——半截轨迹里已发生的
+  // 触发是真违规（负向可判）；半截没触发不等于后面不会触发（正向不判）。
+  skill_not_triggered: 'negative_monotone',
+  skill_triggered: 'positive_monotone',
+  // N-EVAL-FAILURE-AUTOHARVEST：连续失败超预算一旦发生撤不回（负向可判）；
+  // handoff 提案一旦落库撤不回（not_proposed 负向可判），proposed 与必经步骤在
+  // 半截轨迹上判不了终局（正向不补跑）。
+  max_tool_retries: 'negative_monotone',
+  handoff_not_proposed: 'negative_monotone',
+  handoff_proposed: 'positive_monotone',
+  required_steps: 'positive_monotone',
   tool_called: 'positive_monotone',
   min_tool_calls: 'positive_monotone',
   approval_requested: 'positive_monotone',

@@ -230,6 +230,22 @@ export interface AiReviewVerdict {
   judgeModel: string;
   promptHash: string;
   reason?: 'no_expectation' | 'judge_error' | 'parse_error';
+  /**
+   * Jev 初筛标记（N-JEV-EVAL-JUDGE，默认关）：jev_decided = 初筛决断、未调生成式；
+   * escalated = 初筛弃权/失败后升级生成式（本判决是生成式出的）。缺省 = 未走初筛。
+   */
+  prescreen?: 'jev_decided' | 'escalated';
+  /**
+   * 该题那次 Jev 初筛调用的刊例估算（USD，estimateJevCallUsd）。同一题各维 verdict
+   * 带的是同一次调用的同一份值——聚合时按题去重，不许逐维累加。
+   */
+  prescreenCostUsd?: number;
+  /**
+   * Jev score 原语的连续 quality（0-1 + confidence）：信息列，只进评测仪表/证据，
+   * 不作任何放行/断言依据（N-JEV-EVAL-JUDGE-R2）。同一题各维带同一份值，聚合按题去重。
+   * Jev 侧答案坏形状/越界被拒收时此字段缺席——缺席即「没有 quality」，不许当 0.5。
+   */
+  quality?: { score: number; confidence: number };
 }
 
 export interface EvalFailureClassification {

@@ -24,6 +24,7 @@ import type {
   PermissionRequestRecord,
   EvalCaseMemory,
   CaseMemorySignals,
+  CaseSkillSignals, HandoffProposalRecord,
   SimTurnRecord,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
@@ -58,7 +59,7 @@ import {
   type FailureCodebook,
 } from './failureCodes';
 import { classifyTestResultFailure } from './testResultFailure';
-import { formatExpectationFailures, judgeTimeoutExpectations } from './timeoutExpectations';
+import { formatExpectationFailures, judgeTimeoutExpectations, collectDeclaredHandoffProposals } from './timeoutExpectations';
 import { mergeSkillActivations } from './skillSelection';
 
 import { attachAiReview } from './testRunnerAiReview';
@@ -145,6 +146,16 @@ export interface AgentInterface {
   consumeSkillActivations?(testId: string): Record<string, number>;
   /** N-EVAL-MEMORY：读走并清空本题的记忆落账（memory_recalled / memory_written 的证据源）。 */
   consumeMemorySignals?(testId: string): CaseMemorySignals;
+  /**
+   * N-SKILL-TRIGGER-EVAL：读走并清空本题 skill 触发落账与上下文集（skill_* 断言的证据源）。
+   * 消费即清——只读 peek 会把台账留到下一 trial，触发计数跨题累积
+   * （ai-review PR#2019 Important 1）。缺席 ⇒ skill_* 断言 fail-loud。
+   */
+  // N-EVAL-FAILURE-AUTOHARVEST：collectHandoffProposals = 采集本会话 run 窗口内落库的 handoff
+  // 提案（handoff_* 断言的证据源；只在 case 声明 handoff_* 断言时被调，见 timeoutExpectations
+  // 的 collectDeclaredHandoffProposals 闸；返回 undefined = 没有证据源 ⇒ 断言 fail-loud）。
+  // 与上行同行是 max-lines 债务门所迫（本文件基线正好 1000 有效行），拆行即红，勿拆。
+  consumeSkillSignals?(testId: string): Promise<CaseSkillSignals>; collectHandoffProposals?(since: number): Promise<HandoffProposalRecord[] | undefined>;
   consumeSubagentSpawns?(testId: string): number;
   getStructuredReplay?(sessionId: string): Promise<StructuredReplay | null>;
 }
@@ -938,7 +949,13 @@ export class TestRunner {
       // N-EVAL-MEMORY：记忆落账必须在断言求值之前、且在**全部轮次**（首轮 + user_simulation /
       // follow_up_prompts）跑完之后才消费——首轮后就取会漏掉后续轮的写入与快照，
       // 把「第二轮才落盘」判成未写入、把「第二轮泄露」判成干净（审查 #1638）。
-      Object.assign(result, agent.consumeMemorySignals?.(testCase.id) ?? {});
+      // N-SKILL-TRIGGER-EVAL：skill 触发落账同时序；消费即清（台账不留给下一 trial）。
+      // 只在题目声明了 skill_* 断言时采集（ai-review PR#2019 R2）：无条件采集会让
+      // SkillDiscoveryService 初始化/ToolSearch 同步的异常扩散成普通题误红。
+      // adapter 没接记录器时字段保持 undefined，fail-loud。
+      // N-EVAL-FAILURE-AUTOHARVEST：handoff 落账同一按需口径（collectDeclaredHandoffProposals
+      // 内部闸：只在声明 handoff_* 断言时查库）；采集器缺席 ⇒ undefined ⇒ fail-loud。
+      Object.assign(result, agent.consumeMemorySignals?.(testCase.id) ?? {}, (testCase.expectations ?? []).some((e) => e.type === 'skill_triggered' || e.type === 'skill_not_triggered') ? (await agent.consumeSkillSignals?.(testCase.id)) ?? {} : {}, await collectDeclaredHandoffProposals(agent, testCase.expectations, result.startTime));
 
       const assertionResult = await runAssertions(testCase.expect ?? {}, {
         toolExecutions: result.toolExecutions,
@@ -989,7 +1006,7 @@ export class TestRunner {
           goalRun: result.goalRun,
           permissionRequests: result.permissionRequests,
           memoryRecall: result.memoryRecall,
-          memorySnapshot: result.memorySnapshot,
+          memorySnapshot: result.memorySnapshot, skillActivations: result.skillActivations, skillContext: result.skillContext, handoffProposals: result.handoffProposals,
         });
         result.expectationResults = expResult.results;
         result.score = expResult.overallScore;
@@ -1046,7 +1063,9 @@ export class TestRunner {
       result.failureReason = message || 'Unknown error';
       // N-EVAL-TIMEOUT-K2-NEGASSERT：拿到被掐那一轮轨迹才补跑负向过程断言；拿不到行为不变。
       if (killedByTimeout && result.timeoutTraceAvailable === true) {
-        await judgeTimeoutExpectations(testCase.expectations, result, workingDirectory)
+        // N-SKILL-TRIGGER-EVAL：skill 证据在补判函数内交出（thunk 传入），交不出则进 unjudged。
+        // N-EVAL-FAILURE-AUTOHARVEST：handoff 证据同款 thunk（末参），交不出进 unjudged。
+        await judgeTimeoutExpectations(testCase.expectations, result, workingDirectory, () => agent.consumeSkillSignals?.(testCase.id) ?? Promise.resolve(undefined), () => agent.collectHandoffProposals?.(result.startTime) ?? Promise.resolve(undefined))
           .catch((judgeError: unknown) => logger.warn('timeout expectations failed to run', { testId: testCase.id, error: String(judgeError) }));
       }
       result.errors.push(message || String(error));
@@ -1106,7 +1125,10 @@ export class TestRunner {
 
       result.endTime = Date.now();
       result.duration = result.endTime - result.startTime;
-      result.skillActivations = agent.consumeSkillActivations?.(testCase.id) ?? {};
+      // N-SKILL-TRIGGER-EVAL：新 adapter 的台账已被 consumeSkillSignals 在断言前消费清空，
+      // ??= 的短路此时保护的是已交出的真值；旧 adapter（只接 consumeSkillActivations）
+      // 则照常在这里消费收口——两条路的「读走即清」都成立，台账不跨 trial 累积。
+      result.skillActivations ??= agent.consumeSkillActivations?.(testCase.id) ?? {};
       result.subagentSpawns = agent.consumeSubagentSpawns?.(testCase.id) ?? 0;
       const usage = costTracker.getUsage();
       if (usage) {

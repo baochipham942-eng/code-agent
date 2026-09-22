@@ -351,6 +351,60 @@ export interface CaseMemorySignals {
   memoryWrites: number;
 }
 
+/**
+ * N-SKILL-TRIGGER-EVAL：adapter 每题交回给 runner 的 skill 触发落账
+ * （字段名与 TestResult 同名，直接并进结果；skill_* 断言的证据源）。
+ */
+export interface CaseSkillSignals {
+  /** 本题 skill 真实触发计数（skill_activated 口径：真实执行成功才算，装进上下文不算） */
+  skillActivations: Record<string, number>;
+  /** 本题实际装进上下文的 skill 名（白名单 ∩ 已发现 ∩ 启用），排序去重 */
+  skillContext: string[];
+}
+
+/**
+ * N-EVAL-FAILURE-AUTOHARVEST：一条 handoff 提案的行为落账
+ * （handoff_* 断言的证据源；只钉结构化字段，不带会话正文）。
+ */
+export interface HandoffProposalRecord {
+  title: string;
+  prompt: string;
+  reason?: string;
+  source: string;
+  status: string;
+  createdAt: number;
+}
+
+/**
+ * expectation 断言的求值上下文（assertionEngine.runExpectations / 超时补判共用）。
+ * 各证据字段的缺席语义统一是 fail-loud：「没记录」和「记录里没有」是两回事。
+ * 历史：本接口原在 assertionEngine.ts 内部；N-EVAL-FAILURE-AUTOHARVEST 因 max-lines
+ * 债务门（该文件基线 999/1000）外移到本文件——它与上面一排 Record 类型本就是一族。
+ */
+export interface ExpectationContext {
+  toolExecutions: ToolExecutionRecord[];
+  responses: string[];
+  errors: string[];
+  turnCount: number;
+  workingDirectory: string;
+  /** 批 6：user simulator 应答落账（sim_stop_respected 断言的锚点数据） */
+  simTurns?: SimTurnRecord[];
+  /** 批 6 · B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
+  goalRun?: GoalRunRecord;
+  /** N-EVAL-APPROVALEVAL · B：审批处理器被调用记录（approval_* 断言的证据源；缺席时那两个断言 fail-loud） */
+  permissionRequests?: PermissionRequestRecord[];
+  /** N-EVAL-MEMORY：记忆注入落账（memory_recalled 的证据源；缺席时 fail-loud） */
+  memoryRecall?: MemoryRecallRecord;
+  /** N-EVAL-MEMORY：跑完的记忆目录快照（memory_written 的证据源；缺席时 fail-loud） */
+  memorySnapshot?: MemoryFileSnapshot[];
+  /** N-SKILL-TRIGGER-EVAL：skill 触发落账（skill_* 断言的证据源；缺席时 fail-loud） */
+  skillActivations?: Record<string, number>;
+  /** N-SKILL-TRIGGER-EVAL：本题装进上下文的 skill 名单（同上；缺席时 fail-loud） */
+  skillContext?: string[];
+  /** N-EVAL-FAILURE-AUTOHARVEST：本会话 handoff 提案落账（handoff_* 断言的证据源；缺席时 fail-loud） */
+  handoffProposals?: HandoffProposalRecord[];
+}
+
 /** 单个附件注入声明 */
 interface CaseFileInjection {
   /** 本地源文件绝对路径（支持 ~ 前缀） */
@@ -482,6 +536,19 @@ export interface TestResult {
   score: number;
   /** 本 case 内每个 skill 的真实激活次数；缺省/空对象均表示未触发。 */
   skillActivations?: Record<string, number>;
+  /**
+   * N-SKILL-TRIGGER-EVAL：本题实际装进上下文的 skill 名单（白名单 ∩ 已发现 ∩ 启用）。
+   * skill_triggered / skill_not_triggered 的证据源之一（另一半是 skillActivations）；
+   * 缺席 = adapter 没接记录器（mock / 旧 adapter），两个断言 fail-loud——
+   * 「没装任何 skill」和「没记录装了什么」混起来，负样本会真空假绿。
+   */
+  skillContext?: string[];
+  /**
+   * N-EVAL-FAILURE-AUTOHARVEST：本 case 会话在 run 时间窗内落库的 handoff 提案落账
+   * （handoff_proposed / handoff_not_proposed 的证据源；adapter 没接采集器时缺席 ⇒ fail-loud）。
+   * 只记结构化字段（title/prompt/reason/source/status/createdAt），不带会话正文。
+   */
+  handoffProposals?: HandoffProposalRecord[];
   /** 题目元数据快照（分层通过率用）；建 summary 时从 TestCase 抄入，报告不回读题库（题库可能已改）。 */
   caseMeta?: TestCaseMeta;
   /** N-EVAL-MEMORY：本 case 的记忆注入落账（memory_recalled 的证据源；adapter 没接记录器时缺席）。 */
@@ -923,7 +990,35 @@ export type ExpectationType =
   // 两者 deterministic 桶；非法参数、以及没有证据源（mock / 旧 adapter）一律 fail-loud，
   // 绝不静默算过——「没记录」和「记录里没有」混起来就是假绿。
   | 'memory_recalled'
-  | 'memory_written';
+  | 'memory_written'
+  // N-SKILL-TRIGGER-EVAL：skill 触发判定（实现在 skillTriggerEval，保持本文件与
+  // assertionEngine 在债务门内）。判据 = skill_activated 事件计数（Skill 工具真实执行
+  // 成功才 emit；装进上下文 / 调用失败都不算触发）。skill 名精确匹配，不用 regex。
+  // skill_triggered —— params: skills（必填非空字符串数组，精确名）、mode（'any' 默认 / 'all'）。
+  //   隐式触发题用：题面不点名 skill，但名单里的 skill 该真被调起来。
+  // skill_not_triggered —— params: skills（同上）。负样本题用：名单里的 skill 一次都不许触发。
+  // 两者 deterministic 桶。fail-loud 三层：非法参数；没有证据源（mock / 旧 adapter，
+  // skillContext 缺席）；声明的 skill 不在本题 skillContext（没装进上下文——负样本
+  // 真空通过、正向永不可能触发，都是配置错不是能力数据）。
+  | 'skill_triggered'
+  | 'skill_not_triggered'
+  // N-EVAL-FAILURE-AUTOHARVEST：过程形状断言（实现在 processAssertionEval，保持本文件与
+  // assertionEngine 在债务门内）。
+  // max_tool_retries（retry 预算）—— params: budget（必填正整数）、tool（可选 regex 过滤）。
+  //   判据 = toolExecutions 里同一签名（工具名 + input 稳定 JSON）连续失败次数 ≤ budget；
+  //   permissionDenied 记录不计（没真执行）。证据源 toolExecutions 现成。
+  | 'max_tool_retries'
+  // handoff_proposed / handoff_not_proposed（handoff 正确）——
+  //   证据源 = adapter 按需采集的本会话 handoff_proposals 落库记录（run 时间窗内）；
+  //   缺席（mock / 旧 adapter）fail-loud——「没记录」和「零 handoff」是两回事。
+  //   params: match（可选 regex，对 title+prompt+reason 任一命中算该提案匹配；
+  //   省略 = 任何提案都算）。
+  | 'handoff_proposed'
+  | 'handoff_not_proposed'
+  // required_steps（必经步骤）—— params: steps（必填非空 regex 数组，匹配工具名）、
+  //   ordered（可选，默认 true = 子序列按序命中；false = 每步至少出现一次）。
+  //   fail-loud：非法参数、toolExecutions 为空一律显式红（真空通过 = 假绿）。
+  | 'required_steps';
 
 export interface Expectation {
   type: ExpectationType;

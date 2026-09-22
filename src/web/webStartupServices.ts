@@ -64,7 +64,8 @@ export type WebStartupTaskName =
   | 'debugSnapshotCleanup'
   | 'openchronicle'
   | 'soulWatcher'
-  | 'modelConsistency';
+  | 'modelConsistency'
+  | 'postLaunchAutoHarvest';
 
 export type WebStartupTasks = Record<WebStartupTaskName, () => void | Promise<void>>;
 
@@ -318,6 +319,13 @@ function createDefaultTasks(
     modelConsistency: async () => {
       const { validateModelConsistency } = await import('../host/model/modelValidator');
       validateModelConsistency();
+    },
+
+    // N-EVAL-FAILURE-AUTOHARVEST：低分自动入候选调度（默认关，privacy.postLaunchAutoHarvest；
+    // 只跑确定性信号不调 judge）。开关关着时调度器每 tick 只 warn 一句就返回。
+    postLaunchAutoHarvest: async () => {
+      const { startPostLaunchAutoHarvestScheduler } = await import('../host/testing/postlaunch/postLaunchAutoHarvestRuntime');
+      startPostLaunchAutoHarvestScheduler();
     },
   };
 }

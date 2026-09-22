@@ -166,6 +166,24 @@ export function resolvePostLaunchReflowEnabled(
 export const POST_LAUNCH_REFLOW_DISABLED_MESSAGE
   = '上线后坏案例回流没开。去「设置 → 隐私防线」页的「数据共享」里把「坏案例回流」选成「开」再来。';
 
+/**
+ * 低分自动入候选扫描开关（N-EVAL-FAILURE-AUTOHARVEST）。三态形状与评分/回流一致，
+ * 但**缺省 = 关**（undefined 解析为 false，连内部槽也要显式 'auto'/'on' 才开）——
+ * 与兄弟开关「缺省 = auto 跟槽」的刻意偏离，因为自动扫描是默认行为变化，工单要求默认关。
+ * 扫描只算确定性信号、永不调 judge（零成本零正文外发）；入的是候选池，草稿仍走四道闸。
+ */
+export type PostLaunchAutoHarvestSwitch = 'on' | 'off' | 'auto';
+
+export function resolvePostLaunchAutoHarvestEnabled(
+  setting: PostLaunchAutoHarvestSwitch | undefined,
+  internalSlot: boolean,
+): boolean {
+  if (setting === 'on') return true;
+  if (setting === 'off') return false;
+  if (setting === 'auto') return internalSlot;
+  return false;
+}
+
 export function resolvePostLaunchScoringEnabled(
   setting: PostLaunchScoringSwitch | undefined,
   internalSlot: boolean,
@@ -190,6 +208,8 @@ export const POST_LAUNCH_DEFAULTS = {
   costAnomalyUsd: 0.2,
   /** 同工具同参数连续调用达到这个次数算 repeat_loop。 */
   repeatLoopThreshold: 3,
+  /** 低分自动入候选扫描的间隔（毫秒）：启动时检查一次 + 按此周期滚动。 */
+  autoHarvestIntervalMs: 24 * 60 * 60 * 1000,
   /** 一行理由的字数上限。 */
   reasonMaxChars: 200,
 } as const;
@@ -320,6 +340,14 @@ export interface PostLaunchScoringRequest {
   /** 只算信号不调模型，用于 CLI --dry-run 与预算超限后的降级路径。 */
   dryRun?: boolean;
   /**
+   * 低分自动入候选扫描（N-EVAL-FAILURE-AUTOHARVEST）：永不调 judge（零成本零正文外发），
+   * 只落确定性信号/not-judged 占位行（真 judge 版本）——候选视图照常带出，且不挡之后的
+   * 人手真评补评（FB-233：not-judged 行不算已评）。与 dryRun 的区别：dryRun 记 'dry-run'
+   * 版本行不进候选；signalOnly 记真版本行进候选。只经 host 自动调度进来：渲染层的
+   * clampPostLaunchScoringRequest 会把这个键丢掉，IPC 开不了这条通道。
+   */
+  signalOnly?: boolean;
+  /**
    * 评合成流量（headless 起源的会话）。只经 CLI --include-headless 进来：
    * 渲染层的 clampPostLaunchScoringRequest 会把这个键丢掉，IPC 开不了这条通道。
    */
@@ -333,10 +361,19 @@ export interface PostLaunchScoringResult {
   excludedTurns: number;
   /** 命中信号、全评的轮。 */
   signalTurns: number;
-  /** 未命中信号、被抽中评的轮。 */
+  /**
+   * 未命中信号、进入评分的轮。Jev 初筛装配时无信号轮全量走 Jev（N-JEV-EVAL-JUDGE 母单④），
+   * dailySampleLimit 只约束其中「升级到生成式」的条数，不再限制 Jev 初筛本身。
+   */
   sampledTurns: number;
   /** 只记了信号、没调 judge 的轮。 */
   signalOnlyTurns: number;
+  /**
+   * Jev 初筛已调用（并计费）但部分弃权、抽样额度耗尽挡住升级生成式、落 not-judged
+   * 占位行待补评的无信号轮。与 signalOnlyTurns 分开计：这类轮调过 judge 且花了钱
+   * （ai-review #2023 R6）。
+   */
+  sampleDeferredTurns: number;
   /** 已有分数、本轮跳过的轮。 */
   skippedTurns: number;
   costUsd: number;

@@ -6,11 +6,11 @@
 //   2) agentTree 快照节点（spawn/parallel/后台代理）
 //   3) delegate_task 后台任务（backgroundTaskStore 的 Task）
 // 九态→四态映射只有 agentRowStatus 一处；去重规则只有 buildAgentRows 一处。
-// 枚举值绝不直接铺给用户——用户只看到 工作中/完成/失败/卡住了/待命。
+// 枚举值绝不直接铺给用户——用户只看到 工作中/等你回应/需要授权/已停/完成/失败/待命。
 // ============================================================================
 
 import type { AgentTreeNode, AgentTreeNodeStatus } from '@shared/contract/agentTree';
-import type { LastToolStep, Task, TaskStatus } from '@shared/contract/backgroundTask';
+import type { Task, TaskStatus } from '@shared/contract/backgroundTask';
 
 /** 用户可见四态 + 待命（预选名单）。 */
 export type AgentRowStatus = 'working' | 'done' | 'failed' | 'cancelled' | 'waiting' | 'standby';
@@ -40,8 +40,11 @@ export interface AgentRow {
   icon?: string;
   isLead: boolean;
   status: AgentRowStatus;
-  /** 当前一句（最近工具步人话）；没有真实工具步时缺省。 */
-  activity?: string;
+  /**
+   * 等你授权。工具步人话不进这一行（N-ASKUSER-ONE-SIGNAL）：
+   * 面板只报状态，细节在点进成员视图之后。
+   */
+  hold?: 'approval';
   failureReason?: string;
   stoppable: boolean;
   tokens?: number;
@@ -102,9 +105,8 @@ export function buildAgentRows(input: {
   members: MemberRowSource[];
   nodes: AgentTreeNode[];
   tasks: Task[];
-  describeStep: (step: LastToolStep | undefined) => string | undefined;
 }): AgentRow[] {
-  const { members, nodes, tasks, describeStep } = input;
+  const { members, nodes, tasks } = input;
   const rows: AgentRow[] = [];
   const memberKeys = new Set(members.map((member) => member.key));
 
@@ -118,9 +120,6 @@ export function buildAgentRows(input: {
       icon: member.icon,
       isLead: member.isLead,
       status: memberRowStatus(member.status),
-      // 没有真实工具步就不声称正在做事；若 agentTree 里有同名节点，下面会把
-      // 它真实的最近工具步补上来。
-      activity: undefined,
       stoppable: member.status === 'running',
       filesChanged: member.filesChanged,
       member,
@@ -135,7 +134,6 @@ export function buildAgentRows(input: {
       const row = rows.find((candidate) => candidate.key === node.id);
       if (row) {
         row.node = node;
-        if (node.lastToolStep) row.activity = describeStep(node.lastToolStep);
         if (typeof node.budgetSummary.tokensUsed === 'number') row.tokens = node.budgetSummary.tokensUsed;
         if (node.failureReason) row.failureReason = node.failureReason;
       }
@@ -150,7 +148,6 @@ export function buildAgentRows(input: {
       name: node.role,
       isLead: false,
       status,
-      activity: describeStep(node.lastToolStep),
       failureReason: node.failureReason,
       stoppable: status === 'working',
       tokens: node.budgetSummary.tokensUsed,
@@ -173,7 +170,6 @@ export function buildAgentRows(input: {
       name: task.title,
       isLead: false,
       status,
-      activity: describeStep(task.progress?.lastToolStep),
       failureReason: task.failure?.message,
       stoppable: status === 'working',
       task,
@@ -181,4 +177,18 @@ export function buildAgentRows(input: {
   }
 
   return rows;
+}
+
+/** 审批请求点名的代理，行上改报「需要授权」。点不到具体人就不猜。 */
+export function applyMemberHolds(
+  rows: AgentRow[],
+  approvalIds: ReadonlySet<string>,
+): AgentRow[] {
+  if (approvalIds.size === 0) return rows;
+  return rows.map((row) => {
+    const ids = [row.key, row.node?.id, row.task?.id, row.task?.runId].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    );
+    return ids.some((id) => approvalIds.has(id)) ? { ...row, hold: 'approval' } : row;
+  });
 }

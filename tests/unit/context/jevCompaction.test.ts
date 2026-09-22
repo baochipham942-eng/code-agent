@@ -25,6 +25,35 @@ function toolTranscript(): ProjectableMessage[] {
   return messages;
 }
 
+function keepAllExcept(overrides: Record<string, number>): JevSystemOneCall {
+  return (async (_state: Record<string, unknown>, questions: Record<string, unknown>) => {
+    const answers: Record<string, { noul: number }> = {};
+    for (const key of Object.keys(questions)) {
+      answers[key] = { noul: overrides[key] ?? 0.9 };
+    }
+    return answers;
+  }) as unknown as JevSystemOneCall;
+}
+
+function expectNoOrphans(messages: ProjectableMessage[]): void {
+  const survivingCallIds = new Set<string>();
+  for (const message of messages) {
+    for (const call of (Array.isArray(message.toolCalls) ? message.toolCalls : []) as Array<{ id?: unknown }>) {
+      if (typeof call.id === 'string') survivingCallIds.add(call.id);
+    }
+  }
+  const survivingResultCallIds = new Set<string>();
+  for (const message of messages) {
+    if (typeof message.toolCallId === 'string') {
+      expect(survivingCallIds.has(message.toolCallId)).toBe(true);
+      survivingResultCallIds.add(message.toolCallId);
+    }
+  }
+  for (const callId of survivingCallIds) {
+    expect(survivingResultCallIds.has(callId)).toBe(true);
+  }
+}
+
 describe('jevCompaction', () => {
   beforeEach(() => vi.unstubAllEnvs());
 
@@ -75,5 +104,93 @@ describe('jevCompaction', () => {
     const result = await applyJevCompaction(messages, systemOne);
     expect(result).toMatchObject({ skipped: true, reason: 'unavailable' });
     expect(messages.length).toBe(before);
+  });
+
+  it('never judges, drops, or truncates protected messages', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_COMPACTION', '1');
+    const messages = toolTranscript();
+    const askedKeys: string[] = [];
+    const systemOne = vi.fn(async (_state: Record<string, unknown>, questions: Record<string, unknown>) => {
+      askedKeys.push(...Object.keys(questions));
+      const answers: Record<string, { noul: number }> = {};
+      for (const key of Object.keys(questions)) answers[key] = { noul: 0.1 };
+      return answers;
+    }) as unknown as JevSystemOneCall;
+    const result = await applyJevCompaction(messages, systemOne, {
+      protectedMessageIds: new Set(['call-0', 'result-0']),
+    });
+    expect(result.skipped).toBe(false);
+    expect(askedKeys.some((key) => key.includes('entry_call-0') || key.includes('entry_result-0'))).toBe(false);
+    expect(messages.find((message) => message.id === 'call-0')).toBeTruthy();
+    expect(messages.find((message) => message.id === 'result-0')?.content).toBe(`result 0 ${'x'.repeat(500)}`);
+    // Unprotected pairs judged drop are still removed as whole pairs.
+    expect(messages.some((message) => message.id === 'call-1')).toBe(false);
+    expect(messages.some((message) => message.id === 'result-1')).toBe(false);
+    expectNoOrphans(messages);
+  });
+
+  it('keeps the call when Jev would drop it but its result is protected', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_COMPACTION', '1');
+    const messages = toolTranscript();
+    const systemOne = keepAllExcept({ 'keep_call_entry_call-0': 0.1 });
+    const result = await applyJevCompaction(messages, systemOne, {
+      protectedMessageIds: new Set(['result-0']),
+    });
+    expect(result.skipped).toBe(false);
+    expect(result.droppedMessages).toBe(0);
+    expect(messages.find((message) => message.id === 'call-0')).toBeTruthy();
+    expect(messages.find((message) => message.id === 'result-0')?.content.length).toBe(`result 0 ${'x'.repeat(500)}`.length);
+    expectNoOrphans(messages);
+  });
+
+  it('truncates but never drops the result of a protected call', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_COMPACTION', '1');
+    const messages = toolTranscript();
+    const systemOne = keepAllExcept({
+      'keep_call_entry_call-0': 0.1,
+      'keep_result_entry_result-0': 0.1,
+    });
+    const result = await applyJevCompaction(messages, systemOne, {
+      protectedMessageIds: new Set(['call-0']),
+    });
+    expect(result.skipped).toBe(false);
+    const resultMessage = messages.find((message) => message.id === 'result-0');
+    expect(resultMessage).toBeTruthy();
+    expect(resultMessage?.content.length).toBe(300);
+    expect(result.truncatedResults).toBe(1);
+    expect(result.droppedMessages).toBe(0);
+    expectNoOrphans(messages);
+  });
+
+  it('keeps the call when a pinned boundary result would otherwise be orphaned', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_COMPACTION', '1');
+    const messages = toolTranscript();
+    // call-0 issues a second tool call whose result arrives at the very end of
+    // the transcript, so the late result is pinned while call-0 is not.
+    (messages[0].toolCalls as Array<{ id: string; name: string }>).push({ id: 'tool-0b', name: 'Read' });
+    messages.push({
+      id: 'result-0b',
+      role: 'tool',
+      content: `late result ${'x'.repeat(500)}`,
+      toolCallId: 'tool-0b',
+    });
+    const systemOne = keepAllExcept({ 'keep_call_entry_call-0': 0.1 });
+    const result = await applyJevCompaction(messages, systemOne);
+    expect(result.skipped).toBe(false);
+    expect(result.droppedMessages).toBe(0);
+    expect(messages.find((message) => message.id === 'call-0')).toBeTruthy();
+    expect(messages.find((message) => message.id === 'result-0b')).toBeTruthy();
+    expectNoOrphans(messages);
+  });
+
+  it('passes the spot check when a low-scored result is already under the truncation length', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_COMPACTION', '1');
+    const messages = toolTranscript();
+    messages[1].content = 'short result';
+    const systemOne = keepAllExcept({ 'keep_result_entry_result-0': 0.1 });
+    const result = await applyJevCompaction(messages, systemOne);
+    expect(result.truncatedResults).toBe(0);
+    expect(result.spotCheckPassed).toBe(true);
+    expect(messages.find((message) => message.id === 'result-0')?.content).toBe('short result');
   });
 });

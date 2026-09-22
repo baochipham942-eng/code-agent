@@ -28,6 +28,12 @@ interface Candidate {
   toolCallIds: string[];
   toolCallId?: string;
   pinned: boolean;
+  protected: boolean;
+}
+
+/** Safe entries are never judged, dropped, or truncated: the latest six tool entries plus user-protected messages. */
+function isSafe(candidate: Candidate): boolean {
+  return candidate.pinned || candidate.protected;
 }
 
 function isNoul(value: unknown): value is { noul: number } {
@@ -46,10 +52,12 @@ function safeKey(id: string, used: Set<string>): string {
   return key;
 }
 
-function buildCandidates(messages: ProjectableMessage[]): Candidate[] {
+function buildCandidates(messages: ProjectableMessage[], protectedMessageIds?: Set<string>): Candidate[] {
   const used = new Set<string>();
   const toolMessages = messages.filter((message) =>
     Array.isArray(message.toolCalls) || typeof message.toolCallId === 'string');
+  // Positional pin of the latest six entries; user protection is a union on top,
+  // so a protected entry never consumes a pin slot from a recent entry.
   const pinnedIds = new Set(toolMessages.slice(-JEV_COMPACTION_THRESHOLDS.pinnedLatestEntries).map((message) => message.id));
   return toolMessages.map((message) => ({
     key: safeKey(message.id, used),
@@ -60,6 +68,7 @@ function buildCandidates(messages: ProjectableMessage[]): Candidate[] {
       : [],
     toolCallId: typeof message.toolCallId === 'string' ? message.toolCallId : undefined,
     pinned: pinnedIds.has(message.id),
+    protected: protectedMessageIds?.has(message.id) ?? false,
   }));
 }
 
@@ -79,13 +88,19 @@ export function isJevCompactionEnabled(env: NodeJS.ProcessEnv = process.env): bo
   return env.CODE_AGENT_JEV_COMPACTION === '1';
 }
 
+export interface JevCompactionOptions {
+  /** User pinned/retained + protectedToolResultPredicate ids from the pipeline; never judged, dropped, or truncated. */
+  protectedMessageIds?: Set<string>;
+}
+
 export async function applyJevCompaction(
   messages: ProjectableMessage[],
   systemOne?: JevSystemOneCall,
+  options?: JevCompactionOptions,
 ): Promise<JevCompactionResult> {
   if (!isJevCompactionEnabled()) return unavailable('disabled');
-  const candidates = buildCandidates(messages);
-  const active = candidates.filter((candidate) => !candidate.pinned);
+  const candidates = buildCandidates(messages, options?.protectedMessageIds);
+  const active = candidates.filter((candidate) => !isSafe(candidate));
   if (active.length === 0) return unavailable('no_candidates');
 
   const batches: Candidate[][] = [];
@@ -138,31 +153,39 @@ export async function applyJevCompaction(
   }
 
   const callById = new Map<string, Candidate>();
+  const resultsByCallId = new Map<string, Candidate[]>();
   for (const candidate of candidates) {
     for (const id of candidate.toolCallIds) callById.set(id, candidate);
+    if (candidate.toolCallId) {
+      const paired = resultsByCallId.get(candidate.toolCallId) ?? [];
+      paired.push(candidate);
+      resultsByCallId.set(candidate.toolCallId, paired);
+    }
   }
+  // Pair integrity holds in both directions: a surviving call keeps its results
+  // (truncated at most, never dropped) and a surviving result keeps its call —
+  // when Jev would drop a call whose result is safe, the call is kept instead.
+  // Compaction may keep more at pair boundaries, never orphan.
   const removeIds = new Set<string>();
   const truncateIds = new Set<string>();
   for (const candidate of candidates) {
-    if (candidate.pinned) continue;
+    if (candidate.kind !== 'call' || isSafe(candidate)) continue;
     const decision = decisions.get(candidate.key);
-    if (!decision) continue;
-    if (candidate.kind === 'call') {
-      if (!decision.keepCall) {
-        removeIds.add(candidate.message.id);
-        for (const id of candidate.toolCallIds) {
-          const result = candidates.find((item) => item.toolCallId === id);
-          if (result && !result.pinned) removeIds.add(result.message.id);
-        }
-      }
-    } else if (candidate.toolCallId) {
-      const callCandidate = callById.get(candidate.toolCallId);
-      const callDecision = callCandidate ? decisions.get(callCandidate.key) : undefined;
-      if (!callDecision?.keepCall) {
-        if (!candidate.pinned) removeIds.add(candidate.message.id);
-      } else if (!decision.keepResult) {
-        truncateIds.add(candidate.message.id);
-      }
+    if (decision?.keepCall !== false) continue;
+    const results = candidate.toolCallIds.flatMap((id) => resultsByCallId.get(id) ?? []);
+    if (results.some(isSafe)) continue;
+    removeIds.add(candidate.message.id);
+    for (const result of results) removeIds.add(result.message.id);
+  }
+  for (const candidate of candidates) {
+    if (candidate.kind !== 'result' || !candidate.toolCallId || isSafe(candidate)) continue;
+    if (removeIds.has(candidate.message.id)) continue;
+    const call = callById.get(candidate.toolCallId);
+    if (!call) continue; // no paired call in the transcript — fail closed, keep
+    const decision = decisions.get(candidate.key);
+    if (decision && !decision.keepResult
+      && candidate.message.content.length > JEV_COMPACTION_THRESHOLDS.truncatedResultChars) {
+      truncateIds.add(candidate.message.id);
     }
   }
 
@@ -188,6 +211,6 @@ export async function applyJevCompaction(
     truncatedResults: truncateIds.size,
     compressionRatio: originalChars === 0 ? 1 : keptChars / originalChars,
     spotCheckPassed: [...truncateIds].every((id) => !messages.some((message) => message.id === id)
-      || messages.find((message) => message.id === id)?.content.length === JEV_COMPACTION_THRESHOLDS.truncatedResultChars),
+      || (messages.find((message) => message.id === id)?.content.length ?? 0) <= JEV_COMPACTION_THRESHOLDS.truncatedResultChars),
   };
 }

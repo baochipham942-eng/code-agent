@@ -86,6 +86,56 @@ function sanitizePortableValue(value: unknown): unknown {
   );
 }
 
+/** Schema spellings only. File_Path / File.Path normalize like the runtime key filePath. */
+const EXACT_TOOL_PATH_KEYS = new Set(['path', 'file_path', 'notebook_path']);
+const PATH_ARGUMENT_TOOLS = new Set([
+  'read', 'readfile', 'edit', 'write', 'grep', 'glob', 'notebookedit',
+]);
+
+function keepsPathArguments(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  return PATH_ARGUMENT_TOOLS.has(toolName.replace(/[^A-Za-z0-9]/g, '').toLowerCase());
+}
+
+function isNormalizedRuntimeIdentityKey(key: string): boolean {
+  const normalized = normalizeKey(key);
+  for (const candidate of FORBIDDEN_RUNTIME_KEYS) {
+    if (normalized === normalizeKey(candidate)) return true;
+  }
+  return false;
+}
+
+/** toolCalls[].arguments keep every non-secret key. Credential-shaped keys are
+ *  value-masked. file_path / path / notebook_path stay only for file tools.
+ *  Other channels stay on sanitizePortableValue, which drops the key entirely. */
+function sanitizeToolArguments(value: unknown, toolName?: string): unknown {
+  if (typeof value === 'string') return redactSecretText(value);
+  if (Array.isArray(value)) return value.map((item) => sanitizeToolArguments(item, toolName));
+  if (!value || typeof value !== 'object') return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (item === undefined) continue;
+    // Exact runtime-identity keys (apiKey, filePath, cwd, …) still cannot appear:
+    // assertNoRuntimeIdentity rejects the key even when the value is redacted.
+    if (FORBIDDEN_RUNTIME_KEYS.has(key)) continue;
+    // File_Path / File.Path normalize to the same key as filePath, so they are
+    // runtime identity too. Only the schema spellings stay, and only on file tools.
+    if (isNormalizedRuntimeIdentityKey(key) && !EXACT_TOOL_PATH_KEYS.has(key)) continue;
+    // Credential-shaped keys are masked before recursion, including objects and numbers.
+    // api_key_path is not one of the schema path spellings, so it stays masked.
+    if (isForbiddenPortableKey(key) && !(keepsPathArguments(toolName) && EXACT_TOOL_PATH_KEYS.has(key))) {
+      result[key] = '[REDACTED]';
+      continue;
+    }
+    if (item && typeof item === 'object') {
+      result[key] = sanitizeToolArguments(item, toolName);
+      continue;
+    }
+    result[key] = typeof item === 'string' ? redactSecretText(item) : item;
+  }
+  return result;
+}
+
 function sanitizePortableContentParts(source: Message['contentParts']): Message['contentParts'] {
   return sanitizePortableValue(source) as Message['contentParts'];
 }
@@ -169,7 +219,7 @@ function sanitizeToolCall(source: NonNullable<Message['toolCalls']>[number]): Po
     name: source.name,
   };
   if (source.arguments !== undefined) {
-    sanitized.arguments = sanitizePortableValue(source.arguments) as Record<string, unknown>;
+    sanitized.arguments = sanitizeToolArguments(source.arguments, source.name) as Record<string, unknown>;
   }
   if (source.result) {
     sanitized.result = {
@@ -305,8 +355,10 @@ function sanitizeMessages(source: SessionExportSourceV2): PortableMessageV2[] {
     // runtime blob (turnDiff/retryAttachments/artifactLocator.filePath/channel names/...)
     // that isn't needed for round-trip — contentParts+toolCalls already carry what
     // rendering needs — and the denylist scrub kept leaking new key shapes every round.
-    // sanitizePortableValue below still strips FORBIDDEN_RUNTIME_KEYS from contentParts/
-    // toolCalls/toolResults, where equivalent keys (filePath, path, outputPath) can occur.
+    // contentParts and toolResults still go through sanitizePortableValue, which drops
+    // forbidden keys. toolCalls[].arguments go through sanitizeToolArguments: credential
+    // values are masked, exact runtime-identity keys are dropped, and path keys stay
+    // only for file tools.
     if (raw.visibility !== undefined) portable.visibility = raw.visibility;
     if (raw.isMeta !== undefined) portable.isMeta = raw.isMeta;
     if (raw.source !== undefined) portable.source = raw.source;

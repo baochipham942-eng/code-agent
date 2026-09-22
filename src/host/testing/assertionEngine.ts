@@ -19,11 +19,7 @@ import type {
   Expectation,
   ExpectationType,
   ExpectationResult,
-  SimTurnRecord,
-  GoalRunRecord,
-  PermissionRequestRecord,
-  MemoryFileSnapshot,
-  MemoryRecallRecord,
+  ExpectationContext,
 } from './types';
 import { WRITE_EFFECT_TOOL_PATTERNS } from './userSimulator';
 import { evaluateGoalStatusExpectation, evaluateGoalEvidenceGateExpectation } from './goalContractEval';
@@ -32,6 +28,7 @@ import { findForbiddenCallViolations } from './forbiddenCallEval';
 import { evaluateApprovalRequestExpectation } from './approvalRequestEval';
 import { evaluateMemoryRecalledExpectation, evaluateMemoryWrittenExpectation } from './memoryEval';
 import { evaluateSkillTriggerExpectation } from './skillTriggerEval';
+import { evaluateProcessAssertion } from './processAssertionEval';
 import { toolMatches } from './toolNameAliases';
 
 /**
@@ -675,31 +672,7 @@ export async function runAssertions(
 // Expectation-Based Assertion Engine (P1)
 // ============================================================================
 
-
-/**
- * Context for expectation evaluation
- */
-interface ExpectationContext {
-  toolExecutions: ToolExecutionRecord[];
-  responses: string[];
-  errors: string[];
-  turnCount: number;
-  workingDirectory: string;
-  /** 批 6：user simulator 应答落账（sim_stop_respected 断言的锚点数据） */
-  simTurns?: SimTurnRecord[];
-  /** 批 6 · B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
-  goalRun?: GoalRunRecord;
-  /** N-EVAL-APPROVALEVAL · B：审批处理器被调用记录（approval_* 断言的证据源；缺席时那两个断言 fail-loud） */
-  permissionRequests?: PermissionRequestRecord[];
-  /** N-EVAL-MEMORY：记忆注入落账（memory_recalled 的证据源；缺席时 fail-loud） */
-  memoryRecall?: MemoryRecallRecord;
-  /** N-EVAL-MEMORY：跑完的记忆目录快照（memory_written 的证据源；缺席时 fail-loud） */
-  memorySnapshot?: MemoryFileSnapshot[];
-  /** N-SKILL-TRIGGER-EVAL：skill 触发落账（skill_* 断言的证据源；缺席时 fail-loud） */
-  skillActivations?: Record<string, number>;
-  /** N-SKILL-TRIGGER-EVAL：本题装进上下文的 skill 名单（同上；缺席时 fail-loud） */
-  skillContext?: string[];
-}
+// ExpectationContext 已外移到 ./types（N-EVAL-FAILURE-AUTOHARVEST，债务门见该处注释）。
 
 /**
  * artifact_runnable params 校验：返回错误描述，合法时返回 null。
@@ -1122,6 +1095,15 @@ async function evaluateExpectation(
         actual = evaluation.actual;
         expected = evaluation.expected;
         details = evaluation.details;
+        break;
+      }
+
+      case 'max_tool_retries':
+      case 'handoff_proposed':
+      case 'handoff_not_proposed':
+      case 'required_steps': {
+        // N-EVAL-FAILURE-AUTOHARVEST：实现在 processAssertionEval（保持本文件在债务门内）；fail-loud 口径见该模块 doc comment。
+        ({ passed, actual, expected, details } = evaluateProcessAssertion(expectation.type, params, context));
         break;
       }
 

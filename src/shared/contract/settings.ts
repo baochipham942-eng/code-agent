@@ -434,6 +434,12 @@ export interface AppSettings {
     postLaunchScoring?: 'on' | 'off' | 'auto';
     /** 上线后坏案例回流入口；三态与评分开关一致，默认跟随内部槽。 */
     postLaunchReflow?: 'on' | 'off' | 'auto';
+    /**
+     * 低分自动入候选扫描（N-EVAL-FAILURE-AUTOHARVEST）：按日只跑确定性信号（不调评分模型、
+     * 零成本零正文外发），把信号命中的轮落成分数行进回流候选池；草稿仍要人过四道闸。
+     * 三态同上，但**缺省 = 关**（连内部槽也要显式 'auto'/'on'）——自动扫描是默认行为变化。
+     */
+    postLaunchAutoHarvest?: 'on' | 'off' | 'auto';
   };
   /** 评测中心（ADR-071 Q4）。 */
   evaluation?: {

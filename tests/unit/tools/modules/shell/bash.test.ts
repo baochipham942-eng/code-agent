@@ -73,9 +73,18 @@ vi.mock('../../../../../src/host/sandbox', async (importOriginal) => ({
 // 反向变异钩子（ADR-066 刀 2）：emptyEnvSecretLookup.value=true 时把回填 lookup
 // 打空，注入的引用全部解不开 —— 命令必须不跑且错误/日志无真值。默认 false =
 // 透传真实快照，文件内其它测试不受影响。
-const { emptyEnvSecretLookup } = vi.hoisted(() => ({
+const { emptyEnvSecretLookup, spillArchive } = vi.hoisted(() => ({
   emptyEnvSecretLookup: { value: false },
+  spillArchive: vi.fn(),
 }));
+vi.mock('../../../../../src/host/utils/toolResultSpill', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../../src/host/utils/toolResultSpill')>();
+  return {
+    ...actual,
+    spillToolResultArchive: (options: Parameters<typeof actual.spillToolResultArchive>[0]) => spillArchive(options),
+  };
+});
+
 vi.mock('../../../../../src/host/utils/envSecretRefs', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../../../../src/host/utils/envSecretRefs')>();
   return {
@@ -133,6 +142,8 @@ describe('bashModule (native)', () => {
     startBackgroundTaskMock.mockReset();
     createPtySessionMock.mockReset();
     getPtySessionOutputMock.mockReset();
+    spillArchive.mockReset();
+    spillArchive.mockImplementation(() => null);
   });
 
   describe('schema', () => {
@@ -1692,6 +1703,51 @@ describe('bashModule child-env secret whitelist (A8)', () => {
       delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
       delete process.env.AUTO_TEST_API_KEY;
     }
+  });
+});
+
+describe('bash output truncation guidance (N-BASH-TRUNC-GUIDANCE)', () => {
+  const overflow = `node -e 'process.stdout.write("x".repeat(40000))'`;
+
+  it('does not tell the model to Read offset when the spill archive cannot be written', async () => {
+    spillArchive.mockImplementation(() => null);
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: overflow }, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toContain('完整输出未能留存');
+    expect(result.output).toContain('不要重跑可能已产生副作用的命令');
+    expect(result.output).toContain('只有确认命令只读时，才缩小输出范围后重跑');
+    expect(result.output).not.toContain('Use Read tool with offset/limit');
+    expect(result.output).not.toContain('Edit tool');
+    expect(result.output).not.toContain('用 Read/Grep 回查');
+  });
+
+  it('names the spill path when the archive write succeeds', async () => {
+    const savedAt = '/tmp/neo-bash-spill-guidance.txt';
+    spillArchive.mockImplementation(() => ({
+      filePath: savedAt,
+      archiveRef: {
+        version: 1 as const,
+        artifactId: 'tool_result:test:Bash:call:abcdef123456',
+        filePath: savedAt,
+        toolName: 'Bash',
+        sessionId: 'test-session',
+        sha256: '0123456789abcdef0123456789abcdef',
+        bytes: 40000,
+        createdAt: 1,
+        reason: 'bash-output-limit',
+      },
+    }));
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: overflow }, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toContain(`完整输出已留存于 ${savedAt}，用 Read/Grep 回查`);
+    expect(result.output).toContain(savedAt);
+    expect(result.output).not.toContain('Use Read tool with offset/limit');
+    expect(result.output).not.toContain('Edit tool');
+    expect(result.output).not.toContain('完整输出未能留存');
   });
 });
 

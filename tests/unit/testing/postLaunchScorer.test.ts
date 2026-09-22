@@ -1004,6 +1004,120 @@ describe('上线后打分编排', () => {
     expect(rows[0].judge_model).toBe(JEV_JUDGE_MODEL);
   });
 
+  // N-JEV-EVAL-JUDGE 母单验收④：Jev 初筛装配时无信号轮全量走 Jev，dailySampleLimit 只约束升级生成式。
+  it('prescreen 装配 + 无信号轮 × 3 + dailySampleLimit=0 ⇒ 全量走 Jev、llmCall 零调用、决断轮不占抽样额度', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    for (let index = 1; index <= 3; index += 1) insertTurn(database, 'chat-1', `t${index}`, index, NOW - HOUR + index);
+    const replays = {
+      'chat-1': replay('chat-1', [1, 2, 3].map((turnNumber) => ({
+        turnNumber,
+        startTime: NOW - HOUR + turnNumber,
+        blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR + turnNumber } as ReplayBlock],
+      }))),
+    };
+    const decideAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'met', confidence: 0.9 },
+      goal_pass: { noul: 0.91 },
+      orchestration_pass: { noul: 0.88 },
+      permission_pass: { noul: 0.95 },
+      no_tools_but_needed: { noul: 0.12 },
+    });
+    const prescreen = vi.fn(decideAll);
+    const llmCall = vi.fn(async () => ALL_PASS);
+
+    const result = await runPostLaunchScoring(
+      deps(database, replays, llmCall, { prescreen }),
+      { dailySampleLimit: 0 },
+    );
+
+    expect(prescreen).toHaveBeenCalledTimes(3);
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(result.sampledTurns).toBe(3);
+    const rows = scoreRows(database);
+    expect(rows).toHaveLength(3);
+    for (const row of rows) expect(row.judge_model).toBe(JEV_JUDGE_MODEL);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 0 }).sampledCount).toBe(0);
+  });
+
+  it('prescreen 装配 + 无信号轮 Jev 弃权 + 抽样额度耗尽 ⇒ 落 not-judged 占位行（可补评）；提高额度后重跑补评上（ai-review #2023）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 't1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const abstainAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'cannot_tell', confidence: 0.2 },
+      goal_pass: { noul: 0.5 },
+      orchestration_pass: { noul: 0.5 },
+      permission_pass: { noul: 0.5 },
+      no_tools_but_needed: { noul: 0.5 },
+    });
+    const prescreen = vi.fn(abstainAll);
+    const llmCall = vi.fn(async () => ALL_PASS);
+    const sample = replays['chat-1'].turns[0];
+    const signals = computeTurnSignals(sample, 't1', { workspaceDir: '/ws', turnCostUsd: 0.001, fileExists: () => true });
+    const jevUsd = estimatePostLaunchPrescreenUsd(sample, signals);
+
+    const first = await runPostLaunchScoring(
+      deps(database, replays, llmCall, { prescreen }),
+      { dailySampleLimit: 0 },
+    );
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(first.signalOnlyTurns).toBe(0);
+    expect(first.sampleDeferredTurns).toBe(1);
+    expect(first.sampledTurns).toBe(0);
+    const [placeholder] = scoreRows(database);
+    expect(placeholder.judge_model).toBe('not-judged');
+    // Jev 调用已发生：刊例计入成本与预算，但占位行不占抽样额度
+    expect(Number(placeholder.budget_cost_usd)).toBeCloseTo(jevUsd, 10);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 0 }).sampledCount).toBe(0);
+
+    const second = await runPostLaunchScoring(
+      deps(database, replays, llmCall, { prescreen }),
+      { dailySampleLimit: 5 },
+    );
+
+    expect(second.skippedTurns).toBe(0);
+    expect(prescreen).toHaveBeenCalledTimes(2);
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    const [judged] = scoreRows(database);
+    expect(judged.judge_model).not.toBe('not-judged');
+    expect(judged.judge_model).not.toBe(JEV_JUDGE_MODEL);
+    expect(judged.dim_goal).toBe(1);
+    // 补评覆盖占位行时结转历史 Jev 预算成本：第二次 Jev + 生成式 0.1 + 第一趟占位 jevUsd
+    expect(Number(judged.budget_cost_usd)).toBeCloseTo(jevUsd * 2 + 0.1, 10);
+    expect(Number(judged.cost_usd)).toBeCloseTo(jevUsd + 0.1, 10);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 5 }).sampledCount).toBe(1);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 5 }).spentUsd).toBeCloseTo(jevUsd * 2 + 0.1, 10);
+  });
+
+  it('prescreen 装配 + 无信号轮 Jev 弃权 + 有抽样额度 ⇒ 升级生成式并占 1 条额度', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 't1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const abstainAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'cannot_tell', confidence: 0.2 },
+      goal_pass: { noul: 0.5 },
+      orchestration_pass: { noul: 0.5 },
+      permission_pass: { noul: 0.5 },
+      no_tools_but_needed: { noul: 0.5 },
+    });
+    const llmCall = vi.fn(async () => ALL_PASS);
+
+    await runPostLaunchScoring(
+      deps(database, replays, llmCall, { prescreen: abstainAll }),
+      { dailySampleLimit: 5 },
+    );
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    const [row] = scoreRows(database);
+    expect(row.judge_model).not.toBe(JEV_JUDGE_MODEL);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 5 }).sampledCount).toBe(1);
+  });
+
   it('prescreen 弃权且预算充足 ⇒ llmCall 一次且 costUsd = Jev 估算 + 生成式估算', async () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR);
     insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);

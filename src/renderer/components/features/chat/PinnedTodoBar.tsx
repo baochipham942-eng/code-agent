@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckSquare, Square, Minimize2, Maximize2, Loader2 } from 'lucide-react';
 import type { TaskPlan, TaskStep } from '@shared/contract';
+import { todoEvidenceLabel, todoEvidenceOf, type TodoEvidence } from '../../../utils/todoEvidence';
 
 interface PinnedTodoBarProps {
   plan: TaskPlan | null;
@@ -59,7 +60,7 @@ export const PinnedTodoBar: React.FC<PinnedTodoBarProps> = ({ plan, sessionId })
           {!collapsed && (
             <ul className="px-3 pb-2 pt-1 space-y-1">
               {steps.map((step, idx) => (
-                <TodoStepItem key={step.id} step={step} index={idx + 1} />
+                <TodoStepItem key={step.id} step={step} index={idx + 1} sessionId={sessionId} />
               ))}
             </ul>
           )}
@@ -69,13 +70,33 @@ export const PinnedTodoBar: React.FC<PinnedTodoBarProps> = ({ plan, sessionId })
   );
 };
 
-const TodoStepItem: React.FC<{ step: TaskStep; index: number }> = ({ step, index }) => {
+function correctionKey(sessionId: string | null, stepId: string): string {
+  return `todo-correction:${sessionId ?? 'none'}:${stepId}`;
+}
+
+const TodoStepItem: React.FC<{ step: TaskStep; index: number; sessionId: string | null }> = ({ step, index, sessionId }) => {
   const isCompleted = step.status === 'completed';
   const isInProgress = step.status === 'in_progress';
   const isSkipped = step.status === 'skipped';
+  const stored = sessionId ? sessionStorage.getItem(correctionKey(sessionId, step.id)) : null;
+  const [draft, setDraft] = useState<string | null>(null);
+  const [correction, setCorrection] = useState<string | null>(stored);
+  const evidence: TodoEvidence = correction ? 'user' : todoEvidenceOf(step.metadata);
+  const text = correction ?? step.content;
+
+  const save = () => {
+    const next = (draft ?? text).trim();
+    if (!next || next === step.content) {
+      setDraft(null);
+      return;
+    }
+    setCorrection(next);
+    if (sessionId) sessionStorage.setItem(correctionKey(sessionId, step.id), next);
+    setDraft(null);
+  };
 
   return (
-    <li className="flex items-start gap-2 py-0.5">
+    <li className="flex items-start gap-2 py-0.5" data-testid={`todo-step-${step.id}`}>
       <span className="mt-[2px] flex-shrink-0">
         {isInProgress ? (
           <Loader2 className="w-3.5 h-3.5 text-badge-warning animate-spin" />
@@ -97,7 +118,32 @@ const TodoStepItem: React.FC<{ step: TaskStep; index: number }> = ({ step, index
         }`}
       >
         <span className="text-zinc-600 mr-1.5">{index}.</span>
-        {step.content}
+        {draft !== null ? (
+          <input
+            data-testid={`todo-edit-${step.id}`}
+            className="min-w-0 flex-1 bg-transparent text-xs text-zinc-200 outline-none"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={save}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') save();
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="text-left"
+            onClick={() => setDraft(text)}
+          >
+            {text}
+          </button>
+        )}
+        <span
+          data-testid={`todo-evidence-${step.id}`}
+          className="ml-1 shrink-0 text-[10px] text-zinc-500"
+        >
+          {todoEvidenceLabel(evidence)}
+        </span>
       </span>
     </li>
   );

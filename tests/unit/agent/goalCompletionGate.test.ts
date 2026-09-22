@@ -207,3 +207,55 @@ describe('闸2 软评审有独立修复预算', () => {
     expect(h.ctx.goalMode.isVerificationDegraded()).toBe(false);
   });
 });
+
+describe('终态被拒后不发第二个终态副作用', () => {
+  it('验证期间已 aborted 时，后到的 markMet 不注入完成摘要', async () => {
+    const h = harness();
+    runVerificationPlanMock.mockImplementation(async () => {
+      h.ctx.goalMode.markAborted('先到的中止');
+      return passedEvidence();
+    });
+
+    expect(await h.run()).toBe('break');
+    expect(h.ctx.goalMode.getStatus()).toBe('aborted');
+    expect(h.ctx.goalMode.getAbortReason()).toBe('先到的中止');
+    expect(h.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
+      expect.stringContaining('目标达成'),
+      'goal-gate',
+    );
+    expect(h.events.filter((event) => event.type === 'goal_complete')).toHaveLength(0);
+  });
+
+  it('已 aborted 后闸2 unverifiable 不发 met 的 goal_complete、不写降级账本、不 forceFinal', async () => {
+    const h = harness({ reviewCondition: '文案要亲切' });
+    runVerificationPlanMock.mockResolvedValue(passedEvidence());
+    runReviewGateMock.mockImplementation(async () => {
+      h.ctx.goalMode.markAborted('先到的中止');
+      return { pass: false, unverifiable: true, reason: '评审基础设施不可用：Invalid API Key' };
+    });
+
+    expect(await h.run()).toBe('break');
+    expect(h.ctx.goalMode.getStatus()).toBe('aborted');
+    expect(h.ctx.goalMode.isVerificationDegraded()).toBe(false);
+    expect(h.ctx.goalMode.getDegradedReason()).toBeUndefined();
+    expect(h.ctx.control.forceFinalResponseReason).toBeUndefined();
+    expect(h.events.filter((event) => event.type === 'goal_complete')).toHaveLength(0);
+    const verdicts = appendToolExecutionCompleteMock.mock.calls.map((call) => call[0] as { summary?: string });
+    expect(verdicts.some((verdict) => String(verdict.summary).includes('unverifiable'))).toBe(false);
+  });
+
+  it('已 met 后评审判定 IMPOSSIBLE 不发 aborted 的 goal_complete、不 forceFinal', async () => {
+    const h = harness({ reviewCondition: '需要外部 API key' });
+    runVerificationPlanMock.mockResolvedValue(passedEvidence());
+    runReviewGateMock.mockImplementation(async () => {
+      h.ctx.goalMode.markMet();
+      return { pass: false, impossible: true, reason: '前置条件缺失' };
+    });
+
+    expect(await h.run()).toBe('break');
+    expect(h.ctx.goalMode.getStatus()).toBe('met');
+    expect(h.ctx.goalMode.getAbortReason()).toBeUndefined();
+    expect(h.ctx.control.forceFinalResponseReason).toBeUndefined();
+    expect(h.events.filter((event) => event.type === 'goal_complete')).toHaveLength(0);
+  });
+});

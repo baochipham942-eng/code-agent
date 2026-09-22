@@ -181,14 +181,14 @@ export async function handleGoalCompletionGate(
     // 复用降级放行语义诚实收尾（met + degraded）。
     if (!pass && verificationEvidence.infraFailure) {
       const releaseReason = `验证基础设施不可用：${gate?.output || '验证命令未能执行'}`;
+      ctx.goalMode.clearCompletionRequest();
+      if (!ctx.goalMode.markMetDegraded(releaseReason)) return 'break';
       recordGateVerdict(ctx, {
         gate: 1,
         verdict: 'unverifiable',
         attempt: ctx.goalMode.getGateFailureCount(1),
         detail: releaseReason,
       });
-      ctx.goalMode.clearCompletionRequest();
-      ctx.goalMode.markMetDegraded(releaseReason);
       // 终态 gate:1 事件（对齐闸2 unverifiable 分支形状）：可区分信号走
       // verificationStatus:'not_run'，不新造 verdict 词汇。
       ctx.onEvent({
@@ -249,9 +249,9 @@ export async function handleGoalCompletionGate(
       }
       // 到限放行：官方判定（验证命令失败）保持原样，收尾但带降级标记。
       const releaseReason = `验证命令 ${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS} 次修复机会用尽仍未通过：${failDetail}`;
-      recordGateVerdict(ctx, { gate: 1, verdict: 'exhausted_release', attempt, detail: releaseReason });
       ctx.goalMode.clearCompletionRequest();
-      ctx.goalMode.markMetDegraded(releaseReason);
+      if (!ctx.goalMode.markMetDegraded(releaseReason)) return 'break';
+      recordGateVerdict(ctx, { gate: 1, verdict: 'exhausted_release', attempt, detail: releaseReason });
       ctx.onEvent({
         type: 'goal_gate',
         data: { gate: 1, pass: false, verdict: 'exhausted_release', attempt, reason: releaseReason },
@@ -333,14 +333,14 @@ export async function handleGoalCompletionGate(
     // aborted（丢产物）→ 复用降级放行语义诚实收尾（met + degraded）。
     if (review.unverifiable) {
       const releaseReason = review.reason; // 已是"评审基础设施不可用：<真实错误>"
+      ctx.goalMode.clearCompletionRequest();
+      if (!ctx.goalMode.markMetDegraded(releaseReason)) return 'break';
       recordGateVerdict(ctx, {
         gate: 2,
         verdict: 'unverifiable',
         attempt: ctx.goalMode.getGateFailureCount(2),
         detail: releaseReason,
       });
-      ctx.goalMode.clearCompletionRequest();
-      ctx.goalMode.markMetDegraded(releaseReason);
       // 终态 gate:2 事件（对齐 exhausted_release 的终态事件形状，Gemini R1-M2）：
       // 可区分信号走 verificationStatus:'not_run'，不新造 verdict 词汇。
       ctx.onEvent({
@@ -384,12 +384,13 @@ export async function handleGoalCompletionGate(
     // 看似 completed 却没有任何解释的 run（codex audit R1 修订）。
     if (review.impossible) {
       const reason = `评审判定目标不可达成：${review.reason}`;
-      emitGoalAbort(ctx, {
+      const abortAccepted = emitGoalAbort(ctx, {
         code: HostReasonCode.GoalAbortUnreachable,
         modelText: reason,
         turns: iterations,
         tokensUsed: goalTokensUsedWithSwarm(ctx),
       });
+      if (!abortAccepted) return 'break';
       if (!ctx.control.forceFinalResponseReason) {
         ctx.control.forceFinalResponse('goal-impossible', [
           '<force-final-response reason="goal-impossible">',
@@ -427,9 +428,9 @@ export async function handleGoalCompletionGate(
         return 'continue';
       }
       const releaseReason = `软评审 ${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS} 次修复机会用尽仍未通过：${failDetail}`;
-      recordGateVerdict(ctx, { gate: 2, verdict: 'exhausted_release', attempt, detail: releaseReason });
       ctx.goalMode.clearCompletionRequest();
-      ctx.goalMode.markMetDegraded(releaseReason);
+      if (!ctx.goalMode.markMetDegraded(releaseReason)) return 'break';
+      recordGateVerdict(ctx, { gate: 2, verdict: 'exhausted_release', attempt, detail: releaseReason });
       ctx.onEvent({
         type: 'goal_gate',
         data: { gate: 2, pass: false, verdict: 'exhausted_release', attempt, reason: releaseReason },
@@ -468,8 +469,8 @@ export async function handleGoalCompletionGate(
     });
   }
 
-  // 闸1（或跳过）+ 闸2（或跳过）全过 → 达成。
-  ctx.goalMode.markMet();
+  // 闸1（或跳过）+ 闸2（或跳过）全过 → 达成。终态已被占住则不注入第二份完成摘要。
+  if (!ctx.goalMode.markMet()) return 'break';
   const passedGates = [
     verifyCommand ? `验证命令 \`${verifyCommand}\` 退出码 0` : null,
     reviewCondition ? '软评审通过' : null,

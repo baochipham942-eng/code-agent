@@ -303,7 +303,7 @@ describe('forceFinal 封口（issue #1991）', () => {
   it('goal 仍 pending 时强制收尾 break 发 goal_complete(aborted) 坐实终态（ai-review PR#2006 Important 1）', () => {
     const goalMode = {
       isPending: vi.fn().mockReturnValue(true),
-      markAborted: vi.fn(),
+      markAborted: vi.fn().mockReturnValue(true),
       getSwarmTokensUsed: vi.fn().mockReturnValue(0),
     };
     const ctx = { ...buildCtx({ forceFinalResponseReason: READ_LOOP_REASON }), goalMode };
@@ -321,7 +321,7 @@ describe('forceFinal 封口（issue #1991）', () => {
   it('goal 非 pending 时 abortPendingGoalOnForcedFinalBreak 不动终态', () => {
     const goalMode = {
       isPending: vi.fn().mockReturnValue(false),
-      markAborted: vi.fn(),
+      markAborted: vi.fn().mockReturnValue(true),
       getSwarmTokensUsed: vi.fn().mockReturnValue(0),
     };
     const ctx = { ...buildCtx({ forceFinalResponseReason: READ_LOOP_REASON }), goalMode };
@@ -336,7 +336,7 @@ describe('forceFinal 封口（issue #1991）', () => {
       ...buildCtx({ forceFinalResponseReason: reason }),
       goalMode: {
         isPending: vi.fn().mockReturnValue(true),
-        markAborted: vi.fn(),
+        markAborted: vi.fn().mockReturnValue(true),
         getSwarmTokensUsed: vi.fn().mockReturnValue(0),
       },
     });

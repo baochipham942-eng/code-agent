@@ -172,10 +172,26 @@ export class GoalModeController {
     return Math.min(Math.floor(requested), ceiling);
   }
 
-  /** 模型申请退出且闸1（+闸2）全过 → 标达成 */
-  markMet(): void {
+  /**
+   * 终态（met / aborted）已写入则拒绝后到的 mark*。
+   * 首个终态胜出：status 与 verificationDegraded / degradedReason / abortReason 都保持不动。
+   * @returns true 表示这次转换被拒绝
+   */
+  private rejectStaleTerminal(target: 'met' | 'aborted', reason?: string): boolean {
+    if (this.status !== 'met' && this.status !== 'aborted') return false;
+    logger.warn(
+      `[GoalMode] GOAL_STALE_TRANSITION status=${this.status} target=${target} reason=${reason ?? ''}`,
+      { status: this.status, target, reason },
+    );
+    return true;
+  }
+
+  /** 模型申请退出且闸1（+闸2）全过 → 标达成。已是终态时返回 false，不改状态。 */
+  markMet(): boolean {
+    if (this.rejectStaleTerminal('met')) return false;
     this.status = 'met';
     logger.debug('[GoalMode] goal marked met');
+    return true;
   }
 
   /** 指定闸失败一次 → 该闸修复预算计数，返回该闸累计次数 */
@@ -197,11 +213,13 @@ export class GoalModeController {
    * 到限放行：修复预算耗尽后不再阻塞收尾，标 met 但带降级标记。
    * 官方判定（验证命令结果）保持原样呈现，UI 侧以安静降级标识区分于全过的 met。
    */
-  markMetDegraded(reason: string): void {
+  markMetDegraded(reason: string): boolean {
+    if (this.rejectStaleTerminal('met', reason)) return false;
     this.status = 'met';
     this.verificationDegraded = true;
     this.degradedReason = reason;
     logger.warn('[GoalMode] goal released after repair budget exhausted (met, degraded)', { reason });
+    return true;
   }
 
   isVerificationDegraded(): boolean {
@@ -212,12 +230,14 @@ export class GoalModeController {
     return this.degradedReason;
   }
 
-  /** 闸3 兜底触发 → 标中止 */
-  markAborted(reason: string): void {
+  /** 闸3 兜底触发 → 标中止。已是终态时返回 false，不改 abortReason。 */
+  markAborted(reason: string): boolean {
+    if (this.rejectStaleTerminal('aborted', reason)) return false;
     this.status = 'aborted';
     this.pauseReason = undefined;
     this.abortReason = reason;
     logger.warn('[GoalMode] goal aborted', { reason });
+    return true;
   }
 
   /** anti-spin 只挂起当前 run，保留 goal 契约、上下文与剩余预算。 */

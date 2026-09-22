@@ -40,5 +40,48 @@ describe('emitGoalAbort', () => {
         tokensUsed: 0,
       },
     });
+    expect(goalMode.getAbortReason()).toBe('达到轮次上限 5，目标未达成');
+  });
+
+  it('已 met 后再中止被拒：不发 goal_complete，不改首个终态', () => {
+    const onEvent = vi.fn();
+    const goalMode = new GoalModeController(buildGoalContract({
+      goal: '完成任务',
+      verifyCommand: 'true',
+      tokenBudget: 100,
+      maxTurns: 5,
+    }));
+    goalMode.markMet();
+    const ctx = { goalMode, onEvent } as never;
+
+    expect(emitGoalAbort(ctx, {
+      code: HostReasonCode.GoalAbortTurnLimit,
+      modelText: '后到的中止',
+      turns: 5,
+      tokensUsed: 0,
+    })).toBe(false);
+
+    expect(onEvent).not.toHaveBeenCalled();
+    expect(goalMode.getStatus()).toBe('met');
+    expect(goalMode.getAbortReason()).toBeUndefined();
+  });
+
+  it('markAborted 返回 false 时不发第二个 goal_complete', () => {
+    const onEvent = vi.fn();
+    const markAborted = vi.fn().mockReturnValue(false);
+    const ctx = {
+      goalMode: { isPending: () => true, markAborted },
+      onEvent,
+    } as never;
+
+    expect(emitGoalAbort(ctx, {
+      code: HostReasonCode.GoalAbortTurnLimit,
+      modelText: '被拒的中止',
+      turns: 2,
+      tokensUsed: 1,
+    })).toBe(false);
+
+    expect(markAborted).toHaveBeenCalledWith('被拒的中止');
+    expect(onEvent).not.toHaveBeenCalled();
   });
 });

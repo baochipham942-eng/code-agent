@@ -36,12 +36,12 @@ function makeCtx() {
     getReviewCondition: vi.fn().mockReturnValue('产物内容正确'),
     getGoal: vi.fn().mockReturnValue('测试目标'),
     getSwarmTokensUsed: vi.fn().mockReturnValue(0),
-    markMet: vi.fn(),
-    markAborted: vi.fn(),
+    markMet: vi.fn().mockReturnValue(true),
+    markAborted: vi.fn().mockReturnValue(true),
     recordGateFailure: vi.fn().mockReturnValue(1),
     getGateFailureCount: vi.fn().mockReturnValue(0),
     isGateRepairExhausted: vi.fn().mockReturnValue(false),
-    markMetDegraded: vi.fn(),
+    markMetDegraded: vi.fn().mockReturnValue(true),
     isVerificationDegraded: vi.fn().mockReturnValue(false),
   };
   const ctx = {

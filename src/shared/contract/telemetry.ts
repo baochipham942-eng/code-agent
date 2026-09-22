@@ -76,6 +76,12 @@ export interface TelemetryModelCall {
   cacheReadTokens?: number;
   /** Provider reported prompt-cache tokens created for this model call. */
   cacheCreationTokens?: number;
+  /** 这次命中里，停滞指纹相对上次命中发生了变化。与 cacheRead>0 不是同一件事。 */
+  cacheHitEffective?: number;
+  /** 这次命中里，停滞指纹没有变化。 */
+  cacheHitIdle?: number;
+  /** 记录该命中时 InferenceCache.getStats().hitRate。 */
+  inferenceCacheHitRate?: string;
 }
 
 // ----------------------------------------------------------------------------

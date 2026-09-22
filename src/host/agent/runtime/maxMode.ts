@@ -25,6 +25,7 @@ const logger = createLogger('MaxMode');
 export type MaxModeEngine = (
   messages: ModelMessage[],
   tools: ToolDefinition[],
+  kind?: 'candidate' | 'judge',
 ) => Promise<ModelResponse>;
 
 export interface MaxModeDeps {
@@ -218,7 +219,7 @@ export async function runMaxModeStep(
 
   const results = await Promise.all(
     Array.from({ length: n }, (_, index) =>
-      deps.silentEngine(input.messages, schemaOnlyTools).catch((error: unknown) => {
+      deps.silentEngine(input.messages, schemaOnlyTools, 'candidate').catch((error: unknown) => {
         logger.warn(`[MaxMode] candidate ${index} failed`, {
           error: error instanceof Error ? error.message : String(error),
         });
@@ -255,7 +256,7 @@ export async function runMaxModeStep(
   let judgeResponse: ModelResponse | undefined;
   if (survivors.length > 1) {
     try {
-      judgeResponse = await deps.silentEngine(buildJudgeMessages(survivors), []);
+      judgeResponse = await deps.silentEngine(buildJudgeMessages(survivors), [], 'judge');
       const verdict = parseJudgeWinner(judgeResponse.content ?? '', survivors.length);
       winner = verdict.index;
       judgeParsed = verdict.parsed;

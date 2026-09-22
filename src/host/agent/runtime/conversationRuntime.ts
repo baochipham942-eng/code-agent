@@ -528,6 +528,12 @@ export class ConversationRuntime {
         logger.debug('[AgentLoop] Calling inference...');
         const inferenceStartTime = Date.now();
         let response = await this.contextAssembly.inference();
+        if (this.ctx.cachePromptSample) {
+          this.ctx.cachePromptSample.current = {
+            prompt: this.ctx.systemPrompt,
+            modelId: response.actualModel ?? response.fallback?.to.model ?? this.ctx.modelConfig.model,
+          };
+        }
         const inferenceDuration = Date.now() - inferenceStartTime;
         logger.debug('[AgentLoop] Inference response type:', response.type);
 
@@ -551,6 +557,8 @@ export class ConversationRuntime {
           duration: inferenceDuration,
         });
 
+        const cacheHit = this.messageProcessor.recordModelCallTelemetry(response, iterations, inferenceDuration);
+
         this.ctx.turnTrace.record('inference', {
           responseType: response.type,
           durationMs: inferenceDuration,
@@ -559,12 +567,14 @@ export class ConversationRuntime {
           ...(response.usage?.cacheReadTokens !== undefined
             ? { cacheReadTokens: response.usage.cacheReadTokens }
             : {}),
+          ...(cacheHit ? {
+            cacheHitEffective: cacheHit.cacheHitEffective,
+            cacheHitIdle: cacheHit.cacheHitIdle,
+            inferenceCacheHitRate: cacheHit.inferenceCacheHitRate,
+          } : {}),
           finishReason: response.finishReason ?? null,
           truncated: response.truncated ?? false,
         });
-
-        // Telemetry: record model call
-        this.messageProcessor.recordModelCallTelemetry(response, iterations, inferenceDuration);
 
         // Debug snapshot: 落一条 turn 快照（给设置页 / debug session 用）
         // 在 post-inference 写入，token 字段反映本轮实际消耗（直接取 response.usage）

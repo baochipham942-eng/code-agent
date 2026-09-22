@@ -123,6 +123,7 @@ describe('Prompt Builder', () => {
       expect(detectCacheBreak(before, after)).toEqual({
         broken: false,
         reason: 'cache stable',
+        cacheBreakReason: 'none',
       });
     });
 

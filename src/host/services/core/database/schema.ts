@@ -495,9 +495,15 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       output_tokens INTEGER NOT NULL,
       usd REAL,
       source TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      cache_break_reason TEXT NOT NULL DEFAULT 'none'
     )
   `);
+  safeAlter(
+    db,
+    `ALTER TABLE turn_cost_estimates ADD COLUMN cache_break_reason TEXT NOT NULL DEFAULT 'none'`,
+    logger,
+  );
 
   // Master Tasks 表 (用户级工作单元，跨 session 持久化；P0-c2)
   // status 列保留 TEXT 不加 CHECK，枚举校验由应用层 (src/shared/contract/task.ts) 负责

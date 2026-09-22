@@ -176,6 +176,11 @@ describe('InferenceCache.computeKey key 内容', () => {
   it('apiKey 不同 → 同 key（凭据不属于请求语义）', () => {
     expect(computeKey(cache, baseMessages, { ...baseConfig, apiKey: 'sk-other' })).toBe(computeKey(cache));
   });
+
+  it('cacheScopeId 与 cacheRetention 不改变 cache bucket key', () => {
+    const scoped: InferenceOptions = { cacheRetention: 'none', cacheScopeId: 'judge' };
+    expect(computeKey(cache, baseMessages, baseConfig, baseTools, scoped)).toBe(computeKey(cache));
+  });
 });
 
 describe('InferenceCache get/set 命中', () => {

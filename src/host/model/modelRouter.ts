@@ -531,6 +531,13 @@ export class ModelRouter {
     options?: InferenceOptions,
   ): Promise<ModelResponse> {
     const normalizedOptions = this.normalizeInferenceOptions(messages, onStream, options);
+    if (normalizedOptions?.cacheScopeId) {
+      // 只记录，不进入 computeKey，不切换 cache bucket。
+      logger.info('[Cache] cacheScopeId recorded without changing the cache bucket', {
+        cacheScopeId: normalizedOptions.cacheScopeId,
+        cacheRetention: normalizedOptions.cacheRetention ?? 'default',
+      });
+    }
 
     // Check for cancellation before starting
     if (signal?.aborted) {
@@ -560,7 +567,13 @@ export class ModelRouter {
       const cacheKey = cache.computeKey(requestMessages, config, tools, normalizedOptions);
       const cached = cache.get(cacheKey);
       if (cached) {
-        logger.info(`[Cache] Hit for ${config.provider}/${config.model}`);
+        const inferenceHitRate = cache.getStats().hitRate;
+        logger.info(`[Cache] Hit for ${config.provider}/${config.model} hitRate=${inferenceHitRate}`);
+        // 返回缓存对象本身（调用方用引用相等判断命中）。标记写在同一对象上。
+        cached.runtimeDiagnostics = {
+          ...cached.runtimeDiagnostics,
+          inferenceCacheHit: true,
+        };
         return cached;
       }
     }

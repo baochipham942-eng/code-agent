@@ -335,6 +335,15 @@ function maxModeBudgetHeadroomOk(ctx: ContextAssemblyCtx): boolean {
   }
 }
 
+/** judge 旁路显式 cacheRetention none；候选调用保持原 options。cacheScopeId 只记录。 */
+function cacheOptionsForMaxModeCall(
+  options: InferenceOptions,
+  kind?: 'candidate' | 'judge',
+): InferenceOptions {
+  if (kind !== 'judge') return options;
+  return { ...options, cacheRetention: 'none', cacheScopeId: 'judge' };
+}
+
 async function runMaxModeInference(
   ctx: ContextAssemblyCtx,
   messages: ModelMessage[],
@@ -345,6 +354,7 @@ async function runMaxModeInference(
 ): Promise<ModelResponse> {
   const { onSnapshot: _onSnapshot, ...restOptions } = engineOptions;
   const silentOptions: InferenceOptions = { ...restOptions, suppressModelDecisionEvent: true };
+  const judgeOptions = cacheOptionsForMaxModeCall(silentOptions, 'judge');
   const signal = ctx.runtime.control.abortController?.signal;
   const candidates = ctx.runtime.maxModeCandidates;
   ctx.taskProgress.emitTaskProgress('thinking', `Max Mode：${candidates} 个候选并行起草中...`);
@@ -368,8 +378,16 @@ async function runMaxModeInference(
   try {
     stepResult = await runMaxModeStep(
       {
-        silentEngine: (msgs, tls) =>
-          runEngineInference(ctx, msgs, tls, requestConfig, undefined, signal, silentOptions),
+        silentEngine: (msgs, tls, kind) =>
+          runEngineInference(
+            ctx,
+            msgs,
+            tls,
+            requestConfig,
+            undefined,
+            signal,
+            kind === 'judge' ? judgeOptions : silentOptions,
+          ),
         streamingEngine: (msgs, tls) =>
           runEngineInference(ctx, msgs, tls, requestConfig, streamCallback, signal, engineOptions),
         // 取消/转向/中断时丢弃整个 step（含已完成的部分赢家），走外层既有取消语义

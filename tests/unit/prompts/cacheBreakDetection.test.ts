@@ -18,6 +18,7 @@ describe('detectCacheBreak', () => {
     const result = detectCacheBreak(PROMPT_WITH_BOUNDARY, PROMPT_WITH_BOUNDARY);
     expect(result.broken).toBe(false);
     expect(result.reason).toBe('cache stable');
+    expect(result.cacheBreakReason).toBe('none');
   });
 
   it('detects break when system prompt static prefix changes', () => {
@@ -25,6 +26,7 @@ describe('detectCacheBreak', () => {
     const result = detectCacheBreak(PROMPT_WITH_BOUNDARY, modified);
     expect(result.broken).toBe(true);
     expect(result.reason).toBe('static prefix changed');
+    expect(result.cacheBreakReason).toBe('prefix-changed');
   });
 
   it('detects break when model changes', () => {
@@ -34,6 +36,7 @@ describe('detectCacheBreak', () => {
     });
     expect(result.broken).toBe(true);
     expect(result.reason).toContain('model changed');
+    expect(result.cacheBreakReason).toBe('model-switch');
   });
 
   it('ignores dynamic section changes', () => {
@@ -52,6 +55,7 @@ describe('detectCacheBreak', () => {
     const result = detectCacheBreak(plain, different);
     expect(result.broken).toBe(true);
     expect(result.reason).toBe('static prefix changed');
+    expect(result.cacheBreakReason).toBe('prefix-changed');
   });
 
   it('does not break when same model is provided', () => {

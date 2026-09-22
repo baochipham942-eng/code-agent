@@ -1,5 +1,6 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import type {
+  CacheBreakReason,
   ModelCostStats,
   TodayCost,
   TurnCostEstimate,
@@ -8,6 +9,11 @@ import type {
 import type { PriceSource } from '../../../../shared/pricing/resolveModelPrice';
 
 type SQLiteRow = Record<string, unknown>;
+
+function readCacheBreakReason(value: unknown): CacheBreakReason {
+  if (value === 'model-switch' || value === 'prefix-changed' || value === 'none') return value;
+  return 'none';
+}
 
 function rowToEstimate(row: SQLiteRow): TurnCostEstimate {
   return {
@@ -20,6 +26,7 @@ function rowToEstimate(row: SQLiteRow): TurnCostEstimate {
     usd: row.usd == null ? null : Number(row.usd),
     source: row.source as PriceSource,
     createdAt: Number(row.created_at),
+    cacheBreakReason: readCacheBreakReason(row.cache_break_reason),
   };
 }
 
@@ -38,8 +45,9 @@ export class TurnCostRepository {
     const createdAt = input.createdAt ?? Date.now();
     const result = this.db.prepare(`
       INSERT INTO turn_cost_estimates (
-        session_id, provider, model_id, input_tokens, output_tokens, usd, source, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        session_id, provider, model_id, input_tokens, output_tokens, usd, source, created_at,
+        cache_break_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.sessionId,
       input.provider,
@@ -49,6 +57,7 @@ export class TurnCostRepository {
       input.usd,
       input.source,
       createdAt,
+      input.cacheBreakReason ?? 'none',
     );
     return Number(result.lastInsertRowid);
   }

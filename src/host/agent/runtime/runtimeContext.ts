@@ -57,6 +57,8 @@ import type { ScopedCostRecorder } from '../../services/core/scopedCostLimit';
 export interface RuntimeContext {
   // --- Configuration ---
   readonly systemPrompt: string;
+  /** 本轮系统提示样本，turn cost 在 turn_end 时拿它跑 detectCacheBreak。 */
+  readonly cachePromptSample?: { current?: { prompt: string; modelId: string } };
   readonly systemInstructions?: string[];
   modelConfig: ModelConfig;
   readonly toolExecutor: ToolExecutor;

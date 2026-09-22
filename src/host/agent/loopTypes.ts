@@ -204,6 +204,8 @@ export interface ModelResponse {
     artifactValidationAttemptCompletion?: {
       targetFile: string;
     };
+    /** 这次响应来自进程内 InferenceCache，与 provider cacheRead 无关。 */
+    inferenceCacheHit?: boolean;
     /** Max Mode（best-of-N）本步诊断：候选/幸存/赢家索引/是否降级/judge 是否解析成功 */
     maxMode?: {
       candidates: number;

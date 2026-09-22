@@ -820,6 +820,13 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         // IME 组合中的 Enter 是确认候选词（如中文选字），不能当成选择面板项
         if (isImeKeyEvent(e, isComposingRef)) return;
         const selected = ordered[selectedIndex];
+        if (selected.skillDisabled) {
+          e.preventDefault();
+          e.stopPropagation();
+          openSettingsTab('skills');
+          onClose();
+          return;
+        }
         const normalizedFilter = filter.trim().replace(/^\//, '').toLowerCase();
         const shouldSubmitExactCommand =
           selected.actionKind === 'prefill-leading-command' &&
@@ -904,6 +911,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="truncate text-sm">{cmd.label}</span>
+                      {cmd.sublabel && cmd.kind !== 'skill' ? (
+                        <span className="shrink-0 text-[10px] text-zinc-500">{cmd.sublabel}</span>
+                      ) : null}
                       <span className="shrink-0 rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-zinc-500">
                         {cmd.slashText}
                       </span>

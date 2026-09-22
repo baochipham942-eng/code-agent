@@ -323,6 +323,7 @@ export const IPC_CHANNELS = {
 
   // In-App HTML validation
   IN_APP_VALIDATION_REQUEST: 'in-app-validation:request',
+  STALL_NOTICE: 'agent:stall-notice',
   IN_APP_VALIDATION_RESULT: 'in-app-validation:result',
 
   // Swarm channels (Agent Swarm 监控)

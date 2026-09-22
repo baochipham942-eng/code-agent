@@ -3,6 +3,7 @@ import {
   WorkflowLaunchApprovalGate,
   buildWorkflowLaunchRequest,
 } from '../../../src/host/agent/workflowLaunchApproval';
+import { stallClockHeld } from '../../../src/host/agent/stallObserver';
 import type { ScriptPreview } from '../../../src/host/agent/scriptRuntime/scriptPreview';
 import {
   hasInteractiveUi as realHasInteractiveUi,
@@ -92,13 +93,16 @@ describe('WorkflowLaunchApprovalGate', () => {
 
   it('有 renderer 时 pending，approve 后 resolve approved', async () => {
     const { gate, deliver } = makeGate();
-    const p = gate.requestApproval({ request: REQ() });
+    const request = buildWorkflowLaunchRequest({ id: 'wf-1', preview: PREVIEW, sessionId: 's1', now: 1 });
+    const p = gate.requestApproval({ request });
     // 等一拍让 requestApproval 注册 pending + 推 requested 事件
     await new Promise((r) => setTimeout(r, 5));
+    expect(stallClockHeld('s1')).toBe(true);
     expect(gate.getPendingRequests()).toHaveLength(1);
     const ok = gate.approve('wf-1', '同意');
     expect(ok).toBe(true);
     const result = await p;
+    expect(stallClockHeld('s1')).toBe(false);
     expect(result.approved).toBe(true);
     expect(result.autoApproved).toBe(false);
     expect(result.feedback).toBe('同意');

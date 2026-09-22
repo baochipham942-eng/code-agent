@@ -12,6 +12,13 @@ import {
   type JevSystemOneCall,
 } from '../../shared/constants/jevQuestions';
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
+import { SPILL_NOTICE_MARKER } from '../utils/toolResultSpill';
+import { ACTIVE_PRUNE_PLACEHOLDER_MARKER } from './layers/activeToolResultPrune';
+
+/** L0/L1 归档取回指针的两种落点形状。 */
+function hasArchivePointer(content: string): boolean {
+  return content.includes(SPILL_NOTICE_MARKER) || content.startsWith(ACTIVE_PRUNE_PLACEHOLDER_MARKER);
+}
 
 export interface JevCompactionResult {
   skipped: boolean;
@@ -33,12 +40,7 @@ interface Candidate {
   protected: boolean;
 }
 
-/** Safe entries are never judged, dropped, or truncated: the latest six tool entries plus user-protected messages. */
-/**
- * 头+尾截断到 ≤300 字符：L0/L1 把 spill 归档取回指针（archive 路径 / next-read
- * 提示）追加在正文末尾，纯 slice(0,300) 会把它切掉，模型从此找不回完整输出
- * （ai-review R2 Important）。尾部 120 字符保底覆盖取回指针。
- */
+/** 头+尾截断到 ≤300 字符（防御性形状；含归档指针的结果已在候选阶段整段排除）。 */
 function jevTruncateResult(content: string): string {
   const budget = JEV_COMPACTION_THRESHOLDS.truncatedResultChars;
   if (content.length <= budget) return content;
@@ -199,6 +201,10 @@ export async function applyJevCompaction(
     const call = callById.get(candidate.toolCallId);
     if (!call) continue; // no paired call in the transcript — fail closed, keep
     const decision = decisions.get(candidate.key);
+    // 已被 L0/L1 归档的结果（spill notice / active-prune 占位）整段排除出截断：
+    // 它们的归档取回指针形状不是定长尾部能覆盖的，截断会丢指针（ai-review R3）。
+    // 这类结果本身已被前置层压短，不截也几乎不损压缩率。
+    if (hasArchivePointer(candidate.message.content)) continue;
     if (decision && !decision.keepResult
       && candidate.message.content.length > JEV_COMPACTION_THRESHOLDS.truncatedResultChars) {
       truncateIds.add(candidate.message.id);

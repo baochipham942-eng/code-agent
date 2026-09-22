@@ -96,7 +96,31 @@ describe('jevCompaction', () => {
     expect(result.spotCheckPassed).toBe(true);
   });
 
-  it('truncation preserves a trailing spill archive pointer (head+tail, ai-review R2)', async () => {
+  it('results carrying a real L1 spill notice are never truncated (ai-review R2/R3)', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_COMPACTION', '1');
+    const messages = toolTranscript();
+    const { buildSpillNotice } = await import('../../../src/host/utils/toolResultSpill');
+    const archivePath = '/private/tmp/neo-spill/session-1/result-abc123.txt';
+    const result1 = messages.find((message) => message.id === 'result-1');
+    if (!result1) throw new Error('fixture missing result-1');
+    // 真实 L1 形状：截短正文 + buildSpillNotice（marker 在尾部）
+    result1.content = 'x'.repeat(500) + buildSpillNotice(archivePath);
+    const systemOne = vi.fn(async (_state: Record<string, unknown>, questions: Record<string, unknown>) => {
+      const answers: Record<string, { noul: number }> = {};
+      for (const key of Object.keys(questions)) {
+        answers[key] = { noul: key.includes('result-1') && key.startsWith('keep_result') ? 0.1 : 0.9 };
+      }
+      return answers;
+    }) as unknown as JevSystemOneCall;
+    const outcome = await applyJevCompaction(messages, systemOne);
+    const surviving = messages.find((message) => message.id === 'result-1')?.content ?? '';
+    // 带归档指针的结果整段排除出截断：内容原样保留，指针永不丢
+    expect(surviving).toContain(archivePath);
+    expect(surviving.length).toBeGreaterThan(300);
+    expect(outcome.truncatedResults).toBe(0);
+  });
+
+  it('truncation preserves a trailing pointer-shaped tail for plain results (head+tail)', async () => {
     vi.stubEnv('CODE_AGENT_JEV_COMPACTION', '1');
     const messages = toolTranscript();
     const archivePath = '/private/tmp/neo-spill/session-1/result-abc123.txt';

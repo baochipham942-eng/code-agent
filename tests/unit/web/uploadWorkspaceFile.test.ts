@@ -4,7 +4,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { getContentType, isWorkspaceFileAllowed } from '../../../src/web/helpers/upload';
 
 describe('isWorkspaceFileAllowed', () => {
@@ -39,6 +39,67 @@ describe('isWorkspaceFileAllowed', () => {
     ) {
       expect(allowed).toBe(false);
     }
+  });
+
+  // 会话工作目录用 home 下的真实临时目录：cwd/tmpdir 是恒放行基线根，只有 home
+  // 下新造的目录才真的落在会话分支上（mac/linux 都成立）。
+  function withSessionRoot(fn: (root: string) => void): void {
+    const root = fs.mkdtempSync(path.join(os.homedir(), '.code-agent-wsallow-'));
+    try {
+      fn(root);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it('allows media files (incl. CJK path) under a bound session working directory', () => {
+    withSessionRoot((root) => {
+      const file = path.join(root, '资料', '截图-报错.png');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, 'png');
+      expect(isWorkspaceFileAllowed(file, [root])).toBe(true);
+    });
+  });
+
+  it('allows any file type under the session .code-agent/artifacts subtree', () => {
+    withSessionRoot((root) => {
+      const file = path.join(root, '.code-agent', 'artifacts', 'preview', 'index.html');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, '<html></html>');
+      expect(isWorkspaceFileAllowed(file, [root])).toBe(true);
+    });
+  });
+
+  it('denies non-previewable extensions and missing files under the session root (fail closed)', () => {
+    withSessionRoot((root) => {
+      const key = path.join(root, 'id_rsa');
+      fs.writeFileSync(key, 'secret');
+      expect(isWorkspaceFileAllowed(key, [root])).toBe(false);
+      expect(isWorkspaceFileAllowed(path.join(root, 'missing.png'), [root])).toBe(false);
+    });
+  });
+
+  it('denies symlink escapes from a bound session working directory', () => {
+    withSessionRoot((root) => {
+      fs.symlinkSync('/etc/passwd', path.join(root, 'escape.png'));
+      expect(isWorkspaceFileAllowed(path.join(root, 'escape.png'), [root])).toBe(false);
+    });
+  });
+
+  it('ignores over-broad session roots like the home directory or filesystem root', () => {
+    withSessionRoot((root) => {
+      const file = path.join(root, 'a.png');
+      fs.writeFileSync(file, 'png');
+      expect(isWorkspaceFileAllowed(file, [os.homedir()])).toBe(false);
+      expect(isWorkspaceFileAllowed(file, [path.parse(root).root])).toBe(false);
+    });
+  });
+
+  it('still denies paths outside every bound session working directory', () => {
+    withSessionRoot((root) => {
+      expect(isWorkspaceFileAllowed('/etc/passwd', [root])).toBe(false);
+      expect(isWorkspaceFileAllowed(path.join(root, '..', 'etc', 'passwd'), [root])).toBe(false);
+    });
   });
 });
 

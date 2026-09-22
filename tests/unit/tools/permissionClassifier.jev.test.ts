@@ -32,6 +32,7 @@ interface StubAnswers {
   needsHuman?: number;
   secrets?: number;
   configAccess?: number;
+  beyondScope?: number;
 }
 
 function stubSystemOne(overrides: StubAnswers = {}): JevSystemOneCall & { calls: unknown[] } {
@@ -43,6 +44,7 @@ function stubSystemOne(overrides: StubAnswers = {}): JevSystemOneCall & { calls:
       needs_human: { noul: overrides.needsHuman ?? 0.1 },
       touches_secrets: { noul: overrides.secrets ?? 0.05 },
       config_or_credential_access: { noul: overrides.configAccess ?? 0.1 },
+      beyond_scope: { noul: overrides.beyondScope ?? 0.1 },
     };
   }) as unknown as JevSystemOneCall & { calls: unknown[] };
   fn.calls = calls;
@@ -215,6 +217,214 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
       expect(result.traceStep?.rule).toBe('fallback');
     }
     expect(stub.calls.length).toBe(0);
+  });
+
+  it('扩桶工具走 Jev，并要求 beyond_scope 低于阈值', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    const result = await classifier.classify(
+      'pdf_generate',
+      { file_path: '/tmp/report.pdf', content: 'private text must not leave the machine' },
+      { workingDirectory: '/tmp' },
+    );
+
+    expect(result.decision).toBe('approve');
+    expect(stub.calls.length).toBe(1);
+    const state = JSON.stringify(stub.calls[0]);
+    expect(state).toContain('file_path=/tmp/report.pdf');
+    expect(state).toContain('content=<omitted>');
+    expect(state).not.toContain('private text must not leave the machine');
+  });
+
+  it('扩桶工具的 Jev 放行不进缓存：同目录同长度参数也逐次问 Jev', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    // buildCacheKey 对非 Bash 把 file_path 折叠成 dirname、超 100 字符的串折叠成
+    // <string:len>——这两条 key 相同（同目录 + <string:150>），若 Jev 放行进缓存，
+    // 第二条会命中缓存绕过 Jev（反向变异实证：删掉 bypassCache 后本测试红）。
+    const first = await classifier.classify(
+      'pdf_generate',
+      { file_path: '/tmp/report-a.pdf', title: 'x'.repeat(150) },
+      { workingDirectory: '/tmp' },
+    );
+    const second = await classifier.classify(
+      'pdf_generate',
+      { file_path: '/tmp/report-b.pdf', title: 'y'.repeat(150) },
+      { workingDirectory: '/tmp' },
+    );
+
+    expect(first.decision).toBe('approve');
+    expect(first.cached).toBe(false);
+    expect(second.decision).toBe('approve');
+    expect(second.cached).toBe(false);
+    expect(stub.calls.length).toBe(2);
+  });
+
+  it('扩桶工具缺失 beyond_scope 或越界时保持 ask', async () => {
+    const missing = vi.fn(async () => ({
+      risk: { choice: 'read_only', confidence: 0.95 },
+      needs_human: { noul: 0.1 },
+      touches_secrets: { noul: 0.05 },
+      config_or_credential_access: { noul: 0.1 },
+    })) as unknown as JevSystemOneCall;
+    const missingResult = await newClassifier(missing).classify(
+      'image_analyze', { path: '/tmp/input.png' }, { workingDirectory: '/tmp' },
+    );
+    expect(missingResult.decision).toBe('ask');
+
+    const outside = stubSystemOne({ beyondScope: 0.3 });
+    const outsideResult = await newClassifier(outside).classify(
+      'image_analyze', { path: '/tmp/input.png' }, { workingDirectory: '/tmp' },
+    );
+    expect(outsideResult.decision).toBe('ask');
+  });
+
+  it('字符串数组参数逐项进 state，不压成 <array>', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    await classifier.classify(
+      'image_analyze',
+      { paths: ['/tmp/batch-a.png', '/tmp/batch-b.png'] },
+      { workingDirectory: '/tmp' },
+    );
+
+    expect(stub.calls.length).toBe(1);
+    const state = JSON.stringify(stub.calls[0]);
+    expect(state).toContain('/tmp/batch-a.png');
+    expect(state).toContain('/tmp/batch-b.png');
+    expect(state).not.toContain('paths=<array>');
+  });
+
+  it('路径形参数命中凭据目录 ⇒ 确定性 ask，systemOne 零调用（ai-review R1）', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    const homeSecret = `${os.homedir()}/.ssh/id_rsa.png`;
+
+    const singleResult = await classifier.classify(
+      'image_analyze', { path: homeSecret }, { workingDirectory: '/tmp' },
+    );
+    expect(singleResult.decision).toBe('ask');
+
+    // 批量数组里混一条敏感路径同样整体 ask——不得随同批正常路径一起放行
+    const batchResult = await classifier.classify(
+      'image_analyze',
+      { paths: ['/tmp/normal.png', '~/.ssh/leak.png'] },
+      { workingDirectory: '/tmp' },
+    );
+    expect(batchResult.decision).toBe('ask');
+    expect(stub.calls.length).toBe(0);
+  });
+
+  it('output_path 命中受保护写路径（.git/config / .code-agent/settings.json）⇒ 确定性 ask，systemOne 零调用（ai-review R3）', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+
+    const gitConfig = await classifier.classify(
+      'pdf_generate',
+      { output_path: '.git/config', overwrite: true },
+      { workingDirectory: '/tmp/work' },
+    );
+    expect(gitConfig.decision).toBe('ask');
+
+    const agentSettings = await classifier.classify(
+      'docx_generate',
+      { output_path: '/tmp/work/.code-agent/settings.json' },
+      { workingDirectory: '/tmp/work' },
+    );
+    expect(agentSettings.decision).toBe('ask');
+    expect(stub.calls.length).toBe(0);
+  });
+
+  it('嵌套对象数组里的路径也过预检（ppt images[].image_path）', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+
+    const result = await classifier.classify(
+      'ppt_generate',
+      { output_path: '/tmp/deck.pptx', images: [{ image_path: '~/.ssh/leak.png' }] },
+      { workingDirectory: '/tmp' },
+    );
+    expect(result.decision).toBe('ask');
+    expect(stub.calls.length).toBe(0);
+  });
+
+  it('image_generate / video_generate 是付费远端生成，不进扩桶白名单 ⇒ ask，systemOne 零调用', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+
+    for (const tool of ['image_generate', 'video_generate']) {
+      const result = await classifier.classify(
+        tool, { output_path: '/tmp/out', prompt: 'a cat' }, { workingDirectory: '/tmp' },
+      );
+      expect(result.decision).toBe('ask');
+    }
+    expect(stub.calls.length).toBe(0);
+  });
+
+  it('glob 模式路径无法静态判定 ⇒ 确定性 ask，systemOne 零调用（ai-review R6）', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    const result = await classifier.classify(
+      'image_analyze', { paths: ['*.png'] }, { workingDirectory: '/tmp' },
+    );
+    expect(result.decision).toBe('ask');
+    expect(stub.calls.length).toBe(0);
+  });
+
+  it('正文 key 的长文本含斜杠不进文件系统解析，分类器不抛错（ai-review R6）', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    // 300 字符单段 + '/': 若被当路径逐段 lstat 会 ENAMETOOLONG
+    const longSegment = 'a'.repeat(300);
+    const result = await classifier.classify(
+      'pdf_generate',
+      { output_path: '/tmp/report.pdf', content: `see https://example.com/${longSegment}/details` },
+      { workingDirectory: '/tmp' },
+    );
+    expect(result.decision).toBe('approve');
+    expect(stub.calls.length).toBe(1);
+  });
+
+  it('工作区内的符号链接指向区外 ⇒ 按真实路径判，确定性 ask（ai-review R5）', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    // 用 realpath(tmpdir) 避开 macOS /tmp→/private/tmp 的符号链接歧义——否则预检
+    // 不规范化候选路径时也会因根目录不匹配而 ask，钉不住符号链接这条语义。
+    const workDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'jev-symlink-'));
+    // “区外”文件必须落在临时目录之外（临时目录本身是允许写根）——放 home 下的临时目录
+    const outsideDir = fs.mkdtempSync(path.join(os.homedir(), '.jev-outside-'));
+    const outsideFile = path.join(outsideDir, 'secret.txt');
+    fs.writeFileSync(outsideFile, 'x');
+    fs.symlinkSync(outsideFile, path.join(workDir, 'evil.pdf'));
+
+    const result = await classifier.classify(
+      'pdf_generate',
+      { output_path: 'evil.pdf', overwrite: true },
+      { workingDirectory: workDir },
+    );
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+    expect(result.decision).toBe('ask');
+    expect(stub.calls.length).toBe(0);
+  });
+
+  it('写到工作目录与临时目录之外 ⇒ 确定性 ask 不外包 Jev；工作目录内照常放行（ai-review R4）', async () => {
+    const outsideStub = stubSystemOne();
+    const outside = await newClassifier(outsideStub).classify(
+      'excel_generate',
+      { output_path: '~/Documents/finance.xlsx', overwrite: true },
+      { workingDirectory: '/tmp/work' },
+    );
+    expect(outside.decision).toBe('ask');
+    expect(outsideStub.calls.length).toBe(0);
+
+    const insideStub = stubSystemOne();
+    const inside = await newClassifier(insideStub).classify(
+      'excel_generate',
+      { output_path: '/tmp/work/reports/finance.xlsx', overwrite: true },
+      { workingDirectory: '/tmp/work' },
+    );
+    expect(inside.decision).toBe('approve');
+    expect(insideStub.calls.length).toBe(1);
   });
 
   // ---------------------------------------------------------------------------

@@ -10,8 +10,9 @@
 // 判官初筛回放：docs/research/assets/2026-09-19-jev/replay-judge.ts（35 轮 glm-4-flash 对表）。
 //
 // 语义边界（permissionClassifier 的 ponytail 约定）：PERMCLASS_* 只服务「规则判不了→ask」
-// 那一桶里 **Bash** 的**收窄**（approve 方向），不做 deny、不扩 approve 边界；非 Bash
-// 工具不进 Jev。Jev 官方明说对抗输入能带偏、不是安全边界。
+// 那一桶里的低风险工具收窄（approve 方向），不做 deny；扩桶只允许
+// permissionClassifierJev.ts 明确列出的本地产物工具。Jev 官方明说对抗输入能带偏、
+// 不是安全边界。
 
 import type { AiReviewDimension } from '../contract/evaluation';
 import type { JSONSchema } from '../contract/tool';
@@ -128,6 +129,23 @@ export const PERMCLASS_QUESTIONS: Record<string, JevQuestionSpec> = {
     type: 'noul',
     instructions:
       'Does `summary` read or modify user-level configuration, credential stores, application data directories, or files under the home directory outside the working directory (e.g. ~/.config, ~/.<app>/, ~/.ssh, keychain)?',
+  },
+};
+
+/** 非 Bash 扩桶专用问句组；Bash 回放继续使用原有四问协议（risk 文案也不动，
+ * 阈值按旧文案标定，ai-review R5）——扩桶的 risk 问句单独覆盖。 */
+export const PERMWIDE_QUESTIONS: Record<string, JevQuestionSpec> = {
+  ...PERMCLASS_QUESTIONS,
+  risk: {
+    type: 'choice',
+    instructions:
+      'What is the risk tier of executing `tool` with `summary` (a sanitized list of the tool\'s arguments) inside the working directory?',
+    criteria: { ...PERMCLASS_QUESTIONS.risk.criteria },
+  },
+  beyond_scope: {
+    type: 'noul',
+    instructions:
+      'Does this action touch files or systems outside the working directory or approved temp directories, or create an external side effect?',
   },
 };
 
@@ -293,6 +311,7 @@ export const PERMCLASS_APPROVE_THRESHOLDS = {
   maxNeedsHuman: 0.2,
   maxTouchesSecrets: 0.3,
   maxConfigAccess: 0.5,
+  maxBeyondScope: 0.3,
 } as const;
 
 /** 浏览器步选阈值。换 jev 版本必须先重跑 §9 题库再改这里。 */

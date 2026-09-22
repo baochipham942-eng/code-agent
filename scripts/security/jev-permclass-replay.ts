@@ -13,6 +13,11 @@
 // 样本来源：本机生产库「fallback→ask」脱敏样本（参照=history_outcome）+
 // tests/fixtures/jev-permclass-samples.json（20 放行 + 8 拒绝照抄 + destructive）。
 // 弃权定义沿用 09-19 回放口径：risk.confidence < 0.6。
+//
+// 非 Bash 样本（N-JEV-PERMWIDE 起）：走同一条真实分类路径——image_analyze 的
+// summary 即图片路径，还原为 { path }；summary 已脱敏成工具名的样本（pdf_generate /
+// ppt_generate 等）传空 args，buildJevState 与生产一样回落到工具名。扩桶工具由
+// 分类器自动换 PERMWIDE_QUESTIONS（含 beyond_scope），脚本不手搓问句。
 import fs from 'node:fs';
 
 import { getPermissionClassifier } from '../../src/host/tools/permissionClassifier';
@@ -71,15 +76,23 @@ interface Outcome {
   needsHuman?: number;
   secrets?: number;
   configAccess?: number;
+  beyondScope?: number;
   abstain?: boolean;
   error?: string;
+}
+
+/** 非 Bash 样本按生产参数形状还原 args；summary 已脱敏成工具名的传空 args。 */
+function replayArgs(row: ReplaySample): Record<string, unknown> {
+  if (row.tool_name === 'Bash') return { command: row.summary };
+  if (row.tool_name === 'image_analyze') return { path: row.summary };
+  return {};
 }
 
 const outcomes: Outcome[] = [];
 for (const row of rows) {
   currentId = row.id;
   classifier.clearCache(); // 同命令样本（探针重复）不复用缓存，逐条真跑
-  const args = row.tool_name === 'Bash' ? { command: row.summary } : {};
+  const args = replayArgs(row);
   let decision: string;
   let rule = '-';
   let reason: string;
@@ -111,6 +124,7 @@ for (const row of rows) {
     configAccess: noul('config_or_credential_access') !== undefined
       ? Number(noul('config_or_credential_access')!.toFixed(2))
       : undefined,
+    beyondScope: noul('beyond_scope') !== undefined ? Number(noul('beyond_scope')!.toFixed(2)) : undefined,
     abstain: riskAnswer?.confidence !== undefined ? riskAnswer.confidence < 0.6 : undefined,
     error: cap?.error,
   });
@@ -137,10 +151,11 @@ console.log(`\n四格（全量）: 放行/放行=${cell('ask-approved', 'approve
   + `拒绝/放行(必须0)=${approvedWrongly.length} 拒绝/ask=${outcomes.filter((o) => o.reference === 'ask-denied' && o.decision !== 'approve').length}`);
 console.log(`弃权率(Jev 被问且 risk.conf<0.6): ${abstains}/${jevReached.length}${jevReached.length ? ` = ${(100 * abstains / jevReached.length).toFixed(1)}%` : ''}`);
 
-console.log('\n== 逐条数值（id | ref | decision | rule | risk conf nh sec cfg | summary）');
+console.log('\n== 逐条数值（id | ref | decision | rule | risk conf nh sec cfg bs | summary）');
 for (const o of outcomes) {
   const vals = o.jevCalled && o.risk !== undefined
-    ? `${o.risk} ${o.conf} nh=${o.needsHuman} sec=${o.secrets} cfg=${o.configAccess}${o.abstain ? ' [abstain]' : ''}`
+    ? `${o.risk} ${o.conf} nh=${o.needsHuman} sec=${o.secrets} cfg=${o.configAccess}`
+      + `${o.beyondScope !== undefined ? ` bs=${o.beyondScope}` : ''}${o.abstain ? ' [abstain]' : ''}`
     : o.error ? `ERR ${o.error.slice(0, 60)}` : '(rule)';
   console.log(`  ${o.id} | ${o.reference} | ${o.decision} | ${o.rule} | ${vals} | ${o.summary}`);
 }

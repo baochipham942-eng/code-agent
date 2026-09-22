@@ -426,3 +426,15 @@ describe('judgeDimensions · Jev 初筛', () => {
     expect(judged.task_completed?.quality?.score).not.toBe(0.5);
   });
 });
+
+// N-JEV-QUESTION-ITER 验收①：两句靶向口径钉死在问句里（改丢即红）。
+describe('EVAL_JUDGE 问句靶向口径（N-JEV-QUESTION-ITER）', () => {
+  it('task_fulfilled 含「交付与过程违规解耦」口径', () => {
+    expect(EVAL_JUDGE_QUESTIONS.task_completed.task_fulfilled.instructions).toContain('process violations');
+    expect(EVAL_JUDGE_QUESTIONS.task_completed.task_fulfilled.instructions).toContain('do not count them here');
+  });
+
+  it('confirmed_before_side_effects 含「无需确认 ⇒ yes」口径', () => {
+    expect(EVAL_JUDGE_QUESTIONS.confirmed_before_acting.confirmed_before_side_effects.instructions).toContain('nothing needed confirming');
+  });
+});

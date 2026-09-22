@@ -17,6 +17,7 @@ import { useTaskStore } from '../../../stores/taskStore';
 import { toast } from '../../../hooks/useToast';
 import { buildStreamRecoveryMessage } from '../../../utils/streamRecoveryMessage';
 import { humanizeInterruptedToolAction } from '../../../utils/streamInterruptionPresentation';
+import { StallNoticeLine } from './StallNoticeLine';
 import { Button } from '../../primitives';
 import { isEditableTarget } from '../../DecisionCard';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';
@@ -330,6 +331,7 @@ export function DecisionSlot({
           onResolved={setResolvedTurnId}
         />
       ) : null}
+      <StallNoticeLine hidden={Boolean(current || userQuestion || planApproval || interruptionVisible)} />
     </section>
   );
 }

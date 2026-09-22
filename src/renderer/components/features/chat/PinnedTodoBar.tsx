@@ -149,7 +149,7 @@ const TodoStepItem: React.FC<{ step: TaskStep; index: number; sessionId: string 
             }}
           />
         ) : (
-          <button
+          <button /* ds-allow:button: 这行字本身就是编辑入口，不是带样式的主按钮 */
             type="button"
             className="text-left"
             title="只改你看到的这行，不会改 agent 的计划"

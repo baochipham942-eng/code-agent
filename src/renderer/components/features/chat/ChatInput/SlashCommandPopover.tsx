@@ -38,8 +38,9 @@ import {
   createPromptCandidate,
   createSkillCandidates,
   createWorkbenchCapabilityCandidates,
+  EMPTY_QUERY_BUILTIN_IDS,
   filterAndRankSlashCandidates,
-  groupSlashCandidates,
+  presentSlashMenuGroups,
   type PromptCommandCandidateInput,
   type SlashCandidateAction,
   type SlashPickerCandidate,
@@ -285,8 +286,6 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       description: sc.new.description,
       icon: <Plus className="w-4 h-4" />,
       shortcut: getShortcutLabel('session.new'),
-      emptyQueryVisible: true,
-      emptyQueryRank: 10,
       action: () => createSession(),
     },
     {
@@ -357,8 +356,6 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       description: sc.agent.description,
       icon: <Bot className="w-4 h-4" />,
       actionKind: 'open-agent-command',
-      emptyQueryVisible: true,
-      emptyQueryRank: 20,
       effectLabel: sc.agent.effectLabel,
       action: () => {},
     },
@@ -368,8 +365,6 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       description: sc['create-role'].description,
       icon: <UserPlus className="w-4 h-4" />,
       actionKind: 'create-role',
-      emptyQueryVisible: true,
-      emptyQueryRank: 25,
       effectLabel: sc['create-role'].effectLabel,
       action: () => {},
     },
@@ -600,6 +595,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: sc.model.label,
       description: sc.model.description,
       icon: <Cpu className="w-4 h-4" />,
+      emptyQueryVisible: true,
+      emptyQueryRank: 50,
       action: () => {
         const mc = useAppStore.getState().modelConfig;
         writeAssistant(t.slashDiagnostics.modelSwitchHint.replace('{provider}', mc.provider).replace('{model}', mc.model));
@@ -610,6 +607,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: sc.compact.label,
       description: sc.compact.description,
       icon: <Zap className="w-4 h-4" />,
+      emptyQueryVisible: true,
+      emptyQueryRank: 55,
       action: async () => {
         try {
           const result = await invoke(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, currentSessionId ?? undefined);
@@ -665,6 +664,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         id: def.id,
         label: def.name,
         description: def.description,
+        emptyQueryVisible: EMPTY_QUERY_BUILTIN_IDS.has(def.id),
+        emptyQueryRank: 60,
         icon: registryIconMap[def.id] || <Terminal className="w-4 h-4" />,
         sourceLabel: 'Command',
         action: () => {
@@ -762,10 +763,16 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   ]);
 
   const filtered = useMemo(
-    () => filterAndRankSlashCandidates(allCommands, filter),
+    () => filterAndRankSlashCandidates(allCommands, filter, { maxEmptyItems: 48 }),
     [filter, allCommands],
   );
-  const grouped = useMemo(() => groupSlashCandidates(filtered), [filtered]);
+  const grouped = useMemo(
+    () => presentSlashMenuGroups(filtered, filter, {
+      system: sc.picker.systemSection,
+      skill: sc.picker.skillSection,
+    }),
+    [filtered, filter, sc.picker.skillSection, sc.picker.systemSection],
+  );
 
   // Reset selection on filter change
   useEffect(() => {
@@ -851,10 +858,12 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     >
       <div className="py-1">
         {grouped.map((group) => (
-          <div key={group.group}>
-            <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-zinc-600 first:pt-1">
-              {group.label}
-            </div>
+          <div key={group.id}>
+            {group.label ? (
+              <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-zinc-600 first:pt-1">
+                {group.label}
+              </div>
+            ) : null}
             {group.items.map((cmd) => {
               const i = filtered.indexOf(cmd);
               const skillStatus = cmd.kind === 'skill'
@@ -888,9 +897,6 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="truncate text-sm">{cmd.label}</span>
-                      {cmd.sublabel ? (
-                        <span className="shrink-0 text-[10px] text-zinc-500">{cmd.sublabel}</span>
-                      ) : null}
                       <span className="shrink-0 rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-zinc-500">
                         {cmd.slashText}
                       </span>
@@ -912,6 +918,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                       ) : null}
                     </div>
                   </div>
+                  {cmd.kind === 'skill' && cmd.sublabel ? (
+                    <span className="shrink-0 text-[10px] text-zinc-500">{cmd.sublabel}</span>
+                  ) : null}
                   {cmd.shortcut && (
                     <kbd className="px-1.5 py-0.5 text-[10px] bg-zinc-800 rounded text-zinc-500 border border-zinc-700">
                       {cmd.shortcut}
@@ -920,6 +929,16 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                 </button>
               );
             })}
+            {group.id === 'skill' ? (
+              <button
+                type="button"
+                data-testid="slash-more-skills"
+                onClick={() => openSettingsTab('skills')}
+                className="w-full px-3 py-2 text-left text-xs text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300"
+              >
+                {sc.picker.moreSkills}
+              </button>
+            ) : null}
           </div>
         ))}
       </div>

@@ -20,7 +20,7 @@ export const DOOM_LOOP_HANDBACK_RETRY_NUDGE = [
 
 export type DoomLoopHandbackChoice = 'retry' | 'stop';
 
-type Waiter = (choice: DoomLoopHandbackChoice) => void;
+type Waiter = (choice: DoomLoopHandbackChoice | 'steered') => void;
 const waiters = new Map<string, Waiter>();
 
 export function answerDoomLoopHandback(sessionId: string, choice: DoomLoopHandbackChoice): boolean {
@@ -31,7 +31,7 @@ export function answerDoomLoopHandback(sessionId: string, choice: DoomLoopHandba
   return true;
 }
 
-export type DoomLoopHandbackWait = DoomLoopHandbackChoice | 'timeout' | 'stop';
+export type DoomLoopHandbackWait = DoomLoopHandbackChoice | 'timeout' | 'stop' | 'steered';
 
 /**
  * 交互会话等用户点卡片。取消/打断立刻停；超时也停。
@@ -53,13 +53,22 @@ export function waitForDoomLoopHandback(
       if (waiters.get(sessionId) === onChoice) waiters.delete(sessionId);
       resolve(result);
     };
-    const onChoice = (choice: DoomLoopHandbackChoice) => finish(choice);
+    const onChoice = (choice: DoomLoopHandbackChoice | 'steered') => finish(choice);
     const onAbort = () => finish('stop');
     const timer = setTimeout(() => finish('timeout'), timeoutMs);
     waiters.set(sessionId, onChoice);
     signal?.addEventListener('abort', onAbort, { once: true });
     if (signal?.aborted) onAbort();
   });
+}
+
+/** 用户在卡片出现后改口发了新消息。结束等待，让这一轮接着推理，而不是再干等。 */
+export function releaseDoomLoopHandbackForSteer(sessionId: string): boolean {
+  const waiter = waiters.get(sessionId);
+  if (!waiter) return false;
+  waiters.delete(sessionId);
+  waiter('steered');
+  return true;
 }
 
 /** 无人值守不弹卡，直接记下终态原因码。 */
@@ -100,9 +109,9 @@ export async function settleDoomLoopHandback(
     INTERACTION_TIMEOUTS.USER_QUESTION,
     ctx.control.runAbortController?.signal,
   );
-  if (choice === 'retry') {
+  if (choice === 'retry' || choice === 'steered') {
     guard.resetAfterHandback();
-    injectNudge(DOOM_LOOP_HANDBACK_RETRY_NUDGE);
+    if (choice === 'retry') injectNudge(DOOM_LOOP_HANDBACK_RETRY_NUDGE);
     return 'retry';
   }
   abortGoalIfPending(ctx, iterations);

@@ -3,6 +3,7 @@ import { DoomLoopGuard } from '../../../src/host/agent/runtime/doomLoopGuard';
 import {
   answerDoomLoopHandback,
   DOOM_LOOP_HANDBACK_STOP,
+  releaseDoomLoopHandbackForSteer,
   settleDoomLoopHandback,
   stopUnattendedDoomLoop,
   waitForDoomLoopHandback,
@@ -81,6 +82,20 @@ describe('doom loop handback', () => {
     )).resolves.toBe('stop');
     expect(cron).not.toHaveBeenCalled();
     expect(takeUnattendedApprovalTimeout('cron-ui')).toBe(DOOM_LOOP_HANDBACK_STOP);
+  });
+
+  it('改口发新消息会结束等待并继续这一轮，不再注入换方法提示', async () => {
+    setBrowserWindowInteractionProbe(() => true);
+    const inject = vi.fn();
+    const pending = settleDoomLoopHandback(
+      host({ sessionId: 'desk-steer', onEvent: vi.fn() }),
+      new DoomLoopGuard(),
+      3,
+      inject,
+    );
+    expect(releaseDoomLoopHandbackForSteer('desk-steer')).toBe(true);
+    await expect(pending).resolves.toBe('retry');
+    expect(inject).not.toHaveBeenCalled();
   });
 
   it('有界面才发卡片，运行被取消时不等待', async () => {

@@ -83,7 +83,7 @@ import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair'
 import { classifyIntent } from '../../telemetry/intentClassifier';
 import { markDistilledSkillTurnSignal } from '../../services/skills/distillSignalStore';
 import { emitGoalAbort } from './goalAbort';
-import { settleDoomLoopHandback } from './doomLoopHandback';
+import { releaseDoomLoopHandbackForSteer, settleDoomLoopHandback } from './doomLoopHandback';
 import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
 
 
@@ -1230,6 +1230,7 @@ export class ConversationRuntime {
     this.ctx.turn.requestReinference();
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
     await persisted;
+    releaseDoomLoopHandbackForSteer(this.ctx.sessionId);
     if (resumePausedGoal) this.resume();
     if (metadata?.workbench?.runtimeInputMode === 'redirect') {
       const receipt: InputRedirectReceiptMetadata = {

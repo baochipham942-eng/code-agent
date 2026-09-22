@@ -81,11 +81,11 @@ describe('model onboarding helpers', () => {
 
     expect(selection.modelConfig).toMatchObject({
       provider: 'deepseek',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       apiKey: 'sk-test',
       baseUrl: 'https://api.deepseek.com/v1',
     });
-    expect(selection.providerSettings.models?.['deepseek-v4-flash']?.enabled).toBe(true);
+    expect(selection.providerSettings.models?.['deepseek-flash']?.enabled).toBe(true);
   });
 });
 

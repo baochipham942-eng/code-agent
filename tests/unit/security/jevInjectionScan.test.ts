@@ -65,4 +65,26 @@ describe('jevInjectionScan', () => {
       reason: 'unavailable',
     });
   });
+
+  it('short-circuits on an aborted run signal and never calls Jev', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_INJECTION_SCAN', '1');
+    const controller = new AbortController();
+    controller.abort();
+    const systemOne = vi.fn() as unknown as JevSystemOneCall;
+    const result = await scanWithJevInjection('web_fetch', 'ordinary report', systemOne, controller.signal);
+    expect(result).toMatchObject({ skipped: true, reason: 'aborted', flagged: false });
+    expect(systemOne).not.toHaveBeenCalled();
+  });
+
+  it('passes the run abort signal through to the provider call', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_INJECTION_SCAN', '1');
+    const controller = new AbortController();
+    const systemOne = vi.fn(async (_state: Record<string, unknown>, _q: unknown, options?: { signal?: AbortSignal }) => {
+      expect(options?.signal).toBe(controller.signal);
+      return { injection: { noul: 0.1 }, exfil_request: { noul: 0.1 } };
+    }) as unknown as JevSystemOneCall;
+    const result = await scanWithJevInjection('web_fetch', 'ordinary report', systemOne, controller.signal);
+    expect(result.skipped).toBe(false);
+    expect(systemOne).toHaveBeenCalledTimes(1);
+  });
 });

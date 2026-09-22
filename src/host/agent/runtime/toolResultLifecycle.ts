@@ -222,10 +222,17 @@ export async function handleToolResultBookkeeping({
       // microtask only; enabled: bounded by the provider's JEV_TIMEOUT_MS and
       // fail-closed to skip on error/timeout. Skipped entirely when the
       // sanitizer already replaced the content with the [BLOCKED] placeholder —
-      // scanning the placeholder would waste a real Jev call.
+      // scanning the placeholder would waste a real Jev call. The run abort
+      // signal is passed through so cancelling the run short-circuits the scan
+      // instead of stalling tool_call_end / cancel settlement on it.
       if (!(sanitized.blocked && effectiveUntrustedContentPolicy === 'block')) {
         try {
-          const jevScan = await scanWithJevInjection(canonicalName, toolResult.output);
+          const jevScan = await scanWithJevInjection(
+            canonicalName,
+            toolResult.output,
+            undefined,
+            ctx.control.runAbortController?.signal,
+          );
           toolResult.metadata = {
             ...toolResult.metadata,
             jevInjectionScan: jevScan,

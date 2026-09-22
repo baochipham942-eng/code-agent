@@ -18,7 +18,7 @@ export interface JevInjectionScanResult {
   flagged: boolean;
   injection: number;
   exfilRequest: number;
-  reason?: 'disabled' | 'not_remote' | 'regex_hit' | 'unavailable' | 'bad_shape';
+  reason?: 'disabled' | 'not_remote' | 'regex_hit' | 'unavailable' | 'bad_shape' | 'aborted';
 }
 
 const REMOTE_TOOL_PREFIXES = [
@@ -54,10 +54,13 @@ export async function scanWithJevInjection(
   source: string,
   text: string,
   systemOne?: JevSystemOneCall,
+  signal?: AbortSignal,
 ): Promise<JevInjectionScanResult> {
   if (!isJevInjectionScanEnabled()) return unavailable('disabled');
   if (!isRemoteInjectionSource(source)) return unavailable('not_remote');
   if (!text) return { skipped: false, flagged: false, injection: 0, exfilRequest: 0 };
+  // Advisory only: a cancelled run must not wait on the scan.
+  if (signal?.aborted) return unavailable('aborted');
 
   // The regex layer remains authoritative for known signatures. Jev only gets
   // clean text, and every string crossing the provider boundary is guarded.
@@ -77,7 +80,7 @@ export async function scanWithJevInjection(
 
   let answers: JevAnswers;
   try {
-    answers = await call(state, JEV_INJECTION_QUESTIONS);
+    answers = await call(state, JEV_INJECTION_QUESTIONS, { signal });
   } catch {
     return unavailable('unavailable');
   }

@@ -33,7 +33,7 @@ export function answerDoomLoopHandback(sessionId: string, choice: DoomLoopHandba
 /** 交互会话等用户点卡片。超时视为停止，避免 run 挂住。 */
 export function waitForDoomLoopHandback(
   sessionId: string,
-  timeoutMs = INTERACTION_TIMEOUTS.USER_QUESTION,
+  timeoutMs: number = INTERACTION_TIMEOUTS.USER_QUESTION,
 ): Promise<DoomLoopHandbackChoice | 'timeout'> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {

@@ -105,6 +105,12 @@ export interface AgentLoopConfig {
   onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: import('../../shared/contract').ToolResult }) => void;
   /** CLI 模式下的消息持久化回调 */
   persistMessage?: (message: Message) => Promise<void>;
+  /**
+   * N-EVAL-FAILURE-AUTOHARVEST：隔离运行时（eval）的 handoff 提案落库回调——
+   * 隔离臂的提案必须落注入库，断言采集器才读得到。缺省走全局 HandoffProposalService
+   * （产线行为不变）。
+   */
+  persistHandoffProposal?: (input: import('../../shared/contract/handoff').CreateHandoffProposalInput) => void;
   /** Per-run turn snapshot sink for isolated runtimes. */
   turnSnapshotSink?: TurnSnapshotSink;
   /** Optional case-bound cost recorder for controlled eval runs. */

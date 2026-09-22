@@ -503,6 +503,35 @@ describe('NudgeManager', () => {
 
       expect(result).toBe(false);
     });
+
+    it('announces the missing files once after the nudge budget is spent', () => {
+      const expectedFiles = ['/tmp/test/output.xlsx'];
+      manager.reset([], '生成文件', '/tmp/test', expectedFiles);
+      mockExistsSync.mockReturnValue(false);
+      expect(manager.takeAbandonedOutputFiles()).toBeNull();
+
+      for (let i = 0; i < 3; i++) {
+        expect(manager.runNudgeChecks(createMockContext({
+          toolsUsedInTurn: ['write_file'],
+        }))).toBe(true);
+      }
+
+      expect(manager.takeAbandonedOutputFiles()).toEqual(expectedFiles);
+      expect(manager.takeAbandonedOutputFiles()).toBeNull();
+    });
+
+    it('does not announce when the file showed up, and still can announce if it is missing again', () => {
+      const expectedFiles = ['/tmp/test/output.xlsx'];
+      manager.reset([], '生成文件', '/tmp/test', expectedFiles);
+      mockExistsSync.mockReturnValue(false);
+      for (let i = 0; i < 3; i++) {
+        manager.runNudgeChecks(createMockContext({ toolsUsedInTurn: ['write_file'] }));
+      }
+      mockExistsSync.mockReturnValue(true);
+      expect(manager.takeAbandonedOutputFiles()).toBeNull();
+      mockExistsSync.mockReturnValue(false);
+      expect(manager.takeAbandonedOutputFiles()).toEqual(expectedFiles);
+    });
   });
 
   // ────────────────────────────────────────────────────────────────────────

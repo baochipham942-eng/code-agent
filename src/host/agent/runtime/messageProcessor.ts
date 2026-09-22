@@ -419,6 +419,10 @@ export class MessageProcessor {
       if (nudgeTriggered) {
         return 'continue';
       }
+      this.ctx.nudgeManager.emitAbandonedOutputFiles?.((missingFiles) => this.ctx.onEvent({
+        type: 'turn_diff',
+        data: { turnId: this.ctx.turn.currentTurnId || '', files: [], missingFiles, filesAuthoritative: false },
+      }));
     }
     // P7 + P0 Output validation (delegated to NudgeManager)
     if (!isForcedFinalTextPass) {

@@ -20,6 +20,7 @@ import type { CapabilityGapNotice } from '../../../stores/capabilityGapStore';
 import { isAgentPointerEvent, useAgentPointerStore } from '../../../stores/agentPointerStore';
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
 import { buildAgentPointerEvent } from '../../../utils/agentPointer';
+import { mergeTurnDiffNotice } from '../../../utils/turnDiffSummary';
 
 const logger = createLogger('useAgent');
 
@@ -141,8 +142,9 @@ export function applyToolExecutionEvent(
         const targetMessage = messages.find((message) => message.id === event.data.turnId)
           ?? [...messages].reverse().find((message) => message.role === 'assistant');
         if (targetMessage) {
+          const turnDiff = mergeTurnDiffNotice(targetMessage.metadata?.turnDiff, event.data);
           deps.updateMessage(targetMessage.id, {
-            metadata: { ...targetMessage.metadata, turnDiff: event.data },
+            metadata: { ...targetMessage.metadata, turnDiff },
           });
         }
       }

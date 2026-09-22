@@ -725,6 +725,7 @@ export interface IpcEventHandlers {
   ) => void;
   // In-App validation request (main → renderer broadcast)
   [IPC_CHANNELS.IN_APP_VALIDATION_REQUEST]: (request: InAppValidationRequest) => void;
+  [IPC_CHANNELS.STALL_NOTICE]: (notice: { sessionId?: string; level?: 'hint' | 'escalated'; phase?: 'tool' | 'model'; detail?: string; clear?: boolean }) => void;
   // DAG Visualization events
   [DAG_CHANNELS.EVENT]: (event: DAGVisualizationEvent) => void;
   // Lab training progress events

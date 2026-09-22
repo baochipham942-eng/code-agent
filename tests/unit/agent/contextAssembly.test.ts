@@ -2081,7 +2081,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     const assembly = new ContextAssembly(ctx as never);
     await assembly.checkAndAutoCompress();
 
-    expect(shouldTriggerByTokens).toHaveBeenCalledWith(expect.any(Number));
+    expect(shouldTriggerByTokens).toHaveBeenCalledWith(expect.any(Number), expect.any(Number));
     expect(shouldTriggerByTokens.mock.calls[0][0]).toBeGreaterThanOrEqual(765);
   });
 

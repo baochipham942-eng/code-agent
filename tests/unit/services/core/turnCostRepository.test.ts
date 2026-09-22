@@ -59,6 +59,7 @@ describe('TurnCostRepository', () => {
       usd: null,
       source: 'unknown',
       createdAt: 1_234,
+      cacheBreakReason: 'none',
     });
     expect(repo.listBySession('session-1')).toHaveLength(1);
   });

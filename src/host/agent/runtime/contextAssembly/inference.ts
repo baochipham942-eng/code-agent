@@ -3,7 +3,7 @@
 import type { AgentEvent, ToolCall, ToolDefinition } from '../../../../shared/contract';
 import type { ModelResponse } from '../../../agent/loopTypes';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../../../model/adapters/aiSdkAdapter';
-import { getConfigService, getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../../services';
+import { getConfigService, getLangfuseService, getBudgetService } from '../../../services';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { ContextLengthExceededError } from '../../../model/modelRouter';
 import { createSnapshotHandler } from '../../../session/streamSnapshot';
@@ -39,6 +39,8 @@ import { getAdaptiveRouter, withClarificationHint } from '../../../model/adaptiv
 import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
+import { noteStreamProgress } from '../../stallObserver';
+import { cacheOptionsForMaxModeCall, maxModeBudgetHeadroomOk } from './maxModePolicy';
 import { emitOverflowRecoverySignal } from './compressionSignal';
 import {
   seedArtifactRepairGuardFromContext,
@@ -316,25 +318,6 @@ function assertInputTokenBudget(
  * （streamHandler 累计 ctx.stats.totalInputTokens/totalOutputTokens、line ~820 的赢家估算）
  * 只见到赢家的 response.usage。
  */
-/**
- * 预算头寸闸（Codex R1-H3）：预算已到 WARNING/BLOCKED 时不做 N 倍并发扇出——
- * budgetService 的事后记账拦不住一次 step 内并发花出去的 N+1 笔调用，
- * 临界状态下直接退回正常单次调用（行为与开关关一致）。
- */
-function maxModeBudgetHeadroomOk(ctx: ContextAssemblyCtx): boolean {
-  try {
-    const { alertLevel } = getBudgetService(ctx.runtime.budgetScope).checkBudget();
-    const ok = alertLevel !== BudgetAlertLevel.WARNING && alertLevel !== BudgetAlertLevel.BLOCKED;
-    if (!ok) {
-      logger.warn(`[MaxMode] budget alertLevel=${alertLevel}; skipping best-of-N fanout for this step`);
-    }
-    return ok;
-  } catch {
-    // 测试/CLI 环境无 budget 服务 → 不拦
-    return true;
-  }
-}
-
 async function runMaxModeInference(
   ctx: ContextAssemblyCtx,
   messages: ModelMessage[],
@@ -345,6 +328,7 @@ async function runMaxModeInference(
 ): Promise<ModelResponse> {
   const { onSnapshot: _onSnapshot, ...restOptions } = engineOptions;
   const silentOptions: InferenceOptions = { ...restOptions, suppressModelDecisionEvent: true };
+  const judgeOptions = cacheOptionsForMaxModeCall(silentOptions, 'judge');
   const signal = ctx.runtime.control.abortController?.signal;
   const candidates = ctx.runtime.maxModeCandidates;
   ctx.taskProgress.emitTaskProgress('thinking', `Max Mode：${candidates} 个候选并行起草中...`);
@@ -368,8 +352,16 @@ async function runMaxModeInference(
   try {
     stepResult = await runMaxModeStep(
       {
-        silentEngine: (msgs, tls) =>
-          runEngineInference(ctx, msgs, tls, requestConfig, undefined, signal, silentOptions),
+        silentEngine: (msgs, tls, kind) =>
+          runEngineInference(
+            ctx,
+            msgs,
+            tls,
+            requestConfig,
+            undefined,
+            signal,
+            kind === 'judge' ? judgeOptions : silentOptions,
+          ),
         streamingEngine: (msgs, tls) =>
           runEngineInference(ctx, msgs, tls, requestConfig, streamCallback, signal, engineOptions),
         // 取消/转向/中断时丢弃整个 step（含已完成的部分赢家），走外层既有取消语义
@@ -819,6 +811,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           }),
         });
       } else if (chunk.type === 'tool_call_delta') {
+        noteStreamProgress(ctx.runtime.sessionId);
         ctx.runtime.onEvent({
           type: 'stream_tool_call_delta',
           data: {

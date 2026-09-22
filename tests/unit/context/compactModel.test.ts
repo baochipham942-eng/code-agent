@@ -124,7 +124,10 @@ describe('compactModelSummarize', () => {
         provider: 'moonshot',
         model: 'kimi-k2.5',
         apiKey: 'moonshot-key',
-      })
+      }),
+      undefined,
+      undefined,
+      { cacheRetention: 'none', cacheScopeId: 'compact-summary' },
     );
   });
 
@@ -168,7 +171,10 @@ describe('compactModelSummarize', () => {
         provider: 'xiaomi',
         model: 'mimo-v2.5-pro',
         apiKey: 'xiaomi-key',
-      })
+      }),
+      undefined,
+      undefined,
+      { cacheRetention: 'none', cacheScopeId: 'compact-summary' },
     );
   });
 
@@ -233,7 +239,10 @@ describe('compactModelSummarize', () => {
       expect.objectContaining({
         provider: 'moonshot',
         model: 'kimi-k2.5',
-      })
+      }),
+      undefined,
+      undefined,
+      { cacheRetention: 'none', cacheScopeId: 'compact-summary' },
     );
     expect(compactModelMocks.inference).toHaveBeenNthCalledWith(
       2,
@@ -243,7 +252,10 @@ describe('compactModelSummarize', () => {
         provider: 'xiaomi',
         model: 'mimo-v2.5-pro',
         apiKey: 'xiaomi-key',
-      })
+      }),
+      undefined,
+      undefined,
+      { cacheRetention: 'none', cacheScopeId: 'compact-summary' },
     );
   });
 });

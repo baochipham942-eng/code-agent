@@ -1,5 +1,6 @@
 export type TodoEvidence = 'probe' | 'claimed' | 'user';
 
+// ponytail: 还没有写入方把 evidence / evidenceRefs 放进 TaskStep。有记录要等计划服务接上探针后再出现。
 export function todoEvidenceOf(metadata?: Record<string, unknown>): TodoEvidence {
   const raw = metadata?.evidence;
   if (raw === 'probe' || raw === 'user' || raw === 'claimed') return raw;

@@ -74,13 +74,28 @@ function correctionKey(sessionId: string | null, stepId: string): string {
   return `todo-correction:${sessionId ?? 'none'}:${stepId}`;
 }
 
+function readCorrection(sessionId: string | null, stepId: string, content: string): string | null {
+  if (!sessionId) return null;
+  const raw = sessionStorage.getItem(correctionKey(sessionId, stepId));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { base?: string; text?: string };
+    return parsed.base === content && parsed.text ? parsed.text : null;
+  } catch {
+    return null;
+  }
+}
+
 const TodoStepItem: React.FC<{ step: TaskStep; index: number; sessionId: string | null }> = ({ step, index, sessionId }) => {
   const isCompleted = step.status === 'completed';
   const isInProgress = step.status === 'in_progress';
   const isSkipped = step.status === 'skipped';
-  const stored = sessionId ? sessionStorage.getItem(correctionKey(sessionId, step.id)) : null;
   const [draft, setDraft] = useState<string | null>(null);
-  const [correction, setCorrection] = useState<string | null>(stored);
+  const [correction, setCorrection] = useState<string | null>(() => readCorrection(sessionId, step.id, step.content));
+  useEffect(() => {
+    setCorrection(readCorrection(sessionId, step.id, step.content));
+    setDraft(null);
+  }, [sessionId, step.id, step.content]);
   const evidence: TodoEvidence = correction ? 'user' : todoEvidenceOf(step.metadata);
   const text = correction ?? step.content;
 
@@ -91,7 +106,9 @@ const TodoStepItem: React.FC<{ step: TaskStep; index: number; sessionId: string 
       return;
     }
     setCorrection(next);
-    if (sessionId) sessionStorage.setItem(correctionKey(sessionId, step.id), next);
+    if (sessionId) {
+      sessionStorage.setItem(correctionKey(sessionId, step.id), JSON.stringify({ base: step.content, text: next }));
+    }
     setDraft(null);
   };
 
@@ -133,6 +150,7 @@ const TodoStepItem: React.FC<{ step: TaskStep; index: number; sessionId: string 
           <button
             type="button"
             className="text-left"
+            title="只改你看到的这行，不会改 agent 的计划"
             onClick={() => setDraft(text)}
           >
             {text}

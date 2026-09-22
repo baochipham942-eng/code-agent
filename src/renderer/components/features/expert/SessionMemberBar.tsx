@@ -194,13 +194,12 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
 
   if (rows.length === 0) return null;
 
-  // 「N 个代理工作中 · 名字 当前一句」：名字总在（谁在干活是事实），当前一句只有
-  // 拿到真实工具步才带——没有工具步就不编「正在整理任务…」这类假活动。
+  // 「N 个代理工作中 · 名字」。名字说明谁在干活；工具步人话不进折叠条。
   const firstWorking = working[0];
   const summary = standby
     ? text.collapsedStandby.replace('{count}', String(rows.length))
     : firstWorking
-      ? `${text.collapsedWorking.replace('{count}', String(working.length))} · ${firstWorking.name}${firstWorking.activity ? ` ${firstWorking.activity}` : ''}`
+      ? `${text.collapsedWorking.replace('{count}', String(working.length))} · ${firstWorking.name}`
       : waiting.length > 0
         ? text.collapsedWaiting.replace('{count}', String(waiting.length))
         : failed.length > 0

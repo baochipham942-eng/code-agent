@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type {
   Message,
   PermissionRequest,
@@ -92,6 +92,7 @@ const storeState = vi.hoisted(() => ({
 }));
 const currentSession = vi.hoisted(() => ({ id: 'session-current' as string | null }));
 const invoke = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const stallListeners = vi.hoisted(() => new Set<(payload: unknown) => void>());
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
@@ -103,8 +104,11 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
   ),
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
-  useSessionStore: (selector: (state: { currentSessionId: string | null }) => unknown) => (
-    selector({ currentSessionId: currentSession.id })
+  useSessionStore: Object.assign(
+    (selector: (state: { currentSessionId: string | null }) => unknown) => (
+      selector({ currentSessionId: currentSession.id })
+    ),
+    { getState: () => ({ currentSessionId: currentSession.id }) },
   ),
 }));
 vi.mock('../../../src/renderer/stores/permissionStore', () => ({
@@ -112,6 +116,13 @@ vi.mock('../../../src/renderer/stores/permissionStore', () => ({
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { isAvailable: () => true, invoke },
+  ipcService: {
+    invoke,
+    on: (_channel: string, callback: (payload: unknown) => void) => {
+      stallListeners.add(callback);
+      return () => { stallListeners.delete(callback); };
+    },
+  },
 }));
 
 import { DecisionSlot } from '../../../src/renderer/components/features/chat/DecisionSlot';
@@ -131,6 +142,7 @@ describe('DecisionSlot', () => {
     useTaskStore.setState({ sessionStates: {} });
     useRunControlStore.getState().publishActions(null);
     useToastStore.setState({ toasts: [] });
+    stallListeners.clear();
   });
 
   afterEach(() => {
@@ -300,6 +312,31 @@ describe('DecisionSlot', () => {
     const view = render(<DecisionSlot />);
 
     expect(view.container.innerHTML).toBe('');
+  });
+
+  it('没有待决卡时，卡住提示挂在这个槽位', () => {
+    render(<DecisionSlot />);
+    expect(screen.queryByTestId('stall-notice')).toBeNull();
+    act(() => {
+      for (const listener of stallListeners) {
+        listener({ sessionId: 'session-current', level: 'hint', phase: 'tool', detail: 'Bash' });
+      }
+    });
+    expect(screen.getByTestId('stall-notice').textContent).toContain('卡住了：Bash');
+    expect(screen.getByRole('button', { name: '先停下' })).toBeTruthy();
+  });
+
+  it('有待决卡时不挂卡住提示', () => {
+    storeState.pendingPermissionRequest = normalRequest;
+    storeState.pendingPermissionSessionId = 'session-current';
+    render(<DecisionSlot />);
+    act(() => {
+      for (const listener of stallListeners) {
+        listener({ sessionId: 'session-current', level: 'escalated', phase: 'tool', detail: 'Bash' });
+      }
+    });
+    expect(screen.queryByTestId('stall-notice')).toBeNull();
+    expect(screen.getByTestId('decision-slot')).toBeTruthy();
   });
 
   it('流式中断收成一行槽位；继续复用原消息动作，成功后槽位消失', async () => {

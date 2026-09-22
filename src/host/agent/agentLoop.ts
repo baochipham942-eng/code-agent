@@ -36,7 +36,7 @@ import { getAutoCompressor } from '../context/autoCompressor';
 import { CompressionState } from '../context/compressionState';
 import { CompressionPipeline } from '../context/compressionPipeline';
 import { stampAssistantMessageCorrelation } from '../session/assistantCorrelation';
-import { clearStreamProgress, startForegroundStallWatch, streamProgressOf, type StallPhase } from './stallObserver';
+import { clearStreamProgress, stallClockHeld, startForegroundStallWatch, streamProgressOf, type StallPhase } from './stallObserver';
 import { broadcastToRenderer } from '../platform/windowBridge';
 import { IPC_CHANNELS } from '../../shared/ipc';
 
@@ -343,7 +343,7 @@ export class AgentLoop {
     }
   }
 
-  private stallSnapshot(): { progressKey: string; phase: StallPhase; detail: string } {
+  private stallSnapshot(): { progressKey: string; phase: StallPhase; detail: string; held: boolean } {
     const messages = this.ctx.messages;
     let toolCalls = 0;
     for (const message of messages) toolCalls += message.toolCalls?.length ?? 0;
@@ -351,11 +351,12 @@ export class AgentLoop {
     const textLength = typeof last?.content === 'string' ? last.content.length : 0;
     const streamed = this.ctx.turn.lastStreamedContent?.length ?? 0;
     const progressKey = `${messages.length}:${textLength}:${toolCalls}:${streamed}:${streamProgressOf(this.ctx.sessionId)}`;
+    const held = stallClockHeld(this.ctx.sessionId);
     const lastCall = last?.toolCalls?.[last.toolCalls.length - 1];
     if (last?.role === 'assistant' && lastCall?.name) {
-      return { progressKey, phase: 'tool', detail: lastCall.name };
+      return { progressKey, phase: 'tool', detail: lastCall.name, held };
     }
-    return { progressKey, phase: 'model', detail: '等模型回响' };
+    return { progressKey, phase: 'model', detail: '等模型回响', held };
   }
 
   private async injectPersistentRoleContext(userMessage: string): Promise<string> {

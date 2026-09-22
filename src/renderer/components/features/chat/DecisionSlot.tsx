@@ -284,7 +284,8 @@ export function DecisionSlot({
     if (requestSignature) setCollapsed(false);
   }, [requestSignature]);
 
-  if (decisionCount === 0) return null;
+  // 有待决卡时不挂这行。等审批或提问的时间由 host 停表，不算模型卡住。
+  if (decisionCount === 0) return <StallNoticeLine />;
 
   return (
     <section
@@ -331,7 +332,6 @@ export function DecisionSlot({
           onResolved={setResolvedTurnId}
         />
       ) : null}
-      <StallNoticeLine hidden={Boolean(current || userQuestion || planApproval || interruptionVisible)} />
     </section>
   );
 }

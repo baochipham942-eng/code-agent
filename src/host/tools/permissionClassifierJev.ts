@@ -18,6 +18,7 @@ import { createLogger } from '../services/infra/logger';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
 import { isProtectedWritePath, isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
+import { resolveCanonicalRunPath } from '../runtime/runContext';
 import {
   PERMCLASS_APPROVE_THRESHOLDS,
   PERMCLASS_QUESTIONS,
@@ -110,11 +111,15 @@ function buildJevState(toolName: string, args: Record<string, unknown>, context:
 
 let jevKeyMissingWarned = false;
 
-/** 收集参数里的路径形字符串（顶层/数组/嵌套对象逐项），解析为绝对路径。 */
+/** 收集参数里的路径形字符串（顶层/数组/嵌套对象逐项），解析为真实路径。 */
 function resolveArgPaths(args: Record<string, unknown>, workingDirectory: string): string[] {
   const candidates: string[] = [];
   const visit = (value: unknown) => {
-    if (typeof value === 'string' && (value.includes('/') || value.startsWith('~') || value.startsWith('.'))) {
+    // 含 '/' 或 '\'（Windows 绝对路径）、'~' / '.' 开头、平台绝对路径，以及任何
+    // 不含空格的短串（'evil.pdf' 这类裸文件名也要过符号链接解析，ai-review R5）。
+    if (typeof value === 'string' && value.length > 0
+      && (value.includes('/') || value.includes('\\') || value.startsWith('~') || value.startsWith('.')
+        || path.isAbsolute(value) || !value.includes(' '))) {
       candidates.push(value);
     } else if (Array.isArray(value)) {
       for (const item of value) visit(item);
@@ -125,27 +130,31 @@ function resolveArgPaths(args: Record<string, unknown>, workingDirectory: string
   for (const value of Object.values(args)) visit(value);
   return candidates.map((candidate) => {
     const expanded = candidate.startsWith('~') ? os.homedir() + candidate.slice(1) : candidate;
-    return path.isAbsolute(expanded) ? path.normalize(expanded) : path.resolve(workingDirectory, expanded);
+    const resolved = path.isAbsolute(expanded) ? path.normalize(expanded) : path.resolve(workingDirectory, expanded);
+    // 跟随符号链接（与规则层 resolveCandidatePath 同一原语）——工作区内的
+    // 链接指向区外时按区外判（ai-review R5）。
+    return resolveCanonicalRunPath(resolved);
   });
 }
 
 function isWithinAny(candidate: string, roots: string[]): boolean {
   return roots.some((root) => {
-    const resolved = path.resolve(root);
-    return candidate === resolved || candidate.startsWith(resolved + path.sep);
+    return candidate === root || candidate.startsWith(root + path.sep);
   });
 }
 
+// 每次调用重读：tmpdir 受环境影响，且避免模块加载期固化（ai-review R5 Nit）。
 const JEV_WRITE_ROOTS = () => [os.tmpdir(), '/tmp', '/private/tmp'];
 
 /**
  * 确定性边界预检：命中凭据目录、受保护写路径，或落在工作目录与临时目录之外，
- * 一律 ask 不问 Jev——边界判断不外包给第三方模型（ai-review R1/R3/R4）。
+ * 一律 ask 不问 Jev——边界判断不外包给第三方模型（ai-review R1/R3/R4/R5）。
  * 正文内容命中属于偏严误报，方向安全（ask 不是 deny），保持不变。
  */
 function hitsDeterministicBoundary(args: Record<string, unknown>, workingDirectory: string): boolean {
   const resolvedPaths = resolveArgPaths(args, workingDirectory);
-  const allowedRoots = [path.resolve(workingDirectory), ...JEV_WRITE_ROOTS().map((root) => path.resolve(root))];
+  const allowedRoots = [workingDirectory, ...JEV_WRITE_ROOTS()]
+    .map((root) => resolveCanonicalRunPath(path.resolve(root)));
   return resolvedPaths.some((resolved) =>
     isSensitiveCredentialPath(resolved)
     || isProtectedWritePath(resolved, { projectRoot: workingDirectory })

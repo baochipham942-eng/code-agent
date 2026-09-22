@@ -3,6 +3,7 @@ import type { TraceTurn } from '../../../src/shared/contract/trace';
 import {
   buildTurnFileChanges,
   isFileChangeCardOwnedNode,
+  mergeTurnDiffNotice,
 } from '../../../src/renderer/utils/turnDiffSummary';
 
 function turnWithWrite(
@@ -94,6 +95,21 @@ describe('buildTurnFileChanges — Bug 1: diff line count on truncated Write con
     turn.turnDiff = { turnId: 'turn-1', files: [] };
 
     expect(buildTurnFileChanges(turn)).toEqual([]);
+  });
+
+  it('keeps a completed Write visible when the missing-file notice has no authoritative diff', () => {
+    const turn = turnWithWrite(
+      { file_path: '/x/a.xlsx', content: 'sheet' },
+      { result: 'Created file: /x/a.xlsx' },
+    );
+    turn.turnDiff = mergeTurnDiffNotice(undefined, {
+      turnId: 'turn-1',
+      files: [],
+      missingFiles: ['/x/b.docx'],
+    });
+
+    expect(buildTurnFileChanges(turn).map((change) => change.filePath)).toEqual(['/x/a.xlsx']);
+    expect(turn.turnDiff.missingFiles).toEqual(['/x/b.docx']);
   });
 
   it('uses authoritative content_lines when content was truncated to a fragment', () => {

@@ -11,6 +11,8 @@ export const turnDiffZh = {
   confirmMessage: '将回滚本轮对 {count} 个文件的全部修改，当前内容会被 checkpoint 覆盖。',
   confirmAction: '撤销变更',
   newFileBadge: '新建',
+  missingTitle: '这几个文件没有写到磁盘',
+  missingHint: '跟我说再生成一次就行',
   expandDiff: '展开改动',
   collapseDiff: '收起改动',
   viewer: {
@@ -38,6 +40,8 @@ export const turnDiffEn: typeof turnDiffZh = {
   confirmMessage: 'This rolls back all changes to {count} files from this turn; current contents will be overwritten by the checkpoint.',
   confirmAction: 'Undo changes',
   newFileBadge: 'new',
+  missingTitle: 'These files were not written',
+  missingHint: 'Ask me to generate them again',
   expandDiff: 'Expand diff',
   collapseDiff: 'Collapse diff',
   viewer: {

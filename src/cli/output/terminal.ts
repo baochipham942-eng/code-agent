@@ -705,11 +705,21 @@ export class TerminalOutput {
         break;
 
       case 'turn_diff': {
+        const missing = event.data.missingFiles ?? [];
+        if (event.data.filesAuthoritative === false) {
+          if (missing.length > 0) {
+            process.stdout.write(`${chalk.dim(`  not written: ${missing.join(', ')}`)}\n`);
+          }
+          break;
+        }
         const added = event.data.files.reduce((total, file) => total + file.added, 0);
         const removed = event.data.files.reduce((total, file) => total + file.removed, 0);
         process.stdout.write(`${chalk.dim(
           `  ${event.data.files.length} files changed ${chalk.green(`+${added}`)} ${chalk.red(`-${removed}`)}`,
         )}\n`);
+        if (missing.length > 0) {
+          process.stdout.write(`${chalk.dim(`  not written: ${missing.join(', ')}`)}\n`);
+        }
         break;
       }
 

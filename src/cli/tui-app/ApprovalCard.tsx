@@ -8,13 +8,15 @@ import { Box, Text } from 'ink';
 import type { PermissionRequestData } from '../../host/tools/types';
 import { approvalOptions, approvalTarget, editDiffPreview, writeChangeSummary } from './approval';
 
-export function ApprovalCard({ request, selected, feedback, diffExpanded }: {
+export function ApprovalCard({ request, selected, feedback, diffExpanded, jevAdvisory }: {
   request: PermissionRequestData;
   selected: number;
   /** 非 null = No 附反馈输入模式（值为当前输入缓冲） */
   feedback: string | null;
   /** inline diff 是否展开（edit 类审批，Tab 切换） */
   diffExpanded: boolean;
+  /** 本轮有远端内容被 Jev 注入扫描标记（仅 advisory 提示行，不参与放行/拒绝） */
+  jevAdvisory?: boolean;
 }) {
   const options = approvalOptions(request);
   const danger = request.dangerLevel === 'danger' || request.type === 'dangerous_command';
@@ -36,6 +38,9 @@ export function ApprovalCard({ request, selected, feedback, diffExpanded }: {
         <Text dimColor>  {approvalTarget(request)}</Text>
       </Text>
       {request.reason ? <Text dimColor wrap="truncate-end">{request.reason}</Text> : null}
+      {jevAdvisory ? (
+        <Text color="yellow">⚠ recent remote content flagged as possible injection (advisory)</Text>
+      ) : null}
       {summary ? (
         <Text dimColor>
           {summary}

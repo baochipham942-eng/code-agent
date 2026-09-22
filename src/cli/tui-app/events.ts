@@ -129,6 +129,12 @@ export interface ChatState {
   contextPercent: number | null;
   /** 上一 turn 耗时 ms（task_complete.duration） */
   lastTurnMs: number | null;
+  /**
+   * 本轮有远端内容被 Jev 注入扫描标记（tool_call_end 的 metadata.jevInjectionScan.flagged）。
+   * 仅 advisory：审批卡据此加一行提示，绝不参与放行/拒绝判定；turn 结束（agent_complete/
+   * agent_cancelled）清零，语义是「recent」而非全 session 粘性。
+   */
+  jevInjectionAdvisory: boolean;
   /** 自增消息 id 计数（保证纯函数可复现） */
   nextId: number;
 }
@@ -210,6 +216,7 @@ export function createChatState(): ChatState {
     toolNames: [],
     contextPercent: null,
     lastTurnMs: null,
+    jevInjectionAdvisory: false,
     nextId: 1,
   };
 }
@@ -416,6 +423,13 @@ export function reduceAgentEvent(state: ChatState, event: AgentEvent, now: numbe
     case 'tool_call_end': {
       const data = event.data;
       if (!data?.toolCallId) return state;
+      // Jev advisory：远端内容的注入扫描标记随 ToolResult.metadata 进事件流，
+      // 这里只记账（审批卡提示行用），不参与任何判定。
+      const jevScan = data.metadata?.jevInjectionScan as { flagged?: unknown } | undefined;
+      const withJevAdvisory = (next: ChatState): ChatState =>
+        jevScan?.flagged === true && !next.jevInjectionAdvisory
+          ? { ...next, jevInjectionAdvisory: true }
+          : next;
       // 从后往前找包含该调用的分组（正常都是最近一组）
       for (let i = state.messages.length - 1; i >= 0; i--) {
         const message = state.messages[i];
@@ -438,9 +452,9 @@ export function reduceAgentEvent(state: ChatState, event: AgentEvent, now: numbe
             ? 'error'
             : 'done';
         const updated: ToolGroupMessage = { ...message, calls, status: groupStatus };
-        return { ...state, messages: [...state.messages.slice(0, i), updated, ...state.messages.slice(i + 1)] };
+        return withJevAdvisory({ ...state, messages: [...state.messages.slice(0, i), updated, ...state.messages.slice(i + 1)] });
       }
-      return state;
+      return withJevAdvisory(state);
     }
 
     case 'task_progress': {
@@ -512,7 +526,7 @@ export function reduceAgentEvent(state: ChatState, event: AgentEvent, now: numbe
     case 'agent_cancelled': {
       let next = sealThinking(state, now);
       next = sealAssistant(next);
-      return { ...next, running: false, activity: null, turnStartedAt: null };
+      return { ...next, running: false, activity: null, turnStartedAt: null, jevInjectionAdvisory: false };
     }
 
     case 'stream_usage': {

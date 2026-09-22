@@ -128,6 +128,73 @@ describe('tool_use 归组', () => {
   });
 });
 
+describe('jevInjectionAdvisory（Jev 注入扫描 advisory 标记）', () => {
+  it('tool_call_end 带 metadata.jevInjectionScan.flagged=true 时置位，未标记不复位', () => {
+    let state = createChatState();
+    expect(state.jevInjectionAdvisory).toBe(false);
+
+    state = reduceAll(state, [
+      ev('tool_call_start', { id: 'c1', name: 'web_fetch', arguments: { url: 'https://example.com' } }),
+      ev('tool_call_end', {
+        toolCallId: 'c1',
+        success: true,
+        output: 'page body',
+        metadata: { jevInjectionScan: { skipped: false, flagged: true, injection: 0.81, exfilRequest: 0.12 } },
+      }),
+    ]);
+    expect(state.jevInjectionAdvisory).toBe(true);
+
+    // 后续未标记的工具结果不复位（turn 内保持 recent 语义）
+    state = reduceAll(state, [
+      ev('tool_call_start', { id: 'c2', name: 'read_file', arguments: { path: '/a.ts' } }),
+      ev('tool_call_end', { toolCallId: 'c2', success: true, output: 'file a content' }),
+    ]);
+    expect(state.jevInjectionAdvisory).toBe(true);
+  });
+
+  it('未命中扫描/未标记的 tool_call_end 不置位', () => {
+    let state = createChatState();
+    state = reduceAll(state, [
+      ev('tool_call_start', { id: 'c1', name: 'web_fetch', arguments: { url: 'https://example.com' } }),
+      ev('tool_call_end', {
+        toolCallId: 'c1',
+        success: true,
+        output: 'page body',
+        metadata: { jevInjectionScan: { skipped: false, flagged: false, injection: 0.1, exfilRequest: 0.05 } },
+      }),
+      ev('tool_call_start', { id: 'c2', name: 'read_file', arguments: { path: '/a.ts' } }),
+      ev('tool_call_end', { toolCallId: 'c2', success: true, output: 'file a content' }),
+    ]);
+    expect(state.jevInjectionAdvisory).toBe(false);
+  });
+
+  it('agent_complete / agent_cancelled 清零 advisory（recent 只覆盖当前 turn）', () => {
+    let state = reduceAll(createChatState(), [
+      ev('tool_call_start', { id: 'c1', name: 'web_fetch', arguments: { url: 'https://example.com' } }),
+      ev('tool_call_end', {
+        toolCallId: 'c1',
+        success: true,
+        output: 'page body',
+        metadata: { jevInjectionScan: { skipped: false, flagged: true, injection: 0.9, exfilRequest: 0.2 } },
+      }),
+    ]);
+    expect(state.jevInjectionAdvisory).toBe(true);
+
+    state = reduceAgentEvent(state, ev('agent_complete'));
+    expect(state.jevInjectionAdvisory).toBe(false);
+
+    state = reduceAgentEvent(state, ev('tool_call_end', {
+      toolCallId: 'c9',
+      success: true,
+      output: 'orphan result',
+      metadata: { jevInjectionScan: { skipped: false, flagged: true, injection: 0.9, exfilRequest: 0.2 } },
+    }));
+    expect(state.jevInjectionAdvisory).toBe(true);
+    state = reduceAgentEvent(state, ev('agent_cancelled'));
+    expect(state.jevInjectionAdvisory).toBe(false);
+  });
+});
+
 describe('error / agent_complete', () => {
   it('error 事件产出 system 错误消息', () => {
     const state = reduceAgentEvent(createChatState(), ev('error', { message: 'boom' }));

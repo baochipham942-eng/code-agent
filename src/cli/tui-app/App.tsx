@@ -967,6 +967,7 @@ export function App({ agent, options, onExit }: {
   const approvalRows = approval
     ? Math.min(
       3 /* 标题+目标+reason */
+        + (state.jevInjectionAdvisory ? 1 : 0) /* Jev 注入扫描 advisory 提示行 */
         + (approvalFeedback !== null ? 1 : approvalOptions(approval.request).length)
         + (approvalDiffExpanded ? 20 : 2), /* 摘要行 + diff 预算（超出由 overflowY 裁） */
       Math.max(6, rows - 6),
@@ -1064,6 +1065,7 @@ export function App({ agent, options, onExit }: {
               selected={approvalIndex}
               feedback={approvalFeedback}
               diffExpanded={approvalDiffExpanded}
+              jevAdvisory={state.jevInjectionAdvisory}
             />
           )
           : modelPicker

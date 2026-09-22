@@ -214,7 +214,9 @@ describe('companionStore 双路由：账号优先、当次回落、老记录零�
   });
 
   it('⑤ 登录成功 ⇒ 票据/邮箱/用户 id 落进配对盘，access token 与密码绝不落盘（M4 守卫）', async () => {
-    harness.loginResult = { ok: true, ticket: 'neo1.fresh-ticket', userId: 'user-1', email: 'lin@example.com' };
+    // 替身多塞一个 accessToken 字段（比真实形状胖）：store 必须只挑 ticket/email/userId 落盘——
+    // 谁把 token 顺手写进持久化，这里的 not.toContain 立刻红。
+    harness.loginResult = { ok: true, ticket: 'neo1.fresh-ticket', userId: 'user-1', email: 'lin@example.com', accessToken: 'fake-access-token-sentinel' } as typeof harness.loginResult;
     harness.hostEmail = 'lin@example.com';
     const { store, writes } = storeWith(storageWith({ relay: RELAY_ROUTE, hostAccountEmail: 'lin@example.com' }));
     await store.getState().hydrate();
@@ -228,6 +230,7 @@ describe('companionStore 双路由：账号优先、当次回落、老记录零�
     expect(store.getState().account).toEqual({ email: 'lin@example.com', userId: 'user-1' });
     // 密码与令牌不进任何一次落盘（token 没进 store，这里能搜的只有密码与票据之外的一切）。
     expect(JSON.stringify(writes)).not.toContain('super-secret-password');
+    expect(JSON.stringify(writes)).not.toContain('fake-access-token-sentinel');
     store.getState().pause();
   });
 

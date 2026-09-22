@@ -14,7 +14,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useRunControlStore } from '../../../stores/runControlStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
-import { useToast } from '../../../stores/uiStore';
+import { toast } from '../../../hooks/useToast';
 import { buildStreamRecoveryMessage } from '../../../utils/streamRecoveryMessage';
 import { humanizeInterruptedToolAction } from '../../../utils/streamInterruptionPresentation';
 import { Button } from '../../primitives';
@@ -91,7 +91,6 @@ const StreamInterruptionDecisionRow: React.FC<{
   onResolved: (turnId: string) => void;
 }> = ({ decision, sessionId, onResolved }) => {
   const { t } = useI18n();
-  const toast = useToast();
   const [isContinuing, setIsContinuing] = useState(false);
   const [isAbandoning, setIsAbandoning] = useState(false);
   const summary = interruptionSummary(decision.snapshot, decision.retryMessage, t);

@@ -553,11 +553,11 @@ export class MessageProcessor {
     if (wasMessagePersistedByContextAssembly(assistantMessage)) this.ctx.turn.resetStreamedContent();
     if (handoffTail.draft) {
       try {
-        getHandoffProposalService().create({
-          sessionId: this.ctx.sessionId,
-          sourceMessageId: assistantMessage.id,
-          ...handoffTail.draft,
-        });
+        // N-EVAL-FAILURE-AUTOHARVEST：隔离运行时（eval）走注入库回调，提案与消息落同一个库，
+        // 断言采集器才读得到（ai-review PR#2024 R5）；缺省走全局服务（产线不变）。
+        // 下列两语句同行为压缩成行是 max-lines 债务门所迫（本文件基线贴顶），勿拆行。
+        const proposalInput = { sessionId: this.ctx.sessionId, sourceMessageId: assistantMessage.id, ...handoffTail.draft };
+        if (this.ctx.persistHandoffProposal) this.ctx.persistHandoffProposal(proposalInput); else getHandoffProposalService().create(proposalInput);
       } catch (error) {
         logger.warn('[Handoff] Failed to create proposal from assistant tail', {
           error,

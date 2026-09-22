@@ -6,7 +6,7 @@
 import { useEffect, useCallback, useState } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { MemoryLearnedEvent, MemoryConfirmRequest } from '@shared/contract/memory';
-import { useUIStore } from '../stores/uiStore';
+import { toast } from './useToast';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 
@@ -52,7 +52,7 @@ const TYPE_LABELS: Record<string, string> = {
  * 监听 AI 学习事件，显示 toast，处理确认请求
  */
 export function useMemoryLearning() {
-  const showToast = useUIStore((state) => state.showToast);
+  const showToast = toast.show;
   const [pendingConfirms, setPendingConfirms] = useState<PendingMemoryConfirm[]>([]);
 
   /**

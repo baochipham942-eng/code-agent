@@ -13,7 +13,7 @@ import {
 import type { VoiceCallSummary, VoiceTokenUsage } from '@shared/contract/voice';
 import { estimateRealtimeVoiceCost } from '@shared/pricing/estimateRealtimeVoiceCost';
 import { useI18n } from '../../../hooks/useI18n';
-import { useUIStore } from '../../../stores/uiStore';
+import { toast } from '../../../hooks/useToast';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { Modal } from '../../primitives';
 
@@ -204,7 +204,7 @@ const LoadingState: React.FC<{ label: string }> = ({ label }) => (
 export const VoiceAuditDialog: React.FC<VoiceAuditDialogProps> = ({ sessionId, sessionTitle, onClose }) => {
   const { t } = useI18n();
   const labels = t.voiceAudit;
-  const showToast = useUIStore((state) => state.showToast);
+  const showToast = toast.show;
   const [calls, setCalls] = useState<VoiceCallListItem[] | null>(null);
   const [callsError, setCallsError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);

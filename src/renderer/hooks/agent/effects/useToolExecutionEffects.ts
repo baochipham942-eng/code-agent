@@ -20,6 +20,7 @@ import type { CapabilityGapNotice } from '../../../stores/capabilityGapStore';
 import { isAgentPointerEvent, useAgentPointerStore } from '../../../stores/agentPointerStore';
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
 import { buildAgentPointerEvent } from '../../../utils/agentPointer';
+import { mergeTurnDiffNotice } from '../../../utils/turnDiffSummary';
 
 const logger = createLogger('useAgent');
 
@@ -141,15 +142,7 @@ export function applyToolExecutionEvent(
         const targetMessage = messages.find((message) => message.id === event.data.turnId)
           ?? [...messages].reverse().find((message) => message.role === 'assistant');
         if (targetMessage) {
-          const previous = targetMessage.metadata?.turnDiff;
-          const incoming = event.data;
-          // 缺文件通告的 files 是空的。不能拿它盖掉这一轮已经记下的真实改动。
-          const turnDiff = incoming.missingFiles && incoming.files.length === 0 && previous
-            ? { ...previous, missingFiles: incoming.missingFiles }
-            : {
-                ...incoming,
-                ...(incoming.missingFiles ? {} : previous?.missingFiles ? { missingFiles: previous.missingFiles } : {}),
-              };
+          const turnDiff = mergeTurnDiffNotice(targetMessage.metadata?.turnDiff, event.data);
           deps.updateMessage(targetMessage.id, {
             metadata: { ...targetMessage.metadata, turnDiff },
           });

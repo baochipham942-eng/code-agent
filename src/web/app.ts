@@ -229,25 +229,14 @@ export function createApp(deps: CreateAppDeps): express.Express {
 
   // ── Screenshot proxy ────────────────────────────────────────────────
   // 绑定会话工作目录清单：/api/screenshot 与 /api/workspace/file 共用（后者放行会话内附件）。
-  // 短 TTL 缓存：多附件会话每张图一次请求，逐次 listSessions 会反复查库+触发后台云同步
-  // （ai-review PR#2030 Nit）；10s 内的新建会话目录顶多让新附件晚 10s 可预览，可接受。
-  const SESSION_WORKING_DIRECTORIES_CACHE_TTL_MS = 10_000;
-  let sessionWorkingDirectoriesCache: { at: number; directories: string[] } | null = null;
+  // 逐请求现取，不缓存——缓存会跨登出/换账号驻留旧用户的工作目录白名单（ai-review PR#2030）。
   const listSessionWorkingDirectories = async (): Promise<string[]> => {
-    if (
-      sessionWorkingDirectoriesCache
-      && Date.now() - sessionWorkingDirectoriesCache.at < SESSION_WORKING_DIRECTORIES_CACHE_TTL_MS
-    ) {
-      return sessionWorkingDirectoriesCache.directories;
-    }
     const sessionManager = await tryGetSessionManager();
-    if (!sessionManager) return sessionWorkingDirectoriesCache?.directories ?? [];
+    if (!sessionManager) return [];
     const sessions = await sessionManager.listSessions({ limit: 500, includeArchived: true });
-    const directories = sessions
+    return sessions
       .map((session) => session.workingDirectory?.trim())
       .filter((workingDirectory): workingDirectory is string => Boolean(workingDirectory));
-    sessionWorkingDirectoriesCache = { at: Date.now(), directories };
-    return directories;
   };
 
   app.get('/api/screenshot', async (req: Request, res: Response) => {

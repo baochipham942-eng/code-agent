@@ -263,6 +263,9 @@ export class SessionManager implements Disposable {
       if (originKind === 'cron' || originKind === 'heartbeat' || originKind === 'channel') {
         permissionManager.markUnattendedSession(session.id);
       }
+      if (originKind === 'cron' || originKind === 'heartbeat') {
+        permissionManager.markUnattendedApprovalTerminal(session.id);
+      }
       permissionManager.initSessionMode(session.id);
     } catch (err) {
       logger.warn('[SessionManager] 初始化会话权限档失败（不阻塞）:', err instanceof Error ? err.message : String(err));

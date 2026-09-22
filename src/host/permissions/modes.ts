@@ -232,6 +232,8 @@ export class PermissionModeManager {
   private sessionModesLoaded = false;
   // 无人值守会话（cron/heartbeat 等 automation 来源）：权限档读取时强制钳到不高于 acceptEdits。
   private unattendedSessions: Set<string> = new Set();
+  /** cron/heartbeat：审批 60s 进终态。channel 只进 unattendedSessions，仍停车 24h。 */
+  private approvalTerminalSessions: Set<string> = new Set();
   /**
    * 云货架专家的首跑会话：本轮一律最严档，不看会话自己选的档。
    * 只在本轮有效（turn 结束即 clear），第二轮起回到会话档。
@@ -411,6 +413,15 @@ export class PermissionModeManager {
    */
   markUnattendedSession(sessionId: string): void {
     this.unattendedSessions.add(sessionId);
+  }
+
+  /** cron/heartbeat 专用。channel 不标，审批仍走 24h 停车。 */
+  markUnattendedApprovalTerminal(sessionId: string): void {
+    this.approvalTerminalSessions.add(sessionId);
+  }
+
+  isUnattendedApprovalTerminal(sessionId?: string): boolean {
+    return !!sessionId && this.approvalTerminalSessions.has(sessionId);
   }
 
   /**

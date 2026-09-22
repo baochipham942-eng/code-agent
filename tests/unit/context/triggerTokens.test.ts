@@ -3,10 +3,11 @@ import { getContextWindow } from '../../../src/shared/constants';
 import { AutoContextCompressor } from '../../../src/host/context/autoCompressor';
 import { PIPELINE_AUTOCOMPACT_OCCUPANCY } from '../../../src/host/context/compactionOccupancy';
 import {
-  LEGACY_FIXED_TRIGGER_TOKENS,
   resolveTriggerTokens,
   storedTriggerTokens,
 } from '../../../src/host/context/triggerTokens';
+
+const LEGACY_FIXED_TRIGGER_TOKENS = 100_000;
 
 // Catalog has no 64K window (nearby: qwen-vl-max 32768, default 128000).
 // 64K is the contract tier passed into the pure function. 200K and 1M are real catalog rows.

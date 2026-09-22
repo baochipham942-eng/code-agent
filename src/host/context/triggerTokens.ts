@@ -4,7 +4,7 @@
 
 import { PIPELINE_AUTOCOMPACT_OCCUPANCY } from './compactionOccupancy';
 
-export const LEGACY_FIXED_TRIGGER_TOKENS = 100_000;
+const LEGACY_FIXED_TRIGGER_TOKENS = 100_000;
 
 export function resolveTriggerTokens(
   contextWindow: number,

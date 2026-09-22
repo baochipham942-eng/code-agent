@@ -172,6 +172,13 @@ export type DimensionJudgePrescreen = (
 export interface DimensionJudgeOptions {
   /** Jev 初筛。缺省则全部维直接走生成式（既有行为）。 */
   prescreen?: DimensionJudgePrescreen;
+  /**
+   * 评测语境接电 requiresExpectation 三维（tool_choice / no_extra_changes / self_tested，
+   * 自 #1479 起恒短路 no_expectation）。缺省 = 短路原状，生产/默认评测行为逐字不变
+   * （N-JEV-DIMJUDGE-WIRE3 验收①③）。金标判据来源：题声明了 expectations 用之；
+   * 没声明用投影自带的 prompt + reference_solution（buildJudgeProjection 两项俱全）。
+   */
+  judgeExpectationDims?: boolean;
 }
 
 /** 初筛判决的 promptHash：该维问句表 + pin 模型，用来分辨问句漂移（与生成式指令段哈希分开）。 */
@@ -244,7 +251,8 @@ export async function judgeDimensions(
   const verdicts: Partial<Record<AiReviewDimension, AiReviewVerdict>> = {};
   const judgeable: AiReviewDimension[] = [];
   for (const dimension of input.dims) {
-    if (getAiReviewDimensionDefinition(dimension).requiresExpectation) {
+    // judgeExpectationDims 未开 ⇒ 三维保持 #1479 短路原状；开了 ⇒ 进初筛+升级路径（评测实验专用）。
+    if (getAiReviewDimensionDefinition(dimension).requiresExpectation && !options?.judgeExpectationDims) {
       verdicts[dimension] = unavailable(dimension, 'no_expectation', '这道题没有该维度的逐题期望');
     } else {
       judgeable.push(dimension);

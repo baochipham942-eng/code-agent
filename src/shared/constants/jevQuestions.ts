@@ -213,6 +213,8 @@ export const JEV_ROUTER_THRESHOLDS = {
   needsClarification: 0.9,
   /** destructive_intent ≥ 此值：禁止 simple/free 档（安全信号，只升档）。 */
   destructiveIntent: 0.7,
+} as const;
+
 export function buildJevCompactionQuestions(
   keys: readonly string[],
 ): Record<string, JevQuestionSpec> {

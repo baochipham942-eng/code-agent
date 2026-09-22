@@ -17,6 +17,10 @@ const hostReasonZh = {
   [HostReasonCode.PermissionClassifierFailed]: { summary: '安全检查暂时不可用，这次操作需要人工确认' },
   [HostReasonCode.PermissionDeniedByUser]: { summary: '你拒绝了{toolName}' },
   [HostReasonCode.PermissionDeniedNoApprovalUi]: { summary: '当前运行环境无法显示审批，{toolName}已按安全规则拒绝' },
+  [HostReasonCode.PermissionDeniedPeerOriginUnattended]: { summary: '{toolName}由 agent {senderAgentId} 的消息触发，无人值守下已按安全规则拒绝', detail: '其他 agent 转述的写入或执行，必须有你当场确认；请你在交互会话里直接发起这个操作。' },
+  [HostReasonCode.PermissionPeerOriginConfirmationRequired]: { summary: '{toolName}由其他 agent 的消息触发，需要你确认' },
+  [HostReasonCode.PermissionDeniedPeermsgLaunder]: { summary: '{toolName}与刚被拒绝的操作相同，由 agent {senderAgentId} 转述，已按权限洗白拦截', detail: '同一个动作你刚拒绝过一次。其他 agent 转述同一动作属于权限洗白，一律拦截；如果确实要做，请你本人直接发起并确认。' },
+  [HostReasonCode.PermissionLaunderRetryConfirmationRequired]: { summary: '{toolName}此前在本会话被拒绝过，再次发起需要你确认' },
   [HostReasonCode.PermissionDeniedTimeout]: { summary: '等待{toolName}审批超时，已按安全规则拒绝' },
   [HostReasonCode.PermissionDeniedCancelled]: { summary: '本次运行已取消，{toolName}没有执行' },
   [HostReasonCode.PermissionDeniedFailClosed]: { summary: '审批链路暂时不可用，{toolName}已按安全规则拒绝' },
@@ -36,6 +40,9 @@ const hostReasonZh = {
   [HostReasonCode.GoalAbortTimeBudget]: { summary: '目标还没完成，已停止继续执行', detail: '本次运行已达到时间上限。你可以重试，或新开会话继续。' },
   [HostReasonCode.GoalAbortUnreachable]: { summary: '当前条件下无法完成这个目标', detail: '请补充所需条件后重试，或新开会话调整目标。' },
   [HostReasonCode.GoalAbortRepeatedAction]: { summary: '执行陷入重复，已停止继续尝试', detail: '请调整目标后重试，或新开会话继续。' },
+  [HostReasonCode.OsSandboxApplied]: { summary: '命令将在操作系统沙箱中执行' },
+  [HostReasonCode.OsSandboxDegraded]: { summary: '操作系统沙箱未套用，将在无隔离环境下执行' },
+  [HostReasonCode.OsSandboxUnavailable]: { summary: '操作系统沙箱不可用，已拒绝执行' },
 } satisfies Record<HostReasonCode, { summary: string; detail?: string }>;
 
 const hostReasonEn: typeof hostReasonZh = {
@@ -53,6 +60,10 @@ const hostReasonEn: typeof hostReasonZh = {
   [HostReasonCode.PermissionClassifierFailed]: { summary: 'The safety check is temporarily unavailable, so this action needs manual confirmation' },
   [HostReasonCode.PermissionDeniedByUser]: { summary: 'You declined {toolName}' },
   [HostReasonCode.PermissionDeniedNoApprovalUi]: { summary: 'This environment cannot show approvals, so {toolName} was denied by the safety policy' },
+  [HostReasonCode.PermissionDeniedPeerOriginUnattended]: { summary: '{toolName} was triggered by a message from agent {senderAgentId} and was denied by the safety policy while unattended', detail: 'Writes or executions relayed by another agent need your explicit confirmation. Start this action yourself in an interactive session.' },
+  [HostReasonCode.PermissionPeerOriginConfirmationRequired]: { summary: '{toolName} was triggered by a message from another agent and needs your confirmation' },
+  [HostReasonCode.PermissionDeniedPeermsgLaunder]: { summary: '{toolName} matches an action you just denied, relayed by agent {senderAgentId}, and was blocked as permission laundering', detail: 'You already denied this exact action once. Another agent relaying it is permission laundering and is always blocked. If you really want it, start it yourself and confirm.' },
+  [HostReasonCode.PermissionLaunderRetryConfirmationRequired]: { summary: '{toolName} was denied earlier in this session and needs your confirmation to run again' },
   [HostReasonCode.PermissionDeniedTimeout]: { summary: 'Approval for {toolName} timed out and was denied by the safety policy' },
   [HostReasonCode.PermissionDeniedCancelled]: { summary: 'This run was cancelled, so {toolName} did not run' },
   [HostReasonCode.PermissionDeniedFailClosed]: { summary: 'The approval path is unavailable, so {toolName} was denied by the safety policy' },
@@ -72,6 +83,9 @@ const hostReasonEn: typeof hostReasonZh = {
   [HostReasonCode.GoalAbortTimeBudget]: { summary: 'The goal is unfinished, so execution stopped', detail: 'This run reached its time limit. Retry, or start a new session to continue.' },
   [HostReasonCode.GoalAbortUnreachable]: { summary: 'This goal cannot be completed under the current conditions', detail: 'Provide the missing requirements and retry, or adjust the goal in a new session.' },
   [HostReasonCode.GoalAbortRepeatedAction]: { summary: 'Execution became repetitive and was stopped', detail: 'Adjust the goal and retry, or start a new session to continue.' },
+  [HostReasonCode.OsSandboxApplied]: { summary: 'The command will run inside the OS sandbox' },
+  [HostReasonCode.OsSandboxDegraded]: { summary: 'The OS sandbox was not applied; the command will run without isolation' },
+  [HostReasonCode.OsSandboxUnavailable]: { summary: 'The OS sandbox is unavailable, so the command was refused' },
 };
 // agentError 域词条（AgentErrorCard 会话区错误卡片）—— zh/en 同文件相邻维护。
 // 卡片文案按 category 表驱动：title 一句话说发生了什么，suggestion 给建议动作，

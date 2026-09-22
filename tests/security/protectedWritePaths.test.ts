@@ -85,6 +85,17 @@ describe('PROTECTED_WRITE_PATHS fuse', () => {
     expect(existsSync(target)).toBe(false);
   }
 
+  function gapTargets(): string[] {
+    return [
+      path.join(workspace, '.code-agent', 'settings.json'),
+      path.join(workspace, '.code-agent', 'permissions.json'),
+      path.join(workspace, '.code-agent', 'hooks', 'hooks.json'),
+      path.join(workspace, '.code-agent', 'mcp.json'),
+      path.join(dataDir, 'permissions.json'),
+      path.join(dataDir, 'mcp.json'),
+    ];
+  }
+
   it('Edit(**) allow 后写数据目录 settings.json 仍弹审批卡', async () => {
     const target = path.join(dataDir, 'settings.json');
     await expectForcedAsk('Write', { file_path: target, content: 'pwned' }, target);
@@ -195,6 +206,36 @@ describe('PROTECTED_WRITE_PATHS fuse', () => {
     expect(permissionRequests).toHaveLength(0);
     expect(result.success).toBe(true);
     expect(await fs.readFile(target, 'utf8')).toBe('hello');
+  });
+
+  it('项目级 .code-agent 约束文件与用户级 permissions/mcp.json 写入强制审批', async () => {
+    for (const target of gapTargets()) {
+      permissionRequests = [];
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await expectForcedAsk('Write', { file_path: target, content: 'pwned' }, target);
+    }
+  });
+
+  it('bypassPermissions 档仍放行新增受保护路径（该档语义不变）', async () => {
+    for (const target of gapTargets()) {
+      permissionRequests = [];
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      const executor = buildExecutor({
+        permissionModeOverride: 'bypassPermissions',
+        requestPermission: async (request) => {
+          permissionRequests.push(request);
+          return false;
+        },
+      });
+      const result = await executor.execute(
+        'Write',
+        { file_path: target, content: 'bypass-ok' },
+        { sessionId: `protected-write-bypass-gap-${path.basename(target)}`, preApprovedTools: new Set(['Write']) },
+      );
+      expect(permissionRequests, `bypassPermissions must still write ${target}`).toHaveLength(0);
+      expect(result.success).toBe(true);
+      expect(await fs.readFile(target, 'utf8')).toBe('bypass-ok');
+    }
   });
 
   it('bypassPermissions 档仍放行受保护路径（该档语义不变）', async () => {

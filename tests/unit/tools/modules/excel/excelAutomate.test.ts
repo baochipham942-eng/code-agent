@@ -40,6 +40,8 @@ vi.mock('../../../../../src/host/tools/utils/pythonBridge', () => ({
 }));
 
 import { excelAutomateModule } from '../../../../../src/host/tools/modules/excel/excelAutomate';
+import { validateToolArgs } from '../../../../../src/host/agent/runtime/toolArgsValidator';
+import { excelAutomateSchema } from '../../../../../src/host/tools/modules/excel/excelAutomate.schema';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -493,6 +495,49 @@ describe('excelAutomateModule (native)', () => {
       const stages = events.map((e) => e.stage);
       expect(stages[0]).toBe('starting');
       expect(stages[stages.length - 1]).toBe('completing');
+    });
+  });
+
+  // 2026-09-18 夜跑回归：excelAutomate 的 sheet 参数同样是 union type（旧 schema
+  // 用 as unknown as string 强转绕过类型）。真实生产 schema 过 validateToolArgs。
+  describe('inputSchema validation (regression for the 2026-09-18 night run)', () => {
+    it('sheet 传工作表名（string）通过校验', () => {
+      const result = validateToolArgs('ExcelAutomate', excelAutomateSchema.inputSchema, {
+        action: 'read',
+        file_path: '/abs/data.xlsx',
+        sheet: '说明',
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it('sheet 传工作表索引（number）通过校验', () => {
+      const result = validateToolArgs('ExcelAutomate', excelAutomateSchema.inputSchema, {
+        action: 'read',
+        file_path: '/abs/data.xlsx',
+        sheet: 2,
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    // ai-review #1952 R1：handler 读的每个 args 键都要在 schema 里，否则 additionalProperties:false 会把合法调用拒掉。
+    it('validate_formulas 带 recalc:true（handler 读、文档列出的参数）通过校验', () => {
+      const result = validateToolArgs('ExcelAutomate', excelAutomateSchema.inputSchema, {
+        action: 'validate_formulas',
+        file_path: '/abs/data.xlsx',
+        recalc: true,
+      });
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('未识别参数名被拒，不再静默放行', () => {
+      const result = validateToolArgs('ExcelAutomate', excelAutomateSchema.inputSchema, {
+        action: 'read',
+        file_path: '/abs/data.xlsx',
+        sheets: ['说明'],
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.message).toContain('未识别的参数 `sheets`');
     });
   });
 });

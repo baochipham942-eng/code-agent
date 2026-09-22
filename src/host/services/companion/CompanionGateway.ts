@@ -1,13 +1,18 @@
 import { companionReadSchema, projectGrant, type CompanionRead } from '../../../shared/contract/companionLibrary';
+import type { CompanionPairedDevice } from '../../../shared/contract/companionManagement';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyCompanionSchema } from '../core/database/migrations/companion';
-import { companionCommandSchema } from '../../../shared/contract/companion';
+import { companionCommandSchema, isCompanionDecisionCommand, isCompanionDecisionOutcome } from '../../../shared/contract/companion';
 import { COMPANION_LIMITS } from '../../../shared/constants/companion';
+import { logCompanionRelayInfo, type CompanionRelayLogger } from './companionRelayConfig';
 import type {
   CompanionCommand,
   CompanionCommandRecord,
   CompanionDecision,
+  CompanionDecisionAnswer,
+  CompanionDecisionCommand,
+  CompanionDecisionKind,
   CompanionDeviceCredential,
   CompanionDevice,
   CompanionEvent,
@@ -38,6 +43,23 @@ function equalCredentialDigest(left: string, right: string): boolean {
   return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 }
 
+/**
+ * 逐帧流式 kind：手机在线时 message_delta 每个流式帧 publish 一次（routes/agent.ts 的原始
+ * 回调不走 eventBatcher），一轮 1500 chunk 的回答就是 1500 行 INFO——热路径上每帧还要多付一次
+ * redact+stringify+write。这类 kind 不逐帧进日志：首拍一行 + 轮末一行汇总（ai-review R3 Important）。
+ */
+const FRAME_STREAM_KINDS = new Set(['message_delta']);
+
+function parseDecisionAnswer(raw: unknown): CompanionDecisionAnswer | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined;
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as CompanionDecisionAnswer : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface CompanionDispatchResult {
   state?: 'accepted' | 'resolved' | 'rejected' | 'reconciling';
   result?: Record<string, unknown>;
@@ -46,11 +68,21 @@ export interface CompanionDispatchResult {
 export interface CompanionGatewayDeps {
   now?: () => number;
   sessionProject?: (sessionId: string) => string | null;
+  /** Live (not tombstoned) session. Deleted sessions must not reappear on /sync. */
+  sessionVisible?: (sessionId: string) => boolean;
   read?: (deviceId: string, request: CompanionRead) => Promise<unknown>;
   refreshDecisions?: () => void;
   dispatch?: (command: CompanionCommand) => CompanionDispatchResult;
   /** Must resolve through the same authoritative service used by the desktop. */
-  decide?: (command: Extract<CompanionCommand, { action: 'approval.respond' }>) => CompanionSubmitResult;
+  decide?: (command: CompanionDecisionCommand) => CompanionSubmitResult | Promise<CompanionSubmitResult>;
+  onPublish?: (event: CompanionEvent) => void;
+  onRevoke?: (deviceId: string) => void;
+  /**
+   * 结算链留痕（N-MOBILE-SEND-RESULT-LOST）：submit 结论、settleCommand 迁移、publish、
+   * 启动期回收计数。只打 action/commandId/state/code 一类枚举字段——payload 正文、凭据、
+   * 票据绝不进日志。
+   */
+  logger?: CompanionRelayLogger;
 }
 
 /**
@@ -66,6 +98,8 @@ export class CompanionGateway {
   /** Events published under an older epoch are unreachable: every device re-snapshots. */
   get epoch(): number { return this.currentEpoch; }
   private readonly refreshDecisions: () => void;
+  /** 逐帧流式 kind 的轮内记账（key = sessionId）：只攒帧数/字节数，不逐帧出日志行。 */
+  private readonly streamBursts = new Map<string, { kind: string; frames: number; bytes: number; firstSeq: number; lastSeq: number }>();
 
   constructor(private readonly db: BetterSqlite3.Database, private readonly deps: CompanionGatewayDeps = {}) {
     this.now = deps.now ?? Date.now;
@@ -75,25 +109,43 @@ export class CompanionGateway {
     this.ensureSchema();
     // Session mutations commit their DB effect and receipt in one transaction.
     // An interrupted reservation therefore has no committed session mutation.
-    this.db.prepare(`UPDATE companion_commands SET state = 'rejected', result_json = ?
-      WHERE state = 'reconciling' AND (action LIKE 'session.%' OR action = 'voice.transcribe')`).run(JSON.stringify({ code: 'COMPANION_INTERRUPTED' }));
+    // A reservation without a committed receipt means the host may have exited
+    // before the command resolved.  Recover every action: leaving message/run/
+    // approval rows reconciling strands the phone's durable pending command.
+    const interrupted = this.db.prepare(`UPDATE companion_commands SET state = 'rejected', result_json = ?
+      WHERE state = 'reconciling'`).run(JSON.stringify({ code: 'COMPANION_INTERRUPTED' }));
+    if (interrupted.changes > 0) {
+      // 手机 pending 卡死 + 宿主重启现场里，这一行是「上次会话结算悬挂」的直接证据。
+      this.deps.logger?.warn(`Companion gateway startup recovery: interrupted=${interrupted.changes} reconciling command(s)`);
+    }
+    // An approval claim belongs to the uncertain command reservation. Once that
+    // reservation is explicitly recovered, release the claim so a fresh
+    // command ID can retry the still-pending desktop approval.
+    this.db.prepare(`DELETE FROM companion_decision_claims
+      WHERE EXISTS (SELECT 1 FROM companion_commands c
+        WHERE c.action IN ('approval.respond', 'question.respond', 'plan.respond') AND c.state = 'rejected'
+          AND json_extract(c.result_json, '$.code') = 'COMPANION_INTERRUPTED'
+          AND EXISTS (SELECT 1 FROM companion_decisions d
+            WHERE d.request_id = companion_decision_claims.request_id
+              AND d.status = 'pending'))`).run();
     const row = this.db.prepare(`SELECT MAX(epoch) AS epoch FROM (
       SELECT COALESCE(MAX(epoch), 1) AS epoch FROM companion_events
       UNION ALL SELECT COALESCE(MAX(scope_epoch), 1) AS epoch FROM companion_devices
     )`).get() as SqlRow | undefined;
     this.currentEpoch = Math.max(1, Number(row?.epoch ?? 1));
+    this.pruneEvents();
   }
 
   registerDevice(device: CompanionDevice): void {
     this.db.prepare(`
-      INSERT INTO companion_devices (device_id, credential_hash, scope_json, scope_epoch, revoked_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO companion_devices (device_id, credential_hash, scope_json, scope_epoch, revoked_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(device_id) DO UPDATE SET
         credential_hash = excluded.credential_hash,
         scope_json = excluded.scope_json,
         scope_epoch = excluded.scope_epoch,
         revoked_at = excluded.revoked_at
-    `).run(device.deviceId, device.credentialHash, JSON.stringify(device.scope), device.scopeEpoch, device.revokedAt);
+    `).run(device.deviceId, device.credentialHash, JSON.stringify(device.scope), device.scopeEpoch, device.revokedAt, this.now());
   }
 
   issueDeviceCredential(scope: readonly string[], scopeEpoch = this.currentEpoch): CompanionDeviceCredential {
@@ -127,10 +179,16 @@ export class CompanionGateway {
       ? { deviceId: device.deviceId, scopeEpoch: device.scopeEpoch, scope: [...device.scope] } : null;
   }
 
-  pairedDevices(): { deviceId: string; scope: string[] }[] {
-    return (this.db.prepare(`SELECT d.device_id, d.scope_json FROM companion_identity_keys k
+  pairedDevices(): CompanionPairedDevice[] {
+    return (this.db.prepare(`SELECT d.device_id, d.scope_json, d.scope_epoch, d.created_at FROM companion_identity_keys k
       JOIN companion_devices d ON d.device_id = k.device_id WHERE d.revoked_at IS NULL`).all() as SqlRow[])
-      .map(row => ({ deviceId: String(row.device_id), scope: JSON.parse(String(row.scope_json)) as string[] }));
+      .map(row => ({
+        deviceId: String(row.device_id),
+        scope: JSON.parse(String(row.scope_json)) as string[],
+        // routeToken 派生的输入之一（companionRelayRouteToken.ts）：epoch 变 token 跟着变。
+        scopeEpoch: Number(row.scope_epoch),
+        ...(row.created_at == null ? {} : { pairedAt: Number(row.created_at) }),
+      }));
   }
 
   revokeDevice(deviceId: string, now = this.now()): number {
@@ -138,19 +196,60 @@ export class CompanionGateway {
     const changes = this.db.prepare(`
       UPDATE companion_devices SET revoked_at = ?, scope_epoch = ? WHERE device_id = ?
     `).run(now, nextEpoch, deviceId).changes;
-    if (changes > 0) this.currentEpoch = nextEpoch;
+    if (changes > 0) {
+      this.currentEpoch = nextEpoch;
+      try { this.deps.onRevoke?.(deviceId); } catch { /* push cleanup must not abort revoke */ }
+    }
     return changes;
   }
 
-  submit(rawCommand: unknown): CompanionSubmitResult {
+  isUsableDevice(deviceId: string): boolean {
+    const device = this.getDevice(deviceId);
+    return device?.revokedAt === null;
+  }
+
+  hasDevice(deviceId: string): boolean {
+    return this.getDevice(deviceId) != null;
+  }
+
+  activeDevices(): { deviceId: string }[] {
+    return (this.db.prepare('SELECT device_id FROM companion_devices WHERE revoked_at IS NULL').all() as SqlRow[])
+      .map(row => ({ deviceId: String(row.device_id) }));
+  }
+
+  async submit(rawCommand: unknown): Promise<CompanionSubmitResult> {
     const parsed = companionCommandSchema.safeParse(rawCommand);
-    if (!parsed.success) return { kind: 'rejected', reason: 'invalid_command' };
-    const command = parsed.data;
+    if (!parsed.success) {
+      this.logSubmit(null, { kind: 'rejected', reason: 'invalid_command' });
+      return { kind: 'rejected', reason: 'invalid_command' };
+    }
+    const result = await this.submitChecked(parsed.data);
+    this.logSubmit(parsed.data, result);
+    return result;
+  }
+
+  /** 结算链留痕：每个结论一行（accepted/replayed 为 info，rejected/conflict/approval_conflict 为 warn）。 */
+  private logSubmit(command: CompanionCommand | null, result: CompanionSubmitResult): void {
+    const logger = this.deps.logger;
+    if (!logger) return;
+    const reason = 'reason' in result && typeof result.reason === 'string' ? ` reason=${result.reason}` : '';
+    const line = `Companion gateway submit: action=${command?.action ?? 'invalid'} deviceId=${command?.deviceId ?? '-'} commandId=${command?.commandId ?? '-'} kind=${result.kind}${reason}`;
+    if (result.kind === 'rejected' || result.kind === 'conflict' || result.kind === 'approval_conflict') logger.warn(line);
+    else logCompanionRelayInfo(logger, line);
+  }
+
+  private async submitChecked(command: CompanionCommand): Promise<CompanionSubmitResult> {
     const device = this.getDevice(command.deviceId);
     if (!device) return { kind: 'rejected', reason: 'device_unknown' };
     if (device.revokedAt !== null) return { kind: 'rejected', reason: 'device_revoked' };
     if (command.scopeEpoch !== device.scopeEpoch) return { kind: 'conflict', reason: 'scope_epoch_mismatch' };
-    if (!command.sessionId || !(command.action === 'session.create' ? command.sessionId.startsWith('project:') && device.scope.includes(command.sessionId) : this.canAccessSession(command.deviceId, command.sessionId))) {
+    if (command.action === 'voice.transcribe') {
+      // 欢迎页转写按设备 grants 授权，不绑会话（N-MOBILE-WELCOME-VOICE）。有 sessionId 时仍要能看见那个会话。
+      if (!this.grants(command.deviceId).length) return { kind: 'rejected', reason: 'scope_denied' };
+      if (command.sessionId && !this.canAccessSession(command.deviceId, command.sessionId)) {
+        return { kind: 'rejected', reason: 'scope_denied' };
+      }
+    } else if (!command.sessionId || !(command.action === 'session.create' ? command.sessionId.startsWith('project:') && device.scope.includes(command.sessionId) : this.canAccessSession(command.deviceId, command.sessionId))) {
       return { kind: 'rejected', reason: 'scope_denied' };
     }
 
@@ -163,14 +262,15 @@ export class CompanionGateway {
     }
 
     const decide = this.decide;
-    if (command.action === 'approval.respond') {
+    const decisionCommand = isCompanionDecisionCommand(command) ? command : null;
+    if (decisionCommand) {
       // A separate companion-only CAS cannot authorize a desktop operation.
       if (!decide) return { kind: 'rejected', reason: 'unsupported_action' };
       this.refreshDecisions();
-      const current = this.getDecision(command.payload.requestId);
-      if (current?.sessionId !== command.sessionId) return { kind: 'rejected', reason: 'scope_denied' };
-      if (current.revision !== command.expectedRevision || current.status !== 'pending' ||
-          current.operationDigest !== command.payload.operationDigest) {
+      const current = this.getDecision(decisionCommand.payload.requestId);
+      if (current?.sessionId !== decisionCommand.sessionId) return { kind: 'rejected', reason: 'scope_denied' };
+      if (current.revision !== decisionCommand.expectedRevision || current.status !== 'pending' ||
+          current.operationDigest !== decisionCommand.payload.operationDigest) {
         return { kind: 'approval_conflict', current };
       }
     }
@@ -198,13 +298,13 @@ export class CompanionGateway {
       // `decide &&` only restates the guard above (an approval without an authority
       // already returned); it keeps the narrowing here without a non-null assertion,
       // and an impossible miss degrades to dispatch's HOST_UNAVAILABLE, not a crash.
-      if (decide && command.action === 'approval.respond') {
+      if (decide && decisionCommand) {
         // A different command ID must not redispatch an uncertain logical decision.
         const claimed = this.db.prepare(`INSERT OR IGNORE INTO companion_decision_claims
           (request_id, revision, operation_digest) VALUES (?, ?, ?)`).run(
-            command.payload.requestId, command.expectedRevision, command.payload.operationDigest);
+            decisionCommand.payload.requestId, decisionCommand.expectedRevision, decisionCommand.payload.operationDigest);
         if (!claimed.changes) return { kind: 'replayed', command: record };
-        const decision = decide(command);
+        const decision = await decide(decisionCommand);
         if (decision.kind !== 'accepted' && decision.kind !== 'replayed') {
           // The claim exists to stop a *second* command ID from redispatching a decision
           // whose outcome is unknown. A definite non-decision is not that: nothing was
@@ -214,7 +314,7 @@ export class CompanionGateway {
           // A same-commandId replay is still caught earlier, by the command row itself.
           this.db.prepare(`DELETE FROM companion_decision_claims
             WHERE request_id = ? AND revision = ? AND operation_digest = ?`).run(
-              command.payload.requestId, command.expectedRevision, command.payload.operationDigest);
+              decisionCommand.payload.requestId, decisionCommand.expectedRevision, decisionCommand.payload.operationDigest);
           record.state = 'rejected';
           record.result = { decision };
         } else {
@@ -233,7 +333,19 @@ export class CompanionGateway {
       // fall back to the in-memory record rather than handing back a null command.
       return { kind: 'replayed', command: this.getCommand(command.deviceId, command.commandId) ?? record };
     }
-    return { kind: 'accepted', command: this.getCommand(command.deviceId, command.commandId) ?? record };
+    return { kind: 'accepted', command: this.deliverCommand(record) };
+  }
+
+  // files.read 的分片 base64 是全仓唯一进 result_json 的二进制大对象：返回值携带 data 交给手机，
+  // 落库行随即擦掉 data，否则 companion_commands 无 TTL 无上限，按累计传输字节数永久膨胀
+  // （claude 复审 Important 3）。手机重放/重读路径不依赖旧行的 data（缓存未命中会以新
+  // commandId 重发 files.read，从磁盘重读）。
+  private deliverCommand(record: CompanionCommandRecord): CompanionCommandRecord {
+    const command = this.getCommand(record.deviceId, record.commandId) ?? record;
+    if (command.action === 'files.read' && command.state !== 'reconciling' && 'data' in command.result) {
+      this.db.prepare(`UPDATE companion_commands SET result_json = json_remove(result_json, '$.data') WHERE device_id = ? AND command_id = ?`).run(command.deviceId, command.commandId);
+    }
+    return command;
   }
 
   commitMutation(command: CompanionCommand, write: () => void, result: Record<string, unknown>): void {
@@ -241,18 +353,27 @@ export class CompanionGateway {
       const record = this.getCommand(command.deviceId, command.commandId);
       if (record?.state !== 'reconciling') throw new Error('COMPANION_COMMAND_CLOSED');
       write();
-      if (command.action === 'session.delete') this.db.prepare('INSERT OR IGNORE INTO companion_session_cleanup (session_id) VALUES (?)').run(command.sessionId);
+      if (command.action === 'session.delete') this.forgetSession(command.sessionId);
       this.settleCommand(command.deviceId, command.commandId, 'accepted', result);
     })();
   }
 
   settleCommand(deviceId: string, commandId: string, state: 'accepted' | 'rejected', result: Record<string, unknown>): void {
-    this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ?
-      WHERE device_id = ? AND command_id = ? AND state = 'reconciling'`).run(state, JSON.stringify(result), deviceId, commandId);
+    // RETURNING 顺带取回 action：迁移行自带这个字段，不必为了日志再查一遍命令（ai-review Nit 4）。
+    const settled = this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ?
+      WHERE device_id = ? AND command_id = ? AND state = 'reconciling' RETURNING action`)
+      .get(state, JSON.stringify(result), deviceId, commandId) as SqlRow | undefined;
+    // 只记真迁移（settled 行存在）：dispatch 异步结算悬挂时 submit 有行、这里永远无行——两行对不上就是断点。
+    if (settled && this.deps.logger) {
+      const code = typeof result.code === 'string' ? result.code : 'none';
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway settled: action=${String(settled.action ?? 'unknown')} deviceId=${deviceId} commandId=${commandId} state=${state} code=${code}`);
+    }
   }
 
-  pendingDecisions(): CompanionDecision[] {
-    const rows = this.db.prepare("SELECT request_id FROM companion_decisions WHERE status = 'pending'").all() as SqlRow[];
+  pendingDecisions(kind?: CompanionDecisionKind): CompanionDecision[] {
+    const rows = (kind
+      ? this.db.prepare("SELECT request_id FROM companion_decisions WHERE status = 'pending' AND COALESCE(kind, 'approval') = ?").all(kind)
+      : this.db.prepare("SELECT request_id FROM companion_decisions WHERE status = 'pending'").all()) as SqlRow[];
     return rows.flatMap(row => { const decision = this.getDecision(String(row.request_id)); return decision ? [decision] : []; });
   }
 
@@ -260,38 +381,114 @@ export class CompanionGateway {
     const device = this.getDevice(deviceId);
     if (device?.revokedAt !== null) return null;
     const command = this.getCommand(deviceId, commandId);
-    return command?.sessionId && (command.action === 'session.create' ? device.scope.includes(command.sessionId) : this.canAccessSession(deviceId, command.sessionId)) ? command : null;
+    const allowed = !command ? null
+      : command.action === 'voice.transcribe'
+        ? (this.grants(deviceId).length && (!command.sessionId || this.canAccessSession(deviceId, command.sessionId)) ? command : null)
+      : command.sessionId && (command.action === 'session.create' ? device.scope.includes(command.sessionId) : this.canAccessSession(deviceId, command.sessionId))
+        ? command : null;
+    return allowed ? this.deliverCommand(allowed) : null;
+  }
+
+  hasLiveDevices(): boolean {
+    return !!this.db.prepare('SELECT 1 FROM companion_devices WHERE revoked_at IS NULL LIMIT 1').get();
+  }
+
+  /** True when at least one unrevoked device canAccessSession(sessionId). */
+  hasLiveDeviceForSession(sessionId: string): boolean {
+    return this.activeDevices().some(device => this.canAccessSession(device.deviceId, sessionId));
+  }
+
+  forgetSession(sessionId: string): void {
+    // 会话终态兜底（ai-review R4 Nit 2）：以 message_delta 收尾的轮次等不到下一条非逐帧
+    // publish，汇总行永不输出且 map 条目滞留——删会话时先补出汇总、清掉账再删行。
+    this.flushStreamBurst(sessionId);
+    this.db.prepare('DELETE FROM companion_events WHERE session_id = ?').run(sessionId);
+    this.db.prepare('DELETE FROM companion_decisions WHERE session_id = ?').run(sessionId);
+    this.db.prepare('INSERT OR IGNORE INTO companion_session_cleanup (session_id) VALUES (?)').run(sessionId);
+  }
+
+  /** Batch form of isForgotten(): the list path filters a whole page without compiling SQL per session. */
+  forgottenSessions(): ReadonlySet<string> {
+    const rows = this.db.prepare('SELECT session_id FROM companion_session_cleanup').all() as { session_id: string }[];
+    return new Set(rows.map(row => row.session_id));
   }
 
   publish(sessionId: string | null, kind: string, payload: Record<string, unknown>, now = this.now()): CompanionEvent {
-    const seqRow = this.db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM companion_events WHERE epoch = ?').get(this.currentEpoch) as SqlRow;
+    this.pruneEvents(now);
+    const seq = this.nextSeq();
     const event: CompanionEvent = {
       eventId: randomUUID(),
       epoch: this.currentEpoch,
-      seq: Number(seqRow.seq) + 1,
+      seq: seq + 1,
       sessionId,
       kind,
       payload,
       createdAt: now,
     };
+    const frameStream = FRAME_STREAM_KINDS.has(kind);
+    if (!this.hasLiveDevices()) {
+      // 打点放在逐帧判定之后（ai-review R4 Nit 3）：逐帧 kind 连 skipped 也不逐帧打，
+      // 否则未来不经调用方预检的逐帧 publish 在无设备时会退回逐帧刷屏。非逐帧拍仍是
+      // 会话时间线上的轮末边界——先收口上一轮真实发布过的逐帧汇总，再留自己的 skipped 行。
+      if (frameStream) return { ...event, seq };
+      this.flushStreamBurst(sessionId);
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway publish skipped: kind=${kind} sessionId=${sessionId ?? '-'} seq=${event.seq} reason=no_live_devices`);
+      return { ...event, seq };
+    }
+    // 逐帧流式 kind 不逐帧记：同会话下一条非逐帧 publish 先收口上一轮的汇总行。
+    if (!frameStream) this.flushStreamBurst(sessionId);
+    const payloadJson = JSON.stringify(event.payload);
     this.db.prepare(`
       INSERT INTO companion_events (event_id, epoch, seq, session_id, kind, payload_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(event.eventId, event.epoch, event.seq, event.sessionId, event.kind, JSON.stringify(event.payload), event.createdAt);
+    `).run(event.eventId, event.epoch, event.seq, event.sessionId, event.kind, payloadJson, event.createdAt);
+    if (frameStream) {
+      this.noteStreamBurst(sessionId, kind, event.seq, Buffer.byteLength(payloadJson));
+    } else {
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway published: kind=${kind} sessionId=${sessionId ?? '-'} seq=${event.seq}`);
+    }
+    this.pruneEvents(now);
+    try { this.deps.onPublish?.(event); } catch { /* push enqueue must not abort the event log */ }
     return event;
+  }
+
+  /** 首拍一行（first=true，照本 PR LAN exchange 的首拍形状）；后续帧只记账。 */
+  private noteStreamBurst(sessionId: string | null, kind: string, seq: number, bytes: number): void {
+    const key = sessionId ?? '-';
+    const burst = this.streamBursts.get(key);
+    if (!burst) {
+      this.streamBursts.set(key, { kind, frames: 1, bytes, firstSeq: seq, lastSeq: seq });
+      logCompanionRelayInfo(this.deps.logger, `Companion gateway published: kind=${kind} sessionId=${sessionId ?? '-'} seq=${seq} first=true`);
+      return;
+    }
+    burst.frames += 1;
+    burst.bytes += bytes;
+    burst.lastSeq = seq;
+  }
+
+  /** 轮末汇总一行：帧数/字节数/seq 区间。没有开着的 burst 就是无事可做。 */
+  private flushStreamBurst(sessionId: string | null): void {
+    const key = sessionId ?? '-';
+    const burst = this.streamBursts.get(key);
+    if (!burst) return;
+    this.streamBursts.delete(key);
+    logCompanionRelayInfo(this.deps.logger, `Companion gateway stream burst: kind=${burst.kind} sessionId=${sessionId ?? '-'} frames=${burst.frames} bytes=${burst.bytes} seq=${burst.firstSeq}-${burst.lastSeq}`);
   }
 
   registerDecision(decision: CompanionDecision): void {
     this.db.prepare(`
       INSERT INTO companion_decisions
-        (request_id, session_id, revision, status, resolved_by, operation_digest)
-      VALUES (?, ?, ?, ?, ?, ?)
+        (request_id, session_id, revision, status, resolved_by, operation_digest, kind, outcome, answer_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(request_id) DO UPDATE SET
         session_id = excluded.session_id,
         revision = excluded.revision,
         status = excluded.status,
         resolved_by = excluded.resolved_by,
-        operation_digest = excluded.operation_digest
+        operation_digest = excluded.operation_digest,
+        kind = excluded.kind,
+        outcome = excluded.outcome,
+        answer_json = excluded.answer_json
     `).run(
       decision.requestId,
       decision.sessionId,
@@ -299,6 +496,9 @@ export class CompanionGateway {
       decision.status,
       decision.resolvedBy,
       decision.operationDigest,
+      decision.kind ?? 'approval',
+      decision.outcome ?? null,
+      decision.answer === undefined ? null : JSON.stringify(decision.answer),
     );
   }
 
@@ -329,6 +529,8 @@ export class CompanionGateway {
   canAccessSession(deviceId: string, sessionId: string): boolean {
     const device = this.getDevice(deviceId);
     if (device?.revokedAt !== null || sessionId.startsWith('project:')) return false;
+    if (this.isForgotten(sessionId)) return false;
+    if (this.deps.sessionVisible && !this.deps.sessionVisible(sessionId)) return false;
     if (device.scope.includes(sessionId)) return true;
     const project = this.deps.sessionProject?.(sessionId);
     return !!project && device.scope.includes(projectGrant(project));
@@ -342,9 +544,9 @@ export class CompanionGateway {
   async read(deviceId: string, raw: unknown): Promise<unknown> {
     if (!this.grants(deviceId).length || !this.deps.read) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
     const request = companionReadSchema.parse(raw);
-    if (request.kind === 'history' && !this.canAccessSession(deviceId, request.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
+    if ((request.kind === 'history' || request.kind === 'artifacts') && !this.canAccessSession(deviceId, request.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
     const result = await this.deps.read(deviceId, request);
-    if (!this.grants(deviceId).length || (request.kind === 'history' && !this.canAccessSession(deviceId, request.sessionId))) throw new Error('COMPANION_SCOPE_DENIED');
+    if (!this.grants(deviceId).length || ((request.kind === 'history' || request.kind === 'artifacts') && !this.canAccessSession(deviceId, request.sessionId))) throw new Error('COMPANION_SCOPE_DENIED');
     return result;
   }
 
@@ -363,12 +565,39 @@ export class CompanionGateway {
   getDecision(requestId: string): CompanionDecision | null {
     const row = this.db.prepare('SELECT * FROM companion_decisions WHERE request_id = ?').get(requestId) as SqlRow | undefined;
     if (!row) return null;
-    return { requestId: String(row.request_id), sessionId: String(row.session_id), revision: Number(row.revision), status: row.status as CompanionDecision['status'], resolvedBy: row.resolved_by == null ? null : String(row.resolved_by), operationDigest: row.operation_digest == null ? null : String(row.operation_digest) };
+    const answer = parseDecisionAnswer(row.answer_json);
+    return {
+      requestId: String(row.request_id),
+      sessionId: String(row.session_id),
+      revision: Number(row.revision),
+      status: row.status as CompanionDecision['status'],
+      resolvedBy: row.resolved_by == null ? null : String(row.resolved_by),
+      operationDigest: row.operation_digest == null ? null : String(row.operation_digest),
+      kind: row.kind === 'question' || row.kind === 'plan' ? row.kind : 'approval',
+      ...(isCompanionDecisionOutcome(row.outcome) ? { outcome: row.outcome } : {}),
+      ...(answer ? { answer } : {}),
+    };
   }
 
   private nextSeq(): number {
     const row = this.db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM companion_events WHERE epoch = ?').get(this.currentEpoch) as SqlRow;
     return Number(row.seq);
+  }
+
+  private isForgotten(sessionId: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM companion_session_cleanup WHERE session_id = ?').get(sessionId);
+  }
+
+  private pruneEvents(now = this.now()): void {
+    this.db.prepare('DELETE FROM companion_events WHERE created_at < ?').run(now - COMPANION_LIMITS.eventTtlMs);
+    this.db.prepare('DELETE FROM companion_events WHERE epoch < ?').run(this.currentEpoch);
+    const count = Number((this.db.prepare('SELECT COUNT(*) AS n FROM companion_events').get() as SqlRow).n);
+    if (count <= COMPANION_LIMITS.eventMaxRows) return;
+    this.db.prepare(`
+      DELETE FROM companion_events WHERE event_id IN (
+        SELECT event_id FROM companion_events ORDER BY created_at ASC, epoch ASC, seq ASC LIMIT ?
+      )
+    `).run(count - COMPANION_LIMITS.eventMaxRows);
   }
 
   private ensureSchema(): void {

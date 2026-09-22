@@ -1,4 +1,5 @@
 import { CompanionLibraryService } from '../host/services/companion/CompanionLibraryService';
+import { CompanionFileService } from '../host/services/companion/CompanionFileService';
 // ============================================================================
 // Web App Assembly - 纯 Express app 装配（无顶层副作用）
 // ============================================================================
@@ -24,6 +25,7 @@ import type { ConversationEnvelope } from '../shared/contract/conversationEnvelo
 import { formatError } from './helpers/utils';
 import { handleTempUpload, handleScreenshot } from './helpers/upload';
 import { dbAvailable, getPersistenceHealth } from './helpers/sessionCache';
+import { broadcastSSE } from './helpers/sse';
 
 // Middleware
 import {
@@ -55,17 +57,31 @@ import { createDevRouter } from './routes/dev';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createBackgroundRouter } from './routes/background';
 import { dispatchHostWebRoute } from '../host/services/capabilities/hostCapabilityContributions';
-import { getRegisteredSpeechTranscriber } from '../host/services/capabilities/hostCapabilityPorts';
+import { getRegisteredSpeechTranscriber, registerUserQuestionRoute } from '../host/services/capabilities/hostCapabilityPorts';
+import { companionTranscriptionSettlement } from '../shared/contract/speech';
 import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 import { createCompanionRouter } from './routes/companion';
 import { createCompanionProvisioningRouter } from './routes/companionProvisioning';
 import { CompanionGateway } from '../host/services/companion/CompanionGateway';
+import { companionApnsOutboxTransport } from '../host/services/companion/companionApnsProvider';
+import { CompanionPushOutbox, loadPushWrapKeySync } from '../host/services/companion/CompanionPushOutbox';
 import { projectCompanionEvent } from '../host/services/companion/projectCompanionEvent';
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
+import { CompanionQuestionService } from '../host/services/companion/CompanionQuestionService';
+import { CompanionPlanService, inspectionFromGatePlan, type CompanionPlanInspection } from '../host/services/companion/CompanionPlanService';
+import { deliverCompanionUserPlan, listCompanionUserPlans, noteCompanionUserPlan, takeCompanionUserPlanSettlement } from '../host/services/companion/companionUserPlan';
+import { companionSteerMessagePayload, steerOrQueueCompanionMessage } from '../host/services/companion/companionMessageSend';
+import { getPlanApprovalGate } from '../host/agent/planApproval';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
+import { startCompanionRelayAccountIfConfigured, startCompanionRelayIfConfigured } from '../host/services/companion/CompanionRelayClient';
+import { getAuthService } from '../host/services/auth/authService';
+import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
 import { loadLanIdentity } from '../host/services/companion/lanIdentity';
-import { COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
+import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
+import { projectScope } from '../shared/contract/companionLibrary';
+import { IPC_CHANNELS } from '../shared/ipc';
+import { broadcastToRenderer } from '../host/platform/windowBridge';
 import { getDatabase } from '../host/services/core/databaseService';
 import type { AgentRunBody } from './routes/agentBodySchemas';
 import { wireGenerativeUiEditProjectionInvalidation } from './helpers/generativeUiEditWiring';
@@ -103,6 +119,14 @@ export interface CreateAppDeps {
     sessionId: string;
     envelope: ConversationEnvelope;
   }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
+}
+
+function inspectCompanionPlan(planId: string): CompanionPlanInspection | null {
+  // 结算判定在 inspectionFromGatePlan：按结构化 resolutionOrigin 分流，机器终止
+  // （取消/超时/重启孤儿）不走 answered，宿主内部 feedback 不透给手机。
+  const plan = getPlanApprovalGate().getPlan(planId);
+  const inspection = plan ? inspectionFromGatePlan(plan) : null;
+  return inspection ?? takeCompanionUserPlanSettlement(planId);
 }
 
 /**
@@ -240,14 +264,46 @@ export function createApp(deps: CreateAppDeps): express.Express {
     publishCompanionEvent: (sessionId, kind, payload) => publishCompanionEvent?.(sessionId, kind, payload),
   }));
 
+  // 保活必须在数据库条件之外创建：runRegistry 不依赖 DB，数据库降级时运行中的长任务
+  // 仍要阻止空闲休眠；companion 配对源在 db 分支里接线，无 gateway 时安全归 false。
+  let inhibitorGateway: CompanionGateway | undefined;
+  // registerCompanionShutdown 只保存一个回调（webServer.ts 的 stopCompanion 单槽），
+  // 必须注册一次组合回调；companion 侧句柄在 db 分支里接线，未接线时安全跳过。
+  let companionLan: { stop(): Promise<void>; lanAdvertisement(): { endpoint: string; altEndpoint: string | null; candidates: string[] } | null } | undefined;
+  let companionRelay: { stop(): Promise<void>; routeFor(deviceId: string): import('../shared/contract/companionRelay').CompanionRelayRoute | null; connected: boolean } | undefined;
+  let companionRelayAbandoned = false;
+  let companionRelayAccount: ReturnType<typeof startCompanionRelayAccountIfConfigured> | null = null;
+  const idleSleepInhibitor = new IdleSleepInhibitor(
+    () => runRegistry.size > 0,
+    () => (inhibitorGateway?.pairedDevices().length ?? 0) > 0,
+    { logger },
+  );
+  idleSleepInhibitor.start();
+  let cleanupQuestionRoute: () => void = () => {};
+  deps.registerCompanionShutdown?.(async () => {
+    cleanupQuestionRoute();
+    await idleSleepInhibitor.stop();
+    companionRelayAbandoned = true;
+    await companionRelayAccount?.stop();
+    await companionRelay?.stop();
+    await companionLan?.stop();
+  });
+
   try {
     const db = getDatabase().getDb();
     if (db) {
-      let approvals: CompanionApprovalService | undefined;
       // gateway 与 library 互相依赖：gateway 的回调要调 library，library 又要拿 gateway。
       // 用一个 const 容器打破这个环，而不是先声明后赋值的 let——后者读起来像「可能被改」，
       // 实际只赋值一次，而且回调里读到的是同一个坑位。
-      const services: { library?: CompanionLibraryService } = {};
+      const services: {
+        library?: CompanionLibraryService;
+        files?: CompanionFileService;
+        push?: CompanionPushOutbox;
+        approvals?: CompanionApprovalService;
+        questions?: CompanionQuestionService;
+        plans?: CompanionPlanService;
+        relay?: { revoke(deviceId: string): void };
+      } = {};
       const requireLibrary = () => {
         const library = services.library;
         // 回调只在路由挂载之后才可能触发，那时 library 早已就位；真取不到就说明接线断了。
@@ -256,18 +312,38 @@ export function createApp(deps: CreateAppDeps): express.Express {
       };
       const gateway = new CompanionGateway(db, {
         sessionProject: id => requireLibrary().sessionProject(id),
-        read: (deviceId, request) => requireLibrary().read(deviceId, request),
-        refreshDecisions: () => approvals?.refresh(),
-        decide: command => approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' },
+        sessionVisible: id => requireLibrary().sessionExists(id),
+        read: (deviceId, request) => {
+          if (request.kind !== 'artifacts') return requireLibrary().read(deviceId, request);
+          if (!services.files) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
+          return Promise.resolve(services.files.list(request.sessionId));
+        },
+        refreshDecisions: () => { services.approvals?.refresh(); services.questions?.refresh(); services.plans?.refresh(); },
+        decide: command => {
+          if (command.action === 'approval.respond') return services.approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
+          if (command.action === 'question.respond') return services.questions?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
+          if (command.action === 'plan.respond') return services.plans?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
+          return { kind: 'rejected', reason: 'unsupported_action' };
+        },
+        onPublish: event => { services.push?.enqueue(event); void services.push?.flush(); },
+        onRevoke: deviceId => { services.push?.forgetDevice(deviceId); services.relay?.revoke(deviceId); companionRelayAccount?.revoke(deviceId); },
+        // 结算链留痕（N-MOBILE-SEND-RESULT-LOST）：submit 结论/settle 迁移/publish/启动回收。
+        logger,
         dispatch: (command) => {
+          if (command.action.startsWith('files.')) {
+            return services.files?.dispatch(command) ?? { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
+          }
           if (command.action === 'voice.transcribe') {
             // Registered by the voice-input capability. Absent = that capability is not
             // installed, so say so now rather than parking the phone on 'reconciling'.
             const transcribe = getRegisteredSpeechTranscriber();
             if (!transcribe) return { state: 'rejected', result: { code: 'COMPANION_TRANSCRIPTION_UNAVAILABLE' } };
             void transcribe({ ...command.payload, mode: 'cloud-only', source: 'composer', keepAudioOnFailure: false, durationSeconds: command.payload.durationMs / 1000 })
-              .then(result => gateway.settleCommand(command.deviceId, command.commandId, result.success && result.engine === 'groq' ? 'accepted' : 'rejected',
-                result.success && result.engine === 'groq' ? { text: result.text, engine: result.engine } : { code: 'COMPANION_TRANSCRIPTION_FAILED' }),
+              .then(result => {
+                // 真实错误码要带回去：手机按它分「这段没人说话」与「真失败」。
+                const settlement = companionTranscriptionSettlement(result);
+                return gateway.settleCommand(command.deviceId, command.commandId, settlement.state, settlement.result);
+              },
                 () => gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'COMPANION_TRANSCRIPTION_FAILED' }));
             return { state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } };
           }
@@ -278,14 +354,67 @@ export function createApp(deps: CreateAppDeps): express.Express {
           }
           if (command.action === 'run.cancel' && command.sessionId) {
             const target = runRegistry.resolve({ sessionId: command.sessionId });
-            if (!target) return { state: 'resolved', result: { alreadyTerminal: true } };
+            if (!target) {
+              // 恢复成 waiting 的 durable run 没有 handle（recoverDurable 只登记 owner + 心跳），
+              // resolve() 查不到。先同步探测有没有这种 run，有就在规范路径上终态化并补发
+              // agent_cancelled，再按 alreadyTerminal 结算——手机据此清 runId 收尾。
+              const waiting = runRegistry.findRecoveredWaitingRun({
+                sessionId: command.sessionId,
+                runId: command.payload.runId,
+              });
+              if (waiting) {
+                void runRegistry.terminalRecoveredWaitingRun({ runId: waiting.runId })
+                  .then((recovered) => {
+                    if (recovered && !recovered.joined) {
+                      publishCompanionEvent?.(command.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
+                    }
+                    gateway.settleCommand(command.deviceId, command.commandId, 'accepted', {
+                      alreadyTerminal: true,
+                      ...(recovered ? { runId: recovered.runId } : {}),
+                    });
+                  })
+                  .catch((error) => {
+                    logger.warn('Companion waiting-run cancel failed', error);
+                    gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'COMPANION_OPERATION_FAILED' });
+                  });
+                return { state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } };
+              }
+              return { state: 'resolved', result: { alreadyTerminal: true } };
+            }
             if (target.context.runId !== command.payload.runId) return { state: 'rejected', result: { code: 'RUN_NOT_ACTIVE' } };
             void target.cancel('user');
             return { state: 'accepted', result: { stopping: true, runId: target.context.runId } };
           }
-          if (command.action !== 'message.send' || !companionRun) return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
+          if (command.action !== 'message.send') return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
           const payload = command.payload as { text?: unknown };
           const text = typeof payload.text === 'string' ? payload.text : '';
+          const activeRun = command.sessionId ? runRegistry.resolve({ sessionId: command.sessionId }) : undefined;
+          if (activeRun && command.sessionId) {
+            const sessionId = command.sessionId;
+            // 手机插话与桌面 /api/interrupt 同一套事件：电脑聊天区靠这两个广播立刻
+            // 看到这条用户消息，不用等刷新（ai-review R8 Nit 3）。
+            broadcastSSE('agent:event', {
+              type: 'interrupt_start',
+              data: { message: '正在调整方向...', newUserMessage: text, runId: activeRun.context.runId },
+              sessionId,
+            });
+            void steerOrQueueCompanionMessage(activeRun, { sessionId, commandId: command.commandId, text })
+              .then(({ runId, outcome }) => {
+                broadcastSSE('agent:event', {
+                  type: 'interrupt_complete',
+                  data: { message: '已调整方向', newUserMessage: text, runId },
+                  sessionId,
+                });
+                gateway.publish(sessionId, 'message', companionSteerMessagePayload({
+                  commandId: command.commandId, text, runId, outcome,
+                }));
+                gateway.settleCommand(command.deviceId, command.commandId, 'accepted', { runId, outcome });
+              }, () => {
+                gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'RUN_START_FAILED' });
+              }).catch(() => logger.warn('Companion steer receipt unavailable'));
+            return { state: 'reconciling', result: { code: 'RUN_STARTING' } };
+          }
+          if (!companionRun) return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
           const activation = companionRun({
             version: 1,
             prompt: text,
@@ -301,42 +430,179 @@ export function createApp(deps: CreateAppDeps): express.Express {
         },
       });
       services.library = new CompanionLibraryService(gateway, id => !!runRegistry.resolve({ sessionId: id }));
-      void services.library.cleanup();
+      services.files = new CompanionFileService(db, gateway, id => requireLibrary().workspaceOf(id));
+      const apns = companionApnsOutboxTransport(process.env);
+      services.push = new CompanionPushOutbox(db, gateway, {
+        wrapKey: loadPushWrapKeySync(resolveCodeAgentDataDir()),
+        apnsKeyPath: apns.apnsKeyPath,
+        send: apns.send,
+      });
+      void services.library.cleanup().catch((error) => {
+        logger.warn('Companion deleted-session cleanup unavailable', error);
+      });
       if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
-        approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
+        // deliver 直传：respond 在 deliver 的同步窗口持有 phoneResponding（回声抑制，
+        // respond 自己会带 resolvedBy 发布结算），包一层 noteCompanionApprovalSettlement
+        // 恒不生效，是死代码（ai-review R8 Nit 2，已删）。
+        services.approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
       }
+      services.questions = new CompanionQuestionService(gateway);
+      cleanupQuestionRoute = registerUserQuestionRoute(services.questions);
+      services.plans = new CompanionPlanService(gateway, () => [
+        ...getPlanApprovalGate().getPendingPlans().flatMap(plan => {
+          const sessionId = plan.scope?.sessionId;
+          if (!sessionId) return [];
+          return [{ id: plan.id, sessionId, plan: plan.plan, agentName: plan.agentName, risk: plan.risk }];
+        }),
+        ...listCompanionUserPlans(),
+      ], (planId, approved, feedback, sessionId) => {
+        const gate = getPlanApprovalGate();
+        const plan = gate.getPlan(planId);
+        if (plan?.status === 'pending' && plan.scope?.sessionId === sessionId) {
+          const ok = approved ? gate.approve(planId, feedback) : gate.reject(planId, feedback?.trim() || 'Rejected');
+          return { success: ok };
+        }
+        return deliverCompanionUserPlan(planId, approved, feedback, sessionId, (id, prompt, options) => {
+          if (!companionRun) return Promise.reject(new Error('HOST_UNAVAILABLE'));
+          return companionRun({
+            sessionId: id,
+            prompt,
+            ...(options?.historyVisibility ? { historyVisibility: options.historyVisibility } : {}),
+            ...(options?.disableAutoAgent ? { disableAutoAgent: true } : {}),
+          });
+        });
+      }, inspectCompanionPlan);
       publishCompanionEvent = (sessionId, kind, payload) => {
+        const raw = payload.event && typeof payload.event === 'object' && !Array.isArray(payload.event)
+          ? payload.event as Record<string, unknown> : null;
+        const notedUserPlan = kind === 'tool_call_end' && raw ? noteCompanionUserPlan(sessionId, raw) : false;
+        if (!gateway.hasLiveDevices()) return;
+        // 成果复制只对「有已配对手机」的桌面发生：没配对过的用户每次成图都复制一份
+        // 进项目目录且无任何清理路径，是纯浪费（claude 复审 Important 2）。
+        // pairedDevices() 是 SQL JOIN，只在真的涉及成果的两个 kind 里才算（流式事件每帧都过这里）。
+        if (kind === 'artifact_write_started' && raw && gateway.pairedDevices().length > 0) {
+          services.files?.noteWrite(sessionId, String(raw.toolCallId ?? ''), String(raw.filePath ?? ''));
+        }
+        if (notedUserPlan) services.plans?.refresh();
         const projection = projectCompanionEvent(kind, payload.event);
-        if (!projection) return;
+        if (!projection) {
+          // 投影被丢弃的 tool_call_end 失败帧也要清掉 pendingWrites 记账，否则条目永久滞留。
+          if (kind === 'tool_call_end' && raw && typeof raw.toolCallId === 'string' && raw.success !== true) {
+            services.files?.discardWrite(sessionId, raw.toolCallId);
+          }
+          return;
+        }
         try {
           gateway.publish(sessionId, kind, { ...projection, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
+          if (kind === 'tool_call_end' && raw && typeof raw.toolCallId === 'string') {
+            if (raw.success === true && gateway.pairedDevices().length > 0) {
+              const artifact = services.files?.completeWrite(sessionId, raw.toolCallId);
+              if (artifact) gateway.publish(sessionId, 'artifact', { ...artifact, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
+            } else {
+              services.files?.discardWrite(sessionId, raw.toolCallId);
+            }
+          }
         } catch {
           // A companion projection failure must not abort the desktop engine.
           logger.warn('Companion event projection unavailable');
         }
       };
       app.use('/api/companion', createCompanionProvisioningRouter({ gateway }));
+      inhibitorGateway = gateway;
       const lan = new LanCompanionManager(gateway, () => loadLanIdentity(resolveCodeAgentDataDir()), async () => {
         const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
         return sessions.map(session => ({ id: session.id, title: session.title }));
-      }, () => requireLibrary().projects());
+      }, () => requireLibrary().projects(), services.push,
+      // relay 客户端是异步拨起的：手机问路由时它可能还没就绪——闭包读当前值，null 即 unavailable。
+      deviceId => companionRelay?.routeFor(deviceId) ?? null,
+      // 账号路由（不带凭据，N-COMPANION-RELAY-ACCOUNT-ROUTE-PHONE）：Host 登录了 Neo 账号才有；
+      // 手机拿这条路由 + 自己登录换的设备票据拨 relay，凭据不随路由下发。
+      deviceId => companionRelayAccount?.relayRoute(deviceId) ?? null,
+      // 跨网连接状态块（N-COMPANION-RELAY-ACCOUNT-DESKTOP-STATUS）：照 relayRoute 的方式注入取值回调。
+      // 「配没配中继」由 account === 'off' 表达（没配时账号通道自报 off）；缺省日志已由两条通道启动时打过。
+      () => ({
+        legacy: companionRelay?.connected ? 'connected' as const : 'disconnected' as const,
+        // 句柄还没赋上（db 分支未接线/启动瞬间）时按没开通报：那种场景下整个 manage 口都不存在。
+        ...(companionRelayAccount?.status() ?? { account: 'off' as const }),
+      }),
+      // 配对信息随 welcome 带电脑账号邮箱：手机登录页预填 + 「这台电脑属于谁」的账号一致性核对。
+      () => getAuthService().getCurrentUser()?.email ?? null,
+      // LAN 连接层留痕透传（N-MOBILE-SEND-RESULT-LOST）。
+      logger);
       // Both halves must hold: a phone is reachable for this session, AND this particular
       // card is renderable. With no approvals service there is no companion approval path.
-      hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && approvals?.canDisplay(request) === true;
-      handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => lan.manage(request));
+      hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && services.approvals?.canDisplay(request) === true;
+      /**
+       * manage 口的统一包装（N-COMPANION-RELAY-ACCOUNT-RECOVER）：pair.respond 是账号通道挂起配对
+       * 的表态，不归 LanCompanionManager（它只管 LAN 面），在这里截走；其余动作原样转发。
+       */
+      const manageCompanion = (request: unknown): Promise<unknown> => {
+        if (request && typeof request === 'object' && 'action' in request && (request as { action: unknown }).action === 'pair.respond') {
+          const { requestId, approve } = request as { requestId?: unknown; approve?: unknown };
+          if (typeof requestId !== 'string' || typeof approve !== 'boolean') {
+            return Promise.reject(new Error('COMPANION_INVALID_REQUEST'));
+          }
+          return Promise.resolve(companionRelayAccount
+            ? { kind: 'pairResponded' as const, ok: companionRelayAccount.respondPair(requestId, approve) }
+            : { kind: 'pairResponded' as const, ok: false });
+        }
+        return lan.manage(request);
+      };
+      handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => manageCompanion(request));
       // Web transport sends `companion:manage` to /api/companion/manage.
       // Keep an explicit route so browser/web builds can generate invitations
       // without relying on the generic IPC fallback (which is auth-gated).
       app.post('/api/companion/manage', async (req, res) => {
         try {
-          const result = await lan.manage(req.body);
+          const result = await manageCompanion(req.body);
           res.json(result);
         } catch (error) {
           res.status(500).json({ success: false, error: { code: 'COMPANION_MANAGE_FAILED', message: error instanceof Error ? error.message : String(error) } });
         }
       });
-      deps.registerCompanionShutdown?.(() => lan.stop());
+      companionLan = lan;
       void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
+      void startCompanionRelayIfConfigured({
+        dataDirectory: resolveCodeAgentDataDir(),
+        gateway,
+        loadIdentity: () => loadLanIdentity(resolveCodeAgentDataDir()),
+        logger,
+      }).then(client => {
+        if (!client) return;
+        if (companionRelayAbandoned) {
+          void client.stop();
+          return;
+        }
+        services.relay = client;
+        companionRelay = client;
+      }).catch((error) => logger.warn(
+        'Companion relay dial-out skipped',
+        error instanceof Error ? error.message : String(error),
+      ));
+      // 账号通道与上面的共享凭据通道并行（N-COMPANION-RELAY-ACCOUNT-BIND）：没登录就什么都不做。
+      // 找回配对（N-COMPANION-RELAY-ACCOUNT-RECOVER）的取值面全部走闭包现取——relay 客户端是异步
+      // 拨起的，LAN 面与共享凭据通道此刻可能还没就绪，回调触发时读到的是什么就是什么。
+      companionRelayAccount = startCompanionRelayAccountIfConfigured({
+        dataDirectory: resolveCodeAgentDataDir(),
+        gateway,
+        loadIdentity: () => loadLanIdentity(resolveCodeAgentDataDir()),
+        auth: getAuthService(),
+        logger,
+        // 新设备的授权范围与二维码邀请同一取值面：全部项目的 grant（截到邀请同款上限）。
+        pairScope: () => projectScope(requireLibrary().projects()).slice(0, COMPANION_LIMITS.maxScopeSessions),
+        // 旧路由（含共享凭据）从共享凭据通道取：账号通道自己没有共享凭据可下发。
+        pairLegacyRoute: deviceId => companionRelay?.routeFor(deviceId) ?? null,
+        // LAN 地址三件套与二维码邀请同源；LAN 面没起（还没配对设备）就缺席，手机仅中继可达。
+        pairLanAdvertisement: () => companionLan?.lanAdvertisement() ?? null,
+        hostAccountEmail: () => getAuthService().getCurrentUser()?.email ?? null,
+        onPairRequest: request => broadcastToRenderer(IPC_CHANNELS.COMPANION_PAIR_REQUEST, {
+          type: 'request', requestId: request.requestId, code: request.code, expiresAt: request.expiresAt,
+          scopeEmpty: request.scopeEmpty,
+        }),
+        onPairSettled: requestId => broadcastToRenderer(IPC_CHANNELS.COMPANION_PAIR_REQUEST, {
+          type: 'gone', requestId,
+        }),
+      });
       app.use('/companion', createCompanionRouter({
         gateway,
         authenticate: (deviceId, credential) => gateway.authenticateDevice(deviceId, credential),

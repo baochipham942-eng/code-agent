@@ -7,13 +7,13 @@ import type { IpcMain, AppWindow } from '../platform';
 import { broadcastToRenderer } from '../platform';
 import {
   IPC_CHANNELS,
-  IPC_DOMAINS,
-  type IPCRequest,
-  type IPCResponse,
   type ConnectorStatusSummary,
   type ConnectorEvent,
   type NativeConnectorInventoryItem,
 } from '../../shared/ipc';
+import type { DomainRouteHandlers } from '../../shared/ipc/domainRoutes';
+import { ConnectorSchemas, type ConnectorDomainRequest } from '../../shared/ipc/schemas/connector';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getConnectorRegistry } from '../connectors';
 import { ConnectorAuth } from '../connectors/oauth/connectorAuth';
 import { ConnectorOAuthStore } from '../connectors/oauth/connectorOAuthStore';
@@ -391,6 +391,7 @@ interface ConnectorOAuthProviderStatus {
   authorizationOpened?: boolean;
   blocked?: boolean;
   stale?: boolean;
+  installState?: 'failed';
   userName?: string;
   tenantName?: string;
 }
@@ -444,6 +445,7 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
         authMode,
         ...(cliAdminBlocked.has(descriptor.id) ? { blocked: true } : {}),
         ...(cliStatus.stale ? { stale: true } : {}),
+        ...(cliStatus.installState ? { installState: cliStatus.installState } : {}),
         ...(cliStatus.user?.name ? { userName: cliStatus.user.name } : {}),
         ...(cliStatus.user?.tenantName ? { tenantName: cliStatus.user.tenantName } : {}),
       };
@@ -706,6 +708,120 @@ export function stopConnectorStatusWatcher(): void {
   }
 }
 
+interface ConnectorRouteCtx {
+  getConfigService: () => ConfigService | null;
+  broadcast: () => Promise<void>;
+}
+
+/**
+ * connector 域单源路由表（RQ-183 续作·CONNECTOR 刀）：原 domain switch 15 个「data = …; break;」case 由脚本平移为
+ * 默认模式 handler（返回 data，装配器包 { success: true, data }）；闭包依赖 getConfigService / broadcast 改走装配 ctx。
+ * 未知 action 用装配器缺省（INVALID_ACTION `Unknown action: <action>`，与原文逐字一致）。抛错 code 判定链原样进
+ * resolveErrorCode：错误自带 string code 透传 → 管理员安装文案 → ADMIN_REQUIRED → 其余 INTERNAL_ERROR；message
+ * 由装配器取 Error.message / String(error)，与原 catch 一致。请求体为 null / 非对象时，原实现在 try 外解构抛错
+ * （IPC reject），现返回 INVALID_ACTION。
+ */
+const connectorHandlers: DomainRouteHandlers<ConnectorDomainRequest, ConnectorRouteCtx> = {
+  listStatuses: async (_ctx, _payload) => {
+    return await handleListStatuses();
+  },
+  listNativeInventory: async (ctx, _payload) => {
+    return handleListNativeInventory(ctx.getConfigService);
+  },
+  setNativeEnabled: async (ctx, payload) => {
+    return await handleSetNativeEnabled(
+      ctx.getConfigService,
+      payload as { id?: string; enabled?: boolean } | undefined,
+      ctx.broadcast,
+    );
+  },
+  retry: async (ctx, payload) => {
+    return await handleRetryConnector(
+      ctx.getConfigService,
+      (payload as { connectorId?: string } | undefined)?.connectorId,
+      ctx.broadcast,
+    );
+  },
+  probe: async (ctx, payload) => {
+    return await handleProbeConnector(
+      (payload as { connectorId?: string } | undefined)?.connectorId,
+      ctx.broadcast,
+    );
+  },
+  disconnect: async (ctx, payload) => {
+    return await handleDisconnectConnector(
+      ctx.getConfigService,
+      (payload as { connectorId?: string } | undefined)?.connectorId,
+      ctx.broadcast,
+    );
+  },
+  remove: async (ctx, payload) => {
+    return await handleRemoveConnector(
+      ctx.getConfigService,
+      (payload as { connectorId?: string } | undefined)?.connectorId,
+      ctx.broadcast,
+    );
+  },
+  repairPermission: async (ctx, payload) => {
+    return await handleRepairConnectorPermission(
+      ctx.getConfigService,
+      (payload as { connectorId?: string } | undefined)?.connectorId,
+      ctx.broadcast,
+    );
+  },
+  oauthStatus: async (_ctx, _payload) => {
+    return await listConnectorOAuthStatuses();
+  },
+  oauthSaveDescriptor: async (_ctx, payload) => {
+    return await handleConnectorOAuthSaveDescriptor(
+      payload as CustomOAuthDescriptorInput | undefined,
+    );
+  },
+  oauthConnect: async (_ctx, payload) => {
+    return await handleConnectorOAuthConnect(
+      payload as {
+        providerId?: string;
+        action?: string;
+        authMode?: 'oauth' | CliAuthMode;
+      } | undefined,
+    );
+  },
+  oauthSetSecret: async (_ctx, payload) => {
+    return await handleConnectorOAuthSetSecret(
+      payload as {
+        providerId?: string;
+        clientSecret?: string;
+        authMode?: 'oauth' | CliAuthMode;
+      } | undefined,
+    );
+  },
+  oauthCancelConnect: async (_ctx, payload) => {
+    return await handleConnectorOAuthCancelConnect(
+      payload as { providerId?: string } | undefined,
+    );
+  },
+  oauthDisconnect: async (_ctx, payload) => {
+    return await handleConnectorOAuthDisconnect(
+      payload as { providerId?: string } | undefined,
+    );
+  },
+  openApp: async (_ctx, payload) => {
+    return await handleOpenConnectorApp(
+      (payload as { connectorId?: string } | undefined)?.connectorId,
+    );
+  },
+};
+
+const connectorRoutes = defineDomainRoutes<ConnectorDomainRequest, ConnectorRouteCtx>(ConnectorSchemas.REQUEST, connectorHandlers, {
+  resolveErrorCode: (error) => (
+    error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+      ? error.code
+      : error instanceof Error && error.message === '需联系企业应用管理员安装'
+        ? 'ADMIN_REQUIRED'
+        : undefined
+  ),
+});
+
 export function registerConnectorHandlers(
   ipcMain: IpcMain,
   getMainWindow: () => AppWindow | null,
@@ -715,117 +831,8 @@ export function registerConnectorHandlers(
 
   const broadcast = () => pollAndBroadcastConnectorStatuses(getMainWindow);
 
-  ipcMain.handle(IPC_DOMAINS.CONNECTOR, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action } = request;
-
-    try {
-      let data: unknown;
-
-      switch (action) {
-        case 'listStatuses':
-          data = await handleListStatuses();
-          break;
-        case 'listNativeInventory':
-          data = handleListNativeInventory(getConfigService);
-          break;
-        case 'setNativeEnabled':
-          data = await handleSetNativeEnabled(
-            getConfigService,
-            request.payload as { id?: string; enabled?: boolean } | undefined,
-            broadcast,
-          );
-          break;
-        case 'retry':
-          data = await handleRetryConnector(
-            getConfigService,
-            (request.payload as { connectorId?: string } | undefined)?.connectorId,
-            broadcast,
-          );
-          break;
-        case 'probe':
-          data = await handleProbeConnector(
-            (request.payload as { connectorId?: string } | undefined)?.connectorId,
-            broadcast,
-          );
-          break;
-        case 'disconnect':
-          data = await handleDisconnectConnector(
-            getConfigService,
-            (request.payload as { connectorId?: string } | undefined)?.connectorId,
-            broadcast,
-          );
-          break;
-        case 'remove':
-          data = await handleRemoveConnector(
-            getConfigService,
-            (request.payload as { connectorId?: string } | undefined)?.connectorId,
-            broadcast,
-          );
-          break;
-        case 'repairPermission':
-          data = await handleRepairConnectorPermission(
-            getConfigService,
-            (request.payload as { connectorId?: string } | undefined)?.connectorId,
-            broadcast,
-          );
-          break;
-        case 'oauthStatus':
-          data = await listConnectorOAuthStatuses();
-          break;
-        case 'oauthSaveDescriptor':
-          data = await handleConnectorOAuthSaveDescriptor(
-            request.payload as CustomOAuthDescriptorInput | undefined,
-          );
-          break;
-        case 'oauthConnect':
-          data = await handleConnectorOAuthConnect(
-            request.payload as {
-              providerId?: string;
-              action?: string;
-              authMode?: 'oauth' | CliAuthMode;
-            } | undefined,
-          );
-          break;
-        case 'oauthSetSecret':
-          data = await handleConnectorOAuthSetSecret(
-            request.payload as {
-              providerId?: string;
-              clientSecret?: string;
-              authMode?: 'oauth' | CliAuthMode;
-            } | undefined,
-          );
-          break;
-        case 'oauthCancelConnect':
-          data = await handleConnectorOAuthCancelConnect(
-            request.payload as { providerId?: string } | undefined,
-          );
-          break;
-        case 'oauthDisconnect':
-          data = await handleConnectorOAuthDisconnect(
-            request.payload as { providerId?: string } | undefined,
-          );
-          break;
-        case 'openApp':
-          data = await handleOpenConnectorApp(
-            (request.payload as { connectorId?: string } | undefined)?.connectorId,
-          );
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      const errorCode = error && typeof error === 'object' && 'code' in error
-        && typeof error.code === 'string'
-        ? error.code
-        : error instanceof Error && error.message === '需联系企业应用管理员安装'
-          ? 'ADMIN_REQUIRED'
-          : 'INTERNAL_ERROR';
-      return {
-        success: false,
-        error: { code: errorCode, message: error instanceof Error ? error.message : String(error) },
-      };
-    }
-  });
+  installDomainRoutes(ipcMain, connectorRoutes, { getConfigService, broadcast });
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）
+registerConnectorHandlers.routes = connectorRoutes;

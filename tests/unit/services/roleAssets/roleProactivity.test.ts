@@ -47,7 +47,7 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
 const mockSettings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 
 vi.mock('../../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getSettings: () => mockSettings.value,
     getApiKey: () => '',
   }),

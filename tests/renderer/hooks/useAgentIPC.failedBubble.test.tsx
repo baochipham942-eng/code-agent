@@ -214,6 +214,7 @@ describe('useAgentIPC 失败气泡保留 + clientMessageId 幂等', () => {
         currentTurnMessageId: null,
         committedAssistantMessageIds: new Set<string>(),
         lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
       },
       {
         addMessage: (message) => {

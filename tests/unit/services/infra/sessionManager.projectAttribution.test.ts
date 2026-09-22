@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { UNSORTED_PROJECT_ID } from '../../../../src/shared/contract/project';
+import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '../../../../src/shared/contract/project';
 
 const sendMock = vi.fn();
 
@@ -110,5 +110,27 @@ describe('SessionManager project attribution', () => {
     await manager.updateSession(explicitSession.id, { workingDirectory: '/some/other/dir' });
 
     expect(dbMock.getSession(explicitSession.id)?.projectId).toBe('proj_explicit');
+  });
+
+  /**
+   * N-MOBILE-DEFAULT-PROJECT（09-17 zj032 真宿主）：手机在「未分类」里建的会话没有工作目录，首轮运行
+   * syncSessionWorkingDirectory 补上 <数据目录>-work，上面那条规则把它挪进自动项目 ⇒ 会话跑出手机的项目授权，
+   * 命令回执/事件/历史全被网关拒，手机卡在「还没收到电脑确认」。钉住的会话不重算，整列 metadata 替换也不抹钉子。
+   */
+  it('keeps a pinned unsorted session in unsorted when the runtime fills in a working directory', async () => {
+    const manager = await makeManager();
+    const pinned = await manager.createSession({
+      title: '新会话',
+      modelConfig: { provider: 'openai', model: 'gpt-5' },
+      metadata: { [SESSION_PROJECT_PINNED_METADATA_KEY]: true },
+    });
+    expect(dbMock.getSession(pinned.id)?.projectId).toBe(UNSORTED_PROJECT_ID);
+
+    await manager.updateSession(pinned.id, { metadata: { unrelated: 1 } });
+    await manager.updateSession(pinned.id, { workingDirectory: '/data-dir-work' });
+
+    expect(dbMock.getSession(pinned.id)?.projectId).toBe(UNSORTED_PROJECT_ID);
+    expect(ensureProjectForWorkspace).not.toHaveBeenCalledWith('/data-dir-work', expect.anything());
+    expect(dbMock.getSession(pinned.id)?.metadata).toMatchObject({ unrelated: 1, [SESSION_PROJECT_PINNED_METADATA_KEY]: true });
   });
 });

@@ -53,8 +53,12 @@ describe('catalog 标注消费（getModelScaffoldTier）', () => {
     expect(getModelScaffoldTier('gpt-5.5')).toBe('strong');
   });
 
-  it('已标注 lite 的弱档命中', () => {
-    expect(getModelScaffoldTier('LongCat-2.0-Preview')).toBe('lite');
+  it('已标注 lite 的弱档命中（LongCat-2.0 = Preview 的 GA 名，同档）', () => {
+    expect(getModelScaffoldTier('LongCat-2.0')).toBe('lite');
+  });
+
+  it('已下线的 LongCat-2.0-Preview 不再命中标注，回落 standard', () => {
+    expect(getModelScaffoldTier('LongCat-2.0-Preview')).toBe('standard');
   });
 
   it('未标注模型 → standard（fail-safe 默认）', () => {

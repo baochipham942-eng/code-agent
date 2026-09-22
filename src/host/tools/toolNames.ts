@@ -21,6 +21,12 @@ const CANONICAL_TOOL_ALIASES: Record<string, string> = {
   web_search: 'web_search',
   webfetch: 'web_fetch',
   web_fetch: 'web_fetch',
+  // Protocol schemas expose Read/Grep/Glob; citation extractor (and older
+  // permission fixtures) still switch on read_file/grep/glob.
+  read: 'read_file',
+  read_file: 'read_file',
+  grep: 'grep',
+  glob: 'glob',
 };
 
 /**

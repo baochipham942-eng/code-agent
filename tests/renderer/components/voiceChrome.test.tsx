@@ -114,6 +114,44 @@ describe('VoiceChrome 固定槽位', () => {
     expect(screen.getByTestId('voice-call-cost').textContent).not.toContain('—');
   });
 
+  it('设了分钟预算时显示已用/上限，未设时不出现预算槽', () => {
+    dialInto();
+    render(<VoiceChrome sessionId="session-1" />);
+    expect(screen.queryByTestId('voice-call-budget')).toBeNull();
+
+    act(() => {
+      useVoiceCallStore.getState().budgetApplied({
+        level: 'none',
+        usageRatio: 0.2,
+        minutesUsed: 1,
+        minutesLimit: 5,
+        costAmount: null,
+        costCurrency: null,
+        costLimit: null,
+      });
+    });
+    expect(screen.getByTestId('voice-call-budget').textContent).toContain(
+      zh.voice.live.budgetMinutes.replace('{used}', '1').replace('{limit}', '5'),
+    );
+  });
+
+  it('设了成本预算时同屏显示已用/上限', () => {
+    dialInto();
+    useVoiceCallStore.getState().budgetApplied({
+      level: 'warning',
+      usageRatio: 0.85,
+      minutesUsed: 2,
+      minutesLimit: null,
+      costAmount: 0.085,
+      costCurrency: 'CNY',
+      costLimit: 0.1,
+    });
+    render(<VoiceChrome sessionId="session-1" />);
+    expect(screen.queryByTestId('voice-call-budget')).toBeNull();
+    expect(screen.getByTestId('voice-call-cost').textContent).toContain('¥0.0850');
+    expect(screen.getByTestId('voice-call-cost').textContent).toContain('¥0.1000');
+  });
+
   it('在干活：统一显示“通话中 mm:ss”，不显示当前任务与剩余工作数，操作数为 2', () => {
     dialInto();
     const store = useVoiceCallStore.getState();

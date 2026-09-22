@@ -2,6 +2,8 @@ import type {
   EvalCaseListItem,
   EvalExperimentCaseDetail,
   EvalExperimentDetail,
+  EvalFeedbackPushRequest,
+  EvalFeedbackPushResult,
   EvalRunEvent,
   EvalRunPanelProbe,
   EvalRunRequest,
@@ -31,6 +33,7 @@ interface EvaluationRunIpcInvokeHandlers {
   [EVALUATION_CHANNELS.SAVE_CASE]: (request: SaveEvalCaseRequest) => Promise<SaveEvalCaseResult>;
   [EVALUATION_CHANNELS.HARVEST_PREVIEW]: (request: HarvestPreviewRequest) => Promise<HarvestPreviewResult>;
   [EVALUATION_CHANNELS.SAVE_ANNOTATION]: (request: SaveEvalAnnotationRequest) => Promise<SaveEvalAnnotationResult>;
+  [EVALUATION_CHANNELS.PUSH_FEEDBACK]: (request: EvalFeedbackPushRequest) => Promise<EvalFeedbackPushResult>;
   [EVALUATION_CHANNELS.LIST_ANNOTATIONS]: (request: { experimentId: string; caseId: string }) => Promise<ListEvalAnnotationsResult>;
   [EVALUATION_CHANNELS.SET_BASELINE]: (request: { experimentId: string }) => Promise<EvalBaselineSetResult>;
   [EVALUATION_CHANNELS.BASELINE_INFO]: () => Promise<EvalBaselineInfoResult>;

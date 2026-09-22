@@ -19,7 +19,7 @@ import { useAppStore } from '../stores/appStore';
 import { useAuthStore } from '../stores/authStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
-import { useUIStore } from '../stores/uiStore';
+import { toast } from '../hooks/useToast';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useWorkflowStore } from '../stores/workflowStore';
 import { getSessionStatusPresentation } from '../utils/sessionPresentation';
@@ -75,7 +75,7 @@ export const SessionActionsMenu: React.FC = () => {
   const workflowRuns = useWorkflowStore((s) => s.runs);
   const durableBackgroundTasks = useBackgroundTaskStore((s) => s.tasks);
   const user = useAuthStore((s) => s.user);
-  const showToast = useUIStore((s) => s.showToast);
+  const showToast = toast.show;
 
   const currentSession = sessions.find((s) => s.id === currentSessionId) || null;
   const canOpenReplay = canAccessFeature('telemetry.replay', user);

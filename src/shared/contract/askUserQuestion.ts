@@ -21,3 +21,6 @@ export function normalizeUserQuestionOption(option: UserQuestionOption): UserQue
 
 export const ASK_USER_QUESTION_DECLINED_OUTPUT =
   'Questions skipped by the user; continue with the information you already have, make reasonable defaults where decisions are required and state your assumptions in your response, and do not ask the same question again.';
+
+/** AskUserQuestion 无头回退的开头标记。文案已进夜跑库 result_summary，一字不改。 */
+export const ASK_USER_QUESTION_UNANSWERED_PREFIX = '[用户未响应 - CLI 模式无法交互]';

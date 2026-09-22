@@ -11,7 +11,10 @@
 // Slice 2 后台化：LoopController 仍是内存里的执行器（loop 本就跑在主进程单例上，
 // 切走/关会话不会被杀），这里只把生命周期**镜像**进 backgroundTaskLedger——
 // 登记 kind='loop' 的任务、每轮更新进度、终态发系统通知 + 入台账通知，
-// 让后台运行的 loop 在任务面板可见、跑完能提醒。App 重启恢复运行不在本切片范围。
+// 让后台运行的 loop 在任务面板可见、跑完能提醒。
+//
+// 刀2-c：`adopt(state, ledgerCtx)` 从 durable cursor 重建内存态并续跑——
+// dispatching/awaiting_reply 重跑当轮（at-least-once）；sleeping 按 nextRunAt 重排。
 // ============================================================================
 
 import { randomUUID } from 'node:crypto';
@@ -27,6 +30,18 @@ import {
 import type { TaskStatus } from '../../shared/contract/backgroundTask';
 import { buildTurnPrompt, detectDoneMarker, parseWaitMs } from './loopPrompt';
 import { captureLoopOwnerStamp } from './loopOwnership';
+import {
+  LOOP_DURABLE_PARENT_MISSING_CODE,
+  LOOP_INTERRUPTED_REASON,
+  LoopDurableLedgerLostError,
+  LoopDurableStartError,
+  getLoopDurableLedger,
+  isLoopDurableArmed,
+  waitForLoopDurableLedger,
+  type LoopAdoptLedgerContext,
+  type LoopEngineCursor,
+} from './loopDurableLedger';
+import { resolveLoopParentRunId } from './loopDurableParent';
 import { getTaskManager } from '../task';
 import { getSessionManager } from '../services/infra/sessionManager';
 import { getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
@@ -63,26 +78,57 @@ function formatLoopCadence(state: Pick<LoopRunState, 'intervalMs'>): string {
   return `每 ${hours} 小时`;
 }
 
+interface LoopTurnOrchestrator {
+  sendMessage(
+    prompt: string,
+    attachments: undefined,
+    options: {
+      inputSource: 'automation';
+      mode: 'normal';
+      historyVisibility: 'meta';
+      deniedToolNames: string[];
+      unattended: true;
+    },
+  ): Promise<unknown>;
+}
+
+interface LoopRuntimePorts {
+  getOrchestrator?(sessionId: string): LoopTurnOrchestrator | null;
+  readSession?(
+    sessionId: string,
+    lookback: number,
+  ): Promise<{ messages: Array<{ role: string; content: unknown }> } | null>;
+}
+
 export class LoopController {
   private loops = new Map<string, LoopRunState>();
   private aborted = new Set<string>();
   private timers = new Map<string, NodeJS.Timeout>();
   private waiters = new Map<string, () => void>();
 
-  start(config: LoopRunConfig): LoopRunState {
+  constructor(private readonly ports: LoopRuntimePorts = {}) {}
+
+  async start(config: LoopRunConfig): Promise<LoopRunState> {
     const id = `loop_${randomUUID()}`;
+    const wantsDurable = isLoopDurableArmed() && config.durable !== false;
+    const maxTurns = config.maxTurns && config.maxTurns > 0 ? config.maxTurns : LOOP_DEFAULT_MAX_TURNS;
     const state: LoopRunState = {
       id,
       sessionId: config.sessionId,
       prompt: config.prompt,
       intervalMs: config.intervalMs,
-      maxTurns: config.maxTurns && config.maxTurns > 0 ? config.maxTurns : LOOP_DEFAULT_MAX_TURNS,
+      maxTurns,
       until: config.until,
       handoffPrompt: config.handoffPrompt,
       turn: 0,
       status: 'running',
       startedAt: Date.now(),
+      durable: wantsDurable,
+      phase: 'sleeping',
     };
+    if (wantsDurable) {
+      await this.beginDurable(state);
+    }
     this.loops.set(id, state);
     this.registerTask(state);
     this.recordAutomationCreated(state);
@@ -100,6 +146,7 @@ export class LoopController {
       state.stopReason = reason;
       state.nextRunAt = undefined;
       this.finalizeTask(state);
+      void this.finalizeDurable(state);
     }
     return { ...state };
   }
@@ -123,14 +170,145 @@ export class LoopController {
     }
   }
 
+  /**
+   * 从 durable cursor 重建内存态并续跑。判据一律用内存状态,与 finish() 的终态
+   * 守卫同哲学:
+   * - 同 id 仍在跑:正常不该发生(租约在本进程手里,sweeper 不该认领);防御性
+   *   直接返回,不动账本、不复跑。
+   * - 同 id 已是终态(典型:心跳曾失联被 untrack,stop/finish 的 finalize 跳过,
+   *   行留 running 被 sweeper 认领回来):不许复活续跑;把认领来的行按内存终态
+   *   收口(stopped→cancelled、failed→failed、completed→completed)。
+   * - 否则:dispatching/awaiting_reply → 重跑当轮;sleeping → 按 nextRunAt 重排
+   *   (过期立即跑)。
+   */
+  adopt(state: LoopRunState, ledgerCtx: LoopAdoptLedgerContext): LoopRunState {
+    const existing = this.loops.get(state.id);
+    if (existing?.status === 'running') return { ...existing };
+    if (existing) {
+      const ledger = getLoopDurableLedger();
+      if (ledger) {
+        ledger.adopt(existing.id, ledgerCtx);
+        void this.finalizeDurable(existing);
+      }
+      return { ...existing };
+    }
+
+    const adopted: LoopRunState = {
+      ...state,
+      status: 'running',
+      durable: true,
+      phase: state.phase ?? 'sleeping',
+    };
+    this.loops.set(adopted.id, adopted);
+    const ledger = getLoopDurableLedger();
+    if (ledger) ledger.adopt(adopted.id, ledgerCtx);
+    this.registerTask(adopted);
+    void this.resumeLoop(adopted.id);
+    return { ...adopted };
+  }
+
   private finish(id: string, status: LoopStatus, reason: LoopStopReason, error?: string): void {
     const s = this.loops.get(id);
     if (!s) return;
+    // 终态守卫:stop() 或先到的 finish 已收口时,竞态迟到的 finish(典型:在途
+    // checkpoint 撞上 finalize 后抛错)不许覆写终态、不许重跑 finalizeTask。
+    if (s.status !== 'running') return;
     s.status = status;
     s.stopReason = reason;
     s.nextRunAt = undefined;
     if (error) s.error = error;
     this.finalizeTask(s);
+    void this.finalizeDurable(s);
+  }
+
+  private async beginDurable(state: LoopRunState): Promise<void> {
+    const ledger = getLoopDurableLedger() ?? await waitForLoopDurableLedger();
+    const parentRunId = resolveLoopParentRunId(state.sessionId);
+    if (!parentRunId) {
+      throw new LoopDurableStartError(
+        LOOP_DURABLE_PARENT_MISSING_CODE,
+        'Cannot start a durable loop because this session has no foreground run to parent it',
+      );
+    }
+    await ledger.begin({
+      loopId: state.id,
+      sessionId: state.sessionId,
+      parentRunId,
+      config: {
+        prompt: state.prompt,
+        maxTurns: state.maxTurns,
+        ...(state.intervalMs !== undefined ? { intervalMs: state.intervalMs } : {}),
+        ...(state.until ? { until: state.until } : {}),
+        ...(state.handoffPrompt ? { handoffPrompt: state.handoffPrompt } : {}),
+      },
+      startedAt: state.startedAt,
+    });
+  }
+
+  private engineCursor(state: LoopRunState): LoopEngineCursor {
+    const inFlight = state.phase === 'dispatching' || state.phase === 'awaiting_reply';
+    return {
+      schemaVersion: 1,
+      kind: 'loop',
+      config: {
+        prompt: state.prompt,
+        maxTurns: state.maxTurns,
+        ...(state.intervalMs !== undefined ? { intervalMs: state.intervalMs } : {}),
+        ...(state.until ? { until: state.until } : {}),
+        ...(state.handoffPrompt ? { handoffPrompt: state.handoffPrompt } : {}),
+      },
+      turn: inFlight ? Math.max(0, state.turn - 1) : state.turn,
+      phase: state.phase ?? 'sleeping',
+      ...(state.lastTurnAt !== undefined ? { lastTurnAt: state.lastTurnAt } : {}),
+      ...(state.nextRunAt !== undefined ? { nextRunAt: state.nextRunAt } : {}),
+    };
+  }
+
+  private async checkpointDispatched(state: LoopRunState): Promise<void> {
+    if (!state.durable) return; // legacy / --ephemeral：不挂账本，行为不变
+    const ledger = getLoopDurableLedger();
+    // durable 模式账本失联即 fail-closed：抛给 runLoop 收口 failed，不再花钱。
+    if (!ledger) throw new LoopDurableLedgerLostError(state.id);
+    await ledger.turnDispatched(state.id, { turn: state.turn, cursor: this.engineCursor(state) });
+  }
+
+  private async checkpointCompleted(
+    state: LoopRunState,
+    extra: { done?: boolean; waitMs?: number } = {},
+  ): Promise<void> {
+    if (!state.durable) return;
+    const ledger = getLoopDurableLedger();
+    if (!ledger) throw new LoopDurableLedgerLostError(state.id);
+    await ledger.turnCompleted(state.id, {
+      turn: state.turn,
+      cursor: this.engineCursor(state),
+      ...extra,
+    });
+  }
+
+  private async finalizeDurable(state: LoopRunState): Promise<void> {
+    const ledger = getLoopDurableLedger();
+    // untracked = 账本已失联（fence 或连续瞬时失败超阈值时已停写）；此处不再补写，
+    // durable 行留 running，租约到期由 sweeper 认领后走刀2-c 恢复 handler：
+    // 本进程内存已是终态 → adopt 按内存终态收口，否则续跑或降级 interrupted。
+    // SQLITE_BUSY 单次抖动不再 untrack（见 track() 的连续窗口容忍），不走这条路。
+    if (!ledger?.isTracked(state.id)) return;
+    const outcome = state.status === 'completed'
+      ? 'completed'
+      : state.status === 'stopped' ? 'cancelled' : 'failed';
+    try {
+      await ledger.finalize(state.id, {
+        outcome,
+        reason: state.error
+          ?? (state.stopReason === 'user' ? 'user' : state.stopReason)
+          ?? (outcome === 'failed' ? LOOP_INTERRUPTED_REASON : undefined),
+        turn: state.turn,
+        cursor: this.engineCursor(state),
+        finishedAt: Date.now(),
+      });
+    } catch (err) {
+      logger.warn(`finalizeDurable failed for ${state.id}:`, err);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -293,6 +471,25 @@ export class LoopController {
     }
   }
 
+  private async resumeLoop(id: string): Promise<void> {
+    const state = this.loops.get(id);
+    if (state?.status !== 'running') return;
+    const phase = state.phase ?? 'sleeping';
+    if (phase === 'sleeping') {
+      const remaining = (state.nextRunAt ?? 0) - Date.now();
+      if (remaining > 0) {
+        await this.sleep(id, remaining);
+        if (this.aborted.has(id) || this.loops.get(id)?.status !== 'running') {
+          this.aborted.delete(id);
+          this.timers.delete(id);
+          this.waiters.delete(id);
+          return;
+        }
+      }
+    }
+    await this.runLoop(id);
+  }
+
   private async runLoop(id: string): Promise<void> {
     const state = this.loops.get(id);
     if (!state) return;
@@ -305,9 +502,12 @@ export class LoopController {
         state.turn += 1;
         state.lastTurnAt = Date.now();
         state.nextRunAt = undefined;
+        state.phase = 'dispatching';
         this.syncTaskProgress(state);
+        await this.checkpointDispatched(state);
 
-        const orchestrator = getTaskManager().getOrCreateCurrentOrchestrator(state.sessionId);
+        const orchestrator = this.ports.getOrchestrator?.(state.sessionId)
+          ?? getTaskManager().getOrCreateCurrentOrchestrator(state.sessionId);
         if (!orchestrator) {
           this.finish(id, 'failed', 'error', `orchestrator unavailable for session ${state.sessionId}`);
           break;
@@ -318,24 +518,38 @@ export class LoopController {
           mode: 'normal',
           historyVisibility: 'meta',
           deniedToolNames: ['AskUserQuestion', 'ask_user_question'],
+          // loop 轮（含 --ephemeral）无人盯守：断流续接取无人值守预算（ADR-068 D4）
+          unattended: true,
         });
         if (this.aborted.has(id)) break;
 
+        state.phase = 'awaiting_reply';
         const reply = await this.readLastAssistantReply(state.sessionId);
         if (detectDoneMarker(reply)) {
+          state.phase = 'sleeping';
+          await this.checkpointCompleted(state, { done: true });
           this.finish(id, 'completed', 'condition_met');
           break;
         }
 
         const waitMs = state.intervalMs ?? parseWaitMs(reply) ?? 0;
+        state.phase = 'sleeping';
         if (waitMs > 0) {
           state.nextRunAt = Date.now() + waitMs;
+          await this.checkpointCompleted(state, { waitMs });
           await this.sleep(id, waitMs);
+        } else {
+          await this.checkpointCompleted(state, { waitMs: 0 });
         }
       }
     } catch (err) {
-      this.finish(id, 'failed', 'error', err instanceof Error ? err.message : String(err));
-      logger.error(`Loop ${id} failed:`, err);
+      // 判据用状态而非错误文案:stop() 已收口(status 已 stopped)时在途
+      // checkpoint 抛错(账本已失联/被 finalize 抢先收口)是预期竞态,维持
+      // stopped、不重跑 finalizeTask、不报 task_failed;其余为真实故障,收口 failed。
+      if (state.status === 'running') {
+        this.finish(id, 'failed', 'error', err instanceof Error ? err.message : String(err));
+        logger.error(`Loop ${id} failed:`, err);
+      }
     } finally {
       this.aborted.delete(id);
       this.timers.delete(id);
@@ -345,7 +559,9 @@ export class LoopController {
 
   private async readLastAssistantReply(sessionId: string): Promise<string> {
     try {
-      const session = await getSessionManager().getSession(sessionId, REPLY_LOOKBACK);
+      const session = this.ports.readSession
+        ? await this.ports.readSession(sessionId, REPLY_LOOKBACK)
+        : await getSessionManager().getSession(sessionId, REPLY_LOOKBACK);
       const messages = session?.messages ?? [];
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].role === 'assistant') {

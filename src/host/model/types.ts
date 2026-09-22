@@ -123,8 +123,13 @@ export interface ModelResponse {
 // Streaming Types
 // ----------------------------------------------------------------------------
 
+// ADR-068 刀 3 B2 诚实分段信号（chunk.type === 'stream_break'）：
+// adapter 已决定断流重发且该续接无 prefix 合同（B2）——重发是全新生成，续答是新的一条
+// 消息。调用方收到后应把断点 partial 以带中断标记的 assistant 消息落库（形态对齐
+// conversationRuntime 的 preserveStreamedPartial），再让续写 delta 另起一段累积；
+// 不把重发内容 append 进旧消息冒充单次生成（D2 边界）。error 字段带断流原因（诊断用）。
 export interface StreamChunk {
-  type: 'text' | 'reasoning' | 'tool_call_start' | 'tool_call_delta' | 'token_estimate' | 'complete' | 'usage' | 'error';
+  type: 'text' | 'reasoning' | 'tool_call_start' | 'tool_call_delta' | 'token_estimate' | 'complete' | 'usage' | 'error' | 'stream_break' | 'reconnecting';
   content?: string;
   toolCall?: {
     index: number;
@@ -140,12 +145,34 @@ export interface StreamChunk {
   providerReportedSavedTokens?: number;
   // complete event
   finishReason?: string;
-  // error event
+  // error event / stream_break 的断流原因
   error?: string;
   errorCode?: string;
+  // ADR-068 刀 4（D5 UI 信号）：reconnecting 专用——attempt/maxReconnects 即状态行的
+  // n/N；segment 标 B1（prefix 合同档无缝续打）还是 B2（诚实分段，断点消息定格、
+  // 续答另起一段）。纯呈现信号，不带续接决策（分流逻辑见 aiSdkAdapter 断流分支）。
+  attempt?: number;
+  maxReconnects?: number;
+  segment?: 'b1' | 'b2';
 }
 
-export type StreamCallback = (chunk: string | StreamChunk) => void;
+export type StreamCallback = (chunk: string | StreamChunk) => void | Promise<void>;
+
+/**
+ * 推理层单次重试/断流续接事件（issue #1989 可观测性）。
+ * kind：'timeout'=客户端超时（整请求/首字节看门狗）驱动；'transient'=普通瞬态错误；
+ * 'reconnect'=首字节后断流续接（ADR-068）。CLI 走 retryEvents 全局通道，
+ * 会话级 trace 记录走 InferenceOptions.onInferenceRetry（避免跨会话串话）。
+ */
+export interface InferenceRetryInfo {
+  provider: string;
+  model?: string;
+  attempt: number;
+  maxRetries: number;
+  delayMs: number;
+  kind: 'timeout' | 'transient' | 'reconnect';
+  error: string;
+}
 
 export interface InferenceOptions {
   onSnapshot?: (snapshot: import('./providers/sseStream').StreamSnapshot) => void;
@@ -156,11 +183,16 @@ export interface InferenceOptions {
   artifactRepairFullRewritePriority?: boolean;
   disableProviderTransientRetry?: boolean;
   disableRuntimeNetworkRetry?: boolean;
+  /** 首字节后断流续接预算覆盖（ADR-068 D4）：缺省 STREAM_RECONNECT_MAX（前台）；无人值守轮由
+   *  inference 层传 UNATTENDED_STREAM_RECONNECT_MAX，熔断后传 0。disableProviderTransientRetry 仍优先。 */
+  streamReconnectMax?: number;
   maxInputTokens?: number;
   maxOutputTokens?: number;
   requestTimeoutMs?: number;
   firstByteTimeoutMs?: number;
   inactivityTimeoutMs?: number;
+  /** 每次推理重试/断流续接时回调（会话级 trace 用；不影响重试决策）。 */
+  onInferenceRetry?: (info: InferenceRetryInfo) => void;
   /**
    * Caller-level reasoning intensity for thinking-mode models. modelRouter
    * defaults this to 'low' on artifact generation/repair turns so reasoning

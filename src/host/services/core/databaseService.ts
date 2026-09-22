@@ -14,6 +14,27 @@ import { applyConversationBranchSchema } from './database/schemaConversationBran
 import { applySessionForkPortabilitySchema } from './database/schemaSessionForkPortability';
 import { applyIndexes } from './database/indexes';
 import { ensureWalShmConsistency } from './database/walShmConsistency';
+import {
+  clearIntegrityFailedMarker,
+  clearUnrecoverableMarker,
+  hasIntegrityFailedMarker,
+  probeDatabaseIntegrity,
+  readUnrecoverableMarker,
+  shouldAttemptRestore,
+  writeUnrecoverableMarker,
+  type DbIntegrityOutcome,
+} from './database/integrityGate';
+import { classifySqliteIntegrityError, DatabaseIntegrityError, DatabaseReadOnlyError } from './database/sqliteErrors';
+import { assertDatabaseWritable, openReadOnlyDatabase } from './database/readOnlyDegraded';
+import { recordLedgerWriteError } from './database/ledgerCorruptionMonitor';
+import {
+  copyBackupIntoPlace,
+  findLatestGoodBackup,
+  hasFreeSpaceForBackup,
+  isolateCorruptDatabase,
+  quickCheckFileSync,
+} from '../infra/dbBackup';
+import { SQLITE_BUSY, SQLITE_INTEGRITY } from '../../../shared/constants';
 import { applySessionsMigrations, applyTelemetryTurnsMigrations, applyEvaluationCleanupMigration } from './database/migrations';
 import { applyDistillSignalsMigration } from './database/migrations/distillSignals';
 import { DurableRunDatabaseSupport } from './database/durableRunDatabaseSupport';
@@ -81,6 +102,14 @@ import {
 } from './repositories/sessionForkPublishedWorkspaceReader';
 
 type DatabaseRecoveryCallback = () => void;
+
+function isNonRetryableIntegrityError(err: unknown): boolean {
+  if (err instanceof DatabaseIntegrityError) return true;
+  if (err && typeof err === 'object' && 'code' in err) {
+    return (err as { code?: unknown }).code === SQLITE_INTEGRITY.CORRUPT_NO_BACKUP;
+  }
+  return false;
+}
 
 const databaseRecoveryListeners = new Set<DatabaseRecoveryCallback>();
 
@@ -251,6 +280,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private turnCostRepo!: TurnCostRepository;
   /** 启动时从总账重建的崩溃现场快照（ADR-022 第二期），供诊断出口/恢复消费 */
   private lastRecoverySnapshot: RecoverySnapshot | null = null;
+  private _integrityOutcome: DbIntegrityOutcome = { kind: 'ok' };
+  /** 进程级只读降级标志：与正常可写模式明确区分。见 readOnlyDegraded.ts 头注释。 */
+  private _degradedMode = false;
 
   constructor(dataDir: string = app.getPath('userData')) {
     super();
@@ -266,6 +298,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
    */
   get isReady(): boolean {
     return this.db !== null;
+  }
+
+  /** 只读降级：历史可读、写路径抛 DatabaseReadOnlyError、durable run fail-closed。 */
+  isDegradedMode(): boolean {
+    return this._degradedMode;
   }
 
   /**
@@ -295,7 +332,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this._initFailed = false;
     this._initPromise = this._doInitialize().catch((err) => {
       this._initFailed = true;
-      this._scheduleRetry();
+      if (!isNonRetryableIntegrityError(err)) {
+        this._scheduleRetry();
+      }
       throw err;
     });
     return this._initPromise;
@@ -341,15 +380,132 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     }
 
     const { step, summary } = createInitStepTimer();
+    const dataDir = path.dirname(this.dbPath);
+
+    let openedFromRestore = false;
+
+    const finishReadonlyInit = (): void => {
+      step('open+wal');
+      step('integrity-probe');
+      step('schema');
+      step('migrations');
+      step('indexes');
+      step('repos');
+      logger.info(`[DatabaseService] init timings: ${summary()}`);
+    };
+
+    // 不可恢复标记带稳定 code。自愈口子:手里重新有了通过 quick_check 的备份
+    // (用户拷入/上次漏扫)且磁盘够,就直接再试恢复,成功清标记;
+    // 自愈不了再退只读降级(刀3,历史可读、写拒绝);只读也打不开才按标记 code
+    // 抛出,且永不落到空路径建空库。优先级:自愈恢复 > readonly > 内存模式。
+    const unrecoverable = readUnrecoverableMarker(dataDir);
+    if (unrecoverable) {
+      const healBackup = findLatestGoodBackup(this.dbPath, quickCheckFileSync);
+      const healSpace = healBackup
+        ? await hasFreeSpaceForBackup(healBackup.path).catch(() => ({ ok: false, detail: 'precheck failed' }))
+        : null;
+      if (healBackup && healSpace?.ok) {
+        this.restoreFromBackupOrThrow(healBackup);
+        clearUnrecoverableMarker(dataDir);
+        openedFromRestore = true;
+        logger.warn('[DatabaseService] healed from previously unrecoverable state via backup restore');
+      } else if (unrecoverable.isolatedPath && this.enterReadonlyMode(unrecoverable.isolatedPath)) {
+        finishReadonlyInit();
+        return;
+      } else {
+        throw new DatabaseIntegrityError(unrecoverable.code);
+      }
+    }
 
     // 开库前的 -shm 一致性保障：过小就补大，永不删除（见 walShmConsistency.ts 顶部注释）
     ensureWalShmConsistency(this.dbPath, logger);
 
     try {
-      this.db = new Database(this.dbPath);
-      this.db.pragma('journal_mode = WAL');
-      this.db.pragma('foreign_keys = ON');
+      if (!openedFromRestore) {
+        try {
+          this.openDatabaseConnection();
+        } catch (err) {
+          const classification = classifySqliteIntegrityError(err);
+          // 只有真损坏(CORRUPT/NOTADB/malformed)才进隔离/恢复编排;
+          // 临时或无法归类的 IOERR 原样上抛,_scheduleRetry 重开原库(main 基线行为),
+          // 永远不许把临时 IO 错误变成隔离 + 不可恢复标记。
+          if (classification !== 'corrupt') throw err;
+          if (this.restoreFromBackupOrThrow() === 'readonly') {
+            finishReadonlyInit();
+            return;
+          }
+          openedFromRestore = true;
+        }
+      }
       step('open+wal');
+
+      // Tier 1 必须在 applySchema / applyDurableRunMigration / runStartupMaintenance 之前。
+      // 否则恢复闭包写入会在坏库上半写。禁止在这里跑 PRAGMA quick_check / integrity_check。
+      if (!openedFromRestore) {
+        if (!this.db) {
+          throw new Error('Database not opened');
+        }
+        const probe = probeDatabaseIntegrity(this.db);
+        step('integrity-probe');
+        logger.info(
+          `[DatabaseService] integrity probe: severity=${probe.severity} elapsed=${Math.round(probe.elapsedMs)}ms`,
+        );
+        if (shouldAttemptRestore(probe, { escalate: hasIntegrityFailedMarker(dataDir) })) {
+          if (probe.severity === 'catastrophic') {
+            // 库已不可读:隔离是对的,走恢复/只读降级/不可恢复标记原路径
+            if (this.restoreFromBackupOrThrow() === 'readonly') {
+              finishReadonlyInit();
+              return;
+            }
+          } else {
+            // 升级恢复(方案档 §2.1):先 preflight 确认手里有通过 quick_check 的
+            // 备份才隔离改名。没有好备份不隔离还能读的库——隔离了就是永久内存模式
+            // (老用户从没做过备份时新会话全丢,而 main 上同一个库还能用)。
+            // 磁盘余量不足同样不隔离:复制必然半路失败,留在当前库 + degraded,
+            // 不写任何标记,下次启动空间够了自动重试。
+            const preflight = findLatestGoodBackup(this.dbPath, quickCheckFileSync);
+            if (!preflight) {
+              this._integrityOutcome = { kind: 'degraded', reason: SQLITE_INTEGRITY.QUICK_CHECK_FAILED };
+              logger.warn(
+                '[DatabaseService] .integrity-failed set but no quick_check-good backup; ' +
+                  'keeping the readable db in service (degraded) instead of isolating it',
+              );
+            } else {
+              const space = await hasFreeSpaceForBackup(this.dbPath)
+                .catch((err: unknown) => {
+                  logger.warn('[DatabaseService] restore disk precheck failed; staying retryable', err as Error);
+                  return { ok: false, detail: 'precheck failed' };
+                });
+              if (space.ok) {
+                this.restoreFromBackupOrThrow(preflight);
+              } else {
+                this._integrityOutcome = { kind: 'degraded', reason: SQLITE_INTEGRITY.RESTORE_LOW_DISK };
+                logger.warn(
+                  `[DatabaseService] restore preflight: not enough free disk (${space.detail}); ` +
+                    'keeping the readable db in service (degraded, retryable next launch)',
+                );
+              }
+            }
+          }
+        } else if (probe.severity === 'local') {
+          const tables = probe.tables.filter((row) => !row.ok).map((row) => row.table);
+          this._integrityOutcome = { kind: 'local', tables };
+          logger.warn(
+            `[DatabaseService] local sqlite damage on ${tables.join(', ')}; not isolating (only CORRUPT/IOERR isolate)`,
+          );
+        } else {
+          this._integrityOutcome = { kind: 'ok' };
+          // Tier 1(LIMIT 1 浅探针)通过无权清 .integrity-failed:
+          // 标记只能由成功的恢复或 Tier 2 quick_check 复测通过清除。
+          // 标记在时上面 shouldAttemptRestore 已升级为尝试恢复,走不到这里。
+        }
+      } else {
+        step('integrity-probe');
+      }
+
+      if (!this.db) {
+        throw new Error('Database not opened');
+      }
 
       applySchema(this.db, logger);
       step('schema');
@@ -442,8 +598,153 @@ export class DatabaseService extends DurableRunDatabaseSupport {
         }
       }
       this.db = null;
+      this._degradedMode = false;
       throw err;
     }
+  }
+
+  private openDatabaseConnection(): void {
+    if (!Database) {
+      throw new Error('better-sqlite3 not available (CLI mode or native module missing)');
+    }
+    this.db = new Database(this.dbPath, { timeout: SQLITE_BUSY.BUSY_TIMEOUT_MS });
+    this.db.pragma('journal_mode = WAL');
+    this.db.pragma('foreign_keys = ON');
+  }
+
+  private closeConnectionKeepingPath(): void {
+    if (!this.db) return;
+    try {
+      this.db.close();
+    } catch (closeErr) {
+      logger.warn('[DatabaseService] Failed to close database connection:', closeErr);
+    }
+    this.db = null;
+    this._degradedMode = false;
+  }
+
+  /**
+   * 只读降级（刀3）：不跑 checkpoint/schema/migration，失败返回 false，由调用方决定下一步。
+   * 只打开隔离副本（restoreFromBackupOrThrow 已把坏库改名），绝不碰原路径。
+   */
+  private enterReadonlyMode(filePath: string): boolean {
+    if (!Database || !fs.existsSync(filePath)) return false;
+    this.closeConnectionKeepingPath();
+    try {
+      this.db = openReadOnlyDatabase(Database, filePath);
+      this.db.prepare('SELECT name FROM sqlite_master LIMIT 1').get();
+      this.initializeReadonlyRepositories();
+      this._degradedMode = true;
+      this._integrityOutcome = { kind: 'readonly', path: filePath };
+      logger.warn(
+        '[DatabaseService] opened database read-only (DB_READONLY). ' +
+          'Available: read history, search. Refused: new session, write memory, start durable run. ' +
+          'Corrupt file was not modified.',
+      );
+      return true;
+    } catch (err) {
+      logger.warn('[DatabaseService] read-only open failed:', err);
+      this.closeConnectionKeepingPath();
+      return false;
+    }
+  }
+
+  private initializeReadonlyRepositories(): void {
+    if (!this.db) throw new Error('Database not opened');
+    this.conversationBranchRepo = new ConversationBranchRepository(this.db);
+    this.sessionRepo = new SessionRepository(this.db);
+    this.sessionForkRepo = new SessionForkRepository(this.db, this.conversationBranchRepo);
+    this.sessionForkWorkspaceRepo = new SessionForkWorkspaceRepository(this.db);
+    this.sessionForkPortabilityRepo = new SessionForkPortabilityRepository(
+      this.db,
+      this.conversationBranchRepo,
+    );
+    this.isolatedAnchorWorkspaceService = new IsolatedAnchorWorkspaceService({
+      durableRoot: path.join(path.dirname(this.dbPath), 'session-fork-worktrees'),
+      intentStore: this.sessionForkWorkspaceRepo,
+    });
+    this.memoryRepo = new MemoryRepository(this.db);
+    this.configRepo = new ConfigRepository(this.db);
+    this.captureRepo = new CaptureRepository(this.db);
+    this.experimentRepo = new ExperimentRepository(this.db);
+    this.annotationRepo = new AnnotationRepository(this.db);
+    this.projectRepo = new ProjectRepository(this.db);
+    this.swarmTraceRepo = createSwarmTraceRepo(this.db);
+    this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
+    this.agentWakeRepo = new AgentWakeRepository(this.db);
+    this.permissionDecisionRepo = new PermissionDecisionRepository(this.db);
+    this.voiceCallAuditRepo = new VoiceCallAuditRepository(this.db);
+    this.toolExecutionEventRepo = new ToolExecutionEventRepository(this.db);
+    this.swarmLedgerRepo = new SwarmLedgerRepository(this.db);
+    this.usageLedgerRepo = new UsageLedgerRepository(this.db);
+    this.turnCostRepo = new TurnCostRepository(this.db);
+    // durable run 仓库故意不建：getDurableRunRepository 在降级态抛 DatabaseReadOnlyError。
+  }
+
+  /**
+   * 整库灾难性损坏：有备份则隔离改名（永不删除）后恢复；无备份则只读打开隔离副本；
+   * 只读也打不开才抛 DB_CORRUPT_NO_BACKUP（调用方进内存模式）。
+   *
+   * preflightBackup：升级恢复路径在隔离前已确认过的好备份（手里有恢复源才隔离）;
+   * 灾难性路径不传——库已不可读,内部现找。
+   *
+   * 双进程共写 data dir：恢复出的新库对仍在跑的旧进程不可见；旧进程继续写已经
+   * 隔离改名的坏库。两边不会接到同一份文件上。重启后收敛到新库。
+   */
+  private restoreFromBackupOrThrow(preflightBackup?: { path: string; mtimeMs: number }): 'restored' | 'readonly' {
+    this.closeConnectionKeepingPath();
+
+    const now = Date.now();
+    const isolatedPath = isolateCorruptDatabase(this.dbPath, now);
+    logger.warn(
+      `[DatabaseService] isolated corrupt database as ${isolatedPath} (never deleted). ` +
+        'A still-running peer keeps writing the isolated files; this process opens a restored copy the peer cannot see; restart converges.',
+    );
+
+    const backup = preflightBackup ?? findLatestGoodBackup(this.dbPath, quickCheckFileSync);
+    if (!backup) {
+      // 先落不可恢复标记再试只读：标记保住下次启动的自愈口子
+      // （自愈恢复 > readonly > 内存模式），只读成功也不摘标记。
+      writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath, SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
+      if (this.enterReadonlyMode(isolatedPath)) {
+        return 'readonly';
+      }
+      throw new DatabaseIntegrityError(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
+    }
+
+    try {
+      copyBackupIntoPlace(backup.path, this.dbPath);
+      ensureWalShmConsistency(this.dbPath, logger);
+      this.openDatabaseConnection();
+    } catch (err) {
+      // 复制/打开恢复副本失败(磁盘满、权限等):绝不交给 _scheduleRetry——
+      // 重试会在空路径上 new Database 造空库顶替,用户历史看起来被清空,
+      // 且每日备份轮转会在两天内把好备份顶掉。备份与隔离坏库都还在,
+      // 标记挡住下次启动的空库创建;本进程 fail-closed,不重试。
+      const code = classifySqliteIntegrityError(err) === 'corrupt'
+        ? SQLITE_INTEGRITY.CORRUPT_NO_BACKUP
+        : SQLITE_INTEGRITY.RESTORE_FAILED;
+      writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath, code);
+      throw new DatabaseIntegrityError(code);
+    }
+    if (!this.db) {
+      throw new Error('Database not opened');
+    }
+    const post = probeDatabaseIntegrity(this.db);
+    if (post.severity === 'catastrophic') {
+      writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath, SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
+      throw new DatabaseIntegrityError(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
+    }
+    this._integrityOutcome = {
+      kind: 'recovered',
+      backupTakenAt: backup.mtimeMs,
+      isolatedPath,
+    };
+    clearIntegrityFailedMarker(path.dirname(this.dbPath));
+    logger.warn(
+      `[DatabaseService] restored database from backup mtime=${new Date(backup.mtimeMs).toISOString()}`,
+    );
+    return 'restored';
   }
 
   private async recoverIncompleteSessionForkWorkspaces(): Promise<void> {
@@ -520,6 +821,16 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     return this.dbPath;
   }
 
+  /** 启动完整性结果：供 PersistenceHealth 报 recovered / degraded。 */
+  getIntegrityOutcome(): DbIntegrityOutcome {
+    return this._integrityOutcome;
+  }
+
+  override getDurableRunRepository(): import('./repositories').DurableRunRepository {
+    if (this._degradedMode) throw new DatabaseReadOnlyError();
+    return super.getDurableRunRepository();
+  }
+
   /**
    * Backfill legacy sessions only after Project ownership has reached its
    * canonical local projection. Existing immutable rows are never rewritten.
@@ -542,6 +853,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       if (!this.db || !this.permissionDecisionRepo) return;
       this.permissionDecisionRepo.append(input);
     } catch (err) {
+      recordLedgerWriteError(err, (message, data) => logger.warn(message, data));
+      if (err instanceof DatabaseReadOnlyError) return;
       logger.warn('[DatabaseService] appendPermissionDecision failed (ignored):', err);
     }
   }
@@ -578,6 +891,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       if (!this.db || !this.toolExecutionEventRepo) return;
       this.toolExecutionEventRepo.appendBegin(input);
     } catch (err) {
+      recordLedgerWriteError(err, (message, data) => logger.warn(message, data));
+      if (err instanceof DatabaseReadOnlyError) return;
       logger.warn('[DatabaseService] appendToolExecutionBegin failed (ignored):', err);
     }
   }
@@ -588,6 +903,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       if (!this.db || !this.toolExecutionEventRepo) return;
       this.toolExecutionEventRepo.appendComplete(input.error ? { ...input, error: redactSecrets(input.error) } : input);
     } catch (err) {
+      recordLedgerWriteError(err, (message, data) => logger.warn(message, data));
+      if (err instanceof DatabaseReadOnlyError) return;
       logger.warn('[DatabaseService] appendToolExecutionComplete failed (ignored):', err);
     }
   }
@@ -620,6 +937,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       if (!this.db || !this.usageLedgerRepo) return;
       this.usageLedgerRepo.append(input);
     } catch (err) {
+      recordLedgerWriteError(err, (message, data) => logger.warn(message, data));
+      if (err instanceof DatabaseReadOnlyError) return;
       logger.warn('[DatabaseService] appendUsageRecord failed (ignored):', err);
     }
   }
@@ -647,6 +966,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       if (!this.db || !this.swarmLedgerRepo) return;
       this.swarmLedgerRepo.append(input);
     } catch (err) {
+      recordLedgerWriteError(err, (message, data) => logger.warn(message, data));
+      if (err instanceof DatabaseReadOnlyError) return;
       logger.warn('[DatabaseService] appendSwarmLedgerEvent failed (ignored):', err);
     }
   }
@@ -717,6 +1038,16 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       return this.toolExecutionEventRepo.getBySession(sessionId, limit);
     } catch {
       return [];
+    }
+  }
+
+  /** 手机 companion 是否发过某类命令（语音能力迁移把用量当使用证据）。表不存在或库未开则 false。 */
+  hasCompanionCommandAction(action: string): boolean {
+    if (!this.db) return false;
+    try {
+      return Boolean(this.db.prepare('SELECT 1 FROM companion_commands WHERE action = ? LIMIT 1').get(action));
+    } catch {
+      return false;
     }
   }
 
@@ -809,6 +1140,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       this.db.close();
       this.db = null;
     }
+    this._degradedMode = false;
     this._initPromise = null;
     this._initFailed = false;
   }
@@ -983,9 +1315,14 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     }
   }
 
+  private ensureWritable(): void {
+    this.ensureDb();
+    assertDatabaseWritable(this._degradedMode);
+  }
+
   // --- SessionRepository ---
   createSession(session: Session): void {
-    this.ensureDb();
+    this.ensureWritable();
     this.sessionRepo.createSession(session);
   }
   createSessionWithId(
@@ -1010,7 +1347,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     },
     options?: { syncOrigin?: 'local' | 'remote' }
   ): void {
-    this.ensureDb();
+    this.ensureWritable();
     this.sessionRepo.createSessionWithId(id, data, options);
   }
   getSession(sessionId: string, options?: { includeDeleted?: boolean; userId?: string | null }): import('./repositories').StoredSession | null {
@@ -1028,7 +1365,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     return findLatestExpertThreadSession(db, roleId, userId);
   }
   updateSession(sessionId: string, updates: Partial<Session>, options?: { syncOrigin?: 'local' | 'remote'; isDeleted?: boolean }): void {
-    this.ensureDb();
+    this.ensureWritable();
     this.sessionRepo.updateSession(sessionId, updates, options);
   }
   patchSessionMetadata(
@@ -1089,7 +1426,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       provenanceKind?: 'compatibility_projection_append' | 'crash-recovery';
     }
   ): void {
-    this.ensureDb();
+    this.ensureWritable();
     this.sessionRepo.addMessage(sessionId, message, options);
   }
   replaceMessages(sessionId: string, messages: Message[], updatedAt?: number): void {
@@ -2922,7 +3259,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
 
   // --- MemoryRepository ---
   createMemory(data: Omit<import('./repositories').MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): import('./repositories').MemoryRecord {
-    this.ensureDb();
+    this.ensureWritable();
     return this.memoryRepo.createMemory(data);
   }
   getMemory(id: string): import('./repositories').MemoryRecord | null {
@@ -3220,6 +3557,7 @@ export function getDatabase(): DatabaseService {
 export async function initDatabase(): Promise<DatabaseService> {
   const db = getDatabase();
   await db.initialize();
+  if (db.isDegradedMode()) return db;
   // P0-2：存量 session 按 workspace 自动归桶（幂等，仅当存在未归桶 session 时执行）。
   // 懒加载 ProjectService 避免初始化期循环依赖。
   let projectBoundaryReady = false;

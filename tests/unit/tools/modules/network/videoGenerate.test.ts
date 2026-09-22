@@ -90,7 +90,7 @@ describe('video_generate — execute', () => {
     vi.clearAllMocks();
     existsSyncMock.mockReturnValue(true);
     process.env.ZHIPU_OFFICIAL_API_KEY = 'official-key';
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue(undefined),
     });
   });
@@ -128,6 +128,12 @@ describe('video_generate — execute', () => {
       makeCtx(),
       allowAll,
     );
+
+    // 提示词扩写打的是智谱官方端点：model 必须是官方端点上存在的免费快模型，
+    // 不能复用已切 0ki 专属 glm-5.3-flash 的 DEFAULT_MODELS.quick（否则 model not found → 静默回落短提示词）
+    const [expandUrl, expandInit] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(expandUrl).toContain('open.bigmodel.cn');
+    expect(JSON.parse(String(expandInit.body)).model).toBe('glm-4-flash');
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -265,7 +271,7 @@ describe('video_generate — execute', () => {
 
   it('returns NOT_INITIALIZED when no zhipu key', async () => {
     delete process.env.ZHIPU_OFFICIAL_API_KEY;
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue(undefined),
     });
     const result = await executeVideoGenerate(
@@ -285,7 +291,7 @@ describe('video_generate — execute', () => {
 
   it('rejects 0ki proxy key (only official)', async () => {
     delete process.env.ZHIPU_OFFICIAL_API_KEY;
-    getConfigServiceMock.mockReturnValue({
+    getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue('oki-proxy-key'),
     });
     const result = await executeVideoGenerate(

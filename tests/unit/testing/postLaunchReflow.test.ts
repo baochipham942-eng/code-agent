@@ -12,6 +12,7 @@ import {
 import { checkPostLaunchReflowGates } from '../../../src/host/testing/postlaunch/postLaunchReflowGate';
 import { buildHarvestPreview } from '@internal-evaluation/host/evaluation/harvestPreview';
 import type { ReplayBlock, ReplayTurn, StructuredReplay } from '../../../src/shared/contract/evaluation';
+import { POST_LAUNCH_JUDGE_VERSION } from '../../../src/shared/contract/postLaunchScore';
 
 // 回流裁剪/溯源的断言一律走公开入口 buildHarvestPreview：knip 生产档拦「只被测试
 // 消费」的导出，裁剪/溯源 helper 是模块内私有，不许为测试开 export（#1697 第 7 轮）。
@@ -36,7 +37,7 @@ vi.mock('@host/telemetry/replay/telemetryQueryService', () => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ privacy: { postLaunchReflow: 'on' } }) }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({ privacy: { postLaunchReflow: 'on' } }) }),
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -44,7 +45,7 @@ vi.mock('../../../src/host/platform', () => ({
 }));
 
 const LOGGER = { debug() {}, info() {}, warn() {}, error() {} } as never;
-const VERSION = 'postlaunch-judge-v1';
+const VERSION = POST_LAUNCH_JUDGE_VERSION;
 const WORKDIR = '/tmp/reflow-harvest';
 const FIRST_TURN_PROMPT = 'FEATURE_A_FIRST_TURN_PROMPT';
 const TRIGGER_TURN_PROMPT = 'FEATURE_B_TRIGGER_TURN_PROMPT';

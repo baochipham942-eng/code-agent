@@ -27,7 +27,10 @@ import type {
 import type {
   UserQuestion,
 } from '../../../../shared/contract';
-import { ASK_USER_QUESTION_DECLINED_OUTPUT } from '../../../../shared/contract/askUserQuestion';
+import {
+  ASK_USER_QUESTION_DECLINED_OUTPUT,
+  ASK_USER_QUESTION_UNANSWERED_PREFIX,
+} from '../../../../shared/contract/askUserQuestion';
 import { promptUserInChat } from '../../utils/userQuestionPrompt';
 import { askUserQuestionSchema as schema } from './askUserQuestion.schema';
 import {
@@ -45,7 +48,7 @@ function formatNoInteractiveUserOutput(questions: UserQuestion[]): string {
     })
     .join('\n\n');
 
-  return `[用户未响应 - CLI 模式无法交互]\n\n${formatted}\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。`;
+  return `${ASK_USER_QUESTION_UNANSWERED_PREFIX}\n\n${formatted}\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。`;
 }
 
 export async function executeAskUserQuestion(
@@ -113,7 +116,9 @@ export async function executeAskUserQuestion(
     return {
       ok: true,
       output: formatNoInteractiveUserOutput(questions),
-      meta: deniedDecisionMetadata(reason),
+      // awaitingUserInput 是「问句未答冻结」的引擎信号（toolExecutionEngine 消费）：
+      // 输出文案里的「不要创建、修改或删除任何文件」不能只指望模型读懂人话。
+      meta: { ...deniedDecisionMetadata(reason), awaitingUserInput: true },
     };
   }
   if (result.status === 'aborted') {
@@ -125,7 +130,9 @@ export async function executeAskUserQuestion(
       ok: false,
       error: reason,
       code: USER_INPUT_TIMEOUT_CODE,
-      meta: deniedDecisionMetadata(reason),
+      // 有界面但用户超时没答：与无头无人应答同属「问句未答」，冻结非 read 工具。
+      // declined（用户明确跳过、文案让模型按默认继续）不置此位。
+      meta: { ...deniedDecisionMetadata(reason), awaitingUserInput: true },
     };
   }
   if (result.status === 'declined' || result.response?.declined === true) {

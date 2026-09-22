@@ -8,6 +8,7 @@ import type { AppSettings } from '../../../src/shared/contract';
 // payload 归一化。mock adminGuard/secureStorage/budgetService/providerIconAssets/fetch/platform。
 
 const env = vi.hoisted(() => ({
+  focusedWindow: null as unknown,
   isAdmin: true,
   adminAccessError: null as IPCResponse | null,
   config: {
@@ -69,7 +70,7 @@ vi.mock('../../../src/host/services/core/budgetService', () => ({
 }));
 vi.mock('../../../src/host/platform', () => ({
   app: { getVersion: () => '9.9.9' },
-  AppWindow: { getFocusedWindow: () => null },
+  AppWindow: { getFocusedWindow: () => env.focusedWindow },
 }));
 
 import { applyLocalProviderDiscoverySnapshot, registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
@@ -489,5 +490,39 @@ describe('未知 action 与 WINDOW domain', () => {
     expect(await winHandler(null, { action: 'maximize' } as IPCRequest)).toEqual({ success: true, data: null });
     expect(await winHandler(null, { action: 'close' } as IPCRequest)).toEqual({ success: true, data: null });
     expect(await winHandler(null, { action: 'nope' } as IPCRequest)).toMatchObject({ success: false, error: { code: 'INVALID_ACTION' } });
+  });
+
+  it('WINDOW domain 有聚焦窗口：minimize / close 委派；maximize 已最大化 → unmaximize、否则 maximize', async () => {
+    const winHandler = handlers.get(IPC_DOMAINS.WINDOW)!;
+    const win = { minimize: vi.fn(), maximize: vi.fn(), unmaximize: vi.fn(), close: vi.fn(), isMaximized: vi.fn(() => false) };
+    env.focusedWindow = win;
+    try {
+      expect(await winHandler(null, { action: 'minimize' } as IPCRequest)).toEqual({ success: true, data: null });
+      expect(win.minimize).toHaveBeenCalledTimes(1);
+      expect(await winHandler(null, { action: 'maximize' } as IPCRequest)).toEqual({ success: true, data: null });
+      expect(win.maximize).toHaveBeenCalledTimes(1);
+      expect(win.unmaximize).not.toHaveBeenCalled();
+      win.isMaximized.mockReturnValue(true);
+      expect(await winHandler(null, { action: 'maximize' } as IPCRequest)).toEqual({ success: true, data: null });
+      expect(win.unmaximize).toHaveBeenCalledTimes(1);
+      expect(win.maximize).toHaveBeenCalledTimes(1);
+      expect(await winHandler(null, { action: 'close' } as IPCRequest)).toEqual({ success: true, data: null });
+      expect(win.close).toHaveBeenCalledTimes(1);
+    } finally {
+      env.focusedWindow = null;
+    }
+  });
+
+  it('WINDOW domain 未知 action 文案逐字；窗口方法抛错 → INTERNAL_ERROR + message', async () => {
+    const winHandler = handlers.get(IPC_DOMAINS.WINDOW)!;
+    expect(await winHandler(null, { action: 'nope' } as IPCRequest))
+      .toEqual({ success: false, error: { code: 'INVALID_ACTION', message: 'Unknown action: nope' } });
+    env.focusedWindow = { close: () => { throw new Error('window gone'); } };
+    try {
+      expect(await winHandler(null, { action: 'close' } as IPCRequest))
+        .toEqual({ success: false, error: { code: 'INTERNAL_ERROR', message: 'window gone' } });
+    } finally {
+      env.focusedWindow = null;
+    }
   });
 });

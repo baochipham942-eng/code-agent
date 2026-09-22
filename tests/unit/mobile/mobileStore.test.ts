@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createMobileStore } from '../../../packages/mobile/src/stores/mobileStore';
-import { canAddressSession } from '../../../packages/mobile/src/stores/companionStore';
+import { createMobileStore, joinTranscript } from '../../../packages/mobile/src/stores/mobileStore';
+import { canAddressSession, needsLibraryPick } from '../../../packages/mobile/src/stores/companionStore';
 
 function disk(initial: string | null = null) {
   let value = initial;
@@ -160,17 +160,102 @@ it('transcription receipts append once to the originating draft and never send i
   expect(next.getState().sendAttempted).toBe(false);
 });
 
-// ai-review #1742 Important：send / transcribe / respond 三处在没有可寻址会话时都是**静默
-// return**。界面若只按 status==='connected' 分流，用只勾项目的二维码配对（本 PR 新增的项目
-// 授权形态）后 sessionId 为 null，手机写着「已连接，可以发任务」，点发送却什么都不发生——
-// 无报错、无提示、无 pending、草稿不清，用户只能反复点。这条判据是那三处与界面的唯一共用来源。
+it('分片续写接着上一段写，不在用户句子里插换行', async () => {
+  const store = createMobileStore(disk()); await store.getState().hydrate();
+  store.getState().activateDraft('host:a'); store.getState().editDraft('我先说一句');
+  await store.getState().appendTranscript('帮我整理资料', 'host:a', 'chunk-1');
+  await store.getState().appendTranscript('重点看定位', 'host:a', 'chunk-2', true);
+  // 第一段与用户已打的字分行；同一次录音的第二段接着写
+  expect(store.getState().preferences.drafts['host:a']).toBe('我先说一句\n帮我整理资料重点看定位');
+});
+
+describe('joinTranscript', () => {
+  it.each([
+    ['空草稿直接用转写结果', '', '你好', false, '你好'],
+    ['整段转写另起一行', '已有文字', '你好', false, '已有文字\n你好'],
+    ['中文分片续写不补空格', '重点看一下它们的', '定位和传播方式', true, '重点看一下它们的定位和传播方式'],
+    ['中文标点结尾也不补空格', '整理好了。', '还要补一页', true, '整理好了。还要补一页'],
+    ['英文分片续写补一个空格，别把两个词粘死', 'brand research', 'and positioning', true, 'brand research and positioning'],
+    // grok ai-review #1764 Nit：日韩也算 CJK，漏了就在词间多空格
+    ['日文假名相接不补空格', 'これは', 'テストです', true, 'これはテストです'],
+    ['韩文音节相接不补空格', '안녕하', '세요', true, '안녕하세요'],
+    ['空转写不动草稿', '已有文字', '', true, '已有文字'],
+  ])('%s', (_name, draft, text, continuation, expected) => {
+    expect(joinTranscript(draft, text, continuation)).toBe(expected);
+  });
+});
+
+// send / transcribe / respond 在没有可寻址会话时都是静默 return。全量 project 授权
+// 配对后 sessionId 为 null，必须进库列表选会话，不能假装已经在对话里。
 describe('canAddressSession', () => {
   it.each([
     ['已连接且选了会话', { status: 'connected' as const, sessionId: 's1' }, true],
-    ['已连接但没有会话（只勾项目的配对）', { status: 'connected' as const, sessionId: null }, false],
+    ['已连接但没有会话（全量项目授权）', { status: 'connected' as const, sessionId: null }, false],
     ['有会话但没连上', { status: 'offline' as const, sessionId: 's1' }, false],
     ['未配对', { status: 'unpaired' as const, sessionId: null }, false],
   ])('%s', (_label, state, expected) => {
     expect(canAddressSession(state)).toBe(expected);
+  });
+});
+
+describe('needsLibraryPick', () => {
+  it.each([
+    ['全量项目授权后进库选会话', { status: 'connected' as const, sessionId: null }, true],
+    ['已选会话则进对话', { status: 'connected' as const, sessionId: 's1' }, false],
+    ['还没连上不弹库', { status: 'connecting' as const, sessionId: null }, false],
+  ])('%s', (_label, state, expected) => {
+    expect(needsLibraryPick(state)).toBe(expected);
+  });
+});
+
+describe('sessionTitles 上限与清理（ai-review Nit：只增不删会无限增长）', () => {
+  it('每台电脑最多保留最近 50 条，改写顶到最新端、最旧的先淘汰', async () => {
+    const store = createMobileStore(disk()); await store.getState().hydrate();
+    for (let i = 0; i < 52; i += 1) store.getState().rememberSessionTitle('host-a', `s-${i}`, `标题${i}`);
+    let titles = store.getState().preferences.sessionTitles!;
+    expect(Object.keys(titles)).toHaveLength(50);
+    expect(titles['host-a:s-0']).toBeUndefined();   // 最旧的先被淘汰
+    expect(titles['host-a:s-1']).toBeUndefined();
+    expect(titles['host-a:s-2']).toBe('标题2');
+    expect(titles['host-a:s-51']).toBe('标题51');
+    // 改写 s-2 算最新一次写入（顶到最新端）：再写一条挤出的是 s-3，刚改写的 s-2 保留
+    store.getState().rememberSessionTitle('host-a', 's-2', '改名');
+    store.getState().rememberSessionTitle('host-a', 's-52', '新条');
+    titles = store.getState().preferences.sessionTitles!;
+    expect(titles['host-a:s-2']).toBe('改名');
+    expect(titles['host-a:s-3']).toBeUndefined();
+    expect(titles['host-a:s-52']).toBe('新条');
+    expect(Object.keys(titles)).toHaveLength(50);
+  });
+  it('上限按电脑分开算：别台的条目不被挤掉；盘上超量的旧数据 hydrate 时也收口', async () => {
+    const oversized: Record<string, string> = { 'host-a:s-keep': '旧标题' };
+    for (let i = 0; i < 60; i += 1) oversized[`host-b:s-${i}`] = `B${i}`;
+    const port = disk(JSON.stringify({ schema: 1, drafts: { new: '', fixture: '' }, appearance: 'system', nickname: '', notifyEnabled: false, sessionTitles: oversized }));
+    const store = createMobileStore(port); await store.getState().hydrate();
+    const titles = store.getState().preferences.sessionTitles!;
+    expect(titles['host-a:s-keep']).toBe('旧标题');
+    expect(Object.keys(titles).filter(key => key.startsWith('host-b:'))).toHaveLength(50);
+    expect(titles['host-b:s-0']).toBeUndefined();
+    expect(titles['host-b:s-59']).toBe('B59');
+  });
+  it('forgetSessionTitles：带 sessionId 清一条，不带清整台；没得清不写盘', async () => {
+    let writes = 0;
+    const port = { get: async () => null as string | null, set: async () => { writes += 1; } };
+    const store = createMobileStore(port); await store.getState().hydrate();
+    store.getState().rememberSessionTitle('host-a', 's-1', '一');
+    store.getState().rememberSessionTitle('host-a', 's-2', '二');
+    store.getState().rememberSessionTitle('host-b', 's-1', '别台');
+    await store.getState().flush();
+    const writesSeeded = writes;
+    store.getState().forgetSessionTitles('host-c');   // 没得清：不写盘
+    expect(writes).toBe(writesSeeded);
+    store.getState().forgetSessionTitles('host-a', 's-1');
+    const titles = store.getState().preferences.sessionTitles!;
+    expect(titles['host-a:s-1']).toBeUndefined();
+    expect(titles['host-a:s-2']).toBe('二');
+    expect(titles['host-b:s-1']).toBe('别台');
+    store.getState().forgetSessionTitles('host-a');   // 整台清
+    expect(Object.keys(store.getState().preferences.sessionTitles!)).toEqual(['host-b:s-1']);
+    await store.getState().flush();
   });
 });

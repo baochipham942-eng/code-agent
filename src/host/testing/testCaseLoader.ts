@@ -5,7 +5,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import * as yaml from 'js-yaml';
-import type { TestSuite, TestCase } from './types';
+import { TEST_CATEGORIES, type TestSuite, type TestCase } from './types';
 import { resolveCaseLayer } from './caseLayer';
 import { isCaseHardened } from './caseHardening';
 import { findRepositoryRoot, repoRelativeSource, resolveAnswerSideFile } from './answerSide';
@@ -88,7 +88,7 @@ async function mergeAnswerSide(data: unknown, filePath: string): Promise<unknown
 /**
  * Validate a test case
  */
-function validateTestCase(testCase: unknown, index: number, requireHardened: boolean): TestCase {
+function validateTestCase(testCase: unknown, index: number, requireHardened: boolean, filePath: string): TestCase {
   const tc = testCase as Record<string, unknown>;
 
   if (!tc.id || typeof tc.id !== 'string') {
@@ -105,6 +105,13 @@ function validateTestCase(testCase: unknown, index: number, requireHardened: boo
 
   if (!tc.description) {
     tc.description = tc.id;
+  }
+
+  // 契约四值之外一律拒收：脏值进列表会让分布矩阵「其他」列回流（N-EVAL-CASEBANK-CATEGORY-FILL）
+  if (tc.category !== undefined && !(TEST_CATEGORIES as readonly unknown[]).includes(tc.category)) {
+    throw new Error(
+      `Test case ${tc.id}: invalid 'category' ${JSON.stringify(tc.category)} in ${filePath}（只接受 ${TEST_CATEGORIES.join(' | ')}）`,
+    );
   }
 
   tc.expect ??= {};
@@ -146,7 +153,7 @@ function validateTestSuite(data: unknown, filePath: string, requireHardened: boo
   const suiteTags = suite.tags as string[] | undefined;
   const relativeDir = path.basename(path.dirname(filePath));
   const validatedCases = suite.cases.map((tc, i) => ({
-    ...validateTestCase(tc, i, requireHardened),
+    ...validateTestCase(tc, i, requireHardened, filePath),
     inheritedTags: suiteTags ? [...suiteTags] : undefined,
     layer: resolveCaseLayer(path.basename(filePath), relativeDir),
   }));

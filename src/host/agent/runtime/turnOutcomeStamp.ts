@@ -1,10 +1,18 @@
-import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
+import { checkDocumentEvidenceClaims, currentMessages } from './documentEvidenceBoundary';
+import {
+  checkDeliverablesOnDisk,
+  collectDeliverableClaims,
+  formatDeliverableProblems,
+  normalizeDeliverablePath,
+  type DeliverableDiskCheckResult,
+} from './deliverableDiskCheck';
 import { readbackFileEvidence } from './fileEvidenceReadback';
 import type { Message, ToolResult } from '../../../shared/contract';
 import type { CompletionSummaryRecord } from '../../../shared/contract/completionSummary';
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
 import { createLogger } from '../../services/infra/logger';
 import { resolveRegisteredTurnOutcome } from '../../services/capabilities/hostCapabilityPorts';
+import type { DeclaredDeliverables } from './artifactState';
 import type { RuntimeContext } from './runtimeContext';
 import type { RunTerminalStatus } from './runTerminalStatus';
 import type { TraceEvent, TraceEventDataMap, TurnTraceRecorder } from './turnTrace';
@@ -17,16 +25,61 @@ export interface TurnOutcomeStampContext {
   messages: Message[];
   goalMode?: RuntimeContext['goalMode'];
   turnTrace: TurnTraceRecorder;
+  nudgeManager?: RuntimeContext['nudgeManager'];
+  /** declare_deliverables 的会话级声明槽（RuntimeContext.artifact）；本 run 内声明的才进落盘核对 */
+  artifact?: { readonly declaredDeliverables?: DeclaredDeliverables };
 }
 
 function successfulToolResults(messages: readonly Message[]): ToolResult[] {
   return messages.flatMap((message) => message.toolResults ?? []).filter((result) => result.success);
 }
 
+/**
+ * 本 run 真碰过的文件集合。summary 的 changedFiles/artifactRefs 是**会话级**清单
+ * （completionSummaryService.collectChangedFiles 扫全 ctx.messages，nudgeManager.modifiedFiles
+ * 只增不减、reset() 无调用方），直接拿它做回读+断言扫描，等于第 1 轮写的报告在第 5 轮
+ * 再读一遍并把旧账记在本轮头上（ai-review #1740 第 8 轮 Important，arbitrate 二审维持）。
+ * 与 verdict 里的 evidence_boundary 检查同一把尺：只认最后一条 user 消息之后（currentMessages，
+ * documentEvidenceBoundary.ts 同一口径）。两路来源：
+ *  · 成功工具结果报出来的路径（metadata.changedFiles + outputPath，失败调用不算数，
+ *    抽取规则照抄 completionSummaryService）；
+ *  · nudgeManager.getModifiedFilesSince（最后一条 user 消息的时间戳）——bash/脚本/子代理
+ *    的工作区变更没有 outputPath 可报，只进这条账（toolFileMutationTracking.ts），
+ *    漏掉它本轮 bash 写的文档就永不回读（ai-review #1745 第 1 轮 Important）。
+ * 归一化与 completionSummaryService 同为「绝对路径原样、相对路径对 workingDirectory resolve」，
+ * 再叠加交付物核对的 ~ 展开 + NFC（normalizeDeliverablePath）：同一文件以 ~/... 或
+ * NFD/NFC 两种形态出现时集合成员判定不能说谎（ai-review #2007 Nit）。
+ */
+function currentRunFilePaths(
+  messages: readonly Message[],
+  workingDirectory: string,
+  nudgeManager?: RuntimeContext['nudgeManager'],
+): Set<string> {
+  const paths = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value !== 'string' || !value.trim()) return;
+    paths.add(normalizeDeliverablePath(value, workingDirectory));
+  };
+  for (const message of currentMessages(messages)) {
+    for (const result of message.toolResults ?? []) {
+      if (!result.success) continue;
+      if (Array.isArray(result.metadata?.changedFiles)) result.metadata.changedFiles.forEach(add);
+      add(result.outputPath);
+      add(result.metadata?.outputPath);
+    }
+  }
+  if (nudgeManager) {
+    const lastUserTimestamp = [...messages].reverse().find((message) => message.role === 'user')?.timestamp ?? 0;
+    nudgeManager.getModifiedFilesSince(lastUserTimestamp).forEach(add);
+  }
+  return paths;
+}
+
 async function genericEvidenceRefs(
   messages: readonly Message[],
   summary: CompletionSummaryRecord | undefined,
   workingDirectory: string,
+  nudgeManager?: RuntimeContext['nudgeManager'],
 ): Promise<{ refs: EvidenceRef[]; problems: string[] }> {
   const refs: EvidenceRef[] = successfulToolResults(messages).map((result) => makeEvidenceRef({
     id: result.toolCallId,
@@ -55,6 +108,11 @@ async function genericEvidenceRefs(
   // 基线对它们无条件出一条 candidate ref、不报错；这里保持同一口径：能回读就升 read，
   // 读不到退回 candidate、不进 problems，verdict 不因一个本就该消失的文件降级。
   const changedPaths = [...new Set(summary?.changedFiles ?? [])].filter((filePath) => !declaredPaths.has(filePath));
+  // 回读/断言扫描只覆盖本 run 真碰过的文件；更早轮次的产物保留 candidate 条目（交付清单
+  // 如实列出），但不回读、不断言、不报 UNREADABLE——它此刻是否存在、写了什么，是那一轮的账。
+  const runPaths = currentRunFilePaths(messages, workingDirectory, nudgeManager);
+  // summary 一侧生产上已是绝对路径，这里仍按同一规则归一化再比对，不吃调用方有没有归一化。
+  const inCurrentRun = (filePath: string) => runPaths.has(normalizeDeliverablePath(filePath, workingDirectory));
   const canonicalPaths = new Set<string>();
   const readback = (filePath: string): boolean => {
     try {
@@ -68,11 +126,13 @@ async function genericEvidenceRefs(
       return false;
     }
   };
+  const candidateFileRef = (filePath: string) => makeEvidenceRef({ kind: 'file', ref: filePath, source: 'completion_summary', state: 'candidate' });
   for (const filePath of declaredPaths) {
+    if (!inCurrentRun(filePath)) { refs.push(candidateFileRef(filePath)); continue; }
     if (!readback(filePath)) problems.push(`COMPLETION_FILE_UNREADABLE: ${filePath}`);
   }
   for (const filePath of changedPaths) {
-    if (!readback(filePath)) refs.push(makeEvidenceRef({ kind: 'file', ref: filePath, source: 'completion_summary', state: 'candidate' }));
+    if (!inCurrentRun(filePath) || !readback(filePath)) refs.push(candidateFileRef(filePath));
   }
   for (const verification of summary?.verificationEvidence ?? []) {
     // 只在「明确知道它非零退出」时丢弃证据。生产上普通前台 Bash 的成功返回不写
@@ -149,7 +209,7 @@ async function buildTurnOutcome(
     };
   }
 
-  const { refs: evidenceRefs, problems } = await genericEvidenceRefs(ctx.messages, summary, ctx.workingDirectory ?? process.cwd());
+  const { refs: evidenceRefs, problems } = await genericEvidenceRefs(ctx.messages, summary, ctx.workingDirectory ?? process.cwd(), ctx.nudgeManager);
   const voiceDispatch = currentVoiceDispatch(ctx.messages);
   if (voiceDispatch) {
     if (terminal !== 'completed') {
@@ -167,6 +227,53 @@ async function buildTurnOutcome(
   if (terminal !== 'completed') {
     return { terminal, verdict: 'n_a', evidenceRefs: [], source: 'generic' };
   }
+
+  // 交付物落盘核对（issue #1998）：本 run 声明（declare_deliverables）或最终回复声称的
+  // 交付物，存在且非空才认。核对通过是 verified 的另一条可达路径——此前 verified 只在
+  // 跑过验证命令时可达，而产品交付形态（网页/报告/演示稿）绝大多数不跑测试命令，
+  // verdict 因此几乎全 self_claimed（605/608）。缺漏记 problems，verdict 保持 self_claimed；
+  // 回喂补一轮在 messageProcessor 收尾前做（有界，TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS）。
+  // workingDirectory 缺失时不核对：回落 process.cwd() 会拿宿主进程 cwd 解析相对路径，
+  // 核对结果没有语义（ai-review #2007 第五轮 Nit）。
+  const workingDirectory = ctx.workingDirectory;
+  const deliverableClaims = workingDirectory
+    ? collectDeliverableClaims({
+      messages: ctx.messages,
+      workingDirectory,
+      declaredDeliverables: ctx.artifact?.declaredDeliverables,
+      nudgeManager: ctx.nudgeManager,
+    })
+    : [];
+  const deliverableCheck: DeliverableDiskCheckResult = workingDirectory
+    ? checkDeliverablesOnDisk(deliverableClaims, workingDirectory)
+    : { claims: [], evidenceRefs: [], missing: [] };
+  problems.push(...formatDeliverableProblems(deliverableCheck.missing));
+  const knownRefs = new Set(evidenceRefs.map((ref) => ref.ref));
+  for (const ref of deliverableCheck.evidenceRefs) {
+    if (!knownRefs.has(ref.ref)) evidenceRefs.push(ref);
+  }
+  // 模型没显式声明、但回复里声称了交付物：把抽取结果记进同一本 deliverables_declaration 账，
+  // 不另起平行机制；本 run 已有显式声明（declared/overridden）则不重复记。
+  const inferredClaims = deliverableClaims.filter((claim) => claim.source === 'inferred');
+  const runEvents = currentRunEvents(ctx.turnTrace.getEvents());
+  if (
+    inferredClaims.length > 0
+    && !runEvents.some((event) => event.type === 'deliverables_declaration' && event.data.status !== 'rejected')
+  ) {
+    ctx.turnTrace.record('deliverables_declaration', {
+      status: 'inferred',
+      finalArtifacts: inferredClaims.map((claim) => claim.claimed),
+    });
+  }
+
+  // verified 提升只认「本 run 真碰过」的声称文件（与 genericEvidenceRefs 回读同一把 run 域尺）：
+  // 顺带提及的既有文件（如 ./README.md）配上一个声称动词不该把 verdict 抬成 verified——
+  // 它在盘上 ≠ 本 run 交付了它（ai-review #2007 Nit）。缺漏核对不受此限：声称了不存在的就是幻觉。
+  const runPaths = workingDirectory ? currentRunFilePaths(ctx.messages, workingDirectory, ctx.nudgeManager) : new Set<string>();
+  const claimsDeliveredThisRun = deliverableCheck.claims.length > 0
+    && deliverableCheck.missing.length === 0
+    && deliverableCheck.claims.every((claim) => runPaths.has(claim.resolved));
+
   return {
     terminal,
     // File readback proves delivery bytes, not the truth of claims inside them.
@@ -174,8 +281,11 @@ async function buildTurnOutcome(
     // 从不清空，扫全量等于「会话里任何一轮命中过一次，此后每轮永久降级」；按 turnIndex 过滤则
     // 挡不住上一条用户消息里同号迭代的残留（见 currentRunEvents 注释）。
     verdict: problems.length === 0
-      && !currentRunEvents(ctx.turnTrace.getEvents()).some((event) => event.type === 'evidence_boundary')
-      && evidenceRefs.some((ref) => ref.kind === 'test' && ref.freshness.state === 'read')
+      && !runEvents.some((event) => event.type === 'evidence_boundary')
+      && (
+        evidenceRefs.some((ref) => ref.kind === 'test' && ref.freshness.state === 'read')
+        || claimsDeliveredThisRun
+      )
       ? 'verified' : 'self_claimed',
     evidenceRefs,
     source: 'generic',

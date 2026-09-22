@@ -23,7 +23,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: excel-bench-59196
     type: task
-    category: formula
+    category: task_completion
+    tags: [formula]
     difficulty: medium
     description: "公式：返回行中最大值所在列的标题"
     setup:
@@ -41,7 +42,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: excel-bench-CF_28766
     type: task
-    category: conditional_formatting
+    category: task_completion
+    tags: [conditional_formatting]
     difficulty: hard
     description: "条件格式：同日期内仅标记第二次及后续重复名字"
     setup:
@@ -61,7 +63,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: excel-bench-382-29
     type: task
-    category: macro
+    category: task_completion
+    tags: [macro]
     difficulty: hard
     description: "宏：跨多个 Sheet 对 B2:B26 求和到 Totals 表"
     setup:
@@ -81,7 +84,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: excel-bench-66-1
     type: task
-    category: text_parsing
+    category: task_completion
+    tags: [text_parsing]
     difficulty: hard
     description: "从产品描述中提取尺寸并计算面积(m2)"
     setup:
@@ -100,7 +104,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: excel-bench-353-50
     type: task
-    category: macro
+    category: task_completion
+    tags: [macro]
     difficulty: hard
     description: "宏：动态插入上月列并复制公式"
     setup:
@@ -120,7 +125,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: excel-bench-91-3
     type: task
-    category: transpose
+    category: task_completion
+    tags: [transpose]
     difficulty: hard
     description: "转置多个 Sheet 并生成汇总报告"
     setup:
@@ -143,7 +149,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: excel-bench-46167
     type: task
-    category: formula
+    category: task_completion
+    tags: [formula]
     difficulty: easy
     description: "SUMIF 公式：按 Product ID 求和 QTY"
     setup:
@@ -162,7 +169,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: excel-bench-58994
     type: task
-    category: text_parsing
+    category: task_completion
+    tags: [text_parsing]
     difficulty: medium
     description: "从 SKU 格式中提取 Size 并转换为加仑"
     setup:
@@ -182,7 +190,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: excel-bench-55427
     type: task
-    category: formula
+    category: task_completion
+    tags: [formula]
     difficulty: hard
     description: "INDEX/MATCH 跨表查找学校数据"
     setup:
@@ -204,7 +213,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: excel-bench-44389
     type: task
-    category: formula
+    category: task_completion
+    tags: [formula]
     difficulty: hard
     description: "公式：返回行中 >0 最小值所在列的标题（多值用逗号分隔）"
     setup:

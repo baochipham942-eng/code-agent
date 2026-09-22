@@ -5,7 +5,14 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import os from 'os';
 import path from 'path';
-import type { LibraryItem, LibraryItemKind, LibraryListOptions, SessionContextPin } from '@shared/contract/library';
+import type {
+  LibraryItem,
+  LibraryItemKind,
+  LibraryLearnStatus,
+  LibraryListOptions,
+  SessionContextPin,
+} from '@shared/contract/library';
+import { isLibraryLearnStatus } from '@shared/contract/library';
 import { guardSensitiveText } from '../../../security/sensitiveDataGuard';
 
 type SQLiteRow = Record<string, unknown>;
@@ -51,6 +58,11 @@ function rowToLibraryItem(row: SQLiteRow): LibraryItem {
     sourceSessionId: (row.source_session_id as string | null) ?? undefined,
     sourceRoleId: (row.source_role_id as string | null) ?? undefined,
     contentHash: (row.content_hash as string | null) ?? undefined,
+    learnStatus: isLibraryLearnStatus(String(row.learn_status ?? ''))
+      ? row.learn_status as LibraryLearnStatus
+      : 'pending',
+    learnError: (row.learn_error as string | null) ?? undefined,
+    learnUpdatedAt: (row.learn_updated_at as number | null) ?? undefined,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
   };
@@ -64,8 +76,9 @@ export class LibraryRepository {
   createItem(item: LibraryItem): void {
     this.db.prepare(`
       INSERT OR REPLACE INTO library_items
-        (id, project_id, title, kind, path_or_uri, tags, summary, source_session_id, source_role_id, content_hash, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, project_id, title, kind, path_or_uri, tags, summary, source_session_id, source_role_id, content_hash,
+         learn_status, learn_error, learn_updated_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       item.id,
       item.projectId,
@@ -77,6 +90,9 @@ export class LibraryRepository {
       item.sourceSessionId ?? null,
       item.sourceRoleId ?? null,
       item.contentHash ?? null,
+      isLibraryLearnStatus(String(item.learnStatus ?? '')) ? item.learnStatus : 'pending',
+      item.learnError ? guardLibraryText(item.learnError, 1_000) : null,
+      item.learnUpdatedAt ?? null,
       item.createdAt,
       item.updatedAt,
     );
@@ -159,6 +175,64 @@ export class LibraryRepository {
   deleteItem(id: string): boolean {
     const result = this.db.prepare('DELETE FROM library_items WHERE id = ?').run(id);
     return result.changes > 0;
+  }
+
+  /**
+   * 学习状态迁移（N-LIBRARY-LEARN-STATUS 状态机唯一写口）。
+   * 只动 learn_* 列：学习状态churn不该重排按 updated_at 排序的用户列表。
+   */
+  updateLearnStatus(
+    id: string,
+    status: LibraryLearnStatus,
+    patch: { error?: string | null; now: number },
+  ): boolean {
+    const current = this.db
+      .prepare('SELECT learn_status FROM library_items WHERE id = ?')
+      .get(id) as SQLiteRow | undefined;
+    if (!current) return false;
+    const currentStatus = isLibraryLearnStatus(String(current.learn_status ?? ''))
+      ? current.learn_status as LibraryLearnStatus
+      : 'pending';
+    const allowed: Record<LibraryLearnStatus, readonly LibraryLearnStatus[]> = {
+      pending: ['pending', 'running', 'failed'],
+      running: ['running', 'ready', 'failed'],
+      ready: ['ready', 'running'],
+      failed: ['failed', 'running'],
+    };
+    if (!allowed[currentStatus].includes(status)) {
+      throw new Error(`Invalid library learn status transition: ${currentStatus} -> ${status}`);
+    }
+    const result = this.db
+      .prepare(
+        `UPDATE library_items
+         SET learn_status = ?, learn_error = ?, learn_updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(status, patch.error ? guardLibraryText(patch.error, 1_000) : null, patch.now, id);
+    return result.changes > 0;
+  }
+
+  /** 待学习条目 id（迁移旧行 + 卡死的 running），供 sweep 补跑 */
+  listPendingLearnIds(limit: number, now: number = Date.now(), staleRunningMs: number = 120_000): string[] {
+    const staleBefore = now - staleRunningMs;
+    const rows = this.db
+      .prepare(
+        `SELECT id FROM library_items
+         WHERE learn_status = 'pending'
+            OR (learn_status = 'running' AND (learn_updated_at IS NULL OR learn_updated_at < ?))
+         ORDER BY updated_at ASC LIMIT ?`,
+      )
+      .all(staleBefore, limit) as SQLiteRow[];
+    return rows.map((row) => row.id as string);
+  }
+
+  /** 按路径跨项目找条目（依据投影：citation.source 不携带项目语义） */
+  findByPathAnyProject(pathOrUri: string): LibraryItem | undefined {
+    const normalizedPathOrUri = normalizePathOrUri(pathOrUri);
+    const row = this.db
+      .prepare('SELECT * FROM library_items WHERE path_or_uri = ? ORDER BY updated_at DESC LIMIT 1')
+      .get(normalizedPathOrUri) as SQLiteRow | undefined;
+    return row ? rowToLibraryItem(row) : undefined;
   }
 
   findByPath(projectId: string | null, pathOrUri: string): LibraryItem | undefined {

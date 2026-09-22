@@ -116,6 +116,9 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 import { DecisionSlot } from '../../../src/renderer/components/features/chat/DecisionSlot';
 import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
+import { useRunControlStore } from '../../../src/renderer/stores/runControlStore';
+import { useTaskStore } from '../../../src/renderer/stores/taskStore';
+import { useToastStore } from '../../../src/renderer/hooks/useToast';
 
 describe('DecisionSlot', () => {
   beforeEach(() => {
@@ -125,10 +128,15 @@ describe('DecisionSlot', () => {
     storeState.pendingPermissionSessionId = null;
     storeState.queuedPermissionRequests = {};
     window.localStorage.clear();
+    useTaskStore.setState({ sessionStates: {} });
+    useRunControlStore.getState().publishActions(null);
+    useToastStore.setState({ toasts: [] });
   });
 
   afterEach(() => {
     cleanup();
+    useRunControlStore.getState().publishActions(null);
+    useToastStore.setState({ toasts: [] });
     for (const request of [normalRequest, secondNormalRequest, dangerousRequest, writebackRequest]) {
       releaseApprovalResponse(request.id);
     }
@@ -387,7 +395,7 @@ describe('DecisionSlot', () => {
       .toContain('上次回复已中断，写入 reload-proof.md 未执行');
   });
 
-  it('Enter 触发同一继续 handler；放弃只清掉当前中断槽位', async () => {
+  it('Enter 触发同一继续 handler；放弃走真实取消，成功后清掉当前中断槽位', async () => {
     const snapshot = {
       sessionId: 'session-current',
       turnId: 'interrupted-turn-2',
@@ -409,10 +417,77 @@ describe('DecisionSlot', () => {
     await waitFor(() => expect(onContinue).toHaveBeenCalledWith(retryMessage));
     first.unmount();
 
+    // 放弃现在必须走真实取消（useAgent().cancel）：宿主把 waiting 的 durable run 终态化
+    // 后任务状态落到 cancelled，本地水位与槽位收尾都发生在确认之后。
+    useRunControlStore.getState().publishActions({
+      interrupt: async () => {
+        useTaskStore.getState().updateSessionState('session-current', { status: 'cancelled' });
+      },
+    });
     const abandonedSnapshot = { ...snapshot, turnId: 'interrupted-turn-3' };
     render(<DecisionSlot streamInterruption={{ snapshot: abandonedSnapshot, retryMessage, onContinue }} />);
     fireEvent.click(screen.getByRole('button', { name: '放弃' }));
-    expect(screen.queryByTestId('decision-slot')).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId('decision-slot')).toBeNull());
+    expect(window.localStorage.getItem('neo:interrupt:resolved:session-current:interrupted-turn-3')).toBe('abandoned');
+  });
+
+  it('放弃时取消未结算：槽位保留、不写本地水位、toast 给出可见反馈', async () => {
+    const snapshot = {
+      sessionId: 'session-current',
+      turnId: 'interrupted-turn-unsettled',
+      content: '',
+      reasoning: '',
+      toolCalls: [{ id: 'write-u', name: 'Write', arguments: '{}' }],
+      estimatedTokens: 0,
+      timestamp: 1,
+      isFinal: false,
+      streamStatus: 'incomplete',
+      stableForExecution: false,
+      incompleteToolCallIds: [],
+    } as StreamRecoverySnapshot;
+    useRunControlStore.getState().publishActions({
+      interrupt: async () => {
+        // 取止停在了 'cancelling'（/api/cancel 202 未结算 / IPC 抛错被 useAgent 吞掉）。
+        useTaskStore.getState().updateSessionState('session-current', { status: 'cancelling' });
+      },
+    });
+    render(<DecisionSlot streamInterruption={{
+      snapshot,
+      retryMessage: { id: 'u-unsettled', role: 'user', content: '写', timestamp: 0 } as Message,
+      onContinue: vi.fn().mockResolvedValue(true),
+    }} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '放弃' }));
+
+    await waitFor(() => expect(useToastStore.getState().toasts.some(toast => toast.type === 'error')).toBe(true));
+    expect(screen.getByTestId('stream-interruption-decision')).toBeTruthy();
+    expect(window.localStorage.getItem('neo:interrupt:resolved:session-current:interrupted-turn-unsettled')).toBeNull();
+  });
+
+  it('放弃时聊天运行时未挂载：同样给可见反馈而不是静默', async () => {
+    const snapshot = {
+      sessionId: 'session-current',
+      turnId: 'interrupted-turn-no-control',
+      content: '',
+      reasoning: '',
+      toolCalls: [],
+      estimatedTokens: 0,
+      timestamp: 1,
+      isFinal: false,
+      streamStatus: 'incomplete',
+      stableForExecution: false,
+      incompleteToolCallIds: [],
+    } as StreamRecoverySnapshot;
+    render(<DecisionSlot streamInterruption={{
+      snapshot,
+      retryMessage: { id: 'u-no-control', role: 'user', content: '写', timestamp: 0 } as Message,
+      onContinue: vi.fn().mockResolvedValue(true),
+    }} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '放弃' }));
+
+    await waitFor(() => expect(useToastStore.getState().toasts.some(toast => toast.type === 'error')).toBe(true));
+    expect(screen.getByTestId('stream-interruption-decision')).toBeTruthy();
   });
 
   it('仅有 pending 权限请求时不把右栏内容信号置为 true', () => {

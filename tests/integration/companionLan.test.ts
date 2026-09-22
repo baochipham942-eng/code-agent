@@ -5,16 +5,26 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...actual, networkInterfaces: vi.fn(actual.networkInterfaces) };
 });
 import Database from 'better-sqlite3';
-import { networkInterfaces } from 'node:os';
+import { createServer } from 'node:http';
+import { createConnection, createServer as createTcpServer, type Server as TcpServer } from 'node:net';
+import { hostname, networkInterfaces } from 'node:os';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { LanCompanionManager } from '../../src/host/services/companion/LanCompanionManager';
 import { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
+import { CompanionFileService } from '../../src/host/services/companion/CompanionFileService';
+import { FileCache } from '../../packages/mobile/src/platform/fileCache';
 import { LanCompanionServer } from '../../src/host/services/companion/LanCompanionServer';
 import { createHandshake, createIdentity, NoiseChannel } from '../../src/shared/companion/noiseChannel';
-import { fromHex, toHex, isPrivateIPv4, parseInvitation, validateLanEndpoint, type LanBinding } from '../../src/shared/companion/lanProtocol';
+import { fromHex, toHex, isLanPeer, isPrivateIPv4, lanAdvertisedHost, parseInvitation, validateLanEndpoint, type LanBinding } from '../../src/shared/companion/lanProtocol';
 import { LanCompanionClient, type LanPost } from '../../packages/mobile/src/platform/lanCompanionClient';
 import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 import { createCompanionStore } from '../../packages/mobile/src/stores/companionStore';
+import { companionTranscriptionSettlement } from '../../src/shared/contract/speech';
 import type { CompanionSyncResult } from '../../src/shared/contract/companion';
+import { registerCompanionDictation, type CompanionDictationPort } from '../../src/host/services/capabilities/hostCapabilityPorts';
+import type { CompanionDictationOpenResult } from '../../src/shared/contract/companionDictation';
 import vector from '../fixtures/companion/lan-noise-vector.json';
 
 describe('LAN companion: real HTTP + Noise + SQLite', () => {
@@ -48,6 +58,236 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
   const command = (binding: LanBinding, id = 'once', sessionId = 'shared') => ({ version: 1, deviceId: binding.deviceId,
     commandId: id, scopeEpoch: binding.scopeEpoch, sessionId, action: 'message.send', payload: { text: 'private-lan-message-正文' } });
   async function pair() { return client.pair(JSON.stringify(server.invite(['shared']))); }
+
+  it('invites with the literal first and the mDNS name as the alternate', () => {
+    // 2026-09-12 真机：只广告 mDNS 名时，Mac 连着 iPhone 热点的手机解析不了宿主的 .local，
+    // 配对 100% 失败（app 报「无法连接电脑」，宿主端口上零 TCP，Safari 直连同样找不到服务器）。
+    // 字面量是「此刻一定连得上」的那个，mDNS 名换网后才有价值——所以两个都给，顺序不能反。
+    const invitation = server.invite(['shared']);
+    expect(invitation.endpoint).toBe(`http://${address}:${new URL(invitation.endpoint).port}`);
+    const advertised = lanAdvertisedHost(address!, hostname());
+    if (advertised === address) expect(invitation.altEndpoint).toBeUndefined();
+    else expect(invitation.altEndpoint).toBe(`http://${advertised}:${new URL(invitation.endpoint).port}`);
+    expect(parseInvitation(JSON.stringify(invitation))).toMatchObject({ endpoint: invitation.endpoint });
+  });
+
+  it('rejects an invitation whose alternate address is not a valid LAN endpoint', () => {
+    const invitation = server.invite(['shared']);
+    for (const altEndpoint of ['http://evil.example:8182', 'http://8.8.8.8:8182', 'http://192.168.1.2:8182/path', 42]) {
+      expect(() => parseInvitation(JSON.stringify({ ...invitation, altEndpoint }))).toThrow();
+    }
+  });
+
+  it('falls back to an ephemeral port when the LAN port is taken instead of failing the invite (真机首验回归 2026-09-15)', async () => {
+    // 同机另一张 Host 脸常驻 lanPort（现场：01:04 起的旧 Dev app 占着 8182，新 Host 的
+    // invite 全部 EADDRINUSE，配对入口整个消失）。占位者用 wildcard 绑定制造真冲突。
+    const squatter = createServer();
+    await new Promise<void>(resolve => squatter.listen(0, () => resolve()));
+    const takenPort = (squatter.address() as { port: number }).port;
+    const busy = new LanCompanionServer(gateway, hostIdentity, () => now);
+    await busy.start(address!, takenPort); // 修复前：这里抛 EADDRINUSE
+    const invitation = busy.invite(['shared']);
+    const boundPort = Number(new URL(invitation.endpoint).port);
+    expect(boundPort).not.toBe(takenPort); // 端点带的是实际端口
+    expect(boundPort).toBeGreaterThan(0);
+    // 换了端口也得真能配上对——端点随 QR/绑定走，手机无感。
+    const binding = await client.pair(JSON.stringify(invitation));
+    expect(binding.deviceId).toBeTruthy();
+    await busy.stop();
+    await new Promise<void>(resolve => squatter.close(() => resolve()));
+  });
+
+  it('pairs over the alternate address when the primary one is dead, and remembers which worked', async () => {
+    const live = server.invite(['shared']);
+    // 主地址指向一个没人听的端口：这就是「宿主换了网、旧地址失效」在测试里的样子。
+    const dead = `http://${address}:${1}`;
+    const binding = await client.pair(JSON.stringify({ ...live, endpoint: dead, altEndpoint: live.endpoint }));
+    expect(binding.endpoint).toBe(live.endpoint);
+    expect(binding.altEndpoint).toBe(dead);
+    expect(await client.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+  });
+
+  it('reconnects over the alternate address after the primary one stops answering', async () => {
+    const live = server.invite(['shared']);
+    const binding = await client.pair(JSON.stringify(live));
+    const dead = `http://${address}:${1}`;
+    const recovered = await client.recover({ endpoint: dead, altEndpoint: binding.endpoint, hostKey: binding.hostKey }, binding);
+    expect(recovered.endpoint).toBe(binding.endpoint);
+    expect(recovered.altEndpoint).toBe(dead);
+  });
+
+  // N-COMPANION-MDNS-FALLBACK：宿主多张私网接口时 endpoint 只取 [0]，可能是手机根本不在的
+  // 那一张（电脑连手机热点：Wi-Fi+热点、热点+VPN 虚接口）；热点下 .local 又解析不了 ⇒ 两个候选
+  // 全灭。candidates 把全部私网字面量带出去（含 [0]，手机侧去重保序）。
+  const iface = (addr: string) => ({ address: addr, family: 'IPv4' as const, internal: false,
+    netmask: '255.255.255.0', mac: '00:00:00:00:00:00', cidr: `${addr}/24` });
+  it('invites with every private literal aboard when multi-homed; [0] stays the primary', () => {
+    const port = Number(new URL(server.invite(['shared']).endpoint).port);
+    const interfaces = vi.mocked(networkInterfaces);
+    // 接口枚举第一张（Wi-Fi）不一定是手机在的那张（热点）：候选必须全带。
+    interfaces.mockReturnValueOnce({ en0: [iface('192.168.1.5')], bridge100: [iface('172.20.10.2')] });
+    const invitation = server.invite(['shared']);
+    expect(invitation.endpoint).toBe(`http://192.168.1.5:${port}`);
+    expect(invitation.candidates).toEqual([`http://192.168.1.5:${port}`, `http://172.20.10.2:${port}`]);
+    // 整份邀请（含 candidates 逐条白名单）要能过 parse。
+    expect(parseInvitation(JSON.stringify(invitation))).toMatchObject({ endpoint: invitation.endpoint });
+  });
+  it('omits candidates on a single-homed host: they would just repeat the endpoint', () => {
+    const port = Number(new URL(server.invite(['shared']).endpoint).port);
+    vi.mocked(networkInterfaces).mockReturnValueOnce({ en0: [iface('192.168.1.5')] });
+    const invitation = server.invite(['shared']);
+    expect(invitation.endpoint).toBe(`http://192.168.1.5:${port}`);
+    expect(invitation.candidates).toBeUndefined();
+  });
+  it('falls back to the start address with no candidates when every private interface is gone', () => {
+    const port = Number(new URL(server.invite(['shared']).endpoint).port);
+    vi.mocked(networkInterfaces).mockReturnValueOnce({});
+    const invitation = server.invite(['shared']);
+    // 列表为空的兜底行为不变：报 start 时那个，candidates 缺席。
+    expect(invitation.endpoint).toBe(`http://${address}:${port}`);
+    expect(invitation.candidates).toBeUndefined();
+  });
+  it('pairs over a later literal candidate when [0] is the network the phone is not on', async () => {
+    const live = server.invite(['shared']);
+    // 宿主多网卡：endpoint=[0] 是手机不在的那张网（用没人听的端口扮演），真正可达的那张在 candidates 里。
+    const dead = `http://${address}:${1}`;
+    const binding = await client.pair(JSON.stringify({ ...live, endpoint: dead, candidates: [dead, live.endpoint], altEndpoint: undefined }));
+    expect(binding.endpoint).toBe(live.endpoint);
+    expect(binding.altEndpoint).toBe(dead);
+    expect(await client.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+  });
+  it('persists pairing candidates and recovers through them after the first dial fails (整条链)', async () => {
+    const live = server.invite(['shared']);
+    const dead = `http://${address}:${1}`;
+    const raw = JSON.stringify({ ...live, endpoint: dead, candidates: [dead, live.endpoint], altEndpoint: undefined });
+    let storage: string | null = null;
+    let lose = true;
+    const port = {
+      read: async () => storage,
+      write: async (value: string) => { storage = value; },
+      scan: async () => raw,
+      post: async (url: string, body: unknown) => {
+        const result = await post(url, body);
+        if (url.endsWith('/finish') && String(url).startsWith(live.endpoint) && lose) { lose = false; throw new Error('PAIRING_RECEIPT_LOST'); }
+        return result;
+      },
+    };
+    const first = createCompanionStore(port, () => {});
+    await first.getState().pair();
+    expect(first.getState().status).toBe('offline');
+    // 配对失败的瞬间，候选（含 candidates）要已经落盘——重启后的自动重连靠它救。
+    expect(JSON.parse(storage!).candidate).toMatchObject({ endpoint: dead, candidates: [dead, live.endpoint] });
+    const restarted = createCompanionStore(port, () => {});
+    await restarted.getState().hydrate();
+    expect(restarted.getState().status).toBe('connected');
+    restarted.getState().pause();
+  });
+
+  /**
+   * 地址自愈（N-COMPANION-NOLANPORT，爸 2026-09-16 真机）：绑定里的地址是配对那一刻写死的，
+   * 宿主换网后就死，手机没有任何重新发现手段 ⇒ 只能删 app 重装。现在握手回执捎上
+   * 「这次实际落在宿主哪张网卡上」，手机据此把地址刷新成当前的。
+   *
+   * 测试里造不出「两个都能到达的私网地址」，所以用一个几行的 TCP 转发器当第二个入口：
+   * 手机拨转发器，宿主看到的 socket.localAddress 由转发器连向哪里决定 —— 两种情况都确定性可控。
+   */
+  const forwarder = async (to: { host: string; port: number }) => {
+    const sockets = new Set<ReturnType<typeof createConnection>>();
+    const proxy: TcpServer = createTcpServer(incoming => {
+      const upstream = createConnection(to);
+      sockets.add(incoming); sockets.add(upstream);
+      incoming.pipe(upstream); upstream.pipe(incoming);
+      const drop = () => { incoming.destroy(); upstream.destroy(); };
+      incoming.on('error', drop); upstream.on('error', drop);
+    });
+    await new Promise<void>(resolve => proxy.listen(0, address!, () => resolve()));
+    return {
+      port: (proxy.address() as { port: number }).port,
+      close: async () => { for (const s of sockets) s.destroy(); await new Promise<void>(r => proxy.close(() => r())); },
+    };
+  };
+
+  it('welcome 捎回「你够得到我的那张网卡」，手机据此把绑定刷新成宿主当前地址', async () => {
+    const live = server.invite(['shared']);
+    const realPort = Number(new URL(live.endpoint).port);
+    // 转发器连向宿主的真实网卡 ⇒ 宿主看到 localAddress = 私网地址 ⇒ 报得出地址。
+    const relay = await forwarder({ host: address!, port: realPort });
+    const dialed = `http://${address}:${relay.port}`;
+    const binding = await client.pair(JSON.stringify({ ...live, endpoint: dialed }));
+    // 存的不是我们拨的那个转发器端口，而是宿主报的当前地址。
+    expect(binding.endpoint).toBe(live.endpoint);
+    expect(binding.endpoint).not.toBe(dialed);
+    // 被挤下主位的那个**刚刚拨通过**，必须落到备用位：否则「主地址死了、经备用拨通」那一轮
+    // 会把唯一换网还能用的候选（mDNS 名）整个丢掉，宿主再换一次网就又只能重新扫码
+    // （grok ai-review PR#1904 Important）。
+    expect(binding.altEndpoint).toBe(dialed);
+    // 自愈后的地址必须真能用，否则就是把一个能用的换成不能用的。
+    expect(await client.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+    await relay.close();
+  });
+
+  /**
+   * 宿主报了个**校验不过**的地址时，手机必须原地不动。从真实路径打：把宿主的 reachedEndpoint
+   * 换掉（TS 的 private 只是编译期约束），welcome 就会捎着这个恶意值下来。
+   * 形状规则本身归 validateLanEndpoint 管，这里钉的是「有没有真的过那道校验」这条接线。
+   */
+  it.each([
+    ['公网地址', 'http://8.8.8.8:8182'],
+    ['回环地址', 'http://127.0.0.1:8182'],
+    ['https', 'https://192.168.1.9:8182'],
+    ['带路径', 'http://192.168.1.9:8182/x'],
+    ['压根不是 URL', 'not-a-url'],
+  ])('宿主报了%s：手机不采纳，留住刚拨通的那个（坏值不许换掉唯一能用的地址）', async (_label, hostile) => {
+    const invitation = server.invite(['shared']);
+    const patched = server as unknown as { reachedEndpoint: (via?: string) => string | null };
+    const original = patched.reachedEndpoint;
+    patched.reachedEndpoint = () => hostile;
+    try {
+      const solo = new LanCompanionClient(createIdentity(), post);
+      const binding = await solo.pair(JSON.stringify(invitation));
+      expect(binding.endpoint).toBe(invitation.endpoint);
+      // 前提自证：这一轮宿主确实报了那个恶意值，否则「没被换掉」是恒真判据。
+      expect(patched.reachedEndpoint()).toBe(hostile);
+      expect(await solo.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+      solo.close();
+    } finally { patched.reachedEndpoint = original; }
+  });
+
+  it('宿主拿不准对面从哪张网卡进来时不报地址——手机留住手里那个（宁可不说，不可说错）', async () => {
+    const live = server.invite(['shared']);
+    const realPort = Number(new URL(live.endpoint).port);
+    // 转发器连向 127.0.0.1 ⇒ 宿主看到 localAddress = loopback，那不是手机够得到的地址。
+    // 这一档必须**什么都不报**：报了手机就会把唯一能用的地址换成一个它永远连不上的。
+    const relay = await forwarder({ host: '127.0.0.1', port: realPort });
+    const dialed = `http://${address}:${relay.port}`;
+    const solo = new LanCompanionClient(createIdentity(), post);
+    const binding = await solo.pair(JSON.stringify({ ...live, endpoint: dialed }));
+    expect(binding.endpoint).toBe(dialed);
+    expect(await solo.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+    solo.close();
+    await relay.close();
+  });
+
+  it('does not spend the alternate address when the handshake itself was rejected', async () => {
+    // 换地址只解决「没连上」。主机身份对不上说明已经够到宿主了，换个地址还是同一台机器，
+    // 只会白烧掉一次性邀请，并把真正的错误换成第二次的。
+    const live = server.invite(['shared']);
+    let hellos = 0;
+    const counting = new LanCompanionClient(createIdentity(), async (url, body) => {
+      if (url.endsWith('/v1/hello')) hellos += 1;
+      return post(url, body);
+    });
+    await expect(counting.pair(JSON.stringify({ ...live, altEndpoint: live.endpoint,
+      hostKey: toHex(createIdentity().publicKey) }))).rejects.toThrow('HOST_KEY_MISMATCH');
+    expect(hellos).toBe(1);
+    counting.close();
+  });
+
+  it('surfaces the primary failure, not the alternate one, when neither address answers', async () => {
+    const live = server.invite(['shared']);
+    await expect(client.pair(JSON.stringify({ ...live, endpoint: `http://${address}:1`, altEndpoint: `http://${address}:2` })))
+      .rejects.toThrow(/ECONNREFUSED|fetch failed/);
+  });
 
   it('pairs, delivers a command and receives scoped events without plaintext on the wire', async () => {
     const binding = await pair();
@@ -123,6 +363,38 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     await expect(client.resume(binding)).rejects.toThrow('HTTP_403');
     expect(executions).toBe(0);
   });
+  it('revocation lands the phone on rejected without an auto-retry flash (LAN exchange names the revoked device)', async () => {
+    // post 助手按 nativeCompanion.post 的口径折叠 403（exchange 读 body 点名撤销，其余 403 原样）。
+    // 那段映射的真身由 tests/unit/mobile/nativeCompanionExchange.test.ts 钉住，这里只复刻。
+    const nativeMappedPost: LanPost = async (url, body) => {
+      const res = await fetch(url, { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => null) as { error?: unknown } | null;
+      if (res.status === 403 && url.endsWith('/v1/exchange') && data?.error === 'COMPANION_DEVICE_REVOKED') throw new Error('COMPANION_DEVICE_REVOKED');
+      if (res.status === 403 && !url.endsWith('/v1/exchange')) throw new Error('COMPANION_PAIRING_REJECTED');
+      if (!res.ok) throw new Error('COMPANION_NETWORK_UNAVAILABLE');
+      return data;
+    };
+    const raw = JSON.stringify(server.invite(['shared']));
+    let storage: string | null = null;
+    const port = {
+      read: async () => storage,
+      write: async (value: string) => { storage = value; },
+      scan: async () => raw,
+      post: nativeMappedPost,
+    };
+    const store = createCompanionStore(port, () => {});
+    await store.getState().pair();
+    expect(store.getState().status).toBe('connected');
+    // 记录撤销之后看到的每拍（status, autoRetrying）：序列里不许出现 autoRetrying=true
+    // （记法对照 relayPath.test.ts 的 O2 用例——那一拍就是爸真机看到的「正在自动重试」一闪）。
+    const seen: { status: string; autoRetrying: boolean }[] = [];
+    const unsubscribe = store.subscribe(state => seen.push({ status: state.status, autoRetrying: state.autoRetrying }));
+    server.revoke(store.getState().binding!.deviceId);
+    await store.getState().sync();
+    expect(store.getState()).toMatchObject({ status: 'rejected', connectionError: 'connectionRejected' });
+    expect(seen.filter(state => state.autoRetrying)).toEqual([]);
+    unsubscribe();
+  });
   it('rejects cross-session actions and cross-device body substitution', async () => {
     const binding = await pair();
     expect(await client.request({ action: 'command', command: command(binding, 'bad', 'hidden') })).toMatchObject({ kind: 'rejected', reason: 'scope_denied' });
@@ -143,9 +415,25 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     const binding = await pair();
     const replies = await Promise.all(['first', 'second'].map(id => client.request({ action: 'command', command: command(binding, id) })));
     expect(replies).toHaveLength(2); expect(executions).toBe(2);
-    now += L.channelTtlMs;
+    // A channel expires only after a full TTL of silence following its last successful RPC.
+    // 显式越过边界（TTL + 1ms），不押 expiresAt <= now 的等号巧合。
+    now += L.channelTtlMs + 1;
     await expect(client.request({ action: 'status', commandId: 'first' })).rejects.toThrow('HTTP_403');
     await client.resume(binding);
+  });
+  it('keeps an active channel online beyond its original TTL', async () => {
+    await pair();
+    const firstExpiry = now + L.channelTtlMs;
+    now += L.channelTtlMs - 1;
+    await client.request({ action: 'status', commandId: 'missing' });
+    expect(now).toBeGreaterThanOrEqual(firstExpiry - 1);
+
+    now += L.channelTtlMs - 1;
+    await client.request({ action: 'status', commandId: 'missing' });
+    expect(now).toBeGreaterThan(firstExpiry);
+
+    now += L.channelTtlMs - 1;
+    await expect(client.request({ action: 'status', commandId: 'missing' })).resolves.toBeDefined();
   });
   it('retains a phone identity before pairing and recovers a lost pairing receipt', async () => {
     const raw = JSON.stringify(server.invite(['shared']));
@@ -168,33 +456,390 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(restarted.getState().status).toBe('connected'); expect(gateway.pairedDevices()).toHaveLength(1);
     restarted.getState().pause();
   });
+  it('待确认命令的文案按 action 分：语音转写不套用「请勿重复发送」', async () => {
+    // 真机反馈（2026-09-12）：转写期间状态行写的是「正在核对电脑是否已接收，请勿重复发送」——
+    // 用户既没发送什么，也不存在重复发送的风险，那句话是给 message.send 写的。
+    const identity = createIdentity();
+    const pendingVoice = {
+      version: 1, deviceId: 'device-1', scopeEpoch: 1, commandId: 'cmd-voice',
+      sessionId: 'shared', action: 'voice.transcribe',
+      payload: { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1200 },
+    };
+    const seed = (pending: unknown) => JSON.stringify({
+      version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey), pending,
+    });
+
+    const voice = createCompanionStore({ read: async () => seed(pendingVoice), write: async () => {},
+      scan: async () => '', post }, () => {});
+    await voice.getState().hydrate();
+    expect(voice.getState()).toMatchObject({ pending: true, pendingAction: 'voice.transcribe' });
+
+    const send = createCompanionStore({ read: async () => seed({ ...pendingVoice, commandId: 'cmd-send',
+      action: 'message.send', payload: { text: 'hi' } }), write: async () => {}, scan: async () => '', post }, () => {});
+    await send.getState().hydrate();
+    expect(send.getState()).toMatchObject({ pending: true, pendingAction: 'message.send' });
+
+    const idle = createCompanionStore({ read: async () => seed(undefined), write: async () => {},
+      scan: async () => '', post }, () => {});
+    await idle.getState().hydrate();
+    expect(idle.getState()).toMatchObject({ pending: false, pendingAction: null });
+  });
+
+  it('活着的那条路径也标出命令身份：发命令期间 pendingAction 被置起、settle 后归零', async () => {
+    // 上一条用例走的是重启恢复（hydrate）。这条守的是日常路径（persist）——
+    // 两条都得标，否则文案会在其中一条上串台。
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage,
+      write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
+    try {
+      await phone.getState().pair();
+      // #1915 起配对落在欢迎页（sessionId=null），send 会静默提前返回：像 App 一样先选中会话
+      phone.getState().selectSession('shared');
+      const seen: { pending: boolean; action: string | null }[] = [];
+      const unsubscribe = phone.subscribe(state => seen.push({ pending: state.pending, action: state.pendingAction }));
+      await phone.getState().send('pending-copy-正文');
+      unsubscribe();
+      expect(seen.map(sample => sample.action)).toContain('message.send');
+      // 两个字段必须同一拍翻：出现过 pending=true + action=null 的中间帧，
+      // 状态行就会在结算瞬间闪回「请勿重复发送」。
+      expect(seen.filter(sample => sample.pending && sample.action === null)).toEqual([]);
+      expect(phone.getState()).toMatchObject({ pending: false, pendingAction: null });
+    } finally { phone.getState().pause(); }
+  });
+
   it('phone storage failure prevents dispatch and keeps the draft', async () => {
     let storage: string | null = null; let fail = false; let cleared = false;
     const phone = createCompanionStore({ read: async () => storage,
       write: async value => { if (fail) throw new Error('STORAGE_FULL'); storage = value; },
       scan: async () => JSON.stringify(server.invite(['shared'])), post,
     }, () => { cleared = true; });
-    await phone.getState().pair(); fail = true;
+    await phone.getState().pair(); phone.getState().selectSession('shared'); fail = true;
     await phone.getState().send('draft must stay');
     expect(phone.getState().status).toBe('storageError'); expect(executions).toBe(0); expect(cleared).toBe(false);
   });
   it('phone restart reconciles a pending command using the same persisted ID', async () => {
-    let storage: string | null = null; let lose = true; let cleared = '';
-    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+    let storage: string | null = null; let lose = false; let armed = false; let cleared = '';
+    // 丢的是「命令的回执」不是「配对后第一个 exchange」——路由探针（relay.route）在配对后
+    // 也会做一次 exchange，按序号丢会误伤它。按「命令进待确认槽」武装，才与实现顺序解耦。
+    const port = { read: async () => storage, write: async (value: string) => { storage = value;
+        if ((JSON.parse(value) as { pending?: unknown }).pending) armed = true; },
       scan: async () => JSON.stringify(server.invite(['shared'])),
       post: async (url: string, body: unknown) => {
         const result = await post(url, body);
-        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        if (url.endsWith('/exchange') && armed && !lose) { lose = true; throw new Error('RECEIPT_LOST'); }
         return result;
       },
     };
     const phone = createCompanionStore(port, text => { cleared = text; });
-    await phone.getState().pair(); await phone.getState().send('persist before dispatch');
+    await phone.getState().pair(); phone.getState().selectSession('shared'); await phone.getState().send('persist before dispatch');
     expect(phone.getState().pending).toBe(true); expect(cleared).toBe('');
     const restarted = createCompanionStore(port, text => { cleared = text; });
     await restarted.getState().hydrate();
     expect(restarted.getState().pending).toBe(false); expect(cleared).toBe('persist before dispatch'); expect(executions).toBe(1);
     restarted.getState().pause();
+  });
+  it('退到后台是「暂停」不是「连不上」：宽限内不拆连接，回前台不重握手（N-MOBILE-BG-KEEPALIVE-GRACE）', async () => {
+    // 爸真机两件事：① 2026-09-12 Neo 还没关，切换器卡片上就写「电脑尚未连接」——那是 pause
+    // 立即拆连接逼出来的假警报；② 2026-09-18 切出去看一眼微信就回来也必重连——连接本身
+    // 没坏，是我们退后台那一刻自己拆的。现在 pause() 挂宽限：宽限内保持 connected、同一条
+    // 通道还能发；回前台只取消延迟关闭 + 探活，不重拨。（宽限到期 → offline+paused 的路径
+    // 由 phoneReconnect 单测用 fake timers 验，这里不真等 30s。）
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
+    try {
+      await phone.getState().pair();
+      phone.getState().selectSession('shared');
+      expect(phone.getState().status).toBe('connected');
+      const hostChannels = () => (server as unknown as { channels: Map<string, unknown> }).channels.size;
+      const dispatchedBefore = executions;
+      // iOS 退后台会连发两次生命周期回调：第二拍不得重挂宽限、更不得把连接拆了。
+      phone.getState().pause(); phone.getState().pause();
+      expect(phone.getState()).toMatchObject({ status: 'connected', paused: false });
+      // 宽限内同一条通道直接还能发：不需要任何重连动作，更不需要新握手。
+      await phone.getState().send('still-alive-正文');
+      expect(executions).toBe(dispatchedBefore + 1);
+      expect(phone.getState().pending).toBe(false);
+      // 回到前台：取消延迟关闭 + 探活，Host 侧不出现新握手（channels 不增）。
+      const channelsBeforeResume = hostChannels();
+      await phone.getState().reconnect();
+      expect(phone.getState()).toMatchObject({ status: 'connected', paused: false });
+      expect(hostChannels()).toBe(channelsBeforeResume);
+      // 真断线之后再退后台：报错不能被「只是暂停」盖掉
+      server.revoke(phone.getState().binding!.deviceId);
+      await phone.getState().sync();
+      expect(phone.getState().paused).toBe(false);
+      phone.getState().pause();
+      expect(phone.getState().paused).toBe(false);
+    } finally { phone.getState().pause(); }
+  });
+
+  it('分片已进待确认槽后断网：transcribe 必须报「已发出」，否则同一段音频会被传两遍', async () => {
+    // grok ai-review #1764 Important：判据是「进没进待确认槽」，不是 deliver 成没成功。
+    // 一旦 persist 成 saved.pending，重连后这条一定会被结算、结果会进草稿；此时若回 false，
+    // 分片队列会把队头那段用新 commandId 再发一次，草稿里出现重复的字。
+    let storage: string | null = null; let lose = false; let armed = false;
+    const port = { read: async () => storage, write: async (value: string) => { storage = value;
+        if ((JSON.parse(value) as { pending?: unknown }).pending) armed = true; },
+      scan: async () => JSON.stringify(server.invite(['shared'])),
+      post: async (url: string, body: unknown) => {
+        const result = await post(url, body);
+        if (url.endsWith('/exchange') && armed && !lose) { lose = true; throw new Error('RECEIPT_LOST'); }
+        return result;
+      },
+    };
+    const phone = createCompanionStore(port, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      const sent = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey);
+      expect(typeof sent).toBe('string');
+      expect(phone.getState().pending).toBe(true);
+    } finally { phone.getState().pause(); }
+  });
+
+  it('取消过的录音，晚到 ack 不许因为「后来又取消了一次」而漏网', async () => {
+    // grok ai-review Important：取消槽只有一个，后一次取消会把前一次的代号盖掉。
+    // 真机时序：取消 A（A 的分片已进待确认槽、ack 还在路上）→ 立刻再点麦克风录 B
+    //（B 的分片发不出去，槽还被 A 占着，所以在飞的代号仍是 A）→ 再取消 B → A 的 ack 到了。
+    // 判据一被盖掉，用户刚撤掉的那句话照样写进输入框。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'accepted', result: { text: '取消掉的那句话' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null; let lose = false; let armed = false;
+    const transcripts: string[] = [];
+    const port = { read: async () => storage, write: async (value: string) => { storage = value;
+        if ((JSON.parse(value) as { pending?: unknown }).pending) armed = true; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])),
+      post: async (url: string, body: unknown) => {
+        const result = await post(url, body);
+        // 吞掉命令回执：主机已经收下并转好了，手机这边 deliver 抛错，结算要等重连后的 status
+        // 查询——ack 于是落在两次取消**之后**，正是覆盖那个判据的窗口。按「命令进待确认槽」
+        // 武装（路由探针的 exchange 不许被误伤），丢的就是命令那一发。
+        if (url.endsWith('/exchange') && armed && !lose) { lose = true; throw new Error('RECEIPT_LOST'); }
+        return result;
+      } };
+    const phone = createCompanionStore(port, () => {}, async text => { transcripts.push(text); });
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      await phone.getState().transcribe({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 },
+        sessionId!, binding!.hostKey, false, 'take-1');
+      expect(phone.getState().pending).toBe(true);
+      phone.getState().discardPendingTranscript('take-1');
+      phone.getState().discardPendingTranscript('take-2');
+      await phone.getState().reconnect();
+      expect(phone.getState().pending).toBe(false);
+      expect(transcripts).toEqual([]);
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
+  it('deliver 当场被拒时 commandErrorAction 要认得出是哪种命令——必须在清槽前捕获', async () => {
+    // grok ai-review Nit：动作原本是在 persist 清掉 saved.pending **之后**才读的，恒是 null，
+    // 于是「通用提示条按动作给输入区让位」这条判据在这条路上直接失效。
+    // 走 approval.respond：本测试的网关没有 decide 处理器 ⇒ 当场回 unsupported_action，
+    // 那是非设备级拒绝，正好落在 deliver 的 rejected 分支（此前这条路一条判据都没有）。
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
+    try {
+      await phone.getState().pair();
+      // #1915 起配对落在欢迎页（sessionId=null），respond 会静默提前返回：先选中审批卡所在会话
+      phone.getState().selectSession('shared');
+      const sessionId = phone.getState().sessionId!;
+      phone.setState({ events: [{ kind: 'approval', sessionId,
+        payload: { requestId: 'r1', status: 'pending', revision: 1, operationDigest: 'd1' } }] as never });
+      await phone.getState().respond('r1', 'approved');
+      expect(phone.getState()).toMatchObject({
+        commandError: 'unsupported_action',
+        commandErrorAction: 'approval.respond',
+      });
+    } finally { phone.getState().pause(); }
+  });
+
+  it('主机回「这段没人说话」时结论是 silent、不写 commandError——分片下静音是常态不是失败', async () => {
+    // 2026-09-13 爸真机：4 秒分片让 Host 的幻觉护栏 30 段里开火 13 段（43%），
+    // 每开火一次手机就弹一句「电脑那边拒绝了这条操作」。HALLUCINATION / EMPTY_RESULT
+    // 说的是「这段没人说话」，在分片路径上不是失败。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      // 替身必须走**生产的**结算映射：第一版手工塞 { code:'HALLUCINATION' } 全绿，而真实写入点
+      // 当时把所有失败压成 COMPANION_TRANSCRIPTION_FAILED，手机侧判据在生产里恒不成立
+      // ——替身比真实依赖宽容，全量绿真机红（grok ai-review Important）。
+      dispatch: () => companionTranscriptionSettlement({ success: false, engine: 'groq', code: 'HALLUCINATION' } as never) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post }, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      const commandId = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey, false, 'take-1');
+      expect(phone.getState()).toMatchObject({ pending: false,
+        voiceResult: { commandId, outcome: 'silent', code: 'HALLUCINATION' } });
+      expect(phone.getState().commandError).toBeNull();
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
+  it('真失败照旧报错：只有「没人说话」那一族才静默跳过', async () => {
+    // 判据不能宽成「voice.transcribe 被拒就不报错」——网络/鉴权/主机 5xx 必须让用户看见。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => companionTranscriptionSettlement({ success: false, engine: 'groq', code: 'COMPANION_TRANSCRIPTION_FAILED' } as never) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post }, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      const commandId = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey, false, 'take-1');
+      expect(phone.getState()).toMatchObject({
+        voiceResult: { commandId, outcome: 'error', code: 'COMPANION_TRANSCRIPTION_FAILED' },
+        commandError: 'COMPANION_TRANSCRIPTION_FAILED' });
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
+  it('取消掉的那次转写被拒，不再弹一句通用报错——那个动作用户已经撤了', async () => {
+    // grok ai-review Nit：取消之后冒出「电脑那边拒绝了这条操作」，说的是用户刚撤掉的动作。
+    // 输入区那条带阶段的失败提示此刻也不在场（面板已经收了），所以这句没有任何可操作性。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => companionTranscriptionSettlement({ success: false, engine: 'groq', code: 'COMPANION_TRANSCRIPTION_FAILED' } as never) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null; let lose = true;
+    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])),
+      post: async (url: string, body: unknown) => {
+        const result = await post(url, body);
+        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        return result;
+      } };
+    const phone = createCompanionStore(port, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      await phone.getState().transcribe({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 },
+        sessionId!, binding!.hostKey, false, 'take-1');
+      phone.getState().discardPendingTranscript('take-1');
+      await phone.getState().reconnect();
+      expect(phone.getState().pending).toBe(false);
+      expect(phone.getState().commandError).toBeNull();
+      // 结论照旧要给出来，否则分片队列一直等 ack
+      expect(phone.getState().voiceResult?.outcome).toBe('error');
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
+  it('待确认的语音命令被回收时也必须给出结论，否则分片队列一直等 ack、面板永不收口', async () => {
+    // grok ai-review #1764 Important：清待确认槽的路不止「结算」一条——被拒、抢答冲突、
+    // reconciling 超时回收都在别处清槽，谁都没写结果。分片队列等的就是这条命令的结果，
+    // 等不到就一直 awaiting，语音面板永远收不了口。
+    // 这里复现最真实的那条：主机收下了转写请求（reconciling），但一直没结算。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post }, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      // 把主机的钟拨回去下这条命令，等价于「这条 reconciling 已经躺了超过回收窗口」——
+      // 回收判据读的是主机记的 createdAt 与手机本地时钟之差。
+      const paired = now;
+      now -= L.reconcilingRecoveryMs + 1_000;
+      const commandId = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey);
+      expect(phone.getState()).toMatchObject({ pending: true, voiceResult: null });
+      now = paired;
+      // 回到前台重连：走的就是那条「躺太久了，回收掉」的路径
+      await phone.getState().reconnect();
+      // 结论必须认得出「是哪条命令的」：粘着的全局 outcome 会被下一次录音读成自己的。
+      expect(phone.getState()).toMatchObject({ pending: false,
+        voiceResult: { commandId, outcome: 'error' },
+        commandError: 'COMPANION_COMMAND_RECONCILING_TIMEOUT' });
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
+  it('已取消的那次录音走「超时回收」清槽，同样不报错——清槽三条路共用一个判据', async () => {
+    // grok ai-review Nit：第一版只堵住了「结算被拒」那一条，deliver 当场被拒与 reconciling
+    // 超时回收照样写 commandError。修一处必须回头问同一个形状还有几处，判据抽在一处。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post }, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      const paired = now;
+      now -= L.reconcilingRecoveryMs + 1_000;
+      const commandId = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey, false, 'take-1');
+      phone.getState().discardPendingTranscript('take-1');
+      now = paired;
+      await phone.getState().reconnect();
+      expect(phone.getState().commandError).toBeNull();
+      // 结论照旧要给出来，否则分片队列一直等 ack
+      expect(phone.getState()).toMatchObject({ pending: false, voiceResult: { commandId, outcome: 'error' } });
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
+  it('cache-full phone still previews a fully downloaded artifact', async () => {
+    // 真 LAN + Noise + 真 CompanionFileService；手机缓存配额 1 字节必然 STORAGE_FULL。
+    // 文件完整回传并通过 SHA-256 后预览必须照常，commandError 只提示 STORAGE_FULL。
+    const workspace = mkdtempSync(path.join(tmpdir(), 'neo-lan-files-'));
+    const db2 = new Database(':memory:');
+    const holder: { files?: CompanionFileService } = {};
+    const gateway2 = new CompanionGateway(db2, { now: () => now, dispatch: (cmd) =>
+      cmd.action.startsWith('files.') ? holder.files?.dispatch(cmd) ?? { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } }
+        : { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } } });
+    holder.files = new CompanionFileService(db2, gateway2, () => workspace, undefined, () => now);
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage,
+      write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post,
+    }, () => {}, undefined, {
+      cache: new FileCache(1),
+      pick: async () => null,
+      save: async () => { throw new Error('must-not-save'); },
+    });
+    try {
+      await phone.getState().pair();
+      // #1915 起配对落在欢迎页（sessionId=null），upload 会静默提前返回：先选中会话
+      phone.getState().selectSession('shared');
+      const bytes = new TextEncoder().encode('lan-file-正文');
+      await phone.getState().upload({ name: 'note.txt', mimeType: 'text/plain', size: bytes.length, bytes });
+      const artifact = phone.getState().artifacts[0];
+      expect(artifact).toBeTruthy();
+      await phone.getState().previewArtifact(artifact.artifactId);
+      const state = phone.getState();
+      expect(state.preview?.bytes.length).toBe(bytes.length);
+      expect(state.commandError).toBe('STORAGE_FULL');
+      // files.read 的分片 base64 落库后随手机读取即擦除，不留永久膨胀（claude 复审 Important 3）
+      const leftovers = db2.prepare("SELECT command_id FROM companion_commands WHERE action = 'files.read' AND json_extract(result_json, '$.data') IS NOT NULL").all();
+      expect(leftovers).toEqual([]);
+    } finally {
+      phone.getState().pause();
+      await server2.stop(); db2.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
   it('transports long Unicode messages across multiple authenticated records', async () => {
     const binding = await pair();
@@ -275,7 +920,7 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     await client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq: 0 });
     expect(server.hasApprovalUi('shared')).toBe(true);
     expect(server.hasApprovalUi('hidden')).toBe(false);
-    now += L.uiPresenceTtlMs + 1;
+    now += L.uiPresenceTtlMs;
     expect(server.hasApprovalUi('shared')).toBe(false);
     await client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq: 0 });
     expect(server.hasApprovalUi('shared')).toBe(true);
@@ -294,12 +939,53 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
       scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
     await phone.getState().pair();
+    // #1915 起配对落在欢迎页（sessionId=null），sync 的事件只落到选中会话上：先选中它
+    phone.getState().selectSession('shared');
     gateway.publish('shared', 'message', { id: 'desktop-message', role: 'user', content: 'desktop task', runId: 'desktop-run' });
     await phone.getState().sync();
     expect(phone.getState()).toMatchObject({ runId: 'desktop-run', terminal: null });
     gateway.publish('shared', 'agent_complete', { runId: 'desktop-run' });
     await phone.getState().sync();
     expect(phone.getState()).toMatchObject({ runId: null, terminal: 'complete' });
+    phone.getState().pause();
+  });
+  it('keeps a run failure out of the bottom notice so a later success cannot sit next to it (N-MOBILE-EXEC-STATUS ②)', async () => {
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
+    await phone.getState().pair();
+    // #1915 起配对落在欢迎页（sessionId=null），sync 的事件只落到选中会话上：先选中它
+    phone.getState().selectSession('shared');
+    gateway.publish('shared', 'message', { id: 'u1', role: 'user', content: 'first', runId: 'run-a' });
+    gateway.publish('shared', 'error', { code: 'MODEL_AUTH', runId: 'run-a' });
+    await phone.getState().sync();
+    // 失败原因随 error 事件留在会话里（CompanionConversation 挂在那次执行下面），不进全局提示条
+    expect(phone.getState()).toMatchObject({ runId: null, terminal: 'failed', commandError: null });
+    gateway.publish('shared', 'message', { id: 'u2', role: 'user', content: 'second', runId: 'run-b' });
+    gateway.publish('shared', 'agent_complete', { runId: 'run-b' });
+    await phone.getState().sync();
+    expect(phone.getState()).toMatchObject({ runId: null, terminal: 'complete', commandError: null });
+    expect(phone.getState().events.filter(event => event.kind === 'error')).toHaveLength(1);
+    phone.getState().pause();
+  });
+  it('clears a pending file command after the transfer is interrupted so retry is possible', async () => {
+    const invitation = JSON.stringify(server.invite(['shared']));
+    let storage: string | null = null;
+    const failingPost: LanPost = async (url, body) => {
+      if (String(url).endsWith('/v1/exchange')) throw new Error('COMPANION_NETWORK_UNAVAILABLE');
+      return post(url, body);
+    };
+    const phone = createCompanionStore({
+      read: async () => storage, write: async value => { storage = value; },
+      scan: async () => invitation, post: failingPost,
+    }, () => {});
+    await phone.getState().pair();
+    expect(phone.getState().status).toBe('connected');
+    // #1915 起配对落在欢迎页（sessionId=null），upload 会静默提前返回：先选中会话
+    phone.getState().selectSession('shared');
+    await phone.getState().upload({ name: 'photo.png', mimeType: 'image/png', size: 4, bytes: new Uint8Array([1, 2, 3, 4]) });
+    expect(phone.getState().pending).toBe(false);
+    expect(JSON.parse(storage!).pending).toBeUndefined();
     phone.getState().pause();
   });
   it('does not resurrect a connection when pairing completes after the phone closes it', async () => {
@@ -353,6 +1039,8 @@ describe('a lost approval race must not retire the device', () => {
     }, () => {});
     await phone.getState().pair();
     expect(phone.getState().status).toBe('connected');
+    // #1915 起配对落在欢迎页（sessionId=null），respond/send 会静默提前返回：先选中会话
+    phone.getState().selectSession('shared');
     return phone;
   }
 
@@ -432,10 +1120,33 @@ describe('LAN protocol validation', () => {
   it.each(['http://127.0.0.1:8181', 'http://169.254.169.254:80', 'http://example.com:8181', 'http://192.168.1.2:8181/path', 'http://user@192.168.1.2:8181', 'https://192.168.1.2:8181', 'http://192.168.1.2:8181#token'])('rejects invitation endpoint %s', endpoint => {
     expect(() => validateLanEndpoint(endpoint)).toThrow();
   });
-  it('accepts only canonical RFC1918 endpoints and an unexpired well-formed QR', () => {
+  it('accepts canonical RFC1918 or mDNS endpoints and an unexpired well-formed QR', () => {
     expect(validateLanEndpoint('http://192.168.1.2:8181')).toBe('http://192.168.1.2:8181');
+    expect(validateLanEndpoint('http://neo-host.local:8182')).toBe('http://neo-host.local:8182');
     expect(isPrivateIPv4('172.31.1.1')).toBe(true); expect(isPrivateIPv4('172.32.1.1')).toBe(false);
     expect(() => parseInvitation('{}')).toThrow();
+  });
+  const notMdns = ['local', 'localhost', '.local', '-bad.local', 'bad-.local', 'evil.local.com', 'foo.localdomain', 'local.evil.com'];
+  it.each(notMdns)('does not mistake %s for an mDNS name', host => {
+    expect(() => validateLanEndpoint(`http://${host}:8181`)).toThrow();
+    expect(lanAdvertisedHost('192.168.1.2', host)).toBe('192.168.1.2');
+  });
+  it('admits only on-link peers, and cuts the rest before they can hold a socket', () => {
+    // Binding every interface is only safe because this predicate runs on 'connection', not per
+    // request: an off-link caller never gets to occupy maxConnections or idle out requestTimeout.
+    for (const peer of ['192.168.1.2', '10.0.0.7', '172.16.3.4', '127.0.0.1', '127.5.5.5', '::1']) {
+      expect(isLanPeer(peer)).toBe(true);
+    }
+    for (const peer of ['100.83.97.48', '198.18.0.1', '8.8.8.8', '169.254.169.254', '172.32.1.1', '', 'localhost']) {
+      expect(isLanPeer(peer)).toBe(false);
+    }
+  });
+  it('advertises the mDNS name when the host has one, the literal when it does not', () => {
+    // The literal is what dies on a network change; the name is why a paired phone need not rescan.
+    expect(lanAdvertisedHost('192.168.1.2', 'Linchens-MacBook-Pro.local')).toBe('linchens-macbook-pro.local');
+    expect(lanAdvertisedHost('192.168.1.2', 'ubuntu-box')).toBe('192.168.1.2');
+    expect(lanAdvertisedHost('192.168.1.2', 'host.localdomain')).toBe('192.168.1.2');
+    expect(validateLanEndpoint(`http://${lanAdvertisedHost('192.168.1.2', 'neo.local')}:8182`)).toBe('http://neo.local:8182');
   });
   it('retires a channel on replay and cannot resume using the next valid record', () => {
     // A separate matching IK exchange exercises the real cipher, not a mock decryptor.
@@ -494,5 +1205,73 @@ describe('LAN manager network changes (mocked network and listener)', () => {
       t.setAddresses('10.1.1.2'); await t.invite();
       expect(t.start).toHaveBeenLastCalledWith('10.1.1.2');
     } finally { await t.manager.stop(); t.db.close(); }
+  });
+});
+
+describe('LAN companion dictation (not a persisted command)', () => {
+  let db: Database.Database;
+  let gateway: CompanionGateway;
+  let server: LanCompanionServer;
+  let client: LanCompanionClient;
+  let unregister: () => void;
+  const hostIdentity = createIdentity();
+  const phoneIdentity = createIdentity();
+  const address = Object.values(networkInterfaces()).flat().find(n => n?.family === 'IPv4' && isPrivateIPv4(n.address))?.address;
+  const post: LanPost = async (url, body) => {
+    const res = await fetch(url, { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const raw = await res.text();
+    if (!res.ok) throw new Error(`HTTP_${res.status}`);
+    return JSON.parse(raw);
+  };
+  const fake: CompanionDictationPort = {
+    open: vi.fn(async (): Promise<CompanionDictationOpenResult> => ({ ok: true, streamId: 'stream-1', sampleRate: L.voicePcmSampleRate })),
+    audio: vi.fn(() => ({ ok: true, events: [{ type: 'partial' as const, text: '你', sentenceId: 1 }] })),
+    stop: vi.fn(async () => ({ ok: true, events: [{ type: 'final' as const, text: '你好', sentenceId: 1 }] })),
+    release: vi.fn(),
+    releaseAll: vi.fn(),
+  };
+
+  beforeEach(async () => {
+    if (!address) throw new Error('LAN_TEST_REQUIRES_PRIVATE_IPV4_ON_FLEET');
+    unregister = registerCompanionDictation(fake);
+    db = new Database(':memory:');
+    gateway = new CompanionGateway(db, { dispatch: () => ({ state: 'accepted', result: { runId: 'test-run' } }) });
+    server = new LanCompanionServer(gateway, hostIdentity, Date.now);
+    await server.start(address, 0);
+    client = new LanCompanionClient(phoneIdentity, post);
+  });
+  afterEach(async () => {
+    client?.close();
+    await server?.stop();
+    db?.close();
+    unregister?.();
+    vi.clearAllMocks();
+  });
+
+  it('advertises dictation on welcome and relays frames without a command row', async () => {
+    const binding = await client.pair(JSON.stringify(server.invite(['shared'])));
+    expect(binding.dictation).toBe(true);
+    expect(binding.sessionlessTranscribe).toBe(true);
+    expect(binding.transcription).toBe('not-installed');
+    const opened = await client.request({ action: 'dictation', op: 'open' }) as { ok: true; streamId: string };
+    expect(opened).toMatchObject({ ok: true, streamId: 'stream-1', sampleRate: L.voicePcmSampleRate });
+    const pcm = Buffer.alloc(4).toString('base64');
+    expect(await client.request({ action: 'dictation', op: 'audio', streamId: opened.streamId, pcm }))
+      .toEqual({ ok: true, events: [{ type: 'partial', text: '你', sentenceId: 1 }] });
+    expect(await client.request({ action: 'dictation', op: 'stop', streamId: opened.streamId }))
+      .toEqual({ ok: true, events: [{ type: 'final', text: '你好', sentenceId: 1 }] });
+    expect(gateway.commandStatus(binding.deviceId, 'stream-1')).toBeNull();
+  });
+
+  it('keeps the Noise channel when dictation is unavailable so the phone can fall back to chunked', async () => {
+    unregister();
+    const binding = await client.pair(JSON.stringify(server.invite(['shared'])));
+    expect(binding.dictation).toBeUndefined();
+    expect(binding.sessionlessTranscribe).toBe(true);
+    expect(binding.transcription).toBe('not-installed');
+    expect(await client.request({ action: 'dictation', op: 'open' }))
+      .toEqual({ ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE', events: [] });
+    expect(await client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq: 0 }))
+      .toMatchObject({ events: [] });
   });
 });

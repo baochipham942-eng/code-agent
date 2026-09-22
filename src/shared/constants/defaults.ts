@@ -12,6 +12,26 @@ export const SSE_FIRST_BYTE_TIMEOUT = 60_000;
 export const SSE_INACTIVITY_TIMEOUT =
   (typeof process !== 'undefined' && Number(process.env?.SSE_INACTIVITY_TIMEOUT_MS)) || 120_000;
 
+/** 首字节后断流续接预算（ADR-068 D4）：已向用户吐过 delta 的可续接断流，最多续接次数。
+ *  独立于首字节前的 STREAM_MAX_RETRIES=4（那边没有 output 沉没成本且用户无感，维持不变）。
+ *  env 可覆盖；本文件被 renderer 打包，env 读取沿用上面的 typeof 守卫形状。 */
+export const STREAM_RECONNECT_MAX =
+  (typeof process !== 'undefined' && Number(process.env?.STREAM_RECONNECT_MAX)) || 2;
+
+/** 无人值守轮（cron/heartbeat/channel 会话、async_agent、goal、loop）的断流续接预算（ADR-068 D4）：
+ *  没人盯着手动重试，续跑取高预算；前台轮仍用 STREAM_RECONNECT_MAX。env 可覆盖，形状同上。 */
+export const UNATTENDED_STREAM_RECONNECT_MAX =
+  (typeof process !== 'undefined' && Number(process.env?.UNATTENDED_STREAM_RECONNECT_MAX)) || 5;
+
+/** 无人值守轮断流熔断阈值（ADR-068 D4）：同 run 连续这么多轮推理都遇到断流，本 run 余下
+ *  推理不再续接（预算置 0），断流直接走 error 收尾成 resumable 中断态，防断流-续跑死循环烧钱。 */
+export const UNATTENDED_STREAM_BREAK_CIRCUIT = 3;
+
+/** 断流续接退避封顶（ms，ADR-068 D4）：续接是打字中的中断，要快恢复不是越等越稳——
+ *  指数退避复用 computeRetryBackoffMs 但封顶压到 4s（首字节前重试封顶 16s 不变）；
+ *  429 的 retry-after 优先且不受此封顶。 */
+export const STREAM_RECONNECT_BACKOFF_CAP_MS = 4_000;
+
 /** 默认 Provider — LongCat API 开放平台（2026-07-13 起替代小米 MiMo：Token Plan key 失效 401） */
 export const DEFAULT_PROVIDER = 'longcat' as const;
 
@@ -63,6 +83,8 @@ export const MODEL_MIGRATIONS: Record<string, string> = {
   'doubao-1.5-pro-256k': 'doubao-seed-1-6',
   'doubao-1.5-thinking-pro': 'doubao-seed-1-6-thinking',
   'doubao-seed-1-6-vision-250815': 'doubao-seed-1-6',
+  // LongCat — 2026-09-12 上游下线 Preview（/models 只剩 LongCat-2.0），存量配置迁到 GA 名
+  'LongCat-2.0-Preview': 'LongCat-2.0',
 };
 
 /**
@@ -122,6 +144,7 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'glm-4.7-flash': 128_000,
   'glm-4.7-flashx': 128_000,
   'glm-4-flash': 128_000,
+  'glm-5.3-flash': 128_000,
   'glm-4.6v': 32_000,
   'glm-4.6v-flash': 32_000,
   // Qwen
@@ -159,7 +182,6 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'mimo-v2-omni': 131_072,
   // LongCat（开放平台 registry maxTokens 上限 32768）
   'LongCat-2.0': 32_768,
-  'LongCat-2.0-Preview': 32_768,
 };
 
 /**
@@ -214,6 +236,8 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'glm-4.7-flash': 200_000,
   'glm-4.7-flashx': 200_000,
   'glm-4-flash': 128_000,
+  // GLM-5.3-flash 上下文 128K，来源：智谱官方 GLM-5.3-flash 模型说明（与 model-catalog.json desc 的 128K 同源）
+  'glm-5.3-flash': 128_000,
   'glm-4.6v': 128_000,
   'glm-4.6v-flash': 128_000,
   // Qwen
@@ -251,7 +275,6 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'mimo-v2-omni': 262_144,    // 256k，多模态版上下文较短
   // LongCat（longcat.chat 开放平台）
   'LongCat-2.0': 131_072,
-  'LongCat-2.0-Preview': 131_072,
 };
 
 /** 默认上下文窗口（未知模型 fallback） */

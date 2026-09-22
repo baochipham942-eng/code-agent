@@ -11,6 +11,7 @@ import { CompanionGateway } from '../../src/host/services/companion/CompanionGat
 import { createCompanionRouter } from '../../src/web/routes/companion';
 import { projectCompanionEvent } from '../../src/host/services/companion/projectCompanionEvent';
 import type { CompanionDeviceCredential } from '../../src/shared/contract/companion';
+import { COMPANION_LIMITS } from '../../src/shared/constants/companion';
 
 describe('companion device boundary (HTTP + persistent SQLite)', () => {
   let directory: string;
@@ -89,26 +90,28 @@ describe('companion device boundary (HTTP + persistent SQLite)', () => {
     await request('/commands', command());
     expect(await (await request('/commands/command-1', undefined, other)).json()).toEqual({ success: true, data: { kind: 'not_seen' } });
   });
-  it('reserves a command durably when the final receipt write fails', () => {
+  it('reserves a command durably when the final receipt write fails', async () => {
     db.exec("CREATE TRIGGER fail_receipt BEFORE UPDATE ON companion_commands BEGIN SELECT RAISE(ABORT, 'injected receipt failure'); END");
-    const result = gateway.submit(command());
+    // 回执写入失败在 submit 内部转成 rejected promise（async 化后不再同步抛），断言走 rejects。
+    const result = await gateway.submit(command());
     expect(result).toMatchObject({ kind: 'replayed', command: { state: 'reconciling' } });
     expect(executions).toBe(1);
+    db.exec('DROP TRIGGER fail_receipt');
     db.close();
     db = new Database(join(directory, 'test.db'));
     const restarted = new CompanionGateway(db, { dispatch });
-    expect(restarted.submit(command())).toMatchObject({ kind: 'replayed', command: { state: 'reconciling' } });
+    expect(await restarted.submit(command())).toMatchObject({ kind: 'replayed', command: { state: 'rejected', result: { code: 'COMPANION_INTERRUPTED' } } });
     expect(executions).toBe(1);
   });
-  it('does not dispatch if the durable reservation cannot be saved', () => {
+  it('does not dispatch if the durable reservation cannot be saved', async () => {
     db.exec("CREATE TRIGGER fail_reservation BEFORE INSERT ON companion_commands BEGIN SELECT RAISE(ABORT, 'injected reservation failure'); END");
-    expect(() => gateway.submit(command())).toThrow('injected reservation failure');
+    await expect(gateway.submit(command())).rejects.toThrow('injected reservation failure');
     expect(executions).toBe(0);
   });
-  it('does not blindly redispatch after an uncertain execution exception', () => {
+  it('does not blindly redispatch after an uncertain execution exception', async () => {
     const uncertain = new CompanionGateway(db, { dispatch: () => { executions += 1; throw new Error('injected after side effect'); } });
-    expect(uncertain.submit(command())).toMatchObject({ command: { state: 'reconciling' } });
-    expect(uncertain.submit(command())).toMatchObject({ command: { state: 'reconciling' } });
+    expect(await uncertain.submit(command())).toMatchObject({ command: { state: 'reconciling' } });
+    expect(await uncertain.submit(command())).toMatchObject({ command: { state: 'reconciling' } });
     expect(executions).toBe(1);
   });
   it.each([null, {}, { text: '   ' }, { text: 'ok', providerKey: 'forbidden' }])('rejects invalid message payload %j before dispatch', async payload => {
@@ -146,11 +149,38 @@ describe('companion device boundary (HTTP + persistent SQLite)', () => {
       .toEqual({ toolCallId: 'tool-1', success: true });
     expect(projectCompanionEvent('message', { id: 'm1', role: 'assistant', content: 'visible', reasoning: 'internal', attachments: [{ path: '/private/path' }] }))
       .toEqual({ id: 'm1', role: 'assistant', content: 'visible' });
+    const long = 'x'.repeat(COMPANION_LIMITS.messageLength + 25);
+    const clipped = long.slice(0, COMPANION_LIMITS.messageLength);
+    expect(projectCompanionEvent('message', { id: 'm1', role: 'assistant', content: long })).toEqual({ id: 'm1', role: 'assistant', content: clipped });
+    expect(projectCompanionEvent('message_delta', { role: 'assistant', path: 'content', op: 'append', text: long })).toMatchObject({ text: clipped });
+    expect(projectCompanionEvent('message_snapshot', { content: long })).toMatchObject({ content: clipped });
     expect(projectCompanionEvent('message_delta', { role: 'assistant', path: 'reasoning', op: 'append', text: 'internal' })).toBeNull();
     expect(projectCompanionEvent('message', { id: 'm2', role: 'system', content: 'internal' })).toBeNull();
     expect(projectCompanionEvent('diagnostic', { secret: 'private-marker' })).toBeNull();
     expect(projectCompanionEvent('agent_complete', null)).toEqual({});
     expect(projectCompanionEvent('agent_cancelled', null)).toEqual({});
     expect(projectCompanionEvent('error', { stack: 'private-marker' })).toEqual({ code: 'RUN_FAILED' });
+    expect(projectCompanionEvent('error', { stack: 'private-marker', failure: { code: 'PROJECT_SOURCE_TRUST', kind: 'source_missing' } }))
+      .toEqual({ code: 'PROJECT_SOURCE_MISSING' });
+    expect(projectCompanionEvent('error', { failure: { code: 'PROJECT_SOURCE_TRUST', kind: 'not_trusted' } }))
+      .toEqual({ code: 'PROJECT_SOURCE_UNTRUSTED' });
+    expect(projectCompanionEvent('error', { failure: { code: 'MODEL_AUTH', provider: 'longcat' } }))
+      .toEqual({ code: 'MODEL_AUTH' });
+    // 带上失败的是哪个模型（provider/model 两个都在才带），手机据此判断用户是否已经换走
+    expect(projectCompanionEvent('error', { failure: { code: 'MODEL_AUTH', provider: 'custom-team-relay', model: 'LongCat-2.0', apiKey: 'sk-secret' } }))
+      .toEqual({ code: 'MODEL_AUTH', provider: 'custom-team-relay', model: 'LongCat-2.0' });
+    expect(projectCompanionEvent('error', { failure: { code: 'MODEL_UNAVAILABLE', provider: 'longcat', model: 'LongCat-2.0-Preview', stack: 'secret' } }))
+      .toEqual({ code: 'MODEL_UNAVAILABLE', provider: 'longcat', model: 'LongCat-2.0-Preview' });
+    // 余额或额度用完（模拟器验收 O2）：与 AUTH/UNAVAILABLE 同一套贯通，手机据此给「换一个可用模型」卡
+    expect(projectCompanionEvent('error', { failure: { code: 'MODEL_QUOTA', provider: 'custom-team-relay', model: 'gpt-5.5', apiKey: 'sk-secret' } }))
+      .toEqual({ code: 'MODEL_QUOTA', provider: 'custom-team-relay', model: 'gpt-5.5' });
+    expect(projectCompanionEvent('error', { failure: { code: 'MODEL_QUOTA', provider: 'longcat' } }))
+      .toEqual({ code: 'MODEL_QUOTA' });
+    expect(JSON.stringify(projectCompanionEvent('error', { stack: 'private-marker', failure: { code: 'PROJECT_SOURCE_TRUST', kind: 'source_missing', sourcePath: '/private/path' } })))
+      .not.toContain('private-marker');
+    const generating = projectCompanionEvent('artifact_write_started', { toolCallId: 't1', filePath: '/private/secret/photo.png', token: 'secret-marker' });
+    expect(generating).toEqual({ status: 'generating', toolCallId: 't1', name: 'photo.png' });
+    expect(JSON.stringify(generating)).not.toContain('/private');
+    expect(JSON.stringify(generating)).not.toContain('secret-marker');
   });
 });

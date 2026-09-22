@@ -37,6 +37,11 @@ export interface CLIGlobalOptions {
   metrics?: string;
   /** Path to write run-status heartbeat JSON (--status-file), mapped from run/chat option */
   statusFile?: string;
+  /**
+   * Script/headless entries pass 'headless'. Interactive chat/TUI omit it.
+   * createAgentLoop must not guess this for the caller.
+   */
+  originKind?: SessionOriginKind;
 }
 
 /**
@@ -67,6 +72,8 @@ export interface CLIConfig {
   maxIterations?: number;
   /** 当前 run 可见的原生工具白名单；会话指挥台前台脑据此保持窄工具面。 */
   allowedToolNames?: string[];
+  /** 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。 */
+  foregroundToolFace?: boolean;
   /** 任务宿主启用指挥工具；CLI 默认关闭，web 启用后仍受显式 deny 与工具执行权限约束。 */
   taskManagerToolsEnabled?: boolean;
   /** 当前 run 的工具禁用名单（CLI --disallowed-tools；与 allowedToolNames 同层语义）。 */
@@ -94,6 +101,8 @@ export interface CLIConfig {
    *   - 界面会话不传（= 真人手动，落 NULL）——与 SessionConfig.originKind 的口径一致。
    */
   originKind?: SessionOriginKind;
+  /** Current run writes model history but not the visible chat transcript. */
+  historyVisibility?: 'visible' | 'meta';
 }
 
 /**
@@ -127,6 +136,11 @@ export interface CLIRunResult {
   schemaValid?: boolean;
   /** Validation errors for structured-output runs. */
   schemaErrors?: Array<{ path: string; message: string }>;
+  /**
+   * 非正常完成时的终止原因。'max_iterations' = 撞最大执行轮次上限、已按
+   * 「部分结果 + 未完成说明」收尾（CLI 映射为退出码 2，见 cli/exitCodes.ts）。
+   */
+  terminationReason?: 'max_iterations';
 }
 
 /**

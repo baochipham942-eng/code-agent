@@ -22,7 +22,7 @@ import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngin
 import { MODEL_OVERRIDE_METADATA_KEY } from '../../session/modelOverridePersistence';
 import { stripAppshotBlocks } from '../../../shared/contract/appshot';
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
-import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
+import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './logger';
 import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExecutionSessionExport';
 import { stripLegacyForkClaims } from '../sessionFork/portability';
@@ -55,6 +55,8 @@ function isDefaultSessionTitle(title: string): boolean {
   return title === 'New Chat'
     || title === 'New Session'
     || title === '新对话'
+    || title === '新会话'
+    || title === 'New conversation'
     || title.startsWith('Session ');
 }
 
@@ -638,15 +640,13 @@ export class SessionManager implements Disposable {
 
     // 整列 metadata 替换保护（Codex audit R2）：通用 update 不得静默抹掉模型切换
     // 持久化标记；清除标记必须走 clearModelOverride（key 级 patch 通道）。
-    if (
-      updates.metadata !== undefined &&
-      updates.metadata !== null &&
-      !(MODEL_OVERRIDE_METADATA_KEY in updates.metadata)
-    ) {
+    // 项目钉住标记同理：整列替换抹掉它，下一次补工作目录就会把明确归属的会话挪走。
+    for (const key of [MODEL_OVERRIDE_METADATA_KEY, SESSION_PROJECT_PINNED_METADATA_KEY]) {
+      if (updates.metadata === undefined || updates.metadata === null || key in updates.metadata) continue;
       try {
-        const marker = db.getSession(sessionId)?.metadata?.[MODEL_OVERRIDE_METADATA_KEY];
+        const marker = db.getSession(sessionId)?.metadata?.[key];
         if (marker !== undefined) {
-          updates = { ...updates, metadata: { ...updates.metadata, [MODEL_OVERRIDE_METADATA_KEY]: marker } };
+          updates = { ...updates, metadata: { ...updates.metadata, [key]: marker } };
         }
       } catch { /* 读不到当前 metadata 时按原样写入 */ }
     }
@@ -667,8 +667,10 @@ export class SessionManager implements Disposable {
     // 工作目录后补时，仅为未归桶/待整理会话重算项目归属；明确归属不覆盖。
     if (typeof updates.workingDirectory === 'string' && updates.workingDirectory.trim()) {
       try {
-        const currentProjectId = db.getSession(sessionId)?.projectId ?? null;
-        if (currentProjectId === null || currentProjectId === UNSORTED_PROJECT_ID) {
+        const current = db.getSession(sessionId);
+        const currentProjectId = current?.projectId ?? null;
+        // 钉住的会话（手机在「未分类」里明确建的）归属不因运行时兜底目录被重算。
+        if ((currentProjectId === null || currentProjectId === UNSORTED_PROJECT_ID) && current?.metadata?.[SESSION_PROJECT_PINNED_METADATA_KEY] !== true) {
           const { getProjectService } = await import('../project/projectService');
           const project = await getProjectService().ensureProjectForWorkspace(
             updates.workingDirectory.trim(),

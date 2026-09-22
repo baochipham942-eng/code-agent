@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { computeCalibration, type CalibrationPair } from '../../../src/host/testing/calibration/judgeCalibration';
+import { resolveCalibrationJudgeIdentity, summarizeRepeatVariance } from '../../../scripts/lib/judgeCalibrationRepeat';
 
 // 构造一组 judge 与金标的配对，命中已知的混淆矩阵：TP=4, TN=3, FP=2, FN=1
 function fixedPairs(): CalibrationPair[] {
@@ -80,5 +81,71 @@ describe('computeCalibration', () => {
     expect(r.total).toBe(0);
     expect(r.cohensKappa).toBe(0);
     expect(r.disagreements).toEqual([]);
+  });
+});
+
+// N-JEV-EVAL-JUDGE 母单验收⑥：冻结轨迹重复判方差汇总（judge-calibration.ts --repeat 用）。
+describe('summarizeRepeatVariance', () => {
+  it('全同判决方差 0 零翻转；一半翻转的二值序列方差 = p(1-p)', () => {
+    const summary = summarizeRepeatVariance([
+      { caseId: 'stable', scores: [1, 1, 1, 1] },
+      { caseId: 'flip', scores: [1, 0, 1, 0] },
+    ]);
+    const [stable, flip] = summary.cases;
+    expect(stable.scoreVariance).toBe(0);
+    expect(stable.flips).toBe(0);
+    expect(flip.scoreVariance).toBe(0.25);
+    expect(flip.flips).toBe(3);
+    expect(summary.meanVariance).toBe(0.125);
+    expect(summary.totalFlips).toBe(3);
+  });
+
+  it('弃权/unavailable（null）不进方差但算翻转；数值判决不足 2 次 ⇒ variance=null 不冒充 0', () => {
+    const summary = summarizeRepeatVariance([
+      { caseId: 'abstain-heavy', scores: [1, null, 1, null] },
+      { caseId: 'all-abstain', scores: [null, null] },
+    ]);
+    const [abstainHeavy, allAbstain] = summary.cases;
+    expect(abstainHeavy.flips).toBe(3);
+    expect(abstainHeavy.scoreVariance).toBe(0);
+    expect(abstainHeavy.judgedRuns).toBe(2);
+    expect(allAbstain.scoreVariance).toBeNull();
+    expect(summary.varianceCases).toBe(1);
+    expect(summary.meanVariance).toBe(0);
+  });
+});
+
+// ai-review #2023 Important：校准记录身份必须是实际判决的判官，Jev 的 κ 不许写到 quick 名下。
+describe('resolveCalibrationJudgeIdentity', () => {
+  const quick = { judgeModel: 'zhipu/glm-4-flash', promptHash: 'gen-hash', endpoint: 'https://quick.example' };
+  const jev = { judgeModel: 'typesafe/jev-1.13.0', endpoint: 'https://api.typesafe.ai/v1/systemone' };
+
+  it('未开 prescreen ⇒ quick 身份；缺 quick 配置 ⇒ null', () => {
+    expect(resolveCalibrationJudgeIdentity({ prescreen: false, dimension: 'task_completed', quick, judged: [], jev }))
+      .toEqual({ judgeId: 'task_completed@zhipu/glm-4-flash', promptHash: 'gen-hash', endpoint: quick.endpoint, judgeModel: quick.judgeModel });
+    expect(resolveCalibrationJudgeIdentity({ prescreen: false, dimension: 'task_completed', quick: null, judged: [], jev })).toBeNull();
+  });
+
+  it('prescreen 且全部判决出自 Jev ⇒ Jev 身份（promptHash 用判决带回来的初筛哈希）', () => {
+    const identity = resolveCalibrationJudgeIdentity({
+      prescreen: true, dimension: 'task_completed', quick, jev,
+      judged: [{ judgeModel: jev.judgeModel, promptHash: 'jev-hash' }, { judgeModel: jev.judgeModel, promptHash: 'jev-hash' }],
+    });
+    expect(identity).toEqual({
+      judgeId: 'task_completed@typesafe/jev-1.13.0',
+      promptHash: 'jev-hash',
+      endpoint: jev.endpoint,
+      judgeModel: jev.judgeModel,
+    });
+  });
+
+  it('prescreen 但有生成式判决混入 ⇒ null（不写注册表）；零有效判决 ⇒ null', () => {
+    expect(resolveCalibrationJudgeIdentity({
+      prescreen: true, dimension: 'task_completed', quick, jev,
+      judged: [{ judgeModel: jev.judgeModel, promptHash: 'h' }, { judgeModel: quick.judgeModel, promptHash: 'g' }],
+    })).toBeNull();
+    expect(resolveCalibrationJudgeIdentity({
+      prescreen: true, dimension: 'task_completed', quick, jev, judged: [],
+    })).toBeNull();
   });
 });

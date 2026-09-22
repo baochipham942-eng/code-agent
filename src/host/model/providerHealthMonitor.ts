@@ -4,10 +4,25 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import {
+  classifyError,
+  resolveAvailabilityFailure,
+  type AvailabilityKind,
+  type AvailabilityScope,
+} from './errorClassifier';
+import { createModelMarkFileStore, type ModelMarkStore } from './availabilityMarkPersistence';
 
 const logger = createLogger('ProviderHealthMonitor');
 
 export type HealthStatus = 'healthy' | 'degraded' | 'unavailable' | 'recovering';
+
+const AVAILABILITY_MARK_TTL_MS = 30 * 60_000;
+
+export interface AvailabilityMark {
+  scope: AvailabilityScope;
+  kind: AvailabilityKind;
+  at: number;
+}
 
 export interface ProviderHealth {
   provider: string;
@@ -26,6 +41,14 @@ const DEGRADED_THRESHOLD = 0.3;     // 30% error rate
 const UNAVAILABLE_THRESHOLD = 0.7;  // 70% error rate
 const RECOVERY_SUCCESS_COUNT = 3;   // consecutive successes to recover
 
+/**
+ * 路由持久供应商错误（PERSISTENT_PROVIDER_ERROR_PATTERN：401/403/余额）整家打标记用的 kind：
+ * 余额归 quota（「余额或额度用完了」），其余归 auth。空内容等非持久失败不打标记，不走这里。
+ */
+export function persistentProviderMarkKind(message: string): AvailabilityKind {
+  return classifyError(message) === 'quota_exhaustion' ? 'quota' : 'auth';
+}
+
 interface ProviderState {
   observationCount: number;
   latencies: number[];
@@ -37,11 +60,24 @@ interface ProviderState {
   status: HealthStatus;
 }
 
+function modelKey(provider: string, model: string): string {
+  return `${provider}\0${model}`;
+}
+
 class ProviderHealthMonitor {
   private providers = new Map<string, ProviderState>();
+  /** 供应商级失败（401/403、余额、网络）：标整家。内存 + 30 分钟 TTL，不持久化（瞬态）。 */
+  private providerMarks = new Map<string, AvailabilityMark>();
+  /**
+   * 模型级失败（停用 / 不存在）：只标这一个模型。不吃 TTL——「停用」不自愈，供应商真
+   * 重新上架时下一次成功调用（recordSuccess）会清；挂上持久化 store 后跨重启生效
+   * （N-MOBILE-CONN-POLISH-R3 ④：重启即空会让回落链把已停用模型当好模型选中）。
+   */
+  private modelMarks = new Map<string, AvailabilityMark>();
+  private modelMarkStore: ModelMarkStore | null = null;
 
   /** Call after each successful request */
-  recordSuccess(provider: string, latencyMs: number): void {
+  recordSuccess(provider: string, latencyMs: number, options?: { model?: string }): void {
     const state = this.getOrCreate(provider);
     state.observationCount++;
     state.latencies.push(latencyMs);
@@ -52,12 +88,43 @@ class ProviderHealthMonitor {
     state.lastSuccessAt = Date.now();
     this.pruneEvents(state);
     this.updateStatus(provider, state);
+    // 成功一次立即清该级标记：这个模型的模型级标记 + 这家的供应商级标记。落盘跟同一拍。
+    if (options?.model && this.modelMarks.delete(modelKey(provider, options.model))) this.persistModelMarks();
+    this.providerMarks.delete(provider);
   }
 
   /** Call after each failed request */
-  recordFailure(provider: string, options?: { cancelled?: boolean }): void {
+  recordFailure(provider: string, options?: {
+    cancelled?: boolean;
+    model?: string;
+    error?: unknown;
+    scope?: AvailabilityScope;
+    kind?: AvailabilityKind;
+  }): void {
     // 用户主动取消不是 provider 故障，不参与健康统计，也不记作成功。
     if (options?.cancelled === true) return;
+    const classified = options?.scope && options?.kind
+      ? { scope: options.scope, kind: options.kind }
+      : resolveAvailabilityFailure(options?.error);
+    const at = Date.now();
+    if (classified?.scope === 'model' && options?.model) {
+      this.modelMarks.set(modelKey(provider, options.model), { scope: 'model', kind: classified.kind, at });
+      this.persistModelMarks();
+      // 模型级失败不把整家打成 unavailable（Preview 下线不能连累 LongCat-2.0）。
+      const state = this.getOrCreate(provider);
+      state.observationCount++;
+      return;
+    }
+    if (classified?.scope === 'provider') {
+      // 网络类（5xx/断网）一次失败就给整家打 30 分钟标记，会把手机默认模型切到别家且难以
+      // 自愈——默认已换走，不再有请求来清标记。所以网络类只在错误率已把健康态推到 unavailable
+      // （下面的 updateStatus 沿用 UNAVAILABLE_THRESHOLD 阈值，此刻读的是这笔失败之前的态）
+      // 时才升格成供应商级标记；auth/quota 是持久性问题（key 无效/余额耗尽），一次即标。
+      const persistent = classified.kind === 'auth' || classified.kind === 'quota';
+      if (persistent || this.getOrCreate(provider).status === 'unavailable') {
+        this.providerMarks.set(provider, { scope: 'provider', kind: classified.kind, at });
+      }
+    }
     const state = this.getOrCreate(provider);
     state.observationCount++;
     state.events.push({ time: Date.now(), success: false });
@@ -66,6 +133,60 @@ class ProviderHealthMonitor {
     state.lastErrorAt = Date.now();
     this.pruneEvents(state);
     this.updateStatus(provider, state);
+  }
+
+  private expired(at: number, now = Date.now()): boolean {
+    return now - at >= AVAILABILITY_MARK_TTL_MS;
+  }
+
+  getAvailabilityMark(provider: string, model: string): AvailabilityMark | null {
+    const now = Date.now();
+    const providerMark = this.providerMarks.get(provider);
+    if (providerMark && !this.expired(providerMark.at, now)) return providerMark;
+    if (providerMark) this.providerMarks.delete(provider);
+    // 模型级标记不查 TTL：停用不自愈，只有该模型成功一次（recordSuccess）才清。
+    return this.modelMarks.get(modelKey(provider, model)) ?? null;
+  }
+
+  getProviderMark(provider: string): AvailabilityMark | null {
+    const mark = this.providerMarks.get(provider);
+    if (!mark) return null;
+    if (this.expired(mark.at)) {
+      this.providerMarks.delete(provider);
+      return null;
+    }
+    return mark;
+  }
+
+  getModelMarks(provider: string): Record<string, { kind: AvailabilityKind }> {
+    const out: Record<string, { kind: AvailabilityKind }> = {};
+    const prefix = `${provider}\0`;
+    for (const [key, mark] of this.modelMarks) {
+      if (!key.startsWith(prefix)) continue;
+      out[key.slice(prefix.length)] = { kind: mark.kind };
+    }
+    return out;
+  }
+
+  listKnownProviders(): string[] {
+    const names = new Set(this.providers.keys());
+    for (const name of this.providerMarks.keys()) names.add(name);
+    for (const key of this.modelMarks.keys()) names.add(key.slice(0, key.indexOf('\0')));
+    return [...names];
+  }
+
+  /**
+   * 显示口径的「整家连不上」：健康态被熔断成 unavailable **且最近一次事件是失败**（lastErrorAt 严格晚于
+   * lastSuccessAt）。成功一次就清——recordSuccess 已删标记，这里不能还被旧的 unavailable 拖住
+   * （RECOVERY_SUCCESS_COUNT 只管路由的恢复节奏；模拟器验收 D1：500×5 后成功 1 次，手机两行仍
+   * 「最近连不上」、默认挂到别家，电脑端同时刻新建会话却还是原默认，两端不一致）。
+   * 时间戳同毫秒并列算已清：真实调用一轮不可能同毫秒成对出现；会走到这支（无存活标记）的并列，
+   * 只可能是成功刚删掉标记——失败若在其后必会再留下标记，就走标记那支了。
+   */
+  isProviderDown(provider: string): boolean {
+    const state = this.providers.get(provider);
+    if (!state) return false;
+    return state.status === 'unavailable' && state.lastErrorAt > state.lastSuccessAt;
   }
 
   /** Get health for all providers */
@@ -103,6 +224,23 @@ class ProviderHealthMonitor {
       lastErrorAt: state.lastErrorAt,
       consecutiveErrors: state.consecutiveErrors,
     };
+  }
+
+  /**
+   * 挂上模型级标记的持久化：回灌盘上标记（内存里已有的更新鲜，不覆盖），此后每次
+   * modelMarks 变更（recordFailure 写 / recordSuccess 删）跟同一拍落盘。生产由宿主
+   * 启动时 armModelMarkPersistence() 接线；不挂 store 时纯内存，行为与本单之前一致。
+   */
+  attachModelMarkStore(store: ModelMarkStore): void {
+    this.modelMarkStore = store;
+    const stored = store.load();
+    if (!stored) return;
+    for (const [key, mark] of stored) if (!this.modelMarks.has(key)) this.modelMarks.set(key, mark);
+  }
+
+  /** 内存为真源：每次变更把整份模型级标记交给 store 串行落盘（provider 级不持久化）。 */
+  private persistModelMarks(): void {
+    this.modelMarkStore?.persist([...this.modelMarks]);
   }
 
   private getOrCreate(provider: string): ProviderState {
@@ -161,4 +299,16 @@ let instance: ProviderHealthMonitor | null = null;
 export function getProviderHealthMonitor(): ProviderHealthMonitor {
   if (!instance) instance = new ProviderHealthMonitor();
   return instance;
+}
+
+/**
+ * 生产接线：宿主启动时给单例挂上模型级标记持久化（读盘回灌 + 变更落盘，默认落数据目录
+ * model-availability-marks.json）。刻意不在 getProviderHealthMonitor() 里默认挂：单测
+ * （modelRouter / aiSdkAdapter / companionModelDefault 等 8+ 个文件）靠 vi.resetModules
+ * 拿互不串盘的纯内存实例，工厂挂盘会让上一条用例的标记漏进下一条。
+ */
+export function armModelMarkPersistence(store: ModelMarkStore = createModelMarkFileStore()): ProviderHealthMonitor {
+  const monitor = getProviderHealthMonitor();
+  monitor.attachModelMarkStore(store);
+  return monitor;
 }

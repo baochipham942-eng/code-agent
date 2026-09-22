@@ -166,15 +166,13 @@ interface ProtectedWritePathOptions {
 
 // As-built user-level files under getUserConfigDir() / candidate data dirs.
 // Project-level counterparts live on projectRoot (see isProtectedWritePath).
-// ponytail: coverage ceiling is the closed as-built default, not a full Neo
-// config inventory. Known gaps (same baseline verdict, not a regression):
-// project-level `.code-agent/settings.json`, `permissions.json`,
-// `hooks/hooks.json`, `mcp.json`; user-level `permissions.json` / `mcp.json`.
 const PROTECTED_DATA_DIR_FILES = [
   'policy.toml',
   'session-permission-modes.json',
   'exec-policy.json',
   'hooks.json',
+  'permissions.json',
+  'mcp.json',
 ];
 
 function isProtectedSettingsFileName(fileName: string): boolean {
@@ -277,6 +275,10 @@ export const isProtectedWritePath = Object.assign(
       entries.push({ kind: 'file', path: path.join(projectRoot, '.gitconfig') });
       entries.push({ kind: 'file', path: path.join(projectRoot, '.npmrc') });
       entries.push({ kind: 'file', path: path.join(projectRoot, CONFIG_DIR_NEW, 'exec-policy.json') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, CONFIG_DIR_NEW, 'settings.json') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, CONFIG_DIR_NEW, 'permissions.json') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, CONFIG_DIR_NEW, 'hooks', 'hooks.json') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, CONFIG_DIR_NEW, 'mcp.json') });
       entries.push({ kind: 'file', path: path.join(projectRoot, 'code-agent-policy.toml') });
     }
 

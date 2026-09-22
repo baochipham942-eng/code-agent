@@ -167,6 +167,8 @@ export interface ResearchProgressData {
 export interface AgentRunOptions {
   /** Host producer identity; automated input must not cancel a user's pending time wake. */
   inputSource?: 'user' | 'automation';
+  /** 本轮无人盯守（loop 轮等）：断流续接取无人值守预算（ADR-068 D4）。缺省按前台处理。 */
+  unattended?: boolean;
   mode: 'normal' | 'deep-research';
   /** Optional per-run allow/deny list for externally delivered AgentEvents. */
   eventFilter?: import('../protocol/events/eventFilter').AgentEventFilter;
@@ -183,6 +185,8 @@ export interface AgentRunOptions {
   deniedToolNames?: string[];
   /** 当前 run 唯一可见且可调用的工具名。用于前台 brain 等严格窄工具面。 */
   allowedToolNames?: string[];
+  /** 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。 */
+  foregroundToolFace?: boolean;
   toolScope?: import('../../shared/contract/conversationEnvelope').WorkbenchToolScope;
   executionIntent?: import('../../shared/contract/conversationEnvelope').ConversationExecutionIntent;
   runtimeInput?: import('../../shared/contract/conversationEnvelope').RuntimeInputIntent;

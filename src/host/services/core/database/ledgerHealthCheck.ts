@@ -46,3 +46,13 @@ export function checkLedgerHealth(deps: LedgerHealthDeps, now: number): void {
     deps.warn('[DatabaseService] 账本健康检查失败（忽略）:', err);
   }
 }
+
+/** 连续 corruption 达阈值后的 WARN 出口（刀3；与上面断流 WARN 并列，不阻塞启动）。 */
+export function warnLedgerCorruptionThreshold(
+  warn: (message: string, data?: unknown) => void,
+  consecutive: number,
+): void {
+  warn('[DatabaseService] ledger corruption threshold reached (fail-safe; persistence degraded)', {
+    consecutive,
+  });
+}

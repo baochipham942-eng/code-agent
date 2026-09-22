@@ -64,6 +64,8 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   'glm-5': { input: 0.05, output: 0.05 },
   'glm-4.7': { input: 0.05, output: 0.05 },
   'glm-4.6v': { input: 0.05, output: 0.05 },
+  // glm-5.3-flash：0ki 年卡包月模型，不按 token 计费，额度按次扣
+  'glm-5.3-flash': { input: 0, output: 0 },
   'glm-4.7-flash': { input: 0, output: 0 },
   'glm-4-flash': { input: 0, output: 0 },
   'glm-4.6v-flash': { input: 0, output: 0 },
@@ -80,7 +82,6 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   'mimo-v2-omni': { input: 0, output: 0 },
   // LongCat（开放平台免费额度，quota 内不计费）
   'LongCat-2.0': { input: 0, output: 0 },
-  'LongCat-2.0-Preview': { input: 0, output: 0 },
   // Fallback
   'default': { input: 1, output: 3 },
 };

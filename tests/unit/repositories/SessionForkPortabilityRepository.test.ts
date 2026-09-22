@@ -134,6 +134,19 @@ function seedLineage(
     sharedAssistantAttachments,
     'active',
   );
+  db.prepare(`
+    UPDATE messages
+    SET thinking = ?, content_parts = ?, tool_calls = ?, metadata = ?
+    WHERE id IN ('a1', 'ca1')
+  `).run(
+    'private reasoning',
+    JSON.stringify([
+      { type: 'text', text: 'answer' },
+      { type: 'tool_call', toolCallId: 'call-answer' },
+    ]),
+    JSON.stringify([{ id: 'call-answer', name: 'bash', arguments: { command: 'echo answer' } }]),
+    JSON.stringify({ thinking: 'metadata thinking' }),
+  );
   insertMessage.run('cu2', 'child', 'user', 'rewind anchor', 3, null, 'active');
 
   db.prepare(`
@@ -534,7 +547,7 @@ describe('SessionForkPortabilityRepository', () => {
       .toEqual({ count: 0 });
   });
 
-  it('imports a fully remapped lineage atomically and clears runtime/task/authorization state', () => {
+  it('roundtrips rich thinking/contentParts lineage and clears runtime/task/authorization state', () => {
     const envelope = repository.exportSessionFork({
       exportId: 'export-import',
       rootSessionId: 'root',
@@ -662,6 +675,37 @@ describe('SessionForkPortabilityRepository', () => {
     expect(branchRepo.auditLineage(importedChildId, boundary)).toMatchObject({
       status: 'healthy',
       issues: [],
+    });
+    const importedRichMessage = db.prepare(`
+      SELECT thinking, content_parts, tool_calls, metadata
+      FROM messages
+      WHERE id = ?
+    `).get(plan.messageIdMap.ca1) as {
+      thinking: string | null;
+      content_parts: string | null;
+      tool_calls: string | null;
+      metadata: string | null;
+    };
+    expect(importedRichMessage.thinking).toBe('private reasoning');
+    expect(JSON.parse(String(importedRichMessage.content_parts))).toEqual([
+      { type: 'text', text: 'answer' },
+      { type: 'tool_call', toolCallId: 'call-answer' },
+    ]);
+    // The imported tool_calls column must still resolve the content_parts tool_call
+    // reference above — otherwise useTurnProjection silently drops the tool call card.
+    expect(JSON.parse(String(importedRichMessage.tool_calls))).toEqual([
+      expect.objectContaining({ id: 'call-answer', name: 'bash' }),
+    ]);
+    // message.metadata (the source row's { thinking: 'metadata thinking' } blob) is not
+    // part of the portable envelope at all (N-FORK-PORTABILITY round 3) — the imported
+    // metadata column is re-synthesized purely from message.source/subtype/artifacts. This
+    // fixture's content embeds a ```mermaid``` block, which the export path turns into
+    // readOnlyArtifactProvenance (see readPortableMessages) — so message.artifacts IS set,
+    // and that's the only thing that survives into the re-synthesized metadata column.
+    expect(JSON.parse(String(importedRichMessage.metadata))).toEqual({
+      readOnlyArtifactProvenanceV2: [
+        expect.objectContaining({ type: 'mermaid' }),
+      ],
     });
     const importedRootAssistantId = plan.messageIdMap.a1;
     const importedAttachmentRow = db.prepare(`

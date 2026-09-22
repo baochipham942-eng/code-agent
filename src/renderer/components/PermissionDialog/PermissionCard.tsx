@@ -59,8 +59,10 @@ function normalizeRequest(
       affectedPath: request.details.affectedPath,
       affectedFileCount: request.details.affectedFileCount,
       targetKind: request.details.targetKind,
+      triggeredByAgentMessage: request.details.triggeredByAgentMessage,
       path: request.details.path,
       preview: request.details.preview,
+      sandbox: request.details.sandbox,
     },
     // 可编辑工具才带原参数（host 默认分支 details = {...params} + 透传字段）；其余不背这份
     rawArgs: isEditableTool(request.tool) ? (request.details as Record<string, unknown>) : undefined,

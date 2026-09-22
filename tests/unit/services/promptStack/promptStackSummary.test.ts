@@ -127,4 +127,37 @@ describe('summarizePromptStack', () => {
     expect(summary.totalTokens).toBe(0);
     expect(summary.warnings).toContain('No model invocation record found for this session.');
   });
+
+  it('does not treat a diagnostic compression signal as a compaction checkpoint', () => {
+    const summary = summarizePromptStack([
+      {
+        id: 'diagnostic-signal',
+        sessionId: 'session-signal',
+        agentId: 'agent-1',
+        invocationId: 'signal-1',
+        category: 'unknown',
+        action: 'added',
+        sourceKind: CONTEXT_LEDGER.SOURCE_KIND.COMPRESSION_SIGNAL,
+        sourceDetail: 'compression-signal:summary-validation-failed',
+        layer: 'diagnostic',
+        timestamp: 100,
+      },
+      {
+        id: 'prompt-layer',
+        sessionId: 'session-signal',
+        agentId: 'agent-1',
+        invocationId: 'turn-1',
+        sourceKind: CONTEXT_LEDGER.SOURCE_KIND.PROMPT_LAYER,
+        sourceDetail: CONTEXT_LEDGER.BASE_SOURCE.TASK,
+        layer: CONTEXT_LEDGER.BASE_SOURCE.TASK,
+        sequence: 0,
+        chars: 20,
+        tokens: 5,
+        promptLayerOutcome: CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.INCLUDED,
+        timestamp: 200,
+      },
+    ], { sessionId: 'session-signal', agentId: 'agent-1' });
+
+    expect(summary.compactionCheckpoint).toBeUndefined();
+  });
 });

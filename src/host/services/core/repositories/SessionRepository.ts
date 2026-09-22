@@ -53,6 +53,8 @@ import {
   clearAllMessagesWithLedger,
   reconcileMessageProjectionOrderWithLedger,
 } from './sessionRepositoryMessageLedger';
+import { runTransactionWithFtsRepair, runWithFtsWriteRepair } from '../database/ftsRepair';
+import { runWithSqliteBusyRetry } from '../database/sqliteBusyRetry';
 
 export type { StoredSession, StoredMessage };
 export type {
@@ -624,15 +626,14 @@ export class SessionRepository {
           .run(options?.updatedAt ?? Date.now(), sessionId);
       }
     };
-    if (this.conversationBranchRepo && !options?.skipConversationLedger) {
-      this.db.transaction(write)();
-    } else {
-      write();
-    }
+    const useLedger = Boolean(this.conversationBranchRepo && !options?.skipConversationLedger);
+    // WAL 多进程下先读后写的事务必须 BEGIN IMMEDIATE（.immediate()），否则升级出 SQLITE_BUSY_SNAPSHOT
+    // 直接抛 database is locked（issue #1992）；外层 busy 重试兜底 busy_timeout 到期的普通写锁等待。
+    runWithSqliteBusyRetry(() => runWithFtsWriteRepair(this.db, useLedger ? () => this.db.transaction(write).immediate() : write));
   }
 
   replaceMessages(sessionId: string, messages: Message[], updatedAt: number = Date.now()): void {
-    const replaceFn = this.db.transaction(() => {
+    const replaceBody = (): void => {
       const protectedIds = this.protectedForkMessageIds(sessionId);
       if (protectedIds.size > 0) {
         const desiredById = new Map(messages.map((message) => [message.id, message]));
@@ -693,9 +694,8 @@ export class SessionRepository {
           createdAt: updatedAt,
         });
       }
-    });
-
-    replaceFn();
+    };
+    runWithSqliteBusyRetry(() => runTransactionWithFtsRepair(this.db, () => this.db.transaction(replaceBody).immediate()));
   }
 
   reconcileMessageProjectionOrder(sessionId: string, reason: string, createdAt = Date.now()): void {
@@ -826,9 +826,9 @@ export class SessionRepository {
       }
     };
     if (this.conversationBranchRepo && recordsRevision) {
-      this.db.transaction(write)();
+      runWithSqliteBusyRetry(() => runTransactionWithFtsRepair(this.db, () => this.db.transaction(write).immediate()));
     } else {
-      write();
+      runWithSqliteBusyRetry(() => runWithFtsWriteRepair(this.db, write));
     }
   }
 

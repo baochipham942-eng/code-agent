@@ -1,5 +1,6 @@
 {
   "schemaVersion": 2,
+  "note": "2026-09-13 N-KNIP-MOBILE-BLINDSPOT：扫描范围纳入 packages/mobile。符号数变化含「手机消费的共享导出不再假死」和「手机侧只给单测用的导出首次入账」，不是清理战果。真死的 decodeInvitation / Dispose / FileExportResult / PushProvider / KEYBOARD_EASING / KeyboardFrame 已删或去 export，没有塞进基线。",
   "symbols": [
     {
       "file": "packages/internal/evaluation-center/src/host/evaluation/trajectory/trajectoryExporter.ts",
@@ -25,6 +26,41 @@
       "file": "packages/internal/evaluation-center/src/host/evaluation/trajectoryToCase.ts",
       "name": "DraftSource",
       "kind": "type"
+    },
+    {
+      "file": "packages/mobile/src/app/keyboardInset.ts",
+      "name": "KEYBOARD_ANIMATION_MS",
+      "kind": "export"
+    },
+    {
+      "file": "packages/mobile/src/app/keyboardInset.ts",
+      "name": "keyboardTransitionMs",
+      "kind": "export"
+    },
+    {
+      "file": "packages/mobile/src/app/MobileRoot.tsx",
+      "name": "composerModelLabel",
+      "kind": "export"
+    },
+    {
+      "file": "packages/mobile/src/platform/fileAccept.ts",
+      "name": "COMPANION_PICKER_MIME_TYPES",
+      "kind": "export"
+    },
+    {
+      "file": "packages/mobile/src/platform/notifications.ts",
+      "name": "nativeTokenUnavailable",
+      "kind": "export"
+    },
+    {
+      "file": "packages/mobile/src/stores/companionStore.ts",
+      "name": "companionAckMatches",
+      "kind": "export"
+    },
+    {
+      "file": "packages/mobile/src/stores/mobileStore.ts",
+      "name": "joinTranscript",
+      "kind": "export"
     },
     {
       "file": "src/cli/adapter.ts",
@@ -742,41 +778,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/agent/loopTypes.ts",
-      "name": "AutonomousConfig",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/loopTypes.ts",
-      "name": "ModelToolCall",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/loopTypes.ts",
-      "name": "ParsedStep",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/loopTypes.ts",
-      "name": "SEQUENTIAL_TOOLS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/loopTypes.ts",
-      "name": "ToolExecutionContext",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/loopTypes.ts",
-      "name": "ToolFailureEntry",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/loopTypes.ts",
-      "name": "TurnProgressState",
-      "kind": "type"
-    },
-    {
       "file": "src/host/agent/messageHandling/contextBuilder.ts",
       "name": "__getContextCacheSizesForTest",
       "kind": "export"
@@ -819,11 +820,6 @@
     {
       "file": "src/host/agent/messageHandling/converter.ts",
       "name": "sanitizeToolResultsForHistory",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/multiagentTools/spawnAgent.ts",
-      "name": "getAvailableAgents",
       "kind": "export"
     },
     {
@@ -1059,11 +1055,6 @@
     {
       "file": "src/host/agent/runtime/contextAssembly.ts",
       "name": "MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/contextAssembly.ts",
-      "name": "MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS",
       "kind": "export"
     },
     {
@@ -1404,31 +1395,6 @@
     {
       "file": "src/host/agent/runtime/runTerminalStatus.ts",
       "name": "RUN_TERMINAL_POSTHOG_EVENT",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/scaffoldProfile.ts",
-      "name": "getScaffoldProfileOverride",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/scaffoldProfile.ts",
-      "name": "getThinkingInjectionOverride",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/scaffoldProfile.ts",
-      "name": "resolveScaffoldProfile",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/scaffoldProfile.ts",
-      "name": "setScaffoldProfileOverride",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/scaffoldProfile.ts",
-      "name": "setThinkingInjectionOverride",
       "kind": "export"
     },
     {
@@ -2299,11 +2265,6 @@
     {
       "file": "src/host/context/compactModel.ts",
       "name": "isCompactModelAvailable",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/compressionPipeline.ts",
-      "name": "setCompressionPipelineOverride",
       "kind": "export"
     },
     {
@@ -3402,11 +3363,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/ipc/voicePaste.ipc.ts",
-      "name": "unregisterVoicePaste",
-      "kind": "export"
-    },
-    {
       "file": "src/host/ipc/workflow.ipc.ts",
       "name": "ensureWorkflowBusBridge",
       "kind": "export"
@@ -4242,31 +4198,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/model/quickModel.ts",
-      "name": "ClassificationResult",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/model/quickModel.ts",
-      "name": "quickClassify",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/model/quickModel.ts",
-      "name": "quickDecision",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/model/quickModel.ts",
-      "name": "quickExtract",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/model/quickModel.ts",
-      "name": "resetQuickModel",
-      "kind": "export"
-    },
-    {
       "file": "src/host/model/types.ts",
       "name": "ModelToolCall",
       "kind": "type"
@@ -4752,391 +4683,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/platform/appPaths.ts",
-      "name": "getAppDataPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/appPaths.ts",
-      "name": "getAppPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/appPaths.ts",
-      "name": "getDesktopPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/appPaths.ts",
-      "name": "getDocumentsPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/appPaths.ts",
-      "name": "getDownloadsPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/appPaths.ts",
-      "name": "getHomePath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/appPaths.ts",
-      "name": "getLocale",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/appPaths.ts",
-      "name": "getTempPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "autoUpdater",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "clipboardReadText",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "clipboardWriteText",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "contentTracing",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "contextBridge",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "crashReporter",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "desktopCapturer",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "Electron",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "eventListeners",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "getAppDataPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "getAppName",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "getAppPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "getDesktopPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "getDocumentsPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "getDownloadsPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "getHomePath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "getLocale",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "getPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "getTempPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "ipcClient",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "IpcMainEvent",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "IpcMainInvokeEvent",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "isPackaged",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "Menu",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "MenuItem",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "nativeImage",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "nativeTheme",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "net",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "openExternal",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "openPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "powerMonitor",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "protocol",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "safeStorage",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "screen",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "session",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "showItemInFolder",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "systemPreferences",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "Tray",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "webContents",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "WebContentsSender",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "webUtils",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/index.ts",
-      "name": "WindowLike",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/platform/ipcRegistry.ts",
-      "name": "eventListeners",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/ipcTypes.ts",
-      "name": "Electron",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/ipcTypes.ts",
-      "name": "IpcMainEvent",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "autoUpdater",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "contentTracing",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "contextBridge",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "crashReporter",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "desktopCapturer",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "ipcClient",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "Menu",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "MenuItem",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "nativeTheme",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "net",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "powerMonitor",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "protocol",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "safeStorage",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "screen",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "session",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "systemPreferences",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "Tray",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "webContents",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/miscCompat.ts",
-      "name": "webUtils",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/nativeClipboard.ts",
-      "name": "nativeImage",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/nativeClipboard.ts",
-      "name": "readText",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/nativeClipboard.ts",
-      "name": "writeText",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/nativeShell.ts",
-      "name": "openPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/platform/nativeShell.ts",
-      "name": "showItemInFolder",
-      "kind": "export"
-    },
-    {
       "file": "src/host/plugins/builtin/audioProcessing/index.ts",
       "name": "activate",
       "kind": "export"
@@ -5224,11 +4770,6 @@
     {
       "file": "src/host/plugins/pluginValidator.ts",
       "name": "validateManifest",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/plugins/pluginValidator.ts",
-      "name": "validateSkillsDir",
       "kind": "export"
     },
     {
@@ -6162,121 +5703,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/sandbox/bubblewrap.ts",
-      "name": "resetBubblewrap",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "Bubblewrap",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "BubblewrapConfig",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "BubblewrapStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "executeInSandbox",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "getBubblewrap",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "getSeatbelt",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "resetBubblewrap",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "resetSandboxManager",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "resetSeatbelt",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "SandboxConfig",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "SandboxedCommand",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "SandboxManager",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "SandboxManagerStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "SandboxPlatform",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "SandboxPreset",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "SandboxResult",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "SandboxWrapOptions",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "Seatbelt",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "SeatbeltConfig",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/sandbox/index.ts",
-      "name": "SeatbeltStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/sandbox/manager.ts",
-      "name": "executeInSandbox",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/manager.ts",
-      "name": "resetSandboxManager",
-      "kind": "export"
-    },
-    {
       "file": "src/host/sandbox/networkPolicy.ts",
       "name": "NETWORK_COMMANDS",
       "kind": "export"
@@ -6284,11 +5710,6 @@
     {
       "file": "src/host/sandbox/seatbelt.ts",
       "name": "generateProfile",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/seatbelt.ts",
-      "name": "resetSeatbelt",
       "kind": "export"
     },
     {
@@ -6335,21 +5756,6 @@
       "file": "src/host/security/auditLogger.ts",
       "name": "resetAuditLogger",
       "kind": "export"
-    },
-    {
-      "file": "src/host/security/commandSafety.ts",
-      "name": "classifyCommand",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/security/commandSafety.ts",
-      "name": "defaultShellKind",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/security/commandSafety.ts",
-      "name": "RiskLevel",
-      "kind": "type"
     },
     {
       "file": "src/host/security/decisionHistory.ts",
@@ -6464,26 +5870,6 @@
     {
       "file": "src/host/security/policyFile.ts",
       "name": "ToolsPolicy",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/security/sensitiveDataGuard.ts",
-      "name": "neutralizePromptInjectionText",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/security/sensitiveDataGuard.ts",
-      "name": "sanitizeUrlTokens",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/security/sensitiveDataGuard.ts",
-      "name": "SensitiveDataMode",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/security/sensitiveDataGuard.ts",
-      "name": "SensitiveDataSurface",
       "kind": "type"
     },
     {
@@ -6775,11 +6161,6 @@
       "file": "src/host/services/agentEngine/mimoCliAdapter.ts",
       "name": "parseMimoJsonLine",
       "kind": "export"
-    },
-    {
-      "file": "src/host/services/auth/authService.ts",
-      "name": "AuthResult",
-      "kind": "type"
     },
     {
       "file": "src/host/services/auth/index.ts",
@@ -7092,28 +6473,8 @@
       "kind": "type"
     },
     {
-      "file": "src/host/services/core/configService.ts",
-      "name": "isProduction",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/core/configService.ts",
-      "name": "safeLog",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/core/configService.ts",
-      "name": "sanitizeForLogging",
-      "kind": "export"
-    },
-    {
       "file": "src/host/services/core/crashRecovery.ts",
       "name": "_RepoSatisfies",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/services/core/crashRecovery.ts",
-      "name": "RecoveredOperation",
       "kind": "type"
     },
     {
@@ -7908,22 +7269,12 @@
     },
     {
       "file": "src/host/services/infra/index.ts",
-      "name": "getShutdownManager",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/infra/index.ts",
       "name": "getSupabaseConfig",
       "kind": "export"
     },
     {
       "file": "src/host/services/infra/index.ts",
       "name": "getToolCache",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/infra/index.ts",
-      "name": "gracefulShutdown",
       "kind": "export"
     },
     {
@@ -7953,11 +7304,6 @@
     },
     {
       "file": "src/host/services/infra/index.ts",
-      "name": "isInShutdown",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/infra/index.ts",
       "name": "LangfuseConfig",
       "kind": "type"
     },
@@ -7973,11 +7319,6 @@
     },
     {
       "file": "src/host/services/infra/index.ts",
-      "name": "onShutdown",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/infra/index.ts",
       "name": "PageContent",
       "kind": "type"
     },
@@ -7985,11 +7326,6 @@
       "file": "src/host/services/infra/index.ts",
       "name": "ProfileRow",
       "kind": "type"
-    },
-    {
-      "file": "src/host/services/infra/index.ts",
-      "name": "removeShutdownHandler",
-      "kind": "export"
     },
     {
       "file": "src/host/services/infra/index.ts",
@@ -8019,11 +7355,6 @@
     {
       "file": "src/host/services/infra/index.ts",
       "name": "SessionManager",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/infra/index.ts",
-      "name": "setupDefaultSignalHandlers",
       "kind": "export"
     },
     {
@@ -8080,11 +7411,6 @@
       "file": "src/host/services/infra/langfuseService.ts",
       "name": "initLangfuse",
       "kind": "export"
-    },
-    {
-      "file": "src/host/services/infra/logger.ts",
-      "name": "LogLevel",
-      "kind": "type"
     },
     {
       "file": "src/host/services/infra/playwrightLaunchSemaphore.ts",
@@ -8777,11 +8103,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/services/skills/skillDiscoveryService.ts",
-      "name": "SkillDiscoveryServiceOptions",
-      "kind": "type"
-    },
-    {
       "file": "src/host/services/skills/skillDraftQueue.ts",
       "name": "generateDraftSkillMd",
       "kind": "export"
@@ -8794,26 +8115,6 @@
     {
       "file": "src/host/services/skills/skillExecutorRegistry.ts",
       "name": "unregisterSkillExecutor",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/skills/skillRepositories.ts",
-      "name": "groupRecommendedSkillsByCategory",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/skills/skillRepositories.ts",
-      "name": "RECOMMENDED_SKILLS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/skills/skillRepositories.ts",
-      "name": "SKILL_CATEGORIES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/skills/skillRepositories.ts",
-      "name": "SKILL_ROLE_BUNDLES",
       "kind": "export"
     },
     {
@@ -8830,26 +8131,6 @@
       "file": "src/host/services/speech/gummyRealtimeTransport.ts",
       "name": "GummyTranscript",
       "kind": "type"
-    },
-    {
-      "file": "src/host/services/speech/whisperCppTranscriber.ts",
-      "name": "convertToWav",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/speech/whisperCppTranscriber.ts",
-      "name": "findWhisperBinary",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/speech/whisperCppTranscriber.ts",
-      "name": "getWhisperModelPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/speech/whisperCppTranscriber.ts",
-      "name": "parseWhisperOutput",
-      "kind": "export"
     },
     {
       "file": "src/host/services/surfaceExecution/ExternalSurfaceAgentAdapter.ts",
@@ -9582,6 +8863,31 @@
       "kind": "export"
     },
     {
+      "file": "src/host/testing/calibration/judgeCalibration.ts",
+      "name": "CalibrationLabel",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/testing/calibration/judgeCalibration.ts",
+      "name": "CalibrationPair",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/testing/calibration/judgeCalibration.ts",
+      "name": "CalibrationReport",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/testing/calibration/judgeCalibration.ts",
+      "name": "computeCalibration",
+      "kind": "export"
+    },
+    {
+      "file": "src/host/testing/calibration/judgeCalibration.ts",
+      "name": "ConfusionMatrix",
+      "kind": "type"
+    },
+    {
       "file": "src/host/testing/ci/baselineManager.ts",
       "name": "BASELINE_DENOMINATOR_VERSION",
       "kind": "export"
@@ -9719,11 +9025,6 @@
     {
       "file": "src/host/testing/types.ts",
       "name": "StatisticalRunSummary",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/testing/types.ts",
-      "name": "TestCaseType",
       "kind": "type"
     },
     {
@@ -10897,16 +10198,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/composites/ConfirmDialog.tsx",
-      "name": "ConfirmDialogVariant",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/composites/ConfirmDialog.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/composites/FormField.tsx",
       "name": "default",
       "kind": "export"
@@ -12033,11 +11324,6 @@
     },
     {
       "file": "src/renderer/components/features/chat/ToolStepGroup.tsx",
-      "name": "buildToolGroupHeadSummary",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ToolStepGroup.tsx",
       "name": "tailTruncateLiveOutput",
       "kind": "export"
     },
@@ -12637,11 +11923,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/features/shared/PageContent.tsx",
-      "name": "PageContentWidth",
-      "kind": "type"
-    },
-    {
       "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
       "name": "default",
       "kind": "export"
@@ -12722,16 +12003,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/features/voice/LiveVoiceButton.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/voice/VoiceChrome.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/features/voice/VoiceStartDialog.tsx",
       "name": "default",
       "kind": "export"
@@ -12780,11 +12051,6 @@
       "file": "src/renderer/components/features/workflow/useDAGLayout.ts",
       "name": "default",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/FolderTrustDialog.tsx",
-      "name": "FolderTrustDangerousItem",
-      "kind": "type"
     },
     {
       "file": "src/renderer/components/ForceUpdateModal.tsx",
@@ -12885,31 +12151,6 @@
       "file": "src/renderer/components/PreviewPanel.tsx",
       "name": "toPreviewErrorState",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/primitives/Button.tsx",
-      "name": "ButtonSize",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/primitives/Button.tsx",
-      "name": "DangerButton",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/primitives/EmptyState.tsx",
-      "name": "EmptyStateVariant",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/primitives/IconButton.tsx",
-      "name": "IconButtonSize",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/primitives/IconButton.tsx",
-      "name": "IconButtonVariant",
-      "kind": "type"
     },
     {
       "file": "src/renderer/components/primitives/index.ts",
@@ -13044,41 +12285,6 @@
     {
       "file": "src/renderer/components/primitives/Input.tsx",
       "name": "InputType",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/primitives/Modal.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/primitives/Modal.tsx",
-      "name": "ModalSize",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/primitives/Select.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/primitives/Select.tsx",
-      "name": "SelectOption",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/primitives/Select.tsx",
-      "name": "SelectOptionGroup",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/primitives/Textarea.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/primitives/Toggle.tsx",
-      "name": "ToggleSize",
       "kind": "type"
     },
     {
@@ -13827,16 +13033,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/hooks/useToast.ts",
-      "name": "dedupeRepeatedListItems",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useToast.ts",
-      "name": "Toast",
-      "kind": "type"
-    },
-    {
       "file": "src/renderer/hooks/useTurnProjection.ts",
       "name": "projectTurns",
       "kind": "export"
@@ -13914,46 +13110,6 @@
     {
       "file": "src/renderer/services/invokeSkillIPC.ts",
       "name": "SKILL_FOLDER_TRUST_ERROR_MARKER",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/services/ipcService.ts",
-      "name": "extractDocxHtml",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/services/ipcService.ts",
-      "name": "extractExcelJson",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/services/ipcService.ts",
-      "name": "extractExcelText",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/services/ipcService.ts",
-      "name": "extractPdfText",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/services/ipcService.ts",
-      "name": "getPathForFile",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/services/ipcService.ts",
-      "name": "isAvailable",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/services/ipcService.ts",
-      "name": "off",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/services/ipcService.ts",
-      "name": "transcribeSpeech",
       "kind": "export"
     },
     {
@@ -14067,46 +13223,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/stores/appStore.ts",
-      "name": "MAX_PREVIEW_TABS",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/stores/appStore.ts",
-      "name": "OpenWorkbenchTabOptions",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/appStore.ts",
-      "name": "SettingsCapabilityFocus",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/appStore.ts",
-      "name": "TaskPanelTab",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/appStore.ts",
-      "name": "WorkbenchHighlight",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/appStore.ts",
-      "name": "WorkbenchOpenSource",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/appStore.ts",
-      "name": "WorkbenchTabId",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/authStore.ts",
-      "name": "formatAuthErrorMessage",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/stores/capabilityGapStore.ts",
       "name": "selectNoticeFor",
       "kind": "export"
@@ -14189,11 +13305,6 @@
     {
       "file": "src/renderer/stores/sessionCreate.ts",
       "name": "resolveOnboardingDefaultEngine",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/stores/sessionStore.ts",
-      "name": "findReusableNewSessionDraft",
       "kind": "export"
     },
     {
@@ -14325,16 +13436,6 @@
       "file": "src/renderer/types/runWorkbench.ts",
       "name": "RunIdentity",
       "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/accessControl.ts",
-      "name": "ACCESS_CONTROL_REGISTRY",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/accessControl.ts",
-      "name": "canAccessAnyFeature",
-      "kind": "export"
     },
     {
       "file": "src/renderer/utils/browserAnnotation.ts",
@@ -14529,11 +13630,6 @@
     {
       "file": "src/renderer/utils/settingsIndex.ts",
       "name": "SETTINGS_INDEX",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/settingsTabs.ts",
-      "name": "CAPABILITY_HUB_TAB_BY_SETTINGS_TAB",
       "kind": "export"
     },
     {
@@ -15002,21 +14098,6 @@
       "kind": "type"
     },
     {
-      "file": "src/shared/companion/lanProtocol.ts",
-      "name": "LanBinding",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/companion/lanProtocol.ts",
-      "name": "parseInvitation",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/companion/lanProtocol.ts",
-      "name": "validateLanEndpoint",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/constants/acceptance.ts",
       "name": "ACCEPTANCE_DEFAULTS",
       "kind": "export"
@@ -15025,31 +14106,6 @@
       "file": "src/shared/constants/acceptance.ts",
       "name": "AcceptanceMonotonicMode",
       "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/agent.ts",
-      "name": "AGENT",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/agent.ts",
-      "name": "AGENT_COMPLEXITY",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/agent.ts",
-      "name": "AGENT_ITERATIONS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/agent.ts",
-      "name": "AGENT_TIMEOUT",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/agent.ts",
-      "name": "PLANNING",
-      "kind": "export"
     },
     {
       "file": "src/shared/constants/almaMcpRegistry.ts",
@@ -15283,6 +14339,11 @@
     },
     {
       "file": "src/shared/constants/network.ts",
+      "name": "COMPANION_RELAY_PLACEHOLDER_URL",
+      "kind": "export"
+    },
+    {
+      "file": "src/shared/constants/network.ts",
       "name": "getRendererBundleChannel",
       "kind": "export"
     },
@@ -15362,16 +14423,6 @@
       "kind": "export"
     },
     {
-      "file": "src/shared/constants/skillCatalog.ts",
-      "name": "RECOMMENDED_SKILLS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/skillCatalog.ts",
-      "name": "SKILL_ROLE_BUNDLES",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/constants/storage.ts",
       "name": "EMBEDDING",
       "kind": "export"
@@ -15439,11 +14490,6 @@
     {
       "file": "src/shared/constants/toolConsentGroups.ts",
       "name": "TOOL_CONSENT_MAP",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/tools.ts",
-      "name": "FILE",
       "kind": "export"
     },
     {
@@ -15604,11 +14650,6 @@
     {
       "file": "src/shared/contract/agentFailure.ts",
       "name": "agentFailureCodeFromToolResultCode",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/agentFailure.ts",
-      "name": "isAgentFailureCode",
       "kind": "export"
     },
     {
@@ -16397,11 +15438,6 @@
       "kind": "type"
     },
     {
-      "file": "src/shared/contract/durableRun.ts",
-      "name": "TERMINAL_RUN_STATUSES",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/contract/error.ts",
       "name": "ErrorCode",
       "kind": "type"
@@ -16424,31 +15460,6 @@
     {
       "file": "src/shared/contract/evaluation.ts",
       "name": "EvalHarnessSource",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "EvidenceControlProjectionSource",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "EvidenceControlProjectionTrustLevel",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "ReplayFailureAttribution",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "ReplayMetricSource",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "ReplayTimelineEvent",
       "kind": "type"
     },
     {
@@ -16564,11 +15575,6 @@
     {
       "file": "src/shared/contract/message.ts",
       "name": "ChannelMessageMetadata",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/message.ts",
-      "name": "ContentPart",
       "kind": "type"
     },
     {
@@ -17002,11 +16008,6 @@
       "kind": "type"
     },
     {
-      "file": "src/shared/contract/queuedInput.ts",
-      "name": "QueuedInputStatus",
-      "kind": "type"
-    },
-    {
       "file": "src/shared/contract/rolePackRegistry.ts",
       "name": "ROLE_PACK_MARKETPLACE_ID",
       "kind": "export"
@@ -17019,11 +16020,6 @@
     {
       "file": "src/shared/contract/scriptRun.ts",
       "name": "ScriptRunEventType",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/session.ts",
-      "name": "SessionOriginKind",
       "kind": "type"
     },
     {
@@ -17064,11 +16060,6 @@
     {
       "file": "src/shared/contract/skillRepository.ts",
       "name": "SkillDependencyInfo",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/skillRepository.ts",
-      "name": "SkillMountSource",
       "kind": "type"
     },
     {
@@ -18690,7 +17681,6 @@
     "src/host/agent/verificationCi.ts",
     "src/host/app/desktopQueuedInputDrain.ts",
     "src/host/app/dynamicWorkflowRecoveryHost.ts",
-    "src/host/context/compactionSnapshotWriter.ts",
     "src/host/cowork/coworkContract.ts",
     "src/host/cron/index.ts",
     "src/host/errors/errorClassifier.ts",
@@ -18710,7 +17700,6 @@
     "src/host/services/memory/dreamScheduler.ts",
     "src/host/services/skills/distillScheduler.ts",
     "src/host/testing/autoTestHook.ts",
-    "src/host/testing/calibration/judgeCalibration.ts",
     "src/host/testing/gaiaImporter.ts",
     "src/host/tools/dispatch/denyRules.ts",
     "src/host/tools/dispatch/toolSearchExecutionContract.ts",
@@ -18752,7 +17741,6 @@
     "src/renderer/components/features/swarm/AgentWorkRecordDialog.tsx",
     "src/renderer/components/features/swarm/SwarmMonitor.tsx",
     "src/renderer/components/features/swarm/SwarmTraceHistory.tsx",
-    "src/renderer/components/features/voice/VoicePasteIndicator.tsx",
     "src/renderer/components/PlanningPanel.tsx",
     "src/renderer/components/QuestionFormPreview.tsx",
     "src/renderer/components/SkillsPanel.tsx",

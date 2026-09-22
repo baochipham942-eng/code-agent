@@ -14,16 +14,16 @@ function normalizeInstallKey(pluginSpec: string): string {
   return pluginSpec.trim().toLowerCase();
 }
 
-export function runExclusivePluginInstall(
+export function runExclusivePluginInstall<T extends InstallResult>(
   pluginSpec: string,
-  install: () => Promise<InstallResult>,
-): Promise<InstallResult> {
+  install: () => Promise<T>,
+): Promise<T> {
   const key = normalizeInstallKey(pluginSpec);
   if (activePluginInstalls.has(key)) {
     return Promise.reject(new Error(`Plugin '${pluginSpec.trim()}' installation is already in progress`));
   }
 
-  let tracked!: Promise<InstallResult>;
+  let tracked!: Promise<T>;
   tracked = install().finally(() => {
     if (activePluginInstalls.get(key) === tracked) {
       activePluginInstalls.delete(key);
@@ -46,10 +46,14 @@ export async function copyDirectory(src: string, dest: string, signal?: AbortSig
     throwIfInstallAborted(signal);
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
+    const stat = await fs.lstat(srcPath);
 
-    if (entry.isDirectory()) {
+    if (stat.isSymbolicLink()) {
+      throw new Error(`SKILL_CONTENT_SCAN_BLOCKED: symbolic link rejected (${srcPath})`);
+    }
+    if (stat.isDirectory()) {
       await copyDirectory(srcPath, destPath, signal);
-    } else if (entry.isFile()) {
+    } else if (stat.isFile()) {
       await fs.copyFile(srcPath, destPath);
       throwIfInstallAborted(signal);
     }

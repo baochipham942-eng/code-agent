@@ -30,6 +30,7 @@ import ipcService from '../../../../services/ipcService';
 import type { PersistenceHealth } from '@shared/contract';
 import type { TelemetryHealth } from '@shared/contract/telemetry';
 import {
+  describePersistenceBanner,
   fetchWebPersistenceHealth,
   getPersistenceWarningText,
   shouldShowPersistenceWarning,
@@ -399,7 +400,9 @@ export const DataSettings: React.FC = () => {
     () => buildDataManagementSummary(stats, snapshotStats, dataText),
     [dataText, snapshotStats, stats],
   );
-  const persistenceWarningText = getPersistenceWarningText(persistenceHealth);
+  const persistenceBanner = persistenceHealth
+    ? describePersistenceBanner(persistenceHealth, dataText.persistence)
+    : null;
   const summaryCards = useMemo(() => {
     const cards = [
       [
@@ -488,10 +491,11 @@ export const DataSettings: React.FC = () => {
         <div className="flex items-start gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/10 px-3 py-2 text-sm text-badge-warning">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <div className="min-w-0">
-            <div className="font-medium">{dataText.persistence.title}</div>
+            <div className="font-medium">
+              {persistenceBanner?.title ?? dataText.persistence.title}
+            </div>
             <div className="mt-0.5 text-xs text-badge-warning/80">
-              {persistenceWarningText}
-              {persistenceHealth.reason ? `${dataText.persistence.reasonPrefix}${persistenceHealth.reason}` : ''}
+              {persistenceBanner?.body ?? getPersistenceWarningText(persistenceHealth)}
             </div>
           </div>
         </div>

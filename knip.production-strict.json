@@ -5,12 +5,14 @@
     "src/web/webServer.ts",
     "src/host/mcp/mcp-server-entry.ts",
     "src/renderer/index.tsx",
-    "packages/bridge/src/index.ts"
+    "packages/bridge/src/index.ts",
+    "packages/mobile/src/main.tsx"
   ],
   "project": [
     "src/**/*.{ts,tsx}",
     "!src/**/__tests__/**",
-    "!src/**/*.{test,spec}.{ts,tsx}"
+    "!src/**/*.{test,spec}.{ts,tsx}",
+    "packages/mobile/src/**/*.{ts,tsx}"
   ],
   "eslint": false,
   "github-actions": false,
@@ -26,6 +28,13 @@
   "typescript": false,
   "vite": false,
   "vitest": false,
-  "ignoreDependencies": [".*"],
-  "ignoreBinaries": [".*"]
+  "ignoreDependencies": [
+    ".*"
+  ],
+  "ignoreBinaries": [
+    ".*"
+  ],
+  "ignore": [
+    "packages/mobile/src/env.d.ts"
+  ]
 }

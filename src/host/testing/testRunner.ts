@@ -24,12 +24,14 @@ import type {
   PermissionRequestRecord,
   EvalCaseMemory,
   CaseMemorySignals,
+  CaseSkillSignals, HandoffProposalRecord,
+  SimTurnRecord,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
 import { validateUserSimulation, evaluateSimRules, DEFAULT_SIM_MAX_TURNS } from './userSimulator';
 import { validateGoalContract } from './goalContractEval';
 import { applyCaseMemory } from './memoryEval';
-import { withTimeout } from '../services/infra/timeoutController';
+import { appendRound, InFlightRound } from './timeoutTrace';
 import { runAssertions, runExpectations, countDeclaredAssertions } from './assertionEngine';
 import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
@@ -41,7 +43,7 @@ import { UNKNOWN_EVAL_RUN_STAMP } from '../../shared/contract/evaluation';
 import { EvalCritic } from './evalCritic';
 import { loadAllTestSuites as loadSuitesForCritic } from './testCaseLoader';
 import { isProviderVariantDisabled } from '../prompts/providerVariants';
-import { OS_SANDBOX } from '../../shared/constants/sandbox';
+import { isOsSandboxEnabled } from '../../shared/constants/sandbox';
 import { TEST_TIMEOUTS } from '../../shared/constants/timeouts';
 import { getSandboxManager } from '../sandbox';
 import { isRedlineCase } from './testCaseClassification';
@@ -57,6 +59,7 @@ import {
   type FailureCodebook,
 } from './failureCodes';
 import { classifyTestResultFailure } from './testResultFailure';
+import { formatExpectationFailures, judgeTimeoutExpectations, collectDeclaredHandoffProposals } from './timeoutExpectations';
 import { mergeSkillActivations } from './skillSelection';
 
 import { attachAiReview } from './testRunnerAiReview';
@@ -68,23 +71,10 @@ const UNSTABLE_STDDEV_THRESHOLD = 0.2;
 
 /**
  * 当前 host 是否有会真正包住 bash 执行的 OS 级 jail。
- * 对齐 bash.ts 的 shouldSandbox：OS_SANDBOX.ENABLED + 平台沙箱（bwrap/seatbelt）可用。
+ * 对齐 bash.ts：isOsSandboxEnabled()（默认 true）+ 平台沙箱（bwrap/seatbelt）可用。
  */
-/**
- * 把模拟用户轮 / follow-up 轮的结果并进 TestResult。审批记录必须一起并：
- * 「先确认」类题的危险命令发生在第二轮，只取首轮会把真弹过的审批卡数成 0
- * （09-04 L3 第八程：3 条命令只数到 2 条、产品会弹卡 0 次）。没有记录就不建数组。
- */
-function appendRound(result: TestResult, round: Pick<TestResult, 'responses' | 'toolExecutions' | 'turnCount' | 'errors' | 'permissionRequests'>): void {
-  result.responses.push(...round.responses);
-  result.toolExecutions.push(...round.toolExecutions);
-  if (round.permissionRequests) (result.permissionRequests ??= []).push(...round.permissionRequests);
-  result.turnCount += round.turnCount;
-  result.errors.push(...round.errors);
-}
-
 function isOsJailActive(): boolean {
-  return OS_SANDBOX.ENABLED && getSandboxManager().isAvailable();
+  return isOsSandboxEnabled() && getSandboxManager().isAvailable();
 }
 
 /**
@@ -117,7 +107,7 @@ export interface AgentInterface {
   /** Reset the agent state for a new test */
   reset(): Promise<void>;
   /** Get current agent info */
-  getAgentInfo(): { name: string; model: string; provider: string };
+  getAgentInfo(): { name: string; model: string; provider: string; endpoint?: string };
   /** Get the current session ID (optional) */
   getSessionId?(): string | undefined;
   /** Flush/end the current telemetry session after a case completes (optional) */
@@ -156,6 +146,16 @@ export interface AgentInterface {
   consumeSkillActivations?(testId: string): Record<string, number>;
   /** N-EVAL-MEMORY：读走并清空本题的记忆落账（memory_recalled / memory_written 的证据源）。 */
   consumeMemorySignals?(testId: string): CaseMemorySignals;
+  /**
+   * N-SKILL-TRIGGER-EVAL：读走并清空本题 skill 触发落账与上下文集（skill_* 断言的证据源）。
+   * 消费即清——只读 peek 会把台账留到下一 trial，触发计数跨题累积
+   * （ai-review PR#2019 Important 1）。缺席 ⇒ skill_* 断言 fail-loud。
+   */
+  // N-EVAL-FAILURE-AUTOHARVEST：collectHandoffProposals = 采集本会话 run 窗口内落库的 handoff
+  // 提案（handoff_* 断言的证据源；只在 case 声明 handoff_* 断言时被调，见 timeoutExpectations
+  // 的 collectDeclaredHandoffProposals 闸；返回 undefined = 没有证据源 ⇒ 断言 fail-loud）。
+  // 与上行同行是 max-lines 债务门所迫（本文件基线正好 1000 有效行），拆行即红，勿拆。
+  consumeSkillSignals?(testId: string): Promise<CaseSkillSignals>; collectHandoffProposals?(since: number): Promise<HandoffProposalRecord[] | undefined>;
   consumeSubagentSpawns?(testId: string): number;
   getStructuredReplay?(sessionId: string): Promise<StructuredReplay | null>;
 }
@@ -447,7 +447,7 @@ export class TestRunner {
       results,
       environment: {
         model: genInfo.model,
-        provider: genInfo.provider,
+        provider: genInfo.provider, ...(genInfo.endpoint ? { endpoint: genInfo.endpoint } : {}),
         workingDirectory: this.config.workingDirectory,
         // roadmap 2.4 A/B 归因（audit D-R3）：记录 variant 臂，两臂结果可对比
         providerVariantArm: isProviderVariantDisabled() ? 'variant-off' : 'variant-on',
@@ -733,6 +733,7 @@ export class TestRunner {
     const sendMessage = (prompt: string) => costTracker.run(() => agent.sendMessage(prompt, {
       scopedCostRecorder: costTracker.recordUsage,
     }));
+    const inFlight = new InFlightRound();
     let completedExecution = false;
 
     logger.info('Running test', { testId: testCase.id });
@@ -765,7 +766,7 @@ export class TestRunner {
         result.failureStage = 'infra';
         result.failureReason =
           '红线/破坏性 case 需 OS 级 jail 才能安全执行；当前 host 无可用 jail'
-          + '（未设 OS_SANDBOX_ENABLED 或平台沙箱不可用），已跳过以防真实执行破坏性命令。';
+          + '（OS_SANDBOX_ENABLED=false 或平台沙箱不可用），已跳过以防真实执行破坏性命令。';
         return result;
       }
 
@@ -827,7 +828,7 @@ export class TestRunner {
       const timeout = forceTimeout ? baseTimeout : Math.round(baseTimeout * scale);
 
       // Send the test prompt (withTimeout 自动清理 timer)
-      const agentResult = await withTimeout(
+      const agentResult = await inFlight.race(
         sendMessage(testCase.prompt),
         timeout,
         `Test timeout after ${timeout}ms`,
@@ -863,13 +864,11 @@ export class TestRunner {
         for (let simTurn = 0; simTurn < maxSimTurns; simTurn++) {
           const match = evaluateSimRules(sim, lastTurn, matchCounts);
           if (!match) break;
-          result.simTurns?.push({
-            ruleId: match.rule.id,
-            action: match.action,
-            message: match.message,
-            toolExecutionsBefore: result.toolExecutions.length,
-            responsesBefore: result.responses.length,
-          });
+          const simTurnRecord: SimTurnRecord = {
+            ruleId: match.rule.id, action: match.action, message: match.message,
+            toolExecutionsBefore: result.toolExecutions.length, responsesBefore: result.responses.length,
+          };
+          result.simTurns?.push(simTurnRecord);
           if (match.action === 'stop') break;
 
           const remainingTime = timeout - (Date.now() - startTime);
@@ -880,7 +879,11 @@ export class TestRunner {
             // 按存量口径分流 infra_excluded（时间预算问题不是能力数据）。
             throw new Error(`Test timeout after ${timeout}ms (budget exhausted before simulated user turn)`);
           }
-          const simResult = await withTimeout(
+          // 送达标记必须在发出前置位：这一轮被超时掐掉时应答文本已经在 agent 手里，
+          // 「拒绝之后」的窗口成立；而上面那条 throw（预算在发出前耗尽）走掉时它保持
+          // 未置位，超时补判据此记未判，不拿零证据判绿（K2 PR#1878 ai-review Nit 1）。
+          simTurnRecord.delivered = true;
+          const simResult = await inFlight.race(
             sendMessage(match.message!),
             remainingTime,
             `Simulated user turn timeout after ${timeout}ms`,
@@ -912,7 +915,7 @@ export class TestRunner {
           const remainingTime = timeout - (Date.now() - startTime);
           if (remainingTime <= 0) break;
 
-          const followUpResult = await withTimeout(
+          const followUpResult = await inFlight.race(
             sendMessage(followUp),
             remainingTime,
             `Follow-up timeout after ${timeout}ms`,
@@ -946,7 +949,13 @@ export class TestRunner {
       // N-EVAL-MEMORY：记忆落账必须在断言求值之前、且在**全部轮次**（首轮 + user_simulation /
       // follow_up_prompts）跑完之后才消费——首轮后就取会漏掉后续轮的写入与快照，
       // 把「第二轮才落盘」判成未写入、把「第二轮泄露」判成干净（审查 #1638）。
-      Object.assign(result, agent.consumeMemorySignals?.(testCase.id) ?? {});
+      // N-SKILL-TRIGGER-EVAL：skill 触发落账同时序；消费即清（台账不留给下一 trial）。
+      // 只在题目声明了 skill_* 断言时采集（ai-review PR#2019 R2）：无条件采集会让
+      // SkillDiscoveryService 初始化/ToolSearch 同步的异常扩散成普通题误红。
+      // adapter 没接记录器时字段保持 undefined，fail-loud。
+      // N-EVAL-FAILURE-AUTOHARVEST：handoff 落账同一按需口径（collectDeclaredHandoffProposals
+      // 内部闸：只在声明 handoff_* 断言时查库）；采集器缺席 ⇒ undefined ⇒ fail-loud。
+      Object.assign(result, agent.consumeMemorySignals?.(testCase.id) ?? {}, (testCase.expectations ?? []).some((e) => e.type === 'skill_triggered' || e.type === 'skill_not_triggered') ? (await agent.consumeSkillSignals?.(testCase.id)) ?? {} : {}, await collectDeclaredHandoffProposals(agent, testCase.expectations, result.startTime));
 
       const assertionResult = await runAssertions(testCase.expect ?? {}, {
         toolExecutions: result.toolExecutions,
@@ -997,7 +1006,7 @@ export class TestRunner {
           goalRun: result.goalRun,
           permissionRequests: result.permissionRequests,
           memoryRecall: result.memoryRecall,
-          memorySnapshot: result.memorySnapshot,
+          memorySnapshot: result.memorySnapshot, skillActivations: result.skillActivations, skillContext: result.skillContext, handoffProposals: result.handoffProposals,
         });
         result.expectationResults = expResult.results;
         result.score = expResult.overallScore;
@@ -1007,12 +1016,10 @@ export class TestRunner {
           result.failureDetails = undefined;
         } else if (expResult.overallScore > 0 && !expResult.hasCriticalFailure) {
           result.status = 'partial';
-          result.failureReason = expResult.results
-            .filter((r) => !r.passed).map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`).join('; ');
+          result.failureReason = formatExpectationFailures(expResult.results);
         } else {
           result.status = 'failed';
-          result.failureReason = expResult.results
-            .filter((r) => !r.passed).map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`).join('; ');
+          result.failureReason = formatExpectationFailures(expResult.results);
         }
       }
       await attachAiReview(this.config, testCase, result, agent.usesMockEvalPolicy?.() === true);
@@ -1044,6 +1051,9 @@ export class TestRunner {
         result.failureStage = 'timeout';
         // N-EVAL-L3-HARNESS：超时题的循环/工具不能活到下一题，这里真的掐掉。
         await agent.cancelActiveRun?.().catch((cancelError: unknown) => logger.warn('cancelActiveRun failed after timeout', { testId: testCase.id, error: String(cancelError) }));
+        // N-EVAL-TIMEOUT-K1-TRACE：掐掉后原 sendMessage 会带着已发生的轨迹 return，限时接住并入；等不到就标不可得。
+        // 掐不掉的 adapter 那一轮不会自己回来，不白等宽限。
+        result.timeoutTraceAvailable = agent.cancelActiveRun ? await inFlight.settleInto(result, TEST_TIMEOUTS.TIMEOUT_TRACE_GRACE) : false;
       } else if (isInfraExclusionError(message)) {
         result.status = 'infra_excluded';
         result.failureStage = 'infra';
@@ -1051,6 +1061,13 @@ export class TestRunner {
         result.status = 'failed';
       }
       result.failureReason = message || 'Unknown error';
+      // N-EVAL-TIMEOUT-K2-NEGASSERT：拿到被掐那一轮轨迹才补跑负向过程断言；拿不到行为不变。
+      if (killedByTimeout && result.timeoutTraceAvailable === true) {
+        // N-SKILL-TRIGGER-EVAL：skill 证据在补判函数内交出（thunk 传入），交不出则进 unjudged。
+        // N-EVAL-FAILURE-AUTOHARVEST：handoff 证据同款 thunk（末参），交不出进 unjudged。
+        await judgeTimeoutExpectations(testCase.expectations, result, workingDirectory, () => agent.consumeSkillSignals?.(testCase.id) ?? Promise.resolve(undefined), () => agent.collectHandoffProposals?.(result.startTime) ?? Promise.resolve(undefined))
+          .catch((judgeError: unknown) => logger.warn('timeout expectations failed to run', { testId: testCase.id, error: String(judgeError) }));
+      }
       result.errors.push(message || String(error));
       result.killedByTimeout = killedByTimeout;
       this.emit({ type: 'error', testId: testCase.id, error: message });
@@ -1108,7 +1125,10 @@ export class TestRunner {
 
       result.endTime = Date.now();
       result.duration = result.endTime - result.startTime;
-      result.skillActivations = agent.consumeSkillActivations?.(testCase.id) ?? {};
+      // N-SKILL-TRIGGER-EVAL：新 adapter 的台账已被 consumeSkillSignals 在断言前消费清空，
+      // ??= 的短路此时保护的是已交出的真值；旧 adapter（只接 consumeSkillActivations）
+      // 则照常在这里消费收口——两条路的「读走即清」都成立，台账不跨 trial 累积。
+      result.skillActivations ??= agent.consumeSkillActivations?.(testCase.id) ?? {};
       result.subagentSpawns = agent.consumeSubagentSpawns?.(testCase.id) ?? 0;
       const usage = costTracker.getUsage();
       if (usage) {

@@ -10,12 +10,14 @@ import {
 } from './durableRecoveryDispatcher';
 import {
   createAgentTeamRecoveryHandler,
+  createBackgroundSubagentRecoveryHandler,
   createDynamicWorkflowRecoveryHandler,
   createExternalEngineRecoveryHandler,
   createMcpOperationRecoveryHandler,
   createNativeRecoveryHandler,
   type ExternalResumeRunners,
 } from './durableRecoveryHandlers';
+import { createLoopRecoveryHandler } from '../loop/loopRecoveryHandler';
 import type { RunRegistry } from './runRegistry';
 import type { DynamicWorkflowRecoveryHost } from './dynamicWorkflowRecovery';
 import type { NativeRecoveryHostPorts } from './nativeRecoveryHost';
@@ -28,6 +30,8 @@ export interface DurableRecoveryHandlerOverrides {
   agentTeam?: DurableEngineRecoveryHandler;
   externalEngine?: DurableEngineRecoveryHandler;
   dynamicWorkflow?: DurableEngineRecoveryHandler;
+  backgroundSubagent?: DurableEngineRecoveryHandler;
+  loop?: DurableEngineRecoveryHandler;
   mcpOperation?: DurableOperationRecoveryHandler;
 }
 
@@ -70,6 +74,12 @@ export function createDurableRecoveryRuntime(input: {
   dispatcher.registerEngineHandler(input.handlerOverrides?.dynamicWorkflow ?? createDynamicWorkflowRecoveryHandler({
     registry: input.registry,
     host: input.dynamicWorkflowHost,
+  }));
+  dispatcher.registerEngineHandler(input.handlerOverrides?.backgroundSubagent ?? createBackgroundSubagentRecoveryHandler({
+    registry: input.registry,
+  }));
+  dispatcher.registerEngineHandler(input.handlerOverrides?.loop ?? createLoopRecoveryHandler({
+    registry: input.registry,
   }));
   dispatcher.registerOperationHandler(input.handlerOverrides?.mcpOperation ?? createMcpOperationRecoveryHandler({
     kernel: input.kernel,

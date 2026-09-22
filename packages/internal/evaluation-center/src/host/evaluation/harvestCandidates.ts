@@ -15,6 +15,7 @@
 import path from 'node:path';
 import { shortSessionIdForFileName } from '@shared/utils/id';
 import type {
+  EvalAttributionTriple,
   HarvestCandidate,
   HarvestDraftSeed,
   HarvestFieldKey,
@@ -39,6 +40,11 @@ export interface HarvestDeriveInput {
   batchTag: string;
   /** 该会话的点踩时刻（telemetry_feedback.created_at，rating=-1），可为空。 */
   negativeFeedbackAt: number[];
+  /**
+   * 这场会话最近一条人工评审的归因三件套（ADR-071 D5）。有就拼进草稿描述，
+   * 让草稿带着「当初判成谁的错、证据是什么」走，不动 case 契约。
+   */
+  attribution?: EvalAttributionTriple;
 }
 
 function firstString(args: Record<string, unknown> | undefined, keys: readonly string[]): string | null {
@@ -176,9 +182,26 @@ function toolTraceSummary(replay: StructuredReplay): string {
   return names.join(' → ');
 }
 
+const ATTRIBUTION_LABELS: Record<EvalAttributionTriple['attribution'], string> = {
+  user_input: '用户输入',
+  model_capability: '模型能力',
+  scenario_fit: '场景适配',
+  system_config: '系统配置',
+};
+
+/** 人工归因三件套拼成描述里的一句溯源。 */
+function attributionSummary(triple: EvalAttributionTriple): string {
+  const parts = [
+    `人工归因：${ATTRIBUTION_LABELS[triple.attribution]}／${triple.severity}`,
+    `证据：${triple.evidence}`,
+  ];
+  if (triple.suggestion) parts.push(`建议：${triple.suggestion}`);
+  return parts.join('；');
+}
+
 /** 把一场会话的回放变成一份草稿预填内容。 */
 export function deriveHarvestSeed(input: HarvestDeriveInput): HarvestDraftSeed {
-  const { replay, sessionTitle, workingDirectory, fields, batchTag, negativeFeedbackAt } = input;
+  const { replay, sessionTitle, workingDirectory, fields, batchTag, negativeFeedbackAt, attribution } = input;
   const prompt = firstUserPrompt(replay) ?? '';
   const tags = [batchTag];
   if (fields.includes('qualityTags')) {
@@ -186,7 +209,8 @@ export function deriveHarvestSeed(input: HarvestDeriveInput): HarvestDraftSeed {
     if (grade) tags.push(`quality-${grade}`);
   }
   const trace = fields.includes('toolTrace') ? toolTraceSummary(replay) : '';
-  const description = trace ? `${sessionTitle}（会话里的工具调用：${trace}）` : sessionTitle;
+  const base = trace ? `${sessionTitle}（会话里的工具调用：${trace}）` : sessionTitle;
+  const description = attribution ? `${base}｜${attributionSummary(attribution)}` : base;
   const { candidates, notes } = deriveExpectationCandidates({ replay, workingDirectory, negativeFeedbackAt });
 
   return {

@@ -60,6 +60,7 @@ import {
   uninstallPlugin,
 } from '../../../../src/host/skills/marketplace/installService';
 import { getPromptCommandService } from '../../../../src/host/services/commands/promptCommandService';
+import { installFromLocalZip } from '../../../../src/host/skills/marketplace/localZipInstall';
 
 describe('marketplace install service trust defaults', () => {
   let tempRoot: string;
@@ -106,6 +107,7 @@ describe('marketplace install service trust defaults', () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
 
@@ -192,6 +194,101 @@ describe('marketplace install service trust defaults', () => {
     await expect(getEnabledSkillDirs()).resolves.toEqual([]);
     expect(fsSync.existsSync(commandPath)).toBe(false);
     expect(mocks.reloadSkills).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['critical command', '```bash\nrm -rf /\n```'],
+    ['embedded high-confidence secret', '```\nOPENAI_API_KEY=sk-proj-123456789012345678901234567890123456789012345678\n```'],
+    ['dynamic command name', '```bash\ncmd=rm; $cmd -rf /\n```'],
+  ])('blocks %s before marketplace assets are renamed', async (_label, content) => {
+    await fs.writeFile(
+      path.join(mocks.marketplaceRoot, 'skills', 'demo', 'SKILL.md'),
+      content,
+      'utf8',
+    );
+
+    await expect(installPlugin('demo@trusted-test')).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    expect((await listInstalledPlugins())['demo@trusted-test']).toBeUndefined();
+
+    const pluginsDir = path.join(mocks.userConfigDir, 'plugins');
+    const residualEntries = fsSync.existsSync(pluginsDir) ? await fs.readdir(pluginsDir) : [];
+    expect(residualEntries.filter((entry) => entry.includes('.staging-') || entry.includes('demo__trusted-test'))).toEqual([]);
+  });
+
+  it('keeps hard content blocks non-overridable and preserves the previous install', async () => {
+    await installPlugin('demo@trusted-test');
+    const first = (await listInstalledPlugins())['demo@trusted-test']!;
+    await fs.writeFile(
+      path.join(mocks.marketplaceRoot, 'skills', 'demo', 'SKILL.md'),
+      '```bash\nrm -rf /\n```',
+      'utf8',
+    );
+
+    await expect(installPlugin('demo@trusted-test', { force: true })).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    const retained = (await listInstalledPlugins())['demo@trusted-test']!;
+    expect(retained).toEqual(first);
+    await expect(fs.readFile(path.join(first.pluginRoot!, 'skills', 'demo', 'SKILL.md'), 'utf8'))
+      .resolves.toContain('name: demo');
+  });
+
+  it('scans untrusted GitHub archive commands before optional activation', async () => {
+    const zip = new JSZip();
+    zip.file('remote-repo/plugins/remote-demo/SKILL.md', 'safe');
+    zip.file('remote-repo/plugins/remote-demo/commands/run.md', '```bash\ncmd=rm; $cmd -rf /\n```');
+    mockGitHubInstall('f'.repeat(40), await zip.generateAsync({ type: 'nodebuffer' }));
+    mocks.getMarketplaceInfo.mockResolvedValue({
+      rootDir: mocks.marketplaceRoot,
+      source: { source: 'github', repo: 'owner/remote-repo' },
+      manifest: {
+        name: 'trusted-test',
+        plugins: [{
+          name: 'remote-demo',
+          source: 'plugins/remote-demo',
+          repository: 'owner/remote-repo',
+          skills: ['.'],
+          commands: ['commands/run.md'],
+        }],
+      },
+    });
+
+    await expect(installPlugin('remote-demo@trusted-test')).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    expect((await listInstalledPlugins())['remote-demo@trusted-test']).toBeUndefined();
+    const cacheDir = path.join(mocks.userConfigDir, 'marketplace-plugin-cache');
+    const cacheEntries = fsSync.existsSync(cacheDir) ? await fs.readdir(cacheDir) : [];
+    expect(cacheEntries.filter((entry) => entry.includes('tmp-'))).toEqual([]);
+  });
+
+  it('scans text payload files outside declared skill and command paths', async () => {
+    await fs.mkdir(path.join(mocks.marketplaceRoot, 'scripts'), { recursive: true });
+    await fs.writeFile(
+      path.join(mocks.marketplaceRoot, 'scripts', 'setup.sh'),
+      '#!/bin/sh\nrm -rf /\n',
+      'utf8',
+    );
+
+    await expect(installPlugin('demo@trusted-test')).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    expect((await listInstalledPlugins())['demo@trusted-test']).toBeUndefined();
+  });
+
+  it('rejects a symlink payload before it can be copied into staging', async () => {
+    await fs.mkdir(path.join(mocks.marketplaceRoot, 'hooks'), { recursive: true });
+    await fs.symlink('../skills/demo/SKILL.md', path.join(mocks.marketplaceRoot, 'hooks', 'run.sh'));
+
+    await expect(installPlugin('demo@trusted-test')).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    expect((await listInstalledPlugins())['demo@trusted-test']).toBeUndefined();
+  });
+
+  it('fails closed when a staged text file cannot be read', async () => {
+    const originalReadFile = fs.readFile.bind(fs);
+    vi.spyOn(fs, 'readFile').mockImplementation(async (filePath, options) => {
+      if (String(filePath).endsWith(`${path.sep}SKILL.md`)) {
+        throw new Error('EIO');
+      }
+      return originalReadFile(filePath, options);
+    });
+
+    await expect(installPlugin('demo@trusted-test')).rejects.toThrow('SKILL_CONTENT_SCAN_FAILED');
+    expect((await listInstalledPlugins())['demo@trusted-test']).toBeUndefined();
   });
 
   it('rejects a duplicate install while the same plugin id is still resolving', async () => {
@@ -602,5 +699,127 @@ describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
     expect(retainedRecord.contentHash).toBe(sha256(firstZip));
     expect(retainedRecord.pluginRoot).toBe(firstRecord.pluginRoot);
     await expect(fs.readFile(firstSkillPath, 'utf8')).resolves.toBe('v1');
+  });
+});
+
+describe('installFromLocalZip', () => {
+  let tempRoot: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'code-agent-local-zip-'));
+    mocks.userConfigDir = path.join(tempRoot, 'user-config');
+    mocks.projectConfigDir = path.join(tempRoot, 'project-config');
+    mocks.reloadSkills.mockResolvedValue(undefined);
+  });
+
+  afterEach(async () => {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  });
+
+  async function packSkillZip(entries: Record<string, string>): Promise<Buffer> {
+    const zip = new JSZip();
+    for (const [name, content] of Object.entries(entries)) {
+      zip.file(name, content);
+    }
+    return zip.generateAsync({ type: 'nodebuffer' });
+  }
+
+  it('installs an export-shaped zip through extractZipSafely and enables the skill', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---\nhello',
+      '_meta.json': '{"name":"demo"}',
+    });
+
+    const result = await installFromLocalZip(archive);
+    expect(result.pluginSpec).toBe('demo@local-zip');
+    expect(result.installedSkills).toEqual(['demo']);
+    expect(result.skillName).toBe('demo');
+
+    const installed = await listInstalledPlugins();
+    expect(installed['demo@local-zip']).toMatchObject({
+      plugin: 'demo',
+      marketplace: 'local-zip',
+      isEnabled: true,
+      skills: ['demo'],
+    });
+    expect(
+      await fs.readFile(path.join(installed['demo@local-zip']!.pluginRoot!, 'demo', 'SKILL.md'), 'utf8'),
+    ).toContain('hello');
+  });
+
+  it('rejects a zip with no SKILL.md', async () => {
+    const archive = await packSkillZip({ 'readme.md': 'nope' });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_MISSING_SKILL_MD');
+    expect(await listInstalledPlugins()).toEqual({});
+  });
+
+  it('rejects a zip with more than one SKILL.md', async () => {
+    const archive = await packSkillZip({
+      'one/SKILL.md': '---\nname: one\ndescription: One\n---\n',
+      'two/SKILL.md': '---\nname: two\ndescription: Two\n---\n',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_MULTIPLE_SKILL_MD');
+  });
+
+  it('rejects path traversal entries before any files land', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---\n',
+      '../escape/SKILL.md': 'owned',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('Unsafe zip entry path rejected');
+    await expect(fs.stat(path.join(tempRoot, 'escape', 'SKILL.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('blocks critical content before the local zip is renamed into plugins', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---\n```bash\nrm -rf /\n```',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_CONTENT_SCAN_BLOCKED');
+    expect((await listInstalledPlugins())['demo@local-zip']).toBeUndefined();
+    const pluginsDir = path.join(mocks.userConfigDir, 'plugins');
+    const residual = fsSync.existsSync(pluginsDir) ? await fs.readdir(pluginsDir) : [];
+    expect(residual.filter((entry) => entry.includes('demo') || entry.includes('.staging-'))).toEqual([]);
+  });
+
+  it('rejects a zip whose SKILL.md is missing required frontmatter', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: demo\n---\nhello',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_INVALID_FRONTMATTER');
+    expect(await listInstalledPlugins()).toEqual({});
+  });
+
+  it('rejects a zip whose frontmatter name discovery cannot load', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: Demo_v2\ndescription: Demo skill\n---\nhello',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_INVALID_FRONTMATTER');
+    expect(await listInstalledPlugins()).toEqual({});
+  });
+
+  it('rejects a zip whose SKILL.md frontmatter fence discovery cannot parse', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---',
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_INVALID_FRONTMATTER');
+    expect(await listInstalledPlugins()).toEqual({});
+  });
+
+  it('rejects a zip whose description exceeds the parser limit', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': `---\nname: demo\ndescription: ${'x'.repeat(1025)}\n---\nhello`,
+    });
+    await expect(installFromLocalZip(archive)).rejects.toThrow('SKILL_ZIP_INVALID_FRONTMATTER');
+    expect(await listInstalledPlugins()).toEqual({});
+  });
+
+  it('returns the frontmatter name when it differs from the zip directory', async () => {
+    const archive = await packSkillZip({
+      'pack/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---\nhello',
+    });
+    const result = await installFromLocalZip(archive);
+    expect(result.pluginSpec).toBe('pack@local-zip');
+    expect(result.skillName).toBe('demo');
   });
 });

@@ -50,7 +50,7 @@ try {
       preferences:{get:async()=>localStorage.getItem('drafts'),set:async v=>localStorage.setItem('drafts',v)},
       companion:{read:()=>window.lanRead(),write:v=>window.lanWrite(v),scan:()=>window.lanScan(),post:(url,body)=>window.lanPost(url,body)},
       appInfo:{read:async()=>({version:'acceptance',build:'real-host'})},
-      lifecycle:{subscribe:async()=>()=>{},leave:async()=>{}},keyboard:{subscribe:async()=>()=>{},hide:async()=>{}},systemBars:{setStyle:async()=>{}}
+      lifecycle:{subscribe:async()=>()=>{},leave:async()=>{}},keyboard:{subscribe:async()=>()=>{},subscribeFrame:async()=>()=>{},hide:async()=>{}},systemBars:{setStyle:async()=>{}}
     }}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,platform:'browser',format:'iife',jsx:'automatic',outfile:resolve(directory,'library-mobile.js')});
   http=createServer((req,res)=>{if(req.url==='/library-mobile.js'||req.url==='/library-mobile.css'){res.setHeader('content-type',req.url.endsWith('.css')?'text/css':'application/javascript');res.end(readFileSync(resolve(directory,req.url.slice(1))));}else res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/library-mobile.css"><div id="root"></div><script src="/library-mobile.js"></script>');});
   await new Promise(resolve=>http.listen(0,'127.0.0.1',resolve));
@@ -126,14 +126,18 @@ try {
   await page.waitForTimeout(1500);
   assert.notEqual(db.prepare('SELECT status FROM sessions WHERE id=?').get(createdId).status,'archived');
   if(await page.getByRole('dialog').count())await page.getByRole('dialog').getByRole('button',{name:'关闭弹层',exact:true}).click();
+  // 模型入口只留输入区胶囊（N-MOBILE-SESSIONSHEET-SPLIT）：会话操作里不许再有模型。
   await page.getByTestId('open-more').click();
-  const options=await page.locator('#model-select option').evaluateAll(nodes=>nodes.map(n=>({value:n.value,label:n.textContent})));
+  assert.equal(await page.locator('.library-sheet .model-row, .library-sheet select').count(),0);
+  await page.getByRole('dialog').getByRole('button',{name:'关闭弹层',exact:true}).click();
+  await page.locator('.composer-tools .model').click();
+  const options=await page.locator('button.model-row').evaluateAll(nodes=>nodes.map(n=>({id:n.dataset.testid,current:n.getAttribute('aria-current')==='true'})));
   assert(options.length>0);pass('model-options-come-from-configured-desktop-catalogue');
-  if(options.length>1){
-    const value=await page.locator('#model-select').inputValue();const other=options.find(o=>o.value!==value);
-    await page.locator('#model-select').selectOption(other.value);await page.getByRole('button',{name:'使用此模型',exact:true}).click();
+  const other=options.find(o=>!o.current);
+  if(other){
+    await page.getByTestId(other.id).click();
     await page.waitForTimeout(1500);
-    const [provider,model]=JSON.parse(other.value);const row=db.prepare('SELECT model_provider,model_name,metadata FROM sessions WHERE id=?').get(createdId);
+    const [provider,model]=other.id.slice('model-'.length).split(/:(.*)/s);const row=db.prepare('SELECT model_provider,model_name,metadata FROM sessions WHERE id=?').get(createdId);
     assert.equal(row.model_provider,provider);assert.equal(row.model_name,model);assert(JSON.parse(row.metadata).modelOverride);pass('model-choice-persists-with-desktop-override-marker');
   }
   if(await page.getByRole('dialog').count())await page.getByRole('dialog').getByRole('button',{name:'关闭弹层',exact:true}).click();

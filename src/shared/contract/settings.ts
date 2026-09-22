@@ -48,9 +48,14 @@ export function resolveVoiceLiveEnabled(
 export interface VoiceLiveSettings {
   /** 总开关：undefined = 默认开启；false = Composer 不显示实时通话入口 */
   enabled?: boolean;
-  /** 单通实时语音预估成本上限；未配置或 <=0 = 不设限。 */
+  /** 单通分钟上限；未配置或 <=0 = 不设限。硬顶仍是 VOICE_SESSION_MAX_DURATION_MS。 */
+  callMinuteLimit?: number;
+  /**
+   * 单通预估成本上限，币种跟随当前实时模型刊例价（见 REALTIME_VOICE_PRICING_PER_1M）。
+   * 未配置或 <=0 = 不设限。
+   */
   callCostLimit?: number;
-  /** 到限动作：默认只提醒；用户可显式改为自动挂断。 */
+  /** 分钟或成本任一到上限时的动作：默认只提醒；用户可显式改为自动挂断。 */
   callCostLimitAction?: 'warn' | 'hangup';
   /**
    * 实时语音 Provider。存量配置没有该字段时读取为 DashScope；
@@ -362,7 +367,19 @@ export interface AppSettings {
   };
   // MCP 配置
   mcp?: {
-    servers: Array<{
+    /**
+     * 连接空闲回收；默认关闭（不配置就连扫描计时器都不建）。开启前置条件：
+     * 该 workspace 的 MCP server 都不持有服务端会话状态——浏览器/REPL 类
+     * server 持有登录态与页面上下文，被回收后 lazy 重连是全新进程，状态归零，
+     * 模型收不到任何重启信号会继续按旧状态操作。缺省 ttlMs/scanIntervalMs
+     * 使用 host 的 MCP_TIMEOUTS 默认值。
+     */
+    idleReaping?: {
+      enabled?: boolean;
+      ttlMs?: number;
+      scanIntervalMs?: number;
+    };
+    servers?: Array<{
       name: string;
       command: string;
       args?: string[];
@@ -417,6 +434,22 @@ export interface AppSettings {
     postLaunchScoring?: 'on' | 'off' | 'auto';
     /** 上线后坏案例回流入口；三态与评分开关一致，默认跟随内部槽。 */
     postLaunchReflow?: 'on' | 'off' | 'auto';
+    /**
+     * 低分自动入候选扫描（N-EVAL-FAILURE-AUTOHARVEST）：按日只跑确定性信号（不调评分模型、
+     * 零成本零正文外发），把信号命中的轮落成分数行进回流候选池；草稿仍要人过四道闸。
+     * 三态同上，但**缺省 = 关**（连内部槽也要显式 'auto'/'on'）——自动扫描是默认行为变化。
+     */
+    postLaunchAutoHarvest?: 'on' | 'off' | 'auto';
+  };
+  /** 评测中心（ADR-071 Q4）。 */
+  evaluation?: {
+    /**
+     * 「进反馈池」的钩子命令。默认空 = 抽屉里的按钮退化成「复制 fb add 命令」文本。
+     * 配了才执行：宿主先把证据写进一个目录，再用 shell 跑这条命令，目录路径经环境变量
+     * NEO_EVAL_FEEDBACK_DIR 传进去（不拼进命令串，题 id 不会被当成命令片段）。
+     * 🔴 产品代码里不写任何私有工具路径，要接哪套反馈池由这条配置决定。
+     */
+    feedbackHookCommand?: string;
   };
   /** 第三方界面插件总开关。缺省与默认配置均为关闭。 */
   pluginUi?: {

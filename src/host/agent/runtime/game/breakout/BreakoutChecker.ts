@@ -12,6 +12,7 @@ import type {
 } from '../types';
 import { gameSubtypeRegistry } from '../registry';
 import { extractByPath } from '../verbs';
+import { lookupBreakoutRepair } from './repairCodes';
 
 const REQUIRED_POWERUPS = ['wide', 'multi', 'slow', 'through', 'life'] as const;
 const REQUIRED_SCENARIOS = [
@@ -26,6 +27,8 @@ const REQUIRED_SCENARIOS = [
 
 const BREAKOUT_META_PATTERN =
   /__(?:GAME|INTERACTIVE)_META__[\s\S]{0,3000}\b(?:subtype|genre|type)\s*:\s*['"`](?:breakout|arkanoid)['"`]|(?:game|interactive)-meta[\s\S]{0,3000}"(?:subtype|genre|type)"\s*:\s*"(?:breakout|arkanoid)"/i;
+
+const BREAKOUT_FILENAME_PATTERN = /\b(?:breakout|arkanoid|brick[-_]?breaker)\b/i;
 
 const DECLARED_VERBS: readonly VerbDeclaration[] = [
   { verb: 'moveTo', selector: 'paddleX', successPredicate: { op: 'change', path: 'paddleX' }, required: true },
@@ -222,8 +225,21 @@ function powerupTriggered(type: typeof REQUIRED_POWERUPS[number], probe: Scenari
 
 export function isBreakoutArtifact(content: string, filePath = ''): boolean {
   if (BREAKOUT_META_PATTERN.test(content)) return true;
-  return /\b(?:breakout|arkanoid)\b/i.test(path.basename(filePath))
+  return BREAKOUT_FILENAME_PATTERN.test(path.basename(filePath))
     && /window\.__(?:GAME|INTERACTIVE)_META__/i.test(content);
+}
+
+/**
+ * Filename or playable-loop heuristic that does not require META.
+ * Used to fail-loud when a finished brick-breaker ships without the contract.
+ */
+export function looksLikeBreakoutGame(content: string, filePath = ''): boolean {
+  if (isBreakoutArtifact(content, filePath)) return true;
+  if (BREAKOUT_FILENAME_PATTERN.test(path.basename(filePath))) return true;
+  return /\bpaddle\b/i.test(content)
+    && /\bball\b/i.test(content)
+    && /\bbricks?\b/i.test(content)
+    && /\brequestAnimationFrame\b/i.test(content);
 }
 
 export class BreakoutChecker implements GameSubtypeChecker {
@@ -417,6 +433,8 @@ export class BreakoutChecker implements GameSubtypeChecker {
   }
 
   repairGuidance(failureCode: string): string | undefined {
+    const entry = lookupBreakoutRepair(failureCode);
+    if (entry) return entry.repairInstruction;
     if (/breakout|arkanoid/i.test(failureCode)) {
       return 'Expose breakout/arkanoid __GAME_META__ and __GAME_TEST__ deterministic scenarios for paddleMove, launch, wallBounce, paddleBounce, brickHit, powerup:<type>, win, and lose; each scenario must be driven by live step() and produce before/after snapshot deltas. Start the real browser game loop with requestAnimationFrame(loop) or equivalent before the script exits, and load a playable first level on the real initial screen so snapshot() has brickCount/bricksRemaining/bricks.length > 0 before any test helper mutates state. Wire real browser keyboard events too: Space must use event.code === "Space" or normalize event.key === " " to the same Space input consumed by the live loop, the canvas/game root should be focusable and focused on load/click, and a real browser Space press from the initial loaded start screen must move ball.x or ball.y without relying on __GAME_TEST__.start().';
     }
@@ -429,3 +447,4 @@ export const arkanoidChecker = new BreakoutChecker('arkanoid');
 
 gameSubtypeRegistry.register(breakoutChecker);
 gameSubtypeRegistry.register(arkanoidChecker);
+

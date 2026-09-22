@@ -26,7 +26,7 @@ const {
 }));
 
 vi.mock('../../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getZhipuOfficialKey: () => getApiKeyMock(),
     getApiKey: (provider: string) => getApiKeyMock(provider),
     getModelForCapability: (capability: string) => getModelForCapabilityMock(capability),

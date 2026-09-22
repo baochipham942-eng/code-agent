@@ -228,6 +228,47 @@ export function commandAnalysisDenialError(toolName: string): HostReasonPayload 
 }
 
 /**
+ * ADR-067 D3：peer 消息触发的写/执行在无人值守会话 fail-closed——无人值守没有
+ * 当场裁决的人，机器转述的请求不许静默放行（与 ADR-066 D3 新域名卡同一语义），
+ * 也不进停车挂起（B2 停车是给用户本人指令链的异步裁决，peer 转述不在其列）。
+ */
+export function peerOriginUnattendedDenialError(toolName: string, senderAgentId?: string): HostReasonPayload {
+  const sender = senderAgentId ?? 'unknown';
+  const modelText = `${toolName} 被自动拒绝：本次操作由 agent ${sender} 的消息触发，`
+    + '而当前是无人值守会话——peer 转述的写入/执行一律 fail-closed 拒绝（bypassPermissions 不豁免），'
+    + '用户并未看到审批请求。重试同一个操作会得到相同结果，不要重试。'
+    + '出路：请用户本人在交互会话中直接发起该操作。';
+  return createHostReason(
+    HostReasonCode.PermissionDeniedPeerOriginUnattended,
+    modelText,
+    { toolName, senderAgentId: sender },
+  );
+}
+
+/**
+ * ADR-067 D4：权限洗白 BLOCK——同一动作指纹在本会话刚被人拒绝（ask-denied），
+ * 换 agent 以 peer 消息转述同一动作，一律不执行。无人值守/bypass 同向（fail-closed）。
+ * 用户本人重试不走本文案（那是 launder-retry 的 ask 降档，不是 BLOCK）。
+ */
+export function peermsgLaunderDenialError(
+  toolName: string,
+  senderAgentId?: string,
+  deniedSummary?: string,
+): HostReasonPayload {
+  const sender = senderAgentId ?? 'unknown';
+  const prior = deniedSummary ? `（此前被拒的动作：${deniedSummary}）` : '';
+  const modelText = `${toolName} 被自动拒绝：同一动作${prior}在本会话刚被拒绝过，`
+    + `本次由 agent ${sender} 的消息转述——这是权限洗白，一律拦截（无人值守/bypass 同向），`
+    + '并非用户本次拒绝了新请求。重试结果相同，不要重试、不要换措辞再求。'
+    + '出路：请用户本人在交互会话中直接发起并确认该操作。';
+  return createHostReason(
+    HostReasonCode.PermissionDeniedPeermsgLaunder,
+    modelText,
+    { toolName, senderAgentId: sender },
+  );
+}
+
+/**
  * 权限分类三分支解析 + 档位改写：
  * 1. policy always_confirm / skill 边界违规 → 直接 ask（跳过 classifier）；
  * 2. 其余走 classifier；
@@ -251,6 +292,18 @@ export async function resolveToolPermissionClassification(input: {
   permStartTime: number;
   readOnlyForcesConfirmation: boolean;
   sessionPermissionMode: PermissionMode;
+  /**
+   * ADR-067 D3：本轮输入含 peer-agent 消息且本工具非只读时为 true。
+   * 与 unresolvedWriteTargetForcesAsk 同规矩：放在档位自动放行之后改写，
+   * bypassPermissions / acceptEdits 不能把 peer 转述的写/执行升回 approve。
+   */
+  peerOriginForcesConfirmation?: boolean;
+  /**
+   * ADR-067 D4：同一动作指纹在本会话刚被拒绝（ask-denied）、本次为用户本人重试
+   * （无 peer 来源）时为 true——降 approve 为 ask 一次，不硬毙、不设 forceConfirm
+   * （既有审批记忆 once/session/always 语义保留，不另造豁免）。
+   */
+  launderRetryForcesAsk?: boolean;
 }): Promise<ClassificationResult> {
   // B1: EXTERNAL 风险类打标，与三分支决策正交、不改变审批结果。所有出口都带上，供 B2/B4/审计消费。
   const external = isExternalSideEffectTool(input.executionToolName);
@@ -364,6 +417,53 @@ export async function resolveToolPermissionClassification(input: {
       confidence: 1,
       cached: false,
       traceStep: createTraceStep('permission_classifier', 'permission_mode_auto_approve', 'allow', reason, input.permStartTime),
+    };
+  }
+  // ADR-067 D3：peer 消息触发的写/执行一律升 ask——放在档位自动放行之后改写，
+  // bypassPermissions / acceptEdits / classifier approve 都不得静默放行机器转述的请求。
+  // deny 保持原判（不弱化成可批卡），只读工具不进此旗标（调用方只给非只读置位）。
+  if (input.peerOriginForcesConfirmation && classification.decision === 'approve') {
+    const reason = '本轮输入来自其他 agent 的消息：写入/执行操作需要人工确认';
+    classification = {
+      decision: 'ask',
+      reason,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionPeerOriginConfirmationRequired,
+        reason,
+        { toolName: input.executionToolName },
+      ),
+      confidence: 1,
+      cached: false,
+      traceStep: createTraceStep(
+        'permission_classifier',
+        'peer_origin_turn',
+        'ask',
+        reason,
+        input.permStartTime,
+      ),
+    };
+  }
+  // ADR-067 D4：同指纹动作刚被拒、用户本人重试——降 approve 为 ask 一次（不硬毙、
+  // 不 forceConfirm，审批记忆机制照走）。同样放在档位自动放行之后改写。
+  if (input.launderRetryForcesAsk && classification.decision === 'approve') {
+    const reason = '同一动作此前在本会话被拒绝过：再次发起需要人工确认';
+    classification = {
+      decision: 'ask',
+      reason,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionLaunderRetryConfirmationRequired,
+        reason,
+        { toolName: input.executionToolName },
+      ),
+      confidence: 1,
+      cached: false,
+      traceStep: createTraceStep(
+        'permission_classifier',
+        'launder_retry',
+        'ask',
+        reason,
+        input.permStartTime,
+      ),
     };
   }
   // After auto-approve so bypass cannot promote this ask back to approve.

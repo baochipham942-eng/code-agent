@@ -2,8 +2,9 @@
 // Error Classifier - Categorise API and runtime errors into known classes
 // ============================================================================
 
-import type { ModelAuthFailureMarker } from '../../shared/contract/model';
+import type { ModelAuthFailureMarker, ModelQuotaFailureMarker, ModelUnavailableMarker } from '../../shared/contract/model';
 import { hasInsufficientBalanceSignal } from '../../shared/utils/providerError';
+import { getModelErrorStatus } from '../../shared/modelErrorDiagnostics';
 
 /** 引擎侧「本地就没有 key」的自有错误码，与上游 401/403 归同一类。 */
 export const MODEL_API_KEY_MISSING_CODE = 'MODEL_API_KEY_MISSING';
@@ -105,7 +106,8 @@ export function getModelAuthFailureMarker(error: unknown): ModelAuthFailureMarke
   let cursor = error;
   for (let depth = 0; depth < 4 && cursor && typeof cursor === 'object'; depth += 1) {
     const candidate = cursor as { code?: unknown; status?: unknown; provider?: unknown; model?: unknown; cause?: unknown };
-    const status = typeof candidate.status === 'number' ? candidate.status : undefined;
+    // AI SDK 的 APICallError 把 HTTP 码放在 statusCode，不是 status（build 45 真机：403 漏成兜底话）。
+    const status = getModelErrorStatus(candidate);
     if (candidate.code === MODEL_API_KEY_MISSING_CODE || status === 401 || status === 403) {
       return {
         code: 'MODEL_AUTH',
@@ -114,6 +116,71 @@ export function getModelAuthFailureMarker(error: unknown): ModelAuthFailureMarke
       };
     }
     cursor = candidate.cause;
+  }
+  return undefined;
+}
+
+function identityFields(candidate: { provider?: unknown; model?: unknown }): { provider?: string; model?: string } {
+  return {
+    ...(typeof candidate.provider === 'string' && candidate.provider ? { provider: candidate.provider } : {}),
+    ...(typeof candidate.model === 'string' && candidate.model ? { model: candidate.model } : {}),
+  };
+}
+
+/**
+ * 模型被供应商停用 / 不存在。认 classifyError === model_deprecated，或 400 Unsupported model / 404 指向模型。
+ * 鉴权失败走 getModelAuthFailureMarker，这里让位。
+ */
+export function getModelUnavailableMarker(error: unknown): ModelUnavailableMarker | undefined {
+  if (getModelAuthFailureMarker(error)) return undefined;
+  let cursor = error;
+  for (let depth = 0; depth < 4 && cursor && typeof cursor === 'object'; depth += 1) {
+    const candidate = cursor as { provider?: unknown; model?: unknown; cause?: unknown };
+    if (classifyError(candidate) === 'model_deprecated') {
+      return { code: 'MODEL_UNAVAILABLE', ...identityFields(candidate) };
+    }
+    cursor = candidate.cause;
+  }
+  if (classifyError(error) === 'model_deprecated') return { code: 'MODEL_UNAVAILABLE' };
+  return undefined;
+}
+
+/**
+ * 供应商余额或额度耗尽（classifyError === quota_exhaustion：402 / 余额不足文案 / remaining 0）。
+ * 与 auth / unavailable 互斥（classifyError 只落一类），runFinalizer 按同一链条带出手机卡片。
+ */
+export function getModelQuotaFailureMarker(error: unknown): ModelQuotaFailureMarker | undefined {
+  let cursor = error;
+  for (let depth = 0; depth < 4 && cursor && typeof cursor === 'object'; depth += 1) {
+    const candidate = cursor as { provider?: unknown; model?: unknown; cause?: unknown };
+    if (classifyError(candidate) === 'quota_exhaustion') {
+      return { code: 'MODEL_QUOTA', ...identityFields(candidate) };
+    }
+    cursor = candidate.cause;
+  }
+  if (classifyError(error) === 'quota_exhaustion') return { code: 'MODEL_QUOTA' };
+  return undefined;
+}
+
+export type AvailabilityKind = 'model' | 'auth' | 'network' | 'quota';
+export type AvailabilityScope = 'model' | 'provider';
+export type AvailabilityFailure = { scope: AvailabilityScope; kind: AvailabilityKind };
+
+/** 把一次调用失败分成「只标这个模型」还是「标整家供应商」，给健康监控用。 */
+export function resolveAvailabilityFailure(error: unknown): AvailabilityFailure | undefined {
+  if (error == null) return undefined;
+  // 余额/额度耗尽是供应商级，但不是密钥问题：标 quota（「余额或额度用完了」），别误导用户重填 key。
+  if (classifyError(error) === 'quota_exhaustion') {
+    return { scope: 'provider', kind: 'quota' };
+  }
+  if (getModelAuthFailureMarker(error) || classifyError(error) === 'auth') {
+    return { scope: 'provider', kind: 'auth' };
+  }
+  if (getModelUnavailableMarker(error) || classifyError(error) === 'model_deprecated') {
+    return { scope: 'model', kind: 'model' };
+  }
+  if (classifyError(error) === 'network' || classifyError(error) === 'unavailable') {
+    return { scope: 'provider', kind: 'network' };
   }
   return undefined;
 }
@@ -136,6 +203,14 @@ export function classifyError(error: unknown): ErrorClass {
     if (status === 400) {
       const msg = getMessage(error);
       if (/content.?filter|content.?policy|safety|harmful|violat|moderation/i.test(msg)) return 'content_policy';
+      // 「Unsupported model」是模型下线，不是 content policy，也不是笼统 400。
+      // 不认 bare "unsupported"（会误伤 Unsupported value: temperature）。
+      // 「模型不支持/不存在」只在这个状态码分支里判，且 model 一律词边界锚定（\bmodel\b）：
+      // 「model_xxx parameter not supported」说的是参数不支持，参数名带 model 前缀
+      // 不代表模型停用（ai-review R7，别再让 loopDecision 建议切模型）。
+      if (/\bunsupported\s+model\b/i.test(msg) || /\bmodel\b[^\n]*?\b(?:not\.?found|does\s+not\s+exist|not\s+supported)\b/i.test(msg)) {
+        return 'model_deprecated';
+      }
     }
   }
 

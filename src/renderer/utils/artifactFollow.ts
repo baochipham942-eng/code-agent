@@ -26,7 +26,10 @@ export function resolveFollowableArtifactPath(
   const dot = withoutQuery.lastIndexOf('.');
   const extension = dot >= 0 ? withoutQuery.slice(dot + 1).toLowerCase() : '';
   if (!FOLLOWABLE_EXTENSIONS.has(extension)) return null;
-  if (filePath.startsWith('/') || !workingDirectory) return filePath;
+  // 绝对路径三形态：POSIX '/'、Windows 盘符（C:\ 或 C:/）、UNC（\\host\share）。
+  // 生产侧（imageGenerate/imageProcess）现在直接产出绝对路径，win32 绝对值不能再被拼一次。
+  const isAbsolute = filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath) || filePath.startsWith('\\\\');
+  if (isAbsolute || !workingDirectory) return filePath;
   return `${workingDirectory.replace(/\/$/, '')}/${filePath.replace(/^\.\//, '')}`;
 }
 

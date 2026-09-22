@@ -17,7 +17,9 @@ import { checkCurrentBrowserRelay } from './checks/browserRelay';
 import { checkMcpServers } from './checks/mcp';
 import { checkHooksConfig } from './checks/hooks';
 import { checkAppVersion } from './checks/version';
+import { checkOsSandbox } from './checks/sandbox';
 import { DOCTOR_FIX_CODES, DOCTOR_TIMEOUTS } from '../../shared/constants/doctor';
+import { OS_SANDBOX_DOCTOR_ITEM_NAME } from '../../shared/constants/sandbox';
 import type {
   DoctorCategory,
   DoctorItem,
@@ -106,6 +108,11 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
       category: 'environment',
       name: 'Node.js',
       run: async () => [checkNodeVersion()],
+    },
+    {
+      category: 'environment',
+      name: OS_SANDBOX_DOCTOR_ITEM_NAME,
+      run: async () => [checkOsSandbox()],
     },
     {
       category: 'database',

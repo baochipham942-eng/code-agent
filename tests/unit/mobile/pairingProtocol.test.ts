@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptInvitation, createIdentity, decryptFrame, encodeInvitation, encryptFrame, issueInvitation, PairingError, PairingRegistry, loadIdentity, saveIdentity, verifyHandshake, signHandshake } from '../../../packages/mobile/src/pairing/protocol';
+import { acceptInvitation, createIdentity, decryptFrame, encodeInvitation, encryptFrame, issueInvitation, PairingError, PairingRegistry, loadIdentity, saveIdentity, verifyHandshake, signHandshake } from './pairingSpike';
 const store = () => { let value: string | null = null; return { get: async (_key?: string) => value, set: async (_key: string, v: string) => { value = v; } }; };
 describe('mobile pairing spike MP-01..04', () => {
  it('normal handshake and persistence', async () => { const h=createIdentity('host'); const p=createIdentity('phone'); const i=issueInvitation(h,1000,100); const r=acceptInvitation(i,h,p,200); expect(r.sessionKey).toHaveLength(32); const x=`${h.id}|${p.id}|1`; expect(verifyHandshake(h,x,signHandshake(h,x))).toBe(true); const s=store(); await saveIdentity(s,p); expect((await loadIdentity(s))?.id).toBe('phone'); });

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { tsImport } from 'tsx/esm/api';
-import { digest, selectTests, validateFiles, validateReport, renderReceipt } from './lib/gates-fast-contract.mjs';
+import { digest, selectTests, validateFiles, validateReport, renderReceipt, extractGateIds, validateGateBudgetCoverage, commandDeadline, budgetFailure } from './lib/gates-fast-contract.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
@@ -32,6 +32,7 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'gates-fast-'));
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', timeout: 5000 }).trim();
 let privateRoot;
 let initial;
+let activeGate = null;
 
 function hashFiles(files) {
   return digest(JSON.stringify(files.sort().map((file) => [file, digest(fs.readFileSync(path.join(root, file)))])));
@@ -81,21 +82,25 @@ async function command(argv, env = {}) {
   const began = performance.now();
   const record = { argv, startedAt: new Date().toISOString(), exit: null, durationMs: 0 };
   receipt.commands.push(record);
-  const remaining = policy.budgetMs - (performance.now() - started);
-  if (remaining <= 0) throw new Error('FAIL: budget exceeded (60000ms)');
+  const now = performance.now();
+  const deadline = commandDeadline(policy, activeGate?.id, now - started, activeGate ? now - activeGate.began : 0);
+  if (deadline.remainingMs <= 0) throw new Error(budgetFailure(deadline, argv));
   await new Promise((resolve, reject) => {
     const child = spawn(argv[0], argv.slice(1), { cwd: root, detached: true, stdio: 'inherit', env: { ...process.env, npm_config_offline: 'true', ...env } });
     let timedOut = false;
+    let signalled = false;
     const kill = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; } };
-    const timer = setTimeout(() => { timedOut = true; kill(); }, remaining);
-    const interrupted = () => { timedOut = true; kill(); };
+    const timer = setTimeout(() => { timedOut = true; kill(); }, deadline.remainingMs);
+    const interrupted = () => { signalled = true; kill(); };
     process.once('SIGINT', interrupted);
     process.once('SIGTERM', interrupted);
     const cleanup = () => { clearTimeout(timer); process.removeListener('SIGINT', interrupted); process.removeListener('SIGTERM', interrupted); record.durationMs = Math.round(performance.now() - began); };
     child.once('error', (error) => { cleanup(); reject(error); });
     child.once('close', (code, signal) => {
       cleanup(); record.exit = code; record.signal = signal;
-      if (timedOut || code !== 0) reject(new Error(`FAIL: ${timedOut ? '60000ms budget/interruption' : `exit ${code}`} in ${argv.join(' ')}`));
+      if (timedOut) reject(new Error(budgetFailure(deadline, argv)));
+      else if (signalled) reject(new Error(`FAIL: interrupted by signal in ${argv.join(' ')}`));
+      else if (code !== 0) reject(new Error(`FAIL: exit ${code} in ${argv.join(' ')}`));
       else resolve();
     });
   });
@@ -105,10 +110,11 @@ async function gate(id, applicable, run) {
   receipt.gates.push(record);
   if (!applicable) return;
   const began = performance.now();
+  activeGate = { id, began };
   console.log(`▶ gates:fast ${id}`);
   try { await run(); record.status = 'passed'; }
   catch (error) { record.status = 'failed'; throw error; }
-  finally { record.durationMs = Math.round(performance.now() - began); record.overBudget = record.durationMs > record.budgetMs; }
+  finally { activeGate = null; record.durationMs = Math.round(performance.now() - began); record.overBudget = record.durationMs > record.budgetMs; }
 }
 const options = { base: 'origin/main' };
 let regressions = [];
@@ -123,7 +129,8 @@ try {
     output = path.join(root, '.reports/gates-fast', `${receipt.receiptId}.json`);
     throw new Error('FAIL: receipt must be outside source or under .reports/gates-fast');
   }
-  if (policy.budgetMs !== 60000 || policy.maxFiles !== 12) throw new Error('FAIL: first-version policy requires 60000ms and 12-file maximum');
+  if (policy.maxFiles !== 12) throw new Error('FAIL: first-version policy requires 12-file maximum');
+  validateGateBudgetCoverage(policy, extractGateIds(fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8')));
   if (options.regressions) regressions = JSON.parse(fs.readFileSync(options.regressions, 'utf8'));
   await gate('inputs', true, async () => {
     const { resolveAnswerSideRoot } = await tsImport(path.join(root, 'src/host/testing/answerSide.ts'), import.meta.url);
@@ -178,7 +185,7 @@ try {
   });
   await gate('tests-typecheck', receipt.testsTypecheck, () => command([process.execPath, 'scripts/tsc-tests-ratchet.mjs']));
   if (JSON.stringify(initial) !== JSON.stringify(snapshot())) throw new Error('FAIL: inputs changed during gates:fast; receipt invalid');
-  if (performance.now() - started > policy.budgetMs) throw new Error('FAIL: 60000ms budget exceeded');
+  if (performance.now() - started > policy.budgetMs) throw new Error(`FAIL: total budget ${policy.budgetMs}ms exhausted`);
   receipt.status = 'passed';
 } catch (error) {
   receipt.error = error instanceof Error ? error.message : String(error);

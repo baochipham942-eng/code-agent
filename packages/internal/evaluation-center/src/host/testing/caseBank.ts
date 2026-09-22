@@ -79,6 +79,7 @@ function splitIndex(splitFile: Awaited<ReturnType<typeof loadEvalSplits>>): Map<
     ['held-out', splitFile.heldOut],
     ['control', splitFile.control],
     ['safety', splitFile.safety],
+    ['core', splitFile.core ?? []],
   ];
   for (const [bucket, ids] of buckets) {
     for (const id of ids) index.set(id, [...(index.get(id) ?? []), bucket]);

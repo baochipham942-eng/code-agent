@@ -7,7 +7,13 @@ import path from 'path';
 import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
 import { getRunStampReportRows } from './runStampReport';
-import { failureCodeLabel, loadProjectFailureCodebook } from './failureCodes';
+import {
+  failureCodeAttribution,
+  failureCodeCategory,
+  failureCodeLabel,
+  loadProjectFailureCodebook,
+} from './failureCodes';
+import { suggestRiskLevel, type RiskLevelInput } from './riskLevel';
 import { AI_REVIEW_DIMENSIONS } from './judge/dimensions';
 import type { AiReviewDimension } from '../../shared/contract/evaluation';
 
@@ -106,7 +112,7 @@ export function generateMarkdownReport(
 
   lines.push('## 成本与用量');
   lines.push('');
-  lines.push('> Token 与 USD 均来自 provider response usage；缺失或混入本地估算时标为 `usage_unavailable`，不以 0 代替。USD 按 `MODEL_PRICING_PER_1M` 折算。');
+  lines.push('> Token 与 USD 均来自 provider response usage；缺失或混入本地估算时标为 `usage_unavailable`，不以 0 代替。USD 按 `MODEL_PRICING_PER_1M` 折算（未收录的 custom 渠道回落 `default` 价）。Prompt tokens 含 cache read / cache write；汇总只含 case 内调用，与终端 `Actual usage (process budget)` 同价表同口径，差额 = case 外同进程记账调用。判官（quick model）调用两处都不计；报错重试的失败请求两处都不记账；本地估算的调用进程账照记、该 case 标 `usage_unavailable`。');
   lines.push('');
   lines.push('| 用例 ID | Prompt tokens | Completion tokens | Total tokens | 折算 USD |');
   lines.push('|---------|---------------|-------------------|--------------|----------|');
@@ -152,6 +158,12 @@ export function generateMarkdownReport(
   lines.push('## 评分权威分桶');
   lines.push('');
   lines.push(generateScoreAuthoritySection(summary.results));
+  lines.push('');
+
+  // 分层通过率：总体之外至少一层，分母外数字必须与通过率并列出现
+  lines.push('## 分层通过率');
+  lines.push('');
+  lines.push(...generateBreakdownSection(summary));
   lines.push('');
 
   const aiReviewSection = generateAiReviewSection(summary.results);
@@ -387,7 +399,9 @@ export function generateMarkdownReport(
   }
 
   // Expectation evidence (P1)
-  const resultsWithExpectations = summary.results.filter((r) => r.expectationResults && r.expectationResults.length > 0);
+  const resultsWithExpectations = summary.results.filter(
+    (r) => (r.expectationResults && r.expectationResults.length > 0) || (r.timeoutExpectations?.unjudged.length ?? 0) > 0,
+  );
   if (resultsWithExpectations.length > 0) {
     lines.push('## 期望断言详情');
     lines.push('');
@@ -395,15 +409,22 @@ export function generateMarkdownReport(
       const expectationResults = result.expectationResults ?? [];
       lines.push(`### ${result.testId}`);
       lines.push('');
-      lines.push('| 状态 | 描述 | 证据 |');
-      lines.push('|------|------|------|');
-      for (const er of expectationResults) {
-        const status = er.passed ? '✅' : '❌';
-        const desc = er.expectation.type.replace(/\|/g, '\\|');
-        const evidence = (er.evidence.details ?? '—').replace(/\|/g, '\\|').substring(0, 100);
-        lines.push(`| ${status} | ${desc} | ${evidence} |`);
+      if (result.timeoutExpectations) {
+        const unjudged = result.timeoutExpectations.unjudged;
+        lines.push(`> 超时题：只在被掐前的轨迹上跑负向过程断言（N-EVAL-TIMEOUT-K2 起的口径，历史轮没有）${unjudged.length > 0 ? `；未判：${unjudged.join(', ')}` : ''}`);
+        lines.push('');
       }
-      lines.push('');
+      if (expectationResults.length > 0) {
+        lines.push('| 状态 | 描述 | 证据 |');
+        lines.push('|------|------|------|');
+        for (const er of expectationResults) {
+          const status = er.passed ? '✅' : '❌';
+          const desc = er.expectation.type.replace(/\|/g, '\\|');
+          const evidence = (er.evidence.details ?? '—').replace(/\|/g, '\\|').substring(0, 100);
+          lines.push(`| ${status} | ${desc} | ${evidence} |`);
+        }
+        lines.push('');
+      }
     }
   }
 
@@ -573,6 +594,84 @@ function formatDisposition(disposition: string): string {
   return disposition;
 }
 
+const ATTRIBUTION_LABELS: Record<string, string> = {
+  user_input: '用户输入',
+  model_capability: '模型能力',
+  scenario_fit: '场景适配',
+  system_config: '系统配置',
+};
+
+/**
+ * 默认归因分布（ADR-071 D2/Q5）。🔴 这一栏的来源是 failcodes.yaml 上的先验，
+ * 不是逐题判断，所以它单独一张表、单独一句免责，且不参与通过率等任何聚合口径。
+ * 人工归因（annotations.attribution_json）在评测中心抽屉里看，不进本文件——
+ * 报告只拿得到 TestRunSummary，读不到库。
+ */
+function generateDefaultAttributionRows(summary: TestRunSummary): string[] {
+  const codebook = reportFailureCodebook();
+  const counts: Record<string, number> = {};
+  for (const [code, count] of Object.entries(summary.failureDistribution ?? {})) {
+    const attribution = codebook ? failureCodeAttribution(codebook, code) : undefined;
+    const key = attribution ?? 'unattributed';
+    counts[key] = (counts[key] ?? 0) + count;
+  }
+  const rows = Object.entries(counts)
+    .sort(([left, leftCount], [right, rightCount]) => rightCount - leftCount || left.localeCompare(right))
+    .map(([key, count]) => `| ${ATTRIBUTION_LABELS[key] ?? '未标默认归因'} | ${count} |`);
+  return [
+    '',
+    '### 默认归因（码本先验，不进聚合口径）',
+    '',
+    '> 来自 `.claude/eval-failcodes.yaml` 的 `attribution:`，是「这个码通常是谁的错」的默认值。',
+    '> 逐题的人工归因三件套在评测中心抽屉里给，两者分开看，不混算。',
+    '',
+    '| 默认归因 | 数量 |',
+    '|----------|------|',
+    ...(rows.length > 0 ? rows : ['| 暂无 | 0 |']),
+  ];
+}
+
+const PROBLEM_CATEGORY_LABELS: Record<string, string> = {
+  content_error: '内容错误',
+  semantic_deviation: '语义偏差',
+  compliance: '合规风险',
+  scenario_mismatch: '场景不匹配',
+  response_anomaly: '回复异常',
+  stability: '稳定性问题',
+};
+
+/**
+ * 某个 code 的定级输入（ADR-071 D3）。category 取 caseMeta.category（题目分类），
+ * 与 failcode 上的 category（问题分类）不是一回事，别混。
+ */
+function riskInputFor(summary: TestRunSummary, code: string, hitCount: number): RiskLevelInput {
+  const hits = summary.results.filter((result) => result.failure?.code === code);
+  const categoryTotals = new Map<string, number>();
+  for (const result of summary.results) {
+    const key = result.caseMeta?.category ?? '未标注';
+    categoryTotals.set(key, (categoryTotals.get(key) ?? 0) + 1);
+  }
+  const categoryHits = new Map<string, number>();
+  for (const result of hits) {
+    const key = result.caseMeta?.category ?? '未标注';
+    categoryHits.set(key, (categoryHits.get(key) ?? 0) + 1);
+  }
+  let maxCategoryRepeatRatio = 0;
+  for (const [key, count] of categoryHits) {
+    const total = categoryTotals.get(key) ?? 0;
+    if (total > 0) maxCategoryRepeatRatio = Math.max(maxCategoryRepeatRatio, count / total);
+  }
+  return {
+    code,
+    hitCount,
+    denominator: summary.results.length,
+    maxCategoryRepeatRatio,
+    allTrialsFailed: hits.some((result) => result.trialAggregate?.c === 0),
+    split: summary.stamp.evalSet.split,
+    dispositions: [...new Set(hits.flatMap((result) => result.failure?.dispositions ?? []))],
+  };
+}
+
 function generateFailureDistributionRows(summary: TestRunSummary): string[] {
   const distribution = { unknown: 0, ...summary.failureDistribution };
   const codeRows = Object.entries(distribution)
@@ -585,10 +684,19 @@ function generateFailureDistributionRows(summary: TestRunSummary): string[] {
     }
     return counts;
   }, {});
+  const codebook = reportFailureCodebook();
   const lines = [
-    '| 失败原因 | 数量 |',
-    '|----------|------|',
-    ...codeRows.map(([code, count]) => `| ${formatFailureCode(code)} | ${count} |`),
+    '> 「风险等级（建议）」是本轮按 code 自动算出的**建议值**（ADR-071 D3 矩阵），',
+    '> 与抽屉里人给的**题级**定级是两个口径：分开看，不相加、不互相覆盖。',
+    '',
+    '| 失败原因 | 问题分类 | 数量 | 风险等级（建议） | 依据 |',
+    '|----------|----------|------|------------------|------|',
+    ...codeRows.map(([code, count]) => {
+      const category = codebook ? failureCodeCategory(codebook, code) : undefined;
+      const risk = suggestRiskLevel(riskInputFor(summary, code, count));
+      const categoryLabel = category ? PROBLEM_CATEGORY_LABELS[category] ?? category : '未标注';
+      return `| ${formatFailureCode(code)} | ${categoryLabel} | ${count} | ${risk.level} | ${risk.basis} |`;
+    }),
     '',
     '### 处置标签',
     '',
@@ -599,6 +707,7 @@ function generateFailureDistributionRows(summary: TestRunSummary): string[] {
     .sort(([left, leftCount], [right, rightCount]) => rightCount - leftCount || left.localeCompare(right))
     .map(([disposition, count]) => `| ${formatDisposition(disposition)} | ${count} |`);
   lines.push(...(dispositionRows.length > 0 ? dispositionRows : ['| 暂无 | 0 |']));
+  lines.push(...generateDefaultAttributionRows(summary));
   return lines;
 }
 
@@ -739,6 +848,49 @@ function generateScoreAuthoritySection(results: TestResult[]): string {
   return lines.join('\n');
 }
 
+/** 分层通过率的分母：与 generateScoreAuthoritySection 的「确定性断言」桶同口径。 */
+function isBreakdownDenominator(result: TestResult): boolean {
+  return (result.scoreAuthority ?? 'unknown') === 'deterministic_assertion'
+    && result.status !== 'skipped'
+    && result.status !== 'infra_excluded'
+    && result.status !== 'cost_exceeded';
+}
+
+const BREAKDOWN_DIMENSIONS: Array<{ label: string; keysOf: (result: TestResult) => string[] }> = [
+  { label: 'category', keysOf: (r) => [r.caseMeta?.category ?? '未标注'] },
+  { label: 'difficulty', keysOf: (r) => [r.caseMeta?.difficulty ?? '未标注'] },
+  { label: 'layer', keysOf: (r) => [r.caseMeta?.layer ?? '未标注'] },
+  { label: 'tag', keysOf: (r) => (r.caseMeta?.tags.length ? r.caseMeta.tags : ['未标注']) },
+];
+
+/** 按 category / difficulty / layer / tag 各一张表；一题多 tag 会进多行，tag 表分母之和不等于总分母。 */
+function generateBreakdownSection(summary: TestRunSummary): string[] {
+  const denominator = summary.results.filter(isBreakdownDenominator);
+  const lines: string[] = [];
+  for (const dimension of BREAKDOWN_DIMENSIONS) {
+    const rows = new Map<string, { total: number; passed: number }>();
+    for (const result of denominator) {
+      for (const key of dimension.keysOf(result)) {
+        const row = rows.get(key) ?? { total: 0, passed: 0 };
+        row.total += 1;
+        if (result.status === 'passed' && !result.invalid) row.passed += 1;
+        rows.set(key, row);
+      }
+    }
+    lines.push(`### 按 ${dimension.label}`, '', `| ${dimension.label} | 分母 | 通过 | 通过率 |`, '|------|-----:|-----:|-------:|');
+    for (const [key, row] of [...rows.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      lines.push(`| ${key} | ${row.total} | ${row.passed} | ${(row.passed / row.total * 100).toFixed(1)}% |`);
+    }
+    if (rows.size === 0) lines.push('| （无确定性断言题） | 0 | 0 | -- |');
+    lines.push('');
+  }
+  lines.push(
+    `> 分母外：infra_excluded ${summary.infraExcluded ?? 0} · cost_exceeded ${summary.costExceeded ?? 0} · retired ${summary.retiredSkipped?.length ?? 0} · not_run ${summary.notRun} · invalid ${summary.invalidCases}`,
+    '> 分母只含确定性断言桶且非 skipped/infra_excluded/cost_exceeded 的题；not_run 无权威桶不进分母；invalid 在分母但不计通过。',
+  );
+  return lines;
+}
+
 const AI_REVIEW_LABELS: Record<AiReviewDimension, string> = {
   task_completed: '任务完成',
   tool_choice: '工具选择',
@@ -750,21 +902,40 @@ const AI_REVIEW_LABELS: Record<AiReviewDimension, string> = {
 function generateAiReviewSection(results: TestResult[]): string {
   if (!results.some((result) => result.aiReview)) return '';
   const lines = [
-    '| 维度 | 是 | 否 | 不可用 |',
-    '|------|---:|---:|-------:|',
+    '| 维度 | 是 | 否 | 无法确定 | 不可用 |',
+    '|------|---:|---:|-------:|-------:|',
   ];
   for (const dimension of AI_REVIEW_DIMENSIONS) {
     const verdicts = results.map((result) => result.aiReview?.[dimension]?.verdict).filter(Boolean);
-    lines.push(`| ${AI_REVIEW_LABELS[dimension]} | ${verdicts.filter((v) => v === 'yes').length} | ${verdicts.filter((v) => v === 'no').length} | ${verdicts.filter((v) => v === 'unavailable').length} |`);
+    lines.push(`| ${AI_REVIEW_LABELS[dimension]} | ${verdicts.filter((v) => v === 'yes').length} | ${verdicts.filter((v) => v === 'no').length} | ${verdicts.filter((v) => v === 'abstain').length} | ${verdicts.filter((v) => v === 'unavailable').length} |`);
   }
   lines.push('', `| 用例 ID | ${AI_REVIEW_DIMENSIONS.map((dimension) => AI_REVIEW_LABELS[dimension]).join(' | ')} |`);
   lines.push(`|---------|${AI_REVIEW_DIMENSIONS.map(() => '---').join('|')}|`);
   for (const result of results) {
     const cells = AI_REVIEW_DIMENSIONS.map((dimension) => {
       const verdict = result.aiReview?.[dimension]?.verdict;
-      return verdict === 'yes' ? '是' : verdict === 'no' ? '否' : verdict === 'unavailable' ? '不可用' : '—';
+      return verdict === 'yes' ? '是' : verdict === 'no' ? '否' : verdict === 'abstain' ? '无法确定' : verdict === 'unavailable' ? '不可用' : '—';
     });
     lines.push(`| ${result.testId} | ${cells.join(' | ')} |`);
+  }
+  // Jev 初筛口径（N-JEV-EVAL-JUDGE，默认关）：弃权率看上表「无法确定」列；这里汇总决断/升级。
+  const marked = results.flatMap((result) =>
+    AI_REVIEW_DIMENSIONS.map((dimension) => result.aiReview?.[dimension])
+      .filter((verdict) => verdict?.prescreen));
+  if (marked.length > 0) {
+    const decided = marked.filter((verdict) => verdict?.prescreen === 'jev_decided').length;
+    const escalated = marked.length - decided;
+    // prescreenCostUsd 同题各维是同一次调用的同一份值，按题去重后求和（刊例估算）。
+    const prescreenCostUsd = results.reduce((sum, result) => {
+      const own = AI_REVIEW_DIMENSIONS
+        .map((dimension) => result.aiReview?.[dimension]?.prescreenCostUsd)
+        .find((value) => value !== undefined);
+      return sum + (own ?? 0);
+    }, 0);
+    lines.push(
+      '',
+      `Jev 初筛：决断 ${decided} 维次 / 升级生成式 ${escalated} 维次（升级率 ${((escalated / marked.length) * 100).toFixed(1)}%）；初筛刊例估算 ≈ $${prescreenCostUsd.toFixed(6)}`,
+    );
   }
   return lines.join('\n');
 }

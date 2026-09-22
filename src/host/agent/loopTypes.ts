@@ -93,14 +93,24 @@ export interface AgentLoopConfig {
   maxIterations?: number;
   /** 当前 run 写入模型历史但不进入用户可见聊天历史。 */
   historyVisibility?: 'visible' | 'meta';
+  /** 无人值守轮（ADR-068 D4 断流续接分档）；缺省前台。 */
+  unattendedTurn?: boolean;
   /** 当前 run 禁用的工具名。 */
   deniedToolNames?: string[];
   /** 当前 run 的严格工具允许清单。 */
   allowedToolNames?: string[];
+  /** 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。 */
+  foregroundToolFace?: boolean;
   /** 工具执行日志回调 */
   onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: import('../../shared/contract').ToolResult }) => void;
   /** CLI 模式下的消息持久化回调 */
   persistMessage?: (message: Message) => Promise<void>;
+  /**
+   * N-EVAL-FAILURE-AUTOHARVEST：隔离运行时（eval）的 handoff 提案落库回调——
+   * 隔离臂的提案必须落注入库，断言采集器才读得到。缺省走全局 HandoffProposalService
+   * （产线行为不变）。
+   */
+  persistHandoffProposal?: (input: import('../../shared/contract/handoff').CreateHandoffProposalInput) => void;
   /** Per-run turn snapshot sink for isolated runtimes. */
   turnSnapshotSink?: TurnSnapshotSink;
   /** Optional case-bound cost recorder for controlled eval runs. */

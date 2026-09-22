@@ -18,6 +18,7 @@ import {
   type VoiceLiveSettings,
 } from '@shared/contract/settings';
 import { normalizeVoiceInputDevice } from '@shared/voiceInputDevice';
+import { VOICE_SESSION_MAX_DURATION_MS } from '@shared/constants/voice';
 import { PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants/models';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
@@ -90,6 +91,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
   const [echoCancellation, setEchoCancellation] = useState<EchoCancellationMode>('auto');
   // 未配置 = normal（契约默认档），存量用户打开设置页不该看到"什么都没选"
   const [speechRate, setSpeechRate] = useState<SpeechRate>('normal');
+  const [minuteLimitInput, setMinuteLimitInput] = useState('');
   const [costLimitInput, setCostLimitInput] = useState('');
   const [costLimitAction, setCostLimitAction] = useState<'warn' | 'hangup'>('warn');
   const [keybindings, setKeybindings] = useState<KeybindingsSettings>(() =>
@@ -165,6 +167,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         setSpeechRate(voice?.live?.speechRate ?? 'normal');
         setVoiceprintEnabled(voice?.live?.voiceprint !== false);
         setRecordCalls(voice?.live?.recordCalls === true);
+        setMinuteLimitInput(voice?.live?.callMinuteLimit ? String(voice.live.callMinuteLimit) : '');
         setCostLimitInput(voice?.live?.callCostLimit ? String(voice.live.callCostLimit) : '');
         setCostLimitAction(voice?.live?.callCostLimitAction ?? 'warn');
         setKeybindings(mergeKeybindingsWithDefaults(
@@ -245,6 +248,9 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     if (patch.speechRate !== undefined) setSpeechRate(patch.speechRate);
     if (patch.voiceprint !== undefined) setVoiceprintEnabled(patch.voiceprint);
     if (patch.recordCalls !== undefined) setRecordCalls(patch.recordCalls);
+    if ('callMinuteLimit' in patch) {
+      setMinuteLimitInput(patch.callMinuteLimit ? String(patch.callMinuteLimit) : '');
+    }
     if ('callCostLimit' in patch) {
       setCostLimitInput(patch.callCostLimit ? String(patch.callCostLimit) : '');
     }
@@ -453,10 +459,28 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         </div>
       </div>
 
-      <div className="border-t border-zinc-700 pt-4" data-testid="voice-cost-limit-settings">
-        <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.costLimitTitle}</h3>
-        <p className="mb-3 text-xs leading-5 text-zinc-500">{text.costLimitDescription}</p>
+      <div className="border-t border-zinc-700 pt-4" data-testid="voice-budget-settings">
+        <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.budgetTitle}</h3>
+        <p className="mb-3 text-xs leading-5 text-zinc-500">
+          {text.budgetDescription.replace('{minutes}', String(VOICE_SESSION_MAX_DURATION_MS / 60_000))}
+        </p>
         <div className="grid grid-cols-2 gap-3">
+          <input
+            data-testid="voice-minute-limit"
+            type="number"
+            min="0"
+            step="1"
+            value={minuteLimitInput}
+            placeholder={text.minuteLimitPlaceholder}
+            onChange={(event) => setMinuteLimitInput(event.target.value)}
+            onBlur={() => {
+              const parsed = Number(minuteLimitInput);
+              void persist({
+                callMinuteLimit: Number.isFinite(parsed) && parsed > 0 ? parsed : 0,
+              });
+            }}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
+          />
           <input
             data-testid="voice-cost-limit"
             type="number"
@@ -476,18 +500,18 @@ export const VoiceLiveSettingsSection: React.FC = () => {
             }}
             className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           />
-          <select
-            data-testid="voice-cost-limit-action"
-            value={costLimitAction}
-            onChange={(event) => void persist({
-              callCostLimitAction: event.target.value as 'warn' | 'hangup',
-            })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
-          >
-            <option value="warn">{text.costLimitWarn}</option>
-            <option value="hangup">{text.costLimitHangup}</option>
-          </select>
         </div>
+        <select
+          data-testid="voice-cost-limit-action"
+          value={costLimitAction}
+          onChange={(event) => void persist({
+            callCostLimitAction: event.target.value as 'warn' | 'hangup',
+          })}
+          className="mt-3 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
+        >
+          <option value="warn">{text.costLimitWarn}</option>
+          <option value="hangup">{text.costLimitHangup}</option>
+        </select>
       </div>
 
       {/* 本月通话用量：累计账本独立于可选的单通成本上限。 */}

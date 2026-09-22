@@ -112,6 +112,45 @@ describe('MessageProcessor persistence', () => {
     });
   });
 
+  it('evaluates compaction pressure after a text-only response', async () => {
+    const checkAndAutoCompress = vi.fn();
+    const ctx = {
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
+      contextHealth: ContextHealthState.forTest(),
+      artifact: ArtifactState.forTest(),
+      sessionId: 'text-pressure-session',
+      messages: [{ id: 'user-1', role: 'user' as const, content: 'reply', timestamp: 1 }],
+      control: ControlState.forTest({ isCancelled: false } as never),
+      modelConfig: { model: 'mimo-v2.5-pro' },
+      turn: TurnState.forTest({ currentTurnId: 'turn-1', toolsUsedInTurn: [] } as never),
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: { runNudgeChecks: vi.fn(), runOutputValidation: vi.fn() },
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, {
+      generateId: () => 'assistant-1',
+      stripInternalFormatMimicry: (content: string) => content,
+      addAndPersistMessage: vi.fn(),
+      injectSystemMessage: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress,
+    }, {
+      emitTaskProgress: vi.fn(),
+      emitTaskComplete: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+    });
+
+    await processor.handleTextResponse(
+      { type: 'text', content: 'plain final response', finishReason: 'end_turn' } as ModelResponse,
+      true,
+      1,
+      false,
+      { endSpan: vi.fn() },
+    );
+
+    expect(checkAndAutoCompress).toHaveBeenCalledOnce();
+  });
+
   it('persists injected steer messages to the runtime session instead of the global current session', () => {
     const ctx = {
       stats: RunStatsState.forTest(),
@@ -385,6 +424,7 @@ describe('MessageProcessor persistence', () => {
     const persistedMessages: unknown[] = [];
     const ctx = {
       stats: RunStatsState.forTest(),
+      control: ControlState.forTest(),
       deniedToolNames: ['AskUserQuestion'],
       maxToolCallRetries: 0,
       historyVisibility: 'meta',
@@ -435,6 +475,7 @@ describe('MessageProcessor persistence', () => {
     };
     const processor = createProcessor({
       stats: RunStatsState.forTest(),
+      control: ControlState.forTest(),
       deniedToolNames: ['Task', 'AgentSpawn'],
       maxToolCallRetries: 2,
       contextHealth: ContextHealthState.forTest(),
@@ -648,6 +689,126 @@ describe('MessageProcessor persistence', () => {
         data: expect.objectContaining({ id: 'assistant-message-1' }),
       }),
     );
+  });
+
+  it('forced-final content that strips to empty is not a delivery at max iterations: reason stays for the wrap-up fallback (ai-review R2 #2005)', async () => {
+    const ctx = {
+      artifact: ArtifactState.forTest(),
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+      control: ControlState.forTest({ isCancelled: false } as never),
+      modelConfig: { model: 'mimo-v2.5-pro', maxTokens: 4096 },
+      maxIterations: 2,
+      MAX_CONSECUTIVE_TRUNCATIONS: 3,
+      hookManager: undefined,
+      planningService: undefined,
+      turn: TurnState.forTest({ effortLevel: 'medium', researchModeActive: false, toolsUsedInTurn: [], isSimpleTaskMode: false } as never),
+      nudgeManager: {
+        runNudgeChecks: vi.fn(),
+        runOutputValidation: vi.fn(),
+      },
+      onEvent: vi.fn(),
+    };
+    ctx.control.forceFinalResponse('max-steps-reached', 'prompt');
+    const contextAssembly = {
+      // 原文非空但只含内部格式标记——清洗后落盘正文为空
+      stripInternalFormatMimicry: vi.fn(() => ''),
+      generateId: vi.fn().mockReturnValue('assistant-message-1'),
+      addAndPersistMessage: vi.fn(),
+      injectSystemMessage: vi.fn(),
+      updateContextHealth: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      emitTaskComplete: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer);
+
+    const action = await processor.handleTextResponse(
+      {
+        type: 'text',
+        content: '<truncation-recovery>mimicked scaffold</truncation-recovery>',
+        finishReason: 'stop',
+      },
+      false,
+      2,
+      false,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('break');
+    // 空正文不落盘、不清 reason——循环尾部 ensureMaxStepsWrapUp 的「reason 残留」判据保持有效
+    expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
+    expect(ctx.control.forceFinalResponseReason).toBe('max-steps-reached');
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'turn_end' }),
+    );
+    expect(ctx.onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'message' }),
+    );
+  });
+
+  it('non-max-iterations forced-final with strippable-only content still lands the #2006 static closing text (ai-review R4 #2005)', async () => {
+    const ctx = {
+      artifact: ArtifactState.forTest(),
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+      control: ControlState.forTest({ isCancelled: false } as never),
+      modelConfig: { model: 'mimo-v2.5-pro', maxTokens: 4096 },
+      maxIterations: 50,
+      MAX_CONSECUTIVE_TRUNCATIONS: 3,
+      hookManager: undefined,
+      planningService: undefined,
+      turn: TurnState.forTest({ effortLevel: 'medium', researchModeActive: false, toolsUsedInTurn: [], isSimpleTaskMode: false } as never),
+      nudgeManager: {
+        runNudgeChecks: vi.fn(),
+        runOutputValidation: vi.fn(),
+      },
+      onEvent: vi.fn(),
+    };
+    // 只读硬阈值之类的非撞顶 forced-final：ensureMaxStepsWrapUp 不接这种轮次，
+    // 静态收尾文案必须落盘，否则这条路径零收尾断流。
+    ctx.control.forceFinalResponse('连续只读操作达到硬阈值', 'prompt');
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn(() => ''),
+      generateId: vi.fn().mockReturnValue('assistant-message-1'),
+      addAndPersistMessage: vi.fn(),
+      injectSystemMessage: vi.fn(),
+      updateContextHealth: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      emitTaskComplete: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer);
+
+    const action = await processor.handleTextResponse(
+      {
+        type: 'text',
+        content: '<truncation-recovery>mimicked scaffold</truncation-recovery>',
+        finishReason: 'stop',
+      },
+      false,
+      1,
+      false,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('break');
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'assistant',
+        content: expect.stringContaining('任务已结束'),
+      }),
+    );
+    // 静态收尾落盘 = 已交付，reason 正常清除（不走 max-iterations 保底）
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 
   it('treats wake_noop as a terminal hidden action with no visible assistant text or tool row', async () => {

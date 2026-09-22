@@ -4,6 +4,7 @@
 
 import type { TelemetryCompleteness } from './evaluationReplay';
 import type { PostLaunchConsentScope, PostLaunchSignalKind, PostLaunchDimension } from './postLaunchScore';
+import { normalizeHarnessKnobs } from '../constants/harnessKnobs';
 
 export const EVAL_RUN_EVENT_SCHEMA_VERSION = 4 as const;
 export const EVAL_REPEAT_MAX = 10;
@@ -22,6 +23,8 @@ export interface EvalCompareHarness {
   thinkingInjection?: boolean;
   hooksEnabled?: boolean;
   toolMode?: 'all' | 'deferred';
+  /** 行为策略数值旋钮（键集见 host runtime/harnessKnobs.ts HARNESS_KNOB_DEFAULTS）；省略 = 生产默认 */
+  knobs?: Record<string, number>;
 }
 
 /** Shared experiment-arm contract consumed by host, bridge and the internal UI. */
@@ -132,6 +135,8 @@ export function effectiveArmSignature(config: EvalCompareArm, baseline: EvalComp
           thinkingInjection: arm.harness.thinkingInjection ?? null,
           hooksEnabled: arm.harness.hooksEnabled ?? null,
           toolMode: arm.harness.toolMode ?? null,
+          // 省略 / 空对象 / 显式写默认值 三者归一为同一全表，否则「配置不同行为相同」会被当成有效 A/B
+          knobs: normalizeHarnessKnobs(arm.harness.knobs),
         }
       : null,
     memory: arm.memory,
@@ -190,6 +195,10 @@ export interface EvalAnnotation {
   supersedesId?: string;
   createdAt: number;
   mine?: boolean;
+  /** 勾了「进金标集」：这条判定可作判官校准真值（annotations.calibration_split = 'gold'）。 */
+  gold?: boolean;
+  /** 人工归因三件套 + 定级（annotations.attribution_json）。与 yaml 上的默认归因分开算。 */
+  attribution?: EvalAttributionTriple;
 }
 
 export interface SaveEvalAnnotationRequest {
@@ -199,6 +208,10 @@ export interface SaveEvalAnnotationRequest {
   note?: string;
   dims: Partial<Record<AiReviewDimension, 'yes' | 'no'>>;
   supersedesId?: string;
+  /** true = 进金标集；省略或 false = 普通人工评审。 */
+  gold?: boolean;
+  /** 人工归因三件套；省略 = 这一版没填归因。 */
+  attribution?: EvalAttributionTriple;
 }
 
 export interface SaveEvalAnnotationResult {
@@ -211,24 +224,46 @@ export interface ListEvalAnnotationsResult {
 }
 
 export interface AiReviewVerdict {
-  verdict: 'yes' | 'no' | 'unavailable';
+  /** abstain = 判官自报「无法确定」：不进是/否统计，交人工判定（N-EVAL-JUDGE-ABSTAIN）。 */
+  verdict: 'yes' | 'no' | 'abstain' | 'unavailable';
   reasoning: string;
   judgeModel: string;
   promptHash: string;
   reason?: 'no_expectation' | 'judge_error' | 'parse_error';
+  /**
+   * Jev 初筛标记（N-JEV-EVAL-JUDGE，默认关）：jev_decided = 初筛决断、未调生成式；
+   * escalated = 初筛弃权/失败后升级生成式（本判决是生成式出的）。缺省 = 未走初筛。
+   */
+  prescreen?: 'jev_decided' | 'escalated';
+  /**
+   * 该题那次 Jev 初筛调用的刊例估算（USD，estimateJevCallUsd）。同一题各维 verdict
+   * 带的是同一次调用的同一份值——聚合时按题去重，不许逐维累加。
+   */
+  prescreenCostUsd?: number;
+  /**
+   * Jev score 原语的连续 quality（0-1 + confidence）：信息列，只进评测仪表/证据，
+   * 不作任何放行/断言依据（N-JEV-EVAL-JUDGE-R2）。同一题各维带同一份值，聚合按题去重。
+   * Jev 侧答案坏形状/越界被拒收时此字段缺席——缺席即「没有 quality」，不许当 0.5。
+   */
+  quality?: { score: number; confidence: number };
 }
 
 export interface EvalFailureClassification {
   code: string;
   dispositions: string[];
   symptoms: string[];
+  /**
+   * 默认归因：命中的最高优先码在 failcodes.yaml 上写的 `attribution:`。
+   * 🔴 这是统计先验不是这一题的判断，不进任何聚合口径（ADR-071 Q5）。
+   */
+  attribution?: EvalAttribution;
 }
 
 export interface EvalRunStamp {
   caseBankSha: string;
   answerSideSha: string;
   evalSet: {
-    split: 'held-in' | 'held-out' | 'control' | 'safety' | 'all';
+    split: 'held-in' | 'held-out' | 'control' | 'safety' | 'core' | 'all';
     splitsFileSha: string;
     tags: string[];
     ids: string[];
@@ -240,6 +275,11 @@ export interface EvalRunStamp {
     judgeCalibrationId: string;
     aiReview: AiReviewDimension[];
     aiReviewCalibration: Partial<Record<AiReviewDimension, string>>;
+    /**
+     * 评审模型与被测模型同一 provider（同源裁判）。同源时自我偏好未隔离，报告头明示。
+     * 可选：旧轮 stamp 没有这一位，读作 undefined = 未知，不当 false 用。
+     */
+    judgeSameSource?: boolean;
   };
   k: number;
   aggregationRuleVersion: number;
@@ -262,6 +302,8 @@ export interface EvalRunStamp {
       thinkingInjection?: boolean;
       hooksEnabled?: boolean;
       toolMode?: 'all' | 'deferred';
+      /** 本轮生效的旋钮全表（生产臂 = HARNESS_KNOB_DEFAULTS 原样） */
+      knobs?: Record<string, number>;
     } | null;
   };
   divergesFromProduction: string[];
@@ -319,7 +361,7 @@ interface EvalRunStartConfig extends EvalRunStamp {
   model: string;
   provider: string;
   scope: 'smoke' | 'full';
-  split?: 'held-in' | 'held-out' | 'control' | 'safety';
+  split?: 'held-in' | 'held-out' | 'control' | 'safety' | 'core';
   tags?: string[];
   ids?: string[];
   includeRetired?: boolean;
@@ -361,7 +403,7 @@ export interface EvalRunPanelProbe {
     dim: AiReviewDimension;
     calibration: {
       state: 'calibrated' | 'uncalibrated';
-      reason?: 'no_record' | 'below_threshold' | 'prompt_changed' | 'not_enough_pairs' | 'superseded' | 'judge_changed';
+      reason?: 'no_record' | 'below_threshold' | 'prompt_changed' | 'not_enough_pairs' | 'superseded' | 'judge_changed' | 'abstain_rate';
       kappa?: number;
       pairs?: number;
       computedAt?: string;
@@ -369,7 +411,7 @@ export interface EvalRunPanelProbe {
     };
     requiresExpectation: boolean;
   }>;
-  splitCounts: Record<'held-in' | 'held-out' | 'safety', number>;
+  splitCounts: Record<'held-in' | 'held-out' | 'safety' | 'core', number>;
   unhardenedCount: number;
   quickCheck: {
     tags: string[];
@@ -621,7 +663,7 @@ export interface EvalRunRequest {
   mode?: 'real' | 'mock';
   ids?: string[];
   tags?: string[];
-  split?: 'held-in' | 'held-out' | 'control' | 'safety';
+  split?: 'held-in' | 'held-out' | 'control' | 'safety' | 'core';
   timeoutMs?: number;
   repeat?: number;
   skills?: string[];
@@ -842,7 +884,7 @@ export interface EvalExperimentCaseDetail {
   costUsd?: number;
 }
 
-export type EvalCaseSplitBucket = 'held-in' | 'held-out' | 'control' | 'safety';
+export type EvalCaseSplitBucket = 'held-in' | 'held-out' | 'control' | 'safety' | 'core';
 
 export interface EvalCaseListEntry {
   id: string;
@@ -876,6 +918,9 @@ export type EvalCaseListItem = EvalCaseListEntry | EvalCaseListParseError;
 
 // 「从会话转成题目」的契约拆在 evaluationHarvest.ts，消费方仍从本文件取。
 export * from './evaluationHarvest';
+// 归因码本（ADR-071）同理拆在 evaluationAttribution.ts。
+export * from './evaluationAttribution';
+import type { EvalAttribution, EvalAttributionTriple } from './evaluationAttribution';
 
 import type { EvalDraftCaseType as EvalDraftCaseTypeRef, HarvestCandidate as HarvestCandidateRef } from './evaluationHarvest';
 

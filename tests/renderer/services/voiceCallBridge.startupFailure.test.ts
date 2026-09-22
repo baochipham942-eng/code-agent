@@ -121,6 +121,8 @@ describe('voiceStartupFailureTier 分档表', () => {
       VOICE_MODEL_UNRESPONSIVE: 'actionable',
       VOICE_SERVICE_UNSTABLE: 'actionable',
       VOICE_WORK_FAILED: 'actionable',
+      VOICE_BUDGET_WARNING: 'actionable',
+      VOICE_BUDGET_EXCEEDED: 'actionable',
       // 用户什么都做不了：上游 5xx / 429 / 连不上 / 退避耗尽
       VOICE_UPSTREAM_UNAVAILABLE: 'silent',
       UPSTREAM_SOCKET: 'silent',

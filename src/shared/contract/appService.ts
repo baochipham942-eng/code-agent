@@ -117,6 +117,8 @@ export interface AppServiceRunOptions {
   modelSpec?: ConversationModelSpec;
   /** Foreground command-center brain tool allowlist. Omitted for normal execution runs. */
   allowedToolNames?: string[];
+  /** 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。 */
+  foregroundToolFace?: boolean;
   /** /goal 自治模式：存在则本轮激活 goal 模式 */
   goal?: GoalRunInput;
   /** Per-turn web search switch. Omitted by legacy clients means enabled. */

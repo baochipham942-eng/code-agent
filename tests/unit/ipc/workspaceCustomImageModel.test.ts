@@ -47,7 +47,7 @@ vi.mock('../../../src/host/config/configPaths', async (importActual) => {
 
 vi.mock('../../../src/host/services/core/configService', async (importActual) => {
   const actual = await importActual<typeof import('../../../src/host/services/core/configService')>();
-  return { ...actual, getConfigService: vi.fn(() => ({ getApiKey: vi.fn(() => undefined) })) };
+  return { ...actual, getConfigService: vi.fn(() => ({ onSettingsUpdated: vi.fn(), getApiKey: vi.fn(() => undefined) })) };
 });
 
 // handleDownloadFile 用 app.getPath('downloads')；mock 成 cfg.root（每测的 workDir）使下载目录确定可断言。

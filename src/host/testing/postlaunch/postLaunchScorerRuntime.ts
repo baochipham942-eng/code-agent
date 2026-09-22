@@ -56,7 +56,8 @@ function requireDb(): BetterSqlite3.Database {
   return db;
 }
 
-function createPostLaunchScorerDeps(): PostLaunchScorerDeps {
+// N-EVAL-FAILURE-AUTOHARVEST：导出给 postLaunchAutoHarvestRuntime 复用（signalOnly 扫描同一份真机 deps）。
+export function createPostLaunchScorerDeps(): PostLaunchScorerDeps {
   const judge = getQuickModelRuntimeInfo();
   return {
     db: requireDb(),

@@ -42,8 +42,8 @@ function parseArgs(argv: string[]) {
     if (arg === '--runs' && i + 1 < args.length) runs = parseInt(args[++i], 10);
     else if (arg === '--split' && i + 1 < args.length) {
       const value = args[++i];
-      if (!['held-in', 'held-out', 'control', 'safety'].includes(value)) {
-        throw new Error(`--split 必须是 held-in / held-out / control / safety，收到 ${value}`);
+      if (!['held-in', 'held-out', 'control', 'safety', 'core'].includes(value)) {
+        throw new Error(`--split 必须是 held-in / held-out / control / safety / core，收到 ${value}`);
       }
       split = value as SplitBucket;
     }

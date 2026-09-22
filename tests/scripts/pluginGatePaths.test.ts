@@ -111,4 +111,25 @@ describe('eval harness plugin lifecycle paths', () => {
     ];
     for (const file of pr1563Files) expectCoveredByBothEvents(file);
   });
+
+  it('覆盖审批三桶评测依赖的安全、工具和权限分类器路径', () => {
+    const approvalDecisionFiles = [
+      'src/host/security/commandSafety.ts',
+      'src/host/security/execPolicy.ts',
+      'src/host/tools/modules/shell/bash.ts',
+      'src/host/permissions/policyEngine.ts',
+    ];
+    for (const file of approvalDecisionFiles) expectCoveredByBothEvents(file);
+  });
+
+  it('覆盖评测决策表与 sandbox writeFence 代表文件', () => {
+    const representativeFiles = [
+      'tests/fixtures/approval-eval/ratchet.json',
+      'src/host/sandbox/writeFence.ts',
+    ];
+    for (const file of representativeFiles) {
+      expect(fs.existsSync(path.join(repoRoot, file)), `${file} 必须真实存在`).toBe(true);
+      expectCoveredByBothEvents(file);
+    }
+  });
 });

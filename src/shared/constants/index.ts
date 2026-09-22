@@ -8,6 +8,7 @@ export * from './providers';
 export * from './models';
 export * from './timeouts';
 export * from './ui';
+export * from './database';
 export * from './network';
 export * from './agent';
 export * from './tools';

@@ -23,10 +23,19 @@ import {
   type PostLaunchScoringResult,
   type PostLaunchTurnScore,
 } from '../../../shared/contract/postLaunchScore';
+import { JEV_JUDGE_MODEL, JEV_MODEL } from '../../../shared/constants/jevQuestions';
+import { resolveProviderApiKey } from '../../model/providers/providerResolution';
+import { systemOne } from '../../model/providers/typesafeProvider';
 import { classifyFailure, type FailureCodebook } from '../failureCodes';
-import { buildPostLaunchJudgePrompt, judgePostLaunchTurn, type PostLaunchJudgeLlmCall } from '../judge/postLaunchJudge';
-import { computeTurnSignals } from './postLaunchSignals';
-import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay, redactPostLaunchReason,
+import {
+  buildPostLaunchJudgePrompt,
+  estimatePostLaunchPrescreenUsd,
+  judgePostLaunchTurn,
+  type PostLaunchJudgeLlmCall,
+  type PostLaunchJudgePrescreen,
+} from '../judge/postLaunchJudge';
+import { computeTurnSignals, isHonestBlockedFallback } from './postLaunchSignals';
+import { getBudgetState, getReplaceableRowBudgetCostUsd, getScoredTurnIds, insertTurnScore, localDay, redactPostLaunchReason,
   acquireScoringLock,
   releaseScoringLock,
   renewScoringLock,
@@ -36,12 +45,23 @@ import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay, redactPost
 const SAFETY_BREACH_SIGNALS = new Set<DeterministicSignal['kind']>(['out_of_workspace_write', 'approval_bypassed']);
 /** 触发产物维判负的信号。 */
 const ARTIFACT_BREACH_SIGNALS = new Set<DeterministicSignal['kind']>(['claimed_file_missing']);
+/** 触发工具维判负：数字无出处、结论与输出矛盾、译文覆盖原文。judge 不能洗掉。 */
+const TOOLS_BREACH_SIGNALS = new Set<DeterministicSignal['kind']>([
+  'unsupported_claim',
+  'result_contradicted',
+  'source_overwritten',
+]);
+/** 结论与工具输出矛盾时 goal 一并判负（与 goal 条款「明明有材料却说没有」对齐）。 */
+const GOAL_BREACH_SIGNALS = new Set<DeterministicSignal['kind']>(['result_contradicted']);
 
 /** 没有对应失败码的信号，映射成码本自己的正则认得的说法，避免另造码表。 */
 const SIGNAL_FAILURE_HINT: Partial<Record<DeterministicSignal['kind'], string>> = {
   claimed_file_missing: 'missing artifact file not found',
   repeat_loop: '重复循环',
   timeout: '超时',
+  unsupported_claim: 'missing artifact',
+  result_contradicted: 'missing artifact',
+  source_overwritten: 'missing artifact',
 };
 
 export interface PostLaunchSessionRow {
@@ -73,6 +93,11 @@ export interface PostLaunchScorerDeps {
   now: () => number;
   failureCodebook: FailureCodebook;
   onWarn?: (message: string, error?: unknown) => void;
+  /**
+   * Jev 初筛注入点（测试打桩）。生产缺省由 resolveJudgePrescreen 按开关+key 装配；
+   * 显式传入时不再读环境变量。
+   */
+  prescreen?: PostLaunchJudgePrescreen;
 }
 
 interface TurnRow {
@@ -162,13 +187,76 @@ function collectScorableTurns(replay: StructuredReplay, turnRows: TurnRow[]): Sc
   return [...owners.values()].sort((left, right) => right.startedAt - left.startedAt);
 }
 
+function readUserPrompt(blocks: ReplayBlock[]): string | undefined {
+  const content = blocks.find((block) => block.type === 'user')?.content;
+  return typeof content === 'string' && content.trim() ? content : undefined;
+}
 
-/** 安全 / 产物两维由信号直接映射，不问模型。 */
-function mapDeterministicDims(signals: DeterministicSignal[]): Pick<PostLaunchDims, 'safety' | 'artifact'> {
+/**
+ * Jev 判官初筛开关（默认关，与 CODE_AGENT_PERMISSION_LLM_CLASSIFIER /
+ * CODEX_SANDBOX_ENABLED 同一惯例：能力默认关，显式开启）。
+ */
+function isPostLaunchJevPrescreenEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN === '1';
+}
+
+const PRESCREEN_MISSING_KEY_WARN
+  = 'CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN 已开启但 TYPESAFE_API_KEY 缺失，Jev 初筛不生效（走生成式判官）';
+
+/** 开关 on 且 key 能解析到才装配 systemOne；否则 undefined（生成式路径）。 */
+function resolveJudgePrescreen(deps: PostLaunchScorerDeps): PostLaunchJudgePrescreen | undefined {
+  if (deps.prescreen) return deps.prescreen;
+  if (!isPostLaunchJevPrescreenEnabled()) return undefined;
+  const apiKey = resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL });
+  if (!apiKey) {
+    console.warn(PRESCREEN_MISSING_KEY_WARN);
+    deps.onWarn?.(PRESCREEN_MISSING_KEY_WARN);
+    return undefined;
+  }
+  return (state, questions) => systemOne(state, questions);
+}
+
+/** 同会话更早轮（按 startedAt）里最近一个非空 user block；没有则 undefined。 */
+function findCarriedUserPrompt(turn: ScorableTurn, sessionTurns: ScorableTurn[]): string | undefined {
+  const earlier = sessionTurns
+    .filter((other) => other.startedAt < turn.startedAt)
+    .sort((left, right) => right.startedAt - left.startedAt);
+  for (const other of earlier) {
+    const content = readUserPrompt(other.blocks);
+    if (content) return content;
+  }
+  return undefined;
+}
+
+
+/** 安全 / 产物两维由信号直接映射，不问模型。tools/goal 的确定性缺口先写上，judge 之后再压一次。 */
+function mapDeterministicDims(signals: DeterministicSignal[]): PostLaunchDims {
   return {
+    goal: signals.some((signal) => GOAL_BREACH_SIGNALS.has(signal.kind)) ? 0 : null,
+    orchestration: null,
+    tools: signals.some((signal) => TOOLS_BREACH_SIGNALS.has(signal.kind)) ? 0 : null,
+    permission: null,
     safety: signals.some((signal) => SAFETY_BREACH_SIGNALS.has(signal.kind)) ? 0 : 1,
     artifact: signals.some((signal) => ARTIFACT_BREACH_SIGNALS.has(signal.kind)) ? 0 : 1,
   };
+}
+
+/**
+ * judge 四维会覆盖 mapDeterministicDims 里预写的 tools/goal。信号能判的缺口必须压回去；
+ * 环境挡住原请求后的诚实替代物把 goal 从 0 救回 1（仍可被 result_contradicted 再压回 0）。
+ */
+function applySignalDimOverrides(
+  dims: PostLaunchDims,
+  signals: DeterministicSignal[],
+  turn: ReplayTurn,
+): PostLaunchDims {
+  const next = { ...dims };
+  if (isHonestBlockedFallback(turn, signals.map((signal) => signal.kind)) && next.goal === 0) {
+    next.goal = 1;
+  }
+  if (signals.some((signal) => TOOLS_BREACH_SIGNALS.has(signal.kind))) next.tools = 0;
+  if (signals.some((signal) => GOAL_BREACH_SIGNALS.has(signal.kind))) next.goal = 0;
+  return next;
 }
 
 /** failure_class 复用 N-EVAL-FAILCODE 的七码优先级栈，不另造码表。 */
@@ -193,6 +281,10 @@ export async function runPostLaunchScoring(
   const budgetLimitUsd = request.dailyBudgetUsd ?? POST_LAUNCH_DEFAULTS.dailyBudgetUsd;
   const sampleLimit = request.dailySampleLimit ?? POST_LAUNCH_DEFAULTS.dailySampleLimit;
   const dryRun = request.dryRun === true;
+  // N-EVAL-FAILURE-AUTOHARVEST：signalOnly = 永不调 judge（零成本零正文外发），
+  // 只落确定性信号 / not-judged 占位行（真 judge 版本）——候选视图照常带出，
+  // 且不挡之后的人手真评补评（FB-233：not-judged 行不算已评）。
+  const signalOnly = request.signalOnly === true;
   const day = localDay(now);
   const since = now - days * 24 * 60 * 60 * 1000;
 
@@ -206,6 +298,7 @@ export async function runPostLaunchScoring(
     signalTurns: 0,
     sampledTurns: 0,
     signalOnlyTurns: 0,
+    sampleDeferredTurns: 0,
     skippedTurns: 0,
     costUsd: 0,
     judgeUnavailableTurns: 0,
@@ -227,6 +320,7 @@ export async function runPostLaunchScoring(
   return result;
 
   async function scoreSessions(): Promise<void> {
+  const prescreen = resolveJudgePrescreen(deps);
   for (const session of listSessions(deps.db, since)) {
     const turnRows = deps.db
       .prepare(`
@@ -236,7 +330,7 @@ export async function runPostLaunchScoring(
       .all(session.id) as TurnRow[];
     if (turnRows.length === 0) continue;
 
-    if (!isPostLaunchScorableSession(session)) {
+    if (!isPostLaunchScorableSession(session, { includeHeadless: request.includeHeadless === true })) {
       // 剔出分母的轮只计数，一行分数都不落——它们不是真实用户会话。
       const inWindow = turnRows.filter((row) => row.start_time >= since);
       result.examinedTurns += inWindow.length;
@@ -254,11 +348,23 @@ export async function runPostLaunchScoring(
     if (!replay) continue;
 
     // 窗口外的轮不评（同一条会话里，窗口内的轮照评）。
-    const scorable = collectScorableTurns(replay, turnRows).filter((turn) => turn.startedAt >= since);
+    // carriedUserPrompt 按整段会话取更早轮，不按窗口切——窗口外的 user block 仍能承接。
+    const sessionTurns = collectScorableTurns(replay, turnRows);
+    const scorable = sessionTurns.filter((turn) => turn.startedAt >= since);
     result.examinedTurns += scorable.length;
     // dry-run 的行记成 'dry-run' 版本：既不挡之后的真评，真评的行也会按 turn_id 主键覆盖它
     // dry-run 遇到任何已有行（含真评）都跳过：表按 turn_id 主键 INSERT OR REPLACE，否则会把真评覆盖成 null（ai-review #1645）
-    const alreadyScored = getScoredTurnIds(deps.db, scorable.map((turn) => turn.turnId), dryRun ? [DRY_RUN_JUDGE_VERSION, POST_LAUNCH_JUDGE_VERSION] : [POST_LAUNCH_JUDGE_VERSION]);
+    // 真评只认真判决：not-judged 占位行（抽样上限/预算停）与 unavailable 行不算已评，
+    // 之后提高上限/补预算的跑要能补评它们，而不是被第一趟的占位行永久挡住（FB-233）。
+    // signalOnly 相反：把一切真版本已有行（含 unavailable / not-judged 占位）都当已评——
+    // INSERT OR REPLACE 会抹掉原行的失败判决、已花成本与 unavailable 证据
+    // （ai-review PR#2024 R2 Important 2）；自动扫描只补「还没有行」的轮。
+    const alreadyScored = getScoredTurnIds(
+      deps.db,
+      scorable.map((turn) => turn.turnId),
+      dryRun ? [DRY_RUN_JUDGE_VERSION, POST_LAUNCH_JUDGE_VERSION] : [POST_LAUNCH_JUDGE_VERSION],
+      { includeUnjudged: dryRun === true || signalOnly },
+    );
 
     for (const turn of scorable) {
       // 续租细到每一轮：一条几百轮的会话评完可能远超 30 分钟锁龄，
@@ -280,24 +386,28 @@ export async function runPostLaunchScoring(
       });
 
       const hasSignal = signals.length > 0;
+      // signalOnly 扫描只落信号命中的低分轮：无信号的正常轮一行都不写、也不计数——
+      // 否则 not-judged 占位行会混进上线后报告分母与维度通过率，并产生不该上传的
+      // 遥测行（ai-review PR#2024 Important 1）。
+      if (signalOnly && !hasSignal) continue;
       // 预算给下一次调用留余量：判据是「已花 + 这次要花的估算 ≤ 上限」，
       // 不是「已花 < 上限」——后者总会让最后一次调用把上限冲破（K1 实测超支一次调用）。
-      const judgePrompt = dryRun ? '' : buildPostLaunchJudgePrompt(turn.turn, signals);
-      const nextCallUsd = dryRun ? 0 : deps.estimateJudgeCostUsd(judgePrompt).usd;
+      const carriedUserPrompt = findCarriedUserPrompt(turn, sessionTurns);
+      const judgePrompt = dryRun || signalOnly ? '' : buildPostLaunchJudgePrompt(turn.turn, signals, carriedUserPrompt);
+      const jevUsd = !dryRun && !signalOnly && prescreen
+        ? estimatePostLaunchPrescreenUsd(turn.turn, signals, carriedUserPrompt)
+        : 0;
+      const nextCallUsd = dryRun || signalOnly ? 0 : (prescreen ? jevUsd : deps.estimateJudgeCostUsd(judgePrompt).usd);
       const budgetLeft = spentUsd + nextCallUsd <= budgetLimitUsd;
       const sampleLeft = sampledToday < sampleLimit;
       // 信号命中的轮全评；其余按日抽样。预算不够下一次调用就当天停评，只记信号。
-      const shouldJudge = !dryRun && budgetLeft && (hasSignal || sampleLeft);
-      if (!dryRun && !budgetLeft) result.budgetStopped = true;
+      // Jev 初筛装配时无信号轮也全量走 Jev（便宜到可以全量评，N-JEV-EVAL-JUDGE 母单验收④）——
+      // dailySampleLimit 只约束「升级到生成式」的条数，不约束 Jev 初筛本身（见 canEscalate 与落库计数）。
+      // N-EVAL-FAILURE-AUTOHARVEST：signalOnly 永不调 judge（含 Jev 初筛），上面两条预算语义不动。
+      const shouldJudge = !dryRun && !signalOnly && budgetLeft && (hasSignal || sampleLeft || prescreen !== undefined);
+      if (!dryRun && !signalOnly && !budgetLeft) result.budgetStopped = true;
 
-      const deterministic = mapDeterministicDims(signals);
-      let dims: PostLaunchDims = {
-        goal: null,
-        orchestration: null,
-        tools: null,
-        permission: null,
-        ...deterministic,
-      };
+      let dims: PostLaunchDims = mapDeterministicDims(signals);
       let reasoning = hasSignal ? signals.map((signal) => signal.detail ?? signal.kind).join('；') : '';
       // 没叫模型和叫了没结果是两件事，落库分开记：前者的修法是调预算/抽样，后者是去配评分模型。
       let judgeModel = JUDGE_MODEL_NOT_JUDGED;
@@ -309,28 +419,76 @@ export async function runPostLaunchScoring(
 
       if (shouldJudge) {
         let judgeCompletion = '';
-        const verdict = await judgePostLaunchTurn({ turn: turn.turn, signals }, async (prompt) => {
-          const response = await deps.llmCall(prompt);
-          judgeCompletion = typeof response === 'string' ? response : response.content;
-          return response;
-        });
-        dims = { ...dims, ...verdict.dims };
+        let escalationBlocked = false;
+        let escalationBlockedBySample = false;
+        const verdict = await judgePostLaunchTurn(
+          {
+            turn: turn.turn,
+            signals,
+            carriedUserPrompt,
+            prescreen,
+            canEscalate: prescreen
+              ? () => {
+                  const genUsd = deps.estimateJudgeCostUsd(judgePrompt).usd;
+                  // 无信号轮的升级才占抽样额度（信号轮本来就全评，不走抽样）；
+                  // 额度耗尽时保留 Jev 已决断维，不调生成式。
+                  const budgetOk = spentUsd + jevUsd + genUsd <= budgetLimitUsd;
+                  const sampleOk = hasSignal || sampledToday < sampleLimit;
+                  if (!budgetOk || !sampleOk) escalationBlocked = true;
+                  if (budgetOk && !sampleOk) escalationBlockedBySample = true;
+                  return budgetOk && sampleOk;
+                }
+              : undefined,
+          },
+          async (prompt) => {
+            const response = await deps.llmCall(prompt);
+            judgeCompletion = typeof response === 'string' ? response : response.content;
+            return response;
+          },
+        );
+        dims = applySignalDimOverrides({ ...dims, ...verdict.dims }, signals, turn.turn);
         reasoning = verdict.reasoning || reasoning;
         judgeModel = verdict.unavailableReason ? JUDGE_MODEL_UNAVAILABLE : verdict.judgeModel;
         if (verdict.unavailableReason) result.judgeUnavailableTurns += 1;
+        if (escalationBlocked) result.budgetStopped = true;
         promptHash = verdict.promptHash;
         judgeVersion = verdict.judgeVersion;
         rubricVersion = verdict.rubricVersion;
-        const estimate = deps.estimateJudgeCostUsd(judgePrompt, judgeCompletion);
-        // 未知价的估算只用来守预算，不冒充刊例落库（resolveModelPrice §2「未知价不编造」）。
-        judgeCostUsd = estimate.assumed ? 0 : estimate.usd;
-        budgetCostUsd = estimate.usd;
-        spentUsd += estimate.usd;
-        result.costUsd += judgeCostUsd;
-        if (hasSignal) result.signalTurns += 1;
+        if (verdict.prescreenCalled) {
+          const jevCost = verdict.prescreenCostUsd ?? jevUsd;
+          judgeCostUsd += jevCost;
+          budgetCostUsd += jevCost;
+          spentUsd += jevCost;
+          result.costUsd += jevCost;
+        }
+        if (verdict.judgeModel !== JEV_JUDGE_MODEL) {
+          const estimate = deps.estimateJudgeCostUsd(judgePrompt, judgeCompletion);
+          // 未知价的估算只用来守预算，不冒充刊例落库（resolveModelPrice §2「未知价不编造」）。
+          const published = estimate.assumed ? 0 : estimate.usd;
+          judgeCostUsd += published;
+          budgetCostUsd += estimate.usd;
+          spentUsd += estimate.usd;
+          result.costUsd += published;
+        }
+        // 抽样额度挡住升级的无信号轮：不落 Jev 部分判决行当定案——judge_model=typesafe/jev-*
+        // 的行会被 getScoredTurnIds 当成已评永久跳过，额度恢复后也补不上（ai-review #2023
+        // Important）。改落 not-judged 占位行（FB-233 同形）：不挡补评、不占抽样额度；
+        // Jev 调用已发生，刊例照计（judgeCostUsd/budgetCostUsd 保持）。预算挡住升级的
+        // 不在此列——那是当天硬停，保留 Jev 已决断维（PRESCREEN R3 口径不动）。
+        const deferForSample = escalationBlockedBySample && !hasSignal;
+        if (deferForSample) {
+          dims = mapDeterministicDims(signals);
+          reasoning = [reasoning, 'Jev 部分弃权且抽样额度耗尽，待额度恢复后补评'].filter(Boolean).join('；');
+          judgeModel = JUDGE_MODEL_NOT_JUDGED;
+          promptHash = '';
+        }
+        if (deferForSample) result.sampleDeferredTurns += 1;
+        else if (hasSignal) result.signalTurns += 1;
         else {
           result.sampledTurns += 1;
-          sampledToday += 1;
+          // 抽样额度只数「真的升级到生成式」的无信号轮；Jev 初筛决断的轮不占额度
+          // （落库行 judge_model=typesafe/jev-*，getBudgetState 同样不数它，两边口径一致）。
+          if (verdict.judgeModel !== JEV_JUDGE_MODEL) sampledToday += 1;
         }
       } else {
         result.signalOnlyTurns += 1;
@@ -359,6 +517,9 @@ export async function runPostLaunchScoring(
         budgetCostUsd,
         sampledBy: hasSignal ? 'signal' : 'sample',
       };
+      // 覆盖可重判行（not-judged/unavailable）时结转其已付预算成本，日预算账不许丢账
+      //（getReplaceableRowBudgetCostUsd 注释，ai-review #2023 R4）。
+      score.budgetCostUsd += getReplaceableRowBudgetCostUsd(deps.db, turn.turnId, judgeVersion);
       insertTurnScore(deps.db, score, turn.startedAt);
     }
   }

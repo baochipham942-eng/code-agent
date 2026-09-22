@@ -62,7 +62,7 @@ const probe: EvalRunPanelProbe = {
     { dim: 'no_extra_changes', requiresExpectation: true, calibration: { state: 'uncalibrated', reason: 'no_record' } },
     { dim: 'self_tested', requiresExpectation: true, calibration: { state: 'uncalibrated', reason: 'no_record' } },
   ],
-  splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12 },
+  splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12, core: 40 },
   unhardenedCount: 0,
   quickCheck: { tags: ['core-path'], maxCases: 12 },
   productionArm: { name: 'production@sys-v45', model: 'deepseek-chat', provider: 'deepseek' },

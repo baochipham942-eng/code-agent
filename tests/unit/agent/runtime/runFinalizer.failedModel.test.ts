@@ -78,6 +78,30 @@ describe('RunFinalizer 失败事件', () => {
     expect(buildCompletionSummaryRecord).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
   });
 
+  it('无人值守轮允许空最终说明保持 completed', async () => {
+    const events: AgentEvent[] = [];
+    const finalizer = new RunFinalizer({
+      sessionId: 'empty-unattended', persistLongTermMemory: false,
+      nudgeManager: { getModifiedFiles: () => new Set() },
+      onEvent: (event: AgentEvent) => events.push(event),
+      modelConfig: { provider: 'claude', model: 'test' },
+      messages: [{ id: 'u1', role: 'user', content: 'hello', timestamp: 1 }],
+      maxIterations: 10,
+      stats: { traceId: 'empty-unattended', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+      unattendedTurn: true,
+    } as never);
+    finalizer.setModules({ generateId: () => 'a1', addAndPersistMessage: vi.fn() } as never,
+      { runPostRun: vi.fn(), runSessionEndLearning: vi.fn() } as never);
+    await finalizer.finalizeRun(1, 'hello', { endTrace: vi.fn(), flush: vi.fn(async () => undefined) } as never, 1, { status: 'completed' });
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'error', data: expect.objectContaining({ code: 'RUN_FAILED' }),
+    }));
+    expect(buildCompletionSummaryRecord).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
+  });
+
   it('RUN_FAILED 带上这一轮真正跑的 provider/model', async () => {
     const events: AgentEvent[] = [];
     const finalizer = new RunFinalizer({
@@ -115,6 +139,86 @@ describe('RunFinalizer 失败事件', () => {
     expect(errorEvent?.data).toMatchObject({
       code: 'RUN_FAILED',
       details: { provider: 'custom-100xlabs', model: 'claude-opus-4-8' },
+    });
+  });
+
+  it('引擎内吞掉的 403 推理失败带 MODEL_AUTH 标记出去（手机据此给「换一个可用模型」，不是兜底话）', async () => {
+    const events: AgentEvent[] = [];
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-auth-failed',
+      onEvent: (event: AgentEvent) => events.push(event),
+      modelConfig: { provider: 'custom-team-relay', model: 'LongCat-2.0' },
+      messages: [],
+      maxIterations: 10,
+      stats: { traceId: 'trace-auth', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules({ generateId: () => 'msg-auth', addAndPersistMessage: vi.fn() } as never, { runPostRun: vi.fn() } as never);
+    // AI SDK APICallError 的真实形状：message 只剩 statusText，HTTP 码在 statusCode
+    const forbidden = Object.assign(new Error('Forbidden'), { statusCode: 403 });
+    await finalizer.finalizeRun(1, '你好', { endTrace: vi.fn() } as never, 8, { status: 'failed', error: forbidden }).catch(() => undefined);
+    // 带上这一轮真正跑的模型（APICallError 自己不带 provider）
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({ code: 'RUN_FAILED', failure: { code: 'MODEL_AUTH', provider: 'custom-team-relay', model: 'LongCat-2.0' } });
+
+    // 反面：非鉴权失败不冒充
+    const other: AgentEvent[] = [];
+    const plain = new RunFinalizer({
+      sessionId: 'sess-other-failed', onEvent: (event: AgentEvent) => other.push(event),
+      modelConfig: { provider: 'deepseek', model: 'deepseek-chat' }, messages: [], maxIterations: 10,
+      stats: { traceId: 'trace-other', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() }, turn: { currentTurnId: null },
+    } as never);
+    plain.setModules({ generateId: () => 'msg-other', addAndPersistMessage: vi.fn() } as never, { runPostRun: vi.fn() } as never);
+    await plain.finalizeRun(1, '你好', { endTrace: vi.fn() } as never, 8, { status: 'failed', error: Object.assign(new Error('Bad Gateway'), { statusCode: 502 }) }).catch(() => undefined);
+    expect(other.find((event) => event.type === 'error')?.data).not.toHaveProperty('failure');
+  });
+
+  it('400 Unsupported model 带 MODEL_UNAVAILABLE 标记出去', async () => {
+    const events: AgentEvent[] = [];
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-model-gone',
+      onEvent: (event: AgentEvent) => events.push(event),
+      modelConfig: { provider: 'longcat', model: 'LongCat-2.0-Preview' },
+      messages: [],
+      maxIterations: 10,
+      stats: { traceId: 'trace-gone', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules({ generateId: () => 'msg-gone', addAndPersistMessage: vi.fn() } as never, { runPostRun: vi.fn() } as never);
+    const unsupported = Object.assign(new Error('Unsupported model'), { status: 400 });
+    await finalizer.finalizeRun(1, '你好', { endTrace: vi.fn() } as never, 8, { status: 'failed', error: unsupported }).catch(() => undefined);
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({
+      code: 'RUN_FAILED',
+      failure: { code: 'MODEL_UNAVAILABLE', provider: 'longcat', model: 'LongCat-2.0-Preview' },
+    });
+  });
+
+  // 模拟器验收 O2：宿主已能把余额不足归为 quota（弹层副标题），但那一轮消息流只有红字没卡片。
+  // 402 也要沿 failure 标记出去，手机才有「余额或额度用完了」卡和「换一个可用模型」出路。
+  it('402 余额不足带 MODEL_QUOTA 标记出去（带上这一轮真正跑的模型）', async () => {
+    const events: AgentEvent[] = [];
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-quota-failed',
+      onEvent: (event: AgentEvent) => events.push(event),
+      modelConfig: { provider: 'custom-team-relay', model: 'gpt-5.5' },
+      messages: [],
+      maxIterations: 10,
+      stats: { traceId: 'trace-quota', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules({ generateId: () => 'msg-quota', addAndPersistMessage: vi.fn() } as never, { runPostRun: vi.fn() } as never);
+    const paymentRequired = Object.assign(new Error('Insufficient Balance'), { statusCode: 402 });
+    await finalizer.finalizeRun(1, '你好', { endTrace: vi.fn() } as never, 8, { status: 'failed', error: paymentRequired }).catch(() => undefined);
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({
+      code: 'RUN_FAILED',
+      failure: { code: 'MODEL_QUOTA', provider: 'custom-team-relay', model: 'gpt-5.5' },
     });
   });
 

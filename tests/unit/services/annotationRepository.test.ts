@@ -32,6 +32,7 @@ function row(overrides: Partial<AnnotationRow> = {}): AnnotationRow {
     overall: 'down',
     note: 'missing evidence',
     dims_json: JSON.stringify({ task_completed: 'no' }),
+    attribution_json: null,
     consent_scope: 'metadata',
     calibration_split: null,
     supersedes_id: null,
@@ -62,6 +63,25 @@ describe('AnnotationRepository', () => {
         id: 'annotation-2',
         supersedes_id: 'annotation-1',
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('listForExperiment 回本轮全部行（含未勾金标的撤销行），按时间倒序，跨实验隔离', () => {
+    const db = new Database(':memory:');
+    try {
+      applySchema(db, logger as never);
+      seedCase(db);
+      db.prepare("INSERT INTO experiments (id, name, timestamp, summary_json) VALUES ('run-2', 'other', 2, '{}')").run();
+      const repository = new AnnotationRepository(db);
+      repository.insert(row({ id: 'plain', calibration_split: null, created_at: 10 }));
+      repository.insert(row({ id: 'gold-old', calibration_split: 'gold', created_at: 20 }));
+      repository.insert(row({ id: 'gold-new', calibration_split: 'gold', case_id: 'case-2', created_at: 30 }));
+      repository.insert(row({ id: 'other-run', experiment_id: 'run-2', calibration_split: 'gold', created_at: 40 }));
+
+      expect(repository.listForExperiment('run-1').map((item) => item.id)).toEqual(['gold-new', 'gold-old', 'plain']);
+      expect(repository.listForExperiment('run-2').map((item) => item.id)).toEqual(['other-run']);
     } finally {
       db.close();
     }

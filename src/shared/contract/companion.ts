@@ -20,6 +20,31 @@ export const companionCommandSchema = z.discriminatedUnion('action', [
     expectedRevision: z.number().int().nonnegative().safe(),
     payload: z.object({ requestId: id, decision: z.enum(['approved', 'rejected']), operationDigest: id }).strict(),
   }).strict(),
+  z.object({ ...commandFields, action: z.literal('question.respond'),
+    expectedRevision: z.number().int().nonnegative().safe(),
+    payload: z.object({
+      requestId: id,
+      operationDigest: id,
+      answers: z.record(
+        z.string().min(1).max(COMPANION_LIMITS.messageLength),
+        z.union([
+          z.string().min(1).max(COMPANION_LIMITS.messageLength),
+          z.array(z.string().min(1).max(COMPANION_LIMITS.messageLength)).min(1),
+        ]),
+      ).optional(),
+      declined: z.literal(true).optional(),
+      reason: z.string().max(COMPANION_LIMITS.messageLength).optional(),
+    }).strict().refine(payload => payload.declined === true || (payload.answers != null && Object.keys(payload.answers).length > 0)),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('plan.respond'),
+    expectedRevision: z.number().int().nonnegative().safe(),
+    payload: z.object({
+      requestId: id,
+      operationDigest: id,
+      decision: z.enum(['approved', 'rejected']),
+      feedback: z.string().max(COMPANION_LIMITS.messageLength).optional(),
+    }).strict(),
+  }).strict(),
   z.object({ ...commandFields, action: z.literal('session.create'),
     payload: z.object({ title: z.string().trim().min(1).max(160), provider: id, model: id }).strict(),
   }).strict(),
@@ -33,10 +58,40 @@ export const companionCommandSchema = z.discriminatedUnion('action', [
   z.object({ ...commandFields, action: z.literal('session.model'),
     payload: z.object({ provider: id, model: id }).strict(),
   }).strict(),
-  z.object({ ...commandFields, action: z.literal('voice.transcribe'),
+  z.object({ ...commandFields, sessionId: id.optional(), action: z.literal('voice.transcribe'),
     payload: z.object({ audioData: z.string().min(1).max(COMPANION_LIMITS.voiceBase64Limit).regex(/^[A-Za-z0-9+/]+={0,2}$/),
       mimeType: z.enum(['audio/aac', 'audio/mp4', 'audio/webm', 'audio/ogg', 'audio/wav']),
       durationMs: z.number().positive().max(COMPANION_LIMITS.voiceDurationMs + 5_000) }).strict(),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('files.prepare'),
+    payload: z.object({
+      name: z.string().trim().min(1).max(COMPANION_LIMITS.fileNameLength),
+      mimeType: z.string().trim().min(1).max(127),
+      size: z.number().int().positive().max(COMPANION_LIMITS.fileMaxBytes).safe(),
+      sha256: z.string().length(64).regex(/^[a-f0-9]+$/),
+    }).strict(),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('files.chunk'),
+    payload: z.object({
+      transferId: id,
+      offset: z.number().int().nonnegative().safe(),
+      data: z.string().min(1).max(COMPANION_LIMITS.fileChunkBase64Limit).regex(/^[A-Za-z0-9+/]+={0,2}$/),
+      sha256: z.string().length(64).regex(/^[a-f0-9]+$/),
+    }).strict(),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('files.commit'),
+    payload: z.object({ transferId: id, sha256: z.string().length(64).regex(/^[a-f0-9]+$/) }).strict(),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('files.abort'),
+    payload: z.object({ transferId: id }).strict(),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('files.read'),
+    payload: z.object({
+      artifactId: id,
+      version: z.number().int().positive().safe().default(1),
+      offset: z.number().int().nonnegative().safe(),
+      length: z.number().int().positive().max(COMPANION_LIMITS.fileChunkBytes).safe(),
+    }).strict(),
   }).strict(),
 ]);
 export type CompanionCommand = z.infer<typeof companionCommandSchema>;
@@ -81,6 +136,41 @@ export interface CompanionEvent {
   createdAt: number;
 }
 
+export type CompanionDecisionKind = 'approval' | 'question' | 'plan';
+export type CompanionDecisionCommand = Extract<CompanionCommand, {
+  action: 'approval.respond' | 'question.respond' | 'plan.respond'
+}>;
+
+export function isCompanionDecisionCommand(command: CompanionCommand): command is CompanionDecisionCommand {
+  return command.action === 'approval.respond' || command.action === 'question.respond' || command.action === 'plan.respond';
+}
+
+export type CompanionDecisionOutcome = 'answered' | 'expired' | 'cancelled';
+
+export interface CompanionQuestionAnswer {
+  answers?: Record<string, string | string[]>;
+  declined?: boolean;
+  reason?: string;
+}
+
+export interface CompanionApprovalAnswer {
+  decision: 'approved' | 'rejected' | 'allow_session';
+}
+
+export interface CompanionPlanAnswer {
+  decision: 'approved' | 'rejected';
+  feedback?: string;
+}
+
+export type CompanionDecisionAnswer =
+  | CompanionQuestionAnswer
+  | CompanionApprovalAnswer
+  | CompanionPlanAnswer;
+
+export function isCompanionDecisionOutcome(value: unknown): value is CompanionDecisionOutcome {
+  return value === 'answered' || value === 'expired' || value === 'cancelled';
+}
+
 export interface CompanionDecision {
   requestId: string;
   sessionId: string;
@@ -88,6 +178,11 @@ export interface CompanionDecision {
   status: 'pending' | 'approved' | 'rejected' | 'closed';
   resolvedBy: string | null;
   operationDigest: string | null;
+  kind?: CompanionDecisionKind;
+  /** Terminal cards only. Old phones ignore this field. */
+  outcome?: CompanionDecisionOutcome;
+  /** Terminal cards only. Shape depends on kind. Old phones ignore this field. */
+  answer?: CompanionDecisionAnswer;
 }
 
 export type CompanionSubmitResult =

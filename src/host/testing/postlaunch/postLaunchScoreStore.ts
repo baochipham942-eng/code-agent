@@ -7,6 +7,7 @@
 // 表里只有分数、维度、失败类别、一行脱敏理由和信号名，没有 prompt / 回复 / 工具入参。
 // ============================================================================
 import type BetterSqlite3 from 'better-sqlite3';
+import { JEV_JUDGE_MODEL } from '../../../shared/constants/jevQuestions';
 import {
   POST_LAUNCH_DEFAULTS,
   POST_LAUNCH_DIMENSIONS,
@@ -14,6 +15,7 @@ import {
   DRY_RUN_JUDGE_VERSION,
   POST_LAUNCH_RUBRIC_VERSION,
   POST_LAUNCH_CONSENT_SCOPES,
+  JUDGE_MODEL_NOT_JUDGED,
   JUDGE_MODEL_UNAVAILABLE,
   isPostLaunchScorableSession,
   type PostLaunchBudgetState,
@@ -101,6 +103,26 @@ export function insertTurnScore(db: BetterSqlite3.Database, score: PostLaunchTur
     score.budgetCostUsd,
     score.sampledBy,
   );
+}
+
+/**
+ * 可重判行（not-judged 占位 / unavailable）被 INSERT OR REPLACE 覆盖前，其已付的预算成本
+ * 必须结转进新行——否则反复补评会反复真调 Jev/生成式，而日预算账只记最后一次，
+ * 实际支出可冲破 dailyBudgetUsd（ai-review #2023 R4 Important）。
+ */
+export function getReplaceableRowBudgetCostUsd(
+  db: BetterSqlite3.Database,
+  turnId: string,
+  judgeVersion: string,
+): number {
+  const row = db
+    .prepare(`
+      SELECT COALESCE(SUM(budget_cost_usd), 0) AS carried
+      FROM telemetry_turn_scores
+      WHERE turn_id = ? AND judge_version = ? AND COALESCE(judge_model, '') IN (?, ?)
+    `)
+    .get(turnId, judgeVersion, JUDGE_MODEL_NOT_JUDGED, JUDGE_MODEL_UNAVAILABLE) as { carried: number };
+  return row.carried;
 }
 
 /**
@@ -193,13 +215,31 @@ export function markTurnScoresSynced(
   })();
 }
 
-export function getScoredTurnIds(db: BetterSqlite3.Database, turnIds: string[], judgeVersions: string[] = [POST_LAUNCH_JUDGE_VERSION]): Set<string> {
+/**
+ * 「已评」只认真拿到过判决的行：judge_model 是 not-judged（抽样上限/预算停的占位行）或
+ * unavailable（叫了 judge 但没判成）的不算——否则第一趟 --sample 0 落下的占位行会把第二趟
+ * --sample 200 的补评永远挡住（FB-233：生产同理，日抽样上限外的轮永远评不上）。
+ * includeUnjudged=true 恢复「行存在即已评」：dry-run 用它——表按 turn_id 主键 INSERT OR REPLACE，
+ * 演练不得覆盖任何已有行（含占位行，免得把 unavailable 行里的预算账冲掉）。
+ */
+export function getScoredTurnIds(
+  db: BetterSqlite3.Database,
+  turnIds: string[],
+  judgeVersions: string[] = [POST_LAUNCH_JUDGE_VERSION],
+  options: { includeUnjudged?: boolean } = {},
+): Set<string> {
   if (turnIds.length === 0 || judgeVersions.length === 0) return new Set();
   const placeholders = turnIds.map(() => '?').join(', ');
   const versionPlaceholders = judgeVersions.map(() => '?').join(', ');
+  const pendingClause = options.includeUnjudged
+    ? ''
+    : ` AND COALESCE(judge_model, '') NOT IN (?, ?)`;
+  const params = options.includeUnjudged
+    ? [...judgeVersions, ...turnIds]
+    : [...judgeVersions, JUDGE_MODEL_NOT_JUDGED, JUDGE_MODEL_UNAVAILABLE, ...turnIds];
   const rows = db
-    .prepare(`SELECT turn_id FROM telemetry_turn_scores WHERE judge_version IN (${versionPlaceholders}) AND turn_id IN (${placeholders})`)
-    .all(...judgeVersions, ...turnIds) as Array<{ turn_id: string }>;
+    .prepare(`SELECT turn_id FROM telemetry_turn_scores WHERE judge_version IN (${versionPlaceholders})${pendingClause} AND turn_id IN (${placeholders})`)
+    .all(...params) as Array<{ turn_id: string }>;
   return new Set(rows.map((row) => row.turn_id));
 }
 
@@ -207,6 +247,7 @@ interface ReflowScoreRow {
   turn_id: string;
   session_id: string;
   judge_version: string;
+  judge_model: string | null;
   scored_at: number;
   dim_goal: number | null;
   dim_orchestration: number | null;
@@ -260,8 +301,13 @@ export function setPostLaunchConsentScope(
 
 function candidateSources(row: ReflowScoreRow): Array<'judge' | 'signal'> {
   const sources: Array<'judge' | 'signal'> = [];
+  // ai-review PR#2024 R4 Important 3：维红 + judge 真给出过判决才算 judge 来源——
+  // signalOnly 自动扫描落的行 judge_model = not-judged（从没调过评分模型），
+  // 标成 source:judge 会让 HARVEST 草稿带上错误的失败归因。NULL/'' 按已评处理，
+  // 与 getScoredTurnIds 的 COALESCE 口径一致（FB-233）。
+  const judged = !([JUDGE_MODEL_NOT_JUDGED, JUDGE_MODEL_UNAVAILABLE] as string[]).includes(row.judge_model ?? '');
   if ([row.dim_goal, row.dim_orchestration, row.dim_tools, row.dim_permission, row.dim_safety, row.dim_artifact]
-    .some((value) => value === 0)) sources.push('judge');
+    .some((value) => value === 0) && judged) sources.push('judge');
   if (parseSignals(row.signals ?? '[]').length > 0) sources.push('signal');
   return sources;
 }
@@ -298,7 +344,7 @@ export function listReflowCandidates(
   const sessionClause = sessionId ? 'AND session_id = ?' : '';
   const scoreParams = sessionId ? [judgeVersion, sessionId, limit] : [judgeVersion, limit];
   const rows = db.prepare(`
-    SELECT turn_id, session_id, judge_version, scored_at,
+    SELECT turn_id, session_id, judge_version, judge_model, scored_at,
            dim_goal, dim_orchestration, dim_tools, dim_permission, dim_safety, dim_artifact,
            failure_class, signals
     FROM telemetry_turn_scores
@@ -490,14 +536,20 @@ export function getBudgetState(
   day: string,
   limits: { limitUsd: number; sampleLimit: number; reserveUsd?: number },
 ): PostLaunchBudgetState {
+  // sampled 只数真判过判决的抽样行：占位行（not-judged/unavailable）没花抽样额度，
+  // 数进去会让同日重跑在额度还剩着的时候就停抽样（FB-233 同族）。
+  // Jev 初筛全决断的抽样行（judge_model=typesafe/jev-*）同样不数——dailySampleLimit
+  // 只约束「升级到生成式」的条数，与 postLaunchScorer 的 sampledToday 口径一致（N-JEV-EVAL-JUDGE-R2 复核④）。
   const row = db
     .prepare(`
       SELECT COALESCE(SUM(budget_cost_usd), 0) AS spent,
              COALESCE(SUM(budget_cost_usd - cost_usd), 0) AS assumed,
-             COALESCE(SUM(CASE WHEN sampled_by = 'sample' THEN 1 ELSE 0 END), 0) AS sampled
+             COALESCE(SUM(CASE WHEN sampled_by = 'sample'
+                       AND COALESCE(judge_model, '') NOT IN (?, ?, ?)
+                     THEN 1 ELSE 0 END), 0) AS sampled
       FROM telemetry_turn_scores WHERE scored_day = ? AND judge_version = ?
     `)
-    .get(day, POST_LAUNCH_JUDGE_VERSION) as { spent: number; assumed: number; sampled: number };
+    .get(JUDGE_MODEL_NOT_JUDGED, JUDGE_MODEL_UNAVAILABLE, JEV_JUDGE_MODEL, day, POST_LAUNCH_JUDGE_VERSION) as { spent: number; assumed: number; sampled: number };
   return {
     day,
     spentUsd: row.spent,

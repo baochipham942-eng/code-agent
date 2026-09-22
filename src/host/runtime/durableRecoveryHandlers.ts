@@ -7,6 +7,12 @@ import {
   rehydrateAgentTeam,
 } from '../agent/agentTeamRecovery';
 import {
+  BACKGROUND_SUBAGENT_INTERRUPTED_REASON,
+  readBackgroundSubagentCursorMetadata,
+} from '../agent/backgroundSubagentDurableLedger';
+import { getBackgroundSubagentRegistry } from '../agent/backgroundSubagentRegistry';
+import { scheduleBackgroundSubagentIdleWake } from '../agent/backgroundSubagentIdleWake';
+import {
   getParallelAgentCoordinatorRegistry,
   type ParallelAgentCoordinator,
 } from '../agent/parallelAgentCoordinator';
@@ -130,6 +136,51 @@ export function createAgentTeamRecoveryHandler(input: {
       for (const coordinator of recoveredCoordinators) coordinator.abortAllRunning('coordinator_shutdown');
       recoveredCoordinators.clear();
       return input.autoAgentHost?.createHandler().shutdown?.();
+    },
+  };
+}
+
+/**
+ * N-BGSPAWN-DURABLE 启动收口：engine_kind='subagent_single' 的残留 running 行
+ * 说明持有它的进程死了（租约过期才会被 recoverOnStartup 认领）。断点续跑不在
+ * 本卡范围（ADR-025 A2），统一收口成 failed/interrupted_by_restart 终态，并把
+ * 中断事实经 SubagentCompletionRecord 管道投影回父会话。terminal 成功后行即
+ * 终态、不再被 sweep，投影因此只发生一次。
+ */
+export function createBackgroundSubagentRecoveryHandler(input: {
+  registry: RunRegistry;
+}): DurableEngineRecoveryHandler {
+  return {
+    name: 'background_subagent_single',
+    engineKind: 'subagent_single',
+    async recover(plan, now) {
+      const metadata = readBackgroundSubagentCursorMetadata(plan.envelope.cursor.engineCursor);
+      await input.registry.terminalDurable(plan.envelope.runId, {
+        now,
+        status: 'failed',
+        reason: BACKGROUND_SUBAGENT_INTERRUPTED_REASON,
+        event: {
+          type: 'background_subagent_interrupted_by_restart',
+          payload: { agentId: plan.envelope.runId, sessionId: plan.envelope.sessionId },
+          recordedAt: now,
+        },
+      });
+      const record = getBackgroundSubagentRegistry().recordInterruptedCompletion({
+        agentId: plan.envelope.runId,
+        ...(metadata?.title ? { title: metadata.title } : {}),
+        ...(metadata?.role ? { role: metadata.role } : {}),
+        ...(metadata?.completionKind ? { completionKind: metadata.completionKind } : {}),
+        sessionId: plan.envelope.sessionId,
+        ...(plan.envelope.parentRunId ? { runId: plan.envelope.parentRunId } : {}),
+        ...(metadata?.treeId ? { treeId: metadata.treeId } : {}),
+        ...(metadata?.startedAt !== undefined ? { startedAt: metadata.startedAt } : {}),
+      });
+      scheduleBackgroundSubagentIdleWake(record);
+      return {
+        status: 'recovered',
+        reason: BACKGROUND_SUBAGENT_INTERRUPTED_REASON,
+        detail: { agentId: plan.envelope.runId, sessionId: plan.envelope.sessionId },
+      };
     },
   };
 }
@@ -282,6 +333,17 @@ export function createMcpOperationRecoveryHandler(input: {
       return protocol.updateTask(request);
     },
     resolveTaskResult: (request) => requireMcpProtocol(input, request.serverIdentity).resolveTaskResult(request),
+    // This facade resolves a fresh McpSdkTaskProtocol per request instead of closing
+    // over one server (recovery can touch several servers), so the per-server client
+    // methods can't be reused directly: route by serverName resolved from serverIdentity.
+    acquireConnectionLease: ({ serverIdentity, leaseId, expiresAt }) => {
+      const serverName = resolveMcpServerName(input, serverIdentity);
+      if (serverName) input.getClient().acquireConnectionLease(serverName, leaseId, expiresAt);
+    },
+    releaseConnectionLease: ({ serverIdentity, leaseId }) => {
+      const serverName = resolveMcpServerName(input, serverIdentity);
+      if (serverName) input.getClient().releaseConnectionLease(serverName, leaseId);
+    },
   };
   return {
     name: 'mcp_tool_call',
@@ -332,6 +394,17 @@ function resolveMcpRecoveryCapability(
       const capability = client.buildTaskCapability(serverName, tool.name, input.trustedServerIdentities);
       if (capability?.query) return capability;
     }
+  }
+  return undefined;
+}
+
+function resolveMcpServerName(
+  input: { getClient: () => MCPClient },
+  serverIdentity: string,
+): string | undefined {
+  const client = input.getClient();
+  for (const state of client.getServerStates()) {
+    if (client.getServerIdentity(state.config.name) === serverIdentity) return state.config.name;
   }
   return undefined;
 }

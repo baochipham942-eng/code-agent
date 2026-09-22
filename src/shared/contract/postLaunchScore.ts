@@ -30,7 +30,7 @@ export type PostLaunchDimScore = 0 | 1 | null;
 export type PostLaunchDims = Record<PostLaunchDimension, PostLaunchDimScore>;
 
 /**
- * 九类确定性信号：代码能判的一律不进 LLM。
+ * 十二类确定性信号：代码能判的一律不进 LLM。
  * 命名与检测词表见 postLaunchSignals.ts，改任一类都要同步那里的真阳/真阴单测。
  */
 export type PostLaunchSignalKind =
@@ -42,7 +42,10 @@ export type PostLaunchSignalKind =
   | 'cost_anomaly'
   | 'repeat_loop'
   | 'claimed_file_missing'
-  | 'out_of_workspace_write';
+  | 'out_of_workspace_write'
+  | 'unsupported_claim'
+  | 'result_contradicted'
+  | 'source_overwritten';
 
 export interface DeterministicSignal {
   kind: PostLaunchSignalKind;
@@ -86,14 +89,34 @@ export interface PostLaunchSessionDenominatorInput {
  * ② 脚本/无头发起的会话（neo CLI、评测真跑桥）——它们 session_type 也是 'chat'，
  *    从 session_type 一个字都看不出来（ADR-063 §3 + K1 留给刀 2 第 1 条）。
  */
-export function isPostLaunchScorableSession(session: PostLaunchSessionDenominatorInput): boolean {
+export interface PostLaunchScorableSessionOptions {
+  /**
+   * 合成流量评分通道（CLI --include-headless）：为真时只放过「仅因 headless 被剔」的会话
+   * （含存量 cli_session_ 前缀行）；session_type ∈ {eval,subagent,schedule,heartbeat} 照剔。
+   * 生产报表（buildPostLaunchReport）不传这一项——合成流量的分数行落表也不进生产统计。
+   */
+  includeHeadless?: boolean;
+}
+
+export function isPostLaunchScorableSession(
+  session: PostLaunchSessionDenominatorInput,
+  options: PostLaunchScorableSessionOptions = {},
+): boolean {
   if (!isScorableSessionType(session.sessionType)) return false;
+  if (options.includeHeadless === true) return true;
   if (session.originKind) return session.originKind !== 'headless';
   return !session.id.startsWith(LEGACY_HEADLESS_ID_PREFIX);
 }
 
-/** judge 提示词或维度定义变了就要 +1；不同版本的分数不可相比（ADR-063 §2）。 */
-export const POST_LAUNCH_JUDGE_VERSION = 'postlaunch-judge-v1';
+/**
+ * 提示词或维度定义变了就 +1；只改评分口径不改提示词时只动 POST_LAUNCH_RUBRIC_VERSION（ADR-063 §2）。不同版本的分数不可相比。
+ * v4（N-POSTLAUNCH-SIGNALS-DEAD-R2 漏判）：goal 补「环境挡住原请求 + 诚实替代物」例外；
+ * 生成式仍评四维，但 tools 出处/矛盾/覆盖原文由确定性信号压过 judge。
+ * v5（同单第四轮）：unsupported_claim 提取改为围栏 JSON 整数 + 分布标签计数，不枚举题面词。
+ * 提示词没改，但仍升 judge 版本：telemetry_turn_scores 主键是 turn_id，getScoredTurnIds
+ * 按 judge_version 跳过，同版本重评会覆盖上一轮，回归对照做不成。
+ */
+export const POST_LAUNCH_JUDGE_VERSION = 'postlaunch-judge-v5';
 /** dry-run 落表用的版本号：真评按 POST_LAUNCH_JUDGE_VERSION 查跳过时看不到它 */
 export const DRY_RUN_JUDGE_VERSION = 'dry-run';
 /** judge_model 哨兵：叫了打分模型但它没给出判决（没配好 / 报错 / 返回解析不了）。 */
@@ -105,7 +128,7 @@ export const JUDGE_MODEL_UNAVAILABLE = 'unavailable';
  */
 export const JUDGE_MODEL_NOT_JUDGED = 'not-judged';
 /** 六维口径版本；与 judge 版本分开，改评分口径而不改提示词时只动这个。 */
-export const POST_LAUNCH_RUBRIC_VERSION = 'postlaunch-rubric-v1';
+export const POST_LAUNCH_RUBRIC_VERSION = 'postlaunch-rubric-v3';
 
 /**
  * 开关三态：'on' / 'off' 是用户显式选择，'auto' = 跟随槽默认
@@ -143,6 +166,24 @@ export function resolvePostLaunchReflowEnabled(
 export const POST_LAUNCH_REFLOW_DISABLED_MESSAGE
   = '上线后坏案例回流没开。去「设置 → 隐私防线」页的「数据共享」里把「坏案例回流」选成「开」再来。';
 
+/**
+ * 低分自动入候选扫描开关（N-EVAL-FAILURE-AUTOHARVEST）。三态形状与评分/回流一致，
+ * 但**缺省 = 关**（undefined 解析为 false，连内部槽也要显式 'auto'/'on' 才开）——
+ * 与兄弟开关「缺省 = auto 跟槽」的刻意偏离，因为自动扫描是默认行为变化，工单要求默认关。
+ * 扫描只算确定性信号、永不调 judge（零成本零正文外发）；入的是候选池，草稿仍走四道闸。
+ */
+export type PostLaunchAutoHarvestSwitch = 'on' | 'off' | 'auto';
+
+export function resolvePostLaunchAutoHarvestEnabled(
+  setting: PostLaunchAutoHarvestSwitch | undefined,
+  internalSlot: boolean,
+): boolean {
+  if (setting === 'on') return true;
+  if (setting === 'off') return false;
+  if (setting === 'auto') return internalSlot;
+  return false;
+}
+
 export function resolvePostLaunchScoringEnabled(
   setting: PostLaunchScoringSwitch | undefined,
   internalSlot: boolean,
@@ -167,6 +208,8 @@ export const POST_LAUNCH_DEFAULTS = {
   costAnomalyUsd: 0.2,
   /** 同工具同参数连续调用达到这个次数算 repeat_loop。 */
   repeatLoopThreshold: 3,
+  /** 低分自动入候选扫描的间隔（毫秒）：启动时检查一次 + 按此周期滚动。 */
+  autoHarvestIntervalMs: 24 * 60 * 60 * 1000,
   /** 一行理由的字数上限。 */
   reasonMaxChars: 200,
 } as const;
@@ -296,6 +339,19 @@ export interface PostLaunchScoringRequest {
   dailySampleLimit?: number;
   /** 只算信号不调模型，用于 CLI --dry-run 与预算超限后的降级路径。 */
   dryRun?: boolean;
+  /**
+   * 低分自动入候选扫描（N-EVAL-FAILURE-AUTOHARVEST）：永不调 judge（零成本零正文外发），
+   * 只落确定性信号/not-judged 占位行（真 judge 版本）——候选视图照常带出，且不挡之后的
+   * 人手真评补评（FB-233：not-judged 行不算已评）。与 dryRun 的区别：dryRun 记 'dry-run'
+   * 版本行不进候选；signalOnly 记真版本行进候选。只经 host 自动调度进来：渲染层的
+   * clampPostLaunchScoringRequest 会把这个键丢掉，IPC 开不了这条通道。
+   */
+  signalOnly?: boolean;
+  /**
+   * 评合成流量（headless 起源的会话）。只经 CLI --include-headless 进来：
+   * 渲染层的 clampPostLaunchScoringRequest 会把这个键丢掉，IPC 开不了这条通道。
+   */
+  includeHeadless?: boolean;
 }
 
 export interface PostLaunchScoringResult {
@@ -305,10 +361,19 @@ export interface PostLaunchScoringResult {
   excludedTurns: number;
   /** 命中信号、全评的轮。 */
   signalTurns: number;
-  /** 未命中信号、被抽中评的轮。 */
+  /**
+   * 未命中信号、进入评分的轮。Jev 初筛装配时无信号轮全量走 Jev（N-JEV-EVAL-JUDGE 母单④），
+   * dailySampleLimit 只约束其中「升级到生成式」的条数，不再限制 Jev 初筛本身。
+   */
   sampledTurns: number;
   /** 只记了信号、没调 judge 的轮。 */
   signalOnlyTurns: number;
+  /**
+   * Jev 初筛已调用（并计费）但部分弃权、抽样额度耗尽挡住升级生成式、落 not-judged
+   * 占位行待补评的无信号轮。与 signalOnlyTurns 分开计：这类轮调过 judge 且花了钱
+   * （ai-review #2023 R6）。
+   */
+  sampleDeferredTurns: number;
   /** 已有分数、本轮跳过的轮。 */
   skippedTurns: number;
   costUsd: number;

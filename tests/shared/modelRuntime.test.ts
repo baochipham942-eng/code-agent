@@ -6,6 +6,7 @@ import {
   buildProviderInfoFromSettings,
   buildRuntimeModelOptions,
   estimateProviderIconImageBytes,
+  fallbackModelForProvider,
   getProviderIconAssetFilename,
   getProviderIconPresets,
   getProviderRuntimeModels,
@@ -20,7 +21,7 @@ import {
   resolveRuntimeProviderBillingMode,
   validateProviderIcon,
 } from '../../src/shared/modelRuntime';
-import { getModelDisplayLabel, getProviderInfo, PROVIDER_MODELS_MAP } from '../../src/shared/constants';
+import { getDefaultModelForProvider, getModelDisplayLabel, getProviderInfo, PROVIDER_MODELS_MAP } from '../../src/shared/constants';
 
 describe('modelRuntime', () => {
   const tinyPngIcon = 'data:image/png;base64,aGVsbG8=';
@@ -737,5 +738,82 @@ describe('modelRuntime', () => {
       { icon: 'AP', label: 'API' },
       { icon: 'AI', label: 'AI' },
     ]);
+  });
+});
+
+describe('fallbackModelForProvider', () => {
+  it('内置供应商未配 model 时回落登记默认，与 getDefaultModelForProvider 等值', () => {
+    const settings = {
+      models: {
+        providers: {
+          longcat: {
+            enabled: true,
+            apiKeyConfigured: true,
+            models: {
+              'LongCat-2.0-Preview': { enabled: true },
+              'LongCat-2.0': { enabled: true },
+            },
+          },
+          deepseek: {
+            enabled: true,
+            apiKeyConfigured: true,
+          },
+        },
+      },
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
+
+    for (const provider of ['longcat', 'deepseek'] as const) {
+      expect(fallbackModelForProvider(provider, settings)).toBe(getDefaultModelForProvider(provider));
+    }
+
+    const longcatOptions = buildRuntimeModelOptions(settings).filter((option) => option.provider === 'longcat');
+    // Preview 已从目录退役：目录首项就是 GA 默认；settings 里残留的 Preview key 会以
+    // discovered 来源回流到列表尾——configService 迁移要改 key 防的就是这个回流
+    expect(longcatOptions.map((option) => option.model)).toEqual(['LongCat-2.0', 'LongCat-2.0-Preview']);
+  });
+
+  it('custom-* 未配 model 时取该供应商列表第一项', () => {
+    const settings = {
+      models: {
+        providers: {
+          'custom-team-relay': {
+            enabled: true,
+            apiKeyConfigured: true,
+            models: {
+              'gpt-5.5': { enabled: true },
+              'gpt-5.4-mini': { enabled: true },
+            },
+          },
+        },
+      },
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
+
+    expect(fallbackModelForProvider('custom-team-relay', settings)).toBe('gpt-5.5');
+  });
+
+  it('配了 model 时不变', () => {
+    const settings = {
+      models: {
+        providers: {
+          longcat: {
+            enabled: true,
+            apiKeyConfigured: true,
+            model: 'LongCat-2.0-Preview',
+          },
+          'custom-team-relay': {
+            enabled: true,
+            apiKeyConfigured: true,
+            model: 'gpt-5.4-mini',
+            models: {
+              'gpt-5.5': { enabled: true },
+              'gpt-5.4-mini': { enabled: true },
+            },
+          },
+        },
+      },
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
+
+    expect(fallbackModelForProvider('longcat', settings)).toBe('LongCat-2.0-Preview');
+    expect(fallbackModelForProvider('custom-team-relay', settings)).toBe('gpt-5.4-mini');
   });
 });

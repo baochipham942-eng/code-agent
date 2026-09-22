@@ -1,12 +1,13 @@
 import { configureVoiceRelease } from './configure-voice.mjs';
 import './remote-only.mjs';
 import { configureIosLan } from './configure-lan.mjs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { extractNativeTargetId, exportOptionsXml, patchPbxprojVersions, profileCoversDevice, readMobileprovision, sharedSchemeXml, summarizeProfile } from './ios-package.mjs';
+import { assertBinaryPushEntitlement, ensureAppPushEntitlements, extractNativeTargetId, exportOptionsXml, LOCALIZABLE_REGIONS, localizableStrings, patchPbxprojVersions, profileCoversDevice, pushAlertStrings, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins, withLocalizableStrings, withPushAppDelegateHooks, withSelfImplementedPluginClasses } from './ios-package.mjs';
+import { messages, runOutcomeCopy } from '../src/i18n/index.ts';
 
 const build = Number(process.env.NEO_MOBILE_BUILD);
 if (!Number.isSafeInteger(build) || build < 1) throw new Error('POSITIVE_NEO_MOBILE_BUILD_REQUIRED');
@@ -52,6 +53,52 @@ if (style === 'manual' && !profileFile) missing.push('no .mobileprovision (set N
 if (!expectedDevice) missing.push('NEO_IOS_EXPECTED_UDID required so Ad Hoc export fails closed unless the profile covers the target iPhone');
 if (missing.length > 0) throw new Error(`IOS_PREREQUISITES_MISSING: ${missing.join(' | ')}`);
 
+/**
+ * iOS 侧我们自己实现、故意不用厂商原生包的插件（JS 依赖仍在，Android 走厂商实现）。
+ * vendorClass 是 cap sync 会写进 packageClassList 的那个名字——那个类不会被编译进来，
+ * 必须换成 nativeClass，Capacitor 的注册表才指向真正存在的实现。
+ * LanDns 没有厂商包（第一方 mDNS 解析，fix4-⑤），vendorClass 仅占位：
+ * withSelfImplementedPluginClasses 找不到它时直接 push nativeClass。
+ */
+const SELF_IMPLEMENTED_IOS_PLUGINS = [
+  { package: 'capacitor-voice-recorder', vendorClass: 'VoiceRecorder', nativeClass: 'NeoVoiceRecorderPlugin' },
+  { package: 'neo-lan-dns', vendorClass: 'LanDns', nativeClass: 'NeoLanDnsPlugin' },
+  // 前台推送按会话抑制（N-MOBILE-EXEC-STATUS ④），同 LanDns：没有厂商包，vendorClass 仅占位。
+  { package: 'neo-push-presentation', vendorClass: 'PushPresentation', nativeClass: 'NeoPushPresentationPlugin' },
+];
+
+/** 装了哪些带 iOS 原生实现的 Capacitor 插件——以 package.json 依赖为准，不靠手抄清单。 */
+function installedIosPlugins() {
+  const dependencies = Object.keys(JSON.parse(readFileSync('package.json', 'utf8')).dependencies ?? {});
+  return dependencies.filter((name) => {
+    const manifest = resolve('node_modules', name, 'package.json');
+    if (!existsSync(manifest)) return false;
+    return Boolean(JSON.parse(readFileSync(manifest, 'utf8')).capacitor?.ios);
+  });
+}
+
+/** cap sync 之后再放第一方原生源码：sync 会重写 Package.swift，但不碰 Sources 目录。 */
+function stageNativePlugins() {
+  const sources = 'ios/App/CapApp-SPM/Sources/CapApp-SPM';
+  mkdirSync(sources, { recursive: true });
+  for (const file of readdirSync('ios-native')) {
+    copyFileSync(resolve('ios-native', file), resolve(sources, file));
+    if (!existsSync(resolve(sources, file))) throw new Error(`IOS_NATIVE_SOURCE_NOT_STAGED: ${file}`);
+  }
+  const unlinked = unlinkedSpmPlugins(readFileSync(`${sources}/../../Package.swift`, 'utf8'),
+    installedIosPlugins(), SELF_IMPLEMENTED_IOS_PLUGINS.map(plugin => plugin.package));
+  if (unlinked.length > 0) throw new Error(`IOS_PLUGINS_NOT_LINKED: ${unlinked.join(' | ')}`);
+  // 注册表按类名找类：厂商类不会被编译进来，登记名必须换成第一方类名，否则桥照样找不到实现。
+  const configPath = 'ios/App/App/capacitor.config.json';
+  const registered = withSelfImplementedPluginClasses(JSON.parse(readFileSync(configPath, 'utf8')), SELF_IMPLEMENTED_IOS_PLUGINS);
+  writeFileSync(configPath, `${JSON.stringify(registered, null, '\t')}\n`);
+  for (const { vendorClass, nativeClass } of SELF_IMPLEMENTED_IOS_PLUGINS) {
+    if (registered.packageClassList.includes(vendorClass) || !registered.packageClassList.includes(nativeClass)) {
+      throw new Error(`IOS_PLUGIN_CLASS_NOT_REGISTERED: ${nativeClass}`);
+    }
+  }
+}
+
 configureVoiceRelease();
 run('npm', ['run', 'build']);
 if (!existsSync('ios')) run('node_modules/.bin/cap', ['add', 'ios']);
@@ -65,12 +112,39 @@ if (!existsSync(scheme)) {
   writeFileSync(scheme, sharedSchemeXml(targetId));
 }
 run('node_modules/.bin/cap', ['sync', 'ios']);
+stageNativePlugins();
 configureIosLan();
+// 推送横幅正文（N-MOBILE-EXEC-STATUS ⑤）：Host 只发 loc-key，系统在 app 包里查 Localizable.strings，
+// 查不到就把 key 原样当正文。两张表由 src/i18n 生成，工程里挂进 Resources。
+for (const [region, language] of LOCALIZABLE_REGIONS) {
+  mkdirSync(`ios/App/App/${region}.lproj`, { recursive: true });
+  const text = messages(language);
+  writeFileSync(`ios/App/App/${region}.lproj/Localizable.strings`, localizableStrings(pushAlertStrings(text, runOutcomeCopy(text, 'failed'), runOutcomeCopy(text, 'failed', 'MODEL_AUTH'), runOutcomeCopy(text, 'failed', 'MODEL_UNAVAILABLE'), runOutcomeCopy(text, 'failed', 'MODEL_QUOTA'))));
+}
+writeFileSync(pbxproj, withLocalizableStrings(readFileSync(pbxproj, 'utf8')));
+const appDelegate = 'ios/App/App/AppDelegate.swift';
+if (!existsSync(appDelegate)) throw new Error('IOS_APP_DELEGATE_MISSING');
+const patchedDelegate = withPushAppDelegateHooks(readFileSync(appDelegate, 'utf8'));
+writeFileSync(appDelegate, patchedDelegate);
+if (!patchedDelegate.includes('capacitorDidRegisterForRemoteNotifications')) throw new Error('IOS_PUSH_APPDELEGATE_NOT_WIRED');
+const profileSummary = profileFile ? summarizeProfile(readMobileprovision(readFileSync(profileFile))) : null;
+const entitlements = 'ios/App/App/App.entitlements';
+const aps = profileSummary?.apsEnvironment === 'development' ? 'development' : 'production';
+const ensured = ensureAppPushEntitlements({
+  existingXml: existsSync(entitlements) ? readFileSync(entitlements, 'utf8') : null,
+  pbxproj: readFileSync(pbxproj, 'utf8'),
+  environment: aps,
+  appId,
+});
+writeFileSync(entitlements, ensured.entitlementsXml);
+writeFileSync(pbxproj, ensured.pbxproj);
+if (!ensured.pbxproj.includes('CODE_SIGN_ENTITLEMENTS = App/App.entitlements;')) {
+  throw new Error('IOS_CODE_SIGN_ENTITLEMENTS_NOT_WIRED');
+}
 copyFileSync(resolve(root, 'src-tauri/icons/ios/AppIcon-512@2x.png'),
   resolve('ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png'));
 mkdirSync('.artifacts/ios', { recursive: true });
 const archive = '.artifacts/ios/App.xcarchive';
-const profileSummary = profileFile ? summarizeProfile(readMobileprovision(readFileSync(profileFile))) : null;
 const profileName = profileSummary ? (profileSummary.name ?? profileSummary.uuid) : null;
 const archiveArgs = ['-project', 'ios/App/App.xcodeproj', '-scheme', 'App', '-configuration', 'Release',
   '-destination', 'generic/platform=iOS', '-archivePath', archive, 'archive'];
@@ -104,8 +178,33 @@ const ipa = `.artifacts/neo-mobile-${version}-${build}.ipa`;
 copyFileSync(`${exportPath}/${exported}`, ipa);
 const appBundle = capture('unzip', ['-Z1', ipa]).split('\n').map(line => line.match(/^Payload\/([^/]+\.app)\/$/)?.[1]).find(Boolean);
 if (!appBundle) throw new Error('APP_BUNDLE_MISSING_IN_IPA');
+// 源码进了 SPM target 不等于真被编译进包：链接闸看的是清单，这一格看的是产物本身。
+const executable = execFileSync('unzip', ['-p', ipa, `Payload/${appBundle}/${appBundle.replace(/\.app$/, '')}`], { maxBuffer: 1 << 28 });
+if (!executable.includes('NeoVoiceRecorderPlugin')) throw new Error('IOS_VOICE_PLUGIN_MISSING_FROM_BINARY');
+// mDNS 解析插件同理：类名不在二进制里 = JS 侧 resolve 永远 "not implemented"，
+// 重连静默回退旧 IP（fix4-⑤ 的病根），构建期就红。
+if (!executable.includes('NeoLanDnsPlugin')) throw new Error('IOS_LAN_DNS_PLUGIN_MISSING_FROM_BINARY');
+if (!executable.includes('PushNotificationsPlugin')) throw new Error('IOS_PUSH_PLUGIN_MISSING_FROM_BINARY');
+if (!executable.includes('NeoPushPresentationPlugin')) throw new Error('IOS_PUSH_PRESENTATION_PLUGIN_MISSING_FROM_BINARY');
+// 工程里挂上了不等于进了包：loc-key 查的是包里的表，这一格看产物本身。
+const bundled = capture('unzip', ['-Z1', ipa]).split('\n');
+for (const [region] of LOCALIZABLE_REGIONS) {
+  if (!bundled.includes(`Payload/${appBundle}/${region}.lproj/Localizable.strings`)) throw new Error(`IOS_PUSH_STRINGS_MISSING_FROM_BUNDLE: ${region}`);
+}
+// 描述文件有 aps-environment 不等于二进制声明了它：register() 读的是 app entitlements。
+const inspect = '.artifacts/ios-binary-entitlements';
+rmSync(inspect, { recursive: true, force: true });
+mkdirSync(inspect, { recursive: true });
+run('unzip', ['-q', '-o', ipa, '-d', inspect]);
+const signedApp = `${inspect}/Payload/${appBundle}`;
+const dumped = spawnSync('codesign', ['-d', '--entitlements', ':-', signedApp], { encoding: 'utf8' });
+if (dumped.status !== 0) {
+  throw new Error(`IOS_BINARY_ENTITLEMENTS_UNREADABLE: ${String(dumped.stderr ?? dumped.error?.message ?? 'codesign failed').split('\n')[0].trim()}`);
+}
+assertBinaryPushEntitlement(`${dumped.stdout ?? ''}\n${dumped.stderr ?? ''}`);
 const embeddedPlist = readMobileprovision(execFileSync('unzip', ['-p', ipa, `Payload/${appBundle}/embedded.mobileprovision`], { maxBuffer: 1 << 24 }));
 const summary = summarizeProfile(embeddedPlist);
+if (!summary.apsEnvironment) console.warn('PUSH_ENTITLEMENT_MISSING: profile has no aps-environment; ios:verify will fail push-entitlement-present');
 if (summary.method !== 'ad-hoc') throw new Error(`NOT_AD_HOC: exported profile is ${summary.method}`);
 if (summary.expired) throw new Error(`PROFILE_EXPIRED: ${summary.expiresAt.toISOString()}`);
 if (!profileCoversDevice(embeddedPlist, expectedDevice)) throw new Error('PROFILE_DOES_NOT_COVER_EXPECTED_DEVICE');

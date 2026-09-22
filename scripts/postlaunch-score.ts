@@ -4,8 +4,18 @@
 // ----------------------------------------------------------------------------
 // 用法：
 //   npx tsx scripts/postlaunch-score.ts --days 7 --budget 0.5 --dry-run
+//   npx tsx scripts/postlaunch-score.ts --days 3 --include-headless --budget 0.5 --sample 60
 //
 // --dry-run 只算确定性信号、一次模型都不调，用来先看看这台机器上有多少轮会命中。
+// --include-headless 把 headless 起源的会话（夜跑/评测合成流量）也评了：分数落表，
+// 但 buildPostLaunchReport 不认它们，不进生产报表。
+// 合成流量评分与生产评分共用当日 --budget / --sample 账本，跑合成流量时显式给
+// --budget/--sample，否则会吃掉生产抽样额度。
+// 升版影响：getScoredTurnIds 按 judge_version 判已评，旧版分数行留表；下次生产跑会在
+// --days 窗口内把未评当前版本的轮重新评，受当日 --budget/--sample 封顶。
+// getBudgetState 也按当前 judge_version 汇总当日 budget_cost_usd / 抽样数：升版当天
+// 旧版花的钱不计入日预算，当天实际支出可能到两倍上限。
+// buildPostLaunchReport 默认只读当前 judge 版本，重评完成前报表轮数会变少，不是数据丢了。
 // 直接开 SQLite 文件（默认 $CODE_AGENT_DATA_DIR/code-agent.db，未设置则 ~/.code-agent），
 // 不启 Electron、不启 DatabaseService——CLI 只需要读遥测表和写分数表。
 // ============================================================================
@@ -31,8 +41,9 @@ import { estimateJudgeCost } from '../src/host/testing/postlaunch/postLaunchCost
 import { isPostLaunchScoringEnabled } from '../src/host/testing/postlaunch/postLaunchGate';
 import { runPostLaunchScoring, type PostLaunchSessionRow } from '../src/host/testing/postlaunch/postLaunchScorer';
 import { buildPostLaunchReport } from '../src/host/testing/postlaunch/postLaunchScoreStore';
+import { resolveZeroTurnHint } from './lib/postLaunchCliHints';
 
-function parseArgs(): { days: number; budget: number; sampleLimit: number; dryRun: boolean } {
+function parseArgs(): { days: number; budget: number; sampleLimit: number; dryRun: boolean; includeHeadless: boolean } {
   const argv = process.argv.slice(2);
   const read = (flag: string): string | undefined => {
     const index = argv.indexOf(flag);
@@ -43,6 +54,7 @@ function parseArgs(): { days: number; budget: number; sampleLimit: number; dryRu
     budget: Number(read('--budget') ?? POST_LAUNCH_DEFAULTS.dailyBudgetUsd),
     sampleLimit: Number(read('--sample') ?? POST_LAUNCH_DEFAULTS.dailySampleLimit),
     dryRun: argv.includes('--dry-run'),
+    includeHeadless: argv.includes('--include-headless'),
   };
 }
 
@@ -58,6 +70,10 @@ function costUsd(provider: string, model: string, inputTokens: number, outputTok
 
 async function main(): Promise<void> {
   const options = parseArgs();
+  if (options.includeHeadless) {
+    console.error('合成流量评分通道：分数落表但不进生产报表');
+    console.error('合成流量评分与生产评分共用当日 --budget / --sample 账本，跑合成流量时显式给 --budget/--sample，否则会吃掉生产抽样额度。');
+  }
   // 开关三态先判：关着就一步都别走——不开库、不建表，更不叫模型。
   // 读的是宿主真正用的那份配置：界面经 ConfigService 存的是 <数据目录>/config.json，
   // 不是 settings.json——两端读不同文件的话，用户按提示在界面开了、CLI 仍会拒
@@ -106,6 +122,7 @@ async function main(): Promise<void> {
     dailyBudgetUsd: options.budget,
     dailySampleLimit: options.sampleLimit,
     dryRun: options.dryRun,
+    includeHeadless: options.includeHeadless,
   });
 
   console.log(`扫到 ${result.examinedTurns} 轮；剔除 ${result.excludedTurns} 轮（eval/子代理/定时/心跳/脚本发起）`);
@@ -113,8 +130,10 @@ async function main(): Promise<void> {
   // （后者是那一周落过分数的轮数）。措辞必须自带这个限定，别让两处同名不同义（K1 留给刀 2 第 6 条）。
   console.log(result.dryRun
     ? `dry-run 未调 judge：本可全评的信号轮 ${result.signalTurns}、抽样轮 ${result.sampledTurns}；只记信号 ${result.signalOnlyTurns}；已有分数跳过 ${result.skippedTurns}`
-    : `本次调了 judge：信号轮 ${result.signalTurns} / 抽样轮 ${result.sampledTurns}；只记信号（没调 judge）${result.signalOnlyTurns}；已有分数跳过 ${result.skippedTurns}`);
-  if (result.locked) console.log('这个库上另有一次评分正在跑（30 分钟内的锁），本次一轮没评、一分没扣；等它跑完再来。');
+    : `本次调了 judge：信号轮 ${result.signalTurns} / 抽样轮 ${result.sampledTurns}；只记信号（没调 judge）${result.signalOnlyTurns}；Jev 弃权待补评 ${result.sampleDeferredTurns}；已有分数跳过 ${result.skippedTurns}`);
+  // 锁 / 0 轮两种提示互斥，判据在 scripts/lib/postLaunchCliHints.ts（有测试守着）。
+  const hint = resolveZeroTurnHint(result);
+  if (hint) console.log(hint);
   if (result.judgeUnavailableTurns > 0) {
     console.log(`⚠️ 打分模型没给出判决的有 ${result.judgeUnavailableTurns} 轮（没配好 / 报错 / 返回读不了），这些轮只记了信号；去设置里配好评分模型再跑。`);
   }

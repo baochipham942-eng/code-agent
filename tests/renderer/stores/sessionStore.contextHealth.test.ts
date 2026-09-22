@@ -139,6 +139,25 @@ describe('sessionStore context health refresh', () => {
     expect(useAppStore.getState().contextHealth).toEqual(health);
   });
 
+  it('preserves a newer renderer compression signal across host health refreshes', async () => {
+    const signal = {
+      kind: 'success' as const,
+      code: 'compaction-succeeded' as const,
+      timestamp: 999,
+    };
+    const liveHealth = makeHealth(9000);
+    liveHealth.compression = { ...liveHealth.compression!, lastSignal: signal };
+    const hostHealth = makeHealth(9100);
+    useSessionStore.setState({ currentSessionId: 'session-1' });
+    useAppStore.setState({ contextHealth: liveHealth });
+    mockInvoke.mockResolvedValue(hostHealth);
+
+    await useSessionStore.getState().refreshContextHealth('session-1');
+
+    expect(useAppStore.getState().contextHealth?.compression?.lastSignal).toEqual(signal);
+    expect(useAppStore.getState().contextHealth?.currentTokens).toBe(hostHealth.currentTokens);
+  });
+
   it('does not replace measured context health with an empty runtime event', () => {
     const measuredHealth = makeHealth(2345);
     const emptyHealth = makeHealth(0);

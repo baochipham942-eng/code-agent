@@ -18,6 +18,7 @@
 // 定义，无 snake_case/PascalCase 漂移（对照 Bug B / Bug C）。
 // ============================================================================
 
+import { MODEL_API_KEY_MISSING_CODE } from '../errorClassifier';
 import { generateText, streamText, jsonSchema, tool as aiTool } from 'ai';
 import { normalizeAiSdkUsage } from '../providers/wrappers/usageNormalization';
 import { extractToolCallMeta } from '../providers/toolCallMeta';
@@ -44,7 +45,17 @@ import type {
 import type { StreamSnapshot } from '../providers/sseStream';
 import type { ModelResponse } from '../../agent/loopTypes';
 import type { ToolCall, ToolDefinition, ModelConfig } from '../../../shared/contract';
-import { MODEL_API_ENDPOINTS, PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INACTIVITY_TIMEOUT } from '../../../shared/constants';
+import {
+  MODEL_API_ENDPOINTS,
+  PROVIDER_TIMEOUT,
+  SSE_FIRST_BYTE_TIMEOUT,
+  SSE_INACTIVITY_TIMEOUT,
+  STREAM_RECONNECT_MAX,
+  STREAM_RECONNECT_BACKOFF_CAP_MS,
+  INFERENCE_TIMEOUTS,
+} from '../../../shared/constants';
+import { getIncompleteToolCallIds } from '../../session/streamSnapshot';
+import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
 import {
@@ -65,8 +76,14 @@ import {
 } from '../providers/shared';
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
-import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 import { logger, makeAiSdkFetch } from './aiSdkFetch';
+import {
+  isInferenceClientTimeoutError,
+  makeInferenceClientTimeoutError,
+  notifyGenerateRetry,
+  notifyStreamRetry,
+  withRequestTimeout,
+} from './inferenceRetryNotify';
 import { buildVendorCompatSettings, resolveAiSdkProviderOptions } from './aiSdkVendorCompat';
 export { buildVendorCompatSettings } from './aiSdkVendorCompat';
 import {
@@ -117,14 +134,23 @@ function resolveProviderRequest(config: ModelConfig): ProviderRequest {
 }
 
 // ── provider 解析：优先专用包（专用包能处理 thinking 回传等坑，通用 openai-compatible 不行）──
-function resolveModel(config: ModelConfig, req: ProviderRequest, options?: { searchEnabled?: boolean }): LanguageModel {
+function resolveModel(
+  config: ModelConfig,
+  req: ProviderRequest,
+  options?: { searchEnabled?: boolean; streamResumeEndpointPath?: string },
+): LanguageModel {
   switch (config.provider) {
     case 'deepseek':
       // deepseek 不走 default case 的 createOpenAICompatible，vendorCompat 的
       // reasoning_effort 注入必须在这里挂进 fetch（QE-01 真机探针抓获的死代码分叉）。
+      // ADR-068 刀 2：B1 续接重建时按能力表 endpointPath 切端点（prefix 合同要求 /beta，
+      // host 不变只换 path 段）；prefix:true 由 vendorCompat 的 transformRequestBody 按
+      // 末条 assistant 形状注入，与端点切换解耦。
       return createDeepSeek({
         apiKey: req.apiKey,
-        baseURL: req.baseURL,
+        baseURL: options?.streamResumeEndpointPath
+          ? withEndpointPath(req.baseURL ?? MODEL_API_ENDPOINTS.deepseek, options.streamResumeEndpointPath)
+          : req.baseURL,
         fetch: makeAiSdkFetch(config.provider, buildVendorCompatSettings(config, options).transformRequestBody),
       })(config.model);
     case 'anthropic':
@@ -146,7 +172,10 @@ function resolveModel(config: ModelConfig, req: ProviderRequest, options?: { sea
       })(config.model);
     default: {
       if (!req.baseURL) {
-        throw new Error(`[AiSdkAdapter] 无法解析 provider "${config.provider}" 的 baseURL`);
+        // 电脑上已经没有这个 provider 的配置 = 用户能换模型绕过去，与缺 key 同一档结构化码；
+        // 裸 Error 会让手机落回「电脑执行时出了问题」（build 46 远端验收：会话 override 指向已删除的 provider）。
+        throw Object.assign(new Error(`[AiSdkAdapter] 无法解析 provider "${config.provider}" 的 baseURL`),
+          { code: MODEL_API_KEY_MISSING_CODE, provider: config.provider, model: config.model });
       }
       // openai-compatible provider 默认请求流式 usage；zhipu/moonshot/xiaomi 再叠加 vendor
       // quirks。明确拒绝 stream_options 的端点由能力矩阵 requestCompat.noStreamOptions 关闭。
@@ -572,6 +601,14 @@ export async function inferenceViaAiSdk(
   }
 }
 
+// 测试专用导出（挂在既有函数对象上，不新增顶层 export）：断点态筛选与端点路径覆盖的
+// 单元直测入口，B1 端到端形状（prefix 拼装 / 逐字一致）由 aiSdkAdapterStreamResume 测试
+// 经 streamText mock 抓请求参数覆盖。
+Object.assign(inferenceViaAiSdk, {
+  __seedAccumulatorFromBreakpoint: seedAccumulatorFromBreakpoint,
+  __withEndpointPath: withEndpointPath,
+});
+
 async function runInferenceViaAiSdk(
   messages: ModelMessage[],
   tools: ToolDefinition[],
@@ -624,28 +661,9 @@ async function runInferenceViaAiSdk(
   }
 
   if (streaming) {
-    return streamViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, onStream, signal, options, messages });
+    return streamViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, req, onStream, signal, options, messages });
   }
   return generateViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, signal, options, messages });
-}
-
-// 给一次 provider 调用套 per-request 超时：组合「外部 signal + 内部超时」成一个 abortSignal。
-// AI SDK 走 fetch 默认无请求超时，旧 axios 路径有 PROVIDER_TIMEOUT，迁移时丢了——provider 偶发
-// 卡住（接受连接但响应不返回）会一直挂到外层预算耗尽（子代理 90s 硬超时），无 per-request 早退+重试。
-// 用自管 setTimeout（可被 fake timers 控制，区别于 AbortSignal.timeout）；timedOut() 让调用方区分
-// 「本超时（应重试）」与「外部 abort（父/预算取消，不应重试）」。
-function withRequestTimeout(signal: AbortSignal | undefined, timeoutMs: number): {
-  signal: AbortSignal;
-  timedOut: () => boolean;
-  cleanup: () => void;
-} {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return {
-    signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
-    timedOut: () => controller.signal.aborted,
-    cleanup: () => clearTimeout(timer),
-  };
 }
 
 // ── 非流式：generateText（服务子代理 + 主 loop 的 artifact 非流式重试）。行为与迁移 P0 一致 ──
@@ -688,7 +706,7 @@ async function generateViaAiSdk(params: {
           });
         } catch (err) {
           if (guard.timedOut() && !signal?.aborted) {
-            throw new Error(`timeout of ${requestTimeoutMs}ms exceeded`, { cause: err });
+            throw makeInferenceClientTimeoutError(requestTimeoutMs, err);
           }
           throw err;
         } finally {
@@ -697,11 +715,17 @@ async function generateViaAiSdk(params: {
       },
       {
         providerName: config.provider,
+        model: config.model,
         signal,
         // 与流式路径同一契约：调用方自带重试循环（modelRouter fallback/artifact 修复）
         // 时本层必须单次尝试，否则候选数 × 5 放大成长时间卡死。
         maxRetries: options?.disableProviderTransientRetry ? 0 : GENERATE_MAX_RETRIES,
         baseDelay: GENERATE_RETRY_BASE_DELAY_MS,
+        // 超时重试单独封顶（issue #1989）：每次超时重试最坏烧满一个 300s 窗口，
+        // 旧 4 次预算会把单轮推理拖到 1500s，远超外层 600s 看门狗，整轮任务全灭。
+        isTimeoutError: isInferenceClientTimeoutError,
+        maxTimeoutRetries: INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX,
+        onRetry: (info) => notifyGenerateRetry(options, config, info),
       },
     );
   } catch (err) {
@@ -772,7 +796,8 @@ async function generateViaAiSdk(params: {
   };
 }
 
-// ── 流式累积状态（每次重试尝试用全新实例）──
+// ── 流式累积状态（首字节前重试每次全新实例；断流续接 attempt 用断点态 seed，见
+//    seedAccumulatorFromBreakpoint —— ADR-068 刀 1）──
 interface StreamAccumulator {
   content: string;
   reasoning: string;
@@ -810,6 +835,114 @@ function registerToolCall(acc: StreamAccumulator, id: string, name: string) {
 function stringifyArgs(input: Record<string, unknown> | undefined, fallback: string): string {
   if (!input) return fallback;
   try { return JSON.stringify(input); } catch { return fallback; }
+}
+
+// ── ADR-068 刀 1：首字节后断流续接的 accumulator 断点态 seed ──
+// 打破「每次尝试全新累积器」不变量（该不变量以 emittedOutput 闸门为前提，续接场景由
+// ADR D2 的 prefix 边界接管）：续接 attempt 从断点态续起，续写 delta 追加其上。
+// - 保留 content / contentParts / reasoning / 完整 toolCalls；
+// - 半截 tool_call（JSON.parse 不可过，判据复用 getIncompleteToolCallIds）永不进 seed，
+//   让模型重发完整调用——执行安全幂等比续接完整性更硬（D2/D4）；
+// - 请求体的 prefix 注入（末条 assistant 前缀）与启用开关由刀 2 落地
+//   （STREAM_RESUME_B1_PREFIX_SHAPE_LANDED=true，withResumePrefixAssistant 在 attempt
+//   顶部消费 seed 时拼装）；本函数只管断点态本身的筛选，B1/B2 两种续接形态共用。
+function seedAccumulatorFromBreakpoint(acc: StreamAccumulator): StreamAccumulator {
+  const incompleteIds = new Set(getIncompleteToolCallIds({
+    // 映射形状对齐 emitSnapshot；断点必非终态，isFinal 恒 false。
+    isFinal: false,
+    toolCalls: [...acc.toolCalls.values()].map((t) => ({
+      id: t.id, name: t.name, arguments: stringifyArgs(t.input, t.argsText),
+    })),
+  }));
+  const toolCalls: StreamAccumulator['toolCalls'] = new Map();
+  for (const entry of acc.toolCalls.values()) {
+    // 拷贝 entry：续接 attempt 的 tool-input-delta 会原地追加 argsText，不能与断点前的 Map 共享对象。
+    if (!incompleteIds.has(entry.id)) toolCalls.set(entry.id, { ...entry });
+  }
+  // 半截 tool_call 的 contentParts 条目一并移除，text/tool_call 交错序列保持真实。
+  const contentParts = acc.contentParts.filter(
+    (part) => !(part.type === 'tool_call' && incompleteIds.has(part.toolCallId)),
+  );
+  const lastPartType = contentParts.length > 0
+    ? (contentParts[contentParts.length - 1].type === 'text' ? 'text' : 'tool_call')
+    : null;
+  return {
+    content: acc.content,
+    reasoning: acc.reasoning,
+    // 断点处尚未 finish：finishReason / usage 不带入断点态。usage 跨 attempt 合并记账
+    // （ADR-068 刀 3）在 streamViaAiSdk 里用 usageFromBrokenAttempts 累积——不挂在
+    // accumulator 上，B1/B2 两种续接形态共用同一份账。
+    finishReason: undefined,
+    usage: undefined,
+    toolCalls,
+    contentParts,
+    lastPartType,
+    charCount: acc.charCount,
+    // tool_call index 映射跨 attempt 保持稳定（ADR D2）：nextToolIndex 不回卷，
+    // 续写新发的 tool_call 接着断点前的序号编，不与已 seed 的 index 冲突。
+    nextToolIndex: acc.nextToolIndex,
+  };
+}
+
+// ── ADR-068 刀 3：usage 跨 attempt 合并记账 ──
+// 每次续接尝试都是真实计费（重发整段 input + 各自的 output），单轮展示 usage = Σ attempts。
+// 缺侧未上报的可选字段按 0 计入求和（另一侧报了就是真实花费）。
+type StreamUsageTotal = NonNullable<StreamAccumulator['usage']>;
+function mergeAttemptUsage(a: StreamUsageTotal | undefined, b: StreamUsageTotal | undefined): StreamUsageTotal | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  const sumOptional = (x: number | undefined, y: number | undefined): number | undefined =>
+    (x === undefined && y === undefined) ? undefined : (x ?? 0) + (y ?? 0);
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheReadTokens: sumOptional(a.cacheReadTokens, b.cacheReadTokens),
+    cacheCreationTokens: sumOptional(a.cacheCreationTokens, b.cacheCreationTokens),
+  };
+}
+
+// ADR-068 刀 3：B1 生效需两件事同时就位——能力表档位（prefix-param / trailing-assistant，
+// modelCapabilityMatrix）与刀 2 的 prefix 请求形状（把断点前缀真的拼进重发请求）。只有
+// 重发请求携带前缀，续写才是「模型以传入前缀为条件继续同一次生成」（D2 (a)）；否则一切
+// 续接走 B2 诚实分段（D2 (b)）。刀 2 已落地：开关翻开，prefix 注入接上。
+const STREAM_RESUME_B1_PREFIX_SHAPE_LANDED = true;
+
+// ADR-068 刀 2：prefix-param 档端点覆盖——替换 baseURL 末尾的版本段（…/vN → /beta），
+// host 与自定义 baseURL 的目录前缀不变（中转站路由）：官方 'https://api.deepseek.com/v1'
+// → '…/beta'；中转 'https://proxy.example/deepseek/v1' → '…/deepseek/beta'。末段不是
+// 版本段时 append（不覆盖自定义路径）。非法 baseURL 保持原样（后续请求层自然报错）。
+function withEndpointPath(baseURL: string, endpointPath: string): string {
+  try {
+    const u = new URL(baseURL);
+    const segments = u.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+    const normalizedPath = endpointPath.replace(/^\//, '');
+    if (segments.length > 0 && /^v\d+$/.test(segments[segments.length - 1])) {
+      segments[segments.length - 1] = normalizedPath;
+    } else {
+      segments.push(normalizedPath);
+    }
+    u.pathname = `/${segments.join('/')}`;
+    return u.toString();
+  } catch {
+    return baseURL;
+  }
+}
+
+// ── ADR-068 刀 2：B1 续接请求的末条 assistant prefix（D2 (a) 合同形状）──
+// 断点前的文本前缀拼成末条 assistant 消息。调用点保证 acc 为「无完整 tool_call」的断点态
+// （含完整 tool_call 的断点在 catch 分流处回落 B2——AI SDK 的配对校验对未配对 tool-call
+// 直接抛 MissingToolResultsError，见 toAiMessages 同约束注释）；半截 tool_call 已在
+// seedAccumulatorFromBreakpoint 剔除（D2 铁律：永不进 prefix、永不执行，续写中模型重发
+// 完整调用）。reasoning 不回传：各家 thinking 协议不通用（deepseek reasoning_content /
+// anthropic thinking blocks / gemini thought signatures），前缀不变量只压 text；断点前
+// 只有 reasoning 时 prefix 退化为空文本，模型重写正文——诚实优先于伪续接。
+// 原 messages 数组元素引用原样 append（不重建不重排，cacheControl 断点不动）：续接请求
+// 与原请求共享逐字相同的前缀（system + history + user），ADR-032 prompt cache 命中前提
+// （D4 增量成本控制全压在这条上）。
+function withResumePrefixAssistant(prompt: AiSdkPromptShape, acc: StreamAccumulator): AiSdkPromptShape {
+  // content '' 的空形态对齐 toAiMessages 的空 assistant 先例（string content）。
+  const prefixMessage = { role: 'assistant', content: acc.content } as AiModelMessage;
+  return { ...prompt, messages: [...prompt.messages, prefixMessage] };
 }
 
 function finalToolInput(
@@ -862,22 +995,54 @@ async function streamViaAiSdk(params: {
   aiPrompt: AiSdkPromptShape;
   aiTools: ToolSet | undefined;
   config: ModelConfig;
+  req: ProviderRequest;
   onStream: StreamCallback;
   signal: AbortSignal | undefined;
   options: InferenceOptions | undefined;
   messages: ModelMessage[];
 }): Promise<ModelResponse> {
-  const { model, aiPrompt, aiTools, config, onStream, signal, options, messages } = params;
+  const { model, aiPrompt, aiTools, config, req, onStream, signal, options, messages } = params;
   const healthMonitor = getProviderHealthMonitor();
   const maxRetries = options?.disableProviderTransientRetry ? 0 : STREAM_MAX_RETRIES;
+  // ADR-068 刀 1：首字节后断流续接预算，与首字节前的 maxRetries 双轨独立计数——
+  // disableProviderTransientRetry（调用方自带重试循环）对本层两类重试一体生效。
+  // 无人值守分档/熔断由调用方经 streamReconnectMax 传入（adapter 不识别轮次来源）。
+  const reconnectMax = options?.disableProviderTransientRetry ? 0 : (options?.streamReconnectMax ?? STREAM_RECONNECT_MAX);
+  let reconnectsUsed = 0;
+  // 首字节看门狗超时驱动的重试单独计数（issue #1989，对齐非流式 maxTimeoutRetries）：
+  // 每次首字节超时最坏烧满 firstByteMs 窗口，与普通瞬态错误分开封顶。
+  let timeoutRetriesUsed = 0;
+  // 续接 attempt 的 accumulator 断点态 seed（见 seedAccumulatorFromBreakpoint）；null = 全新累积器。
+  let resumeSeed: StreamAccumulator | null = null;
+  // 断流 attempt 已上报 usage 的累积（刀 3 合并记账）：成功时并入最终 usage = Σ attempts。
+  let usageFromBrokenAttempts: StreamUsageTotal | undefined;
   const snapshotInterval = options?.snapshotIntervalMs ?? DEFAULT_SNAPSHOT_INTERVAL_MS;
   const onSnapshot = options?.onSnapshot;
 
   for (let attempt = 0; ; attempt++) {
     const startTime = Date.now();
-    // 每次尝试用全新累积器：emittedOutput 闸门保证只在「尚未吐过任何 delta」时才会到这里，
-    // 故重置 content/toolCalls 不会丢用户已看到的内容。
-    const acc = createAccumulator();
+    // 首字节前重试（!emittedOutput）仍用全新累积器——闸门保证重置不丢用户已见内容；
+    // 断流续接（emittedOutput=true，ADR-068 刀 1）改用断点态 seed，续写 delta 追加其上。
+    const acc: StreamAccumulator = resumeSeed ?? createAccumulator();
+    const accResumedFromBreakpoint = resumeSeed !== null;
+    resumeSeed = null;
+    // ADR-068 刀 2：B1 attempt 的 prefix 请求形状——末条 assistant（断点文本前缀；含完整
+    // tool_call 的断点已在 catch 分流处回落 B2）append 到原 prompt 之后。prefix-param 档
+    // （deepseek）重建 model 切 /beta 端点（prefix:true 由 vendorCompat transform 按 body
+    // 末条 assistant 形状注入）；trailing-assistant 档（openrouter / gemini / claude≤4.5）
+    // 复用原 model，仅拼消息。
+    let attemptPrompt = aiPrompt;
+    let attemptModel = model;
+    if (accResumedFromBreakpoint) {
+      attemptPrompt = withResumePrefixAssistant(aiPrompt, acc);
+      const streamResume = resolveModelCapabilities(config.provider, config.model).streamResume;
+      if (streamResume?.mode === 'prefix-param') {
+        attemptModel = resolveModel(config, req, {
+          searchEnabled: options?.searchEnabled,
+          streamResumeEndpointPath: streamResume.endpointPath,
+        });
+      }
+    }
     let emittedOutput = false;
     let lastEstimateAt = 0;
     let lastSnapshotAt = 0;
@@ -920,8 +1085,8 @@ async function streamViaAiSdk(params: {
 
     try {
       const result = streamText({
-        model,
-        ...aiPrompt,
+        model: attemptModel,
+        ...attemptPrompt,
         tools: aiTools,
         abortSignal: streamSignal,
         temperature: requestTemperature,
@@ -1021,7 +1186,10 @@ async function streamViaAiSdk(params: {
 
       stopWatchdog();
       // 正常完成：发 usage + complete（对齐 sseStream），落最终 snapshot，累积成 ModelResponse。
-      healthMonitor.recordSuccess(config.provider, Date.now() - startTime);
+      healthMonitor.recordSuccess(config.provider, Date.now() - startTime, { model: config.model });
+      // usage 跨 attempt 合并记账（ADR-068 刀 3）：断流续接时各次尝试都真实计费，
+      // 单轮展示 usage = Σ attempts（断流 attempt 上报过 usage 的并入，未上报的无从记起）。
+      acc.usage = mergeAttemptUsage(acc.usage, usageFromBrokenAttempts);
       if (acc.usage) {
         onStream({
           type: 'usage',
@@ -1051,17 +1219,88 @@ async function streamViaAiSdk(params: {
       // emittedOutput 闸门：已向用户吐过 delta → 绝不重试（避免重复 emit）；只在首个可见
       // delta 之前的瞬态失败才重试，复用模型调用层统一可重试判定（status 429/5xx +
       // 网络瞬态文案/code，401/403/400 等确定性错误不重试）。
-      if (!emittedOutput && attempt < maxRetries && !signal?.aborted && isRetryableModelCallError(effectiveErr)) {
+      // 看门狗超时（首字节）重试另受 INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX 封顶：
+      // 每次最坏烧满 firstByteMs 窗口，预算耗尽即落终错（provider fallback 还有机会）。
+      const timeoutCapHit = watchdogTimedOut && timeoutRetriesUsed >= INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX;
+      if (timeoutCapHit) logger.warn(`[AiSdkAdapter] 首字节超时重试已达上限 (${INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX})，放弃重试: "${msg}"`);
+      if (!emittedOutput && attempt < maxRetries && !signal?.aborted && !timeoutCapHit && isRetryableModelCallError(effectiveErr)) {
+        if (watchdogTimedOut) timeoutRetriesUsed += 1;
+        // B1 续接 attempt 的首字节前瞬态失败：断点态不能随「全新累积器」重置丢掉
+        // （resumeSeed 已在循环顶消费）——挂回后再 continue，重试仍是 prefix 形状。
+        if (accResumedFromBreakpoint) resumeSeed = acc;
         const retryAfterMs = extractRetryAfterMs(err);
         const delay = computeRetryBackoffMs(attempt, STREAM_RETRY_BASE_DELAY_MS, retryAfterMs);
-        logger.warn(`[AiSdkAdapter] 流式瞬态错误 "${msg}" (code=${code})，${delay}ms 后首字节前重试 (${attempt + 1}/${maxRetries})${retryAfterMs != null ? ' [retry-after]' : ''}`);
+        logger.warn(`[AiSdkAdapter] 流式瞬态错误 "${msg}" (code=${code})，${delay}ms 后首字节前重试 (${attempt + 1}/${maxRetries})${retryAfterMs != null ? ' [retry-after]' : ''}${watchdogTimedOut ? ` [timeout-retry ${timeoutRetriesUsed}/${INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX}]` : ''}`);
         // CLI 可见性：与非流式 withTransientRetry 同一事件通道（adapter 订阅后打一行重试提示）
         retryEvents.emit('retry', { provider: config.provider, attempt: attempt + 1, maxRetries, delay, error: msg });
+        // 会话级 trace（issue #1989）：挂死不再静默——重试进 turn trace（inference_retry）。
+        notifyStreamRetry(options, config, { attempt: attempt + 1, maxRetries, delayMs: delay, kind: watchdogTimedOut ? 'timeout' : 'transient', error: msg });
         // 可中断退避（codex audit R2 对称应用）：abort 立即醒来，醒后已 abort 则不再重试
         await abortableSleep(delay, signal);
         if (!signal?.aborted) continue;
       }
-      healthMonitor.recordFailure(config.provider, { cancelled: isCancellationError(err, signal) });
+      // ADR-068 刀 1：首字节后断流续接——emittedOutput=true 且属可续接断流（D3 表：网络瞬态 /
+      // 429/5xx 由 isRetryableModelCallError 覆盖；stream inactivity 看门狗超时为主场景）且预算
+      // 未耗尽时，accumulator 以断点态 seed 后重发（prefix 请求形状是刀 2）。abort 永远优先于
+      // 续接；first-byte 超时 emittedOutput 必为 false，恒走上面的首字节前重试，不进此分支。
+      // 预算耗尽 / 确定性错误（401/400 等）同样不进此分支，回落下方现有 error+throw 路径。
+      const resumableStreamBreak = emittedOutput
+        && !signal?.aborted
+        && reconnectsUsed < reconnectMax
+        && (timedOutKind === 'stream inactivity' || isRetryableModelCallError(effectiveErr));
+      if (resumableStreamBreak) {
+        reconnectsUsed += 1;
+        usageFromBrokenAttempts = mergeAttemptUsage(usageFromBrokenAttempts, acc.usage);
+        // B1/B2 分流（ADR-068 D2 + 刀 3）：B1 需要能力表合同档位与刀 2 的 prefix 请求形状
+        // 同时就位（STREAM_RESUME_B1_PREFIX_SHAPE_LANDED），续写 delta 才允许 append 进
+        // 断点同一条消息；否则走 B2 诚实分段——发 stream_break 信号让调用方把断点 partial
+        // 以带中断标记的 assistant 消息落库，续答用全新累积器另起一段，绝不把重发内容
+        // append 进旧消息冒充单次生成（D2 边界两级都禁止）。
+        const streamResumeMode = resolveModelCapabilities(config.provider, config.model).streamResume?.mode;
+        const b1PrefixContractActive = STREAM_RESUME_B1_PREFIX_SHAPE_LANDED
+          && (streamResumeMode === 'prefix-param' || streamResumeMode === 'trailing-assistant');
+        // 断点含完整 tool_call 时 prefix assistant 会带 tool-call 而无配对 tool-result——
+        // AI SDK 的配对校验（MissingToolResultsError，toAiMessages 同约束）在请求发出前就
+        // 拒掉，B1 发不出去：此形状回落 B2 诚实分段（partial 落库、模型在续答里重发完整
+        // 调用，对齐 D2「半截丢弃重生成」的安全幂等精神）。半截 tool_call 已被 seed 剔除，
+        // 不会误触发本判据。
+        const seed = seedAccumulatorFromBreakpoint(acc);
+        const isB1Segment = b1PrefixContractActive && seed.toolCalls.size === 0;
+        // ADR-068 刀 4（D5）：断流续接对用户可见——B1/B2 都发 reconnecting 信号（n/N 与
+        // 分档随行，renderer 据此在同一 streaming 消息内嵌状态行；B2 另用于分段定格）。
+        // 纯呈现信号，不参与上面的续接决策。
+        onStream({ type: 'reconnecting', attempt: reconnectsUsed, maxReconnects: reconnectMax, segment: isB1Segment ? 'b1' : 'b2' });
+        if (isB1Segment) {
+          resumeSeed = seed;
+        } else {
+          // await：调用方在 stream_break 分支里先落库断点 partial——落库完成前不进退避
+          // 与重发，续答终稿不可能抢在 partial 前面写入（PR #1833 复审 Important）。
+          await onStream({ type: 'stream_break', error: msg });
+          logger.info(`[AiSdkAdapter] B2 诚实分段：断点 partial（${acc.charCount} 字符）交调用方落库，续答另起新消息 (${reconnectsUsed}/${reconnectMax})`);
+        }
+        // 退避复用 computeRetryBackoffMs（base 1s + ±25% jitter），续接场景封顶 4s（ADR D4：
+        // 打字中断要快恢复）；429 的 retry-after 优先且不受此封顶（限流等少了没用）。
+        const retryAfterMs = extractRetryAfterMs(err);
+        const backoffMs = computeRetryBackoffMs(reconnectsUsed - 1, STREAM_RETRY_BASE_DELAY_MS, retryAfterMs);
+        const delay = retryAfterMs != null ? backoffMs : Math.min(backoffMs, STREAM_RECONNECT_BACKOFF_CAP_MS);
+        logger.warn(`[AiSdkAdapter] 首字节后断流 "${msg}" (code=${code})，${delay}ms 后断点续接 (${reconnectsUsed}/${reconnectMax})${retryAfterMs != null ? ' [retry-after]' : ''}`);
+        // CLI 可见性（D5）：与非流式/首字节前重试同一事件通道扩展 reconnect 语义，订阅方打一行提示。
+        retryEvents.emit('reconnect', {
+          provider: config.provider,
+          attempt: reconnectsUsed,
+          maxReconnects: reconnectMax,
+          delay,
+          error: msg,
+          segment: isB1Segment ? 'b1' : 'b2',
+        });
+        // 会话级 trace：断流续接同样进 inference_retry（kind='reconnect'）。
+        notifyStreamRetry(options, config, { attempt: reconnectsUsed, maxRetries: reconnectMax, delayMs: delay, kind: 'reconnect', error: msg });
+        // abort 短路：续接退避与重发全程可中断（复用首字节前重试的 abortableSleep 先例），
+        // 醒后已 abort 则不再重发，回落下方 throw 路径（与现状 abort 语义一致）。
+        await abortableSleep(delay, signal);
+        if (!signal?.aborted) continue;
+      }
+      healthMonitor.recordFailure(config.provider, { cancelled: isCancellationError(err, signal), model: config.model, error: err });
       if (!signal?.aborted) {
         onStream({ type: 'error', error: summarizeModelErrorForUser(msg), ...(code ? { errorCode: code } : {}) });
       }

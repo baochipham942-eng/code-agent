@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'fs';
 import { isAbsolute, resolve, join } from 'path';
 import { getUserConfigDir } from '../../config/configPaths';
 import type { ToolCall, ToolResult } from '../../../shared/contract';
-import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
+import { ARTIFACT_REPAIR_MAX_ATTEMPTS, formatArtifactRepairProgress } from '../../../shared/constants/repair';
 import { GAME_VALIDATION_TIMEOUTS } from '../../../shared/constants/game';
 import { fileReadTracker } from '../../tools/fileReadTracker';
 import { createLogger } from '../../services/infra/logger';
@@ -137,10 +137,7 @@ export async function handleModifiedArtifactValidation({
       const failureMap = getArtifactValidationFailureMap(ctx);
       const previousFailure = failureMap.get(absolutePath);
       const attempts = (previousFailure?.attempts || 0) + 1;
-      runFinalizer.emitTaskProgress(
-        'tool_running',
-        `artifact 验收失败，正在准备第 ${attempts}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} 次修复...`,
-      );
+      runFinalizer.emitTaskProgress('tool_running', formatArtifactRepairProgress(attempts));
       ctx.artifact.clearValidationPassed();
       const postPatchContent = artifactRepairRollbackSnapshot?.filePath === absolutePath
         ? readFileSync(absolutePath, 'utf-8')

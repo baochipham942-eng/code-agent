@@ -47,7 +47,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  initConfigService: () => ({ initialize: mocks.configInitialize }),
+  initConfigService: () => ({ onSettingsUpdated: vi.fn(), initialize: mocks.configInitialize }),
 }));
 
 vi.mock('../../../src/cli/database', () => ({
@@ -199,6 +199,9 @@ describe('initializeCLIServices durable wiring', () => {
       `session-origin-${declared ?? 'none'}`,
       expect.objectContaining({ originKind: expected }),
     );
+    expect(mocks.agentLoopConfigs.at(-1)).toEqual(expect.objectContaining({
+      unattendedTurn: declared === 'headless',
+    }));
   });
 
   it('passes the web workbench tool scope through the CLI bootstrap adapter', async () => {
@@ -232,9 +235,10 @@ describe('initializeCLIServices durable wiring', () => {
     createAgentLoop({
       workingDirectory: process.cwd(), modelConfig: { provider: 'openai', model: 'test-model' },
       outputFormat: 'text', enablePlanning: false, enableHooks: false, debug: false,
-      taskManagerToolsEnabled: enabled, allowedToolNames: names, deniedToolNames: ['cancel_task'],
+      taskManagerToolsEnabled: enabled, allowedToolNames: names, deniedToolNames: ['cancel_task'], foregroundToolFace: enabled,
     }, vi.fn());
     const runtimeConfig = mocks.agentLoopConfigs.at(-1) as Parameters<typeof filterToolsByRunPolicy>[1];
+    expect((runtimeConfig as { foregroundToolFace?: boolean }).foregroundToolFace).toBe(enabled);
     expect(filterToolsByRunPolicy(tools, runtimeConfig).map((tool) => tool.name))
       .toEqual(enabled ? ['delegate_task', 'steer_task', 'task_status'] : []);
     expect(runtimeConfig.deniedToolNames).toContain('cancel_task');

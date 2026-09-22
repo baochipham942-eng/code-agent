@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -10,6 +10,13 @@ import {
   DurableRunRolloutInitializationError,
   initializeDurableRun,
 } from '../../../../src/host/app/initializeDurableRun';
+import {
+  configureBackgroundSubagentDurableLedger,
+  getBackgroundSubagentDurableLedger,
+  isBackgroundSubagentDurableArmed,
+} from '../../../../src/host/agent/backgroundSubagentDurableLedger';
+import { BackgroundSubagentRegistry } from '../../../../src/host/agent/backgroundSubagentRegistry';
+import { resetLoopDurableLedger } from '../../../../src/host/loop/loopDurableLedger';
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
 import { applyDurableRunMigrationDraft } from '../../../../src/host/services/core/database/migrations/durableRun';
 import { DurableRunRepository } from '../../../../src/host/services/core/repositories/DurableRunRepository';
@@ -21,6 +28,10 @@ function repository(): { db: Database.Database; repo: DurableRunRepository } {
 }
 
 describe('shared Durable Run application initialization', () => {
+  afterEach(() => {
+    resetLoopDurableLedger();
+  });
+
   it('fails closed when migration or repository initialization is unavailable', async () => {
     await expect(initializeDurableRun({
       registry: new RunRegistry(), repository: null, dataDir: '/tmp', ownerId: 'owner',
@@ -80,5 +91,37 @@ describe('shared Durable Run application initialization', () => {
     expect(web).toContain("from '../host/app/initializeDurableRun'");
     expect(web).toContain('assemble: () => assembleDurableRun({');
     expect(web).toContain('recover: (assembly) => assembly.recover({');
+  });
+
+  it('rolls back armed state when kernel wiring fails, so later background spawn falls back to in-memory (ai-review 2026-09-14)', async () => {
+    configureBackgroundSubagentDurableLedger.resetForTest();
+    const { db, repo } = repository();
+    const registry = new RunRegistry();
+    vi.spyOn(registry, 'configureDurableKernel').mockImplementation(() => {
+      throw new Error('simulated durable kernel wiring failure');
+    });
+
+    expect(() => assembleDurableRun({
+      registry, repository: repo, ownerId: 'owner', processInstanceId: 'process',
+      env: { CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' },
+    })).toThrow(DurableRunRolloutInitializationError);
+
+    // armed 不许残留：残留会让后台 spawn 死等一个永远不会 configure 的账本（30s 超时）。
+    expect(isBackgroundSubagentDurableArmed()).toBe(false);
+    expect(getBackgroundSubagentDurableLedger()).toBeNull();
+
+    // 进程此时实为 legacy：后台 spawn 必须纯内存跑通（真定时器，不等 BOOTSTRAP 超时）。
+    const spawned = new BackgroundSubagentRegistry();
+    const agentId = spawned.spawn(
+      async () => ({ success: true, output: 'in-memory ok', toolsUsed: [], iterations: 1 }),
+      { sessionId: 'session-after-init-failure', runId: 'run-after-init-failure' },
+    );
+    const result = await spawned.await(agentId);
+    expect(result?.output).toBe('in-memory ok');
+    expect(spawned.getStatus(agentId)?.status).toBe('completed');
+    expect(await repo.get(agentId)).toBeNull();
+
+    db.close();
+    configureBackgroundSubagentDurableLedger.resetForTest();
   });
 });

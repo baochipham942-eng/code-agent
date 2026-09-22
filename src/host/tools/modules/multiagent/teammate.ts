@@ -24,6 +24,7 @@ import type {
 } from '../../../protocol/tools';
 import { getTeammateService } from '../../../agent/teammate';
 import type { TeammateMessageType } from '../../../agent/teammate';
+import { mintToolMessageOrigin } from '../../../agent/messageOrigin';
 import { parseScopedSwarmAgentId } from '../../../../shared/contract/swarm';
 import { teammateSchema as schema } from './teammate.schema';
 import { withMultiagentMeta } from './resultMeta';
@@ -74,6 +75,8 @@ export async function executeTeammate(
   const currentAgentRole = ctx.subagent?.agentRole || 'orchestrator';
   const scope = ctx.swarmRunScope ?? parseScopedSwarmAgentId(currentAgentId)?.scope;
   const discoveryScope = scope ?? { sessionId: ctx.sessionId };
+  // ADR-067 D1：消息 origin 由宿主从 ctx 核验身份后铸造，发送方不得自报。
+  const messageOrigin = mintToolMessageOrigin(ctx);
 
   if (scope && !parseScopedSwarmAgentId(currentAgentId)) {
     return {
@@ -127,6 +130,7 @@ export async function executeTeammate(
           content: message,
           taskId,
           requiresResponse: action === 'query',
+          origin: messageOrigin,
           ...(scope ? { scope } : {}),
         });
 
@@ -161,7 +165,7 @@ Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
         if (!targetAgent) {
           return { ok: false, error: `Agent not found in current run: ${to}`, code: 'NOT_FOUND' };
         }
-        const msg = service.respond(currentAgentId, to, message, responseTo, scope);
+        const msg = service.respond(currentAgentId, to, message, responseTo, scope, messageOrigin);
         return withMultiagentMeta({
           ok: true,
           output: `Response sent to ${to}
@@ -185,6 +189,7 @@ Message ID: ${msg.id}`,
           type: 'broadcast',
           content: message,
           taskId,
+          origin: messageOrigin,
           ...(scope ? { scope } : {}),
         });
         const agentCount = Math.max(0, service.listAgents(discoveryScope).length - 1);

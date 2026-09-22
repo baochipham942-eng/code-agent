@@ -1,5 +1,6 @@
 import type { AppSettings, BillingMode, ModelCapability, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from './contract';
 import {
+  DEFAULT_MODELS,
   MODEL_FEATURES,
   PROVIDER_MODELS,
   PROVIDER_MODELS_MAP,
@@ -698,6 +699,11 @@ export function buildRuntimeModelOptions(
   providerIds: readonly ModelProvider[] = DEFAULT_SWITCHER_PROVIDERS,
   runtimeOptions: {
     includeDisabledProviders?: readonly ModelProvider[];
+    /**
+     * 同一模型家族（如多个 GLM 中转）只保留最新一个来源——对话切换器要去重；
+     * 设置页档位要能看到/校验每个已配来源，传 false，否则被去重掉的来源会被误判「不可用」并被自愈改写。
+     */
+    dedupeProviderGroups?: boolean;
   } = {},
 ): RuntimeModelOption[] {
   const options: RuntimeModelOption[] = [];
@@ -791,7 +797,7 @@ export function buildRuntimeModelOptions(
   }
 
   for (const source of sources) {
-    if (latestSourceByGroup.get(source.providerGroup) !== source) continue;
+    if (runtimeOptions.dedupeProviderGroups !== false && latestSourceByGroup.get(source.providerGroup) !== source) continue;
 
     for (const model of source.models) {
       if (isPureGenerationModel(model.capabilities)) continue; // U5：纯生成模型不进对话选择器
@@ -844,6 +850,22 @@ export function hasConfiguredDefaultRuntimeModel(settings?: AppSettings | null):
   const providerConfig = settings.models.providers?.[providerId];
   if (!providerConfig || providerConfig.enabled === false) return false;
   return isRuntimeProviderAvailable(providerId, providerConfig);
+}
+
+/**
+ * 供应商默认模型回落（N-COMPANION-DEFAULT-MODEL-FAILING）：
+ * providers[p].model → 登记默认 getProviderInfo(p)?.defaultModel（内置与 main 一致）
+ * → 该供应商运行时列表第一项（只有没登记默认时才走到，即 custom-*）
+ * → DEFAULT_MODELS.chat。
+ */
+export function fallbackModelForProvider(provider: string, settings?: { models?: unknown } | null): string {
+  const configured = (settings as AppSettings | null | undefined)?.models?.providers?.[provider as ModelProvider]?.model;
+  if (configured) return configured;
+  const registered = getProviderInfo(provider)?.defaultModel;
+  if (registered) return registered;
+  const listed = buildRuntimeModelOptions(settings as AppSettings | null | undefined).find(option => option.provider === provider)?.model;
+  if (listed) return listed;
+  return DEFAULT_MODELS.chat;
 }
 
 function compareProviderOptionSource(

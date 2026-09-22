@@ -35,7 +35,7 @@ import {
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
-import { activateMaxStepsFinalResponse, createResourceWarning } from './maxStepsFallback';
+import { activateMaxStepsFinalResponse, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
 import { DoomLoopGuard } from './doomLoopGuard';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
@@ -49,7 +49,7 @@ import {
   setSessionTodos,
   syncTodosToSessionTasks,
 } from '../../agent/todoParser';
-import { decideNextAction, type LoopState } from '../loopDecision';
+import { decideNextAction, getContextRatio, type LoopState } from '../loopDecision';
 import type { RuntimeContext } from './runtimeContext';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
 import type { ContextAssembly } from './contextAssembly';
@@ -589,8 +589,8 @@ export class ConversationRuntime {
           const loopState: LoopState = {
             stopReason: response.finishReason ?? (response.truncated ? 'max_tokens' : 'end_turn'),
             tokenUsage: {
-              input: this.ctx.stats.totalInputTokens,
-              output: this.ctx.stats.totalOutputTokens,
+              input: response.usage?.inputTokens ?? 0,
+              output: response.usage?.outputTokens ?? 0,
             },
             maxTokens: getContextWindow(this.ctx.modelConfig.model),
             errorType: null,
@@ -616,10 +616,10 @@ export class ConversationRuntime {
             reason: decision.reason,
             stopReason: loopState.stopReason,
             consecutiveErrors: loopState.consecutiveErrors,
-            contextRatio: loopState.maxTokens > 0
-              ? Math.round((loopState.tokenUsage.input / loopState.maxTokens) * 100) / 100
-              : 0,
+            contextRatio: Math.round(getContextRatio(loopState.tokenUsage.input, loopState.maxTokens) * 100) / 100,
           });
+
+          if (decision.action === 'compact') await this.contextAssembly.checkAndAutoCompress();
         }
 
         // Exactly one final inference is allowed after resource exhaustion; no tool execution or reinference.
@@ -651,10 +651,14 @@ export class ConversationRuntime {
         }
 
         // 2b. Handle actual text response
-        if (response.type === 'text' && response.content) {
+        // forced-final 轮只回空白字符不算交付（ai-review #2005）：reason 保持残留，
+        // 循环尾部 ensureMaxStepsWrapUp 兜底才生效。仅限撞顶轮（R4）：非撞顶走 #2006 静态收尾。
+        if (response.type === 'text' && response.content && (response.content.trim().length > 0 || !this.ctx.control.forceFinalResponseReason || iterations < this.ctx.maxIterations)) {
+          // 强制收尾文本轮：goal 续跑不得覆盖它的 break（否则回到带工具推理反复触发硬阈值，issue #1991）
+          const forcedFinalTextPass = Boolean(this.ctx.control.forceFinalResponseReason);
           const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);
           if (textAction === 'continue') continue;
-          if (this.ctx.goalMode?.isPending()) {
+          if (!forcedFinalTextPass && this.ctx.goalMode?.isPending()) {
             this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildContinuationPrompt(), 'goal-progress');
             continue;
           }
@@ -740,6 +744,9 @@ export class ConversationRuntime {
         terminal = { status: 'aborted' };
       }
       if (terminal.status === 'completed' && this.toolEngine.noProgressStopped) terminal = { status: 'aborted' };
+
+      // 撞顶收尾保底（issue #1999）：forced-final 轮交白卷 → 合成「部分结果 + 未完成说明」，同一收尾通道
+      await ensureMaxStepsWrapUp(this.ctx, this.contextAssembly, iterations);
     } catch (error) {
       terminal = { status: 'failed', error };
       runError = error;

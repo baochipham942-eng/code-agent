@@ -1,26 +1,230 @@
 import { VoiceRecorder } from 'capacitor-voice-recorder';
 import { App } from '@capacitor/app';
-import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
+import { Camera } from '@capacitor/camera';
+import { Capacitor, registerPlugin, SystemBars, SystemBarsStyle } from '@capacitor/core';
+
+import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Keyboard } from '@capacitor/keyboard';
 import { Preferences } from '@capacitor/preferences';
-import type { PlatformPorts } from './ports';
+import { PushNotifications } from '@capacitor/push-notifications';
+import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
+import { messages } from '../i18n';
+import type { FilePorts, PlatformPorts } from './ports';
+import { pickFromCamera, toPickedFile, type CameraBridge } from './cameraPick';
+import { createKeyboardPort } from './keyboardPort';
+import { bytesToArrayBuffer, bytesToBase64, FileCache } from './fileCache';
+import { HistoryCache } from './historyCache';
+import { FILE_ACCEPT, IMAGE_ACCEPT } from './fileAccept';
 import { nativeCompanionPort } from './nativeCompanion';
+import { createNotificationPort, type PushPresentationBridge } from './notifications';
 
 const PREFERENCES_KEY = 'neo.mobile.preferences.v1';
+const HISTORY_CACHE_KEY = 'neo.companion.history.v1';
 
-export const capacitorPorts: PlatformPorts = {
-  recorder: Capacitor.isNativePlatform() ? {
+async function readCameraUri(uri: string): Promise<string> {
+  const { data } = await Filesystem.readFile({ path: uri.replace(/^file:\/\//, '') });
+  if (typeof data !== 'string') throw new Error('EMPTY_PHOTO');
+  return data;
+}
+
+function webFilePorts(cache: FileCache): FilePorts {
+  return {
+    pick: kind => {
+      if (kind === 'camera') return pickFromCamera(Camera as CameraBridge, readCameraUri);
+      return new Promise((resolve, reject) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = kind === 'image' ? IMAGE_ACCEPT : FILE_ACCEPT;
+        input.addEventListener('change', async () => {
+          const file = input.files?.[0];
+          if (!file) { resolve(null); return; }
+          // 先卡大小再读字节：arrayBuffer() 会把整段录像一次性读进 WebView 内存，
+          // 100MB+ 直接 OOM，超限提示根本轮不到（claude 复审修正轮 7）。
+          if (file.size > COMPANION_LIMITS.fileMaxBytes) { reject(new Error('UPLOAD_TOO_LARGE')); return; }
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          // OS/浏览器上报的 MIME 不可靠（.m4a 常见 audio/x-m4a、.md 报 octet-stream），扩展名才是权威；
+          // 不把上报值带给上层，避免与扩展名矛盾被 companionFileMime 一致性校验拒掉。
+          try { resolve(toPickedFile(file.name, bytes)); }
+          catch (error) { reject(error); }
+        }, { once: true });
+        input.addEventListener('cancel', () => resolve(null), { once: true });
+        input.click();
+      });
+    },
+    save: async file => {
+      try {
+        if (Capacitor.isNativePlatform()) {
+          // 同名成果不静默覆盖：photo.png 已存在则写 photo (1).png、photo (2).png…
+          const dot = file.name.lastIndexOf('.');
+          const stem = dot > 0 ? file.name.slice(0, dot) : file.name;
+          const ext = dot > 0 ? file.name.slice(dot) : '';
+          let candidate = file.name;
+          for (let n = 1; ; n++) {
+            try { await Filesystem.stat({ path: candidate, directory: Directory.Documents }); candidate = `${stem} (${n})${ext}`; }
+            catch { break; }
+          }
+          await Filesystem.writeFile({
+            path: candidate, data: bytesToBase64(file.bytes), directory: Directory.Documents,
+          });
+          return { status: 'saved', name: candidate };
+        }
+        const href = URL.createObjectURL(new Blob([bytesToArrayBuffer(file.bytes)], { type: file.mimeType }));
+        const link = document.createElement('a');
+        link.href = href; link.download = file.name; link.click();
+        URL.revokeObjectURL(href);
+        return { status: 'saved' };
+      } catch (error) {
+        const code = error && typeof error === 'object' && 'code' in error ? String((error as { code: unknown }).code) : '';
+        const message = error instanceof Error ? error.message : '';
+        if (code === 'ENOSPC' || code === 'EDQUOT' || /quota|space|disk full/i.test(message)) {
+          return { status: 'error', code: 'STORAGE_FULL' };
+        }
+        return { status: 'error', code: 'COMPANION_EXPORT_FAILED' };
+      }
+    },
+    cache,
+  };
+}
+
+type PcmBridge = {
+  startPcmRecording(): Promise<{ value: boolean; sampleRate?: number }>;
+  stopPcmRecording(): Promise<{ value: boolean }>;
+  addListener(event: 'pcmFrame', cb: (frame: { pcm: string; durationMs: number }) => void): Promise<{ remove: () => Promise<void> }>;
+  addListener(event: 'microphoneAvailable', cb: () => void): Promise<{ remove: () => Promise<void> }>;
+  watchMicrophoneRelease(): Promise<{ available: boolean }>;
+  unwatchMicrophoneRelease(): Promise<void>;
+  openAppSettings(): Promise<void>;
+};
+
+const pcmBridge = VoiceRecorder as unknown as PcmBridge;
+
+/**
+ * Android 录音前台服务桥（N-MOBILE-BG-RECORDING）：Android 12+ 后台用麦克风必须有
+ * microphone 类型的前台服务。iOS 靠 Info.plist 的 audio 后台模式保活，不走这个插件。
+ */
+type VoiceKeepAliveBridge = {
+  start(options: { title: string; text: string; channelName: string }): Promise<void>;
+  stop(): Promise<void>;
+};
+
+const voiceKeepAlive = Capacitor.getPlatform() === 'android'
+  ? registerPlugin<VoiceKeepAliveBridge>('VoiceKeepAlive', { web: async () => ({ start: async () => {}, stop: async () => {} }) })
+  : null;
+
+function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
+  // 前台服务按「一次录音」的粒度挂，不跟分段走：recorder.stop/start 每段都来一遍，服务若
+  // 跟着段走，通知每 4s 闪一次，且后台一旦停了就再起不来（Android 12+ 禁止后台 startForegroundService）。
+  // 起服务只认 running 标记：切段那声 start 不再重复 startForegroundService；
+  // 停服务带防抖：最后一次 stop 之后没有新 start（切段之间的间隔远小于宽限值）才真停，真停时复位 running。
+  // 状态与实现只建在 Android（voiceKeepAlive 非空）上；iOS 走 audio 后台模式，留空实现即可
+  // （PR#1944 ai-review Nit：非 Android 平台不必也建一份防抖状态）。
+  let keepAliveStart: () => Promise<void> = async () => {};
+  let keepAliveStop: () => void = () => {};
+  if (voiceKeepAlive) {
+    let stopTimer: ReturnType<typeof setTimeout> | null = null;
+    let running = false;
+    keepAliveStart = async () => {
+      if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
+      if (running) return;
+      // fail-open：服务起不来不该毁掉前台录音，但降级要留痕（哪个平台、什么错）。
+      const text = messages(typeof navigator === 'undefined' ? 'en' : navigator.language);
+      // 常驻通知标题用专门的「正在录音」，不复用麦克风按钮的「语音输入」；通道名同走 i18n（PR#1944 ai-review Nit）。
+      try {
+        await voiceKeepAlive.start({ title: text.voiceRecording, text: text.voiceListening, channelName: text.voiceRecordingChannel });
+        running = true;
+      }
+      catch (error) { console.warn('[voice-keepalive] start failed', error); }
+    };
+    keepAliveStop = () => {
+      if (stopTimer) clearTimeout(stopTimer);
+      stopTimer = setTimeout(() => {
+        stopTimer = null;
+        running = false;
+        void voiceKeepAlive.stop().catch((error: unknown) => console.warn('[voice-keepalive] stop failed', error));
+      }, COMPANION_LIMITS.voiceServiceStopGraceMs);
+    };
+  }
+  const recorder: NonNullable<PlatformPorts['recorder']> = {
     start: async () => {
       if (!(await VoiceRecorder.requestAudioRecordingPermission()).value) throw new Error('MICROPHONE_DENIED');
-      await VoiceRecorder.startRecording();
+      await keepAliveStart();
+      try {
+        await VoiceRecorder.startRecording();
+      } catch (error) {
+        keepAliveStop();   // 起录失败即这次录音到头了：服务收尾别等下一次 stop
+        throw error;
+      }
     },
     stop: async () => {
-      const { value } = await VoiceRecorder.stopRecording();
-      if (!value.recordDataBase64) throw new Error('EMPTY_RECORDING');
-      return { audioData: value.recordDataBase64, mimeType: value.mimeType.split(';')[0], durationMs: value.msDuration };
+      // stopRecording 在 RECORDING_HAS_NOT_STARTED / FAILED_TO_FETCH_RECORDING 等状态下会 reject，
+      // 而调用方（VoiceCapture.run）在调 stop 前已把 live 落 false、不会再补一次 stop——
+      // 回收必须兜在 finally，否则「正在听你说」常驻通知永久留在通知栏（PR#1944 ai-review Important）。
+      try {
+        const { value } = await VoiceRecorder.stopRecording();
+        if (!value.recordDataBase64) throw new Error('EMPTY_RECORDING');
+        return { audioData: value.recordDataBase64, mimeType: value.mimeType.split(';')[0], durationMs: value.msDuration };
+      } finally {
+        keepAliveStop();
+      }
     },
-  } : undefined,
+  };
+  // PCM tap is first-party iOS only. Android still uses the vendor file recorder.
+  if (Capacitor.getPlatform() !== 'ios') return recorder;
+  let pcmListen: Promise<{ remove: () => Promise<void> }> | null = null;
+  recorder.startPcm = async () => {
+    if (!(await VoiceRecorder.requestAudioRecordingPermission()).value) throw new Error('MICROPHONE_DENIED');
+    if (pcmListen) await pcmListen;
+    const result = await pcmBridge.startPcmRecording();
+    return { sampleRate: result.sampleRate ?? COMPANION_LIMITS.voicePcmSampleRate };
+  };
+  recorder.stopPcm = async () => { await pcmBridge.stopPcmRecording(); };
+  recorder.subscribePcm = onFrame => {
+    let handle: { remove: () => Promise<void> } | null = null;
+    let closed = false;
+    pcmListen = pcmBridge.addListener('pcmFrame', frame => { if (!closed) onFrame(frame); }).then(listener => {
+      if (closed) void listener.remove();
+      else handle = listener;
+      return listener;
+    });
+    return () => { closed = true; void handle?.remove(); pcmListen = null; };
+  };
+  recorder.watchMicrophoneRelease = onReleased => {
+    let closed = false;
+    const release = () => { if (!closed) { closed = true; onReleased(); } };
+    // 先挂监听再布防：布防和「刚好放手」之间没有空窗。布防时已经空着就直接回调。
+    const listen = pcmBridge.addListener('microphoneAvailable', release);
+    const armed = listen.then(() => pcmBridge.watchMicrophoneRelease()).then(({ available }) => { if (available) release(); }).catch(() => {});
+    return () => {
+      closed = true;
+      void listen.then(handle => handle.remove()).catch(() => {});
+      // 撤防排在布防回包之后：否则撤防先到、布防后到，原生 2 秒定时器会一直跑到麦克风放手（grok ai-review Nit）。
+      void armed.then(() => pcmBridge.unwatchMicrophoneRelease()).catch(() => {});
+    };
+  };
+  return recorder;
+}
+
+export const capacitorPorts: PlatformPorts = {
+  recorder: Capacitor.isNativePlatform() ? nativeRecorder() : undefined,
   companion: Capacitor.isNativePlatform() ? nativeCompanionPort : undefined,
+  notifications: createNotificationPort(
+    Capacitor.getPlatform(),
+    async () => {
+      // @capacitor/app 在 iOS 上没有 openUrl（原生回 UNIMPLEMENTED，被 catch 吞掉 ⇒ 「去设置」一直是空操作，
+      // build 46 远端验收实测）。iOS 走第一方插件打开本 App 的设置页。
+      if (Capacitor.getPlatform() === 'ios') { await pcmBridge.openAppSettings().catch(() => {}); return; }
+      const open = (App as { openUrl?: (opts: { url: string }) => Promise<void> }).openUrl;
+      if (!open) return;
+      try { await open({ url: 'app-settings:' }); } catch { /* user opens Settings by hand */ }
+    },
+    Capacitor.getPlatform() === 'ios' ? PushNotifications : undefined,
+    Capacitor.getPlatform() === 'ios' ? registerPlugin<PushPresentationBridge>('PushPresentation') : undefined,
+  ),
+  files: webFilePorts(new FileCache()),
+  historyCache: new HistoryCache(undefined, undefined, Date.now, {
+    read: async () => (await Preferences.get({ key: HISTORY_CACHE_KEY })).value,
+    write: async value => { await Preferences.set({ key: HISTORY_CACHE_KEY, value }); },
+  }),
   preferences: {
     get: async () => (await Preferences.get({ key: PREFERENCES_KEY })).value,
     set: async value => { await Preferences.set({ key: PREFERENCES_KEY, value }); },
@@ -28,7 +232,7 @@ export const capacitorPorts: PlatformPorts = {
   appInfo: { read: () => App.getInfo() },
   lifecycle: {
     subscribe: async (onActive, onBack) => {
-      const active = await App.addListener('appStateChange', ({ isActive }) => onActive(isActive));
+      const active = await App.addListener('appStateChange', ({ isActive }: { isActive: boolean }) => onActive(isActive));
       try {
         const back = Capacitor.getPlatform() === 'android' ? await App.addListener('backButton', onBack) : null;
         return () => { void active.remove(); void back?.remove(); };
@@ -36,17 +240,7 @@ export const capacitorPorts: PlatformPorts = {
     },
     leave: () => App.minimizeApp(),
   },
-  keyboard: {
-    subscribe: async onVisible => {
-      if (!Capacitor.isNativePlatform()) return () => {};
-      const show = await Keyboard.addListener('keyboardDidShow', () => onVisible(true));
-      try {
-        const hide = await Keyboard.addListener('keyboardDidHide', () => onVisible(false));
-        return () => { void show.remove(); void hide.remove(); };
-      } catch (error) { await show.remove(); throw error; }
-    },
-    hide: async () => { if (Capacitor.isNativePlatform()) await Keyboard.hide(); },
-  },
+  keyboard: createKeyboardPort(Keyboard, Capacitor.getPlatform()),
   // Icon shade follows the resolved theme; on web there are no system bars, so degrade silently like appInfo.
   systemBars: {
     setStyle: async appearance => {

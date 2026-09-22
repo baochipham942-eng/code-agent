@@ -73,6 +73,18 @@ export const enSettingsSystem = {
       },
       persistence: {
         title: 'History persistence is unavailable',
+        degradedTitle: 'Storage is degraded',
+        degradedFtsDisabled: 'Full-text index is temporarily unavailable; fallback search is in use. Writes are unaffected.',
+        degradedFtsReindexing: 'Full-text index was recreated and history is being backfilled; search may be temporarily incomplete. Writes are unaffected.',
+        degradedQuickCheck: 'Database integrity check failed. The next launch will try to restore from a backup.',
+        degradedLocal: 'Some tables are damaged. Diagnostics were recorded; writes still work.',
+        degradedReadonly: 'The database is damaged and opened read-only. History and search still work; new sessions, memory writes, and runs are refused.',
+        degradedLedgerCorrupt: 'Audit ledgers are damaged. History still works; some diagnostic records may be missing.',
+        recoveredTitle: 'Restored from backup',
+        recoveredBody: 'The database was restored from a local backup taken at {timestamp}. Changes after that point may be lost.',
+        corruptNoBackup: 'The database is corrupt and no usable backup was found. This session is memory-only.',
+        restoreFailed: 'Restoring from a backup failed (for example, disk full). This session is memory-only. The corrupt database and the backups were kept, not deleted.',
+        restoreLowDisk: 'The database failed an integrity check, but there is not enough free disk space to restore from a backup. The current database stays in use; freeing up space will retry the restore on the next launch.',
         reasonPrefix: ' Reason: ',
       },
       controlPlane: {
@@ -381,6 +393,7 @@ export const enSettingsSystem = {
         connected: 'Connected',
         adminRequired: 'Admin required',
         unavailable: 'Unavailable',
+        installFailed: 'Install failed · reinstall',
       },
       capabilities: {
         feishu: 'Send meeting notes, weekly updates, and progress reminders to Feishu groups as yourself without leaving Neo.',
@@ -405,6 +418,7 @@ export const enSettingsSystem = {
         adminRequired: 'Contact your organization’s app admin to install it',
         connectedIdentity: 'Connected · {user}@{tenant}',
         statusUnavailable: 'The connection status is incomplete or loopback is unavailable, so actions are disabled.',
+        cliInstallFailed: 'The connector is not installed correctly. Reinstall it to repair the connection.',
       },
       secret: {
         label: 'App Secret',
@@ -423,6 +437,7 @@ export const enSettingsSystem = {
         connectTmeet: 'Connect Tencent Meeting',
         cancel: 'Cancel',
         retry: 'Retry',
+        reinstall: 'Reinstall',
         disconnect: 'Disconnect',
         disconnecting: 'Disconnecting…',
       },

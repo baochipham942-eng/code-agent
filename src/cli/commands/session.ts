@@ -7,6 +7,8 @@ import { ReadOnlySessionDatabase } from '../sessionDiagnostics/readOnlySessionDb
 import { buildFailureDigest, buildTimeline } from '../sessionDiagnostics/sessionQueries';
 import { loadSessionPackageBuilder } from '../sessionDiagnostics/sessionPackageAdapter';
 import { shortSessionIdForFileName } from '../../shared/utils/id';
+import { decodeSessionExportEnvelopeV2 } from '../../host/services/sessionFork/portability/codec';
+import { planSessionForkImport } from '../../host/services/sessionFork/portability/importPlan';
 
 function writeJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -196,10 +198,78 @@ const exportCommand = new Command('export')
     }
   });
 
+const importCommand = new Command('import')
+  .description('校验会话分支导入计划（当前仅支持只读 dry-run）')
+  .argument('<file>', 'neo.session-export JSON 文件')
+  .option('--dry-run', '只校验并展示导入计划，不写入数据库')
+  .option('--owner <id>', '目标 owner scope')
+  .option('--project <id>', '目标 project')
+  .option('--namespace <name>', '导入 ID 命名空间')
+  .option('--allow-project-remap', '允许显式 project remap')
+  .option('--json', '输出纯 JSON')
+  .action(async (
+    file: string,
+    options: {
+      dryRun?: boolean;
+      owner?: string;
+      project?: string;
+      namespace?: string;
+      allowProjectRemap?: boolean;
+      json?: boolean;
+    },
+    command: Command,
+  ) => {
+    try {
+      if (!options.dryRun) {
+        throw new Error('session import 当前只支持 --dry-run；实际写入请走桌面端导入协议');
+      }
+      const owner = options.owner?.trim();
+      const project = options.project?.trim();
+      const namespace = options.namespace?.trim();
+      if (!owner || !project || !namespace) {
+        throw new Error('--owner、--project、--namespace 都是 dry-run 必填项');
+      }
+      const envelope = decodeSessionExportEnvelopeV2(fs.readFileSync(file, 'utf8'));
+      const plan = planSessionForkImport({
+        envelope,
+        targetOwnerScopeId: owner,
+        targetProjectId: project,
+        namespace,
+        allowProjectRemap: options.allowProjectRemap,
+      });
+      const result = {
+        dryRun: true,
+        sourceExportId: plan.sourceExportId,
+        targetOwnerScopeId: plan.targetOwnerScopeId,
+        targetProjectId: plan.targetProjectId,
+        namespace,
+        payloadDigest: plan.envelope.payloadDigest,
+        sessionCount: plan.envelope.sessions.length,
+        messageCount: plan.envelope.messages.length,
+        lineageNodeCount: plan.envelope.lineage.nodes.length,
+        idMapCounts: {
+          sessions: Object.keys(plan.sessionIdMap).length,
+          messages: Object.keys(plan.messageIdMap).length,
+          forks: Object.keys(plan.forkIdMap).length,
+        },
+      };
+      if (wantsJson(options, command)) {
+        writeJson(result);
+        return;
+      }
+      process.stdout.write(`Dry-run OK: ${result.sourceExportId}\n`);
+      process.stdout.write(`Sessions: ${result.sessionCount}; messages: ${result.messageCount}; lineage nodes: ${result.lineageNodeCount}\n`);
+      process.stdout.write(`Target: ${result.targetOwnerScopeId}/${result.targetProjectId}; namespace: ${result.namespace}\n`);
+    } catch (error) {
+      fail(error);
+    }
+  });
+
 export const sessionCommand = new Command('session')
   .description('查询和导出本机会话诊断数据')
   .addCommand(listCommand)
   .addCommand(timelineCommand)
   .addCommand(exportCommand)
+  .addCommand(importCommand)
   .addCommand(digestCommand)
   .addCommand(ledgerHealthCommand);

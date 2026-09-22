@@ -1,14 +1,93 @@
-export type Dispose = () => void;
+import type { FileCache } from './fileCache';
+import type { HistoryCache } from './historyCache';
+import type { RelayDialSocket } from './relayCompanionClient';
+
+type Dispose = () => void;
+
+type KeyboardFrame = { height: number; phase: 'will-show' | 'will-hide' };
+
+export interface PickedFile {
+  name: string;
+  mimeType: string;
+  size: number;
+  bytes: Uint8Array;
+}
+
+interface FileExportResult {
+  status: 'saved' | 'cancelled' | 'error';
+  code?: string;
+  /** 实际落盘文件名（同名去重后可能与请求名不同）。 */
+  name?: string;
+}
+
+export interface FilePorts {
+  pick(kind: 'image' | 'file' | 'camera'): Promise<PickedFile | null>;
+  save(file: { name: string; mimeType: string; bytes: Uint8Array }): Promise<FileExportResult>;
+  cache: FileCache;
+}
+
+export type OsPermission = 'unknown' | 'requesting' | 'granted' | 'limited' | 'denied' | 'restricted';
+export type NetworkStatus = 'unknown' | 'online' | 'offline';
+type PushProvider = 'apns' | 'fcm' | 'vendor';
+export type PushToken = { provider: PushProvider; token: string; environment: 'production' | 'sandbox' };
+export type TokenResult =
+  | { kind: 'token'; token: PushToken }
+  | { kind: 'unavailable'; code: 'CHANNEL_MISSING'; missing: 'apns_entitlement' | 'gms_or_vendor' }
+  | { kind: 'error'; code: 'REGISTRATION_FAILED' };
+
+/**
+ * 前台推送的系统呈现判定（N-MOBILE-FOREGROUND-PUSH-R3）：present=弹横幅（含声音），list=只落
+ * 通知中心列表。常态 present=false+list=true——前台不横幅打扰、app 内轻提示替位，但系统层一定
+ * 留痕；两位全 false 只属于「正看着的就是推送那条会话」（N-MOBILE-EXEC-STATUS ④）。
+ */
+export interface ForegroundPushDecision { present: boolean; list: boolean }
+
+export interface NotificationPort {
+  permission: { read(): Promise<OsPermission>; request(): Promise<OsPermission> };
+  token: { current(): Promise<TokenResult>; subscribe(onChange: (result: TokenResult) => void): Dispose };
+  tap: { subscribe(onTap: (routeToken: string) => void): Promise<Dispose> };
+  /** 前台来推送时问一句怎么呈现（横幅/通知中心列表两位）；只有 iOS 第一方插件提供。 */
+  foreground?: { subscribe(decide: (routeToken: string | null) => Promise<ForegroundPushDecision>): Promise<Dispose> };
+  openSettings(): Promise<void>;
+  network: { read(): NetworkStatus };
+}
 
 export interface PlatformPorts {
-  recorder?: { start(): Promise<void>; stop(): Promise<{ audioData: string; mimeType: string; durationMs: number }>; };
+  recorder?: {
+    start(): Promise<void>;
+    stop(): Promise<{ audioData: string; mimeType: string; durationMs: number }>;
+    startPcm?(): Promise<{ sampleRate: number }>;
+    stopPcm?(): Promise<void>;
+    subscribePcm?(onFrame: (frame: { pcm: string; durationMs: number }) => void): () => void;
+    /**
+     * 起录因 MICROPHONE_BUSY 失败后，盯着麦克风什么时候被占用方放掉；放掉时回调一次。返回取消盯守。
+     * 只有 iOS 第一方插件提供（它能读音频会话状态）。
+     */
+    watchMicrophoneRelease?(onReleased: () => void): () => void;
+  };
   companion?: {
     read(): Promise<string | null>; write(value: string): Promise<void>;
     scan(): Promise<string>; post(url: string, body: unknown): Promise<unknown>;
+    /** One-shot mDNS resolve of a `.local` hostname to a private IPv4 (fix4-⑤). Null = use the old address. */
+    resolveHost?(host: string): Promise<string | null>;
+    /**
+     * 拨 relay WSS（N-MOBILE-RELAY-PHONE）。headers 由能设头的运行时消费；WebView 的
+     * WebSocket 设不了头，缺省的 browserRelayDial 把凭据编码进 WebSocket 子协议。缺省走
+     * browserRelayDial。
+     */
+    dialRelay?(url: string, headers: { authorization: string }): RelayDialSocket;
   };
+  files?: FilePorts;
+  /** App-private conversation body cache. Separate from pairing identity and drafts. */
+  historyCache?: HistoryCache;
+  notifications?: NotificationPort;
   preferences: { get(): Promise<string | null>; set(value: string): Promise<void> };
   appInfo: { read(): Promise<{ version: string; build: string }> };
   lifecycle: { subscribe(onActive: (active: boolean) => void, onBack: () => void): Promise<Dispose>; leave(): Promise<void> };
-  keyboard: { subscribe(onVisible: (visible: boolean) => void): Promise<Dispose>; hide(): Promise<void> };
+  keyboard: {
+    subscribe(onVisible: (visible: boolean) => void): Promise<Dispose>;
+    subscribeFrame(onFrame: (frame: KeyboardFrame) => void): Promise<Dispose>;
+    hide(): Promise<void>;
+  };
   systemBars?: { setStyle(appearance: 'light' | 'dark'): Promise<void> };
 }

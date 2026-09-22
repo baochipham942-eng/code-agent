@@ -25,8 +25,9 @@ import {
 } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
-import { useUIStore } from '../stores/uiStore';
+import { toast } from '../hooks/useToast';
 import { IconButton, UndoToast } from './primitives';
+import { ConfirmDialog } from './composites/ConfirmDialog';
 import { createLogger } from '../utils/logger';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import { SidebarSessionList } from './features/sidebar/SidebarSessionList';
@@ -146,6 +147,7 @@ export const Sidebar: React.FC = () => {
     currentSessionId,
     isLoading,
     createSession,
+    loadSessions,
     switchSession,
     archiveSession,
     unarchiveSession,
@@ -381,6 +383,21 @@ export const Sidebar: React.FC = () => {
   // Keep new local state after the legacy Sidebar state sequence; several renderer tests
   // intentionally inject historical context/review state by hook index.
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const [sessionForkConfirm, setSessionForkConfirm] = useState<{
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText: string;
+    resolve: (confirmed: boolean) => void;
+  } | null>(null);
+  const confirmImportSessionFork = useCallback((options: {
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText: string;
+  }): Promise<boolean> => new Promise((resolve) => {
+    setSessionForkConfirm({ ...options, resolve });
+  }), []);
   const collapseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(
@@ -431,7 +448,7 @@ export const Sidebar: React.FC = () => {
     t,
   });
 
-  const showToast = useUIStore((state) => state.showToast);
+  const showToast = toast.show;
 
   const {
     saveExportToDownloads,
@@ -480,6 +497,47 @@ export const Sidebar: React.FC = () => {
         archiveSession,
         softDelete,
         saveExportToDownloads,
+        reloadSessions: () => loadSessions({ silent: true }),
+        switchSession,
+        findImportedSession: async (sourceExportId, projectId) => {
+          await loadSessions({ silent: true });
+          const importedRoot = useSessionStore.getState().sessions.find((candidate) => {
+            const provenance = candidate.metadata?.portabilityImportV2;
+            return candidate.projectId === projectId
+              && !candidate.parentSessionId
+              && provenance
+              && typeof provenance === 'object'
+              && !Array.isArray(provenance)
+              && (provenance as { sourceExportId?: unknown }).sourceExportId === sourceExportId;
+          });
+          if (!importedRoot) return null;
+          const provenance = importedRoot.metadata?.portabilityImportV2;
+          const sourcePayloadDigest = provenance
+            && typeof provenance === 'object'
+            && !Array.isArray(provenance)
+            && typeof (provenance as { sourcePayloadDigest?: unknown }).sourcePayloadDigest === 'string'
+            ? (provenance as { sourcePayloadDigest: string }).sourcePayloadDigest
+            : undefined;
+          return { id: importedRoot.id, sourcePayloadDigest };
+        },
+        locateImportedSession: async (sourceExportId, projectId) => {
+          await loadSessions({ silent: true });
+          const importedId = useSessionStore.getState().sessions.find((candidate) => {
+            const provenance = candidate.metadata?.portabilityImportV2;
+            return candidate.projectId === projectId
+              && !candidate.parentSessionId
+              && provenance
+              && typeof provenance === 'object'
+              && !Array.isArray(provenance)
+              && (provenance as { sourceExportId?: unknown }).sourceExportId === sourceExportId;
+          })?.id;
+          if (!importedId) return false;
+          await switchSession(importedId);
+          return true;
+        },
+        confirmImportSessionFork,
+        showActionToast: (message, action) => toast.error(message, action),
+        showSuccessToast: (message) => toast.success(message),
         showToast,
         openRuntimeLogsFolder,
         t,
@@ -495,6 +553,9 @@ export const Sidebar: React.FC = () => {
       setWorkingDirectory,
       saveWorkbenchPresetFromSession,
       saveExportToDownloads,
+      loadSessions,
+      switchSession,
+      confirmImportSessionFork,
       canOpenSessionReplay,
       handleOpenSessionReplay,
       handleOpenVoiceAudit,
@@ -910,6 +971,27 @@ export const Sidebar: React.FC = () => {
           y={contextMenu.y}
           items={getContextMenuItems(contextMenu.session)}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {sessionForkConfirm && (
+        <ConfirmDialog
+          isOpen
+          title={sessionForkConfirm.title}
+          message={sessionForkConfirm.message}
+          variant="warning"
+          confirmText={sessionForkConfirm.confirmText}
+          cancelText={sessionForkConfirm.cancelText}
+          onConfirm={() => {
+            const resolve = sessionForkConfirm.resolve;
+            setSessionForkConfirm(null);
+            resolve(true);
+          }}
+          onCancel={() => {
+            const resolve = sessionForkConfirm.resolve;
+            setSessionForkConfirm(null);
+            resolve(false);
+          }}
         />
       )}
 

@@ -78,7 +78,6 @@ export {
   logger,
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS,
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS,
-  MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS,
   MAX_SYSTEM_PROMPT_TOKENS,
   normalizePersistentSystemContextKey,
 } from './contextAssembly/shared';
@@ -106,6 +105,7 @@ export class ContextAssembly {
     _artifactNonStreamingRetried: false,
     _artifactRepairCompactWriteRetried: false,
     _networkRetried: false,
+    consecutiveStreamBreakRounds: 0,
   };
 
   private readonly compressionRecovery: CompressionRecoveryState = {

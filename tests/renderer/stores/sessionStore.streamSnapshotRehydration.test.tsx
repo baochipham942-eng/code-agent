@@ -83,6 +83,7 @@ function makeRemountedStreamState() {
     currentTurnMessageId: null as string | null,
     committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
   };
 }
 

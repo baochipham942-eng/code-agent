@@ -1,7 +1,8 @@
-import os from 'node:os';
-import path from 'node:path';
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { getDefaultWorkDirectory } from '../config/configPaths';
+import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
+import { FolderTrustSchemas, type FolderTrustDomainRequest } from '../../shared/ipc/schemas/folderTrust';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import {
   evaluateFolderTrust,
@@ -34,12 +35,12 @@ async function defaultResolveSessionWorkingDirectory(sessionId: string): Promise
  * 信任评估对象解析优先级：
  * 1. payload.workingDirectory（显式，调用方已知道目标目录）
  * 2. payload.sessionId → 会话绑定 workingDirectory
- * 3. WEB_MODE 兜底 → <dataDir>/work（无会话时的快速对话默认）
+ * 3. WEB_MODE 兜底 → getDefaultWorkDirectory()（无会话时的快速对话默认）
  * 4. app 级 getWorkingDirectory
  * 5. process.cwd()
  *
  * 注意：桌面 app 经 webServer 恒 CODE_AGENT_WEB_MODE=true，所以「会话优先」
- * 必须排在 WEB_MODE 分支之前，否则项目会话永远评到 <dataDir>/work。
+ * 必须排在 WEB_MODE 分支之前，否则项目会话永远评到 默认工作目录。
  */
 export async function resolveWorkingDirectory(
   payload: unknown,
@@ -67,58 +68,57 @@ export async function resolveWorkingDirectory(
   }
 
   if (env.CODE_AGENT_WEB_MODE === 'true') {
-    const dataDir = env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), '.code-agent');
-    // 与 web /api/run 的 ensureDefaultWebWorkingDirectory 保持同一真相源。
-    return path.join(path.resolve(dataDir), 'work');
+    // 与 web /api/run 的默认工作目录同一真相源。
+    return getDefaultWorkDirectory(env);
   }
   const appWorkingDirectory = getAppService()?.getWorkingDirectory();
   if (appWorkingDirectory) return appWorkingDirectory;
   return process.cwd();
 }
 
+/**
+ * folderTrust 域单源路由表（RQ-183 续作·FOLDER_TRUST 刀）：原 domain switch 逐 case 平移为 handler（rawResponse：
+ * set 的 INVALID_PAYLOAD 失败响应逐字不变）；每个 handler 按请求解析 workingDirectory（原 switch 分发前统一解析，
+ * 未知 action 也解析；迁表后未知 action 不解析，解析本身无副作用）；未知 action → INVALID_ACTION
+ * `Unknown action: <action>`、抛错 → INTERNAL_ERROR（Error 取 message、非 Error 取 String(error)），均为装配器缺省。
+ * 请求体为 null / 非对象时由原 INTERNAL_ERROR 变为 INVALID_ACTION（真实调用方不发此形状）。
+ */
+type FolderTrustRouteCtx = () => AgentApplicationService | null;
+
+const folderTrustHandlers: RawDomainRouteHandlers<FolderTrustDomainRequest, FolderTrustRouteCtx> = {
+  get: async (getAppService, payload) => ({
+    success: true,
+    data: await evaluateFolderTrust(await resolveWorkingDirectory(payload, getAppService)),
+  }),
+  set: async (getAppService, rawPayload) => {
+    const workingDirectory = await resolveWorkingDirectory(rawPayload, getAppService);
+    const payload = rawPayload as { state?: FolderTrustDecisionState; decidedBy?: string } | undefined;
+    if (payload?.state !== 'trusted' && payload?.state !== 'blocked') {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'folderTrust:set requires state trusted or blocked.' },
+      };
+    }
+    return { success: true, data: await setFolderTrust(workingDirectory, payload.state, payload.decidedBy) };
+  },
+  revoke: async (getAppService, payload) => ({
+    success: true,
+    data: await revokeFolderTrust(await resolveWorkingDirectory(payload, getAppService)),
+  }),
+};
+
+const folderTrustRoutes = defineDomainRoutes<FolderTrustDomainRequest, FolderTrustRouteCtx>(
+  FolderTrustSchemas.REQUEST,
+  folderTrustHandlers,
+  { rawResponse: true },
+);
+
 export function registerFolderTrustHandlers(
   ipcMain: IpcMain,
   getAppService: () => AgentApplicationService | null,
 ): void {
-  ipcMain.handle(IPC_DOMAINS.FOLDER_TRUST, async (_event, request: IPCRequest): Promise<IPCResponse> => {
-    try {
-      const workingDirectory = await resolveWorkingDirectory(request.payload, getAppService);
-      let data: unknown;
-
-      switch (request.action) {
-        case 'get':
-          data = await evaluateFolderTrust(workingDirectory);
-          break;
-        case 'set': {
-          const payload = request.payload as { state?: FolderTrustDecisionState; decidedBy?: string } | undefined;
-          if (payload?.state !== 'trusted' && payload?.state !== 'blocked') {
-            return {
-              success: false,
-              error: { code: 'INVALID_PAYLOAD', message: 'folderTrust:set requires state trusted or blocked.' },
-            };
-          }
-          data = await setFolderTrust(workingDirectory, payload.state, payload.decidedBy);
-          break;
-        }
-        case 'revoke':
-          data = await revokeFolderTrust(workingDirectory);
-          break;
-        default:
-          return {
-            success: false,
-            error: { code: 'INVALID_ACTION', message: `Unknown action: ${request.action}` },
-          };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
-  });
+  installDomainRoutes(ipcMain, folderTrustRoutes, getAppService);
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）
+registerFolderTrustHandlers.routes = folderTrustRoutes;

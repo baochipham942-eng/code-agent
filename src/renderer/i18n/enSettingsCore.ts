@@ -69,6 +69,7 @@ export const enSettingsCore = {
       voiceLive: 'Live Voice',
       voiceLiveVoice: 'Live Voice timbre',
       voiceLiveInterrupt: 'Interrupt mode',
+      voiceCallBudget: 'Call budget',
       voiceConversationModel: 'Live Voice model',
       whisperModel: 'Whisper model',
       transcriptionLanguage: 'Transcription language',
@@ -251,6 +252,13 @@ export const enSettingsCore = {
           description: 'Sub-agents now use Strict inheritance by default to prevent plan → coder, reviewer → coder, and similar workflows from bypassing permissions. Choose Independent mode only if you need the old behavior.',
           acknowledge: 'Got it',
           releaseNotes: 'View release notes',
+        },
+        sandbox: {
+          title: 'OS sandbox',
+          available: 'Bash runs inside the OS sandbox by default in Default and Accept edits modes.',
+          unavailable: 'OS sandbox is unavailable on this machine. Bash will run with an explicit degradation mark instead of a silent naked fallback.',
+          disabled: 'OS sandbox is turned off. OS_SANDBOX_ENABLED=false is an emergency opt-out only.',
+          installHint: 'On Linux, install bubblewrap (bwrap). macOS uses the built-in sandbox-exec.',
         },
         controlPlane: {
           title: 'Permission control plane',

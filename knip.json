@@ -12,6 +12,9 @@
     "packages/internal/evaluation-center/src/renderer/entry.tsx",
     "packages/internal/evaluation-center/esbuild.host.config.ts",
     "packages/internal/evaluation-center/vite.renderer.config.ts",
+    "packages/mobile/src/main.tsx",
+    "packages/mobile/capacitor.config.ts",
+    "packages/mobile/vite.config.ts",
     "scripts/**/*.{ts,mjs}",
     "tests/**/*.{ts,tsx}",
     "esbuild.config.ts",
@@ -22,7 +25,8 @@
   ],
   "project": [
     "src/**/*.{ts,tsx}",
-    "packages/internal/evaluation-center/src/**/*.{ts,tsx}"
+    "packages/internal/evaluation-center/src/**/*.{ts,tsx}",
+    "packages/mobile/src/**/*.{ts,tsx}"
   ],
   "ignoreDependencies": [
     ".*"
@@ -30,5 +34,7 @@
   "ignoreBinaries": [
     ".*"
   ],
-  "ignore": []
+  "ignore": [
+    "packages/mobile/src/env.d.ts"
+  ]
 }

@@ -80,6 +80,7 @@ describe('统一实验臂 schema', () => {
       thinkingInjection: true,
       hooksEnabled: false,
       toolMode: 'all',
+      knobs: { 'subagent.compactionThreshold': 0.8 },
     };
     const base: CompareConfiguration = {
       ...BASELINE,
@@ -99,6 +100,7 @@ describe('统一实验臂 schema', () => {
       { thinkingInjection: false },
       { hooksEnabled: true },
       { toolMode: 'deferred' },
+      { knobs: { 'subagent.compactionThreshold': 0.7 } },
     ];
     for (const flip of harnessFlips) {
       const candidate: CompareConfiguration = { ...same, harness: { ...fullHarness, ...flip } };
@@ -107,6 +109,11 @@ describe('统一实验臂 schema', () => {
     expect(() => assertCompareArmsDistinct(base, { ...same, memory: { longTerm: true, routingModel: 'memory-a' } })).not.toThrow();
     expect(() => assertCompareArmsDistinct(base, { ...same, memory: { longTerm: false, routingModel: 'memory-b' } })).not.toThrow();
     expect(() => assertCompareArmsDistinct(base, { ...same, reasoningEffort: 'xhigh' })).not.toThrow();
+    // PR#1769 ai-review：knobs 省略 / 空对象 / 显式写成生产默认值，行为相同 ⇒ 必须判「两组一样」
+    const baseNoKnobs: CompareConfiguration = { ...base, harness: { ...fullHarness, knobs: undefined } };
+    expect(() => assertCompareArmsDistinct(baseNoKnobs, { ...same, harness: { ...fullHarness, knobs: {} } })).toThrow();
+    expect(() => assertCompareArmsDistinct(baseNoKnobs, { ...same, harness: { ...fullHarness, knobs: { 'subagent.compactionThreshold': 0.8, 'context.persistentSystemContextTokens': 1200 } } })).toThrow();
+    expect(() => assertCompareArmsDistinct(baseNoKnobs, { ...same, harness: { ...fullHarness, knobs: { 'context.persistentSystemContextTokens': 1201 } } })).not.toThrow();
     for (const skills of [['alpha'], ['beta'], ['alpha', 'beta']]) {
       expect(() => assertCompareArmsDistinct(base, { ...same, skills }), JSON.stringify(skills)).not.toThrow();
     }

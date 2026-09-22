@@ -404,6 +404,8 @@ export async function executeImageGenerate(
   const style = params.style;
   const outputPath = params.output_path || defaultImageOutputPath(ctx.workingDir);
   const isDefaultOutputPath = !params.output_path;
+  // 事件里的 filePath 必须是绝对路径（相对值按 workingDir 归一）——成果回传方不猜进程 cwd。
+  const absoluteOutputPath = path.isAbsolute(outputPath) ? outputPath : path.join(ctx.workingDir, outputPath);
 
   if (ctx.currentToolCallId) {
     ctx.emit({
@@ -411,7 +413,7 @@ export async function executeImageGenerate(
       data: {
         toolCallId: ctx.currentToolCallId,
         toolName: schema.name,
-        filePath: outputPath,
+        filePath: absoluteOutputPath,
       },
     });
   }
@@ -503,9 +505,7 @@ export async function executeImageGenerate(
     let savedImageSizeBytes: number | undefined;
     let dimensions: { width: number; height: number } | undefined;
     if (!isImageUrl(imageBase64)) {
-      const resolvedPath = path.isAbsolute(outputPath)
-        ? outputPath
-        : path.join(ctx.workingDir, outputPath);
+      const resolvedPath = absoluteOutputPath;
 
       const dir = path.dirname(resolvedPath);
       if (!fs.existsSync(dir)) {

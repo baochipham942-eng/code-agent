@@ -50,7 +50,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 vi.mock('../../../src/host/services', () => ({
-  getConfigService: () => ({ getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
   getAuthService: () => ({ getCurrentUser: vi.fn().mockReturnValue({ isAdmin: false }) }),
   getLangfuseService: () => ({
     startGenerationInSpan: vi.fn(),
@@ -60,7 +60,7 @@ vi.mock('../../../src/host/services', () => ({
 
 // modelDecision.ts 直接 import configService（绕过 services barrel），需单独 mock
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
 }));
 
 vi.mock('../../../src/host/mcp/logCollector.js', () => ({
@@ -244,7 +244,7 @@ describe('resolveMainChatModelDecision — model_decision 事件发射（ADR-019
       resolvedProvider: 'moonshot',
       resolvedModel: 'kimi-k2.5',
       reason: 'fallback-availability',
-      fallbackFrom: 'zhipu/glm-4-flash',
+      fallbackFrom: `zhipu/${DEFAULT_MODELS.quick}`,
     });
   });
 

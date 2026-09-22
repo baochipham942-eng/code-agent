@@ -12,12 +12,11 @@
 
 import {
   DEFAULT_PROVIDER,
-  DEFAULT_MODELS,
-  getDefaultModelForProvider,
   getModelMaxOutputTokens,
 } from '../../../shared/constants';
 import type { ModelConfig, ModelProvider } from '../../../shared/contract';
 import { resolveConfiguredDefaultProvider } from '../../../shared/modelDefaults';
+import { fallbackModelForProvider } from '../../../shared/modelRuntime';
 import { getConfigService } from './configService';
 
 export interface SessionDefaultArgs {
@@ -45,7 +44,7 @@ export function resolveSessionDefaultModelConfig(args: SessionDefaultArgs = {}):
   const provider = (args.provider as ModelProvider | undefined)
     ?? resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
   const providerCfg = settings.models?.providers?.[provider];
-  const model = args.model || providerCfg?.model || getDefaultModelForProvider(provider) || DEFAULT_MODELS.chat;
+  const model = args.model || providerCfg?.model || fallbackModelForProvider(provider, settings);
 
   return {
     provider,

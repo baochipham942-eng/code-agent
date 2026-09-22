@@ -4,7 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import policy from '../../scripts/lib/gates-fast-policy.json';
-import { assertExactFiles, selectTests, validateFiles, validateReport, renderReceipt, digest } from '../../scripts/lib/gates-fast-contract.mjs';
+import {
+  assertExactFiles, selectTests, validateFiles, validateReport, renderReceipt, digest,
+  validateBudgetPolicy, validateGateBudgetCoverage, extractGateIds, commandDeadline, budgetFailure,
+} from '../../scripts/lib/gates-fast-contract.mjs';
 
 const root = path.resolve(__dirname, '../..');
 describe('fast gate fail-closed contracts', () => {
@@ -76,6 +79,40 @@ describe('fast gate fail-closed contracts', () => {
       { ...good, testResults: [{ ...good.testResults[0], assertionResults: [] }] },
       { ...good, testResults: [{ ...good.testResults[0], assertionResults: [{ status: 'pending' }] }] },
     ]) expect(() => validateReport([policy.baseline[0]], bad, root)).toThrow();
+  });
+  it('budgets: per-gate cap and total ceiling are separate limits with separate failure wording', () => {
+    expect(() => validateBudgetPolicy(policy)).not.toThrow();
+    expect(() => validateBudgetPolicy({ ...policy, budgetMs: 180000 })).toThrow('ship outer timeout');
+    expect(() => validateBudgetPolicy({ ...policy, budgetsMs: {} })).toThrow('per-gate budgets');
+    expect(() => validateBudgetPolicy({ ...policy, budgetsMs: { ...policy.budgetsMs, vitest: policy.budgetMs + 1 } })).toThrow('budgetsMs.vitest');
+    const p = { budgetMs: 100, budgetsMs: { a: 30 } };
+    expect(commandDeadline(p, 'a', 10, 5)).toEqual({ limit: 'gate', limitMs: 30, remainingMs: 25, gateId: 'a' });
+    expect(commandDeadline(p, 'a', 90, 5)).toEqual({ limit: 'total', limitMs: 100, remainingMs: 10, gateId: 'a' });
+    expect(commandDeadline(p, undefined, 40, 0)).toEqual({ limit: 'total', limitMs: 100, remainingMs: 60, gateId: null });
+    expect(budgetFailure(commandDeadline(p, 'a', 10, 40), ['node', 'x'])).toBe('FAIL: gate budget 30ms exceeded (gate a) in node x');
+    expect(budgetFailure(commandDeadline(p, 'a', 120, 0), ['node', 'x'])).toBe('FAIL: total budget 100ms exhausted (gate a) in node x');
+  });
+  it('对账 gates-fast.mjs 的 gate() 注册与 budgetsMs，缺项和多余项都 fail-closed', () => {
+    const source = `await gate('inputs', true, run);\nawait gate("vitest", true, run);`;
+    expect(extractGateIds(source)).toEqual(['inputs', 'vitest']);
+    expect(() => validateGateBudgetCoverage({ ...policy, budgetsMs: { inputs: 100 } }, ['inputs', 'vitest']))
+      .toThrow('missing budgetsMs key(s): vitest');
+    expect(() => validateGateBudgetCoverage({ ...policy, budgetsMs: { inputs: 100, vitest: 100, retired: 100 } }, extractGateIds(source)))
+      .toThrow('unknown budgetsMs key(s): retired');
+    expect(() => validateGateBudgetCoverage({ ...policy, budgetsMs: { inputs: 100, vitest: 100 } }, ['inputs', 'vitest']))
+      .not.toThrow();
+    expect(() => extractGateIds("await gate('inputs', true, run); await gate('inputs', false, run);"))
+      .toThrow('duplicate gate registration: inputs');
+  });
+  it('policy leaves 2x headroom over the measured agent-core PR under load (09-15 route-domains TASK run, 3 receipts)', () => {
+    // 09-15 负载 ~10 下 TASK 刀逐格实测最大值（tests-typecheck 取单跑 16.7s，vitest 取工单记录的 agentOrchestrator 选中 22.6s）
+    const measured: Record<string, number> = {
+      inputs: 600, provider: 100, private: 9300, 'src-typecheck': 8800, shell: 100,
+      'commit-checks': 11700, vitest: 22600, 'package-typechecks': 7400, 'tests-typecheck': 16700,
+    };
+    const budgets = policy.budgetsMs as Record<string, number>;
+    for (const [id, ms] of Object.entries(measured)) expect(budgets[id], id).toBeGreaterThanOrEqual(ms * 2);
+    expect(Object.values(measured).reduce((a, b) => a + b, 0) * 2).toBeLessThanOrEqual(policy.budgetMs);
   });
   it('renders the persisted receipt values and never renders success for a failure', () => {
     const receipt = JSON.parse(JSON.stringify({ schemaVersion: 2, status: 'passed', headSha: 'head', baseSha: 'base', receiptId: 'id', ci: { status: 'pending' }, prNumber: null }));

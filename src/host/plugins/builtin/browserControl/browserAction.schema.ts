@@ -1,17 +1,18 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 // Pure type-only — does not pull legacy tool code at import time.
 import type { UntrustedContentToolSchema } from '../../../protocol/tools';
+import { browserJevStepDescriptionSuffix, withBrowserJevStepActionEnum } from '../../../../shared/constants/jevQuestions';
 
 export const browserActionSchema: UntrustedContentToolSchema = {
   name: 'browser_action',
-  description: `Control a browser for web automation and testing (tabs, click/type, screenshots, DOM/a11y snapshots, forms, uploads/downloads, account state).
+  get description() { return `Control a browser for web automation and testing (tabs, click/type, screenshots, DOM/a11y snapshots, forms, uploads/downloads, account state).
 
 Routing: prefer web_fetch/search for plain reads; use browser_action for login/session, multi-page, or visual work. After mutations, refresh DOM/a11y evidence before claiming final state.
 engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
 Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy userConfirmed signal but also requires a one-time Host approval bound to profile/domain scope; clear_cookies clears managed profile cookies. Never log cookie values.
-storageState file path: export_storage_state / import_storage_state for CI/scripts.`,
+storageState file path: export_storage_state / import_storage_state for CI/scripts.${browserJevStepDescriptionSuffix()}`; },
   outputSchema: { type: 'string' },
-  inputSchema: {
+  get inputSchema() { return withBrowserJevStepActionEnum({
     type: 'object',
     properties: {
       action: {
@@ -24,7 +25,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
           'list_profiles', 'import_profile_cookies', 'clear_cookies',
-          'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs'
+          'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+          'execute_goal',
         ],
         description: 'The browser action to perform',
       },
@@ -151,15 +153,28 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       domainAllowlist: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Optional domain allowlist for import_profile_cookies',
+        description: 'Required domain allowlist for import_profile_cookies. Provide at least one domain; an empty list is rejected.',
       },
       userConfirmed: {
         type: 'boolean',
         description: 'Legacy compatibility signal for import_profile_cookies. It cannot authorize import without a one-time Host permission bound to the exact profile/domain scope (ADR-041).',
       },
+      task: {
+        type: 'string',
+        description: 'Natural-language goal for execute_goal',
+      },
+      assertions: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+        description: 'Optional frozen gold assertions for execute_goal',
+      },
+      jevBudgetUsd: {
+        type: 'number',
+        description: 'Optional per-task Jev USD budget for execute_goal',
+      },
     },
     required: ['action'],
-  },
+  }); },
   category: 'vision',
   permissionLevel: 'execute',
   readsUntrustedContent: 'block',

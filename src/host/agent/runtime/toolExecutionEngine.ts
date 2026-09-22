@@ -1,4 +1,6 @@
-import { getToolAttemptTrace } from './toolAttemptTrace';
+import { getToolAttemptTrace, shouldFreezeNonReadWhileAwaitingUser, buildAwaitingUserBlockedResult, AWAITING_USER_FREEZE_NOTICE } from './toolAttemptTrace';
+import { emitForceFinalSkippedToolResult } from './forceFinalSeal';
+import { mintUserTurnOrigin } from '../messageOrigin';
 import { attachDocumentOrigin, describeDocumentEvidenceProblems, documentClaimPreflight } from './documentEvidenceBoundary';
 // ============================================================================
 // ToolExecutionEngine — Tool execution with hooks, circuit breaker, content verification
@@ -19,7 +21,7 @@ import { getLangfuseService } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { EXIT_ROLE_FLOW_TOOL_NAME } from '../../tools/modules/roleAuthoring/exitRoleFlow.schema';
 import { createLogger } from '../../services/infra/logger';
-import { TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS, DESIGN_QUALITY } from '../../../shared/constants';
+import { DESIGN_QUALITY } from '../../../shared/constants';
 import { runDesignQualityReview } from '../../quality/designQualityHook';
 import { isFrontendPath } from '../../quality/detect';
 import { readFileSync } from 'node:fs';
@@ -79,7 +81,7 @@ import {
   semanticProgressReasonForToolCall,
 } from './toolPreflightGuards';
 import { getArtifactLocatorPreflightBlock } from '../../tools/artifacts/artifactLocatorHost';
-import { clearApprovalWait, getApprovalWaitMs } from '../../tools/toolExecutionTelemetry';
+import { createToolExecutionWatchdog } from './toolExecutionTimeout';
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 import { planContextTag } from './planApprovalRunBoundary';
@@ -118,6 +120,8 @@ export class ToolExecutionEngine {
   // 工具入参 repair 节流闸：按 toolName 统计连续校验失败，超上限切终止指引
   // （Kimi 借鉴 #1）。引擎实例随 AgentLoop 跨多轮复用，run 起点须 reset。
   private readonly repairGate = new ToolArgsRepairGate(TOOL_ARGS_REPAIR_MAX_ATTEMPTS);
+  // 问句未答冻结的提示只在本 run 内注入一次（resetRepairGate 清掉）。
+  private awaitingUserNoticeInjected = false;
 
   constructor(protected ctx: RuntimeContext) {}
 
@@ -126,6 +130,7 @@ export class ToolExecutionEngine {
     this.repairGate.reset();
     getToolAttemptTrace(this.ctx).reset();
     this.dispatchedCalls.clear();
+    this.awaitingUserNoticeInjected = false;
   }
 
   getActiveToolNames(): string[] {
@@ -356,7 +361,7 @@ export class ToolExecutionEngine {
         parallel,
       );
     };
-    const emitBlockedToolResult = (toolResult: ToolResult): ToolResult => {
+    const emitBlockedToolResult = (toolResult: ToolResult, observed = sanitizeToolResultForObservation(toolCall, toolResult)): ToolResult => {
       emitToolCallStart();
       this.ctx.telemetryAdapter?.onToolCallEnd(
         this.ctx.turn.currentTurnId,
@@ -367,23 +372,29 @@ export class ToolExecutionEngine {
         undefined,
         toolResult.metadata,
       );
-      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
+      this.ctx.onEvent({ type: 'tool_call_end', data: observed });
+      return toolResult;
+    };
+    /** preflight 拒绝（不 dispatch）结果的统一簿记：在 emitBlockedToolResult 上补执行日志。 */
+    const emitBlockedToolResultWithLog = (toolResult: ToolResult): ToolResult => {
+      const observed = sanitizeToolResultForObservation(toolCall, toolResult); emitBlockedToolResult(toolResult, observed);
+      if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
+        try {
+          this.ctx.onToolExecutionLog({
+            sessionId: this.ctx.sessionId,
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            args: sanitizeToolArgumentsForObservation(toolCall) as Record<string, unknown>,
+            result: observed,
+          });
+        } catch { /* never let logging break tool execution */ }
+      }
       return toolResult;
     };
 
     if (this.shouldSkipToolBecauseForceFinalWasSetInBatch()) {
-      const toolResult: ToolResult = {
-        toolCallId: toolCall.id,
-        success: false,
-        error: `Tool skipped because final response is already forced: ${this.ctx.control.forceFinalResponseReason}`,
-        duration: 0,
-        metadata: {
-          skipped: true,
-          blocked: true,
-          forceFinalResponseReason: this.ctx.control.forceFinalResponseReason,
-        },
-      };
-      return emitBlockedToolResult(toolResult);
+      // 强制收尾已置位：只发 UI 事件收口，不派发、不写遥测（不计工具失败，issue #1991）
+      return emitForceFinalSkippedToolResult(this.ctx, toolCall, index);
     }
 
     // 记录式：提醒模型，但**不拦**这次写入，也不计入连续错误去触发强制收尾
@@ -604,26 +615,7 @@ export class ToolExecutionEngine {
         'tool-argument-repair',
       );
 
-      emitToolCallStart();
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
-      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
-      // Tool execution logging (non-blocking)
-      if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
-        try {
-          const safeToolResult = sanitizeToolResultForObservation(toolCall, toolResult);
-          this.ctx.onToolExecutionLog({
-            sessionId: this.ctx.sessionId,
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            args: sanitizeToolArgumentsForObservation(toolCall) as Record<string, unknown>,
-            result: safeToolResult,
-          });
-        } catch {
-          // Never let logging break tool execution
-        }
-      }
-
-      return toolResult;
+      return emitBlockedToolResultWithLog(toolResult);
     }
 
     // 清理工具参数中的 XML 标签残留（如 <arg_key>command</arg_key>）
@@ -632,6 +624,23 @@ export class ToolExecutionEngine {
     // Schema validation gate — 在真实 dispatch 前用工具自身 inputSchema 校验
     // missing required + 顶层 type，失败时把 schema 信息回灌给模型自我修正
     const definition = getToolDefinitionWithCloudMeta(toolCall.name);
+
+    // 问句未答冻结：无人应答或等待超时后，只放行 read 级与 AskUserQuestion（bypass 同冻）。
+    if (shouldFreezeNonReadWhileAwaitingUser(getToolAttemptTrace(this.ctx).awaitingUserInput, toolCall.name, definition)) {
+      logger.warn('[AgentLoop] Tool blocked while awaiting user input (unanswered AskUserQuestion)', {
+        tool: toolCall.name,
+      });
+      logCollector.tool('WARN', `Tool ${toolCall.name} blocked while awaiting user input`, {
+        toolCallId: toolCall.id,
+      });
+      const toolResult = buildAwaitingUserBlockedResult(toolCall.id, Date.now() - startTime);
+      if (!this.awaitingUserNoticeInjected) {
+        this.awaitingUserNoticeInjected = true;
+        this.contextAssembly.injectSystemMessage(AWAITING_USER_FREEZE_NOTICE, 'tool-policy-guard');
+      }
+      return emitBlockedToolResultWithLog(toolResult);
+    }
+
     const validation = validateToolArgs(
       toolCall.name,
       definition?.inputSchema,
@@ -672,24 +681,7 @@ export class ToolExecutionEngine {
 
       this.contextAssembly.injectSystemMessage(injectMessage, 'tool-schema-repair');
 
-      emitToolCallStart();
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
-      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
-
-      if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
-        try {
-          const safeToolResult = sanitizeToolResultForObservation(toolCall, toolResult);
-          this.ctx.onToolExecutionLog({
-            sessionId: this.ctx.sessionId,
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            args: sanitizeToolArgumentsForObservation(toolCall) as Record<string, unknown>,
-            result: safeToolResult,
-          });
-        } catch { /* never let logging break tool execution */ }
-      }
-
-      return toolResult;
+      return emitBlockedToolResultWithLog(toolResult);
     }
 
     // 入参通过校验 → 该工具的连续校验失败 streak 清零（即使后续运行时失败，
@@ -701,18 +693,8 @@ export class ToolExecutionEngine {
     }
 
     if (this.shouldSkipToolBecauseForceFinalWasSetInBatch()) {
-      const toolResult: ToolResult = {
-        toolCallId: toolCall.id,
-        success: false,
-        error: `Tool skipped because final response is already forced: ${this.ctx.control.forceFinalResponseReason}`,
-        duration: Date.now() - startTime,
-        metadata: {
-          skipped: true,
-          blocked: true,
-          forceFinalResponseReason: this.ctx.control.forceFinalResponseReason,
-        },
-      };
-      return emitBlockedToolResult(toolResult);
+      // 强制收尾已置位：只发 UI 事件收口，不派发、不写遥测（不计工具失败，issue #1991）
+      return emitForceFinalSkippedToolResult(this.ctx, toolCall, index, Date.now() - startTime);
     }
 
     const readOnlyPreflight = getReadOnlyPreflightWarning(this.ctx, toolCall);
@@ -776,28 +758,24 @@ export class ToolExecutionEngine {
     });
 
     // Tool progress & timeout tracking
-    const timeoutThreshold = TOOL_TIMEOUT_THRESHOLDS[toolCall.name] ?? TOOL_PROGRESS.DEFAULT_THRESHOLD;
-    let timeoutEmitted = false;
-    const progressInterval = setInterval(() => {
-      // 卡在人身上的时间不算工具耗时：语音态/无人值守的审批是「停车挂起」（不限时），
-      // 把等人那段算进来的话，用户还在看审批卡就先被告知「工具执行超时」（2026-07-26 真机）。
-      const now = Date.now();
-      const elapsed = now - startTime - getApprovalWaitMs(toolCall.id, now);
-      this.ctx.onEvent({
-        type: 'tool_progress',
-        data: { toolCallId: toolCall.id, toolName: toolCall.name, elapsedMs: elapsed },
-      });
-      if (!timeoutEmitted && elapsed > timeoutThreshold) {
-        timeoutEmitted = true;
-        this.ctx.onEvent({
-          type: 'tool_timeout',
-          data: { toolCallId: toolCall.id, toolName: toolCall.name, elapsedMs: elapsed, threshold: timeoutThreshold },
-        });
-        logger.warn(`Tool ${toolCall.name} exceeded timeout threshold ${timeoutThreshold}ms (elapsed: ${elapsed}ms)`);
-      }
-    }, TOOL_PROGRESS.REPORT_INTERVAL);
+    const watchdog = createToolExecutionWatchdog({
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      startedAt: startTime,
+      onEvent: (event) => this.ctx.onEvent(event),
+      onTimeoutWarn: (elapsed, threshold) => logger.warn(`Tool ${toolCall.name} exceeded timeout threshold ${threshold}ms (elapsed: ${elapsed}ms)`),
+    });
+    watchdog.startProgressReporter();
 
     this.activeToolNames.set(toolCall.id, toolCall.name);
+    const toolAbortController = new AbortController();
+    const parentAbortSignal = this.ctx.control.runAbortController?.signal;
+    const abortFromParent = () => toolAbortController.abort(parentAbortSignal?.reason);
+    if (parentAbortSignal?.aborted) {
+      abortFromParent();
+    } else {
+      parentAbortSignal?.addEventListener('abort', abortFromParent, { once: true });
+    }
     try {
       logger.debug(` Calling toolExecutor.execute for ${toolCall.name}...`);
 
@@ -807,8 +785,9 @@ export class ToolExecutionEngine {
         ? await captureWorkspaceMutationSnapshot(this.ctx.workingDirectory || process.cwd())
         : undefined;
 
+      watchdog.markActivity();
       this.dispatchedCalls.add(toolCall.id);
-      const result = await this.ctx.toolExecutor.execute(
+      const execution = this.ctx.toolExecutor.execute(
         toolCall.name,
         toolCall.arguments,
         {
@@ -822,7 +801,10 @@ export class ToolExecutionEngine {
           modelConfig: this.ctx.modelConfig,
           setPlanMode: this.runtimeControl.setPlanMode.bind(this.runtimeControl),
           isPlanMode: this.runtimeControl.isPlanMode.bind(this.runtimeControl),
-          emitEvent: (event: string, data: unknown) => this.ctx.onEvent({ type: event, data, sessionId: this.ctx.sessionId } as AgentEvent),
+          emitEvent: (event: string, data: unknown) => {
+            watchdog.markActivity();
+            this.ctx.onEvent({ type: event, data, sessionId: this.ctx.sessionId } as AgentEvent);
+          },
           sessionId: this.ctx.sessionId,
           // Per-agent BrowserPool / ComputerSurface 隔离的关键：把 RuntimeContext.agentId
           // 透传到 ToolContext。子 agent 通过 subagent pipeline 派活时填入此字段，工具
@@ -830,6 +812,8 @@ export class ToolExecutionEngine {
           agentId: this.ctx.agentId,
           // 仅轮级确认的持久化角色可写入角色记忆，避免普通预定义 agent 误建角色目录。
           agentRole: this.ctx.persistentRoleId,
+          // ADR-067 D3：主代理常规输入铸 user 起源（维度补齐，user 不升档、行为不变）。
+          turnOrigin: mintUserTurnOrigin({ sessionId: this.ctx.sessionId, runId: this.ctx.runId, turnId: this.ctx.turn.currentTurnId }),
           // 仅轮级确认的持久化角色可写入角色记忆，避免普通预定义 agent 误建角色目录。
           preApprovedTools: this.ctx.control.preApprovedTools,
           skillDiscoveryService: this.ctx.skillDiscoveryService,
@@ -846,13 +830,16 @@ export class ToolExecutionEngine {
           executionIntent: this.ctx.executionIntent,
           neoTag: this.ctx.neoTag,
           suppressBackgroundSubagentIdleWake: Boolean(this.ctx.goalMode?.isPending()),
-          abortSignal: this.ctx.control.runAbortController?.signal,
+          abortSignal: toolAbortController.signal,
           deniedToolNames: this.ctx.deniedToolNames,
-          allowedToolNames: this.ctx.allowedToolNames,
+          allowedToolNames: this.ctx.allowedToolNames, foregroundToolFace: this.ctx.foregroundToolFace,
         }
       );
-      clearInterval(progressInterval);
-      clearApprovalWait(toolCall.id);
+      const result = await watchdog.awaitExecution(
+        execution,
+        () => toolAbortController.abort(new Error('tool execution inactivity timeout')),
+      );
+      watchdog.stop();
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
 
       // exit_role_flow：工具本体触达不到 turn 状态，在引擎侧收口——成功即解除
@@ -1165,10 +1152,9 @@ export class ToolExecutionEngine {
 
       return preservedToolResult;
     } catch (error) {
-      clearInterval(progressInterval);
-      clearApprovalWait(toolCall.id);
-      // catch 错误处理已抽取为 handleToolExecutionError（行为不变）。clearInterval
-      // 引用局部 progressInterval 故留在此处；其余逻辑全部委托给 helper。
+      watchdog.stop();
+      // catch 错误处理已抽取为 handleToolExecutionError（行为不变）；watchdog.stop()
+      // 幂等，与成功路径的重复调用安全。其余逻辑全部委托给 helper。
       return await handleToolExecutionError({
         ctx: this.ctx,
         contextAssembly: this.contextAssembly,
@@ -1179,6 +1165,11 @@ export class ToolExecutionEngine {
         toolSpanId,
       });
     } finally {
+      if (parentAbortSignal) parentAbortSignal.removeEventListener('abort', abortFromParent);
+      // detached 子代理（run_in_background / waitForCompletion:false / 前台超时收养）
+      // 在 spawnAgent.ts 各自路径返回前已摘除对本信号的监听；这里的 abort 只作用于
+      // 已收口的前台调用。
+      toolAbortController.abort();
       this.activeToolNames.delete(toolCall.id);
     }
   }

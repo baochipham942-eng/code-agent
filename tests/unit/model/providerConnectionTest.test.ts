@@ -5,7 +5,7 @@ import {
 } from '../../../src/host/model/providerConnectionTest';
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getApiKey: vi.fn(() => ''),
   }),
 }));

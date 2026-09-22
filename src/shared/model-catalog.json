@@ -195,6 +195,12 @@
           "desc": "200K · 增强快速"
         },
         {
+          "id": "glm-5.3-flash",
+          "label": "GLM-5.3 Flash",
+          "desc": "128K · 极速非思考 · 意图分类/短任务（0ki）",
+          "evalEligible": false
+        },
+        {
           "id": "glm-4-flash",
           "label": "GLM-4 Flash (免费)",
           "desc": "极速非思考 · 意图分类/短任务",
@@ -306,11 +312,11 @@
       "description": "LongCat API 开放平台（OpenAI / Claude 兼容）",
       "apiUrl": "https://api.longcat.chat/openai/v1",
       "apiKeyHint": "sk-...",
-      "default": "LongCat-2.0-Preview",
+      "default": "LongCat-2.0",
       "models": [
         {
-          "id": "LongCat-2.0-Preview",
-          "label": "LongCat 2.0 Preview",
+          "id": "LongCat-2.0",
+          "label": "LongCat 2.0",
           "desc": "官方开放平台模型 · 支持 OpenAI / Claude 兼容协议",
           "scaffoldTier": "lite"
         }

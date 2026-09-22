@@ -20,9 +20,21 @@ import * as path from 'path';
 import { getTelemetryStorage } from '../../telemetry/telemetryStorage';
 import { getDatabase } from '../core/databaseService';
 import { getUserDataPath } from '../../platform/appPaths';
-import { TELEMETRY_RETENTION } from '../../../shared/constants';
+import { SQLITE_INTEGRITY, TELEMETRY_RETENTION } from '../../../shared/constants';
 import { createLogger } from './logger';
 import { runVacuumInSubprocess, shouldPersistVacuumMarker, type VacuumOutcome } from './dbVacuumSubprocess';
+import { rotateDatabaseBackup, type BackupOutcome } from './dbBackup';
+import {
+  runQuickCheckInSubprocess,
+  shouldPersistIntegrityMarker,
+  type QuickCheckOutcome,
+} from './dbQuickCheckSubprocess';
+import {
+  readTimestampMarker,
+  shouldRunIntegrityCheck,
+  writeTimestampMarker,
+  integrityMarkerPath,
+} from '../core/database/integrityGate';
 
 export type { VacuumOutcome };
 
@@ -62,7 +74,80 @@ function defaultWriteLastVacuumAt(ts: number): void {
 }
 
 function defaultVacuum(): Promise<VacuumOutcome> {
-  return runVacuumInSubprocess(getDatabase().getDbPath());
+  return backupThenVacuum();
+}
+
+/**
+ * VACUUM 子进程动刀前先落一份备份（2026-07-31 SIGBUS 事故的对症保险）。
+ * 备份失败只报警，VACUUM 仍按自身磁盘检查决定是否继续。
+ * .integrity-failed 在时 rotateDatabaseBackup 内部拒轮转（force 不豁免）：
+ * 带坏库的备份会顶掉好副本。
+ */
+async function backupThenVacuum(): Promise<VacuumOutcome> {
+  const database = getDatabase();
+  const db = database.getDb();
+  const dbPath = database.getDbPath();
+  if (db) {
+    try {
+      await rotateDatabaseBackup({
+        dbPath,
+        force: true,
+        backupTo: async (dest) => {
+          await db.backup(dest);
+        },
+      });
+    } catch (error) {
+      logger.warn('Pre-VACUUM backup failed (continuing to VACUUM)', error as Error);
+    }
+  }
+  return runVacuumInSubprocess(dbPath);
+}
+
+function defaultBackup(): Promise<BackupOutcome> {
+  try {
+    const database = getDatabase();
+    const db = database.getDb();
+    if (!db) return Promise.resolve('skipped-no-db');
+    return rotateDatabaseBackup({
+      dbPath: database.getDbPath(),
+      backupTo: async (dest) => {
+        await db.backup(dest);
+      },
+    });
+  } catch {
+    return Promise.resolve('skipped-no-db');
+  }
+}
+
+function defaultIntegrityCheck(): Promise<QuickCheckOutcome> {
+  try {
+    const database = getDatabase();
+    if (!database.getDb()) return Promise.resolve('db-unavailable');
+    return runQuickCheckInSubprocess(database.getDbPath());
+  } catch {
+    return Promise.resolve('db-unavailable');
+  }
+}
+
+function defaultReadLastIntegrityAt(): number | null {
+  try {
+    return readTimestampMarker(
+      integrityMarkerPath(getUserDataPath(), SQLITE_INTEGRITY.MARKER_INTEGRITY),
+    );
+  } catch {
+    return null;
+  }
+}
+
+function defaultWriteLastIntegrityAt(ts: number): void {
+  try {
+    writeTimestampMarker(
+      integrityMarkerPath(getUserDataPath(), SQLITE_INTEGRITY.MARKER_INTEGRITY),
+      ts,
+    );
+  } catch (error) {
+    logger.warn('Failed to persist last-integrity-check marker', error as Error);
+  }
 }
 
 export interface DbRetentionOptions {
@@ -74,6 +159,12 @@ export interface DbRetentionOptions {
   vacuum?: () => Promise<VacuumOutcome>;
   readLastVacuumAt?: () => number | null;
   writeLastVacuumAt?: (ts: number) => void;
+  backup?: () => Promise<BackupOutcome>;
+  integrityCheck?: () => Promise<QuickCheckOutcome>;
+  readLastIntegrityAt?: () => number | null;
+  writeLastIntegrityAt?: (ts: number) => void;
+  /** 上次 Tier 2 quick_check 失败标记(测试 seam);生产默认由 rotateDatabaseBackup 内部读标记兜底 */
+  hasIntegrityFailed?: () => boolean;
 }
 
 export interface DbRetentionResult {
@@ -83,6 +174,8 @@ export interface DbRetentionResult {
    * 'skipped-*' / 'failed' 都没有落 .last-vacuum 标记,下次启动会再试。
    */
   vacuum: VacuumOutcome;
+  backup: BackupOutcome;
+  integrityCheck: QuickCheckOutcome;
 }
 
 /**
@@ -92,8 +185,12 @@ export async function runDbRetention(options: DbRetentionOptions = {}): Promise<
   const now = options.now ?? Date.now();
   const storage = options.storage ?? getTelemetryStorage();
   const vacuum = options.vacuum ?? defaultVacuum;
+  const backup = options.backup ?? defaultBackup;
+  const integrityCheck = options.integrityCheck ?? defaultIntegrityCheck;
   const readLastVacuumAt = options.readLastVacuumAt ?? defaultReadLastVacuumAt;
   const writeLastVacuumAt = options.writeLastVacuumAt ?? defaultWriteLastVacuumAt;
+  const readLastIntegrityAt = options.readLastIntegrityAt ?? defaultReadLastIntegrityAt;
+  const writeLastIntegrityAt = options.writeLastIntegrityAt ?? defaultWriteLastIntegrityAt;
 
   let pruned = false;
   try {
@@ -105,23 +202,52 @@ export async function runDbRetention(options: DbRetentionOptions = {}): Promise<
 
   if (!storage.dbAvailable) {
     logger.info('Database VACUUM skipped: persistence unavailable');
-    return { pruned, vacuum: 'db-unavailable' };
-  }
-  if (!shouldRunVacuum(now, readLastVacuumAt())) {
-    return { pruned, vacuum: 'not-due' };
+    return { pruned, vacuum: 'db-unavailable', backup: 'skipped-no-db', integrityCheck: 'db-unavailable' };
   }
 
-  let outcome: VacuumOutcome;
-  try {
-    outcome = await vacuum();
-  } catch (error) {
-    // runVacuumInSubprocess 承诺不抛;这里只兜注入实现 / 意外异常
-    logger.warn('Database VACUUM failed', error as Error);
-    outcome = 'failed';
+  // quick_check 结果先行:备份门要看本次结果——带坏库轮转会顶掉好备份。
+  let integrityOutcome: QuickCheckOutcome = 'not-due';
+  if (shouldRunIntegrityCheck(now, readLastIntegrityAt())) {
+    try {
+      integrityOutcome = await integrityCheck();
+    } catch (error) {
+      logger.warn('Database quick_check failed', error as Error);
+      integrityOutcome = 'spawn-failed';
+    }
+    if (shouldPersistIntegrityMarker(integrityOutcome)) {
+      writeLastIntegrityAt(now);
+    }
   }
 
-  if (shouldPersistVacuumMarker(outcome)) {
-    writeLastVacuumAt(now);
+  // 本次 quick_check 失败或 .integrity-failed 标记还在:跳过备份轮转,
+  // 不用可能带页级损坏的当前库顶掉好备份(VACUUM 前备份在 rotateDatabaseBackup 内过同一门)。
+  const integrityFailed = integrityOutcome === 'failed' || (options.hasIntegrityFailed?.() ?? false);
+  let backupOutcome: BackupOutcome;
+  if (integrityFailed) {
+    logger.warn('Database backup skipped: integrity check failed (keeping existing good backups)');
+    backupOutcome = 'skipped-integrity-failed';
+  } else {
+    try {
+      backupOutcome = await backup();
+    } catch (error) {
+      logger.warn('Database backup failed', error as Error);
+      backupOutcome = 'failed';
+    }
   }
-  return { pruned, vacuum: outcome };
+
+  let vacuumOutcome: VacuumOutcome = 'not-due';
+  if (shouldRunVacuum(now, readLastVacuumAt())) {
+    try {
+      vacuumOutcome = await vacuum();
+    } catch (error) {
+      // runVacuumInSubprocess 承诺不抛;这里只兜注入实现 / 意外异常
+      logger.warn('Database VACUUM failed', error as Error);
+      vacuumOutcome = 'failed';
+    }
+    if (shouldPersistVacuumMarker(vacuumOutcome)) {
+      writeLastVacuumAt(now);
+    }
+  }
+
+  return { pruned, vacuum: vacuumOutcome, backup: backupOutcome, integrityCheck: integrityOutcome };
 }

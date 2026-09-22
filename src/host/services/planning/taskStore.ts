@@ -418,6 +418,27 @@ export function isClosedTaskStatus(status: SessionTaskStatus): boolean {
 }
 
 /**
+ * 启动失败的台账回收：run 没起来就没有「正在进行」的工作——in_progress 全部退回
+ * pending（completed/cancelled 等终态不动，那是真实发生过的工作）。返回回收后的
+ * 全量列表供事件广播；会话没有台账时返回 null。
+ */
+export function demoteInProgressTasks(sessionId: string): SessionTask[] | null {
+  hydrateTasks(sessionId);
+  const taskMap = sessionTasks.get(sessionId);
+  if (!taskMap || taskMap.size === 0) return null;
+  const now = Date.now();
+  let demoted = false;
+  for (const [id, task] of taskMap) {
+    if (task.status !== 'in_progress') continue;
+    taskMap.set(id, { ...task, status: 'pending', updatedAt: now });
+    recordTaskEvent(sessionId, id, 'unstarted');
+    demoted = true;
+  }
+  if (demoted) persistTasks(sessionId);
+  return Array.from(taskMap.values());
+}
+
+/**
  * 获取未完成任务数量
  */
 export function getIncompleteTasks(sessionId: string): SessionTask[] {

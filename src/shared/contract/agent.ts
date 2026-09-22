@@ -6,6 +6,7 @@ import type { ModelConfig } from './model';
 import type { ToolCall } from './tool';
 import type { PermissionRequest } from './permission';
 import type { SessionTask, TodoItem } from './planning';
+import type { PlanApprovalRecord } from './planApproval';
 import type {
   AgentEventEnvelopeSchema,
   AgentEventSchema,
@@ -64,8 +65,9 @@ export interface TaskCompleteData {
 export interface ToolProgressData {
   toolCallId: string;
   toolName: string;
-  elapsedMs: number;       // 已耗时 ms
+  elapsedMs: number;       // 已耗时 ms（总耗时口径，扣审批等待）
   detail?: string;         // 可选的描述文本
+  inactiveMs?: number;     // 距上次进展 ms（inactivity 超时判定口径，与 elapsedMs 语义不同）
 }
 
 // 工具执行超时警告事件数据（超过阈值时发射）
@@ -112,6 +114,14 @@ export interface TaskUpdateEventData {
   taskId?: string;
   taskIds?: string[];
   source?: string;
+}
+
+/** 计划审批异步落定（starting → approved/revision_requested/failed）后推给客户端，卡片据此收敛。 */
+export interface PlanApprovalUpdateEventData {
+  sessionId: string;
+  messageId: string;
+  toolCallId: string;
+  approval: PlanApprovalRecord;
 }
 
 // Web Bridge 本地工具调用请求数据
@@ -401,6 +411,46 @@ export interface ContextCompressedData {
   savedTokens: number;
   strategy?: string;
   newMessageCount: number;
+}
+
+/** Structured context-compression recovery signal.
+ *
+ * `surface` is the routing contract: conversation signals may become one
+ * visible timeline notice; health/ledger signals remain diagnostic traces.
+ */
+type ContextCompressionSignalKind =
+  | 'success'
+  | 'failure'
+  | 'downgrade'
+  | 'skip'
+  | 'cooldown'
+  | 'overflow-recovery'
+  | 'paused';
+
+type ContextCompressionSignalCode =
+  | 'compaction-succeeded'
+  | 'summary-validation-failed'
+  | 'summary-call-failed'
+  | 'checkpoint-rebuild-fallback'
+  | 'no-safe-compaction-span'
+  | 'compaction-rejected'
+  | 'lossless-budget-skip'
+  | 'summary-cooldown'
+  | 'overflow-recovery-started'
+  | 'auto-compaction-paused';
+
+export interface ContextCompressionSignalData {
+  signalId: string;
+  kind: ContextCompressionSignalKind;
+  code: ContextCompressionSignalCode;
+  surface: 'conversation' | 'health' | 'ledger';
+  timestamp: number;
+  retryable?: boolean;
+  cooldownUntil?: number;
+  tokensBefore?: number;
+  messagesCount?: number;
+  fromStrategy?: string;
+  toStrategy?: string;
 }
 
 // 中断事件数据

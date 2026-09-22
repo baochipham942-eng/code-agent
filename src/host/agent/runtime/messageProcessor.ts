@@ -25,6 +25,7 @@ import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector.js';
 import { DELIVERY_CRITIC, MODEL_MAX_TOKENS, STOP_HOOK, getModelMaxOutputTokens } from '../../../shared/constants';
 import { runDeliveryCritic } from '../deliveryCritic';
+import { runDeliverableDiskCheckGate } from './deliverableDiskCheck';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
@@ -60,8 +61,8 @@ import {
   isArtifactRepairTargetFileRead,
   sanitizeToolArgumentsForObservation,
   sanitizeToolResultForObservation,
-  shouldDeferForcedFinalToInference,
 } from './messageProcessorHelpers';
+import { concludeForceFinalAfterToolBatch, sealToolCallsDuringForceFinal, abortPendingGoalOnForcedFinalBreak } from './forceFinalSeal';
 import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 import { generateTruncationWarning } from './truncationPrompts';
@@ -87,6 +88,7 @@ export class MessageProcessor {
     userStopHookBlockCount: 0,
     toolCallRetryCount: 0,
     deliveryCriticBlockCount: 0,
+    deliverableRepairCount: 0,
     _consecutiveTruncations: 0,
   };
 
@@ -110,6 +112,11 @@ export class MessageProcessor {
     shouldContinue: boolean;
   } {
     let wasForceExecuted = false;
+    // 强制收尾生效中：工具通道已封口（issue #1991），文本里的工具调用描述不再
+    // 代执行、也不再注入格式错误重试——直接当普通文本走最终回复路径。
+    if (this.ctx.control.forceFinalResponseReason) {
+      return { response, wasForceExecuted, shouldContinue: false };
+    }
     if (response.type === 'text' && response.content) {
       const failedToolCallMatch = this.ctx.antiPatternDetector.detectFailedToolCallPattern(response.content);
       if (failedToolCallMatch) {
@@ -472,13 +479,61 @@ export class MessageProcessor {
         sessionId: this.ctx.sessionId,
       });
     }
-    const assistantMessage = this.buildAssistantMessageFromResponse(response, gated.content);
+
+    // 交付物落盘核对（issue #1998）：声称/本 run 声明的交付物必须在盘上存在且非空；缺漏有界补一轮，仍缺在 final 如实说明。
+    let deliverableCheckedContent = gated.content;
+    if (!isForcedFinalTextPass) {
+      const gate = runDeliverableDiskCheckGate({
+        workingDirectory: this.ctx.workingDirectory,
+        messages: this.ctx.messages,
+        declaredDeliverables: this.ctx.artifact?.declaredDeliverables,
+        finalText: gated.content,
+        repairsUsed: this.guardState.deliverableRepairCount,
+        nudgeManager: this.ctx.nudgeManager,
+      });
+      if (gate.action === 'repair') {
+        this.guardState.deliverableRepairCount += 1;
+        logger.warn('[DeliverableDiskCheck] deliverables not on disk, bounded repair round fed back', { sessionId: this.ctx.sessionId, missing: gate.missing.map((item) => item.claim.resolved) });
+        this.contextAssembly.injectSystemMessage(gate.prompt, 'deliverable-disk-check');
+        return 'continue';
+      }
+      deliverableCheckedContent = gate.content;
+    }
+
+    const assistantMessage = this.buildAssistantMessageFromResponse(response, deliverableCheckedContent);
     const finalContent = assistantMessage.content;
+    // 强制收尾轮输出全是裸标记时，剥离后正文为空——空消息落库等于对用户断流，
+    // 回落静态收尾文案；contentParts 同步收口，防转录层优先读 parts 又拿到裸标记
+    // （ai-review PR#2006 Nit）。
+    if (isForcedFinalTextPass && !finalContent.trim()) {
+      assistantMessage.content = buildForcedFinalAssistantContent(this.ctx.control.forceFinalResponseReason ?? '');
+      assistantMessage.contentParts = [{ type: 'text', text: assistantMessage.content }];
+    }
     // 终答尾部带 handoff proposal 时，contentParts 必须收口成清洗后的正文：它没过
     // extractHandoffProposalTail，而 transcriptReplayBuilder 无条件优先用 contentParts，
     // 原样落库会把 <handoff-proposal>{...}</handoff-proposal> 里的 JSON 当正文显示给用户，
     // survivorManifest 还会把它拼进压缩 manifest 回灌模型。
     if (handoffTail.found && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
+
+    // forced-final 落盘正文为空（原文仅内部格式标记，被 stripInternalFormatMimicry 清掉）
+    // 不算交付（ai-review R2 #2005）：不落空消息、不清 reason，保持循环尾部
+    // ensureMaxStepsWrapUp 的「reason 残留」判据有效；turn 收尾事件照发，不留半开回合。
+    // 仅限撞顶轮（iterations >= maxIterations）：非撞顶的 forced-final（只读硬阈值 /
+    // 产物修复降级等）没有 ensureMaxStepsWrapUp 接手，必须继续走 #2006 的静态收尾文案，
+    // 否则那几条路径会零收尾断流（ai-review R4 #2005）。
+    if (isForcedFinalTextPass && finalContent.trim().length === 0 && iterations >= this.ctx.maxIterations) {
+      langfuse.endSpan(this.ctx.turn.currentIterationSpanId, { type: 'text_response' });
+      this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
+      this.ctx.onEvent({
+        type: 'turn_end',
+        data: { turnId: this.ctx.turn.currentTurnId },
+      });
+      this.contextAssembly.updateContextHealth();
+      if (typeof this.contextAssembly.checkAndAutoCompress === 'function') {
+        await this.contextAssembly.checkAndAutoCompress();
+      }
+      return 'break';
+    }
 
     // Artifact extraction
     const artifacts = extractArtifacts(finalContent);
@@ -498,11 +553,11 @@ export class MessageProcessor {
     if (wasMessagePersistedByContextAssembly(assistantMessage)) this.ctx.turn.resetStreamedContent();
     if (handoffTail.draft) {
       try {
-        getHandoffProposalService().create({
-          sessionId: this.ctx.sessionId,
-          sourceMessageId: assistantMessage.id,
-          ...handoffTail.draft,
-        });
+        // N-EVAL-FAILURE-AUTOHARVEST：隔离运行时（eval）走注入库回调，提案与消息落同一个库，
+        // 断言采集器才读得到（ai-review PR#2024 R5）；缺省走全局服务（产线不变）。
+        // 下列两语句同行为压缩成行是 max-lines 债务门所迫（本文件基线贴顶），勿拆行。
+        const proposalInput = { sessionId: this.ctx.sessionId, sourceMessageId: assistantMessage.id, ...handoffTail.draft };
+        if (this.ctx.persistHandoffProposal) this.ctx.persistHandoffProposal(proposalInput); else getHandoffProposalService().create(proposalInput);
       } catch (error) {
         logger.warn('[Handoff] Failed to create proposal from assistant tail', {
           error,
@@ -514,6 +569,10 @@ export class MessageProcessor {
 
     this.ctx.onEvent({ type: 'message', data: assistantMessage });
     if (isForcedFinalTextPass) {
+      // goal 仍 pending 不许无痕出循环：发 goal_complete(aborted) 坐实终态
+      // （ai-review PR#2006 Important 1）；terminal 由 conversationRuntime 循环后
+      // 既有映射（goalMode aborted && completed → aborted）接手。
+      abortPendingGoalOnForcedFinalBreak(this.ctx, iterations);
       this.ctx.control.clearForceFinalResponse();
     }
 
@@ -534,6 +593,12 @@ export class MessageProcessor {
     });
 
     this.contextAssembly.updateContextHealth();
+
+    // Text-only turns (including forced-final wrap-up) must participate in the
+    // same pressure evaluation as tool turns.
+    if (typeof this.contextAssembly.checkAndAutoCompress === 'function') {
+      await this.contextAssembly.checkAndAutoCompress();
+    }
 
     // PostExecution hook: trigger async health checks (GC, codebase scans)
     if (this.ctx.hookManager) {
@@ -566,6 +631,17 @@ export class MessageProcessor {
     // toolCallIdUniqueness.ts。
     const toolCalls = ensureUniqueToolCallIds(response.toolCalls ?? [], this.ctx.messages).toolCalls;
     const requestedToolNames = toolCalls.map((toolCall) => toolCall.name).join(', ');
+
+    // 强制收尾生效中模型仍回了 tool_use：整轮封口——不派发 executor、不计工具失败
+    // 遥测，合成 skipped 结果落账后直接走强制收尾结论（issue #1991）。
+    if (this.ctx.control.forceFinalResponseReason) {
+      return sealToolCallsDuringForceFinal(
+        { ctx: this.ctx, contextAssembly: this.contextAssembly },
+        response,
+        toolCalls,
+        langfuse,
+      );
+    }
 
     const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name));
     if (deniedToolCalls.length > 0) {
@@ -941,55 +1017,13 @@ export class MessageProcessor {
     }
 
     if (this.ctx.control.forceFinalResponseReason) {
-      if (shouldDeferForcedFinalToInference(this.ctx)) {
-        logger.warn('[AgentLoop] Read-loop hard limit reached; deferring final answer to no-tool inference', {
-          reason: this.ctx.control.forceFinalResponseReason,
-        });
-        this.contextAssembly.flushHookMessageBuffer();
-        langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
-          type: 'tool_calls',
-          toolCount: toolCalls.length,
-          successCount: toolResults.filter((r: ToolResult) => r.success).length,
-          forcedFinalResponseDeferred: true,
-        });
-        // Close this tool turn before the deferred no-tool inference starts a fresh turn.
-        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
-        this.ctx.onEvent({
-          type: 'turn_end',
-          data: { turnId: this.ctx.turn.currentTurnId },
-        });
-        return 'continue';
-      }
-
-      const finalMessage: Message = {
-        id: this.contextAssembly.generateId(),
-        role: 'assistant',
-        content: buildForcedFinalAssistantContent(this.ctx.control.forceFinalResponseReason),
-        timestamp: Date.now(),
-        effortLevel: this.ctx.turn.effortLevel,
-        metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
-      };
-      await this.contextAssembly.addAndPersistMessage(finalMessage);
-      this.ctx.onEvent({ type: 'message', data: finalMessage });
-
-      // admission_stop:在 final assistant message push 后 emit error,
-      // useSessionLifecycleEffects 会把 errorContent 合并到 lastMessage(此时 = finalMessage assistant)上显示。
-      emitArtifactRepairStopError(this.ctx, this.ctx.control.forceFinalResponseReason);
-
-      this.ctx.control.clearForceFinalResponse();
-      this.contextAssembly.flushHookMessageBuffer();
-      langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
-        type: 'tool_calls',
-        toolCount: toolCalls.length,
-        successCount: toolResults.filter((r: ToolResult) => r.success).length,
-        forcedFinalResponse: true,
-      });
-      this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
-      this.ctx.onEvent({
-        type: 'turn_end',
-        data: { turnId: this.ctx.turn.currentTurnId },
-      });
-      return 'break';
+      return concludeForceFinalAfterToolBatch(
+        { ctx: this.ctx, contextAssembly: this.contextAssembly },
+        response,
+        toolCalls,
+        toolResults,
+        langfuse,
+      );
     }
 
     // === Stagnation detection ===

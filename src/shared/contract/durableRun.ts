@@ -29,7 +29,9 @@ export type RunEngineRef =
   | { kind: 'native' }
   | { kind: 'agent_team'; treeId?: string }
   | { kind: 'dynamic_workflow'; workflowId?: string }
-  | { kind: 'external_cli'; engine: Exclude<AgentEngineKind, 'native'>; externalSessionId?: string };
+  | { kind: 'external_cli'; engine: Exclude<AgentEngineKind, 'native'>; externalSessionId?: string }
+  | { kind: 'subagent_single' }
+  | { kind: 'loop' };
 
 export interface RunCursor {
   /** The next append-only event sequence. Sequence starts at 1 and never resets across attempts. */
@@ -264,6 +266,8 @@ export function assertRunEnvelope(envelope: RunEnvelope): void {
     agent_team: true,
     dynamic_workflow: true,
     external_cli: true,
+    subagent_single: true,
+    loop: true,
   })) {
     throw new Error(`Unsupported run engine kind: ${String(envelope.engine.kind)}`);
   }

@@ -147,6 +147,18 @@ echo "分析这段代码" | ca run --json
 2. Schema 验证（轻量级，无外部依赖）
 3. 失败重试（附加验证错误到 prompt）
 
+### 退出码
+
+headless 编排（cron / 调度器 / 上层 agent）用退出码区分 run 的终态；常量真源是 `src/cli/exitCodes.ts`，新增退出码必须同步本节。
+
+| code | 语义 | 触发路径 |
+|------|------|----------|
+| 0 | 正常完成 | `result.success === true` |
+| 1 | 异常失败 | 推理错误、内部异常、未收尾的运行时失败等 |
+| 2 | 部分完成 | 撞最大执行轮次上限（max iterations），已产出「部分结果 + 未完成说明」收尾；`result.terminationReason === 'max_iterations'`（error 事件带稳定 code `MAX_ITERATIONS_REACHED`） |
+
+撞 max iterations 时 host 会先给模型一个禁用工具的 forced-final 收尾轮；模型交白卷时运行时再用本次运行已有产出合成确定性部分结果，保证 run 不零收尾断流（issue #1999）。
+
 ### serve — HTTP API
 
 ```bash

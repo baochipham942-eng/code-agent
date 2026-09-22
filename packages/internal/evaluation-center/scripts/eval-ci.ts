@@ -25,6 +25,7 @@ import { BaselineManager } from '@host/testing/ci/baselineManager';
 import { createEvalBaselineManager, hasLegacyEvalBaseline } from './lib/eval-baseline-path';
 import {
   EVAL_SPLITS_RELATIVE_PATH,
+  SPLIT_BUCKETS,
   applySplitFilter,
   assertValidEvalSplits,
   loadEvalSplits,
@@ -181,10 +182,10 @@ function parseArgs(argv: string[]) {
       ids = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--split' && i + 1 < args.length) {
       const val = args[++i];
-      if (val === 'held-in' || val === 'held-out' || val === 'control' || val === 'safety') {
-        split = val;
+      if ((SPLIT_BUCKETS as readonly string[]).includes(val)) {
+        split = val as SplitBucket;
       } else {
-        console.error(chalk.red(`Invalid split: ${val}. Use 'held-in', 'held-out', 'control' or 'safety'.`));
+        console.error(chalk.red(`Invalid split: ${val}. Use ${SPLIT_BUCKETS.map((bucket) => `'${bucket}'`).join(', ')}.`));
         process.exit(1);
       }
     } else if (arg === '--compare' && i + 1 < args.length) {
@@ -279,7 +280,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --ai-review <a,b>   Add independent yes/no AI review dimensions
   npx tsx scripts/eval-ci.ts --tags <a,b>       Filter test cases by tags
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
-  npx tsx scripts/eval-ci.ts --split <bucket>   Filter to 'held-in' (daily) / 'held-out' (milestone) / 'control' (judge calibration) / 'safety' (OS jail only)
+  npx tsx scripts/eval-ci.ts --split <bucket>   Filter to 'held-in' (daily) / 'held-out' (milestone) / 'control' (judge calibration) / 'safety' (OS jail only) / 'core' (weekly regression subset)
   npx tsx scripts/eval-ci.ts --force             Bypass --max-cases limit
   npx tsx scripts/eval-ci.ts --include-retired   Include cases past rotation.retire_after for replay
   npx tsx scripts/eval-ci.ts --compare <yaml>   A/B paired blind test: baseline vs candidate config
@@ -1167,6 +1168,11 @@ async function mainImpl(
       console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
       process.exit(1);
     }
+    // core 是可选桶（eval-split.ts 不生成它）：缺失时 fail-closed 点名，别让周跑对着空集「成功」退出。
+    if (effectiveSplit === 'core' && !splitFile.core?.length) {
+      console.error(chalk.red(`  Error: 切分文件（seed=${splitFile.seed}）没有 core 桶——周跑核心集需先在 eval-splits.json 加 core（held-in 子集，见 N-EVAL-CORESET-CRON 证据档）。`));
+      process.exit(1);
+    }
     fullSelectedCaseIds = applySplitFilter(undefined, splitFile, effectiveSplit)
       .filter((id) => runnableCaseIds.has(id));
     ids = applySplitFilter(rawIds, splitFile, effectiveSplit);
@@ -1181,7 +1187,8 @@ async function mainImpl(
       console.log(chalk.yellow('  ⚠ safety 只允许在 OS jail 生效时执行；无 jail 的运行时安全闸会在模型调用前分流。'));
     }
     if (!effectiveReal && splitFile.seed === 'core-v1-2026-07-26') {
-      if (effectiveSplit !== 'held-in') {
+      // core 是 held-in 子集，mock policy 天然覆盖；其余桶仍需先显式分类。
+      if (effectiveSplit !== 'held-in' && effectiveSplit !== 'core') {
         console.error(chalk.red(`  Error: mock policy 当前只覆盖 held-in，--split ${effectiveSplit} 需先显式分类。`));
         process.exit(1);
       }
@@ -1476,10 +1483,13 @@ async function mainImpl(
   if (effectiveReal) {
     const { getBudgetService } = await import('@host/services');
     const usage = getBudgetService().getUsageHistory();
-    const totalIn = usage.reduce((s, u) => s + u.inputTokens, 0);
+    // 与报告「成本与用量」同口径：prompt = 非缓存输入 + cache read + cache write。
+    // 这是进程级账：比逐 case 汇总多出的部分 = case 作用域外、同进程记进 budget 的调用。
+    const totalIn = usage.reduce((s, u) => s + u.inputTokens + (u.cacheReadTokens ?? 0) + (u.cacheCreationTokens ?? 0), 0);
+    const totalCacheRead = usage.reduce((s, u) => s + (u.cacheReadTokens ?? 0), 0);
     const totalOut = usage.reduce((s, u) => s + u.outputTokens, 0);
     console.log(chalk.cyan(
-      `  Actual usage: ${totalIn.toLocaleString()} in / ${totalOut.toLocaleString()} out tokens, ` +
+      `  Actual usage (process budget): ${totalIn.toLocaleString()} prompt (incl. ${totalCacheRead.toLocaleString()} cache read) / ${totalOut.toLocaleString()} out tokens, ` +
       `cost $${getBudgetService().getCurrentCost().toFixed(4)} (maxMode=${process.env.CODE_AGENT_MAX_MODE === '1' ? 'on' : 'off'})`
     ));
   }
@@ -1551,6 +1561,7 @@ async function mainImpl(
     newPasses: delta.comparable ? delta.newPasses.length : 0,
     mode: effectiveReal ? 'real' : 'mock',
     providerVariantArm: providerVariantArm(),
+    model: `${summary.environment.provider}/${summary.environment.model}${summary.environment.endpoint ? `@${summary.environment.endpoint}` : ''}`,
     ...(summary.infraExcluded ? { infraExcluded: summary.infraExcluded } : {}),
     ...(summary.costExceeded ? { costExceeded: summary.costExceeded } : {}),
   };

@@ -16,12 +16,14 @@ import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
 import { isGoalNoticeContent } from '../components/features/chat/goalNotice';
 import { isModelFallbackNoticeContent } from '../components/features/chat/fallbackNotice';
+import { isContextCompressionSignalContent } from '../components/features/chat/contextCompressionSignal';
 import { measureStreamingPerformanceTiming } from '../utils/streamingPerformanceMetrics';
 import { isToolResultEcho } from '../utils/toolResultEcho';
 import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
 import {
   isPersistedStreamInterruptionMessage,
   streamInterruptionReasonFromContent,
+  stripStreamBreakMarker,
 } from '../utils/streamInterruptionPresentation';
 
 type MessageModelDecision = NonNullable<Message['modelDecision']>;
@@ -331,6 +333,33 @@ export function projectTurns(
       continue;
     }
 
+    if (msg.source === 'system' && isContextCompressionSignalContent(msg.content)) {
+      const node: TraceNode = {
+        id: msg.id,
+        type: 'system',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        subtype: 'context_compression_signal',
+        metadata: msg.metadata,
+      };
+
+      if (!currentTurn) {
+        turnCounter++;
+        currentTurn = {
+          turnNumber: turnCounter,
+          turnId: `turn-${turnCounter}`,
+          nodes: [],
+          status: 'completed',
+          startTime: msg.timestamp,
+        };
+        turns.push(currentTurn);
+      }
+
+      currentTurn.nodes.push(node);
+      currentTurn.endTime = msg.timestamp;
+      continue;
+    }
+
     // 折叠成一行的记录：自动化提示（isMeta）/ 用户给成员补话（N-SUBAGENT-INPUT）。后者不看 isMeta：
     // 专家团路径落的是可见 user 消息（团长推理历史要看得到，isMeta 会被过滤掉），展示上同样折叠、不开新轮。
     if (msg.metadata?.memberInput || (msg.isMeta && msg.metadata?.automation)) {
@@ -556,10 +585,16 @@ export function projectTurns(
         // 中断轮的唯一时间线信号由 recovery 工具节点承载。落库 marker 前的 partial
         // 与 snapshot.content 是同一段流式正文，二者都继续投影会在重载后重复两遍，
         // 也会破坏“灰字一行 + 决策槽一行”的单信号形态。
-        if (streamInterruptionReason && (
+        // ADR-068 刀 4 例外：断流续接的断点段（stream-break）不 suppression——它的
+        // 正文是真实答案的前半段（recovery 消息自己的文本仍被上方原规则压掉，不会
+        // 双渲染），只剥掉正文尾部的裸协议标记，中断语义走样式行。
+        const streamBreakKeptSegment = streamInterruptionReason === 'stream-break' && !recoveryMessage;
+        if (streamInterruptionReason && !streamBreakKeptSegment && (
           recoveryMessage
           || isPersistedStreamInterruptionMessage(msg)
         )) return;
+        const projectedContent = streamBreakKeptSegment ? stripStreamBreakMarker(content) : content;
+        if (streamBreakKeptSegment && !projectedContent.trim()) return;
         // 模型回显：小模型有时把工具结果 JSON 当正文复述，整段吞掉不当答案渲染。
         if (isToolResultEcho(content)) return;
         // 去重：连续相同的模型决策只在首个节点显示，避免每条消息都刷"用户选择 mimo"
@@ -579,7 +614,7 @@ export function projectTurns(
           id: index && index > 1 ? `${msg.id}-text-${index}` : `${msg.id}-text`,
           messageId: msg.id,
           type: 'assistant_text',
-          content,
+          content: projectedContent,
           timestamp: msg.timestamp,
           reasoning: attachReasoning ? msg.reasoning : undefined,
           thinking: attachReasoning ? msg.thinking : undefined,

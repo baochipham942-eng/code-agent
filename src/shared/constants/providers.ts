@@ -54,6 +54,8 @@ export const MODEL_API_ENDPOINTS = {
   custom: 'https://api.example.com/v1',
   /** Local Ollama */
   ollama: 'http://localhost:11434/v1',
+  /** TypeSafe Jev System One（判断面专用，非聊天端点） */
+  typesafeSystemOne: 'https://api.typesafe.ai/v1/systemone',
 } as const;
 
 /** Groq 在售的低时延默认模型；判断步与通用 Groq provider 共用。 */
@@ -306,6 +308,12 @@ export function getDefaultModelForProvider(provider: string | null | undefined):
 
 export function getProviderEndpoint(provider: string | null | undefined): string | undefined {
   return getProviderInfo(provider)?.endpoint;
+}
+
+/** 请求会落到的 host（不含 key/path）：显式 baseUrl 优先，否则 provider 表；解析不了返回 undefined。跨轮取证用（N-EVALRUN-PROVENANCE） */
+export function getProviderEndpointHost(provider: string | null | undefined, baseUrl?: string): string | undefined {
+  const raw = baseUrl ?? getProviderEndpoint(provider);
+  try { return raw ? new URL(raw).host : undefined; } catch { return undefined; }
 }
 
 export function getProviderEndpointForProtocol(

@@ -16,6 +16,8 @@ import {
   type DurableRunRolloutPolicy,
 } from './durableRunRollout';
 import { DurableRunReadService } from './durableRunReadService';
+import { armBackgroundSubagentDurableLedger } from '../agent/backgroundSubagentDurableLedger';
+import { armLoopDurableLedger, resetLoopDurableLedger } from '../loop/loopDurableLedger';
 
 export class DurableRunRolloutInitializationError extends Error {
   readonly code = 'DURABLE_RUN_ROLLOUT_INITIALIZATION_FAILED';
@@ -45,6 +47,8 @@ interface DurableRunAssemblyInput {
   processInstanceId: string;
   env?: NodeJS.ProcessEnv;
   leaseDurationMs?: number;
+  /** degraded/readonly/corrupt：装配 stores=null 的 kernel，创建 run 必抛 DURABLE_RUN_PERSISTENCE_UNAVAILABLE。 */
+  persistenceUnavailable?: boolean;
 }
 
 interface DurableRunRecoveryInput {
@@ -80,6 +84,7 @@ export function assembleDurableRun(
   const policy = resolveDurableRunRollout(input.env);
   const readService = new DurableRunReadService(policy, input.repository);
   if (!policy.durableActivation) {
+    resetLoopDurableLedger();
     return {
       policy,
       kernel: null,
@@ -94,6 +99,35 @@ export function assembleDurableRun(
       }),
     };
   }
+  // 只读降级/持久化不可用（刀3）：装配 stores=null 的 kernel——durable 激活语义下
+  // 创建 run 必抛 DURABLE_RUN_PERSISTENCE_UNAVAILABLE（fail-closed），不退回 legacy 纯内存。
+  if (input.persistenceUnavailable) {
+    const kernel = new DurableRunKernel({
+      stores: null,
+      ownerId: input.ownerId,
+      processInstanceId: input.processInstanceId,
+      leaseDurationMs: input.leaseDurationMs ?? DEFAULT_DURABLE_RUN_LEASE_DURATION_MS,
+    });
+    input.registry.configureDurableKernel(kernel);
+    // 与主路径同一不变量：arm 只许在 configure 成功之后；spawn 落账时被
+    // stores-null kernel fail-closed 拒绝，而不是死等一个永远不会 configure 的账本。
+    armBackgroundSubagentDurableLedger();
+    armLoopDurableLedger();
+    return {
+      policy,
+      kernel,
+      readService,
+      recover: async () => ({
+        policy,
+        kernel,
+        recoveryRuntime: null,
+        readService,
+        recoveryResults: [],
+        shutdown: async () => undefined,
+      }),
+    };
+  }
+  // durable 激活分支才 arm；legacy 分支永不 arm，spawn 行为与改造前一致。
   if (!input.repository) {
     throw new DurableRunRolloutInitializationError(
       `${policy.mode} requires initialized Durable Run migration and repository`,
@@ -109,6 +143,15 @@ export function assembleDurableRun(
       leaseDurationMs,
     });
     input.registry.configureDurableKernel(kernel);
+    // ai-review 修复（2026-09-14）：arm 只许在 kernel 配置成功之后。assemble 全程同步，
+    // 先 arm 并没有可守的窗口；而一旦 kernel/configureDurableKernel 抛错（调用方记日志
+    // 走 legacy/retry），残留的 armed 会让后续后台 spawn 死等一个永远不会 configure 的
+    // 账本（waitFor 30s 超时后失败），尽管此时进程实为 legacy 纯内存、任务本可以跑。
+    // armed 的终态只能是「configure 成功」或「从未 arm（legacy 纯内存）」，不许停在中间。
+    armBackgroundSubagentDurableLedger();
+    // 与 armBackgroundSubagentDurableLedger 同理：只在 kernel 配置成功后 arm，
+    // 避免 assemble 失败残留 armed 让 /loop 死等一个永远不会 configure 的账本。
+    armLoopDurableLedger();
     return {
       policy,
       kernel,

@@ -22,6 +22,7 @@ function streamState() {
     currentTurnMessageId: null as string | null,
     committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
   };
 }
 
@@ -186,6 +187,7 @@ describe('reconnect/replay: assistant body renders once', () => {
       currentTurnMessageId: state.currentTurnMessageId,
       committedAssistantMessageIds: new Set(state.committedAssistantMessageIds),
       lastDeltaSeqByTurn: new Map(state.lastDeltaSeqByTurn),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
     let afterReplay = merged;
     applyConversationStreamEvent(
@@ -568,5 +570,56 @@ describe('findLiveCounterpart: correlation.turnId pairing', () => {
 
     expect(assistants).toHaveLength(1);
     expect(toolIds).toEqual(expect.arrayContaining(['call-old', 'call-new']));
+  });
+});
+
+// ADR-068 刀 4（ai-review 复审后的真机形状，E2E run4 复现）：B2 续答段是 renderer 侧
+// 构造（id 与 host 落库终稿不同），收尾 session/load 的 live-tail 合并靠 correlation.
+// turnId 配对——续答段不带配对键时，DB 终稿与 live 续答段并成两条重复正文。
+describe('B2 断流续接的 live-tail 合并：续答段带 correlation 配对键（ADR-068 刀 4）', () => {
+  const user = (id: string): Message => ({ id, role: 'user', content: '写一段', timestamp: 1 });
+  const corr = (turnId: string) => ({ correlation: { turnId } });
+
+  it('断点段+续答段 对上 DB 的 partial+终稿：四条并两条，两段正文各一份', () => {
+    const snapshot = [
+      user('u-1'),
+      { id: 'db-partial', role: 'assistant' as const, content: 'PART1__断点片段。\n\n[连接中断 — 部分回答已保留]', timestamp: 2, metadata: corr('turn-b2') },
+      { id: 'db-final', role: 'assistant' as const, content: 'PART2__续答正文。', timestamp: 3, metadata: corr('turn-b2') },
+    ];
+    const live = [
+      user('u-1'),
+      { id: 'turn-b2', role: 'assistant' as const, content: 'PART1__断点片段。', timestamp: 2, metadata: corr('turn-b2') },
+      {
+        id: 'segment-1',
+        role: 'assistant' as const,
+        content: 'PART2__续答正文。',
+        timestamp: 4,
+        metadata: { ...corr('turn-b2'), streamResumeNote: { attempt: 1, maxReconnects: 1 } },
+      },
+    ];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistants = merged.filter((m) => m.role === 'assistant');
+    expect(assistants).toHaveLength(2);
+    expect(assistants.map((m) => m.content)).toEqual([
+      'PART1__断点片段。\n\n[连接中断 — 部分回答已保留]',
+      'PART2__续答正文。',
+    ]);
+  });
+
+  it('反例（回归锁）：续答段不带 correlation 配不上对，DB 终稿与 live 续答段并成两条——正是配对键承重的形状', () => {
+    const snapshot = [
+      user('u-1'),
+      { id: 'db-partial', role: 'assistant' as const, content: 'PART1__断点片段。\n\n[连接中断 — 部分回答已保留]', timestamp: 2, metadata: corr('turn-b2') },
+      { id: 'db-final', role: 'assistant' as const, content: 'PART2__续答正文。', timestamp: 3, metadata: corr('turn-b2') },
+    ];
+    const live = [
+      user('u-1'),
+      { id: 'turn-b2', role: 'assistant' as const, content: 'PART1__断点片段。', timestamp: 2, metadata: corr('turn-b2') },
+      { id: 'segment-1', role: 'assistant' as const, content: 'PART2__续答正文。', timestamp: 4 },
+    ];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    expect(merged.filter((m) => m.role === 'assistant')).toHaveLength(3);
   });
 });

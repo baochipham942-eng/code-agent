@@ -31,6 +31,8 @@ export const VOICE_STARTUP_FAILURE_TIER: Record<VoiceMessageCode, VoiceStartupFa
   VOICE_MODEL_UNRESPONSIVE: 'actionable',
   VOICE_SERVICE_UNSTABLE: 'actionable',
   VOICE_WORK_FAILED: 'actionable',
+  VOICE_BUDGET_WARNING: 'actionable',
+  VOICE_BUDGET_EXCEEDED: 'actionable',
   // 用户修不了的上游/网络失败：收回 chrome + toast。
   VOICE_UPSTREAM_UNAVAILABLE: 'silent',
   UPSTREAM_SOCKET: 'silent',

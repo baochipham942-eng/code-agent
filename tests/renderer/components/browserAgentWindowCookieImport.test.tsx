@@ -19,11 +19,16 @@ const listImportableBrowserProfiles = vi.fn(async () => ([
     appName: 'Google Chrome',
     available: true,
     cookieDbPath: '/tmp/Cookies',
+    cookieDomains: [
+      { domain: 'example.com', cookieCount: 2 },
+      { domain: 'github.com', cookieCount: 1 },
+    ],
   },
 ]));
 const importBrowserProfileCookiesToPersonal = vi.fn(async (_args: {
   source: 'chrome';
   profileId: string;
+  domainAllowlist?: string[];
 }) => ({
   ok: true as boolean,
   source: 'chrome' as const,
@@ -71,6 +76,7 @@ vi.mock('../../../src/renderer/services/browserCookieImportClient', () => ({
   importBrowserProfileCookiesToPersonal: (args: {
     source: 'chrome';
     profileId: string;
+    domainAllowlist?: string[];
   }) => importBrowserProfileCookiesToPersonal(args),
 }));
 
@@ -135,17 +141,42 @@ describe('BrowserAgentWindow Cookie 导入入口（P1）', () => {
       expect(screen.getByTestId('browser-agent-window-import-cookies-dialog')).toBeTruthy();
     });
 
+    fireEvent.click(screen.getByTestId('browser-cookie-import-domain-example.com'));
     fireEvent.click(screen.getByText('确认导入'));
     await waitFor(() => {
       expect(importBrowserProfileCookiesToPersonal).toHaveBeenCalledWith({
         source: 'chrome',
         profileId: 'Default',
+        domainAllowlist: ['example.com'],
       });
     });
     await waitFor(() => {
       expect(screen.getByTestId('browser-agent-window-cookie-import-notice').textContent)
         .toContain('已导入 3 条 Cookie');
     });
+  });
+
+  it('disables confirm when no site is selected by default', async () => {
+    render(<BrowserAgentWindow />);
+    fireEvent.click(screen.getByTestId('browser-agent-window-more'));
+    fireEvent.click(screen.getByTestId('browser-agent-window-import-cookies'));
+    await waitFor(() => expect(screen.getByTestId('browser-agent-window-import-cookies-dialog')).toBeTruthy());
+
+    expect((screen.getByRole('button', { name: '确认导入' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(importBrowserProfileCookiesToPersonal).not.toHaveBeenCalled();
+  });
+
+  it('does not import when 导入全部 is cancelled in window.confirm', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<BrowserAgentWindow />);
+    fireEvent.click(screen.getByTestId('browser-agent-window-more'));
+    fireEvent.click(screen.getByTestId('browser-agent-window-import-cookies'));
+    await waitFor(() => expect(screen.getByTestId('browser-agent-window-import-cookies-dialog')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('browser-cookie-import-all'));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(importBrowserProfileCookiesToPersonal).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
   it('Chrome 锁库失败展示人话提示', async () => {
@@ -169,6 +200,7 @@ describe('BrowserAgentWindow Cookie 导入入口（P1）', () => {
     fireEvent.click(screen.getByTestId('browser-agent-window-more'));
     fireEvent.click(screen.getByTestId('browser-agent-window-import-cookies'));
     await waitFor(() => expect(screen.getByTestId('browser-agent-window-import-cookies-dialog')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('browser-cookie-import-domain-example.com'));
     fireEvent.click(screen.getByText('确认导入'));
     await waitFor(() => {
       expect(screen.getByTestId('browser-cookie-import-error').textContent)

@@ -4,7 +4,7 @@
  * Usage:
  *   npx tsx esbuild.config.ts [target...]
  *
- * Targets: cli, web, mcp, bridge, test-runner, all (default)
+ * Targets: cli, web, mcp, bridge, relay, test-runner, all (default)
  * Options: --dev (sourcemap, no minify)
  *
  * Examples:
@@ -290,6 +290,14 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
       name: 'Bridge',
       entry: 'packages/bridge/src/index.ts',
       outfile: 'dist/bridge/code-agent-bridge.cjs',
+      format: 'cjs',
+      external: NATIVE_EXTERNALS,
+      minify: !isDev,
+    },
+    relay: {
+      name: 'Companion Relay',
+      entry: 'packages/relay/src/index.ts',
+      outfile: 'dist/relay/neo-companion-relay.cjs',
       format: 'cjs',
       external: NATIVE_EXTERNALS,
       minify: !isDev,

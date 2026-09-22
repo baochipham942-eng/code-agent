@@ -252,6 +252,9 @@ export function buildObservation(
 }
 
 export function buildInferenceMessages(messages: RuntimeMessage[]): ProviderModelMessage[] {
+  // Caller (subagentExecutor) already ran projectReadSubagentMessages. AI SDK
+  // consumes that projected list directly; this mapper only converts it for
+  // the legacy provider path.
   return messages.map((message) => ({
     role: message.role,
     content: message.content,

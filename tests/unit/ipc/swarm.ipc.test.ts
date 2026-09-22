@@ -253,7 +253,11 @@ describe('swarm.ipc run-scoped control plane', () => {
         },
       }),
     });
-    expect(coordinatorA.sendMessage).toHaveBeenCalledWith(agentA, '只发给 Team A reviewer');
+    expect(coordinatorA.sendMessage).toHaveBeenCalledWith(agentA, '只发给 Team A reviewer', {
+      senderKind: 'user',
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+    });
     expect(coordinatorB.sendMessage).not.toHaveBeenCalled();
     expect(teammateState.onUserMessage).toHaveBeenCalledWith(
       scopeA,
@@ -423,6 +427,7 @@ describe('swarm.ipc run-scoped control plane', () => {
       agentA,
       { type: 'text', from: 'user', payload: '顺便把页码加上', timestamp: 777 },
       expect.objectContaining({ sessionId: scopeA.sessionId, runId: scopeA.runId }),
+      { senderKind: 'user', sessionId: scopeA.sessionId, runId: scopeA.runId },
     );
   });
 
@@ -439,7 +444,11 @@ describe('swarm.ipc run-scoped control plane', () => {
     } as never);
 
     expect(result).toEqual({ delivered: true, persisted: true });
-    expect(coordinatorA.sendMessage).toHaveBeenCalledWith(agentA, '换成按季度汇总\n\n这条消息是用户显式选择的改道指令');
+    expect(coordinatorA.sendMessage).toHaveBeenCalledWith(agentA, '换成按季度汇总\n\n这条消息是用户显式选择的改道指令', {
+      senderKind: 'user',
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+    });
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith(scopeA.sessionId, expect.objectContaining({
       content: '换成按季度汇总',
     }));

@@ -81,6 +81,8 @@ import {
   writeBrowserClipboard,
   type BrowserPendingDialog,
 } from './browser/browserSurfaceInteractions';
+import { captureJevPageFromTab, type JevCapturedSnapshot } from './browser/jevBrowserSnapshotPrep';
+import { JEV_MAX_INTERACTIVE_ELEMENTS } from './browser/domSnapshotParser';
 import {
   MANAGED_BROWSER_ARTIFACT_DIR,
   MANAGED_BROWSER_ARTIFACT_ROOT_DIR,
@@ -676,6 +678,14 @@ export class BrowserService implements Disposable {
 
   async getDomSnapshot(tabId?: string): Promise<BrowserDomSnapshot> {
     return captureBrowserDomSnapshot(this.getTab(tabId), this.targetRefs);
+  }
+
+  async captureJevPage(tabId?: string): Promise<JevCapturedSnapshot> {
+    return captureJevPageFromTab({
+      tab: this.getTab(tabId),
+      registry: this.targetRefs,
+      maxInteractiveElements: JEV_MAX_INTERACTIVE_ELEMENTS,
+    });
   }
 
   async getAccessibilitySnapshot(tabId?: string): Promise<unknown> {

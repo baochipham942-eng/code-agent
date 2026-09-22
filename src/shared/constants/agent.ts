@@ -10,7 +10,7 @@
 /** 隐藏唤醒回合的「无话可说」出口工具名（N-TASKWAKE）；host 与 renderer 共用，放 shared 以免 runtime 反向依赖 commandCenter 服务图。 */
 export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 
-export const PROMPT_VERSION = 'sys-v49' as const;
+export const PROMPT_VERSION = 'sys-v54' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
@@ -22,6 +22,7 @@ export const CONTEXT_LEDGER = {
     PROMPT_LAYER: 'prompt_layer',
     TOOL_SCHEMA_SNAPSHOT: 'tool_schema_snapshot',
     MODEL_BINDING: 'model_binding',
+    COMPRESSION_SIGNAL: 'compression_signal',
   },
   PROMPT_LAYER_OUTCOME: {
     INCLUDED: 'included',
@@ -36,20 +37,6 @@ export const CONTEXT_LEDGER = {
   SCHEMA_HASH_ALGORITHM: 'sha256',
 } as const;
 
-/** Agent 配置 */
-export const AGENT = {
-  /** 最大迭代次数 */
-  MAX_ITERATIONS: 30,
-  /** 最大重试次数 */
-  MAX_RETRIES: 3,
-  /** 默认超时时间 (ms) */
-  DEFAULT_TIMEOUT: 60000,
-  /** 最大消息长度 */
-  MAX_MESSAGE_LENGTH: 100000,
-  /** 子任务最大深度 */
-  MAX_SUBTASK_DEPTH: 5,
-} as const;
-
 /** SpawnGuard 子代理守卫（spawn 并发 + 嵌套深度） */
 export const SPAWN_GUARD = {
   /** 整棵 spawn 树共享的最大并发 agent 数 */
@@ -60,44 +47,6 @@ export const SPAWN_GUARD = {
   HARD_MAX_SPAWN_DEPTH: 5,
   /** 超额 spawn 在全树槽位池里等待的默认时长。 */
   QUEUE_WAIT_TIMEOUT_MS: 30_000,
-} as const;
-
-/** Agent 超时配置 (按角色) */
-export const AGENT_TIMEOUT = {
-  PLANNER: 60000,
-  RESEARCHER: 120000,
-  CODER: 180000,
-  REVIEWER: 90000,
-  WRITER: 120000,
-  TESTER: 180000,
-  COORDINATOR: 300000,
-} as const;
-
-/** Agent 迭代配置 (按角色) */
-export const AGENT_ITERATIONS = {
-  PLANNER: 15,
-  RESEARCHER: 20,
-  CODER: 30,
-  REVIEWER: 20,
-  WRITER: 25,
-  TESTER: 25,
-  COORDINATOR: 50,
-} as const;
-
-/** Agent 复杂度配置 */
-export const AGENT_COMPLEXITY = {
-  LOW: {
-    maxTurns: 5,
-    timeout: 30_000,
-  },
-  MEDIUM: {
-    maxTurns: 15,
-    timeout: 120_000,
-  },
-  HIGH: {
-    maxTurns: 50,
-    timeout: 600_000,
-  },
 } as const;
 
 /** 预定义 Agent 超时配置 */
@@ -241,6 +190,31 @@ export const STOP_HOOK = {
   USER_MAX_RETRIES: 1,
 } as const;
 
+/** turn_outcome 交付物落盘核对（issue #1998：产物幻觉闭环） */
+export const TURN_OUTCOME = {
+  /**
+   * 声称/声明的交付物盘上核对不通过（不存在或为空）时，最多回喂模型补几轮。
+   * 补轮仍缺则放行收尾，但在 final 里如实说明哪些没交付——绝不无限阻塞在补交循环里。
+   */
+  MAX_DELIVERABLE_REPAIR_ROUNDS: 1,
+  /**
+   * 输入资料目录名：路径里带这些段的文件是「引用输入」不是交付物，
+   * 最终回复提到它们（如「已读取 资料/周报.md」）不进落盘核对。
+   */
+  INPUT_MATERIALS_DIR_NAMES: ['资料'],
+  /**
+   * 单次落盘核对处理的声称路径上限。declare_deliverables 没有数量上限，
+   * 超出的声称不核对、不参与 verified 提升——收尾同步 IO 必须有界（ai-review #2007）。
+   */
+  MAX_DELIVERABLE_CLAIMS: 50,
+  /**
+   * 单次落盘核对回读（readFileSync+sha256）的总字节预算。预算内逐文件回读带 digest；
+   * 超出后降级为 stat 存在性+非空检查（幻觉拦截仍在，只是不再回读字节），
+   * 防止「声明数百个大文件」在 host 收尾同步读数 GB 阻塞事件循环。
+   */
+  MAX_DELIVERABLE_READBACK_BYTES: 64 * 1024 * 1024,
+} as const;
+
 /** System prompt 预算配置（GAP-023 动态化） */
 export const SYSTEM_PROMPT_BUDGET = {
   /** 预算下限（无模型信息/小窗口模型时的默认值，等于历史固定值 6000） */
@@ -308,16 +282,6 @@ export const AGENT_WAKE = {
   MAX_SLEEP_MS: 30 * 24 * 60 * 60 * 1000,
 } as const;
 
-/** 规划配置 */
-export const PLANNING = {
-  /** 最大 TODO 数量 */
-  MAX_TODOS: 50,
-  /** 最大 Findings 数量 */
-  MAX_FINDINGS: 100,
-  /** 计划文件最大大小 */
-  MAX_PLAN_SIZE: 50000,
-} as const;
-
 
 /** Subagent progress watchdog; total execution budget remains an independent hard limit. */
 export const SUBAGENT_IDLE = {
@@ -325,3 +289,10 @@ export const SUBAGENT_IDLE = {
   IN_TOOL_MS: 600_000,
   GRACE_MS: 5_000,
 } as const;
+
+/**
+ * host run 级错误码：撞最大执行轮次上限（max iterations）后按部分结果收尾。
+ * runFinalizer 的 error 事件带这个 code；CLI 据此把退出码映射为
+ * CLI_EXIT_PARTIAL_MAX_ITERATIONS（2），与「正常完成 0 / 异常失败 1」区分。
+ */
+export const RUN_ERROR_CODE_MAX_ITERATIONS = 'MAX_ITERATIONS_REACHED';

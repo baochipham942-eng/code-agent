@@ -8,14 +8,16 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
-import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY, CONFIG_DIR_DEV } from '../../shared/constants/configDir';
+import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../../shared/constants/configDir';
 
 // ----------------------------------------------------------------------------
 // Constants
 // ----------------------------------------------------------------------------
 
 // 目录名常量上移到 shared 单一真值源（供 renderer 干净引用）；此处 re-export 保持现有 import 不变。
-export { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY, CONFIG_DIR_DEV };
+// CONFIG_DIR_DEV 不再从此处 re-export：最后一个消费方（channelDataDir）已改走
+// shared/devSlot，全仓无人再从 configPaths 拿它（knip dead-export 棘轮 2026-09-18）。
+export { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY };
 
 // ----------------------------------------------------------------------------
 // Types
@@ -61,6 +63,41 @@ export function getUserConfigDir(): string {
   const explicit = process.env.CODE_AGENT_DATA_DIR?.trim();
   if (explicit) return explicit;
   return path.join(getHomeDir(), CONFIG_DIR_NEW);
+}
+
+function resolveHomeAndDataDir(env: NodeJS.ProcessEnv): { home: string; dataDir: string } {
+  const home = path.resolve(env.CODE_AGENT_HOME || os.homedir());
+  return { home, dataDir: path.resolve(env.CODE_AGENT_DATA_DIR?.trim() || path.join(home, CONFIG_DIR_NEW)) };
+}
+
+/** 2026-09-16 前的默认工作目录 <dataDir>/work。只用于认出已经存进会话的旧路径、放行旧产物缩略图。 */
+export function getLegacyDefaultWorkDirectory(dataDir: string): string {
+  return path.join(dataDir, 'work');
+}
+
+/**
+ * 会话里存的是不是旧默认工作目录。是就当作「没有目录」，改走 getDefaultWorkDirectory——
+ * 否则旧会话（Dev 槽 5 个、正式版 18 个）派后台任务照样 WORKSPACE_REQUIRED（grok ai-review PR#1911 Nit）。
+ * 旧目录里的文件不迁移，按绝对路径照样能读。
+ */
+export function isLegacyDefaultWorkDirectory(dir: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  return path.resolve(dir) === getLegacyDefaultWorkDirectory(resolveHomeAndDataDir(env).dataDir);
+}
+
+/**
+ * 没有项目目录的会话（「未分类」、快速对话）默认工作目录。所有兜底点共用这一个函数。
+ *
+ * 不能放在数据目录里：后台任务的写权限（resolveBackgroundWorkspaceAuthority）按设计拒绝数据目录，
+ * 放在 <dataDir>/work 时未分类会话派后台任务必然 WORKSPACE_REQUIRED（爸 2026-09-16 真机）。
+ * 爸 2026-09-16 拍板放主目录下用户看得见的 ~/Neo（不放「文稿」：macOS 会弹授权，拒了就写不了）。
+ * - 数据目录直接挂在主目录下：正式版 ~/.code-agent → ~/Neo；测试槽 ~/.code-agent-dev → ~/Neo-dev（测试产物不混进正式目录）
+ * - 其余嵌套数据目录（测试临时目录、远端验收宿主）：放在数据目录旁边 <dataDir>-work，不往真实主目录写
+ */
+export function getDefaultWorkDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  const { home, dataDir } = resolveHomeAndDataDir(env);
+  if (path.dirname(dataDir) !== home) return `${dataDir}-work`;
+  const slot = path.basename(dataDir).replace(/^\.+/, '').replace(/^code-agent-?/, '');
+  return path.join(home, slot ? `Neo-${slot}` : 'Neo');
 }
 
 /**

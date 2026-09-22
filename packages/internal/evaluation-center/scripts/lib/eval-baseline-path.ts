@@ -15,7 +15,10 @@ export function createEvalBaselineManager(
   workingDir: string,
   options: EvalBaselineManagerOptions,
 ): BaselineManager {
-  if (!options.grouped || options.kind === 'mock-harness') {
+  // core 周跑集永远对自己的 k 基线（.claude/eval-baseline.core.k<k>.json）：
+  // 不走旧口径的 .code-agent/eval-baseline.json，否则退步题永远点不出来。
+  const grouped = options.grouped || (options.split === 'core' && !options.caseDir);
+  if (!grouped || options.kind === 'mock-harness') {
     return new BaselineManager(workingDir, { kind: options.kind });
   }
   const split = options.caseDir ? 'all' : options.split ?? 'held-in';

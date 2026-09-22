@@ -42,7 +42,7 @@ export interface TraceNode {
   };
   reasoning?: string;
   thinking?: string;
-  subtype?: 'compaction' | 'error' | 'skill_status' | 'goal_notice' | 'model_fallback' | 'voice_call_summary';
+  subtype?: 'compaction' | 'error' | 'skill_status' | 'goal_notice' | 'model_fallback' | 'voice_call_summary' | 'context_compression_signal';
   attachments?: import('./message').MessageAttachment[];
   artifacts?: import('./message').Artifact[];
   modelDecision?: import('./modelDecision').ModelDecisionEventData;

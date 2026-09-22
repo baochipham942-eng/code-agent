@@ -89,6 +89,7 @@ import { getConfigService } from '../../../services/core/configService';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
 import type { AgentNoticeEvent } from '../../../../shared/ipc/handlers';
 import { applyHistoricalImageBudget } from './imageBudget';
+import { projectReadTranscriptEntries } from '../../../context/readResultProjection';
 
 export { formatArtifactRepairToolResultContent } from './artifactRepairProjection';
 export {
@@ -867,13 +868,17 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     transcriptEntries,
   );
 
-  let contextApiView = interventionAdjustedEntries;
+  // Keep the unprojected transcript through compression. A duplicate Read
+  // receipt may refer to an earlier result, so projection must run only after
+  // compression has decided which complete results remain model-visible.
+  const compressionTranscriptEntries = interventionAdjustedEntries;
+  let contextApiView = compressionTranscriptEntries;
   const contextWindowSize = resolveContextWindow(ctx.runtime.modelConfig.model, ctx.runtime.modelConfig.provider);
   try {
     const cache = getRuntimeAssemblyCache(ctx);
     const compressionCacheKey = buildCompressionCacheKey(
       ctx,
-      interventionAdjustedEntries,
+      compressionTranscriptEntries,
       transcriptInterventions,
       contextWindowSize,
     );
@@ -901,7 +906,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
 
       const armEnabled = getCompressionPipelineOverride() ?? DEFAULT_COMPRESSION_PIPELINE_ENABLED;
       const pipelineResult = await ctx.runtime.compressionPipeline.evaluate(
-        interventionAdjustedEntries.map((entry) => ({ ...entry })),
+        compressionTranscriptEntries.map((entry) => ({ ...entry })),
         nextCompressionState,
         {
           maxTokens: contextWindowSize,
@@ -983,6 +988,9 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     ctx.runtime.contextHealth.replaceCompressionState(new CompressionState());
   }
   contextApiView = applyArchiveHydration(contextApiView, ctx.runtime.contextHealth.compressionState, ctx.runtime.sessionId);
+  // Project duplicate Read output only after compression. The transcript and
+  // persisted tool results remain unchanged for UI, audit, and callers.
+  contextApiView = projectReadTranscriptEntries(contextApiView);
 
   const currentUserMessageId = getLastUserMessage(ctx)?.id;
   const imageBudgetResult = applyHistoricalImageBudget(contextApiView, {

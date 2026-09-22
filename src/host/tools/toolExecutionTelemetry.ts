@@ -93,6 +93,11 @@ interface ApprovalWaitState {
   accumulatedMs: number;
   /** 正在等待中的那一段的起点；不在等待时为 undefined */
   waitingSince?: number;
+  /**
+   * 并行在等的审批数（同一 toolCallId 下的并行子 agent 可能同时弹卡）。
+   * 可重入：只有最后一张卡结束时才把整段等待封账，先结束的卡不清 waitingSince。
+   */
+  pendingCount: number;
 }
 
 const approvalWaits = new Map<string, ApprovalWaitState>();
@@ -110,17 +115,25 @@ export function clearApprovalWait(toolCallId: string | undefined): void {
   if (toolCallId) approvalWaits.delete(toolCallId);
 }
 
-function beginApprovalWait(toolCallId: string | undefined): void {
+/**
+ * 记一笔「正在等人审批」的开始/结束。顶层审批走 requestPermissionWithTelemetry 内部记账；
+ * 工具内部审批（canUseTool 弹卡）由 ToolExecutor 签发的 context.requestPermission 包一层记账。
+ */
+export function beginApprovalWait(toolCallId: string | undefined): void {
   if (!toolCallId) return;
-  const state = approvalWaits.get(toolCallId) ?? { accumulatedMs: 0 };
-  state.waitingSince = Date.now();
+  const state = approvalWaits.get(toolCallId) ?? { accumulatedMs: 0, pendingCount: 0 };
+  state.pendingCount += 1;
+  state.waitingSince ??= Date.now();
   approvalWaits.set(toolCallId, state);
 }
 
-function endApprovalWait(toolCallId: string | undefined): void {
+export function endApprovalWait(toolCallId: string | undefined): void {
   if (!toolCallId) return;
   const state = approvalWaits.get(toolCallId);
   if (!state?.waitingSince) return;
+  state.pendingCount -= 1;
+  if (state.pendingCount > 0) return;
+  state.pendingCount = 0;
   state.accumulatedMs += Date.now() - state.waitingSince;
   state.waitingSince = undefined;
 }

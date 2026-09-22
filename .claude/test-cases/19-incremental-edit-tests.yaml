@@ -23,6 +23,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: incremental-edit-no-reread
     type: task
+    category: task_completion
     description: "L4 smart masking：增量编辑链路不应重新读取文件"
     setup:
       - |
@@ -49,6 +50,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: reread-loop-trap
     type: conversation
+    category: task_completion
     description: "L3 detector：诱导重读陷阱，验证 reread-loop 兜底"
     setup:
       - |
@@ -89,6 +91,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: modify-verify-modify
     type: task
+    category: task_completion
     description: "L1 placeholder + L4：改-验-改闭环，验证修改后内容可见"
     setup:
       - |
@@ -119,6 +122,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: cross-file-consistent-edit
     type: task
+    category: task_completion
     description: "L4 smart masking 跨文件：同步修改两个文件保持一致性"
     setup:
       - |
@@ -146,6 +150,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: long-chain-budget-15
     type: task
+    category: task_completion
     description: "长链路预算：10 轮增量编辑总工具调用 <=15（对应 P0 从 51 降到 <15）"
     setup:
       - |

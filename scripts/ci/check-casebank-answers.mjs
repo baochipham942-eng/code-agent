@@ -14,7 +14,7 @@ const sourceRepoRoot = path.resolve(scriptDir, '../..');
 const repoRoot = process.cwd();
 const requirePrivate = process.argv.slice(2).includes('--require-private');
 const unexpectedArgs = process.argv.slice(2).filter((arg) => arg !== '--require-private');
-const answerEnumeratedSubdirectories = ['artifact-runnable', 'goal-contract', 'user-simulator', 'memory'];
+const answerEnumeratedSubdirectories = ['artifact-runnable', 'goal-contract', 'user-simulator', 'memory', 'skill-trigger'];
 const securityRedlineSource = '.claude/test-cases/06-security-redline-tests.yaml';
 const gitWorkflowSource = '.claude/test-cases/10-git-workflow-tests.yaml';
 /** id 列表折叠阈值：超过就只列前几条 + 计数，别刷屏。 */
@@ -292,6 +292,7 @@ async function checkPrivate(publicBank, errors) {
     path.join(caseRoot, 'goal-contract'),
     path.join(caseRoot, 'user-simulator'),
     path.join(caseRoot, 'memory'),
+    path.join(caseRoot, 'skill-trigger'),
   ];
   const loaderErrors = [];
   const originalConsoleError = console.error;
@@ -330,22 +331,23 @@ async function checkPrivate(publicBank, errors) {
       errors.push(message);
     }
   }
-  // K5：12 道危险题 + 12 道良性对照（tag benign-control）都在 safety split、都只在 OS jail 跑。
-  if (coreCases.length !== 155) {
+  // K5：危险题 + 良性对照（tag benign-control）都在 safety split、都只在 OS jail 跑。
+  // N-SAFETY-DENY-THEN-DELETE 后：14 道危险题 + 12 道良性对照 = 红线 26，总题数 157。
+  if (coreCases.length !== 157) {
     pairingDriftDetected = true;
-    errors.push(`默认题数应为 155，实际 ${coreCases.length}`);
+    errors.push(`默认题数应为 157，实际 ${coreCases.length}`);
   }
-  if (redlineCases.length !== 24) {
+  if (redlineCases.length !== 26) {
     pairingDriftDetected = true;
-    errors.push(`红线题数（含良性对照）应为 24，实际 ${redlineCases.length}`);
+    errors.push(`红线题数（含良性对照）应为 26，实际 ${redlineCases.length}`);
   }
   if (!coreCases.every((testCase) => testCase.max_cost_usd === 0.10)) {
     errors.push('并非所有核心 case 的 max_cost_usd 都是 0.10');
   }
-  if (split.safety.length !== 24) errors.push(`safety 应为 24，实际 ${split.safety.length}`);
-  if (new Set([...split.heldIn, ...split.heldOut, ...split.safety]).size !== 155) {
+  if (split.safety.length !== 26) errors.push(`safety 应为 26，实际 ${split.safety.length}`);
+  if (new Set([...split.heldIn, ...split.heldOut, ...split.safety]).size !== 157) {
     pairingDriftDetected = true;
-    errors.push('heldIn + heldOut + safety 去重后必须完整覆盖 155 题');
+    errors.push('heldIn + heldOut + safety 去重后必须完整覆盖 157 题');
   }
   try {
     const coverage = mockPolicy.assertMockPolicyCoverage(split.heldIn);

@@ -257,4 +257,322 @@ fs.chmodSync(path.join(pkg, 'scripts', 'tmeet.js'), 0o755);
       'install', '--prefix', path.join(dataDir, 'tmeet'), '@tencentcloud/tmeet@1.0.15',
     ]);
   });
+
+  it('self-heals a missing tmeet binary during status probing', async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'neo-tmeet-self-heal-'));
+    roots.push(dataDir);
+    const npmPath = path.join(dataDir, 'fake-npm');
+    const npmLog = path.join(dataDir, 'npm-args.json');
+    const sourcePath = path.join(dataDir, 'tmeet-source.js');
+    const logPath = path.join(dataDir, 'calls.ndjson');
+    const credentialPath = path.join(dataDir, 'credential');
+    await writeFile(sourcePath, FAKE_TMEET);
+    await writeFile(npmPath, [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "fs.writeFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(args));",
+      "const prefix = args[args.indexOf('--prefix') + 1];",
+      "const pkg = path.join(prefix, 'node_modules', '@tencentcloud', 'tmeet');",
+      "fs.mkdirSync(path.join(pkg, 'scripts'), { recursive: true });",
+      "fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: 'v1.0.15' }));",
+      "fs.copyFileSync(process.env.FAKE_SOURCE, path.join(pkg, 'scripts', 'tmeet.js'));",
+      "fs.chmodSync(path.join(pkg, 'scripts', 'tmeet.js'), 0o755);",
+    ].join('\n'));
+    await chmod(npmPath, 0o755);
+    const driver = createTmeetCliDriver({
+      dataDir,
+      npmExecutable: npmPath,
+      statusCacheTtlMs: 0,
+      env: {
+        ...process.env,
+        FAKE_NPM_LOG: npmLog,
+        FAKE_SOURCE: sourcePath,
+        FAKE_LOG: logPath,
+        FAKE_CREDENTIAL: credentialPath,
+        FAKE_MODE: 'normal',
+      },
+    });
+
+    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none' });
+    expect(JSON.parse(await readFile(npmLog, 'utf8'))).toEqual([
+      'install', '--prefix', path.join(dataDir, 'tmeet'), '@tencentcloud/tmeet@1.0.15',
+    ]);
+    expect((await calls(logPath)).map((call) => call.args)).toEqual([['auth', 'status']]);
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      'CLI connector binary missing; attempting self-heal install',
+      expect.objectContaining({ providerId: 'tmeet' }),
+    );
+  });
+
+  it('surfaces a reinstall state when tmeet self-heal installation fails', async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'neo-tmeet-self-heal-fail-'));
+    roots.push(dataDir);
+    const npmPath = path.join(dataDir, 'fake-npm');
+    await writeFile(npmPath, ['#!/usr/bin/env node', 'process.exit(1);'].join('\n'));
+    await chmod(npmPath, 0o755);
+    const driver = createTmeetCliDriver({
+      dataDir,
+      npmExecutable: npmPath,
+      statusCacheTtlMs: 0,
+      env: { ...process.env },
+    });
+
+    await expect(driver.status()).resolves.toEqual({
+      connected: false,
+      identity: 'none',
+      installState: 'failed',
+    });
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      'CLI connector self-heal install failed',
+      expect.objectContaining({ providerId: 'tmeet' }),
+    );
+  });
+
+  it('self-heals when tmeet status exits 127', async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'neo-tmeet-self-heal-127-'));
+    roots.push(dataDir);
+    const npmPath = path.join(dataDir, 'fake-npm');
+    const npmLog = path.join(dataDir, 'npm-args.json');
+    const sourcePath = path.join(dataDir, 'tmeet-source.js');
+    const logPath = path.join(dataDir, 'calls.ndjson');
+    const credentialPath = path.join(dataDir, 'credential');
+    const packageDir = path.join(dataDir, 'tmeet', 'node_modules', '@tencentcloud', 'tmeet');
+    const binaryPath = path.join(packageDir, 'scripts', 'tmeet.js');
+    await mkdir(path.dirname(binaryPath), { recursive: true });
+    await writeFile(binaryPath, '#!/usr/bin/env node\nprocess.exit(127);\n');
+    await chmod(binaryPath, 0o755);
+    await writeFile(sourcePath, FAKE_TMEET);
+    await writeFile(npmPath, [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "fs.writeFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(args));",
+      "const prefix = args[args.indexOf('--prefix') + 1];",
+      "const pkg = path.join(prefix, 'node_modules', '@tencentcloud', 'tmeet');",
+      "fs.mkdirSync(path.join(pkg, 'scripts'), { recursive: true });",
+      "fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: 'v1.0.15' }));",
+      "fs.copyFileSync(process.env.FAKE_SOURCE, path.join(pkg, 'scripts', 'tmeet.js'));",
+      "fs.chmodSync(path.join(pkg, 'scripts', 'tmeet.js'), 0o755);",
+    ].join('\n'));
+    await chmod(npmPath, 0o755);
+    const driver = createTmeetCliDriver({
+      dataDir,
+      npmExecutable: npmPath,
+      statusCacheTtlMs: 0,
+      env: {
+        ...process.env,
+        FAKE_NPM_LOG: npmLog,
+        FAKE_SOURCE: sourcePath,
+        FAKE_LOG: logPath,
+        FAKE_CREDENTIAL: credentialPath,
+        FAKE_MODE: 'normal',
+      },
+    });
+
+    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none' });
+    expect(JSON.parse(await readFile(npmLog, 'utf8'))).toEqual([
+      'install', '--prefix', path.join(dataDir, 'tmeet'), '@tencentcloud/tmeet@1.0.15',
+    ]);
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      'CLI connector binary missing; attempting self-heal install',
+      expect.objectContaining({ providerId: 'tmeet' }),
+    );
+  });
+
+  it('distinguishes a successful install that still exits 127 from an install failure', async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'neo-tmeet-self-heal-still-127-'));
+    roots.push(dataDir);
+    const npmPath = path.join(dataDir, 'fake-npm');
+    const npmLog = path.join(dataDir, 'npm-args.json');
+    await writeFile(npmPath, [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "fs.writeFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(args));",
+      "const prefix = args[args.indexOf('--prefix') + 1];",
+      "const pkg = path.join(prefix, 'node_modules', '@tencentcloud', 'tmeet');",
+      "fs.mkdirSync(path.join(pkg, 'scripts'), { recursive: true });",
+      "fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: 'v1.0.15' }));",
+      "fs.writeFileSync(path.join(pkg, 'scripts', 'tmeet.js'), '#!/usr/bin/env node\\nprocess.exit(127);\\n');",
+      "fs.chmodSync(path.join(pkg, 'scripts', 'tmeet.js'), 0o755);",
+    ].join('\n'));
+    await chmod(npmPath, 0o755);
+    const driver = createTmeetCliDriver({
+      dataDir,
+      npmExecutable: npmPath,
+      statusCacheTtlMs: 0,
+      env: { ...process.env, FAKE_NPM_LOG: npmLog },
+    });
+
+    await expect(driver.status()).resolves.toEqual({
+      connected: false,
+      identity: 'none',
+      installState: 'failed',
+    });
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      'CLI connector still missing after self-heal install',
+      expect.objectContaining({ providerId: 'tmeet', phase: 'post-install-status', exitCode: 127 }),
+    );
+    expect(loggerWarnMock).not.toHaveBeenCalledWith(
+      'CLI connector self-heal install failed',
+      expect.anything(),
+    );
+  });
+
+  it('does not self-heal a non-127 status failure', async () => {
+    const { driver } = await fixture('gpt-test', 'status-fail');
+
+    await expect(driver.status()).resolves.toEqual({
+      connected: false,
+      identity: 'none',
+      stale: true,
+    });
+    expect(loggerWarnMock).not.toHaveBeenCalledWith(
+      'CLI connector binary missing; attempting self-heal install',
+      expect.anything(),
+    );
+    expect(loggerWarnMock).not.toHaveBeenCalledWith(
+      'CLI connector self-heal install failed',
+      expect.anything(),
+    );
+  });
+
+  it('does not rerun npm install during the failed-install cooldown', async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'neo-tmeet-self-heal-cooldown-'));
+    roots.push(dataDir);
+    const npmPath = path.join(dataDir, 'fake-npm');
+    const npmLog = path.join(dataDir, 'npm-args.json');
+    await writeFile(npmPath, [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      "fs.appendFileSync(process.env.FAKE_NPM_LOG, 'install\\n');",
+      'process.exit(1);',
+    ].join('\n'));
+    await chmod(npmPath, 0o755);
+    let nowMs = 1_000;
+    const driver = createTmeetCliDriver({
+      dataDir,
+      npmExecutable: npmPath,
+      now: () => nowMs,
+      env: { ...process.env, FAKE_NPM_LOG: npmLog },
+    });
+
+    await expect(driver.status()).resolves.toEqual({
+      connected: false,
+      identity: 'none',
+      installState: 'failed',
+    });
+    expect(await readFile(npmLog, 'utf8')).toBe('install\n');
+
+    nowMs += 60_000;
+    await expect(driver.status()).resolves.toEqual({
+      connected: false,
+      identity: 'none',
+      installState: 'failed',
+    });
+    expect(await readFile(npmLog, 'utf8')).toBe('install\n');
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      'CLI connector self-heal install failed',
+      expect.objectContaining({ phase: 'install' }),
+    );
+
+    await expect(driver.ensureInstalled()).rejects.toThrow(/installation could not be verified|failed with exit code 1/);
+    expect(await readFile(npmLog, 'utf8')).toBe('install\ninstall\n');
+  });
+
+  it('force-reinstalls a same-version executable binary that exits 127', async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'neo-tmeet-self-heal-force-'));
+    roots.push(dataDir);
+    const npmPath = path.join(dataDir, 'fake-npm');
+    const npmLog = path.join(dataDir, 'npm-args.json');
+    const sourcePath = path.join(dataDir, 'tmeet-source.js');
+    const logPath = path.join(dataDir, 'calls.ndjson');
+    const credentialPath = path.join(dataDir, 'credential');
+    const packageDir = path.join(dataDir, 'tmeet', 'node_modules', '@tencentcloud', 'tmeet');
+    const binaryPath = path.join(packageDir, 'scripts', 'tmeet.js');
+    await mkdir(path.dirname(binaryPath), { recursive: true });
+    // 版本号与可执行位都正常，但运行即 127 的坏二进制：alreadyInstalled 识别不了，
+    // 自愈必须强制重装（PR#1970 ai-review Important 1）。
+    await writeFile(path.join(packageDir, 'package.json'), JSON.stringify({ version: 'v1.0.15' }));
+    await writeFile(binaryPath, '#!/usr/bin/env node\nprocess.exit(127);\n');
+    await chmod(binaryPath, 0o755);
+    await writeFile(sourcePath, FAKE_TMEET);
+    await writeFile(npmPath, [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "fs.writeFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(args));",
+      "const prefix = args[args.indexOf('--prefix') + 1];",
+      "const pkg = path.join(prefix, 'node_modules', '@tencentcloud', 'tmeet');",
+      "fs.mkdirSync(path.join(pkg, 'scripts'), { recursive: true });",
+      "fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: 'v1.0.15' }));",
+      "fs.copyFileSync(process.env.FAKE_SOURCE, path.join(pkg, 'scripts', 'tmeet.js'));",
+      "fs.chmodSync(path.join(pkg, 'scripts', 'tmeet.js'), 0o755);",
+    ].join('\n'));
+    await chmod(npmPath, 0o755);
+    const driver = createTmeetCliDriver({
+      dataDir,
+      npmExecutable: npmPath,
+      statusCacheTtlMs: 0,
+      env: {
+        ...process.env,
+        FAKE_NPM_LOG: npmLog,
+        FAKE_SOURCE: sourcePath,
+        FAKE_LOG: logPath,
+        FAKE_CREDENTIAL: credentialPath,
+        FAKE_MODE: 'normal',
+      },
+    });
+
+    await expect(driver.status()).resolves.toEqual({ connected: false, identity: 'none' });
+    expect(JSON.parse(await readFile(npmLog, 'utf8'))).toEqual([
+      'install', '--prefix', path.join(dataDir, 'tmeet'), '@tencentcloud/tmeet@1.0.15',
+    ]);
+    expect((await calls(logPath)).map((call) => call.args)).toEqual([['auth', 'status']]);
+  });
+
+  it('classifies a post-install non-127 status failure by baseline rules, not as install failure', async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'neo-tmeet-self-heal-non127-'));
+    roots.push(dataDir);
+    const npmPath = path.join(dataDir, 'fake-npm');
+    const npmLog = path.join(dataDir, 'npm-args.json');
+    // 安装成功但装完的状态命令以非 127 错误退出（如未登录类）：不得误标
+    // installState failed，应抛回外层走 isMissingConfiguration/stale 既有分类
+    // （PR#1970 ai-review Important 2）。
+    await writeFile(npmPath, [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "fs.writeFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(args));",
+      "const prefix = args[args.indexOf('--prefix') + 1];",
+      "const pkg = path.join(prefix, 'node_modules', '@tencentcloud', 'tmeet');",
+      "fs.mkdirSync(path.join(pkg, 'scripts'), { recursive: true });",
+      "fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ version: 'v1.0.15' }));",
+      "fs.writeFileSync(path.join(pkg, 'scripts', 'tmeet.js'), '#!/usr/bin/env node\\nprocess.stderr.write(\"status unavailable\\\\n\");\\nprocess.exit(1);\\n');",
+      "fs.chmodSync(path.join(pkg, 'scripts', 'tmeet.js'), 0o755);",
+    ].join('\n'));
+    await chmod(npmPath, 0o755);
+    const driver = createTmeetCliDriver({
+      dataDir,
+      npmExecutable: npmPath,
+      statusCacheTtlMs: 0,
+      env: { ...process.env, FAKE_NPM_LOG: npmLog },
+    });
+
+    await expect(driver.status()).resolves.toEqual({
+      connected: false,
+      identity: 'none',
+      stale: true,
+    });
+    expect(loggerWarnMock).not.toHaveBeenCalledWith(
+      'CLI connector still missing after self-heal install',
+      expect.anything(),
+    );
+  });
 });

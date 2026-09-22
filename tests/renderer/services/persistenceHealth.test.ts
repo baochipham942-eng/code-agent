@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  describePersistenceBanner,
   fetchWebBuildInfo,
   getPersistenceWarningText,
   shouldShowPersistenceWarning,
 } from '../../../src/renderer/services/persistenceHealth';
 import type { BuildInfo, PersistenceHealth } from '../../../src/shared/contract';
+import { SQLITE_INTEGRITY } from '../../../src/shared/constants';
+import { zh } from '../../../src/renderer/i18n';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -31,6 +34,96 @@ describe('persistence health renderer helpers', () => {
     expect(shouldShowPersistenceWarning(unavailable)).toBe(true);
     expect(shouldShowPersistenceWarning(available)).toBe(false);
     expect(shouldShowPersistenceWarning(null)).toBe(false);
+  });
+
+  it('shows a warning when persistence is degraded but still durable', () => {
+    const degraded = {
+      status: 'degraded',
+      mode: 'database',
+      durable: true,
+      message: '历史会持久化到本机数据库。',
+      reason: 'FTS_DISABLED',
+      checkedAt: 30,
+    } satisfies PersistenceHealth;
+    expect(shouldShowPersistenceWarning(degraded)).toBe(true);
+  });
+
+  it('shows a warning after backup recovery', () => {
+    const recovered = {
+      status: 'recovered',
+      mode: 'database',
+      durable: true,
+      message: 'Restored from a local backup.',
+      reason: `${SQLITE_INTEGRITY.RECOVERED_FROM_BACKUP}:2026-09-14T00:00:00.000Z`,
+      checkedAt: 40,
+    } satisfies PersistenceHealth;
+    expect(shouldShowPersistenceWarning(recovered)).toBe(true);
+    expect(describePersistenceBanner(recovered, zh.settings.data.persistence)).toMatchObject({
+      title: zh.settings.data.persistence.recoveredTitle,
+      body: expect.stringContaining('2026-09-14T00:00:00.000Z'),
+    });
+  });
+
+  it('translates DB_CORRUPT_NO_BACKUP instead of leaking a host message', () => {
+    const noBackup = {
+      status: 'unavailable',
+      mode: 'memory',
+      durable: false,
+      message: 'Restored from a local backup.',
+      reason: SQLITE_INTEGRITY.CORRUPT_NO_BACKUP,
+      checkedAt: 50,
+    } satisfies PersistenceHealth;
+    expect(describePersistenceBanner(noBackup, zh.settings.data.persistence).body)
+      .toBe(zh.settings.data.persistence.corruptNoBackup);
+  });
+
+  it('translates DB_RESTORE_FAILED with its own copy', () => {
+    const restoreFailed = {
+      status: 'unavailable',
+      mode: 'memory',
+      durable: false,
+      message: 'DB_RESTORE_FAILED',
+      reason: SQLITE_INTEGRITY.RESTORE_FAILED,
+      checkedAt: 60,
+    } satisfies PersistenceHealth;
+    expect(describePersistenceBanner(restoreFailed, zh.settings.data.persistence).body)
+      .toBe(zh.settings.data.persistence.restoreFailed);
+  });
+
+  it('translates DB_RESTORE_LOW_DISK as degraded with its own copy', () => {
+    const lowDisk = {
+      status: 'degraded',
+      mode: 'database',
+      durable: true,
+      message: '历史会持久化到本机数据库。',
+      reason: SQLITE_INTEGRITY.RESTORE_LOW_DISK,
+      checkedAt: 70,
+    } satisfies PersistenceHealth;
+    expect(describePersistenceBanner(lowDisk, zh.settings.data.persistence).body)
+      .toContain(zh.settings.data.persistence.restoreLowDisk);
+  });
+
+  it('translates DB_READONLY and LEDGER_CORRUPT instead of leaking a host message', () => {
+    const readonly = {
+      status: 'degraded',
+      mode: 'database',
+      durable: false,
+      message: 'History is readable; writes are refused.',
+      reason: SQLITE_INTEGRITY.READONLY,
+      checkedAt: 80,
+    } satisfies PersistenceHealth;
+    expect(describePersistenceBanner(readonly, zh.settings.data.persistence).body)
+      .toContain(zh.settings.data.persistence.degradedReadonly);
+    const ledger = {
+      status: 'degraded',
+      mode: 'database',
+      durable: true,
+      message: 'ignored',
+      reason: SQLITE_INTEGRITY.LEDGER_CORRUPT,
+      checkedAt: 81,
+    } satisfies PersistenceHealth;
+    expect(describePersistenceBanner(ledger, zh.settings.data.persistence).body)
+      .toContain(zh.settings.data.persistence.degradedLedgerCorrupt);
   });
 
   it('keeps a clear fallback warning when health text is missing', () => {

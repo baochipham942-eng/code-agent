@@ -1,4 +1,6 @@
 import type { ServiceApiKey } from '../../../shared/contract/configService';
+import type { AppSettings } from '../../../shared/contract';
+import { DEFAULT_MODELS } from '../../../shared/constants';
 
 const CLOUD_MANAGED_SERVICE_KEY_PREFIX = 'cloud-service-key:';
 const CLOUD_MANAGED_SERVICE_BASE_URL_PREFIX = 'serviceBaseUrl.cloud.';
@@ -65,4 +67,26 @@ export function normalizeBaseUrl(value?: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * quick 档旧默认迁移（2026-09-20）：quick 档历史默认 zhipu/glm-4-flash 是免费档，走 bigmodel.cn +
+ * ZHIPU_OFFICIAL_API_KEY；默认切到 0ki glm-5.3-flash 后，随历史 save 落盘的旧默认仍会打旧端点。
+ * 只迁 `routing.fast`：它没有设置面板入口，磁盘上的 zhipu/glm-4-flash 只可能是历史默认落盘。
+ * glm-4-flash 仍在 catalog/registry 里可选（ponytail: 不真退役），所以 taskStrategy.profiles.fast
+ * （任务策略面板可直选）、providers.zhipu.model、其它档位、models map 条目一律不碰——
+ * 那些位置的值可能是用户显式选择，且没有一次性标记就分不开。
+ * 幂等：迁完再跑找不到旧默认即空跑。返回迁移条数（调用方决定是否记日志）。
+ */
+export function migrateQuickFreeTierToOkiFlash(models: AppSettings['models']): number {
+  const RETIRED_QUICK_DEFAULT = 'glm-4-flash';
+  const isRetiredQuickDefault = (slot: { provider: string; model?: string }): boolean =>
+    slot.provider === 'zhipu' && slot.model?.toLowerCase() === RETIRED_QUICK_DEFAULT;
+
+  let migrated = 0;
+  if (isRetiredQuickDefault(models.routing.fast)) {
+    models.routing.fast.model = DEFAULT_MODELS.quick;
+    migrated += 1;
+  }
+  return migrated;
 }

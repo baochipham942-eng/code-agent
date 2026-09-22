@@ -13,6 +13,7 @@ const OUTCOME_KEYS = [
   'cancelled-by-user',
   'interrupted-session-switch',
   'interrupted-restart',
+  'interrupted-stream-break',
   'interrupted-by-parent',
   'interrupted-unknown',
   'failed-tool',
@@ -118,6 +119,7 @@ describe('outcomeWords contract', () => {
     expect(resolveStreamInterruptionOutcomeKey('session-switch')).toBe('interrupted-session-switch');
     expect(resolveStreamInterruptionOutcomeKey('app-restart')).toBe('interrupted-restart');
     expect(resolveStreamInterruptionOutcomeKey(undefined)).toBe('interrupted-restart');
+    expect(resolveStreamInterruptionOutcomeKey('stream-break')).toBe('interrupted-stream-break');
 
     expect(outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label).toBe('已取消');
     expect(outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label).toBe('Cancelled');

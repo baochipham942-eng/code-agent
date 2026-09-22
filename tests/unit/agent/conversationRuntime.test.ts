@@ -47,7 +47,7 @@ vi.mock('../../../src/host/agent/runtime/turnSnapshotWriter', () => ({
 }));
 
 vi.mock('../../../src/host/services', () => ({
-  getConfigService: () => ({ getApiKey: vi.fn().mockReturnValue('mock-key') }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: vi.fn().mockReturnValue('mock-key') }),
   getAuthService: () => ({}),
   getLangfuseService: () => ({
     startTrace: vi.fn(),
@@ -479,6 +479,7 @@ function createMockModules() {
       pushPersistentSystemContext: vi.fn(),
       checkAndAutoCompress: vi.fn(),
       addAndPersistMessage: vi.fn(),
+      generateId: vi.fn().mockReturnValue('generated-msg-id'),
     } as any,
     runFinalizer: {
       finalizeRun: vi.fn(),
@@ -1586,6 +1587,246 @@ describe('ConversationRuntime', () => {
       expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
     });
 
+    it('synthesizes a partial-result wrap-up when max iterations ends without any final text (issue #1999)', async () => {
+      ctx.maxIterations = 2;
+      const mp = (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        // 最后一轮 forced-final 推理交白卷 → 运行时兜底合成部分结果
+        .mockImplementationOnce(async () => ({ type: 'text', content: '' }));
+
+      await runtime.run('long task');
+
+      const persistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = persistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeTruthy();
+      expect(synthesized!.content).toContain('已完成的部分');
+      expect(synthesized!.content).toContain('未完成的部分');
+      expect(synthesized!.content).toContain('为什么停');
+      expect(synthesized!.content).toContain('2 轮');
+      // 同步上屏：message 事件把保底收尾推给 CLI/renderer
+      const messageEvents = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls
+        .filter((call: unknown[]) => (call[0] as { type?: string }).type === 'message')
+        .map((call: unknown[]) => (call[0] as { data?: { content?: string } }).data);
+      expect(messageEvents.some((m) => m?.content?.includes('已达最大执行轮次'))).toBe(true);
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'long task',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'completed' }),
+      );
+    });
+
+    it('does not synthesize a fallback when the max-iterations final turn delivered a summary', async () => {
+      ctx.maxIterations = 2;
+      // 真实 handleTextResponse 持久化收尾文本后会 clearForceFinalResponse——
+      // 「reason 已清除」就是保底通道的「已交付」判据，mock 里对齐这一行为。
+      (runtime as unknown as {
+        messageProcessor: { handleTextResponse: ReturnType<typeof vi.fn> };
+      }).messageProcessor.handleTextResponse.mockImplementation(async () => {
+        ctx.control.clearForceFinalResponse();
+        return 'break';
+      });
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        .mockImplementationOnce(async () => ({ type: 'text', content: 'Maximum steps reached. Summary of work done.' }));
+
+      await runtime.run('long task');
+
+      const deliveredPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = deliveredPersistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeUndefined();
+    });
+
+    it('treats a whitespace-only forced-final turn as not delivered and synthesizes the fallback (ai-review #2005)', async () => {
+      ctx.maxIterations = 2;
+      const mp = (runtime as unknown as {
+        messageProcessor: {
+          handleTextResponse: ReturnType<typeof vi.fn>;
+          detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn>;
+        };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        // 最后一轮只回空白字符：不能进 handleTextResponse 清掉 reason，兜底必须生效
+        .mockImplementationOnce(async () => ({ type: 'text', content: '   \n  ' }));
+
+      await runtime.run('long task');
+
+      expect(mp.handleTextResponse).not.toHaveBeenCalled();
+      const whitespacePersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = whitespacePersistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeTruthy();
+    });
+
+    it('never quotes pre-run assistant history as this run\'s partial output (ai-review #2005)', async () => {
+      ctx.maxIterations = 2;
+      (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      // 会话历史里的旧答案（run 开始前的 timestamp）：兜底不许把它复述成「最近一次产出」
+      ctx.messages.push({
+        id: 'old-1', role: 'assistant', content: '上一轮任务的旧答案', timestamp: 1,
+      } as never);
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        .mockImplementationOnce(async () => ({ type: 'text', content: '' }));
+
+      await runtime.run('long task');
+
+      const historyPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = historyPersistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeTruthy();
+      expect(synthesized!.content).not.toContain('上一轮任务的旧答案');
+      expect(synthesized!.content).toContain('没有留下可见产出');
+    });
+
+    it('never claims files modified by earlier runs as this run\'s partial output (ai-review R3 #2005)', async () => {
+      ctx.maxIterations = 2;
+      (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      // modifiedFiles 跨 run 累积：上一轮的 old-run-a.ts 不许进本轮「已完成部分」
+      const getModifiedFilesSince = vi.fn().mockReturnValue([]);
+      ctx.nudgeManager = {
+        getModifiedFilesSince,
+        getModifiedFiles: vi.fn().mockReturnValue(new Set(['old-run-a.ts'])),
+      } as never;
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        .mockImplementationOnce(async () => ({ type: 'text', content: '' }));
+
+      await runtime.run('long task');
+
+      const crossRunPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = crossRunPersistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeTruthy();
+      expect(synthesized!.content).not.toContain('old-run-a.ts');
+      expect(getModifiedFilesSince).toHaveBeenCalledWith(ctx.stats.runStartTime);
+    });
+
+    it('synthesizes the wrap-up even when budget exhaustion coincides with the final round (aborted, ai-review R5 #2005)', async () => {
+      ctx.maxIterations = 2;
+      const mp = (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      // 预算恰好在最后一轮耗尽：terminal=aborted，若按终态放行兜底就没人接手，零收尾断流
+      modules.runFinalizer.checkAndEmitBudgetStatus
+        .mockReturnValueOnce(false)
+        .mockReturnValue(true);
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        .mockImplementationOnce(async () => ({ type: 'text', content: '   ' }));
+
+      await runtime.run('budget task');
+
+      const abortedPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = abortedPersistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeTruthy();
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'budget task',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'aborted' }),
+      );
+    });
+
+    it('synthesizes the wrap-up when the final forced-final round ends goal_met with a blank answer (ai-review R5 #2005)', async () => {
+      ctx.maxIterations = 2;
+      ctx.goalMode = new GoalModeController({ goal: 'finish', verifyCommand: 'true', tokenBudget: 100000, maxTurns: 20 });
+      vi.spyOn(ctx.goalMode, 'evaluateFallback').mockReturnValue({} as never);
+      // markMetDegraded 类路径：终态 goal_met（非 completed），交白卷时兜底也必须接手
+      vi.spyOn(ctx.goalMode, 'getStatus').mockReturnValue('met' as never);
+      const mp = (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.turn.requestReinference();
+          return { type: 'text', content: 'partial' };
+        })
+        .mockImplementationOnce(async () => ({ type: 'text', content: '  ' }));
+
+      await runtime.run('goal task');
+
+      const goalMetPersistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = goalMetPersistCalls
+        .map((call) => call[0] as { role?: string; content?: string })
+        .find((m) => m.role === 'assistant' && m.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeTruthy();
+    });
+
+    it('does not synthesize a fallback when the run completes before max iterations', async () => {
+      ctx.maxIterations = 5;
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Done!' });
+
+      await runtime.run('quick task');
+
+      expect(modules.contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
+    });
+
     it('does not force a summary when the run completes before max iterations', async () => {
       ctx.maxIterations = 5;
       modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Done!' });
@@ -1792,18 +2033,18 @@ describe('ConversationRuntime', () => {
       );
     });
 
-    it('keeps compact loop decisions advisory under context pressure', async () => {
+    it('executes the compaction path when the current response is under context pressure', async () => {
       activityMocks.formatActivityPromptContext.mockReturnValueOnce({ mode: 'none' });
-      ctx.stats.addTokenUsage(120_000, 0);
       modules.contextAssembly.inference.mockResolvedValue({
         type: 'text',
         content: 'Done!',
         finishReason: 'end_turn',
+        usage: { inputTokens: 120_000, outputTokens: 1 },
       });
 
       await runtime.run('context pressure');
 
-      expect(modules.contextAssembly.checkAndAutoCompress).not.toHaveBeenCalled();
+      expect(modules.contextAssembly.checkAndAutoCompress).toHaveBeenCalled();
       expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
         'Continue from where you stopped. Do not restate or apologize.',
         'output-continuation',

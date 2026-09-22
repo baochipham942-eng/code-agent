@@ -104,6 +104,32 @@ codes:
     });
   });
 
+  it('归因轴：项目码本七个码都写了默认归因，分类结果跟着最高优先码带出来（ADR-071 D2）', () => {
+    expect(codebook.codes.every((definition) => definition.attribution !== undefined)).toBe(true);
+    expect(classifyFailure({ failureReason: 'fatal error: worker crashed' }, codebook).attribution)
+      .toBe('system_config');
+    expect(classifyFailure({ failureReason: 'expected hello but actual goodbye' }, codebook).attribution)
+      .toBe('model_capability');
+    // 一个码都没命中时没有默认归因可言，不许瞎给一个。
+    expect(classifyFailure({ failureReason: '风平浪静' }, codebook).attribution).toBeUndefined();
+  });
+
+  it('归因轴：四值以外的 attribution 整份码本拒绝加载', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'eval-failcodes-attr-'));
+    await writeFile(path.join(dir, 'eval-failcodes.yaml'), `
+version: 1
+codes:
+  - code: bad_attr
+    label: 归因写错
+    priority: 10
+    attribution: whoever
+    match:
+      status: [failed]
+    dispositions: []
+`);
+    expect(() => loadFailureCodebook(dir)).toThrow(/attribution 只能是/);
+  });
+
   it('坏正则、重复代码和重复优先级都用人话拒绝加载', async () => {
     const cases = [
       {
@@ -132,7 +158,7 @@ codes:
     try {
       const loaded = loadProjectFailureCodebookWithSource(projectDir);
       expect(loaded.source).toBe('bundled');
-      expect(loaded.codebook.codes).toHaveLength(7);
+      expect(loaded.codebook.codes).toHaveLength(12);
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/未找到项目失败原因码本.*使用内置码本/));
     } finally {
       warn.mockRestore();

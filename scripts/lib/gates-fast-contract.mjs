@@ -105,3 +105,83 @@ export function renderReceipt(receipt) {
     : `CI: ${receipt.ci.status}`;
   return [local, ci];
 }
+
+// ship pr 外层给 gates:fast 180s（~/.local/bin/ship），总上限必须留 10s 给回执落盘与核验。
+const SHIP_OUTER_TIMEOUT_MS = 180000;
+
+/**
+ * 预算两层（N-GATESFAST-TOTAL-BUDGET）：budgetsMs 是每格硬上限，budgetMs 是整跑硬上限。
+ * 原 60s 累计预算在负载 ~10 时被 9 格常态耗时（合计 60s+）必然耗尽、截在最后一格，与该格自身快慢无关。
+ */
+export function validateBudgetPolicy(policy) {
+  const total = policy.budgetMs;
+  const ceiling = SHIP_OUTER_TIMEOUT_MS - 10000;
+  if (!Number.isInteger(total) || total <= 0 || total > ceiling) {
+    throw new Error(`FAIL: policy.budgetMs must be a positive integer <= ${ceiling}ms (ship outer timeout ${SHIP_OUTER_TIMEOUT_MS}ms)`);
+  }
+  const gates = Object.entries(policy.budgetsMs ?? {});
+  if (!gates.length) throw new Error('FAIL: policy.budgetsMs must declare per-gate budgets');
+  for (const [id, ms] of gates) {
+    if (!Number.isInteger(ms) || ms <= 0 || ms > total) throw new Error(`FAIL: policy.budgetsMs.${id} must be a positive integer <= budgetMs`);
+  }
+}
+
+/**
+ * Read the literal gate registrations from gates-fast.mjs so a new gate cannot
+ * silently fall back to the total-run budget, and a retired gate cannot leave
+ * a stale budget entry behind.
+ *
+ * Only single- or double-quoted string literals are recognized
+ * (`gate('inputs', ...)` / `gate("vitest", ...)`). Template strings and
+ * variable ids fail-closed as unknown — safe, but callers must keep
+ * registrations as quoted literals.
+ */
+export function extractGateIds(source) {
+  if (typeof source !== 'string') throw new Error('FAIL: gates-fast source must be a string');
+  const ids = [];
+  const seen = new Set();
+  const pattern = /\bgate\(\s*(['"])([^'"\n]+)\1/g;
+  for (const match of source.matchAll(pattern)) {
+    const id = match[2];
+    if (seen.has(id)) throw new Error(`FAIL: duplicate gate registration: ${id}`);
+    seen.add(id);
+    ids.push(id);
+  }
+  if (!ids.length) throw new Error('FAIL: gates-fast source has no literal gate registrations');
+  return ids;
+}
+
+export function validateGateBudgetCoverage(policy, gateIds) {
+  validateBudgetPolicy(policy);
+  if (!Array.isArray(gateIds) || gateIds.length === 0) {
+    throw new Error('FAIL: gateIds must contain the literal gates-fast registrations');
+  }
+  const registered = new Set(gateIds);
+  const configured = new Set(Object.keys(policy.budgetsMs ?? {}));
+  const missing = gateIds.filter((id) => !configured.has(id));
+  const extra = [...configured].filter((id) => !registered.has(id));
+  if (missing.length || extra.length) {
+    const details = [
+      ...(missing.length ? [`missing budgetsMs key(s): ${missing.join(', ')}`] : []),
+      ...(extra.length ? [`unknown budgetsMs key(s): ${extra.join(', ')}`] : []),
+    ];
+    throw new Error(`FAIL: gate/budget coverage mismatch; ${details.join('; ')}`);
+  }
+}
+
+/** 当前命令还能跑多久：取「本格剩余」与「整跑剩余」中更紧的那个，并记下是哪一层在约束 */
+export function commandDeadline(policy, gateId, runElapsedMs, gateElapsedMs) {
+  const total = { limit: 'total', limitMs: policy.budgetMs, remainingMs: policy.budgetMs - runElapsedMs };
+  const gateMs = gateId ? policy.budgetsMs?.[gateId] : undefined;
+  if (gateMs === undefined) return { ...total, gateId: gateId ?? null };
+  const gate = { limit: 'gate', limitMs: gateMs, remainingMs: gateMs - gateElapsedMs };
+  return { ...(gate.remainingMs < total.remainingMs ? gate : total), gateId };
+}
+
+/** 超时报错：单格超时与整跑预算耗尽分开措辞，判因不再需要逐格求和 */
+export function budgetFailure(deadline, argv) {
+  const where = `${deadline.gateId ? ` (gate ${deadline.gateId})` : ''} in ${argv.join(' ')}`;
+  return deadline.limit === 'gate'
+    ? `FAIL: gate budget ${deadline.limitMs}ms exceeded${where}`
+    : `FAIL: total budget ${deadline.limitMs}ms exhausted${where}`;
+}

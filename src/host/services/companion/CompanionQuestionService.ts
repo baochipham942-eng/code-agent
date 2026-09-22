@@ -1,0 +1,147 @@
+import { createHash } from 'node:crypto';
+import type { UserQuestionRequest, UserQuestionResponse } from '../../../shared/contract';
+import type { CompanionCommand, CompanionDecision, CompanionQuestionAnswer, CompanionSubmitResult } from '../../../shared/contract/companion';
+import { COMPANION_LIMITS } from '../../../shared/constants/companion';
+import type { UserQuestionRoute, UserQuestionSettlement } from '../capabilities/hostCapabilityPorts';
+import type { CompanionGateway } from './CompanionGateway';
+
+function canonical(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  const row = value as Record<string, unknown>;
+  return `{${Object.keys(row).sort().map(key => `${JSON.stringify(key)}:${canonical(row[key])}`).join(',')}}`;
+}
+
+interface OfferedQuestion {
+  request: UserQuestionRequest;
+  sessionId: string;
+  respond: (response: UserQuestionResponse) => void;
+}
+
+/** Phone question cards are a projection of promptUserInChat's pending map. */
+export class CompanionQuestionService implements UserQuestionRoute {
+  private readonly publishedEpoch = new Map<string, number>();
+  private readonly offered = new Map<string, OfferedQuestion>();
+
+  constructor(private readonly gateway: CompanionGateway) {}
+
+  canOffer(sessionId: string | undefined): boolean {
+    // Tools that omit sessionId never had a companion session to scope against.
+    // Keep the old "cannot offer" answer; claiming them would hang the prompt
+    // (offer=true, phone sync filters them out) until timeout.
+    if (!sessionId) return false;
+    return this.gateway.hasLiveDeviceForSession(sessionId);
+  }
+
+  offer(request: UserQuestionRequest, respond: (response: UserQuestionResponse) => void): boolean {
+    if (!request.sessionId || !this.gateway.hasLiveDeviceForSession(request.sessionId)) return false;
+    if (!this.card(request)) return false;
+    this.offered.set(request.id, { request, sessionId: request.sessionId, respond });
+    this.refresh();
+    return this.gateway.getDecision(request.id)?.status === 'pending';
+  }
+
+  cancel(requestId: string, settlement?: UserQuestionSettlement): void {
+    if (!this.offered.has(requestId)) return;
+    this.offered.delete(requestId);
+    this.settle(requestId, settlement ?? { outcome: 'cancelled' });
+  }
+
+  /**
+   * The card a phone would actually see, or null when it cannot be shown truthfully.
+   * Never truncate: a person answering a clipped question is answering what they did not read.
+   */
+  private card(request: UserQuestionRequest): { preview: string; sessionId: string } | null {
+    if (!request.sessionId) return null;
+    const preview = JSON.stringify({ questions: request.questions }, null, 2);
+    return preview.length > COMPANION_LIMITS.approvalPreviewLength ? null : { preview, sessionId: request.sessionId };
+  }
+
+  refresh(): void {
+    if (!this.gateway.hasLiveDevices() && this.offered.size === 0 && this.publishedEpoch.size === 0) return;
+    const displayable = new Set<string>();
+    for (const { request } of this.offered.values()) {
+      const card = this.card(request);
+      if (!card) continue;
+      const { preview, sessionId } = card;
+      displayable.add(request.id);
+      const operationDigest = createHash('sha256').update(canonical(request)).digest('hex');
+      const old = this.gateway.getDecision(request.id);
+      const unchanged = old?.operationDigest === operationDigest;
+      if (unchanged && (old.status !== 'pending' || this.publishedEpoch.get(request.id) === this.gateway.epoch)) continue;
+      const decision = unchanged
+        ? old
+        : { requestId: request.id, sessionId, revision: (old?.revision ?? 0) + 1,
+          operationDigest, status: 'pending' as const, resolvedBy: null, kind: 'question' as const };
+      if (!unchanged) this.gateway.registerDecision(decision);
+      this.publishedEpoch.set(request.id, this.gateway.publish(sessionId, 'question', { ...decision, preview }).epoch);
+    }
+    for (const decision of this.gateway.pendingDecisions('question')) {
+      if (!displayable.has(decision.requestId)) {
+        this.settle(decision.requestId, { outcome: 'cancelled' }, decision);
+      }
+    }
+  }
+
+  private settle(requestId: string, settlement: UserQuestionSettlement, known?: CompanionDecision): void {
+    const current = known ?? this.gateway.getDecision(requestId);
+    if (current?.status !== 'pending') return;
+    const declined = settlement.answer?.declined === true;
+    const status = settlement.outcome === 'answered'
+      ? (declined ? 'rejected' as const : 'approved' as const)
+      : 'closed' as const;
+    const answer: CompanionQuestionAnswer | undefined = settlement.answer
+      ? {
+        ...(settlement.answer.answers ? { answers: settlement.answer.answers } : {}),
+        ...(declined ? { declined: true } : {}),
+        ...(settlement.answer.reason ? { reason: settlement.answer.reason } : {}),
+      }
+      : undefined;
+    const resolved = {
+      ...current,
+      status,
+      kind: 'question' as const,
+      outcome: settlement.outcome,
+      ...(answer ? { answer } : {}),
+    };
+    this.gateway.registerDecision(resolved);
+    this.gateway.publish(current.sessionId, 'question', { ...resolved });
+    this.publishedEpoch.delete(requestId);
+  }
+
+  respond(command: Extract<CompanionCommand, { action: 'question.respond' }>): CompanionSubmitResult {
+    this.refresh();
+    const current = this.gateway.getDecision(command.payload.requestId);
+    if (current?.sessionId !== command.sessionId) return { kind: 'rejected', reason: 'scope_denied' };
+    if (current.status !== 'pending' || current.revision !== command.expectedRevision || current.operationDigest !== command.payload.operationDigest) {
+      return { kind: 'approval_conflict', current };
+    }
+    const offered = this.offered.get(current.requestId);
+    if (!offered) {
+      this.refresh();
+      return { kind: 'approval_conflict', current: this.gateway.getDecision(current.requestId) ?? current };
+    }
+    this.offered.delete(current.requestId);
+    const declined = command.payload.declined === true;
+    const answer: CompanionQuestionAnswer = declined
+      ? { declined: true, ...(command.payload.reason ? { reason: command.payload.reason } : {}) }
+      : { answers: command.payload.answers ?? {} };
+    const resolved = {
+      ...current,
+      status: declined ? 'rejected' as const : 'approved' as const,
+      resolvedBy: command.deviceId,
+      kind: 'question' as const,
+      outcome: 'answered' as const,
+      answer,
+    };
+    this.gateway.registerDecision(resolved);
+    this.gateway.publish(current.sessionId, 'question', { ...resolved });
+    this.publishedEpoch.delete(current.requestId);
+    const response: UserQuestionResponse = command.payload.declined === true
+      ? { requestId: current.requestId, declined: true, ...(command.payload.reason ? { reason: command.payload.reason } : {}) }
+      : { requestId: current.requestId, answers: command.payload.answers ?? {} };
+    offered.respond(response);
+    return { kind: 'accepted', command: { deviceId: command.deviceId, commandId: command.commandId, action: command.action,
+      sessionId: command.sessionId, payloadHash: '', state: 'resolved', createdAt: Date.now(), result: { decision: resolved.status, requestId: current.requestId } } };
+  }
+}

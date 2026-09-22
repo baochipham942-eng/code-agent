@@ -7,6 +7,11 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 // 兜底：本用例不该产生任何数据目录访问；万一有，也只能落到临时目录。
 process.env.CODE_AGENT_DATA_DIR = path.join(os.tmpdir(), `postlaunch-scorer-${process.pid}`);
 
+const systemOneMock = vi.hoisted(() => vi.fn(async () => ({})));
+vi.mock('../../../src/host/model/providers/typesafeProvider', () => ({
+  systemOne: systemOneMock,
+}));
+
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { applySchema } from '../../../src/host/services/core/database/schema';
@@ -14,7 +19,10 @@ import { applyTelemetrySchema } from '../../../src/host/services/core/database/s
 import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
-import { DRY_RUN_JUDGE_VERSION, POST_LAUNCH_JUDGE_VERSION, clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
+import { estimatePostLaunchPrescreenUsd, type PostLaunchJudgePrescreen } from '../../../src/host/testing/judge/postLaunchJudge';
+import { computeTurnSignals } from '../../../src/host/testing/postlaunch/postLaunchSignals';
+import { JEV_JUDGE_MODEL } from '../../../src/shared/constants/jevQuestions';
+import { DRY_RUN_JUDGE_VERSION, POST_LAUNCH_DEFAULTS, POST_LAUNCH_JUDGE_VERSION, clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
 import { estimateJudgeCost } from '../../../src/host/testing/postlaunch/postLaunchCost';
 import { resolveModelPrice } from '../../../src/shared/pricing/resolveModelPrice';
 import { acquireScoringLock, buildPostLaunchReport, getBudgetState, getUnsyncedTurnScores, localDay, markTurnScoresSynced, releaseScoringLock, renewScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
@@ -82,13 +90,20 @@ function insertTurn(
   `).run(turnId, sessionId, turnNumber, startTime, startTime + 1000);
 }
 
-function replay(sessionId: string, turns: Array<{ turnNumber: number; startTime: number; blocks: ReplayBlock[] }>): StructuredReplay {
+function replay(
+  sessionId: string,
+  turns: Array<{ turnNumber: number; startTime: number; blocks: ReplayBlock[] }>,
+  options: { injectUserPrompt?: boolean } = {},
+): StructuredReplay {
+  const injectUserPrompt = options.injectUserPrompt !== false;
   return {
     sessionId,
     turns: turns.map((turn) => ({
       turnNumber: turn.turnNumber,
       turnType: 'user' as const,
-      blocks: turn.blocks,
+      blocks: injectUserPrompt && !turn.blocks.some((block) => block.type === 'user')
+        ? [{ type: 'user' as const, content: '帮我做这件事', timestamp: turn.startTime }, ...turn.blocks]
+        : turn.blocks,
       inputTokens: 100,
       outputTokens: 50,
       durationMs: 1000,
@@ -141,6 +156,8 @@ describe('上线后打分编排', () => {
 
   beforeEach(() => {
     database = db();
+    systemOneMock.mockClear();
+    vi.stubEnv('CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN', '');
   });
 
   it('③分母剔除：eval / 子代理 / 定时 / 心跳会话一行分数都不落', async () => {
@@ -402,6 +419,85 @@ describe('上线后打分编排', () => {
 
     expect(llmCall).toHaveBeenCalledTimes(1);
     expect(second.skippedTurns).toBe(1);
+  });
+
+  // FB-233（N-POSTLAUNCH-SIGNALS-DEAD-R2 ④）：--sample 0 跑一趟，无信号轮落的是
+  // judge_model='not-judged' 的正式版本占位行；第二趟提高抽样上限必须能补评上，
+  // 不能被第一趟的占位行当成「已有分数」整批跳过。
+  it('抽样上限外的占位行不挡补评：--sample 0 之后再 --sample 200 能评上（FB-233）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+
+    const first = await runPostLaunchScoring(deps(database, replays, llmCall), { dailySampleLimit: 0 });
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(first.signalOnlyTurns).toBe(1);
+    const [placeholder] = scoreRows(database);
+    expect(placeholder.judge_version).toBe(POST_LAUNCH_JUDGE_VERSION);
+    expect(placeholder.judge_model).toBe('not-judged');
+
+    const second = await runPostLaunchScoring(deps(database, replays, llmCall), { dailySampleLimit: 200 });
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(second.skippedTurns).toBe(0);
+    expect(second.sampledTurns).toBe(1);
+    const [judged] = scoreRows(database);
+    expect(judged.judge_model).not.toBe('not-judged');
+    expect(judged.dim_goal).toBe(1);
+  });
+
+  it('占位行不占日抽样额度：同日重跑时 sampled 只数真判过的行（FB-233 同族）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+    await runPostLaunchScoring(deps(database, replays, llmCall), { dailySampleLimit: 0 });
+
+    // 第一趟落了 1 行占位（sampled_by='sample'、not-judged）；同日第二趟额度应从 0 起算。
+    const budget = getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 1 });
+    expect(budget.sampledCount).toBe(0);
+  });
+
+  it('unavailable 行不算已评：叫了没判成的轮，下次照常重试', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const broken = vi.fn(async () => '这不是 JSON');
+    const first = await runPostLaunchScoring(deps(database, replays, broken));
+    expect(first.judgeUnavailableTurns).toBe(1);
+    const [unavailableRow] = scoreRows(database);
+    expect(unavailableRow.judge_model).toBe('unavailable');
+
+    const llmCall = vi.fn(async () => ALL_PASS);
+    const second = await runPostLaunchScoring(deps(database, replays, llmCall));
+
+    expect(second.skippedTurns).toBe(0);
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    const [judged] = scoreRows(database);
+    expect(judged.judge_model).not.toBe('unavailable');
+    expect(judged.dim_goal).toBe(1);
+  });
+
+  it('--dry-run 不覆盖 not-judged 占位行', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { dailySampleLimit: 0 });
+    const dry = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { dryRun: true });
+
+    expect(dry.skippedTurns).toBe(1);
+    const [row] = scoreRows(database);
+    expect(row.judge_version).toBe(POST_LAUNCH_JUDGE_VERSION);
+    expect(row.judge_model).toBe('not-judged');
   });
 
   it('报告：信号轮与抽样轮分两行，不合并；null 不进分母', async () => {
@@ -728,6 +824,28 @@ describe('上线后打分编排', () => {
     expect(buildPostLaunchReport(database, { now: NOW, dailyBudgetUsd: 0.5, reserveUsd: 0.1 }).budget.stopped).toBe(false);
   });
 
+  it('跨轮承接：第二轮没有 user block 时传给 judge 的投影含第一轮 userPrompt 且 source=carried', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-2', 2, NOW - HOUR + 10);
+    const replays = {
+      'chat-1': replay('chat-1', [
+        { turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'user', content: '第一轮用户问题：补全 README', timestamp: NOW - HOUR }] },
+        { turnNumber: 2, startTime: NOW - HOUR + 10, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR + 10 }] },
+      ], { injectUserPrompt: false }),
+    };
+    const prompts: string[] = [];
+    await runPostLaunchScoring(deps(database, replays, async (prompt) => {
+      prompts.push(prompt);
+      return ALL_PASS;
+    }));
+
+    const second = prompts.find((prompt) => prompt.includes('"userPromptSource": "carried"'));
+    expect(second).toBeDefined();
+    expect(second).toContain('第一轮用户问题：补全 README');
+    expect(prompts.some((prompt) => prompt.includes('"userPromptSource": "turn"'))).toBe(true);
+  });
+
   it('子迭代的块并进它的 user 父轮：agentic loop 不把一轮拆成多轮', async () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR);
     insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
@@ -747,6 +865,512 @@ describe('上线后打分编排', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].turn_id).toBe('chat-turn-1');
     expect(JSON.parse(rows[0].signals as string)).toContain('error_terminated');
+  });
+
+  // ── N-POSTLAUNCH-SIGNALS-DEAD：生产路径合并迭代轮，判官拿到的是整轮轨迹 ──
+
+  function insertIteration(
+    database: Database.Database,
+    sessionId: string,
+    turnId: string,
+    turnNumber: number,
+    parentTurnId: string,
+    startTime: number,
+  ): void {
+    database.prepare(`
+      INSERT INTO telemetry_turns (id, session_id, turn_number, start_time, end_time, duration_ms, turn_type, parent_turn_id, total_input_tokens, total_output_tokens)
+      VALUES (?, ?, ?, ?, ?, 10, 'iteration', ?, 10, 5)
+    `).run(turnId, sessionId, turnNumber, startTime, startTime + 10, parentTurnId);
+  }
+
+  function readToolCall(name: string, path: string, timestamp: number): ReplayBlock {
+    return {
+      type: 'tool_call',
+      content: name,
+      timestamp,
+      toolCall: { id: `${name}-${timestamp}`, name, args: { path }, success: true, duration: 1, category: 'Read' },
+    };
+  }
+
+  it('judge 拿到的是合并轮：prompt 含 user 父轮的 userPrompt，也含 iteration 轮里的 toolCalls', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    insertIteration(database, 'chat-1', 'chat-turn-1-i1', 2, 'chat-turn-1', NOW - HOUR + 5);
+    insertIteration(database, 'chat-1', 'chat-turn-1-i2', 3, 'chat-turn-1', NOW - HOUR + 20);
+    const replays = {
+      'chat-1': replay('chat-1', [
+        { turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'user', content: '帮我统计销量前五的商品', timestamp: NOW - HOUR }] },
+        { turnNumber: 2, startTime: NOW - HOUR + 5, blocks: [readToolCall('Read', './sales.csv', NOW - HOUR + 5)] },
+        { turnNumber: 3, startTime: NOW - HOUR + 20, blocks: [readToolCall('Grep', 'sales', NOW - HOUR + 20)] },
+      ]),
+    };
+    const prompts: string[] = [];
+    await runPostLaunchScoring(deps(database, replays, async (prompt) => { prompts.push(prompt); return ALL_PASS; }));
+
+    // 三个 telemetry 轮并成一个 user 轮评：09-19 复现脚本把回放轮逐个喂 judge 才出现
+    // 「第二轮起 userPrompt 恒空」——生产路径不该有那个形状。
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('帮我统计销量前五的商品');
+    expect(prompts[0]).toContain('Read');
+    expect(prompts[0]).toContain('./sales.csv');
+    expect(prompts[0]).toContain('Grep');
+    expect(scoreRows(database)).toHaveLength(1);
+  });
+
+  it('repeat_loop 跨迭代轮命中：三个 iteration 轮各一次同工具同参数，合并后按默认阈值判出', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const count = POST_LAUNCH_DEFAULTS.repeatLoopThreshold;
+    const replayTurns = [];
+    for (let index = 1; index <= count; index += 1) {
+      const startTime = NOW - HOUR + index * 5;
+      insertIteration(database, 'chat-1', `chat-turn-1-i${index}`, index + 1, 'chat-turn-1', startTime);
+      // 同工具同参数：跨迭代轮的重复只在「并进同一 user 轮」后可见。
+      replayTurns.push({ turnNumber: index + 1, startTime, blocks: [readToolCall('Read', './a.ts', startTime)] });
+    }
+    const replays = { 'chat-1': replay('chat-1', replayTurns) };
+    await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS));
+
+    const rows = scoreRows(database);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].turn_id).toBe('chat-turn-1');
+    expect(JSON.parse(rows[0].signals as string)).toContain('repeat_loop');
+  });
+
+  it('反向变异：prescreen 全部 cannot_tell / noul 0.5 ⇒ ≥3 轮 100% 走升级路径（llmCall 次数=轮数）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    for (let index = 1; index <= 3; index += 1) {
+      insertTurn(database, 'chat-1', `chat-turn-${index}`, index, NOW - HOUR + index);
+    }
+    const replays = {
+      'chat-1': replay('chat-1', [1, 2, 3].map((turnNumber) => ({
+        turnNumber,
+        startTime: NOW - HOUR + turnNumber,
+        blocks: [{ type: 'error', content: 'boom', timestamp: NOW - HOUR + turnNumber } as ReplayBlock],
+      }))),
+    };
+    const abstainAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'cannot_tell', confidence: 0.2 },
+      goal_pass: { noul: 0.5 },
+      orchestration_pass: { noul: 0.5 },
+      tools_pass: { noul: 0.5 },
+      permission_pass: { noul: 0.5 },
+      no_tools_but_needed: { noul: 0.5 },
+    });
+    const llmCall = vi.fn(async () => ALL_PASS);
+    await runPostLaunchScoring(deps(database, replays, llmCall, { prescreen: abstainAll }));
+
+    expect(llmCall).toHaveBeenCalledTimes(3);
+  });
+
+  it('预算只够 Jev 不够生成式 + prescreen 全弃权 ⇒ llmCall 零调用、budgetStopped、Jev 成本计入', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const sessionReplay = replay('chat-1', [{
+      turnNumber: 1,
+      startTime: NOW - HOUR,
+      blocks: [{ type: 'error', content: 'boom', timestamp: NOW - HOUR } as ReplayBlock],
+    }]);
+    const sample = sessionReplay.turns[0];
+    const signals = computeTurnSignals(sample, 'chat-turn-1', {
+      workspaceDir: '/ws',
+      turnCostUsd: 0.001,
+      fileExists: () => true,
+    });
+    const jevUsd = estimatePostLaunchPrescreenUsd(sample, signals);
+    const genUsd = 0.1;
+    const abstainAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'cannot_tell', confidence: 0.2 },
+      goal_pass: { noul: 0.5 },
+      orchestration_pass: { noul: 0.5 },
+      tools_pass: { noul: 0.5 },
+      permission_pass: { noul: 0.5 },
+      no_tools_but_needed: { noul: 0.5 },
+    });
+    const llmCall = vi.fn(async () => ALL_PASS);
+    const result = await runPostLaunchScoring(
+      deps(database, { 'chat-1': sessionReplay }, llmCall, { prescreen: abstainAll }),
+      { dailyBudgetUsd: jevUsd + genUsd / 2 },
+    );
+
+    expect(jevUsd).toBeGreaterThan(0);
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(result.budgetStopped).toBe(true);
+    expect(result.costUsd).toBeCloseTo(jevUsd);
+    const rows = scoreRows(database);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cost_usd).toBeCloseTo(jevUsd);
+    expect(rows[0].budget_cost_usd).toBeCloseTo(jevUsd);
+    expect(rows[0].judge_model).toBe(JEV_JUDGE_MODEL);
+  });
+
+  // N-JEV-EVAL-JUDGE 母单验收④：Jev 初筛装配时无信号轮全量走 Jev，dailySampleLimit 只约束升级生成式。
+  it('prescreen 装配 + 无信号轮 × 3 + dailySampleLimit=0 ⇒ 全量走 Jev、llmCall 零调用、决断轮不占抽样额度', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    for (let index = 1; index <= 3; index += 1) insertTurn(database, 'chat-1', `t${index}`, index, NOW - HOUR + index);
+    const replays = {
+      'chat-1': replay('chat-1', [1, 2, 3].map((turnNumber) => ({
+        turnNumber,
+        startTime: NOW - HOUR + turnNumber,
+        blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR + turnNumber } as ReplayBlock],
+      }))),
+    };
+    const decideAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'met', confidence: 0.9 },
+      goal_pass: { noul: 0.91 },
+      orchestration_pass: { noul: 0.88 },
+      permission_pass: { noul: 0.95 },
+      no_tools_but_needed: { noul: 0.12 },
+    });
+    const prescreen = vi.fn(decideAll);
+    const llmCall = vi.fn(async () => ALL_PASS);
+
+    const result = await runPostLaunchScoring(
+      deps(database, replays, llmCall, { prescreen }),
+      { dailySampleLimit: 0 },
+    );
+
+    expect(prescreen).toHaveBeenCalledTimes(3);
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(result.sampledTurns).toBe(3);
+    const rows = scoreRows(database);
+    expect(rows).toHaveLength(3);
+    for (const row of rows) expect(row.judge_model).toBe(JEV_JUDGE_MODEL);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 0 }).sampledCount).toBe(0);
+  });
+
+  it('prescreen 装配 + 无信号轮 Jev 弃权 + 抽样额度耗尽 ⇒ 落 not-judged 占位行（可补评）；提高额度后重跑补评上（ai-review #2023）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 't1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const abstainAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'cannot_tell', confidence: 0.2 },
+      goal_pass: { noul: 0.5 },
+      orchestration_pass: { noul: 0.5 },
+      permission_pass: { noul: 0.5 },
+      no_tools_but_needed: { noul: 0.5 },
+    });
+    const prescreen = vi.fn(abstainAll);
+    const llmCall = vi.fn(async () => ALL_PASS);
+    const sample = replays['chat-1'].turns[0];
+    const signals = computeTurnSignals(sample, 't1', { workspaceDir: '/ws', turnCostUsd: 0.001, fileExists: () => true });
+    const jevUsd = estimatePostLaunchPrescreenUsd(sample, signals);
+
+    const first = await runPostLaunchScoring(
+      deps(database, replays, llmCall, { prescreen }),
+      { dailySampleLimit: 0 },
+    );
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(first.signalOnlyTurns).toBe(0);
+    expect(first.sampleDeferredTurns).toBe(1);
+    expect(first.sampledTurns).toBe(0);
+    const [placeholder] = scoreRows(database);
+    expect(placeholder.judge_model).toBe('not-judged');
+    // Jev 调用已发生：刊例计入成本与预算，但占位行不占抽样额度
+    expect(Number(placeholder.budget_cost_usd)).toBeCloseTo(jevUsd, 10);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 0 }).sampledCount).toBe(0);
+
+    const second = await runPostLaunchScoring(
+      deps(database, replays, llmCall, { prescreen }),
+      { dailySampleLimit: 5 },
+    );
+
+    expect(second.skippedTurns).toBe(0);
+    expect(prescreen).toHaveBeenCalledTimes(2);
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    const [judged] = scoreRows(database);
+    expect(judged.judge_model).not.toBe('not-judged');
+    expect(judged.judge_model).not.toBe(JEV_JUDGE_MODEL);
+    expect(judged.dim_goal).toBe(1);
+    // 补评覆盖占位行时结转历史 Jev 预算成本：第二次 Jev + 生成式 0.1 + 第一趟占位 jevUsd
+    expect(Number(judged.budget_cost_usd)).toBeCloseTo(jevUsd * 2 + 0.1, 10);
+    expect(Number(judged.cost_usd)).toBeCloseTo(jevUsd + 0.1, 10);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 5 }).sampledCount).toBe(1);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 5 }).spentUsd).toBeCloseTo(jevUsd * 2 + 0.1, 10);
+  });
+
+  it('prescreen 装配 + 无信号轮 Jev 弃权 + 有抽样额度 ⇒ 升级生成式并占 1 条额度', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 't1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const abstainAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'cannot_tell', confidence: 0.2 },
+      goal_pass: { noul: 0.5 },
+      orchestration_pass: { noul: 0.5 },
+      permission_pass: { noul: 0.5 },
+      no_tools_but_needed: { noul: 0.5 },
+    });
+    const llmCall = vi.fn(async () => ALL_PASS);
+
+    await runPostLaunchScoring(
+      deps(database, replays, llmCall, { prescreen: abstainAll }),
+      { dailySampleLimit: 5 },
+    );
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    const [row] = scoreRows(database);
+    expect(row.judge_model).not.toBe(JEV_JUDGE_MODEL);
+    expect(getBudgetState(database, localDay(NOW), { limitUsd: 1, sampleLimit: 5 }).sampledCount).toBe(1);
+  });
+
+  it('prescreen 弃权且预算充足 ⇒ llmCall 一次且 costUsd = Jev 估算 + 生成式估算', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const sessionReplay = replay('chat-1', [{
+      turnNumber: 1,
+      startTime: NOW - HOUR,
+      blocks: [{ type: 'error', content: 'boom', timestamp: NOW - HOUR } as ReplayBlock],
+    }]);
+    const sample = sessionReplay.turns[0];
+    const signals = computeTurnSignals(sample, 'chat-turn-1', {
+      workspaceDir: '/ws',
+      turnCostUsd: 0.001,
+      fileExists: () => true,
+    });
+    const jevUsd = estimatePostLaunchPrescreenUsd(sample, signals);
+    const genUsd = 0.1;
+    const abstainAll: PostLaunchJudgePrescreen = async () => ({
+      goal_met: { choice: 'cannot_tell', confidence: 0.2 },
+      goal_pass: { noul: 0.5 },
+      orchestration_pass: { noul: 0.5 },
+      tools_pass: { noul: 0.5 },
+      permission_pass: { noul: 0.5 },
+      no_tools_but_needed: { noul: 0.5 },
+    });
+    const llmCall = vi.fn(async () => ALL_PASS);
+    const result = await runPostLaunchScoring(
+      deps(database, { 'chat-1': sessionReplay }, llmCall, {
+        prescreen: abstainAll,
+        estimateJudgeCostUsd: () => ({ usd: genUsd, assumed: false }),
+      }),
+      { dailyBudgetUsd: 1 },
+    );
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(result.budgetStopped).toBe(false);
+    expect(result.costUsd).toBeCloseTo(jevUsd + genUsd);
+    const rows = scoreRows(database);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cost_usd).toBeCloseTo(jevUsd + genUsd);
+    expect(rows[0].budget_cost_usd).toBeCloseTo(jevUsd + genUsd);
+    expect(rows[0].judge_model).not.toBe(JEV_JUDGE_MODEL);
+  });
+
+  it('prescreen 全决断 × N 轮，budgetLimitUsd 只够 k 轮 ⇒ 第 k+1 轮停、systemOne 调 k 次', async () => {
+    vi.stubEnv('CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN', '1');
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-jev-key');
+    const decideAll = {
+      goal_met: { choice: 'met', confidence: 0.9 },
+      goal_pass: { noul: 0.91 },
+      orchestration_pass: { noul: 0.88 },
+      tools_pass: { noul: 0.87 },
+      permission_pass: { noul: 0.95 },
+      no_tools_but_needed: { noul: 0.12 },
+    };
+    systemOneMock.mockImplementation(async () => decideAll);
+    const n = 4;
+    const k = 2;
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    for (let index = 1; index <= n; index += 1) {
+      insertTurn(database, 'chat-1', `chat-turn-${index}`, index, NOW - HOUR + index);
+    }
+    const sessionReplay = replay('chat-1', [1, 2, 3, 4].map((turnNumber) => ({
+      turnNumber,
+      startTime: NOW - HOUR + turnNumber,
+      blocks: [{ type: 'error', content: 'boom', timestamp: NOW - HOUR + turnNumber } as ReplayBlock],
+    })));
+    const sample = sessionReplay.turns[0];
+    const signals = computeTurnSignals(sample, 'chat-turn-1', {
+      workspaceDir: '/ws',
+      turnCostUsd: 0.001,
+      fileExists: () => true,
+    });
+    const perCall = estimatePostLaunchPrescreenUsd(sample, signals);
+    const llmCall = vi.fn(async () => ALL_PASS);
+    try {
+      const result = await runPostLaunchScoring(
+        deps(database, { 'chat-1': sessionReplay }, llmCall),
+        { dailyBudgetUsd: perCall * k + perCall / 2 },
+      );
+
+      expect(systemOneMock).toHaveBeenCalledTimes(k);
+      expect(llmCall).not.toHaveBeenCalled();
+      expect(result.budgetStopped).toBe(true);
+      expect(perCall).toBeGreaterThan(0);
+      expect(result.costUsd).toBeCloseTo(perCall * k);
+      const judged = scoreRows(database).filter((row) => row.judge_model === JEV_JUDGE_MODEL);
+      expect(judged).toHaveLength(k);
+      for (const row of judged) {
+        expect(row.cost_usd).toBeCloseTo(perCall);
+        expect(row.budget_cost_usd).toBeCloseTo(perCall);
+      }
+    } finally {
+      systemOneMock.mockReset();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('开关 on（CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN=1）+ key 在 ⇒ 装配的 prescreen 真被调用', async () => {
+    vi.stubEnv('CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN', '1');
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-jev-key');
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+    try {
+      await runPostLaunchScoring(deps(database, replays, llmCall));
+      expect(systemOneMock).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('开关 off ⇒ prescreen 从不装配（systemOne spy 零调用）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+    await runPostLaunchScoring(deps(database, replays, llmCall));
+
+    expect(systemOneMock).not.toHaveBeenCalled();
+    expect(llmCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('开关 on 但无 key ⇒ 同 off 且 stderr 一行 warn', async () => {
+    vi.stubEnv('CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN', '1');
+    vi.stubEnv('TYPESAFE_API_KEY', '');
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const llmCall = vi.fn(async () => ALL_PASS);
+    try {
+      await runPostLaunchScoring(deps(database, replays, llmCall));
+      expect(systemOneMock).not.toHaveBeenCalled();
+      expect(llmCall).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('TYPESAFE_API_KEY'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('includeHeadless：headless 起源（含存量 cli_ 前缀）进分母；eval 即使开着也不进；默认两者都不进', async () => {
+    const sessions: Array<[string, string, string | null]> = [
+      ['chat-headless', 'chat', 'headless'],
+      ['cli_session_1788581520765_10a7e1aa', 'chat', null],
+      ['eval-headless', 'eval', 'headless'],
+    ];
+    const replays: Record<string, ReturnType<typeof replay>> = {};
+    for (const [index, [id, type, originKind]] of sessions.entries()) {
+      insertSession(database, id, type, NOW - HOUR, originKind);
+      insertTurn(database, id, `turn-${index}`, 1, NOW - HOUR);
+      replays[id] = replay(id, [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]);
+    }
+
+    // 默认：合成流量一条都不评（生产统计的现状口径）。
+    const defaults = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS));
+    expect(scoreRows(database)).toEqual([]);
+    expect(defaults.excludedTurns).toBe(3);
+
+    const included = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { includeHeadless: true });
+    expect(scoreRows(database).map((row) => row.session_id).sort()).toEqual(['chat-headless', 'cli_session_1788581520765_10a7e1aa']);
+    expect(included.excludedTurns).toBe(1);
+  });
+
+  it('tools 缺口压过 judge：截断 ls 上的全称否定 → dim_tools=0，即使 judge 四维全过', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const truncatedLs = '[cwd: ~/ws] | total 2200 | drwxr-xr-x   67 zj032  staff    2144 Sep 18 23:51 . | drwxr-xr-x';
+    const replays = {
+      'chat-1': replay('chat-1', [{
+        turnNumber: 1,
+        startTime: NOW - HOUR,
+        blocks: [
+          { type: 'user', content: '我有几件事：周报汇总、会议待办', timestamp: NOW - HOUR },
+          {
+            type: 'tool_call',
+            content: 'Bash',
+            timestamp: NOW - HOUR + 1,
+            toolCall: {
+              id: 'ls1', name: 'Bash', args: { command: 'ls -la' }, result: truncatedLs,
+              success: true, duration: 5, category: 'Bash',
+            },
+          },
+          {
+            type: 'text',
+            content: '这个工作目录里只有代码项目文件，没有任何周报、会议纪要、合同、销售数据或公告原文。',
+            timestamp: NOW - HOUR + 2,
+          },
+        ],
+      }], { injectUserPrompt: false }),
+    };
+    await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS));
+    const [row] = scoreRows(database);
+    expect(JSON.parse(row.signals as string)).toContain('result_contradicted');
+    expect(row.dim_tools).toBe(0);
+    expect(row.dim_goal).toBe(0);
+  });
+
+  it('goal 救援：问方案被拒后诚实落盘，judge 把 goal 判 0 也救回 1', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const unanswered = '[用户未响应 - CLI 模式无法交互]\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。';
+    const replays = {
+      'chat-1': replay('chat-1', [{
+        turnNumber: 1,
+        startTime: NOW - HOUR,
+        blocks: [
+          { type: 'user', content: '把周报直接发邮件给赵总', timestamp: NOW - HOUR },
+          {
+            type: 'tool_call',
+            content: 'AskUserQuestion',
+            timestamp: NOW - HOUR + 1,
+            toolCall: {
+              id: 'q1', name: 'AskUserQuestion', success: true, duration: 5, category: 'Other',
+              result: unanswered,
+              args: { questions: [{ question: '邮件发送环境未就绪，你希望怎么处理？', header: '邮件备选方案', options: [{ label: '保存为邮件草稿文件' }] }] },
+            },
+          },
+          {
+            type: 'tool_call',
+            content: 'Write',
+            timestamp: NOW - HOUR + 2,
+            toolCall: {
+              id: 'w1', name: 'Write', success: true, duration: 5, category: 'Write',
+              args: { path: '周报汇总-第38周.txt' },
+            },
+          },
+          {
+            type: 'text',
+            content: '邮件发送未完成：当前运行时环境没有配置 macOS Mail 连接器。已保存到 周报汇总-第38周.txt。',
+            timestamp: NOW - HOUR + 3,
+          },
+        ],
+      }], { injectUserPrompt: false }),
+    };
+    const goalFail = JSON.stringify({
+      goal: { pass: false, why: '邮件并未发出' },
+      orchestration: { pass: true, why: '' },
+      tools: { pass: true, why: '' },
+      permission: { pass: true, why: '' },
+    });
+    await runPostLaunchScoring(deps(database, replays, async () => goalFail));
+    const [row] = scoreRows(database);
+    expect(JSON.parse(row.signals as string)).toContain('approval_denied');
+    expect(JSON.parse(row.signals as string)).not.toContain('approval_bypassed');
+    expect(row.dim_goal).toBe(1);
+    expect(row.dim_tools).toBe(1);
   });
 });
 

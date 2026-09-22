@@ -23,6 +23,7 @@ export interface CheckAndAutoCompressOptions {
   providerConfirmedOverflow?: boolean;
 }
 import { SYSTEM_PROMPT_BUDGET } from '../../../../shared/constants';
+import { getHarnessKnob } from '../harnessKnobs';
 import { resolveContextWindow } from '../../../model/modelLimits';
 import type { RuntimeContext } from '../runtimeContext';
 import type { AdvisoryTailKey } from '../turnState';
@@ -87,15 +88,15 @@ export function getSystemPromptBudget(
   if (process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS) {
     return MAX_SYSTEM_PROMPT_TOKENS;
   }
+  const minTokens = getHarnessKnob('context.systemPromptMinTokens');
   if (model) {
     return Math.max(
-      SYSTEM_PROMPT_BUDGET.MIN_TOKENS,
+      minTokens,
       Math.floor(resolveContextWindow(model, provider) * SYSTEM_PROMPT_BUDGET.WINDOW_RATIO),
     );
   }
-  return MAX_SYSTEM_PROMPT_TOKENS;
+  return minTokens;
 }
-export const MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS = 1200;
 export const MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS = 6;
 export const MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS = 260;
 
@@ -112,6 +113,7 @@ export interface ContextTranscriptEntry extends ProjectableMessage {
   preserveObservation?: boolean;
   evidenceKind?: string;
   filePath?: string;
+  toolResultMetadata?: Record<string, unknown>;
 }
 
 export type CurrentAttachment = {
@@ -134,6 +136,8 @@ export interface InferenceRecoveryState {
   _artifactNonStreamingRetried: boolean;
   _artifactRepairCompactWriteRetried: boolean;
   _networkRetried: boolean;
+  /** 无人值守 run 连续遇到断流的推理轮数（ADR-068 D4 熔断计数）；某轮无断流即清零。 */
+  consecutiveStreamBreakRounds: number;
   currentModelDecision?: ModelDecisionEventData;
 }
 

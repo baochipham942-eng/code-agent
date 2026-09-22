@@ -259,12 +259,25 @@ export function extractRetryAfterMs(err: unknown): number | null {
 export interface RetryOptions {
   /** Provider 名称，用于日志 */
   providerName: string;
+  /** 这次请求的模型，失败标记按模型/供应商分流时用 */
+  model?: string;
   /** 最大重试次数（不含首次） */
   maxRetries?: number;
   /** 基础延迟 ms，实际延迟 = baseDelay * 2^attempt（指数退避），retry-after 提示优先 */
   baseDelay?: number;
   /** AbortSignal，取消时不重试 */
   signal?: AbortSignal;
+  /**
+   * 超时类错误判定（调用方注入，如整请求/首字节看门狗超时）。
+   * 与 maxTimeoutRetries 配合：超时重试单独计数，不与普通瞬态错误共享预算。
+   */
+  isTimeoutError?: (err: unknown) => boolean;
+  /**
+   * 超时类错误的重试上限（不含首次）。每次超时重试最坏要烧满一个整请求窗口
+   * （如 300s），普通瞬态错误秒级失败——共享同一预算会把单轮推理拖进外层看门狗。
+   * 缺省不限（维持 maxRetries 旧行为）。
+   */
+  maxTimeoutRetries?: number;
   /** Optional callback when a retry is about to happen */
   onRetry?: (info: { provider: string; attempt: number; maxRetries: number; delay: number; error: string }) => void;
 }
@@ -328,38 +341,54 @@ export async function withTransientRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions
 ): Promise<T> {
-  const { providerName, maxRetries = 2, baseDelay = 1000, signal, onRetry } = options;
+  const { providerName, model, maxRetries = 2, baseDelay = 1000, signal, isTimeoutError, maxTimeoutRetries, onRetry } = options;
   const healthMonitor = getProviderHealthMonitor();
+  let timeoutRetriesUsed = 0;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const startTime = Date.now();
     try {
       const result = await fn();
-      healthMonitor.recordSuccess(providerName, Date.now() - startTime);
+      healthMonitor.recordSuccess(providerName, Date.now() - startTime, { model });
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (isRetryableModelCallError(err) && attempt < maxRetries && !signal?.aborted) {
-        // 优先尊重上游的 retry-after 提示，否则指数退避 + jitter（roadmap 1.9）
-        const retryAfterMs = extractRetryAfterMs(err);
-        const delay = computeRetryBackoffMs(attempt, baseDelay, retryAfterMs);
-        logger.warn(`[${providerName}] 瞬态错误 "${msg}" (code=${(err as NodeJS.ErrnoException).code}), ${delay}ms 后重试 (${attempt + 1}/${maxRetries})${retryAfterMs != null ? ' [retry-after]' : ''}`);
-        // Notify caller about retry (for CLI visibility)
-        const retryInfo = { provider: providerName, attempt: attempt + 1, maxRetries, delay, error: msg };
-        onRetry?.(retryInfo);
-        retryEvents.emit('retry', retryInfo);
-        // 可中断 sleep（codex audit R1）：abort 时立即醒来，不等满 retry-after
-        await abortableSleep(delay, signal);
-        if (signal?.aborted) {
-          healthMonitor.recordFailure(providerName, {
-            cancelled: isCancellationError(err, signal),
-          });
-          throw err;
+        // 超时类错误单独计数：烧满整请求窗口的重试次数到顶就放弃，让错误尽快
+        // 上抛（provider fallback / 轮级恢复还有机会），不再烧下一个 300s 窗口。
+        const timeoutError = isTimeoutError?.(err) === true;
+        const timeoutBudgetLeft = !timeoutError
+          || maxTimeoutRetries === undefined
+          || timeoutRetriesUsed < maxTimeoutRetries;
+        if (!timeoutBudgetLeft) {
+          logger.warn(`[${providerName}] 客户端超时重试已达上限 (${maxTimeoutRetries})，放弃重试: "${msg}"`);
+        } else {
+          if (timeoutError) timeoutRetriesUsed += 1;
+          // 优先尊重上游的 retry-after 提示，否则指数退避 + jitter（roadmap 1.9）
+          const retryAfterMs = extractRetryAfterMs(err);
+          const delay = computeRetryBackoffMs(attempt, baseDelay, retryAfterMs);
+          logger.warn(`[${providerName}] 瞬态错误 "${msg}" (code=${(err as NodeJS.ErrnoException).code}), ${delay}ms 后重试 (${attempt + 1}/${maxRetries})${retryAfterMs != null ? ' [retry-after]' : ''}${timeoutError ? ` [timeout-retry ${timeoutRetriesUsed}/${maxTimeoutRetries}]` : ''}`);
+          // Notify caller about retry (for CLI visibility)
+          const retryInfo = { provider: providerName, attempt: attempt + 1, maxRetries, delay, error: msg };
+          onRetry?.(retryInfo);
+          retryEvents.emit('retry', retryInfo);
+          // 可中断 sleep（codex audit R1）：abort 时立即醒来，不等满 retry-after
+          await abortableSleep(delay, signal);
+          if (signal?.aborted) {
+            healthMonitor.recordFailure(providerName, {
+              cancelled: isCancellationError(err, signal),
+              model,
+              error: err,
+            });
+            throw err;
+          }
+          continue;
         }
-        continue;
       }
       healthMonitor.recordFailure(providerName, {
         cancelled: isCancellationError(err, signal),
+        model,
+        error: err,
       });
       throw err;
     }

@@ -16,9 +16,24 @@ import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { permissionConsequence } from './permissionPresentation';
+import { OS_SANDBOX_CODES } from '@shared/constants/sandbox';
 
 interface RequestDetailsProps {
   request: PermissionRequest;
+}
+
+function sandboxStatusCopy(
+  sandbox: NonNullable<PermissionRequest['details']['sandbox']>,
+  labels: { sandboxApplied: string; sandboxDegraded: string; sandboxDegradedUnsandboxable: string; sandboxDegradedUnavailable: string; sandboxDegradedDisabled: string },
+): string {
+  if (sandbox.code === OS_SANDBOX_CODES.DEGRADED_UNSANDBOXABLE) {
+    return labels.sandboxDegradedUnsandboxable.replace('{exception}', sandbox.exception ?? sandbox.code);
+  }
+  if (sandbox.code === OS_SANDBOX_CODES.DEGRADED_UNAVAILABLE) return labels.sandboxDegradedUnavailable;
+  if (sandbox.code === OS_SANDBOX_CODES.DEGRADED_DISABLED) return labels.sandboxDegradedDisabled;
+  if (sandbox.degraded) return labels.sandboxDegraded;
+  if (sandbox.applied) return labels.sandboxApplied;
+  return labels.sandboxDegraded;
 }
 
 export function RequestDetails({ request }: RequestDetailsProps) {
@@ -30,11 +45,19 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   // 兼容旧版 API：path -> filePath
   const filePath = details.filePath || details.path;
 
+  // ADR-067 D3：peer 消息触发的动作必须在卡上标明来源（写回分支同样适用）。
+  const peerOriginNotice = details.triggeredByAgentMessage ? (
+    <p className="text-xs leading-5 text-badge-warning" data-testid="permission-peer-origin">
+      {labels.triggeredByAgentMessage.replace('{sender}', details.triggeredByAgentMessage.senderAgentId ?? '?')}
+    </p>
+  ) : null;
+
   // N-WRITEBACK-EDIT：可编辑写回工具把参数全部摊开（含正文），不再用只拼 To/CC 的通用预览，
   // 也不显示按 permissionLevel 推断出来的「修改当前项目文件」边界（对邮件是误导）。
   if (request.rawArgs) {
     return (
       <div className="space-y-3">
+        {peerOriginNotice}
         <WritebackFieldsView tool={request.tool} args={request.rawArgs} />
         {request.boundary?.id === 'connector.external_write' && (
           <BoundaryDisclosure
@@ -57,6 +80,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
 
   return (
     <div className="space-y-3">
+      {peerOriginNotice}
       {permissionConsequence(request, t) && (
         <p className={`text-xs leading-5 ${type === 'dangerous_command' || request.dangerLevel === 'danger' ? 'text-badge-danger' : 'text-zinc-400'}`} data-testid="permission-consequence">
           {permissionConsequence(request, t)}
@@ -75,6 +99,15 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           isCode
           isDangerous={type === 'dangerous_command'}
         />
+      )}
+
+      {details.sandbox && (
+        <p
+          className={`text-xs leading-5 ${details.sandbox.degraded ? 'text-badge-warning' : 'text-zinc-400'}`}
+          data-testid="permission-sandbox-status"
+        >
+          {sandboxStatusCopy(details.sandbox, labels)}
+        </p>
       )}
 
       {/* URL */}

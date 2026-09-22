@@ -11,6 +11,10 @@
 // ============================================================================
 
 import { createLogger } from '../host/services/infra/logger';
+import { setIntegrityCheckListener } from '../host/services/core/database/integrityGate';
+import { setLedgerCorruptionListener } from '../host/services/core/database/ledgerCorruptionMonitor';
+import { markPersistenceDegraded } from './helpers/sessionCache';
+import { SQLITE_INTEGRITY } from '../shared/constants';
 
 const logger = createLogger('WebStartupRetention');
 
@@ -23,6 +27,12 @@ const logger = createLogger('WebStartupRetention');
  * 真正的防阻塞在 dbRetention 内部：全库 VACUUM 已移出本进程（dbVacuumSubprocess.ts）。
  */
 export function kickoffStartupRetention(): void {
+  setIntegrityCheckListener((result) => {
+    if (!result.ok) markPersistenceDegraded(SQLITE_INTEGRITY.QUICK_CHECK_FAILED);
+  });
+  setLedgerCorruptionListener((signal) => {
+    markPersistenceDegraded(signal.reason);
+  });
   void import('../host/services/infra/logRetention')
     .then(({ runLogRetention }) => runLogRetention())
     .catch((error) => logger.warn('Log retention failed (non-blocking):', (error as Error).message));

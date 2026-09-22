@@ -32,7 +32,8 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { bashSchema as schema } from './bash.schema';
-import { BASH, OS_SANDBOX } from '../../../../shared/constants';
+import { BASH, OS_SANDBOX_CODES } from '../../../../shared/constants';
+import { HostReasonCode, createHostReason } from '../../../../shared/contract/permission';
 import { startBackgroundTask } from '../../shell/backgroundTasks';
 import { spawnWindowsShell, killProcessTree } from '../../shell/platformShell';
 import { createPtySession, getPtySessionOutput } from '../../shell/ptyExecutor';
@@ -41,53 +42,25 @@ import { diagnoseSandboxDenial } from '../../shell/sandboxFailureDiagnostics';
 import { getShellPathDiagnostics } from '../../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
-import { filterSecretEnvVars } from '../../../utils/envSecretFilter';
-import { getEnvFilterPolicy } from '../../../security/policyLoader';
+import { createEvalSafeShellEnv } from './evalSafeShellEnv';
 import { truncateMiddleErrorAware } from '../../../utils/truncate';
 import { spillToolResultArchive, buildSpillNotice } from '../../../utils/toolResultSpill';
 import { checkCommandPolicy } from './commandPolicy';
 import { rewriteBashCommand } from './rtkRewriter';
 import { getPermissionModeManager } from '../../../permissions/modes';
-import { resolveSandboxNetworkPolicy, wrapCommandForSandbox } from '../../../sandbox';
+import { getSandboxManager, resolveSandboxNetworkPolicy, wrapCommandForSandbox } from '../../../sandbox';
+import {
+  resolveOsSandboxDecision,
+  type OsSandboxDecision,
+  type OsSandboxPermissionMode,
+} from '../../../sandbox/osSandboxPolicy';
 import { containWriteFenceWorkspaceRoot, isOsWriteFenceAvailable } from '../../../sandbox/writeFence';
 import { resolveCanonicalRunPath } from '../../../runtime/runContext';
+import { isPathWithinRoot } from '../../../runtime/workspaceScope';
 
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
 const MAX_LIVE_OUTPUT_DELTA_LENGTH = 2_000;
-
-function createEvalSafeShellEnv(
-  extra: Record<string, string | undefined> | undefined,
-  projectDir: string,
-  logger?: ToolContext['logger'],
-): Record<string, string> {
-  const env = createSanitizedEnv(extra);
-  if (process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined) {
-    delete env.CODE_AGENT_EVAL_REAL_ROOT;
-    delete env.AUTO_TEST_API_KEY;
-    delete env.AUTO_TEST_BASE_URL;
-    delete env.NEO_SCRIPTED_APPROVAL_POLICY;
-  }
-
-  // A8 env secret whitelist: strip secret-looking vars (*_KEY/*_TOKEN/
-  // *_SECRET/...) from the CHILD process env. This module is shared by
-  // CLI/desktop/web, so the filter applies on all three ends by default
-  // (intended — A8 is P0). The AGENT process itself is untouched: it keeps
-  // its own process.env with provider API keys for model calls.
-  // Escape hatch: [env_filter] in code-agent-policy.toml
-  // (strip_secret_vars=false, or allowed_secret_vars=[...]).
-  const envFilter = getEnvFilterPolicy(projectDir);
-  if (!envFilter.strip_secret_vars) return env;
-  const { env: filtered, strippedNames } = filterSecretEnvVars(env, {
-    allowedNames: envFilter.allowed_secret_vars,
-  });
-  if (strippedNames.length > 0) {
-    // Names only — values must never touch logs.
-    logger?.debug('Bash child env: stripped secret-looking vars', { names: strippedNames });
-  }
-  return filtered;
-}
 
 /**
  * 解包 self-referential 工具调用：
@@ -198,11 +171,19 @@ function truncateOutput(
     reason: 'bash-output-limit',
   });
   const truncated = truncateMiddleErrorAware(output, BASH.MAX_OUTPUT_LENGTH);
+  const size = `Output was ${originalLength} chars, truncated to ${BASH.MAX_OUTPUT_LENGTH}.`;
+  // 落盘失败时没有路径，不能让模型去 Read offset / Edit；成功时只指落盘文件。
+  if (!spillResult) {
+    return (
+      truncated +
+      `\n\n[Guidance: ${size} 完整输出未能留存。不要重跑可能已产生副作用的命令。只有确认命令只读时，才缩小输出范围后重跑。]`
+    );
+  }
+  const savedAt = spillResult.archiveRef.filePath;
   return (
     truncated +
-    `\n\n[Guidance: Output was ${originalLength} chars, truncated to ${BASH.MAX_OUTPUT_LENGTH}. ` +
-    `Use Read tool with offset/limit to read specific sections, or use Edit tool to make targeted changes without reading the entire file.]` +
-    (spillResult ? buildSpillNotice(spillResult.archiveRef) : '')
+    `\n\n[Guidance: ${size} 完整输出已留存于 ${savedAt}，用 Read/Grep 回查。]` +
+    buildSpillNotice(spillResult.archiveRef)
   );
 }
 
@@ -557,12 +538,46 @@ interface BashMeta extends Record<string, unknown> {
   duration?: number;
   description?: string;
   codexThreadId?: string;
+  sandboxed?: boolean;
+  sandbox?: {
+    applied: boolean;
+    degraded: boolean;
+    code: string;
+    exception?: string;
+  };
+  hostReason?: ReturnType<typeof createHostReason>;
   shellPath?: {
     source: string;
     pathEntryCount: number;
     degraded: boolean;
     fallbackApplied: boolean;
     fallbackEntries: string[];
+  };
+}
+
+function buildSandboxMeta(decision: OsSandboxDecision): Pick<BashMeta, 'sandboxed' | 'sandbox' | 'hostReason'> {
+  const sandbox = {
+    applied: decision.sandboxed,
+    degraded: decision.degraded,
+    code: decision.code,
+    ...(decision.exception ? { exception: decision.exception } : {}),
+  };
+  const hostReason = decision.degraded
+    ? createHostReason(
+      HostReasonCode.OsSandboxDegraded,
+      `OS sandbox degraded: ${decision.code}${decision.exception ? ` (${decision.exception})` : ''}`,
+      {
+        reasonCode: decision.code,
+        ...(decision.exception ? { exception: decision.exception } : {}),
+      },
+    )
+    : decision.code === OS_SANDBOX_CODES.UNAVAILABLE
+      ? createHostReason(HostReasonCode.OsSandboxUnavailable, 'OS sandbox is required but unavailable')
+      : undefined;
+  return {
+    sandboxed: decision.sandboxed,
+    sandbox,
+    ...(hostReason ? { hostReason } : {}),
   };
 }
 
@@ -588,6 +603,25 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
       return { ok: false, error: 'command must not be empty', code: 'INVALID_ARGS' };
     }
 
+    const command = unwrapSelfReference(rawCommand);
+    const implicitBackground = rewriteImplicitBackgroundCommand(command);
+    const normalizedCommand = implicitBackground.command;
+    const permissionModeManager = getPermissionModeManager();
+    // Reverse mutation: ignore requiresOsWriteFence ⇒ skip-confirm writes run naked.
+    const writeFence = ctx.requiresOsWriteFence === true;
+    const fenceRoot = writeFence
+      ? containWriteFenceWorkspaceRoot(ctx.writeFenceWorkspaceRoot)
+      : undefined;
+    let sandboxDecision = resolveOsSandboxDecision({
+      command: normalizedCommand,
+      permissionMode: permissionModeManager.getModeForSession(ctx.sessionId) as OsSandboxPermissionMode,
+      unattended: permissionModeManager.isUnattendedSession(ctx.sessionId),
+      writeFence,
+      evalRealRoot: process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined,
+      multiRoot: (ctx.workspaceScope?.roots.length ?? 0) > 1,
+      sandboxAvailable: getSandboxManager().isAvailable(),
+    });
+
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {
       return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
@@ -595,8 +629,6 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     if (ctx.abortSignal.aborted) {
       return { ok: false, error: 'aborted', code: 'ABORTED' };
     }
-
-    const command = unwrapSelfReference(rawCommand);
 
     // -------------------------------------------------------------------------
     // 设计画布会话硬控（跨进程）：本轮是设计画布会话且命令是"用代码画图"时，
@@ -630,8 +662,6 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         return { ok: false, error: 'workspace is not a usable path: empty', code: 'INVALID_ARGS' };
       }
     }
-    const implicitBackground = rewriteImplicitBackgroundCommand(command);
-    const normalizedCommand = implicitBackground.command;
     const runInBackground = (args.run_in_background as boolean | undefined) ?? implicitBackground.rewritten;
     const usePty = args.pty as boolean | undefined;
     const cols = (args.cols as number) || 80;
@@ -639,36 +669,37 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const waitForCompletion = args.wait_for_completion as boolean | undefined;
 
     // -------------------------------------------------------------------------
-    // OS 沙箱（bypassPermissions / YOLO 档 + 无人值守会话）
-    // 把命令包装成带沙箱前缀的 shell 命令，前台/PTY/后台三条路径统一使用，
-    // 复用各自执行器已有的流式 / abort / 错误语义。沙箱不可用时硬报错，绝不静默裸跑。
-    // 审出 MED：无人值守钳制（bypass→acceptEdits）不能顺带撤掉唯一的 OS 级围栏——
-    // unattended 会话不论钳后档位，命令一律带沙箱跑。
+    // OS 沙箱（default / acceptEdits 灰度默认开；bypass / unattended / write-fence 强制）
+    // 三条执行路径统一 applySandbox。不可用时：强制档硬报错，灰度档显式降级，绝不静默裸跑。
     // -------------------------------------------------------------------------
-    const permissionModeManager = getPermissionModeManager();
-    // Reverse mutation: ignore requiresOsWriteFence ⇒ skip-confirm writes run naked.
-    const writeFence = ctx.requiresOsWriteFence === true;
-    const fenceRoot = writeFence
-      ? containWriteFenceWorkspaceRoot(ctx.writeFenceWorkspaceRoot)
-      : undefined;
-    const shouldSandbox = writeFence || (OS_SANDBOX.ENABLED
-      && (process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined
-        || permissionModeManager.getModeForSession(ctx.sessionId) === 'bypassPermissions'
-        || permissionModeManager.isUnattendedSession(ctx.sessionId)
-        || (ctx.workspaceScope?.roots.length ?? 0) > 1));
     let sandboxCleanup: (() => void) | undefined;
     const cleanupSandbox = () => {
       const cleanup = sandboxCleanup;
       sandboxCleanup = undefined;
       cleanup?.();
     };
-    /** shouldSandbox 时把命令包装成带沙箱前缀的 shell 命令，否则原样返回 */
-    const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {
-      if (!shouldSandbox) return { ok: true, command: cmd };
+    const applySandbox = (cmd: string, allowNetwork: boolean): { ok: true; command: string } | { ok: false; error: string } => {
+      if (!sandboxDecision.apply) return { ok: true, command: cmd };
       try {
         if (writeFence && (!fenceRoot || !isOsWriteFenceAvailable())) {
           throw new Error('write fence cannot contain workspace root');
         }
+        const scopeWriteRoots = ctx.workspaceScope?.roots
+          .filter((root) => root.access === 'read_write')
+          .map((root) => resolveCanonicalRunPath(root.path));
+        // #1997：workspaceScope 缺省时 jail 默认 = cwd 子树，而默认会话 cwd = HOME
+        // （agentOrchestrator.initializeWorkDirectory）→ 整棵 HOME 可写，产物逃逸
+        // ~/Downloads / HOME 根 / 工作区兄弟目录（ws/gdp-772e7524 截成 ws/gdp-7724）
+        // 全部写成功。run 的授权边界 ctx.workspace 落在 cwd 内时收紧到它（只收紧、
+        // 不放宽：workspace 不在 cwd 内或两者相等时维持 [workingDirectory] 默认）。
+        // 收紧的已知代价：git/pip/uv 等往 HOME 下写缓存/配置会被拒（npm 有白名单
+        // 不受影响）——与有项目 cwd 时的既有行为同侧，属「更严」而非新增破坏面。
+        const workspaceConfinedRoots = !scopeWriteRoots
+          && canonicalWorkspace
+          && canonicalWorkspace !== workingDirectory
+          && isPathWithinRoot(canonicalWorkspace, workingDirectory)
+          ? [canonicalWorkspace]
+          : undefined;
         const wrapped = wrapCommandForSandbox(cmd, {
           workingDirectory,
           readOnlyRoots: ctx.workspaceScope?.roots
@@ -676,27 +707,43 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
             .map((root) => resolveCanonicalRunPath(root.path)),
           readWriteRoots: writeFence && fenceRoot
             ? [fenceRoot]
-            : ctx.workspaceScope?.roots
-              .filter((root) => root.access === 'read_write')
-              .map((root) => resolveCanonicalRunPath(root.path)),
+            : scopeWriteRoots ?? workspaceConfinedRoots,
           deniedReadRoots: process.env.CODE_AGENT_EVAL_REAL_ROOT
             ? [process.env.CODE_AGENT_EVAL_REAL_ROOT]
             : undefined,
-          allowNetwork: resolveSandboxNetworkPolicy({
-            command: cmd,
-            redline: ctx.executionIntent?.redline === true,
-          }),
+          allowNetwork,
         });
         sandboxCleanup = wrapped.cleanup;
+        sandboxDecision = {
+          ...sandboxDecision,
+          sandboxed: true,
+          degraded: false,
+          code: OS_SANDBOX_CODES.APPLIED,
+        };
         return { ok: true, command: wrapped.command };
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
+        if (sandboxDecision.degradeIfUnavailable) {
+          sandboxDecision = {
+            apply: false,
+            sandboxed: false,
+            degraded: true,
+            degradeIfUnavailable: true,
+            code: OS_SANDBOX_CODES.DEGRADED_UNAVAILABLE,
+          };
+          return { ok: true, command: cmd };
+        }
+        sandboxDecision = {
+          ...sandboxDecision,
+          sandboxed: false,
+          degraded: false,
+          code: OS_SANDBOX_CODES.UNAVAILABLE,
+        };
         return {
           ok: false,
           error: writeFence
-            ? `区内写入免确认要求 OS 沙箱可用，但当前不可用：${detail}。请安装 bubblewrap（Linux）或切换到 default 档。`
-            : `bypassPermissions 档要求 OS 沙箱可用，但当前不可用：${detail}。` +
-              `请安装 bubblewrap（Linux）或切换到 default 档。`,
+            ? `OS write-fence requires an OS sandbox, but it is unavailable: ${detail}`
+            : `OS sandbox is required but unavailable: ${detail}`,
         };
       }
     };
@@ -707,8 +754,32 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     // PTY 执行
     // -------------------------------------------------------------------------
     if (usePty) {
-      const sandboxed = applySandbox(normalizedCommand);
-      if (!sandboxed.ok) return { ok: false, error: sandboxed.error, code: 'SANDBOX_UNAVAILABLE' };
+      const allowNetwork = resolveSandboxNetworkPolicy({
+        command: normalizedCommand,
+        redline: ctx.executionIntent?.redline === true,
+      });
+      const sandboxed = applySandbox(normalizedCommand, allowNetwork);
+      if (!sandboxed.ok) {
+        return {
+          ok: false,
+          error: sandboxed.error,
+          code: 'SANDBOX_UNAVAILABLE',
+          meta: buildSandboxMeta(sandboxDecision),
+        };
+      }
+      const childEnv = createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger, {
+        allowNetwork,
+        command: normalizedCommand,
+      });
+      if (!childEnv.ok) {
+        cleanupSandbox();
+        return {
+          ok: false,
+          error: childEnv.error,
+          code: childEnv.code,
+          meta: buildSandboxMeta(sandboxDecision),
+        };
+      }
       let result: ReturnType<typeof createPtySession>;
       try {
         result = createPtySession({
@@ -719,13 +790,13 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           maxRuntime: timeout,
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
-          env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
+          env: childEnv.env,
           // The passed env already contains the full sanitized process.env minus
           // filtered secrets. If we also inherited process.env here, the filtered
           // secret vars would leak straight back in (ptyExecutor spreads
           // process.env UNDER the passed env) — so never inherit.
           inheritProcessEnv: false,
-          sandboxed: shouldSandbox,
+          sandboxed: sandboxDecision.sandboxed,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
       } catch (error) {
@@ -773,6 +844,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           exitCode: output.exitCode,
           duration: output.duration,
           pty: true,
+          ...buildSandboxMeta(sandboxDecision),
         };
 
         if (output.status === 'completed') {
@@ -786,7 +858,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           command: normalizedCommand,
           message: failureMessage,
           code: output.exitCode,
-          sandboxed: shouldSandbox,
+          sandboxed: sandboxDecision.sandboxed,
           workingDirectory,
         });
         return {
@@ -816,6 +888,7 @@ Use process_kill to terminate the session.`;
         ok: true,
         output: msg,
         meta: {
+          ...buildSandboxMeta(sandboxDecision),
           sessionId: result.sessionId,
           outputFile: result.outputFile,
           artifact: result.outputFile
@@ -832,15 +905,39 @@ Use process_kill to terminate the session.`;
     // 后台任务
     // -------------------------------------------------------------------------
     if (runInBackground) {
-      const sandboxed = applySandbox(normalizedCommand);
-      if (!sandboxed.ok) return { ok: false, error: sandboxed.error, code: 'SANDBOX_UNAVAILABLE' };
+      const allowNetwork = resolveSandboxNetworkPolicy({
+        command: normalizedCommand,
+        redline: ctx.executionIntent?.redline === true,
+      });
+      const sandboxed = applySandbox(normalizedCommand, allowNetwork);
+      if (!sandboxed.ok) {
+        return {
+          ok: false,
+          error: sandboxed.error,
+          code: 'SANDBOX_UNAVAILABLE',
+          meta: buildSandboxMeta(sandboxDecision),
+        };
+      }
+      const childEnv = createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger, {
+        allowNetwork,
+        command: normalizedCommand,
+      });
+      if (!childEnv.ok) {
+        cleanupSandbox();
+        return {
+          ok: false,
+          error: childEnv.error,
+          code: childEnv.code,
+          meta: buildSandboxMeta(sandboxDecision),
+        };
+      }
       let result: ReturnType<typeof startBackgroundTask>;
       try {
         result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
-          env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
-          sandboxed: shouldSandbox,
+          env: childEnv.env,
+          sandboxed: sandboxDecision.sandboxed,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
       } catch (error) {
@@ -881,6 +978,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         ok: true,
         output: msg,
         meta: {
+          ...buildSandboxMeta(sandboxDecision),
           taskId: result.taskId,
           outputFile: result.outputFile,
           artifact: result.outputFile
@@ -946,8 +1044,35 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       fallbackEntries: shellPathDiagnostics.fallbackEntries,
     };
 
-    const sandboxedFg = applySandbox(commandForExecution);
-    if (!sandboxedFg.ok) return { ok: false, error: sandboxedFg.error, code: 'SANDBOX_UNAVAILABLE' };
+    const allowNetworkFg = resolveSandboxNetworkPolicy({
+      command: commandForExecution,
+      redline: ctx.executionIntent?.redline === true,
+    });
+    const sandboxedFg = applySandbox(commandForExecution, allowNetworkFg);
+    if (!sandboxedFg.ok) {
+      return {
+        ok: false,
+        error: sandboxedFg.error,
+        code: 'SANDBOX_UNAVAILABLE',
+        meta: buildSandboxMeta(sandboxDecision),
+      };
+    }
+
+    const childEnvFg = createEvalSafeShellEnv({
+      PATH: shellPathDiagnostics.path,
+    }, workingDirectory, ctx.logger, {
+      allowNetwork: allowNetworkFg,
+      command: commandForExecution,
+    });
+    if (!childEnvFg.ok) {
+      cleanupSandbox();
+      return {
+        ok: false,
+        error: childEnvFg.error,
+        code: childEnvFg.code,
+        meta: { ...buildSandboxMeta(sandboxDecision), shellPath: shellPathMeta },
+      };
+    }
 
     try {
       // 并行：生成动态描述（不阻塞命令执行）
@@ -961,9 +1086,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         abortSignal: ctx.abortSignal,
         ctx,
         startedAt,
-        env: createEvalSafeShellEnv({
-          PATH: shellPathDiagnostics.path,
-        }, workingDirectory, ctx.logger),
+        env: childEnvFg.env,
       });
 
       let output = stdout;
@@ -992,6 +1115,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         ok: true,
         output: cwdPrefix + output,
         meta: {
+          ...buildSandboxMeta(sandboxDecision),
           ...(dynamicDesc ? { description: dynamicDesc } : {}),
           process: {
             command: normalizedCommand,
@@ -1037,7 +1161,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         signal: typeof errObj.signal === 'string' ? errObj.signal as NodeJS.Signals : undefined,
         code: typeof errObj.code === 'number' || typeof errObj.code === 'string' ? errObj.code : undefined,
         durationMs: typeof errObj.durationMs === 'number' ? errObj.durationMs : undefined,
-        sandboxed: shouldSandbox,
+        sandboxed: sandboxDecision.sandboxed,
         workingDirectory,
       });
       const withDiagnostics = (msg: string) => appendFailureDiagnostics(msg, diagnostics);
@@ -1048,7 +1172,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           ok: false,
           error: 'aborted',
           code: 'ABORTED',
-          meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
+          meta: { ...buildSandboxMeta(sandboxDecision), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
         };
       }
 
@@ -1057,7 +1181,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           ok: false,
           error: withOutput(`Command timed out after ${timeout / 1000} seconds. Consider using run_in_background=true for long-running commands.`),
           code: 'TIMEOUT',
-          meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
+          meta: { ...buildSandboxMeta(sandboxDecision), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
         };
       }
 
@@ -1065,7 +1189,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         ok: false,
         error: withDiagnostics(withOutput(errMsg || 'Command execution failed')),
         code: 'FS_ERROR',
-        meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
+        meta: { ...buildSandboxMeta(sandboxDecision), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
     } finally {
       // PTY/后台路径把 cleanup 交给执行器的退出回调；这里只收前台路径。

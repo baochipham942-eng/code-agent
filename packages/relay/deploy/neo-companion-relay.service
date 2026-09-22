@@ -1,0 +1,24 @@
+[Unit]
+Description=Agent Neo companion relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=neorelay
+Group=neorelay
+EnvironmentFile=/etc/neo-relay/relay.env
+ExecStart=/usr/local/bin/node /opt/neo-relay/neo-companion-relay.cjs
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+# JWKS 落盘缓存（N-COMPANION-RELAY-ACCOUNT-BIND）：systemd 建 /var/lib/neo-relay 并以 STATE_DIRECTORY 传入，
+# relay 重启时 supabase.co 不通也能立刻验签。
+StateDirectory=neo-relay
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

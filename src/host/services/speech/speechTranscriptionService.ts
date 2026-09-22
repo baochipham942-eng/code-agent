@@ -17,6 +17,10 @@ import {
   type SpeechTranscriptionSegment,
   type SpeechTranscriptionEngine,
   type SpeechTranscriptionMode,
+  SPEECH_EMPTY_RESULT_CODE,
+  SPEECH_HALLUCINATION_CODE,
+  keepVoicedTranscript,
+  type SpeechAsrSegment,
 } from '../../../shared/contract/speech';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
@@ -31,12 +35,36 @@ const execFileAsync = promisify(execFile);
 let activeTranscriptions = 0;
 
 const MAX_SINGLE_PASS_AUDIO_BYTES = 10 * 1024 * 1024;
+// Groq 免费档单文件上限 25MB，留 1MB 余量；cloud-only 只按字节分段——按时长分段是为本地
+// whisper.cpp 的时长/内存限制存在的，把 ffmpeg 拽进云链路只会让「ffmpeg 一崩、云转写陪葬」
+//（2026-09-12 台账：57KB/60s 的 cloud-only 请求死在分段，300ms 返回 UNKNOWN）。
+const CLOUD_SINGLE_PASS_MAX_BYTES = 24 * 1024 * 1024;
 const MAX_COMPOSER_AUDIO_BYTES = 50 * 1024 * 1024;
 const MIN_COMPOSER_AUDIO_BYTES = 500;
 const CHUNK_AUDIO_AFTER_SECONDS = 60;
 const RETAINED_AUDIO_TTL_MS = 24 * 60 * 60 * 1000;
 
-const HALLUCINATION_PATTERNS = [
+/**
+ * whisper 在静音/近静音上会吐训练语料里的字幕尾巴。
+ * 逐条列举必漏——2026-09-13 真机吐出「杨茜茜字幕志愿者」，而表里只有「字幕由」「字幕制作」。
+ * 凡是有「家族」的一律写成一条正则，别再往下加词。
+ *
+ * **但家族要收紧到「署名形状」，不是见「字幕」就杀。** 判据是两种错的代价不对称：
+ * 漏一条幻觉 = 草稿里多一句垃圾，用户看得见、删掉就是；误杀一条 = 这 4 秒真话**无声消失**
+ * ——静音段改成静默跳过之后（本单），误杀连「有片段没转成文字」的提示都不会留。
+ * 所以「字幕组」「字幕制作」「字幕翻译」这些**既是署名又是日常词**的，必须再带一个
+ * 署名记号（冒号 / 出品压制 / 「由…」）才算；只有「字幕由」「字幕志愿者」这种
+ * 日常说不出来的才裸配。
+ */
+const HALLUCINATION_PATTERNS: (string | RegExp)[] = [
+  /字幕(由|志愿者)/,
+  /字幕(组|制作|翻译)\s*[:：]/,
+  // 「出品/制作/压制/发布」是署名动词；「翻译」是日常动词（「字幕组翻译得挺好」），
+  // 放这里就和上面那条收紧规则自相矛盾了（grok ai-review Nit）。
+  // 真幻觉里的「由XX字幕组翻译」由下面那条「由…字幕组」兜。
+  /字幕组(出品|制作|压制|发布)/,
+  /由.{0,10}字幕组/,
+  /subtitle(s)?\s*(by|volunteer)/i,
   '请不吝点赞',
   '订阅转发',
   '打赏支持',
@@ -54,9 +82,6 @@ const HALLUCINATION_PATTERNS = [
   'thanks for watching',
   'please subscribe',
   'like and subscribe',
-  '字幕由',
-  '字幕制作',
-  'subtitles by',
   'amara.org',
 ];
 
@@ -88,7 +113,8 @@ function getTextFromTranscriptionResult(result: unknown): string {
 
 function isHallucination(text: string): boolean {
   const lowerText = text.toLowerCase();
-  return HALLUCINATION_PATTERNS.some((pattern) => lowerText.includes(pattern.toLowerCase()));
+  return HALLUCINATION_PATTERNS.some((pattern) =>
+    pattern instanceof RegExp ? pattern.test(text) : lowerText.includes(pattern.toLowerCase()));
 }
 
 function getAudioExtension(mimeType: string): string {
@@ -96,7 +122,10 @@ function getAudioExtension(mimeType: string): string {
   if (mimeType.includes('wav')) return '.wav';
   if (mimeType.includes('mp3') || mimeType.includes('mpeg')) return '.mp3';
   if (mimeType.includes('ogg')) return '.ogg';
-  if (mimeType.includes('aac')) return '.aac';
+  // AAC 从手机上来的一定是 MP4 容器（iOS AVAudioRecorder / Android MediaRecorder 都是），
+  // 而 Groq 按扩展名收文件、支持列表里没有 .aac：同一段字节命名成 .aac 会被 400
+  // unsupported_audio_format 拒掉，命名成 .m4a 就能转（2026-09-12 同字节差分实测）。
+  if (mimeType.includes('aac')) return '.m4a';
   return '.webm';
 }
 
@@ -224,7 +253,7 @@ function ensureMeaningfulText(
     return {
       success: false,
       error: '未识别到语音内容',
-      code: 'EMPTY_RESULT',
+      code: SPEECH_EMPTY_RESULT_CODE,
       recoverable: true,
       engine,
       ...meta,
@@ -235,7 +264,7 @@ function ensureMeaningfulText(
     return {
       success: false,
       error: '未识别到有效语音，请重新说话',
-      code: 'HALLUCINATION',
+      code: SPEECH_HALLUCINATION_CODE,
       hallucination: true,
       recoverable: true,
       engine,
@@ -287,9 +316,15 @@ function logSpeechTranscriptionResult(
   logger.info('Speech transcription result', {
     success: result.success,
     code: result.code,
+    // 失败原因必须落日志：只记 code 时，一次「TRANSCRIPTION_FAILED」要靠差分实验才能定位
+    // （2026-09-12 实付：真因是 Groq 400 unsupported_audio_format，而日志里一个字都没有）。
+    ...(result.success ? {} : { error: result.error }),
     recoverable: result.recoverable,
     engine: result.engine,
-    cloud: result.engine === 'groq',
+    // 别用 `cloud: engine === 'groq'`：失败结果的 engine 缺省，它在一切失败上恒 false，
+    // 分不清「没走云」和「走了云但失败」——2026-09-12 台账把这个伪影当成了「没走云」的证据。
+    // 改记这个 mode 会尝试的通道，排查时一眼看出走没走云。
+    attempted: request.mode === 'local-only' ? 'local' : request.mode === 'cloud-only' ? 'groq' : 'local+groq',
     mode: request.mode,
     language: result.language || request.language,
     model: result.model || request.model,
@@ -301,8 +336,20 @@ function logSpeechTranscriptionResult(
 }
 
 function shouldChunkAudio(request: NormalizedSpeechRequest): boolean {
+  // cloud-only 不按时长分段：Groq 按文件大小收、不按时长，按时长切只增加一次 ffmpeg 依赖
+  //（本地模式按时长分段的判据一字未动）。
+  if (request.mode === 'cloud-only') {
+    return request.buffer.length > CLOUD_SINGLE_PASS_MAX_BYTES;
+  }
   return request.buffer.length > MAX_SINGLE_PASS_AUDIO_BYTES
     || (request.durationSeconds ?? 0) > CHUNK_AUDIO_AFTER_SECONDS;
+}
+
+/** execFile 失败时 stderr 挂在 error 上（error.message 只带截断版本，不够定位）。 */
+function getExecFileStderr(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const stderr = (error as { stderr?: unknown }).stderr;
+  return typeof stderr === 'string' && stderr.trim() ? stderr.trim() : undefined;
 }
 
 async function splitAudioIntoChunks(
@@ -334,7 +381,10 @@ async function splitAudioIntoChunks(
       throw new LocalSpeechTranscriptionError('NOT_INITIALIZED', 'ffmpeg 未安装。请运行: brew install ffmpeg', { cause: error });
     }
     const message = error instanceof Error ? error.message : String(error);
-    throw new LocalSpeechTranscriptionError('UNKNOWN', `长语音分段失败: ${message}`, { cause: error });
+    // ffmpeg 的 stderr 必须显式落日志——error.message 只带截断后的 stderr，
+    // 2026-09-12 台账那种「分段崩了、现场零线索、只能靠差分实验定位」就是它造成的。
+    logger.warn('ffmpeg 长语音分段失败', { error: message, stderr: getExecFileStderr(error) });
+    throw new LocalSpeechTranscriptionError('SEGMENT_FAILED', `长语音分段失败: ${message}`, { cause: error });
   }
 
   const chunks = fs.readdirSync(outputDir)
@@ -349,10 +399,30 @@ async function splitAudioIntoChunks(
   return chunks;
 }
 
+function parseGroqTranscription(transcription: unknown): { text: string; segments?: SpeechAsrSegment[] } {
+  if (typeof transcription === 'string') return { text: transcription };
+  if (!transcription || typeof transcription !== 'object' || Array.isArray(transcription)) {
+    return { text: getTextFromTranscriptionResult(transcription) };
+  }
+  const record = transcription as Record<string, unknown>;
+  const text = typeof record.text === 'string' ? record.text : '';
+  if (!Array.isArray(record.segments)) return { text };
+  const segments = record.segments.flatMap((entry): SpeechAsrSegment[] => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const segment = entry as Record<string, unknown>;
+    return [{
+      text: typeof segment.text === 'string' ? segment.text : undefined,
+      no_speech_prob: typeof segment.no_speech_prob === 'number' ? segment.no_speech_prob : undefined,
+      avg_logprob: typeof segment.avg_logprob === 'number' ? segment.avg_logprob : undefined,
+    }];
+  });
+  return { text, segments };
+}
+
 async function transcribeWithGroq(
   filePath: string,
   language: string,
-): Promise<string> {
+): Promise<{ text: string; segments?: SpeechAsrSegment[] }> {
   const apiKey = getConfigService().getApiKey('groq');
   if (!apiKey) {
     throw new LocalSpeechTranscriptionError('NOT_INITIALIZED', '未配置 Groq API Key');
@@ -370,9 +440,10 @@ async function transcribeWithGroq(
       file: fileStream,
       model: 'whisper-large-v3-turbo',
       ...(language && language !== 'auto' ? { language } : {}),
-      response_format: 'text',
+      // verbose_json 才带分段 no_speech_prob / avg_logprob，纯 text 拦不住远场人声。
+      response_format: 'verbose_json',
     });
-    return getTextFromTranscriptionResult(transcription);
+    return parseGroqTranscription(transcription);
   } finally {
     fileStream.destroy();
   }
@@ -414,7 +485,8 @@ async function transcribeAudioFile(
 
   try {
     const startedAt = Date.now();
-    const text = await transcribeWithGroq(filePath, language);
+    const groq = await transcribeWithGroq(filePath, language);
+    const text = keepVoicedTranscript(groq.text, groq.segments);
     return attachFailureAudio(ensureMeaningfulText(text, 'groq', {
       durationMs: Date.now() - startedAt,
       language,

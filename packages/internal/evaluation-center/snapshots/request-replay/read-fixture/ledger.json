@@ -32,7 +32,7 @@
         {
           "toolCallId": "e2e-real-agent-read-fixture",
           "success": true,
-          "output": "Read version digest: 61118334d0e25865\n     1\tE2E_REAL_AGENT_REPLAY_EVAL_FIXTURE=true\n     2\tThis file proves the snapshot corpus session reached the real Read tool executor."
+          "output": "Read version digest: 61118334d0e25865\n     1\tE2E_REAL_AGENT_REPLAY_EVAL_FIXTURE=true\n     2\tThis file proves the snapshot corpus session reached the real Read tool executor.\n\n<document-evidence>{\"path\":\"<RECORD_DATA_DIR>/workspace/read-fixture/snapshot-read-target.txt\",\"digest\":\"61118334d0e258657ef593c2c0a832c1c94a130c6c5004aa2b6a7c409f9078cb\",\"kind\":\"unclassified\",\"roots\":[\"<RECORD_DATA_DIR>/workspace/read-fixture/snapshot-read-target.txt\"]}; local file content, source independence unverified</document-evidence>"
         }
       ]
     },

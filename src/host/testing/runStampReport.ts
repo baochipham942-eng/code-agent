@@ -1,10 +1,12 @@
 import type { EvalRunStamp } from '../../shared/contract/evaluation';
+import { HARNESS_KNOB_DEFAULTS } from '../../shared/constants/harnessKnobs';
 
 const SPLIT_LABELS: Record<EvalRunStamp['evalSet']['split'], string> = {
   'held-in': '日常集',
   'held-out': '留出集',
   control: '校准集',
   safety: '安全集',
+  core: '核心集',
   all: '全部',
 };
 
@@ -37,7 +39,19 @@ function formatScorers(stamp: EvalRunStamp): string {
   const legacyJudge = stamp.scorers.judge === 'llm'
     ? `；对比实验评审（${stamp.scorers.judgeModel}）`
     : '';
-  return `确定性断言${aiReview.length ? `；AI 评审：${aiReview.join('、')}` : ''}${legacyJudge}`;
+  const sameSource = stamp.scorers.judgeSameSource
+    ? '；⚠ 同源裁判：评审模型与被测模型同一 provider，自我偏好未隔离'
+    : '';
+  return `确定性断言${aiReview.length ? `；AI 评审：${aiReview.join('、')}` : ''}${legacyJudge}${sameSource}`;
+}
+
+/** 只列偏离生产默认的旋钮；全默认返回 null（不占行）。 */
+function formatKnobs(knobs: Record<string, number> | undefined): string | null {
+  if (!knobs) return null;
+  const changed = Object.entries(knobs)
+    .filter(([key, value]) => value !== (HARNESS_KNOB_DEFAULTS as Record<string, number>)[key])
+    .map(([key, value]) => `${key}=${value}（默认 ${(HARNESS_KNOB_DEFAULTS as Record<string, number>)[key] ?? '无'}）`);
+  return changed.length ? `旋钮：${changed.join('、')}` : null;
 }
 
 function formatShape(stamp: EvalRunStamp): string {
@@ -51,6 +65,7 @@ function formatShape(stamp: EvalRunStamp): string {
         harness.thinkingInjection === undefined ? null : `思考提示：${harness.thinkingInjection ? '开' : '关'}`,
         harness.hooksEnabled === undefined ? null : `自动检查：${harness.hooksEnabled ? '开' : '关'}`,
         harness.toolMode === undefined ? null : `工具加载：${harness.toolMode === 'deferred' ? '按需' : '全部'}`,
+        formatKnobs(harness.knobs),
       ].filter((item): item is string => item !== null).join('，')
     : '未单独指定';
   return [

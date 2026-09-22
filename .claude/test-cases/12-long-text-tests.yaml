@@ -17,6 +17,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: longtext-read-large-file
     type: task
+    category: edge_case
     description: "读取大文件并提取关键信息"
     setup:
       - |
@@ -34,6 +35,7 @@ cases:
 
   - id: longtext-count-patterns
     type: task
+    category: edge_case
     description: "大文件中搜索模式"
     setup:
       - |
@@ -57,6 +59,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: longtext-long-prompt
     type: task
+    category: edge_case
     description: "处理超长 prompt"
     prompt: |
       请帮我创建一个 test-long-prompt-result.txt 文件。
@@ -74,6 +77,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: longtext-scan-directory
     type: task
+    category: edge_case
     description: "扫描大量文件提取信息"
     prompt: "扫描 src/host/tools 目录下所有 .ts 文件，统计每个文件的行数，找出最大的 3 个文件"
     timeout: 600000
@@ -83,6 +87,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: longtext-generate-doc
     type: task
+    category: edge_case
     description: "生成结构化长文档"
     prompt: "读取 package.json 和 src/host 目录结构，生成一份 test-project-overview.md，至少包含：项目简介、技术栈、目录结构说明、主要模块描述，不少于 200 字"
     cleanup:

@@ -113,4 +113,23 @@ describe('HandoffProposalService', () => {
       updatedAt: 200,
     });
   });
+
+  it('dbOverride：显式绑库时提案落绑定的库（eval 隔离臂形状），不碰全局库', () => {
+    const isolated = new Database(':memory:');
+    try {
+      const bound = new HandoffProposalService(isolated);
+      bound.create({
+        sessionId: 'sess-iso',
+        sourceMessageId: 'assistant-1',
+        title: '隔离臂提案',
+        prompt: '接力',
+        createdAt: 100,
+      });
+      expect(bound.list({ sessionId: 'sess-iso' })).toHaveLength(1);
+      // 全局库（本测试套件 monkeypatch 的 :memory:）里没有这条
+      expect(service.list({ sessionId: 'sess-iso' })).toHaveLength(0);
+    } finally {
+      isolated.close();
+    }
+  });
 });

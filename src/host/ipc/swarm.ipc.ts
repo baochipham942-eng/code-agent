@@ -19,6 +19,7 @@ import type { Message } from '../../shared/contract';
 import type { SwarmRunDetail } from '../../shared/contract/swarmTrace';
 import { getSwarmServices } from '../agent/swarmServices';
 import { getSwarmEventEmitter } from '../agent/swarmEventPublisher';
+import type { AgentMessageOrigin } from '../agent/messageOrigin';
 import {
   hasSingleSpawnVisibilityAgent,
   resolveSingleSpawnVisibility,
@@ -224,12 +225,18 @@ export async function sendSwarmUserMessage(
       return services.spawnGuard.get?.(agentId, ref)?.status === 'running';
     });
     const sessionMessage = buildPersistedUserMessage(payload, scope, validatedTargetIds);
-    let delivered = await coordinator.sendMessage(payload.agentId, payload.message);
+    // ADR-067 D1：用户直达消息的来源由宿主在此 IPC 入队点铸造（senderKind='user'）。
+    const messageOrigin: AgentMessageOrigin = {
+      senderKind: 'user',
+      sessionId: scope.sessionId,
+      runId: scope.runId,
+    };
+    let delivered = await coordinator.sendMessage(payload.agentId, payload.message, messageOrigin);
     if (!delivered) {
-      // SpawnGuard 回退按结构化消息投：from='user'，执行器抽干时按来源打前缀（不再冒充父 agent）
+      // SpawnGuard 回退按结构化消息投：origin 铸 user，执行器抽干时按来源打前缀（不再冒充父 agent）
       delivered = Boolean(services.spawnGuard.sendMessage?.(payload.agentId, {
         type: 'text', from: 'user', payload: payload.message, timestamp: sessionMessage.timestamp,
-      }, ref));
+      }, ref, messageOrigin));
     }
 
     if (!delivered) {

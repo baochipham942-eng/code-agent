@@ -1,6 +1,7 @@
 import { configureVoiceRelease } from './configure-voice.mjs';
 import './remote-only.mjs';
 import { configureAndroidLan } from './configure-lan.mjs';
+import { assembleDebugOffline } from './gradle-offline-warm.mjs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, readdirSync } from 'node:fs';
@@ -40,6 +41,10 @@ import java.util.Locale;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // First-party plugins must be registered before super.onCreate: BridgeActivity builds the
+        // bridge (and consumes the plugin list) inside its own onCreate.
+        registerPlugin(LanDnsPlugin.class);
+        registerPlugin(VoiceKeepAlivePlugin.class);
         super.onCreate(savedInstanceState);
         // Draw behind the system bars so the web scrim covers the status bar area (MN-01).
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
@@ -95,7 +100,328 @@ public class MainActivity extends BridgeActivity {
     }
 }
 `);
+// fix4-⑤（2026-09-15）：第一方 mDNS 单次解析插件。Android 的 Java 解析器不认 .local、
+// NsdManager 只面向 service 类型（宿主只广告主机名），这里补最小解析能力：
+// 一次 A 查询发到 224.0.0.251:5353，等第一条命中该名字的 A 应答，带超时、不长驻 browse。
+writeFileSync('android/app/src/main/java/dev/neo/companion/preview/LanDnsPlugin.java', `package dev.neo.companion.preview;
+
+import android.content.Context;
+import android.net.wifi.WifiManager;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.ByteArrayOutputStream;
+import java.net.DatagramPacket;
+import java.net.InetAddress;
+import java.net.MulticastSocket;
+import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import org.json.JSONObject;
+
+/** One-shot mDNS A-record resolve for a .local hostname (fix4-⑤). Mirrors iOS NeoLanDnsPlugin. */
+@CapacitorPlugin(name = "LanDns")
+public class LanDnsPlugin extends Plugin {
+
+    private static final String MDNS_GROUP = "224.0.0.251";
+    private static final int MDNS_PORT = 5353;
+    /** mDNS packets are capped at 9000 bytes (RFC 6762 §17). */
+    private static final int MAX_PACKET_BYTES = 9000;
+    /** Fallback timeout; JS always passes COMPANION_LIMITS.mdnsResolveTimeoutMs explicitly. */
+    private static final int FALLBACK_TIMEOUT_MS = 3000;
+    private static final String HOST_PATTERN = "(?i)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\\\\.local";
+
+    @PluginMethod
+    public void resolve(PluginCall call) {
+        String host = call.getString("host");
+        int timeoutMs = call.getInt("timeoutMs", FALLBACK_TIMEOUT_MS);
+        if (host == null || !host.matches(HOST_PATTERN)) {
+            call.reject("INVALID_HOST");
+            return;
+        }
+        // Blocking socket work runs on its own short-lived thread; PluginCall resolve is thread-safe.
+        Thread worker = new Thread(() -> {
+            Context appContext = getContext().getApplicationContext();
+            WifiManager wifi = (WifiManager) appContext.getSystemService(Context.WIFI_SERVICE);
+            WifiManager.MulticastLock lock = null;
+            MulticastSocket socket = null;
+            String address = null;
+            try {
+                // Receiving multicast on Wi-Fi needs the lock; without it packets are silently filtered.
+                if (wifi != null) {
+                    lock = wifi.createMulticastLock("neo-lan-dns");
+                    lock.setReferenceCounted(false);
+                    lock.acquire();
+                }
+                socket = new MulticastSocket(MDNS_PORT);
+                socket.setReuseAddress(true);
+                socket.setSoTimeout(Math.max(250, timeoutMs));
+                InetAddress group = InetAddress.getByName(MDNS_GROUP);
+                socket.joinGroup(group);
+                byte[] query = buildQuery(host);
+                socket.send(new DatagramPacket(query, query.length, group, MDNS_PORT));
+                long deadline = System.currentTimeMillis() + Math.max(250, timeoutMs);
+                byte[] buffer = new byte[MAX_PACKET_BYTES];
+                while (address == null && System.currentTimeMillis() < deadline) {
+                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                    try {
+                        socket.receive(packet);
+                    } catch (SocketTimeoutException noTraffic) {
+                        break;
+                    }
+                    address = parseAAnswer(packet.getData(), packet.getLength(), host);
+                }
+            } catch (Exception unresolved) {
+                address = null; // resolve failure is not an error: caller falls back to the old address
+            } finally {
+                if (socket != null) socket.close();
+                if (lock != null) lock.release();
+            }
+            JSObject result = new JSObject();
+            try {
+                result.put("address", address == null ? JSONObject.NULL : address);
+            } catch (org.json.JSONException invalid) {
+                call.reject("INVALID_RESULT");
+                return;
+            }
+            call.resolve(result);
+        }, "neo-lan-dns");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /** Standard DNS query: header + one question (host, A, IN). */
+    private static byte[] buildQuery(String host) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(host.length() + 18);
+        out.write(0); out.write(0); // ID 0
+        out.write(0); out.write(0); // flags 0 (standard query)
+        out.write(0); out.write(1); // QDCOUNT 1
+        out.write(0); out.write(0); // ANCOUNT
+        out.write(0); out.write(0); // NSCOUNT
+        out.write(0); out.write(0); // ARCOUNT
+        for (String label : host.split("\\\\.")) {
+            byte[] bytes = label.getBytes(StandardCharsets.US_ASCII);
+            out.write(bytes.length);
+            out.write(bytes, 0, bytes.length);
+        }
+        out.write(0);               // root label
+        out.write(0); out.write(1); // QTYPE = A
+        out.write(0); out.write(1); // QCLASS = IN
+        return out.toByteArray();
+    }
+
+    /** Walks the answer section for an A record whose owner name equals host. */
+    private static String parseAAnswer(byte[] data, int length, String host) {
+        if (length < 12) return null;
+        int questions = ((data[4] & 0xff) << 8) | (data[5] & 0xff);
+        int answers = ((data[6] & 0xff) << 8) | (data[7] & 0xff);
+        int offset = 12;
+        for (int i = 0; i < questions; i++) {
+            offset = skipName(data, offset, length);
+            if (offset < 0 || offset + 4 > length) return null;
+            offset += 4; // QTYPE + QCLASS
+        }
+        for (int i = 0; i < answers; i++) {
+            int[] afterName = new int[1];
+            String owner = readName(data, offset, length, afterName);
+            offset = afterName[0];
+            if (owner == null || offset + 10 > length) return null;
+            int type = ((data[offset] & 0xff) << 8) | (data[offset + 1] & 0xff);
+            int rdLength = ((data[offset + 8] & 0xff) << 8) | (data[offset + 9] & 0xff);
+            int rdStart = offset + 10;
+            if (type == 1 && rdLength == 4 && rdStart + 4 <= length && host.equalsIgnoreCase(owner)) {
+                return String.format(Locale.US, "%d.%d.%d.%d",
+                    data[rdStart] & 0xff, data[rdStart + 1] & 0xff, data[rdStart + 2] & 0xff, data[rdStart + 3] & 0xff);
+            }
+            offset = rdStart + rdLength;
+        }
+        return null;
+    }
+
+    private static int skipName(byte[] data, int offset, int limit) {
+        int[] end = new int[1];
+        return readName(data, offset, limit, end) != null ? end[0] : -1;
+    }
+
+    /**
+     * Reads one (possibly compressed) domain name. end[0] is set to the offset just past this
+     * name in the ORIGINAL record position; returns null on malformed input.
+     */
+    private static String readName(byte[] data, int offset, int limit, int[] end) {
+        StringBuilder name = new StringBuilder();
+        int cursor = offset;
+        int jumps = 0;
+        int afterName = -1;
+        while (cursor < limit) {
+            int length = data[cursor] & 0xff;
+            if (length == 0) {
+                if (afterName < 0) afterName = cursor + 1;
+                break;
+            }
+            if ((length & 0xc0) == 0xc0) {
+                if (cursor + 1 >= limit || ++jumps > 8) return null;
+                if (afterName < 0) afterName = cursor + 2;
+                cursor = ((length & 0x3f) << 8) | (data[cursor + 1] & 0xff);
+                continue;
+            }
+            if (cursor + 1 + length > limit || (length & 0xc0) != 0) return null;
+            if (name.length() > 0) name.append('.');
+            name.append(new String(data, cursor + 1, length, StandardCharsets.US_ASCII));
+            cursor += 1 + length;
+        }
+        if (cursor >= limit && afterName < 0) return null;
+        end[0] = afterName < 0 ? cursor : afterName;
+        return name.toString();
+    }
+}
+`);
 const manifestPath = 'android/app/src/main/AndroidManifest.xml';
+// N-MOBILE-BG-RECORDING（爸 2026-09-18）：Android 12+ 后台用麦克风必须有 microphone 类型的前台服务，
+// 否则系统直接静音/断麦。最小插件：JS 在一次录音的 start/stop 前后调 start/stop，服务挂持久通知。
+// manifest 权限与 <service> 声明由 configure-lan.mjs 的 ensureAndroidVoiceForegroundService 注入。
+writeFileSync('android/app/src/main/java/dev/neo/companion/preview/VoiceKeepAlivePlugin.java', `package dev.neo.companion.preview;
+
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.Context;
+import android.content.Intent;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+
+/** Starts/stops the microphone foreground service around a voice take (N-MOBILE-BG-RECORDING). */
+@CapacitorPlugin(name = "VoiceKeepAlive")
+public class VoiceKeepAlivePlugin extends Plugin {
+
+    static final String CHANNEL_ID = "neo-voice-recording";
+    static final int NOTIFICATION_ID = 46;
+
+    @PluginMethod
+    public void start(PluginCall call) {
+        // The channel name shows up in system notification settings, so it follows the app language
+        // like the title/text: created (or renamed — same channel id — on language switch) here,
+        // before every take. The service keeps an English fallback for a start without JS.
+        String channelName = call.getString("channelName", "Recording");
+        NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        manager.createNotificationChannel(new NotificationChannel(
+                CHANNEL_ID, channelName, NotificationManager.IMPORTANCE_LOW));
+        Intent intent = new Intent(getContext(), VoiceRecordingService.class)
+                .putExtra(VoiceRecordingService.EXTRA_TITLE, call.getString("title", "Neo"))
+                .putExtra(VoiceRecordingService.EXTRA_TEXT, call.getString("text", ""));
+        // startForegroundService is API 26+ and minSdk is 26. A background start attempt must not
+        // crash the app: the service fails to promote itself and stops quietly (see the service).
+        try {
+            getContext().startForegroundService(intent);
+        } catch (Exception denied) {
+            // Recording continues without the service; the notification is simply absent.
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void stop(PluginCall call) {
+        getContext().stopService(new Intent(getContext(), VoiceRecordingService.class));
+        call.resolve();
+    }
+}
+`);
+// 常驻通知的小图标（PR#1944 ai-review Nit）：不许再用系统通用占位图标。通知小图标只吃
+// alpha 通道（系统按状态栏色调染色），所以取 Neo 品牌字形（src-tauri/icons/agent-neo.svg 的
+// N2 星芒）纯白重绘成 vector drawable，随构建写进工程。
+mkdirSync('android/app/src/main/res/drawable', { recursive: true });
+writeFileSync('android/app/src/main/res/drawable/neo_recording_icon.xml', `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:pathData="M15,33.5L15,14.5L33,33.5L33,14.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <path
+        android:pathData="M37,6.5L38.1,10L41.6,11.1L38.1,12.2L37,15.7L35.9,12.2L32.4,11.1L35.9,10Z"
+        android:fillColor="#FFFFFFFF"/>
+</vector>
+`);
+writeFileSync('android/app/src/main/java/dev/neo/companion/preview/VoiceRecordingService.java', `package dev.neo.companion.preview;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ServiceInfo;
+import android.os.Build;
+import android.os.IBinder;
+import androidx.core.app.NotificationCompat;
+
+/**
+ * Microphone foreground service (N-MOBILE-BG-RECORDING): keeps the process eligible for the
+ * microphone while the app is backgrounded. The persistent notification is an OS requirement,
+ * not a user-facing alert. Notification copy comes from JS so it follows the app language.
+ */
+public class VoiceRecordingService extends Service {
+
+    static final String EXTRA_TITLE = "title";
+    static final String EXTRA_TEXT = "text";
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        // Fallback only: the plugin creates the channel with the app-language name before every start.
+        if (manager.getNotificationChannel(VoiceKeepAlivePlugin.CHANNEL_ID) == null) {
+            manager.createNotificationChannel(new NotificationChannel(
+                    VoiceKeepAlivePlugin.CHANNEL_ID,
+                    "Recording",
+                    NotificationManager.IMPORTANCE_LOW));
+        }
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        String title = intent == null ? null : intent.getStringExtra(EXTRA_TITLE);
+        String text = intent == null ? null : intent.getStringExtra(EXTRA_TEXT);
+        Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        PendingIntent open = launch == null ? null : PendingIntent.getActivity(this, 0, launch,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification notification = new NotificationCompat.Builder(this, VoiceKeepAlivePlugin.CHANNEL_ID)
+                .setSmallIcon(R.drawable.neo_recording_icon)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setOngoing(true)
+                .setContentIntent(open)
+                .setOnlyAlertOnce(true)
+                .build();
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                startForeground(VoiceKeepAlivePlugin.NOTIFICATION_ID, notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+            } else {
+                startForeground(VoiceKeepAlivePlugin.NOTIFICATION_ID, notification);
+            }
+        } catch (Exception denied) {
+            // e.g. promoted from the background on Android 12+: crashing here would take the
+            // whole app down while the recording itself needs no service in the foreground.
+            stopSelf();
+        }
+        return START_NOT_STICKY;
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+}
+`);
 const manifestTemplate = readFileSync(manifestPath, 'utf8');
 if (!manifestTemplate.includes('<application')) throw new Error('ANDROID_TEMPLATE_CHANGED');
 if (!manifestTemplate.includes('enableOnBackInvokedCallback')) {
@@ -104,7 +430,7 @@ if (!manifestTemplate.includes('enableOnBackInvokedCallback')) {
 }
 run('node_modules/.bin/cap', ['sync', 'android']);
 configureAndroidLan();
-run('./gradlew', ['--offline', '--no-daemon', '--max-workers=2', 'assembleDebug'], resolve('android'));
+assembleDebugOffline({ cwd: resolve('android') });
 mkdirSync('.artifacts', { recursive: true });
 const apk = `.artifacts/neo-mobile-${version}-${build}.apk`;
 copyFileSync('android/app/build/outputs/apk/debug/app-debug.apk', apk);

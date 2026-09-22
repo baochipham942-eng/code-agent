@@ -1,0 +1,57 @@
+{
+  "generatedAt": "2026-09-19T09:19:14.493Z",
+  "mutate": "empty-window",
+  "rows": [
+    {
+      "id": "JBS-01",
+      "arm": "baseline",
+      "round": 1,
+      "steps": 2,
+      "usd": 0,
+      "ok": true,
+      "status": "done_verified",
+      "jevCalls": 0,
+      "fallbacks": 0,
+      "pureJev": false,
+      "sensitiveUnauthed": false,
+      "wallSec": 10.305
+    },
+    {
+      "id": "JBS-01",
+      "arm": "jev",
+      "round": 1,
+      "steps": 2,
+      "usd": 0,
+      "ok": true,
+      "status": "done_verified",
+      "jevCalls": 0,
+      "fallbacks": 1,
+      "pureJev": false,
+      "sensitiveUnauthed": false,
+      "fallbackReason": "no_candidates",
+      "wallSec": 7.809
+    }
+  ],
+  "headline": {
+    "baseline": {
+      "arm": "baseline",
+      "avgSteps": 2,
+      "avgWallSec": 10.305,
+      "successRate": 1,
+      "avgUsd": 0
+    },
+    "jev": {
+      "arm": "jev",
+      "avgSteps": 2,
+      "avgWallSec": 7.809,
+      "successRate": 1,
+      "avgUsd": 0
+    }
+  },
+  "pureJev": 0,
+  "fallbackReasons": {
+    "no_candidates": 1
+  },
+  "sensitiveUnauthed": false,
+  "verdict": "可接电候选"
+}

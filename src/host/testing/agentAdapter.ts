@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { AgentInterface } from './testRunner';
-import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord, EvalCaseMemory, MemoryFileSnapshot, MemoryRecallRecord } from './types';
+import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord, EvalCaseMemory, MemoryFileSnapshot, MemoryRecallRecord, CaseSkillSignals, HandoffProposalRecord } from './types';
 import { seedCaseMemory, snapshotMemoryDir } from './memoryEval';
 import { createPermissionRequestRecorder } from './approvalRequestEval';
 import { buildPermissionDecider, narrowScriptedPermissionHandler } from './userSimulator';
@@ -13,11 +13,15 @@ import type { ModelProvider } from '../../shared/contract';
 import type { ModelConfig } from '../../shared/contract/model';
 import type { InferenceOptions } from '../model/types';
 import type { ConversationExecutionIntent } from '../../shared/contract/conversationEnvelope';
+import { HandoffProposalService } from '../handoff/handoffProposalService';
 import { createLogger } from '../services/infra/logger';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
+import { ARTIFACT_REPAIR_PROGRESS_MARKER } from '../../shared/constants/repair';
+import { getProviderEndpointHost } from '../../shared/constants/providers';
 import { app } from '../platform';
 import { runWithCompressionPipelineOverride } from '../context/compressionPipeline';
 import { runWithScaffoldProfileOverrides } from '../agent/runtime/scaffoldProfile';
+import { runWithHarnessKnobs } from '../agent/runtime/harnessKnobs';
 import { runWithMemoryModelOverride } from '../model/memoryModelOverrideScope';
 import { getMockCasePolicy } from './mockEvalPolicy';
 import type { PermissionRequestData } from '../tools/types';
@@ -127,11 +131,13 @@ function runWithHarnessOverrideScope<T>(
   harness: HarnessVariantConfig | undefined,
   callback: () => T,
 ): T {
-  return runWithCompressionPipelineOverride(harness?.compressionPipeline, () =>
-    runWithScaffoldProfileOverrides({
-      scaffoldProfile: harness?.scaffoldProfile,
-      thinkingInjection: harness?.thinkingInjection,
-    }, callback),
+  return runWithHarnessKnobs(harness?.knobs, () =>
+    runWithCompressionPipelineOverride(harness?.compressionPipeline, () =>
+      runWithScaffoldProfileOverrides({
+        scaffoldProfile: harness?.scaffoldProfile,
+        thinkingInjection: harness?.thinkingInjection,
+      }, callback),
+    ),
   );
 }
 
@@ -432,6 +438,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private memorySnapshot?: MemoryFileSnapshot[];
   /** N-EVAL-MEMORY：本题的记忆声明；未声明的 case 保持 EVAL_AGENT_DEFAULTS（两向都关）。 */
   private caseMemory?: EvalCaseMemory;
+  private repairRoundsUsed = 0;
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
@@ -594,10 +601,76 @@ export class StandaloneAgentAdapter implements AgentInterface {
     return { ...activations };
   }
 
+  /**
+   * N-SKILL-TRIGGER-EVAL：skill_* 断言的证据源。消费即清（读走本题台账并删除——
+   * 只读 peek 会把计数留给下一 trial，ai-review PR#2019 Important 1）。
+   * skillContext 必须与模型真实可见集同口径：getSkillsForContext() =
+   * 白名单 ∩ 已发现 ∩ 启用 ∩ 非 disableModelInvocation ∩ applicability('model_context')
+   * ——模型看不见的 skill 不算装进上下文，否则负样本会「未装载却判忍住」假绿
+   * （ai-review PR#2019 Important 2）。
+   */
+  async consumeSkillSignals(testId: string): Promise<CaseSkillSignals> {
+    const { SkillDiscoveryService } = await import('../services/skills/skillDiscoveryService');
+    const discovery = this.skillDiscoveryService ??= new SkillDiscoveryService({
+      skillNames: this.skills,
+      includeClaudeLegacySkills: this.includeClaudeLegacySkills,
+    });
+    await discovery.ensureInitialized(this.workingDirectory);
+    const skillContext = discovery.getSkillsForContext()
+      .map((skill) => skill.name)
+      .sort((left, right) => left.localeCompare(right));
+    const activations = { ...(this.skillActivations.get(testId) ?? {}) };
+    this.skillActivations.delete(testId);
+    return { skillActivations: activations, skillContext };
+  }
+
   consumeSubagentSpawns(testId: string): number {
     const count = this.subagentSpawns.get(testId) ?? 0;
     this.subagentSpawns.delete(testId);
     return count;
+  }
+
+  /**
+   * N-EVAL-FAILURE-AUTOHARVEST：handoff_* 断言的证据源。按需采集——只在 case 声明
+   * handoff_* 断言时由 runner 调用（无条件采集会把库炸点扩散成普通题误红，
+   * ai-review PR#2019 R2 同款教训）。
+   * 读取点跟写入点同库：隔离评测注入了 this.database 时，loop 侧 persistHandoffProposal
+   * 回调把提案落注入库（messageProcessor），这里也读注入库；没有注入库时写入与读取
+   * 都是全局单例库（产线 / 非隔离评测）。
+   * 会话 id 还没落定（超时发生在 session 建立前）= 没有证据源，不是零提案——
+   * 返 [] 会让 handoff_not_proposed 假绿（ai-review PR#2024 R2 Important 3）。
+   * 返回 undefined = 没有证据源（库不可用/读出错）⇒ 断言 fail-loud；
+   * 表都没建过 = 从未落过一条提案 ⇒ 零条是事实，不是没证据。
+   */
+  async collectHandoffProposals(since: number): Promise<HandoffProposalRecord[] | undefined> {
+    if (!this.currentSessionId) return undefined;
+    try {
+      // 先选库再取句柄：注入了隔离库但暂时不可用（getDb() 为 null）= 没有证据源，
+      // 必须返 undefined——不许回退全局库，否则同 session 的旧提案会串题
+      // （ai-review PR#2024 R6）。只有「压根没注入」才读全局（产线 / 非隔离评测的写入点）。
+      const dbService = this.database ?? (await import('../services/core/databaseService')).getDatabase();
+      const db = dbService.getDb();
+      if (!db) return undefined;
+      const rows = db.prepare(
+        `SELECT title, prompt, reason, source, status, created_at AS createdAt
+         FROM handoff_proposals WHERE session_id = ? AND created_at >= ? ORDER BY created_at ASC`,
+      ).all(this.currentSessionId, since) as Array<Omit<HandoffProposalRecord, 'reason'> & { reason: string | null }>;
+      return rows.map((row) => ({
+        title: row.title,
+        prompt: row.prompt,
+        ...(row.reason !== null ? { reason: row.reason } : {}),
+        source: row.source,
+        status: row.status,
+        createdAt: row.createdAt,
+      }));
+    } catch (error: unknown) {
+      if (String(error).includes('no such table')) return [];
+      logger.warn('collectHandoffProposals failed — handoff assertions will fail loud', {
+        sessionId: this.currentSessionId,
+        error: String(error),
+      });
+      return undefined;
+    }
   }
 
   /**
@@ -621,7 +694,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
     toolExecutions: ToolExecutionRecord[];
     turnCount: number;
     errors: string[];
+    repairRoundsUsed: number;
   }> {
+    this.repairRoundsUsed = 0;
     let permissionRequests: PermissionRequestRecord[] | undefined;
     const responses: string[] = [];
     const toolExecutions: ToolExecutionRecord[] = [];
@@ -804,6 +879,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
               }
             : undefined,
           turnSnapshotSink: runtimeDatabase,
+          // N-EVAL-FAILURE-AUTOHARVEST：隔离臂的 handoff 提案落同一个注入库——
+          // 提案与消息/遥测同库，collectHandoffProposals 才读得到（ai-review PR#2024 R5）。
+          ...(runtimeDatabase ? {
+            persistHandoffProposal: (input: import('../../shared/contract/handoff').CreateHandoffProposalInput) => {
+              const sqlite = runtimeDatabase.getDb();
+              if (!sqlite) throw new Error('eval isolated database not initialized');
+              new HandoffProposalService(sqlite).create(input);
+            },
+          } : {}),
           scopedCostRecorder: options?.scopedCostRecorder,
           onEvent: (event) => {
             if (this.currentSessionId) {
@@ -849,6 +933,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
               }
             }
             switch (event.type) {
+              case 'task_progress':
+                if (event.data.phase === 'tool_running' && event.data.step?.includes(ARTIFACT_REPAIR_PROGRESS_MARKER)) this.repairRoundsUsed += 1;
+                break;
               case 'message':
                 if (event.data?.role === 'assistant' && event.data?.content) {
                   responses.push(event.data.content);
@@ -944,6 +1031,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       toolExecutions,
       turnCount: turnCount || responses.length,
       errors,
+      repairRoundsUsed: this.repairRoundsUsed,
       ...(permissionRequests ? { permissionRequests } : {}),
     };
   }
@@ -1027,11 +1115,14 @@ export class StandaloneAgentAdapter implements AgentInterface {
     }
   }
 
-  getAgentInfo(): { name: string; model: string; provider: string } {
+  getAgentInfo(): { name: string; model: string; provider: string; endpoint?: string } {
+    // endpoint = 本次真正会发请求的 host，只用于解释"换了端点"这类跨轮差异（N-EVALRUN-PROVENANCE）
+    const endpoint = getProviderEndpointHost(this.modelConfig.provider, this.modelConfig.baseUrl);
     return {
       name: 'agent-runtime',
       model: this.modelConfig.model,
       provider: this.modelConfig.provider,
+      ...(endpoint ? { endpoint } : {}),
     };
   }
 

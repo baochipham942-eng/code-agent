@@ -866,6 +866,80 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(toolEvents[3]?.data).toMatchObject({ toolCallId: 'tool-read-16' });
   });
 
+  it('强制收尾后被吞掉的批内调用不计入工具失败遥测（issue #1991）', async () => {
+    const toolExecutor = {
+      execute: vi.fn(async (): Promise<ToolResult> => ({
+        toolCallId: '',
+        success: true,
+        output: 'read ok',
+      })),
+    };
+    const antiPatternDetector = new AntiPatternDetector();
+    for (let index = 0; index < 14; index += 1) {
+      antiPatternDetector.trackToolExecution('Read', true);
+    }
+
+    const ctx = makeRuntimeContext({
+      toolExecutor: toolExecutor as never,
+      antiPatternDetector,
+    });
+    const contextAssembly = {
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    };
+    const runFinalizer = { emitTaskProgress: vi.fn() };
+    const conversationRuntime = {
+      setPlanMode: vi.fn(),
+      isPlanMode: vi.fn().mockReturnValue(false),
+      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
+    };
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
+
+    const results = await engine.executeToolsWithHooks([
+      { id: 'tool-read-15', name: 'Read', arguments: { file_path: '/tmp/a.ts' } } as ToolCall,
+      { id: 'tool-read-16', name: 'Read', arguments: { file_path: '/tmp/b.ts' } } as ToolCall,
+      { id: 'tool-read-17', name: 'Read', arguments: { file_path: '/tmp/c.ts' } } as ToolCall,
+    ]);
+
+    expect(results).toHaveLength(3);
+    // 硬阈值拦下的第 15 次读仍按守卫事件落遥测（这是有意义的护栏信号）
+    expect(ctx.telemetryAdapter?.onToolCallEnd).toHaveBeenCalledWith(
+      'turn-1',
+      'tool-read-15',
+      false,
+      expect.any(String),
+      expect.any(Number),
+      undefined,
+      expect.objectContaining({ hardLimitPreflight: true }),
+    );
+    // 强制收尾置位后被吞掉的 16/17 次：UI 事件照发，遥测一个不写
+    const telemetryEndedIds = vi.mocked(ctx.telemetryAdapter!.onToolCallEnd).mock.calls.map((call) => call[1]);
+    expect(telemetryEndedIds).toEqual(['tool-read-15']);
+    const telemetryStartedIds = vi.mocked(ctx.telemetryAdapter!.onToolCallStart).mock.calls.map((call) => call[1]);
+    expect(telemetryStartedIds).toEqual(['tool-read-15']);
+    // UI 侧三张卡片都正常收口
+    const uiEvents = vi.mocked(ctx.onEvent).mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'tool_call_start' || event.type === 'tool_call_end');
+    expect(uiEvents.map((event) => event.type)).toEqual([
+      'tool_call_start', 'tool_call_end',
+      'tool_call_start', 'tool_call_end',
+      'tool_call_start', 'tool_call_end',
+    ]);
+    expect(results[1]).toMatchObject({
+      toolCallId: 'tool-read-16',
+      success: false,
+      metadata: expect.objectContaining({ skipped: true, forceFinalSuppressed: true }),
+    });
+    expect(results[2]).toMatchObject({
+      toolCallId: 'tool-read-17',
+      success: false,
+      metadata: expect.objectContaining({ skipped: true, forceFinalSuppressed: true }),
+    });
+  });
+
   it('preflights batched read-only Bash calls before the hard-limit command executes', async () => {
     const toolExecutor = {
       execute: vi.fn(async (_toolName: string, args: Record<string, unknown>): Promise<ToolResult> => ({
@@ -1532,14 +1606,24 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(executedEdit.new_text).toBe(newText);
   });
 
-  it('passes the run-level abort signal into ToolExecutor', async () => {
+  it('chains the run-level abort signal into the tool abort signal', async () => {
     const controller = new AbortController();
+    // 在 mock 里只记录不断言：mock 内 throw 会被引擎 catch 吞成工具失败结果，断言必须落在外面。
+    let signalAbortedBeforeRunAbort: boolean | undefined;
+    let signalAbortedAfterRunAbort: boolean | undefined;
     const toolExecutor = {
-      execute: vi.fn(async (): Promise<ToolResult> => ({
-        toolCallId: '',
-        success: true,
-        output: 'read ok',
-      })),
+      execute: vi.fn(async (_name: string, _args: unknown, context: { abortSignal: AbortSignal }): Promise<ToolResult> => {
+        // 引擎给每次工具调用派生独立 controller（inactivity 超时可单独 abort 单个工具），
+        // 但必须链接 run 级信号：run abort 时工具 signal 同步 abort。
+        signalAbortedBeforeRunAbort = context.abortSignal.aborted;
+        controller.abort();
+        signalAbortedAfterRunAbort = context.abortSignal.aborted;
+        return {
+          toolCallId: '',
+          success: true,
+          output: 'read ok',
+        };
+      }),
     };
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
@@ -1563,11 +1647,10 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       makeToolCall('tool-abort-signal', 'file.txt'),
     ]);
 
-    expect(toolExecutor.execute).toHaveBeenCalledWith(
-      'read_file',
-      { path: 'file.txt' },
-      expect.objectContaining({ abortSignal: controller.signal }),
-    );
+    const toolSignal = vi.mocked(toolExecutor.execute).mock.calls[0]?.[2]?.abortSignal;
+    expect(toolSignal).toBeInstanceOf(AbortSignal);
+    expect(signalAbortedBeforeRunAbort).toBe(false);
+    expect(signalAbortedAfterRunAbort).toBe(true);
   });
 
   it('injects validation feedback after writing a game HTML artifact', async () => {

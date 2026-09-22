@@ -22,6 +22,7 @@ const FALLBACK_SPLIT_COUNTS: EvalRunPanelProbe['splitCounts'] = {
   'held-in': 76,
   'held-out': 52,
   safety: 12,
+  core: 0, // core 是可选桶：切分文件没有它就显示 0，别让面板承诺后端会拒绝的题数
 };
 
 function readSplitCounts(repositoryRoot?: string): EvalRunPanelProbe['splitCounts'] {
@@ -31,13 +32,14 @@ function readSplitCounts(repositoryRoot?: string): EvalRunPanelProbe['splitCount
       splitsPath(repositoryRoot),
       'utf8',
     )) as Record<string, unknown>;
-    const count = (key: 'heldIn' | 'heldOut' | 'safety', fallback: number): number => (
+    const count = (key: 'heldIn' | 'heldOut' | 'safety' | 'core', fallback: number): number => (
       Array.isArray(parsed[key]) ? parsed[key].length : fallback
     );
     return {
       'held-in': count('heldIn', FALLBACK_SPLIT_COUNTS['held-in']),
       'held-out': count('heldOut', FALLBACK_SPLIT_COUNTS['held-out']),
       safety: count('safety', FALLBACK_SPLIT_COUNTS.safety),
+      core: count('core', FALLBACK_SPLIT_COUNTS.core),
     };
   } catch {
     return FALLBACK_SPLIT_COUNTS;
@@ -64,6 +66,7 @@ export async function inspectEvalRunPanel(): Promise<EvalRunPanelProbe> {
     else if (record.promptHash !== getAiReviewPromptHash(id)) reason = 'prompt_changed';
     else if (judge && (record.endpoint !== judge.baseUrl || record.judgeModel !== judgeIdentity)) reason = 'judge_changed';
     else if (record.pairs < CALIBRATION_TRUST_THRESHOLDS.minPairs) reason = 'not_enough_pairs';
+    else if ((record.abstainRate ?? 0) > CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate) reason = 'abstain_rate';
     else if (!isTrustedCalibration(record)) reason = 'below_threshold';
     return {
       dim: id,

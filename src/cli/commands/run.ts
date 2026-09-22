@@ -13,6 +13,7 @@ import { extractJSON } from '../utils/jsonExtractor';
 import { validateSchema, formatValidationErrors, type JSONSchema } from '../utils/schemaValidator';
 import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
 import { resolveCLIPermissionModeFlag, type CLIPermissionMode } from '../permissionPolicy';
+import { resolveRunExitCode } from '../exitCodes';
 
 /**
  * Read stdin when piped (non-TTY)
@@ -196,6 +197,7 @@ export const runCommand = new Command('run')
         tools: options.tools,
         disallowedTools: options.disallowedTools,
         statusFile: options.statusFile,
+        originKind: 'headless',
       });
 
       // 恢复会话（如果指定）
@@ -332,9 +334,9 @@ export const runCommand = new Command('run')
         }
       }
 
-      // 设置退出码并退出
+      // 设置退出码并退出（0 正常 / 1 异常失败 / 2 撞最大轮次部分完成，见 cli/exitCodes.ts）
       await cleanup();
-      process.exit(result.success ? 0 : 1);
+      process.exit(resolveRunExitCode(result));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
 

@@ -18,7 +18,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: git-status
     type: task
-    category: git_workflow
+    category: task_completion
+    tags: [git_workflow]
     difficulty: easy
     description: "查看 Git 状态"
     setup:
@@ -30,6 +31,7 @@ cases:
 
   - id: git-log
     type: task
+    category: task_completion
     description: "查看 Git 提交历史"
     setup:
       - "mkdir -p test-git-repo && git -C test-git-repo init && git -C test-git-repo config user.email 'test@test.com' && git -C test-git-repo config user.name 'Test' && echo 'v1' > test-git-repo/file.txt && git -C test-git-repo add . && git -C test-git-repo commit -m 'first commit' && echo 'v2' > test-git-repo/file.txt && git -C test-git-repo add . && git -C test-git-repo commit -m 'second commit'"
@@ -45,6 +47,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: git-diff-analysis
     type: task
+    category: task_completion
     description: "分析 Git diff 并解释变更"
     setup:
       - |
@@ -67,6 +70,7 @@ cases:
 
   - id: git-commit-message
     type: task
+    category: task_completion
     description: "根据变更生成 commit message"
     setup:
       - |
@@ -84,6 +88,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: git-branch-create
     type: task
+    category: task_completion
     description: "创建分支并提交"
     setup:
       - "mkdir -p test-git-repo && cd test-git-repo && git init && git config user.email 'test@test.com' && git config user.name 'Test' && echo 'init' > file.txt && git add . && git commit -m 'init'"
@@ -93,6 +98,7 @@ cases:
 
   - id: git-conflict-awareness
     type: conversation
+    category: task_completion
     description: "识别合并冲突"
     setup:
       - |

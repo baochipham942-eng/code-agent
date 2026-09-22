@@ -7,6 +7,7 @@ import { getConfigService, getLangfuseService, getBudgetService, BudgetAlertLeve
 import { logCollector } from '../../../mcp/logCollector.js';
 import { ContextLengthExceededError } from '../../../model/modelRouter';
 import { createSnapshotHandler } from '../../../session/streamSnapshot';
+import { UNATTENDED_STREAM_BREAK_CIRCUIT, UNATTENDED_STREAM_RECONNECT_MAX } from '../../../../shared/constants';
 import {
   getCoreToolDefinitions,
   getLoadedDeferredToolDefinitions,
@@ -37,6 +38,7 @@ import { getAdaptiveRouter } from '../../../model/adaptiveRouter';
 import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
+import { emitOverflowRecoverySignal } from './compressionSignal';
 import {
   seedArtifactRepairGuardFromContext,
 } from '../artifactRepairGuard';
@@ -49,7 +51,12 @@ import {
   contentHasImageParts,
   runVisionPreflightCandidates,
 } from './visionPreflight';
-import { writeAgentRecoveryNotice } from './systemContextStack';
+import {
+  writeAgentRecoveryNotice,
+  persistStreamedPartialBeforeResend,
+  STREAM_BREAK_SEGMENT_MARKER,
+  INFERENCE_ERROR_PARTIAL_MARKER,
+} from './systemContextStack';
 import {
   broadcastVisionPreflightUnavailable,
   buildAiSdkAdaptiveFallbackInfo,
@@ -65,20 +72,21 @@ import {
 } from './inferenceToolStrategy';
 import {
   buildArtifactValidationAttemptCompletionResponse,
+  buildCompactArtifactRepairWriteRetryOptions,
   capArtifactRepairMaxTokens,
   capOutputTokens,
   dedupeToolDefinitions,
   emitAssistantMessageDelta,
   filterToolsForArtifactRepair,
-  getNetworkRetryBudget,
   isArtifactRepairFullRewritePriority,
   isArtifactRepairMode,
   isArtifactRepairWritePriority,
+  runNetworkErrorRecovery,
   startArtifactModelWaitProgress,
 } from './inferenceArtifactRepair';
 import { withNativeModelOperation } from './nativeModelCheckpoint';
 import { runInferenceWithTelemetry } from './inferenceTelemetry';
-import { completeRequestManifest, recordRequestManifest, withActualModelIdentity } from './requestManifest';
+import { completeRequestManifest, recordRequestManifest, recordInferenceRetryTrace, withActualModelIdentity } from './requestManifest';
 import type { TraceEventDataMap } from '../turnTrace';
 import {
   applyCommandCenterPreannounce,
@@ -767,7 +775,11 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
 
     // 原始 chunk 边来边进 turn（abort 时留住半截），同时喂给按整段判定的证据流。
     const pushContent = (text: string) => { ctx.runtime.turn.appendStreamedContent(text); contentStreamFilter.push(text); };
-    const streamCallback: StreamCallback = (chunk) => {
+    // ADR-068 D4：无人值守轮（loop/cron·heartbeat·channel 会话、async_agent、goal）续接取高预算，同 run 连续断流轮数到阈值熔断（预算 0）；前台不传，adapter 用默认预算
+    const unattendedRun = ctx.runtime.unattendedTurn === true || ctx.runtime.budgetScope === 'unattended' || Boolean(ctx.runtime.goalMode);
+    const streamReconnectMax = unattendedRun ? (ctx.inferenceRecovery.consecutiveStreamBreakRounds >= UNATTENDED_STREAM_BREAK_CIRCUIT ? 0 : UNATTENDED_STREAM_RECONNECT_MAX) : undefined;
+    let streamBrokeThisRound = false; let roundSucceeded = false;
+    const streamCallback: StreamCallback = async (chunk) => {
       if (typeof chunk === 'string') {
         pushContent(chunk);
       } else if (chunk.type === 'text') {
@@ -829,6 +841,30 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
             turnId: ctx.runtime.turn.currentTurnId,
           },
         });
+      } else if (chunk.type === 'stream_break') {
+        // ADR-068 刀 3 B2：adapter 决定断流重发（续答属新一次生成）。先保 partial 再收
+        // 续写 delta，续答另起一段不 append 拼缝（D2）。UI 信号是刀 4，这里只落库。
+        await persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, `断流续接：${chunk.error ?? 'unknown'}`);
+      } else if (chunk.type === 'reconnecting') {
+        // ADR-068 刀 4（D5 UI 信号）：断流续接中——同一轮回答不重置 turn（voiceCall
+        // reconnecting 先例），renderer 在同一 streaming 消息内嵌「连接中断，正在续接 n/N」
+        // 状态行；B2 档同时用于分段定格（断点消息定格、续答另起一段带一次性说明）。
+        // host 只发稳定 code 与计数，文案在 renderer i18n。
+        streamBrokeThisRound = true;
+        ctx.runtime.onEvent({
+          type: 'stream_reconnecting',
+          data: {
+            turnId: ctx.runtime.turn.currentTurnId,
+            attempt: chunk.attempt ?? 1,
+            maxReconnects: chunk.maxReconnects ?? 1,
+            segment: chunk.segment ?? 'b2',
+          },
+        });
+      } else if (chunk.type === 'error') {
+        // ADR-068 as-built 备注 1 收编：streamCallback 原本没有 error 分支，流中断对日志
+        // 不可见。renderer 呈现仍是刀 4；这里先让中断在日志层可见（带 provider 摘要的
+        // 用户向文案 + errorCode）。
+        logger.warn('[AgentLoop] 流式中断（streamCallback error 分支）:', chunk.error ?? 'unknown', chunk.errorCode ?? '');
       }
     };
 
@@ -854,9 +890,13 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           turnId: ctx.runtime.turn.currentTurnId,
           workingDir: ctx.runtime.workingDirectory,
         }),
+        // issue #1989：超时/瞬态重试与断流续接进会话 trace——provider 挂起时
+        // trace 不再止于 request_manifest，能看到第几次超时、退避多久、是否续接。
+        onInferenceRetry: recordInferenceRetryTrace(ctx, llmCallId),
         artifactRepairActive: Boolean(ctx.runtime.artifact.repairGuard),
         artifactRepairWritePriority,
         artifactRepairFullRewritePriority,
+        ...(streamReconnectMax !== undefined ? { streamReconnectMax } : {}),
       };
       requestManifestData = recordRequestManifest(ctx, { requestId: llmCallId, messages: modelMessages, assembledMessages: builtModelMessages, tools: effectiveTools, requestConfig });
       // 这次模型调用的整个生命周期（prepared → dispatched → succeeded/abandoned）
@@ -869,8 +909,11 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           ? runMaxModeInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, engineOptions)
           : runEngineInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, inferenceAbortController.signal, engineOptions)
       ));
+      roundSucceeded = true;
     } finally {
       stopArtifactProgress();
+      // 熔断计数：断流轮 +1；只有「成功且无断流」才清零——熔断轮（预算 0 不发 reconnecting）再断流抛错时计数保持，熔断不被一次失败解除（PR #1839 ai-review Important）
+      if (unattendedRun) ctx.inferenceRecovery.consecutiveStreamBreakRounds = streamBrokeThisRound ? ctx.inferenceRecovery.consecutiveStreamBreakRounds + 1 : roundSucceeded ? 0 : ctx.inferenceRecovery.consecutiveStreamBreakRounds;
     }
     if (!ctx.runtime.control.isCancelled) contentStreamFilter.finish(response.content);
     response = applyCommandCenterPreannounce(response, commandCenterPreannounce);
@@ -987,6 +1030,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           newMessageCount: ctx.runtime.messages.length,
         },
       } as AgentEvent);
+      emitOverflowRecoverySignal(ctx, error.requestedTokens);
 
       // 尝试自动压缩 + 重试
       try {
@@ -1038,6 +1082,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     const isIncompleteToolStream = /stream ended before \[DONE\] with tool calls|refusing to execute incomplete tool arguments|invalid streamed tool arguments/i.test(errMsg);
     if (isIncompleteToolStream && artifactRequest && !ctx.inferenceRecovery._artifactNonStreamingRetried) {
       ctx.inferenceRecovery._artifactNonStreamingRetried = true;
+      // ADR-068 刀 3 收编：已吐 delta 后的重发先保片段再重发（重试产物是新的一条消息）。
+      await persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, 'artifact 非流式重发');
       logger.warn('[AgentLoop] Artifact tool stream ended incomplete; retrying once with non-streaming inference');
       logCollector.agent('WARN', 'Artifact tool stream incomplete; retrying non-streaming');
       await writeAgentRecoveryNotice(
@@ -1074,6 +1120,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       && !ctx.inferenceRecovery._artifactRepairCompactWriteRetried;
     if (shouldCompactRetryArtifactRepairWrite) {
       ctx.inferenceRecovery._artifactRepairCompactWriteRetried = true;
+      // ADR-068 刀 3 收编：同上——compact 重试也是已吐 delta 后的整轮重发，先保片段再重发。
+      await persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, 'artifact 修复 compact 重发');
       logger.warn('[AgentLoop] Artifact repair write-priority timed out; retrying once with compact mutation-only context');
       logCollector.agent('WARN', 'Artifact repair write-priority timed out; retrying compact mutation-only context');
       ctx.taskProgress.emitTaskProgress('generating', 'artifact 修复写入超时，正在用更小上下文重试...');
@@ -1095,16 +1143,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           compactConfig,
           undefined,
           compactAbortController.signal,
-          {
-            artifactRepairActive: true,
-            artifactRepairWritePriority: true,
-            artifactRepairFullRewritePriority,
-            forceNonStreaming: true,
-            disableProviderTransientRetry: true,
-            requestTimeoutMs: 90_000,
-            firstByteTimeoutMs: 20_000,
-            inactivityTimeoutMs: 45_000,
-          },
+          buildCompactArtifactRepairWriteRetryOptions(artifactRepairFullRewritePriority),
         );
         ctx.runtime.control.setInferenceAbortController(null);
         ctx.inferenceRecovery._artifactRepairCompactWriteRetried = false;
@@ -1140,37 +1179,15 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         logger.error('[AgentLoop] Compact artifact repair write retry also failed:', retryErr);
       }
     }
-    const isNetworkError = /ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket hang up|TLS connection|ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|bad record mac|network socket disconnected|request timeout|timeout after \d+ms|timed out/i.test(errMsg)
-      || /ECONNRESET|ETIMEDOUT|ECONNREFUSED/i.test(errCode || '');
-    const maxNetworkRetries = getNetworkRetryBudget(
-      errMsg,
-      errCode,
-      Boolean(ctx.runtime.artifact.repairGuard),
-    );
-    const networkRetryCount = ctx.runtime.contextHealth.networkRetryCount ?? (ctx.inferenceRecovery._networkRetried ? 1 : 0);
-    const shouldRetryNetworkError =
-      isNetworkError
-      && networkRetryCount < maxNetworkRetries
-      && ctx.runtime.inferenceOptions?.disableRuntimeNetworkRetry !== true
-      && !(ctx.runtime.artifact.repairGuard && isSlowProviderTimeout);
-    if (shouldRetryNetworkError) {
-      ctx.inferenceRecovery._networkRetried = true;
-      ctx.runtime.contextHealth.setNetworkRetryCount(networkRetryCount + 1);
-      logger.warn(`[AgentLoop] Network error "${errMsg}" (code=${errCode}), retrying inference (${ctx.runtime.contextHealth.networkRetryCount}/${maxNetworkRetries})...`);
-      await new Promise(r => setTimeout(r, 2000));
-      try {
-        const retryResult = await ctx.inference();
-        ctx.inferenceRecovery._networkRetried = false;
-        ctx.runtime.contextHealth.setNetworkRetryCount(0);
-        return retryResult;
-      } catch (retryErr) {
-        if ((ctx.runtime.contextHealth.networkRetryCount ?? 0) >= maxNetworkRetries) {
-          ctx.inferenceRecovery._networkRetried = false;
-          ctx.runtime.contextHealth.setNetworkRetryCount(0);
-        }
-        logger.error('[AgentLoop] Network retry also failed:', retryErr);
-      }
-    }
+    // loop 层网络瞬态重试（含 ADR-068 刀 3 的「先保片段再重发」收编），返回 undefined =
+    // 不重试/重试失败，回落下方终错路径。
+    const networkRetryResult = await runNetworkErrorRecovery(ctx, { errMsg, errCode, isSlowProviderTimeout });
+    if (networkRetryResult) return networkRetryResult;
+
+    // ADR-068 刀 3：补齐 error 路径不落库的缺口——preserveStreamedPartial 原本只挂在
+    // cancel/steer 上，推理终错（含断流续接预算耗尽转 error）时已吐 partial 直接丢。
+    // 此处 partial 必然未被落库（落库与 reset 在成功/分段路径已成对出现），保一次不重。
+    await persistStreamedPartialBeforeResend(ctx, INFERENCE_ERROR_PARTIAL_MARKER, '推理终错保留 partial');
 
     throw error;
   }

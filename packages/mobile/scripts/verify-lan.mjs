@@ -46,7 +46,7 @@ await build({ stdin: { contents: `
     companion: { read: () => window.lanRead(), write: value => window.lanWrite(value), scan: () => window.lanScan(), post: (url, body) => window.lanPost(url, body) },
     appInfo: { read: async () => ({ version: 'test', build: 'lan-browser' }) },
     lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
-    keyboard: { subscribe: async () => () => {}, hide: async () => {} },
+    keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
     systemBars: { setStyle: async () => {} },
   }} />);
 `, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, platform: 'browser', format: 'iife', jsx: 'automatic', outfile: resolve(directory, 'browser.js') });
@@ -98,7 +98,15 @@ try {
   await page.screenshot({ path: resolve(directory, 'connected.png') });
   loseReceipt = true;
   await page.getByTestId('draft').fill('browser-private-retry'); await page.getByTestId('send').click();
-  await page.getByText('正在核对电脑是否已接收，请勿重复发送', { exact: true }).waitFor();
+  // 这句提示现在要憋过 pendingNoticeDelayMs 才出现（N-MOBILE-PENDING-NOISE），贴着 Playwright
+  // 的默认 5s 超时只剩两秒余量 ⇒ 显式给足超时，别靠默认值（grok ai-review PR#1903 Nit④）。
+  //
+  // 曾改锚「草稿被清空」，那是**恒不成立**的判据：草稿只在 ack 回来后经 acknowledgeDraft 清，
+  // 而这条路径（loseReceipt=true）就是故意把 ack 丢掉的——它永远等不到，整条浏览器验收会挂死
+  // （grok ai-review PR#1903 Important）。换判据之前必须问一句：这条路径上它会不会成立。
+  // 15s 写字面量不 import 常量：这是 .mjs，直接 import 那个 .ts 常量文件要靠 Node 的类型剥离，
+  // 是给验收脚本加一条我在这里跑不到的运行时依赖。余量留得够大，阈值再调也不会贴上来。
+  await page.getByText('正在核对电脑是否已接收，请勿重复发送', { exact: true }).waitFor({ timeout: 15_000 });
   await page.reload();
   await page.getByText('LAN fixture response 2', { exact: true }).waitFor();
   assert.equal(await page.getByTestId('draft').inputValue(), ''); assert.equal(fixture.count(), 2); checks.push('reload-reconciles-without-duplicate');

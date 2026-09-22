@@ -1,4 +1,4 @@
-import type { MessageAttachment } from '../../../../shared/contract/message';
+import type { Message, MessageAttachment } from '../../../../shared/contract/message';
 import {
   DataFormatVersionError,
   migrateDataFormatToCurrent,
@@ -17,6 +17,8 @@ import type {
   PortableMessageV2,
   PortableModelConfigV2,
   PortableSessionV2,
+  PortableToolCallV1,
+  PortableToolResultV1,
   SessionExportDecodeScope,
   SessionExportEnvelopeV2,
   SessionExportSourceV2,
@@ -27,66 +29,115 @@ import {
   LOCAL_SESSION_FORK_OWNER_SCOPE_ID,
   SESSION_EXPORT_ENVELOPE_SCHEMA,
   SESSION_EXPORT_ENVELOPE_VERSION,
-  SessionForkPortabilityError,
 } from '../../../../shared/contract/sessionForkPortability';
 import { canonicalJson, deepPortableClone, portabilityDigest, withoutDigest } from './canonical';
-import { validatePortableConversationHistory } from './conversationHistory';
+import {
+  isForbiddenStructuralKey,
+  normalizeKey,
+  redactSecretText,
+  validatePortableConversationHistory,
+} from './conversationHistory';
 import {
   sanitizePortableSessionWorkspaceV2,
   validatePortableSessionWorkspaceV2,
 } from './portableWorkspaceEvidence';
+import {
+  assertDigest,
+  assertInteger,
+  assertNonEmptyString,
+  assertObject,
+  assertOnlyKeys,
+  assertPortableDigest,
+  fail,
+  validateMessageOrdinals,
+  validatePortableSessionOrigin,
+} from './portableValidation';
 
+// Neo's own runtime/session-management state — queues, leases, diffs, snapshots — that
+// has no export meaning even when it isn't credential-shaped. This is a distinct concern
+// from FORBIDDEN_STRUCTURAL_KEYS/MARKERS in conversationHistory.ts (which target
+// credential- and filesystem-path-shaped keys in arbitrary user/tool data): a key here
+// is forbidden because of *what it is* (process state), not *what it looks like*
+// (a secret). isForbiddenPortableKey below checks both sets through one shared
+// normalize+match so a key forbidden on one export channel is forbidden on the other.
 const FORBIDDEN_RUNTIME_KEYS = new Set([
-  'absoluteWorktreePath', 'apiKey', 'approvalQueue', 'approvalRequests',
-  'baseUrl', 'cwd', 'durableWaitingInput', 'executablePermission',
-  'externalSessionId', 'lease', 'leaseId', 'logPath',
+  'absoluteWorktreePath', 'accountName', 'apiKey', 'approvalQueue', 'approvalRequests',
+  'baseUrl', 'chatName', 'cwd', 'durableWaitingInput', 'executablePermission',
+  'externalSessionId', 'filePath', 'lease', 'leaseId', 'logPath',
   'pendingApproval', 'pendingApprovals', 'permissionGrant', 'queuedInput',
-  'queuedInputs', 'runId', 'sourceRunId', 'streamSnapshot',
-  'taskLease', 'todo', 'todos', 'workingDirectory',
+  'queuedInputs', 'retryAttachments', 'runId', 'sourceRunId', 'streamSnapshot',
+  'taskLease', 'todo', 'todos', 'turnDiff', 'workingDirectory',
 ]);
 
-function fail(code: ConstructorParameters<typeof SessionForkPortabilityError>[0], message: string): never {
-  throw new SessionForkPortabilityError(code, message);
+function isForbiddenPortableKey(key: string): boolean {
+  if (isForbiddenStructuralKey(key)) return true;
+  const normalized = normalizeKey(key);
+  return [...FORBIDDEN_RUNTIME_KEYS].some((candidate) => normalized === normalizeKey(candidate));
 }
 
-function assertObject(value: unknown, label: string): asserts value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    fail('INVALID_ENVELOPE', `${label} must be an object`);
+function sanitizePortableValue(value: unknown): unknown {
+  if (typeof value === 'string') return redactSecretText(value);
+  if (Array.isArray(value)) return value.map(sanitizePortableValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key, item]) => item !== undefined && !isForbiddenPortableKey(key))
+      .map(([key, item]) => [key, sanitizePortableValue(item)]),
+  );
+}
+
+/** Schema spellings only. File_Path / File.Path normalize like the runtime key filePath. */
+const EXACT_TOOL_PATH_KEYS = new Set(['path', 'file_path', 'notebook_path']);
+const PATH_ARGUMENT_TOOLS = new Set([
+  'read', 'readfile', 'edit', 'write', 'grep', 'glob', 'notebookedit',
+]);
+
+function keepsPathArguments(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  return PATH_ARGUMENT_TOOLS.has(toolName.replace(/[^A-Za-z0-9]/g, '').toLowerCase());
+}
+
+function isNormalizedRuntimeIdentityKey(key: string): boolean {
+  const normalized = normalizeKey(key);
+  for (const candidate of FORBIDDEN_RUNTIME_KEYS) {
+    if (normalized === normalizeKey(candidate)) return true;
   }
+  return false;
 }
 
-function assertNonEmptyString(value: unknown, label: string): asserts value is string {
-  if (typeof value !== 'string' || value.length === 0) {
-    fail('INVALID_ENVELOPE', `${label} must be a non-empty string`);
-  }
-}
-
-function assertInteger(value: unknown, label: string): asserts value is number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) {
-    fail('ORDINAL_INVALID', `${label} must be a non-negative safe integer`);
-  }
-}
-
-function assertOnlyKeys(
-  value: Record<string, unknown>,
-  allowed: readonly string[],
-  label: string,
-): void {
-  const allowedKeys = new Set(allowed);
-  for (const key of Object.keys(value)) {
-    if (!allowedKeys.has(key)) {
-      fail('INVALID_ENVELOPE', `${label}.${key} is not part of the portable schema`);
+/** toolCalls[].arguments keep every non-secret key. Credential-shaped keys are
+ *  value-masked. file_path / path / notebook_path stay only for file tools.
+ *  Other channels stay on sanitizePortableValue, which drops the key entirely. */
+function sanitizeToolArguments(value: unknown, toolName?: string): unknown {
+  if (typeof value === 'string') return redactSecretText(value);
+  if (Array.isArray(value)) return value.map((item) => sanitizeToolArguments(item, toolName));
+  if (!value || typeof value !== 'object') return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (item === undefined) continue;
+    // Exact runtime-identity keys (apiKey, filePath, cwd, …) still cannot appear:
+    // assertNoRuntimeIdentity rejects the key even when the value is redacted.
+    if (FORBIDDEN_RUNTIME_KEYS.has(key)) continue;
+    // File_Path / File.Path normalize to the same key as filePath, so they are
+    // runtime identity too. Only the schema spellings stay, and only on file tools.
+    if (isNormalizedRuntimeIdentityKey(key) && !EXACT_TOOL_PATH_KEYS.has(key)) continue;
+    // Credential-shaped keys are masked before recursion, including objects and numbers.
+    // api_key_path is not one of the schema path spellings, so it stays masked.
+    if (isForbiddenPortableKey(key) && !(keepsPathArguments(toolName) && EXACT_TOOL_PATH_KEYS.has(key))) {
+      result[key] = '[REDACTED]';
+      continue;
     }
+    if (item && typeof item === 'object') {
+      result[key] = sanitizeToolArguments(item, toolName);
+      continue;
+    }
+    result[key] = typeof item === 'string' ? redactSecretText(item) : item;
   }
+  return result;
 }
 
-function assertPortableDigest(value: unknown, label: string): asserts value is string {
-  if (
-    typeof value !== 'string'
-    || !/^(?:sha256:)?[a-f0-9]{64}$/i.test(value)
-  ) {
-    fail('DIGEST_MISMATCH', `${label} must be a SHA-256 digest`);
-  }
+function sanitizePortableContentParts(source: Message['contentParts']): Message['contentParts'] {
+  return sanitizePortableValue(source) as Message['contentParts'];
 }
 
 function parseJson(value: string | unknown, label: string): unknown {
@@ -162,6 +213,49 @@ function sanitizeAttachment(source: MessageAttachment): PortableAttachmentProven
   return attachment;
 }
 
+function sanitizeToolCall(source: NonNullable<Message['toolCalls']>[number]): PortableToolCallV1 {
+  const sanitized: PortableToolCallV1 = {
+    id: source.id,
+    name: source.name,
+  };
+  if (source.arguments !== undefined) {
+    sanitized.arguments = sanitizeToolArguments(source.arguments, source.name) as Record<string, unknown>;
+  }
+  if (source.result) {
+    sanitized.result = {
+      success: source.result.success,
+      ...(source.result.output !== undefined
+        ? { output: sanitizePortableValue(source.result.output) as string } : {}),
+      ...(source.result.error !== undefined
+        ? { error: sanitizePortableValue(source.result.error) as string } : {}),
+      ...(source.result.duration !== undefined ? { duration: source.result.duration } : {}),
+      // outputPath/metadata dropped: local filesystem path and free-form blob (imagePath etc.)
+    };
+  }
+  if (source.shortDescription !== undefined) {
+    sanitized.shortDescription = sanitizePortableValue(source.shortDescription) as string;
+  }
+  if (source.stepLabel !== undefined) sanitized.stepLabel = source.stepLabel;
+  if (source.targetContext !== undefined) {
+    sanitized.targetContext = sanitizePortableValue(source.targetContext) as PortableToolCallV1['targetContext'];
+  }
+  if (source.expectedOutcome !== undefined) {
+    sanitized.expectedOutcome = sanitizePortableValue(source.expectedOutcome) as string;
+  }
+  return sanitized;
+}
+
+function sanitizeToolResult(source: NonNullable<Message['toolResults']>[number]): PortableToolResultV1 {
+  return {
+    toolCallId: source.toolCallId,
+    success: source.success,
+    ...(source.output !== undefined ? { output: sanitizePortableValue(source.output) as string } : {}),
+    ...(source.error !== undefined ? { error: sanitizePortableValue(source.error) as string } : {}),
+    ...(source.duration !== undefined ? { duration: source.duration } : {}),
+    // outputPath/metadata dropped: local filesystem path and free-form blob (imagePath etc.)
+  };
+}
+
 function sanitizeArtifacts(source: SessionExportSourceV2['messages'][number]['artifacts']): PortableArtifactProvenanceV2[] | undefined {
   if (!source?.length) return undefined;
   return source.map((artifact) => {
@@ -214,6 +308,10 @@ function sanitizeSession(
   };
   if (raw.type !== undefined) portable.type = raw.type;
   if (raw.origin !== undefined) {
+    // N-EXTHISTORY-IMPORT-WIRE: external_history provenance had zero production writers
+    // (nothing ever set origin.metadata.kind === 'external_history'), so this branch and
+    // its matching validatePortableSessionOrigin check were removed as dead code that
+    // would silently no-op forever. Reintroduce both together with the import mapper.
     portable.origin = {
       kind: raw.origin.kind,
       ...(raw.origin.name !== undefined ? { name: raw.origin.name } : {}),
@@ -238,9 +336,29 @@ function sanitizeMessages(source: SessionExportSourceV2): PortableMessageV2[] {
       sessionId: source.session.id,
       ordinal,
       role: raw.role,
-      content: raw.content,
+      content: sanitizePortableValue(raw.content) as string,
       timestamp: raw.timestamp,
     };
+    if (raw.contentParts !== undefined) {
+      portable.contentParts = sanitizePortableContentParts(raw.contentParts);
+    }
+    if (raw.toolCalls?.length) {
+      portable.toolCalls = raw.toolCalls.map(sanitizeToolCall);
+    }
+    if (raw.toolResults?.length) {
+      portable.toolResults = raw.toolResults.map(sanitizeToolResult);
+    }
+    if (raw.thinking !== undefined) {
+      portable.thinking = sanitizePortableValue(raw.thinking) as string;
+    }
+    // message.metadata is not exported (N-FORK-PORTABILITY round 3): it's a free-form
+    // runtime blob (turnDiff/retryAttachments/artifactLocator.filePath/channel names/...)
+    // that isn't needed for round-trip — contentParts+toolCalls already carry what
+    // rendering needs — and the denylist scrub kept leaking new key shapes every round.
+    // contentParts and toolResults still go through sanitizePortableValue, which drops
+    // forbidden keys. toolCalls[].arguments go through sanitizeToolArguments: credential
+    // values are masked, exact runtime-identity keys are dropped, and path keys stay
+    // only for file tools.
     if (raw.visibility !== undefined) portable.visibility = raw.visibility;
     if (raw.isMeta !== undefined) portable.isMeta = raw.isMeta;
     if (raw.source !== undefined) portable.source = raw.source;
@@ -353,12 +471,6 @@ function detachedLineage(
     })],
     messageMappings: [],
   });
-}
-
-function assertDigest(actual: string, expected: string, label: string): void {
-  if (actual !== expected) {
-    fail('DIGEST_MISMATCH', `${label} digest does not match its canonical payload`);
-  }
 }
 
 function validateLineageDigests(lineage: ForkLineageEnvelopeV1): void {
@@ -616,89 +728,6 @@ export function decodeForkLineageEnvelopeV1(
   return deepPortableClone(lineage);
 }
 
-function validateMessageOrdinals(messages: PortableMessageV2[], sessionIds: ReadonlySet<string>): void {
-  const grouped = new Map<string, PortableMessageV2[]>();
-  const allMessageIds = new Set<string>();
-  for (const message of messages) {
-    assertObject(message, 'portable message');
-    assertOnlyKeys(message as unknown as Record<string, unknown>, [
-      'id',
-      'sessionId',
-      'ordinal',
-      'role',
-      'content',
-      'timestamp',
-      'visibility',
-      'isMeta',
-      'source',
-      'subtype',
-      'attachments',
-      'artifacts',
-      'payloadDigest',
-    ], `messages[${message.id}]`);
-    if (allMessageIds.has(message.id)) {
-      fail('REFERENCE_NOT_CLOSED', `duplicate message id ${message.id}`);
-    }
-    allMessageIds.add(message.id);
-    if (!sessionIds.has(message.sessionId)) {
-      fail('REFERENCE_NOT_CLOSED', `message ${message.id} references missing session ${message.sessionId}`);
-    }
-    assertInteger(message.ordinal, `message ${message.id} ordinal`);
-    const group = grouped.get(message.sessionId) ?? [];
-    group.push(message);
-    grouped.set(message.sessionId, group);
-    for (const attachment of message.attachments ?? []) {
-      assertObject(attachment, `message ${message.id} attachment`);
-      const raw = attachment as unknown as Record<string, unknown>;
-      assertOnlyKeys(raw, [
-        'id',
-        'type',
-        'category',
-        'name',
-        'size',
-        'mimeType',
-        'pageCount',
-        'sheetCount',
-        'rowCount',
-        'language',
-        'contentDigest',
-      ], `messages[${message.id}].attachments[${attachment.id}]`);
-      assertPortableDigest(
-        attachment.contentDigest,
-        `messages[${message.id}].attachments[${attachment.id}].contentDigest`,
-      );
-    }
-    for (const artifact of message.artifacts ?? []) {
-      assertObject(artifact, `message ${message.id} artifact`);
-      assertOnlyKeys(artifact as unknown as Record<string, unknown>, [
-        'id',
-        'type',
-        'title',
-        'version',
-        'parentId',
-        'contentDigest',
-      ], `messages[${message.id}].artifacts[${artifact.id}]`);
-      assertPortableDigest(artifact.contentDigest, `artifact ${artifact.id}.contentDigest`);
-    }
-  }
-  for (const sessionId of sessionIds) {
-    const entries = grouped.get(sessionId) ?? [];
-    const ordinals = entries.map((item) => item.ordinal).sort((a, b) => a - b);
-    ordinals.forEach((ordinal, index) => {
-      if (ordinal !== index) {
-        fail('ORDINAL_INVALID', `messages for ${sessionId} must use contiguous ordinals from zero`);
-      }
-    });
-  }
-  for (const message of messages) {
-    assertDigest(
-      message.payloadDigest,
-      portabilityDigest(withoutDigest(message)),
-      `message ${message.id}`,
-    );
-  }
-}
-
 export function validateSessionExportEnvelopeV2(
   envelope: SessionExportEnvelopeV2,
   expectedScope?: SessionExportDecodeScope,
@@ -790,12 +819,7 @@ export function validateSessionExportEnvelopeV2(
       );
     }
     if (session.origin) {
-      assertObject(session.origin, `sessions[${session.id}].origin`);
-      assertOnlyKeys(
-        session.origin as unknown as Record<string, unknown>,
-        ['kind', 'name'],
-        `sessions[${session.id}].origin`,
-      );
+      validatePortableSessionOrigin(session.origin, `sessions[${session.id}]`);
     }
     if (session.engine) {
       assertObject(session.engine, `sessions[${session.id}].engine`);
@@ -900,6 +924,15 @@ export function validateSessionExportEnvelopeV2(
   } else if (envelope.detachedProvenance) {
     fail('LINEAGE_INVALID', 'subtree exports cannot carry detached provenance');
   }
+  // Digest self-consistency is checked unconditionally — never skipped based on
+  // anything the envelope itself claims (N-FORK-PORTABILITY-IDENTITY: an earlier design
+  // let a `legacyDigest` marker on the envelope bypass this recompute for
+  // migrated/grandfathered digests, but that marker travels on data that crosses trust
+  // boundaries just like everything else here — an external caller providing a raw
+  // envelope object (a sync transport row from another machine, a hand-built IPC
+  // payload) could set it and skip verification entirely. portabilityDigest is a pure
+  // function of content, so re-deriving it on every validate call is cheap and gives no
+  // legitimate case any reason to opt out.)
   assertDigest(envelope.payloadDigest, portabilityDigest(withoutDigest(envelope)), 'session export envelope');
 }
 

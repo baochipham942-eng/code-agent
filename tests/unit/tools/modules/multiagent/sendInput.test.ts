@@ -161,7 +161,10 @@ describe('send_input behavior', () => {
         artifact: expect.objectContaining({ kind: 'text', sourceTool: 'send_input' }),
       });
     }
-    expect(guard.sendMessage).toHaveBeenCalledWith('a1', 'next step');
+    expect(guard.sendMessage).toHaveBeenCalledWith('a1', 'next step', undefined, expect.objectContaining({
+      senderKind: 'orchestrator',
+      sessionId: 'test',
+    }));
   });
 
   it('SpawnGuard hit 但 sendMessage 失败 → DOMAIN_ERROR', async () => {

@@ -11,7 +11,7 @@ import type {
 } from '../contract/queuedInput';
 import type { SkillDraftOrigin } from '../contract/agent';
 import type { ParsedSkill } from '../contract/agentSkill';
-import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, CanvasVideoRequest, CanvasVideoDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, MCPOAuthConsentRequest, MCPOAuthConsentResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
+import type { Message, PermissionResponse, Session, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, CanvasVideoRequest, CanvasVideoDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, MCPOAuthConsentRequest, MCPOAuthConsentResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
 import type { ServiceApiKey } from '../contract/configService';
 import type { DownloadResult, LocalSkillLibrary, SessionSkillMount, SkillCatalogPayload, SkillRecommendation, SkillRepository, StageRepositoryResult, UpdateResult } from '../contract/skillRepository';
 import type { SkillRegistryListItem } from '../contract/skillRegistry';
@@ -64,7 +64,7 @@ import type { NeoTagEvent } from '../contract/tag';
 
 import { IPC_CHANNELS } from './legacy-channels';
 
-import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults, SessionReviewItemsRequest, AgentTrajectoryQualitySummariesRequest, AgentTrajectoryCollectionUpdateRequest } from './types';
+import type { AgentMessageRequest, AgentCancelRequest, SessionExport, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults, SessionReviewItemsRequest, AgentTrajectoryQualitySummariesRequest, AgentTrajectoryCollectionUpdateRequest } from './types';
 import type { PostLaunchReport, PostLaunchScoringRequest, PostLaunchScoringResult } from '../contract/postLaunchScore';
 import type { AdminReviewQueueItem } from '../contract/productClosure';
 import type { AgentTrajectorySessionQualitySummary } from '../contract/agentTrajectory';
@@ -89,7 +89,6 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SESSION_LOAD]: (id: string) => Promise<Session>;
   [IPC_CHANNELS.SESSION_DELETE]: (id: string) => Promise<void>;
   [IPC_CHANNELS.SESSION_GET_MESSAGES]: (sessionId: string) => Promise<Message[]>;
-  [IPC_CHANNELS.SESSION_GET_TASKS]: (sessionId: string) => Promise<SessionTask[]>;
   [IPC_CHANNELS.SESSION_EXPORT]: (sessionId: string) => Promise<SessionExport>;
   [IPC_CHANNELS.SESSION_IMPORT]: (data: SessionExport) => Promise<string>;
   [IPC_CHANNELS.SESSION_ARCHIVE]: (sessionId: string) => Promise<Session>;
@@ -98,12 +97,6 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SESSION_SEARCH]: (payload: { query: string; options?: CrossSessionSearchOptions }) => Promise<CrossSessionSearchResults>;
   [IPC_CHANNELS.SESSION_GET_PLAN_TITLE]: (sessionId: string) => Promise<string | null>;
   [IPC_CHANNELS.SESSION_LIST_REVIEW_ITEMS]: (payload: SessionReviewItemsRequest) => Promise<Record<string, AdminReviewQueueItem[]>>;
-
-  // Memory (legacy - kept for compatibility)
-  [IPC_CHANNELS.MEMORY_GET_CONTEXT]: (query: string) => Promise<MemoryContextResult>;
-  [IPC_CHANNELS.MEMORY_SEARCH_CODE]: (query: string, topK?: number) => Promise<SearchResult[]>;
-  [IPC_CHANNELS.MEMORY_SEARCH_CONVERSATIONS]: (query: string, topK?: number) => Promise<SearchResult[]>;
-  [IPC_CHANNELS.MEMORY_GET_STATS]: () => Promise<MemoryStats>;
 
   // MCP
   [IPC_CHANNELS.MCP_GET_STATUS]: () => Promise<MCPStatus>;
@@ -134,11 +127,6 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY]: (payload: { service: ServiceApiKey; apiKey: string }) => Promise<void>;
   [IPC_CHANNELS.SETTINGS_GET_INTEGRATION]: (integration: string) => Promise<Record<string, string> | null>;
   [IPC_CHANNELS.SETTINGS_SET_INTEGRATION]: (payload: { integration: string; config: Record<string, string> }) => Promise<void>;
-
-  // Window
-  [IPC_CHANNELS.WINDOW_MINIMIZE]: () => Promise<void>;
-  [IPC_CHANNELS.WINDOW_MAXIMIZE]: () => Promise<void>;
-  [IPC_CHANNELS.WINDOW_CLOSE]: () => Promise<void>;
 
   // App
   [IPC_CHANNELS.APP_GET_VERSION]: () => Promise<string>;
@@ -273,6 +261,27 @@ export interface IpcInvokeHandlers {
   [SKILL_CHANNELS.SKILL_DISABLE]: (skillName: string) => Promise<void>;
   [SKILL_CHANNELS.SKILL_PROJECT_SET]: (skillName: string, enabled: boolean, workspacePath?: string) => Promise<void>;
   [SKILL_CHANNELS.SKILL_PROJECT_CLEAR]: (skillName: string, workspacePath?: string) => Promise<void>;
+  [SKILL_CHANNELS.SKILL_EXPORT]: (skillName: string, targetPath?: string) => Promise<{
+    success: boolean;
+    /** 建议保存文件名（<skillDirName>.skill.zip） */
+    fileName?: string;
+    /** sha256(payload zip)，不含 _meta.json */
+    contentHash?: string;
+    /** 未指定 targetPath 时返回 ZIP 内容（renderer 侧触发下载） */
+    archiveBase64?: string;
+    /** 指定 targetPath 时返回落盘路径 */
+    savedPath?: string;
+    error?: string;
+  }>;
+  [SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP]: (payload: {
+    zipPath?: string;
+    archiveBase64?: string;
+  }) => Promise<{
+    success: boolean;
+    skillName?: string;
+    pluginSpec?: string;
+    error?: string;
+  }>;
   [SKILL_CHANNELS.SESSION_MOUNT]: (sessionId: string, skillName: string, libraryId: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_UNMOUNT]: (sessionId: string, skillName: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_LIST]: (sessionId: string) => Promise<SessionSkillMount[]>;
@@ -741,6 +750,25 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_NOTICE]: (event: AgentNoticeEvent) => void;
   // Agent Registry change broadcast (custom .md agents 热加载推送)
   [IPC_CHANNELS.AGENTS_CHANGED]: (event: AgentsChangedEvent) => void;
+  // Companion relay pair-request（手机「登录找回电脑」：到达出全局卡片 / 消账收卡片）
+  [IPC_CHANNELS.COMPANION_PAIR_REQUEST]: (event: CompanionPairRequestEvent) => void;
+}
+
+/**
+ * companion:pair-request —— relay 找回配对（N-COMPANION-RELAY-ACCOUNT-RECOVER）在桌面上的
+ * 「新手机请求连接」卡片事件。request = 到达（带 4 位核对码，人眼与手机屏比对后表态）；
+ * gone = 挂起态消账（拒绝/超时/完成/连接断），卡片自收。
+ */
+export interface CompanionPairRequestEvent {
+  type: 'request' | 'gone';
+  requestId: string;
+  /** request 事件必带：XX 握手材料派生的 4 位核对码。 */
+  code?: string;
+  /** request 事件必带：卡片到点自收的本地期限。 */
+  expiresAt?: number;
+  /** request 事件必带：此刻电脑零个项目——同意只会登记零授权设备，卡片给「先建项目」出路、
+   * 同意置灰（R2 Important②）。旧 Host 不带（卡片按未置灰渲染，同意路径的守卫兜底）。 */
+  scopeEmpty?: boolean;
 }
 
 export interface ProviderFallbackEvent {

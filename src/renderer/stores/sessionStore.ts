@@ -17,7 +17,7 @@ import {
 } from '../utils/streamRecoveryMessage';
 import ipcService from '../services/ipcService';
 import { useSessionUIStore } from './sessionUIStore';
-import { useAppStore } from './appStore';
+import { preserveLatestCompressionSignal, useAppStore } from './appStore';
 import { useTaskStore } from './taskStore';
 import { useAppshotsStore } from './appshotsStore';
 import { useDesignCanvasStore } from '../components/design/designCanvasStore';
@@ -498,9 +498,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
         if (get().currentSessionId === targetSessionId) {
           const appStore = useAppStore.getState();
-          if (shouldReplaceContextHealth(health, appStore.contextHealth)) {
-            appStore.setContextHealth(health ?? null);
-          }
+          const mergedHealth = preserveLatestCompressionSignal(health, appStore.contextHealth);
+          if (shouldReplaceContextHealth(mergedHealth, appStore.contextHealth))
+            appStore.setContextHealth(mergedHealth ?? null);
         }
 
         return health ?? null;
@@ -873,9 +873,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
       if (event.sessionId === get().currentSessionId) {
         const appStore = useAppStore.getState();
-        if (shouldReplaceContextHealth(contextHealth, appStore.contextHealth)) {
-          appStore.setContextHealth(contextHealth ?? null);
-        }
+        const mergedAppHealth = preserveLatestCompressionSignal(contextHealth, appStore.contextHealth);
+        if (shouldReplaceContextHealth(mergedAppHealth, appStore.contextHealth))
+          appStore.setContextHealth(mergedAppHealth ?? null);
       }
 
       logger.debug('Session runtime updated', {

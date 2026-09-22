@@ -11,6 +11,7 @@ import {
   PROVIDER_FALLBACK_CHAIN,
 } from '../../../src/shared/constants';
 import type { ModelConfig, ModelProvider } from '../../../src/shared/contract';
+import type { ModelMessage } from '../../../src/host/model/types';
 import { ResponsesProvider } from '../../../src/host/model/providers/responsesProvider';
 import { DeepSeekProvider } from '../../../src/host/model/providers/deepseekProvider';
 import { OpenAIProvider } from '../../../src/host/model/providers/openaiProvider';
@@ -77,20 +78,26 @@ vi.mock('../../../src/host/model/providers/moonshotProvider', () => ({
 // Mock configService
 const mockGetSettings = vi.hoisted(() => vi.fn(() => ({} as Record<string, unknown>)));
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getApiKey: vi.fn().mockReturnValue('mock-api-key'),
     getSettings: mockGetSettings,
   }),
 }));
 
-// Mock inferenceCache
-vi.mock('../../../src/host/model/inferenceCache', () => ({
-  getInferenceCache: () => ({
-    computeKey: vi.fn().mockReturnValue('cache-key'),
-    get: vi.fn().mockReturnValue(null),
-    set: vi.fn(),
-  }),
-}));
+// Mock inferenceCache —— 键语义必须真实（N-INFERCACHE-KEYDRIFT 的归属回归依赖真实
+// computeKey 区分不同 config），仅隔离单例：beforeEach 换新实例避免用例间串味
+const inferenceCacheState = vi.hoisted(() => ({ reset: (): void => {} }));
+vi.mock('../../../src/host/model/inferenceCache', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/model/inferenceCache')>();
+  let instance = new actual.InferenceCache();
+  inferenceCacheState.reset = () => {
+    instance = new actual.InferenceCache();
+  };
+  return {
+    InferenceCache: actual.InferenceCache,
+    getInferenceCache: () => instance,
+  };
+});
 
 // Mock adaptiveRouter
 vi.mock('../../../src/host/model/adaptiveRouter', () => ({
@@ -102,9 +109,11 @@ vi.mock('../../../src/host/model/adaptiveRouter', () => ({
   }),
 }));
 
-vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
-  getProviderHealthMonitor: () => healthMonitorMock,
-}));
+// 只桩 getProviderHealthMonitor；persistentProviderMarkKind 用真实现（分类语义是断言对象）
+vi.mock('../../../src/host/model/providerHealthMonitor', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/host/model/providerHealthMonitor')>();
+  return { ...actual, getProviderHealthMonitor: () => healthMonitorMock };
+});
 
 const broadcastToRendererMock = vi.fn();
 vi.mock('../../../src/host/platform/windowBridge', () => ({
@@ -122,6 +131,7 @@ describe('ModelRouter', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    inferenceCacheState.reset();
     healthMonitorMock.getHealth.mockReturnValue(null);
     broadcastToRendererMock.mockReset();
     router = new ModelRouter();
@@ -2144,6 +2154,180 @@ describe('ModelRouter', () => {
       expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('xiaomi');
       expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('zhipu');
       expect(moonshotProvider.inference).toHaveBeenCalledTimes(1);
+    });
+
+    it('空内容失败只记普通失败，不再带 provider 级 auth/quota 分类（ai-review PR#1918 Important 2）', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: '', finishReason: 'stop' }),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: '', finishReason: 'stop' }),
+      } as any;
+      const moonshotProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [{ id: 'call-1', name: 'Write', arguments: {} }], finishReason: 'tool_calls' }),
+      } as any;
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+      (router as any).providers.set('moonshot', moonshotProvider);
+      // openai/deepseek 没挂 mock：用健康监控的 unavailable 让路由跳过它们，
+      // 流程里只剩空内容失败——deepseek 真实解析路径会合成 401（PERSISTENT，带分类是应有行为）
+      healthMonitorMock.getHealth.mockImplementation((provider: string) => {
+        if (provider === 'openai' || provider === 'deepseek') return { status: 'unavailable' };
+        return null;
+      });
+
+      await router.inference(
+        [{ role: 'user', content: '请生成一个单文件 HTML 游戏，并保存到 /tmp/game.html' }],
+        [],
+        { provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'test-key', maxTokens: 1000, adaptive: true },
+        vi.fn(),
+      );
+
+      expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('xiaomi');
+      // 一次空内容不该让整家 30 分钟显示「密钥用不了」/「余额或额度用完了」
+      const classified = healthMonitorMock.recordFailure.mock.calls
+        .filter(([, options]) => (options as { scope?: string } | undefined)?.scope === 'provider');
+      expect(classified).toEqual([]);
+    });
+
+    it('持久错误（401/余额）命中 PERSISTENT_PROVIDER_ERROR_PATTERN 才带 provider 级分类；余额归 quota', async () => {
+      const okFallback = { inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback ok', finishReason: 'stop' }) } as any;
+      (router as any).providers.set('zhipu', okFallback);
+      (router as any).providers.set('openai', okFallback);
+      (router as any).providers.set('deepseek', okFallback);
+      const unauthorized = { inference: vi.fn().mockRejectedValue(new Error('Unauthorized: invalid api key')) } as any;
+      (router as any).providers.set('xiaomi', unauthorized);
+
+      await router.inference(
+        [{ role: 'user', content: 'hello' }],
+        [],
+        { provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'test-key', maxTokens: 1000, adaptive: true },
+        vi.fn(),
+      ).catch(() => undefined);
+      expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('xiaomi', { scope: 'provider', kind: 'auth' });
+
+      healthMonitorMock.recordFailure.mockClear();
+      const balance = { inference: vi.fn().mockRejectedValue(new Error('402 insufficient balance')) } as any;
+      (router as any).providers.set('xiaomi', balance);
+      await router.inference(
+        [{ role: 'user', content: 'hello' }],
+        [],
+        { provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'test-key', maxTokens: 1000, adaptive: true },
+        vi.fn(),
+      ).catch(() => undefined);
+      // 余额不足是 quota（「余额或额度用完了」），不冒充密钥
+      expect(healthMonitorMock.recordFailure).toHaveBeenCalledWith('xiaomi', { scope: 'provider', kind: 'quota' });
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // inference cache key 归属（N-INFERCACHE-KEYDRIFT）
+  // 写缓存必须用实际产出响应的 config 算 key：adaptive 用 adaptedConfig、
+  // fallback 用 fallbackConfig，主模型请求不得命中降级/自适应模型写下的结果。
+  // --------------------------------------------------------------------------
+  describe('inference cache key ownership', () => {
+    afterEach(() => {
+      mockGetSettings.mockReturnValue({});
+    });
+
+    it('主模型失败走 fallback 成功后，主模型同一请求不命中缓存', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 402 - insufficient balance')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback answer', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      const messages: ModelMessage[] = [{ role: 'user', content: '写一句关于秋天的短诗' }];
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+        adaptive: true,
+      };
+
+      const first = await router.inference(messages, [], config);
+      expect(first).toMatchObject({ type: 'text', content: 'fallback answer' });
+
+      const second = await router.inference(messages, [], config);
+      expect(second).toMatchObject({ type: 'text', content: 'fallback answer' });
+      // 两次都真实打到 provider——缓存没有把 fallback 结果冒充主模型答案
+      expect(primaryProvider.inference).toHaveBeenCalledTimes(2);
+      expect(zhipuProvider.inference).toHaveBeenCalledTimes(2);
+    });
+
+    it('adaptive 路由产出的结果，主模型同一请求不命中缓存', async () => {
+      mockGetSettings.mockReturnValue({
+        models: {
+          taskStrategy: {
+            mode: 'manual',
+            defaultProfile: 'fast',
+            profiles: {
+              fast: { provider: 'zhipu', model: 'glm-4.7-flash', maxTokens: 4096 },
+              main: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+              deep: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+              vision: { provider: 'zhipu', model: 'glm-4.6v-flash' },
+            },
+            fallback: { enabled: true, preferSameProvider: false, allowCrossProvider: true },
+            rules: [],
+          },
+        },
+      });
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'adapted model answer', finishReason: 'stop' }),
+      } as any;
+      const xiaomiProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'main model answer', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('zhipu', zhipuProvider);
+      (router as any).providers.set('xiaomi', xiaomiProvider);
+
+      const messages: ModelMessage[] = [{ role: 'user', content: '写一句关于冬天的短诗' }];
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+        adaptive: true,
+      };
+
+      const adapted = await router.inference(messages, [], config);
+      expect(adapted).toMatchObject({ type: 'text', content: 'adapted model answer' });
+      expect(zhipuProvider.inference).toHaveBeenCalledTimes(1);
+
+      // 同一请求再来一次，这次没有策略路由（主模型直连）：不得吃上一步 adaptive 写的缓存
+      mockGetSettings.mockReturnValue({});
+      const main = await router.inference(messages, [], config);
+      expect(main).toMatchObject({ type: 'text', content: 'main model answer' });
+      expect(xiaomiProvider.inference).toHaveBeenCalledTimes(1);
+      expect(zhipuProvider.inference).toHaveBeenCalledTimes(1);
+    });
+
+    it('完全相同的非流式请求仍然命中缓存（保护原有功能）', async () => {
+      const xiaomiProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'main model answer', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('xiaomi', xiaomiProvider);
+
+      const messages: ModelMessage[] = [{ role: 'user', content: '写一句关于春天的短诗' }];
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+
+      const first = await router.inference(messages, [], config);
+      const second = await router.inference(messages, [], config);
+
+      expect(first).toMatchObject({ type: 'text', content: 'main model answer' });
+      expect(second).toMatchObject({ type: 'text', content: 'main model answer' });
+      expect(second).toBe(first);
+      // 第二次来自缓存，provider 只被真实调用一次
+      expect(xiaomiProvider.inference).toHaveBeenCalledTimes(1);
     });
   });
 

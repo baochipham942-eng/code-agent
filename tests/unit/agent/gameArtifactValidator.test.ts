@@ -3185,6 +3185,43 @@ describe('validateGameArtifact', () => {
     expect(result.failures.some((failure) => failure.includes('游离'))).toBe(true);
   });
 
+  it('the Auto-run comment separator still ends the orphan-tail scan (ai-review #1766 Important)', async () => {
+    // hasOrphanedContractTail 的 split 分隔符之一是注释 `// Auto-run smoke test`。
+    // 若喂剥注释的视图，该分隔符永远匹配不到，尾巴被取得比实际长，
+    // 合约之后本属正常的 start()/runSmokeTest() 会被误判成「孤立尾巴」。
+    // 本用例走完整 validateGameArtifact，不是对字面量跑裸正则。
+    const filePath = await writeTempHtml(`
+      <!doctype html>
+      <html>
+      <body>
+        <canvas id="game" width="800" height="600"></canvas>
+        <script>
+          const state = { progress: 0, score: 0, mode: 'playing' };
+          document.addEventListener('keydown', () => { state.progress += 1; });
+          window.__GAME_META__ = {
+            domain: 'game',
+            controls: { ArrowRight: 'Move right' },
+            levels: [{ id: '1' }],
+          };
+          window.__GAME_TEST__ = {
+            start() { return this.snapshot(); },
+            reset(levelOrScenario) { state.progress = 0; return this.snapshot(); },
+            snapshot() { return { progress: state.progress, mode: state.mode }; },
+            step(inputState = {}, frames = 1) { state.progress += frames; return this.snapshot(); },
+            runSmokeTest() { return { passed: true, checks: [], failures: [], coverage: {} }; }
+          };
+          // Auto-run smoke test
+          start() { return state; },
+          runSmokeTest() { return { passed: true }; }
+        </script>
+      </body>
+      </html>
+    `);
+    const result = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    const orphanHit = result.failures.some((f) => f.includes('孤立'));
+    expect(orphanHit, `failures=${result.failures.join(' | ')}`).toBe(false);
+  });
+
   it('inspects only the active balanced test contract instead of orphaned tail snippets', async () => {
     const filePath = await writeTempHtml(`
       <!doctype html>
@@ -3251,5 +3288,407 @@ describe('validateGameArtifact', () => {
     expect(result.shouldValidate).toBe(true);
     expect(result.failures.some((failure) => failure.includes('step() 直接用宽松距离'))).toBe(false);
     expect(result.failures.some((failure) => failure.includes('对象存在、机制注册或覆盖声明'))).toBe(false);
+  });
+});
+
+const BREAKOUT_COLLAPSE_CODES = [
+  'missing_coverage_metadata',
+  'missing_controls_metadata',
+  'missing_reachability_metadata',
+  'smoke_missing_coverage',
+  'missing_test_contract',
+  'missing_contract_start',
+  'missing_contract_snapshot',
+  'missing_contract_smoke',
+] as const;
+
+const BREAKOUT_FIXTURE_DIR = path.resolve(
+  __dirname,
+  '../../fixtures/game/breakout-contract-collapse',
+);
+
+describe('breakout whole-contract collapse (N-GAME-BREAKOUT-CONTRACT)', () => {
+  it('light still passes a casual snake without META/TEST', async () => {
+    const html = [
+      '<!doctype html>',
+      '<html><head><style>#game{max-width:calc(100vw - 16px);height:auto;aspect-ratio:1/1;}</style></head>',
+      '<body>',
+      '<canvas id="game" width="400" height="400"></canvas>',
+      '<div>得分: <span id="score">0</span> 关卡: <span id="level">1</span></div>',
+      '<script>',
+      "  const ctx = document.getElementById('game').getContext('2d');",
+      '  let score = 0; let level = 1; let snake = [[5, 5]]; let dir = [1, 0]; let food = [10, 10];',
+      "  document.addEventListener('keydown', (e) => {",
+      "    if (e.key === 'ArrowUp') dir = [0, -1];",
+      '  });',
+      '  function loop() { requestAnimationFrame(loop); }',
+      '  loop();',
+      '</script>',
+      '</body></html>',
+    ].join('\n');
+    const lightPath = await writeTempHtml(html, 'casual-game-light.html');
+    const light = await validateGameArtifact(lightPath, { contractLevel: 'light' });
+    expect(light.passed).toBe(true);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少'))).toBe(false);
+  });
+
+  it('light fails a playable breakout that never entered the contract path', async () => {
+    const filePath = path.join(BREAKOUT_FIXTURE_DIR, 'HI-B1-r2-brick-breaker.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.shouldValidate).toBe(true);
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+
+  it('full validation of HI-B1-r2 and HO-B1-r3 drops the 8-code collapse signature and fail-louds integrity', async () => {
+    const { createArtifactRepairSpec } = await import('../../../src/host/agent/runtime/artifactRepairSpec');
+    for (const name of ['HI-B1-r2-brick-breaker.html', 'HO-B1-r3-pixel-breakout.html'] as const) {
+      const filePath = path.join(BREAKOUT_FIXTURE_DIR, name);
+      const full = await validateGameArtifact(filePath, { contractLevel: 'full' });
+      expect(full.passed).toBe(false);
+      expect(full.checks).toContain('test contract integrity: step() and runSmokeTest() are both absent');
+      expect(full.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+      const codes = createArtifactRepairSpec(full).issues.map((issue) => issue.code);
+      expect(codes).toContain('missing_breakout_contract');
+      const collapseHits = BREAKOUT_COLLAPSE_CODES.filter((code) => codes.includes(code));
+      // 钉精确集合而不是「少于 4 条」：松断言下退化到 3 条也不报警，锚点就白立了。
+      expect(collapseHits, `${name} collapse codes=${collapseHits.join(',')}`).toEqual(['missing_test_contract']);
+    }
+  });
+
+  it('reverse mutation: a same-case artifact that did write the contract is not classified as whole-contract collapse', async () => {
+    const { createArtifactRepairSpec } = await import('../../../src/host/agent/runtime/artifactRepairSpec');
+    const filePath = path.join(BREAKOUT_FIXTURE_DIR, 'HI-B1-r1-brick-breaker.html');
+    const full = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    const codes = createArtifactRepairSpec(full).issues.map((issue) => issue.code);
+    expect(codes).not.toContain('missing_breakout_contract');
+    expect(full.checks).not.toContain('test contract integrity: step() and runSmokeTest() are both absent');
+    expect(BREAKOUT_COLLAPSE_CODES.every((code) => codes.includes(code))).toBe(false);
+  });
+
+  it('reverse mutation: stripping META/TEST from a contracted breakout reintroduces missing_breakout_contract + integrity', async () => {
+    const { createArtifactRepairSpec } = await import('../../../src/host/agent/runtime/artifactRepairSpec');
+    const { readFile } = await import('fs/promises');
+    const sourcePath = path.join(BREAKOUT_FIXTURE_DIR, 'HI-B1-r1-brick-breaker.html');
+    const original = await readFile(sourcePath, 'utf-8');
+    expect(original).toContain('window.__GAME_META__');
+    expect(original).toContain('window.__GAME_TEST__');
+    const stripped = original
+      .replace(/window\.__GAME_META__\s*=[\s\S]*?(?=window\.__GAME_TEST__)/, '')
+      .replace(/window\.__GAME_TEST__\s*=[\s\S]*?(?=\s*\/\/ Start game loop|\s*requestAnimationFrame|\s*\)\(\);)/, '');
+    expect(stripped).not.toContain('window.__GAME_META__');
+    expect(stripped).not.toContain('window.__GAME_TEST__');
+    const filePath = await writeTempHtml(stripped, 'brick-breaker.html');
+    const full = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(full.checks).toContain('test contract integrity: step() and runSmokeTest() are both absent');
+    expect(createArtifactRepairSpec(full).issues.map((issue) => issue.code)).toContain('missing_breakout_contract');
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+
+  it('a null contract assignment does not satisfy the gate (ai-review #1759 nit)', async () => {
+    const { readFile } = await import('fs/promises');
+    const sourcePath = path.join(BREAKOUT_FIXTURE_DIR, 'HI-B1-r1-brick-breaker.html');
+    const original = await readFile(sourcePath, 'utf-8');
+    // 只把「= {」换成「= null;」：赋值 token 还在，右侧不再是直接对象字面量。
+    // 光看 `=` 的判据会放行这种空壳，闸门就白立了。
+    const hollow = original
+      .replace(/window\.__GAME_META__\s*=\s*\{[\s\S]*?(?=window\.__GAME_TEST__)/, 'window.__GAME_META__ = null;\n')
+      .replace(/window\.__GAME_TEST__\s*=\s*\{[\s\S]*?(?=\s*\/\/ Start game loop|\s*requestAnimationFrame|\s*\)\(\);)/, 'window.__GAME_TEST__ = null;\n');
+    expect(hollow).toContain('window.__GAME_META__ =');
+    expect(hollow).toContain('window.__GAME_TEST__ =');
+    expect(hollow).not.toContain('window.__GAME_META__ = {');
+    const filePath = await writeTempHtml(hollow, 'brick-breaker.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+});
+
+function playableBreakoutWithoutContract(): string {
+  return [
+    '<!doctype html>',
+    '<html><body>',
+    '<canvas id="game" width="400" height="300"></canvas>',
+    '<script>',
+    'const paddle = { x: 40 };',
+    'const ball = { x: 10, y: 10 };',
+    'const bricks = [];',
+    'const player = paddle;',
+    'let score = 0;',
+    'let lives = 3;',
+    "document.addEventListener('keydown', (event) => { paddle.x += event.key === 'ArrowRight' ? 4 : 0; });",
+    'function loop() { requestAnimationFrame(loop); }',
+    'loop();',
+    '</script>',
+    '</body></html>',
+  ].join('\n');
+}
+
+describe('N-GAMEVALIDATOR-STRIP-COMMENTS', () => {
+  it('does not treat a commented contract assignment as present', async () => {
+    const html = playableBreakoutWithoutContract().replace(
+      '<script>',
+      `<script>
+// window.__GAME_META__ = {
+// window.__GAME_TEST__ = {`,
+    );
+    expect(html).toMatch(/window\.__GAME_META__\s*=\s*\{/);
+    const filePath = await writeTempHtml(html, 'brick-breaker.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+
+  it('comment-only contract on the HI-B1-r2 collapse fixture still fails light', async () => {
+    const { readFile } = await import('fs/promises');
+    const original = await readFile(path.join(BREAKOUT_FIXTURE_DIR, 'HI-B1-r2-brick-breaker.html'), 'utf-8');
+    const faked = original.replace('<script>', '<script>\n// window.__GAME_META__ = {\n// window.__GAME_TEST__ = {\n');
+    const filePath = await writeTempHtml(faked, 'brick-breaker.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+
+  it('does not treat a string-literal contract assignment as present', async () => {
+    const html = playableBreakoutWithoutContract().replace(
+      '<script>',
+      `<script>
+const fakeMeta = "window.__GAME_META__ = {";
+const fakeTest = "window.__GAME_TEST__ = {";`,
+    );
+    expect(html).toMatch(/window\.__GAME_META__\s*=\s*\{/);
+    const filePath = await writeTempHtml(html, 'brick-breaker.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+
+  it('still sees keydown when it only appears as an event-name string', async () => {
+    const html = [
+      '<!doctype html>',
+      '<html><head></head><body>',
+      '<canvas id="game" width="400" height="300"></canvas>',
+      '<script>',
+      "document.addEventListener('keydown', () => {});",
+      'const player = {}; const score = 0; const level = 1;',
+      'function loop() { requestAnimationFrame(loop); }',
+      'loop();',
+      '</script>',
+      '</body></html>',
+    ].join('\n');
+    const filePath = await writeTempHtml(html, 'casual-game-light.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.passed).toBe(true);
+    expect(light.checks).toContain('user input entry detected');
+  });
+
+  it('reverse mutation: raw regex still matches the comment fake (mask is what rejects it)', () => {
+    const fake = '// window.__GAME_META__ = {\n';
+    expect(/window\.__GAME_META__\s*=\s*\{/.test(fake)).toBe(true);
+  });
+});
+
+describe('N-GAMEVALIDATOR-REAL-PARSE', () => {
+  // 两例误报形态（09-13 判读 R4）：v1 HI-R1-r1 dino-run 的 `start: function(){…}` 形态、
+  // v1 SHO-R1-r2 lane-run 的 `start(){…}, reset(levelOrScenario){…}` 形态。
+  // 两者 __GAME_TEST__ 都是标准直接对象字面量，真 JS 解析（new Function / acorn）判定合法，
+  // 旧括号平衡算法却因方法体内的正则字面量（/{…/、/\}/g）失衡，误报
+  // 「没有形成可平衡解析的对象字面量」→ malformed_test_contract。
+  function realParseFixtureHtml(testContract: string): string {
+    return `
+      <!doctype html>
+      <html>
+      <head>
+        <style>
+          body { display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+          canvas { border: 1px solid #fff; max-width: calc(100vw - 16px); height: auto; }
+        </style>
+      </head>
+      <body>
+        <canvas id="game" width="800" height="480"></canvas>
+        <script>
+          const state = { playerX: 0, score: 0, hazard: false, level: 0 };
+          window.__GAME_META__ = {
+            domain: 'game',
+            subtype: 'arcade',
+            controls: { ArrowRight: 'Move right' },
+            levels: [{ id: 0, name: 'test' }],
+            progressPlan: [{ input: 'ArrowRight', frames: 5, metric: 'playerX', expect: 'increase' }],
+            qualityPlan: {
+              actorReadable: true,
+              mechanics: ['move'],
+              rewards: ['score'],
+              risks: ['hazard'],
+              levelsCovered: [0],
+              allAuthoredLevelsReachable: true
+            }
+          };
+          ${testContract}
+        </script>
+      </body>
+      </html>
+    `;
+  }
+
+  const MALFORMED_SIGNALS = ['可平衡解析', '游离'];
+
+  function expectNoMalformed(failures: string[]): void {
+    for (const signal of MALFORMED_SIGNALS) {
+      expect(failures.some((failure) => failure.includes(signal)), `failures=${failures.join(' | ')}`).toBe(false);
+    }
+  }
+
+  it('accepts a function-property contract with string-paren/regex/template traps (v1 HI-R1-r1 dino-run shape)', async () => {
+    const filePath = await writeTempHtml(realParseFixtureHtml(`
+          window.__GAME_TEST__ = {
+            start: function() {
+              this.reset(0);
+            },
+            reset: function(levelOrScenario) {
+              state.level = Number(levelOrScenario) || 0;
+              state.playerX = 0;
+              state.score = 0;
+              state.hazard = false;
+            },
+            snapshot: function() {
+              // 字符串内括号陷阱：'(score {' 属于字符串，不参与括号深度
+              const label = 'player(' + state.playerX + ') {score=' + state.score + '}';
+              return { ...state, label };
+            },
+            step: function(inputState, frames = 1) {
+              if (inputState && inputState.ArrowRight) {
+                state.playerX += frames * 4;
+                state.score += frames;
+                if (state.playerX > 12) state.hazard = true;
+              }
+              // 模板串陷阱
+              state.lastNote = \`step \${frames} -> x=\${state.playerX} {ok}\`;
+              return this.snapshot();
+            },
+            runSmokeTest: function() {
+              this.start();
+              const before = this.snapshot();
+              const after = this.step({ ArrowRight: true }, 5);
+              // 正则字面量陷阱：/{(\\w+)/ 里的 { 属于正则，不属于对象括号深度
+              const tag = JSON.stringify(after.score).replace(/\\{(\\w+)/g, '$1');
+              return {
+                passed: after.playerX > before.playerX && after.score > before.score,
+                checks: ['input changed playerX and score ' + tag],
+                failures: [],
+                coverage: {
+                  levelsPassed: [0],
+                  totalLevels: 1,
+                  allLevelsReachable: true,
+                  mechanics: { move: true },
+                  rewards: { scoreGain: true },
+                  risks: { hazardFeedback: after.hazard === true },
+                  stateChanges: { position: true }
+                }
+              };
+            }
+          };
+    `), 'dino-run.html');
+
+    const result = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    expect(result.shouldValidate).toBe(true);
+    expectNoMalformed(result.failures);
+    expect(result.passed, `failures=${result.failures.join(' | ')}`).toBe(true);
+  });
+
+  it('accepts a method-shorthand contract with a }-regex trap (v1 SHO-R1-r2 lane-run shape)', async () => {
+    const filePath = await writeTempHtml(realParseFixtureHtml(`
+          window.__GAME_TEST__ = {
+            start() {
+              this.reset(0);
+              // 正则字面量陷阱：/\\}/g 的 } 是正则内容，不是对象闭合
+              state.note = 'lane'.replace(/\\}/g, '');
+            },
+            reset(levelOrScenario) {
+              state.level = Number(levelOrScenario) || 0;
+              state.playerX = 0;
+              state.score = 0;
+              state.hazard = false;
+            },
+            snapshot() {
+              const label = 'lane(' + state.level + ')';
+              return { ...state, label };
+            },
+            step(inputState = {}, frames = 1) {
+              if (inputState && inputState.ArrowRight) {
+                state.playerX += frames * 4;
+                state.score += frames;
+                if (state.playerX > 12) state.hazard = true;
+              }
+              return this.snapshot();
+            },
+            runSmokeTest() {
+              this.start();
+              const before = this.snapshot();
+              const after = this.step({ ArrowRight: true }, 5);
+              return {
+                passed: after.playerX > before.playerX && after.score > before.score,
+                checks: ['input changed playerX and score'],
+                failures: [],
+                coverage: {
+                  levelsPassed: [0],
+                  totalLevels: 1,
+                  allLevelsReachable: true,
+                  mechanics: { move: true },
+                  rewards: { scoreGain: true },
+                  risks: { hazardFeedback: after.hazard === true },
+                  stateChanges: { position: true }
+                }
+              };
+            }
+          };
+    `), 'lane-run.html');
+
+    const result = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    expect(result.shouldValidate).toBe(true);
+    expectNoMalformed(result.failures);
+    expect(result.passed, `failures=${result.failures.join(' | ')}`).toBe(true);
+  });
+
+  it('still reports malformed_test_contract when the contract object never closes', async () => {
+    const filePath = await writeTempHtml(realParseFixtureHtml(`
+          window.__GAME_TEST__ = {
+            start() {
+              this.reset(0);
+            },
+            reset(levelOrScenario) {
+              state.level = Number(levelOrScenario) || 0;
+    `), 'unclosed-contract.html');
+
+    const result = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    expect(result.passed).toBe(false);
+    expect(
+      result.failures.some((failure) => failure.includes('可平衡解析')),
+      `failures=${result.failures.join(' | ')}`,
+    ).toBe(true);
+  });
+
+  it('reports malformed_test_contract for illegal syntax even when braces balance', async () => {
+    // 括号完全平衡但语法非法（const 1illegal）：旧括号平衡会放行，真解析必须拦下。
+    const filePath = await writeTempHtml(realParseFixtureHtml(`
+          window.__GAME_TEST__ = {
+            start() { this.reset(0); },
+            reset(levelOrScenario) { state.level = Number(levelOrScenario) || 0; },
+            snapshot() { return { ...state }; },
+            step(inputState = {}, frames = 1) {
+              const 1illegal = frames;
+              return this.snapshot();
+            },
+            runSmokeTest() { return { passed: true, checks: [], failures: [], coverage: {} }; }
+          };
+    `), 'illegal-syntax-contract.html');
+
+    const result = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    expect(result.passed).toBe(false);
+    expect(
+      result.failures.some((failure) => failure.includes('可平衡解析')),
+      `failures=${result.failures.join(' | ')}`,
+    ).toBe(true);
   });
 });

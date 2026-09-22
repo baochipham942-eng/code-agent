@@ -33,6 +33,7 @@ import { initPostHogNode } from '../host/observability/posthogNode';
 import type { AuthUser } from '../shared/contract';
 import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from '../host/services/core/repositories/PendingApprovalRepository';
+import { reconcileRecentPlanApprovalStarts } from '../host/services/planning/planApprovalService';
 import { getTaskManager } from '../host/task/TaskManager';
 import { installLocalWebAuthStatusHandler } from './webLocalAuth';
 import {
@@ -332,6 +333,7 @@ export function startWebCapabilityBootstrap(
 
 import { broadcastSSE, sseClients } from './helpers/sse';
 import {
+  applyDbIntegrityOutcome,
   dbAvailable,
   setDbAvailable,
 } from './helpers/sessionCache';
@@ -364,7 +366,7 @@ import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createApp, type CreateAppDeps } from './app';
 import { listForegroundPermissionRequests } from './foregroundPermissionRegistry';
-import { installSessionDomainHandler } from './sessionDomainHandler';
+import { createWebSessionContext } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
 
 // Re-export broadcastSSE for backward compatibility
@@ -539,6 +541,7 @@ async function initializeServices(): Promise<void> {
     });
     databaseForDurableRun = await initDatabase();
     setDbAvailable(true);
+    applyDbIntegrityOutcome(databaseForDurableRun.getIntegrityOutcome());
     logger.info('Database initialized');
   } catch (error) {
     durableRunRolloutReady = false;
@@ -551,6 +554,17 @@ async function initializeServices(): Promise<void> {
     }
   }
   bootMark('database');
+
+  // 4.6 模型级可用性标记回灌（N-MOBILE-CONN-POLISH-R3 ④）：停用/不存在的模型标记持久化
+  // 在数据目录，重启后继续生效——否则手机默认模型的回落链会把「从未调用过」的已停用模型
+  // 当好模型选中，下一次执行必炸。provider 级标记维持内存 + TTL，不受影响。
+  try {
+    const { armModelMarkPersistence } = await import('../host/model/providerHealthMonitor');
+    armModelMarkPersistence();
+  } catch (error) {
+    logger.warn('Model availability mark persistence unavailable (non-blocking):', (error as Error).message);
+  }
+  bootMark('model-marks');
 
   // 4.5 Loop 启动收口（N-LOOP-DURABLE 刀1 + 修复棒）：归属进程已确认消失的 loop 残留
   // 在 session_automations 里永远停在 running，侧栏徽标继续谎报「运行中」。
@@ -632,8 +646,9 @@ async function initializeServices(): Promise<void> {
       capabilityBootstrap,
       assemble: () => assembleDurableRun({
         registry: runRegistry,
-        repository: durableRunRolloutPolicy.durableActivation
-          ? databaseForDurableRun?.getDurableRunRepository() ?? null
+        persistenceUnavailable: databaseForDurableRun.isDegradedMode(),
+        repository: durableRunRolloutPolicy.durableActivation && !databaseForDurableRun.isDegradedMode()
+          ? databaseForDurableRun.getDurableRunRepository()
           : null,
         ownerId: 'web-native-host',
         processInstanceId: `web-${process.pid}-${randomUUID()}`,
@@ -837,6 +852,23 @@ function registerHandlers(): void {
       }
     }
 
+    try {
+      // ChatView 计划审批 starting 认领的崩溃残留对账：上个进程认领后没等到启动确认就
+      // 退出，记录会永久卡 starting（不可重试/不可取消）。落成 failed 恢复可决定性。
+      // 不阻塞启动：对账走 DB 读，异步跑完即可。
+      void reconcileRecentPlanApprovalStarts({ taskManager: getTaskManager() })
+        .then((settledStarts) => {
+          if (settledStarts > 0) {
+            logger.warn(`Closed ${settledStarts} orphaned plan approval start claim(s) from previous process`);
+          }
+        })
+        .catch((err: unknown) => {
+          logger.warn('Plan approval start reconciliation failed (web):', (err as Error).message);
+        });
+    } catch (err) {
+      logger.warn('Plan approval start reconciliation failed (web):', (err as Error).message);
+    }
+
     registerSwarmServices({
       planApproval: planApprovalGate,
       launchApproval: launchApprovalGate,
@@ -885,6 +917,17 @@ function registerHandlers(): void {
       if (!onQueuedInputSendNow) throw new Error('Queued input delivery route is unavailable');
       return onQueuedInputSendNow(input, route);
     },
+    // session 域单装配点（RQ-183 刀 2）：web context 注入后 setupAllIpcHandlers 里的
+    // registerSessionHandlers 直接装 web 形态表，webServer 不再事后覆盖 domain:session
+    sessionCommandContext: createWebSessionContext({
+      getDbAvailable: () => dbAvailable,
+      hasActiveRun: (sessionId) => runRegistry.hasSession(sessionId),
+      getCurrentSessionId: () => currentSessionId,
+      setCurrentSessionId: (sessionId) => {
+        currentSessionId = sessionId;
+      },
+      getDurableRunReadService,
+    }),
   };
 
   // setupAllIpcHandlers 会同时处理:
@@ -904,17 +947,6 @@ function registerHandlers(): void {
     pendingDevPermissions,
     getCurrentSessionId: () => currentSessionId,
     logger,
-  });
-
-  installSessionDomainHandler({
-    handlers,
-    getDbAvailable: () => dbAvailable,
-    hasActiveRun: (sessionId) => runRegistry.hasSession(sessionId),
-    getCurrentSessionId: () => currentSessionId,
-    setCurrentSessionId: (sessionId) => {
-      currentSessionId = sessionId;
-    },
-    getDurableRunReadService,
   });
 
   logger.info(`Registered ${handlers.size} IPC handlers`);

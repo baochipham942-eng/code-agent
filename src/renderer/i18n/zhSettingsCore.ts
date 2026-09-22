@@ -69,6 +69,7 @@ export const zhSettingsCore = {
       voiceLive: '实时语音',
       voiceLiveVoice: '实时语音音色',
       voiceLiveInterrupt: '打断方式',
+      voiceCallBudget: '通话预算',
       voiceConversationModel: '实时语音模型',
       whisperModel: 'Whisper 模型',
       transcriptionLanguage: '转写语言',
@@ -251,6 +252,13 @@ export const zhSettingsCore = {
           description: '子 Agent 默认启用「严格继承」，防止 plan → coder、reviewer → coder 等工作流绕过权限。如需保留旧行为请选择「独立模式」。',
           acknowledge: '知道了',
           releaseNotes: '查看 release notes',
+        },
+        sandbox: {
+          title: '操作系统沙箱',
+          available: 'Bash 在「默认」和「自动接受编辑」档下默认在操作系统沙箱中执行。',
+          unavailable: '这台机器的操作系统沙箱不可用。Bash 会标记为降级后执行，不会静默裸跑。',
+          disabled: '操作系统沙箱已关闭。设置 OS_SANDBOX_ENABLED=false 仅作紧急关闭。',
+          installHint: 'Linux 请安装 bubblewrap（bwrap）。macOS 使用系统自带的 sandbox-exec。',
         },
         controlPlane: {
           title: '权限控制面',

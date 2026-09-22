@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelProviderSettings } from '../../../src/shared/contract/settings';
+import { getDefaultModelForProvider } from '../../../src/shared/constants';
 
 const settingsState = vi.hoisted(() => ({
   settings: {
@@ -21,7 +22,7 @@ const settingsState = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(),
     getSettings: () => settingsState.settings,
     getApiKey: vi.fn(() => 'mock-key'),
   }),
@@ -79,6 +80,60 @@ describe('resolveSessionDefaultModelConfig', () => {
     expect(config.model).toBe('mimo-v2.5-pro');
 
     delete (settingsState.settings as Record<string, unknown>).model;
+  });
+
+  it('内置供应商未配 model 时回落登记默认，与 getDefaultModelForProvider 等值', () => {
+    const providers = settingsState.settings.models.providers as Record<string, ModelProviderSettings>;
+    try {
+      for (const provider of ['longcat', 'deepseek'] as const) {
+        settingsState.settings.models.default = provider;
+        settingsState.settings.models.defaultProvider = provider;
+        providers[provider] = {
+          enabled: true,
+          apiKeyConfigured: true,
+          ...(provider === 'longcat'
+            ? {
+                models: {
+                  'LongCat-2.0-Preview': { enabled: true },
+                  'LongCat-2.0': { enabled: true },
+                },
+              }
+            : {}),
+        };
+
+        const config = resolveSessionDefaultModelConfig();
+        expect(config.provider).toBe(provider);
+        expect(config.model).toBe(getDefaultModelForProvider(provider));
+      }
+    } finally {
+      delete providers.longcat;
+      delete providers.deepseek;
+    }
+  });
+
+  it('custom provider without model falls back to that provider\'s first listed model, not DEFAULT_MODELS.chat', () => {
+    settingsState.settings.models.default = 'custom-team-relay';
+    settingsState.settings.models.defaultProvider = 'custom-team-relay';
+    (settingsState.settings.models.providers as Record<string, ModelProviderSettings>)['custom-team-relay'] = {
+      enabled: true,
+      apiKeyConfigured: true,
+      models: {
+        'gpt-5.5': { enabled: true },
+        'gpt-5.4-mini': { enabled: true },
+      },
+    };
+
+    const config = resolveSessionDefaultModelConfig();
+
+    expect(config.provider).toBe('custom-team-relay');
+    expect(config.model).toBe('gpt-5.5');
+    expect(config.model).not.toBe('LongCat-2.0');
+  });
+
+  it('provider with an explicit model keeps that model', () => {
+    const config = resolveSessionDefaultModelConfig();
+    expect(config.provider).toBe('xiaomi');
+    expect(config.model).toBe('mimo-v2.5-pro');
   });
 
   it('uses models.default when the legacy defaultProvider alias disagrees', () => {

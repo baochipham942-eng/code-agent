@@ -55,6 +55,8 @@ export interface ToolContext {
   deniedToolNames?: readonly string[];
   /** 当前 run 的工具白名单（CLI --tools 等）；非空 = 精确白名单，spawn_agent 据此收窄子代理面。 */
   allowedToolNames?: readonly string[];
+  /** 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。 */
+  foregroundToolFace?: boolean;
   /** Run-scoped discovery source; production callers omit it and use the app singleton. */
   skillDiscoveryService?: SkillDiscoveryService;
   /** Run-scoped telemetry owner propagated to spawned agents. */
@@ -196,6 +198,11 @@ export interface PermissionRequestData {
   runId?: string;
   parentToolUseId?: string;
   forceConfirm?: boolean;
+  /**
+   * ADR-067 D3：本轮最新输入的 origin 链（可多条，判定取最不可信者）。
+   * 由 ToolExecutor 从 ExecuteOptions 透传；含 peer-agent 时写/执行类一律 forceConfirm。
+   */
+  turnOrigin?: import('../agent/messageOrigin').AgentMessageOrigin[];
   type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' | 'directory_access';
   tool: string;
   details: Record<string, unknown>;

@@ -449,9 +449,15 @@ export interface MessageMetadata {
    * 原始标记继续只存在正文协议里；展示层只消费这个稳定枚举，不把协议串上屏。
    */
   streamInterruptionReason?: StreamInterruptionReason;
+  /**
+   * ADR-068 刀 4：B2 诚实分段时 renderer 给续答段消息写的一次性续接说明
+   * （仅流中存在，host 不落库、重载后不出现——续接史由 PART1 的中断标记承载）。
+   * n/N 与断流信号同源（stream_reconnecting 事件）。
+   */
+  streamResumeNote?: { attempt: number; maxReconnects: number };
 }
 
-export type StreamInterruptionReason = 'user' | 'session-switch' | 'app-restart';
+export type StreamInterruptionReason = 'user' | 'session-switch' | 'app-restart' | 'stream-break';
 
 export interface Message {
   id: string;

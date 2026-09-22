@@ -203,12 +203,12 @@ describe('ProviderRegistry', () => {
       expect(found?.supportsVision).toBe(true);
     });
 
-    it('DEFAULT_MODELS.quick should exist and be fast/free', () => {
+    it('DEFAULT_MODELS.quick should exist on zhipu as yearly (0ki 档，免费档官方 key 已死)', () => {
       const found = Object.values(PROVIDER_REGISTRY)
         .flatMap(p => p.models)
         .find(m => m.id === DEFAULT_MODELS.quick);
       expect(found).toBeDefined();
-      expect(found?.costType).toBe('free');
+      expect(found?.costType).toBe('yearly');
     });
   });
 

@@ -19,12 +19,14 @@ cases:
   # --------------------------------------------------------------------------
   - id: web-search-basic
     type: task
+    category: task_completion
     description: "基础 Web 搜索"
     prompt: "搜索 TypeScript 5.0 有哪些新特性"
     reference_solution: "使用 web_search 工具搜索并返回包含关键信息的结果"
 
   - id: web-search-chinese
     type: task
+    category: task_completion
     description: "中文搜索"
     prompt: "搜索 Electron 桌面应用开发的最佳实践"
 
@@ -33,11 +35,13 @@ cases:
   # --------------------------------------------------------------------------
   - id: web-fetch-page
     type: task
+    category: task_completion
     description: "抓取网页内容"
     prompt: "抓取 https://httpbin.org/html 这个页面的内容，告诉我页面上有什么"
 
   - id: web-fetch-json-api
     type: task
+    category: task_completion
     description: "获取 JSON API"
     prompt: "访问 https://httpbin.org/json 获取返回的 JSON 数据"
 
@@ -46,6 +50,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: web-search-and-summarize
     type: task
+    category: task_completion
     description: "搜索后整合信息"
     prompt: "搜索 esbuild 和 webpack 的区别，用一段话总结各自的优缺点"
     timeout: 180000
@@ -55,10 +60,12 @@ cases:
   # --------------------------------------------------------------------------
   - id: web-fetch-invalid-url
     type: error_handling
+    category: error_recovery
     description: "无效 URL 处理"
     prompt: "抓取 https://this-domain-absolutely-does-not-exist-xyz123.com 的内容"
 
   - id: web-search-no-results
     type: task
+    category: task_completion
     description: "搜索无结果处理"
     prompt: "搜索 xyznonexistentterm98765432 的详细信息"

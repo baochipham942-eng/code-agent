@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { CompanionGateway } from '../../../src/host/services/companion/CompanionGateway';
+import { hasFullProjectScope, projectScope } from '../../../src/shared/contract/companionLibrary';
 
 function fixture() {
   const db = new Database(':memory:');
@@ -17,32 +18,63 @@ function fixture() {
 }
 
 describe('companion explicit project scope', () => {
-  it('keeps old session grants narrow and only admits explicitly shared project members', () => {
+  it('does not expand an old session grant when later invites cover every project', async () => {
+    const f = fixture();
+    try {
+      const full = f.gateway.issueDeviceCredential(projectScope([{ id: 'one' }, { id: 'two' }]));
+      expect(hasFullProjectScope(full.scope, [{ id: 'one' }, { id: 'two' }])).toBe(true);
+      expect(f.gateway.canAccessSession(full.deviceId, 'a')).toBe(true);
+      expect(f.gateway.canAccessSession(full.deviceId, 'secret')).toBe(true);
+      expect(f.gateway.canAccessSession(f.device.deviceId, 'secret')).toBe(false);
+      expect(f.gateway.canAccessSession(f.device.deviceId, 'b')).toBe(false);
+    } finally { f.db.close(); }
+  });
+  it('keeps old session grants narrow and only admits explicitly shared project members', async () => {
     const f = fixture();
     try {
       expect(f.gateway.canAccessSession(f.device.deviceId, 'a')).toBe(true);
       expect(f.gateway.canAccessSession(f.device.deviceId, 'b')).toBe(false);
       expect(f.gateway.canAccessSession(f.projectDevice.deviceId, 'b')).toBe(true);
-      expect(f.gateway.submit(f.command('secret'))).toMatchObject({ kind: 'rejected', reason: 'scope_denied' });
+      expect(await f.gateway.submit(f.command('secret'))).toMatchObject({ kind: 'rejected', reason: 'scope_denied' });
       expect(f.dispatch).not.toHaveBeenCalled();
       f.projects.b = 'two';
       expect(f.gateway.canAccessSession(f.projectDevice.deviceId, 'b')).toBe(false);
     } finally { f.db.close(); }
   });
-  it('requires the exact project grant for creation and replays mutations without execution', () => {
+  it('requires the exact project grant for creation and replays mutations without execution', async () => {
     const f = fixture();
     try {
       const payload = { title: 'new', provider: 'configured-provider', model: 'configured-model' };
-      expect(f.gateway.submit(f.command('a', 'session.create', payload, f.device))).toMatchObject({ kind: 'rejected' });
-      expect(f.gateway.submit(f.command('project:two', 'session.create', payload))).toMatchObject({ kind: 'rejected' });
+      expect(await f.gateway.submit(f.command('a', 'session.create', payload, f.device))).toMatchObject({ kind: 'rejected' });
+      expect(await f.gateway.submit(f.command('project:two', 'session.create', payload))).toMatchObject({ kind: 'rejected' });
       const command = f.command('project:one', 'session.create', payload);
-      expect(f.gateway.submit(command)).toMatchObject({ kind: 'accepted' });
-      expect(f.gateway.submit(command)).toMatchObject({ kind: 'replayed' });
+      expect(await f.gateway.submit(command)).toMatchObject({ kind: 'accepted' });
+      expect(await f.gateway.submit(command)).toMatchObject({ kind: 'replayed' });
       expect(f.dispatch).toHaveBeenCalledTimes(1);
       expect(f.gateway.commandStatus(f.projectDevice.deviceId, command.commandId)).not.toBeNull();
     } finally { f.db.close(); }
   });
-  it('filters project events and rejects revocation without exposing global events', () => {
+  it('does not expose a deleted project member through /sync', async () => {
+    const f = fixture();
+    try {
+      f.gateway.publish('b', 'message', { content: 'deleted-member' });
+      expect(f.gateway.syncForDevice(f.projectDevice.deviceId, 1, 0).events.map(e => e.payload.content)).toEqual(['deleted-member']);
+      f.gateway.forgetSession('b');
+      expect(f.gateway.canAccessSession(f.projectDevice.deviceId, 'b')).toBe(false);
+      expect(f.gateway.syncForDevice(f.projectDevice.deviceId, 1, 0).events).toEqual([]);
+      expect(f.db.prepare('SELECT COUNT(*) AS n FROM companion_events WHERE session_id = ?').get('b')).toEqual({ n: 0 });
+    } finally { f.db.close(); }
+  });
+  it('hides leftover deleted-session events from a later project grant', async () => {
+    const f = fixture();
+    try {
+      f.gateway.publish('b', 'message', { content: 'stale-deleted' });
+      f.db.prepare('INSERT INTO companion_session_cleanup (session_id) VALUES (?)').run('b');
+      expect(f.gateway.syncForDevice(f.projectDevice.deviceId, 1, 0).events).toEqual([]);
+      expect(f.db.prepare('SELECT COUNT(*) AS n FROM companion_events WHERE session_id = ?').get('b')).toEqual({ n: 1 });
+    } finally { f.db.close(); }
+  });
+  it('filters project events and rejects revocation without exposing global events', async () => {
     const f = fixture();
     try {
       f.gateway.publish('a', 'message', { content: 'shared' });
@@ -51,27 +83,27 @@ describe('companion explicit project scope', () => {
       expect(f.gateway.syncForDevice(f.projectDevice.deviceId, 1, 0).events.map(e => e.payload.content)).toEqual(['shared']);
       f.gateway.revokeDevice(f.projectDevice.deviceId);
       expect(f.gateway.canAccessSession(f.projectDevice.deviceId, 'a')).toBe(false);
-      expect(f.gateway.submit(f.command('a'))).toMatchObject({ kind: 'rejected', reason: 'device_revoked' });
+      expect(await f.gateway.submit(f.command('a'))).toMatchObject({ kind: 'rejected', reason: 'device_revoked' });
     } finally { f.db.close(); }
   });
-  it('atomically commits mutation receipts and rejects only interrupted reservations on restart', () => {
+  it('atomically commits mutation receipts and rejects only interrupted reservations on restart', async () => {
     const db = new Database(':memory:'); db.exec('CREATE TABLE effects (value TEXT)');
     const gateway = new CompanionGateway(db, { dispatch: () => ({ state: 'reconciling' }) });
     const device = gateway.issueDeviceCredential(['a']);
     const command = { version: 1 as const, deviceId: device.deviceId, scopeEpoch: device.scopeEpoch, sessionId: 'a', commandId: 'rename', action: 'session.rename' as const, payload: { title: 'renamed' } };
     try {
-      gateway.submit(command);
+      await gateway.submit(command);
       expect(() => gateway.commitMutation(command, () => { db.prepare('INSERT INTO effects VALUES (?)').run('rollback'); throw new Error('disk failure'); }, {})).toThrow();
       expect(db.prepare('SELECT * FROM effects').all()).toHaveLength(0);
       gateway.commitMutation(command, () => { db.prepare('INSERT INTO effects VALUES (?)').run('committed'); }, { sessionId: 'a' });
-      gateway.submit({ ...command, commandId: 'interrupted' });
+      await gateway.submit({ ...command, commandId: 'interrupted' });
       const restarted = new CompanionGateway(db);
       expect(restarted.commandStatus(device.deviceId, 'rename')).toMatchObject({ state: 'accepted' });
       expect(restarted.commandStatus(device.deviceId, 'interrupted')).toMatchObject({ state: 'rejected', result: { code: 'COMPANION_INTERRUPTED' } });
       expect(db.prepare('SELECT * FROM effects').all()).toEqual([{ value: 'committed' }]);
     } finally { db.close(); }
   });
-  it('does not overwrite a synchronous atomic receipt with the async dispatch placeholder', () => {
+  it('does not overwrite a synchronous atomic receipt with the async dispatch placeholder', async () => {
     const db = new Database(':memory:');
     const gateway = new CompanionGateway(db, { dispatch: command => {
       gateway.commitMutation(command, () => {}, { sessionId: command.sessionId });
@@ -79,7 +111,7 @@ describe('companion explicit project scope', () => {
     } });
     const device = gateway.issueDeviceCredential(['a']);
     try {
-      const result = gateway.submit({ version: 1, deviceId: device.deviceId, scopeEpoch: 1, sessionId: 'a', commandId: 'sync-rename', action: 'session.rename', payload: { title: 'new' } });
+      const result = await gateway.submit({ version: 1, deviceId: device.deviceId, scopeEpoch: 1, sessionId: 'a', commandId: 'sync-rename', action: 'session.rename', payload: { title: 'new' } });
       expect(result).toMatchObject({ kind: 'accepted', command: { state: 'accepted' } });
       expect(new CompanionGateway(db).commandStatus(device.deviceId, 'sync-rename')).toMatchObject({ state: 'accepted' });
     } finally { db.close(); }

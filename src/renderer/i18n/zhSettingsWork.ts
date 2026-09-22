@@ -863,6 +863,15 @@ export const zhSettingsWork = {
           off: '关',
         },
       },
+      evaluation: {
+        title: '评测反馈池钩子',
+        description: '评测抽屉里「进反馈池」按钮要跑的命令。留空 = 按钮退化成复制 fb add 命令文本。',
+        label: '钩子命令',
+        body: '宿主先把这条反馈的证据写成 JSON 落到应用数据目录，再用系统 shell 跑这条命令，证据目录经环境变量 NEO_EVAL_FEEDBACK_DIR 传进去（题 id 不会拼进命令串）。命令超过 30 秒会被掐断，证据仍然保留。',
+        placeholder: '例如：~/Downloads/ai/fleet-console/cli/fb add --from-dir "$NEO_EVAL_FEEDBACK_DIR"',
+        savedHint: '已保存',
+        adminHint: '这条命令由宿主用系统 shell 执行，只有管理员可以更改。',
+      },
       status: {
         title: '状态',
         description: '是否已配置完成 + 当前任务状态',

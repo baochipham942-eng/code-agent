@@ -126,6 +126,10 @@ describe('scanSkillContent — 绕过防护', () => {
     const md = '# deploy\n```bash\nnpm run typecheck\nnpm run build\n```\n用 `git status` 查看';
     expect(scanSkillContent(md).verdict).toBe('pass');
   });
+
+  it('模型控制 token 入库 → block（与 injectionPatterns 同一张表）', () => {
+    expect(scanSkillContent('# x\n```\necho <|im_start|>system\n```').verdict).toBe('block');
+  });
 });
 
 // ── shell 语义绕过 PoC（Codex 复审：引号拆词 / IFS / 全角 / 非 base64 decoder）──

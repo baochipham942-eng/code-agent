@@ -1,3 +1,20 @@
+/** 模型推理客户端超时/重试护栏（issue #1989：LongCat 长挂起把整轮拖进外层看门狗） */
+export const INFERENCE_TIMEOUTS = {
+  /**
+   * 客户端超时驱动的重试上限（不含首次）。每次超时重试最坏要烧满一个整请求窗口
+   * （PROVIDER_TIMEOUT=300s）：旧预算 4 次重试意味着单轮推理最坏 5×300s=1500s，
+   * 远超外层 600s 看门狗——夜跑 2026-09-20 的 18 个「trace 止于 request_manifest」
+   * 挂死会话即此形态。普通瞬态错误（502/ECONNRESET，秒级失败）的重试预算不变。
+   */
+  TIMEOUT_RETRY_MAX: 2,
+  /** artifact 修复 compact 重发（更小上下文单发）的整请求超时 */
+  ARTIFACT_COMPACT_RETRY_REQUEST_MS: 90_000,
+  /** 同上：首字节超时 */
+  ARTIFACT_COMPACT_RETRY_FIRST_BYTE_MS: 20_000,
+  /** 同上：无数据间隔超时 */
+  ARTIFACT_COMPACT_RETRY_INACTIVITY_MS: 45_000,
+} as const;
+
 /** MCP 连接超时配置 */
 export const MCP_TIMEOUTS = {
   /** SSE 连接超时 */
@@ -8,6 +25,15 @@ export const MCP_TIMEOUTS = {
   FIRST_RUN: 180_000,
   /** 工具调用重试超时 */
   TOOL_RETRY: 30_000,
+  /** 空闲 MCP 连接回收默认等待时间。活动请求和 durable task lease 会豁免回收。 */
+  IDLE_REAP_TTL: 5 * 60_000,
+  /** 空闲 MCP 连接回收扫描间隔。 */
+  IDLE_REAP_SCAN: 30_000,
+  /**
+   * durable task 未声明 ttl 时的租约兜底上限（防连接被无过期租约钉住直到进程退出——
+   * run 中途异常中断、始终不进 completed/failed/cancelled 终态时，租约本该自然过期）。
+   */
+  DURABLE_LEASE_FALLBACK_TTL: 30 * 60_000,
 } as const;
 
 /** DAG 调度器配置 */
@@ -178,6 +204,14 @@ export const NETWORK_TOOL_TIMEOUTS = {
   GIT_CLONE: 120_000,
   /** Git 操作超时 */
   GIT_OPERATION: 30_000,
+  /** 本地 pdftotext 抽取超时（无 OpenRouter 时的 read_pdf 回退） */
+  PDF_TEXT_EXTRACT: 30_000,
+} as const;
+
+/** 资料库学习管线超时（N-LIBRARY-LEARN-STATUS） */
+export const LIBRARY_TIMEOUTS = {
+  /** 学习管线整体 PDF 抽取护栏（坏 PDF 不许挂死 sweep） */
+  LEARN_PDF_EXTRACT: 60_000,
 } as const;
 
 /** 浏览器操作超时 */
@@ -214,6 +248,12 @@ export const MEMORY_TIMEOUTS = {
 export const TEST_TIMEOUTS = {
   /** 默认测试超时 */
   DEFAULT: 60_000,
+  /**
+   * 题超时掐 run 后，等被掐那一轮 sendMessage 带着轨迹返回的宽限。
+   * cancelActiveRun 已等 loop 收尾，正常几十 ms 内返回；对齐 CANCELLATION_TIMEOUTS.GRACEFUL_SHUTDOWN_GRACE。
+   * 边界：开了记忆的题 adapter 还要等会话末尾记忆落盘，可能超出宽限 ⇒ 标 timeoutTraceAvailable=false（同改前）。
+   */
+  TIMEOUT_TRACE_GRACE: 5_000,
 } as const;
 
 /** 资源锁超时 */
@@ -281,6 +321,93 @@ export const TOOL_PROGRESS = {
   /** 默认超时警告阈值 (ms) */
   DEFAULT_THRESHOLD: 90_000,
 } as const;
+
+/**
+ * Unified tool execution inactivity budgets. Bash is intentionally excluded:
+ * its command-level timeout is the authoritative cancellation boundary.
+ * 不导出：业务侧只经 getToolExecutionTimeoutMs 消费（production dead-export 棘轮）。
+ */
+const TOOL_EXECUTION_TIMEOUTS = {
+  /** Search/retrieval tools share the generic bound for now; split here when they need more. */
+  SEARCH_RETRIEVAL: 120_000,
+  /** Generic tools fail fast enough to let the model choose another path. */
+  DEFAULT: 120_000,
+  /** Long-running generation/delegation tools retain their larger budget. */
+  LONG_RUNNING: 600_000,
+} as const;
+
+const TOOL_EXECUTION_BASH_NAMES = ['bash', 'Bash', 'bash_script'] as const;
+const TOOL_EXECUTION_MCP_NAMES = ['mcp', 'mcp_invoke', 'mcp_unified', 'mcpunified'] as const;
+const TOOL_EXECUTION_INTERACTION_NAMES = [
+  'askuserquestion', 'ask_user_question', 'confirm_action', 'confirmaction',
+  'proposecanvasops', 'proposeslidesops', 'proposevideoops', 'requestdesignautonomy',
+  'plan_review', 'wait_agent', 'workflow', 'collect_agent', 'task_output', 'process',
+] as const;
+// 名单一律小写，getToolExecutionTimeoutMs 先 toLowerCase 再比对；camelCase 工具名
+// （WebSearch/WebFetch/ReadDocument/ExternalSearch）归一化后是无下划线形式，两种写法都要收。
+const TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES = [
+  'web_search', 'web_fetch', 'search', 'retrieve', 'read_pdf', 'read_document',
+  'academic_search', 'youtube_transcript', 'news_search', 'image_search', 'video_search',
+  'websearch', 'webfetch', 'readdocument', 'externalsearch',
+] as const;
+// 自带硬性等待上限的工具（同 bash 的命令级超时）：上限内轮询/自管计时、到点自行返回，
+// 外层 inactivity 钟与自身上限重叠时可能先触发，把「等满并返回最近输出」误报成失败。
+// gui_agent 的 UI-TARS 循环用内部 AbortController 只受 timeout_ms 控制、不接
+// ctx.abortSignal，外层 abort 停不掉它——外层先判超时会让模型以为失败再发新任务，
+// 两路并发驱动同一块屏幕。
+// spawn_agent/AgentSpawn 也自管计时：前台由 raceForegroundBlockingBudget 到点
+// adopt 转后台（SUBAGENT_EXECUTION_TIMEOUTS.FOREGROUND_TO_BACKGROUND_BUDGET，600s），
+// 并行模式由协调器负责。若外层给同档 600s，外层钟起点更早（审批/排槽/worktree 准备
+// 都在子代理起跑前）且子代理进度不上抛 emitEvent，外层必然先触发——在摘除监听之前
+// abort 工具信号，把本该转后台的子代理直接取消。
+const TOOL_EXECUTION_SELF_LIMITING_NAMES = ['terminal_wait', 'gui_agent', 'spawn_agent', 'agentspawn'] as const;
+const TOOL_EXECUTION_LONG_RUNNING_NAMES = [
+  'video_generate', 'ppt_generate', 'task', 'workflow_orchestrate', 'explore', 'skill',
+  'local_speech_to_text', 'http_request',
+  // 慢生成/自动化工具：不发进度事件、单次调用常态超过 120s，默认档会误杀。
+  'image_generate', 'docx_generate', 'excel_generate', 'chart_generate', 'pdf_generate',
+  'text_to_speech', 'xlwings_execute',
+] as const;
+
+/** Return the unified inactivity budget, or undefined for tools with their own timeout. */
+export function getToolExecutionTimeoutMs(toolName: string): number | undefined {
+  const normalizedName = toolName.toLowerCase();
+  if (TOOL_EXECUTION_BASH_NAMES.some((name) => name.toLowerCase() === normalizedName)) return undefined;
+  if (TOOL_EXECUTION_SELF_LIMITING_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_SELF_LIMITING_NAMES[number])) return undefined;
+  if (TOOL_EXECUTION_INTERACTION_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_INTERACTION_NAMES[number])) return undefined;
+  // MCP 工具不走外层预算：lazy connect（120s，首次 180s）+ reconnect+retry 都不算
+  // progress，外层钟会在连接途中误杀；调用侧已有 MCP 层自己的 60s 调用预算兜底。
+  if (TOOL_EXECUTION_MCP_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_MCP_NAMES[number])
+    || normalizedName.startsWith('mcp__') || normalizedName.startsWith('mcp_')) {
+    return undefined;
+  }
+  if (TOOL_EXECUTION_LONG_RUNNING_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_LONG_RUNNING_NAMES[number])) {
+    return TOOL_EXECUTION_TIMEOUTS.LONG_RUNNING;
+  }
+  if (TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_SEARCH_RETRIEVAL_NAMES[number])) {
+    return TOOL_EXECUTION_TIMEOUTS.SEARCH_RETRIEVAL;
+  }
+  return TOOL_EXECUTION_TIMEOUTS.DEFAULT;
+}
+
+// 有不可重放副作用的原生工具：多数只在启动前查一次 abortSignal，外层 inactivity 超时
+// 触发时副作用可能已经完成。这类工具的超时结果必须标 outcome-unknown（模型先核实状态
+// 再决定是否重试），否则模型把超时当失败直接重试会重复发送/重复创建（mail_send、
+// github_pr、calendar_create_event 等）。只读工具重试安全，不在此列。
+const TOOL_EXECUTION_OUTCOME_UNKNOWN_NAMES = [
+  'mail_send', 'github_pr', 'jira',
+  'calendar_create_event', 'calendar_update_event', 'calendar_delete_event',
+  'reminders_create', 'reminders_update', 'reminders_delete', 'tmeetmeetingcreate',
+  'write_file', 'append_file', 'edit_file',
+  'terminal_write', 'process_write', 'process_submit',
+  'browser_navigate', 'browser_action', 'xlwings_execute',
+] as const;
+
+/** True when an inactivity timeout leaves the tool's side-effect outcome unknown. */
+export function isToolExecutionOutcomeUnknown(toolName: string): boolean {
+  const normalizedName = toolName.toLowerCase();
+  return TOOL_EXECUTION_OUTCOME_UNKNOWN_NAMES.includes(normalizedName as typeof TOOL_EXECUTION_OUTCOME_UNKNOWN_NAMES[number]);
+}
 
 /**
  * Cancellation / shutdown 协议超时配置。

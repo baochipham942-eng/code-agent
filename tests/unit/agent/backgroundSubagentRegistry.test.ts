@@ -135,7 +135,9 @@ describe('BackgroundSubagentRegistry', () => {
       status: 'completed',
       durationMs: 0,
     });
-    expect(first[0]?.content).toContain('"agent_id": "subagent-bg-1"');
+    expect(first[0]?.content).toContain(`"agent_id": "${agentId}"`);
+    // ADR-025 B1：持久随机 id，保留 subagent-bg- 前缀（collect_agent 等消费方的形态假设）
+    expect(agentId).toMatch(/^subagent-bg-[0-9a-f-]{36}$/);
     expect(reg.drainCompletionNotifications({ sessionId: 'session-a', runId: 'run-a' })).toEqual([]);
   });
 

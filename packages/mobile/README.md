@@ -19,7 +19,10 @@ NEO_MOBILE_BUILD=1 NEO_MOBILE_FIXTURES=1 npm run android:build
 
 The build script generates the Android project from pinned Capacitor dependencies,
 sets versionName from this package and versionCode from `NEO_MOBILE_BUILD`, then
-builds offline using the existing Gradle cache. It does not silently install SDKs.
+builds offline using the existing Gradle cache. If `--offline` fails because a newly
+introduced native dependency is not cached, the script logs that, resolves
+dependencies online once, and retries `--offline`. It does not silently install
+SDKs; missing SDK or platform components still fail closed.
 `android/`, dependencies, packages and reports stay outside Git. Check the generated
 manifest's sourceDirty flag; delivery packages must come from a clean commit.
 The preview identity is separate from the historical Spike app. Increase the build
@@ -65,6 +68,20 @@ the embedded provisioning profile is Ad Hoc, unexpired and team-matched, the bun
 version comes from the built package rather than a design mock, and the code
 signature names the team. On-iPhone install and update acceptance (MI-01/02) stay
 with the device.
+
+### Simulator Debug vs signed Keychain
+
+Pairing identity is written with `@aparajita/capacitor-secure-storage` and
+`KeychainAccess.whenUnlockedThisDeviceOnly`. That write needs a TeamIdentifier.
+
+| Build variant | TeamIdentifier | Pairing identity survives process kill |
+|---|---|---|
+| `ios:build` Ad Hoc / Development Team (`ios:verify` requires `TeamIdentifier=`) | yes | yes — this is the iPhone path |
+| Xcode Debug-iphonesimulator, Sign to Run Locally (`adhoc -`) | no | no — Keychain `set` fails, UI stays on `storageError` |
+
+This is a signing variant, not a product fallback. Simulator acceptance may inject
+an in-process SecureStorage stub; that stub is not shipped. Do not store pairing
+secrets in Preferences.
 
 试用安装与更新（给使用者）：
 

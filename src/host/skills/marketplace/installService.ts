@@ -12,6 +12,7 @@ import { getUserConfigDir as getBaseConfigDir, getProjectConfigDir as getBasePro
 import { createLogger } from '../../services/infra/logger';
 import { getMarketplaceInfo, listMarketplaces } from './marketplaceService';
 import type {
+  MarketplaceSource,
   PluginEntryKind,
   InstalledPluginRecord,
   InstalledPluginsFile,
@@ -20,6 +21,13 @@ import type {
   PluginScope,
   PluginEntry,
 } from './types';
+import {
+  classifySkillInstallSource,
+  getPluginAssetDirName,
+  parseGitHubRepository,
+  scanInstallContent,
+  type SkillInstallSourceTrust,
+} from './skillInstallContentGuard';
 import type { SkillRegistryEntry } from '../../../shared/contract/skillRegistry';
 import { SKILL_REGISTRY_MARKETPLACE_ID } from '../../../shared/contract/skillRegistry';
 import {
@@ -85,11 +93,15 @@ async function ensureDir(dirPath: string): Promise<void> {
   await fs.mkdir(dirPath, { recursive: true });
 }
 
+function getPluginAssetDestination(scope: PluginScope, projectPath: string | undefined, pluginSpec: string): string {
+  return path.join(getPluginAssetsDir(scope, projectPath), getPluginAssetDirName(pluginSpec));
+}
+
 // ----------------------------------------------------------------------------
 // Installed Plugins State
 // ----------------------------------------------------------------------------
 
-async function loadInstalledPlugins(): Promise<InstalledPluginsFile> {
+export async function loadInstalledPlugins(): Promise<InstalledPluginsFile> {
   try {
     const filePath = getInstalledPluginsPath();
     if (!fsSync.existsSync(filePath)) return {};
@@ -203,6 +215,7 @@ async function resolvePluginSpec(pluginInput: string, signal?: AbortSignal): Pro
   pluginSpec: string;
   entry: PluginEntry;
   rootDir: string;
+  source?: MarketplaceSource;
 }> {
   const { plugin, marketplace } = parsePluginSpec(pluginInput);
   throwIfInstallAborted(signal);
@@ -223,6 +236,7 @@ async function resolvePluginSpec(pluginInput: string, signal?: AbortSignal): Pro
       pluginSpec: `${plugin}@${marketplace}`,
       entry,
       rootDir: info.rootDir,
+      source: info.source,
     };
   }
 
@@ -234,6 +248,7 @@ async function resolvePluginSpec(pluginInput: string, signal?: AbortSignal): Pro
     marketplace: string;
     entry: PluginEntry;
     rootDir: string;
+    source?: MarketplaceSource;
   }> = [];
 
   for (const marketplaceName of Object.keys(config)) {
@@ -247,6 +262,7 @@ async function resolvePluginSpec(pluginInput: string, signal?: AbortSignal): Pro
           marketplace: marketplaceName,
           entry: found,
           rootDir: info.rootDir,
+          source: info.source,
         });
       }
     } catch {
@@ -275,6 +291,7 @@ async function resolvePluginSpec(pluginInput: string, signal?: AbortSignal): Pro
     pluginSpec: `${match.plugin}@${match.marketplace}`,
     entry: match.entry,
     rootDir: match.rootDir,
+    source: match.source,
   };
 }
 
@@ -319,33 +336,6 @@ function getPluginEntryTypes(entry: PluginEntry): PluginEntryKind[] {
     types.push('skill');
   }
   return Array.from(new Set(types));
-}
-
-function getPluginAssetDirName(pluginSpec: string): string {
-  return pluginSpec
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9@._-]+/g, '-')
-    .replace(/@/g, '__')
-    .replace(/^-+|-+$/g, '') || 'plugin';
-}
-
-function getPluginAssetDestination(scope: PluginScope, projectPath: string | undefined, pluginSpec: string): string {
-  return path.join(getPluginAssetsDir(scope, projectPath), getPluginAssetDirName(pluginSpec));
-}
-
-function parseGitHubRepository(repository?: string): { owner: string; repo: string } | null {
-  if (!repository) {
-    return null;
-  }
-  const trimmed = repository.trim().replace(/\.git$/, '');
-  const match = trimmed.match(/^https:\/\/github\.com\/([^/\s]+)\/([^/\s#?]+)$/)
-    ?? trimmed.match(/^github:([^/\s]+)\/([^/\s#?]+)$/)
-    ?? trimmed.match(/^([^/\s]+)\/([^/\s#?]+)$/);
-  if (!match) {
-    return null;
-  }
-  return { owner: match[1]!, repo: match[2]! };
 }
 
 async function resolveGitHubBranchCommit(
@@ -440,6 +430,7 @@ async function resolveEntrySourceBase(args: {
   cleanup?: () => Promise<void>;
   pinnedCommit?: string;
   contentHash?: string;
+  sourceTrust?: SkillInstallSourceTrust;
 }> {
   const sourcePath = args.entry.source || args.entry.path || './';
   throwIfInstallAborted(args.signal);
@@ -469,6 +460,7 @@ async function resolveEntrySourceBase(args: {
   return {
     sourceBase: remoteSourceBase,
     ...artifact,
+    sourceTrust: 'unsigned-github-archive',
     cleanup: async () => {
       await fs.rm(tempDir, { recursive: true, force: true });
     },
@@ -710,7 +702,7 @@ async function installPluginUnlocked(
   const projectPath = scope === 'project' ? options.projectPath || process.cwd() : undefined;
   throwIfInstallAborted(options.signal);
 
-  const { plugin, marketplace, pluginSpec, entry, rootDir } =
+  const { plugin, marketplace, pluginSpec, entry, rootDir, source } =
     await resolvePluginSpec(pluginInput, options.signal);
 
   const state = await loadInstalledPlugins();
@@ -741,6 +733,7 @@ async function installPluginUnlocked(
       marketplace,
       pluginSpec,
       entry,
+      sourceTrust: entrySource.sourceTrust ?? classifySkillInstallSource({ source }),
       entrySource,
       scope,
       projectPath,
@@ -819,6 +812,7 @@ async function installFromRegistryEntryUnlocked(
       marketplace: SKILL_REGISTRY_MARKETPLACE_ID,
       pluginSpec,
       entry,
+      sourceTrust: 'official-registry',
       entrySource: { sourceBase, ...artifact },
       scope: 'user',
       state,
@@ -832,11 +826,12 @@ async function installFromRegistryEntryUnlocked(
   }
 }
 
-async function performInstall(args: {
+export async function performInstall(args: {
   plugin: string;
   marketplace: string;
   pluginSpec: string;
   entry: PluginEntry;
+  sourceTrust: SkillInstallSourceTrust;
   entrySource: { sourceBase: string; pinnedCommit?: string; contentHash?: string };
   scope: PluginScope;
   projectPath?: string;
@@ -846,7 +841,7 @@ async function performInstall(args: {
   enableAfterInstall?: boolean;
   signal?: AbortSignal;
 }): Promise<InstallResult> {
-  const { plugin, marketplace, pluginSpec, entry, entrySource, scope, projectPath, state, existing } = args;
+  const { plugin, marketplace, pluginSpec, entry, sourceTrust, entrySource, scope, projectPath, state, existing } = args;
   const options = { force: args.force, enableAfterInstall: args.enableAfterInstall };
   const pluginRoot = getPluginAssetDestination(scope, projectPath, pluginSpec);
   const stagingRoot = `${pluginRoot}.staging-${randomUUID()}`;
@@ -881,6 +876,11 @@ async function performInstall(args: {
       commandPaths: entry.commands || [],
     });
     const installedCommands = commandFiles.map((command) => command.name);
+    await scanInstallContent({
+      pluginSpec,
+      sourceTrust,
+      rootDir: stagingRoot,
+    });
     throwIfInstallAborted(args.signal);
 
     if (existing && options.force) {

@@ -32,6 +32,20 @@ describe('CitationExtractor', () => {
       expect(citations).toHaveLength(1);
       expect(citations[0].location).toContain('10');
     });
+
+    it('should extract file citation from protocol Read name', () => {
+      const citations = extractCitations(
+        'Read',
+        'tc-1',
+        { file_path: '/Users/me/library/global/learn-status-brief.md' },
+        '     1\t# note\n     2\t第一行\n     3\t第二行 Berkshire Buffett\n',
+      );
+      expect(citations).toHaveLength(1);
+      expect(citations[0].type).toBe('file');
+      expect(citations[0].source).toBe('/Users/me/library/global/learn-status-brief.md');
+      expect(citations[0].label).toBe('learn-status-brief.md:1');
+      expect(citations[0].location).toMatch(/^lines?:1/);
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -46,6 +60,15 @@ src/host.ts:5:import { x } from './app';`;
       expect(citations.some(c => c.source === 'src/app.ts')).toBe(true);
       expect(citations.some(c => c.source === 'src/host.ts')).toBe(true);
     });
+
+    it('should extract file references from protocol Grep name', () => {
+      const output = `/tmp/learn-status-brief.md:3:第二行 Berkshire Buffett`;
+      const citations = extractCitations('Grep', 'tc-1', { pattern: 'Berkshire' }, output);
+      expect(citations).toHaveLength(1);
+      expect(citations[0].type).toBe('file');
+      expect(citations[0].source).toBe('/tmp/learn-status-brief.md');
+      expect(citations[0].location).toBe('line:3');
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -55,10 +78,57 @@ src/host.ts:5:import { x } from './app';`;
     it('should extract file paths', () => {
       const output = `src/app.ts
 src/host.ts
-src/utils.ts`;
-      const citations = extractCitations('glob', 'tc-1', { pattern: '**/*.ts' }, output);
+src/utils.ts
+
+nextOffset: null`;
+      const citations = extractCitations(
+        'glob',
+        'tc-1',
+        { pattern: '**/*.ts', path: '/tmp/proj' },
+        output,
+      );
       expect(citations).toHaveLength(3);
       expect(citations.every(c => c.type === 'file')).toBe(true);
+      expect(citations.map((c) => c.source)).toEqual([
+        '/tmp/proj/src/app.ts',
+        '/tmp/proj/src/host.ts',
+        '/tmp/proj/src/utils.ts',
+      ]);
+    });
+
+    it('should extract file paths from protocol Glob name and ignore handler tail', () => {
+      const output = `notes.md
+brief.md
+
+nextOffset: null`;
+      const citations = extractCitations(
+        'Glob',
+        'tc-1',
+        { pattern: '*.md', path: '/tmp/proj' },
+        output,
+      );
+      expect(citations).toHaveLength(2);
+      expect(citations.map((c) => c.source)).toEqual(['/tmp/proj/notes.md', '/tmp/proj/brief.md']);
+    });
+
+    it('should skip relative glob hits when search path is not absolute', () => {
+      const citations = extractCitations(
+        'Glob',
+        'tc-1',
+        { pattern: '*.md' },
+        'notes.md\n\nnextOffset: null',
+      );
+      expect(citations).toHaveLength(0);
+    });
+
+    it('should not cite the zero-match handler sentence', () => {
+      const citations = extractCitations(
+        'Glob',
+        'tc-1',
+        { pattern: '*.nope' },
+        'No files matched the pattern',
+      );
+      expect(citations).toHaveLength(0);
     });
   });
 

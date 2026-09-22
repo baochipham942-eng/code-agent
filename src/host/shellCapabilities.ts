@@ -12,6 +12,47 @@ import {
   type ShellCapabilityRisk,
 } from '../shared/contract/shellCapabilities';
 import { IPC_DOMAINS, type IPCDomain } from '../shared/ipc/domains';
+import { sessionRoutes } from './ipc/domainRoutes/sessionRoutes';
+import { MemorySchemas } from '../shared/ipc/schemas/memory';
+import { DesktopSchemas } from '../shared/ipc/schemas/desktop';
+import { TagSchemas } from '../shared/ipc/schemas/tag';
+import { CronSchemas } from '../shared/ipc/schemas/cron';
+import { PromptSchemas } from '../shared/ipc/schemas/prompt';
+import { DiagnosticsSchemas } from '../shared/ipc/schemas/diagnostics';
+import { DataSchemas } from '../shared/ipc/schemas/data';
+import { LoopSchemas } from '../shared/ipc/schemas/loop';
+import { SyncSchemas } from '../shared/ipc/schemas/sync';
+import { DeviceSchemas } from '../shared/ipc/schemas/device';
+import { WindowSchemas } from '../shared/ipc/schemas/window';
+import { ProjectSchemas } from '../shared/ipc/schemas/project';
+import { TaskSchemas } from '../shared/ipc/schemas/task';
+import { GenerativeUISchemas } from '../shared/ipc/schemas/generativeUI';
+import { FolderTrustSchemas } from '../shared/ipc/schemas/folderTrust';
+import { HookSchemas } from '../shared/ipc/schemas/hook';
+import { WorkspaceSchemas } from '../shared/ipc/schemas/workspace';
+import { AuthSchemas } from '../shared/ipc/schemas/auth';
+import { RolesSchemas } from '../shared/ipc/schemas/roles';
+import { ConnectorSchemas } from '../shared/ipc/schemas/connector';
+import { AgentSchemas } from '../shared/ipc/schemas/agent';
+import { SettingsSchemas } from '../shared/ipc/schemas/settings';
+import { McpSchemas } from '../shared/ipc/schemas/mcp';
+import { LibrarySchemas } from '../shared/ipc/schemas/library';
+import { AgentEngineSchemas } from '../shared/ipc/schemas/agentEngine';
+import { CapabilitySchemas } from '../shared/ipc/schemas/capability';
+import { PiiSchemas } from '../shared/ipc/schemas/pii';
+import { ActivitySchemas } from '../shared/ipc/schemas/activity';
+import { StatusSchemas } from '../shared/ipc/schemas/status';
+import { NotificationSchemas } from '../shared/ipc/schemas/notification';
+import { OpenchronicleSchemas } from '../shared/ipc/schemas/openchronicle';
+import { SoulSchemas } from '../shared/ipc/schemas/soul';
+import { PlanningSchemas } from '../shared/ipc/schemas/planning';
+import { TerminalSchemas } from '../shared/ipc/schemas/terminal';
+import { SessionAutomationSchemas } from '../shared/ipc/schemas/sessionAutomation';
+import { TeamSchemas } from '../shared/ipc/schemas/team';
+import { CaptureSchemas } from '../shared/ipc/schemas/capture';
+import { AgentRegistrySchemas } from '../shared/ipc/schemas/agentRegistry';
+import { LivePreviewSchemas } from '../shared/ipc/schemas/livePreview';
+import { UpdateSchemas } from '../shared/ipc/schemas/update';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -52,11 +93,16 @@ const NATIVE_TAURI_COMMANDS = [
   'warm_compile_cache_after_install',
 ] as const;
 
+// session 域自 RQ-183 刀 4 起从单源路由表派生（方案 2.4）：action 集合的真源是
+// sessionRoutes 表，本清单不再手工维护——加/删 action 改表即可，这里自动跟。
+// 手工只剩 since 版本（DEFAULT_SINCE_VERSION）与高危标记（HIGH_RISK_CAPABILITIES）。
+// 其余域表化后照此逐域切换（挂后续单）；未表化域仍手工维护，由 domainRouteParity
+// 的全域单向门盯「清单 ⊆ 实际 handler」+ 缺报棘轮。
+const SESSION_TABLE_ACTIONS: readonly string[] = Object.keys(sessionRoutes.actions);
+
 const CAPABILITY_DOMAIN_ACTIONS = {
-  [IPC_DOMAINS.ACTIVITY]: [
-    'getCurrentContext',
-    'listProviders',
-  ],
+  // activity 域：派生自 schema action 集合（== activity 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.ACTIVITY]: ActivitySchemas.ACTIONS,
   [IPC_DOMAINS.ADMIN]: [
     'createInviteCode',
     'listControlPlaneAuditEvents',
@@ -67,70 +113,29 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'setSharedRelay',
     'updateInviteCode',
   ],
-  [IPC_DOMAINS.AGENT]: [
-    'cancel',
-    'closeAgent',
-    'getSessionPermissionMode',
-    'getTree',
-    'getWorktreeReview',
-    'interrupt',
-    'pause',
-    'permissionResponse',
-    'resume',
-    'send',
-    'sendMemberInput',
-    'setPermissionMode',
-    'setSessionPermissionMode',
+  // agent 域：派生自 schema action 集合（== agent 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.AGENT]: AgentSchemas.ACTIONS,
+  // agentEngine 域：派生自 schema action 集合（== agentEngine 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.AGENT_ENGINE]: AgentEngineSchemas.ACTIONS,
+  // agents 域（AGENT_REGISTRY）：派生自 schema action 集合（== agentRegistry 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.AGENT_REGISTRY]: AgentRegistrySchemas.ACTIONS,
+  // backgroundTasks 域：defineHandler schema 化注册（BackgroundTaskSchemas.REQUEST），renderer 的任务面板 / 通知同步在调；
+  // 此前整域未登记（缺报 5 项），parity 门的缺报棘轮按 defineHandler 提取对账
+  [IPC_DOMAINS.BACKGROUND_TASKS]: [
+    'drainNotifications',
+    'getTask',
+    'listTasks',
+    'markNotificationDelivered',
+    'readTaskLog',
   ],
-  [IPC_DOMAINS.AGENT_ENGINE]: [
-    'detect',
-    'get',
-    'list',
-    'listHistory',
-    'listModels',
-    'listSources',
-    'previewHistory',
-    'select',
-    'selectModel',
-  ],
-  [IPC_DOMAINS.AGENT_REGISTRY]: [
-    'list',
-  ],
-  [IPC_DOMAINS.AUTH]: [
-    'clearSavedCredentials',
-    'generateQuickToken',
-    'getSavedCredentials',
-    'getStatus',
-    'getUser',
-    'passwordResetCallback',
-    'resetPassword',
-    'saveCredentials',
-    'signInEmail',
-    'signInOAuth',
-    'signInToken',
-    'signOut',
-    'signUpEmail',
-    'updatePassword',
-    'updateProfile',
-  ],
-  [IPC_DOMAINS.CAPABILITY]: [
-    'installDraft',
-    'list',
-    'removeDraft',
-    'setEnabled',
-  ],
-  [IPC_DOMAINS.CAPTURE]: [
-    'capture',
-    'delete',
-    'get',
-    'importFiles',
-    'list',
-    'search',
-    'selectFiles',
-    'stats',
-    'wechatStatus',
-  ],
+  // auth 域：派生自 schema action 集合（== auth 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.AUTH]: AuthSchemas.ACTIONS,
+  // capability 域：派生自 schema action 集合（== capability 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.CAPABILITY]: CapabilitySchemas.ACTIONS,
+  // capture 域：派生自 schema action 集合（== capture 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.CAPTURE]: CaptureSchemas.ACTIONS,
   [IPC_DOMAINS.VOICE]: [
+    'injectUserText',
     'reportFailure',
     // 通话录音（N-L7-REC）：设置页与导出勾选框都读它，旧壳不认识要降级。
     'recordingOverview',
@@ -141,164 +146,42 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'voiceprintPrepareModel',
     'voiceprintRegister',
   ],
-  [IPC_DOMAINS.CONNECTOR]: [
-    'disconnect',
-    'listNativeInventory',
-    'listStatuses',
-    'oauthCancelConnect',
-    'oauthConnect',
-    'oauthDisconnect',
-    'oauthSaveDescriptor',
-    'oauthSetSecret',
-    'oauthStatus',
-    'openApp',
-    'probe',
-    'remove',
-    'repairPermission',
-    'retry',
-    'setNativeEnabled',
-  ],
-  [IPC_DOMAINS.DATA]: [
-    'clearSnapshots',
-    'clearToolCache',
-    'getSnapshotStats',
-    'getStats',
-    'setSnapshotRetention',
-  ],
-  [IPC_DOMAINS.FOLDER_TRUST]: [
-    'get',
-    'set',
-  ],
-  [IPC_DOMAINS.DESKTOP]: [
-    'attachBrowserRelayTab',
-    'clearManagedBrowserCookies',
-    'closeManagedBrowserSession',
-    'detachBrowserRelayTab',
-    'ensureManagedBrowserSession',
-    'getBrowserRelayState',
-    'getComputerSurfaceState',
-    'getManagedBrowserRecoverySnapshot',
-    'getManagedBrowserSession',
-    'importBrowserProfileCookies',
-    'listBrowserProfiles',
-    'listBrowserRelayTabs',
-    'listComputerSurfaceElements',
-    'observeComputerSurface',
-    'openBrowserRelayExtensionDirectory',
-    'openBrowserRelayTab',
-    'openManagedBrowserUrl',
-    'refreshManagedBrowserAccountState',
-    'startBrowserRelay',
-    'stopBrowserRelay',
-  ],
-  [IPC_DOMAINS.DIAGNOSTICS]: [
-    'budget',
-    'compression',
-    'decisions',
-    'desktopShell',
-    'execPolicy',
-    'exportAppBundle',
-    'logClientError',
-  ],
-  [IPC_DOMAINS.GENERATIVE_UI]: [
-    'applyEvent',
-    'persistHtmlEdit',
-    'resolveInstance',
-    'resolveManifest',
-  ],
-  [IPC_DOMAINS.HOOK]: [
-    'list',
-    'openConfigFile',
-    'revealConfigFolder',
-  ],
-  [IPC_DOMAINS.LIVE_PREVIEW]: [
-    'applyTweak',
-    'detectFramework',
-    'getDevServerLogs',
-    'getDevServerSession',
-    'listDevServers',
-    'ping',
-    'resolveSourceLocation',
-    'startDevServer',
-    'stopDevServer',
-    'validateDevServerUrl',
-    'waitDevServerReady',
-  ],
-  [IPC_DOMAINS.MCP]: [
-    'addServer',
-    'cancelServerInstall',
-    'getCatalog',
-    'getServerStates',
-    'getStatus',
-    'listResources',
-    'listTools',
-    'reconnectServer',
-    'refreshFromCloud',
-    'removeServer',
-    'setServerEnabled',
-    'signOutServer',
-  ],
-  [IPC_DOMAINS.MEMORY]: [
-    'memoryAudit',
-    'memoryEntryUpdate',
-    'memoryInboxResolve',
-  ],
-  [IPC_DOMAINS.NOTIFICATION]: [
-    'getRecent',
-    'reportClientDelivery',
-  ],
-  [IPC_DOMAINS.OPENCHRONICLE]: [
-    'getSettings',
-    'getStatus',
-    'setEnabled',
-    'updateSettings',
-  ],
-  [IPC_DOMAINS.PII]: [
-    'setup:cancel',
-    'setup:isReady',
-    'setup:start',
-    'setup:status',
-  ],
-  [IPC_DOMAINS.PLANNING]: [
-    'getErrors',
-    'getFindings',
-    'getPlan',
-    'getState',
-    'respondApproval',
-  ],
-  [IPC_DOMAINS.PROJECT]: [
-    'addGoal',
-    'addRole',
-    'addSource',
-    'artifactIssues',
-    'artifacts',
-    'createInvite',
-    'createSpace',
-    'create',
-    'deleteProject',
-    'detail',
-    'gitStates',
-    'list',
-    'listCapabilitySelections',
-    'listCloudCards',
-    'listMembers',
-    'listWithActivity',
-    'promoteToCloudSpace',
-    'promoteToSpace',
-    'removeRole',
-    'removeSource',
-    'rename',
-    'resyncCloudCards',
-    'selectCapability',
-    'setPrimarySource',
-    'setDescription',
-    'setStatus',
-    'sources',
-    'unselectCapability',
-    'updateGoalStatus',
-    'updateProject',
-    'updateSourceAccess',
-  ],
+  // connector 域：派生自 schema action 集合（== connector 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.CONNECTOR]: ConnectorSchemas.ACTIONS,
+  // data 域：派生自 schema action 集合（== data 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.DATA]: DataSchemas.ACTIONS,
+  // folderTrust 域：派生自 schema action 集合（== folderTrust 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.FOLDER_TRUST]: FolderTrustSchemas.ACTIONS,
+  // cron 域：派生自 schema action 集合（== cron 表 keys，parity 门三面对账）
+  [IPC_DOMAINS.CRON]: CronSchemas.ACTIONS,
+  // device 域：派生自 schema action 集合（== device 表 keys，parity 门三面对账）
+  [IPC_DOMAINS.DEVICE]: DeviceSchemas.ACTIONS,
+  // desktop 域：派生自 schema action 集合（== desktop 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.DESKTOP]: DesktopSchemas.ACTIONS,
+  // diagnostics 域：派生自 schema action 集合（== diagnostics 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.DIAGNOSTICS]: DiagnosticsSchemas.ACTIONS,
+  // generativeUI 域：派生自 schema action 集合（== generativeUI 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.GENERATIVE_UI]: GenerativeUISchemas.ACTIONS,
+  // hook 域：派生自 schema action 集合（== hook 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.HOOK]: HookSchemas.ACTIONS,
+  // livePreview 域：派生自 schema action 集合（== livePreview 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.LIVE_PREVIEW]: LivePreviewSchemas.ACTIONS,
+  // loop 域：派生自 schema action 集合（== loop 表 keys，parity 门三面对账）
+  [IPC_DOMAINS.LOOP]: LoopSchemas.ACTIONS,
+  // mcp 域：派生自 schema action 集合（== mcp 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.MCP]: McpSchemas.ACTIONS,
+  // memory 域：派生自 schema action 集合（== memoryRoutes 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.MEMORY]: MemorySchemas.ACTIONS,
+  // notification 域：派生自 schema action 集合（== notification 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.NOTIFICATION]: NotificationSchemas.ACTIONS,
+  // openchronicle 域：派生自 schema action 集合（== openchronicle 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.OPENCHRONICLE]: OpenchronicleSchemas.ACTIONS,
+  // pii 域：派生自 schema action 集合（== pii 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.PII]: PiiSchemas.ACTIONS,
+  // planning 域：派生自 schema action 集合（== planning 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.PLANNING]: PlanningSchemas.ACTIONS,
+  // project 域：派生自 schema action 集合（== project 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.PROJECT]: ProjectSchemas.ACTIONS,
   [IPC_DOMAINS.QUEUED_INPUT]: [
     'enqueue',
     'list',
@@ -310,18 +193,12 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'sendNow',
     'update',
   ],
-  [IPC_DOMAINS.LIBRARY]: [
-    'addItem',
-    'delete',
-    'get',
-    'getPin',
-    'importFiles',
-    'list',
-    'pinnedItems',
-    'setPin',
-    'update',
-  ],
+  // library 域：派生自 schema action 集合（== library 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.LIBRARY]: LibrarySchemas.ACTIONS,
+  // prompt 域：派生自 schema action 集合（== prompt 表 keys，parity 门三面对账）；此前清单整域缺报 7 项
+  [IPC_DOMAINS.PROMPT]: PromptSchemas.ACTIONS,
   [IPC_DOMAINS.PROVIDER]: [
+    'delete_realtime_voice_provider',
     'discover_models',
     'getHealthStatus',
     'get_search_capabilities',
@@ -333,91 +210,14 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'test_connection',
     'test_realtime_voice_provider',
   ],
-  [IPC_DOMAINS.ROLES]: [
-    'addBinding',
-    'confirmDraft',
-    'deleteMemory',
-    'detail',
-    'list',
-    'listBoundCronJobs',
-    'listBindings',
-    'listDrafts',
-    'rejectDraft',
-    'removeBinding',
-    'rolePackInstall',
-    'rolePackList',
-    'rolePackRetryMissingSkills',
-    'rolePackUninstall',
-    'setProactivity',
-    'updateMemory',
-    'updateEquipment',
-    'updateDefinitionBody',
-    'updatePersonalization',
-    'updateVisual',
-    'restoreFactory',
-    'writeProjectMemory',
-  ],
-  [IPC_DOMAINS.SESSION]: [
-    'archive',
-    'auditConversationLineage',
-    'clearModelOverride',
-    'compareConversationBranches',
-    'create',
-    'delete',
-    'enqueueSessionForkSync',
-    'export',
-    'exportDiagnostics',
-    'exportMarkdown',
-    'exportSessionFork',
-    'fork',
-    'getForkLineage',
-    'findExpertThread',
-    'getMemoryContext',
-    'getMessages',
-    'getModelOverride',
-    'getRecap',
-    'getSessionTasks',
-    'import',
-    'importReadySessionForkSync',
-    'importSessionFork',
-    'ingestSessionForkSync',
-    'list',
-    'listConversationEvaluationAttributions',
-    'listForkChildren',
-    'load',
-    'quarantineConversationLineage',
-    'readSessionForkNeighborhood',
-    'readSessionForkTree',
-    'recordConversationEvaluationAttribution',
-    'recoverHistory',
-    'repairConversationLineage',
-    'replayConversationBranch',
-    'restoreConversationRewind',
-    'restoreWorkspaceFilesAtCheckpoint',
-    'rewindConversation',
-    'rewindToPrompt',
-    'search',
-    'searchSessionForkExports',
-    'traceConversationProvenance',
-    'switchModel',
-    'turnCheckout',
-    'turnRedo',
-    'unarchive',
-    'update',
-  ],
-  [IPC_DOMAINS.SESSION_AUTOMATION]: [
-    'countPendingReview',
-    'getSessionSummary',
-    'listBySession',
-    'listParkedApprovals',
-    'listPendingReview',
-    'markReviewed',
-    'summarizeSessions',
-  ],
-  [IPC_DOMAINS.STATUS]: [
-    'getCostStats',
-    'getTodayCost',
-  ],
+  // roles 域：派生自 schema action 集合（== roles 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.ROLES]: RolesSchemas.ACTIONS,
+  // session 域：派生自 sessionRoutes 表（见上），手工清单已删
+  [IPC_DOMAINS.SESSION]: SESSION_TABLE_ACTIONS,
+  // sessionAutomation 域：派生自 schema action 集合（== sessionAutomation 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.SESSION_AUTOMATION]: SessionAutomationSchemas.ACTIONS,
+  // status 域：派生自 schema action 集合（== status 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.STATUS]: StatusSchemas.ACTIONS,
   [IPC_DOMAINS.SURFACE_EXECUTION]: [
     'control',
     'deletePersistedTerminalFrames',
@@ -426,147 +226,37 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'getPersistedTerminalFrame',
     'getSnapshot',
     'persistTerminalFrame',
+    'startLiveStream',
+    'stopLiveStream',
   ],
-  [IPC_DOMAINS.SETTINGS]: [
-    'checkApiKeyConfigured',
-    'get',
-    'getAllServiceKeys',
-    'getBudgetStatus',
-    'getDevMode',
-    'getServiceApiKey',
-    'resolveProviderIconAsset',
-    'saveProviderIconAsset',
-    'set',
-    'setBudgetConfig',
-    'setDevMode',
-    'setServiceApiKey',
-    'testApiKey',
-  ],
-  [IPC_DOMAINS.SOUL]: [
-    'getDefault',
-    'getProfile',
-    'getStatus',
-    'resetProfile',
-    'saveProfile',
-  ],
-  [IPC_DOMAINS.SYNC]: [
-    'forceFull',
-    'getStatus',
-    'start',
-    'stop',
-  ],
-  [IPC_DOMAINS.TASK]: [
-    'cancel',
-    'cleanup',
-    'getAllStates',
-    'getQueue',
-    'getState',
-    'getStats',
-    'interrupt',
-    'start',
-  ],
-  [IPC_DOMAINS.TERMINAL]: [
-    'close',
-    'list',
-    'open',
-    'resize',
-    'snapshot',
-    'write',
-  ],
-  [IPC_DOMAINS.TEAM]: [
-    'confirmDraft',
-    'knownRoles',
-    'launchRecipe',
-    'listDrafts',
-    'recipeCreate',
-    'recipeDelete',
-    'recipeList',
-    'recipeUpdate',
-    'rejectDraft',
-  ],
-  [IPC_DOMAINS.UPDATE]: [
-    'check',
-    'download',
-    'getInfo',
-    'openFile',
-    'openUrl',
-    'prepareRuntimeAssets',
-    'rendererBundleStatus',
-    'runtimeAssetsStatus',
-    'startAutoCheck',
-    'stopAutoCheck',
-  ],
-  [IPC_DOMAINS.WORKSPACE]: [
-    'createFile',
-    'createFolder',
-    'deleteBrand',
-    'deleteCustomImageModel',
-    'deleteCustomVideoModel',
-    'downloadFile',
-    'editDesignImage',
-    'editImageByAnnotation',
-    'expandDesignImage',
-    'exportBundle',
-    'exportCanvasPptx',
-    'exportImagePdf',
-    'exportPrototypePdf',
-    'extractBrandFromImage',
-    'generateDesignImage',
-    'generateDesignMusic',
-    'generateDesignVideo',
-    'generateSlidesDeck',
-    'generateSlidesOutline',
-    'generateSlidesPreview',
-    'getConfigScope',
-    'getCurrent',
-    'getDesignMdSummary',
-    'getDesignSettings',
-    'getFileMetadata',
-    'getPublishInfo',
-    'getShareLink',
-    'importDesignImage',
-    'importDesignImageFromPath',
-    'inspectArchive',
-    'inspectPresentation',
-    'findFile',
-    'previewPresentation',
-    'publishVersion',
-    'createShareLink',
-    'updateShareLinkTtl',
-    'pushShareLink',
-    'revokeShareLink',
-    'listBrands',
-    'listCustomImageModels',
-    'listCustomVideoModels',
-    'listFiles',
-    'listRecent',
-    'listVisualImageModels',
-    'listVisualMusicModels',
-    'listVisualVideoModels',
-    'openPath',
-    'readBinary',
-    'readFile',
-    'removeRecent',
-    'removeWatermarkDesignImage',
-    'resolveDesignDir',
-    'saveBinaryToDownloads',
-    'saveBrand',
-    'saveCustomImageModel',
-    'saveCustomVideoModel',
-    'saveTextToDownloads',
-    'selectDirectory',
-    'setActiveBrand',
-    'setCurrent',
-    'showItemInFolder',
-    'updateDesignSettings',
-    'writeFile',
-  ],
+  // settings 域：派生自 schema action 集合（== settings 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.SETTINGS]: SettingsSchemas.ACTIONS,
+  // soul 域：派生自 schema action 集合（== soul 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.SOUL]: SoulSchemas.ACTIONS,
+  // sync 域：派生自 schema action 集合（== sync 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.SYNC]: SyncSchemas.ACTIONS,
+  // tag 域：派生自 schema action 集合（== tag 表 keys，parity 门三面对账）
+  [IPC_DOMAINS.TAG]: TagSchemas.ACTIONS,
+  // task 域：派生自 schema action 集合（== task 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.TASK]: TaskSchemas.ACTIONS,
+  // terminal 域：派生自 schema action 集合（== terminal 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.TERMINAL]: TerminalSchemas.ACTIONS,
+  // team 域：派生自 schema action 集合（== team 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.TEAM]: TeamSchemas.ACTIONS,
+  // update 域：派生自 schema action 集合（== update 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.UPDATE]: UpdateSchemas.ACTIONS,
+  // window 域：派生自 schema action 集合（== window 表 keys，parity 门三面对账）
+  [IPC_DOMAINS.WINDOW]: WindowSchemas.ACTIONS,
+  // workspace 域：派生自 schema action 集合（== workspace 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.WORKSPACE]: WorkspaceSchemas.ACTIONS,
 } satisfies Partial<Record<IPCDomain, readonly string[]>>;
 
 const HIGH_RISK_CAPABILITIES = new Set([
   makeShellCapabilityId(IPC_DOMAINS.AGENT, 'send'),
   // oauthSetSecret 落用户机密、oauthSaveDescriptor 改授权与注入边界、oauthConnect 发起
-  // 对外授权；inferRisk 按动作名前缀猜会把 oauth* 判成 low，风险显示不出来。
+  // 对外授权。判据自身够不着 high：set / save 在词中只到 medium，而 oauthConnect 切词是
+  // oauth|connect，connect 不在 MUTATION_VERBS（表里只有 disconnect），只到 low。
+  // 三条都是机密与授权边界，要 high——判据够不着的个例才进这份清单。
   makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthConnect'),
   makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthSaveDescriptor'),
   makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthSetSecret'),
@@ -575,8 +265,8 @@ const HIGH_RISK_CAPABILITIES = new Set([
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'observeComputerSurface'),
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'openManagedBrowserUrl'),
   // recoverHistory's import action writes sessions/messages/forks and creates a
-  // receipt table; inferRisk's prefix regex doesn't match "recoverHistory" so it
-  // would silently fall through to low.
+  // receipt table; neither segment of "recoverHistory" is a mutation verb, so
+  // inferRisk would silently fall through to low without this entry.
   makeShellCapabilityId(IPC_DOMAINS.SESSION, 'recoverHistory'),
   makeShellCapabilityId(IPC_DOMAINS.SESSION, 'restoreWorkspaceFilesAtCheckpoint'),
   makeShellCapabilityId(IPC_DOMAINS.SESSION, 'turnCheckout'),
@@ -587,13 +277,65 @@ const HIGH_RISK_CAPABILITIES = new Set([
   makeTauriCommandCapabilityId('install_update'),
 ]);
 
+/** 写动作动词表：命中即至少 medium。 */
+const MUTATION_VERBS = new Set([
+  'add', 'archive', 'cancel', 'capture', 'clear', 'close', 'confirm', 'create', 'delete',
+  'disconnect', 'download', 'force', 'import', 'install', 'interrupt', 'open', 'pause',
+  'prepare', 'probe', 'refresh', 'reject', 'remove', 'rename', 'repair', 'report', 'reset',
+  'resume', 'resync', 'retry', 'save', 'select', 'send', 'set', 'sign', 'start', 'stop',
+  'switch', 'unarchive', 'update', 'write',
+]);
+
+/**
+ * 只读首词：动作名以这些词开头时整体是查询，即便后续词段里有写动词也不升级。
+ * 没有这条，getAudioCaptureStatus（含 capture）、inspectArchive（含 archive）、
+ * check_for_update（含 update）都会被误判成 medium。
+ *
+ * 表里只留**实测会改变判定**的首词，两轮清理：
+ * - describe / diff / has / is / query / stat / status：仓内零命中，从没参与过判定；
+ * - export / resolve：仓内虽有 16 条动作以它们开头，但那 16 条的后续词段**全无写动词**
+ *   （实测命中 0 条），不靠这条规则也判 low —— 同样是死条目。
+ * 两次删除都用全量对拍证过：575 条 risk 判定逐条不变。
+ *
+ * 已知天花板（与本表无关，删干净后依然存在）：domain:sync/resolveConflict、
+ * domain:session/exportSessionFork 是写动作却判 low，真因是 resolve / conflict / export /
+ * fork 都不在 MUTATION_VERBS 里，**判据天然够不着**，不是被只读首词规则保护的。要让它们
+ * 升档只能逐条进 HIGH_RISK_CAPABILITIES，或往写动词表加词（那会波及同词根的其他动作，
+ * 要先跑对拍）。shellCapabilities.test.ts 钉着这两条当前为 low，升档会红。
+ */
+const READONLY_HEAD_VERBS = new Set([
+  'audit', 'check', 'compare', 'count', 'detect', 'find', 'get', 'inspect', 'list',
+  'ping', 'preview', 'read', 'search', 'stats', 'summarize', 'trace', 'validate',
+]);
+
+/**
+ * 动作名切词：camelCase 边界 + `_` `:` `-` `.` 分隔，全部转小写。
+ * 冒号必须算分隔符——pii 的线协议动作形如 `setup:cancel`，不切就会被当成一个整词，
+ * 反而丢掉真该命中的 cancel。
+ */
+function actionSegments(action: string): string[] {
+  return action
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(/[\s_:\-.]+/)
+    .map((segment) => segment.toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * 风险档按「动词出现在动作名的哪个词段」判，不是只看词首。
+ *
+ * 旧判据是 `/^(add|…|write)/`，只锚词首 ⇒ 写库动作只要动词不在开头就静默落 low
+ * （memoryEntryDelete / lightDelete / memoryImportV2Apply / rolePackInstall / recipeDelete
+ * / cacheClear 等 30+ 条）；而它又没有词边界，`^set` 反过来把 pii 的 setup:status、
+ * setup:isReady 这两条纯查询吃成 medium。两个方向的错都来自同一个形状问题。
+ */
 function inferRisk(domain: string, action: string): ShellCapabilityRisk {
   const id = makeShellCapabilityId(domain, action);
   if (HIGH_RISK_CAPABILITIES.has(id)) return 'high';
-  if (/^(add|archive|cancel|capture|clear|close|confirm|create|delete|disconnect|download|force|import|install|interrupt|open|pause|prepare|probe|refresh|reject|remove|rename|repair|report|reset|resume|resync|retry|save|select|send|set|sign|start|stop|switch|unarchive|update|write)/i.test(action)) {
-    return 'medium';
-  }
-  return 'low';
+  const segments = actionSegments(action);
+  if (segments.length > 0 && READONLY_HEAD_VERBS.has(segments[0])) return 'low';
+  return segments.some((segment) => MUTATION_VERBS.has(segment)) ? 'medium' : 'low';
 }
 
 export function getShellCapabilities(): ShellCapability[] {

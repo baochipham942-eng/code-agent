@@ -861,6 +861,15 @@ export const enSettingsWork = {
           off: 'Off',
         },
       },
+      evaluation: {
+        title: 'Evaluation feedback-pool hook',
+        description: 'Command run by the "Send to feedback pool" button in the evaluation drawer. Empty means the button falls back to copying an fb add command.',
+        label: 'Hook command',
+        body: 'The host writes the evidence as JSON under the app data directory first, then runs this command in the system shell with the evidence directory passed through the NEO_EVAL_FEEDBACK_DIR environment variable (the case id is never concatenated into the command). The command is killed after 30 seconds; the evidence is kept either way.',
+        placeholder: 'e.g. ~/Downloads/ai/fleet-console/cli/fb add --from-dir "$NEO_EVAL_FEEDBACK_DIR"',
+        savedHint: 'Saved',
+        adminHint: 'The host runs this command in a system shell; only an administrator can change it.',
+      },
       status: {
         title: 'Status',
         description: 'Whether setup is complete + current task status',

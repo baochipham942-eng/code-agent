@@ -20,6 +20,11 @@ import {
   type SwarmRunScope,
 } from '../../../shared/contract/swarm';
 import { getEventBus } from '../../services/eventing/bus';
+import {
+  originSenderId,
+  resolveMessageOrigin,
+  type AgentMessageOrigin,
+} from '../messageOrigin';
 import type {
   TeammateMessage,
   TeammateMailbox,
@@ -57,6 +62,8 @@ type SendMessageParams = {
   scope?: SwarmRunScope;
   id?: string;
   timestamp?: number;
+  /** 宿主在调用方（工具/IPC 入队点）铸造的来源信封；缺失时从严视同 peer-agent。 */
+  origin?: AgentMessageOrigin;
 };
 
 /**
@@ -169,7 +176,8 @@ export class TeammateService {
    * 发送消息
    */
   send(params: SendMessageParams): TeammateMessage {
-    const scope = this.resolveMessageScope(params.scope, params.from, params.to);
+    // ADR-067：scope 校验的发送者身份按 origin 取（from 仅展示）。
+    const scope = this.resolveMessageScope(params.scope, originSenderId(params.origin, params.from), params.to);
     const message: TeammateMessage = {
       id: this.resolveMessageId(scope, params.id),
       from: params.from,
@@ -177,6 +185,17 @@ export class TeammateService {
       type: params.type,
       content: params.content,
       timestamp: params.timestamp ?? Date.now(),
+      // ADR-067 D1：origin 只来自宿主铸造的 params.origin，绝不从消息内容自报；
+      // scope 维度由本服务按已核验的 run scope 补齐。
+      ...(params.origin
+        ? {
+            origin: {
+              ...params.origin,
+              sessionId: params.origin.sessionId ?? scope?.sessionId,
+              runId: params.origin.runId ?? scope?.runId,
+            },
+          }
+        : {}),
       metadata: {
         taskId: params.taskId,
         priority: params.priority || 'normal',
@@ -268,6 +287,7 @@ export class TeammateService {
     content: string,
     responseTo: string,
     scope?: SwarmRunScope,
+    origin?: AgentMessageOrigin,
   ): TeammateMessage {
     return this.send({
       from,
@@ -276,6 +296,7 @@ export class TeammateService {
       content,
       responseTo,
       scope,
+      origin,
     });
   }
 
@@ -585,7 +606,10 @@ export class TeammateService {
   }
 
   private publishSwarmMessage(scope: SwarmRunScope, message: TeammateMessage): void {
-    const isUserMessage = message.from === 'user';
+    // ADR-067：事件路由按宿主铸造的 origin 判定，不读 from 展示串；
+    // 存量无 origin 从严按 peer-agent（即 agent 事件）处置。
+    const senderId = originSenderId(message.origin, message.from);
+    const isUserMessage = resolveMessageOrigin(message.origin).senderKind === 'user';
     const event: SwarmEvent = {
       type: isUserMessage ? 'swarm:user:message' : 'swarm:agent:message',
       sessionId: scope.sessionId,
@@ -594,7 +618,7 @@ export class TeammateService {
       parentNativeRunId: scope.parentNativeRunId,
       timestamp: message.timestamp,
       data: {
-        agentId: isUserMessage ? message.to : message.from,
+        agentId: isUserMessage ? message.to : senderId,
         message: {
           id: message.id,
           from: message.from,
@@ -648,8 +672,8 @@ export class TeammateService {
       : this.getHistoryForScope(parseScopedSwarmAgentId(agentA)?.scope);
     return history
       .filter(m =>
-        (m.from === agentA && m.to === agentB) ||
-        (m.from === agentB && m.to === agentA)
+        (originSenderId(m.origin, m.from) === agentA && m.to === agentB) ||
+        (originSenderId(m.origin, m.from) === agentB && m.to === agentA)
       )
       .slice(-limit);
   }
@@ -729,6 +753,12 @@ export class TeammateService {
       scope,
       id: identity.id,
       timestamp: identity.timestamp,
+      // ADR-067 D1：用户消息来源由宿主在此铸造，不经发送方自报。
+      origin: {
+        senderKind: 'user',
+        sessionId: scope?.sessionId,
+        runId: scope?.runId,
+      },
     });
   }
 
@@ -848,10 +878,11 @@ export class TeammateService {
     }
     for (const entry of this.scopedMessageHistory.values()) {
       for (const message of entry.messages) {
-        const parsedFrom = parseScopedSwarmAgentId(message.from);
+        const senderId = originSenderId(message.origin, message.from);
+        const parsedFrom = parseScopedSwarmAgentId(senderId);
         const parsedTo = parseScopedSwarmAgentId(message.to);
         if (
-          (message.from !== 'user' && !parsedFrom)
+          (senderId !== 'user' && !parsedFrom)
           || (message.to !== 'all' && !parsedTo)
           || (parsedFrom && !this.isSameScope(parsedFrom.scope, entry.scope))
           || (parsedTo && !this.isSameScope(parsedTo.scope, entry.scope))

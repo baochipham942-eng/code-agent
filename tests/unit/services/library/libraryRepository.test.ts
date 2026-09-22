@@ -19,6 +19,7 @@ function makeItem(overrides: Partial<LibraryItem> = {}): LibraryItem {
     kind: 'upload',
     pathOrUri: '/tmp/library/Brief.pdf',
     tags: [],
+    learnStatus: 'pending',
     createdAt: 1000,
     updatedAt: 1000,
     ...overrides,
@@ -120,5 +121,34 @@ describe('LibraryRepository', () => {
     repo.createItem(makeItem({ id: 'a' }));
     db.prepare("UPDATE library_items SET tags = 'not-json' WHERE id = 'a'").run();
     expect(repo.getItem('a')?.tags).toEqual([]);
+  });
+
+  it('学习状态只允许 pending/running/ready/failed 合法迁移', () => {
+    repo.createItem(makeItem({ id: 'learn' }));
+    expect(repo.updateLearnStatus('learn', 'running', { now: 1100 })).toBe(true);
+    expect(repo.updateLearnStatus('learn', 'ready', { now: 1200 })).toBe(true);
+    expect(() => repo.updateLearnStatus('learn', 'failed', { now: 1300 })).toThrow(/Invalid library learn status transition/);
+    expect(repo.updateLearnStatus('learn', 'running', { now: 1400 })).toBe(true);
+    expect(repo.updateLearnStatus('learn', 'failed', { error: 'parse failed', now: 1500 })).toBe(true);
+    expect(repo.getItem('learn')).toMatchObject({ learnStatus: 'failed', learnError: 'parse failed', learnUpdatedAt: 1500 });
+  });
+
+  it('createItem 丢掉非法 learnStatus；库内脏值按 pending 迁移', () => {
+    repo.createItem(makeItem({ id: 'garbage', learnStatus: 'ok' as LibraryItem['learnStatus'] }));
+    expect(repo.getItem('garbage')?.learnStatus).toBe('pending');
+
+    repo.createItem(makeItem({ id: 'legacy' }));
+    db.prepare("UPDATE library_items SET learn_status = 'ok' WHERE id = 'legacy'").run();
+    expect(repo.getItem('legacy')?.learnStatus).toBe('pending');
+    expect(repo.updateLearnStatus('legacy', 'running', { now: 1100 })).toBe(true);
+    expect(repo.getItem('legacy')?.learnStatus).toBe('running');
+  });
+
+  it('sweep 只捞 pending 和过期 running，不捞新鲜 running', () => {
+    repo.createItem(makeItem({ id: 'fresh' }));
+    expect(repo.updateLearnStatus('fresh', 'running', { now: 10_000 })).toBe(true);
+    repo.createItem(makeItem({ id: 'stale' }));
+    expect(repo.updateLearnStatus('stale', 'running', { now: 1_000 })).toBe(true);
+    expect(repo.listPendingLearnIds(10, 130_000, 120_000)).toEqual(['stale']);
   });
 });

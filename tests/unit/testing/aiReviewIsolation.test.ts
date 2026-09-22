@@ -4,8 +4,11 @@ import type { TestCase, TestResult, TestRunnerConfig } from '../../../src/host/t
 
 const quickTask = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/host/model/quickModel', () => ({ quickTask }));
+const systemOne = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/host/model/providers/typesafeProvider', () => ({ systemOne }));
 
 import { attachAiReview } from '../../../src/host/testing/testRunnerAiReview';
+import { JEV_JUDGE_MODEL } from '../../../src/shared/constants/jevQuestions';
 
 const verdict = (value: 'yes' | 'no'): AiReviewVerdict => ({
   verdict: value, reasoning: value, judgeModel: 'judge/model', promptHash: 'hash',
@@ -98,6 +101,70 @@ describe('AI 评审隔离', () => {
       score: 1,
       status: 'passed',
       scoreAuthority: 'deterministic_assertion',
+    });
+  });
+});
+
+// N-JEV-EVAL-JUDGE：CODE_AGENT_DIMJUDGE_JEV_PRESCREEN 默认关；开且 key 齐才装配 systemOne。
+describe('AI 评审 Jev 初筛开关', () => {
+  beforeEach(() => {
+    quickTask.mockReset();
+    systemOne.mockReset();
+    vi.unstubAllEnvs();
+  });
+
+  it('开关未设 ⇒ 不装初筛，走生成式，systemOne 零调用', async () => {
+    const target = unreviewed();
+    quickTask.mockResolvedValueOnce({ success: true, content: '证据充分\n是', provider: 'p', model: 'm' });
+
+    await attachAiReview(config, testCase, target, false);
+
+    expect(systemOne).not.toHaveBeenCalled();
+    expect(quickTask).toHaveBeenCalledTimes(1);
+    expect(target.aiReview?.task_completed).toMatchObject({ verdict: 'yes' });
+    expect(target.aiReview?.task_completed?.prescreen).toBeUndefined();
+  });
+
+  it('开关 on 但无 TYPESAFE_API_KEY ⇒ warn 一行并回落生成式；同进程第二题不再重复 warn', async () => {
+    vi.stubEnv('CODE_AGENT_DIMJUDGE_JEV_PRESCREEN', '1');
+    vi.stubEnv('TYPESAFE_API_KEY', '');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const first = unreviewed();
+    const second = unreviewed();
+    quickTask.mockResolvedValue({ success: true, content: '证据充分\n是', provider: 'p', model: 'm' });
+    try {
+      await attachAiReview(config, testCase, first, false);
+      await attachAiReview(config, testCase, second, false);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('TYPESAFE_API_KEY'));
+    } finally {
+      warn.mockRestore();
+      vi.unstubAllEnvs();
+    }
+
+    expect(systemOne).not.toHaveBeenCalled();
+    expect(quickTask).toHaveBeenCalledTimes(2);
+    expect(first.aiReview?.task_completed?.prescreen).toBeUndefined();
+    expect(second.aiReview?.task_completed?.prescreen).toBeUndefined();
+  });
+
+  it('开关 on 且 key 在 ⇒ 装配 systemOne，初筛决断则不调生成式', async () => {
+    vi.stubEnv('CODE_AGENT_DIMJUDGE_JEV_PRESCREEN', '1');
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-key');
+    systemOne.mockResolvedValueOnce({ task_fulfilled: { noul: 0.9 }, claims_grounded: { noul: 0.9 } });
+    const target = unreviewed();
+    try {
+      await attachAiReview(config, testCase, target, false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(quickTask).not.toHaveBeenCalled();
+    expect(target.aiReview?.task_completed).toMatchObject({
+      verdict: 'yes',
+      judgeModel: JEV_JUDGE_MODEL,
+      prescreen: 'jev_decided',
     });
   });
 });

@@ -60,7 +60,7 @@ vi.mock('../../../src/host/config/configPaths', async (importActual) => {
 
 vi.mock('../../../src/host/services/core/configService', async (importActual) => {
   const actual = await importActual<typeof import('../../../src/host/services/core/configService')>();
-  return { ...actual, getConfigService: vi.fn(() => ({ getApiKey: (k: string) => (k === 'openrouter' ? health.openrouter : undefined) })) };
+  return { ...actual, getConfigService: vi.fn(() => ({ onSettingsUpdated: vi.fn(), getApiKey: (k: string) => (k === 'openrouter' ? health.openrouter : undefined) })) };
 });
 
 import { handleGenerateDesignImage } from '../../../src/host/ipc/workspace.ipc';

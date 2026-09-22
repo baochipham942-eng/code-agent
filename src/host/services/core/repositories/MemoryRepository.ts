@@ -5,6 +5,8 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { MEMORY } from '../../../../shared/constants';
 import { normalizeFtsMatchQuery, runMemoriesFtsBackfill } from '../../../../shared/memoriesFts.sql';
+import { isFtsDisabled, isFtsSearchDegraded, markFtsTableAvailable, repairFtsTableIfCorrupt } from '../database/ftsRepair';
+import { isSqliteCorruptionError } from '../database/sqliteErrors';
 import type { MemoryRecord } from '../../../protocol/types';
 import { guardSensitiveText, guardSensitiveValue } from '../../../security/sensitiveDataGuard';
 
@@ -298,6 +300,10 @@ export class MemoryRepository {
     conditions.push(memoryStatusCondition(options, 'm.status'));
     const extra = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
 
+    if (isFtsSearchDegraded('memories_fts')) {
+      return null;
+    }
+
     try {
       const rows = this.db.prepare(`
         SELECT m.* FROM memories_fts
@@ -307,8 +313,11 @@ export class MemoryRepository {
         LIMIT ?
       `).all(...params, fetchLimit) as SQLiteRow[];
       return rows.length > 0 ? rows : null;
-    } catch {
-      // FTS 表缺失或 raw 语法错误 → LIKE 兜底
+    } catch (err) {
+      if (isSqliteCorruptionError(err)) {
+        repairFtsTableIfCorrupt(this.db, 'memories_fts');
+      }
+      // FTS 表缺失 / 语法错误 / 损坏 → LIKE 兜底
       return null;
     }
   }
@@ -344,6 +353,9 @@ export class MemoryRepository {
    * 只在 FTS 空且 memories 非空时执行；幂等。
    */
   backfillMemoriesFts(): number {
+    if (isFtsDisabled('memories_fts')) {
+      return 0;
+    }
     try {
       // LIMIT 1 存在性检查，避免 FTS5 COUNT(*) 全扫（启动关键路径）
       const ftsHasRows = this.db.prepare('SELECT 1 FROM memories_fts LIMIT 1').get() !== undefined;
@@ -351,8 +363,13 @@ export class MemoryRepository {
       if (ftsHasRows || !memHasRows) {
         return 0;
       }
-      return runMemoriesFtsBackfill(this.db);
-    } catch {
+      const backfilled = runMemoriesFtsBackfill(this.db);
+      markFtsTableAvailable('memories_fts');
+      return backfilled;
+    } catch (err) {
+      if (isSqliteCorruptionError(err)) {
+        repairFtsTableIfCorrupt(this.db, 'memories_fts');
+      }
       // backfill 失败不阻塞启动；下次启动重试（原子回滚保证 FTS 仍为空）
       return 0;
     }

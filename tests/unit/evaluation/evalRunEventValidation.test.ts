@@ -137,6 +137,11 @@ describe('evaluation run event validation', () => {
       ...base,
       aiReview: { task_completed: { verdict: 'yes', reasoning: '完成', judgeModel: 'judge/model', promptHash: 'hash' } },
     })).toMatchObject({ aiReview: { task_completed: { verdict: 'yes' } } });
+    // N-EVAL-JUDGE-ABSTAIN：判官弃权是合法事件，桥不能因为一题一维弃权就 failRun 整轮（ai-review #1821 Important①）
+    expect(parseEvalRunEvent({
+      ...base,
+      aiReview: { task_completed: { verdict: 'abstain', reasoning: '证据不足', judgeModel: 'judge/model', promptHash: 'hash' } },
+    })).toMatchObject({ aiReview: { task_completed: { verdict: 'abstain' } } });
     expect(() => parseEvalRunEvent({
       ...base,
       aiReview: { unknown: { verdict: 'yes', reasoning: 'x', judgeModel: 'm', promptHash: 'h' } },

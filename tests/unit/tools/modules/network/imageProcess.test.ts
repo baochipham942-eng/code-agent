@@ -133,6 +133,21 @@ describe('image_process — execute', () => {
     }
   });
 
+  it('resolves a relative output_path against workingDir for both write and event', async () => {
+    // 相对输出不再写到宿主进程 cwd（修正轮 9 行为修正的回归钉）。
+    const events: { type: string; data: Record<string, unknown> }[] = [];
+    const result = await executeImageProcess(
+      { input_path: '/abs/photo.png', action: 'convert', format: 'webp', output_path: './out/photo.webp' },
+      makeCtx({ currentToolCallId: 'tc-1', emit: ((event: unknown) => { events.push(event as { type: string; data: Record<string, unknown> }); }) as Parameters<typeof executeImageProcess>[1]['emit'] }),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    expect(toFileMock).toHaveBeenCalledWith('/tmp/work/out/photo.webp');
+    const started = events.find(e => e.type === 'artifact_write_started');
+    expect(started?.data.filePath).toBe('/tmp/work/out/photo.webp');
+    if (result.ok) expect(result.meta?.artifact).toMatchObject({ path: '/tmp/work/out/photo.webp' });
+  });
+
   it('falls back to the current image attachment when input_path is omitted', async () => {
     const result = await executeImageProcess(
       { action: 'compress', quality: 70 },

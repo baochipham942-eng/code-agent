@@ -24,6 +24,11 @@ describe('isPrivateOrLocalHost', () => {
     expect(isPrivateOrLocalHost('0.0.0.0')).toBe(true);
     expect(isPrivateOrLocalHost('localhost')).toBe(true);
   });
+  it('云元数据主机名判为私有', () => {
+    expect(isPrivateOrLocalHost('metadata.google.internal')).toBe(true);
+    expect(isPrivateOrLocalHost('metadata')).toBe(true);
+    expect(isPrivateOrLocalHost('instance-data')).toBe(true);
+  });
   it('公网 IPv4 / 域名判为非私有', () => {
     expect(isPrivateOrLocalHost('8.8.8.8')).toBe(false);
     expect(isPrivateOrLocalHost('172.32.0.1')).toBe(false); // 172.32 出私网段

@@ -14,6 +14,7 @@ export interface EvalRunPanelLabels {
   dailySet: string;
   heldOutSet: string;
   safetySet: string;
+  coreSet: string;
   allSet: string;
   tags: string;
   tagCorePath: string;
@@ -37,7 +38,7 @@ export interface EvalRunPanelLabels {
   aiReviewDimensions: Record<AiReviewDimension, string>;
   calibrated: string;
   uncalibrated: string;
-  calibrationReasons: Record<'no_record' | 'below_threshold' | 'prompt_changed' | 'not_enough_pairs' | 'superseded' | 'judge_changed', string>;
+  calibrationReasons: Record<'no_record' | 'below_threshold' | 'prompt_changed' | 'not_enough_pairs' | 'superseded' | 'judge_changed' | 'abstain_rate', string>;
   needsExpectation: string;
   referenceOnly: string;
   aiReviewEstimatedCost: string;
@@ -93,6 +94,7 @@ export interface EvalRunPanelLabels {
   hideRunCases: string;
   noRunCases: string;
   runCaseScore: string;
+  alwaysPassed: string;
   runCaseStatus: EvalStatusLabels;
   selectForCompare: string;
   incompleteCannotCompare: string;
@@ -136,6 +138,7 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     dailySet: '日常集',
     heldOutSet: '留出集',
     safetySet: '安全集',
+    coreSet: '核心集',
     allSet: '全部题目',
     tags: '标签',
     tagCorePath: '核心路径',
@@ -165,6 +168,7 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     calibrationReasons: {
       no_record: '无记录', below_threshold: '一致性未达标', prompt_changed: '提示词改过',
       not_enough_pairs: '金标不足 N<20', superseded: '按旧标准，需重跑', judge_changed: '评审模型已变',
+      abstain_rate: '弃权率过高',
     },
     needsExpectation: '这题集没有逐题期望，评审不了',
     referenceOnly: '结果只作参考，不作能力证据',
@@ -221,6 +225,7 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     hideRunCases: '收起逐题',
     noRunCases: '本轮没有逐题结果',
     runCaseScore: '得分 {score}',
+    alwaysPassed: '5 轮全过',
     runCaseStatus: { passed: '通过', failed: '失败', infra: '环境故障', invalid: '判废', skipped: '跳过', costExceeded: '成本超限', notRun: '未执行', partial: '部分通过', error: '出错' },
     selectForCompare: '选择这轮用于对比',
     incompleteCannotCompare: '未跑满的轮次不能用于对比',
@@ -261,6 +266,7 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     dailySet: 'Daily set',
     heldOutSet: 'Held-out set',
     safetySet: 'Safety set',
+    coreSet: 'Core set',
     allSet: 'All cases',
     tags: 'Tags',
     tagCorePath: 'Core path',
@@ -290,6 +296,7 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     calibrationReasons: {
       no_record: 'No record', below_threshold: 'Agreement below requirement', prompt_changed: 'Prompt changed',
       not_enough_pairs: 'Not enough gold labels N<20', superseded: 'Old standard; rerun required', judge_changed: 'Review model changed',
+      abstain_rate: 'Abstained too often',
     },
     needsExpectation: 'This case set has no per-case expectation for this review',
     referenceOnly: 'Reference only; not capability evidence',
@@ -346,6 +353,7 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     hideRunCases: 'Hide cases',
     noRunCases: 'No case results were recorded for this run',
     runCaseScore: 'Score {score}',
+    alwaysPassed: 'Passed 5 runs in a row',
     runCaseStatus: { passed: 'Passed', failed: 'Failed', infra: 'Environment issue', invalid: 'Invalid', skipped: 'Skipped', costExceeded: 'Cost limit reached', notRun: 'Not run', partial: 'Partially passed', error: 'Error' },
     selectForCompare: 'Select this run for comparison',
     incompleteCannotCompare: 'Incomplete runs cannot be compared',

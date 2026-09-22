@@ -8,5 +8,6 @@
   "local-display-primitive": 0,
   "theme-blind-bright-foreground": 0,
   "theme-blind-white-hover-foreground": 0,
-  "stale-zindex-allowlist": 0
+  "stale-zindex-allowlist": 0,
+  "sticky-in-padded-scroller": 0
 }

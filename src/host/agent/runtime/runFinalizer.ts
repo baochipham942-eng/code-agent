@@ -20,6 +20,7 @@ import { judgeConversation } from '../../lightMemory/conversationJudge';
 import { skipRunAutomaticMemory } from '../../memory/automaticMemoryPolicy';
 import { writeDurableFacts } from '../../lightMemory/durableFactWriter';
 import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
+import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
 import { trackNode } from '../../observability/posthogNode';
@@ -28,6 +29,7 @@ import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { resolveContextWindow } from '../../model/modelLimits';
 import { getModelErrorStatus, summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
+import { getModelAuthFailureMarker, getModelQuotaFailureMarker, getModelUnavailableMarker } from '../../model/errorClassifier';
 
 // Import refactored modules
 import type {
@@ -359,6 +361,7 @@ export class RunFinalizer {
       && !hasTerminalWakeNoopAfterLastUser(this.ctx.messages)
       && !this.ctx.circuitBreaker.isTripped()
       && iterations < this.ctx.maxIterations
+      && this.ctx.unattendedTurn !== true
     ) {
       terminalStatus = 'failed';
       terminalError = new Error('任务已结束，执行记录和产物已保留。这一轮没有生成最终说明，请直接查看上面的工具结果。');
@@ -384,6 +387,9 @@ export class RunFinalizer {
         });
       }
       logger.error('[AgentLoop] Loop exited due to runtime error', terminalError);
+      const marker = getModelAuthFailureMarker(terminalError) ?? getModelUnavailableMarker(terminalError) ?? getModelQuotaFailureMarker(terminalError);
+      // 带上这一轮真正跑的模型：手机据此判断用户是否已经换走，换了就不再挂「换一个可用模型」。
+      const modelFailure = marker && { ...marker, provider: marker.provider ?? this.ctx.modelConfig.provider, model: marker.model ?? this.ctx.modelConfig.model };
       logCollector.agent('ERROR', `Agent run failed: ${errorMessage}`);
       this.ctx.onEvent({
         type: 'error',
@@ -399,6 +405,9 @@ export class RunFinalizer {
             model: this.ctx.modelConfig.model,
           },
           goalAbort: this.ctx.goalMode?.getStatus() === 'aborted',
+          // 引擎内吞掉的推理失败只从这里出去：不挂鉴权/停用/余额标记，手机/renderer 只能说
+          // 「执行时出了问题」，用户拿不到「换一个可用模型」这条路（build 45 真机 403；O2：402 同病）。
+          ...(modelFailure ? { failure: modelFailure } : {}),
         },
       });
 
@@ -434,7 +443,7 @@ export class RunFinalizer {
       const errorMessage: Message = {
         id: this.messageWriter.generateId(),
         role: 'assistant',
-        content: '⚠️ **工具调用异常**\n\n连续多次工具调用失败，已自动停止执行。这可能是由于：\n- 文件路径不存在\n- 网络连接问题\n- 工具参数错误\n\n请检查上面的错误信息，然后告诉我如何继续。',
+        content: '⚠️ **工具调用异常**\n\n连续多次基础设施类工具调用失败，已自动停止执行。这可能是由于：\n- 网络连接问题\n- 服务暂时不可用\n- 系统资源或数据库繁忙\n\n请检查上面的错误信息，然后告诉我如何继续。',
         timestamp: Date.now(),
       };
       await this.persistTerminalMessage(errorMessage);
@@ -452,9 +461,16 @@ export class RunFinalizer {
     } else if (iterations >= this.ctx.maxIterations) {
       logger.debug('[AgentLoop] Max iterations reached!');
       logCollector.agent('WARN', `Max iterations reached (${this.ctx.maxIterations})`);
+      // 稳定 code：CLI 据此把这次 run 映射为「部分完成」退出码（2），
+      // 与正常完成（0）/异常失败（1）区分（issue #1999）。
+      // maxIterations=1 无 forced-final 轮也无合成收尾（ensureMaxStepsWrapUp 早退），
+      // 「部分完成」语义不成立，不带 code 按普通失败退出（ai-review R5 Nit #2005）。
       this.ctx.onEvent({
         type: 'error',
-        data: { message: 'Max iterations reached' },
+        data: {
+          message: 'Max iterations reached',
+          ...(this.ctx.maxIterations > 1 ? { code: RUN_ERROR_CODE_MAX_ITERATIONS } : {}),
+        },
       });
 
       // Fire-and-forget: emit StopFailure hook

@@ -15,6 +15,7 @@ import {
   buildBrowserWorkbenchBlockedResult,
   evaluateBrowserWorkbenchPolicy,
 } from './browserWorkbenchIntent';
+import { browserJevStepDescriptionSuffix, withBrowserJevStepActionEnum } from '../../../shared/constants/jevQuestions';
 
 // Actions from browserActionTool (kept as-is since they don't conflict)
 const BROWSER_ACTION_ACTIONS = [
@@ -24,6 +25,7 @@ const BROWSER_ACTION_ACTIONS = [
   'get_dialog_state', 'handle_dialog', 'read_clipboard', 'write_clipboard',
   'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
   'get_workbench_state', 'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+  'execute_goal',
 ] as const;
 
 function remapBrowserToolActionForManagedSession(
@@ -71,7 +73,7 @@ function remapBrowserToolActionForManagedSession(
 
 export const BrowserTool: Tool = {
   name: 'Browser',
-  description: `Unified browser control tool combining navigation and automation.
+  get description() { return `Unified browser control tool combining navigation and automation.
 
 Use action="navigate" to delegate to the browser_action navigate, or use the simple OS-level
 browser opener actions. For full Playwright-based browser automation, use the browser_action actions.
@@ -102,6 +104,7 @@ Routing contract:
 - wait: Wait for elements or timeout
 - fill_form: Fill multiple form fields
 - get_logs: Get recent browser operation logs
+${browserJevStepDescriptionSuffix()}
 
 ## Parameters:
 - action: The browser action to perform (see above)
@@ -118,11 +121,11 @@ Routing contract:
 - fullPage: Full page screenshot flag (Playwright)
 - formData: Form fields as {selector: value} pairs (Playwright)
 - analyze: Enable AI analysis for screenshot (Playwright)
-- prompt: Custom prompt for AI analysis (Playwright)`,
+- prompt: Custom prompt for AI analysis (Playwright)`; },
   requiresPermission: true,
   permissionLevel: 'execute', // highest among sub-tools: execute > write
   outputSchema: { type: 'string' },
-  inputSchema: {
+  get inputSchema() { return withBrowserJevStepActionEnum({
     type: 'object',
     properties: {
       action: {
@@ -137,6 +140,7 @@ Routing contract:
           'get_dialog_state', 'handle_dialog', 'read_clipboard', 'write_clipboard',
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+          'execute_goal',
         ],
         description: 'The browser action to perform',
       },
@@ -254,9 +258,22 @@ Routing contract:
         type: 'string',
         description: '[Playwright] Custom prompt for AI analysis',
       },
+      task: {
+        type: 'string',
+        description: 'Natural-language goal for execute_goal',
+      },
+      assertions: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+        description: 'Optional frozen gold assertions for execute_goal',
+      },
+      jevBudgetUsd: {
+        type: 'number',
+        description: 'Optional per-task Jev USD budget for execute_goal',
+      },
     },
     required: ['action'],
-  },
+  }); },
 
   async execute(
     params: Record<string, unknown>,

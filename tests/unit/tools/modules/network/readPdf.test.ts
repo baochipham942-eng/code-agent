@@ -25,9 +25,14 @@ vi.mock('fs/promises', () => ({
 }));
 
 const getApiKeyMock = vi.fn();
+const execFileMock = vi.fn();
 
 vi.mock('../../../../../src/host/services', () => ({
-  getConfigService: () => ({ getApiKey: getApiKeyMock }),
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: getApiKeyMock }),
+}));
+
+vi.mock('node:child_process', () => ({
+  execFile: (...args: unknown[]) => execFileMock(...args),
 }));
 
 import { readPdfModule } from '../../../../../src/host/tools/modules/network/readPdf';
@@ -68,6 +73,7 @@ beforeEach(() => {
   readFileMock.mockReset();
   statMock.mockReset();
   getApiKeyMock.mockReset();
+  execFileMock.mockReset();
   fetchMock.mockReset();
 
   accessMock.mockResolvedValue(undefined);
@@ -146,6 +152,14 @@ describe('readPdfModule (native)', () => {
   describe('happy paths', () => {
     it('uses direct OpenRouter when api key present', async () => {
       getApiKeyMock.mockReturnValue('sk-test-key');
+      execFileMock.mockImplementation((
+        _bin: string,
+        _args: string[],
+        _opts: unknown,
+        cb: (err: Error | null, stdout?: string) => void,
+      ) => {
+        cb(new Error('should not extract when vision is configured'));
+      });
       fetchMock.mockResolvedValue(
         makeJsonResponse({ choices: [{ message: { content: 'PDF summary' } }] }),
       );
@@ -171,18 +185,113 @@ describe('readPdfModule (native)', () => {
       }
     });
 
-    it('returns a configuration error when no OpenRouter api key is available', async () => {
+    it('extracts selectable text when OpenRouter is not configured', async () => {
       getApiKeyMock.mockReturnValue(undefined);
-      fetchMock.mockResolvedValue(
-        makeJsonResponse({ choices: [{ message: { content: 'cloud summary' } }] }),
-      );
+      execFileMock.mockImplementation((...args: unknown[]) => {
+        const cb = args.find((value) => typeof value === 'function') as
+          ((err: Error | null, stdout?: string, stderr?: string) => void);
+        cb(null, 'DocBench selectable body', '');
+      });
+      const result = await run({ file_path: '/abs/doc.pdf' });
+      expect(result.ok).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(execFileMock).toHaveBeenCalled();
+      const opts = execFileMock.mock.calls[0].find((value: unknown) =>
+        Boolean(value) && typeof value === 'object' && 'timeout' in (value as object),
+      ) as { timeout: number; signal: AbortSignal };
+      expect(opts.timeout).toBeGreaterThan(0);
+      expect(opts.signal).toBeInstanceOf(AbortSignal);
+      if (result.ok) {
+        expect(result.output).toContain('DocBench selectable body');
+        expect(result.output).toContain('本地文本抽取');
+        expect(result.output).toContain('prompt 未生效');
+        expect(result.meta).toMatchObject({ processingMethod: 'text' });
+      }
+    });
+
+    it('returns ABORTED when pdftotext is cancelled mid-extract', async () => {
+      getApiKeyMock.mockReturnValue(undefined);
+      const ctrl = new AbortController();
+      execFileMock.mockImplementation((
+        _bin: string,
+        _args: string[],
+        opts: { signal?: AbortSignal },
+        cb: (err: Error | null, stdout?: string) => void,
+      ) => {
+        opts.signal?.addEventListener('abort', () => {
+          cb(Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORT_ERR' }));
+        });
+      });
+      const pending = run({ file_path: '/abs/doc.pdf' }, makeCtx({ abortSignal: ctrl.signal }));
+      await vi.waitFor(() => expect(execFileMock).toHaveBeenCalled());
+      ctrl.abort();
+      const result = await pending;
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ABORTED');
+        expect(result.error).toBe('aborted');
+      }
+      expect(execFileMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('surfaces pdftotext password errors instead of telling the user to install poppler', async () => {
+      getApiKeyMock.mockReturnValue(undefined);
+      const ctx = makeCtx();
+      execFileMock.mockImplementation((
+        _bin: string,
+        _args: string[],
+        _opts: unknown,
+        cb: (err: Error | null, stdout?: string) => void,
+      ) => {
+        cb(Object.assign(new Error('Command Line Error: Incorrect password'), { code: 1 as unknown as string }));
+      });
+      const result = await run({ file_path: '/abs/doc.pdf' }, ctx);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('Incorrect password');
+        expect(result.error).not.toContain('brew install poppler');
+      }
+      expect(ctx.logger.warn).toHaveBeenCalled();
+    });
+
+    it('returns TIMEOUT when pdftotext is killed by the extract timeout', async () => {
+      getApiKeyMock.mockReturnValue(undefined);
+      execFileMock.mockImplementation((
+        _bin: string,
+        _args: string[],
+        _opts: unknown,
+        cb: (err: Error | null, stdout?: string) => void,
+      ) => {
+        cb(Object.assign(new Error('killed'), { killed: true, signal: 'SIGTERM' }));
+      });
+      const result = await run({ file_path: '/abs/doc.pdf' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('TIMEOUT');
+        expect(result.error).toContain('timed out');
+      }
+      expect(execFileMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns a configuration error when OpenRouter is missing and text extract is empty', async () => {
+      getApiKeyMock.mockReturnValue(undefined);
+      execFileMock.mockImplementation((
+        _bin: string,
+        _args: string[],
+        _opts: unknown,
+        cb: (err: Error | null, stdout?: string) => void,
+      ) => {
+        cb(new Error('ENOENT'));
+      });
       const result = await run({ file_path: '/abs/doc.pdf' });
       expect(result.ok).toBe(false);
       expect(fetchMock).not.toHaveBeenCalled();
       if (!result.ok) {
         expect(result.error).toContain('支持 PDF/文件输入的视觉模型配置');
-        expect(result.error).toContain('当前版本可识别的配置');
         expect(result.error).toContain('OPENROUTER_API_KEY');
+        expect(result.error).toContain('当前版本可识别的配置');
+        expect(result.error).toContain('pdftotext');
+        expect(result.error).toContain('poppler');
       }
     });
 
@@ -222,7 +331,7 @@ describe('readPdfModule (native)', () => {
     });
 
     it('wraps fetch network errors as NETWORK_ERROR', async () => {
-      getApiKeyMock.mockReturnValue(undefined);
+      getApiKeyMock.mockReturnValue('sk-test-key');
       fetchMock.mockRejectedValue(new Error('socket hang up'));
       const result = await run({ file_path: '/abs/doc.pdf' });
       expect(result.ok).toBe(false);

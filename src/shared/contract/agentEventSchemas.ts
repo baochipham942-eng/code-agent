@@ -6,6 +6,7 @@ import type {
   BackgroundTaskLedgerChangedData,
   BudgetEventData,
   ContextCompressedData,
+  ContextCompressionSignalData,
   GoalGatePlannedCommand,
   GoalGateSkippedCheck,
   GoalGateVerificationCard,
@@ -17,6 +18,7 @@ import type {
   MemoryLearnedData,
   MessageDeltaData,
   MessageSnapshotData,
+  PlanApprovalUpdateEventData,
   ResearchCompleteData,
   ResearchDetectedData,
   ResearchErrorData,
@@ -183,6 +185,12 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
       after: z.string().optional(),
       diff: z.string().optional(),
       summary: z.string(),
+    }).optional(),
+    sandbox: z.object({
+      applied: z.boolean(),
+      degraded: z.boolean().optional(),
+      code: z.string(),
+      exception: z.string().optional(),
     }).optional(),
   }),
   reason: z.string().optional(),
@@ -442,6 +450,7 @@ const stabilityByType = {
   stream_tool_call_delta: 'experimental',
   todo_update: 'experimental',
   task_update: 'experimental',
+  plan_approval_update: 'experimental',
   turn_diff: 'experimental',
   notification: 'experimental',
   routing_resolved: 'experimental',
@@ -492,11 +501,13 @@ const stabilityByType = {
   task_stats: 'experimental',
   context_compacting: 'experimental',
   context_compacted: 'experimental',
+  context_compression_signal: 'experimental',
   stream_usage: 'stable',
   stream_token_estimate: 'experimental',
   tool_call_local: 'experimental',
   tool_cancel_local: 'experimental',
   suggestions_update: 'experimental',
+  stream_reconnecting: 'experimental',
 } as const satisfies Record<string, EventStability>;
 
 function event<T extends keyof typeof stabilityByType, S extends z.ZodType>(type: T, data: S) {
@@ -533,6 +544,28 @@ const StreamToolCallStartEventSchema = event('stream_tool_call_start', z.object(
 const StreamToolCallDeltaEventSchema = event('stream_tool_call_delta', z.object({ index: z.number().optional(), name: z.string().optional(), argumentsDelta: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() }));
 const TodoUpdateEventSchema = event('todo_update', z.array(todoItemSchema));
 const TaskUpdateEventSchema = event('task_update', taskUpdateSchema);
+const planApprovalStepSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  originalContent: z.string(),
+  edited: z.boolean().optional(),
+});
+const PlanApprovalUpdateEventSchema = event('plan_approval_update', typed<PlanApprovalUpdateEventData>(z.object({
+  sessionId: z.string(),
+  messageId: z.string(),
+  toolCallId: z.string(),
+  approval: z.object({
+    status: z.enum(['pending', 'starting', 'approved', 'failed', 'cancelled', 'revision_requested']),
+    originalPlan: z.string(),
+    steps: z.array(planApprovalStepSchema),
+    removedSteps: z.array(planApprovalStepSchema).optional(),
+    reordered: z.boolean().optional(),
+    decidedAt: z.number().optional(),
+    feedback: z.string().optional(),
+    failureReason: z.string().optional(),
+    failedAt: z.number().optional(),
+  }),
+})));
 const TurnDiffEventSchema = event('turn_diff', typed<TurnDiffEventData>(z.object({
   turnId: z.string(),
   files: z.array(z.object({
@@ -619,6 +652,30 @@ const ResearchDetectedEventSchema = event('research_detected', typed<ResearchDet
 const BudgetWarningEventSchema = event('budget_warning', typed<BudgetEventData>(z.object({ currentCost: z.number(), maxBudget: z.number(), usagePercentage: z.number(), remaining: z.number(), alertLevel: z.enum(['silent', 'warning', 'blocked']), message: z.string().optional() })));
 const BudgetExceededEventSchema = event('budget_exceeded', typed<BudgetEventData>(z.object({ currentCost: z.number(), maxBudget: z.number(), usagePercentage: z.number(), remaining: z.number(), alertLevel: z.enum(['silent', 'warning', 'blocked']), message: z.string().optional() })));
 const ContextCompressedEventSchema = event('context_compressed', typed<ContextCompressedData>(z.object({ savedTokens: z.number(), strategy: z.string().optional(), newMessageCount: z.number() })));
+const ContextCompressionSignalEventSchema = event('context_compression_signal', typed<ContextCompressionSignalData>(z.object({
+  signalId: z.string().min(1),
+  kind: z.enum(['success', 'failure', 'downgrade', 'skip', 'cooldown', 'overflow-recovery', 'paused']),
+  code: z.enum([
+    'compaction-succeeded',
+    'summary-validation-failed',
+    'summary-call-failed',
+    'checkpoint-rebuild-fallback',
+    'no-safe-compaction-span',
+    'compaction-rejected',
+    'lossless-budget-skip',
+    'summary-cooldown',
+    'overflow-recovery-started',
+    'auto-compaction-paused',
+  ]),
+  surface: z.enum(['conversation', 'health', 'ledger']),
+  timestamp: z.number(),
+  retryable: z.boolean().optional(),
+  cooldownUntil: z.number().optional(),
+  tokensBefore: z.number().optional(),
+  messagesCount: z.number().optional(),
+  fromStrategy: z.string().optional(),
+  toStrategy: z.string().optional(),
+})));
 const interruptSchema = typed<InterruptEventData>(z.object({ message: z.string(), newUserMessage: z.string().optional() }));
 const InterruptStartEventSchema = event('interrupt_start', interruptSchema);
 const InterruptAcknowledgedEventSchema = event('interrupt_acknowledged', interruptSchema);
@@ -635,7 +692,7 @@ const InputRedirectedEventSchema = event('input_redirected', z.object({
 }));
 const CitationsUpdatedEventSchema = event('citations_updated', z.object({ citations: z.array(citationSchema) }));
 const ModelSwitchedEventSchema = event('model_switched', z.object({ from: z.string(), to: z.string(), provider: z.string().optional() }));
-const ToolProgressEventSchema = event('tool_progress', typed<ToolProgressData>(z.object({ toolCallId: z.string(), toolName: z.string(), elapsedMs: z.number(), detail: z.string().optional() })));
+const ToolProgressEventSchema = event('tool_progress', typed<ToolProgressData>(z.object({ toolCallId: z.string(), toolName: z.string(), elapsedMs: z.number(), detail: z.string().optional(), inactiveMs: z.number().optional() })));
 const ToolOutputDeltaEventSchema = event('tool_output_delta', typed<ToolOutputDeltaData>(z.object({ toolCallId: z.string(), toolName: z.string(), stream: z.enum(['stdout', 'stderr']), content: z.string(), elapsedMs: z.number().optional(), truncated: z.boolean().optional() })));
 const ToolTimeoutEventSchema = event('tool_timeout', typed<ToolTimeoutData>(z.object({ toolCallId: z.string(), toolName: z.string(), elapsedMs: z.number(), threshold: z.number() })));
 const PlanModeEnteredEventSchema = event('plan_mode_entered', z.object({ reason: z.string() }));
@@ -648,13 +705,22 @@ const StreamTokenEstimateEventSchema = event('stream_token_estimate', z.object({
 const ToolCallLocalEventSchema = event('tool_call_local', typed<LocalToolCallData>(z.object({ toolCallId: z.string(), tool: z.string(), originalTool: z.string().optional(), params: unknownRecordSchema, permissionLevel: z.enum(['L1', 'L2', 'L3']), runId: z.string(), sessionId: z.string(), workspace: z.string(), cwd: z.string() })));
 const ToolCancelLocalEventSchema = event('tool_cancel_local', typed<LocalToolCancelData>(z.object({ toolCallId: z.string(), runId: z.string(), sessionId: z.string() })));
 const SuggestionsUpdateEventSchema = event('suggestions_update', z.array(z.object({ id: z.string(), text: z.string(), source: z.string() })));
+// ADR-068 刀 4（D5）：首字节后断流续接的 UI 信号——同一轮同一 streaming 消息内嵌状态行
+// 「连接中断，正在续接 n/N」。attempt/maxReconnects 即 n/N；segment 标 B1 无缝续打还是
+// B2 诚实分段（B2 时 renderer 先定格断点消息、续答另起一段，D2 边界）。
+const StreamReconnectingEventSchema = event('stream_reconnecting', z.object({
+  turnId: z.string().optional(),
+  attempt: z.number().int().min(1),
+  maxReconnects: z.number().int().min(1),
+  segment: z.enum(['b1', 'b2']),
+}));
 
 export const AgentEventSchema = z.discriminatedUnion('type', [
   MessageEventSchema, SurfaceExecutionEventSchema, ToolCallStartEventSchema, ToolCallEndEventSchema,
   ArtifactWriteStartedEventSchema, PermissionRequestEventSchema, ModelDecisionEventSchema, HookTriggerEventSchema,
   HookStartedEventSchema, ErrorEventSchema, MessageDeltaEventSchema, MessageSnapshotEventSchema, StreamChunkEventSchema,
   StreamReasoningEventSchema, StreamToolCallStartEventSchema, StreamToolCallDeltaEventSchema, TodoUpdateEventSchema,
-  TaskUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ArtifactLocatorEventSchema,
+  TaskUpdateEventSchema, PlanApprovalUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ArtifactLocatorEventSchema,
   AgentCompleteEventSchema, AgentCancelledEventSchema, GoalIterationEventSchema, GoalGateEventSchema,
   GoalCompleteEventSchema, AgentThinkingEventSchema, TurnStartEventSchema, TurnEndEventSchema,
   SubagentActivityEventSchema, SubagentRunEndEventSchema, SkillActivatedEventSchema, MemoryInjectedEventSchema, MemoryWrittenEventSchema,
@@ -662,12 +728,12 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   TaskProgressEventSchema, TaskCompleteEventSchema, BackgroundTaskLedgerChangedEventSchema, MemoryLearnedEventSchema,
   SkillDraftPendingEventSchema, RoleDraftPendingEventSchema, TeamRecipeDraftPendingEventSchema,
   ResearchModeStartedEventSchema, ResearchProgressEventSchema, ResearchCompleteEventSchema, ResearchErrorEventSchema,
-  ResearchDetectedEventSchema, BudgetWarningEventSchema, BudgetExceededEventSchema, ContextCompressedEventSchema,
+  ResearchDetectedEventSchema, BudgetWarningEventSchema, BudgetExceededEventSchema, ContextCompressedEventSchema, ContextCompressionSignalEventSchema,
   InterruptStartEventSchema, InterruptAcknowledgedEventSchema, InterruptCompleteEventSchema, InputRedirectedEventSchema, CitationsUpdatedEventSchema,
   ModelSwitchedEventSchema, ToolProgressEventSchema, ToolOutputDeltaEventSchema, ToolTimeoutEventSchema,
   PlanModeEnteredEventSchema, PlanModeExitedEventSchema, TaskStatsEventSchema, ContextCompactingEventSchema,
   ContextCompactedEventSchema, StreamUsageEventSchema, StreamTokenEstimateEventSchema, ToolCallLocalEventSchema,
-  ToolCancelLocalEventSchema, SuggestionsUpdateEventSchema,
+  ToolCancelLocalEventSchema, SuggestionsUpdateEventSchema, StreamReconnectingEventSchema,
 ]).meta({
   title: 'AgentEvent',
   description: 'Neo public agent event contract. New events default to experimental; stable event shapes are additive-only.',

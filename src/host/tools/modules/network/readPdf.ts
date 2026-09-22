@@ -1,7 +1,8 @@
 // ============================================================================
 // read_pdf (P0-6.3 Batch 8 — network: native ToolModule rewrite)
 //
-// 使用视觉模型（Gemini 2.0）解析 PDF。需要本地 OpenRouter API Key。
+// OpenRouter 已配置：视觉模型（Gemini 2.0）解析 PDF。
+// 未配置：本地 pdftotext 抽可选中文本；prompt 不生效。
 // ============================================================================
 
 import fs from 'fs/promises';
@@ -20,6 +21,17 @@ import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readPdfSchema as schema } from './readPdf.schema';
 import { TOOL_DEPENDENCY_HINTS } from '../_helpers/dependencyHints';
+import { extractSelectablePdfText } from './pdfTextExtract';
+
+export { extractSelectablePdfText };
+
+function isAbortLike(error: unknown, abortSignal: AbortSignal): boolean {
+  if (abortSignal.aborted) return true;
+  if (!error || typeof error !== 'object') return false;
+  const code = (error as { code?: string }).code;
+  const name = (error as { name?: string }).name;
+  return code === 'ABORT_ERR' || code === 'ABORTED' || name === 'AbortError';
+}
 
 const VisionCompletionResponseSchema = z.object({
   choices: z.array(z.object({
@@ -139,45 +151,74 @@ export async function executeReadPdf(
     const stats = await fs.stat(filePath);
     const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
 
+    const apiKey = getConfigService().getApiKey('openrouter');
+    if (apiKey) {
+      onProgress?.({
+        stage: 'running',
+        detail: `正在使用视觉模型处理 PDF (${fileSizeMB} MB)...`,
+      });
+      const result = await processWithVisionModel(filePath, prompt, ctx);
+      return finishPdfResult(filePath, fileSizeMB, 'vision', result.content, ctx, onProgress);
+    }
+
     onProgress?.({
       stage: 'running',
-      detail: `正在使用视觉模型处理 PDF (${fileSizeMB} MB)...`,
+      detail: `未配置 OpenRouter，改用本地文本抽取 (${fileSizeMB} MB)...`,
     });
-
-    const result = await processWithVisionModel(filePath, prompt, ctx);
-
-    let output = `📄 PDF 分析结果\n`;
-    output += `文件: ${path.basename(filePath)} (${fileSizeMB} MB)\n`;
-    output += `处理方式: 视觉模型 (Gemini 2.0)\n\n`;
-    output += result.content;
-
-    onProgress?.({ stage: 'completing', percent: 100 });
-
-    return {
-      ok: true,
-      output,
-      meta: {
-        artifact: await createFileArtifact(filePath, schema.name, ctx, {
-          kind: 'document',
-          mimeType: 'application/pdf',
-          preview: result.content.slice(0, 500),
-          metadata: {
-            processingMethod: 'vision',
-            fileSizeMB: parseFloat(fileSizeMB),
-          },
-        }),
-        processingMethod: 'vision',
-        fileSizeMB: parseFloat(fileSizeMB),
-      },
-    };
+    const text = await extractSelectablePdfText(filePath, ctx.abortSignal, ctx.logger);
+    return finishPdfResult(filePath, fileSizeMB, 'text', text, ctx, onProgress);
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    if ((error as { code?: string }).code === 'ENOENT') {
+    const errCode = (error as { code?: string }).code;
+    if (errCode === 'ENOENT') {
       return { ok: false, error: `文件不存在: ${filePath}`, code: 'ENOENT' };
+    }
+    if (isAbortLike(error, ctx.abortSignal)) {
+      return { ok: false, error: 'aborted', code: 'ABORTED' };
+    }
+    if (errCode === 'TIMEOUT') {
+      return { ok: false, error: errMsg || 'pdftotext timed out', code: 'TIMEOUT' };
     }
     ctx.logger.error('PDF read failed', { error: errMsg });
     return { ok: false, error: errMsg || '读取 PDF 失败', code: 'NETWORK_ERROR' };
   }
+}
+
+async function finishPdfResult(
+  filePath: string,
+  fileSizeMB: string,
+  method: 'vision' | 'text',
+  content: string,
+  ctx: ToolContext,
+  onProgress?: ToolProgressFn,
+): Promise<ToolResult<string>> {
+  const methodLabel = method === 'vision' ? '视觉模型 (Gemini 2.0)' : '本地文本抽取';
+  let output = `📄 PDF 分析结果\n`;
+  output += `文件: ${path.basename(filePath)} (${fileSizeMB} MB)\n`;
+  output += `处理方式: ${methodLabel}\n`;
+  if (method === 'text') {
+    output += `说明: prompt 未生效（本地抽取不支持指令）\n`;
+  }
+  output += `\n`;
+  output += content;
+  onProgress?.({ stage: 'completing', percent: 100 });
+  return {
+    ok: true,
+    output,
+    meta: {
+      artifact: await createFileArtifact(filePath, schema.name, ctx, {
+        kind: 'document',
+        mimeType: 'application/pdf',
+        preview: content.slice(0, 500),
+        metadata: {
+          processingMethod: method,
+          fileSizeMB: parseFloat(fileSizeMB),
+        },
+      }),
+      processingMethod: method,
+      fileSizeMB: parseFloat(fileSizeMB),
+    },
+  };
 }
 
 class ReadPdfHandler implements ToolHandler<Record<string, unknown>, string> {

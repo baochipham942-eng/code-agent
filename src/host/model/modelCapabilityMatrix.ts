@@ -49,6 +49,7 @@ const MATRIX: ModelCapabilityMatrix = {
       streamResume: { mode: 'prefix-param', endpointPath: '/beta' },
     },
     models: {
+      'deepseek-flash': { protocol: 'responses', search: { mode: 'deepseek-responses' } },
       'deepseek-v4-flash': { protocol: 'responses', search: { mode: 'deepseek-responses' } },
     },
   },

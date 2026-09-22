@@ -372,7 +372,7 @@ describe('runAiSdkInferenceWithProviderFallback — AI SDK 普通 provider fallb
     expect(mockInferenceViaAiSdk).toHaveBeenCalledTimes(2);
     expect(mockInferenceViaAiSdk.mock.calls[1][2]).toMatchObject({
       provider: 'deepseek',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       apiKey: 'deepseek-key',
       baseUrl: 'https://deepseek.test/v1',
       protocol: 'openai',
@@ -380,10 +380,10 @@ describe('runAiSdkInferenceWithProviderFallback — AI SDK 普通 provider fallb
     });
     expect(response).toMatchObject({
       actualProvider: 'deepseek',
-      actualModel: 'deepseek-v4-flash',
+      actualModel: 'deepseek-flash',
       fallback: {
         from: { provider: 'moonshot', model: 'kimi-k2.5' },
-        to: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+        to: { provider: 'deepseek', model: 'deepseek-flash' },
         category: 'provider_unavailable',
         strategy: 'adaptive-provider-fallback',
         tried: [
@@ -442,7 +442,7 @@ describe('runAiSdkInferenceWithProviderFallback — AI SDK 普通 provider fallb
       skipped: [
         {
           provider: 'deepseek',
-          model: 'deepseek-v4-flash',
+          model: 'deepseek-flash',
           status: 'skipped',
           reason: 'missing_api_key',
         },

@@ -7,6 +7,7 @@ import {
   type RequestPermissionResult,
 } from '../../shared/contract/permission';
 import { getTelemetryService } from '../telemetry/telemetryService';
+import { recordSessionCacheHit } from '../model/cacheHitObservation';
 
 function findToolSpan(toolCallId?: string) {
   return toolCallId
@@ -196,10 +197,23 @@ export async function requestPermissionWithTelemetry(input: {
   return ask;
 }
 
-export function markToolCacheHit(toolCallId?: string): void {
+export function markToolCacheHit(
+  toolCallId?: string,
+  hit?: { sessionId?: string; fingerprint?: string },
+): void {
+  const recorded = recordSessionCacheHit(hit?.sessionId ?? 'tool-cache', hit?.fingerprint);
   try {
     const toolSpan = findToolSpan(toolCallId);
-    if (toolSpan) getTelemetryService().updateSpan(toolSpan.spanId, { 'tool.cache_hit': true });
+    if (toolSpan) {
+      getTelemetryService().updateSpan(toolSpan.spanId, {
+        'tool.cache_hit': true,
+        'tool.cache_hit.effective': recorded.kind === 'effective' ? 1 : 0,
+        'tool.cache_hit.idle': recorded.kind === 'idle' ? 1 : 0,
+        'cache.effective_hits': recorded.effective,
+        'cache.idle_hits': recorded.idle,
+        'cache.inference_hit_rate': recorded.inferenceHitRate,
+      });
+    }
   } catch {
     // Trace storage is best-effort.
   }

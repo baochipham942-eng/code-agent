@@ -65,6 +65,7 @@ import {
 import { concludeForceFinalAfterToolBatch, sealToolCallsDuringForceFinal, abortPendingGoalOnForcedFinalBreak } from './forceFinalSeal';
 import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
+import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
 import { generateTruncationWarning } from './truncationPrompts';
 import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
 import { attachTurnQualityMetadata } from './turnQuality';
@@ -1036,6 +1037,7 @@ export class MessageProcessor {
     }).filter((fp: string) => fp.length > 0);
 
     if (fingerprints.length > 0) {
+      noteStagnationFingerprint(this.ctx.sessionId, fingerprints[fingerprints.length - 1]);
       const detection = pushAndDetectStagnation(this.guardState.recentToolFingerprints, fingerprints);
       if (detection.detected && !this.guardState.stagnationWarningEmitted) {
         logger.warn(
@@ -1164,8 +1166,8 @@ export class MessageProcessor {
     response: ModelResponse,
     iterations: number,
     inferenceDuration: number,
-  ): void {
-    recordMessageProcessorModelCallTelemetry(this.ctx, response, iterations, inferenceDuration);
+  ): ReturnType<typeof recordMessageProcessorModelCallTelemetry> {
+    return recordMessageProcessorModelCallTelemetry(this.ctx, response, iterations, inferenceDuration);
   }
 
   /**

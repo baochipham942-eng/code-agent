@@ -75,7 +75,9 @@ export class InferenceCache {
    * Deliberately NOT in the key: apiKey (credential, not output-affecting),
    * capabilities/computerUse (descriptive metadata), promptCaching (server-side
    * cache marker, output-transparent), adaptive (routing permission — response
-   * ownership is handled by keying writes with the config that produced them).
+   * ownership is handled by keying writes with the config that produced them),
+   * cacheRetention / cacheScopeId (record-only side-path contract; must not
+   * switch the cache bucket).
    */
   computeKey(
     messages: ModelMessage[],

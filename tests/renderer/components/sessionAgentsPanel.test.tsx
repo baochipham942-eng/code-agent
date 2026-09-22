@@ -14,7 +14,12 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
-const appState = { setWorkbenchCollapsed: vi.fn() };
+const appState = {
+  setWorkbenchCollapsed: vi.fn(),
+  pendingPermissionRequest: null as { resolved?: boolean; agentId?: string; runId?: string } | null,
+  pendingPermissionSessionId: null as string | null,
+  queuedPermissionRequests: {} as Record<string, Array<{ resolved?: boolean; agentId?: string; runId?: string }>>,
+};
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
 vi.mock('../../../src/renderer/stores/appStore', () => {
@@ -106,6 +111,9 @@ describe('SessionAgentsPanel', () => {
     invokeDomainMock.mockReset();
     invokeDomainMock.mockResolvedValue(null);
     appState.setWorkbenchCollapsed.mockReset();
+    appState.pendingPermissionRequest = null;
+    appState.pendingPermissionSessionId = null;
+    appState.queuedPermissionRequests = {};
     useSwarmStore.setState({ activeSessionId: undefined, activeRunId: undefined, activeTreeId: undefined, lastEventAt: undefined, eventLog: [] });
     useSessionStore.setState({ sessions: [], currentSessionId: 'session-1' });
     useComposerStore.setState({ selectedTeamRecipeId: null, standbyExcludedMemberKeys: [] });
@@ -177,27 +185,43 @@ describe('SessionAgentsPanel', () => {
 
     render(<SessionAgentsPanel />);
     await screen.findByTestId('agents-panel-row-researcher');
-    expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe(
-      zh.outcomeWords['cancelled-by-user'].badge.label,
-    );
+    expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe('已停');
     expect(screen.queryByTestId('agents-panel-stop-researcher')).toBeNull();
     expect(screen.queryByTestId('agents-panel-stop-all')).toBeNull();
   });
 
-  it('行状态文案：工作中 / 失败（带原因）/ 卡住了在等你', async () => {
+  it('行状态文案：工作中 / 失败（带原因）/ 等你回应，不带工具步人话', async () => {
     mockLedger([record({ status: 'running', endTime: null, durationMs: null })]);
     mockTree(snapshotOf([
       treeNode({ id: 'agent-failed', role: '失败代理', status: 'failed', statusLabel: '遇到问题', failureReason: '可用预算已经用完' }),
-      treeNode({ id: 'agent-blocked', role: '阻塞代理', status: 'blocked', statusLabel: '被阻塞' }),
+      treeNode({
+        id: 'agent-blocked',
+        role: '阻塞代理',
+        status: 'blocked',
+        statusLabel: '被阻塞',
+        lastToolStep: { tool: 'Read', target: '/repo/secret-narration.md', at: 1 },
+      }),
     ]));
 
     render(<SessionAgentsPanel />);
     await screen.findByTestId('agents-panel-row-researcher');
     expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe('工作中');
     expect(screen.getByTestId('agents-panel-status-agent-failed').textContent).toBe('失败：可用预算已经用完');
-    expect(screen.getByTestId('agents-panel-status-agent-blocked').textContent).toBe('卡住了在等你');
+    expect(screen.getByTestId('agents-panel-status-agent-blocked').textContent).toBe('等你回应');
+    expect(screen.getByTestId('agents-panel-row-agent-blocked').textContent).not.toContain('secret-narration.md');
     // 有 waiting 行 → 顶部报「卡住了」
     expect(screen.getByTestId('agents-panel-merge-state').textContent).toBe('一个代理卡住了在等你');
+  });
+
+  it('审批点名的代理行显示需要授权', async () => {
+    appState.pendingPermissionSessionId = 'session-1';
+    appState.pendingPermissionRequest = { agentId: 'agent-blocked', resolved: false };
+    mockTree(snapshotOf([
+      treeNode({ id: 'agent-blocked', role: '阻塞代理', status: 'running', statusLabel: '正在处理' }),
+    ]));
+
+    render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-status-agent-blocked')).textContent).toBe('需要授权');
   });
 
   it('delegate_task 后台任务成 kind task 行，带「后台」badge', async () => {

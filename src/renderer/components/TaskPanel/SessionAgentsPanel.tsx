@@ -116,11 +116,13 @@ export const SessionAgentsPanel: React.FC = () => {
 
   const statusLabel = (row: AgentRow): string => {
     const labels = text.panel.status;
+    if (row.hold === 'approval') return labels.needsApproval;
     if (row.status === 'failed') {
       return row.failureReason
         ? `${labels.failed}：${row.failureReason}`
         : labels.failed;
     }
+    if (row.status === 'cancelled') return labels.stopped;
     return labels[row.status];
   };
 
@@ -234,9 +236,6 @@ export const SessionAgentsPanel: React.FC = () => {
                       </span>
                     )}
                   </span>
-                  {row.activity && (
-                    <span className="truncate text-[11px] text-zinc-400">{row.activity}</span>
-                  )}
                   <span
                     data-testid={`agents-panel-status-${row.key}`}
                     className={`text-[10px] ${

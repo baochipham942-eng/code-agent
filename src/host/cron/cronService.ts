@@ -922,6 +922,8 @@ export class CronService implements Disposable {
             );
           }
         }
+        const unattendedTimeout = (await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id);
+        if (unattendedTimeout) throw new Error(unattendedTimeout);
         if (runFailed) throw runError;
 
         await this.deliverCronResult(definition, result, executionId);

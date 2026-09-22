@@ -16,6 +16,7 @@ import type { PendingApprovalRepository } from '../services/core/repositories/Pe
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/contract/permissionEdit';
 import { approvalParkEvents } from './approvalParkEvents';
+import { noteUnattendedApprovalTimeout, UNATTENDED_APPROVAL_TIMEOUT } from './unattendedApprovalTerminal';
 import { getConfirmationGate } from './confirmationGate';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
@@ -351,12 +352,20 @@ export class OrchestratorPermissionIsland {
     // 要求他 60 秒内点一下。实测通话结束后 run 才请求审批，60s 必然超时自动拒绝，
     // 而迟到的点击又落进静默丢弃分支，用户只看到「失败」且毫无线索。
     // 判据与抬严同源（isLiveVoiceSession = 通话中 或 语音派的 run 还在飞）。
-    const needsParking = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId)
-      || getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
-    if (needsParking) {
+    const unattended = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId);
+    const voice = getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
+    // 语音派仍停车 24h：通话里 60s 点不到，到点拒绝会把迟到的点击丢掉。
+    // cron/heartbeat 无人值守没有人看那张卡，60s 后必须进终态，不能跟语音共用 24h。
+    if (unattended || voice) {
       const parkRepo = this.getPendingApprovalRepo();
       if (parkRepo) {
-        return this.parkApproval(fullRequest, permissionLevel, parkRepo);
+        return this.parkApproval(
+          fullRequest,
+          permissionLevel,
+          parkRepo,
+          'tool_approval',
+          unattended ? 'unattended' : 'backstop',
+        );
       }
     } else {
       if (!forceConfirm && this.isDevModeAutoApproveEnabled()) {
@@ -424,7 +433,14 @@ export class OrchestratorPermissionIsland {
           safeWarn('Permission timeout event could not be emitted; resolving fail-closed anyway', error);
         }
         // N-PERMTRACE：超时无人应答 ≠ 用户拒绝。
-        resolve({ approved: false, denialSource: 'timeout' });
+        if (unattended && fullRequest.sessionId) {
+          noteUnattendedApprovalTimeout(fullRequest.sessionId);
+        }
+        resolve({
+          approved: false,
+          denialSource: 'timeout',
+          ...(unattended ? { message: UNATTENDED_APPROVAL_TIMEOUT } : {}),
+        });
       };
 
       /** 没有面的一拍：推进 fail-closed 时钟，走满就解除。 */
@@ -474,12 +490,29 @@ export class OrchestratorPermissionIsland {
     permissionLevel: string,
     repo: PendingApprovalRepository,
     kind: PendingApprovalKind = 'tool_approval',
+    deadline: 'unattended' | 'backstop' = 'backstop',
   ): Promise<PermissionAskResult> {
     return new Promise((resolve) => {
+      const unattendedDeadline = deadline === 'unattended';
+      const timeoutMs = unattendedDeadline
+        ? INTERACTION_TIMEOUTS.PERMISSION
+        : INTERACTION_TIMEOUTS.PARKED_APPROVAL;
       const timeoutId = setTimeout(() => {
-        logger.warn(`Parked approval ${fullRequest.id} expired after 24h backstop, denying`);
-        this.resolveParkedApproval(fullRequest.id, 'deny', 'parked approval expired', 'timeout');
-      }, INTERACTION_TIMEOUTS.PARKED_APPROVAL);
+        if (unattendedDeadline && fullRequest.sessionId) {
+          noteUnattendedApprovalTimeout(fullRequest.sessionId);
+        }
+        logger.warn(
+          unattendedDeadline
+            ? `Unattended approval ${fullRequest.id} timed out, denying`
+            : `Parked approval ${fullRequest.id} expired after 24h backstop, denying`,
+        );
+        this.resolveParkedApproval(
+          fullRequest.id,
+          'deny',
+          unattendedDeadline ? UNATTENDED_APPROVAL_TIMEOUT : 'parked approval expired',
+          'timeout',
+        );
+      }, timeoutMs);
 
       this.pendingPermissions.set(fullRequest.id, {
         parked: true,

@@ -388,7 +388,7 @@ export class OrchestratorPermissionIsland {
     const PERMISSION_TIMEOUT = isEditableTool(request.tool) ? EDITABLE_PERMISSION_TIMEOUT_MS : 60000;
 
     const releaseHold = holdStallClock(fullRequest.sessionId);
-    return new Promise((resolve) => {
+    return new Promise<PermissionAskResult>((resolve) => {
       // 免超时是一个**可撤回**的决定，不是 t=0 那一次问出来就永久生效的结论。
       // 判据既要对空间（这条请求渲染得出卡片吗——见 hasApprovalUi 的入参），也要对时间：
       // companion 通道建链后固定到期、被 prune() 无条件拆除，而没有任何事件回来重判。
@@ -495,7 +495,7 @@ export class OrchestratorPermissionIsland {
     deadline: 'unattended' | 'backstop' = 'backstop',
   ): Promise<PermissionAskResult> {
     const releaseHold = holdStallClock(fullRequest.sessionId);
-    return new Promise((resolve) => {
+    return new Promise<PermissionAskResult>((resolve) => {
       const unattendedDeadline = deadline === 'unattended';
       const timeoutMs = unattendedDeadline
         ? INTERACTION_TIMEOUTS.PERMISSION

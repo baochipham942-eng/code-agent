@@ -279,6 +279,42 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     expect(outsideResult.decision).toBe('ask');
   });
 
+  it('字符串数组参数逐项进 state，不压成 <array>', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    await classifier.classify(
+      'image_analyze',
+      { paths: ['/tmp/batch-a.png', '/tmp/batch-b.png'] },
+      { workingDirectory: '/tmp' },
+    );
+
+    expect(stub.calls.length).toBe(1);
+    const state = JSON.stringify(stub.calls[0]);
+    expect(state).toContain('/tmp/batch-a.png');
+    expect(state).toContain('/tmp/batch-b.png');
+    expect(state).not.toContain('paths=<array>');
+  });
+
+  it('路径形参数命中凭据目录 ⇒ 确定性 ask，systemOne 零调用（ai-review R1）', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    const homeSecret = `${os.homedir()}/.ssh/id_rsa.png`;
+
+    const singleResult = await classifier.classify(
+      'image_analyze', { path: homeSecret }, { workingDirectory: '/tmp' },
+    );
+    expect(singleResult.decision).toBe('ask');
+
+    // 批量数组里混一条敏感路径同样整体 ask——不得随同批正常路径一起放行
+    const batchResult = await classifier.classify(
+      'image_analyze',
+      { paths: ['/tmp/normal.png', '~/.ssh/leak.png'] },
+      { workingDirectory: '/tmp' },
+    );
+    expect(batchResult.decision).toBe('ask');
+    expect(stub.calls.length).toBe(0);
+  });
+
   // ---------------------------------------------------------------------------
   // 反向变异（跑真代码）：桩模拟「被带偏/故障的 Jev」，分类器必须不放大损害。
   // 夹具 = tests/fixtures/jev-permclass-samples.json（20 放行 + 8 拒绝 + 5 destructive）。

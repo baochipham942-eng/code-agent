@@ -16,6 +16,7 @@ import * as os from 'os';
 import { createLogger } from '../services/infra/logger';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
+import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 import {
   PERMCLASS_APPROVE_THRESHOLDS,
   PERMCLASS_QUESTIONS,
@@ -77,6 +78,14 @@ function buildJevState(toolName: string, args: Record<string, unknown>, context:
         }
         if (typeof value === 'string') return `${safeKey}=${value.slice(0, 256)}`;
         if (typeof value === 'number' || typeof value === 'boolean') return `${safeKey}=${String(value)}`;
+        // 字符串数组（如 image_analyze 的批量 paths）必须逐项带进 state——
+        // 压成 <array> 会让工作区图片与 ~/.ssh/*.png 产生完全相同的 Jev 输入，
+        // 前者放行后者也被放行（ai-review R1）。敏感路径另有确定性预检拦截。
+        if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+          const items = (value as string[]).slice(0, 8).map((item) => item.slice(0, 160)).join(';');
+          const suffix = (value as string[]).length > 8 ? `;…+${(value as string[]).length - 8}` : '';
+          return `${safeKey}=[${items}${suffix}]`;
+        }
         return `${safeKey}=<${Array.isArray(value) ? 'array' : typeof value}>`;
       })
       .join(' ') || toolName;
@@ -94,6 +103,23 @@ function buildJevState(toolName: string, args: Record<string, unknown>, context:
 }
 
 let jevKeyMissingWarned = false;
+
+/** 收集参数里命中凭据目录的路径形字符串（顶层字符串与字符串数组逐项）。 */
+function collectSensitiveArgPaths(args: Record<string, unknown>): string[] {
+  const candidates: string[] = [];
+  const visit = (value: unknown) => {
+    if (typeof value === 'string' && (value.includes('/') || value.startsWith('~'))) {
+      candidates.push(value);
+    } else if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+    }
+  };
+  for (const value of Object.values(args)) visit(value);
+  return candidates.filter((candidate) => {
+    const expanded = candidate.startsWith('~') ? os.homedir() + candidate.slice(1) : candidate;
+    return isSensitiveCredentialPath(expanded);
+  });
+}
 
 /** Jev 不可用只 warn 一行、不抛：key 缺失属配置错误只报一次，其余失败逐次留痕。 */
 function warnJevUnavailable(error: unknown): void {
@@ -138,6 +164,10 @@ export async function classifyByJev(
   startTime: number,
 ): Promise<ClassificationResult | null> {
   if (!isJevPermissionTool(toolName)) return null;
+  // 确定性预检：任何路径形参数（含数组逐项）命中凭据目录直接 ask，不问 Jev。
+  // Jev 只缩 ask 桶，敏感路径的判断不许外包给第三方模型（ai-review R1：
+  // image_analyze 批量 paths 与工作区图片曾产生相同 state）。
+  if (collectSensitiveArgPaths(args).length > 0) return null;
   const state = buildJevState(toolName, args, context);
   const questions = isBashToolName(toolName) ? PERMCLASS_QUESTIONS : PERMWIDE_QUESTIONS;
   let answers: JevAnswers;

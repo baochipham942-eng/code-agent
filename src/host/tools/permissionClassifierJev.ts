@@ -111,30 +111,41 @@ function buildJevState(toolName: string, args: Record<string, unknown>, context:
 
 let jevKeyMissingWarned = false;
 
-/** 收集参数里的路径形字符串（顶层/数组/嵌套对象逐项），解析为真实路径。 */
-function resolveArgPaths(args: Record<string, unknown>, workingDirectory: string): string[] {
+/** 只按路径形 key 定向提取（path/file/dir/image/output/template/target/source），
+ * 正文 key（content/data/subtitle…）不进文件系统解析——长正文含 '/' 时逐段
+ * lstat 会 ENAMETOOLONG 让分类器整体抛错（ai-review R6）。 */
+const PATHISH_ARG_KEY = /path|file|dir|image|output|template|target|source/i;
+
+/** 收集参数里的路径形字符串（按 key 定向，数组/嵌套对象继承父 key），解析为真实路径。 */
+function resolveArgPaths(args: Record<string, unknown>, workingDirectory: string): { paths: string[]; hasGlob: boolean } {
   const candidates: string[] = [];
-  const visit = (value: unknown) => {
-    // 含 '/' 或 '\'（Windows 绝对路径）、'~' / '.' 开头、平台绝对路径，以及任何
-    // 不含空格的短串（'evil.pdf' 这类裸文件名也要过符号链接解析，ai-review R5）。
-    if (typeof value === 'string' && value.length > 0
-      && (value.includes('/') || value.includes('\\') || value.startsWith('~') || value.startsWith('.')
-        || path.isAbsolute(value) || !value.includes(' '))) {
-      candidates.push(value);
+  let hasGlob = false;
+  const visit = (value: unknown, pathish: boolean) => {
+    if (typeof value === 'string') {
+      if (pathish && value.length > 0) {
+        candidates.push(value);
+        if (/[*?[]/.test(value)) hasGlob = true;
+      }
     } else if (Array.isArray(value)) {
-      for (const item of value) visit(item);
+      for (const item of value) visit(item, pathish);
     } else if (value !== null && typeof value === 'object') {
-      for (const nested of Object.values(value)) visit(nested);
+      for (const [key, nested] of Object.entries(value)) visit(nested, pathish || PATHISH_ARG_KEY.test(key));
     }
   };
-  for (const value of Object.values(args)) visit(value);
-  return candidates.map((candidate) => {
+  for (const [key, value] of Object.entries(args)) visit(value, PATHISH_ARG_KEY.test(key));
+  const paths = candidates.map((candidate) => {
     const expanded = candidate.startsWith('~') ? os.homedir() + candidate.slice(1) : candidate;
     const resolved = path.isAbsolute(expanded) ? path.normalize(expanded) : path.resolve(workingDirectory, expanded);
     // 跟随符号链接（与规则层 resolveCandidatePath 同一原语）——工作区内的
-    // 链接指向区外时按区外判（ai-review R5）。
-    return resolveCanonicalRunPath(resolved);
+    // 链接指向区外时按区外判（ai-review R5）。lstat 只吞 ENOENT/ENOTDIR，
+    // 其余错误（如 ENAMETOOLONG）这里兜底回字面路径，绝不让分类器抛错（R6）。
+    try {
+      return resolveCanonicalRunPath(resolved);
+    } catch {
+      return resolved;
+    }
   });
+  return { paths, hasGlob };
 }
 
 function isWithinAny(candidate: string, roots: string[]): boolean {
@@ -147,12 +158,13 @@ function isWithinAny(candidate: string, roots: string[]): boolean {
 const JEV_WRITE_ROOTS = () => [os.tmpdir(), '/tmp', '/private/tmp'];
 
 /**
- * 确定性边界预检：命中凭据目录、受保护写路径，或落在工作目录与临时目录之外，
- * 一律 ask 不问 Jev——边界判断不外包给第三方模型（ai-review R1/R3/R4/R5）。
- * 正文内容命中属于偏严误报，方向安全（ask 不是 deny），保持不变。
+ * 确定性边界预检：命中凭据目录、受保护写路径、glob 模式（执行期可能匹配到
+ * 指向区外的符号链接，无法静态判定），或落在工作目录与临时目录之外，
+ * 一律 ask 不问 Jev——边界判断不外包给第三方模型（ai-review R1/R3/R4/R5/R6）。
  */
 function hitsDeterministicBoundary(args: Record<string, unknown>, workingDirectory: string): boolean {
-  const resolvedPaths = resolveArgPaths(args, workingDirectory);
+  const { paths: resolvedPaths, hasGlob } = resolveArgPaths(args, workingDirectory);
+  if (hasGlob) return true;
   const allowedRoots = [workingDirectory, ...JEV_WRITE_ROOTS()]
     .map((root) => resolveCanonicalRunPath(path.resolve(root)));
   return resolvedPaths.some((resolved) =>

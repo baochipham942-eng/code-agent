@@ -361,6 +361,30 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     expect(stub.calls.length).toBe(0);
   });
 
+  it('glob 模式路径无法静态判定 ⇒ 确定性 ask，systemOne 零调用（ai-review R6）', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    const result = await classifier.classify(
+      'image_analyze', { paths: ['*.png'] }, { workingDirectory: '/tmp' },
+    );
+    expect(result.decision).toBe('ask');
+    expect(stub.calls.length).toBe(0);
+  });
+
+  it('正文 key 的长文本含斜杠不进文件系统解析，分类器不抛错（ai-review R6）', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    // 300 字符单段 + '/': 若被当路径逐段 lstat 会 ENAMETOOLONG
+    const longSegment = 'a'.repeat(300);
+    const result = await classifier.classify(
+      'pdf_generate',
+      { output_path: '/tmp/report.pdf', content: `see https://example.com/${longSegment}/details` },
+      { workingDirectory: '/tmp' },
+    );
+    expect(result.decision).toBe('approve');
+    expect(stub.calls.length).toBe(1);
+  });
+
   it('工作区内的符号链接指向区外 ⇒ 按真实路径判，确定性 ask（ai-review R5）', async () => {
     const stub = stubSystemOne();
     const classifier = newClassifier(stub);

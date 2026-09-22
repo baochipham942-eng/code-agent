@@ -380,7 +380,7 @@ describe('runAiSdkInferenceWithProviderFallback — AI SDK 普通 provider fallb
     });
     expect(response).toMatchObject({
       actualProvider: 'deepseek',
-      actualModel: 'deepseek-v4-flash',
+      actualModel: 'deepseek-flash',
       fallback: {
         from: { provider: 'moonshot', model: 'kimi-k2.5' },
         to: { provider: 'deepseek', model: 'deepseek-flash' },

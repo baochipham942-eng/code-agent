@@ -361,6 +361,26 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     expect(stub.calls.length).toBe(0);
   });
 
+  it('写到工作目录与临时目录之外 ⇒ 确定性 ask 不外包 Jev；工作目录内照常放行（ai-review R4）', async () => {
+    const outsideStub = stubSystemOne();
+    const outside = await newClassifier(outsideStub).classify(
+      'excel_generate',
+      { output_path: '~/Documents/finance.xlsx', overwrite: true },
+      { workingDirectory: '/tmp/work' },
+    );
+    expect(outside.decision).toBe('ask');
+    expect(outsideStub.calls.length).toBe(0);
+
+    const insideStub = stubSystemOne();
+    const inside = await newClassifier(insideStub).classify(
+      'excel_generate',
+      { output_path: '/tmp/work/reports/finance.xlsx', overwrite: true },
+      { workingDirectory: '/tmp/work' },
+    );
+    expect(inside.decision).toBe('approve');
+    expect(insideStub.calls.length).toBe(1);
+  });
+
   // ---------------------------------------------------------------------------
   // 反向变异（跑真代码）：桩模拟「被带偏/故障的 Jev」，分类器必须不放大损害。
   // 夹具 = tests/fixtures/jev-permclass-samples.json（20 放行 + 8 拒绝 + 5 destructive）。

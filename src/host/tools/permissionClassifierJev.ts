@@ -90,23 +90,28 @@ function buildJevState(toolName: string, args: Record<string, unknown>, context:
         return `${safeKey}=<${Array.isArray(value) ? 'array' : typeof value}>`;
       })
       .join(' ') || toolName;
-  const tempDirs = [...new Set([os.tmpdir(), '/tmp', '/private/tmp'])];
+  const isBash = typeof args.command === 'string';
   return {
     tool: guard(toolName),
     summary: guard(summary),
     working_directory: guard(context.workingDirectory),
-    temp_dirs: {
-      system_tmp: guard(tempDirs[0] ?? '/tmp'),
-      posix_tmp: guard(tempDirs[1] ?? '/tmp'),
-      private_tmp: guard(tempDirs[2] ?? '/private/tmp'),
-    },
+    // Bash 保持回放标定时的数组形状（阈值按旧形状校准，ai-review R4）；
+    // 非 Bash 用命名键（探针实证：数组下标引用会判错）。不做去重按下标取值——
+    // Linux 上 os.tmpdir()=/tmp 会让标签错位。
+    temp_dirs: isBash
+      ? [...new Set([os.tmpdir(), '/tmp', '/private/tmp'])].map(guard)
+      : {
+          system_tmp: guard(os.tmpdir()),
+          posix_tmp: guard('/tmp'),
+          private_tmp: guard('/private/tmp'),
+        },
   };
 }
 
 let jevKeyMissingWarned = false;
 
-/** 收集参数里命中凭据目录或受保护写路径的路径形字符串（顶层/数组/嵌套对象逐项）。 */
-function collectProtectedArgPaths(args: Record<string, unknown>, workingDirectory: string): string[] {
+/** 收集参数里的路径形字符串（顶层/数组/嵌套对象逐项），解析为绝对路径。 */
+function resolveArgPaths(args: Record<string, unknown>, workingDirectory: string): string[] {
   const candidates: string[] = [];
   const visit = (value: unknown) => {
     if (typeof value === 'string' && (value.includes('/') || value.startsWith('~') || value.startsWith('.'))) {
@@ -118,11 +123,33 @@ function collectProtectedArgPaths(args: Record<string, unknown>, workingDirector
     }
   };
   for (const value of Object.values(args)) visit(value);
-  return candidates.filter((candidate) => {
+  return candidates.map((candidate) => {
     const expanded = candidate.startsWith('~') ? os.homedir() + candidate.slice(1) : candidate;
-    const resolved = path.isAbsolute(expanded) ? expanded : path.resolve(workingDirectory, expanded);
-    return isSensitiveCredentialPath(resolved) || isProtectedWritePath(resolved, { projectRoot: workingDirectory });
+    return path.isAbsolute(expanded) ? path.normalize(expanded) : path.resolve(workingDirectory, expanded);
   });
+}
+
+function isWithinAny(candidate: string, roots: string[]): boolean {
+  return roots.some((root) => {
+    const resolved = path.resolve(root);
+    return candidate === resolved || candidate.startsWith(resolved + path.sep);
+  });
+}
+
+const JEV_WRITE_ROOTS = () => [os.tmpdir(), '/tmp', '/private/tmp'];
+
+/**
+ * 确定性边界预检：命中凭据目录、受保护写路径，或落在工作目录与临时目录之外，
+ * 一律 ask 不问 Jev——边界判断不外包给第三方模型（ai-review R1/R3/R4）。
+ * 正文内容命中属于偏严误报，方向安全（ask 不是 deny），保持不变。
+ */
+function hitsDeterministicBoundary(args: Record<string, unknown>, workingDirectory: string): boolean {
+  const resolvedPaths = resolveArgPaths(args, workingDirectory);
+  const allowedRoots = [path.resolve(workingDirectory), ...JEV_WRITE_ROOTS().map((root) => path.resolve(root))];
+  return resolvedPaths.some((resolved) =>
+    isSensitiveCredentialPath(resolved)
+    || isProtectedWritePath(resolved, { projectRoot: workingDirectory })
+    || !isWithinAny(resolved, allowedRoots));
 }
 
 /** Jev 不可用只 warn 一行、不抛：key 缺失属配置错误只报一次，其余失败逐次留痕。 */
@@ -168,11 +195,9 @@ export async function classifyByJev(
   startTime: number,
 ): Promise<ClassificationResult | null> {
   if (!isJevPermissionTool(toolName)) return null;
-  // 确定性预检：任何路径形参数（含数组/嵌套对象逐项、~ 展开、相对路径按
-  // workingDirectory 解析）命中凭据目录或受保护写路径（.git/config、
-  // .code-agent/settings.json 等）直接 ask，不问 Jev。Jev 只缩 ask 桶，敏感与
-  // 受保护路径的判断不许外包给第三方模型（ai-review R1/R3）。
-  if (collectProtectedArgPaths(args, context.workingDirectory).length > 0) return null;
+  // 确定性边界预检只对扩桶的非 Bash 工具做（Bash 走原有四问协议，形状与
+  // 判据不变）：凭据目录 / 受保护写路径 / 工作目录与临时目录之外，一律 ask。
+  if (!isBashToolName(toolName) && hitsDeterministicBoundary(args, context.workingDirectory)) return null;
   const state = buildJevState(toolName, args, context);
   const questions = isBashToolName(toolName) ? PERMCLASS_QUESTIONS : PERMWIDE_QUESTIONS;
   let answers: JevAnswers;

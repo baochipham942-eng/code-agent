@@ -709,14 +709,14 @@ const SuggestionsUpdateEventSchema = event('suggestions_update', z.array(z.objec
 // ADR-068 刀 4（D5）：首字节后断流续接的 UI 信号——同一轮同一 streaming 消息内嵌状态行
 // 「连接中断，正在续接 n/N」。attempt/maxReconnects 即 n/N；segment 标 B1 无缝续打还是
 // B2 诚实分段（B2 时 renderer 先定格断点消息、续答另起一段，D2 边界）。
-const DoomLoopHandbackEventSchema = event('doom_loop_handback', z.object({
-  sessionId: z.string(),
-}));
 const StreamReconnectingEventSchema = event('stream_reconnecting', z.object({
   turnId: z.string().optional(),
   attempt: z.number().int().min(1),
   maxReconnects: z.number().int().min(1),
   segment: z.enum(['b1', 'b2']),
+}));
+const DoomLoopHandbackEventSchema = event('doom_loop_handback', z.object({
+  sessionId: z.string(),
 }));
 
 export const AgentEventSchema = z.discriminatedUnion('type', [

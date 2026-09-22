@@ -97,9 +97,11 @@ export class AgentLoop {
       logger.info(`[AgentLoop] scaffold-profile-active tier=${scaffoldProfile.tier} model=${config.modelConfig.model}`);
     }
     const resolvedSessionId = config.sessionId || `session-${Date.now()}`;
+    const cachePromptSample: { current?: { prompt: string; modelId: string } } = {};
     const onEvent = createTurnCostEventHandler({
       sessionId: resolvedSessionId,
       onEvent: config.onEvent,
+      readCachePrompt: () => cachePromptSample.current,
     });
     const persistMessage = config.persistMessage;
     const persistedRuntimeState = loadPersistedRuntimeState(resolvedSessionId);
@@ -114,6 +116,7 @@ export class AgentLoop {
 
     this.ctx = {
       systemPrompt: config.systemPrompt || '',
+      cachePromptSample,
       systemInstructions: config.systemInstructions,
       modelConfig: config.modelConfig,
       toolExecutor: config.toolExecutor,

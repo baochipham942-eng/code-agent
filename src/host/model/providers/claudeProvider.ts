@@ -386,10 +386,14 @@ export class ClaudeProvider implements Provider {
     signal?: AbortSignal,
     options?: InferenceOptions,
   ): Promise<ModelResponse> {
-    // Auto-enable prompt caching if not explicitly configured
-    const effectiveConfig = config.promptCaching
-      ? config
-      : { ...config, promptCaching: { enabled: true, cacheSystem: true } };
+    // cacheRetention 'none'：旁路调用完全不打 cache_control，也不带 prompt-caching beta。
+    // 缺省仍自动打开 prompt caching。
+    const retainPromptCache = options?.cacheRetention !== 'none';
+    const effectiveConfig = retainPromptCache
+      ? (config.promptCaching
+        ? config
+        : { ...config, promptCaching: { enabled: true, cacheSystem: true } })
+      : { ...config, promptCaching: { enabled: false } };
 
     const baseUrl = normalizeClaudeBaseUrl(
       effectiveConfig.baseUrl || process.env.ANTHROPIC_BASE_URL || MODEL_API_ENDPOINTS.claude

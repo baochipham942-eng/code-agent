@@ -87,7 +87,9 @@ async function requestSummary(
   config: ModelConfig,
   finalPrompt: string,
   maxTokens: number,
-  useMainModel: boolean
+  useMainModel: boolean,
+  cacheScopeId: string,
+  searchEnabled?: boolean,
 ): Promise<{ content: string; truncated?: boolean }> {
   logger.debug('Generating summary', {
     provider: config.provider,
@@ -103,7 +105,15 @@ async function requestSummary(
     {
       ...config,
       maxTokens: Math.min(maxTokens, config.maxTokens || 2048),
-    }
+    },
+    undefined,
+    undefined,
+    {
+      // 摘要是旁路：不给主会话前缀打 cache_control。cacheScopeId 只记录。
+      cacheRetention: 'none',
+      cacheScopeId,
+      ...(searchEnabled !== undefined ? { searchEnabled } : {}),
+    },
   );
 
   if (response.content) {
@@ -269,15 +279,23 @@ function toSummaryResult(
 /**
  * Generate AI summary and return the actual model used.
  */
+interface CompactSummaryCallOptions {
+  /** 使用主模型做摘要（而非 cheap model），理解上下文更好 */
+  useMainModel?: boolean;
+  /** 自定义摘要指令，覆盖默认 prompt */
+  instructions?: string;
+  /** 旁路合同。本函数始终向模型传 'none'。 */
+  cacheRetention?: 'none';
+  /** 只记录的范围标签。缺省 compact-summary。 */
+  cacheScopeId?: string;
+  /** 传给推理层。缺省保持 provider 的搜索默认。 */
+  searchEnabled?: boolean;
+}
+
 export async function compactModelSummarizeWithMetadata(
   prompt: string,
   maxTokens: number,
-  options?: {
-    /** 使用主模型做摘要（而非 cheap model），理解上下文更好 */
-    useMainModel?: boolean;
-    /** 自定义摘要指令，覆盖默认 prompt */
-    instructions?: string;
-  }
+  options?: CompactSummaryCallOptions,
 ): Promise<CompactModelSummaryResult> {
   // 如果提供了自定义指令，替换 prompt 中的默认指令部分
   const finalPrompt = options?.instructions
@@ -311,12 +329,15 @@ export async function compactModelSummarizeWithMetadata(
   }
 
   try {
+    const cacheScopeId = options?.cacheScopeId ?? 'compact-summary';
     const summary = await requestSummary(
       modelRouter,
       resolution.config,
       finalPrompt,
       maxTokens,
-      resolution.useMainModel
+      resolution.useMainModel,
+      cacheScopeId,
+      options?.searchEnabled,
     );
     return toSummaryResult(summary, resolution);
   } catch (error) {
@@ -334,7 +355,15 @@ export async function compactModelSummarizeWithMetadata(
           promptLength: finalPrompt.length,
         });
         try {
-          const summary = await requestSummary(modelRouter, mainResolution.config, finalPrompt, maxTokens, true);
+          const summary = await requestSummary(
+            modelRouter,
+            mainResolution.config,
+            finalPrompt,
+            maxTokens,
+            true,
+            options?.cacheScopeId ?? 'compact-summary',
+            options?.searchEnabled,
+          );
           return toSummaryResult(summary, {
             ...mainResolution,
             fallbackReason: 'compact_context_length_exceeded',
@@ -363,12 +392,7 @@ export async function compactModelSummarizeWithMetadata(
 export async function compactModelSummarize(
   prompt: string,
   maxTokens: number,
-  options?: {
-    /** 使用主模型做摘要（而非 cheap model），理解上下文更好 */
-    useMainModel?: boolean;
-    /** 自定义摘要指令，覆盖默认 prompt */
-    instructions?: string;
-  }
+  options?: CompactSummaryCallOptions,
 ): Promise<string> {
   const result = await compactModelSummarizeWithMetadata(prompt, maxTokens, options);
   return result.summary;

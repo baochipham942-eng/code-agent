@@ -3,6 +3,7 @@ import type { ToolResult } from '../../shared/contract';
 import { getDatabase } from '../services/core/databaseService';
 import { getAuditLogger } from '../security';
 import { sanitizeToolParams, truncateToolOutput } from './toolExecutorHelpers';
+import { fingerprintToolCall } from '../agent/runtime/stagnationDetector';
 import { markToolCacheHit } from './toolExecutionTelemetry';
 
 export function recordCachedToolReplay(input: {
@@ -42,7 +43,13 @@ export function recordCachedToolReplay(input: {
   } catch {
     // Cache replay remains available when the audit DB is unavailable.
   }
-  markToolCacheHit(input.toolCallId);
+  markToolCacheHit(input.toolCallId, {
+    sessionId: input.sessionId,
+    fingerprint: fingerprintToolCall(
+      { id: input.toolCallId ?? 'cache', name: input.toolName, arguments: input.params },
+      input.cached,
+    ),
+  });
   if (!input.auditEnabled) return;
   try {
     getAuditLogger().logToolUsage({

@@ -438,6 +438,20 @@ describe('runMaxModeStep', () => {
     // 汇总字段仍在（诊断用）
     expect(stats.overhead).toEqual({ inputTokens: 15, outputTokens: 3 });
   });
+
+  it('calls the silent engine with kind judge for the side-path verdict', async () => {
+    const silentEngine: MaxModeEngine = vi.fn(async (_messages, tools) => (
+      tools.length === 0
+        ? textResponse('WINNER: 0')
+        : textResponse('candidate')
+    ));
+    await runMaxModeStep(
+      { silentEngine, streamingEngine: vi.fn() },
+      { messages: MESSAGES, tools: TOOLS, candidates: 2 },
+    );
+    const kinds = vi.mocked(silentEngine).mock.calls.map((call) => call[2]);
+    expect(kinds).toEqual(['candidate', 'candidate', 'judge']);
+  });
 });
 
 describe('JUDGE_SYSTEM_PROMPT 防欺骗措辞（roadmap 1.4 三件套，对齐 goalReviewGate 风格）', () => {

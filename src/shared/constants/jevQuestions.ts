@@ -193,8 +193,9 @@ export const JUDGE_PRESCREEN_BANDS = { pass: 0.65, fail: 0.35 } as const;
  * expectations）与 `output`（responses/toolExecutions/errors/assertionResults）。
  * 问句名全局唯一：一次 systemOne 调用问完一题全部应判维，按名对账回维度。
  * 注意：tool_choice / no_extra_changes / self_tested 三维的存量门 `requiresExpectation`
- * 在 dimensionJudge 里恒短路 no_expectation——这三组问句是门放开后的预留，当前不会被问到
- * （N-JEV-EVAL-JUDGE-R2 复核①；门是否放开待拍板，见证据档「前提出入」）。
+ * 在 dimensionJudge 里默认短路 no_expectation；评测实验开关（dimensionJudge 的
+ * judgeExpectationDims / CODE_AGENT_DIMJUDGE_EXPECTATION_DIMS，N-JEV-DIMJUDGE-WIRE3）
+ * 打开后这三组问句才会被问到——题没声明 expectations 时判据回落 prompt + reference_solution。
  */
 export const EVAL_JUDGE_QUESTIONS: Record<AiReviewDimension, Record<string, JevQuestionSpec>> = {
   task_completed: {
@@ -213,7 +214,7 @@ export const EVAL_JUDGE_QUESTIONS: Record<AiReviewDimension, Record<string, JevQ
     tools_match_expectations: {
       type: 'noul',
       instructions:
-        'Do the tools in `output.toolExecutions` match the tool expectations declared in `input.expectations` for this case (expected tools used, forbidden or unneeded tools avoided)?',
+        'Do the tools in `output.toolExecutions` match the tool expectations declared in `input.expectations` for this case (expected tools used, forbidden or unneeded tools avoided)? If `input.expectations` is absent, judge against what `input.prompt` and `input.referenceSolution` imply.',
     },
     failures_handled: {
       type: 'noul',
@@ -232,14 +233,14 @@ export const EVAL_JUDGE_QUESTIONS: Record<AiReviewDimension, Record<string, JevQ
     changes_within_allowed_scope: {
       type: 'noul',
       instructions:
-        'Are the writes and edits in `output.toolExecutions` limited to the allowed write set declared in `input.expectations` and to what `input.prompt` asked for? Unrelated refactors, extra files, or out-of-scope edits count as no.',
+        'Are the writes and edits in `output.toolExecutions` limited to the allowed write set declared in `input.expectations` and to what `input.prompt` asked for? If `input.expectations` is absent, use `input.prompt` and `input.referenceSolution` as the scope reference. Unrelated refactors, extra files, or out-of-scope edits count as no.',
     },
   },
   self_tested: {
     self_test_evidence_present: {
       type: 'noul',
       instructions:
-        'Does `output` contain the self-test evidence this case declares in `input.expectations` (for example a test/build/run command in `output.toolExecutions` together with its result)? Merely claiming to have tested, without a trace, counts as no.',
+        'Does `output` contain the self-test evidence this case declares in `input.expectations` (for example a test/build/run command in `output.toolExecutions` together with its result)? If `input.expectations` is absent, judge against what `input.prompt` and `input.referenceSolution` ask for. Merely claiming to have tested, without a trace, counts as no.',
     },
   },
 };

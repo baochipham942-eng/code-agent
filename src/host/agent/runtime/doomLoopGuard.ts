@@ -123,6 +123,17 @@ export class DoomLoopGuard {
     return { level: 'none' };
   }
 
+  /**
+   * 用户选了「换个方法」。连击、警告标记和整步签名都清掉。
+   * 下一次相同调用从 1 重新数，要再满 3 次才警告，警告后再重复才中止。
+   */
+  resetAfterHandback(): void {
+    this.lastCallSignature = null;
+    this.identicalCallStreak = 0;
+    this.doomLoopNudged = false;
+    this.recentStepSignatures = [];
+  }
+
   /** 记录一次空输出，返回续接或停止决定（L3） */
   recordEmptyOutput(): { action: 'continue' | 'stop'; nudge?: string } {
     if (this.emptyOutputContinuations >= EMPTY_OUTPUT_CONTINUATION_LIMIT) {

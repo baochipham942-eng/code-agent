@@ -83,6 +83,7 @@ import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair'
 import { classifyIntent } from '../../telemetry/intentClassifier';
 import { markDistilledSkillTurnSignal } from '../../services/skills/distillSignalStore';
 import { emitGoalAbort } from './goalAbort';
+import { settleDoomLoopHandback } from './doomLoopHandback';
 import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
 
 
@@ -673,12 +674,10 @@ export class ConversationRuntime {
             response.toolCalls.map((tc) => ({ name: tc.name, arguments: tc.arguments })),
           );
           if (doomCheck.level === 'doom-loop-abort') {
-            logger.warn('[DoomLoopGuard] Identical tool call repeated after warning; aborting run');
-            logCollector.agent('WARN', 'Doom loop abort: identical tool call repeated after warning');
-            emitGoalAbort(this.ctx, {
-              code: HostReasonCode.GoalAbortRepeatedAction, modelText: '相同工具调用在警告后仍反复出现，目标未达成',
-              turns: iterations, tokensUsed: goalTokensUsedWithSwarm(this.ctx),
+            const action = await settleDoomLoopHandback(this.ctx, doomLoopGuard, iterations, (text) => {
+              this.contextAssembly.injectSystemMessage(text, 'stagnation-guard');
             });
+            if (action === 'retry') continue;
             terminal = { status: 'aborted' };
             break;
           }

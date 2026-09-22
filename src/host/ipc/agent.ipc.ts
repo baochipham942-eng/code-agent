@@ -340,6 +340,14 @@ export function registerAgentHandlers(
       return handlePermissionResponse(getAppService, { requestId, response, sessionId });
     }
   );
+
+  ipcMain.handle(
+    IPC_CHANNELS.AGENT_DOOM_LOOP_HANDBACK,
+    async (_, sessionId: string, choice: 'retry' | 'stop') => {
+      const { answerDoomLoopHandback } = await import('../agent/runtime/doomLoopHandback');
+      return answerDoomLoopHandback(sessionId, choice);
+    },
+  );
 }
 
 // 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）

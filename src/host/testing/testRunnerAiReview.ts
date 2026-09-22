@@ -17,6 +17,14 @@ function isDimJudgeJevPrescreenEnabled(env: NodeJS.ProcessEnv = process.env): bo
   return env.CODE_AGENT_DIMJUDGE_JEV_PRESCREEN === '1';
 }
 
+/**
+ * 评测实验开关（N-JEV-DIMJUDGE-WIRE3，默认关）：接电 requiresExpectation 三维进判官。
+ * 与 Jev 初筛开关独立——只开它时三维走生成式判官，两个都开时三维走初筛+升级。
+ */
+function isDimJudgeExpectationDimsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CODE_AGENT_DIMJUDGE_EXPECTATION_DIMS === '1';
+}
+
 const DIMJUDGE_PRESCREEN_MISSING_KEY_WARN
   = 'CODE_AGENT_DIMJUDGE_JEV_PRESCREEN 已开启但 TYPESAFE_API_KEY 缺失，Jev 初筛不生效（走生成式判官）';
 
@@ -56,7 +64,7 @@ export async function attachAiReview(
           judgeModel: `${response.provider ?? 'unknown'}/${response.model ?? 'unknown'}`,
         };
       },
-      { prescreen: resolveDimensionPrescreen() },
+      { prescreen: resolveDimensionPrescreen(), judgeExpectationDims: isDimJudgeExpectationDimsEnabled() },
     );
   } catch (error) {
     const aiReview: NonNullable<TestResult['aiReview']> = {};

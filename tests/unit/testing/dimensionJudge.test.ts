@@ -309,6 +309,65 @@ describe('judgeDimensions · Jev 初筛', () => {
     expect(judged.task_completed?.prescreenCostUsd).toBeGreaterThan(0);
   });
 
+  // N-JEV-DIMJUDGE-WIRE3：requiresExpectation 三维的评测语境接电（默认关，验收①③）。
+  it('judgeExpectationDims 缺省 ⇒ 三维保持 #1479 短路原状（有 prescreen 也不问）', async () => {
+    const prescreen = vi.fn(async () => ({}));
+    const llmCall = vi.fn(async () => '不会调用\n是');
+    const judged = await judgeDimensions(
+      { testCase: testCase(), result: result(), dims: ['tool_choice', 'no_extra_changes', 'self_tested'] },
+      llmCall,
+      { prescreen },
+    );
+    expect(prescreen).not.toHaveBeenCalled();
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(Object.values(judged).every((value) => value?.reason === 'no_expectation')).toBe(true);
+  });
+
+  it('judgeExpectationDims 开 + prescreen ⇒ 三维真走初筛决断，不调生成式', async () => {
+    const dims: AiReviewDimension[] = ['tool_choice', 'no_extra_changes', 'self_tested'];
+    const prescreen = vi.fn(async (
+      _state: Record<string, unknown>,
+      _questions: Record<string, JevQuestionSpec>,
+    ) => answersFor(dims, 0.9));
+    const llmCall = vi.fn(async () => '不会调用\n是');
+    const judged = await judgeDimensions(
+      { testCase: testCase(), result: result(), dims },
+      llmCall,
+      { prescreen, judgeExpectationDims: true },
+    );
+    expect(prescreen).toHaveBeenCalledTimes(1);
+    expect(Object.keys(prescreen.mock.calls[0][1])).toContain('tools_match_expectations');
+    expect(llmCall).not.toHaveBeenCalled();
+    for (const dimension of dims) {
+      expect(judged[dimension]).toMatchObject({ verdict: 'yes', prescreen: 'jev_decided' });
+    }
+  });
+
+  it('judgeExpectationDims 开 + 无 prescreen ⇒ 三维走生成式判官（每维一次 llmCall）', async () => {
+    const dims: AiReviewDimension[] = ['tool_choice', 'no_extra_changes', 'self_tested'];
+    const llmCall = vi.fn(async () => '按证据判断\n否');
+    const judged = await judgeDimensions(
+      { testCase: testCase(), result: result(), dims },
+      llmCall,
+      { judgeExpectationDims: true },
+    );
+    expect(llmCall).toHaveBeenCalledTimes(3);
+    for (const dimension of dims) {
+      expect(judged[dimension]).toMatchObject({ verdict: 'no' });
+    }
+  });
+
+  it('judgeExpectationDims 开 + 三维中间带 ⇒ 该维弃权升级生成式', async () => {
+    const llmCall = vi.fn(async () => '证据充分\n是');
+    const judged = await judgeDimensions(
+      { testCase: testCase(), result: result(), dims: ['tool_choice'] },
+      llmCall,
+      { prescreen: async () => answersFor(['tool_choice'], 0.5), judgeExpectationDims: true },
+    );
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(judged.tool_choice).toMatchObject({ verdict: 'yes', prescreen: 'escalated' });
+  });
+
   // 母单验收⑦反向锚：全部窄问落中间带（0.5）⇒ 应判维 100% 升级生成式，不许硬切判 0/1。
   it('全部窄问 0.5 ⇒ 100% 升级生成式（llmCall 次数 = 应判维数），无 0.5 硬切', async () => {
     const dims: AiReviewDimension[] = ['task_completed', 'confirmed_before_acting'];

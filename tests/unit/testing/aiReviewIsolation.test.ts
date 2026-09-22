@@ -148,6 +148,34 @@ describe('AI 评审 Jev 初筛开关', () => {
     expect(second.aiReview?.task_completed?.prescreen).toBeUndefined();
   });
 
+  it('CODE_AGENT_DIMJUDGE_EXPECTATION_DIMS 开 ⇒ requiresExpectation 维真调判官（WIRE3 接线）', async () => {
+    vi.stubEnv('CODE_AGENT_DIMJUDGE_EXPECTATION_DIMS', '1');
+    const target = unreviewed();
+    quickTask.mockResolvedValueOnce({ success: true, content: '按期望判断\n否', provider: 'p', model: 'm' });
+    try {
+      await attachAiReview(
+        { ...config, aiReview: ['tool_choice'] },
+        testCase,
+        target,
+        false,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(quickTask).toHaveBeenCalledTimes(1);
+    expect(target.aiReview?.tool_choice).toMatchObject({ verdict: 'no' });
+    expect(target.aiReview?.tool_choice?.reason).toBeUndefined();
+  });
+
+  it('CODE_AGENT_DIMJUDGE_EXPECTATION_DIMS 未开 ⇒ requiresExpectation 维仍短路（默认不变）', async () => {
+    const target = unreviewed();
+    await attachAiReview({ ...config, aiReview: ['tool_choice'] }, testCase, target, false);
+
+    expect(quickTask).not.toHaveBeenCalled();
+    expect(target.aiReview?.tool_choice).toMatchObject({ verdict: 'unavailable', reason: 'no_expectation' });
+  });
+
   it('开关 on 且 key 在 ⇒ 装配 systemOne，初筛决断则不调生成式', async () => {
     vi.stubEnv('CODE_AGENT_DIMJUDGE_JEV_PRESCREEN', '1');
     vi.stubEnv('TYPESAFE_API_KEY', 'test-key');

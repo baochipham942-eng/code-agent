@@ -36,7 +36,7 @@ import { getAutoCompressor } from '../context/autoCompressor';
 import { CompressionState } from '../context/compressionState';
 import { CompressionPipeline } from '../context/compressionPipeline';
 import { stampAssistantMessageCorrelation } from '../session/assistantCorrelation';
-import { startForegroundStallWatch, type StallPhase } from './stallObserver';
+import { clearStreamProgress, startForegroundStallWatch, streamProgressOf, type StallPhase } from './stallObserver';
 import { broadcastToRenderer } from '../platform/windowBridge';
 import { IPC_CHANNELS } from '../../shared/ipc';
 
@@ -299,9 +299,11 @@ export class AgentLoop {
     // 普通 sendMessage 先把展示面原话写进共享历史，再把模型面 executionContent 作为
     // run 首参传进来。messageBuild 只读历史，因此这里为当前 user 消息登记一个纯请求投影；
     // 不改 ctx.messages，避免脚手架进入会话落库、checkpoint 或 renderer。
+    const sessionId = this.ctx.sessionId;
     const stopStallWatch = startForegroundStallWatch({
       snapshot: () => this.stallSnapshot(),
-      emit: (notice) => broadcastToRenderer(IPC_CHANNELS.STALL_NOTICE, notice),
+      emit: (notice) => broadcastToRenderer(IPC_CHANNELS.STALL_NOTICE, { ...notice, sessionId }),
+      clear: () => broadcastToRenderer(IPC_CHANNELS.STALL_NOTICE, { sessionId, clear: true }),
     });
     try {
       // 轮级只判定一次；普通预定义 agent（如 explore）不会取得角色记忆写入身份。
@@ -333,6 +335,8 @@ export class AgentLoop {
       );
     } finally {
       stopStallWatch();
+      clearStreamProgress(sessionId);
+      broadcastToRenderer(IPC_CHANNELS.STALL_NOTICE, { sessionId, clear: true });
       this.ctx.turn.setModelFacingUserMessage(undefined);
       // 缺口探测器（N-CAP1 / F1）：纯记账，不发事件、不弹卡、不通知。
       void recordCapabilityGapTurn(this.ctx.sessionId, this.ctx.toolExecutor.getLedgerOrigin?.());
@@ -345,7 +349,7 @@ export class AgentLoop {
     for (const message of messages) toolCalls += message.toolCalls?.length ?? 0;
     const last = messages[messages.length - 1];
     const textLength = typeof last?.content === 'string' ? last.content.length : 0;
-    const progressKey = `${messages.length}:${textLength}:${toolCalls}`;
+    const progressKey = `${messages.length}:${textLength}:${toolCalls}:${streamProgressOf(this.ctx.sessionId)}`;
     const lastCall = last?.toolCalls?.[last.toolCalls.length - 1];
     if (last?.role === 'assistant' && lastCall?.name) {
       return { progressKey, phase: 'tool', detail: lastCall.name };

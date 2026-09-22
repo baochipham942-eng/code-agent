@@ -9,6 +9,20 @@ export interface StallNotice {
   detail: string;
 }
 
+const streamTicks = new Map<string, number>();
+
+export function noteStreamProgress(sessionId: string): void {
+  streamTicks.set(sessionId, (streamTicks.get(sessionId) ?? 0) + 1);
+}
+
+export function streamProgressOf(sessionId: string): number {
+  return streamTicks.get(sessionId) ?? 0;
+}
+
+export function clearStreamProgress(sessionId: string): void {
+  streamTicks.delete(sessionId);
+}
+
 const HINT_MS = 90_000;
 const ESCALATE_MS = 5 * 60_000;
 
@@ -21,11 +35,12 @@ export class StallObserver {
     this.lastProgressAt = now;
   }
 
-  noteProgress(key: string, now: number): void {
-    if (key === this.progressKey) return;
+  noteProgress(key: string, now: number): boolean {
+    if (key === this.progressKey) return false;
     this.progressKey = key;
     this.lastProgressAt = now;
     this.level = 'none';
+    return true;
   }
 
   tick(now: number, phase: StallPhase, detail: string): StallNotice | null {
@@ -46,6 +61,7 @@ export class StallObserver {
 export function startForegroundStallWatch(input: {
   snapshot: () => { progressKey: string; phase: StallPhase; detail: string };
   emit: (notice: StallNotice) => void;
+  clear: () => void;
   now?: () => number;
   intervalMs?: number;
 }): () => void {
@@ -54,7 +70,7 @@ export function startForegroundStallWatch(input: {
   const timer = setInterval(() => {
     const snap = input.snapshot();
     const at = now();
-    observer.noteProgress(snap.progressKey, at);
+    if (observer.noteProgress(snap.progressKey, at)) input.clear();
     const notice = observer.tick(at, snap.phase, snap.detail);
     if (notice) input.emit(notice);
   }, input.intervalMs ?? 15_000);

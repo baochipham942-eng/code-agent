@@ -4,7 +4,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { getContentType, isWorkspaceFileAllowed } from '../../../src/web/helpers/upload';
 
 describe('isWorkspaceFileAllowed', () => {
@@ -39,6 +39,19 @@ describe('isWorkspaceFileAllowed', () => {
     ) {
       expect(allowed).toBe(false);
     }
+  });
+
+  it('allows files under a bound session working directory', () => {
+    const sessionRoot = path.join(path.sep, 'nonexistent-session-ws-attach-preview-403');
+    expect(isWorkspaceFileAllowed(path.join(sessionRoot, '资料', '截图-报错.png'), [sessionRoot])).toBe(true);
+  });
+
+  it('still denies paths outside every bound session working directory', () => {
+    const sessionRoot = path.join(path.sep, 'nonexistent-session-ws-attach-preview-403');
+    expect(isWorkspaceFileAllowed('/etc/passwd', [sessionRoot])).toBe(false);
+    expect(
+      isWorkspaceFileAllowed(path.join(sessionRoot, '..', 'etc', 'passwd'), [sessionRoot]),
+    ).toBe(false);
   });
 });
 

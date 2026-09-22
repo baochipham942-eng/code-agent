@@ -252,9 +252,33 @@ function isPathWithinBase(targetPath: string, basePath: string): boolean {
   return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
 }
 
-function isWorkspaceFileAllowed(targetPath: string): boolean {
-  const allowedRoots = [path.resolve(process.cwd()), path.resolve(os.tmpdir())];
-  return allowedRoots.some((root) => isPathWithinBase(targetPath, root));
+function isWorkspaceFileAllowed(
+  targetPath: string,
+  sessionWorkingDirectories: readonly string[] = [],
+): boolean {
+  // 与 handleScreenshot 同源：cwd / tmpdir / agent 默认工作目录（生成产物落这里，
+  // 见 C.12 注释）之外，再放行绑定会话的工作目录——会话内附件（如 <ws>/资料/x.png）
+  // 走本路由回读，不在白名单会 403 成破图（N-ATTACH-PREVIEW-403）。
+  const allowedRoots = [
+    path.resolve(process.cwd()),
+    path.resolve(os.tmpdir()),
+    path.resolve(getDefaultWorkDirectory()),
+    path.resolve(getLegacyDefaultWorkDirectory(getUserDataPath())),
+  ];
+  if (allowedRoots.some((root) => isPathWithinBase(targetPath, root))) return true;
+  for (const workingDirectory of sessionWorkingDirectories) {
+    if (!workingDirectory?.trim()) continue;
+    const root = path.resolve(workingDirectory);
+    if (!isPathWithinBase(targetPath, root)) continue;
+    try {
+      // 词法包含挡 ../；realpath 再挡符号链接逃出会话工作区。
+      if (isPathWithinBase(fs.realpathSync(targetPath), fs.realpathSync(root))) return true;
+    } catch {
+      // 目标或根不存在：词法包含已成立，放行给路由的 stat 回落 404（不存在 ≠ 越界）。
+      return true;
+    }
+  }
+  return false;
 }
 
 function getContentType(filePath: string): string {

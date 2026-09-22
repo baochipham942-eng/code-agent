@@ -5,6 +5,7 @@
 import { zhSettings } from './zhSettings';
 import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
+import { attachmentPreviewZh } from './attachmentPreview';
 import { chatInputZh } from './chatInput';
 import { voiceZh } from './voice';
 import { chatInputModelStrategyZh } from './chatInputModelStrategy';
@@ -928,6 +929,7 @@ export const zh = {
   ...rolePackZh,
   ...knowledgeMemoryZh,
   ...chatTranscriptZh,
+  ...attachmentPreviewZh,
   ...chatInputZh,
   ...voiceZh,
   ...chatInputModelStrategyZh,

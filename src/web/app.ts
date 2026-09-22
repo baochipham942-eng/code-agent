@@ -228,24 +228,33 @@ export function createApp(deps: CreateAppDeps): express.Express {
   });
 
   // ── Screenshot proxy ────────────────────────────────────────────────
-  app.get('/api/screenshot', async (req: Request, res: Response) => {
+  // 绑定会话工作目录清单：/api/screenshot 与 /api/workspace/file 共用（后者放行会话内附件）。
+  const listSessionWorkingDirectories = async (): Promise<string[]> => {
     const sessionManager = await tryGetSessionManager();
+    if (!sessionManager) return [];
+    const sessions = await sessionManager.listSessions({ limit: 500, includeArchived: true });
+    return sessions
+      .map((session) => session.workingDirectory?.trim())
+      .filter((workingDirectory): workingDirectory is string => Boolean(workingDirectory));
+  };
+
+  app.get('/api/screenshot', async (req: Request, res: Response) => {
     let sessionWorkingDirectories: string[] = [];
-    if (sessionManager) {
-      try {
-        const sessions = await sessionManager.listSessions({ limit: 500, includeArchived: true });
-        sessionWorkingDirectories = sessions
-          .map((session) => session.workingDirectory?.trim())
-          .filter((workingDirectory): workingDirectory is string => Boolean(workingDirectory));
-      } catch (error) {
-        logger.warn('Failed to resolve session-bound screenshot roots', error);
-      }
+    try {
+      sessionWorkingDirectories = await listSessionWorkingDirectories();
+    } catch (error) {
+      logger.warn('Failed to resolve session-bound screenshot roots', error);
     }
     handleScreenshot(req, res, { sessionWorkingDirectories });
   });
 
   // ── Dev routes (workspace/file, dev/exec-tool, dev/smoke/office) ────
-  app.use('/api', createDevRouter({ pendingDevPermissions, runRegistry, logger }));
+  app.use('/api', createDevRouter({
+    pendingDevPermissions,
+    runRegistry,
+    logger,
+    resolveSessionWorkingDirectories: listSessionWorkingDirectories,
+  }));
 
   // ── Agent routes (extracted to routes/agent.ts) ─────────────────────
   app.use('/api', createAgentRouter({

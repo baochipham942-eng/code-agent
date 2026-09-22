@@ -470,11 +470,14 @@ export class ConversationRuntime {
           if (fallback.stop) {
             const reason = fallback.reason ?? 'goal aborted';
             const code = fallback.reasonCode ?? HostReasonCode.GoalAbortRepeatedAction;
+            // 终态粘性：中止被拒（本轮已先 met/降级放行）时不把 run 终态盖成 aborted；
+            // 但资源封顶的退出保证（forced-final + resourceFinalAttempted）与终态无关，照旧执行，
+            // 否则封顶撞上同轮降级放行时 run 会一直跑到 maxIterations（监工复核 Claude 审 R1）。
             if (emitGoalAbort(this.ctx, { code, modelText: reason, turns: iterations, tokensUsed: tokensUsedWithSwarm })) {
               terminal = { status: 'aborted' };
-              activateMaxStepsFinalResponse(this.ctx, reason);
-              resourceFinalAttempted = true;
             }
+            activateMaxStepsFinalResponse(this.ctx, reason);
+            resourceFinalAttempted = true;
           }
 
           // Swarm goal（P4）：allowSwarm 时首轮注入一次编排引导

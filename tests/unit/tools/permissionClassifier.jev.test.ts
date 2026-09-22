@@ -388,9 +388,9 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
   it('工作区内的符号链接指向区外 ⇒ 按真实路径判，确定性 ask（ai-review R5）', async () => {
     const stub = stubSystemOne();
     const classifier = newClassifier(stub);
-    // 用 /private/tmp 避开 macOS /tmp→/private/tmp 的符号链接歧义——否则预检
+    // 用 realpath(tmpdir) 避开 macOS /tmp→/private/tmp 的符号链接歧义——否则预检
     // 不规范化候选路径时也会因根目录不匹配而 ask，钉不住符号链接这条语义。
-    const workDir = fs.mkdtempSync(path.join('/private/tmp/', 'jev-symlink-'));
+    const workDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'jev-symlink-'));
     // “区外”文件必须落在临时目录之外（临时目录本身是允许写根）——放 home 下的临时目录
     const outsideDir = fs.mkdtempSync(path.join(os.homedir(), '.jev-outside-'));
     const outsideFile = path.join(outsideDir, 'secret.txt');

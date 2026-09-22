@@ -215,6 +215,30 @@ export const JEV_ROUTER_THRESHOLDS = {
   destructiveIntent: 0.7,
 } as const;
 
+export function buildJevCompactionQuestions(
+  keys: readonly string[],
+): Record<string, JevQuestionSpec> {
+  const questions: Record<string, JevQuestionSpec> = {};
+  for (const key of keys) {
+    questions[`keep_call_${key}`] = {
+      type: 'noul',
+      instructions: 'Should this tool call be kept verbatim in context for future reasoning?',
+    };
+    questions[`keep_result_${key}`] = {
+      type: 'noul',
+      instructions: 'Should this tool result be kept verbatim in context for future reasoning?',
+    };
+  }
+  return questions;
+}
+
+export const JEV_COMPACTION_THRESHOLDS = {
+  keep: 0.5,
+  maxBatchTokens: 25_000,
+  pinnedLatestEntries: 6,
+  truncatedResultChars: 300,
+} as const;
+
 /**
  * 判官初筛问句（文案与 09-19 回放脚本 replay-judge.ts 对齐）。
  * 有工具时发 `tools_pass`；空 `toolCalls` 只发 `no_tools_but_needed`（二选一，见 postLaunchJudge）。

@@ -3,7 +3,7 @@
 import type { AgentEvent, ToolCall, ToolDefinition } from '../../../../shared/contract';
 import type { ModelResponse } from '../../../agent/loopTypes';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../../../model/adapters/aiSdkAdapter';
-import { getConfigService, getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../../services';
+import { getConfigService, getLangfuseService, getBudgetService } from '../../../services';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { ContextLengthExceededError } from '../../../model/modelRouter';
 import { createSnapshotHandler } from '../../../session/streamSnapshot';

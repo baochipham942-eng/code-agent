@@ -111,6 +111,7 @@ export class NudgeManager {
   private expectedOutputFiles: string[] = [];
   private outputFileNudgeCount: number = 0;
   private maxOutputFileNudges: number = 3;
+  private abandonedOutputAnnounced: boolean = false;
   private _userExpectsOutput: boolean = false;
   private _initialDataFiles: Set<string> = new Set();
 
@@ -159,6 +160,7 @@ export class NudgeManager {
     this._subtaskNudgeCount = 0;
     this._extractedSubtasks = this._extractSubtasksFromPrompt(userMessage);
     this.outputFileNudgeCount = 0;
+    this.abandonedOutputAnnounced = false;
 
     this._outputValidationDone = false;
     this._originalUserPrompt = userMessage;
@@ -277,6 +279,24 @@ export class NudgeManager {
   /** Max output file nudges. */
   get maxOutputFileNudgeCount(): number {
     return this.maxOutputFileNudges;
+  }
+
+  /**
+   * 催写用尽后仍缺的文件，只报一次。次数没满、文件已在、或已经报过，都返回 null。
+   */
+  takeAbandonedOutputFiles(): string[] | null {
+    if (this.abandonedOutputAnnounced) return null;
+    if (this.outputFileNudgeCount < this.maxOutputFileNudges) return null;
+    if (this.expectedOutputFiles.length === 0) return null;
+    const missing = this.expectedOutputFiles.filter((filePath) => !existsSync(filePath));
+    if (missing.length === 0) return null;
+    this.abandonedOutputAnnounced = true;
+    return missing;
+  }
+
+  emitAbandonedOutputFiles(emit: (missingFiles: string[]) => void): void {
+    const missingFiles = this.takeAbandonedOutputFiles();
+    if (missingFiles) emit(missingFiles);
   }
 
   // ──────────────────────────────────────────────────────────────────────────

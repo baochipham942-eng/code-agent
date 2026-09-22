@@ -148,7 +148,24 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn, excluded
     });
   }, [expansionKey]);
 
-  if (fileChanges.length === 0) return null;
+  const missingFiles = turn.turnDiff?.missingFiles ?? [];
+  if (fileChanges.length === 0 && missingFiles.length === 0) return null;
+  if (fileChanges.length === 0) {
+    return (
+      <div
+        data-testid="turn-diff-missing-files"
+        className="mt-2 rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-2"
+      >
+        <div className="text-xs text-zinc-200">{t.turnDiff.missingTitle}</div>
+        <ul className="mt-1 space-y-0.5">
+          {missingFiles.map((filePath) => (
+            <li key={filePath} className="truncate text-[11px] text-badge-warning">{filePath}</li>
+          ))}
+        </ul>
+        <div className="mt-1 text-[11px] text-zinc-500">{t.turnDiff.missingHint}</div>
+      </div>
+    );
+  }
 
   const totalAdded = fileChanges.reduce((s, f) => s + f.added, 0);
   const totalRemoved = fileChanges.reduce((s, f) => s + f.removed, 0);
@@ -219,6 +236,18 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn, excluded
           </div>
         )}
       </div>
+
+      {missingFiles.length > 0 && (
+        <div data-testid="turn-diff-missing-files" className="border-b border-zinc-800 px-3 py-2">
+          <div className="text-xs text-zinc-200">{t.turnDiff.missingTitle}</div>
+          <ul className="mt-1 space-y-0.5">
+            {missingFiles.map((filePath) => (
+              <li key={filePath} className="truncate text-[11px] text-badge-warning">{filePath}</li>
+            ))}
+          </ul>
+          <div className="mt-1 text-[11px] text-zinc-500">{t.turnDiff.missingHint}</div>
+        </div>
+      )}
 
       {/* File list：点名字 → 右栏预览；点箭头 → 展开 diff。两个动作分开。 */}
       <div>

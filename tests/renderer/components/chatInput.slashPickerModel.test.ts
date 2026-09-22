@@ -11,7 +11,7 @@ import {
   createWorkbenchCapabilityCandidates,
   filterAndRankSlashCandidates,
   getTrailingSlashToken,
-  groupSlashCandidates,
+  presentSlashMenuGroups,
   removeTrailingSlashToken,
 } from '../../../src/renderer/components/features/chat/ChatInput/slashPickerModel';
 import type { WorkbenchCapabilityRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
@@ -134,7 +134,8 @@ describe('slash picker model', () => {
       skillLibraryId: 'office',
       skillMounted: true,
       skillSelected: true,
-      slashText: '/skills:docx',
+      slashText: '/docx',
+      label: '/docx',
     });
   });
 
@@ -198,23 +199,13 @@ describe('slash picker model', () => {
     });
 
     expect(candidates[0]).toMatchObject({
-      group: 'suggested',
-      slashText: '/skills:docx',
+      group: 'skill',
+      slashText: '/docx',
+      label: '/docx',
       effectLabel: '挂载并选入本轮',
       emptyQueryVisible: true,
     });
     expect(filterAndRankSlashCandidates(candidates, 'doc').map((item) => item.id)).toEqual(['skill:docx']);
-  });
-
-  it('groups mixed slash results without repeating headings', () => {
-    const groups = groupSlashCandidates([
-      createCommandCandidate({ id: 'low', label: 'Low', description: 'Low effort' }),
-      createPromptCandidate({ name: 'lowdown', description: 'Explain risk', source: 'file', hints: [] }),
-      createCommandCandidate({ id: 'loop', label: 'Loop', description: 'Repeat task' }),
-    ]);
-
-    expect(groups.map((group) => group.group)).toEqual(['command', 'prompt']);
-    expect(groups[0]?.items.map((item) => item.id)).toEqual(['low', 'loop']);
   });
 
   it('effectLabel/描述装饰走注入 labels（en 传入则输出英文，缺省回退中文）', () => {
@@ -302,16 +293,64 @@ describe('slash picker model', () => {
         group: 'suggested',
         actionKind: 'select-connector',
         connectorConnected: true,
-        emptyQueryVisible: true,
+        emptyQueryVisible: false,
       }),
       expect.objectContaining({
         id: 'mcp:github',
         group: 'mcp',
         actionKind: 'select-mcp',
         mcpConnected: true,
-        emptyQueryVisible: true,
+        emptyQueryVisible: false,
       }),
     ]);
+  });
+
+  it('空查询只留系统内置和已装技能，壳层命令与连接器要打字才出现', () => {
+    const builtin = createCommandCandidate({
+      id: 'goal', label: 'Goal', description: '设目标', emptyQueryVisible: true, emptyQueryRank: 1,
+    });
+    const shell = createCommandCandidate({
+      id: 'sidebar', label: 'Sidebar', description: '侧栏',
+    });
+    const skill = createSkillCandidates({
+      availableSkills: [
+        makeSkill({ name: 'docx', userInvocable: true, enabled: false, metadata: { category: '文档' } }),
+        makeSkill({ name: 'hidden', userInvocable: false }),
+      ],
+      mountedSkills: [],
+      selectedSkillIds: [],
+    });
+    const visible = filterAndRankSlashCandidates([builtin, shell, ...skill], '');
+    expect(visible.map((item) => item.id)).toEqual(['goal', 'skill:docx']);
+    expect(skill.find((item) => item.skillName === 'docx')).toMatchObject({
+      label: '/docx',
+      sublabel: '文档',
+      skillDisabled: true,
+    });
+    expect(skill.find((item) => item.skillName === 'hidden')).toBeUndefined();
+
+    const labels = { system: '系统', skill: '技能' };
+    const sections = presentSlashMenuGroups(visible, '', labels);
+    expect(sections.map((section) => section.label)).toEqual(['', '技能']);
+    const typed = presentSlashMenuGroups(filterAndRankSlashCandidates([builtin, shell, ...skill], 'side'), 'side', labels);
+    expect(typed.map((section) => section.id)).toEqual(['system']);
+    expect(typed[0]?.label).toBe('系统');
+  });
+
+  it('内置命令排在技能前面，空查询截断也不会把 /doctor 挤掉', () => {
+    const doctor = createCommandCandidate({
+      id: 'doctor', label: 'Doctor', description: '检查', emptyQueryVisible: true, emptyQueryRank: 10,
+    });
+    const skills = Array.from({ length: 50 }, (_, index) => createCommandCandidate({
+      id: `skill-${index}`,
+      label: `Skill ${index}`,
+      description: '技能',
+      emptyQueryVisible: true,
+      emptyQueryRank: 55,
+    }));
+    const visible = filterAndRankSlashCandidates([doctor, ...skills], '', { maxEmptyItems: 48 });
+    expect(visible[0]?.id).toBe('doctor');
+    expect(visible).toHaveLength(48);
   });
 
   it('中文/标点后触发 slash（2026-08-05 放宽）：句中加第二个 skill 不被路径守卫拦', () => {

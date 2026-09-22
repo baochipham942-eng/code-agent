@@ -1011,6 +1011,9 @@ export const en = {
       localConnector: 'Local connector',
       connectorNeedsConnection: 'Connect before use',
       mcpNeedsConnection: 'Requires connection',
+      systemSection: 'System',
+      skillSection: 'Skills',
+      moreSkills: 'More skills',
     },
     badges: {
       skillSelected: 'Selected',

@@ -46,7 +46,7 @@ const PERMWIDE_TOOL_NAMES = new Set([
   'video_generate',
 ]);
 
-export function isJevPermissionTool(toolName: string): boolean {
+function isJevPermissionTool(toolName: string): boolean {
   return isBashToolName(toolName) || PERMWIDE_TOOL_NAMES.has(normalizeToolName(toolName));
 }
 

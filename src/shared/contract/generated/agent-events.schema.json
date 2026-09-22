@@ -2328,6 +2328,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "filesAuthoritative": {
+          "type": "boolean"
         }
       },
       "required": [

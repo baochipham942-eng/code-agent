@@ -146,4 +146,23 @@ describe('TerminalOutput', () => {
     expect(writes.join('')).toContain('+2');
     expect(writes.join('')).toContain('-1');
   });
+
+  it('prints missing files instead of an empty authoritative diff', () => {
+    const output = new TerminalOutput();
+    const { writes } = captureOutput();
+
+    output.handleEvent({
+      type: 'turn_diff',
+      data: {
+        turnId: 'turn-1',
+        files: [],
+        missingFiles: ['/repo/b.docx'],
+        filesAuthoritative: false,
+      },
+    } as AgentEvent);
+
+    const text = writes.join('');
+    expect(text).toContain('not written: /repo/b.docx');
+    expect(text).not.toContain('files changed');
+  });
 });

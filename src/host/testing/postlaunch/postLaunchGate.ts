@@ -10,8 +10,10 @@ import path from 'node:path';
 import {
   resolvePostLaunchScoringEnabled,
   resolvePostLaunchReflowEnabled,
+  resolvePostLaunchAutoHarvestEnabled,
   type PostLaunchScoringSwitch,
   type PostLaunchReflowSwitch,
+  type PostLaunchAutoHarvestSwitch,
 } from '../../../shared/contract/postLaunchScore';
 import { devSlotFromDataDirName } from '../../../shared/devSlot';
 import { getUserDataPath } from '../../platform';
@@ -51,4 +53,19 @@ export function isPostLaunchReflowEnabled(): boolean {
     setting = undefined;
   }
   return resolvePostLaunchReflowEnabled(setting, isInternalSlot());
+}
+
+/**
+ * 低分自动入候选扫描的独立开关（N-EVAL-FAILURE-AUTOHARVEST）。
+ * 与兄弟开关不同：**缺省 = 关**（undefined 不跟槽），连内部槽也要显式 'auto'/'on'——
+ * 自动扫描是默认行为变化，工单要求默认关。
+ */
+export function isPostLaunchAutoHarvestEnabled(): boolean {
+  let setting: PostLaunchAutoHarvestSwitch | undefined;
+  try {
+    setting = getConfigService().getSettings().privacy?.postLaunchAutoHarvest;
+  } catch {
+    setting = undefined;
+  }
+  return resolvePostLaunchAutoHarvestEnabled(setting, isInternalSlot());
 }

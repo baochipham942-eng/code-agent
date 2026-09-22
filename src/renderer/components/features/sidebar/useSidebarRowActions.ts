@@ -3,7 +3,7 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { ConfigScopeSummary } from '@shared/contract/configScope';
 import type { StructuredReplay } from '@shared/contract/evaluation';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
-import type { ToastType } from '../../../stores/uiStore';
+import type { ToastType } from '../../../hooks/useToast';
 import type { Translations } from '../../../i18n';
 import ipcService from '../../../services/ipcService';
 import { createLogger } from '../../../utils/logger';

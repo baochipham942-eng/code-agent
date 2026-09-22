@@ -87,6 +87,8 @@ export interface RuntimeContext {
   readonly maxSystemPromptTokens?: number;
   readonly skillDiscoveryService?: SkillDiscoveryService;
   readonly persistMessage?: (message: Message) => Promise<void>;
+  /** N-EVAL-FAILURE-AUTOHARVEST：隔离运行时（eval）的 handoff 提案落库回调；缺省走全局 HandoffProposalService。 */
+  readonly persistHandoffProposal?: (input: import('../../../shared/contract/handoff').CreateHandoffProposalInput) => void;
   readonly turnSnapshotSink?: TurnSnapshotSink;
   readonly scopedCostRecorder?: ScopedCostRecorder;
   readonly onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: ToolResult }) => void;

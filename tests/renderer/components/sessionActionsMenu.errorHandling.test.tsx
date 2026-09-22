@@ -51,8 +51,8 @@ vi.mock('../../../src/renderer/stores/backgroundTaskStore', () => ({
 vi.mock('../../../src/renderer/stores/authStore', () => ({
   useAuthStore: (selector: (state: { user: null }) => unknown) => selector({ user: null }),
 }));
-vi.mock('../../../src/renderer/stores/uiStore', () => ({
-  useUIStore: (selector: (state: { showToast: typeof showToast }) => unknown) => selector({ showToast }),
+vi.mock('../../../src/renderer/hooks/useToast', () => ({
+  toast: { show: (...args: unknown[]) => showToast(...args) },
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invoke: vi.fn() },

@@ -283,17 +283,21 @@ function isWorkspaceFileAllowed(
   targetPath: string,
   sessionWorkingDirectories: readonly string[] = [],
 ): boolean {
-  // cwd / tmpdir / agent 默认工作目录（生成产物落这里，见 C.12 注释）之外，
-  // 补绑定会话的工作目录：artifact 子树不限类型，其余只放行媒体/文档扩展名。
+  // 基线根（cwd / tmpdir）维持原样；agent 默认工作目录与绑定会话工作目录走同一套
+  // 收窄规则：artifact 子树不限类型，其余位置只放行媒体/文档扩展名 + realpath 双锚
+  // （ai-review PR#2030：默认工作目录不限类型直放会读到 <workDir>/.env 这类凭据）。
   const allowedRoots = [
     path.resolve(process.cwd()),
     path.resolve(os.tmpdir()),
-    path.resolve(getDefaultWorkDirectory()),
-    path.resolve(getLegacyDefaultWorkDirectory(getUserDataPath())),
   ];
   if (allowedRoots.some((root) => isPathWithinBase(targetPath, root))) return true;
-  if (isBoundSessionArtifactPath(targetPath, sessionWorkingDirectories)) return true;
-  return isSessionWorkspaceFileAllowed(targetPath, sessionWorkingDirectories);
+  const workDirectories = [
+    getDefaultWorkDirectory(),
+    getLegacyDefaultWorkDirectory(getUserDataPath()),
+    ...sessionWorkingDirectories,
+  ];
+  if (isBoundSessionArtifactPath(targetPath, workDirectories)) return true;
+  return isSessionWorkspaceFileAllowed(targetPath, workDirectories);
 }
 
 function getContentType(filePath: string): string {

@@ -331,7 +331,7 @@ function makePendingGoalMode(): NonNullable<RuntimeContext['goalMode']> {
     getVerifyCommand: vi.fn().mockReturnValue(undefined),
     getReviewCondition: vi.fn().mockReturnValue(undefined),
     getGoal: vi.fn().mockReturnValue('validate artifact'),
-    markMet: vi.fn(),
+    markMet: vi.fn().mockReturnValue(true),
     clearCompletionRequest: vi.fn(),
     // 这些 hook 测试不测 swarm；返回 false 让 applySwarmBudgetClamp 等 swarm 路径直接 no-op
     // （生产代码 swarmGoalIntegration 会调 goalMode.allowsSwarm()，mock 缺它会抛 TypeError）。

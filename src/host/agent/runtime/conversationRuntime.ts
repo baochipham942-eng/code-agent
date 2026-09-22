@@ -422,8 +422,7 @@ export class ConversationRuntime {
           // 或 attempts 达 2×上限兜底 → markMetDegraded 诚实降级交付（最佳版本已由
           // monotonicity 保护落盘），不是 aborted——aborted 只留给没有任何可用产物的情况。
           const repairReleaseReason = getGoalArtifactRepairReleaseReason(this.ctx);
-          if (repairReleaseReason) {
-            this.ctx.goalMode.markMetDegraded(repairReleaseReason);
+          if (repairReleaseReason && this.ctx.goalMode.markMetDegraded(repairReleaseReason)) {
             this.ctx.onEvent({
               type: 'goal_complete',
               data: {
@@ -471,10 +470,11 @@ export class ConversationRuntime {
           if (fallback.stop) {
             const reason = fallback.reason ?? 'goal aborted';
             const code = fallback.reasonCode ?? HostReasonCode.GoalAbortRepeatedAction;
-            emitGoalAbort(this.ctx, { code, modelText: reason, turns: iterations, tokensUsed: tokensUsedWithSwarm });
-            terminal = { status: 'aborted' };
-            activateMaxStepsFinalResponse(this.ctx, reason);
-            resourceFinalAttempted = true;
+            if (emitGoalAbort(this.ctx, { code, modelText: reason, turns: iterations, tokensUsed: tokensUsedWithSwarm })) {
+              terminal = { status: 'aborted' };
+              activateMaxStepsFinalResponse(this.ctx, reason);
+              resourceFinalAttempted = true;
+            }
           }
 
           // Swarm goal（P4）：allowSwarm 时首轮注入一次编排引导

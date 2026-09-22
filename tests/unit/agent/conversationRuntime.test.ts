@@ -1961,6 +1961,70 @@ describe('ConversationRuntime', () => {
       );
     });
 
+    it('artifact 降级放行是首个终态时发出 met+degraded 的 goal_complete', async () => {
+      ctx.goalMode = new GoalModeController({
+        goal: 'finish',
+        verifyCommand: 'true',
+        tokenBudget: 100_000,
+        maxTurns: 20,
+      });
+      ctx.artifact.validationFailures.set('/tmp/game.html', {
+        attempts: 1,
+        phase: 'baseline_repair',
+        degradedReleasePending: '修复与重写均未收敛',
+      });
+      modules.contextAssembly.inference.mockResolvedValue({
+        type: 'text',
+        content: 'wrap up',
+        usage: { inputTokens: 10, outputTokens: 2 },
+      });
+
+      await runtime.run('finish');
+
+      expect(ctx.goalMode.getStatus()).toBe('met');
+      expect(ctx.goalMode.isVerificationDegraded()).toBe(true);
+      expect(ctx.onEvent).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'goal_complete',
+        data: expect.objectContaining({
+          status: 'met',
+          degraded: true,
+          degradedReason: expect.stringContaining('修复与重写均未收敛'),
+        }),
+      }));
+    });
+
+    it('artifact 降级放行撞上已写入的终态时不发第二个 goal_complete', async () => {
+      ctx.goalMode = new GoalModeController({
+        goal: 'finish',
+        verifyCommand: 'true',
+        tokenBudget: 100_000,
+        maxTurns: 20,
+      });
+      ctx.artifact.validationFailures.set('/tmp/game.html', {
+        attempts: 1,
+        phase: 'baseline_repair',
+        degradedReleasePending: '修复与重写均未收敛',
+      });
+      vi.mocked(ctx.onEvent).mockImplementation((event) => {
+        if (event.type === 'goal_iteration') ctx.goalMode?.markAborted('先到的中止');
+      });
+      modules.contextAssembly.inference.mockResolvedValue({
+        type: 'text',
+        content: 'still working',
+        usage: { inputTokens: 10, outputTokens: 2 },
+      });
+
+      await runtime.run('finish');
+
+      expect(ctx.goalMode.getStatus()).toBe('aborted');
+      expect(ctx.goalMode.getAbortReason()).toBe('先到的中止');
+      expect(ctx.goalMode.isVerificationDegraded()).toBe(false);
+      expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+        type: 'goal_complete',
+        data: expect.objectContaining({ status: 'met' }),
+      }));
+    });
+
     it('纯对话 goal 连续 3 轮零工具后发 paused 事件，用户消息可在同一 run 复活', async () => {
       ctx.goalMode = new GoalModeController({
         goal: '只进行问答',

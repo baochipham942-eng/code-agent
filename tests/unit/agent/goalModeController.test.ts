@@ -3,7 +3,18 @@
 // 设计见 docs/decisions/goal-longrun-stability（PR1）
 // ============================================================================
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const loggerWarn = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  createLogger: () => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: loggerWarn,
+    error: vi.fn(),
+  }),
+}));
+
 import { buildGoalContract, GoalModeController } from '../../../src/host/agent/goalModeController';
 import { GOAL_MODE } from '../../../src/shared/constants';
 import { HostReasonCode } from '../../../src/shared/contract';
@@ -181,5 +192,92 @@ describe('B7 audit 间隔倍率 — scaffold profile 接线', () => {
   it('非法倍率（0/负数）被钳到 1，不会让 audit 永不触发', () => {
     const c = ctrl({ verifyCommand: 'npm test', auditIntervalMultiplier: 0 });
     expect(c.shouldInjectAudit(GOAL_MODE.CHECKPOINT_INTERVAL)).toBe(true);
+  });
+});
+
+describe('终态粘性 — 首个 met/aborted 胜出，后到的 mark* 被拒', () => {
+  beforeEach(() => {
+    loggerWarn.mockClear();
+  });
+
+  function staleWarn(status: string, target: string, reason: string) {
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining(`GOAL_STALE_TRANSITION status=${status} target=${target} reason=${reason}`),
+      expect.objectContaining({ status, target, reason: reason || undefined }),
+    );
+  }
+
+  it('首个 markMet 成功且不打 GOAL_STALE_TRANSITION', () => {
+    const c = ctrl();
+    expect(c.markMet()).toBe(true);
+    expect(c.getStatus()).toBe('met');
+    expect(loggerWarn).not.toHaveBeenCalledWith(
+      expect.stringContaining('GOAL_STALE_TRANSITION'),
+      expect.anything(),
+    );
+  });
+
+  it('met → markAborted 被拒：status 与副字段不变，返回 false', () => {
+    const c = ctrl();
+    expect(c.markMet()).toBe(true);
+    expect(c.markAborted('后到的中止')).toBe(false);
+    expect(c.getStatus()).toBe('met');
+    expect(c.getAbortReason()).toBeUndefined();
+    expect(c.isVerificationDegraded()).toBe(false);
+    expect(c.getDegradedReason()).toBeUndefined();
+    staleWarn('met', 'aborted', '后到的中止');
+  });
+
+  it('aborted → markMet 被拒：abortReason 保持首个原因', () => {
+    const c = ctrl();
+    expect(c.markAborted('首个中止')).toBe(true);
+    loggerWarn.mockClear();
+    expect(c.markMet()).toBe(false);
+    expect(c.getStatus()).toBe('aborted');
+    expect(c.getAbortReason()).toBe('首个中止');
+    expect(c.isVerificationDegraded()).toBe(false);
+    staleWarn('aborted', 'met', '');
+  });
+
+  it('met → markMetDegraded 被拒：不补降级标记', () => {
+    const c = ctrl();
+    c.markMet();
+    loggerWarn.mockClear();
+    expect(c.markMetDegraded('后到的降级')).toBe(false);
+    expect(c.getStatus()).toBe('met');
+    expect(c.isVerificationDegraded()).toBe(false);
+    expect(c.getDegradedReason()).toBeUndefined();
+    staleWarn('met', 'met', '后到的降级');
+  });
+
+  it('aborted → markMetDegraded 被拒：不改成 met，不写降级原因', () => {
+    const c = ctrl();
+    c.markAborted('首个中止');
+    loggerWarn.mockClear();
+    expect(c.markMetDegraded('后到的降级')).toBe(false);
+    expect(c.getStatus()).toBe('aborted');
+    expect(c.getAbortReason()).toBe('首个中止');
+    expect(c.isVerificationDegraded()).toBe(false);
+    expect(c.getDegradedReason()).toBeUndefined();
+    staleWarn('aborted', 'met', '后到的降级');
+  });
+
+  it('met → markMet 被拒：重复达成不改副字段', () => {
+    const c = ctrl();
+    c.markMetDegraded('首个降级');
+    loggerWarn.mockClear();
+    expect(c.markMet()).toBe(false);
+    expect(c.getStatus()).toBe('met');
+    expect(c.isVerificationDegraded()).toBe(true);
+    expect(c.getDegradedReason()).toBe('首个降级');
+    staleWarn('met', 'met', '');
+  });
+
+  it('met 之后 markPaused 仍按 status !== pending 早退', () => {
+    const c = ctrl();
+    c.markMet();
+    c.markPaused('anti_spin');
+    expect(c.getStatus()).toBe('met');
+    expect(c.getPauseReason()).toBeUndefined();
   });
 });

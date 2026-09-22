@@ -27,13 +27,13 @@ function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
     getReviewCondition: vi.fn().mockReturnValue('代码无重复逻辑'),
     getGoal: vi.fn().mockReturnValue('重构 utils'),
     getSwarmTokensUsed: vi.fn().mockReturnValue(500),
-    markMet: vi.fn(),
-    markAborted: vi.fn(),
+    markMet: vi.fn().mockReturnValue(true),
+    markAborted: vi.fn().mockReturnValue(true),
     // 三分支裁决（有界修复 + 到限放行）新增接口
     recordGateFailure: vi.fn().mockReturnValue(1),
     getGateFailureCount: vi.fn().mockReturnValue(0),
     isGateRepairExhausted: vi.fn().mockReturnValue(false),
-    markMetDegraded: vi.fn(),
+    markMetDegraded: vi.fn().mockReturnValue(true),
     isVerificationDegraded: vi.fn().mockReturnValue(false),
     ...goalModeOverrides,
   };

@@ -430,7 +430,8 @@ async function completePendingGoalAfterArtifactValidation({
     }
   }
 
-  goalMode.markMet();
+  // 终态已被先到的 mark* 占住：不再注入第二份「目标达成」摘要。
+  if (!goalMode.markMet()) return;
   const passedGates = [
     `artifact validation passed for ${absolutePath}`,
     verifyCommand ? `验证命令 \`${verifyCommand}\` 退出码 0` : null,

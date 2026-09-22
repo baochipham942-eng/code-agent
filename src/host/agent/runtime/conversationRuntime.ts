@@ -83,7 +83,9 @@ import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair'
 import { classifyIntent } from '../../telemetry/intentClassifier';
 import { markDistilledSkillTurnSignal } from '../../services/skills/distillSignalStore';
 import { emitGoalAbort } from './goalAbort';
+import { releaseDoomLoopHandbackForSteer, settleDoomLoopHandback } from './doomLoopHandback';
 import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
+import { recordInferenceTrace } from './inferenceCacheTrace';
 
 
 const logger = createLogger('AgentLoop');
@@ -527,6 +529,12 @@ export class ConversationRuntime {
         logger.debug('[AgentLoop] Calling inference...');
         const inferenceStartTime = Date.now();
         let response = await this.contextAssembly.inference();
+        if (this.ctx.cachePromptSample) {
+          this.ctx.cachePromptSample.current = {
+            prompt: this.ctx.systemPrompt,
+            modelId: response.actualModel ?? response.fallback?.to.model ?? this.ctx.modelConfig.model,
+          };
+        }
         const inferenceDuration = Date.now() - inferenceStartTime;
         logger.debug('[AgentLoop] Inference response type:', response.type);
 
@@ -550,20 +558,9 @@ export class ConversationRuntime {
           duration: inferenceDuration,
         });
 
-        this.ctx.turnTrace.record('inference', {
-          responseType: response.type,
-          durationMs: inferenceDuration,
-          inputTokens: response.usage?.inputTokens ?? 0,
-          outputTokens: response.usage?.outputTokens ?? 0,
-          ...(response.usage?.cacheReadTokens !== undefined
-            ? { cacheReadTokens: response.usage.cacheReadTokens }
-            : {}),
-          finishReason: response.finishReason ?? null,
-          truncated: response.truncated ?? false,
-        });
+        const cacheHit = this.messageProcessor.recordModelCallTelemetry(response, iterations, inferenceDuration);
 
-        // Telemetry: record model call
-        this.messageProcessor.recordModelCallTelemetry(response, iterations, inferenceDuration);
+        recordInferenceTrace(this.ctx.turnTrace, response, inferenceDuration, cacheHit);
 
         // Debug snapshot: 落一条 turn 快照（给设置页 / debug session 用）
         // 在 post-inference 写入，token 字段反映本轮实际消耗（直接取 response.usage）
@@ -673,12 +670,10 @@ export class ConversationRuntime {
             response.toolCalls.map((tc) => ({ name: tc.name, arguments: tc.arguments })),
           );
           if (doomCheck.level === 'doom-loop-abort') {
-            logger.warn('[DoomLoopGuard] Identical tool call repeated after warning; aborting run');
-            logCollector.agent('WARN', 'Doom loop abort: identical tool call repeated after warning');
-            emitGoalAbort(this.ctx, {
-              code: HostReasonCode.GoalAbortRepeatedAction, modelText: '相同工具调用在警告后仍反复出现，目标未达成',
-              turns: iterations, tokensUsed: goalTokensUsedWithSwarm(this.ctx),
+            const action = await settleDoomLoopHandback(this.ctx, doomLoopGuard, iterations, (text) => {
+              this.contextAssembly.injectSystemMessage(text, 'stagnation-guard');
             });
+            if (action === 'retry') continue;
             terminal = { status: 'aborted' };
             break;
           }
@@ -1231,6 +1226,7 @@ export class ConversationRuntime {
     this.ctx.turn.requestReinference();
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
     await persisted;
+    releaseDoomLoopHandbackForSteer(this.ctx.sessionId);
     if (resumePausedGoal) this.resume();
     if (metadata?.workbench?.runtimeInputMode === 'redirect') {
       const receipt: InputRedirectReceiptMetadata = {

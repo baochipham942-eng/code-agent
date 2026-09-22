@@ -5,7 +5,7 @@
 //   1. Routing 策略 — 保留
 //   2. 自动整理开关 — 第一层
 //   3. 摘要模型 — 只读引用 + 跳转到模型设置（在 model tab 真正配置）
-//   4. 上下文整理阈值（preserve / warning / critical / triggerTokens / audit）
+//   4. 上下文整理阈值（preserve / warning / triggerTokens / audit）
 //      下沉到 SettingsDetails 折叠区
 // Browser 模式已在 Step 1 迁移到工作区 tab。
 // ============================================================================
@@ -31,9 +31,7 @@ const DEFAULT_COMPRESSION_STATE: ContextCompressionChannelState = {
   config: {
     enabled: true,
     warningThreshold: 0.75,
-    criticalThreshold: 0.85,
     preserveRecentCount: 10,
-    triggerTokens: 100000,
     compactProvider: 'moonshot',
     compactModel: 'kimi-k2.5',
     auditEnabled: true,
@@ -223,7 +221,7 @@ export const ConversationSettings: React.FC = () => {
               description={conversationText.details.description}
             >
               <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
                     <div className="text-[11px] text-zinc-500">{conversationText.details.preserveRecent}</div>
                     <div className="mt-1 flex items-center gap-2">
@@ -254,22 +252,6 @@ export const ConversationSettings: React.FC = () => {
                       className="mt-2 w-full accent-primary-500"
                     />
                   </div>
-
-                  <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
-                    <div className="flex items-center justify-between text-[11px] text-zinc-500">
-                      <span>{conversationText.details.criticalThreshold}</span>
-                      <span>{percentLabel(compressionState.config.criticalThreshold)}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={60}
-                      max={95}
-                      step={5}
-                      value={Math.round(compressionState.config.criticalThreshold * 100)}
-                      onChange={(event) => updateCompression({ criticalThreshold: Number(event.target.value) / 100 })}
-                      className="mt-2 w-full accent-primary-500"
-                    />
-                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -280,11 +262,27 @@ export const ConversationSettings: React.FC = () => {
                         type="number"
                         min={16}
                         max={1000}
-                        value={Math.round((compressionState.config.triggerTokens ?? 100000) / 1000)}
-                        onChange={(event) => updateCompression({ triggerTokens: Number(event.target.value) * 1000 })}
+                        value={compressionState.config.triggerTokens != null
+                          ? Math.round(compressionState.config.triggerTokens / 1000)
+                          : ''}
+                        placeholder={conversationText.details.triggerTokensAuto}
+                        onChange={(event) => {
+                          const raw = event.target.value.trim();
+                          if (!raw) {
+                            void updateCompression({ triggerTokensExplicit: false });
+                            return;
+                          }
+                          const tokens = Number(raw) * 1000;
+                          if (!Number.isFinite(tokens)) return;
+                          void updateCompression({ triggerTokens: tokens, triggerTokensExplicit: true });
+                        }}
                         className="w-20 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-hidden focus:border-zinc-500"
                       />
-                      <span className="text-xs text-zinc-500">K tokens</span>
+                      <span className="text-xs text-zinc-500">
+                        {compressionState.config.triggerTokens != null
+                          ? 'K tokens'
+                          : conversationText.details.triggerTokensAuto}
+                      </span>
                     </div>
                   </label>
 

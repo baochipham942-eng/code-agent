@@ -8,12 +8,12 @@
 
 import { useMemo } from 'react';
 import type { AgentTreeNode, AgentTreeOwnershipConflict } from '@shared/contract/agentTree';
-import { useI18n } from './useI18n';
+import type { PermissionRequest } from '@shared/contract/permission';
 import { useAgentTreeSnapshot } from './useAgentTreeSnapshot';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
+import { useAppStore } from '../stores/appStore';
 import { useSessionMembers } from '../components/features/expert/SessionMemberBar';
-import { describeLastToolStep } from '../utils/agentActivity';
-import { buildAgentRows, type AgentRow } from '../utils/agentRows';
+import { applyMemberHolds, buildAgentRows, type AgentRow } from '../utils/agentRows';
 
 /** parallelCoordinator/agentWorktree 不带会话归属，没锚点（成员/本会话任务）的节点不列，防跨会话泄漏。 */
 const UNANCHORED_SOURCES = new Set(['parallelCoordinator', 'agentWorktree']);
@@ -31,11 +31,32 @@ export interface SessionAgentRows {
   conflicts: AgentTreeOwnershipConflict[];
 }
 
+function approvalIdsForSession(
+  sessionId: string | null,
+  pending: PermissionRequest | null,
+  pendingSessionId: string | null,
+  queued: Record<string, PermissionRequest[] | undefined> | undefined,
+): Set<string> {
+  const ids = new Set<string>();
+  const add = (request: PermissionRequest | null | undefined) => {
+    if (!request || request.resolved) return;
+    if (request.agentId) ids.add(request.agentId);
+    if (request.runId) ids.add(request.runId);
+  };
+  if (sessionId && pendingSessionId === sessionId) add(pending);
+  if (sessionId) {
+    for (const request of queued?.[sessionId] ?? []) add(request);
+  }
+  return ids;
+}
+
 export function useSessionAgentRows(sessionId: string | null): SessionAgentRows {
-  const { t } = useI18n();
   const members = useSessionMembers(sessionId);
   const { snapshot } = useAgentTreeSnapshot(sessionId);
   const allTasks = useBackgroundTaskStore((state) => state.tasks);
+  const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
+  const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
+  const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
 
   return useMemo(() => {
     const tasks = sessionId
@@ -52,12 +73,24 @@ export function useSessionAgentRows(sessionId: string | null): SessionAgentRows 
       }),
     ]);
     const nodes = (snapshot?.nodes ?? []).filter((node) => isSessionNode(node, anchors));
-    const rows = buildAgentRows({
+    const rows = applyMemberHolds(buildAgentRows({
       members,
       nodes,
       tasks,
-      describeStep: (step) => describeLastToolStep(step, t),
-    });
+    }), approvalIdsForSession(
+      sessionId,
+      pendingPermissionRequest,
+      pendingPermissionSessionId,
+      queuedPermissionRequests,
+    ));
     return { rows, conflicts: snapshot?.summary.ownershipConflicts ?? [] };
-  }, [members, snapshot, allTasks, sessionId, t]);
+  }, [
+    members,
+    snapshot,
+    allTasks,
+    sessionId,
+    pendingPermissionRequest,
+    pendingPermissionSessionId,
+    queuedPermissionRequests,
+  ]);
 }

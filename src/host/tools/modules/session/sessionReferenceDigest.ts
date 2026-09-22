@@ -144,6 +144,10 @@ export async function resolveSessionReference(
     generation = compactModelSummarize(
       buildDigestPrompt(session, messages),
       DIGEST_MAX_TOKENS,
+      {
+        cacheRetention: 'none',
+        cacheScopeId: 'session-reference-digest',
+      },
     ).then(parseGeneratedDigest);
     pendingDigests.set(pendingKey, generation);
   }

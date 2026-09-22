@@ -41,6 +41,7 @@ import { ChatInput } from './features/chat/ChatInput';
 import { applyVoicePartialsToProjection } from '../utils/voicePartialOverlay';
 import { useVoiceLiveRuntime } from '../hooks/useVoiceLiveRuntime';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
+import { DoomLoopHandbackBar } from './features/chat/DoomLoopHandbackBar';
 import { buildGoalNoticeMessage } from './features/chat/goalNotice';
 import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
@@ -1103,6 +1104,7 @@ export const ChatView: React.FC = () => {
 
           {/* /goal 运行进度条（独立一行，仅 goal 运行中显示） */}
           <GoalStatusBar />
+          <DoomLoopHandbackBar sessionId={currentSessionId} />
 
           <ChatInput
             ref={chatInputRef}

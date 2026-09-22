@@ -82,6 +82,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.AGENT_SEND_MESSAGE]: (message: string | AgentMessageRequest) => Promise<void>;
   [IPC_CHANNELS.AGENT_CANCEL]: (payload?: AgentCancelRequest) => Promise<void>;
   [IPC_CHANNELS.AGENT_PERMISSION_RESPONSE]: (requestId: string, response: PermissionResponse, sessionId?: string, updatedArgs?: Record<string, unknown>) => Promise<void>;
+  [IPC_CHANNELS.AGENT_DOOM_LOOP_HANDBACK]: (sessionId: string, choice: 'retry' | 'stop') => Promise<boolean>;
 
   // Session
   [IPC_CHANNELS.SESSION_LIST]: (options?: { includeArchived?: boolean }) => Promise<Session[]>;
@@ -724,6 +725,7 @@ export interface IpcEventHandlers {
   ) => void;
   // In-App validation request (main → renderer broadcast)
   [IPC_CHANNELS.IN_APP_VALIDATION_REQUEST]: (request: InAppValidationRequest) => void;
+  [IPC_CHANNELS.STALL_NOTICE]: (notice: { sessionId?: string; level?: 'hint' | 'escalated'; phase?: 'tool' | 'model'; detail?: string; clear?: boolean }) => void;
   // DAG Visualization events
   [DAG_CHANNELS.EVENT]: (event: DAGVisualizationEvent) => void;
   // Lab training progress events

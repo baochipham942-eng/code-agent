@@ -22,6 +22,7 @@ export const IPC_CHANNELS = {
   AGENT_EVENT_BATCH: 'agent:event:batch',
   AGENT_STREAM_SNAPSHOT_REQUIRED: 'agent:stream-snapshot-required',
   AGENT_PERMISSION_RESPONSE: 'agent:permission-response',
+  AGENT_DOOM_LOOP_HANDBACK: 'agent:doom-loop-handback',
 
 
   // Session channels
@@ -322,6 +323,7 @@ export const IPC_CHANNELS = {
 
   // In-App HTML validation
   IN_APP_VALIDATION_REQUEST: 'in-app-validation:request',
+  STALL_NOTICE: 'agent:stall-notice',
   IN_APP_VALIDATION_RESULT: 'in-app-validation:result',
 
   // Swarm channels (Agent Swarm 监控)

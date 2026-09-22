@@ -5,7 +5,7 @@
       "$ref": "#/$defs/__schema0"
     },
     {
-      "$ref": "#/$defs/__schema239"
+      "$ref": "#/$defs/__schema242"
     }
   ],
   "title": "AgentEventEnvelope",
@@ -240,6 +240,9 @@
         },
         {
           "$ref": "#/$defs/__schema236"
+        },
+        {
+          "$ref": "#/$defs/__schema239"
         }
       ],
       "title": "AgentEvent",
@@ -5819,6 +5822,40 @@
       "additionalProperties": false
     },
     "__schema239": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/__schema240"
+        },
+        "data": {
+          "$ref": "#/$defs/__schema241"
+        }
+      },
+      "required": [
+        "type",
+        "data"
+      ],
+      "additionalProperties": false,
+      "stability": "experimental",
+      "description": "Experimental event. Its shape may change or be removed."
+    },
+    "__schema240": {
+      "type": "string",
+      "const": "doom_loop_handback"
+    },
+    "__schema241": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "additionalProperties": false
+    },
+    "__schema242": {
       "type": "object",
       "properties": {
         "streamEpoch": {

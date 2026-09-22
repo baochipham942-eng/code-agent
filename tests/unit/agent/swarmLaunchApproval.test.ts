@@ -46,6 +46,7 @@ vi.mock('../../../src/host/permissions/modes', () => ({
 
 import { SwarmLaunchApprovalGate } from '../../../src/host/agent/swarmLaunchApproval';
 import type { SwarmLaunchTaskPreview, SwarmRunScope } from '../../../src/shared/contract/swarm';
+import { stallClockHeld } from '../../../src/host/agent/stallObserver';
 
 const TEST_SCOPE: SwarmRunScope = {
   sessionId: 'session-launch-test',
@@ -157,6 +158,7 @@ describe('SwarmLaunchApprovalGate', () => {
       });
 
       await vi.advanceTimersByTimeAsync(0);
+      expect(stallClockHeld(TEST_SCOPE.sessionId)).toBe(true);
       expect(gate.getPendingRequests()).toHaveLength(1);
       expect(busState.publishMock.mock.calls.some((c) => c[1] === 'launch:requested')).toBe(true);
 
@@ -168,6 +170,7 @@ describe('SwarmLaunchApprovalGate', () => {
       const reqId = gate.getPendingRequests()[0].id;
       gate.approve(reqId, 'go');
       const result = await pending;
+      expect(stallClockHeld(TEST_SCOPE.sessionId)).toBe(false);
       expect(result.approved).toBe(true);
       expect(result.autoApproved).toBe(false);
       expect(result.feedback).toBe('go');

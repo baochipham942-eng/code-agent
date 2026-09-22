@@ -64,6 +64,7 @@ import {
 
 const logger = createLogger('ModelRouter');
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
+import { observeInferenceCache } from './inferenceCacheTelemetry';
 export { ContextLengthExceededError } from './types';
 
 function fallbackTargetLabel(provider: string, model?: string): string {
@@ -531,7 +532,6 @@ export class ModelRouter {
     options?: InferenceOptions,
   ): Promise<ModelResponse> {
     const normalizedOptions = this.normalizeInferenceOptions(messages, onStream, options);
-
     // Check for cancellation before starting
     if (signal?.aborted) {
       throw new Error('Request was cancelled before starting');
@@ -559,10 +559,8 @@ export class ModelRouter {
       const cache = getInferenceCache();
       const cacheKey = cache.computeKey(requestMessages, config, tools, normalizedOptions);
       const cached = cache.get(cacheKey);
-      if (cached) {
-        logger.info(`[Cache] Hit for ${config.provider}/${config.model}`);
-        return cached;
-      }
+      const observed = observeInferenceCache(normalizedOptions, cached, cache, config, logger);
+      if (observed) return observed;
     }
     let simpleTaskBillingMode: BillingMode | undefined, providerSettings: Record<string, ModelDecisionProviderSettings> | undefined, taskStrategy: TaskModelStrategySettings | undefined;
     try {

@@ -16,6 +16,7 @@ import { persistStreamedPartialBeforeResend, STREAM_BREAK_SEGMENT_MARKER } from 
 import { retryEvents } from '../../../model/providers/retryStrategy';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
+import { noteStreamProgress } from '../../stallObserver';
 
 const ARTIFACT_REPAIR_RECOVERY_MAX_TOKENS = 16_384;
 const ARTIFACT_REPAIR_TARGETED_EDIT_MAX_TOKENS = 32_768;
@@ -184,6 +185,7 @@ export function emitAssistantMessageDelta(
   text: string | undefined,
 ): void {
   if (!text) return;
+  noteStreamProgress(ctx.runtime.sessionId);
   ctx.runtime.onEvent({
     type: 'message_delta',
     data: {

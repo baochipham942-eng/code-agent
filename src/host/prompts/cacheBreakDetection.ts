@@ -6,9 +6,13 @@
 // Dynamic section changes (memory, rules, reminders) should not count.
 // ============================================================================
 
+import type { CacheBreakReason } from '../../shared/contract/turnCost';
+
 export interface CacheBreakResult {
   broken: boolean;
   reason: string;
+  /** 可落库的稳定枚举，与 reason 文案分开，避免靠字符串解析。 */
+  cacheBreakReason: CacheBreakReason;
 }
 
 export interface CacheBreakOptions {
@@ -35,7 +39,11 @@ export function detectCacheBreak(
 ): CacheBreakResult {
   // Check model change
   if (options?.prevModel && options?.currModel && options.prevModel !== options.currModel) {
-    return { broken: true, reason: `model changed: ${options.prevModel} → ${options.currModel}` };
+    return {
+      broken: true,
+      reason: `model changed: ${options.prevModel} → ${options.currModel}`,
+      cacheBreakReason: 'model-switch',
+    };
   }
 
   const boundary = options?.dynamicBoundary ?? DYNAMIC_BOUNDARY_MARKER;
@@ -44,10 +52,10 @@ export function detectCacheBreak(
   const [currPrefix] = splitAtBoundary(currPrompt, boundary);
 
   if (prevPrefix !== currPrefix) {
-    return { broken: true, reason: 'static prefix changed' };
+    return { broken: true, reason: 'static prefix changed', cacheBreakReason: 'prefix-changed' };
   }
 
-  return { broken: false, reason: 'cache stable' };
+  return { broken: false, reason: 'cache stable', cacheBreakReason: 'none' };
 }
 
 /**

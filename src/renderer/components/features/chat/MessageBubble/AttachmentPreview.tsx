@@ -362,7 +362,7 @@ const AttachmentItem: React.FC<{
             onClick={() => mediaAsset && onMediaOpen(mediaAsset)}
           >
             <img
-              src={previewRetryNonce > 0 && !imageSrc.startsWith('data:')
+              src={previewRetryNonce > 0 && imageSrc.startsWith('/api/')
                 ? `${imageSrc}${imageSrc.includes('?') ? '&' : '?'}_r=${previewRetryNonce}`
                 : imageSrc}
               alt={displayAttachment.name}
@@ -394,7 +394,7 @@ const AttachmentItem: React.FC<{
           </div>
         ) : (
           <div className="flex min-h-[84px] items-center justify-center px-3 py-4 text-center text-xs text-zinc-500">
-            图片过大，已跳过内联预览
+            {t.attachmentPreview.imageTooLarge}
           </div>
         )}
         {(mediaAsset || stateBadge) && (

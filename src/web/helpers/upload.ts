@@ -252,13 +252,39 @@ function isPathWithinBase(targetPath: string, basePath: string): boolean {
   return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
 }
 
+// 会话工作目录下可整目录放行的只有 artifact 子树（产物预览要 html/css/js，同
+// handleScreenshot 的 isBoundSessionArtifactPath 口径）；其余位置只放行可内联预览的
+// 媒体/文档扩展名（N-ATTACH-PREVIEW-403 的会话附件场景；ai-review PR#2030 收窄）。
+const SESSION_FILE_ALLOWED_EXT = /\.(jpe?g|png|gif|webp|svg|mp3|wav|ogg|m4a|flac|mp4|webm|mov|m4v|pdf|txt|md|json|csv)$/i;
+
+function isSessionWorkspaceFileAllowed(
+  targetPath: string,
+  sessionWorkingDirectories: readonly string[],
+): boolean {
+  for (const workingDirectory of sessionWorkingDirectories) {
+    if (!workingDirectory?.trim()) continue;
+    const root = path.resolve(workingDirectory);
+    // 过宽的根不放行：会话绑了家目录/盘根就能读 ~/.ssh、~/.code-agent 里的密钥。
+    if (root === os.homedir() || root === path.parse(root).root) continue;
+    if (!isPathWithinBase(targetPath, root)) continue;
+    if (!SESSION_FILE_ALLOWED_EXT.test(targetPath)) continue;
+    try {
+      // 词法包含挡 ../；realpath 再挡符号链接逃逸。失败一律拒（fail closed），
+      // 缺失文件表现为 403，由前端「无法预览」兜底承接。
+      if (isPathWithinBase(fs.realpathSync(targetPath), fs.realpathSync(root))) return true;
+    } catch {
+      // fail closed
+    }
+  }
+  return false;
+}
+
 function isWorkspaceFileAllowed(
   targetPath: string,
   sessionWorkingDirectories: readonly string[] = [],
 ): boolean {
-  // 与 handleScreenshot 同源：cwd / tmpdir / agent 默认工作目录（生成产物落这里，
-  // 见 C.12 注释）之外，再放行绑定会话的工作目录——会话内附件（如 <ws>/资料/x.png）
-  // 走本路由回读，不在白名单会 403 成破图（N-ATTACH-PREVIEW-403）。
+  // cwd / tmpdir / agent 默认工作目录（生成产物落这里，见 C.12 注释）之外，
+  // 补绑定会话的工作目录：artifact 子树不限类型，其余只放行媒体/文档扩展名。
   const allowedRoots = [
     path.resolve(process.cwd()),
     path.resolve(os.tmpdir()),
@@ -266,19 +292,8 @@ function isWorkspaceFileAllowed(
     path.resolve(getLegacyDefaultWorkDirectory(getUserDataPath())),
   ];
   if (allowedRoots.some((root) => isPathWithinBase(targetPath, root))) return true;
-  for (const workingDirectory of sessionWorkingDirectories) {
-    if (!workingDirectory?.trim()) continue;
-    const root = path.resolve(workingDirectory);
-    if (!isPathWithinBase(targetPath, root)) continue;
-    try {
-      // 词法包含挡 ../；realpath 再挡符号链接逃出会话工作区。
-      if (isPathWithinBase(fs.realpathSync(targetPath), fs.realpathSync(root))) return true;
-    } catch {
-      // 目标或根不存在：词法包含已成立，放行给路由的 stat 回落 404（不存在 ≠ 越界）。
-      return true;
-    }
-  }
-  return false;
+  if (isBoundSessionArtifactPath(targetPath, sessionWorkingDirectories)) return true;
+  return isSessionWorkspaceFileAllowed(targetPath, sessionWorkingDirectories);
 }
 
 function getContentType(filePath: string): string {

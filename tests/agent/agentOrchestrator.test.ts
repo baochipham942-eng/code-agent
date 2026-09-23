@@ -329,6 +329,7 @@ import type { ConfigService } from '../../src/host/services/core/configService';
 import type { AgentEvent, Message, MessageAttachment, PermissionAskResult, PermissionRequest } from '../../src/shared/contract';
 import type { AgentRunOptions } from '../../src/host/research/types';
 import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
+import { getToolSearchService } from '../../src/host/services/toolSearch/toolSearchService';
 import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';
 import { resolveToolPermissionClassification } from '../../src/host/tools/toolPermissionClassification';
 import { TaskManager } from '../../src/host/task/TaskManager';
@@ -467,6 +468,32 @@ describe('AgentOrchestrator', () => {
       await expect(AgentOrchestrator.prototype.sendMessage.call(ingress as unknown as AgentOrchestrator,
         'I am back', undefined, options)).rejects.toThrow('after user ingress');
       expect(cancelTimeWakesOnUserReturn).toHaveBeenCalledWith('return-session', options);
+    });
+
+    it('releases deferred-tool holds when a normal run ends', async () => {
+      const release = vi.spyOn(getToolSearchService(), 'releaseSession');
+      const run = orchestrator as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+        ) => Promise<void>;
+        runStandardAgentLoop: () => Promise<void>;
+      };
+      run.runStandardAgentLoop = async () => {
+        throw new Error('stop-before-loop');
+      };
+
+      await expect(run.runNormalMode(
+        'hello',
+        () => undefined,
+        { provider: 'openai', model: 'gpt-4o' },
+        'session-ended',
+      )).rejects.toThrow('stop-before-loop');
+
+      expect(release).toHaveBeenCalledWith('session-ended');
+      release.mockRestore();
     });
 
     it('getWorkingDirectory 应该返回当前目录', () => {

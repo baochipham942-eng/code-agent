@@ -333,7 +333,7 @@ function enforceSingleInjectionCeiling(result: SearchRenderResult): string {
     .filter((schema) => !keptAgain.has(schema.name))
     .map((schema) => schema.name);
   if (droppedAgain.length > 0) {
-    getToolSearchService().applyInjectionFit(again.schemas, droppedAgain, bounded.schemas);
+    getToolSearchService().applyInjectionFit(again.schemas, droppedAgain, measurable);
     for (const name of droppedAgain) overCeiling.add(name);
     result.loadedTools = result.loadedTools.filter((name) => !overCeiling.has(name));
   }

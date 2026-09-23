@@ -240,6 +240,9 @@ describe('ToolSearch output plus newly loaded schema', () => {
         input_schema: sent!.inputSchema as unknown as Record<string, unknown>,
       };
       expect(sentSchema.input_schema).toHaveProperty('properties');
+      if (name === 'TaskManager') {
+        expect(sentSchema.input_schema).toHaveProperty(['properties', 'description']);
+      }
       expect(singleInjectionTokens(result.output, [sentSchema])).toBeLessThanOrEqual(CEILING);
     },
   );

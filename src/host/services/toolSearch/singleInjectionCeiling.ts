@@ -43,11 +43,19 @@ function sliceToTokenBudget(text: string, budget: number): string {
 }
 
 function withoutDescriptions(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutDescriptions);
+  if (Array.isArray(value)) return value.map((item) => withoutDescriptions(item));
   if (!value || typeof value !== 'object') return value;
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (key === 'description') continue;
+    if (key === 'properties' && child && typeof child === 'object' && !Array.isArray(child)) {
+      const properties: Record<string, unknown> = {};
+      for (const [propName, propSchema] of Object.entries(child as Record<string, unknown>)) {
+        properties[propName] = withoutDescriptions(propSchema);
+      }
+      out.properties = properties;
+      continue;
+    }
+    if (key === 'description' && typeof child === 'string') continue;
     out[key] = withoutDescriptions(child);
   }
   return out;

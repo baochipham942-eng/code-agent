@@ -701,7 +701,7 @@ describe('AskUserQuestion 同轮重复问句回放', () => {
     const noDescQuestions = [
       {
         question: '选哪个',
-        header: '选',
+        header: '确认',
         options: [{ label: '甲' }, { label: '乙' }],
       },
     ] as unknown as UserQuestion[];
@@ -758,6 +758,42 @@ describe('AskUserQuestion 同轮重复问句回放', () => {
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.code).toBe('ABORTED');
     expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('多问题卡只答部分 header：正常返回但不缓存，二次同问照弹', async () => {
+    const multiQuestions: UserQuestion[] = [
+      {
+        question: '要继续吗？',
+        header: '确认',
+        options: [
+          { label: '继续', description: '继续当前操作' },
+          { label: '停止', description: '停下等待' },
+        ],
+      },
+      {
+        question: '范围？',
+        header: '范围',
+        options: [
+          { label: '全部', description: '所有文件' },
+          { label: '部分', description: '只改相关文件' },
+        ],
+      },
+    ];
+    const ctx = makeCtx({ runId: 'run-partial-1', turnId: 'iter-1' });
+    const handler = await askUserQuestionModule.createHandler();
+    const firstPromise = handler.execute({ questions: multiQuestions }, ctx, allowAll);
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
+    const firstRequest = sendMock.mock.calls[0][1];
+    // Companion 协议允许只提交部分 header 的答案。
+    await responseHandlerRef.fn?.({}, { requestId: firstRequest.id, answers: { 确认: '继续' } });
+    const first = await firstPromise;
+    expect(first.ok).toBe(true);
+    if (first.ok) expect(first.output).toBe('User responses:\n[确认]: 继续');
+
+    // 残缺答案未缓存：同 run 同问第二次必须照弹，不回放不完整结果。
+    const second = await executeAndAnswer(ctx, multiQuestions, 1);
+    expect(second.ok).toBe(true);
+    expect(sendMock).toHaveBeenCalledTimes(2);
   });
 });
 

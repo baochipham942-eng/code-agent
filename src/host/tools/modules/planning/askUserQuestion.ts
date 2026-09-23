@@ -178,7 +178,15 @@ export async function executeAskUserQuestion(
   ctx.logger.debug('AskUserQuestion done', { requestId: response.requestId });
 
   const output = `User responses:\n${answerLines.join('\n')}`;
-  recordAskUserQuestionAnswer(ctx, questions, output);
+  // 多问题卡允许只提交部分 header（Companion 协议）：残缺答案不缓存，
+  // 本次正常返回，但下轮同问必须照弹，不能回放不完整结果。
+  const allAnswered = questions.every((q) => {
+    const answer = response.answers[q.header];
+    return Array.isArray(answer)
+      ? answer.some((item) => item.trim().length > 0)
+      : typeof answer === 'string' && answer.trim().length > 0;
+  });
+  if (allAnswered) recordAskUserQuestionAnswer(ctx, questions, output);
   return {
     ok: true,
     output,

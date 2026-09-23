@@ -499,4 +499,104 @@ describe('grepModule (native)', () => {
       }
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // N-SEARCH-PARTIAL-RESULTS: rg/grep exit 2 (unreadable path) with matches on
+  // stdout must be reported as "matches + [partial] paths", not as a failure.
+  // chmod cases are skipped when running as root (permissions are ignored).
+  // ---------------------------------------------------------------------------
+  describe('partial results (N-SEARCH-PARTIAL-RESULTS)', () => {
+    // chmod 000 is a no-op for root — those cases are skipped there on purpose
+    // (skipIf below), never silently passing.
+    const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+
+    async function makePartialFixture(): Promise<string> {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'grep-partial-'));
+      await fs.mkdir(path.join(root, 'okdir'), { recursive: true });
+      await fs.mkdir(path.join(root, 'lockdir'), { recursive: true });
+      await fs.writeFile(path.join(root, 'okdir', 'a.txt'), 'needle here\n');
+      await fs.writeFile(path.join(root, 'lockdir', 'b.txt'), 'needle hidden\n');
+      await fs.chmod(path.join(root, 'lockdir'), 0o000);
+      return root;
+    }
+
+    it.skipIf(isRoot)('returns matches plus a [partial] block naming the unreadable path', async () => {
+      const root = await makePartialFixture();
+      try {
+        const result = await run({ pattern: 'needle', path: root });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          // readable-path match is still delivered
+          expect(result.output).toContain('a.txt');
+          expect(result.output).toContain('needle here');
+          // honest incompleteness marker reaches the model
+          expect(result.output).toContain('[partial]');
+          expect(result.output).toContain('1 path could not be searched');
+          expect(result.output).toContain('lockdir');
+          const meta = result.meta as {
+            partial?: boolean;
+            unreadablePaths?: string[];
+          } | undefined;
+          expect(meta?.partial).toBe(true);
+          expect(meta?.unreadablePaths?.join('\n')).toContain('lockdir');
+        }
+      } finally {
+        await fs.chmod(path.join(root, 'lockdir'), 0o755);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it.skipIf(isRoot)('system-grep fallback applies the same partial handling', async () => {
+      __setRgBinaryPathForTest(null); // force the grep fallback engine
+      const root = await makePartialFixture();
+      try {
+        const result = await run({ pattern: 'needle', path: root });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const meta = result.meta as { engine?: string; partial?: boolean } | undefined;
+          expect(meta?.engine).toBe('grep');
+          expect(result.output).toContain('a.txt');
+          expect(result.output).toContain('[partial]');
+          expect(result.output).toContain('lockdir');
+          expect(meta?.partial).toBe(true);
+        }
+      } finally {
+        await fs.chmod(path.join(root, 'lockdir'), 0o755);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('no unreadable dirs → no [partial] block and meta.partial falsy', async () => {
+      // same fixture shape, but the sibling dir stays readable
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'grep-clean-'));
+      try {
+        await fs.mkdir(path.join(root, 'okdir'), { recursive: true });
+        await fs.mkdir(path.join(root, 'plaindir'), { recursive: true });
+        await fs.writeFile(path.join(root, 'okdir', 'a.txt'), 'needle here\n');
+        await fs.writeFile(path.join(root, 'plaindir', 'b.txt'), 'needle there\n');
+
+        const result = await run({ pattern: 'needle', path: root });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toContain('a.txt');
+          expect(result.output).not.toContain('[partial]');
+          const meta = result.meta as { partial?: boolean } | undefined;
+          expect(meta?.partial).toBeFalsy();
+        }
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('exit 2 with empty stdout is still a real error (nonexistent search path)', async () => {
+      const result = await run({
+        pattern: 'needle',
+        path: path.join(tempDir, '__no_such_dir__'),
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(['FS_ERROR', 'ENOENT']).toContain(result.code);
+      }
+    });
+  });
 });

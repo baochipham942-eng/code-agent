@@ -352,6 +352,16 @@ describe('ToolSearchService loadable results', () => {
     expect(result.loadedTools).not.toContain('Computer');
   });
 
+  it('does not treat maxResults truncation as a unique match for auto-loading', async () => {
+    const service = new ToolSearchService();
+
+    const result = await service.searchTools('screenshot', { maxResults: 1, includeMCP: false });
+
+    expect(result.tools).toHaveLength(1);
+    expect(result.loadedTools).toEqual([]);
+    expect(service.isToolLoaded('Computer')).toBe(false);
+  });
+
   it('explains desktop context metadata as workbench context instead of callable tools', () => {
     const service = new ToolSearchService();
 

@@ -215,6 +215,31 @@ describe('toolSearchModule (native)', () => {
       }
     });
 
+    it('caps no-hit discovery failures at the single-injection token ceiling', async () => {
+      discoverLazyServersForSearchMock.mockResolvedValue(
+        Array.from({ length: 200 }, (_, index) => ({
+          serverName: `server-${index}`,
+          connected: false,
+          toolCount: 0,
+          error: 'discovery failed with a verbose diagnostic payload',
+        })),
+      );
+      searchToolsMock.mockResolvedValue({
+        tools: [],
+        loadedTools: [],
+        totalCount: 0,
+        hasMore: false,
+      });
+
+      const result = await run({ query: 'no-hit' });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(estimateTokens(result.output)).toBeLessThanOrEqual(400);
+        expect(result.output).toContain('未找到匹配 "no-hit"');
+      }
+    });
+
     it('formats not-callable hits without claiming they are loaded', async () => {
       searchToolsMock.mockResolvedValue({
         tools: [

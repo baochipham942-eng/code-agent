@@ -132,7 +132,10 @@ export async function executeToolSearch(
         if (gaps.length === 0) return '';
         return `\n\n${renderGaps(query, gaps)}`;
       })();
-      const output = `未找到匹配 "${query}" 的工具。${discoveryHint}${capabilityHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`;
+      const output = fitTextToTokenCeiling(
+        `未找到匹配 "${query}" 的工具。${discoveryHint}${capabilityHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`,
+        SINGLE_INJECTION_TOKEN_CEILING,
+      );
       return {
         ok: true,
         output,
@@ -257,6 +260,24 @@ export async function executeToolSearch(
       code: 'SEARCH_ERROR',
     };
   }
+}
+
+function fitTextToTokenCeiling(text: string, ceiling: number): string {
+  if (estimateTokens(text) <= ceiling) return text;
+  let low = 0;
+  let high = text.length;
+  let best = '';
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = text.slice(0, middle);
+    if (estimateTokens(candidate) <= ceiling) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best;
 }
 
 function fitToolSearchOutput(

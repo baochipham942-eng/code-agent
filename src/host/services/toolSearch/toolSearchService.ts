@@ -141,8 +141,8 @@ export class ToolSearchService {
     // 取 top N
     const topResults = scored.slice(0, maxResults);
     const topScore = topResults[0]?.score;
-    const firstResultClearlyAhead = topResults.length === 1
-      || (topScore !== undefined && topScore - (topResults[1]?.score ?? 0) >= 0.25);
+    const firstResultClearlyAhead = scored.length === 1
+      || (topScore !== undefined && topScore - (scored[1]?.score ?? 0) >= 0.25);
     const loadedTools: string[] = [];
 
     const tools: ToolSearchItem[] = topResults.map(({ meta, score }, index) => {

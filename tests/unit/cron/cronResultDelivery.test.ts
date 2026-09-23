@@ -138,3 +138,31 @@ describe('pushCronResult literal dedup against lastPushed (FB-239)', () => {
     });
   });
 });
+
+describe('pushCronResult push body sanitization (PR#2060 round 2)', () => {
+  // 监听模板让模型把对比状态包进 <cron_snapshot>、新发现包进 <cron_alert>；
+  // 剥快照块 + 只推 alert 内文，标签壳不许进通道。
+  it('strips snapshot blocks and pushes only the alert inner text', async () => {
+    const raw = '巡检完成。<cron_snapshot>{"fingerprint":"abc"}</cron_snapshot><cron_alert>冲突 A</cron_alert> 其余说明 <cron_alert>冲突 B</cron_alert>';
+    const outcome = await pushCronResult(job('feishu:oc_group1'), raw);
+
+    expect(outcome).toEqual({ delivered: true, pushedBody: '冲突 A\n冲突 B' });
+    expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', '冲突 A\n冲突 B');
+  });
+
+  it('strips snapshot blocks from plain bodies without touching the text', async () => {
+    const outcome = await pushCronResult(job('feishu:oc_group1'), '日报正文<cron_snapshot>state</cron_snapshot>');
+
+    expect(outcome).toEqual({ delivered: true, pushedBody: '日报正文' });
+    expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', '日报正文');
+  });
+
+  // 剥完为空 = 没东西要发：按安静处理不推，且不写失败留痕（reason 为 undefined）。
+  it('stays quiet when nothing survives sanitization', async () => {
+    const outcome = await pushCronResult(job('feishu:oc_group1'), '<cron_snapshot>only-state</cron_snapshot>');
+
+    expect(outcome).toEqual({ delivered: false });
+    expect(outcome.reason).toBeUndefined();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+});

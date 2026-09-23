@@ -1,5 +1,5 @@
 import type { CronJobAction, CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
-import { CRON_RESULT_PUSH } from '../../shared/constants';
+import { CRON_AGENT_SNAPSHOT, CRON_RESULT_PUSH, EXTERNAL_WATCH } from '../../shared/constants';
 import { saveCronExecution, upsertCronExecutionInMemory } from './cronPersistence';
 import { truncateUtf8Snapshot } from './cronAgentPrompt';
 
@@ -35,6 +35,23 @@ function parseTarget(raw: string): { account: string; chatId?: string } {
   };
 }
 
+/**
+ * 推送正文清洗（PR#2060 ai-review Important 第二轮）：内置飞书监听模板让模型把对比状态
+ * 包进 <cron_snapshot>、新发现包进 <cron_alert>，原文照推会把内部状态和标签壳怼到群里。
+ * 规则：任何推送先剥全部 <cron_snapshot> 块；出现 <cron_alert> 时只推标签内正文
+ * （多块拼接）；剥完为空 = 没东西要发，按安静处理不推（不写失败留痕）。
+ * 正则复用 shared/constants 里的既有 pattern source，只加 global 旗标，不新造表达式。
+ */
+function sanitizePushBody(raw: string): string {
+  const snapshotBlocks = new RegExp(CRON_AGENT_SNAPSHOT.TAG_PATTERN.source, 'gi');
+  const withoutSnapshots = raw.replace(snapshotBlocks, '');
+  const alertBlocks = new RegExp(EXTERNAL_WATCH.ALERT_TAG_PATTERN.source, 'gi');
+  const alerts = [...withoutSnapshots.matchAll(alertBlocks)]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
+  return (alerts.length > 0 ? alerts.join('\n') : withoutSnapshots).trim();
+}
+
 export async function pushCronResult(
   definition: CronJobDefinition,
   result: unknown,
@@ -48,7 +65,8 @@ export async function pushCronResult(
   const targetChannel = definition.resultChannel?.trim() || heartbeatChannel;
   if (!targetChannel || !result) return { delivered: false };
 
-  const body = String(result);
+  const body = sanitizePushBody(String(result));
+  if (!body) return { delivered: false };
   // 字面去重（免费路径，不受任何开关限制；借鉴 OWB scheduler.js:293「跟上次真推出去的比」）：
   // 正文与上次真推成功的一字不差就不推。判错最坏是少推一条重复内容，不是永远不知道。
   // lastPushed 只在真推成功后由下方 rememberPushedBody 写回，这里只读；

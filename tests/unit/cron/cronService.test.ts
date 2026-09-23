@@ -17,7 +17,7 @@ const configState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 const channelState = vi.hoisted(() => ({
   // 通道契约是 SendMessageResult；返回 undefined 的桩不忠实于真实通道，
   // 而新实现要看这个返回值来判断平台有没有拒发。
-  sendMessage: vi.fn(async (): Promise<{ success: boolean; messageId?: string; error?: string }> => ({ success: true, messageId: 'om_stub' })),
+  sendMessage: vi.fn(async (_accountId: string, _chatId: string, _text: string): Promise<{ success: boolean; messageId?: string; error?: string }> => ({ success: true, messageId: 'om_stub' })),
 }));
 
 const automationState = vi.hoisted(() => ({
@@ -737,9 +737,11 @@ describe('N-CRON-SKIPPED-DELIVERY quiet watch rounds', () => {
 
   // 验收②：有 <cron_alert> 的监听轮照推，且真推成功后把正文记成 lastPushed。
   // 正文来自 getMessages() 的最后一条 assistant 消息——sendMessage 的真实返回是 void。
+  // 推送前清洗（PR#2060 第二轮）：剥 <cron_snapshot> 内部状态块，只推 <cron_alert> 内文，
+  // 标签壳与快照原文都不许进通道。
   it('pushes an external_watch round that carries a cron_alert', async () => {
-    const alertText = '<cron_alert>新增冲突：明天十点双会</cron_alert>';
-    agentRunState.messages = [{ role: 'assistant', content: alertText }];
+    const assistantText = '例行巡检完成。\n<cron_snapshot>{"conflicts":2,"rows":"指纹"}</cron_snapshot>\n<cron_alert>新增冲突：明天十点双会</cron_alert>';
+    agentRunState.messages = [{ role: 'assistant', content: assistantText }];
     const service = new CronService();
     const job = await service.createJob(agentJob({
       externalWatch: { source: 'feishu-calendar', calendarId: 'cal-1' },
@@ -750,16 +752,19 @@ describe('N-CRON-SKIPPED-DELIVERY quiet watch rounds', () => {
 
     expect(execution).toMatchObject({ status: 'completed' });
     expect(execution.result).not.toMatchObject({ skipped: true });
-    expect(channelState.sendMessage).toHaveBeenCalledWith('feishu-account', 'oc_group1', alertText);
+    expect(channelState.sendMessage).toHaveBeenCalledWith('feishu-account', 'oc_group1', '新增冲突：明天十点双会');
+    const pushedBody = channelState.sendMessage.mock.calls[0]?.[2] as string;
+    expect(pushedBody).not.toContain('<cron_snapshot>');
+    expect(pushedBody).not.toContain('<cron_alert>');
     expect(service.getJob(job.id)?.action).toMatchObject({
-      context: { lastPushedResult: alertText },
+      context: { lastPushedResult: '新增冲突：明天十点双会' },
     });
     await service.shutdown();
   });
 
-  // 验收②：非监听任务不受 skipped 门影响，每轮照推。
+  // 验收②：非监听任务不受 skipped 门影响，每轮照推；<cron_snapshot> 块同样不许进通道。
   it('keeps pushing non-watch agent jobs as before', async () => {
-    agentRunState.messages = [{ role: 'assistant', content: '日报正文' }];
+    agentRunState.messages = [{ role: 'assistant', content: '日报正文\n<cron_snapshot>{"done":3}</cron_snapshot>' }];
     const service = new CronService();
     const job = await service.createJob(agentJob({}));
 

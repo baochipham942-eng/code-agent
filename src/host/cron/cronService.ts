@@ -1096,11 +1096,6 @@ export class CronService implements Disposable {
   // Database Operations
   // --------------------------------------------------------------------------
 
-  /**
-   * 启动时把残留的 running 执行记录标记为 interrupted（maka 护栏自查 A5-④）：
-   * 上次进程退出前没跑完的执行会永远停在 running，误导用户以为还在跑。
-   * 单条 UPDATE，幂等（重复跑不会二次改动已是 interrupted 的行），不影响启动耗时。
-   */
   /** 投递与失败留痕的实现已拆到 cronResultDelivery.ts（含 FB-239 字面去重写回）。 */
   private async deliverCronResult(definition: CronJobDefinition, result: unknown, executionId?: string): Promise<void> {
     await deliverCronResultToChannel(definition, result, this.executions, executionId, {
@@ -1109,6 +1104,11 @@ export class CronService implements Disposable {
     });
   }
 
+  /**
+   * 启动时把残留的 running 执行记录标记为 interrupted（maka 护栏自查 A5-④）：
+   * 上次进程退出前没跑完的执行会永远停在 running，误导用户以为还在跑。
+   * 单条 UPDATE，幂等（重复跑不会二次改动已是 interrupted 的行），不影响启动耗时。
+   */
   private async markInterruptedExecutions(): Promise<void> {
     try {
       const db = getDatabase().getDb();

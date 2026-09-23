@@ -1,18 +1,30 @@
-# ADR-072：跨会话协调协议——协调会话、委托链与确定性准入门
+# ADR-072：跨会话协调协议——发起会话、委托链与确定性准入门
 
-- 状态：**待拍板**（本单只出 ADR 不施工；施工卡由拍板后另立）
+- 状态：**已拍板（R4）**，待立施工卡（本单只出 ADR 不施工）
 - 工单：N-WORKHUB-ADR（多agent线，wave 37）
 - 相关：ADR-054（会话=指挥台——派活语义的上一拍）、ADR-047（主理人编排）、ADR-052（会话与专家的关系）、ADR-044（queued_inputs 排队输入——委托投递复用的表）、ADR-067（子代理 origin 链——**不覆盖**委托投递，R2 撤回「防洗白依据」这一用法）；在飞或待派单 N-BGSPAWN-DURABLE（刀1 已合 main）、N-LOOP-DURABLE-K2*、N-RUNENTRY-IDEMPOTENT、N-APPROVALWAIT-PAUSECLOCK
 - as-built 基线：**origin/main@8c7dde035**（本文件所有 `标识符 @ 文件:行号` 均从该 commit 核出，不从工作树）
 - 来源：`docs/competitive/maka-agent-2026-09-23-三周动向借鉴清单.md` §2（code-agent-private-archive 仓）；maka 源料 commit **d5bc0fad**，已拷贝至 `code-agent-private-archive/docs/evidence/assets/N-WORKHUB-ADR/maka-src/`（ADR、术语表、路由纯逻辑、准入门、协调器、协议、目标执行权威、崩溃恢复测试共 14 份）
 
-## 背景：Neo 有「会话内指挥台」，没有「会话间协调层」
+## 术语
+
+| 词 | 含义 |
+|----|------|
+| 发起会话（origin session） | 用户正在聊的任意普通会话。它的 brain 在需要时调用跨会话委托工具。不是 `session_type`，不隐藏、不从列表排除 |
+| 目标会话 | 接受委托、由**自己的** agent 在后台跑一轮的另一个已有或新建会话 |
+| 委托 | 把一条任务投进目标会话。不是另起的 backend agent 实体。发起侧只记链接（定义见决策开头） |
+| 委托轮 | 目标会话里由这条委托触发的那一轮 |
+| 发起轮 | 发起会话里用户说话、brain 决定派或不派的那一轮 |
+
+R0–R3 写的「协调会话」整词废止，不留作隐藏角色的别名。
+
+## 背景：Neo 有「会话内指挥台」，没有「会话间委托」
 
 ADR-054（2026-08-04 已 accepted）把 Neo 的会话定为指挥台：前台 brain turn 用窄工具面（`delegate_task` / `steer_task` / `cancel_task` / `task_status`）把活派给**本会话的后台任务槽**，执行走账本任务，lane 串行 + submissionKey 幂等。这套派活语义已经落地（`SessionCommandCenter @ src/host/services/commandCenter/sessionCommandCenter.ts:116`，`spawn @ :151`）。
 
 但它只覆盖一个会话内部。用户在 cowork 场景下的工作单位是**多个会话**（各有各的工作区、转录、产物和历史），今天想「把这句话送到对的会话去」只有一条路：自己记得哪个会话在干什么、手动切过去、手动粘贴。唯一跨会话的运行时行为是角色主动性（`wakeRole @ src/host/services/roleAssets/roleProactivity.ts:254` 起 schedule 会话，单向不回流）。`agentAppService.sendMessage @ src/host/app/agentAppService.ts:439` 能向任意会话投一条消息，但发行版主路径不走它：`webServer.ts:899` 的 `getAppService` 恒为 null，排队输入的生产投递是 `createWebQueuedInputDrain`（见 D5.1），没有协调层、没有准入门。
 
-Apache Maka 09 月做了 WorkHub：每个 Runtime Host 一个隐藏的**协调会话**（Session 的一个角色，不是新实体），把用户消息路由四选一（就地回答 / 委托已有会话 / 新建会话 / 澄清），所有写操作先过**确定性准入门**，模型只出建议、无效输出一律回退澄清，停止/纠正/恢复沿**持久化委托链**走。本 ADR 回答 Neo 版协议的形状——借协议骨架，不抄代码。
+Apache Maka 09 月做了 WorkHub：每个 Runtime Host 一个隐藏的协调会话（Session 的一个角色，不是新实体），把用户消息路由四选一（就地回答 / 委托已有会话 / 新建会话 / 澄清），所有写操作先过**确定性准入门**，模型只出建议、无效输出一律回退澄清，停止/纠正/恢复沿**持久化委托链**走。本 ADR 借这套协议骨架（准入门、委托链、fail-closed），不抄代码，也不抄隐藏会话。Neo 的入口是发起会话里的跨会话委托工具（D1，R4 撤销隐藏角色）。
 
 ### 现状全表（@8c7dde035）
 
@@ -38,19 +50,19 @@ Apache Maka 09 月做了 WorkHub：每个 Runtime Host 一个隐藏的**协调�
 | 16 | **跨会话消息入口（AppService 通道，发行版未接上）** | `sendMessage @ src/host/app/agentAppService.ts:439`（`ConversationEnvelope @ src/shared/contract/conversationEnvelope.ts:168`） | 任意会话（进程内） | 消息经 sessionRepository 落库 | `agent.ipc.ts:85`、`planning.ipc.ts:146/:162`、`planApprovalService.ts:322/:355`；桌面 drain 里的调用（`desktopQueuedInputDrain.ts:124`）包在零生产调用方的 `registerDesktopQueuedInputDrain` 里。发行版 `getAppService @ webServer.ts:899` 为 null。排队投递的主人见 D5.1 |
 | 17 | ACP 外部引擎会话 | `acpClientAdapter @ src/host/services/agentEngine/acpClientAdapter.ts` | 引擎层（外部 agent 引擎的会话） | 引擎自管 | 引擎适配（本 ADR 划界外） |
 
-**读表结论**：#9 已经把「派活语义」（delegate/steer/cancel/status + 短名 + lane 串行 + submissionKey 幂等 + 歧义走 askUserQuestion）在会话内拍板并落地；#16 的 `sendMessage` 不是发行版排队投递的主人。**缺的是中间一层：决定「这句话该去哪个会话」的协调入口、防止派错的确定性准入门、以及记住「谁派给了谁」的委托链。** 投递复用既有 `queued_inputs` + `createWebQueuedInputDrain`（D5.1）。
+**读表结论**：#9 已经把「派活语义」（delegate/steer/cancel/status + 短名 + lane 串行 + submissionKey 幂等 + 歧义走 askUserQuestion）在会话内拍板并落地；#16 的 `sendMessage` 不是发行版排队投递的主人。**缺的是中间一层：发起会话在需要时调用的跨会话委托工具、防止派错的确定性准入门、以及记住「谁派给了谁」的委托链。** 没有单独的协调入口。投递复用既有 `queued_inputs` + `createWebQueuedInputDrain`（D5.1）。
 
 ## 三张图
 
 ### 图 1 · 委托链状态机
 
-协调侧持久状态（`session_delegations.status`，含 `terminal_observed`）与目标会话执行状态（只读投影：`target_run_id` join durable_runs 的 `RunStatus`）是两套语言。`terminal_observed` 是协调层事实：投影看到目标 run 进入终态时把委托行写成这个状态（幂等、可重放），G4 就不再把已经完成的委托当成在飞。completed / failed / cancelled **不复制进委托行**，读取时 join。R1 曾把前台轮投影改挂 TaskManager，R2 撤回（前提为假，见修订记录）。
+发起侧持久状态（`session_delegations.status`，含 `terminal_observed`）与目标会话执行状态（只读投影：`target_run_id` join durable_runs 的 `RunStatus`）是两套语言。`terminal_observed` 是发起侧事实：投影看到目标 run 进入终态时把委托行写成这个状态（幂等、可重放）。同一目标可以同时有多条 `active`（已接受、还在 FIFO 里或尚未观察到终态）。completed / failed / cancelled **不复制进委托行**，读取时 join。R1 曾把前台轮投影改挂 TaskManager，R2 撤回（前提为假，见修订记录）。
 
 ```mermaid
 stateDiagram-v2
-    [*] --> proposed: 协调 brain turn 产出建议
-    proposed --> active: 准入门 G1-G12 全过，单事务提交：委托行 + queued_inputs 行（create_new 时含新会话行）
-    proposed --> clarified: 门拒 或 模型输出无效，不落委托行，回协调会话澄清
+    [*] --> proposed: 发起会话 brain 调用 delegate_session
+    proposed --> active: 准入门全过，单事务提交：委托行 + queued_inputs 行（create_new 时含新会话行）
+    proposed --> clarified: 门拒或调用无效，不落委托行，工具返回结构化拒绝
 
     active --> superseding: 链上操作·纠正 correct
     superseding --> superseded: 新委托行落链，旧行 status=superseded
@@ -64,80 +76,75 @@ stateDiagram-v2
     active --> terminal_observed: 投影到目标 run 终态时落表\\n(幂等、可重放；不复制 RunStatus)
     stopped --> terminal_observed: 同上，落表
 
-    aborted --> active: 同一 queued_input 重发成功\\n投递复核通过且 G4 仍允许
+    aborted --> active: 同一 queued_input 重发成功\\n投递复核通过（INV-2）\\n不因同目标另有 active 而拒绝
 
-    clarified --> [*]: 澄清回答作为新消息重新进入路由
+    clarified --> [*]: 用户回答后，发起会话新一轮可再次调用工具
     superseded --> [*]
     aborted --> [*]: retracted 或不重发
     terminal_observed --> [*]
 ```
 
-**哪些迁移需要持久化**：`active` / `superseded` / `stopped` / `aborted` / `terminal_observed` 是协调侧持久状态，落 `session_delegations`。`terminal_observed` 在投影到目标 run 终态（`TERMINAL_RUN_STATUSES`：completed / failed / cancelled）时写入，幂等、可重放：已经是这个状态再写是空操作，崩溃没写上下一次投影补写。它记的是「协调层已观察到终态」，不把 RunStatus 复制进委托行；具体成败仍按 `target_run_id` 只读 join。G4 只数 `status='active'`，`terminal_observed` 不占单活名额。`superseding` / `stopping` / `resuming` 是链上操作的中间态，由操作自身的持久记录（stop 请求行 / 纠正行）表达，不单独立状态。`running` / `waiting` 等执行态**不落委托表**——它们是目标会话 durable_runs 的 `RunStatus`（`RunStatus @ src/shared/contract/durableRun.ts:5`，终态集合 `TERMINAL_RUN_STATUSES @ :15`）。`aborted(delivery_failed)` 不是终态：同一 `target_queued_input_id` 被重发、投递复核通过、且 G4 仍允许（该目标没有别的 `active` 委托）后翻回 `active`。`aborted(retracted_by_user)` 不再翻回。
+**哪些迁移需要持久化**：`active` / `superseded` / `stopped` / `aborted` / `terminal_observed` 是发起侧持久状态，落 `session_delegations`。`terminal_observed` 在投影到目标 run 终态（`TERMINAL_RUN_STATUSES`：completed / failed / cancelled）时写入，幂等、可重放：已经是这个状态再写是空操作，崩溃没写上下一次投影补写。它记的是「发起侧已观察到终态」，不把 RunStatus 复制进委托行；具体成败仍按 `target_run_id` 只读 join。同一目标的多条已接受委托都可以是 `active`，靠 `queued_inputs` FIFO 排队，不靠「只数一条 active」拒第二条。`superseding` / `stopping` / `resuming` 是链上操作的中间态，由操作自身的持久记录（stop 请求行 / 纠正行）表达，不单独立状态。`running` / `waiting` 等执行态**不落委托表**——它们是目标会话 durable_runs 的 `RunStatus`（`RunStatus @ src/shared/contract/durableRun.ts:5`，终态集合 `TERMINAL_RUN_STATUSES @ :15`）。`aborted(delivery_failed)` 不是终态：同一 `target_queued_input_id` 被重发且投递复核通过（INV-2）后翻回 `active`。同目标已有别的 `active` 委托不阻止翻回。`aborted(retracted_by_user)` 不再翻回。
 
-**崩溃重启从哪恢复**：`active` 行本身就是恢复锚点。事务提交（委托行 + queued_inputs 行同 commit，见 D5.1）与 `markSending` 之间崩溃——行仍是 `queued` 且 `paused_reason IS NULL`，生产启动扫 `runStartupSweep @ src/web/routes/webQueuedInputDrain.ts:215`（接线 `agent.ts:326`，闸门 `webServer.ts:1094`）会补投。`markSending` 之后、`runAgentTurn` 返回前崩溃——`recoverSendingOrphans @ src/host/services/core/repositories/QueuedInputRepository.ts:247` 把行改回 `queued` 且 `paused_reason='restart'`，而 `listSessionsWithQueuedInputs @ :114` 与 `getNextDispatchable @ :125` 只取 `paused_reason IS NULL`，启动扫**不会**补投。这种行要等显式解停：目标会话用户 `sendNow`（`queuedInput.ipc.ts:212`），或协调层 `resume` 走同一条解停路径并先过投递复核。重复投递由 queued_inputs 主键幂等 + `markSending` 的抢占挡住。协调层**不建第二个恢复状态机**。`registerDesktopQueuedInputDrain` 的 `runStartupSweep @ desktopQueuedInputDrain.ts:170` 不是这条缝的主人（生产调用方 0）。
+**崩溃重启从哪恢复**：`active` 行本身就是恢复锚点。事务提交（委托行 + queued_inputs 行同 commit，见 D5.1）与 `markSending` 之间崩溃——行仍是 `queued` 且 `paused_reason IS NULL`，生产启动扫 `runStartupSweep @ src/web/routes/webQueuedInputDrain.ts:215`（接线 `agent.ts:326`，闸门 `webServer.ts:1094`）会补投。`markSending` 之后、`runAgentTurn` 返回前崩溃——`recoverSendingOrphans @ src/host/services/core/repositories/QueuedInputRepository.ts:247` 把行改回 `queued` 且 `paused_reason='restart'`，而 `listSessionsWithQueuedInputs @ :114` 与 `getNextDispatchable @ :125` 只取 `paused_reason IS NULL`，启动扫**不会**补投。这种行要等显式解停：目标会话用户 `sendNow`（`queuedInput.ipc.ts:212`），或发起侧 `resume` 走同一条解停路径并先过投递复核。重复投递由 queued_inputs 主键幂等 + `markSending` 的抢占挡住。本协议**不建第二个恢复状态机**。`registerDesktopQueuedInputDrain` 的 `runStartupSweep @ desktopQueuedInputDrain.ts:170` 不是这条缝的主人（生产调用方 0）。
 
-### 图 2 · 一条用户消息从协调会话到落地
+### 图 2 · 一条用户消息从发起会话到落地
+
+用户在正在聊的会话里直接说。这条消息**不**先跑路由预判。发起会话的 brain 自己决定叫不叫工具；工具执行时才跑准入门。
 
 ```mermaid
 sequenceDiagram
     actor U as 用户
-    participant C as 协调会话<br>(Session 角色 · brain turn)
-    participant R as 路由模型<br>(只出建议 · 两次小调用)
-    participant P as 路由策略纯函数
-    participant G as 委托准入门<br>(确定性 · 无模型)
+    participant O as 发起会话<br>(任意普通会话的 brain)
+    participant L as list_session_candidates<br>(只读 · ≤32 · 无 sessionId)
+    participant T as delegate_session<br>(模型调用只是建议)
+    participant G as 委托准入门<br>(工具执行时 · 查库)
     participant D as 单事务提交<br>(委托行+queued_inputs+新会话行)
-    participant T as 目标会话轮
+    participant S as 目标会话轮
 
-    U->>C: 消息 (ConversationEnvelope)
-    C->>R: 意图分类 (用户文本 + 最近8条协调转录)
-    R-->>C: 意图 JSON (routing/linked/unclear)
-    alt 意图 = execute / continue
-        C->>R: 召回排序 (≤32候选：不透明引用/短名/工作区/状态/新鲜度)
-        R-->>C: ranked / ambiguous / none
-    end
-    C->>P: applyRoutingPolicy(意图, 召回)
-    P-->>C: 四选一 disposition 或链上操作建议
-    alt 模型输出无效 / 超时 / 空召回 / 歧义
-        P-->>C: clarify (fail-closed，绝不 create_new)
-        C-->>U: 反问澄清（回答作为新消息重新进入本图）
-    else answer_here
-        C-->>U: 就地回答（普通转录轮）
-    else delegate_existing / create_new / 链上操作
-        C->>G: 提案 (candidateRef, submissionKey, 受信用户文本)
-        G->>G: G1-G12 确定性校验（查库/宿主构造，不查模型）
-        alt 门拒
-            G-->>C: 拒绝码 (target_unavailable / delegation_conflict / …)
-            C-->>U: 澄清（带拒绝原因上下文）
+    U->>O: 在当前会话里说
+    alt brain 不调用委托工具
+        O-->>U: answer_here（普通回答）
+    else brain 要委托或做链上操作
+        O->>L: 取候选
+        L-->>O: candidateRef + 短名/工作区/状态/新鲜度
+        O->>T: delegate_existing 或 create_new 或 correct/stop/resume
+        T->>G: 执行时跑准入门（G4 只做幂等）
+        alt 门红 / 候选歧义 / 调用无效
+            G-->>O: 结构化拒绝（fail-closed，绝不因此 create_new）
+            O-->>U: AskUserQuestion 追问（ADR-054 决策 4）
         else 门过
             G->>D: 提交
-            D->>D: 委托行(active) + create_new 新会话行 + queued_inputs 行
-            D->>T: 提交后 createWebQueuedInputDrain 投递（空闲靠 handleEnqueued；runAgentTurn，不调 sendMessage）
-            Note over D,T: markSending 前崩溃由 runStartupSweep 补投；之后崩溃行变 paused_reason=restart，不自动补投
-            T-->>D: 轮终态（durable_runs RunStatus）
-            D-->>C: 落表 terminal_observed（幂等），具体成败仍 join
-            C-->>U: 委托卡片（进行中→终态）
+            D->>D: 委托行 active + queued_inputs FIFO（同目标多条照排）
+            D->>S: 提交后 createWebQueuedInputDrain 投递（runAgentTurn，不调 sendMessage）
+            Note over D,S: 同一目标同时只一轮。markSending 前崩溃由 runStartupSweep 补投；之后崩溃行变 paused_reason=restart，不自动补投
+            S-->>D: 轮终态（durable_runs RunStatus）
+            D-->>O: 落表 terminal_observed（幂等），具体成败仍 join
+            O-->>U: 委托卡片（进行中到终态）
         end
     end
 ```
 
-### 图 3 · 协调会话、普通 Session 与会话内编排设施的关系
+### 图 3 · 发起会话、普通 Session 与会话内编排设施的关系
 
 ```mermaid
 flowchart TB
     U[用户]
 
-    subgraph COORD["协调层（本 ADR 新增）"]
-        CS[协调会话<br>session_type = coordination<br>隐藏于普通会话列表]
-        GATE[委托准入门<br>确定性 G1-G12]
-        DG[session_delegations 委托链<br>协调层唯一新增表]
+    subgraph ORIGIN["发起侧（任意普通会话里的能力，无独立入口）"]
+        BRAIN[发起会话的 brain<br>需要时才调工具]
+        LIST[list_session_candidates<br>只读 有界 32]
+        TOOL[delegate_session<br>delegate_existing / create_new<br>以及 correct / stop / resume]
+        GATE[委托准入门<br>执行时查库 无单活门]
+        DG[session_delegations 委托链<br>本协议唯一新增表]
     end
 
-    QI[queued_inputs 待处理输入<br>既有表复用（ADR-044）<br>createWebQueuedInputDrain 投递]
-    RUN[runAgentTurn<br>buildQueuedAgentRunBody<br>前台轮写 durable_runs]
+    QI[queued_inputs FIFO<br>既有表复用 ADR-044<br>同目标多条委托排队]
+    RUN[runAgentTurn<br>同一会话同时只一轮]
 
     subgraph SESSIONS["普通 Session（sessions 表）"]
-        SA[会话 A]
-        SB[会话 B]
+        SA[会话 A 可以是发起会话]
+        SB[会话 B 可以是目标]
     end
 
     subgraph INSESSION["会话内编排设施（全部不碰）"]
@@ -147,29 +154,30 @@ flowchart TB
         WF[workflow / workflow_orchestrate]
         GG[goal_gate 双闸]
         TM[taskManager]
-        SCC[SessionCommandCenter<br>delegate_task / steer_task<br>（会话内后台任务槽）]
+        SCC[SessionCommandCenter<br>delegate_task / steer_task<br>会话内后台任务槽]
     end
 
     subgraph LEDGER["既有账本（不新增）"]
-        DR[durable_runs · RunStatus<br>终态投影的主人]
+        DR[durable_runs RunStatus<br>终态投影的主人]
         SR[swarm_runs]
         BL[backgroundTaskLedger]
     end
 
-    U -->|直接打开会话发消息| RUN
-    U -->|在协调入口发消息| CS
-    CS --> GATE
-    GATE -->|入队（主键幂等）| QI
+    U -->|在正在聊的会话里直接说| SA
+    SA --> BRAIN
+    BRAIN --> LIST
+    LIST --> TOOL
+    TOOL --> GATE
+    GATE -->|入队 主键幂等 排在已有输入之后| QI
     QI -->|空闲 handleEnqueued / 释放后 handleReleasedSession| RUN
-    CS --- DG
-    DG -.->|terminal_observed 落表；RunStatus 只读 join| DR
-    RUN --> SA
+    BRAIN --- DG
+    DG -.->|terminal_observed 落表 RunStatus 只读 join| DR
     RUN --> SB
     SA & SB -->|内部编排| INSESSION
     INSESSION --> LEDGER
 ```
 
-三句话读图 3：协调会话**经准入门入队 queued_inputs**，由生产 drain `createWebQueuedInputDrain` 调 `runAgentTurn(buildQueuedAgentRunBody)` 投进目标会话，不另开通道，也不调 `sendMessage`；会话内编排设施（spawn_agent / coordinatorMode / DAGScheduler / workflow / goal_gate / taskManager / SessionCommandCenter）**原封不动**，协调层不知道它们的内部结构；账本分层——`session_delegations` 是协调层唯一新增表（投递复用既有 queued_inputs）。投影看到目标 run 终态时把委托行写成 `terminal_observed`（幂等）；completed / failed / cancelled 仍只读 join durable_runs（`target_run_id`），不读 TaskManager 的内存会话状态。
+三句话读图 3：发起会话的 brain **经准入门入队 queued_inputs**，由生产 drain `createWebQueuedInputDrain` 调 `runAgentTurn(buildQueuedAgentRunBody)` 投进目标会话，不另开通道，也不调 `sendMessage`；会话内编排设施（spawn_agent / coordinatorMode / DAGScheduler / workflow / goal_gate / taskManager / SessionCommandCenter）**原封不动**，本协议不知道它们的内部结构；账本分层——`session_delegations` 是本协议唯一新增表（投递复用既有 queued_inputs）。投影看到目标 run 终态时把委托行写成 `terminal_observed`（幂等）；completed / failed / cancelled 仍只读 join durable_runs（`target_run_id`），不读 TaskManager 的内存会话状态。
 
 ## 决策
 

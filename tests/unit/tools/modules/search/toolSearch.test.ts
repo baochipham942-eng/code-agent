@@ -267,6 +267,42 @@ describe('toolSearchModule (native)', () => {
       }
     });
 
+    it('tells the model to select loadable hits that were not auto-unlocked', async () => {
+      searchToolsMock.mockResolvedValue({
+        tools: [
+          {
+            name: 'pdf_generate',
+            description: 'Generate a PDF',
+            tags: ['document'],
+            source: 'builtin',
+            loadable: true,
+          },
+          {
+            name: 'PdfAutomate',
+            description: 'Automate an existing PDF',
+            tags: ['document'],
+            source: 'builtin',
+            loadable: true,
+          },
+        ],
+        loadedTools: [],
+        totalCount: 2,
+        hasMore: false,
+      });
+
+      const result = await run({ query: 'pdf', max_results: 3 });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('• **pdf_generate**');
+        expect(result.output).toContain('Generate a PDF');
+        expect(result.output).toContain('使用 select:pdf_generate 加载');
+        expect(result.output).toContain('使用 select:PdfAutomate 加载');
+        expect(result.output).toContain('未注入完整 schema');
+        expect(result.output).not.toContain('已加载，可直接调用');
+        expect(estimateTokens(result.output)).toBeLessThanOrEqual(400);
+      }
+    });
+
     it('formats loadable hits and includes canonicalInvocation', async () => {
       searchToolsMock.mockResolvedValue({
         tools: [

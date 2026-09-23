@@ -177,7 +177,6 @@ export async function executeToolSearch(
       const sourceInfo = tool.source === 'mcp' && tool.mcpServer
         ? ` [MCP: ${tool.mcpServer}]`
         : '';
-      const tags = tool.tags.length > 0 ? ` (${tool.tags.join(', ')})` : '';
       const availability = tool.loadable === false
         ? `不可直接调用：${tool.notCallableReason || 'no direct tool definition is available'}`
         : '已加载，可直接调用';
@@ -194,6 +193,8 @@ export async function executeToolSearch(
         if (tool.canonicalInvocation) {
           lines.push(`  调用入口：${tool.canonicalInvocation}`);
         }
+      } else {
+        lines.push(`  未加载完整定义；使用 select:${tool.name} 加载。`);
       }
       lines.push('');
     }
@@ -208,10 +209,16 @@ export async function executeToolSearch(
     }
 
     lines.push('');
+    const notAutoLoaded = result.tools.filter(
+      (tool) => tool.loadable !== false && !result.loadedTools.includes(tool.name),
+    );
     if (result.loadedTools.length > 0) {
-      lines.push('已加载的工具现在可以直接使用；不可直接调用的结果只作为搜索线索。');
-    } else {
+      lines.push('已加载的工具现在可以直接使用。');
+    } else if (notAutoLoaded.length === 0) {
       lines.push('没有新工具被加载；不可直接调用的结果只作为搜索线索。');
+    }
+    if (notAutoLoaded.length > 0) {
+      lines.push('其余匹配只返回名称和短描述，未注入完整 schema；需要时使用 select:工具名。');
     }
 
     ctx.logger.info('ToolSearch done', {

@@ -429,10 +429,6 @@ export async function checkAndAutoCompress(
 
     if (decision.action === 'none') return;
 
-    // Deferred schemas stay stable through ordinary rounds. Evict only when this
-    // pressure decision has crossed the compaction boundary, preserving prefix cache hits.
-    getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary();
-
     // Item2 剪枝短路（仅绝对 token 阈值路径）：raw transcript 命中 triggerTokens，但工具
     // 结果经系统 A 同款预算化后可能已够小——此时付费 AI 摘要没必要。pipeline-signal /
     // usage-percent 触发是基于系统 A 已预算化的 apiView 做出的（其优先级高于 token-threshold，
@@ -456,6 +452,11 @@ export async function checkAndAutoCompress(
         return;
       }
     }
+
+    // Deferred schemas stay stable through ordinary rounds. Evict only after the
+    // lossless short-circuit above has been ruled out, at the actual compaction
+    // boundary, preserving prefix cache hits across ordinary rounds.
+    getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary();
 
     logger.info(`[AgentLoop] Context pressure (${decision.trigger}): ${decision.reason} — triggering ${decision.action}`);
 

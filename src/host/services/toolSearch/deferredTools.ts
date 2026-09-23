@@ -12,8 +12,11 @@ import type { ToolTag } from '../../../shared/contract/tool';
  * ## 入选判据（2026-08-14 L8 N-L8-SLIM2 补写，此前无成文依据）
  *
  * 常驻一个工具 = 每轮全额付它的 schema（95~2249 token）；挪进 deferred = 每轮只付
- * 名字索引成本由仓内 cl100k_base BPE 实测并在 injection-panorama 记录；模型要用时
- * `select:` 拉全量，代价是一个额外往返。
+ * 名字索引。128 条 builtin 的完整摘要（分类行里的 name + shortDescription）用
+ * gpt-tokenizer@3.4.0 cl100k_base 实测为 2,482 token，不是此前写的每行 ~13 token；
+ * 同一摘要再加一个 server 上 500 个 MCP 名字是 6,987 token（命令见 injection-panorama）。
+ * 调用侧默认预算 1,200：先去掉 shortDescription（builtin 名字索引 485 token），仍超出则
+ * 只留分类/server 计数。模型要用时 `select:` 拉全量，代价是一个额外往返。
  * 所以判据是**「这一轮多半用得上」**，不是「这个能力重要」：
  *
  * - ✅ 进 CORE：高频（真库使用频次在前列）、或首轮就需要（模型没它无法起步，如 ToolSearch）、

@@ -28,7 +28,7 @@ vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => mcpClientMocks,
 }));
 
-function registerProtocolToolForSearch(name: 'Browser' | 'Computer' | 'validate_html_in_app'): void {
+function registerProtocolToolForSearch(name: string): void {
   const schema: ToolSchema = {
     name,
     description: `${name} test schema`,
@@ -463,8 +463,23 @@ describe('ToolSearchService loadable results', () => {
     });
   });
 
+  it('caps a broad search at 5 and unlocks only a clearly leading match', async () => {
+    const service = new ToolSearchService();
+
+    const broad = await service.searchTools('file', { maxResults: 100, includeMCP: false });
+    expect(broad.totalCount).toBeGreaterThan(5);
+    expect(broad.tools).toHaveLength(5);
+    expect(broad.loadedTools.length).toBeLessThanOrEqual(1);
+
+    const browser = await service.searchTools('browser', { maxResults: 5, includeMCP: false });
+    expect(browser.tools.length).toBeGreaterThan(1);
+    expect(browser.loadedTools).toEqual(['Browser']);
+    expect(browser.tools.filter((tool) => tool.name !== 'Browser').every((tool) => tool.description.length > 0)).toBe(true);
+  });
+
   describe('compaction-boundary eviction', () => {
     it('keeps adjacent ordinary rounds stable, then evicts idle tools at compaction and rediscovers them', async () => {
+      registerProtocolToolForSearch('Task');
       const service = new ToolSearchService();
       expect(service.selectTool('Task').loadedTools).toEqual(['Task']);
 

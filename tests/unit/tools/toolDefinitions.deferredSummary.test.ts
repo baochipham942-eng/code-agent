@@ -166,7 +166,9 @@ describe('getDeferredToolsSummary MCP name index (GAP-008)', () => {
     const summary = getDeferredToolsSummary([], undefined, 500);
 
     expect(estimateTokens(summary)).toBeLessThanOrEqual(500);
-    expect(summary).toContain('[memory]');
+    for (const category of ['memory', 'file', 'planning', 'shell', 'network', 'document', 'vision', 'media', 'multiagent', 'evolution', 'search']) {
+      expect(summary).toContain(`[${category}]`);
+    }
     expect(summary).toContain('[mcp:mock] 500 tools; use ToolSearch to find them');
     expect(summary).toMatch(/\b\d+ tools unlisted; use ToolSearch to find them/);
 

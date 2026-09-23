@@ -715,6 +715,30 @@ describe('buildAskUserQuestionReplayKey 归一化', () => {
     expect(a).toBe(b);
   });
 
+  it('有无标点不算差异（剥标点而非仅 NFKC 归一）', () => {
+    const withPunct = buildAskUserQuestionReplayKey([
+      {
+        question: '部署到生产环境，好吗？',
+        header: 'h',
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'b', description: 'y' },
+        ],
+      },
+    ]);
+    const withoutPunct = buildAskUserQuestionReplayKey([
+      {
+        question: '部署到生产环境好吗',
+        header: 'h',
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'b', description: 'y' },
+        ],
+      },
+    ]);
+    expect(withPunct).toBe(withoutPunct);
+  });
+
   it('选项集合不同（含新增选项）key 不同', () => {
     const base = buildAskUserQuestionReplayKey([
       {

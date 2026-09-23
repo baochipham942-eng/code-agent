@@ -265,7 +265,7 @@ function renderToolSearchLines(result: SearchRenderResult, overCeiling: Readonly
         lines.push(`  调用入口：${tool.canonicalInvocation}`);
       }
     } else if (overCeiling.has(tool.name)) {
-      lines.push('  完整 schema 超过单次注入上限，未注入。名称和短描述仍可搜索。');
+      lines.push(`  完整 schema 超过单次注入上限，未自动注入。使用 select:${tool.name} 加载完整定义。`);
     } else {
       lines.push(`  未加载完整定义；使用 select:${tool.name} 加载。`);
     }
@@ -290,7 +290,7 @@ function renderToolSearchLines(result: SearchRenderResult, overCeiling: Readonly
     lines.push('没有新工具被加载；不可直接调用的结果只作为搜索线索。');
   }
   if (overCeilingHits.length > 0) {
-    lines.push(`未注入完整 schema（超过单次注入上限）：${overCeilingHits.map((tool) => tool.name).join(', ')}。`);
+    lines.push(`未自动注入完整 schema（超过单次注入上限）。使用 select:工具名 加载：${overCeilingHits.map((tool) => `select:${tool.name}`).join(', ')}。`);
   }
   if (notAutoLoaded.length > 0) {
     lines.push('其余匹配只返回名称和短描述，未注入完整 schema；需要时使用 select:工具名。');

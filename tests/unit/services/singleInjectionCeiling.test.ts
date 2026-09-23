@@ -217,6 +217,7 @@ describe('ToolSearch output plus newly loaded schema', () => {
     if (!keyword.ok) return;
     expect(keywordService.isToolLoaded(name)).toBe(false);
     expect(keyword.output).toContain('超过单次注入上限');
+    expect(keyword.output).toContain(`select:${name}`);
     const loadedSchemaTokens = getLoadedDeferredToolDefinitions().reduce((sum, tool) => sum + estimateTokens(JSON.stringify({
       name: tool.name,
       description: tool.description,
@@ -226,7 +227,7 @@ describe('ToolSearch output plus newly loaded schema', () => {
   });
 
   it.each(['TaskManager', 'ppt_generate', 'MemoryWrite', 'AgentSpawn'])(
-    'select:%s stays loaded and the sent schema shares the ceiling with the result text',
+    'select:%s keeps the original schema and caps the result text',
     async (name) => {
       getProtocolRegistry();
       const ctx = {

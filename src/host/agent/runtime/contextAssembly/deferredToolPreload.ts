@@ -10,7 +10,7 @@ type RuntimeForDeferredToolPreload = Pick<
   RuntimeContext,
   'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'turn'
   | 'deniedToolNames' | 'allowedToolNames' | 'toolScope'
->;
+> & { sessionId?: string };
 
 // 意图正则守则（issue #322）：\b 对 . / - 等非单词字符也成立，"notes.md" 能穿过
 // \bnotes\b；裸词缺 \b 会被子串误命中（"express" 含 "press"）。误触的代价不止暴露
@@ -159,7 +159,7 @@ export function preloadDeferredToolsForTurn(
 
   for (const toolName of toolNames) {
     try {
-      const result = service.selectTool(toolName);
+      const result = service.selectTool(toolName, runtime.sessionId);
       for (const loadedTool of result.loadedTools) {
         loaded.add(loadedTool);
       }

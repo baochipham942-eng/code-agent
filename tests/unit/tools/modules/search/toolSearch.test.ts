@@ -8,6 +8,8 @@ import type {
   CanUseToolFn,
   Logger,
 } from '../../../../../src/host/protocol/tools';
+import { estimateTokens } from '../../../../../src/host/context/tokenEstimator';
+import { DEFERRED_TOOL_LOADING } from '../../../../../src/shared/constants/tools';
 
 // -----------------------------------------------------------------------------
 // Mock service singletons
@@ -19,6 +21,8 @@ const discoverLazyServersForSearchMock = vi.fn();
 vi.mock('../../../../../src/host/services/toolSearch/toolSearchService', () => ({
   getToolSearchService: () => ({
     searchTools: searchToolsMock,
+    applyInjectionFit: vi.fn(),
+    getLoadedDeferredTools: () => [],
   }),
   setProtocolToolNameChecker: vi.fn(),
 }));
@@ -26,6 +30,7 @@ vi.mock('../../../../../src/host/services/toolSearch/toolSearchService', () => (
 vi.mock('../../../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     discoverLazyServersForSearch: discoverLazyServersForSearchMock,
+    getToolDefinitions: () => [],
   }),
 }));
 
@@ -214,6 +219,31 @@ describe('toolSearchModule (native)', () => {
       }
     });
 
+    it('caps no-hit discovery failures at the single-injection token ceiling', async () => {
+      discoverLazyServersForSearchMock.mockResolvedValue(
+        Array.from({ length: 200 }, (_, index) => ({
+          serverName: `server-${index}`,
+          connected: false,
+          toolCount: 0,
+          error: 'discovery failed with a verbose diagnostic payload',
+        })),
+      );
+      searchToolsMock.mockResolvedValue({
+        tools: [],
+        loadedTools: [],
+        totalCount: 0,
+        hasMore: false,
+      });
+
+      const result = await run({ query: 'no-hit' });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(estimateTokens(result.output)).toBeLessThanOrEqual(DEFERRED_TOOL_LOADING.SINGLE_INJECTION_TOKEN_CEILING);
+        expect(result.output).toContain('未找到匹配 "no-hit"');
+      }
+    });
+
     it('formats not-callable hits without claiming they are loaded', async () => {
       searchToolsMock.mockResolvedValue({
         tools: [
@@ -238,6 +268,42 @@ describe('toolSearchModule (native)', () => {
         expect(result.output).toContain('不可直接调用');
         expect(result.output).toContain('没有新工具被加载');
         expect(result.output).not.toContain('已加载的工具现在可以直接使用');
+      }
+    });
+
+    it('tells the model to select loadable hits that were not auto-unlocked', async () => {
+      searchToolsMock.mockResolvedValue({
+        tools: [
+          {
+            name: 'pdf_generate',
+            description: 'Generate a PDF',
+            tags: ['document'],
+            source: 'builtin',
+            loadable: true,
+          },
+          {
+            name: 'PdfAutomate',
+            description: 'Automate an existing PDF',
+            tags: ['document'],
+            source: 'builtin',
+            loadable: true,
+          },
+        ],
+        loadedTools: [],
+        totalCount: 2,
+        hasMore: false,
+      });
+
+      const result = await run({ query: 'pdf', max_results: 3 });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('• **pdf_generate**');
+        expect(result.output).toContain('Generate a PDF');
+        expect(result.output).toContain('使用 select:pdf_generate 加载');
+        expect(result.output).toContain('使用 select:PdfAutomate 加载');
+        expect(result.output).toContain('未注入完整 schema');
+        expect(result.output).not.toContain('已加载，可直接调用');
+        expect(estimateTokens(result.output)).toBeLessThanOrEqual(DEFERRED_TOOL_LOADING.SINGLE_INJECTION_TOKEN_CEILING);
       }
     });
 
@@ -403,20 +469,43 @@ describe('toolSearchModule (native)', () => {
         expect(result.output).toContain('还有 6 个匹配结果');
       }
     });
+
+    it('enforces the single-injection token ceiling while keeping result names searchable', async () => {
+      searchToolsMock.mockResolvedValue({
+        tools: Array.from({ length: 5 }, (_, index) => ({
+          name: `mcp__mock__tool_${String(index).padStart(3, '0')}`,
+          description: 'A deliberately verbose description '.repeat(30),
+          tags: ['mcp'],
+          source: 'mcp',
+          loadable: true,
+        })),
+        loadedTools: ['mcp__mock__tool_000'],
+        totalCount: 500,
+        hasMore: true,
+      });
+
+      const result = await run({ query: 'mock', max_results: 5 });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(estimateTokens(result.output)).toBeLessThanOrEqual(DEFERRED_TOOL_LOADING.SINGLE_INJECTION_TOKEN_CEILING);
+        expect(result.output).toContain('mcp__mock__tool_000');
+        expect(result.output).toContain('mcp__mock__tool_004');
+      }
+    });
   });
 
   describe('max_results', () => {
-    it('defaults to 5 and caps at 10', async () => {
+    it('defaults to 3 and caps at 5', async () => {
       searchToolsMock.mockResolvedValue({ tools: [], loadedTools: [], totalCount: 0, hasMore: false });
 
       await run({ query: 'foo' });
-      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 5, includeMCP: true });
+      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 3, includeMCP: true, sessionId: 'test-session' });
 
       await run({ query: 'foo', max_results: 100 });
-      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 10, includeMCP: true });
+      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 5, includeMCP: true, sessionId: 'test-session' });
 
       await run({ query: 'foo', max_results: 3 });
-      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 3, includeMCP: true });
+      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 3, includeMCP: true, sessionId: 'test-session' });
     });
   });
 
@@ -426,8 +515,9 @@ describe('toolSearchModule (native)', () => {
     await run({ query: 'select:AgentSpawn' }, makeCtx({ deniedToolNames: ['AgentSpawn'] }));
 
     expect(searchToolsMock).toHaveBeenCalledWith('select:AgentSpawn', {
-      maxResults: 5,
+      maxResults: 3,
       includeMCP: true,
+      sessionId: 'test-session',
       deniedToolNames: ['AgentSpawn'],
     });
   });

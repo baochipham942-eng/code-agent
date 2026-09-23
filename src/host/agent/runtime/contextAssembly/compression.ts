@@ -1,6 +1,6 @@
 // ContextAssembly - Context health tracking and hard-threshold compression.
 import type { AgentEvent, Message } from '../../../../shared/contract';
-import { CHECKPOINT_WRITER, COMPACTION_ECONOMICS, DEFAULT_MODELS } from '../../../../shared/constants';
+import { CHECKPOINT_WRITER, COMPACTION_ECONOMICS, DEFAULT_MODELS, DEFERRED_TOOL_LOADING } from '../../../../shared/constants';
 import { getContextHealthService } from '../../../context/contextHealthService';
 import { CompressionState } from '../../../context/compressionState';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
@@ -26,6 +26,7 @@ import { getSessionManager } from '../../../services';
 import { getIncompleteTasks } from '../../../services/planning/taskStore';
 import { getSessionSkillService } from '../../../services/skills/sessionSkillService';
 import { getSessionTodos } from '../../../agent/todoParser';
+import { getToolSearchService } from '../../../services/toolSearch';
 import type { CheckAndAutoCompressOptions, ContextAssemblyCtx } from './shared';
 import { cachedReaddirSync, logger } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
@@ -515,6 +516,10 @@ export async function checkAndAutoCompress(
             tokensBefore: currentTokens,
             messagesCount: ctx.runtime.messages.length,
           });
+          getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary(
+            DEFERRED_TOOL_LOADING.IDLE_ROUNDS_BEFORE_EVICTION,
+            ctx.runtime.sessionId,
+          );
           return;
         }
         logger.warn('[AgentLoop] Checkpoint rebuild boundary unavailable, falling back to summary compaction', {
@@ -633,6 +638,10 @@ export async function checkAndAutoCompress(
         emitCompacted: true,
         survivorReason: `Compaction block inserted after ${decision.trigger} compaction`,
       });
+      getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary(
+        DEFERRED_TOOL_LOADING.IDLE_ROUNDS_BEFORE_EVICTION,
+        ctx.runtime.sessionId,
+      );
       emitContextCompressionSignal(ctx, {
         kind: 'success',
         code: 'compaction-succeeded',

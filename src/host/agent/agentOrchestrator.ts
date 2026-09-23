@@ -24,6 +24,7 @@ import { getPermissionModeManager, rolePermissionPresetToMode } from '../permiss
 import type { PermissionAskResult, PermissionDeliveryOutcome } from '../../shared/contract/permission';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
+import { getToolSearchService } from '../services/toolSearch/toolSearchService';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
 import { analyzeTask } from './hybrid/taskRouter';
@@ -741,7 +742,8 @@ export class AgentOrchestrator {
       terminalError = error;
     } finally {
       if (sessionId) {
-        sessionStateManager.updateStatus(sessionId, 'idle');
+        // 本轮结束即放开工具占用，避免冻结的回合钟钉住别的会话。
+        sessionStateManager.updateStatus(sessionId, 'idle'); getToolSearchService().releaseSession(sessionId);
         // 云端同步直写 db.updateSession，绕过 SM 钩子；轮末把 sessions 真标题补进遥测。
         try {
           const session = await getSessionManager().getSession(sessionId);

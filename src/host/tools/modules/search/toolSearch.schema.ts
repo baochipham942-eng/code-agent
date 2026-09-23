@@ -16,7 +16,7 @@ export const TOOL_SEARCH_INPUT_SCHEMA = {
     },
     max_results: {
       type: 'number',
-      description: '最大返回结果数（默认 5，最大 10）',
+      description: '最大返回结果数（默认 3，最大 5）',
     },
   },
   required: ['query'],

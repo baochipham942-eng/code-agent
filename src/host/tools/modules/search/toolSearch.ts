@@ -28,9 +28,14 @@ import { toolSearchSchema as schema } from './toolSearch.schema';
 import { getCapabilityRecommender } from '../../../services/capability';
 import { renderGaps } from '../planning/recommendCapability';
 import { markDistilledSkillTurnSignal } from '../../../services/skills/distillSignalStore';
+import { estimateTokens } from '../../../context/tokenEstimator';
+import { DEFERRED_TOOL_LOADING } from '../../../../shared/constants/tools';
+import { readDeferredToolInjectionSchemas } from '../../dispatch/toolDefinitions';
+import { boundSingleInjection } from '../../../services/toolSearch/singleInjectionCeiling';
 
-const MAX_RESULTS_HARD_CAP = 10;
-const DEFAULT_MAX_RESULTS = 5;
+const MAX_RESULTS_HARD_CAP = DEFERRED_TOOL_LOADING.SEARCH_MAX_RESULTS_HARD_CAP;
+const DEFAULT_MAX_RESULTS = DEFERRED_TOOL_LOADING.SEARCH_DEFAULT_MAX_RESULTS;
+const SINGLE_INJECTION_TOKEN_CEILING = DEFERRED_TOOL_LOADING.SINGLE_INJECTION_TOKEN_CEILING;
 
 interface McpDiscoveryEntry {
   serverName: string;
@@ -67,6 +72,7 @@ export async function executeToolSearch(
 
   try {
     const service = getToolSearchService();
+    const alreadyLoaded = new Set(service.getLoadedDeferredTools());
     // scope 判据前置：discovery 会真的把 lazy stdio server 拉起来（起子进程），
     // 范围外的拉起来结果也会被丢掉，白起——收窄生效时只发现范围内的
     const scopedMcpServerIds = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
@@ -82,6 +88,7 @@ export async function executeToolSearch(
     const result = await service.searchTools(query, {
       maxResults,
       includeMCP: true,
+      sessionId: ctx.sessionId,
       ...(ctx.deniedToolNames?.length ? { deniedToolNames: ctx.deniedToolNames } : {}),
     });
 
@@ -130,7 +137,10 @@ export async function executeToolSearch(
         if (gaps.length === 0) return '';
         return `\n\n${renderGaps(query, gaps)}`;
       })();
-      const output = `未找到匹配 "${query}" 的工具。${discoveryHint}${capabilityHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`;
+      const output = fitTextToTokenCeiling(
+        `未找到匹配 "${query}" 的工具。${discoveryHint}${capabilityHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`,
+        SINGLE_INJECTION_TOKEN_CEILING,
+      );
       return {
         ok: true,
         output,
@@ -163,51 +173,13 @@ export async function executeToolSearch(
       };
     }
 
-    const lines: string[] = [
-      `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
-      '',
-    ];
-
-    for (const tool of result.tools) {
-      const sourceInfo = tool.source === 'mcp' && tool.mcpServer
-        ? ` [MCP: ${tool.mcpServer}]`
-        : '';
-      const tags = tool.tags.length > 0 ? ` (${tool.tags.join(', ')})` : '';
-      const availability = tool.loadable === false
-        ? `不可直接调用：${tool.notCallableReason || 'no direct tool definition is available'}`
-        : '已加载，可直接调用';
-      lines.push(`• **${tool.name}**${sourceInfo}`);
-      lines.push(`  ${tool.description}${tags}`);
-      lines.push(`  ${availability}`);
-      if (tool.canonicalInvocation) {
-        lines.push(`  调用入口：${tool.canonicalInvocation}`);
-      }
-      lines.push('');
-    }
-
-    if (result.hasMore) {
-      const remaining = result.totalCount - result.tools.length;
-      // scope 过滤后 totalCount 与列出数对齐（remaining 为 0），但服务说还有更多——
-      // 范围内也可能有，给个不带假计数的提示
-      lines.push(remaining > 0
-        ? `还有 ${remaining} 个匹配结果，使用更具体的关键词缩小范围。`
-        : '范围内可能还有更多匹配结果，使用更具体的关键词缩小范围。');
-    }
-
-    lines.push('');
-    if (result.loadedTools.length > 0) {
-      lines.push('已加载的工具现在可以直接使用；不可直接调用的结果只作为搜索线索。');
-    } else {
-      lines.push('没有新工具被加载；不可直接调用的结果只作为搜索线索。');
-    }
+    const output = enforceSingleInjectionCeiling(result, alreadyLoaded, query.trim().startsWith('select:'));
 
     ctx.logger.info('ToolSearch done', {
       query,
       loaded: result.loadedTools.length,
       total: result.totalCount,
     });
-
-    const output = lines.join('\n');
     return {
       ok: true,
       output,
@@ -247,6 +219,196 @@ export async function executeToolSearch(
       code: 'SEARCH_ERROR',
     };
   }
+}
+
+interface SearchHit {
+  name: string;
+  description: string;
+  source?: string;
+  mcpServer?: string;
+  loadable?: boolean;
+  notCallableReason?: string;
+  canonicalInvocation?: string;
+}
+
+interface SearchRenderResult {
+  tools: SearchHit[];
+  loadedTools: string[];
+  hasMore: boolean;
+  totalCount: number;
+}
+
+function renderToolSearchLines(result: SearchRenderResult, overCeiling: ReadonlySet<string>): string[] {
+  const lines: string[] = [
+    `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
+    '',
+  ];
+
+  for (const tool of result.tools) {
+    const sourceInfo = tool.source === 'mcp' && tool.mcpServer
+      ? ` [MCP: ${tool.mcpServer}]`
+      : '';
+    const availability = tool.loadable === false
+      ? `不可直接调用：${tool.notCallableReason || 'no direct tool definition is available'}`
+      : '已加载，可直接调用';
+    const isLoaded = result.loadedTools.includes(tool.name);
+    lines.push(`• **${tool.name}**${isLoaded ? sourceInfo : ''}`);
+    lines.push(`  ${tool.description}`);
+    if (tool.loadable === false) {
+      lines.push(`  ${availability}`);
+      if (tool.canonicalInvocation) {
+        lines.push(`  调用入口：${tool.canonicalInvocation}`);
+      }
+    } else if (isLoaded) {
+      lines.push(`  ${availability}`);
+      if (tool.canonicalInvocation) {
+        lines.push(`  调用入口：${tool.canonicalInvocation}`);
+      }
+    } else if (overCeiling.has(tool.name)) {
+      lines.push(`  完整 schema 超过单次注入上限，未自动注入。使用 select:${tool.name} 加载完整定义。`);
+    } else {
+      lines.push(`  未加载完整定义；使用 select:${tool.name} 加载。`);
+    }
+    lines.push('');
+  }
+
+  if (result.hasMore) {
+    const remaining = result.totalCount - result.tools.length;
+    lines.push(remaining > 0
+      ? `还有 ${remaining} 个匹配结果，使用更具体的关键词缩小范围。`
+      : '范围内可能还有更多匹配结果，使用更具体的关键词缩小范围。');
+  }
+
+  lines.push('');
+  const notAutoLoaded = result.tools.filter(
+    (tool) => tool.loadable !== false && !result.loadedTools.includes(tool.name) && !overCeiling.has(tool.name),
+  );
+  const overCeilingHits = result.tools.filter((tool) => overCeiling.has(tool.name));
+  if (result.loadedTools.length > 0) {
+    lines.push('已加载的工具现在可以直接使用。');
+  } else if (notAutoLoaded.length === 0 && overCeilingHits.length === 0) {
+    lines.push('没有新工具被加载；不可直接调用的结果只作为搜索线索。');
+  }
+  if (overCeilingHits.length > 0) {
+    lines.push(`未自动注入完整 schema（超过单次注入上限）。使用 select:工具名 加载：${overCeilingHits.map((tool) => `select:${tool.name}`).join(', ')}。`);
+  }
+  if (notAutoLoaded.length > 0) {
+    lines.push('其余匹配只返回名称和短描述，未注入完整 schema；需要时使用 select:工具名。');
+  }
+  return lines;
+}
+
+function namesOnlyText(result: SearchRenderResult): string {
+  return [
+    `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
+    '',
+    ...result.tools.flatMap((tool) => [`• **${tool.name}**`, '']),
+    '搜索结果已按单次注入预算裁剪；使用 select:工具名加载工具。',
+  ].join('\n');
+}
+
+function schemasKeptWhole(
+  kept: readonly { name: string; description: string; input_schema: Record<string, unknown> }[],
+  originals: readonly { name: string; description: string; input_schema: Record<string, unknown> }[],
+): boolean {
+  if (kept.length !== originals.length) return false;
+  return originals.every((original) => {
+    const match = kept.find((schema) => schema.name === original.name);
+    return match?.description === original.description
+      && JSON.stringify(match.input_schema) === JSON.stringify(original.input_schema);
+  });
+}
+
+function enforceSingleInjectionCeiling(
+  result: SearchRenderResult,
+  alreadyLoaded: ReadonlySet<string>,
+  explicitSelect: boolean,
+): string {
+  const overCeiling = new Set<string>();
+  const freshLoaded = result.loadedTools.filter((name) => !alreadyLoaded.has(name));
+  const draft = fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result);
+  // select: asked for this one schema. Send it whole. The result text stays inside the ceiling.
+  if (explicitSelect || freshLoaded.length === 0) {
+    return fitTextToTokenCeiling(draft, SINGLE_INJECTION_TOKEN_CEILING);
+  }
+  const measurable = readDeferredToolInjectionSchemas(freshLoaded);
+  const bounded = boundSingleInjection({
+    text: draft,
+    namesText: namesOnlyText(result),
+    schemas: measurable,
+  });
+  if (schemasKeptWhole(bounded.schemas, measurable)) return bounded.text;
+
+  for (const schema of measurable) overCeiling.add(schema.name);
+  getToolSearchService().applyInjectionFit([], [...overCeiling], measurable);
+  result.loadedTools = result.loadedTools.filter((name) => !overCeiling.has(name));
+  return fitTextToTokenCeiling(
+    fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result),
+    SINGLE_INJECTION_TOKEN_CEILING,
+  );
+}
+
+function fitTextToTokenCeiling(text: string, ceiling: number): string {
+  if (estimateTokens(text) <= ceiling) return text;
+  let low = 0;
+  let high = text.length;
+  let best = '';
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = text.slice(0, middle);
+    if (estimateTokens(candidate) <= ceiling) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best;
+}
+
+function fitToolSearchOutput(
+  lines: string[],
+  result: { tools: Array<{ name: string; description: string }>; loadedTools: string[]; hasMore: boolean; totalCount: number },
+): string {
+  const full = lines.join('\n');
+  if (estimateTokens(full) <= SINGLE_INJECTION_TOKEN_CEILING) return full;
+
+  const compactLines = [
+    `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
+    '',
+    ...result.tools.flatMap((tool) => [
+      `• **${tool.name}**`,
+      `  ${tool.description.slice(0, 120)}`,
+      '',
+    ]),
+    ...(result.hasMore ? ['使用更具体的关键词缩小范围。', ''] : []),
+    '搜索结果已按单次注入预算裁剪；需要完整工具定义时使用 select:工具名。',
+  ];
+  if (estimateTokens(compactLines.join('\n')) <= SINGLE_INJECTION_TOKEN_CEILING) {
+    return compactLines.join('\n');
+  }
+
+  const namesOnly = [
+    `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
+    '',
+    ...result.tools.flatMap((tool) => [`• **${tool.name}**`, '']),
+    '搜索结果已按单次注入预算裁剪；使用 select:工具名加载工具。',
+  ].join('\n');
+  if (estimateTokens(namesOnly) <= SINGLE_INJECTION_TOKEN_CEILING) return namesOnly;
+  let low = 0;
+  let high = namesOnly.length;
+  let best = '';
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = namesOnly.slice(0, middle);
+    if (estimateTokens(candidate) <= SINGLE_INJECTION_TOKEN_CEILING) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best;
 }
 
 class ToolSearchHandler implements ToolHandler<Record<string, unknown>, string> {

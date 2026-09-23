@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { DEFERRED_TOOL_LOADING } from '../../../src/shared/constants/tools';
 import { ToolSearchService } from '../../../src/host/services/toolSearch/toolSearchService';
 import { DEFERRED_TOOLS_META } from '../../../src/host/services/toolSearch/deferredTools';
 import { getProtocolRegistry, isProtocolToolName, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
@@ -28,7 +29,7 @@ vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => mcpClientMocks,
 }));
 
-function registerProtocolToolForSearch(name: 'Browser' | 'Computer' | 'validate_html_in_app'): void {
+function registerProtocolToolForSearch(name: string): void {
   const schema: ToolSchema = {
     name,
     description: `${name} test schema`,
@@ -343,13 +344,23 @@ describe('ToolSearchService loadable results', () => {
     expect(screenshotResult.tools[0]?.canonicalInvocation).toBe('Computer');
   });
 
-  it('ranks Computer first for generic screenshot searches', async () => {
+  it('ranks Computer first but does not unlock a tied result', async () => {
     const service = new ToolSearchService();
 
     const result = await service.searchTools('screenshot', { maxResults: 3, includeMCP: false });
 
     expect(result.tools[0]?.name).toBe('Computer');
-    expect(result.loadedTools).toContain('Computer');
+    expect(result.loadedTools).not.toContain('Computer');
+  });
+
+  it('does not treat maxResults truncation as a unique match for auto-loading', async () => {
+    const service = new ToolSearchService();
+
+    const result = await service.searchTools('screenshot', { maxResults: 1, includeMCP: false });
+
+    expect(result.tools).toHaveLength(1);
+    expect(result.loadedTools).toEqual([]);
+    expect(service.isToolLoaded('Computer')).toBe(false);
   });
 
   it('explains desktop context metadata as workbench context instead of callable tools', () => {
@@ -450,6 +461,95 @@ describe('ToolSearchService loadable results', () => {
 
       expect(second).toEqual([]);
       expect(service.getLoadedDeferredTools().filter((n) => n === 'Task')).toHaveLength(1);
+    });
+  });
+
+  it('caps a broad search at 5 and unlocks only a clearly leading match', async () => {
+    const service = new ToolSearchService();
+
+    const broad = await service.searchTools('file', { maxResults: 100, includeMCP: false });
+    expect(broad.totalCount).toBeGreaterThan(5);
+    expect(broad.tools).toHaveLength(5);
+    expect(broad.loadedTools.length).toBeLessThanOrEqual(1);
+
+    const browser = await service.searchTools('browser', { maxResults: 5, includeMCP: false });
+    expect(browser.tools.length).toBeGreaterThan(1);
+    expect(browser.loadedTools).toEqual(['Browser']);
+    expect(browser.tools.filter((tool) => tool.name !== 'Browser').every((tool) => tool.description.length > 0)).toBe(true);
+  });
+
+  describe('compaction-boundary eviction', () => {
+    it('keeps adjacent ordinary rounds stable, then evicts idle tools at compaction and rediscovers them', async () => {
+      registerProtocolToolForSearch('Task');
+      const service = new ToolSearchService();
+      expect(service.selectTool('Task').loadedTools).toEqual(['Task']);
+
+      service.beginRound();
+      service.markToolCalled('Task');
+      const afterUse = service.getLoadedDeferredTools();
+
+      service.beginRound();
+      const afterIdleRoundOne = service.getLoadedDeferredTools();
+      service.beginRound();
+      const afterIdleRoundTwo = service.getLoadedDeferredTools();
+      expect(afterIdleRoundOne).toEqual(afterUse);
+      expect(afterIdleRoundTwo).toEqual(afterUse);
+
+      service.beginRound();
+      expect(service.evictIdleDeferredToolsAtCompactionBoundary()).toEqual(['Task']);
+      expect(service.getLoadedDeferredTools()).not.toContain('Task');
+
+      const rediscovered = await service.searchTools('Task', { includeMCP: false, maxResults: 3 });
+      expect(rediscovered.tools.map((tool) => tool.name)).toContain('Task');
+      expect(service.selectTool('Task').loadedTools).toContain('Task');
+    });
+
+    it('evicts a tool selected with no session id once a real session reaches the idle window', () => {
+      registerProtocolToolForSearch('Task');
+      const service = new ToolSearchService();
+      expect(service.selectTool('Task').loadedTools).toEqual(['Task']);
+
+      for (let round = 0; round < DEFERRED_TOOL_LOADING.IDLE_ROUNDS_BEFORE_EVICTION; round += 1) {
+        service.beginRound('session-a');
+      }
+
+      expect(service.evictIdleDeferredToolsAtCompactionBoundary(
+        DEFERRED_TOOL_LOADING.IDLE_ROUNDS_BEFORE_EVICTION,
+        'session-a',
+      )).toEqual(['Task']);
+      expect(service.getLoadedDeferredTools()).not.toContain('Task');
+    });
+
+    it('does not let an ended session keep another session from evicting a tool', () => {
+      registerProtocolToolForSearch('Task');
+      const service = new ToolSearchService();
+      expect(service.selectTool('Task', 'session-ended').loadedTools).toEqual(['Task']);
+      service.beginRound('session-ended');
+      service.markToolCalled('Task', 'session-ended');
+      for (let round = 0; round < 4; round += 1) service.beginRound('session-live');
+
+      expect(service.evictIdleDeferredToolsAtCompactionBoundary(3, 'session-live')).toEqual([]);
+      expect(service.getLoadedDeferredTools()).toContain('Task');
+
+      service.releaseSession('session-ended');
+      expect(service.evictIdleDeferredToolsAtCompactionBoundary(3, 'session-live')).toEqual(['Task']);
+      expect(service.getLoadedDeferredTools()).not.toContain('Task');
+    });
+
+    it('does not let one session compaction evict a tool another session just used', () => {
+      registerProtocolToolForSearch('Task');
+      registerProtocolToolForSearch('MemoryWrite');
+      const service = new ToolSearchService();
+      expect(service.selectTool('Task', 'session-a').loadedTools).toEqual(['Task']);
+      expect(service.selectTool('MemoryWrite', 'session-b').loadedTools).toContain('MemoryWrite');
+
+      service.beginRound('session-a');
+      service.markToolCalled('Task', 'session-a');
+      for (let round = 0; round < 4; round += 1) service.beginRound('session-b');
+
+      expect(service.evictIdleDeferredToolsAtCompactionBoundary(3, 'session-b')).toEqual(['MemoryWrite']);
+      expect(service.getLoadedDeferredTools()).toContain('Task');
+      expect(service.getLoadedDeferredTools()).not.toContain('MemoryWrite');
     });
   });
 });

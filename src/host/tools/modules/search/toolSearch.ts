@@ -72,7 +72,7 @@ export async function executeToolSearch(
     const scopedMcpServerIds = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
     let mcpDiscovery: McpDiscoveryEntry[] = [];
     try {
-      mcpDiscovery = await getMCPClient().discoverLazyServersForSearch(query, scopedMcpServerIds);
+      mcpDiscovery = await getMCPClient().discoverLazyServersForSearch(query, scopedMcpServerIds, ctx.abortSignal);
     } catch (discoveryError) {
       ctx.logger.warn('Lazy MCP discovery during tool search failed', {
         error: discoveryError instanceof Error ? discoveryError.message : String(discoveryError),

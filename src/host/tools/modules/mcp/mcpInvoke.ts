@@ -162,8 +162,18 @@ export async function executeMcpInvoke(
   // turn scope 收窄后「首次调用会自动连接」那句承诺在唯一可走的调用路径上落空。
   // 连不上（没装 / 被关 / 连接失败）才回 NOT_INITIALIZED（行为保真：拼出 connectedServers 列表）
   if (!mcpClient.isConnected(server)) {
-    const connected = await mcpClient.ensureConnected(server).catch(() => false);
+    const connected = await mcpClient.ensureConnected(server, ctx.abortSignal).catch(() => false);
     if (!connected) {
+      // 取消优先于「未连接」：等待被 abort 打断时对齐 :147 的 ABORTED 形状，
+      // 未取消的连接失败（没装 / 被关 / 连不上）仍回 NOT_INITIALIZED
+      if (ctx.abortSignal.aborted) {
+        return {
+          ok: false,
+          error: 'aborted',
+          code: 'ABORTED',
+          meta: buildMcpInvokeMeta({ server, tool, errorCode: 'ABORTED' }),
+        };
+      }
       const status = mcpClient.getStatus();
       return {
         ok: false,

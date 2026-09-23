@@ -157,6 +157,32 @@ describe('toolSearchModule (native)', () => {
       // logger.warn 被调到
       expect((ctx.logger.warn as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
     });
+
+    // N-MCP-LAZYCONNECT-SIGNAL ③：ctx.abortSignal 端到端传进懒发现——
+    // 等待被 abort 打断时 search 立即往下走，不阻塞到连接超时
+    it('passes ctx.abortSignal into lazy discovery so the wait is abortable', async () => {
+      const ctrl = new AbortController();
+      discoverLazyServersForSearchMock.mockImplementation(
+        (_query: string, _allowlist: string[] | undefined, signal?: AbortSignal) =>
+          new Promise((resolve) => {
+            signal?.addEventListener('abort', () => resolve([]), { once: true });
+          }),
+      );
+      searchToolsMock.mockResolvedValue({
+        tools: [],
+        loadedTools: [],
+        totalCount: 0,
+        hasMore: false,
+      });
+
+      const pending = run({ query: 'pdf' }, makeCtx({ abortSignal: ctrl.signal }));
+      setTimeout(() => ctrl.abort(), 20);
+
+      const startedAt = Date.now();
+      const result = await pending;
+      expect(Date.now() - startedAt).toBeLessThan(200); // 发现等待被打断，立即继续
+      expect(result.ok).toBe(true);
+    });
   });
 
   describe('result formatting', () => {
@@ -299,11 +325,11 @@ describe('toolSearchModule (native)', () => {
       searchToolsMock.mockResolvedValue({ tools: [], loadedTools: [], totalCount: 0, hasMore: false });
       const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
       await run({ query: 'feishu' }, scopedCtx);
-      expect(discoverLazyServersForSearchMock).toHaveBeenCalledWith('feishu', ['lark']);
+      expect(discoverLazyServersForSearchMock).toHaveBeenCalledWith('feishu', ['lark'], expect.any(AbortSignal));
 
       discoverLazyServersForSearchMock.mockClear();
       await run({ query: 'feishu' });
-      expect(discoverLazyServersForSearchMock).toHaveBeenCalledWith('feishu', undefined);
+      expect(discoverLazyServersForSearchMock).toHaveBeenCalledWith('feishu', undefined, expect.any(AbortSignal));
     });
 
     // 与 loadedTools 同一份完整 scope 门：连接器侧被收窄的工具也不能只滤一半（ai-review 第十五轮 Nit）

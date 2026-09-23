@@ -622,7 +622,7 @@ describe('MCPClient lazy search discovery', () => {
     const discovery = await client.discoverLazyServersForSearch('sequential');
     const search = await getToolSearchService().searchTools('think', { maxResults: 3 });
 
-    expect(ensureConnected).toHaveBeenCalledWith('sequential-thinking');
+    expect(ensureConnected).toHaveBeenCalledWith('sequential-thinking', undefined);
     expect(discovery).toEqual([{
       serverName: 'sequential-thinking',
       connected: true,
@@ -672,7 +672,7 @@ describe('MCPClient lazy search discovery', () => {
 
     const discovery = await client.discoverLazyServersForSearch('sequential');
 
-    expect(ensureConnected).toHaveBeenCalledWith('sequential-thinking');
+    expect(ensureConnected).toHaveBeenCalledWith('sequential-thinking', undefined);
     expect(discovery).toEqual([{
       serverName: 'sequential-thinking',
       connected: false,
@@ -708,7 +708,7 @@ describe('MCPClient lazy search discovery', () => {
 
     const discovery = await client.discoverLazyServersForSearch('sequential');
 
-    expect(ensureConnected).toHaveBeenCalledWith('sequential-thinking');
+    expect(ensureConnected).toHaveBeenCalledWith('sequential-thinking', undefined);
     expect(discovery).toEqual([{
       serverName: 'sequential-thinking',
       connected: true,
@@ -739,7 +739,7 @@ describe('MCPClient lazy search discovery', () => {
 
     const discovery = await client.discoverLazyServersForSearch('Computer Use desktop control');
 
-    expect(ensureConnected).toHaveBeenCalledWith('cua-driver');
+    expect(ensureConnected).toHaveBeenCalledWith('cua-driver', undefined);
     expect(discovery).toEqual([{
       serverName: 'cua-driver',
       connected: true,

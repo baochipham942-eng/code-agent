@@ -1,0 +1,28 @@
+{
+  "type": "tool_use",
+  "content": "Reading the snapshot fixture for the first time.",
+  "finishReason": "tool_calls",
+  "actualProvider": "acceptance",
+  "actualModel": "e2e-local-agent-model",
+  "toolCalls": [
+    {
+      "id": "e2e-snapshot-replay-read-dedupe-1",
+      "name": "Read",
+      "arguments": {
+        "file_path": "<RECORD_DATA_DIR>/workspace/read-duplicate/snapshot-read-target.txt",
+        "offset": 1,
+        "limit": 20
+      }
+    }
+  ],
+  "contentParts": [
+    {
+      "type": "tool_call",
+      "toolCallId": "e2e-snapshot-replay-read-dedupe-1"
+    }
+  ],
+  "usage": {
+    "inputTokens": 150,
+    "outputTokens": 22
+  }
+}

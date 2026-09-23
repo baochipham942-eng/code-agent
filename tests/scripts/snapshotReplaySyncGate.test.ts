@@ -9,6 +9,7 @@ const roots: string[] = [];
 const snapshotDir = 'packages/internal/evaluation-center/snapshots/request-replay';
 const caseIndex = `${snapshotDir}/single-turn-qa/index.json`;
 const sensitiveFile = 'src/host/prompts/builder.ts';
+const readProjectionFile = 'src/host/context/readResultProjection.ts';
 
 function write(root: string, relativePath: string, content: string): void {
   const absolutePath = join(root, relativePath);
@@ -27,6 +28,7 @@ function makeFixture(): string {
   git(root, 'config', 'user.name', 'Snapshot Sync Gate Test');
   git(root, 'config', 'user.email', 'snapshot-sync-gate@example.test');
   write(root, sensitiveFile, 'export const SYSTEM_PROMPT = "v1";\n');
+  write(root, readProjectionFile, 'export const READ_RECEIPT_PREFIX = "[Read already shown";\n');
   write(root, caseIndex, '{"version":1,"caseId":"single-turn-qa","turns":["turn-01"]}\n');
   write(root, 'README.md', '# fixture\n');
   git(root, 'add', '.');
@@ -66,6 +68,18 @@ describe('snapshot-replay sync gate', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('改了模型可见行为面但没同 PR 重录 request-replay 快照');
     expect(result.stderr).toContain(sensitiveFile);
+  });
+
+  it('改 Read 去重投影（src/host/context/readResultProjection.ts）不同步快照时必须红', () => {
+    // N-SNAPSHOT-CORPUS-READDEDUPE：该文件不在 contextAssembly/ 前缀下，曾实测
+    // 漏网——去重分支被变异时回放层不红，只能靠本门强制同 PR 重录语料。
+    const root = makeFixture();
+    write(root, readProjectionFile, 'export const READ_RECEIPT_PREFIX = "[Read duped";\n');
+
+    const result = runGate(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('改了模型可见行为面但没同 PR 重录 request-replay 快照');
+    expect(result.stderr).toContain(readProjectionFile);
   });
 
   it('改敏感面文件且快照目录同改时为绿', () => {

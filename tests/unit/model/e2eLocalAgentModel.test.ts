@@ -588,4 +588,52 @@ describe('e2eLocalAgentModel', () => {
     expect(final.type).toBe('text');
     expect(final.content).toContain('read-then-write completed');
   });
+
+  it('reads the same fixture range twice for the snapshot read-dedupe case', () => {
+    const env = { CODE_AGENT_E2E_AGENT_MODEL_READ_FILE: '/tmp/e2e-fixture.txt' };
+    const first = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_SNAPSHOT_REPLAY_READ_DEDUPE 连读两遍' }],
+      [readTool],
+      config,
+      undefined,
+      env,
+    );
+    expect(first.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-snapshot-replay-read-dedupe-1',
+      name: 'Read',
+      arguments: { file_path: '/tmp/e2e-fixture.txt', offset: 1, limit: 20 },
+    });
+
+    const second = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_SNAPSHOT_REPLAY_READ_DEDUPE 连读两遍' },
+        { role: 'tool', toolCallId: 'e2e-snapshot-replay-read-dedupe-1', content: 'fixture full text' },
+      ],
+      [readTool],
+      config,
+      undefined,
+      env,
+    );
+    // 第二次调用与第一次同文件同区间（去重靠 path#range，不靠 call id）
+    expect(second.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-snapshot-replay-read-dedupe-2',
+      name: 'Read',
+      arguments: { file_path: '/tmp/e2e-fixture.txt', offset: 1, limit: 20 },
+    });
+
+    const final = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_SNAPSHOT_REPLAY_READ_DEDUPE 连读两遍' },
+        { role: 'tool', toolCallId: 'e2e-snapshot-replay-read-dedupe-1', content: 'fixture full text' },
+        // 第二次结果在投影后只剩回执——收尾路由必须按 toolCallId 认它
+        { role: 'tool', toolCallId: 'e2e-snapshot-replay-read-dedupe-2', content: '[Read already shown: /tmp/e2e-fixture.txt#L1-L20; digest=abc. The full content is in the earlier Read result.]' },
+      ],
+      [readTool],
+      config,
+      undefined,
+      env,
+    );
+    expect(final.type).toBe('text');
+    expect(final.content).toBe('E2E snapshot replay read-dedupe completed.');
+  });
 });

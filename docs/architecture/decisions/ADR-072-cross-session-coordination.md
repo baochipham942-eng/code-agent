@@ -193,7 +193,7 @@ flowchart TB
 
 | 池 | 常量 | 谁在用 | 为什么委托不进 |
 |----|------|--------|----------------|
-| 会话内任务槽 | `SESSION_TASK_CONCURRENCY.global = 4`、`perSession = 2`（`src/shared/constants/voice.ts:9-12`，注释写明是 ADR-054 后台任务并发） | `SessionCommandCenter` 取 `getSessionTaskConcurrencyPool`（`sessionCommandCenter.ts:357`） | 那是 `delegate_task` 的池 |
+| 会话内任务槽 | `SESSION_TASK_CONCURRENCY.global = 4`、`perSession = 2`（`src/shared/constants/voice.ts:9-12`，注释写明是 ADR-054 后台任务并发） | `SessionCommandCenter` 取 `getSessionTaskConcurrencyPool`（`sessionCommandCenter.ts:357`）。语音侧 `voiceTaskSlotLedger.ts:4` 是同一个函数的别名，共用这一池 | 那是 `delegate_task` 的池，不是跨会话委托的池 |
 | 子代理树 | `SPAWN_GUARD.MAX_TREE_AGENTS = 8`（`src/shared/constants/agent.ts:43`，读取点 `spawnGuard.ts:180`） | `getSpawnGuard`，`spawn_agent` 进这棵树 | `delegate_session` 不调用 `getSpawnGuard` |
 | 已连接客户端的 SSE | `WEB_SSE.MAX_CONCURRENT_PER_TOKEN = 8`（`src/shared/constants/webServer.ts:4`） | `agentRunSseLimiter.tryAcquire`（`agent.ts:501`），只在 `connectedClient` 为真时 | drain 投递 `connectedClient: false`，不 acquire |
 

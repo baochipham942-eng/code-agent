@@ -24,3 +24,7 @@ export const ASK_USER_QUESTION_DECLINED_OUTPUT =
 
 /** AskUserQuestion 无头回退的开头标记。文案已进夜跑库 result_summary，一字不改。 */
 export const ASK_USER_QUESTION_UNANSWERED_PREFIX = '[用户未响应 - CLI 模式无法交互]';
+
+/** AskUserQuestion 同轮重复问句回放的工具结果后缀（对模型可见）。 */
+export const ASK_USER_QUESTION_REPLAY_SUFFIX =
+  '\n\n[回放] 你这轮已答过这组问题：问句与选项归一化后与本轮上次提问完全相同，以上为上次答案的直接回放，没有再次询问用户。请基于该答案继续，不要重复提问。';

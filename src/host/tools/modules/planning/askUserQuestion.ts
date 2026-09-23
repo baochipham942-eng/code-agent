@@ -32,6 +32,10 @@ import {
   ASK_USER_QUESTION_UNANSWERED_PREFIX,
 } from '../../../../shared/contract/askUserQuestion';
 import { promptUserInChat } from '../../utils/userQuestionPrompt';
+import {
+  lookupAskUserQuestionReplay,
+  recordAskUserQuestionAnswer,
+} from './askUserQuestionReplay';
 import { askUserQuestionSchema as schema } from './askUserQuestion.schema';
 import {
   deniedDecisionMetadata,
@@ -89,6 +93,14 @@ export async function executeAskUserQuestion(
         code: 'INVALID_ARGS',
       };
     }
+  }
+
+  // 同轮字面重复问句：直接回放上次答案，不产生审批与提问事件（N-ASKUSER-REPEAT-REPLAY）。
+  const replayedOutput = lookupAskUserQuestionReplay(ctx, questions);
+  if (replayedOutput !== undefined) {
+    onProgress?.({ stage: 'completing', percent: 100 });
+    ctx.logger.debug('AskUserQuestion replayed same-turn answer', { sessionId: ctx.sessionId });
+    return { ok: true, output: replayedOutput };
   }
 
   const permit = await canUseTool(schema.name, args);
@@ -160,9 +172,11 @@ export async function executeAskUserQuestion(
   onProgress?.({ stage: 'completing', percent: 100 });
   ctx.logger.debug('AskUserQuestion done', { requestId: response.requestId });
 
+  const output = `User responses:\n${answerLines.join('\n')}`;
+  recordAskUserQuestionAnswer(ctx, questions, output);
   return {
     ok: true,
-    output: `User responses:\n${answerLines.join('\n')}`,
+    output,
   };
 }
 

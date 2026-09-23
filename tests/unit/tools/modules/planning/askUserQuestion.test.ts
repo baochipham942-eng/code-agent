@@ -47,6 +47,11 @@ vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
 }));
 
 import { askUserQuestionModule } from '../../../../../src/host/tools/modules/planning/askUserQuestion';
+import {
+  buildAskUserQuestionReplayKey,
+  clearAskUserQuestionReplayForSession,
+} from '../../../../../src/host/tools/modules/planning/askUserQuestionReplay';
+import type { UserQuestion } from '../../../../../src/shared/contract';
 import { INTERACTION_TIMEOUTS } from '../../../../../src/shared/constants';
 import {
   beginVoiceQuestionSession,
@@ -542,5 +547,232 @@ describe('AskUserQuestion renderer response', () => {
     const result = await promise;
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.output).toBe('User responses:\n[确认]: 继续');
+  });
+});
+
+// ============================================================================
+// 同轮重复问句回放（N-ASKUSER-REPEAT-REPLAY）
+// ① 同轮同问第二次：无 send（提问事件）、无 canUseTool（审批），输出=上次答案+回放标记
+// ② 选项顺序/空白/标点/大小写/全半角差异 → 同问；选项集合不同（含新增选项）→ 照弹
+// ③ 跨轮/跨会话不回放；clearAskUserQuestionReplayForSession（run 结束清空）后照弹
+// ============================================================================
+describe('AskUserQuestion 同轮重复问句回放', () => {
+  const replayQuestions: UserQuestion[] = [
+    {
+      question: '要继续吗？',
+      header: '确认',
+      options: [
+        { label: '继续', description: '继续当前操作' },
+        { label: '停止', description: '停下等待' },
+      ],
+    },
+  ];
+
+  beforeEach(() => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+  });
+
+  async function executeAndAnswer(
+    ctx: ToolContext,
+    questions: UserQuestion[],
+    callIndex: number,
+    canUseTool: CanUseToolFn = allowAll,
+  ) {
+    const handler = await askUserQuestionModule.createHandler();
+    const promise = handler.execute({ questions }, ctx, canUseTool);
+    await vi.waitFor(() => expect(sendMock.mock.calls.length).toBeGreaterThan(callIndex));
+    const request = sendMock.mock.calls[callIndex][1];
+    await responseHandlerRef.fn?.({}, { requestId: request.id, answers: { 确认: '继续' } });
+    return promise;
+  }
+
+  it('同轮同问第二次不产生提问事件与审批，工具结果=上次答案+回放标记', async () => {
+    const ctx = makeCtx({ turnId: 'turn-replay-1' });
+    const canUseTool = vi.fn(allowAll);
+
+    const first = await executeAndAnswer(ctx, replayQuestions, 0, canUseTool);
+    expect(first).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(canUseTool).toHaveBeenCalledTimes(1);
+
+    const handler = await askUserQuestionModule.createHandler();
+    const second = await handler.execute({ questions: replayQuestions }, ctx, canUseTool);
+    expect(second.ok).toBe(true);
+    if (second.ok) {
+      expect(second.output).toContain('User responses:\n[确认]: 继续');
+      expect(second.output).toContain('你这轮已答过');
+    }
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(canUseTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('问句只差选项顺序/空白/标点视为同问，直接回放', async () => {
+    const ctx = makeCtx({ turnId: 'turn-replay-2' });
+    await executeAndAnswer(ctx, replayQuestions, 0);
+
+    const reordered: UserQuestion[] = [
+      {
+        question: ' 要继续吗?',
+        header: '确认 ',
+        options: [
+          { label: '停止 ', description: '停下等待' },
+          { label: '继续', description: ' 继续当前操作' },
+        ],
+      },
+    ];
+    const handler = await askUserQuestionModule.createHandler();
+    const second = await handler.execute({ questions: reordered }, ctx, allowAll);
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.output).toContain('你这轮已答过');
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('选项集合不同（新增选项）视为语义不同，照弹', async () => {
+    const ctx = makeCtx({ turnId: 'turn-replay-3' });
+    await executeAndAnswer(ctx, replayQuestions, 0);
+
+    const withNewOption: UserQuestion[] = [
+      {
+        ...replayQuestions[0],
+        options: [
+          ...replayQuestions[0].options,
+          { label: '稍后', description: '待会再定' },
+        ],
+      },
+    ];
+    const second = await executeAndAnswer(ctx, withNewOption, 1);
+    expect(second).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('跨轮不回放', async () => {
+    await executeAndAnswer(makeCtx({ turnId: 'turn-replay-4a' }), replayQuestions, 0);
+
+    const nextTurnCtx = makeCtx({ turnId: 'turn-replay-4b' });
+    const second = await executeAndAnswer(nextTurnCtx, replayQuestions, 1);
+    expect(second).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('跨会话不回放', async () => {
+    await executeAndAnswer(makeCtx({ turnId: 'turn-replay-5' }), replayQuestions, 0);
+
+    const otherSessionCtx = makeCtx({ sessionId: 'sess-2', turnId: 'turn-replay-5' });
+    const second = await executeAndAnswer(otherSessionCtx, replayQuestions, 1);
+    expect(second).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('run 结束清空缓存后同问照弹', async () => {
+    const ctx = makeCtx({ turnId: 'turn-replay-6' });
+    await executeAndAnswer(ctx, replayQuestions, 0);
+
+    clearAskUserQuestionReplayForSession('sess-1');
+
+    const second = await executeAndAnswer(ctx, replayQuestions, 1);
+    expect(second).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('无 turnId/runId 的 ctx 不缓存也不回放（保守照弹）', async () => {
+    const ctx = makeCtx();
+    await executeAndAnswer(ctx, replayQuestions, 0);
+
+    const handler = await askUserQuestionModule.createHandler();
+    const promise = handler.execute({ questions: replayQuestions }, ctx, allowAll);
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(2));
+    const request = sendMock.mock.calls[1][1];
+    await responseHandlerRef.fn?.({}, { requestId: request.id, answers: { 确认: '继续' } });
+    const second = await promise;
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.output).not.toContain('你这轮已答过');
+  });
+});
+
+describe('buildAskUserQuestionReplayKey 归一化', () => {
+  it('大小写/全半角/标点/空白/选项顺序不影响 key', () => {
+    const a = buildAskUserQuestionReplayKey([
+      {
+        question: 'Deploy NOW？',
+        header: 'H',
+        options: [
+          { label: 'Ａ', description: 'x' },
+          { label: 'b', description: 'y' },
+        ],
+      },
+    ]);
+    const b = buildAskUserQuestionReplayKey([
+      {
+        question: 'deploy now?',
+        header: 'h ',
+        options: [
+          { label: 'B', description: 'y' },
+          { label: 'a', description: 'x' },
+        ],
+      },
+    ]);
+    expect(a).toBe(b);
+  });
+
+  it('选项集合不同（含新增选项）key 不同', () => {
+    const base = buildAskUserQuestionReplayKey([
+      {
+        question: 'q',
+        header: 'h',
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'b', description: 'y' },
+        ],
+      },
+    ]);
+    const added = buildAskUserQuestionReplayKey([
+      {
+        question: 'q',
+        header: 'h',
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'b', description: 'y' },
+          { label: 'c', description: 'z' },
+        ],
+      },
+    ]);
+    const changed = buildAskUserQuestionReplayKey([
+      {
+        question: 'q',
+        header: 'h',
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'c', description: 'y' },
+        ],
+      },
+    ]);
+    expect(base).not.toBe(added);
+    expect(base).not.toBe(changed);
+  });
+
+  it('multiSelect 不同 key 不同（语义差异照弹）', () => {
+    const single = buildAskUserQuestionReplayKey([
+      {
+        question: 'q',
+        header: 'h',
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'b', description: 'y' },
+        ],
+      },
+    ]);
+    const multi = buildAskUserQuestionReplayKey([
+      {
+        question: 'q',
+        header: 'h',
+        multiSelect: true,
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'b', description: 'y' },
+        ],
+      },
+    ]);
+    expect(single).not.toBe(multi);
   });
 });

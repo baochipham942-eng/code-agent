@@ -86,6 +86,7 @@ import { emitGoalAbort } from './goalAbort';
 import { releaseDoomLoopHandbackForSteer, settleDoomLoopHandback } from './doomLoopHandback';
 import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
 import { recordInferenceTrace } from './inferenceCacheTrace';
+import { getCachedDynamicSystemPrompt } from './contextAssembly/messageBuild';
 
 
 const logger = createLogger('AgentLoop');
@@ -534,7 +535,7 @@ export class ConversationRuntime {
         let response = await this.contextAssembly.inference();
         if (this.ctx.cachePromptSample) {
           this.ctx.cachePromptSample.current = {
-            prompt: this.ctx.systemPrompt,
+            prompt: getCachedDynamicSystemPrompt(this.ctx) ?? this.ctx.systemPrompt,
             modelId: response.actualModel ?? response.fallback?.to.model ?? this.ctx.modelConfig.model,
           };
         }

@@ -25,7 +25,6 @@ import { extractToolCallMeta } from '../providers/toolCallMeta';
 import type {
   LanguageModel,
   ModelMessage as AiModelMessage,
-  SystemModelMessage as AiSystemModelMessage,
   ToolSet,
   TextStreamPart,
   ToolChoice,
@@ -85,6 +84,7 @@ import {
   withRequestTimeout,
 } from './inferenceRetryNotify';
 import { buildVendorCompatSettings, resolveAiSdkProviderOptions } from './aiSdkVendorCompat';
+import { buildAiSdkPrompt, type AiSdkPromptShape } from './aiSdkPromptBuilder';
 export { buildVendorCompatSettings } from './aiSdkVendorCompat';
 import {
   assertNativeRequestCapabilities,
@@ -439,34 +439,6 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
   return out;
 }
 
-interface AiSdkPromptShape {
-  // v7 把顶层 `system` 改名为 `instructions`（`system` 仍在但已 deprecated）。
-  // `Instructions = string | SystemModelMessage | Array<SystemModelMessage>`，
-  // 数组形态受支持 ⇒ 挂在 system 消息上的 providerOptions.anthropic.cacheControl
-  // （GAP-003 的缓存断点 1）原样保留，不需要退化成拼接字符串。
-  instructions?: AiSystemModelMessage[];
-  messages: AiModelMessage[];
-}
-
-function buildAiSdkPrompt(messages: ModelMessage[], provider: string): AiSdkPromptShape {
-  const aiMessages = applyAnthropicCacheBreakpoints(toAiMessages(messages), provider);
-  const system: AiSystemModelMessage[] = [];
-  const nonSystem: AiModelMessage[] = [];
-
-  for (const message of aiMessages) {
-    if (message.role === 'system') {
-      system.push(message as AiSystemModelMessage);
-    } else {
-      nonSystem.push(message);
-    }
-  }
-
-  return {
-    ...(system.length > 0 ? { instructions: system } : {}),
-    messages: nonSystem,
-  };
-}
-
 // ── GAP-003: Anthropic prompt caching 断点注入 ──
 // 旧 claudeProvider 路径默认开启 caching（system + tools 断点），AI SDK 迁移时丢了。
 // 这里补回并增强：
@@ -653,7 +625,12 @@ async function runInferenceViaAiSdk(
   try {
     // P1b：模型不支持 tool_call 时不传 tools（能力即数据，来自 providerRegistry）
     aiTools = tools.length > 0 && req.supportsTool ? buildTools(tools) : undefined;
-    aiPrompt = buildAiSdkPrompt(messages, requestConfig.provider);
+    const aiMessages = toAiMessages(messages);
+    aiPrompt = buildAiSdkPrompt(
+      options?.cacheRetention === 'none'
+        ? aiMessages
+        : applyAnthropicCacheBreakpoints(aiMessages, requestConfig.provider),
+    );
   } catch (err) {
     const stage = !aiTools && tools.length > 0 && req.supportsTool ? 'buildTools' : 'toAiMessages';
     logInferenceFailure(err, stage, requestConfig, messages);

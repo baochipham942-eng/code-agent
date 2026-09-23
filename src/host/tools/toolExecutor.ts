@@ -2198,6 +2198,7 @@ export class ToolExecutor {
         recordCachedToolReplay({
           cached,
           params,
+          rawParams,
           toolName: executionToolName,
           sessionId: effectiveSessionId,
           toolCallId: options.currentToolCallId,

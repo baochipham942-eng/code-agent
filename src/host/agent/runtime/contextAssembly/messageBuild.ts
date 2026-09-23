@@ -65,6 +65,7 @@ import { countTraceEntries, recordMemoryInjectionTrace } from '../../../memory/m
 import { recordTurnMemoryBlock } from '../turnQuality';
 import { createHash } from 'crypto';
 import type { ContextAssemblyCtx, ContextTranscriptEntry, ModelMessagesWithSources } from './shared';
+import type { RuntimeContext } from '../runtimeContext';
 import { logger } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { appendNativeGenerativeUIPromptBlocks } from './nativeGenerativeUIPrompt';
@@ -121,6 +122,7 @@ interface DynamicPromptParts {
 }
 
 type RuntimeAssemblyCache = {
+  lastAssembledSystemPrompt?: string;
   dynamicPrompt?: {
     key: string;
     createdAt: number;
@@ -149,6 +151,11 @@ function getRuntimeAssemblyCache(ctx: ContextAssemblyCtx): RuntimeAssemblyCache 
     runtimeAssemblyCaches.set(ctx.runtime as unknown as object, cache);
   }
   return cache;
+}
+
+export function getCachedDynamicSystemPrompt(runtime: RuntimeContext): string | undefined {
+  const cache = runtimeAssemblyCaches.get(runtime as unknown as object);
+  return cache?.dynamicPrompt?.prompt ?? cache?.lastAssembledSystemPrompt;
 }
 
 function getLastUserMessage(ctx: ContextAssemblyCtx): Message | undefined {
@@ -668,6 +675,7 @@ ${deferredToolsSummary}
   // 从 working string 切出本轮 advisory 上下文；system 消息只保留稳定前缀
   const turnContext = systemPrompt.slice(stableSystemPrompt.length).trim();
   systemPrompt = stableSystemPrompt;
+  cache.lastAssembledSystemPrompt = systemPrompt;
 
   const tokens = estimateTokens(systemPrompt) + (turnContext ? estimateTokens(turnContext) : 0);
   if (tokens <= promptBudget(ctx)) {

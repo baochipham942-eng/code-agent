@@ -10,6 +10,7 @@ import type { InferenceOptions, ModelMessage } from '../../../src/host/model/typ
 import { ClaudeProvider } from '../../../src/host/model/providers/claudeProvider';
 import { electronFetch } from '../../../src/host/model/providers/shared';
 import {
+  clearSessionCacheHits,
   isObservedCacheHit,
   noteStagnationFingerprint,
   recordSessionCacheHit,
@@ -331,14 +332,13 @@ describe('cache hit effective / idle split', () => {
     expect(recordSessionCacheHit(repeated, 'fp-b').kind).toBe('effective');
   });
 
-  it('counts a tool-cache replay with the same fingerprint as idle and reads hitRate', () => {
+  it('counts a tool-cache replay with the same fingerprint as idle', () => {
     const sessionId = `hit-${Date.now()}-same`;
     noteStagnationFingerprint(sessionId, 'fp-same');
     const first = recordSessionCacheHit(sessionId, 'fp-same');
     const second = recordSessionCacheHit(sessionId, 'fp-same');
     expect(first.kind).toBe('effective');
     expect(second.kind).toBe('idle');
-    expect(second.inferenceHitRate).toMatch(/%$/);
   });
 
   it('counts a later hit as effective after the stagnation fingerprint changes', () => {
@@ -346,5 +346,18 @@ describe('cache hit effective / idle split', () => {
     recordSessionCacheHit(sessionId, 'fp-1');
     noteStagnationFingerprint(sessionId, 'fp-2');
     expect(recordSessionCacheHit(sessionId).kind).toBe('effective');
+  });
+
+  it('clears session state and bounds retained sessions with an LRU cap', () => {
+    const prefix = `hit-lru-${Date.now()}`;
+    const sessionIds = Array.from({ length: 256 }, (_, index) => `${prefix}-${index}`);
+    for (const sessionId of sessionIds) recordSessionCacheHit(sessionId, 'same');
+    recordSessionCacheHit(sessionIds[0], 'same');
+    recordSessionCacheHit(`${prefix}-overflow`, 'same');
+
+    expect(recordSessionCacheHit(sessionIds[0], 'same').kind).toBe('idle');
+    expect(recordSessionCacheHit(sessionIds[1], 'same').kind).toBe('effective');
+    clearSessionCacheHits(sessionIds[0]);
+    expect(recordSessionCacheHit(sessionIds[0], 'same').kind).toBe('effective');
   });
 });

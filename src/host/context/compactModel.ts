@@ -284,8 +284,6 @@ interface CompactSummaryCallOptions {
   useMainModel?: boolean;
   /** 自定义摘要指令，覆盖默认 prompt */
   instructions?: string;
-  /** 旁路合同。本函数始终向模型传 'none'。 */
-  cacheRetention?: 'none';
   /** 只记录的范围标签。缺省 compact-summary。 */
   cacheScopeId?: string;
   /** 传给推理层。缺省保持 provider 的搜索默认。 */

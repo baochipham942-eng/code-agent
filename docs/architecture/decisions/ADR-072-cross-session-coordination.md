@@ -181,6 +181,24 @@ flowchart TB
 
 ## 决策
 
+### 委托是什么
+
+委托不是另起一个 backend agent，也不是 `spawn_agent` 的子代理。它是把一条任务投进另一个已有或新建的 Neo 会话，由那个会话自己的 agent 在后台跑一轮。发起侧只记链接（D5）：哪一个发起会话的哪一轮、派给了哪个会话、哪条 `queued_inputs`、哪一次 run。
+
+同一目标会话同时只能跑一轮。`RunRegistry.startDurable` 发现该会话已有别的 run 时抛 `RunSessionConflictError`（`src/host/runtime/runRegistry.ts:251`）。drain 与 `/api/run` 都经 `agentDurableRouteLifecycle.ts:167` 调用它。已连接客户端上这个错误变成 409（`agent.ts:537-544`）；drain 传 `connectedClient: false`（`agent.ts:310-312`），冲突向上抛，不吞掉。
+
+同一目标上的多条委托不因此被拒绝。它们按 `queued_inputs` 的 position FIFO 排队（D5.1）。前一条的轮结束，drain 再抽下一条。`terminal_observed` 仍表示发起侧已经观察到终态（R3），不拿来占坑或放坑。
+
+不同目标之间不设上限，也不另加池。下面三个既有上限的主人都不是这条投递，委托不占、不加：
+
+| 池 | 常量 | 谁在用 | 为什么委托不进 |
+|----|------|--------|----------------|
+| 会话内任务槽 | `SESSION_TASK_CONCURRENCY.global = 4`、`perSession = 2`（`src/shared/constants/voice.ts:9-12`，注释写明是 ADR-054 后台任务并发） | `SessionCommandCenter` 取 `getSessionTaskConcurrencyPool`（`sessionCommandCenter.ts:357`） | 那是 `delegate_task` 的池 |
+| 子代理树 | `SPAWN_GUARD.MAX_TREE_AGENTS = 8`（`src/shared/constants/agent.ts:43`，读取点 `spawnGuard.ts:180`） | `getSpawnGuard`，`spawn_agent` 进这棵树 | `delegate_session` 不调用 `getSpawnGuard` |
+| 已连接客户端的 SSE | `WEB_SSE.MAX_CONCURRENT_PER_TOKEN = 8`（`src/shared/constants/webServer.ts:4`） | `agentRunSseLimiter.tryAcquire`（`agent.ts:501`），只在 `connectedClient` 为真时 | drain 投递 `connectedClient: false`，不 acquire |
+
+会和用户自己开的会话轮一起撞上的，是供应商并发限流 `getProviderLimiter`（`aiSdkAdapter.ts:556`）。同文件 `:544-546` 写明：只对声明了上限的 provider 返回非 null，当前只有 zhipu，与 quick model 共用同一实例。委托不另加限流器。
+
 ### D1 · 没有协调会话。任意普通会话都可以是发起会话
 
 **决策**：不新增 `session_type`，不隐藏会话，不从列表、搜索、导出、同步里排除任何角色。用户在正在聊的会话里直接对 agent 说。这个会话就是发起会话。它的 brain 在需要时调用跨会话委托工具 `delegate_session`（与 ADR-054 会话内的 `delegate_task` 同族，作用域是会话，不是本会话的任务槽）。没有「每个 App 实例一个」的协调会话，也没有协调入口。
@@ -192,7 +210,7 @@ flowchart TB
 
 **代价**：R0 认下的「每一处遍历都要排除 coordination 角色」撤销。没有这条角色，就没有这条税。
 
-**为什么不是扩展 SessionCommandCenter 把目标从任务槽改成会话**：任务槽与 Session 仍是两种生命周期。任务槽是本会话里的短命执行单元；委托的目标是另一个 Session。复用的是派活语义（delegate / steer / cancel / 短名 / 幂等 / lane），不复用任务槽的池。池的边界见下面「委托是什么」。
+**为什么不是扩展 SessionCommandCenter 把目标从任务槽改成会话**：任务槽与 Session 仍是两种生命周期。任务槽是本会话里的短命执行单元；委托的目标是另一个 Session。复用的是派活语义（delegate / steer / cancel / 短名 / 幂等 / lane），不复用任务槽的池。池的边界见上一节。
 
 ### D2 · 四个结果是工具的动作，不是每条消息先跑的预判
 
@@ -206,7 +224,7 @@ flowchart TB
 
 **create_new 的收紧**：必须来自用户显式要一块新工作。解析失败、超时、空候选、歧义、门红，都不得变成 `create_new`，也不得绑定任意会话。
 
-### D3 · 确定性准入门：G1-G12 运行时门全查库/宿主构造，G9 为结构性约束
+### D3 · 确定性准入门：运行时门全查库/宿主构造，G9 为结构性约束
 
 **决策**：模型输出（路由建议、链上操作提案）永远只是建议；任何写操作（委托落账、停止、纠正、恢复）之前必须过准入门，门的判定项全部是确定性事实查询：
 
@@ -215,23 +233,22 @@ flowchart TB
 | G1 | 目标会话存在且未归档未删除 | sessions 表 `is_archived` / `is_deleted` 直查 | `target_unavailable` |
 | G2 | 目标可被委托：不是发起会话本身、不是子代理/计划唤醒/评测会话、不是外部引擎会话（`AgentEngineKind @ src/shared/contract/agentEngine.ts:10` 上一切 `kind !== 'native'`，含 manifest 尚未登记的新 kind——不只 ACP，也不按现有八个名字列举） | `session_type`；判据是 `agent_engine.kind !== 'native'`。**不**调用 `isExternalAgentEngine @ src/host/services/agentEngine/agentEngineGuards.ts:69`：它转到 `isManifestBackedExternalKind @ src/shared/externalEngineManifest.ts:597`，还要求 `adapter.adapterId` 有值，新 kind 没有 adapterId 会被当成可委托 | `not_delegatable` / `self_route` |
 | G3 | 候选集新鲜：模型建议的 candidateRef 属于当前候选集快照 | candidateSetId = hash(候选会话集快照)，与建议携带的集合指纹比对 | `candidate_set_stale` |
-| G4 | 无冲突在飞委托：同一目标会话至多一个 `active` 委托（v1 单活约束，见待拍板 Q3）。只数 `status='active'`；`terminal_observed` 已落表，完成过的委托不再占坑 | session_delegations 按 target 查 `status='active'` | `delegation_conflict` |
+| G4 | 幂等与去重：同一 `submission_key` 已有委托行则返回既有结果；同键而 `action_fingerprint` 不同则拒绝。不按目标数 `active`，不拒同目标的第二条 | session_delegations 唯一键 | `reused` / `idempotency_conflict` |
 | G5 | 工作区边界：目标会话的 workspaceScope 必须可解析、且其根在用户授权目录集内。发起会话是普通会话，可以有自己的工作区；不要求与目标同一工作区——用户就是从正在聊的会话把活派到另一个工作区。R0 的「与协调会话工作区一致」不恢复 | `resolveSessionWorkspaceScope @ src/host/services/sessionFork/workspace/resolveSessionWorkspaceScope.ts:22`（:40-42 无 projectId 返回 undefined） | `workspace_boundary` |
-| G6 | 写互斥：目标工作区不得与**任何活跃写方**重叠——不只比其他 active 委托，还包括用户直开的其他会话正在该工作区跑轮（R0 只比委托行，看不见用户直开会话） | 活跃前台轮 = `RunRegistry.hasSession @ src/host/runtime/runRegistry.ts:896`（生产调用 `ipc/index.ts:220`、`webServer.ts:924`）。工作区取 `getBySessionId @ :867` 返回的 handle 的 `context.workspace`。跨会话枚举用 `list @ :940`（方法在，生产调用方 0，准入门是它的第一个调用方，不另造账本）。不读 `TaskManager.getSessionState @ src/host/task/TaskManager.ts:610`：未知会话默认 idle，web 主路径不写这张 Map（`:633-635`），发行版 `getTaskManager @ src/web/webServer.ts:910` 返回 null。目录重叠比工作区根；子代理先例是 `bindFileOwnershipReleaseHook @ src/host/agent/multiagentTools/spawnAgent.ts:114`（`ownedPaths @ :159`） | `write_conflict` |
-| G7 | 幂等：submissionKey 已存在则返回既有委托结果；同键不同指纹拒绝 | session_delegations 唯一键 | `reused` / `idempotency_conflict` |
+| G6 | 写互斥：目标工作区不得与**其他会话正在跑的轮**重叠，包括用户直开的会话（R0 只比委托行，看不见用户直开会话）。同一目标上已排队、尚未开写的其他委托不算写方，它们 FIFO，一次只跑一轮 | 活跃前台轮 = `RunRegistry.hasSession @ src/host/runtime/runRegistry.ts:896`（生产调用 `ipc/index.ts:220`、`webServer.ts:924`）。工作区取 `getBySessionId @ :867` 返回的 handle 的 `context.workspace`。跨会话枚举用 `list @ :940`（方法在，生产调用方 0，准入门是它的第一个调用方，不另造账本）。不读 `TaskManager.getSessionState @ src/host/task/TaskManager.ts:610`：未知会话默认 idle，web 主路径不写这张 Map（`:633-635`），发行版 `getTaskManager @ src/web/webServer.ts:910` 返回 null。目录重叠比工作区根；子代理先例是 `bindFileOwnershipReleaseHook @ src/host/agent/multiagentTools/spawnAgent.ts:114`（`ownedPaths @ :159`） | `write_conflict` |
 | G8 | create_new 的工作区上下文必须来自 Host 受信通道（当前授权目录），模型输出不得携带工作区或身份 | Host 侧构造 | `unauthorized_workspace` |
 | G9 | 用户文本取自 ConversationEnvelope 原文（受信通道）；模型写的 delegationText 只是任务内容，不构成用户权威 | 入口投影 | （结构性约束，非运行时门——表内唯一不查库的一条） |
-| G10 | 目标会话空闲：无活跃前台轮、无别的排队/发送中输入（人机争用——委托不得插进用户正在用的会话） | `RunRegistry.hasSession @ src/host/runtime/runRegistry.ts:896` 为真即忙（与 drain 的 `runRegistry.getBySessionId @ src/web/routes/agent.ts:308` 同一索引；已有活跃 run 时 `startDurable` 抛 `RunSessionConflictError @ src/host/runtime/runRegistry.ts:251`）。再加上 queued_inputs 里**其他** queued/sending 行（`hasQueuedUserInput @ src/host/services/commandCenter/foregroundWake.ts:60`）。不把 `getSessionState` 的非 idle 当判据（理由同 G6）。`hasActivePrimaryRun @ TaskManager.ts:637` 只是 `runRegistry.hasSession` 的包装，门直接读 registry | `target_busy` |
+| G10 | 目标没被**用户**占用（人机争用：委托不插进用户正在用的会话）。用户自己的活跃前台轮，或用户来源的 queued/sending 行，拒绝。同一目标上已接受的其他委托不算占用：新委托按 position 排在后面。同时只跑一轮由 `startDurable` 抛 `RunSessionConflictError @ src/host/runtime/runRegistry.ts:251` 保证，准入门不再为这个拒第二条 | `RunRegistry.hasSession @ src/host/runtime/runRegistry.ts:896`（生产调用 `ipc/index.ts:220`、`webServer.ts:924`；drain 用同一索引 `agent.ts:308`）。用户的活跃 run = `hasSession` 为真，且这个 run id 对不上任何指向该目标的委托行的 `target_run_id`。用户来源的排队行 = queued/sending 且没有 `session_delegations` 指向它。不读 `TaskManager.getSessionState`（理由同 G6）。`hasQueuedUserInput @ foregroundWake.ts:60` 把已暂停行也算进去且未导出，门不直接调用（施工前置 N3） | `target_busy` |
 | G11 | 目标会话权限档不得高于 acceptEdits：委托文本不得送进 `bypassPermissions` 档的会话（防权限洗白） | `getModeForSession @ src/host/permissions/modes.ts:334`（生效档，含 unattended/首跑/限流钳制）；先例：无人值守钳档 `clampUnattendedPermissionMode @ :749`（不得高于 acceptEdits）、B1 收口 `sessionManager.ts:258-262`（cron/heartbeat/channel 标 unattended 强制钳档） | `target_permission_mode` |
 | G12 | folderTrust：create_new 的新工作区与 delegate_existing 的目标工作区都要过信任评估（生产 drain 不调 folderTrust，须在准入门与投递复核这两步调） | `evaluateFolderTrust @ src/host/security/folderTrustService.ts:857`。非 trusted 且 blockedItems>0 一律拒绝回澄清，用户显式确认后才放行。**评估抛错或拿不到结果也拒绝**（同一拒绝码）。这与 `ensureFolderTrustForSpaceCreation @ src/host/services/project/projectService.ts:526-530` 相反：那里 `catch` 后得到 undefined，`:530` 直接 return，创建继续（注释 `:519`：用户亲手选的目录，扫描故障不阻断）。委托要去的目录不是用户亲手选的，评估失败等于信任未知，未知必须拒 | `untrusted_workspace` |
 
-G7 的幂等键直接沿用 #9 已在生产验证的形状（`SessionCommandCenter.spawn` 的 laneKey + submissionKey）；maka 的 action fingerprint（sha256 绑定 操作+目标+载荷）作为同键冲突时的判别器。
+原 G7 并入 G4，编号 G7 空出。G5、G6、G8–G12 不改号，INV-2 与修订史仍按原号引用。G4 的键沿用 #9 已在生产验证的形状（`SessionCommandCenter.spawn` 的 laneKey + submissionKey）；maka 的 action fingerprint（sha256 绑定 操作+目标+载荷）作为同键冲突时的判别器。R3 用 `terminal_observed` 给「只数一条 active」腾坑，那条单活规则本轮撤销；`terminal_observed` 留下，只表示已观察到终态。`delegation_conflict` 这个拒绝码不再使用。
 
 **候选集的构造**（只读工具 `list_session_candidates` 的输出，也是 G2/G3 的输入）：`is_archived=0 AND is_deleted=0 AND session_type='chat'`，再去掉发起会话本身。按 `session_type` 白名单收口：`SessionType @ src/shared/contract/session.ts:21` 的值域是 `'chat' | 'schedule' | 'heartbeat' | 'subagent' | 'eval'`，其中 schedule/heartbeat 是角色唤醒会话（单向不回流）、subagent/eval 是系统会话，一律不进候选。R0 用 `parent_session_id IS NULL` 判子代理是误伤：**用户手动分叉的会话也是 `parent_session_id=sourceSessionId` 且 `session_type='chat'`**（`SessionForkRepository.ts:274-294`，:283 字面量 'chat'、:294 写 parent_session_id）——该过滤会把用户分叉会话全挡掉；子代理会话由 `session_type` 白名单 + G2 引擎判定双重排除，不再依赖 parent_session_id。按最近活动排序截断到 32 个（maka 上限，沿用）。每项只含：不透明 `candidateRef`（本快照内稳定、跨快照不稳定）、短名、工作区短名、状态、新鲜度桶。**stable sessionId 不进模型输入，也不进工具输出**——模型只能引用它看过的候选集里的 opaque ref，由宿主反查（maka 同款："Proposals never carry a Session id"）。
 
 ### D4 · 跨会话委托工具的契约（R4 起替代「两次小调用 + 决策表」）
 
-路由不再是每条用户消息都先跑的两次预判。那会让每条聊天都多付一轮 4-7k 输入 token。发起会话的 brain 自己决定叫不叫工具；模型的工具调用只是建议；准入门在工具执行时跑。
+路由不再是每条用户消息都先跑的两次预判。那会让每条聊天都多付一轮 4-7k 输入 token。发起会话的 brain 自己决定叫不叫工具；模型的工具调用只是建议；准入门在工具执行时跑（D3；G7 已并入 G4）。
 
 两个工具，都还没有生产实现（8c7dde035 上 `delegate_session` / `list_session_candidates` 零匹配）。名字与 `delegate_task`（`sessionCommandCenter.schema.ts:12`）并列，作用域不同。
 
@@ -243,7 +260,7 @@ G7 的幂等键直接沿用 #9 已在生产验证的形状（`SessionCommandCent
 | 输出 | 最多 32 条。每条：`candidateRef`、短名、工作区短名、状态、新鲜度桶，外加本快照的 `candidateSetId`。没有 stable sessionId |
 | 失败 | 读失败返回空列表加错误，不编造候选 |
 
-**`delegate_session`（写；执行时才跑 G1–G12）**
+**`delegate_session`（写；执行时才跑 D3 的准入门）**
 
 | | 形状 |
 |--|------|
@@ -284,7 +301,7 @@ CREATE TABLE IF NOT EXISTS session_delegations (
 - 链的状态与执行状态分离：`status` 表达的是**链**的生死（active / superseded / stopped / aborted / terminal_observed），不是目标活的成败——目标活的成败属于目标会话，按 `target_run_id` join。`terminal_observed` 只表示已观察到终态，不保存 completed / failed / cancelled。
 - **单事务提交边界**（落到真实表见 D5.1）：委托行（session_delegations）+ queued_inputs 行 + create_new 的新会话行（sessions），一个 SQLite immediate 事务；提交前互不可见，提交后同时存在。投递（drain）只发生在提交之后。
 
-**崩溃恢复入口复用什么**：不建第二个恢复状态机。三段接缝各有既有主人——(a) 提交与 `markSending` 之间：行仍是 `queued` 且 `paused_reason IS NULL`，生产启动扫 `runStartupSweep @ src/web/routes/webQueuedInputDrain.ts:215` 会补投（接线见 D5.1）。`markSending` 之后崩溃不在这条补投里：`recoverSendingOrphans` 把行标成 `paused_reason='restart'`，启动扫看不到它，要显式解停。R0 曾把这段引到 `BackgroundSubagentDurableLedger`，该账本文件头 `:14-16` 是完成时 checkpoint、`:17-20` 是重启**收口成 interrupted_by_restart 不续跑**。R1 改引 `registerDesktopQueuedInputDrain`，该函数在 8c7dde035 上只有定义、生产调用方 0。两轮都锚到没接电的东西；(b) 委托行残留 active 而发起会话那一轮已死：启动扫 `status='active'` 且无对应在跑轮的行，按 N-LOOP-DURABLE 刀1 的收口语义投影「中断事实」给发起会话（收口不续跑；续跑是 `resume` 链上操作的事）。Q3 会收紧这条扫描：FIFO 下「active 且当前没在跑」是排队常态，不能都当成中断；(c) 目标会话自身的崩溃恢复：事实在 durable_runs（默认 rollout `durable_preferred`，`resolveDurableRunRollout @ src/host/app/durableRunRollout.ts:39`，`durableActivation @ :57` 在非 legacy 时为真）。`recovering` 是 `RunStatus @ src/shared/contract/durableRun.ts:10`。本协议只读 `target_run_id`。不读 `TaskManager.sessionStates`。
+**崩溃恢复入口复用什么**：不建第二个恢复状态机。三段接缝各有既有主人——(a) 提交与 `markSending` 之间：行仍是 `queued` 且 `paused_reason IS NULL`，生产启动扫 `runStartupSweep @ src/web/routes/webQueuedInputDrain.ts:215` 会补投（接线见 D5.1）。`markSending` 之后崩溃不在这条补投里：`recoverSendingOrphans` 把行标成 `paused_reason='restart'`，启动扫看不到它，要显式解停。R0 曾把这段引到 `BackgroundSubagentDurableLedger`，该账本文件头 `:14-16` 是完成时 checkpoint、`:17-20` 是重启**收口成 interrupted_by_restart 不续跑**。R1 改引 `registerDesktopQueuedInputDrain`，该函数在 8c7dde035 上只有定义、生产调用方 0。两轮都锚到没接电的东西；(b) 委托行残留 `active`，且不是还在 FIFO 里等：对应的 `queued_inputs` 行已经消失或失败耗尽，或者目标 run 已进终态却还没写成 `terminal_observed`。这种行按 N-LOOP-DURABLE 刀1 的收口语义投影「中断事实」给发起会话（收口不续跑；续跑是 `resume` 的事）。单纯 `active` 且当前没有在跑的轮，是同目标下一条还排着的常态，不投影中断；(c) 目标会话自身的崩溃恢复：事实在 durable_runs（默认 rollout `durable_preferred`，`resolveDurableRunRollout @ src/host/app/durableRunRollout.ts:39`，`durableActivation @ :57` 在非 legacy 时为真）。`recovering` 是 `RunStatus @ src/shared/contract/durableRun.ts:10`。本协议只读 `target_run_id`。不读 `TaskManager.sessionStates`。
 
 **链的持久锚与三种失效**（R1 新增，R2 补 `target_run_id`）：链的身份锚 = `delegation_id`（主键）+ `target_session_id`（sessions 行稳定）+ `target_queued_input_id`（queued_inputs 行在消息消失后仍存活——`markConsumed` 只 UPDATE status 不删行，且生产 drain 送达时它就是消息的 clientMessageId，`drainOne @ src/web/routes/webQueuedInputDrain.ts:159` 重建 envelope 带 `clientMessageId: record.id`）。`target_run_id` 不是身份锚：提交时 run 还不存在，起轮后由 `onDurableActivated @ src/web/routes/agent.ts:530` 回填（drain 把回调从 `:312` 传进来），之后投影只 join 这一列。回填不限于这一条 drain：INV-4，任何能把委托来源行送进目标会话的入口都要回传本次激活 run 的 id。投影看到终态时把本行写成 `terminal_observed`（幂等、可重放），不把 RunStatus 复制进来。`target_message_id` 降级为**软链接**：消息行消失或被隐藏时投影降级为「目标已前进」，链本身不断（委托行的身份不依赖消息存活）。fork 后委托**不跟到子会话**：fork 换新 id 新会话行、不复制 session_delegations，链停在源会话并投影「目标已分叉」（fork 的 `forkLineage` metadata 可 join 出 childSessionId，`SessionForkRepository.ts:293`，文件在 `src/host/services/core/repositories/`），用户要继续就显式发新委托（新行 supersedes 旧行）——不让链静默漂移到用户没确认过的目标。三种失效各一行：
 
@@ -312,7 +329,7 @@ CREATE TABLE IF NOT EXISTS session_delegations (
 
 桌面端没有第二条「入队即投」主进程。发行版是 Tauri + webServer（`webServer.ts:513`；`setupAllIpcHandlers` 的生产调用方只有 `webServer.ts:937`，`session.ipc.ts:8`）。`getAppService` 与 `getTaskManager` 在这套装配里都是 null（`webServer.ts:899`、`:910`）。renderer 负责入队（`useChatInputSubmit.ts:82-85`）和人手 `sendNow`（`QueuedInputTray.tsx:54`），不负责空闲自动抽干。`registerDesktopQueuedInputDrain @ desktopQueuedInputDrain.ts:52` 会调 `sendMessage`（`:124`），但生产调用方是 0（只有测试），本 ADR 不把它当主人。所以桌面与 web 共用这一条 drain，不另开「桌面投递缺失」的待拍板槽。
 
-**失败与重发**：投递失败走 `requeueAfterFailure`，至 `QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS = 3`（`src/shared/constants/queuedInput.ts:3`）耗尽后 `markFailed`（默认 `paused_reason='send_failed'`，`QueuedInputRepository.ts:165`）+ `QUEUED_INPUT_SEND_FAILED`。这时委托行投影 `aborted(delivery_failed)`，但 **aborted 不是终态**。自动重试不改载荷。委托来源行上，用户 `requeue` 不得改 INV-5 的载荷，也不得把已撤回行复活为委托（INV-6）；要改内容或重发已撤回的委托，就另发一条普通用户消息。同一 `target_queued_input_id` 上、载荷未改的重发若投递复核通过、G4 仍允许、并起了轮，委托行从 `aborted(delivery_failed)` 翻回 `active`，`target_run_id` 改记新 run。用户撤回投影 `aborted(retracted_by_user)`，这条不再翻回。
+**失败与重发**：投递失败走 `requeueAfterFailure`，至 `QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS = 3`（`src/shared/constants/queuedInput.ts:3`）耗尽后 `markFailed`（默认 `paused_reason='send_failed'`，`QueuedInputRepository.ts:165`）+ `QUEUED_INPUT_SEND_FAILED`。这时委托行投影 `aborted(delivery_failed)`，但 **aborted 不是终态**。自动重试不改载荷。委托来源行上，用户 `requeue` 不得改 INV-5 的载荷，也不得把已撤回行复活为委托（INV-6）；要改内容或重发已撤回的委托，就另发一条普通用户消息。同一 `target_queued_input_id` 上、载荷未改的重发若投递复核通过并起了轮，委托行从 `aborted(delivery_failed)` 翻回 `active`，`target_run_id` 改记新 run。同目标另有 `active` 委托不阻止翻回。用户撤回投影 `aborted(retracted_by_user)`，这条不再翻回。
 
 **委托文本的权威**（R2；R3 起第 2、3 条只定不变量，落点由施工卡定）：
 
@@ -323,15 +340,15 @@ CREATE TABLE IF NOT EXISTS session_delegations (
    - 重排允许，它不改载荷。撤回允许，并投影 `aborted(retracted_by_user)`。
 3. **投递时复核。** 不指定函数落点。
    - **INV-1** 复核必须发生在该行被任何投递路径抢占（claim / markSending）之前。自动 drain 与用户 `sendNow` 同一条规矩。做不到先复核再抢占的入口，不得投递委托来源行。
-   - **INV-2** 复核只看目标是否有活跃 run，以及 G1、G2、G11、G12。不把排在本行之后的用户输入算作忙——否则委托被暂停，后面的用户消息跟着卡死。
+   - **INV-2** 复核看 G1、G2、G11、G12，再看是谁占着这个会话。排在本行之后的输入不算忙——这条在 FIFO 下仍成立：后面又排了委托或用户消息，不能把前面这条暂停，否则队列从队头卡死。同一目标上另一条委托占着的活跃 run（这场 run 的 id 对得上那条委托的 `target_run_id`）也不算拒绝理由：本行保持 `queued` 且 `paused_reason IS NULL`，等 drain 在 `hasActiveRun` 为假时再抽（`agent.ts:308`）。这就是排队，不是冲突。对不上任何委托行的活跃 run，或排在本行之前的用户来源 queued/sending 行，算用户占用：暂停并投影（G10）。R3 写的「有活跃 run 即忙」在排队语义下不成立，改成这三句。
    - **INV-3** 复核红时暂停本行并投影给发起会话。调度必须继续抽下一行，不得因本行暂停而停摆。抢占之后才发现目标已有活跃 run 的，同样暂停并投影，不放回自动重试。
    - **INV-4** `target_run_id` 的回填是投递路径的义务：任何能把委托来源行送进目标会话的入口，都必须回传本次激活 run 的 id。做不到回填的入口不得投递委托来源行。
 
 **与前台唤醒跳过规则相容**：`hasQueuedUserInput @ src/host/services/commandCenter/foregroundWake.ts:60`（:68-69 见 queued/sending 即真）会让命令中心的前台唤醒跳过该会话（:148-149）——委托输入在队期间，该会话的后台任务完成**不触发前台唤醒**，直到 drain 消费完。这是既有规则对一切排队输入的统一行为（用户自己排队时同样发生），方向是安全的（防唤醒轮与排队输入交错），本 ADR 接受并沿用，不开例外。
 
-**与 G10 的两段**：提案时 G10 红，委托不落行，回澄清。落行之后的忙闲改看 INV-2：只看目标有没有活跃 run，不把排在本行之后的用户输入算作忙。复核红则暂停并投影，不静默排到用户后面再投。`sessionAutomationService.ts:663-680` 忙则留言不打断，说的是自动化交接，不是这条投递。
+**与 G10 的两段**：提案时 G10 红（用户占用），委托不落行，工具返回 `target_busy`。同一目标只有别的委托在排队或在跑，G10 绿，新行排到队尾。落行之后的忙闲改看 INV-2。复核红则暂停并投影，不静默插进用户正在用的轮。`sessionAutomationService.ts:663-680` 忙则留言不打断，说的是自动化交接，不是这条投递。
 
-**恢复语义**：`paused_reason IS NULL` 的 queued 行，启动扫会补投。`paused_reason='restart'`（行被抢占之后崩溃）或投递复核写下的拒绝码，启动扫不投。解停（用户 `sendNow` 或发起侧 `resume`）必须先满足 INV-1 到 INV-4，再投递。`aborted(delivery_failed)` 翻回 `active` 时，复核在 INV-2 的项之外再加上 G4：同一目标已有别的 `active` 委托则不翻回。这与接缝 (b) 委托行残留 active 的收口（投影中断事实、续跑靠显式 resume）不是同一段。不要把「行还在」写成「runStartupSweep 会补投」。
+**恢复语义**：`paused_reason IS NULL` 的 queued 行，启动扫会补投。`paused_reason='restart'`（行被抢占之后崩溃）或投递复核写下的拒绝码，启动扫不投。解停（用户 `sendNow` 或发起侧 `resume`）必须先满足 INV-1 到 INV-4，再投递。`aborted(delivery_failed)` 翻回 `active` 时，复核仍是 INV-2，不因为同目标另有 `active` 委托而拒绝。同目标多条 `active` 是排队的常态。这与接缝 (b)（不是还在 FIFO 里等的残留 active，投影中断事实，续跑靠显式 resume）不是同一段。不要把「行还在」写成「runStartupSweep 会补投」。
 
 ### 施工前置（本 ADR 不定落点，施工卡必须逐条关账）
 
@@ -392,10 +409,8 @@ R3 起 D5.1 只定不变量，落点由施工卡定。下面每条是施工卡�
 
 ## 风险
 
-- **「遍历污染」是复用 Session 角色的持续税**：每处新加的会话遍历（搜索/导出/同步/统计/最近列表）都要排除 coordination 角色。maka 认了同样的代价。缓解靠查询收口，但新建旁路查询时仍会漏——列入 code review 检查项。
-- **v1 单活委托约束太紧**：用户想让两个委托先后进同一会话排队时，第二个直接被拒（回澄清）。先紧后松是对的（并发委托的正确性论证复杂度陡增），松绑判据：内测期 `delegation_conflict` 拒绝码占比 >10% 才考虑队列化。
-- **fail-closed 的体验反噬**：路由模型弱时用户每句话都被反问，比没有协调层更烦。E4（多余澄清率 ≤20%）就是卡这个的；接电前必须用真实消息分布测，不能用合成消息。
-- **名词混淆**：普通会话里有 `delegate_task`（派给本会话任务槽），协调入口有「委托」（派给会话）。用户面两套文案必须可区分（槽任务叫「任务」，链上叫「委托给会话 X」），落 i18n 时统一。
+- **fail-closed 的体验反噬**：工具一拒绝，brain 就追问。模型弱的时候，不该派的话被派出去，或者该派的时候根本不调工具。E1、E2、E4 卡这个。不再是「每条消息先付两次小调用」。
+- **名词混淆**：同一个会话里有 `delegate_task`（派给本会话任务槽）和 `delegate_session`（派给另一个会话）。用户面两套文案必须可区分（槽任务叫「任务」，链上叫「委托给会话 X」），落 i18n 时统一。
 
 ## 待爸拍板
 
@@ -403,7 +418,6 @@ R3 起 D5.1 只定不变量，落点由施工卡定。下面每条是施工卡�
 |---|------|------------------------|---------|
 | Q1 | 协调入口的产品形态：独立常驻面板（maka 的 WorkHub 浮窗形态）还是现有会话列表里一个隐藏角色 + 侧栏顶部固定入口按钮？ | **定位与边界**——拍错整个 renderer 信息架构返工，且用户「在哪找到协调」的心智一旦形成难改 | v1 做隐藏角色 + 侧栏顶部「协调」入口按钮，不做独立面板/浮窗；面板形态等内测数据再说 |
 | Q2 | ~~路由不确定时的默认档：宁可 `clarify` 还是宁可 `answer_here`？~~（R1 撤销拍板需求）D4 已把一切失败路径锁死 fail-closed 到 `clarify`、无任何路径静默 create_new 或绑定会话——正文已定，本槽降级为确认记录 | —（不再是开放槽） | 维持 D4；若要改默认档，先改 D4 契约再回本表，不在此处开后门 |
-| Q3 | 单活委托：同一目标会话已有 active 委托时，第二个委托 v1 是直接拒绝回澄清，还是排进目标会话队列？ | **业务规则**——系统行为错：排队会引入「用户以为派了其实还在等」的静默延迟，拒绝会打断「我就想让它连着干两件」的自然意图 | v1 直接拒绝并在澄清里带「已有委托在跑」上下文；内测看 `delegation_conflict` 占比再决定是否队列化 |
 | Q4 | 路由模型用协调会话自己保存的模型（主模型兼任）还是独立小模型配置？ | **成本与性能**（涉付费 API 调用归爸）——R1 重估：成本大头在**输入**不在输出——意图调用吃用户文本 ≤2000 字 + 最近 8 条转录 ×600 字，召回再吃一遍用户文本 + ≤32 候选描述，两次调用合计**输入约 4-7k token/条消息**、输出仅 80/160，全走主模型时账单随消息量线性涨 | 仍默认用协调会话已保存的模型（零配置优先，非程序员配不动旋钮）；设置里留「路由专用模型」可选项（v1.1），flag 内测期用 E5 计时 + 账单数据回看是否值得切小模型 |
 | Q5 | 协调会话的转录进不进遥测上传与上线后评分分母？ | **数据口径**——拍错要么系统会话污染上线评分（协调轮天然高频短轮），要么协调行为完全无观测 | 进遥测上传（`toSessionRow` 的 `session_type` 列带 coordination，`telemetryUploaderService.ts:409`），但**剔出评分分母**（现分母只剔 eval，`postLaunchScoreStore.ts:166`，需加剔 coordination） |
 | Q6 | 计费/quota 归属：路由两次小调用记协调会话、被委托轮 token 记目标会话（现状记账按会话各自记）——协调侧要不要汇总「本委托总共花了多少」？ | **成本可见性**——拍错用户在目标会话看到一笔没来由的 token 消耗，或协调层为汇总重造一套记账 | v1 不做汇总投影（记账留各会话、委托卡片不带成本）；内测看用户是否追问再立单 |

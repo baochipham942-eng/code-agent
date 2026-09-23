@@ -2,7 +2,7 @@
 
 - 状态：**待拍板**（本单只出 ADR 不施工；施工卡由拍板后另立）
 - 工单：N-WORKHUB-ADR（多agent线，wave 37）
-- 相关：ADR-054（会话=指挥台——派活语义的上一拍）、ADR-047（主理人编排）、ADR-052（会话与专家的关系）；在飞或待派单 N-BGSPAWN-DURABLE（刀1 已合 main）、N-LOOP-DURABLE-K2*、N-RUNENTRY-IDEMPOTENT、N-APPROVALWAIT-PAUSECLOCK
+- 相关：ADR-054（会话=指挥台——派活语义的上一拍）、ADR-047（主理人编排）、ADR-052（会话与专家的关系）、ADR-044（queued_inputs 排队输入——R1 起为委托投递路径）、ADR-067（注入 origin 链权限判定——R1 起为委托文本的防洗白依据）；在飞或待派单 N-BGSPAWN-DURABLE（刀1 已合 main）、N-LOOP-DURABLE-K2*、N-RUNENTRY-IDEMPOTENT、N-APPROVALWAIT-PAUSECLOCK
 - as-built 基线：**origin/main@8c7dde035**（本文件所有 `标识符 @ 文件:行号` 均从该 commit 核出，不从工作树）
 - 来源：`docs/competitive/maka-agent-2026-09-23-三周动向借鉴清单.md` §2（code-agent-private-archive 仓）；maka 源料 commit **d5bc0fad**，已拷贝至 `code-agent-private-archive/docs/evidence/assets/N-WORKHUB-ADR/maka-src/`（ADR、术语表、路由纯逻辑、准入门、协调器、协议、目标执行权威、崩溃恢复测试共 14 份）
 
@@ -26,7 +26,7 @@ Apache Maka 09 月做了 WorkHub：每个 Runtime Host 一个隐藏的**协调�
 | 4 | `coordinatorMode`（3+ 并行 spawn 自动激活的任务编排） | `CoordinatorSession @ src/host/agent/coordinatorMode.ts:47`、阈值 `COORDINATOR_ACTIVATION_THRESHOLD @ :41`、激活 `shouldActivateCoordinator @ :302`、接线 `spawnAgent.ts:852-854` | 会话内（并行 spawn 内部） | ❌ 纯内存 Map | `executeParallelAgents` |
 | 5 | `DAGScheduler`（Task DAG 并行调度） | `DAGScheduler @ src/host/scheduler/DAGScheduler.ts:149` | 会话内 | checkpoint 委托给 durable run | `parallelAgentCoordinator`、`toolExecution/dagScheduler.ts`、`orchestration/adapters/dagGraphSchedulerAdapter.ts` |
 | 6 | `workflow`（命令式脚本编排）+ `workflow_orchestrate`（声明式 stage-DAG） | `src/host/agent/scriptRuntime/`；`src/host/agent/multiagentTools/workflowOrchestrate.ts` | 会话内 | `workflow_runs` / `workflow_run_calls` | 模型工具（复杂长任务默认路径） |
-| 7 | goal 模式完成闸 | `handleGoalCompletionGate @ src/host/agent/runtime/goalCompletionGate.ts:67`（闸0 证据自证 + 闸1 确定性 verify + 闸2 软评审） | 会话内（goal 模式，可 allowSwarm） | turnTrace + `tool_execution_events`（append-only） | goal 模式运行时 |
+| 7 | goal 模式完成闸 | `handleGoalCompletionGate @ src/host/agent/runtime/goalCompletionGate.ts:66`（闸0 证据自证 + 闸1 确定性 verify + 闸2 软评审） | 会话内（goal 模式，可 allowSwarm） | turnTrace + `tool_execution_events`（append-only） | goal 模式运行时 |
 | 8 | `taskManager`（会话任务清单） | `taskManagerModule @ src/host/tools/modules/planning/taskManager.ts:430` | 会话内 | taskStore（会话任务表） | 模型工具 |
 | 9 | **会话命令中心**（ADR-054 指挥台的会话内落地） | 工具 `delegate_task @ src/host/tools/modules/commandCenter/sessionCommandCenter.schema.ts:12`、`steer_task @ :35`、`cancel_task @ :54`、`task_status @ :70`；执行 `executeDelegateTask @ src/host/tools/modules/commandCenter/sessionCommandCenter.ts:84`；服务 `SessionCommandCenter @ src/host/services/commandCenter/sessionCommandCenter.ts:116`（`spawn @ :151`，laneKey+submissionKey 幂等） | **会话内**（本会话的后台任务槽） | `SessionTaskSlotLedger @ src/host/services/commandCenter/sessionTaskSlotLedger.ts:79`（全局 4 / 每会话 2 / lane 串行）+ `BackgroundTaskLedger @ src/host/task/backgroundTaskLedger.ts:32` | 模型工具 + 成员视图 |
 | 10 | 组队配方（主理人编排，ADR-047） | `launchTeamRecipe @ src/host/services/team/teamRecipeLaunchService.ts:334`、`validateTeamRecipe @ src/shared/contract/teamRecipe.ts:80`、`SwarmLaunchApprovalGate @ src/host/agent/swarmLaunchApproval.ts:33` | 会话内（lead 在当前会话轮拉成员） | swarm_runs + durable run | 产品入口 + `/命令` |
@@ -34,7 +34,7 @@ Apache Maka 09 月做了 WorkHub：每个 Runtime Host 一个隐藏的**协调�
 | 12 | 角色主动性（cadence/event 唤醒） | `wakeRole @ src/host/services/roleAssets/roleProactivity.ts:254`、`syncCadenceJobs @ :629` | **跨会话但单向**（从角色资产建 schedule 会话，不回流协调） | history append + 会话 `origin=role-cadence` | cron + Stop hook |
 | 13 | `/loop` 自主循环 | `LoopController @ src/host/loop/loopController.ts:103`；刀1 启动收口 `loopStartupRecovery @ src/host/loop/loopStartupRecovery.ts:2`（N-LOOP-DURABLE，PR#1683 已合） | 会话内自动循环 | `session_automations`（刀2 将建 `loop_runs`） | 用户命令 |
 | 14 | 后台子代理 durable 账本 | `BackgroundSubagentRegistry @ src/host/agent/backgroundSubagentRegistry.ts:76`；`BackgroundSubagentDurableLedger @ src/host/agent/backgroundSubagentDurableLedger.ts:93`（N-BGSPAWN-DURABLE 刀1 / ADR-025 B1 + ADR-037，已合 main） | 会话内子代理转后台 | durable_runs：spawn 落账、租约 heartbeat、重启收口 `interrupted_by_restart`（不做断点续跑） | spawn_agent `run_in_background` |
-| 15 | 账本数据层 | `RunStatus @ src/shared/contract/durableRun.ts:5`（8 态 + `RUN_STATUS_TRANSITIONS @ :15`）；`swarm_runs @ src/host/services/core/database/schema.ts:962` | 数据层 | SQLite | 上述所有入口 |
+| 15 | 账本数据层 | `RunStatus @ src/shared/contract/durableRun.ts:5`（8 态 + `RUN_STATUS_TRANSITIONS @ :17`）；`swarm_runs @ src/host/services/core/database/schema.ts:962` | 数据层 | SQLite | 上述所有入口 |
 | 16 | **跨会话消息入口（唯一现存通道）** | `sendMessage @ src/host/app/agentAppService.ts:439`（`ConversationEnvelope @ src/shared/contract/conversationEnvelope.ts:168`） | 任意会话（进程内） | 消息经 sessionRepository 落库 | renderer / IPC / web API——**无协调层、无准入门、无委托链** |
 | 17 | ACP 外部引擎会话 | `acpClientAdapter @ src/host/services/agentEngine/acpClientAdapter.ts` | 引擎层（外部 agent 引擎的会话） | 引擎自管 | 引擎适配（本 ADR 划界外） |
 
@@ -44,12 +44,12 @@ Apache Maka 09 月做了 WorkHub：每个 Runtime Host 一个隐藏的**协调�
 
 ### 图 1 · 委托链状态机
 
-协调侧持久状态（`session_delegations.status`）与目标会话执行状态（durable_runs 的 `RunStatus` 投影）是两套语言：前者是协调层事实，后者是目标会话事实，**委托行永不复制目标执行状态**，只在读取时 join 投影。
+协调侧持久状态（`session_delegations.status`）与目标会话执行状态（只读投影：前台轮走 TaskManager 会话状态，后台 run 走 durable_runs 的 `RunStatus`）是两套语言：前者是协调层事实，后者是目标会话事实，**委托行永不复制目标执行状态**，只在读取时 join 投影。
 
 ```mermaid
 stateDiagram-v2
     [*] --> proposed: 协调 brain turn 产出建议
-    proposed --> active: 准入门 G1-G9 全过，单事务提交：委托行 + 目标会话待处理消息（create_new 时含新会话行）
+    proposed --> active: 准入门 G1-G12 全过，单事务提交：委托行 + queued_inputs 行（create_new 时含新会话行）
     proposed --> clarified: 门拒 或 模型输出无效，不落委托行，回协调会话澄清
 
     active --> superseding: 链上操作·纠正 correct
@@ -61,7 +61,7 @@ stateDiagram-v2
     stopped --> resuming: 链上操作·恢复 resume
     resuming --> active: 目标会话轮已起
 
-    active --> terminal_observed: 目标 run 终态投影\\n(completed/failed/cancelled)
+    active --> terminal_observed: 目标会话轮终态投影\\n(TaskManager idle/error)
     stopped --> terminal_observed
 
     clarified --> [*]: 澄清回答作为新消息重新进入路由
@@ -70,9 +70,9 @@ stateDiagram-v2
     terminal_observed --> [*]
 ```
 
-**哪些迁移需要持久化**：`active` / `superseded` / `stopped` / `aborted` 是协调侧持久状态，落 `session_delegations`；`superseding` / `stopping` / `resuming` 是链上操作的中间态，由操作自身的持久记录（stop 请求行 / 纠正行）表达，不单独立状态。`running` / `waiting` 等执行态**不落委托表**——它们是目标会话 durable_runs 的事实，协调层只读投影，会话变更通知失效后重建。
+**哪些迁移需要持久化**：`active` / `superseded` / `stopped` / `aborted` 是协调侧持久状态，落 `session_delegations`；`superseding` / `stopping` / `resuming` 是链上操作的中间态，由操作自身的持久记录（stop 请求行 / 纠正行）表达，不单独立状态。`running` / `waiting` 等执行态**不落委托表**——它们是目标会话的事实（前台轮 = TaskManager 会话状态、后台 run = durable_runs），协调层只读投影，会话变更通知失效后重建。
 
-**崩溃重启从哪恢复**：`active` 行本身就是恢复锚点。事务提交（委托行 + 目标会话待处理消息同 commit）与目标会话起轮之间崩溃——重启后目标会话按既有待处理消息恢复起轮（与 `BackgroundSubagentDurableLedger` 刀1「commit 与 wake 之间崩溃由 pending 恢复」同款接缝，`backgroundSubagentDurableLedger.ts:1-33` 文件头注释）；重复投递由 submissionKey 幂等键挡住（#9 的 spawn 已在生产用同款幂等）。协调层**不建第二个恢复状态机**。
+**崩溃重启从哪恢复**：`active` 行本身就是恢复锚点。事务提交（委托行 + queued_inputs 行同 commit，见 D5.1）与目标会话起轮之间崩溃——重启后既有 `runStartupSweep @ src/host/app/desktopQueuedInputDrain.ts:170` 扫到该 queued_inputs 行、目标 idle 即补投（ADR-044 的既有机制，不是 bg 子代理账本）；重复投递由 queued_inputs 主键幂等 + submissionKey 挡住（#9 的 spawn 已在生产用同款幂等）。协调层**不建第二个恢复状态机**。
 
 ### 图 2 · 一条用户消息从协调会话到落地
 
@@ -83,12 +83,12 @@ sequenceDiagram
     participant R as 路由模型<br>(只出建议 · 两次小调用)
     participant P as 路由策略纯函数
     participant G as 委托准入门<br>(确定性 · 无模型)
-    participant D as 单事务提交<br>(委托账本+目标会话)
+    participant D as 单事务提交<br>(委托行+queued_inputs+新会话行)
     participant T as 目标会话轮
 
     U->>C: 消息 (ConversationEnvelope)
     C->>R: 意图分类 (用户文本 + 最近8条协调转录)
-    R-->>C: 三值意图 JSON
+    R-->>C: 意图 JSON (routing/linked/unclear)
     alt 意图 = execute / continue
         C->>R: 召回排序 (≤32候选：不透明引用/短名/工作区/状态/新鲜度)
         R-->>C: ranked / ambiguous / none
@@ -102,15 +102,15 @@ sequenceDiagram
         C-->>U: 就地回答（普通转录轮）
     else delegate_existing / create_new / 链上操作
         C->>G: 提案 (candidateRef, submissionKey, 受信用户文本)
-        G->>G: G1-G9 确定性校验（查库，不查模型）
+        G->>G: G1-G12 确定性校验（查库/宿主构造，不查模型）
         alt 门拒
             G-->>C: 拒绝码 (target_unavailable / delegation_conflict / …)
             C-->>U: 澄清（带拒绝原因上下文）
         else 门过
             G->>D: 提交
-            D->>D: 委托行(active) + create_new 新会话行 + 目标会话待处理消息
-            D->>T: 事务提交后唤醒（此处崩溃→重启由待处理消息恢复，幂等键防重）
-            T-->>D: run 终态 (RunStatus)
+            D->>D: 委托行(active) + create_new 新会话行 + queued_inputs 行
+            D->>T: 提交后经 drain 投递（目标 idle 即投；此处崩溃→重启 runStartupSweep 补投，主键幂等防重）
+            T-->>D: 会话轮终态 (TaskManager idle/error)
             D-->>C: 终态投影（只读，通知失效重建）
             C-->>U: 委托卡片（进行中→终态）
         end
@@ -125,10 +125,11 @@ flowchart TB
 
     subgraph COORD["协调层（本 ADR 新增）"]
         CS[协调会话<br>session_type = coordination<br>隐藏于普通会话列表]
-        GATE[委托准入门<br>确定性 G1-G9]
-        DG[session_delegations 委托链<br>协调层唯一新增持久化]
+        GATE[委托准入门<br>确定性 G1-G12]
+        DG[session_delegations 委托链<br>协调层唯一新增表]
     end
 
+    QI[queued_inputs 待处理输入<br>既有表复用（ADR-044）<br>desktopQueuedInputDrain 投递]
     SEND[agentAppService.sendMessage<br>消息进会话轮的统一入口（既有）]
 
     subgraph SESSIONS["普通 Session（sessions 表）"]
@@ -146,25 +147,28 @@ flowchart TB
         SCC[SessionCommandCenter<br>delegate_task / steer_task<br>（会话内后台任务槽）]
     end
 
-    subgraph LEDGER["既有账本（不新增，只读引用）"]
+    subgraph LEDGER["既有账本（不新增）"]
         DR[durable_runs · RunStatus]
         SR[swarm_runs]
         BL[backgroundTaskLedger]
+        TP[TaskManager 会话状态<br>idle / error]
     end
 
     U -->|直接打开会话发消息| SEND
     U -->|在协调入口发消息| CS
     CS --> GATE
-    GATE -->|委托投递（幂等键）| SEND
+    GATE -->|入队（主键幂等）| QI
+    QI -->|目标 idle 时 drain 调 sendMessage| SEND
     CS --- DG
-    DG -.->|终态只读投影| DR
+    DG -.->|前台轮终态只读投影| TP
+    DG -.->|后台 run 终态只读投影| DR
     SEND --> SA
     SEND --> SB
     SA & SB -->|内部编排| INSESSION
     INSESSION --> LEDGER
 ```
 
-三句话读图 3：协调会话**经准入门复用** `sendMessage` 这个既有统一入口，不另开投递通道；会话内编排设施（spawn_agent / coordinatorMode / DAGScheduler / workflow / goal_gate / taskManager / SessionCommandCenter）**原封不动**，协调层不知道它们的内部结构；账本分层——`session_delegations` 是协调层唯一新增持久化，durable_runs / swarm_runs / backgroundTaskLedger 归会话内编排所有，协调层只读。
+三句话读图 3：协调会话**经准入门入队 queued_inputs、由既有 drain 复用** `sendMessage` 这个统一入口，不另开投递通道；会话内编排设施（spawn_agent / coordinatorMode / DAGScheduler / workflow / goal_gate / taskManager / SessionCommandCenter）**原封不动**，协调层不知道它们的内部结构；账本分层——`session_delegations` 是协调层唯一新增表（投递复用既有 queued_inputs），durable_runs / swarm_runs / backgroundTaskLedger 归会话内编排所有，前台轮终态投影走 TaskManager 会话状态。
 
 ## 决策
 
@@ -191,25 +195,28 @@ flowchart TB
 
 **cowork 场景对四选一的修正**：maka 的 `discuss`（就地回答）对应 Neo 的 `answer_here`，语义不变；`create` 必须来自用户显式要求新工作（maka 同款收紧：意图模型 prompt 明示 "create requires an explicit request for new work"），**任何失败路径都不得静默变成 create_new**——这是 cowork 用户（非程序员）被派错会话后最难自救的场景。
 
-### D3 · 确定性准入门：九条判定，全部查库不查模型
+### D3 · 确定性准入门：G1-G12 运行时门全查库/宿主构造，G9 为结构性约束
 
 **决策**：模型输出（路由建议、链上操作提案）永远只是建议；任何写操作（委托落账、停止、纠正、恢复）之前必须过准入门，门的判定项全部是确定性事实查询：
 
 | # | 判定项 | 数据源 | 拒绝码 |
 |---|--------|--------|--------|
 | G1 | 目标会话存在且未归档未删除 | sessions 表 `is_archived` / `is_deleted` 直查 | `target_unavailable` |
-| G2 | 目标可被委托：不是协调会话本身、不是子代理会话、不是 ACP 外部引擎会话 | `session_type` / `parent_session_id` / `agent_engine` | `not_delegatable` / `self_route` |
+| G2 | 目标可被委托：不是协调会话本身、不是子代理/计划唤醒/评测会话、不是外部引擎会话（`AgentEngineKind @ src/shared/contract/agentEngine.ts:10` 全部非 native 值：codex_cli / claude_code / mimo_code / kimi_code / kimi_code_acp / codebuddy_code / grok_cli / dsh_cli——不只 ACP） | `session_type`；`agent_engine` 列的 kind 用 `isExternalAgentEngine @ src/host/services/agentEngine/agentEngineGuards.ts:69` 同款判据（按「非 native」判，不按 ACP 列举） | `not_delegatable` / `self_route` |
 | G3 | 候选集新鲜：模型建议的 candidateRef 属于当前候选集快照 | candidateSetId = hash(候选会话集快照)，与建议携带的集合指纹比对 | `candidate_set_stale` |
 | G4 | 无冲突在飞委托：同一目标会话至多一个 `active` 委托（v1 单活约束，见待拍板 Q3） | session_delegations 按 target 查 active | `delegation_conflict` |
-| G5 | 工作区边界不跨：协调会话与目标会话的 workspaceScope 一致，或目标工作区在用户已授权目录集内 | `resolveSessionWorkspaceScope @ src/host/services/sessionFork/workspace/resolveSessionWorkspaceScope.ts:22` 同源判定 | `workspace_boundary` |
-| G6 | 写互斥：两个 active 委托的目标会话工作区不得重叠（同工作区不允许两个委托并发写） | 工作区目录重叠判定（`fileOwnershipRegistry` / ownedPaths 同款思路，`bindFileOwnershipReleaseHook @ src/host/agent/multiagentTools/spawnAgent.ts:49` 是既有先例） | `write_conflict` |
+| G5 | 工作区边界：目标会话的 workspaceScope 必须可解析、且其根在用户授权目录集内（协调会话是隐藏系统会话、无 projectId 无工作区——`resolveSessionWorkspaceScope` 对它返回 undefined，R0 的「协调与目标一致」比较无比对象，删） | `resolveSessionWorkspaceScope @ src/host/services/sessionFork/workspace/resolveSessionWorkspaceScope.ts:22`（:40-42 无 projectId 返回 undefined） | `workspace_boundary` |
+| G6 | 写互斥：目标工作区不得与**任何活跃写方**重叠——不只比其他 active 委托，还包括用户直开的其他会话正在该工作区跑轮（R0 只比委托行，看不见用户直开会话） | 活跃前台轮的工作区（`getSessionState @ src/host/task/TaskManager.ts:610` + `hasActivePrimaryRun @ :637`）与目标 workspaceScope 的目录重叠判定（`bindFileOwnershipReleaseHook @ src/host/agent/multiagentTools/spawnAgent.ts:49` 的 ownedPaths 是子代理先例） | `write_conflict` |
 | G7 | 幂等：submissionKey 已存在则返回既有委托结果；同键不同指纹拒绝 | session_delegations 唯一键 | `reused` / `idempotency_conflict` |
 | G8 | create_new 的工作区上下文必须来自 Host 受信通道（当前授权目录），模型输出不得携带工作区或身份 | Host 侧构造 | `unauthorized_workspace` |
-| G9 | 用户文本取自 ConversationEnvelope 原文（受信通道）；模型写的 delegationText 只是任务内容，不构成用户权威 | 入口投影 | （结构性约束，非运行时码） |
+| G9 | 用户文本取自 ConversationEnvelope 原文（受信通道）；模型写的 delegationText 只是任务内容，不构成用户权威 | 入口投影 | （结构性约束，非运行时门——表内唯一不查库的一条） |
+| G10 | 目标会话空闲：无活跃前台轮、无排队/发送中输入（人机争用——委托不得插进用户正在用的会话） | `getSessionState @ src/host/task/TaskManager.ts:610`（非 idle/error 即忙；忙时 `startTask` 本就直接抛 `:276-284`）+ `hasActivePrimaryRun @ :637`（web AgentLoop 路径不更新 sessionStates）+ queued_inputs 按 session 查 queued/sending（与 `hasQueuedUserInput @ src/host/services/commandCenter/foregroundWake.ts:60` 同判据） | `target_busy` |
+| G11 | 目标会话权限档不得高于 acceptEdits：委托文本不得送进 `bypassPermissions` 档的会话（防权限洗白） | `getModeForSession @ src/host/permissions/modes.ts:334`（生效档，含 unattended/首跑/限流钳制）；先例：无人值守钳档 `clampUnattendedPermissionMode @ :749`（不得高于 acceptEdits）、B1 收口 `sessionManager.ts:258-262`（cron/heartbeat/channel 标 unattended 强制钳档） | `target_permission_mode` |
+| G12 | folderTrust：create_new 的新工作区与 delegate_existing 的目标工作区都要过信任评估（`sendMessage` 现不调 folderTrust，须在准入门这一步调） | `evaluateFolderTrust @ src/host/security/folderTrustService.ts:857`；先例 `ensureFolderTrustForSpaceCreation @ src/host/services/project/projectService.ts:521`（用户亲手选目录 = 授权；含 gated 配置未确认则抛）。协调建议的 create_new 工作区**不是用户亲手选的**：非 trusted 且 blockedItems>0 一律拒绝回澄清，用户显式确认后才放行 | `untrusted_workspace` |
 
 G7 的幂等键直接沿用 #9 已在生产验证的形状（`SessionCommandCenter.spawn` 的 laneKey + submissionKey）；maka 的 action fingerprint（sha256 绑定 操作+目标+载荷）作为同键冲突时的判别器。
 
-**候选集的构造**（G2/G3 的输入）：`is_archived=0 AND is_deleted=0 AND session_type<>'coordination' AND parent_session_id IS NULL`（子代理会话不可作为委托目标），按最近活动排序截断（maka 上限 32 个，沿用），每项只含：不透明引用（候选集内稳定、跨集合不稳定）、短名、工作区短名、状态、新鲜度桶。**stable sessionId 不进模型输入**——模型只能引用它看过的候选集里的 opaque ref，由 Host 反查（maka 同款："Proposals never carry a Session id"）。
+**候选集的构造**（G2/G3 的输入）：`is_archived=0 AND is_deleted=0 AND session_type='chat'`——按 `session_type` 白名单收口：`SessionType @ src/shared/contract/session.ts:21` 的值域是 `'chat' | 'schedule' | 'heartbeat' | 'subagent' | 'eval'`，其中 schedule/heartbeat 是角色唤醒会话（单向不回流）、subagent/eval 是系统会话，一律不进候选。R0 用 `parent_session_id IS NULL` 判子代理是误伤：**用户手动分叉的会话也是 `parent_session_id=sourceSessionId` 且 `session_type='chat'`**（`SessionForkRepository.ts:274-294`，:283 字面量 'chat'、:294 写 parent_session_id）——该过滤会把用户分叉会话全挡掉；子代理会话由 `session_type` 白名单 + G2 引擎判定双重排除，不再依赖 parent_session_id。按最近活动排序截断（maka 上限 32 个，沿用），每项只含：不透明引用（候选集内稳定、跨集合不稳定）、短名、工作区短名、状态、新鲜度桶。**stable sessionId 不进模型输入**——模型只能引用它看过的候选集里的 opaque ref，由 Host 反查（maka 同款："Proposals never carry a Session id"）。
 
 ### D4 · 模型只出建议的契约
 
@@ -220,10 +227,10 @@ G7 的幂等键直接沿用 #9 已在生产验证的形状（`SessionCommandCent
 | 意图 | 用户文本（≤2000 字）+ 最近 8 条协调转录（每条 ≤600 字） | 输出 ≤80 token，0 重试 |
 | 召回 | 用户文本 + 意图结果 + ≤32 候选（不透明引用/短名/工作区名/状态/新鲜度桶） | 输出 ≤160 token，0 重试 |
 
-界值取 maka 生产值（`WORKHUB_ROUTING_MAX_*`，其 `workhub-routing.ts:43-46`）；意图看不到候选，召回看不到 stable 会话身份——两者都不能单独授权任何写。
+界值取 maka 代码值（输入界值 `WORKHUB_ROUTING_MAX_*` @ 其 `workhub-routing.ts:43-46`，输出上限 80/160 @ 其 `execution-model-authority.ts:253/:275`；该路由模型生产未接电，两组界值均出自未通电的代码常量而非生产观测）；意图看不到候选，召回看不到 stable 会话身份——两者都不能单独授权任何写。
 
 **输出**：严格 JSON，白名单解码（多余键、未知值、超集引用一律抛错）：
-- 意图三值：`routing{discuss|execute|create|continue}` / `linked{correct|stop|resume}` / `unclear`
+- 意图标签集（8 值，与 E1 评测口径一一对应）：`routing{discuss|execute|create|continue}`（四路由值）/ `linked{correct|stop|resume}`（三链上值）/ `unclear`
 - 召回三值：`ranked[refs]`（首个为明确最佳）/ `ambiguous[refs]`（≥2 可信）/ `none`
 
 **策略是纯函数**（决策表，单测锁死）：
@@ -254,8 +261,8 @@ CREATE TABLE IF NOT EXISTS session_delegations (
   coordination_turn_id    TEXT NOT NULL,
   disposition       TEXT NOT NULL,          -- delegate_existing | create_new
   target_session_id TEXT NOT NULL,
-  target_message_id TEXT,                   -- 投递落定的消息 id
-  target_run_id     TEXT,                   -- 起轮后回填（只读引用，不拥有）
+  target_message_id TEXT,                   -- 投递落定的消息 id（软链接，可因压缩/rewind 失效，见下）
+  target_queued_input_id TEXT,              -- queued_inputs 行 id（投递幂等主键；行在消息消失后仍存活）
   submission_key    TEXT NOT NULL UNIQUE,   -- 幂等键：协调会话+轮+提案指纹
   action_fingerprint TEXT NOT NULL,         -- sha256(操作+目标+载荷)，同键判别器
   status            TEXT NOT NULL,          -- active | superseded | stopped | aborted
@@ -267,17 +274,49 @@ CREATE TABLE IF NOT EXISTS session_delegations (
 ```
 
 **关键约束**（maka "Delegation links rather than copies transcripts" 的同款纪律）：
-- 委托行只存**有界链接**（协调轮 ↔ 目标会话/消息/run），不复制目标会话的执行状态与转录；`running` / `waiting` / 终态是 join durable_runs 的**只读投影**，会话变更通知失效重建，重启后从同一链接重建。
+- 委托行只存**有界链接**（协调轮 ↔ 目标会话/消息/排队输入），不复制目标会话的执行状态与转录；`running` / `waiting` / 终态是 join 目标会话事实的**只读投影**（前台轮 = TaskManager 会话状态，后台 run = durable_runs），会话变更通知失效重建，重启后从同一链接重建。
 - 协调状态与执行状态分离：`status` 表达的是**链**的生死（active/superseded/stopped/aborted），不是目标活的成败——目标活的成败属于目标会话。
-- **单事务提交边界**：委托行 + create_new 的新会话行 + 目标会话待处理消息，一个事务；提交前两会话互不可见，提交后同时存在。唤醒目标会话的 executor 只发生在提交之后。
+- **单事务提交边界**（落到真实表见 D5.1）：委托行（session_delegations）+ queued_inputs 行 + create_new 的新会话行（sessions），一个 SQLite immediate 事务；提交前互不可见，提交后同时存在。投递（drain）只发生在提交之后。
 
-**崩溃恢复入口复用什么**：不建第二个恢复状态机。三段接缝各有既有主人——(a) 提交与唤醒之间：目标会话的待处理消息恢复（`BackgroundSubagentDurableLedger` 刀1 的同款接缝语义，`backgroundSubagentDurableLedger.ts:14-16`）；(b) 委托行残留 active 而协调会话轮已死：启动扫 `status='active'` 且无对应在跑轮的行，按 N-LOOP-DURABLE 刀1 的收口语义投影「中断事实」给协调会话（收口不续跑；续跑是 `resume` 链上操作的事）；(c) 目标会话自身的崩溃恢复：durable_runs 既有 `recovering` 语义（`RunStatus @ src/shared/contract/durableRun.ts:10`），协调层只读。
+**崩溃恢复入口复用什么**：不建第二个恢复状态机。三段接缝各有既有主人——(a) 提交与投递之间：queued_inputs 的启动补投（ADR-044：`runStartupSweep @ src/host/app/desktopQueuedInputDrain.ts:170` 扫 queued 行、目标 idle 即 drain，幂等见 D5.1）。R0 曾把这段引到 `BackgroundSubagentDurableLedger`，核源码后更正：该账本文件头 `:14-16` 是完成时 checkpoint、`:17-20` 是重启**收口成 interrupted_by_restart 不续跑**——它不是「待处理输入重启后派发」的主人，引错了；(b) 委托行残留 active 而协调会话轮已死：启动扫 `status='active'` 且无对应在跑轮的行，按 N-LOOP-DURABLE 刀1 的收口语义投影「中断事实」给协调会话（收口不续跑；续跑是 `resume` 链上操作的事）；(c) 目标会话自身的崩溃恢复：前台轮以 TaskManager 会话状态与转录尾部为准（`SessionStatus @ src/host/task/TaskManager.ts:64`），后台 run 才有 durable_runs 的 `recovering` 语义（`RunStatus @ src/shared/contract/durableRun.ts:10`），协调层只读。
+
+**链的持久锚与三种失效**（R1 新增）：链的身份锚 = `delegation_id`（主键）+ `target_session_id`（sessions 行稳定）+ `target_queued_input_id`（queued_inputs 行在消息消失后仍存活——`markConsumed` 只 UPDATE status 不删行，且 drain 送达时它就是消息的 clientMessageId，`drainOne` 重建 envelope 带 `clientMessageId: record.id`）。`target_message_id` 降级为**软链接**：消息行消失或被隐藏时投影降级为「目标已前进」，链本身不断（委托行的身份不依赖消息存活）。fork 后委托**不跟到子会话**：fork 换新 id 新会话行、不复制 session_delegations，链停在源会话并投影「目标已分叉」（fork 的 `forkLineage` metadata 可 join 出 childSessionId，`SessionForkRepository.ts:293`），用户要继续就显式发新委托（新行 supersedes 旧行）——不让链静默漂移到用户没确认过的目标。三种失效各一行：
+
+| 发生 | 链状态 | 用户看到什么 |
+|------|--------|--------------|
+| 目标会话手动压缩（`replaceMessages @ src/host/services/core/repositories/SessionRepository.ts:635`：:662 整表 DELETE 后 :670-677 重插；入口 `contextHealth.ipc.ts:561`） | target_message_id 指向的行被删 | 委托卡片显示「目标已前进（转录已压缩）」，链与终态事实仍在 |
+| 目标会话 rewind（`hidden_by_rewind_id @ src/host/services/core/database/schema.ts:97`；`hideProjectionSuffix @ src/host/services/core/repositories/SessionRewindRepository.ts:367` 软隐藏不删行） | target_message_id 指向 `visibility='rewound'` 的行 | 委托卡片显示「目标已回退」，终态投影以 rewind 后的转录为准 |
+| 目标会话被分叉（换 id，子会话无委托行） | 链停在源会话，status 不变 | 委托卡片显示「目标已分叉」，提示可向新会话显式发新委托（resume 语义） |
 
 **与在飞单的关系**：
 - **N-BGSPAWN-DURABLE**（刀1 已合 main）：委托链**依赖**它的接缝语义但不吸收它——它管「后台子代理的 durable 收口」，本 ADR 管「会话到会话的链接」，表不同、恢复入口不同。它的刀2（断点续跑，若立项）同样不被本 ADR 吸收。
-- **N-RUNENTRY-IDEMPOTENT**（排队中）：目标是「客户端重试不重复起 run」。委托投递的 submissionKey 是**同族问题在协调层的实例**：该单落地后，委托投递应换用其共享幂等层；在此之前协议先落自己的键，两不相等也不冲突。**建议排序：本 ADR 的协议落地不 block on 它，接电前对齐。**
+- **N-RUNENTRY-IDEMPOTENT**（排队中）：目标是「客户端重试不重复起 run」。R1 起委托投递复用 queued_inputs，其 `INSERT OR IGNORE` + 主键幂等（`enqueue @ src/host/services/core/repositories/QueuedInputRepository.ts:62`）已是这类幂等的既有生产实例；该单落地后统一收口到共享幂等层，协议侧键形状对齐即可。**建议排序：本 ADR 的协议落地不 block on 它，接电前对齐。**
 - **N-LOOP-DURABLE-K2***（排队中）：互不吸收。loop_runs 管循环轮次恢复，session_delegations 管委托链；两者共用「启动扫描收口 + 显式恢复操作」的框架思路（照 agent_wakes 模式），表与触发器各自独立。
 - **N-APPROVALWAIT-PAUSECLOCK**（排队中）：无直接依赖；若落地，目标会话 waiting 态的时长口径以它为准，本 ADR 的 `waiting` 投影只读该口径。
+
+### D5.1 · 委托投递路径：走既有 queued_inputs，不另建待处理表（R1 新增）
+
+**决策**：委托消息进目标会话走既有 `queued_inputs` 表（ADR-044 D1，`queued_inputs @ src/host/services/core/database/schema.ts:1084`），不新建「目标会话待处理消息」存储——「协调层唯一新增持久化 = session_delegations 一张表」的自述由此成立：投递是**复用**既有表，不是新增。
+
+**单事务提交边界（真实表）**：一个 SQLite immediate 事务 = session_delegations 行 + queued_inputs 行 +（create_new 时）sessions 行。create_new 的 Project 边界解析（`ensureProjectForWorkspace`，异步且自身有写）与 G12 的 folderTrust 评估都放在事务**前**完成，事务内只做三处行插入——`sessionManager.createSession @ src/host/services/infra/sessionManager.ts:217-256` 的插入部分由协调层在事务内直调，不走它的 async 外壳。
+
+**入队形状**：`queued_inputs.id = 'delegation:' + submission_key`（确定性派生）。`enqueue @ src/host/services/core/repositories/QueuedInputRepository.ts:62` 是 `INSERT OR IGNORE` + 主键幂等——崩溃重放不重复入队；`position = MAX(position)+1`——委托排在已在队的用户输入**之后**（`ORDER BY position ASC, created_at ASC, id ASC`，FIFO 不插队）。
+
+**投递执行**：全部复用既有 `registerDesktopQueuedInputDrain @ src/host/app/desktopQueuedInputDrain.ts:52`——目标会话转 idle（state_change 事件）或启动扫（`runStartupSweep @ :170`，只投 idle 会话；web 侧接线 `src/web/routes/agent.ts:326`）时 `drainOne @ :103` 调 `sendMessage`；投递失败重入队，至 `QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS = 3`（`src/shared/constants/queuedInput.ts:3`）耗尽后 markFailed + `QUEUED_INPUT_SEND_FAILED` 事件 → 委托行投影 `aborted(delivery_failed)`，协调会话向用户呈现送达失败，可 `resume` 重投。
+
+**与前台唤醒跳过规则相容**：`hasQueuedUserInput @ src/host/services/commandCenter/foregroundWake.ts:60`（:68-69 见 queued/sending 即真）会让命令中心的前台唤醒跳过该会话（:148-149）——委托输入在队期间，该会话的后台任务完成**不触发前台唤醒**，直到 drain 消费完。这是既有规则对一切排队输入的统一行为（用户自己排队时同样发生），方向是安全的（防唤醒轮与排队输入交错），本 ADR 接受并沿用，不开例外。
+
+**与 G10 一致**：准入门在提案时拒绝忙目标（target_busy）；提交后用户抢先说话的窗口由 drain 的既有语义兜住——`startTask` 忙抛（`TaskManager.ts:276-284`）→ 重入队 → 转 idle 再投，委托消息排在用户消息之后执行，顺序保真。与两个既有先例同哲学：`sessionAutomationService.ts:663-680` 忙则不打断（注释明言旧实现 interruptAndContinue 属敌意行为）、foregroundWake 有排队输入即跳过唤醒。
+
+**恢复语义**：这段接缝的语义是**补投**（幂等重放，行为不丢），与接缝 (b) 委托行残留 active 的**收口**（投影中断事实、续跑靠显式 resume）不同段不同主——不要混用。
+
+### D5.2 · 审批卡的归属与协调侧可见性（R1 新增）
+
+**事实**：审批 park 按会话——`approvalParkEvents @ src/host/agent/approvalParkEvents.ts:31`（parked 事件总线）；`TaskManager.ts:296-298` 的注释明示后台 run 的「消息与审批仍归属原 sessionId」；启动重水化 `hydrateApprovalGatesAtBoot @ src/host/agent/parkedApprovalHydration.ts:26`。companion 手机端已有按会话渲染的 ApprovalCard（`packages/mobile/src/features/sessions/ApprovalCard.tsx:4`，`MobileRoot.tsx:674` 渲染）。
+
+**决策**：委托轮触发的审批卡**留在目标会话**，协调层不搬卡、不代答。防权限洗白的运行时对应物已有：委托文本在目标会话按 ADR-067 D3 注入语义带 origin 链（本轮注入消息的 origin 链挂 turn context，权限判定取最不可信者——`subagentExecutor.ts:579`；peer 起源写/执行升人工确认——`subagentExecutor.ts:936`），G11 再从准入侧挡掉 bypassPermissions 档目标。
+
+**协调侧感知**：只读投影「目标等待审批」（waiting 语义，时长口径归 N-APPROVALWAIT-PAUSECLOCK）；委托卡片给「去目标会话处理」的跳转，不在协调会话里复刻审批交互——协调会话的工具档本来就不含审批面，防协调层长成执行体。用户也可以在 companion 上答目标会话的审批卡（既有能力，无需新做）。协调入口/委托卡片要不要进 companion，列为待拍板 Q7。
 
 ### D6 · 两步走：协议先落地、默认不接电，接电判据可测
 
@@ -285,12 +324,12 @@ CREATE TABLE IF NOT EXISTS session_delegations (
 
 | # | 判据 | 阈值 | 怎么测 |
 |---|------|------|--------|
-| E1 | 路由意图准确率 | ≥200 条真实 cowork 消息评测集上 intent 三值准确率 ≥85% | Neo 既有 eval 框架跑（不建协调专用评测框架，maka 同款决策） |
+| E1 | 路由意图准确率 | ≥200 条评测集上意图标签 **8 值**（routing{discuss/execute/create/continue} + linked{correct/stop/resume} + unclear，与 D4 输出集一一对应）准确率 ≥85%，且分层配额达标：execute/continue 合计 ≥40%、create ≥5%、discuss ≥15%、linked ≥15%、unclear ≥10% | 评测集来源（协调入口未上线、无真实协调消息可采，用代理语料）：①从本机既有真实会话历史抽多会话快照、人工改写出「跨会话意图」样本（候选集快照按 G3 同 schema 从真实会话表构造，≤32 个）；②人工新写。金标 = 单人标注 + 20% 抽样双标（另一人/另一模型席），一致率 ≥90% 才收卷。Neo 既有 eval 框架跑（不建协调专用评测框架，maka 同款决策） |
 | E2 | 不安全绑定 | **= 0**：把 execute 派给错误会话、或任何失败路径产出 create_new/任意绑定 | 评测集断言 + 准入门拒绝路径单测全覆盖 |
-| E3 | 崩溃幂等 | 注入「提交后唤醒前」崩溃 ≥20 次：重复投递 0、丢委托 0 | fault-injection 档测试（`docs/testing-evidence-classes.md` 口径） |
-| E4 | 多余澄清率 | 评测集上不必要的 clarify ≤20%（「不必要」= 人工标注为可路由却 clarify） | 同 E1 评测集标注 |
+| E3 | 崩溃幂等 | 两个注入点各 ≥10 次、合计 ≥20 次：①单事务提交返回后、drain `markSending` 前（`drainOne @ src/host/app/desktopQueuedInputDrain.ts:103` 入口）②`markSending` 后、`sendMessage` 返回前（走重入队路径）。断言：重复投递 0（queued_inputs 主键 + submissionKey）、丢委托 0（行存活 + `runStartupSweep` 补投） | fault-injection 档测试（`docs/testing-evidence-classes.md` 口径），注入钩子即上述两个函数边界 |
+| E4 | 多余澄清率 | 评测集上不必要的 clarify ≤20%（「不必要」= E1 金标判为可路由却 clarify） | 同 E1 评测集与金标流程，标注人同 E1 |
 | E5 | 路由延迟 | 端到端路由决策 P95 ≤3s（两次小调用 + 候选查询） | 评测集计时 |
-| E6 | 准入门真实工作 | flag 内测期拒绝码分布非全零（门在真实使用中被触发，不是摆设） | flag 内测期打点 |
+| E6 | 准入门真实工作 | flag 内测期 ≥500 条路由消息中拒绝码分布非全零、且 ≥2 种不同拒绝码被触发（门在真实使用中被触发，不是摆设） | flag 内测期打点 |
 
 不满足 E1-E4 任意一条：不接电，回评测迭代；E5/E6 不满足：可以带病接电但必须立单。
 
@@ -301,7 +340,7 @@ CREATE TABLE IF NOT EXISTS session_delegations (
 | `coordinatorMode`（`CoordinatorSession @ src/host/agent/coordinatorMode.ts:47`） | **不碰** | 它是并行 spawn 内部的内存任务编排（3+ agent 自动激活）；协调层永远不进 spawn 树，协调会话的工具档**禁含 spawn_agent**（防协调层自己变成执行体） |
 | `spawn_agent`（`executeSpawnAgent @ src/host/agent/multiagentTools/spawnAgent.ts:95`） | **不碰、不吸收** | 委托的目标是 Session，子代理树继续是会话内设施；`run_in_background` 的 durable 账本（#14）与委托链各自独立，表不同恢复入口不同 |
 | `DAGScheduler`（`DAGScheduler @ src/host/scheduler/DAGScheduler.ts:149`） | **不碰** | 会话内 DAG 执行调度层（`webStartupServices` 注入 resolver）；协调层只选会话、不调度 DAG，两者的「依赖」语言不共享 |
-| `goal_gate`（`handleGoalCompletionGate @ src/host/agent/runtime/goalCompletionGate.ts:67`） | **不碰** | goal 完成闸是会话内 goal 模式的语义；委托的「完成」= 目标会话 run 终态投影，**不引入第二把完成闸**——协调层无权判定目标的活算不算完成 |
+| `goal_gate`（`handleGoalCompletionGate @ src/host/agent/runtime/goalCompletionGate.ts:66`） | **不碰** | goal 完成闸是会话内 goal 模式的语义；委托的「完成」= 目标会话轮终态投影（前台轮 = TaskManager idle/error，后台 run = durable_runs 终态），**不引入第二把完成闸**——协调层无权判定目标的活算不算完成 |
 | `taskManager`（`taskManagerModule @ src/host/tools/modules/planning/taskManager.ts:430`） | **并存** | 协调会话作为 Session 可以用自己的任务清单记协调待办（可选）；委托不读写目标会话的 taskStore，两套任务语言不合并 |
 
 另与 **ADR-054 会话命令中心**（#9）的关系是**分层并存**：它管「会话 brain → 本会话后台任务槽」，本 ADR 管「协调会话 → 其他会话」；派活语义（delegate/steer/cancel/短名/幂等/lane）同族同源，实现分体（槽池 vs 委托链）。用户在一个普通会话里说「帮我做 X」走它；在协调入口说「让那个做 X 的会话继续 Y」走本 ADR。
@@ -309,10 +348,10 @@ CREATE TABLE IF NOT EXISTS session_delegations (
 ## 划界（不做什么）
 
 - **不做多 Host / Mesh / 云同步协调**。单机单 App 实例是全部前提；跨设备协调（两台机器各开一个 Neo 互相同步委托）明确不在本 ADR，maka 也只做到 per-Host。
-- **不动会话内编排的内部**。上面五个设施 + workflow 的内部结构、schema、语义一概不改；协调层对它们只有「目标会话的 run 终态」这一个只读接口。
+- **不动会话内编排的内部**。上面五个设施 + workflow 的内部结构、schema、语义一概不改；协调层对它们只有「目标会话的轮终态」这一个只读接口。
 - **maka 的 model routing ≠ Neo 的 modelRouter**。maka「routing」指用模型把消息分派到会话；Neo `modelRouter` 是按任务选推理模型。两词在本 ADR 语境中不混用——本文「路由」一律指前者。
 - **协调会话不做执行**。工具档禁 `spawn_agent` / `workflow` / `delegate_task`（会话内指挥台工具）等一切「自己把活干了」的口子；它只能回答、澄清、委托、链上操作。防协调层长成又一个执行体。
-- **ACP 外部引擎会话不作为委托目标**（G2 拒绝）：其轮生命周期由外部引擎驱动，待处理消息语义无保证。将来若开放，另立 ADR。
+- **外部引擎会话不作为委托目标**（G2 拒绝，覆盖 `AgentEngineKind @ src/shared/contract/agentEngine.ts:10` 全部非 native 值——codex_cli / claude_code / mimo_code / kimi_code / kimi_code_acp / codebuddy_code / grok_cli / dsh_cli，判据同 `isExternalAgentEngine`，不只 ACP）：其轮生命周期由外部引擎驱动，待处理消息语义无保证。将来若开放，另立 ADR。
 - **不做 L3 agent 间对话**（沿用 multiagent-system.md 的 L0-L3 分级决策）；协调会话与目标会话之间只有消息投递与状态投影，没有对话。
 
 ## 风险
@@ -327,9 +366,12 @@ CREATE TABLE IF NOT EXISTS session_delegations (
 | # | 问题 | 类型（拍错了受伤的是什么） | 我的建议 |
 |---|------|------------------------|---------|
 | Q1 | 协调入口的产品形态：独立常驻面板（maka 的 WorkHub 浮窗形态）还是现有会话列表里一个隐藏角色 + 侧栏顶部固定入口按钮？ | **定位与边界**——拍错整个 renderer 信息架构返工，且用户「在哪找到协调」的心智一旦形成难改 | v1 做隐藏角色 + 侧栏顶部「协调」入口按钮，不做独立面板/浮窗；面板形态等内测数据再说 |
-| Q2 | 路由不确定时的默认档：宁可 `clarify`（反问打扰）还是宁可 `answer_here`（就地答，可能没把活派出去）？ | **风险容忍**——这是价值取向：错派的修复成本（非程序员用户找不到自己的活去哪了）vs 反问的打扰成本，两害谁轻只有产品负责人能称 | `clarify`（maka 同款）。cowork 用户被派错会话后最难自救，反问的成本是一次输入，错派的成本是用户失去对工作位置的心智地图 |
+| Q2 | ~~路由不确定时的默认档：宁可 `clarify` 还是宁可 `answer_here`？~~（R1 撤销拍板需求）D4 已把一切失败路径锁死 fail-closed 到 `clarify`、无任何路径静默 create_new 或绑定会话——正文已定，本槽降级为确认记录 | —（不再是开放槽） | 维持 D4；若要改默认档，先改 D4 契约再回本表，不在此处开后门 |
 | Q3 | 单活委托：同一目标会话已有 active 委托时，第二个委托 v1 是直接拒绝回澄清，还是排进目标会话队列？ | **业务规则**——系统行为错：排队会引入「用户以为派了其实还在等」的静默延迟，拒绝会打断「我就想让它连着干两件」的自然意图 | v1 直接拒绝并在澄清里带「已有委托在跑」上下文；内测看 `delegation_conflict` 占比再决定是否队列化 |
-| Q4 | 路由模型用协调会话自己保存的模型（主模型兼任，两次小调用每次 ≤160 token）还是独立小模型配置（省 token、多一个配置项）？ | **成本与性能**（涉付费 API 调用归爸）——拍错要么账单涨（主模型贵），要么多一个用户要配的旋钮（非程序员配不动） | 用协调会话已保存的模型（maka 同款，零额外配置）；意图+召回两次调用输出上限 80/160 token，单条消息路由成本可忽略 |
+| Q4 | 路由模型用协调会话自己保存的模型（主模型兼任）还是独立小模型配置？ | **成本与性能**（涉付费 API 调用归爸）——R1 重估：成本大头在**输入**不在输出——意图调用吃用户文本 ≤2000 字 + 最近 8 条转录 ×600 字，召回再吃一遍用户文本 + ≤32 候选描述，两次调用合计**输入约 4-7k token/条消息**、输出仅 80/160，全走主模型时账单随消息量线性涨 | 仍默认用协调会话已保存的模型（零配置优先，非程序员配不动旋钮）；设置里留「路由专用模型」可选项（v1.1），flag 内测期用 E5 计时 + 账单数据回看是否值得切小模型 |
+| Q5 | 协调会话的转录进不进遥测上传与上线后评分分母？ | **数据口径**——拍错要么系统会话污染上线评分（协调轮天然高频短轮），要么协调行为完全无观测 | 进遥测上传（`toSessionRow` 的 `session_type` 列带 coordination，`telemetryUploaderService.ts:409`），但**剔出评分分母**（现分母只剔 eval，`postLaunchScoreStore.ts:166`，需加剔 coordination） |
+| Q6 | 计费/quota 归属：路由两次小调用记协调会话、被委托轮 token 记目标会话（现状记账按会话各自记）——协调侧要不要汇总「本委托总共花了多少」？ | **成本可见性**——拍错用户在目标会话看到一笔没来由的 token 消耗，或协调层为汇总重造一套记账 | v1 不做汇总投影（记账留各会话、委托卡片不带成本）；内测看用户是否追问再立单 |
+| Q7 | companion（手机端）可见性：协调入口/委托卡片要不要出现在手机端？ | **产品边界**——companion 已能按会话渲染审批卡（`ApprovalCard @ packages/mobile/src/features/sessions/ApprovalCard.tsx:4`），委托轮触发审批时手机上只见目标会话的卡、看不到「这是委托来的」上下文 | v1 手机端不做协调入口（桌面先行）；目标会话审批卡照常可达（D5.2），委托上下文标注随 v1.1 |
 
 ## 拍板记录
 
@@ -344,7 +386,9 @@ CREATE TABLE IF NOT EXISTS session_delegations (
 | 日期 | 改动 | 原因 |
 |------|------|------|
 | 2026-09-23 | 初稿（只出 ADR 不施工） | N-WORKHUB-ADR |
+| 2026-09-23 | R1：新增 D5.1 委托投递路径（queued_inputs 复用）与 D5.2 审批卡归属；接缝 (a) 改引真实主人（ADR-044，弃 bg 子代理账本误引）；候选集判据 `parent_session_id IS NULL` → `session_type='chat'` 白名单（不再误伤用户分叉）；准入门补 G10-G12、G2 扩全部非 native 引擎、G6 补用户直开会话；D5 链锚定（target_queued_input_id + 软链接降级 + fork 不跟链）与三种失效表；E1/E3/E4/E6 改写得出数的测法；拍板槽重整（Q2 撤销、Q4 补输入 token、新增 Q5-Q7）；锚点修正 RUN_STATUS_TRANSITIONS :17、goal 闸 :66 | 三席跨家审（claude/opus · kimi · grok）全票「修后可拍板」，7 条 Important 收敛（N-WORKHUB-ADR R1） |
 
 ---
 
 席位证据：GLM 5.3 · as-built 基线 origin/main@8c7dde035（本 worktree HEAD 同 commit，干净树核出）· maka 源料 commit d5bc0fad
+R1（2026-09-23）：三席评审票存 `code-agent-private-archive/docs/evidence/assets/N-WORKHUB-ADR/review-{claude-opus,kimi,grok}-2026-09-23.*`；每条意见核到 8c7dde035 源码后再改，处置逐条记于证据档「R1 修订」节。

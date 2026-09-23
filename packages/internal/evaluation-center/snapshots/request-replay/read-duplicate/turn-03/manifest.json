@@ -1,0 +1,98 @@
+{
+  "requestId": "read-duplicate-request-03",
+  "messageRefs": [
+    {
+      "kind": "content",
+      "contentHash": "5cec4f7fc0dd07c64ce1580ad8b92d13cd1a57f62e82016e4219f5b1d2b6ec58",
+      "reason": "system_prompt_fallback"
+    },
+    {
+      "kind": "ledger_message",
+      "messageId": "msg-01"
+    },
+    {
+      "kind": "ledger_message",
+      "messageId": "msg-02"
+    },
+    {
+      "kind": "ledger_message",
+      "messageId": "msg-03"
+    },
+    {
+      "kind": "ledger_message",
+      "messageId": "msg-04"
+    },
+    {
+      "kind": "ledger_message",
+      "messageId": "msg-05"
+    },
+    {
+      "kind": "content",
+      "contentHash": "bbc8ddf9e014b91ba2840873b3600561403385a96ddea606b4c3b922aaaf3089",
+      "reason": "post_assembly_rewrite"
+    },
+    {
+      "kind": "content",
+      "contentHash": "b1fa7a1c1c1bd7a639a612a6a63a5e31ccd7128e03d00627190c89299d34b02a",
+      "reason": "dynamic_tail",
+      "blocks": [
+        {
+          "contentHash": "f1ed6994abc0a9e316d33b30b64b51bccf5c1160068434ef70d82b8c81ae5acc",
+          "bytes": 28
+        },
+        {
+          "contentHash": "05ff84f968f8bb6cd55d43077dc0f42b7a5773ea856117c9123ff3254362eb6e",
+          "bytes": 201
+        },
+        {
+          "contentHash": "eacde090d9dffa516f03eb5dc32abc07fce0192b388603903ceda593faf2da44",
+          "bytes": 4
+        },
+        {
+          "contentHash": "44b4b1111936b146b2734f961766ef1c4c4669e6564fe2426bb700e7c5bc78ba",
+          "bytes": 179
+        },
+        {
+          "contentHash": "4321bbd880e301948c0b880c24a5ffdfe73f103e23585e37904da5434cfdd520",
+          "bytes": 19
+        }
+      ]
+    }
+  ],
+  "toolSchemaHash": "8bb2032064719e01732d986de53c2a29c6fbc0d1de94c33c776c93370023d59e",
+  "toolNames": [
+    "AskUserQuestion",
+    "Bash",
+    "Blob",
+    "Edit",
+    "Glob",
+    "Grep",
+    "ListDirectory",
+    "Read",
+    "Skill",
+    "ToolSearch",
+    "WebSearch",
+    "Write",
+    "delegate_task",
+    "recommend_capability",
+    "task_status"
+  ],
+  "requested": {
+    "provider": "openai",
+    "model": "e2e-local-agent-model",
+    "temperature": 0.3,
+    "maxTokens": 16384,
+    "reasoningEffort": "high",
+    "thinkingBudget": 16384
+  },
+  "actualProvider": "acceptance",
+  "actualModel": "e2e-local-agent-model",
+  "appVersion": "0.33.0",
+  "adapterDefaults": {
+    "engine": "legacy",
+    "temperature": null,
+    "maxTokens": null
+  },
+  "compactionReplacements": [],
+  "degraded": false
+}

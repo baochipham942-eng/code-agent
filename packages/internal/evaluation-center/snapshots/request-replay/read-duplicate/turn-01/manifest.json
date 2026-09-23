@@ -1,0 +1,50 @@
+{
+  "requestId": "read-duplicate-request-01",
+  "messageRefs": [
+    {
+      "kind": "content",
+      "contentHash": "5cec4f7fc0dd07c64ce1580ad8b92d13cd1a57f62e82016e4219f5b1d2b6ec58",
+      "reason": "system_prompt_fallback"
+    },
+    {
+      "kind": "ledger_message",
+      "messageId": "msg-01"
+    }
+  ],
+  "toolSchemaHash": "8bb2032064719e01732d986de53c2a29c6fbc0d1de94c33c776c93370023d59e",
+  "toolNames": [
+    "AskUserQuestion",
+    "Bash",
+    "Blob",
+    "Edit",
+    "Glob",
+    "Grep",
+    "ListDirectory",
+    "Read",
+    "Skill",
+    "ToolSearch",
+    "WebSearch",
+    "Write",
+    "delegate_task",
+    "recommend_capability",
+    "task_status"
+  ],
+  "requested": {
+    "provider": "openai",
+    "model": "e2e-local-agent-model",
+    "temperature": 0.3,
+    "maxTokens": 16384,
+    "reasoningEffort": "high",
+    "thinkingBudget": 16384
+  },
+  "actualProvider": "acceptance",
+  "actualModel": "e2e-local-agent-model",
+  "appVersion": "0.33.0",
+  "adapterDefaults": {
+    "engine": "legacy",
+    "temperature": null,
+    "maxTokens": null
+  },
+  "compactionReplacements": [],
+  "degraded": false
+}

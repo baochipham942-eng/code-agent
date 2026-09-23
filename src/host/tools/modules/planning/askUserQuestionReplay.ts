@@ -30,7 +30,12 @@ function buildAskUserQuestionReplayKey(questions: UserQuestion[]): string {
   return questions
     .map((q) => {
       const options = q.options
-        .map((o) => `${normalizeQuestionText(o.label ?? '')}${normalizeQuestionText(o.description ?? '')}`)
+        // label/description 归一化后必须带边界编码：裸拼接会让「AB 无 desc」与
+        // 「A + desc B」撞键，不同选项集合命中旧缓存回放错答案（ai-review I1）。
+        .map((o) => JSON.stringify([
+          normalizeQuestionText(o.label ?? ''),
+          normalizeQuestionText(o.description ?? ''),
+        ]))
         .sort()
         .join('\u0002');
       return [

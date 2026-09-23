@@ -741,6 +741,24 @@ describe('AskUserQuestion 同轮重复问句回放', () => {
     expect(second.ok).toBe(true);
     if (second.ok) expect(second.output).not.toContain('你这轮已答过');
   });
+
+  it('abortSignal 已取消且有缓存：返回 ABORTED 而非回放旧答案', async () => {
+    const ctx = makeCtx({ runId: 'run-abort-1', turnId: 'iter-1' });
+    await executeAndAnswer(ctx, replayQuestions, 0);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const handler = await askUserQuestionModule.createHandler();
+    const second = await handler.execute(
+      { questions: replayQuestions },
+      makeCtx({ runId: 'run-abort-1', turnId: 'iter-2', abortSignal: ctrl.signal }),
+      allowAll,
+    );
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.code).toBe('ABORTED');
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 // 归一化语义走行为面钉：record 写入后 lookup 命中=同问、未命中=不同问
@@ -873,5 +891,30 @@ describe('AskUserQuestion 回放归一化语义（record/lookup 行为面）', (
       },
     ];
     expect(recordThenLookup('turn-key-4', single, multi)).toBeUndefined();
+  });
+
+  it('label/description 归一化后带边界编码：AB无desc 与 A+desc(B) 不撞键', () => {
+    // 裸拼接时两组选项归一化结果同为 'ab'，会撞键回放错答案（ai-review I1）。
+    const abNoDesc: UserQuestion[] = [
+      {
+        question: 'q',
+        header: 'h',
+        options: [{ label: 'AB' }, { label: 'c', description: 'z' }] as UserQuestion['options'],
+      },
+    ];
+    const aWithDescB: UserQuestion[] = [
+      {
+        question: 'q',
+        header: 'h',
+        options: [
+          { label: 'A', description: 'B' },
+          { label: 'c', description: 'z' },
+        ],
+      },
+    ];
+    expect(recordThenLookup('turn-key-5a', abNoDesc, aWithDescB)).toBeUndefined();
+    expect(recordThenLookup('turn-key-5b', aWithDescB, abNoDesc)).toBeUndefined();
+    // 同组自身仍命中（编码改动没破坏正常回放）。
+    expect(recordThenLookup('turn-key-5c', abNoDesc, abNoDesc)).toBeDefined();
   });
 });

@@ -95,7 +95,12 @@ export async function executeAskUserQuestion(
     }
   }
 
-  // 同轮字面重复问句：直接回放上次答案，不产生审批与提问事件（N-ASKUSER-REPEAT-REPLAY）。
+  // 取消检查必须在回放命中之前：已取消的重复调用要返回 ABORTED，不能拿旧答案报 ok。
+  if (ctx.abortSignal.aborted) {
+    return { ok: false, error: 'aborted', code: 'ABORTED' };
+  }
+
+  // 同 run 字面重复问句：直接回放上次答案，不产生审批与提问事件（N-ASKUSER-REPEAT-REPLAY）。
   const replayedOutput = lookupAskUserQuestionReplay(ctx, questions);
   if (replayedOutput !== undefined) {
     onProgress?.({ stage: 'completing', percent: 100 });

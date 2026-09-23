@@ -21,7 +21,7 @@ const discoverLazyServersForSearchMock = vi.fn();
 vi.mock('../../../../../src/host/services/toolSearch/toolSearchService', () => ({
   getToolSearchService: () => ({
     searchTools: searchToolsMock,
-    applyInjectionFit: vi.fn(),
+    rollbackInserted: vi.fn(),
     getLoadedDeferredTools: () => [],
   }),
   setProtocolToolNameChecker: vi.fn(),

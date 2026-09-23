@@ -34,6 +34,7 @@ import { hasConfiguredExternalSearchCredential } from '../../services/search/sea
 import { estimateTokens } from '../../context/tokenEstimator';
 import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
 import type { InjectedToolSchema } from '../../services/toolSearch/singleInjectionCeiling';
+import { measureSentToolTokens } from '../../services/toolSearch/sentToolSchema';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
@@ -59,8 +60,20 @@ function findSchemaByName(schemas: readonly ToolSchema[], name: string): ToolSch
 }
 
 /**
+ * cloud || dynamicDescription(context) || static.
+ * Empty string is not a description: it falls through, matching the historical renderer.
+ */
+function resolveToolDescription(
+  cloudDescription: string | undefined,
+  dynamicDescription: string | undefined,
+  staticDescription: string,
+): string {
+  return cloudDescription || dynamicDescription || staticDescription;
+}
+
+/**
  * 把 protocol ToolSchema 映射成 ToolDefinition，合并 cloud meta。
- * description 优先级: 单次注入上限裁剪 > cloud > dynamic > static schema.description
+ * description 优先级: cloud || dynamicDescription(context) || static schema.description
  */
 function schemaToDefinition(
   schema: ToolSchema,
@@ -68,17 +81,15 @@ function schemaToDefinition(
   descriptionContext?: ToolDescriptionContext,
 ): ToolDefinition {
   const cloud = cloudMeta[schema.name];
-  const service = getToolSearchService();
-  const override = service.getInjectionDescriptionOverride(schema.name);
-  const inputOverride = service.getInjectionInputSchemaOverride(schema.name);
-  const description = override
-    ?? cloud?.description
-    ?? schema.dynamicDescription?.(descriptionContext)
-    ?? schema.description;
+  const description = resolveToolDescription(
+    cloud?.description,
+    schema.dynamicDescription?.(descriptionContext),
+    schema.description,
+  );
   return {
     name: schema.name,
     description,
-    inputSchema: (inputOverride ?? schema.inputSchema) as unknown as ToolDefinition['inputSchema'],
+    inputSchema: schema.inputSchema as unknown as ToolDefinition['inputSchema'],
     outputSchema: schema.outputSchema,
     requiresPermission: schema.requiresPermission ?? schema.permissionLevel !== 'read',
     permissionLevel: mapPermissionLevel(schema.permissionLevel),
@@ -153,41 +164,47 @@ export function getLoadedDeferredToolDefinitions(
 
   const mcpDefinitions = getMCPClient()
     .getToolDefinitions()
-    .filter((definition) => loadedNames.has(definition.name))
-    .map((definition) => {
-      const override = toolSearchService.getInjectionDescriptionOverride(definition.name);
-      const inputOverride = toolSearchService.getInjectionInputSchemaOverride(definition.name);
-      if (override === undefined && inputOverride === undefined) return definition;
-      return {
-        ...definition,
-        ...(override === undefined ? {} : { description: override }),
-        ...(inputOverride === undefined ? {} : { inputSchema: inputOverride as unknown as ToolDefinition['inputSchema'] }),
-      };
-    });
+    .filter((definition) => loadedNames.has(definition.name));
 
   return [...protocolDefinitions, ...mcpDefinitions];
 }
 
-/** Claude-shaped schema that getLoadedDeferredToolDefinitions would send before a ceiling override. */
-export function readDeferredToolInjectionSchemas(names: readonly string[]): InjectedToolSchema[] {
+/**
+ * Schema getLoadedDeferredToolDefinitions would send for these names.
+ * Description uses the same cloud || dynamic || static resolution as rendering.
+ * sentTokens counts the provider-normalized wire, not the static description alone.
+ */
+export function readDeferredToolInjectionSchemas(
+  names: readonly string[],
+  descriptionContext?: ToolDescriptionContext,
+  provider?: string,
+): InjectedToolSchema[] {
   const wanted = new Set(names);
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
   const found: InjectedToolSchema[] = [];
   for (const schema of getProtocolToolSchemas()) {
     if (!wanted.has(schema.name)) continue;
+    const definition = schemaToDefinition(schema, cloudToolMeta, descriptionContext);
     found.push({
-      name: schema.name,
-      description: cloudToolMeta[schema.name]?.description || schema.description,
-      input_schema: schema.inputSchema as unknown as Record<string, unknown>,
+      name: definition.name,
+      description: definition.description,
+      input_schema: definition.inputSchema as unknown as Record<string, unknown>,
+      sentTokens: measureSentToolTokens(definition, provider),
     });
   }
   const mcp = getMCPClient() as { getToolDefinitions?: () => Array<{ name: string; description: string; inputSchema: unknown }> };
   for (const definition of mcp.getToolDefinitions?.() ?? []) {
     if (!wanted.has(definition.name) || found.some((schema) => schema.name === definition.name)) continue;
-    found.push({
+    const sent = {
       name: definition.name,
       description: definition.description,
+      inputSchema: definition.inputSchema as ToolDefinition['inputSchema'],
+    };
+    found.push({
+      name: sent.name,
+      description: sent.description,
       input_schema: definition.inputSchema as Record<string, unknown>,
+      sentTokens: measureSentToolTokens(sent, provider),
     });
   }
   return found;

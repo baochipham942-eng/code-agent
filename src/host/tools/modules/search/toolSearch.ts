@@ -32,10 +32,12 @@ import { estimateTokens } from '../../../context/tokenEstimator';
 import { DEFERRED_TOOL_LOADING } from '../../../../shared/constants/tools';
 import { readDeferredToolInjectionSchemas } from '../../dispatch/toolDefinitions';
 import { boundSingleInjection } from '../../../services/toolSearch/singleInjectionCeiling';
+import { descriptionContextFromModelConfig } from '../../../services/toolSearch/sentToolSchema';
 
 const MAX_RESULTS_HARD_CAP = DEFERRED_TOOL_LOADING.SEARCH_MAX_RESULTS_HARD_CAP;
 const DEFAULT_MAX_RESULTS = DEFERRED_TOOL_LOADING.SEARCH_DEFAULT_MAX_RESULTS;
 const SINGLE_INJECTION_TOKEN_CEILING = DEFERRED_TOOL_LOADING.SINGLE_INJECTION_TOKEN_CEILING;
+const EXPLICIT_SELECT_TOKEN_CEILING = DEFERRED_TOOL_LOADING.EXPLICIT_SELECT_INJECTION_TOKEN_CEILING;
 
 interface McpDiscoveryEntry {
   serverName: string;
@@ -72,7 +74,6 @@ export async function executeToolSearch(
 
   try {
     const service = getToolSearchService();
-    const alreadyLoaded = new Set(service.getLoadedDeferredTools());
     // scope 判据前置：discovery 会真的把 lazy stdio server 拉起来（起子进程），
     // 范围外的拉起来结果也会被丢掉，白起——收窄生效时只发现范围内的
     const scopedMcpServerIds = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
@@ -173,7 +174,26 @@ export async function executeToolSearch(
       };
     }
 
-    const output = enforceSingleInjectionCeiling(result, alreadyLoaded, query.trim().startsWith('select:'));
+    const modelContext = descriptionContextFromModelConfig(ctx.modelConfig);
+    const decision = enforceSingleInjectionCeiling(result, {
+      explicitSelect: query.trim().startsWith('select:'),
+      sessionId: ctx.sessionId,
+      descriptionContext: modelContext.context,
+      provider: modelContext.provider,
+    });
+    if (!decision.ok) {
+      return {
+        ok: false,
+        error: `INJECTION_CEILING name=${decision.name} measured=${decision.measured} allowed=${decision.allowed}`,
+        code: 'INJECTION_CEILING',
+        meta: {
+          name: decision.name,
+          measured: decision.measured,
+          allowed: decision.allowed,
+        },
+      };
+    }
+    const output = decision.output;
 
     ctx.logger.info('ToolSearch done', {
       query,
@@ -243,6 +263,11 @@ function renderToolSearchLines(result: SearchRenderResult, overCeiling: Readonly
     `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
     '',
   ];
+  if (overCeiling.size > 0) {
+    const selects = [...overCeiling].map((name) => `select:${name}`).join(', ');
+    lines.push(`未自动注入完整 schema（超过单次注入上限）。使用 ${selects} 加载完整定义。`);
+    lines.push('');
+  }
 
   for (const tool of result.tools) {
     const sourceInfo = tool.source === 'mcp' && tool.mcpServer
@@ -307,45 +332,53 @@ function namesOnlyText(result: SearchRenderResult): string {
   ].join('\n');
 }
 
-function schemasKeptWhole(
-  kept: readonly { name: string; description: string; input_schema: Record<string, unknown> }[],
-  originals: readonly { name: string; description: string; input_schema: Record<string, unknown> }[],
-): boolean {
-  if (kept.length !== originals.length) return false;
-  return originals.every((original) => {
-    const match = kept.find((schema) => schema.name === original.name);
-    return match?.description === original.description
-      && JSON.stringify(match.input_schema) === JSON.stringify(original.input_schema);
-  });
-}
-
 function enforceSingleInjectionCeiling(
-  result: SearchRenderResult,
-  alreadyLoaded: ReadonlySet<string>,
-  explicitSelect: boolean,
-): string {
-  const overCeiling = new Set<string>();
-  const freshLoaded = result.loadedTools.filter((name) => !alreadyLoaded.has(name));
-  const draft = fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result);
-  // select: asked for this one schema. Send it whole. The result text stays inside the ceiling.
-  if (explicitSelect || freshLoaded.length === 0) {
-    return fitTextToTokenCeiling(draft, SINGLE_INJECTION_TOKEN_CEILING);
-  }
-  const measurable = readDeferredToolInjectionSchemas(freshLoaded);
+  result: SearchRenderResult & { insertedLoads?: readonly { name: string; token: number }[] },
+  options: {
+    explicitSelect: boolean;
+    sessionId: string;
+    descriptionContext?: { provider?: string; model?: string };
+    provider?: string;
+  },
+): { ok: true; output: string } | { ok: false; measured: number; allowed: number; name: string } {
+  const insertedLoads = result.insertedLoads ?? [];
+  const freshNames = insertedLoads.map((claim) => claim.name);
+  const measurable = readDeferredToolInjectionSchemas(freshNames, options.descriptionContext, options.provider);
+  const schemaTokens = measurable.reduce((sum, schema) => sum + (schema.sentTokens ?? 0), 0);
+  const ceiling = options.explicitSelect ? EXPLICIT_SELECT_TOKEN_CEILING : SINGLE_INJECTION_TOKEN_CEILING;
+  const fullText = renderToolSearchLines(result, new Set()).join('\n');
   const bounded = boundSingleInjection({
-    text: draft,
+    text: fullText,
     namesText: namesOnlyText(result),
     schemas: measurable,
+    schemaTokens,
+    ceiling,
   });
-  if (schemasKeptWhole(bounded.schemas, measurable)) return bounded.text;
+  if (options.explicitSelect) {
+    if (!bounded.fitsSchemas) {
+      getToolSearchService().rollbackInserted(insertedLoads, options.sessionId);
+      result.loadedTools = result.loadedTools.filter((name) => !freshNames.includes(name));
+      return {
+        ok: false,
+        measured: bounded.measured,
+        allowed: ceiling,
+        name: freshNames[0] || result.tools[0]?.name || 'tool',
+      };
+    }
+    return { ok: true, output: bounded.text };
+  }
+  if (bounded.fitsSchemas) return { ok: true, output: bounded.text };
 
-  for (const schema of measurable) overCeiling.add(schema.name);
-  getToolSearchService().applyInjectionFit([], [...overCeiling], measurable);
+  const overCeiling = new Set(freshNames);
+  getToolSearchService().rollbackInserted(insertedLoads, options.sessionId);
   result.loadedTools = result.loadedTools.filter((name) => !overCeiling.has(name));
-  return fitTextToTokenCeiling(
-    fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result),
-    SINGLE_INJECTION_TOKEN_CEILING,
-  );
+  return {
+    ok: true,
+    output: fitTextToTokenCeiling(
+      fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result),
+      SINGLE_INJECTION_TOKEN_CEILING,
+    ),
+  };
 }
 
 function fitTextToTokenCeiling(text: string, ceiling: number): string {

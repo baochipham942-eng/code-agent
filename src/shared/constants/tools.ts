@@ -1,13 +1,21 @@
 /**
- * Deferred-tool index budget and ToolSearch single-injection ceiling.
- * One source for the summary budget, result caps, idle-eviction window,
- * and the token ceiling that covers ToolSearch text plus a newly loaded schema.
- * 520 fits the largest description-free deferred schema (ppt_generate, 476)
- * plus the short select confirmation. Longer descriptions are trimmed first.
+ * Deferred-tool index budget and ToolSearch injection ceilings.
+ * SINGLE_INJECTION_TOKEN_CEILING bounds automatic keyword injection
+ * (result text plus one newly loaded full schema). Overflow tells the model
+ * to select:name and does not trim that schema.
+ * EXPLICIT_SELECT_INJECTION_TOKEN_CEILING bounds the same total for select:.
+ * Measured 2026-09-23 on 100 loadable builtin schemas, dynamic descriptions,
+ * and the real agent catalog. Largest bare wire is TaskManager at 2024
+ * (deepseek strict), longest select text is ProposeCanvasOps at 95, largest
+ * paired total is TaskManager at 2081. AgentSpawn with that catalog plus 30
+ * extra agents is 3074. The ceiling is 3074 + 95 + 131 so a full schema, its
+ * result text, a modest catalog, and a cloud description edit still fit.
+ * A larger user schema fails with the measured total.
  */
 export const DEFERRED_TOOL_LOADING = {
   SUMMARY_TOKEN_BUDGET: 1200,
   SINGLE_INJECTION_TOKEN_CEILING: 520,
+  EXPLICIT_SELECT_INJECTION_TOKEN_CEILING: 3300,
   SEARCH_DEFAULT_MAX_RESULTS: 3,
   SEARCH_MAX_RESULTS_HARD_CAP: 5,
   IDLE_ROUNDS_BEFORE_EVICTION: 3,

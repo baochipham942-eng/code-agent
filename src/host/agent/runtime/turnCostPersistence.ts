@@ -59,13 +59,10 @@ export function createTurnCostEventHandler(options: {
   const turns = new Map<string, PendingTurnCost>();
   const sink = options.sink ?? defaultSink();
   let activeTurnId: string | null = null;
-  let previousPrompt = previousPromptBySession.get(options.sessionId);
-
   const cacheBreakReasonForTurn = (): CacheBreakReason => {
     const current = options.readCachePrompt?.();
     if (!current) return 'none';
-    const previous = previousPrompt;
-    previousPrompt = current;
+    const previous = previousPromptBySession.get(options.sessionId);
     previousPromptBySession.delete(options.sessionId);
     if (previousPromptBySession.size >= MAX_PREVIOUS_PROMPT_SESSIONS) {
       const oldest = previousPromptBySession.keys().next().value;

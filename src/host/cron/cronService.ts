@@ -66,7 +66,7 @@ import {
   saveCronJob,
   upsertCronExecutionInMemory,
 } from './cronPersistence';
-import { pushCronResult } from './cronResultDelivery';
+import { deliverCronResultToChannel } from './cronResultDelivery';
 export { computeCronFireJitterMs } from './cronExecutionPolicy';
 
 const execAsync = promisify(exec);
@@ -926,7 +926,14 @@ export class CronService implements Disposable {
         }
         if (runFailed) throw runError;
 
-        await this.deliverCronResult(definition, result, executionId);
+        // 无新料的监听轮不投递（FB-239）：skipped 判定必须先于推送，
+        // 否则安静轮照样把「没有更新」推到通道，跟 skipped 语义无进收件箱自相矛盾。
+        const quietWatchRound = isExternalWatch && !hasAlert;
+        if (!quietWatchRound) {
+          // 推送正文必须是最后一条 assistant 正文：orchestrator.sendMessage 是 Promise<void>，
+          // result 恒 undefined，推它等于永远不推（PR#2060 ai-review Important）。
+          await this.deliverCronResult(definition, finalAssistantText || result, executionId);
+        }
 
         // 无新料的监听运行整成 skipped 形状：复用 isSkippedResult 门，
         // 让它不进待过目收件箱、不写会话回流（快照已在上面照常写回）。
@@ -935,7 +942,7 @@ export class CronService implements Disposable {
           prompt: action.prompt,
           result,
           sessionId: cronSession.id,
-          ...(isExternalWatch && !hasAlert ? { skipped: true, reason: 'no_new_event' } : {}),
+          ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
         };
       }
 
@@ -1089,32 +1096,19 @@ export class CronService implements Disposable {
   // Database Operations
   // --------------------------------------------------------------------------
 
+  /** 投递与失败留痕的实现已拆到 cronResultDelivery.ts（含 FB-239 字面去重写回）。 */
+  private async deliverCronResult(definition: CronJobDefinition, result: unknown, executionId?: string): Promise<void> {
+    await deliverCronResultToChannel(definition, result, this.executions, executionId, {
+      getLatestDefinition: (jobId) => this.jobs.get(jobId)?.definition,
+      persistAction: (jobId, action) => this.updateJob(jobId, { action }),
+    });
+  }
+
   /**
    * 启动时把残留的 running 执行记录标记为 interrupted（maka 护栏自查 A5-④）：
    * 上次进程退出前没跑完的执行会永远停在 running，误导用户以为还在跑。
    * 单条 UPDATE，幂等（重复跑不会二次改动已是 interrupted 的行），不影响启动耗时。
    */
-  /**
-   * 推结果 + 失败留痕。推送失败原来只有一行 console.warn，无人值守场景等于没有信号；
-   * 这里把原因写进该次执行记录的 error 字段（执行历史已经在展示它），不新造告警面。
-   * 🚫 不改 status：任务本身确实跑成功了，改成 failed 会谎报执行结果。
-   */
-  private async deliverCronResult(
-    definition: CronJobDefinition,
-    result: unknown,
-    executionId?: string,
-  ): Promise<void> {
-    const outcome = await pushCronResult(definition, result);
-    if (outcome.delivered || !outcome.reason || !executionId) return;
-    const executions = this.executions.get(definition.id) ?? [];
-    const execution = executions.find((candidate) => candidate.id === executionId);
-    if (!execution) return;
-    const note = `结果推送失败：${outcome.reason}`;
-    execution.error = execution.error ? `${execution.error}\n${note}` : note;
-    upsertCronExecutionInMemory(this.executions, execution);
-    await saveCronExecution(execution);
-  }
-
   private async markInterruptedExecutions(): Promise<void> {
     try {
       const db = getDatabase().getDb();

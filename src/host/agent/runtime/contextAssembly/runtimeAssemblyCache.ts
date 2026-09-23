@@ -10,6 +10,7 @@ export type RuntimeAssemblyCache = {
     prompt: string;
     turnContext: string;
     tokens: number;
+    /** GAP-023: prompt 构建时被预算丢弃的块（缓存命中时恢复，保持可见化一致） */
     droppedBlocks?: string[];
     promptLayers?: ContextEventRecord[];
   };
@@ -35,5 +36,5 @@ export function getRuntimeAssemblyCache(ctx: ContextAssemblyCtx): RuntimeAssembl
 
 export function getCachedDynamicSystemPrompt(runtime: RuntimeContext): string | undefined {
   const cache = runtimeAssemblyCaches.get(runtime as unknown as object);
-  return cache?.dynamicPrompt?.prompt ?? cache?.lastAssembledSystemPrompt;
+  return cache?.lastAssembledSystemPrompt;
 }

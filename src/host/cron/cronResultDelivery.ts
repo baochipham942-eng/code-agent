@@ -1,12 +1,13 @@
 import type { CronJobAction, CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
 import { CRON_RESULT_PUSH } from '../../shared/constants';
 import { saveCronExecution, upsertCronExecutionInMemory } from './cronPersistence';
+import { truncateUtf8Snapshot } from './cronAgentPrompt';
 
 export interface CronResultDeliveryOutcome {
   delivered: boolean;
   /** 没有配置推送目标或与上次真推正文一字不差时为 undefined——那不是失败，是没东西要发。 */
   reason?: string;
-  /** 真推成功时回传发出去的正文，调用方据此更新 lastPushed（只在成功后更新）。 */
+  /** 真推成功时回传用于写回 lastPushed 的去重键（按 CRON_AGENT_SNAPSHOT.MAX_BYTES 截断；≤8KB 时与发出正文一字不差）。 */
   pushedBody?: string;
 }
 
@@ -50,11 +51,13 @@ export async function pushCronResult(
   const body = String(result);
   // 字面去重（免费路径，不受任何开关限制；借鉴 OWB scheduler.js:293「跟上次真推出去的比」）：
   // 正文与上次真推成功的一字不差就不推。判错最坏是少推一条重复内容，不是永远不知道。
-  // lastPushed 只在真推成功后由下方 rememberPushedBody 写回，这里只读。
+  // lastPushed 只在真推成功后由下方 rememberPushedBody 写回，这里只读；
+  // 比较与写回共用同一截断口径（≤8KB 时截断是恒等，「一字不差不推」严格成立）。
+  const dedupBody = truncateUtf8Snapshot(body).value;
   if (definition.action.type === 'agent') {
     const lastPushed = definition.action.context?.[CRON_RESULT_PUSH.LAST_PUSHED_CONTEXT_KEY];
-    if (typeof lastPushed === 'string' && body === lastPushed) {
-      console.error(`[CronService] Job result identical to the last pushed body, push skipped: ${targetChannel}`);
+    if (typeof lastPushed === 'string' && dedupBody === lastPushed) {
+      console.warn(`[CronService] Job result identical to the last pushed body, push skipped: ${targetChannel}`);
       return { delivered: false };
     }
   }
@@ -79,7 +82,7 @@ export async function pushCronResult(
     if (!sent.success) return fail(`channel rejected the message: ${sent.error ?? 'unknown error'}`);
 
     console.error(`[CronService] Job result pushed to channel: ${targetChannel}`);
-    return { delivered: true, pushedBody: body };
+    return { delivered: true, pushedBody: dedupBody };
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
   }

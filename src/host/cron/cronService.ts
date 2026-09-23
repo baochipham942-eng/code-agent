@@ -930,7 +930,9 @@ export class CronService implements Disposable {
         // 否则安静轮照样把「没有更新」推到通道，跟 skipped 语义无进收件箱自相矛盾。
         const quietWatchRound = isExternalWatch && !hasAlert;
         if (!quietWatchRound) {
-          await this.deliverCronResult(definition, result, executionId);
+          // 推送正文必须是最后一条 assistant 正文：orchestrator.sendMessage 是 Promise<void>，
+          // result 恒 undefined，推它等于永远不推（PR#2060 ai-review Important）。
+          await this.deliverCronResult(definition, finalAssistantText || result, executionId);
         }
 
         // 无新料的监听运行整成 skipped 形状：复用 isSkippedResult 门，

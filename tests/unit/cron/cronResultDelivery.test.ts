@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
+import { CRON_AGENT_SNAPSHOT } from '../../../src/shared/constants';
+import { truncateUtf8Snapshot } from '../../../src/host/cron/cronAgentPrompt';
 
 const sendMessage = vi.fn();
 const getAllAccounts = vi.fn();
@@ -113,5 +115,26 @@ describe('pushCronResult literal dedup against lastPushed (FB-239)', () => {
     await expect(pushCronResult(shellDefinition, 'same')).resolves.toEqual({ delivered: true, pushedBody: 'same' });
     await expect(pushCronResult(shellDefinition, 'same')).resolves.toEqual({ delivered: true, pushedBody: 'same' });
     expect(sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  // 去重键落库前按快照同一口径截断（8KB UTF-8），比较也用同一口径：
+  // 超长按截断后形态比对，≤8KB 正文则「一字不差不推」严格成立。
+  it('compares and stores lastPushed with the shared 8KB truncation', async () => {
+    const longBody = `${'长'.repeat(CRON_AGENT_SNAPSHOT.MAX_BYTES)}尾巴`;
+    const truncated = truncateUtf8Snapshot(longBody).value;
+    const definition = job('feishu:oc_group1');
+    definition.action = { ...definition.action, context: { lastPushedResult: truncated } } as typeof definition.action;
+
+    const outcome = await pushCronResult(definition, longBody);
+
+    expect(outcome).toEqual({ delivered: false });
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    // 截断窗口内差一字仍照推，且写回键就是截断后的正文。
+    const changedBody = `异${longBody.slice(1)}`;
+    await expect(pushCronResult(definition, changedBody)).resolves.toEqual({
+      delivered: true,
+      pushedBody: truncateUtf8Snapshot(changedBody).value,
+    });
   });
 });

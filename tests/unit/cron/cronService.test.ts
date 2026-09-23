@@ -74,7 +74,9 @@ vi.mock('../../../src/host/platform', () => ({
 }));
 
 const agentRunState = vi.hoisted(() => ({
-  sendMessage: vi.fn(async () => '本轮正文'),
+  // 真实形状：AgentOrchestrator.sendMessage 是 Promise<void>，返回值恒 undefined；
+  // 推送正文只能来自 getMessages() 里最后一条 assistant 消息（PR#2060 ai-review Important）。
+  sendMessage: vi.fn(async () => undefined),
   messages: [] as Array<{ role: string; content: string }>,
 }));
 
@@ -134,7 +136,7 @@ afterEach(() => {
   configState.language = 'zh';
   channelState.sendMessage.mockClear();
   agentRunState.sendMessage.mockReset();
-  agentRunState.sendMessage.mockImplementation(async () => '本轮正文');
+  agentRunState.sendMessage.mockImplementation(async () => undefined);
   agentRunState.messages = [];
   automationState.recordCreated.mockClear();
   automationState.recordEvent.mockClear();
@@ -734,10 +736,10 @@ describe('N-CRON-SKIPPED-DELIVERY quiet watch rounds', () => {
   });
 
   // 验收②：有 <cron_alert> 的监听轮照推，且真推成功后把正文记成 lastPushed。
+  // 正文来自 getMessages() 的最后一条 assistant 消息——sendMessage 的真实返回是 void。
   it('pushes an external_watch round that carries a cron_alert', async () => {
     const alertText = '<cron_alert>新增冲突：明天十点双会</cron_alert>';
     agentRunState.messages = [{ role: 'assistant', content: alertText }];
-    agentRunState.sendMessage.mockResolvedValue(alertText);
     const service = new CronService();
     const job = await service.createJob(agentJob({
       externalWatch: { source: 'feishu-calendar', calendarId: 'cal-1' },
@@ -758,7 +760,6 @@ describe('N-CRON-SKIPPED-DELIVERY quiet watch rounds', () => {
   // 验收②：非监听任务不受 skipped 门影响，每轮照推。
   it('keeps pushing non-watch agent jobs as before', async () => {
     agentRunState.messages = [{ role: 'assistant', content: '日报正文' }];
-    agentRunState.sendMessage.mockResolvedValue('日报正文');
     const service = new CronService();
     const job = await service.createJob(agentJob({}));
 
@@ -777,13 +778,13 @@ describe('N-CRON-SKIPPED-DELIVERY quiet watch rounds', () => {
     const service = new CronService();
     const job = await service.createJob(agentJob({}));
 
-    agentRunState.sendMessage.mockResolvedValue('正文A');
+    agentRunState.messages = [{ role: 'assistant', content: '正文A' }];
     await service.triggerJob(job.id);
     expect(channelState.sendMessage).toHaveBeenCalledTimes(1);
     expect(service.getJob(job.id)?.action).toMatchObject({ context: { lastPushedResult: '正文A' } });
 
     // 平台拒发：lastPushed 不许更新。
-    agentRunState.sendMessage.mockResolvedValue('正文B');
+    agentRunState.messages = [{ role: 'assistant', content: '正文B' }];
     channelState.sendMessage.mockResolvedValueOnce({ success: false, error: 'invalid receive_id' });
     await service.triggerJob(job.id);
     expect(channelState.sendMessage).toHaveBeenCalledTimes(2);

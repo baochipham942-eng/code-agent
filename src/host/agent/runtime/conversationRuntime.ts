@@ -827,7 +827,7 @@ export class ConversationRuntime {
       !startupTaskFeatures.isPlanningTask &&
       !startupTaskFeatures.isFuzzyCodeReview &&
       !startupTaskFeatures.isFuzzyTroubleshooting;
-    preloadToolsForIntent(startupTaskFeatures);
+    preloadToolsForIntent(startupTaskFeatures, this.ctx.sessionId);
     try {
       const skillInvocation =
         await resolveSkillInvocation(userRequest, this.ctx.workingDirectory)

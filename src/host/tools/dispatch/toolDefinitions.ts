@@ -31,6 +31,9 @@ import { getToolSearchService } from '../../services/toolSearch/toolSearchServic
 import { isBashToolName } from '../toolNames';
 import { getConfigService } from '../../services/core/configService';
 import { hasConfiguredExternalSearchCredential } from '../../services/search/searchSourceRegistry';
+import { estimateTokens } from '../../context/tokenEstimator';
+import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
+import type { InjectedToolSchema } from '../../services/toolSearch/singleInjectionCeiling';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
@@ -57,7 +60,7 @@ function findSchemaByName(schemas: readonly ToolSchema[], name: string): ToolSch
 
 /**
  * 把 protocol ToolSchema 映射成 ToolDefinition，合并 cloud meta。
- * description 优先级: cloud > dynamic > static schema.description
+ * description 优先级: 单次注入上限裁剪 > cloud > dynamic > static schema.description
  */
 function schemaToDefinition(
   schema: ToolSchema,
@@ -65,12 +68,17 @@ function schemaToDefinition(
   descriptionContext?: ToolDescriptionContext,
 ): ToolDefinition {
   const cloud = cloudMeta[schema.name];
-  const description =
-    cloud?.description || schema.dynamicDescription?.(descriptionContext) || schema.description;
+  const service = getToolSearchService();
+  const override = service.getInjectionDescriptionOverride(schema.name);
+  const inputOverride = service.getInjectionInputSchemaOverride(schema.name);
+  const description = override
+    ?? cloud?.description
+    ?? schema.dynamicDescription?.(descriptionContext)
+    ?? schema.description;
   return {
     name: schema.name,
     description,
-    inputSchema: schema.inputSchema,
+    inputSchema: (inputOverride ?? schema.inputSchema) as unknown as ToolDefinition['inputSchema'],
     outputSchema: schema.outputSchema,
     requiresPermission: schema.requiresPermission ?? schema.permissionLevel !== 'read',
     permissionLevel: mapPermissionLevel(schema.permissionLevel),
@@ -145,9 +153,44 @@ export function getLoadedDeferredToolDefinitions(
 
   const mcpDefinitions = getMCPClient()
     .getToolDefinitions()
-    .filter((definition) => loadedNames.has(definition.name));
+    .filter((definition) => loadedNames.has(definition.name))
+    .map((definition) => {
+      const override = toolSearchService.getInjectionDescriptionOverride(definition.name);
+      const inputOverride = toolSearchService.getInjectionInputSchemaOverride(definition.name);
+      if (override === undefined && inputOverride === undefined) return definition;
+      return {
+        ...definition,
+        ...(override === undefined ? {} : { description: override }),
+        ...(inputOverride === undefined ? {} : { inputSchema: inputOverride as unknown as ToolDefinition['inputSchema'] }),
+      };
+    });
 
   return [...protocolDefinitions, ...mcpDefinitions];
+}
+
+/** Claude-shaped schema that getLoadedDeferredToolDefinitions would send before a ceiling override. */
+export function readDeferredToolInjectionSchemas(names: readonly string[]): InjectedToolSchema[] {
+  const wanted = new Set(names);
+  const cloudToolMeta = getCloudConfigService().getAllToolMeta();
+  const found: InjectedToolSchema[] = [];
+  for (const schema of getProtocolToolSchemas()) {
+    if (!wanted.has(schema.name)) continue;
+    found.push({
+      name: schema.name,
+      description: cloudToolMeta[schema.name]?.description || schema.description,
+      input_schema: schema.inputSchema as unknown as Record<string, unknown>,
+    });
+  }
+  const mcp = getMCPClient() as { getToolDefinitions?: () => Array<{ name: string; description: string; inputSchema: unknown }> };
+  for (const definition of mcp.getToolDefinitions?.() ?? []) {
+    if (!wanted.has(definition.name) || found.some((schema) => schema.name === definition.name)) continue;
+    found.push({
+      name: definition.name,
+      description: definition.description,
+      input_schema: definition.inputSchema as Record<string, unknown>,
+    });
+  }
+  return found;
 }
 
 /**
@@ -198,6 +241,8 @@ export const DESIGN_SUPPRESSED_GENERIC_MEDIA_TOOLS = [
   'image_annotate',
 ] as const;
 
+const DEFAULT_DEFERRED_SUMMARY_TOKEN_BUDGET = DEFERRED_TOOL_LOADING.SUMMARY_TOKEN_BUDGET;
+
 export function withoutGenericMediaToolsInDesign(
   tools: ToolDefinition[],
   designCanvasActive: boolean | undefined,
@@ -217,6 +262,7 @@ export function withoutGenericMediaToolsInDesign(
 export function getDeferredToolsSummary(
   deniedToolNames: readonly string[] = [],
   allowedToolNames?: readonly string[],
+  tokenBudget: number = DEFAULT_DEFERRED_SUMMARY_TOKEN_BUDGET,
 ): string {
   // T3b: allowlist 收窄（如会话指挥台前台 brain）下，若 ToolSearch 本身不在允许集里，
   // 模型物理上加载不了任何延迟工具——继续宣传"可通过 ToolSearch 加载 X"只会诱导模型
@@ -226,7 +272,9 @@ export function getDeferredToolsSummary(
     if (!allowed.has('toolsearch')) return '';
   }
   const denied = new Set(deniedToolNames.map((name) => name.trim().toLowerCase()));
+  const budget = Math.max(1, Math.floor(tokenBudget));
   const grouped = new Map<string, string[]>();
+  const visibleBuiltinCount = DEFERRED_TOOLS_META.filter((meta) => !denied.has(meta.name.toLowerCase())).length;
   for (const meta of DEFERRED_TOOLS_META) {
     if (denied.has(meta.name.toLowerCase())) continue;
     const category = meta.tags[0] || 'other';
@@ -234,9 +282,13 @@ export function getDeferredToolsSummary(
     grouped.get(category)!.push(`${meta.name}: ${meta.shortDescription}`);
   }
 
-  const lines: string[] = [];
+  const fullLines: string[] = [];
+  const nameLines: string[] = [];
+  const compactLines: string[] = [];
   for (const [category, tools] of grouped) {
-    lines.push(`[${category}] ${tools.join(' | ')}`);
+    fullLines.push(`[${category}] ${tools.join(' | ')}`);
+    nameLines.push(`[${category}] ${tools.map((tool) => tool.slice(0, tool.indexOf(': '))).join(' | ')}`);
+    compactLines.push(`[${category}] ${tools.length} tools; use ToolSearch to find them`);
   }
 
   // MCP 工具名索引：按 server 分组，只列名字不带 schema
@@ -252,10 +304,50 @@ export function getDeferredToolsSummary(
   // 该 summary 进 system 稳定前缀，顺序漂移会弱化跨会话前缀复用
   for (const server of [...byServer.keys()].sort()) {
     const names = [...(byServer.get(server) ?? [])].sort();
-    lines.push(`[mcp:${server}] ${names.join(' | ')}`);
+    fullLines.push(`[mcp:${server}] ${names.join(' | ')}`);
+    nameLines.push(`[mcp:${server}] ${names.join(' | ')}`);
+    compactLines.push(`[mcp:${server}] ${names.length} tools; use ToolSearch to find them`);
   }
 
-  return lines.join('\n');
+  const visibleMcpCount = [...byServer.values()].reduce((sum, names) => sum + names.length, 0);
+  const visibleCount = visibleBuiltinCount + visibleMcpCount;
+  const withUnlistedCount = (lines: string[], unlisted: number): string => [
+    ...lines,
+    `${unlisted} tools unlisted; use ToolSearch to find them`,
+  ].join('\n');
+  const full = withUnlistedCount(fullLines, 0);
+  if (estimateTokens(full) <= budget) return full;
+
+  const names = withUnlistedCount(nameLines, 0);
+  if (estimateTokens(names) <= budget) return names;
+
+  const compact = withUnlistedCount(compactLines, visibleCount);
+  if (estimateTokens(compact) <= budget) return compact;
+
+  // A caller can provide an unusually small budget. Keep the cap hard even then;
+  // normal budgets retain every category/server line above.
+  const fitted: string[] = [];
+  for (const line of [...compactLines, `${visibleCount} tools unlisted; use ToolSearch to find them`]) {
+    const candidate = [...fitted, line].join('\n');
+    if (estimateTokens(candidate) <= budget) fitted.push(line);
+  }
+  if (fitted.length > 0) return fitted.join('\n');
+  const fallback = `${visibleCount} tools unlisted`;
+  if (estimateTokens(fallback) <= budget) return fallback;
+  let low = 0;
+  let high = fallback.length;
+  let best = '';
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = fallback.slice(0, middle);
+    if (estimateTokens(candidate) <= budget) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best;
 }
 
 /**

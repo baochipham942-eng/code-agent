@@ -58,8 +58,11 @@ export interface ToolSearchResult {
  * 工具搜索选项
  */
 export interface ToolSearchOptions {
-  /** 最大返回结果数（默认 5） */
+  /** 最大返回结果数（默认 3，硬上限 5） */
   maxResults?: number;
+
+  /** Session whose round clock should own a tool unlocked by this search. */
+  sessionId?: string;
 
   /** 必须匹配的前缀（用 + 标记） */
   requiredPrefix?: string;

@@ -86,7 +86,7 @@ export async function handleUnavailableToolCalls(
     const unlockedCallIds = new Set<string>();
     for (const call of unavailableToolCalls) {
       const canonical = resolveToolAlias(call.name);
-      const selection = toolSearchService.selectTool(canonical);
+      const selection = toolSearchService.selectTool(canonical, ctx.sessionId);
       if (selection.loadedTools.length > 0) {
         autoLoaded.push(...selection.loadedTools);
         unlockedCallIds.add(call.id);

@@ -9,10 +9,13 @@ import type {
   DeferredToolMeta,
   ToolSearchQueryMode,
 } from '../../../shared/contract/toolSearch';
+import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
 import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName, resolveToolAlias } from './deferredTools';
+import type { InjectedToolSchema } from './singleInjectionCeiling';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('ToolSearchService');
+const DEFAULT_EVICTION_SESSION = 'default';
 
 let protocolToolNameChecker: (name: string) => boolean = () => false;
 
@@ -35,6 +38,10 @@ function normalizeToolName(name: string): string {
  */
 export class ToolSearchService {
   private loadedDeferredTools: Set<string> = new Set();
+  private readonly injectionDescriptionOverrides = new Map<string, string>();
+  private readonly injectionInputSchemaOverrides = new Map<string, Record<string, unknown>>();
+  private readonly roundBySession = new Map<string, number>();
+  private readonly lastUsedBySession = new Map<string, Map<string, number>>();
   private deferredToolIndex: Map<string, DeferredToolMeta>;
   private mcpToolsMeta: Map<string, DeferredToolMeta> = new Map();
   private skillsMeta: Map<string, DeferredToolMeta> = new Map();
@@ -81,10 +88,16 @@ export class ToolSearchService {
     query: string,
     options: ToolSearchOptions = {}
   ): Promise<ToolSearchResult> {
-    const { maxResults = 5, includeMCP = true } = options;
+    const requestedMaxResults = options.maxResults ?? DEFERRED_TOOL_LOADING.SEARCH_DEFAULT_MAX_RESULTS;
+    const maxResults = Math.min(
+      Math.max(1, requestedMaxResults),
+      DEFERRED_TOOL_LOADING.SEARCH_MAX_RESULTS_HARD_CAP,
+    );
+    const { includeMCP = true } = options;
     const deniedToolNames = new Set(
       (options.deniedToolNames ?? []).map((name) => normalizeToolName(name).toLowerCase()),
     );
+    const sessionId = options.sessionId || DEFAULT_EVICTION_SESSION;
     const mode = this.parseQuery(query);
 
     logger.debug(`Searching tools: query="${query}", mode=${mode.type}`);
@@ -95,7 +108,7 @@ export class ToolSearchService {
         logger.warn(`ToolSearch selection blocked by run policy: ${mode.toolName}`);
         return { tools: [], hasMore: false, totalCount: 0, loadedTools: [] };
       }
-      return this.selectTool(mode.toolName);
+      return this.selectTool(mode.toolName, sessionId);
     }
 
     // 获取所有可搜索的工具元数据
@@ -134,15 +147,19 @@ export class ToolSearchService {
 
     // 取 top N
     const topResults = scored.slice(0, maxResults);
+    const topScore = topResults[0]?.score;
+    const firstResultClearlyAhead = scored.length === 1
+      || (topScore !== undefined && topScore - (scored[1]?.score ?? 0) >= DEFERRED_TOOL_LOADING.CLEAR_LEAD_SCORE_GAP);
     const loadedTools: string[] = [];
 
-    const tools: ToolSearchItem[] = topResults.map(({ meta, score }) => {
+    const tools: ToolSearchItem[] = topResults.map(({ meta, score }, index) => {
       const loadable = this.canExposeLoadedTool(meta);
       const notCallableReason = loadable ? undefined : this.getNotCallableReason(meta);
       const canonicalInvocation = this.getCanonicalInvocation(meta, loadable);
+      const shouldLoad = index === 0 && firstResultClearlyAhead;
 
-      if (loadable && !isCoreToolName(meta.name)) {
-        this.loadedDeferredTools.add(meta.name);
+      if (loadable && shouldLoad && !isCoreToolName(meta.name)) {
+        this.markToolLoaded(meta.name, sessionId);
         loadedTools.push(meta.name);
       } else {
         logger.debug(`ToolSearch match is not loaded as a deferred tool: ${meta.name}: ${notCallableReason || 'core tool already available'}`);
@@ -174,7 +191,8 @@ export class ToolSearchService {
   /**
    * 直接选择工具
    */
-  selectTool(toolName: string): ToolSearchResult {
+  selectTool(toolName: string, sessionId = DEFAULT_EVICTION_SESSION): ToolSearchResult {
+    const ownerSession = sessionId || DEFAULT_EVICTION_SESSION;
     const normalizedToolName = normalizeToolName(toolName);
     if (isCoreToolName(normalizedToolName)) {
       logger.info(`Selected core tool already available: ${normalizedToolName}`);
@@ -212,7 +230,7 @@ export class ToolSearchService {
     const canonicalInvocation = this.getCanonicalInvocation(meta, loadable);
     const loadedTools = loadable ? [meta.name] : [];
     if (loadedTools.length > 0) {
-      this.loadedDeferredTools.add(meta.name);
+      this.markToolLoaded(meta.name, ownerSession);
       logger.info(`Selected and loaded tool: ${normalizedToolName}`);
     } else {
       logger.info(`Selected tool is searchable but not loadable as a callable tool: ${normalizedToolName}`);
@@ -318,6 +336,43 @@ export class ToolSearchService {
     return Array.from(this.loadedDeferredTools);
   }
 
+  /** Advance one session's turn clock. Other sessions keep their own clocks. */
+  beginRound(sessionId = DEFAULT_EVICTION_SESSION): void {
+    this.roundBySession.set(sessionId, this.sessionRound(sessionId) + 1);
+  }
+
+  /** Record a real tool call so idle eviction measures consecutive unused rounds. */
+  markToolCalled(name: string, sessionId = DEFAULT_EVICTION_SESSION): void {
+    const normalized = normalizeToolName(name);
+    if (this.loadedDeferredTools.has(normalized)) {
+      this.touchTool(sessionId, normalized);
+    }
+  }
+
+  /**
+   * Evict tools this session has left idle, and only after a compaction that
+   * actually landed. A tool another session used inside its own idle window stays.
+   */
+  evictIdleDeferredToolsAtCompactionBoundary(
+    idleRounds = DEFERRED_TOOL_LOADING.IDLE_ROUNDS_BEFORE_EVICTION,
+    sessionId = DEFAULT_EVICTION_SESSION,
+  ): string[] {
+    const round = this.sessionRound(sessionId);
+    const evicted: string[] = [];
+    for (const name of [...this.loadedDeferredTools]) {
+      const localLast = this.lastUsedBySession.get(sessionId)?.get(name);
+      const localIdle = localLast === undefined ? round : round - localLast;
+      if (localIdle < idleRounds) continue;
+      if (this.toolHeldByAnotherSession(name, sessionId, idleRounds)) continue;
+      this.unloadDeferredTool(name);
+      evicted.push(name);
+    }
+    if (evicted.length > 0) {
+      logger.info(`Evicted idle deferred tools at compaction boundary: ${evicted.join(', ')}`);
+    }
+    return evicted;
+  }
+
   /**
    * 获取所有已注册的 MCP 工具元数据
    * GAP-008: 用于把 MCP 工具名索引注入 system prompt（schema 仍按需加载）
@@ -331,15 +386,19 @@ export class ToolSearchService {
    * 与 selectTool 同一套可加载性校验；未知/不可加载的名字静默跳过。
    * 返回实际新加载的工具名。
    */
-  preloadTools(names: string[]): string[] {
+  preloadTools(names: string[], sessionId = DEFAULT_EVICTION_SESSION): string[] {
+    const ownerSession = sessionId || DEFAULT_EVICTION_SESSION;
     const loaded: string[] = [];
     for (const name of names) {
       const normalized = normalizeToolName(name);
       if (isCoreToolName(normalized)) continue;
-      if (this.loadedDeferredTools.has(normalized)) continue;
+      if (this.loadedDeferredTools.has(normalized)) {
+        this.touchTool(ownerSession, normalized);
+        continue;
+      }
       const meta = this.deferredToolIndex.get(normalized) || this.mcpToolsMeta.get(normalized);
       if (!meta || !this.canExposeLoadedTool(meta)) continue;
-      this.loadedDeferredTools.add(meta.name);
+      this.markToolLoaded(meta.name, ownerSession);
       loaded.push(meta.name);
     }
     if (loaded.length > 0) {
@@ -362,7 +421,55 @@ export class ToolSearchService {
    */
   resetLoadedTools(): void {
     this.loadedDeferredTools.clear();
+    this.injectionDescriptionOverrides.clear();
+    this.injectionInputSchemaOverrides.clear();
+    this.roundBySession.clear();
+    this.lastUsedBySession.clear();
     logger.debug('Reset loaded deferred tools');
+  }
+
+  /**
+   * Drop a session's eviction clock. A deleted or ended session must not keep
+   * another session's tools loaded by looking recently active.
+   */
+  releaseSession(sessionId: string): void {
+    if (!sessionId || sessionId === DEFAULT_EVICTION_SESSION) return;
+    this.roundBySession.delete(sessionId);
+    this.lastUsedBySession.delete(sessionId);
+  }
+
+  getInjectionDescriptionOverride(name: string): string | undefined {
+    return this.injectionDescriptionOverrides.get(name);
+  }
+
+  getInjectionInputSchemaOverride(name: string): Record<string, unknown> | undefined {
+    return this.injectionInputSchemaOverrides.get(name);
+  }
+
+  /**
+   * Record the schema text that actually fits the single-injection ceiling.
+   * Dropped names are unloaded so their full schema is not sent.
+   */
+  applyInjectionFit(
+    kept: readonly InjectedToolSchema[],
+    dropped: readonly string[],
+    originals: readonly InjectedToolSchema[],
+  ): void {
+    const originalByName = new Map(originals.map((schema) => [schema.name, schema]));
+    for (const name of dropped) this.unloadDeferredTool(name);
+    for (const schema of kept) {
+      const original = originalByName.get(schema.name);
+      if (schema.description !== original?.description) {
+        this.injectionDescriptionOverrides.set(schema.name, schema.description);
+      } else {
+        this.injectionDescriptionOverrides.delete(schema.name);
+      }
+      if (JSON.stringify(schema.input_schema) !== JSON.stringify(original?.input_schema)) {
+        this.injectionInputSchemaOverrides.set(schema.name, schema.input_schema);
+      } else {
+        this.injectionInputSchemaOverrides.delete(schema.name);
+      }
+    }
   }
 
   /**
@@ -442,6 +549,42 @@ export class ToolSearchService {
       return meta.name;
     }
     return undefined;
+  }
+
+  private sessionRound(sessionId: string): number {
+    return this.roundBySession.get(sessionId) ?? 0;
+  }
+
+  private touchTool(sessionId: string, name: string): void {
+    let used = this.lastUsedBySession.get(sessionId);
+    if (!used) {
+      used = new Map();
+      this.lastUsedBySession.set(sessionId, used);
+    }
+    used.set(name, this.sessionRound(sessionId));
+  }
+
+  private toolHeldByAnotherSession(name: string, sessionId: string, idleRounds: number): boolean {
+    for (const [otherId, used] of this.lastUsedBySession) {
+      // 'default' has no round clock. Treating it as a live session pins tools forever.
+      if (otherId === sessionId || otherId === DEFAULT_EVICTION_SESSION) continue;
+      const otherLast = used.get(name);
+      if (otherLast === undefined) continue;
+      if (this.sessionRound(otherId) - otherLast < idleRounds) return true;
+    }
+    return false;
+  }
+
+  private unloadDeferredTool(name: string): void {
+    this.loadedDeferredTools.delete(name);
+    this.injectionDescriptionOverrides.delete(name);
+    this.injectionInputSchemaOverrides.delete(name);
+    for (const used of this.lastUsedBySession.values()) used.delete(name);
+  }
+
+  private markToolLoaded(name: string, sessionId: string): void {
+    this.loadedDeferredTools.add(name);
+    this.touchTool(sessionId, name);
   }
 
   /**

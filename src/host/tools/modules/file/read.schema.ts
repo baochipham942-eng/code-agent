@@ -4,26 +4,28 @@ import type { ToolSchema } from '../../../protocol/tools';
 export const readSchema: ToolSchema = {
   name: 'Read',
   description:
-    'Read local files instead of Bash cat/head/tail. ' +
-    'Use offset/limit for narrow ranges; avoid re-reading. ' +
-    'For directories use ListDirectory or Glob. ' +
-    'If the file does not exist, report that; do not create it to make the read succeed.',
+    'Never Bash cat/head/tail; Read text with line numbers. ' +
+    'One field, version, or config value: Read limit=20 of that file. ' +
+    'Grep must set path to that file, never the repo. ' +
+    'default 2000 is wrong for one value. ' +
+    'file_path accepts "<path> offset=N limit=N" or "<path> lines N-M". ' +
+    'Early stop names unread lines. ' +
+    'Dirs: ListDirectory or Glob. Missing: report, do not create.',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {
       file_path: {
         type: 'string',
-        description:
-          'Absolute path to the file; ~ is expanded. Put only the path here — offset/limit are separate parameters.',
+        description: 'Path; ~ expands.',
       },
       offset: {
         type: 'number',
-        description: 'First line to read, 1-indexed. Default 1. Past the end of the file returns empty content.',
+        description: 'First line, 1-indexed. Default 1.',
       },
       limit: {
         type: 'number',
-        description: 'How many lines to read. Default 2000.',
+        description: 'Line count. Default 2000. One value: small limit.',
       },
     },
     required: ['file_path'],

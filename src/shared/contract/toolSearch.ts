@@ -52,6 +52,12 @@ export interface ToolSearchResult {
 
   /** 本次搜索加载的工具名称 */
   loadedTools: string[];
+
+  /**
+   * Tools this call inserted into the loaded set.
+   * Rollback may unload only these claims, and only while this call still owns them.
+   */
+  insertedLoads?: readonly { name: string; token: number }[];
 }
 
 /**

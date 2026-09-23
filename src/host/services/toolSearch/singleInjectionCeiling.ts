@@ -1,11 +1,13 @@
 import { estimateTokens } from '../../context/tokenEstimator';
 import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
 
-/** Claude tool JSON: name, description, input_schema. This is the schema injection shape. */
+/** Semantic tool schema. Descriptions and parameters are never trimmed to fit a ceiling. */
 export interface InjectedToolSchema {
   name: string;
   description: string;
   input_schema: Record<string, unknown>;
+  /** Provider-normalized wire size. Falls back to Claude-shaped JSON when omitted. */
+  sentTokens?: number;
 }
 
 function claudeToolInjectionText(schema: InjectedToolSchema): string {
@@ -16,11 +18,12 @@ function claudeToolInjectionText(schema: InjectedToolSchema): string {
   });
 }
 
-function singleInjectionTokens(text: string, schemas: readonly InjectedToolSchema[]): number {
-  return estimateTokens(text) + schemas.reduce(
-    (sum, schema) => sum + estimateTokens(claudeToolInjectionText(schema)),
-    0,
-  );
+function schemaTokensOf(schemas: readonly InjectedToolSchema[], override?: number): number {
+  if (override !== undefined) return override;
+  return schemas.reduce((sum, schema) => {
+    if (schema.sentTokens !== undefined) return sum + schema.sentTokens;
+    return sum + estimateTokens(claudeToolInjectionText(schema));
+  }, 0);
 }
 
 function sliceToTokenBudget(text: string, budget: number): string {
@@ -42,99 +45,46 @@ function sliceToTokenBudget(text: string, budget: number): string {
   return best;
 }
 
-function withoutDescriptions(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => withoutDescriptions(item));
-  if (!value || typeof value !== 'object') return value;
-  const out: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (key === 'properties' && child && typeof child === 'object' && !Array.isArray(child)) {
-      const properties: Record<string, unknown> = {};
-      for (const [propName, propSchema] of Object.entries(child as Record<string, unknown>)) {
-        properties[propName] = withoutDescriptions(propSchema);
-      }
-      out.properties = properties;
-      continue;
-    }
-    if (key === 'description' && typeof child === 'string') continue;
-    out[key] = withoutDescriptions(child);
-  }
-  return out;
-}
-
-function shrinkSchema(schema: InjectedToolSchema, budget: number): InjectedToolSchema | null {
-  if (budget <= 0) return null;
-  if (estimateTokens(claudeToolInjectionText(schema)) <= budget) return schema;
-  const empty = { ...schema, description: '' };
-  if (estimateTokens(claudeToolInjectionText(empty)) > budget) {
-    const stripped: InjectedToolSchema = {
-      ...empty,
-      input_schema: withoutDescriptions(schema.input_schema) as Record<string, unknown>,
-    };
-    return estimateTokens(claudeToolInjectionText(stripped)) <= budget ? stripped : null;
-  }
-  let low = 0;
-  let high = schema.description.length;
-  let best = empty;
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    const candidate = { ...schema, description: schema.description.slice(0, middle) };
-    if (estimateTokens(claudeToolInjectionText(candidate)) <= budget) {
-      best = candidate;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-  return best;
+function textWithin(text: string, namesText: string, budget: number): string {
+  if (budget <= 0) return '';
+  if (estimateTokens(text) <= budget) return text;
+  if (namesText && estimateTokens(namesText) <= budget) return namesText;
+  return sliceToTokenBudget(namesText || text, budget);
 }
 
 /**
- * Fit ToolSearch text and newly loaded schemas into one ceiling.
- * Full schemas stay when they fit beside the result text. Otherwise descriptions
- * shrink, including nested parameter descriptions, so names and types stay callable.
- * A schema that still cannot fit is omitted; the caller must not inject it.
+ * Fit ToolSearch result text beside newly loaded full schemas.
+ * Schemas stay intact. When the schemas themselves exceed the ceiling, none are returned.
+ * `measured` is the unfitted total: result text plus provider-normalized schema tokens.
  */
 export function boundSingleInjection(input: {
   text: string;
   namesText: string;
   schemas: readonly InjectedToolSchema[];
   ceiling?: number;
-}): { text: string; schemas: InjectedToolSchema[] } {
+  schemaTokens?: number;
+}): { text: string; schemas: InjectedToolSchema[]; measured: number; fitsSchemas: boolean } {
   const ceiling = input.ceiling ?? DEFERRED_TOOL_LOADING.SINGLE_INJECTION_TOKEN_CEILING;
-  const originals = input.schemas.map((schema) => ({ ...schema, input_schema: schema.input_schema }));
-  const fitText = (budget: number): string => {
-    if (budget <= 0) return '';
-    if (estimateTokens(input.text) <= budget) return input.text;
-    if (estimateTokens(input.namesText) <= budget) return input.namesText;
-    return sliceToTokenBudget(input.namesText || input.text, budget);
-  };
-
-  if (singleInjectionTokens(input.text, originals) <= ceiling) {
-    return { text: input.text, schemas: originals };
-  }
-  if (singleInjectionTokens(input.namesText, originals) <= ceiling) {
+  const originals = input.schemas.map((schema) => ({
+    name: schema.name,
+    description: schema.description,
+    input_schema: schema.input_schema,
+    ...(schema.sentTokens !== undefined ? { sentTokens: schema.sentTokens } : {}),
+  }));
+  const schemaTokens = schemaTokensOf(originals, input.schemaTokens);
+  const measured = estimateTokens(input.text) + schemaTokens;
+  if (schemaTokens > ceiling) {
     return {
-      text: fitText(ceiling - originals.reduce((sum, schema) => sum + estimateTokens(claudeToolInjectionText(schema)), 0)),
-      schemas: originals,
+      text: textWithin(input.namesText || input.text, input.namesText, ceiling),
+      schemas: [],
+      measured,
+      fitsSchemas: false,
     };
   }
-
-  const namesTokens = estimateTokens(input.namesText);
-  const schemaBudget = Math.max(0, ceiling - Math.min(namesTokens, ceiling));
-  const ordered = [...originals].sort(
-    (left, right) => estimateTokens(claudeToolInjectionText(left)) - estimateTokens(claudeToolInjectionText(right)),
-  );
-  const kept: InjectedToolSchema[] = [];
-  let used = 0;
-  for (const schema of ordered) {
-    const shrunk = shrinkSchema(schema, schemaBudget - used);
-    if (!shrunk) continue;
-    kept.push(shrunk);
-    used += estimateTokens(claudeToolInjectionText(shrunk));
-  }
-  let text = fitText(ceiling - used);
-  if (singleInjectionTokens(text, kept) > ceiling) {
-    text = sliceToTokenBudget(text, Math.max(0, ceiling - used));
-  }
-  return { text, schemas: kept };
+  return {
+    text: textWithin(input.text, input.namesText, ceiling - schemaTokens),
+    schemas: originals,
+    measured,
+    fitsSchemas: true,
+  };
 }

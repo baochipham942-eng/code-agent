@@ -11,8 +11,12 @@ import type {
 } from '../../../shared/contract/toolSearch';
 import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
 import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName, resolveToolAlias } from './deferredTools';
-import type { InjectedToolSchema } from './singleInjectionCeiling';
 import { createLogger } from '../infra/logger';
+
+interface InsertedLoadClaim {
+  name: string;
+  token: number;
+}
 
 const logger = createLogger('ToolSearchService');
 const DEFAULT_EVICTION_SESSION = 'default';
@@ -38,8 +42,8 @@ function normalizeToolName(name: string): string {
  */
 export class ToolSearchService {
   private loadedDeferredTools: Set<string> = new Set();
-  private readonly injectionDescriptionOverrides = new Map<string, string>();
-  private readonly injectionInputSchemaOverrides = new Map<string, Record<string, unknown>>();
+  private readonly insertOwner = new Map<string, { token: number; sessionId: string }>();
+  private nextInsertToken = 1;
   private readonly roundBySession = new Map<string, number>();
   private readonly lastUsedBySession = new Map<string, Map<string, number>>();
   private deferredToolIndex: Map<string, DeferredToolMeta>;
@@ -151,6 +155,7 @@ export class ToolSearchService {
     const firstResultClearlyAhead = scored.length === 1
       || (topScore !== undefined && topScore - (scored[1]?.score ?? 0) >= DEFERRED_TOOL_LOADING.CLEAR_LEAD_SCORE_GAP);
     const loadedTools: string[] = [];
+    const insertedLoads: InsertedLoadClaim[] = [];
 
     const tools: ToolSearchItem[] = topResults.map(({ meta, score }, index) => {
       const loadable = this.canExposeLoadedTool(meta);
@@ -159,8 +164,9 @@ export class ToolSearchService {
       const shouldLoad = index === 0 && firstResultClearlyAhead;
 
       if (loadable && shouldLoad && !isCoreToolName(meta.name)) {
-        this.markToolLoaded(meta.name, sessionId);
+        const claim = this.markToolLoaded(meta.name, sessionId);
         loadedTools.push(meta.name);
+        if (claim.inserted) insertedLoads.push({ name: claim.name, token: claim.token });
       } else {
         logger.debug(`ToolSearch match is not loaded as a deferred tool: ${meta.name}: ${notCallableReason || 'core tool already available'}`);
       }
@@ -185,6 +191,7 @@ export class ToolSearchService {
       hasMore: scored.length > maxResults,
       totalCount: scored.length,
       loadedTools,
+      ...(insertedLoads.length > 0 ? { insertedLoads } : {}),
     };
   }
 
@@ -229,8 +236,10 @@ export class ToolSearchService {
     const notCallableReason = loadable ? undefined : this.getNotCallableReason(meta);
     const canonicalInvocation = this.getCanonicalInvocation(meta, loadable);
     const loadedTools = loadable ? [meta.name] : [];
+    const insertedLoads: InsertedLoadClaim[] = [];
     if (loadedTools.length > 0) {
-      this.markToolLoaded(meta.name, ownerSession);
+      const claim = this.markToolLoaded(meta.name, ownerSession);
+      if (claim.inserted) insertedLoads.push({ name: claim.name, token: claim.token });
       logger.info(`Selected and loaded tool: ${normalizedToolName}`);
     } else {
       logger.info(`Selected tool is searchable but not loadable as a callable tool: ${normalizedToolName}`);
@@ -251,6 +260,7 @@ export class ToolSearchService {
       hasMore: false,
       totalCount: 1,
       loadedTools,
+      ...(insertedLoads.length > 0 ? { insertedLoads } : {}),
     };
   }
 
@@ -421,8 +431,7 @@ export class ToolSearchService {
    */
   resetLoadedTools(): void {
     this.loadedDeferredTools.clear();
-    this.injectionDescriptionOverrides.clear();
-    this.injectionInputSchemaOverrides.clear();
+    this.insertOwner.clear();
     this.roundBySession.clear();
     this.lastUsedBySession.clear();
     logger.debug('Reset loaded deferred tools');
@@ -438,37 +447,15 @@ export class ToolSearchService {
     this.lastUsedBySession.delete(sessionId);
   }
 
-  getInjectionDescriptionOverride(name: string): string | undefined {
-    return this.injectionDescriptionOverrides.get(name);
-  }
-
-  getInjectionInputSchemaOverride(name: string): Record<string, unknown> | undefined {
-    return this.injectionInputSchemaOverrides.get(name);
-  }
-
   /**
-   * Record the schema text that actually fits the single-injection ceiling.
-   * Dropped names are unloaded so their full schema is not sent.
+   * Unload tools this call inserted, and only while this session still owns that insert.
+   * A tool another session loaded during an await keeps its place in the loaded set.
    */
-  applyInjectionFit(
-    kept: readonly InjectedToolSchema[],
-    dropped: readonly string[],
-    originals: readonly InjectedToolSchema[],
-  ): void {
-    const originalByName = new Map(originals.map((schema) => [schema.name, schema]));
-    for (const name of dropped) this.unloadDeferredTool(name);
-    for (const schema of kept) {
-      const original = originalByName.get(schema.name);
-      if (schema.description !== original?.description) {
-        this.injectionDescriptionOverrides.set(schema.name, schema.description);
-      } else {
-        this.injectionDescriptionOverrides.delete(schema.name);
-      }
-      if (JSON.stringify(schema.input_schema) !== JSON.stringify(original?.input_schema)) {
-        this.injectionInputSchemaOverrides.set(schema.name, schema.input_schema);
-      } else {
-        this.injectionInputSchemaOverrides.delete(schema.name);
-      }
+  rollbackInserted(claims: readonly InsertedLoadClaim[], sessionId: string): void {
+    for (const claim of claims) {
+      const owner = this.insertOwner.get(claim.name);
+      if (owner?.token !== claim.token || owner?.sessionId !== sessionId) continue;
+      this.unloadDeferredTool(claim.name);
     }
   }
 
@@ -577,14 +564,25 @@ export class ToolSearchService {
 
   private unloadDeferredTool(name: string): void {
     this.loadedDeferredTools.delete(name);
-    this.injectionDescriptionOverrides.delete(name);
-    this.injectionInputSchemaOverrides.delete(name);
+    this.insertOwner.delete(name);
     for (const used of this.lastUsedBySession.values()) used.delete(name);
   }
 
-  private markToolLoaded(name: string, sessionId: string): void {
+  private markToolLoaded(name: string, sessionId: string): InsertedLoadClaim & { inserted: boolean } {
+    const inserted = !this.loadedDeferredTools.has(name);
     this.loadedDeferredTools.add(name);
     this.touchTool(sessionId, name);
+    if (inserted) {
+      const token = this.nextInsertToken;
+      this.nextInsertToken += 1;
+      this.insertOwner.set(name, { token, sessionId });
+      return { name, token, inserted: true };
+    }
+    const owner = this.insertOwner.get(name);
+    if (owner && owner.sessionId !== sessionId) {
+      this.insertOwner.delete(name);
+    }
+    return { name, token: owner?.token ?? 0, inserted: false };
   }
 
   /**

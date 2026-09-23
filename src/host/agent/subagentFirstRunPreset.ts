@@ -39,13 +39,23 @@ export async function resolveSubagentPreset(
   if (firstRunStrict) {
     logger.info(`[Subagent] ${roleId} 首次运行，本轮强制 strict 档（忽略包声明的 ${declaredOrDefault}）`);
   }
-  const preset = firstRunStrict ? 'strict' : declaredOrDefault;
+  let preset = firstRunStrict ? 'strict' : declaredOrDefault;
 
-  if (!getPermissionModeManager().isLiveVoiceSession(parentSessionId)) return preset;
-  const clamped = clampLiveVoicePermissionPreset(preset);
-  if (clamped !== preset) {
-    logger.info(`[Subagent] 实时语音通话中，档位由 ${preset} 抬严到 ${clamped}（D4）`);
+  if (getPermissionModeManager().isLiveVoiceSession(parentSessionId)) {
+    const clamped = clampLiveVoicePermissionPreset(preset);
+    if (clamped !== preset) {
+      logger.info(`[Subagent] 实时语音通话中，档位由 ${preset} 抬严到 ${clamped}（D4）`);
+    }
+    preset = clamped;
   }
-  return clamped;
+
+  // ci 等价 bypassPermissions。限流把它收到 development（主链 default），与语音钳制并列。
+  const rateLimitedCi = preset === 'ci'
+    && getPermissionModeManager().clampForRateLimit('bypassPermissions', parentSessionId) === 'default';
+  if (rateLimitedCi) {
+    logger.info(`[Subagent] 父会话已自动档限流，档位由 ${preset} 抬严到 development`);
+    preset = 'development';
+  }
+  return preset;
 }
 

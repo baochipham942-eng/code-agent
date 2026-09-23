@@ -5,7 +5,7 @@ import { getMemoryDir } from '../lightMemory/indexLoader';
 import { ToolExecutor } from '../tools/toolExecutor';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
-import { permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
+import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
 import { isAgentWorktreePath } from './agentWorktreePath';
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
@@ -105,11 +105,16 @@ export function createSubagentToolRuntime(input: {
     telemetryCollector: context.telemetryCollector,
     requestPermission: async (request) => {
       const forceConfirm = request.forceConfirm === true;
+      // 限流在 spawn 之后才置位，不能用构造时的 effectiveMode 决定免确认。
+      const mode = getPermissionModeManager().clampForRateLimit(
+        input.effectiveMode as PermissionMode,
+        input.sessionId,
+      );
       if (
         !forceConfirm
         && (
-          input.effectiveMode === 'bypassPermissions'
-          || permissionModeAutoApproves(input.effectiveMode, getPermissionLevel(request.type))
+          mode === 'bypassPermissions'
+          || permissionModeAutoApproves(mode, getPermissionLevel(request.type))
         )
       ) return true;
       return context.permission.request({ ...request, ...input.identity });

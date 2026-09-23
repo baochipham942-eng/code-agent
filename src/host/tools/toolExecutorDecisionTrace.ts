@@ -4,8 +4,14 @@
 // ============================================================================
 
 import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
+import { AUTO_MODE_RATE_LIMIT } from '../../shared/constants/timeouts';
 import { getToolLedgerSink } from './toolLedgerSink';
-import { getDecisionHistory, type DecisionOutcome as HistoryDecisionOutcome } from '../security/decisionHistory';
+import { getPermissionModeManager } from '../permissions/modes';
+import {
+  getDecisionHistory,
+  isAutoDenyOutcome,
+  type DecisionOutcome as HistoryDecisionOutcome,
+} from '../security/decisionHistory';
 import type {
   DecisionLayer,
   DecisionOutcome as TraceDecisionOutcome,
@@ -27,7 +33,12 @@ export function recordDecision(
     timestamp: now, toolName, summary, outcome, reason,
     durationMs,
     decisionTrace,
+    sessionId,
   });
+  // 自动拦截落账后再判限流。判定留在 toolExecutor 侧：permissions 已经依赖 security
+  // （policyEngine → auditLogger，guardFabric → decisionTraceBuilder），不让
+  // decisionHistory 反向去调 PermissionModeManager。history 只提供按会话计数。
+  noteAutoModeRateLimit(sessionId, outcome);
   // 事件账本持久化（fail-safe）：任何失败都不得影响权限判定 / 工具执行。
   // sink 自身可替换；这里仍套一层兜底，保证任何写入异常不影响主流程。
   try {
@@ -61,6 +72,24 @@ function historyOutcomeToLayer(outcome: HistoryDecisionOutcome): DecisionLayer {
   if (outcome === 'classifier-deny' || outcome === 'auto-approve') return 'permission_classifier';
   if (outcome === 'hook-blocked') return 'plugin_hook';
   return 'plan_approval';
+}
+
+/**
+ * 记录到自动拦截之后判一次。达连续或窗口阈值就把该会话标成限流（只标一次）。
+ * 非自动拦截不判：它们只负责在 history 里打断连续、不进累计。
+ */
+function noteAutoModeRateLimit(sessionId: string | undefined, outcome: HistoryDecisionOutcome): void {
+  if (!sessionId || !isAutoDenyOutcome(outcome)) return;
+  const history = getDecisionHistory();
+  const consecutive = history.countConsecutiveAutoDenies(sessionId);
+  const windowCount = history.countWindowAutoDenies(sessionId, AUTO_MODE_RATE_LIMIT.WINDOW_MS);
+  if (consecutive >= AUTO_MODE_RATE_LIMIT.CONSECUTIVE) {
+    getPermissionModeManager().markAutoModeRateLimited(sessionId, 'consecutive', consecutive);
+    return;
+  }
+  if (windowCount >= AUTO_MODE_RATE_LIMIT.WINDOW_COUNT) {
+    getPermissionModeManager().markAutoModeRateLimited(sessionId, 'window', windowCount);
+  }
 }
 
 function buildHistoryDecisionTrace(

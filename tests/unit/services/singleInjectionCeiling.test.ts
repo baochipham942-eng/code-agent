@@ -166,10 +166,20 @@ function allow(): Promise<{ allow: true }> {
   return Promise.resolve({ allow: true });
 }
 
-function ceilingFailure(error: string | undefined): { measured: number; allowed: number } {
-  const match = /measured=(\d+) allowed=(\d+)/.exec(error || '');
-  if (!match) throw new Error(`missing measured/allowed in: ${error}`);
-  return { measured: Number(match[1]), allowed: Number(match[2]) };
+function ceilingFailure(result: {
+  error: string;
+  code?: string;
+  meta?: Record<string, unknown>;
+}): { measured: number; allowed: number } {
+  expect(result.code).toBe('INJECTION_CEILING');
+  expect(result.error.startsWith('INJECTION_CEILING')).toBe(true);
+  expect(result.error).not.toMatch(/[\u3400-\u9fff]/);
+  const match = /measured=(\d+) allowed=(\d+)/.exec(result.error);
+  if (!match) throw new Error(`missing measured/allowed in: ${result.error}`);
+  const measured = Number(match[1]);
+  const allowed = Number(match[2]);
+  expect(result.meta).toMatchObject({ measured, allowed });
+  return { measured, allowed };
 }
 
 describe('ToolSearch output plus newly loaded schema', () => {
@@ -244,7 +254,7 @@ describe('ToolSearch output plus newly loaded schema', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    const counts = ceilingFailure(result.error);
+    const counts = ceilingFailure(result);
     expect(counts.allowed).toBe(EXPLICIT_CEILING);
     expect(counts.measured).toBeGreaterThan(EXPLICIT_CEILING);
     expect(counts.measured).toBeGreaterThanOrEqual(measured!.sentTokens!);
@@ -429,7 +439,7 @@ describe('ToolSearch output plus newly loaded schema', () => {
       const result = await executeToolSearch({ query: 'select:Task' }, searchContext(), allow);
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      const counts = ceilingFailure(result.error);
+      const counts = ceilingFailure(result);
       expect(counts.allowed).toBe(EXPLICIT_CEILING);
       expect(counts.measured).toBeGreaterThanOrEqual(measured!.sentTokens!);
       expect(service.isToolLoaded('Task')).toBe(false);

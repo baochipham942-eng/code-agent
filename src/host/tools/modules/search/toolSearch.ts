@@ -184,8 +184,13 @@ export async function executeToolSearch(
     if (!decision.ok) {
       return {
         ok: false,
-        error: `显式选择 ${decision.name} 的完整 schema 超过单次注入总量上限（measured=${decision.measured} allowed=${decision.allowed}）。未注入部分 schema。`,
+        error: `INJECTION_CEILING name=${decision.name} measured=${decision.measured} allowed=${decision.allowed}`,
         code: 'INJECTION_CEILING',
+        meta: {
+          name: decision.name,
+          measured: decision.measured,
+          allowed: decision.allowed,
+        },
       };
     }
     const output = decision.output;

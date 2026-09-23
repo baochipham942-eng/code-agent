@@ -235,6 +235,16 @@ describe('humanizeToolError — code 优先（metadata.code 命中登记表）',
 });
 
 describe('humanizeToolError — 带参 code 的 {param} 插值', () => {
+  it('INJECTION_CEILING 用 metadata 填入工具名、测得值和上限', () => {
+    const metadata = { code: 'INJECTION_CEILING', name: 'HugeMcpSchema', measured: 9001, allowed: 3300 };
+    const zhCopy = humanizeToolError('INJECTION_CEILING name=HugeMcpSchema measured=9001 allowed=3300', 'ToolSearch', zh, metadata);
+    expect(zhCopy?.summary).toBe('这个工具的完整定义超过单次加载上限');
+    expect(zhCopy?.detail).toBe('HugeMcpSchema 测得 9001，上限 3300。没有载入不完整的定义。');
+    const enCopy = humanizeToolError('INJECTION_CEILING name=HugeMcpSchema measured=9001 allowed=3300', 'ToolSearch', en, metadata);
+    expect(enCopy?.summary).toBe('This tool definition exceeds the single-load limit');
+    expect(enCopy?.detail).toBe('HugeMcpSchema measured 9001; the limit is 3300. No partial definition was loaded.');
+  });
+
   it('有参 → 填进 summary（{branch}）', () => {
     const h = humanizeToolError('host 原文', 'Bash', zh, {
       code: 'PR_ON_DEFAULT_BRANCH',

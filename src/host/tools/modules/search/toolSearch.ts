@@ -72,6 +72,7 @@ export async function executeToolSearch(
 
   try {
     const service = getToolSearchService();
+    const alreadyLoaded = new Set(service.getLoadedDeferredTools());
     // scope 判据前置：discovery 会真的把 lazy stdio server 拉起来（起子进程），
     // 范围外的拉起来结果也会被丢掉，白起——收窄生效时只发现范围内的
     const scopedMcpServerIds = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
@@ -172,7 +173,7 @@ export async function executeToolSearch(
       };
     }
 
-    const output = enforceSingleInjectionCeiling(result);
+    const output = enforceSingleInjectionCeiling(result, alreadyLoaded);
 
     ctx.logger.info('ToolSearch done', {
       query,
@@ -306,10 +307,14 @@ function namesOnlyText(result: SearchRenderResult): string {
   ].join('\n');
 }
 
-function enforceSingleInjectionCeiling(result: SearchRenderResult): string {
+function enforceSingleInjectionCeiling(
+  result: SearchRenderResult,
+  alreadyLoaded: ReadonlySet<string>,
+): string {
   const overCeiling = new Set<string>();
+  const freshLoaded = result.loadedTools.filter((name) => !alreadyLoaded.has(name));
   const draft = fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result);
-  const measurable = readDeferredToolInjectionSchemas(result.loadedTools);
+  const measurable = readDeferredToolInjectionSchemas(freshLoaded);
   const bounded = boundSingleInjection({
     text: draft,
     namesText: namesOnlyText(result),
@@ -321,7 +326,7 @@ function enforceSingleInjectionCeiling(result: SearchRenderResult): string {
   if (dropped.length === 0) return bounded.text;
 
   for (const name of dropped) overCeiling.add(name);
-  result.loadedTools = result.loadedTools.filter((name) => !overCeiling.has(name));
+  result.loadedTools = result.loadedTools.filter((name) => alreadyLoaded.has(name) || !overCeiling.has(name));
   const revised = fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result);
   const again = boundSingleInjection({
     text: revised,
@@ -335,7 +340,7 @@ function enforceSingleInjectionCeiling(result: SearchRenderResult): string {
   if (droppedAgain.length > 0) {
     getToolSearchService().applyInjectionFit(again.schemas, droppedAgain, measurable);
     for (const name of droppedAgain) overCeiling.add(name);
-    result.loadedTools = result.loadedTools.filter((name) => !overCeiling.has(name));
+    result.loadedTools = result.loadedTools.filter((name) => alreadyLoaded.has(name) || !overCeiling.has(name));
   }
   return again.text;
 }

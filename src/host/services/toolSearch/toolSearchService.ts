@@ -39,6 +39,7 @@ function normalizeToolName(name: string): string {
 export class ToolSearchService {
   private loadedDeferredTools: Set<string> = new Set();
   private readonly injectionDescriptionOverrides = new Map<string, string>();
+  private readonly injectionInputSchemaOverrides = new Map<string, Record<string, unknown>>();
   private readonly roundBySession = new Map<string, number>();
   private readonly lastUsedBySession = new Map<string, Map<string, number>>();
   private deferredToolIndex: Map<string, DeferredToolMeta>;
@@ -421,6 +422,7 @@ export class ToolSearchService {
   resetLoadedTools(): void {
     this.loadedDeferredTools.clear();
     this.injectionDescriptionOverrides.clear();
+    this.injectionInputSchemaOverrides.clear();
     this.roundBySession.clear();
     this.lastUsedBySession.clear();
     logger.debug('Reset loaded deferred tools');
@@ -440,6 +442,10 @@ export class ToolSearchService {
     return this.injectionDescriptionOverrides.get(name);
   }
 
+  getInjectionInputSchemaOverride(name: string): Record<string, unknown> | undefined {
+    return this.injectionInputSchemaOverrides.get(name);
+  }
+
   /**
    * Record the schema text that actually fits the single-injection ceiling.
    * Dropped names are unloaded so their full schema is not sent.
@@ -449,13 +455,19 @@ export class ToolSearchService {
     dropped: readonly string[],
     originals: readonly InjectedToolSchema[],
   ): void {
-    const originalDescription = new Map(originals.map((schema) => [schema.name, schema.description]));
+    const originalByName = new Map(originals.map((schema) => [schema.name, schema]));
     for (const name of dropped) this.unloadDeferredTool(name);
     for (const schema of kept) {
-      if (schema.description !== originalDescription.get(schema.name)) {
+      const original = originalByName.get(schema.name);
+      if (schema.description !== original?.description) {
         this.injectionDescriptionOverrides.set(schema.name, schema.description);
       } else {
         this.injectionDescriptionOverrides.delete(schema.name);
+      }
+      if (JSON.stringify(schema.input_schema) !== JSON.stringify(original?.input_schema)) {
+        this.injectionInputSchemaOverrides.set(schema.name, schema.input_schema);
+      } else {
+        this.injectionInputSchemaOverrides.delete(schema.name);
       }
     }
   }
@@ -566,6 +578,7 @@ export class ToolSearchService {
   private unloadDeferredTool(name: string): void {
     this.loadedDeferredTools.delete(name);
     this.injectionDescriptionOverrides.delete(name);
+    this.injectionInputSchemaOverrides.delete(name);
     for (const used of this.lastUsedBySession.values()) used.delete(name);
   }
 

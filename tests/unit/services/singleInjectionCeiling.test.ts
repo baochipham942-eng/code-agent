@@ -86,7 +86,10 @@ describe('single injection ceiling', () => {
       input_schema: {
         type: 'object',
         properties: {
-          blob: { type: 'string', description: 'payload '.repeat(800) },
+          blob: {
+            type: 'string',
+            enum: Array.from({ length: 400 }, (_, index) => `choice_${index}_${'x'.repeat(24)}`),
+          },
         },
         required: ['blob'],
       },
@@ -155,7 +158,10 @@ describe('ToolSearch output plus newly loaded schema', () => {
       inputSchema: {
         type: 'object',
         properties: {
-          blob: { type: 'string', description: 'payload '.repeat(800) },
+          blob: {
+            type: 'string',
+            enum: Array.from({ length: 400 }, (_, index) => `choice_${index}_${'x'.repeat(24)}`),
+          },
         },
         required: ['blob'],
       },
@@ -204,5 +210,64 @@ describe('ToolSearch output plus newly loaded schema', () => {
       input_schema: tool.inputSchema,
     })), 0);
     expect(estimateTokens(result.output) + loadedSchemaTokens).toBeLessThanOrEqual(CEILING);
+  });
+
+  it.each(['TaskManager', 'ppt_generate', 'MemoryWrite', 'AgentSpawn'])(
+    'select:%s stays loaded and the sent schema shares the ceiling with the result text',
+    async (name) => {
+      getProtocolRegistry();
+      const ctx = {
+        sessionId: 'session-ceiling',
+        workingDir: process.cwd(),
+        abortSignal: new AbortController().signal,
+        logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+        emit: () => undefined,
+      } as unknown as ToolContext;
+      const result = await executeToolSearch(
+        { query: `select:${name}` },
+        ctx,
+        async () => ({ allow: true }),
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(getToolSearchService().isToolLoaded(name)).toBe(true);
+      const sent = getLoadedDeferredToolDefinitions().find((tool) => tool.name === name);
+      expect(sent).toBeDefined();
+      const sentSchema: InjectedToolSchema = {
+        name: sent!.name,
+        description: sent!.description,
+        input_schema: sent!.inputSchema as unknown as Record<string, unknown>,
+      };
+      expect(sentSchema.input_schema).toHaveProperty('properties');
+      expect(singleInjectionTokens(result.output, [sentSchema])).toBeLessThanOrEqual(CEILING);
+    },
+  );
+
+  it('does not unload a tool that was already loaded before this select', async () => {
+    getProtocolRegistry();
+    const service = getToolSearchService();
+    expect(service.selectTool('TaskManager', 'session-ceiling').loadedTools).toEqual(['TaskManager']);
+    const before = getLoadedDeferredToolDefinitions().find((tool) => tool.name === 'TaskManager');
+    expect(before).toBeDefined();
+
+    const ctx = {
+      sessionId: 'session-ceiling',
+      workingDir: process.cwd(),
+      abortSignal: new AbortController().signal,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      emit: () => undefined,
+    } as unknown as ToolContext;
+    const result = await executeToolSearch(
+      { query: 'select:TaskManager' },
+      ctx,
+      async () => ({ allow: true }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(service.isToolLoaded('TaskManager')).toBe(true);
+    const after = getLoadedDeferredToolDefinitions().find((tool) => tool.name === 'TaskManager');
+    expect(after?.description).toBe(before?.description);
+    expect(JSON.stringify(after?.inputSchema)).toBe(JSON.stringify(before?.inputSchema));
   });
 });

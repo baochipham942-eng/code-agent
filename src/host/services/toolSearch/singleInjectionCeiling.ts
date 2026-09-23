@@ -42,11 +42,28 @@ function sliceToTokenBudget(text: string, budget: number): string {
   return best;
 }
 
+function withoutDescriptions(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutDescriptions);
+  if (!value || typeof value !== 'object') return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key === 'description') continue;
+    out[key] = withoutDescriptions(child);
+  }
+  return out;
+}
+
 function shrinkSchema(schema: InjectedToolSchema, budget: number): InjectedToolSchema | null {
   if (budget <= 0) return null;
   if (estimateTokens(claudeToolInjectionText(schema)) <= budget) return schema;
   const empty = { ...schema, description: '' };
-  if (estimateTokens(claudeToolInjectionText(empty)) > budget) return null;
+  if (estimateTokens(claudeToolInjectionText(empty)) > budget) {
+    const stripped: InjectedToolSchema = {
+      ...empty,
+      input_schema: withoutDescriptions(schema.input_schema) as Record<string, unknown>,
+    };
+    return estimateTokens(claudeToolInjectionText(stripped)) <= budget ? stripped : null;
+  }
   let low = 0;
   let high = schema.description.length;
   let best = empty;
@@ -66,8 +83,8 @@ function shrinkSchema(schema: InjectedToolSchema, budget: number): InjectedToolS
 /**
  * Fit ToolSearch text and newly loaded schemas into one ceiling.
  * Full schemas stay when they fit beside the result text. Otherwise descriptions
- * shrink so input_schema remains callable. A schema whose skeleton cannot fit is
- * omitted; the caller must not inject it.
+ * shrink, including nested parameter descriptions, so names and types stay callable.
+ * A schema that still cannot fit is omitted; the caller must not inject it.
  */
 export function boundSingleInjection(input: {
   text: string;

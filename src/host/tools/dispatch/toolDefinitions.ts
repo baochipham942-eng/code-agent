@@ -68,7 +68,9 @@ function schemaToDefinition(
   descriptionContext?: ToolDescriptionContext,
 ): ToolDefinition {
   const cloud = cloudMeta[schema.name];
-  const override = getToolSearchService().getInjectionDescriptionOverride(schema.name);
+  const service = getToolSearchService();
+  const override = service.getInjectionDescriptionOverride(schema.name);
+  const inputOverride = service.getInjectionInputSchemaOverride(schema.name);
   const description = override
     ?? cloud?.description
     ?? schema.dynamicDescription?.(descriptionContext)
@@ -76,7 +78,7 @@ function schemaToDefinition(
   return {
     name: schema.name,
     description,
-    inputSchema: schema.inputSchema,
+    inputSchema: (inputOverride ?? schema.inputSchema) as unknown as ToolDefinition['inputSchema'],
     outputSchema: schema.outputSchema,
     requiresPermission: schema.requiresPermission ?? schema.permissionLevel !== 'read',
     permissionLevel: mapPermissionLevel(schema.permissionLevel),
@@ -154,7 +156,13 @@ export function getLoadedDeferredToolDefinitions(
     .filter((definition) => loadedNames.has(definition.name))
     .map((definition) => {
       const override = toolSearchService.getInjectionDescriptionOverride(definition.name);
-      return override === undefined ? definition : { ...definition, description: override };
+      const inputOverride = toolSearchService.getInjectionInputSchemaOverride(definition.name);
+      if (override === undefined && inputOverride === undefined) return definition;
+      return {
+        ...definition,
+        ...(override === undefined ? {} : { description: override }),
+        ...(inputOverride === undefined ? {} : { inputSchema: inputOverride as unknown as ToolDefinition['inputSchema'] }),
+      };
     });
 
   return [...protocolDefinitions, ...mcpDefinitions];

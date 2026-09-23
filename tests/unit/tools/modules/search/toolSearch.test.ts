@@ -9,6 +9,7 @@ import type {
   Logger,
 } from '../../../../../src/host/protocol/tools';
 import { estimateTokens } from '../../../../../src/host/context/tokenEstimator';
+import { DEFERRED_TOOL_LOADING } from '../../../../../src/shared/constants/tools';
 
 // -----------------------------------------------------------------------------
 // Mock service singletons
@@ -21,6 +22,7 @@ vi.mock('../../../../../src/host/services/toolSearch/toolSearchService', () => (
   getToolSearchService: () => ({
     searchTools: searchToolsMock,
     applyInjectionFit: vi.fn(),
+    getLoadedDeferredTools: () => [],
   }),
   setProtocolToolNameChecker: vi.fn(),
 }));
@@ -237,7 +239,7 @@ describe('toolSearchModule (native)', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(estimateTokens(result.output)).toBeLessThanOrEqual(400);
+        expect(estimateTokens(result.output)).toBeLessThanOrEqual(DEFERRED_TOOL_LOADING.SINGLE_INJECTION_TOKEN_CEILING);
         expect(result.output).toContain('未找到匹配 "no-hit"');
       }
     });
@@ -301,7 +303,7 @@ describe('toolSearchModule (native)', () => {
         expect(result.output).toContain('使用 select:PdfAutomate 加载');
         expect(result.output).toContain('未注入完整 schema');
         expect(result.output).not.toContain('已加载，可直接调用');
-        expect(estimateTokens(result.output)).toBeLessThanOrEqual(400);
+        expect(estimateTokens(result.output)).toBeLessThanOrEqual(DEFERRED_TOOL_LOADING.SINGLE_INJECTION_TOKEN_CEILING);
       }
     });
 
@@ -485,7 +487,7 @@ describe('toolSearchModule (native)', () => {
       const result = await run({ query: 'mock', max_results: 5 });
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(estimateTokens(result.output)).toBeLessThanOrEqual(400);
+        expect(estimateTokens(result.output)).toBeLessThanOrEqual(DEFERRED_TOOL_LOADING.SINGLE_INJECTION_TOKEN_CEILING);
         expect(result.output).toContain('mcp__mock__tool_000');
         expect(result.output).toContain('mcp__mock__tool_004');
       }

@@ -2,10 +2,12 @@
  * Deferred-tool index budget and ToolSearch single-injection ceiling.
  * One source for the summary budget, result caps, idle-eviction window,
  * and the token ceiling that covers ToolSearch text plus a newly loaded schema.
+ * 520 fits the largest description-free deferred schema (ppt_generate, 476)
+ * plus the short select confirmation. Longer descriptions are trimmed first.
  */
 export const DEFERRED_TOOL_LOADING = {
   SUMMARY_TOKEN_BUDGET: 1200,
-  SINGLE_INJECTION_TOKEN_CEILING: 400,
+  SINGLE_INJECTION_TOKEN_CEILING: 520,
   SEARCH_DEFAULT_MAX_RESULTS: 3,
   SEARCH_MAX_RESULTS_HARD_CAP: 5,
   IDLE_ROUNDS_BEFORE_EVICTION: 3,

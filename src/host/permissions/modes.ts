@@ -232,8 +232,18 @@ export class PermissionModeManager {
   private sessionModesLoaded = false;
   // 无人值守会话（cron/heartbeat 等 automation 来源）：权限档读取时强制钳到不高于 acceptEdits。
   private unattendedSessions: Set<string> = new Set();
-  /** cron/heartbeat：审批 60s 进终态。channel 只进 unattendedSessions，仍停车 24h。 */
+  /**
+   * cron/heartbeat：审批 60s 进终态。channel 只进 unattendedSessions，仍停车 24h。
+   * 自动档限流（rateLimitedSessions）叠在这之上、只收紧：已限流会话即使仍在本集合里，
+   * isUnattendedApprovalTerminal 也返回 false，审批改走 PARKED_APPROVAL（24h）停车等人，
+   * 不再 60s 自动终态。不会把 channel 的停车改回终态。
+   */
   private approvalTerminalSessions: Set<string> = new Set();
+  /**
+   * 自动档限流。同一会话连续或窗口内自动拦截达阈值后置位，进程内终身有效。
+   * 不落盘、不提供 clear：本单不做恢复，无消费方的清除口会让 knip 红。
+   */
+  private rateLimitedSessions: Set<string> = new Set();
   /**
    * 云货架专家的首跑会话：本轮一律最严档，不看会话自己选的档。
    * 只在本轮有效（turn 结束即 clear），第二轮起回到会话档。
@@ -242,7 +252,7 @@ export class PermissionModeManager {
   /**
    * 本轮跑的专家自带的审批档（详情页「安全」页 / agent.md 的 permission-override）。
    * 「为这位专家单独设置」比会话档更具体，所以它取代会话档当 base——包括放宽方向
-   * （放手档 → bypassPermissions）；首跑 / 无人值守两处钳制仍压在它之上，只收紧不放宽。
+   * （放手档 → bypassPermissions）；首跑 / 无人值守 / 自动档限流钳制仍压在它之上，只收紧不放宽。
    */
   private rolePresetSessions: Map<string, PermissionMode> = new Map();
   // 运行时会话粘性：无法可靠解析的命令按 canonical hash 记账。只活在当前进程，
@@ -319,13 +329,14 @@ export class PermissionModeManager {
    * 判定链（toolExecutor / subagent / bash 沙箱）统一走这里取档。
    * 无人值守会话在此单点钳制（B1 ③）：bypassPermissions 强制降到 acceptEdits，
    * 杜绝「用户开着 bypass 时定时任务也 bypass 跑」。
+   * 自动档限流再压一档：带免确认捷径的档收到 default（逐次 ask）。
    */
   getModeForSession(sessionId?: string): PermissionMode {
     this.ensureSessionModesLoaded();
     const base = (sessionId && this.rolePresetSessions.get(sessionId))
       || (sessionId && this.sessionModes.get(sessionId))
       || this.currentMode;
-    // 三处钳制都只收紧不放宽，所以依次叠加即可，顺序不影响结果。
+    // 四处钳制都只收紧不放宽，所以依次叠加即可，顺序不影响结果。
     let mode = base;
     if (sessionId && this.firstRunStrictSessions.has(sessionId)) {
       mode = clampFirstRunPermissionMode(mode);
@@ -335,6 +346,9 @@ export class PermissionModeManager {
     }
     if (this.isLiveVoiceSession(sessionId)) {
       mode = clampLiveVoicePermissionMode(mode);
+    }
+    if (sessionId && this.rateLimitedSessions.has(sessionId)) {
+      mode = clampRateLimitedPermissionMode(mode);
     }
     return mode;
   }
@@ -420,8 +434,28 @@ export class PermissionModeManager {
     this.approvalTerminalSessions.add(sessionId);
   }
 
+  /**
+   * cron/heartbeat 在 approvalTerminalSessions 内时，审批 60s 进终态
+   * （INTERACTION_TIMEOUTS.PERMISSION，并记 UNATTENDED_APPROVAL_TIMEOUT）。
+   * channel 不在该集合，parkApproval 走 deadline='backstop'，等 PARKED_APPROVAL（24h）。
+   *
+   * 自动档限流与 approvalTerminalSessions 字段注释的关系：限流不把会话移出该集合，
+   * 只让本谓词对已限流会话返回 false。于是 cron/heartbeat 也改走 channel 那条停车挂起，
+   * 不再 60s 自动终态。未限流的 cron/heartbeat 语义不变。
+   */
   isUnattendedApprovalTerminal(sessionId?: string): boolean {
+    if (sessionId && this.rateLimitedSessions.has(sessionId)) return false;
     return !!sessionId && this.approvalTerminalSessions.has(sessionId);
+  }
+
+  /**
+   * 自动档限流置位。同一会话只打一次日志；重复调用不再 warn。
+   * reason 取本次跨过的那条：连续优先于窗口（连续在第 3 次就会先跨过）。
+   */
+  markAutoModeRateLimited(sessionId: string, reason: 'consecutive' | 'window', count: number): void {
+    if (this.rateLimitedSessions.has(sessionId)) return;
+    this.rateLimitedSessions.add(sessionId);
+    logger.warn(`AUTO_MODE_RATE_LIMITED sessionId=${sessionId} reason=${reason} count=${count}`);
   }
 
   /**
@@ -767,6 +801,19 @@ export function clampLiveVoicePermissionPreset(preset: PermissionPreset): Permis
 export function clampFirstRunPermissionMode(mode: PermissionMode): PermissionMode {
   return permissionModeAutoApproves(mode, 'write') || permissionModeAutoApproves(mode, 'execute')
     ? 'readOnly'
+    : mode;
+}
+
+/**
+ * 自动档限流钳制：带免确认捷径的档收到 default（逐次 ask）。
+ * 免确认捷径以 permissionModeAutoApproves 为准，与枚举注释一致：
+ * acceptEdits 自动接受编辑，bypassPermissions 跳过检查。
+ * 已更严的档（readOnly / plan / dontAsk）原样——dontAsk 把写和执行直接拒绝，
+ * 收到 default 会变成可批准，那是放宽。delegate 没有免确认捷径，也不动。
+ */
+function clampRateLimitedPermissionMode(mode: PermissionMode): PermissionMode {
+  return permissionModeAutoApproves(mode, 'write') || permissionModeAutoApproves(mode, 'execute')
+    ? 'default'
     : mode;
 }
 

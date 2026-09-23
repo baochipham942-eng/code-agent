@@ -100,6 +100,20 @@ export const INTERACTION_TIMEOUTS = {
   CANVAS_PROPOSAL_GEN_BUDGET: 90_000,
 } as const;
 
+/**
+ * 自动档限流阈值（写死，不进设置面、不读 config）。
+ * 同一会话连续自动拦截达到 CONSECUTIVE，或 WINDOW_MS 内累计达到 WINDOW_COUNT，
+ * 该会话免确认档钳到 default；无人值守审批不再走 60s 终态，改走上面的 PARKED_APPROVAL。
+ */
+export const AUTO_MODE_RATE_LIMIT = {
+  /** 连续自动拦截次数 */
+  CONSECUTIVE: 3,
+  /** 滑动窗口内累计自动拦截次数 */
+  WINDOW_COUNT: 20,
+  /** 滑动窗口长度（10 分钟） */
+  WINDOW_MS: 10 * 60_000,
+} as const;
+
 /** 锁和资源管理超时 */
 export const LOCK_TIMEOUTS = {
   /** 锁默认超时 */

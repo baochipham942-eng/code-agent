@@ -42,6 +42,13 @@ const E2E_STREAM_BREAK_PART1 = 'E2E_STREAM_BREAK_PART1__这段生成会被网络
 const E2E_STREAM_BREAK_PART2 = 'E2E_STREAM_BREAK_PART2__这是重发后的全新生成。';
 let e2eStreamBreakFailuresRemaining = -1;
 const E2E_SNAPSHOT_READ_WRITE_MARKER = 'E2E_SNAPSHOT_REPLAY_READ_WRITE';
+// N-SNAPSHOT-CORPUS-READDEDUPE：同文件同区间连读两次专用 marker。两次调用只是
+// call id 不同，file_path/offset/limit 逐字节相同且中间不改盘——真 Read 执行器
+// 返回同 digest，readResultProjection 在第二轮起的请求投影里把第二次结果去重成
+// 回执。改动本段必须同 PR 重录快照（snapshot-replay-sync-gate）。
+const E2E_SNAPSHOT_READ_DEDUPE_MARKER = 'E2E_SNAPSHOT_REPLAY_READ_DEDUPE';
+const E2E_SNAPSHOT_READ_DEDUPE_FIRST_CALL_ID = 'e2e-snapshot-replay-read-dedupe-1';
+const E2E_SNAPSHOT_READ_DEDUPE_SECOND_CALL_ID = 'e2e-snapshot-replay-read-dedupe-2';
 const E2E_SNAPSHOT_WRITE_CALL_ID = 'e2e-snapshot-replay-write';
 const E2E_SNAPSHOT_BASH_CALL_ID = 'e2e-snapshot-replay-bash';
 const E2E_SNAPSHOT_BASH_COMMAND = 'echo E2E_SNAPSHOT_REPLAY_BASH_OUTPUT';
@@ -622,6 +629,28 @@ function buildSnapshotReplayE2EResponse(
       'E2E snapshot replay single-turn QA answered deterministically.',
       onStream,
     );
+  }
+
+  if (allText.includes(E2E_SNAPSHOT_READ_DEDUPE_MARKER)) {
+    // 收尾判据按 toolCallId 而非正文：第二次结果在请求投影里被去重成回执，
+    // 正文里既没有夹具 marker 也没有全文（这正是本路由要钉死的行为）。
+    if (findToolResultContent(messages, E2E_SNAPSHOT_READ_DEDUPE_SECOND_CALL_ID)) {
+      return snapshotTextResponse(
+        'E2E snapshot replay read-dedupe completed.',
+        onStream,
+      );
+    }
+    if (!hasReadTool(tools)) {
+      return snapshotTextResponse('E2E snapshot replay could not find the Read tool.', onStream);
+    }
+    const rereading = Boolean(findToolResultContent(messages, E2E_SNAPSHOT_READ_DEDUPE_FIRST_CALL_ID));
+    return snapshotToolUseResponse({
+      id: rereading ? E2E_SNAPSHOT_READ_DEDUPE_SECOND_CALL_ID : E2E_SNAPSHOT_READ_DEDUPE_FIRST_CALL_ID,
+      name: 'Read',
+      arguments: { file_path: resolveFixturePath(env), offset: 1, limit: 20 },
+    }, rereading
+      ? 'Re-reading the same fixture range without touching the file.'
+      : 'Reading the snapshot fixture for the first time.', onStream);
   }
 
   const writeCall = {

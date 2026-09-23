@@ -26,8 +26,12 @@ const defaultRepoRoot = path.resolve(scriptDir, '../..');
 const snapshotDir = 'packages/internal/evaluation-center/snapshots/request-replay';
 
 // 模型可见行为面：改动这些路径 = 可能改变发给模型的字节 / 假模型响应 / 重建语义。
+// readResultProjection.ts 单列出文件而非整目录：src/host/context/ 下其余模块不进
+// 请求拼装；该文件决定重复 Read 结果在模型可见投影里去重成回执还是保留全文
+// （N-SNAPSHOT-CORPUS-READDEDUPE 实证：变异它回放层不红，只能靠本门强制同 PR 重录）。
 const SENSITIVE_PREFIXES = [
   'src/host/agent/runtime/contextAssembly/',
+  'src/host/context/readResultProjection.ts',
   'src/host/prompts/',
   'src/host/testing/e2e/',
   'packages/internal/evaluation-center/src/host/evaluation/requestReplay.ts',

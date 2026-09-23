@@ -67,6 +67,18 @@ export const SNAPSHOT_CASES: SnapshotCaseSpec[] = [
     expectedTurns: 3,
     expectedTools: ['Read', 'Write'],
   },
+  {
+    // N-SNAPSHOT-CORPUS-READDEDUPE：语料里此前没有同文件同区间读两次的场景，
+    // readResultProjection 的去重分支从未被快照门覆盖（PR #1975 重录零漂移的真因）。
+    // 本用例同一 range 连读两次且中间不改盘，第二轮起该结果在 canonical-request
+    // 里呈现为回执（post_assembly_rewrite 内容块）而非全文。
+    caseId: 'read-duplicate',
+    title: '同文件同区间连读两次：第二次 Read 在模型可见投影里去重为回执',
+    coverage: ['Read', 'read-dedupe', 'tool-result-backfill'],
+    prompts: ['E2E_SNAPSHOT_REPLAY_READ_DEDUPE：把录制夹具按相同区间连读两遍。'],
+    expectedTurns: 3,
+    expectedTools: ['Read'],
+  },
 ];
 
 export const SNAPSHOT_READ_FIXTURE_NAME = 'snapshot-read-target.txt';

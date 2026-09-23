@@ -1,0 +1,82 @@
+{
+  "messages": [
+    {
+      "id": "msg-01",
+      "role": "user",
+      "content": "E2E_SNAPSHOT_REPLAY_READ_DEDUPE：把录制夹具按相同区间连读两遍。",
+      "timestamp": 0
+    },
+    {
+      "id": "msg-02",
+      "role": "assistant",
+      "content": "Reading the snapshot fixture for the first time.",
+      "timestamp": 0,
+      "toolCalls": [
+        {
+          "id": "e2e-snapshot-replay-read-dedupe-1",
+          "name": "Read",
+          "arguments": {
+            "file_path": "<RECORD_DATA_DIR>/workspace/read-duplicate/snapshot-read-target.txt",
+            "offset": 1,
+            "limit": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "msg-03",
+      "role": "tool",
+      "content": "",
+      "timestamp": 0,
+      "toolResults": [
+        {
+          "toolCallId": "e2e-snapshot-replay-read-dedupe-1",
+          "success": true,
+          "output": "Read version digest: 61118334d0e25865\n     1\tE2E_REAL_AGENT_REPLAY_EVAL_FIXTURE=true\n     2\tThis file proves the snapshot corpus session reached the real Read tool executor.\n\n<document-evidence>{\"path\":\"<RECORD_DATA_DIR>/workspace/read-duplicate/snapshot-read-target.txt\",\"digest\":\"61118334d0e258657ef593c2c0a832c1c94a130c6c5004aa2b6a7c409f9078cb\",\"kind\":\"unclassified\",\"roots\":[\"<RECORD_DATA_DIR>/workspace/read-duplicate/snapshot-read-target.txt\"]}; local file content, source independence unverified</document-evidence>"
+        }
+      ]
+    },
+    {
+      "id": "msg-04",
+      "role": "assistant",
+      "content": "Re-reading the same fixture range without touching the file.",
+      "timestamp": 0,
+      "toolCalls": [
+        {
+          "id": "e2e-snapshot-replay-read-dedupe-2",
+          "name": "Read",
+          "arguments": {
+            "file_path": "<RECORD_DATA_DIR>/workspace/read-duplicate/snapshot-read-target.txt",
+            "offset": 1,
+            "limit": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "msg-05",
+      "role": "system",
+      "content": "<cache-hint>\nℹ️ You just called \"Read\" with the same parameters as before.\nThe result is already available in the conversation context above.\nPlease use the existing result instead of calling again.\n</cache-hint>",
+      "timestamp": 0
+    },
+    {
+      "id": "msg-06",
+      "role": "tool",
+      "content": "",
+      "timestamp": 0,
+      "toolResults": [
+        {
+          "toolCallId": "e2e-snapshot-replay-read-dedupe-2",
+          "success": true,
+          "output": "Read version digest: 61118334d0e25865\n     1\tE2E_REAL_AGENT_REPLAY_EVAL_FIXTURE=true\n     2\tThis file proves the snapshot corpus session reached the real Read tool executor.\n\n<document-evidence>{\"path\":\"<RECORD_DATA_DIR>/workspace/read-duplicate/snapshot-read-target.txt\",\"digest\":\"61118334d0e258657ef593c2c0a832c1c94a130c6c5004aa2b6a7c409f9078cb\",\"kind\":\"unclassified\",\"roots\":[\"<RECORD_DATA_DIR>/workspace/read-duplicate/snapshot-read-target.txt\"]}; local file content, source independence unverified</document-evidence>"
+        }
+      ]
+    },
+    {
+      "id": "msg-07",
+      "role": "assistant",
+      "content": "E2E snapshot replay read-dedupe completed.",
+      "timestamp": 0
+    }
+  ]
+}

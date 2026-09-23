@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "caseId": "read-duplicate",
+  "title": "同文件同区间连读两次：第二次 Read 在模型可见投影里去重为回执",
+  "coverage": [
+    "Read",
+    "read-dedupe",
+    "tool-result-backfill"
+  ],
+  "model": {
+    "provider": "openai",
+    "model": "e2e-local-agent-model"
+  },
+  "fakeModelEnv": {
+    "CODE_AGENT_E2E": "1",
+    "CODE_AGENT_E2E_LOCAL_AGENT_MODEL": "1",
+    "CODE_AGENT_E2E_AGENT_MODEL_READ_FILE": "<RECORD_DATA_DIR>/workspace/read-duplicate/snapshot-read-target.txt",
+    "CODE_AGENT_E2E_AGENT_MODEL_WRITE_FILE": "<RECORD_DATA_DIR>/workspace/read-duplicate/snapshot-write-note.txt"
+  },
+  "turns": [
+    "turn-01",
+    "turn-02",
+    "turn-03"
+  ]
+}

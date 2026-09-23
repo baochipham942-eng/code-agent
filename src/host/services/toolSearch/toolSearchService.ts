@@ -13,6 +13,8 @@ import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName, resolveToo
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('ToolSearchService');
+const DEFAULT_SEARCH_MAX_RESULTS = 3;
+const SEARCH_MAX_RESULTS_HARD_CAP = 5;
 
 let protocolToolNameChecker: (name: string) => boolean = () => false;
 
@@ -35,6 +37,8 @@ function normalizeToolName(name: string): string {
  */
 export class ToolSearchService {
   private loadedDeferredTools: Set<string> = new Set();
+  private readonly lastUsedRound = new Map<string, number>();
+  private currentRound = 0;
   private deferredToolIndex: Map<string, DeferredToolMeta>;
   private mcpToolsMeta: Map<string, DeferredToolMeta> = new Map();
   private skillsMeta: Map<string, DeferredToolMeta> = new Map();
@@ -81,7 +85,9 @@ export class ToolSearchService {
     query: string,
     options: ToolSearchOptions = {}
   ): Promise<ToolSearchResult> {
-    const { maxResults = 5, includeMCP = true } = options;
+    const requestedMaxResults = options.maxResults ?? DEFAULT_SEARCH_MAX_RESULTS;
+    const maxResults = Math.min(Math.max(1, requestedMaxResults), SEARCH_MAX_RESULTS_HARD_CAP);
+    const { includeMCP = true } = options;
     const deniedToolNames = new Set(
       (options.deniedToolNames ?? []).map((name) => normalizeToolName(name).toLowerCase()),
     );
@@ -134,15 +140,19 @@ export class ToolSearchService {
 
     // 取 top N
     const topResults = scored.slice(0, maxResults);
+    const topScore = topResults[0]?.score;
+    const firstResultClearlyAhead = topResults.length === 1
+      || (topScore !== undefined && topScore - (topResults[1]?.score ?? 0) >= 0.25);
     const loadedTools: string[] = [];
 
-    const tools: ToolSearchItem[] = topResults.map(({ meta, score }) => {
+    const tools: ToolSearchItem[] = topResults.map(({ meta, score }, index) => {
       const loadable = this.canExposeLoadedTool(meta);
       const notCallableReason = loadable ? undefined : this.getNotCallableReason(meta);
       const canonicalInvocation = this.getCanonicalInvocation(meta, loadable);
+      const shouldLoad = index === 0 && firstResultClearlyAhead;
 
-      if (loadable && !isCoreToolName(meta.name)) {
-        this.loadedDeferredTools.add(meta.name);
+      if (loadable && shouldLoad && !isCoreToolName(meta.name)) {
+        this.markToolLoaded(meta.name);
         loadedTools.push(meta.name);
       } else {
         logger.debug(`ToolSearch match is not loaded as a deferred tool: ${meta.name}: ${notCallableReason || 'core tool already available'}`);
@@ -212,7 +222,7 @@ export class ToolSearchService {
     const canonicalInvocation = this.getCanonicalInvocation(meta, loadable);
     const loadedTools = loadable ? [meta.name] : [];
     if (loadedTools.length > 0) {
-      this.loadedDeferredTools.add(meta.name);
+      this.markToolLoaded(meta.name);
       logger.info(`Selected and loaded tool: ${normalizedToolName}`);
     } else {
       logger.info(`Selected tool is searchable but not loadable as a callable tool: ${normalizedToolName}`);
@@ -318,6 +328,36 @@ export class ToolSearchService {
     return Array.from(this.loadedDeferredTools);
   }
 
+  /** Advance the logical turn clock without evicting anything. */
+  beginRound(): void {
+    this.currentRound += 1;
+  }
+
+  /** Record a real tool call so idle eviction measures consecutive unused rounds. */
+  markToolCalled(name: string): void {
+    const normalized = normalizeToolName(name);
+    if (this.loadedDeferredTools.has(normalized)) {
+      this.lastUsedRound.set(normalized, this.currentRound);
+    }
+  }
+
+  /** Evict idle tools only at a compaction boundary; ordinary rounds never call this. */
+  evictIdleDeferredToolsAtCompactionBoundary(idleRounds = 3): string[] {
+    const evicted: string[] = [];
+    for (const name of this.loadedDeferredTools) {
+      const lastUsed = this.lastUsedRound.get(name) ?? this.currentRound;
+      if (this.currentRound - lastUsed >= idleRounds) {
+        this.loadedDeferredTools.delete(name);
+        this.lastUsedRound.delete(name);
+        evicted.push(name);
+      }
+    }
+    if (evicted.length > 0) {
+      logger.info(`Evicted idle deferred tools at compaction boundary: ${evicted.join(', ')}`);
+    }
+    return evicted;
+  }
+
   /**
    * 获取所有已注册的 MCP 工具元数据
    * GAP-008: 用于把 MCP 工具名索引注入 system prompt（schema 仍按需加载）
@@ -339,7 +379,7 @@ export class ToolSearchService {
       if (this.loadedDeferredTools.has(normalized)) continue;
       const meta = this.deferredToolIndex.get(normalized) || this.mcpToolsMeta.get(normalized);
       if (!meta || !this.canExposeLoadedTool(meta)) continue;
-      this.loadedDeferredTools.add(meta.name);
+      this.markToolLoaded(meta.name);
       loaded.push(meta.name);
     }
     if (loaded.length > 0) {
@@ -362,6 +402,8 @@ export class ToolSearchService {
    */
   resetLoadedTools(): void {
     this.loadedDeferredTools.clear();
+    this.lastUsedRound.clear();
+    this.currentRound = 0;
     logger.debug('Reset loaded deferred tools');
   }
 
@@ -442,6 +484,11 @@ export class ToolSearchService {
       return meta.name;
     }
     return undefined;
+  }
+
+  private markToolLoaded(name: string): void {
+    this.loadedDeferredTools.add(name);
+    this.lastUsedRound.set(name, this.currentRound);
   }
 
   /**

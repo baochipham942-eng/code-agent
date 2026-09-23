@@ -343,13 +343,13 @@ describe('ToolSearchService loadable results', () => {
     expect(screenshotResult.tools[0]?.canonicalInvocation).toBe('Computer');
   });
 
-  it('ranks Computer first for generic screenshot searches', async () => {
+  it('ranks Computer first but does not unlock a tied result', async () => {
     const service = new ToolSearchService();
 
     const result = await service.searchTools('screenshot', { maxResults: 3, includeMCP: false });
 
     expect(result.tools[0]?.name).toBe('Computer');
-    expect(result.loadedTools).toContain('Computer');
+    expect(result.loadedTools).not.toContain('Computer');
   });
 
   it('explains desktop context metadata as workbench context instead of callable tools', () => {
@@ -450,6 +450,32 @@ describe('ToolSearchService loadable results', () => {
 
       expect(second).toEqual([]);
       expect(service.getLoadedDeferredTools().filter((n) => n === 'Task')).toHaveLength(1);
+    });
+  });
+
+  describe('compaction-boundary eviction', () => {
+    it('keeps adjacent ordinary rounds stable, then evicts idle tools at compaction and rediscovers them', async () => {
+      const service = new ToolSearchService();
+      expect(service.selectTool('Task').loadedTools).toEqual(['Task']);
+
+      service.beginRound();
+      service.markToolCalled('Task');
+      const afterUse = service.getLoadedDeferredTools();
+
+      service.beginRound();
+      const afterIdleRoundOne = service.getLoadedDeferredTools();
+      service.beginRound();
+      const afterIdleRoundTwo = service.getLoadedDeferredTools();
+      expect(afterIdleRoundOne).toEqual(afterUse);
+      expect(afterIdleRoundTwo).toEqual(afterUse);
+
+      service.beginRound();
+      expect(service.evictIdleDeferredToolsAtCompactionBoundary()).toEqual(['Task']);
+      expect(service.getLoadedDeferredTools()).not.toContain('Task');
+
+      const rediscovered = await service.searchTools('Task', { includeMCP: false, maxResults: 3 });
+      expect(rediscovered.tools.map((tool) => tool.name)).toContain('Task');
+      expect(service.selectTool('Task').loadedTools).toContain('Task');
     });
   });
 });

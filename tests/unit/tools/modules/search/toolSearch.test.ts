@@ -8,6 +8,7 @@ import type {
   CanUseToolFn,
   Logger,
 } from '../../../../../src/host/protocol/tools';
+import { estimateTokens } from '../../../../../src/host/context/tokenEstimator';
 
 // -----------------------------------------------------------------------------
 // Mock service singletons
@@ -403,17 +404,40 @@ describe('toolSearchModule (native)', () => {
         expect(result.output).toContain('还有 6 个匹配结果');
       }
     });
+
+    it('enforces the single-injection token ceiling while keeping result names searchable', async () => {
+      searchToolsMock.mockResolvedValue({
+        tools: Array.from({ length: 5 }, (_, index) => ({
+          name: `mcp__mock__tool_${String(index).padStart(3, '0')}`,
+          description: 'A deliberately verbose description '.repeat(30),
+          tags: ['mcp'],
+          source: 'mcp',
+          loadable: true,
+        })),
+        loadedTools: ['mcp__mock__tool_000'],
+        totalCount: 500,
+        hasMore: true,
+      });
+
+      const result = await run({ query: 'mock', max_results: 5 });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(estimateTokens(result.output)).toBeLessThanOrEqual(400);
+        expect(result.output).toContain('mcp__mock__tool_000');
+        expect(result.output).toContain('mcp__mock__tool_004');
+      }
+    });
   });
 
   describe('max_results', () => {
-    it('defaults to 5 and caps at 10', async () => {
+    it('defaults to 3 and caps at 5', async () => {
       searchToolsMock.mockResolvedValue({ tools: [], loadedTools: [], totalCount: 0, hasMore: false });
 
       await run({ query: 'foo' });
-      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 5, includeMCP: true });
+      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 3, includeMCP: true });
 
       await run({ query: 'foo', max_results: 100 });
-      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 10, includeMCP: true });
+      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 5, includeMCP: true });
 
       await run({ query: 'foo', max_results: 3 });
       expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 3, includeMCP: true });
@@ -426,7 +450,7 @@ describe('toolSearchModule (native)', () => {
     await run({ query: 'select:AgentSpawn' }, makeCtx({ deniedToolNames: ['AgentSpawn'] }));
 
     expect(searchToolsMock).toHaveBeenCalledWith('select:AgentSpawn', {
-      maxResults: 5,
+      maxResults: 3,
       includeMCP: true,
       deniedToolNames: ['AgentSpawn'],
     });

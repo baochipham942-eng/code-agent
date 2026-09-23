@@ -26,6 +26,7 @@ import { getSessionManager } from '../../../services';
 import { getIncompleteTasks } from '../../../services/planning/taskStore';
 import { getSessionSkillService } from '../../../services/skills/sessionSkillService';
 import { getSessionTodos } from '../../../agent/todoParser';
+import { getToolSearchService } from '../../../services/toolSearch';
 import type { CheckAndAutoCompressOptions, ContextAssemblyCtx } from './shared';
 import { cachedReaddirSync, logger } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
@@ -427,6 +428,10 @@ export async function checkAndAutoCompress(
     ctx.runtime.contextHealth.setPipelineAutocompactNeeded(false);
 
     if (decision.action === 'none') return;
+
+    // Deferred schemas stay stable through ordinary rounds. Evict only when this
+    // pressure decision has crossed the compaction boundary, preserving prefix cache hits.
+    getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary();
 
     // Item2 剪枝短路（仅绝对 token 阈值路径）：raw transcript 命中 triggerTokens，但工具
     // 结果经系统 A 同款预算化后可能已够小——此时付费 AI 摘要没必要。pipeline-signal /

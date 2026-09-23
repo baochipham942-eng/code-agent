@@ -28,9 +28,11 @@ import { toolSearchSchema as schema } from './toolSearch.schema';
 import { getCapabilityRecommender } from '../../../services/capability';
 import { renderGaps } from '../planning/recommendCapability';
 import { markDistilledSkillTurnSignal } from '../../../services/skills/distillSignalStore';
+import { estimateTokens } from '../../../context/tokenEstimator';
 
-const MAX_RESULTS_HARD_CAP = 10;
-const DEFAULT_MAX_RESULTS = 5;
+const MAX_RESULTS_HARD_CAP = 5;
+const DEFAULT_MAX_RESULTS = 3;
+const SINGLE_INJECTION_TOKEN_CEILING = 400;
 
 interface McpDiscoveryEntry {
   serverName: string;
@@ -176,11 +178,19 @@ export async function executeToolSearch(
       const availability = tool.loadable === false
         ? `不可直接调用：${tool.notCallableReason || 'no direct tool definition is available'}`
         : '已加载，可直接调用';
-      lines.push(`• **${tool.name}**${sourceInfo}`);
-      lines.push(`  ${tool.description}${tags}`);
-      lines.push(`  ${availability}`);
-      if (tool.canonicalInvocation) {
-        lines.push(`  调用入口：${tool.canonicalInvocation}`);
+      const isLoaded = result.loadedTools.includes(tool.name);
+      lines.push(`• **${tool.name}**${isLoaded ? sourceInfo : ''}`);
+      lines.push(`  ${tool.description}`);
+      if (tool.loadable === false) {
+        lines.push(`  ${availability}`);
+        if (tool.canonicalInvocation) {
+          lines.push(`  调用入口：${tool.canonicalInvocation}`);
+        }
+      } else if (isLoaded) {
+        lines.push(`  ${availability}`);
+        if (tool.canonicalInvocation) {
+          lines.push(`  调用入口：${tool.canonicalInvocation}`);
+        }
       }
       lines.push('');
     }
@@ -207,7 +217,7 @@ export async function executeToolSearch(
       total: result.totalCount,
     });
 
-    const output = lines.join('\n');
+    const output = fitToolSearchOutput(lines, result);
     return {
       ok: true,
       output,
@@ -247,6 +257,51 @@ export async function executeToolSearch(
       code: 'SEARCH_ERROR',
     };
   }
+}
+
+function fitToolSearchOutput(
+  lines: string[],
+  result: { tools: Array<{ name: string; description: string }>; loadedTools: string[]; hasMore: boolean; totalCount: number },
+): string {
+  const full = lines.join('\n');
+  if (estimateTokens(full) <= SINGLE_INJECTION_TOKEN_CEILING) return full;
+
+  const compactLines = [
+    `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
+    '',
+    ...result.tools.flatMap((tool) => [
+      `• **${tool.name}**`,
+      `  ${tool.description.slice(0, 120)}`,
+      '',
+    ]),
+    ...(result.hasMore ? ['使用更具体的关键词缩小范围。', ''] : []),
+    '搜索结果已按单次注入预算裁剪；需要完整工具定义时使用 select:工具名。',
+  ];
+  if (estimateTokens(compactLines.join('\n')) <= SINGLE_INJECTION_TOKEN_CEILING) {
+    return compactLines.join('\n');
+  }
+
+  const namesOnly = [
+    `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
+    '',
+    ...result.tools.flatMap((tool) => [`• **${tool.name}**`, '']),
+    '搜索结果已按单次注入预算裁剪；使用 select:工具名加载工具。',
+  ].join('\n');
+  if (estimateTokens(namesOnly) <= SINGLE_INJECTION_TOKEN_CEILING) return namesOnly;
+  let low = 0;
+  let high = namesOnly.length;
+  let best = '';
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = namesOnly.slice(0, middle);
+    if (estimateTokens(candidate) <= SINGLE_INJECTION_TOKEN_CEILING) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best;
 }
 
 class ToolSearchHandler implements ToolHandler<Record<string, unknown>, string> {

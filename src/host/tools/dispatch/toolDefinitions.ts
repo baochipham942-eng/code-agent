@@ -31,6 +31,7 @@ import { getToolSearchService } from '../../services/toolSearch/toolSearchServic
 import { isBashToolName } from '../toolNames';
 import { getConfigService } from '../../services/core/configService';
 import { hasConfiguredExternalSearchCredential } from '../../services/search/searchSourceRegistry';
+import { estimateTokens } from '../../context/tokenEstimator';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
@@ -198,6 +199,8 @@ export const DESIGN_SUPPRESSED_GENERIC_MEDIA_TOOLS = [
   'image_annotate',
 ] as const;
 
+const DEFAULT_DEFERRED_SUMMARY_TOKEN_BUDGET = 1200;
+
 export function withoutGenericMediaToolsInDesign(
   tools: ToolDefinition[],
   designCanvasActive: boolean | undefined,
@@ -217,6 +220,7 @@ export function withoutGenericMediaToolsInDesign(
 export function getDeferredToolsSummary(
   deniedToolNames: readonly string[] = [],
   allowedToolNames?: readonly string[],
+  tokenBudget = DEFAULT_DEFERRED_SUMMARY_TOKEN_BUDGET,
 ): string {
   // T3b: allowlist 收窄（如会话指挥台前台 brain）下，若 ToolSearch 本身不在允许集里，
   // 模型物理上加载不了任何延迟工具——继续宣传"可通过 ToolSearch 加载 X"只会诱导模型
@@ -226,7 +230,9 @@ export function getDeferredToolsSummary(
     if (!allowed.has('toolsearch')) return '';
   }
   const denied = new Set(deniedToolNames.map((name) => name.trim().toLowerCase()));
+  const budget = Math.max(1, Math.floor(tokenBudget));
   const grouped = new Map<string, string[]>();
+  const visibleBuiltinCount = DEFERRED_TOOLS_META.filter((meta) => !denied.has(meta.name.toLowerCase())).length;
   for (const meta of DEFERRED_TOOLS_META) {
     if (denied.has(meta.name.toLowerCase())) continue;
     const category = meta.tags[0] || 'other';
@@ -234,9 +240,13 @@ export function getDeferredToolsSummary(
     grouped.get(category)!.push(`${meta.name}: ${meta.shortDescription}`);
   }
 
-  const lines: string[] = [];
+  const fullLines: string[] = [];
+  const nameLines: string[] = [];
+  const compactLines: string[] = [];
   for (const [category, tools] of grouped) {
-    lines.push(`[${category}] ${tools.join(' | ')}`);
+    fullLines.push(`[${category}] ${tools.join(' | ')}`);
+    nameLines.push(`[${category}] ${tools.map((tool) => tool.slice(0, tool.indexOf(': '))).join(' | ')}`);
+    compactLines.push(`[${category}] ${tools.length} tools; use ToolSearch to find them`);
   }
 
   // MCP 工具名索引：按 server 分组，只列名字不带 schema
@@ -252,10 +262,50 @@ export function getDeferredToolsSummary(
   // 该 summary 进 system 稳定前缀，顺序漂移会弱化跨会话前缀复用
   for (const server of [...byServer.keys()].sort()) {
     const names = [...(byServer.get(server) ?? [])].sort();
-    lines.push(`[mcp:${server}] ${names.join(' | ')}`);
+    fullLines.push(`[mcp:${server}] ${names.join(' | ')}`);
+    nameLines.push(`[mcp:${server}] ${names.join(' | ')}`);
+    compactLines.push(`[mcp:${server}] ${names.length} tools; use ToolSearch to find them`);
   }
 
-  return lines.join('\n');
+  const visibleMcpCount = [...byServer.values()].reduce((sum, names) => sum + names.length, 0);
+  const visibleCount = visibleBuiltinCount + visibleMcpCount;
+  const withUnlistedCount = (lines: string[], unlisted: number): string => [
+    ...lines,
+    `${unlisted} tools unlisted; use ToolSearch to find them`,
+  ].join('\n');
+  const full = withUnlistedCount(fullLines, 0);
+  if (estimateTokens(full) <= budget) return full;
+
+  const names = withUnlistedCount(nameLines, 0);
+  if (estimateTokens(names) <= budget) return names;
+
+  const compact = withUnlistedCount(compactLines, visibleCount);
+  if (estimateTokens(compact) <= budget) return compact;
+
+  // A caller can provide an unusually small budget. Keep the cap hard even then;
+  // normal budgets retain every category/server line above.
+  const fitted: string[] = [];
+  for (const line of [...compactLines, `${visibleCount} tools unlisted; use ToolSearch to find them`]) {
+    const candidate = [...fitted, line].join('\n');
+    if (estimateTokens(candidate) <= budget) fitted.push(line);
+  }
+  if (fitted.length > 0) return fitted.join('\n');
+  const fallback = `${visibleCount} tools unlisted`;
+  if (estimateTokens(fallback) <= budget) return fallback;
+  let low = 0;
+  let high = fallback.length;
+  let best = '';
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = fallback.slice(0, middle);
+    if (estimateTokens(candidate) <= budget) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best;
 }
 
 /**

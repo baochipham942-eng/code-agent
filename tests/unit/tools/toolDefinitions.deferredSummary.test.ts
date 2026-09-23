@@ -9,6 +9,7 @@ import {
   getToolSearchService,
   resetToolSearchService,
 } from '../../../src/host/services/toolSearch/toolSearchService';
+import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
@@ -84,6 +85,15 @@ describe('getDeferredToolsSummary MCP name index (GAP-008)', () => {
     expect(getDeferredToolsSummary([], [])).toContain('Browser');
   });
 
+  it('drops descriptions before falling back to category counts', () => {
+    const summary = getDeferredToolsSummary([], undefined, 600);
+
+    expect(estimateTokens(summary)).toBeLessThanOrEqual(600);
+    expect(summary).toContain('[memory]');
+    expect(summary).toContain('MemoryWrite');
+    expect(summary).not.toContain('写入/更新/删除长期记忆文件');
+  });
+
   it('appends MCP tool name index grouped by server (names only, no schema)', () => {
     const service = getToolSearchService();
     service.registerMCPTools([
@@ -140,5 +150,27 @@ describe('getDeferredToolsSummary MCP name index (GAP-008)', () => {
     service.unregisterMCPServer('github');
 
     expect(getDeferredToolsSummary()).not.toContain('[mcp:github]');
+  });
+
+  it('keeps a 500-tool MCP index within budget and preserves staged discovery', async () => {
+    const service = getToolSearchService();
+    service.registerMCPTools(Array.from({ length: 500 }, (_, index) => ({
+      name: `mcp__mock__tool_${String(index).padStart(3, '0')}`,
+      shortDescription: `Mock tool ${index}`,
+      tags: ['mcp'],
+      aliases: [`mock${index}`],
+      source: 'mcp' as const,
+      mcpServer: 'mock',
+    })));
+
+    const summary = getDeferredToolsSummary([], undefined, 500);
+
+    expect(estimateTokens(summary)).toBeLessThanOrEqual(500);
+    expect(summary).toContain('[memory]');
+    expect(summary).toContain('[mcp:mock] 500 tools; use ToolSearch to find them');
+    expect(summary).toMatch(/\b\d+ tools unlisted; use ToolSearch to find them/);
+
+    const search = await service.searchTools('mock499', { maxResults: 3 });
+    expect(search.tools.map((tool) => tool.name)).toContain('mcp__mock__tool_499');
   });
 });

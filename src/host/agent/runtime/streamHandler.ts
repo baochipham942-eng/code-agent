@@ -9,6 +9,7 @@ import type {
 import type { ModelResponse } from '../../agent/loopTypes';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getLangfuseService } from '../../services';
+import { getToolSearchService } from '../../services/toolSearch';
 import { createLogger } from '../../services/infra/logger';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
@@ -124,6 +125,7 @@ export class StreamHandler {
       ? iterationTraceContext.spanId
       : `iteration-${this.ctx.stats.traceId}-${iterations}`;
     this.ctx.turn.beginTurn(turnId, iterationSpanId);
+    getToolSearchService().beginRound();
     if (iterationTraceContext) enterRunTraceContext(iterationTraceContext);
     langfuse.startSpan(this.ctx.stats.traceId, this.ctx.turn.currentIterationSpanId, {
       name: `Iteration ${iterations}`,

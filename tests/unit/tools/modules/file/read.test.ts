@@ -68,17 +68,18 @@ describe('readModule (native)', () => {
 
     it('tells a single-value read to Grep then use a narrow window, and documents embedded offset/limit', () => {
       const description = readModule.schema.description;
+      expect(description).toContain('Never Bash cat');
       expect(description).toContain('Grep');
       expect(description).toContain('version');
+      expect(description).toContain('limit=20');
+      expect(description).toContain('never the repo');
       expect(description).toContain('offset=N limit=N');
       expect(description).toContain('lines N-M');
       expect(description).toContain('default 2000');
+      expect(description).toContain('unread');
       const properties = readModule.schema.inputSchema.properties as Record<string, { description?: string }>;
       expect(properties.limit.description).toContain('Default 2000');
       expect(properties.limit.description).toContain('small limit');
-      expect(properties.file_path.description).toContain('offset=N limit=N');
-      expect(properties.file_path.description).toContain('lines N-M');
-      expect(properties.offset.description).toContain('Grep');
     });
   });
 

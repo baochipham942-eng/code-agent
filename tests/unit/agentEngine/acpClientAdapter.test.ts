@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   addOutputRef: vi.fn(),
   queueNotification: vi.fn(),
   registryGet: vi.fn(),
+  loadMcpConfigFiles: vi.fn(),
 }));
 
 vi.mock('child_process', () => ({ spawn: (...args: unknown[]) => mocks.spawn(...args) }));
@@ -45,6 +46,12 @@ vi.mock('../../../src/host/task/backgroundTaskLedger', () => ({
 vi.mock('../../../src/host/services/agentEngine/agentEngineRegistry', () => ({
   getAgentEngineRegistry: () => ({ get: mocks.registryGet }),
 }));
+vi.mock('../../../src/host/mcp/mcpConfigFile', () => ({
+  loadMcpConfigFiles: (...args: unknown[]) => mocks.loadMcpConfigFiles(...args),
+}));
+vi.mock('../../../src/host/mcp/mcpSecretResolver', () => ({
+  resolveServerConfigSecrets: (config: unknown) => config,
+}));
 
 import { KimiAcpAdapter } from '../../../src/host/services/agentEngine/acpClientAdapter';
 
@@ -66,6 +73,8 @@ interface FakeAgentOptions {
   clientCalls?: Array<{ method: string; params: Record<string, unknown> }>;
   onClientCallResult?: (method: string, result: unknown, error: unknown) => void;
   loadSessionCalls?: string[];
+  /** 收集 session/new 与 session/load 的请求参数。 */
+  sessionSetups?: Array<{ method: string; params: Record<string, unknown> }>;
 }
 
 function installFakeAgent(options: FakeAgentOptions) {
@@ -119,6 +128,7 @@ function installFakeAgent(options: FakeAgentOptions) {
           } });
           break;
         case 'session/new':
+          options.sessionSetups?.push({ method: 'session/new', params: msg.params ?? {} });
           send({ jsonrpc: '2.0', id: msg.id, result: {
             sessionId: 'sess-fake-1',
             ...(options.configOptions ? { configOptions: options.configOptions } : {}),
@@ -129,6 +139,7 @@ function installFakeAgent(options: FakeAgentOptions) {
           send({ jsonrpc: '2.0', id: msg.id, result: { configOptions: options.configOptions ?? [] } });
           break;
         case 'session/load':
+          options.sessionSetups?.push({ method: 'session/load', params: msg.params ?? {} });
           options.loadSessionCalls?.push(String(msg.params?.sessionId));
           // 真实 agent 在 load 时把**整段历史**当成 session/update 回放：
           // 用户说过的话 + **上一轮的助手正文** + 思考流（2026-08-27 真机抓包形态）。
@@ -187,6 +198,7 @@ beforeEach(async () => {
   });
   mocks.addMessageToSession.mockResolvedValue(undefined);
   mocks.updateSession.mockResolvedValue(undefined);
+  mocks.loadMcpConfigFiles.mockResolvedValue([]);
 });
 afterEach(async () => {
   await fsp.rm(workspace, { recursive: true, force: true });
@@ -311,6 +323,62 @@ describe('AcpClientAdapter — 收尾不许打死宿主进程', () => {
     // 说明适配器确实等到了进程收干净，而不是发完信号就走。
     expect((child as unknown as { exitCode: number | null }).exitCode).toBe(0);
     expect((child as unknown as { kill: { mock: { calls: unknown[] } } }).kill.mock.calls.length).toBeGreaterThan(0);
+  });
+});
+
+describe('AcpClientAdapter — MCP 透传到 session/new 与 session/load', () => {
+  const expectedServer = {
+    name: 'fixture-ping',
+    command: 'node',
+    args: ['fixture.mjs'],
+    env: [{ name: 'FIXTURE', value: '1' }],
+  };
+
+  it('两处请求的 mcpServers 都是 Neo 配置映射结果，不再是空数组', async () => {
+    mocks.loadMcpConfigFiles.mockResolvedValue([{
+      name: 'fixture-ping',
+      type: 'stdio',
+      command: 'node',
+      args: ['fixture.mjs'],
+      env: { FIXTURE: '1' },
+      enabled: true,
+      scope: 'user',
+    }]);
+
+    const created: Array<{ method: string; params: Record<string, unknown> }> = [];
+    installFakeAgent({
+      sessionSetups: created,
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }],
+    });
+    const createdResult = await new KimiAcpAdapter().run(baseRequest() as never);
+    expect(createdResult.status).toBe('completed');
+
+    const loaded: Array<{ method: string; params: Record<string, unknown> }> = [];
+    installFakeAgent({
+      sessionSetups: loaded,
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }],
+    });
+    const loadedResult = await new KimiAcpAdapter().run(
+      baseRequest({ externalSessionId: 'sess-persisted-42' }) as never,
+    );
+    expect(loadedResult.status).toBe('completed');
+
+    const newServers = created.find((call) => call.method === 'session/new')?.params.mcpServers;
+    const loadServers = loaded.find((call) => call.method === 'session/load')?.params.mcpServers;
+    expect(newServers).toEqual([expectedServer]);
+    expect(loadServers).toEqual([expectedServer]);
+    expect(newServers).not.toEqual([]);
+    expect(loadServers).not.toEqual([]);
+    expect(mocks.loadMcpConfigFiles).toHaveBeenCalledWith(await fsp.realpath(workspace));
+
+    const passthrough = mocks.appendEvent.mock.calls
+      .map((call) => call[0] as { type?: string; data?: unknown })
+      .filter((event) => event.type === 'agent_engine.mcp_passthrough');
+    expect(passthrough).toEqual([
+      expect.objectContaining({ data: { passed: 1, dropped: [] } }),
+      expect.objectContaining({ data: { passed: 1, dropped: [] } }),
+    ]);
+    expect(JSON.stringify(passthrough)).not.toContain('FIXTURE');
   });
 });
 

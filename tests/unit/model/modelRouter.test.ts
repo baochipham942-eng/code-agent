@@ -2429,7 +2429,8 @@ describe('ModelRouter', () => {
 
       expect(first).toMatchObject({ type: 'text', content: 'main model answer' });
       expect(second).toMatchObject({ type: 'text', content: 'main model answer' });
-      expect(second).toBe(first);
+      expect(second).not.toBe(first);
+      expect(second.runtimeDiagnostics).toEqual({ inferenceCacheHit: true });
       // 第二次来自缓存，provider 只被真实调用一次
       expect(xiaomiProvider.inference).toHaveBeenCalledTimes(1);
     });

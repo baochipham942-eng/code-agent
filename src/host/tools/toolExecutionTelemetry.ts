@@ -201,8 +201,9 @@ export function markToolCacheHit(
   toolCallId?: string,
   hit?: { sessionId?: string; fingerprint?: string },
 ): void {
-  const recorded = recordSessionCacheHit(hit?.sessionId ?? 'tool-cache', hit?.fingerprint);
   try {
+    if (!hit?.sessionId) return;
+    const recorded = recordSessionCacheHit(hit.sessionId, hit.fingerprint);
     const toolSpan = findToolSpan(toolCallId);
     if (toolSpan) {
       getTelemetryService().updateSpan(toolSpan.spanId, {
@@ -211,7 +212,6 @@ export function markToolCacheHit(
         'tool.cache_hit.idle': recorded.kind === 'idle' ? 1 : 0,
         'cache.effective_hits': recorded.effective,
         'cache.idle_hits': recorded.idle,
-        'cache.inference_hit_rate': recorded.inferenceHitRate,
       });
     }
   } catch {

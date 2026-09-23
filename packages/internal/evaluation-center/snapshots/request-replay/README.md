@@ -1,5 +1,6 @@
 # request-replay 快照语料（N-SNAPSHOT-REGRESSION / DSH P1-M2）
 
+Provider cache telemetry uses `providerCacheHitAdvancing` and `providerCacheHitStagnant`. These counters classify a provider-reported cache hit by whether the latest raw tool-call stagnation fingerprint differs from the previous provider hit: advancing means it changed, stagnant means it did not. They measure provider-cache hit progress only; InferenceCache hit rate is reported by its own cache telemetry and is not attached to these events.
 keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的录制回放语料。
 每条用例跑真 AgentLoop + StandaloneAgentAdapter，逐轮落：
 

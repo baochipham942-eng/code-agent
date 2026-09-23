@@ -10,7 +10,10 @@ import {
 } from '../../../src/shared/pricing/resolveModelPrice';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { TurnCostRepository } from '../../../src/host/services/core/repositories/TurnCostRepository';
-import { createTurnCostEventHandler } from '../../../src/host/agent/runtime/turnCostPersistence';
+import {
+  clearSessionCachePrompt,
+  createTurnCostEventHandler,
+} from '../../../src/host/agent/runtime/turnCostPersistence';
 
 const logger = {
   debug: vi.fn(),
@@ -171,5 +174,48 @@ describe('turn cost production event handler', () => {
     const reasons = repo.listBySession('session-cache-break').map((row) => row.cacheBreakReason);
     expect(reasons).toEqual(['none', 'none', 'prefix-changed', 'model-switch']);
     expect(JSON.parse(JSON.stringify(reasons))).toEqual(reasons);
+  });
+
+  it('keeps the previous prompt sample across AgentLoop handler instances', () => {
+    const sessionId = 'session-cache-break-across-runs';
+    clearSessionCachePrompt(sessionId);
+    const sample: { current?: { prompt: string; modelId: string } } = {};
+    const finish = (handler: (event: AgentEvent) => void, turnId: string, prompt: string) => {
+      sample.current = { prompt, modelId: 'deepseek-v4-pro' };
+      handler({ type: 'turn_start', data: { turnId, iteration: 1 } });
+      handler({
+        type: 'model_response',
+        data: {
+          model: 'deepseek-v4-pro',
+          provider: 'deepseek',
+          responseType: 'text',
+          duration: 1,
+          toolCalls: [],
+          textLength: 1,
+          inputTokens: 10,
+          outputTokens: 2,
+        },
+      });
+      handler({ type: 'turn_end', data: { turnId } });
+    };
+
+    const first = createTurnCostEventHandler({
+      sessionId,
+      onEvent: vi.fn(),
+      sink: repo,
+      readCachePrompt: () => sample.current,
+    });
+    finish(first, 'run-1-turn', 'stable prefix A');
+
+    const second = createTurnCostEventHandler({
+      sessionId,
+      onEvent: vi.fn(),
+      sink: repo,
+      readCachePrompt: () => sample.current,
+    });
+    finish(second, 'run-2-turn', 'stable prefix B');
+
+    expect(repo.listBySession(sessionId).map((row) => row.cacheBreakReason)).toEqual(['none', 'prefix-changed']);
+    clearSessionCachePrompt(sessionId);
   });
 });

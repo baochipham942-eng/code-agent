@@ -9,6 +9,7 @@ import { markToolCacheHit } from './toolExecutionTelemetry';
 export function recordCachedToolReplay(input: {
   cached: ToolResult;
   params: Record<string, unknown>;
+  rawParams?: Record<string, unknown>;
   toolName: string;
   sessionId?: string;
   toolCallId?: string;
@@ -46,7 +47,7 @@ export function recordCachedToolReplay(input: {
   markToolCacheHit(input.toolCallId, {
     sessionId: input.sessionId,
     fingerprint: fingerprintToolCall(
-      { id: input.toolCallId ?? 'cache', name: input.toolName, arguments: input.params },
+      { id: input.toolCallId ?? 'cache', name: input.toolName, arguments: input.rawParams ?? input.params },
       input.cached,
     ),
   });

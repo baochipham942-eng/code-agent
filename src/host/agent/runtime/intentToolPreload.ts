@@ -17,9 +17,9 @@ const SCREEN_CAPTURE_TOOLS = ['image_analyze'];
  * 按任务特征预载工具，返回实际新加载的工具名。
  * 不可加载/未知工具由 ToolSearchService 静默跳过。
  */
-export function preloadToolsForIntent(features: TaskFeatures): string[] {
+export function preloadToolsForIntent(features: TaskFeatures, sessionId?: string): string[] {
   if (!features.isScreenCaptureTask) return [];
-  const preloaded = getToolSearchService().preloadTools(SCREEN_CAPTURE_TOOLS);
+  const preloaded = getToolSearchService().preloadTools(SCREEN_CAPTURE_TOOLS, sessionId);
   if (preloaded.length > 0) {
     logger.info('[AgentLoop] Screen-capture intent detected, preloaded tools', { preloaded });
   }

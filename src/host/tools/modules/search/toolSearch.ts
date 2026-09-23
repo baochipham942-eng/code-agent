@@ -84,6 +84,7 @@ export async function executeToolSearch(
     const result = await service.searchTools(query, {
       maxResults,
       includeMCP: true,
+      sessionId: ctx.sessionId,
       ...(ctx.deniedToolNames?.length ? { deniedToolNames: ctx.deniedToolNames } : {}),
     });
 

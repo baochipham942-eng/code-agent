@@ -249,7 +249,7 @@ export class ToolExecutionEngine {
 
         for (const { index, toolCall } of batch) {
           this.ctx.turn.recordToolUse(toolCall.name);
-          getToolSearchService().markToolCalled(toolCall.name);
+          getToolSearchService().markToolCalled(toolCall.name, this.ctx.sessionId);
           this.runFinalizer.emitTaskProgress('tool_running', `并行执行 ${batch.length} 个工具`, {
             tool: toolCall.name,
             toolIndex: index,
@@ -273,7 +273,7 @@ export class ToolExecutionEngine {
     } else if (parallelGroup.length === 1) {
       const { index, toolCall } = parallelGroup[0];
       this.ctx.turn.recordToolUse(toolCall.name);
-      getToolSearchService().markToolCalled(toolCall.name);
+      getToolSearchService().markToolCalled(toolCall.name, this.ctx.sessionId);
       // Research mode: show friendly message for web_fetch
       const singleToolLabel = this.ctx.turn.researchModeActive && toolCall.name === 'web_fetch'
         ? '正在抓取详情...'
@@ -295,7 +295,7 @@ export class ToolExecutionEngine {
       }
 
       this.ctx.turn.recordToolUse(toolCall.name);
-      getToolSearchService().markToolCalled(toolCall.name);
+      getToolSearchService().markToolCalled(toolCall.name, this.ctx.sessionId);
       const progress = Math.round((index / toolCalls.length) * 100);
       // Research mode: show friendly message for web_fetch
       const toolStepLabel = this.ctx.turn.researchModeActive && toolCall.name === 'web_fetch'

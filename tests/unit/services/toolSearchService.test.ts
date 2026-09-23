@@ -502,6 +502,22 @@ describe('ToolSearchService loadable results', () => {
       expect(rediscovered.tools.map((tool) => tool.name)).toContain('Task');
       expect(service.selectTool('Task').loadedTools).toContain('Task');
     });
+
+    it('does not let one session compaction evict a tool another session just used', () => {
+      registerProtocolToolForSearch('Task');
+      registerProtocolToolForSearch('MemoryWrite');
+      const service = new ToolSearchService();
+      expect(service.selectTool('Task', 'session-a').loadedTools).toEqual(['Task']);
+      expect(service.selectTool('MemoryWrite', 'session-b').loadedTools).toContain('MemoryWrite');
+
+      service.beginRound('session-a');
+      service.markToolCalled('Task', 'session-a');
+      for (let round = 0; round < 4; round += 1) service.beginRound('session-b');
+
+      expect(service.evictIdleDeferredToolsAtCompactionBoundary(3, 'session-b')).toEqual(['MemoryWrite']);
+      expect(service.getLoadedDeferredTools()).toContain('Task');
+      expect(service.getLoadedDeferredTools()).not.toContain('MemoryWrite');
+    });
   });
 });
 

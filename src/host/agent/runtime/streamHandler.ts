@@ -125,7 +125,7 @@ export class StreamHandler {
       ? iterationTraceContext.spanId
       : `iteration-${this.ctx.stats.traceId}-${iterations}`;
     this.ctx.turn.beginTurn(turnId, iterationSpanId);
-    getToolSearchService().beginRound();
+    getToolSearchService().beginRound(this.ctx.sessionId);
     if (iterationTraceContext) enterRunTraceContext(iterationTraceContext);
     langfuse.startSpan(this.ctx.stats.traceId, this.ctx.turn.currentIterationSpanId, {
       name: `Iteration ${iterations}`,

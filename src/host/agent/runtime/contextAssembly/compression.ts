@@ -453,11 +453,6 @@ export async function checkAndAutoCompress(
       }
     }
 
-    // Deferred schemas stay stable through ordinary rounds. Evict only after the
-    // lossless short-circuit above has been ruled out, at the actual compaction
-    // boundary, preserving prefix cache hits across ordinary rounds.
-    getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary();
-
     logger.info(`[AgentLoop] Context pressure (${decision.trigger}): ${decision.reason} — triggering ${decision.action}`);
 
     // Emit context_compacting event (Claude Code style) — 现在所有触发路径统一发，
@@ -521,6 +516,7 @@ export async function checkAndAutoCompress(
             tokensBefore: currentTokens,
             messagesCount: ctx.runtime.messages.length,
           });
+          getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary(3, ctx.runtime.sessionId);
           return;
         }
         logger.warn('[AgentLoop] Checkpoint rebuild boundary unavailable, falling back to summary compaction', {
@@ -639,6 +635,7 @@ export async function checkAndAutoCompress(
         emitCompacted: true,
         survivorReason: `Compaction block inserted after ${decision.trigger} compaction`,
       });
+      getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary(3, ctx.runtime.sessionId);
       emitContextCompressionSignal(ctx, {
         kind: 'success',
         code: 'compaction-succeeded',

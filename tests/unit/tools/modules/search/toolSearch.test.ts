@@ -495,13 +495,13 @@ describe('toolSearchModule (native)', () => {
       searchToolsMock.mockResolvedValue({ tools: [], loadedTools: [], totalCount: 0, hasMore: false });
 
       await run({ query: 'foo' });
-      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 3, includeMCP: true });
+      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 3, includeMCP: true, sessionId: 'test-session' });
 
       await run({ query: 'foo', max_results: 100 });
-      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 5, includeMCP: true });
+      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 5, includeMCP: true, sessionId: 'test-session' });
 
       await run({ query: 'foo', max_results: 3 });
-      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 3, includeMCP: true });
+      expect(searchToolsMock).toHaveBeenLastCalledWith('foo', { maxResults: 3, includeMCP: true, sessionId: 'test-session' });
     });
   });
 
@@ -513,6 +513,7 @@ describe('toolSearchModule (native)', () => {
     expect(searchToolsMock).toHaveBeenCalledWith('select:AgentSpawn', {
       maxResults: 3,
       includeMCP: true,
+      sessionId: 'test-session',
       deniedToolNames: ['AgentSpawn'],
     });
   });

@@ -15,6 +15,7 @@ import { createLogger } from '../infra/logger';
 const logger = createLogger('ToolSearchService');
 const DEFAULT_SEARCH_MAX_RESULTS = 3;
 const SEARCH_MAX_RESULTS_HARD_CAP = 5;
+const DEFAULT_EVICTION_SESSION = 'default';
 
 let protocolToolNameChecker: (name: string) => boolean = () => false;
 
@@ -37,8 +38,8 @@ function normalizeToolName(name: string): string {
  */
 export class ToolSearchService {
   private loadedDeferredTools: Set<string> = new Set();
-  private readonly lastUsedRound = new Map<string, number>();
-  private currentRound = 0;
+  private readonly roundBySession = new Map<string, number>();
+  private readonly lastUsedBySession = new Map<string, Map<string, number>>();
   private deferredToolIndex: Map<string, DeferredToolMeta>;
   private mcpToolsMeta: Map<string, DeferredToolMeta> = new Map();
   private skillsMeta: Map<string, DeferredToolMeta> = new Map();
@@ -91,6 +92,7 @@ export class ToolSearchService {
     const deniedToolNames = new Set(
       (options.deniedToolNames ?? []).map((name) => normalizeToolName(name).toLowerCase()),
     );
+    const sessionId = options.sessionId || DEFAULT_EVICTION_SESSION;
     const mode = this.parseQuery(query);
 
     logger.debug(`Searching tools: query="${query}", mode=${mode.type}`);
@@ -101,7 +103,7 @@ export class ToolSearchService {
         logger.warn(`ToolSearch selection blocked by run policy: ${mode.toolName}`);
         return { tools: [], hasMore: false, totalCount: 0, loadedTools: [] };
       }
-      return this.selectTool(mode.toolName);
+      return this.selectTool(mode.toolName, sessionId);
     }
 
     // 获取所有可搜索的工具元数据
@@ -152,7 +154,7 @@ export class ToolSearchService {
       const shouldLoad = index === 0 && firstResultClearlyAhead;
 
       if (loadable && shouldLoad && !isCoreToolName(meta.name)) {
-        this.markToolLoaded(meta.name);
+        this.markToolLoaded(meta.name, sessionId);
         loadedTools.push(meta.name);
       } else {
         logger.debug(`ToolSearch match is not loaded as a deferred tool: ${meta.name}: ${notCallableReason || 'core tool already available'}`);
@@ -184,7 +186,7 @@ export class ToolSearchService {
   /**
    * 直接选择工具
    */
-  selectTool(toolName: string): ToolSearchResult {
+  selectTool(toolName: string, sessionId = DEFAULT_EVICTION_SESSION): ToolSearchResult {
     const normalizedToolName = normalizeToolName(toolName);
     if (isCoreToolName(normalizedToolName)) {
       logger.info(`Selected core tool already available: ${normalizedToolName}`);
@@ -222,7 +224,7 @@ export class ToolSearchService {
     const canonicalInvocation = this.getCanonicalInvocation(meta, loadable);
     const loadedTools = loadable ? [meta.name] : [];
     if (loadedTools.length > 0) {
-      this.markToolLoaded(meta.name);
+      this.markToolLoaded(meta.name, sessionId);
       logger.info(`Selected and loaded tool: ${normalizedToolName}`);
     } else {
       logger.info(`Selected tool is searchable but not loadable as a callable tool: ${normalizedToolName}`);
@@ -328,29 +330,37 @@ export class ToolSearchService {
     return Array.from(this.loadedDeferredTools);
   }
 
-  /** Advance the logical turn clock without evicting anything. */
-  beginRound(): void {
-    this.currentRound += 1;
+  /** Advance one session's turn clock. Other sessions keep their own clocks. */
+  beginRound(sessionId = DEFAULT_EVICTION_SESSION): void {
+    this.roundBySession.set(sessionId, this.sessionRound(sessionId) + 1);
   }
 
   /** Record a real tool call so idle eviction measures consecutive unused rounds. */
-  markToolCalled(name: string): void {
+  markToolCalled(name: string, sessionId = DEFAULT_EVICTION_SESSION): void {
     const normalized = normalizeToolName(name);
     if (this.loadedDeferredTools.has(normalized)) {
-      this.lastUsedRound.set(normalized, this.currentRound);
+      this.touchTool(sessionId, normalized);
     }
   }
 
-  /** Evict idle tools only at a compaction boundary; ordinary rounds never call this. */
-  evictIdleDeferredToolsAtCompactionBoundary(idleRounds = 3): string[] {
+  /**
+   * Evict tools this session has left idle, and only after a compaction that
+   * actually landed. A tool another session used inside its own idle window stays.
+   */
+  evictIdleDeferredToolsAtCompactionBoundary(
+    idleRounds = 3,
+    sessionId = DEFAULT_EVICTION_SESSION,
+  ): string[] {
+    const round = this.sessionRound(sessionId);
     const evicted: string[] = [];
-    for (const name of this.loadedDeferredTools) {
-      const lastUsed = this.lastUsedRound.get(name) ?? this.currentRound;
-      if (this.currentRound - lastUsed >= idleRounds) {
-        this.loadedDeferredTools.delete(name);
-        this.lastUsedRound.delete(name);
-        evicted.push(name);
-      }
+    for (const name of [...this.loadedDeferredTools]) {
+      const localLast = this.lastUsedBySession.get(sessionId)?.get(name);
+      const localIdle = localLast === undefined ? round : round - localLast;
+      if (localIdle < idleRounds) continue;
+      if (this.toolHeldByAnotherSession(name, sessionId, idleRounds)) continue;
+      this.loadedDeferredTools.delete(name);
+      for (const used of this.lastUsedBySession.values()) used.delete(name);
+      evicted.push(name);
     }
     if (evicted.length > 0) {
       logger.info(`Evicted idle deferred tools at compaction boundary: ${evicted.join(', ')}`);
@@ -371,7 +381,7 @@ export class ToolSearchService {
    * 与 selectTool 同一套可加载性校验；未知/不可加载的名字静默跳过。
    * 返回实际新加载的工具名。
    */
-  preloadTools(names: string[]): string[] {
+  preloadTools(names: string[], sessionId = DEFAULT_EVICTION_SESSION): string[] {
     const loaded: string[] = [];
     for (const name of names) {
       const normalized = normalizeToolName(name);
@@ -379,7 +389,7 @@ export class ToolSearchService {
       if (this.loadedDeferredTools.has(normalized)) continue;
       const meta = this.deferredToolIndex.get(normalized) || this.mcpToolsMeta.get(normalized);
       if (!meta || !this.canExposeLoadedTool(meta)) continue;
-      this.markToolLoaded(meta.name);
+      this.markToolLoaded(meta.name, sessionId);
       loaded.push(meta.name);
     }
     if (loaded.length > 0) {
@@ -402,8 +412,8 @@ export class ToolSearchService {
    */
   resetLoadedTools(): void {
     this.loadedDeferredTools.clear();
-    this.lastUsedRound.clear();
-    this.currentRound = 0;
+    this.roundBySession.clear();
+    this.lastUsedBySession.clear();
     logger.debug('Reset loaded deferred tools');
   }
 
@@ -486,9 +496,32 @@ export class ToolSearchService {
     return undefined;
   }
 
-  private markToolLoaded(name: string): void {
+  private sessionRound(sessionId: string): number {
+    return this.roundBySession.get(sessionId) ?? 0;
+  }
+
+  private touchTool(sessionId: string, name: string): void {
+    let used = this.lastUsedBySession.get(sessionId);
+    if (!used) {
+      used = new Map();
+      this.lastUsedBySession.set(sessionId, used);
+    }
+    used.set(name, this.sessionRound(sessionId));
+  }
+
+  private toolHeldByAnotherSession(name: string, sessionId: string, idleRounds: number): boolean {
+    for (const [otherId, used] of this.lastUsedBySession) {
+      if (otherId === sessionId) continue;
+      const otherLast = used.get(name);
+      if (otherLast === undefined) continue;
+      if (this.sessionRound(otherId) - otherLast < idleRounds) return true;
+    }
+    return false;
+  }
+
+  private markToolLoaded(name: string, sessionId: string): void {
     this.loadedDeferredTools.add(name);
-    this.lastUsedRound.set(name, this.currentRound);
+    this.touchTool(sessionId, name);
   }
 
   /**

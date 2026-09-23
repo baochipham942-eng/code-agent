@@ -22,7 +22,7 @@ export type RuntimeAssemblyCache = {
   imageBudgetNoticeKey?: string;
 };
 
-export const runtimeAssemblyCaches = new WeakMap<object, RuntimeAssemblyCache>();
+const runtimeAssemblyCaches = new WeakMap<object, RuntimeAssemblyCache>();
 
 export function getRuntimeAssemblyCache(ctx: ContextAssemblyCtx): RuntimeAssemblyCache {
   let cache = runtimeAssemblyCaches.get(ctx.runtime as unknown as object);

@@ -825,7 +825,7 @@ export class MCPClient extends EventEmitter {
    * Discover lazy stdio servers that are likely relevant to a ToolSearch query.
    * 实现在 mcpLazySearch.ts（max-lines 硬限拆分），此处保留 thin delegate。
    */
-  async discoverLazyServersForSearch(query: string, serverNameAllowlist?: string[]): Promise<Array<{
+  async discoverLazyServersForSearch(query: string, serverNameAllowlist?: string[], signal?: AbortSignal): Promise<Array<{
     serverName: string;
     connected: boolean;
     toolCount: number;
@@ -835,6 +835,7 @@ export class MCPClient extends EventEmitter {
       this as unknown as McpLazySearchClient,
       query,
       serverNameAllowlist,
+      signal,
     );
   }
 
@@ -1052,8 +1053,10 @@ export class MCPClient extends EventEmitter {
       const state = this.serverStates.get(serverName);
       if (state?.status === 'lazy' || state?.status === 'disconnected') {
         logger.info(`Server ${serverName} not connected, triggering lazy-load for tool: ${toolName}`);
-        const connected = await this.ensureConnected(serverName);
+        const connected = await this.ensureConnected(serverName, abortSignal);
         if (!connected) {
+          // 等待被 abort 打断：按 :999 的取消形状返回，不说成 connection failed
+          if (abortSignal?.aborted) return buildCancelledToolResult(toolCallId);
           const errorMsg = state?.error || 'Failed to connect to server';
           return {
             toolCallId,

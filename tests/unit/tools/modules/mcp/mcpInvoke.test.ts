@@ -183,9 +183,41 @@ describe('mcpInvokeModule (native)', () => {
       });
       getMCPClientMock.mockReturnValue(client);
       const result = await run(VALID_ARGS);
-      expect(client.ensureConnected).toHaveBeenCalledWith('filesystem');
+      // N-MCP-LAZYCONNECT-SIGNAL ②：懒连接现在带上调用方的 abortSignal（取消可打断等待）
+      expect(client.ensureConnected).toHaveBeenCalledWith('filesystem', expect.any(AbortSignal));
       expect(client.callTool).toHaveBeenCalled();
       expect(result.ok).toBe(true);
+    });
+
+    // N-MCP-LAZYCONNECT-SIGNAL ②：懒连接等待被 abort 打断时立即回 ABORTED，
+    // 不阻塞到连接超时、也不说成「未连接」
+    it('lazy connect 等待被 abort 打断：立即回 ABORTED 而非 NOT_INITIALIZED', async () => {
+      const ctrl = new AbortController();
+      const ctx = makeCtx({ abortSignal: ctrl.signal });
+      const client = makeMockClient({
+        isConnected: vi.fn().mockReturnValue(false),
+        // 桩：挂住直到收到的 signal 被 abort 才返回 false
+        ensureConnected: vi.fn().mockImplementation(
+          (_server: string, signal?: AbortSignal) =>
+            new Promise<boolean>((resolve) => {
+              signal?.addEventListener('abort', () => resolve(false), { once: true });
+            }),
+        ),
+      });
+      getMCPClientMock.mockReturnValue(client);
+
+      const pending = run(VALID_ARGS, ctx);
+      setTimeout(() => ctrl.abort(), 20);
+
+      const startedAt = Date.now();
+      const result = await pending;
+      expect(Date.now() - startedAt).toBeLessThan(200); // 立即返回，不阻塞到连接超时
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ABORTED');
+        expect(result.error).toBe('aborted');
+      }
+      expect(client.callTool).not.toHaveBeenCalled();
     });
 
     it('ensureConnected 也拉不起来：回 NOT_INITIALIZED（没装 / 被关 / 连接失败）', async () => {

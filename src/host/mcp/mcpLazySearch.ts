@@ -26,11 +26,15 @@ export interface McpLazySearchClient {
  * Discover lazy stdio servers that are likely relevant to a ToolSearch query.
  * This avoids starting every lazy server while making enabled servers like
  * sequential-thinking searchable before their first direct tool call.
+ *
+ * signal 只中断「本次发现的拉起节奏」：某次等待被取消后不再拉起后续 server，
+ * 已得结果照常返回；正在建立的共享连接照常完成（见 ensureConnected 注释）。
  */
 export async function discoverLazyMcpServersForSearch(
   client: McpLazySearchClient,
   query: string,
   serverNameAllowlist?: string[],
+  signal?: AbortSignal,
 ): Promise<Array<{
   serverName: string;
   connected: boolean;
@@ -72,7 +76,9 @@ export async function discoverLazyMcpServersForSearch(
   }> = [];
 
   for (const config of candidates) {
-    const connected = await client.ensureConnected(config.name);
+    // 等待被取消后不再拉起后续 server：signal 已 aborted 时跳出，返回已得结果
+    if (signal?.aborted) break;
+    const connected = await client.ensureConnected(config.name, signal);
     const state = client.serverStates.get(config.name);
     results.push({
       serverName: config.name,

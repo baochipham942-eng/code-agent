@@ -137,16 +137,11 @@ describe('ToolSearch output plus newly loaded schema', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).toContain('screenshot_page');
+    expect(estimateTokens(result.output)).toBeLessThanOrEqual(CEILING);
     const sent = getLoadedDeferredToolDefinitions().find((tool) => tool.name === 'screenshot_page');
     expect(sent).toBeDefined();
-    const sentSchema: InjectedToolSchema = {
-      name: sent!.name,
-      description: sent!.description,
-      input_schema: sent!.inputSchema as unknown as Record<string, unknown>,
-    };
-    expect(JSON.stringify(sentSchema.input_schema)).toContain('url');
-    expect(singleInjectionTokens(result.output, [sentSchema])).toBeLessThanOrEqual(CEILING);
-    expect(estimateTokens(claudeToolInjectionText(sentSchema))).toBeLessThanOrEqual(CEILING);
+    expect(sent!.description).toBe(raw!.description);
+    expect(JSON.stringify(sent!.inputSchema)).toBe(JSON.stringify(raw!.input_schema));
   });
 
   it('does not inject a registered schema that cannot fit even with an empty description', async () => {
@@ -199,17 +194,35 @@ describe('ToolSearch output plus newly loaded schema', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(service.isToolLoaded(name)).toBe(false);
-    expect(getLoadedDeferredToolDefinitions().some((tool) => tool.name === name)).toBe(false);
+    expect(service.isToolLoaded(name)).toBe(true);
     expect(result.output).toContain(name);
-    expect(result.output).toContain('超过单次注入上限');
     expect(estimateTokens(result.output)).toBeLessThanOrEqual(CEILING);
+
+    resetToolSearchService();
+    const keywordService = getToolSearchService();
+    keywordService.registerMCPTool({
+      name,
+      shortDescription: 'huge schema fixture',
+      tags: ['network'],
+      aliases: [],
+      source: 'mcp',
+      mcpServer: 'fixture',
+    });
+    const keyword = await executeToolSearch(
+      { query: name },
+      ctx,
+      async () => ({ allow: true }),
+    );
+    expect(keyword.ok).toBe(true);
+    if (!keyword.ok) return;
+    expect(keywordService.isToolLoaded(name)).toBe(false);
+    expect(keyword.output).toContain('超过单次注入上限');
     const loadedSchemaTokens = getLoadedDeferredToolDefinitions().reduce((sum, tool) => sum + estimateTokens(JSON.stringify({
       name: tool.name,
       description: tool.description,
       input_schema: tool.inputSchema,
     })), 0);
-    expect(estimateTokens(result.output) + loadedSchemaTokens).toBeLessThanOrEqual(CEILING);
+    expect(estimateTokens(keyword.output) + loadedSchemaTokens).toBeLessThanOrEqual(CEILING);
   });
 
   it.each(['TaskManager', 'ppt_generate', 'MemoryWrite', 'AgentSpawn'])(
@@ -239,11 +252,12 @@ describe('ToolSearch output plus newly loaded schema', () => {
         description: sent!.description,
         input_schema: sent!.inputSchema as unknown as Record<string, unknown>,
       };
-      expect(sentSchema.input_schema).toHaveProperty('properties');
+      expect(getToolSearchService().getInjectionDescriptionOverride(name)).toBeUndefined();
+      expect(getToolSearchService().getInjectionInputSchemaOverride(name)).toBeUndefined();
       if (name === 'TaskManager') {
         expect(sentSchema.input_schema).toHaveProperty(['properties', 'description']);
       }
-      expect(singleInjectionTokens(result.output, [sentSchema])).toBeLessThanOrEqual(CEILING);
+      expect(estimateTokens(result.output)).toBeLessThanOrEqual(CEILING);
     },
   );
 

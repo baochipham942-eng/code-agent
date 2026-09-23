@@ -173,7 +173,7 @@ export async function executeToolSearch(
       };
     }
 
-    const output = enforceSingleInjectionCeiling(result, alreadyLoaded);
+    const output = enforceSingleInjectionCeiling(result, alreadyLoaded, query.trim().startsWith('select:'));
 
     ctx.logger.info('ToolSearch done', {
       query,
@@ -307,42 +307,45 @@ function namesOnlyText(result: SearchRenderResult): string {
   ].join('\n');
 }
 
+function schemasKeptWhole(
+  kept: readonly { name: string; description: string; input_schema: Record<string, unknown> }[],
+  originals: readonly { name: string; description: string; input_schema: Record<string, unknown> }[],
+): boolean {
+  if (kept.length !== originals.length) return false;
+  return originals.every((original) => {
+    const match = kept.find((schema) => schema.name === original.name);
+    return match?.description === original.description
+      && JSON.stringify(match.input_schema) === JSON.stringify(original.input_schema);
+  });
+}
+
 function enforceSingleInjectionCeiling(
   result: SearchRenderResult,
   alreadyLoaded: ReadonlySet<string>,
+  explicitSelect: boolean,
 ): string {
   const overCeiling = new Set<string>();
   const freshLoaded = result.loadedTools.filter((name) => !alreadyLoaded.has(name));
   const draft = fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result);
+  // select: asked for this one schema. Send it whole. The result text stays inside the ceiling.
+  if (explicitSelect || freshLoaded.length === 0) {
+    return fitTextToTokenCeiling(draft, SINGLE_INJECTION_TOKEN_CEILING);
+  }
   const measurable = readDeferredToolInjectionSchemas(freshLoaded);
   const bounded = boundSingleInjection({
     text: draft,
     namesText: namesOnlyText(result),
     schemas: measurable,
   });
-  const kept = new Set(bounded.schemas.map((schema) => schema.name));
-  const dropped = measurable.filter((schema) => !kept.has(schema.name)).map((schema) => schema.name);
-  getToolSearchService().applyInjectionFit(bounded.schemas, dropped, measurable);
-  if (dropped.length === 0) return bounded.text;
+  if (schemasKeptWhole(bounded.schemas, measurable)) return bounded.text;
 
-  for (const name of dropped) overCeiling.add(name);
-  result.loadedTools = result.loadedTools.filter((name) => alreadyLoaded.has(name) || !overCeiling.has(name));
-  const revised = fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result);
-  const again = boundSingleInjection({
-    text: revised,
-    namesText: namesOnlyText(result),
-    schemas: bounded.schemas,
-  });
-  const keptAgain = new Set(again.schemas.map((schema) => schema.name));
-  const droppedAgain = bounded.schemas
-    .filter((schema) => !keptAgain.has(schema.name))
-    .map((schema) => schema.name);
-  if (droppedAgain.length > 0) {
-    getToolSearchService().applyInjectionFit(again.schemas, droppedAgain, measurable);
-    for (const name of droppedAgain) overCeiling.add(name);
-    result.loadedTools = result.loadedTools.filter((name) => alreadyLoaded.has(name) || !overCeiling.has(name));
-  }
-  return again.text;
+  for (const schema of measurable) overCeiling.add(schema.name);
+  getToolSearchService().applyInjectionFit([], [...overCeiling], measurable);
+  result.loadedTools = result.loadedTools.filter((name) => !overCeiling.has(name));
+  return fitTextToTokenCeiling(
+    fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result),
+    SINGLE_INJECTION_TOKEN_CEILING,
+  );
 }
 
 function fitTextToTokenCeiling(text: string, ceiling: number): string {

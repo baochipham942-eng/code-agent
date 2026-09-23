@@ -47,6 +47,12 @@ vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
 }));
 
 import { askUserQuestionModule } from '../../../../../src/host/tools/modules/planning/askUserQuestion';
+import {
+  clearAskUserQuestionReplay,
+  lookupAskUserQuestionReplay,
+  recordAskUserQuestionAnswer,
+} from '../../../../../src/host/tools/modules/planning/askUserQuestionReplay';
+import type { UserQuestion } from '../../../../../src/shared/contract';
 import { INTERACTION_TIMEOUTS } from '../../../../../src/shared/constants';
 import {
   beginVoiceQuestionSession,
@@ -542,5 +548,409 @@ describe('AskUserQuestion renderer response', () => {
     const result = await promise;
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.output).toBe('User responses:\n[确认]: 继续');
+  });
+});
+
+// ============================================================================
+// 同轮重复问句回放（N-ASKUSER-REPEAT-REPLAY）
+// ① 同轮同问第二次：无 send（提问事件）、无 canUseTool（审批），输出=上次答案+回放标记
+// ② 选项顺序/空白/标点/大小写/全半角差异 → 同问；选项集合不同（含新增选项）→ 照弹
+// ③ 跨轮/跨会话不回放；clearAskUserQuestionReplay（run 结束清空）后照弹
+// ============================================================================
+describe('AskUserQuestion 同轮重复问句回放', () => {
+  const replayQuestions: UserQuestion[] = [
+    {
+      question: '要继续吗？',
+      header: '确认',
+      options: [
+        { label: '继续', description: '继续当前操作' },
+        { label: '停止', description: '停下等待' },
+      ],
+    },
+  ];
+
+  beforeEach(() => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+  });
+
+  async function executeAndAnswer(
+    ctx: ToolContext,
+    questions: UserQuestion[],
+    callIndex: number,
+    canUseTool: CanUseToolFn = allowAll,
+  ) {
+    const handler = await askUserQuestionModule.createHandler();
+    const promise = handler.execute({ questions }, ctx, canUseTool);
+    await vi.waitFor(() => expect(sendMock.mock.calls.length).toBeGreaterThan(callIndex));
+    const request = sendMock.mock.calls[callIndex][1];
+    await responseHandlerRef.fn?.({}, { requestId: request.id, answers: { 确认: '继续' } });
+    return promise;
+  }
+
+  it('同轮同问第二次不产生提问事件与审批，工具结果=上次答案+回放标记', async () => {
+    const ctx = makeCtx({ turnId: 'turn-replay-1' });
+    const canUseTool = vi.fn(allowAll);
+
+    const first = await executeAndAnswer(ctx, replayQuestions, 0, canUseTool);
+    expect(first).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(canUseTool).toHaveBeenCalledTimes(1);
+
+    const handler = await askUserQuestionModule.createHandler();
+    const second = await handler.execute({ questions: replayQuestions }, ctx, canUseTool);
+    expect(second.ok).toBe(true);
+    if (second.ok) {
+      expect(second.output).toContain('User responses:\n[确认]: 继续');
+      expect(second.output).toContain('你这轮已答过');
+    }
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(canUseTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('问句只差选项顺序/空白/标点视为同问，直接回放', async () => {
+    const ctx = makeCtx({ turnId: 'turn-replay-2' });
+    await executeAndAnswer(ctx, replayQuestions, 0);
+
+    const reordered: UserQuestion[] = [
+      {
+        question: ' 要继续吗?',
+        header: '确认 ',
+        options: [
+          { label: '停止 ', description: '停下等待' },
+          { label: '继续', description: ' 继续当前操作' },
+        ],
+      },
+    ];
+    const handler = await askUserQuestionModule.createHandler();
+    const second = await handler.execute({ questions: reordered }, ctx, allowAll);
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.output).toContain('你这轮已答过');
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('选项集合不同（新增选项）视为语义不同，照弹', async () => {
+    const ctx = makeCtx({ turnId: 'turn-replay-3' });
+    await executeAndAnswer(ctx, replayQuestions, 0);
+
+    const withNewOption: UserQuestion[] = [
+      {
+        ...replayQuestions[0],
+        options: [
+          ...replayQuestions[0].options,
+          { label: '稍后', description: '待会再定' },
+        ],
+      },
+    ];
+    const second = await executeAndAnswer(ctx, withNewOption, 1);
+    expect(second).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('跨轮不回放', async () => {
+    await executeAndAnswer(makeCtx({ turnId: 'turn-replay-4a' }), replayQuestions, 0);
+
+    const nextTurnCtx = makeCtx({ turnId: 'turn-replay-4b' });
+    const second = await executeAndAnswer(nextTurnCtx, replayQuestions, 1);
+    expect(second).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('跨会话不回放', async () => {
+    await executeAndAnswer(makeCtx({ turnId: 'turn-replay-5' }), replayQuestions, 0);
+
+    const otherSessionCtx = makeCtx({ sessionId: 'sess-2', turnId: 'turn-replay-5' });
+    const second = await executeAndAnswer(otherSessionCtx, replayQuestions, 1);
+    expect(second).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('生产形状：两次调用 turnId 不同、runId 相同（跨模型迭代）仍命中回放', async () => {
+    // streamHandler.setupIteration 每次迭代重铸 turnId（generateMessageId → beginTurn），
+    // 模型必然先拿答案、下一迭代才重问——作用域必须是 runId 而不是 turnId。
+    const first = await executeAndAnswer(
+      makeCtx({ runId: 'run-prod-1', turnId: 'iter-1' }),
+      replayQuestions,
+      0,
+    );
+    expect(first).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+
+    const handler = await askUserQuestionModule.createHandler();
+    const second = await handler.execute(
+      { questions: replayQuestions },
+      makeCtx({ runId: 'run-prod-1', turnId: 'iter-2' }),
+      allowAll,
+    );
+    expect(second.ok).toBe(true);
+    if (second.ok) {
+      expect(second.output).toContain('User responses:\n[确认]: 继续');
+      expect(second.output).toContain('你这轮已答过');
+    }
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('跨 run 不回放（turnId 相同、runId 不同照弹）', async () => {
+    await executeAndAnswer(makeCtx({ runId: 'run-a', turnId: 'iter-1' }), replayQuestions, 0);
+
+    const second = await executeAndAnswer(makeCtx({ runId: 'run-b', turnId: 'iter-1' }), replayQuestions, 1);
+    expect(second).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('选项只有 label 没有 description：正常弹卡不抛错，且可回放', async () => {
+    const noDescQuestions = [
+      {
+        question: '选哪个',
+        header: '确认',
+        options: [{ label: '甲' }, { label: '乙' }],
+      },
+    ] as unknown as UserQuestion[];
+    const ctx = makeCtx({ runId: 'run-nodesc', turnId: 'iter-1' });
+    const first = await executeAndAnswer(ctx, noDescQuestions, 0);
+    expect(first.ok).toBe(true);
+    if (first.ok) expect(first.output).toContain('User responses:');
+
+    const handler = await askUserQuestionModule.createHandler();
+    const second = await handler.execute({ questions: noDescQuestions }, ctx, allowAll);
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.output).toContain('你这轮已答过');
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('run 结束清空缓存后同问照弹', async () => {
+    const ctx = makeCtx({ turnId: 'turn-replay-6' });
+    await executeAndAnswer(ctx, replayQuestions, 0);
+
+    clearAskUserQuestionReplay('sess-1');
+
+    const second = await executeAndAnswer(ctx, replayQuestions, 1);
+    expect(second).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('无 turnId/runId 的 ctx 不缓存也不回放（保守照弹）', async () => {
+    const ctx = makeCtx();
+    await executeAndAnswer(ctx, replayQuestions, 0);
+
+    const handler = await askUserQuestionModule.createHandler();
+    const promise = handler.execute({ questions: replayQuestions }, ctx, allowAll);
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(2));
+    const request = sendMock.mock.calls[1][1];
+    await responseHandlerRef.fn?.({}, { requestId: request.id, answers: { 确认: '继续' } });
+    const second = await promise;
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.output).not.toContain('你这轮已答过');
+  });
+
+  it('abortSignal 已取消且有缓存：返回 ABORTED 而非回放旧答案', async () => {
+    const ctx = makeCtx({ runId: 'run-abort-1', turnId: 'iter-1' });
+    await executeAndAnswer(ctx, replayQuestions, 0);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const handler = await askUserQuestionModule.createHandler();
+    const second = await handler.execute(
+      { questions: replayQuestions },
+      makeCtx({ runId: 'run-abort-1', turnId: 'iter-2', abortSignal: ctrl.signal }),
+      allowAll,
+    );
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.code).toBe('ABORTED');
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('多问题卡只答部分 header：正常返回但不缓存，二次同问照弹', async () => {
+    const multiQuestions: UserQuestion[] = [
+      {
+        question: '要继续吗？',
+        header: '确认',
+        options: [
+          { label: '继续', description: '继续当前操作' },
+          { label: '停止', description: '停下等待' },
+        ],
+      },
+      {
+        question: '范围？',
+        header: '范围',
+        options: [
+          { label: '全部', description: '所有文件' },
+          { label: '部分', description: '只改相关文件' },
+        ],
+      },
+    ];
+    const ctx = makeCtx({ runId: 'run-partial-1', turnId: 'iter-1' });
+    const handler = await askUserQuestionModule.createHandler();
+    const firstPromise = handler.execute({ questions: multiQuestions }, ctx, allowAll);
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
+    const firstRequest = sendMock.mock.calls[0][1];
+    // Companion 协议允许只提交部分 header 的答案。
+    await responseHandlerRef.fn?.({}, { requestId: firstRequest.id, answers: { 确认: '继续' } });
+    const first = await firstPromise;
+    expect(first.ok).toBe(true);
+    if (first.ok) expect(first.output).toBe('User responses:\n[确认]: 继续');
+
+    // 残缺答案未缓存：同 run 同问第二次必须照弹，不回放不完整结果。
+    const second = await executeAndAnswer(ctx, multiQuestions, 1);
+    expect(second.ok).toBe(true);
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+// 归一化语义走行为面钉：record 写入后 lookup 命中=同问、未命中=不同问
+// （buildAskUserQuestionReplayKey 是模块内私有，仓规 §5.9 不为测试开 export）。
+describe('AskUserQuestion 回放归一化语义（record/lookup 行为面）', () => {
+  const REPLAY_OUTPUT = 'User responses:\n[h]: a';
+
+  function recordThenLookup(
+    turnId: string,
+    recorded: UserQuestion[],
+    queried: UserQuestion[],
+  ): string | undefined {
+    const ctx = makeCtx({ turnId });
+    recordAskUserQuestionAnswer(ctx, recorded, REPLAY_OUTPUT);
+    return lookupAskUserQuestionReplay(ctx, queried);
+  }
+
+  it('大小写/全半角/标点/空白/选项顺序不影响同问判定', () => {
+    const hit = recordThenLookup(
+      'turn-key-1',
+      [
+        {
+          question: 'Deploy NOW？',
+          header: 'H',
+          options: [
+            { label: 'Ａ', description: 'x' },
+            { label: 'b', description: 'y' },
+          ],
+        },
+      ],
+      [
+        {
+          question: 'deploy now?',
+          header: 'h ',
+          options: [
+            { label: 'B', description: 'y' },
+            { label: 'a', description: 'x' },
+          ],
+        },
+      ],
+    );
+    expect(hit).toBeDefined();
+    expect(hit).toContain(REPLAY_OUTPUT);
+    expect(hit).toContain('你这轮已答过');
+  });
+
+  it('有无标点不算差异（剥标点而非仅 NFKC 归一）', () => {
+    const hit = recordThenLookup(
+      'turn-key-2',
+      [
+        {
+          question: '部署到生产环境，好吗？',
+          header: 'h',
+          options: [
+            { label: 'a', description: 'x' },
+            { label: 'b', description: 'y' },
+          ],
+        },
+      ],
+      [
+        {
+          question: '部署到生产环境好吗',
+          header: 'h',
+          options: [
+            { label: 'a', description: 'x' },
+            { label: 'b', description: 'y' },
+          ],
+        },
+      ],
+    );
+    expect(hit).toBeDefined();
+  });
+
+  it('选项集合不同（含新增/替换选项）视为不同问，不回放', () => {
+    const base: UserQuestion[] = [
+      {
+        question: 'q',
+        header: 'h',
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'b', description: 'y' },
+        ],
+      },
+    ];
+    const added: UserQuestion[] = [
+      {
+        question: 'q',
+        header: 'h',
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'b', description: 'y' },
+          { label: 'c', description: 'z' },
+        ],
+      },
+    ];
+    const changed: UserQuestion[] = [
+      {
+        question: 'q',
+        header: 'h',
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'c', description: 'y' },
+        ],
+      },
+    ];
+    expect(recordThenLookup('turn-key-3a', base, added)).toBeUndefined();
+    expect(recordThenLookup('turn-key-3b', base, changed)).toBeUndefined();
+  });
+
+  it('multiSelect 不同视为不同问（语义差异照弹）', () => {
+    const single: UserQuestion[] = [
+      {
+        question: 'q',
+        header: 'h',
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'b', description: 'y' },
+        ],
+      },
+    ];
+    const multi: UserQuestion[] = [
+      {
+        question: 'q',
+        header: 'h',
+        multiSelect: true,
+        options: [
+          { label: 'a', description: 'x' },
+          { label: 'b', description: 'y' },
+        ],
+      },
+    ];
+    expect(recordThenLookup('turn-key-4', single, multi)).toBeUndefined();
+  });
+
+  it('label/description 归一化后带边界编码：AB无desc 与 A+desc(B) 不撞键', () => {
+    // 裸拼接时两组选项归一化结果同为 'ab'，会撞键回放错答案（ai-review I1）。
+    const abNoDesc: UserQuestion[] = [
+      {
+        question: 'q',
+        header: 'h',
+        options: [{ label: 'AB' }, { label: 'c', description: 'z' }] as UserQuestion['options'],
+      },
+    ];
+    const aWithDescB: UserQuestion[] = [
+      {
+        question: 'q',
+        header: 'h',
+        options: [
+          { label: 'A', description: 'B' },
+          { label: 'c', description: 'z' },
+        ],
+      },
+    ];
+    expect(recordThenLookup('turn-key-5a', abNoDesc, aWithDescB)).toBeUndefined();
+    expect(recordThenLookup('turn-key-5b', aWithDescB, abNoDesc)).toBeUndefined();
+    // 同组自身仍命中（编码改动没破坏正常回放）。
+    expect(recordThenLookup('turn-key-5c', abNoDesc, abNoDesc)).toBeDefined();
   });
 });

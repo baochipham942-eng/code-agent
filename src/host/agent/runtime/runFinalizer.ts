@@ -68,6 +68,7 @@ import type { CompletionSummaryRecord } from '../../../shared/contract/completio
 import { recordTurnOutcomeStamp } from './turnOutcomeStamp';
 import { captureTurnDiff } from '../../services/checkpoint/turnDiffService';
 import { emitGoalAbort } from './goalAbort';
+import { clearAskUserQuestionReplay } from '../../tools/modules/planning/askUserQuestionReplay';
 
 const logger = createLogger('AgentLoop');
 
@@ -318,6 +319,10 @@ export class RunFinalizer {
     genNum: number,
     terminal: RunTerminalInfo = {},
   ): Promise<void> {
+    // AskUserQuestion 同 run 重复问句回放缓存随 run 结束精确清空（N-ASKUSER-REPEAT-REPLAY）。
+    // runId 缺省时退化为 session 级整清（评测/旧路径无 runId，缓存本就随 run 生灭）。
+    clearAskUserQuestionReplay(this.ctx.sessionId, this.ctx.runId?.trim() || undefined);
+
     let terminalStatus = terminal.status
       ?? (this.ctx.control.isCancelled
         ? 'cancelled'

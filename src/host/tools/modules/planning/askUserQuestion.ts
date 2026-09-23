@@ -32,6 +32,10 @@ import {
   ASK_USER_QUESTION_UNANSWERED_PREFIX,
 } from '../../../../shared/contract/askUserQuestion';
 import { promptUserInChat } from '../../utils/userQuestionPrompt';
+import {
+  lookupAskUserQuestionReplay,
+  recordAskUserQuestionAnswer,
+} from './askUserQuestionReplay';
 import { askUserQuestionSchema as schema } from './askUserQuestion.schema';
 import {
   deniedDecisionMetadata,
@@ -89,6 +93,19 @@ export async function executeAskUserQuestion(
         code: 'INVALID_ARGS',
       };
     }
+  }
+
+  // 取消检查必须在回放命中之前：已取消的重复调用要返回 ABORTED，不能拿旧答案报 ok。
+  if (ctx.abortSignal.aborted) {
+    return { ok: false, error: 'aborted', code: 'ABORTED' };
+  }
+
+  // 同 run 字面重复问句：直接回放上次答案，不产生审批与提问事件（N-ASKUSER-REPEAT-REPLAY）。
+  const replayedOutput = lookupAskUserQuestionReplay(ctx, questions);
+  if (replayedOutput !== undefined) {
+    onProgress?.({ stage: 'completing', percent: 100 });
+    ctx.logger.debug('AskUserQuestion replayed same-turn answer', { sessionId: ctx.sessionId });
+    return { ok: true, output: replayedOutput };
   }
 
   const permit = await canUseTool(schema.name, args);
@@ -160,9 +177,19 @@ export async function executeAskUserQuestion(
   onProgress?.({ stage: 'completing', percent: 100 });
   ctx.logger.debug('AskUserQuestion done', { requestId: response.requestId });
 
+  const output = `User responses:\n${answerLines.join('\n')}`;
+  // 多问题卡允许只提交部分 header（Companion 协议）：残缺答案不缓存，
+  // 本次正常返回，但下轮同问必须照弹，不能回放不完整结果。
+  const allAnswered = questions.every((q) => {
+    const answer = response.answers[q.header];
+    return Array.isArray(answer)
+      ? answer.some((item) => item.trim().length > 0)
+      : typeof answer === 'string' && answer.trim().length > 0;
+  });
+  if (allAnswered) recordAskUserQuestionAnswer(ctx, questions, output);
   return {
     ok: true,
-    output: `User responses:\n${answerLines.join('\n')}`,
+    output,
   };
 }
 

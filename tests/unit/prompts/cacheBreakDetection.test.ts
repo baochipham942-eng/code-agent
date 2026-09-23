@@ -133,7 +133,7 @@ describe('session reference digest cache contract', () => {
     summarize.mockClear();
   });
 
-  it('passes cacheRetention none and a record-only scope id', async () => {
+  it('passes a record-only scope id', async () => {
     const { resolveSessionReference } = await import('../../../src/host/tools/modules/session/sessionReferenceDigest');
     const session = { id: `session-${Date.now()}`, title: 'Referenced' } as Session;
     const messages = Array.from({ length: 16 }, (_, index) => ({
@@ -148,7 +148,7 @@ describe('session reference digest cache contract', () => {
     expect(summarize).toHaveBeenCalledWith(
       expect.stringContaining('Referenced'),
       800,
-      { cacheRetention: 'none', cacheScopeId: 'session-reference-digest' },
+      { cacheScopeId: 'session-reference-digest' },
     );
   });
 });

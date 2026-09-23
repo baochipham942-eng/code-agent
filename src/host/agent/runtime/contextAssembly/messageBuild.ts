@@ -57,7 +57,7 @@ import { estimateModelMessageTokens, estimateTokens } from '../../../context/tok
 import { CompressionState } from '../../../context/compressionState';
 import { getContextInterventionState } from '../../../context/contextInterventionState';
 import { applyInterventionsToMessages } from '../../../context/contextInterventionHelpers';
-import { getContextEventLedger, type ContextEventRecord } from '../../../context/contextEventLedger';
+import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { getSystemPromptCache } from '../../../telemetry/systemPromptCache';
 import { applyProviderVariant } from '../../../prompts/providerVariants';
 import { logCollector } from '../../../mcp/logCollector.js';
@@ -90,6 +90,7 @@ import { IPC_CHANNELS } from '../../../../shared/ipc';
 import type { AgentNoticeEvent } from '../../../../shared/ipc/handlers';
 import { applyHistoricalImageBudget } from './imageBudget';
 import { projectReadTranscriptEntries } from '../../../context/readResultProjection';
+import { getRuntimeAssemblyCache } from './runtimeAssemblyCache';
 
 export { formatArtifactRepairToolResultContent } from './artifactRepairProjection';
 export {
@@ -118,37 +119,6 @@ const REQUIRED_GAME_PROMPT_TRIM_CANDIDATES = ['repo map', 'skills', 'deferred to
 interface DynamicPromptParts {
   systemPrompt: string;
   turnContext: string;
-}
-
-type RuntimeAssemblyCache = {
-  dynamicPrompt?: {
-    key: string;
-    createdAt: number;
-    prompt: string;
-    turnContext: string;
-    tokens: number;
-    /** GAP-023: 该缓存 prompt 构建时被预算丢弃的块（缓存命中时恢复，保持可见化一致） */
-    droppedBlocks?: string[];
-    promptLayers?: ContextEventRecord[];
-  };
-  compression?: {
-    key: string;
-    createdAt: number;
-    apiView: ContextTranscriptEntry[];
-    state: string;
-  };
-  imageBudgetNoticeKey?: string;
-};
-
-const runtimeAssemblyCaches = new WeakMap<object, RuntimeAssemblyCache>();
-
-function getRuntimeAssemblyCache(ctx: ContextAssemblyCtx): RuntimeAssemblyCache {
-  let cache = runtimeAssemblyCaches.get(ctx.runtime as unknown as object);
-  if (!cache) {
-    cache = {};
-    runtimeAssemblyCaches.set(ctx.runtime as unknown as object, cache);
-  }
-  return cache;
 }
 
 function getLastUserMessage(ctx: ContextAssemblyCtx): Message | undefined {
@@ -241,6 +211,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       ctx.runtime.modelConfig?.model,
     );
     const tokens = estimateTokens(fullPrompt);
+    cache.lastAssembledSystemPrompt = fullPrompt;
     recordBasePromptLayer(ctx, fullPrompt, CONTEXT_LEDGER.BASE_SOURCE.FULL_REPLACE);
     if (tokens <= promptBudget(ctx)) {
       cache.dynamicPrompt = {
@@ -668,6 +639,7 @@ ${deferredToolsSummary}
   // 从 working string 切出本轮 advisory 上下文；system 消息只保留稳定前缀
   const turnContext = systemPrompt.slice(stableSystemPrompt.length).trim();
   systemPrompt = stableSystemPrompt;
+  cache.lastAssembledSystemPrompt = systemPrompt;
 
   const tokens = estimateTokens(systemPrompt) + (turnContext ? estimateTokens(turnContext) : 0);
   if (tokens <= promptBudget(ctx)) {

@@ -5,7 +5,7 @@ export function recordInferenceTrace(
   trace: TurnTraceRecorder,
   response: ModelResponse,
   durationMs: number,
-  cacheHit?: { cacheHitEffective: number; cacheHitIdle: number; inferenceCacheHitRate: string },
+  cacheHit?: { providerCacheHitAdvancing: number; providerCacheHitStagnant: number },
 ): void {
   trace.record('inference', {
     responseType: response.type,

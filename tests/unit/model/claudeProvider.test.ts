@@ -66,6 +66,37 @@ describe('ClaudeProvider interleaved thinking beta header', () => {
 
     expect(headers?.['anthropic-beta'] ?? '').not.toContain('interleaved-thinking-2025-05-14');
   });
+
+  it('cacheRetention none omits cache controls and prompt-caching beta', async () => {
+    const tool = {
+      name: 'read_file',
+      description: 'read',
+      inputSchema: { type: 'object', properties: {} },
+      outputSchema: { type: 'object', properties: {} },
+      requiresPermission: false,
+      permissionLevel: 'read',
+    };
+    await new ClaudeProvider().inference(
+      [
+        { role: 'system', content: 'stable system prompt' },
+        { role: 'user', content: 'hello' },
+      ],
+      [tool] as never,
+      BASE_CONFIG,
+      undefined,
+      undefined,
+      { cacheRetention: 'none' },
+    );
+
+    const request = JSON.parse(String(mockElectronFetch.mock.calls[0][1]?.body)) as {
+      system?: unknown;
+      messages?: unknown;
+      tools?: unknown;
+    };
+    expect(JSON.stringify(request)).not.toContain('cache_control');
+    expect(String(mockElectronFetch.mock.calls[0][1]?.headers?.['anthropic-beta'] ?? ''))
+      .not.toContain('prompt-caching-2024-07-31');
+  });
 });
 
 describe('ClaudeProvider tool-call streaming order', () => {

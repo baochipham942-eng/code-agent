@@ -18,6 +18,7 @@ import {
 } from '../../../src/web/helpers/webSessionStore';
 
 const coreDatabase = vi.hoisted(() => ({ current: null as DatabaseService | null }));
+const cacheLifecycle = vi.hoisted(() => ({ clearSessionRuntimeCaches: vi.fn() }));
 
 vi.mock('../../../src/host/services/core', () => ({
   getDatabase: () => {
@@ -33,6 +34,13 @@ vi.mock('../../../src/host/services/auth/authService', () => ({
 vi.mock('../../../src/host/services/infra/supabaseService', () => ({
   getSupabase: () => null,
   isSupabaseInitialized: () => false,
+}));
+
+vi.mock('../../../src/host/session/sessionCacheLifecycle', () => cacheLifecycle);
+vi.mock('../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter', () => ({
+  getManagedBrowserProviderAdapter: () => ({
+    clearConversationResumeState: vi.fn(async () => undefined),
+  }),
 }));
 
 import { SessionManager } from '../../../src/host/services/infra/sessionManager';
@@ -131,6 +139,11 @@ describe('WebSessionStore CLI SessionManager backend', () => {
     else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
     fs.rmSync(tmpDir, { recursive: true, force: true });
     setDbAvailable(false, new Error('test reset'));
+  });
+
+  it('clears process-local cache observations when a session ends', async () => {
+    await infraSessionManager.endSession('session-ended');
+    expect(cacheLifecycle.clearSessionRuntimeCaches).toHaveBeenCalledWith('session-ended');
   });
 
   it('经 CLI SM 写入后由 infra SM 全字段读回，并失效旧缓存后重算列表快照', async () => {

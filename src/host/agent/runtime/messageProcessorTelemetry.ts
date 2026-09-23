@@ -5,9 +5,8 @@ import { isObservedCacheHit, recordSessionCacheHit } from '../../model/cacheHitO
 import type { RuntimeContext } from './runtimeContext';
 
 interface PromptCacheHitObservation {
-  cacheHitEffective: number;
-  cacheHitIdle: number;
-  inferenceCacheHitRate: string;
+  providerCacheHitAdvancing: number;
+  providerCacheHitStagnant: number;
 }
 
 function serializeMessageContent(message: Message): string {
@@ -28,9 +27,8 @@ export function recordMessageProcessorModelCallTelemetry(
     : undefined;
   const cacheHitFields: PromptCacheHitObservation | undefined = cacheHit
     ? {
-      cacheHitEffective: cacheHit.kind === 'effective' ? 1 : 0,
-      cacheHitIdle: cacheHit.kind === 'idle' ? 1 : 0,
-      inferenceCacheHitRate: cacheHit.inferenceHitRate,
+      providerCacheHitAdvancing: cacheHit.kind === 'effective' ? 1 : 0,
+      providerCacheHitStagnant: cacheHit.kind === 'idle' ? 1 : 0,
     }
     : undefined;
   if (!ctx.telemetryAdapter) return cacheHitFields;

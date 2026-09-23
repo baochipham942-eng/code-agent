@@ -1,17 +1,13 @@
 // 命中二分：effective = 停滞指纹变了；idle = 指纹没变。
 // 命中来源可以是工具缓存、进程内推理缓存或 provider cacheRead，不能只看 cacheRead>0。
 
-import { getInferenceCache } from './inferenceCache';
-
 type CacheHitKind = 'effective' | 'idle';
 
-interface RecordedCacheHit {
+export interface RecordedCacheHit {
   kind: CacheHitKind;
   /** 该 session 累计，从 1 起。 */
   effective: number;
   idle: number;
-  /** InferenceCache.getStats().hitRate 的生产读数。 */
-  inferenceHitRate: string;
 }
 
 interface SessionHitState {
@@ -25,13 +21,26 @@ interface SessionHitState {
 }
 
 const sessions = new Map<string, SessionHitState>();
+const MAX_SESSION_STATES = 256;
 
 function stateFor(sessionId: string): SessionHitState {
   const existing = sessions.get(sessionId);
-  if (existing) return existing;
+  if (existing) {
+    sessions.delete(sessionId);
+    sessions.set(sessionId, existing);
+    return existing;
+  }
+  if (sessions.size >= MAX_SESSION_STATES) {
+    const oldest = sessions.keys().next().value;
+    if (oldest !== undefined) sessions.delete(oldest);
+  }
   const created: SessionHitState = { seenHit: false, effective: 0, idle: 0 };
   sessions.set(sessionId, created);
   return created;
+}
+
+export function clearSessionCacheHits(sessionId: string): void {
+  sessions.delete(sessionId);
 }
 
 /** 工具批次推进后记下当前停滞指纹，供下一次命中比较。 */
@@ -77,6 +86,5 @@ export function recordSessionCacheHit(sessionId: string, fingerprint?: string): 
     kind,
     effective: state.effective,
     idle: state.idle,
-    inferenceHitRate: getInferenceCache().getStats().hitRate,
   };
 }

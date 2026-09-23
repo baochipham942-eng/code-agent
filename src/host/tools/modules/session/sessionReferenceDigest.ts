@@ -145,7 +145,6 @@ export async function resolveSessionReference(
       buildDigestPrompt(session, messages),
       DIGEST_MAX_TOKENS,
       {
-        cacheRetention: 'none',
         cacheScopeId: 'session-reference-digest',
       },
     ).then(parseGeneratedDigest);

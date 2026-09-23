@@ -19,12 +19,18 @@ interface PendingTurnCost {
   modelId?: string;
   inputTokens?: number;
   outputTokens?: number;
-  cacheBreakReason?: CacheBreakReason;
 }
 
 interface TurnCachePromptSample {
   prompt: string;
   modelId: string;
+}
+
+const previousPromptBySession = new Map<string, TurnCachePromptSample>();
+const MAX_PREVIOUS_PROMPT_SESSIONS = 256;
+
+export function clearSessionCachePrompt(sessionId: string): void {
+  previousPromptBySession.delete(sessionId);
 }
 
 function isTokenCount(value: unknown): value is number {
@@ -53,13 +59,16 @@ export function createTurnCostEventHandler(options: {
   const turns = new Map<string, PendingTurnCost>();
   const sink = options.sink ?? defaultSink();
   let activeTurnId: string | null = null;
-  let previousPrompt: TurnCachePromptSample | undefined;
-
   const cacheBreakReasonForTurn = (): CacheBreakReason => {
     const current = options.readCachePrompt?.();
     if (!current) return 'none';
-    const previous = previousPrompt;
-    previousPrompt = current;
+    const previous = previousPromptBySession.get(options.sessionId);
+    previousPromptBySession.delete(options.sessionId);
+    if (previousPromptBySession.size >= MAX_PREVIOUS_PROMPT_SESSIONS) {
+      const oldest = previousPromptBySession.keys().next().value;
+      if (oldest !== undefined) previousPromptBySession.delete(oldest);
+    }
+    previousPromptBySession.set(options.sessionId, current);
     if (!previous) return 'none';
     return detectCacheBreak(previous.prompt, current.prompt, {
       prevModel: previous.modelId,
@@ -84,7 +93,7 @@ export function createTurnCostEventHandler(options: {
     const provider = turn.provider ?? 'unknown';
     const modelId = turn.modelId ?? 'unknown';
     const price = resolveModelPrice(provider, modelId);
-    const cacheBreakReason = turn.cacheBreakReason ?? cacheBreakReasonForTurn();
+    const cacheBreakReason = cacheBreakReasonForTurn();
     try {
       sink.insert({
         sessionId: options.sessionId,

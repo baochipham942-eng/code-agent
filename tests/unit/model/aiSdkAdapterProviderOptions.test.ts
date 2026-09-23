@@ -195,6 +195,32 @@ describe('inferenceViaAiSdk provider options', () => {
     }));
   });
 
+  it('cacheRetention none leaves Anthropic messages and tools without cache controls', async () => {
+    await inferenceViaAiSdk(
+      [
+        { role: 'system', content: 'stable system prompt' },
+        { role: 'user', content: 'hello' },
+      ],
+      [{
+        name: 'read_file',
+        description: 'read',
+        inputSchema: { type: 'object', properties: {} },
+        outputSchema: { type: 'object', properties: {} },
+        requiresPermission: false,
+        permissionLevel: 'read',
+      } as ToolDefinition],
+      { provider: 'claude', model: 'claude-sonnet-4-6' } as ModelConfig,
+      undefined,
+      undefined,
+      { cacheRetention: 'none' },
+    );
+
+    const request = vi.mocked(generateText).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(JSON.stringify(request.instructions ?? [])).not.toContain('cacheControl');
+    expect(JSON.stringify(request.messages ?? [])).not.toContain('cacheControl');
+    expect(JSON.stringify(request.tools ?? {})).not.toContain('cacheControl');
+  });
+
   it('custom fetch 通过 getHttpsAgent/axios 保留 method、headers、body 和 AbortSignal，并返回可读 Response body', async () => {
     const proxyAgent = { tag: 'proxy-agent' };
     networkMocks.getHttpsAgent.mockReturnValue(proxyAgent);

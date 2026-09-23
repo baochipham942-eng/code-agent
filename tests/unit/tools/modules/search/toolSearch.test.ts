@@ -20,6 +20,7 @@ const discoverLazyServersForSearchMock = vi.fn();
 vi.mock('../../../../../src/host/services/toolSearch/toolSearchService', () => ({
   getToolSearchService: () => ({
     searchTools: searchToolsMock,
+    applyInjectionFit: vi.fn(),
   }),
   setProtocolToolNameChecker: vi.fn(),
 }));
@@ -27,6 +28,7 @@ vi.mock('../../../../../src/host/services/toolSearch/toolSearchService', () => (
 vi.mock('../../../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     discoverLazyServersForSearch: discoverLazyServersForSearchMock,
+    getToolDefinitions: () => [],
   }),
 }));
 

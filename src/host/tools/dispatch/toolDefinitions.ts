@@ -32,6 +32,8 @@ import { isBashToolName } from '../toolNames';
 import { getConfigService } from '../../services/core/configService';
 import { hasConfiguredExternalSearchCredential } from '../../services/search/searchSourceRegistry';
 import { estimateTokens } from '../../context/tokenEstimator';
+import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
+import type { InjectedToolSchema } from '../../services/toolSearch/singleInjectionCeiling';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
@@ -58,7 +60,7 @@ function findSchemaByName(schemas: readonly ToolSchema[], name: string): ToolSch
 
 /**
  * 把 protocol ToolSchema 映射成 ToolDefinition，合并 cloud meta。
- * description 优先级: cloud > dynamic > static schema.description
+ * description 优先级: 单次注入上限裁剪 > cloud > dynamic > static schema.description
  */
 function schemaToDefinition(
   schema: ToolSchema,
@@ -66,8 +68,11 @@ function schemaToDefinition(
   descriptionContext?: ToolDescriptionContext,
 ): ToolDefinition {
   const cloud = cloudMeta[schema.name];
-  const description =
-    cloud?.description || schema.dynamicDescription?.(descriptionContext) || schema.description;
+  const override = getToolSearchService().getInjectionDescriptionOverride(schema.name);
+  const description = override
+    ?? cloud?.description
+    ?? schema.dynamicDescription?.(descriptionContext)
+    ?? schema.description;
   return {
     name: schema.name,
     description,
@@ -146,9 +151,38 @@ export function getLoadedDeferredToolDefinitions(
 
   const mcpDefinitions = getMCPClient()
     .getToolDefinitions()
-    .filter((definition) => loadedNames.has(definition.name));
+    .filter((definition) => loadedNames.has(definition.name))
+    .map((definition) => {
+      const override = toolSearchService.getInjectionDescriptionOverride(definition.name);
+      return override === undefined ? definition : { ...definition, description: override };
+    });
 
   return [...protocolDefinitions, ...mcpDefinitions];
+}
+
+/** Claude-shaped schema that getLoadedDeferredToolDefinitions would send before a ceiling override. */
+export function readDeferredToolInjectionSchemas(names: readonly string[]): InjectedToolSchema[] {
+  const wanted = new Set(names);
+  const cloudToolMeta = getCloudConfigService().getAllToolMeta();
+  const found: InjectedToolSchema[] = [];
+  for (const schema of getProtocolToolSchemas()) {
+    if (!wanted.has(schema.name)) continue;
+    found.push({
+      name: schema.name,
+      description: cloudToolMeta[schema.name]?.description || schema.description,
+      input_schema: schema.inputSchema as unknown as Record<string, unknown>,
+    });
+  }
+  const mcp = getMCPClient() as { getToolDefinitions?: () => Array<{ name: string; description: string; inputSchema: unknown }> };
+  for (const definition of mcp.getToolDefinitions?.() ?? []) {
+    if (!wanted.has(definition.name) || found.some((schema) => schema.name === definition.name)) continue;
+    found.push({
+      name: definition.name,
+      description: definition.description,
+      input_schema: definition.inputSchema as Record<string, unknown>,
+    });
+  }
+  return found;
 }
 
 /**
@@ -199,7 +233,7 @@ export const DESIGN_SUPPRESSED_GENERIC_MEDIA_TOOLS = [
   'image_annotate',
 ] as const;
 
-const DEFAULT_DEFERRED_SUMMARY_TOKEN_BUDGET = 1200;
+const DEFAULT_DEFERRED_SUMMARY_TOKEN_BUDGET = DEFERRED_TOOL_LOADING.SUMMARY_TOKEN_BUDGET;
 
 export function withoutGenericMediaToolsInDesign(
   tools: ToolDefinition[],
@@ -220,7 +254,7 @@ export function withoutGenericMediaToolsInDesign(
 export function getDeferredToolsSummary(
   deniedToolNames: readonly string[] = [],
   allowedToolNames?: readonly string[],
-  tokenBudget = DEFAULT_DEFERRED_SUMMARY_TOKEN_BUDGET,
+  tokenBudget: number = DEFAULT_DEFERRED_SUMMARY_TOKEN_BUDGET,
 ): string {
   // T3b: allowlist 收窄（如会话指挥台前台 brain）下，若 ToolSearch 本身不在允许集里，
   // 模型物理上加载不了任何延迟工具——继续宣传"可通过 ToolSearch 加载 X"只会诱导模型

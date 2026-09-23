@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { DEFERRED_TOOL_LOADING } from '../../../src/shared/constants/tools';
 import { ToolSearchService } from '../../../src/host/services/toolSearch/toolSearchService';
 import { DEFERRED_TOOLS_META } from '../../../src/host/services/toolSearch/deferredTools';
 import { getProtocolRegistry, isProtocolToolName, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
@@ -501,6 +502,38 @@ describe('ToolSearchService loadable results', () => {
       const rediscovered = await service.searchTools('Task', { includeMCP: false, maxResults: 3 });
       expect(rediscovered.tools.map((tool) => tool.name)).toContain('Task');
       expect(service.selectTool('Task').loadedTools).toContain('Task');
+    });
+
+    it('evicts a tool selected with no session id once a real session reaches the idle window', () => {
+      registerProtocolToolForSearch('Task');
+      const service = new ToolSearchService();
+      expect(service.selectTool('Task').loadedTools).toEqual(['Task']);
+
+      for (let round = 0; round < DEFERRED_TOOL_LOADING.IDLE_ROUNDS_BEFORE_EVICTION; round += 1) {
+        service.beginRound('session-a');
+      }
+
+      expect(service.evictIdleDeferredToolsAtCompactionBoundary(
+        DEFERRED_TOOL_LOADING.IDLE_ROUNDS_BEFORE_EVICTION,
+        'session-a',
+      )).toEqual(['Task']);
+      expect(service.getLoadedDeferredTools()).not.toContain('Task');
+    });
+
+    it('does not let an ended session keep another session from evicting a tool', () => {
+      registerProtocolToolForSearch('Task');
+      const service = new ToolSearchService();
+      expect(service.selectTool('Task', 'session-ended').loadedTools).toEqual(['Task']);
+      service.beginRound('session-ended');
+      service.markToolCalled('Task', 'session-ended');
+      for (let round = 0; round < 4; round += 1) service.beginRound('session-live');
+
+      expect(service.evictIdleDeferredToolsAtCompactionBoundary(3, 'session-live')).toEqual([]);
+      expect(service.getLoadedDeferredTools()).toContain('Task');
+
+      service.releaseSession('session-ended');
+      expect(service.evictIdleDeferredToolsAtCompactionBoundary(3, 'session-live')).toEqual(['Task']);
+      expect(service.getLoadedDeferredTools()).not.toContain('Task');
     });
 
     it('does not let one session compaction evict a tool another session just used', () => {

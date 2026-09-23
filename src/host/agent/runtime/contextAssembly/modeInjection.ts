@@ -44,7 +44,7 @@ export function injectResearchModePrompt(ctx: ContextAssemblyCtx, _userMessage: 
   // Pre-load web_fetch for research mode to avoid wasting an iteration on tool_search
   try {
     const toolSearchService = getToolSearchService();
-    toolSearchService.selectTool('web_fetch');
+    toolSearchService.selectTool('web_fetch', ctx.runtime.sessionId);
     logger.info('[ResearchMode] Pre-loaded web_fetch tool');
   } catch (error) {
     logger.debug('[ResearchMode] Could not pre-load web_fetch', { error: String(error) });

@@ -29,10 +29,13 @@ import { getCapabilityRecommender } from '../../../services/capability';
 import { renderGaps } from '../planning/recommendCapability';
 import { markDistilledSkillTurnSignal } from '../../../services/skills/distillSignalStore';
 import { estimateTokens } from '../../../context/tokenEstimator';
+import { DEFERRED_TOOL_LOADING } from '../../../../shared/constants/tools';
+import { readDeferredToolInjectionSchemas } from '../../dispatch/toolDefinitions';
+import { boundSingleInjection } from '../../../services/toolSearch/singleInjectionCeiling';
 
-const MAX_RESULTS_HARD_CAP = 5;
-const DEFAULT_MAX_RESULTS = 3;
-const SINGLE_INJECTION_TOKEN_CEILING = 400;
+const MAX_RESULTS_HARD_CAP = DEFERRED_TOOL_LOADING.SEARCH_MAX_RESULTS_HARD_CAP;
+const DEFAULT_MAX_RESULTS = DEFERRED_TOOL_LOADING.SEARCH_DEFAULT_MAX_RESULTS;
+const SINGLE_INJECTION_TOKEN_CEILING = DEFERRED_TOOL_LOADING.SINGLE_INJECTION_TOKEN_CEILING;
 
 interface McpDiscoveryEntry {
   serverName: string;
@@ -169,66 +172,13 @@ export async function executeToolSearch(
       };
     }
 
-    const lines: string[] = [
-      `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
-      '',
-    ];
-
-    for (const tool of result.tools) {
-      const sourceInfo = tool.source === 'mcp' && tool.mcpServer
-        ? ` [MCP: ${tool.mcpServer}]`
-        : '';
-      const availability = tool.loadable === false
-        ? `不可直接调用：${tool.notCallableReason || 'no direct tool definition is available'}`
-        : '已加载，可直接调用';
-      const isLoaded = result.loadedTools.includes(tool.name);
-      lines.push(`• **${tool.name}**${isLoaded ? sourceInfo : ''}`);
-      lines.push(`  ${tool.description}`);
-      if (tool.loadable === false) {
-        lines.push(`  ${availability}`);
-        if (tool.canonicalInvocation) {
-          lines.push(`  调用入口：${tool.canonicalInvocation}`);
-        }
-      } else if (isLoaded) {
-        lines.push(`  ${availability}`);
-        if (tool.canonicalInvocation) {
-          lines.push(`  调用入口：${tool.canonicalInvocation}`);
-        }
-      } else {
-        lines.push(`  未加载完整定义；使用 select:${tool.name} 加载。`);
-      }
-      lines.push('');
-    }
-
-    if (result.hasMore) {
-      const remaining = result.totalCount - result.tools.length;
-      // scope 过滤后 totalCount 与列出数对齐（remaining 为 0），但服务说还有更多——
-      // 范围内也可能有，给个不带假计数的提示
-      lines.push(remaining > 0
-        ? `还有 ${remaining} 个匹配结果，使用更具体的关键词缩小范围。`
-        : '范围内可能还有更多匹配结果，使用更具体的关键词缩小范围。');
-    }
-
-    lines.push('');
-    const notAutoLoaded = result.tools.filter(
-      (tool) => tool.loadable !== false && !result.loadedTools.includes(tool.name),
-    );
-    if (result.loadedTools.length > 0) {
-      lines.push('已加载的工具现在可以直接使用。');
-    } else if (notAutoLoaded.length === 0) {
-      lines.push('没有新工具被加载；不可直接调用的结果只作为搜索线索。');
-    }
-    if (notAutoLoaded.length > 0) {
-      lines.push('其余匹配只返回名称和短描述，未注入完整 schema；需要时使用 select:工具名。');
-    }
+    const output = enforceSingleInjectionCeiling(result);
 
     ctx.logger.info('ToolSearch done', {
       query,
       loaded: result.loadedTools.length,
       total: result.totalCount,
     });
-
-    const output = fitToolSearchOutput(lines, result);
     return {
       ok: true,
       output,
@@ -268,6 +218,126 @@ export async function executeToolSearch(
       code: 'SEARCH_ERROR',
     };
   }
+}
+
+interface SearchHit {
+  name: string;
+  description: string;
+  source?: string;
+  mcpServer?: string;
+  loadable?: boolean;
+  notCallableReason?: string;
+  canonicalInvocation?: string;
+}
+
+interface SearchRenderResult {
+  tools: SearchHit[];
+  loadedTools: string[];
+  hasMore: boolean;
+  totalCount: number;
+}
+
+function renderToolSearchLines(result: SearchRenderResult, overCeiling: ReadonlySet<string>): string[] {
+  const lines: string[] = [
+    `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
+    '',
+  ];
+
+  for (const tool of result.tools) {
+    const sourceInfo = tool.source === 'mcp' && tool.mcpServer
+      ? ` [MCP: ${tool.mcpServer}]`
+      : '';
+    const availability = tool.loadable === false
+      ? `不可直接调用：${tool.notCallableReason || 'no direct tool definition is available'}`
+      : '已加载，可直接调用';
+    const isLoaded = result.loadedTools.includes(tool.name);
+    lines.push(`• **${tool.name}**${isLoaded ? sourceInfo : ''}`);
+    lines.push(`  ${tool.description}`);
+    if (tool.loadable === false) {
+      lines.push(`  ${availability}`);
+      if (tool.canonicalInvocation) {
+        lines.push(`  调用入口：${tool.canonicalInvocation}`);
+      }
+    } else if (isLoaded) {
+      lines.push(`  ${availability}`);
+      if (tool.canonicalInvocation) {
+        lines.push(`  调用入口：${tool.canonicalInvocation}`);
+      }
+    } else if (overCeiling.has(tool.name)) {
+      lines.push('  完整 schema 超过单次注入上限，未注入。名称和短描述仍可搜索。');
+    } else {
+      lines.push(`  未加载完整定义；使用 select:${tool.name} 加载。`);
+    }
+    lines.push('');
+  }
+
+  if (result.hasMore) {
+    const remaining = result.totalCount - result.tools.length;
+    lines.push(remaining > 0
+      ? `还有 ${remaining} 个匹配结果，使用更具体的关键词缩小范围。`
+      : '范围内可能还有更多匹配结果，使用更具体的关键词缩小范围。');
+  }
+
+  lines.push('');
+  const notAutoLoaded = result.tools.filter(
+    (tool) => tool.loadable !== false && !result.loadedTools.includes(tool.name) && !overCeiling.has(tool.name),
+  );
+  const overCeilingHits = result.tools.filter((tool) => overCeiling.has(tool.name));
+  if (result.loadedTools.length > 0) {
+    lines.push('已加载的工具现在可以直接使用。');
+  } else if (notAutoLoaded.length === 0 && overCeilingHits.length === 0) {
+    lines.push('没有新工具被加载；不可直接调用的结果只作为搜索线索。');
+  }
+  if (overCeilingHits.length > 0) {
+    lines.push(`未注入完整 schema（超过单次注入上限）：${overCeilingHits.map((tool) => tool.name).join(', ')}。`);
+  }
+  if (notAutoLoaded.length > 0) {
+    lines.push('其余匹配只返回名称和短描述，未注入完整 schema；需要时使用 select:工具名。');
+  }
+  return lines;
+}
+
+function namesOnlyText(result: SearchRenderResult): string {
+  return [
+    `找到 ${result.totalCount} 个匹配工具，已加载 ${result.loadedTools.length} 个：`,
+    '',
+    ...result.tools.flatMap((tool) => [`• **${tool.name}**`, '']),
+    '搜索结果已按单次注入预算裁剪；使用 select:工具名加载工具。',
+  ].join('\n');
+}
+
+function enforceSingleInjectionCeiling(result: SearchRenderResult): string {
+  const overCeiling = new Set<string>();
+  const draft = fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result);
+  const measurable = readDeferredToolInjectionSchemas(result.loadedTools);
+  const bounded = boundSingleInjection({
+    text: draft,
+    namesText: namesOnlyText(result),
+    schemas: measurable,
+  });
+  const kept = new Set(bounded.schemas.map((schema) => schema.name));
+  const dropped = measurable.filter((schema) => !kept.has(schema.name)).map((schema) => schema.name);
+  getToolSearchService().applyInjectionFit(bounded.schemas, dropped, measurable);
+  if (dropped.length === 0) return bounded.text;
+
+  for (const name of dropped) overCeiling.add(name);
+  result.loadedTools = result.loadedTools.filter((name) => !overCeiling.has(name));
+  const revised = fitToolSearchOutput(renderToolSearchLines(result, overCeiling), result);
+  const again = boundSingleInjection({
+    text: revised,
+    namesText: namesOnlyText(result),
+    schemas: bounded.schemas,
+  });
+  const keptAgain = new Set(again.schemas.map((schema) => schema.name));
+  const droppedAgain = bounded.schemas
+    .filter((schema) => !keptAgain.has(schema.name))
+    .map((schema) => schema.name);
+  if (droppedAgain.length > 0) {
+    getToolSearchService().applyInjectionFit(again.schemas, droppedAgain, bounded.schemas);
+    for (const name of droppedAgain) overCeiling.add(name);
+    result.loadedTools = result.loadedTools.filter((name) => !overCeiling.has(name));
+  }
+  return again.text;
 }
 
 function fitTextToTokenCeiling(text: string, ceiling: number): string {

@@ -76,4 +76,50 @@ describe('deferred tool eviction stays off skipped compaction', () => {
     expect(service.getLoadedDeferredTools()).toEqual(['Task']);
     expect(service.evictIdleDeferredToolsAtCompactionBoundary(3, 'session-a')).toEqual(['Task']);
   });
+
+  it('leaves the loaded set unchanged when lossless budgeting skips compaction', async () => {
+    const service = getToolSearchService();
+    expect(service.selectTool('Task', 'session-a').loadedTools).toEqual(['Task']);
+    service.beginRound('session-a');
+    service.beginRound('session-a');
+    service.beginRound('session-a');
+    service.beginRound('session-a');
+
+    let thresholdChecks = 0;
+    const ctx = {
+      generateId: () => 'signal-2',
+      injectSystemMessage: () => undefined,
+      compressionRecovery: {
+        _consecutiveCompacts: 0,
+        _autoCompactPaused: false,
+        _summaryFailureStreak: 0,
+        _summaryCooldownUntil: 0,
+      },
+      runtime: {
+        sessionId: 'session-a',
+        agentId: 'subagent-a',
+        workingDirectory: '/tmp',
+        messages: [{ id: 'm1', role: 'user', content: 'hello' }],
+        modelConfig: { provider: 'openai', model: 'gpt-4o' },
+        onEvent: () => undefined,
+        contextHealth: {
+          pipelineAutocompactNeeded: false,
+          checkpointRebuildLastWatermarkId: undefined,
+          setPipelineAutocompactNeeded: () => undefined,
+        },
+        autoCompressor: {
+          getConfig: () => ({ warningThreshold: 0.8, enabled: true, preserveRecentCount: 8 }),
+          shouldTriggerByTokens: () => {
+            thresholdChecks += 1;
+            return thresholdChecks === 1;
+          },
+        },
+      },
+    } as unknown as ContextAssemblyCtx;
+
+    await checkAndAutoCompress(ctx);
+
+    expect(thresholdChecks).toBeGreaterThanOrEqual(2);
+    expect(service.getLoadedDeferredTools()).toEqual(['Task']);
+  });
 });

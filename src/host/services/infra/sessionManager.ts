@@ -805,7 +805,7 @@ export class SessionManager implements Disposable {
    */
   async deleteSession(sessionId: string, commit?: (write: () => void) => void): Promise<void> {
     const db = getDatabase();
-    this.assertAccessibleSession(sessionId);
+    this.assertAccessibleSession(sessionId); clearSessionRuntimeCaches(sessionId);
     if (commit) {
       commit(() => db.deleteSession(sessionId));
       this.sessionCache.delete(sessionId);
@@ -833,7 +833,7 @@ export class SessionManager implements Disposable {
   }
 
   async cleanupDeletedSession(sessionId: string): Promise<void> {
-    if (getDatabase().getSession(sessionId)) throw new Error('SESSION_NOT_DELETED');
+    clearSessionRuntimeCaches(sessionId); if (getDatabase().getSession(sessionId)) throw new Error('SESSION_NOT_DELETED');
     await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(sessionId);
     await this.deleteTerminalFrames(sessionId);
   }

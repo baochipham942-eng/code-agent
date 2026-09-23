@@ -1,3 +1,17 @@
+/**
+ * Deferred-tool index budget and ToolSearch single-injection ceiling.
+ * One source for the summary budget, result caps, idle-eviction window,
+ * and the token ceiling that covers ToolSearch text plus a newly loaded schema.
+ */
+export const DEFERRED_TOOL_LOADING = {
+  SUMMARY_TOKEN_BUDGET: 1200,
+  SINGLE_INJECTION_TOKEN_CEILING: 400,
+  SEARCH_DEFAULT_MAX_RESULTS: 3,
+  SEARCH_MAX_RESULTS_HARD_CAP: 5,
+  IDLE_ROUNDS_BEFORE_EVICTION: 3,
+  CLEAR_LEAD_SCORE_GAP: 0.25,
+} as const;
+
 /** 文件配置 */
 export const FILE = {
   /** 最大文件大小 (10MB) */

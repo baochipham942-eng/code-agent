@@ -1,6 +1,6 @@
 // ContextAssembly - Context health tracking and hard-threshold compression.
 import type { AgentEvent, Message } from '../../../../shared/contract';
-import { CHECKPOINT_WRITER, COMPACTION_ECONOMICS, DEFAULT_MODELS } from '../../../../shared/constants';
+import { CHECKPOINT_WRITER, COMPACTION_ECONOMICS, DEFAULT_MODELS, DEFERRED_TOOL_LOADING } from '../../../../shared/constants';
 import { getContextHealthService } from '../../../context/contextHealthService';
 import { CompressionState } from '../../../context/compressionState';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
@@ -516,7 +516,10 @@ export async function checkAndAutoCompress(
             tokensBefore: currentTokens,
             messagesCount: ctx.runtime.messages.length,
           });
-          getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary(3, ctx.runtime.sessionId);
+          getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary(
+            DEFERRED_TOOL_LOADING.IDLE_ROUNDS_BEFORE_EVICTION,
+            ctx.runtime.sessionId,
+          );
           return;
         }
         logger.warn('[AgentLoop] Checkpoint rebuild boundary unavailable, falling back to summary compaction', {
@@ -635,7 +638,10 @@ export async function checkAndAutoCompress(
         emitCompacted: true,
         survivorReason: `Compaction block inserted after ${decision.trigger} compaction`,
       });
-      getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary(3, ctx.runtime.sessionId);
+      getToolSearchService().evictIdleDeferredToolsAtCompactionBoundary(
+        DEFERRED_TOOL_LOADING.IDLE_ROUNDS_BEFORE_EVICTION,
+        ctx.runtime.sessionId,
+      );
       emitContextCompressionSignal(ctx, {
         kind: 'success',
         code: 'compaction-succeeded',

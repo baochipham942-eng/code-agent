@@ -94,6 +94,25 @@ describe('deferred tool preload', () => {
     resetToolSearchService();
   });
 
+  it('attributes a preloaded tool to the runtime session so that session can evict it', () => {
+    const loaded = preloadDeferredToolsForTurn({
+      ...runtime({
+        messages: [{
+          id: 'm1',
+          role: 'user',
+          content: '通过 computer use 打开记事本，记录会议内容',
+          timestamp: 1,
+        }],
+      }),
+      sessionId: 'session-preload',
+    });
+
+    expect(loaded).toEqual(['Computer']);
+    const service = getToolSearchService();
+    for (let round = 0; round < 3; round += 1) service.beginRound('session-preload');
+    expect(service.evictIdleDeferredToolsAtCompactionBoundary(3, 'session-preload')).toEqual(['Computer']);
+  });
+
   it('preloads Computer for explicit computer use requests', () => {
     const loaded = preloadDeferredToolsForTurn(runtime({
       messages: [{

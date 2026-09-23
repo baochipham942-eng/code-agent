@@ -29,6 +29,7 @@ import { stripLegacyForkClaims } from '../sessionFork/portability';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { stampAssistantMessageCorrelation } from '../../session/assistantCorrelation';
 import { getTelemetryCollector } from '../../telemetry';
+import { clearSessionRuntimeCaches } from '../../session/sessionCacheLifecycle';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
@@ -1221,6 +1222,8 @@ export class SessionManager implements Disposable {
     if (!targetSessionId) return;
 
     logger.info('Ending session, generating summary', { sessionId: targetSessionId });
+
+    await clearSessionRuntimeCaches(targetSessionId);
 
     await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(targetSessionId);
 

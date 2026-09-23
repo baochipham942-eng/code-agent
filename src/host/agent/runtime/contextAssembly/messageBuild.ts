@@ -154,6 +154,7 @@ function getRuntimeAssemblyCache(ctx: ContextAssemblyCtx): RuntimeAssemblyCache 
 }
 
 export function getCachedDynamicSystemPrompt(runtime: RuntimeContext): string | undefined {
+  // The key is the exact RuntimeContext object owned by ContextAssemblyCtx.runtime.
   const cache = runtimeAssemblyCaches.get(runtime as unknown as object);
   return cache?.dynamicPrompt?.prompt ?? cache?.lastAssembledSystemPrompt;
 }
@@ -248,6 +249,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       ctx.runtime.modelConfig?.model,
     );
     const tokens = estimateTokens(fullPrompt);
+    cache.lastAssembledSystemPrompt = fullPrompt;
     recordBasePromptLayer(ctx, fullPrompt, CONTEXT_LEDGER.BASE_SOURCE.FULL_REPLACE);
     if (tokens <= promptBudget(ctx)) {
       cache.dynamicPrompt = {

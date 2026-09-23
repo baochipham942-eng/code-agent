@@ -40,6 +40,10 @@ import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools'
  * 纯英文是 0.44 倍），工具 schema 几乎全英文会被高估约一倍，桶间比例直接失真。
  *
  * ## 基线变更记录
+ * - 4628 → 4881（2026-09-23，N-READ-BOUNDED，+253）：Read 单值窄读规则。
+ *   压进 4628 的短文案（Read≈182）在同题 claude-sonnet-4.6 真跑里改走 Bash cat，正文 30570 字符
+ *   （run dc3be11b-541f-4292-8130-fe26e02ead61）。当前这条长文案同题走 Grep，正文 98 字符
+ *   （run 85469257-5e5c-4c48-ab03-cd534ba7ae08）。涨幅是实测才会改行为的说明，不是顺手加长。
  * - 4349 → 4628（2026-08-15，L8 N-L8-PVDYN / N-L8-SCHEMAGATE，+279）：核算纠偏。
  *   预算门原来只量静态 `schema.description`，但 CORE 中 WebSearch 实际优先下发
  *   `dynamicDescription()`。两段 description 单独量是 77 / 335（+258）；按本门口径重新
@@ -56,7 +60,7 @@ import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools'
  *   这 194 不是措辞膨胀，是**从「一分钱不花但也一点用没有」换成「花 194 但真的送到」**；
  *   同批 toolUsagePolicy 的委派判据搬进了 Task（非 CORE，按需下发，不计本门）。
  */
-const CORE_SCHEMA_TOKEN_BASELINE = 4628;
+const CORE_SCHEMA_TOKEN_BASELINE = 4881;
 
 const MODULES_DIR = join(__dirname, '../../../src/host/tools/modules');
 const FIXED_SCHEMA_CLOCK = new Date(2026, 7, 14, 12);

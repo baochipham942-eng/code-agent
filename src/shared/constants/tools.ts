@@ -5,16 +5,17 @@
  * to select:name and does not trim that schema.
  * EXPLICIT_SELECT_INJECTION_TOKEN_CEILING bounds the same total for select:.
  * Measured 2026-09-23 on 100 loadable builtin schemas, dynamic descriptions,
- * and the real agent catalog: largest provider wire is TaskManager at 2024
- * (deepseek strict / the max wire), longest select text is ProposeCanvasOps
- * at 95, largest paired total is TaskManager at 2081. The ceiling is
- * 2024 + 95 so a full schema and a bounded result text both fit.
+ * and the real agent catalog. Largest bare wire is TaskManager at 2024
+ * (deepseek strict), longest select text is ProposeCanvasOps at 95, largest
+ * paired total is TaskManager at 2081. AgentSpawn with that catalog plus 30
+ * extra agents is 3074. The ceiling is 3074 + 95 + 131 so a full schema, its
+ * result text, a modest catalog, and a cloud description edit still fit.
  * A larger user schema fails with the measured total.
  */
 export const DEFERRED_TOOL_LOADING = {
   SUMMARY_TOKEN_BUDGET: 1200,
   SINGLE_INJECTION_TOKEN_CEILING: 520,
-  EXPLICIT_SELECT_INJECTION_TOKEN_CEILING: 2119,
+  EXPLICIT_SELECT_INJECTION_TOKEN_CEILING: 3300,
   SEARCH_DEFAULT_MAX_RESULTS: 3,
   SEARCH_MAX_RESULTS_HARD_CAP: 5,
   IDLE_ROUNDS_BEFORE_EVICTION: 3,

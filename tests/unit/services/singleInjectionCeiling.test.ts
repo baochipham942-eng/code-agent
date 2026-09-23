@@ -363,6 +363,38 @@ describe('ToolSearch output plus newly loaded schema', () => {
     expect(checked).toContain('TaskManager');
   });
 
+  it('still selects AgentSpawn when the real catalog grows by 30 agents', async () => {
+    getProtocolRegistry();
+    const holder = globalThis as typeof globalThis & {
+      codeAgentAgentRegistry?: { listAllAgents?: () => readonly { id: string; description?: string }[] };
+    };
+    const previous = holder.codeAgentAgentRegistry;
+    const real = previous?.listAllAgents?.() ?? [];
+    holder.codeAgentAgentRegistry = {
+      listAllAgents: () => [
+        ...real,
+        ...Array.from({ length: 30 }, (_, index) => ({
+          id: `extra-agent-${index}`,
+          description: `catalog fixture ${'x'.repeat(80)}`,
+        })),
+      ],
+    };
+    try {
+      const measured = readDeferredToolInjectionSchemas(['AgentSpawn'])[0];
+      expect(measured?.description).toContain('extra-agent-29');
+      expect(measured?.sentTokens).toBeGreaterThan(2500);
+      expect(measured?.sentTokens).toBeLessThanOrEqual(EXPLICIT_CEILING);
+      const result = await executeToolSearch({ query: 'select:AgentSpawn' }, searchContext(), allow);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const sent = getLoadedDeferredToolDefinitions().find((tool) => tool.name === 'AgentSpawn');
+      expect(sent?.description).toContain('extra-agent-29');
+      expect(estimateTokens(result.output) + (measured?.sentTokens ?? 0)).toBeLessThanOrEqual(EXPLICIT_CEILING);
+    } finally {
+      holder.codeAgentAgentRegistry = previous;
+    }
+  });
+
   it('measures the dynamic agent catalog and rejects a catalog that exceeds the explicit total', async () => {
     getProtocolRegistry();
     const holder = globalThis as typeof globalThis & {

@@ -12,6 +12,7 @@ vi.mock('../../../src/host/services/roleAssets/rolePackInstallService', () => ({
 }));
 
 import { resolveSubagentPreset } from '../../../src/host/agent/subagentFirstRunPreset';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 
 describe('云货架专家首轮强制 strict', () => {
   beforeEach(() => {
@@ -41,5 +42,27 @@ describe('云货架专家首轮强制 strict', () => {
     consumeFirstRunStrictMock.mockResolvedValue(false);
 
     await expect(resolveSubagentPreset(undefined, 'writer', undefined)).resolves.toBe('development');
+  });
+});
+
+describe('父会话限流后 spawn preset 抬严', () => {
+  const SESSION = 'rate-limited-parent';
+
+  beforeEach(() => {
+    resetPermissionModeManager();
+    consumeFirstRunStrictMock.mockReset();
+    consumeFirstRunStrictMock.mockResolvedValue(false);
+  });
+
+  it('父会话已限流时，声明 ci 收到 development，已不免确认的档原样', async () => {
+    getPermissionModeManager().markAutoModeRateLimited(SESSION, 'consecutive', 3);
+
+    await expect(resolveSubagentPreset('ci', 'writer', SESSION)).resolves.toBe('development');
+    await expect(resolveSubagentPreset('development', 'writer', SESSION)).resolves.toBe('development');
+    await expect(resolveSubagentPreset('strict', 'writer', SESSION)).resolves.toBe('strict');
+  });
+
+  it('未限流的父会话保持声明档', async () => {
+    await expect(resolveSubagentPreset('ci', 'writer', 'plain-parent')).resolves.toBe('ci');
   });
 });

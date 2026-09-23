@@ -22,7 +22,12 @@ vi.mock('../../../src/host/tools/toolExecutor', () => ({
 }));
 
 import { createSubagentToolRuntime } from '../../../src/host/agent/subagentToolRuntime';
-import type { PermissionMode } from '../../../src/host/permissions/modes';
+import {
+  getPermissionModeManager,
+  resetPermissionModeManager,
+  type PermissionMode,
+} from '../../../src/host/permissions/modes';
+import { resolveSessionPermissionMode } from '../../../src/host/tools/toolPermissionClassification';
 
 describe('createSubagentToolRuntime permission forwarding', () => {
   beforeEach(() => {
@@ -32,18 +37,20 @@ describe('createSubagentToolRuntime permission forwarding', () => {
   function captureRequestPermission(input: {
     effectiveMode: PermissionMode;
     permissionResult?: boolean;
+    sessionId?: string;
   }) {
+    const sessionId = input.sessionId ?? 'session-1';
     const permissionRequest = vi.fn(async () => input.permissionResult ?? false);
     createSubagentToolRuntime({
       context: {
-        sessionId: 'session-1',
+        sessionId,
         cwd: '/tmp/workbench',
         resolver: { getDefinition: vi.fn() },
         permission: { request: permissionRequest },
         events: { emit: vi.fn() },
         abortSignal: new AbortController().signal,
       } as any,
-      sessionId: 'session-1',
+      sessionId,
       effectiveMode: input.effectiveMode,
       identity: { agentId: 'agent-1', runId: 'run-1', parentToolUseId: 'parent-tool-1' },
       allowedToolNames: new Set(['Write', 'Bash']),
@@ -124,5 +131,50 @@ describe('createSubagentToolRuntime permission forwarding', () => {
     });
 
     expect(toolExecutorState.config?.telemetryCollector).toBe(telemetryCollector);
+  });
+
+  describe('父会话限流后子代理不再沿用 spawn 时的免确认档', () => {
+    const SESSION = 'rate-limited-parent';
+    const OTHER = 'not-rate-limited';
+
+    beforeEach(() => {
+      resetPermissionModeManager();
+    });
+
+    it('acceptEdits 子代理的 write 不再直接放行，改走 permission.request', async () => {
+      getPermissionModeManager().markAutoModeRateLimited(SESSION, 'consecutive', 3);
+      const { requestPermission, permissionRequest } = captureRequestPermission({
+        effectiveMode: 'acceptEdits',
+        permissionResult: false,
+        sessionId: SESSION,
+      });
+
+      const approved = await requestPermission({
+        type: 'file_write',
+        tool: 'Write',
+        details: {},
+      });
+
+      expect(approved).toBe(false);
+      expect(permissionRequest).toHaveBeenCalledTimes(1);
+      expect(permissionRequest).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'agent-1',
+        parentToolUseId: 'parent-tool-1',
+        runId: 'run-1',
+        tool: 'Write',
+        type: 'file_write',
+      }));
+    });
+
+    it('resolveSessionPermissionMode 限流后把 acceptEdits override 收到 default，未限流原样', () => {
+      expect(resolveSessionPermissionMode('acceptEdits', SESSION)).toBe('acceptEdits');
+      expect(resolveSessionPermissionMode('acceptEdits', OTHER)).toBe('acceptEdits');
+
+      getPermissionModeManager().markAutoModeRateLimited(SESSION, 'consecutive', 3);
+
+      expect(resolveSessionPermissionMode('acceptEdits', SESSION)).toBe('default');
+      expect(resolveSessionPermissionMode('acceptEdits', OTHER)).toBe('acceptEdits');
+      expect(resolveSessionPermissionMode('readOnly', SESSION)).toBe('readOnly');
+    });
   });
 });

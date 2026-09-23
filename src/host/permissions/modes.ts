@@ -347,10 +347,17 @@ export class PermissionModeManager {
     if (this.isLiveVoiceSession(sessionId)) {
       mode = clampLiveVoicePermissionMode(mode);
     }
-    if (sessionId && this.rateLimitedSessions.has(sessionId)) {
-      mode = clampRateLimitedPermissionMode(mode);
-    }
+    mode = this.clampForRateLimit(mode, sessionId);
     return mode;
+  }
+
+  /**
+   * 会话已限流时把免确认档收到 default，否则原样。
+   * override 与子代理闭包不经过 getModeForSession，请求时走这里；只收紧不放宽。
+   */
+  clampForRateLimit(mode: PermissionMode, sessionId?: string): PermissionMode {
+    if (!sessionId || !this.rateLimitedSessions.has(sessionId)) return mode;
+    return clampRateLimitedPermissionMode(mode);
   }
 
   /** 记录解析失败指纹；返回 true 表示该会话此前已经撞过同一指纹。 */

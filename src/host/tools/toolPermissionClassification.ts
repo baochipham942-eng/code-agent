@@ -31,12 +31,16 @@ interface PermissionedToolShape {
 /**
  * 会话有效权限档：subagent 走父子收缩后的 override（禁止回读父会话档扩权），
  * 主 agent 走会话档单一真源。
+ * override 仍过限流钳制：只收紧不放宽，限流发生在 spawn 之后也生效。
  */
 export function resolveSessionPermissionMode(
   override: PermissionMode | undefined,
   sessionId?: string,
 ): PermissionMode {
-  return override ?? getPermissionModeManager().getModeForSession(sessionId);
+  if (override !== undefined) {
+    return getPermissionModeManager().clampForRateLimit(override, sessionId);
+  }
+  return getPermissionModeManager().getModeForSession(sessionId);
 }
 
 /**

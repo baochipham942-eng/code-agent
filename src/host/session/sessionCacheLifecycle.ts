@@ -1,11 +1,8 @@
+import { clearSessionCachePrompt } from '../agent/runtime/turnCostPersistence';
+import { clearSessionCacheHits } from '../model/cacheHitObservation';
+
 /** Release process-local observations when a host session ends. */
-export async function clearSessionRuntimeCaches(sessionId: string): Promise<void> {
-  await Promise.all([
-    import('../agent/runtime/turnCostPersistence').then(({ clearSessionCachePrompt }) => {
-      clearSessionCachePrompt(sessionId);
-    }),
-    import('../model/cacheHitObservation').then(({ clearSessionCacheHits }) => {
-      clearSessionCacheHits(sessionId);
-    }),
-  ]);
+export function clearSessionRuntimeCaches(sessionId: string): void {
+  clearSessionCachePrompt(sessionId);
+  clearSessionCacheHits(sessionId);
 }

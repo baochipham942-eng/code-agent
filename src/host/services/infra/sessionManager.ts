@@ -1223,7 +1223,7 @@ export class SessionManager implements Disposable {
 
     logger.info('Ending session, generating summary', { sessionId: targetSessionId });
 
-    await clearSessionRuntimeCaches(targetSessionId);
+    clearSessionRuntimeCaches(targetSessionId);
 
     await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(targetSessionId);
 

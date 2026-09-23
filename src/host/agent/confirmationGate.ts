@@ -13,8 +13,6 @@ import type {
 } from '../../shared/contract/confirmation';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { isBashToolName } from '../tools/toolNames';
-import { clearSessionCacheHits } from '../model/cacheHitObservation';
-import { clearSessionCachePrompt } from './runtime/turnCostPersistence';
 
 // 危险工具列表
 const DANGEROUS_TOOLS = new Set([
@@ -320,8 +318,6 @@ export class ConfirmationGate {
    * 清除 session 的批准记录
    */
   clearSessionApprovals(sessionId: string): void {
-    clearSessionCacheHits(sessionId);
-    clearSessionCachePrompt(sessionId);
     this.sessionApprovals.delete(sessionId);
   }
 

@@ -86,7 +86,7 @@ import { emitGoalAbort } from './goalAbort';
 import { releaseDoomLoopHandbackForSteer, settleDoomLoopHandback } from './doomLoopHandback';
 import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
 import { recordInferenceTrace } from './inferenceCacheTrace';
-import { getCachedDynamicSystemPrompt } from './contextAssembly/messageBuild';
+import { getCachedDynamicSystemPrompt } from './contextAssembly/runtimeAssemblyCache';
 
 
 const logger = createLogger('AgentLoop');

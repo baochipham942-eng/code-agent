@@ -10,8 +10,6 @@ import { makeEvidenceRef, type EvidenceRef } from '../../shared/contract/evidenc
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { createTask, listTasks, updateTask } from '../services/planning/taskStore';
-import { clearSessionCacheHits } from '../model/cacheHitObservation';
-import { clearSessionCachePrompt } from './runtime/turnCostPersistence';
 
 const logger = createLogger('TodoParser');
 
@@ -80,8 +78,6 @@ export function setSessionTodos(sessionId: string | undefined, todos: TodoItem[]
  */
 export function clearSessionTodos(sessionId?: string): void {
   if (sessionId) {
-    clearSessionCacheHits(sessionId);
-    clearSessionCachePrompt(sessionId);
     sessionTodos.delete(sessionId);
     persistSessionTodos(sessionId, []);
   } else {

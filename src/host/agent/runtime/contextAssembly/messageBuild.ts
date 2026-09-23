@@ -57,7 +57,7 @@ import { estimateModelMessageTokens, estimateTokens } from '../../../context/tok
 import { CompressionState } from '../../../context/compressionState';
 import { getContextInterventionState } from '../../../context/contextInterventionState';
 import { applyInterventionsToMessages } from '../../../context/contextInterventionHelpers';
-import { getContextEventLedger, type ContextEventRecord } from '../../../context/contextEventLedger';
+import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { getSystemPromptCache } from '../../../telemetry/systemPromptCache';
 import { applyProviderVariant } from '../../../prompts/providerVariants';
 import { logCollector } from '../../../mcp/logCollector.js';
@@ -65,7 +65,6 @@ import { countTraceEntries, recordMemoryInjectionTrace } from '../../../memory/m
 import { recordTurnMemoryBlock } from '../turnQuality';
 import { createHash } from 'crypto';
 import type { ContextAssemblyCtx, ContextTranscriptEntry, ModelMessagesWithSources } from './shared';
-import type { RuntimeContext } from '../runtimeContext';
 import { logger } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { appendNativeGenerativeUIPromptBlocks } from './nativeGenerativeUIPrompt';
@@ -91,6 +90,7 @@ import { IPC_CHANNELS } from '../../../../shared/ipc';
 import type { AgentNoticeEvent } from '../../../../shared/ipc/handlers';
 import { applyHistoricalImageBudget } from './imageBudget';
 import { projectReadTranscriptEntries } from '../../../context/readResultProjection';
+import { getRuntimeAssemblyCache } from './runtimeAssemblyCache';
 
 export { formatArtifactRepairToolResultContent } from './artifactRepairProjection';
 export {
@@ -119,44 +119,6 @@ const REQUIRED_GAME_PROMPT_TRIM_CANDIDATES = ['repo map', 'skills', 'deferred to
 interface DynamicPromptParts {
   systemPrompt: string;
   turnContext: string;
-}
-
-type RuntimeAssemblyCache = {
-  lastAssembledSystemPrompt?: string;
-  dynamicPrompt?: {
-    key: string;
-    createdAt: number;
-    prompt: string;
-    turnContext: string;
-    tokens: number;
-    /** GAP-023: 该缓存 prompt 构建时被预算丢弃的块（缓存命中时恢复，保持可见化一致） */
-    droppedBlocks?: string[];
-    promptLayers?: ContextEventRecord[];
-  };
-  compression?: {
-    key: string;
-    createdAt: number;
-    apiView: ContextTranscriptEntry[];
-    state: string;
-  };
-  imageBudgetNoticeKey?: string;
-};
-
-const runtimeAssemblyCaches = new WeakMap<object, RuntimeAssemblyCache>();
-
-function getRuntimeAssemblyCache(ctx: ContextAssemblyCtx): RuntimeAssemblyCache {
-  let cache = runtimeAssemblyCaches.get(ctx.runtime as unknown as object);
-  if (!cache) {
-    cache = {};
-    runtimeAssemblyCaches.set(ctx.runtime as unknown as object, cache);
-  }
-  return cache;
-}
-
-export function getCachedDynamicSystemPrompt(runtime: RuntimeContext): string | undefined {
-  // The key is the exact RuntimeContext object owned by ContextAssemblyCtx.runtime.
-  const cache = runtimeAssemblyCaches.get(runtime as unknown as object);
-  return cache?.dynamicPrompt?.prompt ?? cache?.lastAssembledSystemPrompt;
 }
 
 function getLastUserMessage(ctx: ContextAssemblyCtx): Message | undefined {

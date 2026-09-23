@@ -62,16 +62,16 @@ export function createTurnCostEventHandler(options: {
   let previousPrompt = previousPromptBySession.get(options.sessionId);
 
   const cacheBreakReasonForTurn = (): CacheBreakReason => {
-  const current = options.readCachePrompt?.();
-  if (!current) return 'none';
-  const previous = previousPrompt;
-  previousPrompt = current;
-  previousPromptBySession.delete(options.sessionId);
-  if (previousPromptBySession.size >= MAX_PREVIOUS_PROMPT_SESSIONS) {
-    const oldest = previousPromptBySession.keys().next().value;
-    if (oldest !== undefined) previousPromptBySession.delete(oldest);
-  }
-  previousPromptBySession.set(options.sessionId, current);
+    const current = options.readCachePrompt?.();
+    if (!current) return 'none';
+    const previous = previousPrompt;
+    previousPrompt = current;
+    previousPromptBySession.delete(options.sessionId);
+    if (previousPromptBySession.size >= MAX_PREVIOUS_PROMPT_SESSIONS) {
+      const oldest = previousPromptBySession.keys().next().value;
+      if (oldest !== undefined) previousPromptBySession.delete(oldest);
+    }
+    previousPromptBySession.set(options.sessionId, current);
     if (!previous) return 'none';
     return detectCacheBreak(previous.prompt, current.prompt, {
       prevModel: previous.modelId,

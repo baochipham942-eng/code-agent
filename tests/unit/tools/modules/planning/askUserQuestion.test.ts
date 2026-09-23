@@ -48,8 +48,9 @@ vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
 
 import { askUserQuestionModule } from '../../../../../src/host/tools/modules/planning/askUserQuestion';
 import {
-  buildAskUserQuestionReplayKey,
   clearAskUserQuestionReplayForSession,
+  lookupAskUserQuestionReplay,
+  recordAskUserQuestionAnswer,
 } from '../../../../../src/host/tools/modules/planning/askUserQuestionReplay';
 import type { UserQuestion } from '../../../../../src/shared/contract';
 import { INTERACTION_TIMEOUTS } from '../../../../../src/shared/constants';
@@ -690,57 +691,79 @@ describe('AskUserQuestion 同轮重复问句回放', () => {
   });
 });
 
-describe('buildAskUserQuestionReplayKey 归一化', () => {
-  it('大小写/全半角/标点/空白/选项顺序不影响 key', () => {
-    const a = buildAskUserQuestionReplayKey([
-      {
-        question: 'Deploy NOW？',
-        header: 'H',
-        options: [
-          { label: 'Ａ', description: 'x' },
-          { label: 'b', description: 'y' },
-        ],
-      },
-    ]);
-    const b = buildAskUserQuestionReplayKey([
-      {
-        question: 'deploy now?',
-        header: 'h ',
-        options: [
-          { label: 'B', description: 'y' },
-          { label: 'a', description: 'x' },
-        ],
-      },
-    ]);
-    expect(a).toBe(b);
+// 归一化语义走行为面钉：record 写入后 lookup 命中=同问、未命中=不同问
+// （buildAskUserQuestionReplayKey 是模块内私有，仓规 §5.9 不为测试开 export）。
+describe('AskUserQuestion 回放归一化语义（record/lookup 行为面）', () => {
+  const REPLAY_OUTPUT = 'User responses:\n[h]: a';
+
+  function recordThenLookup(
+    turnId: string,
+    recorded: UserQuestion[],
+    queried: UserQuestion[],
+  ): string | undefined {
+    const ctx = makeCtx({ turnId });
+    recordAskUserQuestionAnswer(ctx, recorded, REPLAY_OUTPUT);
+    return lookupAskUserQuestionReplay(ctx, queried);
+  }
+
+  it('大小写/全半角/标点/空白/选项顺序不影响同问判定', () => {
+    const hit = recordThenLookup(
+      'turn-key-1',
+      [
+        {
+          question: 'Deploy NOW？',
+          header: 'H',
+          options: [
+            { label: 'Ａ', description: 'x' },
+            { label: 'b', description: 'y' },
+          ],
+        },
+      ],
+      [
+        {
+          question: 'deploy now?',
+          header: 'h ',
+          options: [
+            { label: 'B', description: 'y' },
+            { label: 'a', description: 'x' },
+          ],
+        },
+      ],
+    );
+    expect(hit).toBeDefined();
+    expect(hit).toContain(REPLAY_OUTPUT);
+    expect(hit).toContain('你这轮已答过');
   });
 
   it('有无标点不算差异（剥标点而非仅 NFKC 归一）', () => {
-    const withPunct = buildAskUserQuestionReplayKey([
-      {
-        question: '部署到生产环境，好吗？',
-        header: 'h',
-        options: [
-          { label: 'a', description: 'x' },
-          { label: 'b', description: 'y' },
-        ],
-      },
-    ]);
-    const withoutPunct = buildAskUserQuestionReplayKey([
-      {
-        question: '部署到生产环境好吗',
-        header: 'h',
-        options: [
-          { label: 'a', description: 'x' },
-          { label: 'b', description: 'y' },
-        ],
-      },
-    ]);
-    expect(withPunct).toBe(withoutPunct);
+    const hit = recordThenLookup(
+      'turn-key-2',
+      [
+        {
+          question: '部署到生产环境，好吗？',
+          header: 'h',
+          options: [
+            { label: 'a', description: 'x' },
+            { label: 'b', description: 'y' },
+          ],
+        },
+      ],
+      [
+        {
+          question: '部署到生产环境好吗',
+          header: 'h',
+          options: [
+            { label: 'a', description: 'x' },
+            { label: 'b', description: 'y' },
+          ],
+        },
+      ],
+    );
+    expect(hit).toBeDefined();
   });
 
-  it('选项集合不同（含新增选项）key 不同', () => {
-    const base = buildAskUserQuestionReplayKey([
+  it('选项集合不同（含新增/替换选项）视为不同问，不回放', () => {
+    const base: UserQuestion[] = [
       {
         question: 'q',
         header: 'h',
@@ -749,8 +772,8 @@ describe('buildAskUserQuestionReplayKey 归一化', () => {
           { label: 'b', description: 'y' },
         ],
       },
-    ]);
-    const added = buildAskUserQuestionReplayKey([
+    ];
+    const added: UserQuestion[] = [
       {
         question: 'q',
         header: 'h',
@@ -760,8 +783,8 @@ describe('buildAskUserQuestionReplayKey 归一化', () => {
           { label: 'c', description: 'z' },
         ],
       },
-    ]);
-    const changed = buildAskUserQuestionReplayKey([
+    ];
+    const changed: UserQuestion[] = [
       {
         question: 'q',
         header: 'h',
@@ -770,13 +793,13 @@ describe('buildAskUserQuestionReplayKey 归一化', () => {
           { label: 'c', description: 'y' },
         ],
       },
-    ]);
-    expect(base).not.toBe(added);
-    expect(base).not.toBe(changed);
+    ];
+    expect(recordThenLookup('turn-key-3a', base, added)).toBeUndefined();
+    expect(recordThenLookup('turn-key-3b', base, changed)).toBeUndefined();
   });
 
-  it('multiSelect 不同 key 不同（语义差异照弹）', () => {
-    const single = buildAskUserQuestionReplayKey([
+  it('multiSelect 不同视为不同问（语义差异照弹）', () => {
+    const single: UserQuestion[] = [
       {
         question: 'q',
         header: 'h',
@@ -785,8 +808,8 @@ describe('buildAskUserQuestionReplayKey 归一化', () => {
           { label: 'b', description: 'y' },
         ],
       },
-    ]);
-    const multi = buildAskUserQuestionReplayKey([
+    ];
+    const multi: UserQuestion[] = [
       {
         question: 'q',
         header: 'h',
@@ -796,7 +819,7 @@ describe('buildAskUserQuestionReplayKey 归一化', () => {
           { label: 'b', description: 'y' },
         ],
       },
-    ]);
-    expect(single).not.toBe(multi);
+    ];
+    expect(recordThenLookup('turn-key-4', single, multi)).toBeUndefined();
   });
 });

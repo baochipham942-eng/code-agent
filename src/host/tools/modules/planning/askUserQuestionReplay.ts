@@ -21,7 +21,7 @@ function normalizeQuestionText(text: string): string {
     .replace(/[\s\p{P}]+/gu, '');
 }
 
-export function buildAskUserQuestionReplayKey(questions: UserQuestion[]): string {
+function buildAskUserQuestionReplayKey(questions: UserQuestion[]): string {
   return questions
     .map((q) => {
       const options = q.options

@@ -268,4 +268,100 @@ describe('globModule (native)', () => {
       expect(events).toContain('completing');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // N-SEARCH-PARTIAL-RESULTS: an unreadable directory inside the walk must not
+  // be silently skipped — the result carries a [partial] block + meta marker so
+  // existence judgements ("does X exist?") cannot turn into confident wrong
+  // answers. chmod cases are skipped when running as root (chmod is a no-op).
+  // ---------------------------------------------------------------------------
+  describe('partial traversal results (N-SEARCH-PARTIAL-RESULTS)', () => {
+    const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+
+    it.skipIf(isRoot)('returns readable matches plus a [partial] block naming the unreadable dir', async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'glob-partial-'));
+      try {
+        await fs.mkdir(path.join(root, 'okdir'), { recursive: true });
+        await fs.mkdir(path.join(root, 'lockdir'), { recursive: true });
+        await fs.writeFile(path.join(root, 'okdir', 'a.ts'), 'x', 'utf-8');
+        await fs.writeFile(path.join(root, 'lockdir', 'b.ts'), 'x', 'utf-8');
+        await fs.chmod(path.join(root, 'lockdir'), 0o000);
+
+        const handler = await globModule.createHandler();
+        const result = await handler.execute(
+          { pattern: '**/*.ts', path: root },
+          makeCtx(),
+          allowAll,
+        );
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          // readable matches still delivered; locked dir skipped as before
+          expect(result.output).toContain('a.ts');
+          expect(result.output).not.toContain('b.ts');
+          // honest incompleteness marker reaches the model
+          expect(result.output).toContain('[partial]');
+          expect(result.output).toContain('1 path could not be searched');
+          expect(result.output).toContain('lockdir');
+          const meta = result.meta as {
+            partial?: boolean;
+            unreadablePaths?: string[];
+          } | undefined;
+          expect(meta?.partial).toBe(true);
+          expect(meta?.unreadablePaths?.join('\n')).toContain('lockdir');
+        }
+      } finally {
+        await fs.chmod(path.join(root, 'lockdir'), 0o755);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it.skipIf(isRoot)('empty result over an unreadable dir still reports the partial marker', async () => {
+      // the existence-judgement case: without the marker the model would read
+      // "No files matched" as "the file does not exist anywhere".
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'glob-partial-empty-'));
+      try {
+        await fs.mkdir(path.join(root, 'lockdir'), { recursive: true });
+        await fs.writeFile(path.join(root, 'lockdir', 'secret.bin'), 'x', 'utf-8');
+        await fs.chmod(path.join(root, 'lockdir'), 0o000);
+
+        const handler = await globModule.createHandler();
+        const result = await handler.execute(
+          { pattern: '**/*.bin', path: root },
+          makeCtx(),
+          allowAll,
+        );
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toContain('No files matched the pattern');
+          expect(result.output).toContain('[partial]');
+          expect(result.output).toContain('lockdir');
+          const meta = result.meta as {
+            partial?: boolean;
+            unreadablePaths?: string[];
+          } | undefined;
+          expect(meta?.partial).toBe(true);
+          expect(meta?.unreadablePaths?.join('\n')).toContain('lockdir');
+        }
+      } finally {
+        await fs.chmod(path.join(root, 'lockdir'), 0o755);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('no unreadable dirs → no [partial] block and meta.partial falsy', async () => {
+      const handler = await globModule.createHandler();
+      const result = await handler.execute(
+        { pattern: '**/*.ts', path: tmpDir },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('a.ts');
+        expect(result.output).not.toContain('[partial]');
+        const meta = result.meta as { partial?: boolean } | undefined;
+        expect(meta?.partial).toBeFalsy();
+      }
+    });
+  });
 });

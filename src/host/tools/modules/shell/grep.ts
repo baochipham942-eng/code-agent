@@ -35,6 +35,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { grepSchema as schema } from './grep.schema';
+import { applyPartialToOutput, parseSearchErrorStderr } from './partialResults';
 import { GREP, BASH } from '../../../../shared/constants';
 import {
   collectForeignSlotTraversalExcludes,
@@ -138,6 +139,8 @@ interface RgResult {
   /** rg ran but found zero matches */
   noMatches: boolean;
   stdout: string;
+  /** non-empty when matches were found but some paths could not be searched (rg exit 2) */
+  unreadablePaths?: string[];
 }
 
 interface GrepMeta extends Record<string, unknown> {
@@ -148,6 +151,20 @@ interface GrepMeta extends Record<string, unknown> {
   limit?: number;
   nextOffset?: number | null;
   truncated?: boolean;
+  /** true when some paths could not be searched (N-SEARCH-PARTIAL-RESULTS) */
+  partial?: boolean;
+  unreadablePaths?: string[];
+}
+
+/**
+ * rg / grep exit 2 on traversal errors (e.g. EACCES subdir) while still printing
+ * every match found on readable paths. With matches on stdout this is a partial
+ * success, not a failure — see N-SEARCH-PARTIAL-RESULTS.
+ */
+function isPartialSearchExit(
+  e: { code?: number | string; stdout?: string },
+): e is { code: number | string; stdout: string; stderr?: string } {
+  return e.code === 2 && typeof e.stdout === 'string' && e.stdout.length > 0;
 }
 
 interface GrepMatch {
@@ -226,7 +243,7 @@ async function tryRipgrep(
     });
     return { found: true, noMatches: false, stdout: result.stdout };
   } catch (err: unknown) {
-    const e = err as { code?: number | string; stderr?: string; message?: string };
+    const e = err as { code?: number | string; stderr?: string; stdout?: string; message?: string };
 
     // EAGAIN: retry with single thread
     if (isEagainError(err)) {
@@ -239,9 +256,18 @@ async function tryRipgrep(
         });
         return { found: true, noMatches: false, stdout: result.stdout };
       } catch (retryErr: unknown) {
-        const re = retryErr as { code?: number | string; stderr?: string };
+        const re = retryErr as { code?: number | string; stderr?: string; stdout?: string };
         if (re.code === 1 && !re.stderr) {
           return { found: false, noMatches: true, stdout: '' };
+        }
+        // Exit 2 with matches already on stdout → partial success, same as the main path
+        if (isPartialSearchExit(re)) {
+          return {
+            found: true,
+            noMatches: false,
+            stdout: re.stdout,
+            unreadablePaths: parseSearchErrorStderr(re.stderr ?? ''),
+          };
         }
         throw retryErr;
       }
@@ -252,12 +278,28 @@ async function tryRipgrep(
       return { found: false, noMatches: true, stdout: '' };
     }
 
+    // Exit 2 + matches already on stdout: some paths errored (e.g. EACCES subdir)
+    // but every readable path was searched → success with a partial warning, not a
+    // failure. Exit 2 + empty stdout falls through to the real-error throw below.
+    if (isPartialSearchExit(e)) {
+      return {
+        found: true,
+        noMatches: false,
+        stdout: e.stdout,
+        unreadablePaths: parseSearchErrorStderr(e.stderr ?? ''),
+      };
+    }
+
     // ENOENT / path not found → signal fallback to grep
     if (e.code === 'ENOENT' || (typeof e.message === 'string' && e.message.includes('ENOENT'))) {
       return { found: false, noMatches: false, stdout: '' };
     }
 
-    // Other errors (bad pattern, invalid path, etc) bubble up
+    // Other errors (bad pattern, invalid path, etc) bubble up — exit 2 with no
+    // matches lands here; make sure stderr (the reason) is in the message.
+    if (e.code === 2) {
+      throw new Error(`rg failed with exit code 2: ${e.stderr || e.message || 'unknown error'}`, { cause: err });
+    }
     throw err;
   }
 }
@@ -265,6 +307,12 @@ async function tryRipgrep(
 // ----------------------------------------------------------------------------
 // 系统 grep 降级
 // ----------------------------------------------------------------------------
+
+interface SystemGrepResult {
+  stdout: string;
+  /** non-empty when matches were found but some paths could not be searched (grep exit 2) */
+  unreadablePaths: string[];
+}
 
 async function runSystemGrep(
   pattern: string,
@@ -275,7 +323,7 @@ async function runSystemGrep(
   fileType: string | undefined,
   include: string | undefined,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<SystemGrepResult> {
   // -H：剪枝后的搜索根可能是单个文件参数，没有 -H 时 grep 不带路径前缀，
   // 输出形状（path:line:content）会被破坏，结果侧过滤与分页都靠这个前缀。
   const grepArgs: string[] = ['-r', '-n', '-E', '-H'];
@@ -306,12 +354,25 @@ async function runSystemGrep(
 
   grepArgs.push(pattern, ...searchPaths);
 
-  const result = await execFileAsync('grep', grepArgs, {
-    maxBuffer: BASH.MAX_BUFFER,
-    timeout: GREP.DEFAULT_TIMEOUT,
-    signal,
-  });
-  return result.stdout;
+  try {
+    const result = await execFileAsync('grep', grepArgs, {
+      maxBuffer: BASH.MAX_BUFFER,
+      timeout: GREP.DEFAULT_TIMEOUT,
+      signal,
+    });
+    return { stdout: result.stdout, unreadablePaths: [] };
+  } catch (err: unknown) {
+    const e = err as { code?: number | string; stderr?: string; stdout?: string; message?: string };
+    // GNU/BSD/ugrep exit 2 on traversal errors while still printing every match
+    // found on readable paths → partial success, same rule as the rg path.
+    if (isPartialSearchExit(e)) {
+      return { stdout: e.stdout, unreadablePaths: parseSearchErrorStderr(e.stderr ?? '') };
+    }
+    if (e.code === 2) {
+      throw new Error(`grep failed with exit code 2: ${e.stderr || e.message || 'unknown error'}`, { cause: err });
+    }
+    throw err;
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -527,6 +588,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
     try {
       let stdout: string;
       let engine: 'rg' | 'grep';
+      let unreadablePaths: string[] = [];
 
       // 1) 尝试 ripgrep
       const rgResult = await tryRipgrep(
@@ -542,6 +604,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
 
       if (rgResult.found) {
         stdout = filterForeignSlotGrepOutput(rgResult.stdout, searchPath, slotExcludes);
+        unreadablePaths = rgResult.unreadablePaths ?? [];
         engine = 'rg';
       } else if (rgResult.noMatches) {
         onProgress?.({ stage: 'completing', percent: 100 });
@@ -557,20 +620,18 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         // 需要检查什么」，同样是枚举面（ai-review 第 8 轮砍线，ADR-065）。
         // 统一由结果侧 filterForeignSlotGrepOutput() 按真实路径过滤（与 rg 路径同）。
         try {
-          stdout = filterForeignSlotGrepOutput(
-            await runSystemGrep(
-              pattern,
-              [searchPath],
-              caseInsensitive,
-              ctxBefore,
-              ctxAfter,
-              fileType,
-              include,
-              ctx.abortSignal,
-            ),
-            searchPath,
-            slotExcludes,
+          const grepResult = await runSystemGrep(
+            pattern,
+            [searchPath],
+            caseInsensitive,
+            ctxBefore,
+            ctxAfter,
+            fileType,
+            include,
+            ctx.abortSignal,
           );
+          stdout = filterForeignSlotGrepOutput(grepResult.stdout, searchPath, slotExcludes);
+          unreadablePaths = grepResult.unreadablePaths;
           engine = 'grep';
         } catch (grepErr: unknown) {
           const ge = grepErr as { code?: number | string; stderr?: string; message?: string };
@@ -634,7 +695,10 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
             reason: 'discovery-full-results',
           })
         : null;
-      const finalOutput = appendArchiveHint(outputText, archive?.archiveRef);
+      const { output: finalOutput, partialMeta } = applyPartialToOutput(
+        appendArchiveHint(outputText, archive?.archiveRef),
+        unreadablePaths,
+      );
 
       return {
         ok: true,
@@ -651,6 +715,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
           matches,
           matchesTruncated: matches.length >= 200,
           ...(archive ? { archiveRef: archive.archiveRef } : {}),
+          ...partialMeta,
           artifact: createVirtualArtifact({
             sourceTool: schema.name,
             kind: 'search',
@@ -670,6 +735,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
               nextOffset: meta.nextOffset,
               truncated: meta.truncated,
               ...(archive ? { archiveRef: archive.archiveRef } : {}),
+              ...partialMeta,
             },
           }),
         },

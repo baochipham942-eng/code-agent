@@ -16,6 +16,8 @@
 
 import { glob as globLib } from 'glob';
 import * as fs from 'fs/promises';
+import { readdir as readdirCb } from 'fs';
+import type { Dirent } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type {
@@ -28,6 +30,7 @@ import type {
 } from '../../../protocol/tools';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
+import { applyPartialToOutput } from '../shell/partialResults';
 import { globSchema as schema } from './glob.schema';
 import {
   collectForeignSlotTraversalExcludes,
@@ -176,10 +179,33 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
           : DEFAULT_IGNORE),
         ...slotExcludes.ignoreGlobs,
       ];
+      // N-SEARCH-PARTIAL-RESULTS：glob（内部 path-scurry）会吞掉 readdir 错误并静默
+      // 跳过不可读目录。注入一个 fs shim：失败瞬间记下路径+错误码后原样重抛，
+      // walk 行为不变，但我们拿到了「结果不完整」的诚实标记。只覆盖回调式
+      // readdir（异步 walk 实际走的入口），其余 fs 调用走 path-scurry 默认实现。
+      const unreadablePaths: string[] = [];
+      const seenUnreadable = new Set<string>();
+      const traversalFs = {
+        readdir: (
+          dirPath: string,
+          options: { withFileTypes: true },
+          cb: (er: NodeJS.ErrnoException | null, entries?: Dirent[]) => void,
+        ) => {
+          readdirCb(dirPath, options, (er, entries) => {
+            const code = er?.code;
+            if ((code === 'EACCES' || code === 'EPERM') && !seenUnreadable.has(dirPath)) {
+              seenUnreadable.add(dirPath);
+              unreadablePaths.push(`${dirPath}: ${code}`);
+            }
+            cb(er, entries);
+          });
+        },
+      };
       const matches = (await globLib(pattern, {
         cwd: searchPath,
         nodir: true,
         ignore,
+        fs: traversalFs,
       })).filter((match) => (
         !isListedPathInsideForeignSlot(path.resolve(searchPath, match), slotExcludes.roots)
       ));
@@ -187,7 +213,10 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
 
       if (sortedMatches.length === 0) {
         onProgress?.({ stage: 'completing', percent: 100 });
-        const output = 'No files matched the pattern';
+        const { output, partialMeta } = applyPartialToOutput(
+          'No files matched the pattern',
+          unreadablePaths,
+        );
         return {
           ok: true,
           output,
@@ -201,6 +230,7 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
               limit,
               nextOffset: null,
               truncated: false,
+              ...partialMeta,
             artifact: createVirtualArtifact({
               sourceTool: schema.name,
               kind: 'search',
@@ -209,7 +239,7 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
               mimeType: 'text/plain',
               contentLength: output.length,
               preview: output,
-              metadata: { pattern, searchPath, totalMatches: 0, returned: 0, offset, limit, nextOffset: null, truncated: false },
+              metadata: { pattern, searchPath, totalMatches: 0, returned: 0, offset, limit, nextOffset: null, truncated: false, ...partialMeta },
             }),
           },
         };
@@ -230,6 +260,7 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
           })
         : null;
       result = appendArchiveHint(result, archive?.archiveRef);
+      const { output: finalResult, partialMeta } = applyPartialToOutput(result, unreadablePaths);
 
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('Glob done', {
@@ -240,7 +271,7 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
       });
       return {
         ok: true,
-        output: result,
+        output: finalResult,
         meta: {
           pattern,
           searchPath,
@@ -254,14 +285,15 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
           nextOffset,
           truncated: nextOffset !== null,
           ...(archive ? { archiveRef: archive.archiveRef } : {}),
+          ...partialMeta,
           artifact: createVirtualArtifact({
             sourceTool: schema.name,
             kind: 'search',
             sessionId: ctx.sessionId,
             name: `Glob: ${pattern}`,
             mimeType: 'text/plain',
-            contentLength: result.length,
-            preview: result.slice(0, 500),
+            contentLength: finalResult.length,
+            preview: finalResult.slice(0, 500),
             metadata: {
               pattern,
               searchPath,
@@ -272,6 +304,7 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
               nextOffset,
               truncated: nextOffset !== null,
               ...(archive ? { archiveRef: archive.archiveRef } : {}),
+              ...partialMeta,
             },
           }),
         },

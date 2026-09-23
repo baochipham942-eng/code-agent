@@ -38,7 +38,7 @@ describe('pushCronResult', () => {
   // 🔴 承重：会话 id 必须原样传给通道，不能传账号 id。原实现传 account.id，
   // 飞书实测回 230001 invalid receive_id（2026-08-24 实测），结果永远到不了群里。
   it('sends to the conversation id from the target, not the account id', async () => {
-    await expect(pushCronResult(job('feishu:oc_group1'), '简报内容')).resolves.toEqual({ delivered: true });
+    await expect(pushCronResult(job('feishu:oc_group1'), '简报内容')).resolves.toEqual({ delivered: true, pushedBody: '简报内容' });
     expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', '简报内容');
   });
 
@@ -76,5 +76,42 @@ describe('pushCronResult', () => {
     expect(outcome).toEqual({ delivered: false });
     expect(outcome.reason).toBeUndefined();
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('pushCronResult literal dedup against lastPushed (FB-239)', () => {
+  // 字面门（免 Jev 的免费路径）：只跟「上次真推出去的」比，不是「上次跑的」。
+  it('skips the push when the body is byte-identical to the last pushed body', async () => {
+    const definition = job('feishu:oc_group1');
+    definition.action = { ...definition.action, context: { lastPushedResult: '简报内容' } } as typeof definition.action;
+
+    const outcome = await pushCronResult(definition, '简报内容');
+
+    expect(outcome).toEqual({ delivered: false });
+    expect(outcome.reason).toBeUndefined();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('pushes when the body differs from lastPushed by even one character', async () => {
+    const definition = job('feishu:oc_group1');
+    definition.action = { ...definition.action, context: { lastPushedResult: '简报内容' } } as typeof definition.action;
+
+    const outcome = await pushCronResult(definition, '简报内容。');
+
+    expect(outcome).toEqual({ delivered: true, pushedBody: '简报内容。' });
+    expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', '简报内容。');
+  });
+
+  // 去重状态只存在 agent action 的 context 袋里；shell/webhook 没有袋子可放，
+  // 它们的推送行为保持不变（每次照推）。
+  it('never dedups non-agent actions: identical bodies still push every time', async () => {
+    const shellDefinition = {
+      ...job('feishu:oc_group1'),
+      action: { type: 'shell', command: 'echo ok' },
+    } as CronJobDefinition;
+
+    await expect(pushCronResult(shellDefinition, 'same')).resolves.toEqual({ delivered: true, pushedBody: 'same' });
+    await expect(pushCronResult(shellDefinition, 'same')).resolves.toEqual({ delivered: true, pushedBody: 'same' });
+    expect(sendMessage).toHaveBeenCalledTimes(2);
   });
 });

@@ -17,7 +17,7 @@ const configState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 const channelState = vi.hoisted(() => ({
   // 通道契约是 SendMessageResult；返回 undefined 的桩不忠实于真实通道，
   // 而新实现要看这个返回值来判断平台有没有拒发。
-  sendMessage: vi.fn(async () => ({ success: true, messageId: 'om_stub' })),
+  sendMessage: vi.fn(async (): Promise<{ success: boolean; messageId?: string; error?: string }> => ({ success: true, messageId: 'om_stub' })),
 }));
 
 const automationState = vi.hoisted(() => ({
@@ -73,6 +73,34 @@ vi.mock('../../../src/host/platform', () => ({
   broadcastToRenderer: (...args: unknown[]) => sessionState.broadcasts.push(args),
 }));
 
+const agentRunState = vi.hoisted(() => ({
+  sendMessage: vi.fn(async () => '本轮正文'),
+  messages: [] as Array<{ role: string; content: string }>,
+}));
+
+vi.mock('../../../src/host/task', () => ({
+  getTaskManager: () => ({
+    getOrCreateCurrentOrchestrator: () => ({
+      setExecutionTopology: () => undefined,
+      sendMessage: agentRunState.sendMessage,
+      getMessages: () => agentRunState.messages,
+    }),
+    setWorkingDirectory: () => undefined,
+    cleanup: () => undefined,
+  }),
+}));
+
+// executeAction 的 agent 分支用动态 import('../services') 建 cron 会话；
+// 只替身这两个入口，仓内其它模块都不从 barrel 取东西。
+vi.mock('../../../src/host/services', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
+  getSessionManager: () => ({
+    getCurrentSessionId: () => null,
+    getSession: async () => null,
+    createSession: async () => ({ id: 'cron-agent-session-1' }),
+  }),
+}));
+
 vi.mock('../../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => automationState,
 }));
@@ -105,6 +133,9 @@ afterEach(() => {
   sessionState.broadcasts = [];
   configState.language = 'zh';
   channelState.sendMessage.mockClear();
+  agentRunState.sendMessage.mockReset();
+  agentRunState.sendMessage.mockImplementation(async () => '本轮正文');
+  agentRunState.messages = [];
   automationState.recordCreated.mockClear();
   automationState.recordEvent.mockClear();
   automationState.getBySourceRef.mockClear();
@@ -315,7 +346,7 @@ describe('CronService result channel delivery', () => {
   // 现改为「会话 id 必须原样传给通道」。
   it('pushes a normal cron result to the conversation named by the target', async () => {
     const definition = resultJob({ resultChannel: 'feishu:oc_group1' });
-    await expect(pushCronResult(definition, 'normal result')).resolves.toEqual({ delivered: true });
+    await expect(pushCronResult(definition, 'normal result')).resolves.toEqual({ delivered: true, pushedBody: 'normal result' });
 
     expect(channelState.sendMessage).toHaveBeenCalledWith(
       'feishu-account',
@@ -351,7 +382,7 @@ describe('CronService result channel delivery', () => {
         context: { heartbeatTask: true, channel: 'feishu:oc_group1' },
       },
     });
-    await expect(pushCronResult(definition, 'heartbeat result')).resolves.toEqual({ delivered: true });
+    await expect(pushCronResult(definition, 'heartbeat result')).resolves.toEqual({ delivered: true, pushedBody: 'heartbeat result' });
 
     expect(channelState.sendMessage).toHaveBeenCalledWith(
       'feishu-account',
@@ -668,4 +699,105 @@ describe('N-CRON-ACTIONGATE unsupported actions', () => {
       expect(stored).toEqual(expect.arrayContaining([execution.id, job.id, 'failed', 'unsupported_action']));
     },
   );
+});
+
+
+describe('N-CRON-SKIPPED-DELIVERY quiet watch rounds', () => {
+  function agentJob(context: Record<string, unknown>) {
+    return {
+      name: '飞书日历监听',
+      runsOn: 'local' as const,
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 15, unit: 'minutes' as const },
+      action: { type: 'agent' as const, agentType: 'default', prompt: '盯日历变更', context },
+      resultChannel: 'feishu:oc_group1',
+      enabled: false,
+    };
+  }
+
+  // 验收①：无 <cron_alert> 的监听轮整成 skipped，且一个字都不许推到通道。
+  // 反向变异：把 deliverCronResult 挪回 skipped 判定之前，这条必须红。
+  it('does not push a quiet external_watch round and records it as skipped', async () => {
+    agentRunState.messages = [{ role: 'assistant', content: '本轮巡检：没有新变化。' }];
+    const service = new CronService();
+    const job = await service.createJob(agentJob({
+      externalWatch: { source: 'feishu-calendar', calendarId: 'cal-1' },
+    }));
+
+    const execution = await service.triggerJob(job.id);
+    if (!execution) throw new Error('Expected an execution record');
+
+    expect(execution).toMatchObject({ status: 'completed' });
+    expect(execution.result).toMatchObject({ skipped: true, reason: 'no_new_event' });
+    expect(channelState.sendMessage).not.toHaveBeenCalled();
+    await service.shutdown();
+  });
+
+  // 验收②：有 <cron_alert> 的监听轮照推，且真推成功后把正文记成 lastPushed。
+  it('pushes an external_watch round that carries a cron_alert', async () => {
+    const alertText = '<cron_alert>新增冲突：明天十点双会</cron_alert>';
+    agentRunState.messages = [{ role: 'assistant', content: alertText }];
+    agentRunState.sendMessage.mockResolvedValue(alertText);
+    const service = new CronService();
+    const job = await service.createJob(agentJob({
+      externalWatch: { source: 'feishu-calendar', calendarId: 'cal-1' },
+    }));
+
+    const execution = await service.triggerJob(job.id);
+    if (!execution) throw new Error('Expected an execution record');
+
+    expect(execution).toMatchObject({ status: 'completed' });
+    expect(execution.result).not.toMatchObject({ skipped: true });
+    expect(channelState.sendMessage).toHaveBeenCalledWith('feishu-account', 'oc_group1', alertText);
+    expect(service.getJob(job.id)?.action).toMatchObject({
+      context: { lastPushedResult: alertText },
+    });
+    await service.shutdown();
+  });
+
+  // 验收②：非监听任务不受 skipped 门影响，每轮照推。
+  it('keeps pushing non-watch agent jobs as before', async () => {
+    agentRunState.messages = [{ role: 'assistant', content: '日报正文' }];
+    agentRunState.sendMessage.mockResolvedValue('日报正文');
+    const service = new CronService();
+    const job = await service.createJob(agentJob({}));
+
+    const execution = await service.triggerJob(job.id);
+    if (!execution) throw new Error('Expected an execution record');
+
+    expect(execution).toMatchObject({ status: 'completed' });
+    expect(execution.result).not.toMatchObject({ skipped: true });
+    expect(channelState.sendMessage).toHaveBeenCalledWith('feishu-account', 'oc_group1', '日报正文');
+    await service.shutdown();
+  });
+
+  // 验收③：lastPushed 只在真推成功后更新——推失败时同正文下一轮仍照推；
+  // 真推成功后同正文不再推，差一字照推。
+  it('updates lastPushed only after a successful push and skips byte-identical bodies', async () => {
+    const service = new CronService();
+    const job = await service.createJob(agentJob({}));
+
+    agentRunState.sendMessage.mockResolvedValue('正文A');
+    await service.triggerJob(job.id);
+    expect(channelState.sendMessage).toHaveBeenCalledTimes(1);
+    expect(service.getJob(job.id)?.action).toMatchObject({ context: { lastPushedResult: '正文A' } });
+
+    // 平台拒发：lastPushed 不许更新。
+    agentRunState.sendMessage.mockResolvedValue('正文B');
+    channelState.sendMessage.mockResolvedValueOnce({ success: false, error: 'invalid receive_id' });
+    await service.triggerJob(job.id);
+    expect(channelState.sendMessage).toHaveBeenCalledTimes(2);
+    expect(service.getJob(job.id)?.action).toMatchObject({ context: { lastPushedResult: '正文A' } });
+
+    // 上轮没推成，同正文这一轮仍照推（不受去重拦截）。
+    await service.triggerJob(job.id);
+    expect(channelState.sendMessage).toHaveBeenCalledTimes(3);
+    expect(service.getJob(job.id)?.action).toMatchObject({ context: { lastPushedResult: '正文B' } });
+
+    // 真推成功后，一字不差的正文不再推。
+    await service.triggerJob(job.id);
+    expect(channelState.sendMessage).toHaveBeenCalledTimes(3);
+
+    await service.shutdown();
+  });
 });

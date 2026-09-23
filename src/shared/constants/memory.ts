@@ -190,6 +190,16 @@ export const CRON_AGENT_SNAPSHOT = {
   MAX_BYTES: 8 * 1024,
 } as const;
 
+/** Cron 结果推送的字面去重（存放在 agent action.context 共享袋中）。 */
+export const CRON_RESULT_PUSH = {
+  /**
+   * action.context 中记录「上次真推出去的正文」的键。与上轮运行快照分开：
+   * 快照是 agent 自比用的状态，这个是投递侧去重——正文一字不差就不推，
+   * 且只在通道真推成功后才更新（推失败不更新，下一轮还会再试）。
+   */
+  LAST_PUSHED_CONTEXT_KEY: 'lastPushedResult',
+} as const;
+
 /** GAP-005: 经验沉淀管线（learningPipeline → failure journal / skill 草稿） */
 export const LEARNING_PIPELINE = {
   // 注：原 telemetry n-gram 成功蒸馏（SUCCESS_PATTERN_THRESHOLD / SUCCESS_SEQUENCE_*）已废弃移除，

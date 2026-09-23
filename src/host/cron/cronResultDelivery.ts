@@ -1,9 +1,20 @@
-import type { CronJobDefinition } from '../../shared/contract/cron';
+import type { CronJobAction, CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
+import { CRON_RESULT_PUSH } from '../../shared/constants';
+import { saveCronExecution, upsertCronExecutionInMemory } from './cronPersistence';
 
 export interface CronResultDeliveryOutcome {
   delivered: boolean;
-  /** 没有配置推送目标时为 undefined——那不是失败，是用户没选。 */
+  /** 没有配置推送目标或与上次真推正文一字不差时为 undefined——那不是失败，是没东西要发。 */
   reason?: string;
+  /** 真推成功时回传发出去的正文，调用方据此更新 lastPushed（只在成功后更新）。 */
+  pushedBody?: string;
+}
+
+export interface CronResultDeliveryPersistence {
+  /** 以 jobs 里的最新定义为底合并，避免并发编辑被覆盖（与快照写回同一套路）。 */
+  getLatestDefinition: (jobId: string) => CronJobDefinition | undefined;
+  /** 真推成功后把合并好的 action（含 lastPushed）落库，即 CronService.updateJob。 */
+  persistAction: (jobId: string, action: CronJobAction) => Promise<unknown>;
 }
 
 /**
@@ -36,6 +47,18 @@ export async function pushCronResult(
   const targetChannel = definition.resultChannel?.trim() || heartbeatChannel;
   if (!targetChannel || !result) return { delivered: false };
 
+  const body = String(result);
+  // 字面去重（免费路径，不受任何开关限制；借鉴 OWB scheduler.js:293「跟上次真推出去的比」）：
+  // 正文与上次真推成功的一字不差就不推。判错最坏是少推一条重复内容，不是永远不知道。
+  // lastPushed 只在真推成功后由下方 rememberPushedBody 写回，这里只读。
+  if (definition.action.type === 'agent') {
+    const lastPushed = definition.action.context?.[CRON_RESULT_PUSH.LAST_PUSHED_CONTEXT_KEY];
+    if (typeof lastPushed === 'string' && body === lastPushed) {
+      console.error(`[CronService] Job result identical to the last pushed body, push skipped: ${targetChannel}`);
+      return { delivered: false };
+    }
+  }
+
   const { account: accountRef, chatId } = parseTarget(targetChannel);
   try {
     const { getChannelManager } = await import('../channels/channelManager');
@@ -50,13 +73,13 @@ export async function pushCronResult(
       return fail(`push target "${targetChannel}" has no conversation id (expected "<channel>:<chatId>")`);
     }
 
-    const sent = await channelManager.sendMessage(targetAccount.id, chatId, String(result));
+    const sent = await channelManager.sendMessage(targetAccount.id, chatId, body);
     // 🔴 返回值必须看：原实现忽略它，发送被平台拒绝（无效 receive_id / 不在出站白名单）时
     // 表现为「任务成功、结果没到」，而无人值守场景没有人会发现。
     if (!sent.success) return fail(`channel rejected the message: ${sent.error ?? 'unknown error'}`);
 
     console.error(`[CronService] Job result pushed to channel: ${targetChannel}`);
-    return { delivered: true };
+    return { delivered: true, pushedBody: body };
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
   }
@@ -64,5 +87,55 @@ export async function pushCronResult(
   function fail(reason: string): CronResultDeliveryOutcome {
     console.error(`[CronService] Failed to push job result to ${targetChannel}: ${reason}`);
     return { delivered: false, reason };
+  }
+}
+
+/**
+ * 推结果 + 失败留痕 + 字面去重写回（FB-239）。
+ * 推送失败原来只有一行 console.warn，无人值守场景等于没有信号；这里把原因写进
+ * 该次执行记录的 error 字段（执行历史已经在展示它），不新造告警面。
+ * 🚫 不改 status：任务本身确实跑成功了，改成 failed 会谎报执行结果。
+ */
+export async function deliverCronResultToChannel(
+  definition: CronJobDefinition,
+  result: unknown,
+  executions: Map<string, CronJobExecution[]>,
+  executionId: string | undefined,
+  persistence: CronResultDeliveryPersistence,
+): Promise<void> {
+  const outcome = await pushCronResult(definition, result);
+  if (outcome.delivered) {
+    await rememberPushedBody(definition, outcome.pushedBody, persistence);
+    return;
+  }
+  if (!outcome.reason || !executionId) return;
+  const executionsForJob = executions.get(definition.id) ?? [];
+  const execution = executionsForJob.find((candidate) => candidate.id === executionId);
+  if (!execution) return;
+  const note = `结果推送失败：${outcome.reason}`;
+  execution.error = execution.error ? `${execution.error}\n${note}` : note;
+  upsertCronExecutionInMemory(executions, execution);
+  await saveCronExecution(execution);
+}
+
+/** lastPushed 只在真推成功后写回：推失败不写——下一轮正文不变也还会再试。写库失败不拖垮本次执行。 */
+async function rememberPushedBody(
+  definition: CronJobDefinition,
+  pushedBody: string | undefined,
+  persistence: CronResultDeliveryPersistence,
+): Promise<void> {
+  if (pushedBody === undefined) return;
+  const latest = persistence.getLatestDefinition(definition.id) ?? definition;
+  if (latest.action.type !== 'agent') return;
+  try {
+    await persistence.persistAction(definition.id, {
+      ...latest.action,
+      context: {
+        ...latest.action.context,
+        [CRON_RESULT_PUSH.LAST_PUSHED_CONTEXT_KEY]: pushedBody,
+      },
+    });
+  } catch (error) {
+    console.warn(`[CronService] Failed to persist last pushed body (job=${definition.id})`, error);
   }
 }

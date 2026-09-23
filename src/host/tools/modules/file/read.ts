@@ -10,7 +10,7 @@
 //   * offset/limit 按行分页（1-indexed，默认 offset=1, limit=2000）
 //   * file_path 内嵌参数兼容（"file offset=N limit=N" / "file lines 7-9" 等）
 //   * 每行 6 位对齐行号（cat -n 风格），超长行截断到 2000 字符
-//   * endLine < 总行数时追加 "... (N more lines)" 尾标
+//   * endLine < 总行数时 fail-loud：已读行数、未读行数、下一次 offset，并以 "... (N more lines)" 收尾
 //   * 二进制格式（xlsx/xls/docx/pdf/pptx）重定向到专用工具
 //   * fileReadTracker.recordRead 记录（mtime + size，供 Edit 做外改检测）
 //   * dataFingerprintStore.recordFact 提取文件指纹
@@ -118,6 +118,34 @@ function parseEmbeddedParams(rawPath: string, rawOffset: number, rawLimit: numbe
   return { inputPath, offset, limit };
 }
 
+/** 超长行截断必须说出没返回的字符数，不能只留一个省略号。 */
+function formatReadLine(line: string, lineNum: number): string {
+  const paddedNum = String(lineNum).padStart(6, ' ');
+  if (line.length <= MAX_LINE_WIDTH) return `${paddedNum}\t${line}`;
+  const unread = line.length - MAX_LINE_WIDTH;
+  return `${paddedNum}\t${line.substring(0, MAX_LINE_WIDTH)}... [line truncated; ${unread} chars on this line were not returned]`;
+}
+
+/**
+ * 窗口没盖住文件结尾时的 fail-loud 尾标。
+ * 末行必须仍是 "... (N more lines)"，survivorManifest 靠这个收尾判断截断。
+ */
+function incompleteReadNotice(shownStart: number, shownEnd: number, totalLines: number): string {
+  const shown = shownEnd - shownStart + 1;
+  const unread = totalLines - shownEnd;
+  const nextOffset = shownEnd + 1;
+  const unreadLabel = unread === 1
+    ? '1 line remains unread and was not returned.'
+    : `${unread} lines remain unread and were not returned.`;
+  return (
+    `\n\n[Read incomplete] Showed lines ${shownStart}-${shownEnd} (${shown} lines). ` +
+    `${unreadLabel} ` +
+    `Continue with Read offset=${nextOffset} and an explicit limit. ` +
+    `Do not treat this result as the whole file.\n` +
+    `... (${unread} more lines)`
+  );
+}
+
 class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
 
@@ -200,19 +228,12 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
       });
 
       const formatted = selectedLines
-        .map((line, index) => {
-          const lineNum = startLine + index + 1;
-          const paddedNum = String(lineNum).padStart(6, ' ');
-          const truncated = line.length > MAX_LINE_WIDTH
-            ? line.substring(0, MAX_LINE_WIDTH) + '...'
-            : line;
-          return `${paddedNum}\t${truncated}`;
-        })
+        .map((line, index) => formatReadLine(line, startLine + index + 1))
         .join('\n');
 
       let result = formatted;
       if (endLine < lines.length) {
-        result += `\n\n... (${lines.length - endLine} more lines)`;
+        result += incompleteReadNotice(startLine + 1, endLine, lines.length);
       }
 
       // 源数据锚定：CSV/JSON 提取 schema 指纹

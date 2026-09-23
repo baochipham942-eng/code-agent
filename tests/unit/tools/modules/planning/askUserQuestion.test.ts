@@ -48,7 +48,7 @@ vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
 
 import { askUserQuestionModule } from '../../../../../src/host/tools/modules/planning/askUserQuestion';
 import {
-  clearAskUserQuestionReplayForSession,
+  clearAskUserQuestionReplay,
   lookupAskUserQuestionReplay,
   recordAskUserQuestionAnswer,
 } from '../../../../../src/host/tools/modules/planning/askUserQuestionReplay';
@@ -555,7 +555,7 @@ describe('AskUserQuestion renderer response', () => {
 // 同轮重复问句回放（N-ASKUSER-REPEAT-REPLAY）
 // ① 同轮同问第二次：无 send（提问事件）、无 canUseTool（审批），输出=上次答案+回放标记
 // ② 选项顺序/空白/标点/大小写/全半角差异 → 同问；选项集合不同（含新增选项）→ 照弹
-// ③ 跨轮/跨会话不回放；clearAskUserQuestionReplayForSession（run 结束清空）后照弹
+// ③ 跨轮/跨会话不回放；clearAskUserQuestionReplay（run 结束清空）后照弹
 // ============================================================================
 describe('AskUserQuestion 同轮重复问句回放', () => {
   const replayQuestions: UserQuestion[] = [
@@ -665,11 +665,63 @@ describe('AskUserQuestion 同轮重复问句回放', () => {
     expect(sendMock).toHaveBeenCalledTimes(2);
   });
 
+  it('生产形状：两次调用 turnId 不同、runId 相同（跨模型迭代）仍命中回放', async () => {
+    // streamHandler.setupIteration 每次迭代重铸 turnId（generateMessageId → beginTurn），
+    // 模型必然先拿答案、下一迭代才重问——作用域必须是 runId 而不是 turnId。
+    const first = await executeAndAnswer(
+      makeCtx({ runId: 'run-prod-1', turnId: 'iter-1' }),
+      replayQuestions,
+      0,
+    );
+    expect(first).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+
+    const handler = await askUserQuestionModule.createHandler();
+    const second = await handler.execute(
+      { questions: replayQuestions },
+      makeCtx({ runId: 'run-prod-1', turnId: 'iter-2' }),
+      allowAll,
+    );
+    expect(second.ok).toBe(true);
+    if (second.ok) {
+      expect(second.output).toContain('User responses:\n[确认]: 继续');
+      expect(second.output).toContain('你这轮已答过');
+    }
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('跨 run 不回放（turnId 相同、runId 不同照弹）', async () => {
+    await executeAndAnswer(makeCtx({ runId: 'run-a', turnId: 'iter-1' }), replayQuestions, 0);
+
+    const second = await executeAndAnswer(makeCtx({ runId: 'run-b', turnId: 'iter-1' }), replayQuestions, 1);
+    expect(second).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('选项只有 label 没有 description：正常弹卡不抛错，且可回放', async () => {
+    const noDescQuestions = [
+      {
+        question: '选哪个',
+        header: '选',
+        options: [{ label: '甲' }, { label: '乙' }],
+      },
+    ] as unknown as UserQuestion[];
+    const ctx = makeCtx({ runId: 'run-nodesc', turnId: 'iter-1' });
+    const first = await executeAndAnswer(ctx, noDescQuestions, 0);
+    expect(first.ok).toBe(true);
+    if (first.ok) expect(first.output).toContain('User responses:');
+
+    const handler = await askUserQuestionModule.createHandler();
+    const second = await handler.execute({ questions: noDescQuestions }, ctx, allowAll);
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.output).toContain('你这轮已答过');
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
   it('run 结束清空缓存后同问照弹', async () => {
     const ctx = makeCtx({ turnId: 'turn-replay-6' });
     await executeAndAnswer(ctx, replayQuestions, 0);
 
-    clearAskUserQuestionReplayForSession('sess-1');
+    clearAskUserQuestionReplay('sess-1');
 
     const second = await executeAndAnswer(ctx, replayQuestions, 1);
     expect(second).toMatchObject({ ok: true, output: 'User responses:\n[确认]: 继续' });

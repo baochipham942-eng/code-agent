@@ -108,7 +108,7 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
 }));
 
 import { CronService } from '../../../src/host/cron/cronService';
-import { pushCronResult } from '../../../src/host/cron/cronResultDelivery';
+import { deliverCronResultToChannel } from '../../../src/host/cron/cronResultDelivery';
 import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
 
@@ -342,13 +342,22 @@ describe('CronService result channel delivery', () => {
     };
   }
 
+  // pushCronResult 已收为模块内私有（knip production 棘轮，PR#2060 R3）；
+  // 这里的通道契约断言改走公开行为面 deliverCronResultToChannel。
+  function deliver(definition: import('../../../src/shared/contract/cron').CronJobDefinition, result: unknown) {
+    return deliverCronResultToChannel(definition, result, new Map(), undefined, {
+      getLatestDefinition: () => definition,
+      persistAction: async () => undefined,
+    });
+  }
+
   // 断言原为 sendMessage('feishu-account', 'feishu-account', …)，即把账号 id 当会话 id 传。
   // 那不是产品决定，是镜像了实现缺陷：飞书实测拿账号 uuid 当 receive_id 一律回
   // 230001 invalid receive_id（2026-08-24 真机），也就是说这条断言绿着、结果永远到不了群里。
   // 现改为「会话 id 必须原样传给通道」。
   it('pushes a normal cron result to the conversation named by the target', async () => {
     const definition = resultJob({ resultChannel: 'feishu:oc_group1' });
-    await expect(pushCronResult(definition, 'normal result')).resolves.toEqual({ delivered: true, pushedBody: 'normal result' });
+    await expect(deliver(definition, 'normal result')).resolves.toEqual({ delivered: true, pushedBody: 'normal result' });
 
     expect(channelState.sendMessage).toHaveBeenCalledWith(
       'feishu-account',
@@ -359,7 +368,7 @@ describe('CronService result channel delivery', () => {
 
   it('refuses to deliver when the target names no conversation', async () => {
     const definition = resultJob({ resultChannel: 'feishu' });
-    const outcome = await pushCronResult(definition, 'normal result');
+    const outcome = await deliver(definition, 'normal result');
 
     expect(outcome.delivered).toBe(false);
     expect(outcome.reason).toContain('no conversation id');
@@ -368,7 +377,7 @@ describe('CronService result channel delivery', () => {
 
   it('does not push a normal cron result without a configured channel', async () => {
     const definition = resultJob();
-    await pushCronResult(definition, 'quiet result');
+    await deliver(definition, 'quiet result');
 
     expect(channelState.sendMessage).not.toHaveBeenCalled();
   });
@@ -384,7 +393,7 @@ describe('CronService result channel delivery', () => {
         context: { heartbeatTask: true, channel: 'feishu:oc_group1' },
       },
     });
-    await expect(pushCronResult(definition, 'heartbeat result')).resolves.toEqual({ delivered: true, pushedBody: 'heartbeat result' });
+    await expect(deliver(definition, 'heartbeat result')).resolves.toEqual({ delivered: true, pushedBody: 'heartbeat result' });
 
     expect(channelState.sendMessage).toHaveBeenCalledWith(
       'feishu-account',

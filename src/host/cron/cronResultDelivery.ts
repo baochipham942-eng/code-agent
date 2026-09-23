@@ -3,7 +3,7 @@ import { CRON_AGENT_SNAPSHOT, CRON_RESULT_PUSH, EXTERNAL_WATCH } from '../../sha
 import { saveCronExecution, upsertCronExecutionInMemory } from './cronPersistence';
 import { truncateUtf8Snapshot } from './cronAgentPrompt';
 
-export interface CronResultDeliveryOutcome {
+interface CronResultDeliveryOutcome {
   delivered: boolean;
   /** 没有配置推送目标或与上次真推正文一字不差时为 undefined——那不是失败，是没东西要发。 */
   reason?: string;
@@ -52,7 +52,7 @@ function sanitizePushBody(raw: string): string {
   return (alerts.length > 0 ? alerts.join('\n') : withoutSnapshots).trim();
 }
 
-export async function pushCronResult(
+async function pushCronResult(
   definition: CronJobDefinition,
   result: unknown,
 ): Promise<CronResultDeliveryOutcome> {
@@ -116,6 +116,7 @@ export async function pushCronResult(
  * 推送失败原来只有一行 console.warn，无人值守场景等于没有信号；这里把原因写进
  * 该次执行记录的 error 字段（执行历史已经在展示它），不新造告警面。
  * 🚫 不改 status：任务本身确实跑成功了，改成 failed 会谎报执行结果。
+ * 返回投递 outcome 供调用方/测试核对；生产调用方（CronService）只看副作用。
  */
 export async function deliverCronResultToChannel(
   definition: CronJobDefinition,
@@ -123,20 +124,21 @@ export async function deliverCronResultToChannel(
   executions: Map<string, CronJobExecution[]>,
   executionId: string | undefined,
   persistence: CronResultDeliveryPersistence,
-): Promise<void> {
+): Promise<CronResultDeliveryOutcome> {
   const outcome = await pushCronResult(definition, result);
   if (outcome.delivered) {
     await rememberPushedBody(definition, outcome.pushedBody, persistence);
-    return;
+    return outcome;
   }
-  if (!outcome.reason || !executionId) return;
+  if (!outcome.reason || !executionId) return outcome;
   const executionsForJob = executions.get(definition.id) ?? [];
   const execution = executionsForJob.find((candidate) => candidate.id === executionId);
-  if (!execution) return;
+  if (!execution) return outcome;
   const note = `结果推送失败：${outcome.reason}`;
   execution.error = execution.error ? `${execution.error}\n${note}` : note;
   upsertCronExecutionInMemory(executions, execution);
   await saveCronExecution(execution);
+  return outcome;
 }
 
 /** lastPushed 只在真推成功后写回：推失败不写——下一轮正文不变也还会再试。写库失败不拖垮本次执行。 */

@@ -61,8 +61,12 @@ import { emitExternalAgentEvent } from './agentEngineEventSink';
 import { bindExternalEngineAbort } from './agentEngineAbort';
 import { getAgentEngineSessionSink } from './agentEngineSessionSink';
 import { withTurnCorrelation } from '../../session/assistantCorrelation';
+import { loadMcpConfigFiles } from '../../mcp/mcpConfigFile';
+import { resolveServerConfigSecrets } from '../../mcp/mcpSecretResolver';
+import { isProjectConfigTrusted } from '../../security/folderTrustService';
 import { AcpClientHostBridge } from './acpClientHostBridge';
 import { AcpToolCallTracker, mapAcpSessionUpdate } from './acpEventMapping';
+import { toAcpMcpServers, type AcpMcpPassthrough } from './acpMcpServers';
 
 const logger = createLogger('AcpClientAdapter');
 
@@ -404,20 +408,59 @@ class AcpClientAdapter {
           Readable.toWeb(stdoutTap) as unknown as ReadableStream<Uint8Array>,
         ),
         async (ctx) => {
-          await ctx.request('initialize', {
+          const initialized = await ctx.request('initialize', {
             protocolVersion: ACP_PROTOCOL_VERSION,
             // 全部声明为 true：真正的闸在 acpClientHostBridge 的逐次审批上，
             // 而不是在这里把能力藏起来。藏能力换不来安全，只换来对方报「能力不可用」。
             clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
             clientInfo: { name: 'neo', version: '1.0.0' },
+          }) as {
+            agentCapabilities?: { mcpCapabilities?: { http?: boolean; sse?: boolean } | null };
+          };
+
+          let passthrough: AcpMcpPassthrough;
+          let passthroughFailed = false;
+          try {
+            const configs = await loadMcpConfigFiles(cwd);
+            passthrough = toAcpMcpServers(configs, {
+              mcpCapabilities: initialized.agentCapabilities?.mcpCapabilities,
+              projectStdioTrusted: await isProjectConfigTrusted(cwd, 'project-mcp'),
+              localStdioTrusted: await isProjectConfigTrusted(cwd, 'project-mcp-local'),
+              resolveSecrets: resolveServerConfigSecrets,
+            });
+          } catch (error) {
+            passthroughFailed = true;
+            passthrough = { servers: [], dropped: [] };
+            // 不记 error.message：解引用失败时原文可能带字段名，明文凭据也不能进日志。
+            logger.warn('[ACP] MCP config passthrough failed; session continues with no MCP servers', {
+              runId,
+              errorName: error instanceof Error ? error.name : 'unknown',
+            });
+          }
+          ledger.appendEvent({
+            taskId,
+            type: 'agent_engine.mcp_passthrough',
+            status: 'running',
+            message: `${config.label} MCP passthrough: ${passthrough.servers.length} passed, ${passthrough.dropped.length} dropped`,
+            data: passthroughFailed
+              ? { passed: 0, dropped: [], error: 'load_failed' }
+              : {
+                  passed: passthrough.servers.length,
+                  dropped: passthrough.dropped.map(({ name, reason, transport }) => ({
+                    name,
+                    reason,
+                    ...(transport ? { transport } : {}),
+                  })),
+                },
           });
+          const mcpServers = passthrough.servers;
 
           if (externalSessionId) {
             // 续接：session/load 会把历史以 session/update 回放一遍（含 user_message_chunk，
             // 已在 mapAcpSessionUpdate 里按 ignored 拦掉，不会渲染成助手输出）。
             replayingHistory = true;
             try {
-              await ctx.request('session/load', { sessionId: externalSessionId, cwd, mcpServers: [] });
+              await ctx.request('session/load', { sessionId: externalSessionId, cwd, mcpServers });
             } finally {
               replayingHistory = false;
             }
@@ -429,7 +472,7 @@ class AcpClientAdapter {
               data: { externalSessionId },
             });
           } else {
-            const created = await ctx.request('session/new', { cwd, mcpServers: [] }) as {
+            const created = await ctx.request('session/new', { cwd, mcpServers }) as {
               sessionId: string;
               configOptions?: AcpConfigOption[];
             };

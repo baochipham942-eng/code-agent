@@ -65,6 +65,21 @@ describe('readModule (native)', () => {
       expect(readModule.schema.permissionLevel).toBe('read');
       expect(readModule.schema.inputSchema.required).toContain('file_path');
     });
+
+    it('tells a single-value read to Grep then use a narrow window, and documents embedded offset/limit', () => {
+      const description = readModule.schema.description;
+      expect(description).toContain('Grep');
+      expect(description).toContain('version');
+      expect(description).toContain('offset=N limit=N');
+      expect(description).toContain('lines N-M');
+      expect(description).toContain('default 2000');
+      const properties = readModule.schema.inputSchema.properties as Record<string, { description?: string }>;
+      expect(properties.limit.description).toContain('Default 2000');
+      expect(properties.limit.description).toContain('small limit');
+      expect(properties.file_path.description).toContain('offset=N limit=N');
+      expect(properties.file_path.description).toContain('lines N-M');
+      expect(properties.offset.description).toContain('Grep');
+    });
   });
 
   describe('validation', () => {
@@ -180,11 +195,45 @@ describe('readModule (native)', () => {
         expect(result.output).toContain('11\tline11');
         expect(result.output).toContain('12\tline12');
         expect(result.output).not.toContain('line13');
-        expect(result.output).toContain('more lines');
+        expect(result.output).toContain('[Read incomplete] Showed lines 10-12 (3 lines).');
+        expect(result.output).toContain('88 lines remain unread and were not returned.');
+        expect(result.output).toContain('Continue with Read offset=13');
+        expect(result.output.trimEnd().endsWith('... (88 more lines)')).toBe(true);
       }
     });
 
-    it('truncates long lines to 2000 chars', async () => {
+    it('keeps the default 2000-line window and fail-loud when the file is longer', async () => {
+      const file = path.join(tmpDir, 'over-default.txt');
+      const content = Array.from({ length: 2001 }, (_, i) => `L${i + 1}`).join('\n');
+      await fs.writeFile(file, content, 'utf-8');
+
+      const handler = await readModule.createHandler();
+      const result = await handler.execute({ file_path: file }, makeCtx(), allowAll);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('2000\tL2000');
+        expect(result.output).not.toContain('\tL2001');
+        expect(result.output).toContain('[Read incomplete] Showed lines 1-2000 (2000 lines).');
+        expect(result.output).toContain('1 line remains unread and was not returned.');
+        expect(result.output).toContain('Continue with Read offset=2001');
+        expect(result.output.trimEnd().endsWith('... (1 more lines)')).toBe(true);
+      }
+    });
+
+    it('does not add an incomplete notice when the window covers the file', async () => {
+      const file = path.join(tmpDir, 'short.txt');
+      await fs.writeFile(file, 'only\n', 'utf-8');
+
+      const handler = await readModule.createHandler();
+      const result = await handler.execute({ file_path: file }, makeCtx(), allowAll);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).not.toContain('[Read incomplete]');
+        expect(result.output).not.toContain('more lines');
+      }
+    });
+
+    it('truncates long lines to 2000 chars and says how many chars were not returned', async () => {
       const file = path.join(tmpDir, 'long.txt');
       await fs.writeFile(file, 'x'.repeat(3000), 'utf-8');
 
@@ -192,10 +241,9 @@ describe('readModule (native)', () => {
       const result = await handler.execute({ file_path: file }, makeCtx(), allowAll);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toContain('...');
-        // length = prefix (6 + tab) + 2000 chars + "..."
-        const parts = result.output.split('\t');
-        expect(parts[1].length).toBeLessThanOrEqual(2003);
+        expect(result.output).toContain('... [line truncated; 1000 chars on this line were not returned]');
+        const body = result.output.split('\t')[1] ?? '';
+        expect(body.startsWith('x'.repeat(2000))).toBe(true);
       }
     });
 
@@ -284,6 +332,9 @@ describe('readModule (native)', () => {
       if (result.ok) {
         expect(result.output).toContain('5\tL5');
         expect(result.output).toContain('6\tL6');
+        expect(result.output).toContain('[Read incomplete] Showed lines 5-6 (2 lines).');
+        expect(result.output).toContain('44 lines remain unread and were not returned.');
+        expect(result.output).toContain('Continue with Read offset=7');
       }
     });
 

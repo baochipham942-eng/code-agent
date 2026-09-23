@@ -1,5 +1,7 @@
 // ACP session/new 与 session/load 的 mcpServers 映射。
-// stdio 在协议里没有 type 字段。folderTrust 的结论由调用方用 isProjectConfigTrusted 传入。
+// stdio 在协议里没有 type 字段。
+// 未信任目录的 project/local 文件由 loadMcpConfigFiles 整文件不读，这里不再二次判定。
+// 同名按列表顺序后者整条覆盖（MCPClient.addServer）；本条被丢掉时先前同名版本一并清掉。
 
 import type { McpCapabilities, McpServer } from '@agentclientprotocol/sdk';
 import { SECRET_REF_PREFIX } from '../../mcp/secretRef';
@@ -9,22 +11,21 @@ import {
   isSSEConfig,
   isStdioConfig,
 } from '../../mcp/types';
+import { createLogger } from '../infra/logger';
+
+const logger = createLogger('AcpMcpServers');
 
 export interface AcpMcpPassthrough {
   servers: McpServer[];
   dropped: Array<{
     name: string;
-    reason: 'folder_trust' | 'capability' | 'disabled' | 'unsupported' | 'secret';
+    reason: 'capability' | 'disabled' | 'unsupported' | 'secret';
     transport?: 'http' | 'sse';
   }>;
 }
 
 interface ToAcpMcpServersOptions {
   mcpCapabilities?: Pick<McpCapabilities, 'http' | 'sse'> | null;
-  /** isProjectConfigTrusted(cwd, 'project-mcp')。非 true 时丢掉 project scope 的 stdio。 */
-  projectStdioTrusted?: boolean;
-  /** isProjectConfigTrusted(cwd, 'project-mcp-local')。非 true 时丢掉 local scope 的 stdio。 */
-  localStdioTrusted?: boolean;
   /** 与 Neo 启动 MCP 相同的解引用。缺省不调用存储器；留下的 secretRef 直接丢弃。 */
   resolveSecrets?: (config: MCPServerConfig) => MCPServerConfig;
 }
@@ -44,12 +45,24 @@ function resolveConfig(
   config: MCPServerConfig,
   resolveSecrets: ToAcpMcpServersOptions['resolveSecrets'],
 ): MCPServerConfig | null {
+  let resolved: MCPServerConfig;
   try {
-    const resolved = resolveSecrets ? resolveSecrets(config) : config;
-    return containsSecretRef(resolved) ? null : resolved;
-  } catch {
+    resolved = resolveSecrets ? resolveSecrets(config) : config;
+  } catch (error) {
+    // 只记名字。error.message 和配置值都可能带密钥。
+    logger.warn('[ACP] MCP secret resolve threw', {
+      serverName: config.name,
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
     return null;
   }
+  if (containsSecretRef(resolved)) {
+    logger.warn('[ACP] MCP secret ref remains after resolve', {
+      serverName: config.name,
+    });
+    return null;
+  }
+  return resolved;
 }
 
 function mapConfig(config: MCPServerConfig): McpServer | null {
@@ -89,16 +102,10 @@ export function toAcpMcpServers(
   const accepted = new Map<string, McpServer>();
 
   for (const config of configs) {
+    // 先删再判：后来的同名条目无论因 disabled / capability / secret / unsupported 丢掉，都不留先前版本。
+    accepted.delete(config.name);
     if (config.enabled === false) {
       dropped.push({ name: config.name, reason: 'disabled' });
-      continue;
-    }
-    if (isStdioConfig(config) && config.scope === 'project' && options.projectStdioTrusted !== true) {
-      dropped.push({ name: config.name, reason: 'folder_trust' });
-      continue;
-    }
-    if (isStdioConfig(config) && config.scope === 'local' && options.localStdioTrusted !== true) {
-      dropped.push({ name: config.name, reason: 'folder_trust' });
       continue;
     }
     if (isHttpStreamableConfig(config) && options.mcpCapabilities?.http !== true) {

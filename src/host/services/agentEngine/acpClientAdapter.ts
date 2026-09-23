@@ -63,7 +63,6 @@ import { getAgentEngineSessionSink } from './agentEngineSessionSink';
 import { withTurnCorrelation } from '../../session/assistantCorrelation';
 import { loadMcpConfigFiles } from '../../mcp/mcpConfigFile';
 import { resolveServerConfigSecrets } from '../../mcp/mcpSecretResolver';
-import { isProjectConfigTrusted } from '../../security/folderTrustService';
 import { AcpClientHostBridge } from './acpClientHostBridge';
 import { AcpToolCallTracker, mapAcpSessionUpdate } from './acpEventMapping';
 import { toAcpMcpServers, type AcpMcpPassthrough } from './acpMcpServers';
@@ -424,8 +423,6 @@ class AcpClientAdapter {
             const configs = await loadMcpConfigFiles(cwd);
             passthrough = toAcpMcpServers(configs, {
               mcpCapabilities: initialized.agentCapabilities?.mcpCapabilities,
-              projectStdioTrusted: await isProjectConfigTrusted(cwd, 'project-mcp'),
-              localStdioTrusted: await isProjectConfigTrusted(cwd, 'project-mcp-local'),
               resolveSecrets: resolveServerConfigSecrets,
             });
           } catch (error) {

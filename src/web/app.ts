@@ -77,6 +77,7 @@ import { LanCompanionManager } from '../host/services/companion/LanCompanionMana
 import { startCompanionRelayAccountIfConfigured, startCompanionRelayIfConfigured } from '../host/services/companion/CompanionRelayClient';
 import { getAuthService } from '../host/services/auth/authService';
 import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
+import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
 import { loadLanIdentity } from '../host/services/companion/lanIdentity';
 import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
 import { projectScope } from '../shared/contract/companionLibrary';
@@ -284,7 +285,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   let companionRelayAbandoned = false;
   let companionRelayAccount: ReturnType<typeof startCompanionRelayAccountIfConfigured> | null = null;
   const idleSleepInhibitor = new IdleSleepInhibitor(
-    () => runRegistry.size > 0,
+    () => runRegistry.size > 0 || getBackgroundTaskLedger().hasActiveTasks(),
     () => (inhibitorGateway?.pairedDevices().length ?? 0) > 0,
     { logger },
   );

@@ -98,6 +98,20 @@ describe('BackgroundTaskLedger', () => {
     expect(ledger.listTasks({ sessionId: 'session-1', status: 'queued' })).toEqual([]);
   });
 
+  it('reports active work while queued or running and clears it at a terminal status', () => {
+    const ledger = new BackgroundTaskLedger();
+
+    expect(ledger.hasActiveTasks()).toBe(false);
+    ledger.upsertTask({ id: 'task-active', source: 'shell', title: 'Long command', status: 'queued' });
+    expect(ledger.hasActiveTasks()).toBe(true);
+
+    ledger.upsertTask({ id: 'task-active', status: 'running' });
+    expect(ledger.hasActiveTasks()).toBe(true);
+
+    ledger.upsertTask({ id: 'task-active', status: 'completed' });
+    expect(ledger.hasActiveTasks()).toBe(false);
+  });
+
   it('appends events, updates task status, and keeps snapshots immutable', () => {
     const [now, setNow] = createClock(10);
     const ledger = new BackgroundTaskLedger({

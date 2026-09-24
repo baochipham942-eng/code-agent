@@ -1,3 +1,4 @@
+import type { ModelThinkingCapability } from '../../shared/contract/model';
 import { createLogger } from '../services/infra/logger';
 import type { ModelMessage, MessageContent } from './types';
 
@@ -5,12 +6,12 @@ const logger = createLogger('ModelReplaySanitizer');
 
 const IMAGE_PLACEHOLDER = '[Image omitted: the current model cannot view images.]';
 
-export interface ReplayModelCapabilities {
+interface ReplayModelCapabilities {
   supportsVision: boolean;
   supportsReasoning: boolean;
 }
 
-export interface ReplaySanitizationResult {
+interface ReplaySanitizationResult {
   messages: ModelMessage[];
   imagePartsReplaced: number;
   reasoningPartsDropped: number;
@@ -62,7 +63,7 @@ function sanitizeContent(
 
   if (parts.length > 0) return { content: parts, images, reasoning };
   return {
-    content: [{ type: 'text', text: '' }],
+    content: [{ type: 'text', text: '[Prior reasoning omitted: the current model does not support reasoning.]' }],
     images,
     reasoning,
   };
@@ -72,7 +73,7 @@ function sanitizeContent(
  * Remove replay-only content the target model cannot accept. The returned
  * messages are request-local copies; callers must keep persisted history intact.
  */
-export function sanitizeModelReplay(
+function sanitizeModelReplay(
   messages: ModelMessage[],
   capabilities: ReplayModelCapabilities,
 ): ReplaySanitizationResult {
@@ -130,10 +131,10 @@ export function sanitizeModelReplay(
 
 export function sanitizeModelReplayForModelInfo(
   messages: ModelMessage[],
-  modelInfo: { supportsVision?: boolean; capabilities?: readonly string[] } | null,
+  modelInfo: { supportsVision?: boolean; thinking?: ModelThinkingCapability } | null,
 ): ModelMessage[] {
   return sanitizeModelReplay(messages, {
     supportsVision: modelInfo?.supportsVision === true,
-    supportsReasoning: modelInfo?.capabilities?.includes('reasoning') === true,
+    supportsReasoning: modelInfo?.thinking?.kind !== 'none',
   }).messages;
 }

@@ -79,7 +79,7 @@ describe('N-MODELSWITCH-REPLAY as-built reproduction', () => {
       { role: 'assistant', content: 'visible', thinking: 'must not be sent' },
       { role: 'user', content: 'Continue.' },
     ], [], {
-      provider: 'xai', model: 'grok-4-1-fast-non-reasoning', apiKey: 'test-key',
+      provider: 'zhipu', model: 'glm-5.3-flash', apiKey: 'test-key',
     } as any);
     expect(generateText.mock.calls[1][0].messages).toEqual([
       { role: 'assistant', content: 'visible' },
@@ -102,7 +102,7 @@ describe('N-MODELSWITCH-REPLAY as-built reproduction', () => {
   it('legacy router path sends a sanitized body to a text-only non-reasoning target', async () => {
 
     await new ModelRouter().inference(HISTORY, [], {
-      provider: 'custom', model: 'text-only', apiKey: 'test-key', baseUrl: 'https://test.local/v1',
+      provider: 'zhipu', model: 'glm-5.3-flash', apiKey: 'test-key', baseUrl: 'https://test.local/v1',
     } as any, undefined, undefined, { forceNonStreaming: true, disableProviderTransientRetry: true });
 
     const body = JSON.parse(electronFetch.mock.calls[0][1].body as string);
@@ -115,6 +115,25 @@ describe('N-MODELSWITCH-REPLAY as-built reproduction', () => {
         ],
       },
       { role: 'assistant', content: 'It is a diagram.' },
+      { role: 'user', content: 'Continue.' },
+    ]);
+  });
+
+  it('legacy Responses path preserves reasoning output when the target model still supports it', async () => {
+    await new ModelRouter().inference([
+      {
+        role: 'assistant',
+        content: 'visible',
+        responsesOutput: [{ type: 'reasoning', id: 'rs_1', encrypted_content: 'sealed' }],
+      },
+      { role: 'user', content: 'Continue.' },
+    ], [], {
+      provider: 'deepseek', model: 'deepseek-flash', apiKey: 'test-key',
+    } as any, undefined, undefined, { disableProviderTransientRetry: true });
+
+    const body = JSON.parse(electronFetch.mock.calls.at(-1)![1].body as string);
+    expect(body.input).toEqual([
+      { type: 'reasoning', id: 'rs_1', encrypted_content: 'sealed' },
       { role: 'user', content: 'Continue.' },
     ]);
   });

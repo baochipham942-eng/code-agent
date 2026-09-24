@@ -55,7 +55,6 @@ import {
 } from '../../../shared/constants';
 import { getIncompleteToolCallIds } from '../../session/streamSnapshot';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
-import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
 import {
   withTransientRetry,
@@ -92,7 +91,8 @@ import {
   ProviderRuntimeCapabilityError,
   resolveNativeProtocolFamily,
 } from '../providerRuntimeCapabilities';
-import { sanitizeModelReplay } from '../modelReplaySanitizer';
+import { sanitizeModelReplayForModelInfo } from '../modelReplaySanitizer';
+import { resolveModelInfo } from '../modelInfo';
 
 // resolveModel 现覆盖全部 provider：deepseek/claude·anthropic（专用包）/ gemini（@ai-sdk/google）/
 // openrouter（@openrouter/ai-sdk-provider）/ 其余走 openai-compatible。zhipu/moonshot/xiaomi 的 vendor
@@ -116,7 +116,6 @@ interface ProviderRequest {
   apiKey: string | undefined;
   supportsTool: boolean;
   supportsVision: boolean;
-  supportsReasoning: boolean;
 }
 
 // baseURL / apiKey 走与 provider 类同一份解析（providerResolution）——不再在适配器里复制
@@ -126,13 +125,12 @@ interface ProviderRequest {
 // config.apiKey 仅作最后兜底，避免拿父的 key 去打子代理的 provider → "Invalid token"。
 // supportsTool（能力即数据，对照 Models.dev）仍取自 providerRegistry。
 function resolveProviderRequest(config: ModelConfig): ProviderRequest {
-  const modelEntry = PROVIDER_REGISTRY[config.provider]?.models.find((m) => m.id === config.model);
+  const modelEntry = resolveModelInfo(config.provider, config.model);
   return {
     baseURL: resolveProviderBaseUrl(config) || undefined,
     apiKey: resolveProviderApiKey(config, { trustConfigKey: false }) || undefined,
     supportsTool: modelEntry?.supportsTool ?? true,
     supportsVision: modelEntry?.supportsVision ?? false,
-    supportsReasoning: modelEntry?.capabilities.includes('reasoning') ?? false,
   };
 }
 
@@ -596,21 +594,12 @@ async function runInferenceViaAiSdk(
     ? { ...config, reasoningEffort: options.reasoningEffort } as ModelConfig
     : config;
   const req = resolveProviderRequest(requestConfig);
-  const replay = sanitizeModelReplay(messages, {
-    supportsVision: req.supportsVision,
-    supportsReasoning: req.supportsReasoning,
-  });
-  const replayMessages = replay.messages;
+  const replayMessages = sanitizeModelReplayForModelInfo(
+    messages,
+    resolveModelInfo(config.provider, config.model),
+  );
   const streaming = typeof onStream === 'function' && options?.forceNonStreaming !== true;
   const effectiveToolsPresent = tools.length > 0 && req.supportsTool;
-  const requestedCapabilities = collectNativeRequestCapabilities(
-    replayMessages,
-    effectiveToolsPresent,
-    requestConfig,
-    streaming,
-    signal,
-    options,
-  );
   assertNativeRequestCapabilities(
     replayMessages,
     effectiveToolsPresent,
@@ -619,7 +608,18 @@ async function runInferenceViaAiSdk(
     signal,
     options,
   );
-  if (requestedCapabilities.includes('image_input') && !req.supportsVision) {
+  // Keep the adapter capability assertion as a postcondition of replay projection.
+  if (
+    !req.supportsVision
+    && collectNativeRequestCapabilities(
+      replayMessages,
+      effectiveToolsPresent,
+      requestConfig,
+      streaming,
+      signal,
+      options,
+    ).includes('image_input')
+  ) {
     throw new ProviderRuntimeCapabilityError(
       'native',
       resolveNativeProtocolFamily(requestConfig),

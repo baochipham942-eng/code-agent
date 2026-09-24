@@ -16,7 +16,7 @@ import { PROVIDER_REGISTRY } from './providerRegistry';
 import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../shared/constants';
 import { isFallbackEligible, abortableSleep, isCancellationError } from './providers/retryStrategy';
 import { getSettingsProviderBaseUrl } from './providers/providerResolution';
-import { getModelMaxOutputTokens } from '../../shared/constants';
+import { resolveModelInfo } from './modelInfo';
 import { resolveModelMaxOutputTokens } from './modelLimits';
 import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
@@ -209,21 +209,7 @@ export class ModelRouter {
    * 会把用户配置的模型一律判为"无能力"，导致不必要的 fallback 或直接报错。
    */
   getModelInfo(provider: string, modelId: string): ModelInfo | null {
-    const providerConfig = PROVIDER_REGISTRY[provider];
-    const registryModel = providerConfig?.models.find((m) => m.id === modelId);
-    if (registryModel) return registryModel;
-
-    const settingsModel = this.getProviderSettings(provider as ModelProvider)?.models?.[modelId];
-    if (!settingsModel) return null;
-    return {
-      id: modelId,
-      name: settingsModel.label ?? modelId,
-      capabilities: settingsModel.capabilities ?? [],
-      maxTokens: getModelMaxOutputTokens(modelId, provider, settingsModel.maxTokens),
-      supportsTool: settingsModel.supportsTool !== false,
-      supportsVision: settingsModel.supportsVision === true,
-      supportsStreaming: settingsModel.supportsStreaming !== false,
-    };
+    return resolveModelInfo(provider, modelId);
   }
 
   /**
@@ -906,7 +892,8 @@ export class ModelRouter {
       : null;
     const effectiveSignal = combined?.signal ?? signal;
     const healthMonitor = getProviderHealthMonitor();
-    const observationCount = healthMonitor.getObservationCount(config.provider); const startedAt = Date.now();
+    const observationCount = healthMonitor.getObservationCount(config.provider);
+    const startedAt = Date.now();
     const replayMessages = sanitizeModelReplayForModelInfo(messages, this.getModelInfo(config.provider, config.model));
     try {
       if (effectiveSignal?.aborted) {

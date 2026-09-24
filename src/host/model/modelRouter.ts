@@ -65,6 +65,7 @@ import {
 const logger = createLogger('ModelRouter');
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
 import { observeInferenceCache } from './inferenceCacheTelemetry';
+import { sanitizeModelReplayForModelInfo } from './modelReplaySanitizer';
 export { ContextLengthExceededError } from './types';
 
 function fallbackTargetLabel(provider: string, model?: string): string {
@@ -905,13 +906,13 @@ export class ModelRouter {
       : null;
     const effectiveSignal = combined?.signal ?? signal;
     const healthMonitor = getProviderHealthMonitor();
-    const observationCount = healthMonitor.getObservationCount(config.provider);
-    const startedAt = Date.now();
+    const observationCount = healthMonitor.getObservationCount(config.provider); const startedAt = Date.now();
+    const replayMessages = sanitizeModelReplayForModelInfo(messages, this.getModelInfo(config.provider, config.model));
     try {
       if (effectiveSignal?.aborted) {
         throw new Error('Request was cancelled before starting');
       }
-      const response = await provider.inference(messages, tools, config, onStream, effectiveSignal, options);
+      const response = await provider.inference(replayMessages, tools, config, onStream, effectiveSignal, options);
       // Legacy providers do not all use the shared retry wrapper. Fill the
       // canonical provider key only when the inner path recorded nothing.
       if (healthMonitor.getObservationCount(config.provider) === observationCount) {

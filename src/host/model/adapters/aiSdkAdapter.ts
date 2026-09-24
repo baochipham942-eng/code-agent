@@ -92,6 +92,7 @@ import {
   ProviderRuntimeCapabilityError,
   resolveNativeProtocolFamily,
 } from '../providerRuntimeCapabilities';
+import { sanitizeModelReplay } from '../modelReplaySanitizer';
 
 // resolveModel 现覆盖全部 provider：deepseek/claude·anthropic（专用包）/ gemini（@ai-sdk/google）/
 // openrouter（@openrouter/ai-sdk-provider）/ 其余走 openai-compatible。zhipu/moonshot/xiaomi 的 vendor
@@ -115,6 +116,7 @@ interface ProviderRequest {
   apiKey: string | undefined;
   supportsTool: boolean;
   supportsVision: boolean;
+  supportsReasoning: boolean;
 }
 
 // baseURL / apiKey 走与 provider 类同一份解析（providerResolution）——不再在适配器里复制
@@ -130,6 +132,7 @@ function resolveProviderRequest(config: ModelConfig): ProviderRequest {
     apiKey: resolveProviderApiKey(config, { trustConfigKey: false }) || undefined,
     supportsTool: modelEntry?.supportsTool ?? true,
     supportsVision: modelEntry?.supportsVision ?? false,
+    supportsReasoning: modelEntry?.capabilities.includes('reasoning') ?? false,
   };
 }
 
@@ -593,10 +596,15 @@ async function runInferenceViaAiSdk(
     ? { ...config, reasoningEffort: options.reasoningEffort } as ModelConfig
     : config;
   const req = resolveProviderRequest(requestConfig);
+  const replay = sanitizeModelReplay(messages, {
+    supportsVision: req.supportsVision,
+    supportsReasoning: req.supportsReasoning,
+  });
+  const replayMessages = replay.messages;
   const streaming = typeof onStream === 'function' && options?.forceNonStreaming !== true;
   const effectiveToolsPresent = tools.length > 0 && req.supportsTool;
   const requestedCapabilities = collectNativeRequestCapabilities(
-    messages,
+    replayMessages,
     effectiveToolsPresent,
     requestConfig,
     streaming,
@@ -604,7 +612,7 @@ async function runInferenceViaAiSdk(
     options,
   );
   assertNativeRequestCapabilities(
-    messages,
+    replayMessages,
     effectiveToolsPresent,
     requestConfig,
     streaming,
@@ -625,7 +633,7 @@ async function runInferenceViaAiSdk(
   try {
     // P1b：模型不支持 tool_call 时不传 tools（能力即数据，来自 providerRegistry）
     aiTools = tools.length > 0 && req.supportsTool ? buildTools(tools) : undefined;
-    const aiMessages = toAiMessages(messages);
+    const aiMessages = toAiMessages(replayMessages);
     aiPrompt = buildAiSdkPrompt(
       options?.cacheRetention === 'none'
         ? aiMessages
@@ -633,14 +641,14 @@ async function runInferenceViaAiSdk(
     );
   } catch (err) {
     const stage = !aiTools && tools.length > 0 && req.supportsTool ? 'buildTools' : 'toAiMessages';
-    logInferenceFailure(err, stage, requestConfig, messages);
+    logInferenceFailure(err, stage, requestConfig, replayMessages);
     throw err;
   }
 
   if (streaming) {
-    return streamViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, req, onStream, signal, options, messages });
+    return streamViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, req, onStream, signal, options, messages: replayMessages });
   }
-  return generateViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, signal, options, messages });
+  return generateViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, signal, options, messages: replayMessages });
 }
 
 // ── 非流式：generateText（服务子代理 + 主 loop 的 artifact 非流式重试）。行为与迁移 P0 一致 ──

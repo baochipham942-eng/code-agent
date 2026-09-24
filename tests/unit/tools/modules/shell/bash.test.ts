@@ -47,11 +47,16 @@ vi.mock('../../../../../src/host/services/infra/shellEnvironment', () => ({
 
 // backgroundTasks + ptyExecutor are stubbed so we don't actually spawn children
 const startBackgroundTaskMock = vi.fn();
+const handoverTimedOutCommandMock = vi.fn();
 const createPtySessionMock = vi.fn();
 const getPtySessionOutputMock = vi.fn();
 
 vi.mock('../../../../../src/host/tools/shell/backgroundTasks', () => ({
   startBackgroundTask: (...args: unknown[]) => startBackgroundTaskMock(...args),
+}));
+
+vi.mock('../../../../../src/host/tools/shell/timeoutHandover', () => ({
+  handoverTimedOutCommand: (...args: unknown[]) => handoverTimedOutCommandMock(...args),
 }));
 
 vi.mock('../../../../../src/host/tools/shell/ptyExecutor', () => ({
@@ -140,6 +145,8 @@ describe('bashModule (native)', () => {
     vi.clearAllMocks();
     wrapMock.mockImplementation((cmd: unknown) => ({ command: cmd, cleanup: cleanupMock }));
     startBackgroundTaskMock.mockReset();
+    handoverTimedOutCommandMock.mockReset();
+    handoverTimedOutCommandMock.mockReturnValue(null);
     createPtySessionMock.mockReset();
     getPtySessionOutputMock.mockReset();
     spillArchive.mockReset();
@@ -360,6 +367,47 @@ describe('bashModule (native)', () => {
       }
     }, 10_000);
 
+    it('returns the adopted task and buffered preview when timeout handover succeeds', async () => {
+      handoverTimedOutCommandMock.mockReturnValue({
+        taskId: 'adopted-timeout-task',
+        outputFile: '/tmp/adopted-timeout-task.log',
+        preview: 'line 1\nline 2',
+      });
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'sleep 100', timeout: 500 },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('<task-id>adopted-timeout-task</task-id>');
+        expect(result.output).toContain('line 1');
+        expect(result.output).toContain('Process with action="output"');
+        expect(result.meta).toMatchObject({ taskId: 'adopted-timeout-task', background: true });
+      }
+      expect(handoverTimedOutCommandMock).toHaveBeenCalledOnce();
+    }, 10_000);
+
+    it('terminates on timeout in unattended sessions instead of handing over', async () => {
+      const unattendedSession = `unattended-timeout-${Date.now()}`;
+      getPermissionModeManager().markUnattendedSession(unattendedSession);
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'sleep 5', timeout: 50 },
+        makeCtx({ sessionId: unattendedSession }),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('TIMEOUT');
+        expect(result.error).toContain('disabled in unattended sessions');
+      }
+      expect(handoverTimedOutCommandMock).not.toHaveBeenCalled();
+    }, 10_000);
+
     it('aborts a foreground command when the run signal fires', async () => {
       const ctrl = new AbortController();
       const handler = await bashModule.createHandler();
@@ -520,6 +568,24 @@ describe('bashModule (native)', () => {
   });
 
   describe('run_in_background', () => {
+    it('rejects explicit background execution for unattended sessions', async () => {
+      const unattendedSession = `unattended-${Date.now()}`;
+      getPermissionModeManager().markUnattendedSession(unattendedSession);
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'sleep 100', run_in_background: true },
+        makeCtx({ sessionId: unattendedSession }),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('BACKGROUND_UNAVAILABLE');
+        expect(result.error).toContain('unattended sessions');
+      }
+      expect(startBackgroundTaskMock).not.toHaveBeenCalled();
+    });
+
     it('does not rewrite inline ampersands that are followed by another command', () => {
       expect(rewriteImplicitBackgroundCommand('echo one & echo two')).toEqual({
         command: 'echo one & echo two',

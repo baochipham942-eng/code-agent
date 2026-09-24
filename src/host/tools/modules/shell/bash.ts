@@ -21,7 +21,6 @@
 // - meta 字段（taskId / sessionId / background / pty / codexThreadId / description 等）放 meta
 // ============================================================================
 
-import { spawn } from 'child_process';
 import path from 'node:path';
 import type {
   ToolHandler,
@@ -35,7 +34,8 @@ import { bashSchema as schema } from './bash.schema';
 import { BASH, OS_SANDBOX_CODES } from '../../../../shared/constants';
 import { HostReasonCode, createHostReason } from '../../../../shared/contract/permission';
 import { startBackgroundTask } from '../../shell/backgroundTasks';
-import { spawnWindowsShell, killProcessTree } from '../../shell/platformShell';
+import { handoverTimedOutCommand } from '../../shell/timeoutHandover';
+import { runForegroundCommand } from './foregroundCommand';
 import { createPtySession, getPtySessionOutput } from '../../shell/ptyExecutor';
 import { generateBashDescription } from '../../shell/dynamicDescription';
 import { diagnoseSandboxDenial } from '../../shell/sandboxFailureDiagnostics';
@@ -60,7 +60,6 @@ import { isPathWithinRoot } from '../../../runtime/workspaceScope';
 
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
-const MAX_LIVE_OUTPUT_DELTA_LENGTH = 2_000;
 
 /**
  * 解包 self-referential 工具调用：
@@ -187,37 +186,6 @@ function truncateOutput(
   );
 }
 
-class BashForegroundExecutionError extends Error {
-  stdout: string;
-  stderr: string;
-  killed?: boolean;
-  signal?: NodeJS.Signals;
-  code?: number | string | null;
-  durationMs?: number;
-
-  constructor(
-    message: string,
-    details: {
-      stdout?: string;
-      stderr?: string;
-      killed?: boolean;
-      signal?: NodeJS.Signals;
-      code?: number | string | null;
-      durationMs?: number;
-      name?: string;
-    } = {},
-  ) {
-    super(message);
-    this.name = details.name || 'BashForegroundExecutionError';
-    this.stdout = details.stdout || '';
-    this.stderr = details.stderr || '';
-    this.killed = details.killed;
-    this.signal = details.signal;
-    this.code = details.code;
-    this.durationMs = details.durationMs;
-  }
-}
-
 export interface BashFailureDiagnosticsInput {
   command: string;
   message?: string;
@@ -278,234 +246,6 @@ export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[
 export function appendFailureDiagnostics(message: string, diagnostics: string[]): string {
   if (diagnostics.length === 0) return message;
   return `${message}\n\n${diagnostics.join('\n')}`;
-}
-
-function emitToolOutputDelta(
-  ctx: ToolContext,
-  stream: 'stdout' | 'stderr',
-  content: string,
-  startedAt: number,
-): void {
-  if (!ctx.currentToolCallId || !content) return;
-
-  const truncated = content.length > MAX_LIVE_OUTPUT_DELTA_LENGTH;
-  const liveContent = truncated ? content.slice(-MAX_LIVE_OUTPUT_DELTA_LENGTH) : content;
-  ctx.emit({
-    type: 'tool_output_delta',
-    data: {
-      toolCallId: ctx.currentToolCallId,
-      toolName: schema.name,
-      stream,
-      content: liveContent,
-      elapsedMs: Date.now() - startedAt,
-      ...(truncated ? { truncated: true } : {}),
-    },
-  });
-}
-
-function runForegroundCommand(options: {
-  command: string;
-  cwd: string;
-  timeout: number;
-  env: NodeJS.ProcessEnv;
-  abortSignal: AbortSignal;
-  ctx: ToolContext;
-  startedAt: number;
-}): Promise<{ stdout: string; stderr: string }> {
-  const {
-    command,
-    cwd,
-    timeout,
-    env,
-    abortSignal,
-    ctx,
-    startedAt,
-  } = options;
-
-  return new Promise((resolve, reject) => {
-    if (abortSignal.aborted) {
-      reject(new BashForegroundExecutionError('aborted', { code: 'ABORT_ERR', name: 'AbortError' }));
-      return;
-    }
-
-    // detached: 让 shell 成为独立进程组组长(pgid === pid)，超时/abort 时可整组 kill，
-    // 回收命令里被 `&` 后台化的子/孙进程；否则只杀直接子进程，孤儿后台进程会泄漏。
-    // win32 无进程组/bash，PowerShell 执行 + taskkill /T 收树（platformShell）。
-    const child = process.platform === 'win32'
-      ? spawnWindowsShell(command, { cwd, env })
-      : spawn(command, {
-          cwd,
-          env,
-          shell: true,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          detached: true,
-        });
-    // 被后台化、存活更久的子进程不应钉住本进程事件循环(settle 时还会 destroy 管道)。
-    child.unref();
-
-    let stdout = '';
-    let stderr = '';
-    let settled = false;
-    let timedOut = false;
-    let maxBufferExceeded = false;
-    let aborted = false;
-    let exitCode: number | null = null;
-    let exitSignal: NodeJS.Signals | null = null;
-    let postExitTimer: NodeJS.Timeout | undefined;
-
-    const cleanup = () => {
-      clearTimeout(timeoutTimer);
-      if (postExitTimer) clearTimeout(postExitTimer);
-      abortSignal.removeEventListener('abort', abortHandler);
-    };
-
-    // 整组收树并等到整树确认退出：POSIX detached 下 child.pid 即组长，-pid 命中组内
-    // 全部(含被后台化的孙进程)，组不存在(进程已退)时回退到直接子进程；win32 走
-    // taskkill /T。SIGTERM → 宽限 → SIGKILL → 探活确认全在 killProcessTree 内部。
-    //
-    // 只对 child 的进程组发信号，宿主自己不在这个组里（宿主是 spawn 的父进程，
-    // detached 让 child 另开了一组）——对照 claude-code #45717：Bash 工具超时的
-    // SIGTERM 传播把宿主进程自己杀了。
-    let treeExit: Promise<void> | undefined;
-
-    const killChild = () => {
-      treeExit = killProcessTree(child, {
-        posixGroupKill: true,
-        graceMs: BASH.KILL_GRACE_MS,
-      });
-    };
-
-    // 'close'(管道 EOF) 与 exit 后兜底共用的收尾逻辑（顺序：abort > timeout > maxBuffer > 非零退出 > 成功）。
-    const finalize = async (code: number | null, signal: NodeJS.Signals | null) => {
-      if (settled) return;
-      settled = true;
-      // 主动杀过（abort / 超时 / 输出溢出）就等整树确认退出再交还结果——直接子进程
-      // 退出不代表树死了，提前 reject 会让调用方以为清理完成而被后台孙进程反咬。
-      if (treeExit) await treeExit;
-      const durationMs = Date.now() - startedAt;
-      cleanup();
-      // 释放对子进程 stdio 管道的持有，避免被后台化、存活更久的孙进程拖住事件循环。
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-
-      if (aborted) {
-        reject(new BashForegroundExecutionError('aborted', {
-          stdout,
-          stderr,
-          code: 'ABORT_ERR',
-          name: 'AbortError',
-          durationMs,
-        }));
-        return;
-      }
-
-      if (timedOut) {
-        reject(new BashForegroundExecutionError(`Command timed out after ${timeout / 1000} seconds`, {
-          stdout,
-          stderr,
-          killed: true,
-          signal: 'SIGTERM',
-          code,
-          durationMs,
-        }));
-        return;
-      }
-
-      if (maxBufferExceeded) {
-        reject(new BashForegroundExecutionError(`stdout maxBuffer length exceeded (${BASH.MAX_BUFFER})`, {
-          stdout,
-          stderr,
-          killed: true,
-          signal: signal || 'SIGTERM',
-          code,
-          durationMs,
-        }));
-        return;
-      }
-
-      if (signal) {
-        reject(new BashForegroundExecutionError(`Command terminated by signal ${signal}`, {
-          stdout,
-          stderr,
-          signal,
-          code,
-          durationMs,
-        }));
-        return;
-      }
-
-      if (code && code !== 0) {
-        reject(new BashForegroundExecutionError(`Command failed with exit code ${code}`, {
-          stdout,
-          stderr,
-          code,
-          durationMs,
-          ...(signal ? { signal } : {}),
-        }));
-        return;
-      }
-
-      resolve({ stdout, stderr });
-    };
-
-    const rejectOnce = (error: Error) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-      reject(error);
-    };
-
-    const abortHandler = () => {
-      aborted = true;
-      killChild();
-    };
-
-    const timeoutTimer = setTimeout(() => {
-      timedOut = true;
-      killChild();
-    }, timeout);
-
-    abortSignal.addEventListener('abort', abortHandler, { once: true });
-
-    const appendOutput = (stream: 'stdout' | 'stderr', chunk: Buffer | string) => {
-      const text = chunk.toString();
-      if (stream === 'stdout') {
-        stdout += text;
-      } else {
-        stderr += text;
-      }
-      emitToolOutputDelta(ctx, stream, text, startedAt);
-
-      if (stdout.length + stderr.length > BASH.MAX_BUFFER && !maxBufferExceeded) {
-        maxBufferExceeded = true;
-        killChild();
-      }
-    };
-
-    child.stdout?.on('data', (chunk: Buffer | string) => appendOutput('stdout', chunk));
-    child.stderr?.on('data', (chunk: Buffer | string) => appendOutput('stderr', chunk));
-
-    child.on('error', (error) => {
-      rejectOnce(error);
-    });
-
-    // 正常命令：stdio 管道 EOF → 'close' 先触发，捕获全部输出后 settle（行为不变）。
-    child.on('close', (code, signal) => {
-      void finalize(code, signal);
-    });
-
-    // shell 已退出但 'close' 可能因被 `&` 后台化的子进程持有 stdout 管道而永不触发。
-    // 给极短窗口让正常 'close' 优先；超时则用 exit 结果兜底 settle，避免工具无限挂起。
-    child.on('exit', (code, signal) => {
-      if (settled) return;
-      exitCode = code;
-      exitSignal = signal;
-      postExitTimer = setTimeout(() => void finalize(exitCode, exitSignal), BASH.POST_EXIT_DRAIN_MS);
-      postExitTimer.unref();
-    });
-  });
 }
 
 export function rewriteImplicitBackgroundCommand(command: string): { command: string; rewritten: boolean } {
@@ -607,6 +347,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const implicitBackground = rewriteImplicitBackgroundCommand(command);
     const normalizedCommand = implicitBackground.command;
     const permissionModeManager = getPermissionModeManager();
+    const unattended = permissionModeManager.isUnattendedSession(ctx.sessionId);
     // Reverse mutation: ignore requiresOsWriteFence ⇒ skip-confirm writes run naked.
     const writeFence = ctx.requiresOsWriteFence === true;
     const fenceRoot = writeFence
@@ -615,7 +356,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     let sandboxDecision = resolveOsSandboxDecision({
       command: normalizedCommand,
       permissionMode: permissionModeManager.getModeForSession(ctx.sessionId) as OsSandboxPermissionMode,
-      unattended: permissionModeManager.isUnattendedSession(ctx.sessionId),
+      unattended,
       writeFence,
       evalRealRoot: process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined,
       multiRoot: (ctx.workspaceScope?.roots.length ?? 0) > 1,
@@ -667,6 +408,14 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const cols = (args.cols as number) || 80;
     const rows = (args.rows as number) || 24;
     const waitForCompletion = args.wait_for_completion as boolean | undefined;
+
+    if (unattended && runInBackground) {
+      return {
+        ok: false,
+        error: 'Background execution is disabled in unattended sessions, including explicit run_in_background=true.',
+        code: 'BACKGROUND_UNAVAILABLE',
+      };
+    }
 
     // -------------------------------------------------------------------------
     // OS 沙箱（default / acceptEdits 灰度默认开；bypass / unattended / write-fence 强制）
@@ -937,6 +686,7 @@ Use process_kill to terminate the session.`;
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
           env: childEnv.env,
+          abortSignal: ctx.abortSignal,
           sandboxed: sandboxDecision.sandboxed,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
@@ -1079,7 +829,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       const descriptionPromise = generateBashDescription(normalizedCommand).catch(() => null);
 
       const startedAt = Date.now();
-      const { stdout, stderr } = await runForegroundCommand({
+      const foregroundResult = await runForegroundCommand({
         command: sandboxedFg.command,
         cwd: workingDirectory,
         timeout,
@@ -1087,7 +837,38 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         ctx,
         startedAt,
         env: childEnvFg.env,
+        toolName: schema.name,
+        onTimeout: unattended ? undefined : ({ child, stdout, stderr }) => handoverTimedOutCommand({
+          child,
+          command: sandboxedFg.command,
+          cwd: workingDirectory,
+          sessionId: ctx.sessionId,
+          toolCallId: ctx.currentToolCallId,
+          sandboxed: sandboxDecision.sandboxed,
+          abortSignal: ctx.abortSignal,
+          onExit: cleanupSandbox,
+          stdout,
+          stderr,
+          startedAt,
+        }),
       });
+
+      if (foregroundResult.handover) {
+        const handover = foregroundResult.handover;
+        const preview = handover.preview || '(no output yet)';
+        return {
+          ok: true,
+          output: `Command timed out after ${timeout / 1000} seconds and was adopted as a background task.\n\n<task-id>${handover.taskId}</task-id>\n<task-type>bash-timeout-handover</task-type>\n<status>running</status>\n<output-preview>\n${preview}\n</output-preview>\n\nUse Process with action="output", task_id="${handover.taskId}" to continue reading the full output.`,
+          meta: {
+            ...buildSandboxMeta(sandboxDecision),
+            taskId: handover.taskId,
+            ...(handover.outputFile ? { outputFile: handover.outputFile } : {}),
+            background: true,
+          },
+        };
+      }
+
+      const { stdout, stderr } = foregroundResult;
 
       let output = stdout;
       if (stderr) {
@@ -1177,9 +958,12 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       }
 
       if (errObj.killed && errObj.signal === 'SIGTERM') {
+        const timeoutMessage = unattended
+          ? `Command timed out after ${timeout / 1000} seconds. Background execution is disabled in unattended sessions; the process was terminated.`
+          : `Command timed out after ${timeout / 1000} seconds. Consider using run_in_background=true for long-running commands.`;
         return {
           ok: false,
-          error: withOutput(`Command timed out after ${timeout / 1000} seconds. Consider using run_in_background=true for long-running commands.`),
+          error: withOutput(timeoutMessage),
           code: 'TIMEOUT',
           meta: { ...buildSandboxMeta(sandboxDecision), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
         };

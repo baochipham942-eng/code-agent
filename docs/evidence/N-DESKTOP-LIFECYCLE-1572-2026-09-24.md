@@ -14,6 +14,18 @@
 - 将未知写分支改回“interrupt 后 completed”时，`between-tool-begin-end-unknown-write` 必须变红：期望 `waiting`、无 terminal commit。
 - 移除 fake client 的 `acquireConnectionLease` / `releaseConnectionLease` 时，`mcp-durable-task-queryable` 必须变红：provider query 计数回到 0，场景不能通过。
 
+实际反向变异输出：
+
+```text
+FAIL tests/unit/host/runtime/nativeRecoveryHost.test.ts > NativeRecoveryHost production recovery > keeps unknown writes in review without replaying the tool
+AssertionError: expected { status: 'recovered', … } to match object { status: 'requires_review', … }
+```
+
+```text
+{"pass":false,"scenarios":14,"gates":{"allKillPointsPassed":false,...}}
+exit 1
+```
+
 ## 验证
 
 - `npx vitest run tests/unit/host/runtime/nativeRecoveryHost.test.ts tests/unit/host/runtime/durableNativeRecoveryLifecycle.test.ts`：44 passed。

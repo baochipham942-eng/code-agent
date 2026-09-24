@@ -16,3 +16,17 @@ export interface FileChange {
   diff?: string;
   timestamp: number;
 }
+
+export interface WorkspaceDirectorySummary {
+  path: string;
+  exists: boolean;
+  isDirectory: boolean;
+  git: {
+    isRepository: boolean;
+    branch: string | null;
+    dirtyFiles: number;
+    ahead: number;
+    behind: number;
+  };
+  recentSessionCount: number;
+}

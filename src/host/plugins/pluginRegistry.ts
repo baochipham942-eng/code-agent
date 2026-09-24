@@ -31,6 +31,7 @@ import {
 import { BUILTIN_PLUGIN_CATALOG, findBuiltinPlugin } from './builtin/catalog';
 import { recordCapabilityPackageLifecycle } from '../services/capabilities/capabilityPackageLifecycle';
 import { createLogger } from '../services/infra/logger';
+import { notificationService } from '../services/infra/notificationService';
 import { getConfigService } from '../services/core/configService';
 import { getAuthService } from '../services/auth/authService';
 import {
@@ -388,8 +389,7 @@ export class PluginRegistry {
 
       showNotification: (title, body) => {
         this.assertPermission(plugin, 'notification', '发送系统通知');
-        // TODO: Implement notifications
-        logger.info(`[Notification] ${title}: ${body}`);
+        notificationService.notifyPlugin({ title, body });
       },
 
       // ----------------------------------------------------------------------

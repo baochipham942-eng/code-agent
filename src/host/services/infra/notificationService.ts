@@ -36,7 +36,7 @@ interface VoiceWorkSettledNotificationData {
 
 export interface RecordedNotification {
   id: string;
-  type: 'needs_input' | 'task_complete' | 'task_failed';
+  type: 'needs_input' | 'task_complete' | 'task_failed' | 'plugin';
   sessionId: string;
   title: string;
   body: string;
@@ -187,6 +187,27 @@ class NotificationService implements Disposable {
     });
     this.deliver({ id: entry.id, title: entry.title, body: entry.body, sessionId: data.sessionId });
     logger.info('Notification sent', { sessionTitle });
+  }
+
+  /**
+   * 发送插件主动请求的系统通知。插件没有目标会话，因此通知点击只负责唤起应用，
+   * 不会尝试切换到不存在的会话。
+   */
+  notifyPlugin(data: { title: string; body: string }): void {
+    if (!this.isIntentAllowed('plugin')) return;
+    if (!this.shouldNotify()) {
+      logger.debug('Skip plugin notification - app is focused');
+      return;
+    }
+
+    const entry = this.record({
+      type: 'plugin',
+      sessionId: '',
+      title: data.title,
+      body: data.body,
+    });
+    this.deliver({ id: entry.id, title: entry.title, body: entry.body, sessionId: '' });
+    logger.info('Plugin notification sent', { title: entry.title });
   }
 
   /**

@@ -83,6 +83,7 @@ import { assertSafeDownloadUrl } from '../security/ssrfGuard';
 import { promises as fsp } from 'fs';
 import { readDesignSettings, updateDesignSettings } from '../services/design/designSettings';
 import type { DesignSettings } from '../services/design/designSettings';
+import { handleGetDirectorySummary } from './workspaceDirectorySummary';
 import {
   getUserBrowserLinkService,
   type UserBrowserLinkService,
@@ -300,6 +301,8 @@ async function handleListFiles(payload: { dirPath: string }): Promise<FileInfo[]
     return [];
   }
 }
+
+export { handleGetDirectorySummary } from './workspaceDirectorySummary';
 
 // 消息里的文件链接常是裸文件名（模型很少写全路径），点击预览需要按名字找回真实路径。
 // 有界递归：跳过依赖/构建目录，先按「文件名完全相等」收集，命中即返回（最多 5 个候选）。
@@ -839,6 +842,9 @@ const workspaceRoutes = defineDomainRoutes<WorkspaceDomainRequest, WorkspaceRout
   },
   getCurrent: async ({ getAppService }, _payload) => {
     return await handleGetCurrent(getAppService);
+  },
+  getDirectorySummary: async (_ctx, payload) => {
+    return await handleGetDirectorySummary(payload as { dir?: string });
   },
   setCurrent: async ({ getMainWindow, getAppService, getConfigService }, payload) => {
     return await handleSetCurrent(payload as { dir: string | null | undefined }, getAppService, getMainWindow, getConfigService);

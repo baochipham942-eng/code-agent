@@ -119,7 +119,16 @@ export const enSettingsWork = {
       details: {
         currentWorkspace: 'Current workspace',
         recentVisit: 'Recent visit',
-        todo: 'TODO: add summaries for recent sessions, index health, git status, and related directory signals.',
+        summaryTitle: 'Directory summary',
+        summaryLoading: 'Loading summary...',
+        summaryUnavailable: 'Summary is unavailable right now.',
+        gitRepository: 'Git repository',
+        gitRepositoryYes: 'Yes',
+        gitRepositoryNo: 'No',
+        gitBranch: 'Branch',
+        gitDirtyFiles: 'Changed files',
+        recentSessions: 'Recent sessions',
+        notAvailable: 'Unavailable',
       },
       guidance: {
         recommendedLayerTitle: 'Recommended write layer',

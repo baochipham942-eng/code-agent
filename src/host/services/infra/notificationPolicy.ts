@@ -8,6 +8,7 @@ export type NotificationIntent =
   | 'needs_input'
   | 'task_complete'
   | 'task_failed'
+  | 'plugin'
   | 'progress'
   | 'typing'
   | 'stream_delta'
@@ -23,6 +24,7 @@ const ALLOWED_SYSTEM_NOTIFICATION_INTENTS = new Set<NotificationIntent>([
   'needs_input',
   'task_complete',
   'task_failed',
+  'plugin',
 ]);
 
 export function evaluateNotificationPolicy(intent: NotificationIntent): NotificationPolicyDecision {

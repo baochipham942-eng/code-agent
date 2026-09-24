@@ -73,6 +73,7 @@ describe('runLogRetention', () => {
     const result = await runLogRetention({
       retentionDays: 30,
       engineLogRoot: engineRoot,
+      traceRoot: path.join(tmpRoot, 'traces'),
       now,
       auditCleanup,
     });
@@ -85,6 +86,25 @@ describe('runLogRetention', () => {
     expect(fs.existsSync(path.join(engineRoot, 'claude-code', 'run-fresh.log'))).toBe(true);
   });
 
+  it('清理 trace ledger 的过期文件，并保留近期 trace', async () => {
+    const now = 1_000 * DAY_MS;
+    const traceRoot = path.join(tmpRoot, 'traces');
+    fs.mkdirSync(traceRoot);
+    writeFileWithMtime(path.join(traceRoot, 'old.jsonl'), now - 40 * DAY_MS);
+    writeFileWithMtime(path.join(traceRoot, 'fresh.jsonl'), now - 1 * DAY_MS);
+
+    const result = await runLogRetention({
+      retentionDays: 30,
+      traceRoot,
+      now,
+      auditCleanup: vi.fn().mockResolvedValue(0),
+    });
+
+    expect(result.traceDeleted).toBe(1);
+    expect(fs.existsSync(path.join(traceRoot, 'old.jsonl'))).toBe(false);
+    expect(fs.existsSync(path.join(traceRoot, 'fresh.jsonl'))).toBe(true);
+  });
+
   it('审计清理抛错不影响引擎日志清理（best-effort）', async () => {
     const now = 1_000 * DAY_MS;
     const engineRoot = path.join(tmpRoot, 'agent-engines');
@@ -95,6 +115,7 @@ describe('runLogRetention', () => {
     const result = await runLogRetention({
       retentionDays: 30,
       engineLogRoot: engineRoot,
+      traceRoot: path.join(tmpRoot, 'traces'),
       now,
       auditCleanup: vi.fn().mockRejectedValue(new Error('boom')),
     });

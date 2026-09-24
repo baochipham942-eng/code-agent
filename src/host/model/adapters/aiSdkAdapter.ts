@@ -55,7 +55,6 @@ import {
 } from '../../../shared/constants';
 import { getIncompleteToolCallIds } from '../../session/streamSnapshot';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
-import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
 import {
   withTransientRetry,
@@ -92,6 +91,8 @@ import {
   ProviderRuntimeCapabilityError,
   resolveNativeProtocolFamily,
 } from '../providerRuntimeCapabilities';
+import { sanitizeModelReplayForModelInfo } from '../modelReplaySanitizer';
+import { resolveModelInfo } from '../modelInfo';
 
 // resolveModel 现覆盖全部 provider：deepseek/claude·anthropic（专用包）/ gemini（@ai-sdk/google）/
 // openrouter（@openrouter/ai-sdk-provider）/ 其余走 openai-compatible。zhipu/moonshot/xiaomi 的 vendor
@@ -124,7 +125,7 @@ interface ProviderRequest {
 // config.apiKey 仅作最后兜底，避免拿父的 key 去打子代理的 provider → "Invalid token"。
 // supportsTool（能力即数据，对照 Models.dev）仍取自 providerRegistry。
 function resolveProviderRequest(config: ModelConfig): ProviderRequest {
-  const modelEntry = PROVIDER_REGISTRY[config.provider]?.models.find((m) => m.id === config.model);
+  const modelEntry = resolveModelInfo(config.provider, config.model);
   return {
     baseURL: resolveProviderBaseUrl(config) || undefined,
     apiKey: resolveProviderApiKey(config, { trustConfigKey: false }) || undefined,
@@ -593,25 +594,32 @@ async function runInferenceViaAiSdk(
     ? { ...config, reasoningEffort: options.reasoningEffort } as ModelConfig
     : config;
   const req = resolveProviderRequest(requestConfig);
+  const replayMessages = sanitizeModelReplayForModelInfo(
+    messages,
+    resolveModelInfo(config.provider, config.model),
+  );
   const streaming = typeof onStream === 'function' && options?.forceNonStreaming !== true;
   const effectiveToolsPresent = tools.length > 0 && req.supportsTool;
-  const requestedCapabilities = collectNativeRequestCapabilities(
-    messages,
-    effectiveToolsPresent,
-    requestConfig,
-    streaming,
-    signal,
-    options,
-  );
   assertNativeRequestCapabilities(
-    messages,
+    replayMessages,
     effectiveToolsPresent,
     requestConfig,
     streaming,
     signal,
     options,
   );
-  if (requestedCapabilities.includes('image_input') && !req.supportsVision) {
+  // Keep the adapter capability assertion as a postcondition of replay projection.
+  if (
+    !req.supportsVision
+    && collectNativeRequestCapabilities(
+      replayMessages,
+      effectiveToolsPresent,
+      requestConfig,
+      streaming,
+      signal,
+      options,
+    ).includes('image_input')
+  ) {
     throw new ProviderRuntimeCapabilityError(
       'native',
       resolveNativeProtocolFamily(requestConfig),
@@ -625,7 +633,7 @@ async function runInferenceViaAiSdk(
   try {
     // P1b：模型不支持 tool_call 时不传 tools（能力即数据，来自 providerRegistry）
     aiTools = tools.length > 0 && req.supportsTool ? buildTools(tools) : undefined;
-    const aiMessages = toAiMessages(messages);
+    const aiMessages = toAiMessages(replayMessages);
     aiPrompt = buildAiSdkPrompt(
       options?.cacheRetention === 'none'
         ? aiMessages
@@ -633,14 +641,14 @@ async function runInferenceViaAiSdk(
     );
   } catch (err) {
     const stage = !aiTools && tools.length > 0 && req.supportsTool ? 'buildTools' : 'toAiMessages';
-    logInferenceFailure(err, stage, requestConfig, messages);
+    logInferenceFailure(err, stage, requestConfig, replayMessages);
     throw err;
   }
 
   if (streaming) {
-    return streamViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, req, onStream, signal, options, messages });
+    return streamViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, req, onStream, signal, options, messages: replayMessages });
   }
-  return generateViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, signal, options, messages });
+  return generateViaAiSdk({ model, aiPrompt, aiTools, config: requestConfig, signal, options, messages: replayMessages });
 }
 
 // ── 非流式：generateText（服务子代理 + 主 loop 的 artifact 非流式重试）。行为与迁移 P0 一致 ──

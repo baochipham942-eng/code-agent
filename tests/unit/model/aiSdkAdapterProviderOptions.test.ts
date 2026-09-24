@@ -448,8 +448,8 @@ describe('inferenceViaAiSdk provider options', () => {
     expect(serialized).toContain('"path"');
   });
 
-  it('rejects image input before provider construction when the selected model declares no vision support', async () => {
-    await expect(inferenceViaAiSdk([{
+  it('replaces image input before provider construction when the selected model declares no vision support', async () => {
+    await inferenceViaAiSdk([{
       role: 'user',
       content: [{
         type: 'image',
@@ -458,14 +458,15 @@ describe('inferenceViaAiSdk provider options', () => {
     }], [], {
       provider: 'deepseek',
       model: 'deepseek-reasoner',
-    } as ModelConfig)).rejects.toMatchObject({
-      code: 'PROVIDER_RUNTIME_CAPABILITY_BLOCKED',
-      capability: 'image_input',
-      status: 'unsupported',
-    });
+    } as ModelConfig);
 
-    expect(providerMocks.createDeepSeek).not.toHaveBeenCalled();
-    expect(vi.mocked(generateText)).not.toHaveBeenCalled();
+    expect(providerMocks.createDeepSeek).toHaveBeenCalled();
+    expect(vi.mocked(generateText).mock.calls.at(-1)?.[0]).toMatchObject({
+      messages: [{
+        role: 'user',
+        content: [{ type: 'text', text: '[Image omitted: the current model cannot view images.]' }],
+      }],
+    });
   });
 
   it('rejects unknown local endpoint tool_choice before provider construction', async () => {

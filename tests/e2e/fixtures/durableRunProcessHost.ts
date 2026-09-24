@@ -312,6 +312,8 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
   const fakeMcpClient = {
     getServerStates: () => [{ config: { name: 'fake-mcp' } }],
     getServerIdentity: () => 'trusted-server',
+    acquireConnectionLease: () => undefined,
+    releaseConnectionLease: () => undefined,
     getTools: () => [{ serverName: 'fake-mcp', name: 'durable_task' }],
     buildTaskCapability: () => ({
       serverIdentity: 'trusted-server', trusted: true, serverToolsCall: true,

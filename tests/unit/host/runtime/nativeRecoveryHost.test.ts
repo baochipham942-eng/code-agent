@@ -70,14 +70,15 @@ describe('NativeRecoveryHost production recovery', () => {
     expect(registry.terminalDurable).toHaveBeenCalledOnce();
   });
 
-  it('settles unknown writes as interrupted without replaying the tool', async () => {
+  it('keeps unknown writes in review without replaying the tool', async () => {
     const { handler, ports, registry } = fixture();
     const pending = operation({ kind: 'tool_call', sideEffect: true, providerOperationId: undefined });
-    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({ status: 'recovered', reason: 'unknown_write_side_effect' });
+    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({ status: 'requires_review', reason: 'unknown_write_side_effect' });
     expect(ports.tool.queryResult).not.toHaveBeenCalled();
     expect(ports.tool.dispatchPrepared).not.toHaveBeenCalled();
-    expect(ports.tool.interrupt).toHaveBeenCalledOnce();
-    expect(registry.terminalDurable).toHaveBeenCalledOnce();
+    expect(ports.tool.interrupt).not.toHaveBeenCalled();
+    expect(registry.checkpointDurable).toHaveBeenCalledWith('run-1', expect.objectContaining({ status: 'waiting' }));
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 
   it('replays only when stored and current declarations are both automatic', async () => {

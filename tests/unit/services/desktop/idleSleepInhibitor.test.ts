@@ -3,14 +3,15 @@ import { IdleSleepInhibitor } from '../../../../src/host/services/desktop/idleSl
 
 describe('IdleSleepInhibitor', () => {
   it('inhibits while a run or paired companion exists and releases when both disappear', async () => {
-    let running = false; let paired = false;
+    let running = false; let background = false; let paired = false;
     const child = { once: vi.fn((event: string, cb: (...args: unknown[]) => void) => { if (event === 'exit') void cb; return child; }), kill: vi.fn(() => true) } as any;
     const spawnMock = vi.fn(() => child) as any;
-    const inhibitor = new IdleSleepInhibitor(() => running, () => paired, { platform: 'darwin', spawn: spawnMock });
+    const inhibitor = new IdleSleepInhibitor(() => running || background, () => paired, { platform: 'darwin', spawn: spawnMock });
     running = true; await inhibitor.reconcile(); expect(inhibitor.getStatus().state).toBe('inhibited');
     // -i 阻止空闲休眠，-w 盯住宿主 pid（宿主崩溃/强退时 caffeinate 随之退出，不成孤儿）。
     expect(spawnMock).toHaveBeenCalledWith('/usr/bin/caffeinate', ['-i', '-w', String(process.pid)], { stdio: 'ignore' });
-    running = false; paired = true; await inhibitor.reconcile(); expect(inhibitor.getStatus().state).toBe('inhibited');
+    running = false; background = true; await inhibitor.reconcile(); expect(inhibitor.getStatus().state).toBe('inhibited');
+    background = false; paired = true; await inhibitor.reconcile(); expect(inhibitor.getStatus().state).toBe('inhibited');
     paired = false; await inhibitor.reconcile(); expect(child.kill).toHaveBeenCalledWith('SIGTERM'); expect(inhibitor.getStatus().state).toBe('released');
   });
 

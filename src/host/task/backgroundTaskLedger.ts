@@ -249,6 +249,13 @@ export class BackgroundTaskLedger {
       .map(cloneTask);
   }
 
+  hasActiveTasks(): boolean {
+    for (const task of this.tasks.values()) {
+      if (!isTerminalTaskStatus(task.status)) return true;
+    }
+    return false;
+  }
+
   drainNotifications(sessionId: string): TaskNotification[] {
     this.assertNonEmpty(sessionId, 'session id');
 

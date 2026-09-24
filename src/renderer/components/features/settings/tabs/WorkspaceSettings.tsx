@@ -8,7 +8,6 @@
 // settings.workspace.recentDirectories（main 侧 setCurrent/selectDirectory 走
 // configService.addRecentDirectory），表格行的"移除"调用 removeRecent。
 // ============================================================================
-
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -28,7 +27,7 @@ import {
   X,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { AppSettings } from '@shared/contract';
+import type { AppSettings, WorkspaceDirectorySummary } from '@shared/contract';
 import type {
   ConfigSafetyScanSummary,
   ConfigSafetySeverity,
@@ -53,11 +52,10 @@ import { zh } from '../../../../i18n/zh';
 import { getDesktopShellLabel, isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
+import { WorkspaceDirectorySummaryCard } from './WorkspaceDirectorySummaryCard';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
-
 const logger = createLogger('WorkspaceSettings');
-
 type WorkspaceSettingsText = typeof zh.settings.workspace;
 
 const BROWSER_OPTIONS: Array<{ value: BrowserSessionMode }> = [
@@ -227,6 +225,8 @@ export const WorkspaceSettings: React.FC = () => {
   const [recentDirs, setRecentDirs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDetail, setSelectedDetail] = useState<RecentDirRow | null>(null);
+  const [directorySummary, setDirectorySummary] = useState<WorkspaceDirectorySummary | null>(null);
+  const [directorySummaryLoading, setDirectorySummaryLoading] = useState(false);
   const [defaultOpenTarget, setDefaultOpenTargetState] = useState<DefaultOpenTarget>('lastDirectory');
   const [pinnedDirectory, setPinnedDirectoryState] = useState<string | null>(null);
   const [savingPreference, setSavingPreference] = useState(false);
@@ -265,6 +265,29 @@ export const WorkspaceSettings: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!selectedDetail) {
+      setDirectorySummary(null);
+      return;
+    }
+    let cancelled = false;
+    setDirectorySummaryLoading(true);
+    void ipcService.invokeDomain<WorkspaceDirectorySummary>(
+      IPC_DOMAINS.WORKSPACE,
+      'getDirectorySummary',
+      { dir: selectedDetail.path },
+    ).then((summary) => {
+      if (!cancelled) setDirectorySummary(summary);
+    }).catch(() => {
+      if (!cancelled) setDirectorySummary(null);
+    }).finally(() => {
+      if (!cancelled) setDirectorySummaryLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDetail]);
 
   const rows = useMemo(() => buildRecentRows(currentDir, recentDirs), [currentDir, recentDirs]);
   const configScopeTiles = useMemo(() => buildConfigScopeTiles(configScope), [configScope]);
@@ -824,9 +847,7 @@ export const WorkspaceSettings: React.FC = () => {
                   )}
                 </div>
               </div>
-              <div className="rounded border border-zinc-800 bg-zinc-900/60 p-3 text-[11px] text-zinc-500">
-                {workspaceText.details.todo}
-              </div>
+              <WorkspaceDirectorySummaryCard summary={directorySummary} loading={directorySummaryLoading} labels={workspaceText.details} />
             </div>
           </aside>
         </div>

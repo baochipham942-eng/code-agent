@@ -38,6 +38,7 @@ const WorkspaceDomainRequestSchema = z.object({
     'generateSlidesPreview',
     'getConfigScope',
     'getCurrent',
+    'getDirectorySummary',
     'getDesignMdSummary',
     'getDesignSettings',
     'getFileMetadata',

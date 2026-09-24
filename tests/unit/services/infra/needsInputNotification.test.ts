@@ -42,4 +42,21 @@ describe('needs-input notification focus policy', () => {
       expect.objectContaining({ sessionId: 's1', title: '等待回答', body: '请选择' }),
     );
   });
+
+  it('插件通知走同一套系统通知策略，但不绑定会话', () => {
+    notificationService.notifyPlugin({ title: '插件提醒', body: '插件已完成同步' });
+
+    expect(notificationService.getRecentNotifications()).toEqual([
+      expect.objectContaining({
+        type: 'plugin',
+        sessionId: '',
+        title: '插件提醒',
+        body: '插件已完成同步',
+      }),
+    ]);
+    expect(platformMocks.broadcast).toHaveBeenCalledWith(
+      IPC_CHANNELS.NOTIFICATION_SHOW,
+      expect.objectContaining({ sessionId: '', title: '插件提醒', body: '插件已完成同步' }),
+    );
+  });
 });

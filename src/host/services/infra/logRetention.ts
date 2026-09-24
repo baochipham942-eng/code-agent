@@ -1,15 +1,15 @@
 // ============================================================================
 // Log Retention - 启动期日志保留清理
 // ----------------------------------------------------------------------------
-// 把原本是死代码的 AuditLogger.cleanup 接上，并清理 agent 引擎逐次运行日志
-// （每次运行落一个 .log / .last.md，原本无任何清理，无限堆积）。
+// 把原本是死代码的 AuditLogger.cleanup 接上，并清理 agent 引擎逐次运行日志与 trace ledger
+// （每次运行落一个 .log / .last.md / .jsonl，原本无任何清理，无限堆积）。
 // 主日志（logger.ts）已自带每日轮转 + 7 天清理，这里不重复处理。
 // ============================================================================
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { getAuditLogger } from '../../security/auditLogger';
-import { getLogsPath } from '../../platform/appPaths';
+import { getLogsPath, getUserDataPath } from '../../platform/appPaths';
 import { createLogger } from './logger';
 
 const logger = createLogger('LogRetention');
@@ -58,6 +58,8 @@ export interface LogRetentionOptions {
   retentionDays?: number;
   /** 覆盖 agent 引擎日志根目录（测试用） */
   engineLogRoot?: string;
+  /** 覆盖 trace ledger 根目录（测试用） */
+  traceRoot?: string;
   /** 当前时间（测试用） */
   now?: number;
   /** 覆盖审计日志清理实现（测试用，避免触碰真实审计目录） */
@@ -67,10 +69,11 @@ export interface LogRetentionOptions {
 export interface LogRetentionResult {
   auditDeleted: number;
   engineDeleted: number;
+  traceDeleted: number;
 }
 
 /**
- * 启动期日志保留：清理过期审计日志 + agent 引擎运行日志。best-effort，
+ * 启动期日志保留：清理过期审计日志、agent 引擎运行日志和 trace ledger。best-effort，
  * 任一环节失败都不抛出，仅记 warn。
  */
 export async function runLogRetention(options: LogRetentionOptions = {}): Promise<LogRetentionResult> {
@@ -96,9 +99,20 @@ export async function runLogRetention(options: LogRetentionOptions = {}): Promis
     }
   }
 
-  if (auditDeleted > 0 || engineDeleted > 0) {
-    logger.info('Log retention complete', { auditDeleted, engineDeleted, retentionDays });
+  let traceDeleted = 0;
+  try {
+    traceDeleted = await cleanupDirByMtime(
+      options.traceRoot ?? path.join(getUserDataPath(), 'traces'),
+      maxAgeMs,
+      now,
+    );
+  } catch (error) {
+    logger.warn('Trace retention failed (non-blocking):', error as Error);
   }
 
-  return { auditDeleted, engineDeleted };
+  if (auditDeleted > 0 || engineDeleted > 0 || traceDeleted > 0) {
+    logger.info('Log retention complete', { auditDeleted, engineDeleted, traceDeleted, retentionDays });
+  }
+
+  return { auditDeleted, engineDeleted, traceDeleted };
 }

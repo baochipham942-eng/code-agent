@@ -121,7 +121,16 @@ export const zhSettingsWork = {
       details: {
         currentWorkspace: '当前工作区',
         recentVisit: '最近访问',
-        todo: 'TODO：补充该目录的最近 session 数、index 健康、git 状态等摘要。',
+        summaryTitle: '目录摘要',
+        summaryLoading: '正在读取摘要…',
+        summaryUnavailable: '暂时无法读取摘要。',
+        gitRepository: 'Git 仓库',
+        gitRepositoryYes: '是',
+        gitRepositoryNo: '否',
+        gitBranch: '分支',
+        gitDirtyFiles: '改动文件',
+        recentSessions: '最近会话',
+        notAvailable: '暂无',
       },
       guidance: {
         recommendedLayerTitle: '推荐写入层',

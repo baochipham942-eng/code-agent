@@ -11,6 +11,7 @@ import {
   handleInspectPresentation,
   handleWriteFile,
 } from '../../../src/host/ipc/workspace.ipc';
+import { handleGetDirectorySummary } from '../../../src/host/ipc/workspaceDirectorySummary';
 import { publishVersion } from '../../../src/host/tools/document/snapshotManager';
 
 describe('workspace.ipc create handlers', () => {
@@ -18,6 +19,21 @@ describe('workspace.ipc create handlers', () => {
 
   beforeEach(async () => {
     workDir = await mkdtemp(join(tmpdir(), 'workspace-ipc-test-'));
+  });
+
+  it('returns a bounded directory summary for the workspace details drawer', async () => {
+    await expect(handleGetDirectorySummary({ dir: workDir })).resolves.toMatchObject({
+      path: workDir,
+      exists: true,
+      isDirectory: true,
+      git: {
+        isRepository: false,
+        branch: null,
+        dirtyFiles: 0,
+        ahead: 0,
+        behind: 0,
+      },
+    });
   });
 
   afterEach(async () => {

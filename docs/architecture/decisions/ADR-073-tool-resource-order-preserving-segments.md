@@ -1,6 +1,6 @@
 # ADR-073：工具资源声明与保序并行分段
 
-- 状态：**提议，等待产品负责人拍板**
+- 状态：**已拍板（2026-09-24，林晨）**
 - 单号：N-TOOL-RESOURCE-ADR（本 ADR 只定合同，不施工）
 - 范围：`ToolSchema` 的资源语义、同一模型响应内的工具排程、现有写隔离锁、工具级死代码
 - 基线：`origin/main@158bb32492f3d5930e2effa9bfefe6b0c3765769`
@@ -132,4 +132,13 @@ interface ToolSchema {
 3. **终止屏障后的调用如何呈现**：建议返回结构化 deferred/skipped 结果并留在原 index，让下一轮重新生成；绝不在审批前执行。若产品希望把“屏障后的模型调用”视为模型错误，也应保持同一安全边界。
 4. **是否删除工具级 DAG**：建议删除。它零生产消费，继续保留只会让未来维护者误以为工具排程已有第二条实现；任务级 `src/host/scheduler/DAGScheduler.ts` 明确保留。
 
-验收状态：本 ADR 停在拍板槽；上述施工单只是提议，未创建。
+## 拍板记录（只增不改）
+
+2026-09-24 林晨拍板，四项 Decision needed 全部接受：
+
+1. `accesses.expression` **本期就加**（不延后）：受限 DSL 由宿主解析、不执行任意代码；DSL 语法、解析失败回落未知域的规则并入施工第一刀一起定，并配解析器单测与「非法表达式必须落 unknown」的反向变异。
+2. 未知资源域一律串行（fail-closed）。
+3. 终止/审批屏障后的调用本轮不执行，返回结构化 deferred/skipped 结果并留在原 index。
+4. 删除零消费的工具级 `src/host/agent/toolExecution/dagScheduler.ts`；任务级 `src/host/scheduler/DAGScheduler.ts` 保留。
+
+施工单按上文「拟拆施工单」四刀拆出，台账单号 N-TOOLRES-K1 ~ K4。

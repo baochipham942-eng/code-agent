@@ -686,7 +686,6 @@ Use process_kill to terminate the session.`;
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
           env: childEnv.env,
-          abortSignal: ctx.abortSignal,
           sandboxed: sandboxDecision.sandboxed,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
@@ -824,6 +823,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       };
     }
 
+    let handedOver = false;
     try {
       // 并行：生成动态描述（不阻塞命令执行）
       const descriptionPromise = generateBashDescription(normalizedCommand).catch(() => null);
@@ -845,7 +845,6 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
           sandboxed: sandboxDecision.sandboxed,
-          abortSignal: ctx.abortSignal,
           onExit: cleanupSandbox,
           stdout,
           stderr,
@@ -854,6 +853,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       });
 
       if (foregroundResult.handover) {
+        handedOver = true;
         const handover = foregroundResult.handover;
         const preview = handover.preview || '(no output yet)';
         return {
@@ -977,7 +977,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       };
     } finally {
       // PTY/后台路径把 cleanup 交给执行器的退出回调；这里只收前台路径。
-      cleanupSandbox();
+      if (!handedOver) cleanupSandbox();
     }
   }
 }

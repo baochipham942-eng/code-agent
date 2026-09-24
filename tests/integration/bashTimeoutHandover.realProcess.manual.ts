@@ -48,6 +48,7 @@ posixOnly('Bash timeout handover real process', () => {
     expect(taskId).not.toBe('');
     expect(result.output).toContain('<task-type>bash-timeout-handover</task-type>');
     expect(result.output).toContain('second-1');
+    abort.abort();
 
     try {
       const output = await waitForOutput(taskId, 'second-100', 110_000);

@@ -225,6 +225,7 @@ export function runForegroundCommand(options: {
     };
 
     const timeoutTimer = setTimeout(() => {
+      if (settled || aborted || maxBufferExceeded) return;
       const handover = (() => {
         try {
           return options.onTimeout?.({ child, stdout, stderr, startedAt }) ?? null;

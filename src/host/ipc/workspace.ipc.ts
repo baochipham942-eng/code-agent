@@ -302,7 +302,6 @@ async function handleListFiles(payload: { dirPath: string }): Promise<FileInfo[]
   }
 }
 
-export { handleGetDirectorySummary } from './workspaceDirectorySummary';
 
 // 消息里的文件链接常是裸文件名（模型很少写全路径），点击预览需要按名字找回真实路径。
 // 有界递归：跳过依赖/构建目录，先按「文件名完全相等」收集，命中即返回（最多 5 个候选）。

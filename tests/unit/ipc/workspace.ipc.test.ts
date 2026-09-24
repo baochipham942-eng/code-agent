@@ -7,11 +7,11 @@ import {
   handleCreateFile,
   handleCreateFolder,
   handleExportBundle,
-  handleGetDirectorySummary,
   handleInspectArchive,
   handleInspectPresentation,
   handleWriteFile,
 } from '../../../src/host/ipc/workspace.ipc';
+import { handleGetDirectorySummary } from '../../../src/host/ipc/workspaceDirectorySummary';
 import { publishVersion } from '../../../src/host/tools/document/snapshotManager';
 
 describe('workspace.ipc create handlers', () => {

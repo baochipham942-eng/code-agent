@@ -2,12 +2,15 @@
 // 只测 killProcessTree 证明不了后台任务这一支——它还取决于 spawn 时有没有 detached 成组、
 // 收树时有没有传 posixGroupKill。2026-07-30 孤儿 Chrome 事故坏的正是这两项。
 // 证据档位：real-runtime。
+import { spawn } from 'child_process';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   getAllBackgroundTasks,
+  adoptBackgroundTask,
+  getTaskOutput,
   killBackgroundTask,
   startBackgroundTask,
 } from '../../../../src/host/tools/shell/backgroundTasks';
@@ -23,9 +26,9 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 5000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() > deadline) throw new Error('等待条件超时');
     await new Promise((resolve) => { setTimeout(resolve, 25); });
   }
@@ -53,6 +56,48 @@ posixOnly('后台任务停机收尸', () => {
 
     expect(onExit).toHaveBeenCalledOnce();
   });
+
+  it('adopts an existing child with buffered output and abort cleans it up', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-adopt-`);
+    const ctrl = new AbortController();
+    const child = spawn('bash', ['-c', 'for i in $(seq 1 20); do echo "line-$i"; sleep 0.1; done'], {
+      cwd,
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    startedTaskIds.push('adopted-task-placeholder');
+    let buffered = '';
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('child did not produce initial output')), 3000);
+      const onData = (chunk: Buffer | string) => {
+        buffered += chunk.toString();
+        if (buffered.includes('line-1')) {
+          clearTimeout(timer);
+          child.stdout?.removeListener('data', onData);
+          resolve();
+        }
+      };
+      child.stdout?.on('data', onData);
+      child.once('error', reject);
+    });
+
+    const adopted = adoptBackgroundTask(child, 'adopted shell', cwd, {
+      abortSignal: ctrl.signal,
+      bufferedStdout: buffered,
+    });
+    expect(adopted.success).toBe(true);
+    expect(adopted.taskId).toBeTruthy();
+    startedTaskIds.splice(startedTaskIds.indexOf('adopted-task-placeholder'), 1, adopted.taskId!);
+
+    await waitFor(async () => (await getTaskOutput(adopted.taskId!))?.output.includes('line-3') === true);
+    const output = await getTaskOutput(adopted.taskId!);
+    expect(output?.output).toContain('line-1');
+    expect(output?.output).toContain('line-3');
+
+    ctrl.abort();
+    await waitFor(() => getAllBackgroundTasks().find((task) => task.taskId === adopted.taskId)?.status !== 'running');
+    expect(getAllBackgroundTasks().find((task) => task.taskId === adopted.taskId)?.status).toBe('failed');
+  }, 15_000);
 
   it('kill 后台任务时，它 spawn 出来的孙进程一起死干净', async () => {
     const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);

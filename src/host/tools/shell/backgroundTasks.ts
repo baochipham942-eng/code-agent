@@ -39,6 +39,7 @@ export interface TaskState {
   lastReadPosition: number;
   /** 主超时定时器 */
   timeout?: NodeJS.Timeout;
+  abortCleanup?: () => void;
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
@@ -74,6 +75,13 @@ export interface StartBackgroundTaskOptions {
   env?: NodeJS.ProcessEnv;
   sandboxed?: boolean;
   onExit?: () => void;
+  abortSignal?: AbortSignal;
+}
+
+export interface AdoptBackgroundTaskOptions extends StartBackgroundTaskOptions {
+  bufferedStdout?: string;
+  bufferedStderr?: string;
+  startedAt?: number;
 }
 
 export type BackgroundTaskLifecycleEventType = 'started' | 'completed' | 'failed';
@@ -171,6 +179,9 @@ function emitTaskLifecycleEvent(type: BackgroundTaskLifecycleEventType, task: Ta
 }
 
 function runTaskExitCallback(task: TaskState): void {
+  const abortCleanup = task.abortCleanup;
+  task.abortCleanup = undefined;
+  abortCleanup?.();
   const onExit = task.onExit;
   task.onExit = undefined;
   try {
@@ -191,6 +202,112 @@ export function onBackgroundTaskLifecycleEvent(
 // Task Lifecycle
 // ============================================================================
 
+function ensureTaskCapacity(): { success: true } | { success: false; error: string } {
+  if (backgroundTasks.size < MAX_BACKGROUND_TASKS) return { success: true };
+  const cleaned = cleanupCompletedTasks();
+  if (cleaned > 0 || backgroundTasks.size < MAX_BACKGROUND_TASKS) return { success: true };
+  return {
+    success: false,
+    error: `Maximum number of background tasks (${MAX_BACKGROUND_TASKS}) reached. Use the Process tool with action="kill" to terminate some tasks.`,
+  };
+}
+
+function registerBackgroundTaskProcess(
+  proc: ChildProcess,
+  command: string,
+  cwd: string,
+  maxRuntime: number,
+  options: AdoptBackgroundTaskOptions,
+): { success: boolean; taskId?: string; error?: string; outputFile?: string } {
+  const capacity = ensureTaskCapacity();
+  if (!capacity.success) return capacity;
+
+  const taskId = uuidv4();
+  const outputFile = getTaskOutputPath(taskId);
+  const outputStream = fs.createWriteStream(outputFile, { flags: 'w' });
+  const taskState: TaskState = {
+    taskId,
+    process: proc,
+    output: [],
+    outputFile,
+    outputStream,
+    status: 'running',
+    startTime: options.startedAt ?? Date.now(),
+    maxRuntime: Math.min(maxRuntime, BACKGROUND_TASK_MAX_RUNTIME),
+    outputSize: 0,
+    command,
+    lastReadPosition: 0,
+    cwd,
+    sessionId: options.sessionId,
+    toolCallId: options.toolCallId,
+    sandboxed: options.sandboxed,
+    onExit: options.onExit,
+  };
+
+  const appendOutput = (stream: 'stdout' | 'stderr', chunk: Buffer | string): void => {
+    const data = chunk.toString();
+    const text = stream === 'stderr' ? `[stderr] ${data}` : data;
+    taskState.outputSize += text.length;
+    taskState.outputStream?.write(text);
+    if (taskState.outputSize < MAX_BACKGROUND_OUTPUT) {
+      taskState.output.push(text);
+    } else if (!taskState.output[taskState.output.length - 1]?.includes('[Output limit reached]')) {
+      taskState.output.push('[Output limit reached - further output written to file only]');
+    }
+  };
+
+  if (options.bufferedStdout) appendOutput('stdout', options.bufferedStdout);
+  if (options.bufferedStderr) appendOutput('stderr', options.bufferedStderr);
+
+  const timeout = setTimeout(() => {
+    if (taskState.status === 'running') {
+      console.warn(`[BackgroundTasks] Task ${taskId} exceeded max runtime, terminating...`);
+      void killProcessTree(proc, { posixGroupKill: true })
+        .then(() => runTaskExitCallback(taskState));
+    }
+  }, taskState.maxRuntime);
+  taskState.timeout = timeout;
+
+  const onStdout = (data: Buffer | string) => appendOutput('stdout', data);
+  const onStderr = (data: Buffer | string) => appendOutput('stderr', data);
+  const finish = (status: TaskState['status'], code?: number | null) => {
+    taskState.status = status;
+    taskState.exitCode = code ?? undefined;
+    taskState.endTime = Date.now();
+    if (taskState.timeout) clearTimeout(taskState.timeout);
+    if (taskState.outputStream && !taskState.outputStream.writableEnded) taskState.outputStream.end();
+    runTaskExitCallback(taskState);
+    emitTaskLifecycleEvent(status === 'completed' ? 'completed' : 'failed', taskState);
+  };
+  const onClose = (code: number | null) => finish(code === 0 ? 'completed' : 'failed', code);
+  const onError = (error: Error) => {
+    taskState.status = 'failed';
+    taskState.endTime = Date.now();
+    appendOutput('stderr', `[error] ${error.message}\n`);
+    if (taskState.timeout) clearTimeout(taskState.timeout);
+    if (taskState.outputStream && !taskState.outputStream.writableEnded) taskState.outputStream.end();
+    runTaskExitCallback(taskState);
+    emitTaskLifecycleEvent('failed', taskState);
+  };
+
+  proc.stdout?.on('data', onStdout);
+  proc.stderr?.on('data', onStderr);
+  proc.on('close', onClose);
+  proc.on('error', onError);
+  if (options.abortSignal) {
+    const abortHandler = () => { void killBackgroundTask(taskId); };
+    options.abortSignal.addEventListener('abort', abortHandler, { once: true });
+    taskState.abortCleanup = () => options.abortSignal?.removeEventListener('abort', abortHandler);
+  }
+
+  backgroundTasks.set(taskId, taskState);
+  emitTaskLifecycleEvent('started', taskState);
+  if (options.abortSignal?.aborted) {
+    void killBackgroundTask(taskId);
+  }
+  return { success: true, taskId, outputFile };
+}
+
 /**
  * Start a background task
  */
@@ -200,19 +317,8 @@ export function startBackgroundTask(
   maxRuntime: number = BACKGROUND_TASK_MAX_RUNTIME,
   options: StartBackgroundTaskOptions = {},
 ): { success: boolean; taskId?: string; error?: string; outputFile?: string } {
-  // Check task limit
-  if (backgroundTasks.size >= MAX_BACKGROUND_TASKS) {
-    const cleaned = cleanupCompletedTasks();
-    if (cleaned === 0 && backgroundTasks.size >= MAX_BACKGROUND_TASKS) {
-      return {
-        success: false,
-        error: `Maximum number of background tasks (${MAX_BACKGROUND_TASKS}) reached. Use the Process tool with action="kill" to terminate some tasks.`,
-      };
-    }
-  }
-
-  const taskId = uuidv4();
-  const outputFile = getTaskOutputPath(taskId);
+  const capacity = ensureTaskCapacity();
+  if (!capacity.success) return capacity;
 
   // win32 无 bash，走 PowerShell；POSIX 保持 bash -c 原语义
   const proc = process.platform === 'win32'
@@ -227,120 +333,19 @@ export function startBackgroundTask(
         // 事故（90 秒连崩 25 次）的成因。停机属主会显式收树，不靠进程组连坐。
         detached: true,
       });
+  return registerBackgroundTaskProcess(proc, command, cwd, maxRuntime, options);
+}
 
-  // Create output file stream
-  const outputStream = fs.createWriteStream(outputFile, { flags: 'w' });
-
-  const taskState: TaskState = {
-    taskId,
-    process: proc,
-    output: [],
-    outputFile,
-    outputStream,
-    status: 'running',
-    startTime: Date.now(),
-    maxRuntime: Math.min(maxRuntime, BACKGROUND_TASK_MAX_RUNTIME),
-    outputSize: 0,
-    command,
-    lastReadPosition: 0,
-    cwd,
-    sessionId: options.sessionId,
-    toolCallId: options.toolCallId,
-    sandboxed: options.sandboxed,
-    onExit: options.onExit,
-  };
-
-  // Set timeout for max runtime
-  const timeout = setTimeout(() => {
-    if (taskState.status === 'running') {
-      console.warn(`[BackgroundTasks] Task ${taskId} exceeded max runtime, terminating...`);
-      // 升级与整树退出确认都在 killProcessTree 内部；这里是定时器回调，没有 await
-      // 的位置，交给它自己跑完（内部已吞掉所有信号异常，不会 reject）。
-      void killProcessTree(proc, { posixGroupKill: true })
-        .then(() => runTaskExitCallback(taskState));
-    }
-  }, taskState.maxRuntime);
-
-  taskState.timeout = timeout;
-
-  // Handle stdout
-  proc.stdout?.on('data', (data: Buffer | string) => {
-    const dataStr = data.toString();
-    taskState.outputSize += dataStr.length;
-
-    // Write to file
-    taskState.outputStream?.write(dataStr);
-
-    // Store in memory (with limit)
-    if (taskState.outputSize < MAX_BACKGROUND_OUTPUT) {
-      taskState.output.push(dataStr);
-    } else if (!taskState.output[taskState.output.length - 1]?.includes('[Output limit reached]')) {
-      taskState.output.push('[Output limit reached - further output written to file only]');
-    }
-  });
-
-  // Handle stderr
-  proc.stderr?.on('data', (data: Buffer | string) => {
-    const dataStr = data.toString();
-    const stderrStr = `[stderr] ${dataStr}`;
-    taskState.outputSize += stderrStr.length;
-
-    // Write to file
-    taskState.outputStream?.write(stderrStr);
-
-    // Store in memory (with limit)
-    if (taskState.outputSize < MAX_BACKGROUND_OUTPUT) {
-      taskState.output.push(stderrStr);
-    }
-  });
-
-  // Handle process close
-  proc.on('close', (code) => {
-    taskState.status = code === 0 ? 'completed' : 'failed';
-    taskState.exitCode = code ?? undefined;
-    taskState.endTime = Date.now();
-
-    // 清理所有定时器
-    if (taskState.timeout) {
-      clearTimeout(taskState.timeout);
-    }
-
-    // Close output stream（幂等：error 与 close 可能先后触发，避免重复 end 抛 ERR_STREAM_WRITE_AFTER_END）
-    if (taskState.outputStream && !taskState.outputStream.writableEnded) {
-      taskState.outputStream.end();
-    }
-    runTaskExitCallback(taskState);
-    emitTaskLifecycleEvent(taskState.status === 'completed' ? 'completed' : 'failed', taskState);
-  });
-
-  // Handle process error
-  proc.on('error', (err) => {
-    taskState.status = 'failed';
-    taskState.endTime = Date.now();
-    const errorMsg = `[error] ${err.message}`;
-    taskState.output.push(errorMsg);
-    // 幂等：若 close 已先触发结束流，跳过 write/end，避免 ERR_STREAM_WRITE_AFTER_END
-    if (taskState.outputStream && !taskState.outputStream.writableEnded) {
-      taskState.outputStream.write(errorMsg + '\n');
-      taskState.outputStream.end();
-    }
-
-    // 清理所有定时器
-    if (taskState.timeout) {
-      clearTimeout(taskState.timeout);
-    }
-    runTaskExitCallback(taskState);
-    emitTaskLifecycleEvent('failed', taskState);
-  });
-
-  backgroundTasks.set(taskId, taskState);
-  emitTaskLifecycleEvent('started', taskState);
-
-  return {
-    success: true,
-    taskId,
-    outputFile,
-  };
+export function adoptBackgroundTask(
+  proc: ChildProcess,
+  command: string,
+  cwd: string,
+  options: AdoptBackgroundTaskOptions = {},
+): { success: boolean; taskId?: string; error?: string; outputFile?: string } {
+  if (proc.exitCode !== null || proc.signalCode !== null) {
+    return { success: false, error: 'The timed-out process has already exited.' };
+  }
+  return registerBackgroundTaskProcess(proc, command, cwd, BACKGROUND_TASK_MAX_RUNTIME, options);
 }
 
 /**

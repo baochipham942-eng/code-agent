@@ -194,11 +194,15 @@ export class NativeRecoveryHost {
         if (canAutomaticallyReplayTool(replaySafety.stored, replaySafety.current)) {
           evidence = await this.ports.tool.dispatchPrepared(input);
           action = 'replay_safe_tool_once';
+        } else if (operation.sideEffect) {
+          // A write whose outcome cannot be queried or proven safe to replay
+          // must remain visible for manual review. Interrupting it and then
+          // committing a completed run would turn an unknown side effect into
+          // a false success.
+          return this.review(plan, now, 'unknown_write_side_effect');
         } else {
           evidence = await this.ports.tool.interrupt(input);
-          action = operation.sideEffect
-            ? 'unknown_write_side_effect'
-            : 'interrupt_unproven_tool_replay';
+          action = 'interrupt_unproven_tool_replay';
         }
       }
     } else {

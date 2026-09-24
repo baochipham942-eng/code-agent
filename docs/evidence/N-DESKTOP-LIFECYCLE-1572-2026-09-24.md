@@ -31,3 +31,7 @@ exit 1
 - `npx vitest run tests/unit/host/runtime/nativeRecoveryHost.test.ts tests/unit/host/runtime/durableNativeRecoveryLifecycle.test.ts`：44 passed。
 - `CODE_AGENT_DATA_DIR=/tmp/neo1572-acceptance-data npx tsx scripts/acceptance/durable-run-kill-restart.ts --out /tmp/neo1572-acceptance.json`：14 scenarios，9 gates 全部通过。
 - `NEO_EVAL_ANSWERS_DIR=.../code-agent-private-archive/eval CODE_AGENT_DATA_DIR=/tmp/neo1572-data npm run gates:fast -- --regressions /tmp/neo-1572-regressions.json`：通过，receipt `409e6317-66d3-4976-9593-753292d71a40`。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=5ffe18e5d351f1b345654d6a84d83a6d67870485 base=98110776426309f6a2456e1e7b40b0581e533e6b receipt=03ea7d0f-7be0-45ea-8617-b821e7058121

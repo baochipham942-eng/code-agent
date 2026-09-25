@@ -485,8 +485,8 @@ describe('marketplace install service trust defaults', () => {
 
     const installed = await listInstalledPlugins();
     expect(installed['demo@official-registry']?.skills).toEqual(['demo__official-registry']);
-    expect(installed['demo@official-registry']?.sourceTrust).toBe('official-registry');
-    expect(await fs.readFile(path.join(pluginRoot, 'SKILL.md'), 'utf8')).toContain(OFFICIAL_SKILL_SECTION_BEGIN);
+    expect(installed['demo@official-registry']?.sourceTrust).toBe('local-marketplace');
+    expect(await fs.readFile(path.join(pluginRoot, 'SKILL.md'), 'utf8')).not.toContain(OFFICIAL_SKILL_SECTION_BEGIN);
 
     const persisted = JSON.parse(
       await fs.readFile(path.join(mocks.userConfigDir, 'installed-plugins.json'), 'utf8'),
@@ -520,7 +520,7 @@ describe('marketplace install service trust defaults', () => {
     await expect(fs.readFile(installedPluginsPath, 'utf8')).resolves.toBe(original);
   });
 
-  it('backfills markers and trust for a legacy official registry record on startup', async () => {
+  it('downgrades legacy official registry records without a verifiable source', async () => {
     const pluginRoot = path.join(mocks.userConfigDir, 'plugins', 'legacy-official');
     await fs.mkdir(pluginRoot, { recursive: true });
     await fs.writeFile(path.join(pluginRoot, 'SKILL.md'), '---\nname: legacy-official\ndescription: Legacy\n---\nnotes\n', 'utf8');
@@ -542,30 +542,40 @@ describe('marketplace install service trust defaults', () => {
     );
 
     const installed = await listInstalledPlugins();
-    expect(installed['legacy-official@official-registry']?.sourceTrust).toBe('official-registry');
+    expect(installed['legacy-official@official-registry']?.sourceTrust).toBe('local-marketplace');
     const persisted = JSON.parse(await fs.readFile(path.join(mocks.userConfigDir, 'installed-plugins.json'), 'utf8')) as Record<string, { sourceTrust?: string }>;
-    expect(persisted['legacy-official@official-registry']?.sourceTrust).toBe('official-registry');
-    expect(await fs.readFile(path.join(pluginRoot, 'SKILL.md'), 'utf8')).toContain(OFFICIAL_SKILL_SECTION_END);
+    expect(persisted['legacy-official@official-registry']?.sourceTrust).toBe('local-marketplace');
+    const content = await fs.readFile(path.join(pluginRoot, 'SKILL.md'), 'utf8');
+    expect(content).not.toContain(OFFICIAL_SKILL_SECTION_BEGIN);
+    expect(content).toContain('notes');
+  });
 
+  it('leaves installed records untouched when known marketplaces cannot be read', async () => {
+    const pluginRoot = path.join(mocks.userConfigDir, 'plugins', 'legacy-official');
+    await fs.mkdir(pluginRoot, { recursive: true });
     const skillPath = path.join(pluginRoot, 'SKILL.md');
-    const materialized = await fs.readFile(skillPath, 'utf8');
-    const userContent = `${materialized}\nUser experience after END\n`
-      .replace(`${OFFICIAL_SKILL_SECTION_BEGIN}\n`, '')
-      .replace(`${OFFICIAL_SKILL_SECTION_END}\n`, '');
-    await fs.writeFile(skillPath, userContent, 'utf8');
-    const readFile = vi.spyOn(fs, 'readFile');
-    const writeFile = vi.spyOn(fs, 'writeFile');
+    await fs.writeFile(skillPath, '---\nname: legacy-official\n---\nnotes\n', 'utf8');
+    const legacyState = {
+      'legacy-official@official-registry': {
+        plugin: 'legacy-official',
+        marketplace: 'official-registry',
+        scope: 'user' as const,
+        isEnabled: true,
+        installedAt: '2025-01-01T00:00:00.000Z',
+        pluginRoot,
+        skills: ['legacy-official__official-registry.staging-1b94a0a6-6551-4c40-b05a-a4bf1acdfe8b'],
+        skillPaths: [''],
+        sourceMarketplacePath: pluginRoot,
+      },
+    };
+    const installedPluginsPath = path.join(mocks.userConfigDir, 'installed-plugins.json');
+    const original = JSON.stringify(legacyState);
+    await fs.writeFile(installedPluginsPath, original, 'utf8');
+    mocks.listMarketplaces.mockRejectedValueOnce(new Error('marketplace config unreadable'));
 
-    await listInstalledPlugins();
-    await getEnabledSkillDescriptors();
-
-    expect(readFile.mock.calls.filter(([file]) => file === skillPath)).toEqual([]);
-    expect(writeFile.mock.calls.filter(([file]) => file === skillPath)).toEqual([]);
-    readFile.mockRestore();
-    writeFile.mockRestore();
-    expect(await fs.readFile(skillPath, 'utf8')).toBe(userContent);
-    expect(userContent).not.toContain(OFFICIAL_SKILL_SECTION_BEGIN);
-    expect(userContent).toContain('User experience after END');
+    await expect(listInstalledPlugins()).resolves.toEqual(legacyState);
+    await expect(fs.readFile(installedPluginsPath, 'utf8')).resolves.toBe(original);
+    await expect(fs.readFile(skillPath, 'utf8')).resolves.not.toContain(OFFICIAL_SKILL_SECTION_BEGIN);
   });
 
   it.each([

@@ -54,7 +54,6 @@ const marketplaceSkillDirs = vi.hoisted(() => new Set<string>());
 const marketplaceOfficialSkillDirs = vi.hoisted(() => new Set<string>());
 
 vi.mock('../../../../src/host/skills/marketplace/installService', () => ({
-  getEnabledSkillDirs: async () => [...marketplaceSkillDirs],
   getEnabledSkillDescriptors: async () => [...marketplaceSkillDirs].map((dir) => ({
     dir,
     official: marketplaceOfficialSkillDirs.has(dir),

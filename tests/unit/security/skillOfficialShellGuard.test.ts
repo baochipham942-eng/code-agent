@@ -30,6 +30,18 @@ describe('guardShellOfficialSkillWrites', () => {
     await expect(guardShellOfficialSkillWrites('printf notes > new/SKILL.md', root)).resolves.toEqual({ allowed: true });
   });
 
+  it('returns a structured refusal when an existing SKILL.md cannot be read', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-official-shell-'));
+    const skillPath = path.join(root, 'SKILL.md');
+    await fs.mkdir(skillPath);
+
+    await expect(guardShellOfficialSkillWrites('printf notes >> SKILL.md', root)).resolves.toMatchObject({
+      allowed: false,
+      code: 'OFFICIAL_SKILL_SECTION_PROTECTED',
+      path: await fs.realpath(skillPath),
+    });
+  });
+
   it('keeps the guard when SKILL.md is a symlink', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-official-shell-'));
     const target = path.join(root, 'managed.md');

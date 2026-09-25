@@ -69,7 +69,12 @@ export async function guardShellOfficialSkillWrites(
       content = await fs.readFile(resolved, 'utf-8');
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      throw error;
+      return {
+        allowed: false,
+        error: 'SKILL.md official section could not be checked because the existing file could not be read. Resolve the file access issue and use the native file tools for content outside the official section.',
+        code: OFFICIAL_SKILL_SECTION_BLOCKED_CODE,
+        path: resolved,
+      };
     }
     if (hasOfficialSkillSections(content)) {
       return {

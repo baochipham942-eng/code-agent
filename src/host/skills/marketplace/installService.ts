@@ -111,17 +111,6 @@ export async function loadInstalledPlugins(): Promise<InstalledPluginsFile> {
     if (!fsSync.existsSync(filePath)) return {};
     const raw = await fs.readFile(filePath, 'utf8');
     const state = JSON.parse(raw) as InstalledPluginsFile;
-    try {
-      // A failed marketplace read leaves the legacy state untouched. The
-      // reserved marketplace label is not evidence of a signed registry
-      // install, so migration must fail closed when this prerequisite fails.
-      await listMarketplaces();
-    } catch (error) {
-      logger.warn('Failed to read known marketplaces during plugin migration', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return state;
-    }
     const migrated = await migrateInstalledPlugins(migrateStagingSkillNames(state));
     if (migrated !== state) {
       await saveInstalledPlugins(migrated).catch(error => {

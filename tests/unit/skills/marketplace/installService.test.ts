@@ -548,7 +548,7 @@ describe('marketplace install service trust defaults', () => {
     expect(content).toContain('notes');
   });
 
-  it('leaves installed records untouched when known marketplaces cannot be read', async () => {
+  it('migrates installed records without reading known marketplaces', async () => {
     const pluginRoot = path.join(mocks.userConfigDir, 'plugins', 'legacy-official');
     await fs.mkdir(pluginRoot, { recursive: true });
     const skillPath = path.join(pluginRoot, 'SKILL.md');
@@ -567,12 +567,16 @@ describe('marketplace install service trust defaults', () => {
       },
     };
     const installedPluginsPath = path.join(mocks.userConfigDir, 'installed-plugins.json');
-    const original = JSON.stringify(legacyState);
-    await fs.writeFile(installedPluginsPath, original, 'utf8');
+    await fs.writeFile(installedPluginsPath, JSON.stringify(legacyState), 'utf8');
     mocks.listMarketplaces.mockRejectedValueOnce(new Error('marketplace config unreadable'));
 
-    await expect(listInstalledPlugins()).resolves.toEqual(legacyState);
-    await expect(fs.readFile(installedPluginsPath, 'utf8')).resolves.toBe(original);
+    const installed = await listInstalledPlugins();
+    expect(installed['legacy-official@official-registry']).toMatchObject({
+      skills: ['legacy-official'],
+      sourceTrust: 'local-marketplace',
+    });
+    expect(mocks.listMarketplaces).not.toHaveBeenCalled();
+    await expect(fs.readFile(installedPluginsPath, 'utf8')).resolves.toContain('"sourceTrust": "local-marketplace"');
     await expect(fs.readFile(skillPath, 'utf8')).resolves.not.toContain(OFFICIAL_SKILL_SECTION_BEGIN);
   });
 

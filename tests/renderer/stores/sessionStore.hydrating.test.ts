@@ -125,6 +125,29 @@ describe('switchSession 的 isHydratingSession 窗口', () => {
     ]);
   });
 
+  it('跨会话普通切换不会把来源会话的消息尾部合入目标会话', async () => {
+    useSessionStore.setState({
+      sessions: [makeSession('s1'), makeSession('s2')],
+      currentSessionId: 's1',
+      messages: [{ id: 'source-message', role: 'user', content: '项目 B 内容', timestamp: 1 }],
+    });
+    mockDomainInvoke.mockImplementation((_domain: string, action: string) => {
+      if (action === 'load') return Promise.resolve(loadedSession('s2', [
+        { id: 'target-message', role: 'user', content: '项目 A 内容', timestamp: 2 },
+      ]));
+      return Promise.resolve({ success: true, data: [] });
+    });
+
+    await useSessionStore.getState().switchSession('s2');
+
+    expect(useSessionStore.getState().messages).toEqual([
+      expect.objectContaining({ id: 'target-message', content: '项目 A 内容' }),
+    ]);
+    expect(useSessionStore.getState().messages).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'source-message' })]),
+    );
+  });
+
   it('已应用 turn_start/stream_chunk 后 force hydration，迟到的空闲空快照不回退运行态', async () => {
     let resolveLoad: (value: unknown) => void = () => {};
     mockDomainInvoke.mockImplementation((_domain: string, action: string) => {

@@ -314,7 +314,7 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
         writeScope: { projectId: 'project-1', mode: 'none' },
       },
     });
-    expect(switchSession).toHaveBeenCalledWith('session-1', { force: true });
+    expect(switchSession).toHaveBeenCalledWith('session-1');
     expect(useSessionStore.getState().messages[0]).toMatchObject({
       role: 'user',
       content: '@neo 整理竞品',
@@ -390,7 +390,7 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
     await waitFor(() => expect(createAndRun).toHaveBeenCalledTimes(1));
     expect(createSession).toHaveBeenCalledWith('让 Neo 开始一件新工作', { workingDirectory: '/project-a' });
     expect(createAndRun.mock.calls[0]?.[0]).toMatchObject({ sourceConversationId: 'session-created', workspacePath: '/project-a' });
-    expect(switchSession).toHaveBeenCalledWith('session-created', { force: true });
+    expect(switchSession).toHaveBeenCalledWith('session-created');
   });
 
   it('hides new-card creation when a project has neither workspace nor session', () => {

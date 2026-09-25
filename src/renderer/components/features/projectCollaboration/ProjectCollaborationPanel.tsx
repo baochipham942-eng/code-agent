@@ -167,7 +167,7 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
       const result = await createAndRun(request);
       const sessionStore = useSessionStore.getState();
       if (sessionStore.currentSessionId !== conversationId) {
-        await sessionStore.switchSession(conversationId, { force: true });
+        await sessionStore.switchSession(conversationId);
       }
       useSessionStore.getState().addMessage(buildNeoTagSourceMessage({
         envelope,

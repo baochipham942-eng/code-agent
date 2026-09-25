@@ -65,70 +65,73 @@ function classifyRegion(testId: string | null, explicit: string | null): Geometr
   return 'other';
 }
 
-export async function installGeometrySensor(page: Page, options: GeometrySensorOptions = {}): Promise<GeometrySensor> {
-  // tsx/esbuild injects `__name` into serialized evaluate callbacks; Playwright's
-  // own compiler does not. Define a no-op so both runners can install the sensor.
-  await page.evaluate('globalThis.__name = globalThis.__name || ((fn) => fn)');
-  await page.evaluate((stateKey) => {
-    const existing = (window as unknown as Record<string, unknown>)[stateKey] as BrowserSensorState | undefined;
-    if (existing) return;
+function installBrowserSensor(stateKey: string): void {
+  const globalWindow = window as unknown as Record<string, unknown> & { __name?: (fn: unknown) => unknown };
+  globalWindow.__name = globalWindow.__name ?? ((fn) => fn);
+  const existing = globalWindow[stateKey] as BrowserSensorState | undefined;
+  if (existing) return;
 
-    const state: BrowserSensorState = { interactiveAt: null, lastInputAt: -Infinity, shifts: [] };
-    const classify = (testId: string | null, explicit: string | null): GeometryRegion => {
-      if (explicit === 'sidebar' || explicit === 'conversation' || explicit === 'composer') return explicit;
-      const value = `${explicit ?? ''} ${testId ?? ''}`.toLowerCase();
-      if (value.includes('sidebar')) return 'sidebar';
-      if (value.includes('composer') || value.includes('chat-input')) return 'composer';
-      if (value.includes('conversation') || value.includes('chat') || value.includes('message')) return 'conversation';
-      return 'other';
-    };
-    const markInput = () => { state.lastInputAt = performance.now(); };
-    for (const event of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
-      window.addEventListener(event, markInput, { capture: true, passive: true });
-    }
+  const state: BrowserSensorState = { interactiveAt: null, lastInputAt: -Infinity, shifts: [] };
+  const classify = (testId: string | null, explicit: string | null): GeometryRegion => {
+    if (explicit === 'sidebar' || explicit === 'conversation' || explicit === 'composer') return explicit;
+    const value = `${explicit ?? ''} ${testId ?? ''}`.toLowerCase();
+    if (value.includes('sidebar')) return 'sidebar';
+    if (value.includes('composer') || value.includes('chat-input')) return 'composer';
+    if (value.includes('conversation') || value.includes('chat') || value.includes('message')) return 'conversation';
+    return 'other';
+  };
+  const regionOfNode = (node: Node | undefined): GeometryRegion => {
+    const element = node instanceof Element ? node : node instanceof Node ? node.parentElement : null;
+    const landmark = element?.closest('[data-geometry-region]')?.getAttribute('data-geometry-region') ?? null;
+    const testId = element?.closest('[data-testid]')?.getAttribute('data-testid') ?? null;
+    return classify(testId, landmark);
+  };
+  const markInput = () => { state.lastInputAt = performance.now(); };
+  for (const event of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
+    window.addEventListener(event, markInput, { capture: true, passive: true });
+  }
 
-    if ('PerformanceObserver' in window) {
-      state.observer = new PerformanceObserver((list) => {
-        for (const entry of list.getEntries() as PerformanceEntry[]) {
-          const shift = entry as PerformanceEntry & {
-            value?: number;
-            hadRecentInput?: boolean;
-            sources?: Array<{ node?: Node }>;
-          };
-          const source = shift.sources?.[0]?.node;
-          const element = source instanceof Element
-            ? source
-            : source instanceof Node
-              ? source.parentElement
-              : null;
-          const landmark = element?.closest('[data-geometry-region]')?.getAttribute('data-geometry-region') ?? null;
-          const testId = element?.closest('[data-testid]')?.getAttribute('data-testid') ?? null;
-          const region = classify(testId, landmark);
-          const phase = state.interactiveAt !== null && entry.startTime >= state.interactiveAt
-            ? 'after-interactive'
-            : 'before-first-interactive';
-          const hadRecentInput = shift.hadRecentInput === true
-            || performance.now() - state.lastInputAt < 500;
-          state.shifts.push({
-            value: shift.value ?? 0,
-            phase,
-            hadRecentInput,
-            region,
-            startTime: entry.startTime,
-            sources: (shift.sources ?? []).map(({ node }) => node instanceof Element
-              ? node.getAttribute('data-testid') ?? node.tagName.toLowerCase()
-              : 'unknown'),
-          });
-        }
-      });
-      try {
-        state.observer.observe({ type: 'layout-shift', buffered: true });
-      } catch {
-        // Chromium versions without Layout Instability support keep the other sensors active.
+  if ('PerformanceObserver' in window) {
+    state.observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries() as PerformanceEntry[]) {
+        const shift = entry as PerformanceEntry & {
+          value?: number;
+          hadRecentInput?: boolean;
+          sources?: Array<{ node?: Node }>;
+        };
+        const regions = (shift.sources ?? []).map(({ node }) => regionOfNode(node));
+        const region = regions.find((value) => value !== 'other') ?? regions[0] ?? 'other';
+        const phase = state.interactiveAt !== null && entry.startTime >= state.interactiveAt
+          ? 'after-interactive'
+          : 'before-first-interactive';
+        const hadRecentInput = shift.hadRecentInput === true
+          || performance.now() - state.lastInputAt < 500;
+        state.shifts.push({
+          value: shift.value ?? 0,
+          phase,
+          hadRecentInput,
+          region,
+          startTime: entry.startTime,
+          sources: (shift.sources ?? []).map(({ node }) => node instanceof Element
+            ? node.getAttribute('data-testid') ?? node.tagName.toLowerCase()
+            : 'unknown'),
+        });
       }
+    });
+    try {
+      state.observer.observe({ type: 'layout-shift', buffered: true });
+    } catch {
+      // Chromium versions without Layout Instability support keep the other sensors active.
     }
-    (window as unknown as Record<string, unknown>)[stateKey] = state;
-  }, STATE_KEY);
+  }
+  globalWindow[stateKey] = state;
+}
+
+export async function installGeometrySensor(page: Page, options: GeometrySensorOptions = {}): Promise<GeometrySensor> {
+  // addInitScript reinstalls the observer after every navigation so page.goto
+  // does not drop layout-shift records. evaluate covers the already-open document.
+  await page.addInitScript(installBrowserSensor, STATE_KEY);
+  await page.evaluate(installBrowserSensor, STATE_KEY);
 
   const sensor = {
     markInteractive: async () => {
@@ -205,14 +208,19 @@ export async function installGeometrySensor(page: Page, options: GeometrySensorO
         const rect = element.getBoundingClientRect();
         const direction = style.direction === 'rtl' ? 'left' : 'right';
         const gutterX = direction === 'right' ? rect.right - 1 : rect.left + 1;
-        const hit = document.elementFromPoint(gutterX, rect.top + Math.min(Math.max(rect.height / 2, 1), Math.max(rect.height - 1, 1)));
-        if (hit instanceof Element && !isDescendantOrSelf(element, hit)) {
-          violations.push({
-            kind: 'covered-scrollbar',
-            selector: container.selector,
-            region: container.region ?? regionFor(element),
-            detail: `scrollbar gutter is painted by ${hit.getAttribute('data-testid') ?? hit.tagName.toLowerCase()}`,
-          });
+        const sampleYs = [0.25, 0.5, 0.75].map((fraction) =>
+          rect.top + Math.min(Math.max(rect.height * fraction, 1), Math.max(rect.height - 1, 1)));
+        for (const y of sampleYs) {
+          const hit = document.elementFromPoint(gutterX, y);
+          if (hit instanceof Element && !isDescendantOrSelf(element, hit)) {
+            violations.push({
+              kind: 'covered-scrollbar',
+              selector: container.selector,
+              region: container.region ?? regionFor(element),
+              detail: `scrollbar gutter is painted by ${hit.getAttribute('data-testid') ?? hit.tagName.toLowerCase()}`,
+            });
+            break;
+          }
         }
       }
 

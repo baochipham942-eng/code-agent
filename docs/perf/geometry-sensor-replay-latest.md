@@ -2,7 +2,7 @@
 
 generatedAt: 2026-09-25T10:38:07.431Z
 repeats: 5
-harnessRoot: /Users/linchen/Downloads/ai/code-agent-worktrees/ui-geometry
+harnessRoot: .
 
 # N-EVAL-CASELIST-STICKY-PAD (PR #1844)
 pre-fix: 5d67be41edd8b1c68e3a5b3e81e2c0a8f0e3cbcd

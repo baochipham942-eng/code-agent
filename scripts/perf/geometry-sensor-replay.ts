@@ -27,7 +27,11 @@ interface RepeatResult {
 }
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const repeats = Number.parseInt(process.env.GEOMETRY_REPLAY_REPEATS ?? '5', 10);
+const parsedRepeats = Number.parseInt(process.env.GEOMETRY_REPLAY_REPEATS ?? '5', 10);
+if (!Number.isInteger(parsedRepeats) || parsedRepeats < 5) {
+  throw new Error(`GEOMETRY_REPLAY_REPEATS must be an integer >= 5 (got ${process.env.GEOMETRY_REPLAY_REPEATS ?? '5'})`);
+}
+const repeats = parsedRepeats;
 const keepWorktrees = process.argv.includes('--keep-worktrees');
 
 const CASES: ReplayCase[] = [
@@ -79,11 +83,13 @@ async function probe(page: Page, which: ReplayCase['page']): Promise<GeometryRep
 
 async function runVariant(entry: ReplayCase, variant: 'pre' | 'fix', sha: string): Promise<RepeatResult[]> {
   const dir = path.join(os.tmpdir(), `geo-${entry.pr}-${variant}`);
-  addWorktree(dir, sha);
-  const vite = await startGeometryVite(dir, repoRoot);
-  const browser = await chromium.launch({ headless: true });
+  let vite: Awaited<ReturnType<typeof startGeometryVite>> | undefined;
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   const results: RepeatResult[] = [];
   try {
+    addWorktree(dir, sha);
+    vite = await startGeometryVite(dir, repoRoot);
+    browser = await chromium.launch({ headless: true });
     for (let repeat = 1; repeat <= repeats; repeat += 1) {
       const page = await browser.newPage({
         viewport: entry.page === 'caselist' ? { width: 1440, height: 900 } : { width: 420, height: 720 },
@@ -103,8 +109,8 @@ async function runVariant(entry: ReplayCase, variant: 'pre' | 'fix', sha: string
       }
     }
   } finally {
-    await browser.close();
-    await vite.server.close();
+    await browser?.close();
+    await vite?.server.close();
     removeWorktree(dir);
   }
   return results;
@@ -134,7 +140,7 @@ async function main(): Promise<void> {
     '',
     `generatedAt: ${new Date().toISOString()}`,
     `repeats: ${repeats}`,
-    `harnessRoot: ${repoRoot}`,
+    'harnessRoot: .',
     '',
   ];
   let failed = false;

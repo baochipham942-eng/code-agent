@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { minimatch } from 'minimatch';
@@ -77,14 +77,75 @@ describe('perf-journey-ratchet', () => {
     expect(result.stderr).toContain('first-token commitCount 上升：3 -> 4');
   });
 
-  it('计数下降时要求同一 PR 下调基线，不自动改写', () => {
+  it('计数下降时通过并打印收紧命令，不自动改写', () => {
     const root = fixture(3);
     const reportPath = join(root, 'report.json');
     writeFileSync(reportPath, JSON.stringify(report('first-token', 2)));
+    const before = readFileSync(join(root, 'scripts/perf-journey-ratchet-baseline.json'), 'utf8');
     const result = run(root, ['--journey', 'first-token', '--report', reportPath]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('first-token commitCount 下降：3 -> 2');
+    expect(result.stdout).toContain('门通过');
+    expect(result.stdout).toContain('node scripts/perf-journey-ratchet.mjs --journey first-token --tighten');
+    expect(readFileSync(join(root, 'scripts/perf-journey-ratchet-baseline.json'), 'utf8')).toBe(before);
+  });
+
+  it('--tighten 只把低于基线的 journey 降到 current，从不抬高', () => {
+    const root = fixture(3);
+    const reportPath = join(root, 'report.json');
+    writeFileSync(reportPath, JSON.stringify([
+      report('cold-start', 3),
+      report('first-token', 2),
+      report('long-session', 3),
+      report('session-switch', 3),
+    ]));
+    const result = run(root, ['--tighten', '--report', reportPath]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('--tighten 已写入');
+    expect(result.stdout).toContain('first-token 3→2');
+    const next = JSON.parse(readFileSync(join(root, 'scripts/perf-journey-ratchet-baseline.json'), 'utf8'));
+    expect(next.journeys['cold-start'].commitCount).toBe(3);
+    expect(next.journeys['first-token'].commitCount).toBe(2);
+    expect(next.journeys['long-session'].commitCount).toBe(3);
+    expect(next.journeys['session-switch'].commitCount).toBe(3);
+    expect(next.reason).toContain('first-token 3→2');
+    expect(next.journeys['first-token'].reason).toContain('Tightened 3→2');
+    expect(next.journeys['first-token'].reason).toContain('via --tighten');
+  });
+
+  it('--tighten 遇到任何上升都拒绝写入', () => {
+    const root = fixture(3);
+    const reportPath = join(root, 'report.json');
+    writeFileSync(reportPath, JSON.stringify([
+      report('cold-start', 2),
+      report('first-token', 4),
+      report('long-session', 3),
+      report('session-switch', 3),
+    ]));
+    const before = readFileSync(join(root, 'scripts/perf-journey-ratchet-baseline.json'), 'utf8');
+    const result = run(root, ['--tighten', '--report', reportPath]);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('first-token commitCount 下降：3 -> 2');
-    expect(result.stderr).toContain('请在同一 PR 把 scripts/perf-journey-ratchet-baseline.json 里该 journey 的 commitCount 降到 2');
+    expect(result.stderr).toContain('拒绝 --tighten');
+    expect(result.stderr).toContain('first-token 3→4');
+    expect(result.stderr).toContain('禁止抬高基线');
+    expect(result.stderr).toContain('未写入');
+    expect(readFileSync(join(root, 'scripts/perf-journey-ratchet-baseline.json'), 'utf8')).toBe(before);
+  });
+
+  it('把 can-tighten 列表写入 GITHUB_STEP_SUMMARY', () => {
+    const root = fixture(3);
+    const reportPath = join(root, 'report.json');
+    const summaryPath = join(root, 'step-summary.md');
+    writeFileSync(reportPath, JSON.stringify(report('first-token', 2)));
+    const result = spawnSync(process.execPath, [script, '--repo-root', root, '--journey', 'first-token', '--report', reportPath], {
+      encoding: 'utf8',
+      env: { ...process.env, GITHUB_STEP_SUMMARY: summaryPath },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    const summary = readFileSync(summaryPath, 'utf8');
+    expect(summary).toContain('**Can tighten:** first-token 3 → 2');
+    expect(summary).toContain('node scripts/perf-journey-ratchet.mjs --journey first-token --tighten');
+    expect(summary).toContain('no path filter');
   });
 
   it('基线缺 reason / 缺 journey 都 fail loud', () => {
@@ -122,6 +183,20 @@ describe('perf-journey gates:fast path scope', () => {
 
     expect(selectTests(policy, ['src/renderer/hooks/useThrottledStreamingContent.ts']).files)
       .toContain('tests/scripts/perfJourneyFirstToken.test.ts');
+  });
+
+  it('shared product paths attach to exactly one journey probe', () => {
+    const bubble = selectTests(policy, ['src/renderer/components/features/chat/MessageBubble/MessageContent.tsx']);
+    expect(bubble.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual(['perf-journey-first-token']);
+    expect(bubble.files.filter((file) => JOURNEY_FILES.includes(file))).toEqual([
+      'tests/scripts/perfJourneyFirstToken.test.ts',
+    ]);
+
+    const trace = selectTests(policy, ['src/renderer/components/features/chat/TurnBasedTraceView.tsx']);
+    expect(trace.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual(['perf-journey-long-session']);
+    expect(trace.files.filter((file) => JOURNEY_FILES.includes(file))).toEqual([
+      'tests/scripts/perfJourneyLongSession.test.ts',
+    ]);
   });
 
   it('unrelated host paths do not select any journey probe', () => {

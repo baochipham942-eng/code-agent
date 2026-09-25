@@ -122,6 +122,7 @@
     },
     {
       "id": "perf-journey-cold-start",
+      "note": "Shared product paths attach to exactly one journey. ChatInput stays here (cold-start harness hot path). Post-merge swarm-ci perf-journey-ratchet (push to main, no path filter) re-runs all four as the safety net for anything no longer selected at PR time.",
       "paths": [
         "src/renderer/components/features/chat/ChatInput/**",
         "src/renderer/hooks/useI18n.ts",
@@ -142,6 +143,7 @@
     },
     {
       "id": "perf-journey-first-token",
+      "note": "MessageBubble/** attaches here only: first-token harness hot path is MessageContent, the most commit-sensitive probe for bubble edits. Post-merge job is the safety net.",
       "paths": [
         "src/renderer/components/features/chat/MessageBubble/**",
         "src/renderer/hooks/useThrottledStreamingContent.ts",
@@ -165,13 +167,13 @@
     },
     {
       "id": "perf-journey-long-session",
+      "note": "TurnBasedTraceView.tsx attaches here only: long-session harness hot path, 32-turn scroll is the most commit-sensitive probe. MessageBubble is first-token's. Post-merge job is the safety net.",
       "paths": [
         "src/renderer/components/features/chat/TurnBasedTraceView.tsx",
         "src/renderer/components/features/chat/TurnCard.tsx",
         "src/renderer/components/features/chat/TurnRail.tsx",
         "src/renderer/components/features/chat/TurnCompactionMarker.tsx",
         "src/renderer/components/features/chat/TraceNodeRenderer.tsx",
-        "src/renderer/components/features/chat/MessageBubble/**",
         "src/renderer/utils/turnVisibility.ts",
         "src/renderer/utils/turnRailItems.ts",
         "src/renderer/slots/productSlotHosts.tsx",
@@ -193,13 +195,12 @@
     },
     {
       "id": "perf-journey-session-switch",
+      "note": "EmptySessionArea / SessionSwitchSkeleton stays here. MessageBubble → first-token; TurnBasedTraceView → long-session. Post-merge job is the safety net.",
       "paths": [
         "src/renderer/components/features/chat/SessionSwitchSkeleton.tsx",
         "src/renderer/components/features/chat/NewSessionWelcome.tsx",
         "src/renderer/components/ChatView.tsx",
         "src/renderer/stores/sessionStore.ts",
-        "src/renderer/components/features/chat/TurnBasedTraceView.tsx",
-        "src/renderer/components/features/chat/MessageBubble/**",
         "scripts/perf/journey-session-switch-harness.tsx",
         "scripts/perf/journey-browser-smoke.ts",
         "scripts/perf/journey-probe-runtime.ts",

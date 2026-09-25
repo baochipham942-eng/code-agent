@@ -488,6 +488,8 @@ export const enSettingsModels = {
         projectOverrideOn: 'On in this project',
         projectOverrideOff: 'Off in this project',
         projectOverrideBadge: 'Project override',
+        officialConflictBadge: 'These Skills were not loaded because an official Skill with the same name takes precedence:',
+        officialConflictTitle: 'To use a custom version, change the name in its SKILL.md and rename its directory, then reload.',
         summarySkillCountSuffix: ' Skills · ',
         summaryLibraryCountSuffix: ' libraries',
         summaryDisabledPrefix: ' · ',

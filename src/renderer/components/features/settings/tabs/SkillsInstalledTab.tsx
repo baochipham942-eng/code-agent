@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { ParsedSkill } from '@shared/contract/agentSkill';
+import type { ParsedSkill, SkillConflictNotice } from '@shared/contract/agentSkill';
 import type { LocalSkillLibrary, SkillCategory } from '@shared/contract/skillRepository';
 import { SKILL_CATEGORIES } from '@shared/constants/skillCatalog';
 import { Button, Input, Toggle } from '../../../primitives';
@@ -56,6 +56,7 @@ export type SkillsInstalledLabels = typeof zh.settings.skills.installed;
 export type InstalledSkill = ParsedSkill & {
   globalEnabled?: boolean;
   projectOverride?: boolean | null;
+  officialConflict?: SkillConflictNotice;
 };
 
 export type ProjectOverrideValue = 'follow' | 'on' | 'off';
@@ -278,6 +279,11 @@ export function overrideToSelectValue(projectOverride: boolean | null | undefine
   return 'follow';
 }
 
+function skillFileLabel(basePath: string): string {
+  const segments = basePath.split(/[\\/]/).filter(Boolean);
+  return `${segments.at(-1) ?? basePath}/SKILL.md`;
+}
+
 interface SkillRowProps {
   skill: InstalledSkill;
   labels: SkillsInstalledLabels;
@@ -336,6 +342,15 @@ const SkillRow: React.FC<SkillRowProps> = ({
         <p className={`mt-0.5 truncate text-xs ${effectiveEnabled ? 'text-zinc-500' : 'text-zinc-600'}`} title={skill.description}>
           {skill.description}
         </p>
+        {skill.officialConflict && (
+          <div className="mt-2 text-xs text-badge-warning">
+            <p>{labels.officialConflictBadge}</p>
+            {skill.officialConflict.blockedSkills.map((blocked) => (
+              <p key={`${blocked.source}:${blocked.basePath}`} className="break-all">{skillFileLabel(blocked.basePath)}</p>
+            ))}
+            <p>{labels.officialConflictTitle}</p>
+          </div>
+        )}
       </div>
       <select
         value={overrideValue}

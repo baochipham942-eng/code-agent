@@ -60,6 +60,12 @@ export interface SkillDependencyStatus {
   missingReferences: string[];
 }
 
+/** A visible explanation for an official Skill name collision. */
+export interface SkillConflictNotice {
+  winnerSource: SkillSource;
+  blockedSkills: Array<{ source: SkillSource; basePath: string }>;
+}
+
 /**
  * 解析后的 Skill 结构
  */
@@ -122,6 +128,9 @@ export interface ParsedSkill {
 
   /** GAP-007: 解析时发现的未知 frontmatter 字段告警（拼写错误检测，供 UI/日志展示） */
   frontmatterWarnings?: string[];
+
+  /** Set on IPC rows when another same-name Skill was suppressed. */
+  officialConflict?: SkillConflictNotice;
 }
 
 export type SkillSource = 'user' | 'project' | 'plugin' | 'builtin' | 'cloud' | 'library';

@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { SKILL_CHANNELS } from '../../../src/shared/ipc/channels';
 import type { SkillRegistryEntry } from '../../../src/shared/contract/skillRegistry';
+import type { SkillSource } from '../../../src/shared/contract/agentSkill';
 
 // skill.ipc.ts 是 skill:* 通道的注册中枢：仓库管理 / skill 启停 / 会话挂载 /
 // 推荐目录 / SkillsMP 社区搜索 / combo 录制 / 草稿确认队列，全是瘦 try-catch 包装
@@ -24,7 +25,10 @@ const svc = vi.hoisted(() => {
     ensureInitialized: vi.fn(async () => {}),
     refreshLibraries: vi.fn(async () => {}),
     reload: vi.fn(async () => {}),
-    getAllSkills: vi.fn((): Array<{ name: string; source?: string }> => [{ name: 'pdf' }, { name: 'excel' }]),
+    getAllSkills: vi.fn((): Array<{ name: string; source?: string; basePath?: string }> => [{ name: 'pdf' }, { name: 'excel' }]),
+    getSkillConflicts: vi.fn((): Array<{
+      name: string; winnerSource: SkillSource; winnerPath: string; blockedSource: SkillSource; blockedPath: string;
+    }> => []),
     registerSkillsToToolSearch: vi.fn(),
     initialize: vi.fn(async () => {}),
   };
@@ -183,6 +187,7 @@ beforeEach(() => {
   svc.repo.isSkillEnabled.mockReturnValue(true);
   svc.discovery.getWorkingDirectory.mockReturnValue('/work');
   svc.discovery.getAllSkills.mockReturnValue([{ name: 'pdf' }, { name: 'excel' }]);
+  svc.discovery.getSkillConflicts.mockReturnValue([]);
   svc.session.mountSkill.mockResolvedValue(true);
   svc.session.unmountSkill.mockReturnValue(true);
   svc.session.getMountedSkills.mockReturnValue([{ name: 'pdf' }]);
@@ -250,6 +255,22 @@ describe('仓库管理', () => {
 });
 
 describe('skill 启停', () => {
+  it('SKILL_LIST carries every blocked source to the official winner without exposing extra invocable rows', async () => {
+    svc.discovery.getAllSkills.mockReturnValue([{ name: 'pdf', source: 'plugin', basePath: '/plugins/pdf' }]);
+    svc.discovery.getSkillConflicts.mockReturnValue([
+      { name: 'pdf', winnerSource: 'plugin', winnerPath: '/plugins/pdf', blockedSource: 'user', blockedPath: '/user/pdf' },
+      { name: 'pdf', winnerSource: 'plugin', winnerPath: '/plugins/pdf', blockedSource: 'project', blockedPath: '/project/pdf' },
+    ]);
+    expect(await call(SKILL_CHANNELS.SKILL_LIST)).toEqual([
+      expect.objectContaining({
+        name: 'pdf',
+        officialConflict: {
+          winnerSource: 'plugin',
+          blockedSkills: [{ source: 'user', basePath: '/user/pdf' }, { source: 'project', basePath: '/project/pdf' }],
+        },
+      }),
+    ]);
+  });
   it('SKILL_LIST 附带全局态 + 无项目覆盖时 enabled 跟随全局', async () => {
     svc.repo.isSkillEnabled.mockImplementation((n: string) => n === 'pdf');
     const result = (await call(SKILL_CHANNELS.SKILL_LIST)) as Array<{

@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { z } from 'zod';
+import type { SkillInstallSourceTrust } from './skillInstallContentGuard';
 
 // ----------------------------------------------------------------------------
 // Marketplace Source Types
@@ -136,6 +137,8 @@ export interface InstalledPluginRecord {
   plugin: string;
   /** Marketplace name */
   marketplace: string;
+  /** Trust classification captured at install time; marketplace names are untrusted labels. */
+  sourceTrust?: SkillInstallSourceTrust;
   /** Installation scope */
   scope: PluginScope;
   /** Is the plugin enabled */

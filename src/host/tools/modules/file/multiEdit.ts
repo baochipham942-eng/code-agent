@@ -42,6 +42,7 @@ import { multiEditSchema as schema } from './multiEdit.schema';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { confineEvalPath } from '../../file/pathUtils';
 import { getFileMutationActorId } from './fileMutationIdentity';
+import { guardSkillOfficialSections } from '../../../security/skillOfficialSectionGuard';
 
 interface EditOperation {
   old_text: string;
@@ -287,6 +288,15 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
           ok: false,
           error: 'No changes were made (all old_text values equal their new_text).',
           code: 'NO_CHANGES',
+        };
+      }
+
+      const officialSectionGuard = guardSkillOfficialSections(filePath, originalContent, content);
+      if (!officialSectionGuard.allowed) {
+        return {
+          ok: false,
+          error: officialSectionGuard.error ?? 'SKILL.md official section is protected.',
+          code: officialSectionGuard.code,
         };
       }
 

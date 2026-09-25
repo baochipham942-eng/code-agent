@@ -10,6 +10,7 @@ import fsSync from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { getUserConfigDir as getBaseConfigDir } from '../../config/configPaths';
+import { SKILL_REGISTRY_MARKETPLACE_ID } from '../../../shared/contract/skillRegistry';
 import { createLogger } from '../../services/infra/logger';
 import type {
   MarketplaceSource,
@@ -442,6 +443,9 @@ export async function addMarketplace(sourceInput: string): Promise<{ name: strin
     await cacheMarketplaceToDir(validated.data, tempDir);
     const manifest = await readMarketplaceManifest(tempDir);
     const marketplaceName = manifest.name || 'marketplace';
+    if (marketplaceName.toLowerCase() === SKILL_REGISTRY_MARKETPLACE_ID) {
+      throw new Error(`Marketplace name '${marketplaceName}' is reserved for the signed official registry`);
+    }
 
     if (config[marketplaceName]) {
       throw new Error(

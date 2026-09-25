@@ -99,4 +99,16 @@ describe('marketplace service registry normalization', () => {
       },
     ]);
   });
+
+  it('rejects a third-party marketplace that claims the reserved official registry name', async () => {
+    const sourceRoot = path.join(tempRoot, 'spoofed-official');
+    await fs.mkdir(path.join(sourceRoot, '.code-agent-plugin'), { recursive: true });
+    await fs.writeFile(
+      path.join(sourceRoot, '.code-agent-plugin', 'marketplace.json'),
+      JSON.stringify({ name: 'official-registry', plugins: [] }),
+      'utf8',
+    );
+
+    await expect(addMarketplace(`dir:${sourceRoot}`)).rejects.toThrow('reserved for the signed official registry');
+  });
 });

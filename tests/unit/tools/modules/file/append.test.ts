@@ -108,6 +108,43 @@ describe('appendModule (native)', () => {
     }
   });
 
+  it('allows appending durable notes after an official SKILL.md section', async () => {
+    const file = path.join(tmpDir, 'SKILL.md');
+    const original = [
+      '<!-- NEO:OFFICIAL-SKILL:BEGIN -->',
+      'shipped instruction',
+      '<!-- NEO:OFFICIAL-SKILL:END -->',
+      '',
+    ].join('\n');
+    await fs.writeFile(file, original, 'utf-8');
+    const handler = await appendModule.createHandler();
+
+    const result = await handler.execute(
+      { file_path: file, content: 'durable note\n', final: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(await fs.readFile(file, 'utf-8')).toBe(`${original}durable note\n`);
+  });
+
+  it('blocks appending malformed marker content to a SKILL.md', async () => {
+    const file = path.join(tmpDir, 'SKILL.md');
+    await fs.writeFile(file, 'durable note\n', 'utf-8');
+    const handler = await appendModule.createHandler();
+
+    const result = await handler.execute(
+      { file_path: file, content: '<!-- NEO:OFFICIAL-SKILL:BEGIN -->\n' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('OFFICIAL_SKILL_SECTION_PROTECTED');
+    expect(await fs.readFile(file, 'utf-8')).toBe('durable note\n');
+  });
+
   it('confines eval absolute repo paths to the sandbox', async () => {
     const realRoot = path.join(tmpDir, 'repo');
     const sandbox = path.join(tmpDir, 'sandbox');

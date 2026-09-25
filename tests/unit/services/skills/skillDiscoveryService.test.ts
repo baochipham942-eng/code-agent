@@ -12,13 +12,20 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
+const builtinSkillsFixture = vi.hoisted(() => ({
+  skills: [] as Array<Record<string, unknown>>,
+}));
+const cloudSkillsFixture = vi.hoisted(() => ({
+  skills: [] as Array<Record<string, unknown>>,
+}));
+
 vi.mock('../../../../src/host/services/skills/builtinSkills', () => ({
-  getBuiltinSkills: () => [],
+  getBuiltinSkills: () => builtinSkillsFixture.skills,
 }));
 
 vi.mock('../../../../src/host/services/cloud', () => ({
   getCloudConfigService: () => ({
-    getSkills: () => [],
+    getSkills: () => cloudSkillsFixture.skills,
   }),
 }));
 
@@ -44,9 +51,13 @@ vi.mock('../../../../src/host/security/folderTrustService', () => ({
 }));
 
 const marketplaceSkillDirs = vi.hoisted(() => new Set<string>());
+const marketplaceOfficialSkillDirs = vi.hoisted(() => new Set<string>());
 
 vi.mock('../../../../src/host/skills/marketplace/installService', () => ({
-  getEnabledSkillDirs: async () => [...marketplaceSkillDirs],
+  getEnabledSkillDescriptors: async () => [...marketplaceSkillDirs].map((dir) => ({
+    dir,
+    official: marketplaceOfficialSkillDirs.has(dir),
+  })),
 }));
 
 import { SkillDiscoveryService } from '../../../../src/host/services/skills/skillDiscoveryService';
@@ -95,6 +106,9 @@ describe('SkillDiscoveryService discovery', () => {
 
   beforeEach(async () => {
     marketplaceSkillDirs.clear();
+    marketplaceOfficialSkillDirs.clear();
+    builtinSkillsFixture.skills = [];
+    cloudSkillsFixture.skills = [];
     tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-discovery-'));
     homeDir = path.join(tmpRoot, 'home');
     projectDir = path.join(tmpRoot, 'project');
@@ -107,6 +121,8 @@ describe('SkillDiscoveryService discovery', () => {
 
   afterEach(async () => {
     vi.unstubAllEnvs();
+    builtinSkillsFixture.skills = [];
+    cloudSkillsFixture.skills = [];
     await fs.rm(tmpRoot, { recursive: true, force: true });
   });
 
@@ -248,6 +264,78 @@ describe('SkillDiscoveryService discovery', () => {
 
     expect(service.getSkill('plugin-demo')?.source).toBe('plugin');
     expect(service.getSkill('hidden-demo')).toBeUndefined();
+  });
+
+  it('keeps a protected built-in skill when external sources use the same name', async () => {
+    builtinSkillsFixture.skills = [{
+      name: 'official-skill',
+      description: 'official description',
+      depends: [],
+      provides: ['skill:official-skill'],
+      promptContent: 'official prompt',
+      basePath: '',
+      allowedTools: [],
+      disableModelInvocation: false,
+      userInvocable: true,
+      executionContext: 'inline',
+      source: 'builtin',
+      loaded: true,
+    }];
+
+    await writeSkill(path.join(homeDir, '.code-agent', 'skills'), 'official-skill');
+    await writeSkill(path.join(projectDir, '.code-agent', 'skills'), 'official-skill');
+    const pluginSkillDir = path.join(homeDir, '.code-agent', 'plugins', 'official', 'skills', 'official-skill');
+    await writeSkillMd(pluginSkillDir, 'official-skill');
+    marketplaceSkillDirs.add(pluginSkillDir);
+    const libraryDir = path.join(homeDir, '.code-agent', 'skills', 'official-library');
+    await writeSkillMd(libraryDir, 'official-skill');
+    await writeLibraryMeta(libraryDir, '.');
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(service.getSkill('official-skill')).toMatchObject({
+      source: 'builtin',
+      promptContent: 'official prompt',
+    });
+  });
+
+  it('protects an official registry plugin skill from a later project collision', async () => {
+    const pluginSkillDir = path.join(homeDir, '.code-agent', 'plugins', 'official', 'skills', 'registry-skill');
+    await writeSkillMd(pluginSkillDir, 'registry-skill');
+    marketplaceSkillDirs.add(pluginSkillDir);
+    marketplaceOfficialSkillDirs.add(pluginSkillDir);
+    await writeSkill(path.join(projectDir, '.code-agent', 'skills'), 'registry-skill');
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(service.getSkill('registry-skill')).toMatchObject({ source: 'plugin', basePath: pluginSkillDir });
+    expect(service.getSkillConflicts()).toEqual([
+      expect.objectContaining({
+        name: 'registry-skill',
+        winnerSource: 'plugin',
+        blockedSource: 'project',
+      }),
+    ]);
+  });
+
+  it('keeps a protected cloud skill when a project skill uses the same name', async () => {
+    cloudSkillsFixture.skills = [{
+      name: 'cloud-official-skill',
+      description: 'cloud official description',
+      prompt: 'cloud official prompt',
+      tools: ['Read'],
+    }];
+    await writeSkill(path.join(projectDir, '.code-agent', 'skills'), 'cloud-official-skill');
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(service.getSkill('cloud-official-skill')).toMatchObject({
+      source: 'cloud',
+      promptContent: 'cloud official prompt',
+    });
   });
 
   it('discovers a single-skill library whose SKILL.md is at skillsPath "."', async () => {

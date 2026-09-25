@@ -490,6 +490,8 @@ export const zhSettingsModels = {
         projectOverrideOn: '本项目启用',
         projectOverrideOff: '本项目禁用',
         projectOverrideBadge: '项目覆盖',
+        officialConflictBadge: '以下技能已被同名官方技能覆盖，未加载：',
+        officialConflictTitle: '如需使用自定义版本，请修改上述 SKILL.md 的 name 和目录名后重新加载。',
         summarySkillCountSuffix: ' 个 Skill · ',
         summaryLibraryCountSuffix: ' 个库',
         summaryDisabledPrefix: ' · ',

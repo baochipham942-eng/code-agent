@@ -80,6 +80,14 @@ interface SkillMetadataCachePayload {
   entries: Record<string, SkillMetadataCacheEntry>;
 }
 
+interface SkillConflict {
+  name: string;
+  winnerSource: SkillSource;
+  winnerPath: string;
+  blockedSource: SkillSource;
+  blockedPath: string;
+}
+
 /**
  * Skill 发现服务
  *
@@ -89,10 +97,13 @@ interface SkillMetadataCachePayload {
  * 3. Claude legacy 目录: 默认纳入发现，实际内容仍按需加载
  * 4. 内置 Skills (从 cloudConfigService 转换)
  *
- * 优先级：项目 > 用户 > 内置（后加载的覆盖先加载的）
+ * 加载顺序仍是内置、用户、库、插件、项目；同名官方 Skill 会保留，外部同名项记录为冲突并跳过。
  */
 class SkillDiscoveryService {
   private skills: Map<string, ParsedSkill> = new Map();
+  /** Product-owned skills cannot be replaced by same-name external skills. */
+  private readonly protectedOfficialSkillNames = new Set<string>();
+  private skillConflicts: SkillConflict[] = [];
   private initialized = false;
   private workingDirectory = '';
   private readonly includeClaudeLegacySkills: boolean;
@@ -165,6 +176,8 @@ class SkillDiscoveryService {
   private async doInitialize(normalizedDir: string): Promise<void> {
     this.workingDirectory = normalizedDir;
     this.skills.clear();
+    this.protectedOfficialSkillNames.clear();
+    this.skillConflicts = [];
     if (this.allowedSkillNames?.size === 0) {
       this.initialized = true;
       await this.registerSkillsToToolSearch();
@@ -298,18 +311,20 @@ class SkillDiscoveryService {
       const localBuiltins = getBuiltinSkills();
       for (const skill of localBuiltins) {
         this.skills.set(skill.name, skill);
+        this.protectedOfficialSkillNames.add(skill.name);
       }
       logger.debug('Loaded local builtin skills', { count: localBuiltins.length });
     } catch (error) {
       logger.warn('Failed to load local builtin skills', { error });
     }
 
-    // 2. 再加载云端配置的 skills（优先级较高，会覆盖同名 skill）
+    // 2. 再加载云端配置的 skills，并将其名称加入官方保护集合。
     try {
       const cloudSkills = getCloudConfigService().getSkills();
       for (const skill of cloudSkills) {
         const parsed = bridgeCloudSkill(skill);
         this.skills.set(parsed.name, parsed);
+        this.protectedOfficialSkillNames.add(parsed.name);
       }
       logger.debug('Loaded cloud builtin skills', { count: cloudSkills.length });
     } catch (error) {
@@ -351,13 +366,49 @@ class SkillDiscoveryService {
     }
   }
 
-  private async loadSkillDirectory(skillDir: string, source: SkillSource): Promise<void> {
+  private async loadSkillDirectory(
+    skillDir: string,
+    source: SkillSource,
+    options: { official?: boolean } = {},
+  ): Promise<void> {
     if (!(await hasSkillMd(skillDir))) {
       return;
     }
 
     try {
       const skill = await this.readSkillMetadata(skillDir, source);
+      if (options.official) {
+        if (this.protectedOfficialSkillNames.has(skill.name)) {
+          const winner = this.skills.get(skill.name);
+          if (winner) this.recordSkillConflict(winner, skill);
+          logger.info('Skipped official registry skill shadowing an earlier official skill', {
+            name: skill.name,
+            source,
+            path: skillDir,
+          });
+          return;
+        }
+        const previous = this.skills.get(skill.name);
+        if (previous) this.recordSkillConflict(skill, previous);
+        this.skills.set(skill.name, skill);
+        this.protectedOfficialSkillNames.add(skill.name);
+        logger.debug('Loaded official registry skill', {
+          name: skill.name,
+          source,
+          path: skillDir,
+        });
+        return;
+      }
+      if (this.protectedOfficialSkillNames.has(skill.name)) {
+        const winner = this.skills.get(skill.name);
+        if (winner) this.recordSkillConflict(winner, skill);
+        logger.info('Skipped external skill shadowing protected official skill', {
+          name: skill.name,
+          source,
+          path: skillDir,
+        });
+        return;
+      }
       this.skills.set(skill.name, skill);
       logger.debug('Loaded skill', {
         name: skill.name,
@@ -370,6 +421,24 @@ class SkillDiscoveryService {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
+  }
+
+  private recordSkillConflict(winner: ParsedSkill, blocked: ParsedSkill): void {
+    const duplicate = this.skillConflicts.some((conflict) =>
+      conflict.name === blocked.name
+      && conflict.winnerSource === winner.source
+      && conflict.winnerPath === winner.basePath
+      && conflict.blockedSource === blocked.source
+      && conflict.blockedPath === blocked.basePath,
+    );
+    if (duplicate) return;
+    this.skillConflicts.push({
+      name: blocked.name,
+      winnerSource: winner.source,
+      winnerPath: winner.basePath,
+      blockedSource: blocked.source,
+      blockedPath: blocked.basePath,
+    });
   }
 
   /**
@@ -436,13 +505,13 @@ class SkillDiscoveryService {
 
   private async loadFromEnabledMarketplacePlugins(): Promise<void> {
     try {
-      const { getEnabledSkillDirs } = await import('../../skills/marketplace/installService');
-      const skillDirs = await getEnabledSkillDirs();
-      for (const skillDir of skillDirs) {
-        await this.loadSkillDirectory(skillDir, 'plugin');
+      const { getEnabledSkillDescriptors } = await import('../../skills/marketplace/installService');
+      const skillDescriptors = await getEnabledSkillDescriptors();
+      for (const descriptor of skillDescriptors) {
+        await this.loadSkillDirectory(descriptor.dir, 'plugin', { official: descriptor.official });
       }
       logger.debug('Loaded skills from enabled marketplace plugins', {
-        count: skillDirs.length,
+        count: skillDescriptors.length,
       });
     } catch (error) {
       logger.warn('Failed to load enabled marketplace plugin skills', { error });
@@ -478,6 +547,10 @@ class SkillDiscoveryService {
   getSkill(name: string): ParsedSkill | undefined {
     if (this.allowedSkillNames && !this.allowedSkillNames.has(name)) return undefined;
     return this.skills.get(name);
+  }
+
+  getSkillConflicts(): SkillConflict[] {
+    return this.skillConflicts.map((conflict) => ({ ...conflict }));
   }
 
   /**

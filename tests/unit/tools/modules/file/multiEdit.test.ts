@@ -155,6 +155,34 @@ describe('multiEditModule evidence metadata', () => {
     expect(await fs.readFile(file, 'utf-8')).toBe('alpha\ngamma\n');
   });
 
+  it('blocks edits inside an official SKILL.md section', async () => {
+    const file = path.join(tmpDir, 'SKILL.md');
+    const original = [
+      '<!-- NEO:OFFICIAL-SKILL:BEGIN -->',
+      'shipped instruction',
+      '<!-- NEO:OFFICIAL-SKILL:END -->',
+      '',
+      'durable note',
+      '',
+    ].join('\n');
+    await fs.writeFile(file, original, 'utf-8');
+    await fileReadTracker.recordReadWithStats(file);
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        edits: [{ old_text: 'shipped instruction', new_text: 'rewritten instruction' }],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('OFFICIAL_SKILL_SECTION_PROTECTED');
+    expect(await fs.readFile(file, 'utf-8')).toBe(original);
+  });
+
   it('returns nearby file context when old_text is not found', async () => {
     const file = path.join(tmpDir, 'game.html');
     await fs.writeFile(file, [

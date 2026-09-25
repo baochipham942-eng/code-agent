@@ -14,6 +14,7 @@ import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { confineEvalPath } from '../../file/pathUtils';
 import { appendSchema as schema } from './append.schema';
 import { getFileMutationActorId } from './fileMutationIdentity';
+import { guardSkillOfficialSections } from '../../../security/skillOfficialSectionGuard';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
 const LOCK_WAIT_TIMEOUT_MS = 10_000;
@@ -104,6 +105,27 @@ class AppendHandler implements ToolHandler<Record<string, unknown>, string> {
 
     try {
       await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+      let originalSkillContent: string | undefined;
+      if (path.basename(resolvedPath) === 'SKILL.md') {
+        try {
+          originalSkillContent = await fs.readFile(resolvedPath, 'utf-8');
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+      }
+      const officialSectionGuard = guardSkillOfficialSections(
+        resolvedPath,
+        originalSkillContent,
+        originalSkillContent === undefined ? content : originalSkillContent + content,
+      );
+      if (!officialSectionGuard.allowed) {
+        return {
+          ok: false,
+          error: officialSectionGuard.error ?? 'SKILL.md official section is protected.',
+          code: officialSectionGuard.code,
+          meta: { outputPath: resolvedPath },
+        };
+      }
       await fs.appendFile(resolvedPath, content, 'utf-8');
       const stat = await fs.stat(resolvedPath);
       onProgress?.({ stage: 'completing', percent: 100 });

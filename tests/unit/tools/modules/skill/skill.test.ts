@@ -337,6 +337,25 @@ describe('skillModule (native)', () => {
       }
     });
 
+    it('keeps official skill sections read-only in the self-patching hint', async () => {
+      getSkillMock.mockReturnValue(makeSkill({
+        name: 'official-notes',
+        promptContent: [
+          '<!-- NEO:OFFICIAL-SKILL:BEGIN -->',
+          'shipped instruction',
+          '<!-- NEO:OFFICIAL-SKILL:END -->',
+          'durable note',
+        ].join('\n'),
+      }));
+      const result = await run({ command: 'official-notes' });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const meta = result.meta as { skillResult: { newMessages: Array<{ content: string }> } };
+        expect(meta.skillResult.newMessages[1].content).toContain('BEGIN 与 END 标记之间的官方内容只读');
+        expect(meta.skillResult.newMessages[1].content).toContain('END 标记之后的经验段');
+      }
+    });
+
     it('does not append self-patching hint for builtin skills', async () => {
       getSkillMock.mockReturnValue(makeSkill({ name: 'demo', source: 'builtin' }));
       const result = await run({ command: 'demo' });

@@ -69,6 +69,9 @@ on:
       - 'scripts/attention-budget-ratchet.mjs'
       # 基线也要触发：只改基线 = 手工放宽棘轮，不能溜过门（与 knip 基线同理）
       - 'scripts/attention-budget-ratchet-baseline.json'
+      - 'scripts/perf-journey-ratchet.mjs'
+      - 'scripts/perf-journey-ratchet-baseline.json'
+      - 'scripts/perf/journey-*'
       - 'scripts/coverage-ratchet.mjs'
       # 覆盖率基线也必须触发：只改基线 = 手工放宽棘轮，不能溜过门
       - 'scripts/coverage-ratchet-baseline.json'
@@ -574,6 +577,48 @@ jobs:
             tests/e2e/screenshots/
           if-no-files-found: ignore
           retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Post-merge safety net: run ALL journey probes regardless of paths.
+  # PR-time coverage is path-scoped via gates:fast (one file slot per journey).
+  # ---------------------------------------------------------------------------
+  perf-journey-ratchet:
+    name: Perf journey ratchet (post-merge)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Read Playwright version
+        id: playwright-version
+        run: |
+          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run all journey commit-count probes
+        env:
+          E2E_BROWSER_CHANNEL: chromium
+        run: node scripts/perf-journey-ratchet.mjs
 
   # 不再写回 ci/swarm-health.json：streak 直接从 GitHub Actions API 派生，
   # 用 scripts/ci/swarm-streak.sh 按需查询，避免 [skip ci] commit + 1-commit

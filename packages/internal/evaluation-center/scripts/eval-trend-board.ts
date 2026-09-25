@@ -18,7 +18,7 @@
 //     分数是 0-100 制，混读会引入两种口径；报告 JSON 是信息最全的单一真源）。
 //   - mock 模型 run（environment.model === 'mock-model'）排除：mock harness 的分数
 //     不是真模型行为信号。
-//   - skipped / not_run / infra_excluded / cost_excluded 无轨迹语义，排除。
+//   - skipped / not_run / infra_excluded / cost_exceeded 无轨迹语义，排除。
 //   - token 只在 2026-09 后的报告里有（usage 字段），样本量单独如实报告，不足即剔除。
 //   - 「重试」报告里没有现成字段，用可复算的代理：紧邻的同工具再调用（前一次失败）；
 //     「错误恢复」= 同一工具先失败后成功（每工具计一次）。

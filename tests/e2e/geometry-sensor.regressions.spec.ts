@@ -2,7 +2,13 @@ import { expect, test } from './fixtures/axeTest';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startGeometryVite, type GeometryViteServer } from '../../scripts/perf/geometry-sensor-runtime';
-import { hasKind, probeCaselistGeometry, probeSidebarGeometry } from './fixtures/geometryScenarios';
+import {
+  hasKind,
+  probeCaselistGeometry,
+  probeSidebarGeometry,
+  reintroduceCaselistStickyDefect,
+  reintroduceSidebarOverhangDefect,
+} from './fixtures/geometryScenarios';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -31,5 +37,27 @@ test.describe('current-page geometry sensors', () => {
     const report = await probeSidebarGeometry(page);
     expect(report.violations, JSON.stringify(report.violations)).toEqual([]);
     expect(hasKind(report, 'right-overhang')).toBe(false);
+  });
+});
+
+test.describe('positive controls — a blind sensor must fail CI', () => {
+  test('caselist sticky-header control reintroduces FB-162 padding-top on the real page', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(vite.caselistUrl, { waitUntil: 'domcontentloaded' });
+    await reintroduceCaselistStickyDefect(page);
+    const report = await probeCaselistGeometry(page);
+    expect(hasKind(report, 'sticky-header')).toBe(true);
+    const sticky = report.violations.find((violation) => violation.kind === 'sticky-header');
+    expect(sticky?.detail, JSON.stringify(report.violations)).toMatch(/8(\.0)?px/);
+  });
+
+  test('sidebar right-overhang control drops scrollbar-band on the real SidebarSessionList', async ({ page }) => {
+    await page.setViewportSize({ width: 420, height: 720 });
+    await page.goto(vite.sidebarUrl, { waitUntil: 'domcontentloaded' });
+    await reintroduceSidebarOverhangDefect(page);
+    const report = await probeSidebarGeometry(page);
+    expect(hasKind(report, 'right-overhang')).toBe(true);
+    const overhang = report.violations.find((violation) => violation.kind === 'right-overhang');
+    expect(overhang?.detail, JSON.stringify(report.violations)).toMatch(/by 6(\.0)?px/);
   });
 });

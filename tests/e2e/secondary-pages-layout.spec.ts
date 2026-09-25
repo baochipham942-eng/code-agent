@@ -11,6 +11,7 @@
 
 import { test, expect, type Page } from './fixtures/axeTest';
 import { installGeometrySensor, type GeometrySensor } from './fixtures/geometrySensor';
+import { waitForLayoutSettle } from './fixtures/geometryScenarios';
 
 test.setTimeout(90_000);
 
@@ -74,7 +75,7 @@ test('侧栏会话列表的滚动条不挤内容轨——右轨与账号区箭�
       maxOverhangPx: 1,
     }],
   });
-  await waitForAppReady(page, geometrySensor);
+  await waitForAppReady(page);
   const scroll = page.getByTestId('sidebar-session-scroll');
   await expect(scroll).toBeVisible({ timeout: 15_000 });
   const sibling = page.getByTestId('sidebar-capability-zone');
@@ -86,6 +87,8 @@ test('侧栏会话列表的滚动条不挤内容轨——右轨与账号区箭�
   // 做法是侧栏根让出一条同宽窄带、列表用等宽负 margin 要回去，于是：
   //   列表**内容盒**宽度 === 不滚动兄弟块（能力区）的宽度。
   // 这条不变量对「溢出 / 不溢出」都成立，所以先强制溢出再比。
+  // maxHeight 是测试夹具，必须在 markInteractive 之前落地，否则 assertClean 会把
+  // 这次主动缩短记成 post-interactive layout-shift。
   const widths = await scroll.evaluate((node) => {
     const el = node as HTMLElement;
     el.style.maxHeight = '40px'; // 与会话数无关地制造溢出
@@ -95,6 +98,8 @@ test('侧栏会话列表的滚动条不挤内容轨——右轨与账号区箭�
       offsetWidth: el.offsetWidth,
     };
   });
+  await waitForLayoutSettle(page);
+  await geometrySensor.markInteractive();
   const siblingWidth = await sibling.evaluate((node) => (node as HTMLElement).offsetWidth);
   expect(widths.overflowing).toBe(true);
   // 滚动条确实还在（占了自己那条窄带），没有被藏掉

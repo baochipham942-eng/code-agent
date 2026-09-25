@@ -34,6 +34,7 @@ const logger = createLogger('NeoTagRuntimeService');
 
 export interface NeoTagTaskManager {
   getOrCreateCurrentOrchestrator?: (sessionId?: string) => { setWorkingDirectory?: (path: string) => void } | undefined;
+  setSessionContext?: (sessionId: string, messages: Message[]) => void;
   setWorkingDirectory?: (sessionId: string, directory: string) => void;
   startTask: (
     sessionId: string,
@@ -312,6 +313,10 @@ export async function launchApprovedNeoWorkCard(
   notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_queued');
 
   try {
+    // The renderer may submit from a project page while another session is open.
+    // Hydrate the target orchestrator before startTask so a non-current session
+    // keeps its persisted conversation history in the model context.
+    input.taskManager.setSessionContext?.(roundConversationId, source.messages);
     // D2 护栏：只有回源会话跑才同步工作目录；跨会话续接用目标会话自己的目录，
     // 禁止持久改写目标会话的工作目录（污染其后续普通聊天）。
     if (source.workingDirectory && !isCrossConversation) {

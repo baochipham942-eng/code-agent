@@ -301,6 +301,7 @@ describe('Neo Tag runtime helpers', () => {
     const liveUpdates: string[] = [];
     const taskManager = {
       getOrCreateCurrentOrchestrator: vi.fn(() => ({ setWorkingDirectory: vi.fn() })),
+      setSessionContext: vi.fn(),
       setWorkingDirectory: vi.fn(),
       startTask: vi.fn(async () => {
         await writeWorkspaceFile(workspace, 'src/host/services/project/neoTagRuntimeService.ts', 'after');
@@ -344,6 +345,7 @@ describe('Neo Tag runtime helpers', () => {
       // 任何 reload/合并路径都能按 ID 去重（BUG1：@neo 用户消息不显示）。
       card.sourceTurnId,
     );
+    expect(taskManager.setSessionContext).toHaveBeenCalledWith('conv_1', sessionMessages);
     expect(deltas[0].completed[0]).toContain('Queued approved revision');
     expect(deltas[0].decisions.join('\n')).toContain('Context audit: pack=');
     expect(deltas.at(-1)?.changedFiles).toEqual(['src/host/services/project/neoTagRuntimeService.ts']);
@@ -351,7 +353,8 @@ describe('Neo Tag runtime helpers', () => {
   });
 
   it('launches into target conversation: startTask/metadata/delta bind to the round conversation, working dir untouched', async () => {
-    sessionsById.set('conv_B', { workingDirectory: '/repo/other', messages: [] });
+    const targetHistory = [{ id: 'history_B', role: 'user', content: '目标会话已有上下文' } as Message];
+    sessionsById.set('conv_B', { workingDirectory: '/repo/other', messages: targetHistory });
     const card = workCard();
     const rev = revision();
     const deltas: NeoWorkCardDelta[] = [];
@@ -378,6 +381,7 @@ describe('Neo Tag runtime helpers', () => {
     const orchestratorSetWd = vi.fn();
     const taskManager = {
       getOrCreateCurrentOrchestrator: vi.fn(() => ({ setWorkingDirectory: orchestratorSetWd })),
+      setSessionContext: vi.fn(),
       setWorkingDirectory,
       startTask,
       getSessionState: vi.fn(() => ({ status: 'idle' })),
@@ -400,6 +404,7 @@ describe('Neo Tag runtime helpers', () => {
       expect.objectContaining({ neoTag: expect.objectContaining({ sourceTurnId: 'turn_round2' }) }),
       'turn_round2',
     );
+    expect(taskManager.setSessionContext).toHaveBeenCalledWith('conv_B', targetHistory);
     // D2 护栏：跨会话续接不得持久改写目标会话工作目录
     expect(setWorkingDirectory).not.toHaveBeenCalled();
     expect(orchestratorSetWd).not.toHaveBeenCalled();

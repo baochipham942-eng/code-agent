@@ -592,7 +592,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
         onClose={() => setIsCreateModalOpen(false)}
         projectId={projectId ?? null}
         sourceConversationId={projectSession?.id ?? null}
-        workspacePath={projectWorkspacePath ?? projectSession?.workingDirectory ?? null}
+        workspacePath={projectWorkspacePath?.trim() || projectSession?.workingDirectory || null}
         requesterUserId={actorUserId}
       />
 

@@ -135,6 +135,16 @@ describe('TaskManager message event persistence', () => {
     ]);
   });
 
+  it('does not clear an existing orchestrator when idle context hydration has no messages', () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
+    manager.setSessionContext('session-1', [{ id: 'history-1', role: 'user', content: 'existing', timestamp: 1 }]);
+    orchestratorMocks.setMessages.mockClear();
+
+    expect(manager.setSessionContextIfIdle('session-1', [])).toBe(true);
+    expect(orchestratorMocks.setMessages).not.toHaveBeenCalled();
+  });
+
   it('runs two auxiliary tasks in one session and cancels only the addressed task', async () => {
     const manager = new TaskManager({ maxConcurrentTasks: 1 });
     manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });

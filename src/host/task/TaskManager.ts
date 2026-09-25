@@ -711,7 +711,9 @@ export class TaskManager extends EventEmitter {
     if (status === 'running' || status === 'paused' || status === 'queued' || status === 'cancelling') {
       return false;
     }
-    this.setSessionContext(sessionId, messages);
+    if (messages.length > 0) {
+      this.setSessionContext(sessionId, messages);
+    }
     return true;
   }
 

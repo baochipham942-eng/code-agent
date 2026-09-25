@@ -328,7 +328,9 @@ export async function launchApprovedNeoWorkCard(
       : (() => {
         const currentState = input.taskManager.getSessionState?.(roundConversationId);
         if (['running', 'paused', 'queued', 'cancelling'].includes(currentState?.status ?? '')) return false;
-        input.taskManager.setSessionContext?.(roundConversationId, targetMessages);
+        if (targetMessages.length > 0) {
+          input.taskManager.setSessionContext?.(roundConversationId, targetMessages);
+        }
         return true;
       })();
     if (!contextReady) {

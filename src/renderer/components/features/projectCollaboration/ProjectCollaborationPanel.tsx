@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/shallow';
-import { Loader2, Search, X } from 'lucide-react';
+import { Loader2, Plus, Search, Sparkles, X } from 'lucide-react';
 import type { NeoWorkCardDetail } from '@shared/contract/tag';
 import { toast } from '../../../hooks/useToast';
 import { useAuthStore } from '../../../stores/authStore';
@@ -24,6 +24,8 @@ import {
 import type { Message } from '@shared/contract/message';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { buildNeoWorkCardDraftRequest } from '../chat/neoTagSubmit';
+import { Button, Modal, ModalFooter } from '../../primitives';
 import {
   formatNeoTopicDueDay,
   formatRequesterLabel,
@@ -42,6 +44,7 @@ import { ProjectCollaborationDetailPane } from './ProjectCollaborationDetailPane
 
 export interface ProjectCollaborationPanelProps {
   projectId?: string | null;
+  projectWorkspacePath?: string | null;
   /** 嵌入模式（项目空间任务 tab）：隐藏面板自带标题头（宿主页头已有项目名）。 */
   embedded?: boolean;
   /** 注入的 topic 明细（测试/fixture 用）。传入时绕开 store 加载。 */
@@ -89,6 +92,154 @@ function topicActivitySnippet(detail: NeoWorkCardDetail): string | null {
   const nextStep = latest.nextStep?.trim();
   return nextStep && !isInternalRuntimeText(nextStep) ? nextStep : null;
 }
+
+interface NewNeoWorkCardModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  projectId: string | null;
+  sourceConversationId: string | null;
+  workspacePath: string | null;
+  requesterUserId: string;
+}
+
+const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
+  isOpen,
+  onClose,
+  projectId,
+  sourceConversationId,
+  workspacePath,
+  requesterUserId,
+}) => {
+  const { t } = useI18n();
+  const createAndRun = useNeoWorkCardStore((state) => state.createAndRun);
+  const [task, setTask] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const handleClose = useCallback((force = false) => {
+    if (creating && !force) return;
+    setTask('');
+    setError(null);
+    onClose();
+  }, [creating, onClose]);
+
+  const handleSubmit = useCallback(async () => {
+    const userText = task.trim();
+    if (!userText) {
+      setError(t.neoTopics.newWorkCardEmpty);
+      return;
+    }
+    if (!projectId) {
+      setError(t.neoTopics.newWorkCardNoProject);
+      return;
+    }
+    setCreating(true);
+    setError(null);
+    let createdSessionId: string | null = null;
+    try {
+      const envelope = { content: `@neo ${userText}` };
+      let conversationId = sourceConversationId;
+      if (!conversationId) {
+        if (!workspacePath) {
+          setError(t.neoTopics.newWorkCardNoSession);
+          return;
+        }
+        const createdSession = await useSessionStore.getState().createSession(t.neoTopics.newWorkCardTitle, {
+          workingDirectory: workspacePath,
+          preserveSecondaryPages: true,
+        });
+        if (createdSession?.projectId !== projectId) {
+          if (createdSession?.id) {
+            await useSessionStore.getState().deleteSession(createdSession.id);
+          }
+          const message = t.neoTopics.newWorkCardNoSession;
+          toast.error(message);
+          setError(message);
+          return;
+        }
+        conversationId = createdSession.id;
+        createdSessionId = createdSession.id;
+      }
+      const request = buildNeoWorkCardDraftRequest({
+        // The @neo prefix is an internal request shape for the existing tag contract;
+        // this form is the explicit collaboration-page entry and does not restore composer routing.
+        envelope,
+        sourceConversationId: conversationId,
+        projectId,
+        workspacePath,
+        requesterUserId,
+        entry: 'collaboration_page',
+      });
+      if (!request) {
+        if (createdSessionId) {
+          await useSessionStore.getState().deleteSession(createdSessionId);
+        }
+        return;
+      }
+
+      await createAndRun(request);
+      handleClose(true);
+    } catch (submitError) {
+      if (createdSessionId) {
+        await useSessionStore.getState().deleteSession(createdSessionId);
+      }
+      const message = submitError instanceof Error ? submitError.message : String(submitError);
+      const errorMessage = `${t.neoTopics.newWorkCardFailed}: ${message}`;
+      toast.error(errorMessage);
+      setError(errorMessage);
+    } finally {
+      setCreating(false);
+    }
+  }, [createAndRun, handleClose, projectId, requesterUserId, sourceConversationId, t, task, workspacePath]);
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={() => handleClose()}
+      title={t.neoTopics.newWorkCardTitle}
+      headerIcon={<Sparkles className="h-5 w-5 text-badge-success" />}
+      closeOnBackdropClick={!creating}
+      closeOnEsc={!creating}
+      portal
+      footer={(
+        <ModalFooter
+          cancelText={t.common.cancel}
+          confirmText={creating ? t.neoTopics.newWorkCardCreating : t.neoTopics.newWorkCardSubmit}
+          onCancel={() => handleClose()}
+          onConfirm={() => void handleSubmit()}
+          confirmDisabled={creating}
+          cancelDisabled={creating}
+        />
+      )}
+    >
+      <div className="space-y-3 px-6 py-5">
+        <p className="text-sm leading-6 text-zinc-400">{t.neoTopics.newWorkCardDescription}</p>
+        <label className="block text-sm text-zinc-300" htmlFor="neo-new-work-card-task">
+          {t.neoTopics.newWorkCardTaskLabel}
+        </label>
+        <textarea
+          id="neo-new-work-card-task"
+          value={task}
+          onChange={(event) => {
+            setTask(event.target.value);
+            if (error) setError(null);
+          }}
+          placeholder={t.neoTopics.newWorkCardTaskPlaceholder}
+          rows={5}
+          autoFocus
+          disabled={creating}
+          className="w-full resize-y rounded-lg border border-zinc-700 bg-zinc-950/70 px-3 py-2.5 text-sm leading-6 text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-success/60 disabled:opacity-60"
+          data-testid="neo-new-work-card-task"
+        />
+        {error && (
+          <div className="text-xs leading-5 text-badge-danger" data-testid="neo-new-work-card-error">
+            {error}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+};
 
 function TopicRow({
   detail,
@@ -166,6 +317,7 @@ function TopicRow({
 
 export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps> = ({
   projectId = null,
+  projectWorkspacePath = null,
   embedded = false,
   details,
   sourceMessagesByConversation,
@@ -176,6 +328,9 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
 }) => {
   const currentUser = useAuthStore((state) => state.user ?? null);
   const actorUserId = currentUser?.id ?? 'local-user';
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const sessions = useSessionStore((state) => state.sessions);
+  const runningSessionIds = useSessionStore((state) => state.runningSessionIds);
   const { t } = useI18n();
   // 无绑定项目（projectId=null）= 全局目录：跨项目列全部 @neo topic（兜底建的卡挂在 proj_unsorted 等桶下）
   const scopeKey = projectId ?? NEO_WORK_CARD_ALL_SCOPE;
@@ -196,6 +351,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
   const [mineOnly, setMineOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMode, setSortMode] = useState<NeoTopicSortMode>('recent');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const topics = useMemo(() => {
     const source = details ?? storeDetails;
@@ -213,6 +369,25 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
   }, [actorUserId, mineOnly, phaseFilter, searchQuery, topics]);
 
   const selectedDetail = selectedId ? topics.find((detail) => detail.workCard.id === selectedId) ?? null : null;
+  const projectSession = useMemo(() => {
+    if (!projectId) return null;
+    const expectedWorkspacePath = projectWorkspacePath?.trim() || null;
+    const isUsable = (session: typeof sessions[number]) => (
+      session.projectId === projectId
+      && !session.isArchived
+      && session.status !== 'archived'
+      && session.status !== 'running'
+      && session.status !== 'queued'
+      && session.status !== 'paused'
+      && session.status !== 'cancelling'
+      && !runningSessionIds.has(session.id)
+      && (!expectedWorkspacePath || session.workingDirectory?.trim() === expectedWorkspacePath)
+    );
+    const current = sessions.find((session) => session.id === currentSessionId);
+    if (current && isUsable(current)) return current;
+    return sessions.find(isUsable) ?? null;
+  }, [currentSessionId, projectId, projectWorkspacePath, runningSessionIds, sessions]);
+  const canCreateWorkCard = Boolean(projectId && (projectWorkspacePath?.trim() || projectSession));
 
   useEffect(() => {
     ensureNeoWorkCardLiveUpdates();
@@ -371,6 +546,19 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
                 <option value="priority">{t.neoTopics.sortPriority}</option>
                 <option value="dueAt">{t.neoTopics.sortDueAt}</option>
               </select>
+              {canCreateWorkCard && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<Plus />}
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="ml-auto h-7 px-2 text-[11px]"
+                  data-testid="neo-new-work-card"
+                >
+                  {t.neoTopics.newWorkCard}
+                </Button>
+              )}
             </div>
           </div>
 
@@ -388,12 +576,25 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
             </div>
           ) : (
             <div className="rounded-md border border-zinc-800/70 bg-zinc-950/30 px-3 py-6 text-center text-xs text-zinc-600" data-testid="neo-topic-empty">
-              还没有 @neo topic。在对话里 @neo 交代一件事，它就会出现在这里。
+              {projectId
+                ? (embedded
+                  ? t.neoTopics.emptyProjectEmbedded
+                  : (canCreateWorkCard ? t.neoTopics.emptyProject : t.neoTopics.emptyProjectUnavailable))
+                : t.neoTopics.emptyGlobal}
             </div>
           )}
         </div>
 
       </div>
+
+      <NewNeoWorkCardModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        projectId={projectId ?? null}
+        sourceConversationId={projectSession?.id ?? null}
+        workspacePath={projectWorkspacePath?.trim() || projectSession?.workingDirectory || null}
+        requesterUserId={actorUserId}
+      />
 
       {/* 详情 = 非模态右侧抽屉：列表保持可点（点别的行直接切换内容），X/Esc/外部点击关闭。
           portal 到 body + fixed：占满 app 全高（挂载点在全屏页 banner 之下，absolute 只能盖住面板区）。 */}

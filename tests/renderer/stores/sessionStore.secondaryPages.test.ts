@@ -106,4 +106,12 @@ describe('落到会话时二级页让位', () => {
     await useSessionStore.getState().createSession('新会话', { workingDirectory: null });
     expect(readPageFlags()).toEqual(ALL_CLOSED);
   });
+
+  it('工作流创建目标会话时保留宿主二级页', async () => {
+    await useSessionStore.getState().createSession('工作流目标', {
+      workingDirectory: '/project-a',
+      preserveSecondaryPages: true,
+    });
+    expect(readPageFlags()).toEqual(OPEN_PAGES);
+  });
 });

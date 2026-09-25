@@ -64,6 +64,8 @@ export interface CreateSessionOptionsInput {
   workingDirectory?: string | null;
   engine?: Partial<AgentEngineSessionMetadata> | null;
   expertRoleId?: string;
+  /** Keep secondary pages mounted while a workflow creates a target session. */
+  preserveSecondaryPages?: boolean;
 }
 
 function normalizeSession(session: Session & {
@@ -123,8 +125,11 @@ export async function executeCreateSession(
   options?: CreateSessionOptionsInput,
 ): Promise<Session | null> {
   const { get, set, invalidatePendingSessionSwitches, findReusableNewSessionDraft } = deps;
-  // 新建会话 = 回到会话区：二级页（能力中心/资料库/自动化…）让位。
-  useAppStore.getState().closeSecondaryPages();
+  // 普通新建会话回到会话区；工作流创建目标会话时保留宿主页面，
+  // 这样后续失败仍能在提交入口显示错误。
+  if (!options?.preserveSecondaryPages) {
+    useAppStore.getState().closeSecondaryPages();
+  }
   try {
     const inheritedWorkingDirectory =
       options?.workingDirectory !== undefined

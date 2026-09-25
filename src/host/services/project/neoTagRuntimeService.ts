@@ -34,6 +34,9 @@ const logger = createLogger('NeoTagRuntimeService');
 
 export interface NeoTagTaskManager {
   getOrCreateCurrentOrchestrator?: (sessionId?: string) => { setWorkingDirectory?: (path: string) => void } | undefined;
+  hasActivePrimaryRun?: (sessionId: string) => boolean;
+  setSessionContextIfIdle?: (sessionId: string, messages: Message[]) => boolean;
+  setSessionContext?: (sessionId: string, messages: Message[]) => void;
   setWorkingDirectory?: (sessionId: string, directory: string) => void;
   startTask: (
     sessionId: string,
@@ -81,6 +84,11 @@ async function readSourceMessages(sessionId: string): Promise<{ messages: Messag
     messages: session?.messages ?? [],
     workingDirectory: session?.workingDirectory,
   };
+}
+
+async function readFullSessionMessages(sessionId: string): Promise<Message[]> {
+  const session = await getSessionManager().getSession(sessionId, Number.MAX_SAFE_INTEGER, { messageSource: 'ledger' });
+  return session?.messages ?? [];
 }
 
 async function safelyCreateArtifactSnapshot(
@@ -312,6 +320,24 @@ export async function launchApprovedNeoWorkCard(
   notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_queued');
 
   try {
+    // The renderer may submit from a project page while another session is open.
+    // Check and hydrate synchronously so a competing run cannot have its live
+    // orchestrator history replaced before startTask rejects the busy session.
+    const targetMessages = await readFullSessionMessages(roundConversationId);
+    const contextReady = input.taskManager.setSessionContextIfIdle
+      ? input.taskManager.setSessionContextIfIdle(roundConversationId, targetMessages)
+      : (() => {
+        const currentState = input.taskManager.getSessionState?.(roundConversationId);
+        if (['running', 'paused', 'queued', 'cancelling'].includes(currentState?.status ?? '')
+          || input.taskManager.hasActivePrimaryRun?.(roundConversationId)) return false;
+        if (targetMessages.length > 0) {
+          input.taskManager.setSessionContext?.(roundConversationId, targetMessages);
+        }
+        return true;
+      })();
+    if (!contextReady) {
+      throw new Error(`Session ${roundConversationId} is already running`);
+    }
     // D2 护栏：只有回源会话跑才同步工作目录；跨会话续接用目标会话自己的目录，
     // 禁止持久改写目标会话的工作目录（污染其后续普通聊天）。
     if (source.workingDirectory && !isCrossConversation) {
@@ -326,6 +352,7 @@ export async function launchApprovedNeoWorkCard(
     const options: AgentRunOptions = {
       mode: 'normal',
       neoTag: context,
+      displayContent: `@neo ${approvedRevision.taskSummary}`,
     };
     const metadata: MessageMetadata = {
       neoTag: {
@@ -338,8 +365,8 @@ export async function launchApprovedNeoWorkCard(
         status: 'working',
       },
     };
-    // clientMessageId = 本轮 turnId：renderer 在 @neo 提交时本地补的用户消息用同一个 ID，
-    // 落库幂等（addMessageToSession 重复 ID 走 update），live 与 reload 不会出现双份用户消息。
+    // clientMessageId = 本轮 turnId：host 直接把带 @neo 前缀的展示文本落到目标会话，
+    // renderer 不需要切换会话或做本地补显，live 与 reload 都只看到一条用户消息。
     await input.taskManager.startTask(
       roundConversationId,
       approvedRevision.taskSummary,

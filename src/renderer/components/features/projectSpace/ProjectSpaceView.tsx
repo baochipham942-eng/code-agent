@@ -202,7 +202,11 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
               <div className="flex h-full min-h-0 flex-col gap-3">
                 {project?.cloudProjectId ? <CloudCollabCardsSection projectId={projectId} /> : null}
                 <div className="min-h-0 flex-1">
-                  <ProjectCollaborationPanel projectId={projectId} embedded />
+                  <ProjectCollaborationPanel
+                    projectId={projectId}
+                    projectWorkspacePath={project?.workspacePath ?? null}
+                    embedded
+                  />
                 </div>
               </div>
             )}
@@ -249,4 +253,3 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
     </>
   );
 };
-

@@ -143,6 +143,8 @@ export interface CreateSessionOptions {
   workingDirectory?: string | null;
   engine?: Partial<AgentEngineSessionMetadata> | null;
   expertRoleId?: string;
+  /** Keep secondary pages mounted while a workflow creates a target session. */
+  preserveSecondaryPages?: boolean;
 }
 
 function normalizeDraftDirectory(value?: string | null): string {

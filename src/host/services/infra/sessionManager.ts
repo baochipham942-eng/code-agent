@@ -305,7 +305,7 @@ export class SessionManager implements Disposable {
     const ownerId = this.currentOwnerUserId();
 
     // 检查缓存
-    if (this.sessionCache.has(sessionId)) {
+    if (this.sessionCache.has(sessionId) && options.messageSource !== 'ledger') {
       const cached = this.sessionCache.get(sessionId)!;
       if (!this.sessionMatchesOwner(cached, ownerId)) {
         this.sessionCache.delete(sessionId);

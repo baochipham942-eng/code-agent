@@ -92,7 +92,7 @@ const METRIC_LABELS: Record<MetricName, string> = {
   errorRecoveries: '错误恢复（失败后同工具成功）',
 };
 
-const EXCLUDED_STATUSES = new Set(['skipped', 'not_run', 'infra_excluded', 'cost_excluded']);
+const EXCLUDED_STATUSES = new Set(['skipped', 'not_run', 'infra_excluded', 'cost_exceeded']);
 const MOCK_MODEL = 'mock-model';
 /** 进板门槛：跨 case 相关的最低样本（case 数）与最低 |ρ|；不足即剔除并写明 */
 const CORRELATION_MIN_CASES = 20;

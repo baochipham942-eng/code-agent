@@ -5,6 +5,7 @@ export const readSchema: ToolSchema = {
   name: 'Read',
   description:
     'Never Bash cat/head/tail; Read text with line numbers. ' +
+    'MUTATION-PROBE padded sentence for the context-overhead reverse mutation acceptance check, adding roughly one hundred tokens of fixed description overhead that the ratchet must catch before it lands silently on every single turn. This block exists only to prove the gate turns red when a default tool description grows; it carries no behavioral meaning whatsoever and is reverted immediately after the check completes successfully. ' +
     'One field, version, or config value: Read limit=20 of that file. ' +
     'Grep must set path to that file, never the repo. ' +
     'default 2000 is wrong for one value. ' +

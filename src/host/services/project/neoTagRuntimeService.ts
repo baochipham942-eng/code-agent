@@ -167,7 +167,7 @@ async function waitForRuntimeState(
 }
 
 /** 本轮 run 旁听到的终态失败（runFinalizer 的 error 事件：message + 结构化 failure 标记）。 */
-export interface NeoTagRunFailure {
+interface NeoTagRunFailure {
   message: string;
   /** 结构化失败标记的 code（MODEL_AUTH / MODEL_QUOTA / MODEL_UNAVAILABLE …），缺省=未分类。 */
   failureCode?: string;

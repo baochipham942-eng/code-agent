@@ -20,6 +20,9 @@
 //     不是真模型行为信号。
 //   - skipped / not_run / infra_excluded / cost_exceeded 无轨迹语义，排除。
 //   - token 只在 2026-09 后的报告里有（usage 字段），样本量单独如实报告，不足即剔除。
+//   - 遥测字段缺失（toolExecutions / turnCount 不在报告里）按「该行该计数不可用」处理
+//     （同 token：null，不进该计数的统计），不静默当 0——缺字段的报告冒充低开销样本
+//     比丢掉几行更伤结论。
 //   - 「重试」报告里没有现成字段，用可复算的代理：紧邻的同工具再调用（前一次失败）；
 //     「错误恢复」= 同一工具先失败后成功（每工具计一次）。
 //   - 类目来自当前 case bank（.claude/test-cases/*.yaml 的 cases[].category）；
@@ -54,6 +57,11 @@ interface ReportResult {
   caseMeta?: { category?: string };
 }
 
+/** 行级取计数：字段缺失 → null（不进统计），有字段但缺值按 0 不合理时同样 null */
+function metricValue(row: CaseRow, metric: MetricName): number | null {
+  return row[metric];
+}
+
 interface ReportFile {
   environment?: { model?: string; provider?: string };
   results?: ReportResult[];
@@ -65,11 +73,12 @@ interface CaseRow {
   model: string;
   category: string | null;
   score: number;
+  /** 以下计数为 null = 该 run 的报告里没有这个遥测字段，不进该计数的统计 */
   totalTokens: number | null;
-  toolCalls: number;
-  turnCount: number;
-  retries: number;
-  errorRecoveries: number;
+  toolCalls: number | null;
+  turnCount: number | null;
+  retries: number | null;
+  errorRecoveries: number | null;
 }
 
 const METRICS = ['totalTokens', 'toolCalls', 'turnCount', 'retries', 'errorRecoveries'] as const;
@@ -206,7 +215,8 @@ function collectRows(reportsDir: string, categoryMap: Map<string, string>): { ro
     for (const result of report.results ?? []) {
       if (EXCLUDED_STATUSES.has(result.status)) continue;
       if (typeof result.score !== 'number') continue;
-      const executions = result.toolExecutions ?? [];
+      const hasExecutions = Array.isArray(result.toolExecutions);
+      const executions = hasExecutions ? result.toolExecutions! : [];
       rows.push({
         caseId: result.testId,
         run: file,
@@ -214,10 +224,10 @@ function collectRows(reportsDir: string, categoryMap: Map<string, string>): { ro
         category: categoryMap.get(result.testId) ?? result.caseMeta?.category ?? null,
         score: result.score,
         totalTokens: typeof result.usage?.totalTokens === 'number' ? result.usage.totalTokens : null,
-        toolCalls: executions.length,
-        turnCount: result.turnCount ?? 0,
-        retries: countRetries(executions),
-        errorRecoveries: countErrorRecoveries(executions),
+        toolCalls: hasExecutions ? executions.length : null,
+        turnCount: typeof result.turnCount === 'number' ? result.turnCount : null,
+        retries: hasExecutions ? countRetries(executions) : null,
+        errorRecoveries: hasExecutions ? countErrorRecoveries(executions) : null,
       });
     }
   }
@@ -243,11 +253,13 @@ function correlate(rows: CaseRow[]): CorrelationEntry[] {
   const entries: CorrelationEntry[] = [];
   for (const metric of METRICS) {
     const perCase = [...byCase.values()]
-      .map((caseRows) => caseRows.filter((row) => metric !== 'totalTokens' || row.totalTokens !== null))
+      .map((caseRows) => caseRows
+        .map((row) => ({ value: metricValue(row, metric), score: row.score }))
+        .filter((point): point is { value: number; score: number } => point.value !== null))
       .filter((caseRows) => caseRows.length > 0)
       .map((caseRows) => ({
-        metricMedian: median(caseRows.map((row) => metric === 'totalTokens' ? row.totalTokens! : row[metric] as number)),
-        scoreMedian: median(caseRows.map((row) => row.score)),
+        metricMedian: median(caseRows.map((point) => point.value)),
+        scoreMedian: median(caseRows.map((point) => point.score)),
       }));
     const acrossRho = perCase.length >= 3
       ? spearman(perCase.map((point) => point.metricMedian), perCase.map((point) => point.scoreMedian))
@@ -255,11 +267,13 @@ function correlate(rows: CaseRow[]): CorrelationEntry[] {
     // case 内配对（同 case 多 run、计数有波动才算相关样本）
     const withinCaseRhos: number[] = [];
     for (const caseRows of byCase.values()) {
-      const usable = caseRows.filter((row) => metric !== 'totalTokens' || row.totalTokens !== null);
+      const usable = caseRows
+        .map((row) => ({ value: metricValue(row, metric), score: row.score }))
+        .filter((point): point is { value: number; score: number } => point.value !== null);
       if (usable.length < 4) continue;
-      const xs = usable.map((row) => metric === 'totalTokens' ? row.totalTokens! : row[metric] as number);
+      const xs = usable.map((point) => point.value);
       if (new Set(xs).size < 2) continue;
-      withinCaseRhos.push(spearman(xs, usable.map((row) => row.score)));
+      withinCaseRhos.push(spearman(xs, usable.map((point) => point.score)));
     }
     const withinMedian = withinCaseRhos.length > 0 ? median(withinCaseRhos) : null;
     let kept = false;
@@ -306,18 +320,18 @@ function buildBoard(rows: CaseRow[], keptMetrics: MetricName[]): BoardRow[] {
   for (const metric of keptMetrics) {
     const byCategory = new Map<string, Array<{ caseId: string; metricMedian: number; scoreMedian: number; runs: number; models: string[] }>>();
     for (const [caseId, caseRows] of byCase) {
-      const usable = caseRows.filter((row) => metric !== 'totalTokens' || row.totalTokens !== null);
+      const usable = caseRows
+        .map((row) => ({ value: metricValue(row, metric), row }))
+        .filter((point): point is { value: number; row: CaseRow } => point.value !== null);
       if (usable.length === 0) continue;
       const category = caseRows[0].category ?? '(unbanked)';
       if (!byCategory.has(category)) byCategory.set(category, []);
       byCategory.get(category)!.push({
         caseId,
-        metricMedian: metric === 'totalTokens'
-          ? median(usable.map((row) => row.totalTokens!))
-          : median(usable.map((row) => row[metric] as number)),
-        scoreMedian: median(usable.map((row) => row.score)),
+        metricMedian: median(usable.map((point) => point.value)),
+        scoreMedian: median(usable.map((point) => point.row.score)),
         runs: usable.length,
-        models: [...new Set(usable.map((row) => row.model))].sort(),
+        models: [...new Set(usable.map((point) => point.row.model))].sort(),
       });
     }
     for (const [category, cases] of byCategory) {
@@ -343,6 +357,10 @@ function formatMarkdown(coverage: Record<string, number>, correlations: Correlat
   lines.push(`生成：${new Date().toISOString()} · 数据：${coverage.runsRead} 个非 mock run / ${coverage.rows} 行 case×run / ${coverage.mockRuns} 个 mock run 已排除 / ${coverage.unparsable} 份不可解析报告`);
   lines.push('');
   lines.push('> 趋势板只用于定位，永不 gate PR。分数 0–1，计数均为 per-case 中位数（N run）。');
+  if (coverage.rows === 0) {
+    lines.push('');
+    lines.push('**⚠️ 空板**：报告目录没有可读数据。本文件是显式空结果，覆盖了此前可能存在的旧趋势板。');
+  }
   lines.push('');
   lines.push('## 相关性（计数 vs 分数，Spearman）');
   lines.push('');
@@ -381,8 +399,8 @@ async function main(): Promise<void> {
   console.log(`[eval-trend-board] 报告目录 ${reportsDir}`);
   console.log(`[eval-trend-board] case bank 类目 ${categoryMap.size} 条；数据 ${rows.length} 行 case×run（${runsRead} 个非 mock run，${runsMock} 个 mock run 排除，${runsUnparsable} 份不可解析）`);
   if (rows.length === 0) {
-    console.log('[eval-trend-board] 没有可读的历史报告，趋势板为空（本脚本只读已有数据，不发起评测）');
-    return;
+    // 空数据也要写出显式空板：覆盖掉 --out 下可能残留的旧趋势，过期结果比没有结果更危险
+    console.log('[eval-trend-board] 没有可读的历史报告，写出空趋势板（本脚本只读已有数据，不发起评测）');
   }
 
   const correlations = correlate(rows);

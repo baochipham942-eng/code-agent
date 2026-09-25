@@ -183,7 +183,10 @@ async function main(): Promise<void> {
   // 诊断（不进门）：deferred 不折叠时的反事实工具表总量
   const expandedTokens = found.reduce((sum, tool) => sum + tool.tokens, 0);
 
-  // 4) 专家/专项模式固定开销
+  // 4) 专家/专项模式固定开销（含运行时统一追加的子代理固定块——它们和 prompt 一样
+  //    是每个子代理每次都付的固定文本，见 spawnAgent.ts / subagentExecutorProjection.ts）
+  const { SWARM_STATUS_REPORT_SUFFIX } = await import('../../src/host/agent/multiagentTools/statusReport');
+  const { SUBAGENT_DISTILLATION_CONTRACT } = await import('../../src/host/agent/subagentExecutorProjection');
   const expertModeTokens: Record<string, number> = {};
   for (const [id, config] of Object.entries(CORE_AGENTS)) {
     const prompt = String(config.prompt);
@@ -193,6 +196,8 @@ async function main(): Promise<void> {
   for (const [role, config] of Object.entries(BUILT_IN_AGENTS)) {
     expertModeTokens[`builtin.${role}`] = estimateTokens(config.systemPrompt);
   }
+  expertModeTokens['suffixBlock.swarmStatusReport'] = estimateTokens(SWARM_STATUS_REPORT_SUFFIX);
+  expertModeTokens['suffixBlock.subagentDistillationContract'] = estimateTokens(SUBAGENT_DISTILLATION_CONTRACT);
   if (Object.keys(expertModeTokens).length === 0) fail('专家模式清单为空，测量路径已失效');
 
   // —— 报告 ——————————————————————————————————————————————————————————————

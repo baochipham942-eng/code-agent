@@ -40,6 +40,7 @@
     "acceptance:closure": "npm run test:closure && node scripts/task-closure.mjs --help && node scripts/delivery-closure.mjs --help",
     "check:repository-structure": "node scripts/ci/check-repository-structure.mjs",
     "check:tool-output-schemas": "npx tsx scripts/ci/tool-output-schema-ratchet.ts",
+    "check:context-overhead": "npx tsx scripts/ci/context-overhead-ratchet.ts",
     "check:ptc-sdk-determinism": "node scripts/ci/ptc-contract-gate.mjs sdk-determinism",
     "check:ptc-transport-name": "node scripts/ci/ptc-contract-gate.mjs transport-name-reservation",
     "typecheck": "node node_modules/typescript7/bin/tsc --noEmit",

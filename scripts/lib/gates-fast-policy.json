@@ -224,6 +224,16 @@
       ]
     },
     {
+      "id": "eval-center",
+      "paths": [
+        "packages/internal/evaluation-center/scripts/**",
+        "packages/internal/evaluation-center/reports/.gitignore"
+      ],
+      "files": [
+        "tests/unit/testing/evalCiReport.test.ts"
+      ]
+    },
+    {
       "id": "domain-routes",
       "paths": [
         "src/host/ipc/domainRoutes/**",

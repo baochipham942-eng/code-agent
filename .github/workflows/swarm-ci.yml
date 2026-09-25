@@ -34,6 +34,9 @@ on:
       - 'src/shared/contract/generated/agent-events.schema.json'
       - 'scripts/ci/tool-output-schema-ratchet.ts'
       - 'scripts/ci/tool-output-schema-ratchet-baseline.json'
+      # 固定上下文开销棘轮：只改基线 = 手工放宽，必须真跑这道门
+      - 'scripts/ci/context-overhead-ratchet.ts'
+      - 'scripts/ci/context-overhead-ratchet-baseline.json'
       - 'playwright.config.ts'
       - 'tests/e2e/playwright.e2e.config.ts'
       - '.github/workflows/release.yml'
@@ -248,6 +251,14 @@ jobs:
         # 此前只在 gates-local 本地跑、CI 零执行——#1199 改语音文案后 CI 全绿合入，把主线门带红（N-L8-ATT11/12）。
         # 脚本对 0 命中文件 / 找不到语音文案锚点 fail-loud，不会扫空假绿。
         run: node scripts/attention-budget-ratchet.mjs
+
+      - name: Context overhead ratchet (default fixed context)
+        # 固定上下文开销棘轮（N-EVAL-TWO-LAYER-METRICS Layer 1）：默认配置系统提示词 +
+        # <deferred-tools> 折叠索引块 + 默认工具表总量 + 每个专家/专项模式提示词，全部
+        # 只降不升、钉实测真值零余量。与 attention-budget（注入文案）、coreToolSchemaBudget
+        # （CORE schema 上限带余量）互补。确定性 = 空数据目录 + 钉死时钟，两次运行逐字节同数；
+        # 测量路径失效（模板消失 / CORE 缺 schema / buildPrompt 空）一律 fail loud。
+        run: npm run check:context-overhead
 
       - name: Coverage baseline direction (no PR coverage run)
         # PR 只做毫秒级的基线方向检查，阻止手工下调；全量 coverage 只在 main-full-gate 跑。

@@ -214,6 +214,26 @@
       ]
     },
     {
+      "id": "geometry-sensor",
+      "paths": [
+        "tests/e2e/fixtures/geometrySensor.ts",
+        "tests/e2e/fixtures/geometryScenarios.ts",
+        "tests/e2e/fixtures/axeTest.ts",
+        "tests/e2e/geometry-sensor.regressions.spec.ts",
+        "tests/e2e/playwright.geometry.config.ts",
+        "tests/e2e/playwright.e2e.config.ts",
+        "tests/e2e/secondary-pages-layout.spec.ts",
+        "scripts/perf/geometry-sensor-replay.ts",
+        "scripts/perf/geometry-sensor-runtime.ts",
+        "scripts/perf/geometry-sidebar-harness.tsx",
+        "scripts/perf/geometry-caselist-harness.tsx",
+        "docs/perf/geometry-sensor-replay-latest.md"
+      ],
+      "files": [
+        "tests/unit/geometrySensor.test.ts"
+      ]
+    },
+    {
       "id": "full-lock",
       "paths": [
         "scripts/gates-local.mjs",

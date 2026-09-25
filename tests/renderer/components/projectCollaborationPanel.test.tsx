@@ -328,6 +328,32 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
     expect(screen.queryByTestId('neo-new-work-card')).toBeNull();
   });
 
+  it('skips busy project sessions and uses an idle project session', async () => {
+    const createAndRun = vi.fn(async (_request: CreateNeoWorkCardDraftRequest): Promise<CreateNeoWorkCardDraftResult> => ({
+      detail: makeDetail({ id: 'created-idle', title: '整理项目资料' }),
+      sourceTurnId: 'source-idle',
+    }));
+    useNeoWorkCardStore.setState({ createAndRun });
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      sessions: [
+        { id: 'session-running', projectId: 'project-1', workingDirectory: '/project-a', status: 'running' } as never,
+        { id: 'session-idle', projectId: 'project-1', workingDirectory: '/project-a', status: 'idle' } as never,
+      ],
+      switchSession: vi.fn(async (sessionId: string) => {
+        useSessionStore.setState({ currentSessionId: sessionId });
+      }),
+    });
+
+    render(<ProjectCollaborationPanel projectId="project-1" projectWorkspacePath="/project-a" details={[]} sourceMessagesByConversation={{}} />);
+    fireEvent.click(screen.getByTestId('neo-new-work-card'));
+    fireEvent.change(screen.getByTestId('neo-new-work-card-task'), { target: { value: '整理项目资料' } });
+    fireEvent.click(screen.getByRole('button', { name: '开始执行' }));
+
+    await waitFor(() => expect(createAndRun).toHaveBeenCalledTimes(1));
+    expect(createAndRun.mock.calls[0]?.[0]).toMatchObject({ sourceConversationId: 'session-idle' });
+  });
+
   it('creates a project session when the project has no usable session', async () => {
     const createAndRun = vi.fn(async (_request: CreateNeoWorkCardDraftRequest): Promise<CreateNeoWorkCardDraftResult> => ({
       detail: makeDetail({ id: 'created-with-session', title: '整理项目资料' }),
@@ -367,8 +393,13 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
     expect(switchSession).toHaveBeenCalledWith('session-created', { force: true });
   });
 
+  it('hides new-card creation when a project has neither workspace nor session', () => {
+    render(<ProjectCollaborationPanel projectId="project-1" details={[]} sourceMessagesByConversation={{}} />);
+    expect(screen.queryByTestId('neo-new-work-card')).toBeNull();
+  });
+
   it('exposes new-card creation from the embedded project-space directory', () => {
-    render(<ProjectCollaborationPanel projectId="project-1" embedded details={[]} sourceMessagesByConversation={{}} />);
+    render(<ProjectCollaborationPanel projectId="project-1" projectWorkspacePath="/project-a" embedded details={[]} sourceMessagesByConversation={{}} />);
     expect(screen.getByTestId('neo-new-work-card')).toBeTruthy();
   });
 });

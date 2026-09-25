@@ -366,12 +366,17 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
       session.projectId === projectId
       && !session.isArchived
       && session.status !== 'archived'
+      && session.status !== 'running'
+      && session.status !== 'queued'
+      && session.status !== 'paused'
+      && session.status !== 'cancelling'
       && (!expectedWorkspacePath || session.workingDirectory?.trim() === expectedWorkspacePath)
     );
     const current = sessions.find((session) => session.id === currentSessionId);
     if (current && isUsable(current)) return current;
     return sessions.find(isUsable) ?? null;
   }, [currentSessionId, projectId, projectWorkspacePath, sessions]);
+  const canCreateWorkCard = Boolean(projectId && (projectWorkspacePath?.trim() || projectSession));
 
   useEffect(() => {
     ensureNeoWorkCardLiveUpdates();
@@ -530,7 +535,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
                 <option value="priority">{t.neoTopics.sortPriority}</option>
                 <option value="dueAt">{t.neoTopics.sortDueAt}</option>
               </select>
-              {projectId && (
+              {canCreateWorkCard && (
                 <Button
                   type="button"
                   variant="secondary"

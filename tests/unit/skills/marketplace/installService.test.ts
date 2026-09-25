@@ -57,7 +57,6 @@ import crypto from 'crypto';
 import {
   disablePlugin,
   enablePlugin,
-  getEnabledSkillDirs,
   getEnabledSkillDescriptors,
   installFromRegistryEntry,
   installPlugin,
@@ -68,12 +67,11 @@ import type { CanUseToolFn, Logger, ToolContext } from '../../../../src/host/pro
 import { fileReadTracker } from '../../../../src/host/tools/fileReadTracker';
 import { editModule } from '../../../../src/host/tools/modules/file/multiEdit';
 import { readModule } from '../../../../src/host/tools/modules/file/read';
-import {
-  OFFICIAL_SKILL_SECTION_BEGIN,
-  OFFICIAL_SKILL_SECTION_END,
-} from '../../../../src/host/security/skillOfficialSectionGuard';
 import { getPromptCommandService } from '../../../../src/host/services/commands/promptCommandService';
 import { installFromLocalZip } from '../../../../src/host/skills/marketplace/localZipInstall';
+
+const OFFICIAL_SKILL_SECTION_BEGIN = '<!-- NEO:OFFICIAL-SKILL:BEGIN -->';
+const OFFICIAL_SKILL_SECTION_END = '<!-- NEO:OFFICIAL-SKILL:END -->';
 
 describe('marketplace install service trust defaults', () => {
   let tempRoot: string;
@@ -180,12 +178,12 @@ describe('marketplace install service trust defaults', () => {
     expect(fsSync.existsSync(path.join(pluginRoot, 'skills', 'demo', 'SKILL.md'))).toBe(true);
     expect(fsSync.existsSync(path.join(mocks.userConfigDir, 'skills', 'demo', 'SKILL.md'))).toBe(false);
     expect(fsSync.existsSync(commandPath)).toBe(false);
-    await expect(getEnabledSkillDirs()).resolves.toEqual([]);
+    await expect(getEnabledSkillDescriptors()).resolves.toEqual([]);
 
     await enablePlugin('demo@trusted-test');
 
-    await expect(getEnabledSkillDirs()).resolves.toEqual([
-      path.join(pluginRoot, 'skills', 'demo'),
+    await expect(getEnabledSkillDescriptors()).resolves.toEqual([
+      { dir: path.join(pluginRoot, 'skills', 'demo'), official: false },
     ]);
     expect(fsSync.existsSync(commandPath)).toBe(true);
     await expect(getPromptCommandService().listCommands()).resolves.toEqual([
@@ -204,7 +202,7 @@ describe('marketplace install service trust defaults', () => {
 
     await disablePlugin('demo@trusted-test');
 
-    await expect(getEnabledSkillDirs()).resolves.toEqual([]);
+    await expect(getEnabledSkillDescriptors()).resolves.toEqual([]);
     expect(fsSync.existsSync(commandPath)).toBe(false);
     expect(mocks.reloadSkills).toHaveBeenCalledTimes(2);
   });
@@ -686,11 +684,11 @@ describe('marketplace install service trust defaults', () => {
     });
     expect(record?.pluginRoot).toContain('openai-codex-auth__trusted-test');
     expect(fsSync.existsSync(path.join(record!.pluginRoot!, 'provider.json'))).toBe(true);
-    await expect(getEnabledSkillDirs()).resolves.toEqual([]);
+    await expect(getEnabledSkillDescriptors()).resolves.toEqual([]);
 
     await enablePlugin('openai-codex-auth@trusted-test');
     expect((await listInstalledPlugins())['openai-codex-auth@trusted-test']?.isEnabled).toBe(true);
-    await expect(getEnabledSkillDirs()).resolves.toEqual([]);
+    await expect(getEnabledSkillDescriptors()).resolves.toEqual([]);
 
     await disablePlugin('openai-codex-auth@trusted-test');
     expect((await listInstalledPlugins())['openai-codex-auth@trusted-test']?.isEnabled).toBe(false);

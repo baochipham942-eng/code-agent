@@ -48,10 +48,6 @@ export async function getEnabledSkillDescriptors() {
   return collectEnabledSkillDescriptors();
 }
 
-export async function getEnabledSkillDirs(): Promise<string[]> {
-  return (await getEnabledSkillDescriptors()).map(({ dir }) => dir);
-}
-
 // ----------------------------------------------------------------------------
 // Constants
 // ----------------------------------------------------------------------------

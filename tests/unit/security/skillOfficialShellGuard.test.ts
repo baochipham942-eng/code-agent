@@ -2,11 +2,10 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  OFFICIAL_SKILL_SECTION_BEGIN,
-  OFFICIAL_SKILL_SECTION_END,
-} from '../../../src/host/security/skillOfficialSectionGuard';
 import { guardShellOfficialSkillWrites } from '../../../src/host/security/skillOfficialShellGuard';
+
+const OFFICIAL_SKILL_SECTION_BEGIN = '<!-- NEO:OFFICIAL-SKILL:BEGIN -->';
+const OFFICIAL_SKILL_SECTION_END = '<!-- NEO:OFFICIAL-SKILL:END -->';
 
 describe('guardShellOfficialSkillWrites', () => {
   it('blocks shell writes to an existing protected SKILL.md', async () => {

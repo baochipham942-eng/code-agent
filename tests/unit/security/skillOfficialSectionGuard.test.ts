@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import {
-  OFFICIAL_SKILL_SECTION_BEGIN,
-  OFFICIAL_SKILL_SECTION_END,
-  guardSkillOfficialSections,
-} from '../../../src/host/security/skillOfficialSectionGuard';
+import { guardSkillOfficialSections } from '../../../src/host/security/skillOfficialSectionGuard';
+
+const OFFICIAL_SKILL_SECTION_BEGIN = '<!-- NEO:OFFICIAL-SKILL:BEGIN -->';
+const OFFICIAL_SKILL_SECTION_END = '<!-- NEO:OFFICIAL-SKILL:END -->';
 
 const officialBlock = [
   OFFICIAL_SKILL_SECTION_BEGIN,

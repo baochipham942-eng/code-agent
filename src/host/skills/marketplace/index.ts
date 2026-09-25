@@ -21,5 +21,4 @@ export {
   listInstalledPlugins,
   enablePlugin,
   disablePlugin,
-  getEnabledSkillDirs,
 } from './installService';

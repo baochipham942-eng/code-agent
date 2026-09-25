@@ -147,7 +147,9 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
           workingDirectory: workspacePath,
         });
         if (createdSession?.projectId !== projectId) {
-          setError(t.neoTopics.newWorkCardNoSession);
+          const message = t.neoTopics.newWorkCardNoSession;
+          toast.error(message);
+          setError(message);
           return;
         }
         conversationId = createdSession.id;
@@ -177,7 +179,9 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
       handleClose(true);
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : String(submitError);
-      setError(`${t.neoTopics.newWorkCardFailed}: ${message}`);
+      const errorMessage = `${t.neoTopics.newWorkCardFailed}: ${message}`;
+      toast.error(errorMessage);
+      setError(errorMessage);
     } finally {
       setCreating(false);
     }
@@ -186,7 +190,7 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
   return (
     <Modal
       isOpen={isOpen}
-      onClose={handleClose}
+      onClose={() => handleClose()}
       title={t.neoTopics.newWorkCardTitle}
       headerIcon={<Sparkles className="h-5 w-5 text-badge-success" />}
       closeOnBackdropClick={!creating}

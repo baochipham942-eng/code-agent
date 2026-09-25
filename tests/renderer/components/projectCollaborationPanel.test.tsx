@@ -20,6 +20,7 @@ import {
 } from '../../../src/renderer/components/features/projectCollaboration/projectCollaborationData';
 import { useNeoWorkCardStore } from '../../../src/renderer/stores/neoWorkCardStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useToastStore } from '../../../src/renderer/hooks/useToast';
 
 const defaultCreateAndRun = useNeoWorkCardStore.getState().createAndRun;
 const defaultSwitchSession = useSessionStore.getState().switchSession;
@@ -41,6 +42,7 @@ afterEach(() => {
     switchSession: defaultSwitchSession,
     createSession: defaultCreateSession,
   });
+  useToastStore.setState({ toasts: [] });
 });
 
 function makeDelta(over: Partial<NeoWorkCardDelta> = {}): NeoWorkCardDelta {
@@ -391,6 +393,30 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
     expect(createSession).toHaveBeenCalledWith('让 Neo 开始一件新工作', { workingDirectory: '/project-a' });
     expect(createAndRun.mock.calls[0]?.[0]).toMatchObject({ sourceConversationId: 'session-created', workspacePath: '/project-a' });
     expect(switchSession).toHaveBeenCalledWith('session-created');
+  });
+
+  it('surfaces work-card execution failures through a toast after session creation', async () => {
+    useNeoWorkCardStore.setState({
+      createAndRun: vi.fn(async () => {
+        throw new Error('模型配置不可用');
+      }),
+    });
+    useSessionStore.setState({
+      currentSessionId: 'session-other-project',
+      sessions: [{ id: 'session-other-project', projectId: 'project-2', workingDirectory: '/project-b' } as never],
+      createSession: vi.fn(async () => ({
+        id: 'session-created',
+        projectId: 'project-1',
+        workingDirectory: '/project-a',
+      } as never)),
+    });
+
+    render(<ProjectCollaborationPanel projectId="project-1" projectWorkspacePath="/project-a" details={[]} sourceMessagesByConversation={{}} />);
+    fireEvent.click(screen.getByTestId('neo-new-work-card'));
+    fireEvent.change(screen.getByTestId('neo-new-work-card-task'), { target: { value: '执行失败也要提示' } });
+    fireEvent.click(screen.getByRole('button', { name: '开始执行' }));
+
+    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toContain('模型配置不可用'));
   });
 
   it('hides new-card creation when a project has neither workspace nor session', () => {

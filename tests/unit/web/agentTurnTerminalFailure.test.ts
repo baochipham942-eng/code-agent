@@ -95,7 +95,7 @@ describe('AgentRunController.lastTerminalErrorData', () => {
         details: { provider: 'p', model: 'm' },
         failure: { code: 'MODEL_AUTH' },
       },
-    });
+    } as never);
     // 引擎 finalize 后再抛，路由 catch 里裸发一条只有 message 的 error
     controller.emitAgentEvent({ type: 'error', data: { message: 'Unauthorized' } });
 
@@ -109,7 +109,7 @@ describe('AgentRunController.lastTerminalErrorData', () => {
 
   it('warning 级 error 不算终态失败', () => {
     const controller = createController();
-    controller.emitAgentEvent({ type: 'error', data: { message: 'x', level: 'warning' } });
+    controller.emitAgentEvent({ type: 'error', data: { message: 'x', level: 'warning' } } as never);
     expect(controller.hadTerminalError).toBe(false);
     expect(controller.lastTerminalErrorData).toBeNull();
   });

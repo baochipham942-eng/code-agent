@@ -786,11 +786,7 @@ describe('Neo Tag runtime helpers', () => {
   // 完成必须有正向证据（非空最终回复）；失败按旁听到的终态错误分类给人话 + 出路。
 
   interface TerminalTestHarness {
-    service: {
-      get: ReturnType<typeof vi.fn>;
-      setStatus: ReturnType<typeof vi.fn>;
-      appendDelta: ReturnType<typeof vi.fn>;
-    };
+    service: NeoWorkCardService;
     deltas: NeoWorkCardDelta[];
     statuses: string[];
     blockedReasons: Array<string | undefined>;

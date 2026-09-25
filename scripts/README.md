@@ -24,6 +24,9 @@
 当前模型注意力固定开销由 `attention-budget-ratchet.mjs` 与同目录显式基线文件共同守门，
 经 `gates:local` 调用；任何提额都要在基线理由中留下产品决策。
 
+Neo 用户旅程 React commitCount 由 `perf-journey-ratchet.mjs` 与同目录显式基线守门：
+PR 时 `gates:fast` 按路径各占 1 个文件槽（共享产品路径只挂最敏感的那条旅程），合入 main 后 swarm-ci 全量复跑。计数上升红、下降绿；收紧基线是手工 `node scripts/perf-journey-ratchet.mjs --tighten`（只降不升）。
+
 一次性迁移、局部调试和新验收脚本不要继续平铺到根层。迁移已有脚本时先保留薄兼容入口，确认 package scripts、workflow 和文档引用全部切换后再删除。
 
 ## 命名

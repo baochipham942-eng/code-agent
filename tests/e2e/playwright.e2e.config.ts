@@ -61,6 +61,7 @@ export default defineConfig({
     '**/goal-mode.spec.ts',
     '**/model-strategy-recommendation.spec.ts',
     '**/slash-commands.spec.ts',
+    '**/geometry-sensor.regressions.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,

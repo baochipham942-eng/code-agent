@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "systemPromptDefaultTokens": 5415,
+  "systemPromptMinTokens": 4874,
+  "deferredToolsBlockTokens": 639,
+  "toolDefinitionTokensDefault": 5264,
+  "expertModeTokens": {
+    "coreAgent.coder": 451,
+    "coreAgent.reviewer": 475,
+    "coreAgent.explore": 542,
+    "coreAgent.plan": 531,
+    "coreAgent.awaiter": 293,
+    "coreAgent.dream": 417,
+    "coreAgent.distill": 472,
+    "builtin.coder": 103,
+    "builtin.reviewer": 155,
+    "builtin.tester": 141,
+    "builtin.architect": 116,
+    "builtin.debugger": 120,
+    "builtin.documenter": 103,
+    "suffixBlock.swarmStatusReport": 112,
+    "suffixBlock.subagentDistillationContract": 36
+  },
+  "reason": "2026-09-25 PR#2072 ai-review 第二轮补登记：运行时统一追加的子代理固定块也进专家模式棘轮——spawnAgent.ts:815 给每个并行子代理追加 SWARM_STATUS_REPORT_SUFFIX（statusReport.ts:8，实测 112 token）、subagentExecutorProjection.ts:317 追加 SUBAGENT_DISTILLATION_CONTRACT（实测 36 token）。它们与 prompt 同为「每个子代理每次都付」的固定文本，此前漏计。其余数值不变。 —— 2026-09-25 N-EVAL-TWO-LAYER-METRICS 建门首钉，全部为当轮实测真值、未加余量。口径：CODE_AGENT_DATA_DIR 指向空临时目录（无 SOUL.md / prompts-overrides / config.json，全走内置默认）+ 时钟钉死 2026-08-14T04:00:00Z（today anchor 与 WebSearch dynamicDescription 是日期函数，不钉会跨日漂移），同配置两次运行逐字节同数。四项数值：①系统提示词=buildPrompt() 实跑（getSoul 回落 IDENTITY_PROMPT，与 promptBudget.test.ts 的 ≤6400 预算门同源——那道门带余量防超，本门钉实测真值只降不升）；②<deferred-tools> 折叠索引块=getDeferredToolsSummary(builtin-only、无 MCP、默认 1200 预算降档后的名字索引 485) + messageBuild.ts 内联包裹文案（AST 抽取）；③工具表默认下发总量=①CORE schema 4625（与 coreToolSchemaBudget 门同一刀口：扫 modules/**/*.schema.ts、dynamicDescription 优先、{name,description,parameters} JSON 序列化；那道门钉 4628 上限带 5% 措辞余量，本门把「CORE+折叠索引」作为整体钉死零余量）+②折叠索引 639；④专家/专项模式固定开销=hybrid CORE_AGENTS prompt+SUBAGENT_SUFFIXES（spawnAgent 无 customPrompt 时的真实下发量）+ shared/contract builtInAgents systemPrompt。排除项（刻意不进门，非固定开销）：每会话变化的 working directory 注入 / memory index / plugins / skills / MCP 名册；deferred 全展开总量（诊断口径，2026-09-25 实测 47757 token/轮，折叠后省 42493——新增 deferred 工具不增加每轮固定开销，锁进棘轮只会制造无意义基线维护）。systemPromptMinTokens=4874（实测值 -10%）仅防空构建假绿，buildPrompt 链路坏掉返回极短文本时红线。"
+}

@@ -16,3 +16,7 @@
 - [ ] real-runtime（本地 dogfood 包 / 真实 API / 部署后 smoke）
 
 <!-- 只勾 static-contract + hermetic-protocol 时，说明为什么不需要 fault-injection / real-runtime -->
+
+## UI geometry defects
+
+Provide a Playwright geometry assertion, red 5/5 on main and green 5/5 on the branch; screenshots are only for taste judgments.

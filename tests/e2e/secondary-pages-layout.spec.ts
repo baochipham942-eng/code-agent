@@ -10,6 +10,8 @@
 // ============================================================================
 
 import { test, expect, type Page } from './fixtures/axeTest';
+import { installGeometrySensor, type GeometrySensor } from './fixtures/geometrySensor';
+import { waitForLayoutSettle } from './fixtures/geometryScenarios';
 
 test.setTimeout(90_000);
 
@@ -19,7 +21,7 @@ const PAGES = [
   { entry: 'sidebar-capability-automation', page: 'cron-center-panel' },
 ] as const;
 
-async function waitForAppReady(page: Page): Promise<void> {
+async function waitForAppReady(page: Page, sensor?: GeometrySensor): Promise<void> {
   const ssePromise = page.waitForResponse((resp) => resp.url().includes('/api/events'), { timeout: 20_000 });
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
@@ -34,10 +36,11 @@ async function waitForAppReady(page: Page): Promise<void> {
     }
   }
   await expect(page.getByTestId('sidebar-capability-zone')).toBeVisible({ timeout: 15_000 });
+  await sensor?.markInteractive();
 }
 
-test('三个二级页可达，且都不接管整窗——侧栏常驻可见', async ({ page }) => {
-  await waitForAppReady(page);
+test('三个二级页可达，且都不接管整窗——侧栏常驻可见', async ({ page, geometrySensor }) => {
+  await waitForAppReady(page, geometrySensor);
   const sidebar = page.getByTestId('sidebar-capability-zone');
 
   for (const { entry, page: pageTestId } of PAGES) {
@@ -64,6 +67,14 @@ test('三个二级页可达，且都不接管整窗——侧栏常驻可见', as
 });
 
 test('侧栏会话列表的滚动条不挤内容轨——右轨与账号区箭头同轴的前提', async ({ page }) => {
+  const geometrySensor = await installGeometrySensor(page, {
+    scrollContainers: [{ selector: '[data-testid="sidebar-session-scroll"]', region: 'sidebar' }],
+    rightEdgeAlignments: [{
+      subject: '[data-testid="sidebar-session-scroll"]',
+      siblings: ['[data-testid="sidebar-capability-zone"]'],
+      maxOverhangPx: 1,
+    }],
+  });
   await waitForAppReady(page);
   const scroll = page.getByTestId('sidebar-session-scroll');
   await expect(scroll).toBeVisible({ timeout: 15_000 });
@@ -76,6 +87,8 @@ test('侧栏会话列表的滚动条不挤内容轨——右轨与账号区箭�
   // 做法是侧栏根让出一条同宽窄带、列表用等宽负 margin 要回去，于是：
   //   列表**内容盒**宽度 === 不滚动兄弟块（能力区）的宽度。
   // 这条不变量对「溢出 / 不溢出」都成立，所以先强制溢出再比。
+  // maxHeight 是测试夹具，必须在 markInteractive 之前落地，否则 assertClean 会把
+  // 这次主动缩短记成 post-interactive layout-shift。
   const widths = await scroll.evaluate((node) => {
     const el = node as HTMLElement;
     el.style.maxHeight = '40px'; // 与会话数无关地制造溢出
@@ -85,16 +98,19 @@ test('侧栏会话列表的滚动条不挤内容轨——右轨与账号区箭�
       offsetWidth: el.offsetWidth,
     };
   });
+  await waitForLayoutSettle(page);
+  await geometrySensor.markInteractive();
   const siblingWidth = await sibling.evaluate((node) => (node as HTMLElement).offsetWidth);
   expect(widths.overflowing).toBe(true);
   // 滚动条确实还在（占了自己那条窄带），没有被藏掉
   expect(widths.offsetWidth).toBeGreaterThan(widths.clientWidth);
   // 但内容轨与兄弟块同宽 ⇒ 右轨不左移
   expect(widths.clientWidth).toBe(siblingWidth);
+  await geometrySensor.assertClean();
 });
 
-test('点会话回到聊天区，二级页让位', async ({ page }) => {
-  await waitForAppReady(page);
+test('点会话回到聊天区，二级页让位', async ({ page, geometrySensor }) => {
+  await waitForAppReady(page, geometrySensor);
 
   const newTaskBtn = page.getByTestId('sidebar-new-task');
   await expect(newTaskBtn).toBeVisible({ timeout: 15_000 });
@@ -112,8 +128,8 @@ test('点会话回到聊天区，二级页让位', async ({ page }) => {
   await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
 });
 
-test('能力中心页内 tab 深链仍可切换', async ({ page }) => {
-  await waitForAppReady(page);
+test('能力中心页内 tab 深链仍可切换', async ({ page, geometrySensor }) => {
+  await waitForAppReady(page, geometrySensor);
   await page.getByTestId('sidebar-capability-hub').click();
   await expect(page.getByTestId('capability-hub-page')).toBeVisible({ timeout: 15_000 });
 

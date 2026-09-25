@@ -8,6 +8,7 @@ import {
   type TestInfo,
 } from '@playwright/test';
 import path from 'node:path';
+import { installGeometrySensor, type GeometrySensor } from './geometrySensor';
 import {
   AXE_ATTACHMENT_NAME,
   AXE_WCAG_TAGS,
@@ -58,6 +59,7 @@ export async function scanA11y(
 
 type AxeFixtures = {
   axeAutoScan: void;
+  geometrySensor: GeometrySensor;
 };
 
 export const test = base.extend<AxeFixtures>({
@@ -65,5 +67,13 @@ export const test = base.extend<AxeFixtures>({
     await use();
     const alreadyScanned = testInfo.attachments.some(({ name }) => name === AXE_ATTACHMENT_NAME);
     if (!alreadyScanned) await scanA11y(page, testInfo, { scanName: 'automatic' });
+  }, { auto: true }],
+  geometrySensor: [async ({ page }, use) => {
+    const sensor = await installGeometrySensor(page);
+    await use(sensor);
+    const report = await sensor.collect();
+    if (report.violations.length > 0) {
+      throw new Error(`[geometry] ${JSON.stringify(report.violations)}`);
+    }
   }, { auto: true }],
 });

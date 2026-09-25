@@ -34,6 +34,9 @@ on:
       - 'src/shared/contract/generated/agent-events.schema.json'
       - 'scripts/ci/tool-output-schema-ratchet.ts'
       - 'scripts/ci/tool-output-schema-ratchet-baseline.json'
+      # 固定上下文开销棘轮：只改基线 = 手工放宽，必须真跑这道门
+      - 'scripts/ci/context-overhead-ratchet.ts'
+      - 'scripts/ci/context-overhead-ratchet-baseline.json'
       - 'playwright.config.ts'
       - 'tests/e2e/playwright.e2e.config.ts'
       - '.github/workflows/release.yml'
@@ -66,6 +69,9 @@ on:
       - 'scripts/attention-budget-ratchet.mjs'
       # 基线也要触发：只改基线 = 手工放宽棘轮，不能溜过门（与 knip 基线同理）
       - 'scripts/attention-budget-ratchet-baseline.json'
+      - 'scripts/perf-journey-ratchet.mjs'
+      - 'scripts/perf-journey-ratchet-baseline.json'
+      - 'scripts/perf/journey-*'
       - 'scripts/coverage-ratchet.mjs'
       # 覆盖率基线也必须触发：只改基线 = 手工放宽棘轮，不能溜过门
       - 'scripts/coverage-ratchet-baseline.json'
@@ -245,6 +251,14 @@ jobs:
         # 此前只在 gates-local 本地跑、CI 零执行——#1199 改语音文案后 CI 全绿合入，把主线门带红（N-L8-ATT11/12）。
         # 脚本对 0 命中文件 / 找不到语音文案锚点 fail-loud，不会扫空假绿。
         run: node scripts/attention-budget-ratchet.mjs
+
+      - name: Context overhead ratchet (default fixed context)
+        # 固定上下文开销棘轮（N-EVAL-TWO-LAYER-METRICS Layer 1）：默认配置系统提示词 +
+        # <deferred-tools> 折叠索引块 + 默认工具表总量 + 每个专家/专项模式提示词，全部
+        # 只降不升、钉实测真值零余量。与 attention-budget（注入文案）、coreToolSchemaBudget
+        # （CORE schema 上限带余量）互补。确定性 = 空数据目录 + 钉死时钟，两次运行逐字节同数；
+        # 测量路径失效（模板消失 / CORE 缺 schema / buildPrompt 空）一律 fail loud。
+        run: npm run check:context-overhead
 
       - name: Coverage baseline direction (no PR coverage run)
         # PR 只做毫秒级的基线方向检查，阻止手工下调；全量 coverage 只在 main-full-gate 跑。
@@ -563,6 +577,53 @@ jobs:
             tests/e2e/screenshots/
           if-no-files-found: ignore
           retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Post-merge safety net: run ALL journey probes regardless of paths.
+  # PR-time coverage is path-scoped via gates:fast (one file slot per journey).
+  # ---------------------------------------------------------------------------
+  perf-journey-ratchet:
+    name: Perf journey ratchet (post-merge)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Read Playwright version
+        id: playwright-version
+        run: |
+          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run all journey commit-count probes
+        env:
+          E2E_BROWSER_CHANNEL: chromium
+        # No path filter on this job: post-merge safety net for product paths
+        # that PR-time gates:fast no longer selects (each shared path attaches
+        # to exactly one journey). Decreases are green; the script appends the
+        # can-tighten list to $GITHUB_STEP_SUMMARY. Tighten is a manual step:
+        # node scripts/perf-journey-ratchet.mjs --tighten
+        run: node scripts/perf-journey-ratchet.mjs
 
   # 不再写回 ci/swarm-health.json：streak 直接从 GitHub Actions API 派生，
   # 用 scripts/ci/swarm-streak.sh 按需查询，避免 [skip ci] commit + 1-commit

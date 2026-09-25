@@ -51,7 +51,10 @@ const limits = {
   // 2026-09-22 +1: scripts/eval-reflow-compare-cron.sh（N-EVAL-FAILURE-AUTOHARVEST：
   // 回流集周跑对比候选模型发车器，与 scripts/eval-core-cron.sh 同族——launchd 周跑
   // 入口必须在 scripts/ 直属层才能被 plist 引用，下沉子目录会让人以为是两套调度）。
-  directScriptFiles: 158,
+  // 2026-09-25 +2: scripts/perf-journey-ratchet.mjs 及其显式基线文件（N-PERF-JOURNEY-RATCHET：
+  // 四条 Neo 用户旅程的 React Profiler commitCount 棘轮，package / swarm-ci post-merge /
+  // gates:fast 共用的稳定入口；基线只许降不许升，提额必须连同理由接受评审）。
+  directScriptFiles: 160,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

@@ -70,6 +70,41 @@ describe('fast gate fail-closed contracts', () => {
     expect(selectTests(policy, ['scripts/gates-fast.mjs']).files).not.toContain('tests/scripts/gatesLocalLock.test.ts');
     expect(selectTests(policy, ['scripts/lib/gates-local-lock.mjs']).files).toContain('tests/scripts/gatesLocalLock.test.ts');
   });
+  it('a new e2e spec selects the axe wiring ratchet within the 12-file cap', () => {
+    const selected = selectTests(policy, ['tests/e2e/x.spec.ts']);
+    expect(selected.matchedRules).toContain('axe-e2e-wiring');
+    expect(selected.files).toContain('tests/scripts/a11yAxeRatchet.test.ts');
+    expect(selected.files).toHaveLength(policy.baseline.length + 1);
+    validateFiles(root, selected.files, 12);
+  });
+  it('journey probes occupy one file slot each and stay off unrelated host paths', () => {
+    const journeyIds = [
+      'perf-journey-cold-start',
+      'perf-journey-first-token',
+      'perf-journey-long-session',
+      'perf-journey-session-switch',
+    ];
+    for (const id of journeyIds) {
+      const rule = policy.rules.find((entry) => entry.id === id);
+      expect(rule, id).toBeTruthy();
+      expect(rule?.files, id).toHaveLength(1);
+    }
+    const unrelated = selectTests(policy, ['src/host/prompts/old.ts']);
+    expect(unrelated.matchedRules).not.toEqual(expect.arrayContaining(journeyIds));
+  });
+  it('a MessageBubble or TurnBasedTraceView edit selects exactly one journey probe', () => {
+    const bubble = selectTests(policy, ['src/renderer/components/features/chat/MessageBubble/MessageContent.tsx']);
+    expect(bubble.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual(['perf-journey-first-token']);
+    expect(bubble.files).toContain('tests/scripts/perfJourneyFirstToken.test.ts');
+    expect(bubble.files).not.toContain('tests/scripts/perfJourneyLongSession.test.ts');
+    expect(bubble.files).not.toContain('tests/scripts/perfJourneySessionSwitch.test.ts');
+
+    const trace = selectTests(policy, ['src/renderer/components/features/chat/TurnBasedTraceView.tsx']);
+    expect(trace.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual(['perf-journey-long-session']);
+    expect(trace.files).toContain('tests/scripts/perfJourneyLongSession.test.ts');
+    expect(trace.files).not.toContain('tests/scripts/perfJourneySessionSwitch.test.ts');
+    expect(trace.files).not.toContain('tests/scripts/perfJourneyFirstToken.test.ts');
+  });
   it('rejects misleading successful reports: wrong files, zero tests, skipped tests and runtime errors', () => {
     const good = { success: true, numTotalTests: 1, numPassedTests: 1, testResults: [{ name: path.join(root, policy.baseline[0]), status: 'passed', assertionResults: [{ status: 'passed' }] }] };
     expect(validateReport([policy.baseline[0]], good, root).tests).toBe(1);

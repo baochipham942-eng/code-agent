@@ -111,10 +111,137 @@
         "package-lock.json",
         "lint-staged.config.mjs",
         ".husky/**",
-        "scripts/check-*.sh"
+        "scripts/check-*.sh",
+        "scripts/perf-journey-ratchet.mjs",
+        "scripts/perf-journey-ratchet-baseline.json"
       ],
       "files": [
-        "tests/scripts/gatesFast.test.ts"
+        "tests/scripts/gatesFast.test.ts",
+        "tests/scripts/perfJourneyRatchet.test.ts"
+      ]
+    },
+    {
+      "id": "perf-journey-cold-start",
+      "note": "Shared product paths attach to exactly one journey. ChatInput stays here (cold-start harness hot path). Post-merge swarm-ci perf-journey-ratchet (push to main, no path filter) re-runs all four as the safety net for anything no longer selected at PR time.",
+      "paths": [
+        "src/renderer/components/features/chat/ChatInput/**",
+        "src/renderer/hooks/useI18n.ts",
+        "src/renderer/i18n/**",
+        "src/renderer/stores/appStore.ts",
+        "scripts/perf/journey-cold-start-harness.tsx",
+        "scripts/perf/journey-browser-smoke.ts",
+        "scripts/perf/journey-probe-runtime.ts",
+        "scripts/perf/journey-probe-protocol.ts",
+        "scripts/perf/journey-probe-instrument.tsx",
+        "scripts/perf/journey-probe-test-support.ts",
+        "scripts/perf-journey-ratchet.mjs",
+        "scripts/perf-journey-ratchet-baseline.json"
+      ],
+      "files": [
+        "tests/scripts/perfJourneyColdStart.test.ts"
+      ]
+    },
+    {
+      "id": "perf-journey-first-token",
+      "note": "MessageBubble/** attaches here only: first-token harness hot path is MessageContent, the most commit-sensitive probe for bubble edits. Post-merge job is the safety net.",
+      "paths": [
+        "src/renderer/components/features/chat/MessageBubble/**",
+        "src/renderer/hooks/useThrottledStreamingContent.ts",
+        "src/renderer/hooks/useSmoothStreamingText.ts",
+        "src/renderer/hooks/smoothStreamingAlgorithm.ts",
+        "src/renderer/utils/turnContentVisibility.ts",
+        "src/renderer/utils/streamingPerformanceMetrics.ts",
+        "src/renderer/utils/streamingStatePresentation.ts",
+        "scripts/perf/journey-first-token-harness.tsx",
+        "scripts/perf/journey-browser-smoke.ts",
+        "scripts/perf/journey-probe-runtime.ts",
+        "scripts/perf/journey-probe-protocol.ts",
+        "scripts/perf/journey-probe-instrument.tsx",
+        "scripts/perf/journey-probe-test-support.ts",
+        "scripts/perf-journey-ratchet.mjs",
+        "scripts/perf-journey-ratchet-baseline.json"
+      ],
+      "files": [
+        "tests/scripts/perfJourneyFirstToken.test.ts"
+      ]
+    },
+    {
+      "id": "perf-journey-long-session",
+      "note": "TurnBasedTraceView.tsx attaches here only: long-session harness hot path, 32-turn scroll is the most commit-sensitive probe. MessageBubble is first-token's. Post-merge job is the safety net.",
+      "paths": [
+        "src/renderer/components/features/chat/TurnBasedTraceView.tsx",
+        "src/renderer/components/features/chat/TurnCard.tsx",
+        "src/renderer/components/features/chat/TurnRail.tsx",
+        "src/renderer/components/features/chat/TurnCompactionMarker.tsx",
+        "src/renderer/components/features/chat/TraceNodeRenderer.tsx",
+        "src/renderer/utils/turnVisibility.ts",
+        "src/renderer/utils/turnRailItems.ts",
+        "src/renderer/slots/productSlotHosts.tsx",
+        "scripts/perf/long-session-browser-harness.tsx",
+        "scripts/perf/long-session-browser-smoke.ts",
+        "scripts/perf/wait-for-stable.ts",
+        "scripts/perf/journey-long-session-harness.tsx",
+        "scripts/perf/journey-browser-smoke.ts",
+        "scripts/perf/journey-probe-runtime.ts",
+        "scripts/perf/journey-probe-protocol.ts",
+        "scripts/perf/journey-probe-instrument.tsx",
+        "scripts/perf/journey-probe-test-support.ts",
+        "scripts/perf-journey-ratchet.mjs",
+        "scripts/perf-journey-ratchet-baseline.json"
+      ],
+      "files": [
+        "tests/scripts/perfJourneyLongSession.test.ts"
+      ]
+    },
+    {
+      "id": "perf-journey-session-switch",
+      "note": "EmptySessionArea / SessionSwitchSkeleton stays here. MessageBubble → first-token; TurnBasedTraceView → long-session. Post-merge job is the safety net.",
+      "paths": [
+        "src/renderer/components/features/chat/SessionSwitchSkeleton.tsx",
+        "src/renderer/components/features/chat/NewSessionWelcome.tsx",
+        "src/renderer/components/ChatView.tsx",
+        "src/renderer/stores/sessionStore.ts",
+        "scripts/perf/journey-session-switch-harness.tsx",
+        "scripts/perf/journey-browser-smoke.ts",
+        "scripts/perf/journey-probe-runtime.ts",
+        "scripts/perf/journey-probe-protocol.ts",
+        "scripts/perf/journey-probe-instrument.tsx",
+        "scripts/perf/journey-probe-test-support.ts",
+        "scripts/perf-journey-ratchet.mjs",
+        "scripts/perf-journey-ratchet-baseline.json"
+      ],
+      "files": [
+        "tests/scripts/perfJourneySessionSwitch.test.ts"
+      ]
+    },
+    {
+      "id": "axe-e2e-wiring",
+      "paths": [
+        "tests/e2e/*.spec.ts",
+        "tests/e2e/fixtures/axeTest.ts"
+      ],
+      "files": [
+        "tests/scripts/a11yAxeRatchet.test.ts"
+      ]
+    },
+    {
+      "id": "geometry-sensor",
+      "paths": [
+        "tests/e2e/fixtures/geometrySensor.ts",
+        "tests/e2e/fixtures/geometryScenarios.ts",
+        "tests/e2e/fixtures/axeTest.ts",
+        "tests/e2e/geometry-sensor.regressions.spec.ts",
+        "tests/e2e/playwright.geometry.config.ts",
+        "tests/e2e/playwright.e2e.config.ts",
+        "tests/e2e/secondary-pages-layout.spec.ts",
+        "scripts/perf/geometry-sensor-replay.ts",
+        "scripts/perf/geometry-sensor-runtime.ts",
+        "scripts/perf/geometry-sidebar-harness.tsx",
+        "scripts/perf/geometry-caselist-harness.tsx",
+        "docs/perf/geometry-sensor-replay-latest.md"
+      ],
+      "files": [
+        "tests/unit/geometrySensor.test.ts"
       ]
     },
     {
@@ -125,6 +252,16 @@
       ],
       "files": [
         "tests/scripts/gatesLocalLock.test.ts"
+      ]
+    },
+    {
+      "id": "eval-center",
+      "paths": [
+        "packages/internal/evaluation-center/scripts/**",
+        "packages/internal/evaluation-center/reports/.gitignore"
+      ],
+      "files": [
+        "tests/unit/testing/evalCiReport.test.ts"
       ]
     },
     {

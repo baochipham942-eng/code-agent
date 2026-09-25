@@ -145,6 +145,20 @@ describe('TaskManager message event persistence', () => {
     expect(orchestratorMocks.setMessages).not.toHaveBeenCalled();
   });
 
+  it('rejects context hydration while a direct primary run is registered', () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({
+      configService: {} as never,
+      runRegistry: { hasSession: vi.fn(() => true) } as never,
+      onAgentEvent: vi.fn(),
+    });
+
+    expect(manager.setSessionContextIfIdle('session-primary-running', [
+      { id: 'history-1', role: 'user', content: 'existing', timestamp: 1 },
+    ])).toBe(false);
+    expect(orchestratorMocks.setMessages).not.toHaveBeenCalled();
+  });
+
   it('runs two auxiliary tasks in one session and cancels only the addressed task', async () => {
     const manager = new TaskManager({ maxConcurrentTasks: 1 });
     manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });

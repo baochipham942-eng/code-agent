@@ -34,6 +34,7 @@ const logger = createLogger('NeoTagRuntimeService');
 
 export interface NeoTagTaskManager {
   getOrCreateCurrentOrchestrator?: (sessionId?: string) => { setWorkingDirectory?: (path: string) => void } | undefined;
+  hasActivePrimaryRun?: (sessionId: string) => boolean;
   setSessionContextIfIdle?: (sessionId: string, messages: Message[]) => boolean;
   setSessionContext?: (sessionId: string, messages: Message[]) => void;
   setWorkingDirectory?: (sessionId: string, directory: string) => void;
@@ -327,7 +328,8 @@ export async function launchApprovedNeoWorkCard(
       ? input.taskManager.setSessionContextIfIdle(roundConversationId, targetMessages)
       : (() => {
         const currentState = input.taskManager.getSessionState?.(roundConversationId);
-        if (['running', 'paused', 'queued', 'cancelling'].includes(currentState?.status ?? '')) return false;
+        if (['running', 'paused', 'queued', 'cancelling'].includes(currentState?.status ?? '')
+          || input.taskManager.hasActivePrimaryRun?.(roundConversationId)) return false;
         if (targetMessages.length > 0) {
           input.taskManager.setSessionContext?.(roundConversationId, targetMessages);
         }

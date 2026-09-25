@@ -708,7 +708,8 @@ export class TaskManager extends EventEmitter {
    */
   setSessionContextIfIdle(sessionId: string, messages: Message[]): boolean {
     const status = this.sessionStates.get(sessionId)?.status;
-    if (status === 'running' || status === 'paused' || status === 'queued' || status === 'cancelling') {
+    if (status === 'running' || status === 'paused' || status === 'queued' || status === 'cancelling'
+      || this.hasActivePrimaryRun(sessionId)) {
       return false;
     }
     if (messages.length > 0) {

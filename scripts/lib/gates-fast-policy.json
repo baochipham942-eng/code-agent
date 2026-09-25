@@ -214,6 +214,16 @@
       ]
     },
     {
+      "id": "axe-e2e-wiring",
+      "paths": [
+        "tests/e2e/*.spec.ts",
+        "tests/e2e/fixtures/axeTest.ts"
+      ],
+      "files": [
+        "tests/scripts/a11yAxeRatchet.test.ts"
+      ]
+    },
+    {
       "id": "geometry-sensor",
       "paths": [
         "tests/e2e/fixtures/geometrySensor.ts",

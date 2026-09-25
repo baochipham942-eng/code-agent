@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/axeTest';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startGeometryVite, type GeometryViteServer } from '../../scripts/perf/geometry-sensor-runtime';

@@ -70,6 +70,13 @@ describe('fast gate fail-closed contracts', () => {
     expect(selectTests(policy, ['scripts/gates-fast.mjs']).files).not.toContain('tests/scripts/gatesLocalLock.test.ts');
     expect(selectTests(policy, ['scripts/lib/gates-local-lock.mjs']).files).toContain('tests/scripts/gatesLocalLock.test.ts');
   });
+  it('a new e2e spec selects the axe wiring ratchet within the 12-file cap', () => {
+    const selected = selectTests(policy, ['tests/e2e/x.spec.ts']);
+    expect(selected.matchedRules).toContain('axe-e2e-wiring');
+    expect(selected.files).toContain('tests/scripts/a11yAxeRatchet.test.ts');
+    expect(selected.files).toHaveLength(policy.baseline.length + 1);
+    validateFiles(root, selected.files, 12);
+  });
   it('journey probes occupy one file slot each and stay off unrelated host paths', () => {
     const journeyIds = [
       'perf-journey-cold-start',

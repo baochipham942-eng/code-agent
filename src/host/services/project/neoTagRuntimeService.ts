@@ -34,6 +34,7 @@ const logger = createLogger('NeoTagRuntimeService');
 
 export interface NeoTagTaskManager {
   getOrCreateCurrentOrchestrator?: (sessionId?: string) => { setWorkingDirectory?: (path: string) => void } | undefined;
+  setSessionContextIfIdle?: (sessionId: string, messages: Message[]) => boolean;
   setSessionContext?: (sessionId: string, messages: Message[]) => void;
   setWorkingDirectory?: (sessionId: string, directory: string) => void;
   startTask: (
@@ -314,9 +315,19 @@ export async function launchApprovedNeoWorkCard(
 
   try {
     // The renderer may submit from a project page while another session is open.
-    // Hydrate the target orchestrator before startTask so a non-current session
-    // keeps its persisted conversation history in the model context.
-    input.taskManager.setSessionContext?.(roundConversationId, source.messages);
+    // Check and hydrate synchronously so a competing run cannot have its live
+    // orchestrator history replaced before startTask rejects the busy session.
+    const contextReady = input.taskManager.setSessionContextIfIdle
+      ? input.taskManager.setSessionContextIfIdle(roundConversationId, source.messages)
+      : (() => {
+        const currentState = input.taskManager.getSessionState?.(roundConversationId);
+        if (['running', 'paused', 'queued', 'cancelling'].includes(currentState?.status ?? '')) return false;
+        input.taskManager.setSessionContext?.(roundConversationId, source.messages);
+        return true;
+      })();
+    if (!contextReady) {
+      throw new Error(`Session ${roundConversationId} is already running`);
+    }
     // D2 护栏：只有回源会话跑才同步工作目录；跨会话续接用目标会话自己的目录，
     // 禁止持久改写目标会话的工作目录（污染其后续普通聊天）。
     if (source.workingDirectory && !isCrossConversation) {

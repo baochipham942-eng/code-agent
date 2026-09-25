@@ -702,6 +702,20 @@ export class TaskManager extends EventEmitter {
   }
 
   /**
+   * Atomically reserve the idle check and hydrate a session before its next task.
+   * The synchronous check and set prevent a competing startTask call from
+   * having its live orchestrator history replaced after it has begun.
+   */
+  setSessionContextIfIdle(sessionId: string, messages: Message[]): boolean {
+    const status = this.sessionStates.get(sessionId)?.status;
+    if (status === 'running' || status === 'paused' || status === 'queued' || status === 'cancelling') {
+      return false;
+    }
+    this.setSessionContext(sessionId, messages);
+    return true;
+  }
+
+  /**
    * 获取会话的 Orchestrator（如果存在）
    *
    * @param sessionId - 会话 ID（可选，不传则返回当前活跃会话的 orchestrator）

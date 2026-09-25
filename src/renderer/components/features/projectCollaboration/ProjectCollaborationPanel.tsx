@@ -135,6 +135,7 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
     }
     setCreating(true);
     setError(null);
+    let createdSessionId: string | null = null;
     try {
       const envelope = { content: `@neo ${userText}` };
       let conversationId = sourceConversationId;
@@ -145,6 +146,7 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
         }
         const createdSession = await useSessionStore.getState().createSession(t.neoTopics.newWorkCardTitle, {
           workingDirectory: workspacePath,
+          preserveSecondaryPages: true,
         });
         if (createdSession?.projectId !== projectId) {
           if (createdSession?.id) {
@@ -156,6 +158,7 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
           return;
         }
         conversationId = createdSession.id;
+        createdSessionId = createdSession.id;
       }
       const request = buildNeoWorkCardDraftRequest({
         // The @neo prefix is an internal request shape for the existing tag contract;
@@ -172,6 +175,9 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
       await createAndRun(request);
       handleClose(true);
     } catch (submitError) {
+      if (createdSessionId) {
+        await useSessionStore.getState().deleteSession(createdSessionId);
+      }
       const message = submitError instanceof Error ? submitError.message : String(submitError);
       const errorMessage = `${t.neoTopics.newWorkCardFailed}: ${message}`;
       toast.error(errorMessage);
@@ -194,7 +200,7 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
         <ModalFooter
           cancelText={t.common.cancel}
           confirmText={creating ? t.neoTopics.newWorkCardCreating : t.neoTopics.newWorkCardSubmit}
-          onCancel={handleClose}
+          onCancel={() => handleClose()}
           onConfirm={() => void handleSubmit()}
           confirmDisabled={creating}
           cancelDisabled={creating}
@@ -319,6 +325,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
   const actorUserId = currentUser?.id ?? 'local-user';
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const sessions = useSessionStore((state) => state.sessions);
+  const runningSessionIds = useSessionStore((state) => state.runningSessionIds);
   const { t } = useI18n();
   // 无绑定项目（projectId=null）= 全局目录：跨项目列全部 @neo topic（兜底建的卡挂在 proj_unsorted 等桶下）
   const scopeKey = projectId ?? NEO_WORK_CARD_ALL_SCOPE;
@@ -368,12 +375,13 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
       && session.status !== 'queued'
       && session.status !== 'paused'
       && session.status !== 'cancelling'
+      && !runningSessionIds.has(session.id)
       && (!expectedWorkspacePath || session.workingDirectory?.trim() === expectedWorkspacePath)
     );
     const current = sessions.find((session) => session.id === currentSessionId);
     if (current && isUsable(current)) return current;
     return sessions.find(isUsable) ?? null;
-  }, [currentSessionId, projectId, projectWorkspacePath, sessions]);
+  }, [currentSessionId, projectId, projectWorkspacePath, runningSessionIds, sessions]);
   const canCreateWorkCard = Boolean(projectId && (projectWorkspacePath?.trim() || projectSession));
 
   useEffect(() => {

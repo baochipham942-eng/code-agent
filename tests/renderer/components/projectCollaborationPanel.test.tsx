@@ -25,6 +25,7 @@ import { useToastStore } from '../../../src/renderer/hooks/useToast';
 const defaultCreateAndRun = useNeoWorkCardStore.getState().createAndRun;
 const defaultSwitchSession = useSessionStore.getState().switchSession;
 const defaultCreateSession = useSessionStore.getState().createSession;
+const defaultDeleteSession = useSessionStore.getState().deleteSession;
 
 afterEach(() => {
   cleanup();
@@ -38,9 +39,11 @@ afterEach(() => {
   useSessionStore.setState({
     currentSessionId: null,
     sessions: [],
+    runningSessionIds: new Set<string>(),
     messages: [],
     switchSession: defaultSwitchSession,
     createSession: defaultCreateSession,
+    deleteSession: defaultDeleteSession,
   });
   useToastStore.setState({ toasts: [] });
 });
@@ -335,8 +338,10 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
     useNeoWorkCardStore.setState({ createAndRun });
     useSessionStore.setState({
       currentSessionId: 'session-running',
+      runningSessionIds: new Set(['session-live']),
       sessions: [
         { id: 'session-running', projectId: 'project-1', workingDirectory: '/project-a', status: 'running' } as never,
+        { id: 'session-live', projectId: 'project-1', workingDirectory: '/project-a', status: 'idle' } as never,
         { id: 'session-idle', projectId: 'project-1', workingDirectory: '/project-a', status: 'idle' } as never,
       ],
       switchSession: vi.fn(async (sessionId: string) => {
@@ -383,7 +388,10 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
     fireEvent.click(screen.getByRole('button', { name: '开始执行' }));
 
     await waitFor(() => expect(createAndRun).toHaveBeenCalledTimes(1));
-    expect(createSession).toHaveBeenCalledWith('让 Neo 开始一件新工作', { workingDirectory: '/project-a' });
+    expect(createSession).toHaveBeenCalledWith('让 Neo 开始一件新工作', {
+      workingDirectory: '/project-a',
+      preserveSecondaryPages: true,
+    });
     expect(createAndRun.mock.calls[0]?.[0]).toMatchObject({ sourceConversationId: 'session-created', workspacePath: '/project-a' });
     expect(useSessionStore.getState().currentSessionId).toBe('session-other-project');
   });
@@ -416,6 +424,7 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
   });
 
   it('surfaces work-card execution failures through a toast after session creation', async () => {
+    const deleteSession = vi.fn(async () => {});
     useNeoWorkCardStore.setState({
       createAndRun: vi.fn(async () => {
         throw new Error('模型配置不可用');
@@ -429,6 +438,7 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
         projectId: 'project-1',
         workingDirectory: '/project-a',
       } as never)),
+      deleteSession,
     });
 
     render(<ProjectCollaborationPanel projectId="project-1" projectWorkspacePath="/project-a" details={[]} sourceMessagesByConversation={{}} />);
@@ -437,6 +447,7 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
     fireEvent.click(screen.getByRole('button', { name: '开始执行' }));
 
     await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toContain('模型配置不可用'));
+    expect(deleteSession).toHaveBeenCalledWith('session-created');
   });
 
   it('hides new-card creation when a project has neither workspace nor session', () => {

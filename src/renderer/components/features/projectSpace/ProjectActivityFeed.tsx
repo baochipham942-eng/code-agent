@@ -14,6 +14,7 @@ import { tagClient } from '../../../services/tagClient';
 import { getProjectArtifacts } from '../../../services/projectClient';
 import { formatRelativeTime } from '../../../utils/i18nTime';
 import { Badge } from '../../primitives/Badge';
+import { NEO_WORK_CARD_PHASE_LABEL, statusPhase } from '../chat/neoWorkCardPhase';
 import { EmptyState } from '../../primitives/EmptyState';
 import { IconButton } from '../../primitives/IconButton';
 import { buildProjectActivityFeed, type ProjectActivityEntry } from './projectSpaceData';
@@ -101,7 +102,9 @@ export const ProjectActivityFeed: React.FC<ProjectActivityFeedProps> = ({
             <span className="flex min-w-0 items-center gap-2">
               <span className="flex-shrink-0 text-xs text-zinc-500">{kindLabel(entry)}</span>
               {entry.topicStatus ? (
-                <Badge className="border-zinc-700 bg-zinc-800/60 text-[10px] text-zinc-400">{entry.topicStatus}</Badge>
+                <Badge className="border-zinc-700 bg-zinc-800/60 text-[10px] text-zinc-400">
+                  {NEO_WORK_CARD_PHASE_LABEL[statusPhase(entry.topicStatus)]}
+                </Badge>
               ) : null}
             </span>
             <span className="mt-0.5 block truncate text-sm text-zinc-300">{entry.title}</span>

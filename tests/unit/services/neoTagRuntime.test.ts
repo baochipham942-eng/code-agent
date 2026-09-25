@@ -16,6 +16,7 @@ import { buildNeoTagPromptLayer } from '../../../src/host/services/project/neoTa
 import {
   createAndRunNeoWorkCard,
   launchApprovedNeoWorkCard,
+  resolveNeoTagRunOutcome,
   type NeoTagTaskManager,
 } from '../../../src/host/services/project/neoTagRuntimeService';
 import type { NeoWorkCardService } from '../../../src/host/services/project/neoWorkCardService';
@@ -305,6 +306,8 @@ describe('Neo Tag runtime helpers', () => {
       setWorkingDirectory: vi.fn(),
       startTask: vi.fn(async () => {
         await writeWorkspaceFile(workspace, 'src/host/services/project/neoTagRuntimeService.ts', 'after');
+        // 真实 run 会把最终 assistant 回复落进会话；完成判定靠这个正向证据。
+        sessionMessages.push({ id: 'assistant_final', role: 'assistant', content: '运行完成：已改写 runtime 文件。', timestamp: 3 });
       }),
       getSessionState: vi.fn(() => ({ status: 'idle' })),
     };
@@ -514,7 +517,10 @@ describe('Neo Tag runtime helpers', () => {
       draft,
       service,
       taskManager: {
-        startTask: vi.fn(async () => undefined),
+        startTask: vi.fn(async () => {
+          // 终态契约：完成需要非空最终回复的正向证据（本轮 user id = sourceTurnId）。
+          sessionMessages.push({ id: 'assistant_direct', role: 'assistant', content: '直接开干完成。', timestamp: 2 });
+        }),
         getSessionState: vi.fn(() => ({ status: 'idle' })),
       },
       now: () => 100,
@@ -646,7 +652,9 @@ describe('Neo Tag runtime helpers', () => {
     });
 
     expect(statuses).toEqual(['queued', 'working', 'failed']);
-    expect(deltas.at(-1)?.risks).toEqual(['Provider returned 401']);
+    // 失败原因现在带出路（N-CHAT-EMPTY-FINAL-NO-EXIT：失败态带出路不带解释）
+    expect(deltas.at(-1)?.risks[0]).toContain('Provider returned 401');
+    expect(deltas.at(-1)?.risks[0]).toContain('接着做');
     expect(deltas.at(-1)?.nextStep).toContain('runtime/provider error');
   });
 
@@ -705,7 +713,8 @@ describe('Neo Tag runtime helpers', () => {
     });
 
     expect(statuses).toEqual(['queued', 'working', 'failed']);
-    expect(deltas.at(-1)?.risks).toEqual(['Invalid API Key']);
+    expect(deltas.at(-1)?.risks[0]).toContain('Invalid API Key');
+    expect(deltas.at(-1)?.risks[0]).toContain('换一个模型');
     expect(deltas.at(-1)?.openQuestions.join('\n')).toContain('provider credentials');
   });
 
@@ -760,6 +769,10 @@ describe('Neo Tag runtime helpers', () => {
           await writeWorkspaceFile(workspace, 'src/host/services/project/neoTagRuntimeService.ts', 'after');
           await writeWorkspaceFile(workspace, 'docs/neo-notes.md', 'after');
           await writeWorkspaceFile(workspace, 'src/renderer/components/features/settings/tabs/ModelSettings.tsx', 'after');
+          sessionMessages.push(
+            { id: 'msg_source', role: 'user', content: '@neo 按范围改写', timestamp: 2 },
+            { id: 'assistant_scope', role: 'assistant', content: '已按范围改写。', timestamp: 3 },
+          );
         }),
         getSessionState: vi.fn(() => ({ status: 'idle' })),
       },
@@ -767,6 +780,230 @@ describe('Neo Tag runtime helpers', () => {
     });
 
     expect(deltas.at(-1)?.changedFiles).toEqual(['src/host/services/project/neoTagRuntimeService.ts']);
+  });
+
+  // ── 终态契约（N-CHAT-EMPTY-FINAL-NO-EXIT）───────────────────────────────
+  // 完成必须有正向证据（非空最终回复）；失败按旁听到的终态错误分类给人话 + 出路。
+
+  interface TerminalTestHarness {
+    service: {
+      get: ReturnType<typeof vi.fn>;
+      setStatus: ReturnType<typeof vi.fn>;
+      appendDelta: ReturnType<typeof vi.fn>;
+    };
+    deltas: NeoWorkCardDelta[];
+    statuses: string[];
+    blockedReasons: Array<string | undefined>;
+  }
+
+  function terminalHarness(): TerminalTestHarness {
+    const card = workCard();
+    const rev = revision();
+    const deltas: NeoWorkCardDelta[] = [];
+    const statuses: string[] = [];
+    const blockedReasons: Array<string | undefined> = [];
+    const service = {
+      get: vi.fn((): NeoWorkCardDetail => ({
+        workCard: card,
+        currentRevision: rev,
+        approvedRevision: rev,
+        revisions: [rev],
+        approvals: [],
+        deltas,
+        resultReviews: [],
+        memoryCandidates: [],
+      })),
+      setStatus: vi.fn((_id: string, status: NeoWorkCard['status'], _now: number, reason?: string | null) => {
+        statuses.push(status);
+        blockedReasons.push(reason ?? undefined);
+        card.status = status;
+        return card;
+      }),
+      appendDelta: vi.fn((input: Partial<NeoWorkCardDelta>) => {
+        const delta = {
+          id: `delta_${deltas.length + 1}`,
+          workCardId: card.id,
+          runId: input.runId || 'run_1',
+          completed: input.completed || [],
+          changedFiles: input.changedFiles || [],
+          decisions: input.decisions || [],
+          openQuestions: input.openQuestions || [],
+          risks: input.risks || [],
+          memoryCandidates: input.memoryCandidates || [],
+          nextStep: input.nextStep,
+          createdAt: deltas.length + 1,
+        };
+        deltas.push(delta);
+        return delta;
+      }),
+    } as unknown as NeoWorkCardService;
+    return { service, deltas, statuses, blockedReasons };
+  }
+
+  it('终态契约：provider 401（MODEL_AUTH 终态错误事件）进失败态，带人话原因与出路，不出现账本术语', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => undefined),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+        observeAgentEvents: (observer) => {
+          // runFinalizer 的终态错误事件：RUN_FAILED + 鉴权标记（401 真实形状）
+          observer('conv_1', {
+            type: 'error',
+            data: {
+              message: '模型鉴权失败：API Key 无效、已过期或没有权限。',
+              code: 'RUN_FAILED',
+              details: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
+              failure: { code: 'MODEL_AUTH', provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
+            },
+          } as never);
+          return () => {};
+        },
+      },
+    });
+
+    expect(h.statuses).toEqual(['queued', 'working', 'failed']);
+    const reason = h.blockedReasons.at(-1) ?? '';
+    expect(reason).toContain('API Key');
+    expect(reason).toContain('设置');
+    expect(reason).toContain('接着做');
+    // 验收 4：用户面不出现账本术语
+    for (const term of ['RUN_FAILED', 'MODEL_AUTH', 'in_result_review', 'completed_unverified', 'turn_outcome']) {
+      expect(reason).not.toContain(term);
+    }
+    expect(h.deltas.at(-1)?.risks[0]).toBe(reason);
+  });
+
+  it('终态契约：额度不足（MODEL_QUOTA）与模型不可用（MODEL_UNAVAILABLE）各自给「换一个模型」出路', async () => {
+    for (const [failureCode, keyword] of [
+      ['MODEL_QUOTA', '额度不足'],
+      ['MODEL_UNAVAILABLE', '模型不可用'],
+    ] as const) {
+      const h = terminalHarness();
+      await launchApprovedNeoWorkCard({
+        workCardId: 'nwc_1',
+        service: h.service,
+        now: () => 100,
+        taskManager: {
+          startTask: vi.fn(async () => undefined),
+          getSessionState: vi.fn(() => ({ status: 'idle' })),
+          observeAgentEvents: (observer) => {
+            observer('conv_1', {
+              type: 'error',
+              data: { message: 'provider failed', code: 'RUN_FAILED', failure: { code: failureCode } },
+            } as never);
+            return () => {};
+          },
+        },
+      });
+      expect(h.statuses.at(-1)).toBe('failed');
+      const reason = h.blockedReasons.at(-1) ?? '';
+      expect(reason).toContain(keyword);
+      expect(reason).toContain('换一个模型');
+    }
+  });
+
+  it('终态契约：空最终回复不许记为完成——没有任何终态错误也要归失败并给重试入口', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => undefined),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+      },
+    });
+
+    // 排除法兜底已被废除：state=idle + 没有错误事件 ≠ 完成
+    expect(h.statuses).toEqual(['queued', 'working', 'failed']);
+    const reason = h.blockedReasons.at(-1) ?? '';
+    expect(reason).toContain('没有生成最终回复');
+    expect(reason).toContain('接着做');
+  });
+
+  it('终态契约：run 被取消 → 失败态「运行被手动中止」+ 继续入口（不记完成）', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => undefined),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+        observeAgentEvents: (observer) => {
+          observer('conv_1', { type: 'agent_cancelled', data: null } as never);
+          return () => {};
+        },
+      },
+    });
+
+    expect(h.statuses.at(-1)).toBe('failed');
+    expect(h.blockedReasons.at(-1)).toContain('手动中止');
+    expect(h.blockedReasons.at(-1)).toContain('接着做');
+  });
+
+  it('终态契约：有非空最终回复的正向证据时才记完成（in_result_review），正常完成不回退', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => {
+          sessionMessages.push(
+            { id: 'msg_source', role: 'user', content: '@neo 干活', timestamp: 1 },
+            { id: 'assistant_ok', role: 'assistant', content: '做完了，产物如下。', timestamp: 2 },
+          );
+        }),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+      },
+    });
+
+    expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
+  });
+
+  it('终态契约：只有工具输出没有正文（几百行文件清单收尾）不算正向证据', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => {
+          sessionMessages.push(
+            {
+              id: 'assistant_tools_only',
+              role: 'assistant',
+              content: '',
+              timestamp: 2,
+              toolCalls: [{ id: 'tc_1', name: 'list_files', arguments: {} } as never],
+            },
+          );
+        }),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+      },
+    });
+
+    expect(h.statuses.at(-1)).toBe('failed');
+    expect(h.blockedReasons.at(-1)).toContain('没有生成最终回复');
+  });
+
+  it('resolveNeoTagRunOutcome 优先级：state error > cancelled > failure > 无回复 > 完成', () => {
+    const base = { failure: null, cancelled: false, hasFinalReply: true };
+    expect(resolveNeoTagRunOutcome({ ...base, state: { status: 'paused' } })).toEqual({ status: 'waiting_for_user' });
+    expect(resolveNeoTagRunOutcome({ ...base, state: { status: 'error', error: 'boom' } }).status).toBe('failed');
+    expect(resolveNeoTagRunOutcome({ ...base, state: { status: 'idle' }, cancelled: true }).status).toBe('failed');
+    expect(resolveNeoTagRunOutcome({
+      ...base,
+      state: { status: 'idle' },
+      failure: { message: '401', failureCode: 'MODEL_AUTH' },
+    }).status).toBe('failed');
+    expect(resolveNeoTagRunOutcome({ ...base, state: { status: 'idle' }, hasFinalReply: false }).status).toBe('failed');
+    expect(resolveNeoTagRunOutcome({ ...base, state: { status: 'idle' } })).toEqual({ status: 'in_result_review' });
   });
 
   it('returns an empty changedFiles result when no approved files actually change', async () => {
@@ -814,7 +1051,9 @@ describe('Neo Tag runtime helpers', () => {
       workCardId: card.id,
       service,
       taskManager: {
-        startTask: vi.fn(async () => undefined),
+        startTask: vi.fn(async () => {
+          sessionMessages.push({ id: 'assistant_nochg', role: 'assistant', content: '没有需要改的文件。', timestamp: 3 });
+        }),
         getSessionState: vi.fn(() => ({ status: 'idle' })),
       },
       now: () => 100,

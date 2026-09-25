@@ -1,4 +1,4 @@
-import type { Message, ModelConfig, Session } from '../../shared/contract';
+import type { AgentErrorMetadata, Message, ModelConfig, Session } from '../../shared/contract';
 import type { DatabaseService } from '../../host/services/core/databaseService';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
 import type { SessionCreateOptions } from '../../cli/session';
@@ -189,6 +189,12 @@ interface CommitTurnInput {
     hasAssistantOutput: () => boolean;
     hasInterleaving: () => boolean;
   };
+  /**
+   * 终态失败记录（N-CHAT-EMPTY-FINAL-NO-EXIT）：本轮以失败收场且没有任何 assistant
+   * 产出时，落一条携带 metadata.agentError 的空 assistant 消息。会话重开后
+   * AgentErrorCard 照常渲染（人话原因 + 重试/换模型出路），失败不再只活在内存里。
+   */
+  terminalFailure?: { agentError: AgentErrorMetadata } | null;
 }
 
 function isDuplicateMessageError(error: unknown): boolean {
@@ -330,6 +336,7 @@ function fallbackToCollectorSessionProjection(
   turn: CommitTurnInput['turn'],
   assistantMsgId: string,
   assistantArtifacts: ReturnType<typeof extractArtifacts>,
+  terminalFailure?: CommitTurnInput['terminalFailure'],
 ): void {
   // !dbAvailable 时内存仍是主存储；DB 读回失败时也用批 2 前的 collector
   // 投影兜底，避免缓存停在半旧状态并丢掉本轮消息。
@@ -345,7 +352,21 @@ function fallbackToCollectorSessionProjection(
       thinking: turn.assistantThinking || undefined,
       contentParts: turn.hasInterleaving() ? turn.contentParts : undefined,
       artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-      metadata: attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
+      // 有部分产出但失败收场：失败卡并到该条产出上（AgentErrorCard 渲染源）。
+      metadata: terminalFailure
+        ? {
+          ...attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
+          agentError: terminalFailure.agentError,
+        }
+        : attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
+    });
+  } else if (!turn.runCancelled && terminalFailure) {
+    cached.push({
+      id: assistantMsgId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      metadata: { agentError: terminalFailure.agentError },
     });
   }
   replaceSessionMessagesProjection(sessionId, cached);
@@ -511,6 +532,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         userMessagePrePersistedDb,
         userMessage,
         turn,
+        terminalFailure,
       } = input;
 
       const assistantMsgId = generateMessageId();
@@ -522,6 +544,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
           turn,
           assistantMsgId,
           assistantArtifacts,
+          terminalFailure,
         );
       }
 
@@ -578,9 +601,27 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
               toolCalls: turn.assistantToolCalls.length > 0 ? turn.assistantToolCalls : undefined,
               thinking: turn.assistantThinking || undefined,
               artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-              metadata: attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
+              // 有部分产出但失败收场：失败卡并到该条产出上（AgentErrorCard 渲染源）。
+              metadata: terminalFailure
+                ? {
+                  ...attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
+                  agentError: terminalFailure.agentError,
+                }
+                : attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
               contentParts: turn.hasInterleaving() ? turn.contentParts : undefined,
             } as Message);
+          }
+          if (!turn.runCancelled && !turn.hasAssistantOutput() && terminalFailure && !loopPersistedAssistant) {
+            // 失败终态落库：空正文 + agentError 元数据。AgentErrorCard 只认
+            // message.metadata.agentError，重开后即恢复「人话原因 + 重试入口」。
+            await persistMessageToDb(sm, db, sessionId, {
+              id: assistantMsgId,
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+              metadata: { agentError: terminalFailure.agentError },
+            } as Message);
+            persistedFinalAssistantMessageId = assistantMsgId;
           }
           if (!turn.runCancelled && turn.hasAssistantOutput()) {
             persistedFinalAssistantMessageId = loopPersistedAssistant
@@ -648,6 +689,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
             turn,
             assistantMsgId,
             assistantArtifacts,
+            terminalFailure,
           );
         }
       }

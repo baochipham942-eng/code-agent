@@ -1,6 +1,11 @@
 import { randomUUID } from 'crypto';
 import type { AgentRunOptions } from '../../research/types';
-import type { Message, MessageMetadata } from '../../../shared/contract';
+import type { AgentEvent, Message, MessageMetadata } from '../../../shared/contract';
+import {
+  getAgentErrorMessage,
+  isTerminalAgentError,
+} from '../../../shared/utils/agentErrorClassification';
+import { hasVisibleAssistantTextAfterLastUser } from '../../agent/runtime/runFinalizer';
 import type {
   CreateNeoWorkCardDraftInput,
   NeoTagRunContext,
@@ -33,7 +38,11 @@ import { createLogger } from '../infra/logger';
 const logger = createLogger('NeoTagRuntimeService');
 
 export interface NeoTagTaskManager {
-  getOrCreateCurrentOrchestrator?: (sessionId?: string) => { setWorkingDirectory?: (path: string) => void } | undefined;
+  getOrCreateCurrentOrchestrator?: (sessionId?: string) => {
+    setWorkingDirectory?: (path: string) => void;
+    /** AgentOrchestrator.getMessages：工作卡完成判定的正向证据判源（内存 history）。 */
+    getMessages?: () => Message[];
+  } | undefined;
   hasActivePrimaryRun?: (sessionId: string) => boolean;
   setSessionContextIfIdle?: (sessionId: string, messages: Message[]) => boolean;
   setSessionContext?: (sessionId: string, messages: Message[]) => void;
@@ -47,6 +56,10 @@ export interface NeoTagTaskManager {
     clientMessageId?: string,
   ) => Promise<void>;
   getSessionState?: (sessionId: string) => { status: string; error?: string };
+  /** TaskManager.observeAgentEvents 的结构性子集：工作卡靠它旁听本轮 run 的终态事件。 */
+  observeAgentEvents?: (
+    observer: (sessionId: string, event: AgentEvent, taskId?: string) => void,
+  ) => () => void;
 }
 
 export interface LaunchApprovedNeoWorkCardInput {
@@ -151,6 +164,146 @@ async function waitForRuntimeState(
     if (!['running', 'queued', 'cancelling'].includes(latest.status)) return latest;
   }
   return latest;
+}
+
+/** 本轮 run 旁听到的终态失败（runFinalizer 的 error 事件：message + 结构化 failure 标记）。 */
+export interface NeoTagRunFailure {
+  message: string;
+  /** 结构化失败标记的 code（MODEL_AUTH / MODEL_QUOTA / MODEL_UNAVAILABLE …），缺省=未分类。 */
+  failureCode?: string;
+}
+
+/**
+ * 终态契约的单一判定点（N-CHAT-EMPTY-FINAL-NO-EXIT）。
+ *
+ * 完成必须有正向证据：本轮 user turn 之后存在非空 assistant 正文。排除法
+ * （「不是 error/paused 就算完成」）已被废除——provider 401 等失败会让
+ * agentLoop 正常 resolve、session state 回到 idle，排除法把它们全记成完成。
+ *
+ * 优先级（高→低）：session 显式 error → 运行被取消 → 旁听到终态失败 →
+ * 没有最终回复（无正向证据）→ 完成（in_result_review）。
+ */
+export interface NeoTagRunOutcomeInput {
+  state: { status: string; error?: string } | null;
+  failure: NeoTagRunFailure | null;
+  cancelled: boolean;
+  /** 正向证据：本轮 user turn 之后有非空 assistant 正文。 */
+  hasFinalReply: boolean;
+}
+
+export type NeoTagRunOutcome =
+  | { status: 'failed'; reason: string }
+  | { status: 'waiting_for_user' }
+  | { status: 'in_result_review' };
+
+/** 失败态带出路不带解释：一句原因 + 一句下一步，不堆技术细节。 */
+function blockedReasonForFailure(failure: { message: string; failureCode?: string }): string {
+  switch (failure.failureCode) {
+    case 'MODEL_AUTH':
+      return '模型鉴权失败：API Key 无效或已过期。到「设置 → 模型」修复这个模型的 Key，或换一个模型，然后点「接着做」重试。';
+    case 'MODEL_QUOTA':
+      return '模型额度不足：这个账号在服务商的余额或额度已用完。换一个模型，或到服务商侧处理后再点「接着做」重试。';
+    case 'MODEL_UNAVAILABLE':
+      return '模型不可用：这个模型已被服务商下线或暂时不可用。换一个模型后点「接着做」重试。';
+    default: {
+      const raw = failure.message.trim().slice(0, 200);
+      return raw
+        ? `${raw} 点「接着做」重试，或换一个模型。`
+        : '这轮运行失败了。点「接着做」重试，或换一个模型。';
+    }
+  }
+}
+
+export function resolveNeoTagRunOutcome(input: NeoTagRunOutcomeInput): NeoTagRunOutcome {
+  if (input.state?.status === 'paused') return { status: 'waiting_for_user' };
+  if (input.state?.status === 'error') {
+    return {
+      status: 'failed',
+      reason: blockedReasonForFailure({ message: input.state.error ?? '' }),
+    };
+  }
+  if (input.cancelled) {
+    return { status: 'failed', reason: '运行被手动中止，这轮没有产出。点「接着做」继续这个 topic。' };
+  }
+  if (input.failure) {
+    return { status: 'failed', reason: blockedReasonForFailure(input.failure) };
+  }
+  if (!input.hasFinalReply) {
+    return {
+      status: 'failed',
+      reason: '这轮没有生成最终回复，没有可复核的结果。点「接着做」让 Neo 重试，或换一个模型。',
+    };
+  }
+  return { status: 'in_result_review' };
+}
+
+/**
+ * 旁听本轮 run 的终态事件。runFinalizer 对 provider 失败只发 error 事件不抛异常
+ * （sendMessage 照常 resolve），session state 也回 idle——不旁听事件就抓不到失败。
+ */
+function observeNeoTagRunTerminalEvents(
+  taskManager: NeoTagTaskManager,
+  sessionId: string,
+): { failure: () => NeoTagRunFailure | null; cancelled: () => boolean; stop: () => void } {
+  let failure: NeoTagRunFailure | null = null;
+  let cancelled = false;
+  if (!taskManager.observeAgentEvents) {
+    return { failure: () => failure, cancelled: () => cancelled, stop: () => {} };
+  }
+  const unsubscribe = taskManager.observeAgentEvents((eventSessionId, event) => {
+    if (eventSessionId !== sessionId) return;
+    if (event.type === 'agent_cancelled') {
+      cancelled = true;
+      return;
+    }
+    if (event.type !== 'error' || !isTerminalAgentError(event.data)) return;
+    const message = getAgentErrorMessage(event.data) ?? 'Runtime task ended with an unknown error.';
+    const failureCode = event.data && typeof event.data === 'object' && 'failure' in event.data
+      ? (event.data as { failure?: { code?: unknown } }).failure?.code
+      : undefined;
+    failure = {
+      message,
+      ...(typeof failureCode === 'string' && failureCode ? { failureCode } : {}),
+    };
+  });
+  return {
+    failure: () => failure,
+    cancelled: () => cancelled,
+    stop: unsubscribe,
+  };
+}
+
+/**
+ * 正向证据：本轮 user turn（id = roundTurnId，startTask 以它为 clientMessageId 落库）
+ * 之后有没有非空 assistant 正文。
+ *
+ * 判源优先级：orchestrator 内存 history（运行期同步写入，无落库竞态）→ 会话 ledger
+ * 全量（orchestrator 不可用时的兜底）。两处都找不到锚点 user 消息 = 没有证据，
+ * 宁可失败不可冒充完成。
+ */
+async function runProducedVisibleReply(
+  taskManager: NeoTagTaskManager,
+  conversationId: string,
+  roundTurnId: string,
+): Promise<boolean> {
+  const hasReplyFrom = (messages: Message[]): boolean | null => {
+    const anchorIndex = messages.findIndex(
+      (message) => message.id === roundTurnId && message.role === 'user',
+    );
+    if (anchorIndex < 0) return null;
+    return hasVisibleAssistantTextAfterLastUser(messages.slice(anchorIndex));
+  };
+
+  const orchestrator = taskManager.getOrCreateCurrentOrchestrator?.(conversationId);
+  const liveMessages = typeof orchestrator?.getMessages === 'function'
+    ? orchestrator.getMessages()
+    : undefined;
+  if (liveMessages && liveMessages.length > 0) {
+    const live = hasReplyFrom(liveMessages);
+    if (live !== null) return live;
+  }
+  const ledger = hasReplyFrom(await readFullSessionMessages(conversationId));
+  return ledger ?? false;
 }
 
 function runtimeErrorMessage(error: unknown): string {
@@ -367,26 +520,39 @@ export async function launchApprovedNeoWorkCard(
     };
     // clientMessageId = 本轮 turnId：host 直接把带 @neo 前缀的展示文本落到目标会话，
     // renderer 不需要切换会话或做本地补显，live 与 reload 都只看到一条用户消息。
-    await input.taskManager.startTask(
-      roundConversationId,
-      approvedRevision.taskSummary,
-      undefined,
-      options,
-      metadata,
-      roundTurnId,
-    );
+    // 终态事件旁听必须先于 startTask 挂上：runFinalizer 的失败事件发生在 sendMessage
+    // resolve 之前，晚挂会漏。
+    const terminalEvents = observeNeoTagRunTerminalEvents(input.taskManager, roundConversationId);
+    try {
+      await input.taskManager.startTask(
+        roundConversationId,
+        approvedRevision.taskSummary,
+        undefined,
+        options,
+        metadata,
+        roundTurnId,
+      );
+    } finally {
+      terminalEvents.stop();
+    }
     const changedFiles = await safelyCollectChangedFiles(artifactSnapshot);
-
+    const hasFinalReply = await runProducedVisibleReply(input.taskManager, roundConversationId, roundTurnId);
     const state = await waitForRuntimeState(input.taskManager, roundConversationId);
-    if (state?.status === 'error') {
-      const error = state.error || 'Runtime task ended with an error state.';
-      service.setStatus(workCard.id, 'failed', now(), error);
+    const outcome = resolveNeoTagRunOutcome({
+      state,
+      failure: terminalEvents.failure(),
+      cancelled: terminalEvents.cancelled(),
+      hasFinalReply,
+    });
+
+    if (outcome.status === 'failed') {
+      service.setStatus(workCard.id, 'failed', now(), outcome.reason);
       appendFailureDelta({
         service,
         workCardId: workCard.id,
         runId: run,
         conversationId: roundConversationId,
-        error,
+        error: outcome.reason,
         now,
         contextAudit: summarizeContextAudit(contextPack, topicRounds.length),
       });
@@ -394,7 +560,7 @@ export async function launchApprovedNeoWorkCard(
       return { runId: run, context };
     }
 
-    if (state?.status === 'paused') {
+    if (outcome.status === 'waiting_for_user') {
       service.setStatus(
         workCard.id,
         'waiting_for_user',

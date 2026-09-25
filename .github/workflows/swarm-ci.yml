@@ -602,7 +602,7 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
 
       - name: Install Chromium
-        run: npx playwright install chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Run all journey commit-count probes
         env:

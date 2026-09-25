@@ -24,7 +24,7 @@ import {
 import type { Message } from '@shared/contract/message';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { buildNeoTagSourceMessage, buildNeoWorkCardDraftRequest } from '../chat/neoTagSubmit';
+import { buildNeoWorkCardDraftRequest } from '../chat/neoTagSubmit';
 import { Button, Modal, ModalFooter } from '../../primitives';
 import {
   formatNeoTopicDueDay,
@@ -147,6 +147,9 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
           workingDirectory: workspacePath,
         });
         if (createdSession?.projectId !== projectId) {
+          if (createdSession?.id) {
+            await useSessionStore.getState().deleteSession(createdSession.id);
+          }
           const message = t.neoTopics.newWorkCardNoSession;
           toast.error(message);
           setError(message);
@@ -166,16 +169,7 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
       });
       if (!request) return;
 
-      const result = await createAndRun(request);
-      const sessionStore = useSessionStore.getState();
-      if (sessionStore.currentSessionId !== conversationId) {
-        await sessionStore.switchSession(conversationId);
-      }
-      useSessionStore.getState().addMessage(buildNeoTagSourceMessage({
-        envelope,
-        sourceConversationId: conversationId,
-        result,
-      }));
+      await createAndRun(request);
       handleClose(true);
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : String(submitError);
@@ -569,7 +563,11 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
             </div>
           ) : (
             <div className="rounded-md border border-zinc-800/70 bg-zinc-950/30 px-3 py-6 text-center text-xs text-zinc-600" data-testid="neo-topic-empty">
-              {projectId ? (embedded ? t.neoTopics.emptyProjectEmbedded : t.neoTopics.emptyProject) : t.neoTopics.emptyGlobal}
+              {projectId
+                ? (embedded
+                  ? t.neoTopics.emptyProjectEmbedded
+                  : (canCreateWorkCard ? t.neoTopics.emptyProject : t.neoTopics.emptyProjectUnavailable))
+                : t.neoTopics.emptyGlobal}
             </div>
           )}
         </div>

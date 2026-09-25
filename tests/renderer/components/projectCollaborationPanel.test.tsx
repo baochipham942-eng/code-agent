@@ -316,12 +316,9 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
         writeScope: { projectId: 'project-1', mode: 'none' },
       },
     });
-    expect(switchSession).toHaveBeenCalledWith('session-1');
-    expect(useSessionStore.getState().messages[0]).toMatchObject({
-      role: 'user',
-      content: '@neo 整理竞品',
-      id: 'source-created',
-    });
+    expect(switchSession).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().currentSessionId).toBe('session-other-project');
+    expect(useSessionStore.getState().messages).toEqual([]);
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '让 Neo 开始一件新工作' })).toBeNull());
   });
 
@@ -366,15 +363,11 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
       projectId: 'project-1',
       workingDirectory: '/project-a',
     } as never));
-    const switchSession = vi.fn(async (sessionId: string) => {
-      useSessionStore.setState({ currentSessionId: sessionId });
-    });
     useNeoWorkCardStore.setState({ createAndRun });
     useSessionStore.setState({
       currentSessionId: 'session-other-project',
       sessions: [{ id: 'session-other-project', projectId: 'project-2', workingDirectory: '/project-b' } as never],
       createSession,
-      switchSession,
     });
 
     render(
@@ -392,7 +385,34 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
     await waitFor(() => expect(createAndRun).toHaveBeenCalledTimes(1));
     expect(createSession).toHaveBeenCalledWith('让 Neo 开始一件新工作', { workingDirectory: '/project-a' });
     expect(createAndRun.mock.calls[0]?.[0]).toMatchObject({ sourceConversationId: 'session-created', workspacePath: '/project-a' });
-    expect(switchSession).toHaveBeenCalledWith('session-created');
+    expect(useSessionStore.getState().currentSessionId).toBe('session-other-project');
+  });
+
+  it('cleans up a session that is returned for the wrong project', async () => {
+    const createSession = vi.fn(async () => ({
+      id: 'session-wrong-project',
+      projectId: 'project-2',
+      workingDirectory: '/project-b',
+    } as never));
+    const deleteSession = vi.fn(async () => {});
+    const createAndRun = vi.fn(async () => {
+      throw new Error('should not run with a mismatched session');
+    });
+    useNeoWorkCardStore.setState({ createAndRun });
+    useSessionStore.setState({
+      currentSessionId: 'session-other-project',
+      sessions: [{ id: 'session-other-project', projectId: 'project-2', workingDirectory: '/project-b' } as never],
+      createSession,
+      deleteSession,
+    });
+
+    render(<ProjectCollaborationPanel projectId="project-1" projectWorkspacePath="/project-a" details={[]} sourceMessagesByConversation={{}} />);
+    fireEvent.click(screen.getByTestId('neo-new-work-card'));
+    fireEvent.change(screen.getByTestId('neo-new-work-card-task'), { target: { value: '不应启动' } });
+    fireEvent.click(screen.getByRole('button', { name: '开始执行' }));
+
+    await waitFor(() => expect(deleteSession).toHaveBeenCalledWith('session-wrong-project'));
+    expect(createAndRun).not.toHaveBeenCalled();
   });
 
   it('surfaces work-card execution failures through a toast after session creation', async () => {
@@ -422,6 +442,7 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
   it('hides new-card creation when a project has neither workspace nor session', () => {
     render(<ProjectCollaborationPanel projectId="project-1" details={[]} sourceMessagesByConversation={{}} />);
     expect(screen.queryByTestId('neo-new-work-card')).toBeNull();
+    expect(screen.getByTestId('neo-topic-empty').textContent).toBe('这个项目还没有工作卡。');
   });
 
   it('exposes new-card creation from the embedded project-space directory', () => {

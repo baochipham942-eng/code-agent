@@ -324,6 +324,7 @@ describe('Neo Tag runtime helpers', () => {
       undefined,
       expect.objectContaining({
         mode: 'normal',
+        displayContent: '@neo Implement approved runtime wiring',
         neoTag: expect.objectContaining({
           workCardId: card.id,
           approvedRevisionId: rev.id,

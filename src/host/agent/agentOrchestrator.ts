@@ -224,7 +224,7 @@ export class AgentOrchestrator {
     const userMessage: Message = {
       id: clientMessageId ?? this.generateId(),
       role: 'user',
-      content,
+      content: options?.displayContent ?? content,
       timestamp: Date.now(),
       attachments: attachments as MessageAttachment[] | undefined,
       metadata: messageMetadata,

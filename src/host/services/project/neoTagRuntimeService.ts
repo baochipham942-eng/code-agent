@@ -326,6 +326,7 @@ export async function launchApprovedNeoWorkCard(
     const options: AgentRunOptions = {
       mode: 'normal',
       neoTag: context,
+      displayContent: `@neo ${approvedRevision.taskSummary}`,
     };
     const metadata: MessageMetadata = {
       neoTag: {
@@ -338,8 +339,8 @@ export async function launchApprovedNeoWorkCard(
         status: 'working',
       },
     };
-    // clientMessageId = 本轮 turnId：renderer 在 @neo 提交时本地补的用户消息用同一个 ID，
-    // 落库幂等（addMessageToSession 重复 ID 走 update），live 与 reload 不会出现双份用户消息。
+    // clientMessageId = 本轮 turnId：host 直接把带 @neo 前缀的展示文本落到目标会话，
+    // renderer 不需要切换会话或做本地补显，live 与 reload 都只看到一条用户消息。
     await input.taskManager.startTask(
       roundConversationId,
       approvedRevision.taskSummary,

@@ -25,6 +25,7 @@ export const neoTopicsZh = {
     newWorkCardNoSession: '当前没有可用会话，暂时无法创建工作卡。',
     emptyGlobal: '还没有工作卡。',
     emptyProject: '这个项目还没有工作卡。点击“新建工作卡”开始。',
+    emptyProjectUnavailable: '这个项目还没有工作卡。',
     emptyProjectEmbedded: '这个项目还没有工作卡。',
   },
 };
@@ -55,6 +56,7 @@ export const neoTopicsEn = {
     newWorkCardNoSession: 'There is no active session available for a new work card.',
     emptyGlobal: 'No work cards yet.',
     emptyProject: 'No work cards in this project yet. Click “New work card” to start.',
+    emptyProjectUnavailable: 'No work cards in this project yet.',
     emptyProjectEmbedded: 'No work cards in this project yet.',
   },
 };

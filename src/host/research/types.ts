@@ -204,6 +204,8 @@ export interface AgentRunOptions {
   maxIterations?: number;
   /** Neo Tag approved work card runtime context. */
   neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
+  /** Optional user-facing source text persisted for this run. The model receives the raw task input. */
+  displayContent?: string;
   /** 同一会话内的后台执行槽使用 auxiliary RunHandle，不替换会话主 run。 */
   runRegistration?: 'primary' | 'auxiliary';
   /** 后台槽预分配的稳定 run id；与任务台账 id 共用。 */

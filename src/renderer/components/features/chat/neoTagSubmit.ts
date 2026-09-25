@@ -14,6 +14,7 @@ export interface BuildNeoWorkCardDraftRequestParams {
   projectId?: string | null;
   workspacePath?: string | null;
   requesterUserId: string;
+  entry?: 'composer' | 'collaboration_page';
 }
 
 export interface SubmitNeoTagDraftParams extends BuildNeoWorkCardDraftRequestParams {
@@ -63,7 +64,9 @@ export function buildNeoWorkCardDraftRequest(
         artifactIds: attachmentIds,
         fileGlobs: [],
         memoryEntryIds: [],
-        notes: ['Seeded from a leading @neo conversation request.'],
+        notes: [params.entry === 'collaboration_page'
+          ? 'Seeded from the Neo collaboration work-card entry.'
+          : 'Seeded from a leading @neo conversation request.'],
       },
       writeScope: {
         mode: 'none',

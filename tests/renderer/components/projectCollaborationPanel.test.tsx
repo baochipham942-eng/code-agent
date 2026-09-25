@@ -2,8 +2,15 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { NeoWorkCardDelta, NeoWorkCardDetail, NeoWorkCardPriority, NeoWorkCardStatus } from '../../../src/shared/contract/tag';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type {
+  CreateNeoWorkCardDraftRequest,
+  CreateNeoWorkCardDraftResult,
+  NeoWorkCardDelta,
+  NeoWorkCardDetail,
+  NeoWorkCardPriority,
+  NeoWorkCardStatus,
+} from '../../../src/shared/contract/tag';
 import { ProjectCollaborationPanel } from '../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationPanel';
 import { ProjectCollaborationPage } from '../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationPage';
 import {
@@ -12,10 +19,28 @@ import {
   formatRequesterLabel,
 } from '../../../src/renderer/components/features/projectCollaboration/projectCollaborationData';
 import { useNeoWorkCardStore } from '../../../src/renderer/stores/neoWorkCardStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+
+const defaultCreateAndRun = useNeoWorkCardStore.getState().createAndRun;
+const defaultSwitchSession = useSessionStore.getState().switchSession;
+const defaultCreateSession = useSessionStore.getState().createSession;
 
 afterEach(() => {
   cleanup();
-  useNeoWorkCardStore.setState({ detailsById: {}, loadingProjectIds: {}, lastErrorByProjectId: {}, continuationTarget: null });
+  useNeoWorkCardStore.setState({
+    detailsById: {},
+    loadingProjectIds: {},
+    lastErrorByProjectId: {},
+    continuationTarget: null,
+    createAndRun: defaultCreateAndRun,
+  });
+  useSessionStore.setState({
+    currentSessionId: null,
+    sessions: [],
+    messages: [],
+    switchSession: defaultSwitchSession,
+    createSession: defaultCreateSession,
+  });
 });
 
 function makeDelta(over: Partial<NeoWorkCardDelta> = {}): NeoWorkCardDelta {
@@ -244,6 +269,107 @@ describe('ProjectCollaborationPanel = @neo topic 目录', () => {
   it('page wrapper keeps its testid so the workbench boundary stays intact', () => {
     const html = renderToStaticMarkup(<ProjectCollaborationPage projectId="project-1" onClose={() => {}} />);
     expect(html).toContain('data-testid="project-collaboration-page"');
+  });
+
+  it('creates a work card from the explicit project entry using the active session', async () => {
+    const createAndRun = vi.fn(async (_request: CreateNeoWorkCardDraftRequest): Promise<CreateNeoWorkCardDraftResult> => ({
+      detail: makeDetail({ id: 'created', title: '整理竞品' }),
+      sourceTurnId: 'source-created',
+    }));
+    useNeoWorkCardStore.setState({ createAndRun });
+    const switchSession = vi.fn(async (sessionId: string) => {
+      useSessionStore.setState({ currentSessionId: sessionId });
+    });
+    useSessionStore.setState({
+      currentSessionId: 'session-other-project',
+      messages: [],
+      switchSession,
+      sessions: [
+        { id: 'session-other-project', projectId: 'project-2', workingDirectory: '/project-b' } as never,
+        { id: 'session-1', projectId: 'project-1', workingDirectory: '/project-a' } as never,
+      ],
+    });
+
+    render(<ProjectCollaborationPanel projectId="project-1" projectWorkspacePath="/project-a" details={[]} sourceMessagesByConversation={{}} />);
+    fireEvent.click(screen.getByTestId('neo-new-work-card'));
+    expect(screen.getByRole('dialog', { name: '让 Neo 开始一件新工作' })).toBeTruthy();
+    fireEvent.change(screen.getByTestId('neo-new-work-card-task'), { target: { value: '整理竞品' } });
+    fireEvent.click(screen.getByRole('button', { name: '开始执行' }));
+
+    await waitFor(() => expect(createAndRun).toHaveBeenCalledTimes(1));
+    expect(createAndRun.mock.calls[0]?.[0]).toMatchObject({
+      projectId: 'project-1',
+      sourceConversationId: 'session-1',
+      workspacePath: '/project-a',
+      requesterUserId: 'local-user',
+      userText: '整理竞品',
+      title: '整理竞品',
+      revision: {
+        taskSummary: '整理竞品',
+        readScope: {
+          projectId: 'project-1',
+          conversationIds: ['session-1'],
+          notes: ['Seeded from the Neo collaboration work-card entry.'],
+        },
+        writeScope: { projectId: 'project-1', mode: 'none' },
+      },
+    });
+    expect(switchSession).toHaveBeenCalledWith('session-1', { force: true });
+    expect(useSessionStore.getState().messages[0]).toMatchObject({
+      role: 'user',
+      content: '@neo 整理竞品',
+      id: 'source-created',
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '让 Neo 开始一件新工作' })).toBeNull());
+  });
+
+  it('does not expose new-card creation from the global read-only directory', () => {
+    render(<ProjectCollaborationPanel projectId={null} details={[]} sourceMessagesByConversation={{}} />);
+    expect(screen.queryByTestId('neo-new-work-card')).toBeNull();
+  });
+
+  it('creates a project session when the project has no usable session', async () => {
+    const createAndRun = vi.fn(async (_request: CreateNeoWorkCardDraftRequest): Promise<CreateNeoWorkCardDraftResult> => ({
+      detail: makeDetail({ id: 'created-with-session', title: '整理项目资料' }),
+      sourceTurnId: 'source-created-with-session',
+    }));
+    const createSession = vi.fn(async () => ({
+      id: 'session-created',
+      projectId: 'project-1',
+      workingDirectory: '/project-a',
+    } as never));
+    const switchSession = vi.fn(async (sessionId: string) => {
+      useSessionStore.setState({ currentSessionId: sessionId });
+    });
+    useNeoWorkCardStore.setState({ createAndRun });
+    useSessionStore.setState({
+      currentSessionId: 'session-other-project',
+      sessions: [{ id: 'session-other-project', projectId: 'project-2', workingDirectory: '/project-b' } as never],
+      createSession,
+      switchSession,
+    });
+
+    render(
+      <ProjectCollaborationPanel
+        projectId="project-1"
+        projectWorkspacePath="/project-a"
+        details={[]}
+        sourceMessagesByConversation={{}}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('neo-new-work-card'));
+    fireEvent.change(screen.getByTestId('neo-new-work-card-task'), { target: { value: '整理项目资料' } });
+    fireEvent.click(screen.getByRole('button', { name: '开始执行' }));
+
+    await waitFor(() => expect(createAndRun).toHaveBeenCalledTimes(1));
+    expect(createSession).toHaveBeenCalledWith('让 Neo 开始一件新工作', { workingDirectory: '/project-a' });
+    expect(createAndRun.mock.calls[0]?.[0]).toMatchObject({ sourceConversationId: 'session-created', workspacePath: '/project-a' });
+    expect(switchSession).toHaveBeenCalledWith('session-created', { force: true });
+  });
+
+  it('exposes new-card creation from the embedded project-space directory', () => {
+    render(<ProjectCollaborationPanel projectId="project-1" embedded details={[]} sourceMessagesByConversation={{}} />);
+    expect(screen.getByTestId('neo-new-work-card')).toBeTruthy();
   });
 });
 

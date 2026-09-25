@@ -49,16 +49,29 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
+vi.mock('../../../../src/host/tools/lsp/diagnosticsHelper', () => ({
+  getPostEditDiagnostics: async () => null,
+}));
+
 import crypto from 'crypto';
 import {
   disablePlugin,
   enablePlugin,
   getEnabledSkillDirs,
+  getEnabledSkillDescriptors,
   installFromRegistryEntry,
   installPlugin,
   listInstalledPlugins,
   uninstallPlugin,
 } from '../../../../src/host/skills/marketplace/installService';
+import type { CanUseToolFn, Logger, ToolContext } from '../../../../src/host/protocol/tools';
+import { fileReadTracker } from '../../../../src/host/tools/fileReadTracker';
+import { editModule } from '../../../../src/host/tools/modules/file/multiEdit';
+import { readModule } from '../../../../src/host/tools/modules/file/read';
+import {
+  OFFICIAL_SKILL_SECTION_BEGIN,
+  OFFICIAL_SKILL_SECTION_END,
+} from '../../../../src/host/security/skillOfficialSectionGuard';
 import { getPromptCommandService } from '../../../../src/host/services/commands/promptCommandService';
 import { installFromLocalZip } from '../../../../src/host/skills/marketplace/localZipInstall';
 
@@ -194,6 +207,16 @@ describe('marketplace install service trust defaults', () => {
     await expect(getEnabledSkillDirs()).resolves.toEqual([]);
     expect(fsSync.existsSync(commandPath)).toBe(false);
     expect(mocks.reloadSkills).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not grant official treatment to a third-party install named official-registry', async () => {
+    const result = await installPlugin('demo@official-registry', { enableAfterInstall: true });
+    expect(result.pluginSpec).toBe('demo@official-registry');
+    await expect(getEnabledSkillDescriptors()).resolves.toEqual([
+      expect.objectContaining({ official: false }),
+    ]);
+    const record = (await listInstalledPlugins())['demo@official-registry']!;
+    expect(record.sourceTrust).toBe('local-marketplace');
   });
 
   it.each([
@@ -462,6 +485,8 @@ describe('marketplace install service trust defaults', () => {
 
     const installed = await listInstalledPlugins();
     expect(installed['demo@official-registry']?.skills).toEqual(['demo__official-registry']);
+    expect(installed['demo@official-registry']?.sourceTrust).toBe('official-registry');
+    expect(await fs.readFile(path.join(pluginRoot, 'SKILL.md'), 'utf8')).toContain(OFFICIAL_SKILL_SECTION_BEGIN);
 
     const persisted = JSON.parse(
       await fs.readFile(path.join(mocks.userConfigDir, 'installed-plugins.json'), 'utf8'),
@@ -478,6 +503,7 @@ describe('marketplace install service trust defaults', () => {
       'demo@official-registry': {
         plugin: 'demo',
         marketplace: 'official-registry',
+        sourceTrust: 'official-registry',
         scope: 'user',
         isEnabled: true,
         installedAt: '2026-07-27T00:00:00.000Z',
@@ -492,6 +518,95 @@ describe('marketplace install service trust defaults', () => {
     await listInstalledPlugins();
 
     await expect(fs.readFile(installedPluginsPath, 'utf8')).resolves.toBe(original);
+  });
+
+  it('backfills markers and trust for a legacy official registry record on startup', async () => {
+    const pluginRoot = path.join(mocks.userConfigDir, 'plugins', 'legacy-official');
+    await fs.mkdir(pluginRoot, { recursive: true });
+    await fs.writeFile(path.join(pluginRoot, 'SKILL.md'), '---\nname: legacy-official\ndescription: Legacy\n---\nnotes\n', 'utf8');
+    await fs.writeFile(
+      path.join(mocks.userConfigDir, 'installed-plugins.json'),
+      JSON.stringify({
+        'legacy-official@official-registry': {
+          plugin: 'legacy-official',
+          marketplace: 'official-registry',
+          scope: 'user',
+          isEnabled: true,
+          installedAt: '2025-01-01T00:00:00.000Z',
+          skills: ['legacy-official'],
+          skillPaths: [''],
+          sourceMarketplacePath: pluginRoot,
+        },
+      }),
+      'utf8',
+    );
+
+    const installed = await listInstalledPlugins();
+    expect(installed['legacy-official@official-registry']?.sourceTrust).toBe('official-registry');
+    const persisted = JSON.parse(await fs.readFile(path.join(mocks.userConfigDir, 'installed-plugins.json'), 'utf8')) as Record<string, { sourceTrust?: string }>;
+    expect(persisted['legacy-official@official-registry']?.sourceTrust).toBe('official-registry');
+    expect(await fs.readFile(path.join(pluginRoot, 'SKILL.md'), 'utf8')).toContain(OFFICIAL_SKILL_SECTION_END);
+
+    const skillPath = path.join(pluginRoot, 'SKILL.md');
+    const materialized = await fs.readFile(skillPath, 'utf8');
+    const userContent = `${materialized}\nUser experience after END\n`
+      .replace(`${OFFICIAL_SKILL_SECTION_BEGIN}\n`, '')
+      .replace(`${OFFICIAL_SKILL_SECTION_END}\n`, '');
+    await fs.writeFile(skillPath, userContent, 'utf8');
+    const readFile = vi.spyOn(fs, 'readFile');
+    const writeFile = vi.spyOn(fs, 'writeFile');
+
+    await listInstalledPlugins();
+    await getEnabledSkillDescriptors();
+
+    expect(readFile.mock.calls.filter(([file]) => file === skillPath)).toEqual([]);
+    expect(writeFile.mock.calls.filter(([file]) => file === skillPath)).toEqual([]);
+    readFile.mockRestore();
+    writeFile.mockRestore();
+    expect(await fs.readFile(skillPath, 'utf8')).toBe(userContent);
+    expect(userContent).not.toContain(OFFICIAL_SKILL_SECTION_BEGIN);
+    expect(userContent).toContain('User experience after END');
+  });
+
+  it.each([
+    ['official-registry', 'official-registry'],
+    ['OFFICIAL-REGISTRY', 'official-registry'],
+    ['official-registry', 'Official-Registry'],
+  ])('downgrades a legacy record for registered reserved name %s and record name %s', async (registeredName, recordMarketplace) => {
+    mocks.listMarketplaces.mockResolvedValue({
+      [registeredName]: {
+        source: { source: 'directory', path: path.join(tempRoot, 'spoofed-market') },
+        installLocation: path.join(tempRoot, 'spoofed-market'),
+        lastUpdated: '2026-09-25T00:00:00.000Z',
+      },
+    });
+    const pluginRoot = path.join(mocks.userConfigDir, 'plugins', 'spoofed-official');
+    await fs.mkdir(pluginRoot, { recursive: true });
+    await fs.writeFile(path.join(pluginRoot, 'SKILL.md'), '---\nname: spoofed-official\ndescription: Spoof\n---\nuser note\n', 'utf8');
+    await fs.writeFile(
+      path.join(mocks.userConfigDir, 'installed-plugins.json'),
+      JSON.stringify({
+        'spoofed-official@official-registry': {
+          plugin: 'spoofed-official',
+          marketplace: recordMarketplace,
+          scope: 'user',
+          isEnabled: true,
+          installedAt: '2025-01-01T00:00:00.000Z',
+          pluginRoot,
+          skills: ['spoofed-official'],
+          skillPaths: [''],
+          sourceMarketplacePath: pluginRoot,
+        },
+      }),
+      'utf8',
+    );
+
+    const installed = await listInstalledPlugins();
+    expect(installed['spoofed-official@official-registry']?.sourceTrust).toBe('local-marketplace');
+    const persisted = JSON.parse(await fs.readFile(path.join(mocks.userConfigDir, 'installed-plugins.json'), 'utf8'));
+    expect(persisted['spoofed-official@official-registry'].sourceTrust).toBe('local-marketplace');
+    await expect(getEnabledSkillDescriptors()).resolves.toEqual([{ dir: pluginRoot, official: false }]);
+    expect(await fs.readFile(path.join(pluginRoot, 'SKILL.md'), 'utf8')).not.toContain(OFFICIAL_SKILL_SECTION_BEGIN);
   });
 
   it('does not overwrite an existing prompt command when enabling a plugin', async () => {
@@ -622,6 +737,24 @@ describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
     })));
   }
 
+  function makeToolContext(workingDir: string): ToolContext {
+    return {
+      sessionId: 'registry-protection-test',
+      agentId: 'registry-protection-agent',
+      workingDir,
+      abortSignal: new AbortController().signal,
+      logger: {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      } satisfies Logger,
+      emit: () => undefined,
+    } as ToolContext;
+  }
+
+  const allowAll: CanUseToolFn = async () => ({ allow: true });
+
   it('installs by the registry pin without resolving branch heads', async () => {
     const commit = 'e'.repeat(40);
     const zip = await makeRegistryZip('---\nname: remote-demo\n---\nregistry\n');
@@ -651,6 +784,57 @@ describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
     });
     const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
     expect(calls).toEqual([`https://codeload.github.com/owner/remote-repo/zip/${commit}`]);
+  });
+
+  it('writes official markers and protects the section through the native edit chain', async () => {
+    const commit = 'f'.repeat(40);
+    const zip = await makeRegistryZip([
+      '---',
+      'name: remote-demo',
+      'description: Registry demo',
+      '---',
+      '',
+      'registry instructions',
+      '',
+    ].join('\n'));
+    mockCodeload(zip);
+
+    await installFromRegistryEntry(registryEntry(commit, sha256(zip)), { enableAfterInstall: true });
+    const record = (await listInstalledPlugins())['remote-demo@official-registry']!;
+    const skillPath = path.join(record.pluginRoot!, 'SKILL.md');
+    const installedContent = await fs.readFile(skillPath, 'utf8');
+    await expect(getEnabledSkillDescriptors()).resolves.toEqual([{ dir: record.pluginRoot, official: true }]);
+    expect(installedContent).toContain(OFFICIAL_SKILL_SECTION_BEGIN);
+    expect(installedContent).toContain('registry instructions');
+    expect(installedContent).toContain(`${OFFICIAL_SKILL_SECTION_END}\n`);
+
+    fileReadTracker.clear();
+    const context = makeToolContext(tempRoot);
+    const readHandler = await readModule.createHandler();
+    expect((await readHandler.execute({ file_path: skillPath }, context, allowAll)).ok).toBe(true);
+    const editHandler = await editModule.createHandler();
+    const protectedEdit = await editHandler.execute(
+      { file_path: skillPath, edits: [{ old_text: 'registry instructions', new_text: 'tampered instructions' }] },
+      context,
+      allowAll,
+    );
+    expect(protectedEdit).toMatchObject({ ok: false, code: 'OFFICIAL_SKILL_SECTION_PROTECTED' });
+    expect(await fs.readFile(skillPath, 'utf8')).toBe(installedContent);
+
+    const durableEdit = await editHandler.execute(
+      {
+        file_path: skillPath,
+        edits: [{
+          old_text: `${OFFICIAL_SKILL_SECTION_END}\n`,
+          new_text: `${OFFICIAL_SKILL_SECTION_END}\n\nDurable note.\n`,
+        }],
+      },
+      context,
+      allowAll,
+    );
+    expect(durableEdit.ok).toBe(true);
+    expect(await fs.readFile(skillPath, 'utf8')).toContain('Durable note.');
+    fileReadTracker.clear();
   });
 
   it('fails closed when the archive hash does not match the registry entry', async () => {
@@ -683,6 +867,7 @@ describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
     await installFromRegistryEntry(registryEntry('a'.repeat(40), sha256(firstZip)));
     const firstRecord = (await listInstalledPlugins())['remote-demo@official-registry']!;
     const firstSkillPath = path.join(firstRecord.pluginRoot!, 'SKILL.md');
+    const firstSkillContent = await fs.readFile(firstSkillPath, 'utf8');
 
     const secondZip = await makeRegistryZip('v2');
     mockCodeload(secondZip);
@@ -698,7 +883,7 @@ describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
     expect(retainedRecord.pinnedCommit).toBe('a'.repeat(40));
     expect(retainedRecord.contentHash).toBe(sha256(firstZip));
     expect(retainedRecord.pluginRoot).toBe(firstRecord.pluginRoot);
-    await expect(fs.readFile(firstSkillPath, 'utf8')).resolves.toBe('v1');
+    await expect(fs.readFile(firstSkillPath, 'utf8')).resolves.toBe(firstSkillContent);
   });
 });
 

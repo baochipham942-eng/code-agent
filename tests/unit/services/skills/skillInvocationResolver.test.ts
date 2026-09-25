@@ -27,6 +27,24 @@ describe('skillInvocationResolver', () => {
     }
   });
 
+  it('只允许带官方段标记的 skill 在 END 之后自修补', async () => {
+    const resolved = resolveSkillInvocationFromSkills('/official-notes', [skill({
+      name: 'official-notes',
+      description: 'official notes',
+      loaded: true,
+      promptContent: [
+        '<!-- NEO:OFFICIAL-SKILL:BEGIN -->',
+        'shipped instruction',
+        '<!-- NEO:OFFICIAL-SKILL:END -->',
+        'durable note',
+      ].join('\n'),
+    })]);
+
+    const context = await buildSkillInvocationContext(resolved!, '/repo');
+    expect(context.block).toContain('BEGIN 与 END 标记之间的官方内容只读');
+    expect(context.block).toContain('END 标记之后的经验段');
+  });
+
   // role-edit-flow 回归护栏：对话式改角色的种子 `/edit-role <roleId>` 必须确定性命中
   // edit-role 内置 skill（否则模型不进上下文 → propose_role 不可见 → 无确认卡，正是验收暴露的根因）。
   it('对话式改角色种子 /edit-role <roleId> 确定性命中 edit-role 内置 skill 并透传 roleId', () => {

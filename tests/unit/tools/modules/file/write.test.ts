@@ -477,7 +477,32 @@ describe('writeModule (native)', () => {
           expect(result.meta?.maxSingleWriteChars).toBe(160000);
         }
       });
-  });
+    });
+
+    it('blocks overwriting an official SKILL.md section', async () => {
+      const file = path.join(tmpDir, 'SKILL.md');
+      const original = [
+        '<!-- NEO:OFFICIAL-SKILL:BEGIN -->',
+        'shipped instruction',
+        '<!-- NEO:OFFICIAL-SKILL:END -->',
+        '',
+        'durable note',
+        '',
+      ].join('\n');
+      await fs.writeFile(file, original, 'utf-8');
+      await fileReadTracker.recordReadWithStats(file, { actorId: 'test-session:test-agent' });
+
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(
+        { file_path: file, content: original.replace('shipped instruction', 'rewritten instruction') },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('OFFICIAL_SKILL_SECTION_PROTECTED');
+      expect(await fs.readFile(file, 'utf-8')).toBe(original);
+    });
 
   describe('code completeness detection', () => {
     it('warns on unclosed JS braces', async () => {

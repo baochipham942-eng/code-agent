@@ -115,6 +115,7 @@ import { getResourceLockManager } from '../services/infra/resourceLockManager';
 import { fileReadTracker } from './fileReadTracker';
 import { checkExternalModification } from './utils/externalModificationDetector';
 import { getFileMutationActorId } from './modules/file/fileMutationIdentity';
+import { guardShellOfficialSkillWrites } from '../security/skillOfficialShellGuard';
 import {
   createChildRunTraceContext,
   getActiveRunTraceContext,
@@ -1346,6 +1347,33 @@ export class ToolExecutor {
     const shellPathCheck = isBashToolName(policyToolName) && typeof params.command === 'string'
       ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer)
       : { kind: 'allow' as const };
+    if (isBashToolName(policyToolName) && typeof params.command === 'string') {
+      const officialSkillShellCheck = await guardShellOfficialSkillWrites(params.command, bashWorkingDirectory);
+      if (!officialSkillShellCheck.allowed) {
+        logger.warn('Blocked shell write to protected official skill section', {
+          toolName: executionToolName,
+          path: officialSkillShellCheck.path,
+        });
+        recordDecision(
+          executionToolName,
+          params,
+          'policy-deny',
+          officialSkillShellCheck.error ?? 'official skill section protected',
+          permStartTime,
+          undefined,
+          effectiveSessionId,
+          this.ledgerOrigin,
+        );
+        return {
+          success: false,
+          error: officialSkillShellCheck.error ?? 'SKILL.md official section is protected.',
+          metadata: {
+            code: officialSkillShellCheck.code,
+            path: officialSkillShellCheck.path,
+          },
+        };
+      }
+    }
     if (shellPathCheck.kind === 'deny') {
       const denied = shellPathCheck.check;
       logger.warn('Blocked shell write target by path policy', {

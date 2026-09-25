@@ -37,6 +37,7 @@ import { writeSchema as schema } from './write.schema';
 import { computeContentDigest, fileReadTracker } from '../../fileReadTracker';
 import { checkExternalModification } from '../../utils/externalModificationDetector';
 import { getFileMutationActorId } from './fileMutationIdentity';
+import { guardSkillOfficialSections } from '../../../security/skillOfficialSectionGuard';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
 const LOCK_WAIT_TIMEOUT_MS = 10_000;
@@ -382,6 +383,24 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
             contentLength: content.length,
             maxSingleWriteChars: MAX_SINGLE_WRITE_ARTIFACT_CHAR_LIMIT,
           },
+        };
+      }
+
+      let originalSkillContent: string | undefined;
+      if (existed && path.basename(resolvedPath) === 'SKILL.md') {
+        originalSkillContent = await fs.readFile(resolvedPath, 'utf-8');
+      }
+      const officialSectionGuard = guardSkillOfficialSections(
+        resolvedPath,
+        originalSkillContent,
+        content,
+      );
+      if (!officialSectionGuard.allowed) {
+        return {
+          ok: false,
+          error: officialSectionGuard.error ?? 'SKILL.md official section is protected.',
+          code: officialSectionGuard.code,
+          meta: { outputPath: resolvedPath },
         };
       }
 

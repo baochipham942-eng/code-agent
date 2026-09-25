@@ -38,6 +38,7 @@ import { skillSchema as schema } from './skill.schema';
 import { getSkillContentCache, hashSkillContent } from '../../../telemetry/skillContentCache';
 import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 import { markDistilledSkillTurnSignal } from '../../../services/skills/distillSignalStore';
+import { hasOfficialSkillSections } from '../../../security/skillOfficialSectionGuard';
 
 // ----------------------------------------------------------------------------
 // Helpers — 与 legacy skillMetaTool 行为保真
@@ -75,7 +76,9 @@ function handleInlineExecution(
 
   // 对 user/project skill 注入自修补引导
   if (skill.source === 'user' || skill.source === 'project') {
-    promptContent += `\n\n---\n**自修补**: 如果发现本 skill 的指令过时或有错误（工具名变化、路径错误、逻辑缺陷），直接用 Edit 修改 \`${skill.basePath}/SKILL.md\` 的相应部分。修改后系统自动重载。`;
+    promptContent += hasOfficialSkillSections(skill.promptContent)
+      ? `\n\n---\n**自修补**: 如果发现本 skill 的指令过时或有错误，只能用 Edit 修改官方 END 标记之后的经验段；BEGIN 与 END 标记之间的官方内容只读。修改后系统自动重载。`
+      : `\n\n---\n**自修补**: 如果发现本 skill 的指令过时或有错误（工具名变化、路径错误、逻辑缺陷），直接用 Edit 修改 \`${skill.basePath}/SKILL.md\` 的相应部分。修改后系统自动重载。`;
   }
 
   const newMessages: SkillMessage[] = [

@@ -16,6 +16,7 @@ import type {
   PluginEntryKind,
   InstalledPluginRecord,
   InstalledPluginsFile,
+  KnownMarketplacesConfig,
   InstallResult,
   UninstallResult,
   PluginScope,
@@ -37,8 +38,20 @@ import {
   getArchiveSha256,
 } from './githubArchiveSecurity';
 import { copyDirectory, runExclusivePluginInstall, throwIfInstallAborted } from './installConcurrency';
+import { materializeOfficialSkillSection } from '../../security/skillOfficialSectionGuard';
+import { collectEnabledSkillDescriptors } from './enabledSkillDescriptors';
+import { migrateInstalledPlugins } from './installedPluginMigration';
+import { getSkillsDir, resolveInside } from './pathUtils';
 
 const logger = createLogger('PluginInstallService');
+
+export async function getEnabledSkillDescriptors() {
+  return collectEnabledSkillDescriptors();
+}
+
+export async function getEnabledSkillDirs(): Promise<string[]> {
+  return (await getEnabledSkillDescriptors()).map(({ dir }) => dir);
+}
 
 // ----------------------------------------------------------------------------
 // Constants
@@ -73,10 +86,6 @@ function getScopeBaseDir(scope: PluginScope, projectPath?: string): string {
   return getProjectConfigDir(projectPath);
 }
 
-function getSkillsDir(scope: PluginScope, projectPath?: string): string {
-  return path.join(getScopeBaseDir(scope, projectPath), 'skills');
-}
-
 function getCommandsDir(scope: PluginScope, projectPath?: string): string {
   return path.join(getScopeBaseDir(scope, projectPath), 'commands');
 }
@@ -107,10 +116,18 @@ export async function loadInstalledPlugins(): Promise<InstalledPluginsFile> {
     if (!fsSync.existsSync(filePath)) return {};
     const raw = await fs.readFile(filePath, 'utf8');
     const state = JSON.parse(raw) as InstalledPluginsFile;
-    const migrated = migrateStagingSkillNames(state);
+    let knownMarketplaces: KnownMarketplacesConfig = {};
+    try {
+      knownMarketplaces = await listMarketplaces();
+    } catch (error) {
+      logger.warn('Failed to read known marketplaces during plugin migration', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    const migrated = await migrateInstalledPlugins(migrateStagingSkillNames(state), knownMarketplaces);
     if (migrated !== state) {
       await saveInstalledPlugins(migrated).catch(error => {
-        logger.warn('Failed to persist installed plugin skill name migration', {
+        logger.warn('Failed to persist installed plugin migration', {
           error: error instanceof Error ? error.message : String(error),
         });
       });
@@ -486,6 +503,19 @@ async function installPluginAssets(args: {
   return args.destinationRoot;
 }
 
+async function materializeOfficialSkillSections(
+  skillDirs: Array<{ sourcePath: string }>,
+): Promise<void> {
+  for (const skill of skillDirs) {
+    const skillPath = path.join(skill.sourcePath, 'SKILL.md');
+    const content = await fs.readFile(skillPath, 'utf8');
+    const materialized = materializeOfficialSkillSection(content);
+    if (materialized !== content) {
+      await fs.writeFile(skillPath, materialized, 'utf8');
+    }
+  }
+}
+
 interface RenamedPathBackup {
   originalPath: string;
   backupPath: string;
@@ -531,16 +561,6 @@ function getCommandNameFromFile(filePath: string): string {
     throw new Error(`Invalid command file name: ${basename}`);
   }
   return commandName;
-}
-
-function resolveInside(baseDir: string, candidatePath: string): string {
-  const resolvedBase = path.resolve(baseDir);
-  const resolvedCandidate = path.resolve(baseDir, candidatePath);
-  const relative = path.relative(resolvedBase, resolvedCandidate);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error(`Command path must stay inside plugin source: ${candidatePath}`);
-  }
-  return resolvedCandidate;
 }
 
 function assertInside(baseDir: string, candidatePath: string, label: string): void {
@@ -865,11 +885,14 @@ export async function performInstall(args: {
     throwIfInstallAborted(args.signal);
     const pluginTypes = getPluginEntryTypes(entry);
 
-    await resolveSkillDirs({
+    const stagedSkillDirs = await resolveSkillDirs({
       rootDir: stagingRoot,
       entrySourceBase: stagingRoot,
       skillPaths: entry.skills || [],
     });
+    if (sourceTrust === 'official-registry') {
+      await materializeOfficialSkillSections(stagedSkillDirs);
+    }
     const commandFiles = await resolveCommandFiles({
       rootDir: stagingRoot,
       entrySourceBase: stagingRoot,
@@ -923,6 +946,7 @@ export async function performInstall(args: {
     const installedRecord: InstalledPluginRecord = {
       plugin,
       marketplace,
+      sourceTrust,
       scope,
       isEnabled: options.enableAfterInstall === true,
       projectPath,
@@ -1144,39 +1168,4 @@ export async function disablePlugin(pluginInput: string): Promise<void> {
   }
 
   logger.info('Plugin disabled', { pluginSpec });
-}
-
-/**
- * Get installed skills directories (only enabled plugins)
- */
-export async function getEnabledSkillDirs(): Promise<string[]> {
-  const state = await loadInstalledPlugins();
-  const dirs: string[] = [];
-
-  for (const record of Object.values(state)) {
-    if (!record.isEnabled) continue;
-
-    const pluginRoot = record.pluginRoot || record.sourceMarketplacePath;
-    if (pluginRoot && record.skillPaths?.length) {
-      for (const relPath of record.skillPaths) {
-        const skillDir = resolveInside(pluginRoot, relPath);
-        if (fsSync.existsSync(skillDir)) {
-          dirs.push(skillDir);
-        }
-      }
-      continue;
-    }
-
-    // Backward compatibility for records created before managed plugin roots
-    // owned skill exposure.
-    const skillsDir = getSkillsDir(record.scope, record.projectPath);
-    for (const skillName of record.skills || []) {
-      const legacySkillDir = path.join(skillsDir, skillName);
-      if (fsSync.existsSync(legacySkillDir)) {
-        dirs.push(legacySkillDir);
-      }
-    }
-  }
-
-  return dirs;
 }

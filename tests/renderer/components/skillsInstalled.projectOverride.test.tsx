@@ -87,4 +87,14 @@ describe('SkillsInstalledTab 项目覆盖渲染', () => {
     // React 静态渲染把选中项标 selected
     expect(html).toMatch(/<option value="off" selected="">本项目禁用<\/option>/);
   });
+
+  it('同名 Skill 被官方版本压住时显示改名出口', () => {
+    const skill = makeSkill('shadowed', null);
+    skill.source = 'plugin';
+    skill.officialConflict = { winnerSource: 'plugin', blockedSkills: [{ source: 'project', basePath: '/project/skills/shadowed' }] };
+    const html = render([skill]);
+    expect(html).toContain('已被同名官方技能覆盖，未加载');
+    expect(html).toContain('shadowed/SKILL.md');
+    expect(html).toContain('请修改上述 SKILL.md 的 name 和目录名后重新加载');
+  });
 });

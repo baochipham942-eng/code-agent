@@ -63,7 +63,7 @@ vi.mock('../../../src/host/services/skills/skillRepositoryService', () => ({
 }));
 
 vi.mock('../../../src/host/skills/marketplace/installService', () => ({
-  getEnabledSkillDirs: async () => [],
+  getEnabledSkillDescriptors: async () => [],
 }));
 
 vi.mock('../../../src/host/mcp/mcpClient', () => ({

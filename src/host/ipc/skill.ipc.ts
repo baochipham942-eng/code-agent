@@ -209,12 +209,18 @@ async function handleSkillList(workspacePath?: string) {
   const prefStore = projectPreferencesTrusted
     ? getProjectSkillPreferenceStore(workingDirectory)
     : null;
+  const conflicts = discoveryService.getSkillConflicts();
   return discoveryService.getAllSkills().map((skill) => {
     const globalEnabled = repoService.isSkillEnabled(skill.name);
     const override = prefStore?.getOverride(skill.name);
     const projectOverride = override === undefined ? null : override;
+    const blockedSkills = conflicts
+      .filter((conflict) => conflict.name === skill.name
+        && conflict.winnerSource === skill.source && conflict.winnerPath === skill.basePath)
+      .map((conflict) => ({ source: conflict.blockedSource, basePath: conflict.blockedPath }));
     return {
       ...skill,
+      ...(blockedSkills.length > 0 ? { officialConflict: { winnerSource: skill.source, blockedSkills } } : {}),
       globalEnabled,
       projectOverride,
       enabled: projectOverride ?? globalEnabled,

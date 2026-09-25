@@ -496,6 +496,55 @@ describe('AgentOrchestrator', () => {
       release.mockRestore();
     });
 
+    it('primary durable run 失败也要 terminalDurable：不补会泄漏 active 记录，同会话下一条消息 409（N-CHAT-EMPTY-FINAL-NO-EXIT）', async () => {
+      const terminalDurable = vi.fn(async () => undefined);
+      const unregister = vi.fn();
+      const attach = vi.fn(async () => undefined);
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        terminalDurable,
+        unregister,
+        startDurable: vi.fn(async () => ({ attach })),
+      };
+      const durableOrchestrator = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      });
+      const run = durableOrchestrator as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: { runRegistration?: 'primary' | 'auxiliary'; disableAutoAgent?: boolean },
+        ) => Promise<void>;
+      };
+      // 真 runStandardAgentLoop 走完整注册链（startRunPreferringDurable→registry），
+      // AgentLoop.run（已 mock）抛错模拟 provider 失败。
+      agentLoopProbe.onRun = () => {
+        throw new Error('provider 401');
+      };
+
+      await expect(run.runNormalMode(
+        'hello',
+        () => undefined,
+        { provider: 'openai', model: 'gpt-4o' },
+        'session-durable-leak',
+        { runRegistration: 'primary', disableAutoAgent: true },
+      )).rejects.toThrow('provider 401');
+      agentLoopProbe.onRun = undefined;
+
+      // 失败收口：DB 侧 durable 记录必须 terminal，内存注册必须释放
+      expect(terminalDurable).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ status: 'failed', reason: 'primary_run_failed' }),
+        expect.anything(),
+      );
+      expect(unregister).toHaveBeenCalledWith(expect.any(String), expect.anything());
+    });
+
     it('getWorkingDirectory 应该返回当前目录', () => {
       const dir = orchestrator.getWorkingDirectory();
       expect(dir).toBeTruthy();

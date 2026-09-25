@@ -47,6 +47,7 @@ import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { assembleTurnDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import { startRunPreferringDurable } from './orchestrator/durableRunStart';
+import { finalizeDurableRun } from './orchestrator/durableRunTerminal';
 import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
 import { OrchestratorRunSettings } from './orchestratorRunSettings';
 import { OrchestratorMessageHistory } from './orchestratorMessageHistory';
@@ -1070,23 +1071,18 @@ export class AgentOrchestrator {
       if (rolePresetSessionId) {
         getPermissionModeManager().clearRolePresetSession(rolePresetSessionId);
       }
-      if (
-        registeredRun
-        && options?.runRegistration === 'auxiliary'
-        && options.parentRunId
-        && this.runRegistry?.hasDurableOwner(nativeRunId)
-      ) {
-        await this.runRegistry.terminalDurable(nativeRunId, {
-          status: runCompletedNormally ? 'completed' : 'failed',
-          now: Date.now(),
-          reason: runCompletedNormally ? undefined : 'auxiliary_run_failed',
-          event: {
-            type: runCompletedNormally ? 'auxiliary_run_completed' : 'auxiliary_run_failed',
-            payload: { parentRunId: options.parentRunId, sessionId },
-            recordedAt: Date.now(),
-          },
-        }, registeredRun).catch((error) => {
-          logger.error('Failed to persist auxiliary durable terminal state', error);
+      if (registeredRun && this.runRegistry?.hasDurableOwner(nativeRunId)) {
+        // Durable run 终态收口（auxiliary + primary）见 orchestrator/durableRunTerminal：
+        // /api/run 主链有自己的 durableRunLifecycle，TaskManager 路径只靠这里。
+        await finalizeDurableRun({
+          registry: this.runRegistry,
+          runId: nativeRunId,
+          handle: registeredRun,
+          sessionId,
+          completed: runCompletedNormally,
+          ...(options?.runRegistration === 'auxiliary' && options.parentRunId
+            ? { parentRunId: options.parentRunId }
+            : {}),
         });
       }
       if (registeredRun) this.runRegistry?.unregister(nativeRunId, registeredRun);

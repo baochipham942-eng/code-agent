@@ -11,6 +11,12 @@ const JOURNEY_IDS = ['cold-start', 'first-token', 'long-session', 'session-switc
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 
+// Post-merge swarm-ci `perf-journey-ratchet` (push to main, no path filter) re-runs
+// all four journeys. That is the safety net for product paths that PR-time
+// gates:fast no longer selects: each shared product path is attached to exactly
+// one journey. Shared probe infra (journey-probe-*, journey-browser-smoke.ts,
+// this script and its baseline) still selects all four.
+
 function fail(message) {
   console.error(`[perf-journey-ratchet] ✗ ${message}`);
   process.exit(1);
@@ -24,9 +30,12 @@ function option(name, fallback) {
   return value;
 }
 
+const flagOptions = new Set(['--tighten']);
 const valueOptions = new Set(['--repo-root', '--baseline', '--report', '--journey', '--extra-renders']);
+const tighten = args.includes('--tighten');
 for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
+  if (flagOptions.has(arg)) continue;
   if (valueOptions.has(arg)) {
     index += 1;
     if (index >= args.length || args[index].startsWith('--')) fail(`${arg} 缺少参数值`);
@@ -121,6 +130,53 @@ function runProbe(journey) {
   return report;
 }
 
+function tightenCommand() {
+  const parts = ['node scripts/perf-journey-ratchet.mjs'];
+  if (journeyOption !== 'all') parts.push('--journey', journeyOption);
+  parts.push('--tighten');
+  return parts.join(' ');
+}
+
+function writeStepSummary(markdown) {
+  const file = process.env.GITHUB_STEP_SUMMARY;
+  if (!file) return;
+  writeFileSync(file, `${markdown.endsWith('\n') ? markdown : `${markdown}\n`}`, { flag: 'a' });
+}
+
+function formatSummary({ comparisons, increases, decreases }) {
+  const rows = comparisons.map((entry) => {
+    const delta = entry.current - entry.reference;
+    const signed = delta > 0 ? `+${delta}` : String(delta);
+    let status = 'hold';
+    if (delta > 0) status = 'regression';
+    else if (delta < 0) status = `can tighten ${entry.reference} → ${entry.current}`;
+    return `| ${entry.journey} | ${entry.current} | ${entry.reference} | ${signed} | ${status} |`;
+  });
+  const lines = [
+    '## Perf journey ratchet',
+    '',
+    '| journey | current | baseline | delta | status |',
+    '|---|---:|---:|---:|---|',
+    ...rows,
+    '',
+  ];
+  if (increases.length) {
+    lines.push(`**Regressions (blocking):** ${increases.map((entry) => `${entry.journey} ${entry.reference} → ${entry.current}`).join(', ')}`, '');
+  }
+  if (decreases.length) {
+    lines.push(`**Can tighten:** ${decreases.map((entry) => `${entry.journey} ${entry.reference} → ${entry.current}`).join(', ')}`, '');
+    lines.push('```bash', tightenCommand(), '```', '');
+  } else {
+    lines.push('**Can tighten:** none', '');
+  }
+  lines.push('This job has no path filter and always runs all four journeys. It is the safety net for product paths that PR-time `gates:fast` no longer selects (each shared path is attached to exactly one journey).');
+  return `${lines.join('\n')}\n`;
+}
+
+function writeBaseline(next) {
+  writeFileSync(baselinePath, `${JSON.stringify(next, null, 2)}\n`);
+}
+
 const journeys = selectedJourneys();
 const baseline = validateBaseline(readJson(baselinePath, 'perf-journey 基线'));
 const reports = [];
@@ -141,21 +197,66 @@ if (reportOption) {
   for (const id of journeys) reports.push(runProbe(id));
 }
 
-let failed = false;
-let lowered = false;
+const comparisons = [];
+const increases = [];
+const decreases = [];
 for (const report of reports) {
   const reference = baseline.journeys[report.journey].commitCount;
   const current = report.commitCount;
   const delta = current - reference;
+  comparisons.push({ journey: report.journey, current, reference, delta });
   console.log(`[perf-journey-ratchet] ${report.journey} commitCount current=${current} baseline=${reference} wallClockMs=${report.wallClockMs} longTaskCount=${report.longTaskCount} hotRenderCount=${report.hotRenderCount}`);
   if (current > reference) {
-    failed = true;
+    increases.push({ journey: report.journey, current, reference, delta });
     console.error(`[perf-journey-ratchet] ✗ ${report.journey} commitCount 上升：${reference} -> ${current} (+${delta})。这是确定性计数回归，禁止合入；把多余 commit 从热路径拿掉。`);
   } else if (current < reference) {
-    lowered = true;
-    console.error(`[perf-journey-ratchet] ✗ ${report.journey} commitCount 下降：${reference} -> ${current}。请在同一 PR 把 scripts/perf-journey-ratchet-baseline.json 里该 journey 的 commitCount 降到 ${current}，并在 reason 里记下这次赢得的 commit。不要自动改写基线。`);
+    decreases.push({ journey: report.journey, current, reference, delta });
   }
 }
 
-if (failed || lowered) process.exit(1);
+if (tighten) {
+  if (increases.length) {
+    writeStepSummary(formatSummary({ comparisons, increases, decreases }));
+    fail(`拒绝 --tighten：存在高于基线的 journey（${increases.map((entry) => `${entry.journey} ${entry.reference}→${entry.current}`).join(', ')}），禁止抬高基线。未写入 ${path.relative(repoRoot, baselinePath)}`);
+  }
+  if (!decreases.length) {
+    writeStepSummary(formatSummary({ comparisons, increases, decreases }));
+    console.log(`[perf-journey-ratchet] --tighten：没有可收紧的 journey`);
+    console.log(`[perf-journey-ratchet] ✓ ${journeys.join(', ')} commitCount 均未超基线`);
+    process.exit(0);
+  }
+  const when = new Date().toISOString();
+  const tightened = decreases.map((entry) => `${entry.journey} ${entry.reference}→${entry.current}`).join(', ');
+  const nextJourneys = {};
+  for (const id of JOURNEY_IDS) {
+    const entry = baseline.journeys[id];
+    const drop = decreases.find((item) => item.journey === id);
+    if (drop) {
+      nextJourneys[id] = {
+        commitCount: drop.current,
+        reason: `${entry.reason} Tightened ${drop.reference}→${drop.current} on ${when} via --tighten.`,
+      };
+    } else {
+      nextJourneys[id] = { commitCount: entry.commitCount, reason: entry.reason };
+    }
+  }
+  writeBaseline({
+    schemaVersion: 1,
+    reason: `${when} --tighten lowered ${tightened}.`,
+    journeys: nextJourneys,
+  });
+  writeStepSummary(formatSummary({ comparisons, increases, decreases }));
+  console.log(`[perf-journey-ratchet] ✓ --tighten 已写入 ${path.relative(repoRoot, baselinePath)}：${tightened}`);
+  process.exit(0);
+}
+
+writeStepSummary(formatSummary({ comparisons, increases, decreases }));
+
+if (decreases.length) {
+  for (const entry of decreases) {
+    console.log(`[perf-journey-ratchet] ℹ ${entry.journey} commitCount 下降：${entry.reference} -> ${entry.current}。门通过。收紧基线：${tightenCommand()}`);
+  }
+}
+
+if (increases.length) process.exit(1);
 console.log(`[perf-journey-ratchet] ✓ ${journeys.join(', ')} commitCount 均未超基线`);

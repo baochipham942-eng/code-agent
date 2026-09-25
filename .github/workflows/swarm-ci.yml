@@ -618,6 +618,11 @@ jobs:
       - name: Run all journey commit-count probes
         env:
           E2E_BROWSER_CHANNEL: chromium
+        # No path filter on this job: post-merge safety net for product paths
+        # that PR-time gates:fast no longer selects (each shared path attaches
+        # to exactly one journey). Decreases are green; the script appends the
+        # can-tighten list to $GITHUB_STEP_SUMMARY. Tighten is a manual step:
+        # node scripts/perf-journey-ratchet.mjs --tighten
         run: node scripts/perf-journey-ratchet.mjs
 
   # 不再写回 ci/swarm-health.json：streak 直接从 GitHub Actions API 派生，

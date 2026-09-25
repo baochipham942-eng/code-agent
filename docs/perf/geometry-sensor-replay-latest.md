@@ -1,6 +1,6 @@
 # geometry-sensor historical replay
 
-generatedAt: 2026-09-25T10:38:07.431Z
+generatedAt: 2026-09-25T11:17:24.313Z
 repeats: 5
 harnessRoot: .
 
@@ -48,6 +48,31 @@ actual: red 5/5 (PASS)
 - repeat 5: RED kinds=["right-overhang"] right-overhang: content-box right overhangs [data-testid="sidebar-capability-zone"] by 6.0px
 
 ## N-SCROLLGUTTER fix
+
+expected: green 5/5
+actual: green 5/5 (PASS)
+
+- repeat 1: GREEN kinds=[]
+- repeat 2: GREEN kinds=[]
+- repeat 3: GREEN kinds=[]
+- repeat 4: GREEN kinds=[]
+- repeat 5: GREEN kinds=[]
+
+# current origin/main (fdcbe5659e48f42692ecc65aacdad0b070e0ac17)
+probe: caselist sticky-header + sidebar right-overhang, expect green (zero false reds)
+
+## current origin/main caselist
+
+expected: green 5/5
+actual: green 5/5 (PASS)
+
+- repeat 1: GREEN kinds=[]
+- repeat 2: GREEN kinds=[]
+- repeat 3: GREEN kinds=[]
+- repeat 4: GREEN kinds=[]
+- repeat 5: GREEN kinds=[]
+
+## current origin/main sidebar
 
 expected: green 5/5
 actual: green 5/5 (PASS)

@@ -81,7 +81,7 @@ async function probe(page: Page, which: ReplayCase['page']): Promise<GeometryRep
   return which === 'caselist' ? probeCaselistGeometry(page) : probeSidebarGeometry(page);
 }
 
-async function runVariant(entry: ReplayCase, variant: 'pre' | 'fix', sha: string): Promise<RepeatResult[]> {
+async function runVariant(entry: ReplayCase, variant: string, sha: string): Promise<RepeatResult[]> {
   const dir = path.join(os.tmpdir(), `geo-${entry.pr}-${variant}`);
   let vite: Awaited<ReturnType<typeof startGeometryVite>> | undefined;
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
@@ -160,6 +160,30 @@ async function main(): Promise<void> {
     const fixOk = fix.every((result) => !result.red);
     if (!preOk || !fixOk) failed = true;
   }
+  const mainSha = spawnSync('git', ['rev-parse', 'origin/main'], { cwd: repoRoot, encoding: 'utf8' }).stdout.trim();
+  chunks.push(`# current origin/main (${mainSha})`);
+  chunks.push('probe: caselist sticky-header + sidebar right-overhang, expect green (zero false reds)');
+  chunks.push('');
+  const mainCaselist = await runVariant({
+    ...CASES[0],
+    id: 'current-main-caselist',
+    pr: 0,
+    preSha: mainSha,
+    mergeSha: mainSha,
+  }, 'main-caselist', mainSha);
+  const mainSidebar = await runVariant({
+    ...CASES[1],
+    id: 'current-main-sidebar',
+    pr: 0,
+    preSha: mainSha,
+    mergeSha: mainSha,
+  }, 'main-sidebar', mainSha);
+  chunks.push(summarize('current origin/main caselist', false, mainCaselist));
+  chunks.push('');
+  chunks.push(summarize('current origin/main sidebar', false, mainSidebar));
+  chunks.push('');
+  if (!mainCaselist.every((result) => !result.red) || !mainSidebar.every((result) => !result.red)) failed = true;
+
   const output = chunks.join('\n');
   process.stdout.write(`${output}\n`);
   const outDir = path.join(repoRoot, 'docs/perf');

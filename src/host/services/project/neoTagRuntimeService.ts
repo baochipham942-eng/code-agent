@@ -85,6 +85,11 @@ async function readSourceMessages(sessionId: string): Promise<{ messages: Messag
   };
 }
 
+async function readFullSessionMessages(sessionId: string): Promise<Message[]> {
+  const session = await getSessionManager().getSession(sessionId, Number.MAX_SAFE_INTEGER, { messageSource: 'ledger' });
+  return session?.messages ?? [];
+}
+
 async function safelyCreateArtifactSnapshot(
   workingDirectory: string | undefined,
   revision: NeoWorkCardRevision,
@@ -317,12 +322,13 @@ export async function launchApprovedNeoWorkCard(
     // The renderer may submit from a project page while another session is open.
     // Check and hydrate synchronously so a competing run cannot have its live
     // orchestrator history replaced before startTask rejects the busy session.
+    const targetMessages = await readFullSessionMessages(roundConversationId);
     const contextReady = input.taskManager.setSessionContextIfIdle
-      ? input.taskManager.setSessionContextIfIdle(roundConversationId, source.messages)
+      ? input.taskManager.setSessionContextIfIdle(roundConversationId, targetMessages)
       : (() => {
         const currentState = input.taskManager.getSessionState?.(roundConversationId);
         if (['running', 'paused', 'queued', 'cancelling'].includes(currentState?.status ?? '')) return false;
-        input.taskManager.setSessionContext?.(roundConversationId, source.messages);
+        input.taskManager.setSessionContext?.(roundConversationId, targetMessages);
         return true;
       })();
     if (!contextReady) {

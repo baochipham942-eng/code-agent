@@ -170,7 +170,12 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
         requesterUserId,
         entry: 'collaboration_page',
       });
-      if (!request) return;
+      if (!request) {
+        if (createdSessionId) {
+          await useSessionStore.getState().deleteSession(createdSessionId);
+        }
+        return;
+      }
 
       await createAndRun(request);
       handleClose(true);

@@ -125,8 +125,8 @@ export async function executeCreateSession(
   options?: CreateSessionOptionsInput,
 ): Promise<Session | null> {
   const { get, set, invalidatePendingSessionSwitches, findReusableNewSessionDraft } = deps;
-  // 普通新建会话回到会话区；workflow-owned sessions keep their host page mounted
-  // so a failed follow-up can still report the error where it was submitted.
+  // 普通新建会话回到会话区；工作流创建目标会话时保留宿主页面，
+  // 这样后续失败仍能在提交入口显示错误。
   if (!options?.preserveSecondaryPages) {
     useAppStore.getState().closeSecondaryPages();
   }

@@ -112,6 +112,23 @@ describe('SessionManager cache messageLimit hydration', () => {
     expect(database.getRecentMessages).toHaveBeenNthCalledWith(2, sessionId, 80);
   });
 
+  it('bypasses the projection cache for an explicit full ledger load', async () => {
+    const sessionId = 'neo-tag-full-ledger-after-short-cache';
+    const persistedMessages = messages(100);
+    state.messages.set(sessionId, persistedMessages);
+    const manager = new SessionManager();
+
+    expect((await manager.getSession(sessionId, 1))?.messages).toHaveLength(1);
+    const fullSession = await manager.getSession(sessionId, Number.MAX_SAFE_INTEGER, { messageSource: 'ledger' });
+
+    expect(fullSession?.messages).toHaveLength(100);
+    expect(fullSession?.messages.at(0)?.id).toBe('message-1');
+    expect(database.replayConversationBranchForLoad).toHaveBeenCalledWith(sessionId, {
+      ownerUserId: null,
+      projectId: null,
+    });
+  });
+
   it('does not reload when the session has fewer messages than the requested limit', async () => {
     const sessionId = 'short-complete-history';
     const persistedMessages = messages(3);

@@ -111,10 +111,106 @@
         "package-lock.json",
         "lint-staged.config.mjs",
         ".husky/**",
-        "scripts/check-*.sh"
+        "scripts/check-*.sh",
+        "scripts/perf-journey-ratchet.mjs",
+        "scripts/perf-journey-ratchet-baseline.json"
       ],
       "files": [
-        "tests/scripts/gatesFast.test.ts"
+        "tests/scripts/gatesFast.test.ts",
+        "tests/scripts/perfJourneyRatchet.test.ts"
+      ]
+    },
+    {
+      "id": "perf-journey-cold-start",
+      "paths": [
+        "src/renderer/components/features/chat/ChatInput/**",
+        "src/renderer/hooks/useI18n.ts",
+        "src/renderer/i18n/**",
+        "src/renderer/stores/appStore.ts",
+        "scripts/perf/journey-cold-start-harness.tsx",
+        "scripts/perf/journey-browser-smoke.ts",
+        "scripts/perf/journey-probe-runtime.ts",
+        "scripts/perf/journey-probe-protocol.ts",
+        "scripts/perf/journey-probe-instrument.tsx",
+        "scripts/perf/journey-probe-test-support.ts",
+        "scripts/perf-journey-ratchet.mjs",
+        "scripts/perf-journey-ratchet-baseline.json"
+      ],
+      "files": [
+        "tests/scripts/perfJourneyColdStart.test.ts"
+      ]
+    },
+    {
+      "id": "perf-journey-first-token",
+      "paths": [
+        "src/renderer/components/features/chat/MessageBubble/**",
+        "src/renderer/hooks/useThrottledStreamingContent.ts",
+        "src/renderer/hooks/useSmoothStreamingText.ts",
+        "src/renderer/hooks/smoothStreamingAlgorithm.ts",
+        "src/renderer/utils/turnContentVisibility.ts",
+        "src/renderer/utils/streamingPerformanceMetrics.ts",
+        "src/renderer/utils/streamingStatePresentation.ts",
+        "scripts/perf/journey-first-token-harness.tsx",
+        "scripts/perf/journey-browser-smoke.ts",
+        "scripts/perf/journey-probe-runtime.ts",
+        "scripts/perf/journey-probe-protocol.ts",
+        "scripts/perf/journey-probe-instrument.tsx",
+        "scripts/perf/journey-probe-test-support.ts",
+        "scripts/perf-journey-ratchet.mjs",
+        "scripts/perf-journey-ratchet-baseline.json"
+      ],
+      "files": [
+        "tests/scripts/perfJourneyFirstToken.test.ts"
+      ]
+    },
+    {
+      "id": "perf-journey-long-session",
+      "paths": [
+        "src/renderer/components/features/chat/TurnBasedTraceView.tsx",
+        "src/renderer/components/features/chat/TurnCard.tsx",
+        "src/renderer/components/features/chat/TurnRail.tsx",
+        "src/renderer/components/features/chat/TurnCompactionMarker.tsx",
+        "src/renderer/components/features/chat/TraceNodeRenderer.tsx",
+        "src/renderer/components/features/chat/MessageBubble/**",
+        "src/renderer/utils/turnVisibility.ts",
+        "src/renderer/utils/turnRailItems.ts",
+        "src/renderer/slots/productSlotHosts.tsx",
+        "scripts/perf/long-session-browser-harness.tsx",
+        "scripts/perf/long-session-browser-smoke.ts",
+        "scripts/perf/wait-for-stable.ts",
+        "scripts/perf/journey-long-session-harness.tsx",
+        "scripts/perf/journey-browser-smoke.ts",
+        "scripts/perf/journey-probe-runtime.ts",
+        "scripts/perf/journey-probe-protocol.ts",
+        "scripts/perf/journey-probe-instrument.tsx",
+        "scripts/perf/journey-probe-test-support.ts",
+        "scripts/perf-journey-ratchet.mjs",
+        "scripts/perf-journey-ratchet-baseline.json"
+      ],
+      "files": [
+        "tests/scripts/perfJourneyLongSession.test.ts"
+      ]
+    },
+    {
+      "id": "perf-journey-session-switch",
+      "paths": [
+        "src/renderer/components/features/chat/SessionSwitchSkeleton.tsx",
+        "src/renderer/components/features/chat/NewSessionWelcome.tsx",
+        "src/renderer/components/ChatView.tsx",
+        "src/renderer/stores/sessionStore.ts",
+        "src/renderer/components/features/chat/TurnBasedTraceView.tsx",
+        "src/renderer/components/features/chat/MessageBubble/**",
+        "scripts/perf/journey-session-switch-harness.tsx",
+        "scripts/perf/journey-browser-smoke.ts",
+        "scripts/perf/journey-probe-runtime.ts",
+        "scripts/perf/journey-probe-protocol.ts",
+        "scripts/perf/journey-probe-instrument.tsx",
+        "scripts/perf/journey-probe-test-support.ts",
+        "scripts/perf-journey-ratchet.mjs",
+        "scripts/perf-journey-ratchet-baseline.json"
+      ],
+      "files": [
+        "tests/scripts/perfJourneySessionSwitch.test.ts"
       ]
     },
     {

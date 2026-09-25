@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "reason": "2026-09-25 N-PERF-JOURNEY-RATCHET 初值：四条 Neo 用户旅程各钉一枚 React Profiler commitCount，只降不升。cold-start=2（InputArea 可输入）、first-token=3（MessageContent 首 token）、long-session=18（TurnBasedTraceView 32 轮滚动）、session-switch=4（EmptySessionArea 骨架 + 两会话正文）。同 commit 连跑 5 次计数逐字节相同；wallClockMs / longTaskCount 只记录、不进门。",
+  "journeys": {
+    "cold-start": {
+      "commitCount": 2,
+      "reason": "冷启动到 composer contenteditable 接受输入。热组件 InputArea。初值 2。"
+    },
+    "first-token": {
+      "commitCount": 3,
+      "reason": "新会话首个流式 token 落到 MessageContent。热组件 MessageContent。初值 3。"
+    },
+    "long-session": {
+      "commitCount": 18,
+      "reason": "长会话 TurnBasedTraceView 32 轮一次滚动。热组件 TurnBasedTraceView。初值 18。"
+    },
+    "session-switch": {
+      "commitCount": 4,
+      "reason": "两个已有会话切换：A → SessionSwitchSkeleton → B。热组件 EmptySessionArea。初值 4。"
+    }
+  }
+}

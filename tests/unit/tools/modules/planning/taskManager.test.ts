@@ -78,7 +78,7 @@ describe('TaskManager schema', () => {
     expect(taskManagerModule.schema.inputSchema.required).toEqual(['action']);
     const props = taskManagerModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>;
     expect(props.action.enum).toEqual(['create', 'get', 'list', 'update', 'replace', 'patch']);
-    expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'deleted']);
+    expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'needs_decision', 'user_action', 'deleted']);
   });
 });
 

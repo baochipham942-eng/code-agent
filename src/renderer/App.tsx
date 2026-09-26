@@ -67,6 +67,7 @@ import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
 import type { AppSettings, ModelConfig, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
+import { isOpenTaskStatus } from '@shared/contract/planning';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } from '@shared/constants';
 import { fallbackModelForProvider } from '@shared/modelRuntime';
 import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
@@ -767,9 +768,7 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  const hasOpenSessionTask = sessionTasks.some((task) =>
-    task.status === 'pending' || task.status === 'in_progress' || task.status === 'blocked'
-  );
+  const hasOpenSessionTask = sessionTasks.some((task) => isOpenTaskStatus(task.status));
   const hasOpenTodo = todos.some((todo) => todo.status !== 'completed');
   const hasBackgroundTaskActivity = Boolean(
     currentSessionId
@@ -807,7 +806,7 @@ export const App: React.FC = () => {
     ? JSON.stringify({
         sessionId: currentSessionId,
         tasks: sessionTasks
-          .filter((task) => task.status === 'pending' || task.status === 'in_progress' || task.status === 'blocked')
+          .filter((task) => isOpenTaskStatus(task.status))
           // 状态推进不算「新任务内容」，但同一 task id 补进来的标题/说明要算。
           // 这样用户关掉任务页后，旧内容继续跑不会反复弹；任务本身扩写时才允许重开。
           .map((task) => `${task.id}\u0000${task.subject}\u0000${task.description}\u0000${task.activeForm}`)

@@ -21,6 +21,7 @@ import {
   type TurnOutcomeStampContext,
 } from '../../../src/host/agent/runtime/turnOutcomeStamp';
 import { registerTurnOutcomeResolver } from '../../../src/host/services/capabilities/hostCapabilityPorts';
+import { clearTasks, createTask, updateTask } from '../../../src/host/services/planning/taskStore';
 
 let cleanupVoiceResolver: (() => void | Promise<void>) | undefined;
 
@@ -794,5 +795,171 @@ describe('turn outcome stamp', () => {
       evidenceRefs: [],
       source: 'voice',
     });
+  });
+
+  it('refuses verified and lists the wait when a needs_decision task is still open', async () => {
+    const sessionId = 'session-unresolved-decision';
+    clearTasks(sessionId);
+    const task = createTask(sessionId, { subject: '选择酒店方案', description: 'A 还是 B' });
+    updateTask(sessionId, task.id, {
+      status: 'needs_decision',
+      blockedReason: '在两家酒店间选',
+    });
+    const recorder = new TurnTraceRecorder('unresolved-decision', traceRoot);
+    try {
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        summary({
+          verificationEvidence: [{
+            kind: 'command',
+            toolCallId: 'test-ok',
+            command: 'npm test',
+            success: true,
+            exitCode: 0,
+          }],
+        }),
+      );
+      const outcome = latestOutcome(recorder);
+      expect(outcome.verdict).not.toBe('verified');
+      expect(outcome.verdict).toBe('self_claimed');
+      expect(outcome.evidenceProblems?.join('\n')).toContain('选择酒店方案');
+      expect(outcome.evidenceProblems?.join('\n')).toContain('等你拍板');
+    } finally {
+      clearTasks(sessionId);
+    }
+  });
+
+  it('still verifies when every explicit task is completed', async () => {
+    const sessionId = 'session-all-completed-tasks';
+    clearTasks(sessionId);
+    const task = createTask(sessionId, { subject: '写完报告', description: '交付报告' });
+    updateTask(sessionId, task.id, {
+      status: 'completed',
+      evidenceRefs: [makeEvidenceRef({ kind: 'test', ref: 'npm test', source: 'test', state: 'read' })],
+    });
+    const recorder = new TurnTraceRecorder('all-completed-tasks', traceRoot);
+    try {
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        summary({
+          verificationEvidence: [{
+            kind: 'command',
+            toolCallId: 'test-ok',
+            command: 'npm test',
+            success: true,
+            exitCode: 0,
+          }],
+        }),
+      );
+      const outcome = latestOutcome(recorder);
+      expect(outcome.verdict).toBe('verified');
+      expect(outcome.evidenceProblems ?? []).toEqual([]);
+    } finally {
+      clearTasks(sessionId);
+    }
+  });
+
+  it('still verifies when a leftover blocked task was not touched this run', async () => {
+    const sessionId = 'session-leftover-blocked';
+    clearTasks(sessionId);
+    const leftover = createTask(sessionId, { subject: '等权限', description: '上一轮卡住' });
+    updateTask(sessionId, leftover.id, {
+      status: 'blocked',
+      blockedReason: '还没拿到登录',
+    });
+    const recorder = new TurnTraceRecorder('leftover-blocked', traceRoot);
+    const verifiedSummary = summary({
+      verificationEvidence: [{
+        kind: 'command',
+        toolCallId: 'test-ok',
+        command: 'npm test',
+        success: true,
+        exitCode: 0,
+      }],
+    });
+    try {
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        verifiedSummary,
+      );
+      expect(latestOutcome(recorder).verdict).toBe('self_claimed');
+
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        verifiedSummary,
+      );
+      const outcome = latestOutcome(recorder);
+      expect(outcome.verdict).toBe('verified');
+      expect(outcome.evidenceProblems ?? []).toEqual([]);
+    } finally {
+      clearTasks(sessionId);
+    }
+  });
+
+  it('scopes to the latest user message when the run starts with a fresh trace recorder', async () => {
+    const sessionId = 'session-fresh-recorder';
+    clearTasks(sessionId);
+    const leftover = createTask(sessionId, { subject: '等权限', description: '上一轮卡住' });
+    updateTask(sessionId, leftover.id, { status: 'blocked', blockedReason: '还没拿到登录' });
+    // 生产形状：每条用户消息新建 recorder，events 为空；用户消息晚于遗留任务的最后更新。
+    const recorder = new TurnTraceRecorder('fresh-recorder', traceRoot);
+    const userMessage: Message = { id: 'u-next', role: 'user', content: '换个无关的活', timestamp: Date.now() + 1000 };
+    try {
+      await recordTurnOutcomeStamp(
+        { ...context(recorder, [userMessage]), sessionId },
+        'completed',
+        summary({
+          verificationEvidence: [{ kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 }],
+        }),
+      );
+      expect(latestOutcome(recorder).verdict).toBe('verified');
+    } finally {
+      clearTasks(sessionId);
+    }
+  });
+
+  it('refuses verified when this run created a needs_decision task', async () => {
+    const sessionId = 'session-this-run-decision';
+    clearTasks(sessionId);
+    const recorder = new TurnTraceRecorder('this-run-decision', traceRoot);
+    const verifiedSummary = summary({
+      verificationEvidence: [{
+        kind: 'command',
+        toolCallId: 'test-ok',
+        command: 'npm test',
+        success: true,
+        exitCode: 0,
+      }],
+    });
+    try {
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        verifiedSummary,
+      );
+      expect(latestOutcome(recorder).verdict).toBe('verified');
+
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      const task = createTask(sessionId, { subject: '选择酒店方案', description: 'A 还是 B' });
+      updateTask(sessionId, task.id, {
+        status: 'needs_decision',
+        blockedReason: '在两家酒店间选',
+      });
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        verifiedSummary,
+      );
+      const outcome = latestOutcome(recorder);
+      expect(outcome.verdict).not.toBe('verified');
+      expect(outcome.verdict).toBe('self_claimed');
+      expect(outcome.evidenceProblems?.join('\n')).toContain('选择酒店方案');
+    } finally {
+      clearTasks(sessionId);
+    }
   });
 });

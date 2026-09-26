@@ -375,35 +375,59 @@ export class NudgeManager {
       // 仅 todo 未完成时维持原上限 2
       const reentryCap = incompleteTasks.length > 0 ? this.maxTaskGateReentries : this.maxTodoNudges;
 
-      if (totalIncomplete > 0 && this.todoNudgeCount < reentryCap) {
-        this.todoNudgeCount++;
-
+      if (totalIncomplete > 0) {
         const itemList: string[] = [];
         if (incompleteTodos.length > 0) {
           itemList.push(...incompleteTodos.map(t => `- [Todo] ${t.content}`));
         }
         if (incompleteTasks.length > 0) {
-          itemList.push(...incompleteTasks.map(t => `- [Task #${t.id}] ${t.subject}`));
+          itemList.push(...incompleteTasks.map(t => `- [Task #${t.id}] ${t.subject} (${t.status})`));
         }
         const combinedList = itemList.join('\n');
+        // 只有 needs_decision / user_action 算「等用户」；blocked（含子代理 handback）仍要督办收口（ADR-050）。
+        const waitingOnUser = incompleteTasks.filter((task) => (
+          task.status === 'needs_decision' || task.status === 'user_action'
+        ));
+        const stillWorking = incompleteTasks.filter((task) => !waitingOnUser.includes(task));
+        const waitingOnly = stillWorking.length === 0 && incompleteTodos.length === 0 && waitingOnUser.length > 0;
 
-        logger.debug(`[NudgeManager] Incomplete items detected, nudge ${this.todoNudgeCount}/${reentryCap}`);
-        logCollector.agent('INFO', `Incomplete items detected: ${totalIncomplete} items`, {
-          nudgeCount: this.todoNudgeCount,
-          incompleteTodos: incompleteTodos.map(t => t.content),
-          incompleteTasks: incompleteTasks.map(t => ({ id: t.id, subject: t.subject })),
-        });
-        ctx.injectSystemMessage(
-          `<task-completion-check>\n` +
-          `STOP! You have ${totalIncomplete} incomplete item(s):\n${combinedList}\n\n` +
-          `You MUST complete these tasks before finishing. Do NOT provide a final summary until all items are marked as completed.\n` +
-          `- 未完成的 Todo 项会在工具执行后自动推进状态\n` +
-          `- For Tasks: use TaskManager with action="update" and status="completed", status="cancelled" to abandon but keep visible, or status="deleted" to remove\n` +
-          `Continue working on the remaining items NOW.\n` +
-          `</task-completion-check>`,
-          'nudge',
-        );
-        return true;
+        // 全在等用户：只重入一次让模型读到清单并改写最终回复；之后不再重入，继续走后面的检查。
+        if (waitingOnly) {
+          if (this.todoNudgeCount === 0) {
+            this.todoNudgeCount++;
+            logger.debug(`[NudgeManager] Waiting-on-user tasks listed once, single reentry`);
+            ctx.injectSystemMessage(
+              `<task-completion-check>\n`
+                + `这些任务在等用户，不要标 completed，也不要宣称全部做完：\n${combinedList}\n\n`
+                + `needs_decision = 等用户在选项间拍板；user_action = 等用户亲自操作。\n`
+                + `最终回复必须列出谁在等、等什么。用户沉默不等于已选定。\n`
+                + `</task-completion-check>`,
+              'nudge',
+            );
+            return true;
+          }
+          // 已列过：不 return，继续走后面的 P3/F4/P4/P5 检查，等用户的任务不能让产物类检查失效。
+        } else if (this.todoNudgeCount < reentryCap) {
+          this.todoNudgeCount++;
+          logger.debug(`[NudgeManager] Incomplete items detected, nudge ${this.todoNudgeCount}/${reentryCap}`);
+          logCollector.agent('INFO', `Incomplete items detected: ${totalIncomplete} items`, {
+            nudgeCount: this.todoNudgeCount,
+            incompleteTodos: incompleteTodos.map(t => t.content),
+            incompleteTasks: incompleteTasks.map(t => ({ id: t.id, subject: t.subject, status: t.status })),
+          });
+          ctx.injectSystemMessage(
+            `<task-completion-check>\n` +
+              `STOP! You have ${totalIncomplete} incomplete item(s):\n${combinedList}\n\n` +
+              `You MUST finish the items you can still do before finishing.\n` +
+              `- 未完成的 Todo 项会在工具执行后自动推进状态\n` +
+              `- For Tasks you can still do: use TaskManager with action="update" and status="completed", status="cancelled" to abandon but keep visible, or status="deleted" to remove\n` +
+              `- If the user must choose, set status="needs_decision" with blockedReason. If the user must act (login/pay/sign), set status="user_action" with blockedReason. Do not mark those completed, and list them in the final reply.\n` +
+              `Continue working on the remaining items NOW.\n` +
+              `</task-completion-check>`,
+            'nudge',
+          );
+          return true;
+        }
       }
     }
 

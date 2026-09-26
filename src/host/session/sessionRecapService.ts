@@ -20,6 +20,7 @@
 
 import type { SessionTask } from '../../shared/contract';
 import type { CompletionSummaryRecord } from '../../shared/contract';
+import { statusRequiresWaitReason } from '../../shared/contract/planning';
 import { readCompletionSummaryRecordsBySession } from './completionSummaryService';
 import { createLogger } from '../services/infra/logger';
 
@@ -80,7 +81,7 @@ export function collectRecapMaterial(
   const touchedTasks = tasks.filter((task) => (task.updatedAt ?? 0) > sinceTimestamp);
   const artifactLabels = [...labels];
   const completedTasks = touchedTasks.filter((task) => task.status === 'completed');
-  const blockedTasks = touchedTasks.filter((task) => task.status === 'blocked');
+  const blockedTasks = touchedTasks.filter((task) => statusRequiresWaitReason(task.status));
   // 收口轮次在、但产物名/任务结果都没实质句子 → 等同素材为空，不喂小模型。
   if (!hasRecapSubstance({ artifactLabels, completedTasks, blockedTasks })) return null;
 
@@ -133,7 +134,10 @@ export function formatRecapFallback(material: SessionRecapMaterial): string | nu
     parts.push(rest > 0 ? `更新了 ${shown} 等 ${material.artifactLabels.length} 项产物` : `更新了 ${shown}`);
   }
   if (material.completedTasks.length > 0) parts.push(`${material.completedTasks.length} 项任务完成`);
-  if (material.blockedTasks.length > 0) parts.push(`${material.blockedTasks.length} 项任务受阻`);
+  const stuckCount = material.blockedTasks.filter((task) => task.status === 'blocked').length;
+  const waitingCount = material.blockedTasks.length - stuckCount;
+  if (stuckCount > 0) parts.push(`${stuckCount} 项任务受阻`);
+  if (waitingCount > 0) parts.push(`${waitingCount} 项等你`);
   if (parts.length === 0) return null;
   // 规则拼接是「更新了 X / N 项完成 / N 项受阻」，不是模型反问。产物名里的问号
   // 不能当成「不像总结」把整轮追赶吞掉，也不该挡住后面的小模型调用。
@@ -154,7 +158,12 @@ function buildPrompt(material: SessionRecapMaterial): string {
   }
   for (const task of material.blockedTasks.slice(0, MAX_TASKS_IN_PROMPT)) {
     // blockedReason 已过 taskReasonLanguage 清洗（机器噪音会被置空），这里只转述人话那部分
-    lines.push(`卡住：${task.subject}${task.blockedReason ? `（${task.blockedReason}）` : ''}`);
+    const prefix = task.status === 'needs_decision'
+      ? '等你拍板'
+      : task.status === 'user_action'
+        ? '等你操作'
+        : '卡住';
+    lines.push(`${prefix}：${task.subject}${task.blockedReason ? `（${task.blockedReason}）` : ''}`);
   }
   return lines.join('\n');
 }

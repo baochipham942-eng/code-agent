@@ -29,6 +29,8 @@ const TASK_MANAGER_DESCRIPTION_LONG = `维护本次会话的任务清单。写�
 - **子代理报成功不算证据**：自己核实产物后再由你写证据。
 - \`status="blocked"\` **必须**带 \`blockedReason\`，用人话讲清卡在哪（"这个页面要公司账号登录，我们没有"），不要贴 raw 报错——看面板的是不懂技术的协作者。
 - \`blocked\` 专指外部障碍；等前置任务用 \`addBlockedBy\`（任务仍是 pending）。
+- \`needs_decision\`：需要用户在选项间拍板（工具选不了）。必须带 \`blockedReason\` 写清要选什么。不要标成 blocked。
+- \`user_action\`：需要用户亲自操作（登录、付款、线下签字等，工具做不了）。必须带 \`blockedReason\` 写清要用户做什么。不要标成 blocked。
 - \`replace\` / \`patch\` 批量改计划时同样要带。
 
 ## 任务标题写法
@@ -65,6 +67,7 @@ const TASK_MANAGER_DESCRIPTION_SHORT = `维护本次会话的任务清单。写�
 
 - \`status="completed"\` 必须带 \`completionEvidence\`：一句话写你实际核过什么。写不出来就说明还没验证，先去验证。子代理报成功不算证据。
 - \`status="blocked"\` 必须带 \`blockedReason\`，用人话讲卡在哪——看面板的是不懂技术的协作者，别贴 raw 报错。\`blocked\` 专指外部障碍；等前置任务用 \`addBlockedBy\`（任务仍是 pending）。
+- \`needs_decision\`：等用户在选项间拍板（必须带 blockedReason 写清要选什么）。\`user_action\`：等用户亲自操作如登录/付款（必须带 blockedReason 写清要做什么）。两态都不是 blocked。
 - \`replace\` / \`patch\` 批量改计划时同样要带。
 
 任务标题写"要完成的结果"（接通数据流），不是工具调用日志（读取文件）。
@@ -124,7 +127,7 @@ export const taskManagerSchema: ToolSchema = {
       // --- update only ---
       status: {
         type: 'string',
-        enum: ['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'deleted'],
+        enum: ['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'needs_decision', 'user_action', 'deleted'],
         description: `[update] ${TASK_STATUS_DESCRIPTION}`,
       },
       ...TASK_EVIDENCE_PROPERTIES,
@@ -170,10 +173,12 @@ export const taskManagerSchema: ToolSchema = {
             activeForm: { type: 'string', description: 'Present continuous active form' },
             status: {
               type: 'string',
-              enum: ['pending', 'in_progress', 'completed', 'blocked', 'cancelled'],
+              enum: ['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'needs_decision', 'user_action'],
               description:
-                'Task status; batch operations normalize open tasks to exactly one in_progress. '
-                + '"completed" requires completionEvidence and "blocked" requires blockedReason on the same item.',
+                'Task status; batch operations normalize pending/in_progress to exactly one in_progress. '
+                + '"completed" requires completionEvidence. '
+                + '"blocked" / "needs_decision" / "user_action" require blockedReason on the same item '
+                + '(blocked = external obstacle; needs_decision = user must choose; user_action = user must act).',
             },
             ...TASK_EVIDENCE_PROPERTIES,
             priority: {

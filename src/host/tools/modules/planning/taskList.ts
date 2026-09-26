@@ -53,7 +53,9 @@ export async function executeTaskList(
         : task.status === 'in_progress' ? '◐'
           : task.status === 'cancelled' ? '⊘'
             : task.status === 'blocked' ? '▲'
-              : '○';
+              : task.status === 'needs_decision' ? '◇'
+                : task.status === 'user_action' ? '▷'
+                  : '○';
 
     const openBlockers = task.blockedBy.filter((id) => {
       const blocker = tasks.find((t) => t.id === id);
@@ -65,7 +67,11 @@ export async function executeTaskList(
 
     const stuckInfo = task.status === 'blocked'
       ? ` [stuck: ${task.blockedReason || task.blockedReasonCategory || 'reason not recorded'}]`
-      : '';
+      : task.status === 'needs_decision'
+        ? ` [waiting for your decision: ${task.blockedReason || 'choice not recorded'}]`
+        : task.status === 'user_action'
+          ? ` [waiting for you to act: ${task.blockedReason || 'action not recorded'}]`
+          : '';
 
     const ownerInfo = task.owner ? ` (@${task.owner})` : '';
 
@@ -76,6 +82,8 @@ export async function executeTaskList(
   const inProgress = tasks.filter((t) => t.status === 'in_progress').length;
   const pending = tasks.filter((t) => t.status === 'pending').length;
   const cancelled = tasks.filter((t) => t.status === 'cancelled').length;
+  const needsDecision = tasks.filter((t) => t.status === 'needs_decision').length;
+  const userAction = tasks.filter((t) => t.status === 'user_action').length;
   // blocked 计数合并两种来源：显式 blocked 态（外部障碍）与未完成的前置依赖
   const blocked = tasks.filter((t) => {
     if (isClosedTaskStatus(t.status)) return false;
@@ -97,7 +105,9 @@ export async function executeTaskList(
       '\n\n' +
       `Status: ${completed} completed, ${inProgress} in progress, ${pending} pending` +
       (cancelled > 0 ? `, ${cancelled} cancelled` : '') +
-      (blocked > 0 ? `, ${blocked} blocked` : ''),
+      (blocked > 0 ? `, ${blocked} blocked` : '') +
+      (needsDecision > 0 ? `, ${needsDecision} waiting for your decision` : '') +
+      (userAction > 0 ? `, ${userAction} waiting for you to act` : ''),
     meta: {
       tasks: tasks.map((t) => ({
         id: t.id,

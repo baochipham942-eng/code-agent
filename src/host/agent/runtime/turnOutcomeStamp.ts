@@ -18,6 +18,8 @@ import type { DeclaredDeliverables, LastDeliverableCheck } from './artifactState
 import type { RuntimeContext } from './runtimeContext';
 import type { RunTerminalStatus } from './runTerminalStatus';
 import type { TraceEvent, TraceEventDataMap, TurnTraceRecorder } from './turnTrace';
+import { applyUnresolvedTaskTurnGate } from '../../../shared/contract/planning';
+import { listUnresolvedTurnTasksTouchedSince } from '../../services/planning/taskStore';
 
 const logger = createLogger('TurnOutcomeStamp');
 
@@ -186,6 +188,14 @@ function currentRunEvents(events: readonly TraceEvent[]): readonly TraceEvent[] 
   return events;
 }
 
+/** 上一枚 turn_outcome 的时间即本 run 起点；没有上一枚就是会话第一 run（since=0）。 */
+function currentRunStartedAt(events: readonly TraceEvent[]): number {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index].type === 'turn_outcome') return events[index].ts;
+  }
+  return 0;
+}
+
 function latestGoalEvidence(events: readonly TraceEvent[]): EvidenceRef[] {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
@@ -338,7 +348,23 @@ export async function recordTurnOutcomeStamp(
 ): Promise<void> {
   try {
     const outcome = await buildTurnOutcome(ctx, terminal, summary);
-    ctx.turnTrace.record('turn_outcome', outcome);
+    const gated = applyUnresolvedTaskTurnGate(
+      outcome.verdict,
+      outcome.evidenceProblems,
+      listUnresolvedTurnTasksTouchedSince(
+        ctx.sessionId,
+        // 生产里每条用户消息都新建 TurnTraceRecorder，events 为空时上一枚 turn_outcome 找不到；
+        // 取最后一条 user 消息时间兜底，与 deliverableDiskCheck 的 run 域同一把尺。
+        Math.max(currentRunStartedAt(ctx.turnTrace.getEvents()), lastUserTimestamp(ctx.messages)),
+      ),
+    );
+    ctx.turnTrace.record('turn_outcome', {
+      ...outcome,
+      verdict: gated.verdict,
+      evidenceProblems: gated.evidenceProblems.length > 0
+        ? gated.evidenceProblems
+        : outcome.evidenceProblems,
+    });
     if (!ctx.turnTrace.flush()) logger.warn('turn outcome trace flush failed', { sessionId: ctx.sessionId });
   } catch (error) {
     logger.warn('turn outcome stamp failed', {

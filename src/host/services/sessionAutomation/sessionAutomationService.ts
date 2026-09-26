@@ -576,6 +576,10 @@ export class SessionAutomationService {
     eventId: string,
   ): Promise<void> {
     if (record.sourceSessionId === null || record.sourceSessionId === '') return;
+    const config = record.config ?? {};
+    const rationale = typeof config.rationale === 'string' ? config.rationale : undefined;
+    const evidence = typeof config.evidence === 'string' ? config.evidence : undefined;
+    const rationaleMissing = config.rationaleMissing === true;
     const message: Message = {
       id: `automation:${eventId}`,
       role: 'assistant',
@@ -598,6 +602,11 @@ export class SessionAutomationService {
           lastRunAt: record.lastRunAt,
           handoffPrompt: getHandoffPrompt(record),
           nextStage: getNextStage(record),
+          ...(record.type === 'role_wake' && (rationale || evidence || rationaleMissing) ? {
+            ...(rationale ? { rationale } : {}),
+            ...(evidence ? { evidence } : {}),
+            rationaleMissing: rationaleMissing || !rationale,
+          } : {}),
         },
       },
     };

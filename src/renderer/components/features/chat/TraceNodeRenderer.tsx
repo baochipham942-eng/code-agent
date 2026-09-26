@@ -44,6 +44,7 @@ import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { MemberInputNote } from '../expert/MemberInputNote';
+import { WakeRationaleNote, wakeRationaleFromMetadata } from './WakeRationaleNote';
 
 interface TraceNodeRendererProps {
   node: TraceNode;
@@ -321,6 +322,7 @@ const AssistantTextNode: React.FC<{
   const sessionLive = useAppStore((state) => (sessionId ? state.processingSessionIds.has(sessionId) : false));
   const resumeNote = sessionLive ? node.metadata?.streamResumeNote : undefined;
   const keptBreakSegment = node.metadata?.streamInterruptionReason === 'stream-break';
+  const wakeFields = wakeRationaleFromMetadata(node.metadata);
 
   const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({
     content: node.content || '',
@@ -509,6 +511,8 @@ const AssistantTextNode: React.FC<{
           sessionId={sessionId}
         />
       )}
+
+      {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}
 
     </div>
   );

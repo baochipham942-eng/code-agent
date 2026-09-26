@@ -369,6 +369,15 @@ export interface MessageMetadata {
   /** agent 运行失败的结构化错误（会话区渲染 AgentErrorCard），见 AgentErrorMetadata */
   agentError?: AgentErrorMetadata;
   automation?: SessionAutomationMessageMetadata;
+  /**
+   * 角色醒来主动消息的打扰理由。解析自 <rationale>/<evidence>；
+   * missing 时 UI 只显示「这条没有记录理由」，不从正文倒推。
+   */
+  wakeRationale?: {
+    rationale?: string;
+    evidence?: string;
+    missing: boolean;
+  };
   /** 用户在成员视图直接给某位成员补话/改道后，落在主对话里的折叠记录（N-SUBAGENT-INPUT）。 */
   memberInput?: MemberInputMessageMetadata;
   turnQuality?: TurnQualitySummary;

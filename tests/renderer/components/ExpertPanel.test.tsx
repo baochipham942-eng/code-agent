@@ -429,6 +429,30 @@ describe('ExpertPanel', () => {
     });
   });
 
+  it('话题偏好两个输入可保存完整配置', async () => {
+    render(<RoleDetailPage roleId="牧之" />);
+    fireEvent.click(screen.getByTestId('role-detail-tab-records'));
+
+    const include = await screen.findByTestId('role-topics-include');
+    const exclude = screen.getByTestId('role-topics-exclude');
+    fireEvent.change(include, { target: { value: '项目进度, 待办' } });
+    fireEvent.change(exclude, { target: { value: '八卦' } });
+    fireEvent.click(screen.getByTestId('role-topics-save'));
+
+    await waitFor(() => {
+      expect(invokeDomain).toHaveBeenCalledWith(
+        expect.anything(),
+        'setProactivity',
+        {
+          roleId: '牧之',
+          level: 'silent',
+          topicsInclude: ['项目进度', '待办'],
+          topicsExclude: ['八卦'],
+        },
+      );
+    });
+  });
+
   it('未设免打扰时不渲染关闭按钮', async () => {
     render(<RoleDetailPage roleId="牧之" />);
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));

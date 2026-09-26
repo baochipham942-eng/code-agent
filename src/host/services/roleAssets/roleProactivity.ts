@@ -29,6 +29,13 @@ import type {
 } from '../../../shared/contract/roleAssets';
 import { instantiateRole, appendRoleHistory, loadRoleHistory, listPersistentRoles, isPersistentRole } from './roleAssetService';
 import { runRoleWriteBack } from './roleWriteBack';
+import {
+  formatHistoryWhySuffix,
+  formatTopicPreferencePrompt,
+  parseWakeRationale,
+  stripWakeMarkup,
+  topicExcludeHits,
+} from './wakeRationale';
 import { getSessionAutomationService } from '../sessionAutomation';
 import type { SessionAutomationEventKind, SessionAutomationStatus } from '../../../shared/contract/sessionAutomation';
 
@@ -127,7 +134,11 @@ export async function countWakesToday(roleId: string): Promise<number> {
 // 醒来 prompt（设计 §3.1）
 // ----------------------------------------------------------------------------
 
-function buildWakePrompt(trigger: RoleWakeTrigger, extraContext?: string): string {
+function buildWakePrompt(
+  trigger: RoleWakeTrigger,
+  extraContext?: string,
+  config?: RoleProactivityConfig,
+): string {
   const lines = [
     `你被${trigger === 'cadence' ? '定时' : '任务结束事件'}唤醒。这不是用户发来的消息，用户现在不在。`,
     '',
@@ -146,9 +157,16 @@ function buildWakePrompt(trigger: RoleWakeTrigger, extraContext?: string): strin
     '   - 【建议 suggest】有改进想法但需要用户拍板 → 列出建议',
     '   - 【沉默 silence】检查完没有值得说的 → 直接结束（沉默是合法结果，不要为了显得有用而硬找话说）',
     `4. 回复末尾必须带决策标记，格式：<decision>advance</decision> 或 <decision>report</decision> 或 <decision>suggest</decision> 或 <decision>silence</decision>`,
+    '5. 若决策是 report 或 suggest，末尾还必须带：',
+    '   <rationale>为什么现在值得打扰用户，最多两句。必须来自你实际检查到的履历或产物，不许事后编。</rationale>',
+    '   <evidence>依据：会话 / 文件 / 记忆条目的引用；没有就留空</evidence>',
     '',
     `预算约束：你最多有 ${ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS} 轮工具调用，超出会被强制结束，重要的事先做。`,
   ];
+  const topicBlock = config ? formatTopicPreferencePrompt(config) : '';
+  if (topicBlock) {
+    lines.push('', topicBlock);
+  }
   if (extraContext) {
     lines.push('', '本次唤醒的额外上下文：', extraContext);
   }
@@ -387,7 +405,7 @@ export async function wakeRole(
   // 双路径（web/main 路径分离）：
   //   - Electron main：TaskManager orchestrator（带 UI 事件路由 / 权限弹窗）
   //   - webServer/headless（发行版后端）：cli/bootstrap createAgentLoop（与 /api/run 同源）
-  const wakePrompt = buildWakePrompt(trigger, options?.runSummary);
+  const wakePrompt = buildWakePrompt(trigger, options?.runSummary, config);
   const { getTaskManager } = await import('../../task');
   const tm = getTaskManager();
   const orchestrator = tm.getOrCreateCurrentOrchestrator(session.id);
@@ -430,12 +448,18 @@ export async function wakeRole(
   const inferredAdvanceProposal = parsedDecision === 'advance'
     ? null
     : inferAdvanceGoalProposalFromWake(finalOutput, instantiation.contextBlock);
-  const decision = inferredAdvanceProposal ? 'advance' : parsedDecision;
-  let summary = finalOutput
-    .replace(ROLE_PROACTIVITY.DECISION_TAG_PATTERN, '')
-    .trim()
+  let decision = inferredAdvanceProposal ? 'advance' : parsedDecision;
+  const parsedRationale = parseWakeRationale(finalOutput);
+  // exclude 是硬约束：命中则压成 silence。rationale 解析失败不影响原决策。
+  const excludeSource = [finalOutput, parsedRationale.rationale ?? ''].join('\n');
+  const excluded = topicExcludeHits(excludeSource, config.topicsExclude);
+  if (excluded) {
+    logger.info('Wake decision forced to silence: excluded topic', { roleId, trigger, parsedDecision });
+    decision = 'silence';
+  }
+  let summary = stripWakeMarkup(finalOutput)
     .slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
-  if (inferredAdvanceProposal) {
+  if (inferredAdvanceProposal && !excluded) {
     logger.info('Wake decision inferred as advance from verifiable next-step signals', {
       roleId,
       trigger,
@@ -448,7 +472,7 @@ export async function wakeRole(
   // 醒来实例是侦察兵（便宜，判断要不要推进/推进什么）；goal run 是执行者（带闸，干完过验证）。
   // 仅当 advance 且模型给出 <goal> 提案时升级；提案缺省 → 按普通 advance（侦察兵已自己做完）处理。
   let advanceGoalStatus: 'met' | 'aborted' | undefined;
-  if (decision === 'advance') {
+  if (decision === 'advance' && !excluded) {
     const proposal = parseAdvanceGoalProposal(finalOutput) ?? inferredAdvanceProposal;
     if (proposal) {
       logger.info('Advance → goal run', { roleId, goal: proposal.goal, hasVerify: !!proposal.verify });
@@ -480,13 +504,35 @@ export async function wakeRole(
     logger.info('Wake completed with output', { roleId, trigger, decision, sessionId: session.id });
   }
 
+  // ---- 步骤 8.5：把 rationale 写进醒来会话的助手消息（UI「为什么」入口读这里）----
+  const lastAssistant = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1] : undefined;
+  if (lastAssistant?.id) {
+    try {
+      await sessionManager.updateMessage(lastAssistant.id, {
+        metadata: {
+          ...(lastAssistant.metadata ?? {}),
+          wakeRationale: {
+            ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
+            ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
+            missing: parsedRationale.missing,
+          },
+        },
+      });
+    } catch (err) {
+      logger.warn('Wake rationale metadata persist failed', { roleId, error: String(err) });
+    }
+  }
+
   // ---- 步骤 9：写回履历（含沉默；决策入履历便于统计沉默率）+ 记忆写回 ----
   const today = now.toISOString().slice(0, 10);
+  const historySummary = decision === 'silence'
+    ? (excluded ? '巡检无需行动（话题排除）' : '巡检无需行动')
+    : `[${decision}] ${summary || '（无摘要）'}${formatHistoryWhySuffix(parsedRationale)}`;
   await appendRoleHistory(roleId, {
     date: today,
     artifactLabel: wakeHistoryLabel(trigger),
     artifactRef: '-',
-    summary: decision === 'silence' ? '巡检无需行动' : `[${decision}] ${summary || '（无摘要）'}`,
+    summary: historySummary.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS),
   });
 
   if (decision !== 'silence') {
@@ -530,6 +576,9 @@ export async function wakeRole(
         configPatch: {
           decision,
           advanceGoalStatus,
+          ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
+          ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
+          rationaleMissing: parsedRationale.missing,
           ...(options.handoffPrompt ? {
             handoffPrompt: options.handoffPrompt,
             nextStage: { prompt: options.handoffPrompt, title: '角色唤醒后继续' },
@@ -541,7 +590,18 @@ export async function wakeRole(
     }
   }
 
-  return { roleId, trigger, status: 'completed', decision, sessionId: session.id, summary, advanceGoalStatus };
+  return {
+    roleId,
+    trigger,
+    status: 'completed',
+    decision,
+    sessionId: session.id,
+    summary,
+    advanceGoalStatus,
+    ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
+    ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
+    rationaleMissing: parsedRationale.missing,
+  };
 }
 
 // ----------------------------------------------------------------------------

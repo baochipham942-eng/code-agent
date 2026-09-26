@@ -16,7 +16,8 @@ export const sleepUntilSchema: ToolSchema = {
     + 'Use when the next useful step simply cannot happen yet (a deadline, a scheduled export, "check back in 2 hours"). '
     + 'This ends the current turn — you are not blocking or polling, and nothing runs while you wait. '
     + 'You will be woken with your own reason text. The wake fires around the requested time, give or take a few '
-    + 'minutes — tell the user "around <time>", never "exactly at". '
+    + 'minutes while the app is running; if the app is asleep or closed, it is delivered on the next launch, '
+    + 'possibly much later — tell the user "around <time> (while the app is running)", never "exactly at". '
     + 'For work that should repeat on a schedule, create an automation instead.',
   outputSchema: { type: 'string' },
   inputSchema: {

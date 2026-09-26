@@ -33,7 +33,11 @@ describe('能力口径诚实：口径落在对应注入位置', () => {
   });
 
   it('口径 1b：sleep_until 写明醒来时间有几分钟偏差', () => {
-    expect(sleepUntilSchema.description).toContain('give or take a few minutes');
+    const description = sleepUntilSchema.description;
+    expect(description).toContain('give or take a few minutes');
+    // 偏差承诺只在 app 运行中成立；休眠/退出后延迟到下次启动（ai-review Important 2）
+    expect(description).toContain('while the app is running');
+    expect(description).toContain('delivered on the next launch');
   });
 
   it('口径 2：wake_on 写明跑没跑以运行记录为准', () => {
@@ -48,6 +52,9 @@ describe('能力口径诚实：口径落在对应注入位置', () => {
     expect(description).toContain('「已开始／已排队」');
     // 原有 accepted ≠ 完成 契约仍在（不是替换而是补齐）
     expect(description).toContain('accepted 只代表已接单，不代表完成');
+    // 状态分层不混写（ai-review Important 1）：排队/交接=已受理，后台跑完=执行结束
+    expect(description).toContain('排队或交接只代表已受理还没开始跑');
+    expect(description).toContain('后台跑完也只代表执行结束');
   });
 
   it('口径 4：连接器/MCP 工具共享「连接状态只认本轮检查」片段', () => {

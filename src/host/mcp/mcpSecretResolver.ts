@@ -62,7 +62,10 @@ export function resolveServerConfigSecrets(config: MCPServerConfig): MCPServerCo
   const resolved = needsSecretResolution && values
     ? resolveSecretRefs(values, (integrationId) => (
         getConfigService()?.getIntegration(integrationId) ?? null
-      ))
+      ), {
+        // 空凭据检查只拦远程 headers/URL：stdio 可选敏感名 env 留空时保持基线可启动。
+        rejectEmpty: isSSEConfig(config) || isHttpStreamableConfig(config),
+      })
     : values;
 
   if (isStdioConfig(config)) {

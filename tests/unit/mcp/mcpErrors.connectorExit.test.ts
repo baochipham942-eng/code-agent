@@ -98,10 +98,26 @@ describe('connector error classification（保守匹配，五种输入各归其�
   });
 
   describe('service_unavailable', () => {
-    it.each([404, 405, 501])('classifies HTTP %i as a design-state refusal', (status) => {
+    it.each([405, 501])('classifies HTTP %i as a design-state refusal', (status) => {
       const error = unavailableStatusError(status);
       expect(isMcpServiceUnavailableError(error)).toBe(true);
       expect(isMcpInsufficientScopeError(error)).toBe(false);
+    });
+
+    it('does not classify a session-period HTTP 404 as unavailable', () => {
+      const error = unavailableStatusError(404);
+      expect(isMcpServiceUnavailableError(error)).toBe(false);
+      expect(isMcpInsufficientScopeError(error)).toBe(false);
+    });
+
+    it('classifies method/tool not-supported-by-server wording', () => {
+      expect(isMcpServiceUnavailableError(
+        new Error('method tools/call is not supported by this server'),
+      )).toBe(true);
+    });
+
+    it('does not classify a generic system "Operation not supported" as design-state', () => {
+      expect(isMcpServiceUnavailableError(new Error('Operation not supported'))).toBe(false);
     });
 
     it('classifies JSON-RPC METHOD_NOT_FOUND', () => {
@@ -126,8 +142,8 @@ describe('connector error classification（保守匹配，五种输入各归其�
     });
 
     it('does not classify a not-supported wording that is explicitly temporary', () => {
-      // 「not supported」命中设计态模式，但「temporarily/maintenance」说明是临时故障——护栏必须压过模式匹配。
-      const error = new Error('This protocol is not supported temporarily during maintenance');
+      // 「not supported by this server」命中设计态模式，但「temporarily/maintenance」说明是临时故障——护栏必须压过模式匹配。
+      const error = new Error('method tools/call is not supported by this server temporarily during maintenance');
       expect(isMcpServiceUnavailableError(error)).toBe(false);
     });
   });
@@ -150,7 +166,9 @@ describe('connector error classification（保守匹配，五种输入各归其�
       expect(isOAuthAuthorizationRequiredError(error)).toBe(false);
       expect(isMcpInsufficientScopeError(error)).toBe(false);
       expect(isMcpServiceUnavailableError(error)).toBe(false);
+      expect(formatMcpConnectionError(error)).toContain('凭据未附上');
       expect(formatMcpConnectionError(error)).not.toContain('oauth-authorization-required');
+      expect(formatMcpConnectorErrorExit(error)).toContain('credential was never attached');
     });
   });
 
@@ -183,10 +201,17 @@ describe('connector design-state errors never auto-retry', () => {
 
   it.each([
     ['HTTP 403', forbidden()],
-    ['HTTP 404', unavailableStatusError(404)],
+    ['HTTP 501', unavailableStatusError(501)],
     ['method not found', new ProtocolError(METHOD_NOT_FOUND, 'Method not found: tools/call')],
   ])('%s is not treated as a connection interruption, so the tool call is never replayed', (_label, error) => {
     expect(isMcpToolConnectionInterruptionError(error)).toBe(false);
+  });
+
+  it('treats a session-period HTTP 404 as a reconnectable interruption, not unavailable', () => {
+    const error = unavailableStatusError(404);
+    expect(isMcpServiceUnavailableError(error)).toBe(false);
+    expect(isMcpToolConnectionInterruptionError(error)).toBe(true);
+    expect(isRetryableRemoteMCPConnectionError(error)).toBe(false);
   });
 
   it('keeps treating session expiry (-32001) without design-state signals as an interruption', () => {
@@ -223,21 +248,46 @@ describe('connector error exit text（失败态带出路）', () => {
     expect(text).toContain('alternative path');
   });
 
-  it('feeds the exit text into connection state formatting', () => {
-    expect(formatMcpConnectionError(forbidden())).toMatch(/^mcp-insufficient-scope: /);
-    expect(formatMcpConnectionError(unavailableStatusError(404))).toMatch(/^mcp-service-unavailable: /);
+  it('writes user-facing Chinese to connection state, not the model English exit', () => {
+    expect(formatMcpConnectionError(forbidden())).toBe(
+      '当前账号未授予所需权限，请到设置 > 连接器补授权或换账号。',
+    );
+    expect(formatMcpConnectionError(unavailableStatusError(404))).toBe(
+      '该连接器无法完成此请求，请改用服务方官网或其他方式。',
+    );
+    expect(formatMcpConnectionError(unavailableStatusError(501))).toBe(
+      '该连接器无法完成此请求，请改用服务方官网或其他方式。',
+    );
+    expect(formatMcpConnectionError(forbidden())).not.toContain('Tell the user');
     expect(formatMcpConnectionError(new Error('connection failed'))).toBe('connection failed');
+  });
+
+  it('treats connect-phase 404 as an endpoint-missing exit for the model', () => {
+    const text = formatMcpConnectorErrorExit(unavailableStatusError(404), { connectPhase: true });
+    expect(text).toMatch(/^mcp-service-unavailable: /);
+    expect(formatMcpConnectorErrorExit(unavailableStatusError(404))).toBeNull();
   });
 });
 
-describe('empty stored credentials fail closed before the request is sent', () => {
+describe('empty stored credentials fail closed only on the remote path', () => {
   it.each([
     ['empty string', ''],
     ['whitespace only', '   '],
-  ])('treats %s as credentials not attached', (_label, stored) => {
+  ])('stdio env resolves %s (baseline: optional sensitive env may be blank)', (_label, stored) => {
+    expect(resolveSecretRefs(
+      { OPTIONAL_API_KEY: 'secureref:mcp_local.OPTIONAL_API_KEY' },
+      () => ({ OPTIONAL_API_KEY: stored }),
+    )).toEqual({ OPTIONAL_API_KEY: stored });
+  });
+
+  it.each([
+    ['empty string', ''],
+    ['whitespace only', '   '],
+  ])('remote headers treat %s as credentials not attached', (_label, stored) => {
     expect(() => resolveSecretRefs(
       { APP_SECRET: 'secureref:mcp_feishu.APP_SECRET' },
       () => ({ APP_SECRET: stored }),
+      { rejectEmpty: true },
     )).toThrow(MCPCredentialsMissingError);
   });
 
@@ -247,6 +297,7 @@ describe('empty stored credentials fail closed before the request is sent', () =
       resolveSecretRefs(
         { APP_SECRET: 'secureref:mcp_feishu.APP_SECRET' },
         () => ({ APP_SECRET: '' }),
+        { rejectEmpty: true },
       );
     } catch (error) {
       caught = error;
@@ -275,7 +326,7 @@ describe('tool call failures surface the exit text instead of a bare error', () 
   });
 
   it('returns the service-unavailable exit text without reconnecting', async () => {
-    const { mcpClient, retrySpy, reconnectSpy } = setupFailingToolCall(unavailableStatusError(404));
+    const { mcpClient, retrySpy, reconnectSpy } = setupFailingToolCall(unavailableStatusError(501));
 
     const result = await mcpClient.callTool('call-1', 'remote', 'mutate', {});
 
@@ -284,6 +335,22 @@ describe('tool call failures surface the exit text instead of a bare error', () 
     expect(result.error).toContain('do not retry or reconnect');
     expect(reconnectSpy).not.toHaveBeenCalled();
     expect(retrySpy).not.toHaveBeenCalled();
+  });
+
+  it('reconnects a session-period HTTP 404 instead of treating it as unavailable', async () => {
+    const { mcpClient, retrySpy, reconnectSpy } = setupFailingToolCall(unavailableStatusError(404));
+    reconnectSpy.mockResolvedValue({ success: true });
+    retrySpy.mockResolvedValue({
+      toolCallId: 'call-1',
+      success: true,
+      output: 'replayed',
+    });
+
+    const result = await mcpClient.callTool('call-1', 'remote', 'mutate', {});
+
+    expect(result.success).toBe(true);
+    expect(reconnectSpy).toHaveBeenCalledWith('remote');
+    expect(retrySpy).toHaveBeenCalledOnce();
   });
 
   it('keeps the bare message for unclassified failures', async () => {

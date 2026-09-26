@@ -1101,7 +1101,9 @@ export class MCPClient extends EventEmitter {
       }
       // cua-driver：观察 get_window_state/list_apps 等结果，喂本地 AX 树缓存，
       // 供后续 click/type_text 调用反查人话文案（§10）。纯增强，不影响结果。
-      if (serverName === CUA_DRIVER_SERVER_NAME && result.success && typeof result.output === 'string') recordCuaResult(toolName, args, result.output);
+      if (serverName === CUA_DRIVER_SERVER_NAME && result.success && typeof result.output === 'string') {
+        recordCuaResult(toolName, args, result.output);
+      }
       // 失败侧对称采集：进灰度统计（分类见 cuaFailureStats）
       if (serverName === CUA_DRIVER_SERVER_NAME && !result.success && result.error) {
         void recordCuaFailure(toolName, sessionId ?? `pid:${process.pid}`, result.error);
@@ -1116,9 +1118,7 @@ export class MCPClient extends EventEmitter {
       }
 
       const errorMessage = error instanceof Error ? error.message : 'MCP tool call failed';
-      const errorCode = error && typeof error === 'object'
-        ? (error as { code?: unknown }).code
-        : undefined;
+      const errorCode = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
       const isSessionExpired = errorCode === -32001;
       const isConnectionError = isMcpToolConnectionInterruptionError(error);
 

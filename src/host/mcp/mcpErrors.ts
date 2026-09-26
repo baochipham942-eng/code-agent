@@ -29,8 +29,9 @@ export function formatMcpConnectionError(error: unknown): string {
     const message = error instanceof Error ? error.message : 'authorization required';
     return `${OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX}: ${message}`;
   }
-  const connectorExit = formatMcpConnectorErrorExit(error);
-  if (connectorExit) return connectorExit;
+  // 设置页 state.error 面向用户：中文短句。给模型的英文出路在 formatMcpConnectorErrorExit。
+  const userFacing = formatMcpConnectorErrorForUser(error);
+  if (userFacing) return userFacing;
   return error instanceof Error ? error.message : 'Unknown error';
 }
 
@@ -40,8 +41,12 @@ export function formatMcpConnectionError(error: unknown): string {
 // 判据保守匹配：拿不准就归 unknown，绝不把临时故障误判成设计态。
 // ----------------------------------------------------------------------------
 
-/** 服务端明确声明「不支持/不存在」的 HTTP 状态：重试无意义（503 是临时过载，不在此列）。 */
-const UNAVAILABLE_HTTP_STATUSES = new Set([404, 405, 501]);
+/**
+ * 服务端明确声明「不支持」的 HTTP 状态：重试无意义（503 是临时过载，不在此列）。
+ * 不含 404：MCP Streamable HTTP 对过期 Mcp-Session-Id 必须回 404，客户端应重建会话。
+ * 连接阶段「端点不存在」的 404 只在 formatMcpConnectionError / connectPhase 出路里认。
+ */
+const UNAVAILABLE_HTTP_STATUSES = new Set([405, 501]);
 
 const INSUFFICIENT_SCOPE_MESSAGE_PATTERN = new RegExp(
   [
@@ -58,7 +63,7 @@ const SERVICE_UNAVAILABLE_MESSAGE_PATTERN = new RegExp(
     'method not found',
     'not available for (?:this |your )?(?:account|region|plan)',
     'not available in (?:this |your )?(?:account|region|plan)',
-    'not supported',
+    '(?:method|tool|operation)\\b[^.!?\\n]{0,80}\\bnot supported by (?:this )?server',
     'no longer available',
     'not implemented',
   ].join('|'),
@@ -142,12 +147,42 @@ function requiredScopeOf(error: unknown): string | undefined {
     : undefined;
 }
 
+/** 连接阶段（尚无会话）的 404 才表示端点不存在；会话期 404 是过期会话，走重连。 */
+function isConnectPhaseEndpointMissing(error: unknown): boolean {
+  return httpStatusOf(error) === 404;
+}
+
+/** 设置页用户可见短句；模型英文指引见 formatMcpConnectorErrorExit。 */
+function formatMcpConnectorErrorForUser(error: unknown): string | null {
+  if (isMcpCredentialsMissingError(error)) {
+    return '凭据未附上，请到设置 > 连接器重新填写后再试。';
+  }
+  if (isMcpInsufficientScopeError(error)) {
+    return '当前账号未授予所需权限，请到设置 > 连接器补授权或换账号。';
+  }
+  if (isMcpServiceUnavailableError(error) || isConnectPhaseEndpointMissing(error)) {
+    return '该连接器无法完成此请求，请改用服务方官网或其他方式。';
+  }
+  return null;
+}
+
 /**
  * 两类设计态错误的模型可见出路文案；其他错误返回 null（保持原有文本）。
  * 「失败态带出路不带解释」：每条都写明用户下一步能做什么、模型不该做什么。
+ * connectPhase：连接阶段（mcp_add_server / 首次 connect）把 404 当端点不存在，不是会话过期。
  */
-export function formatMcpConnectorErrorExit(error: unknown): string | null {
+export function formatMcpConnectorErrorExit(
+  error: unknown,
+  options?: { connectPhase?: boolean },
+): string | null {
   const message = errorMessageOf(error) ?? 'connector error';
+  if (isMcpCredentialsMissingError(error)) {
+    return [
+      message,
+      'Tell the user to open Settings > Connectors and re-enter the credential.',
+      'This is not an authorization failure — the credential was never attached. Do not retry automatically.',
+    ].join(' ');
+  }
   if (isMcpInsufficientScopeError(error)) {
     const requiredScope = requiredScopeOf(error);
     return [
@@ -156,7 +191,7 @@ export function formatMcpConnectorErrorExit(error: unknown): string | null {
       'Tell the user to open Settings > Connectors, grant the missing permission for this connector or reconnect with an account that has it, then resend the original request. Do not retry automatically.',
     ].join(' ');
   }
-  if (isMcpServiceUnavailableError(error)) {
+  if (isMcpServiceUnavailableError(error) || (options?.connectPhase && isConnectPhaseEndpointMissing(error))) {
     return [
       `${SERVICE_UNAVAILABLE_ERROR_PREFIX}: ${message}`,
       'This is a provider-side limitation, not a temporary outage — do not retry or reconnect.',
@@ -174,6 +209,13 @@ export class MCPCredentialsMissingError extends Error {
     super(message);
     this.name = 'MCPCredentialsMissingError';
   }
+}
+
+/** 生产分流：formatMcpConnectionError / formatMcpConnectorErrorExit 按此给出用户/模型文案。 */
+function isMcpCredentialsMissingError(error: unknown): boolean {
+  if (error instanceof MCPCredentialsMissingError) return true;
+  if (!error || typeof error !== 'object') return false;
+  return (error as { code?: unknown }).code === MCP_CREDENTIALS_MISSING_CODE;
 }
 
 /** The connection failed after dispatch, so the server may already have executed the tool. */

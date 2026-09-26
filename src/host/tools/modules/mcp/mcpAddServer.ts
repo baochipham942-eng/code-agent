@@ -39,7 +39,7 @@ import {
   type MCPHttpStreamableServerConfig,
 } from '../../../mcp/mcpClient';
 import { getMcpConfigPath, ensureConfigDir, pathExists } from '../../../config';
-import { formatMcpConnectionError } from '../../../mcp/mcpErrors';
+import { formatMcpConnectorErrorExit } from '../../../mcp/mcpErrors';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { extractSecrets } from '../../../mcp/secretRef';
 import { getConfigService } from '../../../services/core/configService';
@@ -517,9 +517,9 @@ export async function executeMcpAddServer(
         toolCount: state?.toolCount,
       });
     } catch (error) {
-      // formatMcpConnectionError 对未分类错误原样返回 message；设计态错误（权限范围不足/
-      // 服务端不可用）换成带出路的文案，与设置页 state.error 同源（ai-review nit 2）。
-      const errorMessage = formatMcpConnectionError(error) || 'Connection failed';
+      // 模型可见英文出路（connectPhase：连接阶段 404 当端点不存在）。设置页走 formatMcpConnectionError 的中文短句。
+      const errorMessage = formatMcpConnectorErrorExit(error, { connectPhase: true })
+        || (error instanceof Error ? error.message : 'Connection failed');
       connectResult = { success: false, error: errorMessage };
       ctx.logger.error(`Failed to connect to MCP server ${name}:`, error);
     }

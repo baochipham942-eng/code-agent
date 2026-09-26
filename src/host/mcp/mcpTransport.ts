@@ -80,12 +80,16 @@ function sdkErrorCode(error: unknown): string | undefined {
   return typeof code === 'string' ? code : undefined;
 }
 
-function retryableHttpStatus(error: unknown): boolean {
+function httpStatusOf(error: unknown): number | undefined {
   const status = SdkHttpError.isInstance(error)
     ? error.status
     : errorRecord(error)?.status;
-  return typeof status === 'number'
-    && (status === 408 || status === 429 || status >= 500);
+  return typeof status === 'number' ? status : undefined;
+}
+
+function retryableHttpStatus(error: unknown): boolean {
+  const status = httpStatusOf(error);
+  return status === 408 || status === 429 || (status !== undefined && status >= 500);
 }
 
 function headersWithoutAuthorization(headers: Record<string, string>): Record<string, string> | undefined {
@@ -196,7 +200,8 @@ export function isMcpToolConnectionInterruptionError(error: unknown): boolean {
     return false;
   }
   const code = errorRecord(error)?.code;
-  return isRetryableRemoteMCPConnectionError(error) || code === -32001;
+  // MCP Streamable HTTP：过期 Mcp-Session-Id 必须 404，客户端重建会话即可恢复。
+  return isRetryableRemoteMCPConnectionError(error) || code === -32001 || httpStatusOf(error) === 404;
 }
 
 export async function retryTransientRemoteMCPConnection<T>(

@@ -46,7 +46,7 @@ import { resolveAgent as registryResolveAgent } from './agentRegistry';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { assembleTurnDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
-import { startRunPreferringDurable } from './orchestrator/durableRunStart';
+import { adoptExistingDurableRun, startRunPreferringDurable } from './orchestrator/durableRunStart';
 import { createTerminalEventTracker, finalizeDurableRun } from './orchestrator/durableRunTerminal';
 import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
 import { OrchestratorRunSettings } from './orchestratorRunSettings';
@@ -206,13 +206,19 @@ export class AgentOrchestrator {
     return this.runSettings.isDelegateMode() && !needsAutoAgent && !options?.disableAutoAgent;
   }
 
-  async sendMessage(
-    content: string,
-    attachments?: unknown[],
-    options?: AgentRunOptions,
-    messageMetadata?: MessageMetadata,
-    clientMessageId?: string,
-  ): Promise<void> {
+  async sendMessage(content: string, attachments?: unknown[], options?: AgentRunOptions, messageMetadata?: MessageMetadata, clientMessageId?: string): Promise<void> {
+    await this.executeMessage(content, attachments, options, messageMetadata, clientMessageId, true);
+  }
+
+  /** Continue an already-claimed durable run without adding a second user turn. */
+  async resumeExistingDurableRun(content: string, attachments?: unknown[], options?: AgentRunOptions, messageMetadata?: MessageMetadata, clientMessageId?: string): Promise<void> {
+    if (!options?.runId?.trim()) {
+      throw new Error('Existing durable run resume requires runId');
+    }
+    await this.executeMessage(content, attachments, options, messageMetadata, clientMessageId, false);
+  }
+
+  private async executeMessage(content: string, attachments: unknown[] | undefined, options: AgentRunOptions | undefined, messageMetadata: MessageMetadata | undefined, clientMessageId: string | undefined, persistUserMessage: boolean): Promise<void> {
     // 新用户消息到达：任何仍挂起的权限请求都已过期。先 deny 解除，
     // 否则上一轮被权限 Promise 卡住的 agentLoop 会冻结到 60s 超时（确认死锁）。
     this.permissions.drainPendingPermissions('deny');
@@ -222,35 +228,25 @@ export class AgentOrchestrator {
     const sessionId = await this.resolveSessionId();
     if (sessionId) await cancelTimeWakesOnUserReturn(sessionId, options);
 
-    const userMessage: Message = {
-      id: clientMessageId ?? this.generateId(),
-      role: 'user',
-      content: options?.displayContent ?? content,
-      timestamp: Date.now(),
-      attachments: attachments as MessageAttachment[] | undefined,
-      metadata: messageMetadata,
-    };
-    this.applyHistoryVisibility(
-      userMessage,
-      options?.inputHistoryVisibility
-        ? { ...options, historyVisibility: options.inputHistoryVisibility }
-        : options,
-    );
+    if (persistUserMessage) {
+      const userMessage: Message = { id: clientMessageId ?? this.generateId(), role: 'user', content: options?.displayContent ?? content, timestamp: Date.now(), attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata };
+      this.applyHistoryVisibility(userMessage, options?.inputHistoryVisibility ? { ...options, historyVisibility: options.inputHistoryVisibility } : options);
 
-    this.addMessage(userMessage);
-    logger.debug('User message added, hasAttachments:', !!userMessage.attachments?.length, 'count:', userMessage.attachments?.length || 0);
+      this.addMessage(userMessage);
+      logger.debug('User message added, hasAttachments:', !!userMessage.attachments?.length, 'count:', userMessage.attachments?.length || 0);
 
-    // 录制开轮已下沉到 AgentLoop.run —— 那才是所有入口（桌面 /api/run、CLI、
-    // 通道）的唯一汇聚点；这里再调一次会给同一轮多插一条空 turn。
+      // 录制开轮已下沉到 AgentLoop.run —— 那才是所有入口（桌面 /api/run、CLI、
+      // 通道）的唯一汇聚点；这里再调一次会给同一轮多插一条空 turn。
 
-    try {
-      if (sessionId) {
-        await sessionManager.addMessageToSession(sessionId, userMessage);
-      } else {
-        await sessionManager.addMessage(userMessage);
+      try {
+        if (sessionId) {
+          await sessionManager.addMessageToSession(sessionId, userMessage);
+        } else {
+          await sessionManager.addMessage(userMessage);
+        }
+      } catch (error) {
+        logger.error('Failed to save user message:', error);
       }
-    } catch (error) {
-      logger.error('Failed to save user message:', error);
     }
 
     // 排队恢复的显式模型优先于 E4 会话 override；旧 envelope 仍沿用原解析链。
@@ -1039,7 +1035,15 @@ export class AgentOrchestrator {
       });
 
       registeredRun = this.runRegistry && sessionId
-        ? await startRunPreferringDurable(this.runRegistry, {
+        ? options?.resumeExistingDurableRun
+          ? adoptExistingDurableRun(this.runRegistry, {
+              runId: nativeRunId,
+              sessionId,
+              workspace: runContext!.workspace,
+              workspaceScope,
+              cwd: runContext!.cwd,
+            })
+          : await startRunPreferringDurable(this.runRegistry, {
             runId: nativeRunId,
             sessionId,
             workspace: runContext!.workspace,
@@ -1074,7 +1078,7 @@ export class AgentOrchestrator {
       if (rolePresetSessionId) {
         getPermissionModeManager().clearRolePresetSession(rolePresetSessionId);
       }
-      if (registeredRun && this.runRegistry?.hasDurableOwner(nativeRunId)) {
+      if (registeredRun && this.runRegistry?.hasDurableOwner(nativeRunId) && !options?.resumeExistingDurableRun) {
         // Durable 终态收口见 orchestrator/durableRunTerminal；/api/run 主链有自己的 lifecycle。
         await finalizeDurableRun({
           registry: this.runRegistry,

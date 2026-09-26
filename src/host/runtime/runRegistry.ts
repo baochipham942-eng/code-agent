@@ -864,6 +864,42 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return handle;
   }
 
+  /** Bind a handle to a run already claimed by recoverDurable. No new durable row is created. */
+  adoptRecoveredRun(input: CreateRunContextInput): RunHandle {
+    const runId = input.runId?.trim();
+    if (!runId) throw new Error('Recovered durable run adoption requires runId');
+    const envelope = this.durableEnvelopes.get(runId);
+    const live = this.durableOwners.get(runId);
+    if (!envelope || !live) {
+      throw new Error(`Recovered durable run is not claimed in this process: ${runId}`);
+    }
+    if (envelope.sessionId !== input.sessionId) {
+      throw new RunSessionConflictError(input.sessionId, runId);
+    }
+    const existing = this.handlesByRunId.get(runId);
+    if (existing) return existing;
+    const recoveredDescriptor = this.durableCheckpointStates.get(runId);
+    const workspaceScope = isNativeRecoveryDescriptor(recoveredDescriptor)
+      ? recoveredDescriptor.workspace.scope
+      : undefined;
+    const workspace = input.workspace
+      ?? (isNativeRecoveryDescriptor(recoveredDescriptor) ? recoveredDescriptor.workspace.root : undefined);
+    const cwd = input.cwd
+      ?? (isNativeRecoveryDescriptor(recoveredDescriptor) ? recoveredDescriptor.workspace.cwd : workspace);
+    if (!workspace || !cwd) throw new Error(`Recovered durable run has no workspace: ${runId}`);
+    const context = createRunContext({
+      ...input,
+      runId,
+      workspace,
+      cwd,
+      workspaceScope: input.workspaceScope ?? workspaceScope,
+      createdAt: envelope.createdAt,
+    });
+    const handle = createRunHandle(context, this.durableTraceContexts.get(runId));
+    this.register(handle);
+    return handle;
+  }
+
   getBySessionId(sessionId: string): RunHandle | undefined {
     const runId = this.runIdBySessionId.get(sessionId);
     return runId ? this.handlesByRunId.get(runId) : undefined;

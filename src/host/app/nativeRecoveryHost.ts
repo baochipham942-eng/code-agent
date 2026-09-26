@@ -30,12 +30,11 @@ interface NativeModelContinuationSessions {
 }
 
 interface NativeModelContinuationTasks {
-  setSessionContext(sessionId: string, messages: Message[]): void;
-  startTask(
+  resumeExistingDurableRun(
     sessionId: string,
-    message: string,
-    attachments?: unknown[],
-    options?: { modelSpec?: { provider: string; model: string }; disableAutoAgent?: boolean },
+    runId: string,
+    messages: Message[],
+    options?: { mode: 'normal'; modelSpec?: { provider: string; model: string }; disableAutoAgent?: boolean },
     messageMetadata?: Message['metadata'],
     clientMessageId?: string,
   ): Promise<void>;
@@ -271,12 +270,12 @@ export function createApplicationNativeRecoveryPorts(
         });
         await checkpointModelDispatchFence(registry, input, now());
 
-        tasks.setSessionContext(input.plan.envelope.sessionId, messages.slice(0, sourceIndex));
-        await tasks.startTask(
+        await tasks.resumeExistingDurableRun(
           input.plan.envelope.sessionId,
-          source.content,
-          source.attachments,
+          input.plan.envelope.runId,
+          messages.slice(0, sourceIndex + 1),
           {
+            mode: 'normal',
             modelSpec: {
               provider: input.descriptor.provider,
               model: input.descriptor.model,

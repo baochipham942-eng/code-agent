@@ -36,3 +36,14 @@ export async function startRunPreferringDurable(
     return registry.start(input);
   }
 }
+
+/**
+ * Adopt a durable run that was already claimed by the recovery kernel.
+ * This path only binds a live handle; it never creates a second envelope.
+ */
+export function adoptExistingDurableRun(
+  registry: RunRegistry,
+  input: CreateRunContextInput,
+): RunHandle {
+  return registry.adoptRecoveredRun(input);
+}

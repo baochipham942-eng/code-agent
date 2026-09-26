@@ -34,6 +34,7 @@ export class ExternalEngineSubagentExecutor implements SubagentExecutorPort {
         parentStartedAt: request.context.spawnParentStartedAt, parentTimeoutMs: request.context.spawnParentTimeoutMs,
       }),
       parentSignal: request.context.abortSignal,
+      sessionId: request.context.sessionId,
       initiallyInTool: true,
     });
     try {

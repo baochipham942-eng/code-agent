@@ -40,7 +40,7 @@ describe('unified tool execution timeout policy', () => {
     clearApprovalWait('approval-overlap-test');
     clearApprovalWait('approval-pauses-clock');
     clearApprovalWait('approval-seal-test');
-    while (isHumanWaitActive()) endHumanWait();
+    while (isHumanWaitActive('session-tool-timeout')) endHumanWait('session-tool-timeout');
   });
 
   it('leaves bash and interaction tools to their own boundaries', () => {

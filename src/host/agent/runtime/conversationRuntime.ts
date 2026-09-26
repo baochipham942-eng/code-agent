@@ -346,7 +346,7 @@ export class ConversationRuntime {
     let iterations = 0;
     let softValidationRetries = 0;
     let resourceFinalAttempted = false;
-    const wallClock = bindGoalWallClock(this.ctx.goalMode?.getWallClockBudgetMs(), () => this.ctx.stats.runStartTime);
+    const wallClock = bindGoalWallClock(this.ctx.goalMode?.getWallClockBudgetMs(), () => this.ctx.stats.runStartTime, this.ctx.sessionId);
     const warnResources = createResourceWarning(this.ctx, (text, source) => this.contextAssembly.injectSystemMessage(text, source), wallClock.getElapsedMs);
     let userTurnId: string | undefined;
     let terminal: RunTerminalInfo = { status: 'completed' };

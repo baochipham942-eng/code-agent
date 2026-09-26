@@ -68,11 +68,12 @@ export function createSubagentCancellationLifecycle(options: {
   onIdleTimeout?: (idleMs: number) => void;
   onIdleNudge?: () => void;
   initiallyInTool?: boolean;
+  sessionId?: string;
 }): SubagentCancellationLifecycle {
-  const { agentName, timeoutMs, parentSignal, onIdleTimeout } = options;
+  const { agentName, timeoutMs, parentSignal, onIdleTimeout, sessionId } = options;
   const { controller: timeoutController, cleanup: cleanupTimer } = createTimedAbortController(
     timeoutMs,
-    { label: agentName },
+    { label: agentName, sessionId },
   );
 
   const effectiveController = createChildAbortController(timeoutController);
@@ -101,7 +102,7 @@ export function createSubagentCancellationLifecycle(options: {
   const idleWatchdog = setInterval(() => {
     if (effectiveSignal.aborted) return;
     // 人等待期间总超时已暂停；idle 钟也冻结，避免看卡把子代理当无进展杀掉。
-    if (isHumanWaitActive()) {
+    if (isHumanWaitActive(sessionId)) {
       lastProgressAt = Date.now();
       graceStartedAt = undefined;
       return;

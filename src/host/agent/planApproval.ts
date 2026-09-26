@@ -237,7 +237,7 @@ export class PlanApprovalGate {
    * Low-risk plans are auto-approved. High-risk plans wait for coordinator response.
    */
   async submitForApproval(params: PlanSubmissionInput): Promise<PlanApprovalResult> {
-    return withApprovalTrace('plan', () => this.submitForApprovalInternal(params));
+    return withApprovalTrace('plan', () => this.submitForApprovalInternal(params), params.scope?.sessionId);
   }
 
   private async submitForApprovalInternal(params: PlanSubmissionInput): Promise<PlanApprovalResult> {

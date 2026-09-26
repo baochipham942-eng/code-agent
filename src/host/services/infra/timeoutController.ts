@@ -80,7 +80,7 @@ export class TimeoutController {
   pause(now = Date.now()): void {
     if (this.paused || this.timedOut || this.timeoutId === null) return;
 
-    const elapsed = now - this.startedAt;
+    const elapsed = Math.max(0, now - this.startedAt);
     this.remainingMs = Math.max(0, this.remainingMs - elapsed);
     clearTimeout(this.timeoutId);
     this.timeoutId = null;
@@ -221,7 +221,7 @@ export function createCancellableTimeout(
 
   const pause = () => {
     if (paused || timeoutId === null) return;
-    const elapsed = Date.now() - startedAt;
+    const elapsed = Math.max(0, Date.now() - startedAt);
     remainingMs = Math.max(0, remainingMs - elapsed);
     clearTimeout(timeoutId);
     timeoutId = null;
@@ -244,93 +244,119 @@ export function createCancellableTimeout(
 // 人等待时钟 — 审批 / AskUserQuestion 等待期间暂停已订阅的 TimeoutController
 // ============================================================================
 //
-// 子代理总超时、DAG 任务超时、Goal 墙钟预算都通过 createHumanWaitBoundTimeout
-// 订阅这里。begin/end 可重入：并行多张卡只暂停一次，最后一张结束才 resume。
-// 拒绝、超时、取消、异常都必须走 end（withHumanWait 的 finally），不能留下永久暂停。
+// 按 sessionId 分区：会话 A 挂着审批卡不得冻会话 B 的子代理总超时 / DAG /
+// Goal 墙钟 / idle watchdog。begin/end 在同一会话内可重入（并行多张卡只暂停
+// 一次，最后一张结束才 resume）。拿不到 sessionId 的入口不暂停（保守）。
+// 拒绝、超时、取消、异常都必须走 end（withHumanWait 的 finally）。
 
 interface HumanWaitListener {
   pause(now: number): void;
   resume(now: number): void;
 }
 
-let humanWaitPending = 0;
-let humanWaitSince: number | undefined;
-let humanWaitAccumulatedMs = 0;
-const humanWaitListeners = new Set<HumanWaitListener>();
+interface HumanWaitScopeState {
+  pending: number;
+  since?: number;
+  accumulatedMs: number;
+  listeners: Set<HumanWaitListener>;
+}
 
-function notifyHumanWait(paused: boolean, now: number): void {
-  for (const listener of humanWaitListeners) {
+const humanWaitScopes = new Map<string, HumanWaitScopeState>();
+
+function getHumanWaitScope(sessionId: string): HumanWaitScopeState {
+  let state = humanWaitScopes.get(sessionId);
+  if (!state) {
+    state = { pending: 0, accumulatedMs: 0, listeners: new Set() };
+    humanWaitScopes.set(sessionId, state);
+  }
+  return state;
+}
+
+function notifyHumanWaitScope(state: HumanWaitScopeState, paused: boolean, now: number): void {
+  for (const listener of state.listeners) {
     if (paused) listener.pause(now);
     else listener.resume(now);
   }
 }
 
-/** 人等待开始。已在等待中则只加引用计数。 */
-export function beginHumanWait(now = Date.now()): void {
-  humanWaitPending += 1;
-  if (humanWaitPending === 1) {
-    humanWaitSince = now;
-    notifyHumanWait(true, now);
+/** 人等待开始。无 sessionId 则空操作。已在该会话等待中则只加引用计数。 */
+export function beginHumanWait(sessionId?: string, now = Date.now()): void {
+  if (!sessionId) return;
+  const state = getHumanWaitScope(sessionId);
+  state.pending += 1;
+  if (state.pending === 1) {
+    state.since = now;
+    notifyHumanWaitScope(state, true, now);
   }
 }
 
-/** 人等待结束。引用计数归零才 resume 订阅方。多余的 end 是空操作。 */
-export function endHumanWait(now = Date.now()): void {
-  if (humanWaitPending <= 0) return;
-  humanWaitPending -= 1;
-  if (humanWaitPending > 0) return;
-  if (humanWaitSince !== undefined) {
-    humanWaitAccumulatedMs += now - humanWaitSince;
-    humanWaitSince = undefined;
+/** 人等待结束。引用计数归零才 resume 该会话的订阅方。多余的 end 是空操作。 */
+export function endHumanWait(sessionId?: string, now = Date.now()): void {
+  if (!sessionId) return;
+  const state = humanWaitScopes.get(sessionId);
+  if (!state || state.pending <= 0) return;
+  state.pending -= 1;
+  if (state.pending > 0) return;
+  if (state.since !== undefined) {
+    state.accumulatedMs += now - state.since;
+    state.since = undefined;
   }
-  notifyHumanWait(false, now);
+  notifyHumanWaitScope(state, false, now);
 }
 
-/** 当前是否有人等待（审批卡 / AskUser 未结算）。 */
-export function isHumanWaitActive(): boolean {
-  return humanWaitPending > 0;
+/** 该会话当前是否有人等待（审批卡 / AskUser 未结算）。无 sessionId 视为未等待。 */
+export function isHumanWaitActive(sessionId?: string): boolean {
+  if (!sessionId) return false;
+  return (humanWaitScopes.get(sessionId)?.pending ?? 0) > 0;
 }
 
 /**
- * 进程内已结束 + 正在进行的人等待合计毫秒。
+ * 该会话已结束 + 正在进行的人等待合计毫秒。
  * 审批记录 waitMs 用同一时间源（Date.now）在 begin/end 边界取值。
  */
-export function getHumanWaitMs(now = Date.now()): number {
-  return humanWaitAccumulatedMs + (humanWaitSince !== undefined ? now - humanWaitSince : 0);
+export function getHumanWaitMs(sessionId?: string, now = Date.now()): number {
+  if (!sessionId) return 0;
+  const state = humanWaitScopes.get(sessionId);
+  if (!state) return 0;
+  return state.accumulatedMs + (state.since !== undefined ? now - state.since : 0);
 }
 
-export async function withHumanWait<T>(work: () => Promise<T>): Promise<T> {
-  beginHumanWait();
+export async function withHumanWait<T>(work: () => Promise<T>, sessionId?: string): Promise<T> {
+  beginHumanWait(sessionId);
   try {
     return await work();
   } finally {
-    endHumanWait();
+    endHumanWait(sessionId);
   }
 }
 
-function bindTimeoutToHumanWait(controller: TimeoutController): () => void {
+function bindTimeoutToHumanWait(controller: TimeoutController, sessionId?: string): () => void {
+  if (!sessionId) return () => {};
+  const state = getHumanWaitScope(sessionId);
   const listener: HumanWaitListener = {
     pause: (now) => controller.pause(now),
     resume: (now) => controller.resume(now),
   };
-  humanWaitListeners.add(listener);
-  if (humanWaitPending > 0) listener.pause(humanWaitSince ?? Date.now());
+  state.listeners.add(listener);
+  // 订阅时用 Date.now() pause，不能用 since（早于 startedAt 会把 elapsed 算成负数、拉长预算）。
+  if (state.pending > 0) listener.pause(Date.now());
   return () => {
-    humanWaitListeners.delete(listener);
+    state.listeners.delete(listener);
   };
 }
 
 /**
  * 带人等待暂停能力的超时。先 createTimeoutPromise 再订阅，
- * 否则 pause 时 timeoutId 仍是 null 会空操作。
+ * 否则 pause 时 timeoutId 仍是 null 会空操作。无 sessionId 则不订阅（保守）。
  */
 export function createHumanWaitBoundTimeout(
   ms: number,
   message?: string,
+  sessionId?: string,
 ): { controller: TimeoutController; promise: Promise<never>; unbind: () => void } {
   const controller = new TimeoutController();
   const promise = controller.createTimeoutPromise<never>(ms, message);
   void promise.catch(() => {});
-  const unbind = bindTimeoutToHumanWait(controller);
+  const unbind = bindTimeoutToHumanWait(controller, sessionId);
   return { controller, promise, unbind };
 }

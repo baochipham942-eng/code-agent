@@ -400,7 +400,11 @@ export class DAGScheduler extends EventEmitter {
 
       // 执行任务：TimeoutController 订阅人等待时钟，审批/AskUser 期间倒计时暂停。
       const timeout = task.timeout || this.config.defaultTimeout;
-      const boundTimeout = createHumanWaitBoundTimeout(timeout, `Task timeout after ${timeout}ms`);
+      const boundTimeout = createHumanWaitBoundTimeout(
+        timeout,
+        `Task timeout after ${timeout}ms`,
+        context.executionContext.sessionId,
+      );
       let output: TaskOutput;
       try {
         output = await Promise.race([

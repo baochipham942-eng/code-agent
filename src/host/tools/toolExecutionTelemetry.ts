@@ -121,9 +121,9 @@ export function clearApprovalWait(toolCallId: string | undefined): void {
  * 记一笔「正在等人审批」的开始/结束。顶层审批走 requestPermissionWithTelemetry 内部记账；
  * 工具内部审批（canUseTool 弹卡）由 ToolExecutor 签发的 context.requestPermission 包一层记账。
  */
-export function beginApprovalWait(toolCallId: string | undefined): void {
+export function beginApprovalWait(toolCallId: string | undefined, sessionId?: string): void {
   const now = Date.now();
-  beginHumanWait(now);
+  beginHumanWait(sessionId, now);
   if (!toolCallId) return;
   const state = approvalWaits.get(toolCallId) ?? { accumulatedMs: 0, pendingCount: 0 };
   state.pendingCount += 1;
@@ -131,7 +131,7 @@ export function beginApprovalWait(toolCallId: string | undefined): void {
   approvalWaits.set(toolCallId, state);
 }
 
-export function endApprovalWait(toolCallId: string | undefined): void {
+export function endApprovalWait(toolCallId: string | undefined, sessionId?: string): void {
   const now = Date.now();
   try {
     if (!toolCallId) return;
@@ -143,7 +143,7 @@ export function endApprovalWait(toolCallId: string | undefined): void {
     state.accumulatedMs += now - state.waitingSince;
     state.waitingSince = undefined;
   } finally {
-    endHumanWait(now);
+    endHumanWait(sessionId, now);
   }
 }
 
@@ -171,11 +171,11 @@ export async function requestPermissionWithTelemetry(input: {
   }
 
   let ask: PermissionAskResult & { denialSource: PermissionDenialSource | undefined };
-  beginApprovalWait(input.toolCallId);
+  beginApprovalWait(input.toolCallId, input.request.sessionId);
   try {
     ask = normalizePermissionAskResult(await input.requestPermission(input.request));
   } catch (error) {
-    endApprovalWait(input.toolCallId);
+    endApprovalWait(input.toolCallId, input.request.sessionId);
     try {
       if (approvalSpanId) {
         getTelemetryService().endSpan(approvalSpanId, 'error', {
@@ -188,7 +188,7 @@ export async function requestPermissionWithTelemetry(input: {
     }
     throw error;
   }
-  endApprovalWait(input.toolCallId);
+  endApprovalWait(input.toolCallId, input.request.sessionId);
 
   try {
     if (approvalSpanId) {

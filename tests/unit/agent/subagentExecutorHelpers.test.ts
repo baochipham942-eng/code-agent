@@ -11,9 +11,13 @@ import {
   getSubagentExecutionTimeout,
 } from '../../../src/host/agent/subagentExecutorCancellation';
 
+const SESSION_A = 'sess-a';
+const SESSION_B = 'sess-b';
+
 describe('subagentExecutor helper extraction', () => {
   afterEach(() => {
-    while (isHumanWaitActive()) endHumanWait();
+    while (isHumanWaitActive(SESSION_A)) endHumanWait(SESSION_A);
+    while (isHumanWaitActive(SESSION_B)) endHumanWait(SESSION_B);
     vi.useRealTimers();
   });
 
@@ -136,13 +140,31 @@ describe('subagentExecutor helper extraction', () => {
     const lifecycle = createSubagentCancellationLifecycle({
       agentName: 'Wait Agent',
       timeoutMs: 100,
+      sessionId: SESSION_A,
     });
 
-    beginHumanWait();
+    beginHumanWait(SESSION_A);
     await vi.advanceTimersByTimeAsync(500);
     expect(lifecycle.effectiveSignal.aborted).toBe(false);
 
-    endHumanWait();
+    endHumanWait(SESSION_A);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(lifecycle.effectiveSignal.aborted).toBe(true);
+    expect(lifecycle.effectiveSignal.reason).toBe('timeout');
+
+    lifecycle.cleanupTimer();
+    lifecycle.stopIdleWatchdog();
+  });
+
+  it('does not pause another session\'s subagent timeout or idle watchdog', async () => {
+    vi.useFakeTimers();
+    const lifecycle = createSubagentCancellationLifecycle({
+      agentName: 'Other Session Agent',
+      timeoutMs: 100,
+      sessionId: SESSION_B,
+    });
+
+    beginHumanWait(SESSION_A);
     await vi.advanceTimersByTimeAsync(100);
     expect(lifecycle.effectiveSignal.aborted).toBe(true);
     expect(lifecycle.effectiveSignal.reason).toBe('timeout');

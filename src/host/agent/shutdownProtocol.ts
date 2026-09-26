@@ -120,12 +120,13 @@ export async function initiateShutdown(
  */
 export function createTimedAbortController(
   timeoutMs: number,
-  options?: ShutdownOptions
+  options?: ShutdownOptions & { sessionId?: string }
 ): { controller: AbortController; cleanup: () => void } {
   const controller = new AbortController();
   const bound = createHumanWaitBoundTimeout(
     timeoutMs,
     `[${options?.label || 'agent'}] Timeout reached (${timeoutMs}ms)`,
+    options?.sessionId,
   );
   void bound.promise.catch(() => {
     if (!controller.signal.aborted) {

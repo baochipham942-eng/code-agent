@@ -28,7 +28,7 @@ describe('TelemetryService RunTraceContext authority', () => {
   });
 
   afterEach(() => {
-    while (isHumanWaitActive()) endHumanWait();
+    while (isHumanWaitActive('session-1')) endHumanWait('session-1');
   });
 
   it('uses explicit/active run context and never a mutable process current trace', async () => {

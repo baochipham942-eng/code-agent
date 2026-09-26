@@ -114,7 +114,7 @@ export class WorkflowLaunchApprovalGate {
   }
 
   async requestApproval(params: { request: WorkflowLaunchRequest }): Promise<WorkflowLaunchApprovalResult> {
-    return withApprovalTrace('workflow_launch', () => this.requestApprovalInternal(params));
+    return withApprovalTrace('workflow_launch', () => this.requestApprovalInternal(params), params.request.sessionId);
   }
 
   private async requestApprovalInternal(params: { request: WorkflowLaunchRequest }): Promise<WorkflowLaunchApprovalResult> {

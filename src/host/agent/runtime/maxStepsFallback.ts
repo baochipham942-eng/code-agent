@@ -152,7 +152,7 @@ export async function ensureMaxStepsWrapUp(
 }
 
 
-export function bindGoalWallClock(budgetMs: number | undefined, runStartTime: () => number): {
+export function bindGoalWallClock(budgetMs: number | undefined, runStartTime: () => number, sessionId?: string): {
   getElapsedMs: () => number;
   release: () => void;
 } {
@@ -162,7 +162,8 @@ export function bindGoalWallClock(budgetMs: number | undefined, runStartTime: ()
       release: () => {},
     };
   }
-  const wallClock = createHumanWaitBoundTimeout(budgetMs, 'goal wall-clock budget');
+  // ponytail: 墙钟从 bind 那一刻起算，不含 initializeRun 到 bind 的差值（通常毫秒级）。
+  const wallClock = createHumanWaitBoundTimeout(budgetMs, 'goal wall-clock budget', sessionId);
   return {
     getElapsedMs: () => wallClock.controller.getElapsedMs(),
     release: () => {

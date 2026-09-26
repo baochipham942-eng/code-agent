@@ -87,7 +87,9 @@ beforeEach(() => {
 afterEach(() => {
   void cleanupVoiceQuestionRoute?.();
   cleanupVoiceQuestionRoute = undefined;
-  while (isHumanWaitActive()) endHumanWait();
+  for (const sessionId of ['voice-session', 'prompt-session', 'headless-voice-session', 'cost-session']) {
+    while (isHumanWaitActive(sessionId)) endHumanWait(sessionId);
+  }
   vi.useRealTimers();
 });
 

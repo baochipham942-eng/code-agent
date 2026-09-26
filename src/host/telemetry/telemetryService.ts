@@ -570,10 +570,12 @@ export function getTelemetryService(): TelemetryService {
 export async function withApprovalTrace<T>(
   approvalKind: string,
   callback: () => Promise<T>,
+  sessionId?: string,
 ): Promise<T> {
-  const waitMsBefore = getHumanWaitMs();
-  return withHumanWait(async () => {
-    const waitMs = () => getHumanWaitMs() - waitMsBefore;
+  const scope = sessionId ?? getActiveRunTraceContext()?.sessionId;
+  const waitMsBefore = getHumanWaitMs(scope);
+  const execute = async () => {
+    const waitMs = () => getHumanWaitMs(scope) - waitMsBefore;
     const parent = getActiveRunTraceContext();
     if (!parent) return callback();
     const child = createChildRunTraceContext(parent);
@@ -623,5 +625,7 @@ export async function withApprovalTrace<T>(
         throw error;
       }
     });
-  });
+  };
+  if (!scope) return execute();
+  return withHumanWait(execute, scope);
 }

@@ -43,7 +43,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 describe('ToolExecutor in-tool approval wait accounting', () => {
   afterEach(() => {
     clearApprovalWait('call-approval-wait');
-    while (isHumanWaitActive()) endHumanWait();
+    while (isHumanWaitActive('session-approval-wait')) endHumanWait('session-approval-wait');
     resolverState.definition = undefined;
     resolverState.execute.mockReset();
   });

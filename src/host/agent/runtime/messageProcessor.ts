@@ -485,16 +485,20 @@ export class MessageProcessor {
       });
     }
 
-    // 交付物落盘核对（issue #1998）：声称/本 run 声明的交付物必须在盘上存在且非空；缺漏有界补一轮，仍缺在 final 如实说明。
+    // 交付物落盘核对（issue #1998）：声称/本 run 声明的交付物必须在盘上存在且非空，
+    // 且文档类正文无残留占位符（N-ARTIFACT-PLACEHOLDER-GATE）；缺漏有界补一轮，仍缺在 final 如实说明。
+    // artifact 槽透传核对结果（PR#2079 Round 2 Nit）：闸在落定结论上写入，turnOutcomeStamp
+    // 收尾复用同一份结论，不把 office 交付物重新解析一遍；repair/forced-final 不写。
     let deliverableCheckedContent = gated.content;
     if (!isForcedFinalTextPass) {
-      const gate = runDeliverableDiskCheckGate({
+      const gate = await runDeliverableDiskCheckGate({
         workingDirectory: this.ctx.workingDirectory,
         messages: this.ctx.messages,
         declaredDeliverables: this.ctx.artifact?.declaredDeliverables,
         finalText: gated.content,
         repairsUsed: this.guardState.deliverableRepairCount,
         nudgeManager: this.ctx.nudgeManager,
+        artifact: this.ctx.artifact,
       });
       if (gate.action === 'repair') {
         this.guardState.deliverableRepairCount += 1;

@@ -54,6 +54,17 @@ export interface DeclaredDeliverables {
 }
 
 /**
+ * 收尾闸最近一次交付物核对（PR#2079 Round 2 Nit）：messageProcessor 闸口写入，
+ * turnOutcomeStamp 收尾消费同一份结论——不复用就会把 office 交付物重新解析一遍。
+ * checkedAtMs 与 declaredDeliverables.declaredAtMs 同一把 run 域尺（不早于本 run
+ * 最后一条 user 消息才可信），防止上一 run 的核对结果记到本轮账上。
+ */
+export interface LastDeliverableCheck {
+  result: import('./deliverableDiskCheck').DeliverableDiskCheckResult;
+  checkedAtMs: number;
+}
+
+/**
  * ADR-038 批3e: artifact 域共享状态切片。
  * 原 RuntimeContext 顶层散字段收敛于此：字段私有、读走 getter、写走显式方法，
  * "谁在写"从 grep 考古变成方法调用链。
@@ -63,6 +74,7 @@ export class ArtifactState {
   /** Last interactive artifact path that passed runtime/browser validation in this run. */
   private _validationPassedTargetFile?: string;
   private _declaredDeliverables?: DeclaredDeliverables;
+  private _lastDeliverableCheck?: LastDeliverableCheck;
   /** 每目标校验失败状态（原 RuntimeContext expando `artifactValidationFailures`，批3e 漏网字段收编） */
   private readonly _validationFailures = new Map<string, ArtifactValidationFailureState>();
 
@@ -80,6 +92,10 @@ export class ArtifactState {
 
   get declaredDeliverables(): DeclaredDeliverables | undefined {
     return this._declaredDeliverables;
+  }
+
+  get lastDeliverableCheck(): LastDeliverableCheck | undefined {
+    return this._lastDeliverableCheck;
   }
 
   // --- repair guard 生命周期（W-slot）---
@@ -159,6 +175,13 @@ export class ArtifactState {
     const previous = this._declaredDeliverables;
     this._declaredDeliverables = next;
     return previous;
+  }
+
+  // --- 收尾闸核对结果透传（PR#2079 Round 2）---
+
+  /** 收尾闸只在落定结论（pass/预算用尽）上写入；repair/跳闸不写，stamp 侧按 checkedAtMs 回落现场核对 */
+  setLastDeliverableCheck(result: LastDeliverableCheck['result'], checkedAtMs: number): void {
+    this._lastDeliverableCheck = { result, checkedAtMs };
   }
 
   /** @internal 测试专用：按种子构造任意初始状态，生产代码禁止调用 */

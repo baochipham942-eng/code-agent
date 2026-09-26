@@ -306,9 +306,9 @@ export class TaskManager extends EventEmitter {
     if (existingHandle && existingHandle.context.sessionId !== sessionId) throw new Error(`Durable run ${runId} belongs to session ${existingHandle.context.sessionId}`);
     const source = [...messages].reverse().find((message) => message.role === 'user' && isInferenceHistoryMessage(message));
     if (!source) throw new Error(`Durable run ${runId} has no source user message`);
-    const currentState = this.sessionStates.get(sessionId);
-    if (['running', 'paused', 'queued', 'cancelling'].includes(currentState?.status ?? '')) {
-      throw new Error(`Session ${sessionId} is already ${currentState.status}`);
+    const currentStatus = this.sessionStates.get(sessionId)?.status ?? '';
+    if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus)) {
+      throw new Error(`Session ${sessionId} is already ${currentStatus}`);
     }
 
     await this.semaphore.acquire(); this.updateSessionState(sessionId, { status: 'running', startTime: Date.now() });

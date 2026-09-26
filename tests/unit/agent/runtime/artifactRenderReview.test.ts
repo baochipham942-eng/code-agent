@@ -372,13 +372,12 @@ describe('xlsx structure check', () => {
     const filePath = path.join(workRoot, 'chart-only.xlsx');
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('图');
-    const imageId = workbook.addImage({
-      buffer: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-        'base64',
-      ),
-      extension: 'png',
-    });
+    const pngPath = path.join(workRoot, 'pixel.png');
+    writeFileSync(pngPath, Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    ));
+    const imageId = workbook.addImage({ filename: pngPath, extension: 'png' });
     sheet.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 120, height: 80 } });
     await workbook.xlsx.writeFile(filePath);
     expect(await checkXlsxStructure(filePath)).toEqual([]);

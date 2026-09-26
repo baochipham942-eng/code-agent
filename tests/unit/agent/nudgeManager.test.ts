@@ -402,6 +402,49 @@ describe('NudgeManager', () => {
       expect(injectedMessage).not.toContain('MUST finish the items you can still do');
     });
 
+    it('still runs the missing-file check when every task is waiting on the user', () => {
+      manager.reset(['src/app.ts'], '改 app 并等我确认方案', '/tmp/test', []);
+      manager.recordTaskManagerUse();
+      mockGetIncompleteTasks.mockReturnValue([{
+        id: 't1',
+        subject: '确认方案',
+        status: 'needs_decision',
+        blockedReason: '两个方案等你选',
+      }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['edit_file'],
+      });
+
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      const messages = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0] as string);
+      expect(messages.some((message) => message.includes('这些任务在等用户'))).toBe(true);
+      expect(messages.some((message) => message.includes('file-completion-check'))).toBe(true);
+    });
+
+    it('keeps nudging blocked handback tasks instead of treating them as waiting on the user', () => {
+      manager.reset([], '继续子代理交回的活', '/tmp/test', []);
+      manager.recordTaskManagerUse();
+      mockGetIncompleteTasks.mockReturnValue([{
+        id: 't1',
+        subject: '核实子代理交回的改动',
+        status: 'blocked',
+        blockedReason: '子代理结束时未收口',
+        blockedReasonCategory: 'handback',
+      }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['TaskManager'],
+      });
+
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('MUST finish the items you can still do');
+      expect(injectedMessage).not.toContain('这些任务在等用户');
+    });
+
     it('does not re-enter when every remaining task is waiting on the user', () => {
       manager.reset([], '帮我订酒店', '/tmp/test', []);
       manager.recordTaskManagerUse();

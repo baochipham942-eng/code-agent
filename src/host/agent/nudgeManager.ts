@@ -13,7 +13,6 @@ import type { ReadOnlyTaskIntent } from './antiPattern/detector';
 import { GoalTracker } from './goalTracker';
 import { getSessionTodos as getCurrentTodos } from './todoParser';
 import { getIncompleteTasks } from '../services/planning/taskStore';
-import { statusRequiresWaitReason } from '../../shared/contract/planning';
 import { READ_ONLY_TOOLS, WRITE_TOOLS, VERIFY_TOOLS, type TaskProgressState } from './loopTypes';
 import type { ContextInjectionSource } from '../context/contextEventLedger';
 
@@ -385,10 +384,11 @@ export class NudgeManager {
           itemList.push(...incompleteTasks.map(t => `- [Task #${t.id}] ${t.subject} (${t.status})`));
         }
         const combinedList = itemList.join('\n');
-        const waitingOnUser = incompleteTasks.filter((task) => statusRequiresWaitReason(task.status));
-        const stillWorking = incompleteTasks.filter((task) => (
-          task.status === 'pending' || task.status === 'in_progress'
+        // 只有 needs_decision / user_action 算「等用户」；blocked（含子代理 handback）仍要督办收口（ADR-050）。
+        const waitingOnUser = incompleteTasks.filter((task) => (
+          task.status === 'needs_decision' || task.status === 'user_action'
         ));
+        const stillWorking = incompleteTasks.filter((task) => !waitingOnUser.includes(task));
         const waitingOnly = stillWorking.length === 0 && incompleteTodos.length === 0 && waitingOnUser.length > 0;
 
         // 全在等用户：列出一次就停，不要 return true 把模型反复叫醒复述同一份清单。
@@ -399,16 +399,14 @@ export class NudgeManager {
             ctx.injectSystemMessage(
               `<task-completion-check>\n`
                 + `这些任务在等用户，不要标 completed，也不要宣称全部做完：\n${combinedList}\n\n`
-                + `needs_decision = 等用户在选项间拍板；user_action = 等用户亲自操作；blocked = 外部障碍卡住。\n`
+                + `needs_decision = 等用户在选项间拍板；user_action = 等用户亲自操作。\n`
                 + `最终回复必须列出谁在等、等什么。用户沉默不等于已选定。\n`
                 + `</task-completion-check>`,
               'nudge',
             );
           }
-          return false;
-        }
-
-        if (this.todoNudgeCount < reentryCap) {
+          // 不 return：继续走后面的 P3/F4/P4/P5 检查，等用户的任务不能让产物类检查失效。
+        } else if (this.todoNudgeCount < reentryCap) {
           this.todoNudgeCount++;
           logger.debug(`[NudgeManager] Incomplete items detected, nudge ${this.todoNudgeCount}/${reentryCap}`);
           logCollector.agent('INFO', `Incomplete items detected: ${totalIncomplete} items`, {

@@ -1041,6 +1041,36 @@ describe('Neo Tag runtime helpers', () => {
     expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
   });
 
+  it('终态契约：skill 注入的 user 消息不截断本轮最终回复', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => {
+          sessionMessages.push(
+            { id: 'msg_source', role: 'user', content: '@neo 干活', timestamp: 1 },
+            { id: 'assistant_tool', role: 'assistant', content: '', timestamp: 2 },
+            { id: 'skill_status', role: 'user', content: 'Loading skill', timestamp: 3, source: 'skill' },
+            {
+              id: 'skill_instructions',
+              role: 'user',
+              content: 'Skill instructions',
+              timestamp: 4,
+              isMeta: true,
+              source: 'skill',
+            },
+            { id: 'assistant_ok', role: 'assistant', content: '技能执行完成，结果如下。', timestamp: 5 },
+          );
+        }),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+      },
+    });
+
+    expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
+  });
+
   it('终态契约：只有工具输出没有正文（几百行文件清单收尾）不算正向证据', async () => {
     const h = terminalHarness();
     await launchApprovedNeoWorkCard({

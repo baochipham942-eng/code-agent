@@ -988,18 +988,27 @@ describe('Neo Tag runtime helpers', () => {
     expect(h.blockedReasons.at(-1)).toContain('没有生成最终回复');
   });
 
-  it('resolveNeoTagRunOutcome 优先级：state error > cancelled > failure > 无回复 > 完成', () => {
-    const base = { failure: null, cancelled: false, hasFinalReply: true };
-    expect(resolveNeoTagRunOutcome({ ...base, state: { status: 'paused' } })).toEqual({ status: 'waiting_for_user' });
-    expect(resolveNeoTagRunOutcome({ ...base, state: { status: 'error', error: 'boom' } }).status).toBe('failed');
-    expect(resolveNeoTagRunOutcome({ ...base, state: { status: 'idle' }, cancelled: true }).status).toBe('failed');
-    expect(resolveNeoTagRunOutcome({
-      ...base,
-      state: { status: 'idle' },
-      failure: { message: '401', failureCode: 'MODEL_AUTH' },
-    }).status).toBe('failed');
-    expect(resolveNeoTagRunOutcome({ ...base, state: { status: 'idle' }, hasFinalReply: false }).status).toBe('failed');
-    expect(resolveNeoTagRunOutcome({ ...base, state: { status: 'idle' } })).toEqual({ status: 'in_result_review' });
+  it('终态契约：run 暂停等待用户输入 → waiting_for_user（受阻态，不算完成也不算失败）', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: (() => {
+        // context 检查阶段必须空闲（paused 会被判「会话忙」拒绝启动），
+        // run 结束后进入 paused（run 中途等审批、startTask 挂起后 resume 收尾的形态）
+        let state: { status: string; error?: string } = { status: 'idle' };
+        return {
+          startTask: vi.fn(async () => {
+            state = { status: 'paused' };
+          }),
+          getSessionState: vi.fn(() => state),
+        };
+      })(),
+    });
+
+    expect(h.statuses).toEqual(['queued', 'working', 'waiting_for_user']);
+    expect(h.deltas.at(-1)?.nextStep).toContain('pending runtime request');
   });
 
   it('returns an empty changedFiles result when no approved files actually change', async () => {

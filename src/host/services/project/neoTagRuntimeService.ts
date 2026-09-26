@@ -183,7 +183,7 @@ interface NeoTagRunFailure {
  * 优先级（高→低）：session 显式 error → 运行被取消 → 旁听到终态失败 →
  * 没有最终回复（无正向证据）→ 完成（in_result_review）。
  */
-export interface NeoTagRunOutcomeInput {
+interface NeoTagRunOutcomeInput {
   state: { status: string; error?: string } | null;
   failure: NeoTagRunFailure | null;
   cancelled: boolean;
@@ -191,7 +191,7 @@ export interface NeoTagRunOutcomeInput {
   hasFinalReply: boolean;
 }
 
-export type NeoTagRunOutcome =
+type NeoTagRunOutcome =
   | { status: 'failed'; reason: string }
   | { status: 'waiting_for_user' }
   | { status: 'in_result_review' };
@@ -214,7 +214,7 @@ function blockedReasonForFailure(failure: { message: string; failureCode?: strin
   }
 }
 
-export function resolveNeoTagRunOutcome(input: NeoTagRunOutcomeInput): NeoTagRunOutcome {
+function resolveNeoTagRunOutcome(input: NeoTagRunOutcomeInput): NeoTagRunOutcome {
   if (input.state?.status === 'paused') return { status: 'waiting_for_user' };
   if (input.state?.status === 'error') {
     return {

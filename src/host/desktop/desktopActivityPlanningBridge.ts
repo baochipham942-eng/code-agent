@@ -40,7 +40,7 @@ function normalizeStepContent(content: string): string {
 }
 
 function stripWaitAnnotation(content: string): string {
-  return content.replace(/（等你拍板|等你操作）/g, '').trim();
+  return content.replace(/（(?:等你拍板|等你操作)）/g, '').trim();
 }
 
 function stepLookupKey(content: string): string {

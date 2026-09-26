@@ -299,6 +299,25 @@ describe('desktop recovery wait-state mapping', () => {
     expect(planningService.plan.getCurrentTask()?.step.content).toBe('起草行程');
   });
 
+  it('does not duplicate an annotated wait step when the same tasks are synced again', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'task-manager-plan-'));
+    planTempDirs.push(dir);
+    const planningService = createPlanningService(dir, `session-${crypto.randomUUID()}`);
+    const tasks = [
+      desktopTask({ id: 'decide-hotel', subject: '选择酒店方案', status: 'needs_decision', blockedReason: '在两家酒店间选' }),
+      desktopTask({ id: 'sign-contract', subject: '线下签合同', status: 'user_action', blockedReason: '需要本人签字' }),
+    ];
+
+    await syncDesktopTasksToPlanningService(planningService, tasks);
+    await syncDesktopTasksToPlanningService(planningService, tasks);
+
+    const reloaded = await planningService.plan.read();
+    expect(reloaded!.phases.flatMap((phase) => phase.steps.map((step) => step.content))).toEqual([
+      '选择酒店方案（等你拍板）',
+      '线下签合同（等你操作）',
+    ]);
+  });
+
   it('round-trips blocked step status through ✖', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'task-manager-plan-'));
     planTempDirs.push(dir);

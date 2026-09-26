@@ -34,7 +34,6 @@ export default defineConfig({
       // 混在默认全量跑会导致 Dock 图标乱跳、计算器弹出。需要显式指定文件路径单独跑：
       //   npx vitest run tests/smoke/<name>.smoke.test.ts
       '**/tests/smoke/**',
-      '**/tests/manual/**',
     ],
     coverage: {
       provider: 'v8',

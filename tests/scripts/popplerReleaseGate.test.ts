@@ -107,7 +107,9 @@ function invocationBoundarySource(extraSource = '') {
 import path from 'node:path';
 const pdfPath = '/tmp/deck.pdf';
 const pdftoppm = resolveHelperBinary(path.join('poppler', 'bin', 'pdftoppm'));
-execSync(\`"\${pdftoppm}" -jpeg "\${pdfPath}"\`);
+const args = ['-jpeg'];
+args.push(pdfPath, '/tmp/deck');
+execFileAsync(pdftoppm, args, { encoding: 'utf8' });
 ${extraSource}
 `;
 }
@@ -151,7 +153,9 @@ import path from 'node:path';
 const pdfPath = '/tmp/deck.pdf';
 const sidecarPath = path.join('poppler', 'bin', 'pdftoppm');
 const pdftoppm = resolveHelperBinary('pdftoppm');
-execSync(\`"\${pdftoppm}" -jpeg "\${pdfPath}"\`);
+const args = ['-jpeg'];
+args.push(pdfPath, '/tmp/deck');
+execFileAsync(pdftoppm, args, { encoding: 'utf8' });
 `;
 
     const result = runInvocationBoundaryGate(source);

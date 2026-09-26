@@ -107,7 +107,7 @@ function parseSeverity(value: unknown): ArtifactRenderIssue['severity'] {
   return value === 'high' || value === 'low' || value === 'medium' ? value : 'medium';
 }
 
-function parsePageReview(text: string): { issues: Array<Omit<ArtifactRenderIssue, 'file' | 'page'>> } {
+function parsePageReview(text: string): { parsed: boolean; issues: Array<Omit<ArtifactRenderIssue, 'file' | 'page'>> } {
   const tryParse = (raw: string): unknown => {
     try { return JSON.parse(raw) as unknown; } catch { return undefined; }
   };
@@ -121,15 +121,24 @@ function parsePageReview(text: string): { issues: Array<Omit<ArtifactRenderIssue
     if (brace) parsed = tryParse(brace[0]);
   }
   if (!isRecord(parsed) || !Array.isArray(parsed.issues)) {
-    return { issues: [] };
+    return { parsed: false, issues: [] };
   }
   return {
+    parsed: true,
     issues: parsed.issues.filter(isRecord).map((issue) => ({
       kind: parseIssueKind(issue.kind),
       description: String(issue.description || ''),
       severity: parseSeverity(issue.severity),
     })),
   };
+}
+
+function isRegularFile(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
 }
 
 async function defaultVlm(prompt: string, imagePath: string): Promise<string> {
@@ -178,7 +187,7 @@ async function rasterizeDeliverable(
   const baseName = path.basename(filePath, path.extname(filePath));
   const pdfPath = ext === 'pdf'
     ? filePath
-    : convertOfficeToPdf(filePath, path.join(screenshotDir, '_pdf'));
+    : await convertOfficeToPdf(filePath, path.join(screenshotDir, '_pdf'));
   return rasterizePdfToImages(pdfPath, screenshotDir, baseName, {
     maxPages: ARTIFACT_RENDER_REVIEW.MAX_PAGES,
   });
@@ -195,12 +204,13 @@ export async function reviewRenderableDeliverables(
   files: readonly string[],
   deps: ArtifactRenderReviewDeps = {},
 ): Promise<ArtifactRenderReviewStamp> {
-  if (files.length === 0) {
+  const existingFiles = files.filter(isRegularFile);
+  if (existingFiles.length === 0) {
     return { status: 'not_applicable', issues: [], filesReviewed: [] };
   }
 
   const libreOfficeAvailable = deps.libreOfficeAvailable ?? isLibreOfficeAvailable;
-  const needsOffice = files.some((filePath) => extensionOf(filePath) !== 'pdf');
+  const needsOffice = existingFiles.some((filePath) => extensionOf(filePath) !== 'pdf');
   if (needsOffice && !libreOfficeAvailable()) {
     logger.warn('LibreOffice not available, skipping visual review');
     return { status: 'skipped_no_libreoffice', issues: [], filesReviewed: [] };
@@ -214,7 +224,7 @@ export async function reviewRenderableDeliverables(
   let vlmCalls = 0;
   let vlmResponded = false;
 
-  for (const filePath of files) {
+  for (const filePath of existingFiles) {
     if (extensionOf(filePath) === 'xlsx') {
       issues.push(...await checkXlsx(filePath));
     }
@@ -229,8 +239,9 @@ export async function reviewRenderableDeliverables(
         const pageNumber = index + 1;
         const response = await vlm(pageReviewPrompt(pageNumber, extensionOf(filePath)), pages[index]);
         if (!response.trim()) continue;
-        vlmResponded = true;
         const parsed = parsePageReview(response);
+        if (!parsed.parsed) continue;
+        vlmResponded = true;
         for (const issue of parsed.issues) {
           issues.push({ ...issue, file: filePath, page: pageNumber });
         }
@@ -254,9 +265,7 @@ export async function reviewRenderableDeliverables(
     if (vlmCalls >= ARTIFACT_RENDER_REVIEW.MAX_VLM_CALLS_PER_DELIVERY) break;
   }
 
-  const blocking = issues.filter((issue) =>
-    issue.kind === 'overflow' || issue.kind === 'overlap' || issue.severity !== 'low');
-  if (blocking.length > 0) {
+  if (needsRevision(issues)) {
     return { status: 'failed', issues, filesReviewed };
   }
   if (filesReviewed.length > 0 && vlmCalls > 0 && !vlmResponded) {

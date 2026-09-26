@@ -29,7 +29,7 @@ const visionMock = vi.hoisted(() => ({
 
 const rasterMock = vi.hoisted(() => ({
   isLibreOfficeAvailable: vi.fn(() => true),
-  convertOfficeToPdf: vi.fn((input: string) => input.replace(/\.docx$/i, '.pdf')),
+  convertOfficeToPdf: vi.fn(async (input: string) => input.replace(/\.docx$/i, '.pdf')),
   rasterizePdfToImages: vi.fn(async (_pdf: string, outputDir: string) => {
     const page = path.join(outputDir, 'overflow-1.jpg');
     writeFileSync(page, 'img');

@@ -20,11 +20,15 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
 
-const execSyncMock = vi.hoisted(() => vi.fn());
+const execFileMock = vi.hoisted(() => vi.fn());
+const execFileSyncMock = vi.hoisted(() => vi.fn());
 const resolveHelperBinaryMock = vi.hoisted(() => vi.fn());
 const resolvePresentationPackageIndexMock = vi.hoisted(() => vi.fn());
 
-vi.mock('child_process', () => ({ execSync: execSyncMock }));
+vi.mock('child_process', () => ({
+  execFile: execFileMock,
+  execFileSync: execFileSyncMock,
+}));
 vi.mock('../../../../../../src/host/runtime/runtimeAssetResolver', () => ({
   resolveHelperBinary: resolveHelperBinaryMock,
 }));
@@ -49,7 +53,8 @@ function makeDir(files: string[]): string {
 }
 
 beforeEach(() => {
-  execSyncMock.mockReset();
+  execFileMock.mockReset();
+  execFileSyncMock.mockReset();
   resolveHelperBinaryMock.mockReset();
   resolvePresentationPackageIndexMock.mockReset();
 });
@@ -98,6 +103,12 @@ function writePages(
   }
 }
 
+function callbackOf(options: unknown, cb: unknown): ((err: Error | null, stdout?: string, stderr?: string) => void) | undefined {
+  if (typeof options === 'function') return options as (err: Error | null, stdout?: string, stderr?: string) => void;
+  if (typeof cb === 'function') return cb as (err: Error | null, stdout?: string, stderr?: string) => void;
+  return undefined;
+}
+
 function installConversionExec(
   fixture: ConversionFixture,
   handlers: {
@@ -106,27 +117,61 @@ function installConversionExec(
     qlmanage?: () => void;
   },
 ): void {
-  execSyncMock.mockImplementation((command: string) => {
-    if (command.includes('--convert-to pdf')) {
+  const ok = (callback: ReturnType<typeof callbackOf>) => {
+    if (callback) {
+      process.nextTick(() => callback(null, '', ''));
+      return;
+    }
+    return '';
+  };
+  const fail = (error: Error, callback: ReturnType<typeof callbackOf>) => {
+    if (callback) {
+      process.nextTick(() => callback(error));
+      return;
+    }
+    throw error;
+  };
+
+  execFileSyncMock.mockImplementation((file: string, args: string[] = []) => {
+    if (file === 'which' && args[0] === 'magick') return '/mock/magick\n';
+    if (file === 'which' && args[0] === 'convert') return '/mock/magick\n';
+    throw new Error(`Unexpected sync command: ${file} ${args.join(' ')}`);
+  });
+
+  execFileMock.mockImplementation((file: string, args: string[] = [], options?: unknown, cb?: unknown) => {
+    const callback = callbackOf(options, cb);
+    const argv = Array.isArray(args) ? args : [];
+    if (argv.includes('--convert-to')) {
       const pdfDir = path.join(fixture.screenshotDir, '_pdf');
       mkdirSync(pdfDir, { recursive: true });
       writeFileSync(path.join(pdfDir, `${path.basename(fixture.pptxPath, '.pptx')}.pdf`), 'pdf');
-      return '';
+      return ok(callback);
     }
-    if (command.includes(' -jpeg ')) {
-      handlers.pdftoppm();
-      return '';
+    if (argv.includes('-jpeg')) {
+      try {
+        handlers.pdftoppm();
+        return ok(callback);
+      } catch (error) {
+        return fail(error as Error, callback);
+      }
     }
-    if (command.startsWith('which magick')) return '/mock/magick\n';
-    if (command.includes('/mock/magick')) {
-      handlers.imageMagick?.();
-      return '';
+    if (file === '/mock/magick' || path.basename(String(file)) === 'magick' || path.basename(String(file)) === 'convert') {
+      try {
+        handlers.imageMagick?.();
+        return ok(callback);
+      } catch (error) {
+        return fail(error as Error, callback);
+      }
     }
-    if (command.startsWith('qlmanage')) {
-      handlers.qlmanage?.();
-      return '';
+    if (file === 'qlmanage' || path.basename(String(file)) === 'qlmanage') {
+      try {
+        handlers.qlmanage?.();
+        return ok(callback);
+      } catch (error) {
+        return fail(error as Error, callback);
+      }
     }
-    throw new Error(`Unexpected command: ${command}`);
+    return fail(new Error(`Unexpected command: ${file} ${argv.join(' ')}`), callback);
   });
 }
 
@@ -243,7 +288,7 @@ describe('convertToScreenshots — renderer 生命周期与页数对账', () => 
 
     await expect(convertToScreenshots(fixture.pptxPath, fixture.screenshotDir))
       .rejects.toThrow(/expected 13/i);
-    expect(execSyncMock.mock.calls.some(([command]) => String(command).startsWith('qlmanage'))).toBe(true);
+    expect(execFileMock.mock.calls.some(([file]) => file === 'qlmanage')).toBe(true);
   });
 });
 
@@ -252,9 +297,17 @@ describe('reviewPresentation — 独立临时目录生命周期', () => {
     const fixture = makeConversionFixture();
     const before = new Set(readdirSync(tmpdir()).filter(name => name.startsWith('ppt-visual-review-')));
     resolvePresentationPackageIndexMock.mockResolvedValue(packageIndexOf(1));
-    execSyncMock.mockImplementation((command: string) => {
-      if (command.includes('--convert-to pdf')) throw new Error('LibreOffice crashed');
-      throw new Error(`Unexpected command: ${command}`);
+    execFileMock.mockImplementation((file: string, args: string[] = [], options?: unknown, cb?: unknown) => {
+      const callback = callbackOf(options, cb);
+      const argv = Array.isArray(args) ? args : [];
+      const error = argv.includes('--convert-to')
+        ? new Error('LibreOffice crashed')
+        : new Error(`Unexpected command: ${file} ${argv.join(' ')}`);
+      if (callback) {
+        process.nextTick(() => callback(error));
+        return;
+      }
+      throw error;
     });
 
     await expect(reviewPresentation(fixture.pptxPath, async () => '{}'))

@@ -60,7 +60,7 @@ export async function convertToScreenshots(
   }
 
   const pdfDir = path.join(screenshotDir, '_pdf');
-  const pdfPath = convertOfficeToPdf(pptxPath, pdfDir);
+  const pdfPath = await convertOfficeToPdf(pptxPath, pdfDir);
   const pngPaths = await rasterizePdfToImages(pdfPath, screenshotDir, baseName, { expectedPageCount });
   logger.debug(`Generated ${pngPaths.length} screenshots`);
 

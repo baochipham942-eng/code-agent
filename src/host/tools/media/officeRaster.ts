@@ -2,27 +2,45 @@
 // Office rasterization — LibreOffice → PDF → per-page JPEG
 // Shared by PPT visualReview and docx/pdf/xlsx artifact render review.
 // pdftoppm stays an independent-process sidecar (ADR-040 C2a).
+// External binaries are invoked with execFile argument arrays (no shell).
 // ============================================================================
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import { resolveHelperBinary } from '../../runtime/runtimeAssetResolver';
 import { LIBREOFFICE_SEARCH_PATHS, LIBREOFFICE_PATH_ENV, CONVERT_TIMEOUTS, PDF_RENDER } from './ppt/constants';
 
-export function isLibreOfficeAvailable(): boolean {
-  try {
-    const envPath = process.env[LIBREOFFICE_PATH_ENV];
-    if (envPath && fs.existsSync(envPath)) return true;
+function execFileAsync(
+  file: string,
+  args: string[],
+  options: { timeout: number; encoding: BufferEncoding },
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, options, (err, stdout) => {
+      if (err) reject(err);
+      else resolve(String(stdout));
+    });
+  });
+}
 
-    for (const p of LIBREOFFICE_SEARCH_PATHS) {
-      if (fs.existsSync(p)) return true;
-    }
-    execSync('which soffice 2>/dev/null || which libreoffice 2>/dev/null', { encoding: 'utf8' });
-    return true;
+function whichSync(bin: string): string | null {
+  try {
+    const resolved = execFileSync('which', [bin], { encoding: 'utf8' }).trim();
+    return resolved || null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export function isLibreOfficeAvailable(): boolean {
+  const envPath = process.env[LIBREOFFICE_PATH_ENV];
+  if (envPath && fs.existsSync(envPath)) return true;
+
+  for (const p of LIBREOFFICE_SEARCH_PATHS) {
+    if (fs.existsSync(p)) return true;
+  }
+  return whichSync('soffice') !== null || whichSync('libreoffice') !== null;
 }
 
 function getLibreOfficePath(): string {
@@ -32,11 +50,9 @@ function getLibreOfficePath(): string {
   for (const p of LIBREOFFICE_SEARCH_PATHS) {
     if (fs.existsSync(p)) return p;
   }
-  try {
-    return execSync('which soffice 2>/dev/null || which libreoffice 2>/dev/null', { encoding: 'utf8' }).trim();
-  } catch {
-    throw new Error(`LibreOffice not found. Install: brew install --cask libreoffice, or set ${LIBREOFFICE_PATH_ENV} env var`);
-  }
+  const resolved = whichSync('soffice') ?? whichSync('libreoffice');
+  if (resolved) return resolved;
+  throw new Error(`LibreOffice not found. Install: brew install --cask libreoffice, or set ${LIBREOFFICE_PATH_ENV} env var`);
 }
 
 /** 从页图文件名尾部抽页码：`deck-7.jpg` → 7、`deck-07.jpg` → 7。抽不到的排到末尾。 */
@@ -90,22 +106,19 @@ export function collectPageImages(outputDir: string, baseName: string): string[]
 export function resolvePdftoppm(): string | null {
   const bundled = resolveHelperBinary(path.join('poppler', 'bin', 'pdftoppm'));
   if (bundled && fs.existsSync(bundled)) return bundled;
-  try {
-    return execSync('which pdftoppm', { encoding: 'utf8' }).trim() || null;
-  } catch {
-    return null;
-  }
+  return whichSync('pdftoppm');
 }
 
-export function convertOfficeToPdf(inputPath: string, pdfDir: string): string {
+export async function convertOfficeToPdf(inputPath: string, pdfDir: string): Promise<string> {
   if (!fs.existsSync(pdfDir)) {
     fs.mkdirSync(pdfDir, { recursive: true });
   }
   const soffice = getLibreOfficePath();
   try {
-    execSync(
-      `"${soffice}" --headless --convert-to pdf --outdir "${pdfDir}" "${inputPath}"`,
-      { timeout: CONVERT_TIMEOUTS.PDF_CONVERT, encoding: 'utf8' }
+    await execFileAsync(
+      soffice,
+      ['--headless', '--convert-to', 'pdf', '--outdir', pdfDir, inputPath],
+      { timeout: CONVERT_TIMEOUTS.PDF_CONVERT, encoding: 'utf8' },
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -129,6 +142,7 @@ export interface RasterizePdfOptions {
 
 /**
  * PDF → 每页 JPEG。优先 poppler(pdftoppm)，降级 ImageMagick，最后 qlmanage 单页。
+ * pdftoppm / magick / qlmanage 都走 execFile 参数数组，路径不会进 shell。
  */
 export async function rasterizePdfToImages(
   pdfPath: string,
@@ -149,14 +163,16 @@ export async function rasterizePdfToImages(
   try {
     const pdftoppm = resolvePdftoppm();
     if (!pdftoppm) throw new Error('pdftoppm not found');
-    // PPT 路径不传 maxPages，命令串与抽取前完全一致（poppler 门扫 `"${pdfPath}"`）。
-    const pageRange = typeof maxPages === 'number' && expectedPageCount === undefined
-      ? ` -f 1 -l ${maxPages}`
-      : '';
-    execSync(
-      `"${pdftoppm}" -jpeg -jpegopt quality=${PDF_RENDER.QUALITY} -r ${PDF_RENDER.DPI}${pageRange} "${pdfPath}" "${path.join(outputDir, baseName)}"`,
-      { timeout: CONVERT_TIMEOUTS.PDFTOPPM, encoding: 'utf8' }
-    );
+    const args = [
+      '-jpeg',
+      '-jpegopt', `quality=${PDF_RENDER.QUALITY}`,
+      '-r', String(PDF_RENDER.DPI),
+    ];
+    if (typeof maxPages === 'number' && expectedPageCount === undefined) {
+      args.push('-f', '1', '-l', String(maxPages));
+    }
+    args.push(pdfPath, path.join(outputDir, baseName));
+    await execFileAsync(pdftoppm, args, { timeout: CONVERT_TIMEOUTS.PDFTOPPM, encoding: 'utf8' });
     const files = collectPageImages(outputDir, baseName);
     const accepted = accept(files);
     if (accepted) return accepted;
@@ -164,10 +180,17 @@ export async function rasterizePdfToImages(
   clearPageImages(outputDir, baseName);
 
   try {
-    const magick = execSync('which magick 2>/dev/null || which convert 2>/dev/null', { encoding: 'utf8' }).trim();
-    execSync(
-      `"${magick}" -density ${PDF_RENDER.DPI} -quality ${PDF_RENDER.QUALITY} "${pdfPath}" "${path.join(outputDir, `${baseName}-%d.jpg`)}"`,
-      { timeout: CONVERT_TIMEOUTS.IMAGEMAGICK, encoding: 'utf8' }
+    const magick = whichSync('magick') ?? whichSync('convert');
+    if (!magick) throw new Error('ImageMagick not found');
+    await execFileAsync(
+      magick,
+      [
+        '-density', String(PDF_RENDER.DPI),
+        '-quality', String(PDF_RENDER.QUALITY),
+        pdfPath,
+        path.join(outputDir, `${baseName}-%d.jpg`),
+      ],
+      { timeout: CONVERT_TIMEOUTS.IMAGEMAGICK, encoding: 'utf8' },
     );
     const files = collectPageImages(outputDir, baseName);
     const accepted = accept(files);
@@ -177,9 +200,10 @@ export async function rasterizePdfToImages(
 
   try {
     const outFile = path.join(outputDir, `${baseName}-preview.png`);
-    execSync(
-      `qlmanage -t -s ${PDF_RENDER.QLMANAGE_SIZE} -o "${outputDir}" "${pdfPath}" 2>/dev/null`,
-      { timeout: CONVERT_TIMEOUTS.QLMANAGE, encoding: 'utf8' }
+    await execFileAsync(
+      'qlmanage',
+      ['-t', '-s', String(PDF_RENDER.QLMANAGE_SIZE), '-o', outputDir, pdfPath],
+      { timeout: CONVERT_TIMEOUTS.QLMANAGE, encoding: 'utf8' },
     );
     const qlFile = path.join(outputDir, `${path.basename(pdfPath)}.png`);
     if (fs.existsSync(qlFile)) {

@@ -122,6 +122,35 @@ describe('证据门 — update 路径', () => {
     expect(refs[0].ref).toContain('214 passed');
   });
 
+  it('needs_decision 缺 blockedReason 时拒绝', async () => {
+    const result = await run({ action: 'update', taskId: '1', status: 'needs_decision' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain('blockedReason');
+    expect(updateTaskMock).not.toHaveBeenCalled();
+  });
+
+  it('needs_decision 的人话原因原样保留给 UI', async () => {
+    const result = await run({
+      action: 'update',
+      taskId: '1',
+      status: 'needs_decision',
+      blockedReason: '在两家酒店间选',
+    });
+
+    expect(result.ok).toBe(true);
+    const updates = updateTaskMock.mock.calls[0][2] as Record<string, unknown>;
+    expect(updates.blockedReason).toBe('在两家酒店间选');
+  });
+
+  it('user_action 缺 blockedReason 时拒绝', async () => {
+    const result = await run({ action: 'update', taskId: '1', status: 'user_action' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain('blockedReason');
+    expect(updateTaskMock).not.toHaveBeenCalled();
+  });
+
   it('blocked 缺 blockedReason 时拒绝', async () => {
     const result = await run({ action: 'update', taskId: '1', status: 'blocked' });
 

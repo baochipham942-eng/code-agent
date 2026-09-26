@@ -21,8 +21,39 @@ export interface TodoItem {
 // cancelled: 主动放弃但留痕可见（区别于 update status='deleted' 的物理删除）
 // blocked: 卡在外部障碍上（拿不到权限/网站拒绝/缺信息），必须带 blockedReason。
 //   与 blockedBy 派生的"等前置任务"不同——后者仍是 pending，由 taskList 派生展示。
-export type SessionTaskStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
+// needs_decision: 等用户在选项间拍板；user_action: 等用户亲自做工具做不了的事。
+//   两态与 blocked 一样必须带可展示原因（复用 blockedReason），不要显示成「卡住」。
+export const SESSION_TASK_STATUSES = [
+  'pending',
+  'in_progress',
+  'completed',
+  'blocked',
+  'cancelled',
+  'needs_decision',
+  'user_action',
+] as const;
+export type SessionTaskStatus = (typeof SESSION_TASK_STATUSES)[number];
 export type SessionTaskPriority = 'low' | 'normal' | 'high';
+
+/** 本轮不许盖 verified 的未决态：等用户拍板/操作、外部卡住、或还在做 */
+export const UNRESOLVED_TURN_TASK_STATUSES = [
+  'needs_decision',
+  'user_action',
+  'blocked',
+  'in_progress',
+] as const;
+export type UnresolvedTurnTaskStatus = (typeof UNRESOLVED_TURN_TASK_STATUSES)[number];
+
+export function isUnresolvedTurnTaskStatus(
+  status: SessionTaskStatus,
+): status is UnresolvedTurnTaskStatus {
+  return (UNRESOLVED_TURN_TASK_STATUSES as readonly string[]).includes(status);
+}
+
+/** blocked / needs_decision / user_action 都必须带一句可展示的原因 */
+export function statusRequiresWaitReason(status: unknown): boolean {
+  return status === 'blocked' || status === 'needs_decision' || status === 'user_action';
+}
 
 /**
  * blocked 原因的语义分类（面向非程序员的展示层用它选文案，不直接暴露 raw error）。
@@ -45,7 +76,7 @@ export interface SessionTask {
   subject: string;         // 祈使句 "Implement login"
   description: string;     // 详细描述
   activeForm: string;      // 进行时 "Implementing login"
-  status: SessionTaskStatus;      // pending | in_progress | completed | blocked | cancelled
+  status: SessionTaskStatus;
   priority: SessionTaskPriority;  // low | normal | high
 
   // 依赖关系
@@ -91,7 +122,9 @@ export type SessionTaskEventKind =
   | 'done'           // → completed
   | 'abandoned'      // → cancelled
   | 'renamed'        // subject 变化
-  | 'blocked'        // 新增 blockedBy 依赖
+  | 'blocked'        // 新增 blockedBy 依赖，或 status → blocked
+  | 'needs_decision' // status → needs_decision
+  | 'user_action'    // status → user_action
   | 'unblocked'      // 阻塞任务被删除/收口导致依赖解除
   | 'owner_changed'  // owner 显式变更
   | 'orphan_adopted' // subagent 结束，未收口任务回归主会话
@@ -157,11 +190,76 @@ export function validateTaskStatusEvidence(
       + '(command run and its result, file checked, page observed). '
       + 'If a subagent reported success, verify it yourself first — a subagent report is not evidence.';
   }
-  if (status === 'blocked' && !hasText(input.blockedReason)) {
+  if (statusRequiresWaitReason(status) && !hasText(input.blockedReason)) {
+    if (status === 'needs_decision') {
+      return 'status="needs_decision" requires blockedReason: say what the user must choose, in plain language '
+        + '(e.g. "pick hotel A or hotel B"), not a raw error dump.';
+    }
+    if (status === 'user_action') {
+      return 'status="user_action" requires blockedReason: say what the user must do themselves '
+        + '(login, pay, sign offline, etc.), not a raw error dump.';
+    }
     return 'status="blocked" requires blockedReason: say what is blocking the task in plain language '
       + '(e.g. "the site requires a login we do not have"), not a raw error dump.';
   }
   return null;
+}
+
+export interface UnresolvedTaskLineInput {
+  id: string;
+  subject: string;
+  status: SessionTaskStatus;
+  blockedReason?: string;
+  owner?: string;
+}
+
+export function unresolvedTaskWaitLabel(status: SessionTaskStatus): string {
+  switch (status) {
+    case 'needs_decision':
+      return '等你拍板';
+    case 'user_action':
+      return '等你操作';
+    case 'blocked':
+      return '卡住';
+    case 'in_progress':
+      return '进行中';
+    case 'pending':
+      return '待开始';
+    case 'completed':
+      return '已完成';
+    case 'cancelled':
+      return '已取消';
+  }
+}
+
+export function formatUnresolvedTaskLine(task: UnresolvedTaskLineInput): string {
+  const who = task.owner?.trim() ? ` @${task.owner.trim()}` : '';
+  const reason = task.blockedReason?.trim() ? `：${task.blockedReason.trim()}` : '';
+  return `#${task.id} ${task.subject}${who} — ${unresolvedTaskWaitLabel(task.status)}${reason}`;
+}
+
+export function formatUnresolvedTaskList(tasks: readonly UnresolvedTaskLineInput[]): string {
+  return tasks.map(formatUnresolvedTaskLine).join('\n');
+}
+
+/**
+ * 未决任务硬门：needs_decision / user_action / blocked / in_progress 存在时不许盖 verified。
+ * 未决清单写入 evidenceProblems，供 stamp 与 runFinalizer 共用同一份结果。
+ */
+export function applyUnresolvedTaskTurnGate(
+  verdict: 'verified' | 'self_claimed' | 'n_a',
+  evidenceProblems: readonly string[] | undefined,
+  unresolved: readonly UnresolvedTaskLineInput[],
+): { verdict: 'verified' | 'self_claimed' | 'n_a'; evidenceProblems: string[] } {
+  const problems = [...(evidenceProblems ?? [])];
+  if (unresolved.length === 0) {
+    return { verdict, evidenceProblems: problems };
+  }
+  problems.push(`UNRESOLVED_TASKS:\n${formatUnresolvedTaskList(unresolved)}`);
+  return {
+    verdict: verdict === 'verified' ? 'self_claimed' : verdict,
+    evidenceProblems: problems,
+  };
 }
 
 // Task Plan Types

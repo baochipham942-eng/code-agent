@@ -334,6 +334,28 @@ describe('NudgeManager', () => {
     // 「报告口径用 taskGate 上限(3) 而非 todo 上限(2)」的原始回归点（codex audit R1 LOW）
     // 曾靠断言 notification 文案里的 "(3/3)" 验证；notification 事件已在丙类收口中删除
     // （2026-08-08），该行为改由下面这条用例直接断言「第 4 次才放行停止」来保护。
+    it('asks the model to list needs_decision waits instead of forcing completed', () => {
+      manager.reset([], '帮我订酒店', '/tmp/test', []);
+      manager.recordTaskManagerUse();
+      mockGetIncompleteTasks.mockReturnValue([{
+        id: 't1',
+        subject: '选择酒店方案',
+        status: 'needs_decision',
+        blockedReason: '在两家酒店间选',
+      }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['TaskManager'],
+      });
+
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('等用户');
+      expect(injectedMessage).toContain('needs_decision');
+      expect(injectedMessage).not.toContain('MUST finish the items you can still do');
+    });
+
     it('allows up to 3 reentries for open tasks then lets the model stop (MiMo main cap)', () => {
       manager.reset([], '把这些任务完成并更新 task 状态', '/tmp/test', []);
       mockGetIncompleteTasks.mockReturnValue([{ id: 't1', subject: 'never done', status: 'pending' }]);

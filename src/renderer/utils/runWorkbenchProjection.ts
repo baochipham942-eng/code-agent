@@ -511,6 +511,8 @@ function sessionTaskPersistentStatus(status: SessionTask['status']): TaskRecord[
   if (status === 'cancelled') return 'cancelled';
   if (status === 'in_progress') return 'in_progress';
   if (status === 'blocked') return 'blocked';
+  if (status === 'needs_decision') return 'needs_decision';
+  if (status === 'user_action') return 'user_action';
   return 'pending';
 }
 
@@ -625,7 +627,7 @@ function buildSessionTaskRecordFromSessionTasks(args: {
       status: blockedByIds.length > 0 ? 'blocked' as const : sessionTaskPersistentStatus(task.status),
       blockedByTitles: blockedByTitles.length > 0 ? blockedByTitles : undefined,
       blockedTaskTitles: blockedTaskTitles.length > 0 ? blockedTaskTitles : undefined,
-      ...(task.status === 'blocked'
+      ...(task.status === 'blocked' || task.status === 'needs_decision' || task.status === 'user_action'
         ? {
             blockedReason: task.blockedReason || undefined,
             blockedReasonCategory: task.blockedReasonCategory,
@@ -639,12 +641,16 @@ function buildSessionTaskRecordFromSessionTasks(args: {
     && nonCancelledTasks.every((task) => task.status === 'completed');
   const allCancelled = tasks.every((task) => task.status === 'cancelled');
   const hasBlocked = steps.some((step) => step.status === 'blocked');
+  const hasNeedsDecision = tasks.some((task) => task.status === 'needs_decision');
+  const hasUserAction = tasks.some((task) => task.status === 'user_action');
   const hasInProgress = tasks.some((task) => task.status === 'in_progress');
   const actionablePendingTask = tasks.find((task) => (
     task.status === 'pending'
     && (blockedIdsByTask.get(task.id) ?? []).length === 0
   ));
   const activeTask = tasks.find((task) => task.status === 'in_progress')
+    ?? tasks.find((task) => task.status === 'needs_decision')
+    ?? tasks.find((task) => task.status === 'user_action')
     ?? actionablePendingTask
     ?? tasks.find((task) => task.status === 'pending')
     ?? tasks[0];
@@ -656,6 +662,10 @@ function buildSessionTaskRecordFromSessionTasks(args: {
     status = 'cancelled';
   } else if (hasInProgress) {
     status = 'in_progress';
+  } else if (hasNeedsDecision) {
+    status = 'needs_decision';
+  } else if (hasUserAction) {
+    status = 'user_action';
   } else if (actionablePendingTask) {
     status = 'pending';
   } else if (hasBlocked) {

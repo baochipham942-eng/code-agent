@@ -98,6 +98,58 @@ describe('TaskDashboardSummary 运行中空态（UI 审计 #8）', () => {
   });
 });
 
+describe('TaskDashboardSummary wait states', () => {
+  it('shows 等你拍板 for needs_decision instead of 阻塞', () => {
+    const task: TaskRecord = {
+      id: 'session:session-tasks',
+      scope: 'session',
+      title: '选择酒店方案',
+      status: 'needs_decision',
+      steps: [{ title: '选择酒店方案', status: 'needs_decision', blockedReason: '在两家酒店间选' }],
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(TaskDashboardSummary, { tasks: [task], run: null }),
+    );
+    expect(html).toContain('等你拍板');
+    expect(html).toContain('data-task-status="needs_decision"');
+    expect(html).not.toContain('>阻塞<');
+  });
+
+  it('keeps 等你拍板 visible in checklist mode', () => {
+    const task: TaskRecord = {
+      id: 'session:session-tasks',
+      scope: 'session',
+      title: '选择酒店方案',
+      status: 'needs_decision',
+      steps: [
+        { title: '列出候选酒店', status: 'completed' },
+        { title: '选择酒店方案', status: 'needs_decision', blockedReason: '在两家酒店间选' },
+      ],
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(TaskDashboardSummary, { tasks: [task], run: null }),
+    );
+    expect(html).toContain('等你拍板');
+    expect(html).not.toContain('sr-only');
+  });
+
+  it('shows 等你操作 for user_action instead of 阻塞', () => {
+    const task: TaskRecord = {
+      id: 'session:session-tasks',
+      scope: 'session',
+      title: '完成线下签字',
+      status: 'user_action',
+      steps: [{ title: '完成线下签字', status: 'user_action', blockedReason: '合同要本人签字' }],
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(TaskDashboardSummary, { tasks: [task], run: null }),
+    );
+    expect(html).toContain('等你操作');
+    expect(html).toContain('data-task-status="user_action"');
+    expect(html).not.toContain('>阻塞<');
+  });
+});
+
 describe('TaskDashboardSummary', () => {
   it('labels non-current tasks as background tasks instead of other runs', () => {
     const backgroundTask: TaskRecord = {

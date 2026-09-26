@@ -63,6 +63,10 @@ function statusLabel(status: TaskRecord['status']): string {
       return '已取消';
     case 'pending':
       return '待开始';
+    case 'needs_decision':
+      return '等你拍板';
+    case 'user_action':
+      return '等你操作';
     case 'in_progress':
     default:
       return '正在处理';
@@ -95,7 +99,13 @@ function simpleTitle(task: TaskRecord, run?: RunUiState | null): string {
   // 有明确标题优先显示标题（行内已单独展示状态标签，无需用状态词顶替标题）——
   // 否则终态的后台任务（如"循环 · …"失败）会丢掉名字、只剩"已阻塞/已取消"。
   if (task.title) return task.title;
-  if (task.status === 'completed' || task.status === 'blocked' || task.status === 'cancelled') {
+  if (
+    task.status === 'completed'
+    || task.status === 'blocked'
+    || task.status === 'cancelled'
+    || task.status === 'needs_decision'
+    || task.status === 'user_action'
+  ) {
     return statusLabel(task.status);
   }
   return runStatusLabel(run) || statusLabel(task.status);

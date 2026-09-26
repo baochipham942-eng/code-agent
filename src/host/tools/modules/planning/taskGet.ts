@@ -110,7 +110,11 @@ export async function executeTaskGet(
       (task.owner ? `  Owner: ${task.owner}\n` : '') +
       (task.status === 'blocked'
         ? `  Blocked Reason: ${task.blockedReason || `(${task.blockedReasonCategory ?? 'unknown'})`}\n`
-        : '') +
+        : task.status === 'needs_decision'
+          ? `  Waiting for your decision: ${task.blockedReason || '(choice not recorded)'}\n`
+          : task.status === 'user_action'
+            ? `  Waiting for you to act: ${task.blockedReason || '(action not recorded)'}\n`
+            : '') +
       (task.evidenceRefs?.length
         ? `  Evidence: ${task.evidenceRefs.map((ref) => ref.ref).join(' | ')}\n`
         : '') +

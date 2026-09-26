@@ -16,6 +16,8 @@ import type { DeclaredDeliverables } from './artifactState';
 import type { RuntimeContext } from './runtimeContext';
 import type { RunTerminalStatus } from './runTerminalStatus';
 import type { TraceEvent, TraceEventDataMap, TurnTraceRecorder } from './turnTrace';
+import { applyUnresolvedTaskTurnGate } from '../../../shared/contract/planning';
+import { listUnresolvedTurnTasks } from '../../services/planning/taskStore';
 
 const logger = createLogger('TurnOutcomeStamp');
 
@@ -301,7 +303,18 @@ export async function recordTurnOutcomeStamp(
 ): Promise<void> {
   try {
     const outcome = await buildTurnOutcome(ctx, terminal, summary);
-    ctx.turnTrace.record('turn_outcome', outcome);
+    const gated = applyUnresolvedTaskTurnGate(
+      outcome.verdict,
+      outcome.evidenceProblems,
+      listUnresolvedTurnTasks(ctx.sessionId),
+    );
+    ctx.turnTrace.record('turn_outcome', {
+      ...outcome,
+      verdict: gated.verdict,
+      evidenceProblems: gated.evidenceProblems.length > 0
+        ? gated.evidenceProblems
+        : outcome.evidenceProblems,
+    });
     if (!ctx.turnTrace.flush()) logger.warn('turn outcome trace flush failed', { sessionId: ctx.sessionId });
   } catch (error) {
     logger.warn('turn outcome stamp failed', {

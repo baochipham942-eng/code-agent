@@ -59,7 +59,7 @@ describe('task_update schema', () => {
     expect(taskUpdateModule.schema.allowInPlanMode).toBe(true);
     expect(taskUpdateModule.schema.inputSchema.required).toEqual(['taskId']);
     const props = taskUpdateModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>;
-    expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'deleted']);
+    expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'needs_decision', 'user_action', 'deleted']);
     expect(props.desktopAction.enum).toEqual(['accept', 'dismiss', 'snooze', 'reopen', 'supersede']);
   });
 });

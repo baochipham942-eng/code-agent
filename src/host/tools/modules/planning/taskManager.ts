@@ -60,7 +60,7 @@ interface ProjectedTask {
 }
 
 const VALID_BATCH_STATUSES = new Set<SessionTaskStatus>([
-  'pending', 'in_progress', 'completed', 'blocked', 'cancelled',
+  'pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'needs_decision', 'user_action',
 ]);
 const VALID_PRIORITIES = new Set<SessionTaskPriority>(['low', 'normal', 'high']);
 
@@ -102,7 +102,7 @@ function projectedFromExisting(task: SessionTask): ProjectedTask {
 
 /**
  * 证据门（ADR-050）在批量路径上按「状态转移」触发：沿用旧状态的条目不算新声称，
- * 只有真的把某条改成 completed/blocked 才要求证据。
+ * 只有真的把某条改成 completed / blocked / needs_decision / user_action 才要求证据。
  */
 function evidenceForBatchItem(
   input: BatchTaskInput,

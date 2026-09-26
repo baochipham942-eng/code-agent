@@ -10,6 +10,10 @@ import type {
   SessionTaskEvent,
   SessionTaskEventKind,
 } from '../../../shared/contract/planning';
+import {
+  isUnresolvedTurnTaskStatus,
+  statusRequiresWaitReason,
+} from '../../../shared/contract/planning';
 import { createLogger } from '../infra/logger';
 import { getDatabase } from '../core/databaseService';
 
@@ -274,6 +278,8 @@ export function updateTask(
     else if (updates.status === 'pending' && task.status === 'in_progress') events.push({ kind: 'unstarted' });
     else if (updates.status === 'completed') events.push({ kind: 'done', summary });
     else if (updates.status === 'blocked') events.push({ kind: 'blocked', summary });
+    else if (updates.status === 'needs_decision') events.push({ kind: 'needs_decision', summary });
+    else if (updates.status === 'user_action') events.push({ kind: 'user_action', summary });
     else if (updates.status === 'cancelled') events.push({ kind: 'abandoned', summary });
   }
   if (updates.subject && updates.subject !== task.subject) {
@@ -289,11 +295,11 @@ export function updateTask(
   // Update fields
   if (updates.status) task.status = updates.status as SessionTaskStatus;
   if (updates.subject) task.subject = updates.subject;
-  // 阻塞说明随状态走：离开 blocked 就清掉，否则会挂着一条早已解决的过期理由
+  // 等待原因随状态走：离开 blocked / needs_decision / user_action 就清掉
   if (updates.blockedReason !== undefined) {
     task.blockedReason = updates.blockedReason || undefined;
     task.blockedReasonCategory = updates.blockedReasonCategory;
-  } else if (updates.status && updates.status !== 'blocked') {
+  } else if (updates.status && !statusRequiresWaitReason(updates.status)) {
     task.blockedReason = undefined;
     task.blockedReasonCategory = undefined;
   }
@@ -443,6 +449,11 @@ export function demoteInProgressTasks(sessionId: string): SessionTask[] | null {
  */
 export function getIncompleteTasks(sessionId: string): SessionTask[] {
   return listTasks(sessionId).filter((t) => !isClosedTaskStatus(t.status));
+}
+
+/** 本轮不许盖 verified 的显式任务：needs_decision / user_action / blocked / in_progress */
+export function listUnresolvedTurnTasks(sessionId: string): SessionTask[] {
+  return listTasks(sessionId).filter((task) => isUnresolvedTurnTaskStatus(task.status));
 }
 
 /**

@@ -21,6 +21,7 @@ import {
   type TurnOutcomeStampContext,
 } from '../../../src/host/agent/runtime/turnOutcomeStamp';
 import { registerTurnOutcomeResolver } from '../../../src/host/services/capabilities/hostCapabilityPorts';
+import { clearTasks, createTask, updateTask } from '../../../src/host/services/planning/taskStore';
 
 let cleanupVoiceResolver: (() => void | Promise<void>) | undefined;
 
@@ -638,5 +639,69 @@ describe('turn outcome stamp', () => {
       evidenceRefs: [],
       source: 'voice',
     });
+  });
+
+  it('refuses verified and lists the wait when a needs_decision task is still open', async () => {
+    const sessionId = 'session-unresolved-decision';
+    clearTasks(sessionId);
+    const task = createTask(sessionId, { subject: '选择酒店方案', description: 'A 还是 B' });
+    updateTask(sessionId, task.id, {
+      status: 'needs_decision',
+      blockedReason: '在两家酒店间选',
+    });
+    const recorder = new TurnTraceRecorder('unresolved-decision', traceRoot);
+    try {
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        summary({
+          verificationEvidence: [{
+            kind: 'command',
+            toolCallId: 'test-ok',
+            command: 'npm test',
+            success: true,
+            exitCode: 0,
+          }],
+        }),
+      );
+      const outcome = latestOutcome(recorder);
+      expect(outcome.verdict).not.toBe('verified');
+      expect(outcome.verdict).toBe('self_claimed');
+      expect(outcome.evidenceProblems?.join('\n')).toContain('选择酒店方案');
+      expect(outcome.evidenceProblems?.join('\n')).toContain('等你拍板');
+    } finally {
+      clearTasks(sessionId);
+    }
+  });
+
+  it('still verifies when every explicit task is completed', async () => {
+    const sessionId = 'session-all-completed-tasks';
+    clearTasks(sessionId);
+    const task = createTask(sessionId, { subject: '写完报告', description: '交付报告' });
+    updateTask(sessionId, task.id, {
+      status: 'completed',
+      evidenceRefs: [makeEvidenceRef({ kind: 'test', ref: 'npm test', source: 'test', state: 'read' })],
+    });
+    const recorder = new TurnTraceRecorder('all-completed-tasks', traceRoot);
+    try {
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        summary({
+          verificationEvidence: [{
+            kind: 'command',
+            toolCallId: 'test-ok',
+            command: 'npm test',
+            success: true,
+            exitCode: 0,
+          }],
+        }),
+      );
+      const outcome = latestOutcome(recorder);
+      expect(outcome.verdict).toBe('verified');
+      expect(outcome.evidenceProblems ?? []).toEqual([]);
+    } finally {
+      clearTasks(sessionId);
+    }
   });
 });

@@ -58,6 +58,7 @@ export type WebStartupTaskName =
   | 'distillExecutor'
   | 'heartbeatService'
   | 'heartbeatLoader'
+  | 'wakeService'
   | 'posthogIdentity'
   | 'logBridgeHandler'
   | 'fileCheckpointCleanup'
@@ -246,6 +247,15 @@ function createDefaultTasks(
       });
       await loader.loadFromFile();
       loader.watchFile();
+    },
+
+    wakeService: async () => {
+      // self-wake 定时器。#721 删旧 src/host/index.ts 死入口时把 getWakeService().start()
+      // 唯一的调用点一并带走（#674 原本在那里接线），sleep_until 的时间型醒来从此没人投递；
+      // wake_on / wake_on_event 走 cron 完成回调不受影响。这里按 heartbeatService 同款
+      // 模式把注册面接回当前启动路径；重启后第一次 tick 会把过期的 pending 醒来补送出去。
+      const { getWakeService } = await import('../host/services/wake/wakeService');
+      getWakeService().start();
     },
 
     posthogIdentity: async () => {

@@ -31,6 +31,7 @@ const TASK_NAMES: WebStartupTaskName[] = [
   'distillExecutor',
   'heartbeatService',
   'heartbeatLoader',
+  'wakeService',
   'posthogIdentity',
   'logBridgeHandler',
   'fileCheckpointCleanup',

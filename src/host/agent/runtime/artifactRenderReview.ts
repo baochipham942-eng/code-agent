@@ -39,7 +39,7 @@ const SKIPPED_STATUSES: ReadonlySet<ArtifactRenderReviewStatus> = new Set([
   'skipped_render_failed',
 ]);
 
-export type ArtifactRenderIssueKind =
+type ArtifactRenderIssueKind =
   | 'overflow'
   | 'overlap'
   | 'cramped'
@@ -55,9 +55,9 @@ export type ArtifactRenderIssue = {
   severity: 'high' | 'medium' | 'low';
 };
 
-export type ArtifactRenderReviewStatus = ArtifactRenderReviewStamp['status'];
+type ArtifactRenderReviewStatus = ArtifactRenderReviewStamp['status'];
 
-export type ArtifactRenderVlm = (prompt: string, imagePath: string) => Promise<string>;
+type ArtifactRenderVlm = (prompt: string, imagePath: string) => Promise<string>;
 
 const ISSUE_KINDS: ArtifactRenderIssueKind[] = [
   'overflow', 'overlap', 'cramped', 'low_contrast', 'template_residue', 'other',

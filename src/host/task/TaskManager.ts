@@ -304,12 +304,12 @@ export class TaskManager extends EventEmitter {
     if (!this.runRegistry?.hasDurableOwner(runId)) throw new Error(`Durable run ${runId} is not claimed for resume`);
     const existingHandle = this.runRegistry.get(runId);
     if (existingHandle && existingHandle.context.sessionId !== sessionId) throw new Error(`Durable run ${runId} belongs to session ${existingHandle.context.sessionId}`);
-    const source = [...messages].reverse().find((message) => message.role === 'user' && isInferenceHistoryMessage(message));
-    if (!source) throw new Error(`Durable run ${runId} has no source user message`);
-    const currentStatus = this.sessionStates.get(sessionId)?.status ?? '';
-    if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus)) {
-      throw new Error(`Session ${sessionId} is already ${currentStatus}`);
-    }
+    if (!clientMessageId) throw new Error(`Durable run ${runId} resume requires source message id`);
+    const sourceIndex = messages.findIndex((message) => message.id === clientMessageId && message.role === 'user' && isInferenceHistoryMessage(message));
+    const source = sourceIndex >= 0 ? messages[sourceIndex] : undefined;
+    if (!source) throw new Error(`Durable run ${runId} source message ${clientMessageId} is unavailable`);
+    if (sourceIndex !== messages.length - 1) throw new Error(`Durable run ${runId} resume history must end at source message ${clientMessageId}`);
+    const currentStatus = this.sessionStates.get(sessionId)?.status ?? ''; if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus)) throw new Error(`Session ${sessionId} is already ${currentStatus}`);
 
     await this.semaphore.acquire(); this.updateSessionState(sessionId, { status: 'running', startTime: Date.now() });
     this.emitEvent('task_started', sessionId, { runId, resumed: true });

@@ -1078,7 +1078,7 @@ export class AgentOrchestrator {
       if (rolePresetSessionId) {
         getPermissionModeManager().clearRolePresetSession(rolePresetSessionId);
       }
-      if (registeredRun && this.runRegistry?.hasDurableOwner(nativeRunId)) {
+      if (registeredRun && this.runRegistry?.hasDurableOwner(nativeRunId) && !options?.resumeExistingDurableRun) {
         // Durable 终态收口见 orchestrator/durableRunTerminal；/api/run 主链有自己的 lifecycle。
         await finalizeDurableRun({
           registry: this.runRegistry,

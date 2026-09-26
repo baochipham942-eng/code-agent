@@ -178,7 +178,10 @@ describe('application Native model continuation ports', () => {
 
   it('does not mistake a later turn response for the recovered model result', async () => {
     const input = recoveryInput();
-    const resumeExistingDurableRun = vi.fn(async () => undefined);
+    let resumedHistory: Message[] = [];
+    const resumeExistingDurableRun = vi.fn(async (_sessionId: string, _runId: string, history: Message[]) => {
+      resumedHistory = history;
+    });
     const ports = createApplicationNativeRecoveryPorts(
       { checkpointDurable: vi.fn(async () => undefined) } as never,
       {
@@ -198,6 +201,7 @@ describe('application Native model continuation ports', () => {
       'native model continuation completed without result evidence',
     );
     expect(resumeExistingDurableRun).toHaveBeenCalledTimes(1);
+    expect(resumedHistory.map((message) => message.id)).toEqual(['user-source']);
   });
 
   it('keeps provider result lookup and retry proof conservative', async () => {

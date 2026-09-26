@@ -273,7 +273,7 @@ export function createApplicationNativeRecoveryPorts(
         await tasks.resumeExistingDurableRun(
           input.plan.envelope.sessionId,
           input.plan.envelope.runId,
-          messages,
+          messages.slice(0, sourceIndex + 1),
           {
             mode: 'normal',
             modelSpec: {

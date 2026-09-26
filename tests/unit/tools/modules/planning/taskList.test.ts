@@ -90,7 +90,7 @@ describe('task_list behavior', () => {
       expect(result.output).not.toContain('◐ #2: do B [blocked');
       expect(result.output).toContain('○ #3: do C [blocked by: 2]');
       expect(result.output).toContain('Status: 1 completed, 1 in progress, 1 pending, 1 blocked');
-      expect(result.meta?.stats).toEqual({ total: 3, completed: 1, inProgress: 1, pending: 1, cancelled: 0, blocked: 1, needsDecision: 0, userAction: 0 });
+      expect(result.meta?.stats).toEqual({ total: 3, completed: 1, inProgress: 1, pending: 1, cancelled: 0, blocked: 1 });
     }
   });
 
@@ -107,7 +107,7 @@ describe('task_list behavior', () => {
       expect(result.output).toContain('○ #2: continue current path');
       expect(result.output).not.toContain('[blocked by: 1]');
       expect(result.output).toContain('Status: 0 completed, 0 in progress, 1 pending, 1 cancelled');
-      expect(result.meta?.stats).toEqual({ total: 2, completed: 0, inProgress: 0, pending: 1, cancelled: 1, blocked: 0, needsDecision: 0, userAction: 0 });
+      expect(result.meta?.stats).toEqual({ total: 2, completed: 0, inProgress: 0, pending: 1, cancelled: 1, blocked: 0 });
     }
   });
 

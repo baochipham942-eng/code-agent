@@ -116,7 +116,7 @@ export async function executeTaskList(
         owner: t.owner,
         blockedBy: t.blockedBy,
       })),
-      stats: { total: tasks.length, completed, inProgress, pending, cancelled, blocked, needsDecision, userAction },
+      stats: { total: tasks.length, completed, inProgress, pending, cancelled, blocked },
     },
   };
 }

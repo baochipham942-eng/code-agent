@@ -575,7 +575,10 @@ describe('roleProactivity', () => {
       const lines = await loadRoleHistory(RESEARCHER);
       expect(lines[0]?.startsWith('- ')).toBe(true);
       expect(lines[0]).toContain(`why: ${why}`);
-      expect(parseRoleHistoryLine(formatRoleHistoryLine(entries[0]!))?.why).toBe(why);
+      const first = entries[0];
+      expect(first).toBeDefined();
+      if (!first) return;
+      expect(parseRoleHistoryLine(formatRoleHistoryLine(first))?.why).toBe(why);
     });
 
     it('rationale 缺失时仍保留原决策，只记 missing', async () => {

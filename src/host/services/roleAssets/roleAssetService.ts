@@ -353,16 +353,17 @@ export function parseRoleHistoryLine(raw: string): RoleHistoryEntry | null {
     body = body.slice(0, whyIdx);
   }
   const parts = body.split(' | ');
-  if (parts.length < 3) return null;
-  const date = parts[0]!.trim();
-  const labelField = parts[1]!.trim();
+  const datePart = parts[0];
+  const labelField = parts[1];
+  if (datePart === undefined || labelField === undefined || parts.length < 3) return null;
+  const date = datePart.trim();
   const summary = flattenHistoryText(parts.slice(2).join(' | '));
-  let artifactLabel = labelField;
+  let artifactLabel = labelField.trim();
   let artifactRef = '-';
-  const md = labelField.match(/^\[([^\]]+)\]\((.+)\)$/);
-  if (md) {
-    artifactLabel = md[1]!;
-    artifactRef = md[2]!;
+  const md = labelField.trim().match(/^\[([^\]]+)\]\((.+)\)$/);
+  if (md?.[1] && md[2]) {
+    artifactLabel = md[1];
+    artifactRef = md[2];
   }
   return {
     date,

@@ -252,11 +252,10 @@ describe('roleProactivity', () => {
       expect(parseWakeRationale('没有任何标记的输出')).toEqual({ missing: true });
       expect(parseWakeRationale('<rationale>   </rationale><evidence></evidence>').missing).toBe(true);
       expect(parseWakeRationale('<rationale>未闭合<decision>suggest</decision>').missing).toBe(true);
-      expect(parseWakeRationale('<rationale>产物还在，需要你拍板下一步。</rationale><evidence></evidence>')).toMatchObject({
-        missing: false,
-        rationale: expect.stringContaining('需要你拍板'),
-        evidence: undefined,
-      });
+      const withEmptyEvidence = parseWakeRationale('<rationale>产物还在，需要你拍板下一步。</rationale><evidence></evidence>');
+      expect(withEmptyEvidence.missing).toBe(false);
+      expect(withEmptyEvidence.rationale).toContain('需要你拍板');
+      expect(withEmptyEvidence.evidence).toBeUndefined();
     });
 
     it('exclude 命中为大小写不敏感子串；空列表不命中', () => {

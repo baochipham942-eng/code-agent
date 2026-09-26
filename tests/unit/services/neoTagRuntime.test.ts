@@ -920,6 +920,35 @@ describe('Neo Tag runtime helpers', () => {
     expect(reason).toContain('接着做');
   });
 
+  it('终态契约：后到的裸 error 不覆盖先到的结构化失败（额度出路不丢，ai-review Important）', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => undefined),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+        observeAgentEvents: (observer) => {
+          // runFinalizer 先发带标记的（真实顺序），orchestrator catch 后发裸的
+          observer('conv_1', {
+            type: 'error',
+            data: { message: '余额不足', code: 'RUN_FAILED', failure: { code: 'MODEL_QUOTA' } },
+          } as never);
+          observer('conv_1', {
+            type: 'error',
+            data: { message: 'Provider request failed', code: 'RUN_FAILED' },
+          } as never);
+          return () => {};
+        },
+      },
+    });
+
+    expect(h.statuses.at(-1)).toBe('failed');
+    expect(h.blockedReasons.at(-1)).toContain('额度不足');
+    expect(h.blockedReasons.at(-1)).not.toContain('Provider request failed');
+  });
+
   it('终态契约：run 被取消 → 失败态「运行被手动中止」+ 继续入口（不记完成）', async () => {
     const h = terminalHarness();
     await launchApprovedNeoWorkCard({

@@ -784,10 +784,16 @@ export class AgentOrchestrator {
     options?: AgentRunOptions,
   ): Promise<void> {
     const effectiveContent = executionContent ?? content;
+    // 取消采集（ai-review Important）：AgentLoop 对取消正常 resolve，收口旁听 agent_cancelled 区分。
+    let runCancelledEvent = false;
+    const cancellationAwareOnEvent = (event: AgentEvent) => {
+      if (event.type === 'agent_cancelled') runCancelledEvent = true;
+      onEvent(event);
+    };
     const { dagAwareOnEvent } = initRunDag({
       sessionId,
       content,
-      onEvent,
+      onEvent: cancellationAwareOnEvent,
       broadcastDAGEvent: this.broadcastDAGEvent,
     });
 
@@ -1072,17 +1078,16 @@ export class AgentOrchestrator {
         getPermissionModeManager().clearRolePresetSession(rolePresetSessionId);
       }
       if (registeredRun && this.runRegistry?.hasDurableOwner(nativeRunId)) {
-        // Durable run 终态收口（auxiliary + primary）见 orchestrator/durableRunTerminal：
-        // /api/run 主链有自己的 durableRunLifecycle，TaskManager 路径只靠这里。
+        // Durable 终态收口见 orchestrator/durableRunTerminal；/api/run 主链有自己的 lifecycle。
         await finalizeDurableRun({
           registry: this.runRegistry,
           runId: nativeRunId,
           handle: registeredRun,
           sessionId,
           completed: runCompletedNormally,
-          ...(options?.runRegistration === 'auxiliary' && options.parentRunId
-            ? { parentRunId: options.parentRunId }
-            : {}),
+          cancelled: runCancelledEvent,
+          registration: options?.runRegistration ?? 'primary',
+          ...(options.parentRunId ? { parentRunId: options.parentRunId } : {}),
         });
       }
       if (registeredRun) this.runRegistry?.unregister(nativeRunId, registeredRun);

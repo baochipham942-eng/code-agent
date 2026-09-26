@@ -261,9 +261,14 @@ function observeNeoTagRunTerminalEvents(
     const failureCode = event.data && typeof event.data === 'object' && 'failure' in event.data
       ? (event.data as { failure?: { code?: unknown } }).failure?.code
       : undefined;
+    const structured = typeof failureCode === 'string' && Boolean(failureCode);
+    // 同一次失败会从多个出口各发一条 error（runFinalizer 带 MODEL_QUOTA/UNAVAILABLE
+    // 标记的先到，orchestrator catch 的裸 error 后到）。后到的裸 error 不许覆盖
+    // 先到的结构化失败——覆盖了工作卡就成了 generic 失败，用户拿不到换模型/充值的出路。
+    if (!structured && failure?.failureCode) return;
     failure = {
       message,
-      ...(typeof failureCode === 'string' && failureCode ? { failureCode } : {}),
+      ...(structured ? { failureCode: failureCode as string } : {}),
     };
   });
   return {

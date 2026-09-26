@@ -256,6 +256,7 @@ const agentLoopProbe = vi.hoisted(() => ({
     unattendedTurn?: boolean;
     toolExecutor?: { runContext?: { workspace?: string } };
     workspaceScope?: { primaryRoot: string };
+    onEvent?: (event: import('../../src/shared/contract').AgentEvent) => void;
   },
 }));
 const roleBoundaryProbe = vi.hoisted(() => vi.fn(() => null as null | {
@@ -543,6 +544,50 @@ describe('AgentOrchestrator', () => {
         expect.anything(),
       );
       expect(unregister).toHaveBeenCalledWith(expect.any(String), expect.anything());
+    });
+
+    it('用户取消（AgentLoop 正常 resolve + agent_cancelled 事件）→ durable 终态记 cancelled 而非 completed（ai-review Important）', async () => {
+      const terminalDurable = vi.fn(async () => undefined);
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        terminalDurable,
+        unregister: vi.fn(),
+        startDurable: vi.fn(async () => ({ attach: vi.fn(async () => undefined) })),
+      };
+      const durableOrchestrator = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      });
+      const run = durableOrchestrator as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: { runRegistration?: 'primary' | 'auxiliary'; disableAutoAgent?: boolean },
+        ) => Promise<void>;
+      };
+      // 取消：run() 正常返回，但事件流里先经过 agent_cancelled（经 config.onEvent 注入）
+      agentLoopProbe.onRun = () => {
+        agentLoopProbe.lastConfig?.onEvent?.({ type: 'agent_cancelled', data: null });
+      };
+
+      await run.runNormalMode(
+        'hello',
+        () => undefined,
+        { provider: 'openai', model: 'gpt-4o' },
+        'session-durable-cancel',
+        { runRegistration: 'primary', disableAutoAgent: true },
+      );
+      agentLoopProbe.onRun = undefined;
+
+      expect(terminalDurable).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ status: 'cancelled', reason: 'primary_run_cancelled' }),
+        expect.anything(),
+      );
     });
 
     it('getWorkingDirectory 应该返回当前目录', () => {

@@ -20,21 +20,30 @@ export interface DurableRunTerminalInput {
   handle: RunHandle;
   sessionId?: string | null;
   completed: boolean;
+  /** 用户取消：AgentLoop 对 cancel 正常 resolve（不抛），调用方必须显式告知，否则取消会被记成 completed（ai-review Important）。 */
+  cancelled?: boolean;
+  /** 显式注册档（不以 parentRunId 推断——无父 run 的 auxiliary 存在）。 */
+  registration?: 'primary' | 'auxiliary';
   /** auxiliary 子 run 带 parentRunId（事件里要指回父 run）。 */
   parentRunId?: string;
 }
 
 export async function finalizeDurableRun(input: DurableRunTerminalInput): Promise<void> {
-  const { registry, runId, handle, sessionId, completed, parentRunId } = input;
-  const isAuxiliary = parentRunId !== undefined;
+  const { registry, runId, handle, sessionId, completed, cancelled, registration, parentRunId } = input;
+  const isAuxiliary = registration === 'auxiliary';
+  const status = cancelled ? 'cancelled' : completed ? 'completed' : 'failed';
+  const reason = status === 'completed'
+    ? undefined
+    : status === 'cancelled'
+      ? isAuxiliary ? 'auxiliary_run_cancelled' : 'primary_run_cancelled'
+      : isAuxiliary ? 'auxiliary_run_failed' : 'primary_run_failed';
+  const eventKind = status === 'completed' ? 'completed' : status === 'cancelled' ? 'cancelled' : 'failed';
   await registry.terminalDurable(runId, {
-    status: completed ? 'completed' : 'failed',
+    status,
     now: Date.now(),
-    reason: completed ? undefined : isAuxiliary ? 'auxiliary_run_failed' : 'primary_run_failed',
+    reason,
     event: {
-      type: completed
-        ? isAuxiliary ? 'auxiliary_run_completed' : 'run_completed'
-        : isAuxiliary ? 'auxiliary_run_failed' : 'run_failed',
+      type: `${isAuxiliary ? 'auxiliary_run' : 'run'}_${eventKind}`,
       payload: { sessionId, ...(parentRunId ? { parentRunId } : {}) },
       recordedAt: Date.now(),
     },

@@ -22,7 +22,6 @@ import {
   isSafeRoleId,
   getProjectKey,
   getRoleDir,
-  getRoleHistoryPath,
 } from '../../../../src/host/services/roleAssets/roleAssetPaths';
 import {
   isPersistentRole,
@@ -37,9 +36,6 @@ import {
   loadScopedMemoryIndex,
   appendRoleHistory,
   loadRoleHistory,
-  loadRoleHistoryEntries,
-  formatRoleHistoryLine,
-  parseRoleHistoryLine,
   buildRoleContextBlock,
   instantiateRole,
 } from '../../../../src/host/services/roleAssets/roleAssetService';
@@ -354,52 +350,6 @@ describe('roleAssetService', () => {
       const history = await loadRoleHistory('研究员', 5);
       expect(history.length).toBe(5);
       expect(history[4]).toContain('任务14');
-    });
-
-    it('stores why as an independent field; multiline and over-long summary still load the full why', async () => {
-      const why = '履历里的周报已经连续两周没更新，需要你拍板是否改成自动生成。';
-      await appendRoleHistory('研究员', {
-        date: '2026-09-26',
-        artifactLabel: '主动巡检(cadence)',
-        artifactRef: '-',
-        summary: `[suggest] ${'检查结果如下。\n'.repeat(40)}${'x'.repeat(500)}`,
-        why,
-        evidence: 'history.md · 周报.md',
-      });
-
-      const lines = await loadRoleHistory('研究员');
-      expect(lines).toHaveLength(1);
-      expect(lines[0]?.includes('\n')).toBe(false);
-      expect(lines[0]).toContain(`why: ${why}`);
-      expect(lines[0]).toContain('evidence: history.md · 周报.md');
-
-      const entries = await loadRoleHistoryEntries('研究员');
-      expect(entries[0]?.why).toBe(why);
-      expect(entries[0]?.evidence).toBe('history.md · 周报.md');
-      expect(entries[0]?.summary.length).toBeLessThanOrEqual(200);
-    });
-
-    it('reads old multiline history blocks so a trailing why is not dropped', async () => {
-      await ensureRoleAssetDirs('研究员');
-      const why = '该跟进周报，连续两周没有更新。';
-      const historyPath = getRoleHistoryPath('研究员');
-      await fs.writeFile(
-        historyPath,
-        [
-          '- 2026-09-26 | 主动巡检(cadence) | [suggest] 第一行摘要',
-          '第二行还在继续',
-          `第三行尾巴 | why: ${why} | evidence: history.md`,
-          '',
-        ].join('\n'),
-        'utf-8',
-      );
-
-      const entries = await loadRoleHistoryEntries('研究员');
-      expect(entries[0]?.why).toBe(why);
-      const lines = await loadRoleHistory('研究员');
-      expect(lines[0]?.startsWith('- ')).toBe(true);
-      expect(lines[0]).toContain(`why: ${why}`);
-      expect(parseRoleHistoryLine(formatRoleHistoryLine(entries[0]!))?.why).toBe(why);
     });
   });
 

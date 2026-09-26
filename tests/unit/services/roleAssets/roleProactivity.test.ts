@@ -116,7 +116,8 @@ import {
   stripWakeMarkup,
   topicExcludeHits,
 } from '../../../../src/host/services/roleAssets/wakeRationale';
-import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory, loadRoleHistoryEntries } from '../../../../src/host/services/roleAssets/roleAssetService';
+import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory, loadRoleHistoryEntries, formatRoleHistoryLine, parseRoleHistoryLine } from '../../../../src/host/services/roleAssets/roleAssetService';
+import { getRoleHistoryPath } from '../../../../src/host/services/roleAssets/roleAssetPaths';
 import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
 
 const RESEARCHER = '研究员';
@@ -532,6 +533,49 @@ describe('roleProactivity', () => {
       const wakeEntry = entries.find((entry) => entry.summary.includes('[suggest]'));
       expect(wakeEntry?.why).toBe(why);
       expect(wakeEntry?.summary.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+    });
+
+    it('stores why as an independent field; multiline and over-long summary still load the full why', async () => {
+      const why = '履历里的周报已经连续两周没更新，需要你拍板是否改成自动生成。';
+      await appendRoleHistory(RESEARCHER, {
+        date: TODAY,
+        artifactLabel: `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}(cadence)`,
+        artifactRef: '-',
+        summary: `[suggest] ${'检查结果如下。\n'.repeat(40)}${'x'.repeat(500)}`,
+        why,
+        evidence: 'history.md · 周报.md',
+      });
+
+      const lines = await loadRoleHistory(RESEARCHER);
+      const wakeLine = lines.find((line) => line.includes('[suggest]'));
+      expect(wakeLine?.includes('\n')).toBe(false);
+      expect(wakeLine).toContain(`why: ${why}`);
+      expect(wakeLine).toContain('evidence: history.md · 周报.md');
+      const entries = await loadRoleHistoryEntries(RESEARCHER);
+      const wakeEntry = entries.find((entry) => entry.why === why);
+      expect(wakeEntry?.evidence).toBe('history.md · 周报.md');
+      expect(wakeEntry?.summary.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+    });
+
+    it('reads old multiline history blocks so a trailing why is not dropped', async () => {
+      const why = '该跟进周报，连续两周没有更新。';
+      await fs.writeFile(
+        getRoleHistoryPath(RESEARCHER),
+        [
+          `- ${TODAY} | ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}(cadence) | [suggest] 第一行摘要`,
+          '第二行还在继续',
+          `第三行尾巴 | why: ${why} | evidence: history.md`,
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      const entries = await loadRoleHistoryEntries(RESEARCHER);
+      expect(entries[0]?.why).toBe(why);
+      const lines = await loadRoleHistory(RESEARCHER);
+      expect(lines[0]?.startsWith('- ')).toBe(true);
+      expect(lines[0]).toContain(`why: ${why}`);
+      expect(parseRoleHistoryLine(formatRoleHistoryLine(entries[0]!))?.why).toBe(why);
     });
 
     it('rationale 缺失时仍保留原决策，只记 missing', async () => {

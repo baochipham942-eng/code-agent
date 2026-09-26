@@ -6,6 +6,7 @@ import {
   isTerminalAgentError,
 } from '../../../shared/utils/agentErrorClassification';
 import { TASK_QUEUE_TIMEOUTS } from '../../../shared/constants';
+import { hasVisibleAssistantTextAfterLastUser } from '../../agent/runtime/runFinalizer';
 import type {
   CreateNeoWorkCardDraftInput,
   NeoTagRunContext,
@@ -204,26 +205,6 @@ function isQueueTimeoutState(state: { status: string; error?: string } | null | 
 /** 排队超时的人话出路：一句原因 + 一句下一步，对齐 blockedReasonForFailure 的口吻。 */
 const QUEUE_TIMEOUT_REASON = '排队超时：同时运行的任务太多，这一轮排了很久都没轮到执行。前面的任务现在可能已经空出来了，点「接着做」重试；还是不行的话，等正在跑的任务少一些再发起。';
 
-/**
- * 正向证据的 turn 窗口版：锚点 user 之后、下一条 user 之前，有没有正文非空的
- * assistant。不用尾部版（hasVisibleAssistantTextAfterLastUser）：run 结束后用户马上
- * 追发新消息时，尾部版只看「最后一条 user 之后」，本轮的真实回复会被判丢。
- */
-function hasVisibleAssistantReplyWithinTurn(messages: Message[]): boolean {
-  for (let index = 1; index < messages.length; index += 1) {
-    const message = messages[index];
-    if (message.role === 'user') return false;
-    if (
-      message.role === 'assistant'
-      && typeof message.content === 'string'
-      && message.content.trim().length > 0
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
 /** 本轮 run 旁听到的终态失败（runFinalizer 的 error 事件：message + 结构化 failure 标记）。 */
 interface NeoTagRunFailure {
   message: string;
@@ -357,7 +338,7 @@ async function runProducedVisibleReply(
       (message) => message.id === roundTurnId && message.role === 'user',
     );
     if (anchorIndex < 0) return null;
-    return hasVisibleAssistantReplyWithinTurn(messages.slice(anchorIndex));
+    return hasVisibleAssistantTextAfterLastUser(messages.slice(anchorIndex));
   };
 
   const orchestrator = taskManager.getOrCreateCurrentOrchestrator?.(conversationId);

@@ -1191,7 +1191,7 @@ describe('Neo Tag runtime helpers', () => {
     }
   });
 
-  it('终态契约：run 结束后用户追发新消息不丢本轮回复（turn 窗口正向证据，ai-review Nit）', async () => {
+  it('终态契约：运行中转向（steer）插入 user 后的最终回复仍算本轮正向证据（ai-review 第 5 轮 Important）', async () => {
     const h = terminalHarness();
     await launchApprovedNeoWorkCard({
       workCardId: 'nwc_1',
@@ -1201,16 +1201,18 @@ describe('Neo Tag runtime helpers', () => {
         startTask: vi.fn(async () => {
           sessionMessages.push(
             { id: 'msg_source', role: 'user', content: '@neo 干活', timestamp: 1 },
-            { id: 'assistant_ok', role: 'assistant', content: '做完了，产物如下。', timestamp: 2 },
-            // run 结束后、终态判定读取前，用户在同一会话追发了新消息
-            { id: 'msg_followup', role: 'user', content: '再来一轮', timestamp: 3 },
+            // 转向前只有工具调用、无正文
+            { id: 'assistant_tool', role: 'assistant', content: '', timestamp: 2 },
+            // 运行中用户补话：injectSteerMessage 以 role:'user' 推进同一轮 history
+            { id: 'msg_steer', role: 'user', content: '顺便把标题也改了', timestamp: 3 },
+            { id: 'assistant_ok', role: 'assistant', content: '做完了，标题也改了。', timestamp: 4 },
           );
         }),
         getSessionState: vi.fn(() => ({ status: 'idle' })),
       },
     });
 
-    // 旧尾部版（只看最后一条 user 之后）会误判「没有最终回复」→ failed；窗口版看本轮 turn 内的回复
+    // 截到「下一条 user」为止的窗口版会漏掉转向后的回复 → failed；应为 in_result_review
     expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
   });
 

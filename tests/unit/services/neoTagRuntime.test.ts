@@ -902,6 +902,39 @@ describe('Neo Tag runtime helpers', () => {
     }
   });
 
+  it('终态契约：嵌套 data.data.failure 与顶层 failure 给出相同鉴权原因和出路', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => undefined),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+        observeAgentEvents: (observer) => {
+          observer('conv_1', {
+            type: 'error',
+            data: {
+              data: {
+                message: '模型鉴权失败：API Key 无效、已过期或没有权限。',
+                code: 'RUN_FAILED',
+                failure: { code: 'MODEL_AUTH' },
+              },
+            },
+          } as never);
+          return () => {};
+        },
+      },
+    });
+
+    expect(h.statuses).toEqual(['queued', 'working', 'failed']);
+    const reason = h.blockedReasons.at(-1) ?? '';
+    expect(reason).toContain('API Key');
+    expect(reason).toContain('设置');
+    expect(reason).toContain('接着做');
+    expect(h.deltas.at(-1)?.risks[0]).toBe(reason);
+  });
+
   it('终态契约：空最终回复不许记为完成——没有任何终态错误也要归失败并给重试入口', async () => {
     const h = terminalHarness();
     await launchApprovedNeoWorkCard({
@@ -960,10 +993,10 @@ describe('Neo Tag runtime helpers', () => {
         startTask: vi.fn(async () => undefined),
         getSessionState: vi.fn(() => ({ status: 'idle' })),
         observeAgentEvents: (observer) => {
-          // runFinalizer 先发带标记的（真实顺序），orchestrator catch 后发裸的
+          // 共享 normalizer 先读嵌套标记，随后 orchestrator catch 发裸 error。
           observer('conv_1', {
             type: 'error',
-            data: { message: '余额不足', code: 'RUN_FAILED', failure: { code: 'MODEL_QUOTA' } },
+            data: { data: { message: '余额不足', code: 'RUN_FAILED', failure: { code: 'MODEL_QUOTA' } } },
           } as never);
           observer('conv_1', {
             type: 'error',

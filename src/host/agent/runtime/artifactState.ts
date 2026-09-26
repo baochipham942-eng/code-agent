@@ -55,15 +55,17 @@ export interface DeclaredDeliverables {
 
 /** 本 run 渲染审查结果，供 turn_outcome 盖章（不把 skipped 当成通过） */
 export type ArtifactRenderReviewStamp = {
-  status: 'passed' | 'failed' | 'skipped_no_libreoffice' | 'skipped_no_vlm' | 'not_applicable';
+  status: 'passed' | 'failed' | 'skipped_no_libreoffice' | 'skipped_no_vlm' | 'skipped_render_failed' | 'not_applicable';
   issues: Array<{
     file: string;
     page: number;
-    kind: 'overflow' | 'overlap' | 'cramped' | 'low_contrast' | 'template_residue';
+    kind: 'overflow' | 'overlap' | 'cramped' | 'low_contrast' | 'template_residue' | 'other';
     description: string;
     severity: 'high' | 'medium' | 'low';
   }>;
   filesReviewed: string[];
+  /** 本 turn 已消耗的 VLM 次数（含此前补轮），用于整轮上限 */
+  vlmCallsUsed?: number;
 };
 
 /**

@@ -221,6 +221,8 @@ export const ARTIFACT_RENDER_REVIEW = {
   MAX_PAGES: 10,
   /** 单次交付（一轮审查）VLM 调用上限 */
   MAX_VLM_CALLS_PER_DELIVERY: 10,
+  /** 整轮（含补轮）VLM 总调用上限，防止每轮对全部文件重跑把付费调用打到 40 */
+  MAX_VLM_CALLS_PER_TURN: 20,
   /** VLM 发现问题后最多回喂修正轮数；仍失败则不给 verified */
   MAX_REPAIR_ROUNDS: 3,
   /** 会走渲染审查的交付物扩展名（PPT 仍走 visualReview，不在此列） */

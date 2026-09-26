@@ -492,11 +492,11 @@ export class MessageProcessor {
         workingDirectory: this.ctx.workingDirectory, messages: this.ctx.messages,
         declaredDeliverables: this.ctx.artifact?.declaredDeliverables, finalText: gated.content,
         diskRepairsUsed: this.guardState.deliverableRepairCount, visualRepairsUsed: this.guardState.artifactRenderRepairCount,
-        nudgeManager: this.ctx.nudgeManager, artifact: this.ctx.artifact,
+        nudgeManager: this.ctx.nudgeManager, artifact: this.ctx.artifact, abortSignal: this.ctx.control.runAbortController?.signal,
       });
       if (gate.action === 'repair') {
         if (gate.kind === 'disk') this.guardState.deliverableRepairCount += 1; else this.guardState.artifactRenderRepairCount += 1;
-        logger.warn(gate.logMessage, { sessionId: this.ctx.sessionId });
+        logger.warn(gate.logMessage, { sessionId: this.ctx.sessionId, ...(gate.missing ? { missing: gate.missing } : {}) });
         this.contextAssembly.injectSystemMessage(gate.prompt, gate.tag);
         return 'continue';
       }

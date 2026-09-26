@@ -259,7 +259,9 @@ async function buildTurnOutcome(
   }
   const visualVerification = !renderReview || renderReview.status === 'not_applicable'
     ? undefined
-    : (renderReview.status === 'skipped_no_libreoffice' || renderReview.status === 'skipped_no_vlm')
+    : (renderReview.status === 'skipped_no_libreoffice'
+      || renderReview.status === 'skipped_no_vlm'
+      || renderReview.status === 'skipped_render_failed')
       ? '未做视觉验证' as const
       : renderReview.status;
   const knownRefs = new Set(evidenceRefs.map((ref) => ref.ref));

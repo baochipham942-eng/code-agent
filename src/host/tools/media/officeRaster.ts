@@ -14,7 +14,7 @@ import { LIBREOFFICE_SEARCH_PATHS, LIBREOFFICE_PATH_ENV, CONVERT_TIMEOUTS, PDF_R
 function execFileAsync(
   file: string,
   args: string[],
-  options: { timeout: number; encoding: BufferEncoding },
+  options: { timeout: number; encoding: BufferEncoding; signal?: AbortSignal },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(file, args, options, (err, stdout) => {
@@ -109,7 +109,8 @@ export function resolvePdftoppm(): string | null {
   return whichSync('pdftoppm');
 }
 
-export async function convertOfficeToPdf(inputPath: string, pdfDir: string): Promise<string> {
+export async function convertOfficeToPdf(inputPath: string, pdfDir: string, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted?.();
   if (!fs.existsSync(pdfDir)) {
     fs.mkdirSync(pdfDir, { recursive: true });
   }
@@ -118,7 +119,7 @@ export async function convertOfficeToPdf(inputPath: string, pdfDir: string): Pro
     await execFileAsync(
       soffice,
       ['--headless', '--convert-to', 'pdf', '--outdir', pdfDir, inputPath],
-      { timeout: CONVERT_TIMEOUTS.PDF_CONVERT, encoding: 'utf8' },
+      { timeout: CONVERT_TIMEOUTS.PDF_CONVERT, encoding: 'utf8', signal },
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -138,6 +139,8 @@ export interface RasterizePdfOptions {
   expectedPageCount?: number;
   /** 最多保留前 N 页（文档审查成本护栏）；PPT 不传。 */
   maxPages?: number;
+  /** 取消时杀掉 pdftoppm / magick / qlmanage 子进程 */
+  signal?: AbortSignal;
 }
 
 /**
@@ -152,6 +155,8 @@ export async function rasterizePdfToImages(
 ): Promise<string[]> {
   const expectedPageCount = options.expectedPageCount;
   const maxPages = options.maxPages;
+  const signal = options.signal;
+  signal?.throwIfAborted?.();
   const accept = (files: string[]): string[] | undefined => {
     const sliced = typeof maxPages === 'number' ? files.slice(0, maxPages) : files;
     if (typeof expectedPageCount === 'number') {
@@ -172,7 +177,7 @@ export async function rasterizePdfToImages(
       args.push('-f', '1', '-l', String(maxPages));
     }
     args.push(pdfPath, path.join(outputDir, baseName));
-    await execFileAsync(pdftoppm, args, { timeout: CONVERT_TIMEOUTS.PDFTOPPM, encoding: 'utf8' });
+    await execFileAsync(pdftoppm, args, { timeout: CONVERT_TIMEOUTS.PDFTOPPM, encoding: 'utf8', signal });
     const files = collectPageImages(outputDir, baseName);
     const accepted = accept(files);
     if (accepted) return accepted;
@@ -190,7 +195,7 @@ export async function rasterizePdfToImages(
         pdfPath,
         path.join(outputDir, `${baseName}-%d.jpg`),
       ],
-      { timeout: CONVERT_TIMEOUTS.IMAGEMAGICK, encoding: 'utf8' },
+      { timeout: CONVERT_TIMEOUTS.IMAGEMAGICK, encoding: 'utf8', signal },
     );
     const files = collectPageImages(outputDir, baseName);
     const accepted = accept(files);
@@ -203,7 +208,7 @@ export async function rasterizePdfToImages(
     await execFileAsync(
       'qlmanage',
       ['-t', '-s', String(PDF_RENDER.QLMANAGE_SIZE), '-o', outputDir, pdfPath],
-      { timeout: CONVERT_TIMEOUTS.QLMANAGE, encoding: 'utf8' },
+      { timeout: CONVERT_TIMEOUTS.QLMANAGE, encoding: 'utf8', signal },
     );
     const qlFile = path.join(outputDir, `${path.basename(pdfPath)}.png`);
     if (fs.existsSync(qlFile)) {

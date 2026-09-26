@@ -3,13 +3,15 @@
 //
 // 接入点选 deliverableDiskCheck 的有界补轮（messageProcessor 落库前）：
 // turnOutcomeStamp 是收尾侧账、不能回喂模型，修 3 轮必须走补轮闸。
-// LibreOffice 不可用时跳过审查并盖「未做视觉验证」，不把 skipped 当成通过。
+// LibreOffice / VLM / 栅格化工具链不可用时跳过审查并盖「未做视觉验证」，
+// 不把 skipped 当成通过，也不把基础设施失败当成版面问题去补轮。
 // ============================================================================
 
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 import { ARTIFACT_RENDER_REVIEW } from '../../../shared/constants/agent';
 import type { Message } from '../../../shared/contract';
 import type { ContextInjectionSource } from '../../../shared/contract/contextView';
@@ -30,12 +32,19 @@ const logger = createLogger('ArtifactRenderReview');
 
 const RENDERABLE = new Set<string>(ARTIFACT_RENDER_REVIEW.RENDERABLE_EXTENSIONS);
 
+const SKIPPED_STATUSES: ReadonlySet<ArtifactRenderReviewStatus> = new Set([
+  'skipped_no_libreoffice',
+  'skipped_no_vlm',
+  'skipped_render_failed',
+]);
+
 export type ArtifactRenderIssueKind =
   | 'overflow'
   | 'overlap'
   | 'cramped'
   | 'low_contrast'
-  | 'template_residue';
+  | 'template_residue'
+  | 'other';
 
 export type ArtifactRenderIssue = {
   file: string;
@@ -50,7 +59,7 @@ export type ArtifactRenderReviewStatus = ArtifactRenderReviewStamp['status'];
 export type ArtifactRenderVlm = (prompt: string, imagePath: string) => Promise<string>;
 
 const ISSUE_KINDS: ArtifactRenderIssueKind[] = [
-  'overflow', 'overlap', 'cramped', 'low_contrast', 'template_residue',
+  'overflow', 'overlap', 'cramped', 'low_contrast', 'template_residue', 'other',
 ];
 
 function extensionOf(filePath: string): string {
@@ -62,7 +71,7 @@ function isRenderableClaim(claim: DeliverableClaim): boolean {
 }
 
 export function formatVisualReviewProblems(stamp: ArtifactRenderReviewStamp): string[] {
-  if (stamp.status === 'skipped_no_libreoffice' || stamp.status === 'skipped_no_vlm') {
+  if (SKIPPED_STATUSES.has(stamp.status)) {
     return ['VISUAL_REVIEW_SKIPPED: 未做视觉验证'];
   }
   return stamp.issues.map((issue) =>
@@ -70,10 +79,39 @@ export function formatVisualReviewProblems(stamp: ArtifactRenderReviewStamp): st
 }
 
 function needsRevision(issues: readonly ArtifactRenderIssue[]): boolean {
-  return issues.some((issue) =>
-    issue.kind === 'overflow'
-    || issue.kind === 'overlap'
-    || issue.severity !== 'low');
+  return issues.some((issue) => issue.severity === 'high' || issue.severity === 'medium');
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const name = 'name' in error ? String(error.name) : '';
+  const code = 'code' in error ? error.code : undefined;
+  return name === 'AbortError' || code === 'ABORT_ERR';
+}
+
+function isUsableAbortSignal(signal: unknown): signal is AbortSignal {
+  return Boolean(
+    signal
+    && typeof signal === 'object'
+    && 'aborted' in signal
+    && typeof (signal as AbortSignal).addEventListener === 'function',
+  );
+}
+
+function abortError(): Error {
+  const error = new Error('visual review aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+function waitForAbort(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    if (signal.aborted) {
+      reject(abortError());
+      return;
+    }
+    signal.addEventListener('abort', () => reject(abortError()), { once: true });
+  });
 }
 
 function pageReviewPrompt(pageNumber: number, kind: string): string {
@@ -100,7 +138,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseIssueKind(value: unknown): ArtifactRenderIssueKind {
   return typeof value === 'string' && ISSUE_KINDS.includes(value as ArtifactRenderIssueKind)
     ? value as ArtifactRenderIssueKind
-    : 'overflow';
+    : 'other';
 }
 
 function parseSeverity(value: unknown): ArtifactRenderIssue['severity'] {
@@ -151,6 +189,31 @@ async function defaultVlm(prompt: string, imagePath: string): Promise<string> {
   return analysis ?? '';
 }
 
+function sheetHasExcelJsVisuals(worksheet: ExcelJS.Worksheet): boolean | 'unknown' {
+  try {
+    if (worksheet.getImages().length > 0) return true;
+    const backgroundId = worksheet.getBackgroundImageId();
+    if (typeof backgroundId === 'string' && backgroundId.length > 0) return true;
+    const media = worksheet.model?.media;
+    if (Array.isArray(media) && media.length > 0) return true;
+    return false;
+  } catch {
+    return 'unknown';
+  }
+}
+
+async function sheetHasDrawingOrChart(filePath: string, worksheet: ExcelJS.Worksheet): Promise<boolean | 'unknown'> {
+  try {
+    const zip = await JSZip.loadAsync(fs.readFileSync(filePath));
+    const rels = zip.file(`xl/worksheets/_rels/sheet${worksheet.id}.xml.rels`);
+    if (!rels) return false;
+    const xml = await rels.async('string');
+    return /(?:drawings|charts)\//i.test(xml);
+  } catch {
+    return 'unknown';
+  }
+}
+
 export async function checkXlsxStructure(filePath: string): Promise<ArtifactRenderIssue[]> {
   try {
     const workbook = new ExcelJS.Workbook();
@@ -159,19 +222,22 @@ export async function checkXlsxStructure(filePath: string): Promise<ArtifactRend
       return [{ file: filePath, page: 1, kind: 'overflow', description: '工作簿没有工作表', severity: 'high' }];
     }
     const issues: ArtifactRenderIssue[] = [];
-    workbook.eachSheet((worksheet) => {
+    for (const worksheet of workbook.worksheets) {
       const rows = worksheet.actualRowCount || worksheet.rowCount || 0;
       const cols = worksheet.actualColumnCount || worksheet.columnCount || 0;
-      if (rows === 0 || cols === 0) {
-        issues.push({
-          file: filePath,
-          page: 1,
-          kind: 'overflow',
-          description: `工作表「${worksheet.name}」行列维度为零（空表）`,
-          severity: 'high',
-        });
-      }
-    });
+      if (rows !== 0 && cols !== 0) continue;
+      const excelVisuals = sheetHasExcelJsVisuals(worksheet);
+      if (excelVisuals !== false) continue;
+      const drawings = await sheetHasDrawingOrChart(filePath, worksheet);
+      if (drawings !== false) continue;
+      issues.push({
+        file: filePath,
+        page: 1,
+        kind: 'overflow',
+        description: `工作表「${worksheet.name}」行列维度为零（空表）`,
+        severity: 'high',
+      });
+    }
     return issues;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -182,38 +248,54 @@ export async function checkXlsxStructure(filePath: string): Promise<ArtifactRend
 async function rasterizeDeliverable(
   filePath: string,
   screenshotDir: string,
+  signal?: AbortSignal,
 ): Promise<string[]> {
+  signal?.throwIfAborted?.();
   const ext = extensionOf(filePath);
   const baseName = path.basename(filePath, path.extname(filePath));
   const pdfPath = ext === 'pdf'
     ? filePath
-    : await convertOfficeToPdf(filePath, path.join(screenshotDir, '_pdf'));
+    : await convertOfficeToPdf(filePath, path.join(screenshotDir, '_pdf'), signal);
   return rasterizePdfToImages(pdfPath, screenshotDir, baseName, {
     maxPages: ARTIFACT_RENDER_REVIEW.MAX_PAGES,
+    signal,
   });
 }
 
 export type ArtifactRenderReviewDeps = {
   vlm?: ArtifactRenderVlm;
   libreOfficeAvailable?: () => boolean;
-  rasterize?: (filePath: string, screenshotDir: string) => Promise<string[]>;
+  rasterize?: (filePath: string, screenshotDir: string, signal?: AbortSignal) => Promise<string[]>;
   checkXlsx?: (filePath: string) => Promise<ArtifactRenderIssue[]>;
+  abortSignal?: AbortSignal;
+  vlmCallsUsed?: number;
 };
+
+function stampOf(
+  status: ArtifactRenderReviewStatus,
+  issues: ArtifactRenderIssue[],
+  filesReviewed: string[],
+  vlmCallsUsed: number,
+): ArtifactRenderReviewStamp {
+  return { status, issues, filesReviewed, vlmCallsUsed };
+}
 
 export async function reviewRenderableDeliverables(
   files: readonly string[],
   deps: ArtifactRenderReviewDeps = {},
 ): Promise<ArtifactRenderReviewStamp> {
   const existingFiles = files.filter(isRegularFile);
+  const priorCalls = deps.vlmCallsUsed ?? 0;
   if (existingFiles.length === 0) {
-    return { status: 'not_applicable', issues: [], filesReviewed: [] };
+    return stampOf('not_applicable', [], [], priorCalls);
   }
 
+  const abortSignal = isUsableAbortSignal(deps.abortSignal) ? deps.abortSignal : undefined;
   const libreOfficeAvailable = deps.libreOfficeAvailable ?? isLibreOfficeAvailable;
   const needsOffice = existingFiles.some((filePath) => extensionOf(filePath) !== 'pdf');
   if (needsOffice && !libreOfficeAvailable()) {
     logger.warn('LibreOffice not available, skipping visual review');
-    return { status: 'skipped_no_libreoffice', issues: [], filesReviewed: [] };
+    return stampOf('skipped_no_libreoffice', [], [], priorCalls);
   }
 
   const vlm = deps.vlm ?? defaultVlm;
@@ -223,21 +305,41 @@ export async function reviewRenderableDeliverables(
   const filesReviewed: string[] = [];
   let vlmCalls = 0;
   let vlmResponded = false;
+  let renderFailed = false;
+  let aborted = false;
+  const turnBudget = ARTIFACT_RENDER_REVIEW.MAX_VLM_CALLS_PER_TURN;
+  const deliveryBudget = ARTIFACT_RENDER_REVIEW.MAX_VLM_CALLS_PER_DELIVERY;
 
-  for (const filePath of existingFiles) {
+  const remainingTurn = (): number => Math.max(0, turnBudget - priorCalls - vlmCalls);
+  const remainingDelivery = (): number => Math.max(0, deliveryBudget - vlmCalls);
+
+  fileLoop: for (const filePath of existingFiles) {
+    if (abortSignal?.aborted) {
+      aborted = true;
+      break;
+    }
     if (extensionOf(filePath) === 'xlsx') {
       issues.push(...await checkXlsx(filePath));
     }
 
     const screenshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-render-review-'));
     try {
-      const pages = await rasterize(filePath, screenshotDir);
+      const pages = await rasterize(filePath, screenshotDir, abortSignal);
       filesReviewed.push(filePath);
       for (let index = 0; index < pages.length; index += 1) {
-        if (vlmCalls >= ARTIFACT_RENDER_REVIEW.MAX_VLM_CALLS_PER_DELIVERY) break;
+        if (abortSignal?.aborted) {
+          aborted = true;
+          break fileLoop;
+        }
+        if (remainingTurn() <= 0 || remainingDelivery() <= 0) break;
         vlmCalls += 1;
         const pageNumber = index + 1;
-        const response = await vlm(pageReviewPrompt(pageNumber, extensionOf(filePath)), pages[index]);
+        const response = abortSignal
+          ? await Promise.race([
+            vlm(pageReviewPrompt(pageNumber, extensionOf(filePath)), pages[index]),
+            waitForAbort(abortSignal),
+          ])
+          : await vlm(pageReviewPrompt(pageNumber, extensionOf(filePath)), pages[index]);
         if (!response.trim()) continue;
         const parsed = parsePageReview(response);
         if (!parsed.parsed) continue;
@@ -247,32 +349,34 @@ export async function reviewRenderableDeliverables(
         }
       }
     } catch (error: unknown) {
+      if (isAbortError(error) || abortSignal?.aborted) {
+        aborted = true;
+        break;
+      }
       const message = error instanceof Error ? error.message : String(error);
       logger.warn(`visual review rasterize failed: ${message}`);
-      if (!libreOfficeAvailable() && extensionOf(filePath) !== 'pdf') {
-        return { status: 'skipped_no_libreoffice', issues: [], filesReviewed };
-      }
-      issues.push({
-        file: filePath,
-        page: 1,
-        kind: 'overflow',
-        description: `渲染失败: ${message}`,
-        severity: 'high',
-      });
+      renderFailed = true;
     } finally {
       fs.rmSync(screenshotDir, { recursive: true, force: true });
     }
-    if (vlmCalls >= ARTIFACT_RENDER_REVIEW.MAX_VLM_CALLS_PER_DELIVERY) break;
+    if (remainingTurn() <= 0 || remainingDelivery() <= 0) break;
   }
 
+  const used = priorCalls + vlmCalls;
+  if (aborted && !needsRevision(issues) && !vlmResponded) {
+    return stampOf(renderFailed ? 'skipped_render_failed' : 'skipped_no_vlm', [], filesReviewed, used);
+  }
+  if (renderFailed && !vlmResponded && !needsRevision(issues)) {
+    return stampOf('skipped_render_failed', [], filesReviewed, used);
+  }
   if (needsRevision(issues)) {
-    return { status: 'failed', issues, filesReviewed };
+    return stampOf('failed', issues, filesReviewed, used);
   }
   if (filesReviewed.length > 0 && vlmCalls > 0 && !vlmResponded) {
     logger.warn('VLM returned empty responses, skipping visual verification');
-    return { status: 'skipped_no_vlm', issues, filesReviewed };
+    return stampOf('skipped_no_vlm', issues, filesReviewed, used);
   }
-  return { status: 'passed', issues, filesReviewed };
+  return stampOf('passed', issues, filesReviewed, used);
 }
 
 function buildVisualRepairPrompt(issues: readonly ArtifactRenderIssue[]): string {
@@ -304,6 +408,10 @@ export type ArtifactRenderReviewGateResult =
   | { action: 'pass'; content: string; stamp: ArtifactRenderReviewStamp }
   | { action: 'repair'; prompt: string; stamp: ArtifactRenderReviewStamp };
 
+function uniquePaths(paths: readonly string[]): string[] {
+  return [...new Set(paths)];
+}
+
 export async function runArtifactRenderReviewGate(input: {
   workingDirectory: string;
   messages: readonly Message[];
@@ -311,6 +419,8 @@ export async function runArtifactRenderReviewGate(input: {
   finalText: string;
   repairsUsed: number;
   nudgeManager?: { getModifiedFilesSince(timestamp: number): string[] };
+  previousStamp?: ArtifactRenderReviewStamp;
+  abortSignal?: AbortSignal;
   deps?: ArtifactRenderReviewDeps;
 }): Promise<ArtifactRenderReviewGateResult> {
   const claims = collectDeliverableClaims({
@@ -321,12 +431,26 @@ export async function runArtifactRenderReviewGate(input: {
     nudgeManager: input.nudgeManager,
   }).filter(isRenderableClaim);
 
-  const stamp = await reviewRenderableDeliverables(
-    claims.map((claim) => claim.resolved),
-    input.deps,
-  );
+  const claimedFiles = claims.map((claim) => claim.resolved);
+  const previousIssues = input.repairsUsed > 0 ? (input.previousStamp?.issues ?? []) : [];
+  const files = previousIssues.length > 0
+    ? uniquePaths(previousIssues.map((issue) => issue.file))
+    : claimedFiles;
 
-  if (stamp.status === 'not_applicable' || stamp.status === 'skipped_no_libreoffice' || stamp.status === 'skipped_no_vlm' || stamp.status === 'passed') {
+  const priorCalls = input.previousStamp?.vlmCallsUsed ?? input.deps?.vlmCallsUsed ?? 0;
+  const abortSignal = isUsableAbortSignal(input.abortSignal)
+    ? input.abortSignal
+    : input.deps?.abortSignal;
+  const stamp = await reviewRenderableDeliverables(files, {
+    ...input.deps,
+    abortSignal,
+    vlmCallsUsed: priorCalls,
+  });
+
+  if (abortSignal?.aborted) {
+    return { action: 'pass', content: input.finalText, stamp };
+  }
+  if (stamp.status === 'not_applicable' || SKIPPED_STATUSES.has(stamp.status) || stamp.status === 'passed') {
     return { action: 'pass', content: input.finalText, stamp };
   }
 
@@ -334,7 +458,8 @@ export async function runArtifactRenderReviewGate(input: {
   if (blocking.length === 0) {
     return { action: 'pass', content: input.finalText, stamp };
   }
-  if (input.repairsUsed < ARTIFACT_RENDER_REVIEW.MAX_REPAIR_ROUNDS) {
+  const budgetLeft = (stamp.vlmCallsUsed ?? 0) < ARTIFACT_RENDER_REVIEW.MAX_VLM_CALLS_PER_TURN;
+  if (input.repairsUsed < ARTIFACT_RENDER_REVIEW.MAX_REPAIR_ROUNDS && budgetLeft) {
     return { action: 'repair', prompt: buildVisualRepairPrompt(blocking), stamp };
   }
   return { action: 'pass', content: appendVisualFailureNote(input.finalText, blocking), stamp };
@@ -342,7 +467,14 @@ export async function runArtifactRenderReviewGate(input: {
 
 export type DeliverableCloseGateResult =
   | { action: 'pass'; content: string }
-  | { action: 'repair'; kind: 'disk' | 'visual'; prompt: string; tag: ContextInjectionSource; logMessage: string };
+  | {
+    action: 'repair';
+    kind: 'disk' | 'visual';
+    prompt: string;
+    tag: ContextInjectionSource;
+    logMessage: string;
+    missing?: string[];
+  };
 
 /** 落盘核对之后接渲染审查。messageProcessor 只调这一处，避免两套补轮分叉。 */
 export async function applyDeliverableCloseGates(input: {
@@ -353,7 +485,11 @@ export async function applyDeliverableCloseGates(input: {
   diskRepairsUsed: number;
   visualRepairsUsed: number;
   nudgeManager?: { getModifiedFilesSince(timestamp: number): string[] };
-  artifact?: { setRenderReview?(stamp: ArtifactRenderReviewStamp): void };
+  artifact?: {
+    setRenderReview?(stamp: ArtifactRenderReviewStamp): void;
+    readonly renderReview?: ArtifactRenderReviewStamp;
+  };
+  abortSignal?: AbortSignal;
   deps?: ArtifactRenderReviewDeps;
 }): Promise<DeliverableCloseGateResult> {
   const disk = runDeliverableDiskCheckGate({
@@ -371,6 +507,7 @@ export async function applyDeliverableCloseGates(input: {
       prompt: disk.prompt,
       tag: 'deliverable-disk-check',
       logMessage: '[DeliverableDiskCheck] deliverables not on disk, bounded repair round fed back',
+      missing: disk.missing.map((item) => item.claim.resolved),
     };
   }
 
@@ -381,6 +518,8 @@ export async function applyDeliverableCloseGates(input: {
     finalText: disk.content,
     repairsUsed: input.visualRepairsUsed,
     nudgeManager: input.nudgeManager,
+    previousStamp: input.artifact?.renderReview,
+    abortSignal: input.abortSignal,
     deps: input.deps,
   });
   input.artifact?.setRenderReview?.(visual.stamp);

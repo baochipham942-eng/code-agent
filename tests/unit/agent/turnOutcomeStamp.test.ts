@@ -496,6 +496,31 @@ describe('turn outcome stamp', () => {
     expect(outcome.evidenceProblems).toEqual(['VISUAL_REVIEW_SKIPPED: 未做视觉验证']);
   });
 
+  it('栅格化失败的渲染审查盖「未做视觉验证」且不给 verified', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.pdf');
+    writeFileSync(artifact, 'pdf');
+    const recorder = new TurnTraceRecorder('visual-skip-raster', traceRoot);
+    const messages = [
+      message(),
+      message({ id: 'wrote', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-report', name: 'Write', arguments: { file_path: artifact } }],
+        toolResults: [{ toolCallId: 'write-report', success: true, metadata: { outputPath: artifact } }] }),
+      message({ id: 'final', role: 'assistant', content: '已生成 `report.pdf`，请查收。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({
+      ...context(recorder, messages),
+      workingDirectory: traceRoot,
+      artifact: {
+        renderReview: { status: 'skipped_render_failed', issues: [], filesReviewed: [] },
+      },
+    }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.visualVerification).toBe('未做视觉验证');
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceProblems).toEqual(['VISUAL_REVIEW_SKIPPED: 未做视觉验证']);
+  });
+
   it('渲染审查失败时不给 verified，problems 带页码', async () => {
     mkdirSync(traceRoot, { recursive: true });
     const artifact = path.join(traceRoot, 'overflow.docx');

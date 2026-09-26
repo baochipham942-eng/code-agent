@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import ExcelJS from 'exceljs';
@@ -208,6 +208,121 @@ describe('reviewRenderableDeliverables', () => {
     expect(stamp.issues).toEqual([]);
   });
 
+  it('栅格化抛错记 skipped_render_failed，不进 issue、不触发补轮', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const filePath = path.join(workRoot, 'report.pdf');
+    writeFileSync(filePath, '%PDF-1.4');
+    let vlmCalls = 0;
+
+    const stamp = await reviewRenderableDeliverables([filePath], {
+      libreOfficeAvailable: () => true,
+      rasterize: async () => {
+        throw new Error('pdftoppm not found');
+      },
+      vlm: async () => {
+        vlmCalls += 1;
+        throw new Error('VLM must not run when rasterize fails');
+      },
+    });
+
+    expect(stamp.status).toBe('skipped_render_failed');
+    expect(stamp.issues).toEqual([]);
+    expect(vlmCalls).toBe(0);
+  });
+
+  it('LibreOffice 转换失败同样 skipped_render_failed，docx 不假装 overflow', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const filePath = path.join(workRoot, 'report.docx');
+    await writeCleanDocx(filePath);
+
+    const stamp = await reviewRenderableDeliverables([filePath], {
+      libreOfficeAvailable: () => true,
+      rasterize: async () => {
+        throw new Error('LibreOffice conversion failed: timed out');
+      },
+      vlm: async () => JSON.stringify({ passed: true, issues: [] }),
+    });
+
+    expect(stamp.status).toBe('skipped_render_failed');
+    expect(stamp.issues).toEqual([]);
+  });
+
+  it('VLM 未知 kind 归为 other；low 不触发修复', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const filePath = path.join(workRoot, 'align.pdf');
+    writeFileSync(filePath, '%PDF-1.4');
+    writeFileSync(path.join(workRoot, 'page-1.jpg'), 'img');
+
+    const stamp = await reviewRenderableDeliverables([filePath], {
+      libreOfficeAvailable: () => true,
+      rasterize: async () => [path.join(workRoot, 'page-1.jpg')],
+      vlm: async () => JSON.stringify({
+        passed: false,
+        issues: [{ kind: 'alignment', description: '两列没有齐平', severity: 'low' }],
+      }),
+    });
+
+    expect(stamp.status).toBe('passed');
+    expect(stamp.issues).toEqual([expect.objectContaining({
+      kind: 'other',
+      severity: 'low',
+      description: '两列没有齐平',
+    })]);
+  });
+
+  it('abortSignal 取消后停止后续 VLM 调用', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const fileA = path.join(workRoot, 'a.pdf');
+    const fileB = path.join(workRoot, 'b.pdf');
+    writeFileSync(fileA, '%PDF-1.4');
+    writeFileSync(fileB, '%PDF-1.4');
+    writeFileSync(path.join(workRoot, 'page-a.jpg'), 'img');
+    writeFileSync(path.join(workRoot, 'page-b.jpg'), 'img');
+    const controller = new AbortController();
+    let vlmCalls = 0;
+    const rasterizeFiles: string[] = [];
+
+    await reviewRenderableDeliverables([fileA, fileB], {
+      libreOfficeAvailable: () => true,
+      abortSignal: controller.signal,
+      rasterize: async (filePath) => {
+        rasterizeFiles.push(filePath);
+        return [filePath === fileA ? path.join(workRoot, 'page-a.jpg') : path.join(workRoot, 'page-b.jpg')];
+      },
+      vlm: async () => {
+        vlmCalls += 1;
+        controller.abort();
+        return JSON.stringify({ passed: true, issues: [] });
+      },
+    });
+
+    expect(vlmCalls).toBe(1);
+    expect(rasterizeFiles).toEqual([fileA]);
+  });
+
+  it('整轮 VLM 总调用受 MAX_VLM_CALLS_PER_TURN 限制', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const filePath = path.join(workRoot, 'many.pdf');
+    writeFileSync(filePath, '%PDF-1.4');
+    const pages = Array.from({ length: 5 }, (_, index) => {
+      const pagePath = path.join(workRoot, `turn-${index}.jpg`);
+      writeFileSync(pagePath, 'img');
+      return pagePath;
+    });
+    let calls = 0;
+    const remaining = 2;
+    await reviewRenderableDeliverables([filePath], {
+      libreOfficeAvailable: () => true,
+      vlmCallsUsed: ARTIFACT_RENDER_REVIEW.MAX_VLM_CALLS_PER_TURN - remaining,
+      rasterize: async () => pages,
+      vlm: async () => {
+        calls += 1;
+        return '{"passed":true,"issues":[]}';
+      },
+    });
+    expect(calls).toBe(remaining);
+  });
+
   it('单次交付 VLM 调用不超过 MAX_VLM_CALLS_PER_DELIVERY', async () => {
     mkdirSync(workRoot, { recursive: true });
     const filePath = path.join(workRoot, 'many.pdf');
@@ -249,6 +364,40 @@ describe('xlsx structure check', () => {
     sheet.getCell('A1').value = '月份';
     sheet.getCell('A2').value = '一月';
     await workbook.xlsx.writeFile(filePath);
+    expect(await checkXlsxStructure(filePath)).toEqual([]);
+  });
+
+  it('只含图片的工作表不报空表', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const filePath = path.join(workRoot, 'chart-only.xlsx');
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('图');
+    const imageId = workbook.addImage({
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+      extension: 'png',
+    });
+    sheet.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 120, height: 80 } });
+    await workbook.xlsx.writeFile(filePath);
+    expect(await checkXlsxStructure(filePath)).toEqual([]);
+  });
+
+  it('工作表 drawing/chart 关系存在时不报空表', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const filePath = path.join(workRoot, 'drawing.xlsx');
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('图');
+    await workbook.xlsx.writeFile(filePath);
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(readFileSync(filePath));
+    zip.file(
+      'xl/worksheets/_rels/sheet1.xml.rels',
+      '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>',
+    );
+    zip.file('xl/drawings/drawing1.xml', '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>');
+    writeFileSync(filePath, await zip.generateAsync({ type: 'nodebuffer' }));
     expect(await checkXlsxStructure(filePath)).toEqual([]);
   });
 });
@@ -311,6 +460,76 @@ describe('runArtifactRenderReviewGate', () => {
     expect(result.content).toContain('表格右侧被裁切');
     expect(result.content).toContain('请告诉我方向');
     expect(result.stamp.status).toBe('failed');
+  });
+
+  it('rasterize 抛错不走 repair，stamp 为 skipped_render_failed', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const filePath = path.join(workRoot, 'report.pdf');
+    writeFileSync(filePath, '%PDF-1.4');
+
+    const result = await runArtifactRenderReviewGate({
+      workingDirectory: workRoot,
+      messages: [message(), producingActivity(filePath)],
+      finalText: '已生成 `report.pdf`。',
+      repairsUsed: 0,
+      deps: {
+        libreOfficeAvailable: () => true,
+        rasterize: async () => {
+          throw new Error('Screenshot rendering failed: expected at least 1 pages');
+        },
+        vlm: async () => {
+          throw new Error('VLM must not run');
+        },
+      },
+    });
+
+    expect(result.action).toBe('pass');
+    if (result.action !== 'pass') throw new Error('expected pass');
+    expect(result.stamp.status).toBe('skipped_render_failed');
+    expect(result.stamp.issues).toEqual([]);
+    expect(result.content).toBe('已生成 `report.pdf`。');
+    expect(result.content).not.toContain('视觉审查未通过');
+  });
+
+  it('修复轮只重审上一轮有问题的文件', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const bad = path.join(workRoot, 'bad.pdf');
+    const good = path.join(workRoot, 'good.pdf');
+    writeFileSync(bad, '%PDF-1.4');
+    writeFileSync(good, '%PDF-1.4');
+    writeFileSync(path.join(workRoot, 'bad.jpg'), 'img');
+    writeFileSync(path.join(workRoot, 'good.jpg'), 'img');
+    const reviewed: string[] = [];
+
+    const result = await runArtifactRenderReviewGate({
+      workingDirectory: workRoot,
+      messages: [
+        message(),
+        producingActivity(bad),
+        producingActivity(good),
+      ],
+      finalText: '已生成 `bad.pdf` 和 `good.pdf`。',
+      repairsUsed: 1,
+      previousStamp: {
+        status: 'failed',
+        filesReviewed: [bad, good],
+        vlmCallsUsed: 2,
+        issues: [{ file: bad, page: 1, kind: 'overflow', description: '标题被截断', severity: 'high' }],
+      },
+      deps: {
+        libreOfficeAvailable: () => true,
+        rasterize: async (filePath, screenshotDir) => {
+          reviewed.push(filePath);
+          const page = path.join(screenshotDir, `${path.basename(filePath)}.jpg`);
+          writeFileSync(page, 'img');
+          return [page];
+        },
+        vlm: async () => JSON.stringify({ passed: true, issues: [] }),
+      },
+    });
+
+    expect(reviewed).toEqual([bad]);
+    expect(result.action).toBe('pass');
   });
 });
 
@@ -402,5 +621,39 @@ describe('close-gate shell injection', () => {
     });
     expect(conversionCalls.length).toBeGreaterThan(0);
     expect(conversionCalls.some((call) => Array.isArray(call[1]) && call[1].includes(evilPath))).toBe(true);
+  });
+
+  it('rasterizePdfToImages forwards abortSignal to execFile', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const pdfPath = path.join(workRoot, 'deck.pdf');
+    writeFileSync(pdfPath, '%PDF-1.4');
+    const outDir = path.join(workRoot, 'out-abort');
+    mkdirSync(outDir, { recursive: true });
+    const controller = new AbortController();
+
+    await expect(rasterizePdfToImages(pdfPath, outDir, 'deck', { signal: controller.signal }))
+      .rejects.toThrow(/Screenshot rendering failed/);
+
+    const signaled = execFileMock.mock.calls.some((call) => {
+      const options = call.find((arg) => arg && typeof arg === 'object' && 'signal' in (arg as object));
+      return Boolean(options && (options as { signal?: AbortSignal }).signal === controller.signal);
+    });
+    expect(signaled).toBe(true);
+  });
+
+  it('disk repair result restores missing file list', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const missingPath = path.join(workRoot, 'gone.pdf');
+    const result = await applyDeliverableCloseGates({
+      workingDirectory: workRoot,
+      messages: [message(), producingActivity(missingPath)],
+      finalText: '已生成 `gone.pdf`。',
+      diskRepairsUsed: 0,
+      visualRepairsUsed: 0,
+    });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') throw new Error('expected repair');
+    expect(result.kind).toBe('disk');
+    expect(result.missing).toEqual([missingPath]);
   });
 });

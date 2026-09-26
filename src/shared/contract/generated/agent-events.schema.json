@@ -1957,7 +1957,9 @@
                   "in_progress",
                   "completed",
                   "blocked",
-                  "cancelled"
+                  "cancelled",
+                  "needs_decision",
+                  "user_action"
                 ]
               },
               "priority": {

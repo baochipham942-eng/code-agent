@@ -10,8 +10,15 @@ import type {
   SessionTaskEvent,
   SessionTaskEventKind,
 } from '../../../shared/contract/planning';
+import {
+  isClosedTaskStatus,
+  isUnresolvedTurnTaskStatus,
+  statusRequiresWaitReason,
+} from '../../../shared/contract/planning';
 import { createLogger } from '../infra/logger';
 import { getDatabase } from '../core/databaseService';
+
+export { isClosedTaskStatus };
 
 const logger = createLogger('TaskStore');
 
@@ -274,6 +281,8 @@ export function updateTask(
     else if (updates.status === 'pending' && task.status === 'in_progress') events.push({ kind: 'unstarted' });
     else if (updates.status === 'completed') events.push({ kind: 'done', summary });
     else if (updates.status === 'blocked') events.push({ kind: 'blocked', summary });
+    else if (updates.status === 'needs_decision') events.push({ kind: 'needs_decision', summary });
+    else if (updates.status === 'user_action') events.push({ kind: 'user_action', summary });
     else if (updates.status === 'cancelled') events.push({ kind: 'abandoned', summary });
   }
   if (updates.subject && updates.subject !== task.subject) {
@@ -289,11 +298,11 @@ export function updateTask(
   // Update fields
   if (updates.status) task.status = updates.status as SessionTaskStatus;
   if (updates.subject) task.subject = updates.subject;
-  // 阻塞说明随状态走：离开 blocked 就清掉，否则会挂着一条早已解决的过期理由
+  // 等待原因随状态走：离开 blocked / needs_decision / user_action 就清掉
   if (updates.blockedReason !== undefined) {
     task.blockedReason = updates.blockedReason || undefined;
     task.blockedReasonCategory = updates.blockedReasonCategory;
-  } else if (updates.status && updates.status !== 'blocked') {
+  } else if (updates.status && !statusRequiresWaitReason(updates.status)) {
     task.blockedReason = undefined;
     task.blockedReasonCategory = undefined;
   }
@@ -413,10 +422,6 @@ export function listTasks(sessionId: string): SessionTask[] {
   return Array.from(taskMap.values());
 }
 
-export function isClosedTaskStatus(status: SessionTaskStatus): boolean {
-  return status === 'completed' || status === 'cancelled';
-}
-
 /**
  * 启动失败的台账回收：run 没起来就没有「正在进行」的工作——in_progress 全部退回
  * pending（completed/cancelled 等终态不动，那是真实发生过的工作）。返回回收后的
@@ -443,6 +448,21 @@ export function demoteInProgressTasks(sessionId: string): SessionTask[] | null {
  */
 export function getIncompleteTasks(sessionId: string): SessionTask[] {
   return listTasks(sessionId).filter((t) => !isClosedTaskStatus(t.status));
+}
+
+/** 本轮不许盖 verified 的显式任务：needs_decision / user_action / blocked / in_progress */
+function listUnresolvedTurnTasks(sessionId: string): SessionTask[] {
+  return listTasks(sessionId).filter((task) => isUnresolvedTurnTaskStatus(task.status));
+}
+
+/** 本 run 内创建或更新过的未决任务。上一轮遗留的 blocked/in_progress 不算。 */
+export function listUnresolvedTurnTasksTouchedSince(
+  sessionId: string,
+  sinceTs: number,
+): SessionTask[] {
+  return listUnresolvedTurnTasks(sessionId).filter(
+    (task) => Math.max(task.createdAt, task.updatedAt) > sinceTs,
+  );
 }
 
 /**

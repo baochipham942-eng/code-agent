@@ -557,6 +557,36 @@ describe('runWorkbenchProjection', () => {
     });
   });
 
+  it('surfaces needs_decision as the session task status instead of blocked', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'completed',
+      sessionTasks: [
+        {
+          id: 'task-a',
+          subject: '选择酒店方案',
+          description: '在 A/B 间选',
+          activeForm: '选择酒店方案',
+          status: 'needs_decision',
+          priority: 'normal',
+          blocks: [],
+          blockedBy: [],
+          blockedReason: '在两家酒店间选',
+          metadata: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    expect(task).toMatchObject({
+      status: 'needs_decision',
+      title: '选择酒店方案',
+      steps: [{ title: '选择酒店方案', status: 'needs_decision', blockedReason: '在两家酒店间选' }],
+    });
+  });
+
   it('does not let blocked downstream dependencies mask the actionable SessionTask status', () => {
     const task = buildSessionTaskRecord({
       sessionId: 'session-1',

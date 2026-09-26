@@ -6,7 +6,7 @@
 // ============================================================================
 
 import type { UpdateTaskInput } from '../../../shared/contract/planning';
-import { validateTaskStatusEvidence } from '../../../shared/contract/planning';
+import { statusRequiresWaitReason, validateTaskStatusEvidence } from '../../../shared/contract/planning';
 import { makeEvidenceRef } from '../../../shared/contract/evidence';
 import { describeTaskBlockedReason, sanitizeTaskEvidenceText } from '../../../shared/taskReasonLanguage';
 
@@ -54,7 +54,7 @@ export function buildTaskEvidenceUpdates(
     updates.statusSummary = raw;
   }
 
-  if (args.status === 'blocked') {
+  if (statusRequiresWaitReason(args.status)) {
     const raw = readText(args.blockedReason);
     const described = describeTaskBlockedReason(raw);
     updates.blockedReason = described.reason;

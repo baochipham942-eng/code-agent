@@ -303,7 +303,11 @@ function todoToTaskStatus(status: TodoStatus): SessionTask['status'] {
  * blocked 带着证据门写入的原因，一个复选框把它抹掉就等于凭空解除阻塞（ADR-050）。
  */
 function isStickySessionTaskStatus(status: SessionTask['status']): boolean {
-  return status === 'completed' || status === 'cancelled' || status === 'blocked';
+  return status === 'completed'
+    || status === 'cancelled'
+    || status === 'blocked'
+    || status === 'needs_decision'
+    || status === 'user_action';
 }
 
 function shouldUpdateTaskFromTodo(task: SessionTask, todo: TodoItem): boolean {

@@ -6,7 +6,6 @@ import {
   isTerminalAgentError,
 } from '../../../shared/utils/agentErrorClassification';
 import { TASK_QUEUE_TIMEOUTS } from '../../../shared/constants';
-import { hasVisibleAssistantTextAfterLastUser } from '../../agent/runtime/runFinalizer';
 import type {
   CreateNeoWorkCardDraftInput,
   NeoTagRunContext,
@@ -333,12 +332,24 @@ async function runProducedVisibleReply(
   conversationId: string,
   roundTurnId: string,
 ): Promise<boolean> {
+  const hasVisibleAssistantReplyWithinTurn = (messages: Message[]): boolean => {
+    for (let index = 1; index < messages.length; index += 1) {
+      const message = messages[index];
+      // A plain user message after the run's reply belongs to the next turn;
+      // a runtime steer is part of this run and must not hide its reply.
+      if (message.role === 'user' && message.metadata?.runtimeSteer !== true) return false;
+      if (message.role !== 'assistant') continue;
+      if (typeof message.content === 'string' && message.content.trim().length > 0) return true;
+    }
+    return false;
+  };
+
   const hasReplyFrom = (messages: Message[]): boolean | null => {
     const anchorIndex = messages.findIndex(
       (message) => message.id === roundTurnId && message.role === 'user',
     );
     if (anchorIndex < 0) return null;
-    return hasVisibleAssistantTextAfterLastUser(messages.slice(anchorIndex));
+    return hasVisibleAssistantReplyWithinTurn(messages.slice(anchorIndex));
   };
 
   const orchestrator = taskManager.getOrCreateCurrentOrchestrator?.(conversationId);

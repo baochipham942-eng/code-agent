@@ -163,12 +163,13 @@ describe('MessageProcessor persistence', () => {
     processor.injectSteerMessage('continue with care');
     expect(cancelTimeWakesOnUserReturn).toHaveBeenCalledWith('runtime-session-1', { historyVisibility: undefined });
 
-    expect(ctx.messages).toEqual([{
+    expect(ctx.messages).toEqual([expect.objectContaining({
       id: 'steer-message-1',
       role: 'user',
       content: 'continue with care',
       timestamp: expect.any(Number),
-    }]);
+      metadata: { runtimeSteer: true },
+    })]);
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', ctx.messages[0]);
     expect(sessionManagerState.addMessage).not.toHaveBeenCalled();
   });
@@ -191,8 +192,34 @@ describe('MessageProcessor persistence', () => {
 
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith(
       'runtime-session-1',
-      expect.objectContaining({ id: 'queued-input-1', role: 'user', content: 'C1Q1 立即发送' }),
+      expect.objectContaining({
+        id: 'queued-input-1',
+        role: 'user',
+        content: 'C1Q1 立即发送',
+        metadata: { runtimeSteer: true },
+      }),
     );
+  });
+
+  it('keeps the steer marker after a durable ledger round trip', async () => {
+    const persistedMessages: unknown[] = [];
+    sessionManagerState.addMessageToSession.mockImplementation(async (_sessionId, message) => {
+      persistedMessages.push(message);
+    });
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+
+    await processor.injectSteerMessage('continue after the tool result');
+
+    const reloaded = JSON.parse(JSON.stringify(persistedMessages)) as Array<{
+      metadata?: { runtimeSteer?: true };
+    }>;
+    expect(reloaded[0]?.metadata?.runtimeSteer).toBe(true);
   });
 
   it('skips persistence only for a pure CLI run', async () => {
@@ -289,12 +316,13 @@ describe('MessageProcessor persistence', () => {
     await processor.injectSteerMessage(instruction);
 
     // 承重：执行侧看到的那一条一字未改，也没有被打上任何展示层标记
-    expect(ctx.messages).toEqual([{
+    expect(ctx.messages).toEqual([expect.objectContaining({
       id: 'steer-message-1',
       role: 'user',
       content: instruction,
       timestamp: expect.any(Number),
-    }]);
+      metadata: { runtimeSteer: true },
+    })]);
 
     const persisted = sessionManagerState.addMessageToSession.mock.calls.at(-1)![1] as {
       isMeta?: boolean;
@@ -363,12 +391,13 @@ describe('MessageProcessor persistence', () => {
 
     processor.injectSteerMessage('continue with care', 'client-message-1');
 
-    expect(ctx.messages).toEqual([{
+    expect(ctx.messages).toEqual([expect.objectContaining({
       id: 'client-message-1',
       role: 'user',
       content: 'continue with care',
       timestamp: expect.any(Number),
-    }]);
+      metadata: { runtimeSteer: true },
+    })]);
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', ctx.messages[0]);
   });
 
@@ -384,12 +413,13 @@ describe('MessageProcessor persistence', () => {
 
     await expect(processor.injectSteerMessage('msg')).rejects.toThrow('disk full');
 
-    expect(ctx.messages).toEqual([{
+    expect(ctx.messages).toEqual([expect.objectContaining({
       id: 'steer-message-1',
       role: 'user',
       content: 'msg',
       timestamp: expect.any(Number),
-    }]);
+      metadata: { runtimeSteer: true },
+    })]);
   });
 
   it('waits for steer message persistence before resolving', async () => {

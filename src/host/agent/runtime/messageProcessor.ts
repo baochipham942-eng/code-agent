@@ -1200,7 +1200,7 @@ export class MessageProcessor {
       content: modelContent,
       timestamp,
       attachments,
-      metadata,
+      metadata: { ...metadata, runtimeSteer: true },
     };
     this.ctx.messages.push(steerMessage);
     if (hasUntrustedMemoryInput([steerMessage])) this.ctx.control.markMemoryTainted();

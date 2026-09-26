@@ -103,9 +103,11 @@ describe('builtin skills: batch-research / self-awareness', () => {
     expect(batch.promptContent).toContain('run_in_background');
     expect(batch.promptContent).not.toContain('waitForCompletion');
     // builtin skill 的 allowedTools 会整体进入预授权集合（skillInvocationResolver
-    // canSkillAutoPreApproveTools），无文件写入需求的 skill 不许带写工具（Important 2 修复钉）
+    // canSkillAutoPreApproveTools），无对应需求的 skill 不许带写能力工具
+    // （Write/Edit 写文件，TaskManager 的 replace 动作可整替任务计划）
     expect(batch.allowedTools).not.toContain('Write');
     expect(batch.allowedTools).not.toContain('Edit');
+    expect(batch.allowedTools).not.toContain('TaskManager');
 
     const self = findSkill('self-awareness')!;
     // 正文点名记忆/历史/空间三类查证工具
@@ -113,6 +115,9 @@ describe('builtin skills: batch-research / self-awareness', () => {
       expect(self.promptContent, `self-awareness 正文应点名 ${tool}`).toContain(tool);
       expect(discoverable.has(tool), tool).toBe(true);
     }
+    // space_query 的 skills 只含空间级显式覆盖（spaceOperationsService.query 取
+    // getAllOverrides 的 true 项），不能当全局技能清单答「有哪些技能」（第二轮 Important 2 修复钉）
+    expect(self.promptContent).toContain('查到空列表不等于没有技能');
   });
 
   it('batch-research 与 research-brief-and-split 职责不重叠（前者管批量覆盖，后者管单课题拆题）', () => {

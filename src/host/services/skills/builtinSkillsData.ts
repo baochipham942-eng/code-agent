@@ -295,7 +295,7 @@ Commit message 格式：
 
 禁止：静默丢项、把失败对象从表里抹掉、用「大部分完成」代替 x/N。`,
     basePath: '',
-    allowedTools: ['spawn_agent', 'collect_agent', 'Read', 'WebSearch', 'WebFetch', 'TaskManager'],
+    allowedTools: ['spawn_agent', 'collect_agent', 'Read', 'WebSearch', 'WebFetch'],
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',
@@ -320,7 +320,8 @@ Commit message 格式：
 
 - 记得我什么（记忆）：MemoryRead 读具体记忆文件（系统提示里的 INDEX.md 列了有哪些）；memory_search 按关键词检索记忆。
 - 帮你做过什么（历史）：History 检索过往会话原文（search 找命中，around 取上下文）。
-- 技能 / 连接器 / 定时任务 / 近期产物 / 协作空间：space_list 列出协作空间，space_query 读单个空间的成员、技能、连接器、自动化、近期活动和产物聚合。
+- 有哪些技能（全局）：以当轮系统提示里注入的可用 skill 清单为准（内置 + 已装的用户/项目 skill）。注意：space_query 返回的 skills 只是该空间显式启用的覆盖项，查到空列表不等于没有技能，不能拿来回答全局技能问题。
+- 连接器 / 定时任务 / 近期产物 / 协作空间（空间级）：space_list 列出协作空间，space_query 读单个空间的成员、连接器、自动化、近期活动和产物聚合。
 - 遵守什么规则 / 本机事实（配置、目录、版本）：Read / Glob / Grep 查实际文件（CLAUDE.md、配置文件），不猜。
 
 ## 回答规则

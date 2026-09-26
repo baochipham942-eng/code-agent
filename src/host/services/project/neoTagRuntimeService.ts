@@ -250,8 +250,11 @@ function observeNeoTagRunTerminalEvents(
   if (!taskManager.observeAgentEvents) {
     return { failure: () => failure, cancelled: () => cancelled, stop: () => {} };
   }
-  const unsubscribe = taskManager.observeAgentEvents((eventSessionId, event) => {
+  // 只认本会话**主 run** 的事件：observeAgentEvents 对 auxiliary 后台任务（eventKey=taskId）
+  // 会带上 taskId——同会话后台任务的取消/失败不许污染工作卡主 run 的终态判定。
+  const unsubscribe = taskManager.observeAgentEvents((eventSessionId, event, taskId) => {
     if (eventSessionId !== sessionId) return;
+    if (taskId !== undefined) return;
     if (event.type === 'agent_cancelled') {
       cancelled = true;
       return;

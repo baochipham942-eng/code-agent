@@ -47,7 +47,7 @@ import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { assembleTurnDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import { startRunPreferringDurable } from './orchestrator/durableRunStart';
-import { finalizeDurableRun } from './orchestrator/durableRunTerminal';
+import { createTerminalEventTracker, finalizeDurableRun } from './orchestrator/durableRunTerminal';
 import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
 import { OrchestratorRunSettings } from './orchestratorRunSettings';
 import { OrchestratorMessageHistory } from './orchestratorMessageHistory';
@@ -784,16 +784,13 @@ export class AgentOrchestrator {
     options?: AgentRunOptions,
   ): Promise<void> {
     const effectiveContent = executionContent ?? content;
-    // 取消采集（ai-review Important）：AgentLoop 对取消正常 resolve，收口旁听 agent_cancelled 区分。
-    let runCancelledEvent = false;
-    const cancellationAwareOnEvent = (event: AgentEvent) => {
-      if (event.type === 'agent_cancelled') runCancelledEvent = true;
-      onEvent(event);
-    };
+    // 终态采集见 createTerminalEventTracker（取消/空回复转失败都不抛，只能旁听事件）。
+    const terminalTracker = createTerminalEventTracker(onEvent);
+    const terminalAwareOnEvent = terminalTracker.onEvent;
     const { dagAwareOnEvent } = initRunDag({
       sessionId,
       content,
-      onEvent: cancellationAwareOnEvent,
+      onEvent: terminalAwareOnEvent,
       broadcastDAGEvent: this.broadcastDAGEvent,
     });
 
@@ -1084,8 +1081,8 @@ export class AgentOrchestrator {
           runId: nativeRunId,
           handle: registeredRun,
           sessionId,
-          completed: runCompletedNormally,
-          cancelled: runCancelledEvent,
+          completed: runCompletedNormally && !terminalTracker.snapshot().terminalError,
+          cancelled: terminalTracker.snapshot().cancelled,
           registration: options?.runRegistration ?? 'primary',
           ...(options?.parentRunId ? { parentRunId: options.parentRunId } : {}),
         });

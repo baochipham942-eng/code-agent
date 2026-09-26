@@ -920,6 +920,35 @@ describe('Neo Tag runtime helpers', () => {
     expect(reason).toContain('接着做');
   });
 
+  it('终态契约：同会话 auxiliary 后台任务（带 taskId）的失败/取消不污染工作卡主 run（ai-review Important 二轮）', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => {
+          sessionMessages.push(
+            { id: 'msg_source', role: 'user', content: '@neo 干活', timestamp: 1 },
+            { id: 'assistant_ok', role: 'assistant', content: '做完了。', timestamp: 2 },
+          );
+        }),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+        observeAgentEvents: (observer) => {
+          // 主 run 完成后，同会话 auxiliary 后台任务失败（taskId 存在）
+          observer('conv_1', {
+            type: 'error',
+            data: { message: 'background task 401', code: 'RUN_FAILED' },
+          } as never, 'agent-engine:background-1');
+          return () => {};
+        },
+      },
+    });
+
+    // 主 run 有正向证据 + 污染事件带 taskId → 不受影响，照常完成
+    expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
+  });
+
   it('终态契约：后到的裸 error 不覆盖先到的结构化失败（额度出路不丢，ai-review Important）', async () => {
     const h = terminalHarness();
     await launchApprovedNeoWorkCard({

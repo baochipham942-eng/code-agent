@@ -327,6 +327,57 @@ describe('WebSessionStore', () => {
     );
   });
 
+  it('commitTurn loop 已自行落库最终 assistant 且失败时，agentError 合并回写该消息（ai-review Nit 二轮）', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'loop-persisted', title: 'Existing' });
+    // loop 已把最终 assistant 落库（lastLoopAssistantMessageId 指向它）；
+    // 真实 DB 里该 id 已存在，合并回写的 addMessage 必撞 UNIQUE → 幂等走 update
+    db.getMessages.mockReturnValue([
+      { id: 'user-1', role: 'user', content: 'hi', timestamp: 1 },
+      { id: 'loop-final', role: 'assistant', content: '跑到一半的回复', timestamp: 2 },
+    ] as Message[]);
+    db.addMessage.mockImplementation(() => {
+      throw new Error('SQLITE_CONSTRAINT: UNIQUE constraint failed: messages.id');
+    });
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => null,
+      logger,
+      getDatabase: async () => db as unknown as DatabaseService,
+    });
+    await store.commitTurn({
+      sessionId: 'loop-persisted',
+      title: 'loop 已落库',
+      modelConfig: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
+      historyLength: 0,
+      userMessagePrePersistedDb: true,
+      userMessage: { id: 'user-1', role: 'user', content: 'hi', timestamp: 1 },
+      turn: {
+        assistantText: '跑到一半的回复',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: 'loop-final',
+        contentParts: [],
+        runCancelled: false,
+        hasAssistantOutput: () => true,
+        hasInterleaving: () => false,
+      },
+      terminalFailure: {
+        agentError: { category: 'network', rawMessage: 'fetch failed', goalAbort: false, timestamp: 3 },
+      },
+    });
+    // addMessage 撞 duplicate → updateMessage 合并 agentError 回写 loop-final
+    expect(db.updateMessage).toHaveBeenCalledWith(
+      'loop-final',
+      expect.objectContaining({
+        id: 'loop-final',
+        metadata: expect.objectContaining({ agentError: expect.objectContaining({ category: 'network' }) }),
+      }),
+      'loop-persisted',
+    );
+  });
+
   it('commitTurn 有部分 assistant 产出且失败时，agentError 并到该条产出消息上', async () => {
     setDbAvailable(true);
     const db = createDatabaseStub();

@@ -11,6 +11,8 @@
 import type { RunRegistry } from '../../runtime/runRegistry';
 import type { RunHandle } from '../../runtime/runContext';
 import { createLogger } from '../../services/infra/logger';
+import type { AgentEvent } from '../../../shared/contract';
+import { isTerminalAgentError } from '../../../shared/utils/agentErrorClassification';
 
 const logger = createLogger('AgentOrchestrator');
 
@@ -50,4 +52,31 @@ export async function finalizeDurableRun(input: DurableRunTerminalInput): Promis
   }, handle).catch((error) => {
     logger.error(`Failed to persist ${isAuxiliary ? 'auxiliary' : 'primary'} durable terminal state`, error);
   });
+}
+
+export interface TerminalEventTracker {
+  /** 透传事件并采集终态信号；喂给 AgentLoop 的事件出口。 */
+  onEvent: (event: AgentEvent) => void;
+  /** 截至当前的终态信号快照。 */
+  snapshot: () => { cancelled: boolean; terminalError: boolean };
+}
+
+/**
+ * 终态事件采集器：AgentLoop 对用户取消和「空最终回复转失败」都正常 resolve（不抛），
+ * 调用方无法从「Promise 是否抛错」还原终态——在本轮事件流上旁听
+ * agent_cancelled 与终态 error 事件（ai-review 二轮 Important）。
+ */
+export function createTerminalEventTracker(
+  forward: (event: AgentEvent) => void,
+): TerminalEventTracker {
+  let cancelled = false;
+  let terminalError = false;
+  return {
+    onEvent(event) {
+      if (event.type === 'agent_cancelled') cancelled = true;
+      else if (event.type === 'error' && isTerminalAgentError(event.data)) terminalError = true;
+      forward(event);
+    },
+    snapshot: () => ({ cancelled, terminalError }),
+  };
 }

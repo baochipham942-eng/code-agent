@@ -590,6 +590,53 @@ describe('AgentOrchestrator', () => {
       );
     });
 
+    it('空最终回复转失败（正常 resolve + 终态 error 事件）→ durable 记 failed 而非 completed（ai-review Important 二轮）', async () => {
+      const terminalDurable = vi.fn(async () => undefined);
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        terminalDurable,
+        unregister: vi.fn(),
+        startDurable: vi.fn(async () => ({ attach: vi.fn(async () => undefined) })),
+      };
+      const durableOrchestrator = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      });
+      const run = durableOrchestrator as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: { runRegistration?: 'primary' | 'auxiliary'; disableAutoAgent?: boolean },
+        ) => Promise<void>;
+      };
+      // runFinalizer 的形状：空最终回复 → 发终态 error（RUN_FAILED）后正常返回不抛
+      agentLoopProbe.onRun = () => {
+        agentLoopProbe.lastConfig?.onEvent?.({
+          type: 'error',
+          data: { message: '任务已结束，这一轮没有生成最终说明。', code: 'RUN_FAILED' },
+        });
+      };
+
+      await run.runNormalMode(
+        'hello',
+        () => undefined,
+        { provider: 'openai', model: 'gpt-4o' },
+        'session-durable-empty-reply',
+        { runRegistration: 'primary', disableAutoAgent: true },
+      );
+      agentLoopProbe.onRun = undefined;
+
+      expect(terminalDurable).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ status: 'failed', reason: 'primary_run_failed' }),
+        expect.anything(),
+      );
+    });
+
     it('getWorkingDirectory 应该返回当前目录', () => {
       const dir = orchestrator.getWorkingDirectory();
       expect(dir).toBeTruthy();

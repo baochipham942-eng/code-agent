@@ -400,14 +400,14 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
   // 兜底判定只认「终轮」assistant 是否落库：早轮已落库不能抑制兜底（终轮落库失败时
   // 内容+metadata 会静默丢失）。兜底写的是本 run 合并全文，早轮已在库时触发会有部分
   // 内容重复——丢终轮结论比重复早轮片段更不可接受，取舍偏向保内容。
-  async function hasPersistedFinalLoopAssistantMessage(
+  async function findPersistedFinalLoopAssistantMessage(
     sessionId: string,
     finalMessageId: string | undefined,
     sessionManager: WebCLISessionManagerLike | null,
     db: DatabaseService | null,
-  ): Promise<boolean> {
+  ): Promise<Message | undefined> {
     if (!finalMessageId) {
-      return false;
+      return undefined;
     }
 
     try {
@@ -415,15 +415,15 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         ? await sessionManager.getMessages(sessionId)
         : db?.getMessages(sessionId);
 
-      return Array.isArray(persisted) && persisted.some((message) => (
-        message.role === 'assistant' && message.id === finalMessageId
-      ));
+      return Array.isArray(persisted)
+        ? persisted.find((message) => message.role === 'assistant' && message.id === finalMessageId)
+        : undefined;
     } catch (error) {
       deps.logger.warn(
         `[AgentRouter] Failed to verify loop-persisted assistant messages for ${sessionId}:`,
         error,
       );
-      return false;
+      return undefined;
     }
   }
 
@@ -567,12 +567,13 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
           const db = cliSessionManager
             ? null
             : await ensureDbSession(deps.getDatabase, sessionId, title, modelConfig);
-          const loopPersistedAssistant = await hasPersistedFinalLoopAssistantMessage(
+          const persistedLoopAssistant = await findPersistedFinalLoopAssistantMessage(
             sessionId,
             turn.lastLoopAssistantMessageId,
             sm,
             db,
           );
+          const loopPersistedAssistant = Boolean(persistedLoopAssistant);
 
           if (!userMessagePrePersistedDb) {
             await persistMessageToDb(sm, db, sessionId, {
@@ -627,6 +628,25 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
             persistedFinalAssistantMessageId = loopPersistedAssistant
               ? turn.lastLoopAssistantMessageId
               : assistantMsgId;
+          }
+          if (!turn.runCancelled && terminalFailure && persistedLoopAssistant) {
+            // loop 已自行落库最终 assistant 消息时，失败卡信息合并回写该消息
+            // （否则刷新后失败不可见——ai-review Nit）。persistMessageToDb 走
+            // add→duplicate→update 幂等路径完成回写。
+            try {
+              await persistMessageToDb(sm, db, sessionId, {
+                ...persistedLoopAssistant,
+                metadata: {
+                  ...persistedLoopAssistant.metadata,
+                  agentError: terminalFailure.agentError,
+                },
+              } as Message);
+            } catch (mergeError) {
+              deps.logger.warn(
+                `[AgentRouter] Failed to merge terminal failure into loop-persisted assistant for ${sessionId}:`,
+                (mergeError as Error).message,
+              );
+            }
           }
 
           // 更新会话标题/时间戳。首条消息只覆盖占位标题，不改用户/手机起的名字。

@@ -451,7 +451,7 @@ export function getIncompleteTasks(sessionId: string): SessionTask[] {
 }
 
 /** 本轮不许盖 verified 的显式任务：needs_decision / user_action / blocked / in_progress */
-export function listUnresolvedTurnTasks(sessionId: string): SessionTask[] {
+function listUnresolvedTurnTasks(sessionId: string): SessionTask[] {
   return listTasks(sessionId).filter((task) => isUnresolvedTurnTaskStatus(task.status));
 }
 

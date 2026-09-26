@@ -35,7 +35,6 @@ vi.mock('../../../../../src/host/desktop/desktopActivityUnderstandingService', (
 import { taskManagerModule } from '../../../../../src/host/tools/modules/planning/taskManager';
 import {
   applyUnresolvedTaskTurnGate,
-  formatUnresolvedTaskLine,
   formatUnresolvedTaskList,
   isClosedTaskStatus,
   isOpenTaskStatus,
@@ -367,19 +366,10 @@ describe('unresolved turn task helpers', () => {
   });
 
   it('formats who is waiting and for what', () => {
-    expect(formatUnresolvedTaskLine({
-      id: '1',
-      subject: '选择酒店方案',
-      status: 'needs_decision',
-      blockedReason: '在两家酒店间选',
-    })).toBe('#1 选择酒店方案 — 等你拍板：在两家酒店间选');
-    expect(formatUnresolvedTaskLine({
-      id: '2',
-      subject: '完成线下签字',
-      status: 'user_action',
-      owner: 'user',
-      blockedReason: '合同要本人签字',
-    })).toBe('#2 完成线下签字 @user — 等你操作：合同要本人签字');
+    expect(formatUnresolvedTaskList([
+      { id: '1', subject: '选择酒店方案', status: 'needs_decision', blockedReason: '在两家酒店间选' },
+      { id: '2', subject: '完成线下签字', status: 'user_action', owner: 'user', blockedReason: '合同要本人签字' },
+    ])).toBe('#1 选择酒店方案 — 等你拍板：在两家酒店间选\n#2 完成线下签字 @user — 等你操作：合同要本人签字');
     expect(formatUnresolvedTaskList([
       { id: '1', subject: '选择酒店方案', status: 'needs_decision', blockedReason: '在两家酒店间选' },
     ])).toContain('等你拍板');

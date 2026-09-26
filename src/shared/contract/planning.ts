@@ -23,7 +23,7 @@ export interface TodoItem {
 //   与 blockedBy 派生的"等前置任务"不同——后者仍是 pending，由 taskList 派生展示。
 // needs_decision: 等用户在选项间拍板；user_action: 等用户亲自做工具做不了的事。
 //   两态与 blocked 一样必须带可展示原因（复用 blockedReason），不要显示成「卡住」。
-export const SESSION_TASK_STATUSES = [
+const SESSION_TASK_STATUSES = [
   'pending',
   'in_progress',
   'completed',
@@ -36,7 +36,7 @@ export type SessionTaskStatus = (typeof SESSION_TASK_STATUSES)[number];
 export type SessionTaskPriority = 'low' | 'normal' | 'high';
 
 /** 本轮不许盖 verified 的未决态：等用户拍板/操作、外部卡住、或还在做 */
-export const UNRESOLVED_TURN_TASK_STATUSES = [
+const UNRESOLVED_TURN_TASK_STATUSES = [
   'needs_decision',
   'user_action',
   'blocked',
@@ -223,7 +223,7 @@ export interface UnresolvedTaskLineInput {
   owner?: string;
 }
 
-export function unresolvedTaskWaitLabel(status: SessionTaskStatus): string {
+function unresolvedTaskWaitLabel(status: SessionTaskStatus): string {
   switch (status) {
     case 'needs_decision':
       return '等你拍板';
@@ -242,7 +242,7 @@ export function unresolvedTaskWaitLabel(status: SessionTaskStatus): string {
   }
 }
 
-export function formatUnresolvedTaskLine(task: UnresolvedTaskLineInput): string {
+function formatUnresolvedTaskLine(task: UnresolvedTaskLineInput): string {
   const who = task.owner?.trim() ? ` @${task.owner.trim()}` : '';
   const reason = task.blockedReason?.trim() ? `：${task.blockedReason.trim()}` : '';
   return `#${task.id} ${task.subject}${who} — ${unresolvedTaskWaitLabel(task.status)}${reason}`;

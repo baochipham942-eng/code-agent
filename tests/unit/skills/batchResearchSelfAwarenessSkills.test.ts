@@ -10,6 +10,7 @@
 // ============================================================================
 import { describe, it, expect } from 'vitest';
 import { getBuiltinSkills } from '../../../src/host/services/skills/builtinSkills';
+import { resolveSkillInvocationFromSkills } from '../../../src/host/services/skills/skillInvocationResolver';
 import { CORE_TOOLS, DEFERRED_TOOLS_META } from '../../../src/host/services/toolSearch/deferredTools';
 import { historySchema } from '../../../src/host/tools/modules/lightMemory/history.schema';
 import { memoryReadSchema } from '../../../src/host/tools/modules/lightMemory/memoryRead.schema';
@@ -35,6 +36,9 @@ describe('builtin skills: batch-research / self-awareness', () => {
       expect(skill!.source, name).toBe('builtin');
       expect(skill!.promptContent.length, name).toBeGreaterThan(300);
     }
+    expect(findSkill('batch-research')!.metadata?.category).toBe('research');
+    // SkillCategory 无 general/assistant；development 已收留 dream/distill 这类助手元能力
+    expect(findSkill('self-awareness')!.metadata?.category).toBe('development');
   });
 
   it('description 同时写清做什么与何时触发', () => {
@@ -53,15 +57,45 @@ describe('builtin skills: batch-research / self-awareness', () => {
     expect(self.description).toMatch(/记得我什么|能做什么/);
   });
 
-  it('aliases 含中文触发词', () => {
+  it('aliases 只留低歧义专名，通用问法写在 description', () => {
     const hasChinese = (s: string) => /[一-鿿]/.test(s);
-    expect(findSkill('batch-research')!.aliases?.some(hasChinese)).toBe(true);
+    const batchAliases = findSkill('batch-research')!.aliases ?? [];
     const selfAliases = findSkill('self-awareness')!.aliases ?? [];
+    expect(batchAliases.some(hasChinese)).toBe(true);
     expect(selfAliases.some(hasChinese)).toBe(true);
-    // description 里枚举的自我认知触发问法要在 aliases 有对应入口（ai-review Nit 修复钉）
-    for (const phrase of ['你是谁', '能做什么', '记得我什么', '连了哪些服务', '有哪些技能', '遵守什么规则']) {
-      expect(selfAliases.join(' '), `aliases 应覆盖触发问法「${phrase}」`).toContain(phrase);
+    expect(batchAliases).toEqual(expect.arrayContaining(['批量调研', 'wide research', 'batch research']));
+    expect(selfAliases).toEqual(expect.arrayContaining(['自我认知', 'self awareness']));
+    // 通用中文别名按子串匹配且 frontmatter 得分 0.9，会把日常句强制注入 skill
+    // （skillInvocationResolver.ts CJK includes + N-L8-ATT10 同类教训）
+    for (const generic of ['批量查询', '各查一下', '逐个查一下', '你能做什么', '有哪些技能', '遵守什么规则', '连了哪些服务']) {
+      expect(batchAliases, `batch-research 不应把「${generic}」当 alias`).not.toContain(generic);
+      expect(selfAliases, `self-awareness 不应把「${generic}」当 alias`).not.toContain(generic);
     }
+    const self = findSkill('self-awareness')!;
+    expect(self.description).toMatch(/你能做什么/);
+    expect(self.description).toMatch(/有哪些技能/);
+    expect(self.description).toMatch(/遵守什么规则/);
+    expect(self.description).toMatch(/连了哪些服务/);
+  });
+
+  it('日常通用句子不会被解析成 batch-research / self-awareness', () => {
+    const skills = getBuiltinSkills();
+    const guarded = new Set(['batch-research', 'self-awareness']);
+    const sentences = [
+      '写个批量查询订单的 SQL',
+      '这份简历有哪些技能要补',
+      '这个接口要遵守什么规则',
+      '这个微服务连了哪些服务',
+    ];
+    for (const sentence of sentences) {
+      const resolved = resolveSkillInvocationFromSkills(sentence, skills);
+      expect(
+        resolved && guarded.has(resolved.skill.name),
+        `「${sentence}」不应解析为 ${resolved?.skill.name}`,
+      ).toBeFalsy();
+    }
+    expect(resolveSkillInvocationFromSkills('批量调研这 30 家公司', skills)?.skill.name).toBe('batch-research');
+    expect(resolveSkillInvocationFromSkills('自我认知：你记得我什么', skills)?.skill.name).toBe('self-awareness');
   });
 
   it('self-awareness 的 allowedTools 全部对照真实 ToolSchema 为 readOnly', () => {
@@ -92,9 +126,11 @@ describe('builtin skills: batch-research / self-awareness', () => {
   it('正文点名的核心工具真实存在且模型可发现', () => {
     const discoverable = new Set([...CORE_TOOLS, ...DEFERRED_TOOLS_META.map((m) => m.name)]);
     const batch = findSkill('batch-research')!;
-    // 正文点名 spawn_agent（并行派发）与 collect_agent（后台取回）
+    // 正文点名 spawn_agent（并行派发）与 collect_agent（后台取回）；
+    // agents[] 每项 role 填内置调研角色 explore，避免模型编造未知 role
     expect(batch.promptContent).toContain('spawn_agent');
     expect(batch.promptContent).toContain('collect_agent');
+    expect(batch.promptContent).toContain('role 填 explore');
     expect(discoverable.has('spawn_agent')).toBe(true);
     expect(discoverable.has('collect_agent')).toBe(true);
     // 后台链路配对（ai-review Important 1 修复钉）：collect_agent 只认
@@ -123,9 +159,10 @@ describe('builtin skills: batch-research / self-awareness', () => {
   it('batch-research 与 research-brief-and-split 职责不重叠（前者管批量覆盖，后者管单课题拆题）', () => {
     const batch = findSkill('batch-research')!;
     const brief = findSkill('research-brief-and-split')!;
-    expect(batch.name).not.toBe(brief.name);
-    // batch-research 必须带输出契约（成功 x/N），这是它与单课题拆题的本质区别
+    // batch-research 管批量覆盖率；research-brief-and-split 管单课题拆题，不报 x/N
     expect(batch.promptContent).toContain('格式「成功 x/N」');
     expect(batch.promptContent).toMatch(/失败清单/);
+    expect(brief.promptContent).not.toContain('格式「成功 x/N」');
+    expect(brief.promptContent).toMatch(/拆/);
   });
 });

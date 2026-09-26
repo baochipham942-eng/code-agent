@@ -266,7 +266,7 @@ Commit message 格式：
   {
     name: 'batch-research',
     description: '批量调研：当用户给一批同构对象（公司、论文、产品、链接、人物等）要求逐个查证并汇总时使用——去重、定最小字段表后一个对象一个子代理并行查，失败项只重试一次，最终回复必须报「成功 x/N」与未解决的缺口。单个对象、或子任务互相依赖时不适用。',
-    aliases: ['批量调研', '批量查询', '各查一下', '逐个查一下', 'wide research', 'parallel research', 'batch research'],
+    aliases: ['批量调研', 'wide research', 'parallel research', 'batch research'],
     promptContent: `# 批量调研
 
 一批同构对象逐个查证，一张表汇总，覆盖率和缺口必须显式报出，不许静默漏项。
@@ -280,7 +280,7 @@ Commit message 格式：
 
 1. 去重归一：清理输入列表——同名不同写法合并、大小写/全半角归一、明显重复去掉；报出去重前后的数量。
 2. 定字段表：从需求里提炼最小统一输出字段表，只放用户要的字段，不加自由发挥的列；每个字段写清查不到时填什么（如「未披露」）。
-3. 并行派发：用 spawn_agent 的 parallel 模式（parallel: true + agents 数组），一个对象一个 worker。每个 worker 的 task 必须自包含：对象名 + 完整字段表 + 「只查这个对象，严格按字段表返回，查不到的字段写明原因」。不要再套一层管理者子代理——spawn_agent 自己就是协调者，结果自带聚合。批量大时可分批跑，或改用单发 spawn_agent 的 run_in_background: true 后台执行（立即返回 agent_id，先回复用户已开跑，之后用 collect_agent 凭 agent_id 取回结果）。
+3. 并行派发：用 spawn_agent 的 parallel 模式（parallel: true + agents 数组），一个对象一个 worker。agents[] 每项 role 填 explore（内置只读调研角色，别名 explorer；可用 role 为 explore / coder / reviewer / plan / awaiter，批量查证用 explore，不要编造 role）。每个 worker 的 task 必须自包含：对象名 + 完整字段表 + 「只查这个对象，严格按字段表返回，查不到的字段写明原因」。不要再套一层管理者子代理——spawn_agent 自己就是协调者，结果自带聚合。批量大时可分批跑，或改用单发 spawn_agent 的 run_in_background: true 后台执行（立即返回 agent_id，先回复用户已开跑，之后用 collect_agent 凭 agent_id 取回结果）。
 4. 聚合：并行结果自带聚合统计（成功 x/N、每个子代理的状态与结果摘要）。直接用这份聚合，不要另写一套统计代码。
 5. 失败重试：只对失败项再派一轮（同样一个对象一个 worker）。仍失败的进失败清单，不试第三次。
 6. 汇总交付：严格按字段表拼结果表，连同覆盖率一起交付。
@@ -305,7 +305,7 @@ Commit message 格式：
   {
     name: 'self-awareness',
     description: '自我认知：当用户问你是谁、你能做什么、你记得我什么、你帮我做过什么、连了哪些服务、有哪些技能、遵守什么规则时使用——先现场重查记忆、技能、连接器、定时任务和近期产物再作答，查不到的直说缺，区分事实与推断，不凭印象编。',
-    aliases: ['自我认知', '你是谁', '你能做什么', '你记得我什么', '你帮我做过什么', '连了哪些服务', '有哪些技能', '遵守什么规则', 'self awareness'],
+    aliases: ['自我认知', 'self awareness'],
     promptContent: `# 自我认知
 
 回答关于「我」的问题，先现场重查，再作答。禁止凭训练记忆或上一轮的印象直接回答。
@@ -3119,8 +3119,8 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   docker: 'development',
   dream: 'development',
   distill: 'development',
+  'self-awareness': 'development',
   'task-brief-builder': 'automation',
-  'self-awareness': 'automation',
   'research-brief-and-split': 'research',
   'batch-research': 'research',
   'implementation-closure': 'development',

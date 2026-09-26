@@ -1,6 +1,6 @@
 # ADR-075：重启后前台任务自动续跑
 
-- 状态：**提议**（本页只定行为，不施工；爸拍板后再拆刀）
+- 状态：**已拍板**（2026-09-26 爸「按推荐」，Decision needed 9 项全部按推荐；施工按「批准后拟拆施工单」8 刀）
 - 单号：N-RESTART-RESUME（稳定线 wave 12）
 - 基线：`origin/main@35381f2e4`；Round 2 修订对照分支 `docs/restart-resume-adr@e4b55f1`
 - 证据：`code-agent-private-archive/docs/evidence/N-RESTART-RESUME-2026-09-26.md`
@@ -257,3 +257,14 @@ N-CRON-APPROVAL-PARK 应等刀 0 与刀 3（批准后执行一次）合入再施
 - 四条护栏：只对崩溃/退出自动续；续跑前后成本可见；Stop 必须清空待续队列；继续按钮=发送按钮的一个状态。
 
 Round 2 把「Stop 必须清空待续队列」收成可执行合同：代码里没有队列实体；Stop 写入 `interrupt_cause=user_stop` 并进入 parked（`waiting`），离开自动续集合。09-25 触发时机本身不重开。
+
+2026-09-26 爸拍板（原话「按推荐」）：Decision needed 9 项全部采纳推荐——
+1. 本地文件写：模型核实（喂「中断/结果未知」，禁止重放）。
+2. 外部/不可逆写：默认 `guard_halt` 停下，用户点「继续」。
+3. 自动续：同一 `runId` 最多 2 次；成功推进一轮后清零；用户点「继续」不占次数。
+4. `/goal`：goal 状态能重建才回 loop，否则 parked + 继续按钮；恢复路径禁止直接 `completed`。
+5. 启动续：窗口就绪后进 loop、不抢焦点；后台续跑必须有托盘或系统通知。
+6. 继续按钮：无草稿=继续；开始打字变回发送，新消息覆盖待续并 `cancelled`。
+7. 多会话：串行自动续；每次进 loop 前重查预算，超了 `budget_exhausted` parked。
+8. 恢复中 Stop = `user_stop` parked，绝非 `completed`；`cancelled` 不能再「继续」。
+9. 外部副作用一律禁止自动续（与第 2 项同一政策）。

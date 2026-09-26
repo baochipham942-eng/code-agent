@@ -38,8 +38,6 @@ const StepStatusIcon: React.FC<{ status: TaskStepStatus }> = ({ status }) => {
       return <Loader2 className="w-4 h-4 text-badge-info animate-spin" />;
     case 'skipped':
       return <SkipForward className="w-4 h-4 text-zinc-500" />;
-    case 'blocked':
-      return <XCircle className="w-4 h-4 text-badge-danger" />;
     default:
       return <Circle className="w-4 h-4 text-zinc-500" />;
   }
@@ -69,8 +67,6 @@ const StepItem: React.FC<{ step: TaskStep }> = ({ step }) => {
         return 'text-zinc-200';
       case 'skipped':
         return 'text-zinc-600 line-through';
-      case 'blocked':
-        return 'text-badge-danger';
       default:
         return 'text-zinc-400';
     }

@@ -6,7 +6,7 @@
 // Task Plan Types
 // ----------------------------------------------------------------------------
 
-export type TaskStepStatus = 'pending' | 'in_progress' | 'completed' | 'skipped' | 'blocked';
+export type TaskStepStatus = 'pending' | 'in_progress' | 'completed' | 'skipped';
 export type TaskPhaseStatus = 'pending' | 'in_progress' | 'completed' | 'blocked';
 
 export interface TaskStep {

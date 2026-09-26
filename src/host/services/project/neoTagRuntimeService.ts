@@ -4,6 +4,7 @@ import type { AgentEvent, Message, MessageMetadata } from '../../../shared/contr
 import {
   getAgentErrorMessage,
   isTerminalAgentError,
+  normalizeAgentErrorPayload,
 } from '../../../shared/utils/agentErrorClassification';
 import { TASK_QUEUE_TIMEOUTS } from '../../../shared/constants';
 import type {
@@ -299,8 +300,9 @@ function observeNeoTagRunTerminalEvents(
     }
     if (event.type !== 'error' || !isTerminalAgentError(event.data)) return;
     const message = getAgentErrorMessage(event.data) ?? 'Runtime task ended with an unknown error.';
-    const failureCode = event.data && typeof event.data === 'object' && 'failure' in event.data
-      ? (event.data as { failure?: { code?: unknown } }).failure?.code
+    const payload = normalizeAgentErrorPayload(event.data);
+    const failureCode = payload.failure && typeof payload.failure === 'object' && !Array.isArray(payload.failure)
+      ? (payload.failure as { code?: unknown }).code
       : undefined;
     const structured = typeof failureCode === 'string' && Boolean(failureCode);
     // 同一次失败会从多个出口各发一条 error（runFinalizer 带 MODEL_QUOTA/UNAVAILABLE

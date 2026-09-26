@@ -395,7 +395,7 @@ describe('NudgeManager', () => {
         toolsUsedInTurn: ['TaskManager'],
       });
 
-      expect(manager.runNudgeChecks(ctx)).toBe(false);
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
       const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
       expect(injectedMessage).toContain('等用户');
       expect(injectedMessage).toContain('needs_decision');
@@ -417,6 +417,7 @@ describe('NudgeManager', () => {
         toolsUsedInTurn: ['edit_file'],
       });
 
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
       expect(manager.runNudgeChecks(ctx)).toBe(true);
       const messages = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0] as string);
       expect(messages.some((message) => message.includes('这些任务在等用户'))).toBe(true);
@@ -460,7 +461,8 @@ describe('NudgeManager', () => {
         toolsUsedInTurn: ['TaskManager'],
       });
 
-      expect(manager.runNudgeChecks(ctx)).toBe(false);
+      // 只重入一次让模型读到清单，之后放行收尾
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
       expect(manager.runNudgeChecks(ctx)).toBe(false);
       expect(manager.runNudgeChecks(ctx)).toBe(false);
       expect(ctx.injectSystemMessage).toHaveBeenCalledTimes(1);

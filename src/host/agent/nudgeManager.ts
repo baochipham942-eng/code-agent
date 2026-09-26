@@ -391,11 +391,11 @@ export class NudgeManager {
         const stillWorking = incompleteTasks.filter((task) => !waitingOnUser.includes(task));
         const waitingOnly = stillWorking.length === 0 && incompleteTodos.length === 0 && waitingOnUser.length > 0;
 
-        // 全在等用户：列出一次就停，不要 return true 把模型反复叫醒复述同一份清单。
+        // 全在等用户：只重入一次让模型读到清单并改写最终回复；之后不再重入，继续走后面的检查。
         if (waitingOnly) {
           if (this.todoNudgeCount === 0) {
             this.todoNudgeCount++;
-            logger.debug(`[NudgeManager] Waiting-on-user tasks listed once, no reentry`);
+            logger.debug(`[NudgeManager] Waiting-on-user tasks listed once, single reentry`);
             ctx.injectSystemMessage(
               `<task-completion-check>\n`
                 + `这些任务在等用户，不要标 completed，也不要宣称全部做完：\n${combinedList}\n\n`
@@ -404,8 +404,9 @@ export class NudgeManager {
                 + `</task-completion-check>`,
               'nudge',
             );
+            return true;
           }
-          // 不 return：继续走后面的 P3/F4/P4/P5 检查，等用户的任务不能让产物类检查失效。
+          // 已列过：不 return，继续走后面的 P3/F4/P4/P5 检查，等用户的任务不能让产物类检查失效。
         } else if (this.todoNudgeCount < reentryCap) {
           this.todoNudgeCount++;
           logger.debug(`[NudgeManager] Incomplete items detected, nudge ${this.todoNudgeCount}/${reentryCap}`);

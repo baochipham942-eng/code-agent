@@ -18,6 +18,7 @@ import type {
   DashboardDeclarativeProbe,
   DashboardProbeDeclaration,
 } from '../types';
+import { PLACEHOLDER_TEXT_PATTERN_SOURCE } from '../../placeholderMarkers';
 
 /**
  * html_complete — HTML 文档结构完整。
@@ -44,8 +45,10 @@ export const HTML_COMPLETE_PROBE: DashboardDeclarativeProbe = {
 /**
  * no_lorem_ipsum — 内容不含明显的占位文本。
  *
- * 命中触发器：lorem ipsum / TODO / Coming soon / placeholder / 占位 /
- * 待补充 / 此处填写。这些都是 AI Coding Agent 生成产物里常见的"演示稿后忘记
+ * 命中词表统一取自 placeholderMarkers.PLACEHOLDER_TEXT_PATTERN_SOURCE（单一真源，
+ * 与 toolArtifactRepairPolicy 补丁判据、deliverableDiskCheck 交付物正文扫描共用）：
+ * lorem ipsum / TODO / TBD / Coming soon / placeholder / 占位 / 待补充 / [insert…] /
+ * XXX 连串 / 示例数据 等。这些都是 AI Coding Agent 生成产物里常见的"演示稿后忘记
  * 替换"症状。匹配大小写不敏感。
  *
  * 误伤风险：合法字符串（如 "// TODO: this is intentional"）也会被命中。
@@ -56,14 +59,14 @@ export const HTML_COMPLETE_PROBE: DashboardDeclarativeProbe = {
 export const NO_LOREM_IPSUM_PROBE: DashboardDeclarativeProbe = {
   id: 'no_lorem_ipsum',
   kind: 'declarative',
-  description: 'HTML 内容不含 placeholder / lorem ipsum / TODO / Coming soon / 占位文本',
+  description: 'HTML 内容不含占位脚手架文本（lorem ipsum / TODO / TBD / placeholder / 占位 / 示例数据 等）',
   predicate: {
     op: 'html-content-not-matches',
-    pattern: 'lorem ipsum|coming soon|\\bTODO\\b|placeholder|占位|待补充|此处填写',
+    pattern: PLACEHOLDER_TEXT_PATTERN_SOURCE,
     flags: 'i',
   },
   expectation: 'expect-true',
-  failureMessage: '页面残留占位文本（lorem ipsum / TODO / Coming soon / placeholder / 占位 等），需替换为真实内容。',
+  failureMessage: '页面残留占位文本（lorem ipsum / TODO / TBD / placeholder / 占位 / 示例数据 等），需替换为真实内容。',
 };
 
 /**

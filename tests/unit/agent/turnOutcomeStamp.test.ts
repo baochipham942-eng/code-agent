@@ -434,6 +434,28 @@ describe('turn outcome stamp', () => {
     expect(outcome.evidenceProblems).toEqual([`DELIVERABLE_EMPTY: ${artifact}`]);
   });
 
+  // N-ARTIFACT-PLACEHOLDER-GATE：交付物在盘且非空，但正文残留占位符——补轮用尽后
+  // 不给 verified，命中位置进 evidenceProblems（与缺漏同一条 missing 账）。
+  it('keeps self_claimed when a claimed deliverable still contains placeholder content', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.md');
+    writeFileSync(artifact, '# 周报\nTODO: 补结论\n');
+    const recorder = new TurnTraceRecorder('claim-placeholder', traceRoot);
+    const messages = [
+      message(),
+      message({ id: 'wrote-report', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-report', name: 'Write', arguments: { file_path: artifact } }],
+        toolResults: [{ toolCallId: 'write-report', success: true, metadata: { outputPath: artifact } }] }),
+      message({ id: 'final', role: 'assistant', content: '已生成 `report.md`，请查收。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceProblems).toHaveLength(1);
+    expect(outcome.evidenceProblems?.[0]).toContain(`DELIVERABLE_PLACEHOLDER_CONTENT: ${artifact}`);
+    expect(outcome.evidenceProblems?.[0]).toContain('第 2 行');
+  });
+
   it('ignores claimed paths that reference the input materials directory (资料/)', async () => {
     mkdirSync(traceRoot, { recursive: true });
     const recorder = new TurnTraceRecorder('claim-input-dir', traceRoot);

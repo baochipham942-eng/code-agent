@@ -8,6 +8,9 @@
 //      postLaunchSignals 的 claimed_file_missing 信号同源，不新造平行口径）。
 // 核对通过 → turn_outcome 可给 verified；不通过 → messageProcessor 回喂补一轮
 // （有界，TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS），仍缺在 final 如实说明。
+// 在「存在且非空」之外，对文档/表格/演示/网页/数据类交付物再抽正文扫残留
+// 占位符（N-ARTIFACT-PLACEHOLDER-GATE，Muse artifacts/testing 借鉴）：命中与
+// 「文件缺失」同路进 missing、共用同一条补轮，词表见 placeholderMarkers。
 // ============================================================================
 
 import { statSync } from 'node:fs';
@@ -19,6 +22,11 @@ import type { Message } from '../../../shared/contract';
 import type { DeclaredDeliverables } from './artifactState';
 import { currentMessages } from './documentEvidenceBoundary';
 import { readbackFileEvidence } from './fileEvidenceReadback';
+import {
+  scanDeliverablesForPlaceholders,
+  type PlaceholderScanInput,
+  type DeliverablePlaceholderHit,
+} from './deliverablePlaceholderScan';
 
 /** 声称产物的动词；词表与 postLaunchSignals.CLAIM_VERB_PATTERN 同源，另补「已交付/交付了」。 */
 const CLAIM_VERB_PATTERN = /已(?:写入|创建|生成|保存|落盘|交付)|写到|保存到|生成了|交付了|created|wrote|written to|saved to|generated/i;
@@ -58,11 +66,13 @@ export interface DeliverableClaim {
   source: 'declared' | 'inferred';
 }
 
-type DeliverableMissingKind = 'not_on_disk' | 'empty';
+type DeliverableMissingKind = 'not_on_disk' | 'empty' | 'placeholder';
 
 export interface DeliverableMissing {
   claim: DeliverableClaim;
   kind: DeliverableMissingKind;
+  /** kind === 'placeholder' 时的命中定位（行/页 + 片段 ≤60 字） */
+  placeholderHits?: readonly DeliverablePlaceholderHit[];
 }
 
 export interface DeliverableDiskCheckResult {
@@ -264,19 +274,39 @@ export function collectDeliverableClaims(input: {
 }
 
 /**
+ * 用户明确要模板/带占位的交付物时，正文占位符扫描豁免：请求里出现
+ * 「模板 / template / 占位」即视为有意为之，不按残留脚手架打回。
+ */
+const TEMPLATE_REQUEST_PATTERN = /模板|template|占位/i;
+
+function userRequestExemptsPlaceholderScan(messages: readonly Message[]): boolean {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== 'user') continue;
+    return typeof message.content === 'string' && TEMPLATE_REQUEST_PATTERN.test(message.content);
+  }
+  return false;
+}
+
+/**
  * 落盘核对：文件存在且非空才认。macOS 盘上文件名可能是 NFD，声称串一般是 NFC，
  * 两种归一化形态都试；空的交付物（0 字节）与不存在同罪——「交付了空文件」也是幻觉。
  * IO 有界（ai-review #2007 Important）：最多处理 TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS
  * 条声称；回读总字节超过 TURN_OUTCOME.MAX_DELIVERABLE_READBACK_BYTES 后降级为 stat
  * 存在性检查（candidate 证据，无 digest）——幻觉拦截不降级，回读哈希降级。
+ * 存在且非空的文档/表格/演示/网页/数据类交付物再抽正文扫占位符（词表与扫描
+ * 细节见 deliverablePlaceholderScan / placeholderMarkers），命中与缺漏同路进
+ * missing——同一条补轮，不另起闸。
  */
-export function checkDeliverablesOnDisk(
+export async function checkDeliverablesOnDisk(
   claims: readonly DeliverableClaim[],
   workingDirectory: string,
-): DeliverableDiskCheckResult {
+  options?: { messages?: readonly Message[] },
+): Promise<DeliverableDiskCheckResult> {
   const evidenceRefs: EvidenceRef[] = [];
   const missing: DeliverableMissing[] = [];
   const seenRefs = new Set<string>();
+  const scanned: PlaceholderScanInput[] = [];
   let readbackBytes = 0;
 
   for (const claim of claims.slice(0, TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS)) {
@@ -296,7 +326,10 @@ export function checkDeliverablesOnDisk(
       missing.push({ claim, kind: 'empty' });
       continue;
     }
+    scanned.push({ claimed: claim.claimed, resolved: claim.resolved, path: stat.hit, size: stat.stat.size });
     if (readbackBytes >= TURN_OUTCOME.MAX_DELIVERABLE_READBACK_BYTES) {
+      // 回读哈希降级为存在性证据，但占位符扫描不降级（扫描有自己的字节预算）：
+      // 文件在盘且非空，正文该扫照扫。
       evidenceRefs.push(makeEvidenceRef({ kind: 'file', ref: stat.hit, source: 'deliverable_disk_check', state: 'candidate' }));
       continue;
     }
@@ -308,7 +341,18 @@ export function checkDeliverablesOnDisk(
         evidenceRefs.push(evidence);
       }
     } catch {
+      // 回读失败（stat 与 read 之间消失等）：从扫描队列摘掉，避免同一条声称既记
+      // not_on_disk 又被扫描记 placeholder，修复提示里出现双条目。
+      scanned.pop();
       missing.push({ claim, kind: 'not_on_disk' });
+    }
+  }
+  if (scanned.length > 0 && options?.messages && !userRequestExemptsPlaceholderScan(options.messages)) {
+    const claimByResolved = new Map(claims.map((claim) => [claim.resolved, claim]));
+    for (const finding of await scanDeliverablesForPlaceholders(scanned)) {
+      const claim = claimByResolved.get(finding.resolved);
+      if (!claim) continue;
+      missing.push({ claim, kind: 'placeholder', placeholderHits: finding.hits });
     }
   }
   return { claims: claims.slice(0, TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS), evidenceRefs, missing };
@@ -316,41 +360,69 @@ export function checkDeliverablesOnDisk(
 
 /** 给 evidenceProblems 的稳定 code 行。 */
 export function formatDeliverableProblems(missing: readonly DeliverableMissing[]): string[] {
-  return missing.map((item) => item.kind === 'empty'
-    ? `DELIVERABLE_EMPTY: ${item.claim.resolved}`
-    : `DELIVERABLE_NOT_ON_DISK: ${item.claim.resolved}`);
+  return missing.map((item) => {
+    if (item.kind === 'placeholder') {
+      const first = item.placeholderHits?.[0];
+      return `DELIVERABLE_PLACEHOLDER_CONTENT: ${item.claim.resolved}${first ? `（${first.location}：${first.fragment}）` : ''}`;
+    }
+    return item.kind === 'empty'
+      ? `DELIVERABLE_EMPTY: ${item.claim.resolved}`
+      : `DELIVERABLE_NOT_ON_DISK: ${item.claim.resolved}`;
+  });
 }
 
 /** 回喂补轮的系统消息：缺漏带核验后的绝对路径，模型写错相对路径时能自纠。 */
 function buildDeliverableRepairPrompt(missing: readonly DeliverableMissing[]): string {
   const lines = missing.map((item, index) => {
+    if (item.kind === 'placeholder') {
+      const hitLines = (item.placeholderHits ?? []).map((hit) => `   - ${hit.location}：${hit.fragment}`);
+      return [
+        `${index + 1}. \`${item.claim.claimed}\`（核验路径 ${item.claim.resolved}）：正文残留未替换的占位符：`,
+        ...hitLines,
+      ].join('\n');
+    }
     const reason = item.kind === 'empty' ? '文件是空的（0 字节）' : '文件不存在';
     return `${index + 1}. \`${item.claim.claimed}\`（核验路径 ${item.claim.resolved}）：${reason}`;
   });
   return [
     '<deliverable-disk-check>',
-    '交付物落盘核对未通过：以下声明/声称的最终产物在磁盘上核对不到：',
+    '交付物落盘核对未通过：以下声明/声称的最终产物未通过收尾核对：',
     ...lines,
-    '请二选一，然后重新收尾：',
-    '- 真的把它们做出来：用工具写入/生成这些文件，写完后确认文件存在且非空；',
-    '- 或者如实修改回复：不再声称已交付这些文件，并说明当前的实际状态。',
-    '不要在没有真实落盘的情况下再次声称已交付。',
+    '请按问题处理，然后重新收尾：',
+    '- 文件不存在/为空：真的把它们做出来（用工具写入/生成，写完确认存在且非空），或者如实修改回复、说明当前实际状态；',
+    '- 正文残留占位符：把命中位置替换为真实内容（没有真实内容就删除该段或如实说明未完成），不要保留 TODO/待补充/示例数据/lorem ipsum 这类脚手架痕迹。',
+    '不要在没有真实落盘的情况下再次声称已交付，也不要把带占位符的半成品当成品交付。',
     '</deliverable-disk-check>',
   ].join('\n');
 }
 
 /** 补轮预算用尽后追加到 final 的如实说明（用户可见）。 */
 function appendUndeliveredNote(content: string, missing: readonly DeliverableMissing[]): string {
-  const lines = missing.map((item) => {
-    const reason = item.kind === 'empty' ? '文件为空' : '文件不存在';
-    return `- ${item.claim.claimed}（${reason}）`;
-  });
+  const absentLines = missing
+    .filter((item) => item.kind !== 'placeholder')
+    .map((item) => {
+      const reason = item.kind === 'empty' ? '文件为空' : '文件不存在';
+      return `- ${item.claim.claimed}（${reason}）`;
+    });
+  const placeholderLines = missing
+    .filter((item) => item.kind === 'placeholder')
+    .map((item) => {
+      const hits = (item.placeholderHits ?? []).map((hit) => `${hit.location}：${hit.fragment}`).join('；');
+      return `- ${item.claim.claimed}（正文仍有未替换的占位符${hits ? `：${hits}` : ''}）`;
+    });
+  const sections: string[] = [];
+  if (absentLines.length > 0) {
+    sections.push('以下提到的交付物在磁盘上核对不到，本轮实际未交付：', ...absentLines);
+  }
+  if (placeholderLines.length > 0) {
+    sections.push('以下交付物正文仍有未替换的占位符，未按成品核对通过：', ...placeholderLines);
+  }
   return [
     content,
     '',
     '---',
-    '⚠️ 交付物核对说明：以下提到的交付物在磁盘上核对不到，本轮实际未交付：',
-    ...lines,
+    '⚠️ 交付物核对说明：',
+    ...sections,
   ].join('\n');
 }
 
@@ -360,18 +432,18 @@ export type DeliverableDiskCheckGateResult =
 
 /**
  * 收尾闸（messageProcessor 落库前调用）：核对本 run 声称/声明的交付物。
- * 全过 → pass 原样放行；缺漏且补轮预算未尽 → action:'repair' 带修复提示（调用方
- * 注入并回喂模型补一轮）；预算用尽 → pass，但 content 已追加未交付说明。
+ * 全过 → pass 原样放行；缺漏/正文占位符命中且补轮预算未尽 → action:'repair' 带修复
+ * 提示（调用方注入并回喂模型补一轮）；预算用尽 → pass，但 content 已追加如实说明。
  */
-export function runDeliverableDiskCheckGate(input: {
+export async function runDeliverableDiskCheckGate(input: {
   workingDirectory: string;
   messages: readonly Message[];
   declaredDeliverables?: DeclaredDeliverables;
   finalText: string;
   repairsUsed: number;
   nudgeManager?: { getModifiedFilesSince(timestamp: number): string[] };
-}): DeliverableDiskCheckGateResult {
-  const check = checkDeliverablesOnDisk(
+}): Promise<DeliverableDiskCheckGateResult> {
+  const check = await checkDeliverablesOnDisk(
     collectDeliverableClaims({
       messages: input.messages,
       workingDirectory: input.workingDirectory,
@@ -380,6 +452,7 @@ export function runDeliverableDiskCheckGate(input: {
       nudgeManager: input.nudgeManager,
     }),
     input.workingDirectory,
+    { messages: input.messages },
   );
   if (check.missing.length === 0) return { action: 'pass', content: input.finalText, missing: [] };
   if (input.repairsUsed < TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS) {

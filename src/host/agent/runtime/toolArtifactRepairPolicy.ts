@@ -20,6 +20,11 @@ import { scopeGuardRegistry } from './repair/scopeGuards';
 import { MonotonicityTracker } from './repair/monotonicityTracker';
 import { fileReadTracker } from '../../tools/fileReadTracker';
 import { extractReadFilePath } from './toolObservationSanitizers';
+import {
+  PLACEHOLDER_EXACT_CONTENT_SOURCE,
+  PLACEHOLDER_MARKER_COMMENT_SOURCE,
+  PLACEHOLDER_MARKER_IDENTIFIER_SOURCE,
+} from './placeholderMarkers';
 
 export function getModifiedFilePath(toolCall: Pick<ToolCall, 'arguments'>): string | null {
   const rawPath = toolCall.arguments?.file_path || toolCall.arguments?.path;
@@ -250,16 +255,19 @@ function isWriteTool(toolName: string): boolean {
   return toolName === 'write_file' || toolName === 'Write';
 }
 
+// 占位词表统一取自 placeholderMarkers（单一真源），这里只决定补丁判据的形态：
+// 整段判词（^…$）/ 标识符 marker（\b 包夹）/ 注释形态 marker。
+const PLACEHOLDER_EXACT_CONTENT_PATTERN = new RegExp(`^(?:${PLACEHOLDER_EXACT_CONTENT_SOURCE})$`, 'i');
+const PLACEHOLDER_MARKER_IDENTIFIER_PATTERN = new RegExp(`\\b(?:${PLACEHOLDER_MARKER_IDENTIFIER_SOURCE})\\b`, 'i');
+const PLACEHOLDER_MARKER_COMMENT_PATTERN = new RegExp(PLACEHOLDER_MARKER_COMMENT_SOURCE, 'i');
+
 function isPlaceholderLikeArtifactContent(content: string): boolean {
   const normalized = normalizePatchText(stripCommentLikeLines(content) || content);
-  return /^(?:dummy|test|todo|placeholder|place_holder|read_needed|placeholder_read_needed|tbd|待补|占位)$/i.test(normalized);
+  return PLACEHOLDER_EXACT_CONTENT_PATTERN.test(normalized);
 }
 
 function containsArtifactPlaceholderMarker(value: string): boolean {
-  return (
-    /\b(?:probe_[a-z0-9_]*|placeholder_[a-z0-9_]+|place_holder_[a-z0-9_]+|placeholder_read_needed|read_needed|tbd)\b/i.test(value) ||
-    /(?:\/\/|\/\*|<!--)\s*(?:probe|placeholder|place_holder|read_needed|tbd)\b/i.test(value)
-  );
+  return PLACEHOLDER_MARKER_IDENTIFIER_PATTERN.test(value) || PLACEHOLDER_MARKER_COMMENT_PATTERN.test(value);
 }
 
 function isProbeLikeArtifactEdit(toolCall: Pick<ToolCall, 'arguments'>): boolean {
@@ -288,9 +296,12 @@ function detectArtifactRepairNoOpPatch(toolCall: Pick<ToolCall, 'name' | 'argume
     const allNoChange = edits.every((edit) => normalizePatchText(edit.oldText) === normalizePatchText(edit.newText));
     if (allNoChange) return 'Edit does not change the artifact.';
 
+    // 与 isPlaceholderLikeArtifactContent 同一份判词（placeholderMarkers 单一真源），
+    // 不再各写一个子集——旧版只认 dummy/test/todo/placeholder 四词，place_holder/
+    // read_needed/tbd/待补 的纯占位补丁会漏判成有效补丁。
     const allDummy = edits.every((edit) =>
-      /^(?:dummy|test|todo|placeholder)$/i.test(normalizePatchText(edit.oldText)) &&
-      /^(?:dummy|test|todo|placeholder)$/i.test(normalizePatchText(edit.newText)),
+      PLACEHOLDER_EXACT_CONTENT_PATTERN.test(normalizePatchText(edit.oldText)) &&
+      PLACEHOLDER_EXACT_CONTENT_PATTERN.test(normalizePatchText(edit.newText)),
     );
     if (allDummy) return 'Edit only contains placeholder text.';
 

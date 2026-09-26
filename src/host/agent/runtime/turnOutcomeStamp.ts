@@ -245,7 +245,7 @@ async function buildTurnOutcome(
     })
     : [];
   const deliverableCheck: DeliverableDiskCheckResult = workingDirectory
-    ? checkDeliverablesOnDisk(deliverableClaims, workingDirectory)
+    ? await checkDeliverablesOnDisk(deliverableClaims, workingDirectory, { messages: ctx.messages })
     : { claims: [], evidenceRefs: [], missing: [] };
   problems.push(...formatDeliverableProblems(deliverableCheck.missing));
   const knownRefs = new Set(evidenceRefs.map((ref) => ref.ref));

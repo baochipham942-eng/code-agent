@@ -485,10 +485,11 @@ export class MessageProcessor {
       });
     }
 
-    // 交付物落盘核对（issue #1998）：声称/本 run 声明的交付物必须在盘上存在且非空；缺漏有界补一轮，仍缺在 final 如实说明。
+    // 交付物落盘核对（issue #1998）：声称/本 run 声明的交付物必须在盘上存在且非空，
+    // 且文档类正文无残留占位符（N-ARTIFACT-PLACEHOLDER-GATE）；缺漏有界补一轮，仍缺在 final 如实说明。
     let deliverableCheckedContent = gated.content;
     if (!isForcedFinalTextPass) {
-      const gate = runDeliverableDiskCheckGate({
+      const gate = await runDeliverableDiskCheckGate({
         workingDirectory: this.ctx.workingDirectory,
         messages: this.ctx.messages,
         declaredDeliverables: this.ctx.artifact?.declaredDeliverables,

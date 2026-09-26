@@ -165,7 +165,7 @@ describe('collectDeliverableClaims', () => {
   });
 
   // ai-review #2007 Important 1：~ 开头不展开会 resolve 成 <wd>/~/...，真实写到家目录的文件被误判缺失。
-  it('expands ~ before resolving so home-directory deliverables check out', () => {
+  it('expands ~ before resolving so home-directory deliverables check out', async () => {
     mkdirSync(workRoot, { recursive: true });
     const homeFile = path.join(os.homedir(), `deliverable-disk-check-home-${process.pid}.md`);
     writeFileSync(homeFile, 'home artifact');
@@ -178,7 +178,7 @@ describe('collectDeliverableClaims', () => {
       const claims = collectDeliverableClaims({ messages, workingDirectory: workRoot });
       expect(claims).toHaveLength(1);
       expect(claims[0].resolved).toBe(homeFile);
-      const result = checkDeliverablesOnDisk(claims, workRoot);
+      const result = await checkDeliverablesOnDisk(claims, workRoot);
       expect(result.missing).toEqual([]);
       expect(result.evidenceRefs).toHaveLength(1);
     } finally {
@@ -188,7 +188,7 @@ describe('collectDeliverableClaims', () => {
 
   // ai-review #2007 第四轮 Important：裸文件名只查工作目录根会误判子目录产物——
   // 先按 basename 对到本 run 真写出的文件。
-  it('maps a quoted bare filename to the same-named file this run wrote in a subdirectory', () => {
+  it('maps a quoted bare filename to the same-named file this run wrote in a subdirectory', async () => {
     mkdirSync(path.join(workRoot, 'src/sub'), { recursive: true });
     const artifact = path.join(workRoot, 'src/sub/x.ts');
     writeFileSync(artifact, 'export const x = 1;');
@@ -201,7 +201,7 @@ describe('collectDeliverableClaims', () => {
     ];
     const claims = collectDeliverableClaims({ messages, workingDirectory: workRoot });
     expect(claims).toEqual([{ claimed: 'x.ts', resolved: artifact, source: 'inferred' }]);
-    const result = checkDeliverablesOnDisk(claims, workRoot);
+    const result = await checkDeliverablesOnDisk(claims, workRoot);
     expect(result.missing).toEqual([]);
   });
 
@@ -237,14 +237,14 @@ describe('collectDeliverableClaims', () => {
 describe('checkDeliverablesOnDisk', () => {
   // ai-review #2007 第三轮 Important：核对 IO 必须有界——数量上限外的声称不处理，
   // 回读字节预算耗尽后降级 stat 存在性检查（candidate 证据），收尾不阻塞事件循环。
-  it('caps the number of processed claims and degrades readback to stat-only beyond the byte budget', () => {
+  it('caps the number of processed claims and degrades readback to stat-only beyond the byte budget', async () => {
     mkdirSync(workRoot, { recursive: true });
     const overCount = Array.from({ length: 60 }, (_, index) => {
       const file = path.join(workRoot, `f${index}.md`);
       writeFileSync(file, 'x');
       return { claimed: `f${index}.md`, resolved: file, source: 'inferred' as const };
     });
-    const capped = checkDeliverablesOnDisk(overCount, workRoot);
+    const capped = await checkDeliverablesOnDisk(overCount, workRoot);
     expect(capped.claims).toHaveLength(50);
 
     const claims = Array.from({ length: 40 }, (_, index) => {
@@ -252,17 +252,17 @@ describe('checkDeliverablesOnDisk', () => {
       writeFileSync(file, Buffer.alloc(2 * 1024 * 1024, 1));
       return { claimed: `big-${index}.bin`, resolved: file, source: 'inferred' as const };
     });
-    const degraded = checkDeliverablesOnDisk(claims, workRoot);
+    const degraded = await checkDeliverablesOnDisk(claims, workRoot);
     expect(degraded.missing).toEqual([]);
     expect(degraded.evidenceRefs.every((ref) => ref.freshness.state === 'candidate')).toBe(false);
     expect(degraded.evidenceRefs.some((ref) => ref.freshness.state === 'candidate')).toBe(true);
   });
 
-  it('passes an existing non-empty file and returns a read evidence ref', () => {
+  it('passes an existing non-empty file and returns a read evidence ref', async () => {
     mkdirSync(workRoot, { recursive: true });
     const artifact = path.join(workRoot, 'report.md');
     writeFileSync(artifact, '# 周报');
-    const result = checkDeliverablesOnDisk(
+    const result = await checkDeliverablesOnDisk(
       [{ claimed: 'report.md', resolved: artifact, source: 'inferred' }],
       workRoot,
     );
@@ -271,9 +271,9 @@ describe('checkDeliverablesOnDisk', () => {
     expect(result.evidenceRefs[0].freshness.state).toBe('read');
   });
 
-  it('flags a missing file as not_on_disk', () => {
+  it('flags a missing file as not_on_disk', async () => {
     mkdirSync(workRoot, { recursive: true });
-    const result = checkDeliverablesOnDisk(
+    const result = await checkDeliverablesOnDisk(
       [{ claimed: 'ghost.md', resolved: path.join(workRoot, 'ghost.md'), source: 'inferred' }],
       workRoot,
     );
@@ -281,11 +281,11 @@ describe('checkDeliverablesOnDisk', () => {
     expect(result.missing).toEqual([{ claim: { claimed: 'ghost.md', resolved: path.join(workRoot, 'ghost.md'), source: 'inferred' }, kind: 'not_on_disk' }]);
   });
 
-  it('flags a zero-byte file as empty', () => {
+  it('flags a zero-byte file as empty', async () => {
     mkdirSync(workRoot, { recursive: true });
     const artifact = path.join(workRoot, 'empty.html');
     writeFileSync(artifact, '');
-    const result = checkDeliverablesOnDisk(
+    const result = await checkDeliverablesOnDisk(
       [{ claimed: 'empty.html', resolved: artifact, source: 'declared' }],
       workRoot,
     );
@@ -304,21 +304,196 @@ describe('repair prompt and undelivered note (via runDeliverableDiskCheckGate)',
     });
   }
 
-  it('repair prompt lists the claimed and resolved paths', () => {
+  it('repair prompt lists the claimed and resolved paths', async () => {
     mkdirSync(workRoot, { recursive: true });
-    const result = gate('已生成 output/周报.html。', 0);
+    const result = await gate('已生成 output/周报.html。', 0);
     if (result.action !== 'repair') throw new Error('expected repair action');
     expect(result.prompt).toContain('<deliverable-disk-check>');
     expect(result.prompt).toContain('output/周报.html');
     expect(result.prompt).toContain(path.join(workRoot, 'output/周报.html'));
   });
 
-  it('undelivered note is appended to the final reply when the repair budget is exhausted', () => {
+  it('undelivered note is appended to the final reply when the repair budget is exhausted', async () => {
     mkdirSync(workRoot, { recursive: true });
-    const result = gate('已生成 output/周报.html。', 1);
+    const result = await gate('已生成 output/周报.html。', 1);
     if (result.action !== 'pass') throw new Error('expected pass action');
     expect(result.content).toContain('已生成 output/周报.html。');
     expect(result.content).toContain('本轮实际未交付');
     expect(result.content).toContain('output/周报.html');
+  });
+});
+
+// ============================================================================
+// 正文占位符扫描（N-ARTIFACT-PLACEHOLDER-GATE，Muse artifacts/testing 借鉴）：
+// 存在且非空的文档/表格/演示/网页/数据类交付物再抽正文扫残留脚手架，命中与
+// 「文件缺失」同路补轮。全部走生产消费方入口 runDeliverableDiskCheckGate。
+// 夹具：docx 用 docx 包、xlsx 用 exceljs、pptx 用 JSZip 现做（与扫描读取器
+// mammoth/exceljs/JSZip 互为独立实现，避免自证循环）。
+// ============================================================================
+
+describe('deliverable placeholder content gate (N-ARTIFACT-PLACEHOLDER-GATE)', () => {
+  function placeholderGate(input: { userContent?: string; finalText: string; repairsUsed?: number }) {
+    return runDeliverableDiskCheckGate({
+      workingDirectory: workRoot,
+      messages: [message({ content: input.userContent ?? '做一份周报' }), producingActivity()],
+      finalText: input.finalText,
+      repairsUsed: input.repairsUsed ?? 0,
+    });
+  }
+
+  async function writeDocxFixture(name: string, paragraphTexts: string[]): Promise<string> {
+    const { Document, Packer, Paragraph } = await import('docx');
+    const filePath = path.join(workRoot, name);
+    writeFileSync(filePath, await Packer.toBuffer(new Document({
+      sections: [{ children: paragraphTexts.map((text) => new Paragraph(text)) }],
+    })));
+    return filePath;
+  }
+
+  async function writeXlsxFixture(name: string, rows: string[][]): Promise<string> {
+    const { default: ExcelJS } = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('汇总');
+    rows.forEach((row) => sheet.addRow(row));
+    const filePath = path.join(workRoot, name);
+    writeFileSync(filePath, Buffer.from(await workbook.xlsx.writeBuffer()));
+    return filePath;
+  }
+
+  async function writePptxFixture(slides: string[]): Promise<string> {
+    const { default: JSZip } = await import('jszip');
+    const zip = new JSZip();
+    slides.forEach((text, index) => {
+      zip.file(`ppt/slides/slide${index + 1}.xml`, `<p:sld xmlns:a="urn:x"><p:cSld><p:spTree><a:t>${text}</a:t></p:spTree></p:cSld></p:sld>`);
+    });
+    const filePath = path.join(workRoot, 'deck.pptx');
+    writeFileSync(filePath, await zip.generateAsync({ type: 'nodebuffer' }));
+    return filePath;
+  }
+
+  it('md deliverable with TODO triggers a repair round listing the hit line and fragment', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'report.md'), ['# 周报', 'TODO: 补结论', '本周完成三项需求。'].join('\n'));
+    const result = await placeholderGate({ finalText: '已生成 `report.md`，请查收。' });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.prompt).toContain('正文残留未替换的占位符');
+    expect(result.prompt).toContain('第 2 行');
+    expect(result.prompt).toContain('TODO');
+    expect(result.missing[0].kind).toBe('placeholder');
+    expect(result.missing[0].placeholderHits?.[0]?.fragment.length).toBeLessThanOrEqual(61);
+  });
+
+  it('html deliverable with lorem ipsum in visible text triggers repair with the line number', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'page.html'), [
+      '<html>', '<body>', '<p>Lorem ipsum dolor sit amet</p>', '<p>真实内容。</p>', '</body>', '</html>',
+    ].join('\n'));
+    const result = await placeholderGate({ finalText: '已生成 `page.html`，请查收。' });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.prompt).toContain('第 3 行');
+    expect(result.prompt).toContain('Lorem ipsum');
+  });
+
+  it('docx deliverable with 待补充 triggers repair (mammoth extraction)', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    await writeDocxFixture('report.docx', ['本周结论：待补充', '其余内容完整。']);
+    const result = await placeholderGate({ finalText: '已生成 `report.docx`，请查收。' });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.prompt).toContain('待补充');
+    expect(result.prompt).toContain(path.join(workRoot, 'report.docx'));
+  });
+
+  it('xlsx deliverable with TBD cell triggers repair with sheet and row location', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    await writeXlsxFixture('data.xlsx', [['项目', '数值'], ['需求 A', '3'], ['合计', 'TBD']]);
+    const result = await placeholderGate({ finalText: '已生成 `data.xlsx`，请查收。' });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.prompt).toContain('汇总 第 3 行');
+    expect(result.prompt).toContain('TBD');
+  });
+
+  it('pptx deliverable with 占位 text triggers repair with page location', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    await writePptxFixture(['季度总结', '这里是占位内容']);
+    const result = await placeholderGate({ finalText: '已生成 `deck.pptx`，请查收。' });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.prompt).toContain('第 2 页');
+    expect(result.prompt).toContain('占位');
+  });
+
+  it('bracketed [insert…], 示例数据 and XXX runs are caught in md/csv deliverables', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'notes.md'), '[insert 客户名] 于本周签约。\n');
+    writeFileSync(path.join(workRoot, 'table.csv'), '名称,备注\n合计,示例数据\n联系人,XXX\n');
+    const result = await placeholderGate({ finalText: '已生成 `notes.md` 和 `table.csv`，请查收。' });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.prompt).toContain('[insert');
+    expect(result.prompt).toContain('示例数据');
+    expect(result.prompt).toContain('XXX');
+    expect(result.missing).toHaveLength(2);
+  });
+
+  it('clean md/html/docx/xlsx deliverables pass without a repair round', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'clean.md'), '# 周报\n本周完成三项需求。\n');
+    writeFileSync(path.join(workRoot, 'clean.html'), '<html><body><h1>周报</h1><p>真实内容。</p></body></html>');
+    await writeDocxFixture('clean.docx', ['结论：三项需求全部上线。']);
+    await writeXlsxFixture('clean.xlsx', [['项目', '数值'], ['合计', '3']]);
+    const result = await placeholderGate({ finalText: '已生成 `clean.md`、`clean.html`、`clean.docx` 和 `clean.xlsx`，请查收。' });
+    expect(result.action).toBe('pass');
+    if (result.action !== 'pass') return;
+    expect(result.missing).toEqual([]);
+  });
+
+  // 防误报①：代码文件里的 TODO 注释是正常工程实践，不在正文扫描集合里。
+  it('a .ts deliverable with a TODO comment passes (code files are not scanned)', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'script.ts'), '// TODO: refine later\nexport const x = 1;\n');
+    const result = await placeholderGate({ finalText: '已创建 `script.ts`，接线完成。' });
+    expect(result.action).toBe('pass');
+    if (result.action !== 'pass') return;
+    expect(result.missing).toEqual([]);
+  });
+
+  // 防误报②：HTML 表单的 placeholder 属性与 script 内注释是代码不是可见正文。
+  it('html placeholder attribute and script comments do not trigger the gate', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'form.html'), [
+      '<html>', '<body>',
+      '<input placeholder="搜索关键词">',
+      '<script>// TODO: polish\nconsole.log(1);</script>',
+      '<p>真实内容。</p>',
+      '</body>', '</html>',
+    ].join('\n'));
+    const result = await placeholderGate({ finalText: '已生成 `form.html`，请查收。' });
+    expect(result.action).toBe('pass');
+  });
+
+  // 防误报③：用户明确要模板/带占位的交付物时豁免（任务书：「帮我做个模板」）。
+  it('a template request exempts the placeholder scan', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'report.md'), 'TODO: 待填写内容\n');
+    const result = await placeholderGate({
+      userContent: '帮我做个模板，占位内容我自己填',
+      finalText: '已生成 `report.md`，请查收。',
+    });
+    expect(result.action).toBe('pass');
+  });
+
+  it('repair budget exhausted with placeholder hits → pass and the final reply states where placeholders remain', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'report.md'), '结论：待补充\n');
+    const result = await placeholderGate({ finalText: '已生成 `report.md`，请查收。', repairsUsed: 1 });
+    expect(result.action).toBe('pass');
+    if (result.action !== 'pass') return;
+    expect(result.content).toContain('正文仍有未替换的占位符');
+    expect(result.content).toContain('第 1 行');
+    expect(result.content).toContain('待补充');
   });
 });

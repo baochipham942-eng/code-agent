@@ -213,6 +213,13 @@ export const TURN_OUTCOME = {
    * 防止「声明数百个大文件」在 host 收尾同步读数 GB 阻塞事件循环。
    */
   MAX_DELIVERABLE_READBACK_BYTES: 64 * 1024 * 1024,
+  /**
+   * 单次收尾正文占位符扫描的总字节预算（N-ARTIFACT-PLACEHOLDER-GATE）：声称的
+   * 文档/表格/演示/网页/数据类交付物逐个抽正文（文本直读，docx/xlsx/pptx 走
+   * mammoth/exceljs/JSZip 读取器），超出预算的文件跳过扫描——fail-open，占位漏检
+   * 不拦交付，存在性核对不受此预算影响。
+   */
+  MAX_DELIVERABLE_PLACEHOLDER_SCAN_BYTES: 10 * 1024 * 1024,
 } as const;
 
 /** System prompt 预算配置（GAP-023 动态化） */

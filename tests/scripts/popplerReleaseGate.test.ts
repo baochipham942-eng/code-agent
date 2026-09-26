@@ -116,7 +116,7 @@ function runInvocationBoundaryGate(source: string) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'poppler-invocation-boundary-'));
   tempRoots.push(root);
   fs.mkdirSync(path.join(root, 'scripts/lib'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'src/host/tools/media/ppt'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src/host/tools/media'), { recursive: true });
   fs.mkdirSync(path.join(root, 'config'), { recursive: true });
   fs.mkdirSync(path.join(root, 'docs/architecture/decisions'), { recursive: true });
   for (const relativePath of [
@@ -126,7 +126,7 @@ function runInvocationBoundaryGate(source: string) {
   ]) {
     fs.copyFileSync(path.join(repoRoot, relativePath), path.join(root, relativePath));
   }
-  fs.writeFileSync(path.join(root, 'src/host/tools/media/ppt/visualReview.ts'), source);
+  fs.writeFileSync(path.join(root, 'src/host/tools/media/officeRaster.ts'), source);
   const lockPath = path.join(root, 'config/poppler-sidecar.lock.json');
   fs.writeFileSync(lockPath, JSON.stringify(lock()));
   fs.writeFileSync(

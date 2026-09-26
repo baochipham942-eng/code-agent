@@ -22,7 +22,7 @@ function argumentValue(name) {
 }
 
 function assertInvocationBoundary() {
-  const sourcePath = path.join(repoRoot, 'src/host/tools/media/ppt/visualReview.ts');
+  const sourcePath = path.join(repoRoot, 'src/host/tools/media/officeRaster.ts');
   const source = fs.readFileSync(sourcePath, 'utf8');
   const required = ['execSync(', "path.join('poppler', 'bin', 'pdftoppm')", '"${pdfPath}"'];
   for (const marker of required) {

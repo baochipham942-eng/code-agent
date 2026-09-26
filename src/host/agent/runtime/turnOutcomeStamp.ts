@@ -6,6 +6,8 @@ import {
   normalizeDeliverablePath,
   type DeliverableDiskCheckResult,
 } from './deliverableDiskCheck';
+import { formatVisualReviewProblems } from './artifactRenderReview';
+import type { ArtifactRenderReviewStamp } from './artifactState';
 import { readbackFileEvidence } from './fileEvidenceReadback';
 import type { Message, ToolResult } from '../../../shared/contract';
 import type { CompletionSummaryRecord } from '../../../shared/contract/completionSummary';
@@ -27,7 +29,10 @@ export interface TurnOutcomeStampContext {
   turnTrace: TurnTraceRecorder;
   nudgeManager?: RuntimeContext['nudgeManager'];
   /** declare_deliverables 的会话级声明槽（RuntimeContext.artifact）；本 run 内声明的才进落盘核对 */
-  artifact?: { readonly declaredDeliverables?: DeclaredDeliverables };
+  artifact?: {
+    readonly declaredDeliverables?: DeclaredDeliverables;
+    readonly renderReview?: ArtifactRenderReviewStamp;
+  };
 }
 
 function successfulToolResults(messages: readonly Message[]): ToolResult[] {
@@ -248,6 +253,15 @@ async function buildTurnOutcome(
     ? checkDeliverablesOnDisk(deliverableClaims, workingDirectory)
     : { claims: [], evidenceRefs: [], missing: [] };
   problems.push(...formatDeliverableProblems(deliverableCheck.missing));
+  const renderReview = ctx.artifact?.renderReview;
+  if (renderReview && renderReview.status !== 'not_applicable') {
+    problems.push(...formatVisualReviewProblems(renderReview));
+  }
+  const visualVerification = !renderReview || renderReview.status === 'not_applicable'
+    ? undefined
+    : (renderReview.status === 'skipped_no_libreoffice' || renderReview.status === 'skipped_no_vlm')
+      ? '未做视觉验证' as const
+      : renderReview.status;
   const knownRefs = new Set(evidenceRefs.map((ref) => ref.ref));
   for (const ref of deliverableCheck.evidenceRefs) {
     if (!knownRefs.has(ref.ref)) evidenceRefs.push(ref);
@@ -290,6 +304,7 @@ async function buildTurnOutcome(
     evidenceRefs,
     source: 'generic',
     evidenceProblems: problems,
+    ...(visualVerification ? { visualVerification } : {}),
   };
 }
 

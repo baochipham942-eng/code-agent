@@ -53,6 +53,19 @@ export interface DeclaredDeliverables {
   declaredAtMs: number;
 }
 
+/** 本 run 渲染审查结果，供 turn_outcome 盖章（不把 skipped 当成通过） */
+export type ArtifactRenderReviewStamp = {
+  status: 'passed' | 'failed' | 'skipped_no_libreoffice' | 'skipped_no_vlm' | 'not_applicable';
+  issues: Array<{
+    file: string;
+    page: number;
+    kind: 'overflow' | 'overlap' | 'cramped' | 'low_contrast' | 'template_residue';
+    description: string;
+    severity: 'high' | 'medium' | 'low';
+  }>;
+  filesReviewed: string[];
+};
+
 /**
  * ADR-038 批3e: artifact 域共享状态切片。
  * 原 RuntimeContext 顶层散字段收敛于此：字段私有、读走 getter、写走显式方法，
@@ -63,6 +76,7 @@ export class ArtifactState {
   /** Last interactive artifact path that passed runtime/browser validation in this run. */
   private _validationPassedTargetFile?: string;
   private _declaredDeliverables?: DeclaredDeliverables;
+  private _renderReview?: ArtifactRenderReviewStamp;
   /** 每目标校验失败状态（原 RuntimeContext expando `artifactValidationFailures`，批3e 漏网字段收编） */
   private readonly _validationFailures = new Map<string, ArtifactValidationFailureState>();
 
@@ -80,6 +94,14 @@ export class ArtifactState {
 
   get declaredDeliverables(): DeclaredDeliverables | undefined {
     return this._declaredDeliverables;
+  }
+
+  get renderReview(): ArtifactRenderReviewStamp | undefined {
+    return this._renderReview;
+  }
+
+  setRenderReview(stamp: ArtifactRenderReviewStamp): void {
+    this._renderReview = stamp;
   }
 
   // --- repair guard 生命周期（W-slot）---

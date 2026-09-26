@@ -471,6 +471,62 @@ describe('turn outcome stamp', () => {
     expect(outcome.verdict).toBe('verified');
   });
 
+  it('LibreOffice 缺失的渲染审查盖「未做视觉验证」且不给 verified', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.docx');
+    writeFileSync(artifact, 'docx');
+    const recorder = new TurnTraceRecorder('visual-skip-lo', traceRoot);
+    const messages = [
+      message(),
+      message({ id: 'wrote', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-report', name: 'Write', arguments: { file_path: artifact } }],
+        toolResults: [{ toolCallId: 'write-report', success: true, metadata: { outputPath: artifact } }] }),
+      message({ id: 'final', role: 'assistant', content: '已生成 `report.docx`，请查收。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({
+      ...context(recorder, messages),
+      workingDirectory: traceRoot,
+      artifact: {
+        renderReview: { status: 'skipped_no_libreoffice', issues: [], filesReviewed: [] },
+      },
+    }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.visualVerification).toBe('未做视觉验证');
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceProblems).toEqual(['VISUAL_REVIEW_SKIPPED: 未做视觉验证']);
+  });
+
+  it('渲染审查失败时不给 verified，problems 带页码', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'overflow.docx');
+    writeFileSync(artifact, 'docx');
+    const recorder = new TurnTraceRecorder('visual-fail', traceRoot);
+    const messages = [
+      message(),
+      message({ id: 'wrote', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-report', name: 'Write', arguments: { file_path: artifact } }],
+        toolResults: [{ toolCallId: 'write-report', success: true, metadata: { outputPath: artifact } }] }),
+      message({ id: 'final', role: 'assistant', content: '已生成 `overflow.docx`。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({
+      ...context(recorder, messages),
+      workingDirectory: traceRoot,
+      artifact: {
+        renderReview: {
+          status: 'failed',
+          filesReviewed: [artifact],
+          issues: [{ file: artifact, page: 1, kind: 'overflow', description: '表格右侧被裁切', severity: 'high' }],
+        },
+      },
+    }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.visualVerification).toBe('failed');
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceProblems).toEqual([
+      `VISUAL_REVIEW_ISSUE: ${artifact} p.1 overflow: 表格右侧被裁切`,
+    ]);
+  });
+
   afterEach(() => {
     void cleanupVoiceResolver?.();
     cleanupVoiceResolver = undefined;

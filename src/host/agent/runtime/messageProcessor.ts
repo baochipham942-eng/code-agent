@@ -25,7 +25,7 @@ import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector.js';
 import { DELIVERY_CRITIC, MODEL_MAX_TOKENS, STOP_HOOK, getModelMaxOutputTokens } from '../../../shared/constants';
 import { runDeliveryCritic } from '../deliveryCritic';
-import { runDeliverableDiskCheckGate } from './deliverableDiskCheck';
+import { applyDeliverableCloseGates } from './artifactRenderReview';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
@@ -90,6 +90,7 @@ export class MessageProcessor {
     toolCallRetryCount: 0,
     deliveryCriticBlockCount: 0,
     deliverableRepairCount: 0,
+    artifactRenderRepairCount: 0,
     _consecutiveTruncations: 0,
   };
 
@@ -485,21 +486,18 @@ export class MessageProcessor {
       });
     }
 
-    // 交付物落盘核对（issue #1998）：声称/本 run 声明的交付物必须在盘上存在且非空；缺漏有界补一轮，仍缺在 final 如实说明。
     let deliverableCheckedContent = gated.content;
     if (!isForcedFinalTextPass) {
-      const gate = runDeliverableDiskCheckGate({
-        workingDirectory: this.ctx.workingDirectory,
-        messages: this.ctx.messages,
-        declaredDeliverables: this.ctx.artifact?.declaredDeliverables,
-        finalText: gated.content,
-        repairsUsed: this.guardState.deliverableRepairCount,
-        nudgeManager: this.ctx.nudgeManager,
+      const gate = await applyDeliverableCloseGates({
+        workingDirectory: this.ctx.workingDirectory, messages: this.ctx.messages,
+        declaredDeliverables: this.ctx.artifact?.declaredDeliverables, finalText: gated.content,
+        diskRepairsUsed: this.guardState.deliverableRepairCount, visualRepairsUsed: this.guardState.artifactRenderRepairCount,
+        nudgeManager: this.ctx.nudgeManager, artifact: this.ctx.artifact,
       });
       if (gate.action === 'repair') {
-        this.guardState.deliverableRepairCount += 1;
-        logger.warn('[DeliverableDiskCheck] deliverables not on disk, bounded repair round fed back', { sessionId: this.ctx.sessionId, missing: gate.missing.map((item) => item.claim.resolved) });
-        this.contextAssembly.injectSystemMessage(gate.prompt, 'deliverable-disk-check');
+        if (gate.kind === 'disk') this.guardState.deliverableRepairCount += 1; else this.guardState.artifactRenderRepairCount += 1;
+        logger.warn(gate.logMessage, { sessionId: this.ctx.sessionId });
+        this.contextAssembly.injectSystemMessage(gate.prompt, gate.tag);
         return 'continue';
       }
       deliverableCheckedContent = gate.content;

@@ -55,13 +55,15 @@ export class TimeoutController {
   }
 
   /**
-   * 清理定时器
+   * 清理定时器。清掉 reject 句柄，避免 pause 后的 resume 把已结束的计时器又点着。
    */
   clear(): void {
     if (this.timeoutId !== null) {
       clearTimeout(this.timeoutId);
       this.timeoutId = null;
     }
+    this.rejectFn = null;
+    this.paused = false;
   }
 
   /**
@@ -72,13 +74,14 @@ export class TimeoutController {
   }
 
   /**
-   * 暂停超时计时器，记录剩余时间
+   * 暂停超时计时器，记录剩余时间。
+   * remainingMs 是当前分段起点的剩余量，多次 pause/resume 必须从它扣，不能回退到 totalMs。
    */
-  pause(): void {
+  pause(now = Date.now()): void {
     if (this.paused || this.timedOut || this.timeoutId === null) return;
 
-    const elapsed = Date.now() - this.startedAt;
-    this.remainingMs = Math.max(0, this.totalMs - elapsed);
+    const elapsed = now - this.startedAt;
+    this.remainingMs = Math.max(0, this.remainingMs - elapsed);
     clearTimeout(this.timeoutId);
     this.timeoutId = null;
     this.paused = true;
@@ -87,10 +90,10 @@ export class TimeoutController {
   /**
    * 恢复超时计时器，使用剩余时间继续倒计时
    */
-  resume(): void {
+  resume(now = Date.now()): void {
     if (!this.paused || this.timedOut || !this.rejectFn) return;
 
-    this.startedAt = Date.now();
+    this.startedAt = now;
     this.paused = false;
     this.timeoutId = setTimeout(() => {
       this.timedOut = true;
@@ -108,11 +111,19 @@ export class TimeoutController {
   /**
    * 获取剩余超时时间（毫秒）
    */
-  getRemainingMs(): number {
+  getRemainingMs(now = Date.now()): number {
     if (this.paused) return this.remainingMs;
     if (this.timedOut) return 0;
     if (this.startedAt === 0) return this.totalMs;
-    return Math.max(0, this.remainingMs - (Date.now() - this.startedAt));
+    return Math.max(0, this.remainingMs - (now - this.startedAt));
+  }
+
+  /**
+   * 已计入预算的已用时间（暂停区间不计）。墙钟预算用这个和上限比较。
+   */
+  getElapsedMs(now = Date.now()): number {
+    if (this.timedOut) return this.totalMs;
+    return Math.max(0, this.totalMs - this.getRemainingMs(now));
   }
 }
 
@@ -227,4 +238,99 @@ export function createCancellableTimeout(
   };
 
   return { promise, cancel, pause, resume };
+}
+
+// ============================================================================
+// 人等待时钟 — 审批 / AskUserQuestion 等待期间暂停已订阅的 TimeoutController
+// ============================================================================
+//
+// 子代理总超时、DAG 任务超时、Goal 墙钟预算都通过 createHumanWaitBoundTimeout
+// 订阅这里。begin/end 可重入：并行多张卡只暂停一次，最后一张结束才 resume。
+// 拒绝、超时、取消、异常都必须走 end（withHumanWait 的 finally），不能留下永久暂停。
+
+interface HumanWaitListener {
+  pause(now: number): void;
+  resume(now: number): void;
+}
+
+let humanWaitPending = 0;
+let humanWaitSince: number | undefined;
+let humanWaitAccumulatedMs = 0;
+const humanWaitListeners = new Set<HumanWaitListener>();
+
+function notifyHumanWait(paused: boolean, now: number): void {
+  for (const listener of humanWaitListeners) {
+    if (paused) listener.pause(now);
+    else listener.resume(now);
+  }
+}
+
+/** 人等待开始。已在等待中则只加引用计数。 */
+export function beginHumanWait(now = Date.now()): void {
+  humanWaitPending += 1;
+  if (humanWaitPending === 1) {
+    humanWaitSince = now;
+    notifyHumanWait(true, now);
+  }
+}
+
+/** 人等待结束。引用计数归零才 resume 订阅方。多余的 end 是空操作。 */
+export function endHumanWait(now = Date.now()): void {
+  if (humanWaitPending <= 0) return;
+  humanWaitPending -= 1;
+  if (humanWaitPending > 0) return;
+  if (humanWaitSince !== undefined) {
+    humanWaitAccumulatedMs += now - humanWaitSince;
+    humanWaitSince = undefined;
+  }
+  notifyHumanWait(false, now);
+}
+
+/** 当前是否有人等待（审批卡 / AskUser 未结算）。 */
+export function isHumanWaitActive(): boolean {
+  return humanWaitPending > 0;
+}
+
+/**
+ * 进程内已结束 + 正在进行的人等待合计毫秒。
+ * 审批记录 waitMs 用同一时间源（Date.now）在 begin/end 边界取值。
+ */
+export function getHumanWaitMs(now = Date.now()): number {
+  return humanWaitAccumulatedMs + (humanWaitSince !== undefined ? now - humanWaitSince : 0);
+}
+
+export async function withHumanWait<T>(work: () => Promise<T>): Promise<T> {
+  beginHumanWait();
+  try {
+    return await work();
+  } finally {
+    endHumanWait();
+  }
+}
+
+function bindTimeoutToHumanWait(controller: TimeoutController): () => void {
+  const listener: HumanWaitListener = {
+    pause: (now) => controller.pause(now),
+    resume: (now) => controller.resume(now),
+  };
+  humanWaitListeners.add(listener);
+  if (humanWaitPending > 0) listener.pause(humanWaitSince ?? Date.now());
+  return () => {
+    humanWaitListeners.delete(listener);
+  };
+}
+
+/**
+ * 带人等待暂停能力的超时。先 createTimeoutPromise 再订阅，
+ * 否则 pause 时 timeoutId 仍是 null 会空操作。
+ */
+export function createHumanWaitBoundTimeout(
+  ms: number,
+  message?: string,
+): { controller: TimeoutController; promise: Promise<never>; unbind: () => void } {
+  const controller = new TimeoutController();
+  const promise = controller.createTimeoutPromise<never>(ms, message);
+  void promise.catch(() => {});
+  const unbind = bindTimeoutToHumanWait(controller);
+  return { controller, promise, unbind };
 }

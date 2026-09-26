@@ -16,7 +16,7 @@ import type {
 } from '../../shared/contract/taskDAG';
 import { isTaskTerminal } from '../../shared/contract/taskDAG';
 import { TaskDAG } from './TaskDAG';
-import { withTimeout } from '../services/infra/timeoutController';
+import { createHumanWaitBoundTimeout } from '../services/infra/timeoutController';
 import type { SubagentExecutorPort } from '../agent/subagentExecutorPort';
 import type { SubagentExecutionContext } from '../agent/subagentExecutorTypes';
 import { createLogger } from '../services/infra/logger';
@@ -384,8 +384,8 @@ export class DAGScheduler extends EventEmitter {
     // 标记任务开始
     dag.startTask(task.id);
 
-    // agent 任务建任务级 abort 控制器：withTimeout 只赛跑不取消，超时后内层子代理
-    // 收不到信号会活过 failTask 继续当幽灵烧预算。shell 自带 execAsync timeout kill，
+    // agent 任务建任务级 abort 控制器：超时赛跑只记账，必须再 abort 内层子代理，
+    // 否则活过 failTask 继续当幽灵烧预算。shell 自带 execAsync timeout kill，
     // checkpoint 无外呼，都不建（每次执行各建各的，重试天然拿到新控制器）。
     const taskAbort = task.type === 'agent' ? new AbortController() : undefined;
 
@@ -398,13 +398,19 @@ export class DAGScheduler extends EventEmitter {
         remainingBudget: context.remainingBudget,
       };
 
-      // 执行任务（withTimeout 自动清理 timer，避免 race 胜者侧 timer 长留）
+      // 执行任务：TimeoutController 订阅人等待时钟，审批/AskUser 期间倒计时暂停。
       const timeout = task.timeout || this.config.defaultTimeout;
-      const output: TaskOutput = await withTimeout(
-        this.executeTaskByType(task, execContext, taskAbort?.signal),
-        timeout,
-        `Task timeout after ${timeout}ms`,
-      );
+      const boundTimeout = createHumanWaitBoundTimeout(timeout, `Task timeout after ${timeout}ms`);
+      let output: TaskOutput;
+      try {
+        output = await Promise.race([
+          this.executeTaskByType(task, execContext, taskAbort?.signal),
+          boundTimeout.promise,
+        ]);
+      } finally {
+        boundTimeout.unbind();
+        boundTimeout.controller.clear();
+      }
 
       // 保存输出
       this.taskOutputs.set(task.id, output);

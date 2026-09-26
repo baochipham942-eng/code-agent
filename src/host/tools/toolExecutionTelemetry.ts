@@ -8,6 +8,7 @@ import {
 } from '../../shared/contract/permission';
 import { getTelemetryService } from '../telemetry/telemetryService';
 import { recordSessionCacheHit } from '../model/cacheHitObservation';
+import { beginHumanWait, endHumanWait } from '../services/infra/timeoutController';
 
 function findToolSpan(toolCallId?: string) {
   return toolCallId
@@ -121,22 +122,29 @@ export function clearApprovalWait(toolCallId: string | undefined): void {
  * 工具内部审批（canUseTool 弹卡）由 ToolExecutor 签发的 context.requestPermission 包一层记账。
  */
 export function beginApprovalWait(toolCallId: string | undefined): void {
+  const now = Date.now();
+  beginHumanWait(now);
   if (!toolCallId) return;
   const state = approvalWaits.get(toolCallId) ?? { accumulatedMs: 0, pendingCount: 0 };
   state.pendingCount += 1;
-  state.waitingSince ??= Date.now();
+  state.waitingSince ??= now;
   approvalWaits.set(toolCallId, state);
 }
 
 export function endApprovalWait(toolCallId: string | undefined): void {
-  if (!toolCallId) return;
-  const state = approvalWaits.get(toolCallId);
-  if (!state?.waitingSince) return;
-  state.pendingCount -= 1;
-  if (state.pendingCount > 0) return;
-  state.pendingCount = 0;
-  state.accumulatedMs += Date.now() - state.waitingSince;
-  state.waitingSince = undefined;
+  const now = Date.now();
+  try {
+    if (!toolCallId) return;
+    const state = approvalWaits.get(toolCallId);
+    if (!state?.waitingSince) return;
+    state.pendingCount -= 1;
+    if (state.pendingCount > 0) return;
+    state.pendingCount = 0;
+    state.accumulatedMs += now - state.waitingSince;
+    state.waitingSince = undefined;
+  } finally {
+    endHumanWait(now);
+  }
 }
 
 export async function requestPermissionWithTelemetry(input: {
@@ -170,7 +178,10 @@ export async function requestPermissionWithTelemetry(input: {
     endApprovalWait(input.toolCallId);
     try {
       if (approvalSpanId) {
-        getTelemetryService().endSpan(approvalSpanId, 'error', { 'approval.state': 'failed' });
+        getTelemetryService().endSpan(approvalSpanId, 'error', {
+          'approval.state': 'failed',
+          'approval.wait_ms': getApprovalWaitMs(input.toolCallId, Date.now()),
+        });
       }
     } catch {
       // Approval tracing must not replace the permission error.
@@ -187,6 +198,7 @@ export async function requestPermissionWithTelemetry(input: {
       );
       getTelemetryService().endSpan(approvalSpanId, ask.approved ? 'ok' : 'cancelled', {
         'approval.state': ask.approved ? 'resolved' : 'rejected',
+        'approval.wait_ms': getApprovalWaitMs(input.toolCallId, Date.now()),
         ...(ask.approvalSource ? { 'approval.approval_source': ask.approvalSource } : {}),
         ...(ask.denialSource ? { 'approval.denial_source': ask.denialSource } : {}),
       });

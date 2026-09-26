@@ -35,6 +35,7 @@ import {
   notifyIfLateDecisionResponse,
 } from '../../permissions/userDecision';
 import { holdStallClock } from '../../agent/stallObserver';
+import { withApprovalTrace } from '../../telemetry/telemetryService';
 
 const logger = createLogger('UserQuestionPrompt');
 
@@ -123,6 +124,7 @@ export async function promptUserInChat(
 
   const releaseHold = holdStallClock(opts.sessionId);
   try {
+  return await withApprovalTrace('ask_user', async () => {
   const timeoutMs = opts.timeoutMs ?? INTERACTION_TIMEOUTS.USER_QUESTION;
   const responsePromise = new Promise<UserQuestionResponse>((resolve, reject) => {
     const timeout = hasInteractiveRenderer
@@ -209,6 +211,7 @@ export async function promptUserInChat(
         : headlessDecisionTimeoutReason(timeoutMs),
     };
   }
+  });
   } finally {
     releaseHold();
   }

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beginHumanWait, endHumanWait, isHumanWaitActive } from '../../../src/host/services/infra/timeoutController';
 import {
   buildInferenceMessages,
   buildInitialSubagentMessages,
@@ -11,6 +12,11 @@ import {
 } from '../../../src/host/agent/subagentExecutorCancellation';
 
 describe('subagentExecutor helper extraction', () => {
+  afterEach(() => {
+    while (isHumanWaitActive()) endHumanWait();
+    vi.useRealTimers();
+  });
+
   it('builds the same text-only system and user projection shape', () => {
     const messages = buildInitialSubagentMessages({
       agentName: 'Test Agent',
@@ -120,6 +126,26 @@ describe('subagentExecutor helper extraction', () => {
 
     expect(lifecycle.effectiveSignal.aborted).toBe(true);
     expect(lifecycle.effectiveSignal.reason).toBe('parent-cancel');
+
+    lifecycle.cleanupTimer();
+    lifecycle.stopIdleWatchdog();
+  });
+
+  it('pauses the subagent total timeout while a human wait is active', async () => {
+    vi.useFakeTimers();
+    const lifecycle = createSubagentCancellationLifecycle({
+      agentName: 'Wait Agent',
+      timeoutMs: 100,
+    });
+
+    beginHumanWait();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(lifecycle.effectiveSignal.aborted).toBe(false);
+
+    endHumanWait();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(lifecycle.effectiveSignal.aborted).toBe(true);
+    expect(lifecycle.effectiveSignal.reason).toBe('timeout');
 
     lifecycle.cleanupTimer();
     lifecycle.stopIdleWatchdog();

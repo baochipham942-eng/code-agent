@@ -14,6 +14,7 @@ import {
   withRunTraceContext,
   type RunTraceContext,
 } from './runTraceContext';
+import { getHumanWaitMs, withHumanWait } from '../services/infra/timeoutController';
 
 const logger = createLogger('Telemetry');
 
@@ -570,49 +571,57 @@ export async function withApprovalTrace<T>(
   approvalKind: string,
   callback: () => Promise<T>,
 ): Promise<T> {
-  const parent = getActiveRunTraceContext();
-  if (!parent) return callback();
-  const child = createChildRunTraceContext(parent);
-  let spanId: string | undefined;
-  try {
-    spanId = getTelemetryService().startSpan(
-      `approval:${approvalKind}`,
-      'approval',
-      { 'approval.kind': approvalKind, 'approval.state': 'waiting' },
-      parent.spanId,
-      child,
-    ).spanId;
-    getTelemetryService().addSpanEvent(spanId, 'approval.waiting');
-  } catch {
-    // Approval behavior is independent from tracing availability.
-  }
-
-  return withRunTraceContext(child, async () => {
+  const waitMsBefore = getHumanWaitMs();
+  return withHumanWait(async () => {
+    const waitMs = () => getHumanWaitMs() - waitMsBefore;
+    const parent = getActiveRunTraceContext();
+    if (!parent) return callback();
+    const child = createChildRunTraceContext(parent);
+    let spanId: string | undefined;
     try {
-      const result = await callback();
-      if (spanId) {
-        const approved = Boolean(result && typeof result === 'object' && 'approved' in result
-          ? (result as { approved?: unknown }).approved
-          : true);
-        try {
-          getTelemetryService().addSpanEvent(spanId, approved ? 'approval.resolved' : 'approval.rejected');
-          getTelemetryService().endSpan(spanId, approved ? 'ok' : 'cancelled', {
-            'approval.state': approved ? 'resolved' : 'rejected',
-          });
-        } catch {
-          // Approval behavior is independent from tracing availability.
-        }
-      }
-      return result;
-    } catch (error) {
-      if (spanId) {
-        try {
-          getTelemetryService().endSpan(spanId, 'error', { 'approval.state': 'failed' });
-        } catch {
-          // Approval behavior is independent from tracing availability.
-        }
-      }
-      throw error;
+      spanId = getTelemetryService().startSpan(
+        `approval:${approvalKind}`,
+        'approval',
+        { 'approval.kind': approvalKind, 'approval.state': 'waiting' },
+        parent.spanId,
+        child,
+      ).spanId;
+      getTelemetryService().addSpanEvent(spanId, 'approval.waiting');
+    } catch {
+      // Approval behavior is independent from tracing availability.
     }
+
+    return withRunTraceContext(child, async () => {
+      try {
+        const result = await callback();
+        if (spanId) {
+          const approved = Boolean(result && typeof result === 'object' && 'approved' in result
+            ? (result as { approved?: unknown }).approved
+            : true);
+          try {
+            getTelemetryService().addSpanEvent(spanId, approved ? 'approval.resolved' : 'approval.rejected');
+            getTelemetryService().endSpan(spanId, approved ? 'ok' : 'cancelled', {
+              'approval.state': approved ? 'resolved' : 'rejected',
+              'approval.wait_ms': waitMs(),
+            });
+          } catch {
+            // Approval behavior is independent from tracing availability.
+          }
+        }
+        return result;
+      } catch (error) {
+        if (spanId) {
+          try {
+            getTelemetryService().endSpan(spanId, 'error', {
+              'approval.state': 'failed',
+              'approval.wait_ms': waitMs(),
+            });
+          } catch {
+            // Approval behavior is independent from tracing availability.
+          }
+        }
+        throw error;
+      }
+    });
   });
 }

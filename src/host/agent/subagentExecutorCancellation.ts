@@ -6,6 +6,7 @@ import { CANCELLATION_TIMEOUTS, SUBAGENT_EXECUTION_TIMEOUTS } from '../../shared
 import { SUBAGENT_IDLE } from '../../shared/constants/agent';
 import { join as pathJoin } from 'path';
 import { createChildAbortController, createTimedAbortController, initiateShutdown } from './shutdownProtocol';
+import { isHumanWaitActive } from '../services/infra/timeoutController';
 import { getUserDataPath } from '../platform/appPaths';
 import { captureWorkspacePatch } from '../services/checkpoint/taskPatchService';
 
@@ -99,6 +100,12 @@ export function createSubagentCancellationLifecycle(options: {
   const markToolEnd = (): void => { toolsInFlight = Math.max(0, toolsInFlight - 1); markProgress(); };
   const idleWatchdog = setInterval(() => {
     if (effectiveSignal.aborted) return;
+    // 人等待期间总超时已暂停；idle 钟也冻结，避免看卡把子代理当无进展杀掉。
+    if (isHumanWaitActive()) {
+      lastProgressAt = Date.now();
+      graceStartedAt = undefined;
+      return;
+    }
     // 请求在途 ≠ idle：在途另有 per-request 超时与总预算兜底
     if (requestInFlight) return;
     const idle = Date.now() - lastProgressAt;

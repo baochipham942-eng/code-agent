@@ -28,6 +28,7 @@ vi.mock('../../../../src/host/services/infra/notificationService', () => ({
 }));
 
 import { promptUserInChat } from '../../../../src/host/tools/utils/userQuestionPrompt';
+import { endHumanWait, isHumanWaitActive } from '../../../../src/host/services/infra/timeoutController';
 import { askUserQuestionModule } from '../../../../src/host/tools/modules/planning/askUserQuestion';
 import { confirmGenerationCost } from '../../../../src/host/tools/modules/design/generationCostConfirm';
 import { IPC_CHANNELS } from '../../../../src/shared/ipc';
@@ -86,6 +87,7 @@ beforeEach(() => {
 afterEach(() => {
   void cleanupVoiceQuestionRoute?.();
   cleanupVoiceQuestionRoute = undefined;
+  while (isHumanWaitActive()) endHumanWait();
   vi.useRealTimers();
 });
 

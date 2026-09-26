@@ -73,6 +73,7 @@ import { createOAuthProviderForServer } from './mcpOAuthProvider';
 import { getMcpOAuthCoordinator } from './mcpOAuthCoordinator';
 import {
   formatMcpConnectionError,
+  formatMcpConnectorErrorExit,
   isOAuthAuthorizationRequiredError,
   MCPToolDeliveryUnknownError,
 } from './mcpErrors';
@@ -1100,9 +1101,7 @@ export class MCPClient extends EventEmitter {
       }
       // cua-driver：观察 get_window_state/list_apps 等结果，喂本地 AX 树缓存，
       // 供后续 click/type_text 调用反查人话文案（§10）。纯增强，不影响结果。
-      if (serverName === CUA_DRIVER_SERVER_NAME && result.success && typeof result.output === 'string') {
-        recordCuaResult(toolName, args, result.output);
-      }
+      if (serverName === CUA_DRIVER_SERVER_NAME && result.success && typeof result.output === 'string') recordCuaResult(toolName, args, result.output);
       // 失败侧对称采集：进灰度统计（分类见 cuaFailureStats）
       if (serverName === CUA_DRIVER_SERVER_NAME && !result.success && result.error) {
         void recordCuaFailure(toolName, sessionId ?? `pid:${process.pid}`, result.error);
@@ -1158,7 +1157,9 @@ export class MCPClient extends EventEmitter {
       return {
         toolCallId,
         success: false,
-        error: errorMessage,
+        // 设计态连接器错误（权限范围不足 / 服务端不可用）换成带出路的文案：
+        // 模型拿到的是「下一步做什么」，不是一句裸报错加一次无效重连。
+        error: formatMcpConnectorErrorExit(error) ?? errorMessage,
         duration: Date.now() - startTime,
       };
     }

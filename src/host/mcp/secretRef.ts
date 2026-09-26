@@ -1,4 +1,5 @@
 import { MCP_SECRET_REF_PREFIX } from '../../shared/constants';
+import { MCPCredentialsMissingError } from './mcpErrors';
 
 export const SECRET_REF_PREFIX = MCP_SECRET_REF_PREFIX;
 
@@ -87,17 +88,26 @@ export function resolveSecretRefs(
 
     const integration = lookup(reference.integrationId);
     if (!integration) {
-      throw new Error(
+      throw new MCPCredentialsMissingError(
         `MCP credential "${reference.integrationId}.${reference.field}" is missing; please re-enter it in Connectors`,
       );
     }
     if (!Object.prototype.hasOwnProperty.call(integration, reference.field)) {
-      throw new Error(
+      throw new MCPCredentialsMissingError(
         `MCP credential field "${reference.integrationId}.${reference.field}" is missing; please re-enter it in Connectors`,
       );
     }
 
-    resolved[key] = integration[reference.field];
+    const storedValue = integration[reference.field];
+    if (typeof storedValue !== 'string' || storedValue.trim() === '') {
+      // 空凭据若照发，请求会裸奔出去、换来一个误导性的 401「授权失效」——
+      // 在发出前就 fail-closed 报「凭据未附上」。
+      throw new MCPCredentialsMissingError(
+        `MCP credential "${reference.integrationId}.${reference.field}" is empty (credentials were not attached); please re-enter it in Connectors`,
+      );
+    }
+
+    resolved[key] = storedValue;
   }
 
   return resolved;

@@ -679,8 +679,8 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 | 现象 | 影响面与当前处置 | 出处 | 单号 / 决策 |
 |---|---|---|---|
 | 历史分册混有已退休路径和过期数量 | 引擎种类、恢复能力、源码目录不能只抄分册；本文按代码限定，后续分册校准独立处理 | `docs/architecture/agent-engine.md`、`docs/architecture/durable-runtime-integration.md`、`src/shared/contract/agentEngine.ts` | N-DOCSYS-HLD（入口收口） |
-| Native 已派发模型请求没有可证明的查询/幂等重试合同 | 自动重发可能重复收费；返回复核，不能承诺 exactly-once。ADR-075 提议跨进程重发该轮并如实计量，仍不承诺 exactly-once | `src/host/app/nativeRecoveryHost.ts` | ADR-037；[ADR-075](./architecture/decisions/ADR-075-foreground-restart-resume.md)（提议） |
-| 复核恢复的统一页面动作未闭合 | 后端分类不能直接兑现“点恢复接着跑”；ADR-075 提议崩溃后续跑改为喂回模型并回到 agent loop，复核卡不再当主出路 | `src/host/runtime/nativeRecoveryHost.ts`、`src/renderer/stores/sessionStore.ts` | ADR-037；[ADR-075](./architecture/decisions/ADR-075-foreground-restart-resume.md)（提议） |
+| Native 已派发模型请求没有可证明的查询/幂等重试合同 | 自动重发可能重复收费；返回复核，不能承诺 exactly-once。ADR-075 提议跨进程按 dispatched 重发该轮；崩溃那次 usage 常没落盘，展示标未知或估算，仍不承诺 exactly-once | `src/host/app/nativeRecoveryHost.ts` | ADR-037；[ADR-075](./architecture/decisions/ADR-075-foreground-restart-resume.md)（提议） |
+| 复核恢复的统一页面动作未闭合 | 后端分类不能直接兑现“点恢复接着跑”；ADR-075 提议先补接管已有 runId 原语，再喂回模型回到 agent loop，复核卡不再当主出路。现有 prepared 路径是 startTask 截断 regenerate，不能当回 loop | `src/host/runtime/nativeRecoveryHost.ts`、`src/host/app/nativeRecoveryHost.ts`、`src/renderer/stores/sessionStore.ts` | ADR-037；[ADR-075](./architecture/decisions/ADR-075-foreground-restart-resume.md)（提议） |
 | 手动压缩请求缺独立取消通路 | UI active 期间只能等请求返回；不可编造超时自动取消与重试闭环 | `src/renderer/hooks/useContextHealthActions.ts` | 独立单号未登记 |
 | 诊断内容与多个观测出口并存 | Supabase metadata-only 不覆盖诊断包/Langfuse；旧记录的知情同意与内容收敛要求需按出口复核 | `src/host/telemetry/telemetryUploaderService.ts`、`src/host/services/infra/langfuseService.ts`、`docs/releases/architecture-changelog.md` | ADR-030；历史发布 gate 未凭本文宣告关闭 |
 | 脚本重放依赖确定性控制流 | Promise.race 等时序仍可能改变路径，结果缓存不是 VM 快照 | `docs/architecture/dynamic-workflow.md`、`src/host/agent/scriptRuntime/scriptValidator.ts` | 分册未登记独立单号 |
@@ -745,4 +745,4 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 | 072 | 跨会话协调协议（发起会话、委托链与确定性准入门） | 已拍板 | [ADR-072](./architecture/decisions/ADR-072-cross-session-coordination.md) |
 | 073 | 工具资源声明与保序并行分段 | 已拍板 | [ADR-073](./architecture/decisions/ADR-073-tool-resource-order-preserving-segments.md) |
 | 074 | Plan 模式正文收尾但未调用退出工具的兜底 | 已拍板 | [ADR-074](./architecture/decisions/ADR-074-plan-mode-exit-fallback.md) |
-| 075 | 重启后前台任务自动续跑（喂回模型回 loop；崩溃自动续 / 其余发送按钮继续态） | 提议 | [ADR-075](./architecture/decisions/ADR-075-foreground-restart-resume.md) |
+| 075 | 重启后前台任务自动续跑（先接管已有 runId；parked=waiting+中断原因；崩溃自动续 / 其余发送按钮继续态） | 提议 | [ADR-075](./architecture/decisions/ADR-075-foreground-restart-resume.md) |

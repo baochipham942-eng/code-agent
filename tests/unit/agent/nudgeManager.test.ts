@@ -6,22 +6,24 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock logger
-vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
+const loggerFns = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
 }));
 
-// Mock logCollector
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  createLogger: () => loggerFns,
+}));
+
+const logCollectorMocks = vi.hoisted(() => ({
+  agent: vi.fn(),
+  addLog: vi.fn(),
+}));
+
 vi.mock('../../../src/host/mcp/logCollector', () => ({
-  logCollector: {
-    agent: vi.fn(),
-    addLog: vi.fn(),
-  },
+  logCollector: logCollectorMocks,
 }));
 
 // Mock planning taskStore (legacy tools/planning/ barrel removed in P1 Wave 3 —
@@ -42,11 +44,55 @@ vi.mock('fs', async (importOriginal) => {
     readdirSync: (...args: unknown[]) => mockReaddirSync(...args),
   };
 });
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({ isReady: false }),
+}));
+vi.mock('../../../src/host/mcp/logCollector.js', () => ({
+  logCollector: logCollectorMocks,
+}));
+vi.mock('../../../src/host/services', () => ({
+  getLangfuseService: vi.fn(),
+  getBudgetService: vi.fn(),
+  BudgetAlertLevel: { None: 'none' },
+}));
+vi.mock('../../../src/host/lightMemory/sessionMetadata', () => ({
+  recordSessionEnd: vi.fn(async () => undefined),
+}));
+vi.mock('../../../src/host/lightMemory/recentConversations', () => ({
+  appendConversationSummary: vi.fn(),
+  isLoopAutomationSummaryText: () => false,
+}));
+vi.mock('../../../src/host/lightMemory/conversationJudge', () => ({
+  judgeConversation: vi.fn(async () => ({
+    worth: false,
+    isMeeting: false,
+    title: '',
+    worthKnowledge: [],
+    durableFacts: [],
+    source: 'heuristic',
+  })),
+}));
+vi.mock('../../../src/host/lightMemory/durableFactWriter', () => ({ writeDurableFacts: vi.fn() }));
+vi.mock('../../../src/host/observability/posthogNode', () => ({ trackNode: vi.fn() }));
+vi.mock('../../../src/host/session/completionSummaryService', () => ({
+  buildCompletionSummaryRecord: vi.fn(async () => ({ id: 'summary-1', status: 'completed' })),
+  persistCompletionSummaryRecord: vi.fn(),
+}));
+vi.mock('../../../src/host/agent/runtime/turnOutcomeStamp', () => ({
+  recordTurnOutcomeStamp: vi.fn(),
+}));
+vi.mock('../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime', () => ({
+  getConfiguredSurfaceExecutionRuntime: () => null,
+}));
+vi.mock('../../../src/host/mcp/cuaSessionLock', () => ({ releaseCuaLock: vi.fn() }));
+vi.mock('../../../src/host/mcp/cuaTrajectoryBudget', () => ({ resetCuaBudget: vi.fn() }));
 
 import { NudgeManager, isTaskMutationToolCall } from '../../../src/host/agent/nudgeManager';
 import type { NudgeCheckContext } from '../../../src/host/agent/nudgeManager';
 import { GoalTracker } from '../../../src/host/agent/goalTracker';
 import { logCollector } from '../../../src/host/mcp/logCollector';
+import { RunFinalizer } from '../../../src/host/agent/runtime/runFinalizer';
+import type { AgentEvent, Message } from '../../../src/shared/contract';
 
 // ── Helpers ──
 
@@ -334,6 +380,94 @@ describe('NudgeManager', () => {
     // 「报告口径用 taskGate 上限(3) 而非 todo 上限(2)」的原始回归点（codex audit R1 LOW）
     // 曾靠断言 notification 文案里的 "(3/3)" 验证；notification 事件已在丙类收口中删除
     // （2026-08-08），该行为改由下面这条用例直接断言「第 4 次才放行停止」来保护。
+    it('asks the model to list needs_decision waits instead of forcing completed', () => {
+      manager.reset([], '帮我订酒店', '/tmp/test', []);
+      manager.recordTaskManagerUse();
+      mockGetIncompleteTasks.mockReturnValue([{
+        id: 't1',
+        subject: '选择酒店方案',
+        status: 'needs_decision',
+        blockedReason: '在两家酒店间选',
+      }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['TaskManager'],
+      });
+
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('等用户');
+      expect(injectedMessage).toContain('needs_decision');
+      expect(injectedMessage).not.toContain('MUST finish the items you can still do');
+    });
+
+    it('still runs the missing-file check when every task is waiting on the user', () => {
+      manager.reset(['src/app.ts'], '改 app 并等我确认方案', '/tmp/test', []);
+      manager.recordTaskManagerUse();
+      mockGetIncompleteTasks.mockReturnValue([{
+        id: 't1',
+        subject: '确认方案',
+        status: 'needs_decision',
+        blockedReason: '两个方案等你选',
+      }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['edit_file'],
+      });
+
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      const messages = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0] as string);
+      expect(messages.some((message) => message.includes('这些任务在等用户'))).toBe(true);
+      expect(messages.some((message) => message.includes('file-completion-check'))).toBe(true);
+    });
+
+    it('keeps nudging blocked handback tasks instead of treating them as waiting on the user', () => {
+      manager.reset([], '继续子代理交回的活', '/tmp/test', []);
+      manager.recordTaskManagerUse();
+      mockGetIncompleteTasks.mockReturnValue([{
+        id: 't1',
+        subject: '核实子代理交回的改动',
+        status: 'blocked',
+        blockedReason: '子代理结束时未收口',
+        blockedReasonCategory: 'handback',
+      }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['TaskManager'],
+      });
+
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('MUST finish the items you can still do');
+      expect(injectedMessage).not.toContain('这些任务在等用户');
+    });
+
+    it('does not re-enter when every remaining task is waiting on the user', () => {
+      manager.reset([], '帮我订酒店', '/tmp/test', []);
+      manager.recordTaskManagerUse();
+      mockGetIncompleteTasks.mockReturnValue([{
+        id: 't1',
+        subject: '选择酒店方案',
+        status: 'needs_decision',
+        blockedReason: '在两家酒店间选',
+      }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['TaskManager'],
+      });
+
+      // 只重入一次让模型读到清单，之后放行收尾
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      expect(manager.runNudgeChecks(ctx)).toBe(false);
+      expect(manager.runNudgeChecks(ctx)).toBe(false);
+      expect(ctx.injectSystemMessage).toHaveBeenCalledTimes(1);
+    });
+
     it('allows up to 3 reentries for open tasks then lets the model stop (MiMo main cap)', () => {
       manager.reset([], '把这些任务完成并更新 task 状态', '/tmp/test', []);
       mockGetIncompleteTasks.mockReturnValue([{ id: 't1', subject: 'never done', status: 'pending' }]);
@@ -637,5 +771,89 @@ describe('NudgeManager', () => {
 
       expect(hintTexts(ctx.injectSystemMessage)).toHaveLength(0);
     });
+  });
+});
+
+describe('RunFinalizer unresolved task list', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetIncompleteTasks.mockReturnValue([]);
+  });
+
+  async function finalizeWithIncompleteTasks(
+    tasks: Array<{ id: string; subject: string; status: string; blockedReason?: string }>,
+  ): Promise<Message[]> {
+    mockGetIncompleteTasks.mockReturnValue(tasks);
+    const persisted: Message[] = [];
+    const finalizer = new RunFinalizer({
+      sessionId: 'session-unresolved',
+      workingDirectory: '/tmp',
+      onEvent: (_event: AgentEvent) => undefined,
+      persistMessage: vi.fn(),
+      modelConfig: { provider: 'test', model: 'test-model' },
+      messages: [
+        { id: 'user-1', role: 'user', content: '帮我订酒店', timestamp: 1 },
+        { id: 'assistant-1', role: 'assistant', content: '选哪家？', timestamp: 2 },
+      ],
+      maxIterations: 10,
+      stats: {
+        traceId: 'trace-unresolved',
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        queueDiagnostic: vi.fn(),
+      },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      nudgeManager: { getModifiedFiles: () => new Set() },
+      turn: { currentTurnId: 'assistant-1' },
+    } as never);
+    finalizer.setModules(
+      {
+        generateId: () => 'sys-unresolved',
+        addAndPersistMessage: vi.fn(async (message: Message) => { persisted.push(message); }),
+      } as never,
+      { runSessionEndLearning: vi.fn(async () => undefined) } as never,
+    );
+
+    await finalizer.finalizeRun(
+      1,
+      '帮我订酒店',
+      { endTrace: vi.fn(), flush: vi.fn(async () => undefined) } as never,
+      1,
+      { status: 'completed' },
+    );
+    return persisted;
+  }
+
+  it('writes the wait list into the terminal system message', async () => {
+    const persisted = await finalizeWithIncompleteTasks([{
+      id: '1',
+      subject: '选择酒店方案',
+      status: 'needs_decision',
+      blockedReason: '在两家酒店间选',
+    }]);
+
+    const notice = persisted.find((message) => message.role === 'system' && message.content.includes('显式任务未完成'));
+    expect(notice?.content).toContain('选择酒店方案');
+    expect(notice?.content).toContain('等你拍板');
+  });
+
+  it('still warns when a pending explicit task is left open at run end', async () => {
+    const persisted = await finalizeWithIncompleteTasks([{
+      id: '2',
+      subject: '写行程草稿',
+      status: 'pending',
+    }]);
+
+    const notice = persisted.find((message) => message.role === 'system' && message.content.includes('显式任务未完成'));
+    expect(notice?.content).toContain('1 个显式任务未完成');
+    expect(notice?.content).toContain('写行程草稿');
+    expect(notice?.content).toContain('待开始');
+    expect(loggerFns.warn).toHaveBeenCalledWith(expect.stringContaining('1 incomplete task(s)'));
+    expect(logCollectorMocks.agent).toHaveBeenCalledWith(
+      'WARN',
+      'Agent completing with incomplete tasks',
+      expect.objectContaining({ incompleteCount: 1 }),
+    );
   });
 });

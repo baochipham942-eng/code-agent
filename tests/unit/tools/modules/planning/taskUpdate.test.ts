@@ -59,7 +59,7 @@ describe('task_update schema', () => {
     expect(taskUpdateModule.schema.allowInPlanMode).toBe(true);
     expect(taskUpdateModule.schema.inputSchema.required).toEqual(['taskId']);
     const props = taskUpdateModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>;
-    expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'deleted']);
+    expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'needs_decision', 'user_action', 'deleted']);
     expect(props.desktopAction.enum).toEqual(['accept', 'dismiss', 'snooze', 'reopen', 'supersede']);
   });
 });
@@ -209,6 +209,27 @@ describe('task_update behavior', () => {
     expect(emitFn).toHaveBeenCalledWith('task_update', expect.objectContaining({
       action: 'delete',
     }));
+  });
+
+  it('needs_decision 回写 decision reason recorded 而不是 blocked reason', async () => {
+    getTaskMock.mockReturnValue({ id: '1', subject: '选酒店', status: 'pending' });
+    updateTaskMock.mockReturnValue({
+      id: '1',
+      subject: '选酒店',
+      status: 'needs_decision',
+      blockedReason: '在两家酒店间选',
+    });
+    const handler = await taskUpdateModule.createHandler();
+    const result = await handler.execute(
+      { taskId: '1', status: 'needs_decision', blockedReason: '在两家酒店间选' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('decision reason recorded');
+      expect(result.output).not.toContain('blocked reason recorded');
+    }
   });
 
   it('status="cancelled" → updated task stays visible', async () => {

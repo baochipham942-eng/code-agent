@@ -17,8 +17,11 @@ export const TASK_EVIDENCE_PROPERTIES = {
   blockedReason: {
     type: 'string',
     description:
-      'Required when status="blocked". Plain-language description of what is blocking the work '
-      + '(e.g. "the site requires a login we do not have"). Do not paste raw error logs or API responses.',
+      'Required when status is "blocked", "needs_decision", or "user_action". Plain-language reason the work is waiting: '
+      + 'blocked = an external obstacle ("the site requires a login we do not have"); '
+      + 'needs_decision = what the user must choose ("pick hotel A or hotel B"); '
+      + 'user_action = what the user must do themselves (login, pay, sign offline). '
+      + 'Do not paste raw error logs or API responses.',
   },
   cancelReason: {
     type: 'string',
@@ -27,8 +30,12 @@ export const TASK_EVIDENCE_PROPERTIES = {
 } as const;
 
 export const TASK_STATUS_DESCRIPTION =
-  'New status for the task. Use "blocked" when an external obstacle stops the work (requires blockedReason); '
-  + 'use "cancelled" to abandon but keep it visible (struck through); '
+  'New status for the task. '
+  + 'Use "blocked" when an external obstacle stops the work (permission, site refusal, missing info) — requires blockedReason. '
+  + 'Use "needs_decision" when the user must choose among options — requires blockedReason saying what to pick. '
+  + 'Use "user_action" when the user must do something tools cannot (login, pay, sign offline) — requires blockedReason saying what to do. '
+  + 'blocked ≠ needs_decision ≠ user_action: blocked is stuck on an external obstacle; the other two are waiting on the user. '
+  + 'Use "cancelled" to abandon but keep it visible (struck through); '
   + 'use "deleted" to permanently remove the task. '
   + '"completed" requires completionEvidence.';
 
@@ -48,7 +55,7 @@ export const taskUpdateSchema: ToolSchema = {
       },
       status: {
         type: 'string',
-        enum: ['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'deleted'],
+        enum: ['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'needs_decision', 'user_action', 'deleted'],
         description: TASK_STATUS_DESCRIPTION,
       },
       ...TASK_EVIDENCE_PROPERTIES,

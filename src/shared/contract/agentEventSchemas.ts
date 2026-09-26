@@ -227,7 +227,7 @@ const sessionTaskSchema = typed<SessionTask>(z.object({
   subject: z.string(),
   description: z.string(),
   activeForm: z.string(),
-  status: z.enum(['pending', 'in_progress', 'completed', 'blocked', 'cancelled']),
+  status: z.enum(['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'needs_decision', 'user_action']),
   priority: z.enum(['low', 'normal', 'high']),
   blocks: stringArraySchema,
   blockedBy: stringArraySchema,

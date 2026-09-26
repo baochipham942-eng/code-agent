@@ -36,6 +36,7 @@ import type {
   AgentLoopConfig,
 } from '../../agent/loopTypes';
 import { getIncompleteTasks } from '../../services/planning/taskStore';
+import { formatUnresolvedTaskList } from '../../../shared/contract/planning';
 import {
   parseTodos,
   extractPlanTitle,
@@ -567,10 +568,9 @@ export class RunFinalizer {
     const incompleteFinalTasks = getIncompleteTasks(this.ctx.sessionId);
 
     if (incompleteFinalTasks.length > 0) {
-      const taskDetails = incompleteFinalTasks.map(t => `#${t.id}: ${t.subject}`);
-      const allDetails = taskDetails.join(', ');
+      const allDetails = formatUnresolvedTaskList(incompleteFinalTasks);
 
-      logger.warn(`[AgentLoop] Agent completing with ${incompleteFinalTasks.length} incomplete task(s): ${allDetails}`);
+      logger.warn(`[AgentLoop] Agent completing with ${incompleteFinalTasks.length} incomplete task(s):\n${allDetails}`);
       logCollector.agent('WARN', `Agent completing with incomplete tasks`, {
         incompleteCount: incompleteFinalTasks.length,
         incompleteTasks: incompleteFinalTasks.map(t => ({ id: t.id, subject: t.subject, status: t.status })),
@@ -579,7 +579,7 @@ export class RunFinalizer {
       await this.persistTerminalMessage({
         id: this.messageWriter.generateId(),
         role: 'system',
-        content: `⚠️ ${incompleteFinalTasks.length} 个显式任务未完成 (${allDetails})`,
+        content: `⚠️ ${incompleteFinalTasks.length} 个显式任务未完成\n${allDetails}`,
         timestamp: Date.now(),
         metadata: {
           agentRecoveryNotice: { kind: 'unresolved_tasks' },

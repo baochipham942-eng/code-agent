@@ -73,10 +73,10 @@ export interface TaskRecord {
   id: string;
   scope: 'session' | 'global' | 'scheduled';
   title: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
+  status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled' | 'needs_decision' | 'user_action';
   steps: Array<{
     title: string;
-    status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
+    status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled' | 'needs_decision' | 'user_action';
     blockedByTitles?: string[];
     blockedTaskTitles?: string[];
     /** 已过语义化清洗的阻塞说明（ADR-050）；为空时用 blockedReasonCategory 的文案兜底 */

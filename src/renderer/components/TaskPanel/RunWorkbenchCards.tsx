@@ -10,9 +10,11 @@ import {
   ChevronDown,
   ChevronUp,
   Circle,
+  HelpCircle,
   Loader2,
   Radio,
   RefreshCw,
+  UserRound,
   XCircle,
 } from 'lucide-react';
 import { EmptyState } from '../primitives';
@@ -178,6 +180,9 @@ function getTaskStatusClass(status: TaskRecord['status']): string {
       return 'text-badge-success';
     case 'blocked':
       return 'text-badge-danger';
+    case 'needs_decision':
+    case 'user_action':
+      return 'text-badge-warning';
     case 'cancelled':
       return 'text-zinc-600 line-through';
     default:
@@ -194,6 +199,10 @@ function getTaskStatusLabel(status: TaskRecord['status'], t: Translations): stri
       return t.outcomeWords.completed.badge.label;
     case 'blocked':
       return rw.statusBlocked;
+    case 'needs_decision':
+      return rw.statusNeedsDecision;
+    case 'user_action':
+      return rw.statusUserAction;
     case 'cancelled':
       return t.outcomeWords['cancelled-by-user'].badge.label;
     default:
@@ -390,9 +399,11 @@ const TaskRecordRow = ({
   const rw = t.taskStatusPanels.runWorkbench;
   const detailLabel = task.status === 'blocked'
     ? rw.reason
-    : task.status === 'completed'
-      ? rw.result
-      : rw.currentAction;
+    : task.status === 'needs_decision' || task.status === 'user_action'
+      ? rw.reason
+      : task.status === 'completed'
+        ? rw.result
+        : rw.currentAction;
 
   return (
     <div
@@ -451,14 +462,20 @@ const TaskRecordRow = ({
 // checklist 头部不再摆「已完成 x/y」大计数，步骤行自己讲进度。
 const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailView> }) => {
   const { t } = useI18n();
+  const waitingOnUser = rail.status === 'needs_decision' || rail.status === 'user_action';
   return (
-    <span
-      className="sr-only"
-      data-testid="task-record-status"
-      data-task-status={rail.status}
-    >
-      {getTaskStatusLabel(rail.status, t)}
-    </span>
+    <div className="flex items-center gap-2">
+      <span
+        className={waitingOnUser ? `text-[10px] ${getTaskStatusClass(rail.status)}` : 'sr-only'}
+        data-testid="task-record-status"
+        data-task-status={rail.status}
+      >
+        {getTaskStatusLabel(rail.status, t)}
+      </span>
+      {waitingOnUser ? (
+        <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{rail.title}</span>
+      ) : null}
+    </div>
   );
 };
 
@@ -633,6 +650,10 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
           <Loader2 className="h-4 w-4 animate-spin text-zinc-300" />
         ) : step.status === 'blocked' ? (
           <AlertTriangle className="h-3.5 w-3.5 text-badge-danger" />
+        ) : step.status === 'needs_decision' ? (
+          <HelpCircle className="h-3.5 w-3.5 text-badge-warning" />
+        ) : step.status === 'user_action' ? (
+          <UserRound className="h-3.5 w-3.5 text-badge-warning" />
         ) : step.status === 'cancelled' ? (
           <XCircle className="h-4 w-4 text-zinc-500" />
         ) : (
@@ -652,7 +673,11 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
         </span>
         {stuckHint && (
           <span
-            className="min-w-0 flex-shrink truncate rounded border border-badge-danger/20 bg-red-400/5 px-1 py-0.5 text-[10px] text-badge-danger/85"
+            className={
+              step.status === 'needs_decision' || step.status === 'user_action'
+                ? 'min-w-0 flex-shrink truncate rounded border border-badge-warning/20 bg-amber-400/5 px-1 py-0.5 text-[10px] text-badge-warning/85'
+                : 'min-w-0 flex-shrink truncate rounded border border-badge-danger/20 bg-red-400/5 px-1 py-0.5 text-[10px] text-badge-danger/85'
+            }
             data-testid="task-rail-step-blocked-reason"
             title={stuckHint}
           >

@@ -33,6 +33,16 @@ vi.mock('../../../../../src/host/desktop/desktopActivityUnderstandingService', (
 }));
 
 import { taskManagerModule } from '../../../../../src/host/tools/modules/planning/taskManager';
+import {
+  applyUnresolvedTaskTurnGate,
+  formatUnresolvedTaskList,
+  isClosedTaskStatus,
+  isOpenTaskStatus,
+  isUnresolvedTurnTaskStatus,
+  statusRequiresWaitReason,
+  validateTaskStatusEvidence,
+  type SessionTaskStatus,
+} from '../../../../../src/shared/contract/planning';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -120,6 +130,35 @@ describe('证据门 — update 路径', () => {
     expect(refs).toHaveLength(1);
     expect(refs[0].kind).toBe('tool');
     expect(refs[0].ref).toContain('214 passed');
+  });
+
+  it('needs_decision 缺 blockedReason 时拒绝', async () => {
+    const result = await run({ action: 'update', taskId: '1', status: 'needs_decision' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain('blockedReason');
+    expect(updateTaskMock).not.toHaveBeenCalled();
+  });
+
+  it('needs_decision 的人话原因原样保留给 UI', async () => {
+    const result = await run({
+      action: 'update',
+      taskId: '1',
+      status: 'needs_decision',
+      blockedReason: '在两家酒店间选',
+    });
+
+    expect(result.ok).toBe(true);
+    const updates = updateTaskMock.mock.calls[0][2] as Record<string, unknown>;
+    expect(updates.blockedReason).toBe('在两家酒店间选');
+  });
+
+  it('user_action 缺 blockedReason 时拒绝', async () => {
+    const result = await run({ action: 'update', taskId: '1', status: 'user_action' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain('blockedReason');
+    expect(updateTaskMock).not.toHaveBeenCalled();
   });
 
   it('blocked 缺 blockedReason 时拒绝', async () => {
@@ -290,5 +329,75 @@ describe('证据门 — 批量路径（模型绕行的最短路）', () => {
       .map((call) => call[2] as Record<string, unknown>)
       .find((updates) => updates.status === 'completed');
     expect(completedUpdate?.evidenceRefs).toEqual([previousRef]);
+  });
+});
+
+describe('unresolved turn task helpers', () => {
+  it('classifies wait/blocked/in_progress as unresolved, completed as closed', () => {
+    expect(isUnresolvedTurnTaskStatus('needs_decision')).toBe(true);
+    expect(isUnresolvedTurnTaskStatus('user_action')).toBe(true);
+    expect(isUnresolvedTurnTaskStatus('blocked')).toBe(true);
+    expect(isUnresolvedTurnTaskStatus('in_progress')).toBe(true);
+    expect(isUnresolvedTurnTaskStatus('pending')).toBe(false);
+    expect(isUnresolvedTurnTaskStatus('completed')).toBe(false);
+    expect(isUnresolvedTurnTaskStatus('cancelled')).toBe(false);
+  });
+
+  it('treats needs_decision and user_action as open workbench tasks', () => {
+    expect(isOpenTaskStatus('needs_decision')).toBe(true);
+    expect(isOpenTaskStatus('user_action')).toBe(true);
+    expect(isOpenTaskStatus('pending')).toBe(true);
+    expect(isOpenTaskStatus('blocked')).toBe(true);
+    expect(isOpenTaskStatus('in_progress')).toBe(true);
+    expect(isClosedTaskStatus('completed')).toBe(true);
+    expect(isClosedTaskStatus('cancelled')).toBe(true);
+    expect(isOpenTaskStatus('completed')).toBe(false);
+    expect(isOpenTaskStatus('cancelled')).toBe(false);
+  });
+
+  it('requires a wait reason for blocked, needs_decision, and user_action', () => {
+    expect(statusRequiresWaitReason('blocked')).toBe(true);
+    expect(statusRequiresWaitReason('needs_decision')).toBe(true);
+    expect(statusRequiresWaitReason('user_action')).toBe(true);
+    expect(statusRequiresWaitReason('in_progress')).toBe(false);
+    expect(validateTaskStatusEvidence('needs_decision', {})).toContain('blockedReason');
+    expect(validateTaskStatusEvidence('user_action', {})).toContain('blockedReason');
+    expect(validateTaskStatusEvidence('needs_decision', { blockedReason: '在 A/B 间选' })).toBeNull();
+  });
+
+  it('formats who is waiting and for what', () => {
+    expect(formatUnresolvedTaskList([
+      { id: '1', subject: '选择酒店方案', status: 'needs_decision', blockedReason: '在两家酒店间选' },
+      { id: '2', subject: '完成线下签字', status: 'user_action', owner: 'user', blockedReason: '合同要本人签字' },
+    ])).toBe('#1 选择酒店方案 — 等你拍板：在两家酒店间选\n#2 完成线下签字 @user — 等你操作：合同要本人签字');
+    expect(formatUnresolvedTaskList([
+      { id: '1', subject: '选择酒店方案', status: 'needs_decision', blockedReason: '在两家酒店间选' },
+    ])).toContain('等你拍板');
+  });
+
+  it('downgrades verified when unresolved tasks remain and keeps the wait list', () => {
+    const gated = applyUnresolvedTaskTurnGate('verified', [], [{
+      id: '1',
+      subject: '选择酒店方案',
+      status: 'needs_decision',
+      blockedReason: '在两家酒店间选',
+    }]);
+    expect(gated.verdict).toBe('self_claimed');
+    expect(gated.evidenceProblems.join('\n')).toContain('UNRESOLVED_TASKS');
+    expect(gated.evidenceProblems.join('\n')).toContain('选择酒店方案');
+    expect(gated.evidenceProblems.join('\n')).toContain('等你拍板');
+  });
+
+  it('leaves verified alone when every explicit task is closed', () => {
+    const gated = applyUnresolvedTaskTurnGate('verified', [], []);
+    expect(gated.verdict).toBe('verified');
+    expect(gated.evidenceProblems).toEqual([]);
+  });
+
+  it('does not invent a wait label for an unknown status at compile time', () => {
+    const statuses: SessionTaskStatus[] = [
+      'pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'needs_decision', 'user_action',
+    ];
+    expect(statuses).toHaveLength(7);
   });
 });

@@ -490,6 +490,7 @@ export class PlanManager {
     if (isCompleted || icon === '●') return 'completed';
     if (icon === '◐') return 'in_progress';
     if (icon === '⊘') return 'skipped';
+    if (icon === '✖') return 'blocked';
     return 'pending';
   }
 

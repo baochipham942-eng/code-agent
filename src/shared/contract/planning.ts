@@ -254,7 +254,8 @@ export function formatUnresolvedTaskList(tasks: readonly UnresolvedTaskLineInput
 
 /**
  * 未决任务硬门：needs_decision / user_action / blocked / in_progress 存在时不许盖 verified。
- * 未决清单写入 evidenceProblems。stamp 与 runFinalizer 都走这个函数，清单口径一致。
+ * 未决清单写入 evidenceProblems。stamp 走这个函数（本 run 作用域）。
+ * runFinalizer 收尾提示覆盖全部未收口任务（含 pending），用 formatUnresolvedTaskList。
  */
 export function applyUnresolvedTaskTurnGate(
   verdict: 'verified' | 'self_claimed' | 'n_a',

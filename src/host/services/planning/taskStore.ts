@@ -16,9 +16,9 @@ import {
   statusRequiresWaitReason,
 } from '../../../shared/contract/planning';
 import { createLogger } from '../infra/logger';
+import { getDatabase } from '../core/databaseService';
 
 export { isClosedTaskStatus };
-import { getDatabase } from '../core/databaseService';
 
 const logger = createLogger('TaskStore');
 

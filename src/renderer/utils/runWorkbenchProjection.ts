@@ -1,6 +1,6 @@
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SessionTask, TaskProgressData, TodoItem } from '@shared/contract';
-import type { TaskBlockedCategory } from '@shared/contract/planning';
+import { isClosedTaskStatus, statusRequiresWaitReason, type TaskBlockedCategory } from '@shared/contract/planning';
 import { describeTaskBlockedReason } from '@shared/taskReasonLanguage';
 import type { TurnTimelineNode } from '@shared/contract/turnTimeline';
 import type { ToolResult } from '@shared/contract/tool';
@@ -517,7 +517,7 @@ function sessionTaskPersistentStatus(status: SessionTask['status']): TaskRecord[
 }
 
 function isSessionTaskClosed(task: SessionTask | undefined): boolean {
-  return Boolean(task && (task.status === 'completed' || task.status === 'cancelled'));
+  return Boolean(task && isClosedTaskStatus(task.status));
 }
 
 function addDependency(
@@ -627,7 +627,7 @@ function buildSessionTaskRecordFromSessionTasks(args: {
       status: blockedByIds.length > 0 ? 'blocked' as const : sessionTaskPersistentStatus(task.status),
       blockedByTitles: blockedByTitles.length > 0 ? blockedByTitles : undefined,
       blockedTaskTitles: blockedTaskTitles.length > 0 ? blockedTaskTitles : undefined,
-      ...(task.status === 'blocked' || task.status === 'needs_decision' || task.status === 'user_action'
+      ...(statusRequiresWaitReason(task.status)
         ? {
             blockedReason: task.blockedReason || undefined,
             blockedReasonCategory: task.blockedReasonCategory,

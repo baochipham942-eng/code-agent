@@ -1,3 +1,4 @@
+import { isClosedTaskStatus, statusRequiresWaitReason } from '@shared/contract/planning';
 import type { RunUiState, TaskRecord } from '../types/runWorkbench';
 
 export type TaskRailMode = 'simple' | 'checklist';
@@ -99,13 +100,7 @@ function simpleTitle(task: TaskRecord, run?: RunUiState | null): string {
   // 有明确标题优先显示标题（行内已单独展示状态标签，无需用状态词顶替标题）——
   // 否则终态的后台任务（如"循环 · …"失败）会丢掉名字、只剩"已阻塞/已取消"。
   if (task.title) return task.title;
-  if (
-    task.status === 'completed'
-    || task.status === 'blocked'
-    || task.status === 'cancelled'
-    || task.status === 'needs_decision'
-    || task.status === 'user_action'
-  ) {
+  if (isClosedTaskStatus(task.status) || statusRequiresWaitReason(task.status)) {
     return statusLabel(task.status);
   }
   return runStatusLabel(run) || statusLabel(task.status);

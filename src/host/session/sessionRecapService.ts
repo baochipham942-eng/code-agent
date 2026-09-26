@@ -20,6 +20,7 @@
 
 import type { SessionTask } from '../../shared/contract';
 import type { CompletionSummaryRecord } from '../../shared/contract';
+import { statusRequiresWaitReason } from '../../shared/contract/planning';
 import { readCompletionSummaryRecordsBySession } from './completionSummaryService';
 import { createLogger } from '../services/infra/logger';
 
@@ -80,9 +81,7 @@ export function collectRecapMaterial(
   const touchedTasks = tasks.filter((task) => (task.updatedAt ?? 0) > sinceTimestamp);
   const artifactLabels = [...labels];
   const completedTasks = touchedTasks.filter((task) => task.status === 'completed');
-  const blockedTasks = touchedTasks.filter((task) => (
-    task.status === 'blocked' || task.status === 'needs_decision' || task.status === 'user_action'
-  ));
+  const blockedTasks = touchedTasks.filter((task) => statusRequiresWaitReason(task.status));
   // 收口轮次在、但产物名/任务结果都没实质句子 → 等同素材为空，不喂小模型。
   if (!hasRecapSubstance({ artifactLabels, completedTasks, blockedTasks })) return null;
 
@@ -136,9 +135,7 @@ export function formatRecapFallback(material: SessionRecapMaterial): string | nu
   }
   if (material.completedTasks.length > 0) parts.push(`${material.completedTasks.length} 项任务完成`);
   const stuckCount = material.blockedTasks.filter((task) => task.status === 'blocked').length;
-  const waitingCount = material.blockedTasks.filter((task) => (
-    task.status === 'needs_decision' || task.status === 'user_action'
-  )).length;
+  const waitingCount = material.blockedTasks.length - stuckCount;
   if (stuckCount > 0) parts.push(`${stuckCount} 项任务受阻`);
   if (waitingCount > 0) parts.push(`${waitingCount} 项等你`);
   if (parts.length === 0) return null;

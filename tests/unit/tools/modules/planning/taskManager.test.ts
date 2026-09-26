@@ -2,8 +2,16 @@
 // TaskManager (native ToolModule) Tests — Wave 3 planning
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
+
+vi.mock('electron', () => ({
+  safeStorage: { isEncryptionAvailable: () => false, encryptString: (s: string) => Buffer.from(s) },
+  app: { getAppPath: () => '', getPath: () => '' },
+}));
 
 const createTaskMock = vi.fn();
 const updateTaskMock = vi.fn();
@@ -26,9 +34,17 @@ vi.mock('../../../../../src/host/desktop/desktopActivityUnderstandingService', (
     clearTodoFeedbackForTask: vi.fn(),
   }),
   isDesktopDerivedSessionTask: (...a: unknown[]) => isDesktopDerivedSessionTaskMock(...a),
+  getDesktopTaskKey: (task: { metadata?: { desktopTodoKey?: unknown } }) => (
+    typeof task.metadata?.desktopTodoKey === 'string' ? task.metadata.desktopTodoKey : null
+  ),
 }));
 
 import { taskManagerModule } from '../../../../../src/host/tools/modules/planning/taskManager';
+import type { SessionTask } from '../../../../../src/shared/contract';
+import { PlanManager } from '../../../../../src/host/planning/planManager';
+import { createPlanningService } from '../../../../../src/host/planning';
+import { syncDesktopTasksToPlanningService } from '../../../../../src/host/desktop/desktopActivityPlanningBridge';
+import type { PlanningConfig, TaskPhase } from '../../../../../src/host/planning/types';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -215,5 +231,101 @@ describe('TaskManager dispatch', () => {
     );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.output).toContain('Task #1 updated:');
+  });
+});
+
+const planTempDirs: string[] = [];
+const makePlanConfig = (workingDirectory: string): PlanningConfig => ({
+  workingDirectory,
+  sessionId: 'sess-plan',
+});
+const basePlan = (phases: TaskPhase[] = []) => ({
+  title: 'My Plan',
+  objective: 'ship it',
+  phases,
+});
+
+function desktopTask(overrides: Partial<SessionTask> & Pick<SessionTask, 'id' | 'subject' | 'status'>): SessionTask {
+  return {
+    description: overrides.subject,
+    activeForm: overrides.subject,
+    priority: 'normal',
+    blocks: [],
+    blockedBy: [],
+    metadata: {
+      source: 'desktop_activity',
+      sourceKind: 'activity_todo_candidate',
+    },
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+afterEach(async () => {
+  await Promise.all(planTempDirs.splice(0, planTempDirs.length).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+});
+
+describe('desktop recovery wait-state mapping', () => {
+  it('keeps getCurrentTask on the in_progress step when a needs_decision task shares the phase', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'task-manager-plan-'));
+    planTempDirs.push(dir);
+    const planningService = createPlanningService(dir, `session-${crypto.randomUUID()}`);
+
+    await syncDesktopTasksToPlanningService(planningService, [
+      desktopTask({
+        id: 'decide-hotel',
+        subject: '选择酒店方案',
+        status: 'needs_decision',
+        blockedReason: '在两家酒店间选',
+      }),
+      desktopTask({
+        id: 'draft-itinerary',
+        subject: '起草行程',
+        status: 'in_progress',
+      }),
+    ]);
+
+    expect(planningService.plan.getCurrentTask()?.step.content).toBe('起草行程');
+    expect(planningService.plan.getNextPendingTask()?.step.content).toBe('选择酒店方案（等你拍板）');
+
+    const reloaded = await planningService.plan.read();
+    expect(reloaded).not.toBeNull();
+    expect(reloaded!.phases[0].status).toBe('in_progress');
+    expect(reloaded!.phases[0].steps.map((step) => ({ content: step.content, status: step.status }))).toEqual([
+      { content: '选择酒店方案（等你拍板）', status: 'pending' },
+      { content: '起草行程', status: 'in_progress' },
+    ]);
+    expect(planningService.plan.getCurrentTask()?.step.content).toBe('起草行程');
+  });
+
+  it('round-trips blocked step status through ✖', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'task-manager-plan-'));
+    planTempDirs.push(dir);
+    const writer = new PlanManager(makePlanConfig(dir));
+    await writer.create(
+      basePlan([
+        {
+          id: 'ph1',
+          title: 'Blocked Phase',
+          status: 'blocked',
+          steps: [
+            { id: 's1', content: 'waiting on login', status: 'blocked' },
+            { id: 's2', content: 'active work', status: 'in_progress' },
+          ],
+        },
+      ]),
+    );
+
+    const md = await fs.readFile(writer.getPlanPath(), 'utf-8');
+    expect(md).toContain('✖ waiting on login');
+    expect(md).toContain('◐ active work');
+
+    const reader = new PlanManager(makePlanConfig(dir));
+    const loaded = await reader.read();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.phases[0].status).toBe('blocked');
+    expect(loaded!.phases[0].steps.find((s) => s.content === 'waiting on login')!.status).toBe('blocked');
+    expect(loaded!.phases[0].steps.find((s) => s.content === 'active work')!.status).toBe('in_progress');
   });
 });

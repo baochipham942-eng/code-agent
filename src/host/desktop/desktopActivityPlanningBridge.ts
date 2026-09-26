@@ -30,23 +30,39 @@ function isDesktopDerivedTask(task: SessionTask): boolean {
     && task.metadata?.sourceKind === 'activity_todo_candidate';
 }
 
+const WAIT_STEP_ANNOTATION: Partial<Record<SessionTask['status'], string>> = {
+  needs_decision: '等你拍板',
+  user_action: '等你操作',
+};
+
 function normalizeStepContent(content: string): string {
   return content.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function stripWaitAnnotation(content: string): string {
+  return content.replace(/（等你拍板|等你操作）/g, '').trim();
+}
+
+function stepLookupKey(content: string): string {
+  return normalizeStepContent(stripWaitAnnotation(content));
+}
+
+function waitAnnotation(status: SessionTask['status']): string | undefined {
+  return WAIT_STEP_ANNOTATION[status];
+}
+
+function toStepContent(task: SessionTask): string {
+  const label = waitAnnotation(task.status);
+  return label ? `${task.subject}（${label}）` : task.subject;
 }
 
 function toStepStatus(task: SessionTask): TaskStepStatus {
   if (task.status === 'completed') return 'completed';
   if (task.status === 'in_progress') return 'in_progress';
   if (task.status === 'cancelled') return 'skipped';
-  // 步态没有 needs_decision / user_action。blocked 是已有最接近的等待/阻塞态：
-  // 工作没做完、卡在外部或等用户，桌面恢复计划里不能显示成还没开始的 pending。
-  if (
-    task.status === 'blocked'
-    || task.status === 'needs_decision'
-    || task.status === 'user_action'
-  ) {
-    return 'blocked';
-  }
+  if (task.status === 'blocked') return 'blocked';
+  // 步态没有 needs_decision / user_action。映射成 pending，阶段仍可被
+  // getCurrentTask / getNextPendingTask 扫到；等用户语义写在步骤文本里。
   return 'pending';
 }
 
@@ -67,7 +83,7 @@ function computePhaseStatus(steps: TaskStep[]): TaskPhaseStatus {
 function buildPhaseStep(task: SessionTask): TaskStep {
   return {
     id: `desktop-step-${task.id}`,
-    content: task.subject,
+    content: toStepContent(task),
     status: toStepStatus(task),
     activeForm: task.activeForm,
     metadata: {
@@ -145,13 +161,13 @@ export async function syncDesktopTasksToPlanningService(
   }
 
   const stepByContent = new Map(
-    getAllPlanSteps(plan).map((item) => [normalizeStepContent(item.step.content), item] as const)
+    getAllPlanSteps(plan).map((item) => [stepLookupKey(item.step.content), item] as const)
   );
   let recoveryPhase = plan.phases.find((phase) => phase.title === DESKTOP_RECOVERY_PHASE_TITLE) || null;
   const missingTasks: SessionTask[] = [];
 
   for (const task of desktopTasks) {
-    const key = normalizeStepContent(task.subject);
+    const key = stepLookupKey(task.subject);
     const existing = stepByContent.get(key);
     const desiredStatus = toStepStatus(task);
 
@@ -181,7 +197,7 @@ export async function syncDesktopTasksToPlanningService(
     } else {
       for (const task of missingTasks) {
         await planningService.plan.addStep(recoveryPhase.id, {
-          content: task.subject,
+          content: toStepContent(task),
           status: toStepStatus(task),
           activeForm: task.activeForm,
           metadata: {

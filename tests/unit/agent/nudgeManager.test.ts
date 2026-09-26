@@ -6,22 +6,24 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock logger
-vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
+const loggerFns = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
 }));
 
-// Mock logCollector
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  createLogger: () => loggerFns,
+}));
+
+const logCollectorMocks = vi.hoisted(() => ({
+  agent: vi.fn(),
+  addLog: vi.fn(),
+}));
+
 vi.mock('../../../src/host/mcp/logCollector', () => ({
-  logCollector: {
-    agent: vi.fn(),
-    addLog: vi.fn(),
-  },
+  logCollector: logCollectorMocks,
 }));
 
 // Mock planning taskStore (legacy tools/planning/ barrel removed in P1 Wave 3 —
@@ -46,7 +48,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({ isReady: false }),
 }));
 vi.mock('../../../src/host/mcp/logCollector.js', () => ({
-  logCollector: { agent: vi.fn() },
+  logCollector: logCollectorMocks,
 }));
 vi.mock('../../../src/host/services', () => ({
   getLangfuseService: vi.fn(),
@@ -728,13 +730,15 @@ describe('NudgeManager', () => {
 });
 
 describe('RunFinalizer unresolved task list', () => {
-  it('writes the wait list into the terminal system message', async () => {
-    mockGetIncompleteTasks.mockReturnValue([{
-      id: '1',
-      subject: '选择酒店方案',
-      status: 'needs_decision',
-      blockedReason: '在两家酒店间选',
-    }]);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetIncompleteTasks.mockReturnValue([]);
+  });
+
+  async function finalizeWithIncompleteTasks(
+    tasks: Array<{ id: string; subject: string; status: string; blockedReason?: string }>,
+  ): Promise<Message[]> {
+    mockGetIncompleteTasks.mockReturnValue(tasks);
     const persisted: Message[] = [];
     const finalizer = new RunFinalizer({
       sessionId: 'session-unresolved',
@@ -773,9 +777,38 @@ describe('RunFinalizer unresolved task list', () => {
       1,
       { status: 'completed' },
     );
+    return persisted;
+  }
+
+  it('writes the wait list into the terminal system message', async () => {
+    const persisted = await finalizeWithIncompleteTasks([{
+      id: '1',
+      subject: '选择酒店方案',
+      status: 'needs_decision',
+      blockedReason: '在两家酒店间选',
+    }]);
 
     const notice = persisted.find((message) => message.role === 'system' && message.content.includes('显式任务未完成'));
     expect(notice?.content).toContain('选择酒店方案');
     expect(notice?.content).toContain('等你拍板');
+  });
+
+  it('still warns when a pending explicit task is left open at run end', async () => {
+    const persisted = await finalizeWithIncompleteTasks([{
+      id: '2',
+      subject: '写行程草稿',
+      status: 'pending',
+    }]);
+
+    const notice = persisted.find((message) => message.role === 'system' && message.content.includes('显式任务未完成'));
+    expect(notice?.content).toContain('1 个显式任务未完成');
+    expect(notice?.content).toContain('写行程草稿');
+    expect(notice?.content).toContain('待开始');
+    expect(loggerFns.warn).toHaveBeenCalledWith(expect.stringContaining('1 incomplete task(s)'));
+    expect(logCollectorMocks.agent).toHaveBeenCalledWith(
+      'WARN',
+      'Agent completing with incomplete tasks',
+      expect.objectContaining({ incompleteCount: 1 }),
+    );
   });
 });

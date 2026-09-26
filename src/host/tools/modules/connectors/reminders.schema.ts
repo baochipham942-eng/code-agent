@@ -1,5 +1,6 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 import type { ToolSchema } from '../../../protocol/tools';
+import { CONNECTION_STATE_HONESTY } from './connectionStateHonesty';
 
 export const remindersSchema: ToolSchema = {
   name: 'reminders',
@@ -10,7 +11,9 @@ Supported actions:
 - list_lists
 - list_reminders
 
-Use this for local reminders inspection in office workflows.`,
+Use this for local reminders inspection in office workflows.
+
+${CONNECTION_STATE_HONESTY}`,
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',

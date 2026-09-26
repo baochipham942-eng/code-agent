@@ -1,6 +1,7 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 // Imported by both mail.ts (handler) and modules/index.ts (registry).
 import type { ToolSchema } from '../../../protocol/tools';
+import { CONNECTION_STATE_HONESTY } from './connectionStateHonesty';
 
 export const mailSchema: ToolSchema = {
   name: 'mail',
@@ -13,7 +14,9 @@ Supported actions:
 - list_messages
 - read_message
 
-For list_messages and read_message, provide mailbox. Account is optional but recommended when mailbox names may overlap.`,
+For list_messages and read_message, provide mailbox. Account is optional but recommended when mailbox names may overlap.
+
+${CONNECTION_STATE_HONESTY}`,
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',

@@ -1,5 +1,6 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 import type { UntrustedContentToolSchema } from '../../../protocol/tools';
+import { CONNECTION_STATE_HONESTY } from '../connectors/connectionStateHonesty';
 
 export const mcpUnifiedSchema: UntrustedContentToolSchema = {
   name: 'MCPUnified',
@@ -21,7 +22,9 @@ Examples:
 - Get status: { "action": "status" }
 - Add HTTP Streamable server: { "action": "add_server", "name": "jira", "type": "http-streamable", "serverUrl": "https://mcp.example.com/mcp" }
 - Add SSE server: { "action": "add_server", "name": "my-server", "type": "sse", "serverUrl": "https://mcp.example.com/sse" }
-- Add stdio server: { "action": "add_server", "name": "fs", "type": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"] }`,
+- Add stdio server: { "action": "add_server", "name": "fs", "type": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"] }
+
+${CONNECTION_STATE_HONESTY}`,
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',

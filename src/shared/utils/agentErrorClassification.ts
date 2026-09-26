@@ -4,7 +4,10 @@
 // 从 renderer/hooks/agent/effects/useSessionLifecycleEffects 原地迁来（2026-09-26，
 // N-CHAT-EMPTY-FINAL-NO-EXIT）：失败终态要落库（会话重开后仍显示失败卡 + 重试入口），
 // host 侧（/api/run 收尾）与 renderer 侧必须用同一份分类，否则两边 category 漂移，
-// 同一次失败在刷新前后显示不同的出路。逻辑逐字保留，只改 import 路径。
+// 同一次失败在刷新前后显示不同的出路。迁移时在原 renderer 逻辑之上新增了
+// structuredFailureCode 分支（识别 runFinalizer 的 MODEL_AUTH/MODEL_QUOTA/
+// MODEL_UNAVAILABLE 结构化标记）——不是逐字搬运，与迁移前 renderer 行为的差异
+// 仅此一处（有测试钉住），做迁移比对时别按逐字对。
 // ============================================================================
 
 import type { AgentErrorMetadata } from '../contract';

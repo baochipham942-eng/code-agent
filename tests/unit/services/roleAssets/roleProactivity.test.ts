@@ -116,7 +116,7 @@ import {
   stripWakeMarkup,
   topicExcludeHits,
 } from '../../../../src/host/services/roleAssets/wakeRationale';
-import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory, loadRoleHistoryEntries, formatRoleHistoryLine, parseRoleHistoryLine } from '../../../../src/host/services/roleAssets/roleAssetService';
+import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory } from '../../../../src/host/services/roleAssets/roleAssetService';
 import { getRoleHistoryPath } from '../../../../src/host/services/roleAssets/roleAssetPaths';
 import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
 
@@ -498,8 +498,7 @@ describe('roleProactivity', () => {
       );
       const history = await loadRoleHistory(RESEARCHER, 100);
       expect(history.some((line) => line.includes('[suggest]') && line.includes('why:'))).toBe(true);
-      const entries = await loadRoleHistoryEntries(RESEARCHER, 100);
-      expect(entries.some((entry) => entry.why?.includes('连续两周没更新'))).toBe(true);
+      expect(history.some((line) => line.includes('why:') && line.includes('连续两周没更新'))).toBe(true);
     });
 
     it('多行 + 超长 suggest 产出写入履历后 why 完整可读', async () => {
@@ -529,10 +528,8 @@ describe('roleProactivity', () => {
       expect(wakeLine?.includes('\n')).toBe(false);
       expect(wakeLine).toContain(`why: ${why}`);
       expect(wakeLine).toContain('evidence: history.md · 周报.md');
-      const entries = await loadRoleHistoryEntries(RESEARCHER, 100);
-      const wakeEntry = entries.find((entry) => entry.summary.includes('[suggest]'));
-      expect(wakeEntry?.why).toBe(why);
-      expect(wakeEntry?.summary.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+      const summaryPart = wakeLine?.split(' | why: ')[0].split(' | ').slice(2).join(' | ') ?? '';
+      expect(summaryPart.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
     });
 
     it('stores why as an independent field; multiline and over-long summary still load the full why', async () => {
@@ -551,10 +548,8 @@ describe('roleProactivity', () => {
       expect(wakeLine?.includes('\n')).toBe(false);
       expect(wakeLine).toContain(`why: ${why}`);
       expect(wakeLine).toContain('evidence: history.md · 周报.md');
-      const entries = await loadRoleHistoryEntries(RESEARCHER);
-      const wakeEntry = entries.find((entry) => entry.why === why);
-      expect(wakeEntry?.evidence).toBe('history.md · 周报.md');
-      expect(wakeEntry?.summary.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+      const summaryPart = wakeLine?.split(' | why: ')[0].split(' | ').slice(2).join(' | ') ?? '';
+      expect(summaryPart.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
     });
 
     it('reads old multiline history blocks so a trailing why is not dropped', async () => {
@@ -570,15 +565,10 @@ describe('roleProactivity', () => {
         'utf-8',
       );
 
-      const entries = await loadRoleHistoryEntries(RESEARCHER);
-      expect(entries[0]?.why).toBe(why);
       const lines = await loadRoleHistory(RESEARCHER);
       expect(lines[0]?.startsWith('- ')).toBe(true);
       expect(lines[0]).toContain(`why: ${why}`);
-      const first = entries[0];
-      expect(first).toBeDefined();
-      if (!first) return;
-      expect(parseRoleHistoryLine(formatRoleHistoryLine(first))?.why).toBe(why);
+      expect(lines[0]).toContain('evidence: history.md');
     });
 
     it('rationale 缺失时仍保留原决策，只记 missing', async () => {

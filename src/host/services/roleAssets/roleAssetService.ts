@@ -324,7 +324,7 @@ function flattenHistoryText(text: string): string {
 }
 
 /** 履历落盘格式：单物理行。why / evidence 是独立字段，不占用 summary 截断预算。 */
-export function formatRoleHistoryLine(entry: RoleHistoryEntry): string {
+function formatRoleHistoryLine(entry: RoleHistoryEntry): string {
   const label = entry.artifactRef && entry.artifactRef !== '-'
     ? `[${entry.artifactLabel}](${entry.artifactRef})`
     : entry.artifactLabel;
@@ -336,7 +336,7 @@ export function formatRoleHistoryLine(entry: RoleHistoryEntry): string {
 }
 
 /** 旧格式（无 why 字段、或多行 summary）可读兼容。 */
-export function parseRoleHistoryLine(raw: string): RoleHistoryEntry | null {
+function parseRoleHistoryLine(raw: string): RoleHistoryEntry | null {
   const trimmed = raw.trim();
   if (!trimmed.startsWith('- ')) return null;
   let body = trimmed.slice(2);
@@ -395,7 +395,7 @@ export async function appendRoleHistory(roleId: string, entry: RoleHistoryEntry)
 }
 
 /** 读取履历最近 N 条（结构化；旧多行格式会拼回并抽出 why） */
-export async function loadRoleHistoryEntries(roleId: string, maxEntries?: number): Promise<RoleHistoryEntry[]> {
+async function loadRoleHistoryEntries(roleId: string, maxEntries?: number): Promise<RoleHistoryEntry[]> {
   try {
     const content = await fs.readFile(getRoleHistoryPath(roleId), 'utf-8');
     const entries = collectHistoryBlocks(content)

@@ -47,7 +47,7 @@ type ArtifactRenderIssueKind =
   | 'template_residue'
   | 'other';
 
-export type ArtifactRenderIssue = {
+type ArtifactRenderIssue = {
   file: string;
   page: number;
   kind: ArtifactRenderIssueKind;
@@ -215,7 +215,7 @@ async function sheetHasDrawingOrChart(filePath: string, worksheet: ExcelJS.Works
   }
 }
 
-export async function checkXlsxStructure(filePath: string): Promise<ArtifactRenderIssue[]> {
+async function checkXlsxStructure(filePath: string): Promise<ArtifactRenderIssue[]> {
   try {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
@@ -281,7 +281,7 @@ function stampOf(
   return { status, issues, filesReviewed, vlmCallsUsed };
 }
 
-export async function reviewRenderableDeliverables(
+async function reviewRenderableDeliverables(
   files: readonly string[],
   deps: ArtifactRenderReviewDeps = {},
 ): Promise<ArtifactRenderReviewStamp> {
@@ -405,7 +405,7 @@ function appendVisualFailureNote(content: string, issues: readonly ArtifactRende
   ].join('\n');
 }
 
-export type ArtifactRenderReviewGateResult =
+type ArtifactRenderReviewGateResult =
   | { action: 'pass'; content: string; stamp: ArtifactRenderReviewStamp }
   | { action: 'repair'; prompt: string; stamp: ArtifactRenderReviewStamp };
 
@@ -413,7 +413,7 @@ function uniquePaths(paths: readonly string[]): string[] {
   return [...new Set(paths)];
 }
 
-export async function runArtifactRenderReviewGate(input: {
+async function runArtifactRenderReviewGate(input: {
   workingDirectory: string;
   messages: readonly Message[];
   declaredDeliverables?: DeclaredDeliverables;

@@ -41,12 +41,8 @@ vi.mock('child_process', async (importOriginal) => {
   };
 });
 
-import {
-  applyDeliverableCloseGates,
-  checkXlsxStructure,
-  reviewRenderableDeliverables,
-  runArtifactRenderReviewGate,
-} from '../../../../src/host/agent/runtime/artifactRenderReview';
+import { applyDeliverableCloseGates } from '../../../../src/host/agent/runtime/artifactRenderReview';
+import { ArtifactState, type ArtifactRenderReviewStamp } from '../../../../src/host/agent/runtime/artifactState';
 import { rasterizePdfToImages } from '../../../../src/host/tools/media/officeRaster';
 import { ARTIFACT_RENDER_REVIEW, TURN_OUTCOME } from '../../../../src/shared/constants/agent';
 import type { Message } from '../../../../src/shared/contract';
@@ -66,35 +62,75 @@ function message(overrides: Partial<Message> = {}): Message {
 
 function producingActivity(filePath: string): Message {
   return {
-    id: 'tool-activity',
+    id: `tool-${path.basename(filePath)}`,
     role: 'assistant',
     content: '',
     timestamp: 1_700_000_000_050,
-    toolCalls: [{ id: 'write-1', name: 'Write', arguments: { file_path: filePath } }],
-    toolResults: [{ toolCallId: 'write-1', success: true, output: 'ok', metadata: { outputPath: filePath } }],
+    toolCalls: [{ id: `write-${path.basename(filePath)}`, name: 'Write', arguments: { file_path: filePath } }],
+    toolResults: [{
+      toolCallId: `write-${path.basename(filePath)}`,
+      success: true,
+      output: 'ok',
+      metadata: { outputPath: filePath },
+    }],
   };
+}
+
+async function runVisualCloseGate(
+  files: readonly string[],
+  deps: {
+    vlm?: (prompt: string, imagePath: string) => Promise<string>;
+    libreOfficeAvailable?: () => boolean;
+    rasterize?: (filePath: string, screenshotDir: string, signal?: AbortSignal) => Promise<string[]>;
+    checkXlsx?: (filePath: string) => Promise<ArtifactRenderReviewStamp['issues']>;
+    abortSignal?: AbortSignal;
+    vlmCallsUsed?: number;
+  } = {},
+  options: {
+    finalText?: string;
+    diskRepairsUsed?: number;
+    visualRepairsUsed?: number;
+    abortSignal?: AbortSignal;
+    previousStamp?: ArtifactRenderReviewStamp;
+  } = {},
+) {
+  const artifact = ArtifactState.forTest();
+  if (options.previousStamp) artifact.setRenderReview(options.previousStamp);
+  const names = files.map((filePath) => `\`${path.basename(filePath)}\``).join(' 和 ');
+  const result = await applyDeliverableCloseGates({
+    workingDirectory: workRoot,
+    messages: [message(), ...files.map((filePath) => producingActivity(filePath))],
+    finalText: options.finalText ?? `已生成 ${names}。`,
+    diskRepairsUsed: options.diskRepairsUsed ?? 0,
+    visualRepairsUsed: options.visualRepairsUsed ?? 0,
+    abortSignal: options.abortSignal ?? deps.abortSignal,
+    artifact,
+    deps,
+  });
+  return { result, stamp: artifact.renderReview };
 }
 
 afterEach(() => {
   if (existsSync(workRoot)) rmSync(workRoot, { recursive: true, force: true });
 });
 
-describe('reviewRenderableDeliverables', () => {
+describe('applyDeliverableCloseGates visual review', () => {
   it('LibreOffice 缺失时跳过审查，status 为 skipped_no_libreoffice', async () => {
     mkdirSync(workRoot, { recursive: true });
     const filePath = path.join(workRoot, 'report.docx');
     await writeCleanDocx(filePath);
 
-    const stamp = await reviewRenderableDeliverables([filePath], {
+    const { result, stamp } = await runVisualCloseGate([filePath], {
       libreOfficeAvailable: () => false,
       vlm: async () => {
         throw new Error('VLM must not run when LibreOffice is missing');
       },
     });
 
-    expect(stamp.status).toBe('skipped_no_libreoffice');
-    expect(stamp.issues).toEqual([]);
-    expect(stamp.filesReviewed).toEqual([]);
+    expect(result.action).toBe('pass');
+    expect(stamp?.status).toBe('skipped_no_libreoffice');
+    expect(stamp?.issues).toEqual([]);
+    expect(stamp?.filesReviewed).toEqual([]);
   });
 
   it('VLM 指出文字溢出时 status=failed，带页码和 overflow', async () => {
@@ -103,7 +139,7 @@ describe('reviewRenderableDeliverables', () => {
     await writeOverflowDocx(filePath);
     writeFileSync(path.join(workRoot, 'page-1.jpg'), 'fake-image');
 
-    const stamp = await reviewRenderableDeliverables([filePath], {
+    const { result, stamp } = await runVisualCloseGate([filePath], {
       libreOfficeAvailable: () => true,
       rasterize: async () => [path.join(workRoot, 'page-1.jpg')],
       vlm: async () => JSON.stringify({
@@ -112,8 +148,10 @@ describe('reviewRenderableDeliverables', () => {
       }),
     });
 
-    expect(stamp.status).toBe('failed');
-    expect(stamp.issues).toEqual([expect.objectContaining({
+    expect(result.action).toBe('repair');
+    if (result.action === 'repair') expect(result.kind).toBe('visual');
+    expect(stamp?.status).toBe('failed');
+    expect(stamp?.issues).toEqual([expect.objectContaining({
       file: filePath,
       page: 1,
       kind: 'overflow',
@@ -128,13 +166,14 @@ describe('reviewRenderableDeliverables', () => {
     await writeCleanDocx(filePath);
     writeFileSync(path.join(workRoot, 'page-1.jpg'), 'fake-image');
 
-    const stamp = await reviewRenderableDeliverables([filePath], {
+    const { result, stamp } = await runVisualCloseGate([filePath], {
       libreOfficeAvailable: () => true,
       rasterize: async () => [path.join(workRoot, 'page-1.jpg')],
       vlm: async () => '',
     });
 
-    expect(stamp.status).toBe('skipped_no_vlm');
+    expect(result.action).toBe('pass');
+    expect(stamp?.status).toBe('skipped_no_vlm');
   });
 
   it('VLM 返回非 JSON 时不置通过，status 为 skipped_no_vlm', async () => {
@@ -143,14 +182,15 @@ describe('reviewRenderableDeliverables', () => {
     await writeCleanDocx(filePath);
     writeFileSync(path.join(workRoot, 'page-1.jpg'), 'fake-image');
 
-    const stamp = await reviewRenderableDeliverables([filePath], {
+    const { result, stamp } = await runVisualCloseGate([filePath], {
       libreOfficeAvailable: () => true,
       rasterize: async () => [path.join(workRoot, 'page-1.jpg')],
       vlm: async () => '版面看起来还行，没有明显问题。',
     });
 
-    expect(stamp.status).toBe('skipped_no_vlm');
-    expect(stamp.issues).toEqual([]);
+    expect(result.action).toBe('pass');
+    expect(stamp?.status).toBe('skipped_no_vlm');
+    expect(stamp?.issues).toEqual([]);
   });
 
   it('全部页面都解析失败时标 skipped_no_vlm，不盖 passed', async () => {
@@ -160,13 +200,14 @@ describe('reviewRenderableDeliverables', () => {
     writeFileSync(path.join(workRoot, 'page-1.jpg'), 'img');
     writeFileSync(path.join(workRoot, 'page-2.jpg'), 'img');
 
-    const stamp = await reviewRenderableDeliverables([filePath], {
+    const { result, stamp } = await runVisualCloseGate([filePath], {
       libreOfficeAvailable: () => true,
       rasterize: async () => [path.join(workRoot, 'page-1.jpg'), path.join(workRoot, 'page-2.jpg')],
       vlm: async () => 'not-json {passed: true}',
     });
 
-    expect(stamp.status).toBe('skipped_no_vlm');
+    expect(result.action).toBe('pass');
+    expect(stamp?.status).toBe('skipped_no_vlm');
   });
 
   it('不存在或非普通文件的路径跳过，不调用 rasterize', async () => {
@@ -176,7 +217,7 @@ describe('reviewRenderableDeliverables', () => {
     mkdirSync(dirPath);
     let rasterizeCalls = 0;
 
-    const stamp = await reviewRenderableDeliverables([missing, dirPath], {
+    const { result, stamp } = await runVisualCloseGate([missing, dirPath], {
       libreOfficeAvailable: () => true,
       rasterize: async () => {
         rasterizeCalls += 1;
@@ -185,11 +226,12 @@ describe('reviewRenderableDeliverables', () => {
       vlm: async () => {
         throw new Error('VLM must not run');
       },
-    });
+    }, { diskRepairsUsed: TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS });
 
+    expect(result.action).toBe('pass');
     expect(rasterizeCalls).toBe(0);
-    expect(stamp.status).toBe('not_applicable');
-    expect(stamp.filesReviewed).toEqual([]);
+    expect(stamp?.status).toBe('not_applicable');
+    expect(stamp?.filesReviewed).toEqual([]);
   });
 
   it('干净文档 VLM 无问题 → passed', async () => {
@@ -198,14 +240,15 @@ describe('reviewRenderableDeliverables', () => {
     await writeCleanDocx(filePath);
     writeFileSync(path.join(workRoot, 'page-1.jpg'), 'fake-image');
 
-    const stamp = await reviewRenderableDeliverables([filePath], {
+    const { result, stamp } = await runVisualCloseGate([filePath], {
       libreOfficeAvailable: () => true,
       rasterize: async () => [path.join(workRoot, 'page-1.jpg')],
       vlm: async () => JSON.stringify({ passed: true, issues: [] }),
     });
 
-    expect(stamp.status).toBe('passed');
-    expect(stamp.issues).toEqual([]);
+    expect(result.action).toBe('pass');
+    expect(stamp?.status).toBe('passed');
+    expect(stamp?.issues).toEqual([]);
   });
 
   it('栅格化抛错记 skipped_render_failed，不进 issue、不触发补轮', async () => {
@@ -214,7 +257,7 @@ describe('reviewRenderableDeliverables', () => {
     writeFileSync(filePath, '%PDF-1.4');
     let vlmCalls = 0;
 
-    const stamp = await reviewRenderableDeliverables([filePath], {
+    const { result, stamp } = await runVisualCloseGate([filePath], {
       libreOfficeAvailable: () => true,
       rasterize: async () => {
         throw new Error('pdftoppm not found');
@@ -225,8 +268,9 @@ describe('reviewRenderableDeliverables', () => {
       },
     });
 
-    expect(stamp.status).toBe('skipped_render_failed');
-    expect(stamp.issues).toEqual([]);
+    expect(result.action).toBe('pass');
+    expect(stamp?.status).toBe('skipped_render_failed');
+    expect(stamp?.issues).toEqual([]);
     expect(vlmCalls).toBe(0);
   });
 
@@ -235,7 +279,7 @@ describe('reviewRenderableDeliverables', () => {
     const filePath = path.join(workRoot, 'report.docx');
     await writeCleanDocx(filePath);
 
-    const stamp = await reviewRenderableDeliverables([filePath], {
+    const { result, stamp } = await runVisualCloseGate([filePath], {
       libreOfficeAvailable: () => true,
       rasterize: async () => {
         throw new Error('LibreOffice conversion failed: timed out');
@@ -243,8 +287,9 @@ describe('reviewRenderableDeliverables', () => {
       vlm: async () => JSON.stringify({ passed: true, issues: [] }),
     });
 
-    expect(stamp.status).toBe('skipped_render_failed');
-    expect(stamp.issues).toEqual([]);
+    expect(result.action).toBe('pass');
+    expect(stamp?.status).toBe('skipped_render_failed');
+    expect(stamp?.issues).toEqual([]);
   });
 
   it('VLM 未知 kind 归为 other；low 不触发修复', async () => {
@@ -253,7 +298,7 @@ describe('reviewRenderableDeliverables', () => {
     writeFileSync(filePath, '%PDF-1.4');
     writeFileSync(path.join(workRoot, 'page-1.jpg'), 'img');
 
-    const stamp = await reviewRenderableDeliverables([filePath], {
+    const { result, stamp } = await runVisualCloseGate([filePath], {
       libreOfficeAvailable: () => true,
       rasterize: async () => [path.join(workRoot, 'page-1.jpg')],
       vlm: async () => JSON.stringify({
@@ -262,8 +307,9 @@ describe('reviewRenderableDeliverables', () => {
       }),
     });
 
-    expect(stamp.status).toBe('passed');
-    expect(stamp.issues).toEqual([expect.objectContaining({
+    expect(result.action).toBe('pass');
+    expect(stamp?.status).toBe('passed');
+    expect(stamp?.issues).toEqual([expect.objectContaining({
       kind: 'other',
       severity: 'low',
       description: '两列没有齐平',
@@ -282,7 +328,7 @@ describe('reviewRenderableDeliverables', () => {
     let vlmCalls = 0;
     const rasterizeFiles: string[] = [];
 
-    await reviewRenderableDeliverables([fileA, fileB], {
+    await runVisualCloseGate([fileA, fileB], {
       libreOfficeAvailable: () => true,
       abortSignal: controller.signal,
       rasterize: async (filePath) => {
@@ -311,7 +357,7 @@ describe('reviewRenderableDeliverables', () => {
     });
     let calls = 0;
     const remaining = 2;
-    await reviewRenderableDeliverables([filePath], {
+    await runVisualCloseGate([filePath], {
       libreOfficeAvailable: () => true,
       vlmCallsUsed: ARTIFACT_RENDER_REVIEW.MAX_VLM_CALLS_PER_TURN - remaining,
       rasterize: async () => pages,
@@ -333,7 +379,7 @@ describe('reviewRenderableDeliverables', () => {
       return pagePath;
     });
     let calls = 0;
-    await reviewRenderableDeliverables([filePath], {
+    await runVisualCloseGate([filePath], {
       libreOfficeAvailable: () => true,
       rasterize: async () => pages,
       vlm: async () => {
@@ -346,14 +392,26 @@ describe('reviewRenderableDeliverables', () => {
 });
 
 describe('xlsx structure check', () => {
+  function xlsxVisualDeps() {
+    writeFileSync(path.join(workRoot, 'xlsx-page.jpg'), 'img');
+    return {
+      libreOfficeAvailable: () => true,
+      rasterize: async () => [path.join(workRoot, 'xlsx-page.jpg')],
+      vlm: async () => JSON.stringify({ passed: true, issues: [] }),
+    };
+  }
+
   it('空表（行列维度为零）记为 high 问题', async () => {
     mkdirSync(workRoot, { recursive: true });
     const filePath = path.join(workRoot, 'empty.xlsx');
     const workbook = new ExcelJS.Workbook();
     workbook.addWorksheet('空表');
     await workbook.xlsx.writeFile(filePath);
-    const issues = await checkXlsxStructure(filePath);
-    expect(issues.some((issue) => issue.description.includes('维度为零'))).toBe(true);
+    const { result, stamp } = await runVisualCloseGate([filePath], xlsxVisualDeps());
+    expect(stamp?.issues.some((issue) => issue.description.includes('维度为零'))).toBe(true);
+    expect(stamp?.issues.some((issue) => issue.severity === 'high' && issue.kind === 'overflow')).toBe(true);
+    expect(result.action).toBe('repair');
+    if (result.action === 'repair') expect(result.kind).toBe('visual');
   });
 
   it('有数据的 sheet 不报空表', async () => {
@@ -364,7 +422,10 @@ describe('xlsx structure check', () => {
     sheet.getCell('A1').value = '月份';
     sheet.getCell('A2').value = '一月';
     await workbook.xlsx.writeFile(filePath);
-    expect(await checkXlsxStructure(filePath)).toEqual([]);
+    const { result, stamp } = await runVisualCloseGate([filePath], xlsxVisualDeps());
+    expect(stamp?.issues).toEqual([]);
+    expect(stamp?.status).toBe('passed');
+    expect(result.action).toBe('pass');
   });
 
   it('只含图片的工作表不报空表', async () => {
@@ -380,7 +441,9 @@ describe('xlsx structure check', () => {
     const imageId = workbook.addImage({ filename: pngPath, extension: 'png' });
     sheet.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 120, height: 80 } });
     await workbook.xlsx.writeFile(filePath);
-    expect(await checkXlsxStructure(filePath)).toEqual([]);
+    const { result, stamp } = await runVisualCloseGate([filePath], xlsxVisualDeps());
+    expect(stamp?.issues).toEqual([]);
+    expect(result.action).toBe('pass');
   });
 
   it('工作表 drawing/chart 关系存在时不报空表', async () => {
@@ -397,34 +460,31 @@ describe('xlsx structure check', () => {
     );
     zip.file('xl/drawings/drawing1.xml', '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>');
     writeFileSync(filePath, await zip.generateAsync({ type: 'nodebuffer' }));
-    expect(await checkXlsxStructure(filePath)).toEqual([]);
+    const { result, stamp } = await runVisualCloseGate([filePath], xlsxVisualDeps());
+    expect(stamp?.issues).toEqual([]);
+    expect(result.action).toBe('pass');
   });
 });
 
-describe('runArtifactRenderReviewGate', () => {
+describe('applyDeliverableCloseGates repair budget', () => {
   it('溢出文档在补轮预算内回喂 repair', async () => {
     mkdirSync(workRoot, { recursive: true });
     const filePath = path.join(workRoot, 'overflow.docx');
     await writeOverflowDocx(filePath);
     writeFileSync(path.join(workRoot, 'page-1.jpg'), 'img');
 
-    const result = await runArtifactRenderReviewGate({
-      workingDirectory: workRoot,
-      messages: [message(), producingActivity(filePath)],
-      finalText: '已生成 `overflow.docx`。',
-      repairsUsed: 0,
-      deps: {
-        libreOfficeAvailable: () => true,
-        rasterize: async () => [path.join(workRoot, 'page-1.jpg')],
-        vlm: async () => JSON.stringify({
-          passed: false,
-          issues: [{ kind: 'overflow', description: '标题被截断', severity: 'high' }],
-        }),
-      },
-    });
+    const { result } = await runVisualCloseGate([filePath], {
+      libreOfficeAvailable: () => true,
+      rasterize: async () => [path.join(workRoot, 'page-1.jpg')],
+      vlm: async () => JSON.stringify({
+        passed: false,
+        issues: [{ kind: 'overflow', description: '标题被截断', severity: 'high' }],
+      }),
+    }, { finalText: '已生成 `overflow.docx`。' });
 
     expect(result.action).toBe('repair');
     if (result.action === 'repair') {
+      expect(result.kind).toBe('visual');
       expect(result.prompt).toContain('<artifact-render-review>');
       expect(result.prompt).toContain('第 1 页');
       expect(result.prompt).toContain('标题被截断');
@@ -437,19 +497,16 @@ describe('runArtifactRenderReviewGate', () => {
     await writeOverflowDocx(filePath);
     writeFileSync(path.join(workRoot, 'page-1.jpg'), 'img');
 
-    const result = await runArtifactRenderReviewGate({
-      workingDirectory: workRoot,
-      messages: [message(), producingActivity(filePath)],
+    const { result, stamp } = await runVisualCloseGate([filePath], {
+      libreOfficeAvailable: () => true,
+      rasterize: async () => [path.join(workRoot, 'page-1.jpg')],
+      vlm: async () => JSON.stringify({
+        passed: false,
+        issues: [{ kind: 'overflow', description: '表格右侧被裁切', severity: 'high' }],
+      }),
+    }, {
       finalText: '已生成 `overflow.docx`。',
-      repairsUsed: ARTIFACT_RENDER_REVIEW.MAX_REPAIR_ROUNDS,
-      deps: {
-        libreOfficeAvailable: () => true,
-        rasterize: async () => [path.join(workRoot, 'page-1.jpg')],
-        vlm: async () => JSON.stringify({
-          passed: false,
-          issues: [{ kind: 'overflow', description: '表格右侧被裁切', severity: 'high' }],
-        }),
-      },
+      visualRepairsUsed: ARTIFACT_RENDER_REVIEW.MAX_REPAIR_ROUNDS,
     });
 
     expect(result.action).toBe('pass');
@@ -458,7 +515,7 @@ describe('runArtifactRenderReviewGate', () => {
     expect(result.content).toContain('第 1 页');
     expect(result.content).toContain('表格右侧被裁切');
     expect(result.content).toContain('请告诉我方向');
-    expect(result.stamp.status).toBe('failed');
+    expect(stamp?.status).toBe('failed');
   });
 
   it('rasterize 抛错不走 repair，stamp 为 skipped_render_failed', async () => {
@@ -466,26 +523,20 @@ describe('runArtifactRenderReviewGate', () => {
     const filePath = path.join(workRoot, 'report.pdf');
     writeFileSync(filePath, '%PDF-1.4');
 
-    const result = await runArtifactRenderReviewGate({
-      workingDirectory: workRoot,
-      messages: [message(), producingActivity(filePath)],
-      finalText: '已生成 `report.pdf`。',
-      repairsUsed: 0,
-      deps: {
-        libreOfficeAvailable: () => true,
-        rasterize: async () => {
-          throw new Error('Screenshot rendering failed: expected at least 1 pages');
-        },
-        vlm: async () => {
-          throw new Error('VLM must not run');
-        },
+    const { result, stamp } = await runVisualCloseGate([filePath], {
+      libreOfficeAvailable: () => true,
+      rasterize: async () => {
+        throw new Error('Screenshot rendering failed: expected at least 1 pages');
       },
-    });
+      vlm: async () => {
+        throw new Error('VLM must not run');
+      },
+    }, { finalText: '已生成 `report.pdf`。' });
 
     expect(result.action).toBe('pass');
     if (result.action !== 'pass') throw new Error('expected pass');
-    expect(result.stamp.status).toBe('skipped_render_failed');
-    expect(result.stamp.issues).toEqual([]);
+    expect(stamp?.status).toBe('skipped_render_failed');
+    expect(stamp?.issues).toEqual([]);
     expect(result.content).toBe('已生成 `report.pdf`。');
     expect(result.content).not.toContain('视觉审查未通过');
   });
@@ -500,30 +551,23 @@ describe('runArtifactRenderReviewGate', () => {
     writeFileSync(path.join(workRoot, 'good.jpg'), 'img');
     const reviewed: string[] = [];
 
-    const result = await runArtifactRenderReviewGate({
-      workingDirectory: workRoot,
-      messages: [
-        message(),
-        producingActivity(bad),
-        producingActivity(good),
-      ],
+    const { result } = await runVisualCloseGate([bad, good], {
+      libreOfficeAvailable: () => true,
+      rasterize: async (filePath, screenshotDir) => {
+        reviewed.push(filePath);
+        const page = path.join(screenshotDir, `${path.basename(filePath)}.jpg`);
+        writeFileSync(page, 'img');
+        return [page];
+      },
+      vlm: async () => JSON.stringify({ passed: true, issues: [] }),
+    }, {
       finalText: '已生成 `bad.pdf` 和 `good.pdf`。',
-      repairsUsed: 1,
+      visualRepairsUsed: 1,
       previousStamp: {
         status: 'failed',
         filesReviewed: [bad, good],
         vlmCallsUsed: 2,
         issues: [{ file: bad, page: 1, kind: 'overflow', description: '标题被截断', severity: 'high' }],
-      },
-      deps: {
-        libreOfficeAvailable: () => true,
-        rasterize: async (filePath, screenshotDir) => {
-          reviewed.push(filePath);
-          const page = path.join(screenshotDir, `${path.basename(filePath)}.jpg`);
-          writeFileSync(page, 'img');
-          return [page];
-        },
-        vlm: async () => JSON.stringify({ passed: true, issues: [] }),
       },
     });
 

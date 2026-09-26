@@ -169,10 +169,20 @@ export const ROLE_PROACTIVITY = {
   DEFAULT_LEVEL: 'silent',
   /** 醒来产出里决策标记的提取正则（四选一：advance/report/suggest/silence） */
   DECISION_TAG_PATTERN: /<decision>\s*(advance|report|suggest|silence)\s*<\/decision>/i,
+  /** suggest/report 的打扰理由（最多两句）；解析失败不影响原决策 */
+  RATIONALE_TAG_PATTERN: /<rationale>\s*([\s\S]*?)\s*<\/rationale>/i,
+  /** 理由所依据的会话/文件/记忆引用；可为空 */
+  EVIDENCE_TAG_PATTERN: /<evidence>\s*([\s\S]*?)\s*<\/evidence>/i,
+  /** 打扰理由截断字符数（约两句） */
+  RATIONALE_MAX_CHARS: 240,
   /** 提取不到决策标记时的保守兜底决策 */
   FALLBACK_DECISION: 'report',
-  /** 醒来履历条目的产出摘要截断字符数 */
+  /** 醒来履历条目的产出摘要截断字符数（why 是独立字段，不挤进这个预算） */
   HISTORY_SUMMARY_MAX_CHARS: 200,
+  /** 话题偏好单条最大字符数 */
+  TOPIC_MAX_CHARS: 40,
+  /** 话题偏好最多条数 */
+  TOPIC_MAX_ITEMS: 20,
 } as const;
 
 /** Agent 型定时任务跨运行快照（存放在 action.context 共享袋中）。 */

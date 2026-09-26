@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { IPC_DOMAINS } from "@shared/ipc";
+import { sanitizeTopicList } from "@shared/roleTopicList";
 import type {
   RolePanelDetail,
   RolePanelMemory,
@@ -677,6 +678,120 @@ const QuietHoursEditor: React.FC<{
   );
 };
 
+function parseTopicInput(text: string): string[] {
+  return sanitizeTopicList(text.split(/[,，\n]/));
+}
+
+function topicsToInput(topics: string[] | undefined): string {
+  return (topics ?? []).join(', ');
+}
+
+const TopicsEditor: React.FC<{
+  roleId: string;
+  current: RoleProactivityConfig;
+  onChanged: () => void;
+}> = ({ roleId, current, onChanged }) => {
+  const { t } = useI18n();
+  const text = t.settings.roles.detail;
+  const [includeText, setIncludeText] = useState(topicsToInput(current.topicsInclude));
+  const [excludeText, setExcludeText] = useState(topicsToInput(current.topicsExclude));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIncludeText(topicsToInput(current.topicsInclude));
+    setExcludeText(topicsToInput(current.topicsExclude));
+  }, [current.topicsExclude, current.topicsInclude]);
+
+  const nextInclude = parseTopicInput(includeText);
+  const nextExclude = parseTopicInput(excludeText);
+  const unchanged =
+    topicsToInput(nextInclude) === topicsToInput(current.topicsInclude)
+    && topicsToInput(nextExclude) === topicsToInput(current.topicsExclude);
+
+  const handleSave = async () => {
+    if (unchanged || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await setRoleProactivity(roleId, {
+        ...current,
+        topicsInclude: nextInclude,
+        topicsExclude: nextExclude,
+      });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      logger.error("Failed to set role topic preferences", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const includeActive = (current.topicsInclude ?? []).length > 0;
+  const excludeActive = (current.topicsExclude ?? []).length > 0;
+
+  return (
+    <div
+      data-testid="role-topic-preferences"
+      className="mt-4 border-t border-zinc-700/60 pt-4"
+    >
+      <div className="space-y-3">
+        <label className="block space-y-1">
+          <span className="text-sm text-zinc-300">{text.topicsIncludeTitle}</span>
+          <p className="text-xs text-zinc-500">{text.topicsIncludeDescription}</p>
+          <input
+            data-testid="role-topics-include"
+            type="text"
+            value={includeText}
+            onChange={(event) => setIncludeText(event.target.value)}
+            placeholder={text.topicsPlaceholder}
+            className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-success"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-sm text-zinc-300">{text.topicsExcludeTitle}</span>
+          <p className="text-xs text-zinc-500">{text.topicsExcludeDescription}</p>
+          <input
+            data-testid="role-topics-exclude"
+            type="text"
+            value={excludeText}
+            onChange={(event) => setExcludeText(event.target.value)}
+            placeholder={text.topicsPlaceholder}
+            className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-success"
+          />
+          <p data-testid="role-topics-exclude-hint" className="text-xs text-zinc-500">
+            {text.topicsExcludeMatchHint}
+          </p>
+        </label>
+        <button /* ds-allow:button: 话题偏好使用紧凑行内保存动作 */
+          data-testid="role-topics-save"
+          type="button"
+          disabled={unchanged || busy}
+          onClick={() => void handleSave()}
+          className="rounded-md bg-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {busy ? t.common.saving : text.topicsSave}
+        </button>
+      </div>
+      <div className="mt-2 space-y-0.5 text-xs text-zinc-500">
+        {includeActive ? (
+          <div data-testid="role-topics-include-active">
+            {text.topicsIncludeActive.replace("{topics}", (current.topicsInclude ?? []).join("、"))}
+          </div>
+        ) : null}
+        {excludeActive ? (
+          <div data-testid="role-topics-exclude-active">
+            {text.topicsExcludeActive.replace("{topics}", (current.topicsExclude ?? []).join("、"))}
+          </div>
+        ) : null}
+        {!includeActive && !excludeActive ? <div>{text.topicsInactive}</div> : null}
+      </div>
+      {error ? <div className="mt-2 text-xs text-badge-danger">{error}</div> : null}
+    </div>
+  );
+};
+
 const RoleTrainingSummary: React.FC<{
   detail: RolePanelDetail;
 }> = ({ detail }) => {
@@ -800,6 +915,11 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
                   onChanged={loadDetail}
                 />
                 <QuietHoursEditor
+                  roleId={roleId}
+                  current={detail.proactivity ?? { level: "silent" }}
+                  onChanged={loadDetail}
+                />
+                <TopicsEditor
                   roleId={roleId}
                   current={detail.proactivity ?? { level: "silent" }}
                   onChanged={loadDetail}

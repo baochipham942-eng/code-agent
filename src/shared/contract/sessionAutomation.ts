@@ -150,6 +150,10 @@ export interface SessionAutomationMessageMetadata {
   lastRunAt?: number;
   handoffPrompt?: string;
   nextStage?: SessionAutomationNextStageConfig;
+  /** role_wake：为什么值得打扰；缺失时 UI 显示「这条没有记录理由」 */
+  rationale?: string;
+  evidence?: string;
+  rationaleMissing?: boolean;
 }
 
 export interface UpsertSessionAutomationInput {

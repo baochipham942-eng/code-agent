@@ -18,7 +18,7 @@ import * as path from 'path';
 import { createLogger } from '../infra/logger';
 import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 import { admitStrictUntrustedText } from '../../security/inputSanitizer';
-import { ROLE_ASSETS } from '../../../shared/constants';
+import { ROLE_ASSETS, ROLE_PROACTIVITY } from '../../../shared/constants';
 import {
   getRoleDir,
   getRoleMemoriesDir,
@@ -66,8 +66,12 @@ export interface RoleHistoryEntry {
   artifactLabel: string;
   /** 产物引用（artifact://... 或文件路径），没有则为 '-' */
   artifactRef: string;
-  /** 产出摘要 */
+  /** 产出摘要（写入时扁平化并按 HISTORY_SUMMARY_MAX_CHARS 截断） */
   summary: string;
+  /** 醒来打扰理由；独立字段，不挤进 summary 预算 */
+  why?: string;
+  /** 理由依据（会话 / 文件 / 记忆引用） */
+  evidence?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -312,27 +316,102 @@ export async function loadScopedMemoryIndex(target: ScopedMemoryTarget): Promise
 // 工作履历（设计 §4.3：履历 = 产物清单）
 // ----------------------------------------------------------------------------
 
+const HISTORY_WHY_SEP = ' | why: ';
+const HISTORY_EVIDENCE_SEP = ' | evidence: ';
+
+function flattenHistoryText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** 履历落盘格式：单物理行。why / evidence 是独立字段，不占用 summary 截断预算。 */
+function formatRoleHistoryLine(entry: RoleHistoryEntry): string {
+  const label = entry.artifactRef && entry.artifactRef !== '-'
+    ? `[${entry.artifactLabel}](${entry.artifactRef})`
+    : entry.artifactLabel;
+  const summary = flattenHistoryText(entry.summary).slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+  let line = `- ${entry.date} | ${label} | ${summary}`;
+  if (entry.why) line += `${HISTORY_WHY_SEP}${flattenHistoryText(entry.why)}`;
+  if (entry.evidence) line += `${HISTORY_EVIDENCE_SEP}${flattenHistoryText(entry.evidence)}`;
+  return line;
+}
+
+/** 旧格式（无 why 字段、或多行 summary）可读兼容。 */
+function parseRoleHistoryLine(raw: string): RoleHistoryEntry | null {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('- ')) return null;
+  let body = trimmed.slice(2);
+  let evidence: string | undefined;
+  let why: string | undefined;
+  const evidenceIdx = body.lastIndexOf(HISTORY_EVIDENCE_SEP);
+  if (evidenceIdx !== -1) {
+    evidence = flattenHistoryText(body.slice(evidenceIdx + HISTORY_EVIDENCE_SEP.length)) || undefined;
+    body = body.slice(0, evidenceIdx);
+  }
+  const whyIdx = body.lastIndexOf(HISTORY_WHY_SEP);
+  if (whyIdx !== -1) {
+    why = flattenHistoryText(body.slice(whyIdx + HISTORY_WHY_SEP.length)) || undefined;
+    body = body.slice(0, whyIdx);
+  }
+  const parts = body.split(' | ');
+  const datePart = parts[0];
+  const labelField = parts[1];
+  if (datePart === undefined || labelField === undefined || parts.length < 3) return null;
+  const date = datePart.trim();
+  const summary = flattenHistoryText(parts.slice(2).join(' | '));
+  let artifactLabel = labelField.trim();
+  let artifactRef = '-';
+  const md = labelField.trim().match(/^\[([^\]]+)\]\((.+)\)$/);
+  if (md?.[1] && md[2]) {
+    artifactLabel = md[1];
+    artifactRef = md[2];
+  }
+  return {
+    date,
+    artifactLabel,
+    artifactRef,
+    summary,
+    ...(why ? { why } : {}),
+    ...(evidence ? { evidence } : {}),
+  };
+}
+
+function collectHistoryBlocks(content: string): string[] {
+  const blocks: string[] = [];
+  for (const line of content.split('\n')) {
+    if (line.startsWith('- ')) {
+      blocks.push(line);
+    } else if (blocks.length > 0) {
+      blocks[blocks.length - 1] += `\n${line}`;
+    }
+  }
+  return blocks;
+}
+
 /** 追加一条履历（一行一条，最新的在最后） */
 export async function appendRoleHistory(roleId: string, entry: RoleHistoryEntry): Promise<void> {
   await ensureRoleAssetDirs(roleId);
   const historyPath = getRoleHistoryPath(roleId);
-  const label = entry.artifactRef && entry.artifactRef !== '-'
-    ? `[${entry.artifactLabel}](${entry.artifactRef})`
-    : entry.artifactLabel;
-  const line = `- ${entry.date} | ${label} | ${entry.summary}\n`;
-  await fs.appendFile(historyPath, line, 'utf-8');
+  await fs.appendFile(historyPath, `${formatRoleHistoryLine(entry)}\n`, 'utf-8');
 }
 
-/** 读取履历最近 N 条（注入 / UI 用） */
-export async function loadRoleHistory(roleId: string, maxEntries?: number): Promise<string[]> {
+/** 读取履历最近 N 条（结构化；旧多行格式会拼回并抽出 why） */
+async function loadRoleHistoryEntries(roleId: string, maxEntries?: number): Promise<RoleHistoryEntry[]> {
   try {
     const content = await fs.readFile(getRoleHistoryPath(roleId), 'utf-8');
-    const entries = content.split('\n').filter((line) => line.startsWith('- '));
+    const entries = collectHistoryBlocks(content)
+      .map(parseRoleHistoryLine)
+      .filter((entry): entry is RoleHistoryEntry => entry !== null);
     const limit = maxEntries ?? ROLE_ASSETS.INJECT_HISTORY_MAX_ENTRIES;
     return entries.slice(-limit);
   } catch {
     return [];
   }
+}
+
+/** 读取履历最近 N 条（注入 / UI 用；每条都是含完整 why 的单物理行） */
+export async function loadRoleHistory(roleId: string, maxEntries?: number): Promise<string[]> {
+  const entries = await loadRoleHistoryEntries(roleId, maxEntries);
+  return entries.map(formatRoleHistoryLine);
 }
 
 // ----------------------------------------------------------------------------

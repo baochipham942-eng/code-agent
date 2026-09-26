@@ -21,6 +21,7 @@ const mockSessionManager = vi.hoisted(() => ({
   getSession: vi.fn(),
   createSession: vi.fn(),
   archiveSession: vi.fn(),
+  updateMessage: vi.fn(),
 }));
 const mockRunRoleWriteBack = vi.hoisted(() => vi.fn(async () => ({ written: [], skipped: [], historyAppended: true })));
 // advance→goal run（P4）：Electron 路径用落库事件读 goal 终态
@@ -108,7 +109,15 @@ import {
   cadenceForConfig,
   isWithinQuietHours,
 } from '../../../../src/host/services/roleAssets/roleProactivity';
+import {
+  formatTopicPreferencePrompt,
+  parseWakeRationale,
+  sanitizeTopicList,
+  stripWakeMarkup,
+  topicExcludeHits,
+} from '../../../../src/host/services/roleAssets/wakeRationale';
 import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory } from '../../../../src/host/services/roleAssets/roleAssetService';
+import { getRoleHistoryPath } from '../../../../src/host/services/roleAssets/roleAssetPaths';
 import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
 
 const RESEARCHER = '研究员';
@@ -232,6 +241,43 @@ describe('roleProactivity', () => {
 
     it('解析不出决策时保守兜底为汇报', () => {
       expect(parseWakeDecision('没有任何标记的输出')).toBe('report');
+    });
+
+    it('解析 rationale/evidence；缺失或格式坏时只记 missing，不编理由', () => {
+      expect(parseWakeRationale('<rationale>该提醒周报过期。</rationale><evidence>history.md</evidence>')).toEqual({
+        rationale: '该提醒周报过期。',
+        evidence: 'history.md',
+        missing: false,
+      });
+      expect(parseWakeRationale('没有任何标记的输出')).toEqual({ missing: true });
+      expect(parseWakeRationale('<rationale>   </rationale><evidence></evidence>').missing).toBe(true);
+      expect(parseWakeRationale('<rationale>未闭合<decision>suggest</decision>').missing).toBe(true);
+      const withEmptyEvidence = parseWakeRationale('<rationale>产物还在，需要你拍板下一步。</rationale><evidence></evidence>');
+      expect(withEmptyEvidence.missing).toBe(false);
+      expect(withEmptyEvidence.rationale).toContain('需要你拍板');
+      expect(withEmptyEvidence.evidence).toBeUndefined();
+    });
+
+    it('exclude 命中为大小写不敏感子串；空列表不命中', () => {
+      expect(topicExcludeHits('建议买一些 Crypto 理财', ['crypto', '八卦'])).toBe(true);
+      expect(topicExcludeHits('项目进度正常', ['crypto'])).toBe(false);
+      expect(topicExcludeHits('anything', [])).toBe(false);
+    });
+
+    it('exclude 短 ASCII 词走整词匹配，避免误伤；中文短词仍按子串', () => {
+      expect(topicExcludeHits('DETAILS of the plan', ['AI'])).toBe(false);
+      expect(topicExcludeHits('the AI plan', ['AI'])).toBe(true);
+      expect(topicExcludeHits('email the team', ['AI'])).toBe(false);
+      expect(topicExcludeHits('办公室八卦', ['八卦'])).toBe(true);
+    });
+
+    it('话题列表去空白去重，prompt 注入硬约束', () => {
+      expect(sanitizeTopicList([' 项目进度 ', '项目进度', 'x'.repeat(80), ''])).toEqual(['项目进度', 'x'.repeat(40)]);
+      expect(sanitizeTopicList([' 项目进度 ', '项目进度', 'x'.repeat(80), ''])[1]?.length).toBe(ROLE_PROACTIVITY.TOPIC_MAX_CHARS);
+      const block = formatTopicPreferencePrompt({ topicsInclude: ['项目进度'], topicsExclude: ['八卦'] });
+      expect(block).toContain('用户想听：项目进度');
+      expect(block).toContain('永远别提');
+      expect(stripWakeMarkup('正文。<rationale>理由</rationale><decision>suggest</decision>')).toBe('正文。');
     });
 
     it('从可验证待办信号推断 advance goal 提案', () => {
@@ -412,8 +458,186 @@ describe('roleProactivity', () => {
 
       expect(result.decision).toBe('advance');
       expect(result.advanceGoalStatus).toBeUndefined();
+      expect(result.rationaleMissing).toBeUndefined();
+      expect(mockSessionManager.updateMessage).not.toHaveBeenCalled();
       // 只有侦察醒来这一次 sendMessage，没有第二次 goal run
       expect(mockOrchestrator.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('suggest 带 rationale 时写入 RoleWakeResult、履历和消息 metadata', async () => {
+      await seedProductHistory(RESEARCHER);
+      const body = [
+        '建议把周报改成自动生成。',
+        '<rationale>履历里的周报已经连续两周没更新。</rationale>',
+        '<evidence>history.md · 周报.md</evidence>',
+        '<decision>suggest</decision>',
+      ].join('\n');
+      mockSessionManager.createSession.mockResolvedValue({ id: 'wake-suggest-1', workingDirectory: undefined });
+      mockSessionManager.getSession.mockResolvedValue({
+        id: 'wake-suggest-1',
+        messages: [{ id: 'm-suggest', role: 'assistant', content: body, timestamp: 2 }],
+      });
+      mockOrchestrator.sendMessage.mockResolvedValue(undefined);
+
+      const result = await wakeRole(RESEARCHER, 'cadence');
+
+      expect(result.decision).toBe('suggest');
+      expect(result.rationale).toContain('连续两周没更新');
+      expect(result.evidence).toBe('history.md · 周报.md');
+      expect(result.rationaleMissing).toBe(false);
+      expect(mockSessionManager.updateMessage).toHaveBeenCalledWith(
+        'm-suggest',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            wakeRationale: expect.objectContaining({
+              missing: false,
+              rationale: expect.stringContaining('连续两周没更新'),
+            }),
+          }),
+        }),
+      );
+      const history = await loadRoleHistory(RESEARCHER, 100);
+      expect(history.some((line) => line.includes('[suggest]') && line.includes('why:'))).toBe(true);
+      expect(history.some((line) => line.includes('why:') && line.includes('连续两周没更新'))).toBe(true);
+    });
+
+    it('多行 + 超长 suggest 产出写入履历后 why 完整可读', async () => {
+      await seedProductHistory(RESEARCHER);
+      const why = '履历里的周报已经连续两周没更新，需要你拍板是否改成自动生成。';
+      const longBody = `${'检查结果如下。\n'.repeat(40)}${'段落'.repeat(80)}`;
+      const body = [
+        longBody,
+        `<rationale>${why}</rationale>`,
+        '<evidence>history.md · 周报.md</evidence>',
+        '<decision>suggest</decision>',
+      ].join('\n');
+      mockSessionManager.createSession.mockResolvedValue({ id: 'wake-suggest-long', workingDirectory: undefined });
+      mockSessionManager.getSession.mockResolvedValue({
+        id: 'wake-suggest-long',
+        messages: [{ id: 'm-long', role: 'assistant', content: body, timestamp: 2 }],
+      });
+      mockOrchestrator.sendMessage.mockResolvedValue(undefined);
+
+      const result = await wakeRole(RESEARCHER, 'cadence');
+
+      expect(result.decision).toBe('suggest');
+      expect(result.rationale).toBe(why);
+      const history = await loadRoleHistory(RESEARCHER, 100);
+      const wakeLine = history.find((line) => line.includes('[suggest]'));
+      expect(wakeLine).toBeDefined();
+      expect(wakeLine?.includes('\n')).toBe(false);
+      expect(wakeLine).toContain(`why: ${why}`);
+      expect(wakeLine).toContain('evidence: history.md · 周报.md');
+      const summaryPart = wakeLine?.split(' | why: ')[0].split(' | ').slice(2).join(' | ') ?? '';
+      expect(summaryPart.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+    });
+
+    it('stores why as an independent field; multiline and over-long summary still load the full why', async () => {
+      const why = '履历里的周报已经连续两周没更新，需要你拍板是否改成自动生成。';
+      await appendRoleHistory(RESEARCHER, {
+        date: TODAY,
+        artifactLabel: `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}(cadence)`,
+        artifactRef: '-',
+        summary: `[suggest] ${'检查结果如下。\n'.repeat(40)}${'x'.repeat(500)}`,
+        why,
+        evidence: 'history.md · 周报.md',
+      });
+
+      const lines = await loadRoleHistory(RESEARCHER);
+      const wakeLine = lines.find((line) => line.includes('[suggest]'));
+      expect(wakeLine?.includes('\n')).toBe(false);
+      expect(wakeLine).toContain(`why: ${why}`);
+      expect(wakeLine).toContain('evidence: history.md · 周报.md');
+      const summaryPart = wakeLine?.split(' | why: ')[0].split(' | ').slice(2).join(' | ') ?? '';
+      expect(summaryPart.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+    });
+
+    it('reads old multiline history blocks so a trailing why is not dropped', async () => {
+      const why = '该跟进周报，连续两周没有更新。';
+      await fs.writeFile(
+        getRoleHistoryPath(RESEARCHER),
+        [
+          `- ${TODAY} | ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}(cadence) | [suggest] 第一行摘要`,
+          '第二行还在继续',
+          `第三行尾巴 | why: ${why} | evidence: history.md`,
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      const lines = await loadRoleHistory(RESEARCHER);
+      expect(lines[0]?.startsWith('- ')).toBe(true);
+      expect(lines[0]).toContain(`why: ${why}`);
+      expect(lines[0]).toContain('evidence: history.md');
+    });
+
+    it('rationale 缺失时仍保留原决策，只记 missing', async () => {
+      await seedProductHistory(RESEARCHER);
+      primeWakeRun('suggest', 'wake-suggest-missing');
+
+      const result = await wakeRole(RESEARCHER, 'cadence');
+
+      expect(result.decision).toBe('suggest');
+      expect(result.rationaleMissing).toBe(true);
+      expect(result.rationale).toBeUndefined();
+      const history = await loadRoleHistory(RESEARCHER, 100);
+      expect(history.some((line) => line.includes('why: (missing)'))).toBe(true);
+    });
+
+    it('exclude 命中话题时决策被压成 silence，会话归档', async () => {
+      mockSettings.value = {
+        roleAssets: {
+          proactivity: {
+            roles: {
+              [RESEARCHER]: { level: 'daily', topicsExclude: ['八卦', '理财'] },
+            },
+          },
+        },
+      };
+      await seedProductHistory(RESEARCHER);
+      const body = '建议聊聊办公室八卦。<rationale>最近群里很热闹。</rationale><decision>suggest</decision>';
+      mockSessionManager.createSession.mockResolvedValue({ id: 'wake-exclude-1', workingDirectory: undefined });
+      mockSessionManager.getSession.mockResolvedValue({
+        id: 'wake-exclude-1',
+        messages: [{ id: 'm-ex', role: 'assistant', content: body, timestamp: 2 }],
+      });
+      mockOrchestrator.sendMessage.mockResolvedValue(undefined);
+
+      const result = await wakeRole(RESEARCHER, 'cadence');
+
+      expect(result.decision).toBe('silence');
+      expect(result.rationaleMissing).toBeUndefined();
+      expect(mockSessionManager.updateMessage).not.toHaveBeenCalled();
+      expect(mockSessionManager.archiveSession).toHaveBeenCalledWith('wake-exclude-1');
+      const history = await loadRoleHistory(RESEARCHER, 100);
+      expect(history.some((line) => line.includes('命中排除话题，已停止汇报'))).toBe(true);
+      expect(history.some((line) => line.includes('巡检无需行动'))).toBe(false);
+    });
+
+    it('醒来 prompt 注入话题包含/排除', async () => {
+      mockSettings.value = {
+        roleAssets: {
+          proactivity: {
+            roles: {
+              [RESEARCHER]: {
+                level: 'daily',
+                topicsInclude: ['项目进度'],
+                topicsExclude: ['八卦'],
+              },
+            },
+          },
+        },
+      };
+      await seedProductHistory(RESEARCHER);
+      primeWakeRun('silence', 'wake-topics-prompt');
+
+      await wakeRole(RESEARCHER, 'cadence');
+
+      const wakePrompt = mockOrchestrator.sendMessage.mock.calls[0][0] as string;
+      expect(wakePrompt).toContain('<rationale>');
+      expect(wakePrompt).toContain('用户想听：项目进度');
+      expect(wakePrompt).toContain('八卦');
+      expect(wakePrompt).toContain('<decision>silence</decision>');
     });
 
     it('沉默决策 → 会话归档 + 履历记"巡检无需行动"（单测版 E2E AC3 模型路径）', async () => {
@@ -423,6 +647,8 @@ describe('roleProactivity', () => {
       const result = await wakeRole(RESEARCHER, 'cadence');
 
       expect(result.decision).toBe('silence');
+      expect(result.rationaleMissing).toBeUndefined();
+      expect(mockSessionManager.updateMessage).not.toHaveBeenCalled();
       expect(mockSessionManager.archiveSession).toHaveBeenCalledWith('wake-session-silence');
       const history = await loadRoleHistory(RESEARCHER, 100);
       expect(history.some((l) => l.includes('巡检无需行动'))).toBe(true);

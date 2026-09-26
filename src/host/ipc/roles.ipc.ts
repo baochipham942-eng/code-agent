@@ -47,6 +47,7 @@ import {
   confirmRoleDraft,
   rejectRoleDraft,
 } from '../services/roleAssets';
+import { sanitizeTopicList } from '../services/roleAssets/wakeRationale';
 import { getDatabase } from '../services/core/databaseService';
 import { getCronService } from '../cron/cronService';
 import { normalizeSchedule, parseJsonValue, isRecord } from '../cron/cronNormalizers';
@@ -158,6 +159,8 @@ interface SetProactivityPayload extends RoleIdPayload {
   level?: string;
   cadence?: string;
   quietHours?: RoleProactivityConfig['quietHours'];
+  topicsInclude?: string[];
+  topicsExclude?: string[];
 }
 
 interface UpdateVisualPayload extends RoleIdPayload {
@@ -362,6 +365,8 @@ async function handleSetProactivity(
   level: RoleProactivityLevel,
   cadence?: string,
   quietHours?: RoleProactivityConfig['quietHours'],
+  topicsInclude?: string[],
+  topicsExclude?: string[],
 ) {
   const { getConfigService } = await import('../services/core/configService');
   await getConfigService().updateSettings({
@@ -372,8 +377,10 @@ async function handleSetProactivity(
             level,
             ...(cadence ? { cadence } : {}),
             // null 要写进去（mergeSettings 只对非 null 对象递归，null 直接覆盖 = 清除）；
-            // undefined 才是"本次不动这个字段"。
+            // undefined 才是"本次不动这个字段"。数组整份覆盖（含空数组 = 清除）。
             ...(quietHours !== undefined ? { quietHours } : {}),
+            ...(topicsInclude !== undefined ? { topicsInclude: sanitizeTopicList(topicsInclude) } : {}),
+            ...(topicsExclude !== undefined ? { topicsExclude: sanitizeTopicList(topicsExclude) } : {}),
           },
         },
       },
@@ -486,7 +493,7 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     return { success: true, data: { removed: true } };
   },
   setProactivity: async (_ctx, payload) => {
-    const { roleId, level, cadence, quietHours } = (payload ?? {}) as SetProactivityPayload;
+    const { roleId, level, cadence, quietHours, topicsInclude, topicsExclude } = (payload ?? {}) as SetProactivityPayload;
     if (!roleId || !level || !PROACTIVITY_LEVELS.has(level)) {
       return {
         success: false,
@@ -503,9 +510,22 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
         error: { code: 'INVALID_ARGS', message: 'quietHours must contain distinct start/end values in HH:mm format' },
       };
     }
+    if (topicsInclude !== undefined && !Array.isArray(topicsInclude)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'topicsInclude must be a string array' } };
+    }
+    if (topicsExclude !== undefined && !Array.isArray(topicsExclude)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'topicsExclude must be a string array' } };
+    }
     return {
       success: true,
-      data: await handleSetProactivity(roleId, level as RoleProactivityLevel, cadence, quietHours),
+      data: await handleSetProactivity(
+        roleId,
+        level as RoleProactivityLevel,
+        cadence,
+        quietHours,
+        topicsInclude,
+        topicsExclude,
+      ),
     };
   },
   updateVisual: async (_ctx, payload) => {

@@ -124,6 +124,10 @@ export interface RoleProactivityConfig {
   cadence?: string;
   /** 免打扰时段（本地时间，24 小时制 "HH:mm"；允许跨零点）。显式传 null = 清除。 */
   quietHours?: { start: string; end: string } | null;
+  /** 用户想听的话题（醒来 prompt 注入；空数组 = 无偏好） */
+  topicsInclude?: string[];
+  /** 永远别提的话题（硬约束：命中则决策压成 silence） */
+  topicsExclude?: string[];
 }
 
 /** settings.json 里的主动性配置（用户级覆盖，优先级高于角色 frontmatter） */
@@ -156,6 +160,12 @@ export interface RoleWakeResult {
   summary?: string;
   /** advance 升级为 goal run 时的终态（met/aborted）；未升级则缺省（P4，内部文档） */
   advanceGoalStatus?: 'met' | 'aborted';
+  /** 为什么值得打扰用户（suggest/report；解析自 <rationale>，缺失不编） */
+  rationale?: string;
+  /** 依据：会话/文件/记忆条目引用（可为空） */
+  evidence?: string;
+  /** <rationale> 缺失或格式坏时为 true；不影响原决策 */
+  rationaleMissing?: boolean;
 }
 
 /** 角色详情（设计 §7：定义 / 记忆 / 履历 / 主动性） */

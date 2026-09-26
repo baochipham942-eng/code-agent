@@ -526,6 +526,23 @@ describe('roles.ipc (domain:roles)', () => {
       expect(detail.data?.proactivity.level).toBe('silent');
     });
 
+    it('话题包含/排除写入 settings 后 detail 仍能读回（重启同源：settings 持久化）', async () => {
+      await ensureRoleAssetDirs('研究员');
+      const res = await invoke<{ proactivity: { topicsInclude?: string[]; topicsExclude?: string[] } }>('setProactivity', {
+        roleId: '研究员',
+        level: 'daily',
+        topicsInclude: ['项目进度', ' 项目进度 ', ''],
+        topicsExclude: ['八卦'],
+      });
+      expect(res.success).toBe(true);
+      expect(res.data?.proactivity.topicsInclude).toEqual(['项目进度']);
+      expect(res.data?.proactivity.topicsExclude).toEqual(['八卦']);
+
+      const detail = await invoke<RolePanelDetail>('detail', { roleId: '研究员' });
+      expect(detail.data?.proactivity.topicsInclude).toEqual(['项目进度']);
+      expect(detail.data?.proactivity.topicsExclude).toEqual(['八卦']);
+    });
+
     it('免打扰时段可以被显式 null 清除（省略字段会被深合并保留，等于永远关不掉）', async () => {
       await ensureRoleAssetDirs('研究员');
       await invoke('setProactivity', {

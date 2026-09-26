@@ -1087,7 +1087,7 @@ export class AgentOrchestrator {
           completed: runCompletedNormally,
           cancelled: runCancelledEvent,
           registration: options?.runRegistration ?? 'primary',
-          ...(options.parentRunId ? { parentRunId: options.parentRunId } : {}),
+          ...(options?.parentRunId ? { parentRunId: options.parentRunId } : {}),
         });
       }
       if (registeredRun) this.runRegistry?.unregister(nativeRunId, registeredRun);

@@ -264,6 +264,81 @@ Commit message 格式：
     loaded: true,
   },
   {
+    name: 'batch-research',
+    description: '批量调研：当用户给一批同构对象（公司、论文、产品、链接、人物等）要求逐个查证并汇总时使用——去重、定最小字段表后一个对象一个子代理并行查，失败项只重试一次，最终回复必须报「成功 x/N」与未解决的缺口。单个对象、或子任务互相依赖时不适用。',
+    aliases: ['批量调研', '批量查询', '各查一下', '逐个查一下', 'wide research', 'parallel research', 'batch research'],
+    promptContent: `# 批量调研
+
+一批同构对象逐个查证，一张表汇总，覆盖率和缺口必须显式报出，不许静默漏项。
+
+## 适用判断
+
+- 适用：用户给一批同类对象（公司/论文/产品/链接/人物/文件），要求对每个对象查同样的事。
+- 不适用：只有一个对象（直接查，别起子代理）；子任务互相依赖、后一步要用前一步结果（走常规研究流程，先拆依赖）。
+
+## 工作流
+
+1. 去重归一：清理输入列表——同名不同写法合并、大小写/全半角归一、明显重复去掉；报出去重前后的数量。
+2. 定字段表：从需求里提炼最小统一输出字段表，只放用户要的字段，不加自由发挥的列；每个字段写清查不到时填什么（如「未披露」）。
+3. 并行派发：用 spawn_agent 的 parallel 模式（parallel: true + agents 数组），一个对象一个 worker。每个 worker 的 task 必须自包含：对象名 + 完整字段表 + 「只查这个对象，严格按字段表返回，查不到的字段写明原因」。不要再套一层管理者子代理——spawn_agent 自己就是协调者，结果自带聚合。批量大时可 waitForCompletion: false 后台跑，先回复用户已开跑，之后用 collect_agent 取回结果。
+4. 聚合：并行结果自带聚合统计（成功 x/N、每个子代理的状态与结果摘要）。直接用这份聚合，不要另写一套统计代码。
+5. 失败重试：只对失败项再派一轮（同样一个对象一个 worker）。仍失败的进失败清单，不试第三次。
+6. 汇总交付：严格按字段表拼结果表，连同覆盖率一起交付。
+
+## 输出契约
+
+最终回复必须包含：
+- 总数 N（去重后）、成功数、失败数，格式「成功 x/N」。
+- 结果表：每个成功对象一行，列与字段表一致。
+- 失败清单：每个失败对象一条，带原因；重试后仍失败的说明两轮各败在哪。
+- 缺口说明：字段级缺失（如「融资轮次 12/30 未披露」）也是缺口，显式列出。
+
+禁止：静默丢项、把失败对象从表里抹掉、用「大部分完成」代替 x/N。`,
+    basePath: '',
+    allowedTools: ['spawn_agent', 'collect_agent', 'Read', 'Write', 'WebSearch', 'WebFetch', 'TaskManager'],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'builtin',
+    loaded: true,
+  },
+  {
+    name: 'self-awareness',
+    description: '自我认知：当用户问你是谁、你能做什么、你记得我什么、你帮我做过什么、连了哪些服务、有哪些技能、遵守什么规则时使用——先现场重查记忆、技能、连接器、定时任务和近期产物再作答，查不到的直说缺，区分事实与推断，不凭印象编。',
+    aliases: ['自我认知', '你是谁', '你能做什么', '你记得我什么', '你帮我做过什么', 'self awareness'],
+    promptContent: `# 自我认知
+
+回答关于「我」的问题，先现场重查，再作答。禁止凭训练记忆或上一轮的印象直接回答。
+
+## 触发的问题
+
+你是谁 / 你能做什么 / 你记得我什么 / 你帮我做过什么 / 连了哪些服务 / 有哪些技能 / 遵守什么规则。
+
+## 现场重查清单
+
+按问题类别选查法，工具名都是真实注册名：
+
+- 记得我什么（记忆）：MemoryRead 读具体记忆文件（系统提示里的 INDEX.md 列了有哪些）；memory_search 按关键词检索记忆。
+- 帮你做过什么（历史）：History 检索过往会话原文（search 找命中，around 取上下文）。
+- 技能 / 连接器 / 定时任务 / 近期产物 / 协作空间：space_list 列出协作空间，space_query 读单个空间的成员、技能、连接器、自动化、近期活动和产物聚合。
+- 遵守什么规则 / 本机事实（配置、目录、版本）：Read / Glob / Grep 查实际文件（CLAUDE.md、配置文件），不猜。
+
+## 回答规则
+
+1. 每次都重新查。上次查过不算数——记忆、连接器、技能状态可能已经变了。
+2. 查不到就直说缺什么，不用推测补齐，不编造条目。
+3. 区分「查到的事实」与「推断」：事实注明来源（哪个记忆文件、哪次会话、哪个空间），推断明说是推断。
+4. 能力问答按用户的生活/工作领域组织（工作、项目、家庭、兴趣……），不要平铺工具清单。
+5. 只答所问。不顺带推销连接新服务、安装新技能或改配置。`,
+    basePath: '',
+    allowedTools: ['MemoryRead', 'memory_search', 'History', 'space_list', 'space_query', 'Read', 'Glob', 'Grep'],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'builtin',
+    loaded: true,
+  },
+  {
     name: 'implementation-closure',
     description: '实现闭环：用于已进入代码实现、修 bug、迁移、收尾、测试补齐或回归验证的任务。强调读代码后再改、保护脏 worktree、最小必要改动、跑测试/类型检查/构建/回读验证，不停在方案。',
     aliases: ['实现闭环', '修复并验证', '最小改动', 'typecheck', 'regression', 'smoke test'],
@@ -3044,7 +3119,9 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   dream: 'development',
   distill: 'development',
   'task-brief-builder': 'automation',
+  'self-awareness': 'automation',
   'research-brief-and-split': 'research',
+  'batch-research': 'research',
   'implementation-closure': 'development',
   'reviewer-facing-delivery': 'docs-office',
   // 数据分析

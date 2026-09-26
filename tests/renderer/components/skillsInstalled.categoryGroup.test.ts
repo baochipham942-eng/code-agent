@@ -91,9 +91,9 @@ describe('内置 skill 分类回填（builtinSkills.ts SSoT）', () => {
       'docs-office': 4, // xlsx, meeting-summary, reviewer-facing-delivery + E1 明镜 internal-comms
       'data-analysis': 2, // data-cleaning, data-analysis-helper
       product: 3, // E1 牧之：requirement-elicitation, prd-authoring, review-prep
-      research: 9, // literature-review, paper-distillation, research-monitor, opencli-search, research-brief-and-split + E1 溯真 4（competitor-teardown/multi-source-verification/industry-scan/user-research-synthesis）
+      research: 10, // literature-review, paper-distillation, research-monitor, opencli-search, research-brief-and-split, batch-research + E1 溯真 4（competitor-teardown/multi-source-verification/industry-scan/user-research-synthesis）
       'content-marketing': 5, // E1 青禾：topic-to-draft, xhs-post-crafting, deck-outline, copywriting, notes-humanizer
-      automation: 11, // computer-housekeeper, contract-review, image-ocr-search, photo-archive, create-role, create-team, edit-role, task-brief-builder + E1 明镜 3（weekly-report-synthesis/project-retro/monthly-review）
+      automation: 12, // computer-housekeeper, contract-review, image-ocr-search, photo-archive, create-role, create-team, edit-role, task-brief-builder, self-awareness + E1 明镜 3（weekly-report-synthesis/project-retro/monthly-review）
       development: 16, // commit, review, test, explain, refactor, docker, dream, distill + 方法论 7（brainstorm/tdd/debug/verify/merge/work-review/implementation-closure）+ E1 牧之 brainstorming
     });
   });

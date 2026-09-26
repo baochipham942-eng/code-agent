@@ -303,6 +303,12 @@ export interface InputRedirectReceiptMetadata {
 }
 
 export interface MessageMetadata {
+  /**
+   * Marks a role:user message injected into an active run by runtime steer.
+   * The message remains visible and durable, but does not start a new turn
+   * when checking whether that run produced a reply.
+   */
+  runtimeSteer?: true;
   /** Sticky provenance for automatic memory; never grants or denies explicit MemoryWrite. */
   memoryTainted?: boolean;
   /**

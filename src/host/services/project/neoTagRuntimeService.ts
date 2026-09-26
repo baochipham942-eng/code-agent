@@ -6,7 +6,6 @@ import {
   isTerminalAgentError,
 } from '../../../shared/utils/agentErrorClassification';
 import { TASK_QUEUE_TIMEOUTS } from '../../../shared/constants';
-import { hasVisibleAssistantTextAfterLastUser } from '../../agent/runtime/runFinalizer';
 import type {
   CreateNeoWorkCardDraftInput,
   NeoTagRunContext,
@@ -328,6 +327,26 @@ function observeNeoTagRunTerminalEvents(
  * 全量（orchestrator 不可用时的兜底）。两处都找不到锚点 user 消息 = 没有证据，
  * 宁可失败不可冒充完成。
  */
+function hasVisibleAssistantReplyWithinTurn(messages: Message[]): boolean {
+  let hasVisibleReply = false;
+  for (let index = 1; index < messages.length; index += 1) {
+    const message = messages[index];
+    // 普通用户追发消息开启下一轮；steer 和 skill 注入消息仍属于当前运行。
+    if (message.role === 'user') {
+      if (message.metadata?.runtimeSteer === true) {
+        // steer 前的进度文本不能冒充对最新 steer 的最终回复。
+        hasVisibleReply = false;
+        continue;
+      }
+      if (message.source === 'skill') continue;
+      return hasVisibleReply;
+    }
+    if (message.role !== 'assistant') continue;
+    if (typeof message.content === 'string' && message.content.trim().length > 0) hasVisibleReply = true;
+  }
+  return hasVisibleReply;
+}
+
 async function runProducedVisibleReply(
   taskManager: NeoTagTaskManager,
   conversationId: string,
@@ -338,7 +357,7 @@ async function runProducedVisibleReply(
       (message) => message.id === roundTurnId && message.role === 'user',
     );
     if (anchorIndex < 0) return null;
-    return hasVisibleAssistantTextAfterLastUser(messages.slice(anchorIndex));
+    return hasVisibleAssistantReplyWithinTurn(messages.slice(anchorIndex));
   };
 
   const orchestrator = taskManager.getOrCreateCurrentOrchestrator?.(conversationId);

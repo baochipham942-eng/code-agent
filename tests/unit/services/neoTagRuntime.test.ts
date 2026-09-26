@@ -1020,6 +1020,57 @@ describe('Neo Tag runtime helpers', () => {
     expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
   });
 
+  it('终态契约：回复落库后用户追发新消息，仍按锚点确认本轮有正向证据', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => {
+          sessionMessages.push(
+            { id: 'msg_source', role: 'user', content: '@neo 干活', timestamp: 1 },
+            { id: 'assistant_ok', role: 'assistant', content: '做完了，产物如下。', timestamp: 2 },
+            { id: 'msg_followup', role: 'user', content: '再补一句说明', timestamp: 3 },
+          );
+        }),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+      },
+    });
+
+    expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
+  });
+
+  it('终态契约：skill 注入的 user 消息不截断本轮最终回复', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => {
+          sessionMessages.push(
+            { id: 'msg_source', role: 'user', content: '@neo 干活', timestamp: 1 },
+            { id: 'assistant_tool', role: 'assistant', content: '', timestamp: 2 },
+            { id: 'skill_status', role: 'user', content: 'Loading skill', timestamp: 3, source: 'skill' },
+            {
+              id: 'skill_instructions',
+              role: 'user',
+              content: 'Skill instructions',
+              timestamp: 4,
+              isMeta: true,
+              source: 'skill',
+            },
+            { id: 'assistant_ok', role: 'assistant', content: '技能执行完成，结果如下。', timestamp: 5 },
+          );
+        }),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+      },
+    });
+
+    expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
+  });
+
   it('终态契约：只有工具输出没有正文（几百行文件清单收尾）不算正向证据', async () => {
     const h = terminalHarness();
     await launchApprovedNeoWorkCard({
@@ -1204,8 +1255,15 @@ describe('Neo Tag runtime helpers', () => {
             // 转向前只有工具调用、无正文
             { id: 'assistant_tool', role: 'assistant', content: '', timestamp: 2 },
             // 运行中用户补话：injectSteerMessage 以 role:'user' 推进同一轮 history
-            { id: 'msg_steer', role: 'user', content: '顺便把标题也改了', timestamp: 3 },
+            {
+              id: 'msg_steer',
+              role: 'user',
+              content: '顺便把标题也改了',
+              timestamp: 3,
+              metadata: { runtimeSteer: true },
+            },
             { id: 'assistant_ok', role: 'assistant', content: '做完了，标题也改了。', timestamp: 4 },
+            { id: 'msg_followup', role: 'user', content: '再补一句说明', timestamp: 5 },
           );
         }),
         getSessionState: vi.fn(() => ({ status: 'idle' })),
@@ -1214,6 +1272,41 @@ describe('Neo Tag runtime helpers', () => {
 
     // 截到「下一条 user」为止的窗口版会漏掉转向后的回复 → failed；应为 in_result_review
     expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
+  });
+
+  it('终态契约：转向前的进度文本不能冒充转向后的最终回复', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => {
+          sessionMessages.push(
+            { id: 'msg_source', role: 'user', content: '@neo 干活', timestamp: 1 },
+            {
+              id: 'assistant_progress',
+              role: 'assistant',
+              content: '开始处理了。',
+              timestamp: 2,
+              toolCalls: [{ id: 'tc_progress', name: 'list_files', arguments: {} } as never],
+            },
+            {
+              id: 'msg_steer',
+              role: 'user',
+              content: '改成另一种方案',
+              timestamp: 3,
+              metadata: { runtimeSteer: true },
+            },
+            { id: 'assistant_empty', role: 'assistant', content: '', timestamp: 4 },
+          );
+        }),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+      },
+    });
+
+    expect(h.statuses.at(-1)).toBe('failed');
+    expect(h.blockedReasons.at(-1)).toContain('没有生成最终回复');
   });
 
   it('returns an empty changedFiles result when no approved files actually change', async () => {

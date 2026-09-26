@@ -38,6 +38,15 @@ function toStepStatus(task: SessionTask): TaskStepStatus {
   if (task.status === 'completed') return 'completed';
   if (task.status === 'in_progress') return 'in_progress';
   if (task.status === 'cancelled') return 'skipped';
+  // 步态没有 needs_decision / user_action。blocked 是已有最接近的等待/阻塞态：
+  // 工作没做完、卡在外部或等用户，桌面恢复计划里不能显示成还没开始的 pending。
+  if (
+    task.status === 'blocked'
+    || task.status === 'needs_decision'
+    || task.status === 'user_action'
+  ) {
+    return 'blocked';
+  }
   return 'pending';
 }
 
@@ -45,6 +54,9 @@ function computePhaseStatus(steps: TaskStep[]): TaskPhaseStatus {
   if (steps.length === 0) return 'pending';
   if (steps.every((step) => step.status === 'completed' || step.status === 'skipped')) {
     return 'completed';
+  }
+  if (steps.some((step) => step.status === 'blocked')) {
+    return 'blocked';
   }
   if (steps.some((step) => step.status === 'in_progress')) {
     return 'in_progress';
@@ -63,6 +75,7 @@ function buildPhaseStep(task: SessionTask): TaskStep {
       sourceKind: 'activity_todo_candidate',
       desktopTodoKey: getDesktopTaskKey(task) || task.id,
       sourceTaskId: task.id,
+      sessionTaskStatus: task.status,
     },
   };
 }
@@ -176,6 +189,7 @@ export async function syncDesktopTasksToPlanningService(
             sourceKind: 'activity_todo_candidate',
             desktopTodoKey: getDesktopTaskKey(task) || task.id,
             sourceTaskId: task.id,
+            sessionTaskStatus: task.status,
           },
         });
         addedSteps.push(task.subject);

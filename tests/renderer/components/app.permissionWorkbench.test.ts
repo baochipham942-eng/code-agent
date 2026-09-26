@@ -1,11 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { isOpenTaskStatus } from '../../../src/shared/contract/planning';
 
 const appPath = path.resolve(process.cwd(), 'src/renderer/App.tsx');
 const appSource = fs.readFileSync(appPath, 'utf8');
 
 describe('App task workbench auto reveal', () => {
+  it('只有 needs_decision 任务时面板判定为应展开', () => {
+    expect(appSource).toContain('isOpenTaskStatus');
+    expect(appSource).toContain('hasOpenSessionTask = sessionTasks.some((task) => isOpenTaskStatus(task.status))');
+    expect(appSource).toContain('.filter((task) => isOpenTaskStatus(task.status))');
+    expect(isOpenTaskStatus('needs_decision')).toBe(true);
+    expect(isOpenTaskStatus('user_action')).toBe(true);
+    expect(isOpenTaskStatus('pending')).toBe(true);
+    expect(isOpenTaskStatus('completed')).toBe(false);
+    expect(isOpenTaskStatus('cancelled')).toBe(false);
+    expect([{ status: 'needs_decision' as const }].some((task) => isOpenTaskStatus(task.status))).toBe(true);
+    expect([{ status: 'completed' as const }].some((task) => isOpenTaskStatus(task.status))).toBe(false);
+  });
+
   it('待决或排队权限不再构成右栏自动打开信号', () => {
     const start = appSource.indexOf('const hasTaskWorkbenchContent = (');
     const end = appSource.indexOf('\n  );', start);

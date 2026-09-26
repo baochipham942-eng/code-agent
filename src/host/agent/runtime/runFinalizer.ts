@@ -36,7 +36,11 @@ import type {
   AgentLoopConfig,
 } from '../../agent/loopTypes';
 import { getIncompleteTasks } from '../../services/planning/taskStore';
-import { formatUnresolvedTaskList } from '../../../shared/contract/planning';
+import {
+  applyUnresolvedTaskTurnGate,
+  formatUnresolvedTaskList,
+  isUnresolvedTurnTaskStatus,
+} from '../../../shared/contract/planning';
 import {
   parseTodos,
   extractPlanTitle,
@@ -566,20 +570,25 @@ export class RunFinalizer {
     // 对标 Claude Code：模型返回 text response 即视为完成，不覆盖模型的判断
     // auto-parsed todos 误报率高（编号列表/建议性文本被误识别），不作为完成度依据
     const incompleteFinalTasks = getIncompleteTasks(this.ctx.sessionId);
+    const unresolvedFinalTasks = incompleteFinalTasks.filter((task) => (
+      isUnresolvedTurnTaskStatus(task.status)
+    ));
+    const gated = applyUnresolvedTaskTurnGate('self_claimed', [], unresolvedFinalTasks);
 
-    if (incompleteFinalTasks.length > 0) {
-      const allDetails = formatUnresolvedTaskList(incompleteFinalTasks);
+    if (unresolvedFinalTasks.length > 0) {
+      const allDetails = formatUnresolvedTaskList(unresolvedFinalTasks);
 
-      logger.warn(`[AgentLoop] Agent completing with ${incompleteFinalTasks.length} incomplete task(s):\n${allDetails}`);
+      logger.warn(`[AgentLoop] Agent completing with ${unresolvedFinalTasks.length} incomplete task(s):\n${allDetails}`);
       logCollector.agent('WARN', `Agent completing with incomplete tasks`, {
-        incompleteCount: incompleteFinalTasks.length,
-        incompleteTasks: incompleteFinalTasks.map(t => ({ id: t.id, subject: t.subject, status: t.status })),
+        incompleteCount: unresolvedFinalTasks.length,
+        incompleteTasks: unresolvedFinalTasks.map(t => ({ id: t.id, subject: t.subject, status: t.status })),
+        evidenceProblems: gated.evidenceProblems,
       });
 
       await this.persistTerminalMessage({
         id: this.messageWriter.generateId(),
         role: 'system',
-        content: `⚠️ ${incompleteFinalTasks.length} 个显式任务未完成\n${allDetails}`,
+        content: `⚠️ ${unresolvedFinalTasks.length} 个显式任务未完成\n${allDetails}`,
         timestamp: Date.now(),
         metadata: {
           agentRecoveryNotice: { kind: 'unresolved_tasks' },

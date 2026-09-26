@@ -393,11 +393,32 @@ describe('NudgeManager', () => {
         toolsUsedInTurn: ['TaskManager'],
       });
 
-      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      expect(manager.runNudgeChecks(ctx)).toBe(false);
       const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
       expect(injectedMessage).toContain('等用户');
       expect(injectedMessage).toContain('needs_decision');
       expect(injectedMessage).not.toContain('MUST finish the items you can still do');
+    });
+
+    it('does not re-enter when every remaining task is waiting on the user', () => {
+      manager.reset([], '帮我订酒店', '/tmp/test', []);
+      manager.recordTaskManagerUse();
+      mockGetIncompleteTasks.mockReturnValue([{
+        id: 't1',
+        subject: '选择酒店方案',
+        status: 'needs_decision',
+        blockedReason: '在两家酒店间选',
+      }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['TaskManager'],
+      });
+
+      expect(manager.runNudgeChecks(ctx)).toBe(false);
+      expect(manager.runNudgeChecks(ctx)).toBe(false);
+      expect(manager.runNudgeChecks(ctx)).toBe(false);
+      expect(ctx.injectSystemMessage).toHaveBeenCalledTimes(1);
     });
 
     it('allows up to 3 reentries for open tasks then lets the model stop (MiMo main cap)', () => {

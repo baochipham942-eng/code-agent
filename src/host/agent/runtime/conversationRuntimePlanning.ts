@@ -26,7 +26,9 @@ export function todosFromPlan(plan: TaskPlan): TodoItem[] {
       content: step.content,
       status: step.status === 'completed' || step.status === 'skipped'
         ? 'completed'
-        : step.status,
+        : step.status === 'in_progress'
+          ? 'in_progress'
+          : 'pending',
       activeForm: step.activeForm || step.content,
     })),
   );

@@ -704,4 +704,84 @@ describe('turn outcome stamp', () => {
       clearTasks(sessionId);
     }
   });
+
+  it('still verifies when a leftover blocked task was not touched this run', async () => {
+    const sessionId = 'session-leftover-blocked';
+    clearTasks(sessionId);
+    const leftover = createTask(sessionId, { subject: '等权限', description: '上一轮卡住' });
+    updateTask(sessionId, leftover.id, {
+      status: 'blocked',
+      blockedReason: '还没拿到登录',
+    });
+    const recorder = new TurnTraceRecorder('leftover-blocked', traceRoot);
+    const verifiedSummary = summary({
+      verificationEvidence: [{
+        kind: 'command',
+        toolCallId: 'test-ok',
+        command: 'npm test',
+        success: true,
+        exitCode: 0,
+      }],
+    });
+    try {
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        verifiedSummary,
+      );
+      expect(latestOutcome(recorder).verdict).toBe('self_claimed');
+
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        verifiedSummary,
+      );
+      const outcome = latestOutcome(recorder);
+      expect(outcome.verdict).toBe('verified');
+      expect(outcome.evidenceProblems ?? []).toEqual([]);
+    } finally {
+      clearTasks(sessionId);
+    }
+  });
+
+  it('refuses verified when this run created a needs_decision task', async () => {
+    const sessionId = 'session-this-run-decision';
+    clearTasks(sessionId);
+    const recorder = new TurnTraceRecorder('this-run-decision', traceRoot);
+    const verifiedSummary = summary({
+      verificationEvidence: [{
+        kind: 'command',
+        toolCallId: 'test-ok',
+        command: 'npm test',
+        success: true,
+        exitCode: 0,
+      }],
+    });
+    try {
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        verifiedSummary,
+      );
+      expect(latestOutcome(recorder).verdict).toBe('verified');
+
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      const task = createTask(sessionId, { subject: '选择酒店方案', description: 'A 还是 B' });
+      updateTask(sessionId, task.id, {
+        status: 'needs_decision',
+        blockedReason: '在两家酒店间选',
+      });
+      await recordTurnOutcomeStamp(
+        { ...context(recorder), sessionId },
+        'completed',
+        verifiedSummary,
+      );
+      const outcome = latestOutcome(recorder);
+      expect(outcome.verdict).not.toBe('verified');
+      expect(outcome.verdict).toBe('self_claimed');
+      expect(outcome.evidenceProblems?.join('\n')).toContain('选择酒店方案');
+    } finally {
+      clearTasks(sessionId);
+    }
+  });
 });

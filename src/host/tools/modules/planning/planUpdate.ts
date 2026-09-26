@@ -51,6 +51,7 @@ const VALID_STATUSES: readonly TaskStepStatus[] = [
 function computeWorkspacePhaseStatus(steps: TaskStep[]): TaskPhaseStatus {
   if (steps.length === 0) return 'pending';
   if (steps.every((s) => s.status === 'completed' || s.status === 'skipped')) return 'completed';
+  if (steps.some((s) => s.status === 'blocked')) return 'blocked';
   if (steps.some((s) => s.status === 'in_progress')) return 'in_progress';
   return 'pending';
 }
@@ -252,6 +253,7 @@ export async function executePlanUpdate(
       in_progress: '◐',
       completed: '●',
       skipped: '⊘',
+      blocked: '✖',
     }[status];
 
     let output = `Step updated: ${statusIcon} ${foundStep.content}\n`;

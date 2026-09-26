@@ -11,10 +11,13 @@ import type {
   SessionTaskEventKind,
 } from '../../../shared/contract/planning';
 import {
+  isClosedTaskStatus,
   isUnresolvedTurnTaskStatus,
   statusRequiresWaitReason,
 } from '../../../shared/contract/planning';
 import { createLogger } from '../infra/logger';
+
+export { isClosedTaskStatus };
 import { getDatabase } from '../core/databaseService';
 
 const logger = createLogger('TaskStore');
@@ -419,10 +422,6 @@ export function listTasks(sessionId: string): SessionTask[] {
   return Array.from(taskMap.values());
 }
 
-export function isClosedTaskStatus(status: SessionTaskStatus): boolean {
-  return status === 'completed' || status === 'cancelled';
-}
-
 /**
  * 启动失败的台账回收：run 没起来就没有「正在进行」的工作——in_progress 全部退回
  * pending（completed/cancelled 等终态不动，那是真实发生过的工作）。返回回收后的
@@ -454,6 +453,16 @@ export function getIncompleteTasks(sessionId: string): SessionTask[] {
 /** 本轮不许盖 verified 的显式任务：needs_decision / user_action / blocked / in_progress */
 export function listUnresolvedTurnTasks(sessionId: string): SessionTask[] {
   return listTasks(sessionId).filter((task) => isUnresolvedTurnTaskStatus(task.status));
+}
+
+/** 本 run 内创建或更新过的未决任务。上一轮遗留的 blocked/in_progress 不算。 */
+export function listUnresolvedTurnTasksTouchedSince(
+  sessionId: string,
+  sinceTs: number,
+): SessionTask[] {
+  return listUnresolvedTurnTasks(sessionId).filter(
+    (task) => Math.max(task.createdAt, task.updatedAt) > sinceTs,
+  );
 }
 
 /**

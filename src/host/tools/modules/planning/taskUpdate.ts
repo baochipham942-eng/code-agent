@@ -218,7 +218,11 @@ export async function executeTaskUpdate(
   const changes: string[] = [];
   if (args.status !== undefined) changes.push(`status → ${args.status}`);
   if (evidence.updates.evidenceRefs?.length) changes.push('completion evidence recorded');
-  if (args.status === 'blocked' || args.status === 'needs_decision' || args.status === 'user_action') {
+  if (args.status === 'needs_decision') {
+    changes.push('decision reason recorded');
+  } else if (args.status === 'user_action') {
+    changes.push('user-action reason recorded');
+  } else if (args.status === 'blocked') {
     changes.push('blocked reason recorded');
   }
   if (args.subject !== undefined) changes.push(`subject updated`);

@@ -517,10 +517,13 @@ export class PlanManager {
     const allCompleted = phase.steps.every(
       (s) => s.status === 'completed' || s.status === 'skipped'
     );
+    const anyBlocked = phase.steps.some((s) => s.status === 'blocked');
     const anyInProgress = phase.steps.some((s) => s.status === 'in_progress');
 
     if (allCompleted && phase.steps.length > 0) {
       phase.status = 'completed';
+    } else if (anyBlocked) {
+      phase.status = 'blocked';
     } else if (anyInProgress) {
       phase.status = 'in_progress';
     }

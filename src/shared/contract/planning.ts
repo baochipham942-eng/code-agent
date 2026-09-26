@@ -50,6 +50,16 @@ export function isUnresolvedTurnTaskStatus(
   return (UNRESOLVED_TURN_TASK_STATUSES as readonly string[]).includes(status);
 }
 
+/** 已收口：完成或主动放弃。其余五态都还开着。 */
+export function isClosedTaskStatus(status: SessionTaskStatus): boolean {
+  return status === 'completed' || status === 'cancelled';
+}
+
+/** 未收口/活跃：pending、in_progress、blocked、needs_decision、user_action */
+export function isOpenTaskStatus(status: SessionTaskStatus): boolean {
+  return !isClosedTaskStatus(status);
+}
+
 /** blocked / needs_decision / user_action 都必须带一句可展示的原因 */
 export function statusRequiresWaitReason(status: unknown): boolean {
   return status === 'blocked' || status === 'needs_decision' || status === 'user_action';
@@ -244,7 +254,7 @@ export function formatUnresolvedTaskList(tasks: readonly UnresolvedTaskLineInput
 
 /**
  * 未决任务硬门：needs_decision / user_action / blocked / in_progress 存在时不许盖 verified。
- * 未决清单写入 evidenceProblems，供 stamp 与 runFinalizer 共用同一份结果。
+ * 未决清单写入 evidenceProblems。stamp 与 runFinalizer 都走这个函数，清单口径一致。
  */
 export function applyUnresolvedTaskTurnGate(
   verdict: 'verified' | 'self_claimed' | 'n_a',
@@ -263,7 +273,7 @@ export function applyUnresolvedTaskTurnGate(
 }
 
 // Task Plan Types
-export type TaskStepStatus = 'pending' | 'in_progress' | 'completed' | 'skipped';
+export type TaskStepStatus = 'pending' | 'in_progress' | 'completed' | 'skipped' | 'blocked';
 export type TaskPhaseStatus = 'pending' | 'in_progress' | 'completed' | 'blocked';
 
 export interface TaskStep {

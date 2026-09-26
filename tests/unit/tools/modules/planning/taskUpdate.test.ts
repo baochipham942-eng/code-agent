@@ -211,6 +211,27 @@ describe('task_update behavior', () => {
     }));
   });
 
+  it('needs_decision 回写 decision reason recorded 而不是 blocked reason', async () => {
+    getTaskMock.mockReturnValue({ id: '1', subject: '选酒店', status: 'pending' });
+    updateTaskMock.mockReturnValue({
+      id: '1',
+      subject: '选酒店',
+      status: 'needs_decision',
+      blockedReason: '在两家酒店间选',
+    });
+    const handler = await taskUpdateModule.createHandler();
+    const result = await handler.execute(
+      { taskId: '1', status: 'needs_decision', blockedReason: '在两家酒店间选' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('decision reason recorded');
+      expect(result.output).not.toContain('blocked reason recorded');
+    }
+  });
+
   it('status="cancelled" → updated task stays visible', async () => {
     getTaskMock.mockReturnValue({ id: '1', subject: 'X', status: 'pending' });
     updateTaskMock.mockReturnValue({ id: '1', subject: 'X', status: 'cancelled' });

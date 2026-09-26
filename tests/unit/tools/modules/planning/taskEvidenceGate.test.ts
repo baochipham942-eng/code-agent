@@ -37,6 +37,8 @@ import {
   applyUnresolvedTaskTurnGate,
   formatUnresolvedTaskLine,
   formatUnresolvedTaskList,
+  isClosedTaskStatus,
+  isOpenTaskStatus,
   isUnresolvedTurnTaskStatus,
   statusRequiresWaitReason,
   validateTaskStatusEvidence,
@@ -340,6 +342,18 @@ describe('unresolved turn task helpers', () => {
     expect(isUnresolvedTurnTaskStatus('pending')).toBe(false);
     expect(isUnresolvedTurnTaskStatus('completed')).toBe(false);
     expect(isUnresolvedTurnTaskStatus('cancelled')).toBe(false);
+  });
+
+  it('treats needs_decision and user_action as open workbench tasks', () => {
+    expect(isOpenTaskStatus('needs_decision')).toBe(true);
+    expect(isOpenTaskStatus('user_action')).toBe(true);
+    expect(isOpenTaskStatus('pending')).toBe(true);
+    expect(isOpenTaskStatus('blocked')).toBe(true);
+    expect(isOpenTaskStatus('in_progress')).toBe(true);
+    expect(isClosedTaskStatus('completed')).toBe(true);
+    expect(isClosedTaskStatus('cancelled')).toBe(true);
+    expect(isOpenTaskStatus('completed')).toBe(false);
+    expect(isOpenTaskStatus('cancelled')).toBe(false);
   });
 
   it('requires a wait reason for blocked, needs_decision, and user_action', () => {

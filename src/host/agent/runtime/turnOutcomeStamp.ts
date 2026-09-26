@@ -17,7 +17,7 @@ import type { RuntimeContext } from './runtimeContext';
 import type { RunTerminalStatus } from './runTerminalStatus';
 import type { TraceEvent, TraceEventDataMap, TurnTraceRecorder } from './turnTrace';
 import { applyUnresolvedTaskTurnGate } from '../../../shared/contract/planning';
-import { listUnresolvedTurnTasks } from '../../services/planning/taskStore';
+import { listUnresolvedTurnTasksTouchedSince } from '../../services/planning/taskStore';
 
 const logger = createLogger('TurnOutcomeStamp');
 
@@ -173,6 +173,14 @@ function currentRunEvents(events: readonly TraceEvent[]): readonly TraceEvent[] 
   return events;
 }
 
+/** 上一枚 turn_outcome 的时间即本 run 起点；没有上一枚就是会话第一 run（since=0）。 */
+function currentRunStartedAt(events: readonly TraceEvent[]): number {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index].type === 'turn_outcome') return events[index].ts;
+  }
+  return 0;
+}
+
 function latestGoalEvidence(events: readonly TraceEvent[]): EvidenceRef[] {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
@@ -306,7 +314,10 @@ export async function recordTurnOutcomeStamp(
     const gated = applyUnresolvedTaskTurnGate(
       outcome.verdict,
       outcome.evidenceProblems,
-      listUnresolvedTurnTasks(ctx.sessionId),
+      listUnresolvedTurnTasksTouchedSince(
+        ctx.sessionId,
+        currentRunStartedAt(ctx.turnTrace.getEvents()),
+      ),
     );
     ctx.turnTrace.record('turn_outcome', {
       ...outcome,

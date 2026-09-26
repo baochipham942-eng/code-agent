@@ -35,7 +35,7 @@ import {
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
-import { activateMaxStepsFinalResponse, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
+import { activateMaxStepsFinalResponse, bindGoalWallClock, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
 import { DoomLoopGuard } from './doomLoopGuard';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
@@ -346,7 +346,8 @@ export class ConversationRuntime {
     let iterations = 0;
     let softValidationRetries = 0;
     let resourceFinalAttempted = false;
-    const warnResources = createResourceWarning(this.ctx, (text, source) => this.contextAssembly.injectSystemMessage(text, source));
+    const wallClock = bindGoalWallClock(this.ctx.goalMode?.getWallClockBudgetMs(), () => this.ctx.stats.runStartTime, this.ctx.sessionId);
+    const warnResources = createResourceWarning(this.ctx, (text, source) => this.contextAssembly.injectSystemMessage(text, source), wallClock.getElapsedMs);
     let userTurnId: string | undefined;
     let terminal: RunTerminalInfo = { status: 'completed' };
     let runError: unknown;
@@ -406,8 +407,8 @@ export class ConversationRuntime {
           const tokensUsed = this.ctx.stats.totalInputTokens + this.ctx.stats.totalOutputTokens;
           const tokensUsedWithSwarm = goalTokensUsedWithSwarm(this.ctx);
           // 观测事件：每轮 goal 进度态（UI 用）
-          // 墙钟已用时间（①）：以 run 起点为基准；闸3 与 UI 剩余时间共用。
-          const elapsedMs = Date.now() - this.ctx.stats.runStartTime;
+          // 墙钟已用时间：TimeoutController 订阅人等待时钟，审批/AskUser 区间不计。
+          const elapsedMs = wallClock.getElapsedMs();
           this.ctx.onEvent({
             type: 'goal_iteration',
             data: {
@@ -751,6 +752,7 @@ export class ConversationRuntime {
       runError = error;
       await persistFailedRunContinuationContext(this.contextAssembly, userMessage, iterations, error);
     } finally {
+      wallClock.release();
       if (baseRunTraceContext) enterRunTraceContext(baseRunTraceContext);
       this.ctx.control.markSettled();
       // forced-final 是 per-run 语义：正常路径由 handleTextResponse 在产出最终

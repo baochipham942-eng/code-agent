@@ -210,6 +210,7 @@ export class SubagentExecutor {
       agentName: config.name,
       timeoutMs: timeout,
       parentSignal: context.abortSignal,
+      sessionId: context.sessionId,
       onIdleNudge: () => doomLoopGuard.queueIdleNudge(),
       onIdleTimeout: (idle) => logger.warn(`[${config.name}] idle ${idle}ms exceeded the active watchdog grade; cancelling`),
     });

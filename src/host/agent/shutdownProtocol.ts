@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import { createHumanWaitBoundTimeout } from '../services/infra/timeoutController';
 
 const logger = createLogger('ShutdownProtocol');
 
@@ -119,18 +120,25 @@ export async function initiateShutdown(
  */
 export function createTimedAbortController(
   timeoutMs: number,
-  options?: ShutdownOptions
+  options?: ShutdownOptions & { sessionId?: string }
 ): { controller: AbortController; cleanup: () => void } {
   const controller = new AbortController();
-
-  const timer = setTimeout(() => {
+  const bound = createHumanWaitBoundTimeout(
+    timeoutMs,
+    `[${options?.label || 'agent'}] Timeout reached (${timeoutMs}ms)`,
+    options?.sessionId,
+  );
+  void bound.promise.catch(() => {
     if (!controller.signal.aborted) {
       logger.info(`[${options?.label || 'agent'}] Timeout reached (${timeoutMs}ms), aborting`);
       controller.abort('timeout');
     }
-  }, timeoutMs);
+  });
 
-  const cleanup = () => clearTimeout(timer);
+  const cleanup = () => {
+    bound.unbind();
+    bound.controller.clear();
+  };
 
   return { controller, cleanup };
 }

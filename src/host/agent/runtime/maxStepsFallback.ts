@@ -10,6 +10,7 @@
 import { getBudgetService } from '../../services';
 import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
 import { createLogger } from '../../services/infra/logger';
+import { createHumanWaitBoundTimeout } from '../../services/infra/timeoutController';
 import type { Message } from '../../../shared/contract';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
@@ -151,7 +152,32 @@ export async function ensureMaxStepsWrapUp(
 }
 
 
-export function createResourceWarning(ctx: RuntimeContext, inject: (text: string, source: ContextInjectionSource) => void): () => void {
+export function bindGoalWallClock(budgetMs: number | undefined, runStartTime: () => number, sessionId?: string): {
+  getElapsedMs: () => number;
+  release: () => void;
+} {
+  if (budgetMs === undefined) {
+    return {
+      getElapsedMs: () => Date.now() - runStartTime(),
+      release: () => {},
+    };
+  }
+  // ponytail: 墙钟从 bind 那一刻起算，不含 initializeRun 到 bind 的差值（通常毫秒级）。
+  const wallClock = createHumanWaitBoundTimeout(budgetMs, 'goal wall-clock budget', sessionId);
+  return {
+    getElapsedMs: () => wallClock.controller.getElapsedMs(),
+    release: () => {
+      wallClock.unbind();
+      wallClock.controller.clear();
+    },
+  };
+}
+
+export function createResourceWarning(
+  ctx: RuntimeContext,
+  inject: (text: string, source: ContextInjectionSource) => void,
+  getElapsedMs: () => number = () => Date.now() - ctx.stats.runStartTime,
+): () => void {
   let emitted = false;
   return () => {
     if (emitted || ctx.control.forceFinalResponseReason) return;
@@ -159,7 +185,7 @@ export function createResourceWarning(ctx: RuntimeContext, inject: (text: string
     const wallBudget = goal?.getWallClockBudgetMs();
     const nearLimit = getBudgetService(ctx.budgetScope).checkBudget().usagePercentage >= 0.8
       || (goal && goalTokensUsedWithSwarm(ctx) >= goal.getTokenBudget() * 0.8)
-      || (wallBudget && Date.now() - ctx.stats.runStartTime >= wallBudget * 0.8);
+      || (wallBudget && getElapsedMs() >= wallBudget * 0.8);
     if (!nearLimit) return;
     inject('Resource budget is at least 80% used. Wrap up current work, preserve partial results, and prepare a summary of completed work, remaining work, and next steps.', 'nudge');
     emitted = true;

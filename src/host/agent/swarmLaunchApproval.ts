@@ -111,7 +111,7 @@ export class SwarmLaunchApprovalGate {
     scope: SwarmRunScope;
     requestId?: string;
   }): Promise<SwarmLaunchApprovalResult> {
-    return withApprovalTrace('agent_team_launch', () => this.requestApprovalInternal(params));
+    return withApprovalTrace('agent_team_launch', () => this.requestApprovalInternal(params), params.scope.sessionId);
   }
 
   private autoApproveResult(

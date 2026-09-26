@@ -6,6 +6,7 @@ import {
   endApprovalWait,
   getApprovalWaitMs,
 } from '../../../src/host/tools/toolExecutionTelemetry';
+import { endHumanWait, isHumanWaitActive } from '../../../src/host/services/infra/timeoutController';
 import {
   getToolExecutionTimeoutMs,
   isToolExecutionOutcomeUnknown,
@@ -34,7 +35,13 @@ function makeWatchdog(toolName: string, toolCallId: string) {
 }
 
 describe('unified tool execution timeout policy', () => {
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    clearApprovalWait('approval-overlap-test');
+    clearApprovalWait('approval-pauses-clock');
+    clearApprovalWait('approval-seal-test');
+    while (isHumanWaitActive('session-tool-timeout')) endHumanWait('session-tool-timeout');
+  });
 
   it('leaves bash and interaction tools to their own boundaries', () => {
     expect(getToolExecutionTimeoutMs('bash')).toBeUndefined();

@@ -256,6 +256,7 @@ const agentLoopProbe = vi.hoisted(() => ({
     unattendedTurn?: boolean;
     toolExecutor?: { runContext?: { workspace?: string } };
     workspaceScope?: { primaryRoot: string };
+    onEvent?: (event: import('../../src/shared/contract').AgentEvent) => void;
   },
 }));
 const roleBoundaryProbe = vi.hoisted(() => vi.fn(() => null as null | {
@@ -494,6 +495,209 @@ describe('AgentOrchestrator', () => {
 
       expect(release).toHaveBeenCalledWith('session-ended');
       release.mockRestore();
+    });
+
+    it('primary durable run 失败也要 terminalDurable：不补会泄漏 active 记录，同会话下一条消息 409（N-CHAT-EMPTY-FINAL-NO-EXIT）', async () => {
+      const terminalDurable = vi.fn(async () => undefined);
+      const unregister = vi.fn();
+      const attach = vi.fn(async () => undefined);
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        terminalDurable,
+        unregister,
+        startDurable: vi.fn(async () => ({ attach })),
+      };
+      const durableOrchestrator = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      });
+      const run = durableOrchestrator as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: { runRegistration?: 'primary' | 'auxiliary'; disableAutoAgent?: boolean },
+        ) => Promise<void>;
+      };
+      // 真 runStandardAgentLoop 走完整注册链（startRunPreferringDurable→registry），
+      // AgentLoop.run（已 mock）抛错模拟 provider 失败。
+      agentLoopProbe.onRun = () => {
+        throw new Error('provider 401');
+      };
+
+      await expect(run.runNormalMode(
+        'hello',
+        () => undefined,
+        { provider: 'openai', model: 'gpt-4o' },
+        'session-durable-leak',
+        { runRegistration: 'primary', disableAutoAgent: true },
+      )).rejects.toThrow('provider 401');
+      agentLoopProbe.onRun = undefined;
+
+      // 失败收口：DB 侧 durable 记录必须 terminal，内存注册必须释放
+      expect(terminalDurable).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          status: 'failed',
+          reason: 'primary_run_failed',
+          event: expect.objectContaining({ type: 'run_failed' }),
+        }),
+        expect.anything(),
+      );
+      expect(unregister).toHaveBeenCalledWith(expect.any(String), expect.anything());
+    });
+
+    it('用户取消（AgentLoop 正常 resolve + agent_cancelled 事件）→ durable 终态记 cancelled 而非 completed（ai-review Important）', async () => {
+      const terminalDurable = vi.fn(async () => undefined);
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        terminalDurable,
+        unregister: vi.fn(),
+        startDurable: vi.fn(async () => ({ attach: vi.fn(async () => undefined) })),
+      };
+      const durableOrchestrator = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      });
+      const run = durableOrchestrator as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: { runRegistration?: 'primary' | 'auxiliary'; disableAutoAgent?: boolean },
+        ) => Promise<void>;
+      };
+      // 取消：run() 正常返回，但事件流里先经过 agent_cancelled（经 config.onEvent 注入）
+      agentLoopProbe.onRun = () => {
+        agentLoopProbe.lastConfig?.onEvent?.({ type: 'agent_cancelled', data: null });
+      };
+
+      await run.runNormalMode(
+        'hello',
+        () => undefined,
+        { provider: 'openai', model: 'gpt-4o' },
+        'session-durable-cancel',
+        { runRegistration: 'primary', disableAutoAgent: true },
+      );
+      agentLoopProbe.onRun = undefined;
+
+      expect(terminalDurable).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          status: 'cancelled',
+          reason: 'primary_run_cancelled',
+          event: expect.objectContaining({ type: 'run_cancelled' }),
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('空最终回复转失败（正常 resolve + 终态 error 事件）→ durable 记 failed 而非 completed（ai-review Important 二轮）', async () => {
+      const terminalDurable = vi.fn(async () => undefined);
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        terminalDurable,
+        unregister: vi.fn(),
+        startDurable: vi.fn(async () => ({ attach: vi.fn(async () => undefined) })),
+      };
+      const durableOrchestrator = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      });
+      const run = durableOrchestrator as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: { runRegistration?: 'primary' | 'auxiliary'; disableAutoAgent?: boolean },
+        ) => Promise<void>;
+      };
+      // runFinalizer 的形状：空最终回复 → 发终态 error（RUN_FAILED）后正常返回不抛
+      agentLoopProbe.onRun = () => {
+        agentLoopProbe.lastConfig?.onEvent?.({
+          type: 'error',
+          data: { message: '任务已结束，这一轮没有生成最终说明。', code: 'RUN_FAILED' },
+        });
+      };
+
+      await run.runNormalMode(
+        'hello',
+        () => undefined,
+        { provider: 'openai', model: 'gpt-4o' },
+        'session-durable-empty-reply',
+        { runRegistration: 'primary', disableAutoAgent: true },
+      );
+      agentLoopProbe.onRun = undefined;
+
+      expect(terminalDurable).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          status: 'failed',
+          reason: 'primary_run_failed',
+          event: expect.objectContaining({ type: 'run_failed' }),
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('durable 终态事件类型映射：run_completed/run_failed/run_cancelled + auxiliary_run_*，与 /api/run 主链既有命名一致（ai-review 三轮 Nit）', async () => {
+      // 消费方排查结论（证据档 R2）：RunEventAppend.type 是开放字符串（无 schema 门）、
+      // 恢复计划不读事件、/api/run 主链与 nativeRecoveryHost 早就在写同名事件——本测试
+      // 钉住 finalizeDurableRun 的映射字面量，防未来改名与既有生产者/消费方静默分叉。
+      const terminalDurable = vi.fn(async () => undefined);
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        terminalDurable,
+        unregister: vi.fn(),
+        startDurable: vi.fn(async () => ({ attach: vi.fn(async () => undefined) })),
+      };
+      const run = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      }) as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: { runRegistration?: 'primary' | 'auxiliary'; disableAutoAgent?: boolean },
+        ) => Promise<void>;
+      };
+      // 正常完成（无取消、无终态错误）→ completed + run_completed
+      agentLoopProbe.onRun = () => {
+        agentLoopProbe.lastConfig?.onEvent?.({
+          type: 'agent_complete',
+          data: null,
+        });
+      };
+      await run.runNormalMode(
+        'hello',
+        () => undefined,
+        { provider: 'openai', model: 'gpt-4o' },
+        'session-durable-completed-event',
+        { runRegistration: 'primary', disableAutoAgent: true },
+      );
+      agentLoopProbe.onRun = undefined;
+      expect(terminalDurable).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          status: 'completed',
+          reason: undefined,
+          event: expect.objectContaining({ type: 'run_completed' }),
+        }),
+        expect.anything(),
+      );
     });
 
     it('getWorkingDirectory 应该返回当前目录', () => {

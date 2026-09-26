@@ -298,6 +298,23 @@ export const TASK_OUTPUT_TIMEOUTS = {
   DEFAULT: 30_000,
 } as const;
 
+/**
+ * TaskManager 主 run 等待队列（并发信号量满时的排队语义，TaskManager.DEFAULT_CONFIG
+ * 与 @neo 工作卡的排队等待共用这一个真源）。
+ */
+export const TASK_QUEUE_TIMEOUTS = {
+  /**
+   * 排队超时：入队起等这么久还没拿到并发槽位，TaskManager 把会话判 error 并移出队列
+   * （TaskManager.enqueueTask 的 setTimeout）。@neo 工作卡侧的排队等待上限与之同值，
+   * 让 TaskManager 自己的超时先落 error 状态，工作卡读到后按排队超时给人话失败。
+   */
+  QUEUE_TIMEOUT_MS: 300_000,
+  /** 工作卡侧排队等待在 QUEUE_TIMEOUT_MS 之上的宽限（保证先看到 TaskManager 落的终态） */
+  QUEUE_DRAIN_GRACE_MS: 2_000,
+  /** 排队/执行落定状态轮询间隔 */
+  POLL_INTERVAL_MS: 250,
+} as const;
+
 /** 后台任务超时 */
 export const BACKGROUND_TASK_TIMEOUTS = {
   /** 默认超时 */

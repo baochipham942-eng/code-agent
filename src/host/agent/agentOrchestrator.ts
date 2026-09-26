@@ -47,6 +47,7 @@ import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { assembleTurnDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import { startRunPreferringDurable } from './orchestrator/durableRunStart';
+import { createTerminalEventTracker, finalizeDurableRun } from './orchestrator/durableRunTerminal';
 import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
 import { OrchestratorRunSettings } from './orchestratorRunSettings';
 import { OrchestratorMessageHistory } from './orchestratorMessageHistory';
@@ -783,10 +784,13 @@ export class AgentOrchestrator {
     options?: AgentRunOptions,
   ): Promise<void> {
     const effectiveContent = executionContent ?? content;
+    // 终态采集见 createTerminalEventTracker（取消/空回复转失败都不抛，只能旁听事件）。
+    const terminalTracker = createTerminalEventTracker(onEvent);
+    const terminalAwareOnEvent = terminalTracker.onEvent;
     const { dagAwareOnEvent } = initRunDag({
       sessionId,
       content,
-      onEvent,
+      onEvent: terminalAwareOnEvent,
       broadcastDAGEvent: this.broadcastDAGEvent,
     });
 
@@ -1070,23 +1074,17 @@ export class AgentOrchestrator {
       if (rolePresetSessionId) {
         getPermissionModeManager().clearRolePresetSession(rolePresetSessionId);
       }
-      if (
-        registeredRun
-        && options?.runRegistration === 'auxiliary'
-        && options.parentRunId
-        && this.runRegistry?.hasDurableOwner(nativeRunId)
-      ) {
-        await this.runRegistry.terminalDurable(nativeRunId, {
-          status: runCompletedNormally ? 'completed' : 'failed',
-          now: Date.now(),
-          reason: runCompletedNormally ? undefined : 'auxiliary_run_failed',
-          event: {
-            type: runCompletedNormally ? 'auxiliary_run_completed' : 'auxiliary_run_failed',
-            payload: { parentRunId: options.parentRunId, sessionId },
-            recordedAt: Date.now(),
-          },
-        }, registeredRun).catch((error) => {
-          logger.error('Failed to persist auxiliary durable terminal state', error);
+      if (registeredRun && this.runRegistry?.hasDurableOwner(nativeRunId)) {
+        // Durable 终态收口见 orchestrator/durableRunTerminal；/api/run 主链有自己的 lifecycle。
+        await finalizeDurableRun({
+          registry: this.runRegistry,
+          runId: nativeRunId,
+          handle: registeredRun,
+          sessionId,
+          completed: runCompletedNormally && !terminalTracker.snapshot().terminalError,
+          cancelled: terminalTracker.snapshot().cancelled,
+          registration: options?.runRegistration ?? 'primary',
+          ...(options?.parentRunId ? { parentRunId: options.parentRunId } : {}),
         });
       }
       if (registeredRun) this.runRegistry?.unregister(nativeRunId, registeredRun);

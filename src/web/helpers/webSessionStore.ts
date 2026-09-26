@@ -1,4 +1,4 @@
-import type { Message, ModelConfig, Session } from '../../shared/contract';
+import type { AgentErrorMetadata, Message, ModelConfig, Session } from '../../shared/contract';
 import type { DatabaseService } from '../../host/services/core/databaseService';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
 import type { SessionCreateOptions } from '../../cli/session';
@@ -189,6 +189,12 @@ interface CommitTurnInput {
     hasAssistantOutput: () => boolean;
     hasInterleaving: () => boolean;
   };
+  /**
+   * 终态失败记录（N-CHAT-EMPTY-FINAL-NO-EXIT）：本轮以失败收场且没有任何 assistant
+   * 产出时，落一条携带 metadata.agentError 的空 assistant 消息。会话重开后
+   * AgentErrorCard 照常渲染（人话原因 + 重试/换模型出路），失败不再只活在内存里。
+   */
+  terminalFailure?: { agentError: AgentErrorMetadata } | null;
 }
 
 function isDuplicateMessageError(error: unknown): boolean {
@@ -330,6 +336,7 @@ function fallbackToCollectorSessionProjection(
   turn: CommitTurnInput['turn'],
   assistantMsgId: string,
   assistantArtifacts: ReturnType<typeof extractArtifacts>,
+  terminalFailure?: CommitTurnInput['terminalFailure'],
 ): void {
   // !dbAvailable 时内存仍是主存储；DB 读回失败时也用批 2 前的 collector
   // 投影兜底，避免缓存停在半旧状态并丢掉本轮消息。
@@ -345,7 +352,21 @@ function fallbackToCollectorSessionProjection(
       thinking: turn.assistantThinking || undefined,
       contentParts: turn.hasInterleaving() ? turn.contentParts : undefined,
       artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-      metadata: attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
+      // 有部分产出但失败收场：失败卡并到该条产出上（AgentErrorCard 渲染源）。
+      metadata: terminalFailure
+        ? {
+          ...attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
+          agentError: terminalFailure.agentError,
+        }
+        : attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
+    });
+  } else if (!turn.runCancelled && terminalFailure) {
+    cached.push({
+      id: assistantMsgId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      metadata: { agentError: terminalFailure.agentError },
     });
   }
   replaceSessionMessagesProjection(sessionId, cached);
@@ -379,14 +400,14 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
   // 兜底判定只认「终轮」assistant 是否落库：早轮已落库不能抑制兜底（终轮落库失败时
   // 内容+metadata 会静默丢失）。兜底写的是本 run 合并全文，早轮已在库时触发会有部分
   // 内容重复——丢终轮结论比重复早轮片段更不可接受，取舍偏向保内容。
-  async function hasPersistedFinalLoopAssistantMessage(
+  async function findPersistedFinalLoopAssistantMessage(
     sessionId: string,
     finalMessageId: string | undefined,
     sessionManager: WebCLISessionManagerLike | null,
     db: DatabaseService | null,
-  ): Promise<boolean> {
+  ): Promise<Message | undefined> {
     if (!finalMessageId) {
-      return false;
+      return undefined;
     }
 
     try {
@@ -394,15 +415,15 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         ? await sessionManager.getMessages(sessionId)
         : db?.getMessages(sessionId);
 
-      return Array.isArray(persisted) && persisted.some((message) => (
-        message.role === 'assistant' && message.id === finalMessageId
-      ));
+      return Array.isArray(persisted)
+        ? persisted.find((message) => message.role === 'assistant' && message.id === finalMessageId)
+        : undefined;
     } catch (error) {
       deps.logger.warn(
         `[AgentRouter] Failed to verify loop-persisted assistant messages for ${sessionId}:`,
         error,
       );
-      return false;
+      return undefined;
     }
   }
 
@@ -511,6 +532,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         userMessagePrePersistedDb,
         userMessage,
         turn,
+        terminalFailure,
       } = input;
 
       const assistantMsgId = generateMessageId();
@@ -522,6 +544,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
           turn,
           assistantMsgId,
           assistantArtifacts,
+          terminalFailure,
         );
       }
 
@@ -544,12 +567,13 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
           const db = cliSessionManager
             ? null
             : await ensureDbSession(deps.getDatabase, sessionId, title, modelConfig);
-          const loopPersistedAssistant = await hasPersistedFinalLoopAssistantMessage(
+          const persistedLoopAssistant = await findPersistedFinalLoopAssistantMessage(
             sessionId,
             turn.lastLoopAssistantMessageId,
             sm,
             db,
           );
+          const loopPersistedAssistant = Boolean(persistedLoopAssistant);
 
           if (!userMessagePrePersistedDb) {
             await persistMessageToDb(sm, db, sessionId, {
@@ -578,14 +602,51 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
               toolCalls: turn.assistantToolCalls.length > 0 ? turn.assistantToolCalls : undefined,
               thinking: turn.assistantThinking || undefined,
               artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-              metadata: attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
+              // 有部分产出但失败收场：失败卡并到该条产出上（AgentErrorCard 渲染源）。
+              metadata: terminalFailure
+                ? {
+                  ...attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
+                  agentError: terminalFailure.agentError,
+                }
+                : attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
               contentParts: turn.hasInterleaving() ? turn.contentParts : undefined,
             } as Message);
+          }
+          if (!turn.runCancelled && !turn.hasAssistantOutput() && terminalFailure && !loopPersistedAssistant) {
+            // 失败终态落库：空正文 + agentError 元数据。AgentErrorCard 只认
+            // message.metadata.agentError，重开后即恢复「人话原因 + 重试入口」。
+            await persistMessageToDb(sm, db, sessionId, {
+              id: assistantMsgId,
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+              metadata: { agentError: terminalFailure.agentError },
+            } as Message);
+            persistedFinalAssistantMessageId = assistantMsgId;
           }
           if (!turn.runCancelled && turn.hasAssistantOutput()) {
             persistedFinalAssistantMessageId = loopPersistedAssistant
               ? turn.lastLoopAssistantMessageId
               : assistantMsgId;
+          }
+          if (!turn.runCancelled && terminalFailure && persistedLoopAssistant) {
+            // loop 已自行落库最终 assistant 消息时，失败卡信息合并回写该消息
+            // （否则刷新后失败不可见——ai-review Nit）。persistMessageToDb 走
+            // add→duplicate→update 幂等路径完成回写。
+            try {
+              await persistMessageToDb(sm, db, sessionId, {
+                ...persistedLoopAssistant,
+                metadata: {
+                  ...persistedLoopAssistant.metadata,
+                  agentError: terminalFailure.agentError,
+                },
+              } as Message);
+            } catch (mergeError) {
+              deps.logger.warn(
+                `[AgentRouter] Failed to merge terminal failure into loop-persisted assistant for ${sessionId}:`,
+                (mergeError as Error).message,
+              );
+            }
           }
 
           // 更新会话标题/时间戳。首条消息只覆盖占位标题，不改用户/手机起的名字。
@@ -648,6 +709,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
             turn,
             assistantMsgId,
             assistantArtifacts,
+            terminalFailure,
           );
         }
       }

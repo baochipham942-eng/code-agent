@@ -272,6 +272,195 @@ describe('WebSessionStore', () => {
     );
   });
 
+  // ── 终态失败落库（N-CHAT-EMPTY-FINAL-NO-EXIT）────────────────────────────
+  // 失败终态要随 turn 持久化：刷新后 AgentErrorCard 照常渲染（人话原因 + 重试入口），
+  // 不许只活在内存事件里。
+
+  it('commitTurn 无 assistant 产出且带 terminalFailure 时，落一条 agentError 空消息', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'fail-turn', title: 'Existing' });
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => null,
+      logger,
+      getDatabase: async () => db as unknown as DatabaseService,
+    });
+    await store.commitTurn({
+      sessionId: 'fail-turn',
+      title: '失败轮',
+      modelConfig: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
+      historyLength: 0,
+      userMessagePrePersistedDb: true,
+      userMessage: { id: 'user-fail', role: 'user', content: '你好', timestamp: 1 },
+      turn: {
+        assistantText: '',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: undefined,
+        contentParts: [],
+        runCancelled: false,
+        hasAssistantOutput: () => false,
+        hasInterleaving: () => false,
+      },
+      terminalFailure: {
+        agentError: {
+          category: 'auth',
+          rawMessage: 'Unauthorized',
+          code: 'RUN_FAILED',
+          modelId: 'deepseek-v4-flash',
+          provider: 'custom-tokenrhythm',
+          goalAbort: false,
+          timestamp: 1,
+        },
+      },
+    });
+    expect(db.addMessage).toHaveBeenCalledWith(
+      'fail-turn',
+      expect.objectContaining({
+        role: 'assistant',
+        content: '',
+        metadata: expect.objectContaining({
+          agentError: expect.objectContaining({ category: 'auth', provider: 'custom-tokenrhythm' }),
+        }),
+      }),
+    );
+  });
+
+  it('commitTurn loop 已自行落库最终 assistant 且失败时，agentError 合并回写该消息（ai-review Nit 二轮）', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'loop-persisted', title: 'Existing' });
+    // loop 已把最终 assistant 落库（lastLoopAssistantMessageId 指向它）；
+    // 真实 DB 里该 id 已存在，合并回写的 addMessage 必撞 UNIQUE → 幂等走 update
+    db.getMessages.mockReturnValue([
+      { id: 'user-1', role: 'user', content: 'hi', timestamp: 1 },
+      { id: 'loop-final', role: 'assistant', content: '跑到一半的回复', timestamp: 2 },
+    ] as Message[]);
+    db.addMessage.mockImplementation(() => {
+      throw new Error('SQLITE_CONSTRAINT: UNIQUE constraint failed: messages.id');
+    });
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => null,
+      logger,
+      getDatabase: async () => db as unknown as DatabaseService,
+    });
+    await store.commitTurn({
+      sessionId: 'loop-persisted',
+      title: 'loop 已落库',
+      modelConfig: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
+      historyLength: 0,
+      userMessagePrePersistedDb: true,
+      userMessage: { id: 'user-1', role: 'user', content: 'hi', timestamp: 1 },
+      turn: {
+        assistantText: '跑到一半的回复',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: 'loop-final',
+        contentParts: [],
+        runCancelled: false,
+        hasAssistantOutput: () => true,
+        hasInterleaving: () => false,
+      },
+      terminalFailure: {
+        agentError: { category: 'network', rawMessage: 'fetch failed', goalAbort: false, timestamp: 3 },
+      },
+    });
+    // addMessage 撞 duplicate → updateMessage 合并 agentError 回写 loop-final
+    expect(db.updateMessage).toHaveBeenCalledWith(
+      'loop-final',
+      expect.objectContaining({
+        id: 'loop-final',
+        metadata: expect.objectContaining({ agentError: expect.objectContaining({ category: 'network' }) }),
+      }),
+      'loop-persisted',
+    );
+  });
+
+  it('commitTurn 有部分 assistant 产出且失败时，agentError 并到该条产出消息上', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'partial-turn', title: 'Existing' });
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => null,
+      logger,
+      getDatabase: async () => db as unknown as DatabaseService,
+    });
+    await store.commitTurn({
+      sessionId: 'partial-turn',
+      title: '部分产出',
+      modelConfig: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
+      historyLength: 0,
+      userMessagePrePersistedDb: true,
+      userMessage: { id: 'user-partial', role: 'user', content: '你好', timestamp: 1 },
+      turn: {
+        assistantText: '跑到一半的回复',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: undefined,
+        contentParts: [],
+        runCancelled: false,
+        hasAssistantOutput: () => true,
+        hasInterleaving: () => false,
+      },
+      terminalFailure: {
+        agentError: {
+          category: 'network',
+          rawMessage: 'fetch failed',
+          goalAbort: false,
+          timestamp: 2,
+        },
+      },
+    });
+    const assistantPersist = db.addMessage.mock.calls.find(
+      (call) => (call[1] as Message).role === 'assistant',
+    );
+    expect(assistantPersist).toBeTruthy();
+    expect(assistantPersist?.[1]).toMatchObject({
+      content: '跑到一半的回复',
+      metadata: expect.objectContaining({ agentError: expect.objectContaining({ category: 'network' }) }),
+    });
+  });
+
+  it('commitTurn 无 db 时（内存主存储）terminalFailure 也进投影：刷新语义等价', async () => {
+    setDbAvailable(false, new Error('no db'));
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => null,
+      logger,
+      getDatabase: async () => createDatabaseStub() as unknown as DatabaseService,
+    });
+    await store.commitTurn({
+      sessionId: 'mem-fail-turn',
+      title: '内存失败轮',
+      modelConfig: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
+      historyLength: 0,
+      userMessagePrePersistedDb: false,
+      userMessage: { id: 'user-mem', role: 'user', content: 'hi', timestamp: 1 },
+      turn: {
+        assistantText: '',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: undefined,
+        contentParts: [],
+        runCancelled: false,
+        hasAssistantOutput: () => false,
+        hasInterleaving: () => false,
+      },
+      terminalFailure: {
+        agentError: { category: 'auth', rawMessage: 'Unauthorized', goalAbort: false, timestamp: 2 },
+      },
+    });
+    const projection = getSessionMessagesProjection('mem-fail-turn') ?? [];
+    expect(projection.at(-1)).toMatchObject({
+      role: 'assistant',
+      content: '',
+      metadata: expect.objectContaining({ agentError: expect.objectContaining({ category: 'auth' }) }),
+    });
+  });
+
   it('commitTurn does not rewrite a custom session title on the first user message', async () => {
     setDbAvailable(true);
     const db = createDatabaseStub();

@@ -49,6 +49,7 @@ export class AgentRunController {
   private clientDisconnected = false;
   private runHadTerminalError = false;
   private terminalFailure: unknown = null;
+  private terminalErrorData: Record<string, unknown> | null = null;
   private terminalCompletionEmitted = false;
   private readonly messageAccumulator = new MessageDeltaAccumulator();
   private readonly agentSSEBatcher;
@@ -83,6 +84,14 @@ export class AgentRunController {
 
   get lastTerminalFailure(): unknown {
     return this.terminalFailure;
+  }
+
+  /**
+   * 本轮终态失败事件的完整载荷（message/code/details/failure…）。
+   * 落库失败卡要用它做分类（classifyAgentError），只给 failure 标记不够。
+   */
+  get lastTerminalErrorData(): Record<string, unknown> | null {
+    return this.terminalErrorData;
   }
 
   canWriteSSE(): boolean {
@@ -143,6 +152,11 @@ export class AgentRunController {
         ? event.data as { failure?: unknown }
         : {};
       if (payload.failure) this.terminalFailure = payload.failure;
+      // 完整载荷留给落库失败卡分类用。引擎（runFinalizer）先发的那份带
+      // provider/model details，catch 里裸发的 `{message}` 不覆盖它。
+      if (!this.terminalErrorData || typeof this.terminalErrorData.message !== 'string') {
+        this.terminalErrorData = payload as Record<string, unknown>;
+      }
     }
     if (event.type === 'agent_complete' || event.type === 'agent_cancelled') {
       if (this.terminalCompletionEmitted) {

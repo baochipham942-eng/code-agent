@@ -186,10 +186,11 @@ describe('continueAndRunNeoWorkCard', () => {
       now: () => NOW + 2,
     });
 
-    expect(service.get(created.workCard.id)?.workCard).toMatchObject({
-      status: 'failed',
-      blockedReason: 'Model route unavailable',
-    });
+    // 失败原因带出路（N-CHAT-EMPTY-FINAL-NO-EXIT：失败态带出路不带解释）
+    const failed = service.get(created.workCard.id)?.workCard;
+    expect(failed?.status).toBe('failed');
+    expect(failed?.blockedReason).toContain('Model route unavailable');
+    expect(failed?.blockedReason).toContain('接着做');
   });
 
   it('rejects closed cards (archived/cancelled)', () => {

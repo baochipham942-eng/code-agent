@@ -47,6 +47,7 @@ import {
   type ExternalAgentEngineFailureContext,
   recordExternalEngineFailure,
 } from './agentEngineFailureRecorder';
+import { buildTurnTerminalFailure } from './agentTurnTerminalFailure';
 import {
   AgentRunBodySchema,
   AgentToolResultBodySchema,
@@ -603,6 +604,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     await runController.updateSessionStatus('running');
 
     let externalEngineFailureContext: ExternalAgentEngineFailureContext | undefined;
+    // try 路径 commitTurn 成功后置位：catch 里的失败收口据此避免二次 commit。
+    let turnCommitted = false;
+    // try 块内装配（那里才有 runModelConfig/history/userMsg 这些块内 const），
+    // catch 里调用：引擎失败在 finalize 后会再抛，try 的 commitTurn 被跳过，
+    // 不补 commit 失败就只活在内存事件里，刷新后「无回复也无失败提示」。
+    let commitFailedTurn: ((fallbackMessage: string) => Promise<void>) | null = null;
 
     try {
       if (runController.disconnected) {
@@ -1207,6 +1214,31 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.warn('Pre-persist user message to Supabase failed (continuing run):', (err as Error).message);
       }
 
+      // 失败收口的 commit 装配点：此后任何一步抛错（含 agentLoop.run），catch 里都能
+      // 用这组块内 const 补落失败终态。
+      commitFailedTurn = async (fallbackMessage: string) => {
+        // 守卫放闭包内：catch 里只能引用外层名字（runEventCollector 等都是 try 块内 const，
+        // 在 catch 侧求值是编译错/ReferenceError）。取消轮不落（用户主动停，不算失败）。
+        if (runEventCollector.runCancelled || turnCommitted) return;
+        const terminalFailure = buildTurnTerminalFailure({
+          errorData: runController.lastTerminalErrorData,
+          fallbackMessage,
+          modelId: runModelConfig.model,
+          runCancelled: runEventCollector.runCancelled,
+        });
+        await sessionStore.commitTurn({
+          sessionId,
+          title: buildSessionTitle(visiblePrompt),
+          modelConfig: runModelConfig,
+          historyLength: history.length,
+          userMessagePrePersistedDb: userMsgPrePersistedDb,
+          userMessage: userMsg,
+          turn: runEventCollector,
+          terminalFailure,
+        });
+        turnCommitted = true;
+      };
+
       if (runHandle.cancellationRequested) {
         const cancelledEvent: import('../../shared/contract').AgentEvent = {
           type: 'agent_cancelled',
@@ -1217,6 +1249,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         await agentLoop.run(modelFacePrompt, visiblePrompt);
       }
 
+      // 终态失败记录（N-CHAT-EMPTY-FINAL-NO-EXIT）：run 没抛但以失败收场
+      // （空最终回复被 runFinalizer 转失败等）时，把 agentError 交给 commitTurn
+      // 落库，刷新后失败卡与重试入口不丢。
+      const turnTerminalFailure = buildTurnTerminalFailure({
+        errorData: runController.lastTerminalErrorData,
+        fallbackMessage: null,
+        modelId: runModelConfig.model,
+        runCancelled: runEventCollector.runCancelled,
+      });
       const { assistantMsgId } = await sessionStore.commitTurn({
         sessionId,
         title: buildSessionTitle(visiblePrompt),
@@ -1225,7 +1266,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         userMessagePrePersistedDb: userMsgPrePersistedDb,
         userMessage: userMsg,
         turn: runEventCollector,
+        terminalFailure: turnTerminalFailure,
       });
+      turnCommitted = true;
 
       // 本地这一轮已提交（commitTurn）即结束执行：先落终态、发 agent_complete，再做云端同步。
       // 原来排在云同步之后——未登录时每次访问云端都要先失败一轮恢复登录，回复早已显示，
@@ -1324,6 +1367,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             message,
           },
         });
+      }
+      // 终态失败落库（N-CHAT-EMPTY-FINAL-NO-EXIT）：引擎失败在 finalize 后会再抛，
+      // try 里的 commitTurn 被跳过——不在这里补 commit，失败就只活在内存事件里，
+      // 刷新后「无回复也无失败提示」。放在 publish/emit 之后：失败通知先走，
+      // 落库（真 DB，可能慢）不许拖住手机错误推送（FB-193 只保一条，没保时延）。
+      // 取消轮不落（用户主动停，不算失败）。
+      if (commitFailedTurn) {
+        try {
+          await commitFailedTurn(message);
+        } catch (commitError) {
+          logger.warn('[AgentRouter] Failed to commit failed turn:', (commitError as Error).message);
+        }
       }
       if (!transport.connectedClient) {
         throw error;

@@ -7,27 +7,26 @@
 //   · deliverableDiskCheck 的交付物正文扫描（逐行 i 匹配 + 定位回显）。
 // 本刀之前 htmlProbes 与 toolArtifactRepairPolicy 各自维护一份字面量正则；
 // 交付物正文扫描是第三个消费方，不许再抄第三份——统一引用本模块。
+//
+// ai-review PR#2079 Round 2 起词表拆成三个形态层（裸单词不再 substring 生效）：
+//   · PLACEHOLDER_TEXT_PATTERN_SOURCE —— 全量 substring 词族（office/html 等无歧义面）；
+//   · PLACEHOLDER_UNAMBIGUOUS_TEXT_SOURCE —— 无歧义子集（md/txt 行扫直接用）；
+//   · PLACEHOLDER_BARE_WORD_SOURCE + PLACEHOLDER_WHOLE_VALUE_WORD_SOURCE ——
+//     裸英文单词（todo/tbd/placeholder）只在脚手架形态（括号包住/标记独行/整值）才算，
+//     由消费方按形态编译。
 // ============================================================================
 
 /**
- * 正文占位词族（配 i 标志使用；TODO/TBD/XXX 的 \b 词边界见各 alternation 内）。
- * 词表 = 仓内既有两份（htmlProbes.no_lorem_ipsum、toolArtifactRepairPolicy 整段
- * 判词）取并集，再补任务书点名的 [insert…] / TBD / XXX 连串 / 示例数据。
- * 边界说明：
- * - TODO/TBD/XXX 用 \b 词边界——"todomvc"、base64 长串中间的 xxx 不算命中；
- * - CJK 词不需要 \b（汉字皆非 \w 字符，边界天然存在）；「占位」会连带命中
- *   「占位符」，技术文档讲解占位符语法属可接受的误伤面（与 htmlProbes 既有
- *   立场一致），用户明确要模板/占位交付物时由 deliverableDiskCheck 侧豁免兜住；
- * - [insert…] 用括号形态——bare "insert" 是常用英文词，不能单独当标记。
+ * 无歧义正文占位词族（substring 即命中，配 i 标志）：lorem/示例数据等脚手架专名
+ * 与 CJK 标记。CJK 词不需要 \b（汉字皆非 \w 字符，边界天然存在）；「待补」覆盖
+ * 「待补充/待补全」等前缀延伸，不再重复列（PR#2079 Round 2 Nit 去冗余）；「占位」
+ * 会连带命中「占位符」，技术文档讲解占位符语法属可接受的误伤面（与 htmlProbes
+ * 既有立场一致），用户明确要模板/占位交付物时由 deliverableDiskCheck 侧豁免兜住。
  */
-export const PLACEHOLDER_TEXT_PATTERN_SOURCE = [
+const UNAMBIGUOUS_TEXT_ALTERNATIVES = [
   'lorem ipsum',
   'coming soon',
-  '\\bTODO\\b',
-  '\\bTBD\\b',
-  'placeholder',
   '占位',
-  '待补充',
   '待填写',
   '此处填写',
   '待补',
@@ -35,6 +34,51 @@ export const PLACEHOLDER_TEXT_PATTERN_SOURCE = [
   '样例数据',
   '\\[\\s*insert[^\\]]*\\]',
   '\\bx{3,}\\b',
+];
+
+/**
+ * 裸英文占位词（md/txt/csv 里 substring 命中会是误报重灾区——README 的 TODO 章节、
+ * CSV 的 TBD 状态列、i18n 值里的 placeholder 文案——只允许脚手架形态命中：
+ * 括号/花括号包住、全大写标记独行跟冒号、整值等于标记。todo/tbd 配 \b 使用，
+ * "todomvc"、base64 长串中间的 xxx 不算命中；bare "insert" 是常用英文词不单列）。
+ */
+export const PLACEHOLDER_BARE_WORD_SOURCE = 'todo|tbd|placeholder';
+
+/**
+ * 正文占位词族全量（配 i 标志使用；= 无歧义子集 + 裸单词的 \b 形态）。
+ * 词表 = 仓内既有两份（htmlProbes.no_lorem_ipsum、toolArtifactRepairPolicy 整段
+ * 判词）取并集，再补任务书点名的 [insert…] / TBD / XXX 连串 / 示例数据。
+ * 消费方：htmlProbes 探针、deliverablePlaceholderScan 的 office/html 段扫描。
+ */
+export const PLACEHOLDER_TEXT_PATTERN_SOURCE = [
+  ...UNAMBIGUOUS_TEXT_ALTERNATIVES,
+  '\\bTODO\\b',
+  '\\bTBD\\b',
+  'placeholder',
+].join('|');
+
+/**
+ * 无歧义词族单独导出：md/txt 行扫描用它做 substring 匹配，裸英文单词走脚手架
+ * 形态判据（PR#2079 Round 2 Important：宁可漏拦，不可误伤）。
+ */
+export const PLACEHOLDER_UNAMBIGUOUS_TEXT_SOURCE = UNAMBIGUOUS_TEXT_ALTERNATIVES.join('|');
+
+/**
+ * 「整值/整格即占位」的等值词族（JSON 字符串值、CSV 单元格用，锚定 ^…$ + i）：
+ * substring 语义不适用——equality 要穷举，待补/待补充必须分列。
+ */
+export const PLACEHOLDER_WHOLE_VALUE_WORD_SOURCE = [
+  'coming soon',
+  'todo',
+  'tbd',
+  'placeholder',
+  '占位符?',
+  '待补充',
+  '待补',
+  '待填写',
+  '此处填写',
+  '示例数据',
+  '样例数据',
 ].join('|');
 
 /**

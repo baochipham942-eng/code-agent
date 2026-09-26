@@ -12,23 +12,78 @@
 // （read_xlsx 同款）、pptx → JSZip + ppt/slides/slideN.xml 的 <a:t> 文本
 // （pptEdit 同款），按需动态加载，不给 agent 启动链加依赖。解析失败 fail-open
 // 跳过该文件并留痕——存在性核对已另行把关，读不回来不该拦交付。
+//
+// 防误报形态分层（ai-review PR#2079 Round 2 Important：宁可漏拦，不可误伤——
+// 误拦的代价是补轮诱导模型改坏正确产物，漏拦的代价只是少一道兜底）：
+//   · office/html：词表全量 substring（word 文档/网页可见文本里出现这些词基本就是残留）；
+//   · md/txt：无歧义词族照常 substring；裸英文单词（todo/tbd/placeholder）只在
+//     脚手架形态算——方括号/花括号包住（[TODO]、{{placeholder}}）、全大写标记
+//     独行跟冒号且该行无其他正文；标题行（## TODO）与正文提及天然不算；
+//   · csv：只认整格等于占位标记；一列里多数行是同一个值（状态列全是 TBD）是
+//     数据不是残留，不拦；
+//   · json：只扫字符串值不扫键名，且只认「整值即占位」——i18n 的 "placeholder"
+//     键、值里偶然提到 TODO 都放行；
+//   · 代码仓内代码目录（向上找到 package.json/.git 且文件位于 src/、locales/、
+//     i18n/、tests/、docs/ 等）的 md/json/csv/txt 默认不扫（工程文件不是交付文档），
+//     office/html 照扫。
 // ============================================================================
 
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
+import { dirname, relative } from 'node:path';
 import { TURN_OUTCOME } from '../../../shared/constants/agent';
 import { createLogger } from '../../services/infra/logger';
-import { PLACEHOLDER_TEXT_PATTERN_SOURCE } from './placeholderMarkers';
+import {
+  PLACEHOLDER_BARE_WORD_SOURCE,
+  PLACEHOLDER_TEXT_PATTERN_SOURCE,
+  PLACEHOLDER_UNAMBIGUOUS_TEXT_SOURCE,
+  PLACEHOLDER_WHOLE_VALUE_WORD_SOURCE,
+} from './placeholderMarkers';
 
 const logger = createLogger('DeliverablePlaceholderScan');
 
 /** 无 g 标志：只用 search 定位首个命中，规避 test/exec 的 lastIndex 状态泄漏。 */
 const PLACEHOLDER_SEARCH_PATTERN = new RegExp(PLACEHOLDER_TEXT_PATTERN_SOURCE, 'i');
 
+/** md/txt 行扫描的无歧义词族（裸英文单词另走脚手架形态判据）。 */
+const UNAMBIGUOUS_SEARCH_PATTERN = new RegExp(PLACEHOLDER_UNAMBIGUOUS_TEXT_SOURCE, 'i');
+
+/** 裸英文单词的脚手架形态①：方括号/双花括号/中文括号包住（[TODO]、{{placeholder}}、【待补】）。 */
+const BRACKETED_BARE_WORD_PATTERN = new RegExp(
+  `(?:\\[\\s*(?:${PLACEHOLDER_BARE_WORD_SOURCE})\\s*\\]|\\{\\{\\s*(?:${PLACEHOLDER_BARE_WORD_SOURCE})\\s*\\}\\}|【\\s*(?:${PLACEHOLDER_BARE_WORD_SOURCE})\\s*】)`,
+  'i',
+);
+
+/**
+ * 裸英文单词的脚手架形态②：全大写标记独行跟冒号，该行没有其他正文（TODO:/TBD:）。
+ * 刻意不加 i 标志——词表单一真源转大写派生，只有全大写形态算标记（PR#2079 Round 2）。
+ */
+const MARKER_ONLY_LINE_PATTERN = new RegExp(`^(?:${PLACEHOLDER_BARE_WORD_SOURCE.toUpperCase()})\\s*:\\s*$`);
+
+/** 「整值/整格即占位」的等值判词（JSON 字符串值、CSV 单元格共用；锚定 + i）。 */
+const WHOLE_VALUE_WORD_PATTERN = new RegExp(`^(?:${PLACEHOLDER_WHOLE_VALUE_WORD_SOURCE})$`, 'i');
+
+/** 整值形态的括号变体：[TODO]、[insert …]、{{待补}}、【待补充】整值包住。 */
+const BRACKETED_WHOLE_VALUE_PATTERN = new RegExp(
+  `^(?:\\[\\s*(?:insert[^\\]]*|${PLACEHOLDER_BARE_WORD_SOURCE}|${PLACEHOLDER_WHOLE_VALUE_WORD_SOURCE})\\s*\\]`
+  + `|\\{\\{\\s*(?:${PLACEHOLDER_BARE_WORD_SOURCE}|${PLACEHOLDER_WHOLE_VALUE_WORD_SOURCE})\\s*\\}\\}`
+  + `|【\\s*(?:${PLACEHOLDER_WHOLE_VALUE_WORD_SOURCE})\\s*】)$`,
+  'i',
+);
+
 /**
  * 进正文扫描的扩展名：文档/表格/演示/网页/数据类。代码文件不进（TODO 注释不算
  * 交付物占位）；pdf/图片/音视频无文本读取器，同样不进（存在性核对不受影响）。
  */
 const SCANNABLE_EXTENSIONS = new Set(['md', 'txt', 'html', 'htm', 'csv', 'json', 'docx', 'xlsx', 'pptx']);
+
+/** 纯文本数据/文档类：位于代码仓代码目录时默认不扫（ai-review PR#2079 Round 2）。 */
+const TEXT_DOC_EXTENSIONS = new Set(['md', 'txt', 'csv', 'json']);
+
+/** 代码仓内的代码/本地化/测试/文档目录段（小写比对）。 */
+const CODE_DIR_SEGMENTS = new Set([
+  'src', 'lib', 'test', 'tests', '__tests__', 'spec', 'specs', 'e2e', 'scripts',
+  'locales', 'locale', 'i18n', 'l10n', 'translations', 'docs', 'doc',
+]);
 
 /** 单文件最多报告的命中数：修复提示够定位即可，不刷屏。 */
 const MAX_HITS_PER_FILE = 3;
@@ -47,7 +102,7 @@ const MAX_OFFICE_UNCOMPRESSED_BYTES = 64 * 1024 * 1024;
 const EXTRACTION_TIMEOUT_MS = 15_000;
 
 export interface DeliverablePlaceholderHit {
-  /** 行号 / 工作表行 / 页码等定位描述 */
+  /** 行号 / 工作表行 / 页码 / JSON 路径等定位描述 */
   location: string;
   /** 命中片段（≤60 字） */
   fragment: string;
@@ -76,10 +131,51 @@ interface TextSegment {
   text: string;
 }
 
+/** 抽出的可扫内容：kind 决定命中判据（形态分层见模块头）。 */
+type ScannableContent =
+  | { kind: 'substring'; segments: TextSegment[] }
+  | { kind: 'mdtxt'; segments: TextSegment[] }
+  | { kind: 'csv'; rows: string[][] }
+  | { kind: 'json'; values: TextSegment[] };
+
 /** 只有扫描集合内的扩展名才抽正文（代码文件结构性不进——TODO 注释不算交付物占位）。 */
 function isPlaceholderScannablePath(path: string): boolean {
   const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
   return path.includes('.') && SCANNABLE_EXTENSIONS.has(extension);
+}
+
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await stat(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 交付物是否位于代码仓的代码目录（src/、locales/、i18n/、tests/、docs/ 等）：
+ * 从文件目录向上找最近的 package.json/.git 作为仓根，再看相对路径的目录段。
+ * 命中则 md/json/csv/txt 默认不扫（PR#2079 Round 2：编码任务里这些是工程文件，
+ * 里面的 placeholder 键/TODO 章节是合法内容，扫了只会诱导补轮改坏它们）。
+ * repoMarkerCache 让一次扫描内的多个文件共享「该目录是否有仓标记」的 stat 结果。
+ */
+async function insideCodeRepoCodeDir(filePath: string, repoMarkerCache: Map<string, boolean>): Promise<boolean> {
+  let directory = dirname(filePath);
+  for (;;) {
+    let marker = repoMarkerCache.get(directory);
+    if (marker === undefined) {
+      marker = (await pathExists(`${directory}/package.json`)) || (await pathExists(`${directory}/.git`));
+      repoMarkerCache.set(directory, marker);
+    }
+    if (marker) {
+      const segments = relative(directory, filePath).split(/[\\/]+/);
+      return segments.slice(0, -1).some((segment) => CODE_DIR_SEGMENTS.has(segment.toLowerCase()));
+    }
+    const parent = dirname(directory);
+    if (parent === directory) return false;
+    directory = parent;
+  }
 }
 
 function lineSegments(text: string): TextSegment[] {
@@ -122,6 +218,108 @@ function collectHits(segments: readonly TextSegment[]): DeliverablePlaceholderHi
     const index = segment.text.search(PLACEHOLDER_SEARCH_PATTERN);
     if (index < 0) continue;
     hits.push({ location: segment.location, fragment: fragmentAround(segment.text, index) });
+    if (hits.length >= MAX_HITS_PER_FILE) break;
+  }
+  return hits;
+}
+
+/** md/txt 行判据：无歧义词族 substring 命中，或裸英文单词的脚手架形态。返回命中锚点。 */
+function mdTxtLineHitIndex(line: string): number {
+  const unambiguous = line.search(UNAMBIGUOUS_SEARCH_PATTERN);
+  if (unambiguous >= 0) return unambiguous;
+  const bracketed = line.search(BRACKETED_BARE_WORD_PATTERN);
+  if (bracketed >= 0) return bracketed;
+  return MARKER_ONLY_LINE_PATTERN.test(line) ? 0 : -1;
+}
+
+function collectMdtxtHits(segments: readonly TextSegment[]): DeliverablePlaceholderHit[] {
+  const hits: DeliverablePlaceholderHit[] = [];
+  for (const segment of segments) {
+    const index = mdTxtLineHitIndex(segment.text);
+    if (index < 0) continue;
+    hits.push({ location: segment.location, fragment: fragmentAround(segment.text, index) });
+    if (hits.length >= MAX_HITS_PER_FILE) break;
+  }
+  return hits;
+}
+
+/** RFC4180 口径的小解析器：带引号的逗号/换行/转义引号都要还原成完整单元格。 */
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[index + 1] === '"') { field += '"'; index += 1; }
+        else inQuotes = false;
+      } else field += char;
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ',') {
+      row.push(field);
+      field = '';
+    } else if (char === '\n' || char === '\r') {
+      if (char === '\r' && text[index + 1] === '\n') index += 1;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else field += char;
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+/** 整值/整格即占位：等值词族、XXX 连串、lorem ipsum 开头、括号包住的标记。 */
+function isWholeTextPlaceholder(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return WHOLE_VALUE_WORD_PATTERN.test(trimmed)
+    || /^x{3,}$/i.test(trimmed)
+    || /^lorem ipsum/i.test(trimmed)
+    || BRACKETED_WHOLE_VALUE_PATTERN.test(trimmed);
+}
+
+/** CSV 判据：整格等于占位标记才算；同列多数行同值（状态列全是 TBD）视为数据不拦。 */
+function collectCsvHits(rows: readonly string[][]): DeliverablePlaceholderHit[] {
+  const hits: DeliverablePlaceholderHit[] = [];
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      const cell = row[columnIndex].trim();
+      if (!isWholeTextPlaceholder(cell)) continue;
+      const columnValues = rows.map((entry) => (entry[columnIndex] ?? '').trim()).filter(Boolean);
+      const sameValueCount = columnValues.filter((value) => value === cell).length;
+      if (sameValueCount >= 2 && sameValueCount * 2 >= columnValues.length) continue;
+      hits.push({ location: `第 ${rowIndex + 1} 行第 ${columnIndex + 1} 列`, fragment: fragmentAround(cell, 0) });
+      if (hits.length >= MAX_HITS_PER_FILE) return hits;
+    }
+  }
+  return hits;
+}
+
+/** 递归收集 JSON 的全部字符串值（键名不进——i18n 的 "placeholder" 键是合法键名）。 */
+function collectJsonStringValues(value: unknown, trail: string, out: TextSegment[]): void {
+  if (typeof value === 'string') {
+    out.push({ location: trail, text: value });
+  } else if (Array.isArray(value)) {
+    value.forEach((item, index) => collectJsonStringValues(item, `${trail}[${index}]`, out));
+  } else if (value !== null && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) {
+      collectJsonStringValues(item, trail === '$' ? `$.${key}` : `${trail}.${key}`, out);
+    }
+  }
+}
+
+/** JSON 判据：只认「整值即占位」的字符串值，定位是 JSON 路径（$.a.b[0]）。 */
+function collectJsonHits(values: readonly TextSegment[]): DeliverablePlaceholderHit[] {
+  const hits: DeliverablePlaceholderHit[] = [];
+  for (const value of values) {
+    if (!isWholeTextPlaceholder(value.text)) continue;
+    hits.push({ location: value.location, fragment: fragmentAround(value.text, 0) });
     if (hits.length >= MAX_HITS_PER_FILE) break;
   }
   return hits;
@@ -180,6 +378,12 @@ async function extractPptxSegments(buffer: Buffer): Promise<TextSegment[]> {
 /**
  * docx/xlsx/pptx 解压防线：预检 zip 条目的解压后总尺寸，超限不交给重解析器
  * （mammoth/exceljs/JSZip 解压无内在上限）。预检本身只读中央目录元数据。
+ *
+ * 天花板说明（PR#2079 Round 2 Nit）：该上限依赖中央目录**自报**的 uncompressedSize
+ * ——恶意 zip 可以少报（中央目录是攻击者可控字节），预检此时会放行；兜底是
+ * withExtractionTimeout 的时间上限（放弃等待，但已提交的同步解压中止不了）。
+ * 升级路径：解压时流式计数实际产出字节、超限即中断（JSZip 的 async('nodebuffer')
+ * 无逐块回调，需换流式 inflate 或自管计数器），当前误报/成本权衡下未实现。
  */
 async function officeUncompressedWithinBudget(path: string): Promise<boolean> {
   const { default: JSZip } = await import('jszip');
@@ -210,28 +414,42 @@ function withExtractionTimeout<T>(promise: Promise<T>): Promise<T> {
   });
 }
 
-async function extractSegments(path: string, extension: string): Promise<TextSegment[] | null> {
+async function extractContent(path: string, extension: string): Promise<ScannableContent | null> {
   switch (extension) {
     case 'md':
     case 'txt':
+      return { kind: 'mdtxt', segments: lineSegments(await readFile(path, 'utf8')) };
     case 'csv':
-    case 'json':
-      return lineSegments(await readFile(path, 'utf8'));
+      return { kind: 'csv', rows: parseCsvRows(await readFile(path, 'utf8')) };
+    case 'json': {
+      // JSON.parse 失败按解析失败 fail-open（warn 留痕）——存在性核对另有把关。
+      const parsed: unknown = JSON.parse(await readFile(path, 'utf8'));
+      const values: TextSegment[] = [];
+      collectJsonStringValues(parsed, '$', values);
+      return { kind: 'json', values };
+    }
     case 'html':
     case 'htm':
-      return htmlVisibleLineSegments(await readFile(path, 'utf8'));
+      return { kind: 'substring', segments: htmlVisibleLineSegments(await readFile(path, 'utf8')) };
     case 'docx':
       if (!(await officeUncompressedWithinBudget(path))) throw new Error('OFFICE_UNCOMPRESSED_OVER_BUDGET');
-      return extractDocxSegments(await readFile(path));
+      return { kind: 'substring', segments: await extractDocxSegments(await readFile(path)) };
     case 'xlsx':
       if (!(await officeUncompressedWithinBudget(path))) throw new Error('OFFICE_UNCOMPRESSED_OVER_BUDGET');
-      return extractXlsxSegments(path);
+      return { kind: 'substring', segments: await extractXlsxSegments(path) };
     case 'pptx':
       if (!(await officeUncompressedWithinBudget(path))) throw new Error('OFFICE_UNCOMPRESSED_OVER_BUDGET');
-      return extractPptxSegments(await readFile(path));
+      return { kind: 'substring', segments: await extractPptxSegments(await readFile(path)) };
     default:
       return null;
   }
+}
+
+function collectContentHits(content: ScannableContent): DeliverablePlaceholderHit[] {
+  if (content.kind === 'substring') return collectHits(content.segments);
+  if (content.kind === 'mdtxt') return collectMdtxtHits(content.segments);
+  if (content.kind === 'csv') return collectCsvHits(content.rows);
+  return collectJsonHits(content.values);
 }
 
 /**
@@ -243,16 +461,19 @@ export async function scanDeliverablesForPlaceholders(
   inputs: readonly PlaceholderScanInput[],
 ): Promise<DeliverablePlaceholderFinding[]> {
   const findings: DeliverablePlaceholderFinding[] = [];
+  const repoMarkerCache = new Map<string, boolean>();
   let budgetBytes = TURN_OUTCOME.MAX_DELIVERABLE_PLACEHOLDER_SCAN_BYTES;
   for (const input of inputs) {
     if (budgetBytes <= 0 || input.size > budgetBytes) continue;
     if (!isPlaceholderScannablePath(input.path)) continue;
+    const extension = input.path.slice(input.path.lastIndexOf('.') + 1).toLowerCase();
+    // 代码仓代码目录里的 md/json/csv/txt 是工程文件，默认不扫（office/html 照扫）。
+    if (TEXT_DOC_EXTENSIONS.has(extension) && (await insideCodeRepoCodeDir(input.path, repoMarkerCache))) continue;
     try {
       budgetBytes -= input.size;
-      const extension = input.path.slice(input.path.lastIndexOf('.') + 1).toLowerCase();
-      const segments = await withExtractionTimeout(extractSegments(input.path, extension));
-      if (!segments) continue;
-      const hits = collectHits(segments);
+      const content = await withExtractionTimeout(extractContent(input.path, extension));
+      if (!content) continue;
+      const hits = collectContentHits(content);
       if (hits.length > 0) findings.push({ claimed: input.claimed, resolved: input.resolved, hits });
     } catch (error) {
       // fail-open 但留痕（fail-open 说的是行为不变，不是失败无声）：读不出/解不开的

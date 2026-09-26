@@ -436,10 +436,11 @@ describe('turn outcome stamp', () => {
 
   // N-ARTIFACT-PLACEHOLDER-GATE：交付物在盘且非空，但正文残留占位符——补轮用尽后
   // 不给 verified，命中位置进 evidenceProblems（与缺漏同一条 missing 账）。
+  // Round 2 起裸单词只认脚手架形态（标记独行跟冒号）。
   it('keeps self_claimed when a claimed deliverable still contains placeholder content', async () => {
     mkdirSync(traceRoot, { recursive: true });
     const artifact = path.join(traceRoot, 'report.md');
-    writeFileSync(artifact, '# 周报\nTODO: 补结论\n');
+    writeFileSync(artifact, '# 周报\nTODO:\n');
     const recorder = new TurnTraceRecorder('claim-placeholder', traceRoot);
     const messages = [
       message(),
@@ -454,6 +455,58 @@ describe('turn outcome stamp', () => {
     expect(outcome.evidenceProblems).toHaveLength(1);
     expect(outcome.evidenceProblems?.[0]).toContain(`DELIVERABLE_PLACEHOLDER_CONTENT: ${artifact}`);
     expect(outcome.evidenceProblems?.[0]).toContain('第 2 行');
+  });
+
+  // PR#2079 Round 2 Nit：收尾闸刚做完的核对结果（本 run 内）直接复用——盘上文件此后
+  // 改成干净内容也不重新抽正文（闸与印章同一份结论，office 交付物不二次解析）。
+  it('reuses the close-gate deliverable check instead of re-scanning the files', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.md');
+    writeFileSync(artifact, '# 已修好\n真实内容。\n');
+    const recorder = new TurnTraceRecorder('cache-reuse', traceRoot);
+    const artifactState = ArtifactState.forTest();
+    artifactState.setLastDeliverableCheck({
+      claims: [{ claimed: 'report.md', resolved: artifact, source: 'inferred' }],
+      evidenceRefs: [],
+      missing: [{ claim: { claimed: 'report.md', resolved: artifact, source: 'inferred' }, kind: 'placeholder', placeholderHits: [{ location: '第 2 行', fragment: 'TODO:' }] }],
+    }, Date.now());
+    const messages = [
+      message(),
+      message({ id: 'wrote-report', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-report', name: 'Write', arguments: { file_path: artifact } }],
+        toolResults: [{ toolCallId: 'write-report', success: true, metadata: { outputPath: artifact } }] }),
+      message({ id: 'final', role: 'assistant', content: '已生成 `report.md`，请查收。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot, artifact: artifactState }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceProblems?.[0]).toContain('DELIVERABLE_PLACEHOLDER_CONTENT');
+  });
+
+  // 复用有 run 域纪律：checkedAtMs 早于本 run 最后一条 user 消息的是上一 run 的旧账，
+  // 不采信，回落现场核对（此刻盘上内容是干净的 → verified）。
+  it('ignores a deliverable check older than this run and re-checks on disk', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.md');
+    writeFileSync(artifact, '# 干净\n真实内容。\n');
+    const recorder = new TurnTraceRecorder('cache-stale', traceRoot);
+    const artifactState = ArtifactState.forTest();
+    artifactState.setLastDeliverableCheck({
+      claims: [{ claimed: 'report.md', resolved: artifact, source: 'inferred' }],
+      evidenceRefs: [],
+      missing: [{ claim: { claimed: 'report.md', resolved: artifact, source: 'inferred' }, kind: 'placeholder', placeholderHits: [{ location: '第 2 行', fragment: 'TODO:' }] }],
+    }, 0);
+    const messages = [
+      message(),
+      message({ id: 'wrote-report', role: 'assistant', content: '',
+        toolCalls: [{ id: 'write-report', name: 'Write', arguments: { file_path: artifact } }],
+        toolResults: [{ toolCallId: 'write-report', success: true, metadata: { outputPath: artifact } }] }),
+      message({ id: 'final', role: 'assistant', content: '已生成 `report.md`，请查收。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot, artifact: artifactState }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.verdict).toBe('verified');
+    expect(outcome.evidenceProblems).toEqual([]);
   });
 
   it('ignores claimed paths that reference the input materials directory (资料/)', async () => {

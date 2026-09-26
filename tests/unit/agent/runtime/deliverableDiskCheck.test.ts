@@ -373,7 +373,8 @@ describe('deliverable placeholder content gate (N-ARTIFACT-PLACEHOLDER-GATE)', (
 
   it('md deliverable with TODO triggers a repair round listing the hit line and fragment', async () => {
     mkdirSync(workRoot, { recursive: true });
-    writeFileSync(path.join(workRoot, 'report.md'), ['# 周报', 'TODO: 补结论', '本周完成三项需求。'].join('\n'));
+    // Round 2 起裸单词只认脚手架形态：全大写标记独行跟冒号（该行无其他正文）。
+    writeFileSync(path.join(workRoot, 'report.md'), ['# 周报', 'TODO:', '本周完成三项需求。'].join('\n'));
     const result = await placeholderGate({ finalText: '已生成 `report.md`，请查收。' });
     expect(result.action).toBe('repair');
     if (result.action !== 'repair') return;
@@ -510,5 +511,158 @@ describe('deliverable placeholder content gate (N-ARTIFACT-PLACEHOLDER-GATE)', (
     writeFileSync(path.join(workRoot, 'deck.pptx'), await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
     const result = await placeholderGate({ finalText: '已生成 `deck.pptx`，请查收。' });
     expect(result.action).toBe('pass');
+  });
+});
+
+// ============================================================================
+// 误报反例（ai-review PR#2079 Round 2 Important：宁可漏拦，不可误伤）——
+// 编码/数据任务里的合法文件不许被判成残留占位：i18n JSON 的 placeholder 键、
+// README 的 TODO 章节、CSV 的 TBD 状态列、代码仓 src/locales/docs 下的配置与文档。
+// 每条反例都配有「仍拦」对照，防止放宽过头。
+// ============================================================================
+describe('placeholder scan false-positive guards (ai-review PR#2079 Round 2)', () => {
+  function gate(input: { messages?: Message[]; userContent?: string; finalText: string; repairsUsed?: number }) {
+    return runDeliverableDiskCheckGate({
+      workingDirectory: workRoot,
+      messages: input.messages ?? [message({ content: input.userContent ?? '做一份周报' }), producingActivity()],
+      finalText: input.finalText,
+      repairsUsed: input.repairsUsed ?? 0,
+    });
+  }
+
+  // 反例①：JSON 只扫字符串值且只认「整值即占位」——键名不算，值里偶然提到也不算。
+  it('i18n JSON with a placeholder key and incidental TODO in values passes', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'zh.json'), JSON.stringify({
+      placeholder: '请输入关键词',
+      hint: '已清理全部 TODO 事项',
+      menu: { label: '搜索', tip: 'placeholder 已替换为真实文案' },
+    }, null, 2));
+    const result = await gate({ finalText: '已生成 `zh.json`，请查收。' });
+    expect(result.action).toBe('pass');
+    if (result.action !== 'pass') return;
+    expect(result.missing).toEqual([]);
+  });
+
+  // 反例①对照：整值就是占位标记的字符串值仍然拦（脚手架残留在 JSON 里也该修）。
+  it('JSON whose entire string value is a marker still triggers repair', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'config.json'), JSON.stringify({ 结论: 'TODO', 附注: '[insert 客户名]' }, null, 2));
+    const result = await gate({ finalText: '已生成 `config.json`，请查收。' });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.prompt).toContain('$.结论');
+    expect(result.prompt).toContain('[insert 客户名]');
+  });
+
+  // 反例②：README 的 TODO 章节与正文提及是正常工程文档，不算占位残留。
+  it('README with a ## TODO section and TODO mentioned in prose passes', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'README.md'), [
+      '# 项目 README', '', '## TODO', '', '- [x] 初始化仓库', '- [ ] 国际化', '',
+      '后续迭代里的 TODO 项都记录在本节，TBD 项见看板。', '',
+    ].join('\n'));
+    const result = await gate({ finalText: '已生成 `README.md`，请查收。' });
+    expect(result.action).toBe('pass');
+  });
+
+  // 反例②对照：裸单词只在脚手架形态才算——方括号/花括号包住的 [TODO]/{{placeholder}} 仍拦。
+  it('bracketed [TODO] and {{placeholder}} in md still trigger repair', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'contract.md'), '签约方：[TODO]\n联系人：{{placeholder}}\n');
+    const result = await gate({ finalText: '已生成 `contract.md`，请查收。' });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.prompt).toContain('[TODO]');
+  });
+
+  // 反例②延伸：md/txt 正文句子里出现 TODO/TBD/placeholder 是在讲事情，不是残留。
+  it('md/txt prose that merely mentions TODO/TBD/placeholder passes', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'notes.md'), '本周完成了 TODO 清理与 TBD 项核对，全部落地。\n');
+    writeFileSync(path.join(workRoot, 'notes.txt'), 'This report documents placeholder usage across pages.\n');
+    const result = await gate({ finalText: '已生成 `notes.md` 和 `notes.txt`，请查收。' });
+    expect(result.action).toBe('pass');
+  });
+
+  // 反例③：一列里多数行都是同一个值（状态列全是 TBD）是数据，不是占位残留。
+  it('CSV status column where most rows are TBD passes as data', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'features.csv'), '功能,状态\n登录,TBD\n导出,TBD\n搜索,TBD\n');
+    const result = await gate({ finalText: '已生成 `features.csv`，请查收。' });
+    expect(result.action).toBe('pass');
+  });
+
+  // 反例③对照：整格等于占位标记、且不是同值数据列的单格，仍然拦。
+  it('CSV single whole-cell TBD without a same-value column majority still triggers repair', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'contacts.csv'), '名称,备注\n甲,TBD\n乙,已完成\n丙,已上线\n');
+    const result = await gate({ finalText: '已生成 `contacts.csv`，请查收。' });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.prompt).toContain('TBD');
+  });
+
+  // 反例④：代码仓内 src/locales/docs 等代码目录的 md/json/csv/txt 默认不扫
+  // （是工程文件不是交付文档），office/html 仍扫（由 docx 对照用例钉住）。
+  it('md/json deliverables inside code-repo code dirs are not content-scanned', async () => {
+    mkdirSync(path.join(workRoot, 'repo/src'), { recursive: true });
+    mkdirSync(path.join(workRoot, 'repo/locales'), { recursive: true });
+    mkdirSync(path.join(workRoot, 'repo/docs'), { recursive: true });
+    writeFileSync(path.join(workRoot, 'repo/package.json'), '{"name":"repo"}\n');
+    writeFileSync(path.join(workRoot, 'repo/src/data.json'), JSON.stringify({ placeholder: '请输入', status: 'TODO' }));
+    writeFileSync(path.join(workRoot, 'repo/locales/en.json'), JSON.stringify({ placeholder: 'Type here' }));
+    writeFileSync(path.join(workRoot, 'repo/docs/guide.md'), '## TODO\nfill later: TBD notes\n');
+    const result = await gate({ finalText: '已生成 `repo/src/data.json`、`repo/locales/en.json` 和 `repo/docs/guide.md`。' });
+    expect(result.action).toBe('pass');
+  });
+
+  // 反例④对照：仓库根（不在代码目录里）的交付文档照扫；代码目录里的 docx 也照扫。
+  it('a repo-root md deliverable is still content-scanned', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'package.json'), '{"name":"repo"}\n');
+    writeFileSync(path.join(workRoot, 'report.md'), '结论：待补充\n');
+    const result = await gate({ finalText: '已生成 `report.md`，请查收。' });
+    expect(result.action).toBe('repair');
+  });
+
+  // Nit③：模板豁免看本 run 内的用户消息（任一条提过模板/占位即豁免），
+  // 不能只看最后一条——用户先要模板、后追加改动时，模板交付物仍该豁免。
+  it('a template request in an earlier user message of the run exempts the scan', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'tpl.md'), 'TODO: 待填写内容\n');
+    const messages: Message[] = [
+      message({ content: '帮我做个模板网站，占位内容我自己填', timestamp: 1_700_000_000_000 }),
+      message({ id: 'user-2', role: 'user', content: '标题改成蓝色', timestamp: 1_700_000_000_200 }),
+      message({ id: 'write-2', role: 'assistant', content: '', timestamp: 1_700_000_000_300,
+        toolCalls: [{ id: 'write-2', name: 'Write', arguments: { file_path: 'tpl.md' } }],
+        toolResults: [{ toolCallId: 'write-2', success: true, output: 'ok' }] }),
+    ];
+    const result = await gate({ messages, finalText: '已生成 `tpl.md`，请查收。' });
+    expect(result.action).toBe('pass');
+  });
+
+  // Nit②：补轮预算用尽后追加到 final 的占位片段同样过不可信内容边界
+  //（final 会留在会话历史里回灌模型，与修复提示同一注入面）。
+  it('final undelivered note wraps placeholder fragments in the untrusted-content boundary', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'late.md'), '结论：待补充\n');
+    const result = await gate({ finalText: '已生成 `late.md`，请查收。', repairsUsed: 1 });
+    expect(result.action).toBe('pass');
+    if (result.action !== 'pass') return;
+    expect(result.content).toContain('正文仍有未替换的占位符');
+    expect(result.content).toContain('<untrusted-content source="deliverable-content"');
+  });
+
+  // Nit①：闸结果随 check 透传，turnOutcomeStamp 复用同一份结论（不二次解析 office 文件）。
+  it('gate result carries the full check for turnOutcomeStamp reuse', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    writeFileSync(path.join(workRoot, 'report.md'), '结论：待补充\n');
+    const result = await gate({ finalText: '已生成 `report.md`，请查收。' });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.check.missing).toHaveLength(1);
+    expect(result.check.missing[0].kind).toBe('placeholder');
+    expect(result.check.claims.map((claim) => claim.claimed)).toEqual(['report.md']);
   });
 });

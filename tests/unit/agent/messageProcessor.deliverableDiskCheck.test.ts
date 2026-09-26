@@ -163,6 +163,14 @@ describe('MessageProcessor deliverable disk check (#1998)', () => {
       expect.stringContaining('<deliverable-disk-check>'),
       'deliverable-disk-check',
     );
+    // PR#2079 Round 2 Nit：闸结果透传到 artifact 槽（checkedAtMs 属本 run），
+    // turnOutcomeStamp 收尾复用同一份结论，不二次解析 office 交付物。
+    const lastUserTimestamp = Math.max(...ctx.messages.filter((entry) => entry.role === 'user').map((entry) => entry.timestamp));
+    const lastCheck = ctx.artifact.lastDeliverableCheck;
+    expect(lastCheck).toBeDefined();
+    expect(lastCheck?.checkedAtMs).toBeGreaterThanOrEqual(lastUserTimestamp);
+    expect(lastCheck?.result.missing).toEqual([]);
+    expect(lastCheck?.result.claims.map((claim) => claim.claimed)).toEqual(['report.html']);
   });
 
   it('claims delivered but file missing → feeds back one bounded repair round', async () => {

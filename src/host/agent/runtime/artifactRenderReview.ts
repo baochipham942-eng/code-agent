@@ -25,6 +25,7 @@ import {
   collectDeliverableClaims,
   runDeliverableDiskCheckGate,
   type DeliverableClaim,
+  type DeliverableDiskCheckResult,
 } from './deliverableDiskCheck';
 import type { ArtifactRenderReviewStamp, DeclaredDeliverables } from './artifactState';
 
@@ -488,17 +489,19 @@ export async function applyDeliverableCloseGates(input: {
   artifact?: {
     setRenderReview?(stamp: ArtifactRenderReviewStamp): void;
     readonly renderReview?: ArtifactRenderReviewStamp;
+    setLastDeliverableCheck?(result: DeliverableDiskCheckResult, checkedAtMs: number): void;
   };
   abortSignal?: AbortSignal;
   deps?: ArtifactRenderReviewDeps;
 }): Promise<DeliverableCloseGateResult> {
-  const disk = runDeliverableDiskCheckGate({
+  const disk = await runDeliverableDiskCheckGate({
     workingDirectory: input.workingDirectory,
     messages: input.messages,
     declaredDeliverables: input.declaredDeliverables,
     finalText: input.finalText,
     repairsUsed: input.diskRepairsUsed,
     nudgeManager: input.nudgeManager,
+    artifact: input.artifact,
   });
   if (disk.action === 'repair') {
     return {

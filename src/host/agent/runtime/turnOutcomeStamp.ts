@@ -14,7 +14,7 @@ import type { CompletionSummaryRecord } from '../../../shared/contract/completio
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
 import { createLogger } from '../../services/infra/logger';
 import { resolveRegisteredTurnOutcome } from '../../services/capabilities/hostCapabilityPorts';
-import type { DeclaredDeliverables } from './artifactState';
+import type { DeclaredDeliverables, LastDeliverableCheck } from './artifactState';
 import type { RuntimeContext } from './runtimeContext';
 import type { RunTerminalStatus } from './runTerminalStatus';
 import type { TraceEvent, TraceEventDataMap, TurnTraceRecorder } from './turnTrace';
@@ -28,15 +28,26 @@ export interface TurnOutcomeStampContext {
   goalMode?: RuntimeContext['goalMode'];
   turnTrace: TurnTraceRecorder;
   nudgeManager?: RuntimeContext['nudgeManager'];
-  /** declare_deliverables 的会话级声明槽（RuntimeContext.artifact）；本 run 内声明的才进落盘核对 */
+  /**
+   * declare_deliverables 的会话级声明槽（RuntimeContext.artifact）；本 run 内声明的才进落盘核对。
+   * lastDeliverableCheck 是收尾闸（messageProcessor）刚做完的核对结果：本 run 内
+   * （checkedAtMs 不早于最后一条 user 消息）才复用——office 交付物不重新解析一遍
+   * （PR#2079 Round 2 Nit）。
+   */
   artifact?: {
     readonly declaredDeliverables?: DeclaredDeliverables;
+    readonly lastDeliverableCheck?: LastDeliverableCheck;
     readonly renderReview?: ArtifactRenderReviewStamp;
   };
 }
 
 function successfulToolResults(messages: readonly Message[]): ToolResult[] {
   return messages.flatMap((message) => message.toolResults ?? []).filter((result) => result.success);
+}
+
+/** 本 run 最后一条 user 消息时间戳（与 deliverableDiskCheck 的 run 域纪律同一把尺）。 */
+function lastUserTimestamp(messages: readonly Message[]): number {
+  return [...messages].reverse().find((message) => message.role === 'user')?.timestamp ?? 0;
 }
 
 /**
@@ -74,8 +85,7 @@ function currentRunFilePaths(
     }
   }
   if (nudgeManager) {
-    const lastUserTimestamp = [...messages].reverse().find((message) => message.role === 'user')?.timestamp ?? 0;
-    nudgeManager.getModifiedFilesSince(lastUserTimestamp).forEach(add);
+    nudgeManager.getModifiedFilesSince(lastUserTimestamp(messages)).forEach(add);
   }
   return paths;
 }
@@ -240,18 +250,28 @@ async function buildTurnOutcome(
   // 回喂补一轮在 messageProcessor 收尾前做（有界，TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS）。
   // workingDirectory 缺失时不核对：回落 process.cwd() 会拿宿主进程 cwd 解析相对路径，
   // 核对结果没有语义（ai-review #2007 第五轮 Nit）。
+  // 收尾闸（messageProcessor）刚做完的核对在本 run 内（checkedAtMs 不早于最后一条
+  // user 消息）则直接复用——闸与印章消费同一份结论，office 交付物不再二次解析
+  // （PR#2079 Round 2 Nit）；闸没跑（错误收尾/forced-final 跳闸）就现场核对。
   const workingDirectory = ctx.workingDirectory;
-  const deliverableClaims = workingDirectory
-    ? collectDeliverableClaims({
-      messages: ctx.messages,
-      workingDirectory,
-      declaredDeliverables: ctx.artifact?.declaredDeliverables,
-      nudgeManager: ctx.nudgeManager,
-    })
-    : [];
-  const deliverableCheck: DeliverableDiskCheckResult = workingDirectory
-    ? checkDeliverablesOnDisk(deliverableClaims, workingDirectory)
-    : { claims: [], evidenceRefs: [], missing: [] };
+  const lastCheck = ctx.artifact?.lastDeliverableCheck;
+  const cachedCheck = workingDirectory && lastCheck && lastCheck.checkedAtMs >= lastUserTimestamp(ctx.messages)
+    ? lastCheck.result
+    : undefined;
+  const deliverableClaims = cachedCheck
+    ? cachedCheck.claims
+    : workingDirectory
+      ? collectDeliverableClaims({
+        messages: ctx.messages,
+        workingDirectory,
+        declaredDeliverables: ctx.artifact?.declaredDeliverables,
+        nudgeManager: ctx.nudgeManager,
+      })
+      : [];
+  const deliverableCheck: DeliverableDiskCheckResult = cachedCheck
+    ?? (workingDirectory
+      ? await checkDeliverablesOnDisk(deliverableClaims, workingDirectory, { messages: ctx.messages })
+      : { claims: [], evidenceRefs: [], missing: [] });
   problems.push(...formatDeliverableProblems(deliverableCheck.missing));
   const renderReview = ctx.artifact?.renderReview;
   if (renderReview && renderReview.status !== 'not_applicable') {

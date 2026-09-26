@@ -109,7 +109,14 @@ import {
   cadenceForConfig,
   isWithinQuietHours,
 } from '../../../../src/host/services/roleAssets/roleProactivity';
-import { parseWakeRationale } from '../../../../src/host/services/roleAssets/wakeRationale';
+import {
+  formatHistoryWhySuffix,
+  formatTopicPreferencePrompt,
+  parseWakeRationale,
+  sanitizeTopicList,
+  stripWakeMarkup,
+  topicExcludeHits,
+} from '../../../../src/host/services/roleAssets/wakeRationale';
 import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory } from '../../../../src/host/services/roleAssets/roleAssetService';
 import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
 
@@ -243,7 +250,28 @@ describe('roleProactivity', () => {
         missing: false,
       });
       expect(parseWakeRationale('没有任何标记的输出')).toEqual({ missing: true });
+      expect(parseWakeRationale('<rationale>   </rationale><evidence></evidence>').missing).toBe(true);
       expect(parseWakeRationale('<rationale>未闭合<decision>suggest</decision>').missing).toBe(true);
+      expect(parseWakeRationale('<rationale>产物还在，需要你拍板下一步。</rationale><evidence></evidence>')).toMatchObject({
+        missing: false,
+        rationale: expect.stringContaining('需要你拍板'),
+        evidence: undefined,
+      });
+    });
+
+    it('exclude 命中为大小写不敏感子串；空列表不命中', () => {
+      expect(topicExcludeHits('建议买一些 Crypto 理财', ['crypto', '八卦'])).toBe(true);
+      expect(topicExcludeHits('项目进度正常', ['crypto'])).toBe(false);
+      expect(topicExcludeHits('anything', [])).toBe(false);
+    });
+
+    it('话题列表去空白去重，prompt 注入硬约束，履历记下 missing', () => {
+      expect(sanitizeTopicList([' 项目进度 ', '项目进度', 'x'.repeat(80), ''])).toEqual(['项目进度', 'x'.repeat(40)]);
+      const block = formatTopicPreferencePrompt({ topicsInclude: ['项目进度'], topicsExclude: ['八卦'] });
+      expect(block).toContain('用户想听：项目进度');
+      expect(block).toContain('永远别提');
+      expect(stripWakeMarkup('正文。<rationale>理由</rationale><decision>suggest</decision>')).toBe('正文。');
+      expect(formatHistoryWhySuffix({ missing: true })).toBe(' | why: (missing)');
     });
 
     it('从可验证待办信号推断 advance goal 提案', () => {

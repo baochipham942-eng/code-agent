@@ -1,4 +1,5 @@
 import { MCP_SECRET_REF_PREFIX } from '../../shared/constants';
+import { MCPCredentialsMissingError } from './mcpErrors';
 
 export const SECRET_REF_PREFIX = MCP_SECRET_REF_PREFIX;
 
@@ -69,12 +70,21 @@ export function extractSecrets(
   return { sanitized, extracted };
 }
 
+export interface ResolveSecretRefsOptions {
+  /**
+   * 存储值为空串/空白时 fail-closed。只给远程 headers/URL 打开：空 header 会裸发换来误导性 401。
+   * stdio env 不打开——可选敏感名留空时进程仍按基线启动。
+   */
+  rejectEmpty?: boolean;
+}
+
 /**
  * 解引用 env/headers map。任何引用缺失都 fail-closed，且错误不携带真值。
  */
 export function resolveSecretRefs(
   values: Record<string, string>,
   lookup: (integrationId: string) => Record<string, string> | null,
+  options?: ResolveSecretRefsOptions,
 ): Record<string, string> {
   const resolved: Record<string, string> = {};
 
@@ -87,17 +97,26 @@ export function resolveSecretRefs(
 
     const integration = lookup(reference.integrationId);
     if (!integration) {
-      throw new Error(
+      throw new MCPCredentialsMissingError(
         `MCP credential "${reference.integrationId}.${reference.field}" is missing; please re-enter it in Connectors`,
       );
     }
     if (!Object.prototype.hasOwnProperty.call(integration, reference.field)) {
-      throw new Error(
+      throw new MCPCredentialsMissingError(
         `MCP credential field "${reference.integrationId}.${reference.field}" is missing; please re-enter it in Connectors`,
       );
     }
 
-    resolved[key] = integration[reference.field];
+    const storedValue = integration[reference.field];
+    if (options?.rejectEmpty && (typeof storedValue !== 'string' || storedValue.trim() === '')) {
+      // 空凭据若照发，请求会裸奔出去、换来一个误导性的 401「授权失效」——
+      // 在发出前就 fail-closed 报「凭据未附上」。仅远程路径打开。
+      throw new MCPCredentialsMissingError(
+        `MCP credential "${reference.integrationId}.${reference.field}" is empty (credentials were not attached); please re-enter it in Connectors`,
+      );
+    }
+
+    resolved[key] = typeof storedValue === 'string' ? storedValue : '';
   }
 
   return resolved;

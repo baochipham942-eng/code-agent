@@ -24,6 +24,7 @@ import type {
   MCPStdioServerConfig,
 } from './types';
 import { isStdioConfig, isSSEConfig, isHttpStreamableConfig } from './types';
+import { isMcpInsufficientScopeError, isMcpServiceUnavailableError } from './mcpErrors';
 
 const logger = createLogger('MCPTransport', { lane: 'mcp' });
 export const MCP_TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
@@ -79,12 +80,16 @@ function sdkErrorCode(error: unknown): string | undefined {
   return typeof code === 'string' ? code : undefined;
 }
 
-function retryableHttpStatus(error: unknown): boolean {
+function httpStatusOf(error: unknown): number | undefined {
   const status = SdkHttpError.isInstance(error)
     ? error.status
     : errorRecord(error)?.status;
-  return typeof status === 'number'
-    && (status === 408 || status === 429 || status >= 500);
+  return typeof status === 'number' ? status : undefined;
+}
+
+function retryableHttpStatus(error: unknown): boolean {
+  const status = httpStatusOf(error);
+  return status === 408 || status === 429 || (status !== undefined && status >= 500);
 }
 
 function headersWithoutAuthorization(headers: Record<string, string>): Record<string, string> | undefined {
@@ -180,14 +185,23 @@ async function invokeMcpOAuthFetch(
 }
 
 export function isRetryableRemoteMCPConnectionError(error: unknown): boolean {
+  // 设计态失败（权限范围不足 / 服务端不可用）优先于任何临时启发式：重试改变不了结果。
+  // 501 会被「>=500 可重试」的临时判据捞到，必须在这里显式压下去。
+  if (isMcpInsufficientScopeError(error) || isMcpServiceUnavailableError(error)) {
+    return false;
+  }
   return RETRYABLE_SDK_ERROR_CODES.has(sdkErrorCode(error) ?? '')
     || retryableHttpStatus(error)
     || findSystemErrorCode(error) !== undefined;
 }
 
 export function isMcpToolConnectionInterruptionError(error: unknown): boolean {
+  if (isMcpInsufficientScopeError(error) || isMcpServiceUnavailableError(error)) {
+    return false;
+  }
   const code = errorRecord(error)?.code;
-  return isRetryableRemoteMCPConnectionError(error) || code === -32001;
+  // MCP Streamable HTTP：过期 Mcp-Session-Id 必须 404，客户端重建会话即可恢复。
+  return isRetryableRemoteMCPConnectionError(error) || code === -32001 || httpStatusOf(error) === 404;
 }
 
 export async function retryTransientRemoteMCPConnection<T>(

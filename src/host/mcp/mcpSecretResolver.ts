@@ -2,6 +2,7 @@ import { getConfigService } from '../services/core/configService';
 import type { MCPServerConfig } from './types';
 import { isHttpStreamableConfig, isSSEConfig, isStdioConfig } from './types';
 import { parseSecretRef, resolveSecretRefs, SECRET_REF_PREFIX } from './secretRef';
+import { MCPCredentialsMissingError } from './mcpErrors';
 
 const URL_CREDENTIAL_PLACEHOLDER = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
@@ -28,7 +29,7 @@ function resolveRemoteUrlCredentials(
   const serverUrl = config.serverUrl.replace(URL_CREDENTIAL_PLACEHOLDER, (_placeholder, key: string) => {
     const value = headers?.[key];
     if (!value) {
-      throw new Error(`MCP URL credential "${key}" is missing; please re-enter it in Connectors`);
+      throw new MCPCredentialsMissingError(`MCP URL credential "${key}" is missing; please re-enter it in Connectors`);
     }
     consumedHeaderKeys.add(key);
     return encodeURIComponent(value);
@@ -61,7 +62,10 @@ export function resolveServerConfigSecrets(config: MCPServerConfig): MCPServerCo
   const resolved = needsSecretResolution && values
     ? resolveSecretRefs(values, (integrationId) => (
         getConfigService()?.getIntegration(integrationId) ?? null
-      ))
+      ), {
+        // 空凭据检查只拦远程 headers/URL：stdio 可选敏感名 env 留空时保持基线可启动。
+        rejectEmpty: isSSEConfig(config) || isHttpStreamableConfig(config),
+      })
     : values;
 
   if (isStdioConfig(config)) {

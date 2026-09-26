@@ -121,4 +121,39 @@ describe('resolveServerConfigSecrets', () => {
 
     expect(() => resolveServerConfigSecrets(config)).toThrow(/TENCENT_MAP_KEY.*missing/);
   });
+
+  it('lets stdio start when an optional sensitive env resolves empty', () => {
+    getConfigServiceMock.mockReturnValue({
+      onSettingsUpdated: vi.fn(),
+      getIntegration: vi.fn(() => ({ OPTIONAL_API_KEY: '' })),
+    });
+    const config: MCPServerConfig = {
+      name: 'local-stdio',
+      type: 'stdio',
+      command: 'npx',
+      env: { OPTIONAL_API_KEY: 'secureref:mcp_local.OPTIONAL_API_KEY' },
+      enabled: true,
+    };
+
+    expect(resolveServerConfigSecrets(config)).toEqual({
+      ...config,
+      env: { OPTIONAL_API_KEY: '' },
+    });
+  });
+
+  it('fails closed when a remote header credential resolves empty', () => {
+    getConfigServiceMock.mockReturnValue({
+      onSettingsUpdated: vi.fn(),
+      getIntegration: vi.fn(() => ({ Authorization: '' })),
+    });
+    const config: MCPServerConfig = {
+      name: 'remote',
+      type: 'http-streamable',
+      serverUrl: 'https://example.com/mcp',
+      headers: { Authorization: 'secureref:mcp_remote.Authorization' },
+      enabled: true,
+    };
+
+    expect(() => resolveServerConfigSecrets(config)).toThrow(/credentials were not attached/);
+  });
 });

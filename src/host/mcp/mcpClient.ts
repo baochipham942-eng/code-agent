@@ -73,6 +73,7 @@ import { createOAuthProviderForServer } from './mcpOAuthProvider';
 import { getMcpOAuthCoordinator } from './mcpOAuthCoordinator';
 import {
   formatMcpConnectionError,
+  formatMcpConnectorErrorExit,
   isOAuthAuthorizationRequiredError,
   MCPToolDeliveryUnknownError,
 } from './mcpErrors';
@@ -1117,9 +1118,7 @@ export class MCPClient extends EventEmitter {
       }
 
       const errorMessage = error instanceof Error ? error.message : 'MCP tool call failed';
-      const errorCode = error && typeof error === 'object'
-        ? (error as { code?: unknown }).code
-        : undefined;
+      const errorCode = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
       const isSessionExpired = errorCode === -32001;
       const isConnectionError = isMcpToolConnectionInterruptionError(error);
 
@@ -1158,7 +1157,9 @@ export class MCPClient extends EventEmitter {
       return {
         toolCallId,
         success: false,
-        error: errorMessage,
+        // 设计态连接器错误（权限范围不足 / 服务端不可用）换成带出路的文案：
+        // 模型拿到的是「下一步做什么」，不是一句裸报错加一次无效重连。
+        error: formatMcpConnectorErrorExit(error) ?? errorMessage,
         duration: Date.now() - startTime,
       };
     }

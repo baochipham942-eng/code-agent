@@ -163,13 +163,14 @@ describe('MessageProcessor persistence', () => {
     processor.injectSteerMessage('continue with care');
     expect(cancelTimeWakesOnUserReturn).toHaveBeenCalledWith('runtime-session-1', { historyVisibility: undefined });
 
-    expect(ctx.messages).toEqual([expect.objectContaining({
+    expect(ctx.messages).toEqual([{
       id: 'steer-message-1',
       role: 'user',
       content: 'continue with care',
       timestamp: expect.any(Number),
+      attachments: undefined,
       metadata: { runtimeSteer: true },
-    })]);
+    }]);
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', ctx.messages[0]);
     expect(sessionManagerState.addMessage).not.toHaveBeenCalled();
   });
@@ -316,13 +317,14 @@ describe('MessageProcessor persistence', () => {
     await processor.injectSteerMessage(instruction);
 
     // 承重：执行侧看到的那一条一字未改，也没有被打上任何展示层标记
-    expect(ctx.messages).toEqual([expect.objectContaining({
+    expect(ctx.messages).toEqual([{
       id: 'steer-message-1',
       role: 'user',
       content: instruction,
       timestamp: expect.any(Number),
+      attachments: undefined,
       metadata: { runtimeSteer: true },
-    })]);
+    }]);
 
     const persisted = sessionManagerState.addMessageToSession.mock.calls.at(-1)![1] as {
       isMeta?: boolean;
@@ -391,13 +393,14 @@ describe('MessageProcessor persistence', () => {
 
     processor.injectSteerMessage('continue with care', 'client-message-1');
 
-    expect(ctx.messages).toEqual([expect.objectContaining({
+    expect(ctx.messages).toEqual([{
       id: 'client-message-1',
       role: 'user',
       content: 'continue with care',
       timestamp: expect.any(Number),
+      attachments: undefined,
       metadata: { runtimeSteer: true },
-    })]);
+    }]);
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', ctx.messages[0]);
   });
 
@@ -413,13 +416,14 @@ describe('MessageProcessor persistence', () => {
 
     await expect(processor.injectSteerMessage('msg')).rejects.toThrow('disk full');
 
-    expect(ctx.messages).toEqual([expect.objectContaining({
+    expect(ctx.messages).toEqual([{
       id: 'steer-message-1',
       role: 'user',
       content: 'msg',
       timestamp: expect.any(Number),
+      attachments: undefined,
       metadata: { runtimeSteer: true },
-    })]);
+    }]);
   });
 
   it('waits for steer message persistence before resolving', async () => {

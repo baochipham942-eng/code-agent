@@ -22,11 +22,14 @@ function argumentValue(name) {
 }
 
 function assertInvocationBoundary() {
-  const sourcePath = path.join(repoRoot, 'src/host/tools/media/ppt/visualReview.ts');
+  const sourcePath = path.join(repoRoot, 'src/host/tools/media/officeRaster.ts');
   const source = fs.readFileSync(sourcePath, 'utf8');
-  const required = ['execSync(', "path.join('poppler', 'bin', 'pdftoppm')", '"${pdfPath}"'];
+  const required = ['execFileAsync(pdftoppm', "path.join('poppler', 'bin', 'pdftoppm')", 'args.push(pdfPath'];
   for (const marker of required) {
     if (!source.includes(marker)) throw new Error(`pdftoppm independent-process boundary lost: ${marker}`);
+  }
+  if (source.includes('"${pdfPath}"')) {
+    throw new Error('pdftoppm independent-process boundary lost: shell-interpolated pdfPath');
   }
   const forbidden = [/\bffi\b/i, /\bdlopen\b/i, /shared[_ -]?memory/i, /node-?gyp/i];
   const invocationAnchor = "resolveHelperBinary(path.join('poppler', 'bin', 'pdftoppm'))";

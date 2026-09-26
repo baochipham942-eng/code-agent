@@ -6,6 +6,8 @@ import {
   normalizeDeliverablePath,
   type DeliverableDiskCheckResult,
 } from './deliverableDiskCheck';
+import { formatVisualReviewProblems } from './artifactRenderReview';
+import type { ArtifactRenderReviewStamp } from './artifactState';
 import { readbackFileEvidence } from './fileEvidenceReadback';
 import type { Message, ToolResult } from '../../../shared/contract';
 import type { CompletionSummaryRecord } from '../../../shared/contract/completionSummary';
@@ -37,6 +39,7 @@ export interface TurnOutcomeStampContext {
   artifact?: {
     readonly declaredDeliverables?: DeclaredDeliverables;
     readonly lastDeliverableCheck?: LastDeliverableCheck;
+    readonly renderReview?: ArtifactRenderReviewStamp;
   };
 }
 
@@ -280,6 +283,17 @@ async function buildTurnOutcome(
       ? await checkDeliverablesOnDisk(deliverableClaims, workingDirectory, { messages: ctx.messages })
       : { claims: [], evidenceRefs: [], missing: [] });
   problems.push(...formatDeliverableProblems(deliverableCheck.missing));
+  const renderReview = ctx.artifact?.renderReview;
+  if (renderReview && renderReview.status !== 'not_applicable') {
+    problems.push(...formatVisualReviewProblems(renderReview));
+  }
+  const visualVerification = !renderReview || renderReview.status === 'not_applicable'
+    ? undefined
+    : (renderReview.status === 'skipped_no_libreoffice'
+      || renderReview.status === 'skipped_no_vlm'
+      || renderReview.status === 'skipped_render_failed')
+      ? '未做视觉验证' as const
+      : renderReview.status;
   const knownRefs = new Set(evidenceRefs.map((ref) => ref.ref));
   for (const ref of deliverableCheck.evidenceRefs) {
     if (!knownRefs.has(ref.ref)) evidenceRefs.push(ref);
@@ -322,6 +336,7 @@ async function buildTurnOutcome(
     evidenceRefs,
     source: 'generic',
     evidenceProblems: problems,
+    ...(visualVerification ? { visualVerification } : {}),
   };
 }
 

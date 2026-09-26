@@ -154,7 +154,7 @@ function formatTerminalError(error: unknown): string {
  * （N-CHAT-EMPTY-FINAL-NO-EXIT：完成必须有非空最终回复，不许用排除法兜底）。
  * 运行中转向（injectSteerMessage）会把 role:'user' 推进同一轮 history，最终回复在转向之后。
  */
-export function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
+function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
   let seenLastUser = false;
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {

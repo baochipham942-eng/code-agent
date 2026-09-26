@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TelemetryService, withApprovalTrace } from '../../../../src/host/telemetry/telemetryService';
+import { endHumanWait, isHumanWaitActive } from '../../../../src/host/services/infra/timeoutController';
 import {
   createChildRunTraceContext,
   createRunTraceContext,
@@ -24,6 +25,10 @@ describe('TelemetryService RunTraceContext authority', () => {
   beforeEach(() => {
     service = TelemetryService.getInstance();
     service.reset();
+  });
+
+  afterEach(() => {
+    while (isHumanWaitActive('session-1')) endHumanWait('session-1');
   });
 
   it('uses explicit/active run context and never a mutable process current trace', async () => {
@@ -111,5 +116,7 @@ describe('TelemetryService RunTraceContext authority', () => {
       'approval.rejected',
     ]);
     expect(JSON.stringify(approval)).not.toContain('secret user input');
+    expect(approval.attributes['approval.wait_ms']).toEqual(expect.any(Number));
+    expect(approval.attributes['approval.wait_ms']).toBeGreaterThanOrEqual(0);
   });
 });

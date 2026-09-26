@@ -36,12 +36,14 @@ vi.mock('../../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
 
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { clearApprovalWait, getApprovalWaitMs } from '../../../src/host/tools/toolExecutionTelemetry';
+import { endHumanWait, isHumanWaitActive } from '../../../src/host/services/infra/timeoutController';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('ToolExecutor in-tool approval wait accounting', () => {
   afterEach(() => {
     clearApprovalWait('call-approval-wait');
+    while (isHumanWaitActive('session-approval-wait')) endHumanWait('session-approval-wait');
     resolverState.definition = undefined;
     resolverState.execute.mockReset();
   });

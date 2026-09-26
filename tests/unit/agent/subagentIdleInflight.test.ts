@@ -89,12 +89,12 @@ describe('subagent idle watchdog while a model request is in flight', () => {
     lifecycle.stopIdleWatchdog();
   });
 
-  it('still aborts at the total execution budget while a request is in flight', () => {
+  it('still aborts at the total execution budget while a request is in flight', async () => {
     vi.useFakeTimers();
     const lifecycle = createLifecycle();
     lifecycle.markRequestStart();
 
-    vi.advanceTimersByTime(TEST_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(TEST_TIMEOUT_MS);
 
     expect(lifecycle.effectiveSignal.aborted).toBe(true);
     expect(lifecycle.effectiveSignal.reason).toBe('timeout');

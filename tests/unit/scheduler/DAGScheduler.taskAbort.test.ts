@@ -12,6 +12,7 @@ import { getEventListeners } from 'events';
 import { DAGScheduler } from '../../../src/host/scheduler/DAGScheduler';
 import { TaskDAG } from '../../../src/host/scheduler/TaskDAG';
 import type { SubagentExecutionRequest } from '../../../src/host/agent/subagentExecutorTypes';
+import { beginHumanWait, endHumanWait, isHumanWaitActive } from '../../../src/host/services/infra/timeoutController';
 
 const loggerMock = vi.hoisted(() => ({
   info: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 
 describe('DAGScheduler agent 任务超时 abort 接线', () => {
   afterEach(() => {
+    while (isHumanWaitActive('session-task-abort')) endHumanWait('session-task-abort');
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.clearAllMocks();
@@ -154,5 +156,26 @@ describe('DAGScheduler agent 任务超时 abort 接线', () => {
       expect.stringContaining('agent-hang'),
       expect.objectContaining({ error: 'abort boom' }),
     );
+  });
+
+  it('⑤ 人等待超过任务超时阈值后再结束，任务不因超时被杀', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const execute = hangingExecutor();
+    const { scheduler, dag } = setupScheduler(execute, 50);
+    const { executionContext } = runContext();
+
+    beginHumanWait('session-task-abort');
+    const resultPromise = scheduler.execute(dag, { executionContext: executionContext as never });
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(execute.mock.calls[0][0].context.abortSignal.aborted).toBe(false);
+    endHumanWait('session-task-abort');
+    await vi.advanceTimersByTimeAsync(50);
+    await resultPromise;
+
+    const signal = execute.mock.calls[0][0].context.abortSignal;
+    expect(signal.aborted).toBe(true);
+    expect(signal.reason).toBe('timeout');
+    expect(dag.getTask('agent-hang')?.status).toBe('failed');
   });
 });

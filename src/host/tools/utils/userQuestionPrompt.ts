@@ -35,6 +35,7 @@ import {
   notifyIfLateDecisionResponse,
 } from '../../permissions/userDecision';
 import { holdStallClock } from '../../agent/stallObserver';
+import { withApprovalTrace } from '../../telemetry/telemetryService';
 
 const logger = createLogger('UserQuestionPrompt');
 
@@ -123,92 +124,94 @@ export async function promptUserInChat(
 
   const releaseHold = holdStallClock(opts.sessionId);
   try {
-  const timeoutMs = opts.timeoutMs ?? INTERACTION_TIMEOUTS.USER_QUESTION;
-  const responsePromise = new Promise<UserQuestionResponse>((resolve, reject) => {
-    const timeout = hasInteractiveRenderer
-      ? setTimeout(() => {
-        pending.delete(request.id);
-        cancelRegisteredUserQuestion(request.id, { outcome: 'expired' });
-        markDecisionRequestExpired(request.id, '用户问题');
-        logger.warn('Interactive user question expired after 24h backstop', {
-          requestId: request.id,
-          sessionId: request.sessionId,
-        });
-        reject(new Error('parked-timeout'));
-      }, INTERACTION_TIMEOUTS.PARKED_APPROVAL)
-      : setTimeout(() => {
-        pending.delete(request.id);
-        cancelRegisteredUserQuestion(request.id, { outcome: 'expired' });
-        markDecisionRequestExpired(request.id, '用户问题');
-        reject(new Error('timeout'));
-      }, timeoutMs);
-    pending.set(request.id, { resolve, timeout });
+    return await withApprovalTrace('ask_user', async () => {
+      const timeoutMs = opts.timeoutMs ?? INTERACTION_TIMEOUTS.USER_QUESTION;
+      const responsePromise = new Promise<UserQuestionResponse>((resolve, reject) => {
+        const timeout = hasInteractiveRenderer
+          ? setTimeout(() => {
+            pending.delete(request.id);
+            cancelRegisteredUserQuestion(request.id, { outcome: 'expired' });
+            markDecisionRequestExpired(request.id, '用户问题');
+            logger.warn('Interactive user question expired after 24h backstop', {
+              requestId: request.id,
+              sessionId: request.sessionId,
+            });
+            reject(new Error('parked-timeout'));
+          }, INTERACTION_TIMEOUTS.PARKED_APPROVAL)
+          : setTimeout(() => {
+            pending.delete(request.id);
+            cancelRegisteredUserQuestion(request.id, { outcome: 'expired' });
+            markDecisionRequestExpired(request.id, '用户问题');
+            reject(new Error('timeout'));
+          }, timeoutMs);
+        pending.set(request.id, { resolve, timeout });
 
-    if (opts.abortSignal) {
-      opts.abortSignal.addEventListener(
-        'abort',
-        () => {
+        if (opts.abortSignal) {
+          opts.abortSignal.addEventListener(
+            'abort',
+            () => {
+              const p = pending.get(request.id);
+              if (p) {
+                clearTimeout(p.timeout);
+                pending.delete(request.id);
+                cancelRegisteredUserQuestion(request.id, { outcome: 'cancelled' });
+                reject(new Error('aborted'));
+              }
+            },
+            { once: true },
+          );
+        }
+      });
+
+      try {
+        if (hasInteractiveRenderer) {
+          mainWindow?.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
+        }
+        const voiceOffered = offerRegisteredUserQuestion(request, settleUserQuestionResponse);
+        if (!hasInteractiveRenderer && !voiceOffered) {
           const p = pending.get(request.id);
           if (p) {
             clearTimeout(p.timeout);
             pending.delete(request.id);
-            cancelRegisteredUserQuestion(request.id, { outcome: 'cancelled' });
-            reject(new Error('aborted'));
           }
-        },
-        { once: true },
-      );
-    }
-  });
-
-  try {
-    if (hasInteractiveRenderer) {
-      mainWindow?.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
-    }
-    const voiceOffered = offerRegisteredUserQuestion(request, settleUserQuestionResponse);
-    if (!hasInteractiveRenderer && !voiceOffered) {
-      const p = pending.get(request.id);
-      if (p) {
-        clearTimeout(p.timeout);
-        pending.delete(request.id);
+          logger.warn('user question route disappeared before delivery', {
+            requestId: request.id,
+            sessionId: request.sessionId,
+          });
+          return { status: 'no-renderer' };
+        }
+      } catch (error) {
+        const p = pending.get(request.id);
+        if (p) {
+          clearTimeout(p.timeout);
+          pending.delete(request.id);
+          cancelRegisteredUserQuestion(request.id, { outcome: 'cancelled' });
+        }
+        throw error;
       }
-      logger.warn('user question route disappeared before delivery', {
-        requestId: request.id,
-        sessionId: request.sessionId,
-      });
-      return { status: 'no-renderer' };
-    }
-  } catch (error) {
-    const p = pending.get(request.id);
-    if (p) {
-      clearTimeout(p.timeout);
-      pending.delete(request.id);
-      cancelRegisteredUserQuestion(request.id, { outcome: 'cancelled' });
-    }
-    throw error;
-  }
 
-  try {
-    if (opts.notify) {
-      notifyDecisionNeeded({
-        sessionId: opts.sessionId,
-        title: opts.notify.title,
-        body: opts.notify.body,
-      });
-    }
+      try {
+        if (opts.notify) {
+          notifyDecisionNeeded({
+            sessionId: opts.sessionId,
+            title: opts.notify.title,
+            body: opts.notify.body,
+          });
+        }
 
-    const response = await responsePromise;
-    return { status: response.declined === true ? 'declined' : 'answered', response };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : '';
-    if (msg === 'aborted') return { status: 'aborted' };
-    return {
-      status: 'timeout',
-      reason: hasInteractiveRenderer
-        ? '等待用户回答超过 24 小时，停车请求已按安全兜底拒绝。'
-        : headlessDecisionTimeoutReason(timeoutMs),
-    };
-  }
+        const response = await responsePromise;
+        return { status: response.declined === true ? 'declined' : 'answered', response };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        if (msg === 'aborted') return { status: 'aborted' };
+        return {
+          status: 'timeout',
+          reason: hasInteractiveRenderer
+            ? '等待用户回答超过 24 小时，停车请求已按安全兜底拒绝。'
+            : headlessDecisionTimeoutReason(timeoutMs),
+        };
+      }
+    }, opts.sessionId);
   } finally {
     releaseHold();
   }

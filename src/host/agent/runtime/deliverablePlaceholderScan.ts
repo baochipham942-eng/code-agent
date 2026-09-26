@@ -33,8 +33,18 @@ const SCANNABLE_EXTENSIONS = new Set(['md', 'txt', 'html', 'htm', 'csv', 'json',
 /** 单文件最多报告的命中数：修复提示够定位即可，不刷屏。 */
 const MAX_HITS_PER_FILE = 3;
 
-/** 命中片段长度上限（任务书：片段 ≤60 字）。 */
+/** 命中片段长度上限（任务书：片段 ≤60 字，含截断省略号）。 */
 const MAX_FRAGMENT_CHARS = 60;
+
+/**
+ * 单个压缩型交付物（docx/xlsx/pptx）允许的解压后总字节上限——zip bomb 防线。
+ * 字节预算按压缩后大小计，解压侧必须另设上限：压缩后 <10MB 的恶意文档可以
+ * 解压成 GB 级把收尾闸挂死（ai-review PR#2079 Important）。
+ */
+const MAX_OFFICE_UNCOMPRESSED_BYTES = 64 * 1024 * 1024;
+
+/** 单文件抽正文（读取+解析）的时间上限：收尾闸不许被病态文件无限挂住。 */
+const EXTRACTION_TIMEOUT_MS = 15_000;
 
 export interface DeliverablePlaceholderHit {
   /** 行号 / 工作表行 / 页码等定位描述 */
@@ -99,11 +109,11 @@ function htmlVisibleLineSegments(html: string): TextSegment[] {
   return visible.split(/\r?\n/).map((line, index) => ({ location: `第 ${index + 1} 行`, text: line }));
 }
 
-/** 命中片段：以首个命中位置为锚，向前带一点上下文，压掉空白后截到上限。 */
+/** 命中片段：以首个命中位置为锚，向前带一点上下文，压掉空白后截到上限（省略号计入）。 */
 function fragmentAround(text: string, matchIndex: number): string {
   const start = Math.max(0, matchIndex - 16);
   const fragment = text.slice(start, start + MAX_FRAGMENT_CHARS).replace(/\s+/g, ' ').trim();
-  return start + MAX_FRAGMENT_CHARS < text.length ? `${fragment}…` : fragment;
+  return start + MAX_FRAGMENT_CHARS < text.length ? `${fragment.slice(0, MAX_FRAGMENT_CHARS - 1)}…` : fragment;
 }
 
 function collectHits(segments: readonly TextSegment[]): DeliverablePlaceholderHit[] {
@@ -167,6 +177,39 @@ async function extractPptxSegments(buffer: Buffer): Promise<TextSegment[]> {
   return slides.map((slide) => ({ location: `第 ${slide.page} 页`, text: slide.text }));
 }
 
+/**
+ * docx/xlsx/pptx 解压防线：预检 zip 条目的解压后总尺寸，超限不交给重解析器
+ * （mammoth/exceljs/JSZip 解压无内在上限）。预检本身只读中央目录元数据。
+ */
+async function officeUncompressedWithinBudget(path: string): Promise<boolean> {
+  const { default: JSZip } = await import('jszip');
+  const zip = await JSZip.loadAsync(await readFile(path));
+  let total = 0;
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) continue;
+    // JSZip 未公开解压尺寸；_data.uncompressedSize 是私有字段（loadAsync 后由中央目录
+    // 填充）。取不到的条目不计入——预检失效时还有时间上限兜底，不因此关掉整类扫描。
+    const size = (entry as { _data?: { uncompressedSize?: unknown } })._data?.uncompressedSize;
+    if (typeof size === 'number') total += size;
+  }
+  return total <= MAX_OFFICE_UNCOMPRESSED_BYTES;
+}
+
+/**
+ * 收尾闸的抽正文有时限：超时按解析失败处理（fail-open 跳过并 warn 留痕）。
+ * 注意超时只是放弃等待、让收尾继续，中止不了已提交的同步解析——真正的炸弹
+ * 防线是解压尺寸预检，这里防的是病态文件把收尾挂死。
+ */
+function withExtractionTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`PLACEHOLDER_SCAN_EXTRACTION_TIMEOUT after ${EXTRACTION_TIMEOUT_MS}ms`)), EXTRACTION_TIMEOUT_MS);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
 async function extractSegments(path: string, extension: string): Promise<TextSegment[] | null> {
   switch (extension) {
     case 'md':
@@ -178,10 +221,13 @@ async function extractSegments(path: string, extension: string): Promise<TextSeg
     case 'htm':
       return htmlVisibleLineSegments(await readFile(path, 'utf8'));
     case 'docx':
+      if (!(await officeUncompressedWithinBudget(path))) throw new Error('OFFICE_UNCOMPRESSED_OVER_BUDGET');
       return extractDocxSegments(await readFile(path));
     case 'xlsx':
+      if (!(await officeUncompressedWithinBudget(path))) throw new Error('OFFICE_UNCOMPRESSED_OVER_BUDGET');
       return extractXlsxSegments(path);
     case 'pptx':
+      if (!(await officeUncompressedWithinBudget(path))) throw new Error('OFFICE_UNCOMPRESSED_OVER_BUDGET');
       return extractPptxSegments(await readFile(path));
     default:
       return null;
@@ -204,7 +250,7 @@ export async function scanDeliverablesForPlaceholders(
     try {
       budgetBytes -= input.size;
       const extension = input.path.slice(input.path.lastIndexOf('.') + 1).toLowerCase();
-      const segments = await extractSegments(input.path, extension);
+      const segments = await withExtractionTimeout(extractSegments(input.path, extension));
       if (!segments) continue;
       const hits = collectHits(segments);
       if (hits.length > 0) findings.push({ claimed: input.claimed, resolved: input.resolved, hits });

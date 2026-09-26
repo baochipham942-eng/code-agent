@@ -16,7 +16,6 @@ import { buildNeoTagPromptLayer } from '../../../src/host/services/project/neoTa
 import {
   createAndRunNeoWorkCard,
   launchApprovedNeoWorkCard,
-  resolveNeoTagRunOutcome,
   type NeoTagTaskManager,
 } from '../../../src/host/services/project/neoTagRuntimeService';
 import type { NeoWorkCardService } from '../../../src/host/services/project/neoWorkCardService';

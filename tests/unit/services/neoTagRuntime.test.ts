@@ -1244,6 +1244,41 @@ describe('Neo Tag runtime helpers', () => {
     expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
   });
 
+  it('终态契约：转向前的进度文本不能冒充转向后的最终回复', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => {
+          sessionMessages.push(
+            { id: 'msg_source', role: 'user', content: '@neo 干活', timestamp: 1 },
+            {
+              id: 'assistant_progress',
+              role: 'assistant',
+              content: '开始处理了。',
+              timestamp: 2,
+              toolCalls: [{ id: 'tc_progress', name: 'list_files', arguments: {} } as never],
+            },
+            {
+              id: 'msg_steer',
+              role: 'user',
+              content: '改成另一种方案',
+              timestamp: 3,
+              metadata: { runtimeSteer: true },
+            },
+            { id: 'assistant_empty', role: 'assistant', content: '', timestamp: 4 },
+          );
+        }),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+      },
+    });
+
+    expect(h.statuses.at(-1)).toBe('failed');
+    expect(h.blockedReasons.at(-1)).toContain('没有生成最终回复');
+  });
+
   it('returns an empty changedFiles result when no approved files actually change', async () => {
     const workspace = await createTempWorkspace();
     sessionWorkingDirectory = workspace;

@@ -333,15 +333,23 @@ async function runProducedVisibleReply(
   roundTurnId: string,
 ): Promise<boolean> {
   const hasVisibleAssistantReplyWithinTurn = (messages: Message[]): boolean => {
+    let hasVisibleReply = false;
     for (let index = 1; index < messages.length; index += 1) {
       const message = messages[index];
       // A plain user message after the run's reply belongs to the next turn;
       // a runtime steer is part of this run and must not hide its reply.
-      if (message.role === 'user' && message.metadata?.runtimeSteer !== true) return false;
+      if (message.role === 'user') {
+        if (message.metadata?.runtimeSteer === true) {
+          // Progress text from before a steer is not the answer to that steer.
+          hasVisibleReply = false;
+          continue;
+        }
+        return hasVisibleReply;
+      }
       if (message.role !== 'assistant') continue;
-      if (typeof message.content === 'string' && message.content.trim().length > 0) return true;
+      if (typeof message.content === 'string' && message.content.trim().length > 0) hasVisibleReply = true;
     }
-    return false;
+    return hasVisibleReply;
   };
 
   const hasReplyFrom = (messages: Message[]): boolean | null => {

@@ -107,7 +107,9 @@ function invocationBoundarySource(extraSource = '') {
 import path from 'node:path';
 const pdfPath = '/tmp/deck.pdf';
 const pdftoppm = resolveHelperBinary(path.join('poppler', 'bin', 'pdftoppm'));
-execSync(\`"\${pdftoppm}" -jpeg "\${pdfPath}"\`);
+const args = ['-jpeg'];
+args.push(pdfPath, '/tmp/deck');
+execFileAsync(pdftoppm, args, { encoding: 'utf8' });
 ${extraSource}
 `;
 }
@@ -116,7 +118,7 @@ function runInvocationBoundaryGate(source: string) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'poppler-invocation-boundary-'));
   tempRoots.push(root);
   fs.mkdirSync(path.join(root, 'scripts/lib'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'src/host/tools/media/ppt'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src/host/tools/media'), { recursive: true });
   fs.mkdirSync(path.join(root, 'config'), { recursive: true });
   fs.mkdirSync(path.join(root, 'docs/architecture/decisions'), { recursive: true });
   for (const relativePath of [
@@ -126,7 +128,7 @@ function runInvocationBoundaryGate(source: string) {
   ]) {
     fs.copyFileSync(path.join(repoRoot, relativePath), path.join(root, relativePath));
   }
-  fs.writeFileSync(path.join(root, 'src/host/tools/media/ppt/visualReview.ts'), source);
+  fs.writeFileSync(path.join(root, 'src/host/tools/media/officeRaster.ts'), source);
   const lockPath = path.join(root, 'config/poppler-sidecar.lock.json');
   fs.writeFileSync(lockPath, JSON.stringify(lock()));
   fs.writeFileSync(
@@ -151,7 +153,9 @@ import path from 'node:path';
 const pdfPath = '/tmp/deck.pdf';
 const sidecarPath = path.join('poppler', 'bin', 'pdftoppm');
 const pdftoppm = resolveHelperBinary('pdftoppm');
-execSync(\`"\${pdftoppm}" -jpeg "\${pdfPath}"\`);
+const args = ['-jpeg'];
+args.push(pdfPath, '/tmp/deck');
+execFileAsync(pdftoppm, args, { encoding: 'utf8' });
 `;
 
     const result = runInvocationBoundaryGate(source);

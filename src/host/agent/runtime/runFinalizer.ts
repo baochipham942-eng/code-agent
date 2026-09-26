@@ -151,10 +151,10 @@ function formatTerminalError(error: unknown): string {
 
 /**
  * 「这轮有没有看得见的最终回复」判定：最后一条 user 之后存在正文非空的 assistant。
- * 导出给 neoTagRuntimeService 做工作卡完成判定的正向证据（N-CHAT-EMPTY-FINAL-NO-EXIT：
- * 完成必须有非空最终回复，不许用排除法兜底）。
+ * （N-CHAT-EMPTY-FINAL-NO-EXIT：完成必须有非空最终回复，不许用排除法兜底。
+ * 工作卡侧已改用 neoTagRuntimeService 的 turn 窗口版，本函数回归 runFinalizer 私有。）
  */
-export function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
+function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
   let seenLastUser = false;
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {

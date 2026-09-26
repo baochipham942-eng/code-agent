@@ -40,6 +40,13 @@ import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools'
  * 纯英文是 0.44 倍），工具 schema 几乎全英文会被高估约一倍，桶间比例直接失真。
  *
  * ## 基线变更记录
+ * - 4628 → 4683（2026-09-26，N-HONEST-CAPABILITY-COPY，+55）：规则分流。delegate_task 的
+ *   「accepted ≠ 完成」契约补齐后半句——「排队/交接只代表已受理还没开始跑，后台跑完也只
+ *   代表执行结束，都不等于用户已收到，回流前只说已开始／已排队」（借鉴 Muse 产品契约的
+ *   写死口径，防三类信任损耗；PR#2084 ai-review Important 1 修正状态混写后 +55）。这是新
+ *   政策口径而非措辞优化：按本文件引的 L8 对标结论（工具「怎么用、什么时候别用」下沉到
+ *   description，系统提示只讲跨工具元策略），它必须写在模型派活那一刻读到的工具描述里，
+ *   塞 identity 既违背该结论也伤每轮成本。delegate_task 294 → 352。
  * - 4349 → 4628（2026-08-15，L8 N-L8-PVDYN / N-L8-SCHEMAGATE，+279）：核算纠偏。
  *   预算门原来只量静态 `schema.description`，但 CORE 中 WebSearch 实际优先下发
  *   `dynamicDescription()`。两段 description 单独量是 77 / 335（+258）；按本门口径重新
@@ -56,7 +63,7 @@ import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools'
  *   这 194 不是措辞膨胀，是**从「一分钱不花但也一点用没有」换成「花 194 但真的送到」**；
  *   同批 toolUsagePolicy 的委派判据搬进了 Task（非 CORE，按需下发，不计本门）。
  */
-const CORE_SCHEMA_TOKEN_BASELINE = 4628;
+const CORE_SCHEMA_TOKEN_BASELINE = 4683;
 
 const MODULES_DIR = join(__dirname, '../../../src/host/tools/modules');
 const FIXED_SCHEMA_CLOCK = new Date(2026, 7, 14, 12);

@@ -93,6 +93,7 @@ export const CONTEXT_INJECTION_SOURCES = [
   'compression',
   'deliverables-gate',
   'deliverable-disk-check',
+  'artifact-render-review',
   'preflight-guard',
   'research-mode',
   'adaptive-thinking',

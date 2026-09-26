@@ -15,7 +15,10 @@ export const sleepUntilSchema: ToolSchema = {
     + 'If the user returns before then, this time-based wake is cancelled. '
     + 'Use when the next useful step simply cannot happen yet (a deadline, a scheduled export, "check back in 2 hours"). '
     + 'This ends the current turn — you are not blocking or polling, and nothing runs while you wait. '
-    + 'You will be woken with your own reason text. For work that should repeat on a schedule, create an automation instead.',
+    + 'You will be woken with your own reason text. The wake fires around the requested time, give or take a few '
+    + 'minutes while the app is running; if the app is asleep or closed, it is delivered on the next launch, '
+    + 'possibly much later — tell the user "around <time> (while the app is running)", never "exactly at". '
+    + 'For work that should repeat on a schedule, create an automation instead.',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
@@ -39,6 +42,8 @@ export const wakeOnSchema: ToolSchema = {
   description:
     'Park the current task until a specific automation (cron job) finishes, then continue automatically. '
     + 'Use when your next step needs the output of a scheduled task that is already set up. '
+    + 'Whether an automation actually ran is answered from its run history, never from the fact that it is '
+    + 'scheduled — do not tell the user a check ran unless a run record shows it. '
     + 'This ends the current turn; nothing runs while you wait.',
   outputSchema: { type: 'string' },
   inputSchema: {
@@ -66,6 +71,10 @@ export const wakeOnEventSchema: ToolSchema = {
     + 'For a plain scheduled automation, the event fires every time it finishes a run. '
     + 'For a business-event watcher (e.g. a calendar-conflict or table-change monitor), the event fires only '
     + 'when the watcher actually finds something new — a quiet scheduled check with nothing to report does not fire it. '
+    + 'Be honest about what a watcher is: the underlying automation polls on its schedule — nothing watches '
+    + 'continuously between checks, a change that appears and reverts between checks is missed, and firing '
+    + 'drifts by minutes. Describe it as "checks every N minutes", never "the moment it happens". '
+    + 'A watch can only report after the fact — it cannot block or stop the event itself. '
     + 'This ends the current turn; nothing runs while you wait.',
   outputSchema: { type: 'string' },
   inputSchema: {

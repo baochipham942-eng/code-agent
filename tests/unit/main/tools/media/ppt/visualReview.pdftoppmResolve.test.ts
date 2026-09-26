@@ -13,10 +13,10 @@ import { join } from 'node:path';
 // （runtimeAssetResolver.ts firstExisting），所以调用方的 existsSync 检查是承重的，
 // 这里一并钉住——去掉它，随包缺席时会拿一个不存在的路径去执行。
 
-const execSyncMock = vi.hoisted(() => vi.fn());
+const execFileSyncMock = vi.hoisted(() => vi.fn());
 const resolveHelperBinaryMock = vi.hoisted(() => vi.fn());
 
-vi.mock('child_process', () => ({ execSync: execSyncMock }));
+vi.mock('child_process', () => ({ execFileSync: execFileSyncMock, execFile: vi.fn() }));
 vi.mock('../../../../../../src/host/runtime/runtimeAssetResolver', () => ({
   resolveHelperBinary: resolveHelperBinaryMock,
 }));
@@ -25,7 +25,7 @@ let workDir: string;
 let bundledPath: string;
 
 beforeEach(() => {
-  execSyncMock.mockReset();
+  execFileSyncMock.mockReset();
   resolveHelperBinaryMock.mockReset();
   workDir = mkdtempSync(join(tmpdir(), 'pdftoppm-resolve-'));
   bundledPath = join(workDir, 'poppler', 'bin', 'pdftoppm');
@@ -53,7 +53,7 @@ describe('resolvePdftoppm：随包优先于系统 PATH', () => {
     expect(await resolve()).toBe(bundledPath);
     // 命中随包时不该再 which——开发机上 which 会命中 brew 的那份，
     // 用它就等于永远测不到用户的处境
-    expect(execSyncMock).not.toHaveBeenCalled();
+    expect(execFileSyncMock).not.toHaveBeenCalled();
   });
 
   it('查的是 poppler/bin/pdftoppm 这个相对位置（与 fetch-poppler.sh 的产出对齐）', async () => {
@@ -66,22 +66,23 @@ describe('resolvePdftoppm：随包优先于系统 PATH', () => {
 
   it('随包缺席（resolveHelperBinary 返回不存在的路径）→ 回落系统 PATH', async () => {
     resolveHelperBinaryMock.mockReturnValue(join(workDir, 'nonexistent', 'pdftoppm'));
-    execSyncMock.mockReturnValue('/usr/local/bin/pdftoppm\n');
+    execFileSyncMock.mockReturnValue('/usr/local/bin/pdftoppm\n');
 
     expect(await resolve()).toBe('/usr/local/bin/pdftoppm');
-    expect(String(execSyncMock.mock.calls[0][0])).toBe('which pdftoppm');
+    expect(execFileSyncMock.mock.calls[0][0]).toBe('which');
+    expect(execFileSyncMock.mock.calls[0][1]).toEqual(['pdftoppm']);
   });
 
   it('随包和系统都没有 → 返回 null（让降级链继续，不是抛错）', async () => {
     resolveHelperBinaryMock.mockReturnValue(join(workDir, 'nonexistent', 'pdftoppm'));
-    execSyncMock.mockImplementation(() => { throw new Error('not found'); });
+    execFileSyncMock.mockImplementation(() => { throw new Error('not found'); });
 
     expect(await resolve()).toBeNull();
   });
 
   it('系统 which 返回空串 → 返回 null，不返回空路径', async () => {
     resolveHelperBinaryMock.mockReturnValue(join(workDir, 'nonexistent', 'pdftoppm'));
-    execSyncMock.mockReturnValue('\n');
+    execFileSyncMock.mockReturnValue('\n');
 
     expect(await resolve()).toBeNull();
   });

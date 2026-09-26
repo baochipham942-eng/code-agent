@@ -10,7 +10,7 @@
 /** 隐藏唤醒回合的「无话可说」出口工具名（N-TASKWAKE）；host 与 renderer 共用，放 shared 以免 runtime 反向依赖 commandCenter 服务图。 */
 export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 
-export const PROMPT_VERSION = 'sys-v60' as const;
+export const PROMPT_VERSION = 'sys-v61' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
@@ -220,6 +220,20 @@ export const TURN_OUTCOME = {
    * 不拦交付，存在性核对不受此预算影响。
    */
   MAX_DELIVERABLE_PLACEHOLDER_SCAN_BYTES: 10 * 1024 * 1024,
+} as const;
+
+/** 交付物渲染审查（docx/pdf/xlsx：转 PDF → 栅格化 → 逐页 VLM） */
+export const ARTIFACT_RENDER_REVIEW = {
+  /** 单文件最多审查前 N 页 */
+  MAX_PAGES: 10,
+  /** 单次交付（一轮审查）VLM 调用上限 */
+  MAX_VLM_CALLS_PER_DELIVERY: 10,
+  /** 整轮（含补轮）VLM 总调用上限，防止每轮对全部文件重跑把付费调用打到 40 */
+  MAX_VLM_CALLS_PER_TURN: 20,
+  /** VLM 发现问题后最多回喂修正轮数；仍失败则不给 verified */
+  MAX_REPAIR_ROUNDS: 3,
+  /** 会走渲染审查的交付物扩展名（PPT 仍走 visualReview，不在此列） */
+  RENDERABLE_EXTENSIONS: ['docx', 'pdf', 'xlsx'] as const,
 } as const;
 
 /** System prompt 预算配置（GAP-023 动态化） */

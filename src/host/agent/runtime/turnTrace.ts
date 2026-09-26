@@ -213,6 +213,8 @@ export interface TraceEventDataMap {
     evidenceRefs: EvidenceRef[];
     source: 'generic' | 'goal_gates' | 'voice';
     evidenceProblems?: string[];
+    /** 渲染审查盖章：LibreOffice 缺失时为「未做视觉验证」，失败则不给 verified */
+    visualVerification?: 'passed' | 'failed' | '未做视觉验证' | 'not_applicable';
   };
   /** P3 slot only. Registration wiring is intentionally out of scope for P0A. */
   compensation_registered: {

@@ -10,7 +10,7 @@ const target = {
 // 否则模型会优先相信工具表和工具描述，重现「环境受限」类错误解释。
 export const delegateTaskSchema: ToolSchema = {
   name: 'delegate_task',
-  description: '需要运行命令、联网查证、等待审批、多步骤执行，或生成报告/网页等长任务时，调用本工具创建一个带完整工具面的后台任务。短小的本地文件读写由文字前台直接完成。accepted 只代表已接单，不代表完成。',
+  description: '需要运行命令、联网查证、等待审批、多步骤执行，或生成报告/网页等长任务时，调用本工具创建一个带完整工具面的后台任务。短小的本地文件读写由文字前台直接完成。accepted 只代表已接单，不代表完成；排队或交接只代表已受理还没开始跑，后台跑完也只代表执行结束——都不等于用户已收到，对用户的通报以会话里的真实回流为准，在那之前只说「已开始／已排队」。',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',

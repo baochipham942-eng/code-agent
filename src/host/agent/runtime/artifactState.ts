@@ -53,6 +53,21 @@ export interface DeclaredDeliverables {
   declaredAtMs: number;
 }
 
+/** 本 run 渲染审查结果，供 turn_outcome 盖章（不把 skipped 当成通过） */
+export type ArtifactRenderReviewStamp = {
+  status: 'passed' | 'failed' | 'skipped_no_libreoffice' | 'skipped_no_vlm' | 'skipped_render_failed' | 'not_applicable';
+  issues: Array<{
+    file: string;
+    page: number;
+    kind: 'overflow' | 'overlap' | 'cramped' | 'low_contrast' | 'template_residue' | 'other';
+    description: string;
+    severity: 'high' | 'medium' | 'low';
+  }>;
+  filesReviewed: string[];
+  /** 本 turn 已消耗的 VLM 次数（含此前补轮），用于整轮上限 */
+  vlmCallsUsed?: number;
+};
+
 /**
  * 收尾闸最近一次交付物核对（PR#2079 Round 2 Nit）：messageProcessor 闸口写入，
  * turnOutcomeStamp 收尾消费同一份结论——不复用就会把 office 交付物重新解析一遍。
@@ -74,6 +89,7 @@ export class ArtifactState {
   /** Last interactive artifact path that passed runtime/browser validation in this run. */
   private _validationPassedTargetFile?: string;
   private _declaredDeliverables?: DeclaredDeliverables;
+  private _renderReview?: ArtifactRenderReviewStamp;
   private _lastDeliverableCheck?: LastDeliverableCheck;
   /** 每目标校验失败状态（原 RuntimeContext expando `artifactValidationFailures`，批3e 漏网字段收编） */
   private readonly _validationFailures = new Map<string, ArtifactValidationFailureState>();
@@ -92,6 +108,14 @@ export class ArtifactState {
 
   get declaredDeliverables(): DeclaredDeliverables | undefined {
     return this._declaredDeliverables;
+  }
+
+  get renderReview(): ArtifactRenderReviewStamp | undefined {
+    return this._renderReview;
+  }
+
+  setRenderReview(stamp: ArtifactRenderReviewStamp): void {
+    this._renderReview = stamp;
   }
 
   get lastDeliverableCheck(): LastDeliverableCheck | undefined {

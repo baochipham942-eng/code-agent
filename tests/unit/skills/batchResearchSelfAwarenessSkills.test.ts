@@ -56,7 +56,12 @@ describe('builtin skills: batch-research / self-awareness', () => {
   it('aliases 含中文触发词', () => {
     const hasChinese = (s: string) => /[一-鿿]/.test(s);
     expect(findSkill('batch-research')!.aliases?.some(hasChinese)).toBe(true);
-    expect(findSkill('self-awareness')!.aliases?.some(hasChinese)).toBe(true);
+    const selfAliases = findSkill('self-awareness')!.aliases ?? [];
+    expect(selfAliases.some(hasChinese)).toBe(true);
+    // description 里枚举的自我认知触发问法要在 aliases 有对应入口（ai-review Nit 修复钉）
+    for (const phrase of ['你是谁', '能做什么', '记得我什么', '连了哪些服务', '有哪些技能', '遵守什么规则']) {
+      expect(selfAliases.join(' '), `aliases 应覆盖触发问法「${phrase}」`).toContain(phrase);
+    }
   });
 
   it('self-awareness 的 allowedTools 全部对照真实 ToolSchema 为 readOnly', () => {
@@ -92,6 +97,15 @@ describe('builtin skills: batch-research / self-awareness', () => {
     expect(batch.promptContent).toContain('collect_agent');
     expect(discoverable.has('spawn_agent')).toBe(true);
     expect(discoverable.has('collect_agent')).toBe(true);
+    // 后台链路配对（ai-review Important 1 修复钉）：collect_agent 只认
+    // run_in_background: true 注册进 BackgroundSubagentRegistry 的代理；
+    // waitForCompletion: false 是 SpawnGuard/wait_agent 链路，不许再混用
+    expect(batch.promptContent).toContain('run_in_background');
+    expect(batch.promptContent).not.toContain('waitForCompletion');
+    // builtin skill 的 allowedTools 会整体进入预授权集合（skillInvocationResolver
+    // canSkillAutoPreApproveTools），无文件写入需求的 skill 不许带写工具（Important 2 修复钉）
+    expect(batch.allowedTools).not.toContain('Write');
+    expect(batch.allowedTools).not.toContain('Edit');
 
     const self = findSkill('self-awareness')!;
     // 正文点名记忆/历史/空间三类查证工具

@@ -280,7 +280,7 @@ Commit message 格式：
 
 1. 去重归一：清理输入列表——同名不同写法合并、大小写/全半角归一、明显重复去掉；报出去重前后的数量。
 2. 定字段表：从需求里提炼最小统一输出字段表，只放用户要的字段，不加自由发挥的列；每个字段写清查不到时填什么（如「未披露」）。
-3. 并行派发：用 spawn_agent 的 parallel 模式（parallel: true + agents 数组），一个对象一个 worker。每个 worker 的 task 必须自包含：对象名 + 完整字段表 + 「只查这个对象，严格按字段表返回，查不到的字段写明原因」。不要再套一层管理者子代理——spawn_agent 自己就是协调者，结果自带聚合。批量大时可 waitForCompletion: false 后台跑，先回复用户已开跑，之后用 collect_agent 取回结果。
+3. 并行派发：用 spawn_agent 的 parallel 模式（parallel: true + agents 数组），一个对象一个 worker。每个 worker 的 task 必须自包含：对象名 + 完整字段表 + 「只查这个对象，严格按字段表返回，查不到的字段写明原因」。不要再套一层管理者子代理——spawn_agent 自己就是协调者，结果自带聚合。批量大时可分批跑，或改用单发 spawn_agent 的 run_in_background: true 后台执行（立即返回 agent_id，先回复用户已开跑，之后用 collect_agent 凭 agent_id 取回结果）。
 4. 聚合：并行结果自带聚合统计（成功 x/N、每个子代理的状态与结果摘要）。直接用这份聚合，不要另写一套统计代码。
 5. 失败重试：只对失败项再派一轮（同样一个对象一个 worker）。仍失败的进失败清单，不试第三次。
 6. 汇总交付：严格按字段表拼结果表，连同覆盖率一起交付。
@@ -295,7 +295,7 @@ Commit message 格式：
 
 禁止：静默丢项、把失败对象从表里抹掉、用「大部分完成」代替 x/N。`,
     basePath: '',
-    allowedTools: ['spawn_agent', 'collect_agent', 'Read', 'Write', 'WebSearch', 'WebFetch', 'TaskManager'],
+    allowedTools: ['spawn_agent', 'collect_agent', 'Read', 'WebSearch', 'WebFetch', 'TaskManager'],
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',
@@ -305,7 +305,7 @@ Commit message 格式：
   {
     name: 'self-awareness',
     description: '自我认知：当用户问你是谁、你能做什么、你记得我什么、你帮我做过什么、连了哪些服务、有哪些技能、遵守什么规则时使用——先现场重查记忆、技能、连接器、定时任务和近期产物再作答，查不到的直说缺，区分事实与推断，不凭印象编。',
-    aliases: ['自我认知', '你是谁', '你能做什么', '你记得我什么', '你帮我做过什么', 'self awareness'],
+    aliases: ['自我认知', '你是谁', '你能做什么', '你记得我什么', '你帮我做过什么', '连了哪些服务', '有哪些技能', '遵守什么规则', 'self awareness'],
     promptContent: `# 自我认知
 
 回答关于「我」的问题，先现场重查，再作答。禁止凭训练记忆或上一轮的印象直接回答。

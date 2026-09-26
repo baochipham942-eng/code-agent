@@ -5,7 +5,7 @@ import {
   getAgentErrorMessage,
   isTerminalAgentError,
 } from '../../../shared/utils/agentErrorClassification';
-import { hasVisibleAssistantTextAfterLastUser } from '../../agent/runtime/runFinalizer';
+import { TASK_QUEUE_TIMEOUTS } from '../../../shared/constants';
 import type {
   CreateNeoWorkCardDraftInput,
   NeoTagRunContext,
@@ -166,6 +166,64 @@ async function waitForRuntimeState(
   return latest;
 }
 
+/** 排队等待结果：started=这一轮已开跑（或已落终态）；queue-timeout=排队等待超上限。 */
+type QueueDrainOutcome = { kind: 'started' } | { kind: 'queue-timeout' };
+
+/**
+ * 并发满时 startTask 会让这一轮先进 TaskManager 等待队列（只入队、run 还没开跑）。
+ * 终态判定必须等这一轮真正执行完——第一步先等状态离开 queued。
+ * 上限与 TaskManager 的队列超时同源（TASK_QUEUE_TIMEOUTS + 宽限，宽限保证
+ * TaskManager 自己的超时先落 error 状态）：超时就是真失败，不许「排队=跳过判定」。
+ */
+async function waitForQueueDrain(
+  taskManager: NeoTagTaskManager,
+  sessionId: string,
+): Promise<QueueDrainOutcome> {
+  if (!taskManager.getSessionState) return { kind: 'started' };
+  const maxPolls = Math.ceil(
+    (TASK_QUEUE_TIMEOUTS.QUEUE_TIMEOUT_MS + TASK_QUEUE_TIMEOUTS.QUEUE_DRAIN_GRACE_MS)
+      / TASK_QUEUE_TIMEOUTS.POLL_INTERVAL_MS,
+  );
+  for (let attempt = 0; attempt < maxPolls; attempt += 1) {
+    if (taskManager.getSessionState(sessionId)?.status !== 'queued') return { kind: 'started' };
+    await sleep(TASK_QUEUE_TIMEOUTS.POLL_INTERVAL_MS);
+  }
+  return taskManager.getSessionState(sessionId)?.status === 'queued'
+    ? { kind: 'queue-timeout' }
+    : { kind: 'started' };
+}
+
+/**
+ * TaskManager 队列超时先触发时把会话置 error('Queue timeout')（TaskManager.enqueueTask
+ * 的 setTimeout）。识别它按排队超时给人话失败，别让英文技术原因直接上卡。
+ */
+function isQueueTimeoutState(state: { status: string; error?: string } | null | undefined): boolean {
+  return state?.status === 'error' && (state.error ?? '').includes('Queue timeout');
+}
+
+/** 排队超时的人话出路：一句原因 + 一句下一步，对齐 blockedReasonForFailure 的口吻。 */
+const QUEUE_TIMEOUT_REASON = '排队超时：同时运行的任务太多，这一轮排了很久都没轮到执行。前面的任务现在可能已经空出来了，点「接着做」重试；还是不行的话，等正在跑的任务少一些再发起。';
+
+/**
+ * 正向证据的 turn 窗口版：锚点 user 之后、下一条 user 之前，有没有正文非空的
+ * assistant。不用尾部版（hasVisibleAssistantTextAfterLastUser）：run 结束后用户马上
+ * 追发新消息时，尾部版只看「最后一条 user 之后」，本轮的真实回复会被判丢。
+ */
+function hasVisibleAssistantReplyWithinTurn(messages: Message[]): boolean {
+  for (let index = 1; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message.role === 'user') return false;
+    if (
+      message.role === 'assistant'
+      && typeof message.content === 'string'
+      && message.content.trim().length > 0
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** 本轮 run 旁听到的终态失败（runFinalizer 的 error 事件：message + 结构化 failure 标记）。 */
 interface NeoTagRunFailure {
   message: string;
@@ -299,7 +357,7 @@ async function runProducedVisibleReply(
       (message) => message.id === roundTurnId && message.role === 'user',
     );
     if (anchorIndex < 0) return null;
-    return hasVisibleAssistantTextAfterLastUser(messages.slice(anchorIndex));
+    return hasVisibleAssistantReplyWithinTurn(messages.slice(anchorIndex));
   };
 
   const orchestrator = taskManager.getOrCreateCurrentOrchestrator?.(conversationId);
@@ -529,10 +587,14 @@ export async function launchApprovedNeoWorkCard(
     // clientMessageId = 本轮 turnId：host 直接把带 @neo 前缀的展示文本落到目标会话，
     // renderer 不需要切换会话或做本地补显，live 与 reload 都只看到一条用户消息。
     // 终态事件旁听必须先于 startTask 挂上：runFinalizer 的失败事件发生在 sendMessage
-    // resolve 之前，晚挂会漏。
+    // resolve 之前，晚挂会漏；排队期间也不许停——并发满时这一轮要先在 TaskManager
+    // 队列里等槽位，失败事件到执行期才发出。
     const terminalEvents = observeNeoTagRunTerminalEvents(input.taskManager, roundConversationId);
     try {
-      await input.taskManager.startTask(
+      // 并发满（TaskManager 信号量 3 槽全占）时这一轮先进等待队列，终态判定必须等
+      // 这一轮真正执行完。排队等待与 startTask 并行：startTask 自身可能要等执行完才
+      // resolve，队列超时后还会一直挂到无关 run 释放槽位，不能靠它收口。
+      const runPromise = input.taskManager.startTask(
         roundConversationId,
         approvedRevision.taskSummary,
         undefined,
@@ -540,6 +602,34 @@ export async function launchApprovedNeoWorkCard(
         metadata,
         roundTurnId,
       );
+      // 防御：排队等待期间 startTask 先 reject 时不许裸挂（unhandled rejection）；
+      // 下面 await 时再原样抛给外层 catch。
+      let earlyRejection: { error: unknown } | undefined;
+      runPromise.catch((error: unknown) => {
+        earlyRejection ??= { error };
+      });
+      const queueDrain = await waitForQueueDrain(input.taskManager, roundConversationId);
+      if (
+        queueDrain.kind === 'queue-timeout'
+        || isQueueTimeoutState(input.taskManager.getSessionState?.(roundConversationId))
+      ) {
+        // 排队超时=真失败（TaskManager 侧已把这一轮移出队列，run 不会执行）。
+        // runPromise 可能还挂着等无关槽位释放，rejection 已被上面记录，别再等它。
+        service.setStatus(workCard.id, 'failed', now(), QUEUE_TIMEOUT_REASON);
+        appendFailureDelta({
+          service,
+          workCardId: workCard.id,
+          runId: run,
+          conversationId: roundConversationId,
+          error: QUEUE_TIMEOUT_REASON,
+          now,
+          contextAudit: summarizeContextAudit(contextPack, topicRounds.length),
+        });
+        notifyWorkCardUpdated(input.onWorkCardUpdated, workCard.id, 'runtime_failed');
+        return { runId: run, context };
+      }
+      if (earlyRejection) throw earlyRejection.error;
+      await runPromise;
     } finally {
       terminalEvents.stop();
     }

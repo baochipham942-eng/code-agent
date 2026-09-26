@@ -35,6 +35,7 @@ import { getProjectSourceTrustFailureMarker } from '../services/project/projectS
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
+import { TASK_QUEUE_TIMEOUTS } from '../../shared/constants';
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 
@@ -131,7 +132,7 @@ interface BackgroundTaskRun {
 const DEFAULT_CONFIG: TaskManagerConfig = {
   maxConcurrentTasks: 3,
   interruptTimeout: 5000,
-  queueTimeout: 300000,
+  queueTimeout: TASK_QUEUE_TIMEOUTS.QUEUE_TIMEOUT_MS,
 };
 
 // ============================================================================

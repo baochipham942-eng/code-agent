@@ -21,9 +21,10 @@ import {
 import type { NeoWorkCardService } from '../../../src/host/services/project/neoWorkCardService';
 import type { CreateNeoWorkCardDraftInput } from '../../../src/shared/contract/tag';
 import type { AppSettings } from '../../../src/shared/contract/settings';
+import { TASK_QUEUE_TIMEOUTS } from '../../../src/shared/constants';
 
 const sessionMessages: Message[] = [];
-let sessionWorkingDirectory = '/repo/project';
+let sessionWorkingDirectory: string | undefined = '/repo/project';
 // 按 sessionId 区分的会话数据（跨会话用例用）；未注册的 sessionId 走上面的全局兜底，既有用例不受影响。
 const sessionsById = new Map<string, { workingDirectory?: string; messages: Message[] }>();
 const tempDirs: string[] = [];
@@ -1066,6 +1067,151 @@ describe('Neo Tag runtime helpers', () => {
 
     expect(h.statuses).toEqual(['queued', 'working', 'waiting_for_user']);
     expect(h.deltas.at(-1)?.nextStep).toContain('pending runtime request');
+  });
+
+  it('终态契约：并发满排队（startTask 入队即返回）→ 等这一轮真正执行完再判终态，成功不误判失败（ai-review Important 三轮）', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = terminalHarness();
+      // workingDirectory 置空：跳过 artifact snapshot 的真实 fs IO（fake timers 下
+      // threadpool 宏任务不推进，launch 链会被卡在 startTask 之前）
+      sessionWorkingDirectory = undefined;
+      // 会话状态机模拟 TaskManager 并发满的排队形状：入队（startTask 即返回）→
+      // 排队若干拍 → 槽位空出转 running（run 执行、产出回复）→ idle。
+      let state: { status: string; error?: string } = { status: 'idle' };
+      const observed: string[] = [];
+      const startTask = vi.fn(async () => {
+        // 并发满：只入队就返回，不等执行；user 锚点此刻已落库，回复还没有。
+        state = { status: 'queued' };
+        sessionMessages.push(
+          { id: 'msg_source', role: 'user', content: '@neo 干活', timestamp: 1 },
+        );
+      });
+      const launched = launchApprovedNeoWorkCard({
+        workCardId: 'nwc_1',
+        service: h.service,
+        now: () => 100,
+        taskManager: {
+          startTask,
+          getSessionState: vi.fn(() => {
+            observed.push(state.status);
+            return state;
+          }),
+        },
+      });
+      // launch 链推进到入队（fake timers 下微任务链要靠 timer 推进带出来）
+      let waited = 0;
+      while (state.status !== 'queued' && waited < 5_000) {
+        await vi.advanceTimersByTimeAsync(50);
+        waited += 50;
+      }
+      // 排队的几拍过去：工作卡不许在排队期间被判终态
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(state.status).toBe('queued');
+      expect(startTask).toHaveBeenCalledTimes(1);
+      expect(h.statuses).toEqual(['queued', 'working']);
+      // 槽位空出：run 开始执行并产出非空回复
+      state = { status: 'running' };
+      sessionMessages.push(
+        { id: 'assistant_ok', role: 'assistant', content: '做完了，产物如下。', timestamp: 2 },
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+      state = { status: 'idle' };
+      // 推进 waitForRuntimeState 的收尾轮询（fake timer 不会自己到点）
+      await vi.advanceTimersByTimeAsync(1_000);
+      await launched;
+
+      expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
+      // 排队期间确实观察到 queued/running（终态判定等的是真实执行，不是跳过）
+      expect(observed).toContain('queued');
+      expect(observed).toContain('running');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('终态契约：排队等待超上限 → failed 带人话原因与「接着做」重试出路（超时=真失败，不排队=成功糊弄）', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = terminalHarness();
+      sessionWorkingDirectory = undefined;
+      // 状态机：过前置空闲检查（idle）→ startTask 入队 → 永远 queued（槽位一直不空）
+      let state: { status: string; error?: string } = { status: 'idle' };
+      const launched = launchApprovedNeoWorkCard({
+        workCardId: 'nwc_1',
+        service: h.service,
+        now: () => 100,
+        taskManager: {
+          startTask: vi.fn(async () => {
+            state = { status: 'queued' };
+          }),
+          getSessionState: vi.fn(() => state),
+        },
+      });
+      await vi.advanceTimersByTimeAsync(
+        TASK_QUEUE_TIMEOUTS.QUEUE_TIMEOUT_MS + TASK_QUEUE_TIMEOUTS.QUEUE_DRAIN_GRACE_MS + 10_000,
+      );
+      await launched;
+
+      expect(h.statuses.at(-1)).toBe('failed');
+      const reason = h.blockedReasons.at(-1) ?? '';
+      expect(reason).toContain('排队超时');
+      expect(reason).toContain('接着做');
+      expect(h.deltas.at(-1)?.nextStep).toContain('retry');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('终态契约：TaskManager 自己的队列超时先落 error(Queue timeout) → 同样按排队超时给人话失败', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = terminalHarness();
+      const launched = launchApprovedNeoWorkCard({
+        workCardId: 'nwc_1',
+        service: h.service,
+        now: () => 100,
+        taskManager: {
+          startTask: vi.fn(async () => undefined),
+          getSessionState: vi.fn(() => ({
+            status: 'error',
+            error: 'Queue timeout',
+          })),
+        },
+      });
+      await vi.advanceTimersByTimeAsync(10_000);
+      await launched;
+
+      expect(h.statuses.at(-1)).toBe('failed');
+      const reason = h.blockedReasons.at(-1) ?? '';
+      expect(reason).toContain('排队超时');
+      expect(reason).toContain('接着做');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('终态契约：run 结束后用户追发新消息不丢本轮回复（turn 窗口正向证据，ai-review Nit）', async () => {
+    const h = terminalHarness();
+    await launchApprovedNeoWorkCard({
+      workCardId: 'nwc_1',
+      service: h.service,
+      now: () => 100,
+      taskManager: {
+        startTask: vi.fn(async () => {
+          sessionMessages.push(
+            { id: 'msg_source', role: 'user', content: '@neo 干活', timestamp: 1 },
+            { id: 'assistant_ok', role: 'assistant', content: '做完了，产物如下。', timestamp: 2 },
+            // run 结束后、终态判定读取前，用户在同一会话追发了新消息
+            { id: 'msg_followup', role: 'user', content: '再来一轮', timestamp: 3 },
+          );
+        }),
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+      },
+    });
+
+    // 旧尾部版（只看最后一条 user 之后）会误判「没有最终回复」→ failed；窗口版看本轮 turn 内的回复
+    expect(h.statuses).toEqual(['queued', 'working', 'in_result_review']);
   });
 
   it('returns an empty changedFiles result when no approved files actually change', async () => {

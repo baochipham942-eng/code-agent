@@ -435,8 +435,9 @@ describe('ExpertPanel', () => {
 
     const include = await screen.findByTestId('role-topics-include');
     const exclude = screen.getByTestId('role-topics-exclude');
+    expect(screen.getByTestId('role-topics-exclude-hint').textContent).toContain('短词可能误伤');
     fireEvent.change(include, { target: { value: '项目进度, 待办' } });
-    fireEvent.change(exclude, { target: { value: '八卦' } });
+    fireEvent.change(exclude, { target: { value: `八卦, ${'y'.repeat(80)}` } });
     fireEvent.click(screen.getByTestId('role-topics-save'));
 
     await waitFor(() => {
@@ -447,7 +448,7 @@ describe('ExpertPanel', () => {
           roleId: '牧之',
           level: 'silent',
           topicsInclude: ['项目进度', '待办'],
-          topicsExclude: ['八卦'],
+          topicsExclude: ['八卦', 'y'.repeat(40)],
         },
       );
     });

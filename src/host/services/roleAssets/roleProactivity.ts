@@ -30,7 +30,6 @@ import type {
 import { instantiateRole, appendRoleHistory, loadRoleHistory, listPersistentRoles, isPersistentRole } from './roleAssetService';
 import { runRoleWriteBack } from './roleWriteBack';
 import {
-  formatHistoryWhySuffix,
   formatTopicPreferencePrompt,
   parseWakeRationale,
   stripWakeMarkup,
@@ -504,9 +503,10 @@ export async function wakeRole(
     logger.info('Wake completed with output', { roleId, trigger, decision, sessionId: session.id });
   }
 
-  // ---- 步骤 8.5：把 rationale 写进醒来会话的助手消息（UI「为什么」入口读这里）----
+  // ---- 步骤 8.5：suggest/report 才把 rationale 写进助手消息（沉默/推进不展示「没有记录理由」）----
+  const recordWhy = decision === 'suggest' || decision === 'report';
   const lastAssistant = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1] : undefined;
-  if (lastAssistant?.id) {
+  if (recordWhy && lastAssistant?.id) {
     try {
       await sessionManager.updateMessage(lastAssistant.id, {
         metadata: {
@@ -524,15 +524,20 @@ export async function wakeRole(
   }
 
   // ---- 步骤 9：写回履历（含沉默；决策入履历便于统计沉默率）+ 记忆写回 ----
+  // why 是履历独立字段，不拼进 summary 尾巴，也不走 summary 截断。
   const today = now.toISOString().slice(0, 10);
   const historySummary = decision === 'silence'
-    ? (excluded ? '巡检无需行动（话题排除）' : '巡检无需行动')
-    : `[${decision}] ${summary || '（无摘要）'}${formatHistoryWhySuffix(parsedRationale)}`;
+    ? (excluded ? '命中排除话题，已停止汇报' : '巡检无需行动')
+    : `[${decision}] ${summary || '（无摘要）'}`;
   await appendRoleHistory(roleId, {
     date: today,
     artifactLabel: wakeHistoryLabel(trigger),
     artifactRef: '-',
-    summary: historySummary.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS),
+    summary: historySummary,
+    ...(recordWhy ? {
+      why: parsedRationale.missing ? '(missing)' : parsedRationale.rationale,
+      ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
+    } : {}),
   });
 
   if (decision !== 'silence') {
@@ -576,9 +581,11 @@ export async function wakeRole(
         configPatch: {
           decision,
           advanceGoalStatus,
-          ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
-          ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
-          rationaleMissing: parsedRationale.missing,
+          ...(recordWhy ? {
+            ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
+            ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
+            rationaleMissing: parsedRationale.missing,
+          } : {}),
           ...(options.handoffPrompt ? {
             handoffPrompt: options.handoffPrompt,
             nextStage: { prompt: options.handoffPrompt, title: '角色唤醒后继续' },
@@ -598,9 +605,11 @@ export async function wakeRole(
     sessionId: session.id,
     summary,
     advanceGoalStatus,
-    ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
-    ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
-    rationaleMissing: parsedRationale.missing,
+    ...(recordWhy ? {
+      ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
+      ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
+      rationaleMissing: parsedRationale.missing,
+    } : {}),
   };
 }
 

@@ -177,8 +177,12 @@ export const ROLE_PROACTIVITY = {
   RATIONALE_MAX_CHARS: 240,
   /** 提取不到决策标记时的保守兜底决策 */
   FALLBACK_DECISION: 'report',
-  /** 醒来履历条目的产出摘要截断字符数（含 why 后缀） */
-  HISTORY_SUMMARY_MAX_CHARS: 400,
+  /** 醒来履历条目的产出摘要截断字符数（why 是独立字段，不挤进这个预算） */
+  HISTORY_SUMMARY_MAX_CHARS: 200,
+  /** 话题偏好单条最大字符数 */
+  TOPIC_MAX_CHARS: 40,
+  /** 话题偏好最多条数 */
+  TOPIC_MAX_ITEMS: 20,
 } as const;
 
 /** Agent 型定时任务跨运行快照（存放在 action.context 共享袋中）。 */

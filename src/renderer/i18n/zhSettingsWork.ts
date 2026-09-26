@@ -447,6 +447,7 @@ export const zhSettingsWork = {
         topicsIncludeDescription: '主动建议优先覆盖这些话题，逗号分隔。',
         topicsExcludeTitle: '永远别提',
         topicsExcludeDescription: '命中这些话题时必须沉默，逗号分隔。',
+        topicsExcludeMatchHint: '按关键词匹配，短词可能误伤',
         topicsPlaceholder: '例如：项目进度, 待办',
         topicsSave: '保存话题偏好',
         topicsIncludeActive: '想听：{topics}',

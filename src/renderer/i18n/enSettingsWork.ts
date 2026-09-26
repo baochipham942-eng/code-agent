@@ -445,6 +445,7 @@ export const enSettingsWork = {
         topicsIncludeDescription: 'Proactive suggestions prefer these topics. Comma-separated.',
         topicsExcludeTitle: 'Never bring up',
         topicsExcludeDescription: 'Matching topics stay silent. Comma-separated.',
+        topicsExcludeMatchHint: 'Matches by keyword; short words may over-match',
         topicsPlaceholder: 'e.g. project status, todos',
         topicsSave: 'Save topic preferences',
         topicsIncludeActive: 'Wanted: {topics}',

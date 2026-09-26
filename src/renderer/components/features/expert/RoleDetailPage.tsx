@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { IPC_DOMAINS } from "@shared/ipc";
+import { sanitizeTopicList } from "@shared/roleTopicList";
 import type {
   RolePanelDetail,
   RolePanelMemory,
@@ -678,19 +679,7 @@ const QuietHoursEditor: React.FC<{
 };
 
 function parseTopicInput(text: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const part of text.split(/[,，\n]/)) {
-    const trimmed = part.trim().replace(/\s+/g, ' ');
-    if (!trimmed) continue;
-    const clipped = trimmed.slice(0, 40);
-    const key = clipped.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(clipped);
-    if (out.length >= 20) break;
-  }
-  return out;
+  return sanitizeTopicList(text.split(/[,，\n]/));
 }
 
 function topicsToInput(topics: string[] | undefined): string {
@@ -771,6 +760,9 @@ const TopicsEditor: React.FC<{
             placeholder={text.topicsPlaceholder}
             className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-success"
           />
+          <p data-testid="role-topics-exclude-hint" className="text-xs text-zinc-500">
+            {text.topicsExcludeMatchHint}
+          </p>
         </label>
         <button /* ds-allow:button: 话题偏好使用紧凑行内保存动作 */
           data-testid="role-topics-save"

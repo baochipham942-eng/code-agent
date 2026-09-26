@@ -338,7 +338,9 @@ export async function recordTurnOutcomeStamp(
       outcome.evidenceProblems,
       listUnresolvedTurnTasksTouchedSince(
         ctx.sessionId,
-        currentRunStartedAt(ctx.turnTrace.getEvents()),
+        // 生产里每条用户消息都新建 TurnTraceRecorder，events 为空时上一枚 turn_outcome 找不到；
+        // 取最后一条 user 消息时间兜底，与 deliverableDiskCheck 的 run 域同一把尺。
+        Math.max(currentRunStartedAt(ctx.turnTrace.getEvents()), lastUserTimestamp(ctx.messages)),
       ),
     );
     ctx.turnTrace.record('turn_outcome', {

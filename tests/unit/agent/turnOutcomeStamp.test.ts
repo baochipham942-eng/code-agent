@@ -819,6 +819,28 @@ describe('turn outcome stamp', () => {
     }
   });
 
+  it('scopes to the latest user message when the run starts with a fresh trace recorder', async () => {
+    const sessionId = 'session-fresh-recorder';
+    clearTasks(sessionId);
+    const leftover = createTask(sessionId, { subject: '等权限', description: '上一轮卡住' });
+    updateTask(sessionId, leftover.id, { status: 'blocked', blockedReason: '还没拿到登录' });
+    // 生产形状：每条用户消息新建 recorder，events 为空；用户消息晚于遗留任务的最后更新。
+    const recorder = new TurnTraceRecorder('fresh-recorder', traceRoot);
+    const userMessage: Message = { id: 'u-next', role: 'user', content: '换个无关的活', timestamp: Date.now() + 1000 };
+    try {
+      await recordTurnOutcomeStamp(
+        { ...context(recorder, [userMessage]), sessionId },
+        'completed',
+        summary({
+          verificationEvidence: [{ kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 }],
+        }),
+      );
+      expect(latestOutcome(recorder).verdict).toBe('verified');
+    } finally {
+      clearTasks(sessionId);
+    }
+  });
+
   it('refuses verified when this run created a needs_decision task', async () => {
     const sessionId = 'session-this-run-decision';
     clearTasks(sessionId);

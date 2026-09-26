@@ -1,9 +1,12 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { TaskDashboardSummary, getRunUiStatusLabel } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
 import type { TaskRecord } from '../../../src/renderer/types/runWorkbench';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { isOpenTaskStatus } from '../../../src/shared/contract/planning';
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
@@ -99,6 +102,16 @@ describe('TaskDashboardSummary 运行中空态（UI 审计 #8）', () => {
 });
 
 describe('TaskDashboardSummary wait states', () => {
+  it('只有 needs_decision 任务时面板判定为应展开', () => {
+    const appSource = fs.readFileSync(path.resolve(process.cwd(), 'src/renderer/App.tsx'), 'utf8');
+    expect(appSource).toContain('hasOpenSessionTask = sessionTasks.some((task) => isOpenTaskStatus(task.status))');
+    expect(appSource).toContain('.filter((task) => isOpenTaskStatus(task.status))');
+    expect(isOpenTaskStatus('needs_decision')).toBe(true);
+    expect(isOpenTaskStatus('user_action')).toBe(true);
+    expect(isOpenTaskStatus('completed')).toBe(false);
+    expect([{ status: 'needs_decision' as const }].some((task) => isOpenTaskStatus(task.status))).toBe(true);
+  });
+
   it('shows 等你拍板 for needs_decision instead of 阻塞', () => {
     const task: TaskRecord = {
       id: 'session:session-tasks',

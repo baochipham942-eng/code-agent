@@ -163,13 +163,14 @@ describe('durable Native recovery lifecycle', () => {
       content: '恢复这次模型调用',
       timestamp: 1_005,
     }];
-    const startTask = vi.fn(async () => {
-      messages.push({
+    const resumeExistingDurableRun = vi.fn(async (_sessionId: string, _runId: string, history: Message[]) => {
+      expect(history.map((message) => message.id)).toEqual(['prepared-source-message']);
+      messages = [...messages, {
         id: 'prepared-recovered-result',
         role: 'assistant',
         content: '续跑完成',
         timestamp: 2_001,
-      });
+      }];
     });
 
     try {
@@ -204,10 +205,7 @@ describe('durable Native recovery lifecycle', () => {
               : message);
           }),
         },
-        tasks: {
-          setSessionContext: vi.fn(),
-          startTask,
-        },
+        tasks: { resumeExistingDurableRun },
         now: () => 2_000,
       });
 
@@ -217,7 +215,7 @@ describe('durable Native recovery lifecycle', () => {
           reason: 'execute_prepared_model_once',
           detail: { resultRef: 'message-ledger:prepared-recovered-result' },
         });
-      expect(startTask).toHaveBeenCalledOnce();
+      expect(resumeExistingDurableRun).toHaveBeenCalledOnce();
       expect(await repository.get(original.context.runId)).toMatchObject({
         status: 'completed',
         terminal: { reason: 'execute_prepared_model_once' },
@@ -284,7 +282,7 @@ describe('durable Native recovery lifecycle', () => {
           getMessages: vi.fn(async () => messages),
           updateMessage: vi.fn(async () => undefined),
         },
-        tasks: { setSessionContext: vi.fn(), startTask: vi.fn(async () => undefined) },
+        tasks: { resumeExistingDurableRun: vi.fn(async () => undefined) },
         resolveToolDefinition: vi.fn(() => ({
           name: 'Read',
           description: 'read',

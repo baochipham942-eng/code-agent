@@ -295,6 +295,69 @@ export class TaskManager extends EventEmitter {
   }
 
   /**
+   * Resume a durable run that the recovery kernel already claimed. The supplied
+   * history is installed verbatim and the existing runId is adopted by the live
+   * orchestrator; this path never creates a new user turn.
+   */
+  async resumeExistingDurableRun(sessionId: string, runId: string, messages: Message[], options?: AgentRunOptions, messageMetadata?: MessageMetadata, clientMessageId?: string): Promise<void> {
+    if (!this.configService || !this.onAgentEvent) throw new Error('TaskManager not initialized. Call initialize() first.');
+    if (!this.runRegistry?.hasDurableOwner(runId)) throw new Error(`Durable run ${runId} is not claimed for resume`);
+    const existingHandle = this.runRegistry.get(runId);
+    if (existingHandle && existingHandle.context.sessionId !== sessionId) throw new Error(`Durable run ${runId} belongs to session ${existingHandle.context.sessionId}`);
+    const source = [...messages].reverse().find((message) => message.role === 'user' && isInferenceHistoryMessage(message));
+    if (!source) throw new Error(`Durable run ${runId} has no source user message`);
+    const currentState = this.sessionStates.get(sessionId);
+    if (['running', 'paused', 'queued', 'cancelling'].includes(currentState?.status ?? '')) {
+      throw new Error(`Session ${sessionId} is already ${currentState.status}`);
+    }
+
+    await this.semaphore.acquire(); this.updateSessionState(sessionId, { status: 'running', startTime: Date.now() });
+    this.emitEvent('task_started', sessionId, { runId, resumed: true });
+    const wrapper = this.getOrCreateOrchestrator(sessionId);
+    wrapper.orchestrator.setMessages(messages);
+    try {
+      await wrapper.orchestrator.resumeExistingDurableRun(
+        source.content,
+        source.attachments,
+        {
+          ...options,
+          mode: options?.mode ?? 'normal',
+          runId,
+          resumeExistingDurableRun: true,
+          disableAutoAgent: true,
+        },
+        messageMetadata ?? source.metadata,
+        clientMessageId ?? source.id,
+      );
+      if (this.cancellingSessions.has(sessionId)) {
+        this.finishCancelledSession(sessionId, { clearMarker: true });
+      } else {
+        this.updateSessionState(sessionId, { status: 'idle' });
+        this.emitEvent('task_completed', sessionId, { runId, resumed: true });
+      }
+    } catch (error) {
+      if (this.cancellingSessions.has(sessionId)) {
+        this.finishCancelledSession(sessionId, { clearMarker: true });
+        return;
+      }
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage });
+      this.emitEvent('task_error', sessionId, {
+        runId,
+        error: errorMessage,
+        ...(failure ? { failure } : {}),
+      });
+    } finally {
+      this.semaphore.release();
+      this.processQueue();
+      if (this.sessionStates.get(sessionId)?.status === 'error') {
+        this.updateSessionState(sessionId, { status: 'idle' }, { persistStatus: 'error' });
+      }
+    }
+  }
+
+  /**
    * 在同一会话下启动一个独立后台 run。生命周期与控制键是 taskId，消息与审批仍归属
    * 原 sessionId；run 注册为 auxiliary，因此不会抢走会话主 run 的控制句柄。
    */

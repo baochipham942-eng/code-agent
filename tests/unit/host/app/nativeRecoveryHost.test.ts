@@ -87,7 +87,7 @@ function sourceMessage(metadata?: Message['metadata']): Message {
 }
 
 describe('application Native model continuation ports', () => {
-  it('re-enters the production task path and fences the original operation before dispatch', async () => {
+  it('re-enters the production task path with full history and fences before dispatch', async () => {
     const input = recoveryInput();
     let messages = [
       { id: 'older', role: 'user', content: 'older', timestamp: 0 } as Message,
@@ -99,14 +99,14 @@ describe('application Native model continuation ports', () => {
         ? { ...message, ...updates }
         : message);
     });
-    const setSessionContext = vi.fn();
-    const startTask = vi.fn(async () => {
-      messages.push({
+    const resumeExistingDurableRun = vi.fn(async (_sessionId: string, _runId: string, history: Message[]) => {
+      expect(history.map((message) => message.id)).toEqual(['older', 'user-source']);
+      messages = [...messages, {
         id: 'assistant-result',
         role: 'assistant',
         content: '恢复后的结果',
         timestamp: 3,
-      });
+      }];
     });
     const ports = createApplicationNativeRecoveryPorts(
       { checkpointDurable } as never,
@@ -115,7 +115,7 @@ describe('application Native model continuation ports', () => {
           getMessages: vi.fn(async () => messages),
           updateMessage,
         },
-        tasks: { setSessionContext, startTask },
+        tasks: { resumeExistingDurableRun },
         now: () => 20,
       },
     );
@@ -127,14 +127,15 @@ describe('application Native model continuation ports', () => {
       status: 'running',
       pendingOperations: [expect.objectContaining({ status: 'unknown', updatedAt: 20 })],
     }));
-    expect(setSessionContext).toHaveBeenCalledWith('session-recovery', [
-      expect.objectContaining({ id: 'older' }),
-    ]);
-    expect(startTask).toHaveBeenCalledWith(
+    expect(resumeExistingDurableRun).toHaveBeenCalledWith(
       'session-recovery',
-      '继续原来的模型调用',
-      undefined,
+      'run-recovery',
+      [
+        expect.objectContaining({ id: 'older' }),
+        expect.objectContaining({ id: 'user-source' }),
+      ],
       expect.objectContaining({
+        mode: 'normal',
         disableAutoAgent: true,
         modelSpec: { provider: 'openai', model: 'gpt-test' },
       }),
@@ -147,7 +148,7 @@ describe('application Native model continuation ports', () => {
     const input = recoveryInput();
     const checkpointDurable = vi.fn(async () => undefined);
     const updateMessage = vi.fn(async () => undefined);
-    const startTask = vi.fn(async () => undefined);
+    const resumeExistingDurableRun = vi.fn(async () => undefined);
     const ports = createApplicationNativeRecoveryPorts(
       { checkpointDurable } as never,
       {
@@ -163,21 +164,21 @@ describe('application Native model continuation ports', () => {
           ]),
           updateMessage,
         },
-        tasks: { setSessionContext: vi.fn(), startTask },
+        tasks: { resumeExistingDurableRun },
       },
     );
 
     await expect(ports.model.dispatchPrepared(input)).resolves.toEqual({
       resultRef: 'message-ledger:assistant-existing',
     });
-    expect(startTask).toHaveBeenCalledTimes(0);
+    expect(resumeExistingDurableRun).toHaveBeenCalledTimes(0);
     expect(checkpointDurable).toHaveBeenCalledTimes(0);
     expect(updateMessage).toHaveBeenCalledTimes(0);
   });
 
   it('does not mistake a later turn response for the recovered model result', async () => {
     const input = recoveryInput();
-    const startTask = vi.fn(async () => undefined);
+    const resumeExistingDurableRun = vi.fn(async () => undefined);
     const ports = createApplicationNativeRecoveryPorts(
       { checkpointDurable: vi.fn(async () => undefined) } as never,
       {
@@ -189,14 +190,14 @@ describe('application Native model continuation ports', () => {
           ]),
           updateMessage: vi.fn(async () => undefined),
         },
-        tasks: { setSessionContext: vi.fn(), startTask },
+        tasks: { resumeExistingDurableRun },
       },
     );
 
     await expect(ports.model.dispatchPrepared(input)).rejects.toThrow(
       'native model continuation completed without result evidence',
     );
-    expect(startTask).toHaveBeenCalledTimes(1);
+    expect(resumeExistingDurableRun).toHaveBeenCalledTimes(1);
   });
 
   it('keeps provider result lookup and retry proof conservative', async () => {
@@ -290,7 +291,7 @@ describe('application Native tool continuation ports', () => {
           getMessages: vi.fn(async () => [...toolMessages(), ...persisted]),
           updateMessage: vi.fn(async () => undefined),
         },
-        tasks: { setSessionContext: vi.fn(), startTask: vi.fn(async () => undefined) },
+        tasks: { resumeExistingDurableRun: vi.fn(async () => undefined) },
         resolveToolDefinition: vi.fn(() => readDefinition),
         storedToolReplaySafety: vi.fn(() => 'automatic' as const),
         executeTool,
@@ -344,7 +345,7 @@ describe('application Native tool continuation ports', () => {
           getMessages: vi.fn(async () => toolMessages()),
           updateMessage: vi.fn(async () => undefined),
         },
-        tasks: { setSessionContext: vi.fn(), startTask: vi.fn(async () => undefined) },
+        tasks: { resumeExistingDurableRun: vi.fn(async () => undefined) },
         resolveToolDefinition,
         storedToolReplaySafety: vi.fn(() => 'automatic' as const),
         executeTool,
@@ -377,7 +378,7 @@ describe('application Native tool continuation ports', () => {
           getMessages: vi.fn(async () => [...toolMessages(), ...persisted]),
           updateMessage: vi.fn(async () => undefined),
         },
-        tasks: { setSessionContext: vi.fn(), startTask: vi.fn(async () => undefined) },
+        tasks: { resumeExistingDurableRun: vi.fn(async () => undefined) },
         resolveToolDefinition: vi.fn(() => ({
           ...readDefinition,
           permissionLevel: 'write' as const,

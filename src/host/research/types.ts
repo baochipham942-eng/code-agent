@@ -210,6 +210,8 @@ export interface AgentRunOptions {
   runRegistration?: 'primary' | 'auxiliary';
   /** 后台槽预分配的稳定 run id；与任务台账 id 共用。 */
   runId?: string;
+  /** 恢复已认领的 durable run；不得创建新信封或截断会话历史。 */
+  resumeExistingDurableRun?: boolean;
   /** auxiliary durable run 的父 run。存在时必须建立真实父子投影。 */
   parentRunId?: string;
   /** 已由上层分配独立执行槽时，禁止分析器再次进入 AutoAgent 扇出。 */

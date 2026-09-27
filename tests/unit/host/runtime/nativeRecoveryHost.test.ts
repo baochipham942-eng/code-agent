@@ -65,7 +65,11 @@ describe('NativeRecoveryHost production recovery', () => {
     [operation({ kind: 'tool_call', sideEffect: true, providerOperationId: 'tool-ledger' }), 'query_confirmed_tool_result'],
   ] as const)('commits the recovered operation without terminalizing the run %#', async (pending, reason) => {
     const { handler, registry } = fixture();
-    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({ status: 'recovered', reason });
+    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject(
+      pending.kind === 'model_call'
+        ? { status: 'requires_review' }
+        : { status: 'recovered', reason },
+    );
     expect(registry.checkpointDurable).toHaveBeenCalledOnce();
     expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
@@ -165,6 +169,18 @@ describe('NativeRecoveryHost production recovery', () => {
 
     await expect(handler.recover(recoveryPlan, 10)).resolves.toMatchObject({ status: 'recovered' });
     expect(ports.model.dispatchPrepared).toHaveBeenCalledOnce();
+  });
+
+  it('reviews an already-settled model operation without requesting it again', async () => {
+    const pending = operation({ status: 'succeeded', resultRef: 'model:final' });
+    const { handler, ports, registry } = fixture();
+
+    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({
+      status: 'requires_review', reason: 'native_operation_already_settled',
+    });
+    expect(ports.model.dispatchPrepared).not.toHaveBeenCalled();
+    expect(registry.checkpointDurable).toHaveBeenCalledWith('run-1', expect.objectContaining({ status: 'waiting' }));
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 
   it('replays only when stored and current declarations are both automatic', async () => {
@@ -287,8 +303,8 @@ describe('NativeRecoveryHost production recovery', () => {
     const { handler, registry } = fixture({ resolveWorkspaceScopeVersion });
 
     await expect(handler.recover(recoveryPlan, 10)).resolves.toMatchObject({
-      status: 'recovered',
-      reason: 'execute_prepared_model_once',
+      status: 'requires_review',
+      reason: 'native_model_result_materialized_requires_review',
     });
     // 端口契约：入参是整个 scope（恢复侧据 projectId 分流重算/查库），不是裸 id。
     expect(resolveWorkspaceScopeVersion).toHaveBeenCalledWith(descriptor.workspace.scope);
@@ -377,7 +393,7 @@ describe('NativeRecoveryHost interrupted goal run (P0 false-completion止血)', 
   it('non-goal descriptor still auto-completes (behavior unchanged)', async () => {
     const { handler, registry } = fixture();
     await expect(handler.recover(plan(operation({ status: 'prepared' })), 10))
-      .resolves.toMatchObject({ status: 'recovered' });
+      .resolves.toMatchObject({ status: 'requires_review' });
     expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 
@@ -385,7 +401,7 @@ describe('NativeRecoveryHost interrupted goal run (P0 false-completion止血)', 
     const { handler, registry } = fixture();
     const legacy = plan(operation({ status: 'prepared' }));
     expect('isGoalRun' in (legacy.checkpoint!.state as object)).toBe(false);
-    await expect(handler.recover(legacy, 10)).resolves.toMatchObject({ status: 'recovered' });
+    await expect(handler.recover(legacy, 10)).resolves.toMatchObject({ status: 'requires_review' });
     expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 });

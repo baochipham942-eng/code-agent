@@ -157,6 +157,7 @@ export class NativeRecoveryHost {
     let guardHalt = false;
     let waitingForApproval = false;
     let loopResumed = false;
+    let recoveredToolResult = false;
     let lastAction = 'settle_native_operations';
     let lastResultRef: string | undefined;
 
@@ -198,7 +199,24 @@ export class NativeRecoveryHost {
         // Read-only MCP tasks remain owned by the explicit MCP handler. External
         // writes continue through recoverOperation so an already recorded success
         // can be materialized, while an unknown outcome parks with guard_halt.
-        if (!operation.sideEffect) return { status: 'observing' as const, reason: 'native_waits_for_mcp_operation_handler' };
+        if (!operation.sideEffect) {
+          const siblingsChanged = pendingOperations.some((candidate, index) => (
+            candidate.status !== plan.pendingOperations[index]?.status
+              || candidate.resultRef !== plan.pendingOperations[index]?.resultRef
+          ));
+          if (siblingsChanged) {
+            await this.registry.checkpointDurable(plan.envelope.runId, {
+              now,
+              status: 'running',
+              state: descriptor,
+              engineCursor: plan.checkpoint?.cursor.engineCursor,
+              pendingOperations,
+              childRuns: plan.childRuns,
+              events: [{ type: 'native_recovery_siblings_settled', payload: { operationId: operation.operationId }, recordedAt: now }],
+            });
+          }
+          return { status: 'observing' as const, reason: 'native_waits_for_mcp_operation_handler' };
+        }
       }
 
       // A prepared model recovery can enter the live loop inside dispatchPrepared.
@@ -242,6 +260,7 @@ export class NativeRecoveryHost {
         resultRef: settled.evidence.resultRef,
         updatedAt: now,
       });
+      recoveredToolResult ||= operation.kind === 'tool_call';
       loopResumed ||= settled.evidence.loopResumed === true;
       lastAction = settled.action;
       lastResultRef = settled.evidence.resultRef;
@@ -279,6 +298,15 @@ export class NativeRecoveryHost {
         reason: 'resume_live_loop',
         ...(lastResultRef ? { detail: { resultRef: lastResultRef } } : {}),
       };
+    }
+    if (!recoveredToolResult) {
+      return this.review(
+        plan,
+        now,
+        recoverable.length === 0
+          ? 'native_operation_already_settled'
+          : 'native_model_result_materialized_requires_review',
+      );
     }
     await this.registry.checkpointDurable(plan.envelope.runId, {
       now,
@@ -446,7 +474,7 @@ function descriptorForOperation(
   operation: PendingOperation,
 ): NativeRecoveryDescriptor {
   const logicalOperationId = operation.operationId.replace(/^(model|tool):/, '') || base.logicalOperationId;
-  return {
+  const descriptor: NativeRecoveryDescriptor = {
     ...base,
     operationId: operation.operationId,
     logicalOperationId,
@@ -458,6 +486,14 @@ function descriptorForOperation(
           ? 'before_model_dispatch'
           : 'after_model_dispatch',
   };
+  if (operation.kind === 'approval') {
+    const approvalId = operation.providerOperationId?.replace(/^approval:/, '');
+    if (approvalId) descriptor.approvalId = approvalId;
+    else delete descriptor.approvalId;
+  } else {
+    delete descriptor.approvalId;
+  }
+  return descriptor;
 }
 
 export function createUnavailableNativeRecoveryPorts(): NativeRecoveryHostPorts {

@@ -362,18 +362,15 @@ export class DurableRunKernel implements RunKernelAdapter {
         leaseDurationMs: this.leaseDurationMs,
       });
       if (!claimed) continue;
-      await this.terminal({
+      await stores.replaceRecoveryProjection({
         runId: envelope.runId,
         attempt: claimed.attempt.attempt,
-        owner: claimed.owner,
-        now,
-        status: 'failed',
-        reason: 'auto_resume_limit_reached',
-        event: {
-          type: 'run_auto_resume_limit_reached',
-          payload: { autoResumeCount: claimed.envelope.autoResumeCount ?? 0 },
-          recordedAt: now,
-        },
+        expectedOwnerEpoch: claimed.owner.epoch,
+        status: 'waiting',
+        pendingOperations: await stores.listPendingOperations(envelope.runId),
+        interruptCause: getRunInterruptCause(claimed.envelope) ?? 'crash_or_quit',
+        autoResumeCount: claimed.envelope.autoResumeCount ?? MAX_AUTO_RESUME_COUNT,
+        updatedAt: now,
       });
     }
     const recoverable = await stores.listRecoverable(now, limit);

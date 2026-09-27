@@ -504,7 +504,7 @@ describe('DurableRunKernel', () => {
     db.close();
   });
 
-  it('terminalizes an exhausted crash loop so the session can start a new run', async () => {
+  it('parks an exhausted crash loop for an explicit Continue action', async () => {
     const { db, kernel, repository } = createKernel();
     const capped = await kernel.createNativeRun({
       runId: 'run-exhausted', sessionId: 'session-reusable', now: 10,
@@ -529,15 +529,10 @@ describe('DurableRunKernel', () => {
       leaseDurationMs: 100,
     }).recoverOnStartup(2_000)).toEqual([]);
     expect(await repository.get('run-exhausted')).toMatchObject({
-      status: 'failed',
-      terminal: { status: 'failed', reason: 'auto_resume_limit_reached' },
+      status: 'waiting',
+      interruptCause: 'crash_or_quit', interrupt_cause: 'crash_or_quit',
       autoResumeCount: MAX_AUTO_RESUME_COUNT,
     });
-
-    const next = await kernel.createNativeRun({
-      runId: 'run-after-exhausted', sessionId: 'session-reusable', now: 2_010,
-    });
-    expect(next.envelope.runId).toBe('run-after-exhausted');
     db.close();
   });
 

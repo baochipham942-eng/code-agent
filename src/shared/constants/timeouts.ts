@@ -87,8 +87,8 @@ export const INTERACTION_TIMEOUTS = {
   /** SaaS 连接器知情确认等待超时 */
   CONNECTOR_OAUTH_CONSENT: 120_000,
   /**
-   * 语音派停车审批的兜底超时。cron/heartbeat 不走这条 24h：
-   * 无人值守 60s（PERMISSION）后记 UNATTENDED_APPROVAL_TIMEOUT 并让执行记录离开 running。
+   * 无人值守与语音派停车审批的 24h 兜底。cron/heartbeat 在这段时间内保持同一 run
+   * 等待用户，等待期间由 beginHumanWait/endHumanWait 暂停该会话的工具计时。
    */
   PARKED_APPROVAL: 86_400_000,
   /** MCP Elicitation 用户输入超时 */

@@ -3,7 +3,7 @@ export const UNATTENDED_APPROVAL_TIMEOUT = 'UNATTENDED_APPROVAL_TIMEOUT';
 
 const pending = new Map<string, string>();
 
-/** cron/heartbeat 会话的审批超时。语音派不记。 */
+/** 仅兼容显式旧 60s 终态会话；新的 cron/heartbeat 走 24h 停车，不写这条原因码。 */
 export function noteUnattendedApprovalTimeout(sessionId: string): void {
   noteUnattendedRunTerminal(sessionId, UNATTENDED_APPROVAL_TIMEOUT);
 }

@@ -99,6 +99,30 @@ describe('DurableRecoveryDispatcher', () => {
     expect(results).toEqual(expect.arrayContaining([expect.objectContaining({ phase: 'operation', handler: 'mcp', status: 'observing' })]));
   });
 
+  it('does not re-dispatch an MCP operation already settled by native recovery', async () => {
+    const dispatcher = new DurableRecoveryDispatcher();
+    dispatcher.registerEngineHandler(engineHandler('native', vi.fn(async () => ({
+      status: 'recovered' as const,
+      reason: 'resume_live_loop',
+      detail: { recoveredOperationIds: ['tool-1'] },
+    }))));
+    const recover = vi.fn(async () => ({ status: 'observing' as const, reason: 'must-not-run' }));
+    dispatcher.registerOperationHandler({
+      name: 'mcp',
+      matches: (_plan, candidate) => candidate.providerOperationId?.startsWith('mcp-task:v1:') === true,
+      recover,
+    });
+
+    const run = plan({
+      runId: 'run-native-mcp-write',
+      engine: { kind: 'native' },
+      operations: [operation('run-native-mcp-write', 'tool-1', 'mcp-task:v1:write')],
+    });
+    const results = await dispatcher.dispatch([run]);
+    expect(recover).not.toHaveBeenCalled();
+    expect(results).toEqual([expect.objectContaining({ phase: 'engine', status: 'recovered' })]);
+  });
+
   it('isolates one handler failure and still checks every run', async () => {
     const dispatcher = new DurableRecoveryDispatcher();
     const recover = vi.fn(async (candidate: RunRehydrationPlan) => {

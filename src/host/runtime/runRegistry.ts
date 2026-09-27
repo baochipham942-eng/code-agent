@@ -384,6 +384,10 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     });
   }
 
+  async parkDurable(runId: string, input: { now?: number; reason?: 'user_stop' } = {}, expected?: RunHandle): Promise<void> {
+    if (expected && this.handlesByRunId.get(runId) !== expected) throw new Error(`Durable Run park fenced by stale handle: ${runId}`);
+    const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`); const now = input.now ?? Date.now(); const cause = input.reason ?? 'user_stop'; await this.checkpointDurable(runId, { now, status: 'waiting', state: this.durableCheckpointStates.get(runId), engineCursor: envelope.cursor.engineCursor, pendingOperations: envelope.pendingOperations ?? [], childRuns: envelope.childRuns, interruptCause: cause, events: [{ type: 'run_interrupted', payload: { cause }, recordedAt: now }] });
+  }
   async checkpointNativeModelOperation(input: {
     runId: string;
     sourceMessageId: string;

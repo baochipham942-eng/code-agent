@@ -31,6 +31,8 @@ export interface NativeRecoveryDescriptor {
 
 export interface NativeRecoveryResultEvidence {
   resultRef: string;
+  /** The application port already re-entered the live loop while settling this operation. */
+  loopResumed?: boolean;
 }
 
 export interface NativeRecoveryHostPorts {
@@ -62,6 +64,8 @@ export interface NativeRecoveryHostPorts {
     dispatchPrepared(input: NativeRecoveryOperationInput): Promise<NativeRecoveryResultEvidence>;
     interrupt(input: NativeRecoveryOperationInput): Promise<NativeRecoveryResultEvidence>;
   };
+  /** Re-enter the live loop after recovery has materialized every pending operation. */
+  continueLoop?(input: NativeRecoveryOperationInput): Promise<void>;
   approval: {
     read(approvalId: string): Promise<'pending' | 'approved' | 'rejected' | 'missing' | 'conflict'>;
   };
@@ -139,85 +143,175 @@ export class NativeRecoveryHost {
         return this.review(plan, now, 'native_workspace_scope_drift');
       }
     }
-    const operation = plan.pendingOperations.find((candidate) => candidate.operationId === descriptor.operationId);
-    if (!operation) return this.review(plan, now, 'native_operation_missing');
+    const descriptorOperation = plan.pendingOperations.find((candidate) => candidate.operationId === descriptor.operationId);
+    if (!descriptorOperation) return this.review(plan, now, 'native_operation_missing');
 
-    if (operation.kind === 'approval') return this.recoverApproval(plan, descriptor, operation, now);
-    if (operation.kind === 'tool_call' && operation.providerOperationId?.startsWith('mcp-task:v1:')) {
-      return { status: 'observing' as const, reason: 'native_waits_for_mcp_operation_handler' };
+    // The checkpoint descriptor points at the last operation only. Recover every
+    // non-terminal sibling first, then let the descriptor operation be the final
+    // operation to enter the live loop. This prevents a parallel tool call from
+    // reaching the provider with a missing sibling tool_result.
+    const pendingOperations = [...plan.pendingOperations];
+    const recoverable = pendingOperations
+      .filter((operation) => !isTerminalOperation(operation))
+      .sort((left, right) => Number(left.operationId === descriptor.operationId) - Number(right.operationId === descriptor.operationId));
+    let guardHalt = false;
+    let waitingForApproval = false;
+    let loopResumed = false;
+    let recoveredToolResult = false;
+    let lastAction = 'settle_native_operations';
+    let lastResultRef: string | undefined;
+
+    for (const operation of recoverable) {
+      if (waitingForApproval || guardHalt) continue;
+      const operationDescriptor = descriptorForOperation(descriptor, operation);
+      const operationPlan = operation.operationId === descriptor.operationId && operation.kind === 'model_call'
+        ? {
+            ...plan,
+            envelope: { ...plan.envelope, pendingOperations },
+            pendingOperations: [...pendingOperations],
+          }
+        : plan;
+      const input = { plan: operationPlan, descriptor: operationDescriptor, operation };
+      if (operation.kind === 'approval') {
+        const approvalId = operationDescriptor.approvalId ?? operation.providerOperationId?.replace(/^approval:/, '');
+        if (!approvalId) {
+          return this.ports.continuationExecutor === 'unavailable'
+            ? this.failUnrecoverable(plan, now, 'approval_identity_missing')
+            : this.review(plan, now, 'approval_identity_missing');
+        }
+        const approvalStatus = await this.ports.approval.read(approvalId);
+        if (approvalStatus === 'missing' || approvalStatus === 'conflict') {
+          return this.ports.continuationExecutor === 'unavailable'
+            ? this.failUnrecoverable(plan, now, 'approval_identity_missing')
+            : this.review(plan, now, `approval_identity_${approvalStatus}`);
+        }
+        if (approvalStatus === 'pending') {
+          if (this.ports.continuationExecutor === 'unavailable') {
+            return this.failUnrecoverable(plan, now, 'approval_pending_no_recovery_resolution_path');
+          }
+          waitingForApproval = true;
+          continue;
+        }
+        return this.ports.continuationExecutor === 'unavailable'
+          ? this.failUnrecoverable(plan, now, `approval_${approvalStatus}_continuation_requires_application_resume`)
+          : this.review(plan, now, `approval_${approvalStatus}_continuation_requires_application_resume`);
+      }
+      if (operation.kind === 'tool_call' && operation.providerOperationId?.startsWith('mcp-task:v1:')) {
+        // Read-only MCP tasks remain owned by the explicit MCP handler. External
+        // writes continue through recoverOperation so an already recorded success
+        // can be materialized, while an unknown outcome parks with guard_halt.
+        if (!operation.sideEffect) {
+          const siblingsChanged = pendingOperations.some((candidate, index) => (
+            candidate.status !== plan.pendingOperations[index]?.status
+              || candidate.resultRef !== plan.pendingOperations[index]?.resultRef
+          ));
+          if (siblingsChanged) {
+            await this.registry.checkpointDurable(plan.envelope.runId, {
+              now,
+              status: 'running',
+              state: descriptor,
+              engineCursor: plan.checkpoint?.cursor.engineCursor,
+              pendingOperations,
+              childRuns: plan.childRuns,
+              events: [{ type: 'native_recovery_siblings_settled', payload: { operationId: operation.operationId }, recordedAt: now }],
+            });
+          }
+          return { status: 'observing' as const, reason: 'native_waits_for_mcp_operation_handler' };
+        }
+      }
+
+      // A prepared model recovery can enter the live loop inside dispatchPrepared.
+      // Persist settled siblings before that call so a natural loop finalization
+      // never observes an unresolved parallel operation.
+      if (operation.operationId === descriptor.operationId
+        && operation.kind === 'model_call'
+        && pendingOperations.some((candidate, index) => candidate.status !== plan.pendingOperations[index]?.status)) {
+        await this.registry.checkpointDurable(plan.envelope.runId, {
+          now,
+          status: 'running',
+          state: descriptor,
+          engineCursor: plan.checkpoint?.cursor.engineCursor,
+          pendingOperations,
+          childRuns: plan.childRuns,
+          events: [{ type: 'native_recovery_siblings_settled', payload: { operationId: operation.operationId }, recordedAt: now }],
+        });
+      }
+      const settled = await this.recoverOperation(input);
+      if (settled.reviewReason) {
+        if (settled.guardHalt) {
+          guardHalt = true;
+          replacePendingOperation(pendingOperations, operation, {
+            status: 'unknown',
+            requiresHumanConfirmation: true,
+            updatedAt: now,
+          });
+          continue;
+        }
+        return this.review(plan, now, settled.reviewReason);
+      }
+      if (!settled.evidence) continue;
+      await this.ports.compatibilitySink?.commitResult({
+        runId: plan.envelope.runId,
+        sessionId: plan.envelope.sessionId,
+        operationId: operation.operationId,
+        resultRef: settled.evidence.resultRef,
+      });
+      replacePendingOperation(pendingOperations, operation, {
+        status: 'succeeded',
+        resultRef: settled.evidence.resultRef,
+        updatedAt: now,
+      });
+      recoveredToolResult ||= operation.kind === 'tool_call';
+      loopResumed ||= settled.evidence.loopResumed === true;
+      lastAction = settled.action;
+      lastResultRef = settled.evidence.resultRef;
     }
 
-    const input = { plan, descriptor, operation };
-    let evidence: NativeRecoveryResultEvidence | null = null;
-    let action: string;
-    if (operation.kind === 'model_call' && operation.status === 'prepared') {
-      if (this.ports.continuationExecutor === 'unavailable') {
-        return this.failUnrecoverable(plan, now, 'native_model_continuation_executor_unavailable');
-      }
-      evidence = await this.ports.model.dispatchPrepared(input);
-      action = 'execute_prepared_model_once';
-    } else if (operation.kind === 'model_call' && operation.status === 'dispatched' && operation.providerOperationId) {
-      evidence = await this.ports.model.queryResult({ ...input, providerOperationId: operation.providerOperationId });
-      action = 'query_original_model_result';
-      if (!evidence) {
-        return this.ports.continuationExecutor === 'unavailable'
-          ? this.failUnrecoverable(plan, now, 'model_result_handle_not_queryable')
-          : this.review(plan, now, 'model_result_handle_not_queryable');
-      }
-    } else if (operation.kind === 'model_call' && operation.status === 'dispatched') {
-      if (!await this.ports.model.canRetrySafely(input)) {
-        return this.ports.continuationExecutor === 'unavailable'
-          ? this.failUnrecoverable(plan, now, 'model_safe_retry_unproven')
-          : this.review(plan, now, 'model_safe_retry_unproven');
-      }
-      evidence = await this.ports.model.retrySafe(input);
-      action = 'retry_safe_model_compute_once';
-    } else if (operation.kind === 'tool_call') {
-      if (operation.providerOperationId && operation.requiresHumanConfirmation !== true) {
-        evidence = await this.ports.tool.queryResult({ ...input, providerOperationId: operation.providerOperationId });
-      }
-      if (evidence) {
-        action = 'query_confirmed_tool_result';
-      } else {
-        if (this.ports.continuationExecutor === 'unavailable') {
-          return this.failUnrecoverable(
-            plan,
-            now,
-            operation.providerOperationId
-              ? 'tool_result_evidence_missing'
-              : operation.sideEffect
-                ? 'unknown_write_side_effect'
-                : 'tool_result_evidence_missing',
-          );
-        }
-        const replaySafety = await this.ports.tool.classifyReplaySafety(input);
-        if (canAutomaticallyReplayTool(replaySafety.stored, replaySafety.current)) {
-          evidence = await this.ports.tool.dispatchPrepared(input);
-          action = 'replay_safe_tool_once';
-        } else if (operation.sideEffect) {
-          // A write whose outcome cannot be queried or proven safe to replay
-          // must remain visible for manual review. Interrupting it and then
-          // committing a completed run would turn an unknown side effect into
-          // a false success.
-          return this.review(plan, now, 'unknown_write_side_effect');
-        } else {
-          evidence = await this.ports.tool.interrupt(input);
-          action = 'interrupt_unproven_tool_replay';
-        }
-      }
-    } else {
-      return this.review(plan, now, 'native_operation_not_safely_recoverable');
+    if (waitingForApproval) {
+      await this.registry.checkpointDurable(plan.envelope.runId, {
+        now,
+        status: 'waiting',
+        state: descriptor,
+        engineCursor: plan.checkpoint?.cursor.engineCursor,
+        pendingOperations,
+        childRuns: plan.childRuns,
+        events: [{ type: 'approval_recovered', payload: { runId: plan.envelope.runId }, recordedAt: now }],
+      });
+      return { status: 'observing' as const, reason: 'restore_same_approval' };
+    }
+    if (guardHalt) {
+      await this.registry.checkpointDurable(plan.envelope.runId, {
+        now,
+        status: 'waiting',
+        state: descriptor,
+        engineCursor: plan.checkpoint?.cursor.engineCursor,
+        pendingOperations,
+        childRuns: plan.childRuns,
+        interruptCause: 'guard_halt',
+        events: [{ type: 'native_recovery_requires_review', payload: { reason: 'unknown_write_side_effect' }, recordedAt: now }],
+      });
+      return { status: 'requires_review' as const, reason: 'unknown_write_side_effect' };
     }
 
-    await this.ports.compatibilitySink?.commitResult({
-      runId: plan.envelope.runId,
-      sessionId: plan.envelope.sessionId,
-      operationId: operation.operationId,
-      resultRef: evidence.resultRef,
-    });
-    const pendingOperations = plan.pendingOperations.map((candidate) => candidate.operationId === operation.operationId
-      ? { ...candidate, status: 'succeeded' as const, resultRef: evidence.resultRef, updatedAt: now }
-      : candidate);
+    if (loopResumed) {
+      return {
+        status: 'recovered' as const,
+        reason: 'resume_live_loop',
+        detail: {
+          ...(lastResultRef ? { resultRef: lastResultRef } : {}),
+          recoveredOperationIds: recoverable.map((operation) => operation.operationId),
+        },
+      };
+    }
+    if (!recoveredToolResult) {
+      return this.review(
+        plan,
+        now,
+        recoverable.length === 0
+          ? 'native_operation_already_settled'
+          : 'native_model_result_materialized_requires_review',
+      );
+    }
     await this.registry.checkpointDurable(plan.envelope.runId, {
       now,
       status: 'running',
@@ -225,46 +319,81 @@ export class NativeRecoveryHost {
       engineCursor: plan.checkpoint?.cursor.engineCursor,
       pendingOperations,
       childRuns: plan.childRuns,
-      events: [{ type: 'native_recovery_result_committed', payload: { operationId: operation.operationId }, recordedAt: now }],
+      events: [{
+        type: 'native_recovery_operations_settled',
+        payload: { operationIds: recoverable.map((operation) => operation.operationId) },
+        recordedAt: now,
+      }],
     });
-    await this.registry.terminalDurable(plan.envelope.runId, {
-      now: now + 1,
-      status: 'completed',
-      reason: action,
-      event: { type: 'run_completed', payload: { recoveryAction: action }, recordedAt: now + 1 },
-    });
-    return { status: 'recovered' as const, reason: action, detail: { resultRef: evidence.resultRef } };
+    if (!loopResumed && this.ports.continueLoop) {
+      await this.ports.continueLoop({ plan, descriptor, operation: descriptorOperation });
+      loopResumed = true;
+      lastAction = 'resume_live_loop';
+    }
+    return {
+      status: 'recovered' as const,
+      reason: loopResumed ? 'resume_live_loop' : lastAction,
+      detail: {
+        ...(lastResultRef ? { resultRef: lastResultRef } : {}),
+        recoveredOperationIds: recoverable.map((operation) => operation.operationId),
+      },
+    };
   }
 
-  private async recoverApproval(
-    plan: RunRehydrationPlan,
-    descriptor: NativeRecoveryDescriptor,
-    operation: PendingOperation,
-    now: number,
-  ) {
-    const approvalId = descriptor.approvalId ?? operation.providerOperationId?.replace(/^approval:/, '');
-    if (!approvalId) return this.review(plan, now, 'approval_identity_missing');
-    const status = await this.ports.approval.read(approvalId);
-    if (status === 'missing' || status === 'conflict') return this.review(plan, now, `approval_identity_${status}`);
-    if (status === 'pending') {
-      if (this.ports.continuationExecutor === 'unavailable') {
-        return this.failUnrecoverable(plan, now, 'approval_pending_no_recovery_resolution_path');
-      }
-      await this.registry.checkpointDurable(plan.envelope.runId, {
-        now,
-        status: 'waiting',
-        state: descriptor,
-        engineCursor: plan.checkpoint?.cursor.engineCursor,
-        pendingOperations: plan.pendingOperations,
-        childRuns: plan.childRuns,
-        events: [{ type: 'approval_recovered', payload: { approvalId }, recordedAt: now }],
-      });
-      return { status: 'observing' as const, reason: 'restore_same_approval' };
+  private async recoverOperation(input: NativeRecoveryOperationInput): Promise<{
+    evidence?: NativeRecoveryResultEvidence;
+    action: string;
+    reviewReason?: string;
+    guardHalt?: boolean;
+  }> {
+    const { operation } = input;
+    if (operation.kind === 'model_call' && operation.status === 'prepared') {
+      if (this.ports.continuationExecutor === 'unavailable') return { action: 'model_unavailable', reviewReason: 'native_model_continuation_executor_unavailable' };
+      return { evidence: await this.ports.model.dispatchPrepared(input), action: 'execute_prepared_model_once' };
     }
-    const reason = `approval_${status}_continuation_requires_application_resume`;
-    return this.ports.continuationExecutor === 'unavailable'
-      ? this.failUnrecoverable(plan, now, reason)
-      : this.review(plan, now, reason);
+    if (operation.kind === 'model_call' && operation.status === 'dispatched' && operation.providerOperationId) {
+      const evidence = await this.ports.model.queryResult({ ...input, providerOperationId: operation.providerOperationId });
+      return evidence
+        ? { evidence, action: 'query_original_model_result' }
+        : { action: 'model_result_unqueryable', reviewReason: 'model_result_handle_not_queryable' };
+    }
+    if (operation.kind === 'model_call' && operation.status === 'dispatched') {
+      if (!await this.ports.model.canRetrySafely(input)) {
+        return { action: 'model_retry_unproven', reviewReason: 'model_safe_retry_unproven' };
+      }
+      return { evidence: await this.ports.model.retrySafe(input), action: 'retry_safe_model_compute_once' };
+    }
+    if (operation.kind === 'tool_call') {
+      let evidence: NativeRecoveryResultEvidence | null = null;
+      if (operation.providerOperationId && operation.requiresHumanConfirmation !== true) {
+        evidence = await this.ports.tool.queryResult({ ...input, providerOperationId: operation.providerOperationId });
+      }
+      if (evidence) return { evidence, action: 'query_confirmed_tool_result' };
+      if (this.ports.continuationExecutor === 'unavailable') {
+        return {
+          action: 'tool_unavailable',
+          reviewReason: operation.providerOperationId
+            ? 'tool_result_evidence_missing'
+            : operation.sideEffect
+              ? 'unknown_write_side_effect'
+              : 'tool_result_evidence_missing',
+        };
+      }
+      const replaySafety = await this.ports.tool.classifyReplaySafety(input);
+      // Unknown writes are never replayed. Local writes are materialized as an
+      // interrupted result so the model can verify them; external writes park.
+      if (operation.sideEffect && operation.providerOperationId?.startsWith('mcp-task:v1:')) {
+        return { action: 'unknown_write_side_effect', reviewReason: 'unknown_write_side_effect', guardHalt: true };
+      }
+      if (operation.sideEffect) {
+        return { evidence: await this.ports.tool.interrupt(input), action: 'interrupt_unproven_tool_replay' };
+      }
+      if (canAutomaticallyReplayTool(replaySafety.stored, replaySafety.current)) {
+        return { evidence: await this.ports.tool.dispatchPrepared(input), action: 'replay_safe_tool_once' };
+      }
+      return { evidence: await this.ports.tool.interrupt(input), action: 'interrupt_unproven_tool_replay' };
+    }
+    return { action: 'native_operation_not_safely_recoverable', reviewReason: 'native_operation_not_safely_recoverable' };
   }
 
   private async failUnrecoverable(plan: RunRehydrationPlan, now: number, reason: string) {
@@ -291,6 +420,7 @@ export class NativeRecoveryHost {
         ? { ...operation, status: 'unknown' as const, requiresHumanConfirmation: true, updatedAt: now }
         : operation),
       childRuns: plan.childRuns,
+      ...(reason === 'unknown_write_side_effect' ? { interruptCause: 'guard_halt' as const } : {}),
       events: [{ type: 'native_recovery_requires_review', payload: { reason }, recordedAt: now }],
     });
     return { status: 'requires_review' as const, reason };
@@ -330,6 +460,47 @@ export class NativeRecoveryHost {
     });
     return { status: 'requires_review' as const, reason };
   }
+}
+
+function isTerminalOperation(operation: PendingOperation): boolean {
+  return operation.status === 'succeeded' || operation.status === 'failed' || operation.status === 'abandoned';
+}
+
+function replacePendingOperation(
+  operations: PendingOperation[],
+  operation: PendingOperation,
+  updates: Partial<Pick<PendingOperation, 'status' | 'resultRef' | 'requiresHumanConfirmation' | 'updatedAt'>>,
+): void {
+  const index = operations.findIndex((candidate) => candidate.operationId === operation.operationId);
+  if (index < 0) return;
+  operations[index] = { ...operations[index], ...updates };
+}
+
+function descriptorForOperation(
+  base: NativeRecoveryDescriptor,
+  operation: PendingOperation,
+): NativeRecoveryDescriptor {
+  const logicalOperationId = operation.operationId.replace(/^(model|tool):/, '') || base.logicalOperationId;
+  const descriptor: NativeRecoveryDescriptor = {
+    ...base,
+    operationId: operation.operationId,
+    logicalOperationId,
+    phase: operation.kind === 'tool_call'
+      ? 'tool_dispatched'
+      : operation.kind === 'approval'
+        ? 'approval_waiting'
+        : operation.status === 'prepared'
+          ? 'before_model_dispatch'
+          : 'after_model_dispatch',
+  };
+  if (operation.kind === 'approval') {
+    const approvalId = operation.providerOperationId?.replace(/^approval:/, '');
+    if (approvalId) descriptor.approvalId = approvalId;
+    else delete descriptor.approvalId;
+  } else {
+    delete descriptor.approvalId;
+  }
+  return descriptor;
 }
 
 export function createUnavailableNativeRecoveryPorts(): NativeRecoveryHostPorts {

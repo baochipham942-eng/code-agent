@@ -94,6 +94,7 @@ export class DurableRecoveryDispatcher {
 
     const results: DurableRecoveryDispatchResult[] = [];
     const engineHandler = this.engineHandlers.get(plan.envelope.engine.kind);
+    let engineResult: DurableRecoveryDispatchResult | undefined;
     if (!engineHandler) {
       results.push(this.baseResult(plan, 'engine', 'dispatcher', {
         status: 'unsupported',
@@ -104,10 +105,26 @@ export class DurableRecoveryDispatcher {
         'engine', plan.envelope.runId, plan.envelope.attempt,
         plan.envelope.owner?.epoch ?? 'no-owner', plan.envelope.engine.kind,
       ].join(':');
-      results.push(await this.runOnce(key, () => this.invokeEngine(plan, engineHandler, now)));
+      engineResult = await this.runOnce(key, () => this.invokeEngine(plan, engineHandler, now));
+      results.push(engineResult);
     }
+    const nativeRecoveredOperationIds = engineHandler?.engineKind === 'native'
+      ? recoveredOperationIds(engineResult?.detail)
+      : new Set<string>();
 
     for (const operation of plan.pendingOperations) {
+      // Native recovery owns all local tool settlements. If it parked an
+      // external side effect, do not let the generic MCP handler dispatch it
+      // after the guard_halt checkpoint. An observing native result still leaves
+      // explicit MCP task recovery to its operation handler.
+      if (engineResult
+        && engineHandler?.engineKind === 'native'
+        && engineResult.status === 'requires_review'
+        && engineResult.reason === 'unknown_write_side_effect'
+        && operation.kind === 'tool_call') {
+        continue;
+      }
+      if (nativeRecoveredOperationIds.has(operation.operationId)) continue;
       const handler = this.operationHandlers.find((candidate) => candidate.matches(plan, operation));
       if (!handler) {
         // Some engines recover their internal pending operations as one
@@ -212,6 +229,14 @@ export class DurableRecoveryDispatcher {
 
 function isTerminalOperation(operation: PendingOperation): boolean {
   return operation.status === 'succeeded' || operation.status === 'failed' || operation.status === 'abandoned';
+}
+
+function recoveredOperationIds(detail: unknown): Set<string> {
+  if (!detail || typeof detail !== 'object') return new Set();
+  const candidate = (detail as { recoveredOperationIds?: unknown }).recoveredOperationIds;
+  return Array.isArray(candidate) && candidate.every((value): value is string => typeof value === 'string')
+    ? new Set(candidate)
+    : new Set();
 }
 
 function isEngineOwnedOperation(

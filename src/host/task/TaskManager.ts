@@ -306,9 +306,8 @@ export class TaskManager extends EventEmitter {
     if (existingHandle && existingHandle.context.sessionId !== sessionId) throw new Error(`Durable run ${runId} belongs to session ${existingHandle.context.sessionId}`);
     if (!clientMessageId) throw new Error(`Durable run ${runId} resume requires source message id`);
     const inferenceMessages = messages.filter(isInferenceHistoryMessage);
-    const sourceIndex = inferenceMessages.findIndex((message) => message.id === clientMessageId && message.role === 'user');
-    const source = sourceIndex >= 0 ? inferenceMessages[sourceIndex] : undefined; if (!source) throw new Error(`Durable run ${runId} source message ${clientMessageId} is unavailable`);
-    if (sourceIndex !== inferenceMessages.length - 1) throw new Error(`Durable run ${runId} resume history must end at source message ${clientMessageId}`);
+    const sourceIndex = inferenceMessages.findIndex((message) => message.id === clientMessageId && message.role === 'user'); const source = sourceIndex >= 0 ? inferenceMessages[sourceIndex] : undefined; if (!source) throw new Error(`Durable run ${runId} source message ${clientMessageId} is unavailable`);
+    const laterUserMessage = inferenceMessages.slice(sourceIndex + 1).some((message) => message.role === 'user'); if (laterUserMessage) throw new Error(`Durable run ${runId} resume history cannot contain a later user message after ${clientMessageId}`);
     const currentStatus = this.sessionStates.get(sessionId)?.status ?? ''; if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus)) throw new Error(`Session ${sessionId} is already ${currentStatus}`);
     await this.semaphore.acquire(); this.updateSessionState(sessionId, { status: 'running', startTime: Date.now() });
     this.emitEvent('task_started', sessionId, { runId, resumed: true });
@@ -329,6 +328,7 @@ export class TaskManager extends EventEmitter {
         clientMessageId ?? source.id,
       );
       if (this.cancellingSessions.has(sessionId)) {
+        const currentHandle = this.runRegistry?.get(runId); if (currentHandle && this.runRegistry?.hasDurableOwner(runId)) await this.runRegistry.parkDurable(runId, { reason: 'user_stop' }, currentHandle);
         this.finishCancelledSession(sessionId, { clearMarker: true });
       } else {
         this.updateSessionState(sessionId, { status: 'idle' });

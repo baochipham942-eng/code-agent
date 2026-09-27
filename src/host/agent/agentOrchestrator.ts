@@ -1080,16 +1080,13 @@ export class AgentOrchestrator {
       if (rolePresetSessionId) {
         getPermissionModeManager().clearRolePresetSession(rolePresetSessionId);
       }
-      if (registeredRun && this.runRegistry?.hasDurableOwner(nativeRunId) && !options?.resumeExistingDurableRun) {
-        // Durable 终态收口见 orchestrator/durableRunTerminal；/api/run 主链有自己的 lifecycle。
-        await finalizeDurableRun({
-          registry: this.runRegistry,
-          runId: nativeRunId,
-          handle: registeredRun,
-          sessionId,
+      if (registeredRun && this.runRegistry?.hasDurableOwner(nativeRunId)) {
+        if (options?.resumeExistingDurableRun && terminalTracker.snapshot().cancelled) {
+          await this.runRegistry.parkDurable(nativeRunId, { reason: 'user_stop' }, registeredRun);
+        } else await finalizeDurableRun({
+          registry: this.runRegistry, runId: nativeRunId, handle: registeredRun, sessionId,
           completed: runCompletedNormally && !terminalTracker.snapshot().terminalError,
-          cancelled: terminalTracker.snapshot().cancelled,
-          registration: options?.runRegistration ?? 'primary',
+          cancelled: terminalTracker.snapshot().cancelled, registration: options?.runRegistration ?? 'primary',
           ...(options?.parentRunId ? { parentRunId: options.parentRunId } : {}),
         });
       }

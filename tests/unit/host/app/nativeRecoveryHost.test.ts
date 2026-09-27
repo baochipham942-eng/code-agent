@@ -125,6 +125,7 @@ describe('application Native model continuation ports', () => {
 
     await expect(ports.model.dispatchPrepared(input)).resolves.toEqual({
       resultRef: 'message-ledger:assistant-result',
+      loopResumed: true,
     });
     expect(checkpointDurable).toHaveBeenCalledWith('run-recovery', expect.objectContaining({
       status: 'running',
@@ -205,10 +206,10 @@ describe('application Native model continuation ports', () => {
     );
 
     await expect(ports.model.dispatchPrepared(input)).rejects.toThrow(
-      'native model continuation completed without result evidence',
+      'native model continuation source message is not the latest user turn',
     );
-    expect(resumeExistingDurableRun).toHaveBeenCalledTimes(1);
-    expect(resumedHistory.map((message) => message.id)).toEqual(['user-source']);
+    expect(resumeExistingDurableRun).not.toHaveBeenCalled();
+    expect(resumedHistory).toEqual([]);
   });
 
   it('keeps provider result lookup and retry proof conservative', async () => {

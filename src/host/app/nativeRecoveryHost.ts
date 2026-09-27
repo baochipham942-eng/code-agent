@@ -363,7 +363,15 @@ export function createApplicationNativeRecoveryPorts(
         if (!completed) return null;
         const deps = dependencies();
         const messages = await deps.sessions.getMessages(plan.envelope.sessionId, MODEL_RECOVERY_MESSAGE_LIMIT);
-        const persisted = persistedToolCall(messages, completed.toolCallId ?? providerOperationId);
+        const lookupToolCallId = completed.toolCallId ?? providerOperationId;
+        const persisted = persistedToolCall(messages, lookupToolCallId);
+        const existing = toolResultEvidence(messages, persisted?.toolCall.id ?? lookupToolCallId);
+        if (existing) {
+          if (persisted) {
+            deps.acknowledgeToolRecovery(plan.envelope.sessionId, providerOperationId, persisted.toolCall.name);
+          }
+          return existing;
+        }
         if (!persisted) return null;
         const result: ToolResult = {
           toolCallId: persisted.toolCall.id,

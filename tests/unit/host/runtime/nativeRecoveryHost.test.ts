@@ -131,6 +131,42 @@ describe('NativeRecoveryHost production recovery', () => {
     ]));
   });
 
+  it('passes settled siblings into the prepared model continuation fence', async () => {
+    const sibling = operation({
+      operationId: 'tool:sibling',
+      kind: 'tool_call',
+      providerOperationId: 'sibling-ledger',
+      sideEffect: false,
+    });
+    const model = operation({ operationId: 'model:target', status: 'prepared' });
+    const recoveryPlan = plan(model);
+    recoveryPlan.pendingOperations = [sibling, model];
+    recoveryPlan.envelope.pendingOperations = [sibling, model];
+    const { handler, ports } = fixture({
+      model: {
+        dispatchPrepared: vi.fn(async (input) => {
+          expect(input.plan.pendingOperations).toEqual([
+            expect.objectContaining({ operationId: 'tool:sibling', status: 'succeeded' }),
+            expect.objectContaining({ operationId: 'model:target', status: 'prepared' }),
+          ]);
+          return { resultRef: 'model:prepared' };
+        }),
+        queryResult: vi.fn(async () => ({ resultRef: 'model:queried' })),
+        canRetrySafely: vi.fn(async () => true),
+        retrySafe: vi.fn(async () => ({ resultRef: 'model:retried' })),
+      },
+      tool: {
+        queryResult: vi.fn(async () => ({ resultRef: 'tool:sibling' })),
+        classifyReplaySafety: vi.fn(async () => ({ stored: 'unknown' as const, current: 'unknown' as const })),
+        dispatchPrepared: vi.fn(async () => ({ resultRef: 'tool:replayed' })),
+        interrupt: vi.fn(async () => ({ resultRef: 'tool:interrupted' })),
+      },
+    });
+
+    await expect(handler.recover(recoveryPlan, 10)).resolves.toMatchObject({ status: 'recovered' });
+    expect(ports.model.dispatchPrepared).toHaveBeenCalledOnce();
+  });
+
   it('replays only when stored and current declarations are both automatic', async () => {
     const { handler, ports } = fixture({
       tool: {

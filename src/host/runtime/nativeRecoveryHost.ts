@@ -162,7 +162,14 @@ export class NativeRecoveryHost {
 
     for (const operation of recoverable) {
       const operationDescriptor = descriptorForOperation(descriptor, operation);
-      const input = { plan, descriptor: operationDescriptor, operation };
+      const operationPlan = operation.operationId === descriptor.operationId && operation.kind === 'model_call'
+        ? {
+            ...plan,
+            envelope: { ...plan.envelope, pendingOperations },
+            pendingOperations: [...pendingOperations],
+          }
+        : plan;
+      const input = { plan: operationPlan, descriptor: operationDescriptor, operation };
       if (operation.kind === 'approval') {
         const approvalId = operationDescriptor.approvalId ?? operation.providerOperationId?.replace(/^approval:/, '');
         if (!approvalId) {

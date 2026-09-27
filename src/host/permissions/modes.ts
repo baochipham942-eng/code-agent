@@ -233,10 +233,8 @@ export class PermissionModeManager {
   // 无人值守会话（cron/heartbeat 等 automation 来源）：权限档读取时强制钳到不高于 acceptEdits。
   private unattendedSessions: Set<string> = new Set();
   /**
-   * cron/heartbeat：审批 60s 进终态。channel 只进 unattendedSessions，仍停车 24h。
-   * 自动档限流（rateLimitedSessions）叠在这之上、只收紧：已限流会话即使仍在本集合里，
-   * isUnattendedApprovalTerminal 也返回 false，审批改走 PARKED_APPROVAL（24h）停车等人，
-   * 不再 60s 自动终态。不会把 channel 的停车改回终态。
+   * 兼容旧的显式 60s 终态调用。cron/heartbeat 不再登记到这里，统一走 PARKED_APPROVAL
+   * 的 24h 停车等人；channel 也继续只进 unattendedSessions。
    */
   private approvalTerminalSessions: Set<string> = new Set();
   /**
@@ -436,20 +434,12 @@ export class PermissionModeManager {
     this.unattendedSessions.add(sessionId);
   }
 
-  /** cron/heartbeat 专用。channel 不标，审批仍走 24h 停车。 */
+  /** 旧的显式终态入口；新的 cron/heartbeat 会话不调用它。 */
   markUnattendedApprovalTerminal(sessionId: string): void {
     this.approvalTerminalSessions.add(sessionId);
   }
 
-  /**
-   * cron/heartbeat 在 approvalTerminalSessions 内时，审批 60s 进终态
-   * （INTERACTION_TIMEOUTS.PERMISSION，并记 UNATTENDED_APPROVAL_TIMEOUT）。
-   * channel 不在该集合，parkApproval 走 deadline='backstop'，等 PARKED_APPROVAL（24h）。
-   *
-   * 自动档限流与 approvalTerminalSessions 字段注释的关系：限流不把会话移出该集合，
-   * 只让本谓词对已限流会话返回 false。于是 cron/heartbeat 也改走 channel 那条停车挂起，
-   * 不再 60s 自动终态。未限流的 cron/heartbeat 语义不变。
-   */
+  /** 是否启用了兼容旧调用方的 60s 终态。新 cron/heartbeat 会话不在该集合。 */
   isUnattendedApprovalTerminal(sessionId?: string): boolean {
     if (sessionId && this.rateLimitedSessions.has(sessionId)) return false;
     return !!sessionId && this.approvalTerminalSessions.has(sessionId);

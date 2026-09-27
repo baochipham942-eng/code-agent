@@ -62,6 +62,7 @@ function toAskResult(
   response: PermissionResponse,
   machineDenial?: PermissionDenialSource,
   updatedArgs?: Record<string, unknown>,
+  message?: string,
 ): PermissionAskResult {
   if (isApproveResponse(response)) {
     if (!updatedArgs) return { approved: true, approvalSource: 'user' };
@@ -72,12 +73,21 @@ function toAskResult(
     }
     return { approved: true, approvalSource: 'user', updatedArgs };
   }
-  return { approved: false, denialSource: machineDenial ?? 'user' };
+  return {
+    approved: false,
+    denialSource: machineDenial ?? 'user',
+    ...(message ? { message } : {}),
+  };
 }
 
 export class OrchestratorPermissionIsland {
   private pendingPermissions: Map<string, {
-    resolve: (response: PermissionResponse, machineDenial?: PermissionDenialSource, updatedArgs?: Record<string, unknown>) => void;
+    resolve: (
+      response: PermissionResponse,
+      machineDenial?: PermissionDenialSource,
+      updatedArgs?: Record<string, unknown>,
+      message?: string,
+    ) => void;
     request: PermissionRequest;
     /** B2: 无人值守停车挂起的审批（有 pending_approvals 行）。resolve 走 repo-changes 裁决口。 */
     parked?: boolean;
@@ -228,7 +238,7 @@ export class OrchestratorPermissionIsland {
       outcome: machineDenial === 'timeout' ? 'expired' : machineDenial === 'cancelled' ? 'cancelled' : 'answered',
       answer: approvalAnswerFromPermission(response),
     });
-    pending.resolve(response, machineDenial);
+    pending.resolve(response, machineDenial, undefined, feedbackOverride);
     return 'resolved';
   }
 
@@ -356,7 +366,8 @@ export class OrchestratorPermissionIsland {
     const approvalTerminal = getPermissionModeManager().isUnattendedApprovalTerminal(fullRequest.sessionId);
     const unattended = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId);
     const voice = getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
-    // 语音派和 channel 仍停车 24h。只有 cron/heartbeat 60s 进终态。
+    // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
+    // 60s 终态仅保留给显式登记的旧兼容会话。
     if (unattended || voice) {
       const parkRepo = this.getPendingApprovalRepo();
       if (parkRepo) {
@@ -519,12 +530,12 @@ export class OrchestratorPermissionIsland {
 
       this.pendingPermissions.set(fullRequest.id, {
         parked: true,
-        resolve: (response, machineDenial) => {
+        resolve: (response, machineDenial, _updatedArgs, message) => {
           clearTimeout(timeoutId);
           if (response === 'allow_session' && fullRequest.sessionId) {
             getConfirmationGate().recordApproval(fullRequest.sessionId, fullRequest.tool);
           }
-          resolve(toAskResult(response, machineDenial));
+          resolve(toAskResult(response, machineDenial, undefined, message));
         },
         request: fullRequest,
       });

@@ -111,6 +111,8 @@ import { CronService } from '../../../src/host/cron/cronService';
 import { deliverCronResultToChannel } from '../../../src/host/cron/cronResultDelivery';
 import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
+import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 
 const NOW = Date.UTC(2026, 5, 12, 9, 0, 0);
 
@@ -400,6 +402,71 @@ describe('CronService result channel delivery', () => {
       'oc_group1',
       'heartbeat result',
     );
+  });
+});
+
+describe('CronService approval parking', () => {
+  it('parks approval, resumes the same run after approval, and protects the next tick', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const approvalEvents = vi.fn();
+    const repo = {
+      insert: vi.fn(),
+      resolve: vi.fn(() => 1),
+    } as never;
+    const sessionId = 'cron-agent-session-1';
+    getPermissionModeManager().markUnattendedSession(sessionId);
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => ({ ui: { language: 'zh' } } as never),
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'async_agent',
+      hasApprovalUi: () => false,
+      onEvent: approvalEvents,
+      injectedPendingApprovalRepo: repo,
+    });
+    agentRunState.sendMessage.mockImplementation(async () => {
+      const approval = await island.requestPermission({
+        type: 'file_write',
+        tool: 'write_file',
+        details: { path: '/tmp/cron-approval-park.txt' },
+        sessionId,
+      });
+      if (!approval.approved) throw new Error(approval.message ?? 'approval rejected');
+      agentRunState.messages = [{ role: 'assistant', content: 'approved step completed' }];
+    });
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    const service = new CronService();
+    const job = await service.createJob({
+      name: '审批停车任务',
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 1, unit: 'minutes' },
+      action: { type: 'agent', agentType: 'default', prompt: '需要审批后继续' },
+      enabled: true,
+    });
+
+    const jobs = (service as unknown as { jobs: Map<string, { cronInstance?: { nextRun(): Date | null } }> }).jobs;
+    const instance = jobs.get(job.id)?.cronInstance;
+    expect(instance).toBeDefined();
+    const firstRunDelay = instance!.nextRun()!.getTime() - Date.now();
+    await vi.advanceTimersByTimeAsync(firstRunDelay + 10);
+    expect(agentRunState.sendMessage).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(60_000 + 2_000);
+    expect(agentRunState.sendMessage).toHaveBeenCalledTimes(1);
+    expect(service.getJobExecutions(job.id)).toHaveLength(1);
+
+    const requestId = (approvalEvents.mock.calls[0]?.[0] as { data?: { id?: string } })?.data?.id;
+    expect(requestId).toBeTruthy();
+    expect(island.handlePermissionResponse(requestId!, 'allow')).toBe('delivered');
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    }
+    expect(service.getJobExecutions(job.id)[0]).toMatchObject({ status: 'completed' });
+    await service.shutdown();
+    random.mockRestore();
+    vi.useRealTimers();
+    resetPermissionModeManager();
   });
 });
 

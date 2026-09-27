@@ -25,6 +25,7 @@ interface HealthDeps {
   getDurableRunReady: () => boolean;
   getRendererServeDecision?: () => RendererServeDecision | null;
   getPendingPermissionRequests?: () => PermissionRequest[];
+  onRendererReady?: () => void;
 }
 
 function sendPendingPermissionSnapshots(
@@ -48,7 +49,8 @@ export function createHealthRouter(deps: HealthDeps): Router {
   const { handlers } = deps;
 
   // ── Health ──────────────────────────────────────────────────────────
-  router.get('/health', (_req: Request, res: Response) => {
+  router.get('/health', (req: Request, res: Response) => {
+    if (req.query.rendererReady === '1') deps.onRendererReady?.();
     const payload: WebHealthResponse = {
       status: 'ok',
       mode: 'web-standalone',

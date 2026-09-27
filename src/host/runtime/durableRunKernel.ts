@@ -8,10 +8,13 @@ import {
   type RunCheckpoint,
   type RunEngineRef,
   type RunEnvelope,
+  type RunInterruptCause,
   type RunOwnerLease,
   type RunStatus,
   assertChildRunProjection,
   assertRunEnvelope,
+  getRunInterruptCause,
+  MAX_AUTO_RESUME_COUNT,
 } from '../../shared/contract/durableRun';
 import type {
   DurableRunStores,
@@ -93,6 +96,9 @@ export interface DurableCheckpointInput {
   pendingOperations: PendingOperation[];
   childRuns?: ChildRunRef[];
   events: RunEventAppend[];
+  /** Persisted in the same transaction as the checkpoint/fence. */
+  interruptCause?: RunInterruptCause;
+  autoResumeCount?: number;
 }
 
 export interface DurableTerminalInput {
@@ -169,6 +175,7 @@ export class DurableRunKernel implements RunKernelAdapter {
       parentRunId: input.parentRunId,
       pendingOperations: input.initialPendingOperations ?? [],
       childRuns: input.initialChildRuns ?? [],
+      autoResumeCount: 0,
       createdAt: input.now,
       updatedAt: input.now,
     };
@@ -315,6 +322,8 @@ export class DurableRunKernel implements RunKernelAdapter {
       checkpoint,
       pendingOperations: input.pendingOperations,
       childRuns: input.childRuns ?? envelope.childRuns ?? [],
+      interruptCause: input.interruptCause,
+      autoResumeCount: input.autoResumeCount,
     });
   }
 
@@ -343,6 +352,9 @@ export class DurableRunKernel implements RunKernelAdapter {
     const recoverable = await stores.listRecoverable(now, limit);
     const plans: RunRehydrationPlan[] = [];
     for (const envelope of recoverable) {
+      const interruptCause = getRunInterruptCause(envelope);
+      if (interruptCause !== undefined && interruptCause !== 'crash_or_quit') continue;
+      if ((envelope.autoResumeCount ?? 0) >= MAX_AUTO_RESUME_COUNT) continue;
       const previousAttempt = await stores.getAttempt(envelope.runId, envelope.attempt);
       if (!previousAttempt) throw new Error(`Missing durable attempt ${envelope.runId}/${envelope.attempt}`);
       const checkpoint = await stores.getLatest(envelope.runId);
@@ -370,6 +382,8 @@ export class DurableRunKernel implements RunKernelAdapter {
         expectedOwnerEpoch: claimed.owner.epoch,
         status: waiting ? 'waiting' : 'recovering',
         pendingOperations,
+        interruptCause: getRunInterruptCause(claimed.envelope) ?? 'crash_or_quit',
+        autoResumeCount: claimed.envelope.autoResumeCount ?? 0,
         updatedAt: now,
       });
       plans.push({

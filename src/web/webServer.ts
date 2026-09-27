@@ -384,6 +384,13 @@ let durableRunReadService: DurableRunApplicationRuntime['readService'] | undefin
 let durableRunRolloutPolicy = resolveDurableRunRollout({});
 let durableRunRolloutReady = false;
 const queuedInputStartupSweep = createQueuedInputStartupSweepGate();
+// A Tauri desktop process starts the Node host before the renderer is hydrated.
+// Keep cross-process auto-resume behind the first renderer-ready health signal;
+// standalone web mode has no hidden window and can recover immediately.
+let resolveRendererWindowReady: (() => void) | undefined;
+const rendererWindowReady = process.env.CODE_AGENT_TAURI_BOOT_TOKEN
+  ? new Promise<void>((resolve) => { resolveRendererWindowReady = resolve; })
+  : Promise.resolve();
 /**
  * 路由层的 drain 实例晚于 IPC handler 注册才建出来，用模块作用域把钩子传过去。
  * 没有它，「入队时 session 已空闲」的那条消息就没人抽（release 时的 drain 早跑完了）。
@@ -644,6 +651,7 @@ async function initializeServices(): Promise<void> {
   if (databaseForDurableRun) {
     startDurableRunStartup({
       capabilityBootstrap,
+      windowReady: rendererWindowReady,
       assemble: () => assembleDurableRun({
         registry: runRegistry,
         persistenceUnavailable: databaseForDurableRun.isDegradedMode(),
@@ -1094,6 +1102,7 @@ async function main(): Promise<void> {
     registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),
     registerQueuedInputEnqueueHook: (onEnqueued) => { onQueuedInputEnqueued = onEnqueued; },
     registerQueuedInputSendNowHook: (sendNow) => { onQueuedInputSendNow = sendNow; },
+    onRendererReady: () => resolveRendererWindowReady?.(),
   });
   queuedInputStartupSweep.maybeRun();
 

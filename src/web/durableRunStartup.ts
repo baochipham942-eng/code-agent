@@ -1,5 +1,7 @@
 interface DurableRunStartupInput<Assembly, Runtime> {
   capabilityBootstrap: Promise<unknown>;
+  /** Recovery must not dispatch into a hidden/unhydrated desktop window. */
+  windowReady?: Promise<unknown>;
   assemble(): Assembly;
   recover(assembly: Assembly): Promise<Runtime>;
   onAssemblyReady(assembly: Assembly): void;
@@ -24,7 +26,10 @@ export function startDurableRunStartup<Assembly, Runtime>(
     return;
   }
 
-  void input.capabilityBootstrap
+  void Promise.all([
+    input.capabilityBootstrap,
+    input.windowReady ?? Promise.resolve(),
+  ])
     .then(() => input.recover(assembly))
     .then(input.onRecoveryComplete)
     .catch(input.onRecoveryError);

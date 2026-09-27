@@ -5,6 +5,7 @@ import type {
   RunCheckpoint,
   RunCursor,
   RunEnvelope,
+  RunInterruptCause,
   RunOwnerLease,
   RunStatus,
 } from '../../shared/contract/durableRun';
@@ -94,6 +95,8 @@ export interface CheckpointCommit {
   checkpoint: RunCheckpoint;
   pendingOperations: PendingOperation[];
   childRuns: ChildRunRef[];
+  interruptCause?: RunInterruptCause;
+  autoResumeCount?: number;
 }
 
 export interface CheckpointStore {
@@ -112,6 +115,8 @@ export interface RecoveryProjectionReplace {
   expectedOwnerEpoch: number;
   status: 'recovering' | 'waiting';
   pendingOperations: PendingOperation[];
+  interruptCause?: RunInterruptCause;
+  autoResumeCount?: number;
   updatedAt: number;
 }
 

@@ -54,4 +54,29 @@ describe('startDurableRunStartup', () => {
     await vi.waitFor(() => expect(onRecoveryError).toHaveBeenCalledOnce());
     expect(ready).toBe(true);
   });
+
+  it('does not start recovery until the renderer window is ready', async () => {
+    let releaseWindow!: () => void;
+    const windowReady = new Promise<void>((resolve) => {
+      releaseWindow = resolve;
+    });
+    const recover = vi.fn(async () => 'recovered');
+
+    startDurableRunStartup({
+      capabilityBootstrap: Promise.resolve(),
+      windowReady,
+      assemble: () => 'assembled',
+      recover,
+      onAssemblyReady: vi.fn(),
+      onRecoveryComplete: vi.fn(),
+      onAssemblyError: vi.fn(),
+      onRecoveryError: vi.fn(),
+    });
+
+    await Promise.resolve();
+    expect(recover).not.toHaveBeenCalled();
+
+    releaseWindow();
+    await vi.waitFor(() => expect(recover).toHaveBeenCalledWith('assembled'));
+  });
 });

@@ -9,6 +9,7 @@ import {
   createChildRunRef,
   isTerminalRunStatus,
   projectChildRunTerminal,
+  withRunInterruptMetadata,
   type PendingOperation,
   type RunEnvelope,
   type RunOwnerLease,
@@ -364,7 +365,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       });
       const envelope = this.durableEnvelopes.get(runId);
       if (envelope) {
-        this.durableEnvelopes.set(runId, {
+        this.durableEnvelopes.set(runId, withRunInterruptMetadata({
           ...envelope,
           status: input.status,
           attempt: live.attempt,
@@ -373,7 +374,10 @@ export class RunRegistry implements AgentTeamDurableParentHost {
           pendingOperations: input.pendingOperations,
           childRuns: input.childRuns ?? envelope.childRuns,
           updatedAt: input.now,
-        });
+        }, {
+          ...(input.interruptCause ? { interruptCause: input.interruptCause } : {}),
+          ...(input.autoResumeCount === undefined ? {} : { autoResumeCount: input.autoResumeCount }),
+        }));
       }
       this.durableCheckpointStates.set(runId, input.state);
       return checkpoint;

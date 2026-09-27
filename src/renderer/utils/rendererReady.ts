@@ -24,6 +24,10 @@ export const RENDERER_READY_SETTLE_CAP_MS = 2500;
 export async function signalRendererReady(): Promise<void> {
   // recon: 打点放在 Tauri 判定之前，headless 浏览器测量也能拿到
   performance.mark('boot:renderer-ready');
+  // The Node host starts before the hidden Tauri window is hydrated. The health
+  // endpoint is intentionally auth-free and doubles as the local renderer-ready
+  // signal that releases cross-process durable recovery.
+  void fetch('/api/health?rendererReady=1', { cache: 'no-store', keepalive: true }).catch(() => undefined);
   if (signaled || !isTauriMode()) return;
   signaled = true;
   try {

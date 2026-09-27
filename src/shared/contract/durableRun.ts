@@ -14,6 +14,12 @@ export type RunStatus =
 
 export const TERMINAL_RUN_STATUSES = ['completed', 'failed', 'cancelled'] as const satisfies readonly RunStatus[];
 
+/** Why a non-terminal run is parked or being recovered. */
+export type RunInterruptCause = 'crash_or_quit' | 'user_stop' | 'budget_exhausted' | 'guard_halt';
+
+/** Automatic restart attempts are deliberately bounded; a user Continue starts a new budget. */
+export const MAX_AUTO_RESUME_COUNT = 2;
+
 export const RUN_STATUS_TRANSITIONS: Readonly<Record<RunStatus, readonly RunStatus[]>> = Object.freeze({
   created: ['running', 'recovering', 'cancelled', 'failed'],
   running: ['waiting', 'paused', 'recovering', 'completed', 'failed', 'cancelled'],
@@ -151,6 +157,11 @@ export interface RunEnvelope {
   parentRunId?: string;
   pendingOperations?: PendingOperation[];
   childRuns?: ChildRunRef[];
+  /** Persisted interruption reason. `interrupt_cause` is kept as a wire alias for old readers. */
+  interruptCause?: RunInterruptCause;
+  interrupt_cause?: RunInterruptCause;
+  /** Number of crash/quit resumes dispatched for this logical run. */
+  autoResumeCount?: number;
   terminal?: RunTerminal;
   createdAt: number;
   updatedAt: number;
@@ -287,6 +298,21 @@ export function assertRunEnvelope(envelope: RunEnvelope): void {
   if (!Number.isInteger(envelope.cursor.checkpointSeq) || envelope.cursor.checkpointSeq < 0) {
     throw new Error('cursor.checkpointSeq must be a non-negative integer');
   }
+  if (envelope.interruptCause !== undefined && !isRunInterruptCause(envelope.interruptCause)) {
+    throw new Error(`Unsupported interrupt cause: ${String(envelope.interruptCause)}`);
+  }
+  if (envelope.interrupt_cause !== undefined && !isRunInterruptCause(envelope.interrupt_cause)) {
+    throw new Error(`Unsupported interrupt cause: ${String(envelope.interrupt_cause)}`);
+  }
+  if (envelope.interruptCause !== undefined
+    && envelope.interrupt_cause !== undefined
+    && envelope.interruptCause !== envelope.interrupt_cause) {
+    throw new Error('interruptCause and interrupt_cause must agree');
+  }
+  if (envelope.autoResumeCount !== undefined
+    && (!Number.isInteger(envelope.autoResumeCount) || envelope.autoResumeCount < 0)) {
+    throw new Error('autoResumeCount must be a non-negative integer');
+  }
   if (isTerminalRunStatus(envelope.status)) {
     if (!envelope.terminal) throw new Error('terminal metadata is required for a terminal run');
     if (envelope.terminal.status !== envelope.status) throw new Error('terminal status must match run status');
@@ -340,6 +366,32 @@ export function assertRunEnvelope(envelope: RunEnvelope): void {
     idempotencyKeys.add(operation.idempotencyKey);
   }
   assertChildRunProjection(envelope.runId, envelope.childRuns ?? []);
+}
+
+function isRunInterruptCause(value: unknown): value is RunInterruptCause {
+  return value === 'crash_or_quit'
+    || value === 'user_stop'
+    || value === 'budget_exhausted'
+    || value === 'guard_halt';
+}
+
+export function getRunInterruptCause(envelope: Pick<RunEnvelope, 'interruptCause' | 'interrupt_cause'>): RunInterruptCause | undefined {
+  return envelope.interruptCause ?? envelope.interrupt_cause;
+}
+
+export function withRunInterruptMetadata<T extends Pick<RunEnvelope, 'interruptCause' | 'interrupt_cause' | 'autoResumeCount'>>(
+  envelope: T,
+  input: { interruptCause?: RunInterruptCause; autoResumeCount?: number },
+): T {
+  const nextCause = input.interruptCause ?? getRunInterruptCause(envelope);
+  const nextCount = input.autoResumeCount ?? envelope.autoResumeCount ?? 0;
+  return {
+    ...envelope,
+    ...(nextCause === undefined
+      ? { interruptCause: undefined, interrupt_cause: undefined }
+      : { interruptCause: nextCause, interrupt_cause: nextCause }),
+    autoResumeCount: nextCount,
+  };
 }
 
 /**

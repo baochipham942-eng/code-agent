@@ -94,6 +94,7 @@ export class DurableRecoveryDispatcher {
 
     const results: DurableRecoveryDispatchResult[] = [];
     const engineHandler = this.engineHandlers.get(plan.envelope.engine.kind);
+    let engineResult: DurableRecoveryDispatchResult | undefined;
     if (!engineHandler) {
       results.push(this.baseResult(plan, 'engine', 'dispatcher', {
         status: 'unsupported',
@@ -104,10 +105,21 @@ export class DurableRecoveryDispatcher {
         'engine', plan.envelope.runId, plan.envelope.attempt,
         plan.envelope.owner?.epoch ?? 'no-owner', plan.envelope.engine.kind,
       ].join(':');
-      results.push(await this.runOnce(key, () => this.invokeEngine(plan, engineHandler, now)));
+      engineResult = await this.runOnce(key, () => this.invokeEngine(plan, engineHandler, now));
+      results.push(engineResult);
     }
 
     for (const operation of plan.pendingOperations) {
+      // Native recovery owns all local tool settlements. If it parked an
+      // external side effect, do not let the generic MCP handler dispatch it
+      // after the guard_halt checkpoint. An observing native result still leaves
+      // explicit MCP task recovery to its operation handler.
+      if (engineResult
+        && engineHandler?.engineKind === 'native'
+        && engineResult.status !== 'observing'
+        && operation.kind === 'tool_call') {
+        continue;
+      }
       const handler = this.operationHandlers.find((candidate) => candidate.matches(plan, operation));
       if (!handler) {
         // Some engines recover their internal pending operations as one

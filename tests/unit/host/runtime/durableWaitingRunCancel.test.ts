@@ -38,6 +38,59 @@ function kernel(repository: DurableRunRepository, processInstanceId: string) {
  * waiting → terminalRecoveredWaitingRun → cancelled（kernel 规范路径）→ 同会话能起新 run。
  */
 describe('durable waiting-run cancellation after recovery', () => {
+  it('parks a recovered run on Stop with user_stop and keeps it out of the crash sweep', async () => {
+    const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'durable-recovery-stop-')));
+    const { db, repository } = createRepository();
+    const firstRegistry = new RunRegistry();
+    firstRegistry.configureDurableKernel(kernel(repository, 'stop-before-crash'));
+
+    try {
+      await firstRegistry.startDurable({
+        runId: 'run-recovery-stop',
+        sessionId: 'session-recovery-stop',
+        workspace,
+        cwd: workspace,
+      }, 1_000);
+      await firstRegistry.checkpointNativeModelOperation({
+        runId: 'run-recovery-stop',
+        sourceMessageId: 'message-recovery-stop',
+        provider: 'provider',
+        model: 'model',
+        logicalOperationId: 'turn-recovery-stop',
+        phase: 'after_model_dispatch',
+        status: 'dispatched',
+        now: 1_010,
+      });
+      firstRegistry.clear();
+
+      const recoveredRegistry = new RunRegistry();
+      recoveredRegistry.configureDurableKernel(kernel(repository, 'stop-after-crash'));
+      const [plan] = await recoveredRegistry.recoverDurable(2_000);
+      const handle = recoveredRegistry.adoptRecoveredRun({
+        runId: plan.envelope.runId,
+        sessionId: plan.envelope.sessionId,
+        workspace,
+        cwd: workspace,
+      });
+      await recoveredRegistry.parkDurable('run-recovery-stop', { now: 2_010, reason: 'user_stop' }, handle);
+
+      expect(await repository.get('run-recovery-stop')).toMatchObject({
+        status: 'waiting',
+        interruptCause: 'user_stop',
+        interrupt_cause: 'user_stop',
+      });
+      expect((await repository.get('run-recovery-stop'))?.terminal).toBeUndefined();
+
+      const nextRegistry = new RunRegistry();
+      nextRegistry.configureDurableKernel(kernel(repository, 'stop-next-start'));
+      await expect(nextRegistry.recoverDurable(3_000)).resolves.toEqual([]);
+    } finally {
+      firstRegistry.clear();
+      rmSync(workspace, { recursive: true, force: true });
+      db.close();
+    }
+  });
+
   it('registers an exhausted crash loop as parked waiting so cancel frees the session', async () => {
     const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'durable-exhausted-cancel-')));
     const { db, repository } = createRepository();

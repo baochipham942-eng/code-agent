@@ -212,18 +212,15 @@ describe('durable Native recovery lifecycle', () => {
       await expect(new NativeRecoveryHost(recoveredRegistry, ports).createHandler().recover(plan, 2_000))
         .resolves.toMatchObject({
           status: 'recovered',
-          reason: 'execute_prepared_model_once',
+          reason: 'resume_live_loop',
           detail: { resultRef: 'message-ledger:prepared-recovered-result' },
         });
       expect(resumeExistingDurableRun).toHaveBeenCalledOnce();
       expect(await repository.get(original.context.runId)).toMatchObject({
-        status: 'completed',
-        terminal: { reason: 'execute_prepared_model_once' },
+        status: 'running',
       });
       expect(await repository.read(original.context.runId, 0, 100)).toEqual(expect.arrayContaining([
         expect.objectContaining({ type: 'native_model_recovery_dispatch_fenced' }),
-        expect.objectContaining({ type: 'native_recovery_result_committed' }),
-        expect.objectContaining({ type: 'run_completed' }),
       ]));
     } finally {
       firstRegistry.clear();
@@ -309,7 +306,7 @@ describe('durable Native recovery lifecycle', () => {
       await expect(new NativeRecoveryHost(recoveredRegistry, ports).createHandler().recover(recoveryPlan, 2_000))
         .resolves.toMatchObject({
           status: 'recovered',
-          reason: 'replay_safe_tool_once',
+          reason: 'resume_live_loop',
           detail: { resultRef: 'message-ledger:assistant-read:replayed-tool-result:call-read' },
         });
       expect(executeTool).toHaveBeenCalledOnce();
@@ -318,8 +315,7 @@ describe('durable Native recovery lifecycle', () => {
         toolResults: [{ toolCallId: 'call-read', success: true, output: 'durable file contents' }],
       });
       expect(await repository.get(original.context.runId)).toMatchObject({
-        status: 'completed',
-        terminal: { reason: 'replay_safe_tool_once' },
+        status: 'running',
       });
     } finally {
       firstRegistry.clear();

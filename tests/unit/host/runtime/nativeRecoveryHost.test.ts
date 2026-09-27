@@ -63,22 +63,72 @@ describe('NativeRecoveryHost production recovery', () => {
     [operation({ providerOperationId: 'provider-result' }), 'query_original_model_result'],
     [operation(), 'retry_safe_model_compute_once'],
     [operation({ kind: 'tool_call', sideEffect: true, providerOperationId: 'tool-ledger' }), 'query_confirmed_tool_result'],
-  ] as const)('commits one result and one terminal for safe recovery %#', async (pending, reason) => {
+  ] as const)('commits the recovered operation without terminalizing the run %#', async (pending, reason) => {
     const { handler, registry } = fixture();
     await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({ status: 'recovered', reason });
     expect(registry.checkpointDurable).toHaveBeenCalledOnce();
-    expect(registry.terminalDurable).toHaveBeenCalledOnce();
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 
-  it('keeps unknown writes in review without replaying the tool', async () => {
-    const { handler, ports, registry } = fixture();
+  it('feeds an unknown local write back as interrupted without replaying the tool', async () => {
+    const { handler, ports, registry } = fixture({
+      tool: {
+        queryResult: vi.fn(async () => null),
+        classifyReplaySafety: vi.fn(async () => ({ stored: 'unknown' as const, current: 'unknown' as const })),
+        dispatchPrepared: vi.fn(async () => ({ resultRef: 'must-not-dispatch' })),
+        interrupt: vi.fn(async () => ({ resultRef: 'must-not-interrupt' })),
+      },
+    });
     const pending = operation({ kind: 'tool_call', sideEffect: true, providerOperationId: undefined });
-    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({ status: 'requires_review', reason: 'unknown_write_side_effect' });
+    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({ status: 'recovered', reason: 'interrupt_unproven_tool_replay' });
     expect(ports.tool.queryResult).not.toHaveBeenCalled();
     expect(ports.tool.dispatchPrepared).not.toHaveBeenCalled();
-    expect(ports.tool.interrupt).not.toHaveBeenCalled();
-    expect(registry.checkpointDurable).toHaveBeenCalledWith('run-1', expect.objectContaining({ status: 'waiting' }));
+    expect(ports.tool.interrupt).toHaveBeenCalledOnce();
+    expect(registry.checkpointDurable).toHaveBeenCalledWith('run-1', expect.objectContaining({ status: 'running' }));
     expect(registry.terminalDurable).not.toHaveBeenCalled();
+  });
+
+  it('parks an unknown external write with guard_halt and never dispatches it', async () => {
+    const { handler, ports, registry } = fixture({
+      tool: {
+        queryResult: vi.fn(async () => null),
+        classifyReplaySafety: vi.fn(async () => ({ stored: 'unknown' as const, current: 'unknown' as const })),
+        dispatchPrepared: vi.fn(async () => ({ resultRef: 'must-not-dispatch' })),
+        interrupt: vi.fn(async () => ({ resultRef: 'must-not-interrupt' })),
+      },
+    });
+    const pending = operation({ kind: 'tool_call', sideEffect: true, providerOperationId: 'mcp-task:v1:write-1' });
+    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({
+      status: 'requires_review', reason: 'unknown_write_side_effect',
+    });
+    expect(ports.tool.dispatchPrepared).not.toHaveBeenCalled();
+    expect(ports.tool.interrupt).not.toHaveBeenCalled();
+    expect(registry.checkpointDurable).toHaveBeenCalledWith('run-1', expect.objectContaining({
+      status: 'waiting', interruptCause: 'guard_halt',
+    }));
+  });
+
+  it('settles every non-terminal sibling before returning to the loop', async () => {
+    const first = operation({ operationId: 'tool:first', kind: 'tool_call', providerOperationId: 'first-ledger', sideEffect: false });
+    const second = operation({ operationId: 'tool:second', kind: 'tool_call', providerOperationId: 'second-ledger', sideEffect: false });
+    const recoveryPlan = plan(second);
+    recoveryPlan.pendingOperations = [first, second];
+    recoveryPlan.envelope.pendingOperations = [first, second];
+    const continueLoop = vi.fn(async () => undefined);
+    const { handler, ports, registry } = fixture({ continueLoop });
+
+    await expect(handler.recover(recoveryPlan, 10)).resolves.toMatchObject({
+      status: 'recovered', reason: 'resume_live_loop',
+    });
+    expect(ports.tool.queryResult).toHaveBeenCalledTimes(2);
+    expect(continueLoop).toHaveBeenCalledOnce();
+    const checkpoint = (registry.checkpointDurable as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1] as {
+      pendingOperations: PendingOperation[];
+    };
+    expect(checkpoint.pendingOperations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ operationId: 'tool:first', status: 'succeeded' }),
+      expect.objectContaining({ operationId: 'tool:second', status: 'succeeded' }),
+    ]));
   });
 
   it('replays only when stored and current declarations are both automatic', async () => {
@@ -206,7 +256,7 @@ describe('NativeRecoveryHost production recovery', () => {
     });
     // 端口契约：入参是整个 scope（恢复侧据 projectId 分流重算/查库），不是裸 id。
     expect(resolveWorkspaceScopeVersion).toHaveBeenCalledWith(descriptor.workspace.scope);
-    expect(registry.terminalDurable).toHaveBeenCalledOnce();
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 
   it('still reviews when the Project behind a real scope was deleted', async () => {
@@ -292,7 +342,7 @@ describe('NativeRecoveryHost interrupted goal run (P0 false-completion止血)', 
     const { handler, registry } = fixture();
     await expect(handler.recover(plan(operation({ status: 'prepared' })), 10))
       .resolves.toMatchObject({ status: 'recovered' });
-    expect(registry.terminalDurable).toHaveBeenCalledOnce();
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 
   it('legacy checkpoint without isGoalRun field is treated as non-goal (back-compat)', async () => {
@@ -300,6 +350,6 @@ describe('NativeRecoveryHost interrupted goal run (P0 false-completion止血)', 
     const legacy = plan(operation({ status: 'prepared' }));
     expect('isGoalRun' in (legacy.checkpoint!.state as object)).toBe(false);
     await expect(handler.recover(legacy, 10)).resolves.toMatchObject({ status: 'recovered' });
-    expect(registry.terminalDurable).toHaveBeenCalledOnce();
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 });

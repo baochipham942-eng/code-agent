@@ -225,6 +225,29 @@ export function createApplicationNativeRecoveryPorts(
       });
     }),
   });
+  const continueLoop = async (input: NativeRecoveryOperationInput): Promise<void> => {
+    const { sessions, tasks } = dependencies();
+    const messages = await sessions.getMessages(
+      input.plan.envelope.sessionId,
+      MODEL_RECOVERY_MESSAGE_LIMIT,
+    );
+    const source = messages.find((message) => message.id === input.descriptor.sourceMessageId && message.role === 'user');
+    if (!source) throw new Error('native recovery loop source message is unavailable');
+    await tasks.resumeExistingDurableRun(
+      input.plan.envelope.sessionId,
+      input.plan.envelope.runId,
+      messages,
+      {
+        mode: 'normal',
+        ...(input.operation.kind === 'model_call'
+          ? { modelSpec: { provider: input.descriptor.provider, model: input.descriptor.model } }
+          : {}),
+        disableAutoAgent: true,
+      },
+      source.metadata,
+      source.id,
+    );
+  };
   return {
     continuationExecutor: 'available',
     async resolveWorkspace(descriptor) {
@@ -269,6 +292,9 @@ export function createApplicationNativeRecoveryPorts(
         ));
         const source = messages[sourceIndex];
         if (!source) throw new Error('native model continuation source message is unavailable');
+        if (messages.slice(sourceIndex + 1).some((message) => message.role === 'user')) {
+          throw new Error('native model continuation source message is not the latest user turn');
+        }
 
         await sessions.updateMessage(source.id, {
           metadata: {
@@ -284,7 +310,7 @@ export function createApplicationNativeRecoveryPorts(
         await tasks.resumeExistingDurableRun(
           input.plan.envelope.sessionId,
           input.plan.envelope.runId,
-          messages.slice(0, sourceIndex + 1),
+          messages,
           {
             mode: 'normal',
             modelSpec: {
@@ -310,7 +336,7 @@ export function createApplicationNativeRecoveryPorts(
           input.descriptor,
         );
         if (!replayed) throw new Error('native model continuation completed without result evidence');
-        return replayed;
+        return { ...replayed, loopResumed: true };
       },
       async queryResult() {
         // Native providers currently persist no providerOperationId-correlated result.
@@ -334,7 +360,27 @@ export function createApplicationNativeRecoveryPorts(
           .find((event) => event.executionId === providerOperationId
             && event.phase === 'complete'
             && event.status === 'success');
-        return completed ? { resultRef: `tool-ledger:${providerOperationId}` } : null;
+        if (!completed) return null;
+        const deps = dependencies();
+        const messages = await deps.sessions.getMessages(plan.envelope.sessionId, MODEL_RECOVERY_MESSAGE_LIMIT);
+        const persisted = persistedToolCall(messages, completed.toolCallId ?? providerOperationId);
+        if (!persisted) return null;
+        const result: ToolResult = {
+          toolCallId: persisted.toolCall.id,
+          success: true,
+          output: completed.summary ?? 'Recovered successful tool execution; verify the current state before relying on it.',
+          duration: 0,
+        };
+        const message = buildRecoveredToolMessage({
+          assistantMessage: persisted.assistantMessage,
+          toolCallId: persisted.toolCall.id,
+          result,
+          now: deps.now(),
+          kind: 'replayed',
+        });
+        await deps.persistToolMessage(plan.envelope.sessionId, message);
+        deps.acknowledgeToolRecovery(plan.envelope.sessionId, providerOperationId, persisted.toolCall.name);
+        return { resultRef: `message-ledger:${message.id}` };
       },
       async classifyReplaySafety(input) {
         const { sessions, resolveToolDefinition, storedToolReplaySafety } = dependencies();
@@ -434,6 +480,7 @@ export function createApplicationNativeRecoveryPorts(
         return { resultRef: `message-ledger:${message.id}` };
       },
     },
+    continueLoop,
     approval: {
       async read(approvalId) {
         const approval = getDatabase().getPendingApprovalRepo().getById(approvalId);

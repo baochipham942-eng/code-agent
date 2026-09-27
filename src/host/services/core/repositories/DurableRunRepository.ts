@@ -3,7 +3,10 @@ import {
   assertRunEnvelope,
   DurableActiveSessionConflictError,
   canTransitionRunStatus,
+  getRunInterruptCause,
   isTerminalRunStatus,
+  MAX_AUTO_RESUME_COUNT,
+  withRunInterruptMetadata,
   type ChildRunRef,
   type PendingOperation,
   type RunAttempt,
@@ -47,7 +50,11 @@ function stringify(value: unknown): string {
 }
 
 function rowToEnvelope(row: Row): RunEnvelope {
-  return parseJson<RunEnvelope>(row.envelope_json);
+  const envelope = parseJson<RunEnvelope>(row.envelope_json);
+  return withRunInterruptMetadata(envelope, {
+    ...(getRunInterruptCause(envelope) ? { interruptCause: getRunInterruptCause(envelope) } : {}),
+    autoResumeCount: envelope.autoResumeCount ?? 0,
+  });
 }
 
 function rowToAttempt(row: Row): RunAttempt {
@@ -171,7 +178,33 @@ export class DurableRunRepository implements DurableRunStores {
   async listRecoverable(now: number, limit: number): Promise<RunEnvelope[]> {
     const rows = this.db.prepare(`SELECT envelope_json FROM durable_runs
       WHERE status IN ('running','waiting','recovering') AND lease_expires_at <= ?
-      ORDER BY updated_at ASC LIMIT ?`).all(now, limit) as Row[];
+        AND (
+          COALESCE(json_extract(envelope_json, '$.interruptCause'), json_extract(envelope_json, '$.interrupt_cause')) IS NULL
+          OR COALESCE(json_extract(envelope_json, '$.interruptCause'), json_extract(envelope_json, '$.interrupt_cause')) = 'crash_or_quit'
+        )
+        AND (
+          json_extract(envelope_json, '$.autoResumeCount') IS NULL
+          OR CAST(json_extract(envelope_json, '$.autoResumeCount') AS INTEGER) < ?
+        )
+      ORDER BY updated_at ASC LIMIT ?`).all(now, MAX_AUTO_RESUME_COUNT, limit) as Row[];
+    return rows
+      .map(rowToEnvelope)
+      .filter((envelope) => {
+        // Only crash/quit enters the startup auto-resume set. Legacy rows with no
+        // cause are treated as process-exit candidates once; explicit parked causes
+        // never get swept back into execution.
+        const cause = getRunInterruptCause(envelope);
+        return (cause === undefined || cause === 'crash_or_quit')
+          && (envelope.autoResumeCount ?? 0) < MAX_AUTO_RESUME_COUNT;
+      });
+  }
+
+  async listAutoResumeExhausted(now: number, limit: number): Promise<RunEnvelope[]> {
+    const rows = this.db.prepare(`SELECT envelope_json FROM durable_runs
+      WHERE status IN ('running','recovering') AND lease_expires_at <= ?
+        AND COALESCE(json_extract(envelope_json, '$.interruptCause'), json_extract(envelope_json, '$.interrupt_cause')) = 'crash_or_quit'
+        AND CAST(COALESCE(json_extract(envelope_json, '$.autoResumeCount'), 0) AS INTEGER) >= ?
+      ORDER BY updated_at ASC LIMIT ?`).all(now, MAX_AUTO_RESUME_COUNT, limit) as Row[];
     return rows.map(rowToEnvelope);
   }
 
@@ -208,14 +241,19 @@ export class DurableRunRepository implements DurableRunStores {
         epoch: nextEpoch,
         leaseExpiresAt: claim.now + claim.leaseDurationMs,
       };
-      const envelope: RunEnvelope = {
+      const envelope: RunEnvelope = withRunInterruptMetadata({
         ...previous,
         status: 'recovering',
         attempt: nextAttempt,
         owner,
         terminal: undefined,
         updatedAt: claim.now,
-      };
+      }, {
+        // An expired lease is the durable process-exit signal. User/budget/guard
+        // parked runs are filtered by listRecoverable before this claim path.
+        interruptCause: getRunInterruptCause(previous) ?? 'crash_or_quit',
+        autoResumeCount: previous.autoResumeCount ?? 0,
+      });
       const attempt: RunAttempt = {
         runId: claim.runId,
         attempt: nextAttempt,
@@ -297,12 +335,15 @@ export class DurableRunRepository implements DurableRunStores {
   async replaceRecoveryProjection(input: RecoveryProjectionReplace): Promise<RunEnvelope> {
     return this.db.transaction(() => {
       const envelope = this.requireOwnedEnvelope(input.runId, input.attempt, input.expectedOwnerEpoch);
-      const next: RunEnvelope = {
+      const next: RunEnvelope = withRunInterruptMetadata({
         ...envelope,
         status: input.status,
         pendingOperations: input.pendingOperations,
         updatedAt: input.updatedAt,
-      };
+      }, {
+        ...(input.interruptCause ? { interruptCause: input.interruptCause } : {}),
+        ...(input.autoResumeCount === undefined ? {} : { autoResumeCount: input.autoResumeCount }),
+      });
       this.replaceOperations(input.runId, input.pendingOperations);
       this.db.prepare('UPDATE durable_runs SET status = ?, envelope_json = ?, updated_at = ? WHERE run_id = ? AND owner_epoch = ?')
         .run(input.status, stringify(next), input.updatedAt, input.runId, input.expectedOwnerEpoch);
@@ -372,9 +413,13 @@ export class DurableRunRepository implements DurableRunStores {
         pendingOperations: input.pendingOperations, childRuns: input.childRuns,
         updatedAt: input.checkpoint.createdAt,
       };
+      const withMetadata = withRunInterruptMetadata(next, {
+        ...(input.interruptCause ? { interruptCause: input.interruptCause } : {}),
+        ...(input.autoResumeCount === undefined ? {} : { autoResumeCount: input.autoResumeCount }),
+      });
       this.db.prepare(`UPDATE durable_runs SET status = ?, next_event_seq = ?, checkpoint_seq = ?,
         envelope_json = ?, updated_at = ? WHERE run_id = ? AND owner_epoch = ?`)
-        .run(next.status, next.cursor.nextEventSeq, next.cursor.checkpointSeq, stringify(next), next.updatedAt,
+        .run(withMetadata.status, withMetadata.cursor.nextEventSeq, withMetadata.cursor.checkpointSeq, stringify(withMetadata), withMetadata.updatedAt,
           input.runId, input.expectedOwnerEpoch);
       return input.checkpoint;
     })();

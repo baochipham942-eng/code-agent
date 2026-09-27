@@ -5,6 +5,7 @@ import type {
   RunCheckpoint,
   RunCursor,
   RunEnvelope,
+  RunInterruptCause,
   RunOwnerLease,
   RunStatus,
 } from '../../shared/contract/durableRun';
@@ -63,6 +64,8 @@ export interface RunStore {
   getLatestBySession(sessionId: string): Promise<RunEnvelope | null>;
   getLatestActiveRootBySession(sessionId: string): Promise<RunEnvelope | null>;
   listRecoverable(now: number, limit: number): Promise<RunEnvelope[]>;
+  /** Lists expired crash candidates whose automatic resume budget is exhausted. */
+  listAutoResumeExhausted?(now: number, limit: number): Promise<RunEnvelope[]>;
   /** Claims the owner, increments attempt, and appends the attempt row in one transaction. */
   claimLease(claim: RunLeaseClaim): Promise<RunLeaseClaimResult | null>;
   /**
@@ -94,6 +97,8 @@ export interface CheckpointCommit {
   checkpoint: RunCheckpoint;
   pendingOperations: PendingOperation[];
   childRuns: ChildRunRef[];
+  interruptCause?: RunInterruptCause;
+  autoResumeCount?: number;
 }
 
 export interface CheckpointStore {
@@ -112,6 +117,8 @@ export interface RecoveryProjectionReplace {
   expectedOwnerEpoch: number;
   status: 'recovering' | 'waiting';
   pendingOperations: PendingOperation[];
+  interruptCause?: RunInterruptCause;
+  autoResumeCount?: number;
   updatedAt: number;
 }
 
@@ -135,6 +142,8 @@ export interface RunRehydrationPlan {
   pendingOperations: PendingOperation[];
   childRuns: ChildRunRef[];
   requiresHumanConfirmation: PendingOperation[];
+  /** The run is parked for an explicit Continue action and must not enter recovery handlers. */
+  resumeBlocked?: boolean;
 }
 
 export interface RunRehydrateRequest {

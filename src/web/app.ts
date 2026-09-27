@@ -120,6 +120,8 @@ export interface CreateAppDeps {
     sessionId: string;
     envelope: ConversationEnvelope;
   }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
+  /** Resolves the desktop renderer gate used to start cross-process recovery. */
+  onRendererReady?: () => void;
 }
 
 function inspectCompanionPlan(planId: string): CompanionPlanInspection | null {
@@ -175,6 +177,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     getDurableRunRollout,
     getDurableRunReadService,
     getPendingPermissionRequests,
+    onRendererReady,
     internalFeatures,
   } = deps;
 
@@ -212,6 +215,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
       { currentShellVersion: getAppVersion() },
     ),
     getPendingPermissionRequests,
+    onRendererReady,
   }));
 
   // ── File upload ─────────────────────────────────────────────────────

@@ -38,6 +38,60 @@ function kernel(repository: DurableRunRepository, processInstanceId: string) {
  * waiting → terminalRecoveredWaitingRun → cancelled（kernel 规范路径）→ 同会话能起新 run。
  */
 describe('durable waiting-run cancellation after recovery', () => {
+  it('registers an exhausted crash loop as parked waiting so cancel frees the session', async () => {
+    const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'durable-exhausted-cancel-')));
+    const { db, repository } = createRepository();
+    const firstRegistry = new RunRegistry();
+    firstRegistry.configureDurableKernel(kernel(repository, 'exhausted-before-crash'));
+
+    try {
+      const created = await firstRegistry.startDurable({
+        runId: 'run-exhausted-cancel',
+        sessionId: 'session-exhausted-cancel',
+        workspace,
+        cwd: workspace,
+      }, 1_000);
+      await firstRegistry.checkpointDurable('run-exhausted-cancel', {
+        now: 1_010,
+        status: 'running',
+        state: { capped: true },
+        pendingOperations: [],
+        childRuns: [],
+        events: [{ type: 'run_checkpointed', payload: {}, recordedAt: 1_010 }],
+        interruptCause: 'crash_or_quit',
+        autoResumeCount: 2,
+      });
+      expect(created.context.runId).toBe('run-exhausted-cancel');
+      firstRegistry.clear();
+
+      const recoveredRegistry = new RunRegistry();
+      recoveredRegistry.configureDurableKernel(kernel(repository, 'exhausted-after-crash'));
+      const [plan] = await recoveredRegistry.recoverDurable(2_000);
+      expect(plan).toMatchObject({
+        envelope: { runId: 'run-exhausted-cancel', status: 'waiting' },
+        resumeBlocked: true,
+      });
+      expect(recoveredRegistry.findRecoveredWaitingRun({ sessionId: 'session-exhausted-cancel' }))
+        .toEqual({ runId: 'run-exhausted-cancel', sessionId: 'session-exhausted-cancel' });
+
+      await expect(recoveredRegistry.terminalRecoveredWaitingRun({ sessionId: 'session-exhausted-cancel' }, 3_000))
+        .resolves.toEqual({ runId: 'run-exhausted-cancel', sessionId: 'session-exhausted-cancel' });
+      expect(await repository.get('run-exhausted-cancel')).toMatchObject({ status: 'cancelled' });
+
+      const next = await recoveredRegistry.startDurable({
+        runId: 'run-after-exhausted',
+        sessionId: 'session-exhausted-cancel',
+        workspace,
+        cwd: workspace,
+      }, 3_010);
+      expect(next.context.runId).toBe('run-after-exhausted');
+    } finally {
+      firstRegistry.clear();
+      rmSync(workspace, { recursive: true, force: true });
+      db.close();
+    }
+  });
+
   it('cancels a recovered waiting native run through the kernel path and frees the session', async () => {
     const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'durable-waiting-cancel-')));
     const { db, repository } = createRepository();

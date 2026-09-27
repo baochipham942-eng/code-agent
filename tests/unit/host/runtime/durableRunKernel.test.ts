@@ -12,8 +12,13 @@ import {
   DurableRunKernel,
   DurableRunPersistenceUnavailableError,
 } from '../../../../src/host/runtime/durableRunKernel';
+import { DurableRecoveryDispatcher } from '../../../../src/host/runtime/durableRecoveryDispatcher';
 import { createRunTraceContext } from '../../../../src/host/telemetry/runTraceContext';
-import { createChildRunRef, projectChildRunTerminal } from '../../../../src/shared/contract/durableRun';
+import {
+  createChildRunRef,
+  MAX_AUTO_RESUME_COUNT,
+  projectChildRunTerminal,
+} from '../../../../src/shared/contract/durableRun';
 
 function createKernel(processInstanceId = 'process-1') {
   const db = new Database(':memory:');
@@ -86,6 +91,7 @@ describe('DurableRunKernel', () => {
       engine: { kind: 'native' },
       status: 'running',
       attempt: 1,
+      autoResumeCount: 0,
       cursor: { nextEventSeq: 1, checkpointSeq: 0 },
       owner: {
         ownerId: 'native-host', processInstanceId: 'process-1', epoch: 1, leaseExpiresAt: 1_010,
@@ -405,6 +411,150 @@ describe('DurableRunKernel', () => {
       status: 'completed', reason: 'done', event: { type: 'run_completed', payload: {}, recordedAt: 20 },
     });
     expect(await kernel.recoverOnStartup(2_000)).toEqual([]);
+    db.close();
+  });
+
+  it('auto-resumes only crash/quit candidates and filters them before applying the limit', async () => {
+    const { db, kernel, repository } = createKernel();
+    const parked = await kernel.createNativeRun({
+      runId: 'run-user-stop', sessionId: 'session-user-stop', now: 10,
+    });
+    await kernel.checkpoint({
+      runId: parked.envelope.runId,
+      attempt: parked.attempt.attempt,
+      owner: parked.owner,
+      now: 20,
+      status: 'waiting',
+      state: { parked: true },
+      pendingOperations: [],
+      events: [{ type: 'run_interrupted', payload: { cause: 'user_stop' }, recordedAt: 20 }],
+      interruptCause: 'user_stop',
+      autoResumeCount: 0,
+    });
+    const crash = await kernel.createNativeRun({
+      runId: 'run-crash', sessionId: 'session-crash', now: 30,
+    });
+    await kernel.checkpoint({
+      runId: crash.envelope.runId,
+      attempt: crash.attempt.attempt,
+      owner: crash.owner,
+      now: 40,
+      status: 'running',
+      state: { crashed: true },
+      pendingOperations: [],
+      events: [{ type: 'run_checkpointed', payload: {}, recordedAt: 40 }],
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: 0,
+    });
+    const capped = await kernel.createNativeRun({
+      runId: 'run-capped', sessionId: 'session-capped', now: 50,
+    });
+    await kernel.checkpoint({
+      runId: capped.envelope.runId,
+      attempt: capped.attempt.attempt,
+      owner: capped.owner,
+      now: 60,
+      status: 'running',
+      state: { capped: true },
+      pendingOperations: [],
+      events: [{ type: 'run_checkpointed', payload: {}, recordedAt: 60 }],
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: MAX_AUTO_RESUME_COUNT,
+    });
+
+    const recoveredKernel = new DurableRunKernel({
+      stores: repository,
+      ownerId: 'native-host',
+      processInstanceId: 'process-2',
+      leaseDurationMs: 100,
+    });
+    const plans = await recoveredKernel.recoverOnStartup(2_000, 1);
+
+    expect(plans).toHaveLength(2);
+    expect(plans.map((plan) => plan.envelope.runId)).toEqual(['run-capped', 'run-crash']);
+    expect(plans[0].resumeBlocked).toBe(true);
+    expect(plans[1].resumeBlocked).toBeUndefined();
+    expect(await repository.get('run-user-stop')).toMatchObject({
+      interruptCause: 'user_stop', interrupt_cause: 'user_stop', autoResumeCount: 0,
+    });
+    expect(await repository.get('run-capped')).toMatchObject({
+      interruptCause: 'crash_or_quit', interrupt_cause: 'crash_or_quit',
+      autoResumeCount: MAX_AUTO_RESUME_COUNT,
+    });
+    const secondPlans = await recoveredKernel.recoverOnStartup(2_201);
+    expect(secondPlans.every((plan) => plan.envelope.runId !== 'run-capped')).toBe(true);
+    expect((await repository.get('run-capped'))?.attempt).toBe(2);
+    db.close();
+  });
+
+  it('commits interrupt cause and auto-resume count with the checkpoint fence', async () => {
+    const { db, kernel, repository } = createKernel();
+    const created = await kernel.createNativeRun({ runId: 'run-fence-metadata', sessionId: 'session-fence-metadata', now: 10 });
+
+    await kernel.checkpoint({
+      runId: created.envelope.runId,
+      attempt: created.attempt.attempt,
+      owner: created.owner,
+      now: 20,
+      status: 'running',
+      state: { fence: true },
+      pendingOperations: [],
+      events: [{ type: 'model_dispatch_fence', payload: {}, recordedAt: 20 }],
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: 1,
+    });
+
+    expect(await repository.get(created.envelope.runId)).toMatchObject({
+      interruptCause: 'crash_or_quit', interrupt_cause: 'crash_or_quit', autoResumeCount: 1,
+      cursor: { checkpointSeq: 1 },
+    });
+    db.close();
+  });
+
+  it('parks an exhausted crash loop for an explicit Continue action', async () => {
+    const { db, kernel, repository } = createKernel();
+    const capped = await kernel.createNativeRun({
+      runId: 'run-exhausted', sessionId: 'session-reusable', now: 10,
+    });
+    await kernel.checkpoint({
+      runId: capped.envelope.runId,
+      attempt: capped.attempt.attempt,
+      owner: capped.owner,
+      now: 20,
+      status: 'running',
+      state: { capped: true },
+      pendingOperations: [],
+      events: [{ type: 'run_checkpointed', payload: {}, recordedAt: 20 }],
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: MAX_AUTO_RESUME_COUNT,
+    });
+
+    const plans = await new DurableRunKernel({
+      stores: repository,
+      ownerId: 'native-host',
+      processInstanceId: 'process-2',
+      leaseDurationMs: 100,
+    }).recoverOnStartup(2_000);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({
+      envelope: { runId: 'run-exhausted', status: 'waiting' },
+      resumeBlocked: true,
+    });
+    const recover = vi.fn(async () => ({ status: 'recovered' as const, reason: 'should not run' }));
+    const dispatcher = new DurableRecoveryDispatcher();
+    dispatcher.registerEngineHandler({ name: 'native', engineKind: 'native', recover });
+    await expect(dispatcher.dispatch(plans)).resolves.toEqual([
+      expect.objectContaining({
+        runId: 'run-exhausted', status: 'observing',
+        reason: 'automatic resume budget exhausted; waiting for explicit Continue',
+      }),
+    ]);
+    expect(recover).not.toHaveBeenCalled();
+    expect(await repository.get('run-exhausted')).toMatchObject({
+      status: 'waiting',
+      interruptCause: 'crash_or_quit', interrupt_cause: 'crash_or_quit',
+      autoResumeCount: MAX_AUTO_RESUME_COUNT,
+    });
     db.close();
   });
 

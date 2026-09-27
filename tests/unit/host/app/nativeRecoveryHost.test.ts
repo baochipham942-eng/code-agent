@@ -44,6 +44,9 @@ function recoveryInput(): NativeRecoveryOperationInput {
       owner: {
         ownerId: 'owner', processInstanceId: 'process', epoch: 2, leaseExpiresAt: 10_000,
       },
+      interruptCause: 'crash_or_quit',
+      interrupt_cause: 'crash_or_quit',
+      autoResumeCount: 0,
       pendingOperations: [operation],
       childRuns: [],
       createdAt: 1,
@@ -125,8 +128,12 @@ describe('application Native model continuation ports', () => {
     });
     expect(checkpointDurable).toHaveBeenCalledWith('run-recovery', expect.objectContaining({
       status: 'running',
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: 1,
       pendingOperations: [expect.objectContaining({ status: 'unknown', updatedAt: 20 })],
     }));
+    expect(checkpointDurable.mock.invocationCallOrder[0])
+      .toBeLessThan(resumeExistingDurableRun.mock.invocationCallOrder[0]);
     expect(resumeExistingDurableRun).toHaveBeenCalledWith(
       'session-recovery',
       'run-recovery',
@@ -313,6 +320,10 @@ describe('application Native tool continuation ports', () => {
       resultRef: 'message-ledger:assistant-tool-call:replayed-tool-result:call-read',
     });
     expect(checkpointDurable).toHaveBeenCalledOnce();
+    expect(checkpointDurable).toHaveBeenCalledWith('run-recovery', expect.objectContaining({
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: 1,
+    }));
     expect(checkpointDurable.mock.invocationCallOrder[0])
       .toBeLessThan(executeTool.mock.invocationCallOrder[0]);
     expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({

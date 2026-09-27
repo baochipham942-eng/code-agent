@@ -19,6 +19,7 @@ import {
 } from '../runtime/workspaceAuthority';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import type { ToolDefinition, ToolReplaySafety, ToolResult } from '../../shared/contract';
+import { getRunInterruptCause, MAX_AUTO_RESUME_COUNT } from '../../shared/contract/durableRun';
 import { ToolExecutor } from '../tools/toolExecutor';
 import type { ToolExecutionResult } from '../tools/types';
 import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinitions';
@@ -121,6 +122,9 @@ async function checkpointToolReplayFence(
   input: NativeRecoveryOperationInput,
   now: number,
 ): Promise<void> {
+  const autoResumeCount = getRunInterruptCause(input.plan.envelope) === 'crash_or_quit'
+    ? Math.min(MAX_AUTO_RESUME_COUNT, (input.plan.envelope.autoResumeCount ?? 0) + 1)
+    : (input.plan.envelope.autoResumeCount ?? 0);
   await registry.checkpointDurable(input.plan.envelope.runId, {
     now,
     status: 'running',
@@ -132,6 +136,8 @@ async function checkpointToolReplayFence(
         : operation
     )),
     childRuns: input.plan.childRuns,
+    interruptCause: getRunInterruptCause(input.plan.envelope) ?? 'crash_or_quit',
+    autoResumeCount,
     events: [{
       type: 'native_tool_recovery_dispatch_fenced',
       payload: { operationId: input.operation.operationId },
@@ -145,6 +151,9 @@ async function checkpointModelDispatchFence(
   input: NativeRecoveryOperationInput,
   now: number,
 ): Promise<void> {
+  const autoResumeCount = getRunInterruptCause(input.plan.envelope) === 'crash_or_quit'
+    ? Math.min(MAX_AUTO_RESUME_COUNT, (input.plan.envelope.autoResumeCount ?? 0) + 1)
+    : (input.plan.envelope.autoResumeCount ?? 0);
   const pendingOperations = input.plan.pendingOperations.map((operation) => (
     operation.operationId === input.operation.operationId
       ? {
@@ -164,6 +173,8 @@ async function checkpointModelDispatchFence(
     engineCursor: input.plan.checkpoint?.cursor.engineCursor,
     pendingOperations,
     childRuns: input.plan.childRuns,
+    interruptCause: getRunInterruptCause(input.plan.envelope) ?? 'crash_or_quit',
+    autoResumeCount,
     events: [{
       type: 'native_model_recovery_dispatch_fenced',
       payload: { operationId: input.operation.operationId },

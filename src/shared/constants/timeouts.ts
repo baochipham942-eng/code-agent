@@ -292,6 +292,11 @@ export const STATUS_TIMEOUTS = {
   API_HEALTH_CHECK: 5_000,
 } as const;
 
+/** Startup gates must not remain blocked forever when the renderer signal is lost. */
+export const STARTUP_TIMEOUTS = {
+  RENDERER_WINDOW_READY: 5_000,
+} as const;
+
 /** 任务输出超时 */
 export const TASK_OUTPUT_TIMEOUTS = {
   /** 默认超时 */

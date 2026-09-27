@@ -1,6 +1,6 @@
 # Agent Neo
 
-[![CI](https://github.com/baochipham942-eng/code-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/baochipham942-eng/code-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/baochipham942-eng/code-agent/actions/workflows/main-full-gate.yml/badge.svg)](https://github.com/baochipham942-eng/code-agent/actions/workflows/main-full-gate.yml)
 [![Latest release](https://img.shields.io/github/v/release/baochipham942-eng/code-agent)](https://github.com/baochipham942-eng/code-agent/releases)
 
 Agent Neo is a local-first AI coworker for turning goals into verified deliverables. It combines an agent runtime, desktop shell, web workspace, CLI, browser and computer control, scheduled work, and artifact quality checks.

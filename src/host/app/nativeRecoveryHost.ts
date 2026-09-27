@@ -24,6 +24,7 @@ import { ToolExecutor } from '../tools/toolExecutor';
 import type { ToolExecutionResult } from '../tools/types';
 import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinitions';
 import { classifyToolReplaySafety } from '../tools/toolReplaySafety';
+import { createLogger } from '../services/infra/logger';
 
 interface NativeModelContinuationSessions {
   getMessages(sessionId: string, limit?: number): Promise<Message[]>;
@@ -60,6 +61,7 @@ interface ApplicationNativeRecoveryDependencies {
 }
 
 const MODEL_RECOVERY_MESSAGE_LIMIT = 500;
+const logger = createLogger('NativeRecoveryHost');
 
 function preparedModelEvidence(
   messages: Message[],
@@ -105,7 +107,7 @@ function buildRecoveredToolMessage(input: {
   toolCallId: string;
   result: ToolResult;
   now: number;
-  kind: 'replayed' | 'interrupted';
+  kind: 'replayed' | 'interrupted' | 'approved' | 'denied';
 }): Message {
   return {
     id: `${input.assistantMessage.id}:${input.kind}-tool-result:${input.toolCallId}`,
@@ -115,6 +117,45 @@ function buildRecoveredToolMessage(input: {
     toolResults: [input.result],
     ...(input.assistantMessage.isMeta ? { isMeta: true } : {}),
   };
+}
+
+function approvalToolCallIds(input: NativeRecoveryOperationInput): string[] {
+  const ids = [
+    input.descriptor.logicalOperationId,
+    input.operation.operationId,
+    input.descriptor.approvalId,
+    input.operation.providerOperationId,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .flatMap((value) => [value, value.replace(/^approval:/, '')]);
+  return [...new Set(ids)];
+}
+
+function approvalPayloadToolCallId(approvalId: string | undefined): string | undefined {
+  if (!approvalId) return undefined;
+  try {
+    const approval = getDatabase().getPendingApprovalRepo().getById(approvalId);
+    if (!approval) return undefined;
+    const payload = JSON.parse(approval.payloadJson) as { toolCallId?: unknown };
+    return typeof payload.toolCallId === 'string' && payload.toolCallId.length > 0
+      ? payload.toolCallId
+      : undefined;
+  } catch (error) {
+    logger.warn('Native approval payload could not be parsed', { approvalId, error });
+    return undefined;
+  }
+}
+
+function findApprovalToolCall(messages: Message[], input: NativeRecoveryOperationInput) {
+  const toolCallIds = [
+    ...approvalToolCallIds(input),
+    approvalPayloadToolCallId(input.descriptor.approvalId),
+  ].filter((value): value is string => Boolean(value));
+  for (const toolCallId of [...new Set(toolCallIds)]) {
+    const persisted = persistedToolCall(messages, toolCallId);
+    if (persisted) return persisted;
+  }
+  return null;
 }
 
 async function checkpointToolReplayFence(
@@ -497,8 +538,79 @@ export function createApplicationNativeRecoveryPorts(
         if (!approval) return 'missing';
         if (approval.status === 'pending') return 'pending';
         if (approval.status === 'approved') return 'approved';
-        if (approval.status === 'rejected') return 'rejected';
+        if (approval.status === 'rejected') return { status: 'rejected' as const, feedback: approval.feedback };
         return 'conflict';
+      },
+      async queryResult(input) {
+        const deps = dependencies();
+        const messages = await deps.sessions.getMessages(
+          input.plan.envelope.sessionId,
+          MODEL_RECOVERY_MESSAGE_LIMIT,
+        );
+        const persisted = findApprovalToolCall(messages, input);
+        return persisted ? toolResultEvidence(messages, persisted.toolCall.id) : null;
+      },
+      async dispatchPrepared(input) {
+        const deps = dependencies();
+        const messages = await deps.sessions.getMessages(
+          input.plan.envelope.sessionId,
+          MODEL_RECOVERY_MESSAGE_LIMIT,
+        );
+        const persisted = findApprovalToolCall(messages, input);
+        if (!persisted) throw new Error('native approved approval payload is unavailable');
+        const existing = toolResultEvidence(messages, persisted.toolCall.id);
+        if (existing) return existing;
+        const result = await deps.executeTool({
+          name: persisted.toolCall.name,
+          arguments: persisted.toolCall.arguments,
+          sessionId: input.plan.envelope.sessionId,
+          sourceMessageId: input.descriptor.sourceMessageId,
+          toolCallId: persisted.toolCall.id,
+          workingDirectory: input.descriptor.workspace.cwd,
+        });
+        const toolResult: ToolResult = {
+          toolCallId: persisted.toolCall.id,
+          success: result.success,
+          ...(result.output !== undefined ? { output: result.output } : {}),
+          ...(result.error !== undefined ? { error: result.error } : {}),
+          duration: 0,
+          ...(result.metadata ? { metadata: result.metadata } : {}),
+        };
+        const message = buildRecoveredToolMessage({
+          assistantMessage: persisted.assistantMessage,
+          toolCallId: persisted.toolCall.id,
+          result: toolResult,
+          now: deps.now(),
+          kind: 'approved',
+        });
+        await deps.persistToolMessage(input.plan.envelope.sessionId, message);
+        return { resultRef: `message-ledger:${message.id}` };
+      },
+      async reject(input, feedback) {
+        const deps = dependencies();
+        const messages = await deps.sessions.getMessages(
+          input.plan.envelope.sessionId,
+          MODEL_RECOVERY_MESSAGE_LIMIT,
+        );
+        const persisted = findApprovalToolCall(messages, input);
+        if (!persisted) throw new Error('native rejected approval payload is unavailable');
+        const existing = toolResultEvidence(messages, persisted.toolCall.id);
+        if (existing) return existing;
+        const reason = feedback?.trim() ? `approval rejected: ${feedback.trim()}` : 'approval rejected by user';
+        const message = buildRecoveredToolMessage({
+          assistantMessage: persisted.assistantMessage,
+          toolCallId: persisted.toolCall.id,
+          result: {
+            toolCallId: persisted.toolCall.id,
+            success: false,
+            error: reason,
+            duration: 0,
+          },
+          now: deps.now(),
+          kind: 'denied',
+        });
+        await deps.persistToolMessage(input.plan.envelope.sessionId, message);
+        return { resultRef: `message-ledger:${message.id}` };
       },
     },
   };

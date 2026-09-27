@@ -229,6 +229,100 @@ describe('NativeRecoveryHost production recovery', () => {
     expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 
+  it('dispatches an approved operation once, fences it, and returns to the live loop', async () => {
+    const continueLoop = vi.fn(async () => undefined);
+    const dispatchPrepared = vi.fn(async () => ({ resultRef: 'approval:executed' }));
+    const pending = operation({
+      kind: 'approval',
+      status: 'waiting',
+      operationId: 'approval:approval-1',
+      providerOperationId: 'approval:approval-1',
+    });
+    const { handler, registry } = fixture({
+      continueLoop,
+      approval: {
+        read: vi.fn(async () => ({ status: 'approved' as const })),
+        dispatchPrepared,
+      },
+    });
+
+    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({
+      status: 'recovered',
+      reason: 'resume_live_loop',
+      detail: { resultRef: 'approval:executed' },
+    });
+    expect(dispatchPrepared).toHaveBeenCalledOnce();
+    expect(continueLoop).toHaveBeenCalledOnce();
+    expect(registry.checkpointDurable).toHaveBeenCalledWith('run-1', expect.objectContaining({
+      events: [expect.objectContaining({ type: 'native_approval_recovery_dispatch_fenced' })],
+      pendingOperations: [expect.objectContaining({ status: 'unknown', requiresHumanConfirmation: true })],
+    }));
+    expect((registry.checkpointDurable as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1])
+      .toMatchObject({ pendingOperations: [expect.objectContaining({ status: 'succeeded', resultRef: 'approval:executed' })] });
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
+  });
+
+  it('parks a fenced approval after a crash when no result was materialized', async () => {
+    const continueLoop = vi.fn(async () => undefined);
+    const dispatchPrepared = vi.fn(async () => ({ resultRef: 'approval:executed' }));
+    const queryResult = vi.fn(async () => null);
+    const initial = operation({
+      kind: 'approval',
+      status: 'waiting',
+      operationId: 'approval:approval-1',
+      providerOperationId: 'approval:approval-1',
+    });
+    const { handler } = fixture({
+      continueLoop,
+      approval: {
+        read: vi.fn(async () => ({ status: 'approved' as const })),
+        queryResult,
+        dispatchPrepared,
+      },
+    });
+
+    await expect(handler.recover(plan(initial), 10)).resolves.toMatchObject({ status: 'recovered' });
+    const fenced = { ...initial, status: 'unknown' as const, requiresHumanConfirmation: true };
+    await expect(handler.recover(plan(fenced), 11)).resolves.toMatchObject({
+      status: 'requires_review',
+      reason: 'approval_dispatch_outcome_unknown',
+    });
+    expect(dispatchPrepared).toHaveBeenCalledOnce();
+    expect(queryResult).toHaveBeenCalledOnce();
+  });
+
+  it('feeds a rejected approval and its feedback to the model before resuming the loop', async () => {
+    const continueLoop = vi.fn(async () => undefined);
+    const reject = vi.fn(async (_input, feedback?: string | null) => {
+      expect(feedback).toBe('需要补充范围');
+      return { resultRef: 'approval:rejected' };
+    });
+    const pending = operation({
+      kind: 'approval',
+      status: 'waiting',
+      operationId: 'approval:approval-1',
+      providerOperationId: 'approval:approval-1',
+    });
+    const { handler, ports, registry } = fixture({
+      continueLoop,
+      approval: {
+        read: vi.fn(async () => ({ status: 'rejected' as const, feedback: '需要补充范围' })),
+        reject,
+      },
+    });
+
+    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({
+      status: 'recovered',
+      reason: 'resume_live_loop',
+      detail: { resultRef: 'approval:rejected' },
+    });
+    expect(ports.approval.read).toHaveBeenCalledWith('approval-1');
+    expect(reject).toHaveBeenCalledOnce();
+    expect(continueLoop).toHaveBeenCalledOnce();
+    expect((registry.checkpointDurable as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1])
+      .toMatchObject({ pendingOperations: [expect.objectContaining({ status: 'failed', resultRef: 'approval:rejected' })] });
+  });
+
   it('fails closed when the persisted multi-source scope no longer matches the Project', async () => {
     const pending = operation({ status: 'prepared' });
     const recoveryPlan = plan(pending);

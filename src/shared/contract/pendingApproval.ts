@@ -26,6 +26,8 @@ export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval' | 'directo
  */
 export interface ToolApprovalPayload {
   sessionId: string | null;
+  /** 原始 assistant tool_call id；恢复批准后用它把审批行接回同一条调用。 */
+  toolCallId?: string;
   /** 工具内部名（如 mcp__lark__...） */
   tool: string;
   /** 权限类型（file_write / command / mcp ...） */

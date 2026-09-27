@@ -79,6 +79,37 @@ function recoveryInput(): NativeRecoveryOperationInput {
   return { plan, descriptor, operation };
 }
 
+function approvalInput(): NativeRecoveryOperationInput {
+  const input = recoveryInput();
+  const operation: PendingOperation = {
+    ...input.operation,
+    operationId: 'approval:approval-1',
+    kind: 'approval',
+    status: 'waiting',
+    providerOperationId: 'approval:approval-1',
+    requiresHumanConfirmation: true,
+  };
+  const descriptor: NativeRecoveryDescriptor = {
+    ...input.descriptor,
+    logicalOperationId: 'call-write',
+    operationId: operation.operationId,
+    phase: 'approval_waiting',
+    approvalId: 'approval-1',
+  };
+  return {
+    operation,
+    descriptor,
+    plan: {
+      ...input.plan,
+      envelope: { ...input.plan.envelope, pendingOperations: [operation] },
+      checkpoint: input.plan.checkpoint
+        ? { ...input.plan.checkpoint, state: descriptor }
+        : null,
+      pendingOperations: [operation],
+    },
+  };
+}
+
 function sourceMessage(metadata?: Message['metadata']): Message {
   return {
     id: 'user-source',
@@ -421,6 +452,75 @@ describe('application Native tool continuation ports', () => {
         toolCallId: 'call-read',
         success: false,
         error: expect.stringContaining('interrupted'),
+      }],
+    });
+  });
+});
+
+describe('application Native approval recovery ports', () => {
+  function approvalMessages(): Message[] {
+    return [
+      sourceMessage(),
+      {
+        id: 'assistant-approval-call',
+        role: 'assistant',
+        content: '',
+        timestamp: 2,
+        toolCalls: [{ id: 'call-write', name: 'Write', arguments: { file_path: 'out.txt', content: 'ok' } }],
+      },
+    ];
+  }
+
+  it('executes an approved tool once and materializes its result', async () => {
+    const input = approvalInput();
+    const persisted: Message[] = [];
+    const executeTool = vi.fn(async () => ({ success: true, output: 'written' }));
+    const ports = createApplicationNativeRecoveryPorts(undefined, {
+      sessions: {
+        getMessages: vi.fn(async () => [...approvalMessages(), ...persisted]),
+        updateMessage: vi.fn(async () => undefined),
+      },
+      tasks: { resumeExistingDurableRun: vi.fn(async () => undefined) },
+      executeTool,
+      persistToolMessage: vi.fn(async (_sessionId, message) => { persisted.push(message); }),
+      now: () => 20,
+    });
+
+    await expect(ports.approval.dispatchPrepared!(input)).resolves.toEqual({
+      resultRef: 'message-ledger:assistant-approval-call:approved-tool-result:call-write',
+    });
+    await expect(ports.approval.dispatchPrepared!(input)).resolves.toEqual({
+      resultRef: 'message-ledger:assistant-approval-call:approved-tool-result:call-write',
+    });
+    expect(executeTool).toHaveBeenCalledOnce();
+    expect(persisted[0]).toMatchObject({
+      role: 'tool',
+      toolResults: [{ toolCallId: 'call-write', success: true, output: 'written' }],
+    });
+  });
+
+  it('materializes rejection feedback as a failed tool result', async () => {
+    const input = approvalInput();
+    const persisted: Message[] = [];
+    const ports = createApplicationNativeRecoveryPorts(undefined, {
+      sessions: {
+        getMessages: vi.fn(async () => [...approvalMessages(), ...persisted]),
+        updateMessage: vi.fn(async () => undefined),
+      },
+      tasks: { resumeExistingDurableRun: vi.fn(async () => undefined) },
+      persistToolMessage: vi.fn(async (_sessionId, message) => { persisted.push(message); }),
+      now: () => 20,
+    });
+
+    await expect(ports.approval.reject!(input, '范围不清晰')).resolves.toEqual({
+      resultRef: 'message-ledger:assistant-approval-call:denied-tool-result:call-write',
+    });
+    expect(persisted[0]).toMatchObject({
+      role: 'tool',
+      toolResults: [{
+        toolCallId: 'call-write',
+        success: false,
+        error: 'approval rejected: 范围不清晰',
       }],
     });
   });

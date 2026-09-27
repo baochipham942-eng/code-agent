@@ -410,16 +410,18 @@ export function createApplicationNativeRecoveryPorts(
           input.plan.envelope.sessionId,
           MODEL_RECOVERY_MESSAGE_LIMIT,
         );
-        const existing = toolResultEvidence(messages, input.descriptor.logicalOperationId);
+        const persisted = persistedToolCall(messages, input.descriptor.logicalOperationId);
+        const existing = toolResultEvidence(messages, persisted?.toolCall.id ?? input.descriptor.logicalOperationId);
         if (existing) {
-          deps.acknowledgeToolRecovery(
-            input.plan.envelope.sessionId,
-            input.operation.providerOperationId,
-            input.descriptor.model,
-          );
+          if (persisted) {
+            deps.acknowledgeToolRecovery(
+              input.plan.envelope.sessionId,
+              input.operation.providerOperationId,
+              persisted.toolCall.name,
+            );
+          }
           return existing;
         }
-        const persisted = persistedToolCall(messages, input.descriptor.logicalOperationId);
         if (!persisted) throw new Error('native tool continuation payload is unavailable');
         if (classifyToolReplaySafety(deps.resolveToolDefinition(persisted.toolCall.name)) !== 'automatic') {
           throw new Error('native tool replay declaration changed before dispatch');

@@ -108,6 +108,9 @@ export class DurableRecoveryDispatcher {
       engineResult = await this.runOnce(key, () => this.invokeEngine(plan, engineHandler, now));
       results.push(engineResult);
     }
+    const nativeRecoveredOperationIds = engineHandler?.engineKind === 'native'
+      ? recoveredOperationIds(engineResult?.detail)
+      : new Set<string>();
 
     for (const operation of plan.pendingOperations) {
       // Native recovery owns all local tool settlements. If it parked an
@@ -121,6 +124,7 @@ export class DurableRecoveryDispatcher {
         && operation.kind === 'tool_call') {
         continue;
       }
+      if (nativeRecoveredOperationIds.has(operation.operationId)) continue;
       const handler = this.operationHandlers.find((candidate) => candidate.matches(plan, operation));
       if (!handler) {
         // Some engines recover their internal pending operations as one
@@ -225,6 +229,14 @@ export class DurableRecoveryDispatcher {
 
 function isTerminalOperation(operation: PendingOperation): boolean {
   return operation.status === 'succeeded' || operation.status === 'failed' || operation.status === 'abandoned';
+}
+
+function recoveredOperationIds(detail: unknown): Set<string> {
+  if (!detail || typeof detail !== 'object') return new Set();
+  const candidate = (detail as { recoveredOperationIds?: unknown }).recoveredOperationIds;
+  return Array.isArray(candidate) && candidate.every((value): value is string => typeof value === 'string')
+    ? new Set(candidate)
+    : new Set();
 }
 
 function isEngineOwnedOperation(

@@ -390,7 +390,7 @@ describe('NativeRecoveryHost interrupted goal run (P0 false-completion止血)', 
     expect(terminal.event).toMatchObject({ type: 'goal_complete', payload: { status: 'aborted', reason: 'interrupted' } });
   });
 
-  it('non-goal descriptor still auto-completes (behavior unchanged)', async () => {
+  it('non-goal descriptor with a prepared model requires review without re-dispatch', async () => {
     const { handler, registry } = fixture();
     await expect(handler.recover(plan(operation({ status: 'prepared' })), 10))
       .resolves.toMatchObject({ status: 'requires_review' });

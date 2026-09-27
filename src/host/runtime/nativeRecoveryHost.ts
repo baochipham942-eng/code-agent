@@ -162,6 +162,7 @@ export class NativeRecoveryHost {
     let lastResultRef: string | undefined;
 
     for (const operation of recoverable) {
+      if (waitingForApproval || guardHalt) continue;
       const operationDescriptor = descriptorForOperation(descriptor, operation);
       const operationPlan = operation.operationId === descriptor.operationId && operation.kind === 'model_call'
         ? {
@@ -296,7 +297,10 @@ export class NativeRecoveryHost {
       return {
         status: 'recovered' as const,
         reason: 'resume_live_loop',
-        ...(lastResultRef ? { detail: { resultRef: lastResultRef } } : {}),
+        detail: {
+          ...(lastResultRef ? { resultRef: lastResultRef } : {}),
+          recoveredOperationIds: recoverable.map((operation) => operation.operationId),
+        },
       };
     }
     if (!recoveredToolResult) {
@@ -329,7 +333,10 @@ export class NativeRecoveryHost {
     return {
       status: 'recovered' as const,
       reason: loopResumed ? 'resume_live_loop' : lastAction,
-      ...(lastResultRef ? { detail: { resultRef: lastResultRef } } : {}),
+      detail: {
+        ...(lastResultRef ? { resultRef: lastResultRef } : {}),
+        recoveredOperationIds: recoverable.map((operation) => operation.operationId),
+      },
     };
   }
 

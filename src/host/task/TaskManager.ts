@@ -305,16 +305,15 @@ export class TaskManager extends EventEmitter {
     const existingHandle = this.runRegistry.get(runId);
     if (existingHandle && existingHandle.context.sessionId !== sessionId) throw new Error(`Durable run ${runId} belongs to session ${existingHandle.context.sessionId}`);
     if (!clientMessageId) throw new Error(`Durable run ${runId} resume requires source message id`);
-    const sourceIndex = messages.findIndex((message) => message.id === clientMessageId && message.role === 'user' && isInferenceHistoryMessage(message));
-    const source = sourceIndex >= 0 ? messages[sourceIndex] : undefined;
-    if (!source) throw new Error(`Durable run ${runId} source message ${clientMessageId} is unavailable`);
-    if (sourceIndex !== messages.length - 1) throw new Error(`Durable run ${runId} resume history must end at source message ${clientMessageId}`);
+    const inferenceMessages = messages.filter(isInferenceHistoryMessage);
+    const sourceIndex = inferenceMessages.findIndex((message) => message.id === clientMessageId && message.role === 'user');
+    const source = sourceIndex >= 0 ? inferenceMessages[sourceIndex] : undefined; if (!source) throw new Error(`Durable run ${runId} source message ${clientMessageId} is unavailable`);
+    if (sourceIndex !== inferenceMessages.length - 1) throw new Error(`Durable run ${runId} resume history must end at source message ${clientMessageId}`);
     const currentStatus = this.sessionStates.get(sessionId)?.status ?? ''; if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus)) throw new Error(`Session ${sessionId} is already ${currentStatus}`);
-
     await this.semaphore.acquire(); this.updateSessionState(sessionId, { status: 'running', startTime: Date.now() });
     this.emitEvent('task_started', sessionId, { runId, resumed: true });
     const wrapper = this.getOrCreateOrchestrator(sessionId);
-    wrapper.orchestrator.setMessages(messages);
+    wrapper.orchestrator.setMessages(inferenceMessages);
     try {
       await wrapper.orchestrator.resumeExistingDurableRun(
         source.content,
@@ -1461,7 +1460,6 @@ export class TaskManager extends EventEmitter {
 // ============================================================================
 
 let taskManagerInstance: TaskManager | null = null;
-
 /**
  * 获取 TaskManager 单例
  */

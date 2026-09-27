@@ -24,6 +24,7 @@ import { ToolExecutor } from '../tools/toolExecutor';
 import type { ToolExecutionResult } from '../tools/types';
 import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinitions';
 import { classifyToolReplaySafety } from '../tools/toolReplaySafety';
+import { createLogger } from '../services/infra/logger';
 
 interface NativeModelContinuationSessions {
   getMessages(sessionId: string, limit?: number): Promise<Message[]>;
@@ -60,6 +61,7 @@ interface ApplicationNativeRecoveryDependencies {
 }
 
 const MODEL_RECOVERY_MESSAGE_LIMIT = 500;
+const logger = createLogger('NativeRecoveryHost');
 
 function preparedModelEvidence(
   messages: Message[],
@@ -138,7 +140,8 @@ function approvalPayloadToolCallId(approvalId: string | undefined): string | und
     return typeof payload.toolCallId === 'string' && payload.toolCallId.length > 0
       ? payload.toolCallId
       : undefined;
-  } catch {
+  } catch (error) {
+    logger.warn('Native approval payload could not be parsed', { approvalId, error });
     return undefined;
   }
 }
@@ -537,6 +540,15 @@ export function createApplicationNativeRecoveryPorts(
         if (approval.status === 'approved') return 'approved';
         if (approval.status === 'rejected') return { status: 'rejected' as const, feedback: approval.feedback };
         return 'conflict';
+      },
+      async queryResult(input) {
+        const deps = dependencies();
+        const messages = await deps.sessions.getMessages(
+          input.plan.envelope.sessionId,
+          MODEL_RECOVERY_MESSAGE_LIMIT,
+        );
+        const persisted = findApprovalToolCall(messages, input);
+        return persisted ? toolResultEvidence(messages, persisted.toolCall.id) : null;
       },
       async dispatchPrepared(input) {
         const deps = dependencies();

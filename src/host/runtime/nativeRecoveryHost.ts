@@ -75,6 +75,8 @@ export interface NativeRecoveryHostPorts {
   continueLoop?(input: NativeRecoveryOperationInput): Promise<void>;
   approval: {
     read(approvalId: string): Promise<NativeRecoveryApprovalResolution | NativeRecoveryApprovalStatus>;
+    /** Return a result already materialized before a recovery crash; never execute here. */
+    queryResult?(input: NativeRecoveryOperationInput): Promise<NativeRecoveryResultEvidence | null>;
     /** Execute an approved operation exactly once, after the recovery fence is durable. */
     dispatchPrepared?(input: NativeRecoveryOperationInput): Promise<NativeRecoveryResultEvidence>;
     /** Materialize a denial for the model so the existing run can continue its loop. */
@@ -206,6 +208,26 @@ export class NativeRecoveryHost {
           continue;
         }
         if (approvalStatus === 'approved') {
+          if (operation.status !== 'waiting') {
+            const existing = await this.ports.approval.queryResult?.(input);
+            if (!existing) return this.review(plan, now, 'approval_dispatch_outcome_unknown');
+            await this.ports.compatibilitySink?.commitResult({
+              runId: plan.envelope.runId,
+              sessionId: plan.envelope.sessionId,
+              operationId: operation.operationId,
+              resultRef: existing.resultRef,
+            });
+            replacePendingOperation(pendingOperations, operation, {
+              status: 'succeeded',
+              resultRef: existing.resultRef,
+              updatedAt: now,
+            });
+            recoveredApprovalResult = true;
+            loopResumed ||= existing.loopResumed === true;
+            lastAction = 'recover_approved_operation_result';
+            lastResultRef = existing.resultRef;
+            continue;
+          }
           if (!this.ports.approval.dispatchPrepared) {
             return this.ports.continuationExecutor === 'unavailable'
               ? this.failUnrecoverable(plan, now, 'approval_approved_continuation_requires_application_resume')
@@ -213,7 +235,7 @@ export class NativeRecoveryHost {
           }
           const fencedOperations = pendingOperations.map((candidate) => (
             candidate.operationId === operation.operationId
-              ? { ...candidate, status: 'dispatched' as const, updatedAt: now }
+              ? { ...candidate, status: 'unknown' as const, requiresHumanConfirmation: true, updatedAt: now }
               : candidate
           ));
           await this.registry.checkpointDurable(plan.envelope.runId, {

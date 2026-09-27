@@ -85,6 +85,12 @@ export class DurableRecoveryDispatcher {
         reason: 'terminal runs never enter recovery handlers',
       })];
     }
+    if (plan.resumeBlocked) {
+      return [this.baseResult(plan, 'engine', 'dispatcher', {
+        status: 'observing',
+        reason: 'automatic resume budget exhausted; waiting for explicit Continue',
+      })];
+    }
 
     const results: DurableRecoveryDispatchResult[] = [];
     const engineHandler = this.engineHandlers.get(plan.envelope.engine.kind);

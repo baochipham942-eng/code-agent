@@ -142,6 +142,8 @@ export interface RunRehydrationPlan {
   pendingOperations: PendingOperation[];
   childRuns: ChildRunRef[];
   requiresHumanConfirmation: PendingOperation[];
+  /** The run is parked for an explicit Continue action and must not enter recovery handlers. */
+  resumeBlocked?: boolean;
 }
 
 export interface RunRehydrateRequest {

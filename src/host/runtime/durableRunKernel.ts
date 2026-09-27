@@ -352,7 +352,13 @@ export class DurableRunKernel implements RunKernelAdapter {
     const exhausted = stores.listAutoResumeExhausted
       ? await stores.listAutoResumeExhausted(now, limit)
       : [];
+    const plans: RunRehydrationPlan[] = [];
     for (const envelope of exhausted) {
+      const previousAttempt = await stores.getAttempt(envelope.runId, envelope.attempt);
+      if (!previousAttempt) throw new Error(`Missing durable attempt ${envelope.runId}/${envelope.attempt}`);
+      const checkpoint = await stores.getLatest(envelope.runId);
+      const pendingOperations = await stores.listPendingOperations(envelope.runId);
+      const childRuns = await stores.listChildRuns(envelope.runId);
       const claimed = await stores.claimLease({
         runId: envelope.runId,
         expectedEpoch: envelope.owner?.epoch ?? null,
@@ -362,19 +368,27 @@ export class DurableRunKernel implements RunKernelAdapter {
         leaseDurationMs: this.leaseDurationMs,
       });
       if (!claimed) continue;
-      await stores.replaceRecoveryProjection({
+      const parkedEnvelope = await stores.replaceRecoveryProjection({
         runId: envelope.runId,
         attempt: claimed.attempt.attempt,
         expectedOwnerEpoch: claimed.owner.epoch,
         status: 'waiting',
-        pendingOperations: await stores.listPendingOperations(envelope.runId),
+        pendingOperations,
         interruptCause: getRunInterruptCause(claimed.envelope) ?? 'crash_or_quit',
         autoResumeCount: claimed.envelope.autoResumeCount ?? MAX_AUTO_RESUME_COUNT,
         updatedAt: now,
       });
+      plans.push({
+        envelope: parkedEnvelope,
+        previousAttempt,
+        checkpoint,
+        pendingOperations,
+        childRuns,
+        requiresHumanConfirmation: [],
+        resumeBlocked: true,
+      });
     }
     const recoverable = await stores.listRecoverable(now, limit);
-    const plans: RunRehydrationPlan[] = [];
     for (const envelope of recoverable) {
       const interruptCause = getRunInterruptCause(envelope);
       if (interruptCause !== undefined && interruptCause !== 'crash_or_quit') continue;

@@ -12,6 +12,7 @@ import {
   DurableRunKernel,
   DurableRunPersistenceUnavailableError,
 } from '../../../../src/host/runtime/durableRunKernel';
+import { DurableRecoveryDispatcher } from '../../../../src/host/runtime/durableRecoveryDispatcher';
 import { createRunTraceContext } from '../../../../src/host/telemetry/runTraceContext';
 import {
   createChildRunRef,
@@ -468,8 +469,10 @@ describe('DurableRunKernel', () => {
       leaseDurationMs: 100,
     }).recoverOnStartup(2_000, 1);
 
-    expect(plans).toHaveLength(1);
-    expect(plans[0].envelope.runId).toBe('run-crash');
+    expect(plans).toHaveLength(2);
+    expect(plans.map((plan) => plan.envelope.runId)).toEqual(['run-capped', 'run-crash']);
+    expect(plans[0].resumeBlocked).toBe(true);
+    expect(plans[1].resumeBlocked).toBeUndefined();
     expect(await repository.get('run-user-stop')).toMatchObject({
       interruptCause: 'user_stop', interrupt_cause: 'user_stop', autoResumeCount: 0,
     });
@@ -522,12 +525,27 @@ describe('DurableRunKernel', () => {
       autoResumeCount: MAX_AUTO_RESUME_COUNT,
     });
 
-    expect(await new DurableRunKernel({
+    const plans = await new DurableRunKernel({
       stores: repository,
       ownerId: 'native-host',
       processInstanceId: 'process-2',
       leaseDurationMs: 100,
-    }).recoverOnStartup(2_000)).toEqual([]);
+    }).recoverOnStartup(2_000);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({
+      envelope: { runId: 'run-exhausted', status: 'waiting' },
+      resumeBlocked: true,
+    });
+    const recover = vi.fn(async () => ({ status: 'recovered' as const, reason: 'should not run' }));
+    const dispatcher = new DurableRecoveryDispatcher();
+    dispatcher.registerEngineHandler({ name: 'native', engineKind: 'native', recover });
+    await expect(dispatcher.dispatch(plans)).resolves.toEqual([
+      expect.objectContaining({
+        runId: 'run-exhausted', status: 'observing',
+        reason: 'automatic resume budget exhausted; waiting for explicit Continue',
+      }),
+    ]);
+    expect(recover).not.toHaveBeenCalled();
     expect(await repository.get('run-exhausted')).toMatchObject({
       status: 'waiting',
       interruptCause: 'crash_or_quit', interrupt_cause: 'crash_or_quit',

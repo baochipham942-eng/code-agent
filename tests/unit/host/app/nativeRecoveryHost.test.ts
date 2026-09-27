@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { createApplicationNativeRecoveryPorts } from '../../../../src/host/app/nativeRecoveryHost';
 import type {
@@ -126,6 +128,12 @@ describe('application Native model continuation ports', () => {
     let messages = [
       { id: 'older', role: 'user', content: 'older', timestamp: 0 } as Message,
       sourceMessage(),
+      {
+        id: 'assistant-partial',
+        role: 'assistant',
+        content: '半截回答\n\n[连接中断 — 部分回答已保留]',
+        timestamp: 2,
+      } as Message,
     ];
     const checkpointDurable = vi.fn(async () => undefined);
     const updateMessage = vi.fn(async (_messageId: string, updates: Partial<Message>) => {
@@ -181,6 +189,70 @@ describe('application Native model continuation ports', () => {
       expect.objectContaining({ correlation: { turnId: 'turn-original' } }),
       'user-source',
     );
+  });
+
+  it('replays a dispatched model turn once and records the crashed usage as unknown', async () => {
+    const prepared = recoveryInput();
+    const input: NativeRecoveryOperationInput = {
+      ...prepared,
+      operation: {
+        ...prepared.operation,
+        status: 'dispatched',
+        providerOperationId: 'provider-original',
+      },
+      descriptor: { ...prepared.descriptor, phase: 'after_model_dispatch' },
+    };
+    let messages: Message[] = [sourceMessage()];
+    const recordModelRecoveryUsage = vi.fn();
+    const resumeExistingDurableRun = vi.fn(async (_sessionId: string, _runId: string, history: Message[]) => {
+      expect(history.map((message) => message.id)).toEqual(['user-source']);
+      messages = [...messages, {
+        id: 'assistant-recovered',
+        role: 'assistant',
+        content: '重新生成后的结果',
+        timestamp: 3,
+      }];
+    });
+    const ports = createApplicationNativeRecoveryPorts(
+      { checkpointDurable: vi.fn(async () => undefined) } as never,
+      {
+        sessions: {
+          getMessages: vi.fn(async () => messages),
+          updateMessage: vi.fn(async (messageId: string, updates: Partial<Message>) => {
+            messages = messages.map((message) => message.id === messageId
+              ? { ...message, ...updates }
+              : message);
+          }),
+        },
+        tasks: { resumeExistingDurableRun },
+        recordModelRecoveryUsage,
+        now: () => 20,
+      },
+    );
+
+    await expect(ports.model.dispatchPrepared(input)).resolves.toEqual({
+      resultRef: 'message-ledger:assistant-recovered',
+      loopResumed: true,
+    });
+    expect(recordModelRecoveryUsage).toHaveBeenCalledOnce();
+    expect(recordModelRecoveryUsage).toHaveBeenCalledWith({
+      sessionId: 'session-recovery',
+      provider: 'openai',
+      modelId: 'gpt-test',
+      inputTokens: 0,
+      outputTokens: 0,
+      usd: null,
+      source: 'unknown',
+      createdAt: 20,
+    });
+  });
+
+  it('keeps recovery copy from claiming both model attempts were billed', () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('../../../../src/host/app/nativeRecoveryHost.ts', import.meta.url)),
+      'utf8',
+    );
+    expect(source).not.toContain('两次都入账');
   });
 
   it('does not dispatch a second model call when the message ledger already has the result', async () => {

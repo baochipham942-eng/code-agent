@@ -504,6 +504,43 @@ describe('DurableRunKernel', () => {
     db.close();
   });
 
+  it('terminalizes an exhausted crash loop so the session can start a new run', async () => {
+    const { db, kernel, repository } = createKernel();
+    const capped = await kernel.createNativeRun({
+      runId: 'run-exhausted', sessionId: 'session-reusable', now: 10,
+    });
+    await kernel.checkpoint({
+      runId: capped.envelope.runId,
+      attempt: capped.attempt.attempt,
+      owner: capped.owner,
+      now: 20,
+      status: 'running',
+      state: { capped: true },
+      pendingOperations: [],
+      events: [{ type: 'run_checkpointed', payload: {}, recordedAt: 20 }],
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: MAX_AUTO_RESUME_COUNT,
+    });
+
+    expect(await new DurableRunKernel({
+      stores: repository,
+      ownerId: 'native-host',
+      processInstanceId: 'process-2',
+      leaseDurationMs: 100,
+    }).recoverOnStartup(2_000)).toEqual([]);
+    expect(await repository.get('run-exhausted')).toMatchObject({
+      status: 'failed',
+      terminal: { status: 'failed', reason: 'auto_resume_limit_reached' },
+      autoResumeCount: MAX_AUTO_RESUME_COUNT,
+    });
+
+    const next = await kernel.createNativeRun({
+      runId: 'run-after-exhausted', sessionId: 'session-reusable', now: 2_010,
+    });
+    expect(next.envelope.runId).toBe('run-after-exhausted');
+    db.close();
+  });
+
   it('serializes concurrent checkpoints on one run so none fence on stale cursor', async () => {
     const { db, kernel, repository } = createKernel();
     const created = await kernel.createNativeRun({

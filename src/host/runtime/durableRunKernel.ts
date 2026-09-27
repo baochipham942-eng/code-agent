@@ -349,6 +349,33 @@ export class DurableRunKernel implements RunKernelAdapter {
 
   async recoverOnStartup(now: number, limit = 100): Promise<RunRehydrationPlan[]> {
     const stores = this.requireStores();
+    const exhausted = stores.listAutoResumeExhausted
+      ? await stores.listAutoResumeExhausted(now, limit)
+      : [];
+    for (const envelope of exhausted) {
+      const claimed = await stores.claimLease({
+        runId: envelope.runId,
+        expectedEpoch: envelope.owner?.epoch ?? null,
+        ownerId: this.ownerId,
+        processInstanceId: this.processInstanceId,
+        now,
+        leaseDurationMs: this.leaseDurationMs,
+      });
+      if (!claimed) continue;
+      await this.terminal({
+        runId: envelope.runId,
+        attempt: claimed.attempt.attempt,
+        owner: claimed.owner,
+        now,
+        status: 'failed',
+        reason: 'auto_resume_limit_reached',
+        event: {
+          type: 'run_auto_resume_limit_reached',
+          payload: { autoResumeCount: claimed.envelope.autoResumeCount ?? 0 },
+          recordedAt: now,
+        },
+      });
+    }
     const recoverable = await stores.listRecoverable(now, limit);
     const plans: RunRehydrationPlan[] = [];
     for (const envelope of recoverable) {

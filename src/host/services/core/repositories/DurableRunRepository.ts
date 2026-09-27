@@ -179,9 +179,8 @@ export class DurableRunRepository implements DurableRunStores {
     const rows = this.db.prepare(`SELECT envelope_json FROM durable_runs
       WHERE status IN ('running','waiting','recovering') AND lease_expires_at <= ?
         AND (
-          json_extract(envelope_json, '$.interruptCause') IS NULL
-          OR json_extract(envelope_json, '$.interruptCause') = 'crash_or_quit'
-          OR json_extract(envelope_json, '$.interrupt_cause') = 'crash_or_quit'
+          COALESCE(json_extract(envelope_json, '$.interruptCause'), json_extract(envelope_json, '$.interrupt_cause')) IS NULL
+          OR COALESCE(json_extract(envelope_json, '$.interruptCause'), json_extract(envelope_json, '$.interrupt_cause')) = 'crash_or_quit'
         )
         AND (
           json_extract(envelope_json, '$.autoResumeCount') IS NULL
@@ -198,6 +197,15 @@ export class DurableRunRepository implements DurableRunStores {
         return (cause === undefined || cause === 'crash_or_quit')
           && (envelope.autoResumeCount ?? 0) < MAX_AUTO_RESUME_COUNT;
       });
+  }
+
+  async listAutoResumeExhausted(now: number, limit: number): Promise<RunEnvelope[]> {
+    const rows = this.db.prepare(`SELECT envelope_json FROM durable_runs
+      WHERE status IN ('running','waiting','recovering') AND lease_expires_at <= ?
+        AND COALESCE(json_extract(envelope_json, '$.interruptCause'), json_extract(envelope_json, '$.interrupt_cause')) = 'crash_or_quit'
+        AND CAST(COALESCE(json_extract(envelope_json, '$.autoResumeCount'), 0) AS INTEGER) >= ?
+      ORDER BY updated_at ASC LIMIT ?`).all(now, MAX_AUTO_RESUME_COUNT, limit) as Row[];
+    return rows.map(rowToEnvelope);
   }
 
   async claimLease(claim: RunLeaseClaim): Promise<RunLeaseClaimResult | null> {

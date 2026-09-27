@@ -64,6 +64,8 @@ export interface RunStore {
   getLatestBySession(sessionId: string): Promise<RunEnvelope | null>;
   getLatestActiveRootBySession(sessionId: string): Promise<RunEnvelope | null>;
   listRecoverable(now: number, limit: number): Promise<RunEnvelope[]>;
+  /** Lists expired crash candidates whose automatic resume budget is exhausted. */
+  listAutoResumeExhausted?(now: number, limit: number): Promise<RunEnvelope[]>;
   /** Claims the owner, increments attempt, and appends the attempt row in one transaction. */
   claimLease(claim: RunLeaseClaim): Promise<RunLeaseClaimResult | null>;
   /**

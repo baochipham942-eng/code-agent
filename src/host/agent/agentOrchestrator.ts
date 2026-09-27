@@ -1034,23 +1034,25 @@ export class AgentOrchestrator {
         : undefined,
       });
 
-      registeredRun = this.runRegistry && sessionId
-        ? options?.resumeExistingDurableRun
-          ? adoptExistingDurableRun(this.runRegistry, {
-              runId: nativeRunId,
-              sessionId,
-              workspace: runContext!.workspace,
-              workspaceScope,
-              cwd: runContext!.cwd,
-            })
-          : await startRunPreferringDurable(this.runRegistry, {
-            runId: nativeRunId,
-            sessionId,
-            workspace: runContext!.workspace,
-            workspaceScope,
-            cwd: runContext!.cwd,
-          }, options?.runRegistration, options?.parentRunId)
-        : undefined;
+      if (this.runRegistry && sessionId) {
+        const durableRunInput = {
+          runId: nativeRunId,
+          sessionId,
+          workspace: runContext!.workspace,
+          workspaceScope,
+          cwd: runContext!.cwd,
+        };
+        registeredRun = options?.resumeExistingDurableRun
+          ? adoptExistingDurableRun(this.runRegistry, durableRunInput)
+          : await startRunPreferringDurable(
+            this.runRegistry,
+            durableRunInput,
+            options?.runRegistration,
+            options?.parentRunId,
+          );
+      } else {
+        registeredRun = undefined;
+      }
       await registeredRun?.attach(this.agentLoop);
 
       logger.info('========== Starting agent loop ==========');

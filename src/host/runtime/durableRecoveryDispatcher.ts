@@ -116,7 +116,8 @@ export class DurableRecoveryDispatcher {
       // explicit MCP task recovery to its operation handler.
       if (engineResult
         && engineHandler?.engineKind === 'native'
-        && engineResult.status !== 'observing'
+        && engineResult.status === 'requires_review'
+        && engineResult.reason === 'unknown_write_side_effect'
         && operation.kind === 'tool_call') {
         continue;
       }

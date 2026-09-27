@@ -18,6 +18,7 @@ const dbState = vi.hoisted(() => ({
 const orchestratorMocks = vi.hoisted(() => ({
   configs: [] as Array<{ onEvent: (event: unknown) => Promise<void> }>,
   sendMessage: vi.fn(),
+  resumeExistingDurableRun: vi.fn(),
   interruptAndContinue: vi.fn(),
   cancel: vi.fn(),
   pause: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
       orchestratorMocks.configs.push(config);
     }
     sendMessage = (...args: unknown[]) => orchestratorMocks.sendMessage(...args);
+    resumeExistingDurableRun = (...args: unknown[]) => orchestratorMocks.resumeExistingDurableRun(...args);
     interruptAndContinue = (...args: unknown[]) => orchestratorMocks.interruptAndContinue(...args);
     cancel = () => orchestratorMocks.cancel();
     pause = () => orchestratorMocks.pause();
@@ -133,6 +135,41 @@ describe('TaskManager message event persistence', () => {
       messages[1],
       messages[3],
     ]);
+  });
+
+  it('filters auxiliary meta history before adopting a recovered run', async () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({
+      configService: {} as never,
+      runRegistry: {
+        hasDurableOwner: vi.fn(() => true),
+        get: vi.fn(() => undefined),
+      } as never,
+      onAgentEvent: vi.fn(),
+    });
+    const messages: Message[] = [
+      { id: 'older', role: 'user', content: 'older', timestamp: 1 },
+      { id: 'background-meta', role: 'user', content: 'child work', timestamp: 2, isMeta: true },
+      { id: 'resume-source', role: 'user', content: 'resume this', timestamp: 3 },
+    ];
+
+    await manager.resumeExistingDurableRun(
+      'session-resume',
+      'run-resume',
+      messages,
+      undefined,
+      undefined,
+      'resume-source',
+    );
+
+    expect(orchestratorMocks.setMessages).toHaveBeenCalledWith([messages[0], messages[2]]);
+    expect(orchestratorMocks.resumeExistingDurableRun).toHaveBeenCalledWith(
+      'resume this',
+      undefined,
+      expect.objectContaining({ runId: 'run-resume', resumeExistingDurableRun: true }),
+      undefined,
+      'resume-source',
+    );
   });
 
   it('does not clear an existing orchestrator when idle context hydration has no messages', () => {

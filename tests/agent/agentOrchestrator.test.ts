@@ -464,6 +464,9 @@ describe('AgentOrchestrator', () => {
         resolveSessionId: async () => 'return-session',
         generateId: () => 'user-message',
         applyHistoryVisibility: () => { throw new Error('after user ingress'); },
+        executeMessage: (AgentOrchestrator.prototype as unknown as {
+          executeMessage: (...args: unknown[]) => Promise<void>;
+        }).executeMessage,
       };
       const options = { mode: 'normal' as const, inputSource: 'user' as const };
       await expect(AgentOrchestrator.prototype.sendMessage.call(ingress as unknown as AgentOrchestrator,
@@ -548,6 +551,56 @@ describe('AgentOrchestrator', () => {
         expect.anything(),
       );
       expect(unregister).toHaveBeenCalledWith(expect.any(String), expect.anything());
+    });
+
+    it('recovered durable run leaves terminal ownership for the recovery kernel', async () => {
+      const terminalDurable = vi.fn(async () => undefined);
+      const handle = { attach: vi.fn(async () => undefined) };
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        adoptRecoveredRun: vi.fn(() => handle),
+        terminalDurable,
+        unregister: vi.fn(),
+      };
+      const durableOrchestrator = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      });
+      const run = durableOrchestrator as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: {
+            runId?: string;
+            resumeExistingDurableRun?: boolean;
+            runRegistration?: 'primary' | 'auxiliary';
+            disableAutoAgent?: boolean;
+          },
+        ) => Promise<void>;
+      };
+
+      await run.runNormalMode(
+        '恢复原模型调用',
+        () => undefined,
+        { provider: 'openai', model: 'gpt-4o' },
+        'session-recovered',
+        {
+          runId: 'run-recovered',
+          resumeExistingDurableRun: true,
+          disableAutoAgent: true,
+        },
+      );
+
+      expect(registry.adoptRecoveredRun).toHaveBeenCalledWith(expect.objectContaining({
+        runId: 'run-recovered',
+        sessionId: 'session-recovered',
+      }));
+      expect(terminalDurable).not.toHaveBeenCalled();
+      expect(registry.unregister).toHaveBeenCalledWith('run-recovered', handle);
     });
 
     it('用户取消（AgentLoop 正常 resolve + agent_cancelled 事件）→ durable 终态记 cancelled 而非 completed（ai-review Important）', async () => {

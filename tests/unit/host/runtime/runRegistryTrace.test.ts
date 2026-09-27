@@ -81,6 +81,16 @@ describe('RunRegistry attempt trace ownership', () => {
     expect(recovered.spanId).not.toBe(first.spanId);
     expect(recovered.attempt).toBe(2);
 
+    const adopted = registry.adoptRecoveredRun({
+      runId: staleHandle.context.runId,
+      sessionId: staleHandle.context.sessionId,
+      workspace: '/tmp/recovery-trace',
+    });
+    expect(adopted.context.runId).toBe(staleHandle.context.runId);
+    expect(adopted.context.sessionId).toBe(staleHandle.context.sessionId);
+    expect(registry.get(staleHandle.context.runId)).toBe(adopted);
+    expect(kernel.createNativeRun).toHaveBeenCalledOnce();
+
     await expect(registry.terminalDurable(staleHandle.context.runId, {
       now: 12_000,
       status: 'completed',

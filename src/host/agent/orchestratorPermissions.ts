@@ -532,6 +532,7 @@ export class OrchestratorPermissionIsland {
       const isDirectoryAccess = kind === 'directory_access';
       const payload: ToolApprovalPayload = {
         sessionId: fullRequest.sessionId ?? null,
+        ...(fullRequest.parentToolUseId ? { toolCallId: fullRequest.parentToolUseId } : {}),
         tool: fullRequest.tool,
         type: fullRequest.type,
         permissionLevel,

@@ -35,6 +35,13 @@ export interface NativeRecoveryResultEvidence {
   loopResumed?: boolean;
 }
 
+type NativeRecoveryApprovalStatus = 'pending' | 'approved' | 'rejected' | 'missing' | 'conflict';
+
+interface NativeRecoveryApprovalResolution {
+  status: NativeRecoveryApprovalStatus;
+  feedback?: string | null;
+}
+
 export interface NativeRecoveryHostPorts {
   /** Missing means the caller supplied a real recovery executor; production fallbacks must opt out explicitly. */
   continuationExecutor?: 'available' | 'unavailable';
@@ -67,7 +74,11 @@ export interface NativeRecoveryHostPorts {
   /** Re-enter the live loop after recovery has materialized every pending operation. */
   continueLoop?(input: NativeRecoveryOperationInput): Promise<void>;
   approval: {
-    read(approvalId: string): Promise<'pending' | 'approved' | 'rejected' | 'missing' | 'conflict'>;
+    read(approvalId: string): Promise<NativeRecoveryApprovalResolution | NativeRecoveryApprovalStatus>;
+    /** Execute an approved operation exactly once, after the recovery fence is durable. */
+    dispatchPrepared?(input: NativeRecoveryOperationInput): Promise<NativeRecoveryResultEvidence>;
+    /** Materialize a denial for the model so the existing run can continue its loop. */
+    reject?(input: NativeRecoveryOperationInput, feedback?: string | null): Promise<NativeRecoveryResultEvidence>;
   };
   compatibilitySink?: {
     commitResult(input: {
@@ -158,6 +169,7 @@ export class NativeRecoveryHost {
     let waitingForApproval = false;
     let loopResumed = false;
     let recoveredToolResult = false;
+    let recoveredApprovalResult = false;
     let lastAction = 'settle_native_operations';
     let lastResultRef: string | undefined;
 
@@ -179,7 +191,8 @@ export class NativeRecoveryHost {
             ? this.failUnrecoverable(plan, now, 'approval_identity_missing')
             : this.review(plan, now, 'approval_identity_missing');
         }
-        const approvalStatus = await this.ports.approval.read(approvalId);
+        const approvalResolution = normalizeApprovalResolution(await this.ports.approval.read(approvalId));
+        const approvalStatus = approvalResolution.status;
         if (approvalStatus === 'missing' || approvalStatus === 'conflict') {
           return this.ports.continuationExecutor === 'unavailable'
             ? this.failUnrecoverable(plan, now, 'approval_identity_missing')
@@ -190,6 +203,79 @@ export class NativeRecoveryHost {
             return this.failUnrecoverable(plan, now, 'approval_pending_no_recovery_resolution_path');
           }
           waitingForApproval = true;
+          continue;
+        }
+        if (approvalStatus === 'approved') {
+          if (!this.ports.approval.dispatchPrepared) {
+            return this.ports.continuationExecutor === 'unavailable'
+              ? this.failUnrecoverable(plan, now, 'approval_approved_continuation_requires_application_resume')
+              : this.review(plan, now, 'approval_approved_continuation_requires_application_resume');
+          }
+          const fencedOperations = pendingOperations.map((candidate) => (
+            candidate.operationId === operation.operationId
+              ? { ...candidate, status: 'dispatched' as const, updatedAt: now }
+              : candidate
+          ));
+          await this.registry.checkpointDurable(plan.envelope.runId, {
+            now,
+            status: 'running',
+            state: operationDescriptor,
+            engineCursor: plan.checkpoint?.cursor.engineCursor,
+            pendingOperations: fencedOperations,
+            childRuns: plan.childRuns,
+            events: [{
+              type: 'native_approval_recovery_dispatch_fenced',
+              payload: { operationId: operation.operationId, approvalId },
+              recordedAt: now,
+            }],
+          });
+          const settled = await this.ports.approval.dispatchPrepared({
+            ...input,
+            plan: {
+              ...plan,
+              envelope: { ...plan.envelope, pendingOperations: fencedOperations },
+              pendingOperations: fencedOperations,
+            },
+          });
+          await this.ports.compatibilitySink?.commitResult({
+            runId: plan.envelope.runId,
+            sessionId: plan.envelope.sessionId,
+            operationId: operation.operationId,
+            resultRef: settled.resultRef,
+          });
+          replacePendingOperation(pendingOperations, operation, {
+            status: 'succeeded',
+            resultRef: settled.resultRef,
+            updatedAt: now,
+          });
+          recoveredApprovalResult = true;
+          loopResumed ||= settled.loopResumed === true;
+          lastAction = 'execute_approved_operation_once';
+          lastResultRef = settled.resultRef;
+          continue;
+        }
+        if (approvalStatus === 'rejected') {
+          if (!this.ports.approval.reject) {
+            return this.ports.continuationExecutor === 'unavailable'
+              ? this.failUnrecoverable(plan, now, 'approval_rejection_feedback_unavailable')
+              : this.review(plan, now, 'approval_rejection_feedback_unavailable');
+          }
+          const settled = await this.ports.approval.reject(input, approvalResolution.feedback);
+          await this.ports.compatibilitySink?.commitResult({
+            runId: plan.envelope.runId,
+            sessionId: plan.envelope.sessionId,
+            operationId: operation.operationId,
+            resultRef: settled.resultRef,
+          });
+          replacePendingOperation(pendingOperations, operation, {
+            status: 'failed',
+            resultRef: settled.resultRef,
+            updatedAt: now,
+          });
+          recoveredApprovalResult = true;
+          loopResumed ||= settled.loopResumed === true;
+          lastAction = 'feed_approval_rejection_to_model';
+          lastResultRef = settled.resultRef;
           continue;
         }
         return this.ports.continuationExecutor === 'unavailable'
@@ -303,7 +389,7 @@ export class NativeRecoveryHost {
         },
       };
     }
-    if (!recoveredToolResult) {
+    if (!recoveredToolResult && !recoveredApprovalResult) {
       return this.review(
         plan,
         now,
@@ -464,6 +550,12 @@ export class NativeRecoveryHost {
 
 function isTerminalOperation(operation: PendingOperation): boolean {
   return operation.status === 'succeeded' || operation.status === 'failed' || operation.status === 'abandoned';
+}
+
+function normalizeApprovalResolution(
+  value: NativeRecoveryApprovalResolution | NativeRecoveryApprovalStatus,
+): NativeRecoveryApprovalResolution {
+  return typeof value === 'string' ? { status: value } : value;
 }
 
 function replacePendingOperation(

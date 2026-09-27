@@ -201,7 +201,7 @@ export class DurableRunRepository implements DurableRunStores {
 
   async listAutoResumeExhausted(now: number, limit: number): Promise<RunEnvelope[]> {
     const rows = this.db.prepare(`SELECT envelope_json FROM durable_runs
-      WHERE status IN ('running','waiting','recovering') AND lease_expires_at <= ?
+      WHERE status IN ('running','recovering') AND lease_expires_at <= ?
         AND COALESCE(json_extract(envelope_json, '$.interruptCause'), json_extract(envelope_json, '$.interrupt_cause')) = 'crash_or_quit'
         AND CAST(COALESCE(json_extract(envelope_json, '$.autoResumeCount'), 0) AS INTEGER) >= ?
       ORDER BY updated_at ASC LIMIT ?`).all(now, MAX_AUTO_RESUME_COUNT, limit) as Row[];

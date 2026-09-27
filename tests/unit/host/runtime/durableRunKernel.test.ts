@@ -462,12 +462,13 @@ describe('DurableRunKernel', () => {
       autoResumeCount: MAX_AUTO_RESUME_COUNT,
     });
 
-    const plans = await new DurableRunKernel({
+    const recoveredKernel = new DurableRunKernel({
       stores: repository,
       ownerId: 'native-host',
       processInstanceId: 'process-2',
       leaseDurationMs: 100,
-    }).recoverOnStartup(2_000, 1);
+    });
+    const plans = await recoveredKernel.recoverOnStartup(2_000, 1);
 
     expect(plans).toHaveLength(2);
     expect(plans.map((plan) => plan.envelope.runId)).toEqual(['run-capped', 'run-crash']);
@@ -480,6 +481,9 @@ describe('DurableRunKernel', () => {
       interruptCause: 'crash_or_quit', interrupt_cause: 'crash_or_quit',
       autoResumeCount: MAX_AUTO_RESUME_COUNT,
     });
+    const secondPlans = await recoveredKernel.recoverOnStartup(2_201);
+    expect(secondPlans.every((plan) => plan.envelope.runId !== 'run-capped')).toBe(true);
+    expect((await repository.get('run-capped'))?.attempt).toBe(2);
     db.close();
   });
 

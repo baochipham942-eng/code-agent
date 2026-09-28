@@ -92,10 +92,18 @@ for lease expiry, then starts a fresh process through the shared application
 rollout initializer. The new process claims the lease, dispatches recovery, and
 proves that the previous owner cannot append a checkpoint.
 
-The matrix contains 14 variants across nine core kill points. All release rows
-use handlers registered by `initializeDurableRun()` and
-`createDurableRecoveryRuntime()`; none supplies `recoveryHandlerOverrides`.
-Deterministic fakes replace provider, CLI, MCP, and Graph executor ports only.
+The matrix contains the original nine core kill points plus ADR-075 live-loop
+rows (`adr075-*`). Native safe recovery expects the run to stay `running` with
+the same `runId` attached to the loop (not one-step `completed`). Local unknown
+writes interrupt into history and continue; external irreversible MCP writes
+still park. The four `adr075-*` rows send a real `SIGKILL`, resume the same
+`runId`, and require a terminal `completed` with a final assistant answer.
+
+All release rows use handlers registered by `initializeDurableRun()` and
+`createDurableRecoveryRuntime()`. The `adr075-parallel-readonly` reverse
+mutation injects `recoveryHandlerOverrides` to close only the descriptor
+operation and must go red. Deterministic fakes replace provider, CLI, MCP, and
+Graph executor ports only. Local focused command: `npm run acceptance:restart-resume`.
 
 ## Runtime modes
 

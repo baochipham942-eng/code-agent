@@ -86,6 +86,7 @@
     "acceptance:agent-runtime-app-host": "npx tsx scripts/acceptance/agent-runtime-app-host-smoke.ts",
     "acceptance:terminal-shared-pty": "npx tsx scripts/acceptance/terminal-shared-pty-smoke.ts",
     "acceptance:durable-run-s9": "tsx scripts/acceptance/durable-run-kill-restart.ts",
+    "acceptance:restart-resume": "tsx scripts/acceptance/durable-run-kill-restart.ts --only adr075",
     "acceptance:bgspawn-durable": "tsx scripts/acceptance/background-subagent-kill-restart.ts",
     "acceptance:loop-durable": "tsx scripts/acceptance/loop-durable-kill-restart.ts",
     "acceptance:agent-engine-selector": "npx tsx scripts/acceptance/agent-engine-selector-smoke.ts",

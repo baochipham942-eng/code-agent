@@ -13,7 +13,7 @@ import type { RunInterruptCause } from './durableRun';
  */
 export type SessionStatus = 'idle' | 'running' | 'queued' | 'paused' | 'cancelling' | 'completed' | 'error' | 'interrupted' | 'orphaned' | 'archived';
 
-export type DurableResumeMode = 'auto-resuming' | 'continue';
+type DurableResumeMode = 'auto-resuming' | 'continue';
 
 /** User-facing projection of a non-terminal durable run that can resume or is resuming. */
 export interface DurableResumeState {

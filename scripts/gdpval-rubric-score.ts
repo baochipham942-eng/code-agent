@@ -139,7 +139,7 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
   };
   try {
     bytes = fs.statSync(absPath).size;
-    if (bytes === 0) return { path: relPath, bytes, text: '[空文件：0 字节]' };
+    if (bytes === 0) return { path: relPath, bytes, text: '[空文件：0 字节。这是产物本身为空，不是资料没给全：凡需要看它内容的判据一律判 false]' };
     if (TEXT_EXT.has(ext)) return { path: relPath, bytes, text: clip(fs.readFileSync(absPath, 'utf8')) };
     if (ext === '.xlsx' || ext === '.xls' || ext === '.xlsm') {
       const workbook = XLSX.read(fs.readFileSync(absPath), { type: 'buffer' });
@@ -180,7 +180,7 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
       if (run.error) return unseen(relPath, bytes, `pdftotext 不可用 ${run.error.message}`);
       if (run.stdout.trim()) return { path: relPath, bytes, text: clip(run.stdout) };
       // 打不开的 PDF 是产物本身坏了，要让模型看见并判负；弃权会把坏交付抬成高分。
-      if (run.status !== 0) return { path: relPath, bytes, text: `[此 PDF 文件损坏、无法打开：${run.stderr.trim().slice(0, 200)}]` };
+      if (run.status !== 0) return { path: relPath, bytes, text: `[此 PDF 文件损坏、无法打开（${run.stderr.trim().slice(0, 160)}）。这是产物本身不可用，不是资料没给全：凡需要看它内容的判据一律判 false]` };
       // 能打开但没有文字层（扫描件/纯图片）：给占位，空串会被当成「PDF 里什么都没写」判负。
       return unseen(relPath, bytes, 'PDF 无文字层（疑似扫描件或纯图片）');
     }

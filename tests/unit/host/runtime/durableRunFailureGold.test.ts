@@ -50,7 +50,11 @@ describe('Durable Run kill/restart acceptance inventory', () => {
   it('covers the ADR-075 live-loop kill-9 scenarios through completed on the same runId', () => {
     const live = DURABLE_RUN_KILL_RESTART_SCENARIOS.filter((scenario) => scenario.liveLoop);
     expect(live.map((scenario) => scenario.coreId)).toEqual([...ADR075_LIVE_LOOP_CORE_IDS]);
-    expect(live.every((scenario) => scenario.expectedOutcome === 'completed')).toBe(true);
+    // 单次崩溃的 live-loop 场景必须跑到 completed；连续崩溃场景按 ADR-075 ③.2 在第三次停靠等「继续」。
+    const singleCrash = live.filter((scenario) => !scenario.repeatedCrash);
+    expect(singleCrash.every((scenario) => scenario.expectedOutcome === 'completed')).toBe(true);
+    expect(live.filter((scenario) => scenario.repeatedCrash).map((scenario) => [scenario.coreId, scenario.expectedOutcome]))
+      .toEqual([['adr075-repeated-crash', 'waiting']]);
     expect(live.every((scenario) => scenario.engine.kind === 'native')).toBe(true);
   });
 });

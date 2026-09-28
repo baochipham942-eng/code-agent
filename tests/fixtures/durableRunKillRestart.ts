@@ -5,7 +5,8 @@ export type DurableRunExpectedOutcome =
   | 'observing'
   | 'running'
   | 'waiting_review'
-  | 'waiting_approval';
+  | 'waiting_approval'
+  | 'waiting';
 
 export type DurableRunKillRestartCoreId =
   | 'before-model-dispatch'
@@ -20,7 +21,8 @@ export type DurableRunKillRestartCoreId =
   | 'adr075-model-streaming'
   | 'adr075-bash-executing'
   | 'adr075-readonly-tool'
-  | 'adr075-parallel-readonly';
+  | 'adr075-parallel-readonly'
+  | 'adr075-repeated-crash';
 
 export interface DurableRunKillRestartScenario {
   id: string;
@@ -36,6 +38,8 @@ export interface DurableRunKillRestartScenario {
   requiresReviewReason?: string;
   /** ADR-075 ④ live-loop E2E: recovery must attach the same runId and finish. */
   liveLoop?: boolean;
+  /** ADR-075 ③.2: kill the same native run three times; the third parks for Continue. */
+  repeatedCrash?: boolean;
 }
 
 export const ADR075_S9_CORE_IDS = [
@@ -55,6 +59,7 @@ export const ADR075_LIVE_LOOP_CORE_IDS = [
   'adr075-bash-executing',
   'adr075-readonly-tool',
   'adr075-parallel-readonly',
+  'adr075-repeated-crash',
 ] as const;
 
 /** Real child-process acceptance matrix. Variants cover both safe and uncertain recovery branches. */
@@ -180,5 +185,11 @@ export const DURABLE_RUN_KILL_RESTART_SCENARIOS: readonly DurableRunKillRestartS
     engine: { kind: 'native' }, operationKind: 'tool_call', operationStatus: 'dispatched', sideEffect: false,
     providerOperationId: 'exec-read-b',
     expectedOutcome: 'completed', expectedRecoveryAction: 'resume_live_loop',
+  },
+  {
+    id: 'adr075-repeated-crash', coreId: 'adr075-repeated-crash', liveLoop: true, repeatedCrash: true,
+    killPoint: 'same native model stream killed three times across successive recoveries',
+    engine: { kind: 'native' }, operationKind: 'model_call', operationStatus: 'dispatched', sideEffect: false,
+    expectedOutcome: 'waiting', expectedRecoveryAction: 'automatic resume budget exhausted; waiting for explicit Continue',
   },
 ] as const;

@@ -67,6 +67,7 @@ interface ScenarioResult {
   finalStatus?: string;
   finalAnswer?: string | null;
   mutation?: string | null;
+  interruptCause?: string | null;
 }
 
 const startedAt = Date.now();
@@ -84,6 +85,10 @@ try {
   for (const scenario of selectedScenarios) {
     const scenarioDir = path.join(tempRoot, scenario.id);
     await mkdir(scenarioDir, { recursive: true });
+    if (scenario.repeatedCrash) {
+      results.push(await runRepeatedCrash(scenario.id, scenarioDir));
+      continue;
+    }
     const preparer = startChild(['prepare', scenario.id, scenarioDir]);
     await waitForMarker(preparer, 'ready');
     await forceKill(preparer);
@@ -107,6 +112,8 @@ try {
     : await runReverseMutations(tempRoot);
   const testedSha = git(['rev-parse', 'HEAD']);
   const liveLoopResults = results.filter((result) => result.scenarioId.startsWith('adr075-'));
+  const completedLoopResults = liveLoopResults.filter((result) => result.scenarioId !== 'adr075-repeated-crash');
+  const repeatedCrash = results.find((result) => result.scenarioId === 'adr075-repeated-crash');
   const report = {
     schemaVersion: 1,
     baselineSha: BASELINE_SHA,
@@ -137,8 +144,16 @@ try {
       productionExecutorRecovery: results.every((result) => result.productionRecoveryPath),
       productionReadPreferenceWiring: readPreferenceRoundTrip.pass,
       sameRunIdResumed: liveLoopResults.every((result) => result.sameRunId === true),
-      liveLoopCompleted: liveLoopResults.every((result) => result.finalStatus === 'completed' && result.terminalCount === 1),
-      autoResumeCounted: liveLoopResults.every((result) => result.autoResumeCount === 1),
+      liveLoopCompleted: completedLoopResults.every((result) => result.finalStatus === 'completed' && result.terminalCount === 1),
+      autoResumeCounted: completedLoopResults.every((result) => result.autoResumeCount === 1),
+      repeatedCrashParked: !repeatedCrash || (
+        repeatedCrash.finalStatus === 'waiting'
+        && repeatedCrash.autoResumeCount === 2
+        && repeatedCrash.interruptCause === 'crash_or_quit'
+        && repeatedCrash.sameRunId === true
+        && (repeatedCrash.startTaskCount ?? 0) === 0
+        && repeatedCrash.terminalCount === 0
+      ),
       noRegenerateStartTask: results.every((result) => (result.startTaskCount ?? 0) === 0),
       reverseMutationsCaught: reverseMutations.every((entry) => entry.caught),
     },
@@ -190,6 +205,24 @@ function runReverseMutations(tempRoot: string): Array<{
     const summary = lines.find((line) => line.startsWith('{')) ?? lines.at(-1) ?? '';
     return { mutation: name, caught: result.status === 0, exitCode: result.status, summary: summary.slice(0, 800) };
   });
+}
+
+async function runRepeatedCrash(scenarioId: string, scenarioDir: string): Promise<ScenarioResult> {
+  const preparer = startChild(['prepare', scenarioId, scenarioDir]);
+  await waitForMarker(preparer, 'ready');
+  await forceKill(preparer);
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  for (let restart = 0; restart < 2; restart += 1) {
+    const recoverer = startChild(['recover', scenarioId, scenarioDir]);
+    await waitForMarker(recoverer, 'resumed');
+    await forceKill(recoverer);
+    await new Promise((resolve) => setTimeout(resolve, 900));
+  }
+  const parked = startChild(['recover', scenarioId, scenarioDir]);
+  const result = await waitForMarker(parked, 'result') as unknown as ScenarioResult;
+  const exitCode = await waitForExit(parked);
+  if (exitCode !== 0) throw new Error(`${scenarioId} parked recovery child exited ${exitCode}`);
+  return result;
 }
 
 function startChild(args: string[]): ChildProcessByStdio<null, Readable, Readable> {

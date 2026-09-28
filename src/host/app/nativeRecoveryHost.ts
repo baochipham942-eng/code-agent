@@ -223,10 +223,12 @@ async function checkpointModelDispatchFence(
     operation.operationId === input.operation.operationId
       ? {
           ...operation,
-          // Crossing into the live AgentLoop makes the provider outcome unknowable if
-          // this process dies. Persist unknown before dispatch so recovery reviews it
-          // instead of charging for an unprovable second request.
-          status: 'unknown' as const,
+          // The resumed live loop owns this turn from here. Settle the fenced
+          // operation before entering the loop; otherwise a later crash leaves
+          // it `unknown` and recoverOperation parks for review (ADR-075 ③.2
+          // would then never reach the 3rd crash Continue path).
+          status: 'abandoned' as const,
+          resultRef: `model-recovery:superseded-by-live-loop:${operation.operationId}`,
           updatedAt: now,
         }
       : operation
@@ -244,6 +246,7 @@ async function checkpointModelDispatchFence(
       type: 'native_model_recovery_dispatch_fenced',
       payload: {
         operationId: input.operation.operationId,
+        supersededBy: 'native_live_loop',
         ...(input.operation.status === 'dispatched' ? { usageStatus: 'unknown' as const } : {}),
       },
       recordedAt: now,

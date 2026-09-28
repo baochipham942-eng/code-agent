@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -133,11 +133,60 @@ export async function prepareAdr075(
   return { runId, oldOwnerEpoch: created.owner.epoch };
 }
 
+async function attachAdr075LiveLoopReplacement(
+  registry: RunRegistry,
+  runId: string,
+  state: Adr075PersistedState,
+  now: number,
+): Promise<PendingOperation> {
+  const envelope = registry.getDurableEnvelope(runId);
+  if (!envelope) throw new Error(`adr075 live loop replacement missing envelope ${runId}`);
+  const operationId = `model:live-loop-${now}`;
+  const replacement: PendingOperation = {
+    runId,
+    operationId,
+    attempt: envelope.attempt,
+    kind: 'model_call',
+    status: 'dispatched',
+    idempotencyKey: `idem-${operationId}`,
+    sideEffect: false,
+    preparedAt: now,
+    updatedAt: now,
+  };
+  const descriptor: NativeRecoveryDescriptor = {
+    schemaVersion: 1,
+    kind: 'native',
+    sourceMessageId: state.sourceMessageId,
+    provider: 'scripted',
+    model: 'scripted-model',
+    workspace: state.workspace,
+    logicalOperationId: operationId.replace(/^model:/, ''),
+    operationId,
+    phase: 'after_model_dispatch',
+    checkpointSequence: envelope.cursor.checkpointSeq + 1,
+  };
+  await registry.checkpointDurable(runId, {
+    now,
+    status: 'running',
+    state: descriptor,
+    engineCursor: { schemaVersion: 1, runtime: 'native', operationId, phase: 'after_model_dispatch' },
+    pendingOperations: [...(envelope.pendingOperations ?? []), replacement],
+    childRuns: envelope.childRuns,
+    events: [{
+      type: 'adr075_live_loop_replacement_op',
+      payload: { operationId, runId },
+      recordedAt: now,
+    }],
+  });
+  return replacement;
+}
+
 export async function createAdr075RecoveryPorts(input: {
   selected: DurableRunKillRestartScenario;
   dataDir: string;
   registry: RunRegistry;
   mutation: Adr075Mutation | undefined;
+  hangLiveLoop?: boolean;
 }): Promise<{
   ports: NativeRecoveryHostPorts;
   handlerOverride?: DurableEngineRecoveryHandler;
@@ -174,6 +223,52 @@ export async function createAdr075RecoveryPorts(input: {
     await saveMessages([...messages, message]);
     return `message-ledger:${message.id}`;
   };
+  if (input.hangLiveLoop) {
+    const { createApplicationNativeRecoveryPorts } = await import('../../../src/host/app/nativeRecoveryHost');
+    const ports = createApplicationNativeRecoveryPorts(input.registry, {
+      sessions: {
+        getMessages: loadMessages,
+        updateMessage: async (messageId, updates) => {
+          const messages = await loadMessages();
+          await saveMessages(messages.map((message) => (
+            message.id === messageId ? { ...message, ...updates } : message
+          )));
+        },
+      },
+      tasks: {
+        resumeExistingDurableRun: async (_sessionId, runId) => {
+          await bump({ resumeCount: 1, loopAttached: 1, modelDispatches: 1 });
+          await attachAdr075LiveLoopReplacement(input.registry, runId, state, Date.now());
+          const envelope = input.registry.getDurableEnvelope(runId);
+          process.stdout.write(`${JSON.stringify({
+            marker: 'resumed',
+            scenarioId: input.selected.id,
+            runId,
+            autoResumeCount: envelope?.autoResumeCount ?? 0,
+            attempt: envelope?.attempt ?? 0,
+          })}\n`);
+          await new Promise<never>(() => setInterval(() => undefined, 1_000));
+        },
+      },
+      recordModelRecoveryUsage: () => {
+        const ledger = JSON.parse(readFileSync(usageLedgerPath(input.dataDir), 'utf8')) as { entries: unknown[] };
+        ledger.entries.push({
+          sessionId: state.sessionId,
+          source: 'unknown',
+          inputTokens: 0,
+          outputTokens: 0,
+          recordedAt: Date.now(),
+        });
+        writeFileSync(usageLedgerPath(input.dataDir), JSON.stringify(ledger));
+      },
+      now: () => Date.now(),
+    });
+    return {
+      ports,
+      counters: async () => JSON.parse(await readFile(countersPath(input.dataDir), 'utf8')) as Adr075Counters,
+    };
+  }
+
   const resumeLiveLoop = async (history: Message[], sliced: boolean): Promise<NativeRecoveryResultEvidence> => {
     if (sliced || input.mutation === 'regenerate') {
       await bump({ startTaskCount: 1 });
@@ -414,7 +509,7 @@ function buildKillPoint(
     timestamp: input.now,
     metadata: { correlation: { turnId: selected.coreId } },
   };
-  if (selected.coreId === 'adr075-model-streaming') {
+  if (selected.coreId === 'adr075-model-streaming' || selected.coreId === 'adr075-repeated-crash') {
     const operation = nativeOperation(input.runId, 'model:turn-1', 'model_call', false, input.now);
     const descriptor = nativeDescriptor({
       sourceMessageId: input.sourceMessageId,

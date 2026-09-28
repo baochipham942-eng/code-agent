@@ -409,7 +409,10 @@ describe('durable Native recovery lifecycle', () => {
     if (isModelRecovery) {
       expect(registry.checkpointDurable).toHaveBeenCalledWith('run-review', expect.objectContaining({
         status: 'running',
-        pendingOperations: [expect.objectContaining({ status: 'unknown' })],
+        pendingOperations: [expect.objectContaining({
+          status: 'abandoned',
+          resultRef: 'model-recovery:superseded-by-live-loop:model:review',
+        })],
       }));
     } else {
       expect(registry.checkpointDurable).toHaveBeenCalledWith('run-review', expect.objectContaining({

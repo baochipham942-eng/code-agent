@@ -4,7 +4,13 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { GraphEvent } from '../../../src/host/orchestration/graphEvents';
-import type { PendingOperation, RunOwnerLease } from '../../../src/shared/contract/durableRun';
+import {
+  getRunInterruptCause,
+  MAX_AUTO_RESUME_COUNT,
+  type PendingOperation,
+  type RunOwnerLease,
+} from '../../../src/shared/contract/durableRun';
+import type { DurableRunApplicationRuntime } from '../../../src/host/app/initializeDurableRun';
 import type { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import type { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 import type { DurableRunKillRestartScenario } from '../../fixtures/durableRunKillRestart';
@@ -281,15 +287,106 @@ async function prepareAndWait(selected: DurableRunKillRestartScenario): Promise<
   throw new Error('unreachable');
 }
 
+async function emitAdr075RepeatedCrashOutcome(
+  selected: DurableRunKillRestartScenario,
+  runtime: DurableRunApplicationRuntime,
+  loadAdr075Counters: () => Promise<{
+    startTaskCount: number;
+    resumeCount: number;
+    loopAttached: number;
+    bashExecutions: number;
+    sideEffectWrites: number;
+    modelDispatches: number;
+    toolInterrupts: number;
+  }>,
+): Promise<void> {
+  const persisted = JSON.parse(await readFile(path.join(dataDir, 'adr075-state.json'), 'utf8')) as {
+    runId: string;
+    oldOwner: RunOwnerLease;
+  };
+  const runId = persisted.runId;
+  const envelope = await repository.get(runId);
+  if (!envelope) throw new Error('recovered envelope missing');
+  const queued = runtime.recoveryResults.some((result) => result.reason === 'auto_resume_queued');
+  const parked = envelope.status === 'waiting'
+    && (envelope.autoResumeCount ?? 0) >= MAX_AUTO_RESUME_COUNT
+    && runtime.recoveryResults.some((result) => result.reason.includes('explicit Continue'));
+  if (queued && !parked) {
+    await new Promise<never>(() => setInterval(() => undefined, 1_000));
+  }
+
+  let staleWriteRejected = false;
+  if (runtime.kernel) {
+    try {
+      await runtime.kernel.checkpoint({
+        runId: envelope.runId,
+        attempt: 1,
+        owner: persisted.oldOwner,
+        now: Date.now(),
+        status: 'running',
+        state: envelope,
+        pendingOperations: envelope.pendingOperations ?? [],
+        childRuns: envelope.childRuns,
+        events: [{ type: 'stale_write', payload: null, recordedAt: Date.now() }],
+      });
+    } catch {
+      staleWriteRejected = true;
+    }
+  }
+  const events = await repository.read(envelope.runId, 0, 1_000);
+  const attempts = db.prepare('SELECT attempt, owner_epoch, process_instance_id, status FROM durable_run_attempts WHERE run_id = ? ORDER BY attempt')
+    .all(envelope.runId) as Array<{ attempt: number; owner_epoch: number; process_instance_id: string; status: string }>;
+  const adrCounters = await loadAdr075Counters();
+  const terminalCount = envelope.terminal ? 1 : 0;
+  const eventSequences = events.map((event) => event.seq);
+  const monotonic = eventSequences.every((value, index) => index === 0 || value > eventSequences[index - 1]!);
+  const interruptCause = getRunInterruptCause(envelope) ?? null;
+  const engineResult = runtime.recoveryResults.find((result) => result.handler === 'native_production' || result.reason.includes('explicit Continue'));
+  const pass = parked
+    && envelope.status === 'waiting'
+    && interruptCause === 'crash_or_quit'
+    && (envelope.autoResumeCount ?? 0) === MAX_AUTO_RESUME_COUNT
+    && envelope.runId === persisted.runId
+    && adrCounters.startTaskCount === 0
+    && attempts.length >= 4
+    && attempts[0]!.process_instance_id !== attempts.at(-1)!.process_instance_id
+    && staleWriteRejected
+    && monotonic
+    && terminalCount === 0;
+  marker({
+    marker: 'result', scenarioId: selected.id, coreId: selected.coreId, pass,
+    recoveryAction: engineResult?.reason ?? selected.expectedRecoveryAction,
+    oldOwnerEpoch: attempts[0]?.owner_epoch ?? 0, newOwnerEpoch: attempts.at(-1)?.owner_epoch ?? 0,
+    attempt: envelope.attempt, terminalCount, duplicateSideEffectCount: adrCounters.sideEffectWrites,
+    requiresReviewReason: null, rolloutMode: 'durable_preferred', staleWriteRejected,
+    eventSequenceMonotonic: monotonic, completedNodesReexecuted: 0,
+    operationKeyStable: true, identityLinked: envelope.runId === persisted.runId,
+    oldProcessInstanceId: attempts[0]?.process_instance_id ?? '',
+    newProcessInstanceId: attempts.at(-1)?.process_instance_id ?? '',
+    recoveredByPid: process.pid, counters: { ...adrCounters, outputCommits: 0, approvalCards: 0, childSchedules: 0, completedNodeExecutions: 0, recoveredNodeExecutions: 0, fakeCliResumes: 0 },
+    dispatchResults: runtime.recoveryResults, productionRecoveryPath: true,
+    runId: envelope.runId, sameRunId: envelope.runId === persisted.runId,
+    loopAttached: adrCounters.loopAttached >= 1, autoResumeCount: envelope.autoResumeCount ?? 0,
+    startTaskCount: adrCounters.startTaskCount, resumeCount: adrCounters.resumeCount,
+    bashExecutions: adrCounters.bashExecutions, toolMessageCount: 0,
+    honestPartialKept: true, usageUnknown: true,
+    finalStatus: envelope.status, finalAnswer: null, mutation: null,
+    interruptCause,
+  });
+  await runtime.shutdown();
+  db.close();
+}
+
 async function recoverAdr075AndExit(selected: DurableRunKillRestartScenario): Promise<void> {
   const mutation = parseAdr075Mutation(process.env.CODE_AGENT_ADR075_MUTATE);
+  const hangLiveLoop = selected.repeatedCrash === true;
   const [{ initializeDurableRun }, { RunRegistry }] = await Promise.all([
     import('../../../src/host/app/initializeDurableRun'),
     import('../../../src/host/runtime/runRegistry'),
   ]);
   const registry = new RunRegistry();
   const { ports, handlerOverride, counters: loadAdr075Counters } = await createAdr075RecoveryPorts({
-    selected, dataDir, registry, mutation,
+    selected, dataDir, registry, mutation, hangLiveLoop,
   });
   let backgroundResults: Array<{ reason: string; handler: string; status: string }> | undefined;
   let resolveBackground: ((value: typeof backgroundResults) => void) | undefined;
@@ -303,7 +400,7 @@ async function recoverAdr075AndExit(selected: DurableRunKillRestartScenario): Pr
     ownerId: 'new-owner',
     processInstanceId: `new-process-${process.pid}`,
     env: { CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' },
-    leaseDurationMs: 2_000,
+    leaseDurationMs: hangLiveLoop ? 400 : 2_000,
     now: Date.now(),
     nativeRecoveryPorts: ports,
     ...(handlerOverride ? { recoveryHandlerOverrides: { native: handlerOverride } } : {}),
@@ -314,6 +411,10 @@ async function recoverAdr075AndExit(selected: DurableRunKillRestartScenario): Pr
       resolveBackground?.(backgroundResults);
     },
   });
+  if (hangLiveLoop) {
+    await emitAdr075RepeatedCrashOutcome(selected, runtime, loadAdr075Counters);
+    return;
+  }
   if (runtime.recoveryResults.some((result) => result.reason === 'auto_resume_queued')) {
     await Promise.race([
       backgroundSettled,

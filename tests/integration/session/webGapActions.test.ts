@@ -71,6 +71,7 @@ import { installDomainRoutes } from '../../../src/host/ipc/domainRoutes/registry
 import { defineSessionRoutes } from '../../../src/host/ipc/domainRoutes/sessionRoutes';
 import { createWebSessionContext } from '../../../src/web/sessionDomainHandler';
 import type { HandlerFn } from '../../../src/host/platform';
+import type { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
 
 const SID = 'session-web-gap-actions-proof';
 const NEEDLE = 'webgap-needle-content';
@@ -82,7 +83,10 @@ type DomainResponse = {
 };
 
 /** 与 webServer 生产装配同构：单源表 web 形态 + web context，返回 domain:session handler */
-function installWebDomainHandler(dbAvailable: boolean): HandlerFn {
+function installWebDomainHandler(
+  dbAvailable: boolean,
+  durableRunReadService?: DurableRunReadService,
+): HandlerFn {
   const handlers = new Map<string, HandlerFn>();
   installDomainRoutes(
     { handle: (channel, handler) => { handlers.set(channel, handler); } },
@@ -92,7 +96,7 @@ function installWebDomainHandler(dbAvailable: boolean): HandlerFn {
       hasActiveRun: () => false,
       getCurrentSessionId: () => null,
       setCurrentSessionId: () => {},
-      getDurableRunReadService: () => undefined,
+      getDurableRunReadService: () => durableRunReadService,
     }),
   );
   const handler = handlers.get('domain:session');
@@ -239,5 +243,46 @@ describe('web 形态 session 域 5 个补齐 action（刀 3）', () => {
         error: { code: 'SERVICE_UNAVAILABLE', message: 'SessionManager not available' },
       });
     }
+  });
+
+  it('projects a parked Continue run through both list and load', async () => {
+    const durableRunReadService = {
+      readSessionReplay: vi.fn(async () => ({
+        source: 'durable' as const,
+        consumer: 'session_replay' as const,
+        runId: 'parked-web-domain',
+        sessionId: SID,
+        status: 'waiting' as const,
+        engine: { kind: 'native' as const },
+        terminal: false,
+        interruptCause: 'user_stop' as const,
+        autoResumeCount: 0,
+        continuable: true,
+      })),
+    } as unknown as DurableRunReadService;
+    invoke = installWebDomainHandler(true, durableRunReadService);
+
+    const list = await invoke(null, {
+      action: 'list',
+      payload: { includeArchived: false },
+    }) as DomainResponse;
+    expect(list.success).toBe(true);
+    expect((list.data as Array<{ id: string; durableResume?: unknown }>)
+      .find((session) => session.id === SID)?.durableResume).toMatchObject({
+        mode: 'continue',
+        canContinue: true,
+        interruptCause: 'user_stop',
+      });
+
+    const load = await invoke(null, {
+      action: 'load',
+      payload: { sessionId: SID },
+    }) as DomainResponse;
+    expect(load.success).toBe(true);
+    expect((load.data as { durableResume?: unknown }).durableResume).toMatchObject({
+      mode: 'continue',
+      canContinue: true,
+      interruptCause: 'user_stop',
+    });
   });
 });

@@ -16,7 +16,8 @@
 //                 （runRegistry 状态源 + 写后失效；桌面 appService 版的 taskManager 状态源不再走）
 //   fork        → 归属 web（SessionForkService 直构，runRegistry 状态源；appService 版的
 //                 fork 后 context 投影不在 web 生产行为内）
-//   list / update → 基座归属 web（sm 直调：list 无 durable 投影、update 无 engine 门）
+//   list / load / update → 基座归属 web（sm 直调；list/load 由 web context 复用
+//                 REST 同款 durable replay projection，update 无 engine 门）
 //   写后失效    → 归属 web（invalidateAfterWrite hook：invalidateSessionCache + messages projection）
 //   import / search / exportMarkdown / exportDiagnostics / getMemoryContext →
 //                 刀 2 曾以 INVALID_ACTION 桩占位（原 web handler 就没有这 5 个 case），
@@ -116,9 +117,9 @@ export interface SessionCommandContext {
   /** 纯 host 构造 action（fork/rewind 家族、getRecap、recoverHistory）的 backend 门 */
   ensureBackend(): Promise<void>;
   // —— 1.2 drift 表逐项拍板后的显式差异面（归属见文件头） ——
-  /** web: sm.listSessions 直调（无 durable 投影）；桌面: appService.listSessions */
+  /** web: sm.listSessions + durable replay projection；桌面: appService.listSessions */
   listSessions(options?: SessionListQueryOptions): Promise<Session[]>;
-  /** web: sm.restoreSession（null 透传不抛）；桌面: appService.loadSession（缺失抛错） */
+  /** web: sm.restoreSession + durable replay projection（null 透传不抛）；桌面: appService.loadSession（缺失抛错） */
   loadSession(sessionId: string): Promise<Session | null>;
   /** web: 挂 streamSnapshot + activeRun（runtime-only，不进 DB）；桌面: no-op */
   decorateLoadedSession(session: Session): Promise<void>;

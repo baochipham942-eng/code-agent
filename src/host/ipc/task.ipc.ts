@@ -144,6 +144,10 @@ function ensureTaskEventBridge(taskManager: TaskManager): void {
           sessionId: event.sessionId,
           data: handleGetState(taskManager, { sessionId: event.sessionId }),
         });
+        // Durable recovery and an in-process Stop can change the replay
+        // projection without changing the persisted session row. Refresh the
+        // session list so renderer list/load reads observe those transitions.
+        broadcastToRenderer(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
         break;
 
       case 'queue_update':

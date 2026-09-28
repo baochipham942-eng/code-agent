@@ -26,6 +26,7 @@ import {
   type SessionCommandService,
 } from '../host/ipc/domainRoutes/sessionRoutes';
 import { invalidateSessionMessagesProjection } from './helpers/webSessionStore';
+import { withDurableSessionReplayPayload } from './helpers/durableSessionPayload';
 
 export interface WebSessionContextDependencies {
   getDbAvailable: () => boolean;
@@ -86,12 +87,21 @@ export function createWebSessionContext(deps: WebSessionContextDependencies): Se
       await requireSessionBackend(deps);
     },
 
-    // —— sm 直调四动作（1.2 drift 表拍板归属 web；桌面实现是 AppService 直连语义） ——
-    listSessions: (options?: SessionListQueryOptions) =>
-      resolveSessionManager(deps).then((sm) => sm.listSessions(options)),
+    // —— session rows use the same durable replay projection as REST and desktop ——
+    listSessions: async (options?: SessionListQueryOptions) => {
+      const sessions = await (await resolveSessionManager(deps)).listSessions(options);
+      return Promise.all(sessions.map((session) => withDurableSessionReplayPayload(
+        session,
+        deps.getDurableRunReadService(),
+      ))) as Promise<Session[]>;
+    },
 
-    loadSession: (sessionId: string) =>
-      resolveSessionManager(deps).then((sm) => sm.restoreSession(sessionId)),
+    loadSession: async (sessionId: string) => {
+      const session = await (await resolveSessionManager(deps)).restoreSession(sessionId);
+      return session
+        ? withDurableSessionReplayPayload(session, deps.getDurableRunReadService())
+        : null;
+    },
 
     deleteSession: (sessionId: string) =>
       resolveSessionManager(deps).then((sm) => sm.deleteSession(sessionId)),

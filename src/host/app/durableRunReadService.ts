@@ -159,7 +159,14 @@ function projectDurableResumeState(view: DurableRunView): DurableResumeState | u
   if (view.source !== 'durable' || view.terminal || !view.runId || !view.interruptCause
     || view.engine?.kind === 'external_cli') return undefined;
   const autoResumeCount = view.autoResumeCount ?? 0;
-  if (view.status === 'recovering' && view.interruptCause === 'crash_or_quit') {
+  // A recovery attempt becomes `running` as soon as the engine loop starts.
+  // Keep the single resume signal for that whole turn, using durable facts
+  // rather than the short-lived `recovering` status. Fresh runs have neither
+  // a crash cause nor a recovery attempt, so they remain unmarked.
+  const isRecoveryAttempt = autoResumeCount > 0 || (view.attempt ?? 1) > 1;
+  if ((view.status === 'recovering' || view.status === 'running')
+    && view.interruptCause === 'crash_or_quit'
+    && isRecoveryAttempt) {
     return {
       runId: view.runId,
       mode: isDurableResumeQueued(view.runId) ? 'queued' : 'auto-resuming',

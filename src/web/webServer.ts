@@ -31,6 +31,7 @@ import { initSentryNode } from '../host/observability/sentryNode';
 import { initCrashMarker } from '../host/observability/crashMarker';
 import { initPostHogNode } from '../host/observability/posthogNode';
 import type { AuthUser } from '../shared/contract';
+import { IPC_CHANNELS } from '../shared/ipc';
 import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from '../host/services/core/repositories/PendingApprovalRepository';
 import { reconcileRecentPlanApprovalStarts } from '../host/services/planning/planApprovalService';
@@ -699,6 +700,10 @@ async function initializeServices(): Promise<void> {
         autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(runRegistry),
         nativeRecoveryPorts: createApplicationNativeRecoveryPorts(runRegistry),
         onAutoResumeStart: (plan) => {
+          // The durable row changes before the resumed TaskManager turn emits
+          // its first state event; refresh list/load immediately after the
+          // renderer-ready recovery gate opens.
+          broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
           const envelope = plan.envelope;
           void getSessionManager().getSession(envelope.sessionId, 1).then((session) => {
             if (!session) return;
@@ -715,13 +720,21 @@ async function initializeServices(): Promise<void> {
             && (current.autoResumeCount ?? 0) === (plan.envelope.autoResumeCount ?? 0);
         },
         onRecoveryResults: (results) => {
+          // 恢复把 run 停靠（预算耗尽 / 等审批）时 TaskManager 不发 state 事件，主动让界面重读投影。
+          if (results.length > 0) broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
           notifyDurableRecoveryWaiting(results);
         },
-        onSweepResults: (results) => logger.debug('Durable sweeper recovery dispatched', { results }),
+        onSweepResults: (results) => {
+          // 被杀进程的租约过期后由 sweeper 认领（预算耗尽停靠 / 续跑都可能走这里），同样要让界面重读投影。
+          // sweeper 每 lease/2 空转一次，空结果不广播，否则每个窗口定时全量重拉列表。
+          if (results.length > 0) broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
+          logger.debug('Durable sweeper recovery dispatched', { results });
+        },
         onSweepError: (recoveryError) => logger.error('Durable Run sweeper recovery failed:', recoveryError),
       }),
       onRecoveryComplete: (runtime) => {
         durableRunRuntime = runtime;
+        if (runtime.recoveryResults.length > 0) broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
         notifyDurableRecoveryWaiting(runtime.recoveryResults);
         logger.info('Durable rollout initialized', {
           mode: runtime.policy.mode,

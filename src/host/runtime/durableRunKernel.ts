@@ -423,8 +423,9 @@ export class DurableRunKernel implements RunKernelAdapter {
         status: waiting ? 'waiting' : 'recovering',
         pendingOperations,
         interruptCause: getRunInterruptCause(claimed.envelope) ?? 'crash_or_quit',
-        // 等审批的 run 只是恢复同一审批，不消耗自动续跑预算。
-        autoResumeCount: waiting
+        // 预算只管前台 native 自动续跑；等审批的 run 只是恢复同一审批，
+        // loop / workflow / agent_team 等引擎沿用各自恢复语义，均不消耗。
+        autoResumeCount: waiting || claimed.envelope.engine.kind !== 'native'
           ? (claimed.envelope.autoResumeCount ?? 0)
           : Math.min(MAX_AUTO_RESUME_COUNT, (claimed.envelope.autoResumeCount ?? 0) + 1),
         updatedAt: now,

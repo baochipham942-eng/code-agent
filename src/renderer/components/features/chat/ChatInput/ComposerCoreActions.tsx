@@ -7,7 +7,7 @@ const LiveVoiceButton = React.lazy(() => import('../../voice/LiveVoiceButton').t
   default: module.LiveVoiceButton,
 })));
 
-export type ComposerCoreAction = 'voice-input' | 'live-voice' | 'send' | 'stop';
+export type ComposerCoreAction = 'voice-input' | 'live-voice' | 'send' | 'stop' | 'continue';
 
 interface ComposerCoreActionsProps {
   actions: readonly ComposerCoreAction[];
@@ -19,7 +19,9 @@ interface ComposerCoreActionsProps {
   isProcessing: boolean;
   isInterrupting?: boolean;
   hasContent: boolean;
+  hasContinuation?: boolean;
   onStop?: () => void;
+  onContinue?: () => void;
 }
 
 /**
@@ -36,7 +38,9 @@ export const ComposerCoreActions: React.FC<ComposerCoreActionsProps> = ({
   isProcessing,
   isInterrupting,
   hasContent,
+  hasContinuation,
   onStop,
+  onContinue,
 }) => (
   <div data-testid="composer-core-actions" className="contents">
     {actions.map((action) => {
@@ -64,8 +68,10 @@ export const ComposerCoreActions: React.FC<ComposerCoreActionsProps> = ({
           isProcessing={isProcessing || action === 'stop'}
           isInterrupting={isInterrupting}
           hasContent={hasContent}
+          hasContinuation={action === 'continue' && hasContinuation}
           type="submit"
           onStop={onStop}
+          onContinue={onContinue}
         />
       );
     })}

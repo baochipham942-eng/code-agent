@@ -44,6 +44,7 @@ import {
 } from '../services/agentEngine/externalEngineResumeBuilders';
 import { getLogsPath } from '../platform/appPaths';
 import type { RunKernelAdapter } from './durableRunKernel';
+import { nextAutoResumeCount } from '../../shared/contract/durableRun';
 import type { RunRehydrationPlan } from './durableRunStores';
 import type { RunRegistry } from './runRegistry';
 import {
@@ -359,6 +360,8 @@ export function createMcpOperationRecoveryHandler(input: {
         childRuns: plan.childRuns,
         getState: () => plan.checkpoint?.state,
         getEngineCursor: () => plan.checkpoint?.cursor.engineCursor ?? plan.envelope.cursor.engineCursor,
+        interruptCause: plan.envelope.interruptCause ?? plan.envelope.interrupt_cause,
+        autoResumeCount: nextAutoResumeCount(plan.envelope),
       });
       const controller = new McpDurableTaskController({ kernel: input.kernel, checkpoint, protocol, resultStore: input.resultStore });
       const recover = createMcpTaskRecoveryHandler(controller, {

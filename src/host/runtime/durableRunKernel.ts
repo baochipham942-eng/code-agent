@@ -99,6 +99,7 @@ export interface DurableCheckpointInput {
   /** Persisted in the same transaction as the checkpoint/fence. */
   interruptCause?: RunInterruptCause;
   autoResumeCount?: number;
+  clearInterruptCause?: boolean;
 }
 
 export interface DurableTerminalInput {
@@ -324,6 +325,7 @@ export class DurableRunKernel implements RunKernelAdapter {
       childRuns: input.childRuns ?? envelope.childRuns ?? [],
       interruptCause: input.interruptCause,
       autoResumeCount: input.autoResumeCount,
+      clearInterruptCause: input.clearInterruptCause,
     });
   }
 

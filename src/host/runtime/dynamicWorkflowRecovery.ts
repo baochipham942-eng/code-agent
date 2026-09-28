@@ -13,6 +13,7 @@ import type { ScriptRunHostDeps } from '../agent/scriptRuntime';
 import type { RunRehydrationPlan } from './durableRunStores';
 import type { RunRegistry } from './runRegistry';
 import type { DurableEngineRecoveryHandler } from './durableRecoveryDispatcher';
+import { nextAutoResumeCount } from '../../shared/contract/durableRun';
 
 export interface DynamicWorkflowDurableState {
   schemaVersion: 1;
@@ -110,6 +111,7 @@ export function createDynamicWorkflowGraphRecoveryHandler(input: {
           : state.graphSpec.trace,
       };
       const executor = new DynamicWorkflowExecutor({ dependenciesFactory: () => resolved.deps });
+      const autoResumeCount = nextAutoResumeCount(plan.envelope);
       const runner = new GraphRunner({
         scheduler: new DAGGraphSchedulerAdapter(),
         executors: new GraphExecutorRegistry([executor]),
@@ -136,6 +138,8 @@ export function createDynamicWorkflowGraphRecoveryHandler(input: {
             },
             pendingOperations: plan.pendingOperations,
             childRuns: plan.childRuns,
+            interruptCause: plan.envelope.interruptCause ?? plan.envelope.interrupt_cause,
+            autoResumeCount,
             events: [{
               type: 'dynamic_graph_checkpoint',
               payload: { graphId: graphCheckpoint.graphId, status: graphCheckpoint.status },

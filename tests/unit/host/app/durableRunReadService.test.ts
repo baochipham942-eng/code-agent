@@ -79,6 +79,45 @@ describe('DurableRunReadService migrated consumers', () => {
     })).toEqual({ status: 'completed' });
   });
 
+  it('projects parked user stops and exhausted crash resumes to the Continue button', () => {
+    const base = {
+      source: 'durable' as const,
+      consumer: 'session_replay' as const,
+      runId: 'parked',
+      sessionId: 'session',
+      status: 'waiting' as const,
+      engine: { kind: 'native' as const },
+      terminal: false,
+    };
+    expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'user_stop', autoResumeCount: 0 })).toMatchObject({
+      durableResume: {
+        runId: 'parked', mode: 'continue', interruptCause: 'user_stop', canContinue: true,
+      },
+    });
+    expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'crash_or_quit', autoResumeCount: 2 })).toMatchObject({
+      durableResume: {
+        runId: 'parked', mode: 'continue', interruptCause: 'crash_or_quit', canContinue: true,
+      },
+    });
+    expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'crash_or_quit', autoResumeCount: 1 })).toEqual({
+      status: 'running',
+      durableWaitingInput: true,
+    });
+  });
+
+  it('projects an in-flight crash recovery as one auto-resume signal', () => {
+    expect(projectDurableRunToSessionPayload({
+      source: 'durable', consumer: 'session_replay', runId: 'recovering', sessionId: 'session',
+      status: 'recovering', engine: { kind: 'native' }, terminal: false,
+      interruptCause: 'crash_or_quit', autoResumeCount: 1,
+    })).toMatchObject({
+      status: 'running',
+      durableResume: {
+        runId: 'recovering', mode: 'auto-resuming', interruptCause: 'crash_or_quit', canContinue: false,
+      },
+    });
+  });
+
   it.each([
     ['failed', 'error'],
     ['completed', 'completed'],

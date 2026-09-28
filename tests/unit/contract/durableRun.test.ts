@@ -9,6 +9,7 @@ import {
   createChildRunRef,
   isTerminalRunStatus,
   projectChildRunTerminal,
+  withRunInterruptMetadata,
   type RunEnvelope,
 } from '../../../src/shared/contract/durableRun';
 
@@ -183,5 +184,16 @@ describe('Durable Run contract', () => {
     });
     expect(parent.childRuns?.[0].status).toBe('created');
     expect(parent.childRuns?.[0].terminalAt).toBeUndefined();
+  });
+
+  it('clears the crash marker and resets the automatic budget for an explicit Continue', () => {
+    const next = withRunInterruptMetadata(validEnvelope({
+      interruptCause: 'crash_or_quit',
+      interrupt_cause: 'crash_or_quit',
+      autoResumeCount: 2,
+    }), { clearInterruptCause: true, autoResumeCount: 0 });
+    expect(next.interruptCause).toBeUndefined();
+    expect(next.interrupt_cause).toBeUndefined();
+    expect(next.autoResumeCount).toBe(0);
   });
 });

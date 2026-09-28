@@ -358,4 +358,6 @@ export interface AgentApplicationService {
   // === Pause / Resume ===
   pause(sessionId?: string): void;
   resume(sessionId?: string): void;
+  /** Continue a parked durable foreground run, preserving its runId and history. */
+  continueDurableRun?(sessionId?: string): Promise<void>;
 }

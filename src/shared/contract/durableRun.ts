@@ -379,11 +379,19 @@ export function getRunInterruptCause(envelope: Pick<RunEnvelope, 'interruptCause
   return envelope.interruptCause ?? envelope.interrupt_cause;
 }
 
+/** Count one automatic recovery dispatch at its first durable fence. */
+export function nextAutoResumeCount(envelope: Pick<RunEnvelope, 'interruptCause' | 'interrupt_cause' | 'autoResumeCount'>): number {
+  const current = envelope.autoResumeCount ?? 0;
+  return getRunInterruptCause(envelope) === 'crash_or_quit'
+    ? Math.min(MAX_AUTO_RESUME_COUNT, current + 1)
+    : current;
+}
+
 export function withRunInterruptMetadata<T extends Pick<RunEnvelope, 'interruptCause' | 'interrupt_cause' | 'autoResumeCount'>>(
   envelope: T,
-  input: { interruptCause?: RunInterruptCause; autoResumeCount?: number },
+  input: { interruptCause?: RunInterruptCause; autoResumeCount?: number; clearInterruptCause?: boolean },
 ): T {
-  const nextCause = input.interruptCause ?? getRunInterruptCause(envelope);
+  const nextCause = input.clearInterruptCause ? undefined : (input.interruptCause ?? getRunInterruptCause(envelope));
   const nextCount = input.autoResumeCount ?? envelope.autoResumeCount ?? 0;
   return {
     ...envelope,

@@ -99,6 +99,7 @@ export interface CheckpointCommit {
   childRuns: ChildRunRef[];
   interruptCause?: RunInterruptCause;
   autoResumeCount?: number;
+  clearInterruptCause?: boolean;
 }
 
 export interface CheckpointStore {

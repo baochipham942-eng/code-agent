@@ -4,6 +4,7 @@ import { GraphEventCompatibilityAdapter, type GraphEventCompatibilitySinks } fro
 import type { DurableEngineRecoveryHandler } from './durableRecoveryDispatcher';
 import type { RunRehydrationPlan } from './durableRunStores';
 import type { RunRegistry } from './runRegistry';
+import { nextAutoResumeCount } from '../../shared/contract/durableRun';
 
 export const AUTO_AGENT_CURSOR_VERSION = 1 as const;
 
@@ -99,6 +100,7 @@ export class AutoAgentRecoveryHost {
     if (uncertain) return this.review(plan, state, now, 'auto_agent_uncertain_side_effect');
 
     const compatibility = new GraphEventCompatibilityAdapter(this.compatibilitySinks);
+    const autoResumeCount = nextAutoResumeCount(plan.envelope);
     this.active = true;
     try {
       const result = await this.runner.resume({
@@ -113,6 +115,8 @@ export class AutoAgentRecoveryHost {
             engineCursor: cursor,
             pendingOperations: plan.pendingOperations,
             childRuns: plan.childRuns,
+            interruptCause: plan.envelope.interruptCause ?? plan.envelope.interrupt_cause,
+            autoResumeCount,
             events: [{ type: 'auto_agent_graph_checkpoint', payload: { graphId: checkpoint.graphId }, recordedAt: checkpoint.updatedAt }],
           });
         },
@@ -136,6 +140,8 @@ export class AutoAgentRecoveryHost {
         engineCursor: cursor,
         pendingOperations: terminalOperations,
         childRuns: plan.childRuns,
+        interruptCause: plan.envelope.interruptCause ?? plan.envelope.interrupt_cause,
+        autoResumeCount,
         events: [{
           type: 'auto_agent_graph_result_committed',
           payload: { graphId: result.checkpoint.graphId, status: result.status },

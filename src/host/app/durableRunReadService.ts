@@ -1,5 +1,12 @@
-import type { RunEngineRef, RunEnvelope, RunStatus } from '../../shared/contract/durableRun';
-import type { SessionStatus } from '../../shared/contract/session';
+import {
+  getRunInterruptCause,
+  MAX_AUTO_RESUME_COUNT,
+  type RunEngineRef,
+  type RunEnvelope,
+  type RunInterruptCause,
+  type RunStatus,
+} from '../../shared/contract/durableRun';
+import type { DurableResumeState, SessionStatus } from '../../shared/contract/session';
 import {
   readWithDurablePreference,
   type DurableRunFactReader,
@@ -24,6 +31,8 @@ export interface DurableRunView {
   terminal: boolean;
   attempt?: number;
   updatedAt?: number;
+  interruptCause?: RunInterruptCause;
+  autoResumeCount?: number;
 }
 
 export interface LegacyRunViewInput {
@@ -92,6 +101,8 @@ export function mapDurableRunView(consumer: DurableRunConsumer, envelope: RunEnv
     terminal: Boolean(envelope.terminal),
     attempt: envelope.attempt,
     updatedAt: envelope.updatedAt,
+    ...(getRunInterruptCause(envelope) ? { interruptCause: getRunInterruptCause(envelope) } : {}),
+    autoResumeCount: envelope.autoResumeCount ?? 0,
   };
 }
 
@@ -128,9 +139,41 @@ export function hasDurableWaitingApprovalRun(view: DurableRunView): boolean {
 export function projectDurableRunToSessionPayload(view: DurableRunView): {
   status: SessionStatus;
   durableWaitingInput?: true;
+  durableResume?: DurableResumeState;
 } {
+  const durableResume = projectDurableResumeState(view);
   return {
     status: mapDurableRunToSessionStatus(view.status),
-    ...(hasDurableWaitingApprovalRun(view) ? { durableWaitingInput: true as const } : {}),
+    ...(hasDurableWaitingApprovalRun(view) && durableResume?.mode !== 'continue'
+      ? { durableWaitingInput: true as const }
+      : {}),
+    ...(durableResume ? { durableResume } : {}),
+  };
+}
+
+function projectDurableResumeState(view: DurableRunView): DurableResumeState | undefined {
+  if (view.source !== 'durable' || view.terminal || !view.runId || !view.interruptCause) return undefined;
+  const autoResumeCount = view.autoResumeCount ?? 0;
+  if (view.status === 'recovering' && view.interruptCause === 'crash_or_quit') {
+    return {
+      runId: view.runId,
+      mode: 'auto-resuming',
+      interruptCause: view.interruptCause,
+      autoResumeCount,
+      maxAutoResumeCount: MAX_AUTO_RESUME_COUNT,
+      canContinue: false,
+    };
+  }
+  const canContinue = view.status === 'waiting' && (
+    view.interruptCause !== 'crash_or_quit' || autoResumeCount >= MAX_AUTO_RESUME_COUNT
+  );
+  if (!canContinue) return undefined;
+  return {
+    runId: view.runId,
+    mode: 'continue',
+    interruptCause: view.interruptCause,
+    autoResumeCount,
+    maxAutoResumeCount: MAX_AUTO_RESUME_COUNT,
+    canContinue: true,
   };
 }

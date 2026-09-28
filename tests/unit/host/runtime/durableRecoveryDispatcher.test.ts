@@ -81,6 +81,26 @@ describe('DurableRecoveryDispatcher', () => {
     expect(external).toHaveBeenCalledTimes(1);
   });
 
+  it('serializes different session recoveries so auto-resume cannot burn budgets concurrently', async () => {
+    const dispatcher = new DurableRecoveryDispatcher();
+    let active = 0;
+    let peak = 0;
+    const recover = vi.fn(async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return { status: 'recovered' as const, reason: 'serial' };
+    });
+    dispatcher.registerEngineHandler(engineHandler('native', recover));
+    await dispatcher.dispatch([
+      plan({ runId: 'first', engine: { kind: 'native' } }),
+      plan({ runId: 'second', engine: { kind: 'native' } }),
+    ]);
+    expect(recover).toHaveBeenCalledTimes(2);
+    expect(peak).toBe(1);
+  });
+
   it.each([
     { kind: 'native' as const },
     { kind: 'agent_team' as const, treeId: 'tree' },

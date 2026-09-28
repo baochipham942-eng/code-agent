@@ -65,8 +65,11 @@ export class DurableRecoveryDispatcher {
 
   async dispatch(plans: RunRehydrationPlan[], now = Date.now()): Promise<DurableRecoveryDispatchResult[]> {
     if (this.stopped) throw new Error('Durable recovery dispatcher is stopped');
-    const settled = await Promise.all(plans.map((plan) => this.dispatchPlan(plan, now)));
-    return settled.flat();
+    const results: DurableRecoveryDispatchResult[] = [];
+    for (const plan of plans) {
+      results.push(...await this.dispatchPlan(plan, now));
+    }
+    return results;
   }
 
   async shutdown(): Promise<void> {

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React from 'react';
-import { ArrowUp, Square, Loader2 } from 'lucide-react';
+import { ArrowUp, Square, Loader2, RotateCcw } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 
 export interface SendButtonProps {
@@ -15,12 +15,16 @@ export interface SendButtonProps {
   isInterrupting?: boolean;
   /** 是否有内容可发送 */
   hasContent?: boolean;
+  /** 是否有一个 parked durable run 可由用户继续 */
+  hasContinuation?: boolean;
   /** 表单提交类型 */
   type?: 'submit' | 'button';
   /** 点击回调（发送或停止） */
   onClick?: () => void;
   /** 停止回调 */
   onStop?: () => void;
+  /** 继续 parked durable run 的回调 */
+  onContinue?: () => void;
   /** 自定义按钮文字（如 "开始研究"），传入后按钮会显示文字 */
   label?: string;
 }
@@ -37,9 +41,11 @@ export const SendButton: React.FC<SendButtonProps> = ({
   isProcessing = false,
   isInterrupting = false,
   hasContent = false,
+  hasContinuation = false,
   type = 'submit',
   onClick,
   onStop,
+  onContinue,
   label,
 }) => {
   const { t } = useI18n();
@@ -88,6 +94,23 @@ export const SendButton: React.FC<SendButtonProps> = ({
         aria-label={t.chatInput.stopAria}
       >
         <Square className="h-3 w-3 fill-current stroke-[2.2]" />
+      </button>
+    );
+  }
+
+  // parked durable run + 空输入：继续原 run；一旦有草稿，上面的普通发送态优先。
+  if (hasContinuation && !hasContent) {
+    return (
+      <button
+        type="button"
+        onClick={onContinue}
+        className="flex h-7 items-center gap-1.5 rounded-full bg-brand px-3 text-xs font-medium text-white shadow-[0_10px_24px_var(--brand-primary-glow)] transition-all hover:bg-brand-hover active:scale-95"
+        aria-label={t.chatInput.continueAria}
+        title={t.chatInput.continueAria}
+        data-testid="continue-run-button"
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+        <span>{t.chatInput.continueLabel}</span>
       </button>
     );
   }

@@ -35,6 +35,8 @@ import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from '../host/services/core/repositories/PendingApprovalRepository';
 import { reconcileRecentPlanApprovalStarts } from '../host/services/planning/planApprovalService';
 import { getTaskManager } from '../host/task/TaskManager';
+import { getSessionManager } from '../host/services/infra/sessionManager';
+import { notificationService } from '../host/services/infra/notificationService';
 import { installLocalWebAuthStatusHandler } from './webLocalAuth';
 import {
   initializeWebPluginSystem as initializeWebPluginSystemCore,
@@ -685,6 +687,20 @@ async function initializeServices(): Promise<void> {
           mode: runtime.policy.mode,
           results: runtime.recoveryResults,
         });
+        for (const result of runtime.recoveryResults) {
+          if (result.status !== 'recovered' && result.status !== 'observing') continue;
+          if (result.reason.includes('automatic resume budget exhausted')) continue;
+          const envelope = runRegistry.getDurableEnvelope(result.runId);
+          if (!envelope) continue;
+          void getSessionManager().getSession(envelope.sessionId, 1).then((session) => {
+            if (!session) return;
+            notificationService.notifyTaskResuming({
+              sessionId: session.id,
+              sessionTitle: session.title || '未命名会话',
+              autoResumeCount: envelope?.autoResumeCount ?? 1,
+            });
+          }).catch((error) => logger.debug('Failed to notify durable resume', { result, error }));
+        }
       },
       onRecoveryError: (error) => {
         logger.warn('Durable rollout recovery failed (non-blocking):', error instanceof Error ? error.message : String(error));

@@ -8,6 +8,7 @@ export type NotificationIntent =
   | 'needs_input'
   | 'task_complete'
   | 'task_failed'
+  | 'task_resuming'
   | 'plugin'
   | 'progress'
   | 'typing'
@@ -24,6 +25,7 @@ const ALLOWED_SYSTEM_NOTIFICATION_INTENTS = new Set<NotificationIntent>([
   'needs_input',
   'task_complete',
   'task_failed',
+  'task_resuming',
   'plugin',
 ]);
 

@@ -377,6 +377,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
         }, {
           ...(input.interruptCause ? { interruptCause: input.interruptCause } : {}),
           ...(input.autoResumeCount === undefined ? {} : { autoResumeCount: input.autoResumeCount }),
+          ...(input.clearInterruptCause ? { clearInterruptCause: true } : {}),
         }));
       }
       this.durableCheckpointStates.set(runId, input.state);
@@ -387,6 +388,12 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   async parkDurable(runId: string, input: { now?: number; reason?: 'user_stop' } = {}, expected?: RunHandle): Promise<void> {
     if (expected && this.handlesByRunId.get(runId) !== expected) throw new Error(`Durable Run park fenced by stale handle: ${runId}`);
     const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`); const now = input.now ?? Date.now(); const cause = input.reason ?? 'user_stop'; await this.checkpointDurable(runId, { now, status: 'waiting', state: this.durableCheckpointStates.get(runId), engineCursor: envelope.cursor.engineCursor, pendingOperations: envelope.pendingOperations ?? [], childRuns: envelope.childRuns, interruptCause: cause, events: [{ type: 'run_interrupted', payload: { cause }, recordedAt: now }] });
+  }
+
+  /** Reset the automatic restart budget when a user explicitly continues a parked run. */
+  async resetDurableResumeBudget(runId: string, now = Date.now()): Promise<void> {
+    const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`);
+    await this.checkpointDurable(runId, { now, status: 'running', state: this.durableCheckpointStates.get(runId), engineCursor: envelope.cursor.engineCursor, pendingOperations: envelope.pendingOperations ?? [], childRuns: envelope.childRuns, clearInterruptCause: true, autoResumeCount: 0, events: [{ type: 'manual_resume_requested', payload: { sessionId: envelope.sessionId }, recordedAt: now }] });
   }
   async checkpointNativeModelOperation(input: {
     runId: string;
@@ -910,10 +917,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return handle;
   }
 
-  getBySessionId(sessionId: string): RunHandle | undefined {
-    const runId = this.runIdBySessionId.get(sessionId);
-    return runId ? this.handlesByRunId.get(runId) : undefined;
-  }
+  getBySessionId(sessionId: string): RunHandle | undefined { const runId = this.runIdBySessionId.get(sessionId); return runId ? this.handlesByRunId.get(runId) : undefined; }
 
   setModelSpec(runId: string, modelSpec: ConversationModelSpec): void {
     if (!this.handlesByRunId.has(runId)) {
@@ -939,17 +943,15 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return this.size === 1 ? this.last() : undefined;
   }
 
-  hasSession(sessionId: string): boolean {
-    return this.runIdBySessionId.has(sessionId);
-  }
+  hasSession(sessionId: string): boolean { return this.runIdBySessionId.has(sessionId); }
 
-  hasDurableOwner(runId: string): boolean {
-    return this.durableOwners.has(runId);
-  }
+  hasDurableOwner(runId: string): boolean { return this.durableOwners.has(runId); }
 
-  last(): RunHandle | undefined {
-    return [...this.handlesByRunId.values()].at(-1);
-  }
+  getDurableCheckpointState(runId: string): unknown { return this.durableCheckpointStates.get(runId); }
+
+  getDurableEnvelope(runId: string): RunEnvelope | undefined { const envelope = this.durableEnvelopes.get(runId); return envelope ? { ...envelope, cursor: { ...envelope.cursor } } : undefined; }
+
+  last(): RunHandle | undefined { return [...this.handlesByRunId.values()].at(-1); }
 
   unregister(runId: string, expected?: RunHandle): boolean {
     const handle = this.handlesByRunId.get(runId);

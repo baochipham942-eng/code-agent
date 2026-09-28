@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ChildRunRef, PendingOperation, RunOwnerLease } from '../../shared/contract/durableRun';
+import type { ChildRunRef, PendingOperation, RunInterruptCause, RunOwnerLease } from '../../shared/contract/durableRun';
 import type { RunKernelAdapter } from '../runtime/durableRunKernel';
 import type { RunRehydrationPlan } from '../runtime/durableRunStores';
 import { getTelemetryService } from '../telemetry/telemetryService';
@@ -140,6 +140,8 @@ export function createMcpKernelCheckpointPort(input: {
   childRuns?: ChildRunRef[];
   getState: () => unknown;
   getEngineCursor?: () => unknown;
+  interruptCause?: RunInterruptCause;
+  autoResumeCount?: number;
 }): McpKernelCheckpointPort {
   let pendingOperations = [...(input.initialPendingOperations ?? [])];
   return {
@@ -161,6 +163,8 @@ export function createMcpKernelCheckpointPort(input: {
         engineCursor: input.getEngineCursor?.(),
         pendingOperations: next,
         childRuns: input.childRuns,
+        interruptCause: input.interruptCause,
+        autoResumeCount: input.autoResumeCount,
         events: [{
           type: checkpointInput.event.type,
           payload: checkpointInput.event.payload,

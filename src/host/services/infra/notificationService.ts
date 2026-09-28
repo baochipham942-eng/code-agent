@@ -26,6 +26,12 @@ export interface TaskNotificationData {
   succeeded?: boolean;
 }
 
+interface TaskResumingNotificationData {
+  sessionId: string;
+  sessionTitle: string;
+  autoResumeCount: number;
+}
+
 /** 只在本文件内当 notifyVoiceWorkSettled 的参数类型用；导出无人引用会顶爆 knip 零余量棘轮。 */
 interface VoiceWorkSettledNotificationData {
   sessionId: string;
@@ -36,7 +42,7 @@ interface VoiceWorkSettledNotificationData {
 
 export interface RecordedNotification {
   id: string;
-  type: 'needs_input' | 'task_complete' | 'task_failed' | 'plugin';
+  type: 'needs_input' | 'task_complete' | 'task_failed' | 'task_resuming' | 'plugin';
   sessionId: string;
   title: string;
   body: string;
@@ -187,6 +193,22 @@ class NotificationService implements Disposable {
     });
     this.deliver({ id: entry.id, title: entry.title, body: entry.body, sessionId: data.sessionId });
     logger.info('Notification sent', { sessionTitle });
+  }
+
+  /** Background restart-resume is silent in the chat surface, so expose one system signal. */
+  notifyTaskResuming(data: TaskResumingNotificationData): void {
+    if (!this.isIntentAllowed('task_resuming')) return;
+    if (!this.shouldNotify(true)) return;
+    const title = `任务正在继续 - ${data.sessionTitle}`;
+    const body = `从中断处继续；本轮成本未知/估算，继续运行会消耗额度。自动续跑第 ${data.autoResumeCount} 次。`;
+    const entry = this.record({
+      type: 'task_resuming',
+      sessionId: data.sessionId,
+      title,
+      body,
+    });
+    this.deliver({ id: entry.id, title: entry.title, body: entry.body, sessionId: data.sessionId, markSessionUnread: true });
+    logger.info('Task resume notification sent', { sessionId: data.sessionId, autoResumeCount: data.autoResumeCount });
   }
 
   /**

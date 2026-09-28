@@ -14,6 +14,7 @@
 // 判据，用贵模型逐条判不划算，而这些条目大多是「有没有这张表」「z 值是不是 1.64」
 // 这类可核验事实，不需要强推理。
 // ============================================================================
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import mammoth from 'mammoth';
@@ -23,6 +24,7 @@ import { quickTask, getQuickModelRuntimeInfo } from '../src/host/model/quickMode
 import {
   buildRubricPrompt,
   chunkRubric,
+  extractPptxText,
   isInsideRoot,
   TRUNCATED_MARK,
   parseRubricVerdicts,
@@ -121,8 +123,9 @@ function parseArgs(): { patrol: string; run: string; only: string[]; batch: numb
  * 产物提取。xlsx/docx 直连底层库（4 行），不复用 src 的 read_xlsx / read_docx 工具——
  * 那两个是 ToolHandler，要先造一份 ToolContext（logger/workspace/权限/artifacts），
  * 而 read_pdf 还会按配置走模型 OCR，在评分脚本里既慢又花钱。
- * ponytail: pdf/pptx 只留文件名与大小，rubric 里「产物是不是 PDF、叫什么名」那类条目照样判得了；
- * 要判 PDF 正文时再接 poppler pdftotext（仓里已有 sidecar，见 scripts/lib/poppler-sidecar-release.mjs）。
+ * pdf 走 poppler pdftotext（PATH 上找，PDFTOTEXT 可覆盖）；pptx 按页抽 <a:t>。09-28 夜巡实测
+ * 弃权 1905 条里 366 条是「binary 没解析器」，产物里 pdf 53 个、pptx 28 个——之前这些题只能判文件名。
+ * ponytail: png/mp4 仍只给占位，评分模型是纯文本的；要判图再接多模态。
  */
 async function extractFile(absPath: string, relPath: string): Promise<GdpvalArtifactFile> {
   let bytes = 0;
@@ -165,6 +168,16 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
     if (ext === '.docx') {
       const extracted = await mammoth.extractRawText({ buffer: fs.readFileSync(absPath) });
       return { path: relPath, bytes, text: clip(extracted.value) };
+    }
+    if (ext === '.pptx') {
+      return { path: relPath, bytes, text: clip(await extractPptxText(fs.readFileSync(absPath))) };
+    }
+    if (ext === '.pdf') {
+      const text = execFileSync(process.env.PDFTOTEXT || 'pdftotext', ['-layout', '-enc', 'UTF-8', absPath, '-'],
+        { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000 });
+      // 扫描件没有文字层：给占位而不是空串，空串会被当成「PDF 里什么都没写」判 false。
+      if (!text.trim()) return unseen(relPath, bytes, 'PDF 无文字层（疑似扫描件）');
+      return { path: relPath, bytes, text: clip(text) };
     }
   } catch (error) {
     return unseen(relPath, bytes, `提取失败 ${error instanceof Error ? error.message : String(error)}`);

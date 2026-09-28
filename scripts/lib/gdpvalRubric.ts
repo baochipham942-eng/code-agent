@@ -11,6 +11,7 @@
 // 漏判的条目按不通过计入分母，但单独计数 unjudged——模型漏答与真判负必须分得开。
 // ============================================================================
 import path from 'node:path';
+import JSZip from 'jszip';
 
 /**
  * 题库是外部数据（HuggingFace 下来的），题号和参考文件路径都不能直接当路径用：
@@ -71,6 +72,33 @@ export interface GdpvalTaskScore {
  * 两头各写各的，提取端换个说法就会让模型把「没给看」当成「产物里没有」判 false。
  */
 export const TRUNCATED_MARK = '未给出内容';
+
+/**
+ * pptx 按页抽正文：slideN.xml 里的 <a:t> 文本，页序按 N 数值排（字符串排序会把 slide10 排在 slide2 前）。
+ * 只抽文字，版式/图片不管——rubric 判「第 3 页有没有写 X」要的就是这个。
+ */
+export async function extractPptxText(buffer: Buffer): Promise<string> {
+  const zip = await JSZip.loadAsync(buffer);
+  const slideNo = (name: string): number => Number(/slide(\d+)\.xml$/.exec(name)?.[1] ?? 0);
+  const slides = Object.keys(zip.files)
+    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .sort((a, b) => slideNo(a) - slideNo(b));
+  const pages = await Promise.all(slides.map(async (name) => {
+    const xml = await zip.file(name)!.async('string');
+    const paragraphs = xml.split(/<\/a:p>/).map((paragraph) =>
+      [...paragraph.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((match) => decodeXmlText(match[1])).join(''))
+      .filter((line) => line.trim());
+    return `# slide ${slideNo(name)}\n${paragraphs.join('\n')}`;
+  }));
+  return pages.join('\n\n');
+}
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&amp;/g, '&');
+}
 
 const PROMPT_HEAD = [
   '你是 GDPval 产物评分员。下面给你三样东西：任务给定的输入文件（inputs）、待评的产物文件（artifacts）、逐条评分标准（rubric）。',

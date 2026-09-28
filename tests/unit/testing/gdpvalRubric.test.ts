@@ -169,3 +169,17 @@ describe('isInsideRoot', () => {
     expect(isInsideRoot('/patrol', '/patrol')).toBe(true);
   });
 });
+
+describe('extractPptxText', () => {
+  it('按页码数值排序、逐段抽 <a:t> 并解码实体', async () => {
+    const { default: JSZip } = await import('jszip');
+    const { extractPptxText } = await import('../../../scripts/lib/gdpvalRubric');
+    const zip = new JSZip();
+    const slide = (body: string) => `<p:sld><p:txBody>${body}</p:txBody></p:sld>`;
+    zip.file('ppt/slides/slide10.xml', slide('<a:p><a:r><a:t>第十页</a:t></a:r></a:p>'));
+    zip.file('ppt/slides/slide2.xml', slide('<a:p><a:r><a:t>R&amp;D </a:t></a:r><a:r><a:t>&lt;预算&gt;</a:t></a:r></a:p><a:p><a:r><a:t>z = 1.64</a:t></a:r></a:p>'));
+    zip.file('ppt/slides/_rels/slide2.xml.rels', '<Relationships/>');
+    const text = await extractPptxText(await zip.generateAsync({ type: 'nodebuffer' }));
+    expect(text).toBe('# slide 2\nR&D <预算>\nz = 1.64\n\n# slide 10\n第十页');
+  });
+});

@@ -13,11 +13,11 @@ import {
   type StreamSnapshotIdentity,
 } from '../../../src/host/session/streamSnapshot';
 
-const { loggerWarn } = vi.hoisted(() => ({ loggerWarn: vi.fn() }));
+const { loggerInfo, loggerWarn } = vi.hoisted(() => ({ loggerInfo: vi.fn(), loggerWarn: vi.fn() }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
-    info: vi.fn(),
+    info: loggerInfo,
     warn: loggerWarn,
     error: vi.fn(),
     debug: vi.fn(),
@@ -46,6 +46,7 @@ describe('stream snapshot run isolation', () => {
 
   beforeEach(() => {
     loggerWarn.mockClear();
+    loggerInfo.mockClear();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-stream-'));
   });
 
@@ -208,5 +209,52 @@ describe('stream snapshot run isolation', () => {
         { id: 'tool-1', name: 'write_file', arguments: '{"file_path":"/tmp/a"' },
       ],
     })).toEqual([]);
+  });
+
+  // —— N-STREAMSNAPSHOT-LOG-SPAM：INFO 只按 (session, run, turn) 首次发现打一条 ——
+  it('运行中重复 load 同一未完成快照只打一条 INFO（200~580 条/分钟刷屏的日志侧收口）', () => {
+    saveStreamSnapshot(partialSnapshot('partial'), identity({
+      sessionId: 'session-log',
+      runId: 'run-log',
+      turnId: 'turn-log',
+    }));
+
+    // 模拟一段运行中的刷新窗口：渲染层快照重灌风暴在基线上可达每秒数次 load
+    for (let i = 0; i < 200; i++) {
+      expect(loadStreamSnapshot({ workingDir: tempDir, sessionId: 'session-log' }))
+        .toMatchObject({ content: 'partial', turnId: 'turn-log' });
+    }
+
+    expect(loggerInfo).toHaveBeenCalledTimes(1);
+    expect(loggerInfo).toHaveBeenCalledWith('Found incomplete stream snapshot', expect.objectContaining({
+      sessionId: 'session-log',
+      runId: 'run-log',
+      turnId: 'turn-log',
+    }));
+  });
+
+  it('新 turn / 新 run 的未完成快照仍各自打一条（key 含 run 与 turn）', () => {
+    saveStreamSnapshot(partialSnapshot('turn a'), identity({
+      sessionId: 'session-log-2',
+      runId: 'run-log-2',
+      turnId: 'turn-a',
+    }));
+    loadStreamSnapshot({ workingDir: tempDir, sessionId: 'session-log-2' });
+
+    saveStreamSnapshot(partialSnapshot('turn b'), identity({
+      sessionId: 'session-log-2',
+      runId: 'run-log-2',
+      turnId: 'turn-b',
+    }));
+    loadStreamSnapshot({ workingDir: tempDir, sessionId: 'session-log-2' });
+
+    saveStreamSnapshot(partialSnapshot('other run'), identity({
+      sessionId: 'session-log-3',
+      runId: 'run-log-3',
+      turnId: 'turn-a',
+    }));
+    loadStreamSnapshot({ workingDir: tempDir, sessionId: 'session-log-3' });
+
+    expect(loggerInfo).toHaveBeenCalledTimes(3);
   });
 });

@@ -22,6 +22,27 @@ const LEGACY_SNAPSHOT_FILE = 'stream-snapshot.json';
 const SNAPSHOT_DIRECTORY = 'stream-snapshots';
 const OWNER_FILE = 'current-run.json';
 
+// 「发现未完成快照」是 per-(session, run, turn) 的事实，第一条 INFO 已完整承载
+// （runId/turnId/contentLength/toolCalls）。load 是高频路径（会话 load 与渲染层快照
+// 重灌都会到这），同一 key 的后续 load 再打一条只是把调用频率漏进日志——真机
+// 200~580 条/分钟的刷屏就是这么来的（N-STREAMSNAPSHOT-LOG-SPAM）。不降 debug：
+// 文件 sink 只写 INFO+（logger.ts 的 writeToFile 跳过 DEBUG），降级等于让这条
+// 崩溃恢复排查线索从日志现场消失。容量上限沿 renderer 侧 snapshot 信号去重的
+// 先例（ipcService notifySnapshotRequired 的 256），插入序逐出最旧 key。
+const LOGGED_INCOMPLETE_SNAPSHOT_KEYS = new Map<string, true>();
+const MAX_LOGGED_INCOMPLETE_SNAPSHOT_KEYS = 256;
+
+function shouldLogIncompleteSnapshot(data: PersistedSnapshot): boolean {
+  const key = `${data.sessionId}:${data.runId}:${data.turnId}`;
+  if (LOGGED_INCOMPLETE_SNAPSHOT_KEYS.has(key)) return false;
+  LOGGED_INCOMPLETE_SNAPSHOT_KEYS.set(key, true);
+  if (LOGGED_INCOMPLETE_SNAPSHOT_KEYS.size > MAX_LOGGED_INCOMPLETE_SNAPSHOT_KEYS) {
+    const oldest = LOGGED_INCOMPLETE_SNAPSHOT_KEYS.keys().next().value;
+    if (oldest !== undefined) LOGGED_INCOMPLETE_SNAPSHOT_KEYS.delete(oldest);
+  }
+  return true;
+}
+
 export interface StreamSnapshotIdentity {
   workingDir?: string;
   sessionId: string;
@@ -316,15 +337,17 @@ export function loadStreamSnapshot(selector: StreamSnapshotSelector): PersistedS
     }
 
     const incompleteToolCallIds = getIncompleteToolCallIds(data);
-    logger.info('Found incomplete stream snapshot', {
-      sessionId: data.sessionId,
-      runId: data.runId,
-      turnId: data.turnId,
-      contentLength: data.content.length,
-      toolCallCount: data.toolCalls.length,
-      incompleteToolCallIds,
-      timestamp: new Date(data.timestamp).toISOString(),
-    });
+    if (shouldLogIncompleteSnapshot(data)) {
+      logger.info('Found incomplete stream snapshot', {
+        sessionId: data.sessionId,
+        runId: data.runId,
+        turnId: data.turnId,
+        contentLength: data.content.length,
+        toolCallCount: data.toolCalls.length,
+        incompleteToolCallIds,
+        timestamp: new Date(data.timestamp).toISOString(),
+      });
+    }
     return {
       ...data,
       streamStatus: 'incomplete',

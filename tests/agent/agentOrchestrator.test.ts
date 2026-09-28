@@ -553,7 +553,7 @@ describe('AgentOrchestrator', () => {
       expect(unregister).toHaveBeenCalledWith(expect.any(String), expect.anything());
     });
 
-    it('recovered durable run leaves terminal ownership for the recovery kernel', async () => {
+    it('recovered durable run finalizes after the adopted live loop completes', async () => {
       const terminalDurable = vi.fn(async () => undefined);
       const handle = { attach: vi.fn(async () => undefined) };
       const registry = {
@@ -599,8 +599,64 @@ describe('AgentOrchestrator', () => {
         runId: 'run-recovered',
         sessionId: 'session-recovered',
       }));
-      expect(terminalDurable).not.toHaveBeenCalled();
+      expect(terminalDurable).toHaveBeenCalledWith(
+        'run-recovered',
+        expect.objectContaining({ status: 'completed', event: expect.objectContaining({ type: 'run_completed' }) }),
+        handle,
+      );
       expect(registry.unregister).toHaveBeenCalledWith('run-recovered', handle);
+    });
+
+    it('forwards the durable goal recovery snapshot into the resumed AgentLoop', async () => {
+      const snapshot = {
+        contract: { goal: 'finish', verifyCommand: 'true', tokenBudget: 100, maxTurns: 2 },
+        status: 'pending' as const,
+        inactiveTurns: 0,
+        completionRequested: false,
+        swarmTokensUsed: 0,
+        gateFailureCounts: { 1: 0, 2: 0 },
+        verificationDegraded: false,
+        turnsCompleted: 1,
+        tokensUsed: 12,
+        inputTokensUsed: 8,
+        outputTokensUsed: 4,
+        wallClockElapsedMs: 120,
+      };
+      const handle = { attach: vi.fn(async () => undefined) };
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        adoptRecoveredRun: vi.fn(() => handle),
+        terminalDurable: vi.fn(async () => undefined),
+        unregister: vi.fn(),
+      };
+      const durableOrchestrator = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      });
+      await (durableOrchestrator as unknown as {
+        runNormalMode(
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: { runId?: string; resumeExistingDurableRun?: boolean; disableAutoAgent?: boolean; goalRecoverySnapshot?: typeof snapshot },
+        ): Promise<void>;
+      }).runNormalMode(
+        '恢复 goal',
+        () => undefined,
+        { provider: 'openai', model: 'gpt-4o' },
+        'session-recovered-goal',
+        {
+          runId: 'run-recovered-goal',
+          resumeExistingDurableRun: true,
+          disableAutoAgent: true,
+          goalRecoverySnapshot: snapshot,
+        },
+      );
+
+      expect(lastAgentLoopConfig()).toEqual(expect.objectContaining({ goalRecoverySnapshot: snapshot }));
     });
 
     it('用户取消（AgentLoop 正常 resolve + agent_cancelled 事件）→ durable 终态记 cancelled 而非 completed（ai-review Important）', async () => {
@@ -1626,7 +1682,7 @@ describe('AgentOrchestrator', () => {
         const promise = parkRequest(unattendedSid);
         const requestId = fake.insert.mock.calls[0][0].id as string;
         vi.advanceTimersByTime(86_400_000);
-        expect(await promise).toEqual({ approved: false, denialSource: 'timeout' });
+        expect(await promise).toEqual({ approved: false, denialSource: 'timeout', message: 'parked approval expired' });
         expect(fake.rows.get(requestId)?.status).toBe('rejected');
       } finally {
         vi.useRealTimers();

@@ -42,6 +42,64 @@ export interface GoalContract {
   allowSwarm?: boolean;
 }
 
+/** Durable snapshot needed to rebuild a goal loop after the host process dies. */
+export interface GoalRecoverySnapshot {
+  contract: GoalContract;
+  status: GoalStatus;
+  inactiveTurns: number;
+  pauseReason?: GoalPauseReason;
+  abortReason?: string;
+  completionRequested: boolean;
+  pendingSummary?: string;
+  swarmTokensUsed: number;
+  gateFailureCounts: { 1: number; 2: number };
+  verificationDegraded: boolean;
+  degradedReason?: string;
+  turnsCompleted: number;
+  tokensUsed: number;
+  inputTokensUsed: number;
+  outputTokensUsed: number;
+  wallClockElapsedMs: number;
+}
+
+const GOAL_STATUSES: readonly GoalStatus[] = ['pending', 'paused', 'met', 'aborted'];
+
+/** Runtime validation for the JSON-shaped checkpoint payload. */
+export function isGoalRecoverySnapshot(value: unknown): value is GoalRecoverySnapshot {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<GoalRecoverySnapshot>;
+  const contract = candidate.contract;
+  if (!contract || typeof contract !== 'object') return false;
+  if (typeof contract.goal !== 'string' || contract.goal.trim().length === 0) return false;
+  if ((contract.verifyCommand !== undefined && typeof contract.verifyCommand !== 'string')
+    || (contract.reviewCondition !== undefined && typeof contract.reviewCondition !== 'string')
+    || (typeof contract.verifyCommand !== 'string' && typeof contract.reviewCondition !== 'string')
+    || (contract.verifyCommand?.trim().length === 0 && contract.reviewCondition?.trim().length === 0)) return false;
+  if (!Number.isInteger(contract.tokenBudget) || contract.tokenBudget <= 0) return false;
+  if (!Number.isInteger(contract.maxTurns) || contract.maxTurns <= 0) return false;
+  if (contract.wallClockBudgetMs !== undefined
+    && (!Number.isFinite(contract.wallClockBudgetMs) || contract.wallClockBudgetMs <= 0)) return false;
+  if (contract.allowSwarm !== undefined && typeof contract.allowSwarm !== 'boolean') return false;
+  if (!GOAL_STATUSES.includes(candidate.status as GoalStatus)) return false;
+  if (typeof candidate.inactiveTurns !== 'number' || !Number.isInteger(candidate.inactiveTurns) || candidate.inactiveTurns < 0) return false;
+  if (candidate.pauseReason !== undefined && candidate.pauseReason !== 'anti_spin') return false;
+  if (candidate.abortReason !== undefined && typeof candidate.abortReason !== 'string') return false;
+  if (candidate.pendingSummary !== undefined && typeof candidate.pendingSummary !== 'string') return false;
+  if (typeof candidate.completionRequested !== 'boolean') return false;
+  if (typeof candidate.swarmTokensUsed !== 'number' || !Number.isFinite(candidate.swarmTokensUsed) || candidate.swarmTokensUsed < 0) return false;
+  if (!candidate.gateFailureCounts
+    || !Number.isInteger(candidate.gateFailureCounts[1]) || candidate.gateFailureCounts[1] < 0
+    || !Number.isInteger(candidate.gateFailureCounts[2]) || candidate.gateFailureCounts[2] < 0) return false;
+  if (typeof candidate.verificationDegraded !== 'boolean') return false;
+  if (candidate.degradedReason !== undefined && typeof candidate.degradedReason !== 'string') return false;
+  if (typeof candidate.turnsCompleted !== 'number' || !Number.isInteger(candidate.turnsCompleted) || candidate.turnsCompleted < 0) return false;
+  if (typeof candidate.tokensUsed !== 'number' || !Number.isFinite(candidate.tokensUsed) || candidate.tokensUsed < 0) return false;
+  if (typeof candidate.inputTokensUsed !== 'number' || !Number.isFinite(candidate.inputTokensUsed) || candidate.inputTokensUsed < 0) return false;
+  if (typeof candidate.outputTokensUsed !== 'number' || !Number.isFinite(candidate.outputTokensUsed) || candidate.outputTokensUsed < 0) return false;
+  if (typeof candidate.wallClockElapsedMs !== 'number' || !Number.isFinite(candidate.wallClockElapsedMs) || candidate.wallClockElapsedMs < 0) return false;
+  return true;
+}
+
 /** 闸3 判定结果 */
 export interface FallbackResult {
   stop: boolean;
@@ -111,6 +169,8 @@ export class GoalModeController {
   /** 到限放行标记：met 但验证未全过（完成但降级） */
   private verificationDegraded = false;
   private degradedReason?: string;
+  /** Last live-loop iteration durably observed at a model checkpoint. */
+  private turnsCompleted = 0;
 
   /** B7：审计 nudge 间隔倍率（strong 档拉长注入间隔，1 = 现状） */
   private readonly auditIntervalMultiplier: number;
@@ -118,6 +178,58 @@ export class GoalModeController {
   constructor(contract: GoalContract, options?: { auditIntervalMultiplier?: number }) {
     this.contract = contract;
     this.auditIntervalMultiplier = Math.max(1, options?.auditIntervalMultiplier ?? 1);
+  }
+
+  static fromRecoverySnapshot(
+    snapshot: GoalRecoverySnapshot,
+    options?: { auditIntervalMultiplier?: number },
+  ): GoalModeController {
+    if (!isGoalRecoverySnapshot(snapshot)) {
+      throw new Error('goal recovery snapshot is invalid');
+    }
+    const controller = new GoalModeController(snapshot.contract, options);
+    controller.status = snapshot.status;
+    controller.inactiveTurns = snapshot.inactiveTurns;
+    controller.pauseReason = snapshot.pauseReason;
+    controller.abortReason = snapshot.abortReason;
+    controller.completionRequested = snapshot.completionRequested;
+    controller.pendingSummary = snapshot.pendingSummary;
+    controller.swarmTokensUsed = snapshot.swarmTokensUsed;
+    controller.gateFailureCounts = { ...snapshot.gateFailureCounts };
+    controller.verificationDegraded = snapshot.verificationDegraded;
+    controller.degradedReason = snapshot.degradedReason;
+    controller.turnsCompleted = snapshot.turnsCompleted;
+    return controller;
+  }
+
+  snapshot(
+    tokensUsed: number,
+    inputTokensUsed = tokensUsed,
+    outputTokensUsed = 0,
+    wallClockElapsedMs = 0,
+  ): GoalRecoverySnapshot {
+    return {
+      contract: { ...this.contract },
+      status: this.status,
+      inactiveTurns: this.inactiveTurns,
+      pauseReason: this.pauseReason,
+      abortReason: this.abortReason,
+      completionRequested: this.completionRequested,
+      pendingSummary: this.pendingSummary,
+      swarmTokensUsed: this.swarmTokensUsed,
+      gateFailureCounts: { ...this.gateFailureCounts },
+      verificationDegraded: this.verificationDegraded,
+      degradedReason: this.degradedReason,
+      turnsCompleted: this.turnsCompleted,
+      tokensUsed,
+      inputTokensUsed,
+      outputTokensUsed,
+      wallClockElapsedMs,
+    };
+  }
+
+  recordTurn(turn: number): void {
+    if (Number.isInteger(turn) && turn >= 0) this.turnsCompleted = turn;
   }
 
   getGoal(): string { return this.contract.goal; }

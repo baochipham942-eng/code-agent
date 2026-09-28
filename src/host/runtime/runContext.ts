@@ -4,6 +4,7 @@ import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import type { MessageAttachment, MessageMetadata } from '../../shared/contract';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
 import type { WorkspaceScope } from '../../shared/contract/project';
+import type { GoalRecoverySnapshot } from '../agent/goalModeController';
 import { resolveBackgroundWorkspaceAuthority } from './workspaceAuthority';
 import {
   isPathWithinRoot,
@@ -20,6 +21,7 @@ export interface RunContext {
   /** Default process and relative-path directory for this run. */
   readonly cwd: string;
   readonly createdAt: number;
+  readonly goalRecoverySnapshotProvider?: () => GoalRecoverySnapshot | undefined;
 }
 
 export interface CreateRunContextInput {
@@ -29,6 +31,7 @@ export interface CreateRunContextInput {
   workspaceScope?: WorkspaceScope;
   cwd?: string;
   createdAt?: number;
+  goalRecoverySnapshotProvider?: () => GoalRecoverySnapshot | undefined;
 }
 
 export type RunCancelReason = 'user' | 'session-switch';
@@ -174,10 +177,17 @@ export function createRunContext(input: CreateRunContextInput): RunContext {
     workspace,
     cwd,
     createdAt: input.createdAt ?? Date.now(),
+    goalRecoverySnapshotProvider: input.goalRecoverySnapshotProvider,
   } as RunContext;
   // Preserve the legacy enumerable shape for durable serializers and strict callers.
   Object.defineProperty(context, 'workspaceScope', {
     value: workspaceScope,
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
+  Object.defineProperty(context, 'goalRecoverySnapshotProvider', {
+    value: input.goalRecoverySnapshotProvider,
     enumerable: false,
     writable: false,
     configurable: false,

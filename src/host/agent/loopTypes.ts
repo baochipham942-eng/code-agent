@@ -127,6 +127,8 @@ export interface AgentLoopConfig {
   effortLevel?: import('../../shared/contract/agent').EffortLevel;
   /** /goal 自治模式契约；存在则激活 goal 模式（设 ctx.goalMode + maxIterations=maxTurns） */
   goalContract?: GoalContract;
+  /** Rebuilt /goal controller state after a durable native recovery. */
+  goalRecoverySnapshot?: import('./goalModeController').GoalRecoverySnapshot;
   /** Approved Neo Tag work card context for this run. */
   neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
   /** GAP-013: 启用 Generator-Critic 交付前自动验证（默认读 CODE_AGENT_DELIVERY_CRITIC 环境变量） */

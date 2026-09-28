@@ -200,6 +200,8 @@ export interface AgentRunOptions {
   modelSpec?: import('../../shared/contract/conversationEnvelope').ConversationModelSpec;
   /** /goal 自治模式：存在则本轮激活 goal 模式（normal mode 下生效） */
   goal?: import('../../shared/contract/appService').GoalRunInput;
+  /** Crash recovery supplies the persisted goal controller state verbatim. */
+  goalRecoverySnapshot?: import('../agent/goalModeController').GoalRecoverySnapshot;
   /** 本轮迭代数硬上限（角色主动性醒来等预算受限场景；不传用 AgentLoop 默认值） */
   maxIterations?: number;
   /** Neo Tag approved work card runtime context. */

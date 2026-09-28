@@ -152,25 +152,43 @@ export async function ensureMaxStepsWrapUp(
 }
 
 
-export function bindGoalWallClock(budgetMs: number | undefined, runStartTime: () => number, sessionId?: string): {
+export function bindGoalWallClock(
+  budgetMs: number | undefined,
+  runStartTime: () => number,
+  sessionId?: string,
+  elapsedMs = 0,
+): {
   getElapsedMs: () => number;
   release: () => void;
 } {
+  const priorElapsedMs = Math.max(0, elapsedMs);
   if (budgetMs === undefined) {
     return {
-      getElapsedMs: () => Date.now() - runStartTime(),
+      getElapsedMs: () => priorElapsedMs + Date.now() - runStartTime(),
       release: () => {},
     };
   }
   // ponytail: 墙钟从 bind 那一刻起算，不含 initializeRun 到 bind 的差值（通常毫秒级）。
-  const wallClock = createHumanWaitBoundTimeout(budgetMs, 'goal wall-clock budget', sessionId);
+  const remainingMs = Math.max(0, budgetMs - priorElapsedMs);
+  const wallClock = createHumanWaitBoundTimeout(remainingMs, 'goal wall-clock budget', sessionId);
   return {
-    getElapsedMs: () => wallClock.controller.getElapsedMs(),
+    getElapsedMs: () => priorElapsedMs + wallClock.controller.getElapsedMs(),
     release: () => {
       wallClock.unbind();
       wallClock.controller.clear();
     },
   };
+}
+
+export function bindGoalWallClockForContext(ctx: RuntimeContext): ReturnType<typeof bindGoalWallClock> {
+  const wallClock = bindGoalWallClock(
+    ctx.goalMode?.getWallClockBudgetMs(),
+    () => ctx.stats.runStartTime,
+    ctx.sessionId,
+    ctx.goalRecoverySnapshot?.wallClockElapsedMs,
+  );
+  ctx.goalWallClockElapsedMs = wallClock.getElapsedMs;
+  return wallClock;
 }
 
 export function createResourceWarning(

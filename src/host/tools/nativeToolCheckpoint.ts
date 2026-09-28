@@ -2,6 +2,7 @@ import type { ToolDefinition } from '../../shared/contract';
 import { getConfiguredApplicationRunRegistry } from '../app/applicationRunRegistry';
 import { getDatabase } from '../services/core/databaseService';
 import { hasNativeToolSideEffect } from './toolReplaySafety';
+import type { GoalRecoverySnapshot } from '../agent/goalModeController';
 
 export interface NativeToolCheckpoint {
   complete(success: boolean): Promise<void>;
@@ -16,6 +17,7 @@ export async function prepareNativeToolCheckpoint(input: {
   toolCallId?: string;
   executionId: string;
   startedAt: number;
+  goalRecoverySnapshot?: GoalRecoverySnapshot;
 }): Promise<NativeToolCheckpoint> {
   const registry = input.runId ? getConfiguredApplicationRunRegistry() : null;
   const active = Boolean(input.runId && registry?.hasDurableOwner(input.runId));
@@ -46,6 +48,8 @@ export async function prepareNativeToolCheckpoint(input: {
     ...operation,
     status: 'dispatched',
     now: input.startedAt,
+    isGoalRun: input.goalRecoverySnapshot !== undefined,
+    goalState: input.goalRecoverySnapshot,
   });
 
   return {
@@ -54,6 +58,8 @@ export async function prepareNativeToolCheckpoint(input: {
         ...operation,
         status: success ? 'succeeded' : 'failed',
         resultRef: `tool-ledger:${input.executionId}`,
+        isGoalRun: input.goalRecoverySnapshot !== undefined,
+        goalState: input.goalRecoverySnapshot,
       });
     },
   };

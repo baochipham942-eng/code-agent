@@ -14,6 +14,7 @@ import type { CircuitBreaker } from '../toolExecution/circuitBreaker';
 import type { AntiPatternDetector } from '../antiPattern/detector';
 import type { GoalTracker } from '../goalTracker';
 import type { GoalModeController } from '../goalModeController';
+import type { GoalRecoverySnapshot } from '../goalModeController';
 import type { ScaffoldProfile } from './scaffoldProfile';
 import type { NudgeManager } from '../nudgeManager';
 import type { HookManager } from '../../hooks/hookManager';
@@ -104,6 +105,10 @@ export interface RuntimeContext {
   readonly goalTracker: GoalTracker;
   /** /goal 自治循环控制器；仅 goal 模式下存在（opt-in），普通 run 为 undefined */
   readonly goalMode?: GoalModeController;
+  /** Snapshot used to seed the resumed loop's turn and token budgets. */
+  readonly goalRecoverySnapshot?: GoalRecoverySnapshot;
+  /** Live goal wall-clock accounting callback, installed for the active loop. */
+  goalWallClockElapsedMs?: () => number;
   readonly nudgeManager: NudgeManager;
   hookManager?: HookManager;
   readonly planningService?: PlanningService;

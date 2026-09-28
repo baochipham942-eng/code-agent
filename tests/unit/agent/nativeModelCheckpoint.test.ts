@@ -19,7 +19,7 @@ vi.mock('../../../src/host/app/applicationRunRegistry', () => ({
 import { withNativeModelOperation } from '../../../src/host/agent/runtime/contextAssembly/nativeModelCheckpoint';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly/shared';
 
-function makeCtx(): ContextAssemblyCtx {
+function makeCtx(runtimeOverrides: Record<string, unknown> = {}): ContextAssemblyCtx {
   return {
     runtime: {
       runId: 'run-1',
@@ -27,6 +27,7 @@ function makeCtx(): ContextAssemblyCtx {
       turn: { currentTurnId: 't1' },
       goalMode: null,
       control: { isCancelled: false, isInterrupted: false },
+      ...runtimeOverrides,
     },
   } as unknown as ContextAssemblyCtx;
 }
@@ -67,5 +68,21 @@ describe('withNativeModelOperation（checkpoint 错误降级）', () => {
     ).rejects.toThrow('boom');
     const statuses = registryState.checkpointNativeModelOperation.mock.calls.map((call) => call[0].status);
     expect(statuses).toEqual(['prepared', 'dispatched', 'failed']);
+  });
+
+  it('model checkpoint 保存恢复所需的 token split 和墙钟已用时间', async () => {
+    const snapshot = { status: 'pending' };
+    const goalMode = { snapshot: vi.fn().mockReturnValue(snapshot) };
+    const ctx = makeCtx({
+      goalMode,
+      stats: { totalTokensUsed: 900, totalInputTokens: 600, totalOutputTokens: 300 },
+      goalWallClockElapsedMs: vi.fn().mockReturnValue(3540),
+    });
+    registryState.checkpointNativeModelOperation.mockResolvedValue(undefined);
+
+    await withNativeModelOperation(ctx, CONFIG, new AbortController().signal, async () => 'ok');
+
+    expect(goalMode.snapshot).toHaveBeenCalledWith(900, 600, 300, 3540);
+    expect(registryState.checkpointNativeModelOperation.mock.calls[0][0].goalState).toBe(snapshot);
   });
 });

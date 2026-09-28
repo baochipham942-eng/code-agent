@@ -1,4 +1,4 @@
 export const INTERNAL_SDK_VERSION = Object.freeze({
-  host: '1a217900',
+  host: '22b8e2d8',
   renderer: '4cb7132f',
 });

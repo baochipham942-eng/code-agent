@@ -1904,6 +1904,7 @@ describe('ConversationRuntime', () => {
       ctx.goalMode = {
         isPending: vi.fn().mockReturnValue(false),
         getStatus: vi.fn().mockReturnValue('aborted'),
+        recordTurn: vi.fn(),
         getWallClockBudgetMs: () => undefined,
         getTokenBudget: () => 100000,
         getSwarmTokensUsed: () => 0,

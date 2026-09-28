@@ -35,7 +35,7 @@ import {
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
-import { activateMaxStepsFinalResponse, bindGoalWallClock, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
+import { activateMaxStepsFinalResponse, bindGoalWallClockForContext, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
 import { DoomLoopGuard } from './doomLoopGuard';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
@@ -343,10 +343,10 @@ export class ConversationRuntime {
     const { langfuse, isSimpleTask, genNum } = initResult;
     const baseRunTraceContext = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
 
-    let iterations = 0;
+    let iterations = this.ctx.goalRecoverySnapshot?.turnsCompleted ?? 0;
     let softValidationRetries = 0;
     let resourceFinalAttempted = false;
-    const wallClock = bindGoalWallClock(this.ctx.goalMode?.getWallClockBudgetMs(), () => this.ctx.stats.runStartTime, this.ctx.sessionId);
+    const wallClock = bindGoalWallClockForContext(this.ctx);
     const warnResources = createResourceWarning(this.ctx, (text, source) => this.contextAssembly.injectSystemMessage(text, source), wallClock.getElapsedMs);
     let userTurnId: string | undefined;
     let terminal: RunTerminalInfo = { status: 'completed' };
@@ -361,7 +361,7 @@ export class ConversationRuntime {
         await this.waitWhilePaused();
         if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted) break;
 
-        iterations++;
+        iterations++; this.ctx.goalMode?.recordTurn(Math.max(0, iterations - 1));
         this.ctx.turnTrace.setTurn(iterations);
         logger.debug(` >>>>>> Iteration ${iterations} START <<<<<<`);
 
@@ -752,6 +752,7 @@ export class ConversationRuntime {
       runError = error;
       await persistFailedRunContinuationContext(this.contextAssembly, userMessage, iterations, error);
     } finally {
+      this.ctx.goalWallClockElapsedMs = undefined;
       wallClock.release();
       if (baseRunTraceContext) enterRunTraceContext(baseRunTraceContext);
       this.ctx.control.markSettled();
@@ -889,7 +890,7 @@ export class ConversationRuntime {
 
 
     this.ctx.control.resetExternalDataCalls();
-    this.ctx.stats.beginRun();
+    this.ctx.stats.beginRun(this.ctx.goalRecoverySnapshot && { totalInputTokens: this.ctx.goalRecoverySnapshot.inputTokensUsed, totalOutputTokens: this.ctx.goalRecoverySnapshot.outputTokensUsed, totalTokensUsed: this.ctx.goalRecoverySnapshot.tokensUsed });
 
 
 

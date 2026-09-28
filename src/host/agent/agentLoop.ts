@@ -92,6 +92,10 @@ export class AgentLoop {
   private learningPipeline: LearningPipeline;
   private promptProfile: PromptProfile = 'interactive';
 
+  getGoalRecoverySnapshot() {
+    return this.ctx.goalMode?.snapshot(this.ctx.stats.totalTokensUsed);
+  }
+
   constructor(config: AgentLoopConfig) {
     // B7：按模型能力档解析脚手架厚度（flag 关 / 未标注模型 = standard = 现状行为）
     const scaffoldProfile = resolveScaffoldProfileForModel(config.modelConfig.model);
@@ -127,7 +131,10 @@ export class AgentLoop {
       onEvent,
       modelRouter: new ModelRouter(),
       // Goal 模式：轮次上限用契约的 maxTurns（通常 > 默认 30），否则走默认
-      maxIterations: config.maxIterations ?? config.goalContract?.maxTurns ?? getMaxIterations(),
+      maxIterations: config.maxIterations
+        ?? config.goalRecoverySnapshot?.contract.maxTurns
+        ?? config.goalContract?.maxTurns
+        ?? getMaxIterations(),
       workingDirectory: config.workingDirectory,
       projectConfigDirectory: config.projectConfigDirectory ?? config.workingDirectory,
       workspaceScope: config.workspaceScope,
@@ -173,17 +180,22 @@ export class AgentLoop {
       toolScope: config.toolScope,
       executionIntent: config.executionIntent,
       neoTag: config.neoTag,
+      goalRecoverySnapshot: config.goalRecoverySnapshot,
 
       // Services
       circuitBreaker: new CircuitBreaker(),
       antiPatternDetector: new AntiPatternDetector(),
       goalTracker: new GoalTracker(),
       // Goal 模式控制器：契约存在才激活（opt-in），否则 undefined（普通 run 不走 goal 分支）
-      goalMode: config.goalContract
-        ? new GoalModeController(config.goalContract, {
+      goalMode: config.goalRecoverySnapshot
+        ? GoalModeController.fromRecoverySnapshot(config.goalRecoverySnapshot, {
             auditIntervalMultiplier: scaffoldProfile.auditNudgeIntervalMultiplier,
           })
-        : undefined,
+        : config.goalContract
+          ? new GoalModeController(config.goalContract, {
+            auditIntervalMultiplier: scaffoldProfile.auditNudgeIntervalMultiplier,
+          })
+          : undefined,
       nudgeManager: new NudgeManager(),
       hookManager: config.hookManager,
       planningService: config.planningService,

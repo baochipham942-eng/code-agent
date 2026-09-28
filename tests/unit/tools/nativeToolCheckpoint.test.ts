@@ -54,4 +54,47 @@ describe('prepareNativeToolCheckpoint', () => {
       status: 'succeeded',
     }));
   });
+
+  it('forwards the live goal snapshot into both tool fences', async () => {
+    const goalRecoverySnapshot = {
+      contract: { goal: 'finish', verifyCommand: 'true', tokenBudget: 100, maxTurns: 2 },
+      status: 'pending' as const,
+      inactiveTurns: 0,
+      completionRequested: false,
+      swarmTokensUsed: 0,
+      gateFailureCounts: { 1: 0, 2: 0 },
+      verificationDegraded: false,
+      turnsCompleted: 1,
+      tokensUsed: 12,
+    };
+    const checkpoint = await prepareNativeToolCheckpoint({
+      runId: 'run-1',
+      sessionId: 'session-1',
+      sourceMessageId: 'message-1',
+      toolName: 'Read',
+      toolDefinition: {
+        name: 'Read',
+        description: 'Read',
+        inputSchema: { type: 'object', properties: {} },
+        outputSchema: { type: 'object', properties: {} },
+        requiresPermission: false,
+        permissionLevel: 'read',
+      },
+      toolCallId: 'call-1',
+      executionId: 'execution-1',
+      startedAt: 100,
+      goalRecoverySnapshot,
+    });
+
+    await checkpoint.complete(true);
+
+    expect(mocks.registry.checkpointNativeToolOperation).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      isGoalRun: true,
+      goalState: goalRecoverySnapshot,
+    }));
+    expect(mocks.registry.checkpointNativeToolOperation).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      isGoalRun: true,
+      goalState: goalRecoverySnapshot,
+    }));
+  });
 });

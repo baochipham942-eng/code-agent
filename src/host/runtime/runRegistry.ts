@@ -397,7 +397,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     phase: NativeRecoveryDescriptor['phase'];
     status: PendingOperation['status'];
     resultRef?: string;
-    isGoalRun?: boolean;
+    isGoalRun?: boolean; goalState?: import('../agent/goalModeController').GoalRecoverySnapshot;
     now?: number;
   }): Promise<void> {
     return this.serializeDurableMutation(input.runId, async () => {
@@ -446,7 +446,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       operationId,
       phase: input.phase,
       checkpointSequence: envelope.cursor.checkpointSeq + 1,
-      ...(input.isGoalRun ? { isGoalRun: true } : {}),
+      ...(input.isGoalRun ? { isGoalRun: true } : {}), ...(input.goalState ? { goalState: input.goalState } : {}),
     };
     await this.checkpointDurable(input.runId, {
       now,
@@ -469,6 +469,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     sideEffect: boolean;
     status: PendingOperation['status'];
     resultRef?: string;
+    isGoalRun?: boolean; goalState?: import('../agent/goalModeController').GoalRecoverySnapshot;
     now?: number;
   }): Promise<void> {
     return this.serializeDurableMutation(input.runId, async () => {
@@ -518,6 +519,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       operationId,
       phase: 'tool_dispatched',
       checkpointSequence: envelope.cursor.checkpointSeq + 1,
+      ...(input.isGoalRun ? { isGoalRun: true } : {}), ...(input.goalState ? { goalState: input.goalState } : {}),
     };
     await this.checkpointDurable(input.runId, {
       now,
@@ -1041,8 +1043,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   private async standDownDurableRun(runId: string): Promise<void> {
     const handle = this.handlesByRunId.get(runId);
     this.stopHeartbeat(runId);
-    this.durableOwners.delete(runId);
-    this.durableEnvelopes.delete(runId);
+    this.durableOwners.delete(runId); this.durableEnvelopes.delete(runId);
     this.durableCheckpointStates.delete(runId);
     this.endAttemptSpan(runId, 'error', { 'terminal.status': 'stale_owner' });
     this.unregister(runId, handle);
@@ -1051,8 +1052,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
 
   private stopHeartbeat(runId: string): void {
     const timer = this.heartbeatTimers.get(runId);
-    if (timer) clearInterval(timer);
-    this.heartbeatTimers.delete(runId);
+    if (timer) clearInterval(timer); this.heartbeatTimers.delete(runId);
   }
 
   private startAttemptSpan(

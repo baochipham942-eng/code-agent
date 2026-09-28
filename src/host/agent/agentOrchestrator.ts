@@ -987,6 +987,7 @@ export class AgentOrchestrator {
           workspace: workspaceScope?.primaryRoot,
           workspaceScope,
           cwd: runWorkingDirectory,
+          goalRecoverySnapshotProvider: () => this.agentLoop?.getGoalRecoverySnapshot(),
         })
         : undefined;
       this.agentLoop = new AgentLoop({
@@ -1018,6 +1019,7 @@ export class AgentOrchestrator {
       effortLevel: options?.effortLevel ?? automaticEffort,
       neoTag: options?.neoTag,
       goalContract,
+      goalRecoverySnapshot: options?.goalRecoverySnapshot,
       // 迭代数硬上限（角色主动性醒来等预算受限场景，内部文档 §6）
       maxIterations: options?.maxIterations,
       historyVisibility: options?.historyVisibility,

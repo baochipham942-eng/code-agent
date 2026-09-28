@@ -343,7 +343,7 @@ export class ConversationRuntime {
     const { langfuse, isSimpleTask, genNum } = initResult;
     const baseRunTraceContext = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
 
-    let iterations = 0;
+    let iterations = this.ctx.goalRecoverySnapshot?.turnsCompleted ?? 0;
     let softValidationRetries = 0;
     let resourceFinalAttempted = false;
     const wallClock = bindGoalWallClock(this.ctx.goalMode?.getWallClockBudgetMs(), () => this.ctx.stats.runStartTime, this.ctx.sessionId);
@@ -361,7 +361,7 @@ export class ConversationRuntime {
         await this.waitWhilePaused();
         if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted) break;
 
-        iterations++;
+        iterations++; this.ctx.goalMode?.recordTurn(iterations);
         this.ctx.turnTrace.setTurn(iterations);
         logger.debug(` >>>>>> Iteration ${iterations} START <<<<<<`);
 
@@ -889,7 +889,7 @@ export class ConversationRuntime {
 
 
     this.ctx.control.resetExternalDataCalls();
-    this.ctx.stats.beginRun();
+    this.ctx.stats.beginRun({ totalTokensUsed: this.ctx.goalRecoverySnapshot?.tokensUsed });
 
 
 

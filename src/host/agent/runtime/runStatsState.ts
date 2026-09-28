@@ -34,9 +34,9 @@ export class RunStatsState {
   }
 
   /** run 起始重置（保持原 initializeRun 语义：input/output 累计值不在此清零） */
-  beginRun(): void {
+  beginRun(seed?: { totalTokensUsed?: number }): void {
     this._runStartTime = Date.now();
-    this._totalTokensUsed = 0;
+    this._totalTokensUsed = seed?.totalTokensUsed ?? 0;
     this._totalToolCallCount = 0;
   }
 

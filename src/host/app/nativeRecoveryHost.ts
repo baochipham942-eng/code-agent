@@ -26,6 +26,7 @@ import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinition
 import { classifyToolReplaySafety } from '../tools/toolReplaySafety';
 import { createLogger } from '../services/infra/logger';
 import type { TurnCostEstimateInput } from '../../shared/contract/turnCost';
+import type { GoalRecoverySnapshot } from '../agent/goalModeController';
 
 interface NativeModelContinuationSessions {
   getMessages(sessionId: string, limit?: number): Promise<Message[]>;
@@ -37,7 +38,12 @@ interface NativeModelContinuationTasks {
     sessionId: string,
     runId: string,
     messages: Message[],
-    options?: { mode: 'normal'; modelSpec?: { provider: string; model: string }; disableAutoAgent?: boolean },
+    options?: {
+      mode: 'normal';
+      modelSpec?: { provider: string; model: string };
+      disableAutoAgent?: boolean;
+      goalRecoverySnapshot?: GoalRecoverySnapshot;
+    },
     messageMetadata?: Message['metadata'],
     clientMessageId?: string,
   ): Promise<void>;
@@ -315,6 +321,7 @@ export function createApplicationNativeRecoveryPorts(
           ? { modelSpec: { provider: input.descriptor.provider, model: input.descriptor.model } }
           : {}),
         disableAutoAgent: true,
+        ...(input.descriptor.goalState ? { goalRecoverySnapshot: input.descriptor.goalState } : {}),
       },
       source.metadata,
       source.id,
@@ -405,6 +412,7 @@ export function createApplicationNativeRecoveryPorts(
             // The crashed run was already inside the native model path. Re-entering
             // auto-agent routing would replay a larger graph instead of this operation.
             disableAutoAgent: true,
+            ...(input.descriptor.goalState ? { goalRecoverySnapshot: input.descriptor.goalState } : {}),
           },
           {
             ...source.metadata,

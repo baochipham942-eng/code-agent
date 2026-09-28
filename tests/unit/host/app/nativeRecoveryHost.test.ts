@@ -123,6 +123,47 @@ function sourceMessage(metadata?: Message['metadata']): Message {
 }
 
 describe('application Native model continuation ports', () => {
+  it('passes the durable goal snapshot into the adopted live loop', async () => {
+    const input = recoveryInput();
+    const goalState = {
+      contract: { goal: 'resume goal', verifyCommand: 'npm test', tokenBudget: 800, maxTurns: 4 },
+      status: 'pending' as const,
+      inactiveTurns: 0,
+      completionRequested: false,
+      swarmTokensUsed: 12,
+      gateFailureCounts: { 1: 1, 2: 0 },
+      verificationDegraded: false,
+      turnsCompleted: 2,
+      tokensUsed: 77,
+    };
+    input.descriptor.goalState = goalState;
+    let messages: Message[] = [sourceMessage()];
+    const resumeExistingDurableRun = vi.fn(async (
+      _sessionId: string,
+      _runId: string,
+      _history: Message[],
+      options?: { mode: 'normal'; goalRecoverySnapshot?: typeof goalState },
+    ) => {
+      expect(options?.goalRecoverySnapshot).toEqual(goalState);
+      messages = [...messages, { id: 'assistant-goal', role: 'assistant', content: '继续', timestamp: 3 }];
+    });
+    const ports = createApplicationNativeRecoveryPorts(
+      { checkpointDurable: vi.fn(async () => undefined) } as never,
+      {
+        sessions: {
+          getMessages: vi.fn(async () => messages),
+          updateMessage: vi.fn(async (messageId: string, updates: Partial<Message>) => {
+            messages = messages.map((message) => message.id === messageId ? { ...message, ...updates } : message);
+          }),
+        },
+        tasks: { resumeExistingDurableRun },
+      },
+    );
+
+    await expect(ports.model.dispatchPrepared(input)).resolves.toMatchObject({ loopResumed: true });
+    expect(resumeExistingDurableRun).toHaveBeenCalledOnce();
+  });
+
   it('re-enters the production task path with full history and fences before dispatch', async () => {
     const input = recoveryInput();
     let messages = [

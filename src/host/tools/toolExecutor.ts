@@ -2309,6 +2309,7 @@ export class ToolExecutor {
         toolCallId: options.currentToolCallId,
         executionId,
         startedAt: startTime,
+        goalRecoverySnapshot: this.runContext?.goalRecoverySnapshotProvider?.(),
       });
       executionStarted = true;
       options.turnTrace?.record('tool_execution_start', {

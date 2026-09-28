@@ -5,6 +5,7 @@ import type { RunRehydrationPlan } from './durableRunStores';
 import type { RunRegistry } from './runRegistry';
 import type { DurableEngineRecoveryHandler } from './durableRecoveryDispatcher';
 import { canAutomaticallyReplayTool } from '../tools/toolReplaySafety';
+import { isGoalRecoverySnapshot, type GoalRecoverySnapshot } from '../agent/goalModeController';
 
 export const NATIVE_RECOVERY_SCHEMA_VERSION = 1 as const;
 
@@ -27,6 +28,8 @@ export interface NativeRecoveryDescriptor {
    * pre-goal-marking checkpoints (undefined = not a goal run, back-compatible).
    */
   isGoalRun?: boolean;
+  /** Full /goal contract and live gate/budget state for safe loop reconstruction. */
+  goalState?: GoalRecoverySnapshot;
 }
 
 export interface NativeRecoveryResultEvidence {
@@ -135,7 +138,14 @@ export class NativeRecoveryHost {
       return this.review(plan, now, 'native_recovery_descriptor_missing');
     }
     if (descriptor.isGoalRun) {
-      return this.reviewInterruptedGoal(plan, now);
+      if (!isGoalRecoverySnapshot(descriptor.goalState)) {
+        return this.parkGoalStateRebuildFailure(plan, now, 'goal_run_state_rebuild_failed');
+      }
+      // A parked/terminal goal is waiting for an explicit user action. Only a
+      // still-pending, fully reconstructable controller may re-enter the live loop.
+      if (descriptor.goalState.status !== 'pending') {
+        return this.parkGoalStateRebuildFailure(plan, now, 'goal_run_state_not_resumable');
+      }
     }
     if (descriptor.operationId !== descriptor.logicalOperationId
       && !plan.pendingOperations.some((operation) => operation.operationId === descriptor.operationId)) {
@@ -545,29 +555,8 @@ export class NativeRecoveryHost {
     return { status: 'requires_review' as const, reason };
   }
 
-  /**
-   * Interrupted /goal run: never auto-`completed`. The completion decision belongs to the
-   * goal loop's verify/review gates, which recovery does not re-enter — replaying one pending
-   * operation and terminating `completed` would report a goal as done that never passed
-   * verification (the false-completion P0). Surface the real terminal (`goal_complete` aborted /
-   * interrupted) and route to review. Actually re-running the goal loop is a separate ticket.
-   */
-  private async reviewInterruptedGoal(plan: RunRehydrationPlan, now: number) {
-    const reason = 'goal_run_interrupted_requires_review';
-    const goalComplete = {
-      type: 'goal_complete',
-      payload: { status: 'aborted' as const, reason: 'interrupted' },
-      recordedAt: now,
-    };
-    if (this.ports.continuationExecutor === 'unavailable') {
-      await this.registry.terminalDurable(plan.envelope.runId, {
-        now,
-        status: 'failed',
-        reason,
-        event: goalComplete,
-      });
-      return { status: 'failed' as const, reason };
-    }
+  /** Goal state cannot be rebuilt safely: park it for an explicit continuation. */
+  private async parkGoalStateRebuildFailure(plan: RunRehydrationPlan, now: number, reason: string) {
     await this.registry.checkpointDurable(plan.envelope.runId, {
       now,
       status: 'waiting',
@@ -575,7 +564,8 @@ export class NativeRecoveryHost {
       engineCursor: plan.checkpoint?.cursor.engineCursor,
       pendingOperations: plan.pendingOperations,
       childRuns: plan.childRuns,
-      events: [goalComplete, { type: 'native_recovery_requires_review', payload: { reason }, recordedAt: now }],
+      interruptCause: 'guard_halt',
+      events: [{ type: 'native_recovery_requires_review', payload: { reason }, recordedAt: now }],
     });
     return { status: 'requires_review' as const, reason };
   }

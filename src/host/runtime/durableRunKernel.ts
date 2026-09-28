@@ -423,10 +423,10 @@ export class DurableRunKernel implements RunKernelAdapter {
         status: waiting ? 'waiting' : 'recovering',
         pendingOperations,
         interruptCause: getRunInterruptCause(claimed.envelope) ?? 'crash_or_quit',
-        autoResumeCount: Math.min(
-          MAX_AUTO_RESUME_COUNT,
-          (claimed.envelope.autoResumeCount ?? 0) + 1,
-        ),
+        // 等审批的 run 只是恢复同一审批，不消耗自动续跑预算。
+        autoResumeCount: waiting
+          ? (claimed.envelope.autoResumeCount ?? 0)
+          : Math.min(MAX_AUTO_RESUME_COUNT, (claimed.envelope.autoResumeCount ?? 0) + 1),
         updatedAt: now,
       });
       plans.push({

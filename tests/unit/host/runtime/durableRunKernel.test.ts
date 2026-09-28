@@ -546,6 +546,36 @@ describe('DurableRunKernel', () => {
     db.close();
   });
 
+  it('keeps restoring a pending approval across restarts without burning the auto-resume budget', async () => {
+    const { db, kernel, repository } = createKernel();
+    const created = await kernel.createNativeRun({ runId: 'run-approval-restarts', sessionId: 'session-approval-restarts', now: 10 });
+    const approval = kernel.prepareOperation({
+      runId: created.envelope.runId, operationId: 'approval-1', attempt: created.attempt.attempt,
+      kind: 'approval', sideEffect: false, canDeduplicate: true, now: 15,
+    });
+    await kernel.checkpoint({
+      runId: created.envelope.runId,
+      attempt: created.attempt.attempt,
+      owner: created.owner,
+      now: 20,
+      status: 'waiting',
+      state: {},
+      pendingOperations: [{ ...approval, status: 'waiting' }],
+      events: [{ type: 'approval_requested', payload: {}, recordedAt: 20 }],
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: 0,
+    });
+
+    for (const [index, now] of [2_000, 4_000, 6_000].entries()) {
+      const plans = await new DurableRunKernel({
+        stores: repository, ownerId: 'native-host', processInstanceId: `process-${index + 2}`, leaseDurationMs: 100,
+      }).recoverOnStartup(now);
+      expect(plans).toHaveLength(1);
+      expect(plans[0].envelope).toMatchObject({ status: 'waiting', autoResumeCount: 0 });
+    }
+    db.close();
+  });
+
   it('parks an exhausted crash loop for an explicit Continue action', async () => {
     const { db, kernel, repository } = createKernel();
     const capped = await kernel.createNativeRun({

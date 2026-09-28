@@ -330,7 +330,7 @@ describe('NativeRecoveryHost production recovery', () => {
       resultRef: 'model-recovery:superseded-by-live-loop:model:fenced',
     });
     const live = operation({ operationId: 'model:live', status: 'prepared', idempotencyKey: 'live' });
-    const dispatchPrepared = vi.fn(async () => ({ resultRef: 'model:live-result', loopResumed: true }));
+    const dispatchPrepared = vi.fn(async (_input: Parameters<NativeRecoveryHostPorts['model']['dispatchPrepared']>[0]) => ({ resultRef: 'model:live-result', loopResumed: true }));
     const { handler, registry } = fixture({
       continuationExecutor: 'available',
       model: {
@@ -350,7 +350,7 @@ describe('NativeRecoveryHost production recovery', () => {
       reason: 'resume_live_loop',
     });
     expect(dispatchPrepared).toHaveBeenCalledOnce();
-    expect(dispatchPrepared.mock.calls[0]?.[0].operation.operationId).toBe('model:live');
+    expect(dispatchPrepared.mock.calls[0]?.[0]?.operation.operationId).toBe('model:live');
     expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 

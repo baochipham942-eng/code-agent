@@ -131,9 +131,9 @@ interface IPCResponse<T = unknown> {
 
 | Action | Payload | 响应 | 说明 |
 |--------|---------|------|------|
-| `list` | - | `Session[]` | 列出所有会话 |
+| `list` | - | `Session[]` | 列出所有会话；web 与桌面均附带 durable replay projection（含 Continue / resume notice） |
 | `create` | `{ title?: string }` | `Session` | 创建新会话 |
-| `load` | `{ sessionId: string }` | `Session` | 加载会话 |
+| `load` | `{ sessionId: string }` | `Session` | 加载会话；web 与桌面均附带 durable replay projection |
 | `delete` | `{ sessionId: string }` | `null` | 删除会话 |
 | `getMessages` | `{ sessionId: string }` | `Message[]` | 获取消息 |
 | `rewindConversation` | `{ sessionId: string; anchorUserMessageId: string; idempotencyKey: string }` | `RewindConversationResult` | 锚点保持 active，仅软隐藏其后的消息；兼容 draft 字段返回空内容；不修改工作区文件 |

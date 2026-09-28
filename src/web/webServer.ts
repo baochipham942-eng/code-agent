@@ -31,6 +31,7 @@ import { initSentryNode } from '../host/observability/sentryNode';
 import { initCrashMarker } from '../host/observability/crashMarker';
 import { initPostHogNode } from '../host/observability/posthogNode';
 import type { AuthUser } from '../shared/contract';
+import { IPC_CHANNELS } from '../shared/ipc';
 import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from '../host/services/core/repositories/PendingApprovalRepository';
 import { reconcileRecentPlanApprovalStarts } from '../host/services/planning/planApprovalService';
@@ -699,6 +700,10 @@ async function initializeServices(): Promise<void> {
         autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(runRegistry),
         nativeRecoveryPorts: createApplicationNativeRecoveryPorts(runRegistry),
         onAutoResumeStart: (plan) => {
+          // The durable row changes before the resumed TaskManager turn emits
+          // its first state event; refresh list/load immediately after the
+          // renderer-ready recovery gate opens.
+          broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
           const envelope = plan.envelope;
           void getSessionManager().getSession(envelope.sessionId, 1).then((session) => {
             if (!session) return;

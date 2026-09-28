@@ -132,6 +132,31 @@ describe('DurableRunReadService migrated consumers', () => {
     });
   });
 
+  it('keeps the resume notice visible after recovery enters the running turn', () => {
+    expect(projectDurableRunToSessionPayload({
+      source: 'durable', consumer: 'session_replay', runId: 'running-recovery', sessionId: 'session',
+      status: 'running', engine: { kind: 'native' }, terminal: false,
+      attempt: 2, interruptCause: 'crash_or_quit', autoResumeCount: 1,
+    })).toMatchObject({
+      status: 'running',
+      durableResume: {
+        runId: 'running-recovery', mode: 'auto-resuming', interruptCause: 'crash_or_quit', canContinue: false,
+      },
+    });
+
+    expect(projectDurableRunToSessionPayload({
+      source: 'durable', consumer: 'session_replay', runId: 'fresh-running', sessionId: 'session',
+      status: 'running', engine: { kind: 'native' }, terminal: false,
+      attempt: 1, autoResumeCount: 0,
+    }).durableResume).toBeUndefined();
+
+    expect(projectDurableRunToSessionPayload({
+      source: 'durable', consumer: 'session_replay', runId: 'finished-recovery', sessionId: 'session',
+      status: 'completed', engine: { kind: 'native' }, terminal: true,
+      attempt: 2, interruptCause: 'crash_or_quit', autoResumeCount: 1,
+    }).durableResume).toBeUndefined();
+  });
+
   it('does not expose Continue for external engine runs', () => {
     expect(projectDurableRunToSessionPayload({
       source: 'durable',

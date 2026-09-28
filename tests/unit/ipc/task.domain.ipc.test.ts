@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 
 // task.ipc.ts 派发特征测试（RQ-183 续作·TASK 刀迁表前钉住现状）：既有 taskIpc.unavailable.test.ts 覆盖
 // TaskManager 缺席兜底与三个只读 action / cancelBackgroundTask / 事件桥；这里补齐 manager 可用时
@@ -20,6 +20,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 vi.mock('../../../src/host/platform', () => ({ broadcastToRenderer: vi.fn() }));
 
 import { registerTaskHandlers } from '../../../src/host/ipc/task.ipc';
+import { broadcastToRenderer } from '../../../src/host/platform';
 
 type Handler = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 
@@ -88,6 +89,8 @@ describe('task.ipc dispatch 特征：manager 可用', () => {
     await call(null, { action: 'getState', payload: { sessionId: 's1' } } as IPCRequest);
     await call(null, { action: 'cleanup', payload: { sessionId: 's1' } } as IPCRequest);
     expect(m.listenerCount('event')).toBe(1);
+    m.emit('event', { type: 'state_change', sessionId: 's1', data: { status: 'idle' } });
+    expect(broadcastToRenderer).toHaveBeenCalledWith(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
   });
 });
 

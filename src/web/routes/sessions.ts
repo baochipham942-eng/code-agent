@@ -16,10 +16,11 @@ import {
 import { SessionCreateBodySchema } from './sessionBodySchemas';
 import type { WebRouteLogger } from './routeTypes';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
+import type { DurableRunReadService } from '../../host/app/durableRunReadService';
 import {
-  projectDurableRunToSessionPayload,
-  type DurableRunReadService,
-} from '../../host/app/durableRunReadService';
+  withDurableSessionReplayPayload,
+  type DurableSessionPayload,
+} from '../helpers/durableSessionPayload';
 import type { TraceReadService } from '../../host/app/traceReadService';
 
 interface SessionManagerLike {
@@ -81,30 +82,7 @@ interface SessionsRouterDeps {
   getTraceReadService?: () => TraceReadService | undefined;
 }
 
-type DurableRestoredSessionPayload = Session & { messages: Message[]; durableWaitingInput?: true };
-
-function stripDurableWaitingApprovalMarker<T extends { durableWaitingInput?: true }>(session: T): Omit<T, 'durableWaitingInput'> {
-  const { durableWaitingInput: _durableWaitingApproval, ...rest } = session;
-  return rest;
-}
-
-async function withDurableSessionReplayPayload<T extends Session>(
-  session: T,
-  readService: DurableRunReadService | undefined,
-): Promise<T & { durableWaitingInput?: true }> {
-  const base = stripDurableWaitingApprovalMarker(session as T & { durableWaitingInput?: true });
-  if (!readService) {
-    return base as T;
-  }
-  const run = await readService.readSessionReplay(session.id, () => ({
-    status: session.status === 'running' || session.status === 'paused' ? session.status : 'idle',
-    updatedAt: session.updatedAt,
-  }));
-  return {
-    ...base,
-    ...projectDurableRunToSessionPayload(run),
-  } as T & { durableWaitingInput?: true };
-}
+type DurableRestoredSessionPayload = DurableSessionPayload & { messages: Message[] };
 
 async function withDurableSessionListPayload(
   sessions: unknown[],

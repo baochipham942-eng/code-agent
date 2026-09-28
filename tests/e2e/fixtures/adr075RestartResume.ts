@@ -12,6 +12,7 @@ import {
   type NativeRecoveryDescriptor,
   type NativeRecoveryHostPorts,
   type NativeRecoveryOperationInput,
+  type NativeRecoveryResultEvidence,
 } from '../../../src/host/runtime/nativeRecoveryHost';
 import type { DurableEngineRecoveryHandler } from '../../../src/host/runtime/durableRecoveryDispatcher';
 import type { DurableRunKillRestartScenario } from '../../fixtures/durableRunKillRestart';

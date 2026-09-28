@@ -323,6 +323,62 @@ describe('NativeRecoveryHost production recovery', () => {
       .toMatchObject({ pendingOperations: [expect.objectContaining({ status: 'failed', resultRef: 'approval:rejected' })] });
   });
 
+  it('resumes the live-loop replacement when the fenced model op was settled as abandoned', async () => {
+    const fenced = operation({
+      operationId: 'model:fenced',
+      status: 'abandoned',
+      resultRef: 'model-recovery:superseded-by-live-loop:model:fenced',
+    });
+    const live = operation({ operationId: 'model:live', status: 'prepared', idempotencyKey: 'live' });
+    const dispatchPrepared = vi.fn(async () => ({ resultRef: 'model:live-result', loopResumed: true }));
+    const { handler, registry } = fixture({
+      continuationExecutor: 'available',
+      model: {
+        dispatchPrepared,
+        queryResult: vi.fn(async () => null),
+        canRetrySafely: vi.fn(async () => false),
+        retrySafe: vi.fn(async () => ({ resultRef: 'unused' })),
+      },
+    });
+    const recoveryPlan = plan(live);
+    recoveryPlan.pendingOperations = [fenced, live];
+    recoveryPlan.envelope.pendingOperations = [fenced, live];
+    (recoveryPlan.checkpoint!.state as NativeRecoveryDescriptor).operationId = live.operationId;
+
+    await expect(handler.recover(recoveryPlan, 10)).resolves.toMatchObject({
+      status: 'recovered',
+      reason: 'resume_live_loop',
+    });
+    expect(dispatchPrepared).toHaveBeenCalledOnce();
+    expect(dispatchPrepared.mock.calls[0]?.[0].operation.operationId).toBe('model:live');
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-replay a leftover unknown model_call beside a live-loop replacement', async () => {
+    const unknown = operation({ operationId: 'model:unknown', status: 'unknown' });
+    const live = operation({ operationId: 'model:live', status: 'prepared', idempotencyKey: 'live' });
+    const dispatchPrepared = vi.fn(async () => ({ resultRef: 'must-not-run', loopResumed: true }));
+    const { handler } = fixture({
+      continuationExecutor: 'available',
+      model: {
+        dispatchPrepared,
+        queryResult: vi.fn(async () => null),
+        canRetrySafely: vi.fn(async () => false),
+        retrySafe: vi.fn(async () => ({ resultRef: 'unused' })),
+      },
+    });
+    const recoveryPlan = plan(live);
+    recoveryPlan.pendingOperations = [unknown, live];
+    recoveryPlan.envelope.pendingOperations = [unknown, live];
+    (recoveryPlan.checkpoint!.state as NativeRecoveryDescriptor).operationId = live.operationId;
+
+    await expect(handler.recover(recoveryPlan, 10)).resolves.toMatchObject({
+      status: 'requires_review',
+      reason: 'native_operation_not_safely_recoverable',
+    });
+    expect(dispatchPrepared).not.toHaveBeenCalled();
+  });
+
   it('fails closed when the persisted multi-source scope no longer matches the Project', async () => {
     const pending = operation({ status: 'prepared' });
     const recoveryPlan = plan(pending);

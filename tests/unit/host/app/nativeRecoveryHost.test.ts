@@ -214,7 +214,11 @@ describe('application Native model continuation ports', () => {
       status: 'running',
       interruptCause: 'crash_or_quit',
       autoResumeCount: 1,
-      pendingOperations: [expect.objectContaining({ status: 'unknown', updatedAt: 20 })],
+      pendingOperations: [expect.objectContaining({
+        status: 'abandoned',
+        resultRef: 'model-recovery:superseded-by-live-loop:model:turn-original',
+        updatedAt: 20,
+      })],
     }));
     expect(checkpointDurable.mock.invocationCallOrder[0])
       .toBeLessThan(resumeExistingDurableRun.mock.invocationCallOrder[0]);

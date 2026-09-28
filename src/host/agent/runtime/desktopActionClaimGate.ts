@@ -27,8 +27,26 @@ const DESKTOP_CLAIM_GATE_REPAIR_PROMPT = [
 const DESKTOP_CLAIM_GATE_WARNING =
   '【桌面证据不足】本轮没有成功的 Computer/桌面工具调用，所以下面的桌面操作或屏幕观察不能当作已执行事实。\n\n';
 
+// ponytail: fixed window of recent user turns; follow-ups like 「没看到吗？」 inherit
+// the desktop task from an earlier turn. Widen if longer desktop threads slip through.
+const RECENT_USER_TURNS = 3;
+
+export function collectRecentUserTexts(
+  messages: ReadonlyArray<{ role: string; content?: unknown; visibility?: string }>,
+): string[] {
+  const texts: string[] = [];
+  for (let i = messages.length - 1; i >= 0 && texts.length < RECENT_USER_TURNS; i--) {
+    const message = messages[i];
+    if (message.role !== 'user' || message.visibility === 'rewound') continue;
+    if (typeof message.content === 'string') texts.push(message.content);
+  }
+  return texts;
+}
+
 export interface DesktopActionClaimGateInput {
   latestUserMessage?: string;
+  /** Recent user turns (newest first); any desktop request among them sets desktop context. */
+  recentUserMessages?: string[];
   assistantContent: string;
   toolCallCount: number;
   iterations: number;
@@ -52,12 +70,11 @@ export function applyDesktopActionClaimGate(
     return { action: 'none', content };
   }
 
-  const latestUserMessage = input.latestUserMessage || '';
-  // Observation phrases in the assistant body only corroborate a claim.
-  // Desktop context itself requires the user request to be a desktop/app/screen
-  // operation. Round/session tool evidence is already handled above via
-  // toolCallCount / hasDesktopEvidence (existing input signals; no new state).
-  const desktopContext = DESKTOP_REQUEST_RE.test(latestUserMessage);
+  // Observation phrases in the assistant body only corroborate a claim; desktop
+  // context comes from the user asking for a desktop/app/screen operation in the
+  // latest or a recent turn (so follow-ups without desktop keywords stay covered).
+  const userTexts = [input.latestUserMessage || '', ...(input.recentUserMessages ?? [])];
+  const desktopContext = userTexts.some((text) => DESKTOP_REQUEST_RE.test(text));
 
   if (!desktopContext) {
     return { action: 'none', content };

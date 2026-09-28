@@ -48,7 +48,7 @@ import { getArtifactRepairToolPolicy } from './artifactRepairGuard';
 import { maybeClearCompletedArtifactRepairGuardBeforeAdmission } from './artifactRepairAdmission';
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
-import { applyDesktopActionClaimGate } from './desktopActionClaimGate';
+import { applyDesktopActionClaimGate, collectRecentUserTexts } from './desktopActionClaimGate';
 import { isLikelyIncompleteStopText } from './incompleteStopDetector';
 import { finishHiddenWakeNoop, isTerminalWakeNoop as isTerminalWakeNoopCall } from './hiddenWakeNoop';
 import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
@@ -446,7 +446,7 @@ export class MessageProcessor {
       latestUserMessage?.attachments?.some((attachment) => attachment.id.startsWith('appshot-')) ||
       false;
     const desktopClaimGate = applyDesktopActionClaimGate({
-      latestUserMessage: typeof latestUserContent === 'string' ? latestUserContent : undefined,
+      recentUserMessages: collectRecentUserTexts(this.ctx.messages),
       assistantContent: strippedContent,
       toolCallCount: this.ctx.stats.totalToolCallCount,
       iterations,

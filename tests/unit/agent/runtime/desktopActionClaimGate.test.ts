@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDesktopActionClaimGate } from '../../../../src/host/agent/runtime/desktopActionClaimGate';
+import { applyDesktopActionClaimGate, collectRecentUserTexts } from '../../../../src/host/agent/runtime/desktopActionClaimGate';
 
 describe('applyDesktopActionClaimGate', () => {
   it('retries when a desktop task response claims observation without tool evidence', () => {
@@ -19,7 +19,11 @@ describe('applyDesktopActionClaimGate', () => {
 
   it('warns instead of retrying after the first repair attempt', () => {
     const result = applyDesktopActionClaimGate({
-      latestUserMessage: '你去腾讯会议里找',
+      recentUserMessages: collectRecentUserTexts([
+        { role: 'user', content: '你去腾讯会议里找' },
+        { role: 'assistant', content: '好的。' },
+        { role: 'user', content: '没看到吗？' },
+      ]),
       assistantContent: '腾讯会议在后台运行着，我现在最大化显示。',
       toolCallCount: 0,
       iterations: 2,
@@ -194,6 +198,36 @@ describe('applyDesktopActionClaimGate', () => {
       iterations: 1,
     });
 
+    expect(result.action).toBe('none');
+  });
+
+  it('keeps follow-up turns covered when an earlier turn asked for a desktop action', () => {
+    const result = applyDesktopActionClaimGate({
+      recentUserMessages: ['再试试', '没看到吗？', '打开备忘录'],
+      assistantContent: '我已经打开了备忘录，看到了里面的清单。',
+      toolCallCount: 0,
+      iterations: 1,
+    });
+
+    expect(result.action).toBe('retry');
+  });
+
+  it('ignores desktop requests in rewound turns and beyond the recent window', () => {
+    const texts = collectRecentUserTexts([
+      { role: 'user', content: '打开备忘录' },
+      { role: 'user', content: '写一篇散文' },
+      { role: 'user', content: '再长一点' },
+      { role: 'user', content: '点一下腾讯会议', visibility: 'rewound' },
+      { role: 'user', content: '继续' },
+    ]);
+    expect(texts).toEqual(['继续', '再长一点', '写一篇散文']);
+
+    const result = applyDesktopActionClaimGate({
+      recentUserMessages: texts,
+      assistantContent: '那年春天我打开了窗口，看到了满院的花，也找到了旧日的信。',
+      toolCallCount: 0,
+      iterations: 1,
+    });
     expect(result.action).toBe('none');
   });
 });

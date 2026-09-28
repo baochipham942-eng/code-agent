@@ -52,7 +52,7 @@ import path from 'node:path';
 import { isNativeRecoveryDescriptor, type NativeRecoveryDescriptor } from './nativeRecoveryHost';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 import { createKeyedSerializer } from './keyedSerializer';
-import { findRecoveredWaitingRun as matchRecoveredWaitingRun } from './recoveredWaitingRun';
+import { findRecoveredWaitingRun as matchRecoveredWaitingRun, settleModelOpsForManualContinue } from './recoveredWaitingRun';
 import {
   asNativeAgentTeamProjectionState,
   isDurableActiveSessionConstraint,
@@ -393,7 +393,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   /** Reset the automatic restart budget when a user explicitly continues a parked run. */
   async resetDurableResumeBudget(runId: string, now = Date.now()): Promise<void> {
     const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`);
-    await this.checkpointDurable(runId, { now, status: 'running', state: this.durableCheckpointStates.get(runId), engineCursor: envelope.cursor.engineCursor, pendingOperations: envelope.pendingOperations ?? [], childRuns: envelope.childRuns, clearInterruptCause: true, autoResumeCount: 0, events: [{ type: 'manual_resume_requested', payload: { sessionId: envelope.sessionId }, recordedAt: now }] });
+    await this.checkpointDurable(runId, { now, status: 'running', state: this.durableCheckpointStates.get(runId), engineCursor: envelope.cursor.engineCursor, pendingOperations: settleModelOpsForManualContinue(envelope.pendingOperations ?? [], now), childRuns: envelope.childRuns, clearInterruptCause: true, autoResumeCount: 0, events: [{ type: 'manual_resume_requested', payload: { sessionId: envelope.sessionId }, recordedAt: now }] });
   }
   async checkpointNativeModelOperation(input: {
     runId: string;

@@ -106,8 +106,7 @@ import {
   type AssistantFeedbackState,
 } from '../utils/sendWithImmediateAssistantFeedback';
 import { isChatSendAccepted } from '../utils/chatSendState';
-import { DurableResumeNotice, useDurableContinueVisible, useDurableResumeContinuation } from './features/chat/durableResume';
-
+import { DurableResumeNotice, suppressLegacyInterruptionDecision, useDurableContinueVisible, useDurableResumeContinuation } from './features/chat/durableResume';
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
 // useSyncExternalStore treat every snapshot as changed and can loop before ChatView mounts.
 const EMPTY_PENDING_USER_QUESTIONS: UserQuestionRequest[] = [];
@@ -786,11 +785,7 @@ export const ChatView: React.FC = () => {
     // 避免追赶条抢在列表测量前闪现。
     setInterruptionPointInViewport(Boolean(streamSnapshot));
   }, [currentSessionId, streamSnapshot?.turnId]);
-  const streamInterruptionDecision = interruptionDecision && !isDurableAutoResuming && !isDurableResumeQueued ? {
-    snapshot: interruptionDecision.snapshot,
-    retryMessage: interruptionDecision.retryMessage,
-    onContinue: async (message: Message) => handleSendMessage(message.content, message.attachments),
-  } : null;
+  const streamInterruptionDecision = suppressLegacyInterruptionDecision(interruptionDecision ? { snapshot: interruptionDecision.snapshot, retryMessage: interruptionDecision.retryMessage, onContinue: async (message: Message) => handleSendMessage(message.content, message.attachments) } : null, durableResume?.mode);
 
   // 对话式建角色：入口（能力中心 · 专家 / AgentSwitcher）起新会话后写入种子消息，
   // 这里在新会话就绪后自动发出可见的种子消息，触发 create-role skill。

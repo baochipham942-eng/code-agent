@@ -117,6 +117,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   // agent router
   ['post', '/run'],
   ['post', '/cancel'],
+  ['post', '/continue'],
   ['post', '/pause'],
   ['post', '/resume'],
   ['post', '/interrupt'],

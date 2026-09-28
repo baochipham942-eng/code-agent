@@ -121,6 +121,25 @@ describe('httpTransport domain API', () => {
     expect(JSON.parse(String(requestInit.body))).toEqual(payload);
   });
 
+  it('routes agent Continue through the web runtime continuation endpoint', async () => {
+    const api = createHttpDomainAPI('http://localhost:8180');
+    const payload = { sessionId: 'session-parked' };
+
+    await api.invoke(IPC_DOMAINS.AGENT, 'continue', payload);
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:8180/api/continue');
+    expect(init).toMatchObject({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer test-token',
+      },
+    });
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual(payload);
+  });
+
   it('routes agent pause and resume through web runtime endpoints', async () => {
     const api = createHttpDomainAPI('http://localhost:8180');
     const payload = { sessionId: 'session-paused' };

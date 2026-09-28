@@ -116,6 +116,7 @@ import { SessionHistoryAppService } from './sessionHistoryAppService';
 import { SessionLifecycleAppService } from './sessionLifecycleAppService';
 import { toCachedSession } from './sessionExportCache';
 import { resolveSessionReference } from '../tools/modules/session/sessionReferenceDigest';
+import { continueParkedDurableRun } from './durableRunContinuation';
 
 async function resolveReferencedSessionContext(
   context: ConversationEnvelopeContext | undefined,
@@ -1403,51 +1404,15 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     }
   }
 
-  private readonly continuingSessions = new Set<string>();
-
   /** Continue a parked durable foreground run without creating a new user turn. */
   async continueDurableRun(sessionId?: string): Promise<void> {
     const resolvedSessionId = this.resolveSessionId(sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
-    // 连点「继续」：第二次若也走到失败回滚，会把第一次已拉起的 run 停靠成 user_stop。
-    if (this.continuingSessions.has(resolvedSessionId)) throw new Error(`Session ${resolvedSessionId} is already continuing`);
-    this.continuingSessions.add(resolvedSessionId);
-    try {
-      await this.continueParkedRun(resolvedSessionId);
-    } finally {
-      this.continuingSessions.delete(resolvedSessionId);
-    }
-  }
-
-  private async continueParkedRun(resolvedSessionId: string): Promise<void> {
     if (!this.externalRunRegistry) throw new Error('Durable Run registry is unavailable');
-    const recovered = this.externalRunRegistry.findRecoveredWaitingRun({ sessionId: resolvedSessionId });
-    if (!recovered) throw new Error(`No parked durable run is available for session ${resolvedSessionId}`);
-    const currentStatus = this.getTaskManager().getSessionState(resolvedSessionId)?.status;
-    if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus ?? '')) {
-      throw new Error(`Session ${resolvedSessionId} is already ${currentStatus}`);
-    }
-    const checkpointState = this.externalRunRegistry.getDurableCheckpointState(recovered.runId);
-    if (!checkpointState || typeof checkpointState !== 'object' || !('sourceMessageId' in checkpointState)
-      || typeof checkpointState.sourceMessageId !== 'string') {
-      throw new Error(`Parked durable run ${recovered.runId} has no resumable source message`);
-    }
-    const messages = await getSessionManager().getMessages(resolvedSessionId);
-    const source = messages.find((message) => message.id === checkpointState.sourceMessageId && message.role === 'user');
-    if (!source) throw new Error(`Parked durable run ${recovered.runId} source message is unavailable`);
-    await this.externalRunRegistry.resetDurableResumeBudget(recovered.runId);
-    try {
-      await this.getTaskManager().resumeExistingDurableRun(
-        resolvedSessionId,
-        recovered.runId,
-        messages,
-        { mode: 'normal', disableAutoAgent: true },
-        source.metadata,
-        source.id,
-      );
-    } catch (error) {
-      await this.externalRunRegistry.parkDurable(recovered.runId, { reason: 'user_stop' }).catch(() => undefined);
-      throw error;
-    }
+    await continueParkedDurableRun({
+      sessionId: resolvedSessionId,
+      runRegistry: this.externalRunRegistry,
+      taskManager: this.getTaskManager(),
+    });
   }
 }

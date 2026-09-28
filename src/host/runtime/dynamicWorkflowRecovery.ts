@@ -136,6 +136,7 @@ export function createDynamicWorkflowGraphRecoveryHandler(input: {
             },
             pendingOperations: plan.pendingOperations,
             childRuns: plan.childRuns,
+            interruptCause: plan.envelope.interruptCause ?? plan.envelope.interrupt_cause,
             events: [{
               type: 'dynamic_graph_checkpoint',
               payload: { graphId: graphCheckpoint.graphId, status: graphCheckpoint.status },

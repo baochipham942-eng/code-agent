@@ -13,6 +13,7 @@ const AgentDomainRequestSchema = z.object({
   action: z.enum([
     'cancel',
     'closeAgent',
+    'continue',
     'getSessionPermissionMode',
     'getTree',
     'getWorktreeReview',

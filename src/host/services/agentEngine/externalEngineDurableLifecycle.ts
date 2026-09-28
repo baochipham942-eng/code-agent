@@ -5,7 +5,7 @@ import type {
   AgentEngineRunResult,
   ExternalAgentEngineKind,
 } from '../../../shared/contract/agentEngine';
-import type { PendingOperation } from '../../../shared/contract/durableRun';
+import type { PendingOperation, RunInterruptCause } from '../../../shared/contract/durableRun';
 import type { RunRehydrationPlan } from '../../runtime/durableRunStores';
 import type { RunHandle } from '../../runtime/runContext';
 import { RunRegistry } from '../../runtime/runRegistry';
@@ -106,6 +106,8 @@ export class ExternalEngineDurableLifecycle {
     externalSessionId?: string,
     recoveredAttempt?: number,
     recoveredOwnerEpoch?: number,
+    recoveryAutoResumeCount?: number,
+    recoveryInterruptCause?: RunInterruptCause,
   ) {
     this.handle = started.handle;
     this.runId = started.handle.context.runId;
@@ -113,7 +115,12 @@ export class ExternalEngineDurableLifecycle {
     this.ownerEpoch = recoveredOwnerEpoch ?? started.handle.traceContext?.ownerEpoch ?? 0;
     this.operation = started.launchOperation;
     this.externalSessionId = externalSessionId;
+    this.recoveryAutoResumeCount = recoveryAutoResumeCount;
+    this.recoveryInterruptCause = recoveryInterruptCause;
   }
+
+  private recoveryAutoResumeCount?: number;
+  private recoveryInterruptCause?: RunInterruptCause;
 
   static async start(input: {
     registry: RunRegistry;
@@ -171,6 +178,8 @@ export class ExternalEngineDurableLifecycle {
       input.externalSessionId,
       input.plan.envelope.attempt,
       input.plan.envelope.owner.epoch,
+      input.plan.envelope.autoResumeCount ?? 0,
+      input.plan.envelope.interruptCause ?? input.plan.envelope.interrupt_cause,
     );
   }
 
@@ -320,6 +329,8 @@ export class ExternalEngineDurableLifecycle {
           stderrBytes: this.stderrBytes,
         },
         pendingOperations: [this.operation],
+        interruptCause: this.recoveryInterruptCause,
+        autoResumeCount: this.recoveryAutoResumeCount,
         events: [{
           type: eventType,
           payload: {

@@ -6,11 +6,24 @@ import type { ModelConfig } from './model';
 import type { AgentEngineSessionMetadata } from './agentEngine';
 import type { SessionWorkbenchProvenance, SessionWorkbenchSnapshot } from './sessionWorkspace';
 import type { StreamInterruptionReason } from './message';
+import type { RunInterruptCause } from './durableRun';
 
 /**
  * 会话运行状态
  */
 export type SessionStatus = 'idle' | 'running' | 'queued' | 'paused' | 'cancelling' | 'completed' | 'error' | 'interrupted' | 'orphaned' | 'archived';
+
+type DurableResumeMode = 'auto-resuming' | 'queued' | 'continue';
+
+/** User-facing projection of a non-terminal durable run that can resume or is resuming. */
+export interface DurableResumeState {
+  runId: string;
+  mode: DurableResumeMode;
+  interruptCause: RunInterruptCause;
+  autoResumeCount: number;
+  maxAutoResumeCount: number;
+  canContinue: boolean;
+}
 
 /**
  * 会话代表的工作单元类型。
@@ -121,6 +134,8 @@ export interface Session {
    * session.status remains the projected SessionStatus. Keep for payload compatibility.
    */
   durableWaitingInput?: true;
+  /** Durable restart/continue state projected from the host fact source. */
+  durableResume?: DurableResumeState;
   // 归档状态
   isArchived?: boolean; // 是否已归档
   archivedAt?: number; // 归档时间

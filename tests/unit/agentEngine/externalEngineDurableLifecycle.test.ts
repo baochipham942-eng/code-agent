@@ -250,6 +250,38 @@ describe('ExternalEngineDurableLifecycle', () => {
     registry.clear();
   });
 
+  it('carries the claimed auto-resume budget and interrupt cause into recovered checkpoints', async () => {
+    const mocks = createKernel();
+    const registry = new RunRegistry();
+    registry.configureDurableKernel(mocks.kernel);
+    const plan = recoveryPlan('codex_cli', 'thread-1');
+    const launch = {
+      operationId: 'op-launch', logicalOperationId: 'external-engine-launch', kind: 'external_engine' as const,
+      status: 'started' as const, attempt: 1, sideEffect: true, canDeduplicate: false, createdAt: 1, updatedAt: 1,
+    };
+    plan.envelope.pendingOperations = [launch as never];
+    plan.pendingOperations = [launch as never];
+    plan.envelope.autoResumeCount = 1;
+    plan.envelope.interruptCause = 'crash_or_quit';
+    mocks.recoverOnStartup.mockResolvedValueOnce([plan]);
+    await registry.recoverDurable();
+
+    const lifecycle = ExternalEngineDurableLifecycle.rehydrate({
+      registry, plan, externalSessionId: 'thread-1',
+      context: { cwd: '/tmp', workspace: '/tmp', permissionProfile: 'read_only' },
+    });
+    await lifecycle.attachProcess(fakeChild(), {
+      binary: '/bin/codex', commandSummary: 'codex exec resume <prompt:redacted>', permissionProfile: 'read_only',
+    });
+
+    expect(mocks.checkpoint).toHaveBeenCalledWith(expect.objectContaining({
+      autoResumeCount: 1,
+      interruptCause: 'crash_or_quit',
+    }));
+    await lifecycle.release();
+    registry.clear();
+  });
+
   it('keeps exporter failures diagnostic-only', async () => {
     vi.spyOn(getTelemetryService(), 'startSpan').mockImplementation(() => { throw new Error('exporter down'); });
     const mocks = createKernel();

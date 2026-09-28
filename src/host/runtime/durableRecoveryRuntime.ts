@@ -57,8 +57,17 @@ export function createDurableRecoveryRuntime(input: {
   autoAgentRecoveryHost?: AutoAgentRecoveryHost;
   /** Acceptance-only injection boundary; production bootstraps never set it. */
   handlerOverrides?: DurableRecoveryHandlerOverrides;
+  onAutoResumeStart?: (plan: import('./durableRunStores').RunRehydrationPlan) => void;
+  beforeAutoResume?: (plan: import('./durableRunStores').RunRehydrationPlan) => boolean | Promise<boolean>;
+  onRecoveryResults?: (results: DurableRecoveryDispatchResult[]) => void;
+  onRecoveryError?: (error: unknown) => void;
 }): DurableRecoveryRuntime {
-  const dispatcher = new DurableRecoveryDispatcher();
+  const dispatcher = new DurableRecoveryDispatcher({
+    onAutoResumeStart: input.onAutoResumeStart,
+    beforeAutoResume: input.beforeAutoResume,
+    onBackgroundResult: input.onRecoveryResults,
+    onBackgroundError: input.onRecoveryError,
+  });
   dispatcher.registerEngineHandler(input.handlerOverrides?.native ?? createNativeRecoveryHandler({
     registry: input.registry,
     ports: input.nativeRecoveryPorts,

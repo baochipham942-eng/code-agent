@@ -180,6 +180,72 @@ describe('AgentAppService lifecycle routing', () => {
     vi.mocked(getFileCheckpointService).mockReturnValue(checkpointService as any);
 	  });
 
+  it('parks a durable run again when explicit continuation cannot acquire a task handle', async () => {
+    const resumeExistingDurableRun = vi.fn().mockRejectedValue(new Error('resume failed'));
+    const registry = {
+      findRecoveredWaitingRun: vi.fn(() => ({ runId: 'run-parked', sessionId: 'session-1' })),
+      getDurableCheckpointState: vi.fn(() => ({ sourceMessageId: 'source-1' })),
+      resetDurableResumeBudget: vi.fn().mockResolvedValue(undefined),
+      parkDurable: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(getSessionManager).mockReturnValue({
+      ...sessionManager,
+      getMessages: vi.fn().mockResolvedValue([{
+        id: 'source-1', role: 'user', content: 'continue', timestamp: 1, metadata: {},
+      }]),
+    } as never);
+    const service = new AgentAppServiceImpl(
+      () => ({
+        ...taskManager,
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+        resumeExistingDurableRun,
+      }) as never,
+      () => null,
+      () => 'session-1',
+      vi.fn(),
+      registry as never,
+    );
+
+    await expect(service.continueDurableRun('session-1')).rejects.toThrow('resume failed');
+    expect(registry.resetDurableResumeBudget).toHaveBeenCalledWith('run-parked');
+    expect(registry.parkDurable).toHaveBeenCalledWith('run-parked', { reason: 'user_stop' });
+  });
+
+  it('rejects a second Continue while the first is in flight and never parks the run it started', async () => {
+    let releaseResume!: () => void;
+    const resumeExistingDurableRun = vi.fn(() => new Promise<void>((resolve) => { releaseResume = resolve; }));
+    const registry = {
+      findRecoveredWaitingRun: vi.fn(() => ({ runId: 'run-parked', sessionId: 'session-1' })),
+      getDurableCheckpointState: vi.fn(() => ({ sourceMessageId: 'source-1' })),
+      resetDurableResumeBudget: vi.fn().mockResolvedValue(undefined),
+      parkDurable: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(getSessionManager).mockReturnValue({
+      ...sessionManager,
+      getMessages: vi.fn().mockResolvedValue([{
+        id: 'source-1', role: 'user', content: 'continue', timestamp: 1, metadata: {},
+      }]),
+    } as never);
+    const service = new AgentAppServiceImpl(
+      () => ({
+        ...taskManager,
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+        resumeExistingDurableRun,
+      }) as never,
+      () => null,
+      () => 'session-1',
+      vi.fn(),
+      registry as never,
+    );
+
+    const first = service.continueDurableRun('session-1');
+    await expect(service.continueDurableRun('session-1')).rejects.toThrow('already continuing');
+    await vi.waitFor(() => expect(resumeExistingDurableRun).toHaveBeenCalledTimes(1));
+    releaseResume();
+    await first;
+    expect(registry.parkDurable).not.toHaveBeenCalled();
+  });
+
   it('routes public lineage repair to projection reconstruction with the exact owner/Project boundary', async () => {
     const healthyAudit = {
       status: 'healthy',
@@ -541,6 +607,45 @@ describe('AgentAppService lifecycle routing', () => {
       }),
       'client-msg-send-1',
     );
+  });
+
+  it.each([
+    ['restored approval', 'crash_or_quit' as const, false],
+    ['guard halt', 'guard_halt' as const, false],
+    ['explicitly continuable run', 'user_stop' as const, true],
+  ])('supersedes a recovered waiting run only when the projection is continuable (%s)', async (_label, interruptCause, shouldCancel) => {
+    const terminalRecoveredWaitingRun = vi.fn().mockResolvedValue(undefined);
+    const registry = {
+      findRecoveredWaitingRun: vi.fn(() => ({ runId: 'run-waiting', sessionId: 'session-1' })),
+      terminalRecoveredWaitingRun,
+    };
+    const reader = {
+      getLatestBySession: vi.fn(async () => ({
+        ...durableEnvelope('waiting'),
+        runId: 'run-waiting',
+        interruptCause,
+      })),
+    };
+    const configured = new AgentAppServiceImpl(
+      () => taskManager as never,
+      () => null,
+      () => 'session-1',
+      vi.fn(),
+      registry as never,
+      new DurableRunReadService(
+        resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }),
+        reader,
+      ),
+    );
+
+    await configured.sendMessage({ sessionId: 'session-1', content: 'new turn' } as any);
+
+    if (shouldCancel) {
+      expect(terminalRecoveredWaitingRun).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    } else {
+      expect(terminalRecoveredWaitingRun).not.toHaveBeenCalled();
+    }
+    expect(taskManager.startTask).toHaveBeenCalled();
   });
 
   it('routes interrupt-and-continue through TaskManager to keep the run owner consistent', async () => {

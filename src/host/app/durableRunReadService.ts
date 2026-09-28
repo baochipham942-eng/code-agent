@@ -1,5 +1,13 @@
-import type { RunEngineRef, RunEnvelope, RunStatus } from '../../shared/contract/durableRun';
-import type { SessionStatus } from '../../shared/contract/session';
+import {
+  getRunInterruptCause,
+  MAX_AUTO_RESUME_COUNT,
+  type RunEngineRef,
+  type RunEnvelope,
+  type RunInterruptCause,
+  type RunStatus,
+} from '../../shared/contract/durableRun';
+import type { DurableResumeState, SessionStatus } from '../../shared/contract/session';
+import { isDurableResumeQueued } from '../runtime/durableRecoveryQueueState';
 import {
   readWithDurablePreference,
   type DurableRunFactReader,
@@ -24,6 +32,10 @@ export interface DurableRunView {
   terminal: boolean;
   attempt?: number;
   updatedAt?: number;
+  interruptCause?: RunInterruptCause;
+  autoResumeCount?: number;
+  /** 本进程能否接手这条停靠 run（重启后未被认领的旧 run 为 false，「继续」会找不到它）。 */
+  continuable?: boolean;
 }
 
 export interface LegacyRunViewInput {
@@ -38,6 +50,7 @@ export class DurableRunReadService {
   constructor(
     readonly policy: DurableRunRolloutPolicy,
     private readonly reader: DurableRunFactReader | null,
+    private readonly canContinueRun?: (runId: string) => boolean,
   ) {}
 
   async read(
@@ -51,9 +64,9 @@ export class DurableRunReadService {
       sessionId,
       readLegacy,
     });
-    return selected.source === 'durable'
-      ? mapDurableRunView(consumer, selected.value)
-      : mapLegacyRunView(consumer, sessionId, selected.value);
+    if (selected.source !== 'durable') return mapLegacyRunView(consumer, sessionId, selected.value);
+    const view = mapDurableRunView(consumer, selected.value);
+    return this.canContinueRun && view.runId ? { ...view, continuable: this.canContinueRun(view.runId) } : view;
   }
 
   readNativeStatus(sessionId: string, legacy: () => LegacyRunViewInput | Promise<LegacyRunViewInput>) {
@@ -92,6 +105,8 @@ export function mapDurableRunView(consumer: DurableRunConsumer, envelope: RunEnv
     terminal: Boolean(envelope.terminal),
     attempt: envelope.attempt,
     updatedAt: envelope.updatedAt,
+    ...(getRunInterruptCause(envelope) ? { interruptCause: getRunInterruptCause(envelope) } : {}),
+    autoResumeCount: envelope.autoResumeCount ?? 0,
   };
 }
 
@@ -128,9 +143,42 @@ export function hasDurableWaitingApprovalRun(view: DurableRunView): boolean {
 export function projectDurableRunToSessionPayload(view: DurableRunView): {
   status: SessionStatus;
   durableWaitingInput?: true;
+  durableResume?: DurableResumeState;
 } {
+  const durableResume = projectDurableResumeState(view);
   return {
     status: mapDurableRunToSessionStatus(view.status),
-    ...(hasDurableWaitingApprovalRun(view) ? { durableWaitingInput: true as const } : {}),
+    ...(hasDurableWaitingApprovalRun(view) && durableResume?.mode !== 'continue'
+      ? { durableWaitingInput: true as const }
+      : {}),
+    ...(durableResume ? { durableResume } : {}),
+  };
+}
+
+function projectDurableResumeState(view: DurableRunView): DurableResumeState | undefined {
+  if (view.source !== 'durable' || view.terminal || !view.runId || !view.interruptCause
+    || view.engine?.kind === 'external_cli') return undefined;
+  const autoResumeCount = view.autoResumeCount ?? 0;
+  if (view.status === 'recovering' && view.interruptCause === 'crash_or_quit') {
+    return {
+      runId: view.runId,
+      mode: isDurableResumeQueued(view.runId) ? 'queued' : 'auto-resuming',
+      interruptCause: view.interruptCause,
+      autoResumeCount,
+      maxAutoResumeCount: MAX_AUTO_RESUME_COUNT,
+      canContinue: false,
+    };
+  }
+  const canContinue = view.status === 'waiting' && view.continuable !== false && (
+    view.interruptCause !== 'crash_or_quit' || autoResumeCount >= MAX_AUTO_RESUME_COUNT
+  );
+  if (!canContinue) return undefined;
+  return {
+    runId: view.runId,
+    mode: 'continue',
+    interruptCause: view.interruptCause,
+    autoResumeCount,
+    maxAutoResumeCount: MAX_AUTO_RESUME_COUNT,
+    canContinue: true,
   };
 }

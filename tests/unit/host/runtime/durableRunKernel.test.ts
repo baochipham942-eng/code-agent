@@ -511,6 +511,103 @@ describe('DurableRunKernel', () => {
     db.close();
   });
 
+  it('keeps the claimed auto-resume count when a recovered checkpoint omits it (MCP/engine path)', async () => {
+    const { db, kernel, repository } = createKernel();
+    const created = await kernel.createNativeRun({ runId: 'run-budget-keep', sessionId: 'session-budget-keep', now: 10 });
+    await kernel.checkpoint({
+      runId: created.envelope.runId,
+      attempt: created.attempt.attempt,
+      owner: created.owner,
+      now: 20,
+      status: 'running',
+      state: {},
+      pendingOperations: [],
+      events: [{ type: 'run_checkpointed', payload: {}, recordedAt: 20 }],
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: 0,
+    });
+    const [plan] = await new DurableRunKernel({
+      stores: repository, ownerId: 'native-host', processInstanceId: 'process-2', leaseDurationMs: 100,
+    }).recoverOnStartup(2_000);
+    expect(plan.envelope.autoResumeCount).toBe(1);
+
+    await kernel.checkpoint({
+      runId: plan.envelope.runId,
+      attempt: plan.envelope.attempt,
+      owner: plan.envelope.owner!,
+      now: 2_010,
+      status: 'running',
+      state: {},
+      pendingOperations: [],
+      events: [{ type: 'mcp_task_prepared', payload: {}, recordedAt: 2_010 }],
+    });
+
+    expect(await repository.get('run-budget-keep')).toMatchObject({ autoResumeCount: 1 });
+    db.close();
+  });
+
+  it('keeps restoring a pending approval across restarts without burning the auto-resume budget', async () => {
+    const { db, kernel, repository } = createKernel();
+    const created = await kernel.createNativeRun({ runId: 'run-approval-restarts', sessionId: 'session-approval-restarts', now: 10 });
+    const approval = kernel.prepareOperation({
+      runId: created.envelope.runId, operationId: 'approval-1', attempt: created.attempt.attempt,
+      kind: 'approval', sideEffect: false, canDeduplicate: true, now: 15,
+    });
+    await kernel.checkpoint({
+      runId: created.envelope.runId,
+      attempt: created.attempt.attempt,
+      owner: created.owner,
+      now: 20,
+      status: 'waiting',
+      state: {},
+      pendingOperations: [{ ...approval, status: 'waiting' }],
+      events: [{ type: 'approval_requested', payload: {}, recordedAt: 20 }],
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: 0,
+    });
+
+    for (const [index, now] of [2_000, 4_000, 6_000].entries()) {
+      const plans = await new DurableRunKernel({
+        stores: repository, ownerId: 'native-host', processInstanceId: `process-${index + 2}`, leaseDurationMs: 100,
+      }).recoverOnStartup(now);
+      expect(plans).toHaveLength(1);
+      expect(plans[0].envelope).toMatchObject({ status: 'waiting', autoResumeCount: 0 });
+    }
+    db.close();
+  });
+
+  it.each([
+    ['loop', { kind: 'loop' } as const],
+    ['dynamic-workflow', { kind: 'dynamic_workflow', workflowId: 'workflow-1' } as const],
+    ['agent-team', { kind: 'agent_team', treeId: 'tree-1' } as const],
+  ])('keeps recovering a crashed %s run on every restart without spending the native auto-resume budget', async (label, engine) => {
+    const { db, kernel, repository } = createKernel();
+    const runId = `run-budget-${label}`;
+    const created = await kernel.createRun({ runId, sessionId: `session-budget-${label}`, engine, now: 10 });
+    await kernel.checkpoint({
+      runId,
+      attempt: created.attempt.attempt,
+      owner: created.owner,
+      now: 20,
+      status: 'running',
+      state: {},
+      pendingOperations: [],
+      events: [{ type: 'run_checkpointed', payload: {}, recordedAt: 20 }],
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: 0,
+    });
+
+    for (const [index, now] of [2_000, 4_000, 6_000].entries()) {
+      const plans = await new DurableRunKernel({
+        stores: repository, ownerId: 'native-host', processInstanceId: `process-${index + 2}`, leaseDurationMs: 100,
+      }).recoverOnStartup(now);
+      expect(plans).toHaveLength(1);
+      expect(plans[0]).toMatchObject({ envelope: { runId, status: 'recovering', autoResumeCount: 0 } });
+      expect(plans[0].resumeBlocked).toBeFalsy();
+    }
+    db.close();
+  });
+
   it('parks an exhausted crash loop for an explicit Continue action', async () => {
     const { db, kernel, repository } = createKernel();
     const capped = await kernel.createNativeRun({

@@ -137,6 +137,10 @@ export interface ChatInputProps {
   isInterrupting?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
+  /** parked durable run 的用户继续回调 */
+  onContinue?: () => void;
+  /** 当前会话有可手动继续的 durable run */
+  hasContinuation?: boolean;
   /** 是否有 Plan */
   hasPlan?: boolean;
   /** 点击 Plan 入口 */
@@ -189,8 +193,10 @@ export function resolveLiveVoiceSlot(params: {
    * 没有它时主 loop 一收尾按钮就变回发送键，用户再也点不到「停止全部」。
    */
   hasStoppableBackgroundWork?: boolean;
+  hasContinuation?: boolean;
 }): LiveVoiceSlot {
   if (!params.sessionId || !params.enabled || params.phase !== 'idle') return 'none';
+  if (params.hasContinuation) return 'none';
   if (params.hasContent || params.isProcessing || params.hasStoppableBackgroundWork) return 'none';
   if (params.hasMessages && !params.hadLiveVoice) return 'none';
   return 'primary';
@@ -202,9 +208,12 @@ export function resolveComposerCoreActions(params: Parameters<typeof resolveLive
   /** 缺 Provider key 仍占 live-voice 主位，只改变按钮为配置引导态。 */
   configured: boolean;
   voiceInputInstalled?: boolean;
+  hasContinuation?: boolean;
 }): readonly ComposerCoreAction[] {
   const liveVoiceSlot = resolveLiveVoiceSlot(params);
-  const primaryAction: ComposerCoreAction = liveVoiceSlot === 'primary'
+  const primaryAction: ComposerCoreAction = params.hasContinuation && !params.hasContent
+    ? 'continue'
+    : liveVoiceSlot === 'primary'
     ? 'live-voice'
     : (params.isProcessing || params.hasStoppableBackgroundWork) && !params.hasContent
       ? 'stop'
@@ -249,6 +258,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   hasStoppableBackgroundWork,
   isInterrupting,
   onStop,
+  onContinue,
+  hasContinuation,
   hasPlan,
   onPlanClick,
   placeholder,
@@ -1096,6 +1107,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     hasMessages,
     hadLiveVoice: currentSessionHadLiveVoice,
     hasStoppableBackgroundWork: Boolean(hasStoppableBackgroundWork),
+    hasContinuation: Boolean(hasContinuation),
     voiceInputInstalled,
   });
 
@@ -1540,7 +1552,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               isProcessing={Boolean(isProcessing)}
               isInterrupting={isInterrupting}
               hasContent={hasContent}
+              hasContinuation={Boolean(hasContinuation)}
               onStop={onStop}
+              onContinue={onContinue}
             />
             </>
             )}

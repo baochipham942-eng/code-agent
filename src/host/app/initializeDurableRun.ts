@@ -18,6 +18,9 @@ import {
 import { DurableRunReadService } from './durableRunReadService';
 import { armBackgroundSubagentDurableLedger } from '../agent/backgroundSubagentDurableLedger';
 import { armLoopDurableLedger, resetLoopDurableLedger } from '../loop/loopDurableLedger';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('InitializeDurableRun');
 
 export class DurableRunRolloutInitializationError extends Error {
   readonly code = 'DURABLE_RUN_ROLLOUT_INITIALIZATION_FAILED';
@@ -65,6 +68,9 @@ interface DurableRunRecoveryInput {
     | ((kernel: DurableRunKernel) => DurableRecoveryHandlerOverrides);
   onSweepResults?: (results: DurableRunApplicationRuntime['recoveryResults']) => void;
   onSweepError?: (error: unknown) => void;
+  onAutoResumeStart?: (plan: import('../runtime/durableRunStores').RunRehydrationPlan) => void;
+  beforeAutoResume?: (plan: import('../runtime/durableRunStores').RunRehydrationPlan) => boolean | Promise<boolean>;
+  onRecoveryResults?: (results: DurableRunApplicationRuntime['recoveryResults']) => void;
 }
 
 interface DurableRunApplicationAssembly {
@@ -82,7 +88,11 @@ export function assembleDurableRun(
   input: DurableRunAssemblyInput,
 ): DurableRunApplicationAssembly {
   const policy = resolveDurableRunRollout(input.env);
-  const readService = new DurableRunReadService(policy, input.repository);
+  const readService = new DurableRunReadService(
+    policy,
+    input.repository,
+    (runId) => Boolean(input.registry.findRecoveredWaitingRun({ runId })),
+  );
   if (!policy.durableActivation) {
     resetLoopDurableLedger();
     return {
@@ -172,6 +182,13 @@ export function assembleDurableRun(
             getMcpClient: recoveryInput.getMcpClient,
             trustedMcpServerIdentities: recoveryInput.trustedMcpServerIdentities,
             handlerOverrides,
+            onAutoResumeStart: recoveryInput.onAutoResumeStart,
+            beforeAutoResume: recoveryInput.beforeAutoResume,
+            onRecoveryResults: recoveryInput.onRecoveryResults,
+            onRecoveryError: (error) => logger.warn(
+              'Durable recovery auto-resume failed; fallback path engaged',
+              { error: error instanceof Error ? error.message : String(error) },
+            ),
           });
           const recoveryResults = await recoveryRuntime.recoverAndDispatch(
             recoveryInput.now ?? Date.now(),

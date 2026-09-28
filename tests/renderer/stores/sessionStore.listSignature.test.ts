@@ -27,6 +27,15 @@ describe('sessionsSignature', () => {
     expect(sessionsSignature(a)).toBe(sessionsSignature(b));
   });
 
+  it('changes when the durable resume mode changes (continue → cleared after the run starts)', () => {
+    const resume = { runId: 'r', interruptCause: 'user_stop', autoResumeCount: 0, maxAutoResumeCount: 2 } as const;
+    const parked = [session({ id: 'a', durableResume: { ...resume, mode: 'continue', canContinue: true } } as Partial<SessionWithMeta>)];
+    const queued = [session({ id: 'a', durableResume: { ...resume, mode: 'queued', canContinue: false } } as Partial<SessionWithMeta>)];
+    const cleared = [session({ id: 'a' })];
+    expect(sessionsSignature(parked)).not.toBe(sessionsSignature(cleared));
+    expect(sessionsSignature(parked)).not.toBe(sessionsSignature(queued));
+  });
+
   it('changes when updatedAt changes', () => {
     const before = [session({ id: 'a', updatedAt: 100 })];
     const after = [session({ id: 'a', updatedAt: 101 })];

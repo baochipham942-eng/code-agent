@@ -99,6 +99,7 @@ export interface DurableCheckpointInput {
   /** Persisted in the same transaction as the checkpoint/fence. */
   interruptCause?: RunInterruptCause;
   autoResumeCount?: number;
+  clearInterruptCause?: boolean;
 }
 
 export interface DurableTerminalInput {
@@ -324,6 +325,7 @@ export class DurableRunKernel implements RunKernelAdapter {
       childRuns: input.childRuns ?? envelope.childRuns ?? [],
       interruptCause: input.interruptCause,
       autoResumeCount: input.autoResumeCount,
+      clearInterruptCause: input.clearInterruptCause,
     });
   }
 
@@ -421,7 +423,11 @@ export class DurableRunKernel implements RunKernelAdapter {
         status: waiting ? 'waiting' : 'recovering',
         pendingOperations,
         interruptCause: getRunInterruptCause(claimed.envelope) ?? 'crash_or_quit',
-        autoResumeCount: claimed.envelope.autoResumeCount ?? 0,
+        // 预算只管前台 native 自动续跑；等审批的 run 只是恢复同一审批，
+        // loop / workflow / agent_team 等引擎沿用各自恢复语义，均不消耗。
+        autoResumeCount: waiting || claimed.envelope.engine.kind !== 'native'
+          ? (claimed.envelope.autoResumeCount ?? 0)
+          : Math.min(MAX_AUTO_RESUME_COUNT, (claimed.envelope.autoResumeCount ?? 0) + 1),
         updatedAt: now,
       });
       plans.push({

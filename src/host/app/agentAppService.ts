@@ -440,6 +440,20 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const tm = this.getTaskManager();
     const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
+    // A new draft supersedes a parked run. Keep the old logical run terminal so
+    // it cannot block the new turn or re-enter the automatic recovery set.
+    const registry = this.externalRunRegistry;
+    const recoveredWaiting = registry?.findRecoveredWaitingRun({ sessionId: resolvedSessionId });
+    if (registry && recoveredWaiting && this.durableRunReadService) {
+      const view = await this.durableRunReadService.readSessionReplay(resolvedSessionId, () => ({
+        status: 'waiting',
+        runId: recoveredWaiting.runId,
+      }));
+      const durableResume = projectDurableRunToSessionPayload(view).durableResume;
+      if (durableResume?.mode === 'continue' && durableResume.interruptCause !== 'guard_halt') {
+        await registry.terminalRecoveredWaitingRun({ sessionId: resolvedSessionId });
+      }
+    }
     const sessionManager = getSessionManager();
     const session = await sessionManager.getSession(resolvedSessionId, 1);
     const engine = normalizeAgentEngineSession(session?.engine);
@@ -1027,7 +1041,8 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   }
 
   async loadSession(sessionId: string): Promise<Session> {
-    return this.sessionLifecycle.loadSession(sessionId);
+    const session = await this.sessionLifecycle.loadSession(sessionId);
+    return this.withDurableSessionReplayPayload(session);
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -1385,6 +1400,54 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (!tm.resumeTask(resolvedSessionId)) {
       const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
       orchestrator.resume();
+    }
+  }
+
+  private readonly continuingSessions = new Set<string>();
+
+  /** Continue a parked durable foreground run without creating a new user turn. */
+  async continueDurableRun(sessionId?: string): Promise<void> {
+    const resolvedSessionId = this.resolveSessionId(sessionId);
+    if (!resolvedSessionId) throw new Error('No active session');
+    // 连点「继续」：第二次若也走到失败回滚，会把第一次已拉起的 run 停靠成 user_stop。
+    if (this.continuingSessions.has(resolvedSessionId)) throw new Error(`Session ${resolvedSessionId} is already continuing`);
+    this.continuingSessions.add(resolvedSessionId);
+    try {
+      await this.continueParkedRun(resolvedSessionId);
+    } finally {
+      this.continuingSessions.delete(resolvedSessionId);
+    }
+  }
+
+  private async continueParkedRun(resolvedSessionId: string): Promise<void> {
+    if (!this.externalRunRegistry) throw new Error('Durable Run registry is unavailable');
+    const recovered = this.externalRunRegistry.findRecoveredWaitingRun({ sessionId: resolvedSessionId });
+    if (!recovered) throw new Error(`No parked durable run is available for session ${resolvedSessionId}`);
+    const currentStatus = this.getTaskManager().getSessionState(resolvedSessionId)?.status;
+    if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus ?? '')) {
+      throw new Error(`Session ${resolvedSessionId} is already ${currentStatus}`);
+    }
+    const checkpointState = this.externalRunRegistry.getDurableCheckpointState(recovered.runId);
+    if (!checkpointState || typeof checkpointState !== 'object' || !('sourceMessageId' in checkpointState)
+      || typeof checkpointState.sourceMessageId !== 'string') {
+      throw new Error(`Parked durable run ${recovered.runId} has no resumable source message`);
+    }
+    const messages = await getSessionManager().getMessages(resolvedSessionId);
+    const source = messages.find((message) => message.id === checkpointState.sourceMessageId && message.role === 'user');
+    if (!source) throw new Error(`Parked durable run ${recovered.runId} source message is unavailable`);
+    await this.externalRunRegistry.resetDurableResumeBudget(recovered.runId);
+    try {
+      await this.getTaskManager().resumeExistingDurableRun(
+        resolvedSessionId,
+        recovered.runId,
+        messages,
+        { mode: 'normal', disableAutoAgent: true },
+        source.metadata,
+        source.id,
+      );
+    } catch (error) {
+      await this.externalRunRegistry.parkDurable(recovered.runId, { reason: 'user_stop' }).catch(() => undefined);
+      throw error;
     }
   }
 }

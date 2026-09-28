@@ -92,9 +92,9 @@ export function createAgentTeamRecoveryHandler(input: {
   return {
     name: 'agent_team_production',
     engineKind: 'agent_team',
-    async recover(plan, now) {
+    async recover(plan, now, onAutoResumeStart) {
       if (input.autoAgentHost?.handles(plan)) {
-        return input.autoAgentHost.createHandler().recover(plan, now);
+        return input.autoAgentHost.createHandler().recover(plan, now, onAutoResumeStart);
       }
       const decision = buildAgentTeamRecoveryDecision(plan);
       if (!canRecoverAgentTeam(plan)) {
@@ -359,6 +359,7 @@ export function createMcpOperationRecoveryHandler(input: {
         childRuns: plan.childRuns,
         getState: () => plan.checkpoint?.state,
         getEngineCursor: () => plan.checkpoint?.cursor.engineCursor ?? plan.envelope.cursor.engineCursor,
+        interruptCause: plan.envelope.interruptCause ?? plan.envelope.interrupt_cause,
       });
       const controller = new McpDurableTaskController({ kernel: input.kernel, checkpoint, protocol, resultStore: input.resultStore });
       const recover = createMcpTaskRecoveryHandler(controller, {

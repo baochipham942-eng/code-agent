@@ -154,6 +154,13 @@ const agentHandlers: RawDomainRouteHandlers<AgentDomainRequest, AgentRouteCtx> =
     await handleCancel(getAppService, payload as AgentCancelRequest | undefined);
     return { success: true, data: null };
   },
+  continue: async (getAppService, payload) => {
+    const appService = getAppService();
+    if (!appService) throw new Error('Agent not initialized');
+    if (!appService.continueDurableRun) throw new Error('Durable Run continuation is unavailable');
+    await appService.continueDurableRun((payload as { sessionId?: string } | undefined)?.sessionId);
+    return { success: true, data: null };
+  },
   permissionResponse: async (getAppService, payload) => {
     const delivery = await handlePermissionResponse(getAppService, payload as AgentPermissionResponseRequest);
     return { success: true, data: delivery };

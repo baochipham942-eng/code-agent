@@ -416,6 +416,7 @@ export class DurableRunRepository implements DurableRunStores {
       const withMetadata = withRunInterruptMetadata(next, {
         ...(input.interruptCause ? { interruptCause: input.interruptCause } : {}),
         ...(input.autoResumeCount === undefined ? {} : { autoResumeCount: input.autoResumeCount }),
+        ...(input.clearInterruptCause ? { clearInterruptCause: true } : {}),
       });
       this.db.prepare(`UPDATE durable_runs SET status = ?, next_event_seq = ?, checkpoint_seq = ?,
         envelope_json = ?, updated_at = ? WHERE run_id = ? AND owner_epoch = ?`)

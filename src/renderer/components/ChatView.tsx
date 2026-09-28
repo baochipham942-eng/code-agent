@@ -106,6 +106,7 @@ import {
   type AssistantFeedbackState,
 } from '../utils/sendWithImmediateAssistantFeedback';
 import { isChatSendAccepted } from '../utils/chatSendState';
+import { DurableResumeNotice, useDurableContinueVisible, useDurableResumeContinuation } from './features/chat/durableResume';
 
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
 // useSyncExternalStore treat every snapshot as changed and can loop before ChatView mounts.
@@ -136,6 +137,9 @@ export const ChatView: React.FC = () => {
     streamSnapshot,
   } = useSessionStore();
   const currentSession = sessions.find((session) => session.id === currentSessionId);
+  const durableResume = currentSession?.durableResume;
+  const isDurableAutoResuming = durableResume?.mode === 'auto-resuming';
+  const isDurableResumeQueued = durableResume?.mode === 'queued';
   const channelSessionSource = formatChannelSessionSource(currentSession);
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   // 订阅节流快照而非原始 entries：原始 entries 每 token 变一次，会把投影重算推到 token 频率
@@ -761,6 +765,9 @@ export const ChatView: React.FC = () => {
     return handleSendEnvelope(buildEnvelope(content, attachments));
   }, [buildEnvelope, handleSendEnvelope]);
 
+  const handleContinueDurableRun = useDurableResumeContinuation(currentSessionId);
+  const showDurableContinue = useDurableContinueVisible(durableResume, effectiveIsProcessing);
+
   // D-1「重试该轮」锚点：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID（streamHandler.ts
   // beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无关联，snapshot 里也没有任何
   // 字段指回原始用户消息——唯一可靠锚点是结构性推导：addMessage 一律无条件清空 streamSnapshot
@@ -779,7 +786,7 @@ export const ChatView: React.FC = () => {
     // 避免追赶条抢在列表测量前闪现。
     setInterruptionPointInViewport(Boolean(streamSnapshot));
   }, [currentSessionId, streamSnapshot?.turnId]);
-  const streamInterruptionDecision = interruptionDecision ? {
+  const streamInterruptionDecision = interruptionDecision && !isDurableAutoResuming && !isDurableResumeQueued ? {
     snapshot: interruptionDecision.snapshot,
     retryMessage: interruptionDecision.retryMessage,
     onContinue: async (message: Message) => handleSendMessage(message.content, message.attachments),
@@ -1093,6 +1100,9 @@ export const ChatView: React.FC = () => {
             onUserQuestionSkipped={() => setSkippedQuestionSessionId(currentSessionId)}
           />
 
+          {isDurableAutoResuming && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
+          {isDurableResumeQueued && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
+
           {/* 讨论流浮层已收进右侧「本会话的代理」面板的「事件」折叠区（N-L6-AGENTVIEW S2），
               输入框上方不再另起浮层 */}
 
@@ -1106,18 +1116,10 @@ export const ChatView: React.FC = () => {
           <GoalStatusBar />
           <DoomLoopHandbackBar sessionId={currentSessionId} />
 
-          <ChatInput
-            ref={chatInputRef}
-            onSend={handleSendEnvelope}
-            onSteer={handleSteerEnvelope}
-            disabled={effectiveIsProcessing || isCreatingSession}
-            isProcessing={effectiveIsProcessing}
-            hasStoppableBackgroundWork={hasStoppableSwarmWork}
-            isInterrupting={isInterrupting}
-            onStop={cancel}
-            hasPlan={false}
-            placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined}
-          />
+          <ChatInput ref={chatInputRef} onSend={handleSendEnvelope} onSteer={handleSteerEnvelope}
+            disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
+            hasStoppableBackgroundWork={hasStoppableSwarmWork} isInterrupting={isInterrupting} onStop={cancel} hasContinuation={showDurableContinue}
+            onContinue={handleContinueDurableRun} hasPlan={false} placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
         </div>
       </div>
 

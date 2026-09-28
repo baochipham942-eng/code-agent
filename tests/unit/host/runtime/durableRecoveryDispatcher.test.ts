@@ -4,6 +4,7 @@ import {
   DurableRecoveryDispatcher,
   type DurableEngineRecoveryHandler,
 } from '../../../../src/host/runtime/durableRecoveryDispatcher';
+import { isDurableResumeQueued } from '../../../../src/host/runtime/durableRecoveryQueueState';
 import type { RunRehydrationPlan } from '../../../../src/host/runtime/durableRunStores';
 
 function plan(input: {
@@ -79,6 +80,125 @@ describe('DurableRecoveryDispatcher', () => {
     ]);
     expect(team).toHaveBeenCalledTimes(1);
     expect(external).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes different session recoveries so auto-resume cannot burn budgets concurrently', async () => {
+    const dispatcher = new DurableRecoveryDispatcher();
+    let active = 0;
+    let peak = 0;
+    const recover = vi.fn(async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return { status: 'recovered' as const, reason: 'serial' };
+    });
+    dispatcher.registerEngineHandler({
+      ...engineHandler('native', recover),
+      serialAutoResume: true,
+    });
+    await dispatcher.dispatch([
+      plan({ runId: 'first', engine: { kind: 'native' } }),
+      plan({ runId: 'second', engine: { kind: 'native' } }),
+    ]);
+    await vi.waitFor(() => expect(recover).toHaveBeenCalledTimes(2));
+    expect(peak).toBe(1);
+  });
+
+  it('returns startup promptly and keeps the next session queued until the first loop finishes', async () => {
+    let releaseFirst!: () => void;
+    const firstFinished = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const firstStarted = Promise.withResolvers<void>();
+    const recover = vi.fn(async (candidate: RunRehydrationPlan) => {
+      if (candidate.envelope.runId === 'first-queued') {
+        firstStarted.resolve();
+        await firstFinished;
+      }
+      return { status: 'recovered' as const, reason: 'resume_live_loop' };
+    });
+    const dispatcher = new DurableRecoveryDispatcher();
+    dispatcher.registerEngineHandler({
+      ...engineHandler('native', recover),
+      serialAutoResume: true,
+    });
+
+    const startup = await dispatcher.dispatch([
+      plan({ runId: 'first-queued', engine: { kind: 'native' } }),
+      plan({ runId: 'second-queued', engine: { kind: 'native' } }),
+    ]);
+    expect(startup).toEqual([
+      expect.objectContaining({ runId: 'first-queued', reason: 'auto_resume_queued' }),
+      expect.objectContaining({ runId: 'second-queued', reason: 'auto_resume_queued' }),
+    ]);
+    await firstStarted.promise;
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(isDurableResumeQueued('second-queued')).toBe(true);
+
+    releaseFirst();
+    await vi.waitFor(() => expect(recover).toHaveBeenCalledTimes(2));
+    expect(isDurableResumeQueued('second-queued')).toBe(false);
+    await dispatcher.shutdown();
+  });
+
+  it('settles a waiting approval plan in parallel with a slow non-queued agent team plan', async () => {
+    let releaseTeam!: () => void;
+    const teamStarted = Promise.withResolvers<void>();
+    const team = vi.fn(async () => {
+      teamStarted.resolve();
+      await new Promise<void>((resolve) => { releaseTeam = resolve; });
+      return { status: 'recovered' as const, reason: 'team complete' };
+    });
+    const approval = vi.fn(async () => ({ status: 'observing' as const, reason: 'restore_same_approval' }));
+    const dispatcher = new DurableRecoveryDispatcher();
+    dispatcher.registerEngineHandler(engineHandler('agent_team', team));
+    dispatcher.registerEngineHandler({
+      ...engineHandler('native', approval),
+      serialAutoResume: true,
+    });
+
+    const dispatching = dispatcher.dispatch([
+      plan({ runId: 'slow-team', engine: { kind: 'agent_team', treeId: 'tree' } }),
+      plan({ runId: 'approval-wait', engine: { kind: 'native' }, status: 'waiting' }),
+    ]);
+    await teamStarted.promise;
+    await vi.waitFor(() => expect(approval).toHaveBeenCalledTimes(1));
+    releaseTeam();
+    await dispatching;
+    await dispatcher.shutdown();
+  });
+
+  it('aborts queued auto-resumes on shutdown and clears their queue marks', async () => {
+    let releaseFirst!: () => void;
+    const firstStarted = Promise.withResolvers<void>();
+    const recover = vi.fn(async (candidate: RunRehydrationPlan) => {
+      if (candidate.envelope.runId === 'shutdown-first') {
+        firstStarted.resolve();
+        await new Promise<void>((resolve) => { releaseFirst = resolve; });
+      }
+      return { status: 'recovered' as const, reason: 'shutdown test' };
+    });
+    const handlerShutdown = vi.fn();
+    const dispatcher = new DurableRecoveryDispatcher();
+    dispatcher.registerEngineHandler({
+      ...engineHandler('native', recover),
+      serialAutoResume: true,
+      shutdown: handlerShutdown,
+    });
+
+    await dispatcher.dispatch([
+      plan({ runId: 'shutdown-first', engine: { kind: 'native' } }),
+      plan({ runId: 'shutdown-second', engine: { kind: 'native' } }),
+    ]);
+    await firstStarted.promise;
+    expect(isDurableResumeQueued('shutdown-second')).toBe(true);
+
+    const shuttingDown = dispatcher.shutdown();
+    await vi.waitFor(() => expect(handlerShutdown).toHaveBeenCalledTimes(1));
+    releaseFirst();
+    await shuttingDown;
+
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(isDurableResumeQueued('shutdown-second')).toBe(false);
   });
 
   it.each([

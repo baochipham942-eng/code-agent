@@ -72,12 +72,12 @@ export class AutoAgentRecoveryHost {
     return {
       name: 'agent_team_production',
       engineKind: 'agent_team',
-      recover: (plan, now) => this.recover(plan, now),
+      recover: (plan, now, onAutoResumeStart) => this.recover(plan, now, onAutoResumeStart),
       shutdown: () => this.shutdown(),
     };
   }
 
-  private async recover(plan: RunRehydrationPlan, now: number) {
+  private async recover(plan: RunRehydrationPlan, now: number, _onAutoResumeStart?: () => void) {
     const cursor = plan.checkpoint?.cursor.engineCursor ?? plan.envelope.cursor.engineCursor;
     const state = plan.checkpoint?.state;
     if (!isAutoAgentCursor(cursor) || !isAutoAgentRecoveryState(state)) {
@@ -113,6 +113,7 @@ export class AutoAgentRecoveryHost {
             engineCursor: cursor,
             pendingOperations: plan.pendingOperations,
             childRuns: plan.childRuns,
+            interruptCause: plan.envelope.interruptCause ?? plan.envelope.interrupt_cause,
             events: [{ type: 'auto_agent_graph_checkpoint', payload: { graphId: checkpoint.graphId }, recordedAt: checkpoint.updatedAt }],
           });
         },
@@ -136,6 +137,7 @@ export class AutoAgentRecoveryHost {
         engineCursor: cursor,
         pendingOperations: terminalOperations,
         childRuns: plan.childRuns,
+        interruptCause: plan.envelope.interruptCause ?? plan.envelope.interrupt_cause,
         events: [{
           type: 'auto_agent_graph_result_committed',
           payload: { graphId: result.checkpoint.graphId, status: result.status },

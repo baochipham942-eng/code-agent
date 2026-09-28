@@ -79,6 +79,73 @@ describe('DurableRunReadService migrated consumers', () => {
     })).toEqual({ status: 'completed' });
   });
 
+  it('projects parked user stops and exhausted crash resumes to the Continue button', () => {
+    const base = {
+      source: 'durable' as const,
+      consumer: 'session_replay' as const,
+      runId: 'parked',
+      sessionId: 'session',
+      status: 'waiting' as const,
+      engine: { kind: 'native' as const },
+      terminal: false,
+    };
+    expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'user_stop', autoResumeCount: 0 })).toMatchObject({
+      durableResume: {
+        runId: 'parked', mode: 'continue', interruptCause: 'user_stop', canContinue: true,
+      },
+    });
+    expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'crash_or_quit', autoResumeCount: 2 })).toMatchObject({
+      durableResume: {
+        runId: 'parked', mode: 'continue', interruptCause: 'crash_or_quit', canContinue: true,
+      },
+    });
+    expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'crash_or_quit', autoResumeCount: 1 })).toEqual({
+      status: 'running',
+      durableWaitingInput: true,
+    });
+  });
+
+  it('hides Continue for a parked run this process cannot take over (e.g. user_stop left unclaimed after restart)', async () => {
+    const parked = { ...envelope, runId: 'parked', status: 'waiting' as const, terminal: undefined, interruptCause: 'user_stop' as const };
+    const reader = { getLatestBySession: vi.fn(async () => parked) };
+    const policy = resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' });
+    const owned = new DurableRunReadService(policy, reader, () => true);
+    const orphaned = new DurableRunReadService(policy, reader, () => false);
+
+    const ownedView = await owned.readSessionReplay('session', () => ({ status: 'idle' }));
+    const orphanedView = await orphaned.readSessionReplay('session', () => ({ status: 'idle' }));
+
+    expect(projectDurableRunToSessionPayload(ownedView).durableResume).toMatchObject({ mode: 'continue', canContinue: true });
+    expect(projectDurableRunToSessionPayload(orphanedView).durableResume).toBeUndefined();
+  });
+
+  it('projects an in-flight crash recovery as one auto-resume signal', () => {
+    expect(projectDurableRunToSessionPayload({
+      source: 'durable', consumer: 'session_replay', runId: 'recovering', sessionId: 'session',
+      status: 'recovering', engine: { kind: 'native' }, terminal: false,
+      interruptCause: 'crash_or_quit', autoResumeCount: 1,
+    })).toMatchObject({
+      status: 'running',
+      durableResume: {
+        runId: 'recovering', mode: 'auto-resuming', interruptCause: 'crash_or_quit', canContinue: false,
+      },
+    });
+  });
+
+  it('does not expose Continue for external engine runs', () => {
+    expect(projectDurableRunToSessionPayload({
+      source: 'durable',
+      consumer: 'session_replay',
+      runId: 'external-parked',
+      sessionId: 'session',
+      status: 'waiting',
+      engine: { kind: 'external_cli', engine: 'codex_cli' },
+      terminal: false,
+      interruptCause: 'user_stop',
+      autoResumeCount: 0,
+    })).toEqual({ status: 'running', durableWaitingInput: true });
+  });
+
   it.each([
     ['failed', 'error'],
     ['completed', 'completed'],

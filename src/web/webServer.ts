@@ -699,7 +699,7 @@ async function initializeServices(): Promise<void> {
               sessionTitle: session.title || '未命名会话',
               autoResumeCount: envelope?.autoResumeCount ?? 1,
             });
-          }).catch((error) => logger.debug('Failed to notify durable resume', { result, error }));
+          }).catch((error: unknown) => logger.debug('Failed to notify durable resume', { result, error }));
         }
       },
       onRecoveryError: (error) => {

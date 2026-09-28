@@ -25,6 +25,7 @@ import type { ToolExecutionResult } from '../tools/types';
 import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinitions';
 import { classifyToolReplaySafety } from '../tools/toolReplaySafety';
 import { createLogger } from '../services/infra/logger';
+import type { TurnCostEstimateInput } from '../../shared/contract/turnCost';
 
 interface NativeModelContinuationSessions {
   getMessages(sessionId: string, limit?: number): Promise<Message[]>;
@@ -58,10 +59,23 @@ interface ApplicationNativeRecoveryDependencies {
   persistToolMessage(sessionId: string, message: Message): Promise<void>;
   storedToolReplaySafety(sessionId: string, executionId?: string): ToolReplaySafety | null;
   acknowledgeToolRecovery(sessionId: string, executionId: string | undefined, toolName: string): void;
+  recordModelRecoveryUsage(input: TurnCostEstimateInput): void;
 }
 
 const MODEL_RECOVERY_MESSAGE_LIMIT = 500;
+const PERSISTED_STREAM_INTERRUPTION_MARKER = /\[\s*(?:连接中断|生成中断)\s*[—-]\s*部分回答已保留\s*\]/u;
 const logger = createLogger('NativeRecoveryHost');
+
+function isInterruptedModelPartial(message: Message): boolean {
+  return message.role === 'assistant'
+    && (PERSISTED_STREAM_INTERRUPTION_MARKER.test(message.content)
+      || message.metadata?.streamInterruptionReason === 'app-restart'
+      || message.metadata?.streamInterruptionReason === 'stream-break');
+}
+
+function modelResumeHistory(messages: Message[]): Message[] {
+  return messages.filter((message) => !isInterruptedModelPartial(message));
+}
 
 function preparedModelEvidence(
   messages: Message[],
@@ -77,7 +91,9 @@ function preparedModelEvidence(
     .findIndex((message) => message.role === 'user');
   const turnEnd = nextTurnOffset < 0 ? messages.length : sourceIndex + 1 + nextTurnOffset;
   const result = messages.slice(sourceIndex + 1, turnEnd).find((message) => (
-    message.role === 'assistant' && message.visibility !== 'rewound'
+    message.role === 'assistant'
+      && message.visibility !== 'rewound'
+      && !isInterruptedModelPartial(message)
   ));
   return result ? { resultRef: `message-ledger:${result.id}` } : null;
 }
@@ -218,7 +234,10 @@ async function checkpointModelDispatchFence(
     autoResumeCount,
     events: [{
       type: 'native_model_recovery_dispatch_fenced',
-      payload: { operationId: input.operation.operationId },
+      payload: {
+        operationId: input.operation.operationId,
+        ...(input.operation.status === 'dispatched' ? { usageStatus: 'unknown' as const } : {}),
+      },
       recordedAt: now,
     }],
   });
@@ -265,6 +284,18 @@ export function createApplicationNativeRecoveryPorts(
         recordedAt: Date.now(),
       });
     }),
+    recordModelRecoveryUsage: overrides.recordModelRecoveryUsage ?? ((input) => {
+      try {
+        getDatabase().getTurnCostRepo().insert(input);
+      } catch (error) {
+        logger.warn('Native model recovery usage could not be recorded', {
+          sessionId: input.sessionId,
+          provider: input.provider,
+          modelId: input.modelId,
+          error,
+        });
+      }
+    }),
   });
   const continueLoop = async (input: NativeRecoveryOperationInput): Promise<void> => {
     const { sessions, tasks } = dependencies();
@@ -277,7 +308,7 @@ export function createApplicationNativeRecoveryPorts(
     await tasks.resumeExistingDurableRun(
       input.plan.envelope.sessionId,
       input.plan.envelope.runId,
-      messages,
+      modelResumeHistory(messages),
       {
         mode: 'normal',
         ...(input.operation.kind === 'model_call'
@@ -348,10 +379,23 @@ export function createApplicationNativeRecoveryPorts(
         });
         await checkpointModelDispatchFence(registry, input, now());
 
+        if (input.operation.status === 'dispatched') {
+          dependencies().recordModelRecoveryUsage({
+            sessionId: input.plan.envelope.sessionId,
+            provider: input.descriptor.provider,
+            modelId: input.descriptor.model,
+            inputTokens: 0,
+            outputTokens: 0,
+            usd: null,
+            source: 'unknown',
+            createdAt: now(),
+          });
+        }
+
         await tasks.resumeExistingDurableRun(
           input.plan.envelope.sessionId,
           input.plan.envelope.runId,
-          messages,
+          modelResumeHistory(messages),
           {
             mode: 'normal',
             modelSpec: {

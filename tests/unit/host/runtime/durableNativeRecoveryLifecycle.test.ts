@@ -329,15 +329,15 @@ describe('durable Native recovery lifecycle', () => {
     {
       branch: 'dispatched model with a provider operation id',
       plan: () => reviewPlan(),
-      reason: 'model_result_handle_not_queryable',
-      status: 'requires_review',
+      reason: 'resume_live_loop',
+      status: 'recovered',
       approval: 'pending' as const,
     },
     {
       branch: 'dispatched model without safe retry proof',
       plan: () => planWith({ status: 'dispatched', providerOperationId: undefined }),
-      reason: 'model_safe_retry_unproven',
-      status: 'requires_review',
+      reason: 'resume_live_loop',
+      status: 'recovered',
       approval: 'pending' as const,
     },
     {
@@ -362,7 +362,39 @@ describe('durable Native recovery lifecycle', () => {
       checkpointDurable: vi.fn(),
       terminalDurable: vi.fn(),
     } as unknown as RunRegistry;
-    const production = createApplicationNativeRecoveryPorts();
+    const pending = plan().pendingOperations[0];
+    const isModelRecovery = pending.kind === 'model_call';
+    let messages: Message[] = isModelRecovery
+      ? [{
+          id: 'message-review',
+          role: 'user',
+          content: '恢复模型调用',
+          timestamp: 1,
+          metadata: { correlation: { turnId: 'review' } },
+        }]
+      : [];
+    const production = createApplicationNativeRecoveryPorts(
+      isModelRecovery ? registry : undefined,
+      isModelRecovery
+        ? {
+            sessions: {
+              getMessages: vi.fn(async () => messages),
+              updateMessage: vi.fn(async () => undefined),
+            },
+            tasks: {
+              resumeExistingDurableRun: vi.fn(async () => {
+                messages = [...messages, {
+                  id: 'assistant-review-recovered',
+                  role: 'assistant',
+                  content: '恢复完成',
+                  timestamp: 2,
+                }];
+              }),
+            },
+            recordModelRecoveryUsage: vi.fn(),
+          }
+        : {},
+    );
     const ports: NativeRecoveryHostPorts = {
       ...production,
       resolveWorkspace: vi.fn(async () => ({
@@ -374,9 +406,16 @@ describe('durable Native recovery lifecycle', () => {
     expect(ports.continuationExecutor).toBe('available');
     await expect(new NativeRecoveryHost(registry, ports).createHandler().recover(plan(), 10))
       .resolves.toMatchObject({ status, reason });
-    expect(registry.checkpointDurable).toHaveBeenCalledWith('run-review', expect.objectContaining({
-      status: 'waiting',
-    }));
+    if (isModelRecovery) {
+      expect(registry.checkpointDurable).toHaveBeenCalledWith('run-review', expect.objectContaining({
+        status: 'running',
+        pendingOperations: [expect.objectContaining({ status: 'unknown' })],
+      }));
+    } else {
+      expect(registry.checkpointDurable).toHaveBeenCalledWith('run-review', expect.objectContaining({
+        status: 'waiting',
+      }));
+    }
     expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 
@@ -539,7 +578,7 @@ describe('durable Native recovery lifecycle', () => {
     };
 
     await expect(new NativeRecoveryHost(registry, ports).createHandler().recover(reviewPlan(), 10))
-      .resolves.toMatchObject({ status: 'requires_review', reason: 'model_result_handle_not_queryable' });
+      .resolves.toMatchObject({ status: 'requires_review', reason: 'native_model_result_materialized_requires_review' });
     expect(registry.checkpointDurable).toHaveBeenCalledWith('run-review', expect.objectContaining({ status: 'waiting' }));
     expect(registry.terminalDurable).not.toHaveBeenCalled();
   });

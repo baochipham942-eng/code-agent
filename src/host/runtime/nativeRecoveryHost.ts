@@ -461,11 +461,22 @@ export class NativeRecoveryHost {
     }
     if (operation.kind === 'model_call' && operation.status === 'dispatched' && operation.providerOperationId) {
       const evidence = await this.ports.model.queryResult({ ...input, providerOperationId: operation.providerOperationId });
-      return evidence
-        ? { evidence, action: 'query_original_model_result' }
-        : { action: 'model_result_unqueryable', reviewReason: 'model_result_handle_not_queryable' };
+      if (evidence) return { evidence, action: 'query_original_model_result' };
+      if (this.ports.continuationExecutor === 'available') {
+        return {
+          evidence: await this.ports.model.dispatchPrepared(input),
+          action: 'replay_interrupted_model_once',
+        };
+      }
+      return { action: 'model_result_unqueryable', reviewReason: 'model_result_handle_not_queryable' };
     }
     if (operation.kind === 'model_call' && operation.status === 'dispatched') {
+      if (this.ports.continuationExecutor === 'available') {
+        return {
+          evidence: await this.ports.model.dispatchPrepared(input),
+          action: 'replay_interrupted_model_once',
+        };
+      }
       if (!await this.ports.model.canRetrySafely(input)) {
         return { action: 'model_retry_unproven', reviewReason: 'model_safe_retry_unproven' };
       }

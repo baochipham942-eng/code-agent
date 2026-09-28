@@ -105,6 +105,20 @@ describe('DurableRunReadService migrated consumers', () => {
     });
   });
 
+  it('hides Continue for a parked run this process cannot take over (e.g. user_stop left unclaimed after restart)', async () => {
+    const parked = { ...envelope, runId: 'parked', status: 'waiting' as const, terminal: undefined, interruptCause: 'user_stop' as const };
+    const reader = { getLatestBySession: vi.fn(async () => parked) };
+    const policy = resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' });
+    const owned = new DurableRunReadService(policy, reader, () => true);
+    const orphaned = new DurableRunReadService(policy, reader, () => false);
+
+    const ownedView = await owned.readSessionReplay('session', () => ({ status: 'idle' }));
+    const orphanedView = await orphaned.readSessionReplay('session', () => ({ status: 'idle' }));
+
+    expect(projectDurableRunToSessionPayload(ownedView).durableResume).toMatchObject({ mode: 'continue', canContinue: true });
+    expect(projectDurableRunToSessionPayload(orphanedView).durableResume).toBeUndefined();
+  });
+
   it('projects an in-flight crash recovery as one auto-resume signal', () => {
     expect(projectDurableRunToSessionPayload({
       source: 'durable', consumer: 'session_replay', runId: 'recovering', sessionId: 'session',

@@ -88,7 +88,11 @@ export function assembleDurableRun(
   input: DurableRunAssemblyInput,
 ): DurableRunApplicationAssembly {
   const policy = resolveDurableRunRollout(input.env);
-  const readService = new DurableRunReadService(policy, input.repository);
+  const readService = new DurableRunReadService(
+    policy,
+    input.repository,
+    (runId) => Boolean(input.registry.findRecoveredWaitingRun({ runId })),
+  );
   if (!policy.durableActivation) {
     resetLoopDurableLedger();
     return {

@@ -34,6 +34,8 @@ export interface DurableRunView {
   updatedAt?: number;
   interruptCause?: RunInterruptCause;
   autoResumeCount?: number;
+  /** 本进程能否接手这条停靠 run（重启后未被认领的旧 run 为 false，「继续」会找不到它）。 */
+  continuable?: boolean;
 }
 
 export interface LegacyRunViewInput {
@@ -48,6 +50,7 @@ export class DurableRunReadService {
   constructor(
     readonly policy: DurableRunRolloutPolicy,
     private readonly reader: DurableRunFactReader | null,
+    private readonly canContinueRun?: (runId: string) => boolean,
   ) {}
 
   async read(
@@ -61,9 +64,9 @@ export class DurableRunReadService {
       sessionId,
       readLegacy,
     });
-    return selected.source === 'durable'
-      ? mapDurableRunView(consumer, selected.value)
-      : mapLegacyRunView(consumer, sessionId, selected.value);
+    if (selected.source !== 'durable') return mapLegacyRunView(consumer, sessionId, selected.value);
+    const view = mapDurableRunView(consumer, selected.value);
+    return this.canContinueRun && view.runId ? { ...view, continuable: this.canContinueRun(view.runId) } : view;
   }
 
   readNativeStatus(sessionId: string, legacy: () => LegacyRunViewInput | Promise<LegacyRunViewInput>) {
@@ -166,7 +169,7 @@ function projectDurableResumeState(view: DurableRunView): DurableResumeState | u
       canContinue: false,
     };
   }
-  const canContinue = view.status === 'waiting' && (
+  const canContinue = view.status === 'waiting' && view.continuable !== false && (
     view.interruptCause !== 'crash_or_quit' || autoResumeCount >= MAX_AUTO_RESUME_COUNT
   );
   if (!canContinue) return undefined;

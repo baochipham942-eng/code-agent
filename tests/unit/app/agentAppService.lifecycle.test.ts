@@ -211,6 +211,41 @@ describe('AgentAppService lifecycle routing', () => {
     expect(registry.parkDurable).toHaveBeenCalledWith('run-parked', { reason: 'user_stop' });
   });
 
+  it('rejects a second Continue while the first is in flight and never parks the run it started', async () => {
+    let releaseResume!: () => void;
+    const resumeExistingDurableRun = vi.fn(() => new Promise<void>((resolve) => { releaseResume = resolve; }));
+    const registry = {
+      findRecoveredWaitingRun: vi.fn(() => ({ runId: 'run-parked', sessionId: 'session-1' })),
+      getDurableCheckpointState: vi.fn(() => ({ sourceMessageId: 'source-1' })),
+      resetDurableResumeBudget: vi.fn().mockResolvedValue(undefined),
+      parkDurable: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(getSessionManager).mockReturnValue({
+      ...sessionManager,
+      getMessages: vi.fn().mockResolvedValue([{
+        id: 'source-1', role: 'user', content: 'continue', timestamp: 1, metadata: {},
+      }]),
+    } as never);
+    const service = new AgentAppServiceImpl(
+      () => ({
+        ...taskManager,
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+        resumeExistingDurableRun,
+      }) as never,
+      () => null,
+      () => 'session-1',
+      vi.fn(),
+      registry as never,
+    );
+
+    const first = service.continueDurableRun('session-1');
+    await expect(service.continueDurableRun('session-1')).rejects.toThrow('already continuing');
+    await vi.waitFor(() => expect(resumeExistingDurableRun).toHaveBeenCalledTimes(1));
+    releaseResume();
+    await first;
+    expect(registry.parkDurable).not.toHaveBeenCalled();
+  });
+
   it('routes public lineage repair to projection reconstruction with the exact owner/Project boundary', async () => {
     const healthyAudit = {
       status: 'healthy',

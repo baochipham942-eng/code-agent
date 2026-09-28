@@ -1403,10 +1403,23 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     }
   }
 
+  private readonly continuingSessions = new Set<string>();
+
   /** Continue a parked durable foreground run without creating a new user turn. */
   async continueDurableRun(sessionId?: string): Promise<void> {
     const resolvedSessionId = this.resolveSessionId(sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
+    // 连点「继续」：第二次若也走到失败回滚，会把第一次已拉起的 run 停靠成 user_stop。
+    if (this.continuingSessions.has(resolvedSessionId)) throw new Error(`Session ${resolvedSessionId} is already continuing`);
+    this.continuingSessions.add(resolvedSessionId);
+    try {
+      await this.continueParkedRun(resolvedSessionId);
+    } finally {
+      this.continuingSessions.delete(resolvedSessionId);
+    }
+  }
+
+  private async continueParkedRun(resolvedSessionId: string): Promise<void> {
     if (!this.externalRunRegistry) throw new Error('Durable Run registry is unavailable');
     const recovered = this.externalRunRegistry.findRecoveredWaitingRun({ sessionId: resolvedSessionId });
     if (!recovered) throw new Error(`No parked durable run is available for session ${resolvedSessionId}`);

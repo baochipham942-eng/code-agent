@@ -60,6 +60,10 @@ export const AgentCancelBodySchema = z.object({
   sessionId: z.string().optional(),
 }).passthrough();
 
+export const AgentContinueBodySchema = z.object({
+  sessionId: z.string().min(1),
+}).passthrough();
+
 export const AgentToolResultBodySchema = z.object({
   toolCallId: z.string().min(1),
   success: z.unknown().optional(),

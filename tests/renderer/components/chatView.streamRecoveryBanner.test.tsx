@@ -146,4 +146,12 @@ describe('ChatView — 中断入口收进 DecisionSlot', () => {
     expect(source).toContain('deriveStreamInterruptionDecision');
     expect(source).toContain('effectiveIsProcessing');
   });
+
+  it('durable Continue/auto-resume/queued projections suppress the legacy interruption control', () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/renderer/components/ChatView.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('suppressLegacyInterruptionDecision');
+  });
 });

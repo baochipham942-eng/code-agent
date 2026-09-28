@@ -12,6 +12,17 @@ function shouldShowDurableContinue(
   return resume?.mode === 'continue' && resume.canContinue && !turnActive;
 }
 
+/** The durable resume notice is the single recovery action for these modes. */
+export function suppressLegacyInterruptionDecision<T>(
+  decision: T | null | undefined,
+  durableResumeMode: string | undefined,
+): T | null {
+  if (!decision || durableResumeMode === 'continue' || durableResumeMode === 'auto-resuming' || durableResumeMode === 'queued') {
+    return null;
+  }
+  return decision;
+}
+
 /**
  * 投影只在会话列表刷新时更新；运行态翻转时主动刷新一次，
  * 且运行中以 taskStore 为准，续跑期间主按钮必须是「停止」。

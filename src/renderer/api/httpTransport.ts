@@ -1038,6 +1038,7 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
       try {
         const agentRuntimeEndpoint: Record<string, string> = {
           interrupt: '/api/interrupt',
+          continue: '/api/continue',
           pause: '/api/pause',
           resume: '/api/resume',
         };

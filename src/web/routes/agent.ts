@@ -85,6 +85,7 @@ import {
   resolveNativeRunWorkspaceScope,
 } from './agentDurableRouteLifecycle';
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
+import { registerAgentContinueRoute } from './registerAgentContinueRoute';
 import { steerOrQueue } from '../../host/runtime/steerQueueFence';
 import { QueuedInputRepository } from '../../host/services/core/repositories/QueuedInputRepository';
 import { getDatabase } from '../../host/services/core/databaseService';
@@ -1444,6 +1445,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     // 把「正在处理」清掉（payload 形状与正常终局 agent.ts 的发布保持一致）。
     deps.publishCompanionEvent?.(recovered.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
   });
+
+  registerAgentContinueRoute(router, runRegistry);
 
   registerAgentLifecycleControlRoutes(router, runRegistry, deps.getDurableRunReadService?.());
 

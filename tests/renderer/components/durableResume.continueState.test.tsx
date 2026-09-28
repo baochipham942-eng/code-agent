@@ -2,7 +2,10 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
-import { useDurableContinueVisible } from '../../../src/renderer/components/features/chat/durableResume';
+import {
+  suppressLegacyInterruptionDecision,
+  useDurableContinueVisible,
+} from '../../../src/renderer/components/features/chat/durableResume';
 
 describe('useDurableContinueVisible', () => {
   const parked = { mode: 'continue', canContinue: true };
@@ -40,5 +43,15 @@ describe('useDurableContinueVisible', () => {
     loadSessions.mockClear();
     expect(renderHook(() => useDurableContinueVisible(undefined, false)).result.current).toBe(false);
     expect(loadSessions).not.toHaveBeenCalled();
+  });
+
+  it.each(['continue', 'auto-resuming', 'queued'] as const)('suppresses the legacy interruption action for durable %s', (mode) => {
+    const decision = { retryMessage: { id: 'source' } };
+    expect(suppressLegacyInterruptionDecision(decision, mode)).toBeNull();
+  });
+
+  it('keeps the legacy interruption action when there is no durable resume projection', () => {
+    const decision = { retryMessage: { id: 'source' } };
+    expect(suppressLegacyInterruptionDecision(decision, undefined)).toBe(decision);
   });
 });

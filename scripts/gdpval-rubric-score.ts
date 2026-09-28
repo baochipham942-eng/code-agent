@@ -14,7 +14,7 @@
 // 判据，用贵模型逐条判不划算，而这些条目大多是「有没有这张表」「z 值是不是 1.64」
 // 这类可核验事实，不需要强推理。
 // ============================================================================
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import mammoth from 'mammoth';
@@ -139,6 +139,7 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
   };
   try {
     bytes = fs.statSync(absPath).size;
+    if (bytes === 0) return { path: relPath, bytes, text: '[空文件：0 字节]' };
     if (TEXT_EXT.has(ext)) return { path: relPath, bytes, text: clip(fs.readFileSync(absPath, 'utf8')) };
     if (ext === '.xlsx' || ext === '.xls' || ext === '.xlsm') {
       const workbook = XLSX.read(fs.readFileSync(absPath), { type: 'buffer' });
@@ -173,11 +174,15 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
       return { path: relPath, bytes, text: clip(await extractPptxText(fs.readFileSync(absPath))) };
     }
     if (ext === '.pdf') {
-      const text = execFileSync(process.env.PDFTOTEXT || 'pdftotext', ['-layout', '-enc', 'UTF-8', absPath, '-'],
+      // 不看退出码：pdftotext 遇到语法警告会非零退出，但正文照样抽出来了（09-28 实测 9408 字被当失败丢掉）。
+      const run = spawnSync(process.env.PDFTOTEXT || 'pdftotext', ['-layout', '-enc', 'UTF-8', absPath, '-'],
         { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000 });
-      // 扫描件没有文字层：给占位而不是空串，空串会被当成「PDF 里什么都没写」判 false。
-      if (!text.trim()) return unseen(relPath, bytes, 'PDF 无文字层（疑似扫描件）');
-      return { path: relPath, bytes, text: clip(text) };
+      if (run.error) return unseen(relPath, bytes, `pdftotext 不可用 ${run.error.message}`);
+      if (run.stdout.trim()) return { path: relPath, bytes, text: clip(run.stdout) };
+      // 打不开的 PDF 是产物本身坏了，要让模型看见并判负；弃权会把坏交付抬成高分。
+      if (run.status !== 0) return { path: relPath, bytes, text: `[此 PDF 文件损坏、无法打开：${run.stderr.trim().slice(0, 200)}]` };
+      // 能打开但没有文字层（扫描件/纯图片）：给占位，空串会被当成「PDF 里什么都没写」判负。
+      return unseen(relPath, bytes, 'PDF 无文字层（疑似扫描件或纯图片）');
     }
   } catch (error) {
     return unseen(relPath, bytes, `提取失败 ${error instanceof Error ? error.message : String(error)}`);

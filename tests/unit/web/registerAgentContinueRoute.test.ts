@@ -4,6 +4,7 @@ import http from 'http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHttpDomainAPI } from '../../../src/renderer/api/httpTransport';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import type { Message } from '../../../src/shared/contract';
 import { registerAgentContinueRoute } from '../../../src/web/routes/registerAgentContinueRoute';
 
 describe('registerAgentContinueRoute', () => {
@@ -20,7 +21,7 @@ describe('registerAgentContinueRoute', () => {
     const app = express();
     app.use(express.json());
     const router = express.Router();
-    const source = { id: 'source-1', role: 'user' as const, content: 'finish the task', timestamp: 1, metadata: { source: 'test' } };
+    const source: Message = { id: 'source-1', role: 'user', content: 'finish the task', timestamp: 1, metadata: { retryPrompt: 'finish the task' } };
     const parked = {
       findRecoveredWaitingRun: () => ({ runId: 'run-parked', sessionId: 'session-parked' }),
       getDurableCheckpointState: () => ({ sourceMessageId: source.id }),

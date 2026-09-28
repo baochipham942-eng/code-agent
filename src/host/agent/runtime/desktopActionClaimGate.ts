@@ -5,7 +5,7 @@
 // as facts when no Computer/Desktop tool call happened in the current run.
 
 const DESKTOP_REQUEST_RE =
-  /\bcomputer[\s_-]?use\b|\bcomputer surface\b|\bdesktop\b|\bscreenshot\b|\bscreen\b|桌面|屏幕|截图|截屏|鼠标|键盘|点击|双击|右键|滚动|拖拽|打开(?:记事本|备忘录|应用|窗口|app)|关掉|关闭|当前会议|会议内容|会议记录|腾讯会议|飞书会议|voov|tencentmeeting|imeeting|notes|textedit|spotlight/i;
+  /\bcomputer[\s_-]?use\b|\bcomputer surface\b|\bdesktop\b|\bscreenshot\b|\bscreen\b|桌面|屏幕|截图|截屏|截个屏|鼠标|键盘|点击|双击|右键|滚动|拖拽|打开(?:记事本|备忘录|应用|窗口|app)|关掉|关闭|当前会议|会议内容|会议记录|腾讯会议|飞书会议|voov|tencentmeeting|imeeting|notes|textedit|spotlight/i;
 
 const DESKTOP_OBSERVATION_RE =
   /(?:屏幕上|窗口|前台|后台|最前面|背后|当前打开|当前显示|显示的是|看到了|没看到|没有看到|找到|找到了|没有找到|搜索结果|Spotlight|腾讯会议|飞书会议|TextEdit|Notes|备忘录|记事本|最小化|最大化|打开了|关掉了|关闭了|点击了|进入了|登录|没有安装)/i;
@@ -27,8 +27,26 @@ const DESKTOP_CLAIM_GATE_REPAIR_PROMPT = [
 const DESKTOP_CLAIM_GATE_WARNING =
   '【桌面证据不足】本轮没有成功的 Computer/桌面工具调用，所以下面的桌面操作或屏幕观察不能当作已执行事实。\n\n';
 
+// ponytail: fixed window of recent user turns; follow-ups like 「没看到吗？」 inherit
+// the desktop task from an earlier turn. Widen if longer desktop threads slip through.
+const RECENT_USER_TURNS = 3;
+
+export function collectRecentUserTexts(
+  messages: ReadonlyArray<{ role: string; content?: unknown; visibility?: string }>,
+): string[] {
+  const texts: string[] = [];
+  for (let i = messages.length - 1; i >= 0 && texts.length < RECENT_USER_TURNS; i--) {
+    const message = messages[i];
+    if (message.role !== 'user' || message.visibility === 'rewound') continue;
+    if (typeof message.content === 'string') texts.push(message.content);
+  }
+  return texts;
+}
+
 export interface DesktopActionClaimGateInput {
   latestUserMessage?: string;
+  /** Recent user turns (newest first); any desktop request among them sets desktop context. */
+  recentUserMessages?: string[];
   assistantContent: string;
   toolCallCount: number;
   iterations: number;
@@ -52,10 +70,11 @@ export function applyDesktopActionClaimGate(
     return { action: 'none', content };
   }
 
-  const latestUserMessage = input.latestUserMessage || '';
-  const desktopContext =
-    DESKTOP_REQUEST_RE.test(latestUserMessage) ||
-    DESKTOP_OBSERVATION_RE.test(content);
+  // Observation phrases in the assistant body only corroborate a claim; desktop
+  // context comes from the user asking for a desktop/app/screen operation in the
+  // latest or a recent turn (so follow-ups without desktop keywords stay covered).
+  const userTexts = [input.latestUserMessage || '', ...(input.recentUserMessages ?? [])];
+  const desktopContext = userTexts.some((text) => DESKTOP_REQUEST_RE.test(text));
 
   if (!desktopContext) {
     return { action: 'none', content };

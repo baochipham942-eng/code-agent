@@ -5,7 +5,7 @@
 // as facts when no Computer/Desktop tool call happened in the current run.
 
 const DESKTOP_REQUEST_RE =
-  /\bcomputer[\s_-]?use\b|\bcomputer surface\b|\bdesktop\b|\bscreenshot\b|\bscreen\b|桌面|屏幕|截图|截屏|鼠标|键盘|点击|双击|右键|滚动|拖拽|打开(?:记事本|备忘录|应用|窗口|app)|关掉|关闭|当前会议|会议内容|会议记录|腾讯会议|飞书会议|voov|tencentmeeting|imeeting|notes|textedit|spotlight/i;
+  /\bcomputer[\s_-]?use\b|\bcomputer surface\b|\bdesktop\b|\bscreenshot\b|\bscreen\b|桌面|屏幕|截图|截屏|截个屏|鼠标|键盘|点击|双击|右键|滚动|拖拽|打开(?:记事本|备忘录|应用|窗口|app)|关掉|关闭|当前会议|会议内容|会议记录|腾讯会议|飞书会议|voov|tencentmeeting|imeeting|notes|textedit|spotlight/i;
 
 const DESKTOP_OBSERVATION_RE =
   /(?:屏幕上|窗口|前台|后台|最前面|背后|当前打开|当前显示|显示的是|看到了|没看到|没有看到|找到|找到了|没有找到|搜索结果|Spotlight|腾讯会议|飞书会议|TextEdit|Notes|备忘录|记事本|最小化|最大化|打开了|关掉了|关闭了|点击了|进入了|登录|没有安装)/i;
@@ -53,9 +53,11 @@ export function applyDesktopActionClaimGate(
   }
 
   const latestUserMessage = input.latestUserMessage || '';
-  const desktopContext =
-    DESKTOP_REQUEST_RE.test(latestUserMessage) ||
-    DESKTOP_OBSERVATION_RE.test(content);
+  // Observation phrases in the assistant body only corroborate a claim.
+  // Desktop context itself requires the user request to be a desktop/app/screen
+  // operation. Round/session tool evidence is already handled above via
+  // toolCallCount / hasDesktopEvidence (existing input signals; no new state).
+  const desktopContext = DESKTOP_REQUEST_RE.test(latestUserMessage);
 
   if (!desktopContext) {
     return { action: 'none', content };

@@ -55,6 +55,7 @@ describe('createStreamSnapshotRequiredHandler', () => {
       getCurrentSessionId: () => 'session-1',
       reloadSession,
       now: () => 1_000,
+      schedule: () => {}, // 尾随重灌另有专测
     });
 
     await handler({ sessionId: 'session-1' });
@@ -70,6 +71,7 @@ describe('createStreamSnapshotRequiredHandler', () => {
       getCurrentSessionId: () => 'session-1',
       reloadSession,
       now: () => clock,
+      schedule: () => {}, // 尾随重灌另有专测
     });
 
     // 100 条信号挤在同一个合并窗口内（总跨度 500ms < 1.5s）
@@ -88,6 +90,7 @@ describe('createStreamSnapshotRequiredHandler', () => {
       getCurrentSessionId: () => 'session-1',
       reloadSession,
       now: () => clock,
+      schedule: () => {}, // 尾随重灌另有专测
     });
 
     await handler({ sessionId: 'session-1' });
@@ -97,7 +100,7 @@ describe('createStreamSnapshotRequiredHandler', () => {
     expect(reloadSession).toHaveBeenCalledTimes(2);
   });
 
-  it('在途合并：重灌未完成时到达的信号被丢弃，不叠加也不推迟', async () => {
+  it('在途合并：重灌未完成时到达的信号不叠加', async () => {
     // 只有第一次重灌挂起（受控释放），后续重灌立即完成——否则尾部 await 会吊死在
     // 没人释放的第二把闸上
     let releaseFirstReload: (() => void) | undefined;
@@ -113,10 +116,11 @@ describe('createStreamSnapshotRequiredHandler', () => {
       getCurrentSessionId: () => 'session-1',
       reloadSession,
       now: () => clock,
+      schedule: () => {}, // 尾随重灌另有专测
     });
 
     const first = handler({ sessionId: 'session-1' });
-    await handler({ sessionId: 'session-1' }); // 在途 → 丢弃
+    await handler({ sessionId: 'session-1' }); // 在途 → 不立即重灌
     clock += 10_000; // 即便时钟越过窗口，在途期间到达的信号也不放行
     await handler({ sessionId: 'session-1' });
     expect(reloadSession).toHaveBeenCalledTimes(1);
@@ -129,6 +133,32 @@ describe('createStreamSnapshotRequiredHandler', () => {
     expect(reloadSession).toHaveBeenCalledTimes(2);
   });
 
+  it('尾随重灌：窗口内被合并的信号在窗口结束后补一次，多条只补一次', async () => {
+    const reloadSession = vi.fn(async () => {});
+    const timers: Array<{ run: () => void; delayMs: number }> = [];
+    let clock = 0;
+    const handler = createStreamSnapshotRequiredHandler({
+      getCurrentSessionId: () => 'session-1',
+      reloadSession,
+      now: () => clock,
+      schedule: (run, delayMs) => { timers.push({ run, delayMs }); },
+    });
+
+    await handler({ sessionId: 'session-1' });
+    clock += 300;
+    await handler({ sessionId: 'session-1' }); // 收尾那条缺口落在窗口里
+    clock += 300;
+    await handler({ sessionId: 'session-1' });
+    expect(reloadSession).toHaveBeenCalledTimes(1);
+    expect(timers).toHaveLength(1);
+    expect(timers[0].delayMs).toBe(1_200);
+
+    clock += 1_200;
+    timers[0].run();
+    await drainMicrotasks();
+    expect(reloadSession).toHaveBeenCalledTimes(2);
+  });
+
   it('会话过滤保持：他席会话信号不触发，全局信号与当前会话信号触发', async () => {
     const reloadSession = vi.fn(async () => {});
     let current: string | null = 'session-1';
@@ -136,6 +166,7 @@ describe('createStreamSnapshotRequiredHandler', () => {
       getCurrentSessionId: () => current,
       reloadSession,
       now: () => 0,
+      schedule: () => {}, // 尾随重灌另有专测
     });
 
     await handler({ sessionId: 'session-other' });
@@ -172,6 +203,7 @@ describe('snapshot-required storm → force load frequency (N-STREAMSNAPSHOT-LOG
       getCurrentSessionId: () => 'session-live',
       reloadSession,
       now: () => clock,
+      schedule: () => {}, // 尾随重灌另有专测
     });
     ipcService.on(IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED, handler);
 
@@ -207,6 +239,7 @@ describe('snapshot-required storm → force load frequency (N-STREAMSNAPSHOT-LOG
       getCurrentSessionId: () => 'session-live',
       reloadSession,
       now: () => clock,
+      schedule: () => {}, // 尾随重灌另有专测
     });
     ipcService.on(IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED, handler);
 

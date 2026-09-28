@@ -8,6 +8,14 @@ import type { PendingOperation, RunOwnerLease } from '../../../src/shared/contra
 import type { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import type { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 import type { DurableRunKillRestartScenario } from '../../fixtures/durableRunKillRestart';
+import {
+  ADR075_FINAL_ANSWERS,
+  createAdr075RecoveryPorts,
+  isAdr075Scenario,
+  loadAdr075Evidence,
+  parseAdr075Mutation,
+  prepareAdr075,
+} from './adr075RestartResume';
 
 interface PersistedAcceptanceState {
   schemaVersion: 1;
@@ -36,6 +44,11 @@ interface Counters {
   completedNodeExecutions: number;
   recoveredNodeExecutions: number;
   fakeCliResumes: number;
+  loopAttached: number;
+  toolInterrupts: number;
+  startTaskCount: number;
+  resumeCount: number;
+  bashExecutions: number;
 }
 
 const [phase, scenarioId, dataDir] = process.argv.slice(2);
@@ -62,6 +75,14 @@ else if (phase === 'recover') await recoverAndExit(scenario);
 else throw new Error(`unknown phase: ${phase}`);
 
 async function prepareAndWait(selected: DurableRunKillRestartScenario): Promise<never> {
+  if (isAdr075Scenario(selected)) {
+    const kernel = createKernel('old-owner', `old-process-${process.pid}`, 300);
+    const prepared = await prepareAdr075(selected, dataDir, kernel);
+    await saveCounters(emptyCounters());
+    marker({ marker: 'ready', scenarioId: selected.id, pid: process.pid, runId: prepared.runId, oldOwnerEpoch: prepared.oldOwnerEpoch, attempt: 1 });
+    await new Promise<never>(() => setInterval(() => undefined, 1_000));
+    throw new Error('unreachable');
+  }
   const now = Date.now();
   const runId = `acceptance-${selected.id}`;
   const sessionId = `session-${selected.coreId}`;
@@ -260,7 +281,133 @@ async function prepareAndWait(selected: DurableRunKillRestartScenario): Promise<
   throw new Error('unreachable');
 }
 
+async function recoverAdr075AndExit(selected: DurableRunKillRestartScenario): Promise<void> {
+  const mutation = parseAdr075Mutation(process.env.CODE_AGENT_ADR075_MUTATE);
+  const [{ initializeDurableRun }, { RunRegistry }] = await Promise.all([
+    import('../../../src/host/app/initializeDurableRun'),
+    import('../../../src/host/runtime/runRegistry'),
+  ]);
+  const registry = new RunRegistry();
+  const { ports, handlerOverride, counters: loadAdr075Counters } = await createAdr075RecoveryPorts({
+    selected, dataDir, registry, mutation,
+  });
+  let backgroundResults: Array<{ reason: string; handler: string; status: string }> | undefined;
+  let resolveBackground: ((value: typeof backgroundResults) => void) | undefined;
+  const backgroundSettled = new Promise<typeof backgroundResults>((resolve) => {
+    resolveBackground = resolve;
+  });
+  const runtime = await initializeDurableRun({
+    registry,
+    repository,
+    dataDir,
+    ownerId: 'new-owner',
+    processInstanceId: `new-process-${process.pid}`,
+    env: { CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' },
+    leaseDurationMs: 2_000,
+    now: Date.now(),
+    nativeRecoveryPorts: ports,
+    ...(handlerOverride ? { recoveryHandlerOverrides: { native: handlerOverride } } : {}),
+    onRecoveryResults: (results) => {
+      backgroundResults = results.map((result) => ({
+        reason: result.reason, handler: result.handler, status: result.status,
+      }));
+      resolveBackground?.(backgroundResults);
+    },
+  });
+  if (runtime.recoveryResults.some((result) => result.reason === 'auto_resume_queued')) {
+    await Promise.race([
+      backgroundSettled,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('adr075 auto-resume timed out')), 20_000)),
+    ]);
+  }
+  const persisted = JSON.parse(await readFile(path.join(dataDir, 'adr075-state.json'), 'utf8')) as {
+    runId: string;
+    oldOwner: RunOwnerLease;
+  };
+  const runId = persisted.runId;
+  let staleWriteRejected = false;
+  const latestAfterRecovery = await repository.get(runId);
+  if (runtime.kernel && latestAfterRecovery) {
+    try {
+      await runtime.kernel.checkpoint({
+        runId: latestAfterRecovery.runId,
+        attempt: 1,
+        owner: persisted.oldOwner,
+        now: Date.now(),
+        status: 'running',
+        state: latestAfterRecovery,
+        pendingOperations: latestAfterRecovery.pendingOperations ?? [],
+        childRuns: latestAfterRecovery.childRuns,
+        events: [{ type: 'stale_write', payload: null, recordedAt: Date.now() }],
+      });
+    } catch {
+      staleWriteRejected = true;
+    }
+  }
+  const envelope = await repository.get(runId);
+  if (!envelope) throw new Error('recovered envelope missing');
+  const events = await repository.read(envelope.runId, 0, 1_000);
+  const attempts = db.prepare('SELECT attempt, owner_epoch, process_instance_id, status FROM durable_run_attempts WHERE run_id = ? ORDER BY attempt')
+    .all(envelope.runId) as Array<{ attempt: number; owner_epoch: number; process_instance_id: string; status: string }>;
+  const adrCounters = await loadAdr075Counters();
+  const evidence = await loadAdr075Evidence(dataDir);
+  const terminalCount = envelope.terminal ? 1 : 0;
+  const eventSequences = events.map((event) => event.seq);
+  const monotonic = eventSequences.every((value, index) => index === 0 || value > eventSequences[index - 1]!);
+  const expectedToolMessages = selected.coreId === 'adr075-parallel-readonly' ? 2
+    : selected.coreId === 'adr075-model-streaming' ? 0 : 1;
+  const expectedFinal = ADR075_FINAL_ANSWERS[selected.coreId as keyof typeof ADR075_FINAL_ANSWERS];
+  const engineResult = [...runtime.recoveryResults, ...(backgroundResults ?? [])].find((result) => result.handler === 'native_production' || result.reason !== 'auto_resume_queued');
+  const pass = attempts.length === 2
+    && attempts[1]!.owner_epoch > attempts[0]!.owner_epoch
+    && envelope.attempt === 2
+    && envelope.runId === persisted.runId
+    && (envelope.autoResumeCount ?? 0) === 1
+    && staleWriteRejected
+    && monotonic
+    && envelope.status === 'completed'
+    && terminalCount === 1
+    && adrCounters.startTaskCount === 0
+    && adrCounters.resumeCount === 1
+    && adrCounters.loopAttached >= 1
+    && adrCounters.bashExecutions === 0
+    && adrCounters.sideEffectWrites === 0
+    && !evidence.bashSideEffectReplayed
+    && evidence.toolMessageCount === expectedToolMessages
+    && (selected.coreId !== 'adr075-model-streaming' || (evidence.honestPartialKept && evidence.usageEntries === 1))
+    && (selected.coreId !== 'adr075-bash-executing' || adrCounters.toolInterrupts === 1)
+    && (selected.coreId !== 'adr075-parallel-readonly' || evidence.toolCallIds.length === 2)
+    && Boolean(expectedFinal && evidence.finalAnswer === expectedFinal)
+    && attempts[1]!.process_instance_id !== attempts[0]!.process_instance_id
+    ;
+  marker({
+    marker: 'result', scenarioId: selected.id, coreId: selected.coreId, pass,
+    recoveryAction: engineResult?.reason ?? selected.expectedRecoveryAction,
+    oldOwnerEpoch: attempts[0]?.owner_epoch ?? 0, newOwnerEpoch: attempts[1]?.owner_epoch ?? 0,
+    attempt: envelope.attempt, terminalCount, duplicateSideEffectCount: adrCounters.sideEffectWrites,
+    requiresReviewReason: null, rolloutMode: runtime.policy.mode, staleWriteRejected,
+    eventSequenceMonotonic: monotonic, completedNodesReexecuted: 0,
+    operationKeyStable: true, identityLinked: envelope.runId === persisted.runId,
+    oldProcessInstanceId: attempts[0]?.process_instance_id ?? '',
+    newProcessInstanceId: attempts[1]?.process_instance_id ?? '',
+    recoveredByPid: process.pid, counters: { ...adrCounters, outputCommits: 0, approvalCards: 0, childSchedules: 0, completedNodeExecutions: 0, recoveredNodeExecutions: 0, fakeCliResumes: 0 },
+    dispatchResults: runtime.recoveryResults, productionRecoveryPath: true,
+    runId: envelope.runId, sameRunId: envelope.runId === persisted.runId,
+    loopAttached: adrCounters.loopAttached >= 1, autoResumeCount: envelope.autoResumeCount ?? 0,
+    startTaskCount: adrCounters.startTaskCount, resumeCount: adrCounters.resumeCount,
+    bashExecutions: adrCounters.bashExecutions, toolMessageCount: evidence.toolMessageCount,
+    honestPartialKept: evidence.honestPartialKept, usageUnknown: evidence.usageEntries === 1,
+    finalStatus: envelope.status, finalAnswer: evidence.finalAnswer, mutation: mutation ?? null,
+  });
+  await runtime.shutdown();
+  db.close();
+}
+
 async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<void> {
+  if (isAdr075Scenario(selected)) {
+    await recoverAdr075AndExit(selected);
+    return;
+  }
   const [{ initializeDurableRun }, { RunRegistry }] = await Promise.all([
     import('../../../src/host/app/initializeDurableRun'),
     import('../../../src/host/runtime/runRegistry'),
@@ -352,27 +499,34 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
       dispatchPrepared: async () => {
         const counters = await loadCounters();
         counters.modelDispatches += 1;
+        counters.loopAttached += 1;
+        counters.resumeCount += 1;
         await saveCounters(counters);
-        return { resultRef: 'model-result:prepared' };
+        return { resultRef: 'model-result:prepared', loopResumed: true };
       },
       queryResult: async () => {
         const result = JSON.parse(await readFile(providerResultPath, 'utf8')) as { result: string };
         if (result.result !== 'original-result') throw new Error('provider result identity changed');
         const counters = await loadCounters();
         counters.providerQueries += 1;
+        counters.loopAttached += 1;
+        counters.resumeCount += 1;
         await saveCounters(counters);
-        return { resultRef: 'model-result:queried' };
+        return { resultRef: 'model-result:queried', loopResumed: true };
       },
       canRetrySafely: async () => selected.id === 'after-model-response-safe-retry',
       retrySafe: async () => {
         const counters = await loadCounters();
         counters.modelDispatches += 1;
+        counters.loopAttached += 1;
+        counters.resumeCount += 1;
         await saveCounters(counters);
-        return { resultRef: 'model-result:safe-retry' };
+        return { resultRef: 'model-result:safe-retry', loopResumed: true };
       },
     },
     tool: {
       queryResult: async () => {
+        if (selected.id === 'mcp-durable-task-unknown') return null;
         const counters = await loadCounters();
         counters.providerQueries += 1;
         await saveCounters(counters);
@@ -380,7 +534,18 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
       },
       classifyReplaySafety: async () => ({ stored: 'unknown' as const, current: 'unknown' as const }),
       dispatchPrepared: async () => ({ resultRef: 'tool-result:replayed' }),
-      interrupt: async () => ({ resultRef: 'tool-result:interrupted' }),
+      interrupt: async () => {
+        const counters = await loadCounters();
+        counters.toolInterrupts += 1;
+        await saveCounters(counters);
+        return { resultRef: 'tool-result:interrupted' };
+      },
+    },
+    continueLoop: async () => {
+      const counters = await loadCounters();
+      counters.loopAttached += 1;
+      counters.resumeCount += 1;
+      await saveCounters(counters);
     },
     approval: {
       read: async (approvalId: string) => approvalId === 'approval-stable-1' ? 'pending' as const : 'missing' as const,
@@ -489,6 +654,14 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
     || selected.id === 'child-agent-running' ? initialState : state;
   const completedNodesReexecuted = counters.completedNodeExecutions > 1 ? counters.completedNodeExecutions - 1 : 0;
   const duplicateSideEffectCount = counters.sideEffectWrites;
+  const loopAttached = counters.loopAttached > 0;
+  const sameRunId = envelope.runId === originalState.runId;
+  const nativeSafeRunning = selected.expectedOutcome === 'running'
+    && (envelope.status === 'running' || envelope.status === 'recovering')
+    && terminalCount === 0
+    && loopAttached
+    && counters.startTaskCount === 0
+    && sameRunId;
   const pass = attempts.length === 2
     && attempts[1]!.owner_epoch > attempts[0]!.owner_epoch
     && envelope.attempt === 2
@@ -503,18 +676,21 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
       ? envelope.status === 'completed' && terminalCount === 1
       : selected.expectedOutcome === 'observing'
         ? envelope.status === 'running' && terminalCount === 0
-        : envelope.status === 'waiting')
+        : selected.expectedOutcome === 'running'
+          ? nativeSafeRunning
+          : envelope.status === 'waiting')
     && (selected.expectedOutcome === 'waiting_review' ? requiresReviewReason === selected.requiresReviewReason : true)
     && (selected.id === 'approval-waiting' ? counters.approvalCards === 1 : true)
     && (selected.id === 'child-agent-running' ? counters.childSchedules === 2 : true)
     && (selected.id === 'agent-team-auto-agent' ? graphTerminalCount === 1 : true)
     && (selected.id === 'mcp-durable-task-queryable' ? operation?.status === 'succeeded' && counters.providerQueries === 1 : true)
+    && (selected.id === 'between-tool-begin-end-unknown-write' ? counters.toolInterrupts === 1 : true)
     && attempts[1]!.process_instance_id !== attempts[0]!.process_instance_id
     ;
   const engineDispatch = engineResult;
   const operationDispatch = operationResult;
   const productionRecoveryPath = selected.coreId === 'mcp-durable-task'
-    ? operationDispatch?.handler === 'mcp_tool_call'
+    ? operationDispatch?.handler === 'mcp_tool_call' || engineDispatch?.handler === 'native_production'
     : Boolean(engineDispatch && !engineDispatch.handler.startsWith('acceptance_'));
 
   marker({
@@ -526,6 +702,9 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
     identityLinked: logicalIdentityLinked, oldProcessInstanceId: attempts[0]!.process_instance_id,
     newProcessInstanceId: attempts[1]!.process_instance_id, recoveredByPid: evidenceState.recoveredByPid ?? process.pid,
     counters, dispatchResults: runtime.recoveryResults, productionRecoveryPath,
+    runId: envelope.runId, sameRunId, loopAttached, autoResumeCount: envelope.autoResumeCount ?? 0,
+    startTaskCount: counters.startTaskCount, resumeCount: counters.resumeCount,
+    finalStatus: envelope.status,
   });
   await runtime.shutdown();
   db.close();
@@ -540,6 +719,7 @@ function emptyCounters(): Counters {
     modelDispatches: 0, providerQueries: 0, sideEffectWrites: 0, outputCommits: 0,
     approvalCards: 0, childSchedules: 0, completedNodeExecutions: 0,
     recoveredNodeExecutions: 0, fakeCliResumes: 0,
+    loopAttached: 0, toolInterrupts: 0, startTaskCount: 0, resumeCount: 0, bashExecutions: 0,
   };
 }
 

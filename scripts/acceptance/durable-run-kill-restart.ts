@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { isChildGone } from './childProcessState';
+import { resolveMutationAcceptanceExitCode } from './mutationExitCode';
 import { DURABLE_RUN_SCHEMA_VERSION } from '../../src/shared/contract/durableRun';
 import { DURABLE_RUN_KILL_RESTART_SCENARIOS } from '../../tests/fixtures/durableRunKillRestart';
 
@@ -15,10 +16,22 @@ const rolloutEntry = path.join(root, 'tests/e2e/fixtures/durableRunRolloutProces
 // 不走 node_modules/.bin/tsx：Windows 上无扩展名的 .bin shim 是 POSIX 脚本，
 // CreateProcess 直接 ENOENT；改用 process.execPath + tsx 真实入口，两平台同一条路。
 const tsxCli = path.join(root, 'node_modules/tsx/dist/cli.mjs');
+const tsxPreflight = path.join(root, 'node_modules/tsx/dist/preflight.cjs');
+const tsxLoader = path.join(root, 'node_modules/tsx/dist/loader.mjs');
 const outputArg = process.argv.indexOf('--out');
 const outputPath = path.resolve(root, outputArg >= 0 && process.argv[outputArg + 1]
   ? process.argv[outputArg + 1]!
   : 'test-results/durable-run-s9-acceptance.json');
+const onlyArg = process.argv.indexOf('--only');
+const onlyGroup = onlyArg >= 0 ? process.argv[onlyArg + 1] : undefined;
+if (onlyGroup && onlyGroup !== 'adr075') {
+  throw new Error(`unknown --only ${onlyGroup}; expected adr075`);
+}
+const mutateArg = process.argv.indexOf('--mutate');
+const mutation = mutateArg >= 0 ? process.argv[mutateArg + 1] : undefined;
+if (mutation && mutation !== 'regenerate' && mutation !== 'descriptor-only' && mutation !== 'replay-bash') {
+  throw new Error(`unknown --mutate ${mutation}; expected regenerate | descriptor-only | replay-bash`);
+}
 
 interface ScenarioResult {
   scenarioId: string;
@@ -41,14 +54,34 @@ interface ScenarioResult {
   newProcessInstanceId: string;
   counters: Record<string, number>;
   productionRecoveryPath: boolean;
+  runId?: string;
+  sameRunId?: boolean;
+  loopAttached?: boolean;
+  autoResumeCount?: number;
+  startTaskCount?: number;
+  resumeCount?: number;
+  bashExecutions?: number;
+  toolMessageCount?: number;
+  honestPartialKept?: boolean;
+  usageUnknown?: boolean;
+  finalStatus?: string;
+  finalAnswer?: string | null;
+  mutation?: string | null;
 }
 
 const startedAt = Date.now();
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'code-agent-s9-'));
 const results: ScenarioResult[] = [];
 let finalExitCode: number;
+const selectedScenarios = DURABLE_RUN_KILL_RESTART_SCENARIOS.filter((scenario) => {
+  if (mutation === 'regenerate') return scenario.id === 'adr075-model-streaming';
+  if (mutation === 'descriptor-only') return scenario.id === 'adr075-parallel-readonly';
+  if (mutation === 'replay-bash') return scenario.id === 'adr075-bash-executing';
+  if (onlyGroup === 'adr075') return scenario.liveLoop === true;
+  return true;
+});
 try {
-  for (const scenario of DURABLE_RUN_KILL_RESTART_SCENARIOS) {
+  for (const scenario of selectedScenarios) {
     const scenarioDir = path.join(tempRoot, scenario.id);
     await mkdir(scenarioDir, { recursive: true });
     const preparer = startChild(['prepare', scenario.id, scenarioDir]);
@@ -62,13 +95,24 @@ try {
     results.push(result);
   }
 
-  const rollbackRoundTrip = await runRollbackRoundTrip(path.join(tempRoot, 'rollout-roundtrip'));
-  const readPreferenceRoundTrip = await runReadPreferenceRoundTrip(path.join(tempRoot, 'read-preference'));
+  const skipRoundTrips = Boolean(mutation) || onlyGroup === 'adr075';
+  const rollbackRoundTrip = skipRoundTrips
+    ? { pass: true, skipped: true }
+    : await runRollbackRoundTrip(path.join(tempRoot, 'rollout-roundtrip'));
+  const readPreferenceRoundTrip = skipRoundTrips
+    ? { pass: true, skipped: true }
+    : await runReadPreferenceRoundTrip(path.join(tempRoot, 'read-preference'));
+  const reverseMutations = mutation || onlyGroup === 'adr075'
+    ? []
+    : await runReverseMutations(tempRoot);
   const testedSha = git(['rev-parse', 'HEAD']);
+  const liveLoopResults = results.filter((result) => result.scenarioId.startsWith('adr075-'));
   const report = {
     schemaVersion: 1,
     baselineSha: BASELINE_SHA,
     testedSha,
+    mutation: mutation ?? null,
+    only: onlyGroup ?? null,
     platform: { platform: process.platform, arch: process.arch, release: os.release() },
     nodeVersion: process.version,
     databaseSchemaVersion: DURABLE_RUN_SCHEMA_VERSION,
@@ -77,6 +121,7 @@ try {
     scenarios: results,
     rollbackRoundTrip,
     readPreferenceRoundTrip,
+    reverseMutations,
     gates: {
       allKillPointsPassed: results.every((result) => result.pass),
       noDuplicateSideEffects: results.every((result) => result.duplicateSideEffectCount === 0),
@@ -91,6 +136,11 @@ try {
       realProcessEvidence: results.every((result) => result.oldProcessInstanceId !== result.newProcessInstanceId),
       productionExecutorRecovery: results.every((result) => result.productionRecoveryPath),
       productionReadPreferenceWiring: readPreferenceRoundTrip.pass,
+      sameRunIdResumed: liveLoopResults.every((result) => result.sameRunId === true),
+      liveLoopCompleted: liveLoopResults.every((result) => result.finalStatus === 'completed' && result.terminalCount === 1),
+      autoResumeCounted: liveLoopResults.every((result) => result.autoResumeCount === 1),
+      noRegenerateStartTask: results.every((result) => (result.startTaskCount ?? 0) === 0),
+      reverseMutationsCaught: reverseMutations.every((entry) => entry.caught),
     },
     startedAt: new Date(startedAt).toISOString(),
     finishedAt: new Date().toISOString(),
@@ -99,8 +149,11 @@ try {
   const pass = Object.values(report.gates).every(Boolean);
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify({ ...report, pass }, null, 2)}\n`, { mode: 0o600 });
-  process.stdout.write(`${JSON.stringify({ pass, report: outputPath, testedSha, scenarios: results.length, gates: report.gates })}\n`);
-  finalExitCode = pass ? 0 : 1;
+  process.stdout.write(`${JSON.stringify({ pass, report: outputPath, testedSha, scenarios: results.length, mutation: mutation ?? null, gates: report.gates })}\n`);
+  if (mutation && pass) {
+    process.stderr.write(`mutation ${mutation} not caught: gates stayed green — 变异未被抓到,验收无效\n`);
+  }
+  finalExitCode = resolveMutationAcceptanceExitCode(pass, mutation);
 } finally {
   // Windows 上 Defender/索引器短暂持锁会让 rm 偶发 EPERM/EBUSY，带重试兜掉这类 CI flake
   await rm(tempRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
@@ -115,12 +168,35 @@ function childEnv(isolatedDataDir: string): NodeJS.ProcessEnv {
     ...(process.platform === 'win32' ? process.env : {}),
     PATH: process.env.PATH ?? '', HOME: isolatedDataDir, USERPROFILE: isolatedDataDir,
     NODE_ENV: 'test', CODE_AGENT_DATA_DIR: isolatedDataDir, CODE_AGENT_CLI_MODE: 'true',
+    ...(mutation ? { CODE_AGENT_ADR075_MUTATE: mutation } : {}),
   };
+}
+
+function runReverseMutations(tempRoot: string): Array<{
+  mutation: string;
+  caught: boolean;
+  exitCode: number | null;
+  summary: string;
+}> {
+  const script = path.join(root, 'scripts/acceptance/durable-run-kill-restart.ts');
+  return (['regenerate', 'descriptor-only', 'replay-bash'] as const).map((name) => {
+    const out = path.join(tempRoot, `mutate-${name}.json`);
+    const result = spawnSync(process.execPath, [tsxCli, script, '--mutate', name, '--out', out], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 90_000,
+    });
+    const lines = `${result.stdout}\n${result.stderr}`.split('\n').map((line) => line.trim()).filter(Boolean);
+    const summary = lines.find((line) => line.startsWith('{')) ?? lines.at(-1) ?? '';
+    return { mutation: name, caught: result.status === 0, exitCode: result.status, summary: summary.slice(0, 800) };
+  });
 }
 
 function startChild(args: string[]): ChildProcessByStdio<null, Readable, Readable> {
   const isolatedDataDir = args.at(-1)!;
-  return spawn(process.execPath, [tsxCli, childEntry, ...args], {
+  // Spawn the host in this process (tsx loader), not tsx/cli.mjs: the CLI
+  // re-execs a grandchild, so SIGKILL on the wrapper left the prepare loop alive.
+  return spawn(process.execPath, ['--require', tsxPreflight, '--import', tsxLoader, childEntry, ...args], {
     cwd: root,
     env: childEnv(isolatedDataDir),
     stdio: ['ignore', 'pipe', 'pipe'],

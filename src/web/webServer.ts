@@ -370,6 +370,7 @@ import { createApp, type CreateAppDeps } from './app';
 import { listForegroundPermissionRequests } from './foregroundPermissionRegistry';
 import { createWebSessionContext } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
+import type { DurableRecoveryDispatchResult } from '../host/runtime/durableRecoveryDispatcher';
 
 // Re-export broadcastSSE for backward compatibility
 export { broadcastSSE };
@@ -381,6 +382,25 @@ onRendererPush((channel, data) => {
 
 // Native run lifecycle ownership. Primary key is runId; sessionId is unique while active.
 const runRegistry = getApplicationRunRegistry();
+
+function notifyDurableRecoveryWaiting(results: DurableRecoveryDispatchResult[]): void {
+  const waitingRunIds = new Set(results
+    .filter((result) => ['restore_same_approval', 'waiting_for_approval', 'auto_agent_waiting'].includes(result.reason))
+    .map((result) => result.runId));
+  for (const runId of waitingRunIds) {
+    const envelope = runRegistry.getDurableEnvelope(runId);
+    if (!envelope) continue;
+    void getSessionManager().getSession(envelope.sessionId, 1).then((session) => {
+      if (!session) return;
+      notificationService.notifyNeedsInput({
+        sessionId: session.id,
+        title: session.title || '未命名会话',
+        body: '任务暂停，等待确认后继续。',
+      });
+    }).catch((error: unknown) => logger.debug('Failed to notify durable approval wait', { error }));
+  }
+}
+
 let durableRunRuntime: DurableRunApplicationRuntime | undefined;
 let durableRunReadService: DurableRunApplicationRuntime['readService'] | undefined;
 let durableRunRolloutPolicy = resolveDurableRunRollout({});
@@ -678,29 +698,35 @@ async function initializeServices(): Promise<void> {
         dataDir,
         autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(runRegistry),
         nativeRecoveryPorts: createApplicationNativeRecoveryPorts(runRegistry),
-        onSweepResults: (results) => logger.debug('Durable sweeper recovery dispatched', { results }),
-        onSweepError: (recoveryError) => logger.error('Durable Run sweeper recovery failed:', recoveryError),
-      }),
-      onRecoveryComplete: (runtime) => {
-        durableRunRuntime = runtime;
-        logger.info('Durable rollout initialized', {
-          mode: runtime.policy.mode,
-          results: runtime.recoveryResults,
-        });
-        for (const result of runtime.recoveryResults) {
-          if (result.status !== 'recovered' && result.status !== 'observing') continue;
-          if (result.reason.includes('automatic resume budget exhausted')) continue;
-          const envelope = runRegistry.getDurableEnvelope(result.runId);
-          if (!envelope) continue;
+        onAutoResumeStart: (plan) => {
+          const envelope = plan.envelope;
           void getSessionManager().getSession(envelope.sessionId, 1).then((session) => {
             if (!session) return;
             notificationService.notifyTaskResuming({
               sessionId: session.id,
               sessionTitle: session.title || '未命名会话',
-              autoResumeCount: envelope?.autoResumeCount ?? 1,
+              autoResumeCount: envelope.autoResumeCount ?? 1,
             });
-          }).catch((error: unknown) => logger.debug('Failed to notify durable resume', { result, error }));
-        }
+          }).catch((error: unknown) => logger.debug('Failed to notify durable resume', { error }));
+        },
+        beforeAutoResume: (plan) => {
+          const current = runRegistry.getDurableEnvelope(plan.envelope.runId);
+          return current?.status === 'recovering'
+            && (current.autoResumeCount ?? 0) === (plan.envelope.autoResumeCount ?? 0);
+        },
+        onRecoveryResults: (results) => {
+          notifyDurableRecoveryWaiting(results);
+        },
+        onSweepResults: (results) => logger.debug('Durable sweeper recovery dispatched', { results }),
+        onSweepError: (recoveryError) => logger.error('Durable Run sweeper recovery failed:', recoveryError),
+      }),
+      onRecoveryComplete: (runtime) => {
+        durableRunRuntime = runtime;
+        notifyDurableRecoveryWaiting(runtime.recoveryResults);
+        logger.info('Durable rollout initialized', {
+          mode: runtime.policy.mode,
+          results: runtime.recoveryResults,
+        });
       },
       onRecoveryError: (error) => {
         logger.warn('Durable rollout recovery failed (non-blocking):', error instanceof Error ? error.message : String(error));

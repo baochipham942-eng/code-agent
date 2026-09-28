@@ -99,6 +99,7 @@ export interface NativeRecoveryOperationInput {
   plan: RunRehydrationPlan;
   descriptor: NativeRecoveryDescriptor;
   operation: PendingOperation;
+  onAutoResumeStart?: () => void;
 }
 
 export function isNativeRecoveryDescriptor(value: unknown): value is NativeRecoveryDescriptor {
@@ -128,11 +129,12 @@ export class NativeRecoveryHost {
     return {
       name: 'native_production',
       engineKind: 'native',
-      recover: (plan, now) => this.recover(plan, now),
+      serialAutoResume: this.ports.continuationExecutor === 'available',
+      recover: (plan, now, onAutoResumeStart) => this.recover(plan, now, onAutoResumeStart),
     };
   }
 
-  private async recover(plan: RunRehydrationPlan, now: number) {
+  private async recover(plan: RunRehydrationPlan, now: number, onAutoResumeStart?: () => void) {
     const descriptor = plan.checkpoint?.state;
     if (!isNativeRecoveryDescriptor(descriptor)) {
       return this.review(plan, now, 'native_recovery_descriptor_missing');
@@ -195,7 +197,7 @@ export class NativeRecoveryHost {
             pendingOperations: [...pendingOperations],
           }
         : plan;
-      const input = { plan: operationPlan, descriptor: operationDescriptor, operation };
+      const input = { plan: operationPlan, descriptor: operationDescriptor, operation, onAutoResumeStart };
       if (operation.kind === 'approval') {
         const approvalId = operationDescriptor.approvalId ?? operation.providerOperationId?.replace(/^approval:/, '');
         if (!approvalId) {

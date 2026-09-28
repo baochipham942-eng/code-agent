@@ -19,7 +19,7 @@ import {
 } from '../runtime/workspaceAuthority';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import type { ToolDefinition, ToolReplaySafety, ToolResult } from '../../shared/contract';
-import { getRunInterruptCause, MAX_AUTO_RESUME_COUNT } from '../../shared/contract/durableRun';
+import { getRunInterruptCause } from '../../shared/contract/durableRun';
 import { ToolExecutor } from '../tools/toolExecutor';
 import type { ToolExecutionResult } from '../tools/types';
 import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinitions';
@@ -71,6 +71,12 @@ interface ApplicationNativeRecoveryDependencies {
 const MODEL_RECOVERY_MESSAGE_LIMIT = 500;
 const PERSISTED_STREAM_INTERRUPTION_MARKER = /\[\s*(?:连接中断|生成中断)\s*[—-]\s*部分回答已保留\s*\]/u;
 const logger = createLogger('NativeRecoveryHost');
+
+function recoveryAutoResumeCount(input: NativeRecoveryOperationInput): number {
+  return getRunInterruptCause(input.plan.envelope) === 'crash_or_quit'
+    ? Math.max(1, input.plan.envelope.autoResumeCount ?? 0)
+    : (input.plan.envelope.autoResumeCount ?? 0);
+}
 
 function isInterruptedModelPartial(message: Message): boolean {
   return message.role === 'assistant'
@@ -185,9 +191,7 @@ async function checkpointToolReplayFence(
   input: NativeRecoveryOperationInput,
   now: number,
 ): Promise<void> {
-  const autoResumeCount = getRunInterruptCause(input.plan.envelope) === 'crash_or_quit'
-    ? Math.min(MAX_AUTO_RESUME_COUNT, (input.plan.envelope.autoResumeCount ?? 0) + 1)
-    : (input.plan.envelope.autoResumeCount ?? 0);
+  const autoResumeCount = recoveryAutoResumeCount(input);
   await registry.checkpointDurable(input.plan.envelope.runId, {
     now,
     status: 'running',
@@ -214,9 +218,7 @@ async function checkpointModelDispatchFence(
   input: NativeRecoveryOperationInput,
   now: number,
 ): Promise<void> {
-  const autoResumeCount = getRunInterruptCause(input.plan.envelope) === 'crash_or_quit'
-    ? Math.min(MAX_AUTO_RESUME_COUNT, (input.plan.envelope.autoResumeCount ?? 0) + 1)
-    : (input.plan.envelope.autoResumeCount ?? 0);
+  const autoResumeCount = recoveryAutoResumeCount(input);
   const pendingOperations = input.plan.pendingOperations.map((operation) => (
     operation.operationId === input.operation.operationId
       ? {
@@ -311,6 +313,7 @@ export function createApplicationNativeRecoveryPorts(
     );
     const source = messages.find((message) => message.id === input.descriptor.sourceMessageId && message.role === 'user');
     if (!source) throw new Error('native recovery loop source message is unavailable');
+    input.onAutoResumeStart?.();
     await tasks.resumeExistingDurableRun(
       input.plan.envelope.sessionId,
       input.plan.envelope.runId,
@@ -399,6 +402,7 @@ export function createApplicationNativeRecoveryPorts(
           });
         }
 
+        input.onAutoResumeStart?.();
         await tasks.resumeExistingDurableRun(
           input.plan.envelope.sessionId,
           input.plan.envelope.runId,

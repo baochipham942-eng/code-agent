@@ -4,6 +4,7 @@ import {
   DurableRecoveryDispatcher,
   type DurableEngineRecoveryHandler,
 } from '../../../../src/host/runtime/durableRecoveryDispatcher';
+import { isDurableResumeQueued } from '../../../../src/host/runtime/durableRecoveryQueueState';
 import type { RunRehydrationPlan } from '../../../../src/host/runtime/durableRunStores';
 
 function plan(input: {
@@ -99,6 +100,41 @@ describe('DurableRecoveryDispatcher', () => {
     ]);
     expect(recover).toHaveBeenCalledTimes(2);
     expect(peak).toBe(1);
+  });
+
+  it('returns startup promptly and keeps the next session queued until the first loop finishes', async () => {
+    let releaseFirst!: () => void;
+    const firstFinished = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const firstStarted = Promise.withResolvers<void>();
+    const recover = vi.fn(async (candidate: RunRehydrationPlan) => {
+      if (candidate.envelope.runId === 'first-queued') {
+        firstStarted.resolve();
+        await firstFinished;
+      }
+      return { status: 'recovered' as const, reason: 'resume_live_loop' };
+    });
+    const dispatcher = new DurableRecoveryDispatcher();
+    dispatcher.registerEngineHandler({
+      ...engineHandler('native', recover),
+      serialAutoResume: true,
+    });
+
+    const startup = await dispatcher.dispatch([
+      plan({ runId: 'first-queued', engine: { kind: 'native' } }),
+      plan({ runId: 'second-queued', engine: { kind: 'native' } }),
+    ]);
+    expect(startup).toEqual([
+      expect.objectContaining({ runId: 'first-queued', reason: 'auto_resume_queued' }),
+      expect.objectContaining({ runId: 'second-queued', reason: 'auto_resume_queued' }),
+    ]);
+    await firstStarted.promise;
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(isDurableResumeQueued('second-queued')).toBe(true);
+
+    releaseFirst();
+    await vi.waitFor(() => expect(recover).toHaveBeenCalledTimes(2));
+    expect(isDurableResumeQueued('second-queued')).toBe(false);
+    await dispatcher.shutdown();
   });
 
   it.each([

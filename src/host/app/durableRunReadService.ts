@@ -7,6 +7,7 @@ import {
   type RunStatus,
 } from '../../shared/contract/durableRun';
 import type { DurableResumeState, SessionStatus } from '../../shared/contract/session';
+import { isDurableResumeQueued } from '../runtime/durableRecoveryQueueState';
 import {
   readWithDurablePreference,
   type DurableRunFactReader,
@@ -152,12 +153,13 @@ export function projectDurableRunToSessionPayload(view: DurableRunView): {
 }
 
 function projectDurableResumeState(view: DurableRunView): DurableResumeState | undefined {
-  if (view.source !== 'durable' || view.terminal || !view.runId || !view.interruptCause) return undefined;
+  if (view.source !== 'durable' || view.terminal || !view.runId || !view.interruptCause
+    || view.engine?.kind === 'external_cli') return undefined;
   const autoResumeCount = view.autoResumeCount ?? 0;
   if (view.status === 'recovering' && view.interruptCause === 'crash_or_quit') {
     return {
       runId: view.runId,
-      mode: 'auto-resuming',
+      mode: isDurableResumeQueued(view.runId) ? 'queued' : 'auto-resuming',
       interruptCause: view.interruptCause,
       autoResumeCount,
       maxAutoResumeCount: MAX_AUTO_RESUME_COUNT,

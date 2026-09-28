@@ -1414,13 +1414,18 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const source = messages.find((message) => message.id === checkpointState.sourceMessageId && message.role === 'user');
     if (!source) throw new Error(`Parked durable run ${recovered.runId} source message is unavailable`);
     await this.externalRunRegistry.resetDurableResumeBudget(recovered.runId);
-    await this.getTaskManager().resumeExistingDurableRun(
-      resolvedSessionId,
-      recovered.runId,
-      messages,
-      { mode: 'normal', disableAutoAgent: true },
-      source.metadata,
-      source.id,
-    );
+    try {
+      await this.getTaskManager().resumeExistingDurableRun(
+        resolvedSessionId,
+        recovered.runId,
+        messages,
+        { mode: 'normal', disableAutoAgent: true },
+        source.metadata,
+        source.id,
+      );
+    } catch (error) {
+      await this.externalRunRegistry.parkDurable(recovered.runId, { reason: 'user_stop' }).catch(() => undefined);
+      throw error;
+    }
   }
 }

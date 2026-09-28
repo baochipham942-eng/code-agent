@@ -137,7 +137,10 @@ export const ChatView: React.FC = () => {
     streamSnapshot,
   } = useSessionStore();
   const currentSession = sessions.find((session) => session.id === currentSessionId);
-  const durableResume = currentSession?.durableResume; const hasDurableContinuation = durableResume?.mode === 'continue' && durableResume.canContinue; const isDurableAutoResuming = durableResume?.mode === 'auto-resuming';
+  const durableResume = currentSession?.durableResume;
+  const hasDurableContinuation = durableResume?.mode === 'continue' && durableResume.canContinue;
+  const isDurableAutoResuming = durableResume?.mode === 'auto-resuming';
+  const isDurableResumeQueued = durableResume?.mode === 'queued';
   const channelSessionSource = formatChannelSessionSource(currentSession);
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   // 订阅节流快照而非原始 entries：原始 entries 每 token 变一次，会把投影重算推到 token 频率
@@ -783,7 +786,7 @@ export const ChatView: React.FC = () => {
     // 避免追赶条抢在列表测量前闪现。
     setInterruptionPointInViewport(Boolean(streamSnapshot));
   }, [currentSessionId, streamSnapshot?.turnId]);
-  const streamInterruptionDecision = interruptionDecision ? {
+  const streamInterruptionDecision = interruptionDecision && !isDurableAutoResuming && !isDurableResumeQueued ? {
     snapshot: interruptionDecision.snapshot,
     retryMessage: interruptionDecision.retryMessage,
     onContinue: async (message: Message) => handleSendMessage(message.content, message.attachments),
@@ -1090,13 +1093,15 @@ export const ChatView: React.FC = () => {
 
           {/* 待决卡共用一个固定槽位；一次只展示一张，输入区始终保留。 */}
           <DecisionSlot
-            streamInterruption={isDurableAutoResuming ? null : streamInterruptionDecision} userQuestion={pendingUserQuestion}
+            streamInterruption={streamInterruptionDecision}
+            userQuestion={pendingUserQuestion}
             userQuestionCount={pendingUserQuestions.length}
             planApproval={pendingPlanApproval}
             onUserQuestionSkipped={() => setSkippedQuestionSessionId(currentSessionId)}
           />
 
           {isDurableAutoResuming && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
+          {isDurableResumeQueued && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
 
           {/* 讨论流浮层已收进右侧「本会话的代理」面板的「事件」折叠区（N-L6-AGENTVIEW S2），
               输入框上方不再另起浮层 */}

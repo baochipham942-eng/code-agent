@@ -118,6 +118,20 @@ describe('DurableRunReadService migrated consumers', () => {
     });
   });
 
+  it('does not expose Continue for external engine runs', () => {
+    expect(projectDurableRunToSessionPayload({
+      source: 'durable',
+      consumer: 'session_replay',
+      runId: 'external-parked',
+      sessionId: 'session',
+      status: 'waiting',
+      engine: { kind: 'external_cli', engine: 'codex_cli' },
+      terminal: false,
+      interruptCause: 'user_stop',
+      autoResumeCount: 0,
+    })).toEqual({ status: 'running', durableWaitingInput: true });
+  });
+
   it.each([
     ['failed', 'error'],
     ['completed', 'completed'],

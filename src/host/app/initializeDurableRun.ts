@@ -65,6 +65,9 @@ interface DurableRunRecoveryInput {
     | ((kernel: DurableRunKernel) => DurableRecoveryHandlerOverrides);
   onSweepResults?: (results: DurableRunApplicationRuntime['recoveryResults']) => void;
   onSweepError?: (error: unknown) => void;
+  onAutoResumeStart?: (plan: import('../runtime/durableRunStores').RunRehydrationPlan) => void;
+  beforeAutoResume?: (plan: import('../runtime/durableRunStores').RunRehydrationPlan) => boolean | Promise<boolean>;
+  onRecoveryResults?: (results: DurableRunApplicationRuntime['recoveryResults']) => void;
 }
 
 interface DurableRunApplicationAssembly {
@@ -172,6 +175,9 @@ export function assembleDurableRun(
             getMcpClient: recoveryInput.getMcpClient,
             trustedMcpServerIdentities: recoveryInput.trustedMcpServerIdentities,
             handlerOverrides,
+            onAutoResumeStart: recoveryInput.onAutoResumeStart,
+            beforeAutoResume: recoveryInput.beforeAutoResume,
+            onRecoveryResults: recoveryInput.onRecoveryResults,
           });
           const recoveryResults = await recoveryRuntime.recoverAndDispatch(
             recoveryInput.now ?? Date.now(),

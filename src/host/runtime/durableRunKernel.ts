@@ -423,7 +423,10 @@ export class DurableRunKernel implements RunKernelAdapter {
         status: waiting ? 'waiting' : 'recovering',
         pendingOperations,
         interruptCause: getRunInterruptCause(claimed.envelope) ?? 'crash_or_quit',
-        autoResumeCount: claimed.envelope.autoResumeCount ?? 0,
+        autoResumeCount: Math.min(
+          MAX_AUTO_RESUME_COUNT,
+          (claimed.envelope.autoResumeCount ?? 0) + 1,
+        ),
         updatedAt: now,
       });
       plans.push({

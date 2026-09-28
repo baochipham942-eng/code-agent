@@ -180,6 +180,37 @@ describe('AgentAppService lifecycle routing', () => {
     vi.mocked(getFileCheckpointService).mockReturnValue(checkpointService as any);
 	  });
 
+  it('parks a durable run again when explicit continuation cannot acquire a task handle', async () => {
+    const resumeExistingDurableRun = vi.fn().mockRejectedValue(new Error('resume failed'));
+    const registry = {
+      findRecoveredWaitingRun: vi.fn(() => ({ runId: 'run-parked', sessionId: 'session-1' })),
+      getDurableCheckpointState: vi.fn(() => ({ sourceMessageId: 'source-1' })),
+      resetDurableResumeBudget: vi.fn().mockResolvedValue(undefined),
+      parkDurable: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.mocked(getSessionManager).mockReturnValue({
+      ...sessionManager,
+      getMessages: vi.fn().mockResolvedValue([{
+        id: 'source-1', role: 'user', content: 'continue', timestamp: 1, metadata: {},
+      }]),
+    } as never);
+    const service = new AgentAppServiceImpl(
+      () => ({
+        ...taskManager,
+        getSessionState: vi.fn(() => ({ status: 'idle' })),
+        resumeExistingDurableRun,
+      }) as never,
+      () => null,
+      () => 'session-1',
+      vi.fn(),
+      registry as never,
+    );
+
+    await expect(service.continueDurableRun('session-1')).rejects.toThrow('resume failed');
+    expect(registry.resetDurableResumeBudget).toHaveBeenCalledWith('run-parked');
+    expect(registry.parkDurable).toHaveBeenCalledWith('run-parked', { reason: 'user_stop' });
+  });
+
   it('routes public lineage repair to projection reconstruction with the exact owner/Project boundary', async () => {
     const healthyAudit = {
       status: 'healthy',

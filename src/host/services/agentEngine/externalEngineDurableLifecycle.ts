@@ -5,7 +5,7 @@ import type {
   AgentEngineRunResult,
   ExternalAgentEngineKind,
 } from '../../../shared/contract/agentEngine';
-import { nextAutoResumeCount, type PendingOperation, type RunInterruptCause } from '../../../shared/contract/durableRun';
+import { type PendingOperation, type RunInterruptCause } from '../../../shared/contract/durableRun';
 import type { RunRehydrationPlan } from '../../runtime/durableRunStores';
 import type { RunHandle } from '../../runtime/runContext';
 import { RunRegistry } from '../../runtime/runRegistry';
@@ -178,7 +178,7 @@ export class ExternalEngineDurableLifecycle {
       input.externalSessionId,
       input.plan.envelope.attempt,
       input.plan.envelope.owner.epoch,
-      nextAutoResumeCount(input.plan.envelope),
+      input.plan.envelope.autoResumeCount ?? 0,
       input.plan.envelope.interruptCause ?? input.plan.envelope.interrupt_cause,
     );
   }

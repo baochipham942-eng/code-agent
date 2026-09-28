@@ -917,7 +917,9 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return handle;
   }
 
-  getBySessionId(sessionId: string): RunHandle | undefined { const runId = this.runIdBySessionId.get(sessionId); return runId ? this.handlesByRunId.get(runId) : undefined; }
+  getBySessionId(sessionId: string): RunHandle | undefined {
+    const runId = this.runIdBySessionId.get(sessionId); return runId ? this.handlesByRunId.get(runId) : undefined;
+  }
 
   setModelSpec(runId: string, modelSpec: ConversationModelSpec): void {
     if (!this.handlesByRunId.has(runId)) {

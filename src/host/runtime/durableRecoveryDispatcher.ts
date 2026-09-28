@@ -1,5 +1,10 @@
 import type { PendingOperation, RunEngineRef } from '../../shared/contract/durableRun';
 import type { RunRehydrationPlan } from './durableRunStores';
+import {
+  clearDurableResumeState,
+  markDurableResumeQueued,
+  markDurableResumeStarted,
+} from './durableRecoveryQueueState';
 
 export type DurableRecoveryDispatchStatus =
   | 'recovered'
@@ -26,7 +31,9 @@ export interface DurableEngineRecoveryHandler {
   readonly name: string;
   readonly engineKind: RunEngineRef['kind'];
   getDispatchKey?(plan: RunRehydrationPlan): string;
-  recover(plan: RunRehydrationPlan, now: number): Promise<Omit<DurableRecoveryDispatchResult, 'runId' | 'attempt' | 'ownerEpoch' | 'phase' | 'handler'>>;
+  /** Recovery handlers with a live continuation are serialized to keep startup non-blocking. */
+  serialAutoResume?: boolean;
+  recover(plan: RunRehydrationPlan, now: number, onAutoResumeStart?: () => void): Promise<Omit<DurableRecoveryDispatchResult, 'runId' | 'attempt' | 'ownerEpoch' | 'phase' | 'handler'>>;
   shutdown?(): Promise<void> | void;
 }
 
@@ -46,6 +53,15 @@ export class DurableRecoveryDispatcher {
   private readonly inFlight = new Map<string, Promise<DurableRecoveryDispatchResult>>();
   private readonly completed = new Map<string, DurableRecoveryDispatchResult>();
   private stopped = false;
+  private readonly autoResumeQueue: Array<{ plan: RunRehydrationPlan; now: number }> = [];
+  private autoResumeRunning = false;
+
+  constructor(private readonly hooks: {
+    onAutoResumeStart?: (plan: RunRehydrationPlan) => void;
+    beforeAutoResume?: (plan: RunRehydrationPlan) => boolean | Promise<boolean>;
+    onBackgroundResult?: (result: DurableRecoveryDispatchResult[]) => void;
+    onBackgroundError?: (error: unknown) => void;
+  } = {}) {}
 
   registerEngineHandler(handler: DurableEngineRecoveryHandler): void {
     if (this.stopped) throw new Error('Durable recovery dispatcher is stopped');
@@ -67,6 +83,18 @@ export class DurableRecoveryDispatcher {
     if (this.stopped) throw new Error('Durable recovery dispatcher is stopped');
     const results: DurableRecoveryDispatchResult[] = [];
     for (const plan of plans) {
+      const handler = this.engineHandlers.get(plan.envelope.engine.kind);
+      // A plan that was classified as waiting (for example, a pending approval)
+      // must be settled immediately so its approval UI is restored. Only a
+      // recovering crash plan is an automatic live-loop continuation and may
+      // enter the background serial queue.
+      if (handler?.serialAutoResume
+        && plan.envelope.status === 'recovering'
+        && !plan.resumeBlocked
+        && !TERMINAL_STATUSES.has(plan.envelope.status)) {
+        results.push(this.queueAutoResume(plan, now));
+        continue;
+      }
       results.push(...await this.dispatchPlan(plan, now));
     }
     return results;
@@ -78,6 +106,7 @@ export class DurableRecoveryDispatcher {
     const handlers = [...this.engineHandlers.values(), ...this.operationHandlers];
     await Promise.allSettled(handlers.map((handler) => handler.shutdown?.()));
     await Promise.allSettled([...this.inFlight.values()]);
+    await this.drainAutoResumeQueue();
     this.inFlight.clear();
   }
 
@@ -156,13 +185,57 @@ export class DurableRecoveryDispatcher {
     return results;
   }
 
+  private queueAutoResume(plan: RunRehydrationPlan, now: number): DurableRecoveryDispatchResult {
+    markDurableResumeQueued(plan.envelope.runId);
+    this.autoResumeQueue.push({ plan, now });
+    void this.drainAutoResumeQueue();
+    return this.baseResult(plan, 'engine', 'dispatcher', {
+      status: 'observing',
+      reason: 'auto_resume_queued',
+    });
+  }
+
+  private async drainAutoResumeQueue(): Promise<void> {
+    if (this.autoResumeRunning || this.stopped) return;
+    this.autoResumeRunning = true;
+    try {
+      while (!this.stopped && this.autoResumeQueue.length > 0) {
+        const next = this.autoResumeQueue.shift();
+        if (!next) continue;
+        const { plan, now } = next;
+        markDurableResumeStarted(plan.envelope.runId);
+        try {
+          if (this.hooks.beforeAutoResume && !await this.hooks.beforeAutoResume(plan)) {
+            this.hooks.onBackgroundResult?.([this.baseResult(plan, 'engine', 'dispatcher', {
+              status: 'observing',
+              reason: 'automatic resume budget exhausted; waiting for explicit Continue',
+            })]);
+            continue;
+          }
+          const results = await this.dispatchPlan(plan, now);
+          this.hooks.onBackgroundResult?.(results);
+        } catch (error) {
+          this.hooks.onBackgroundError?.(error);
+        } finally {
+          clearDurableResumeState(plan.envelope.runId);
+        }
+      }
+    } finally {
+      this.autoResumeRunning = false;
+    }
+  }
+
   private async invokeEngine(
     plan: RunRehydrationPlan,
     handler: DurableEngineRecoveryHandler,
     now: number,
   ): Promise<DurableRecoveryDispatchResult> {
     try {
-      return this.baseResult(plan, 'engine', handler.name, await handler.recover(plan, now));
+      return this.baseResult(plan, 'engine', handler.name, await handler.recover(
+        plan,
+        now,
+        () => this.hooks.onAutoResumeStart?.(plan),
+      ));
     } catch (error) {
       return this.baseResult(plan, 'engine', handler.name, {
         status: 'failed',

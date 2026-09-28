@@ -31,7 +31,12 @@ async function checkpointNativeModel(
     status,
     isGoalRun: ctx.runtime.goalMode != null,
     ...(ctx.runtime.goalMode ? {
-      goalState: ctx.runtime.goalMode.snapshot(ctx.runtime.stats.totalTokensUsed),
+      goalState: ctx.runtime.goalMode.snapshot(
+        ctx.runtime.stats.totalTokensUsed,
+        ctx.runtime.stats.totalInputTokens,
+        ctx.runtime.stats.totalOutputTokens,
+        ctx.runtime.goalWallClockElapsedMs?.(),
+      ),
     } : {}),
     ...(status === 'succeeded' ? {
       resultRef: `model-result:${createHash('sha256')

@@ -460,7 +460,7 @@ describe('NativeRecoveryHost interrupted goal run (P0 false-completion止血)', 
     };
   }
 
-  it('refuses to auto-complete: routes to review, never terminates completed, no single-op replay', async () => {
+  it('routes prepared goal recovery to review without false completion', async () => {
     const { handler, ports, registry } = fixture();
     await expect(handler.recover(goalPlan(operation({ status: 'prepared' })), 10))
       .resolves.toMatchObject({ status: 'requires_review' });

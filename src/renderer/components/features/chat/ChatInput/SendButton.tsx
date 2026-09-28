@@ -101,7 +101,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
   // parked durable run + 空输入：继续原 run；一旦有草稿，上面的普通发送态优先。
   if (hasContinuation && !hasContent) {
     return (
-      <button
+      <button /* ds-allow:button: Continue 胶囊按钮包含图标与文本，需保持发送区紧凑布局 */
         type="button"
         onClick={onContinue}
         className="flex h-7 items-center gap-1.5 rounded-full bg-brand px-3 text-xs font-medium text-white shadow-[0_10px_24px_var(--brand-primary-glow)] transition-all hover:bg-brand-hover active:scale-95"

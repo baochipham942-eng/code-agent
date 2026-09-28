@@ -85,8 +85,12 @@ describe('web context（sessionDomainHandler.ts）保持原 web 构造语义', (
   });
 
   it('sm 直调四动作不走 appService（drift 拍板归属 web 的基座行为）', () => {
-    for (const anchor of ['listSessions: (', 'loadSession: (', 'deleteSession: (', 'updateSession: (']) {
+    for (const anchor of ['listSessions: async (', 'loadSession: async (', 'deleteSession: (', 'updateSession: (']) {
       expect(memberBody(webContextSource, anchor)).toContain('resolveSessionManager');
+    }
+    // N-RESUME-K6：渲染层真实读路径必须带 durable 投影（否则「继续」/续跑提示在生产永不渲染）。
+    for (const anchor of ['listSessions: async (', 'loadSession: async (']) {
+      expect(memberBody(webContextSource, anchor)).toContain('withDurableSessionReplayPayload');
     }
   });
 });

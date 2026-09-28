@@ -1411,7 +1411,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const recovered = this.externalRunRegistry.findRecoveredWaitingRun({ sessionId: resolvedSessionId });
     if (!recovered) throw new Error(`No parked durable run is available for session ${resolvedSessionId}`);
     const currentStatus = this.getTaskManager().getSessionState(resolvedSessionId)?.status;
-    if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus)) {
+    if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus ?? '')) {
       throw new Error(`Session ${resolvedSessionId} is already ${currentStatus}`);
     }
     const checkpointState = this.externalRunRegistry.getDurableCheckpointState(recovered.runId);

@@ -106,7 +106,7 @@ import {
   type AssistantFeedbackState,
 } from '../utils/sendWithImmediateAssistantFeedback';
 import { isChatSendAccepted } from '../utils/chatSendState';
-import { DurableResumeNotice, useDurableResumeContinuation } from './features/chat/durableResume';
+import { DurableResumeNotice, useDurableContinueVisible, useDurableResumeContinuation } from './features/chat/durableResume';
 
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
 // useSyncExternalStore treat every snapshot as changed and can loop before ChatView mounts.
@@ -138,7 +138,6 @@ export const ChatView: React.FC = () => {
   } = useSessionStore();
   const currentSession = sessions.find((session) => session.id === currentSessionId);
   const durableResume = currentSession?.durableResume;
-  const hasDurableContinuation = durableResume?.mode === 'continue' && durableResume.canContinue;
   const isDurableAutoResuming = durableResume?.mode === 'auto-resuming';
   const isDurableResumeQueued = durableResume?.mode === 'queued';
   const channelSessionSource = formatChannelSessionSource(currentSession);
@@ -767,6 +766,7 @@ export const ChatView: React.FC = () => {
   }, [buildEnvelope, handleSendEnvelope]);
 
   const handleContinueDurableRun = useDurableResumeContinuation(currentSessionId);
+  const showDurableContinue = useDurableContinueVisible(durableResume, effectiveIsProcessing);
 
   // D-1「重试该轮」锚点：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID（streamHandler.ts
   // beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无关联，snapshot 里也没有任何
@@ -1117,8 +1117,8 @@ export const ChatView: React.FC = () => {
           <DoomLoopHandbackBar sessionId={currentSessionId} />
 
           <ChatInput ref={chatInputRef} onSend={handleSendEnvelope} onSteer={handleSteerEnvelope}
-            disabled={(effectiveIsProcessing && !hasDurableContinuation) || isCreatingSession} isProcessing={effectiveIsProcessing && !hasDurableContinuation}
-            hasStoppableBackgroundWork={hasStoppableSwarmWork} isInterrupting={isInterrupting} onStop={cancel} hasContinuation={hasDurableContinuation}
+            disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
+            hasStoppableBackgroundWork={hasStoppableSwarmWork} isInterrupting={isInterrupting} onStop={cancel} hasContinuation={showDurableContinue}
             onContinue={handleContinueDurableRun} hasPlan={false} placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
         </div>
       </div>

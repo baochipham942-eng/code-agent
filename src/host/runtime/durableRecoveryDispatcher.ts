@@ -213,7 +213,7 @@ export class DurableRecoveryDispatcher {
           if (this.hooks.beforeAutoResume && !await this.hooks.beforeAutoResume(plan)) {
             this.hooks.onBackgroundResult?.([this.baseResult(plan, 'engine', 'dispatcher', {
               status: 'observing',
-              reason: 'automatic resume budget exhausted; waiting for explicit Continue',
+              reason: 'automatic resume skipped (budget exhausted or plan stale); waiting for explicit Continue',
             })]);
             continue;
           }

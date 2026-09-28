@@ -18,6 +18,7 @@ export function sessionsSignature(list: SessionWithMeta[]): string {
         s.turnCount ?? 0,
         s.isArchived ? 1 : 0,
         s.durableWaitingInput ? 1 : 0,
+        s.durableResume?.mode ?? '',
         s.title ?? '',
         s.workingDirectory ?? '',
         s.projectId ?? '',

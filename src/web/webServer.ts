@@ -721,19 +721,20 @@ async function initializeServices(): Promise<void> {
         },
         onRecoveryResults: (results) => {
           // 恢复把 run 停靠（预算耗尽 / 等审批）时 TaskManager 不发 state 事件，主动让界面重读投影。
-          broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
+          if (results.length > 0) broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
           notifyDurableRecoveryWaiting(results);
         },
         onSweepResults: (results) => {
           // 被杀进程的租约过期后由 sweeper 认领（预算耗尽停靠 / 续跑都可能走这里），同样要让界面重读投影。
-          broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
+          // sweeper 每 lease/2 空转一次，空结果不广播，否则每个窗口定时全量重拉列表。
+          if (results.length > 0) broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
           logger.debug('Durable sweeper recovery dispatched', { results });
         },
         onSweepError: (recoveryError) => logger.error('Durable Run sweeper recovery failed:', recoveryError),
       }),
       onRecoveryComplete: (runtime) => {
         durableRunRuntime = runtime;
-        broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
+        if (runtime.recoveryResults.length > 0) broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
         notifyDurableRecoveryWaiting(runtime.recoveryResults);
         logger.info('Durable rollout initialized', {
           mode: runtime.policy.mode,

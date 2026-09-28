@@ -57,6 +57,9 @@ export interface GoalRecoverySnapshot {
   degradedReason?: string;
   turnsCompleted: number;
   tokensUsed: number;
+  inputTokensUsed: number;
+  outputTokensUsed: number;
+  wallClockElapsedMs: number;
 }
 
 const GOAL_STATUSES: readonly GoalStatus[] = ['pending', 'paused', 'met', 'aborted'];
@@ -68,11 +71,10 @@ export function isGoalRecoverySnapshot(value: unknown): value is GoalRecoverySna
   const contract = candidate.contract;
   if (!contract || typeof contract !== 'object') return false;
   if (typeof contract.goal !== 'string' || contract.goal.trim().length === 0) return false;
-  if ((contract.verifyCommand !== undefined
-    && (typeof contract.verifyCommand !== 'string' || contract.verifyCommand.trim().length === 0))
-    || (contract.reviewCondition !== undefined
-      && (typeof contract.reviewCondition !== 'string' || contract.reviewCondition.trim().length === 0))
-    || (typeof contract.verifyCommand !== 'string' && typeof contract.reviewCondition !== 'string')) return false;
+  if ((contract.verifyCommand !== undefined && typeof contract.verifyCommand !== 'string')
+    || (contract.reviewCondition !== undefined && typeof contract.reviewCondition !== 'string')
+    || (typeof contract.verifyCommand !== 'string' && typeof contract.reviewCondition !== 'string')
+    || (contract.verifyCommand?.trim().length === 0 && contract.reviewCondition?.trim().length === 0)) return false;
   if (!Number.isInteger(contract.tokenBudget) || contract.tokenBudget <= 0) return false;
   if (!Number.isInteger(contract.maxTurns) || contract.maxTurns <= 0) return false;
   if (contract.wallClockBudgetMs !== undefined
@@ -92,6 +94,9 @@ export function isGoalRecoverySnapshot(value: unknown): value is GoalRecoverySna
   if (candidate.degradedReason !== undefined && typeof candidate.degradedReason !== 'string') return false;
   if (typeof candidate.turnsCompleted !== 'number' || !Number.isInteger(candidate.turnsCompleted) || candidate.turnsCompleted < 0) return false;
   if (typeof candidate.tokensUsed !== 'number' || !Number.isFinite(candidate.tokensUsed) || candidate.tokensUsed < 0) return false;
+  if (typeof candidate.inputTokensUsed !== 'number' || !Number.isFinite(candidate.inputTokensUsed) || candidate.inputTokensUsed < 0) return false;
+  if (typeof candidate.outputTokensUsed !== 'number' || !Number.isFinite(candidate.outputTokensUsed) || candidate.outputTokensUsed < 0) return false;
+  if (typeof candidate.wallClockElapsedMs !== 'number' || !Number.isFinite(candidate.wallClockElapsedMs) || candidate.wallClockElapsedMs < 0) return false;
   return true;
 }
 
@@ -197,7 +202,12 @@ export class GoalModeController {
     return controller;
   }
 
-  snapshot(tokensUsed: number): GoalRecoverySnapshot {
+  snapshot(
+    tokensUsed: number,
+    inputTokensUsed = tokensUsed,
+    outputTokensUsed = 0,
+    wallClockElapsedMs = 0,
+  ): GoalRecoverySnapshot {
     return {
       contract: { ...this.contract },
       status: this.status,
@@ -212,6 +222,9 @@ export class GoalModeController {
       degradedReason: this.degradedReason,
       turnsCompleted: this.turnsCompleted,
       tokensUsed,
+      inputTokensUsed,
+      outputTokensUsed,
+      wallClockElapsedMs,
     };
   }
 

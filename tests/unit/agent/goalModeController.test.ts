@@ -15,7 +15,8 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
-import { buildGoalContract, GoalModeController } from '../../../src/host/agent/goalModeController';
+import { buildGoalContract, GoalModeController, isGoalRecoverySnapshot } from '../../../src/host/agent/goalModeController';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import { GOAL_MODE } from '../../../src/shared/constants';
 import { HostReasonCode } from '../../../src/shared/contract';
 
@@ -62,6 +63,32 @@ describe('① 墙钟预算 — evaluateFallback', () => {
   it('缺省 elapsedMs（旧调用方未传）→ 墙钟分支跳过，行为不变', () => {
     const r = ctrl({ wallClockBudgetMs: 600_000 }).evaluateFallback({ turn: 1, tokensUsed: 0 });
     expect(r.stop).toBe(false);
+  });
+
+  it('恢复快照保留 token/input-output/墙钟余量，且允许空 verifyCommand 的软目标', () => {
+    const source = new GoalModeController(buildGoalContract({
+      goal: '长任务',
+      verifyCommand: '',
+      reviewCondition: '结果满足评审条件',
+      tokenBudget: 1_000,
+      maxTurns: 5,
+      wallClockBudgetMs: 600_000,
+    }));
+    const snapshot = source.snapshot(900, 600, 300, 540_000);
+
+    expect(isGoalRecoverySnapshot(snapshot)).toBe(true);
+    const restored = GoalModeController.fromRecoverySnapshot(snapshot);
+    expect(restored.evaluateFallback({ turn: 3, tokensUsed: 900, elapsedMs: 540_000 }).stop).toBe(false);
+    expect(GoalModeController.fromRecoverySnapshot(snapshot)
+      .evaluateFallback({ turn: 3, tokensUsed: 1_000, elapsedMs: 0 }).reasonCode)
+      .toBe(HostReasonCode.GoalAbortTokenBudget);
+    expect(GoalModeController.fromRecoverySnapshot(snapshot)
+      .evaluateFallback({ turn: 3, tokensUsed: 0, elapsedMs: 600_000 }).reasonCode)
+      .toBe(HostReasonCode.GoalAbortTimeBudget);
+
+    const stats = new RunStatsState();
+    stats.beginRun({ totalInputTokens: 600, totalOutputTokens: 300, totalTokensUsed: 900 });
+    expect(stats.totalInputTokens + stats.totalOutputTokens).toBe(900);
   });
 });
 

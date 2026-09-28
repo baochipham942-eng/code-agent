@@ -618,6 +618,9 @@ describe('AgentOrchestrator', () => {
         verificationDegraded: false,
         turnsCompleted: 1,
         tokensUsed: 12,
+        inputTokensUsed: 8,
+        outputTokensUsed: 4,
+        wallClockElapsedMs: 120,
       };
       const handle = { attach: vi.fn(async () => undefined) };
       const registry = {

@@ -438,6 +438,9 @@ describe('NativeRecoveryHost interrupted goal run (P0 false-completion止血)', 
     verificationDegraded: false,
     turnsCompleted: 1,
     tokensUsed: 20,
+    inputTokensUsed: 12,
+    outputTokensUsed: 8,
+    wallClockElapsedMs: 120,
   };
 
   function goalPlan(pending: PendingOperation): RunRehydrationPlan {

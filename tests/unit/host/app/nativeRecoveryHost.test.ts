@@ -135,6 +135,9 @@ describe('application Native model continuation ports', () => {
       verificationDegraded: false,
       turnsCompleted: 2,
       tokensUsed: 77,
+      inputTokensUsed: 50,
+      outputTokensUsed: 27,
+      wallClockElapsedMs: 120,
     };
     input.descriptor.goalState = goalState;
     let messages: Message[] = [sourceMessage()];

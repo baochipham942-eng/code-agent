@@ -93,7 +93,12 @@ export class AgentLoop {
   private promptProfile: PromptProfile = 'interactive';
 
   getGoalRecoverySnapshot() {
-    return this.ctx.goalMode?.snapshot(this.ctx.stats.totalTokensUsed);
+    return this.ctx.goalMode?.snapshot(
+      this.ctx.stats.totalTokensUsed,
+      this.ctx.stats.totalInputTokens,
+      this.ctx.stats.totalOutputTokens,
+      this.ctx.goalWallClockElapsedMs?.(),
+    );
   }
 
   constructor(config: AgentLoopConfig) {

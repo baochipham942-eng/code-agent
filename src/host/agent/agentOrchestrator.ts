@@ -980,17 +980,17 @@ export class AgentOrchestrator {
         );
         this.updateSkillWatcher(workspaceScope.primaryRoot);
       }
-      const runContext = sessionId
+      const runLoopRef: { current?: AgentLoop } = {}; const runContext = sessionId
         ? createRunContext({
           runId: nativeRunId,
           sessionId,
           workspace: workspaceScope?.primaryRoot,
           workspaceScope,
           cwd: runWorkingDirectory,
-          goalRecoverySnapshotProvider: () => this.agentLoop?.getGoalRecoverySnapshot(),
+          goalRecoverySnapshotProvider: () => runLoopRef.current?.getGoalRecoverySnapshot(),
         })
         : undefined;
-      this.agentLoop = new AgentLoop({
+      const runLoop = new AgentLoop({
       // provider 变体（roadmap 2.4）：默认主提示词按 provider 家族追加纪律段落
       // （Claude 系 Git 安全 / GPT 国产系自治坚持）；agent 路由自带 prompt 时不动
       systemPrompt,
@@ -1035,6 +1035,7 @@ export class AgentOrchestrator {
           }
         : undefined,
       });
+      runLoopRef.current = runLoop; this.agentLoop = runLoop;
 
       if (this.runRegistry && sessionId) {
         const durableRunInput = {
@@ -1055,12 +1056,12 @@ export class AgentOrchestrator {
       } else {
         registeredRun = undefined;
       }
-      await registeredRun?.attach(this.agentLoop);
+      await registeredRun?.attach(runLoop);
 
       logger.info('========== Starting agent loop ==========');
       // 第二个参数是用户原话：telemetry 的 user_prompt 只能存它，别存拼了
       // turnSystemContext 的 effectiveContent（backfill 会把那一列写回消息流）。
-      const runPromise = this.agentLoop.run(effectiveContent, content);
+      const runPromise = runLoop.run(effectiveContent, content);
       this.activeRunPromise = runPromise;
       await runPromise;
       runCompletedNormally = true;

@@ -107,6 +107,8 @@ export interface RuntimeContext {
   readonly goalMode?: GoalModeController;
   /** Snapshot used to seed the resumed loop's turn and token budgets. */
   readonly goalRecoverySnapshot?: GoalRecoverySnapshot;
+  /** Live goal wall-clock accounting callback, installed for the active loop. */
+  goalWallClockElapsedMs?: () => number;
   readonly nudgeManager: NudgeManager;
   hookManager?: HookManager;
   readonly planningService?: PlanningService;

@@ -66,6 +66,9 @@ describe('prepareNativeToolCheckpoint', () => {
       verificationDegraded: false,
       turnsCompleted: 1,
       tokensUsed: 12,
+      inputTokensUsed: 8,
+      outputTokensUsed: 4,
+      wallClockElapsedMs: 120,
     };
     const checkpoint = await prepareNativeToolCheckpoint({
       runId: 'run-1',

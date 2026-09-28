@@ -5,7 +5,7 @@ import type {
   AgentEngineRunResult,
   ExternalAgentEngineKind,
 } from '../../../shared/contract/agentEngine';
-import { type PendingOperation, type RunInterruptCause } from '../../../shared/contract/durableRun';
+import type { PendingOperation, RunInterruptCause } from '../../../shared/contract/durableRun';
 import type { RunRehydrationPlan } from '../../runtime/durableRunStores';
 import type { RunHandle } from '../../runtime/runContext';
 import { RunRegistry } from '../../runtime/runRegistry';

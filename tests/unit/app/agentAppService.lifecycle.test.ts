@@ -574,6 +574,45 @@ describe('AgentAppService lifecycle routing', () => {
     );
   });
 
+  it.each([
+    ['restored approval', 'crash_or_quit' as const, false],
+    ['guard halt', 'guard_halt' as const, false],
+    ['explicitly continuable run', 'user_stop' as const, true],
+  ])('supersedes a recovered waiting run only when the projection is continuable (%s)', async (_label, interruptCause, shouldCancel) => {
+    const terminalRecoveredWaitingRun = vi.fn().mockResolvedValue(undefined);
+    const registry = {
+      findRecoveredWaitingRun: vi.fn(() => ({ runId: 'run-waiting', sessionId: 'session-1' })),
+      terminalRecoveredWaitingRun,
+    };
+    const reader = {
+      getLatestBySession: vi.fn(async () => ({
+        ...durableEnvelope('waiting'),
+        runId: 'run-waiting',
+        interruptCause,
+      })),
+    };
+    const configured = new AgentAppServiceImpl(
+      () => taskManager as never,
+      () => null,
+      () => 'session-1',
+      vi.fn(),
+      registry as never,
+      new DurableRunReadService(
+        resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }),
+        reader,
+      ),
+    );
+
+    await configured.sendMessage({ sessionId: 'session-1', content: 'new turn' } as any);
+
+    if (shouldCancel) {
+      expect(terminalRecoveredWaitingRun).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    } else {
+      expect(terminalRecoveredWaitingRun).not.toHaveBeenCalled();
+    }
+    expect(taskManager.startTask).toHaveBeenCalled();
+  });
+
   it('routes interrupt-and-continue through TaskManager to keep the run owner consistent', async () => {
     const expectedOutcome = { outcome: 'queued', queuedInputId: 'queued-input-1' } as const;
     taskManager.interruptAndContinue.mockResolvedValueOnce(expectedOutcome);

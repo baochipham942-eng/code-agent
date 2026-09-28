@@ -511,6 +511,41 @@ describe('DurableRunKernel', () => {
     db.close();
   });
 
+  it('keeps the claimed auto-resume count when a recovered checkpoint omits it (MCP/engine path)', async () => {
+    const { db, kernel, repository } = createKernel();
+    const created = await kernel.createNativeRun({ runId: 'run-budget-keep', sessionId: 'session-budget-keep', now: 10 });
+    await kernel.checkpoint({
+      runId: created.envelope.runId,
+      attempt: created.attempt.attempt,
+      owner: created.owner,
+      now: 20,
+      status: 'running',
+      state: {},
+      pendingOperations: [],
+      events: [{ type: 'run_checkpointed', payload: {}, recordedAt: 20 }],
+      interruptCause: 'crash_or_quit',
+      autoResumeCount: 0,
+    });
+    const [plan] = await new DurableRunKernel({
+      stores: repository, ownerId: 'native-host', processInstanceId: 'process-2', leaseDurationMs: 100,
+    }).recoverOnStartup(2_000);
+    expect(plan.envelope.autoResumeCount).toBe(1);
+
+    await kernel.checkpoint({
+      runId: plan.envelope.runId,
+      attempt: plan.envelope.attempt,
+      owner: plan.envelope.owner!,
+      now: 2_010,
+      status: 'running',
+      state: {},
+      pendingOperations: [],
+      events: [{ type: 'mcp_task_prepared', payload: {}, recordedAt: 2_010 }],
+    });
+
+    expect(await repository.get('run-budget-keep')).toMatchObject({ autoResumeCount: 1 });
+    db.close();
+  });
+
   it('parks an exhausted crash loop for an explicit Continue action', async () => {
     const { db, kernel, repository } = createKernel();
     const capped = await kernel.createNativeRun({

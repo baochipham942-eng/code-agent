@@ -442,8 +442,17 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (!resolvedSessionId) throw new Error('No active session');
     // A new draft supersedes a parked run. Keep the old logical run terminal so
     // it cannot block the new turn or re-enter the automatic recovery set.
-    if (this.externalRunRegistry?.findRecoveredWaitingRun({ sessionId: resolvedSessionId })) {
-      await this.externalRunRegistry.terminalRecoveredWaitingRun({ sessionId: resolvedSessionId });
+    const registry = this.externalRunRegistry;
+    const recoveredWaiting = registry?.findRecoveredWaitingRun({ sessionId: resolvedSessionId });
+    if (registry && recoveredWaiting && this.durableRunReadService) {
+      const view = await this.durableRunReadService.readSessionReplay(resolvedSessionId, () => ({
+        status: 'waiting',
+        runId: recoveredWaiting.runId,
+      }));
+      const durableResume = projectDurableRunToSessionPayload(view).durableResume;
+      if (durableResume?.mode === 'continue' && durableResume.interruptCause !== 'guard_halt') {
+        await registry.terminalRecoveredWaitingRun({ sessionId: resolvedSessionId });
+      }
     }
     const sessionManager = getSessionManager();
     const session = await sessionManager.getSession(resolvedSessionId, 1);

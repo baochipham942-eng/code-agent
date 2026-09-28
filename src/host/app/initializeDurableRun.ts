@@ -18,6 +18,9 @@ import {
 import { DurableRunReadService } from './durableRunReadService';
 import { armBackgroundSubagentDurableLedger } from '../agent/backgroundSubagentDurableLedger';
 import { armLoopDurableLedger, resetLoopDurableLedger } from '../loop/loopDurableLedger';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('InitializeDurableRun');
 
 export class DurableRunRolloutInitializationError extends Error {
   readonly code = 'DURABLE_RUN_ROLLOUT_INITIALIZATION_FAILED';
@@ -178,6 +181,10 @@ export function assembleDurableRun(
             onAutoResumeStart: recoveryInput.onAutoResumeStart,
             beforeAutoResume: recoveryInput.beforeAutoResume,
             onRecoveryResults: recoveryInput.onRecoveryResults,
+            onRecoveryError: (error) => logger.warn(
+              'Durable recovery auto-resume failed; fallback path engaged',
+              { error: error instanceof Error ? error.message : String(error) },
+            ),
           });
           const recoveryResults = await recoveryRuntime.recoverAndDispatch(
             recoveryInput.now ?? Date.now(),

@@ -224,4 +224,31 @@ describe('DurableRecoveryRuntime startup ordering', () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(recoverDurable).not.toHaveBeenCalled();
   });
+
+  it('reports a throwing queued auto-resume to the recovery error sink', async () => {
+    const recoverDurable = vi.fn(async () => [nativePlan()]);
+    const recoveryError = new Error('queued resume exploded');
+    const onRecoveryError = vi.fn();
+    const runtime = createDurableRecoveryRuntime({
+      registry: { recoverDurable } as unknown as RunRegistry,
+      kernel: {} as RunKernelAdapter,
+      dataDir: '/tmp/durable-runtime-test',
+      getMcpClient: () => { throw new Error('unused'); },
+      externalRunners: { codex: vi.fn(), claude: vi.fn() } as never,
+      handlerOverrides: {
+        native: {
+          name: 'native_test',
+          engineKind: 'native',
+          serialAutoResume: true,
+          recover: vi.fn(async () => ({ status: 'recovered' as const, reason: 'unreachable' })),
+        },
+      },
+      beforeAutoResume: () => { throw recoveryError; },
+      onRecoveryError,
+    });
+
+    await runtime.recoverAndDispatch(100);
+    await vi.waitFor(() => expect(onRecoveryError).toHaveBeenCalledWith(recoveryError));
+    await runtime.shutdown();
+  });
 });

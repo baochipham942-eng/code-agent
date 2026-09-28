@@ -81,7 +81,8 @@ export class DurableRecoveryDispatcher {
 
   async dispatch(plans: RunRehydrationPlan[], now = Date.now()): Promise<DurableRecoveryDispatchResult[]> {
     if (this.stopped) throw new Error('Durable recovery dispatcher is stopped');
-    const results: DurableRecoveryDispatchResult[] = [];
+    const queuedResults: DurableRecoveryDispatchResult[] = [];
+    const nonQueued: RunRehydrationPlan[] = [];
     for (const plan of plans) {
       const handler = this.engineHandlers.get(plan.envelope.engine.kind);
       // A plan that was classified as waiting (for example, a pending approval)
@@ -92,21 +93,25 @@ export class DurableRecoveryDispatcher {
         && plan.envelope.status === 'recovering'
         && !plan.resumeBlocked
         && !TERMINAL_STATUSES.has(plan.envelope.status)) {
-        results.push(this.queueAutoResume(plan, now));
-        continue;
+        queuedResults.push(this.queueAutoResume(plan, now));
+      } else {
+        nonQueued.push(plan);
       }
-      results.push(...await this.dispatchPlan(plan, now));
     }
-    return results;
+    const settled = await Promise.all(nonQueued.map((plan) => this.dispatchPlan(plan, now)));
+    return [...queuedResults, ...settled.flat()];
   }
 
   async shutdown(): Promise<void> {
     if (this.stopped) return;
+    // Stop first so the drain loop cannot pull another plan while handlers abort.
     this.stopped = true;
+    for (const { plan } of this.autoResumeQueue.splice(0)) {
+      clearDurableResumeState(plan.envelope.runId);
+    }
     const handlers = [...this.engineHandlers.values(), ...this.operationHandlers];
     await Promise.allSettled(handlers.map((handler) => handler.shutdown?.()));
     await Promise.allSettled([...this.inFlight.values()]);
-    await this.drainAutoResumeQueue();
     this.inFlight.clear();
   }
 

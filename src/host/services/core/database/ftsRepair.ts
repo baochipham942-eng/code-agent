@@ -200,6 +200,14 @@ function isFtsTableCorrupt(db: BetterSqlite3.Database, table: FtsTableName): boo
   return probeFtsTable(db, table) === 'corrupt';
 }
 
+function forgetStartupProjectionCheck(db: BetterSqlite3.Database, table: FtsTableName): void {
+  try {
+    db.prepare('DELETE FROM startup_projection_checks WHERE projection = ?').run(table);
+  } catch {
+    // 记录表还没建（首次开机前）或库只读：没有记录可删，闸门本来就会完整核对。
+  }
+}
+
 export const repairFtsTable = Object.assign(
   function repairFtsTable(
     db: BetterSqlite3.Database,
@@ -208,6 +216,9 @@ export const repairFtsTable = Object.assign(
   ): FtsRepairOutcome {
     const rebuild = hooks.rebuild ?? ((database) => defaultRebuild(database, table));
     const recreateEmpty = hooks.recreateEmpty ?? ((database) => recreateEmptyFtsTable(database, table));
+    // 运行期动过修复的投影，下次开机必须完整核对：降级态只在内存、重建后 DDL 指纹不变、
+    // 重试写入又让行数 ≥1，启动闸门（projectionCheckGate）自己看不出来。删掉它的核对记录即走 no-record。
+    forgetStartupProjectionCheck(db, table);
 
     try {
       rebuild(db);

@@ -158,6 +158,23 @@ describe('projection check gate', () => {
       db.close();
     });
 
+    it('re-checks on the next open after a runtime FTS repair left the projection empty', () => {
+      const db = openSchemaDb();
+      gate(db, {});
+      expect(gate(db, {}).outcome).toBe('skipped');
+      // 运行期写路径损坏修复：重建失败 → 空表重建成功 → 回填又失败，停在 empty 降级态；
+      // 随后重试写入让 FTS 至少有 1 行，DDL 指纹也不变。
+      const outcome = repairFtsTable(db, 'session_messages_fts', {
+        rebuild: () => { throw new Error('rebuild failed'); },
+        recreateEmpty: (database) => { database.exec('DELETE FROM session_messages_fts'); },
+      });
+      expect(outcome).toBe('empty-recreated');
+      repairFtsTable.resetStateForTests();
+      expect(recordOf(db, 'session_messages_fts')).toBeUndefined();
+      expect(gate(db, {}).outcome).toBe('checked');
+      db.close();
+    });
+
     it('re-checks when the schema changed during this boot (upgrade migration)', () => {
       const db = openSchemaDb();
       gate(db, {});

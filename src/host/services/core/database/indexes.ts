@@ -37,6 +37,8 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_type_updated ON sessions(session_type, updated_at DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_timestamp ON messages(session_id, timestamp DESC)`);
+  // N-BOOT-DB-CHECKS：分支账本回填探针「每条消息都有 entry」只读 (session_id, id)，覆盖索引免回表读正文
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_message ON messages(session_id, id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_visibility_timestamp ON messages(session_id, visibility, timestamp DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_hidden_by_rewind ON messages(hidden_by_rewind_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_session_rewinds_session_created ON session_rewinds(session_id, created_at DESC)`);

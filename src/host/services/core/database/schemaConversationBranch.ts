@@ -345,20 +345,23 @@ function validateLegacyFork(
   return { fork, mappings, issues };
 }
 
-function backfillLegacyConversations(db: BetterSqlite3.Database): void {
-  if (!tableExists(db, 'sessions') || !tableExists(db, 'messages')) return;
-
+function loadLegacySessions(db: BetterSqlite3.Database): SQLiteRow[] {
   const sessionColumns = tableColumns(db, 'sessions');
   const projectExpression = sessionColumns.has('project_id') ? 'project_id' : 'NULL AS project_id';
   const createdExpression = sessionColumns.has('created_at') ? 'created_at' : '0 AS created_at';
   const deletedExpression = sessionColumns.has('is_deleted') ? 'is_deleted' : '0 AS is_deleted';
-  const sessions = db.prepare(`
+  return db.prepare(`
     SELECT id, user_id, ${projectExpression}, ${createdExpression}, ${deletedExpression}
     FROM sessions
     ORDER BY created_at ASC, id ASC
   `).all() as SQLiteRow[];
-  if (sessions.length === 0) return;
+}
 
+function loadLegacyForkValidations(db: BetterSqlite3.Database, sessions: SQLiteRow[]): {
+  forkByChild: Map<string, SQLiteRow>;
+  mappingsByFork: Map<string, SQLiteRow[]>;
+  forkValidationByChild: Map<string, LegacyForkValidation>;
+} {
   const forkByChild = new Map<string, SQLiteRow>();
   const mappingsByFork = new Map<string, SQLiteRow[]>();
   if (tableExists(db, 'session_forks')) {
@@ -393,6 +396,111 @@ function backfillLegacyConversations(db: BetterSqlite3.Database): void {
       ),
     );
   }
+  return { forkByChild, mappingsByFork, forkValidationByChild };
+}
+
+function legacyForkQuarantine(branchId: string, forkValidation: LegacyForkValidation): {
+  issues: ConversationLineageIssue[];
+  issueDigest: string;
+  idempotencyKey: string;
+} {
+  const issues: ConversationLineageIssue[] = forkValidation.issues.map((issue) => ({
+    ...issue,
+    branchId,
+  }));
+  const issueDigest = conversationLineageIssueDigest(issues);
+  return {
+    issues,
+    issueDigest,
+    idempotencyKey: `legacy-fork-quarantine:${String(forkValidation.fork.id)}:${issueDigest}`,
+  };
+}
+
+function eventExists(db: BetterSqlite3.Database, branchId: string, idempotencyKey: string): boolean {
+  return Boolean(db.prepare(`
+    SELECT 1
+    FROM conversation_branch_events
+    WHERE branch_id = ? AND idempotency_key = ?
+  `).get(branchId, idempotencyKey));
+}
+
+/**
+ * N-BOOT-DB-CHECKS：廉价判定 backfillLegacyConversations 这次会不会写任何一行。
+ * 逐条对应它的四类写入：缺 branch 的会话、缺 entry 的消息（含随之的 legacy/fork 事件）、
+ * 未落的 fork quarantine 事件、未落的 legacy rewind/restore 事件。返回 false 时完整回填必然
+ * 是空操作，可安全跳过；返回 true 就照旧跑完整回填（行为与改前一致）。
+ * 缺 branch / 缺 entry 两项只走索引（session_id UNIQUE、idx_messages_session_message 覆盖索引、
+ * idx_conversation_branch_entries_alias），不读消息正文——完整回填每次开机 SELECT * 全部消息
+ * 并逐条查 entry，953MB 库冷缓存单项 ~0.5~1.1s。
+ */
+function legacyBackfillHasPendingWork(db: BetterSqlite3.Database): boolean {
+  const sessions = loadLegacySessions(db);
+  if (sessions.length === 0) return false;
+  const scope = JSON.stringify(sessions.map((session) => {
+    const sessionId = String(session.id);
+    return [sessionId, conversationBranchId(sessionId)];
+  }));
+  const scopeCte = `
+    WITH scope(session_id, branch_id) AS (
+      SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?)
+    )`;
+  const sessionWithoutBranch = db.prepare(`${scopeCte}
+    SELECT 1 FROM scope s
+    WHERE NOT EXISTS (SELECT 1 FROM conversation_branches b WHERE b.session_id = s.session_id)
+    LIMIT 1
+  `).get(scope);
+  if (sessionWithoutBranch) return true;
+  const messageWithoutEntry = db.prepare(`${scopeCte}
+    SELECT 1 FROM scope s
+    JOIN messages m ON m.session_id = s.session_id
+    WHERE NOT EXISTS (
+      SELECT 1 FROM conversation_branch_entries e
+      WHERE e.branch_id = s.branch_id AND e.projected_message_id = m.id
+    )
+    LIMIT 1
+  `).get(scope);
+  if (messageWithoutEntry) return true;
+
+  if (tableExists(db, 'session_forks')) {
+    const sessionIds = new Set(sessions.map((session) => String(session.id)));
+    const { forkValidationByChild } = loadLegacyForkValidations(db, sessions);
+    for (const [childSessionId, forkValidation] of forkValidationByChild) {
+      if (!sessionIds.has(childSessionId) || forkValidation.issues.length === 0) continue;
+      const branchId = conversationBranchId(childSessionId);
+      if (!eventExists(db, branchId, legacyForkQuarantine(branchId, forkValidation).idempotencyKey)) return true;
+    }
+  }
+
+  if (!tableExists(db, 'session_rewinds')) return false;
+  const rewinds = db.prepare(`
+    SELECT id, session_id, anchor_message_id, restored_at
+    FROM session_rewinds
+    WHERE status IN ('completed', 'restored')
+  `).all() as SQLiteRow[];
+  return rewinds.some((rewind) => {
+    const branchId = conversationBranchId(String(rewind.session_id));
+    const branch = db.prepare('SELECT 1 FROM conversation_branches WHERE id = ?').get(branchId);
+    const anchor = branch && db.prepare(`
+      SELECT 1 FROM conversation_branch_entries
+      WHERE branch_id = ? AND projected_message_id = ?
+      LIMIT 1
+    `).get(branchId, String(rewind.anchor_message_id));
+    if (!anchor) return false;
+    const rewindId = String(rewind.id);
+    if (!eventExists(db, branchId, `legacy-rewind:${rewindId}`)) return true;
+    return rewind.restored_at !== null && rewind.restored_at !== undefined
+      && !eventExists(db, branchId, `legacy-rewind-restore:${rewindId}`);
+  });
+}
+
+function backfillLegacyConversations(db: BetterSqlite3.Database): void {
+  if (!tableExists(db, 'sessions') || !tableExists(db, 'messages')) return;
+  if (!legacyBackfillHasPendingWork(db)) return;
+
+  const sessions = loadLegacySessions(db);
+  if (sessions.length === 0) return;
+
+  const { forkByChild, mappingsByFork, forkValidationByChild } = loadLegacyForkValidations(db, sessions);
 
   const orderedSessions = [...sessions].sort((left, right) => {
     const leftDepth = Number(forkByChild.get(String(left.id))?.depth ?? 0);
@@ -615,17 +723,13 @@ function backfillLegacyConversations(db: BetterSqlite3.Database): void {
       });
     }
     if (forkValidation && forkValidation.issues.length > 0) {
-      const issues: ConversationLineageIssue[] = forkValidation.issues.map((issue) => ({
-        ...issue,
-        branchId,
-      }));
-      const issueDigest = conversationLineageIssueDigest(issues);
+      const { issues, issueDigest, idempotencyKey } = legacyForkQuarantine(branchId, forkValidation);
       const candidateFork = forkValidation.fork;
       insertEvent(db, {
-        id: `cevent_${conversationSha256(`legacy-fork-quarantine:${String(candidateFork.id)}:${issueDigest}`).slice(0, 32)}`,
+        id: `cevent_${conversationSha256(idempotencyKey).slice(0, 32)}`,
         branchId,
         eventType: 'quarantine',
-        idempotencyKey: `legacy-fork-quarantine:${String(candidateFork.id)}:${issueDigest}`,
+        idempotencyKey,
         actorUserId: ownerUserId,
         payload: {
           sticky: true,

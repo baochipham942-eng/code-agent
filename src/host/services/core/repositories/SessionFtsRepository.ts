@@ -49,7 +49,8 @@ export class SessionFtsRepository {
     return runSessionMessagesFtsCount(this.db, query, options);
   }
 
-  backfillSessionMessagesFts(): number {
+  /** onVerified：核对通过或重建完成时回调（启动闸门据此记指纹）；降级/失败分支不回调 */
+  backfillSessionMessagesFts(options: { onVerified?: () => void } = {}): number {
     if (isFtsDisabled('session_messages_fts')) {
       return 0;
     }
@@ -58,6 +59,7 @@ export class SessionFtsRepository {
       const sourceRows = this.countSessionMessagesFtsSourceRows();
 
       if (ftsRows === sourceRows) {
+        options.onVerified?.();
         return 0;
       }
 
@@ -65,6 +67,7 @@ export class SessionFtsRepository {
       const rebuilt = rebuildSessionMessagesFts(this.db);
       logger.info(`[EpisodicFts] Rebuild complete: ${rebuilt} rows`);
       markFtsTableAvailable('session_messages_fts');
+      options.onVerified?.();
       return rebuilt;
     } catch (err) {
       if (isSqliteCorruptionError(err)) {
@@ -170,7 +173,7 @@ export class SessionFtsRepository {
     };
   }
 
-  backfillTranscriptFts(): number {
+  backfillTranscriptFts(options: { onVerified?: () => void } = {}): number {
     if (isFtsDisabled('transcript_fts')) {
       return 0;
     }
@@ -178,6 +181,7 @@ export class SessionFtsRepository {
       const ftsRows = this.countRows('transcript_fts');
       const sourceRows = countTranscriptFtsSourceRows(this.db);
       if (ftsRows === sourceRows) {
+        options.onVerified?.();
         return 0;
       }
 
@@ -185,6 +189,7 @@ export class SessionFtsRepository {
       const rebuilt = rebuildTranscriptFts(this.db);
       logger.info(`[TranscriptFts] Rebuild complete: ${rebuilt} rows`);
       markFtsTableAvailable('transcript_fts');
+      options.onVerified?.();
       return rebuilt;
     } catch (err) {
       if (isSqliteCorruptionError(err)) {

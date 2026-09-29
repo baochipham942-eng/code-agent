@@ -344,7 +344,7 @@ async function emitAdr075RepeatedCrashOutcome(
   const engineResult = runtime.recoveryResults.find((result) => result.handler === 'native_production' || result.reason.includes('explicit Continue'));
   const pass = parked
     && envelope.status === 'waiting'
-    && interruptCause === 'crash_or_quit'
+    && interruptCause === 'budget_exhausted' // ADR-075 修订二：预算耗尽停靠显式标记
     && (envelope.autoResumeCount ?? 0) === MAX_AUTO_RESUME_COUNT
     && envelope.runId === persisted.runId
     && adrCounters.startTaskCount === 0

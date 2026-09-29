@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { SlideData } from './types';
-import { DEFAULT_END_TITLE, DEFAULT_SUBTITLE } from './constants';
+import { DEFAULT_END_TITLE } from './constants';
 
 /**
  * 解析 Markdown 内容为幻灯片数据
@@ -89,165 +89,18 @@ export function parseContentToSlides(content: string, maxSlides: number): SlideD
 }
 
 /**
- * 生成丰富的占位内容
- */
-export function generatePlaceholderSlides(topic: string, count: number): SlideData[] {
-  const slides: SlideData[] = [
-    {
-      title: topic,
-      subtitle: DEFAULT_SUBTITLE,
-      points: [],
-      isTitle: true,
-    },
-  ];
-
-  const sections = [
-    {
-      title: '核心价值',
-      points: [
-        '解决行业痛点：提升 80% 开发效率，减少重复劳动',
-        '技术领先优势：采用最新 AI 架构，性能超越同类产品',
-        '用户价值：降低学习成本，快速上手即可产出成果',
-        '生态完善：丰富的插件和集成，满足多样化需求',
-      ],
-    },
-    {
-      title: '功能特性',
-      points: [
-        '智能代码生成：根据自然语言描述自动生成高质量代码',
-        '上下文理解：200K token 上下文窗口，理解完整项目',
-        '多模态支持：可分析截图、架构图、设计稿等图片',
-        '工具集成：内置 20+ 开发工具，覆盖完整工作流',
-      ],
-    },
-    {
-      title: '技术架构',
-      points: [
-        'Agent Loop 架构：用户输入 → 模型推理 → 工具执行 → 结果反馈',
-        '安全沙箱：所有代码在受限环境执行，保障系统安全',
-        '流式响应：实时显示思考过程，提升用户体验',
-        '可扩展设计：支持 MCP 协议，可连接外部服务',
-      ],
-    },
-    {
-      title: '应用场景',
-      points: [
-        '代码重构：批量修改代码风格，迁移框架版本',
-        'Bug 修复：根据错误日志自动定位并修复问题',
-        '新功能开发：端到端实现完整功能模块',
-        '代码审查：自动检测安全漏洞和性能问题',
-      ],
-    },
-    {
-      title: '使用效果',
-      points: [
-        '效率提升：平均节省 60% 编码时间',
-        '质量保证：代码通过率提升 40%',
-        '学习曲线：新手 30 分钟即可上手',
-        '用户满意度：NPS 评分达到 72 分',
-      ],
-    },
-  ];
-
-  const actualCount = Math.min(count - 2, sections.length);
-  for (let i = 0; i < actualCount; i++) {
-    slides.push(sections[i]);
-  }
-
-  slides.push({
-    title: DEFAULT_END_TITLE,
-    points: [],
-    isEnd: true,
-  });
-
-  return slides;
-}
-
-/**
- * 基于主题生成 SCQA 结构的幻灯片数据
- * S(Situation) → C(Complication) → Q(Question) → A(Answer)
- * 当无 content 时作为 generatePlaceholderSlides 的替代
+ * 无内容时的空大纲骨架：仅封面（标题=主题）+ 结构性页标题 + 结尾页，不含任何数字、
+ * 领域断言或示例要点（points 为空）。
+ * 仅供设计 tab「生成大纲 → 用户编辑 → 出稿」这类用户会看到并改写骨架的路径；
+ * ppt_generate 工具不得用它交付（此前写死的示例内容曾被当成成品交给用户）。
  */
 export function outlineToSlideData(topic: string, count: number): SlideData[] {
-  const slides: SlideData[] = [
-    {
-      title: topic,
-      subtitle: DEFAULT_SUBTITLE,
-      points: [],
-      isTitle: true,
-    },
-  ];
+  const slides: SlideData[] = [{ title: topic, points: [], isTitle: true }];
 
-  // SCQA 结构化大纲
-  const scqaSections = [
-    {
-      title: '背景概述',  // Situation
-      points: [
-        '行业发展现状与市场规模概览',
-        '当前技术水平与应用现状',
-        '主要参与者与竞争格局',
-        '用户需求与市场趋势',
-      ],
-    },
-    {
-      title: '面临挑战',  // Complication
-      points: [
-        '现有方案的核心痛点与瓶颈',
-        '效率低下导致的成本浪费',
-        '技术债务与可维护性问题',
-        '用户体验与预期的差距',
-      ],
-    },
-    {
-      title: '核心价值',  // Question → Answer
-      points: [
-        '解决行业痛点：提升 80% 开发效率',
-        '技术领先优势：采用最新架构设计',
-        '用户价值：降低学习成本，快速上手',
-        '生态完善：丰富的集成满足多样化需求',
-      ],
-    },
-    {
-      title: '技术架构',
-      points: [
-        'Agent Loop 架构：输入 → 推理 → 执行 → 反馈',
-        '安全沙箱：受限环境执行，保障系统安全',
-        '流式响应：实时显示过程，提升体验',
-        '可扩展设计：支持协议扩展，连接外部服务',
-      ],
-    },
-    {
-      title: '应用场景',
-      points: [
-        '场景一：批量代码重构与框架迁移',
-        '场景二：根据日志自动定位修复问题',
-        '场景三：端到端实现完整功能模块',
-        '场景四：自动检测安全漏洞和性能问题',
-      ],
-    },
-    {
-      title: '实施效果',
-      points: [
-        '效率提升：平均节省 60% 编码时间',
-        '质量保证：代码通过率提升 40%',
-        '学习曲线：30 分钟即可上手使用',
-        '用户满意度：NPS 评分达到 72 分',
-      ],
-    },
-    {
-      title: '未来展望',
-      points: [
-        '短期目标：核心功能完善与性能优化',
-        '中期规划：生态建设与社区运营',
-        '长期愿景：成为行业标准解决方案',
-        '持续迭代：基于用户反馈不断改进',
-      ],
-    },
-  ];
-
-  const actualCount = Math.min(count - 2, scqaSections.length);
+  const sectionTitles = ['背景', '问题', '方案', '价值', '落地', '总结'];
+  const actualCount = Math.max(0, Math.min(count - 2, sectionTitles.length));
   for (let i = 0; i < actualCount; i++) {
-    slides.push(scqaSections[i]);
+    slides.push({ title: sectionTitles[i], points: [] });
   }
 
   slides.push({

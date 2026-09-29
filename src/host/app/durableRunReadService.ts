@@ -176,9 +176,8 @@ function projectDurableResumeState(view: DurableRunView): DurableResumeState | u
       canContinue: false,
     };
   }
-  const canContinue = view.status === 'waiting' && view.continuable !== false && (
-    view.interruptCause !== 'crash_or_quit' || autoResumeCount >= MAX_AUTO_RESUME_COUNT
-  );
+  // 按停靠标记（ADR-075 修订二）：crash_or_quit 的 waiting 是等审批，不出「继续」。
+  const canContinue = view.status === 'waiting' && view.continuable !== false && view.interruptCause !== 'crash_or_quit';
   if (!canContinue) return undefined;
   return {
     runId: view.runId,

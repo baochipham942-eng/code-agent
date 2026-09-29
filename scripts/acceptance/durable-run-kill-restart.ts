@@ -149,7 +149,7 @@ try {
       repeatedCrashParked: !repeatedCrash || (
         repeatedCrash.finalStatus === 'waiting'
         && repeatedCrash.autoResumeCount === 2
-        && repeatedCrash.interruptCause === 'crash_or_quit'
+        && repeatedCrash.interruptCause === 'budget_exhausted' // ADR-075 修订二：预算耗尽停靠显式标记
         && repeatedCrash.sameRunId === true
         && (repeatedCrash.startTaskCount ?? 0) === 0
         && repeatedCrash.terminalCount === 0

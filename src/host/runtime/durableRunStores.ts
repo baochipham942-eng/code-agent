@@ -44,6 +44,20 @@ export interface RunTransition {
   updatedAt: number;
 }
 
+/**
+ * ③（N-CLI-DURABLE-TERMINAL-LOST）：不持有租约也能收尸的「不可续跑停靠 run」。
+ * 判据 fence 由仓储层在同一事务内校验：status=waiting 且末事件恰为该复核结论。
+ */
+export interface UnresumableParkedRunCancel {
+  runId: string;
+  sessionId: string;
+  now: number;
+  /** 终态 reason，同时写进 run_cancelled 事件 payload。 */
+  reason: string;
+  /** 只有 run 的末事件恰为这个复核结论时才允许收尸。 */
+  requireLastEvent: { type: 'native_recovery_requires_review'; reviewReason: string };
+}
+
 export interface RunLeaseClaimResult {
   envelope: RunEnvelope;
   owner: RunOwnerLease;
@@ -80,6 +94,12 @@ export interface RunStore {
   renewLease(runId: string, owner: RunOwnerLease, leaseExpiresAt: number): Promise<boolean>;
   transition(input: RunTransition): Promise<RunEnvelope | null>;
   releaseLease(runId: string, owner: RunOwnerLease, now: number): Promise<boolean>;
+  /**
+   * ③（N-CLI-DURABLE-TERMINAL-LOST）：强制终态化「被活进程停靠、但停靠结论是
+   * native_workspace_unavailable（没人能真正续跑）」的 run。不经过租约认领；
+   * 判据不成立或并发变更时返回 false。可选：内存桩/旧仓储实现不提供即视作不支持。
+   */
+  cancelUnresumableParkedRun?(input: UnresumableParkedRunCancel): Promise<boolean>;
   getAttempt(runId: string, attempt: number): Promise<RunAttempt | null>;
   listPendingOperations(runId: string): Promise<PendingOperation[]>;
   listChildRuns(runId: string): Promise<ChildRunRef[]>;

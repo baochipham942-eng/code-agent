@@ -477,13 +477,18 @@ describe('DurableRunKernel', () => {
     expect(await repository.get('run-user-stop')).toMatchObject({
       status: 'waiting', interruptCause: 'user_stop', interrupt_cause: 'user_stop', autoResumeCount: 0,
     });
+    // ADR-075 修订二：预算耗尽的停靠在数据上显式记为 budget_exhausted。
     expect(await repository.get('run-capped')).toMatchObject({
-      interruptCause: 'crash_or_quit', interrupt_cause: 'crash_or_quit',
+      interruptCause: 'budget_exhausted', interrupt_cause: 'budget_exhausted',
       autoResumeCount: MAX_AUTO_RESUME_COUNT,
     });
+    // 第二次重启：预算耗尽停靠按 budget_exhausted 标记再次认领为停靠（resumeBlocked），永不进自动续跑
+    // （旧断言「第二次重启不再出现、attempt 停在 2」钉的正是「继续」丢失的缺陷，ADR-075 修订二改写）。
     const secondPlans = await recoveredKernel.recoverOnStartup(2_201);
-    expect(secondPlans.every((plan) => plan.envelope.runId !== 'run-capped')).toBe(true);
-    expect((await repository.get('run-capped'))?.attempt).toBe(2);
+    expect(secondPlans.filter((plan) => plan.envelope.runId === 'run-capped')
+      .map((plan) => [plan.envelope.status, plan.envelope.interruptCause, plan.resumeBlocked]))
+      .toEqual([['waiting', 'budget_exhausted', true]]);
+    expect((await repository.get('run-capped'))?.attempt).toBe(3);
     db.close();
   });
 
@@ -649,7 +654,7 @@ describe('DurableRunKernel', () => {
     expect(recover).not.toHaveBeenCalled();
     expect(await repository.get('run-exhausted')).toMatchObject({
       status: 'waiting',
-      interruptCause: 'crash_or_quit', interrupt_cause: 'crash_or_quit',
+      interruptCause: 'budget_exhausted', interrupt_cause: 'budget_exhausted',
       autoResumeCount: MAX_AUTO_RESUME_COUNT,
     });
     db.close();

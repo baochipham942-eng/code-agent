@@ -25,7 +25,9 @@ import type {
   RunTransition,
   StoredRunEvent,
   TerminalCommit,
+  UnresumableParkedRunCancel,
 } from '../../../runtime/durableRunStores';
+import { runWithSqliteBusyRetry } from '../database/sqliteBusyRetry';
 import { applyDurableRunMigrationDraft } from '../database/migrations/durableRun';
 
 type Row = Record<string, unknown>;
@@ -118,6 +120,14 @@ function rowToCheckpoint(row: Row): RunCheckpoint {
 }
 
 export class DurableRunRepository implements DurableRunStores {
+  /**
+   * 写事务一律 BEGIN IMMEDIATE + SQLITE_BUSY 自动重试（issue #1992 同款，PR#2003 只修了
+   * SessionRepository/telemetry）：durable 表的写事务全是「先 SELECT 读快照再 UPDATE」的
+   * deferred 形状，WAL 多进程（夜巡 8 个 CLI 共库）下升级出 SQLITE_BUSY_SNAPSHOT——busy
+   * handler 不介入、立即抛 "database is locked"，CLI 终态两次零退避重试全灭后 run 永远
+   * 停非终态（N-CLI-DURABLE-TERMINAL-LOST，night=2026-09-27 exit 0 会话遗留 78 条）。
+   * IMMEDIATE 在读之前拿写锁 ⇒ 快照不可能过期；整体重跑安全（事务已回滚）。
+   */
   constructor(private readonly db: BetterSqlite3.Database) {}
 
   migrate(): void {
@@ -131,7 +141,7 @@ export class DurableRunRepository implements DurableRunStores {
       throw new Error('Initial durable run attempt must match its owner lease');
     }
     try {
-      this.db.transaction(() => {
+      runWithSqliteBusyRetry(() => this.db.transaction(() => {
         this.db.prepare(`INSERT INTO durable_runs (
           run_id, session_id, parent_run_id, engine_kind, engine_ref_json, status, attempt,
           next_event_seq, checkpoint_seq, envelope_json, owner_id, process_instance_id,
@@ -145,7 +155,7 @@ export class DurableRunRepository implements DurableRunStores {
             envelope.createdAt, envelope.updatedAt,
           );
         this.insertAttempt(attempt);
-      })();
+      }).immediate());
     } catch (error) {
       // 抬成自有 code：判据在 runRegistry，不该跨到存储驱动的报错文案上。
       if (isActiveSessionUniqueViolation(error)) {
@@ -223,7 +233,7 @@ export class DurableRunRepository implements DurableRunStores {
     claim: RunLeaseClaim & { abandonedProcessInstanceId?: string },
     recoveryReason: 'lease_expired' | 'process_exit',
   ): RunLeaseClaimResult | null {
-    return this.db.transaction(() => {
+    return runWithSqliteBusyRetry(() => this.db.transaction(() => {
       const row = this.db.prepare('SELECT * FROM durable_runs WHERE run_id = ?').get(claim.runId) as Row | undefined;
       if (!row || isTerminalRunStatus(row.status as RunEnvelope['status'])) return null;
       const epoch = Number(row.owner_epoch);
@@ -286,7 +296,7 @@ export class DurableRunRepository implements DurableRunStores {
       if (changed.changes !== 1) return null;
       this.insertAttempt(attempt);
       return { envelope, owner, attempt };
-    })();
+    }).immediate());
   }
 
   async renewLease(runId: string, owner: RunOwnerLease, leaseExpiresAt: number): Promise<boolean> {
@@ -337,7 +347,7 @@ export class DurableRunRepository implements DurableRunStores {
   }
 
   async replaceRecoveryProjection(input: RecoveryProjectionReplace): Promise<RunEnvelope> {
-    return this.db.transaction(() => {
+    return runWithSqliteBusyRetry(() => this.db.transaction(() => {
       const envelope = this.requireOwnedEnvelope(input.runId, input.attempt, input.expectedOwnerEpoch);
       const next: RunEnvelope = withRunInterruptMetadata({
         ...envelope,
@@ -352,11 +362,11 @@ export class DurableRunRepository implements DurableRunStores {
       this.db.prepare('UPDATE durable_runs SET status = ?, envelope_json = ?, updated_at = ? WHERE run_id = ? AND owner_epoch = ?')
         .run(input.status, stringify(next), input.updatedAt, input.runId, input.expectedOwnerEpoch);
       return next;
-    })();
+    }).immediate());
   }
 
   async append(input: EventAppendRequest): Promise<RunEnvelope['cursor']> {
-    return this.db.transaction(() => {
+    return runWithSqliteBusyRetry(() => this.db.transaction(() => {
       const envelope = this.requireOwnedEnvelope(input.runId, input.attempt, input.expectedOwnerEpoch);
       if (envelope.cursor.nextEventSeq !== input.expectedNextSeq) throw new Error('Event append fenced by stale cursor');
       let seq = input.expectedNextSeq;
@@ -371,7 +381,7 @@ export class DurableRunRepository implements DurableRunStores {
       this.db.prepare('UPDATE durable_runs SET next_event_seq = ?, envelope_json = ?, updated_at = ? WHERE run_id = ? AND owner_epoch = ?')
         .run(seq, stringify(next), next.updatedAt, input.runId, input.expectedOwnerEpoch);
       return cursor;
-    })();
+    }).immediate());
   }
 
   async read(runId: string, afterSeq: number, limit: number): Promise<StoredRunEvent[]> {
@@ -389,7 +399,7 @@ export class DurableRunRepository implements DurableRunStores {
   }
 
   async commit(input: CheckpointCommit): Promise<RunCheckpoint> {
-    return this.db.transaction(() => {
+    return runWithSqliteBusyRetry(() => this.db.transaction(() => {
       const envelope = this.requireOwnedEnvelope(input.runId, input.attempt, input.expectedOwnerEpoch);
       if (isTerminalRunStatus(envelope.status)) throw new Error('Terminal run cannot checkpoint');
       if (envelope.cursor.nextEventSeq !== input.expectedNextEventSeq) throw new Error('Checkpoint fenced by stale cursor');
@@ -427,11 +437,11 @@ export class DurableRunRepository implements DurableRunStores {
         .run(withMetadata.status, withMetadata.cursor.nextEventSeq, withMetadata.cursor.checkpointSeq, stringify(withMetadata), withMetadata.updatedAt,
           input.runId, input.expectedOwnerEpoch);
       return input.checkpoint;
-    })();
+    }).immediate());
   }
 
   async commitTerminal(input: TerminalCommit): Promise<RunEnvelope> {
-    return this.db.transaction(() => {
+    return runWithSqliteBusyRetry(() => this.db.transaction(() => {
       const envelope = this.requireOwnedEnvelope(input.runId, input.attempt, input.expectedOwnerEpoch);
       if (!canTransitionRunStatus(envelope.status, input.status)) throw new Error(`Invalid terminal transition ${envelope.status} -> ${input.status}`);
       if (envelope.cursor.nextEventSeq !== input.expectedNextEventSeq) throw new Error('Terminal write fenced by stale cursor');
@@ -456,7 +466,72 @@ export class DurableRunRepository implements DurableRunStores {
       this.db.prepare(`UPDATE durable_run_children SET status = ?, terminal_at = ? WHERE child_run_id = ?`)
         .run(input.status, input.terminalAt, input.runId);
       return next;
-    })();
+    }).immediate());
+  }
+
+  /**
+   * ③（N-CLI-DURABLE-TERMINAL-LOST）：强收尸「waiting + 末事件 native_recovery_requires_review(
+   * native_workspace_unavailable)」的根 run。绕过租约 fence 是刻意的——接管方只把 run 停靠
+   * 等复核并续着一条没人能用的租约（工作区已不存在，任何续跑路径都会再次判
+   * workspace unavailable），租约活着不等于有人在跑。判据 fence 落在本事务内：
+   * status=waiting + 末事件复核原因原样才写终态；并发变更（有人真在恢复/继续）会让
+   * WHERE 命中 0 行 → 返回 false，退回原冲突语义。owner epoch 顺带 +1，让原持有方
+   * 残留的内存态下一次心跳/写库即被 fence 掉，自然 stand down。
+   */
+  async cancelUnresumableParkedRun(input: UnresumableParkedRunCancel): Promise<boolean> {
+    return runWithSqliteBusyRetry(() => this.db.transaction(() => {
+      const row = this.db.prepare('SELECT * FROM durable_runs WHERE run_id = ?').get(input.runId) as Row | undefined;
+      if (!row) return false;
+      // 纵深防御：runId 必须真的属于这个会话（调用方按会话取 latest root，这里不信任传入的配对）。
+      if (String(row.session_id) !== input.sessionId) return false;
+      if (row.status !== 'waiting') return false;
+      const lastEvent = this.db.prepare(
+        'SELECT event_type, event_json FROM durable_run_events WHERE run_id = ? ORDER BY seq DESC LIMIT 1',
+      ).get(input.runId) as Row | undefined;
+      if (!lastEvent) return false;
+      if (String(lastEvent.event_type) !== input.requireLastEvent.type) return false;
+      let payload: unknown;
+      try {
+        payload = JSON.parse(String(lastEvent.event_json ?? 'null'));
+      } catch {
+        return false;
+      }
+      if (!payload || typeof payload !== 'object'
+        || (payload as { reason?: unknown }).reason !== input.requireLastEvent.reviewReason) {
+        return false;
+      }
+      const envelope = rowToEnvelope(row);
+      const terminalSeq = envelope.cursor.nextEventSeq;
+      // epoch 抬高 fence 掉原持有方的残留内存态；租约即刻过期，避免收尸后还要等旧租约走完。
+      const owner = envelope.owner
+        ? { ...envelope.owner, epoch: envelope.owner.epoch + 1, leaseExpiresAt: input.now }
+        : undefined;
+      const next: RunEnvelope = {
+        ...envelope,
+        status: 'cancelled',
+        owner,
+        cursor: { ...envelope.cursor, nextEventSeq: terminalSeq + 1 },
+        terminal: { status: 'cancelled', eventSeq: terminalSeq, at: input.now, reason: input.reason },
+        updatedAt: input.now,
+      };
+      assertRunEnvelope(next);
+      this.db.prepare(`INSERT INTO durable_run_events (run_id, seq, attempt, event_type, event_json, recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(input.runId, terminalSeq, envelope.attempt, 'run_cancelled',
+          stringify({ sessionId: input.sessionId, reason: input.reason }), input.now);
+      const changed = this.db.prepare(`UPDATE durable_runs SET status = 'cancelled', next_event_seq = ?,
+        terminal_event_seq = ?, terminal_at = ?, owner_epoch = ?, lease_expires_at = ?, envelope_json = ?, updated_at = ?
+        WHERE run_id = ? AND status = 'waiting'`)
+        .run(terminalSeq + 1, terminalSeq, input.now, owner?.epoch ?? null, input.now, stringify(next), input.now,
+          input.runId);
+      if (changed.changes !== 1) return false;
+      this.db.prepare(`UPDATE durable_run_attempts SET status = 'ended', ended_at = ?
+        WHERE run_id = ? AND attempt = ? AND status IN ('starting','active')`)
+        .run(input.now, input.runId, envelope.attempt);
+      this.db.prepare(`UPDATE durable_run_children SET status = 'cancelled', terminal_at = ? WHERE child_run_id = ?`)
+        .run(input.now, input.runId);
+      return true;
+    }).immediate());
   }
 
   private requireOwnedEnvelope(runId: string, attempt: number, ownerEpoch: number): RunEnvelope {

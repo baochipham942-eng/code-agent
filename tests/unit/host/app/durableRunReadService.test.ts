@@ -94,10 +94,16 @@ describe('DurableRunReadService migrated consumers', () => {
         runId: 'parked', mode: 'continue', interruptCause: 'user_stop', canContinue: true,
       },
     });
-    expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'crash_or_quit', autoResumeCount: 2 })).toMatchObject({
+    // ADR-075 修订二：预算耗尽的停靠显式记 budget_exhausted 才出「继续」；crash_or_quit 的 waiting
+    // 计数再高也是等审批（「预算耗尽后又等审批」），不出「继续」。
+    expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'budget_exhausted', autoResumeCount: 2 })).toMatchObject({
       durableResume: {
-        runId: 'parked', mode: 'continue', interruptCause: 'crash_or_quit', canContinue: true,
+        runId: 'parked', mode: 'continue', interruptCause: 'budget_exhausted', canContinue: true,
       },
+    });
+    expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'crash_or_quit', autoResumeCount: 2 })).toEqual({
+      status: 'running',
+      durableWaitingInput: true,
     });
     expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'crash_or_quit', autoResumeCount: 1 })).toEqual({
       status: 'running',

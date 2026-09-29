@@ -52,6 +52,7 @@ import {
 } from '../host/runtime/runContext';
 import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
 import { RunSessionConflictError } from '../host/runtime/runRegistry';
+import { isTerminalRunStatus } from '../shared/contract/durableRun';
 import { createApplicationAutoAgentRecoveryHost } from '../host/app/autoAgentRecoveryHost';
 import { createApplicationNativeRecoveryPorts } from '../host/app/nativeRecoveryHost';
 import { initializeDurableRun, type DurableRunApplicationRuntime } from '../host/app/initializeDurableRun';
@@ -221,16 +222,27 @@ export async function terminalCLIDurableRun(
   success: boolean,
 ): Promise<void> {
   const now = Date.now();
-  await getApplicationRunRegistry().terminalDurable(handle.context.runId, {
-    now,
-    status: success ? 'completed' : 'failed',
-    reason: success ? 'cli_run_completed' : 'cli_run_failed',
-    event: {
-      type: success ? 'cli_run_completed' : 'cli_run_failed',
-      payload: {},
-      recordedAt: now,
-    },
-  }, handle);
+  try {
+    await getApplicationRunRegistry().terminalDurable(handle.context.runId, {
+      now,
+      status: success ? 'completed' : 'failed',
+      reason: success ? 'cli_run_completed' : 'cli_run_failed',
+      event: {
+        type: success ? 'cli_run_completed' : 'cli_run_failed',
+        payload: {},
+        recordedAt: now,
+      },
+    }, handle);
+  } catch (error) {
+    // 幂等兜底：写终态失败但 run 已被他进程终态化（接管后收尸/取消）时，
+    // 「CLI 退出后 run 必为终态」的不变量已经成立，不再把这次失败当错误上抛。
+    const kernel = cliDurableRunRuntime?.kernel;
+    const latest = typeof kernel?.getLatestBySession === 'function'
+      ? await kernel.getLatestBySession(handle.context.sessionId).catch(() => null)
+      : null;
+    if (latest?.runId === handle.context.runId && isTerminalRunStatus(latest.status)) return;
+    throw error;
+  }
 }
 
 /**

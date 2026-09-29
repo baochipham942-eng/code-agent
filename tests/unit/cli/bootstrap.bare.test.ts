@@ -1,8 +1,8 @@
 // ============================================================================
-// initializeCLIServices --bare 纯净模式（N-HEADLESS-BARE）
+// initializeCLIServices --bare 纯净模式（N-HEADLESS-BARE-BUILTIN）
 // 走真公共入口 initializeCLIServices/buildCLIConfig/syncCLIWorkingDirectory/cleanup，
 // mock 只打在模块边界（skills 发现、MCP client、数据库、配置服务等）。
-// 钉住的不变量：--bare 下本地 loaders（skills/hooks/MCP）一律不装载，
+// 钉住的不变量：--bare 下 skills 走 builtin-only、hooks/MCP 仍跳过，
 // 且 CODE_AGENT_ENABLE_ARGUS_MCP=1 也不能把 MCP 自动接入带回来；
 // 不带 --bare 时三者照常开启（历史行为逐字节不变）。
 // ============================================================================
@@ -12,14 +12,14 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
-  // 模拟发现服务的禁用态翻转：bootstrap 的 setDisabled 真改它，指纹据此如实报告
-  const skillServiceState = { disabled: false };
+  // 模拟发现服务的 builtin-only 翻转：bootstrap 的 setBuiltinOnly 真改它，指纹据此如实报告
+  const skillServiceState = { builtinOnly: false };
   return {
     skillServiceState,
     skillInitialize: vi.fn(async () => {}),
     skillEnsureInitialized: vi.fn(async () => {}),
-    skillSetDisabled: vi.fn((disabled: boolean) => {
-      skillServiceState.disabled = disabled;
+    skillSetBuiltinOnly: vi.fn((builtinOnly: boolean) => {
+      skillServiceState.builtinOnly = builtinOnly;
     }),
     initMCPClient: vi.fn(async () => {}),
     mcpDisconnectAll: vi.fn(async () => {}),
@@ -34,8 +34,8 @@ vi.mock('../../../src/host/services/skills', () => ({
   getSkillDiscoveryService: () => ({
     initialize: mocks.skillInitialize,
     ensureInitialized: mocks.skillEnsureInitialized,
-    setDisabled: mocks.skillSetDisabled,
-    isDisabled: () => mocks.skillServiceState.disabled,
+    setBuiltinOnly: mocks.skillSetBuiltinOnly,
+    isBuiltinOnly: () => mocks.skillServiceState.builtinOnly,
     isInitialized: () => true,
     getAllSkills: () => [],
   }),
@@ -131,7 +131,7 @@ describe('initializeCLIServices --bare 纯净模式', () => {
     process.env.CODE_AGENT_ENABLE_ARGUS_MCP = '1';
     delete process.env[SWARM_TRACE.STORAGE_MODE_ENV];
     vi.clearAllMocks();
-    mocks.skillServiceState.disabled = false;
+    mocks.skillServiceState.builtinOnly = false;
     mocks.initCLIDatabase.mockResolvedValue(null);
     // initCLIDatabase 返回 null 走 fail-safe 警告分支，静默掉避免刷屏
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -147,31 +147,32 @@ describe('initializeCLIServices --bare 纯净模式', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('② --bare：skills/MCP 初始化不发生（ARGUS_MCP=1 也不破功），hooks 关闭，指纹全 skipped', async () => {
+  it('② --bare：skills 走 builtin-only 初始化，MCP 仍不接入（ARGUS_MCP=1 也不破功），hooks 关闭，指纹 builtin-only', async () => {
     await initializeCLIServices({ bare: true });
 
-    expect(mocks.skillInitialize).not.toHaveBeenCalled();
-    // 单一真源接线：bare 把发现服务切进禁用态（懒加载路径的守门就在那里）
-    expect(mocks.skillSetDisabled).toHaveBeenCalledWith(true);
+    expect(mocks.skillInitialize).toHaveBeenCalledTimes(1);
+    // 单一真源接线：bare 把发现服务切进 builtin-only（懒加载路径的守门就在那里）
+    expect(mocks.skillSetBuiltinOnly).toHaveBeenCalledWith(true);
     expect(mocks.initMCPClient).not.toHaveBeenCalled();
     expect(buildCLIConfig({ bare: true }).enableHooks).toBe(false);
     expect(getCLIEnvironmentFingerprint()).toEqual({
       bare: true,
-      skills: 'skipped',
+      skills: 'builtin-only',
       skillCount: 0,
+      skillNames: [],
       hooks: 'skipped',
       mcp: 'skipped',
       mcpServers: [],
     });
 
-    // ensureInitialized 等待也不发生（否则会反向触发 initialize，纯净模式破功）
+    // cwd 同步仍不补等 ensureInitialized（hooks/MCP 行为不变）
     await syncCLIWorkingDirectory('/tmp/bare-workspace');
     expect(mocks.skillEnsureInitialized).not.toHaveBeenCalled();
 
-    // shutdown 一致：从未 init 过 MCP，也就不 disconnect；并复位发现服务禁用态
+    // shutdown 一致：从未 init 过 MCP，也就不 disconnect；并复位发现服务 builtin-only
     await cleanup();
     expect(mocks.mcpDisconnectAll).not.toHaveBeenCalled();
-    expect(mocks.skillServiceState.disabled).toBe(false);
+    expect(mocks.skillServiceState.builtinOnly).toBe(false);
   });
 
   it('③ 不带 --bare（默认）：skills/MCP 照常初始化、hooks 开启、指纹如实报告（同一断言取反）', async () => {
@@ -180,7 +181,7 @@ describe('initializeCLIServices --bare 纯净模式', () => {
     await whenCLIMcpReady();
 
     expect(mocks.skillInitialize).toHaveBeenCalledTimes(1);
-    expect(mocks.skillSetDisabled).toHaveBeenCalledWith(false);
+    expect(mocks.skillSetBuiltinOnly).toHaveBeenCalledWith(false);
     expect(mocks.initMCPClient).toHaveBeenCalledTimes(1);
     expect(buildCLIConfig({}).enableHooks).toBe(true);
     expect(getCLIEnvironmentFingerprint()).toEqual({

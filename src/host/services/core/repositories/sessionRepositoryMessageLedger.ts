@@ -8,6 +8,27 @@ import { rowToMessage } from './sessionRepositoryParsers';
 
 type SQLiteRow = Record<string, unknown>;
 
+/**
+ * Crash-recovery rows are written while legacy backfill is still deferred.
+ * A session that already has messages but no branch must not take ordinal 0
+ * for that row: the later backfill would append the older rows after it and
+ * quarantine the branch (PROJECTION_ALIAS_ORDER_MISMATCH). Leave the row in
+ * `messages` so backfill projects it in table order. A session that already
+ * has a branch keeps the immutable crash-recovery append.
+ */
+export function shouldAppendMessageToConversationLedger(
+  db: BetterSqlite3.Database,
+  branchRepo: ConversationBranchRepository | null,
+  sessionId: string,
+  options?: { skipConversationLedger?: boolean; provenanceKind?: string },
+): boolean {
+  if (!branchRepo || options?.skipConversationLedger) return false;
+  if (options?.provenanceKind !== 'crash-recovery') return true;
+  return Boolean(db.prepare(
+    'SELECT 1 AS present FROM conversation_branches WHERE session_id = ? LIMIT 1',
+  ).get(sessionId));
+}
+
 export function clearAllMessagesWithLedger(
   db: BetterSqlite3.Database,
   branchRepo: ConversationBranchRepository | null,

@@ -135,7 +135,7 @@ describe('③ 失败按指数退避重试（注入连续失败断言退避序列
     await vi.advanceTimersByTimeAsync(1);
     expect(calls()).toBe(4); // 120s：第 3 次重试（预算耗尽）
 
-    const execution = await settled;
+    const execution = (await settled)!;
     expect(execution.status).toBe('failed');
     expect(execution.retryAttempt).toBe(3);
     await service.shutdown();
@@ -156,7 +156,7 @@ describe('③ 失败按指数退避重试（注入连续失败断言退避序列
     await vi.advanceTimersByTimeAsync(1);
     expect(calls()).toBe(2); // 7s 自定义间隔到点（而非 30s 退避）
 
-    const execution = await settled;
+    const execution = (await settled)!;
     expect(execution.status).toBe('failed');
     expect(execution.retryAttempt).toBe(1);
     await service.shutdown();
@@ -173,13 +173,13 @@ describe('③ 失败按指数退避重试（注入连续失败断言退避序列
       return { ok: true };
     });
 
-    const execution = await (async () => {
+    const execution = (await (async () => {
       const settled = service.triggerJob(job.id);
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(30_000);
       await vi.advanceTimersByTimeAsync(60_000);
       return settled;
-    })();
+    })())!;
 
     expect(calls).toBe(3);
     expect(execution.status).toBe('completed');
@@ -254,7 +254,7 @@ describe('⑤ 容量/并发等待不计失败不计重试（Cline 实付回归�
       throw new Error('Request was cancelled while waiting');
     });
 
-    const execution = await service.triggerJob(job.id);
+    const execution = (await service.triggerJob(job.id))!;
 
     expect(execution.status).toBe('cancelled');
     expect(calls()).toBe(1); // 没有烧掉任何一次重试
@@ -276,7 +276,7 @@ describe('② permanent 错误：重试无用，首次即停用并告知', () =>
     const job = await service.createJob(recurringShellJob({ maxRetries: 3 }));
     const { calls } = patchExecuteAction(service, async () => { throw error; });
 
-    const execution = await service.triggerJob(job.id);
+    const execution = (await service.triggerJob(job.id))!;
 
     expect(execution.status).toBe('failed');
     expect(calls()).toBe(1); // permanent 不烧重试

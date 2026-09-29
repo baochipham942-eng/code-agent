@@ -10,6 +10,7 @@ import {
   CronFailureNoticeGate,
 } from '../../../src/host/cron/cronFailurePolicy';
 import { CRON_GUARDRAILS } from '../../../src/shared/constants';
+import type { CronJobExecution } from '../../../src/shared/contract/cron';
 
 describe('cronRetryBackoffMs：指数退避序列', () => {
   it('30s → 60s → 120s → 240s（BASE×FACTOR^(n-1)）', () => {
@@ -98,7 +99,13 @@ describe('CronFailureNoticeGate：失败通知去重 + 冷却', () => {
 });
 
 describe('countTrailingCronFailures：末尾连续失败', () => {
-  const exec = (status: string) => ({ status }) as { status: string };
+  const exec = (status: CronJobExecution['status']): CronJobExecution => ({
+    id: `exec-${status}-${Math.random()}`,
+    jobId: 'job-x',
+    status,
+    scheduledAt: 0,
+    retryAttempt: 0,
+  });
 
   it('末尾连续 failed 计数，遇非 failed 断链（成功即重置）', () => {
     expect(countTrailingCronFailures([])).toBe(0);

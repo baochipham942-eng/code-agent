@@ -12,8 +12,20 @@ const mocks = vi.hoisted(() => ({
   getUserConfigDir: vi.fn(),
 }));
 
+// 安装器走异步 execFile；这里把它接到同步风格的 mocks.spawnSync 桩上（返回 {status,stdout,stderr}）。
 vi.mock('child_process', () => ({
-  spawnSync: mocks.spawnSync,
+  execFile: (
+    cmd: string,
+    args: string[],
+    opts: unknown,
+    cb: (error: Error | null, stdout: string, stderr: string) => void,
+  ) => {
+    const r = (mocks.spawnSync(cmd, args, opts) ?? { status: 0, stdout: '', stderr: '' }) as {
+      status: number; stdout?: string; stderr?: string;
+    };
+    const error = r.status === 0 ? null : Object.assign(new Error(r.stderr || 'failed'), { code: r.status });
+    cb(error, r.stdout ?? '', r.stderr ?? '');
+  },
 }));
 
 vi.mock('../../../../src/host/config/configPaths', () => ({
@@ -155,6 +167,28 @@ describe('LSP installer', () => {
     expect(resolved.installed).toBe(true);
     expect(resolved.command).toContain('pyright-langserver');
     expect(fs.existsSync(path.join(tmpDir, 'lsp-servers', 'package.json'))).toBe(true);
+  });
+
+  it('npm: installs with --save semantics so servers sharing lsp-servers do not prune each other', async () => {
+    pathProbe(1);
+    mocks.spawnSync.mockImplementation((cmd: string) => {
+      if (cmd === 'which' || cmd === 'where') return { status: 1, stdout: '', stderr: '' };
+      if (cmd === 'npm') {
+        const binDir = path.join(tmpDir, 'lsp-servers', 'node_modules', '.bin');
+        fs.mkdirSync(binDir, { recursive: true });
+        fs.writeFileSync(path.join(binDir, 'pyright-langserver'), '#!/bin/sh\n');
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    await ensureInstalled({
+      name: 'pyright',
+      command: 'pyright-langserver',
+      args: [],
+      install: { type: 'npm', packages: ['pyright'], binName: 'pyright-langserver' },
+    });
+    const npmCall = mocks.spawnSync.mock.calls.find((c) => c[0] === 'npm');
+    expect(npmCall?.[1]).toEqual(['install', '--no-audit', '--no-fund', 'pyright']);
+    expect(npmCall?.[1]).not.toContain('--no-save');
   });
 
   it('npm: install failure wraps as LSPInstallError with cause', async () => {

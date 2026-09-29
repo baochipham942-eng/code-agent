@@ -14,7 +14,7 @@ import { memoryTask } from '../model/quickModel';
 import { withTimeout } from '../services/infra/timeoutController';
 import { createLogger } from '../services/infra/logger';
 import { SESSION_JUDGE } from '../../shared/constants';
-import { listMemoryIndexTargets, loadMemoryIndex } from './indexLoader';
+import { listMemoryFiles } from './lightMemoryIpc';
 
 const logger = createLogger('ConversationJudge');
 
@@ -81,7 +81,8 @@ const JUDGE_PROMPT = `你是会话归档判断器。根据下面这段会话，�
 - durableFacts 不收本次任务的临时状态、不收能从材料本身推导出的代码或文档或数据自带信息、不收闲聊和一次性调试细节。
 - durableFacts 返回空数组是正常结果，宁缺勿滥；绝大多数轮次都应该返回 []。
 - confidence 校准：用户亲口明说、且明确跨会话成立的给 0.8 以上；从措辞推断或可能只在本任务成立的给 0.5 以下；拿不准给中间值，不要为了写进而抬高。
-- supersedes 只能从下面给出的现有记忆文件清单里选；清单为空或没有可取代的文件时必须省略，禁止编造文件名。`;
+- supersedes 只能从下面给出的现有记忆文件清单里选；清单为空或没有可取代的文件时必须省略，禁止编造文件名。
+- directive 类记忆不会出现在清单里：它们由用户显式确认建立、只能由用户移除，supersedes 永远不许指向 directive，即使你猜到了文件名。`;
 
 /**
  * Truncate a string to a max length with an ellipsis.
@@ -250,14 +251,23 @@ function buildConversationSnippet(userMessages: string[], lastAssistant?: string
 }
 
 /**
- * 现有记忆文件清单（来自 INDEX.md 的 active 条目）。
+ * 现有记忆文件清单（active 且非 directive 的记忆文件）。
  * 拼进判断器输入，让 supersedes 能指向真实存在的文件而不是编造文件名。
+ * r3：① directive 不进清单——其建立要过交互确认门，自动 supersedes 顶不掉，
+ * 列出来只会诱导判断器产出注定被忽略的 supersedes（写入侧另有旧条目类型门兜底）；
+ * ② 条数封顶，输入 token 不随记忆量无界增长（超出部分本次不可被 supersedes，
+ * 保守无害）。来源从 INDEX 目标改为全目录扫描 + active 过滤：类型信息在文件
+ * frontmatter 里而不在 INDEX 行里，且与 INDEX 收录同判据（status 缺省按 active）。
  */
 async function listExistingMemoryFilenames(): Promise<string[]> {
   try {
-    return listMemoryIndexTargets(await loadMemoryIndex());
+    const files = await listMemoryFiles();
+    return files
+      .filter((file) => (file.status ?? 'active') === 'active' && file.type !== 'directive')
+      .map((file) => file.filename)
+      .slice(0, SESSION_JUDGE.DURABLE_FACT_SUPERSEDES_LIST_MAX);
   } catch (error) {
-    logger.warn('读取记忆索引失败，supersedes 将拿不到现有文件清单', {
+    logger.warn('读取记忆文件清单失败，supersedes 将拿不到现有文件清单', {
       error: error instanceof Error ? error.message : String(error),
     });
     return [];

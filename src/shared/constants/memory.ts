@@ -37,8 +37,17 @@ export const SESSION_JUDGE = {
   /**
    * 允许 supersedes 软归档旧条目的事实类型：user/feedback 是"对用户的认知"，
    * 新认知成立时旧认知应让位；project/reference 是任务性材料，新条目不代表旧条目失效。
+   * r3 起这组类型同时约束**旧条目**一侧：directive（建立需用户确认门）与任务性材料
+   * 都不允许被会话收尾的自动判断归档，只能由用户显式操作移除。
    */
   DURABLE_FACT_SUPERSEDES_TYPES: ['user', 'feedback'],
+  /**
+   * 判断器输入「现有记忆文件清单」的条数上限。清单只为 supersedes 指向真实文件服务，
+   * 逐条拼进 prompt；不设上限时输入 token 随记忆量线性增长。取 60（约 INDEX 注入
+   * 预算 200 行的三成）：超出部分本次不可被 supersedes——保守无害，supersedes 本就
+   * 是尽力而为，写入门（旧文件存在且类型可归档）仍兜底。
+   */
+  DURABLE_FACT_SUPERSEDES_LIST_MAX: 60,
 } as const;
 
 /**

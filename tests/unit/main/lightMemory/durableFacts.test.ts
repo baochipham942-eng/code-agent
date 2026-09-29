@@ -63,6 +63,10 @@ import {
   type DurableFact,
 } from '../../../../src/host/lightMemory/conversationJudge';
 import { writeDurableFacts } from '../../../../src/host/lightMemory/durableFactWriter';
+import {
+  rebuildLightMemoryIndex,
+  writeLightMemoryFile,
+} from '../../../../src/host/lightMemory/lightMemoryIpc';
 import { SESSION_JUDGE } from '../../../../src/shared/constants';
 
 interface SummaryRunner {
@@ -471,5 +475,130 @@ describe('默认助手长期事实写回', () => {
       makeFact(1, { confidence: 0.9, supersedes: 'ghost.md' }),
     ])).resolves.toMatchObject({ written: 1, active: 1, files: ['fact-1.md'] });
     expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
+  });
+
+  // ------------------------------------------------------------------------
+  // N-MEM-WRITECONF r3：supersedes 归档的旧条目类型门——directive 经交互确认门建立，
+  // 任务性材料（project/reference）不代表失效，都不能被会话收尾的一次模型判断归档。
+  // ------------------------------------------------------------------------
+
+  /** 按交互确认门的产物形状种一条 directive（生产路径只有那里能传确认旗标）。 */
+  async function seedDirective(filename: string, content: string): Promise<string> {
+    await writeLightMemoryFile({
+      filename,
+      name: '操作指令',
+      description: '经用户交互确认的操作指令',
+      type: 'directive',
+      content,
+      status: 'active',
+      directiveConfirmedByUser: true,
+    });
+    await rebuildLightMemoryIndex();
+    return fs.readFile(path.join(memoryDir, filename), 'utf-8');
+  }
+
+  it('r3：directive 旧条目不可被自动 supersedes 归档：保持 active、逐字节不变、仍在 INDEX', async () => {
+    const rawBefore = await seedDirective('no-destructive-commands.md', '禁止主动执行任何形式的 rm -rf。');
+    expect(await readIndex()).toContain('[no-destructive-commands.md]');
+
+    const result = await writeDurableFacts([
+      makeFact(2, {
+        type: 'feedback',
+        confidence: 0.9,
+        supersedes: 'no-destructive-commands.md',
+        content: '用户话里好像不排斥破坏性命令',
+      }),
+    ]);
+
+    // 新事实照常写成 active；directive 完全不动（内容逐字节一致），仍在 INDEX
+    expect(result).toMatchObject({ written: 1, active: 1, skipped: 0 });
+    expect(await fs.readFile(path.join(memoryDir, 'no-destructive-commands.md'), 'utf-8')).toBe(rawBefore);
+    expect(await readFrontmatter('no-destructive-commands.md')).toMatchObject({
+      status: 'active',
+      type: 'directive',
+    });
+    const index = await readIndex();
+    expect(index).toContain('[no-destructive-commands.md]');
+    expect(index).toContain('[fact-2.md]');
+  });
+
+  it.each(['project', 'reference'] as const)(
+    'r3：旧条目为 %s（新条目 user）时 supersedes 同样不归档——旧条目类型门生效',
+    async (oldType) => {
+      await writeDurableFacts([makeFact(1, { type: oldType, content: '旧材料' })]);
+      expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
+
+      await writeDurableFacts([
+        makeFact(2, { type: 'user', confidence: 0.9, supersedes: 'fact-1.md', content: '新认知' }),
+      ]);
+
+      // 旧 project/reference 条目不被 user 新条目自动顶替：仍 active、双条目都在 INDEX
+      expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
+      const index = await readIndex();
+      expect(index).toContain('[fact-1.md]');
+      expect(index).toContain('[fact-2.md]');
+    },
+  );
+
+  it('r3：判断器的现有记忆文件清单不含 directive 条目，且 prompt 声明其不可被 supersedes', async () => {
+    await seedDirective('no-destructive-commands.md', '禁止主动执行任何形式的 rm -rf。');
+    await writeDurableFacts([makeFact(1)]);
+    memoryModelMocks.memoryTask.mockResolvedValue(llmResult({ durableFacts: [] }));
+
+    await judgeConversation({ userMessages: ['随便聊聊。'] });
+
+    const prompt = memoryModelMocks.memoryTask.mock.calls[0][0] as string;
+    expect(prompt).toContain('- fact-1.md');
+    expect(prompt).not.toContain('- no-destructive-commands.md');
+    expect(prompt).toContain('supersedes 永远不许指向 directive');
+  });
+
+  // ------------------------------------------------------------------------
+  // N-MEM-WRITECONF r3（Nit 1）：同名检测与写入共用 sanitize 规范化，
+  // 派生文件名为 hash 后缀预留写入侧 96 字符预算。
+  // ------------------------------------------------------------------------
+
+  it('r3：非规范化文件名（大小写/空格）撞上同名 active 条目时，candidate 仍不原地覆盖', async () => {
+    await writeDurableFacts([
+      makeFact(1, { filename: 'user-city.md', confidence: 0.9, content: '用户住在上海。' }),
+    ]);
+
+    const result = await writeDurableFacts([
+      makeFact(1, { filename: 'User City.md', confidence: 0.65, content: '用户住在北京。' }),
+    ]);
+
+    // 查找按写入侧 sanitize 命中 user-city.md → 改写派生文件名而不是覆盖旧条目
+    expect(result.files[0]).toMatch(/^user-city\.candidate-[0-9a-f]{8}\.md$/);
+    expect(await readFrontmatter('user-city.md')).toMatchObject({ status: 'active' });
+    const oldRaw = await fs.readFile(path.join(memoryDir, 'user-city.md'), 'utf-8');
+    expect(oldRaw).toContain('用户住在上海。');
+    expect(oldRaw).not.toContain('北京');
+    expect(await readFrontmatter(result.files[0])).toMatchObject({
+      status: 'candidate',
+      deprecated_by: 'user-city.md',
+    });
+  });
+
+  it('r3：超长同名 active 条目的派生文件名保留 hash 后缀（写入侧 96 字符预算内不截断）', async () => {
+    await writeDurableFacts([
+      makeFact(1, { filename: `${'a'.repeat(120)}.md`, confidence: 0.9, content: '用户住在上海。' }),
+    ]);
+    const onDisk = (await listFactFiles(memoryDir))[0];
+    // 写入侧 sanitize 把去扩展名部分截到 96
+    expect(onDisk).toHaveLength(96 + '.md'.length);
+
+    const result = await writeDurableFacts([
+      makeFact(1, { filename: onDisk, confidence: 0.65, content: '用户住在北京。' }),
+    ]);
+
+    const derived = result.files[0];
+    expect(derived).toMatch(/\.candidate-[0-9a-f]{8}\.md$/);
+    expect(derived.slice(0, -'.md'.length)).toHaveLength(96);
+    // 旧条目原封不动，candidate 落在独立派生文件上
+    expect(await readFrontmatter(onDisk)).toMatchObject({ status: 'active' });
+    expect(await readFrontmatter(derived)).toMatchObject({
+      status: 'candidate',
+      deprecated_by: onDisk,
+    });
   });
 });

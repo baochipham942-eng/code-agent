@@ -164,14 +164,26 @@ function sanitizeFrontmatterValue(value: string | number | boolean): string {
   return String(value).replace(/\r?\n/g, ' ').replace(/:/g, ' -').trim();
 }
 
-function sanitizeLightMemoryFilename(filename: string): string {
+/**
+ * sanitizeLightMemoryFilename 生成的去扩展名文件名上限（不含 .md）。
+ * 派生文件名（如 candidate 改写名）必须按这个预算预留后缀空间，
+ * 否则写入侧截断会吃掉后缀、破坏派生名的确定性。
+ */
+export const LIGHT_MEMORY_FILENAME_MAX = 96;
+
+/**
+ * Normalize a raw filename to the exact on-disk form writeLightMemoryFile produces.
+ * 写入与「按名查找/同名检测」两侧必须共用这一份规范化——只取 basename 不做
+ * sanitize 的查找会漏掉大小写/非法字符/超长差异对应的真实文件。
+ */
+export function sanitizeLightMemoryFilename(filename: string): string {
   const basename = path.basename(filename.trim());
   const withoutExt = basename.endsWith('.md') ? basename.slice(0, -3) : basename;
   const safe = withoutExt
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 96);
+    .slice(0, LIGHT_MEMORY_FILENAME_MAX);
   return `${safe || `memory-${Date.now()}`}.md`;
 }
 

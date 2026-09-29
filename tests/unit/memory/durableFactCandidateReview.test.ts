@@ -27,6 +27,10 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 
 import type { DurableFact } from '../../../src/host/lightMemory/conversationJudge';
 import { writeDurableFacts } from '../../../src/host/lightMemory/durableFactWriter';
+import {
+  rebuildLightMemoryIndex,
+  writeLightMemoryFile,
+} from '../../../src/host/lightMemory/lightMemoryIpc';
 import { listUnifiedMemoryEntries } from '../../../src/host/memory/memoryEntryRuntime';
 import { batchReviewMemoryEntries } from '../../../src/host/memory/memoryEntryReview';
 import type { MemoryEntryDatabase } from '../../../src/host/memory/memoryEntryRuntime';
@@ -317,5 +321,111 @@ describe('durable fact candidate 同名 active 条目防覆盖', () => {
     expect(second.files).toEqual(first.files);
     const files = (await fs.readdir(memoryDir)).filter((name) => name.startsWith('user-city.'));
     expect(files.sort()).toEqual([first.files[0], 'user-city.md'].sort());
+  });
+});
+
+// ============================================================================
+// N-MEM-WRITECONF r3：directive 经交互确认门建立，candidate 路径（同名冲突分流与
+// 显式 supersedes）都不得把它登记为待替换链接——否则复核页一 approve，directive 就会
+// 经 archiveMemoryFile 的自授确认被静默归档。candidate 仍照常写（新认知待人工复核），
+// 但 directive 保持 active、逐字节不变、直到用户自己动手。
+// ============================================================================
+
+describe('durable fact candidate 不得顶替 directive', () => {
+  let tmpDir: string;
+  let memoryDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'durable-fact-directive-'));
+    mockConfigDir.dir = tmpDir;
+    memoryDir = path.join(tmpDir, 'memory');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  /** 按交互确认门的产物形状种一条 directive（生产路径只有那里能传确认旗标）。 */
+  async function seedDirective(filename: string): Promise<string> {
+    await writeLightMemoryFile({
+      filename,
+      name: '操作指令',
+      description: '经用户交互确认的操作指令',
+      type: 'directive',
+      content: '涉及城市的问题必须先向用户确认再执行。',
+      status: 'active',
+      directiveConfirmedByUser: true,
+    });
+    await rebuildLightMemoryIndex();
+    const raw = await fs.readFile(path.join(memoryDir, filename), 'utf-8');
+    expect(await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8')).toContain(`[${filename}]`);
+    return raw;
+  }
+
+  it('candidate 撞上同名 directive：落派生文件名、不登记待替换链接，转正后 directive 仍原样', async () => {
+    const rawBefore = await seedDirective('user-city.md');
+
+    const result = await writeDurableFacts([fact({ confidence: 0.65, content: '用户长期居住在北京。' })]);
+
+    const candidateFile = result.files[0];
+    expect(candidateFile).toMatch(/^user-city\.candidate-[0-9a-f]{8}\.md$/);
+    const candidateMeta = await readFrontmatter(memoryDir, candidateFile);
+    expect(candidateMeta.status).toBe('candidate');
+    expect(candidateMeta.deprecated_by).toBeUndefined();
+
+    // directive 逐字节不变、仍在 INDEX
+    expect(await fs.readFile(path.join(memoryDir, 'user-city.md'), 'utf-8')).toBe(rawBefore);
+    expect(await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8')).toContain('[user-city.md]');
+
+    // 复核页 approve 转正 candidate：directive 也不因此被归档
+    const listed = await listUnifiedMemoryEntries();
+    const candidateEntry = listed.entries.find((item) => item.source.filePath === candidateFile);
+    expect(candidateEntry?.status).toBe('candidate');
+    const review = await batchReviewMemoryEntries(fakeDb(), {
+      entryIds: [candidateEntry!.id],
+      decision: 'approve',
+    });
+    expect(review.updated[0].status).toBe('active');
+    expect(await fs.readFile(path.join(memoryDir, 'user-city.md'), 'utf-8')).toBe(rawBefore);
+    expect(await readFrontmatter(memoryDir, 'user-city.md')).toMatchObject({
+      status: 'active',
+      type: 'directive',
+    });
+    expect(await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8')).toContain('[user-city.md]');
+  });
+
+  it('candidate 的 supersedes 指向 directive：不登记待替换链接，转正后 directive 仍不被归档', async () => {
+    const rawBefore = await seedDirective('confirm-city-first.md');
+
+    const result = await writeDurableFacts([
+      fact({
+        filename: 'city-feedback.md',
+        type: 'feedback',
+        confidence: 0.65,
+        supersedes: 'confirm-city-first.md',
+        content: '用户暗示城市问题可以直接执行。',
+      }),
+    ]);
+
+    expect(result.files).toEqual(['city-feedback.md']);
+    const candidateMeta = await readFrontmatter(memoryDir, 'city-feedback.md');
+    expect(candidateMeta.status).toBe('candidate');
+    expect(candidateMeta.deprecated_by).toBeUndefined();
+
+    const listed = await listUnifiedMemoryEntries();
+    const candidateEntry = listed.entries.find((item) => item.source.filePath === 'city-feedback.md');
+    const review = await batchReviewMemoryEntries(fakeDb(), {
+      entryIds: [candidateEntry!.id],
+      decision: 'approve',
+    });
+    expect(review.updated[0].status).toBe('active');
+
+    // directive 保持 active、逐字节不变、仍在 INDEX
+    expect(await fs.readFile(path.join(memoryDir, 'confirm-city-first.md'), 'utf-8')).toBe(rawBefore);
+    expect(await readFrontmatter(memoryDir, 'confirm-city-first.md')).toMatchObject({
+      status: 'active',
+      type: 'directive',
+    });
+    expect(await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8')).toContain('[confirm-city-first.md]');
   });
 });

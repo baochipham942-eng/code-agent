@@ -74,13 +74,13 @@ import { isTaskMutationToolCall } from '../nudgeManager';
 import { handleToolExecutionError } from './toolExecutionErrorHandler';
 import { applySwarmBudgetClamp, recordSwarmSpend } from './swarmGoalIntegration';
 import {
-  activateForceFinalResponse,
   getReadOnlyPreflightWarning,
   getSearchToReadPreflightBlock,
   maybeFinishArtifactRepairIfAlreadyValid,
   recordSearchCandidatesFromResult,
   semanticProgressReasonForToolCall,
 } from './toolPreflightGuards';
+import { applyReadLoopHardLimit, isReadLikeToolCall, releaseReadLoopSealAfterSuccessfulWrite } from './readLoopSeal';
 import { getArtifactLocatorPreflightBlock } from '../../tools/artifacts/artifactLocatorHost';
 import { createToolExecutionWatchdog } from './toolExecutionTimeout';
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
@@ -175,6 +175,11 @@ export class ToolExecutionEngine {
       Boolean(this.ctx.control.forceFinalResponseReason) &&
       this.ctx.control.forceFinalResponseReason !== this.forceFinalResponseReasonAtBatchStart
     );
+  }
+
+  /** file-consistency-guard 注入的唯一 AST 调用点（只封读提示与读循环警告都走这里）。 */
+  private injectFileConsistencyGuard(content: string): void {
+    this.contextAssembly.injectSystemMessage(content, 'file-consistency-guard');
   }
 
   async runSessionStartHook(): Promise<void> {
@@ -702,21 +707,16 @@ export class ToolExecutionEngine {
     }
 
     const readOnlyPreflight = getReadOnlyPreflightWarning(this.ctx, toolCall);
-    if (readOnlyPreflight.warning === 'HARD_LIMIT') {
-      activateForceFinalResponse(this.ctx, `连续只读操作达到硬阈值，已在执行前阻止 ${toolCall.name}`);
-      const hardLimitResult: ToolResult = {
-        toolCallId: toolCall.id,
-        success: false,
-        error: this.ctx.antiPatternDetector.generateHardLimitError(),
-        duration: Date.now() - startTime,
-        metadata: {
-          blocked: true,
-          skipped: true,
-          hardLimitPreflight: true,
-          forceFinalResponseReason: this.ctx.control.forceFinalResponseReason,
-        },
-      };
-      return emitBlockedToolResult(hardLimitResult);
+    if (
+      (this.ctx.control.readLoopSealActive && isReadLikeToolCall(this.ctx, toolCall))
+      || readOnlyPreflight.warning === 'HARD_LIMIT'
+    ) {
+      return emitBlockedToolResult(applyReadLoopHardLimit(
+        this.ctx,
+        toolCall,
+        startTime,
+        (content) => this.injectFileConsistencyGuard(content),
+      ));
     }
 
     const searchToReadBlock = getSearchToReadPreflightBlock(this.ctx, toolCall);
@@ -978,13 +978,12 @@ export class ToolExecutionEngine {
         }
       }
       if (readWriteWarning === 'HARD_LIMIT') {
-        activateForceFinalResponse(this.ctx, `连续只读操作达到硬阈值，最后一次工具为 ${toolCall.name}`);
-        const hardLimitResult: ToolResult = {
-          toolCallId: toolCall.id,
-          success: false,
-          error: this.ctx.antiPatternDetector.generateHardLimitError(),
-          duration: Date.now() - startTime,
-        };
+        const hardLimitResult = applyReadLoopHardLimit(
+          this.ctx,
+          toolCall,
+          startTime,
+          (content) => this.injectFileConsistencyGuard(content),
+        );
         langfuse.endSpan(toolSpanId, {
           success: false,
           error: hardLimitResult.error,
@@ -994,8 +993,10 @@ export class ToolExecutionEngine {
         this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, hardLimitResult) });
         return hardLimitResult;
       } else if (readWriteWarning) {
-        this.contextAssembly.injectSystemMessage(readWriteWarning, 'file-consistency-guard');
+        this.injectFileConsistencyGuard(readWriteWarning);
       }
+
+      releaseReadLoopSealAfterSuccessfulWrite(this.ctx, toolCall, normalizedResult.success);
 
       let preservedToolResult = markFileEvidenceResult(toolCall, toolResult);
       preservedToolResult = await attachDocumentOrigin(toolCall, preservedToolResult, this.ctx.messages, this.ctx.workingDirectory);

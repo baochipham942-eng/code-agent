@@ -320,6 +320,33 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-input-receipt').textContent).toContain(zh.expert.memberBar.receiptRedirectNextStep);
   });
 
+  it('外部引擎成员：回执是没送到，说明由谁运行，草稿留着', async () => {
+    runningMember();
+    invokeDomainMock.mockResolvedValue({
+      outcome: 'rejected',
+      reason: 'external_engine',
+      engineLabel: 'Codex CLI',
+    });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    // 账本详情回来后输入条的 runId 才稳定。先打字的话，scope 切换会把回执清掉。
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL,
+        expect.objectContaining({ sessionId: 'session-1', runId: 'run-1' }),
+      );
+    });
+    await act(async () => { await Promise.resolve(); });
+    const input = await screen.findByTestId('member-input') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: '再补一句' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('rejected'));
+    expect(screen.getByTestId('member-input-receipt').textContent).toContain('这位成员由 Codex CLI 运行，进行中不能补话。等他结束后再问一次。');
+    expect(screen.getByTestId('member-input-receipt').textContent).not.toContain('已送到');
+    expect(input.value).toBe('再补一句');
+  });
+
   it('没送到（成员已收工）：草稿留着，回执带原因，主对话不落记录', async () => {
     runningMember();
     invokeDomainMock.mockResolvedValue({ outcome: 'rejected', reason: 'finished' });

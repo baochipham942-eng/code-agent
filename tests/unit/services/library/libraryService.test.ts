@@ -73,6 +73,31 @@ describe('LibraryService', () => {
     expect(fs.existsSync(src)).toBe(true);
   });
 
+  it('importFile 导入 GBK 文本：学习成功，条目摘要带「按 GBK 识别」标注；合法 UTF-8 无标注', async () => {
+    const gbk = Buffer.from('c3fbb3c62ccafdc1bf0ac6bbb9fb2c330a', 'hex');
+    const dir = path.join(tmpDir, 'incoming');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gbk.csv'), gbk);
+    const item = await service.importFile({ sourcePath: path.join(dir, 'gbk.csv') }, 1000);
+    expect(item.learnStatus).toBe('ready');
+    expect(item.summary).toContain('按 GBK 识别');
+    expect(item.summary).toContain('另存为 UTF-8');
+    expect(service.get(item.id)?.summary).toBe(item.summary);
+
+    const utf8 = await service.importFile({ sourcePath: writeSource('utf8.csv', '名称\n苹果\n') }, 2000);
+    expect(utf8.learnStatus).toBe('ready');
+    expect(utf8.summary).toBeUndefined();
+  });
+
+  it('importFile 导入 UTF-8 与 GB18030 都解不开的字节：学习失败并提示另存 UTF-8，不入 sidecar', async () => {
+    const dir = path.join(tmpDir, 'incoming');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'bad.txt'), Buffer.from([0x61, 0x81, 0x20, 0xff, 0xff]));
+    const item = await service.importFile({ sourcePath: path.join(dir, 'bad.txt') }, 1000);
+    expect(item.learnStatus).toBe('failed');
+    expect(item.learnError).toMatch(/另存为 UTF-8/);
+  });
+
   it('importFile 同项目相同内容去重，不重复落盘', async () => {
     const first = await service.importFile({ projectId: null, sourcePath: writeSource('a.txt', 'same-bytes') }, 1000);
     const second = await service.importFile({ projectId: null, sourcePath: writeSource('b.txt', 'same-bytes') }, 2000);

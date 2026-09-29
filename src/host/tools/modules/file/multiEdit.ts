@@ -191,7 +191,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
       }
 
       const rawContent = await fs.readFile(filePath);
-      const refusal = existingFileWriteRefusal(rawContent, { rejectUndecodable: true });
+      const refusal = existingFileWriteRefusal(rawContent);
       if (refusal) {
         return { ok: false, error: refusal, code: 'INVALID_ARGS', meta: { outputPath: filePath } };
       }

@@ -6,7 +6,7 @@
 // - PDF  → readPdf 的本地 pdftotext 抽取（extractSelectablePdfText，含候选二进制探测）
 // - DOCX → mammoth.extractRawText（与 read_docx 同一条抽取库）
 // - XLSX → ExcelJS 全 sheet 展开（与 read_xlsx 同一条抽取库）
-// - 文本型后缀 → 读 Buffer 后按 UTF-8 → GB18030 严格识别（decodeText，失败明确报错）
+// - 文本型后缀 → 读 Buffer 后按严格 UTF-8 → 严格 GB18030 识别（GBK 须在条目摘要留标注，都失败明确报错）
 // 抽取文本落「文件旁 sidecar」：<libraryDir>/<projectId|global>/.extracted/<itemId>.md，
 // 行号与原件一致（文本型 sidecar 即原件内容），供 pinned 索引块指路 + 依据抽屉取片段。
 // 刻意不上 embedding/向量：检索 = 索引块指路 + 模型按需 Read/Grep sidecar（file-as-memory 口径）。
@@ -18,25 +18,36 @@ import ExcelJS from 'exceljs';
 import { createLogger } from '../infra/logger';
 import { LIBRARY_TIMEOUTS } from '../../../shared/constants';
 import { extractSelectablePdfText } from '../../tools/modules/network/pdfTextExtract';
-import { decodeText, TextDecodeError } from '../../utils/decodeText';
+import { decodeGb18030, decodeUtf8, TextDecodeError } from '../../utils/decodeText';
 
 const logger = createLogger('LibraryIngest');
 
-/** 资料库文本解码：无法识别、或 UTF-8 里夹坏字节时明确报错（sidecar 是原件内容，不能静默写入 U+FFFD），文案引导用户另存后重新导入 */
-function decodeLibraryText(buffer: Buffer): string {
-  const unrecognized = (cause?: unknown) =>
-    new Error('无法识别文件编码（仅支持 UTF-8 / GBK）。请用记事本或 Excel 另存为 UTF-8 编码后重新导入', { cause });
+const UNRECOGNIZED_ENCODING_MESSAGE = '无法识别文件编码（仅支持 UTF-8 / GBK）。请用记事本或 Excel 另存为 UTF-8 编码后重新导入';
+
+/** 按 GBK 识别的条目必须带的可见标注：资料库没有「模型重读」环节，用户/模型只能靠这句发现乱码的可能原因 */
+const GBK_INGEST_NOTE = '按 GBK 识别；如内容显示乱码，请另存为 UTF-8 后重新导入';
+const GBK_SUMMARY_TAG = `【编码提示：${GBK_INGEST_NOTE}】`;
+
+/**
+ * 资料库文本解码：严格 UTF-8 → 严格 GB18030 → 拒绝。
+ * 走 GBK 时返回 note（不猜：字节上无法证明它真是 GBK），调用方写进条目摘要；两者都失败明确报错，绝不把 U+FFFD 入库。
+ */
+function decodeLibraryText(buffer: Buffer): { text: string; note?: string } {
+  const utf8 = decodeUtf8(buffer);
+  if (utf8.invalidSequences === 0) return { text: utf8.text };
   try {
-    const decoded = decodeText(buffer);
-    if (decoded.invalidSequences > 0) {
-      logger.warn('Library text has undecodable UTF-8 bytes, refusing to ingest', { invalidSequences: decoded.invalidSequences });
-      throw unrecognized();
-    }
-    return decoded.text;
+    return { text: decodeGb18030(buffer), note: GBK_INGEST_NOTE };
   } catch (err) {
     if (!(err instanceof TextDecodeError)) throw err;
-    throw unrecognized(err);
+    throw new Error(UNRECOGNIZED_ENCODING_MESSAGE, { cause: err });
   }
+}
+
+/** 把编码标注写进（或从中清除）条目摘要：摘要会注入 pinned 资料索引块，模型读到该条目时能看到这句；重复学习幂等 */
+export function annotateSummaryWithEncodingNote(summary: string | undefined, note: string | undefined): string | undefined {
+  const base = summary?.startsWith(GBK_SUMMARY_TAG) ? summary.slice(GBK_SUMMARY_TAG.length).trimStart() : summary;
+  if (!note) return base || undefined;
+  return base ? `${GBK_SUMMARY_TAG} ${base}` : GBK_SUMMARY_TAG;
 }
 
 /** sidecar 目录名（资料库目录内的隐藏目录） */
@@ -59,6 +70,8 @@ export interface ExtractedLibraryText {
   /** 抽取方式：plaintext / pdftotext / mammoth / exceljs */
   method: string;
   truncated: boolean;
+  /** 需要让用户/模型看到的抽取提示（如「按 GBK 识别」），由调用方写进条目摘要 */
+  note?: string;
 }
 
 /** 该路径是否有学习管线认识的抽取路径（无 = 登记型条目，学习环节直接 ready） */
@@ -83,8 +96,9 @@ export async function extractLibraryText(filePath: string): Promise<ExtractedLib
 
   let raw: string;
   let method: string;
+  let note: string | undefined;
   if (TEXT_EXTENSIONS.has(ext)) {
-    raw = decodeLibraryText(await fs.promises.readFile(filePath));
+    ({ text: raw, note } = decodeLibraryText(await fs.promises.readFile(filePath)));
     method = 'plaintext';
   } else if (ext === '.pdf') {
     // AbortSignal.timeout 让学习管线不挂在坏 PDF 上；logger 结构兼容 ToolContext['logger']
@@ -106,7 +120,7 @@ export async function extractLibraryText(filePath: string): Promise<ExtractedLib
   const text = truncated
     ? `${raw.slice(0, MAX_EXTRACTED_CHARS)}\n\n[抽取文本超出 ${MAX_EXTRACTED_CHARS} 字符上限，已截断]`
     : raw;
-  return { text, method, truncated };
+  return { text, method, truncated, note };
 }
 
 /** xlsx/xls 全 sheet 展开为文本：sheet 名做节标题，每行带真实行号（对齐 read_xlsx 的行号口径） */

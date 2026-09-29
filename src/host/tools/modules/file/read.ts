@@ -35,13 +35,11 @@ import { getFileMutationActorId } from './fileMutationIdentity';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readSchema as schema } from './read.schema';
-import { decodeText, TextDecodeError, type DecodedText } from '../../../utils/decodeText';
+import { decodeGb18030, decodeUtf8, TextDecodeError } from '../../../utils/decodeText';
 
-const NON_UTF8_READ_NOTICE =
-  '[File encoding: GBK/GB18030, decoded to Unicode for display. Edit/Write/Append refuse to modify non-UTF-8 files; ask the user before converting to UTF-8.]\n';
-
+/** 默认按 UTF-8 读；坏字节显示为 U+FFFD 时在结果顶部告知，由模型决定是否用 encoding: 'gbk' 重读（不做编码猜测） */
 const invalidUtf8ReadNotice = (count: number): string =>
-  `[File is UTF-8 but contains ${count} invalid byte sequence(s), shown as U+FFFD. Edit refuses to modify this file (it would replace those bytes with U+FFFD); Append keeps existing bytes.]\n`;
+  `[此文件有 ${count} 处不是合法 UTF-8 的字节（已显示为 \uFFFD）。如果它是 GBK/GB18030 编码（如国内 Excel 导出的 CSV、旧 Windows 文本），请用 encoding: 'gbk' 重新读取。]\n`;
 
 const BINARY_REDIRECTS: Record<string, string> = {
   '.xlsx': 'read_xlsx',
@@ -172,6 +170,10 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
       (args.offset as number) || DEFAULT_OFFSET,
       (args.limit as number) || DEFAULT_LIMIT,
     );
+    const encoding = args.encoding || 'utf-8';
+    if (encoding !== 'utf-8' && encoding !== 'gbk') {
+      return { ok: false, error: "encoding must be 'utf-8' or 'gbk'", code: 'INVALID_ARGS' };
+    }
 
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {
@@ -202,20 +204,24 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
     try {
       const stats = await fs.stat(filePath);
       const raw = await fs.readFile(filePath);
-      let decoded: DecodedText;
-      try {
-        decoded = decodeText(raw);
-      } catch (err) {
-        if (!(err instanceof TextDecodeError)) throw err;
-        return {
-          ok: false,
-          error: `Cannot read ${filePath} as text: ${err.message}. It may be a binary file.`,
-          code: 'INVALID_ARGS',
-        };
+      let content: string;
+      let encodingNotice = '';
+      if (encoding === 'gbk') {
+        try {
+          content = decodeGb18030(raw);
+        } catch (err) {
+          if (!(err instanceof TextDecodeError)) throw err;
+          return {
+            ok: false,
+            error: `Cannot read ${filePath} as GBK: ${err.message}. Try without encoding, or the file may be binary.`,
+            code: 'INVALID_ARGS',
+          };
+        }
+      } else {
+        const decoded = decodeUtf8(raw);
+        content = decoded.bom ? `\uFEFF${decoded.text}` : decoded.text; // 与直接 utf-8 读取一致：BOM 留在首行
+        if (decoded.invalidSequences > 0) encodingNotice = invalidUtf8ReadNotice(decoded.invalidSequences);
       }
-      const content = decoded.text;
-      // digest 必须按原始字节算：Edit/Write 的外改检测（checkExternalModification）对磁盘字节取摘要，
-      // GBK 文件按解码后文本算会与之永不相等。
       const digest = computeContentDigest(raw);
       const lines = content.split('\n');
 
@@ -262,13 +268,6 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
       if (fileFact) {
         dataFingerprintStore.recordFact(fileFact);
       }
-
-      const encodingNotice =
-        decoded.encoding !== 'utf-8'
-          ? NON_UTF8_READ_NOTICE
-          : decoded.invalidSequences > 0
-            ? invalidUtf8ReadNotice(decoded.invalidSequences)
-            : '';
 
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('Read done', {

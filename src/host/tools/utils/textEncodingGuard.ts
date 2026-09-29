@@ -1,44 +1,22 @@
 // ============================================================================
-// textEncodingGuard - 写入前的编码保真守卫（N-READ-ENCODING，方案 B）
+// textEncodingGuard - 写入前的编码保真守卫（N-READ-ENCODING）
 // ============================================================================
 //
-// Read 能认 GBK/GB18030，但 Edit/Write/Append 只会写 UTF-8（Node 的 TextEncoder 不支持 GB18030，
-// 且不许新增依赖）。对已存在的非 UTF-8 文件直接写会把整个文件悄悄转成 UTF-8，所以一律拒写，
-// 让模型把决定权交还给用户。新建文件不受影响（调用方只对已存在文件调用）。
+// Edit/Write/Append 只会写 UTF-8。对已存在、且不是合法 UTF-8 的文件直接写，会悄悄改掉它的字节
+// （Edit/Write 把坏字节变 U+FFFD 或整体转码，Append 把 UTF-8 拼进别的编码）。
+// 判据只有一条、完全可判定：严格 UTF-8 能否解码。不猜它原本是 GBK 还是坏掉的 UTF-8，一律拒写，
+// 把决定权交还给用户。新建文件不受影响（调用方只对已存在文件调用）。
 
-import { decodeText, TextDecodeError } from '../../utils/decodeText';
+import { decodeUtf8 } from '../../utils/decodeText';
 
 /** Append 只为查编码而整读的体积上限；超过则跳过检查（日志类大文件追加不该被拖慢） */
 export const APPEND_ENCODING_CHECK_MAX_BYTES = 32 * 1024 * 1024;
 
 const NON_UTF8_REFUSAL =
-  'This file is GBK/GB18030-encoded. Edit/Write/Append can only write UTF-8, so modifying it directly ' +
-  'would silently change its encoding. The file was NOT modified. If a change is truly needed, ask the user ' +
-  'first whether to convert the file to UTF-8.';
+  'This file is not valid UTF-8, so writing to it directly would change its bytes. ' +
+  'The file was NOT modified. If a change is truly needed, get the user\'s consent first and convert the file to UTF-8.';
 
-const INVALID_UTF8_EDIT_REFUSAL =
-  'This file is UTF-8 but contains invalid byte sequences. Edit rewrites the whole file, which would replace those ' +
-  'bytes with U+FFFD (EF BF BD) and change the file. The file was NOT modified. Append keeps existing bytes; ' +
-  'or ask the user before repairing the file.';
-
-/**
- * 返回拒写文案；可以写则返回 null。
- * - GB18030：一律拒写。
- * - 无法识别编码 / UTF-8 里夹坏字节：`rejectUndecodable` 为 true（Edit，整文件回写会把坏字节写成 U+FFFD）时拒写，
- *   否则放行（Write 整体覆盖 / Append 只追加、不动已有字节）。
- */
-export function existingFileWriteRefusal(
-  existing: Buffer,
-  opts: { rejectUndecodable?: boolean } = {},
-): string | null {
-  try {
-    const decoded = decodeText(existing);
-    if (decoded.encoding === 'gb18030') return NON_UTF8_REFUSAL;
-    return opts.rejectUndecodable && decoded.invalidSequences > 0 ? INVALID_UTF8_EDIT_REFUSAL : null;
-  } catch (err) {
-    if (!(err instanceof TextDecodeError)) throw err;
-    return opts.rejectUndecodable
-      ? 'This file is not valid UTF-8 or GBK/GB18030 text, so Edit cannot safely modify it. The file was NOT modified.'
-      : null;
-  }
+/** 返回拒写文案；可以写（已存在文件是合法 UTF-8，含 BOM）则返回 null。 */
+export function existingFileWriteRefusal(existing: Buffer): string | null {
+  return decodeUtf8(existing).invalidSequences > 0 ? NON_UTF8_REFUSAL : null;
 }

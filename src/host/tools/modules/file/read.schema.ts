@@ -27,6 +27,11 @@ export const readSchema: ToolSchema = {
         type: 'number',
         description: 'Line count. Default 2000. One value: small limit.',
       },
+      encoding: {
+        type: 'string',
+        enum: ['utf-8', 'gbk'],
+        description: 'gbk if GBK.',
+      },
     },
     required: ['file_path'],
   },

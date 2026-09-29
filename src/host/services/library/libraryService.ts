@@ -23,6 +23,7 @@ import { isPathWithinRoot } from '../../runtime/workspaceScope';
 import {
   buildEvidenceFragment,
   extractLibraryText,
+  annotateSummaryWithEncodingNote,
   hasLibraryTextExtractor,
   isTextLikeExtension,
   readLearnedSidecar,
@@ -178,6 +179,10 @@ export class LibraryService {
         }
         const extracted = await extractLibraryText(item.pathOrUri);
         writeLearnedSidecar(this.libraryDir(item.projectId), item.id, extracted.text);
+        const annotated = annotateSummaryWithEncodingNote(item.summary, extracted.note);
+        if (annotated !== item.summary) {
+          this.repo.updateItem(id, { summary: annotated ?? null }, item.updatedAt); // 保留 updatedAt：标注不该重排用户列表
+        }
         this.repo.updateLearnStatus(id, 'ready', { error: null, now });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

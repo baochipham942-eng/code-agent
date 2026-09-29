@@ -250,7 +250,7 @@ export class DurableRunKernel implements RunKernelAdapter {
     if (latest.owner?.ownerId !== input.expectedOwnerId) return false;
     if (latest.owner.processInstanceId === input.processInstanceId) return false;
     if (!canClaimOrphanedCliLease(latest.owner.processInstanceId, latest.owner.leaseExpiresAt, now)) {
-      return false;
+      return this.cancelUnresumableParkedSessionRoot(latest, input.sessionId, now);
     }
     const expired = (latest.owner.leaseExpiresAt ?? 0) <= now;
     const abandoned = isAbandonedCliProcess(latest.owner.processInstanceId);
@@ -284,6 +284,32 @@ export class DurableRunKernel implements RunKernelAdapter {
       },
     });
     return true;
+  }
+
+  /**
+   * ③（N-CLI-DURABLE-TERMINAL-LOST）：租约未过期、owner 视为存活（CLI peer 活进程，或
+   * pid 形状解析失败的非 CLI owner——后者 isAbandonedCliProcess 不敢断死，同样落到这
+   * 条路径），跨进程判据拒收——但 run 是 waiting 且接管方已判 native_workspace_unavailable
+   * （工作区不存在，任何续跑/人工继续路径都会再次判同一个结论），这条租约续的是个没人
+   * 能用的死胡同。允许收尸放行 `-s` 续跑：不认领租约，判据 fence（status=waiting +
+   * 末事件复核结论原样）在仓储层同笔事务里校验，不成立即退回原冲突语义。真冲突保护
+   * 不受影响：running/recovering（有活 handle 或恢复驱动在跑）与其他复核原因（可人工
+   * 处置）仍拒收。
+   */
+  private async cancelUnresumableParkedSessionRoot(
+    latest: RunEnvelope,
+    sessionId: string,
+    now: number,
+  ): Promise<boolean> {
+    const stores = this.stores;
+    if (!stores?.cancelUnresumableParkedRun) return false;
+    return stores.cancelUnresumableParkedRun({
+      runId: latest.runId,
+      sessionId,
+      now,
+      reason: 'cli_resume_reaped_workspace_unavailable',
+      requireLastEvent: { type: 'native_recovery_requires_review', reviewReason: 'native_workspace_unavailable' },
+    });
   }
 
   private async checkpointNow(input: DurableCheckpointInput): Promise<RunCheckpoint> {
@@ -378,7 +404,9 @@ export class DurableRunKernel implements RunKernelAdapter {
         expectedOwnerEpoch: claimed.owner.epoch,
         status: 'waiting',
         pendingOperations,
-        interruptCause: getRunInterruptCause(claimed.envelope) ?? 'crash_or_quit',
+        // 崩溃预算耗尽的停靠在数据上显式标成 budget_exhausted（ADR-075 修订二）：再次重启按标记认领，
+        // 不靠 crash_or_quit + 计数推断（那会与「预算耗尽后又等审批」的 waiting 混淆）。
+        interruptCause: parkedInterruptCause(getRunInterruptCause(claimed.envelope)),
         autoResumeCount: claimed.envelope.autoResumeCount ?? MAX_AUTO_RESUME_COUNT,
         updatedAt: now,
       });
@@ -489,6 +517,11 @@ export class DurableRunKernel implements RunKernelAdapter {
     if (!this.stores) throw new DurableRunPersistenceUnavailableError();
     return this.stores;
   }
+}
+
+/** listParkedForReclaim 只会带出 crash_or_quit 的预算耗尽行（running/recovering），停靠时改记 budget_exhausted；显式停靠原因原样保留。 */
+function parkedInterruptCause(cause: RunInterruptCause | undefined): RunInterruptCause {
+  return cause === undefined || cause === 'crash_or_quit' ? 'budget_exhausted' : cause;
 }
 
 function classifyOperationForRecovery(

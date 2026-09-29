@@ -253,4 +253,36 @@ describe('initializeCLIServices durable wiring', () => {
     await expect(initializeCLIServices()).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledWith('Database not available (CLI mode):', 'sqlite unavailable');
   });
+
+  // N-CLI-DURABLE-TERMINAL-LOST ②：终态写失败但 run 已被他进程终态化时，
+  // 「CLI 退出后 run 必为终态」的不变量已成立，terminalCLIDurableRun 不再当错误上抛。
+  it('terminalCLIDurableRun treats an already-terminal run as success (idempotent), rethrows otherwise', async () => {
+    vi.resetModules();
+    const getLatestBySession = vi.fn();
+    mocks.initializeDurableRun.mockResolvedValueOnce({
+      kernel: { getLatestBySession },
+      policy: { mode: 'durable_preferred' },
+      recoveryRuntime: null,
+      readService: {},
+      recoveryResults: [],
+      shutdown: vi.fn(),
+    });
+    const { initializeCLIServices, terminalCLIDurableRun } = await import('../../../src/cli/bootstrap');
+    await initializeCLIServices();
+
+    const handle = {
+      context: { runId: 'run-1', sessionId: 'sess-1', workspace: '/tmp/p', cwd: '/tmp/p' },
+    };
+    const fenced = new Error('Durable run write fenced by stale owner: run-1');
+
+    // run 已被他进程终态化（接管后取消）→ 幂等成功
+    mocks.registry.terminalDurable.mockRejectedValueOnce(fenced);
+    getLatestBySession.mockResolvedValueOnce({ runId: 'run-1', status: 'cancelled' });
+    await expect(terminalCLIDurableRun(handle as never, true)).resolves.toBeUndefined();
+
+    // run 仍非终态 → 原样上抛，交给 CLI 退出前的可见报错
+    mocks.registry.terminalDurable.mockRejectedValueOnce(fenced);
+    getLatestBySession.mockResolvedValueOnce({ runId: 'run-1', status: 'running' });
+    await expect(terminalCLIDurableRun(handle as never, true)).rejects.toThrow(/fenced by stale owner/);
+  });
 });

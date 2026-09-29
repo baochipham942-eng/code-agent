@@ -16,7 +16,9 @@ describe('findSupersededSessionRoots', () => {
     ['waiting + crash_or_quit + 预算未耗尽（等审批）', run({ interruptCause: 'crash_or_quit', autoResumeCount: MAX_AUTO_RESUME_COUNT - 1 }), false],
     ['waiting + crash_or_quit + 未记次数（等审批）', run({ interruptCause: 'crash_or_quit' }), false],
     ['waiting + 无中断原因（普通审批等待）', run({}), false],
-    ['waiting + crash_or_quit + 预算耗尽', run({ interruptCause: 'crash_or_quit', autoResumeCount: MAX_AUTO_RESUME_COUNT }), true],
+    // ADR-075 修订二：预算耗尽的停靠显式记 budget_exhausted；crash_or_quit 计数耗尽的 waiting 是「预算耗尽后又等审批」。
+    ['waiting + budget_exhausted（预算耗尽停靠）', run({ interruptCause: 'budget_exhausted', autoResumeCount: MAX_AUTO_RESUME_COUNT }), true],
+    ['waiting + crash_or_quit + 计数耗尽（预算耗尽后又等审批）', run({ interruptCause: 'crash_or_quit', autoResumeCount: MAX_AUTO_RESUME_COUNT }), false],
     ['waiting + user_stop', run({ interruptCause: 'user_stop' }), true],
     ['waiting + guard_halt', run({ interruptCause: 'guard_halt' }), true],
     ['running', run({ status: 'running', interruptCause: 'user_stop' }), false],

@@ -3,6 +3,15 @@ import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 const CANCELLED_TOOL_CALL_PLACEHOLDER =
   '[no result: this tool call was cancelled before a result was recorded; do not assume it ran or succeeded]';
 
+/**
+ * 崩溃清算占位（逐字保持历史串，renderer/e2e 按文本识别，不得改写）。
+ * 不分层：begin 写入链路全层 fail-safe 吞错（toolExecutionLedger.begin 的 catch →
+ * databaseService.appendToolExecutionBegin 未就绪/只读静默、BUSY/磁盘满仅 warn），
+ * 「账本无 begin 行」推不出「从未执行」，只能一律按结果未知处理（N-CRASH-OUTCOME-TIERS 返修 r1）。
+ */
+export const INTERRUPTED_TOOL_CALL_PLACEHOLDER =
+  'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded';
+
 interface ToolCallClosureInput<TPersistResult extends void | Promise<void>> {
   messages: readonly Message[];
   assistantMessage: Message;

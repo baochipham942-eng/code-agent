@@ -6,6 +6,7 @@ import React from 'react';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { Play, CheckCircle, XCircle, Loader2, X } from 'lucide-react';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
+import { Z_LAYERS } from '../../../styles/zLayers';
 
 function formatDuration(startedAt: number): string {
   const seconds = Math.floor((Date.now() - startedAt) / 1000);
@@ -67,7 +68,8 @@ export const BackgroundSessionPanel: React.FC = () => {
     return (
       <button
         onClick={() => setIsMinimized(false)}
-        className="fixed bottom-4 right-4 flex items-center gap-2 px-3 py-2 bg-zinc-700 hover:bg-zinc-600/90 backdrop-blur-sm border border-zinc-700 rounded-full shadow-lg transition-colors z-50"
+        className="fixed bottom-4 right-4 flex items-center gap-2 px-3 py-2 bg-zinc-700 hover:bg-zinc-600/90 backdrop-blur-sm border border-zinc-700 rounded-full shadow-lg transition-colors"
+        style={{ zIndex: Z_LAYERS.floatingPanel }}
       >
         <Loader2 className="w-4 h-4 animate-spin text-badge-info" />
         <span className="text-sm text-zinc-200">
@@ -78,7 +80,7 @@ export const BackgroundSessionPanel: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 w-80 bg-zinc-900 backdrop-blur-sm border border-zinc-700 rounded-xl shadow-md dark:shadow-2xl z-50">
+    <div className="fixed bottom-4 right-4 w-80 bg-zinc-900 backdrop-blur-sm border border-zinc-700 rounded-xl shadow-md dark:shadow-2xl" style={{ zIndex: Z_LAYERS.floatingPanel }}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
         <h3 className="text-sm font-medium text-zinc-200">后台任务</h3>
         <button

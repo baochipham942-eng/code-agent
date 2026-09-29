@@ -22,6 +22,8 @@
 // ============================================================================
 
 export const Z_LAYERS = {
+  /** 常驻浮动面板（BackgroundSessionPanel）。必须低于 modal，模态打开时被遮罩压暗。 */
+  floatingPanel: 40,
   /** primitives/Modal.tsx 默认层级，未显式覆盖 zIndex 的常规居中弹窗都落这档。 */
   modal: 50,
   /** DevServerLauncher 启动 Dev Server 弹窗。W3 收口批次迁 Modal primitive 时

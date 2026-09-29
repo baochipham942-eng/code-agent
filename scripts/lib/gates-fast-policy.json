@@ -113,11 +113,16 @@
         ".husky/**",
         "scripts/check-*.sh",
         "scripts/perf-journey-ratchet.mjs",
-        "scripts/perf-journey-ratchet-baseline.json"
+        "scripts/perf-journey-ratchet-baseline.json",
+        "scripts/lib/tmp-sandbox.mjs",
+        "scripts/lib/tmp-sandbox.d.mts",
+        "scripts/gc-stale-tmp.mjs"
       ],
       "files": [
         "tests/scripts/gatesFast.test.ts",
-        "tests/scripts/perfJourneyRatchet.test.ts"
+        "tests/scripts/perfJourneyRatchet.test.ts",
+        "tests/scripts/tmpSandbox.test.ts",
+        "tests/scripts/gcStaleTmp.test.ts"
       ]
     },
     {

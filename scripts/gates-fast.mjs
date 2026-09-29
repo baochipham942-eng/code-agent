@@ -4,13 +4,13 @@ import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { setTimeout, clearTimeout } from 'node:timers';
 import path from 'node:path';
-import os from 'node:os';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { tsImport } from 'tsx/esm/api';
 import { digest, selectTests, validateFiles, validateReport, renderReceipt, extractGateIds, validateGateBudgetCoverage, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
+import { createOwnedTmp } from './lib/tmp-sandbox.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
@@ -28,7 +28,8 @@ const receipt = {
   gates: [], commands: [], selectedFiles: [], report: null,
 };
 let output = path.join(root, '.reports/gates-fast', `${receipt.receiptId}.json`);
-const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'gates-fast-'));
+// N-GATES-TMP-SELFCLEAN：登记进 tmp-sandbox，SIGTERM/退出钩子兜底清理，不再只靠脚本末尾的 finally。
+const temp = createOwnedTmp('gates-fast-');
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', timeout: 5000 }).trim();
 let privateRoot;
 let initial;
@@ -94,8 +95,12 @@ async function command(argv, env = {}) {
     const kill = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; } };
     const timer = setTimeout(() => { timedOut = true; kill(); }, deadline.remainingMs);
     const interrupted = () => { signalled = true; kill(); };
-    process.once('SIGINT', interrupted);
-    process.once('SIGTERM', interrupted);
+    // N-GATES-TMP-SELFCLEAN r2：prepend 让本命令的击杀先于 tmp-sandbox 的信号钩子（它在模块
+    // 加载时 createOwnedTmp 就注册了，普通 once 只会排在它后面，变成「先删 temp 后杀子进程」）。
+    // 必须用非 once 版本：once 包装器触发即自摘，tmp-sandbox 的 handler 会看到 listenerCount<=1
+    // 而抢先 process.exit(130)，挤掉 catch/finally 里的 receipt 落盘。无信号的正常路径不受影响。
+    process.prependListener('SIGINT', interrupted);
+    process.prependListener('SIGTERM', interrupted);
     const cleanup = () => { clearTimeout(timer); process.removeListener('SIGINT', interrupted); process.removeListener('SIGTERM', interrupted); record.durationMs = Math.round(performance.now() - began); };
     child.once('error', (error) => { cleanup(); reject(error); });
     child.once('close', (code, signal) => {

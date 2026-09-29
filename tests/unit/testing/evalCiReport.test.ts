@@ -259,4 +259,18 @@ describe('eval-ci report baseline flow', () => {
     expect(markdown).toContain('case-a');
     expect(markdown).toContain(answerRoot);
   });
+
+  // N-GATES-TMP-SELFCLEAN wiring 契约：eval-ci 的临时数据目录必须走 tmp-sandbox（退出/信号自清），
+  // 行为级验证在 tests/scripts/evalTmpSandbox.test.ts（真实 CLI 入口 + SIGTERM）。
+  it('临时数据目录（数据根/case 级/compare 臂）全部走 tmp-sandbox，不再有裸 mkdtempSync', async () => {
+    const source = await readFile(evalCiScript, 'utf8');
+    expect(source).toContain("createOwnedTmp('code-agent-eval-data-')");
+    expect(source).toContain("createOwnedTmp('case-', { parentDir: baseDataDir })");
+    expect(source).toContain("createOwnedTmp('eval-arm-', { parentDir: dataParent })");
+    expect(source).toContain('releaseOwnedTmp(caseDataDir)');
+    expect(source).toContain('releaseOwnedTmp(generatedDataDir)');
+    expect(source).toContain('releaseOwnedTmp(armDataDir)');
+    expect(source).not.toContain("fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-eval-data-'))");
+    expect(source).toContain('--keep-tmp');
+  });
 });

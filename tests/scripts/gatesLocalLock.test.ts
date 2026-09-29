@@ -195,3 +195,20 @@ describe('gates:local 单机互斥锁', () => {
     expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).pid).toBe(process.pid + 1);
   });
 });
+
+describe('gates:local 临时沙箱接线（N-GATES-TMP-SELFCLEAN）', () => {
+  // 行为级验证（SIGTERM 自清 + 与 releaseLock 钩子共存）在 tests/scripts/tmpSandbox.test.ts。
+  const source = fs.readFileSync(path.resolve(__dirname, '../../scripts/gates-local.mjs'), 'utf8');
+
+  it('renderer-base 临时根走 tmp-sandbox，npm cache 仍用持久目录不进登记表', () => {
+    expect(source).toContain("createOwnedTmp('code-agent-gates-renderer-base-')");
+    expect(source).not.toContain("mkdtempSync(path.join(os.tmpdir(), 'code-agent-gates-renderer-base-')");
+    // npm cache 是跨轮复用的缓存（gc 的排除名单），不许被顺手登记成一次性沙箱。
+    expect(source).not.toContain("createOwnedTmp('code-agent-npm-cache'");
+  });
+
+  it('拿到锁之后以 --execute 起手回收一次陈年临时目录，失败不阻断门', () => {
+    expect(source).toContain("'scripts/gc-stale-tmp.mjs', '--execute'");
+    expect(source).toContain('不阻断门');
+  });
+});

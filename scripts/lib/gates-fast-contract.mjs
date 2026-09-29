@@ -96,6 +96,21 @@ export function validateReport(expected, report, root) {
   return { files: expected.length, tests: report.numTotalTests, passed: report.numPassedTests, hash: digest(JSON.stringify(report)) };
 }
 
+/**
+ * Run-start vs run-end snapshot comparison. baseSha in both snapshots is the
+ * SHA resolved once at start-up and then frozen — the base ref is never
+ * re-resolved — so a concurrent `git fetch` fast-forwarding the shared
+ * origin/main ref cannot invalidate an in-flight receipt. Every other field
+ * (HEAD/tree/policy/lock/private/installed/regressions) still fails the run
+ * on any real change. Returns the sorted differing field names; [] = unchanged.
+ */
+export function changedInputs(initial, current) {
+  if (!initial || typeof initial !== 'object' || !current || typeof current !== 'object') return ['snapshot'];
+  return [...new Set([...Object.keys(initial), ...Object.keys(current)])]
+    .filter((field) => initial[field] !== current[field])
+    .sort();
+}
+
 export function renderReceipt(receipt) {
   const local = receipt.status === 'passed'
     ? `✓ gates:fast passed required local preflight. schema=${receipt.schemaVersion} head=${receipt.headSha} base=${receipt.baseSha} receipt=${receipt.receiptId}`

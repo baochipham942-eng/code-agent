@@ -29,6 +29,7 @@ import { createFileCheckpointIfNeeded } from '../../../src/host/tools/middleware
 import { bashSchema } from '../../../src/host/tools/modules/shell/bash.schema';
 import { docxGenerateSchema } from '../../../src/host/tools/modules/network/docxGenerate.schema';
 import { writeSchema } from '../../../src/host/tools/modules/file/write.schema';
+import { appendSchema } from '../../../src/host/tools/modules/file/append.schema';
 import { multiEditSchema } from '../../../src/host/tools/modules/file/multiEdit.schema';
 import type { ToolDefinition } from '../../../src/shared/contract';
 import type { ToolSchema } from '../../../src/host/protocol/tools';
@@ -57,7 +58,61 @@ function toDefinition(schema: ToolSchema): ToolDefinition {
 const bashDefinition = toDefinition(bashSchema);
 const docxDefinition = toDefinition(docxGenerateSchema);
 const writeDefinition = toDefinition(writeSchema);
+const appendDefinition = toDefinition(appendSchema);
 const editDefinition = toDefinition(multiEditSchema);
+
+// 返修 r5 下限档 fixture：main 白名单旧名（write_file / append_file / edit_file）
+// 不带任何 pathAuthority 声明——快照只能来自白名单下限，钉住「main 会建的调用
+// 一个不少」。append_file 走 aliases 分支（registry 不再注册旧名，别名若回归
+// surface 也必须落回下限），edit_file 用 params.path 钉 main 的取数 fallback。
+function whitelistAliasDefinition(name: string, aliases?: string[]): ToolDefinition {
+  return {
+    name,
+    ...(aliases ? { aliases } : {}),
+    description: `Fixture: main whitelist floor entry ${name}`,
+    inputSchema: { type: 'object' },
+    outputSchema: { type: 'string' },
+    requiresPermission: true,
+    permissionLevel: 'write',
+  };
+}
+
+const whitelistFloorCases: Array<{
+  label: string;
+  definition: ToolDefinition;
+  fileParams: (file: string) => Record<string, unknown>;
+}> = [
+  {
+    label: 'Write (real schema)',
+    definition: writeDefinition,
+    fileParams: (file) => ({ file_path: file, content: 'after\n' }),
+  },
+  {
+    label: 'Append (real schema, no declared path authority)',
+    definition: appendDefinition,
+    fileParams: (file) => ({ file_path: file, content: 'after\n' }),
+  },
+  {
+    label: 'Edit (real schema)',
+    definition: editDefinition,
+    fileParams: (file) => ({ file_path: file, old_string: 'before', new_string: 'after' }),
+  },
+  {
+    label: 'write_file (floor-only fixture)',
+    definition: whitelistAliasDefinition('write_file'),
+    fileParams: (file) => ({ file_path: file, content: 'after\n' }),
+  },
+  {
+    label: 'append_file (floor-only via aliases)',
+    definition: whitelistAliasDefinition('Append', ['append_file']),
+    fileParams: (file) => ({ file_path: file, content: 'after\n' }),
+  },
+  {
+    label: 'edit_file (floor-only, params.path fallback)',
+    definition: whitelistAliasDefinition('edit_file'),
+    fileParams: (file) => ({ path: file, old_string: 'before', new_string: 'after' }),
+  },
+];
 
 // 无 annotations 的 MCP 工具走 mapMcpAnnotationsToPermission 的兜底档（permissionLevel
 // 'network'，非 read）。返修 r4 起 MCP / 未知工具不推断写目标（回 origin/main 行为）：
@@ -258,6 +313,47 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
       .toEqual(['edit-note.md', 'write-note.md']);
     expect(await fs.readFile(writeTarget, 'utf-8')).toBe('before-write\n');
     expect(await fs.readFile(editTarget, 'utf-8')).toBe('before-edit\n');
+  });
+
+  // 返修 r5：main 白名单（write_file/append_file/edit_file/Write/Append/Edit）是
+  // 检查点覆盖的下限——每个名字一条，调用后回退必须恢复原状，与 main 一致。
+  // Append 的 schema 从未声明 pathAuthority（r4 改判据时唯一漏网的六名工具），
+  // 这组用例里它只靠下限建快照。
+  it.each(whitelistFloorCases)(
+    'main whitelist floor keeps $label snapshotted and rewindable',
+    async ({ definition, fileParams }) => {
+      const file = path.join(tempDir, `floor-${definition.name}-${Math.random().toString(36).slice(2, 8)}.md`);
+      await fs.writeFile(file, 'before\n', 'utf-8');
+
+      const checkpoints = await snapshotAndFinalize(
+        definition,
+        fileParams(file),
+        () => fs.writeFile(file, 'after\n', 'utf-8'),
+      );
+      expect(checkpoints).toHaveLength(1);
+      expect(checkpoints[0].filePath).toBe(await fs.realpath(file));
+      expect(await fs.readFile(file, 'utf-8')).toBe('after\n');
+
+      const rewind = await service.rewindFiles(sessionId, messageId);
+      expect(rewind.restoredFiles).toEqual([checkpoints[0].filePath]);
+      expect(rewind.skippedFiles).toEqual([]);
+      expect(await fs.readFile(file, 'utf-8')).toBe('before\n');
+    },
+  );
+
+  it('deletes an Append-created new file on rewind (floor keeps main new-file semantics)', async () => {
+    const file = path.join(tempDir, 'append-new.md');
+
+    const checkpoints = await snapshotAndFinalize(
+      appendDefinition,
+      { file_path: file, content: 'first chunk\n' },
+      () => fs.writeFile(file, 'first chunk\n', 'utf-8'),
+    );
+    expect(checkpoints).toHaveLength(1);
+
+    const rewind = await service.rewindFiles(sessionId, messageId);
+    expect(rewind.deletedFiles).toEqual([checkpoints[0].filePath]);
+    await expect(fs.access(file)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('snapshots a document-generation tool through its declared output_path and restores it on rewind', async () => {

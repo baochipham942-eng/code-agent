@@ -478,6 +478,15 @@ async function initializeServices(): Promise<void> {
   }
   process.env.CODE_AGENT_DATA_DIR = dataDir;
 
+  // 敏感文件权限扫层（FB-238）：数据目录刚就绪、任何消费者写盘之前，把存量
+  // .env*/备份/库文件从 umask 默认档（0644）收紧到 0600/0700。幂等且永不抛。
+  try {
+    const { ensureDataDirPermissions } = await import('../host/config/dataDirPermissions');
+    await ensureDataDirPermissions(dataDir);
+  } catch (e) {
+    logger.warn('Data dir permission sweep failed:', (e as Error).message);
+  }
+
   // Dev 槽首启动（数据目录里还没有 config.json）时，从生产数据目录一次性导入模型配置 +
   // 模型凭据，省掉「换槽 = 新机器、所有 key 重配」。必须排在 initConfigService /
   // getSecureStorage 之前——它俩一构造就会各自读盘并写回。

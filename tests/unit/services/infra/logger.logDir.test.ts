@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -56,6 +56,21 @@ describe('logger file sink log directory', () => {
     const content = await waitForLogFile(logFile);
     expect(content).toContain('LoggerLogDirTest');
     expect(content).toContain('log-dir-override-smoke');
+  });
+
+  it('creates the log directory 0700 and log files 0600 (FB-238)', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const logDir = process.env.CODE_AGENT_LOG_DIR!;
+    const { createLogger, getCurrentLogFilePath } = await import('../../../../src/host/services/infra/logger');
+    const logger = createLogger('LoggerFileModeTest');
+
+    logger.info('mode-smoke');
+    await logger.dispose();
+
+    const logFile = getCurrentLogFilePath();
+    await waitForLogFile(logFile, 'mode-smoke');
+    expect(statSync(logFile).mode & 0o777).toBe(0o600);
+    expect(statSync(logDir).mode & 0o777).toBe(0o700);
   });
 
   it('writes lane and active correlation without inventing startup identifiers', async () => {

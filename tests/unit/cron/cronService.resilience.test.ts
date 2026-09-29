@@ -226,6 +226,22 @@ describe('①③ 同因失败去重后告警：单次告警 + 冷却窗', () => 
     await service.shutdown();
   });
 
+  it('R2 Nit-1：停用那一趟只发停用通知（已含错误与出路），不叠同因失败告警', async () => {
+    const service = new CronService();
+    const job = await service.createJob(agentJob());
+    patchExecuteAction(service, async () => {
+      throw Object.assign(new Error('unsupported_action'), { cronSessionId: 'cron-agent-session-x' });
+    });
+
+    await service.triggerJob(job.id); // permanent：首次失败即停用
+
+    expect(service.getJob(job.id)!.enabled).toBe(false);
+    // 同一次失败只有一条通知：停用通知（HEAD 红：停用通知 + 失败告警 = 2 条）
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    expect(String(notifyState.notifyTaskComplete.mock.calls[0][0]?.summary)).toContain('重试无效');
+    await service.shutdown();
+  });
+
   it('停用前成功一次会重置连败计数（不误停）', async () => {
     const service = new CronService();
     const job = await service.createJob(agentJob());

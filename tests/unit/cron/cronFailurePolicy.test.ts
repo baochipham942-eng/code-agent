@@ -135,4 +135,12 @@ describe('countTrailingCronFailures：末尾连续失败', () => {
     expect(countTrailingCronFailures([exec('failed'), exec('completed'), exec('failed')])).toBe(1);
     expect(countTrailingCronFailures([exec('cancelled'), exec('failed'), exec('failed')])).toBe(2);
   });
+
+  it('R2 Nit-2：cancelled（等容量被中断）跳过不断链，失败与排队交替仍累计连败', () => {
+    // 否则「失败一次→排队被中断→失败一次…」的任务连败永远到不了停用线
+    expect(countTrailingCronFailures([exec('failed'), exec('cancelled'), exec('failed')])).toBe(2);
+    expect(countTrailingCronFailures(
+      [exec('cancelled'), exec('failed'), exec('cancelled'), exec('failed')],
+    )).toBe(2);
+  });
 });

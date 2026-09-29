@@ -735,6 +735,7 @@ export class CronService implements Disposable {
       // 失败停用分档（N-CRON-RESILIENCE）：permanent 首次即停用（重试无用）；
       // transient 连败达到阈值（退避重试已烧尽）后最终停用。两条路都发带出处的通知。
       // ponytail: 用内存内 trailing 历史计数，重启后归零；要跨重启严格计数再改查 DB。
+      let disableNotified = false;
       if (execution.status === 'failed' && definition.scheduleType !== 'at') {
         const finalKind = classifyCronFailure(execution.error);
         if (finalKind === 'permanent') {
@@ -743,6 +744,7 @@ export class CronService implements Disposable {
           );
           await this.updateJob(definition.id, { enabled: false });
           notifyCronJobDisabled(definition, execution, 'permanent');
+          disableNotified = true;
         } else if (countTrailingCronFailures(this.executions.get(definition.id) ?? []) >= CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES) {
           console.error(
             `[CronService] Job ${definition.id} auto-disabled after `
@@ -750,11 +752,16 @@ export class CronService implements Disposable {
           );
           await this.updateJob(definition.id, { enabled: false });
           notifyCronJobDisabled(definition, execution, 'consecutive');
+          disableNotified = true;
         }
       }
 
-      // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session
-      notifyCronAgentExecution(definition, execution, this.failureNoticeGate);
+      // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session。
+      // 停用的那一趟只发停用通知（已含最后错误与出路）——同一笔失败再叠一条
+      // 失败告警就是一次失败两条通知（R2 审查 Nit-1）。
+      if (!disableNotified) {
+        notifyCronAgentExecution(definition, execution, this.failureNoticeGate);
+      }
     }
 
     // self-wake：唤醒等这个任务的会话——wake_on 按任务 id 等，wake_on_event 按任务名字等

@@ -89,10 +89,6 @@ export function cronRetryBackoffMs(consecutiveFailureCount: number): number {
 // 失败通知去重 + 冷却
 // ----------------------------------------------------------------------------
 
-function normalizeCronFailureMessage(message: string): string {
-  return normalizeErrorMessage(message);
-}
-
 /**
  * 同因失败告警的门闸：key = jobId + 归一化错误消息，冷却窗内只放行第一次。
  * 进程内状态，重启归零（重启本身就是一次天然冷却）。
@@ -101,7 +97,7 @@ export class CronFailureNoticeGate {
   private readonly lastNotifiedAt = new Map<string, number>();
 
   shouldNotify(jobId: string, rawMessage: string, now: number = Date.now()): boolean {
-    const key = `${jobId}:${normalizeCronFailureMessage(rawMessage)}`;
+    const key = `${jobId}:${normalizeErrorMessage(rawMessage)}`;
     const last = this.lastNotifiedAt.get(key);
     if (last != null && now - last < CRON_GUARDRAILS.FAILURE_NOTICE_COOLDOWN_MS) return false;
     this.lastNotifiedAt.set(key, now);
@@ -184,11 +180,17 @@ export function notifyCronAgentExecution(
   }
 }
 
-/** 末尾连续失败次数（历史最新在最后；成功一条即断链——成功就重置计数）。 */
+/**
+ * 末尾连续失败次数（历史最新在最后；成功一条即断链——成功就重置计数）。
+ * cancelled（排队等容量被中断）跳过不断链：它既不是任务的失败也不是成功，
+ * 失败与排队交替的任务连败计数不该被排队清零，否则永远到不了自动停用线（R2 审查 Nit-2）。
+ */
 export function countTrailingCronFailures(history: readonly CronJobExecution[]): number {
   let count = 0;
   for (let i = history.length - 1; i >= 0; i--) {
-    if (history[i].status !== 'failed') break;
+    const status = history[i].status;
+    if (status === 'cancelled') continue;
+    if (status !== 'failed') break;
     count++;
   }
   return count;

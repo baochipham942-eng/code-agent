@@ -268,9 +268,10 @@ describe('⑤ 容量/并发等待不计失败不计重试（Cline 实付回归�
 
 describe('② permanent 错误：重试无用，首次即停用并告知', () => {
   it.each([
-    ['鉴权错', new Error('401 Unauthorized: invalid api key')],
-    ['任务不存在', new Error('Cron job gone: not found')],
+    ['自有错误码 unsupported_action', new Error('unsupported_action')],
+    ['配置校验错', new Error('Unsupported interval unit "weeks"; cron cannot express it.')],
     ['预算硬顶', new Error('Cron job run exceeded its $1.50 budget limit.')],
+    ['无人值守停车码', new Error('UNATTENDED_APPROVAL_TIMEOUT')],
   ])('%s → 直接 failed + enabled=0 + 带出路通知，不重试', async (_label, error) => {
     const service = new CronService();
     const job = await service.createJob(recurringShellJob({ maxRetries: 3 }));

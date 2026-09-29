@@ -28,25 +28,35 @@ const CAPACITY_WAIT_PATTERNS: RegExp[] = [
 ];
 
 /**
- * permanent 判据（重试无用的确定性失败——重试只会烧钱/刷屏，直接 failed + 停用 + 告知）：
- * - 动作/调度配置错：unsupported_action、未知动作类型、不支持的 interval 单位、at 时间非法
- * - 鉴权错：401/403/invalid api key 等（换了 key 之前重试必败）
- * - 任务/资源不存在：job not found、任务不存在
- * - 无人值守停车码：审批等不到人（UNATTENDED_APPROVAL_TIMEOUT）、doom loop handback
- * - 预算硬顶：单趟 $ 上限 / scoped cost limit 超限（再试一次就是再烧一次钱）
- * 注意 'not found' 带空格匹配，不会误吃 DNS 的 ENOTFOUND（无空格、transient）。
+ * permanent 判据（重试无用的确定性失败——重试只会烧钱/刷屏，直接 failed + 停用 + 告知）。
+ * 只认**我们自己发出的结构化信号**：自有错误码 / 配置校验文案 / 预算护栏 / 无人值守停车码。
+ *
+ * 不按 HTTP 状态码、"not found" 这类文本片段判 permanent（R2 审查 Important-1）：
+ * cron 的失败 message 里会包含用户 shell 命令原文与外部 stderr（execAsync 把命令和
+ * 输出整个拼进 message），401/403、"command not found"、grep 无匹配（退出码 1）都会
+ * 出现在任意外部文本里——按文本猜 permanent 会把临时限流/环境未就绪误判成「重试无用」
+ * 直接停用任务。鉴权错/资源不存在改走 transient 退避 + 连败停用（基线行为：连败 5 次才停），
+ * 宁可多退避几次，不可误停用一个正常任务。
  */
 const PERMANENT_PATTERNS: RegExp[] = [
+  // 自有错误码 / 配置校验（创建/更新/执行时我们自己 throw 的原文）
   /^unsupported_action$/,
   /^Unknown action type$/,
   /unsupported interval unit/i,
   /定时任务时间已过去|定时任务时间无法解析/,
-  /\b(401|403)\b|unauthorized|forbidden|invalid api key|authentication failed|invalid credentials/i,
-  /\bnot found\b|does not exist|任务不存在/i,
-  /UNATTENDED_APPROVAL_TIMEOUT|DOOM_LOOP_HANDBACK_STOP/,
-  /exceeded its \$[\d.]+ budget limit|成本超限|EVAL_CASE_COST_LIMIT_EXCEEDED/,
   /runsOn is immutable/,
+  // 无人值守停车码：审批等不到人（UNATTENDED_APPROVAL_TIMEOUT）、doom loop handback
+  /UNATTENDED_APPROVAL_TIMEOUT|DOOM_LOOP_HANDBACK_STOP/,
+  // 预算硬顶：单趟 $ 上限 / scoped cost limit / eval 预算护栏的固定文案（再试一次就是再烧一次钱）
+  /exceeded its \$[\d.]+ budget limit|成本超限|EVAL_CASE_COST_LIMIT_EXCEEDED/,
 ];
+
+/**
+ * node child_process exec 失败的固定前缀（cronService 的 execAsync）——我们自己执行器的
+ * 结构化标记。shell 退出码与 stderr 是任意外部文本：命中即 transient，一票否决 permanent，
+ * 保证以后往 PERMANENT_PATTERNS 加判据也不会被 shell 输出误触发。
+ */
+const SHELL_EXEC_FAILED_PATTERN = /^Command failed: /;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -55,6 +65,7 @@ function errorMessage(error: unknown): string {
 export function classifyCronFailure(error: unknown | string): CronFailureKind {
   const message = typeof error === 'string' ? error : errorMessage(error);
   if (CAPACITY_WAIT_PATTERNS.some((pattern) => pattern.test(message))) return 'capacity-wait';
+  if (SHELL_EXEC_FAILED_PATTERN.test(message)) return 'transient';
   if (PERMANENT_PATTERNS.some((pattern) => pattern.test(message))) return 'permanent';
   return 'transient';
 }

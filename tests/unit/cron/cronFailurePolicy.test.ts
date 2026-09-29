@@ -40,20 +40,42 @@ describe('classifyCronFailure：错误分类判据（集中一处）', () => {
     expect(classifyCronFailure('agent call aborted before admission')).toBe('capacity-wait');
   });
 
-  it('配置/鉴权/不存在/预算/无人值守停车 → permanent（重试无用）', () => {
+  it('自有错误码/配置校验/预算/无人值守停车 → permanent（重试无用）', () => {
     expect(classifyCronFailure('unsupported_action')).toBe('permanent');
     expect(classifyCronFailure('Unknown action type')).toBe('permanent');
     expect(classifyCronFailure('Unsupported interval unit "weeks"; cron cannot express it.')).toBe('permanent');
-    expect(classifyCronFailure('401 Unauthorized')).toBe('permanent');
-    expect(classifyCronFailure('403 Forbidden: invalid api key')).toBe('permanent');
-    expect(classifyCronFailure('authentication failed for provider')).toBe('permanent');
-    expect(classifyCronFailure('Cron job xyz not found')).toBe('permanent');
-    expect(classifyCronFailure('任务不存在')).toBe('permanent');
+    expect(classifyCronFailure('定时任务时间已过去（2026/9/29 上午8:00:00），请改成将来的时间')).toBe('permanent');
     expect(classifyCronFailure('UNATTENDED_APPROVAL_TIMEOUT')).toBe('permanent');
     expect(classifyCronFailure('DOOM_LOOP_HANDBACK_STOP')).toBe('permanent');
     expect(classifyCronFailure('Cron job run exceeded its $1.50 budget limit.')).toBe('permanent');
     expect(classifyCronFailure('成本超限：单 case 实际成本 $2 超过上限 $1')).toBe('permanent');
     expect(classifyCronFailure('runsOn is immutable after creation')).toBe('permanent');
+  });
+
+  it('R2 审查三个误判样例（execAsync message 含命令原文与 stderr）→ transient', () => {
+    // 样例 1：shell 任务遇到临时 403 限流（curl GitHub API，message 含命令原文 + 响应体）
+    expect(classifyCronFailure(
+      'Command failed: curl -sS https://api.github.com/repos/foo/bar\n'
+      + '{"message":"API rate limit exceeded for 203.0.113.7. (403)",'
+      + '"documentation_url":"https://developer.github.com/v3/#rate-limiting"}',
+    )).toBe('transient');
+    // 样例 2：command not found（stderr 文本，命令装好前重试有意义）
+    expect(classifyCronFailure(
+      'Command failed: ./scripts/deploy.sh\n/bin/sh: ./scripts/deploy.sh: command not found',
+    )).toBe('transient');
+    // 样例 3：命令原文本身含 "not found"，grep 无匹配退出码 1
+    expect(classifyCronFailure(
+      "Command failed: grep 'not found' /var/log/app.log",
+    )).toBe('transient');
+  });
+
+  it('鉴权/不存在类文本不再判 permanent：无法与外部文本区分 → 退避 + 连败停用（基线行为）', () => {
+    // HTTP 401/403、"not found" 会出现在 shell 命令原文与外部 stderr 里（上面的样例），
+    // 按文本判 permanent 会误停用正常任务；宁可多退避，连败到阈值再停。
+    expect(classifyCronFailure(new Error('401 Unauthorized: invalid api key'))).toBe('transient');
+    expect(classifyCronFailure(new Error('403 Forbidden'))).toBe('transient');
+    expect(classifyCronFailure(new Error('Cron job xyz not found'))).toBe('transient');
+    expect(classifyCronFailure('Cloud cron API request failed (HTTP 404)')).toBe('transient');
   });
 
   it('网络/超时/限流/云端暂不可用 → transient（默认走退避）', () => {

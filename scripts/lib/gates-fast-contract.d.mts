@@ -29,6 +29,8 @@ export function selectTests(policy: FastPolicy, changed: string[], regressions?:
 export function validateReport(expected: string[], report: FastReport, root: string): {
   files: number; tests: number; passed: number; hash: string;
 };
+/** Snapshot comparison for the gates:fast end-of-run inputs check; [] = unchanged. */
+export function changedInputs(initial: Record<string, string>, current: Record<string, string>): string[];
 export function renderReceipt(receipt: {
   status: string; schemaVersion: number; headSha: string; baseSha: string;
   receiptId: string; ci: { status: string }; prNumber: number | null; error?: string;

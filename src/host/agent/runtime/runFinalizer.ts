@@ -945,14 +945,15 @@ export class RunFinalizer {
       && judgment.durableFacts.length > 0
     ) {
       try {
-        const { written, skipped, files } = await writeDurableFacts(judgment.durableFacts);
-        logger.info('[RunFinalizer] Durable facts persisted', { written, skipped });
+        const { written, skipped, files, active, candidate, dropped } = await writeDurableFacts(judgment.durableFacts);
+        logger.info('[RunFinalizer] Durable facts persisted', { written, skipped, active, candidate, dropped });
         // N-EVAL-MEMORY：写入侧信号。只在真写进去(written>0)时发——发一条 written:0 的事件
         // 会让「记忆写入次数」这一列把「判断器决定不写」记成一次写入。
+        // N-MEM-WRITECONF：active/candidate/dropped 按档计数，written = active + candidate。
         if (written > 0) {
           this.ctx.onEvent({
             type: 'memory_written',
-            data: { files, written },
+            data: { files, written, active, candidate, dropped },
           });
         }
       } catch (error) {

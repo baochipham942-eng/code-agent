@@ -623,7 +623,14 @@ const SkillActivatedEventSchema = event('skill_activated', z.object({ name: z.st
 // memory_recalled 判定读它；没有 entries 的注入块只能证明「注了点什么」，证明不了「注的是哪条」。
 const MemoryInjectedEventSchema = event('memory_injected', z.object({ id: z.string(), entries: stringArraySchema.optional() }));
 // N-EVAL-MEMORY：durable facts 真落盘那一刻发；written 来自 durableFactWriter 的返回值。
-const MemoryWrittenEventSchema = event('memory_written', z.object({ files: stringArraySchema, written: z.number() }));
+// N-MEM-WRITECONF：active/candidate/dropped 为按置信度档位的计数（optional，旧事件可缺省）。
+const MemoryWrittenEventSchema = event('memory_written', z.object({
+  files: stringArraySchema,
+  written: z.number(),
+  active: z.number().optional(),
+  candidate: z.number().optional(),
+  dropped: z.number().optional(),
+}));
 const ToolSchemaSnapshotEventSchema = event('tool_schema_snapshot', z.object({
   turnId: z.string().optional(), toolCount: z.number(), tools: z.array(z.object({ name: z.string(), inputSchema: unknownRecordSchema.optional(), requiresPermission: z.boolean().optional(), permissionLevel: z.string().optional() })), parentToolUseId: z.string().optional(),
 }));

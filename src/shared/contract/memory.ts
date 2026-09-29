@@ -212,6 +212,8 @@ export interface MemoryMirrorRebuildResult {
   mirrored: number;
   created: number;
   updated: number;
+  /** 对应 light 文件已不存在、被软归档的镜像行数 */
+  removed: number;
   skipped: Array<{ filename: string; reason: string }>;
 }
 

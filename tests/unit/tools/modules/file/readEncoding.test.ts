@@ -265,6 +265,23 @@ describe('N-READ-ENCODING', () => {
       expect(Buffer.compare(await fs.readFile(file), bytes)).toBe(0);
     });
 
+    it('ASCII 正文含 café / 25°C + 坏字节：Read 不出现 caf茅 / 掳 乱码，无 GBK 提示', async () => {
+      const bytes = Buffer.concat([
+        Buffer.from('The café is open today, please come by before the end of the week; it was 25°C outside.\n', 'utf-8'),
+        Buffer.from([0x92]),
+      ]);
+      const file = path.join(tmpDir, 'latin-lossy.txt');
+      await fs.writeFile(file, bytes);
+      const result = await read(file);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.output).toContain('café');
+      expect(result.output).toContain('25°C');
+      expect(result.output).not.toContain('caf茅');
+      expect(result.output).not.toContain('掳');
+      expect(result.output).not.toContain('GB18030');
+    });
+
     it('ASCII 主体的真 GBK（英文多、只夹几个中文词）：仍判 GBK、仍拒写', async () => {
       // 「id,name\n1,名称\n2,苹果\nplain english text to keep high bytes sparse ...」
       const bytes = Buffer.concat([

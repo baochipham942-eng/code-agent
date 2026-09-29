@@ -85,6 +85,20 @@ describe('decodeText', () => {
     expect(decoded.text).toBe('你好世界\uFFFD\uFFFD');
   });
 
+  it('ASCII 正文含 é / ° 等 UTF-8 双字节（字节上与 GB2312 对无法区分）+ 坏字节：仍判 utf-8', () => {
+    const cases: Array<[string, number[], string]> = [
+      ['The café and the café are open today, please come by before the end of the week.\n', [0x80], 'caf\u00e9'],
+      ['Temperatures: 25°C in the morning, 30°C in the afternoon, and 18°C at night.\n', [0x92], '25°C'],
+      ['Temperatures: 25°C … 30°C don', [0x92, 0x74], '25°C'],
+    ];
+    for (const [text, bad, needle] of cases) {
+      const decoded = decodeText(Buffer.concat([Buffer.from(text, 'utf-8'), Buffer.from(bad)]));
+      expect(decoded.encoding).toBe('utf-8');
+      expect(decoded.text).toContain(needle);
+      expect(decoded.invalidSequences).toBeGreaterThan(0);
+    }
+  });
+
   it('同一段 ASCII 夹 E4 B8：带不带 UTF-8 BOM 判定一致', () => {
     const body = Buffer.concat([Buffer.from('x = 1; '.repeat(20)), Buffer.from([0xe4, 0xb8]), Buffer.from(' y = 2;\n'.repeat(20))]);
     const bom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), body]);

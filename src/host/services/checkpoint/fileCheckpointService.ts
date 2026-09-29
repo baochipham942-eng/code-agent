@@ -524,8 +524,11 @@ export class FileCheckpointService {
     if (!db) return;
 
     try {
+      // 上限只数真快照：uncertain 披露行不占预算，大量带变量的重定向不能把
+      // 可回退的快照挤出每 session 上限（删除侧仍按最旧全量行删，披露行可被逐出）。
       const countResult = db.prepare(`
-        SELECT COUNT(*) as cnt FROM file_checkpoints WHERE session_id = ?
+        SELECT COUNT(*) as cnt FROM file_checkpoints
+        WHERE session_id = ? AND COALESCE(uncertain_target, 0) = 0
       `).get(sessionId) as { cnt: number } | undefined;
 
       const count = countResult?.cnt || 0;

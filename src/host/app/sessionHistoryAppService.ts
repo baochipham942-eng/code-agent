@@ -460,7 +460,11 @@ export class SessionHistoryAppService {
     }
 
     const result = await checkpointService.rewindFiles(sessionId, checkpointMessageId);
-    if (!result.success || result.errors.length > 0) {
+    // uncertain 写目标是「本就没建快照」的披露而非恢复失败：其余文件已尽力恢复时不为它
+    // 整体抛错（其余 skipped 口径——人工编辑、缺摘要等——保持原有抛错行为）。
+    const restoreFailed = result.errors.length > 0
+      || result.skippedFiles.some((item) => item.reason !== 'uncertain_write_target');
+    if (restoreFailed) {
       const failedFileCount = result.errors.length + result.skippedFiles.length;
       throw new WorkspaceFileRestoreError(
         'WORKSPACE_FILE_RESTORE_FAILED',

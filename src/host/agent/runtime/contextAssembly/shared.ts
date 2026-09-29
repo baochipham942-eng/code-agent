@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'fs';
 import type { Message, ToolCall, ToolResult } from '../../../../shared/contract';
 import type { ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
 import type { ModelDecisionEventData } from '../../../../shared/contract/modelDecision';
+import type { RetryFingerprintScope } from '../../../model/providers/retryStrategy';
 import type {
   AgentLoopConfig,
   ModelMessage,
@@ -138,6 +139,8 @@ export interface InferenceRecoveryState {
   _networkRetried: boolean;
   /** 无人值守 run 连续遇到断流的推理轮数（ADR-068 D4 熔断计数）；某轮无断流即清零。 */
   consecutiveStreamBreakRounds: number;
+  /** 本 run 的模型重试指纹。正文或工具调用清掉同指纹连击。 */
+  retryFingerprint?: RetryFingerprintScope;
   currentModelDecision?: ModelDecisionEventData;
 }
 

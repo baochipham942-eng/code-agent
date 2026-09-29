@@ -221,6 +221,8 @@ export interface TraceEventDataMap {
     evidenceProblems?: string[];
     /** 渲染审查盖章：LibreOffice 缺失时为「未做视觉验证」，失败则不给 verified */
     visualVerification?: 'passed' | 'failed' | '未做视觉验证' | 'not_applicable';
+    /** 本 run 命中过的 runaway guard 信号名。没有命中时不写这个字段。 */
+    guardSignals?: string[];
   };
   /** P3 slot only. Registration wiring is intentionally out of scope for P0A. */
   compensation_registered: {

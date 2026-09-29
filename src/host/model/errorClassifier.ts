@@ -227,5 +227,28 @@ export function classifyError(error: unknown): ErrorClass {
     if (pattern.test(message)) return cls;
   }
 
+  // 同指纹熔断的文案本身分不出类。status 已经在上面认过；没有 status 时沿 cause 认原错误。
+  const fromBreakerCause = classifyRepeatedFingerprintCause(error);
+  if (fromBreakerCause !== undefined && fromBreakerCause !== 'unknown') return fromBreakerCause;
+
   return 'unknown';
+}
+
+function classifyRepeatedFingerprintCause(error: unknown): ErrorClass | undefined {
+  let cursor: unknown = error;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (!cursor || typeof cursor !== 'object') return undefined;
+    if ((cursor as { name?: unknown }).name !== 'RepeatedRetryableFingerprintError') return undefined;
+    const cause = (cursor as { cause?: unknown }).cause;
+    if (cause === undefined || cause === null) return undefined;
+    if (
+      typeof cause === 'object'
+      && (cause as { name?: unknown }).name === 'RepeatedRetryableFingerprintError'
+    ) {
+      cursor = cause;
+      continue;
+    }
+    return classifyError(cause);
+  }
+  return undefined;
 }

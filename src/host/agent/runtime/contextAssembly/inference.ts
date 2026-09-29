@@ -886,6 +886,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       const engineOptions: InferenceOptions = {
         ...ctx.runtime.inferenceOptions,
         searchEnabled: ctx.runtime.turn.searchEnabled,
+        retryFingerprint: ctx.inferenceRecovery.retryFingerprint,
         onSnapshot: createSnapshotHandler({
           sessionId: ctx.runtime.sessionId,
           runId: ctx.runtime.runId!,

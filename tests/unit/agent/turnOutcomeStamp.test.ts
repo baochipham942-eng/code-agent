@@ -20,6 +20,7 @@ import {
   recordTurnOutcomeStamp,
   type TurnOutcomeStampContext,
 } from '../../../src/host/agent/runtime/turnOutcomeStamp';
+import { noteGuardSignals } from '../../../src/host/agent/runtime/doomLoopGuard';
 import { registerTurnOutcomeResolver } from '../../../src/host/services/capabilities/hostCapabilityPorts';
 import { clearTasks, createTask, updateTask } from '../../../src/host/services/planning/taskStore';
 
@@ -961,5 +962,13 @@ describe('turn outcome stamp', () => {
     } finally {
       clearTasks(sessionId);
     }
+  });
+
+  it('writes guardSignals onto turn_outcome', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const recorder = new TurnTraceRecorder('guard-signals', traceRoot);
+    noteGuardSignals(recorder, ['polling_repeat']);
+    await recordTurnOutcomeStamp(context(recorder), 'failed', summary());
+    expect(latestOutcome(recorder).guardSignals).toEqual(['polling_repeat']);
   });
 });

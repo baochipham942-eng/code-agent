@@ -4,6 +4,7 @@
 
 import type { ToolCall } from '../../shared/contract';
 import type { ModelDecisionEventData, ModelFallbackInfo, ModelToolStrategyDiagnostics } from '../../shared/contract/modelDecision';
+import type { RetryFingerprintScope } from './providers/retryStrategy';
 
 // ----------------------------------------------------------------------------
 // Message Types
@@ -229,6 +230,11 @@ export interface InferenceOptions {
    * 账本：record only, watch cacheRead curve, decide later。
    */
   cacheScopeId?: string;
+  /**
+   * 一次 run 共享的可重试错误指纹计数。正文或工具调用清掉连击；
+   * 缺省时每次模型调用各自计数。
+   */
+  retryFingerprint?: RetryFingerprintScope;
 }
 
 // ----------------------------------------------------------------------------

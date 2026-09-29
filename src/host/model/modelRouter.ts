@@ -14,7 +14,7 @@ import type {
 import type { TaskModelStrategySettings } from '../../shared/contract/settings';
 import { PROVIDER_REGISTRY } from './providerRegistry';
 import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../shared/constants';
-import { isFallbackEligible, abortableSleep, isCancellationError } from './providers/retryStrategy';
+import { isFallbackEligible, abortableSleep, isCancellationError, describeFallbackError } from './providers/retryStrategy';
 import { getSettingsProviderBaseUrl } from './providers/providerResolution';
 import { resolveModelInfo } from './modelInfo';
 import { resolveModelMaxOutputTokens } from './modelLimits';
@@ -634,8 +634,10 @@ export class ModelRouter {
       return result;
     } catch (primaryErr) {
       // ---- Cross-provider fallback chain ----
-      const errMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
-      const errCode = (primaryErr as NodeJS.ErrnoException).code;
+      // 同指纹熔断的文案不含 502/429。describeFallbackError 取 cause 或保留的 status。
+      const described = describeFallbackError(primaryErr);
+      const errMsg = described.message;
+      const errCode = described.code;
 
       if (PERSISTENT_PROVIDER_ERROR_PATTERN.test(errMsg) || ARTIFACT_UNUSABLE_RESPONSE_PATTERN.test(errMsg)) {
         this.recordProviderHardFailure(effectiveConfig.provider, errMsg);
@@ -818,7 +820,8 @@ export class ModelRouter {
           if (signal?.aborted) {
             throw fallbackErr;
           }
-          const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          const describedFallback = describeFallbackError(fallbackErr);
+          const fbMsg = describedFallback.message;
           if (PERSISTENT_PROVIDER_ERROR_PATTERN.test(fbMsg) || ARTIFACT_UNUSABLE_RESPONSE_PATTERN.test(fbMsg)) {
             this.recordProviderHardFailure(fallback.provider, fbMsg);
           }
@@ -827,7 +830,7 @@ export class ModelRouter {
             fallback.model,
             'tried',
             'fallback_failed',
-            classifyProviderFallbackReason(fbMsg, (fallbackErr as NodeJS.ErrnoException).code),
+            classifyProviderFallbackReason(fbMsg, describedFallback.code),
             fbMsg,
           ));
           logger.warn(`[ModelRouter] Fallback ${fallback.provider} failed: ${fbMsg.split('\n')[0]}`);

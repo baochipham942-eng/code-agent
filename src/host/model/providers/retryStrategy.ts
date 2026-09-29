@@ -6,6 +6,7 @@
 import { logger } from './shared';
 import { EventEmitter } from 'events';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
+import { normalizeErrorMessage } from '../../lightMemory/normalizeErrorMessage';
 
 /** Global retry event emitter for CLI visibility */
 export const retryEvents = new EventEmitter();
@@ -143,6 +144,8 @@ export function isTransientError(msg: string, errCode?: string): boolean {
  * 401/403/400 等确定性错误不在可重试集合内，NON_RETRYABLE 文案护栏同样先生效。
  */
 export function isRetryableModelCallError(err: unknown): boolean {
+  // status 抄在包装上是给分类/降级的。包装本身必须停，不能再进重试。
+  if (isRepeatedRetryableFingerprintError(err)) return false;
   const msg = err instanceof Error ? err.message : String(err);
   const errCode = (err as NodeJS.ErrnoException).code;
   if (includesAnyPattern(msg, NON_RETRYABLE_PATTERNS)) return false;
@@ -256,6 +259,129 @@ export function extractRetryAfterMs(err: unknown): number | null {
   return null;
 }
 
+/**
+ * 同一可重试指纹连续 3 次即停。与 doom loop ×3 对齐：两次仍可能是抖动，
+ * 第三次同一失败不再烧剩余重试预算。
+ */
+const REPEATED_RETRYABLE_FINGERPRINT_THRESHOLD = 3;
+
+export interface RetryFingerprintScope {
+  noteFailure(
+    err: unknown,
+    owner: { provider: string; model?: string },
+  ): { tripped: boolean; streak: number; fingerprint: string };
+  observeSuccess<T>(value: T): T;
+  /**
+   * 丢掉这一家 provider+model 的连击。
+   * 熔断，以及调用以原错误结束（重试次数用尽、超时预算用尽、取消、不可重试）都要调用。
+   * 同一家的下一次调用从 0 开始。另一家用自己的桶，本来就是 0。
+   */
+  release(owner: { provider: string; model?: string }): void;
+}
+
+const REPEATED_RETRYABLE_FINGERPRINT_ERROR = 'RepeatedRetryableFingerprintError';
+
+function isRepeatedRetryableFingerprintError(err: unknown): boolean {
+  return !!err
+    && typeof err === 'object'
+    && (err as { name?: unknown }).name === REPEATED_RETRYABLE_FINGERPRINT_ERROR;
+}
+
+function readErrorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const code = (err as { code?: unknown }).code;
+  return typeof code === 'string' && code.length > 0 ? code : undefined;
+}
+
+function readErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** 分类和降级读 status/code；文案仍不含 429/5xx，避免包装自己被当成又可重试。 */
+function attachRetryableIdentity(target: object, cause: unknown): void {
+  const status = getErrorStatus(cause);
+  if (status !== undefined) Object.assign(target, { status, statusCode: status });
+  const code = readErrorCode(cause);
+  if (code !== undefined) Object.assign(target, { code });
+}
+
+/**
+ * 熔断错误不把原始指纹写进 message：指纹里的 429/5xx/timeout 会让外层
+ * 再把这次熔断当成可重试错误。比对用的指纹留在属性上。
+ * status/code 和 cause 留给降级与错误分类，和耗尽重试后抛出的原错误同一路。
+ */
+class RepeatedRetryableFingerprintError extends Error {
+  readonly streak: number;
+  readonly fingerprint: string;
+
+  constructor(streak: number, fingerprint: string, cause: unknown) {
+    super(`Retry stopped: the same retryable error repeated ${streak} times.`, { cause });
+    this.name = REPEATED_RETRYABLE_FINGERPRINT_ERROR;
+    this.streak = streak;
+    this.fingerprint = fingerprint;
+    attachRetryableIdentity(this, cause);
+  }
+}
+
+function retryableErrorFingerprint(err: unknown): string {
+  const status = getErrorStatus(err);
+  const msg = err instanceof Error ? err.message : String(err);
+  const normalized = normalizeErrorMessage(
+    msg
+      .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, 'ID')
+      .replace(/\b[0-9a-f]{16,}\b/gi, 'ID')
+      .replace(/(?:req_|request_|id_|call_)[A-Za-z0-9_-]+/gi, 'ID')
+      .replace(/(?:[A-Za-z]:)?(?:\/|\\)(?:[\w.@+-]+(?:\/|\\))+[\w.@+-]*/g, 'PATH')
+      .replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g, 'TS'),
+  );
+  return status !== undefined ? `http:${status}:${normalized}` : normalized;
+}
+
+function payloadResetsFingerprint(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  const text = record.text ?? record.content;
+  if (typeof text === 'string' && text.trim().length > 0) return true;
+  const calls = record.toolCalls ?? record.tool_calls;
+  return Array.isArray(calls) && calls.length > 0;
+}
+
+/** 降级链的一跳是 provider+model（ModelConfig / getFallbackChainForRequest）。没传 model 时只按 provider 分桶。 */
+function fingerprintOwnerKey(owner: { provider: string; model?: string }): string {
+  return `${owner.provider}\0${owner.model ?? ''}`;
+}
+
+export function createRetryFingerprintScope(): RetryFingerprintScope {
+  const buckets = new Map<string, { streak: number; fingerprint: string }>();
+  return {
+    noteFailure(err, owner) {
+      const key = fingerprintOwnerKey(owner);
+      if (!isRetryableModelCallError(err)) {
+        buckets.delete(key);
+        return { tripped: false, streak: 0, fingerprint: '' };
+      }
+      const next = retryableErrorFingerprint(err);
+      const prev = buckets.get(key);
+      const streak = prev?.fingerprint === next ? prev.streak + 1 : 1;
+      buckets.set(key, { streak, fingerprint: next });
+      return {
+        tripped: streak >= REPEATED_RETRYABLE_FINGERPRINT_THRESHOLD,
+        streak,
+        fingerprint: next,
+      };
+    },
+    observeSuccess(value) {
+      // 正文或工具调用清掉整次 run 的连击，不限当前 provider。空白正文不清。
+      if (payloadResetsFingerprint(value)) buckets.clear();
+      return value;
+    },
+    release(owner) {
+      buckets.delete(fingerprintOwnerKey(owner));
+    },
+  };
+}
+
 export interface RetryOptions {
   /** Provider 名称，用于日志 */
   providerName: string;
@@ -280,6 +406,11 @@ export interface RetryOptions {
   maxTimeoutRetries?: number;
   /** Optional callback when a retry is about to happen */
   onRetry?: (info: { provider: string; attempt: number; maxRetries: number; delay: number; error: string }) => void;
+  /**
+   * 同指纹熔断的计数器。缺省每次 withTransientRetry 自建，调用之间不共享。
+   * 一次 run 共用一份时，连击按 provider+model 分桶；正文或工具调用清掉全部分桶。
+   */
+  fingerprintScope?: RetryFingerprintScope;
 }
 
 /**
@@ -305,6 +436,47 @@ export function isFallbackEligible(msg: string, errCode?: string): boolean {
   // 不可重试但应该降级的错误（账号耗尽、key 无效等 → 换个 Provider 可能就好了）
   if (includesAnyPattern(msg, NON_RETRYABLE_PATTERNS)) return true;
   return isTransientError(msg, errCode);
+}
+
+/**
+ * 降级链看到的文案和 code。
+ * 普通错误原样返回。同指纹熔断的文案故意匹配不到瞬态模式，所以改看 cause；
+ * cause 不在时，用包装上保留的 HTTP status，让 502/429 仍能切到下一家。
+ */
+export function describeFallbackError(err: unknown): { message: string; code?: string } {
+  if (!isRepeatedRetryableFingerprintError(err)) {
+    const message = readErrorMessage(err);
+    const code = readErrorCode(err);
+    return code !== undefined ? { message, code } : { message };
+  }
+  const chosen = selectFallbackError(err);
+  const code = readErrorCode(chosen);
+  let message = readErrorMessage(chosen);
+  const status = getErrorStatus(chosen);
+  if (
+    status !== undefined
+    && !message.includes(String(status))
+    && !isFallbackEligible(message, code)
+  ) {
+    message = `${message} HTTP ${status}`;
+  }
+  return code !== undefined ? { message, code } : { message };
+}
+
+function selectFallbackError(err: unknown): unknown {
+  let chosen: unknown = err;
+  let cursor: unknown = err;
+  for (let depth = 0; depth < 4 && cursor && typeof cursor === 'object'; depth += 1) {
+    if (fallbackSignalEligible(cursor)) chosen = cursor;
+    cursor = (cursor as { cause?: unknown }).cause;
+  }
+  return chosen;
+}
+
+function fallbackSignalEligible(err: unknown): boolean {
+  if (isFallbackEligible(readErrorMessage(err), readErrorCode(err))) return true;
+  const status = getErrorStatus(err);
+  return status !== undefined && RETRYABLE_HTTP_STATUSES.has(status);
 }
 
 /**
@@ -342,6 +514,8 @@ export async function withTransientRetry<T>(
   options: RetryOptions
 ): Promise<T> {
   const { providerName, model, maxRetries = 2, baseDelay = 1000, signal, isTimeoutError, maxTimeoutRetries, onRetry } = options;
+  const fingerprintScope = options.fingerprintScope ?? createRetryFingerprintScope();
+  const fingerprintOwner = { provider: providerName, model };
   const healthMonitor = getProviderHealthMonitor();
   let timeoutRetriesUsed = 0;
 
@@ -350,9 +524,11 @@ export async function withTransientRetry<T>(
     try {
       const result = await fn();
       healthMonitor.recordSuccess(providerName, Date.now() - startTime, { model });
-      return result;
+      return fingerprintScope.observeSuccess(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      const noted = signal?.aborted ? null : fingerprintScope.noteFailure(err, fingerprintOwner);
+      let stopForFingerprint = false;
       if (isRetryableModelCallError(err) && attempt < maxRetries && !signal?.aborted) {
         // 超时类错误单独计数：烧满整请求窗口的重试次数到顶就放弃，让错误尽快
         // 上抛（provider fallback / 轮级恢复还有机会），不再烧下一个 300s 窗口。
@@ -362,6 +538,9 @@ export async function withTransientRetry<T>(
           || timeoutRetriesUsed < maxTimeoutRetries;
         if (!timeoutBudgetLeft) {
           logger.warn(`[${providerName}] 客户端超时重试已达上限 (${maxTimeoutRetries})，放弃重试: "${msg}"`);
+        } else if (noted?.tripped) {
+          stopForFingerprint = true;
+          logger.warn(`[${providerName}] 同一可重试错误指纹已连续 ${noted.streak} 次，停止重试: "${msg}"`);
         } else {
           if (timeoutError) timeoutRetriesUsed += 1;
           // 优先尊重上游的 retry-after 提示，否则指数退避 + jitter（roadmap 1.9）
@@ -380,6 +559,7 @@ export async function withTransientRetry<T>(
               model,
               error: err,
             });
+            fingerprintScope.release(fingerprintOwner);
             throw err;
           }
           continue;
@@ -390,6 +570,13 @@ export async function withTransientRetry<T>(
         model,
         error: err,
       });
+      if (stopForFingerprint && noted?.tripped) {
+        fingerprintScope.release(fingerprintOwner);
+        throw new RepeatedRetryableFingerprintError(noted.streak, noted.fingerprint, err);
+      }
+      // 重试次数或超时预算用尽时走这里，抛的是原错误，不是熔断错误。
+      // 不清零的话 streak 会留在这个 scope 里，同一 run 的下一次调用第一次相同失败就熔断。
+      fingerprintScope.release(fingerprintOwner);
       throw err;
     }
   }

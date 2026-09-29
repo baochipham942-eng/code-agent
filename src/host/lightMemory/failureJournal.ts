@@ -11,6 +11,9 @@ import { getMemoryDir, getMemoryIndexPath, ensureMemoryDir } from './indexLoader
 import { writeLightMemoryFile } from './lightMemoryIpc';
 import { LEARNING_PIPELINE } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
+import { normalizeErrorMessage } from './normalizeErrorMessage';
+
+export { normalizeErrorMessage };
 
 const logger = createLogger('FailureJournal');
 
@@ -37,13 +40,6 @@ export interface FailurePattern {
 // ----------------------------------------------------------------------------
 // 模式归一化（与 planning/errorTracker.getErrorKey 同源逻辑，但用于跨会话维度）
 // ----------------------------------------------------------------------------
-
-export function normalizeErrorMessage(message: string): string {
-  return message
-    .replace(/\d+/g, 'N')
-    .replace(/['"][^'"]*['"]/g, '"..."')
-    .substring(0, LEARNING_PIPELINE.ERROR_PATTERN_MAX_CHARS);
-}
 
 export function buildFailurePatternKey(
   toolName: string,

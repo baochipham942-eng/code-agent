@@ -33,6 +33,7 @@ import type {
   ModelMessagesWithSources,
 } from './contextAssembly/shared';
 import { inference as inferenceImpl } from './contextAssembly/inference';
+import { createRetryFingerprintScope } from '../../model/providers/retryStrategy';
 import {
   buildModelMessages as buildModelMessagesImpl,
   buildContextTranscriptEntries as buildContextTranscriptEntriesImpl,
@@ -106,6 +107,7 @@ export class ContextAssembly {
     _artifactRepairCompactWriteRetried: false,
     _networkRetried: false,
     consecutiveStreamBreakRounds: 0,
+    retryFingerprint: createRetryFingerprintScope(),
   };
 
   private readonly compressionRecovery: CompressionRecoveryState = {

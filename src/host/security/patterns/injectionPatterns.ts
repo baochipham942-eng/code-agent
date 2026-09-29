@@ -130,11 +130,12 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     severity: 'high',
     description: '试图注入新系统指令',
   },
+  // 名词后若还接着「提示音 / 指令式 / 规则说明」这类复合词，不算指令覆盖。
   {
-    pattern: /(?:忽略|无视|忘记)\s*(?:之前|上面|以上|所有)\s*(?:的\s*)?(?:指令|提示|规则)/,
+    pattern: /(?:忽略|无视|忘记)\s*(?:之前|上面|以上|前面|所有)\s*(?:的\s*)?(?:所有\s*)?(?:指令|提示|规则)(?![音框集式性说文档条款目表化字])/,
     type: 'instruction_override',
     severity: 'critical',
-    description: 'Attempts to override earlier instructions',
+    description: '试图忽略、无视或忘记既有指令',
   },
   {
     pattern: /\[SYSTEM\]|\[INST\]|<<SYS>>|<\|system\|>|<\|im_start\|>system/i,
@@ -190,11 +191,13 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     severity: 'high',
     description: '试图激活特权模式',
   },
+  // 必须落到助手 / AI / 模型等角色名词，并且名词停在句界上。
+  // 「你现在是不是」「你现在是在」「你现在是否」没有角色名词，不命中。
   {
-    pattern: /(?:你现在是(?!否)|从现在起你将扮演)/,
+    pattern: /(?:你现在是|从现在起你(?:将扮演|是))(?:一个|一名|一位)?[^\s，。！？!?\n]{0,16}(?:人工智能|机器人|助手|模型|角色|越狱|DAN|AI)(?=$|[\s，。！？!?、：:,.]|请)/i,
     type: 'jailbreak_attempt',
     severity: 'critical',
-    description: 'Attempts to hijack the assistant role',
+    description: '试图把助手改写成指定角色',
   },
   {
     pattern: /(?:do\s+anything\s+now|no\s+(?:rules?|restrictions?|limitations?|filters?|guidelines?))/i,
@@ -224,11 +227,12 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     severity: 'medium',
     description: '试图获取系统指令内容',
   },
+  // 「打印密钥长度」「将密钥输出到控制台」没有「你的」，也不点名系统提示词。
   {
-    pattern: /(?:输出|泄露|打印)\s*(?:你的\s*)?(?:系统提示词|密钥|API\s*key)/i,
+    pattern: /(?:输出|泄露|打印)\s*(?:你的\s*)?系统提示词|(?:输出|泄露|打印)\s*你的\s*(?:密钥|API\s*key)|(?:把|将)你的\s*(?:密钥|API\s*key)\s*(?:输出|打印|泄露)/i,
     type: 'data_exfiltration',
     severity: 'high',
-    description: 'Attempts to extract system prompts or secrets',
+    description: '试图套取系统提示词或密钥',
   },
   {
     pattern: /(?:send|transmit|post|upload|exfiltrate|forward)\s+(?:to|data\s+to)\s+(?:https?:\/\/|ftp:\/\/)/i,

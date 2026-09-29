@@ -124,11 +124,8 @@ export class InputSanitizer {
     const nonce = options?.nonce ?? generateBoundaryNonce();
     const { text: withoutSpecialTokens, found: strippedSpecialTokens } = stripSpecialTokenLiterals(input);
     const sanitized = stripBoundaryNonce(withoutSpecialTokens, nonce);
+    // 扫描副本只用于匹配。返回的 sanitized 仍是剥离控制 token 后的原文。
     const scanText = sanitized.normalize('NFKC').replace(ZERO_WIDTH_CHARACTERS, '');
-    ZERO_WIDTH_CHARACTERS.lastIndex = 0;
-    const originalHadZeroWidth = ZERO_WIDTH_CHARACTERS.test(input);
-    ZERO_WIDTH_CHARACTERS.lastIndex = 0;
-    const unicodeChanged = sanitized !== scanText;
 
     const warnings: SanitizationWarning[] = [];
 
@@ -151,7 +148,6 @@ export class InputSanitizer {
       const rawMatched = pattern.test(sanitized);
       pattern.lastIndex = 0;
       const foldedMatched = pattern.test(scanText);
-      const foldedOnly = foldedMatched && !rawMatched;
 
       if (rawMatched || foldedMatched) {
         warnings.push({
@@ -161,9 +157,8 @@ export class InputSanitizer {
           description,
         });
       }
-      if (unicodeChanged || originalHadZeroWidth) {
-        unicodeObfuscationDetected ||= foldedOnly;
-      }
+      // 折叠后才命中，说明 NFKC 或去掉零宽字符揭开了原文对不上的模式。
+      if (foldedMatched && !rawMatched) unicodeObfuscationDetected = true;
     }
 
     if (unicodeObfuscationDetected) {
@@ -181,7 +176,7 @@ export class InputSanitizer {
     for (const text of [sanitized, scanText]) {
       const sensitiveResult = sensitiveDetector.detect(text);
       for (const match of sensitiveResult.matches) {
-        const matchKey = `${match.type}:${match.masked}:${match.confidence}`;
+        const matchKey = `${match.type}:${match.original.normalize('NFKC').replace(ZERO_WIDTH_CHARACTERS, '')}:${match.confidence}`;
         sensitiveMatches.set(matchKey, match);
       }
     }

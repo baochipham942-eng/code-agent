@@ -2,13 +2,10 @@
 // N-MEMBER-INPUT-DROP ①(a) — 原生子代理最后一轮 LLM 期间的 send_input 必须被读到
 // ----------------------------------------------------------------------------
 // 收尾只查 taskGate、不看收件箱时：最后一次模型调用期间入队的补话停在队列里，
-// 成员不再迭代，结果里也没有「未送达 N 条」。修完后：非空则续跑（上限 2），
-// 超过上限的残留写进结果，并跟着父代理完成通知走。
+// 成员不再迭代，结果里也没有未送达说明。修完后：非空则续跑（上限 2，且还剩迭代）；
+// 最后一轮或超过上限的残留写进结果「用户的 N 条补话未送达该成员」，并跟着父代理完成通知走。
 // ============================================================================
 
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentMessage } from '../../../src/host/agent/spawnGuard';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
@@ -179,6 +176,8 @@ import {
   resetParallelAgentCoordinators,
 } from '../../../src/host/agent/parallelAgentCoordinator';
 import type { ParallelAgentCoordinator } from '../../../src/host/agent/parallelAgentCoordinator';
+import { getParallelAgentCoordinatorRegistry } from '../../../src/host/agent/parallelAgentCoordinatorRegistry';
+import { getTeammateService, resetTeammateService } from '../../../src/host/agent/teammate/teammateService';
 
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 
@@ -214,6 +213,7 @@ describe('native member follow-up during the final model call (N-MEMBER-INPUT-DR
   afterEach(() => {
     resetSpawnGuard();
     resetParallelAgentCoordinators();
+    resetTeammateService();
     delete process.env.CODE_AGENT_MODEL_ENGINE;
   });
 
@@ -331,6 +331,143 @@ describe('native member follow-up during the final model call (N-MEMBER-INPUT-DR
     expect(result.output).not.toContain('未送达');
   });
 
+  it('keeps the first-turn answer when a follow-up arrives on the last allowed iteration', async () => {
+    const agentId = 'native-member-last-iter';
+    const followUp = 'add the page numbers';
+    const firstAnswer = 'draft answer';
+    mocks.responses.push(textResponse(firstAnswer), textResponse('should not run'));
+    const guard = getSpawnGuard();
+    const executor = new SubagentExecutor();
+    let queuedDuringCall = false;
+    mocks.inference.mockImplementationOnce(async (messages: unknown) => {
+      mocks.seen.push(JSON.stringify(messages));
+      const sent = await executeSendInput(
+        { agentId, message: followUp },
+        makeCtx(),
+        allowAll,
+      );
+      queuedDuringCall = sent.ok === true;
+      const response = mocks.responses.shift();
+      if (!response) throw new Error('Missing mocked inference response');
+      return response;
+    });
+
+    const run = executor.execute({
+      prompt: 'Summarize the report',
+      config: {
+        name: 'Native member',
+        systemPrompt: 'Be brief.',
+        availableTools: [] as string[],
+        maxIterations: 1,
+      },
+      context: {
+        sessionId: 'sess-wind-down',
+        cwd: '/tmp/member-input-drop',
+        modelConfig: { provider: 'test', model: 'test-model' },
+        resolver: { getDefinition: () => undefined },
+        permission: { request: vi.fn(async () => true) },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
+        spawnGuardId: agentId,
+        executionAgentId: agentId,
+      },
+    });
+    guard.register(agentId, 'coder', 'Summarize the report', run, new AbortController());
+    const result = await run;
+
+    expect(queuedDuringCall).toBe(true);
+    expect(mocks.inference).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
+    expect(result.output).toContain(firstAnswer);
+    expect(result.output).toContain('用户的 1 条补话未送达该成员');
+    expect(guard.peekMessages(agentId)).toHaveLength(1);
+  });
+
+  it('drains a guard message peeked under executionAgentId when spawnGuardId is empty', async () => {
+    const agentId = 'exec-id-only';
+    const followUp = 'same-id-follow-up';
+    mocks.responses.push(textResponse('before'), textResponse('after'), textResponse('still queued'));
+    const guard = getSpawnGuard();
+    mocks.inference.mockImplementationOnce(async (messages: unknown) => {
+      mocks.seen.push(JSON.stringify(messages));
+      const sent = await executeSendInput(
+        { agentId, message: followUp },
+        makeCtx(),
+        allowAll,
+      );
+      expect(sent.ok).toBe(true);
+      const response = mocks.responses.shift();
+      if (!response) throw new Error('Missing mocked inference response');
+      return response;
+    });
+
+    const executor = new SubagentExecutor();
+    const run = executor.execute({
+      prompt: 'Do the thing',
+      config: {
+        name: 'Native member',
+        systemPrompt: 'Be brief.',
+        availableTools: [] as string[],
+        maxIterations: 4,
+      },
+      context: {
+        sessionId: 'sess-wind-down',
+        cwd: '/tmp/member-input-drop',
+        modelConfig: { provider: 'test', model: 'test-model' },
+        resolver: { getDefinition: () => undefined },
+        permission: { request: vi.fn(async () => true) },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
+        executionAgentId: agentId,
+      },
+    });
+    guard.register(agentId, 'coder', 'Do the thing', run, new AbortController());
+    const result = await run;
+
+    expect(mocks.inference).toHaveBeenCalledTimes(2);
+    expect(mocks.seen[1]).toContain(followUp);
+    expect(guard.peekMessages(agentId)).toEqual([]);
+    expect(result.output).not.toContain('未送达');
+    expect(result.success).toBe(true);
+  });
+
+  it('does not resume for a teammate-inbox message and does not create a coordinator', async () => {
+    const agentId = 'teammate-only-member';
+    const teammate = getTeammateService();
+    teammate.register(agentId, 'Member', 'coder');
+    teammate.register('peer', 'Peer', 'coder');
+    teammate.coordinate('peer', agentId, 'teammate-only-follow-up');
+    expect(teammate.getInbox(agentId)).toHaveLength(1);
+
+    mocks.responses.push(textResponse('solo answer'));
+    const result = await new SubagentExecutor().execute({
+      prompt: 'Answer once',
+      config: {
+        name: 'Native member',
+        systemPrompt: 'Be brief.',
+        availableTools: [] as string[],
+        maxIterations: 4,
+      },
+      context: {
+        sessionId: 'sess-wind-down',
+        cwd: '/tmp/member-input-drop',
+        modelConfig: { provider: 'test', model: 'test-model' },
+        resolver: { getDefinition: () => undefined },
+        permission: { request: vi.fn(async () => true) },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
+        spawnGuardId: agentId,
+        executionAgentId: agentId,
+      },
+    });
+
+    expect(mocks.inference).toHaveBeenCalledTimes(1);
+    expect(result.output).toBe('solo answer');
+    expect(result.success).toBe(true);
+    expect(getParallelAgentCoordinatorRegistry().size()).toBe(0);
+    expect(teammate.getInbox(agentId)).toHaveLength(1);
+  });
+
   it('reports follow-ups still queued after the wind-down reentry cap in the result and the parent notification', async () => {
     const agentId = 'native-member-cap';
     const guard = getSpawnGuard();
@@ -375,20 +512,10 @@ describe('native member follow-up during the final model call (N-MEMBER-INPUT-DR
     const notifications = guard.drainNotifications();
 
     expect(result.success).toBe(true);
-    expect(result.output).toContain('未送达 1 条');
-    expect(notifications.join('\n')).toContain('未送达 1 条');
+    expect(result.output).toContain('用户的 1 条补话未送达该成员');
+    expect(notifications.join('\n')).toContain('用户的 1 条补话未送达该成员');
     expect(mocks.seen.some((body) => body.includes('follow-up-1'))).toBe(true);
     expect(mocks.seen.some((body) => body.includes('follow-up-2'))).toBe(true);
     expect(mocks.seen.some((body) => body.includes('follow-up-3'))).toBe(false);
-  });
-
-  it('wind-down reads the two live queues and does not aggregate the teammate inbox', () => {
-    const root = join(dirname(fileURLToPath(import.meta.url)), '../../..');
-    const windDown = readFileSync(join(root, 'src/host/agent/memberInputWindDown.ts'), 'utf8');
-    const executor = readFileSync(join(root, 'src/host/agent/subagentExecutor.ts'), 'utf8');
-    expect(windDown).not.toContain('peekAgentInbox');
-    expect(executor).not.toContain('peekAgentInbox');
-    expect(windDown).not.toContain('getParallelAgentCoordinator(');
-    expect(windDown).toContain('peekMessages');
   });
 });

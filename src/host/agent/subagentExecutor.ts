@@ -249,6 +249,9 @@ export class SubagentExecutor {
       parentRemainingBudget: context.parentRemainingBudget, executionTopology: context.executionTopology,
     });
     const executionAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
+    // peek 与 drain 必须是同一个 id。spawnGuardId 为空时 peek 会落到 executionAgentId，
+    // drain 若只认 spawnGuardId，续跑看得见消息却取不走。
+    const memberInputQueueId = context.spawnGuardId || executionAgentId;
     const executionRunId = context.runId || context.swarmRunScope?.runId || context.traceContext?.runId || agentTask.id;
     const turnObservability = createSubagentTurnObservability({
       sessionId, events: context.events,
@@ -577,6 +580,7 @@ export class SubagentExecutor {
 
         currentTurnOrigin = await drainQueuedMemberInput({
           context,
+          queueAgentId: memberInputQueueId,
           agentName: config.name,
           messages,
           logger,
@@ -705,9 +709,11 @@ export class SubagentExecutor {
             openTasks: getIncompleteTasks(sessionId).filter((task) => task.owner === pipelineContext.agentId),
             taskGateReentries,
             memberInputReentries,
-            pendingInput: peekMemberInputQueues(context.spawnGuardId || executionAgentId, context.swarmRunScope).length,
+            pendingInput: peekMemberInputQueues(memberInputQueueId, context.swarmRunScope).length,
           });
-          if (windDown.action !== 'finish') {
+          // 本轮已是 maxIterations 时 continue 不会再进循环，response.content 也不会写入 finalOutput。
+          const resumeMemberInput = windDown.action === 'member-input' && iterations < maxIterations;
+          if (windDown.action === 'task-gate' || resumeMemberInput) {
             taskGateReentries = windDown.taskGateReentries;
             memberInputReentries = windDown.memberInputReentries;
             if (windDown.log) logger.info(`[${config.name}] ${windDown.log}`);
@@ -1072,7 +1078,7 @@ export class SubagentExecutor {
 
       finalOutput = noteUndeliveredMemberInput(
         finalOutput,
-        peekMemberInputQueues(context.spawnGuardId || executionAgentId, context.swarmRunScope).length,
+        peekMemberInputQueues(memberInputQueueId, context.swarmRunScope).length,
       );
 
       // Get final cost

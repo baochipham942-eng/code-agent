@@ -79,15 +79,17 @@ export function resolveSubagentWindDown(input: {
   };
 }
 
-/** 超过续跑上限后仍堆在队列里的补话，写进结果，父代理完成通知跟着这句走。 */
+/** 循环结束后仍堆在队列里的用户补话，写进结果，父代理完成通知跟着这句走。 */
 export function noteUndeliveredMemberInput(output: string, count: number): string {
   if (count <= 0) return output;
-  const line = `未送达 ${count} 条`;
+  const line = `用户的 ${count} 条补话未送达该成员`;
   return output ? `${output}\n${line}` : line;
 }
 
 export async function drainQueuedMemberInput(params: {
-  context: Pick<SubagentContext, 'messageDrain' | 'ackMessageDrain' | 'spawnGuardId'>;
+  context: Pick<SubagentContext, 'messageDrain' | 'ackMessageDrain'>;
+  /** 与 peekMemberInputQueues 相同的 id。空则不碰 SpawnGuard 队列。 */
+  queueAgentId: string | undefined;
   agentName: string;
   messages: RuntimeMessage[];
   logger: { info: (message: string, ...args: unknown[]) => void; warn?: (message: string, ...args: unknown[]) => void };
@@ -97,7 +99,7 @@ export async function drainQueuedMemberInput(params: {
 }): Promise<AgentMessageOrigin[] | undefined> {
   const externalMessages = params.context.messageDrain ? await params.context.messageDrain() : [];
   const pendingMessages = [
-    ...(params.context.spawnGuardId ? getSpawnGuard().drainMessages(params.context.spawnGuardId) : []),
+    ...(params.queueAgentId ? getSpawnGuard().drainMessages(params.queueAgentId) : []),
     ...externalMessages,
   ];
   const nextOrigin = collectTurnOrigins(pendingMessages) ?? params.currentTurnOrigin;

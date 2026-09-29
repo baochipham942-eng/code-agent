@@ -137,6 +137,8 @@ class AgentDurableRouteRunLifecycle {
     runHandle: RunHandle;
     externalLifecycle?: ExternalEngineDurableLifecycle;
   }> {
+    // 用户新消息优先：同会话里停靠待「继续」或排队自动续跑的旧 run 先终态化，否则撞活跃会话唯一约束 409。
+    if (this.deps.durableActivation) await this.deps.runRegistry.supersedeParkedSessionRoots(this.deps.sessionId);
     if (this.deps.externalEngine) {
       this.externalLifecycle = this.deps.durableActivation
         ? await ExternalEngineDurableLifecycle.start({

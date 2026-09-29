@@ -52,7 +52,8 @@ import path from 'node:path';
 import { isNativeRecoveryDescriptor, type NativeRecoveryDescriptor } from './nativeRecoveryHost';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 import { createKeyedSerializer } from './keyedSerializer';
-import { findRecoveredWaitingRun as matchRecoveredWaitingRun, settleModelOpsForManualContinue } from './recoveredWaitingRun';
+import { findRecoveredWaitingRun as matchRecoveredWaitingRun, findSupersededSessionRoots, settleModelOpsForManualContinue, supersedeSessionRoots, terminalRecoveredWaitingRunOnce } from './recoveredWaitingRun';
+import { isDurableResumeQueued } from './durableRecoveryQueueState';
 import {
   asNativeAgentTeamProjectionState,
   isDurableActiveSessionConstraint,
@@ -763,27 +764,17 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     selector: { runId?: string; sessionId?: string },
     now = Date.now(),
   ): Promise<{ runId: string; sessionId: string; joined?: true } | undefined> {
-    const recovered = this.findRecoveredWaitingRun(selector);
-    if (!recovered) return undefined;
-    // 桌面「放弃」与手机「停止」可能同时到：两边都在终态提交前查到了它。后到的一方
-    // 并到同一次提交上，而不是再提交一次撞 cancelled -> cancelled 冲突抛错（桌面 500）。
-    // joined 标给后到者：终态事件只由真正提交的一方补发，手机不会收两条 agent_cancelled。
-    const inFlight = this.recoveredWaitingCancels.get(recovered.runId);
-    if (inFlight) return inFlight.then((settled) => ({ ...settled, joined: true as const }));
-    const cancel = this.terminalDurable(recovered.runId, {
-      now,
-      status: 'cancelled',
-      reason: 'recovered_waiting_run_cancelled',
-      event: {
-        type: 'run_cancelled',
-        payload: { sessionId: recovered.sessionId, reason: 'recovered_waiting_run_cancelled' },
-        recordedAt: now,
-      },
-    }).then(() => recovered).finally(() => {
-      this.recoveredWaitingCancels.delete(recovered.runId);
-    });
-    this.recoveredWaitingCancels.set(recovered.runId, cancel);
-    return cancel;
+    return terminalRecoveredWaitingRunOnce(this, this.recoveredWaitingCancels, selector, now);
+  }
+
+  /**
+   * 新消息优先（ADR-075 修订 2026-09-29 ③⑤）：见 supersedeSessionRoots。只由用户消息入口调用
+   * （web runAgentTurn 建根 run 前、桌面 agentAppService.sendMessage），cron 等主机侧轮次不调，
+   * 免得自动化轮次吃掉用户停靠待「继续」的 run。
+   */
+  async supersedeParkedSessionRoots(sessionId: string, now = Date.now()): Promise<void> {
+    const superseded = findSupersededSessionRoots(this.durableEnvelopes.values(), (runId) => this.handlesByRunId.has(runId), isDurableResumeQueued, sessionId);
+    await supersedeSessionRoots(this, superseded, sessionId, now);
   }
 
   async recoverDurable(now = Date.now()): Promise<RunRehydrationPlan[]> {

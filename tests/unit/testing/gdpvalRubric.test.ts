@@ -176,10 +176,10 @@ describe('extractPptxText', () => {
     const { extractPptxText } = await import('../../../scripts/lib/gdpvalRubric');
     const zip = new JSZip();
     const slide = (body: string) => `<p:sld><p:txBody>${body}</p:txBody></p:sld>`;
-    zip.file('ppt/slides/slide10.xml', slide('<a:p><a:r><a:t>第十页</a:t></a:r></a:p>'));
+    zip.file('ppt/slides/slide10.xml', slide('<a:p><a:r><a:t xml:space="preserve">第十页 &#x2014; 完</a:t></a:r></a:p>'));
     zip.file('ppt/slides/slide2.xml', slide('<a:p><a:r><a:t>R&amp;D </a:t></a:r><a:r><a:t>&lt;预算&gt;</a:t></a:r></a:p><a:p><a:r><a:t>z = 1.64</a:t></a:r></a:p>'));
     zip.file('ppt/slides/_rels/slide2.xml.rels', '<Relationships/>');
     const text = await extractPptxText(await zip.generateAsync({ type: 'nodebuffer' }));
-    expect(text).toBe('# slide 2\nR&D <预算>\nz = 1.64\n\n# slide 10\n第十页');
+    expect(text).toBe('# slide 2\nR&D <预算>\nz = 1.64\n\n# slide 10\n第十页 — 完');
   });
 });

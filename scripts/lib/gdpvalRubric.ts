@@ -86,7 +86,7 @@ export async function extractPptxText(buffer: Buffer): Promise<string> {
   const pages = await Promise.all(slides.map(async (name) => {
     const xml = await zip.file(name)!.async('string');
     const paragraphs = xml.split(/<\/a:p>/).map((paragraph) =>
-      [...paragraph.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((match) => decodeXmlText(match[1])).join(''))
+      [...paragraph.matchAll(/<a:t(?:\s[^>]*)?>([^<]*)<\/a:t>/g)].map((match) => decodeXmlText(match[1])).join(''))
       .filter((line) => line.trim());
     return `# slide ${slideNo(name)}\n${paragraphs.join('\n')}`;
   }));
@@ -97,6 +97,7 @@ function decodeXmlText(value: string): string {
   return value
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
     .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code, 16)))
     .replace(/&amp;/g, '&');
 }
 

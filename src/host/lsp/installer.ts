@@ -13,7 +13,7 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
-import { spawnSync } from 'child_process';
+import { execFile } from 'child_process';
 import { getUserConfigDir } from '../config/configPaths';
 import { LSP_TIMEOUTS } from '../../shared/constants/timeouts';
 
@@ -63,18 +63,28 @@ function npmBinPath(installDir: string, binName: string): string {
 // Probes
 // ----------------------------------------------------------------------------
 
-function isCommandOnPath(command: string): boolean {
-  const probe = process.platform === 'win32' ? 'where' : 'which';
-  try {
-    const result = spawnSync(probe, [command], {
-      stdio: 'pipe',
-      shell: true,
-      timeout: LSP_TIMEOUTS.COMMAND_CHECK,
+// 子进程一律异步：这条路径在每次 run 启动时由 LSP 初始化调用，spawnSync 会把整个
+// webServer 事件循环卡住数秒（槽 3 实测 npm install 3.4s，N-STARTUP-LOOP-STALL）。
+function runCommand(
+  command: string,
+  args: string[],
+  options: { cwd?: string; timeout: number },
+): Promise<{ status: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile(command, args, { ...options, shell: process.platform === 'win32' }, (error, stdout, stderr) => {
+      const code = (error as { code?: unknown } | null)?.code;
+      resolve({
+        status: error ? (typeof code === 'number' ? code : 1) : 0,
+        stdout: String(stdout ?? ''),
+        stderr: String(stderr ?? (error ? error.message : '')),
+      });
     });
-    return result.status === 0;
-  } catch {
-    return false;
-  }
+  });
+}
+
+async function isCommandOnPath(command: string): Promise<boolean> {
+  const probe = process.platform === 'win32' ? 'where' : 'which';
+  return (await runCommand(probe, [command], { timeout: LSP_TIMEOUTS.COMMAND_CHECK })).status === 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -92,13 +102,18 @@ async function ensureNpmRoot(dir: string): Promise<void> {
   }
 }
 
-function runNpmInstall(dir: string, packages: string[]): void {
-  const result = spawnSync('npm', ['install', '--no-save', '--no-audit', '--no-fund', ...packages], {
+// 串行：多个服务器同时首装会在同一目录抢 npm 锁。
+let installQueue: Promise<unknown> = Promise.resolve();
+
+async function runNpmInstall(dir: string, packages: string[]): Promise<void> {
+  // 不用 --no-save：装进同一目录的另一个服务器再 npm install 时，未写进 package.json 的包
+  // 会被当成多余包删掉，两个服务器互相卸载、每次 run 都重装（槽 3 lsp-servers 只剩 pyright）。
+  const install = installQueue.then(() => runCommand('npm', ['install', '--no-audit', '--no-fund', ...packages], {
     cwd: dir,
-    stdio: 'pipe',
-    shell: true,
     timeout: LSP_TIMEOUTS.INSTALL,
-  });
+  }));
+  installQueue = install.catch(() => undefined);
+  const result = await install;
   if (result.status !== 0) {
     const stderr = result.stderr?.toString() ?? '';
     const stdout = result.stdout?.toString() ?? '';
@@ -118,7 +133,7 @@ export async function ensureInstalled(config: {
   args: string[];
   install?: LSPInstallSource;
 }): Promise<ResolvedCommand> {
-  if (isCommandOnPath(config.command)) {
+  if (await isCommandOnPath(config.command)) {
     return { command: config.command, args: config.args, installed: false };
   }
 
@@ -140,7 +155,7 @@ export async function ensureInstalled(config: {
 
     try {
       await ensureNpmRoot(installDir);
-      runNpmInstall(installDir, config.install.packages);
+      await runNpmInstall(installDir, config.install.packages);
     } catch (err) {
       throw new LSPInstallError(
         config.name,

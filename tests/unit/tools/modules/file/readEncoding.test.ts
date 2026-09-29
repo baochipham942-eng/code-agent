@@ -138,6 +138,27 @@ describe('N-READ-ENCODING', () => {
       expect(result.error).toContain('GBK');
     });
 
+    it("encoding:'gbk' 多页读：首页续读尾标同时给 offset 与 encoding: 'gbk'", async () => {
+      const file = path.join(tmpDir, 'paged-gbk.csv');
+      await fs.writeFile(file, Buffer.concat([GBK_BYTES, GBK_BYTES, GBK_BYTES]));
+      const output = await readOutput(file, { encoding: 'gbk', limit: 2 });
+      expect(output).toContain("Continue with Read offset=3, encoding: 'gbk' and an explicit limit.");
+      expect(output.trimEnd().endsWith('... (5 more lines)')).toBe(true);
+    });
+
+    it('UTF-8 多页读：续读尾标不含 encoding，文案与改动前逐字一致', async () => {
+      const file = path.join(tmpDir, 'paged-utf8.csv');
+      await fs.writeFile(file, '名称,数量\n苹果,3\n'.repeat(3), 'utf-8');
+      const output = await readOutput(file, { limit: 2 });
+      expect(output).toContain(
+        '\n\n[Read incomplete] Showed lines 1-2 (2 lines). 5 lines remain unread and were not returned. ' +
+          'Continue with Read offset=3 and an explicit limit. ' +
+          'Do not treat this result as the whole file.\n' +
+          '... (5 more lines)',
+      );
+      expect(output).not.toContain("encoding: 'gbk'");
+    });
+
     it('未知 encoding 值：报错', async () => {
       const file = path.join(tmpDir, 'x.txt');
       await fs.writeFile(file, 'abc');

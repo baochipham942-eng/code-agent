@@ -135,17 +135,23 @@ function formatReadLine(line: string, lineNum: number): string {
  * 窗口没盖住文件结尾时的 fail-loud 尾标。
  * 末行必须仍是 "... (N more lines)"，survivorManifest 靠这个收尾判断截断。
  */
-function incompleteReadNotice(shownStart: number, shownEnd: number, totalLines: number): string {
+function incompleteReadNotice(
+  shownStart: number,
+  shownEnd: number,
+  totalLines: number,
+  encoding: 'utf-8' | 'gbk',
+): string {
   const shown = shownEnd - shownStart + 1;
   const unread = totalLines - shownEnd;
   const nextOffset = shownEnd + 1;
+  const continueArgs = encoding === 'gbk' ? `offset=${nextOffset}, encoding: 'gbk'` : `offset=${nextOffset}`;
   const unreadLabel = unread === 1
     ? '1 line remains unread and was not returned.'
     : `${unread} lines remain unread and were not returned.`;
   return (
     `\n\n[Read incomplete] Showed lines ${shownStart}-${shownEnd} (${shown} lines). ` +
     `${unreadLabel} ` +
-    `Continue with Read offset=${nextOffset} and an explicit limit. ` +
+    `Continue with Read ${continueArgs} and an explicit limit. ` +
     `Do not treat this result as the whole file.\n` +
     `... (${unread} more lines)`
   );
@@ -260,7 +266,7 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
 
       let result = formatted;
       if (endLine < lines.length) {
-        result += incompleteReadNotice(startLine + 1, endLine, lines.length);
+        result += incompleteReadNotice(startLine + 1, endLine, lines.length, encoding);
       }
 
       // 源数据锚定：CSV/JSON 提取 schema 指纹

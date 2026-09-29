@@ -28,6 +28,25 @@ describe('buildRuntimeModeBlock', () => {
     expect(block).not.toContain('GUI features (screenshot, browser_action) are unavailable');
   });
 
+  // N-PROMPT-TERMINAL：右栏共用交互终端是真话——desktop/web 两档都要讲清右栏终端、
+  // terminal_open 入口与 ToolSearch 加载指引，不许再说 "not a terminal" 把用户推回去自己开终端。
+  it('desktop and web runtime modes describe the shared right-rail terminal instead of denying it', () => {
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    const webBlock = buildRuntimeModeBlock();
+
+    delete process.env.CODE_AGENT_WEB_MODE;
+    delete process.env.CODE_AGENT_CLI_MODE;
+    const desktopBlock = buildRuntimeModeBlock();
+
+    for (const block of [webBlock, desktopBlock]) {
+      expect(block).toContain('shared interactive terminal');
+      expect(block).toContain('right rail');
+      expect(block).toContain('terminal_open');
+      expect(block).toContain('ToolSearch');
+      expect(block).not.toContain('not a terminal');
+    }
+  });
+
   it('keeps CLI-only guidance for real terminal mode', () => {
     process.env.CODE_AGENT_CLI_MODE = 'true';
     delete process.env.CODE_AGENT_WEB_MODE;

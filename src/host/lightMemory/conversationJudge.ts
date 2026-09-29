@@ -14,6 +14,7 @@ import { memoryTask } from '../model/quickModel';
 import { withTimeout } from '../services/infra/timeoutController';
 import { createLogger } from '../services/infra/logger';
 import { SESSION_JUDGE } from '../../shared/constants';
+import { listMemoryFiles } from './lightMemoryIpc';
 
 const logger = createLogger('ConversationJudge');
 
@@ -24,6 +25,10 @@ export interface DurableFact {
   description: string;
   type: 'user' | 'feedback' | 'project' | 'reference';
   content: string;
+  /** 判断器给出的置信度 (0-1)。缺失/越界时解析侧回落保守缺省（不低于丢弃门）。 */
+  confidence: number;
+  /** 可选：这条事实修正/取代的现有记忆文件名（r5：写入侧只记录为新条目上的链接，不归档旧条目）。 */
+  supersedes?: string;
 }
 
 export interface ConversationJudgment {
@@ -59,7 +64,9 @@ const JUDGE_PROMPT = `你是会话归档判断器。根据下面这段会话，�
       "name": "事实名称",
       "description": "一句话说明这条记忆是什么",
       "type": "user | feedback | project | reference 四选一",
-      "content": "下次会话可直接使用的完整事实"
+      "content": "下次会话可直接使用的完整事实",
+      "confidence": "0到1之间的小数，表示这条事实跨会话仍然成立的把握",
+      "supersedes": "可选；若这条事实修正或取代了现有记忆文件清单中的某个文件，填那个文件名，否则省略该字段"
     }
   ]
 }
@@ -72,7 +79,10 @@ const JUDGE_PROMPT = `你是会话归档判断器。根据下面这段会话，�
 - durableFacts 只收用户在对话中顺带透露、下次仍然成立的稳定事实，例如所在城市、家庭构成、预算档位、口味或忌口、常用平台与账号、明确表达的工作偏好，或用户对你的纠正。
 - 最强信号：你为了完成任务向用户问了一个问题，用户回答了，而且这个答案下次仍然成立。这种事实必须收进 durableFacts。
 - durableFacts 不收本次任务的临时状态、不收能从材料本身推导出的代码或文档或数据自带信息、不收闲聊和一次性调试细节。
-- durableFacts 返回空数组是正常结果，宁缺勿滥；绝大多数轮次都应该返回 []。`;
+- durableFacts 返回空数组是正常结果，宁缺勿滥；绝大多数轮次都应该返回 []。
+- confidence 校准：用户亲口明说、且明确跨会话成立的给 0.5 以上；从措辞推断、可能只在本任务成立、或拿不准的给 0.5 以下——低于 0.5 的事实会被直接丢弃，不要为了写进而抬高。
+- supersedes 只能从下面给出的现有记忆文件清单里选；清单为空或没有可取代的文件时必须省略，禁止编造文件名。
+- directive 类记忆不会出现在清单里：它们由用户显式确认建立、只能由用户移除，supersedes 永远不许指向 directive，即使你猜到了文件名。`;
 
 /**
  * Truncate a string to a max length with an ellipsis.
@@ -111,6 +121,37 @@ const DURABLE_FACT_TYPES = new Set<DurableFact['type']>([
   'project',
   'reference',
 ]);
+
+/**
+ * 置信度缺省与夹取：缺失或越界（非有限数 / 超出 [0,1]）一律回落保守缺省——
+ * 不低于丢弃门（漏给字段不等于低置信度，不静默丢弃），也不顶到 1。
+ */
+function normalizeDurableFactConfidence(value: unknown): number {
+  return typeof value === 'number'
+    && Number.isFinite(value)
+    && value >= 0
+    && value <= 1
+    ? value
+    : SESSION_JUDGE.DURABLE_FACT_CONFIDENCE_MISSING_DEFAULT;
+}
+
+/**
+ * supersedes 形状校验：与 filename 同规则（.md 结尾、无路径分量），
+ * 且不得指向自身；不合法时丢弃该字段（事实本身照常写入）。
+ */
+function normalizeDurableFactSupersedes(value: unknown, filename: string): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const supersedes = value.trim();
+  if (
+    !supersedes.endsWith('.md')
+    || path.basename(supersedes) !== supersedes
+    || path.win32.basename(supersedes) !== supersedes
+    || supersedes === filename
+  ) {
+    return undefined;
+  }
+  return supersedes;
+}
 
 function parseDurableFacts(value: unknown): DurableFact[] {
   if (!Array.isArray(value)) return [];
@@ -151,6 +192,8 @@ function parseDurableFacts(value: unknown): DurableFact[] {
         description,
         type: fact.type as DurableFact['type'],
         content: content.slice(0, SESSION_JUDGE.MAX_DURABLE_FACT_CHARS).trim(),
+        confidence: normalizeDurableFactConfidence(fact.confidence),
+        supersedes: normalizeDurableFactSupersedes(fact.supersedes, filename),
       }];
     })
     .slice(0, SESSION_JUDGE.MAX_DURABLE_FACTS);
@@ -208,6 +251,38 @@ function buildConversationSnippet(userMessages: string[], lastAssistant?: string
 }
 
 /**
+ * 现有记忆文件清单（active 且非 directive 的记忆文件）。
+ * 拼进判断器输入，让 supersedes 能指向真实存在的文件而不是编造文件名。
+ * ① directive 不进清单——其建立要过交互确认门、只能由用户移除；supersedes
+ * 只是记录在新条目上的链接（本单不归档旧条目），但仍排除 directive，避免诱导
+ * 未来消费该链接的工单去自动顶替用户确认过的约束。
+ * ② 条数封顶，输入 token 不随记忆量无界增长（超出部分本次不可被 supersedes，
+ * 保守无害）。来源为全目录扫描 + active 过滤：类型信息在文件 frontmatter 里
+ * 而不在 INDEX 行里，且与 INDEX 收录同判据（status 缺省按 active）。
+ */
+async function listExistingMemoryFilenames(): Promise<string[]> {
+  try {
+    const files = await listMemoryFiles();
+    return files
+      .filter((file) => (file.status ?? 'active') === 'active' && file.type !== 'directive')
+      .map((file) => file.filename)
+      .slice(0, SESSION_JUDGE.DURABLE_FACT_SUPERSEDES_LIST_MAX);
+  } catch (error) {
+    logger.warn('读取记忆文件清单失败，supersedes 将拿不到现有文件清单', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+}
+
+function buildSupersedesFileListPrompt(filenames: string[]): string {
+  if (filenames.length === 0) {
+    return '\n\n现有记忆文件清单：空（本次所有 supersedes 字段必须省略）。';
+  }
+  return `\n\n现有记忆文件清单（supersedes 只能从中选择）：\n${filenames.map((f) => `- ${f}`).join('\n')}`;
+}
+
+/**
  * Judge a conversation for Light Memory archival.
  *
  * Uses the configurable memory model with a hard timeout; falls back to the truncation
@@ -230,9 +305,14 @@ export async function judgeConversation(input: {
   }
 
   try {
-    const prompt = `${JUDGE_PROMPT}\n\n会话内容：\n${buildConversationSnippet(userMessages, input.lastAssistant)}`;
+    // 清单读取与模型调用共用同一个超时预算：清单在 withTimeout 之外时，
+    // 记忆目录变大后会先把会话收尾拖长，超时门却测不到它。
     const result = await withTimeout(
-      memoryTask(prompt, SESSION_JUDGE.MAX_TOKENS),
+      (async () => {
+        const existingFilenames = await listExistingMemoryFilenames();
+        const prompt = `${JUDGE_PROMPT}${buildSupersedesFileListPrompt(existingFilenames)}\n\n会话内容：\n${buildConversationSnippet(userMessages, input.lastAssistant)}`;
+        return memoryTask(prompt, SESSION_JUDGE.MAX_TOKENS);
+      })(),
       SESSION_JUDGE.TIMEOUT_MS,
       'Conversation judgment timed out',
     );

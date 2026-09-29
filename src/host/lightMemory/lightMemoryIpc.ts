@@ -26,7 +26,10 @@ export interface LightMemoryFile {
   content: string;
   entryId?: string;
   status?: MemoryEntryStatus;
+  /** 本条已被 <filename> 取代（archived 条目上由 archiveMemoryFile 写入）。 */
   deprecatedBy?: string;
+  /** 本条取代了 <filename>（新条目上的前向链接，N-MEM-WRITECONF r5 起记录，暂无消费方）。 */
+  supersedes?: string;
   source?: string;
   schemaVersion?: number;
   scope?: MemoryEntryScope;
@@ -164,14 +167,22 @@ function sanitizeFrontmatterValue(value: string | number | boolean): string {
   return String(value).replace(/\r?\n/g, ' ').replace(/:/g, ' -').trim();
 }
 
-function sanitizeLightMemoryFilename(filename: string): string {
+/** sanitizeLightMemoryFilename 生成的去扩展名文件名上限（不含 .md）。 */
+const LIGHT_MEMORY_FILENAME_MAX = 96;
+
+/**
+ * Normalize a raw filename to the exact on-disk form writeLightMemoryFile produces.
+ * 写入与「按名查找/同名检测」两侧必须共用这一份规范化——只取 basename 不做
+ * sanitize 的查找会漏掉大小写/非法字符/超长差异对应的真实文件。
+ */
+export function sanitizeLightMemoryFilename(filename: string): string {
   const basename = path.basename(filename.trim());
   const withoutExt = basename.endsWith('.md') ? basename.slice(0, -3) : basename;
   const safe = withoutExt
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 96);
+    .slice(0, LIGHT_MEMORY_FILENAME_MAX);
   return `${safe || `memory-${Date.now()}`}.md`;
 }
 
@@ -186,6 +197,7 @@ function toLightMemoryFile(filename: string, content: string, updatedAt: Date): 
     entryId: metadata.entry_id,
     status: parseMemoryEntryStatus(metadata.status),
     deprecatedBy: metadata.deprecated_by || undefined,
+    supersedes: metadata.supersedes || undefined,
     source: metadata.source,
     memoryTainted: metadata.memory_tainted === 'true',
     schemaVersion: parseSchemaVersion(metadata.schema_version),
@@ -296,6 +308,7 @@ export async function writeLightMemoryFile(input: {
   entryId?: string;
   status?: MemoryEntryStatus;
   deprecatedBy?: string | null;
+  supersedes?: string | null;
   source?: string;
   schemaVersion?: number;
   scope?: MemoryEntryScope;
@@ -318,6 +331,7 @@ export async function writeLightMemoryFile(input: {
     ['entry_id', input.entryId],
     ['status', input.status],
     ['deprecated_by', input.deprecatedBy || undefined],
+    ['supersedes', input.supersedes || undefined],
     ['source', input.source],
     ['memory_tainted', input.memoryTainted || undefined],
     ['schema_version', input.schemaVersion],

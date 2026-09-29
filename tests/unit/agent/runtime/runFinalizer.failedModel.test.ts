@@ -345,6 +345,7 @@ describe('RunFinalizer 失败事件', () => {
         description: 'must not persist',
         type: 'user',
         content: 'evaluation-only',
+        confidence: 0.9,
       }],
       source: 'llm',
     });

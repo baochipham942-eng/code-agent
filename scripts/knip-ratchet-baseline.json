@@ -1957,16 +1957,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/hooks/builtins/memoryHooks.ts",
-      "name": "extractSessionLearnings",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/hooks/builtins/memoryHooks.ts",
-      "name": "SessionLearning",
-      "kind": "type"
-    },
-    {
       "file": "src/host/hooks/configParser.ts",
       "name": "captureHooksConfigSnapshot",
       "kind": "export"

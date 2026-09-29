@@ -24,6 +24,21 @@ export const SESSION_JUDGE = {
   MAX_DURABLE_FACTS: 3,
   /** 单条长期事实正文最大字符数 */
   MAX_DURABLE_FACT_CHARS: 1200,
+  // N-MEM-WRITECONF r5（final scope cut）：长期事实唯一置信度门。candidate 分层
+  // （0.5~0.8 待复核）连续 5 轮审查均发现新的数据丢失洞，整体移除——现在只有
+  // < DROP_BELOW 丢弃留痕，其余照 origin/main 原行为写 active。低半区留给
+  // "推断出来/只在本次成立的伪事实"：宁可少写一条，不可覆盖用户确认过的内容。
+  /** 低于该置信度的长期事实直接丢弃（计入 dropped 并记录原因） */
+  DURABLE_FACT_CONFIDENCE_DROP_BELOW: 0.5,
+  /** 判断器漏给/给出界置信度时的保守缺省——不低于丢弃门（不静默丢弃），也不顶到 1 */
+  DURABLE_FACT_CONFIDENCE_MISSING_DEFAULT: 0.65,
+  /**
+   * 判断器输入「现有记忆文件清单」的条数上限。清单只为 supersedes 指向真实文件服务，
+   * 逐条拼进 prompt；不设上限时输入 token 随记忆量线性增长。取 60（约 INDEX 注入
+   * 预算 200 行的三成）：超出部分本次不可被 supersedes——保守无害，supersedes 本就
+   * 是尽力而为，写入侧只对真实存在的文件记录链接。
+   */
+  DURABLE_FACT_SUPERSEDES_LIST_MAX: 60,
 } as const;
 
 /**

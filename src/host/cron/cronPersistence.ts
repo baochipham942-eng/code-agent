@@ -123,3 +123,43 @@ export function loadCronExecutionStatus(
     return undefined;
   }
 }
+
+/**
+ * 启动时把残留的 running 执行记录标记为 interrupted（maka 护栏自查 A5-④）：
+ * 上次进程退出前没跑完的执行会永远停在 running，误导用户以为还在跑。
+ * 单条 UPDATE，幂等（重复跑不会二次改动已是 interrupted 的行），不影响启动耗时。
+ */
+export function markInterruptedCronExecutions(): Promise<void> {
+  try {
+    const db = getDatabase().getDb();
+    if (!db) return Promise.resolve();
+    const result = db.prepare(`
+        UPDATE cron_executions
+        SET status = 'interrupted', completed_at = COALESCE(completed_at, ?)
+        WHERE status = 'running'
+      `).run(Date.now());
+    if (result.changes > 0) {
+      console.error(`[CronService] Marked ${result.changes} stale running execution(s) as interrupted`);
+    }
+  } catch (error) {
+    console.error('[CronService] Failed to mark interrupted executions:', error);
+  }
+  return Promise.resolve();
+}
+
+/** 任务最近一次执行开始时间（ms）；没有执行记录时 undefined。 */
+export function loadCronLastRunAt(jobId: string): number | undefined {
+  try {
+    const db = getDatabase().getDb();
+    if (!db) return undefined;
+    const row = db.prepare(`
+        SELECT MAX(started_at) AS last_run_at
+        FROM cron_executions
+        WHERE job_id = ? AND started_at IS NOT NULL
+      `).get(jobId) as { last_run_at?: number | null } | undefined;
+    return typeof row?.last_run_at === 'number' ? row.last_run_at : undefined;
+  } catch (error) {
+    console.error('[CronService] Failed to load cron last-run timestamp:', error);
+    return undefined;
+  }
+}

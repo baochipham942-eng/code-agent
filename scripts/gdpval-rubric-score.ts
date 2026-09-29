@@ -26,12 +26,14 @@ import {
   chunkRubric,
   extractPptxText,
   isInsideRoot,
+  judgeRubricBatch,
   TRUNCATED_MARK,
-  parseRubricVerdicts,
+  summarizeRun,
   summarizeTask,
   type GdpvalArtifactFile,
   type GdpvalItemVerdict,
   type GdpvalRubricItem,
+  type GdpvalTaskScore,
 } from './lib/gdpvalRubric';
 
 // 额度按「128k 上下文留一半给资料」定：产物标称 12 万 + 输入 6 万 = 18 万字符 ≈ 6 万 token。
@@ -320,6 +322,7 @@ async function main(): Promise<void> {
     process.exit(1);
   });
   let calls = 0;
+  const scores: GdpvalTaskScore[] = [];
   for (const task of tasks) {
     const taskRoot = path.join(artifactsRoot, task.id);   // 根边界已在上面的 tasks 过滤里挡过
     const allRels = listFiles(taskRoot);
@@ -362,42 +365,48 @@ async function main(): Promise<void> {
     const verdicts: GdpvalItemVerdict[] = [];
     for (const batch of chunkRubric(rubric, options.batch)) {
       const prompt = buildRubricPrompt(batch, files, inputs);
-      // 失败要重试够：一次 500 或 429 会让整批条目全变未判、整题记 0 分，
-      // 那是个假信号——它看起来和「产物确实不合格」一模一样。
+      // 失败要重试够：一次 500 或 429 不该让整批条目变成假信号。
       // 退避要拉开：实测智谱 429（code 1305「访问量过大」）在 3 秒后照样 429，
       // 而夜巡一晚要为 216 道题发几百次调用，撞限流是常态不是意外。
-      let content = '';
-      for (let attempt = 0; attempt < RETRY_BACKOFF_MS.length + 1 && !content; attempt += 1) {
-        if (attempt > 0) {
-          const wait = RETRY_BACKOFF_MS[attempt - 1];
-          await new Promise((resolve) => { setTimeout(resolve, wait); });
-        }
-        const more = attempt < RETRY_BACKOFF_MS.length ? `，${RETRY_BACKOFF_MS[attempt] / 1000} 秒后重试` : '，不再重试';
-        try {
+      // 重试耗尽的整批记 call_failed（剔出分母），与模型漏答的 null 分开。
+      verdicts.push(...await judgeRubricBatch(
+        batch,
+        async () => {
           // 不给超时，模型服务挂起时整夜评分会停在这一批上，后面的题一道都不落盘。
           calls += 1;   // 计在发起处：抛错的那次也是真花了钱的，记在 await 之后会低报付费量
-          const response = await quickTask(prompt, 6000, AbortSignal.timeout(options.callTimeoutMs));
-          content = response.success && response.content ? response.content : '';
-          if (!content) console.warn(`  ${task.id}：模型没返回内容（${response.error ?? '无错误信息'}）${more}`);
-        } catch (error) {
-          console.warn(`  ${task.id}：调用失败${more}`, error);
-        }
-      }
-      verdicts.push(...parseRubricVerdicts(content, batch));
+          return quickTask(prompt, 6000, AbortSignal.timeout(options.callTimeoutMs));
+        },
+        RETRY_BACKOFF_MS,
+        {
+          sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
+          warn: (message, error) => console.warn(`  ${task.id}：${message}`, ...(error === undefined ? [] : [error])),
+        },
+      ));
     }
 
     // 落盘的 files 标出哪些只留了占位：事后要能看出「这条判负」是不是因为文件压根没进提示词。
     const seenPaths = new Set(files.filter((file) => !isUnseen(file)).map((file) => file.path));
     const fileLabels = allRels.map((rel) => (seenPaths.has(rel) ? rel : `${rel} [${TRUNCATED_MARK}]`));
     const score = summarizeTask(task.id, verdicts, fileLabels, task._occupation);
+    scores.push(score);
     out.write(`${JSON.stringify(score)}\n`);
     console.log(`${task.id.padEnd(16)} ${(score.ratio * 100).toFixed(0).padStart(3)}%  ${score.earned}/${score.total} 分`
       + `（满分 ${score.totalRaw}，弃权 ${score.abstained} 条已剔出分母）`
       + `  条目 ${verdicts.length}${score.unjudged > 0 ? `（漏判 ${score.unjudged}）` : ''}`
+      + `${score.callFailed ? `（调用失败 ${score.callFailed}，已剔出分母）` : ''}${score.scoreFailed ? '  [score failed]' : ''}`
       + `  产物 ${allRels.length} 个  输入 ${inputs.length} 个`);
   }
   out.end();
   console.log(`\n结果：${outPath}；模型调用 ${calls} 次`);
+  const summary = summarizeRun(scores);
+  const pct = (value: number | null) => (value === null ? 'n/a' : `${(value * 100).toFixed(1)}%`);
+  console.log(`统计（已剔除 score failed 的题）：${summary.scored} 题  中位 ${pct(summary.median)}  `
+    + `均值 ${pct(summary.mean)}  加权 ${pct(summary.weighted)}`);
+  if (summary.scoreFailed > 0) {
+    console.error(`score failed: ${summary.scoreFailed} tasks, first error: ${summary.firstError}`);
+    // 全部评分失败 = 评分整体故障，不是产物不合格：非 0 退出让上游脚本看得见。
+    if (summary.scored === 0) process.exitCode = 1;
+  }
 }
 
 main().catch((error) => {

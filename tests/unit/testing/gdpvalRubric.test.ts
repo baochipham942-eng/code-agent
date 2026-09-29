@@ -4,7 +4,9 @@ import {
   buildRubricPrompt,
   chunkRubric,
   isInsideRoot,
+  judgeRubricBatch,
   parseRubricVerdicts,
+  summarizeRun,
   summarizeTask,
   type GdpvalRubricItem,
 } from '../../../scripts/lib/gdpvalRubric';
@@ -181,5 +183,78 @@ describe('extractPptxText', () => {
     zip.file('ppt/slides/_rels/slide2.xml.rels', '<Relationships/>');
     const text = await extractPptxText(await zip.generateAsync({ type: 'nodebuffer' }));
     expect(text).toBe('# slide 2\nR&D <预算>\nz = 1.64\n\n# slide 10\n第十页 — 完');
+  });
+});
+
+describe('调用失败 ≠ 判不通过（N-GDPVAL-SCORER-CALLFAIL）', () => {
+  const hooks = { sleep: async () => {}, warn: () => {} };
+  const call402 = async () => ({ success: false, error: '402 Insufficient token quota' });
+
+  it('快模型 402 重试耗尽：整批 call_failed，题 scoreFailed、不计 0 分，错误原文带出', async () => {
+    let calls = 0;
+    const verdicts = await judgeRubricBatch(items, async () => { calls += 1; return call402(); }, [1, 1], hooks);
+    expect(calls).toBe(3);
+    expect(verdicts.every((verdict) => verdict.pass === 'call_failed')).toBe(true);
+    const score = summarizeTask('gdp-402', verdicts, []);
+    expect(score.total).toBe(0);
+    expect(score.callFailed).toBe(3);
+    expect(score.unjudged).toBe(0);
+    expect(score.scoreFailed).toBe(true);
+    expect(score.scoreError).toBe('402 Insufficient token quota');
+    const summary = summarizeRun([score]);
+    expect(summary.scoreFailed).toBe(1);
+    expect(summary.scored).toBe(0);
+    expect(summary.median).toBeNull();
+  });
+
+  it('抛错同样记 call_failed，错误截 300 字', async () => {
+    const verdicts = await judgeRubricBatch(items, async () => { throw new Error('x'.repeat(500)); }, [], hooks);
+    expect(verdicts[0].pass).toBe('call_failed');
+    expect(summarizeTask('gdp-t', verdicts, []).scoreError).toHaveLength(300);
+  });
+
+  it('模型正常返回但漏答仍是 null：计入分母、单独计数，不是 call_failed', async () => {
+    const verdicts = await judgeRubricBatch(
+      items,
+      async () => ({ success: true, content: '{"verdicts":[{"n":1,"pass":true}]}' }),
+      [],
+      hooks,
+    );
+    const score = summarizeTask('gdp-o', verdicts, []);
+    expect(verdicts.map((verdict) => verdict.pass)).toEqual([true, null, null]);
+    expect(score.total).toBe(6);
+    expect(score.unjudged).toBe(2);
+    expect(score.callFailed).toBe(0);
+    expect(score.scoreFailed).toBeUndefined();
+  });
+
+  it('重试中途成功就不算失败', async () => {
+    let n = 0;
+    const verdicts = await judgeRubricBatch(
+      items,
+      async () => (++n < 2 ? { success: false, error: '429' } : { success: true, content: '{"verdicts":[{"n":1,"pass":true},{"n":2,"pass":true},{"n":3,"pass":true}]}' }),
+      [1, 1],
+      hooks,
+    );
+    expect(verdicts.every((verdict) => verdict.pass === true)).toBe(true);
+  });
+
+  it('部分失败低于阈值：剩余条目照常计分，失败条目不进分母', () => {
+    const many: GdpvalRubricItem[] = Array.from({ length: 10 }, (_, i) => ({ score: 1, criterion: `c${i}`, rubric_item_id: `r${i}` }));
+    const verdicts = parseRubricVerdicts(
+      `{"verdicts":[${many.slice(0, 9).map((_, i) => `{"n":${i + 1},"pass":true}`).join(',')}]}`, many,
+    );
+    verdicts[9] = { ...verdicts[9], pass: 'call_failed', why: 'boom' };
+    const score = summarizeTask('gdp-p', verdicts, []);
+    expect(score.scoreFailed).toBeUndefined();
+    expect(score.total).toBe(9);
+    expect(score.ratio).toBe(1);
+  });
+
+  it('汇总统计剔除 scoreFailed 的题', () => {
+    const good = summarizeTask('g', parseRubricVerdicts('{"verdicts":[{"n":1,"pass":true},{"n":2,"pass":true},{"n":3,"pass":true}]}', items), []);
+    const bad = summarizeTask('b', items.map((item) => ({ rubricItemId: item.rubric_item_id, criterion: item.criterion, score: item.score, pass: 'call_failed' as const, why: '401' })), []);
+    const summary = summarizeRun([good, bad]);
+    expect(summary).toMatchObject({ scored: 1, scoreFailed: 1, firstError: '401', median: 1, mean: 1, weighted: 1 });
   });
 });

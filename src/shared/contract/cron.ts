@@ -20,10 +20,17 @@ export type CronRunsOn = 'local' | 'cloud';
  */
 export type CronJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'interrupted';
 
+/**
+ * Why a scheduled occurrence was recorded missed.
+ * `interrupted` = it did start, but the process died mid-run（启动扫描据此停用而不整趟重跑）；
+ * `app-offline` = it never started because the app was down through the whole trigger window.
+ */
+export type CronMissedReason = 'app-offline' | 'interrupted';
+
 export interface CronMissedEvent {
   jobId: string;
   scheduledAt: number;
-  reason: 'app-offline';
+  reason: CronMissedReason;
 }
 
 /**

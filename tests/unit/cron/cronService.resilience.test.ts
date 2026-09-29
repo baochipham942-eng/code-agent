@@ -9,6 +9,8 @@ const dbState = vi.hoisted(() => ({
   cronRows: [] as unknown[],
   runs: [] as Array<{ sql: string; args: unknown[] }>,
   executionRows: [] as Array<Record<string, unknown>>,
+  // loadCronLastRunAt（MAX(started_at) 查询）的应答表；未列出的 jobId → null（= 没有执行记录）
+  lastRunAtByJob: {} as Record<string, number | null>,
 }));
 
 const automationState = vi.hoisted(() => ({
@@ -32,7 +34,13 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
     getDb: () => ({
       prepare: (sql: string) => ({
         all: () => (sql.includes('FROM cron_jobs') ? dbState.cronRows : []),
-        get: () => undefined,
+        get: (...args: unknown[]) => {
+          // loadCronLastRunAt 的 MAX(started_at) 查询；其余 get 维持 undefined（既有行为）
+          if (sql.includes('MAX(started_at)')) {
+            return { last_run_at: dbState.lastRunAtByJob[args[0] as string] ?? null };
+          }
+          return undefined;
+        },
         run: (...args: unknown[]) => {
           dbState.runs.push({ sql, args });
           if (sql.includes('UPDATE cron_executions') && sql.includes("'interrupted'")) {
@@ -78,6 +86,7 @@ afterEach(() => {
   dbState.cronRows = [];
   dbState.runs = [];
   dbState.executionRows = [];
+  dbState.lastRunAtByJob = {};
   notifyState.notifyTaskComplete.mockClear();
   automationState.upsert.mockClear();
 });
@@ -616,6 +625,132 @@ describe('R2：jitter 窗口（最长 15min）内任务被停用/编辑 → 不�
 
     expect(executedPrompt).toBe('新 prompt'); // HEAD 红：闭包里还是旧 prompt
     randSpy.mockRestore();
+    await service.shutdown();
+  });
+});
+
+describe('R3：一次性（at）任务宽限窗补跑先核 lastRunAt（不变量 B）', () => {
+  it('宽限窗内但该趟已开始过（跑一半崩溃重启）→ 不整趟重跑：停用 + missed 留痕 reason=interrupted', async () => {
+    vi.useFakeTimers();
+    const dueAt = NOW - 2 * 60_000; // 2 分钟前到期：5 分钟宽限窗内
+    vi.setSystemTime(NOW);
+    dbState.cronRows = [{
+      id: 'job-at-interrupted',
+      name: '跑一半崩溃的一次性任务',
+      description: null,
+      schedule_type: 'at',
+      schedule: JSON.stringify({ type: 'at', datetime: dueAt }),
+      action: JSON.stringify({ type: 'agent', agentType: 'default', prompt: '跑报告' }),
+      enabled: 1,
+      max_retries: 0,
+      retry_delay: null,
+      timeout: 60000,
+      tags: null,
+      metadata: '{}',
+      cloud_job_id: null,
+      created_at: NOW - 60 * 60_000,
+      updated_at: NOW - 60 * 60_000,
+    }];
+    // 崩溃前的执行记录：T 点后已开始过（markInterruptedCronExecutions 已把它标 interrupted）
+    dbState.lastRunAtByJob['job-at-interrupted'] = dueAt + 5_000;
+
+    const service = new CronService();
+    let calls = 0;
+    patchExecuteAction(service, async () => {
+      calls += 1;
+      return { ok: true };
+    });
+    await service.initialize();
+    await vi.advanceTimersByTimeAsync(1); // 补跑是 fire-and-forget
+
+    expect(calls).toBe(0); // 已开始过的趟不整趟重跑（HEAD 红：整趟重跑 = 重复副作用 + 第二笔模型费用）
+    expect(dbState.executionRows.filter((row) => row.job_id === 'job-at-interrupted')).toHaveLength(0);
+    expect(service.getJob('job-at-interrupted')!.enabled).toBe(false); // 按已中断停用
+    // missed 留痕带可区分原因（区别于 app-offline 离线错过）
+    expect(automationState.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'cron:job-at-interrupted',
+      config: expect.objectContaining({ missedNotice: { scheduledAt: dueAt, reason: 'interrupted' } }),
+    }));
+    await service.shutdown();
+  });
+});
+
+describe('R3：退避重试等待后按 jobId 重取当前定义再执行（不变量 A）', () => {
+  it('等待期间任务被停用 → 中止重试链：无第二次执行，终态 cancelled 不计失败', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const service = new CronService();
+    const job = await service.createJob(recurringShellJob({ maxRetries: 2 }));
+    const { calls } = patchExecuteAction(service, async () => {
+      throw new Error('ECONNRESET: socket hang up');
+    });
+
+    const settled = service.triggerJob(job.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls()).toBe(1); // 首次失败，进入 30s 退避等待
+
+    await service.updateJob(job.id, { enabled: false }); // 等待期间停用
+    await vi.advanceTimersByTimeAsync(60_000); // 退避早已到点
+
+    expect(calls()).toBe(1); // 停用了就不再重试（HEAD 红：闭包旧定义照样再跑）
+    const execution = (await settled)!;
+    expect(execution.status).toBe('cancelled'); // 不计失败、不烧连败（HEAD 红：failed）
+    await service.shutdown();
+  });
+
+  it('等待期间任务被删除 → 中止重试链：无第二次执行，终态 cancelled 不计失败', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const service = new CronService();
+    const job = await service.createJob(recurringShellJob({ maxRetries: 2 }));
+    const { calls } = patchExecuteAction(service, async () => {
+      throw new Error('ECONNRESET: socket hang up');
+    });
+
+    const settled = service.triggerJob(job.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls()).toBe(1);
+
+    await service.deleteJob(job.id); // 等待期间删除
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(calls()).toBe(1); // 删了就不再重试（HEAD 红：闭包旧定义照样再跑）
+    const execution = (await settled)!;
+    expect(execution.status).toBe('cancelled');
+    await service.shutdown();
+  });
+
+  it('等待期间改了 prompt → 重试用当前定义执行（新 prompt 生效）', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const service = new CronService();
+    const job = await service.createJob({
+      name: '退避等待中被编辑的任务',
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 12, unit: 'hours' },
+      action: { type: 'agent', agentType: 'default', prompt: '旧 prompt' },
+      enabled: true,
+      maxRetries: 1,
+    });
+    let calls = 0;
+    let executedPrompt: string | undefined;
+    patchExecuteAction(service, async (_definition, action) => {
+      calls += 1;
+      if (calls === 1) throw new Error('ECONNRESET: socket hang up');
+      executedPrompt = (action as { prompt: string }).prompt;
+      return { ok: true };
+    });
+
+    const settled = service.triggerJob(job.id);
+    await vi.advanceTimersByTimeAsync(0); // 首次失败，进入 30s 退避等待
+    await service.updateJob(job.id, {
+      action: { type: 'agent', agentType: 'default', prompt: '新 prompt' },
+    });
+    await vi.advanceTimersByTimeAsync(30_000); // 退避到点，重试
+
+    expect(executedPrompt).toBe('新 prompt'); // HEAD 红：闭包里还是旧 prompt
+    const execution = (await settled)!;
+    expect(execution.status).toBe('completed');
     await service.shutdown();
   });
 });

@@ -20,6 +20,7 @@ import type {
   CronJobAction,
   CronServiceStats,
   CronMissedEvent,
+  CronMissedReason,
   CreateCronJobDefinition,
 } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
@@ -55,6 +56,7 @@ import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
+  decideOneTimeJobStartup,
   intervalToCron,
   runWithCronJobBudget,
   scheduleBoundToDate,
@@ -1094,12 +1096,22 @@ export class CronService implements Disposable {
 
     await new Promise((resolve) => setTimeout(resolve, delay));
 
+    // 不变量 A（R3）：等待后再执行——按 jobId 重取当前定义。等待期间（最长 15min）任务
+    // 可能已被停用/删除：拿闭包旧定义照跑是对已停任务再花一笔执行成本。中止重试链，
+    // 终态 cancelled（不是这次执行的失败，不计连败；最后一次真实失败仍留在 execution.error）。
+    const current = this.jobs.get(definition.id)?.definition;
+    if (!current?.enabled) {
+      console.warn(`[CronService] Job ${definition.id} retry skipped: job ${current ? 'disabled' : 'deleted'} while waiting to retry`);
+      execution.status = 'cancelled';
+      return;
+    }
+
     execution.retryAttempt++;
     execution.status = 'running';
     execution.startedAt = Date.now();
 
     try {
-      const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id);
+      const result = await this.executeAction(current, current.action, current.timeout, execution.id);
       if (isCronAgentActionResult(result)) {
         execution.sessionId = result.sessionId;
       }
@@ -1114,8 +1126,8 @@ export class CronService implements Disposable {
       if (classifyCronFailure(execution.error) === 'permanent') return;
 
       // Continue retrying if we haven't reached the limit
-      if (execution.retryAttempt < (definition.maxRetries || 0)) {
-        await this.retryExecution(definition, execution);
+      if (execution.retryAttempt < (current.maxRetries || 0)) {
+        await this.retryExecution(current, execution);
       }
     }
   }
@@ -1152,32 +1164,30 @@ export class CronService implements Disposable {
         // 过期的一次性任务停用而不是静默挂起（maka 护栏自查 A5-⑥）：
         // datetime 已过（app 关闭期间错过触发窗）时 croner 永远不会再触发，
         // 旧行为是任务留在 enabled 状态装作还会跑。停用并落库，让状态与事实一致。
-        // misfire 宽限窗（N-CRON-RESILIENCE）：刚错过不久（≤MISFIRE_GRACE_MS）的照跑，
-        // 覆盖重启/升级/短暂崩溃的空档；超窗才判离线错过停用。
+        // misfire 宽限窗（N-CRON-RESILIENCE）：刚错过不久（≤MISFIRE_GRACE_MS）且没跑过的照跑，
+        // 覆盖重启/升级/短暂崩溃的空档；该趟已开始过（跑一半崩溃）不整趟重跑（R3 不变量 B，
+        // 判据见 decideOneTimeJobStartup）；超窗才判离线错过停用。
         if (job.runsOn === 'local' && job.enabled && job.schedule.type === 'at') {
-          const ts = typeof job.schedule.datetime === 'number'
-            ? job.schedule.datetime
-            : Date.parse(String(job.schedule.datetime));
-          if (!Number.isFinite(ts) || ts <= now) {
-            if (Number.isFinite(ts) && now - ts <= CRON_GUARDRAILS.MISFIRE_GRACE_MS) {
+          const decision = decideOneTimeJobStartup(job, now, loadCronLastRunAt(job.id));
+          if (decision.kind !== 'register') {
+            if (decision.kind === 'catch-up') {
               this.jobs.set(job.id, { definition: job });
               console.error(
-                `[CronService] One-time job ${job.id} due ${new Date(ts).toISOString()} `
+                `[CronService] One-time job ${job.id} due ${new Date(decision.dueAt).toISOString()} `
                 + 'within misfire grace window; running it now',
               );
               void this.runScheduledJob(job.id).catch((err) => {
                 console.error(`[CronService] Grace-window catch-up failed for job ${job.id}:`, err);
               });
-              loadedCount += 1;
-              continue;
+            } else {
+              const disabled = { ...job, enabled: false, updatedAt: now };
+              this.jobs.set(disabled.id, { definition: disabled });
+              await this.persistJob(disabled);
+              if (decision.dueAt != null) {
+                await this.recordMissedJob(disabled, decision.dueAt, undefined, decision.missedReason);
+              }
+              console.error(`[CronService] One-time job ${job.id} ${decision.alreadyStarted ? 'already started before restart (interrupted mid-run); disabled without re-running' : 'missed its schedule while app was offline; disabled'}`);
             }
-            const disabled = { ...job, enabled: false, updatedAt: now };
-            this.jobs.set(disabled.id, { definition: disabled });
-            await this.persistJob(disabled);
-            if (Number.isFinite(ts)) {
-              await this.recordMissedJob(disabled, ts);
-            }
-            console.error(`[CronService] One-time job ${job.id} missed its schedule while app was offline; disabled`);
             loadedCount += 1;
             continue;
           }
@@ -1229,8 +1239,9 @@ export class CronService implements Disposable {
     definition: CronJobDefinition,
     scheduledAt: number,
     nextRunAt?: number,
+    missedReason: CronMissedReason = 'app-offline',
   ): Promise<void> {
-    const event: CronMissedEvent = { jobId: definition.id, scheduledAt, reason: 'app-offline' };
+    const event: CronMissedEvent = { jobId: definition.id, scheduledAt, reason: missedReason };
     await persistCronMissedTrace(definition, event, nextRunAt);
     getEventBus().publish('system', 'cron.missed', event, { bridgeToRenderer: false });
   }

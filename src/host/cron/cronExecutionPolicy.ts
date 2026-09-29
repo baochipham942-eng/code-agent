@@ -1,6 +1,6 @@
 import { Cron } from 'croner';
 import { CRON_GUARDRAILS } from '../../shared/constants';
-import type { CronJobDefinition } from '../../shared/contract/cron';
+import type { CronJobDefinition, CronMissedReason } from '../../shared/contract/cron';
 import { suggestCronStaggerMinute } from '../../shared/cronStagger';
 import {
   createScopedCostLimit,
@@ -89,6 +89,47 @@ function cronScheduleMinimumIntervalSeconds(schedule: CronJobDefinition['schedul
 
 export function minimumIntervalSecondsForLocation(runsOn: CronJobDefinition['runsOn']): number {
   return runsOn === 'cloud' ? CLOUD_MIN_INTERVAL_SEC : LOCAL_MIN_INTERVAL_SEC;
+}
+
+/** 启动扫描对一次性（at）任务的处置决定（纯函数，副作用留在 cronService）。 */
+export type OneTimeJobStartupDecision =
+  | { kind: 'register' }
+  | { kind: 'catch-up'; dueAt: number }
+  | {
+    kind: 'disable';
+    /** 解析得出到期时间；datetime 解析不出来时 undefined（此时只停用、不记 missed）。 */
+    dueAt?: number;
+    missedReason: CronMissedReason;
+    /** true = 该趟已开始过、跑一半进程崩溃（不整趟重跑）；false = 离线错过根本没跑。 */
+    alreadyStarted: boolean;
+  };
+
+/**
+ * 过期的一次性任务在启动加载时怎么处置（maka 护栏自查 A5-⑥ + N-CRON-RESILIENCE R3）：
+ * - 还没到期 → 照常注册；
+ * - 刚错过（≤MISFIRE_GRACE_MS）且没跑过 → 宽限窗内补跑这一趟；
+ * - 刚错过但**已开始过**（T 点开跑、跑一半崩溃，重启时执行记录已被标 interrupted）→
+ *   停用不重跑（不变量 B：整趟重跑 = 重复副作用 + 第二笔模型费用）；
+ * - 超窗 → 离线错过停用。
+ * lastRunAt 判据与循环任务宽限窗补跑同构：`(lastRunAt ?? createdAt) < dueAt` 才补跑。
+ */
+export function decideOneTimeJobStartup(
+  job: Pick<CronJobDefinition, 'schedule' | 'createdAt'>,
+  now: number,
+  lastRunAt: number | undefined,
+): OneTimeJobStartupDecision {
+  if (job.schedule.type !== 'at') return { kind: 'register' };
+  const ts = typeof job.schedule.datetime === 'number'
+    ? job.schedule.datetime
+    : Date.parse(String(job.schedule.datetime));
+  if (Number.isFinite(ts) && ts > now) return { kind: 'register' };
+  if (Number.isFinite(ts) && now - ts <= CRON_GUARDRAILS.MISFIRE_GRACE_MS) {
+    const startedAt = lastRunAt ?? job.createdAt;
+    return startedAt < ts
+      ? { kind: 'catch-up', dueAt: ts }
+      : { kind: 'disable', dueAt: ts, missedReason: 'interrupted', alreadyStarted: true };
+  }
+  return { kind: 'disable', dueAt: Number.isFinite(ts) ? ts : undefined, missedReason: 'app-offline', alreadyStarted: false };
 }
 
 export function assertExecutionLocationConstraints(

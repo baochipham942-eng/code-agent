@@ -25,7 +25,7 @@ import PptxGenJS from 'pptxgenjs';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS } from '../../../../shared/constants';
 import type { PPTGenerateParams, SlideImage, ChartMode, ResearchContext, VlmCallback, SlideData } from '../../media/ppt/types';
 import { getThemeConfig } from '../../media/ppt/themes';
-import { parseContentToSlides, outlineToSlideData } from '../../media/ppt/parser';
+import { parseContentToSlides } from '../../media/ppt/parser';
 import { registerSlideMasters, MASTER } from '../../media/ppt/slideMasters';
 import {
   selectMasterAndLayout,
@@ -508,6 +508,14 @@ export async function executePptGenerate(
     const slideImages: SlideImage[] = [...((images as SlideImage[]) || [])];
 
     // ===== 多通道内容生成 =====
+    // 拿不到页面内容时报错让模型补内容，禁止用写死的示例稿冒充成品（FB-254）。
+    const noContentError = (reason: string): ToolResult<string> => ({
+      ok: false,
+      error:
+        `PPT not generated: no page content was obtained (${reason}). ` +
+        `Pass per-slide titles and bullet points via \`slides\` (structured) or \`content\` (markdown), then call ppt_generate again.`,
+      code: 'PPT_NO_CONTENT',
+    });
     let structuredSlides: StructuredSlide[] | null = null;
     let legacySlides: SlideData[] | null = null;
 
@@ -521,9 +529,14 @@ export async function executePptGenerate(
         }
       } else {
         ctx.logger.warn(`All structured slides failed validation, falling back to legacy`);
-        legacySlides = content
-          ? parseContentToSlides(content, slides_count)
-          : outlineToSlideData(topic, slides_count);
+        if (!content) {
+          const summary = errors
+            .slice(0, 5)
+            .map((e) => `slide ${e.index + 1}: ${e.errors.join('; ')}`)
+            .join(' | ');
+          return noContentError(`all provided slides failed validation: ${summary}`);
+        }
+        legacySlides = parseContentToSlides(content, slides_count);
       }
     } else if (data_source) {
       // D2: 数据源驱动
@@ -541,14 +554,14 @@ export async function executePptGenerate(
         structuredSlides = generated;
         ctx.logger.debug(`Model generated ${generated.length} structured slides`);
       } else {
-        legacySlides = outlineToSlideData(topic, slides_count);
+        return noContentError('model-generated slide content failed');
       }
     } else {
       // 通道 B：传统 content markdown
-      const processedContent = content || '';
-      legacySlides = processedContent
-        ? parseContentToSlides(processedContent, slides_count)
-        : outlineToSlideData(topic, slides_count);
+      if (!content) {
+        return noContentError('neither slides nor content was provided, and this environment cannot auto-generate content');
+      }
+      legacySlides = parseContentToSlides(content, slides_count);
     }
 
     // ⑥ 注入图表数据（从研究数据自动构建）

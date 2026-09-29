@@ -17,7 +17,6 @@ import {
 } from '../../../shared/contract';
 import { type StructuredOutputConfig, type StructuredOutputResult, generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
 import type { PlanningService } from '../../planning';
-import { recordSessionStart } from '../../lightMemory/sessionMetadata';
 import { getLangfuseService, getBudgetService } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { generateMessageId } from '../../../shared/utils/id';
@@ -43,7 +42,6 @@ import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from '.
 import { type AgentLoopConfig, WRITE_TOOLS } from '../../agent/loopTypes';
 import { buildDynamicPromptV2 } from '../../prompts/builder';
 import { detectTaskFeatures } from '../../prompts/systemReminders';
-import { getSessionRecoveryService } from '../../agent/sessionRecovery';
 import {
   advanceTodoStatus,
   setSessionTodos,
@@ -65,17 +63,16 @@ import {
 } from '../../services/skills/skillInvocationResolver';
 import {
   hasActiveSessionTodos,
-  isSessionFirstUserTurn,
   queueRuntimeDiagnostic,
   todosFromPlan,
 } from './conversationRuntimePlanning';
 import {
   bootstrapDesktopDerivedContext,
   injectActivityContext,
-  injectRecentConversations,
-  injectSeedMemory,
   persistFailedRunContinuationContext,
+  runStartupContextAssembly,
 } from './conversationRuntimeContextBootstrap';
+import { isStartupAborted, raceStartupStep, startupStepAbandoned } from './startupAssemblyGuard';
 import { resolveStickyStrictSkillInvocation } from './conversationRuntimeStickySkill';
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 import { extractUserRequest } from '../turnScaffold';
@@ -337,10 +334,19 @@ export class ConversationRuntime {
 
     const initResult = await this.initializeRun(userMessage);
     if (!initResult) {
-      this.ctx.control.setRunAbortController(null);
-      return; // Early exit (step-by-step mode or hook blocked)
+      // 装配期取消/中断（isStartupAborted 检查点退出）不能走早退——那会绕过 finalizeRun，
+      // run 落不了 cancelled 终态（agent_cancelled 事件缺席，编排侧 user_stop 停靠与
+      // renderer 收尾都拿不到信号）。落入下方正常路径：while 条件首轮即假，terminal 取
+      // cancelled/interrupted，finalizeRun 走既有收尾。非取消的 null（step-by-step /
+      // hook 拦截）保持原早退语义。
+      if (!this.ctx.control.isCancelled && !this.ctx.control.isInterrupted) {
+        this.ctx.control.setRunAbortController(null);
+        return; // Early exit (step-by-step mode or hook blocked)
+      }
     }
-    const { langfuse, isSimpleTask, genNum } = initResult;
+    const langfuse = initResult?.langfuse ?? getLangfuseService();
+    const isSimpleTask = initResult?.isSimpleTask ?? false;
+    const genNum = initResult?.genNum ?? 8;
     const baseRunTraceContext = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
 
     let iterations = this.ctx.goalRecoverySnapshot?.turnsCompleted ?? 0;
@@ -804,7 +810,10 @@ export class ConversationRuntime {
       ...getDiagnosticVersions(),
     }, '');
 
-    await this.initializeUserHooks();
+    // 慢步骤与 run 级 abort 信号竞速 + 每个 await 边界检查取消（N-STOP-DURING-STARTUP）：
+    // 启动期点「停止」即刻退出装配，run() 走既有 cancelled 收尾，不再等全部装配跑完。
+    await raceStartupStep(this.ctx, this.initializeUserHooks());
+    if (isStartupAborted(this.ctx)) return null;
 
     this.ctx.turn.clearActiveSkill();
 
@@ -833,10 +842,15 @@ export class ConversationRuntime {
     preloadToolsForIntent(startupTaskFeatures, this.ctx.sessionId);
     try {
       const skillInvocation =
-        await resolveSkillInvocation(userRequest, this.ctx.workingDirectory)
-        ?? await resolveStickyStrictSkillInvocation(this.ctx, userRequest);
+        await raceStartupStep(this.ctx, resolveSkillInvocation(userRequest, this.ctx.workingDirectory))
+        ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest));
+      if (isStartupAborted(this.ctx)) return null;
       if (skillInvocation) {
-        const skillContext = await buildSkillInvocationContext(skillInvocation, this.ctx.workingDirectory);
+        const skillContext = await raceStartupStep(
+          this.ctx,
+          buildSkillInvocationContext(skillInvocation, this.ctx.workingDirectory),
+        );
+        if (startupStepAbandoned(this.ctx, skillContext)) return null;
         this.ctx.turn.activateSkill({
           skillName: skillInvocation.skill.name,
           source: skillInvocation.skill.source,
@@ -923,9 +937,9 @@ export class ConversationRuntime {
           }
 
           if (sessionScopedPlanningService) {
-            await sessionScopedPlanningService.initialize();
+            await raceStartupStep(this.ctx, sessionScopedPlanningService.initialize());
             const existingPlan = sessionScopedPlanningService.plan.getCurrentPlan()
-              ?? await sessionScopedPlanningService.plan.read();
+              ?? await raceStartupStep(this.ctx, sessionScopedPlanningService.plan.read());
             const hasActivePlan = existingPlan && !sessionScopedPlanningService.plan.isComplete();
 
             if (hasActivePlan && existingPlan) {
@@ -962,6 +976,7 @@ export class ConversationRuntime {
           );
         }
       }
+      if (isStartupAborted(this.ctx)) return null;
 
       if (isPureContentGenerationTask) {
         logger.info('[AgentLoop] Skipping parallel judgment for pure content generation task', {
@@ -972,7 +987,8 @@ export class ConversationRuntime {
         // Parallel Judgment via small model (Groq)
         try {
           const orchestrator = getTaskOrchestrator();
-          const judgment = await orchestrator.judge(userMessage);
+          const judgment = await raceStartupStep(this.ctx, orchestrator.judge(userMessage));
+          if (startupStepAbandoned(this.ctx, judgment)) return null;
 
           if (judgment.shouldParallel && judgment.confidence >= 0.7) {
             const parallelHint = orchestrator.generateParallelHint(judgment);
@@ -1057,83 +1073,16 @@ export class ConversationRuntime {
       }
     }
 
-    // User-configurable hooks: UserPromptSubmit
-    if (this.ctx.hookManager) {
-      const promptResult = await this.ctx.hookManager.triggerUserPromptSubmit(userMessage, this.ctx.sessionId);
-      if (!promptResult.shouldProceed) {
-        logger.info('[AgentLoop] User prompt blocked by hook', { message: promptResult.message });
-        return null;
-      }
-      if (promptResult.message) {
-        this.contextAssembly.injectSystemMessage(
-          `<user-prompt-hook>\n${promptResult.message}\n</user-prompt-hook>`,
-          'user-prompt-hook',
-        );
-      }
-    }
-
-    const isFirstUserTurn = isSessionFirstUserTurn(this.ctx.messages);
-
-    // Record session start for usage tracking (Light Memory)
-    if (isFirstUserTurn) {
-      recordSessionStart(this.ctx.sessionId).catch(() => { /* non-critical */ });
-    }
-
-    // Session start hooks run once per chat session; per-turn hooks stay on UserPromptSubmit/PreToolUse/PostToolUse.
-    if (isFirstUserTurn && this.ctx.hookManager) {
-      const sessionResult = await this.ctx.hookManager.triggerSessionStart(this.ctx.sessionId);
-      if (sessionResult.message) {
-        this.contextAssembly.injectSystemMessage(
-          `<session-start-hook>\n${sessionResult.message}\n</session-start-hook>`,
-          'session-start-hook',
-        );
-      }
-      if (sessionResult.injectedContext) {
-        this.contextAssembly.injectSystemMessage(
-          `<session-start-hook>\n${sessionResult.injectedContext}\n</session-start-hook>`,
-          'session-start-hook',
-        );
-      }
-    }
-
-    if (isFirstUserTurn) {
-      await injectRecentConversations(this.ctx, this.contextAssembly);
-    }
-
-    // F5: 跨会话任务恢复
-    if (!isSimpleTask) {
-      try {
-        const recovery = await getSessionRecoveryService().checkPreviousSession(
-          this.ctx.sessionId,
-          this.ctx.workingDirectory
-        );
-        if (recovery) {
-          this.contextAssembly.injectSystemMessage(
-            `<session-recovery>\n${recovery}\n</session-recovery>`,
-            'runtime-recovery',
-          );
-          logger.info('[AgentLoop] Session recovery summary injected');
-        }
-      } catch {
-        // Graceful: recovery failure doesn't block execution
-      }
-    }
-
-    await injectSeedMemory(this.ctx, this.contextAssembly, userMessage);
-
-    await this.injectActivityContext({ includeDesktopActivity: !isSimpleTask });
-
-    if (!isSimpleTask) {
-      try {
-        await this.bootstrapDesktopDerivedContext(userMessage);
-      } catch (error) {
-        // Graceful: desktop-derived 上下文（todos/task sync）依赖 DB，DB 未初始化或瞬时不可用时
-        // 绝不能阻断整个 run（与 injectActivityContext / 会话恢复 / seed memory 同款降级）。
-        logger.warn('[AgentLoop] Desktop-derived context bootstrap failed, continuing', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+    // 装配尾段（hooks → 近期会话 → 跨会话恢复 → seed memory → 活动上下文 → 桌面派生
+    // 上下文）抽到 conversationRuntimeContextBootstrap.runStartupContextAssembly，内部
+    // 每个 await 边界都带取消检查点。两个薄封装方法经回调注入以保留单测 spy。
+    const assemblyStatus = await runStartupContextAssembly(this.ctx, this.contextAssembly, {
+      userMessage,
+      isSimpleTask,
+      injectActivityContext: (options) => this.injectActivityContext(options),
+      bootstrapDesktopDerivedContext: () => this.bootstrapDesktopDerivedContext(userMessage),
+    });
+    if (assemblyStatus !== 'proceed') return null; // 'aborted'（装配期取消）或 'blocked'（hook 拦截）
 
     return { langfuse, isSimpleTask, genNum };
   }

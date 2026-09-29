@@ -60,6 +60,47 @@ const SLOW_FIRST_FRAME_GAME = `
   </html>
 `;
 
+// 首帧在 rAF 里画完，800ms 后才抛。没有墙钟下限时，像素一出现观察就结束，抛错落在窗口外。
+const DELAYED_LOAD_ERROR_GAME = `
+  <!doctype html>
+  <html>
+  <body>
+    <canvas id="game" width="400" height="300"></canvas>
+    <script>
+      const canvas = document.getElementById('game');
+      const ctx = canvas.getContext('2d');
+      const paint = () => {
+        ctx.fillStyle = '#123';
+        ctx.fillRect(0, 0, 400, 300);
+        ctx.fillStyle = '#fc0';
+        ctx.fillRect(40, 200, 24, 24);
+        requestAnimationFrame(paint);
+      };
+      paint();
+      window.setTimeout(() => { delayedLoadBoom(); }, 800);
+    </script>
+  </body>
+  </html>
+`;
+
+// 没有 canvas，不会走进空白首帧等待。ArrowRight 按下 300ms 后才抛，只够 3 帧时采不到。
+const DELAYED_KEY_ERROR_GAME = `
+  <!doctype html>
+  <html>
+  <body>
+    <p id="stage">ready</p>
+    <script>
+      let armed = false;
+      window.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowRight' || armed) return;
+        armed = true;
+        window.setTimeout(() => { delayedKeyBoom(); }, 300);
+      });
+    </script>
+  </body>
+  </html>
+`;
+
 const CLEAN_HTML_PAGE = `
   <!doctype html>
   <html>
@@ -110,6 +151,24 @@ describe('checkGameSmoke (light contract)', () => {
     if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('runnable');
     expect(result.failures).toEqual([]);
+  });
+
+  it('judges a painted page that throws 800ms after load not_runnable', async (ctx) => {
+    const filePath = await writeTempFile(DELAYED_LOAD_ERROR_GAME, 'delayed-load-error.html');
+    const result = await checkGameSmoke(filePath);
+
+    if (result.verdict === 'skipped') ctx.skip();
+    expect(result.verdict).toBe('not_runnable');
+    expect(result.failures.some((failure) => failure.includes('delayedLoadBoom'))).toBe(true);
+  });
+
+  it('judges a page that throws 300ms after ArrowRight not_runnable', async (ctx) => {
+    const filePath = await writeTempFile(DELAYED_KEY_ERROR_GAME, 'delayed-key-error.html');
+    const result = await checkGameSmoke(filePath);
+
+    if (result.verdict === 'skipped') ctx.skip();
+    expect(result.verdict).toBe('not_runnable');
+    expect(result.failures.some((failure) => failure.includes('delayedKeyBoom'))).toBe(true);
   });
 
   it('reports a missing artifact file as file_missing (审计 R1-H1：不许与 not_runnable 混同，防回归标本假绿)', async () => {

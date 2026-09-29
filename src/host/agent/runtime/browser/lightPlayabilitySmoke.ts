@@ -14,9 +14,14 @@ interface CanvasSample {
   signature: string;
 }
 
-// 按键必须跨过真实动画帧。墙钟睡眠在渲染器卡住时会先走完，采样仍落在空白帧上。
+// 每一段取 max(动画帧, origin/main 的墙钟)。慢渲染时帧等待会把窗口拉长；
+// 墙钟是下限，首帧已画出或没有 canvas 时也不许比基线的 500+400+250+250ms 更短，
+// 否则加载后或按键后几百毫秒的 pageerror 会被当成可玩。
 const KEY_HOLD_FRAMES = 3;
 const KEY_GAP_FRAMES = 2;
+const POST_LOAD_WALL_MS = 500;
+const KEY_HOLD_WALL_MS = 400;
+const KEY_GAP_WALL_MS = 250;
 
 function readLargestCanvasSample(): CanvasSample {
   const canvases = Array.from(document.querySelectorAll('canvas'));
@@ -60,6 +65,23 @@ async function raceDeadline(work: Promise<unknown>, deadline: number): Promise<v
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+async function waitFramesAndWallClock(
+  page: SmokePage,
+  frameCount: number,
+  wallClockMs: number,
+  deadline: number,
+  opTimeoutMs: number,
+): Promise<void> {
+  const started = Date.now();
+  if (frameCount > 0) {
+    await waitForAnimationFrames(page, frameCount, deadline, opTimeoutMs);
+  }
+  const remainingWallMs = wallClockMs - (Date.now() - started);
+  if (remainingWallMs > 0) {
+    await page.waitForTimeout(remainingWallMs);
   }
 }
 
@@ -141,15 +163,16 @@ export async function runLightPlayabilitySmoke(filePath: string, timeoutMs: numb
       timeout: Math.max(1, deadline - Date.now()),
     });
 
+    await waitFramesAndWallClock(page, 0, POST_LOAD_WALL_MS, deadline, timeoutMs);
     const beforeInput = await page.evaluate(readLargestCanvasSample);
     // 常见开始/操作键：Enter（任意键开始）+ 持续向右 + 空格跳跃
     await page.keyboard.press('Enter').catch(() => undefined);
     await page.keyboard.down('ArrowRight').catch(() => undefined);
-    await waitForAnimationFrames(page, KEY_HOLD_FRAMES, deadline, timeoutMs);
+    await waitFramesAndWallClock(page, KEY_HOLD_FRAMES, KEY_HOLD_WALL_MS, deadline, timeoutMs);
     await page.keyboard.press('Space').catch(() => undefined);
-    await waitForAnimationFrames(page, KEY_GAP_FRAMES, deadline, timeoutMs);
+    await waitFramesAndWallClock(page, KEY_GAP_FRAMES, KEY_GAP_WALL_MS, deadline, timeoutMs);
     await page.keyboard.up('ArrowRight').catch(() => undefined);
-    await waitForAnimationFrames(page, KEY_GAP_FRAMES, deadline, timeoutMs);
+    await waitFramesAndWallClock(page, KEY_GAP_FRAMES, KEY_GAP_WALL_MS, deadline, timeoutMs);
     if (shouldKeepWaitingForPaint(beforeInput)) {
       await waitForPresentCanvas(page, deadline, timeoutMs);
     }

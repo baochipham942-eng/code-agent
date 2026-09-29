@@ -27,6 +27,8 @@ import { SteerRejectedError } from '../../../src/host/agent/runtime/conversation
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
 import { sseClients } from '../../../src/web/helpers/sse';
 import { setBrowserWindowInteractionProbe } from '../../../src/host/platform';
+import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
+import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 
 const mockRun = vi.fn();
 const mockCancel = vi.fn();
@@ -1051,6 +1053,59 @@ describe('createAgentRouter', () => {
     } finally {
       projectServiceMocks.getWorkspaceScope.mockReset();
       await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  // N-RESUME-PARKED-RECLAIM ③：重启后被本进程认领的停靠 run（user_stop / guard_halt）不能挡住
+  // 协作者的新消息——经 web /api/run 真路由发新消息，旧 run 终态化，新一轮正常开跑（不再 409）。
+  it.each(['user_stop', 'guard_halt'] as const)('a new /api/run message supersedes a reclaimed %s parked run after restart', async (cause) => {
+    const db = new Database(':memory:');
+    const repository = new DurableRunRepository(db);
+    repository.migrate();
+    const kernelFor = (processInstanceId: string) => new DurableRunKernel({
+      stores: repository, ownerId: 'web-native-host', processInstanceId, leaseDurationMs: 100,
+    });
+    const workspace = await mkdtemp(join(tmpdir(), 'agent-parked-supersede-'));
+    const sessionId = `session-parked-${cause}`;
+    const beforeCrash = new RunRegistry();
+    beforeCrash.configureDurableKernel(kernelFor('before-crash'));
+    try {
+      const startedAt = Date.now() - 10_000;
+      await beforeCrash.startDurable({ runId: `run-parked-${cause}`, sessionId, workspace, cwd: workspace }, startedAt);
+      await beforeCrash.checkpointDurable(`run-parked-${cause}`, {
+        now: startedAt + 1, status: 'waiting', state: {}, pendingOperations: [], childRuns: [],
+        interruptCause: cause, events: [{ type: 'run_interrupted', payload: { cause }, recordedAt: startedAt + 1 }],
+      });
+      beforeCrash.clear();
+
+      runRegistry.configureDurableKernel(kernelFor('after-restart'));
+      const [plan] = await runRegistry.recoverDurable(startedAt + 1_000);
+      expect(plan).toMatchObject({ envelope: { runId: `run-parked-${cause}`, status: 'waiting' }, resumeBlocked: true });
+      expect(runRegistry.findRecoveredWaitingRun({ sessionId })).toEqual({ runId: `run-parked-${cause}`, sessionId });
+
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '换个事情做', sessionId, context: { workingDirectory: workspace } }),
+        signal: controller.signal,
+      });
+      expect(response.status).toBe(200);
+      await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+      expect(await repository.get(`run-parked-${cause}`)).toMatchObject({ status: 'cancelled' });
+      const liveRunId = runRegistry.getBySessionId(sessionId)?.context.runId;
+      expect(liveRunId).toBeDefined();
+      expect(liveRunId).not.toBe(`run-parked-${cause}`);
+      expect(await repository.get(liveRunId!)).toMatchObject({ status: 'running', sessionId });
+
+      controller.abort();
+      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('user'));
+      await response.text().catch(() => undefined);
+    } finally {
+      beforeCrash.clear();
+      runRegistry.clear();
+      await rm(workspace, { recursive: true, force: true });
+      db.close();
     }
   });
 

@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
+import { useI18n } from '../../../hooks/useI18n';
+import { ConfirmDialog } from '../../composites/ConfirmDialog';
 
 /** 投影可能滞后于运行态：本轮已在跑时，「继续」必须让位给「停止」。 */
 function shouldShowDurableContinue(
@@ -48,6 +50,36 @@ export function useDurableResumeContinuation(sessionId?: string | null): () => P
       toast.error(error instanceof Error ? error.message : String(error));
     }
   }, [sessionId]);
+}
+
+/**
+ * guard_halt 停靠的 run（外部系统写入结果未知）点「继续」前必须先过模态二次确认：
+ * 取消不续跑，确认才调 continue（ADR-075 修订 2026-09-29 ②）。其它停靠原因直接续跑。
+ */
+export function useGuardedDurableContinue(
+  interruptCause: string | undefined,
+  onContinue: () => Promise<void>,
+): { onContinue: () => void; confirmDialog: React.ReactNode } {
+  const { t } = useI18n();
+  const [confirming, setConfirming] = useState(false);
+  const guarded = interruptCause === 'guard_halt';
+  return {
+    onContinue: () => (guarded ? setConfirming(true) : void onContinue()),
+    confirmDialog: guarded ? (
+      <ConfirmDialog
+        isOpen={confirming}
+        variant="warning"
+        title={t.chat.durableGuardContinueTitle}
+        message={t.chat.durableGuardContinueMessage}
+        confirmText={t.chat.continueInterrupted}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false);
+          void onContinue();
+        }}
+      />
+    ) : null,
+  };
 }
 
 export const DurableResumeNotice: React.FC<{ text: string }> = ({ text }) => (

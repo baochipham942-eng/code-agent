@@ -361,6 +361,7 @@ import type { PendingLocalToolCall } from './routes/agent';
 import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
 import { createApplicationAutoAgentRecoveryHost } from '../host/app/autoAgentRecoveryHost';
 import { createApplicationNativeRecoveryPorts } from '../host/app/nativeRecoveryHost';
+import { shouldStartQueuedAutoResume } from '../host/app/durableRunContinuation';
 import {
   assembleDurableRun,
   type DurableRunApplicationRuntime,
@@ -709,11 +710,7 @@ async function initializeServices(): Promise<void> {
             });
           }).catch((error: unknown) => logger.debug('Failed to notify durable resume', { error }));
         },
-        beforeAutoResume: (plan) => {
-          const current = runRegistry.getDurableEnvelope(plan.envelope.runId);
-          return current?.status === 'recovering'
-            && (current.autoResumeCount ?? 0) === (plan.envelope.autoResumeCount ?? 0);
-        },
+        beforeAutoResume: (plan) => shouldStartQueuedAutoResume({ plan, runRegistry }),
         onRecoveryResults: (results) => {
           // 恢复把 run 停靠（预算耗尽 / 等审批）时 TaskManager 不发 state 事件，主动让界面重读投影。
           if (results.length > 0) broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);

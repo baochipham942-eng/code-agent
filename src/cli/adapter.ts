@@ -19,8 +19,9 @@ import path from 'path';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
 import type { Message, AgentEvent, PRLink, ModelConfig } from '../shared/contract';
 import { getCompactionCommandMessages } from '../shared/i18n/compactionCommand';
-import { getModelMaxOutputTokens, RUN_ERROR_CODE_MAX_ITERATIONS } from '../shared/constants';
+import { getModelMaxOutputTokens, RUN_ERROR_CODE_MAX_ITERATIONS, CLI_DURABLE_TERMINAL } from '../shared/constants';
 import { createLogger } from '../host/services/infra/logger';
+import { isSqliteBusyError } from '../host/services/core/database/sqliteErrors';
 import { getSessionSkillService } from '../host/services/skills/sessionSkillService';
 import { MetricsCollector, type SessionMetrics } from '../host/agent/metricsCollector';
 import { StatusFileWriter } from './utils/statusFile';
@@ -564,28 +565,63 @@ export class CLIAgent {
     }
 
     if (durableRun) {
-      let lastError: unknown;
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        try {
-          await terminalCLIDurableRun(durableRun, result.success);
-          lastError = undefined;
-          break;
-        } catch (error) {
-          lastError = error;
-          logger.warn('Failed to terminal CLI Durable Run', {
-            error: getErrorMessage(error),
-            attempt: attempt + 1,
-          });
-        }
-      }
-      if (lastError) {
-        logger.warn('CLI Durable Run left non-terminal after retry; next -s start will cancel the orphan', {
-          error: getErrorMessage(lastError),
+      const settled = await this.terminalDurableWithRetry(durableRun, result.success);
+      if (!settled.ok) {
+        // ② 可见报错：夜巡事故里这一步只落 logger.warn（文件日志），无头进程退出后现场
+        // 零线索。run 停非终态会让同会话下一次 -s 续跑被 active durable run 拒绝，
+        // 必须在退出前打到 stderr。
+        console.error('[CLI] Durable Run left non-terminal after retries', {
+          code: 'CLI_DURABLE_RUN_TERMINAL_FAILED',
+          runId: durableRun.context.runId,
+          sessionId: durableRun.context.sessionId,
+          error: getErrorMessage(settled.error),
+        });
+        logger.error('CLI Durable Run left non-terminal after retry', {
+          error: getErrorMessage(settled.error),
+          runId: durableRun.context.runId,
           sessionId: durableRun.context.sessionId,
         });
       }
     }
     resolveRun(result);
+  }
+
+  /**
+   * ②（N-CLI-DURABLE-TERMINAL-LOST）：CLI 正常退出前把 durable run 收进终态。
+   * SQLITE_BUSY 类（WAL 多进程写冲突，含 SQLITE_BUSY_SNAPSHOT）带指数退避重试——夜巡
+   * 事故形态是两次零退避重试连续撞车后只 warn 放弃，run 永远停在非终态（仓储层已改为
+   * IMMEDIATE+busy 重试，这里是退出前最后一道）。fence/owner 类失败是确定性的，重试无
+   * 益，只保留一次原样重试；run 已被他进程终态化的情况由 terminalCLIDurableRun 的
+   * 幂等检查吞掉，不算失败。
+   */
+  private async terminalDurableWithRetry(
+    durableRun: RunHandle,
+    success: boolean,
+  ): Promise<{ ok: true } | { ok: false; error: unknown }> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= CLI_DURABLE_TERMINAL.RETRY_ATTEMPTS; attempt += 1) {
+      try {
+        await terminalCLIDurableRun(durableRun, success);
+        return { ok: true };
+      } catch (error) {
+        lastError = error;
+        const busy = isSqliteBusyError(error);
+        logger.warn('Failed to terminal CLI Durable Run', {
+          error: getErrorMessage(error),
+          attempt,
+          retryable: busy,
+        });
+        if (!busy) {
+          if (attempt >= 2) break;
+        } else if (attempt === CLI_DURABLE_TERMINAL.RETRY_ATTEMPTS) {
+          break;
+        } else {
+          await new Promise((resolve) => setTimeout(resolve,
+            CLI_DURABLE_TERMINAL.RETRY_BACKOFF_BASE_MS << (attempt - 1)));
+        }
+      }
+    }
+    return { ok: false, error: lastError };
   }
 
   /**

@@ -250,7 +250,7 @@ export class DurableRunKernel implements RunKernelAdapter {
     if (latest.owner?.ownerId !== input.expectedOwnerId) return false;
     if (latest.owner.processInstanceId === input.processInstanceId) return false;
     if (!canClaimOrphanedCliLease(latest.owner.processInstanceId, latest.owner.leaseExpiresAt, now)) {
-      return false;
+      return this.cancelUnresumableParkedSessionRoot(latest, input.sessionId, now);
     }
     const expired = (latest.owner.leaseExpiresAt ?? 0) <= now;
     const abandoned = isAbandonedCliProcess(latest.owner.processInstanceId);
@@ -284,6 +284,30 @@ export class DurableRunKernel implements RunKernelAdapter {
       },
     });
     return true;
+  }
+
+  /**
+   * ③（N-CLI-DURABLE-TERMINAL-LOST）：租约未过期、owner 进程活着，跨进程判据拒收——但
+   * run 是 waiting 且接管方已判 native_workspace_unavailable（工作区不存在，任何续跑/
+   * 人工继续路径都会再次判同一个结论），这条租约续的是个没人能用的死胡同。允许收尸放行
+   * `-s` 续跑：不认领租约，判据 fence（status=waiting + 末事件复核结论原样）在仓储层同笔
+   * 事务里校验，不成立即退回原冲突语义。真冲突保护不受影响：running/recovering（有活
+   * handle 或恢复驱动在跑）与其他复核原因（可人工处置）仍拒收。
+   */
+  private async cancelUnresumableParkedSessionRoot(
+    latest: RunEnvelope,
+    sessionId: string,
+    now: number,
+  ): Promise<boolean> {
+    const stores = this.stores;
+    if (!stores?.cancelUnresumableParkedRun) return false;
+    return stores.cancelUnresumableParkedRun({
+      runId: latest.runId,
+      sessionId,
+      now,
+      reason: 'cli_resume_reaped_workspace_unavailable',
+      requireLastEvent: { type: 'native_recovery_requires_review', reviewReason: 'native_workspace_unavailable' },
+    });
   }
 
   private async checkpointNow(input: DurableCheckpointInput): Promise<RunCheckpoint> {

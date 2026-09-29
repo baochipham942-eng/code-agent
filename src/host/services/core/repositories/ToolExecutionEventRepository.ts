@@ -173,6 +173,21 @@ export class ToolExecutionEventRepository {
     }));
   }
 
+  /**
+   * 该 session 的某个 tool call 是否留有 begin 事件（只读）。
+   * 崩溃清算分层判定用：有 begin = 启动过（结果未知），无 begin = 从未开始。
+   * complete 事件不写 tool_call_id，故 tool_call_id 命中即 begin 存在；
+   * 查询走 idx_tool_execution_events_session 前缀（非全表扫），无需新索引。
+   */
+  hasBeginForToolCall(sessionId: string, toolCallId: string): boolean {
+    const row = this.db.prepare(`
+      SELECT 1 FROM tool_execution_events
+      WHERE session_id = ? AND tool_call_id = ? AND phase = 'begin'
+      LIMIT 1
+    `).get(sessionId, toolCallId);
+    return row !== undefined;
+  }
+
   /** 最近 N 条事件（按时间倒序） */
   getRecent(limit = 50): ToolExecutionEventRecord[] {
     const rows = this.db.prepare(`

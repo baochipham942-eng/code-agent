@@ -27,6 +27,7 @@ import { classifyToolReplaySafety } from '../tools/toolReplaySafety';
 import { createLogger } from '../services/infra/logger';
 import type { TurnCostEstimateInput } from '../../shared/contract/turnCost';
 import type { GoalRecoverySnapshot } from '../agent/goalModeController';
+import { INTERRUPTED_TOOL_CALL_PLACEHOLDER } from '../agent/runtime/cancelledToolCallClosure';
 
 interface NativeModelContinuationSessions {
   getMessages(sessionId: string, limit?: number): Promise<Message[]>;
@@ -571,7 +572,8 @@ export function createApplicationNativeRecoveryPorts(
         const toolResult: ToolResult = {
           toolCallId: persisted.toolCall.id,
           success: false,
-          error: 'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded',
+          // 存储型自动操作来自账本，必然有 begin 事件 → 恒为 OUTCOME_UNKNOWN 档
+          error: INTERRUPTED_TOOL_CALL_PLACEHOLDER,
           duration: 0,
         };
         const message = buildRecoveredToolMessage({

@@ -18,6 +18,8 @@ type Logger = ReturnType<typeof createLogger>;
 
 const INTERRUPTED_PLACEHOLDER =
   'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded';
+const INTERRUPTED_PLACEHOLDER_NOT_STARTED =
+  'interrupted: process crashed before this tool call started; it never began running and is safe to re-issue';
 
 describe('startup maintenance orphan tool-call closure', () => {
   let db: InstanceType<typeof Database>;
@@ -85,6 +87,7 @@ describe('startup maintenance orphan tool-call closure', () => {
       toolName: 'bash',
       summary: 'sleep 30',
       params: { command: 'sleep 30' },
+      toolCallId: 'call-1',
       recordedAt: 20,
     });
     const branchEventsBefore = db.prepare(
@@ -117,6 +120,133 @@ describe('startup maintenance orphan tool-call closure', () => {
       { executionId: 'execution-1', phase: 'begin', status: null },
       { executionId: 'execution-1', phase: 'complete', status: 'recovered' },
     ]);
+  });
+
+  it('classifies an orphan tool call with no ledger begin as NOT_STARTED', () => {
+    createSession('not-started-session', 'running');
+    sessionRepo.addMessage('not-started-session', assistantToolCall('assistant-ns', 'call-ns'));
+    expect(toolExecutionEventRepo.hasBeginForToolCall('not-started-session', 'call-ns')).toBe(false);
+
+    runMaintenance();
+
+    const messages = sessionRepo.getMessages('not-started-session');
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toMatchObject({
+      id: 'assistant-ns:interrupted-tool-results',
+      role: 'tool',
+      toolResults: [{
+        toolCallId: 'call-ns',
+        success: false,
+        error: INTERRUPTED_PLACEHOLDER_NOT_STARTED,
+        duration: 0,
+        metadata: { crashRecoveryTier: 'NOT_STARTED' },
+      }],
+    });
+  });
+
+  it('classifies an orphan tool call with a ledger begin as OUTCOME_UNKNOWN with the legacy placeholder', () => {
+    createSession('outcome-unknown-session', 'running');
+    sessionRepo.addMessage('outcome-unknown-session', assistantToolCall('assistant-ou', 'call-ou'));
+    toolExecutionEventRepo.appendBegin({
+      executionId: 'execution-ou',
+      sessionId: 'outcome-unknown-session',
+      toolName: 'bash',
+      summary: 'sleep 30',
+      params: { command: 'sleep 30' },
+      toolCallId: 'call-ou',
+      recordedAt: 20,
+    });
+    // 开口执行（有 begin 无 complete）与 begin+recovered 两种形态都判「有 begin」
+    expect(toolExecutionEventRepo.hasBeginForToolCall('outcome-unknown-session', 'call-ou')).toBe(true);
+    toolExecutionEventRepo.appendComplete({
+      executionId: 'execution-ou',
+      toolName: 'bash',
+      status: 'recovered',
+      sessionId: 'outcome-unknown-session',
+      recordedAt: 21,
+    });
+    expect(toolExecutionEventRepo.hasBeginForToolCall('outcome-unknown-session', 'call-ou')).toBe(true);
+
+    runMaintenance();
+
+    const messages = sessionRepo.getMessages('outcome-unknown-session');
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toMatchObject({
+      role: 'tool',
+      toolResults: [{
+        toolCallId: 'call-ou',
+        success: false,
+        error: INTERRUPTED_PLACEHOLDER,
+        duration: 0,
+        metadata: { crashRecoveryTier: 'OUTCOME_UNKNOWN' },
+      }],
+    });
+  });
+
+  it('splits tiers per tool call inside one mixed assistant message', () => {
+    createSession('mixed-session', 'running');
+    sessionRepo.addMessage('mixed-session', {
+      id: 'assistant-mixed',
+      role: 'assistant',
+      content: '',
+      timestamp: 10,
+      toolCalls: [
+        { id: 'call-begun', name: 'bash', arguments: { command: 'sleep 30' } },
+        { id: 'call-never-begun', name: 'Read', arguments: { file_path: 'README.md' } },
+      ],
+    });
+    toolExecutionEventRepo.appendBegin({
+      executionId: 'execution-mixed',
+      sessionId: 'mixed-session',
+      toolName: 'bash',
+      summary: 'sleep 30',
+      params: { command: 'sleep 30' },
+      toolCallId: 'call-begun',
+      recordedAt: 20,
+    });
+
+    runMaintenance();
+
+    const messages = sessionRepo.getMessages('mixed-session');
+    expect(messages).toHaveLength(2);
+    expect(messages[1].toolResults).toEqual([
+      expect.objectContaining({
+        toolCallId: 'call-begun',
+        error: INTERRUPTED_PLACEHOLDER,
+        metadata: { crashRecoveryTier: 'OUTCOME_UNKNOWN' },
+      }),
+      expect.objectContaining({
+        toolCallId: 'call-never-begun',
+        error: INTERRUPTED_PLACEHOLDER_NOT_STARTED,
+        metadata: { crashRecoveryTier: 'NOT_STARTED' },
+      }),
+    ]);
+  });
+
+  it('falls back to OUTCOME_UNKNOWN when the ledger begin lookup throws', () => {
+    createSession('lookup-fail-session', 'running');
+    sessionRepo.addMessage('lookup-fail-session', assistantToolCall('assistant-lf', 'call-lf'));
+    vi.spyOn(toolExecutionEventRepo, 'hasBeginForToolCall').mockImplementation(() => {
+      throw new Error('ledger unavailable');
+    });
+
+    runMaintenance();
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('fail-safe OUTCOME_UNKNOWN'),
+      expect.objectContaining({ message: 'ledger unavailable' }),
+    );
+    const messages = sessionRepo.getMessages('lookup-fail-session');
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toMatchObject({
+      role: 'tool',
+      toolResults: [{
+        toolCallId: 'call-lf',
+        success: false,
+        error: INTERRUPTED_PLACEHOLDER,
+        metadata: { crashRecoveryTier: 'OUTCOME_UNKNOWN' },
+      }],
+    });
   });
 
   it('does not append a second result when the recovered session crashes again', () => {

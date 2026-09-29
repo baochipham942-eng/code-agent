@@ -12,15 +12,17 @@ import type { MemoryRepository } from '../repositories/MemoryRepository';
 import type { ToolExecutionEventRepository } from '../repositories/ToolExecutionEventRepository';
 import type { PermissionDecisionRepository } from '../repositories/PermissionDecisionRepository';
 import type { createLogger } from '../../infra/logger';
-import { persistCancelledToolCallClosures } from '../../../agent/runtime/cancelledToolCallClosure';
+import {
+  persistCancelledToolCallClosures,
+  INTERRUPTED_TOOL_CALL_PLACEHOLDER,
+  INTERRUPTED_TOOL_CALL_PLACEHOLDER_NOT_STARTED,
+  type CrashRecoveryTier,
+} from '../../../agent/runtime/cancelledToolCallClosure';
 import { backfillTelemetrySessionTitles } from '../../../telemetry/telemetrySessionTitleBackfill';
 import { repairCorruptFtsOnStartup } from './ftsRepair';
 import { runGatedProjectionCheck } from './projectionCheckGate';
 
 type Logger = ReturnType<typeof createLogger>;
-
-const INTERRUPTED_TOOL_CALL_PLACEHOLDER =
-  'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded';
 
 /**
  * 分步计时器：DB init 曾在 1.28GB 生产库上静默吃掉 ~6s（health-ready 的大头），
@@ -109,6 +111,28 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
           assistantMessage,
           toolCalls: toolCallsToInterrupt,
           placeholder: INTERRUPTED_TOOL_CALL_PLACEHOLDER,
+          // N-CRASH-OUTCOME-TIERS：按账本是否留有 begin 事件把清算结果分成两档——
+          // NOT_STARTED（从未开始，可安全重发）/ OUTCOME_UNKNOWN（可能跑过，先核对外部状态）。
+          // 账本查不动时一律按 OUTCOME_UNKNOWN 兜底，宁可存疑绝不凭疑问宣称「没跑过」。
+          resolveClosure: (toolCall) => {
+            let tier: CrashRecoveryTier = 'OUTCOME_UNKNOWN';
+            try {
+              if (!toolExecutionEventRepo.hasBeginForToolCall(sessionId, toolCall.id)) {
+                tier = 'NOT_STARTED';
+              }
+            } catch (err) {
+              logger.warn(
+                `[DatabaseService] Crash tier lookup failed for session ${sessionId} tool call ${toolCall.id} (fail-safe OUTCOME_UNKNOWN):`,
+                err,
+              );
+            }
+            return {
+              error: tier === 'NOT_STARTED'
+                ? INTERRUPTED_TOOL_CALL_PLACEHOLDER_NOT_STARTED
+                : INTERRUPTED_TOOL_CALL_PLACEHOLDER,
+              metadata: { crashRecoveryTier: tier },
+            };
+          },
           messageIdSuffix: 'interrupted-tool-results',
           persistMessage: (message) => {
             sessionRepo.addMessage(sessionId, message, { provenanceKind: 'crash-recovery' });

@@ -58,9 +58,10 @@ describe('write-class classification (via releaseReadLoopSealAfterSuccessfulWrit
     expect(releases({ name: 'docx_generate', arguments: { file_path: '/tmp/out.docx' } })).toBe(true);
   });
 
-  it('treats mutating Bash as write-class and git log / curl as not', () => {
-    expect(releases({ name: 'Bash', arguments: { command: 'python3 -c "Path(\'out.docx\').write_text(\'x\')"' } })).toBe(true);
-    expect(releases({ name: 'Bash', arguments: { command: 'touch /tmp/out.docx' } })).toBe(true);
+  it('never releases on Bash, including write-file and mkdir/touch preparation commands', () => {
+    expect(releases({ name: 'Bash', arguments: { command: 'python3 -c "Path(\'out.docx\').write_text(\'x\')"' } })).toBe(false);
+    expect(releases({ name: 'Bash', arguments: { command: 'touch /tmp/out.docx' } })).toBe(false);
+    expect(releases({ name: 'Bash', arguments: { command: 'mkdir -p output' } })).toBe(false);
     expect(releases({ name: 'Bash', arguments: { command: 'git log' } })).toBe(false);
     expect(releases({ name: 'Bash', arguments: { command: 'curl https://example.test' } })).toBe(false);
     expect(releases({ name: 'Read', arguments: { file_path: '/tmp/a.ts' } })).toBe(false);
@@ -162,7 +163,7 @@ describe('releaseReadLoopSealAfterSuccessfulWrite', () => {
     expect(ctx.control.readLoopSealActive).toBe(true);
   });
 
-  it('clears the seal after a successful write-file Bash and resets the detector count', () => {
+  it('keeps the seal and the read count after a successful Bash (mkdir cannot reset the guard)', () => {
     const ctx = makeCtx();
     ctx.control.activateReadLoopSeal();
     for (let index = 0; index < 15; index += 1) {
@@ -172,12 +173,12 @@ describe('releaseReadLoopSealAfterSuccessfulWrite', () => {
 
     releaseReadLoopSealAfterSuccessfulWrite(
       ctx,
-      { name: 'Bash', arguments: { command: 'python3 -c "Path(\'out.docx\').write_text(\'x\')"' } },
+      { name: 'Bash', arguments: { command: 'mkdir -p output' } },
       true,
     );
 
-    expect(ctx.control.readLoopSealActive).toBe(false);
-    expect(ctx.antiPatternDetector.getConsecutiveReadCount()).toBe(0);
+    expect(ctx.control.readLoopSealActive).toBe(true);
+    expect(ctx.antiPatternDetector.getConsecutiveReadCount()).toBe(15);
   });
 });
 

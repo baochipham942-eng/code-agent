@@ -216,7 +216,7 @@ describe('ToolExecutionEngine read-loop seal (FB-253)', () => {
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 
-  it('after a successful write-file Bash while sealed, the next Read is allowed', async () => {
+  it('a write-file Bash runs while sealed but does not lift the seal', async () => {
     const execute = vi.fn(async (name: string, args: Record<string, unknown>): Promise<ToolResult> => ({
       toolCallId: '',
       success: true,
@@ -232,13 +232,14 @@ describe('ToolExecutionEngine read-loop seal (FB-253)', () => {
     const [writeBash] = await engine.executeToolsWithHooks([
       { id: 'bash-write', name: 'Bash', arguments: { command: 'python3 -c "Path(\'out.docx\').write_text(\'x\')"' } } as ToolCall,
     ]);
+    // 写文件型 Bash 照常执行，但不解封（#2113 审查：Bash 解封会被 mkdir 类命令滥用）。
     expect(writeBash.success).toBe(true);
-    expect(ctx.control.readLoopSealActive).toBe(false);
+    expect(ctx.control.readLoopSealActive).toBe(true);
 
     const [readAfterWrite] = await engine.executeToolsWithHooks([
       { id: 'read-self-check', name: 'Read', arguments: { file_path: '/tmp/out.docx' } } as ToolCall,
     ]);
-    expect(readAfterWrite.success).toBe(true);
+    expect(readAfterWrite.success).toBe(false);
   });
 
   it('after a successful Write while sealed, the next Read is allowed', async () => {

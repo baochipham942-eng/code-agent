@@ -42,19 +42,14 @@ export function isReadLikeToolCall(
   const command = typeof toolCall.arguments?.command === 'string' ? toolCall.arguments.command : '';
   if (!command) return false;
   // 可选链：detector 没有 isReadOnlyShellCommand 时不当成读类（封口期间仍可执行）。
-  // 解封走 isWriteClassToolCall，缺方法时不会误把 git log 当交付。
   return Boolean(ctx.antiPatternDetector.isReadOnlyShellCommand?.(command));
 }
 
-function isWriteClassToolCall(
-  ctx: Pick<RuntimeContext, 'antiPatternDetector'>,
-  toolCall: Pick<ToolCall, 'name' | 'arguments'>,
-): boolean {
-  if (WRITE_TOOLS.includes(toolCall.name) || DELIVERABLE_GENERATE_TOOLS.has(toolCall.name)) return true;
-  if (!isBashToolName(toolCall.name)) return false;
-  const command = typeof toolCall.arguments?.command === 'string' ? toolCall.arguments.command : '';
-  if (!command) return false;
-  return Boolean(ctx.antiPatternDetector.isMutatingShellCommand?.(command));
+function isWriteClassToolCall(toolCall: Pick<ToolCall, 'name'>): boolean {
+  // Bash 一律不算交付（#2113 审查）：mkdir/touch/cp 这类准备命令也匹配 mutation 模式，
+  // 若能解封，一条 `mkdir -p out` 就把封口与读计数双清零，调研循环可无限续命。
+  // 写文件型 Bash 在封口期间照常执行，只是不解封。
+  return WRITE_TOOLS.includes(toolCall.name) || DELIVERABLE_GENERATE_TOOLS.has(toolCall.name);
 }
 
 function buildReadLoopSealError(): string {
@@ -78,8 +73,8 @@ function buildReadLoopSealPrompt(): string {
 }
 
 /**
- * 真实交付成功后解除只封读：WRITE_TOOLS / 写文件型 Bash / 产物生成。
- * git log、curl 等非读也非写的调用不解除，否则 blockedReads 被清零、永远撞不到 forceFinal。
+ * 真实交付成功后解除只封读：WRITE_TOOLS / 产物生成工具。Bash（含写文件型）不解除，
+ * 否则 mkdir/touch 等准备命令就能清零 blockedReads，永远撞不到 forceFinal。
  * 解封时 markSemanticProgress 把 consecutiveReadOps 归零，后续回读自检按 detector 重新计。
  */
 export function releaseReadLoopSealAfterSuccessfulWrite(
@@ -88,7 +83,7 @@ export function releaseReadLoopSealAfterSuccessfulWrite(
   success: boolean,
 ): void {
   if (!success || !ctx.control.readLoopSealActive) return;
-  if (!isWriteClassToolCall(ctx, toolCall)) return;
+  if (!isWriteClassToolCall(toolCall)) return;
   ctx.control.clearReadLoopSeal();
   ctx.antiPatternDetector.markSemanticProgress?.('read-loop-seal-delivery');
 }

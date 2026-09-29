@@ -3367,6 +3367,15 @@
         },
         "written": {
           "type": "number"
+        },
+        "active": {
+          "type": "number"
+        },
+        "candidate": {
+          "type": "number"
+        },
+        "dropped": {
+          "type": "number"
         }
       },
       "required": [

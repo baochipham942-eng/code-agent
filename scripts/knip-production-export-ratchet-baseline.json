@@ -17676,7 +17676,6 @@
     "src/host/agent/runtime/game/skill-loader.ts",
     "src/host/agent/sessionPersistence.ts",
     "src/host/agent/teammate/teamPersistence.ts",
-    "src/host/agent/toolExecution/dagScheduler.ts",
     "src/host/agent/types/builtinAgents.ts",
     "src/host/agent/verificationCi.ts",
     "src/host/app/desktopQueuedInputDrain.ts",

@@ -350,7 +350,10 @@ export class DurableRunKernel implements RunKernelAdapter {
       pendingOperations: input.pendingOperations,
       childRuns: input.childRuns ?? envelope.childRuns ?? [],
       interruptCause: input.interruptCause,
-      autoResumeCount: input.autoResumeCount,
+      // ADR-075 ③.2 / Q2：恢复后成功推进一轮（live 路径一次模型调用成功结束或一个 tool complete）即清零自动续跑计数，
+      // 与这笔进展同一事务落盘。显式传入计数的写（派发 fence、手动继续）以调用方为准，不受影响。
+      autoResumeCount: input.autoResumeCount
+        ?? ((envelope.autoResumeCount ?? 0) > 0 && recordsLiveProgress(input.events) ? 0 : undefined),
       clearInterruptCause: input.clearInterruptCause,
     });
   }
@@ -424,7 +427,9 @@ export class DurableRunKernel implements RunKernelAdapter {
     for (const envelope of recoverable) {
       const interruptCause = getRunInterruptCause(envelope);
       if (interruptCause !== undefined && interruptCause !== 'crash_or_quit') continue;
-      if ((envelope.autoResumeCount ?? 0) >= MAX_AUTO_RESUME_COUNT) continue;
+      // 等审批 / 待人工确认的 waiting 只是恢复同一审批、不消耗预算，计数耗尽也照样认领（ADR-075 修订三）。
+      const budgetExhausted = (envelope.autoResumeCount ?? 0) >= MAX_AUTO_RESUME_COUNT;
+      if (budgetExhausted && envelope.status !== 'waiting') continue;
       const previousAttempt = await stores.getAttempt(envelope.runId, envelope.attempt);
       if (!previousAttempt) throw new Error(`Missing durable attempt ${envelope.runId}/${envelope.attempt}`);
       const checkpoint = await stores.getLatest(envelope.runId);
@@ -446,16 +451,18 @@ export class DurableRunKernel implements RunKernelAdapter {
         operation.status === 'unknown' && operation.requiresHumanConfirmation === true);
       const waiting = requiresHumanConfirmation.length > 0
         || pendingOperations.some((operation) => operation.kind === 'approval' && operation.status === 'waiting');
+      // 计数耗尽却已无审批可等（审批 op 已不在）：不得借这条路越过预算自动续跑，按预算耗尽停靠。
+      const budgetPark = budgetExhausted && !waiting;
       const recoveredEnvelope = await stores.replaceRecoveryProjection({
         runId: envelope.runId,
         attempt: claimed.attempt.attempt,
         expectedOwnerEpoch: claimed.owner.epoch,
-        status: waiting ? 'waiting' : 'recovering',
+        status: waiting || budgetPark ? 'waiting' : 'recovering',
         pendingOperations,
-        interruptCause: getRunInterruptCause(claimed.envelope) ?? 'crash_or_quit',
+        interruptCause: budgetPark ? 'budget_exhausted' : getRunInterruptCause(claimed.envelope) ?? 'crash_or_quit',
         // 预算只管前台 native 自动续跑；等审批的 run 只是恢复同一审批，
         // loop / workflow / agent_team 等引擎沿用各自恢复语义，均不消耗。
-        autoResumeCount: waiting || claimed.envelope.engine.kind !== 'native'
+        autoResumeCount: waiting || budgetPark || claimed.envelope.engine.kind !== 'native'
           ? (claimed.envelope.autoResumeCount ?? 0)
           : Math.min(MAX_AUTO_RESUME_COUNT, (claimed.envelope.autoResumeCount ?? 0) + 1),
         updatedAt: now,
@@ -467,6 +474,7 @@ export class DurableRunKernel implements RunKernelAdapter {
         pendingOperations,
         childRuns,
         requiresHumanConfirmation,
+        ...(budgetPark ? { resumeBlocked: true } : {}),
       });
     }
     return plans;
@@ -522,6 +530,12 @@ export class DurableRunKernel implements RunKernelAdapter {
 /** listParkedForReclaim 只会带出 crash_or_quit 的预算耗尽行（running/recovering），停靠时改记 budget_exhausted；显式停靠原因原样保留。 */
 function parkedInterruptCause(cause: RunInterruptCause | undefined): RunInterruptCause {
   return cause === undefined || cause === 'crash_or_quit' ? 'budget_exhausted' : cause;
+}
+
+/** live 路径的进展事件（runRegistry checkpointNativeModelOperation / checkpointNativeToolOperation 写入 succeeded）。恢复宿主的收口/物化用别的事件类型，不算进展。 */
+function recordsLiveProgress(events: RunEventAppend[]): boolean {
+  return events.some((event) => (event.type === 'native_model_operation' || event.type === 'native_tool_operation')
+    && (event.payload as { status?: unknown } | null)?.status === 'succeeded');
 }
 
 function classifyOperationForRecovery(

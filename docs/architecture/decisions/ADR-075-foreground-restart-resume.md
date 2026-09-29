@@ -296,3 +296,15 @@ Round 2 把「Stop 必须清空待续队列」收成可执行合同：代码里�
 合同测试：`tests/unit/host/runtime/durableParkedReclaimMarker.test.ts`（真实 SQLite + RunRegistry + `continueParkedDurableRun`）。
 
 已知未覆盖：`crash_or_quit` 且计数耗尽的**等审批** `waiting`（「预算耗尽后又等审批」）重启后既不进 `listRecoverable`（计数耗尽）也不进 `listParkedForReclaim`（非停靠标记），仍无人认领、占会话唯一约束；本修订只保证它不被误吞成停靠，认领它（恢复同一审批）需单独立单。
+
+## 修订三（2026-09-29）：预算耗尽后又等审批的认领 + 成功推进一轮后计数清零
+
+2026-09-29 爸拍板口径（N-RESUME-BUDGET-APPROVAL），补修订二「已知未覆盖」与 ③.2 未落地的清零：
+
+1. **预算耗尽后又等审批的 run 按等审批认领**。`interruptCause=crash_or_quit`、`autoResumeCount>=MAX`、`status='waiting'`（带审批 `waiting` op 或待人工确认的 `unknown` op）的 run，重启后与「预算未耗尽的崩溃 + 等审批」走**同一条路**：`listRecoverable @ DurableRunRepository.ts` 对 `status='waiting'` 的 crash 行不再按计数过滤，`recoverOnStartup @ durableRunKernel.ts` 的预算闸只拦非 `waiting` 行。认领后仍是 `waiting` + `crash_or_quit`、计数不变（恢复同一审批不消耗预算），不带 `resumeBlocked`，恢复宿主按 `restore_same_approval` 恢复同一张审批卡；批准后恰好执行一次、同 `runId` 回 live loop，拒绝按现有语义把拒绝喂回模型后回 loop。
+   - 新消息：修订二「等审批 `waiting` 不让位、不出继续」不变，新消息仍是会话冲突（web 409），待审批操作不被静默吞掉；但 run 现在有本进程 owner，「放弃」（web `/api/cancel`、桌面同一 `terminalRecoveredWaitingRun`）能把它终态化，之后新消息正常开新 turn——不再 409 死锁。
+   - 护栏：若计数耗尽的 `waiting` 行认领后已无审批/待确认 op 可等（未经开库迁移的旧停靠形状等），**不得**借这条路越过预算自动续跑：改标 `budget_exhausted` 停靠、`resumeBlocked`，出「继续」。
+   - 存量：`markLegacyBudgetExhaustedParks` 刻意不动的「带审批 op」旧行，下次启动即被上面这条认领为等审批，无需新迁移。
+2. **成功推进一轮后自动续跑计数清零**（③.2 / Q2 已拍板「清零」，此前生产未实现，只有手动继续 `resetDurableResumeBudget` 会清）。「一轮」判定点 = live 路径的进展落账：`runRegistry.checkpointNativeModelOperation(status='succeeded')`（一次模型调用成功结束）或 `checkpointNativeToolOperation(status='succeeded')`（一个 tool complete），即该笔 checkpoint 带 `native_model_operation` / `native_tool_operation` 且 `status='succeeded'` 的事件。清零写在 `checkpointNow @ durableRunKernel.ts`，与这笔进展**同一事务**落盘；只在计数 >0（即恢复后）时生效，首跑本就是 0。显式传入 `autoResumeCount` 的写（派发前 fence、手动继续）以调用方为准，派发前计数与 fence 同笔落盘的约束不变；恢复宿主自己的收口/物化（`native_recovery_*`、`approval_recovered` 等事件）不算进展，崩溃循环仍有顶。清零后再崩溃重新从 1 计、可再自动续跑。
+
+K2（`user_stop` / `guard_halt` 永不进崩溃自动续跑）与修订二（`budget_exhausted` 标记、等审批 `waiting` 不让位、不出「继续」）语义不变。合同测试：`tests/unit/host/runtime/durableResumeBudgetApproval.test.ts`（真实 SQLite + RunRegistry + kernel；web 出口走真实 express `/api/cancel` 与 `createAgentDurableRouteRunLifecycle`）。

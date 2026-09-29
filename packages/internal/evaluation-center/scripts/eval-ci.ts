@@ -101,6 +101,7 @@ import {
   buildProductionCompareArm,
   describeEvalCompareDiff,
 } from '../src/host/evaluation/evalCompareRequest';
+import { createOwnedTmp, releaseOwnedTmp } from '../../../../scripts/lib/tmp-sandbox.mjs';
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
   return isProviderVariantDisabled() ? 'variant-off' : 'variant-on';
@@ -289,6 +290,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --risk-tasks <a,b>       Register case ids this change might break
   npx tsx scripts/eval-ci.ts --case-dir <dir>   External test-case dir (e.g. GAIA)；跳过 baseline 对账与 trend
   npx tsx scripts/eval-ci.ts --data-dir <path>  Isolate all product data reads/writes under this directory
+  npx tsx scripts/eval-ci.ts --keep-tmp        Keep the run's tmp sandboxes and print their paths (debugging)
   npx tsx scripts/eval-ci.ts --promote          Promote current results to baseline
   npx tsx scripts/eval-ci.ts --promote-mock-harness  Refresh the separate deterministic mock-harness baseline
   npx tsx scripts/eval-ci.ts --baseline-info    Show current baseline
@@ -595,8 +597,10 @@ async function runEvals(
     : filteredTestCases.slice(0, opts.maxCases))
     .map((testCase) => testCase.id);
   const eventConfig = { ...opts.eventConfig, maxCases: selectedCaseIds.length };
+  // N-GATES-TMP-SELFCLEAN：事件桥（真跑桥）的数据根/每 case 数据目录登记进 tmp-sandbox，
+  // SIGTERM/退出钩子兜底自清；--keep-tmp / CODE_AGENT_KEEP_TMP=1 可保留排障。
   const generatedDataDir = opts.eventStream && !process.env.CODE_AGENT_DATA_DIR
-    ? fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-eval-data-'))
+    ? createOwnedTmp('code-agent-eval-data-')
     : undefined;
   if (generatedDataDir) process.env.CODE_AGENT_DATA_DIR = generatedDataDir;
   const cleanWorkdir = opts.cleanWorkdir;
@@ -675,7 +679,7 @@ async function runEvals(
               throw new Error('事件桥评测缺少独立数据目录。');
             }
             fs.mkdirSync(baseDataDir, { recursive: true });
-            const caseDataDir = fs.mkdtempSync(path.join(baseDataDir, 'case-'));
+            const caseDataDir = createOwnedTmp('case-', { parentDir: baseDataDir });
             const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
             process.env.CODE_AGENT_DATA_DIR = caseDataDir;
             const isolatedState = await createIsolatedEvalState(caseDataDir);
@@ -699,7 +703,7 @@ async function runEvals(
                 await isolatedState.telemetryCollector.dispose();
                 isolatedState.database.close();
                 process.env.CODE_AGENT_DATA_DIR = previousDataDir;
-                fs.rmSync(caseDataDir, { recursive: true, force: true });
+                releaseOwnedTmp(caseDataDir);
                 executionSandbox.cleanup();
               },
             };
@@ -750,7 +754,7 @@ async function runEvals(
     sandbox.cleanup();
     if (generatedDataDir) {
       delete process.env.CODE_AGENT_DATA_DIR;
-      fs.rmSync(generatedDataDir, { recursive: true, force: true });
+      releaseOwnedTmp(generatedDataDir);
     }
   }
 }
@@ -991,7 +995,7 @@ async function runCompareCommand(
         }
         const dataParent = process.env.CODE_AGENT_DATA_DIR || os.tmpdir();
         fs.mkdirSync(dataParent, { recursive: true });
-        const armDataDir = fs.mkdtempSync(path.join(dataParent, 'eval-arm-'));
+        const armDataDir = createOwnedTmp('eval-arm-', { parentDir: dataParent });
         const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
         process.env.CODE_AGENT_DATA_DIR = armDataDir;
         const isolatedState = await createIsolatedEvalState(armDataDir);
@@ -1005,7 +1009,7 @@ async function runCompareCommand(
             isolatedState.database.close();
             if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
             else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
-            fs.rmSync(armDataDir, { recursive: true, force: true });
+            releaseOwnedTmp(armDataDir);
             armSandbox.cleanup();
           },
         };

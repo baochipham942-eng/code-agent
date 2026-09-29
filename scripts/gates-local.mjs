@@ -8,6 +8,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { acquireLock } from './lib/gates-local-lock.mjs';
+import { createOwnedTmp } from './lib/tmp-sandbox.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
@@ -356,7 +357,8 @@ function runRendererCapabilityDiff() {
     throw new Error(`git merge-base HEAD ${requestedBaseRef} returned an empty SHA`);
   }
 
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-gates-renderer-base-'));
+  // N-GATES-TMP-SELFCLEAN：登记进 tmp-sandbox，退出/信号钩子兜底清理（下面的 finally 正常路径仍保留）。
+  const tempRoot = createOwnedTmp('code-agent-gates-renderer-base-');
   const baseDir = path.join(tempRoot, 'base');
   fs.mkdirSync(baseDir);
 
@@ -411,6 +413,17 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     releaseLock();
     process.exit(130);
   });
+}
+
+// N-GATES-TMP-SELFCLEAN：起手回收陈年临时沙箱（名字匹配 + >1 天 + 无进程占用才删，
+// 见 scripts/gc-stale-tmp.mjs）。回收失败不阻断门——它是保洁，不是前置条件——但必须打印。
+try {
+  const gc = spawn(process.execPath, ['scripts/gc-stale-tmp.mjs', '--execute']);
+  if (gc.status !== 0) {
+    console.error(`⚠ gc-stale-tmp 退出码 ${gc.status}，本轮跳过回收（不阻断门）`);
+  }
+} catch (error) {
+  console.error(`⚠ gc-stale-tmp 跑不起来：${error instanceof Error ? error.message : String(error)}（不阻断门）`);
 }
 
 console.log('gates:local CI mapping');

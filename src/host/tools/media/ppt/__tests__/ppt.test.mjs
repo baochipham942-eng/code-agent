@@ -16,7 +16,7 @@ const projectRequire = createRequire(
 );
 globalThis.require = projectRequire;
 
-const { parseContentToSlides, generatePlaceholderSlides } = await import('../parser.ts');
+const { parseContentToSlides } = await import('../parser.ts');
 const { detectChartData } = await import('../charts.ts');
 const { getThemeConfig, isAppleDark } = await import('../themes.ts');
 
@@ -61,14 +61,6 @@ console.log('\n═══ Part 1: Parser 单元测试 ═══');
 {
   const slides = parseContentToSlides('# 代码\n```python\nprint("hello")\n```', 10);
   log('1.4 代码块解析', slides[0].code?.language === 'python');
-}
-
-// 1.5 占位内容生成
-{
-  const slides = generatePlaceholderSlides('测试主题', 8);
-  log('1.5 占位生成', slides.length === 7, `${slides.length} slides`);
-  log('1.5a 首页标题', slides[0].title === '测试主题');
-  log('1.5b 末页 isEnd', slides[slides.length - 1].isEnd === true);
 }
 
 // 1.6 maxSlides 限制

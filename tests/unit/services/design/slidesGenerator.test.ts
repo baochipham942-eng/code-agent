@@ -79,8 +79,9 @@ describe('buildSlidesOutline', () => {
     expect(outline.length).toBeGreaterThan(0);
     expect(outline[0].isTitle).toBe(true);
     expect(outline[0].title).toBe('一份产品介绍');
-    // 内容页含要点
-    expect(outline.some((s) => !s.isTitle && s.points.length > 0)).toBe(true);
+    // 骨架不含编造要点（FB-254）：内容页 points 为空，无写死副标题
+    expect(outline.filter((s) => !s.isTitle && !s.isEnd).every((s) => s.points.length === 0)).toBe(true);
+    expect(outline[0].subtitle).toBeUndefined();
   });
 
   it('页数透传', () => {

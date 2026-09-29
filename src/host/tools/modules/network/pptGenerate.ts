@@ -25,7 +25,7 @@ import PptxGenJS from 'pptxgenjs';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS } from '../../../../shared/constants';
 import type { PPTGenerateParams, SlideImage, ChartMode, ResearchContext, VlmCallback, SlideData } from '../../media/ppt/types';
 import { getThemeConfig } from '../../media/ppt/themes';
-import { parseContentToSlides, outlineToSlideData } from '../../media/ppt/parser';
+import { parseContentToSlides } from '../../media/ppt/parser';
 import { registerSlideMasters, MASTER } from '../../media/ppt/slideMasters';
 import {
   selectMasterAndLayout,
@@ -508,6 +508,14 @@ export async function executePptGenerate(
     const slideImages: SlideImage[] = [...((images as SlideImage[]) || [])];
 
     // ===== 多通道内容生成 =====
+    // 拿不到页面内容时报错让模型补内容，禁止用写死的示例稿冒充成品（FB-254）。
+    const noContentError = (reason: string): ToolResult<string> => ({
+      ok: false,
+      error:
+        `PPT 未生成：${reason}没有拿到页面内容。` +
+        `请把每页标题与要点通过 slides（结构化）或 content（markdown）传进来后再调用 ppt_generate。`,
+      code: 'PPT_NO_CONTENT',
+    });
     let structuredSlides: StructuredSlide[] | null = null;
     let legacySlides: SlideData[] | null = null;
 
@@ -521,9 +529,14 @@ export async function executePptGenerate(
         }
       } else {
         ctx.logger.warn(`All structured slides failed validation, falling back to legacy`);
-        legacySlides = content
-          ? parseContentToSlides(content, slides_count)
-          : outlineToSlideData(topic, slides_count);
+        if (!content) {
+          const summary = errors
+            .slice(0, 5)
+            .map((e) => `第 ${e.index + 1} 页: ${e.errors.join('; ')}`)
+            .join(' | ');
+          return noContentError(`传入的 slides 全部未通过校验（${summary}）。`);
+        }
+        legacySlides = parseContentToSlides(content, slides_count);
       }
     } else if (data_source) {
       // D2: 数据源驱动
@@ -541,14 +554,14 @@ export async function executePptGenerate(
         structuredSlides = generated;
         ctx.logger.debug(`Model generated ${generated.length} structured slides`);
       } else {
-        legacySlides = outlineToSlideData(topic, slides_count);
+        return noContentError('模型自动生成页面内容失败。');
       }
     } else {
       // 通道 B：传统 content markdown
-      const processedContent = content || '';
-      legacySlides = processedContent
-        ? parseContentToSlides(processedContent, slides_count)
-        : outlineToSlideData(topic, slides_count);
+      if (!content) {
+        return noContentError('未提供 slides 或 content，且当前环境无法自动生成页面内容。');
+      }
+      legacySlides = parseContentToSlides(content, slides_count);
     }
 
     // ⑥ 注入图表数据（从研究数据自动构建）

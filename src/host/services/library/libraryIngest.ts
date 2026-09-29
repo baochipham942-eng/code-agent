@@ -6,7 +6,7 @@
 // - PDF  → readPdf 的本地 pdftotext 抽取（extractSelectablePdfText，含候选二进制探测）
 // - DOCX → mammoth.extractRawText（与 read_docx 同一条抽取库）
 // - XLSX → ExcelJS 全 sheet 展开（与 read_xlsx 同一条抽取库）
-// - 文本型后缀 → utf-8 直读
+// - 文本型后缀 → 读 Buffer 后按 UTF-8 → GB18030 严格识别（decodeLibraryText，失败明确报错）
 // 抽取文本落「文件旁 sidecar」：<libraryDir>/<projectId|global>/.extracted/<itemId>.md，
 // 行号与原件一致（文本型 sidecar 即原件内容），供 pinned 索引块指路 + 依据抽屉取片段。
 // 刻意不上 embedding/向量：检索 = 索引块指路 + 模型按需 Read/Grep sidecar（file-as-memory 口径）。
@@ -18,6 +18,7 @@ import ExcelJS from 'exceljs';
 import { createLogger } from '../infra/logger';
 import { LIBRARY_TIMEOUTS } from '../../../shared/constants';
 import { extractSelectablePdfText } from '../../tools/modules/network/pdfTextExtract';
+import { decodeLibraryText } from './decodeLibraryText';
 
 const logger = createLogger('LibraryIngest');
 
@@ -30,7 +31,7 @@ const MAX_EXTRACTED_CHARS = 2 * 1024 * 1024;
 /** xlsx 展开的单表行数上限（含表头）；防巨表把 sidecar 撑爆 */
 const MAX_XLSX_ROWS_PER_SHEET = 5000;
 
-/** utf-8 直读的文本型后缀 */
+/** 按文本直读（UTF-8 / GB18030）的文本型后缀 */
 const TEXT_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.log',
   '.yml', '.yaml', '.xml', '.html', '.htm', '.mjs', '.js', '.ts', '.py', '.sql',
@@ -66,7 +67,7 @@ export async function extractLibraryText(filePath: string): Promise<ExtractedLib
   let raw: string;
   let method: string;
   if (TEXT_EXTENSIONS.has(ext)) {
-    raw = await fs.promises.readFile(filePath, 'utf-8');
+    raw = decodeLibraryText(await fs.promises.readFile(filePath));
     method = 'plaintext';
   } else if (ext === '.pdf') {
     // AbortSignal.timeout 让学习管线不挂在坏 PDF 上；logger 结构兼容 ToolContext['logger']

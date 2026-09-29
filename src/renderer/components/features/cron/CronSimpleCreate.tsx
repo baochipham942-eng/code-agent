@@ -7,6 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import type { Project } from '@shared/contract/project';
+import { suggestCronStaggerMinute } from '@shared/cronStagger';
 import { Button } from '../../primitives/Button';
 import { FormField } from '../../composites/FormField';
 import { Input } from '../../primitives/Input';
@@ -210,6 +211,12 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
           <FormField label={cc.simpleTimeLabel}>
             <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </FormField>
+        )}
+        {needTime && time.endsWith(':00') && (
+          <p className="text-xs text-badge-warning sm:col-span-2" data-testid="cron-stagger-hint">
+            整点容易和其他任务扎堆触发，建议把分钟错开到{' '}
+            {suggestCronStaggerMinute(`${freq} ${time}`)} 分。
+          </p>
         )}
         {freq === 'hourly' && (
           <FormField label={cc.simpleIntervalLabel}>

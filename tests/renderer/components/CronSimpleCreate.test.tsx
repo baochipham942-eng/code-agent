@@ -179,4 +179,19 @@ describe('CronSimpleCreate', () => {
     await waitFor(() => expect(createJob).toHaveBeenCalled());
     expect(createJob.mock.calls[0][0]).toMatchObject({ runsOn: 'cloud' });
   });
+
+  it('撞整点（默认 09:00）给错峰建议；把分钟错开后建议消失（N-CRON-RESILIENCE ②）', async () => {
+    render(<CronSimpleCreate onDone={() => undefined} />);
+
+    // 默认 daily 09:00：分钟=0，给出错峰建议（建议值 1..59 非 0）
+    const hint = screen.getByTestId('cron-stagger-hint');
+    expect(hint.textContent).toContain('错开到');
+    const suggested = Number(hint.textContent!.match(/错开到\s*(\d+)\s*分/)?.[1]);
+    expect(suggested).toBeGreaterThanOrEqual(1);
+    expect(suggested).toBeLessThanOrEqual(59);
+
+    // 时间改成 09:17：不再撞整点，建议消失
+    fireEvent.change(screen.getByDisplayValue('09:00'), { target: { value: '09:17' } });
+    expect(screen.queryByTestId('cron-stagger-hint')).toBeNull();
+  });
 });

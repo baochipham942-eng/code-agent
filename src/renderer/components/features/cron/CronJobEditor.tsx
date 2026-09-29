@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
+import { isHourAlignedCronExpression, suggestCronStaggerMinute } from '@shared/cronStagger';
 import { ArrowLeft, Clock, Settings, Terminal } from 'lucide-react';
 import { Modal } from '../../primitives/Modal';
 import { Button } from '../../primitives/Button';
@@ -543,6 +544,11 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   <p className="text-xs text-zinc-500" data-testid="cron-min-interval-hint">
                     {draft.runsOn === 'cloud' ? cc.cloudIntervalHint : cc.localIntervalHint}
                   </p>
+                  {(draft.everyUnit === 'hours' || draft.everyUnit === 'days') && (
+                    <p className="text-xs text-zinc-500" data-testid="cron-auto-stagger-hint">
+                      {draft.everyUnit === 'hours' ? '小时' : '天'}级任务会按任务 ID 自动错峰到非整点分钟，避免扎堆触发。
+                    </p>
+                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <FormField label="开始时间">
                       <Input
@@ -567,21 +573,29 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
               )}
 
               {draft.scheduleType === 'cron' && (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <FormField label="Cron 表达式" required error={errors.cronExpression}>
-                    <Input
-                      value={draft.cronExpression}
-                      onChange={(e) => setField('cronExpression', e.target.value)}
-                      className="font-mono"
-                    />
-                  </FormField>
-                  <FormField label="时区">
-                    <Input
-                      value={draft.cronTimezone}
-                      onChange={(e) => setField('cronTimezone', e.target.value)}
-                      placeholder="Asia/Shanghai"
-                    />
-                  </FormField>
+                <div className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <FormField label="Cron 表达式" required error={errors.cronExpression}>
+                      <Input
+                        value={draft.cronExpression}
+                        onChange={(e) => setField('cronExpression', e.target.value)}
+                        className="font-mono"
+                      />
+                    </FormField>
+                    <FormField label="时区">
+                      <Input
+                        value={draft.cronTimezone}
+                        onChange={(e) => setField('cronTimezone', e.target.value)}
+                        placeholder="Asia/Shanghai"
+                      />
+                    </FormField>
+                  </div>
+                  {isHourAlignedCronExpression(draft.cronExpression) && (
+                    <p className="text-xs text-badge-warning" data-testid="cron-stagger-hint">
+                      整点任务容易和其他任务扎堆触发，建议把分钟位错开到{' '}
+                      {suggestCronStaggerMinute(draft.cronExpression)} 分。
+                    </p>
+                  )}
                 </div>
               )}
             </div>

@@ -460,7 +460,11 @@ export class SessionHistoryAppService {
     }
 
     const result = await checkpointService.rewindFiles(sessionId, checkpointMessageId);
-    if (!result.success || result.errors.length > 0) {
+    // uncertain 写目标是「本就没建快照」的披露而非恢复失败：其余文件已尽力恢复时不为它
+    // 整体抛错（其余 skipped 口径——人工编辑、缺摘要等——保持原有抛错行为）。
+    const restoreFailed = result.errors.length > 0
+      || result.skippedFiles.some((item) => item.reason !== 'uncertain_write_target');
+    if (restoreFailed) {
       const failedFileCount = result.errors.length + result.skippedFiles.length;
       throw new WorkspaceFileRestoreError(
         'WORKSPACE_FILE_RESTORE_FAILED',
@@ -469,6 +473,17 @@ export class SessionHistoryAppService {
         result.deletedFiles.length,
         failedFileCount,
       );
+    }
+
+    // uncertain 跳过在这条入口不回传调用方（结果契约面未扩，返修 r3 Nit 记档）：
+    // 至少留一条可判因的日志，别让「跳过了什么」静默丢掉（降级留痕，错题本 2026-08-14）。
+    const uncertainSkips = result.skippedFiles.filter((item) => item.reason === 'uncertain_write_target');
+    if (uncertainSkips.length > 0) {
+      logger.warn('Workspace restore skipped uncertain write targets', {
+        sessionId,
+        checkpointMessageId,
+        skippedFiles: uncertainSkips.map((item) => item.filePath),
+      });
     }
 
     return {

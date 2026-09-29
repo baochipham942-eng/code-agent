@@ -229,15 +229,28 @@ function tokenizeShellCommand(command: string): ShellToken[] {
   return tokens;
 }
 
-/** 写目标在参数位上的命令：cp / mv 写最后一个参数，tee 写每一个文件参数。 */
-const ARGUMENT_WRITE_COMMANDS: Record<string, 'last' | 'all'> = { cp: 'last', mv: 'last', tee: 'all' };
+/** 参数位写命令表：'last' = 只写最后一个操作数（cp/mv 的目的地），'all' = 每个操作数都写（tee）。 */
+type ArgumentWriteCommands = Record<string, 'last' | 'all'>;
 
-function argumentWriteTargets(words: string[]): string[] {
+/** 写目标在参数位上的命令：cp / mv 写最后一个参数，tee 写每一个文件参数。 */
+const ARGUMENT_WRITE_COMMANDS: ArgumentWriteCommands = { cp: 'last', mv: 'last', tee: 'all' };
+
+/**
+ * 检查点口径的参数位写命令（返修 r4 砍范围）：移动/重命名类（mv）一律不进回退——
+ * mv 的源与目的地快照必须**成对**存活、**成对**逐出，而 enforceLimit 跨调用按行逐出
+ * 做不到这一点（连续三轮返修的数据丢失洞），按编排决策整类砍掉（要支持得另立单做
+ * 原子成对快照 + 成对逐出）；rm 补进来：删除目标建快照，回退恢复被删文件。只作用于
+ * 检查点（resolveCheckpointWriteTargets），安全门（resolveToolWriteTargets）的
+ * 参数面一字不动。
+ */
+const CHECKPOINT_ARGUMENT_WRITE_COMMANDS: ArgumentWriteCommands = { cp: 'last', tee: 'all', rm: 'all' };
+
+function argumentWriteTargets(words: string[], commands: ArgumentWriteCommands = ARGUMENT_WRITE_COMMANDS): string[] {
   if (words.length < 2) return [];
   // 命令名也要词法值化：保引号分词后 `c"p"`/`c\p` 这类合法写法带着引号/转义进来，
   // 不词法值化认不出 cp ⇒ 写目标丢失，削弱既有 WRITE_OWNERSHIP_CONFLICT
   // （PR #1709 复审②）。shellWordValue 解完就是 cp。
-  const rule = ARGUMENT_WRITE_COMMANDS[path.basename(shellWordValue(words[0]))];
+  const rule = commands[path.basename(shellWordValue(words[0]))];
   if (!rule) return [];
   // `-r` / `-a` / `--append` 一律是开关不是路径；`--` 之后才是纯路径，但这里不需要区分。
   // 选项判定要先词法值化（PR #1709 复审③：带引号的 `"-f"` 不过滤会混进操作数遮蔽真目标），
@@ -283,8 +296,8 @@ function nestedScriptTexts(words: string[]): string[] {
 }
 
 /** `bash -c '...'` 内嵌脚本的写目标（原始词，值化在出口统一做）。 */
-function nestedScriptTargets(words: string[]): string[] {
-  return nestedScriptTexts(words).flatMap(collectShellTargets);
+function nestedScriptTargets(words: string[], commands: ArgumentWriteCommands = ARGUMENT_WRITE_COMMANDS): string[] {
+  return nestedScriptTexts(words).flatMap((script) => collectShellTargets(script, commands));
 }
 
 export interface ScopedUncertainRedirect {
@@ -379,13 +392,13 @@ export function shellScopedUncertainRedirects(command: string): ScopedUncertainR
 }
 
 /** 收集写目标原始词（引号/转义还在词上）；词法值化只在 shellWriteTargets 出口做一遍。 */
-function collectShellTargets(command: string): string[] {
+function collectShellTargets(command: string, commands: ArgumentWriteCommands = ARGUMENT_WRITE_COMMANDS): string[] {
   const tokens = tokenizeShellCommand(command);
   const targets: string[] = [];
   let words: string[] = [];
   const flushSegment = (): void => {
-    targets.push(...argumentWriteTargets(words));
-    targets.push(...nestedScriptTargets(words));
+    targets.push(...argumentWriteTargets(words, commands));
+    targets.push(...nestedScriptTargets(words, commands));
     words = [];
   };
   for (const token of tokens) {
@@ -403,9 +416,10 @@ function collectShellTargets(command: string): string[] {
  * 上线后评测的越权写信号也用它，别再造一份。
  * ponytail: 只认这三个命令名，不做「哪些命令会写盘」的全量枚举——
  * 按名字枚举永远漏，真正的兜底是沙盒本身，这里只补最常见的三条。
+ * commands 参数是检查点口径（返修 r4：mv 出、rm 入），缺省仍是安全门口径。
  */
-export function shellWriteTargets(command: string): string[] {
-  return collectShellTargets(command).map(shellWordValue);
+export function shellWriteTargets(command: string, commands: ArgumentWriteCommands = ARGUMENT_WRITE_COMMANDS): string[] {
+  return collectShellTargets(command, commands).map(shellWordValue);
 }
 
 /**
@@ -496,10 +510,32 @@ function descriptorAssessment(
   if (typeof command !== 'string' || command.trim() === '') {
     return { targets: [], uncertain: [`uncertain:${descriptor.commandParameter}`], mutations: {} };
   }
-  const targets: string[] = [];
-  const uncertain: string[] = [];
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const canonical = canonicalizeCommand(command);
+  const assessment = redirectAndArgumentTargets(command, input.workingDirectory, canonical);
+  // 路径边界匹配（Nit 修订）：子串会把命令文本里顺带提到的 `.code-agent/memory`
+  // 当成写记忆目录；真路径必有 token 界 + 后随 `/` 或文本尾，见 hasPathBoundaryMention。
+  if (hasPathBoundaryMention(canonical.command, memoryDir) || hasPathBoundaryMention(canonical.command, memoryAlias)) {
+    assessment.targets.push(memoryDir);
+  }
+  return assessment;
+}
+
+/**
+ * 命令文本里的写目标评估（重定向 + cp/mv/tee 目标位 + 内嵌脚本，返修 r3 从
+ * descriptorAssessment 抽出）：安全门（resolveToolWriteTargets 的 shell 描述符）与
+ * 检查点（resolveCheckpointWriteTargets）共用同一条词法，commands 参数区分两边口径
+ * （返修 r4：检查点侧 mv 出、rm 入）。memory 目录提及目标**不**在这条共享路径里
+ * ——那是安全门专属（目录建不出快照，进检查点只会落一条噪音披露行，返修 r3）。
+ */
+function redirectAndArgumentTargets(
+  command: string,
+  workingDirectory: string,
+  canonical: ReturnType<typeof canonicalizeCommand>,
+  commands: ArgumentWriteCommands = ARGUMENT_WRITE_COMMANDS,
+): ToolWriteTargets {
+  const targets: string[] = [];
+  const uncertain: string[] = [];
   // 🔴 重定向目标的分词别喂 canonicalizeCommand 的输出（PR #1709 复审①实测双向错）：
   // 它去引号（安全匹配面要的形状，十几个消费方靠它，不能动），于是
   // `echo x > "/tmp/eval-sandbox escape.txt"` 被截成 /tmp/eval-sandbox——界外写被当界内放行；
@@ -508,19 +544,16 @@ function descriptorAssessment(
   // 做掉它原来顺带做的两件词法预处理：先折词中续行（`\`+换行，照它的折法消掉），
   // 再把没被反斜杠转义的换行切成 `;`（多行脚本第 2 行起不粘第 1 行，PR #1650 第 3 轮）。
   const continuationsFolded = command.replace(/\\(?:\r\n?|\n)/g, '');
-  const redirectTargets = shellWriteTargets(splitUnescapedNewlines(continuationsFolded));
+  const redirectTargets = shellWriteTargets(splitUnescapedNewlines(continuationsFolded), commands);
   if (canonical.parsingFailed && redirectTargets.length > 0) {
     uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
   }
-  // 路径边界匹配（Nit 修订）：子串会把命令文本里顺带提到的 `.code-agent/memory`
-  // 当成写记忆目录；真路径必有 token 界 + 后随 `/` 或文本尾，见 hasPathBoundaryMention。
-  if (hasPathBoundaryMention(canonical.command, memoryDir) || hasPathBoundaryMention(canonical.command, memoryAlias)) targets.push(memoryDir);
   for (const rawTarget of redirectTargets) {
     const target = rawTarget;
     if (!target || /[$`*?{}]/.test(target)) {
       uncertain.push(`uncertain-redirection:${rawTarget || '<missing>'}`);
     } else {
-      targets.push(resolveToolPath(target, input.workingDirectory));
+      targets.push(resolveToolPath(target, workingDirectory));
     }
   }
   return { targets, uncertain, mutations: {} };
@@ -548,6 +581,45 @@ export function resolveToolWriteTargets(input: ResolveToolWriteTargetsInput): To
       : []),
     ...(input.definition.pathAuthority ?? []).map((descriptor) => descriptorAssessment(descriptor, input)),
   ]);
+  return {
+    targets: [...new Set(assessment.targets)].sort(),
+    uncertain: [...new Set(assessment.uncertain)].sort(),
+    mutations: assessment.mutations,
+  };
+}
+
+/**
+ * 检查点路径专用的写目标解析（返修 r3 白名单来源，返修 r4 最终砍范围）：**不**跑
+ * genericPathAssessment 的通用后缀扫描——那条是安全门（ownership / 写边界闸）的口径，
+ * 参数面必须宽；检查点面宽了会把目录类参数（working_directory）变成建不出快照的
+ * 噪音披露行。来源只有两档：
+ * - 声明 shell 权威的工具（bash / terminal_write）：只从命令解析取**单目标**写入
+ *   （重定向、cp 目的地、rm 目标、tee、内嵌脚本），移动类（mv）除外——一律不进回退
+ *   （返修 r4）；绝不从 Bash 的其它参数（working_directory、cwd、timeout 等）取；
+ *   memory 目录提及目标也不进这条路径（见 redirectAndArgumentTargets）。
+ * - 声明 path / global-memory 权威的内置工具：只认 schema 里明确声明的写路径字段
+ *   （Write/Edit 的 file_path、docx 的 output_path 等，含 whenParameter 条件命中）。
+ * - 无声明的 MCP / 未知工具：不推断，零目标零披露（返修 r4 砍掉，回 origin/main 行为）。
+ */
+export function resolveCheckpointWriteTargets(input: ResolveToolWriteTargetsInput): ToolWriteTargets {
+  const descriptors = input.definition.pathAuthority ?? [];
+  const shellDescriptors = descriptors.filter((descriptor) => descriptor.kind === 'shell');
+  const assessment = shellDescriptors.length > 0
+    ? mergeAssessments(shellDescriptors.map((descriptor) => {
+      const command = input.params[descriptor.commandParameter];
+      if (typeof command !== 'string' || command.trim() === '') {
+        return { targets: [], uncertain: [`uncertain:${descriptor.commandParameter}`], mutations: {} };
+      }
+      return redirectAndArgumentTargets(
+        command,
+        input.workingDirectory,
+        canonicalizeCommand(command),
+        CHECKPOINT_ARGUMENT_WRITE_COMMANDS,
+      );
+    }))
+    : descriptors.length > 0
+      ? mergeAssessments(descriptors.map((descriptor) => descriptorAssessment(descriptor, input)))
+      : { targets: [], uncertain: [], mutations: {} };
   return {
     targets: [...new Set(assessment.targets)].sort(),
     uncertain: [...new Set(assessment.uncertain)].sort(),

@@ -19,7 +19,7 @@ export interface FileCheckpoint {
 
 export interface RewindSkippedFile {
   filePath: string;
-  reason: 'human_edit' | 'missing_post_write_digest' | 'redo_snapshot_failed';
+  reason: 'human_edit' | 'missing_post_write_digest' | 'redo_snapshot_failed' | 'uncertain_write_target';
   detail: string;
 }
 

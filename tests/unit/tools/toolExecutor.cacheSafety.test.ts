@@ -35,7 +35,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 }));
 
 vi.mock('../../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
-  createFileCheckpointIfNeeded: vi.fn().mockResolvedValue(undefined),
+  createFileCheckpointIfNeeded: vi.fn().mockResolvedValue([]),
 }));
 
 import { initToolCache } from '../../../src/host/services/infra/toolCache';

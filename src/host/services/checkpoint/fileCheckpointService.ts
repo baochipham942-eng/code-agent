@@ -18,6 +18,16 @@ function getCheckpointDatabase() {
 
 const MISSING_FILE_DIGEST = 'missing';
 
+/**
+ * 一个路径能否进**无损**快照（返修 r2）。二进制/非 utf-8 的判据用 Buffer 做
+ * 解码再编码的往返比对，不靠 utf-8 字符串——有损读入的字符串看不出自己有损。
+ */
+type SnapshotEligibility = {
+  /** 是否落快照行：建不出无损行的（目录/超大/读错误/二进制）为 false，调用方逐条披露。 */
+  snapshotable: boolean;
+  reason?: 'directory' | 'too_large' | 'read_error' | 'non_utf8_content' | 'unsupported_file_type';
+};
+
 export interface RewindFilesOptions {
   /** Snapshot the pre-restore contents under this synthetic message for Redo. */
   redoCheckpointMessageId?: string;
@@ -116,6 +126,105 @@ export class FileCheckpointService {
     }
   }
 
+  /**
+   * 评估一个路径能否被无损快照（工具执行前调用，返修 r2）：
+   * - 文件不存在 → 可快照（新建文件场景，回退时删除）；
+   * - 目录 → 快照行建不出来（snapshotable=false，无内容可丢，逐条披露即可）；
+   * - 超过 maxFileSizeBytes、读错误、非 utf-8 内容（二进制）→ 不可快照；
+   * - 字符/块设备、FIFO 等非常规文件 → 不读（读它们可能阻塞），按不可快照处理。
+   * createCheckpoint 对这几类要么返回 null 要么按 utf-8 有损存入（回退写回损坏内容），
+   * 调用方（fileCheckpointMiddleware）必须先问这里。
+   */
+  async assessSnapshotEligibility(filePath: string): Promise<SnapshotEligibility> {
+    const absolutePath = path.isAbsolute(filePath)
+      ? filePath
+      : path.resolve(filePath);
+
+    let stats: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      stats = await fs.stat(absolutePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { snapshotable: true };
+      }
+      return { snapshotable: false, reason: 'read_error' };
+    }
+    if (stats.isDirectory()) {
+      return { snapshotable: false, reason: 'directory' };
+    }
+    if (!stats.isFile()) {
+      return { snapshotable: false, reason: 'unsupported_file_type' };
+    }
+    if (stats.size > this.config.maxFileSizeBytes) {
+      return { snapshotable: false, reason: 'too_large' };
+    }
+    let content: Buffer;
+    try {
+      content = await fs.readFile(absolutePath);
+    } catch {
+      return { snapshotable: false, reason: 'read_error' };
+    }
+    // utf-8 无损往返判据：解码再编码回不去（坏字节被替换成 U+FFFD）= 二进制/非 utf-8，
+    // 硬存进快照，回退时写回的就是损坏内容。
+    if (!Buffer.from(content.toString('utf-8'), 'utf-8').equals(content)) {
+      return { snapshotable: false, reason: 'non_utf8_content' };
+    }
+    return { snapshotable: true };
+  }
+
+  /**
+   * 记录一个解析不出的写目标（含通配/变量的重定向等）。
+   * 不落快照内容，只在回退时进 skippedFiles 披露「无法确定写入目标」。
+   * 同一 session 同一披露键只留**最早**一条（返修 r3 去重，返修 r4 改向）：rewindFiles
+   * 按 file_path 分组折叠，一条披露行足以代表该目标的全部不确定写入；保留最早一条
+   * 而不是删旧插新——删旧会把更早消息的行抹掉，那条行若是该消息唯一的行，「按消息
+   * 回退」的锚点查询就一行不剩。披露行有自己的总量上限（enforceUncertainLimit），
+   * 不占真快照的预算：真快照已满时，写一条披露不允许把可回退的快照挤出去。
+   * @returns 记录 id（含同键已存在时返回既有行 id），失败返回 null
+   */
+  async recordUncertainWriteTarget(
+    sessionId: string,
+    messageId: string,
+    uncertainTarget: string,
+    attribution?: { workspaceScopeVersion?: string },
+  ): Promise<string | null> {
+    const db = getCheckpointDatabase();
+    if (!db) return null;
+
+    try {
+      const existing = db.prepare(`
+        SELECT id FROM file_checkpoints
+        WHERE session_id = ? AND file_path = ? AND uncertain_target = 1
+        LIMIT 1
+      `).get(sessionId, uncertainTarget) as { id: string } | undefined;
+      if (existing) return existing.id;
+
+      await this.enforceUncertainLimit(sessionId);
+
+      const id = `ckpt_${Date.now()}_${uuidv4().slice(0, 8)}`;
+      db.prepare(`
+        INSERT INTO file_checkpoints (
+          id, session_id, message_id, file_path, workspace_scope_version,
+          original_content, file_existed, uncertain_target, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, NULL, 0, 1, ?)
+      `).run(
+        id,
+        sessionId,
+        messageId,
+        uncertainTarget,
+        attribution?.workspaceScopeVersion ?? null,
+        Date.now(),
+      );
+
+      logger.debug('Uncertain write target recorded', { id, sessionId, messageId, uncertainTarget });
+      return id;
+    } catch (error) {
+      logger.error('Failed to record uncertain write target', { error, sessionId, messageId, uncertainTarget });
+      return null;
+    }
+  }
+
   async finalizeCheckpointDigest(checkpointId: string, filePath: string): Promise<boolean> {
     const db = getCheckpointDatabase();
     if (!db) return false;
@@ -189,6 +298,7 @@ export class FileCheckpointService {
         file_existed: number;
         post_write_digest: string | null;
         restored_from: string | null;
+        uncertain_target: number;
       }>;
 
       if (!checkpoints || checkpoints.length === 0) {
@@ -200,6 +310,7 @@ export class FileCheckpointService {
         content: string | null;
         existed: boolean;
         expectedDigest: string | null;
+        uncertain: boolean;
         checkpointIds: string[];
         restoredFromMarkers: Array<string | null>;
       }>();
@@ -210,6 +321,7 @@ export class FileCheckpointService {
             content: ckpt.original_content,
             existed: ckpt.file_existed === 1,
             expectedDigest: ckpt.post_write_digest,
+            uncertain: ckpt.uncertain_target === 1,
             checkpointIds: [ckpt.id],
             restoredFromMarkers: [ckpt.restored_from],
           });
@@ -217,12 +329,26 @@ export class FileCheckpointService {
           existing.checkpointIds.push(ckpt.id);
           existing.restoredFromMarkers.push(ckpt.restored_from);
           if (ckpt.post_write_digest) existing.expectedDigest = ckpt.post_write_digest;
+          // 窗口内该路径只要有一条披露行，恢复就按披露口径回报（ai-review Nit）：真快照
+          // 的 post 摘要之后又发生过建不出无损快照的写入，比对不一致的成因是「那次写入
+          // 没快照」而非人工编辑——按 human_edit 披露会把原因标错。
+          if (ckpt.uncertain_target === 1) existing.uncertain = true;
         }
       }
 
       // 恢复每个文件
       for (const [filePath, original] of fileToOriginal) {
         try {
+          if (original.uncertain) {
+            // 写目标解析不出来（含通配/变量的重定向等），或建不出无损快照（超大/二进制/
+            // 读错误，返修 r2）——没有可安全回退的快照，逐条披露，回退不碰这些文件
+            result.skippedFiles.push({
+              filePath,
+              reason: 'uncertain_write_target',
+              detail: 'The write target could not be resolved or safely snapshotted when the tool ran, so no snapshot exists to restore.',
+            });
+            continue;
+          }
           const alreadyRestored = options.restoredFrom
             && options.redoCheckpointMessageId
             && original.restoredFromMarkers.every((marker) => marker === options.restoredFrom)
@@ -388,6 +514,7 @@ export class FileCheckpointService {
                original_content, file_existed, post_write_digest, restored_from, created_at
         FROM file_checkpoints
         WHERE session_id = ?
+          AND COALESCE(uncertain_target, 0) = 0
         ORDER BY created_at DESC
       `).all(sessionId) as Array<{
         id: string;
@@ -463,15 +590,20 @@ export class FileCheckpointService {
   }
 
   /**
-   * 强制执行每 session 上限
+   * 强制执行每 session 上限（真快照预算）。逐出按行进行：每条快照都是单文件自足的
+   * （返修 r4），被逐出的行其文件回退时不碰——不存在需要成对保持的记录。
    */
   private async enforceLimit(sessionId: string): Promise<void> {
     const db = getCheckpointDatabase();
     if (!db) return;
 
     try {
+      // 上限只数真快照：uncertain 披露行不占预算，大量带变量的重定向不能把
+      // 可回退的快照挤出每 session 上限。删除侧同口径（返修 r2 Nit）——最旧的
+      // 若是披露行，删它只会白丢披露，真快照数会持续超上限。
       const countResult = db.prepare(`
-        SELECT COUNT(*) as cnt FROM file_checkpoints WHERE session_id = ?
+        SELECT COUNT(*) as cnt FROM file_checkpoints
+        WHERE session_id = ? AND COALESCE(uncertain_target, 0) = 0
       `).get(sessionId) as { cnt: number } | undefined;
 
       const count = countResult?.cnt || 0;
@@ -482,7 +614,7 @@ export class FileCheckpointService {
           DELETE FROM file_checkpoints
           WHERE id IN (
             SELECT id FROM file_checkpoints
-            WHERE session_id = ?
+            WHERE session_id = ? AND COALESCE(uncertain_target, 0) = 0
             ORDER BY created_at ASC, rowid ASC
             LIMIT ?
           )
@@ -492,6 +624,41 @@ export class FileCheckpointService {
       }
     } catch (error) {
       logger.error('Failed to enforce limit', { error, sessionId });
+    }
+  }
+
+  /**
+   * 披露行自己的总量上限（返修 r3，返修 r4 与真快照预算拆开）：真快照预算不动，但
+   * 披露也不许无上限增长（同键去重之外，不同键各来一条照样能涨）——超出按最旧淘汰，
+   * 总量封顶。只在写披露行前调用，绝不逐出真快照。
+   */
+  private async enforceUncertainLimit(sessionId: string): Promise<void> {
+    const db = getCheckpointDatabase();
+    if (!db) return;
+
+    try {
+      const uncertainResult = db.prepare(`
+        SELECT COUNT(*) as cnt FROM file_checkpoints
+        WHERE session_id = ? AND uncertain_target = 1
+      `).get(sessionId) as { cnt: number } | undefined;
+
+      const uncertainCount = uncertainResult?.cnt || 0;
+      if (uncertainCount >= this.config.maxCheckpointsPerSession) {
+        const uncertainDeleteCount = uncertainCount - this.config.maxCheckpointsPerSession + 1;
+        db.prepare(`
+          DELETE FROM file_checkpoints
+          WHERE id IN (
+            SELECT id FROM file_checkpoints
+            WHERE session_id = ? AND uncertain_target = 1
+            ORDER BY created_at ASC, rowid ASC
+            LIMIT ?
+          )
+        `).run(sessionId, uncertainDeleteCount);
+
+        logger.debug('Enforced uncertain disclosure limit', { sessionId, deleted: uncertainDeleteCount });
+      }
+    } catch (error) {
+      logger.error('Failed to enforce uncertain limit', { error, sessionId });
     }
   }
 }

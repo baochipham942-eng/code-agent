@@ -140,6 +140,52 @@ describe('AgentAppService explicit workspace file restore', () => {
     expect(taskManager.setSessionContext).not.toHaveBeenCalled();
   });
 
+  it('treats uncertain-target disclosures as non-fatal when other files were restored', async () => {
+    // uncertain 写目标是「本就没建快照」的披露，不是恢复失败：不能为它整体抛
+    // WORKSPACE_FILE_RESTORE_FAILED（否则窗口内一次变量重定向就让恢复入口永远报错）
+    checkpointService.rewindFiles.mockResolvedValue({
+      success: false,
+      restoredFiles: ['/workspace/file.ts'],
+      deletedFiles: [],
+      skippedFiles: [{
+        filePath: 'uncertain-redirection:$OUT/a.txt',
+        reason: 'uncertain_write_target',
+        detail: 'The write target could not be resolved when the tool ran, so no snapshot exists to restore.',
+      }],
+      errors: [],
+    });
+
+    await expect(createService().restoreWorkspaceFilesAtCheckpoint({
+      sessionId: 'session-1',
+      checkpointMessageId: 'assistant-anchor-1',
+    })).resolves.toMatchObject({
+      success: true,
+      restoredFileCount: 1,
+      deletedFileCount: 0,
+    });
+  });
+
+  it('still fails when a restorable file was skipped for a non-uncertain reason', async () => {
+    checkpointService.rewindFiles.mockResolvedValue({
+      success: false,
+      restoredFiles: [],
+      deletedFiles: [],
+      skippedFiles: [{
+        filePath: '/workspace/human-edit.ts',
+        reason: 'human_edit',
+        detail: 'Current digest differs from the agent write.',
+      }],
+      errors: [],
+    });
+
+    await expect(createService().restoreWorkspaceFilesAtCheckpoint({
+      sessionId: 'session-1',
+      checkpointMessageId: 'assistant-anchor-1',
+    })).rejects.toMatchObject({
+      code: 'WORKSPACE_FILE_RESTORE_FAILED',
+    });
+  });
+
   it('rejects a running session before invoking the checkpoint service', async () => {
     taskManager.getSessionState.mockReturnValue({ status: 'running' });
 

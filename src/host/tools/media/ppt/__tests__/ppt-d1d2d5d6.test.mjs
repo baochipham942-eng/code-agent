@@ -387,22 +387,22 @@ const { outlineToSlideData } = await import('../parser.ts');
     `count=4→${slides4.length}, count=8→${slides8.length}`);
 }
 
-// E.4 outlineToSlideData: content slides have 4 points each
+// E.4 outlineToSlideData: 空骨架，内容页不含要点（不编造）
 {
   const slides = outlineToSlideData('测试主题', 8);
-  // Skip title (index 0) and end (last)
   const contentSlides = slides.slice(1, -1);
-  const allHave4Points = contentSlides.every(s => s.points.length === 4);
-  log('E.4 SCQA 内容页各 4 个要点', allHave4Points,
+  const allEmpty = contentSlides.every(s => s.points.length === 0);
+  log('E.4 骨架内容页无要点', allEmpty,
     contentSlides.map(s => s.points.length).join(','));
 }
 
-// E.5 outlineToSlideData: includes "背景概述" in slide titles (SCQA structure)
+// E.5 outlineToSlideData: 不含写死的领域文案 / 数字断言 / 默认副标题
 {
   const slides = outlineToSlideData('测试主题', 8);
-  const hasBgSlide = slides.some(s => s.title === '背景概述');
-  log('E.5 SCQA 含"背景概述"', hasBgSlide,
-    slides.map(s => s.title).join(' | '));
+  const text = JSON.stringify(slides);
+  const clean = !/80%|60%|NPS|Agent Loop|深度解析与实践指南|行业发展现状/.test(text)
+    && slides[0].subtitle === undefined;
+  log('E.5 骨架不含占位编造文案', clean);
 }
 
 // ============================================================================

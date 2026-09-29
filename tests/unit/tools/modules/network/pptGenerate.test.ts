@@ -132,6 +132,66 @@ describe('pptGenerateModule (native)', () => {
     });
   });
 
+  describe('无页面内容时不再交出写死占位稿 (FB-254)', () => {
+    beforeEach(() => {
+      process.env[ENV_FLAG] = '1';
+    });
+
+    const expectNoContentError = async (
+      args: Record<string, unknown>,
+      ctx: ToolContext,
+      dir: string,
+    ) => {
+      const result = await run({ ...args, output_path: join(dir, 'out.pptx') }, ctx);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('PPT_NO_CONTENT');
+        expect(result.error).toMatch(/slides/);
+        expect(result.error).toMatch(/content/);
+      }
+      await expect(readFile(join(dir, 'out.pptx'))).rejects.toThrow();
+      return result;
+    };
+
+    it('结构化 slides 全部校验失败且无 content → success=false，带校验摘要，不写文件', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'ppt-nocontent-'));
+      try {
+        const result = await expectNoContentError(
+          { topic: 'ILIT 信托', slides: [{ layout: 'not-a-layout', title: 'x' }] },
+          makeCtx({ workingDir: dir }),
+          dir,
+        );
+        if (!result.ok) expect(result.error).toMatch(/slide 1/);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('无 content、模型生成 slides 失败 → success=false，不写文件', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'ppt-nocontent-'));
+      try {
+        const modelCallback = vi.fn().mockRejectedValue(new Error('401 unauthorized'));
+        await expectNoContentError(
+          { topic: '物流估值' },
+          makeCtx({ workingDir: dir, modelCallback } as Partial<ToolContext>),
+          dir,
+        );
+        expect(modelCallback).toHaveBeenCalled();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('无 content 且无 modelCallback → success=false，不写文件', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'ppt-nocontent-'));
+      try {
+        await expectNoContentError({ topic: '物流估值' }, makeCtx({ workingDir: dir }), dir);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('preview mode (legacy parser path, no pptxgenjs)', () => {
     beforeEach(() => {
       process.env[ENV_FLAG] = '1';
@@ -192,7 +252,7 @@ describe('pptGenerateModule (native)', () => {
     it('emits starting + completing progress in preview mode', async () => {
       const stages: string[] = [];
       const result = await run(
-        { topic: '进度测试', preview: true },
+        { topic: '进度测试', content: '# 章节一\n要点 1\n要点 2', preview: true },
         makeCtx(),
         allowAll,
         (e) => stages.push(e.stage),
@@ -214,7 +274,7 @@ describe('pptGenerateModule (native)', () => {
       try {
         const result = await run({
           topic: 'Path test',
-          slides: [{ layout: 'list', title: 'One', points: ['body'] }],
+          content: '# One\nbody',
           output_path: 'report.pptx',
           research: false,
           review: false,

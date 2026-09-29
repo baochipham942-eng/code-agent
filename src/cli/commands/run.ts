@@ -166,7 +166,7 @@ export const runCommand = new Command('run')
     const maxRetries = parseInt(options.maxRetries || '3', 10);
 
     try {
-      // 初始化服务（--bare 纯净模式：跳过 skills/hooks/MCP 装载）
+      // 初始化服务（--bare：宿主机 skills/hooks/MCP 跳过，产品内置 skills 仍装载）
       await initializeCLIServices({
         dangerouslySkipPermissions: options.dangerouslySkipPermissions,
         permissionMode,

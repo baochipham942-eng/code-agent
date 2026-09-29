@@ -19,5 +19,5 @@ export function registerCLIGlobalOptions(program: Command): Command {
     .option('--output-format <format>', '输出格式 (text|json|stream-json)', 'text')
     .option('--system-prompt <prompt>', '自定义系统提示')
     .option('--metrics <path>', '会话结束后写入指标 JSON（用于 eval 分析）')
-    .option('--bare', '纯净模式：跳过本地 hooks/skills/MCP 装载（CI/eval 结果不依赖宿主机环境）');
+    .option('--bare', 'skip host-local hooks/skills/MCP; product built-in skills stay');
 }

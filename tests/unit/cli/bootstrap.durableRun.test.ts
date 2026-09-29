@@ -92,8 +92,8 @@ vi.mock('../../../src/host/services/skills', () => ({
   getSkillDiscoveryService: () => ({
     initialize: vi.fn(),
     ensureInitialized: vi.fn(),
-    setDisabled: vi.fn(),
-    isDisabled: () => false,
+    setBuiltinOnly: vi.fn(),
+    isBuiltinOnly: () => false,
     isInitialized: () => true,
     getAllSkills: () => [],
   }),

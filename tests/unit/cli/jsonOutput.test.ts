@@ -210,8 +210,9 @@ describe('CLI JSONOutput', () => {
     output.start();
     output.environment({
       bare: true,
-      skills: 'skipped',
-      skillCount: 0,
+      skills: 'builtin-only',
+      skillCount: 2,
+      skillNames: ['data-cleaning', 'xlsx'],
       hooks: 'skipped',
       mcp: 'skipped',
       mcpServers: [],
@@ -225,8 +226,9 @@ describe('CLI JSONOutput', () => {
       timestamp: 5000,
       data: {
         bare: true,
-        skills: 'skipped',
-        skillCount: 0,
+        skills: 'builtin-only',
+        skillCount: 2,
+        skillNames: ['data-cleaning', 'xlsx'],
         hooks: 'skipped',
         mcp: 'skipped',
         mcpServers: [],

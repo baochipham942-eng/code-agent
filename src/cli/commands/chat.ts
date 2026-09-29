@@ -186,7 +186,7 @@ export const chatCommand = new Command('chat')
         ? import('../tui-app/inkRunner')
         : null;
 
-      // 初始化服务（--bare 纯净模式：跳过 skills/hooks/MCP 装载）
+      // 初始化服务（--bare：宿主机 skills/hooks/MCP 跳过，产品内置 skills 仍装载）
       await initializeCLIServices({ permissionMode, bare: globalOpts?.bare });
 
       // 初始化统一命令注册表

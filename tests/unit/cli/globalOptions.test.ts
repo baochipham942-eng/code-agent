@@ -13,6 +13,7 @@ describe('CLI 全局选项（neo 根命令）', () => {
     expect(bare).toBeDefined();
     expect(bare?.flags).toBe('--bare');
     expect(bare?.required).toBeFalsy();
+    expect(bare?.description).toBe('skip host-local hooks/skills/MCP; product built-in skills stay');
   });
 
   it('既有选项清单原样保留（只新增 --bare，不重命名不删除）', () => {

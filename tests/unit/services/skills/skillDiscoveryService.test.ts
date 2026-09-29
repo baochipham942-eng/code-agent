@@ -38,10 +38,15 @@ vi.mock('../../../../src/host/services/toolSearch', () => ({
   }),
 }));
 
+const repoMocks = vi.hoisted(() => ({
+  initialize: vi.fn().mockResolvedValue(undefined),
+  isSkillEnabled: vi.fn(() => true),
+}));
+
 vi.mock('../../../../src/host/services/skills/skillRepositoryService', () => ({
   getSkillRepositoryService: () => ({
-    initialize: vi.fn().mockResolvedValue(undefined),
-    isSkillEnabled: () => true,
+    initialize: repoMocks.initialize,
+    isSkillEnabled: repoMocks.isSkillEnabled,
   }),
 }));
 
@@ -114,6 +119,8 @@ describe('SkillDiscoveryService discovery', () => {
     marketplaceOfficialSkillDirs.clear();
     builtinSkillsFixture.skills = [];
     cloudSkillsFixture.skills = [];
+    repoMocks.initialize.mockClear();
+    repoMocks.isSkillEnabled.mockClear();
     folderTrustMocks.isProjectConfigTrustedSync.mockClear();
     tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-discovery-'));
     homeDir = path.join(tmpRoot, 'home');
@@ -447,6 +454,59 @@ describe('SkillDiscoveryService discovery', () => {
     } finally {
       now.mockRestore();
     }
+  });
+
+  it('builtin-only loads product skills and does not read user/project/plugin/.claude skill roots', async () => {
+    builtinSkillsFixture.skills = [{
+      name: 'xlsx',
+      description: 'xlsx builtin fixture',
+      depends: [],
+      provides: ['skill:xlsx'],
+      promptContent: 'xlsx prompt',
+      basePath: '',
+      allowedTools: [],
+      disableModelInvocation: false,
+      userInvocable: true,
+      executionContext: 'inline',
+      source: 'builtin',
+      loaded: true,
+    }];
+    await writeSkill(path.join(homeDir, '.claude', 'skills'), 'user-claude');
+    await writeSkill(path.join(projectDir, '.claude', 'skills'), 'project-claude');
+    await writeSkill(path.join(homeDir, '.code-agent', 'skills'), 'user-code-agent');
+    await writeSkill(path.join(projectDir, '.code-agent', 'skills'), 'project-code-agent');
+    const pluginSkillDir = path.join(homeDir, '.code-agent', 'plugins', 'enabled-demo', 'skills', 'plugin-demo');
+    await writeSkillMd(pluginSkillDir, 'plugin-demo');
+    marketplaceSkillDirs.add(pluginSkillDir);
+
+    const readdirSpy = vi.spyOn(fs, 'readdir');
+    const service = new SkillDiscoveryService();
+    service.setBuiltinOnly(true);
+    await service.initialize(projectDir);
+
+    expect(service.getSkill('xlsx')?.name).toBe('xlsx');
+    expect(service.getSkill('file-organizer')?.source).toBe('cloud');
+    expect(service.getSkill('user-claude')).toBeUndefined();
+    expect(service.getSkill('project-claude')).toBeUndefined();
+    expect(service.getSkill('user-code-agent')).toBeUndefined();
+    expect(service.getSkill('project-code-agent')).toBeUndefined();
+    expect(service.getSkill('plugin-demo')).toBeUndefined();
+    expect(service.isSkillEnabled('xlsx')).toBe(true);
+    expect(repoMocks.initialize).not.toHaveBeenCalled();
+    expect(repoMocks.isSkillEnabled).not.toHaveBeenCalled();
+
+    const scanned = readdirSpy.mock.calls.map((call) => String(call[0]));
+    const hostRoots = [
+      path.join(homeDir, '.claude', 'skills'),
+      path.join(projectDir, '.claude', 'skills'),
+      path.join(homeDir, '.code-agent', 'skills'),
+      path.join(projectDir, '.code-agent', 'skills'),
+      path.join(homeDir, '.code-agent', 'plugins'),
+    ];
+    for (const root of hostRoots) {
+      expect(scanned.some((dir) => dir === root || dir.startsWith(`${root}${path.sep}`))).toBe(false);
+    }
+    readdirSpy.mockRestore();
   });
 
   it('asks folder trust once when gating many skills in one working directory', async () => {

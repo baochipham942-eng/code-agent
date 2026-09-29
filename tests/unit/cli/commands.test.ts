@@ -614,8 +614,9 @@ describe('CLI command entrypoints', () => {
     forceTtyStdin();
     const fingerprint = {
       bare: true,
-      skills: 'skipped',
-      skillCount: 0,
+      skills: 'builtin-only',
+      skillCount: 2,
+      skillNames: ['xlsx', 'data-cleaning'],
       hooks: 'skipped',
       mcp: 'skipped',
       mcpServers: [],

@@ -10,9 +10,11 @@
 
 import type { Message } from '../../shared/contract';
 import type {
+  MemberFollowUpFailure,
   MemberInputReceipt,
   MemberInputRequest,
 } from '../../shared/contract/memberInput';
+import { externalEngineFollowUpFailure, resolveMemberEngine } from './memberRuntimeEngine';
 import type { RuntimeInputMode } from '../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE } from '../../shared/constants/runtimeInput';
 import type { AgentMessage } from './spawnGuard';
@@ -29,7 +31,7 @@ export interface MemberInputDeps {
     messageId?: string;
     timestamp?: number;
     metadata?: Message['metadata'];
-  }): Promise<{ delivered: boolean; persisted: boolean }>;
+  }): Promise<{ delivered: boolean; persisted: boolean; failure?: MemberFollowUpFailure }>;
   spawnGuard: {
     get(id: string, scope?: { sessionId: string }): { status?: string } | undefined;
     sendMessage(id: string, message: AgentMessage, scope?: { sessionId: string }, origin?: AgentMessageOrigin): boolean;
@@ -101,6 +103,16 @@ export async function sendMemberInput(
       },
     });
     if (result.delivered) return { outcome: 'delivered', effect: 'next_step', persisted: result.persisted };
+    if (result.failure?.code === 'external_engine') {
+      return { outcome: 'rejected', reason: 'external_engine', engineLabel: result.failure.engineLabel };
+    }
+    if (result.failure?.code === 'undelivered_pending') {
+      return {
+        outcome: 'rejected',
+        reason: 'finished',
+        ...(result.failure.undeliveredCount ? { undeliveredCount: result.failure.undeliveredCount } : {}),
+      };
+    }
     if (request.kind === 'expert') return { outcome: 'rejected', reason: 'finished' };
   }
 
@@ -109,6 +121,10 @@ export async function sendMemberInput(
   const agent = deps.spawnGuard.get(request.memberId, scope);
   if (!agent) return { outcome: 'rejected', reason: 'not_found' };
   if (!LIVE_SPAWN_STATUSES.has(agent.status ?? '')) return { outcome: 'rejected', reason: 'finished' };
+  const externalFailure = externalEngineFollowUpFailure(resolveMemberEngine({ agentId: request.memberId }));
+  if (externalFailure) {
+    return { outcome: 'rejected', reason: 'external_engine', engineLabel: externalFailure.engineLabel };
+  }
   // ADR-067 D1：用户补话来源由宿主在此铸造（senderKind='user'），不是路由标签自报。
   const sent = deps.spawnGuard.sendMessage(request.memberId, {
     type: 'text',

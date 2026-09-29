@@ -4,6 +4,7 @@
 // ============================================================================
 import { describe, expect, it, vi } from 'vitest';
 import { sendMemberInput, type MemberInputDeps } from '../../../src/host/agent/memberInput';
+import { rememberMemberEngine } from '../../../src/host/agent/memberRuntimeEngine';
 import { RUNTIME_INPUT_REDIRECT_LINE } from '../../../src/shared/constants/runtimeInput';
 
 function deps(overrides: Partial<MemberInputDeps> = {}): MemberInputDeps {
@@ -154,6 +155,37 @@ describe('sendMemberInput', () => {
       .resolves.toEqual({ outcome: 'rejected', reason: 'finished' });
     await expect(sendMemberInput({ ...base, kind: 'task', memberId: 'task-x', mode: 'supplement' }, d))
       .resolves.toEqual({ outcome: 'rejected', reason: 'not_found' });
+  });
+
+  it('外部引擎拒收后不再回退 SpawnGuard，回执带引擎名', async () => {
+    const sendMessage = vi.fn().mockReturnValue(true);
+    const d = deps({
+      sendSwarmUserMessage: vi.fn().mockResolvedValue({
+        delivered: false,
+        persisted: false,
+        failure: {
+          code: 'external_engine',
+          engineLabel: 'Codex CLI',
+          message: "This member is run by Codex CLI; it can't take new input while running. Ask again after it finishes.",
+        },
+      }),
+      spawnGuard: { get: vi.fn().mockReturnValue({ status: 'running' }), sendMessage },
+    });
+    await expect(sendMemberInput({ ...base, kind: 'agent', runId: 'run-a', memberId: 'agent-9', mode: 'supplement' }, d))
+      .resolves.toEqual({ outcome: 'rejected', reason: 'external_engine', engineLabel: 'Codex CLI' });
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('没有 run 作用域的外部引擎 spawn：拒收且不入队', async () => {
+    rememberMemberEngine('agent-ext', 'claude_code');
+    const sendMessage = vi.fn().mockReturnValue(true);
+    const d = deps({
+      spawnGuard: { get: vi.fn().mockReturnValue({ status: 'running' }), sendMessage },
+    });
+    await expect(sendMemberInput({ ...base, kind: 'agent', memberId: 'agent-ext', mode: 'supplement' }, d))
+      .resolves.toEqual({ outcome: 'rejected', reason: 'external_engine', engineLabel: 'Claude Code' });
+    expect(sendMessage).not.toHaveBeenCalled();
+    rememberMemberEngine('agent-ext', 'native');
   });
 
   it('空文本直接拒收 not_found 之外的任何投递都不发生', async () => {

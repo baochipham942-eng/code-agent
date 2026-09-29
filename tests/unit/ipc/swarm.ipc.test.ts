@@ -190,6 +190,8 @@ describe('swarm.ipc run-scoped control plane', () => {
     coordinatorB.canReceiveMessage.mockReturnValue(true);
     coordinatorA.sendMessage.mockReturnValue(true);
     coordinatorB.sendMessage.mockReturnValue(true);
+    coordinatorA.getTaskDefinition.mockReset();
+    coordinatorB.getTaskDefinition.mockReset();
     coordinatorA.abortTask.mockReturnValue(false);
     coordinatorB.abortTask.mockReturnValue(false);
     coordinatorRegistryState.getByRun.mockImplementation((ref: { sessionId: string; runId: string }) => {
@@ -453,6 +455,43 @@ describe('swarm.ipc run-scoped control plane', () => {
       content: '换成按季度汇总',
     }));
     expect(teammateState.onUserMessage).toHaveBeenCalledWith(scopeA, agentA, '换成按季度汇总', expect.anything());
+  });
+
+  it('does not report delivered when an external-engine member cannot read follow-up input', async () => {
+    coordinatorA.getTaskDefinition.mockReturnValue({
+      id: agentA,
+      role: 'researcher',
+      engine: 'codex_cli',
+      task: 'review the draft',
+      tools: [],
+    });
+
+    const result = await handler('swarm:send-user-message')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      message: 'add a footnote',
+    } as never) as {
+      delivered: boolean;
+      persisted: boolean;
+      failure?: { code: string; engineLabel?: string; message: string };
+    };
+
+    expect(result).toMatchObject({
+      delivered: false,
+      persisted: false,
+      failure: {
+        code: 'external_engine',
+        engineLabel: 'Codex CLI',
+      },
+    });
+    expect(result.failure?.message).toContain('Codex CLI');
+    expect(result.failure?.message).toContain("can't take new input while running");
+    expect(result.failure?.message).toContain('after it finishes');
+    expect(coordinatorA.sendMessage).not.toHaveBeenCalled();
+    expect(spawnGuardState.sendMessage).not.toHaveBeenCalled();
+    expect(sessionManagerState.addMessageToSession).not.toHaveBeenCalled();
+    expect(teammateState.onUserMessage).not.toHaveBeenCalled();
   });
 
   it('does not display/persist a phantom success for an unavailable target', async () => {

@@ -58,7 +58,7 @@ function initFileSink(): void {
 
   try {
     logDir = getLogDir();
-    fs.mkdirSync(logDir, { recursive: true });
+    fs.mkdirSync(logDir, { recursive: true, mode: 0o700 });
     cleanOldLogs();
   } catch {
     fileSinkEnabled = false;
@@ -102,7 +102,8 @@ function getLogStream(): fs.WriteStream | null {
 
   try {
     const filePath = path.join(logDir, `code-agent-${today}.log`);
-    logStream = fs.createWriteStream(filePath, { flags: 'a' });
+    // 日志含脱敏后的运行细节，按敏感档收紧（mode 仅新建时生效，存量靠启动扫层）
+    logStream = fs.createWriteStream(filePath, { flags: 'a', mode: 0o600 });
     if (!fileSinkPathReported) {
       fileSinkPathReported = true;
       // CLI 交互界面下这行属于噪音，仅 --debug 时打印

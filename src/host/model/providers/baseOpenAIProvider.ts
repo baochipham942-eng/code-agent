@@ -207,6 +207,7 @@ export abstract class BaseOpenAIProvider implements Provider {
           providerName: config.provider,
           model: config.model,
           signal,
+          fingerprintScope: options?.retryFingerprint,
           maxRetries: options?.disableProviderTransientRetry ? 0 : undefined,
         },
       );
@@ -236,6 +237,7 @@ export abstract class BaseOpenAIProvider implements Provider {
         providerName: config.provider,
         model: config.model,
         signal,
+        fingerprintScope: options?.retryFingerprint,
         maxRetries: options?.disableProviderTransientRetry ? 0 : undefined,
       }
     );

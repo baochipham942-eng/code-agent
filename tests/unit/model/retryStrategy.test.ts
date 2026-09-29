@@ -12,6 +12,7 @@ import {
   isRetryableModelCallError,
   isTransientError,
   withTransientRetry,
+  createRetryFingerprintScope,
 } from '../../../src/host/model/providers/retryStrategy';
 import { getProviderHealthMonitor } from '../../../src/host/model/providerHealthMonitor';
 
@@ -681,8 +682,8 @@ describe('Retry Strategy', () => {
     it('普通瞬态错误不受 maxTimeoutRetries 影响，仍按 maxRetries 重试', async () => {
       const fn = vi.fn()
         .mockRejectedValueOnce(new Error('socket hang up'))
-        .mockRejectedValueOnce(new Error('socket hang up'))
-        .mockRejectedValueOnce(new Error('socket hang up'))
+        .mockRejectedValueOnce(new Error('ECONNRESET'))
+        .mockRejectedValueOnce(new Error('502 Bad Gateway'))
         .mockResolvedValue('recovered');
       const result = await withTransientRetry(fn, {
         providerName: 'test',
@@ -713,13 +714,138 @@ describe('Retry Strategy', () => {
     });
 
     it('缺省 maxTimeoutRetries 维持旧行为（maxRetries 全权）', async () => {
-      const fn = vi.fn().mockRejectedValue(timeoutError());
+      // 交替两种超时文案，同指纹熔断不会把「预算仍是 maxRetries」收成 3 次。
+      const primary = () => Object.assign(
+        new Error('timeout of 300000ms exceeded'),
+        { code: 'INFERENCE_REQUEST_TIMEOUT' },
+      );
+      const other = () => new Error('first-byte timeout');
+      const fn = vi.fn()
+        .mockRejectedValueOnce(primary())
+        .mockRejectedValueOnce(other())
+        .mockRejectedValueOnce(primary())
+        .mockRejectedValueOnce(other())
+        .mockRejectedValue(primary());
       await expect(withTransientRetry(fn, {
         providerName: 'test',
         maxRetries: 4,
         baseDelay: 1,
       })).rejects.toThrow('timeout of 300000ms exceeded');
       expect(fn).toHaveBeenCalledTimes(5);
+    });
+  });
+
+  describe('withTransientRetry — repeated retryable fingerprint', () => {
+    const rateLimit = (id: string) => Object.assign(
+      new Error(`429 rate limited req_${id}`),
+      { status: 429 },
+    );
+    const gateway = (id: string) => Object.assign(
+      new Error(`502 Bad Gateway req_${id}`),
+      { status: 502 },
+    );
+
+    it('stops when the same rate-limit fingerprint repeats to the threshold', async () => {
+      const fn = vi.fn()
+        .mockRejectedValueOnce(rateLimit('a'))
+        .mockRejectedValueOnce(rateLimit('b'))
+        .mockRejectedValueOnce(rateLimit('c'))
+        .mockResolvedValue('should-not-run');
+      await expect(withTransientRetry(fn, {
+        providerName: 'fingerprint-rate-limit',
+        maxRetries: 5,
+        baseDelay: 1,
+      })).rejects.toMatchObject({
+        name: 'RepeatedRetryableFingerprintError',
+        streak: 3,
+      });
+      expect(fn).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not trip when the retryable status alternates', async () => {
+      const fn = vi.fn()
+        .mockRejectedValueOnce(rateLimit('a'))
+        .mockRejectedValueOnce(gateway('b'))
+        .mockRejectedValueOnce(rateLimit('c'))
+        .mockResolvedValue('recovered');
+      const result = await withTransientRetry(fn, {
+        providerName: 'fingerprint-alternating',
+        maxRetries: 5,
+        baseDelay: 1,
+      });
+      expect(result).toBe('recovered');
+      expect(fn).toHaveBeenCalledTimes(4);
+    });
+
+    it('resets the streak when a body or a tool call arrives, and keeps it for empty text', async () => {
+      const scope = createRetryFingerprintScope();
+      const options = {
+        providerName: 'fingerprint-reset',
+        maxRetries: 5,
+        baseDelay: 1,
+        fingerprintScope: scope,
+      };
+      const body = vi.fn()
+        .mockRejectedValueOnce(rateLimit('a'))
+        .mockRejectedValueOnce(rateLimit('b'))
+        .mockResolvedValue({ content: 'partial body' });
+      await expect(withTransientRetry(body, options)).resolves.toEqual({ content: 'partial body' });
+
+      const tools = vi.fn()
+        .mockRejectedValueOnce(rateLimit('c'))
+        .mockRejectedValueOnce(rateLimit('d'))
+        .mockResolvedValue({ toolCalls: [{ id: 'call-1', name: 'Read' }] });
+      await expect(withTransientRetry(tools, options)).resolves.toEqual({
+        toolCalls: [{ id: 'call-1', name: 'Read' }],
+      });
+
+      const blank = vi.fn()
+        .mockRejectedValueOnce(rateLimit('e'))
+        .mockRejectedValueOnce(rateLimit('f'))
+        .mockResolvedValue({ content: '   ', toolCalls: [] });
+      await expect(withTransientRetry(blank, options)).resolves.toEqual({ content: '   ', toolCalls: [] });
+
+      const tripped = vi.fn().mockRejectedValue(rateLimit('g'));
+      await expect(withTransientRetry(tripped, options)).rejects.toMatchObject({
+        name: 'RepeatedRetryableFingerprintError',
+        streak: 3,
+      });
+      expect(tripped).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears the streak on a non-retryable error', async () => {
+      const scope = createRetryFingerprintScope();
+      const options = {
+        providerName: 'fingerprint-non-retryable',
+        maxRetries: 5,
+        baseDelay: 1,
+        fingerprintScope: scope,
+      };
+      const denied = vi.fn()
+        .mockRejectedValueOnce(rateLimit('a'))
+        .mockRejectedValueOnce(rateLimit('b'))
+        .mockRejectedValueOnce(Object.assign(new Error('401 Unauthorized'), { status: 401 }));
+      await expect(withTransientRetry(denied, options)).rejects.toThrow('401 Unauthorized');
+
+      const recovered = vi.fn()
+        .mockRejectedValueOnce(rateLimit('c'))
+        .mockRejectedValueOnce(rateLimit('d'))
+        .mockResolvedValue('ok');
+      await expect(withTransientRetry(recovered, options)).resolves.toBe('ok');
+      expect(recovered).toHaveBeenCalledTimes(3);
+    });
+
+    it('stops an identical timeout fingerprint at the threshold while the retry budget remains', async () => {
+      const fn = vi.fn().mockRejectedValue(new Error('timeout of 300000ms exceeded'));
+      await expect(withTransientRetry(fn, {
+        providerName: 'fingerprint-timeout',
+        maxRetries: 4,
+        baseDelay: 1,
+      })).rejects.toMatchObject({
+        name: 'RepeatedRetryableFingerprintError',
+        streak: 3,
+      });
+      expect(fn).toHaveBeenCalledTimes(3);
     });
   });
 });

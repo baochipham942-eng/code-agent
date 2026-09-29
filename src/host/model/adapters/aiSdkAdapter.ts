@@ -701,7 +701,7 @@ async function generateViaAiSdk(params: {
       {
         providerName: config.provider,
         model: config.model,
-        signal,
+        signal, fingerprintScope: options?.retryFingerprint,
         // 与流式路径同一契约：调用方自带重试循环（modelRouter fallback/artifact 修复）
         // 时本层必须单次尝试，否则候选数 × 5 放大成长时间卡死。
         maxRetries: options?.disableProviderTransientRetry ? 0 : GENERATE_MAX_RETRIES,
@@ -1186,7 +1186,7 @@ async function streamViaAiSdk(params: {
       }
       onStream({ type: 'complete', finishReason: acc.finishReason || 'stop' });
       emitSnapshot(true);
-      return buildStreamResponse(acc, config);
+      return options?.retryFingerprint?.observeSuccess(buildStreamResponse(acc, config)) ?? buildStreamResponse(acc, config);
     } catch (err) {
       stopWatchdog();
       // 周期快照默认 3 秒一次。工具名/参数已经流进 accumulator、用户随即停止时，

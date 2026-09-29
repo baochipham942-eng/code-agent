@@ -35,6 +35,20 @@ beforeAll(() => {
 const cancelTimeWakesOnUserReturn = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock('../../src/host/services/wake/userReturn', () => ({ cancelTimeWakesOnUserReturn }));
 
+// AgentOrchestrator.setWorkingDirectory 会火后即忘地动态 import '../lsp' 并跑初始化：
+// 真身是 which 探测 / npm install / spawn 子进程（秒级、带网络、console 直写），
+// 测试里必须钉成 mock（N-AGENTORCH-TEARDOWN-FLAKE）。
+// lateWriteGate 供回归用例注入「等拆除武装后才写 console」的晚到写入。
+const lspChainMocks = vi.hoisted(() => ({
+  initializeLSPManager: vi.fn(async () => undefined),
+  getLSPManager: vi.fn((): null => null),
+  lateWriteGate: { release: undefined as undefined | (() => void) },
+}));
+vi.mock('../../src/host/lsp', () => ({
+  initializeLSPManager: lspChainMocks.initializeLSPManager,
+  getLSPManager: lspChainMocks.getLSPManager,
+}));
+
 beforeEach(() => {
   teardownConsoleProbe.testRunning = true;
 });
@@ -46,6 +60,10 @@ afterEach(async () => {
   await vi.dynamicImportSettled();
   teardownConsoleProbe.testRunning = false;
   teardownConsoleProbe.armed = true;
+  // 回归用例注入的延迟链在此放行：此刻探针已武装、无测试在跑，正是「晚到写入」的
+  // 落点。若 describe 内的 afterEach 没把 workspace services 链排空，这里的 console
+  // 会被记进 late writes（N-AGENTORCH-TEARDOWN-FLAKE）。
+  lspChainMocks.lateWriteGate.release?.();
 });
 
 afterAll(async () => {
@@ -427,8 +445,12 @@ describe('AgentOrchestrator', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.clearAllMocks();
+    // setWorkingDirectory 点火的 LSP/skillWatcher 链故意不阻塞前台 turn；
+    // dynamicImportSettled 只等模块求值、不等 .then 续体，必须走排空出口等完，
+    // 否则链上晚到的 console 写入会落进 armed 窗口（N-AGENTORCH-TEARDOWN-FLAKE）。
+    await orchestrator.drainWorkspaceServices();
   });
 
   // --------------------------------------------------------------------------
@@ -455,6 +477,26 @@ describe('AgentOrchestrator', () => {
       const newDir = '/test/new/directory';
       orchestrator.setWorkingDirectory(newDir);
       expect(orchestrator.getWorkingDirectory()).toBe(newDir);
+    });
+
+    it('setWorkingDirectory 的 workspace services 链必须被 afterEach 排空（N-AGENTORCH-TEARDOWN-FLAKE 回归）', async () => {
+      // 真身是 LSP 初始化链的 which 探测 / npm install / 子进程握手（秒级）：
+      // 全量回归负载下，链上的 console 写入落进测试间隙，被 afterAll 探针判成
+      // late console writes（2026-09-10 一天两红，单跑恒绿）。
+      // 这里把延迟压进可控尺度：初始化在「拆除已武装」（gate）或 300ms 兜底后才写 console。
+      // 排空出口生效时：写入落在 afterEach 排空期间（testRunning 仍为 true，被遮蔽）；
+      // 摘掉排空（反向变异）：写入落在 armed 窗口 → afterAll 抛 late console writes。
+      lspChainMocks.initializeLSPManager.mockImplementationOnce(async () => {
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            lspChainMocks.lateWriteGate.release = resolve;
+          }),
+          new Promise<void>((resolve) => setTimeout(resolve, 300)),
+        ]);
+        console.warn('[test] delayed workspace-service init finished (drain regression)');
+      });
+      orchestrator.setWorkingDirectory('/test/workspace-services-drain');
+      expect(orchestrator.getWorkingDirectory()).toBe('/test/workspace-services-drain');
     });
 
     it('ordinary user ingress forwards session and producer identity to wake cancellation', async () => {

@@ -140,6 +140,11 @@ export class AgentOrchestrator {
   private activeRunPromise: Promise<void> | null = null;
   private readonly runRegistry?: RunRegistry;
 
+  // setWorkingDirectory 点火的 host 级 workspace services（LSP 初始化 / skillWatcher 更新）链。
+  // 火后即忘、不阻塞前台 turn，但链串在这个实例上，让生命周期边界（应用退出、测试拆除）
+  // 有一个可等待的排空出口（drainWorkspaceServices）。两条私有链各自 catch 进 logger.warn，恒不 reject。
+  private workspaceServicesChain: Promise<unknown> = Promise.resolve();
+
   // Dependency injection: decoupled from Electron APIs
   private getHomeDir: () => string;
   private broadcastDAGEvent?: (event: import('../../shared/contract/dagVisualization').DAGVisualizationEvent) => void;
@@ -502,10 +507,17 @@ export class AgentOrchestrator {
     this.toolExecutor.setWorkingDirectory(path);
     logger.info('Working directory changed to:', path);
     if (options.syncWorkspaceServices !== false) {
-      this.initializeLSP(path);
-      this.updateSkillWatcher(path);
+      // 仍然不阻塞调用方；链串到实例上，排空出口（drainWorkspaceServices）可等。
+      this.workspaceServicesChain = this.workspaceServicesChain.then(() => Promise.all([this.initializeLSP(path), this.updateSkillWatcher(path)]));
     }
   }
+
+  /**
+   * 等 setWorkingDirectory 点火的 workspace services 链（LSP 初始化 / skillWatcher 更新）走完。
+   * 这些链故意不阻塞前台 turn；应用退出、测试 afterEach 等生命周期边界用它排空，
+   * 否则链上的 console 写入会晚于调用方的生命周期（N-AGENTORCH-TEARDOWN-FLAKE）。
+   */
+  async drainWorkspaceServices(): Promise<void> { await this.workspaceServicesChain; }
 
   /** Set once on a newly-created background orchestrator from the foreground host run. */
   setWorkspaceScopeAuthority(workspaceScope: WorkspaceScope): void {
@@ -1190,8 +1202,8 @@ export class AgentOrchestrator {
   // LSP & SkillWatcher (async, non-blocking)
   // --------------------------------------------------------------------------
 
-  private initializeLSP(workspaceRoot: string, workspaceFolders: string[] = [workspaceRoot]): void {
-    import('../lsp').then(async ({ initializeLSPManager, getLSPManager }) => {
+  private initializeLSP(workspaceRoot: string, workspaceFolders: string[] = [workspaceRoot]): Promise<void> {
+    return import('../lsp').then(async ({ initializeLSPManager, getLSPManager }) => {
       try {
         const existingManager = getLSPManager();
         if (existingManager) {
@@ -1202,13 +1214,11 @@ export class AgentOrchestrator {
       } catch (error) {
         logger.warn('LSP initialization failed (non-blocking)', { error });
       }
-    }).catch((error: unknown) => {
-      logger.warn('Failed to import LSP module', { error });
-    });
+    }).catch((error: unknown) => logger.warn('Failed to import LSP module', { error }));
   }
 
-  private updateSkillWatcher(workingDirectory: string): void {
-    import('../services/skills').then(async ({ getSkillWatcher }) => {
+  private updateSkillWatcher(workingDirectory: string): Promise<void> {
+    return import('../services/skills').then(async ({ getSkillWatcher }) => {
       try {
         const watcher = getSkillWatcher();
         if (watcher.isInitialized()) {
@@ -1218,8 +1228,6 @@ export class AgentOrchestrator {
       } catch (error) {
         logger.warn('SkillWatcher update failed (non-blocking)', { error });
       }
-    }).catch((error: unknown) => {
-      logger.warn('Failed to import skills module', { error });
-    });
+    }).catch((error: unknown) => logger.warn('Failed to import skills module', { error }));
   }
 }

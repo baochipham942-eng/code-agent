@@ -133,6 +133,7 @@ Use current project patterns.
       mirrored: 1,
       created: 1,
       updated: 0,
+      removed: 0,
       skipped: [],
     });
     expect(db.createMemory).toHaveBeenCalledWith(expect.objectContaining({

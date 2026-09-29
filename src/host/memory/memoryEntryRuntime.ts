@@ -541,6 +541,7 @@ export async function rebuildMemoryMirrorFromLightFiles(db: MemoryEntryDatabase)
 
   let created = 0;
   let updated = 0;
+  let removed = 0;
   const skipped: MemoryMirrorRebuildResult['skipped'] = [];
 
   for (const file of files) {
@@ -587,11 +588,27 @@ export async function rebuildMemoryMirrorFromLightFiles(db: MemoryEntryDatabase)
     }
   }
 
+  // light 文件是真源：文件已被删除/改名的镜像行不能继续进注入候选，软归档（不硬删，文件回来时重建会复活）。
+  const presentFilenames = new Set(files.map((file) => file.filename));
+  const presentEntryIds = new Set(files.map(memoryEntryIdForLightFile));
+  for (const memory of existingMirrors) {
+    const meta = memoryEntryMetadata(memory);
+    const filePathGone = typeof meta?.filePath !== 'string' || !presentFilenames.has(meta.filePath);
+    const entryIdGone = typeof meta?.id !== 'string' || !presentEntryIds.has(meta.id);
+    if (memory.status === 'archived' || !filePathGone || !entryIdGone) continue;
+    db.updateMemory(memory.id, {
+      status: 'archived',
+      metadata: { ...memory.metadata, memoryEntry: { ...meta, status: 'archived' } },
+    });
+    removed++;
+  }
+
   return {
     totalLightFiles: files.length,
     mirrored: created + updated,
     created,
     updated,
+    removed,
     skipped,
   };
 }

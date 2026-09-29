@@ -11,6 +11,7 @@ import { MemoryRepository } from '../../../src/host/services/core/repositories/M
 import { PermissionDecisionRepository } from '../../../src/host/services/core/repositories/PermissionDecisionRepository';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { ToolExecutionEventRepository } from '../../../src/host/services/core/repositories/ToolExecutionEventRepository';
+import { DatabaseReadOnlyError } from '../../../src/host/services/core/database/sqliteErrors';
 import type { createLogger } from '../../../src/host/services/infra/logger';
 import type { Message, Session } from '../../../src/shared/contract';
 
@@ -117,6 +118,58 @@ describe('startup maintenance orphan tool-call closure', () => {
       { executionId: 'execution-1', phase: 'begin', status: null },
       { executionId: 'execution-1', phase: 'complete', status: 'recovered' },
     ]);
+  });
+
+  // 返修 r1：begin 写入全链路 fail-safe 吞错（toolExecutionLedger.begin 的 catch、
+  // databaseService.appendToolExecutionBegin 在 db 未就绪/只读降级时静默返回、其余错误仅 warn），
+  // 工具照常执行——这层已由 tests/unit/tools/toolExecutor.executionLedger.test.ts 钉住。
+  // 因此「账本无 begin 行」推不出「从未执行」。这里钉住后果：begin 行没写进去（工具实际
+  // 已执行、随后崩溃、结果未落盘）时，清算必须维持「不得假设跑过」的保守占位串。
+  function runBeginWriteFailureScenario(createWriteError: () => Error): void {
+    createSession('begin-write-failed-session', 'running');
+    sessionRepo.addMessage('begin-write-failed-session', assistantToolCall('assistant-bwf', 'call-bwf'));
+    const appendBegin = vi.spyOn(toolExecutionEventRepo, 'appendBegin').mockImplementation(() => {
+      throw createWriteError();
+    });
+    // 运行期：执行器已走到 begin 落账点，但写入抛错（生产链路里被上游吞掉），行未落盘
+    expect(() =>
+      toolExecutionEventRepo.appendBegin({
+        executionId: 'execution-bwf',
+        sessionId: 'begin-write-failed-session',
+        toolName: 'bash',
+        summary: 'sleep 30',
+        params: { command: 'sleep 30' },
+        toolCallId: 'call-bwf',
+        recordedAt: 20,
+      }),
+    ).toThrow();
+    appendBegin.mockRestore();
+    expect(
+      db.prepare(`SELECT COUNT(*) AS count FROM tool_execution_events WHERE phase = 'begin'`).get(),
+    ).toEqual({ count: 0 });
+
+    runMaintenance();
+
+    const closure = sessionRepo.getMessages('begin-write-failed-session')[1];
+    expect(closure.toolResults).toEqual([
+      expect.objectContaining({
+        toolCallId: 'call-bwf',
+        success: false,
+        error: INTERRUPTED_PLACEHOLDER,
+        duration: 0,
+      }),
+    ]);
+    expect(JSON.stringify(closure.toolResults)).not.toContain('safe to re-issue');
+    expect(JSON.stringify(closure.toolResults)).not.toContain('never began running');
+    expect(closure.toolResults?.[0]?.metadata).toBeUndefined();
+  }
+
+  it('keeps the do-not-assume placeholder when the begin ledger write failed with SQLITE_BUSY before the crash', () => {
+    runBeginWriteFailureScenario(() => new Error('database is locked'));
+  });
+
+  it('keeps the do-not-assume placeholder when the begin ledger write failed in read-only degraded mode', () => {
+    runBeginWriteFailureScenario(() => new DatabaseReadOnlyError());
   });
 
   it('does not append a second result when the recovered session crashes again', () => {

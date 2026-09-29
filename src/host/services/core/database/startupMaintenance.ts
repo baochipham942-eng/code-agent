@@ -12,15 +12,15 @@ import type { MemoryRepository } from '../repositories/MemoryRepository';
 import type { ToolExecutionEventRepository } from '../repositories/ToolExecutionEventRepository';
 import type { PermissionDecisionRepository } from '../repositories/PermissionDecisionRepository';
 import type { createLogger } from '../../infra/logger';
-import { persistCancelledToolCallClosures } from '../../../agent/runtime/cancelledToolCallClosure';
+import {
+  persistCancelledToolCallClosures,
+  INTERRUPTED_TOOL_CALL_PLACEHOLDER,
+} from '../../../agent/runtime/cancelledToolCallClosure';
 import { backfillTelemetrySessionTitles } from '../../../telemetry/telemetrySessionTitleBackfill';
 import { repairCorruptFtsOnStartup } from './ftsRepair';
 import { runGatedProjectionCheck } from './projectionCheckGate';
 
 type Logger = ReturnType<typeof createLogger>;
-
-const INTERRUPTED_TOOL_CALL_PLACEHOLDER =
-  'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded';
 
 /**
  * 分步计时器：DB init 曾在 1.28GB 生产库上静默吃掉 ~6s（health-ready 的大头），
@@ -104,6 +104,9 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
           (toolCall) => !storedAutomaticToolCallIds.has(toolCall.id),
         );
         if (toolCallsToInterrupt.length === 0) continue;
+        // 不按「账本有无 begin 行」分层（N-CRASH-OUTCOME-TIERS 返修 r1 撤档）：begin 写入
+        // 全链路 fail-safe 吞错（见 cancelledToolCallClosure.ts 的占位注释），工具可能已带副作用
+        // 执行只是 begin 行没写进去——缺记录推不出「从未开始」，一律按结果未知收口。
         persistCancelledToolCallClosures({
           messages,
           assistantMessage,

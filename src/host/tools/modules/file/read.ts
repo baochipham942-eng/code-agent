@@ -35,6 +35,10 @@ import { getFileMutationActorId } from './fileMutationIdentity';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readSchema as schema } from './read.schema';
+import { decodeText, TextDecodeError, type DecodedText } from '../../../utils/decodeText';
+
+const NON_UTF8_READ_NOTICE =
+  '[File encoding: GBK/GB18030, decoded to Unicode for display. Edit/Write/Append refuse to modify non-UTF-8 files; ask the user before converting to UTF-8.]\n';
 
 const BINARY_REDIRECTS: Record<string, string> = {
   '.xlsx': 'read_xlsx',
@@ -194,8 +198,22 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
 
     try {
       const stats = await fs.stat(filePath);
-      const content = await fs.readFile(filePath, 'utf-8');
-      const digest = computeContentDigest(content);
+      const raw = await fs.readFile(filePath);
+      let decoded: DecodedText;
+      try {
+        decoded = decodeText(raw);
+      } catch (err) {
+        if (!(err instanceof TextDecodeError)) throw err;
+        return {
+          ok: false,
+          error: `Cannot read ${filePath} as text: ${err.message}. It may be a binary file.`,
+          code: 'INVALID_ARGS',
+        };
+      }
+      const content = decoded.text;
+      // digest 必须按原始字节算：Edit/Write 的外改检测（checkExternalModification）对磁盘字节取摘要，
+      // GBK 文件按解码后文本算会与之永不相等。
+      const digest = computeContentDigest(raw);
       const lines = content.split('\n');
 
       const startLine = Math.max(0, parsed.offset - 1);
@@ -242,6 +260,8 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
         dataFingerprintStore.recordFact(fileFact);
       }
 
+      const encodingNotice = decoded.encoding === 'utf-8' ? '' : NON_UTF8_READ_NOTICE;
+
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('Read done', {
         filePath,
@@ -259,7 +279,7 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
 
       return {
         ok: true,
-        output: `Read version digest: ${digest}\n${result}`,
+        output: `Read version digest: ${digest}\n${encodingNotice}${result}`,
         meta: {
           artifact,
           evidenceRef,

@@ -6,7 +6,7 @@
 // - PDF  → readPdf 的本地 pdftotext 抽取（extractSelectablePdfText，含候选二进制探测）
 // - DOCX → mammoth.extractRawText（与 read_docx 同一条抽取库）
 // - XLSX → ExcelJS 全 sheet 展开（与 read_xlsx 同一条抽取库）
-// - 文本型后缀 → 读 Buffer 后按 UTF-8 → GB18030 严格识别（decodeLibraryText，失败明确报错）
+// - 文本型后缀 → 读 Buffer 后按 UTF-8 → GB18030 严格识别（decodeText，失败明确报错）
 // 抽取文本落「文件旁 sidecar」：<libraryDir>/<projectId|global>/.extracted/<itemId>.md，
 // 行号与原件一致（文本型 sidecar 即原件内容），供 pinned 索引块指路 + 依据抽屉取片段。
 // 刻意不上 embedding/向量：检索 = 索引块指路 + 模型按需 Read/Grep sidecar（file-as-memory 口径）。
@@ -18,9 +18,19 @@ import ExcelJS from 'exceljs';
 import { createLogger } from '../infra/logger';
 import { LIBRARY_TIMEOUTS } from '../../../shared/constants';
 import { extractSelectablePdfText } from '../../tools/modules/network/pdfTextExtract';
-import { decodeLibraryText } from './decodeLibraryText';
+import { decodeText, TextDecodeError } from '../../utils/decodeText';
 
 const logger = createLogger('LibraryIngest');
+
+/** 资料库文本解码：通用解码失败时换成资料库专用文案（引导用户另存后重新导入） */
+function decodeLibraryText(buffer: Buffer): string {
+  try {
+    return decodeText(buffer).text;
+  } catch (err) {
+    if (!(err instanceof TextDecodeError)) throw err;
+    throw new Error('无法识别文件编码（仅支持 UTF-8 / GBK）。请用记事本或 Excel 另存为 UTF-8 编码后重新导入', { cause: err });
+  }
+}
 
 /** sidecar 目录名（资料库目录内的隐藏目录） */
 const LIBRARY_EXTRACTED_DIRNAME = '.extracted';

@@ -34,6 +34,7 @@ import {
   containsSmartChars,
 } from '../../utils/quoteNormalizer';
 import { atomicWriteFile } from '../../utils/atomicWrite';
+import { existingFileWriteRefusal } from '../../utils/textEncodingGuard';
 import { buildNearestAnchorHint } from '../../utils/anchorHint';
 import { findFlexibleMatch } from '../../utils/editReplacers';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
@@ -189,7 +190,12 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
         }
       }
 
-      let content = await fs.readFile(filePath, 'utf-8');
+      const rawContent = await fs.readFile(filePath);
+      const refusal = existingFileWriteRefusal(rawContent, { rejectUndecodable: true });
+      if (refusal) {
+        return { ok: false, error: refusal, code: 'INVALID_ARGS', meta: { outputPath: filePath } };
+      }
+      let content = rawContent.toString('utf-8');
       const originalContent = content;
 
       let totalReplacements = 0;

@@ -30,6 +30,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { atomicWriteFile } from '../../utils/atomicWrite';
+import { existingFileWriteRefusal } from '../../utils/textEncodingGuard';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
@@ -402,6 +403,13 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
           code: officialSectionGuard.code,
           meta: { outputPath: resolvedPath },
         };
+      }
+
+      if (existed) {
+        const refusal = existingFileWriteRefusal(await fs.readFile(resolvedPath));
+        if (refusal) {
+          return { ok: false, error: refusal, code: 'INVALID_ARGS', meta: { outputPath: resolvedPath } };
+        }
       }
 
       await atomicWriteFile(resolvedPath, content, 'utf-8');

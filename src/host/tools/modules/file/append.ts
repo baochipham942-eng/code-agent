@@ -15,6 +15,7 @@ import { confineEvalPath } from '../../file/pathUtils';
 import { appendSchema as schema } from './append.schema';
 import { getFileMutationActorId } from './fileMutationIdentity';
 import { guardSkillOfficialSections } from '../../../security/skillOfficialSectionGuard';
+import { APPEND_ENCODING_CHECK_MAX_BYTES, existingFileWriteRefusal } from '../../utils/textEncodingGuard';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
 const LOCK_WAIT_TIMEOUT_MS = 10_000;
@@ -125,6 +126,13 @@ class AppendHandler implements ToolHandler<Record<string, unknown>, string> {
           code: officialSectionGuard.code,
           meta: { outputPath: resolvedPath },
         };
+      }
+      const existingStat = await fs.stat(resolvedPath).catch(() => undefined);
+      if (existingStat && existingStat.size <= APPEND_ENCODING_CHECK_MAX_BYTES) {
+        const refusal = existingFileWriteRefusal(await fs.readFile(resolvedPath));
+        if (refusal) {
+          return { ok: false, error: refusal, code: 'INVALID_ARGS', meta: { outputPath: resolvedPath } };
+        }
       }
       await fs.appendFile(resolvedPath, content, 'utf-8');
       const stat = await fs.stat(resolvedPath);

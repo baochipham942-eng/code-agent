@@ -107,6 +107,8 @@ vi.mock('../../../src/host/model/adapters/aiSdkAdapter', () => ({
 vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
   getProviderHealthMonitor: () => ({
     getHealth: mockGetProviderHealth,
+    recordSuccess: vi.fn(),
+    recordFailure: vi.fn(),
   }),
 }));
 
@@ -119,6 +121,7 @@ import {
   resolveMainChatModelDecision,
   runAiSdkInferenceWithProviderFallback,
 } from '../../../src/host/agent/runtime/contextAssembly/inference';
+import { withTransientRetry } from '../../../src/host/model/providers/retryStrategy';
 
 // --------------------------------------------------------------------------
 // Helpers
@@ -479,6 +482,56 @@ describe('runAiSdkInferenceWithProviderFallback — AI SDK 普通 provider fallb
       ],
     });
     expect(mockInferenceViaAiSdk).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { status: 502 as const, message: '502 Bad Gateway', category: 'provider_unavailable' },
+    { status: 429 as const, message: '429 Too Many Requests', category: 'rate_limit' },
+  ])('repeated $status trips the fingerprint breaker and still succeeds on the fallback provider', async ({ status, message, category }) => {
+    const attempts = vi.fn(async () => {
+      throw Object.assign(new Error(message), { status });
+    });
+    mockGetApiKey.mockImplementation((provider: string) => (provider === 'deepseek' ? 'deepseek-key' : 'main-key'));
+    mockGetSettings.mockReturnValue({
+      models: {
+        providers: {
+          deepseek: {
+            enabled: true,
+            baseUrl: 'https://deepseek.test/v1',
+            protocol: 'openai',
+          },
+        },
+      },
+    });
+    mockInferenceViaAiSdk.mockImplementation(async (_messages: unknown, _tools: unknown, config: ModelConfig) => {
+      if (config.provider === 'moonshot') {
+        return withTransientRetry(attempts, {
+          providerName: 'moonshot',
+          maxRetries: 4,
+          baseDelay: 1,
+        });
+      }
+      return {
+        type: 'text',
+        content: 'fallback ok',
+        usage: { inputTokens: 1, outputTokens: 2 },
+      };
+    });
+
+    const response = await runAiSdkInferenceWithProviderFallback(
+      SIMPLE_MESSAGES,
+      [],
+      makeConfig({ adaptive: true }),
+    );
+
+    expect(attempts).toHaveBeenCalledTimes(3);
+    expect(mockInferenceViaAiSdk).toHaveBeenCalledTimes(2);
+    expect(mockInferenceViaAiSdk.mock.calls[1][2]).toMatchObject({ provider: 'deepseek' });
+    expect(response).toMatchObject({
+      content: 'fallback ok',
+      actualProvider: 'deepseek',
+      fallback: { category, strategy: 'adaptive-provider-fallback' },
+    });
   });
 });
 

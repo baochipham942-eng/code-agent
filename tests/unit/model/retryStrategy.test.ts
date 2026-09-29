@@ -8,12 +8,14 @@ import {
   computeRetryBackoffMs,
   extractRetryAfterMs,
   isCancellationError,
+  describeFallbackError,
   isFallbackEligible,
   isRetryableModelCallError,
   isTransientError,
   withTransientRetry,
   createRetryFingerprintScope,
 } from '../../../src/host/model/providers/retryStrategy';
+import { classifyError } from '../../../src/host/model/errorClassifier';
 import { getProviderHealthMonitor } from '../../../src/host/model/providerHealthMonitor';
 
 // Mock logger to suppress console output during tests
@@ -833,6 +835,59 @@ describe('Retry Strategy', () => {
         .mockResolvedValue('ok');
       await expect(withTransientRetry(recovered, options)).resolves.toBe('ok');
       expect(recovered).toHaveBeenCalledTimes(3);
+    });
+
+    it('classifies the tripped error like the underlying status and does not retry the wrapper', async () => {
+      const cases = [
+        { status: 502, message: '502 Bad Gateway', expected: 'unavailable' },
+        { status: 429, message: '429 Too Many Requests', expected: 'rate_limit' },
+      ] as const;
+      for (const { status, message, expected } of cases) {
+        const underlying = Object.assign(new Error(message), { status });
+        const fn = vi.fn().mockRejectedValue(underlying);
+        const tripped = await withTransientRetry(fn, {
+          providerName: `fingerprint-class-${status}`,
+          maxRetries: 4,
+          baseDelay: 1,
+        }).then(
+          () => Promise.reject(new Error('expected the fingerprint breaker')),
+          (err: unknown) => err,
+        );
+        expect(fn).toHaveBeenCalledTimes(3);
+        expect(isRetryableModelCallError(tripped)).toBe(false);
+        expect(isFallbackEligible((tripped as Error).message)).toBe(false);
+        expect(tripped).toMatchObject({ status, cause: underlying });
+        expect(classifyError(tripped)).toBe(expected);
+        expect(classifyError(tripped)).toBe(classifyError(underlying));
+        const described = describeFallbackError(tripped);
+        expect(isFallbackEligible(described.message, described.code)).toBe(true);
+      }
+    });
+
+    it('lets the next provider retry the same fingerprint after the breaker trips', async () => {
+      const scope = createRetryFingerprintScope();
+      const primary = vi.fn().mockRejectedValue(rateLimit('a'));
+      await expect(withTransientRetry(primary, {
+        providerName: 'fingerprint-primary',
+        maxRetries: 4,
+        baseDelay: 1,
+        fingerprintScope: scope,
+      })).rejects.toMatchObject({
+        name: 'RepeatedRetryableFingerprintError',
+        streak: 3,
+      });
+      expect(primary).toHaveBeenCalledTimes(3);
+
+      const fallback = vi.fn()
+        .mockRejectedValueOnce(rateLimit('b'))
+        .mockResolvedValue('fallback-ok');
+      await expect(withTransientRetry(fallback, {
+        providerName: 'fingerprint-fallback',
+        maxRetries: 4,
+        baseDelay: 1,
+        fingerprintScope: scope,
+      })).resolves.toBe('fallback-ok');
+      expect(fallback).toHaveBeenCalledTimes(2);
     });
 
     it('stops an identical timeout fingerprint at the threshold while the retry budget remains', async () => {

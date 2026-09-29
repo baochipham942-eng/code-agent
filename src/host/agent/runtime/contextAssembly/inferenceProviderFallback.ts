@@ -11,7 +11,7 @@ import type { ModelDecisionEventData, ModelFallbackInfo, ModelFallbackTraceStep 
 import { buildModelProviderIdentity } from '../../../model/modelDecision';
 import { classifyProviderFallbackReason, formatFallbackReason, getFallbackChainForRequest, type ProviderFallbackCategory } from '../../../model/modelRouterPolicy';
 import { getProviderHealthMonitor } from '../../../model/providerHealthMonitor';
-import { isFallbackEligible } from '../../../model/providers/retryStrategy';
+import { describeFallbackError, isFallbackEligible } from '../../../model/providers/retryStrategy';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
 export { handleImagePayloadExceededError } from './inferenceImagePayloadError';
@@ -21,13 +21,7 @@ export function formatFallbackEndpoint(target: { provider: string; model?: strin
 }
 
 export function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function getErrorCode(error: unknown): string | undefined {
-  return typeof (error as NodeJS.ErrnoException | null)?.code === 'string'
-    ? (error as NodeJS.ErrnoException).code
-    : undefined;
+  return describeFallbackError(error).message;
 }
 
 export function getModelFallbackFromError(error: unknown): ModelFallbackInfo | undefined {
@@ -63,11 +57,15 @@ export function buildAiSdkAdaptiveFallbackInfo(
   outcome: 'selected' | 'exhausted',
   finalError?: unknown,
 ): ModelFallbackInfo {
-  const adaptiveMessage = getErrorMessage(error);
-  const adaptiveCategory = classifyProviderFallbackReason(adaptiveMessage, getErrorCode(error));
+  const adaptiveView = describeFallbackError(error);
+  const adaptiveMessage = adaptiveView.message;
+  const adaptiveCategory = classifyProviderFallbackReason(adaptiveMessage, adaptiveView.code);
   const adaptiveReason = formatFallbackReason(adaptiveMessage);
-  const finalMessage = finalError ? getErrorMessage(finalError) : adaptiveMessage;
-  const finalCategory = finalError ? classifyProviderFallbackReason(finalMessage, getErrorCode(finalError)) : adaptiveCategory;
+  const finalView = finalError ? describeFallbackError(finalError) : undefined;
+  const finalMessage = finalView?.message ?? adaptiveMessage;
+  const finalCategory = finalView
+    ? classifyProviderFallbackReason(finalMessage, finalView.code)
+    : adaptiveCategory;
   const finalReason = formatFallbackReason(finalMessage);
   const topCategory = outcome === 'selected' ? adaptiveCategory : finalCategory;
   const topReason = outcome === 'selected' ? adaptiveReason : finalReason;
@@ -159,11 +157,12 @@ export function classifyAndLogVisionPreflightFailure(
   model: string,
   error: unknown,
 ): VisionPreflightAttempt {
-  const message = getErrorMessage(error);
+  const described = describeFallbackError(error);
+  const message = described.message;
   const attempt: VisionPreflightAttempt = {
     provider,
     model,
-    category: classifyProviderFallbackReason(message, getErrorCode(error)),
+    category: classifyProviderFallbackReason(message, described.code),
     detail: formatFallbackReason(message),
   };
   logger.warn(`[Fallback] 视觉预处理失败（${attempt.provider}/${attempt.model}, category=${attempt.category}）：${attempt.detail}，尝试下一个识图模型`);
@@ -245,8 +244,10 @@ export async function runAiSdkInferenceWithProviderFallback(
       throw primaryErr;
     }
 
-    const errMsg = getErrorMessage(primaryErr);
-    const errCode = getErrorCode(primaryErr);
+    // 同指纹熔断的文案不含 502/429。用 cause / status，和重试耗尽后抛出的原错误同一路降级。
+    const described = describeFallbackError(primaryErr);
+    const errMsg = described.message;
+    const errCode = described.code;
     if (!isFallbackEligible(errMsg, errCode)) {
       throw primaryErr;
     }
@@ -358,13 +359,14 @@ export async function runAiSdkInferenceWithProviderFallback(
         if (signal?.aborted) {
           throw fallbackErr;
         }
-        const fallbackMsg = getErrorMessage(fallbackErr);
+        const describedFallback = describeFallbackError(fallbackErr);
+        const fallbackMsg = describedFallback.message;
         fallbackTried.push(fallbackTraceStep(
           fallback.provider,
           fallback.model,
           'tried',
           'fallback_failed',
-          classifyProviderFallbackReason(fallbackMsg, getErrorCode(fallbackErr)),
+          classifyProviderFallbackReason(fallbackMsg, describedFallback.code),
           fallbackMsg,
         ));
         logger.warn(`[AgentLoop] AI SDK fallback ${fallback.provider}/${fallback.model} failed: ${fallbackMsg.split('\n')[0]}`);

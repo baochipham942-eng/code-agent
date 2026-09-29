@@ -144,6 +144,8 @@ export function isTransientError(msg: string, errCode?: string): boolean {
  * 401/403/400 等确定性错误不在可重试集合内，NON_RETRYABLE 文案护栏同样先生效。
  */
 export function isRetryableModelCallError(err: unknown): boolean {
+  // status 抄在包装上是给分类/降级的。包装本身必须停，不能再进重试。
+  if (isRepeatedRetryableFingerprintError(err)) return false;
   const msg = err instanceof Error ? err.message : String(err);
   const errCode = (err as NodeJS.ErrnoException).code;
   if (includesAnyPattern(msg, NON_RETRYABLE_PATTERNS)) return false;
@@ -266,11 +268,40 @@ const REPEATED_RETRYABLE_FINGERPRINT_THRESHOLD = 3;
 export interface RetryFingerprintScope {
   noteFailure(err: unknown): { tripped: boolean; streak: number; fingerprint: string };
   observeSuccess<T>(value: T): T;
+  /** 熔断抛出后清连击。下一个 provider 重新计数，不继承已经熔断的这一串。 */
+  releaseAfterBreaker(): void;
+}
+
+const REPEATED_RETRYABLE_FINGERPRINT_ERROR = 'RepeatedRetryableFingerprintError';
+
+function isRepeatedRetryableFingerprintError(err: unknown): boolean {
+  return !!err
+    && typeof err === 'object'
+    && (err as { name?: unknown }).name === REPEATED_RETRYABLE_FINGERPRINT_ERROR;
+}
+
+function readErrorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const code = (err as { code?: unknown }).code;
+  return typeof code === 'string' && code.length > 0 ? code : undefined;
+}
+
+function readErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** 分类和降级读 status/code；文案仍不含 429/5xx，避免包装自己被当成又可重试。 */
+function attachRetryableIdentity(target: object, cause: unknown): void {
+  const status = getErrorStatus(cause);
+  if (status !== undefined) Object.assign(target, { status, statusCode: status });
+  const code = readErrorCode(cause);
+  if (code !== undefined) Object.assign(target, { code });
 }
 
 /**
  * 熔断错误不把原始指纹写进 message：指纹里的 429/5xx/timeout 会让外层
  * 再把这次熔断当成可重试错误。比对用的指纹留在属性上。
+ * status/code 和 cause 留给降级与错误分类，和耗尽重试后抛出的原错误同一路。
  */
 class RepeatedRetryableFingerprintError extends Error {
   readonly streak: number;
@@ -278,9 +309,10 @@ class RepeatedRetryableFingerprintError extends Error {
 
   constructor(streak: number, fingerprint: string, cause: unknown) {
     super(`Retry stopped: the same retryable error repeated ${streak} times.`, { cause });
-    this.name = 'RepeatedRetryableFingerprintError';
+    this.name = REPEATED_RETRYABLE_FINGERPRINT_ERROR;
     this.streak = streak;
     this.fingerprint = fingerprint;
+    attachRetryableIdentity(this, cause);
   }
 }
 
@@ -333,6 +365,10 @@ export function createRetryFingerprintScope(): RetryFingerprintScope {
         fingerprint = '';
       }
       return value;
+    },
+    releaseAfterBreaker() {
+      streak = 0;
+      fingerprint = '';
     },
   };
 }
@@ -391,6 +427,47 @@ export function isFallbackEligible(msg: string, errCode?: string): boolean {
   // 不可重试但应该降级的错误（账号耗尽、key 无效等 → 换个 Provider 可能就好了）
   if (includesAnyPattern(msg, NON_RETRYABLE_PATTERNS)) return true;
   return isTransientError(msg, errCode);
+}
+
+/**
+ * 降级链看到的文案和 code。
+ * 普通错误原样返回。同指纹熔断的文案故意匹配不到瞬态模式，所以改看 cause；
+ * cause 不在时，用包装上保留的 HTTP status，让 502/429 仍能切到下一家。
+ */
+export function describeFallbackError(err: unknown): { message: string; code?: string } {
+  if (!isRepeatedRetryableFingerprintError(err)) {
+    const message = readErrorMessage(err);
+    const code = readErrorCode(err);
+    return code !== undefined ? { message, code } : { message };
+  }
+  const chosen = selectFallbackError(err);
+  const code = readErrorCode(chosen);
+  let message = readErrorMessage(chosen);
+  const status = getErrorStatus(chosen);
+  if (
+    status !== undefined
+    && !message.includes(String(status))
+    && !isFallbackEligible(message, code)
+  ) {
+    message = `${message} HTTP ${status}`;
+  }
+  return code !== undefined ? { message, code } : { message };
+}
+
+function selectFallbackError(err: unknown): unknown {
+  let chosen: unknown = err;
+  let cursor: unknown = err;
+  for (let depth = 0; depth < 4 && cursor && typeof cursor === 'object'; depth += 1) {
+    if (fallbackSignalEligible(cursor)) chosen = cursor;
+    cursor = (cursor as { cause?: unknown }).cause;
+  }
+  return chosen;
+}
+
+function fallbackSignalEligible(err: unknown): boolean {
+  if (isFallbackEligible(readErrorMessage(err), readErrorCode(err))) return true;
+  const status = getErrorStatus(err);
+  return status !== undefined && RETRYABLE_HTTP_STATUSES.has(status);
 }
 
 /**
@@ -483,6 +560,7 @@ export async function withTransientRetry<T>(
         error: err,
       });
       if (stopForFingerprint && noted?.tripped) {
+        fingerprintScope.releaseAfterBreaker();
         throw new RepeatedRetryableFingerprintError(noted.streak, noted.fingerprint, err);
       }
       throw err;

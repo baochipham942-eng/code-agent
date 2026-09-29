@@ -83,10 +83,7 @@ export async function sessionEndMemoryHook(
     // 提取学习成果
     const learnings = extractSessionLearnings(messages);
 
-    // 过滤低置信度学习
-    const significantLearnings = learnings.filter(l => l.confidence > 0.7);
-
-    if (significantLearnings.length === 0) {
+    if (learnings.length === 0) {
       logger.debug('No significant learnings extracted from session');
       return {
         action: 'continue',
@@ -96,7 +93,7 @@ export async function sessionEndMemoryHook(
 
     // 持久化到记忆系统
     let savedCount = 0;
-    for (const learning of significantLearnings) {
+    for (const learning of learnings) {
       try {
         await memoryService.add({
           type: learning.type,
@@ -116,7 +113,7 @@ export async function sessionEndMemoryHook(
       }
     }
 
-    logger.info(`Persisted ${savedCount}/${significantLearnings.length} learnings from session ${context.sessionId}`);
+    logger.info(`Persisted ${savedCount}/${learnings.length} learnings from session ${context.sessionId}`);
 
     return {
       action: 'continue',

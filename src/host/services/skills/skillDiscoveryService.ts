@@ -99,6 +99,9 @@ interface SkillConflict {
  *
  * 加载顺序仍是内置、用户、库、插件、项目；同名官方 Skill 会保留，外部同名项记录为冲突并跳过。
  */
+// 与 folderTrustService 的 SYNC_SCAN_CACHE_TTL_MS 同量级。
+const PROJECT_SKILL_TRUST_CACHE_TTL_MS = 5_000;
+
 class SkillDiscoveryService {
   private skills: Map<string, ParsedSkill> = new Map();
   /** Product-owned skills cannot be replaced by same-name external skills. */
@@ -126,6 +129,11 @@ class SkillDiscoveryService {
   private metadataCacheDirty = false;
   /** 初始化中的 promise，用于 fire-and-forget 场景下的并发锁 */
   private initPromise: Promise<void> | null = null;
+  /**
+   * 项目级 skill-preferences 信任判定的短缓存：一次装配里几十个 skill 只同步问一次；
+   * 有效期与 folderTrust 同步扫描缓存一致，会话中途撤销信任/新落盘配置几秒内生效。
+   */
+  private projectSkillPreferencesTrust: { trusted: boolean; at: number } | undefined;
 
   constructor(options: SkillDiscoveryServiceOptions = {}) {
     this.includeClaudeLegacySkills = shouldIncludeClaudeLegacySkills(options);
@@ -175,6 +183,7 @@ class SkillDiscoveryService {
 
   private async doInitialize(normalizedDir: string): Promise<void> {
     this.workingDirectory = normalizedDir;
+    this.projectSkillPreferencesTrust = undefined;
     this.skills.clear();
     this.protectedOfficialSkillNames.clear();
     this.skillConflicts = [];
@@ -263,10 +272,7 @@ class SkillDiscoveryService {
   isSkillEnabled(skillName: string): boolean {
     if (this.allowedSkillNames && !this.allowedSkillNames.has(skillName)) return false;
     try {
-      if (
-        this.workingDirectory &&
-        isProjectConfigTrustedSync(this.workingDirectory, 'project-skill-preferences')
-      ) {
+      if (this.workingDirectory && this.isProjectSkillPreferencesTrusted()) {
         const override = getProjectSkillPreferenceStore(this.workingDirectory).getOverride(skillName);
         if (override !== undefined) return override;
       }
@@ -274,6 +280,14 @@ class SkillDiscoveryService {
     } catch {
       return true;
     }
+  }
+
+  private isProjectSkillPreferencesTrusted(): boolean {
+    const cached = this.projectSkillPreferencesTrust;
+    if (cached && Date.now() - cached.at < PROJECT_SKILL_TRUST_CACHE_TTL_MS) return cached.trusted;
+    const trusted = isProjectConfigTrustedSync(this.workingDirectory, 'project-skill-preferences');
+    this.projectSkillPreferencesTrust = { trusted, at: Date.now() };
+    return trusted;
   }
 
   /**

@@ -132,6 +132,36 @@ setInterval(() => {}, 1 << 30);
     expect(fs.existsSync(owned)).toBe(false);
   }, 30_000);
 
+  it('宿主 prepend 的信号钩子（gates-fast r2 的击杀形状）先于 tmp-sandbox 的清理跑', async () => {
+    // gates-fast 返修 r2：信号到来时必须「先杀子进程、后清临时根」。用 keep-tmp 让 tmp-sandbox
+    // 的信号钩子打印一行，与宿主 prepend 钩子的日志比对先后——prepend 生效则宿主行在前。
+    const file = writeFixture('prepend-child.mjs', `
+import { createOwnedTmp } from ${JSON.stringify(moduleUrl)};
+const owned = createOwnedTmp('gates-fast-');
+process.prependListener('SIGTERM', () => { console.error('HOST_HANDLER_RAN'); });
+console.log('CHILD_READY ' + owned);
+setInterval(() => {}, 1 << 30);
+`);
+    const started = startChild(file, [], { CODE_AGENT_KEEP_TMP: '1' });
+    const owned = await started.readLine('CHILD_READY ');
+    strayPaths.push(owned);
+
+    started.child.kill('SIGTERM');
+    // 信号时的清理日志长这样（create 时的「本轮将保留」是另一行，别混）：
+    const sandboxSignalLine = `[tmp-sandbox] keep-tmp：保留 ${owned}（SIGTERM）`;
+    const deadline = Date.now() + 15_000;
+    while (!started.stderr.includes('HOST_HANDLER_RAN') || !started.stderr.includes(sandboxSignalLine)) {
+      if (Date.now() > deadline) throw new Error(`等不到两行信号日志；stderr=${started.stderr}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    // 顺序断言：宿主 prepend 钩子的日志必须排在 tmp-sandbox 信号清理日志前面。
+    expect(started.stderr.indexOf('HOST_HANDLER_RAN')).toBeLessThan(started.stderr.indexOf(sandboxSignalLine));
+    // 双钩子在注册表上：tmp-sandbox 不抢 process.exit，进程活着，由测试收尾击杀。
+    expect(started.child.exitCode).toBeNull();
+    started.child.kill('SIGKILL');
+    await started.waitClosed();
+  }, 30_000);
+
   it('--keep-tmp：SIGTERM 后目录保留，且 stderr 打印了路径', async () => {
     const file = writeFixture('keep-child.mjs', signalChildSource());
     const started = startChild(file, ['--keep-tmp']);
@@ -170,6 +200,16 @@ describe('门脚本临时根接线（static contract）', () => {
     const source = fs.readFileSync(path.join(repoRoot, 'scripts', 'gates-fast.mjs'), 'utf-8');
     expect(source).toContain("createOwnedTmp('gates-fast-')");
     expect(source).not.toContain("mkdtempSync(path.join(os.tmpdir(), 'gates-fast-')");
+  });
+
+  it('gates-fast（r2）命令中断钩子 prepend 注册：先杀子进程组再让 tmp-sandbox 清临时根', () => {
+    const source = fs.readFileSync(path.join(repoRoot, 'scripts', 'gates-fast.mjs'), 'utf-8');
+    expect(source).toContain("process.prependListener('SIGINT', interrupted)");
+    expect(source).toContain("process.prependListener('SIGTERM', interrupted)");
+    // once 包装器触发即自摘会让 tmp-sandbox 看到 listenerCount<=1 而抢先 exit(130)，
+    // 挤掉 receipt 落盘——这里同时钉死「不许退回 once」。
+    expect(source).not.toContain("process.once('SIGINT', interrupted)");
+    expect(source).not.toContain("process.once('SIGTERM', interrupted)");
   });
 
   it('gates-local 的 renderer-base 临时根走 createOwnedTmp', () => {

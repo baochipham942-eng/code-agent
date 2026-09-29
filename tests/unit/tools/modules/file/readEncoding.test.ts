@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import os from 'os';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 import { computeContentDigest, fileReadTracker } from '../../../../../src/host/tools/fileReadTracker';
@@ -17,6 +18,7 @@ import { readModule } from '../../../../../src/host/tools/modules/file/read';
 import { editModule } from '../../../../../src/host/tools/modules/file/multiEdit';
 import { writeModule } from '../../../../../src/host/tools/modules/file/write';
 import { appendModule } from '../../../../../src/host/tools/modules/file/append';
+import { existingPathWriteRefusal } from '../../../../../src/host/tools/utils/textEncodingGuard';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -197,6 +199,24 @@ describe('N-READ-ENCODING', () => {
       if (result.ok) return;
       expect(result.error).toContain('not valid UTF-8');
       expect(Buffer.compare(await fs.readFile(file), bytes)).toBe(0);
+    });
+
+    it.skipIf(process.platform === 'win32')('FIFO / 非普通文件不做整读检查（readFile 等不到 EOF 会挂住）', async () => {
+      const fifo = path.join(tmpDir, 'pipe');
+      execFileSync('mkfifo', [fifo]);
+      const outcome = await Promise.race([
+        existingPathWriteRefusal(fifo),
+        new Promise<string>((resolve) => setTimeout(() => resolve('hung: guard read a FIFO'), 1000)),
+      ]);
+      expect(outcome).toBeNull();
+    });
+
+    it('超过体积上限的普通文件跳过检查（不整读进内存）；不存在的路径视为新建', async () => {
+      const big = path.join(tmpDir, 'big.log');
+      await fs.writeFile(big, Buffer.from([0x80, 0x81]));
+      await fs.truncate(big, 33 * 1024 * 1024);
+      expect(await existingPathWriteRefusal(big)).toBeNull();
+      expect(await existingPathWriteRefusal(path.join(tmpDir, 'nope.txt'))).toBeNull();
     });
 
     it('新建文件照旧 UTF-8', async () => {

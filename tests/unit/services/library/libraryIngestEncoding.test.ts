@@ -47,4 +47,12 @@ describe('extractLibraryText 文本编码识别', () => {
     const file = write('d.txt', Buffer.from([0x61, 0x81, 0x20, 0xff, 0xff]));
     await expect(extractLibraryText(file)).rejects.toThrow(/无法识别文件编码.*UTF-8/);
   });
+
+  it('ASCII 主体夹坏字节（高字节稀疏）：同样明确报错，不把 U+FFFD 写进 sidecar', async () => {
+    const ascii = Buffer.from('plain english line for the library, long enough to be sparse.\n'.repeat(8));
+    for (const bad of [[0xff], [0x81, 0x20], [0x80]]) {
+      const file = write('e.txt', Buffer.concat([ascii, Buffer.from(bad), ascii]));
+      await expect(extractLibraryText(file)).rejects.toThrow(/无法识别文件编码.*UTF-8/);
+    }
+  });
 });

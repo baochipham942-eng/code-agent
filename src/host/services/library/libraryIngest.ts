@@ -22,17 +22,20 @@ import { decodeText, TextDecodeError } from '../../utils/decodeText';
 
 const logger = createLogger('LibraryIngest');
 
-/** 资料库文本解码：通用解码失败时换成资料库专用文案（引导用户另存后重新导入） */
+/** 资料库文本解码：无法识别、或 UTF-8 里夹坏字节时明确报错（sidecar 是原件内容，不能静默写入 U+FFFD），文案引导用户另存后重新导入 */
 function decodeLibraryText(buffer: Buffer): string {
+  const unrecognized = (cause?: unknown) =>
+    new Error('无法识别文件编码（仅支持 UTF-8 / GBK）。请用记事本或 Excel 另存为 UTF-8 编码后重新导入', { cause });
   try {
     const decoded = decodeText(buffer);
     if (decoded.invalidSequences > 0) {
-      logger.warn('Library text has undecodable UTF-8 bytes, replaced with U+FFFD', { invalidSequences: decoded.invalidSequences });
+      logger.warn('Library text has undecodable UTF-8 bytes, refusing to ingest', { invalidSequences: decoded.invalidSequences });
+      throw unrecognized();
     }
     return decoded.text;
   } catch (err) {
     if (!(err instanceof TextDecodeError)) throw err;
-    throw new Error('无法识别文件编码（仅支持 UTF-8 / GBK）。请用记事本或 Excel 另存为 UTF-8 编码后重新导入', { cause: err });
+    throw unrecognized(err);
   }
 }
 

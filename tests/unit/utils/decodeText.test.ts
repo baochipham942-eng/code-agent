@@ -35,9 +35,9 @@ describe('decodeText', () => {
     expect(decoded.text.startsWith('名称')).toBe(true);
   });
 
-  it('坏字节占比过高（有效中文不足 4 倍）不算 UTF-8：回落 GB18030 或报错', () => {
-    // 1 个合法中文 + 2 个坏字节，且不是合法 GB18030
-    const bytes = Buffer.from([0xe5, 0x90, 0x8d, 0x80, 0x20, 0x81, 0x20]);
+  it('坏字节占大头（合法 UTF-8 只覆盖不到一半高字节、也不稀疏）不算 UTF-8：GB18030 也解不开则报错', () => {
+    // 1 个合法中文 + 4 个坏字节 + 1 个 ASCII；0x83 0x20 也不是合法 GB18030
+    const bytes = Buffer.from([0xe5, 0x90, 0x8d, 0x80, 0x81, 0x82, 0x83, 0x20]);
     expect(() => decodeText(bytes)).toThrow(TextDecodeError);
   });
 
@@ -62,6 +62,33 @@ describe('decodeText', () => {
       Buffer.from(',keep the ascii part long enough so that high bytes stay sparse in this file\n'),
     ]);
     expect(decodeText(bytes)).toMatchObject({ encoding: 'gb18030', text: expect.stringContaining('1,名称,') });
+  });
+
+  it('短 UTF-8 夹单个坏字节（有效中文不足 4 倍）：仍判 utf-8，已合法的中文保留', () => {
+    const cases: Array<[Buffer, string]> = [
+      [Buffer.concat([Buffer.from('名称\n'), Buffer.from([0x80])]), '名称\n\uFFFD'],
+      [Buffer.concat([Buffer.from('id=名称;ok'), Buffer.from([0x80])]), 'id=名称;ok\uFFFD'],
+      [Buffer.concat([Buffer.from('苹果,3'), Buffer.from([0x80])]), '苹果,3\uFFFD'],
+      [Buffer.concat([Buffer.from('名称'), Buffer.from([0xff, 0xff])]), '名称\uFFFD\uFFFD'],
+    ];
+    for (const [bytes, expected] of cases) {
+      const decoded = decodeText(bytes);
+      expect(decoded.encoding).toBe('utf-8');
+      expect(decoded.text).toBe(expected);
+    }
+  });
+
+  it('原文里合法的 U+FFFD 不计入坏序列', () => {
+    const bytes = Buffer.concat([Buffer.from('你好世界\uFFFD'), Buffer.from([0x80])]);
+    const decoded = decodeText(bytes);
+    expect(decoded).toMatchObject({ encoding: 'utf-8', invalidSequences: 1 });
+    expect(decoded.text).toBe('你好世界\uFFFD\uFFFD');
+  });
+
+  it('同一段 ASCII 夹 E4 B8：带不带 UTF-8 BOM 判定一致', () => {
+    const body = Buffer.concat([Buffer.from('x = 1; '.repeat(20)), Buffer.from([0xe4, 0xb8]), Buffer.from(' y = 2;\n'.repeat(20))]);
+    const bom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), body]);
+    expect(decodeText(bom).encoding).toBe(decodeText(body).encoding);
   });
 
   it('GBK 以 EF BB BF 三字节起头：GB18030 用原始 buffer，不剥 BOM', () => {

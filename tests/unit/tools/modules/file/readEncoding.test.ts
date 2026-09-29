@@ -250,6 +250,21 @@ describe('N-READ-ENCODING', () => {
       });
     }
 
+    it('短 UTF-8「名称\\n」+ 单个 0x80：Read 中文原样可见、不出现 GBK 乱码，Edit 拒写', async () => {
+      const bytes = Buffer.concat([Buffer.from('id=名称;ok'), Buffer.from([0x80])]);
+      const file = path.join(tmpDir, 'short-lossy.txt');
+      await fs.writeFile(file, bytes);
+      const result = await read(file);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.output).toContain('id=名称;ok');
+      expect(result.output).not.toContain('鍚嶇О');
+      expect(result.output).not.toContain('GB18030');
+      const editResult = await edit(file, '名称', '名字');
+      expect(editResult.ok).toBe(false);
+      expect(Buffer.compare(await fs.readFile(file), bytes)).toBe(0);
+    });
+
     it('ASCII 主体的真 GBK（英文多、只夹几个中文词）：仍判 GBK、仍拒写', async () => {
       // 「id,name\n1,名称\n2,苹果\nplain english text to keep high bytes sparse ...」
       const bytes = Buffer.concat([

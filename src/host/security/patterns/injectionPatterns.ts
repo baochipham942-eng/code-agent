@@ -131,6 +131,12 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     description: '试图注入新系统指令',
   },
   {
+    pattern: /(?:忽略|无视|忘记)\s*(?:之前|上面|以上|所有)\s*(?:的\s*)?(?:指令|提示|规则)/,
+    type: 'instruction_override',
+    severity: 'critical',
+    description: 'Attempts to override earlier instructions',
+  },
+  {
     pattern: /\[SYSTEM\]|\[INST\]|<<SYS>>|<\|system\|>|<\|im_start\|>system/i,
     type: 'instruction_override',
     severity: 'critical',
@@ -185,6 +191,12 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     description: '试图激活特权模式',
   },
   {
+    pattern: /(?:你现在是(?!否)|从现在起你将扮演)/,
+    type: 'jailbreak_attempt',
+    severity: 'critical',
+    description: 'Attempts to hijack the assistant role',
+  },
+  {
     pattern: /(?:do\s+anything\s+now|no\s+(?:rules?|restrictions?|limitations?|filters?|guidelines?))/i,
     type: 'jailbreak_attempt',
     severity: 'high',
@@ -211,6 +223,12 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     type: 'data_exfiltration',
     severity: 'medium',
     description: '试图获取系统指令内容',
+  },
+  {
+    pattern: /(?:输出|泄露|打印)\s*(?:你的\s*)?(?:系统提示词|密钥|API\s*key)/i,
+    type: 'data_exfiltration',
+    severity: 'high',
+    description: 'Attempts to extract system prompts or secrets',
   },
   {
     pattern: /(?:send|transmit|post|upload|exfiltrate|forward)\s+(?:to|data\s+to)\s+(?:https?:\/\/|ftp:\/\/)/i,

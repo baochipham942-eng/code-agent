@@ -13,7 +13,8 @@ import {
   type InjectionPattern,
   type InjectionPatternScope,
 } from './patterns/injectionPatterns';
-import { getSensitiveDetector } from './sensitiveDetector';
+import { getSensitiveDetector, type SensitiveMatch } from './sensitiveDetector';
+import { ZERO_WIDTH_CHARACTERS } from './canonicalizeCommand';
 import {
   foundRoleDelimiterTokens,
   generateBoundaryNonce,
@@ -123,6 +124,11 @@ export class InputSanitizer {
     const nonce = options?.nonce ?? generateBoundaryNonce();
     const { text: withoutSpecialTokens, found: strippedSpecialTokens } = stripSpecialTokenLiterals(input);
     const sanitized = stripBoundaryNonce(withoutSpecialTokens, nonce);
+    const scanText = sanitized.normalize('NFKC').replace(ZERO_WIDTH_CHARACTERS, '');
+    ZERO_WIDTH_CHARACTERS.lastIndex = 0;
+    const originalHadZeroWidth = ZERO_WIDTH_CHARACTERS.test(input);
+    ZERO_WIDTH_CHARACTERS.lastIndex = 0;
+    const unicodeChanged = sanitized !== scanText;
 
     const warnings: SanitizationWarning[] = [];
 
@@ -136,13 +142,18 @@ export class InputSanitizer {
     }
 
     // 1. 检测 prompt injection 模式（scope 过滤后，在剥离后的文本上跑）
+    let unicodeObfuscationDetected = false;
     for (const item of this.allPatterns) {
       if (!patternAppliesToScope(item, scope)) continue;
       const { pattern, type, severity, description } = item;
-      // 重置 lastIndex（全局正则）
+      // 重置 lastIndex（全局正则），并在原文与折叠副本上各跑一次。
       pattern.lastIndex = 0;
+      const rawMatched = pattern.test(sanitized);
+      pattern.lastIndex = 0;
+      const foldedMatched = pattern.test(scanText);
+      const foldedOnly = foldedMatched && !rawMatched;
 
-      if (pattern.test(sanitized)) {
+      if (rawMatched || foldedMatched) {
         warnings.push({
           type,
           severity,
@@ -150,21 +161,38 @@ export class InputSanitizer {
           description,
         });
       }
+      if (unicodeChanged || originalHadZeroWidth) {
+        unicodeObfuscationDetected ||= foldedOnly;
+      }
+    }
+
+    if (unicodeObfuscationDetected) {
+      warnings.push({
+        type: 'prompt_injection',
+        severity: 'high',
+        pattern: 'unicode-obfuscation',
+        description: 'Unicode normalization or zero-width characters obscured a prompt injection pattern',
+      });
     }
 
     // 2. 复用 SensitiveDetector 检测泄露的凭证
     const sensitiveDetector = getSensitiveDetector();
-    const sensitiveResult = sensitiveDetector.detect(sanitized);
-    if (sensitiveResult.hasSensitive) {
+    const sensitiveMatches = new Map<string, SensitiveMatch>();
+    for (const text of [sanitized, scanText]) {
+      const sensitiveResult = sensitiveDetector.detect(text);
       for (const match of sensitiveResult.matches) {
-        if (match.confidence === 'high' || match.confidence === 'medium') {
-          warnings.push({
-            type: 'sensitive_data',
-            severity: match.confidence === 'high' ? 'medium' : 'low',
-            pattern: match.type,
-            description: `外部数据包含 ${match.type}: ${match.masked}`,
-          });
-        }
+        const matchKey = `${match.type}:${match.masked}:${match.confidence}`;
+        sensitiveMatches.set(matchKey, match);
+      }
+    }
+    for (const match of sensitiveMatches.values()) {
+      if (match.confidence === 'high' || match.confidence === 'medium') {
+        warnings.push({
+          type: 'sensitive_data',
+          severity: match.confidence === 'high' ? 'medium' : 'low',
+          pattern: match.type,
+          description: `外部数据包含 ${match.type}: ${match.masked}`,
+        });
       }
     }
 

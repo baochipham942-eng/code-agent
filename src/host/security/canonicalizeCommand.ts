@@ -14,7 +14,7 @@ export const ANSI_C_ESCAPES: Record<string, string> = {
   '?': '?',
 };
 
-const ZERO_WIDTH_CHARACTERS = /[\u200B-\u200D\u2060\uFEFF]/g;
+export const ZERO_WIDTH_CHARACTERS = /[\u200B-\u200D\u2060\uFEFF]/g;
 const IFS_EXPANSIONS = /\$\{IFS[^}]*\}|\$IFS\b/g;
 
 /**

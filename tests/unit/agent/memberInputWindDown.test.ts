@@ -21,6 +21,16 @@ const mocks = vi.hoisted(() => {
     if (!response) throw new Error('Missing mocked inference response');
     return response;
   });
+  const installDefaultInference = () => {
+    inference.mockReset();
+    inference.mockImplementation(async (messages: unknown) => {
+      seen.push(JSON.stringify(messages));
+      const response = responses.shift();
+      if (!response) throw new Error('Missing mocked inference response');
+      return response;
+    });
+  };
+  let cancellationController: AbortController | undefined;
   const pipelineContext = {
     agentId: 'pipeline-agent',
     permissionConfig: { blockedCommands: [] as string[] },
@@ -35,7 +45,16 @@ const mocks = vi.hoisted(() => {
     recordTokenUsage: vi.fn(),
     recordToolUsage: vi.fn(),
   };
-  return { responses, seen, inference, pipeline, pipelineContext };
+  return {
+    responses,
+    seen,
+    inference,
+    installDefaultInference,
+    pipeline,
+    pipelineContext,
+    setCancellationController: (controller: AbortController) => { cancellationController = controller; },
+    getCancellationController: () => cancellationController,
+  };
 });
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
@@ -106,6 +125,7 @@ vi.mock('../../../src/host/agent/subagentExecutorCancellation', () => ({
   flushSubagentCancellation: vi.fn(async () => {}),
   createSubagentCancellationLifecycle: () => {
     const controller = new AbortController();
+    mocks.setCancellationController(controller);
     return {
       effectiveController: controller,
       effectiveSignal: controller.signal,
@@ -204,7 +224,9 @@ describe('native member follow-up during the final model call (N-MEMBER-INPUT-DR
   beforeEach(() => {
     mocks.responses.length = 0;
     mocks.seen.length = 0;
-    mocks.inference.mockClear();
+    mocks.installDefaultInference();
+    mocks.pipeline.checkBudget.mockReset();
+    mocks.pipeline.checkBudget.mockImplementation(() => ({ allowed: true, warnings: [] as string[] }));
     resetSpawnGuard();
     resetParallelAgentCoordinators();
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
@@ -517,5 +539,133 @@ describe('native member follow-up during the final model call (N-MEMBER-INPUT-DR
     expect(mocks.seen.some((body) => body.includes('follow-up-1'))).toBe(true);
     expect(mocks.seen.some((body) => body.includes('follow-up-2'))).toBe(true);
     expect(mocks.seen.some((body) => body.includes('follow-up-3'))).toBe(false);
+  });
+
+  async function runResumeThenStop(options: {
+    agentId: string;
+    followUp: string;
+    firstAnswer: string;
+    second: () => Promise<Record<string, unknown>>;
+  }): Promise<{ result: SubagentResult; guard: ReturnType<typeof getSpawnGuard> }> {
+    const guard = getSpawnGuard();
+    let queuedDuringCall = false;
+    mocks.inference.mockImplementation(async (messages: unknown): Promise<Record<string, unknown>> => {
+      mocks.seen.push(JSON.stringify(messages));
+      if (mocks.seen.length === 1) {
+        const sent = await executeSendInput(
+          { agentId: options.agentId, message: options.followUp },
+          makeCtx(),
+          allowAll,
+        );
+        queuedDuringCall = sent.ok === true;
+        return textResponse(options.firstAnswer);
+      }
+      return options.second();
+    });
+    const executor = new SubagentExecutor();
+    const run = executor.execute({
+      prompt: 'Summarize the report',
+      config: {
+        name: 'Native member',
+        systemPrompt: 'Be brief.',
+        availableTools: [] as string[],
+        maxIterations: 4,
+      },
+      context: {
+        sessionId: 'sess-wind-down',
+        cwd: '/tmp/member-input-drop',
+        modelConfig: { provider: 'test', model: 'test-model' },
+        resolver: { getDefinition: () => undefined },
+        permission: { request: vi.fn(async () => true) },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
+        spawnGuardId: options.agentId,
+        executionAgentId: options.agentId,
+      },
+    });
+    guard.register(options.agentId, 'coder', 'Summarize the report', run, new AbortController());
+    const result = await run;
+    expect(queuedDuringCall).toBe(true);
+    return { result, guard };
+  }
+
+  it('keeps the answer when the resumed iteration stops on budget and reports the undrained follow-up', async () => {
+    const firstAnswer = 'draft answer before budget stop';
+    const followUp = 'add the appendix';
+    let checks = 0;
+    mocks.pipeline.checkBudget.mockImplementation(() => {
+      checks += 1;
+      if (checks >= 3) return { allowed: false, reason: 'member budget exhausted', warnings: [] as string[] };
+      return { allowed: true, warnings: [] as string[] };
+    });
+
+    const { result, guard } = await runResumeThenStop({
+      agentId: 'native-member-budget',
+      followUp,
+      firstAnswer,
+      second: async () => { throw new Error('budget stop must not call the model'); },
+    });
+    const notifications = guard.drainNotifications();
+
+    expect(checks).toBe(3);
+    expect(mocks.inference).toHaveBeenCalledTimes(1);
+    expect(mocks.seen.some((body) => body.includes(followUp))).toBe(false);
+    expect(guard.peekMessages('native-member-budget')).toHaveLength(1);
+    expect(result.success).toBe(true);
+    expect(result.output).toContain(firstAnswer);
+    expect(result.output).toContain('用户的 1 条补话未送达该成员');
+    expect(notifications.join('\n')).toContain(firstAnswer);
+    expect(notifications.join('\n')).toContain('用户的 1 条补话未送达该成员');
+  });
+
+  it('keeps the answer when the resumed model call is cancelled and reports the drained follow-up', async () => {
+    const firstAnswer = 'draft answer before cancel';
+    const followUp = 'cite the source';
+    const { result, guard } = await runResumeThenStop({
+      agentId: 'native-member-cancel',
+      followUp,
+      firstAnswer,
+      second: async () => {
+        const controller = mocks.getCancellationController();
+        if (!controller) throw new Error('missing cancellation controller');
+        controller.abort('parent-cancel');
+        throw new Error('resumed model call cancelled');
+      },
+    });
+    const notifications = guard.drainNotifications();
+
+    expect(mocks.inference).toHaveBeenCalledTimes(2);
+    expect(mocks.seen[1]).toContain(followUp);
+    expect(guard.peekMessages('native-member-cancel')).toEqual([]);
+    expect(result.success).toBe(false);
+    expect(result.cancellationReason).toBe('parent-cancel');
+    expect(result.error).toContain('resumed model call cancelled');
+    expect(result.output).toContain(firstAnswer);
+    expect(result.output).toContain('用户的 1 条补话未送达该成员');
+    expect(notifications.join('\n')).toContain(firstAnswer);
+    expect(notifications.join('\n')).toContain('用户的 1 条补话未送达该成员');
+  });
+
+  it('keeps the answer when the resumed model call errors and reports the drained follow-up', async () => {
+    const firstAnswer = 'draft answer before error';
+    const followUp = 'name the owner';
+    const { result, guard } = await runResumeThenStop({
+      agentId: 'native-member-error',
+      followUp,
+      firstAnswer,
+      second: async () => { throw new Error('provider exploded'); },
+    });
+    const notifications = guard.drainNotifications();
+
+    expect(mocks.inference).toHaveBeenCalledTimes(2);
+    expect(mocks.seen[1]).toContain(followUp);
+    expect(guard.peekMessages('native-member-error')).toEqual([]);
+    expect(result.success).toBe(false);
+    expect(result.cancellationReason).toBeUndefined();
+    expect(result.error).toContain('provider exploded');
+    expect(result.output).toContain(firstAnswer);
+    expect(result.output).toContain('用户的 1 条补话未送达该成员');
+    expect(notifications.join('\n')).toContain(firstAnswer);
+    expect(notifications.join('\n')).toContain('用户的 1 条补话未送达该成员');
   });
 });

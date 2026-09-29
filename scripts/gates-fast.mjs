@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { tsImport } from 'tsx/esm/api';
-import { digest, selectTests, validateFiles, validateReport, renderReceipt, extractGateIds, validateGateBudgetCoverage, commandDeadline, budgetFailure } from './lib/gates-fast-contract.mjs';
+import { digest, selectTests, validateFiles, validateReport, renderReceipt, extractGateIds, validateGateBudgetCoverage, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
@@ -51,11 +51,13 @@ function hashPrivate() {
   visit(privateRoot);
   return digest(JSON.stringify(values));
 }
-function snapshot() {
+function snapshot(frozenBaseSha) {
   if (git('status', '--porcelain', '--untracked-files=all')) throw new Error('FAIL: clean committed HEAD required');
   return {
     headSha: git('rev-parse', 'HEAD'), treeSha: git('rev-parse', 'HEAD^{tree}'),
-    baseSha: git('rev-parse', `${options.base}^{commit}`),
+    // Base carries the run-start SHA in frozen form: the shared ref (origin/main)
+    // is never re-resolved here, so a concurrent fetch cannot fail this run.
+    baseSha: frozenBaseSha,
     policyHash: hashFiles([policyPath, 'vitest.fast.config.ts', 'vitest.config.ts', 'scripts/gates-fast.mjs', 'scripts/lib/gates-fast-contract.mjs']),
     lockHash: hashFiles(git('ls-files').split('\n').filter((file) => /(^|\/)package-lock\.json$/.test(file))),
     privateInputsHash: hashPrivate(),
@@ -155,9 +157,8 @@ try {
     receipt.testsTypecheck = selected.testsTypecheck;
     checkDependencies();
     if (selected.packages.includes('vercel-api')) checkDependencies('vercel-api');
-    initial = snapshot();
+    initial = snapshot(receipt.baseSha);
     if (initial.headSha !== receipt.headSha || initial.treeSha !== receipt.treeSha) throw new Error('FAIL: HEAD moved during test selection; receipt invalid');
-    if (initial.baseSha !== receipt.baseSha) throw new Error('FAIL: base moved during test selection (concurrent fetch?); receipt invalid');
     Object.assign(receipt, initial);
     receipt.repo = git('config', '--get', 'remote.origin.url');
     receipt.workorder = options.workorder ?? null;
@@ -184,7 +185,8 @@ try {
     for (const pkg of receipt.packageChecks) await command(['npm', '--prefix', pkg, 'run', 'typecheck']);
   });
   await gate('tests-typecheck', receipt.testsTypecheck, () => command([process.execPath, 'scripts/tsc-tests-ratchet.mjs']));
-  if (JSON.stringify(initial) !== JSON.stringify(snapshot())) throw new Error('FAIL: inputs changed during gates:fast; receipt invalid');
+  const drift = changedInputs(initial, snapshot(receipt.baseSha));
+  if (drift.length) throw new Error(`FAIL: inputs changed during gates:fast; receipt invalid (${drift.join(', ')})`);
   if (performance.now() - started > policy.budgetMs) throw new Error(`FAIL: total budget ${policy.budgetMs}ms exhausted`);
   receipt.status = 'passed';
 } catch (error) {

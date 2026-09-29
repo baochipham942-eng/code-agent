@@ -7,6 +7,7 @@ import policy from '../../scripts/lib/gates-fast-policy.json';
 import {
   assertExactFiles, selectTests, validateFiles, validateReport, renderReceipt, digest,
   validateBudgetPolicy, validateGateBudgetCoverage, extractGateIds, commandDeadline, budgetFailure,
+  changedInputs,
 } from '../../scripts/lib/gates-fast-contract.mjs';
 
 const root = path.resolve(__dirname, '../..');
@@ -178,5 +179,59 @@ describe('fast gate fail-closed contracts', () => {
       git('add', '.'); git('commit', '-qm', 'bump');
       expect(() => execFileSync('bash', [script, '--base', base, '--head', 'HEAD'], { cwd: dir, stdio: 'pipe' })).not.toThrow();
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('并发 fetch 快进 origin/main 不再误判 inputs changed（base 冻结为开跑解析一次的 SHA）', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gates-fast-base-race-'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' }).trim();
+    try {
+      git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+      git('config', 'core.hooksPath', '/dev/null');
+      fs.writeFileSync(path.join(dir, 'a.txt'), 'one\n');
+      git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
+      fs.writeFileSync(path.join(dir, 'a.txt'), 'two\n');
+      git('add', '.'); git('commit', '-qm', 'head'); const fetched = git('rev-parse', 'HEAD');
+      git('update-ref', 'refs/remotes/origin/main', base);
+      // 开跑：base 解析成 SHA 恰好一次（receipt.baseSha），此后只用这个冻结值。
+      const frozenBase = git('rev-parse', 'refs/remotes/origin/main^{commit}');
+      expect(frozenBase).toBe(base);
+      const initial = { headSha: git('rev-parse', 'HEAD'), treeSha: git('rev-parse', 'HEAD^{tree}'), baseSha: frozenBase,
+        policyHash: 'p1', lockHash: 'l1', privateInputsHash: 'pr1', installedHash: 'i1', regressionsHash: 'r1' };
+      // 跑门期间：别的会话 git fetch 把共享 ref origin/main 快进到 head。
+      git('update-ref', 'refs/remotes/origin/main', fetched);
+      // 收尾 snapshot 复用冻结 baseSha，只重读 HEAD/tree —— ref 移动不进比对。
+      const current = { ...initial, headSha: git('rev-parse', 'HEAD'), treeSha: git('rev-parse', 'HEAD^{tree}') };
+      expect(changedInputs(initial, current)).toEqual([]);
+      // 反面钉住：旧实现收尾重新解析 ref，同一场快进立刻误判 inputs changed。
+      expect(changedInputs(initial, { ...current, baseSha: git('rev-parse', 'refs/remotes/origin/main^{commit}') })).toEqual(['baseSha']);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    // 源码契约：gates-fast.mjs 的 snapshot() 必须接收冻结 SHA、不得在体内重新解析共享 ref。
+    const source = fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8');
+    const start = source.indexOf('function snapshot(');
+    const snapshotSource = source.slice(start, source.indexOf('\nfunction ', start + 1));
+    expect(snapshotSource).toMatch(/baseSha:\s*frozenBaseSha/);
+    expect(snapshotSource).not.toContain('options.base');
+    expect(source.match(/snapshot\(receipt\.baseSha\)/g)).toHaveLength(2);
+  });
+  it('真实的 HEAD/tree 移动与私档/依赖各 hash 变化仍判 inputs changed', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gates-fast-real-drift-'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' }).trim();
+    try {
+      git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+      git('config', 'core.hooksPath', '/dev/null');
+      fs.writeFileSync(path.join(dir, 'a.txt'), 'one\n');
+      git('add', '.'); git('commit', '-qm', 'first');
+      const initial = { headSha: git('rev-parse', 'HEAD'), treeSha: git('rev-parse', 'HEAD^{tree}'), baseSha: 'b1',
+        policyHash: 'p1', lockHash: 'l1', privateInputsHash: 'pr1', installedHash: 'i1', regressionsHash: 'r1' };
+      // 跑门期间落了一个新提交：HEAD sha 与 tree sha 同时变，必须判变。
+      fs.writeFileSync(path.join(dir, 'a.txt'), 'two\n');
+      git('add', '.'); git('commit', '-qm', 'second');
+      expect(changedInputs(initial, { ...initial, headSha: git('rev-parse', 'HEAD'), treeSha: git('rev-parse', 'HEAD^{tree}') })).toEqual(['headSha', 'treeSha']);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    // 私档/策略/lock/安装态/regressions 任一 hash 单独变、或快照多出字段，都仍判变。
+    const same = { headSha: 'h1', treeSha: 't1', baseSha: 'b1', policyHash: 'p1', lockHash: 'l1', privateInputsHash: 'pr1', installedHash: 'i1', regressionsHash: 'r1' };
+    for (const [field, value] of [['privateInputsHash', 'pr2'], ['policyHash', 'p2'], ['lockHash', 'l2'], ['installedHash', 'i2'], ['regressionsHash', 'r2']] as const) {
+      expect(changedInputs(same, { ...same, [field]: value })).toEqual([field]);
+    }
+    expect(changedInputs(same, { ...same, extraHash: 'x1' })).toEqual(['extraHash']);
   });
 });

@@ -371,6 +371,9 @@ import { createApp, type CreateAppDeps } from './app';
 import { listForegroundPermissionRequests } from './foregroundPermissionRegistry';
 import { createWebSessionContext } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
+import {
+  notifyDurableRecoveryWaiting as notifyDurableRecoveryWaitingWith,
+} from './durableRecoveryWaitingNotifier';
 import type { DurableRecoveryDispatchResult } from '../host/runtime/durableRecoveryDispatcher';
 
 // Re-export broadcastSSE for backward compatibility
@@ -385,21 +388,12 @@ onRendererPush((channel, data) => {
 const runRegistry = getApplicationRunRegistry();
 
 function notifyDurableRecoveryWaiting(results: DurableRecoveryDispatchResult[]): void {
-  const waitingRunIds = new Set(results
-    .filter((result) => ['restore_same_approval', 'waiting_for_approval', 'auto_agent_waiting'].includes(result.reason))
-    .map((result) => result.runId));
-  for (const runId of waitingRunIds) {
-    const envelope = runRegistry.getDurableEnvelope(runId);
-    if (!envelope) continue;
-    void getSessionManager().getSession(envelope.sessionId, 1).then((session) => {
-      if (!session) return;
-      notificationService.notifyNeedsInput({
-        sessionId: session.id,
-        title: session.title || '未命名会话',
-        body: '任务暂停，等待确认后继续。',
-      });
-    }).catch((error: unknown) => logger.debug('Failed to notify durable approval wait', { error }));
-  }
+  notifyDurableRecoveryWaitingWith(results, {
+    getDurableEnvelope: (runId) => runRegistry.getDurableEnvelope(runId),
+    getSession: (sessionId) => getSessionManager().getSession(sessionId, 1),
+    notifyNeedsInput: (data) => notificationService.notifyNeedsInput(data),
+    onError: (error) => logger.debug('Failed to notify durable approval wait', { error }),
+  });
 }
 
 let durableRunRuntime: DurableRunApplicationRuntime | undefined;
@@ -709,7 +703,8 @@ async function initializeServices(): Promise<void> {
             if (!session) return;
             notificationService.notifyTaskResuming({
               sessionId: session.id,
-              sessionTitle: session.title || '未命名会话',
+              // 会话名为空时的「未命名会话」兜底由 notifyTaskResuming 按通知语言落（中英文案同源）
+              sessionTitle: session.title,
               autoResumeCount: envelope.autoResumeCount ?? 1,
             });
           }).catch((error: unknown) => logger.debug('Failed to notify durable resume', { error }));

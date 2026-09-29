@@ -18,6 +18,7 @@ import type { DeclaredDeliverables, LastDeliverableCheck } from './artifactState
 import type { RuntimeContext } from './runtimeContext';
 import type { RunTerminalStatus } from './runTerminalStatus';
 import type { TraceEvent, TraceEventDataMap, TurnTraceRecorder } from './turnTrace';
+import { readGuardSignals } from './doomLoopGuard';
 import { applyUnresolvedTaskTurnGate } from '../../../shared/contract/planning';
 import { listUnresolvedTurnTasksTouchedSince } from '../../services/planning/taskStore';
 
@@ -358,12 +359,14 @@ export async function recordTurnOutcomeStamp(
         Math.max(currentRunStartedAt(ctx.turnTrace.getEvents()), lastUserTimestamp(ctx.messages)),
       ),
     );
+    const guardSignals = readGuardSignals(ctx.turnTrace);
     ctx.turnTrace.record('turn_outcome', {
       ...outcome,
       verdict: gated.verdict,
       evidenceProblems: gated.evidenceProblems.length > 0
         ? gated.evidenceProblems
         : outcome.evidenceProblems,
+      ...(guardSignals.length > 0 ? { guardSignals } : {}),
     });
     if (!ctx.turnTrace.flush()) logger.warn('turn outcome trace flush failed', { sessionId: ctx.sessionId });
   } catch (error) {

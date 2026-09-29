@@ -35,7 +35,7 @@ import {
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
 import { activateMaxStepsFinalResponse, bindGoalWallClockForContext, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
-import { DoomLoopGuard } from './doomLoopGuard';
+import { DoomLoopGuard, collectGuardStepResults, noteGuardSignals } from './doomLoopGuard';
 import { createPlanExitFallbackState, planExitFallbackStep } from './planExitFallback';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
@@ -710,11 +710,15 @@ export class ConversationRuntime {
             terminal = { status: 'aborted' };
             break;
           }
-          if (doomCheck.nudge) {
-            logger.warn(`[DoomLoopGuard] ${doomCheck.level} detected; injecting nudge`);
-            this.contextAssembly.injectSystemMessage(doomCheck.nudge, 'stagnation-guard');
-          }
+          const messagesBeforeTools = this.ctx.messages.length;
           const toolAction = await this.messageProcessor.handleToolResponse(response, wasForceExecuted, iterations, langfuse);
+          const signalHit = doomLoopGuard.recordResults(collectGuardStepResults(this.ctx.messages, messagesBeforeTools));
+          if (signalHit.signals.length > 0) noteGuardSignals(this.ctx.turnTrace, signalHit.signals);
+          for (const nudge of [doomCheck.nudge, signalHit.nudge]) {
+            if (!nudge) continue;
+            logger.warn(`[DoomLoopGuard] ${nudge === doomCheck.nudge ? doomCheck.level : signalHit.signals.join(',')} detected; injecting nudge`);
+            this.contextAssembly.injectSystemMessage(nudge, 'stagnation-guard');
+          }
           if (
             toolAction === 'continue-soft-validation'
             && softValidationRetries < TOOL_ARGS_REPAIR_MAX_ATTEMPTS

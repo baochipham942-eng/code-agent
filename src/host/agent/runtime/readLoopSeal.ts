@@ -9,7 +9,7 @@
 // ============================================================================
 
 import type { ToolCall, ToolResult } from '../../../shared/contract';
-import { READ_ONLY_TOOLS } from '../loopTypes';
+import { READ_ONLY_TOOLS, WRITE_TOOLS } from '../loopTypes';
 import { isBashToolName } from '../../tools/toolNames';
 import { activateForceFinalResponse } from './toolPreflightGuards';
 import type { RuntimeContext } from './runtimeContext';
@@ -25,6 +25,14 @@ const MAX_BLOCKED_READS_WHILE_READ_SEALED = 3;
 
 const READ_LOOP_HARD_LIMIT_REASON_PREFIX = '连续只读操作达到硬阈值';
 
+const DELIVERABLE_GENERATE_TOOLS = new Set([
+  'ppt_generate',
+  'docx_generate',
+  'excel_generate',
+  'pdf_generate',
+  'chart_generate',
+]);
+
 export function isReadLikeToolCall(
   ctx: Pick<RuntimeContext, 'antiPatternDetector'>,
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
@@ -33,13 +41,25 @@ export function isReadLikeToolCall(
   if (!isBashToolName(toolCall.name)) return false;
   const command = typeof toolCall.arguments?.command === 'string' ? toolCall.arguments.command : '';
   if (!command) return false;
-  // 写文件型 Bash = 现有只读 Bash 判定取反，不另写一套规则。
+  // 可选链：detector 没有 isReadOnlyShellCommand 时不当成读类（封口期间仍可执行）。
+  // 解封走 isWriteClassToolCall，缺方法时不会误把 git log 当交付。
   return Boolean(ctx.antiPatternDetector.isReadOnlyShellCommand?.(command));
+}
+
+export function isWriteClassToolCall(
+  ctx: Pick<RuntimeContext, 'antiPatternDetector'>,
+  toolCall: Pick<ToolCall, 'name' | 'arguments'>,
+): boolean {
+  if (WRITE_TOOLS.includes(toolCall.name) || DELIVERABLE_GENERATE_TOOLS.has(toolCall.name)) return true;
+  if (!isBashToolName(toolCall.name)) return false;
+  const command = typeof toolCall.arguments?.command === 'string' ? toolCall.arguments.command : '';
+  if (!command) return false;
+  return Boolean(ctx.antiPatternDetector.isMutatingShellCommand?.(command));
 }
 
 function buildReadLoopSealError(): string {
   return (
-    '连续只读操作达到硬阈值，调研通道已关闭。请停止调研，基于已经获取到的文件或搜索证据立刻交付：' +
+    `${READ_LOOP_HARD_LIMIT_REASON_PREFIX}，调研通道已关闭。请停止调研，基于已经获取到的文件或搜索证据立刻交付：` +
     '写文件 / 生成产物（Write、Edit、写文件型 Bash、ppt/docx/xlsx 生成）。' +
     '不要继续 Read/Glob/Grep/WebSearch/WebFetch 或只读 Bash。若关键证据缺失，明确说明缺失。'
   );
@@ -58,8 +78,9 @@ function buildReadLoopSealPrompt(): string {
 }
 
 /**
- * 写类工具成功落盘后解除只封读：死循环已被一次真实交付打破，后续回读自检
- * 按 detector 现有逻辑重新计。读类成功不解除。
+ * 真实交付成功后解除只封读：WRITE_TOOLS / 写文件型 Bash / 产物生成。
+ * git log、curl 等非读也非写的调用不解除，否则 blockedReads 被清零、永远撞不到 forceFinal。
+ * 解封时 markSemanticProgress 把 consecutiveReadOps 归零，后续回读自检按 detector 重新计。
  */
 export function releaseReadLoopSealAfterSuccessfulWrite(
   ctx: Pick<RuntimeContext, 'control' | 'antiPatternDetector'>,
@@ -67,8 +88,9 @@ export function releaseReadLoopSealAfterSuccessfulWrite(
   success: boolean,
 ): void {
   if (!success || !ctx.control.readLoopSealActive) return;
-  if (isReadLikeToolCall(ctx, toolCall)) return;
+  if (!isWriteClassToolCall(ctx, toolCall)) return;
   ctx.control.clearReadLoopSeal();
+  ctx.antiPatternDetector.markSemanticProgress?.('read-loop-seal-delivery');
 }
 
 export function applyReadLoopHardLimit(

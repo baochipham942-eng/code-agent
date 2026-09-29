@@ -216,6 +216,31 @@ describe('ToolExecutionEngine read-loop seal (FB-253)', () => {
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 
+  it('after a successful write-file Bash while sealed, the next Read is allowed', async () => {
+    const execute = vi.fn(async (name: string, args: Record<string, unknown>): Promise<ToolResult> => ({
+      toolCallId: '',
+      success: true,
+      output: `${name} ok ${String(args.file_path ?? args.command ?? '')}`,
+    }));
+    const { ctx, engine } = makeEngine(execute);
+
+    await engine.executeToolsWithHooks([
+      { id: 'read-15', name: 'Read', arguments: { file_path: '/tmp/evidence.txt' } } as ToolCall,
+    ]);
+    expect(ctx.control.readLoopSealActive).toBe(true);
+
+    const [writeBash] = await engine.executeToolsWithHooks([
+      { id: 'bash-write', name: 'Bash', arguments: { command: 'python3 -c "Path(\'out.docx\').write_text(\'x\')"' } } as ToolCall,
+    ]);
+    expect(writeBash.success).toBe(true);
+    expect(ctx.control.readLoopSealActive).toBe(false);
+
+    const [readAfterWrite] = await engine.executeToolsWithHooks([
+      { id: 'read-self-check', name: 'Read', arguments: { file_path: '/tmp/out.docx' } } as ToolCall,
+    ]);
+    expect(readAfterWrite.success).toBe(true);
+  });
+
   it('after a successful Write while sealed, the next Read is allowed', async () => {
     const execute = vi.fn(async (name: string, args: Record<string, unknown>): Promise<ToolResult> => ({
       toolCallId: '',
@@ -329,6 +354,39 @@ describe('ToolExecutionEngine read-loop seal (FB-253)', () => {
     expect(results[3]?.metadata?.readLoopSeal).toBeUndefined();
     expect(execute).toHaveBeenCalledWith('Bash', expect.objectContaining({ command: expect.stringContaining('write_text') }), expect.anything());
     expect(execute).not.toHaveBeenCalledWith('Bash', expect.objectContaining({ command: 'cat evidence.txt' }), expect.anything());
+  });
+
+  it('does not lift the seal on non-write Bash, so extra blocked reads still escalate', async () => {
+    const execute = vi.fn(async (): Promise<ToolResult> => ({
+      toolCallId: '',
+      success: true,
+      output: 'ok',
+    }));
+    const { ctx, engine } = makeEngine(execute);
+
+    await engine.executeToolsWithHooks([
+      { id: 'read-15', name: 'Read', arguments: { file_path: '/tmp/a.ts' } } as ToolCall,
+    ]);
+    expect(ctx.control.readLoopSealActive).toBe(true);
+
+    const [gitLog] = await engine.executeToolsWithHooks([
+      { id: 'bash-git-log', name: 'Bash', arguments: { command: 'git log' } } as ToolCall,
+    ]);
+    expect(gitLog.success).toBe(true);
+    expect(ctx.control.readLoopSealActive).toBe(true);
+
+    for (let index = 0; index < 2; index += 1) {
+      await engine.executeToolsWithHooks([
+        { id: `read-extra-${index}`, name: 'Read', arguments: { file_path: `/tmp/extra-${index}.ts` } } as ToolCall,
+      ]);
+      expect(ctx.control.forceFinalResponseReason).toBeUndefined();
+    }
+
+    await engine.executeToolsWithHooks([
+      { id: 'read-escalate', name: 'Read', arguments: { file_path: '/tmp/escalate.ts' } } as ToolCall,
+    ]);
+    expect(ctx.control.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
+    expect(ctx.control.forceFinalResponsePrompt).toContain('Do not call any tool');
   });
 
   it('escalates to full forceFinal after 3 extra blocked reads', async () => {

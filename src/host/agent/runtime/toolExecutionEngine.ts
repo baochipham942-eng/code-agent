@@ -177,7 +177,7 @@ export class ToolExecutionEngine {
     );
   }
 
-  /** 只封读提示与既有 file-consistency-guard 注入共用这一处 AST 调用点。 */
+  /** file-consistency-guard 注入的唯一 AST 调用点（只封读提示与读循环警告都走这里）。 */
   private injectFileConsistencyGuard(content: string): void {
     this.contextAssembly.injectSystemMessage(content, 'file-consistency-guard');
   }

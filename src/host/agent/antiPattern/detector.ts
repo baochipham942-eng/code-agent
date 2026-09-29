@@ -167,6 +167,10 @@ export class AntiPatternDetector {
     return SHELL_FILE_READ_PATTERN.test(command) && !SHELL_MUTATION_PATTERN.test(command);
   }
 
+  isMutatingShellCommand(command: string): boolean {
+    return SHELL_MUTATION_PATTERN.test(command);
+  }
+
   preflightReadOnlyToolExecution(toolName: string): string | null {
     if (!READ_ONLY_TOOLS.includes(toolName)) {
       return null;

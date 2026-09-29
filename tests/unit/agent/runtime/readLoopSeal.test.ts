@@ -4,6 +4,7 @@ import { ControlState } from '../../../../src/host/agent/runtime/controlState';
 import {
   applyReadLoopHardLimit,
   isReadLikeToolCall,
+  isWriteClassToolCall,
   releaseReadLoopSealAfterSuccessfulWrite,
 } from '../../../../src/host/agent/runtime/readLoopSeal';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
@@ -39,6 +40,25 @@ describe('isReadLikeToolCall', () => {
     expect(isReadLikeToolCall(ctx, { name: 'bash', arguments: { command: 'rg "foo" src' } })).toBe(true);
     expect(isReadLikeToolCall(ctx, { name: 'Bash', arguments: { command: 'python3 -c "Path(\'out.docx\').write_text(\'x\')"' } })).toBe(false);
     expect(isReadLikeToolCall(ctx, { name: 'Bash', arguments: { command: 'touch /tmp/out.docx' } })).toBe(false);
+  });
+});
+
+describe('isWriteClassToolCall', () => {
+  const ctx = makeCtx();
+
+  it('treats Write/Edit and artifact generators as write-class', () => {
+    expect(isWriteClassToolCall(ctx, { name: 'Write', arguments: { file_path: '/tmp/out.docx' } })).toBe(true);
+    expect(isWriteClassToolCall(ctx, { name: 'Edit', arguments: { file_path: '/tmp/a.ts' } })).toBe(true);
+    expect(isWriteClassToolCall(ctx, { name: 'ppt_generate', arguments: { file_path: '/tmp/out.pptx' } })).toBe(true);
+    expect(isWriteClassToolCall(ctx, { name: 'docx_generate', arguments: { file_path: '/tmp/out.docx' } })).toBe(true);
+  });
+
+  it('treats mutating Bash as write-class and git log / curl as not', () => {
+    expect(isWriteClassToolCall(ctx, { name: 'Bash', arguments: { command: 'python3 -c "Path(\'out.docx\').write_text(\'x\')"' } })).toBe(true);
+    expect(isWriteClassToolCall(ctx, { name: 'Bash', arguments: { command: 'touch /tmp/out.docx' } })).toBe(true);
+    expect(isWriteClassToolCall(ctx, { name: 'Bash', arguments: { command: 'git log' } })).toBe(false);
+    expect(isWriteClassToolCall(ctx, { name: 'Bash', arguments: { command: 'curl https://example.test' } })).toBe(false);
+    expect(isWriteClassToolCall(ctx, { name: 'Read', arguments: { file_path: '/tmp/a.ts' } })).toBe(false);
   });
 });
 
@@ -112,7 +132,7 @@ describe('releaseReadLoopSealAfterSuccessfulWrite', () => {
     expect(ctx.control.readLoopSealBlockedReads).toBe(0);
   });
 
-  it('keeps the seal on failed writes and on successful reads', () => {
+  it('keeps the seal on failed writes, successful reads, and non-write Bash', () => {
     const ctx = makeCtx();
     ctx.control.activateReadLoopSeal();
     releaseReadLoopSealAfterSuccessfulWrite(
@@ -128,6 +148,31 @@ describe('releaseReadLoopSealAfterSuccessfulWrite', () => {
       true,
     );
     expect(ctx.control.readLoopSealActive).toBe(true);
+
+    releaseReadLoopSealAfterSuccessfulWrite(
+      ctx,
+      { name: 'Bash', arguments: { command: 'git log' } },
+      true,
+    );
+    expect(ctx.control.readLoopSealActive).toBe(true);
+  });
+
+  it('clears the seal after a successful write-file Bash and resets the detector count', () => {
+    const ctx = makeCtx();
+    ctx.control.activateReadLoopSeal();
+    for (let index = 0; index < 15; index += 1) {
+      ctx.antiPatternDetector.trackToolExecution('Read', true);
+    }
+    expect(ctx.antiPatternDetector.getConsecutiveReadCount()).toBe(15);
+
+    releaseReadLoopSealAfterSuccessfulWrite(
+      ctx,
+      { name: 'Bash', arguments: { command: 'python3 -c "Path(\'out.docx\').write_text(\'x\')"' } },
+      true,
+    );
+
+    expect(ctx.control.readLoopSealActive).toBe(false);
+    expect(ctx.antiPatternDetector.getConsecutiveReadCount()).toBe(0);
   });
 });
 

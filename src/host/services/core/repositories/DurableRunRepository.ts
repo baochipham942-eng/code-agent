@@ -193,7 +193,8 @@ export class DurableRunRepository implements DurableRunStores {
           OR COALESCE(json_extract(envelope_json, '$.interruptCause'), json_extract(envelope_json, '$.interrupt_cause')) = 'crash_or_quit'
         )
         AND (
-          json_extract(envelope_json, '$.autoResumeCount') IS NULL
+          status = 'waiting'
+          OR json_extract(envelope_json, '$.autoResumeCount') IS NULL
           OR CAST(json_extract(envelope_json, '$.autoResumeCount') AS INTEGER) < ?
         )
       ORDER BY updated_at ASC LIMIT ?`).all(now, MAX_AUTO_RESUME_COUNT, limit) as Row[];
@@ -202,10 +203,12 @@ export class DurableRunRepository implements DurableRunStores {
       .filter((envelope) => {
         // Only crash/quit enters the startup auto-resume set. Legacy rows with no
         // cause are treated as process-exit candidates once; explicit parked causes
-        // never get swept back into execution.
+        // never get swept back into execution. A crash_or_quit `waiting` row is an
+        // approval / human-confirmation wait: restoring it spends no auto-resume
+        // budget, so it is reclaimed even when the budget is exhausted (ADR-075 修订三).
         const cause = getRunInterruptCause(envelope);
         return (cause === undefined || cause === 'crash_or_quit')
-          && (envelope.autoResumeCount ?? 0) < MAX_AUTO_RESUME_COUNT;
+          && (envelope.status === 'waiting' || (envelope.autoResumeCount ?? 0) < MAX_AUTO_RESUME_COUNT);
       });
   }
 

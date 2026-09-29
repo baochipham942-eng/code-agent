@@ -405,6 +405,54 @@ describe('⑤ 重启对账幂等：合并已有任务，禁止删旧建新（Cli
     await service.shutdown();
   });
 
+  it('R2：存量任务 retry_delay=5000（旧版默认）视为未设置，失败后走退避 30s→60s', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    // every 60 minutes → '0 */60 * * * *'（整点触发，NOW=09:03，下一次 10:00，
+    // 远离本测试 ~90s 的推进窗口，不会混进计划 tick）
+    dbState.cronRows = [{
+      id: 'job-legacy-5000',
+      name: '旧默认 5s 的存量任务',
+      description: null,
+      schedule_type: 'every',
+      schedule: JSON.stringify({ type: 'every', interval: 60, unit: 'minutes' }),
+      action: JSON.stringify({ type: 'shell', command: 'echo ok' }),
+      enabled: 1,
+      max_retries: 2,
+      retry_delay: 5000, // 旧版 `|| 5000` + schema DEFAULT 5000 写下的存量值
+      timeout: 60000,
+      tags: null,
+      metadata: '{}',
+      cloud_job_id: null,
+      created_at: NOW - 60 * 60_000,
+      updated_at: NOW - 60 * 60_000,
+    }];
+
+    const service = new CronService();
+    await service.initialize();
+    // 读侧把旧默认视为未设置（显式 retryDelay 语义只剩新代码显式写下的值）
+    expect(service.getJob('job-legacy-5000')!.retryDelay).toBeUndefined();
+    const { calls } = patchExecuteAction(service, async () => {
+      throw new Error('ECONNRESET: socket hang up');
+    });
+
+    const settled = service.triggerJob('job-legacy-5000');
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(5_999);
+    expect(calls()).toBe(1); // 旧默认 5s 不再钉死重试间隔
+    await vi.advanceTimersByTimeAsync(24_001);
+    expect(calls()).toBe(2); // 30s：第 1 次退避重试
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(calls()).toBe(2); // 60s 未到不重试
+    await vi.advanceTimersByTimeAsync(1);
+    expect(calls()).toBe(3); // 60s：第 2 次退避重试（预算耗尽）
+
+    const execution = (await settled)!;
+    expect(execution.status).toBe('failed');
+    expect(execution.retryAttempt).toBe(2);
+    await service.shutdown();
+  });
+
   it('两次 initialize 后任务原样保留：同 id、同调度、同 enabled、nextRun 不漂移', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);

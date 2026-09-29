@@ -567,6 +567,12 @@ export const CRON_GUARDRAILS = {
    * 最终停用通知不受冷却约束。
    */
   FAILURE_NOTICE_COOLDOWN_MS: 60 * 60_000,
+  /**
+   * retry_delay 的旧版默认值：旧保存路径把未设置写成 `|| 5000`（schema DEFAULT 5000），
+   * 会把存量任务的失败退避永久钉死在 5s。读侧（normalizeCronJobRow）把等于此旧默认的
+   * 存量值视为未设置，走指数退避；新代码显式写下的其它值不受影响。
+   */
+  LEGACY_DEFAULT_RETRY_DELAY_MS: 5_000,
 } as const;
 
 /**

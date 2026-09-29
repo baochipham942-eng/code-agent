@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ============================================================================
 // CronJobEditor 错峰建议（N-CRON-RESILIENCE ②）：撞整点的 cron 表达式给建议，
-// every 小时/天级任务提示自动错峰。effect 填充 draft 需要 RTL render（静态渲染不跑 effect）。
+// effect 填充 draft 需要 RTL render（静态渲染不跑 effect）。
 // ============================================================================
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
@@ -50,20 +50,6 @@ function cronExpressionJob(expression: string): CronJobDefinition {
   };
 }
 
-function everyJob(unit: 'hours' | 'days' | 'minutes'): CronJobDefinition {
-  return {
-    id: 'job-every',
-    runsOn: 'local',
-    name: '间隔任务',
-    scheduleType: 'every',
-    schedule: { type: 'every', interval: 2, unit },
-    action: { type: 'shell', command: 'echo ok' },
-    enabled: true,
-    createdAt: 0,
-    updatedAt: 0,
-  };
-}
-
 describe('CronJobEditor 错峰建议', () => {
   it('分钟位为 0 的表达式（0 9 * * *）显示错峰建议', async () => {
     render(<CronJobEditor isOpen job={cronExpressionJob('0 9 * * *')} onClose={() => undefined} />);
@@ -81,25 +67,5 @@ describe('CronJobEditor 错峰建议', () => {
       expect(screen.getByDisplayValue('17 9 * * *')).toBeTruthy();
     });
     expect(screen.queryByTestId('cron-stagger-hint')).toBeNull();
-  });
-
-  it('every 小时/天级任务提示自动错峰；分钟级不提示', async () => {
-    const { unmount } = render(<CronJobEditor isOpen job={everyJob('hours')} onClose={() => undefined} />);
-    await waitFor(() => {
-      expect(screen.getByTestId('cron-auto-stagger-hint').textContent).toContain('自动错峰');
-    });
-    unmount();
-
-    render(<CronJobEditor isOpen job={everyJob('days')} onClose={() => undefined} />);
-    await waitFor(() => {
-      expect(screen.getByTestId('cron-auto-stagger-hint').textContent).toContain('自动错峰');
-    });
-    cleanup();
-
-    render(<CronJobEditor isOpen job={everyJob('minutes')} onClose={() => undefined} />);
-    await waitFor(() => {
-      expect(screen.getByText('间隔值')).toBeTruthy();
-    });
-    expect(screen.queryByTestId('cron-auto-stagger-hint')).toBeNull();
   });
 });

@@ -544,11 +544,6 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   <p className="text-xs text-zinc-500" data-testid="cron-min-interval-hint">
                     {draft.runsOn === 'cloud' ? cc.cloudIntervalHint : cc.localIntervalHint}
                   </p>
-                  {(draft.everyUnit === 'hours' || draft.everyUnit === 'days') && (
-                    <p className="text-xs text-zinc-500" data-testid="cron-auto-stagger-hint">
-                      {draft.everyUnit === 'hours' ? '小时' : '天'}级任务会按任务 ID 自动错峰到非整点分钟，避免扎堆触发。
-                    </p>
-                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <FormField label="开始时间">
                       <Input

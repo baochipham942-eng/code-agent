@@ -78,7 +78,7 @@ export function cronRetryBackoffMs(consecutiveFailureCount: number): number {
 // 失败通知去重 + 冷却
 // ----------------------------------------------------------------------------
 
-export function normalizeCronFailureMessage(message: string): string {
+function normalizeCronFailureMessage(message: string): string {
   return normalizeErrorMessage(message);
 }
 
@@ -181,4 +181,17 @@ export function countTrailingCronFailures(history: readonly CronJobExecution[]):
     count++;
   }
   return count;
+}
+
+/**
+ * 失败的 agent 运行也要能关联到半成品 cron 会话：executeAction 的 agent 分支
+ * 会把 cronSessionId 挂在抛出的 error 上，这里收进执行记录——失败告警的点击
+ * 跳转和执行台账都靠它。
+ */
+export function adoptFailedAgentSession(execution: CronJobExecution, error: unknown): void {
+  if (execution.sessionId) return;
+  const sessionId = error instanceof Error && 'cronSessionId' in error
+    ? (error as Error & { cronSessionId?: unknown }).cronSessionId
+    : undefined;
+  if (typeof sessionId === 'string' && sessionId) execution.sessionId = sessionId;
 }

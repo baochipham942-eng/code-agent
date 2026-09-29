@@ -603,7 +603,8 @@ describe('CronService missed schedule traces', () => {
       id: 'job-orphaned',
       name: '已删会话任务',
       scheduleType: 'at',
-      schedule: { type: 'at', datetime: NOW - 5 * 60_000 },
+      // 超出 5 分钟 misfire 宽限窗才判离线错过（N-CRON-RESILIENCE）；窗内会补跑
+      schedule: { type: 'at', datetime: NOW - 6 * 60_000 },
       sourceSessionId: 'deleted-session',
     })];
     const service = new CronService();
@@ -614,8 +615,8 @@ describe('CronService missed schedule traces', () => {
       id: 'cron:job-orphaned',
       status: 'pending_review',
       config: expect.objectContaining({
-        pendingReview: { at: NOW - 5 * 60_000 },
-        missedNotice: { scheduledAt: NOW - 5 * 60_000, reason: 'app-offline' },
+        pendingReview: { at: NOW - 6 * 60_000 },
+        missedNotice: { scheduledAt: NOW - 6 * 60_000, reason: 'app-offline' },
       }),
     }));
     expect(await getSessionManager().getMessages('deleted-session')).toEqual([]);

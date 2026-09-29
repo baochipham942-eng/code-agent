@@ -70,6 +70,7 @@ import {
 } from './cronPersistence';
 import { deliverCronResultToChannel } from './cronResultDelivery';
 import {
+  adoptFailedAgentSession,
   classifyCronFailure,
   countTrailingCronFailures,
   cronRetryBackoffMs,
@@ -671,6 +672,7 @@ export class CronService implements Disposable {
       }
     } catch (error) {
       execution.error = error instanceof Error ? error.message : String(error);
+      adoptFailedAgentSession(execution, error);
       const failureKind = classifyCronFailure(execution.error);
 
       if (failureKind === 'capacity-wait') {
@@ -926,7 +928,14 @@ export class CronService implements Disposable {
             );
           }
         }
-        if (runFailed) throw runError;
+        if (runFailed) {
+          // 失败也把 cron 会话带出去（挂在 error 上）：失败告警（去重+冷却后）要能
+          // 点击跳到这个半成品会话，执行台账也能关联到它。成功路径走 result.sessionId。
+          if (runError instanceof Error && !('cronSessionId' in runError)) {
+            (runError as Error & { cronSessionId?: string }).cronSessionId = cronSession.id;
+          }
+          throw runError;
+        }
 
         // 无新料的监听轮不投递（FB-239）：skipped 判定必须先于推送，
         // 否则安静轮照样把「没有更新」推到通道，跟 skipped 语义无进收件箱自相矛盾。
@@ -1088,6 +1097,7 @@ export class CronService implements Disposable {
     } catch (error) {
       execution.status = 'failed';
       execution.error = error instanceof Error ? error.message : String(error);
+      adoptFailedAgentSession(execution, error);
 
       // permanent：确定性失败，烧掉剩余重试毫无意义，停在这里等 finally 的停用档。
       if (classifyCronFailure(execution.error) === 'permanent') return;

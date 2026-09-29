@@ -25,7 +25,11 @@ const logger = createLogger('LibraryIngest');
 /** 资料库文本解码：通用解码失败时换成资料库专用文案（引导用户另存后重新导入） */
 function decodeLibraryText(buffer: Buffer): string {
   try {
-    return decodeText(buffer).text;
+    const decoded = decodeText(buffer);
+    if (decoded.invalidSequences > 0) {
+      logger.warn('Library text has undecodable UTF-8 bytes, replaced with U+FFFD', { invalidSequences: decoded.invalidSequences });
+    }
+    return decoded.text;
   } catch (err) {
     if (!(err instanceof TextDecodeError)) throw err;
     throw new Error('无法识别文件编码（仅支持 UTF-8 / GBK）。请用记事本或 Excel 另存为 UTF-8 编码后重新导入', { cause: err });

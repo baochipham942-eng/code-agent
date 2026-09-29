@@ -219,6 +219,60 @@ describe('N-READ-ENCODING', () => {
       });
     }
 
+    // ASCII 主体（源码 / 日志）里的孤立坏字节：非 ASCII 有效字符为 0，占比判据帮不上，靠「高字节稀疏 + 不是纯 GB2312 双字节」
+    const asciiCases: Array<[string, Buffer, string[]]> = [
+      ['源码里 don 0x92 t', Buffer.concat([Buffer.from('function don'), Buffer.from([0x92]), Buffer.from("t() { return 1; }\n")]), ['function don', 't() { return 1; }']],
+      ['日志里单个 0x80', Buffer.concat([Buffer.from('hello '), Buffer.from([0x80]), Buffer.from(' world\n')]), ['hello ', ' world']],
+      ['ASCII 夹 0x81 0x20（连 GB18030 都不合法）', Buffer.concat([Buffer.from('a = 1; '), Buffer.from([0x81, 0x20]), Buffer.from('b = 2;\n')]), ['a = 1; ', 'b = 2;']],
+    ];
+    for (const [label, bytes, mustContain] of asciiCases) {
+      it(`ASCII 主体 ${label}：Read 保留两侧 ASCII、不出现 GBK 提示，Edit 拒写、Append 放行`, async () => {
+        const file = path.join(tmpDir, 'ascii-lossy.txt');
+        await fs.writeFile(file, bytes);
+        const result = await read(file);
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        for (const piece of mustContain) expect(result.output).toContain(piece);
+        expect(result.output).not.toContain('GB18030');
+        expect(result.output).toMatch(/invalid byte sequence/i);
+        const editResult = await edit(file, mustContain[0], 'X');
+        expect(editResult.ok).toBe(false);
+        if (editResult.ok) return;
+        expect(editResult.error).not.toContain('GBK');
+        expect(Buffer.compare(await fs.readFile(file), bytes)).toBe(0);
+        const appendResult = await (await appendModule.createHandler()).execute(
+          { file_path: file, content: 'more\n' },
+          ctx,
+          allowAll,
+        );
+        expect(appendResult.ok).toBe(true);
+        expect(Buffer.compare((await fs.readFile(file)).subarray(0, bytes.length), bytes)).toBe(0);
+      });
+    }
+
+    it('ASCII 主体的真 GBK（英文多、只夹几个中文词）：仍判 GBK、仍拒写', async () => {
+      // 「id,name\n1,名称\n2,苹果\nplain english text to keep high bytes sparse ...」
+      const bytes = Buffer.concat([
+        Buffer.from('id,name,note\n1,', 'utf-8'),
+        Buffer.from('c3fbb3c6', 'hex'),
+        Buffer.from(',keep the ascii part long enough so that high bytes are sparse in this file\n2,', 'utf-8'),
+        Buffer.from('c6bbb9fb', 'hex'),
+        Buffer.from(',another long ascii tail to stay above the sparse threshold for sure\n', 'utf-8'),
+      ]);
+      const file = path.join(tmpDir, 'sparse-gbk.csv');
+      await fs.writeFile(file, bytes);
+      const result = await read(file);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.output).toContain('1,名称');
+      expect(result.output).toContain('GB18030');
+      const editResult = await edit(file, 'id,name', 'ID,NAME');
+      expect(editResult.ok).toBe(false);
+      if (editResult.ok) return;
+      expect(editResult.error).toContain('GBK');
+      expect(Buffer.compare(await fs.readFile(file), bytes)).toBe(0);
+    });
+
     it('真 GBK 样本仍判 GBK、仍拒写（判据没把真 GBK 放过）', async () => {
       const file = path.join(tmpDir, 'still-gbk.csv');
       await fs.writeFile(file, GBK_BYTES);

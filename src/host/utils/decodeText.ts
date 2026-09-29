@@ -6,13 +6,15 @@
 // 除「偶有坏字节的 UTF-8」外全部 fatal 解码：遇到非法字节直接抛错，绝不静默把乱码交给下游。
 //
 // 为什么要单独判「偶有坏字节的 UTF-8」：GB18030 几乎能「成功」解开任意字节序列，UTF-8 正文里混进一个坏字节
-// （单个 0x80、0x92 后接字母）就会被整段重解成 GBK 乱码。判据见 looksLikeCorruptedUtf8。
+// （单个 0x80、0x92 后接字母）就会被整段重解成 GBK 乱码。判据见 decodeCorruptedUtf8。
 
 const UTF8_BOM = [0xef, 0xbb, 0xbf];
 const REPLACEMENT_CHAR = '\uFFFD';
 
 /** 宽松 UTF-8 下，有效非 ASCII 字符数至少是坏序列数的这么多倍，才认作「UTF-8 + 少量坏字节」 */
 const UTF8_VALID_TO_INVALID_MIN_RATIO = 4;
+/** ASCII 字节数至少是高字节（≥0x80）数的这么多倍，算「高字节稀疏」（源码 / 日志 / 英文为主的文本） */
+const ASCII_TO_HIGH_BYTE_SPARSE_RATIO = 4;
 
 export interface DecodedText {
   text: string;
@@ -30,16 +32,7 @@ export class TextDecodeError extends Error {
   }
 }
 
-/**
- * 严格 UTF-8 已失败后，判断这是不是「UTF-8 正文里夹了少量坏字节」。
- * 宽松解码后数两样：U+FFFD 个数（坏序列）与有效的非 ASCII 字符个数（真多字节序列）。
- * 有效字符 ≥ 4×坏序列且至少 1 个 → 认作 UTF-8。
- * 真 GBK 的双字节绝大多数不是合法 UTF-8 序列，宽松解码几乎全是 U+FFFD；只有约一成的字对巧合成合法 2 字节序列，
- * 所以 有效/坏 ≈ 0.1（3000 条随机 GBK 语料实测上限 2）；而 UTF-8 里偶有坏字节时比值是几十到几千。4 落在两者之间。
- * 判反的代价不对称：把 GBK 判成 UTF-8 会放开 Edit 并把整文件写成 U+FFFD（数据损坏），
- * 所以阈值偏严；把 UTF-8 判成 GBK 只是 Read 乱码 + 拒写（可恢复）。
- */
-function decodeCorruptedUtf8(body: Uint8Array): { text: string; invalidSequences: number } | null {
+function decodeLenientUtf8(body: Uint8Array): { text: string; invalid: number; valid: number } {
   const text = new TextDecoder('utf-8').decode(body);
   let invalid = 0;
   let valid = 0;
@@ -47,8 +40,45 @@ function decodeCorruptedUtf8(body: Uint8Array): { text: string; invalidSequences
     if (ch === REPLACEMENT_CHAR) invalid++;
     else if (ch.charCodeAt(0) > 0x7f) valid++;
   }
-  if (valid === 0 || valid < invalid * UTF8_VALID_TO_INVALID_MIN_RATIO) return null;
-  return { text, invalidSequences: invalid };
+  return { text, invalid, valid };
+}
+
+/** 高字节（≥0x80）是否稀疏：ASCII ≥ 4×高字节 */
+function isHighByteSparse(bytes: Uint8Array): boolean {
+  let high = 0;
+  for (const byte of bytes) if (byte >= 0x80) high++;
+  return (bytes.length - high) >= high * ASCII_TO_HIGH_BYTE_SPARSE_RATIO;
+}
+
+/** 所有高字节是否都落在 GB2312 双字节区（首字节 A1-F7、次字节 A1-FE）；真 GBK 中文几乎全在这里 */
+function isPureGb2312(bytes: Uint8Array): boolean {
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] < 0x80) continue;
+    const trail = bytes[i + 1];
+    if (bytes[i] < 0xa1 || bytes[i] > 0xf7 || trail === undefined || trail < 0xa1 || trail > 0xfe) return false;
+    i++;
+  }
+  return true;
+}
+
+/**
+ * 严格 UTF-8 失败后，判断这是不是「UTF-8 正文里夹了少量坏字节」（不是 GBK）。两条腿：
+ * ① 占比：宽松解码后，有效非 ASCII 字符 ≥ 4×坏序列（U+FFFD）且至少 1 个 → UTF-8。
+ *    真 GBK 的双字节绝大多数不是合法 UTF-8 序列，宽松解码几乎全是 U+FFFD，只有约一成的字对巧合成合法 2 字节序列，
+ *    所以 有效/坏 ≈ 0.1（3000 条随机 GBK 语料实测上限 2）；UTF-8 里偶有坏字节时比值是几十以上。
+ * ② 稀疏：ASCII 主体（高字节 ≤ 20%）时非 ASCII 有效字符为 0，占比帮不上；改看高字节像不像 GBK——
+ *    真 GBK 的中文全是 GB2312 双字节对，而 `don\x92t`、`\x80`、`\x81 0x20` 这类孤立坏字节凑不成 GB2312 对 → UTF-8。
+ * 判反的代价不对称：把 GBK 判成 UTF-8 会让 Read 出 U+FFFD、Append 把 UTF-8 拼进 GBK（Edit 因 invalidSequences 仍拒写）；
+ * 把 UTF-8 判成 GBK 是 Read 乱码 + 锁写。两边都可恢复但前者更隐蔽，故 ① 阈值偏严。
+ * ponytail: ASCII 主体的 GBK 文件若含 GB2312 之外的生僻字（GBK 扩展区），会落在 ② 判成 UTF-8，
+ * 那几个字在 Read 里显示为 U+FFFD，Append 不再拒。要收紧需外部信号（扩展名 / 用户声明），不在本单范围。
+ */
+function decodeCorruptedUtf8(buffer: Uint8Array, body: Uint8Array): { text: string; invalidSequences: number } | null {
+  const { text, invalid, valid } = decodeLenientUtf8(body);
+  if (invalid === 0) return null;
+  if (valid > 0 && valid >= invalid * UTF8_VALID_TO_INVALID_MIN_RATIO) return { text, invalidSequences: invalid };
+  if (isHighByteSparse(body) && !isPureGb2312(buffer)) return { text, invalidSequences: invalid };
+  return null;
 }
 
 export function decodeText(buffer: Buffer): DecodedText {
@@ -60,7 +90,7 @@ export function decodeText(buffer: Buffer): DecodedText {
   } catch {
     // 不是干净的 UTF-8，继续判断
   }
-  const corrupted = decodeCorruptedUtf8(body);
+  const corrupted = decodeCorruptedUtf8(buffer, body);
   if (corrupted) return { ...corrupted, encoding: 'utf-8', bom };
   try {
     return { text: new TextDecoder('gb18030', { fatal: true }).decode(buffer), encoding: 'gb18030', bom: false, invalidSequences: 0 };

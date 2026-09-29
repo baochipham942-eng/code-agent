@@ -41,6 +41,29 @@ describe('decodeText', () => {
     expect(() => decodeText(bytes)).toThrow(TextDecodeError);
   });
 
+  it('ASCII 主体夹孤立坏字节（0x92 / 0x80 / 0x81 0x20）：判 utf-8，ASCII 两侧保留', () => {
+    const cases: Array<[Buffer, string]> = [
+      [Buffer.concat([Buffer.from('function don'), Buffer.from([0x92]), Buffer.from('t() {}\n')]), 'function don\uFFFDt() {}\n'],
+      [Buffer.concat([Buffer.from('hello '), Buffer.from([0x80]), Buffer.from(' world\n')]), 'hello \uFFFD world\n'],
+      [Buffer.concat([Buffer.from('a = 1; '), Buffer.from([0x81, 0x20]), Buffer.from('b = 2;\n')]), 'a = 1; \uFFFD b = 2;\n'],
+    ];
+    for (const [bytes, expected] of cases) {
+      const decoded = decodeText(bytes);
+      expect(decoded.encoding).toBe('utf-8');
+      expect(decoded.invalidSequences).toBeGreaterThan(0);
+      expect(decoded.text).toBe(expected);
+    }
+  });
+
+  it('ASCII 主体但高字节是 GB2312 双字节对：仍判 gb18030', () => {
+    const bytes = Buffer.concat([
+      Buffer.from('id,name,note\n1,'),
+      Buffer.from('c3fbb3c6', 'hex'),
+      Buffer.from(',keep the ascii part long enough so that high bytes stay sparse in this file\n'),
+    ]);
+    expect(decodeText(bytes)).toMatchObject({ encoding: 'gb18030', text: expect.stringContaining('1,名称,') });
+  });
+
   it('GBK 以 EF BB BF 三字节起头：GB18030 用原始 buffer，不剥 BOM', () => {
     const decoded = decodeText(Buffer.from('efbbbfa80a', 'hex'));
     expect(decoded).toMatchObject({ encoding: 'gb18030', bom: false });

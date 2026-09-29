@@ -387,6 +387,13 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
         };
       }
 
+      if (existed) {
+        const refusal = await existingPathWriteRefusal(resolvedPath);
+        if (refusal) {
+          return { ok: false, error: refusal, code: 'INVALID_ARGS', meta: { outputPath: resolvedPath } };
+        }
+      }
+
       let originalSkillContent: string | undefined;
       if (existed && path.basename(resolvedPath) === 'SKILL.md') {
         originalSkillContent = await fs.readFile(resolvedPath, 'utf-8');
@@ -403,13 +410,6 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
           code: officialSectionGuard.code,
           meta: { outputPath: resolvedPath },
         };
-      }
-
-      if (existed) {
-        const refusal = await existingPathWriteRefusal(resolvedPath);
-        if (refusal) {
-          return { ok: false, error: refusal, code: 'INVALID_ARGS', meta: { outputPath: resolvedPath } };
-        }
       }
 
       await atomicWriteFile(resolvedPath, content, 'utf-8');

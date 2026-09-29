@@ -219,6 +219,24 @@ describe('N-READ-ENCODING', () => {
       expect(await existingPathWriteRefusal(path.join(tmpDir, 'nope.txt'))).toBeNull();
     });
 
+    it('非 UTF-8 的 SKILL.md：Write/Append 先给出编码拒写，而不是被有损比较误报官方段落保护', async () => {
+      const file = path.join(tmpDir, 'SKILL.md');
+      const bytes = Buffer.concat([
+        Buffer.from('<!-- NEO:OFFICIAL-SKILL:BEGIN -->\n'),
+        Buffer.from('c3fbb3c62ccafdc1bf0a', 'hex'),
+        Buffer.from('<!-- NEO:OFFICIAL-SKILL:END -->\n'),
+      ]);
+      await fs.writeFile(file, bytes);
+      await readOutput(file);
+      const written = await write(file, '# rewritten without the official section\n');
+      expect(written.ok).toBe(false);
+      if (!written.ok) expect(written.error).toContain('not valid UTF-8');
+      const appended = await append(file, '\nnotes\n');
+      expect(appended.ok).toBe(false);
+      if (!appended.ok) expect(appended.error).toContain('not valid UTF-8');
+      expect(Buffer.compare(await fs.readFile(file), bytes)).toBe(0);
+    });
+
     it('新建文件照旧 UTF-8', async () => {
       const file = path.join(tmpDir, 'new.csv');
       const result = await write(file, '名称\n香蕉\n');

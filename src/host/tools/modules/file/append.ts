@@ -106,6 +106,10 @@ class AppendHandler implements ToolHandler<Record<string, unknown>, string> {
 
     try {
       await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+      const refusal = await existingPathWriteRefusal(resolvedPath);
+      if (refusal) {
+        return { ok: false, error: refusal, code: 'INVALID_ARGS', meta: { outputPath: resolvedPath } };
+      }
       let originalSkillContent: string | undefined;
       if (path.basename(resolvedPath) === 'SKILL.md') {
         try {
@@ -126,10 +130,6 @@ class AppendHandler implements ToolHandler<Record<string, unknown>, string> {
           code: officialSectionGuard.code,
           meta: { outputPath: resolvedPath },
         };
-      }
-      const refusal = await existingPathWriteRefusal(resolvedPath);
-      if (refusal) {
-        return { ok: false, error: refusal, code: 'INVALID_ARGS', meta: { outputPath: resolvedPath } };
       }
       await fs.appendFile(resolvedPath, content, 'utf-8');
       const stat = await fs.stat(resolvedPath);

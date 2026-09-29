@@ -36,7 +36,8 @@ function decodeLibraryText(buffer: Buffer): { text: string; note?: string } {
   const utf8 = decodeUtf8(buffer);
   if (utf8.invalidSequences === 0) return { text: utf8.text };
   try {
-    return { text: decodeGb18030(buffer), note: GBK_INGEST_NOTE };
+    // 与 UTF-8 分支一致先剥 BOM（PR#2106 旧语义）：BOM 后接 GBK 时，带 BOM 整段解会得到「锘」+ 吞字或直接失败
+    return { text: decodeGb18030(utf8.bom ? buffer.subarray(3) : buffer), note: GBK_INGEST_NOTE };
   } catch (err) {
     if (!(err instanceof TextDecodeError)) throw err;
     throw new Error(UNRECOGNIZED_ENCODING_MESSAGE, { cause: err });

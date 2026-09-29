@@ -44,6 +44,17 @@ describe('extractLibraryText 文本编码识别', () => {
     expect(result.note).toContain('另存为 UTF-8');
   });
 
+  it('UTF-8 BOM 后接 GBK：先剥 BOM 再按 GBK 解（与 PR#2106 一致），不出现「锘」也不吞字', async () => {
+    const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+    const sample = Buffer.from('c3fbb3c62ccafdc1bf0ac6bbb9fb2c330a', 'hex');
+    const withBom = await extractLibraryText(write('bom-gbk.csv', Buffer.concat([bom, sample])));
+    expect(withBom.text).toBe('名称,数量\n苹果,3\n');
+    expect(withBom.note).toContain('按 GBK 识别');
+    const short = await extractLibraryText(write('bom-gbk2.txt', Buffer.concat([bom, Buffer.from('GBK'), Buffer.from('cec4bcfe0a', 'hex')])));
+    expect(short.text).toBe('GBK文件\n');
+    expect(short.text).not.toContain('锘');
+  });
+
   it('合法 UTF-8 / BOM 无编码提示', async () => {
     expect((await extractLibraryText(write('a2.csv', Buffer.from('名称\n')))).note).toBeUndefined();
     expect((await extractLibraryText(write('b2.csv', Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('名称\n')])))).note).toBeUndefined();

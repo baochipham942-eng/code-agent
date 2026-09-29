@@ -25,6 +25,9 @@ const mocks = vi.hoisted(() => ({
   initializeCLIServices: vi.fn(),
   cleanup: vi.fn(),
   getDatabaseService: vi.fn(),
+  getCLIEnvironmentFingerprint: vi.fn(),
+  whenCLIMcpReady: vi.fn(async () => {}),
+  whenCLISkillsReady: vi.fn(async () => {}),
   terminalOutput: {
     info: vi.fn(),
     error: vi.fn(),
@@ -37,6 +40,7 @@ const mocks = vi.hoisted(() => ({
     start: vi.fn(),
     result: vi.fn(),
     error: vi.fn(),
+    environment: vi.fn(),
   },
   transcriptExporterConstructor: vi.fn(),
   exportTranscript: vi.fn(),
@@ -77,6 +81,9 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   initializeCLIServices: mocks.initializeCLIServices,
   cleanup: mocks.cleanup,
   getDatabaseService: mocks.getDatabaseService,
+  getCLIEnvironmentFingerprint: mocks.getCLIEnvironmentFingerprint,
+  whenCLIMcpReady: mocks.whenCLIMcpReady,
+  whenCLISkillsReady: mocks.whenCLISkillsReady,
 }));
 
 vi.mock('../../../src/cli/output', () => ({
@@ -598,5 +605,96 @@ describe('CLI command entrypoints', () => {
     expect(mocks.initializeCLIServices).not.toHaveBeenCalled();
     expect(mocks.createCLIAgent).not.toHaveBeenCalled();
     expect(process.exit).toHaveBeenCalledWith(1);
+  });
+
+  // N-HEADLESS-BARE：--bare 从根命令穿到 initializeCLIServices/createCLIAgent，
+  // 且 stream-json 下 start() 之后紧跟环境指纹首帧，终态 result 帧也带 environment。
+  it('run --bare threads bare through init/agent and emits the fingerprint frame in stream-json', async () => {
+    mockProcessIO();
+    forceTtyStdin();
+    const fingerprint = {
+      bare: true,
+      skills: 'skipped',
+      skillCount: 0,
+      hooks: 'skipped',
+      mcp: 'skipped',
+      mcpServers: [],
+    };
+    mocks.getCLIEnvironmentFingerprint.mockReturnValue(fingerprint);
+    const run = vi.fn(async () => ({ success: true, output: 'bare done' }));
+    mocks.createCLIAgent.mockResolvedValue({
+      run,
+      restoreSession: vi.fn(),
+      getSessionId: vi.fn(() => 'session-bare'),
+    });
+    mocks.getDatabaseService.mockReturnValue(null);
+    const program = new Command();
+    program.exitOverride();
+    program
+      .option('--output-format <format>')
+      .option('--bare')
+      .addCommand(runCommand);
+
+    await program.parseAsync([
+      'node',
+      'agent-neo',
+      '--output-format',
+      'stream-json',
+      '--bare',
+      'run',
+      'do eval',
+    ]);
+
+    expect(mocks.initializeCLIServices).toHaveBeenCalledWith(expect.objectContaining({ bare: true }));
+    expect(mocks.createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ bare: true }));
+    expect(mocks.jsonOutput.start).toHaveBeenCalledTimes(1);
+    expect(mocks.jsonOutput.environment).toHaveBeenCalledTimes(1);
+    expect(mocks.jsonOutput.environment).toHaveBeenCalledWith(fingerprint);
+    // 首帧次序：environment 紧跟 start 之后（帧序是本单的协议契约）
+    expect(mocks.jsonOutput.start.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.jsonOutput.environment.mock.invocationCallOrder[0]);
+    // 终态 result 帧同样携带指纹（additive 字段）
+    expect(mocks.jsonOutput.result).toHaveBeenCalledWith(
+      expect.objectContaining({ output: 'bare done', environment: fingerprint }),
+      true,
+    );
+  });
+
+  // 不带 --bare：fingerprint 仍发出（如实报告 loaded/skipped），但 bare=false。
+  it('run without --bare keeps the default fingerprint path (bare=false)', async () => {
+    mockProcessIO();
+    forceTtyStdin();
+    mocks.getCLIEnvironmentFingerprint.mockReturnValue({
+      bare: false,
+      skills: 'loaded',
+      skillCount: 3,
+      hooks: 'loaded',
+      mcp: 'skipped',
+      mcpServers: [],
+    });
+    const run = vi.fn(async () => ({ success: true, output: 'done' }));
+    mocks.createCLIAgent.mockResolvedValue({
+      run,
+      restoreSession: vi.fn(),
+      getSessionId: vi.fn(() => 'session-plain'),
+    });
+    mocks.getDatabaseService.mockReturnValue(null);
+    const program = new Command();
+    program.exitOverride();
+    program
+      .option('--output-format <format>')
+      .addCommand(runCommand);
+
+    await program.parseAsync(['node', 'agent-neo', '--output-format', 'stream-json', 'run', 'plain run']);
+
+    expect(mocks.initializeCLIServices).toHaveBeenCalledWith(expect.objectContaining({ bare: undefined }));
+    expect(mocks.jsonOutput.environment).toHaveBeenCalledWith({
+      bare: false,
+      skills: 'loaded',
+      skillCount: 3,
+      hooks: 'loaded',
+      mcp: 'skipped',
+      mcpServers: [],
+    });
   });
 });

@@ -161,7 +161,7 @@ describe('pptGenerateModule (native)', () => {
           makeCtx({ workingDir: dir }),
           dir,
         );
-        if (!result.ok) expect(result.error).toMatch(/第 1 页/);
+        if (!result.ok) expect(result.error).toMatch(/slide 1/);
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

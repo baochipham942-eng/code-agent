@@ -512,8 +512,8 @@ export async function executePptGenerate(
     const noContentError = (reason: string): ToolResult<string> => ({
       ok: false,
       error:
-        `PPT 未生成：${reason}没有拿到页面内容。` +
-        `请把每页标题与要点通过 slides（结构化）或 content（markdown）传进来后再调用 ppt_generate。`,
+        `PPT not generated: no page content was obtained (${reason}). ` +
+        `Pass per-slide titles and bullet points via \`slides\` (structured) or \`content\` (markdown), then call ppt_generate again.`,
       code: 'PPT_NO_CONTENT',
     });
     let structuredSlides: StructuredSlide[] | null = null;
@@ -532,9 +532,9 @@ export async function executePptGenerate(
         if (!content) {
           const summary = errors
             .slice(0, 5)
-            .map((e) => `第 ${e.index + 1} 页: ${e.errors.join('; ')}`)
+            .map((e) => `slide ${e.index + 1}: ${e.errors.join('; ')}`)
             .join(' | ');
-          return noContentError(`传入的 slides 全部未通过校验（${summary}）。`);
+          return noContentError(`all provided slides failed validation: ${summary}`);
         }
         legacySlides = parseContentToSlides(content, slides_count);
       }
@@ -554,12 +554,12 @@ export async function executePptGenerate(
         structuredSlides = generated;
         ctx.logger.debug(`Model generated ${generated.length} structured slides`);
       } else {
-        return noContentError('模型自动生成页面内容失败。');
+        return noContentError('model-generated slide content failed');
       }
     } else {
       // 通道 B：传统 content markdown
       if (!content) {
-        return noContentError('未提供 slides 或 content，且当前环境无法自动生成页面内容。');
+        return noContentError('neither slides nor content was provided, and this environment cannot auto-generate content');
       }
       legacySlides = parseContentToSlides(content, slides_count);
     }

@@ -74,13 +74,13 @@ import { isTaskMutationToolCall } from '../nudgeManager';
 import { handleToolExecutionError } from './toolExecutionErrorHandler';
 import { applySwarmBudgetClamp, recordSwarmSpend } from './swarmGoalIntegration';
 import {
-  activateForceFinalResponse,
   getReadOnlyPreflightWarning,
   getSearchToReadPreflightBlock,
   maybeFinishArtifactRepairIfAlreadyValid,
   recordSearchCandidatesFromResult,
   semanticProgressReasonForToolCall,
 } from './toolPreflightGuards';
+import { applyReadLoopHardLimit, isReadLikeToolCall } from './readLoopSeal';
 import { getArtifactLocatorPreflightBlock } from '../../tools/artifacts/artifactLocatorHost';
 import { createToolExecutionWatchdog } from './toolExecutionTimeout';
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
@@ -702,21 +702,16 @@ export class ToolExecutionEngine {
     }
 
     const readOnlyPreflight = getReadOnlyPreflightWarning(this.ctx, toolCall);
-    if (readOnlyPreflight.warning === 'HARD_LIMIT') {
-      activateForceFinalResponse(this.ctx, `连续只读操作达到硬阈值，已在执行前阻止 ${toolCall.name}`);
-      const hardLimitResult: ToolResult = {
-        toolCallId: toolCall.id,
-        success: false,
-        error: this.ctx.antiPatternDetector.generateHardLimitError(),
-        duration: Date.now() - startTime,
-        metadata: {
-          blocked: true,
-          skipped: true,
-          hardLimitPreflight: true,
-          forceFinalResponseReason: this.ctx.control.forceFinalResponseReason,
-        },
-      };
-      return emitBlockedToolResult(hardLimitResult);
+    if (
+      (this.ctx.control.readLoopSealActive && isReadLikeToolCall(this.ctx, toolCall))
+      || readOnlyPreflight.warning === 'HARD_LIMIT'
+    ) {
+      return emitBlockedToolResult(applyReadLoopHardLimit(
+        this.ctx,
+        toolCall,
+        startTime,
+        (content) => this.contextAssembly.injectSystemMessage(content, 'file-consistency-guard'),
+      ));
     }
 
     const searchToReadBlock = getSearchToReadPreflightBlock(this.ctx, toolCall);
@@ -978,13 +973,12 @@ export class ToolExecutionEngine {
         }
       }
       if (readWriteWarning === 'HARD_LIMIT') {
-        activateForceFinalResponse(this.ctx, `连续只读操作达到硬阈值，最后一次工具为 ${toolCall.name}`);
-        const hardLimitResult: ToolResult = {
-          toolCallId: toolCall.id,
-          success: false,
-          error: this.ctx.antiPatternDetector.generateHardLimitError(),
-          duration: Date.now() - startTime,
-        };
+        const hardLimitResult = applyReadLoopHardLimit(
+          this.ctx,
+          toolCall,
+          startTime,
+          (content) => this.contextAssembly.injectSystemMessage(content, 'file-consistency-guard'),
+        );
         langfuse.endSpan(toolSpanId, {
           success: false,
           error: hardLimitResult.error,

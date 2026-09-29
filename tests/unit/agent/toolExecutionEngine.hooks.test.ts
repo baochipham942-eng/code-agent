@@ -767,11 +767,12 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(result).toMatchObject({
       toolCallId: 'tool-hard-limit',
       success: false,
-      error: 'too many reads',
+      error: expect.stringContaining('立刻交付'),
       metadata: expect.objectContaining({
         blocked: true,
         skipped: true,
         hardLimitPreflight: true,
+        readLoopSeal: true,
       }),
     });
     expect(toolExecutor.execute).not.toHaveBeenCalled();
@@ -780,19 +781,21 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       'turn-1',
       'tool-hard-limit',
       false,
-      'too many reads',
+      expect.stringContaining('立刻交付'),
       expect.any(Number),
       undefined,
       expect.objectContaining({
         blocked: true,
         skipped: true,
         hardLimitPreflight: true,
+        readLoopSeal: true,
       }),
     );
     expect(vi.mocked(ctx.onEvent).mock.calls.some(([event]) => event.type === 'tool_call_end')).toBe(true);
     expect(serviceMocks.langfuse.endSpan).not.toHaveBeenCalled();
-    expect(ctx.control.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
-    expect(ctx.control.forceFinalResponsePrompt).toContain('force-final-response');
+    expect(ctx.control.readLoopSealActive).toBe(true);
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
   });
 
   it('blocks the fifteenth read and skips the sixteenth sequential read in the same batch', async () => {
@@ -846,10 +849,12 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       success: false,
       metadata: expect.objectContaining({
         skipped: true,
-        forceFinalResponseReason: expect.stringContaining('连续只读操作达到硬阈值'),
+        readLoopSeal: true,
+        hardLimitPreflight: true,
       }),
     });
-    expect(ctx.control.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
+    expect(ctx.control.readLoopSealActive).toBe(true);
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
 
     const toolEvents = vi.mocked(ctx.onEvent).mock.calls
       .map(([event]) => event)
@@ -904,22 +909,11 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
 
     expect(results).toHaveLength(3);
-    // 硬阈值拦下的第 15 次读仍按守卫事件落遥测（这是有意义的护栏信号）
-    expect(ctx.telemetryAdapter?.onToolCallEnd).toHaveBeenCalledWith(
-      'turn-1',
-      'tool-read-15',
-      false,
-      expect.any(String),
-      expect.any(Number),
-      undefined,
-      expect.objectContaining({ hardLimitPreflight: true }),
-    );
-    // 强制收尾置位后被吞掉的 16/17 次：UI 事件照发，遥测一个不写
+    // 硬阈值后只封读：15/16/17 都是真实护栏拦截（不再走 forceFinal 整批吞掉）
     const telemetryEndedIds = vi.mocked(ctx.telemetryAdapter!.onToolCallEnd).mock.calls.map((call) => call[1]);
-    expect(telemetryEndedIds).toEqual(['tool-read-15']);
+    expect(telemetryEndedIds).toEqual(['tool-read-15', 'tool-read-16', 'tool-read-17']);
     const telemetryStartedIds = vi.mocked(ctx.telemetryAdapter!.onToolCallStart).mock.calls.map((call) => call[1]);
-    expect(telemetryStartedIds).toEqual(['tool-read-15']);
-    // UI 侧三张卡片都正常收口
+    expect(telemetryStartedIds).toEqual(['tool-read-15', 'tool-read-16', 'tool-read-17']);
     const uiEvents = vi.mocked(ctx.onEvent).mock.calls
       .map(([event]) => event)
       .filter((event) => event.type === 'tool_call_start' || event.type === 'tool_call_end');
@@ -931,13 +925,15 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(results[1]).toMatchObject({
       toolCallId: 'tool-read-16',
       success: false,
-      metadata: expect.objectContaining({ skipped: true, forceFinalSuppressed: true }),
+      metadata: expect.objectContaining({ skipped: true, readLoopSeal: true }),
     });
     expect(results[2]).toMatchObject({
       toolCallId: 'tool-read-17',
       success: false,
-      metadata: expect.objectContaining({ skipped: true, forceFinalSuppressed: true }),
+      metadata: expect.objectContaining({ skipped: true, readLoopSeal: true }),
     });
+    expect(ctx.control.readLoopSealActive).toBe(true);
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 
   it('preflights batched read-only Bash calls before the hard-limit command executes', async () => {
@@ -1004,9 +1000,12 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       success: false,
       metadata: expect.objectContaining({
         skipped: true,
-        forceFinalResponseReason: expect.stringContaining('执行前阻止 Bash'),
+        readLoopSeal: true,
+        hardLimitPreflight: true,
       }),
     });
+    expect(ctx.control.readLoopSealActive).toBe(true);
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 
   it('preflights a runaway WebSearch loop and forces the agent to answer at the hard limit', async () => {
@@ -1062,18 +1061,20 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         skipped: true,
       }),
     });
-    // 第 16 次被强制收尾跳过，理由指向只读硬阈值
+    // 第 16 次仍被只封读拦住，但尚未退到全量 forceFinal
     expect(results[15]).toMatchObject({
       toolCallId: 'websearch-16',
       success: false,
       metadata: expect.objectContaining({
         skipped: true,
-        forceFinalResponseReason: expect.stringContaining('执行前阻止 WebSearch'),
+        readLoopSeal: true,
+        hardLimitPreflight: true,
       }),
     });
-    // 强制收尾标记已激活，HARD_LIMIT 错误把"基于已有证据作答"回灌给模型 → 不再空白会话
-    expect(ctx.control.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
+    expect(ctx.control.readLoopSealActive).toBe(true);
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     expect(results[14].error).toContain('基于已经获取到的文件或搜索证据');
+    expect(results[14].error).toContain('立刻交付');
   });
 
   it('marks successful read_file output as preserved file evidence', async () => {

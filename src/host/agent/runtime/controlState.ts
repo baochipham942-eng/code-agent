@@ -17,6 +17,10 @@ export class ControlState {
   private _savedMessages: Message[] | null = null;
   private _forceFinalResponseReason?: string;
   private _forceFinalResponsePrompt?: string;
+  /** 只读硬阈值后的「只封读」状态：读类工具继续拦，写类工具仍可执行。 */
+  private _readLoopSealActive = false;
+  /** 封口激活后额外被拦的读类调用次数（触发那一次不计入）。 */
+  private _readLoopSealBlockedReads = 0;
   private readonly _preApprovedTools = new Set<string>();
   private _externalDataCallCount = 0;
   private _memoryTainted = false;
@@ -33,6 +37,8 @@ export class ControlState {
   get savedMessages(): Message[] | null { return this._savedMessages; }
   get forceFinalResponseReason(): string | undefined { return this._forceFinalResponseReason; }
   get forceFinalResponsePrompt(): string | undefined { return this._forceFinalResponsePrompt; }
+  get readLoopSealActive(): boolean { return this._readLoopSealActive; }
+  get readLoopSealBlockedReads(): number { return this._readLoopSealBlockedReads; }
   get preApprovedTools(): Set<string> { return this._preApprovedTools; }
   get externalDataCallCount(): number { return this._externalDataCallCount; }
 
@@ -90,6 +96,20 @@ export class ControlState {
     this._forceFinalResponsePrompt = undefined;
   }
 
+  activateReadLoopSeal(): void {
+    this._readLoopSealActive = true;
+  }
+
+  /** @returns 封口激活后累计被拦的读类调用次数 */
+  recordBlockedReadDuringReadLoopSeal(): number {
+    return ++this._readLoopSealBlockedReads;
+  }
+
+  clearReadLoopSeal(): void {
+    this._readLoopSealActive = false;
+    this._readLoopSealBlockedReads = 0;
+  }
+
   preApproveTool(toolName: string): void {
     this._preApprovedTools.add(toolName);
   }
@@ -113,6 +133,8 @@ export class ControlState {
     savedMessages?: Message[] | null;
     forceFinalResponseReason?: string;
     forceFinalResponsePrompt?: string;
+    readLoopSealActive?: boolean;
+    readLoopSealBlockedReads?: number;
     preApprovedTools?: Iterable<string>;
     externalDataCallCount?: number;
   }): ControlState {
@@ -126,6 +148,8 @@ export class ControlState {
     if (seed.savedMessages !== undefined) state._savedMessages = seed.savedMessages;
     if (seed.forceFinalResponseReason !== undefined) state._forceFinalResponseReason = seed.forceFinalResponseReason;
     if (seed.forceFinalResponsePrompt !== undefined) state._forceFinalResponsePrompt = seed.forceFinalResponsePrompt;
+    if (seed.readLoopSealActive !== undefined) state._readLoopSealActive = seed.readLoopSealActive;
+    if (seed.readLoopSealBlockedReads !== undefined) state._readLoopSealBlockedReads = seed.readLoopSealBlockedReads;
     if (seed.preApprovedTools !== undefined) for (const t of seed.preApprovedTools) state._preApprovedTools.add(t);
     if (seed.externalDataCallCount !== undefined) state._externalDataCallCount = seed.externalDataCallCount;
     return state;

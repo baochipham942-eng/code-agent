@@ -208,7 +208,14 @@ describe('CLI JSONOutput', () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(5000);
 
     output.start();
-    output.environment({ bare: true, skills: 'skipped', hooks: 'skipped', mcp: 'skipped' });
+    output.environment({
+      bare: true,
+      skills: 'skipped',
+      skillCount: 0,
+      hooks: 'skipped',
+      mcp: 'skipped',
+      mcpServers: [],
+    });
     output.handleEvent({ type: 'agent_complete', data: null } as AgentEvent);
 
     const frames = loggedObjects(log);
@@ -216,7 +223,14 @@ describe('CLI JSONOutput', () => {
     expect(frames[0]).toEqual({
       type: 'environment',
       timestamp: 5000,
-      data: { bare: true, skills: 'skipped', hooks: 'skipped', mcp: 'skipped' },
+      data: {
+        bare: true,
+        skills: 'skipped',
+        skillCount: 0,
+        hooks: 'skipped',
+        mcp: 'skipped',
+        mcpServers: [],
+      },
     });
     // 紧随其后的帧仍是既有类型（complete），旧 schema 消费方不受首帧新增影响
     expect(frames[1]).toEqual({

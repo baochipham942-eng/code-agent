@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   cleanup: vi.fn(),
   getDatabaseService: vi.fn(),
   getCLIEnvironmentFingerprint: vi.fn(),
+  whenCLIMcpReady: vi.fn(async () => {}),
+  whenCLISkillsReady: vi.fn(async () => {}),
   terminalOutput: {
     info: vi.fn(),
     error: vi.fn(),
@@ -80,6 +82,8 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   cleanup: mocks.cleanup,
   getDatabaseService: mocks.getDatabaseService,
   getCLIEnvironmentFingerprint: mocks.getCLIEnvironmentFingerprint,
+  whenCLIMcpReady: mocks.whenCLIMcpReady,
+  whenCLISkillsReady: mocks.whenCLISkillsReady,
 }));
 
 vi.mock('../../../src/cli/output', () => ({
@@ -608,7 +612,14 @@ describe('CLI command entrypoints', () => {
   it('run --bare threads bare through init/agent and emits the fingerprint frame in stream-json', async () => {
     mockProcessIO();
     forceTtyStdin();
-    const fingerprint = { bare: true, skills: 'skipped', hooks: 'skipped', mcp: 'skipped' };
+    const fingerprint = {
+      bare: true,
+      skills: 'skipped',
+      skillCount: 0,
+      hooks: 'skipped',
+      mcp: 'skipped',
+      mcpServers: [],
+    };
     mocks.getCLIEnvironmentFingerprint.mockReturnValue(fingerprint);
     const run = vi.fn(async () => ({ success: true, output: 'bare done' }));
     mocks.createCLIAgent.mockResolvedValue({
@@ -653,7 +664,14 @@ describe('CLI command entrypoints', () => {
   it('run without --bare keeps the default fingerprint path (bare=false)', async () => {
     mockProcessIO();
     forceTtyStdin();
-    mocks.getCLIEnvironmentFingerprint.mockReturnValue({ bare: false, skills: 'loaded', hooks: 'loaded', mcp: 'skipped' });
+    mocks.getCLIEnvironmentFingerprint.mockReturnValue({
+      bare: false,
+      skills: 'loaded',
+      skillCount: 3,
+      hooks: 'loaded',
+      mcp: 'skipped',
+      mcpServers: [],
+    });
     const run = vi.fn(async () => ({ success: true, output: 'done' }));
     mocks.createCLIAgent.mockResolvedValue({
       run,
@@ -670,6 +688,13 @@ describe('CLI command entrypoints', () => {
     await program.parseAsync(['node', 'agent-neo', '--output-format', 'stream-json', 'run', 'plain run']);
 
     expect(mocks.initializeCLIServices).toHaveBeenCalledWith(expect.objectContaining({ bare: undefined }));
-    expect(mocks.jsonOutput.environment).toHaveBeenCalledWith({ bare: false, skills: 'loaded', hooks: 'loaded', mcp: 'skipped' });
+    expect(mocks.jsonOutput.environment).toHaveBeenCalledWith({
+      bare: false,
+      skills: 'loaded',
+      skillCount: 3,
+      hooks: 'loaded',
+      mcp: 'skipped',
+      mcpServers: [],
+    });
   });
 });

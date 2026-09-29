@@ -12,10 +12,6 @@ import type {
 import type { HookTemplate } from './templates/hookTemplates';
 import { BUILT_IN_TEMPLATES, getTemplateById } from './templates/hookTemplates';
 import {
-  sessionEndMemoryHook,
-  type MemoryServiceInterface,
-} from './builtins/memoryHooks';
-import {
   preCompactContextHook,
   type CompactionStrategy,
 } from './builtins/contextHooks';
@@ -80,8 +76,6 @@ export interface BuiltinHookResult extends HookExecutionResult {
   injectedContext?: string;
   /** 保留的上下文数据 */
   preservedData?: unknown;
-  /** 学习成果数量 */
-  learnedCount?: number;
 }
 
 // ----------------------------------------------------------------------------
@@ -91,7 +85,7 @@ export interface BuiltinHookResult extends HookExecutionResult {
 /**
  * 内置钩子执行器
  *
- * 负责执行内置的钩子模板，如记忆注入、记忆持久化、上下文保留等。
+ * 负责执行内置的钩子模板，如 AGENTS.md 注入、上下文保留等。
  */
 export class BuiltinHookExecutor {
   private enabledHooks: Map<string, BuiltinHookConfig> = new Map();
@@ -193,7 +187,12 @@ export class BuiltinHookExecutor {
         return this.executeSessionStartAgentsInject(config, context, startTime);
 
       case 'session-end-memory-persist':
-        return this.executeSessionEndMemoryPersist(config, context, startTime);
+        // Memory service removed — 学习提取/持久化路径已整体删除（原适配器恒返 null，路径不可达）
+        return {
+          action: 'continue',
+          message: 'Memory persist hook disabled (memory service removed)',
+          duration: Date.now() - startTime,
+        };
 
       case 'pre-compact-context-preserve':
         return this.executePreCompactContextPreserve(config, context, startTime);
@@ -271,50 +270,6 @@ export class BuiltinHookExecutor {
       injectedContext: hookResult.message,
       duration: Date.now() - startTime,
     };
-  }
-
-  /**
-   * 执行会话结束记忆持久化
-   */
-  private async executeSessionEndMemoryPersist(
-    config: BuiltinHookConfig,
-    context: BuiltinHookContext,
-    startTime: number
-  ): Promise<BuiltinHookResult> {
-    if (!context.messages) {
-      return {
-        action: 'allow',
-        message: 'No messages to extract learnings from',
-        duration: Date.now() - startTime,
-      };
-    }
-
-    // 获取 Memory 服务适配器（如果可用）
-    const memoryService = await this.getMemoryServiceAdapter();
-
-    const sessionContext: SessionContext = {
-      event: 'SessionEnd',
-      sessionId: context.sessionId,
-      workingDirectory: context.workingDirectory,
-      timestamp: Date.now(),
-    };
-
-    const hookResult = await sessionEndMemoryHook(sessionContext, memoryService, context.messages);
-
-    return {
-      action: hookResult.action === 'continue' ? 'continue' : 'allow',
-      message: hookResult.message,
-      learnedCount: 0, // 从 hookResult.message 中无法直接获取数量
-      duration: Date.now() - startTime,
-    };
-  }
-
-  /**
-   * 获取 Memory 服务适配器
-   */
-  private async getMemoryServiceAdapter(): Promise<MemoryServiceInterface | null> {
-    // Memory service removed — return null (no-op adapter)
-    return null;
   }
 
   /**

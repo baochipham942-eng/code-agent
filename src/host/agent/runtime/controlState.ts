@@ -96,6 +96,12 @@ export class ControlState {
     this._forceFinalResponsePrompt = undefined;
   }
 
+  /** per-run 瞬态：forced-final 与只封读都不得泄漏到下一次用户输入。 */
+  clearPerRunTransientFlags(): void {
+    this.clearForceFinalResponse();
+    this.clearReadLoopSeal();
+  }
+
   activateReadLoopSeal(): void {
     this._readLoopSealActive = true;
   }

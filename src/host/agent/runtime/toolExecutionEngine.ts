@@ -80,7 +80,7 @@ import {
   recordSearchCandidatesFromResult,
   semanticProgressReasonForToolCall,
 } from './toolPreflightGuards';
-import { applyReadLoopHardLimit, isReadLikeToolCall } from './readLoopSeal';
+import { applyReadLoopHardLimit, isReadLikeToolCall, releaseReadLoopSealAfterSuccessfulWrite } from './readLoopSeal';
 import { getArtifactLocatorPreflightBlock } from '../../tools/artifacts/artifactLocatorHost';
 import { createToolExecutionWatchdog } from './toolExecutionTimeout';
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
@@ -175,6 +175,11 @@ export class ToolExecutionEngine {
       Boolean(this.ctx.control.forceFinalResponseReason) &&
       this.ctx.control.forceFinalResponseReason !== this.forceFinalResponseReasonAtBatchStart
     );
+  }
+
+  /** 只封读提示与既有 file-consistency-guard 注入共用这一处 AST 调用点。 */
+  private injectFileConsistencyGuard(content: string): void {
+    this.contextAssembly.injectSystemMessage(content, 'file-consistency-guard');
   }
 
   async runSessionStartHook(): Promise<void> {
@@ -710,7 +715,7 @@ export class ToolExecutionEngine {
         this.ctx,
         toolCall,
         startTime,
-        (content) => this.contextAssembly.injectSystemMessage(content, 'file-consistency-guard'),
+        (content) => this.injectFileConsistencyGuard(content),
       ));
     }
 
@@ -977,7 +982,7 @@ export class ToolExecutionEngine {
           this.ctx,
           toolCall,
           startTime,
-          (content) => this.contextAssembly.injectSystemMessage(content, 'file-consistency-guard'),
+          (content) => this.injectFileConsistencyGuard(content),
         );
         langfuse.endSpan(toolSpanId, {
           success: false,
@@ -988,8 +993,10 @@ export class ToolExecutionEngine {
         this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, hardLimitResult) });
         return hardLimitResult;
       } else if (readWriteWarning) {
-        this.contextAssembly.injectSystemMessage(readWriteWarning, 'file-consistency-guard');
+        this.injectFileConsistencyGuard(readWriteWarning);
       }
+
+      releaseReadLoopSealAfterSuccessfulWrite(this.ctx, toolCall, normalizedResult.success);
 
       let preservedToolResult = markFileEvidenceResult(toolCall, toolResult);
       preservedToolResult = await attachDocumentOrigin(toolCall, preservedToolResult, this.ctx.messages, this.ctx.workingDirectory);

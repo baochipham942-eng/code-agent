@@ -4,6 +4,7 @@ import { ControlState } from '../../../../src/host/agent/runtime/controlState';
 import {
   applyReadLoopHardLimit,
   isReadLikeToolCall,
+  releaseReadLoopSealAfterSuccessfulWrite,
 } from '../../../../src/host/agent/runtime/readLoopSeal';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
 
@@ -92,6 +93,41 @@ describe('applyReadLoopHardLimit', () => {
     expect(ctx.control.forceFinalResponsePrompt).toContain('Do not call any tool');
     expect(escalated.metadata?.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
     expect(injectPrompt).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('releaseReadLoopSealAfterSuccessfulWrite', () => {
+  it('clears the seal after a successful write-class tool', () => {
+    const ctx = makeCtx();
+    ctx.control.activateReadLoopSeal();
+    ctx.control.recordBlockedReadDuringReadLoopSeal();
+
+    releaseReadLoopSealAfterSuccessfulWrite(
+      ctx,
+      { name: 'Write', arguments: { file_path: '/tmp/out.docx', content: 'x' } },
+      true,
+    );
+
+    expect(ctx.control.readLoopSealActive).toBe(false);
+    expect(ctx.control.readLoopSealBlockedReads).toBe(0);
+  });
+
+  it('keeps the seal on failed writes and on successful reads', () => {
+    const ctx = makeCtx();
+    ctx.control.activateReadLoopSeal();
+    releaseReadLoopSealAfterSuccessfulWrite(
+      ctx,
+      { name: 'Write', arguments: { file_path: '/tmp/out.docx', content: 'x' } },
+      false,
+    );
+    expect(ctx.control.readLoopSealActive).toBe(true);
+
+    releaseReadLoopSealAfterSuccessfulWrite(
+      ctx,
+      { name: 'Read', arguments: { file_path: '/tmp/out.docx' } },
+      true,
+    );
+    expect(ctx.control.readLoopSealActive).toBe(true);
   });
 });
 

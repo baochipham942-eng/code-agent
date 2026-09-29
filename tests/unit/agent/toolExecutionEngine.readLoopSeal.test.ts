@@ -144,9 +144,13 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
   };
 }
 
-function makeEngine(execute: (name: string, args: Record<string, unknown>) => Promise<ToolResult>) {
+function makeEngine(
+  execute: (name: string, args: Record<string, unknown>) => Promise<ToolResult>,
+  options: { priorReads?: number } = {},
+) {
   const detector = new AntiPatternDetector();
-  for (let index = 0; index < 14; index += 1) {
+  const priorReads = options.priorReads ?? 14;
+  for (let index = 0; index < priorReads; index += 1) {
     detector.trackToolExecution('Read', true);
   }
   const ctx = makeRuntimeContext({
@@ -177,7 +181,7 @@ describe('ToolExecutionEngine read-loop seal (FB-253)', () => {
     fileReadTracker.clear();
   });
 
-  it('after 15 reads, Write still executes and the 16th Read is blocked', async () => {
+  it('after 15 reads, Write still executes and a follow-up Read without a write stays blocked', async () => {
     const execute = vi.fn(async (name: string, args: Record<string, unknown>): Promise<ToolResult> => ({
       toolCallId: '',
       success: true,
@@ -201,16 +205,6 @@ describe('ToolExecutionEngine read-loop seal (FB-253)', () => {
     );
     expect(String(injectSystemMessage.mock.calls[0]?.[0])).not.toContain('Do not call any tool');
 
-    const [write] = await engine.executeToolsWithHooks([
-      { id: 'write-docx', name: 'Write', arguments: { file_path: '/tmp/deliverable.docx', content: 'memo' } } as ToolCall,
-    ]);
-    expect(write.success).toBe(true);
-    expect(execute).toHaveBeenCalledWith(
-      'Write',
-      expect.objectContaining({ file_path: '/tmp/deliverable.docx' }),
-      expect.anything(),
-    );
-
     const [read16] = await engine.executeToolsWithHooks([
       { id: 'read-16', name: 'Read', arguments: { file_path: '/tmp/evidence.txt' } } as ToolCall,
     ]);
@@ -220,6 +214,71 @@ describe('ToolExecutionEngine read-loop seal (FB-253)', () => {
     });
     expect(execute.mock.calls.some((call) => call[0] === 'Read' && call[1]?.file_path === '/tmp/evidence.txt')).toBe(false);
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
+  });
+
+  it('after a successful Write while sealed, the next Read is allowed', async () => {
+    const execute = vi.fn(async (name: string, args: Record<string, unknown>): Promise<ToolResult> => ({
+      toolCallId: '',
+      success: true,
+      output: `${name} ok ${String(args.file_path ?? args.command ?? '')}`,
+    }));
+    const { ctx, engine } = makeEngine(execute);
+
+    await engine.executeToolsWithHooks([
+      { id: 'read-15', name: 'Read', arguments: { file_path: '/tmp/evidence.txt' } } as ToolCall,
+    ]);
+    expect(ctx.control.readLoopSealActive).toBe(true);
+
+    const [write] = await engine.executeToolsWithHooks([
+      { id: 'write-docx', name: 'Write', arguments: { file_path: '/tmp/deliverable.docx', content: 'memo' } } as ToolCall,
+    ]);
+    expect(write.success).toBe(true);
+    expect(ctx.control.readLoopSealActive).toBe(false);
+    expect(execute).toHaveBeenCalledWith(
+      'Write',
+      expect.objectContaining({ file_path: '/tmp/deliverable.docx' }),
+      expect.anything(),
+    );
+
+    const [readAfterWrite] = await engine.executeToolsWithHooks([
+      { id: 'read-self-check', name: 'Read', arguments: { file_path: '/tmp/deliverable.docx' } } as ToolCall,
+    ]);
+    expect(readAfterWrite.success).toBe(true);
+    expect(execute).toHaveBeenCalledWith(
+      'Read',
+      expect.objectContaining({ file_path: '/tmp/deliverable.docx' }),
+      expect.anything(),
+    );
+  });
+
+  it('after the seal is cleared at run end, the next Read is not blocked', async () => {
+    const execute = vi.fn(async (name: string): Promise<ToolResult> => ({
+      toolCallId: '',
+      success: true,
+      output: `${name} ok`,
+    }));
+    const { ctx, engine } = makeEngine(execute, { priorReads: 0 });
+    ctx.control.activateReadLoopSeal();
+    ctx.control.recordBlockedReadDuringReadLoopSeal();
+
+    const [blocked] = await engine.executeToolsWithHooks([
+      { id: 'read-sealed', name: 'Read', arguments: { file_path: '/tmp/a.ts' } } as ToolCall,
+    ]);
+    expect(blocked.success).toBe(false);
+    expect(blocked.metadata).toEqual(expect.objectContaining({ readLoopSeal: true }));
+    expect(execute).not.toHaveBeenCalled();
+
+    ctx.control.clearReadLoopSeal();
+
+    const [allowed] = await engine.executeToolsWithHooks([
+      { id: 'read-after-run', name: 'Read', arguments: { file_path: '/tmp/a.ts' } } as ToolCall,
+    ]);
+    expect(allowed.success).toBe(true);
+    expect(execute).toHaveBeenCalledWith(
+      'Read',
+      expect.objectContaining({ file_path: '/tmp/a.ts' }),
+      expect.anything(),
+    );
   });
 
   it('same-batch Read at the hard limit still lets Write/Edit run', async () => {

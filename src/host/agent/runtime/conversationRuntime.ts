@@ -756,10 +756,11 @@ export class ConversationRuntime {
       wallClock.release();
       if (baseRunTraceContext) enterRunTraceContext(baseRunTraceContext);
       this.ctx.control.markSettled();
-      // forced-final 是 per-run 语义：正常路径由 handleTextResponse 在产出最终
-      // 文本后清理，但空输出/异常/cancel 等退出路径会绕过它——若不在此兜底清理，
-      // flag 泄漏到下一次用户输入会让 inference 持续禁用全部工具（codex audit R2）。
-      this.ctx.control.clearForceFinalResponse();
+      // forced-final / read-loop seal 都是 per-run 语义：正常路径由
+      // handleTextResponse 在产出最终文本后清理 forceFinal，但空输出/异常/cancel
+      // 等退出路径会绕过它——若不在此兜底清理，forceFinal 泄漏会让 inference
+      // 持续禁用全部工具（codex audit R2），readLoopSeal 则会把下一轮 Read 继续拦掉。
+      this.ctx.control.clearPerRunTransientFlags();
       // G20: 先同步 flush turn trace —— 必须排在 await finalizeRun 之前。
       // finalizeRun 会发出 agent_complete 事件，CLI/host 收到后可能立即 process.exit，
       // 进程在那个 await 让出点被杀，排在其后的同步代码就永远执行不到。

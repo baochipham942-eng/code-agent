@@ -1526,6 +1526,15 @@ describe('ConversationRuntime', () => {
       );
     });
 
+    it('clears read-loop seal in finally so the next run is not blocked from Read', async () => {
+      ctx.control.activateReadLoopSeal();
+      ctx.control.recordBlockedReadDuringReadLoopSeal();
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'done' });
+      await runtime.run('follow-up');
+      expect(ctx.control.readLoopSealActive).toBe(false);
+      expect(ctx.control.readLoopSealBlockedReads).toBe(0);
+    });
+
     it('uses a separate bounded pool for correctable schema failures so accepted dispatch can finish normally', async () => {
       ctx.maxIterations = 3;
       const mp = (runtime as unknown as {

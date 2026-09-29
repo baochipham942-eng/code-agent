@@ -57,6 +57,20 @@ function buildReadLoopSealPrompt(): string {
   ].join('\n');
 }
 
+/**
+ * 写类工具成功落盘后解除只封读：死循环已被一次真实交付打破，后续回读自检
+ * 按 detector 现有逻辑重新计。读类成功不解除。
+ */
+export function releaseReadLoopSealAfterSuccessfulWrite(
+  ctx: Pick<RuntimeContext, 'control' | 'antiPatternDetector'>,
+  toolCall: Pick<ToolCall, 'name' | 'arguments'>,
+  success: boolean,
+): void {
+  if (!success || !ctx.control.readLoopSealActive) return;
+  if (isReadLikeToolCall(ctx, toolCall)) return;
+  ctx.control.clearReadLoopSeal();
+}
+
 export function applyReadLoopHardLimit(
   ctx: RuntimeContext,
   toolCall: Pick<ToolCall, 'id' | 'name'>,

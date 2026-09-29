@@ -9,6 +9,8 @@
 //   判出来的每一条都是猜的。所以本评分器的输入是夜跑归档的产物目录，不是轨迹。
 // 判据来源：题自带的 rubric_json（中位 47 条、最多 137 条，每条带分值），逐条问、不猜。
 // 漏判的条目按不通过计入分母，但单独计数 unjudged——模型漏答与真判负必须分得开。
+// 调用失败（重试耗尽：401/402/超时）的条目是第三种：整批没拿到判决，剔出分母、绝不按不通过计分，
+// 否则评分故障与「产物确实不合格」无法区分（09-28 401 路由错配 896 条、09-29 402 额度耗尽 5976 条假失败）。
 // ============================================================================
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -43,8 +45,11 @@ export interface GdpvalItemVerdict {
   rubricItemId: string;
   criterion: string;
   score: number;
-  /** 'unknown' = 模型明确弃权（资料截断处无从证实）；null = 模型压根没给这条的判决 */
-  pass: boolean | 'unknown' | null;
+  /**
+   * 'unknown' = 模型明确弃权（资料截断处无从证实）；null = 模型正常返回但没给这条的判决（漏答）；
+   * 'call_failed' = 调用重试耗尽、整批没拿到判决（why 里是错误原文）
+   */
+  pass: boolean | 'unknown' | 'call_failed' | null;
   why: string;
 }
 
@@ -64,7 +69,71 @@ export interface GdpvalTaskScore {
   abstained: number;
   /** 模型压根没答的条目数，按不通过计入分母 */
   unjudged: number;
+  /** 调用失败（重试耗尽）而没判的条目数，已剔出分母；老 jsonl 没有这个字段 */
+  callFailed?: number;
+  /** 调用失败条目占比超过阈值：这题的分数不可信，汇总统计剔除；老 jsonl 没有这个字段 */
+  scoreFailed?: boolean;
+  /** scoreFailed 时第一条错误原文（截 300 字） */
+  scoreError?: string;
   files: string[];
+}
+
+/**
+ * 调用失败条目占比超过此值 ⇒ 整题 scoreFailed。取 0.3：
+ * 一题中位 47 条、每批 40 条，丢一批就占 85%，几乎总会触发；
+ * 137 条的大题丢一批（40/137≈29%）仍留下七成以上的判决，得分率有参考价值，故不触发。
+ * 再低会让偶发的一批 429 抹掉整题，再高则丢掉三分之一以上判据的分数还被当真。
+ */
+const SCORE_FAILED_SHARE = 0.3;
+const SCORE_ERROR_MAX_CHARS = 300;
+
+function truncateError(message: string): string {
+  return message.length > SCORE_ERROR_MAX_CHARS ? message.slice(0, SCORE_ERROR_MAX_CHARS) : message;
+}
+
+interface RubricCallResult {
+  success: boolean;
+  content?: string;
+  error?: string;
+}
+
+/**
+ * 一批判据发给评分模型，失败按退避重试；重试耗尽仍无内容 ⇒ 整批记 call_failed（why=错误原文）。
+ * 模型正常返回但漏答的条目仍是 null，二者不混。
+ */
+export async function judgeRubricBatch(
+  batch: GdpvalRubricItem[],
+  call: () => Promise<RubricCallResult>,
+  backoffMs: number[],
+  hooks: { sleep: (ms: number) => Promise<void>; warn: (message: string, error?: unknown) => void },
+): Promise<GdpvalItemVerdict[]> {
+  let content = '';
+  let firstError = '';
+  for (let attempt = 0; attempt < backoffMs.length + 1 && !content; attempt += 1) {
+    if (attempt > 0) await hooks.sleep(backoffMs[attempt - 1]);
+    const more = attempt < backoffMs.length ? `，${backoffMs[attempt] / 1000} 秒后重试` : '，不再重试';
+    try {
+      const response = await call();
+      content = response.success && response.content ? response.content : '';
+      if (!content) {
+        const message = response.error ?? '无错误信息';
+        firstError ||= message;
+        hooks.warn(`模型没返回内容（${message}）${more}`);
+      }
+    } catch (error) {
+      firstError ||= error instanceof Error ? error.message : String(error);
+      hooks.warn(`调用失败${more}`, error);
+    }
+  }
+  if (content) return parseRubricVerdicts(content, batch);
+  const why = truncateError(firstError);
+  return batch.map((item) => ({
+    rubricItemId: item.rubric_item_id,
+    criterion: item.criterion,
+    score: item.score,
+    pass: 'call_failed' as const,
+    why,
+  }));
 }
 
 /**
@@ -272,7 +341,8 @@ export function parseRubricVerdicts(content: string, items: GdpvalRubricItem[]):
  * - 'unknown'：资料被截断、这条在整份资料上无从证实 ⇒ **剔出分母**。
  *   不剔就是系统性低估：GDPval 的表动辄上千行，rubric 里一堆「表里至少有一行满足 X」，
  *   截断后模型只能判 false，分数会被压到与产物质量无关的水平（自验实测 17%→49% 还在压）。
- * - null：模型压根没答 ⇒ 按不通过计入分母，并单独计数（漏答与真判负是两回事）
+ * - null：模型正常返回却压根没答这条 ⇒ 按不通过计入分母，并单独计数（漏答与真判负是两回事）
+ * - 'call_failed'：调用重试耗尽没拿到判决 ⇒ **剔出分母**、不计不通过；占比超阈值整题 scoreFailed
  */
 export function summarizeTask(
   id: string,
@@ -283,8 +353,13 @@ export function summarizeTask(
   // 分母只算正分条目：GDPval 里 score 为负的是惩罚项（「产物里出现了不该有的东西」），
   // 它们不是可得分项，算进满分会把分母压小、把及格线抬高。判 true 时照样扣分。
   const totalRaw = items.reduce((sum, item) => sum + Math.max(item.score, 0), 0);
-  const abstainedScore = items.reduce((sum, item) => sum + (item.pass === 'unknown' ? Math.max(item.score, 0) : 0), 0);
-  const total = totalRaw - abstainedScore;
+  const excludedScore = items.reduce(
+    (sum, item) => sum + (item.pass === 'unknown' || item.pass === 'call_failed' ? Math.max(item.score, 0) : 0),
+    0,
+  );
+  const total = totalRaw - excludedScore;
+  const failedItems = items.filter((item) => item.pass === 'call_failed');
+  const scoreFailed = items.length > 0 && failedItems.length / items.length > SCORE_FAILED_SHARE;
   const earned = items.reduce((sum, item) => sum + (item.pass === true ? item.score : 0), 0);
   return {
     id,
@@ -296,6 +371,35 @@ export function summarizeTask(
     items,
     abstained: items.filter((item) => item.pass === 'unknown').length,
     unjudged: items.filter((item) => item.pass === null).length,
+    callFailed: failedItems.length,
+    ...(scoreFailed ? { scoreFailed, scoreError: truncateError(failedItems[0].why) } : {}),
     files,
+  };
+}
+
+interface GdpvalRunSummary {
+  scored: number;
+  scoreFailed: number;
+  firstError: string;
+  /** 以下三项只统计未 scoreFailed 的题；没有可统计的题时为 null */
+  median: number | null;
+  mean: number | null;
+  weighted: number | null;
+}
+
+/** 汇总统计剔除 scoreFailed 的题并单独列出题数——评分故障不许拉低基线。 */
+export function summarizeRun(scores: GdpvalTaskScore[]): GdpvalRunSummary {
+  const failed = scores.filter((score) => score.scoreFailed);
+  const ok = scores.filter((score) => !score.scoreFailed);
+  const ratios = ok.map((score) => score.ratio).sort((a, b) => a - b);
+  const mid = Math.floor(ratios.length / 2);
+  const totalSum = ok.reduce((sum, score) => sum + score.total, 0);
+  return {
+    scored: ok.length,
+    scoreFailed: failed.length,
+    firstError: failed[0]?.scoreError ?? '',
+    median: ratios.length === 0 ? null : ratios.length % 2 ? ratios[mid] : (ratios[mid - 1] + ratios[mid]) / 2,
+    mean: ratios.length === 0 ? null : ratios.reduce((sum, r) => sum + r, 0) / ratios.length,
+    weighted: totalSum > 0 ? ok.reduce((sum, score) => sum + score.earned, 0) / totalSum : null,
   };
 }

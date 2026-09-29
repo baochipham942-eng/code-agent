@@ -60,14 +60,14 @@ export async function createFileCheckpointIfNeeded(
     ? path.resolve(workingDirectory, params.working_directory)
     : workingDirectory;
 
-  const { targets, uncertain } = resolveToolWriteTargets({
-    definition,
-    params,
-    workingDirectory: effectiveWorkingDirectory,
-  });
-
   const created: CreatedFileCheckpoint[] = [];
   try {
+    // 写目标解析也在 try 内：符号链接环等异常不允许打断工具执行（fail-open）
+    const { targets, uncertain } = resolveToolWriteTargets({
+      definition,
+      params,
+      workingDirectory: effectiveWorkingDirectory,
+    });
     const service = getFileCheckpointService();
     for (const filePath of targets) {
       if (UNSNAPSHOTABLE_DEVICES.has(filePath)) continue;
@@ -87,7 +87,12 @@ export async function createFileCheckpointIfNeeded(
     }
   } catch (error) {
     // 检查点失败不应阻止工具执行；已建成的照常返回，供执行成功后收 digest
-    logger.error('Failed to create checkpoint', { error, toolName: definition.name, targets });
+    logger.error('Failed to create checkpoint', {
+      error,
+      toolName: definition.name,
+      workingDirectory: effectiveWorkingDirectory,
+      createdCount: created.length,
+    });
   }
   return created;
 }

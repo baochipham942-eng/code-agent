@@ -244,6 +244,18 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     expect(rewind.success).toBe(false);
   });
 
+  it('keeps the tool call unblocked when write-target resolution throws (fail-open)', async () => {
+    // 自指符号链接让 resolveCanonicalRunPath 触发环深上限抛错；检查点侧必须吞掉
+    await fs.symlink(path.join(tempDir, 'loop'), path.join(tempDir, 'loop'));
+    const checkpoints = await createFileCheckpointIfNeeded(
+      bashDefinition,
+      { command: `echo x > ${path.join(tempDir, 'loop', 'f.txt')}` },
+      context,
+      tempDir,
+    );
+    expect(checkpoints).toEqual([]);
+  });
+
   it('skips read-permission tools entirely', async () => {
     const file = path.join(tempDir, 'read-only.txt');
     const checkpoints = await createFileCheckpointIfNeeded(

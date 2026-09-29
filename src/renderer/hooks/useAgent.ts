@@ -36,6 +36,7 @@ import {
   useAgentIPC,
 } from './agent/useAgentIPC';
 import { useAgentState } from './agent/useAgentState';
+import { createStreamSnapshotRequiredHandler } from './agent/streamSnapshotRehydrate';
 import { applyToolCallArgumentDelta } from '../utils/toolCallStreaming';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import ipcService from '../services/ipcService';
@@ -66,6 +67,13 @@ function buildStreamingDeltaChanges(
   }
   return Object.keys(changes).length > 0 ? changes : null;
 }
+
+// 模块级单例：跨 ChatView 挂载/卸载保持合并窗口，重挂载风暴也打不穿。
+// 合并语义（在途丢弃 + 最小间隔）见 agent/streamSnapshotRehydrate.ts。
+const handleStreamSnapshotRequired = createStreamSnapshotRequiredHandler({
+  getCurrentSessionId: () => useSessionStore.getState().currentSessionId,
+  reloadSession: (sessionId) => useSessionStore.getState().switchSession(sessionId, { force: true }),
+});
 
 export const useAgent = () => {
   const {
@@ -200,11 +208,7 @@ export const useAgent = () => {
 
   useEffect(() => ipcService.on(
     IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED,
-    async ({ sessionId }) => {
-      const current = useSessionStore.getState().currentSessionId;
-      if (!current || (sessionId && sessionId !== current)) return;
-      await useSessionStore.getState().switchSession(current, { force: true });
-    },
+    handleStreamSnapshotRequired,
   ), []);
 
   const handleBatchUpdate = useCallback((updates: MessageUpdate[]) => {

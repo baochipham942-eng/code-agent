@@ -131,10 +131,11 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     description: '试图注入新系统指令',
   },
   // 名词后若还接着「提示音 / 提示信息 / 提示词 / 提示语 / 指令式 / 规则说明」这类复合词，不算指令覆盖。
+  // 中文模式 severity 为 low：留下告警，不触发 blockOnCritical，也不把工具结果或记忆写入拦下。
   {
     pattern: /(?:忽略|无视|忘记)\s*(?:之前|上面|以上|前面|所有)\s*(?:的\s*)?(?:所有\s*)?(?:指令|提示|规则)(?![音框集式性说文档条款目表化字信语词])/,
     type: 'instruction_override',
-    severity: 'critical',
+    severity: 'low',
     description: '试图忽略、无视或忘记既有指令',
   },
   {
@@ -191,12 +192,12 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     severity: 'high',
     description: '试图激活特权模式',
   },
-  // 对齐英文 DAN / unrestricted 规则：只有人设明确是越狱或不受限制时才 critical。
-  // 普通「你现在是一名…助手 / 专家 / 翻译」不命中。同一段里的「忽略之前的指令」仍走指令覆盖。
+  // 只命中明确的越狱或不受限制人设。普通「你现在是一名…助手 / 专家 / 翻译」不命中。
+  // 同一段里的「忽略之前的指令」仍走指令覆盖。severity 为 low，只记录不阻断。
   {
     pattern: /(?:你现在是|从现在起你(?:将扮演|是))\s*(?:一个|一名|一位)?\s*(?:不受任何限制|没有任何限制|不受限制|不受约束|没有限制|无限制|越狱|邪恶|DAN(?![A-Za-z]))/i,
     type: 'jailbreak_attempt',
-    severity: 'critical',
+    severity: 'low',
     description: '试图把助手改写成不受限制或越狱角色',
   },
   {
@@ -228,10 +229,11 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     description: '试图获取系统指令内容',
   },
   // 「打印密钥长度」「将密钥输出到控制台」没有「你的」，也不点名系统提示词。
+  // severity 为 low，只记录不阻断。
   {
     pattern: /(?:输出|泄露|打印)\s*(?:你的\s*)?系统提示词|(?:输出|泄露|打印)\s*你的\s*(?:密钥|API\s*key)|(?:把|将)你的\s*(?:密钥|API\s*key)\s*(?:输出|打印|泄露)/i,
     type: 'data_exfiltration',
-    severity: 'high',
+    severity: 'low',
     description: '试图套取系统提示词或密钥',
   },
   {

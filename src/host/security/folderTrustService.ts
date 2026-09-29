@@ -416,6 +416,11 @@ export class FolderTrustService {
    * （266 skill × ~18ms）仍然只扫一两次，运行期真出现新配置最多迟几秒被看见。
    */
   private readonly syncDangerousItemsCache = new Map<string, { items: DangerousConfigItem[]; scannedAt: number }>();
+  /**
+   * isProjectConfigTrustedSync 用的门控扫描缓存。不含整树 AGENTS.md walk
+   * （那一段才是启动期 event loop stall 的来源），gated 项与指定 kind 仍每次现算决策。
+   */
+  private readonly syncTrustGateItemsCache = new Map<string, { items: DangerousConfigItem[]; scannedAt: number }>();
 
   constructor(options: { defaultProjectConfigTrust?: boolean } = {}) {
     this.defaultProjectConfigTrust = options.defaultProjectConfigTrust;
@@ -425,6 +430,7 @@ export class FolderTrustService {
     const canonicalRealpath = await realpathNative(workingDirectory);
     const identity = await this.readIdentity(canonicalRealpath);
     const dangerousItems = await this.discoverDangerousItems(canonicalRealpath);
+    this.rememberFullScan(canonicalRealpath, dangerousItems);
     return this.buildEvaluation(canonicalRealpath, workingDirectory, identity, dangerousItems);
   }
 
@@ -439,11 +445,54 @@ export class FolderTrustService {
     );
   }
 
+  private rememberFullScan(canonicalRealpath: string, items: DangerousConfigItem[]): void {
+    const entry = { items, scannedAt: Date.now() };
+    this.syncDangerousItemsCache.set(canonicalRealpath, entry);
+    this.syncTrustGateItemsCache.set(canonicalRealpath, entry);
+  }
+
   private cachedDangerousItemsSync(canonicalRealpath: string): DangerousConfigItem[] {
     const cached = this.syncDangerousItemsCache.get(canonicalRealpath);
     if (cached && Date.now() - cached.scannedAt < SYNC_SCAN_CACHE_TTL_MS) return cached.items;
     const items = this.discoverDangerousItemsSync(canonicalRealpath);
-    this.syncDangerousItemsCache.set(canonicalRealpath, { items, scannedAt: Date.now() });
+    this.rememberFullScan(canonicalRealpath, items);
+    return items;
+  }
+
+  /**
+   * 启动热路径（isSkillEnabled / loadSoul / loadPolicy）只要信任布尔，不要整树
+   * AGENTS.md walk。gated 项（hooks/mcp/policy/可执行 payload）仍扫，contentChanged 语义不变。
+   */
+  evaluateTrustGateSync(workingDirectory: string, kind?: DangerousConfigKind): FolderTrustEvaluation {
+    const canonicalRealpath = fs.realpathSync.native(workingDirectory);
+    const identity = this.readIdentitySync(canonicalRealpath);
+    return this.buildEvaluation(
+      canonicalRealpath,
+      workingDirectory,
+      identity,
+      this.cachedTrustGateItemsSync(canonicalRealpath, kind),
+    );
+  }
+
+  private cachedTrustGateItemsSync(
+    canonicalRealpath: string,
+    kind?: DangerousConfigKind,
+  ): DangerousConfigItem[] {
+    const full = this.syncDangerousItemsCache.get(canonicalRealpath);
+    if (full && Date.now() - full.scannedAt < SYNC_SCAN_CACHE_TTL_MS) return full.items;
+
+    const needInstructionWalk = kind === 'agent-instructions';
+    const cached = this.syncTrustGateItemsCache.get(canonicalRealpath);
+    if (cached && Date.now() - cached.scannedAt < SYNC_SCAN_CACHE_TTL_MS) {
+      if (!needInstructionWalk) return cached.items;
+      if (cached.items.some((item) => item.kind === 'agent-instructions')) return cached.items;
+    }
+
+    const items = this.discoverDangerousItemsSync(canonicalRealpath, {
+      includeAgentInstructionWalk: needInstructionWalk,
+    });
+    if (needInstructionWalk) this.rememberFullScan(canonicalRealpath, items);
+    else this.syncTrustGateItemsCache.set(canonicalRealpath, { items, scannedAt: Date.now() });
     return items;
   }
 
@@ -457,7 +506,7 @@ export class FolderTrustService {
     const dangerousItems = await this.discoverDangerousItems(canonicalRealpath);
     // 决定与快照都出自这一次扫描：同步缓存要是还留着更旧的一份，下一次 evaluateSync 会拿
     // 缓存里多出来的 gated 项跟新快照比，误判成「内容变了」。用刚扫到的这份覆盖掉。
-    this.syncDangerousItemsCache.set(canonicalRealpath, { items: dangerousItems, scannedAt: Date.now() });
+    this.rememberFullScan(canonicalRealpath, dangerousItems);
     this.upsertDecision(canonicalRealpath, workingDirectory, state, decidedBy, identity, gatedDigestOf(dangerousItems));
     return this.buildEvaluation(canonicalRealpath, workingDirectory, identity, dangerousItems);
   }
@@ -484,6 +533,7 @@ export class FolderTrustService {
 
   close(): void {
     this.syncDangerousItemsCache.clear();
+    this.syncTrustGateItemsCache.clear();
     if (this.db) {
       this.db.close();
       this.db = null;
@@ -732,7 +782,10 @@ export class FolderTrustService {
     return this.dedupeItems(items);
   }
 
-  private discoverDangerousItemsSync(workingDirectory: string): DangerousConfigItem[] {
+  private discoverDangerousItemsSync(
+    workingDirectory: string,
+    options: { includeAgentInstructionWalk?: boolean } = {},
+  ): DangerousConfigItem[] {
     const items: DangerousConfigItem[] = [];
     const codeAgentDir = path.join(workingDirectory, CONFIG_DIR_NEW);
     const claudeDir = path.join(workingDirectory, CONFIG_DIR_LEGACY);
@@ -798,8 +851,10 @@ export class FolderTrustService {
       pushItem(items, workingDirectory, 'project-profile', profilePath, 'prompt');
     }
 
-    for (const filePath of findAgentInstructionFilesSync(workingDirectory)) {
-      pushItem(items, workingDirectory, 'agent-instructions', filePath, 'prompt');
+    if (options.includeAgentInstructionWalk !== false) {
+      for (const filePath of findAgentInstructionFilesSync(workingDirectory)) {
+        pushItem(items, workingDirectory, 'agent-instructions', filePath, 'prompt');
+      }
     }
 
     const policyPath = path.join(workingDirectory, POLICY_FILENAME);
@@ -858,10 +913,6 @@ export async function evaluateFolderTrust(workingDirectory: string): Promise<Fol
   return getFolderTrustService().evaluate(workingDirectory);
 }
 
-function evaluateFolderTrustSync(workingDirectory: string): FolderTrustEvaluation {
-  return getFolderTrustService().evaluateSync(workingDirectory);
-}
-
 export async function setFolderTrust(
   workingDirectory: string,
   state: FolderTrustDecisionState,
@@ -915,7 +966,9 @@ export function isProjectConfigTrustedSync(workingDirectory: string, kind?: Dang
   if (defaultTrust !== undefined) return defaultTrust;
 
   try {
-    const evaluation = evaluateFolderTrustSync(workingDirectory);
+    // 不要走 evaluateSync：它会深度 5 递归扫整棵工作目录找 AGENTS.md，技能循环 /
+    // loadSoul / loadPolicy 每次 run 启动都会同步堵住事件循环（槽 3 实测 4–10s）。
+    const evaluation = getFolderTrustService().evaluateTrustGateSync(workingDirectory, kind);
     if (evaluation.state === 'trusted') return true;
     if (allowsUngatedKind(evaluation, kind)) return true;
     logBlockedProjectConfig(evaluation, kind);

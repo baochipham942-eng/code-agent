@@ -4,13 +4,13 @@ import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { setTimeout, clearTimeout } from 'node:timers';
 import path from 'node:path';
-import os from 'node:os';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { tsImport } from 'tsx/esm/api';
 import { digest, selectTests, validateFiles, validateReport, renderReceipt, extractGateIds, validateGateBudgetCoverage, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
+import { createOwnedTmp } from './lib/tmp-sandbox.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
@@ -28,7 +28,8 @@ const receipt = {
   gates: [], commands: [], selectedFiles: [], report: null,
 };
 let output = path.join(root, '.reports/gates-fast', `${receipt.receiptId}.json`);
-const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'gates-fast-'));
+// N-GATES-TMP-SELFCLEAN：登记进 tmp-sandbox，SIGTERM/退出钩子兜底清理，不再只靠脚本末尾的 finally。
+const temp = createOwnedTmp('gates-fast-');
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', timeout: 5000 }).trim();
 let privateRoot;
 let initial;

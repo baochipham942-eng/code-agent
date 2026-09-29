@@ -64,8 +64,12 @@ export interface RunStore {
   getLatestBySession(sessionId: string): Promise<RunEnvelope | null>;
   getLatestActiveRootBySession(sessionId: string): Promise<RunEnvelope | null>;
   listRecoverable(now: number, limit: number): Promise<RunEnvelope[]>;
-  /** Lists expired crash candidates whose automatic resume budget is exhausted. */
-  listAutoResumeExhausted?(now: number, limit: number): Promise<RunEnvelope[]>;
+  /**
+   * Lists expired runs that restart must reclaim as parked (never auto-resumed):
+   * crash candidates whose automatic resume budget is exhausted, plus runs
+   * explicitly parked by user_stop / guard_halt (ADR-075 修订 2026-09-29).
+   */
+  listParkedForReclaim?(now: number, limit: number): Promise<RunEnvelope[]>;
   /** Claims the owner, increments attempt, and appends the attempt row in one transaction. */
   claimLease(claim: RunLeaseClaim): Promise<RunLeaseClaimResult | null>;
   /**

@@ -268,3 +268,21 @@ Round 2 把「Stop 必须清空待续队列」收成可执行合同：代码里�
 7. 多会话：串行自动续；每次进 loop 前重查预算，超了 `budget_exhausted` parked。
 8. 恢复中 Stop = `user_stop` parked，绝非 `completed`；`cancelled` 不能再「继续」。
 9. 外部副作用一律禁止自动续（与第 2 项同一政策）。
+
+## 修订（2026-09-29）：显式停靠 run 的重启认领
+
+背景：K6 把「继续」收窄到本进程能接手的 run（`canContinueRun` = 本进程持有 owner lease 且无控制句柄）。重启后 `user_stop` / `guard_halt` 停靠的 run 没有任何路径认领（启动恢复只认领崩溃候选与预算耗尽），「继续」消失，用户只能从头来；同时这条没人认领的 run 仍占着会话的活跃 run 唯一约束，web `/api/run` 新消息直接 409。
+
+2026-09-29 爸拍板口径（N-RESUME-PARKED-RECLAIM）：
+
+1. **`user_stop` 停靠的 run**：重启后由启动恢复（及周期 sweeper，租约过期时）**认领为本进程持有、不自动跑**，停靠为 `waiting`，投影给 `durableResume.mode='continue'`，界面出「继续」。点击走 `continueParkedDurableRun`，同 `runId` 回 live loop。
+2. **`guard_halt` 停靠的 run**：同样认领并出「继续」，但**点击先弹模态确认框**（有副作用的二次确认必须模态，不用 toast/inline），文案写明「上次对外部系统的操作可能已经执行，继续可能重复执行」，取消则不续跑；文案走 i18n（中英）。
+3. **重启后有停靠 run 时用户发新消息**：新消息优先，旧 run 终态化（`cancelled`，含 `guard_halt`），新消息正常开新 turn。桌面与 web 两条入口都生效——两个用户消息入口（web `runAgentTurn` 经 `AgentDurableRouteRunLifecycle.startRun`，覆盖 `/api/run`、排队输入、手机；桌面 `agentAppService.sendMessage`）在建根 run 前调同一个 `RunRegistry.supersedeParkedSessionRoots`，把同会话里本进程持有、无 handle 的停靠 run（`waiting` 且原因为 `user_stop` / `guard_halt` / `budget_exhausted` / 预算耗尽的 `crash_or_quit`）终态化；等审批的 `waiting` 不在此列。cron 等主机侧轮次不走这一步，不会吃掉用户停靠待「继续」的 run。
+4. **不设过期**，靠第 3 条自然清理。
+5. **自动续跑排队（queued）期间用户发新消息**：同样新消息优先。两道口：用户消息建根 run 前（同上）把仍在排队（`isDurableResumeQueued`、`recovering`、无 handle）的 run 终态化；出队复核（`shouldStartQueuedAutoResume`，webServer `beforeAutoResume`）发现源消息之后已有新 user 消息时终态化（`reason=superseded_by_new_message`）并跳过，不再走到 `resumeExistingDurableRun` 抛错。
+
+实现锚点：`listParkedForReclaim @ DurableRunRepository.ts`（取代 `listAutoResumeExhausted`，额外收 `status='waiting'` 且原因为 `user_stop`/`guard_halt`/`budget_exhausted` 的过期租约 run）→ `recoverOnStartup @ durableRunKernel.ts` 停靠分支（认领后 `waiting` + `resumeBlocked`，原因保留）；`findSupersededSessionRoots` / `supersedeSessionRoots @ recoveredWaitingRun.ts`；`useGuardedDurableContinue @ durableResume.tsx`。
+
+**K2 合同的新表述**：`user_stop` / `guard_halt` 仍**不进崩溃自动续跑**——任何一次重启都不进 recovery handler、不消耗自动续跑预算；但重启后被本进程认领为 `waiting`，`canContinueRun` 为真、投影为 `continue`，用户点「继续」才续跑。合同测试 `durableWaitingRunCancel.test.ts`「parks a recovered run with %s: never auto-resumed, but reclaimed as continuable on every restart」同时钉住两面（连续两次重启都不调 handler + 都投影 continue + 继续后同 runId 被 live loop 领养）。
+
+已知未覆盖：`crash_or_quit` 预算耗尽后已停靠为 `waiting` 的 run，再次重启不会被重新认领（`listParkedForReclaim` 对 `crash_or_quit` 只收 `running`/`recovering`；放开会把「预算耗尽后又等审批」的 run 也吞成停靠，需单独判定）。

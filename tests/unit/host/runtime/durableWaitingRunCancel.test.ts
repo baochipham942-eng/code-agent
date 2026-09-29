@@ -15,6 +15,10 @@ import {
 import { DurableRunKernel } from '../../../../src/host/runtime/durableRunKernel';
 import { RunRegistry, RunSessionConflictError } from '../../../../src/host/runtime/runRegistry';
 import { DurableRunRepository } from '../../../../src/host/services/core/repositories/DurableRunRepository';
+import { DurableRecoveryDispatcher } from '../../../../src/host/runtime/durableRecoveryDispatcher';
+import { assembleDurableRun } from '../../../../src/host/app/initializeDurableRun';
+import { projectDurableRunToSessionPayload } from '../../../../src/host/app/durableRunReadService';
+import { continueParkedDurableRun } from '../../../../src/host/app/durableRunContinuation';
 
 function createRepository() {
   const db = new Database(':memory:');
@@ -38,21 +42,22 @@ function kernel(repository: DurableRunRepository, processInstanceId: string) {
  * waiting → terminalRecoveredWaitingRun → cancelled（kernel 规范路径）→ 同会话能起新 run。
  */
 describe('durable waiting-run cancellation after recovery', () => {
-  it('parks a recovered run on Stop with user_stop and keeps it out of the crash sweep', async () => {
+  // K2 合同（ADR-075 修订 2026-09-29 改写，不降强度）：显式停靠（user_stop / guard_halt）的 run
+  // 永不进崩溃自动续跑——重启多少次都不进 recovery handler；但重启后被本进程认领为 waiting，
+  // canContinueRun 为真、投影给 continue，「继续」同 runId 接回 live loop。
+  it.each(['user_stop', 'guard_halt'] as const)('parks a recovered run with %s: never auto-resumed, but reclaimed as continuable on every restart', async (cause) => {
     const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'durable-recovery-stop-')));
     const { db, repository } = createRepository();
+    const runId = `run-recovery-${cause}`;
+    const sessionId = `session-recovery-${cause}`;
     const firstRegistry = new RunRegistry();
     firstRegistry.configureDurableKernel(kernel(repository, 'stop-before-crash'));
+    const registries: RunRegistry[] = [firstRegistry];
 
     try {
-      await firstRegistry.startDurable({
-        runId: 'run-recovery-stop',
-        sessionId: 'session-recovery-stop',
-        workspace,
-        cwd: workspace,
-      }, 1_000);
+      await firstRegistry.startDurable({ runId, sessionId, workspace, cwd: workspace }, 1_000);
       await firstRegistry.checkpointNativeModelOperation({
-        runId: 'run-recovery-stop',
+        runId,
         sourceMessageId: 'message-recovery-stop',
         provider: 'provider',
         model: 'model',
@@ -64,28 +69,75 @@ describe('durable waiting-run cancellation after recovery', () => {
       firstRegistry.clear();
 
       const recoveredRegistry = new RunRegistry();
+      registries.push(recoveredRegistry);
       recoveredRegistry.configureDurableKernel(kernel(repository, 'stop-after-crash'));
       const [plan] = await recoveredRegistry.recoverDurable(2_000);
-      const handle = recoveredRegistry.adoptRecoveredRun({
-        runId: plan.envelope.runId,
-        sessionId: plan.envelope.sessionId,
-        workspace,
-        cwd: workspace,
-      });
-      await recoveredRegistry.parkDurable('run-recovery-stop', { now: 2_010, reason: 'user_stop' }, handle);
+      const handle = recoveredRegistry.adoptRecoveredRun({ runId: plan.envelope.runId, sessionId, workspace, cwd: workspace });
+      if (cause === 'user_stop') {
+        await recoveredRegistry.parkDurable(runId, { now: 2_010, reason: 'user_stop' }, handle);
+      } else {
+        await recoveredRegistry.checkpointDurable(runId, {
+          now: 2_010, status: 'waiting', state: recoveredRegistry.getDurableCheckpointState(runId),
+          pendingOperations: plan.pendingOperations, childRuns: plan.childRuns, interruptCause: 'guard_halt',
+          events: [{ type: 'native_recovery_requires_review', payload: { reason: 'unknown_write_side_effect' }, recordedAt: 2_010 }],
+        });
+      }
+      recoveredRegistry.clear();
+      expect(await repository.get(runId)).toMatchObject({ status: 'waiting', interruptCause: cause, interrupt_cause: cause });
+      expect((await repository.get(runId))?.terminal).toBeUndefined();
 
-      expect(await repository.get('run-recovery-stop')).toMatchObject({
-        status: 'waiting',
-        interruptCause: 'user_stop',
-        interrupt_cause: 'user_stop',
-      });
-      expect((await repository.get('run-recovery-stop'))?.terminal).toBeUndefined();
+      for (const [index, now] of [3_000, 5_000].entries()) {
+        const nextRegistry = new RunRegistry();
+        registries.push(nextRegistry);
+        const { readService } = assembleDurableRun({
+          registry: nextRegistry, repository, ownerId: 'native-host', processInstanceId: `stop-next-start-${index}`,
+          env: { CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }, leaseDurationMs: 100,
+        });
+        const plans = await nextRegistry.recoverDurable(now);
+        expect(plans).toHaveLength(1);
+        expect(plans[0]).toMatchObject({ envelope: { runId, status: 'waiting', interruptCause: cause }, resumeBlocked: true });
 
-      const nextRegistry = new RunRegistry();
-      nextRegistry.configureDurableKernel(kernel(repository, 'stop-next-start'));
-      await expect(nextRegistry.recoverDurable(3_000)).resolves.toEqual([]);
+        // 不进崩溃自动续跑：派发器对它只「观察」，native 续跑 handler 一次都不调。
+        const recover = vi.fn();
+        const dispatcher = new DurableRecoveryDispatcher();
+        dispatcher.registerEngineHandler({ name: 'native-spy', engineKind: 'native', serialAutoResume: true, recover });
+        const results = await dispatcher.dispatch(plans, now);
+        expect(results.map((result) => [result.runId, result.status])).toEqual([[runId, 'observing']]);
+        expect(recover).not.toHaveBeenCalled();
+        await dispatcher.shutdown();
+
+        // 被本进程认领：canContinueRun 为真，投影给 continue（界面出「继续」）。
+        expect(nextRegistry.findRecoveredWaitingRun({ sessionId })).toEqual({ runId, sessionId });
+        const view = await readService.readSessionReplay(sessionId, () => ({ status: 'idle' }));
+        expect(view.continuable).toBe(true);
+        expect(projectDurableRunToSessionPayload(view).durableResume).toMatchObject({ runId, mode: 'continue', interruptCause: cause, canContinue: true });
+        expect(await repository.get(runId)).toMatchObject({ status: 'waiting', interruptCause: cause });
+
+        if (index === 0) {
+          nextRegistry.clear();
+          continue;
+        }
+        // 「继续」：同 runId 被 live loop 领养（不新建 run、不新建 user 轮次）。
+        const adopted: string[] = [];
+        const result = await continueParkedDurableRun({
+          sessionId,
+          runRegistry: nextRegistry,
+          taskManager: {
+            getSessionState: () => undefined,
+            resumeExistingDurableRun: async (_sessionId: string, resumedRunId: string) => {
+              adopted.push(nextRegistry.adoptRecoveredRun({ runId: resumedRunId, sessionId, workspace, cwd: workspace }).context.runId);
+            },
+          } as never,
+          getMessages: async () => [{ id: 'message-recovery-stop', role: 'user', content: 'go', timestamp: 1 } as never],
+        });
+        expect(result).toEqual({ runId });
+        expect(adopted).toEqual([runId]);
+        const continued = await repository.get(runId);
+        expect(continued).toMatchObject({ status: 'running' });
+        expect(continued?.interruptCause).toBeUndefined();
+      }
     } finally {
-      firstRegistry.clear();
+      for (const registry of registries) registry.clear();
       rmSync(workspace, { recursive: true, force: true });
       db.close();
     }

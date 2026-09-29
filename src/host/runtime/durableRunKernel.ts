@@ -351,11 +351,13 @@ export class DurableRunKernel implements RunKernelAdapter {
 
   async recoverOnStartup(now: number, limit = 100): Promise<RunRehydrationPlan[]> {
     const stores = this.requireStores();
-    const exhausted = stores.listAutoResumeExhausted
-      ? await stores.listAutoResumeExhausted(now, limit)
+    // 预算耗尽的崩溃 run 与显式停靠（user_stop / guard_halt）的 run：重启后认领为本进程持有、
+    // 停靠成 waiting 等用户「继续」，永不进自动续跑（ADR-075 修订 2026-09-29）。
+    const parked = stores.listParkedForReclaim
+      ? await stores.listParkedForReclaim(now, limit)
       : [];
     const plans: RunRehydrationPlan[] = [];
-    for (const envelope of exhausted) {
+    for (const envelope of parked) {
       const previousAttempt = await stores.getAttempt(envelope.runId, envelope.attempt);
       if (!previousAttempt) throw new Error(`Missing durable attempt ${envelope.runId}/${envelope.attempt}`);
       const checkpoint = await stores.getLatest(envelope.runId);

@@ -116,6 +116,19 @@ describe('N-READ-ENCODING', () => {
       expect(output).not.toContain(NOTICE_MARK);
     });
 
+    it("encoding:'gbk' 读 BOM+GBK：先剥误加的 BOM，得原文、不含「锘」也不吞字", async () => {
+      const sample = path.join(tmpDir, 'bom-gbk.csv');
+      await fs.writeFile(sample, Buffer.concat([UTF8_BOM, GBK_BYTES]));
+      const sampleOut = await readOutput(sample, { encoding: 'gbk' });
+      expect(sampleOut).toContain('名称,数量');
+      expect(sampleOut).toContain('苹果,3');
+      const short = path.join(tmpDir, 'bom-gbk2.txt');
+      await fs.writeFile(short, Buffer.concat([UTF8_BOM, Buffer.from('GBK'), Buffer.from('cec4bcfe0a', 'hex')]));
+      const shortOut = await readOutput(short, { encoding: 'gbk' });
+      expect(shortOut).toContain('GBK文件');
+      expect(shortOut).not.toContain('锘');
+    });
+
     it("encoding:'gbk' 遇非法 GB18030 字节：明确报错", async () => {
       const file = path.join(tmpDir, 'bad-gbk.txt');
       await fs.writeFile(file, Buffer.from([0x61, 0x81, 0x20, 0x62]));

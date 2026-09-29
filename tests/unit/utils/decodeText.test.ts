@@ -68,6 +68,12 @@ describe('decodeGb18030（调用方明确指定 GBK）', () => {
     expect(decodeGb18030(GBK_SAMPLE)).toBe('名称,数量\n苹果,3\n');
   });
 
+  it('开头的 UTF-8 BOM 按误加 BOM 剥掉：BOM+GBK 样本 / BOM+短 GBK 都得原文，不出现「锘」', () => {
+    expect(decodeGb18030(Buffer.concat([BOM, GBK_SAMPLE]))).toBe('名称,数量\n苹果,3\n');
+    const short = decodeGb18030(Buffer.concat([BOM, Buffer.from('GBK'), Buffer.from('cec4bcfe', 'hex')]));
+    expect(short).toBe('GBK文件');
+  });
+
   it('非法字节抛 TextDecodeError', () => {
     expect(() => decodeGb18030(Buffer.from([0x61, 0x81, 0x20, 0x62]))).toThrow(TextDecodeError);
   });

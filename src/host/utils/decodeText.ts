@@ -4,7 +4,7 @@
 //
 // 只有两个确定性函数，没有任何「自动判 GBK」的启发式：
 // - decodeUtf8：严格 UTF-8（剥 BOM）；不合法时返回宽松解码结果 + 坏序列数，由调用方决定怎么告知。
-// - decodeGb18030：按调用方明确指定的编码严格解码，失败抛错。
+// - decodeGb18030：按调用方明确指定的编码严格解码（先剥误加的 UTF-8 BOM），失败抛错。
 //
 // 为什么不猜：字节层面 UTF-8 的 `é`（C3 A9）与 GBK 的「茅」完全不可分，
 // 「一个不合法的 UTF-8 文件原本是什么编码」没有可判定的答案，任何阈值/打分都有反例。
@@ -83,10 +83,15 @@ export function decodeUtf8(buffer: Buffer): DecodedUtf8 {
   return { text, encoding: 'utf-8', bom, invalidSequences: countInvalidUtf8Sequences(body) };
 }
 
-/** 调用方明确指定 GBK 时的严格解码（GB18030 覆盖 GBK）；用原始 buffer，不剥 BOM 字节 */
+/**
+ * 调用方明确指定 GBK 时的严格解码（GB18030 覆盖 GBK）。
+ * 开头的 UTF-8 BOM（EF BB BF）按「误加的 BOM」剥掉再解（资料库 / Read 同一语义，与 PR#2106 一致）：
+ * 不剥时 BOM+GBK 要么解成「锘」并吞掉后一字节，要么直接失败。
+ */
 export function decodeGb18030(buffer: Buffer): string {
+  const bom = buffer.length >= 3 && UTF8_BOM.every((byte, i) => buffer[i] === byte);
   try {
-    return new TextDecoder('gb18030', { fatal: true, ignoreBOM: true }).decode(buffer);
+    return new TextDecoder('gb18030', { fatal: true, ignoreBOM: true }).decode(bom ? buffer.subarray(3) : buffer);
   } catch {
     throw new TextDecodeError();
   }

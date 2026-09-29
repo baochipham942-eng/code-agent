@@ -468,14 +468,14 @@ describe('DurableRunKernel', () => {
       processInstanceId: 'process-2',
       leaseDurationMs: 100,
     });
-    const plans = await recoveredKernel.recoverOnStartup(2_000, 1);
+    const plans = await recoveredKernel.recoverOnStartup(2_000, 2);
 
-    expect(plans).toHaveLength(2);
-    expect(plans.map((plan) => plan.envelope.runId)).toEqual(['run-capped', 'run-crash']);
-    expect(plans[0].resumeBlocked).toBe(true);
-    expect(plans[1].resumeBlocked).toBeUndefined();
+    // 只有 crash/quit 且预算未耗尽的进自动续跑；user_stop 与预算耗尽的都被认领为停靠
+    // （resumeBlocked，waiting 等「继续」，ADR-075 修订 2026-09-29）。
+    expect(plans.map((plan) => [plan.envelope.runId, plan.envelope.status, plan.resumeBlocked]))
+      .toEqual([['run-user-stop', 'waiting', true], ['run-capped', 'waiting', true], ['run-crash', 'recovering', undefined]]);
     expect(await repository.get('run-user-stop')).toMatchObject({
-      interruptCause: 'user_stop', interrupt_cause: 'user_stop', autoResumeCount: 0,
+      status: 'waiting', interruptCause: 'user_stop', interrupt_cause: 'user_stop', autoResumeCount: 0,
     });
     expect(await repository.get('run-capped')).toMatchObject({
       interruptCause: 'crash_or_quit', interrupt_cause: 'crash_or_quit',

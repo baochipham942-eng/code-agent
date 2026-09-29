@@ -441,20 +441,8 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const tm = this.getTaskManager();
     const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
-    // A new draft supersedes a parked run. Keep the old logical run terminal so
-    // it cannot block the new turn or re-enter the automatic recovery set.
-    const registry = this.externalRunRegistry;
-    const recoveredWaiting = registry?.findRecoveredWaitingRun({ sessionId: resolvedSessionId });
-    if (registry && recoveredWaiting && this.durableRunReadService) {
-      const view = await this.durableRunReadService.readSessionReplay(resolvedSessionId, () => ({
-        status: 'waiting',
-        runId: recoveredWaiting.runId,
-      }));
-      const durableResume = projectDurableRunToSessionPayload(view).durableResume;
-      if (durableResume?.mode === 'continue' && durableResume.interruptCause !== 'guard_halt') {
-        await registry.terminalRecoveredWaitingRun({ sessionId: resolvedSessionId });
-      }
-    }
+    // 新消息优先（ADR-075 修订 2026-09-29 ③⑤）：停靠待「继续」（含 guard_halt）或排队自动续跑的旧 run 终态化。
+    await this.externalRunRegistry?.supersedeParkedSessionRoots(resolvedSessionId);
     const sessionManager = getSessionManager();
     const session = await sessionManager.getSession(resolvedSessionId, 1);
     const engine = normalizeAgentEngineSession(session?.engine);

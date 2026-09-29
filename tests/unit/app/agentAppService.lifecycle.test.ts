@@ -609,43 +609,23 @@ describe('AgentAppService lifecycle routing', () => {
     );
   });
 
-  it.each([
-    ['restored approval', 'crash_or_quit' as const, false],
-    ['guard halt', 'guard_halt' as const, false],
-    ['explicitly continuable run', 'user_stop' as const, true],
-  ])('supersedes a recovered waiting run only when the projection is continuable (%s)', async (_label, interruptCause, shouldCancel) => {
-    const terminalRecoveredWaitingRun = vi.fn().mockResolvedValue(undefined);
-    const registry = {
-      findRecoveredWaitingRun: vi.fn(() => ({ runId: 'run-waiting', sessionId: 'session-1' })),
-      terminalRecoveredWaitingRun,
-    };
-    const reader = {
-      getLatestBySession: vi.fn(async () => ({
-        ...durableEnvelope('waiting'),
-        runId: 'run-waiting',
-        interruptCause,
-      })),
-    };
+  // N-RESUME-PARKED-RECLAIM ③（桌面入口）：新消息优先——先让同会话停靠 / 排队的旧 run 终态化，再开新一轮。
+  it('supersedes parked or queued durable runs of the session before starting the new turn', async () => {
+    const order: string[] = [];
+    const supersedeParkedSessionRoots = vi.fn(async () => { order.push('supersede'); });
+    taskManager.startTask.mockImplementationOnce(async () => { order.push('startTask'); });
     const configured = new AgentAppServiceImpl(
       () => taskManager as never,
       () => null,
       () => 'session-1',
       vi.fn(),
-      registry as never,
-      new DurableRunReadService(
-        resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }),
-        reader,
-      ),
+      { supersedeParkedSessionRoots } as never,
     );
 
-    await configured.sendMessage({ sessionId: 'session-1', content: 'new turn' } as any);
+    await configured.sendMessage({ sessionId: 'session-1', content: 'new turn' } as never);
 
-    if (shouldCancel) {
-      expect(terminalRecoveredWaitingRun).toHaveBeenCalledWith({ sessionId: 'session-1' });
-    } else {
-      expect(terminalRecoveredWaitingRun).not.toHaveBeenCalled();
-    }
-    expect(taskManager.startTask).toHaveBeenCalled();
+    expect(supersedeParkedSessionRoots).toHaveBeenCalledWith('session-1');
+    expect(order).toEqual(['supersede', 'startTask']);
   });
 
   it('routes interrupt-and-continue through TaskManager to keep the run owner consistent', async () => {

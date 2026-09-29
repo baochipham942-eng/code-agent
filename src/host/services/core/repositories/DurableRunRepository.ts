@@ -199,11 +199,14 @@ export class DurableRunRepository implements DurableRunStores {
       });
   }
 
-  async listAutoResumeExhausted(now: number, limit: number): Promise<RunEnvelope[]> {
+  async listParkedForReclaim(now: number, limit: number): Promise<RunEnvelope[]> {
+    const cause = `COALESCE(json_extract(envelope_json, '$.interruptCause'), json_extract(envelope_json, '$.interrupt_cause'))`;
     const rows = this.db.prepare(`SELECT envelope_json FROM durable_runs
-      WHERE status IN ('running','recovering') AND lease_expires_at <= ?
-        AND COALESCE(json_extract(envelope_json, '$.interruptCause'), json_extract(envelope_json, '$.interrupt_cause')) = 'crash_or_quit'
-        AND CAST(COALESCE(json_extract(envelope_json, '$.autoResumeCount'), 0) AS INTEGER) >= ?
+      WHERE lease_expires_at <= ? AND (
+        (status IN ('running','recovering') AND ${cause} = 'crash_or_quit'
+          AND CAST(COALESCE(json_extract(envelope_json, '$.autoResumeCount'), 0) AS INTEGER) >= ?)
+        OR (status = 'waiting' AND ${cause} IN ('user_stop','guard_halt','budget_exhausted'))
+      )
       ORDER BY updated_at ASC LIMIT ?`).all(now, MAX_AUTO_RESUME_COUNT, limit) as Row[];
     return rows.map(rowToEnvelope);
   }
@@ -250,7 +253,8 @@ export class DurableRunRepository implements DurableRunStores {
         updatedAt: claim.now,
       }, {
         // An expired lease is the durable process-exit signal. User/budget/guard
-        // parked runs are filtered by listRecoverable before this claim path.
+        // parked runs never come from listRecoverable; listParkedForReclaim claims
+        // them here only to re-park them as waiting with their cause preserved.
         interruptCause: getRunInterruptCause(previous) ?? 'crash_or_quit',
         autoResumeCount: previous.autoResumeCount ?? 0,
       });

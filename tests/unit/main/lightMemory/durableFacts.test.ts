@@ -421,26 +421,30 @@ describe('默认助手长期事实写回', () => {
     expect(await readIndex()).toContain('[fact-1.md]');
   });
 
-  it('user 类型 supersedes：新条目写成 active 后软归档旧条目（deprecated_by 指向新文件）', async () => {
+  it('r4：高置信度 supersedes 只记录链接：旧条目逐字节不变、仍 active、仍在 INDEX', async () => {
     await writeDurableFacts([makeFact(1, { content: '旧认知' })]);
+    const rawBefore = await fs.readFile(path.join(memoryDir, 'fact-1.md'), 'utf-8');
 
     const result = await writeDurableFacts([
       makeFact(2, { confidence: 0.9, supersedes: 'fact-1.md', content: '新认知' }),
     ]);
 
+    // 新条目照常写成 active，取代链接只记在它自己的 frontmatter 上
     expect(result).toMatchObject({ written: 1, active: 1 });
-    expect(await readFrontmatter('fact-2.md')).toMatchObject({ status: 'active' });
-    const old = await readFrontmatter('fact-1.md');
-    expect(old.status).toBe('archived');
-    expect(old.deprecated_by).toBe('fact-2.md');
-    // 归档后的旧条目退出 active INDEX，新条目在
+    expect(await readFrontmatter('fact-2.md')).toMatchObject({
+      status: 'active',
+      deprecated_by: 'fact-1.md',
+    });
+    // 旧条目逐字节不变（r4 scope cut：判断器输出不得归档/改写既有条目）
+    expect(await fs.readFile(path.join(memoryDir, 'fact-1.md'), 'utf-8')).toBe(rawBefore);
+    expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
     const index = await readIndex();
+    expect(index).toContain('[fact-1.md]');
     expect(index).toContain('[fact-2.md]');
-    expect(index).not.toContain('[fact-1.md]');
   });
 
   it.each(['project', 'reference'] as const)(
-    '%s 类型 supersedes 不归档旧条目',
+    'r4：%s 类型 supersedes 同样只记录链接，旧条目不动（无类型门）',
     async (type) => {
       await writeDurableFacts([makeFact(1, { type, content: '旧材料' })]);
 
@@ -449,13 +453,14 @@ describe('默认助手长期事实写回', () => {
       ]);
 
       expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
+      expect(await readFrontmatter('fact-2.md')).toMatchObject({ deprecated_by: 'fact-1.md' });
       const index = await readIndex();
       expect(index).toContain('[fact-1.md]');
       expect(index).toContain('[fact-2.md]');
     },
   );
 
-  it('candidate 新条目不归档旧条目：旧条目保持生效直到复核转正', async () => {
+  it('r4：candidate 新条目的 supersedes 同样只记录链接，旧条目保持 active 生效', async () => {
     await writeDurableFacts([makeFact(1, { content: '旧认知' })]);
 
     const result = await writeDurableFacts([
@@ -463,23 +468,29 @@ describe('默认助手长期事实写回', () => {
     ]);
 
     expect(result).toMatchObject({ candidate: 1, active: 0 });
-    expect(await readFrontmatter('fact-2.md')).toMatchObject({ status: 'candidate' });
+    expect(await readFrontmatter('fact-2.md')).toMatchObject({
+      status: 'candidate',
+      deprecated_by: 'fact-1.md',
+    });
     expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
     const index = await readIndex();
     expect(index).toContain('[fact-1.md]');
     expect(index).not.toContain('[fact-2.md]');
   });
 
-  it('supersedes 指向不存在的文件时不抛错，新条目照常写成', async () => {
+  it('supersedes 指向不存在的文件时不抛错，新条目照常写成且不记链接', async () => {
     await expect(writeDurableFacts([
       makeFact(1, { confidence: 0.9, supersedes: 'ghost.md' }),
     ])).resolves.toMatchObject({ written: 1, active: 1, files: ['fact-1.md'] });
-    expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
+    const meta = await readFrontmatter('fact-1.md');
+    expect(meta.status).toBe('active');
+    expect(meta.deprecated_by).toBeUndefined();
   });
 
   // ------------------------------------------------------------------------
-  // N-MEM-WRITECONF r3：supersedes 归档的旧条目类型门——directive 经交互确认门建立，
-  // 任务性材料（project/reference）不代表失效，都不能被会话收尾的一次模型判断归档。
+  // N-MEM-WRITECONF r4：本 PR 没有任何「判断器输出 → 归档旧条目」的路径，supersedes
+  // 只记录链接。directive 经交互确认门建立，这里钉住它（以及任何被指向的旧条目）
+  // 在高置信度 supersedes 下逐字节不变、仍在 INDEX。
   // ------------------------------------------------------------------------
 
   /** 按交互确认门的产物形状种一条 directive（生产路径只有那里能传确认旗标）。 */
@@ -497,7 +508,7 @@ describe('默认助手长期事实写回', () => {
     return fs.readFile(path.join(memoryDir, filename), 'utf-8');
   }
 
-  it('r3：directive 旧条目不可被自动 supersedes 归档：保持 active、逐字节不变、仍在 INDEX', async () => {
+  it('r4：高置信度 supersedes 指向 directive：只记链接，directive 逐字节不变、仍在 INDEX', async () => {
     const rawBefore = await seedDirective('no-destructive-commands.md', '禁止主动执行任何形式的 rm -rf。');
     expect(await readIndex()).toContain('[no-destructive-commands.md]');
 
@@ -510,8 +521,12 @@ describe('默认助手长期事实写回', () => {
       }),
     ]);
 
-    // 新事实照常写成 active；directive 完全不动（内容逐字节一致），仍在 INDEX
+    // 新事实照常写成 active（链接照记）；directive 完全不动（内容逐字节一致），仍在 INDEX
     expect(result).toMatchObject({ written: 1, active: 1, skipped: 0 });
+    expect(await readFrontmatter('fact-2.md')).toMatchObject({
+      status: 'active',
+      deprecated_by: 'no-destructive-commands.md',
+    });
     expect(await fs.readFile(path.join(memoryDir, 'no-destructive-commands.md'), 'utf-8')).toBe(rawBefore);
     expect(await readFrontmatter('no-destructive-commands.md')).toMatchObject({
       status: 'active',
@@ -521,24 +536,6 @@ describe('默认助手长期事实写回', () => {
     expect(index).toContain('[no-destructive-commands.md]');
     expect(index).toContain('[fact-2.md]');
   });
-
-  it.each(['project', 'reference'] as const)(
-    'r3：旧条目为 %s（新条目 user）时 supersedes 同样不归档——旧条目类型门生效',
-    async (oldType) => {
-      await writeDurableFacts([makeFact(1, { type: oldType, content: '旧材料' })]);
-      expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
-
-      await writeDurableFacts([
-        makeFact(2, { type: 'user', confidence: 0.9, supersedes: 'fact-1.md', content: '新认知' }),
-      ]);
-
-      // 旧 project/reference 条目不被 user 新条目自动顶替：仍 active、双条目都在 INDEX
-      expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
-      const index = await readIndex();
-      expect(index).toContain('[fact-1.md]');
-      expect(index).toContain('[fact-2.md]');
-    },
-  );
 
   it('r3：判断器的现有记忆文件清单不含 directive 条目，且 prompt 声明其不可被 supersedes', async () => {
     await seedDirective('no-destructive-commands.md', '禁止主动执行任何形式的 rm -rf。');

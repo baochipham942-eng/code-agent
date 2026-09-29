@@ -148,12 +148,12 @@ describe('durable fact candidate → 人工复核闭环', () => {
     expect(indexAfter).toContain('[user-city.md]');
   });
 
-  it('candidate 新条目复核转正后，supersedes 等待的旧条目才被软归档（deprecated_by 指向新条目）', async () => {
+  it('r4：candidate 复核转正后不再归档被链接的旧条目（supersedes 只记录，approve 不消费）', async () => {
     await writeDurableFacts([fact({ filename: 'user-location.md', confidence: 0.9, content: '用户住在城里。' })]);
     const result = await writeDurableFacts([fact({ confidence: 0.65, supersedes: 'user-location.md' })]);
     expect(result.files).toEqual(['user-city.md']);
 
-    // 转正前旧条目保持生效（candidate 阶段只登记待替换链接）
+    // candidate 阶段：旧条目保持生效，链接只记在新条目 frontmatter 上
     expect(await readFrontmatter(memoryDir, 'user-location.md')).toMatchObject({ status: 'active' });
     expect(await readFrontmatter(memoryDir, 'user-city.md')).toMatchObject({
       status: 'candidate',
@@ -170,22 +170,23 @@ describe('durable fact candidate → 人工复核闭环', () => {
     });
     expect(review.updated[0].status).toBe('active');
 
-    // 转正消费待替换链接：旧条目软归档并指向新条目
-    expect(await readFrontmatter(memoryDir, 'user-location.md')).toMatchObject({
-      status: 'archived',
-      deprecated_by: 'user-city.md',
-    });
+    // r4 scope cut：转正不归档旧条目——两条都 active、都在 INDEX，是否替换由后续工单/用户决定
+    expect(await readFrontmatter(memoryDir, 'user-location.md')).toMatchObject({ status: 'active' });
+    const index = await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8');
+    expect(index).toContain('[user-city.md]');
+    expect(index).toContain('[user-location.md]');
   });
 });
 
 // ============================================================================
-// N-MEM-WRITECONF r2：中置信度改写同名 active 条目时，candidate 绝不原地覆盖——
+// N-MEM-WRITECONF r2→r4：中置信度改写同名条目时，candidate 绝不原地覆盖——
 // writeLightMemoryFile 按 filename 原子覆盖，直接写会把已确认记忆降级出 INDEX，
-// 复核驳回后原事实彻底丢失。candidate 改落派生文件名并登记待替换链接（deprecated_by），
-// 驳回 → 旧条目原封不动；转正 → 旧条目软归档完成替换。
+// 复核驳回后原事实彻底丢失。r4 收口：同名分流只看文件存在性（任意 status 或
+// 没有 status 行的存量文件都算），candidate 改落派生文件名并记录取代链接
+// （deprecated_by，本单不消费）；驳回/转正都不动旧条目。
 // ============================================================================
 
-describe('durable fact candidate 同名 active 条目防覆盖', () => {
+describe('durable fact candidate 同名条目防覆盖', () => {
   let tmpDir: string;
   let memoryDir: string;
 
@@ -206,9 +207,75 @@ describe('durable fact candidate 同名 active 条目防覆盖', () => {
     expect(result).toMatchObject({ active: 1 });
   }
 
+  /**
+   * 按 r4 复审点名的三种形状种一条同名 user-city.md，返回种子文件的原始字节：
+   * - legacy：手工写盘、frontmatter 无 status 行——本 PR 之前 writeDurableFacts 不写
+   *   status，存量记忆都是这个形状，INDEX 与 lightMemoryFileToEntry 都按缺省 active 处理；
+   * - active / candidate：writeLightMemoryFile 显式写 status。
+   */
+  async function seedSameNameFile(mode: 'legacy' | 'active' | 'candidate'): Promise<string> {
+    if (mode === 'legacy') {
+      await fs.mkdir(memoryDir, { recursive: true });
+      await fs.writeFile(path.join(memoryDir, 'user-city.md'), [
+        '---',
+        'name: 用户城市',
+        'description: 用户长期居住的城市',
+        'type: user',
+        '---',
+        '',
+        '用户长期居住在上海。',
+        '',
+      ].join('\n'), 'utf-8');
+    } else {
+      await writeLightMemoryFile({
+        filename: 'user-city.md',
+        name: '用户城市',
+        description: '用户长期居住的城市',
+        type: 'user',
+        content: '用户长期居住在上海。',
+        status: mode,
+      });
+    }
+    await rebuildLightMemoryIndex();
+    return fs.readFile(path.join(memoryDir, 'user-city.md'), 'utf-8');
+  }
+
   async function readIndex(): Promise<string> {
     return fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8');
   }
+
+  it.each(['legacy', 'active', 'candidate'] as const)(
+    'r4：同名文件无论 status 形状（%s），candidate 一律落派生文件名、原文件逐字节不变',
+    async (mode) => {
+      const rawBefore = await seedSameNameFile(mode);
+      // legacy 无 status 行与显式 active 都按缺省 active 收进 INDEX；candidate 不进
+      const indexBefore = await readIndex();
+      if (mode === 'candidate') expect(indexBefore).not.toContain('[user-city.md]');
+      else expect(indexBefore).toContain('[user-city.md]');
+
+      const result = await writeDurableFacts([
+        fact({ confidence: 0.65, content: '用户长期居住在北京。' }),
+      ]);
+
+      expect(result).toMatchObject({ candidate: 1, active: 0 });
+      const candidateFile = result.files[0];
+      expect(candidateFile).toMatch(/^user-city\.candidate-[0-9a-f]{8}\.md$/);
+      expect(candidateFile).not.toBe('user-city.md');
+
+      // 原文件逐字节不变（不看 status 的纯存在性分流，存量无 status 文件同样受保护）
+      expect(await fs.readFile(path.join(memoryDir, 'user-city.md'), 'utf-8')).toBe(rawBefore);
+
+      // candidate 是独立文件：status=candidate、取代链接指向原文件、不进 INDEX
+      expect(await readFrontmatter(memoryDir, candidateFile)).toMatchObject({
+        status: 'candidate',
+        deprecated_by: 'user-city.md',
+      });
+      const indexAfter = await readIndex();
+      if (mode === 'candidate') expect(indexAfter).not.toContain('[user-city.md]');
+      else expect(indexAfter).toContain('[user-city.md]');
+      expect(indexAfter).not.toMatch(/\[user-city\.candidate-/);
+    },
+  );
 
   it.each([
     ['显式中置信度', 0.65],
@@ -239,7 +306,7 @@ describe('durable fact candidate 同名 active 条目防覆盖', () => {
     expect(index).toContain('[user-city.md]');
     expect(index).not.toMatch(/\[user-city\.candidate-/);
 
-    // candidate 是独立文件，带待替换链接，出现在复核页数据源
+    // candidate 是独立文件，带取代链接（只记录，r4 不消费），出现在复核页数据源
     expect(await readFrontmatter(memoryDir, candidateFile)).toMatchObject({
       status: 'candidate',
       deprecated_by: 'user-city.md',
@@ -273,7 +340,7 @@ describe('durable fact candidate 同名 active 条目防覆盖', () => {
     expect(await readIndex()).toBe(indexBefore);
   });
 
-  it('转正 candidate：新条目进 INDEX，旧条目按 supersedes 软归档（deprecated_by 指向新条目）', async () => {
+  it('r4：转正 candidate：新条目进 INDEX，旧条目保持 active 也在 INDEX（不再自动归档）', async () => {
     await seedActiveCity();
     const result = await writeDurableFacts([
       fact({ confidence: 0.65, content: '用户长期居住在北京。' }),
@@ -288,14 +355,12 @@ describe('durable fact candidate 同名 active 条目防覆盖', () => {
     });
     expect(review.updated[0].status).toBe('active');
 
-    // 新条目转正进 INDEX；旧条目软归档退 INDEX，deprecated_by 指向顶替者
+    // 新条目转正进 INDEX；旧条目不动（r4 scope cut：approve 不消费取代链接）
     expect(await readFrontmatter(memoryDir, candidateFile)).toMatchObject({ status: 'active' });
-    const old = await readFrontmatter(memoryDir, 'user-city.md');
-    expect(old.status).toBe('archived');
-    expect(old.deprecated_by).toBe(candidateFile);
+    expect(await readFrontmatter(memoryDir, 'user-city.md')).toMatchObject({ status: 'active' });
     const index = await readIndex();
     expect(index).toContain(`[${candidateFile}]`);
-    expect(index).not.toContain('[user-city.md]');
+    expect(index).toContain('[user-city.md]');
   });
 
   it('高置信度改写同名 active 条目：保持既有行为原地覆盖（仍 active）', async () => {
@@ -325,10 +390,10 @@ describe('durable fact candidate 同名 active 条目防覆盖', () => {
 });
 
 // ============================================================================
-// N-MEM-WRITECONF r3：directive 经交互确认门建立，candidate 路径（同名冲突分流与
-// 显式 supersedes）都不得把它登记为待替换链接——否则复核页一 approve，directive 就会
-// 经 archiveMemoryFile 的自授确认被静默归档。candidate 仍照常写（新认知待人工复核），
-// 但 directive 保持 active、逐字节不变、直到用户自己动手。
+// N-MEM-WRITECONF r3→r4：directive 经交互确认门建立、只能由用户移除。r4 收口后
+// 本 PR 没有任何「判断器输出 → 归档旧条目」的路径：candidate 撞上同名 directive
+// 仍改落派生文件名（纯存在性分流，链接只是记录），复核 approve 也不消费链接——
+// directive 在任何阶段都保持 active、逐字节不变。
 // ============================================================================
 
 describe('durable fact candidate 不得顶替 directive', () => {
@@ -362,7 +427,7 @@ describe('durable fact candidate 不得顶替 directive', () => {
     return raw;
   }
 
-  it('candidate 撞上同名 directive：落派生文件名、不登记待替换链接，转正后 directive 仍原样', async () => {
+  it('candidate 撞上同名 directive：落派生文件名，approve 转正后 directive 仍逐字节原样', async () => {
     const rawBefore = await seedDirective('user-city.md');
 
     const result = await writeDurableFacts([fact({ confidence: 0.65, content: '用户长期居住在北京。' })]);
@@ -371,13 +436,14 @@ describe('durable fact candidate 不得顶替 directive', () => {
     expect(candidateFile).toMatch(/^user-city\.candidate-[0-9a-f]{8}\.md$/);
     const candidateMeta = await readFrontmatter(memoryDir, candidateFile);
     expect(candidateMeta.status).toBe('candidate');
-    expect(candidateMeta.deprecated_by).toBeUndefined();
+    // r4：链接只做记录（指向同名 directive 文件），没有任何路径消费它
+    expect(candidateMeta.deprecated_by).toBe('user-city.md');
 
     // directive 逐字节不变、仍在 INDEX
     expect(await fs.readFile(path.join(memoryDir, 'user-city.md'), 'utf-8')).toBe(rawBefore);
     expect(await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8')).toContain('[user-city.md]');
 
-    // 复核页 approve 转正 candidate：directive 也不因此被归档
+    // 复核页 approve 转正 candidate：directive 也不因此被动
     const listed = await listUnifiedMemoryEntries();
     const candidateEntry = listed.entries.find((item) => item.source.filePath === candidateFile);
     expect(candidateEntry?.status).toBe('candidate');
@@ -394,7 +460,7 @@ describe('durable fact candidate 不得顶替 directive', () => {
     expect(await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8')).toContain('[user-city.md]');
   });
 
-  it('candidate 的 supersedes 指向 directive：不登记待替换链接，转正后 directive 仍不被归档', async () => {
+  it('candidate 的 supersedes 指向 directive：只记录链接，转正后 directive 仍不被归档', async () => {
     const rawBefore = await seedDirective('confirm-city-first.md');
 
     const result = await writeDurableFacts([
@@ -410,7 +476,7 @@ describe('durable fact candidate 不得顶替 directive', () => {
     expect(result.files).toEqual(['city-feedback.md']);
     const candidateMeta = await readFrontmatter(memoryDir, 'city-feedback.md');
     expect(candidateMeta.status).toBe('candidate');
-    expect(candidateMeta.deprecated_by).toBeUndefined();
+    expect(candidateMeta.deprecated_by).toBe('confirm-city-first.md');
 
     const listed = await listUnifiedMemoryEntries();
     const candidateEntry = listed.entries.find((item) => item.source.filePath === 'city-feedback.md');

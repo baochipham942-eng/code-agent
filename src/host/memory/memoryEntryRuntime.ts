@@ -19,10 +19,8 @@ import type {
 } from '../../shared/contract/memory';
 import * as fs from 'fs/promises';
 import type { MemoryRecord } from '../services/core/repositories';
-import { createLogger } from '../services/infra/logger';
 import { getMemoryIndexPath } from '../lightMemory/indexLoader';
 import {
-  archiveMemoryFile,
   listMemoryFiles,
   rebuildLightMemoryIndex,
   writeLightMemoryFile,
@@ -37,8 +35,6 @@ import {
   metadataForImportedEntry,
   sourceKindForLightFile,
 } from './memoryEntryMetadata';
-
-const logger = createLogger('MemoryEntryRuntime');
 
 export interface MemoryEntryDatabase {
   listMemories(options?: {
@@ -894,12 +890,6 @@ export async function updateMemoryEntry(
   const current = (await listUnifiedMemoryEntries(db)).entries.find((entry) => entry.id === request.entryId);
   if (!current) throw new Error(`Memory entry not found: ${request.entryId}`);
 
-  // N-MEM-WRITECONF r2：candidate 携带的待替换链接（durableFactWriter 记在 deprecated_by，指向被
-  // 顶替的旧条目）只在转正（approve → active）时消费——软归档旧条目完成替换；驳回不动旧条目。
-  // 必须先取：buildUpdatedMemoryEntry 转正时会清空 deprecatedBy。
-  const pendingSupersededFilename = request.status === 'active' && current.status === 'candidate'
-    && current.source.sourceOfTruth === 'light_file' && current.deprecatedBy || null;
-
   const next = buildUpdatedMemoryEntry(current, request);
   if (current.source.sourceOfTruth === 'light_file') {
     const file = await writeLightMemoryFile({
@@ -919,17 +909,6 @@ export async function updateMemoryEntry(
       importProvenance: next.source.importProvenance,
     });
     await rebuildLightMemoryIndex();
-    if (pendingSupersededFilename) {
-      // 转正已落盘；归档失败只降级为留痕，不能让整个 approve 报红重试（此时条目已非 candidate）。
-      try {
-        await archiveMemoryFile(pendingSupersededFilename, file.filename);
-      } catch (error) {
-        logger.warn('candidate 转正后归档被替换的旧条目失败', {
-          superseded: pendingSupersededFilename, replacedBy: file.filename,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
     const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db);
     return {
       entry: {

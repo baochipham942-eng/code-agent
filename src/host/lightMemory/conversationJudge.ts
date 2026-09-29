@@ -27,7 +27,7 @@ export interface DurableFact {
   content: string;
   /** 判断器给出的置信度 (0-1)。缺失/越界时解析侧回落保守缺省（candidate 档），不放大。 */
   confidence: number;
-  /** 可选：这条事实修正/取代的现有记忆文件名（仅 user/feedback 在写入侧生效）。 */
+  /** 可选：这条事实修正/取代的现有记忆文件名（r4：写入侧只记录为新条目上的链接，不归档旧条目）。 */
   supersedes?: string;
 }
 
@@ -253,8 +253,9 @@ function buildConversationSnippet(userMessages: string[], lastAssistant?: string
 /**
  * 现有记忆文件清单（active 且非 directive 的记忆文件）。
  * 拼进判断器输入，让 supersedes 能指向真实存在的文件而不是编造文件名。
- * r3：① directive 不进清单——其建立要过交互确认门，自动 supersedes 顶不掉，
- * 列出来只会诱导判断器产出注定被忽略的 supersedes（写入侧另有旧条目类型门兜底）；
+ * r3 起：① directive 不进清单——其建立要过交互确认门、只能由用户移除；
+ * r4 起 supersedes 只是记录在新条目上的链接（本单不归档旧条目），但清单仍排除
+ * directive，避免诱导未来消费该链接的工单去自动顶替用户确认过的约束。
  * ② 条数封顶，输入 token 不随记忆量无界增长（超出部分本次不可被 supersedes，
  * 保守无害）。来源从 INDEX 目标改为全目录扫描 + active 过滤：类型信息在文件
  * frontmatter 里而不在 INDEX 行里，且与 INDEX 收录同判据（status 缺省按 active）。

@@ -357,6 +357,98 @@ describe('CLIAgent', () => {
     expect(mocks.terminalCLIDurableRun).toHaveBeenCalledWith(durableRun, true);
   });
 
+  // N-CLI-DURABLE-TERMINAL-LOST ②：夜巡 8 进程共库时终态写两次零退避重试全灭后只落
+  // logger.warn（文件日志），无头进程退出后现场零线索、run 永远非终态。
+  const busyError = () => Object.assign(new Error('database is locked'), { code: 'SQLITE_BUSY_SNAPSHOT' });
+  const durableRunHandle = () => ({
+    context: {
+      runId: 'durable-run-1',
+      sessionId: 'sess-1',
+      workspace: '/tmp/project',
+      cwd: '/tmp/project',
+    },
+    traceContext: { runId: 'durable-run-1' },
+  });
+
+  it('终态写 SQLITE_BUSY 类失败带退避重试到成功，不报错', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.startCLIDurableRun.mockResolvedValueOnce(durableRunHandle());
+      mocks.terminalCLIDurableRun
+        .mockRejectedValueOnce(busyError())
+        .mockRejectedValueOnce(busyError())
+        .mockResolvedValueOnce(undefined);
+      installLoop(async (ctl) => {
+        ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+      });
+
+      const agent = new CLIAgent();
+      const runPromise = agent.run('busy terminal turn');
+      await vi.advanceTimersByTimeAsync(1_000);
+      const result = await runPromise;
+
+      expect(result.success).toBe(true);
+      expect(mocks.terminalCLIDurableRun).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('终态写重试耗尽后在退出前可见报错（stderr + 结构化 code），且不改写本轮结果', async () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      mocks.startCLIDurableRun.mockResolvedValueOnce(durableRunHandle());
+      mocks.terminalCLIDurableRun.mockRejectedValue(busyError());
+      installLoop(async (ctl) => {
+        ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+      });
+
+      const agent = new CLIAgent();
+      const runPromise = agent.run('lost terminal turn');
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await runPromise;
+
+      // 退出前可见：stderr 结构化报错，不再只有 logger.warn 落文件。
+      expect(errorSpy).toHaveBeenCalledWith('[CLI] Durable Run left non-terminal after retries', expect.objectContaining({
+        code: 'CLI_DURABLE_RUN_TERMINAL_FAILED',
+        runId: 'durable-run-1',
+        sessionId: 'sess-1',
+      }));
+      // 总尝试次数 = CLI_DURABLE_TERMINAL.RETRY_ATTEMPTS（5）
+      expect(mocks.terminalCLIDurableRun).toHaveBeenCalledTimes(5);
+      // 终态丢失不吞本轮答案
+      expect(result.success).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('fence 类确定性失败不烧退避重试：一次原样重试后即可见报错', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      mocks.startCLIDurableRun.mockResolvedValueOnce(durableRunHandle());
+      mocks.terminalCLIDurableRun.mockRejectedValue(
+        new Error('Durable run write fenced by stale owner: durable-run-1'),
+      );
+      installLoop(async (ctl) => {
+        ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+      });
+
+      const agent = new CLIAgent();
+      const result = await agent.run('fenced terminal turn');
+
+      expect(mocks.terminalCLIDurableRun).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledWith('[CLI] Durable Run left non-terminal after retries', expect.objectContaining({
+        code: 'CLI_DURABLE_RUN_TERMINAL_FAILED',
+      }));
+      expect(result.success).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('wraps the whole run in a run trace context carrying the sessionId (log correlation)', async () => {
     const { getActiveRunTraceContext } = await import('../../../src/host/telemetry/runTraceContext');
     let activeDuringRun: unknown;

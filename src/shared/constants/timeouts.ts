@@ -576,3 +576,16 @@ export const WEB_SERVER_SHUTDOWN_TIMEOUTS = {
    */
   PRE_DB_BUDGET_MS: 2_000,
 } as const;
+
+/**
+ * CLI durable run 终态落库重试（N-CLI-DURABLE-TERMINAL-LOST）：夜巡 8 进程共库时
+ * terminalCLIDurableRun 两次零退避重试全灭、run 永远停在非终态（exit 0 会话遗留 78 条）。
+ * 仓储层已有 IMMEDIATE+busy 重试；这组是 CLI 退出前的最后一道：busy 类错误带退避重试，
+ * 重试耗尽才可见报错退出。fence/owner 类不重试（确定性失败），由幂等检查兜底。
+ */
+export const CLI_DURABLE_TERMINAL = {
+  /** 终态写入总尝试次数（含首次） */
+  RETRY_ATTEMPTS: 5,
+  /** 退避基数（毫秒）：第 n 次重试前等待 BASE << (n-1) */
+  RETRY_BACKOFF_BASE_MS: 200,
+} as const;

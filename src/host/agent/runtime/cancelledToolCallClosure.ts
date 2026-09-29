@@ -4,26 +4,13 @@ const CANCELLED_TOOL_CALL_PLACEHOLDER =
   '[no result: this tool call was cancelled before a result was recorded; do not assume it ran or succeeded]';
 
 /**
- * 崩溃清算占位（OUTCOME_UNKNOWN 档）：账本有 begin 事件，执行可能已经发生，
- * 结果未知，先核对外部状态。与历史串逐字相同，renderer/e2e 按文本识别。
+ * 崩溃清算占位（逐字保持历史串，renderer/e2e 按文本识别，不得改写）。
+ * 不分层：begin 写入链路全层 fail-safe 吞错（toolExecutionLedger.begin 的 catch →
+ * databaseService.appendToolExecutionBegin 未就绪/只读静默、BUSY/磁盘满仅 warn），
+ * 「账本无 begin 行」推不出「从未执行」，只能一律按结果未知处理（N-CRASH-OUTCOME-TIERS 返修 r1）。
  */
 export const INTERRUPTED_TOOL_CALL_PLACEHOLDER =
   'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded';
-
-/**
- * 崩溃清算占位（NOT_STARTED 档）：账本无 begin 事件，该调用从未开始，可安全重发。
- */
-export const INTERRUPTED_TOOL_CALL_PLACEHOLDER_NOT_STARTED =
-  'interrupted: process crashed before this tool call started; it never began running and is safe to re-issue';
-
-/** 崩溃清算分层：从未开始（无 begin 事件）vs 结果未知（有 begin 事件） */
-export type CrashRecoveryTier = 'NOT_STARTED' | 'OUTCOME_UNKNOWN';
-
-/** 单个孤儿 tool call 的清算覆盖：占位文案 + 机器可读分层戳 */
-interface ToolCallClosureOverride {
-  error: string;
-  metadata?: Record<string, unknown>;
-}
 
 interface ToolCallClosureInput<TPersistResult extends void | Promise<void>> {
   messages: readonly Message[];
@@ -31,8 +18,6 @@ interface ToolCallClosureInput<TPersistResult extends void | Promise<void>> {
   toolCalls: readonly ToolCall[];
   persistMessage: (message: Message) => TPersistResult;
   placeholder?: string;
-  /** 逐 call 覆盖（崩溃清算分层用）：返回 undefined 时回落到 placeholder */
-  resolveClosure?: (toolCall: ToolCall) => ToolCallClosureOverride | undefined;
   messageIdSuffix?: string;
 }
 
@@ -50,16 +35,12 @@ export function persistCancelledToolCallClosures<TPersistResult extends void | P
   );
   if (missingToolCalls.length === 0) return;
 
-  const closureResults: ToolResult[] = missingToolCalls.map((toolCall) => {
-    const override = input.resolveClosure?.(toolCall);
-    return {
-      toolCallId: toolCall.id,
-      success: false,
-      error: override?.error ?? input.placeholder ?? CANCELLED_TOOL_CALL_PLACEHOLDER,
-      duration: 0,
-      ...(override?.metadata ? { metadata: override.metadata } : {}),
-    };
-  });
+  const closureResults: ToolResult[] = missingToolCalls.map((toolCall) => ({
+    toolCallId: toolCall.id,
+    success: false,
+    error: input.placeholder ?? CANCELLED_TOOL_CALL_PLACEHOLDER,
+    duration: 0,
+  }));
   return input.persistMessage({
     id: `${input.assistantMessage.id}:${input.messageIdSuffix ?? 'cancelled-tool-results'}`,
     role: 'tool',

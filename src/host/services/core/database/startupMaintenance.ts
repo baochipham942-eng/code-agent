@@ -15,8 +15,6 @@ import type { createLogger } from '../../infra/logger';
 import {
   persistCancelledToolCallClosures,
   INTERRUPTED_TOOL_CALL_PLACEHOLDER,
-  INTERRUPTED_TOOL_CALL_PLACEHOLDER_NOT_STARTED,
-  type CrashRecoveryTier,
 } from '../../../agent/runtime/cancelledToolCallClosure';
 import { backfillTelemetrySessionTitles } from '../../../telemetry/telemetrySessionTitleBackfill';
 import { repairCorruptFtsOnStartup } from './ftsRepair';
@@ -106,33 +104,14 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
           (toolCall) => !storedAutomaticToolCallIds.has(toolCall.id),
         );
         if (toolCallsToInterrupt.length === 0) continue;
+        // 不按「账本有无 begin 行」分层（N-CRASH-OUTCOME-TIERS 返修 r1 撤档）：begin 写入
+        // 全链路 fail-safe 吞错（见 cancelledToolCallClosure.ts 的占位注释），工具可能已带副作用
+        // 执行只是 begin 行没写进去——缺记录推不出「从未开始」，一律按结果未知收口。
         persistCancelledToolCallClosures({
           messages,
           assistantMessage,
           toolCalls: toolCallsToInterrupt,
           placeholder: INTERRUPTED_TOOL_CALL_PLACEHOLDER,
-          // N-CRASH-OUTCOME-TIERS：按账本是否留有 begin 事件把清算结果分成两档——
-          // NOT_STARTED（从未开始，可安全重发）/ OUTCOME_UNKNOWN（可能跑过，先核对外部状态）。
-          // 账本查不动时一律按 OUTCOME_UNKNOWN 兜底，宁可存疑绝不凭疑问宣称「没跑过」。
-          resolveClosure: (toolCall) => {
-            let tier: CrashRecoveryTier = 'OUTCOME_UNKNOWN';
-            try {
-              if (!toolExecutionEventRepo.hasBeginForToolCall(sessionId, toolCall.id)) {
-                tier = 'NOT_STARTED';
-              }
-            } catch (err) {
-              logger.warn(
-                `[DatabaseService] Crash tier lookup failed for session ${sessionId} tool call ${toolCall.id} (fail-safe OUTCOME_UNKNOWN):`,
-                err,
-              );
-            }
-            return {
-              error: tier === 'NOT_STARTED'
-                ? INTERRUPTED_TOOL_CALL_PLACEHOLDER_NOT_STARTED
-                : INTERRUPTED_TOOL_CALL_PLACEHOLDER,
-              metadata: { crashRecoveryTier: tier },
-            };
-          },
           messageIdSuffix: 'interrupted-tool-results',
           persistMessage: (message) => {
             sessionRepo.addMessage(sessionId, message, { provenanceKind: 'crash-recovery' });

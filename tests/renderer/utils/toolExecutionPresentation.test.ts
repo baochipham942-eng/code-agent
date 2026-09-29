@@ -61,19 +61,6 @@ describe('toolExecutionPresentation', () => {
     });
   });
 
-  it('recognizes the crash NOT_STARTED closure placeholder as an interruption with the same badge', () => {
-    const notStarted = 'interrupted: process crashed before this tool call started; it never began running and is safe to re-issue';
-
-    expect(isToolInterruptionPlaceholder(notStarted)).toBe(true);
-    expect(humanizeToolError(notStarted, 'Read', en)).toEqual({
-      summary: en.outcomeWords['interrupted-restart'].badge.label,
-      detail: en.outcomeWords['interrupted-restart'].badge.reason,
-    });
-    expect(resolveToolTerminalOutcomeKey({
-      result: { toolCallId: 'not-started', success: false, error: notStarted },
-    })).toBe('interrupted-restart');
-  });
-
   it('requires explicit user provenance before a tool outcome can say cancelled', () => {
     expect(resolveToolTerminalOutcomeKey({
       result: {

@@ -71,9 +71,6 @@ export interface HumanizedToolError {
 export function isToolInterruptionPlaceholder(error: string | undefined): boolean {
   if (!error) return false;
   const normalized = error.toLowerCase();
-  // 崩溃清算的 NOT_STARTED 分层串（账本无 begin 事件 → 从未开始、可安全重发），
-  // 与旧占位同徽章同状态词呈现，不新增 i18n 文案。
-  if (normalized.includes('process crashed before this tool call started')) return true;
   return (
     normalized.includes('result was recorded')
     && (

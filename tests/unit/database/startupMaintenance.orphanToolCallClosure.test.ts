@@ -11,6 +11,7 @@ import { MemoryRepository } from '../../../src/host/services/core/repositories/M
 import { PermissionDecisionRepository } from '../../../src/host/services/core/repositories/PermissionDecisionRepository';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { ToolExecutionEventRepository } from '../../../src/host/services/core/repositories/ToolExecutionEventRepository';
+import { DatabaseReadOnlyError } from '../../../src/host/services/core/database/sqliteErrors';
 import type { createLogger } from '../../../src/host/services/infra/logger';
 import type { Message, Session } from '../../../src/shared/contract';
 
@@ -18,8 +19,6 @@ type Logger = ReturnType<typeof createLogger>;
 
 const INTERRUPTED_PLACEHOLDER =
   'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded';
-const INTERRUPTED_PLACEHOLDER_NOT_STARTED =
-  'interrupted: process crashed before this tool call started; it never began running and is safe to re-issue';
 
 describe('startup maintenance orphan tool-call closure', () => {
   let db: InstanceType<typeof Database>;
@@ -87,7 +86,6 @@ describe('startup maintenance orphan tool-call closure', () => {
       toolName: 'bash',
       summary: 'sleep 30',
       params: { command: 'sleep 30' },
-      toolCallId: 'call-1',
       recordedAt: 20,
     });
     const branchEventsBefore = db.prepare(
@@ -122,131 +120,56 @@ describe('startup maintenance orphan tool-call closure', () => {
     ]);
   });
 
-  it('classifies an orphan tool call with no ledger begin as NOT_STARTED', () => {
-    createSession('not-started-session', 'running');
-    sessionRepo.addMessage('not-started-session', assistantToolCall('assistant-ns', 'call-ns'));
-    expect(toolExecutionEventRepo.hasBeginForToolCall('not-started-session', 'call-ns')).toBe(false);
-
-    runMaintenance();
-
-    const messages = sessionRepo.getMessages('not-started-session');
-    expect(messages).toHaveLength(2);
-    expect(messages[1]).toMatchObject({
-      id: 'assistant-ns:interrupted-tool-results',
-      role: 'tool',
-      toolResults: [{
-        toolCallId: 'call-ns',
-        success: false,
-        error: INTERRUPTED_PLACEHOLDER_NOT_STARTED,
-        duration: 0,
-        metadata: { crashRecoveryTier: 'NOT_STARTED' },
-      }],
+  // 返修 r1：begin 写入全链路 fail-safe 吞错（toolExecutionLedger.begin 的 catch、
+  // databaseService.appendToolExecutionBegin 在 db 未就绪/只读降级时静默返回、其余错误仅 warn），
+  // 工具照常执行——这层已由 tests/unit/tools/toolExecutor.executionLedger.test.ts 钉住。
+  // 因此「账本无 begin 行」推不出「从未执行」。这里钉住后果：begin 行没写进去（工具实际
+  // 已执行、随后崩溃、结果未落盘）时，清算必须维持「不得假设跑过」的保守占位串。
+  function runBeginWriteFailureScenario(createWriteError: () => Error): void {
+    createSession('begin-write-failed-session', 'running');
+    sessionRepo.addMessage('begin-write-failed-session', assistantToolCall('assistant-bwf', 'call-bwf'));
+    const appendBegin = vi.spyOn(toolExecutionEventRepo, 'appendBegin').mockImplementation(() => {
+      throw createWriteError();
     });
-  });
-
-  it('classifies an orphan tool call with a ledger begin as OUTCOME_UNKNOWN with the legacy placeholder', () => {
-    createSession('outcome-unknown-session', 'running');
-    sessionRepo.addMessage('outcome-unknown-session', assistantToolCall('assistant-ou', 'call-ou'));
-    toolExecutionEventRepo.appendBegin({
-      executionId: 'execution-ou',
-      sessionId: 'outcome-unknown-session',
-      toolName: 'bash',
-      summary: 'sleep 30',
-      params: { command: 'sleep 30' },
-      toolCallId: 'call-ou',
-      recordedAt: 20,
-    });
-    // 开口执行（有 begin 无 complete）与 begin+recovered 两种形态都判「有 begin」
-    expect(toolExecutionEventRepo.hasBeginForToolCall('outcome-unknown-session', 'call-ou')).toBe(true);
-    toolExecutionEventRepo.appendComplete({
-      executionId: 'execution-ou',
-      toolName: 'bash',
-      status: 'recovered',
-      sessionId: 'outcome-unknown-session',
-      recordedAt: 21,
-    });
-    expect(toolExecutionEventRepo.hasBeginForToolCall('outcome-unknown-session', 'call-ou')).toBe(true);
-
-    runMaintenance();
-
-    const messages = sessionRepo.getMessages('outcome-unknown-session');
-    expect(messages).toHaveLength(2);
-    expect(messages[1]).toMatchObject({
-      role: 'tool',
-      toolResults: [{
-        toolCallId: 'call-ou',
-        success: false,
-        error: INTERRUPTED_PLACEHOLDER,
-        duration: 0,
-        metadata: { crashRecoveryTier: 'OUTCOME_UNKNOWN' },
-      }],
-    });
-  });
-
-  it('splits tiers per tool call inside one mixed assistant message', () => {
-    createSession('mixed-session', 'running');
-    sessionRepo.addMessage('mixed-session', {
-      id: 'assistant-mixed',
-      role: 'assistant',
-      content: '',
-      timestamp: 10,
-      toolCalls: [
-        { id: 'call-begun', name: 'bash', arguments: { command: 'sleep 30' } },
-        { id: 'call-never-begun', name: 'Read', arguments: { file_path: 'README.md' } },
-      ],
-    });
-    toolExecutionEventRepo.appendBegin({
-      executionId: 'execution-mixed',
-      sessionId: 'mixed-session',
-      toolName: 'bash',
-      summary: 'sleep 30',
-      params: { command: 'sleep 30' },
-      toolCallId: 'call-begun',
-      recordedAt: 20,
-    });
-
-    runMaintenance();
-
-    const messages = sessionRepo.getMessages('mixed-session');
-    expect(messages).toHaveLength(2);
-    expect(messages[1].toolResults).toEqual([
-      expect.objectContaining({
-        toolCallId: 'call-begun',
-        error: INTERRUPTED_PLACEHOLDER,
-        metadata: { crashRecoveryTier: 'OUTCOME_UNKNOWN' },
+    // 运行期：执行器已走到 begin 落账点，但写入抛错（生产链路里被上游吞掉），行未落盘
+    expect(() =>
+      toolExecutionEventRepo.appendBegin({
+        executionId: 'execution-bwf',
+        sessionId: 'begin-write-failed-session',
+        toolName: 'bash',
+        summary: 'sleep 30',
+        params: { command: 'sleep 30' },
+        toolCallId: 'call-bwf',
+        recordedAt: 20,
       }),
+    ).toThrow();
+    appendBegin.mockRestore();
+    expect(
+      db.prepare(`SELECT COUNT(*) AS count FROM tool_execution_events WHERE phase = 'begin'`).get(),
+    ).toEqual({ count: 0 });
+
+    runMaintenance();
+
+    const closure = sessionRepo.getMessages('begin-write-failed-session')[1];
+    expect(closure.toolResults).toEqual([
       expect.objectContaining({
-        toolCallId: 'call-never-begun',
-        error: INTERRUPTED_PLACEHOLDER_NOT_STARTED,
-        metadata: { crashRecoveryTier: 'NOT_STARTED' },
+        toolCallId: 'call-bwf',
+        success: false,
+        error: INTERRUPTED_PLACEHOLDER,
+        duration: 0,
       }),
     ]);
+    expect(JSON.stringify(closure.toolResults)).not.toContain('safe to re-issue');
+    expect(JSON.stringify(closure.toolResults)).not.toContain('never began running');
+    expect(closure.toolResults?.[0]?.metadata).toBeUndefined();
+  }
+
+  it('keeps the do-not-assume placeholder when the begin ledger write failed with SQLITE_BUSY before the crash', () => {
+    runBeginWriteFailureScenario(() => new Error('database is locked'));
   });
 
-  it('falls back to OUTCOME_UNKNOWN when the ledger begin lookup throws', () => {
-    createSession('lookup-fail-session', 'running');
-    sessionRepo.addMessage('lookup-fail-session', assistantToolCall('assistant-lf', 'call-lf'));
-    vi.spyOn(toolExecutionEventRepo, 'hasBeginForToolCall').mockImplementation(() => {
-      throw new Error('ledger unavailable');
-    });
-
-    runMaintenance();
-
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('fail-safe OUTCOME_UNKNOWN'),
-      expect.objectContaining({ message: 'ledger unavailable' }),
-    );
-    const messages = sessionRepo.getMessages('lookup-fail-session');
-    expect(messages).toHaveLength(2);
-    expect(messages[1]).toMatchObject({
-      role: 'tool',
-      toolResults: [{
-        toolCallId: 'call-lf',
-        success: false,
-        error: INTERRUPTED_PLACEHOLDER,
-        metadata: { crashRecoveryTier: 'OUTCOME_UNKNOWN' },
-      }],
-    });
+  it('keeps the do-not-assume placeholder when the begin ledger write failed in read-only degraded mode', () => {
+    runBeginWriteFailureScenario(() => new DatabaseReadOnlyError());
   });
 
   it('does not append a second result when the recovered session crashes again', () => {

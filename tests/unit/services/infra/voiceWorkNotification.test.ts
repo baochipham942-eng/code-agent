@@ -20,6 +20,10 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
     error: vi.fn(),
   }),
 }));
+// notifyTaskResuming 的文案语言读 configService（ui.language）；本文件只测中文路径，钉死 zh。
+vi.mock('../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
+}));
 
 const { notificationService } =
   await import('../../../../src/host/services/infra/notificationService');

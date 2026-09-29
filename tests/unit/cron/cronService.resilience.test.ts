@@ -365,6 +365,45 @@ describe('④ misfire 宽限窗（循环任务错过：窗内照跑，超窗 ski
 });
 
 describe('⑤ 重启对账幂等：合并已有任务，禁止删旧建新（Cline 实付回归）', () => {
+  it('重启加载回来的任务仍走退避（未显式配置 retryDelay 不落 5000 默认）', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    dbState.cronRows = [{
+      id: 'job-restart-backoff',
+      name: '重启后的退避任务',
+      description: null,
+      schedule_type: 'every',
+      schedule: JSON.stringify({ type: 'every', interval: 2, unit: 'hours' }),
+      action: JSON.stringify({ type: 'shell', command: 'echo ok' }),
+      enabled: 1,
+      max_retries: 1,
+      retry_delay: null, // 未显式配置：持久层不再写死 5000 默认
+      timeout: 60000,
+      tags: null,
+      metadata: '{}',
+      cloud_job_id: null,
+      created_at: NOW - 60 * 60_000,
+      updated_at: NOW - 60 * 60_000,
+    }];
+
+    const service = new CronService();
+    await service.initialize();
+    const { calls } = patchExecuteAction(service, async () => {
+      throw new Error('ECONNRESET: socket hang up');
+    });
+
+    const settled = service.triggerJob('job-restart-backoff');
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(calls()).toBe(1); // 旧固定 5s 已废
+    await vi.advanceTimersByTimeAsync(25_001);
+    expect(calls()).toBe(2); // 30s 退避到点
+
+    const execution = (await settled)!;
+    expect(execution.retryAttempt).toBe(1);
+    await service.shutdown();
+  });
+
   it('两次 initialize 后任务原样保留：同 id、同调度、同 enabled、nextRun 不漂移', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);

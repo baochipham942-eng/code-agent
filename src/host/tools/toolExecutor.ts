@@ -2282,9 +2282,8 @@ export class ToolExecutor {
       }
 
       // 文件检查点：写隔离锁拿到后再保存原文件，避免并行 worker 竞争同一目标。
-      // 判写目标（resolveToolWriteTargets），不枚举工具名；数组兜底 ?? [] 兼容
-      // 返回 undefined 的旧测试桩。
-      const fileCheckpoints = (await createFileCheckpointIfNeeded(toolDef, params, () => {
+      // 判写目标（resolveToolWriteTargets），不枚举工具名。
+      const fileCheckpoints = await createFileCheckpointIfNeeded(toolDef, params, () => {
         if (!effectiveSessionId) return null;
         // messageId 从 context 中获取，如果没有则使用工具调用 ID
         const messageId = options.currentToolCallId || `msg_${Date.now()}`;
@@ -2293,7 +2292,7 @@ export class ToolExecutor {
           messageId,
           workspaceScope: this.runContext?.workspaceScope,
         };
-      }, this.executionCwd)) ?? [];
+      }, this.executionCwd);
 
       // Execute the tool via protocol resolver
       context.approvedToolCall = {
@@ -2322,13 +2321,13 @@ export class ToolExecutor {
         : null;
       const rawResult = delegatedResult
         ?? await resolver.execute(executionToolName, params, context);
-      if (rawResult.success) {
-        for (const fileCheckpoint of fileCheckpoints) {
-          await getFileCheckpointService().finalizeCheckpointDigest(
-            fileCheckpoint.checkpointId,
-            fileCheckpoint.filePath,
-          );
-        }
+      // 执行后摘要不分成败都补：Bash 先 `> f` 写了文件再非零退出时，摘要缺失会让
+      // 回退拿 missing_post_write_digest（旧版快照）这个不对的原因披露本可恢复的文件。
+      for (const fileCheckpoint of fileCheckpoints) {
+        await getFileCheckpointService().finalizeCheckpointDigest(
+          fileCheckpoint.checkpointId,
+          fileCheckpoint.filePath,
+        );
       }
       const resultWithSurfaceProjection = ensureFailedToolResultError(
         executionToolName,

@@ -95,7 +95,7 @@ vi.mock('../../src/host/agent/confirmationGate', () => ({
 }));
 
 vi.mock('../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
-  createFileCheckpointIfNeeded: vi.fn(),
+  createFileCheckpointIfNeeded: vi.fn().mockResolvedValue([]),
 }));
 
 // classifier 永远放行 — 用来证明 policy deny 优先级高于 classifier approve

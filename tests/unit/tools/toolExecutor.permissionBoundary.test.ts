@@ -21,7 +21,7 @@ vi.mock('../../../src/host/services/infra/toolCache', () => ({
 }));
 
 vi.mock('../../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
-  createFileCheckpointIfNeeded: vi.fn(),
+  createFileCheckpointIfNeeded: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../../../src/host/agent/confirmationGate', () => ({

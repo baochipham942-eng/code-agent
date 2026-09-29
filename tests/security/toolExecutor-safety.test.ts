@@ -71,7 +71,7 @@ vi.mock('../../src/host/agent/confirmationGate', () => ({
 
 // Mock file checkpoint
 vi.mock('../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
-  createFileCheckpointIfNeeded: vi.fn(),
+  createFileCheckpointIfNeeded: vi.fn().mockResolvedValue([]),
 }));
 
 // Mock permission classifier — 强制走 ask 路径，让 mockRequestPermission 生效

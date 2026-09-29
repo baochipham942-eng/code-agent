@@ -42,6 +42,23 @@ export interface CLIGlobalOptions {
    * createAgentLoop must not guess this for the caller.
    */
   originKind?: SessionOriginKind;
+  /**
+   * --bare 纯净模式：跳过本地 skills 发现 / 用户 hooks / MCP 自动装载，
+   * 让 CI/eval 跑出的结果不依赖宿主机的本地环境（N-HEADLESS-BARE）。
+   */
+  bare?: boolean;
+}
+
+/**
+ * 环境指纹：本次 CLI 进程各 loader（skills/hooks/MCP）是装载还是跳过。
+ * stream-json 首帧与 --output-format json 终态结果都带它，评测侧据此自描述。
+ */
+export interface CLIEnvironmentFingerprint {
+  /** true = --bare 纯净模式（全部 loader 跳过） */
+  bare: boolean;
+  skills: 'loaded' | 'skipped';
+  hooks: 'loaded' | 'skipped';
+  mcp: 'loaded' | 'skipped';
 }
 
 /**
@@ -109,7 +126,7 @@ export interface CLIConfig {
  * CLI 输出事件
  */
 export interface CLIOutputEvent {
-  type: 'thinking' | 'tool_call' | 'tool_result' | 'turn_diff' | 'message' | 'error' | 'complete' | 'result';
+  type: 'thinking' | 'tool_call' | 'tool_result' | 'turn_diff' | 'message' | 'error' | 'complete' | 'result' | 'environment';
   timestamp: number;
   data: unknown;
 }
@@ -141,6 +158,8 @@ export interface CLIRunResult {
    * 「部分结果 + 未完成说明」收尾（CLI 映射为退出码 2，见 cli/exitCodes.ts）。
    */
   terminationReason?: 'max_iterations';
+  /** 环境指纹：本次 run 的 loaders（skills/hooks/MCP）装载状态（--bare 全 skipped）。 */
+  environment?: CLIEnvironmentFingerprint;
 }
 
 /**

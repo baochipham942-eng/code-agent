@@ -859,6 +859,7 @@ export class CLIAgent {
  * 创建 CLI Agent 实例
  */
 export async function createCLIAgent(options: Partial<CLIGlobalOptions> = {}): Promise<CLIAgent> {
-  await initializeCLIServices();
+  // 已初始化时是幂等 no-op；对未经 run/chat 先行 init 的调用方，bare 在这里首次定档。
+  await initializeCLIServices({ bare: options.bare });
   return new CLIAgent(options);
 }

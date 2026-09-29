@@ -16,6 +16,7 @@ if (typeof enableCompileCache === 'function') {
 
 import { Command } from 'commander';
 import { sessionCommand } from './commands/session';
+import { registerCLIGlobalOptions } from './globalOptions';
 import { version } from '../../package.json';
 
 function requestedTopLevelCommand(args: string[]): string | null {
@@ -43,16 +44,7 @@ async function main(): Promise<void> {
     .version(version, '-v, --version', '显示版本号');
 
   // Global options
-  program
-    .option('-p, --project <path>', '项目目录', process.cwd())
-    .option('--json', 'JSON 格式输出')
-    .option('--model <name>', '模型名称')
-    .option('--provider <name>', '模型提供商 (deepseek, openai, zhipu)')
-    .option('--plan', '启用规划模式（复杂任务自动分解）')
-    .option('--debug', '调试模式')
-    .option('--output-format <format>', '输出格式 (text|json|stream-json)', 'text')
-    .option('--system-prompt <prompt>', '自定义系统提示')
-    .option('--metrics <path>', '会话结束后写入指标 JSON（用于 eval 分析）');
+  registerCLIGlobalOptions(program);
 
   program.addCommand(sessionCommand);
 

@@ -32,6 +32,10 @@ import { resolveContextWindow } from '../../model/modelLimits';
 import { estimateTokens } from '../../context/tokenOptimizer';
 import { createLogger } from '../../services/infra/logger';
 import { buildRecentConversationsBlock } from '../../lightMemory/recentConversations';
+import { recordSessionStart } from '../../lightMemory/sessionMetadata';
+import { getSessionRecoveryService } from '../../agent/sessionRecovery';
+import { isSessionFirstUserTurn } from './conversationRuntimePlanning';
+import { isStartupAborted, raceStartupStep } from './startupAssemblyGuard';
 
 const logger = createLogger('AgentLoop');
 
@@ -148,7 +152,7 @@ export async function injectActivityContext(
   }
 }
 
-export async function injectSeedMemory(
+async function injectSeedMemory(
   ctx: RuntimeContext,
   contextAssembly: ContextAssembly,
   userMessage: string,
@@ -287,7 +291,7 @@ export async function injectSeedMemory(
   }
 }
 
-export async function injectRecentConversations(
+async function injectRecentConversations(
   ctx: RuntimeContext,
   contextAssembly: ContextAssembly,
 ): Promise<void> {
@@ -308,6 +312,123 @@ export async function injectRecentConversations(
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+// ----------------------------------------------------------------------------
+// 启动装配尾段编排（N-STOP-DURING-STARTUP）
+// ----------------------------------------------------------------------------
+
+/**
+ * initializeRun 尾段（UserPromptSubmit/SessionStart hooks → 近期会话 → 跨会话恢复 →
+ * seed memory → 活动上下文 → 桌面派生上下文）的顺序装配，从 ConversationRuntime 抽出。
+ * 行为与原内联版本一致，唯一新增：每个慢步骤用 raceStartupStep 与 run 级 abort 信号
+ * 竞速、每个 await 边界检查取消——启动期点「停止」即刻退出装配，不再等全部步骤跑完。
+ *
+ * 返回 'aborted' 时调用方应从 initializeRun return null，由 run() 走既有
+ * cancelled/interrupted 收尾（不新造终态）；'blocked' 保持原 hook 拦截语义（早退）。
+ * injectActivityContext / bootstrapDesktopDerivedContext 以回调注入而非直调模块函数：
+ * ConversationRuntime 上的同名薄封装被单测 spy（桌面活动注入 / bootstrap 失败降级
+ * 回归保护），直调会绕过 spy。
+ */
+export async function runStartupContextAssembly(
+  ctx: RuntimeContext,
+  contextAssembly: ContextAssembly,
+  options: {
+    userMessage: string;
+    isSimpleTask: boolean;
+    injectActivityContext: (options: { includeDesktopActivity: boolean }) => Promise<void>;
+    bootstrapDesktopDerivedContext: (userMessage?: string) => Promise<void>;
+  },
+): Promise<'proceed' | 'blocked' | 'aborted'> {
+  // User-configurable hooks: UserPromptSubmit
+  if (ctx.hookManager) {
+    const promptResult = await raceStartupStep(
+      ctx,
+      ctx.hookManager.triggerUserPromptSubmit(options.userMessage, ctx.sessionId),
+    );
+    if (isStartupAborted(ctx)) return 'aborted';
+    if (promptResult && !promptResult.shouldProceed) {
+      logger.info('[AgentLoop] User prompt blocked by hook', { message: promptResult.message });
+      return 'blocked';
+    }
+    if (promptResult?.message) {
+      contextAssembly.injectSystemMessage(
+        `<user-prompt-hook>\n${promptResult.message}\n</user-prompt-hook>`,
+        'user-prompt-hook',
+      );
+    }
+  }
+
+  const isFirstUserTurn = isSessionFirstUserTurn(ctx.messages);
+
+  // Record session start for usage tracking (Light Memory)
+  if (isFirstUserTurn) {
+    recordSessionStart(ctx.sessionId).catch(() => { /* non-critical */ });
+  }
+
+  // Session start hooks run once per chat session; per-turn hooks stay on UserPromptSubmit/PreToolUse/PostToolUse.
+  if (isFirstUserTurn && ctx.hookManager) {
+    const sessionResult = await raceStartupStep(ctx, ctx.hookManager.triggerSessionStart(ctx.sessionId));
+    if (isStartupAborted(ctx)) return 'aborted';
+    if (sessionResult?.message) {
+      contextAssembly.injectSystemMessage(
+        `<session-start-hook>\n${sessionResult.message}\n</session-start-hook>`,
+        'session-start-hook',
+      );
+    }
+    if (sessionResult?.injectedContext) {
+      contextAssembly.injectSystemMessage(
+        `<session-start-hook>\n${sessionResult.injectedContext}\n</session-start-hook>`,
+        'session-start-hook',
+      );
+    }
+  }
+
+  if (isFirstUserTurn) {
+    await raceStartupStep(ctx, injectRecentConversations(ctx, contextAssembly));
+    if (isStartupAborted(ctx)) return 'aborted';
+  }
+
+  // F5: 跨会话任务恢复
+  if (!options.isSimpleTask) {
+    try {
+      const recovery = await raceStartupStep(
+        ctx,
+        getSessionRecoveryService().checkPreviousSession(ctx.sessionId, ctx.workingDirectory),
+      );
+      if (isStartupAborted(ctx)) return 'aborted';
+      if (recovery) {
+        contextAssembly.injectSystemMessage(
+          `<session-recovery>\n${recovery}\n</session-recovery>`,
+          'runtime-recovery',
+        );
+        logger.info('[AgentLoop] Session recovery summary injected');
+      }
+    } catch {
+      // Graceful: recovery failure doesn't block execution
+    }
+  }
+
+  await raceStartupStep(ctx, injectSeedMemory(ctx, contextAssembly, options.userMessage));
+  if (isStartupAborted(ctx)) return 'aborted';
+
+  await raceStartupStep(ctx, options.injectActivityContext({ includeDesktopActivity: !options.isSimpleTask }));
+  if (isStartupAborted(ctx)) return 'aborted';
+
+  if (!options.isSimpleTask) {
+    try {
+      await raceStartupStep(ctx, options.bootstrapDesktopDerivedContext(options.userMessage));
+    } catch (error) {
+      // Graceful: desktop-derived 上下文（todos/task sync）依赖 DB，DB 未初始化或瞬时不可用时
+      // 绝不能阻断整个 run（与 injectActivityContext / 会话恢复 / seed memory 同款降级）。
+      logger.warn('[AgentLoop] Desktop-derived context bootstrap failed, continuing', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    if (isStartupAborted(ctx)) return 'aborted';
+  }
+
+  return 'proceed';
 }
 
 export async function persistFailedRunContinuationContext(

@@ -750,6 +750,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       file_existed INTEGER NOT NULL,
       post_write_digest TEXT,
       restored_from TEXT,
+      uncertain_target INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
@@ -758,6 +759,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN workspace_scope_version TEXT`, logger);
   safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN post_write_digest TEXT`, logger);
   safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN restored_from TEXT`, logger);
+  safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN uncertain_target INTEGER NOT NULL DEFAULT 0`, logger);
 
   // Session Events 表 (完整 SSE 事件日志，用于评测分析)
   db.exec(`

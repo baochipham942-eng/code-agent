@@ -2282,7 +2282,9 @@ export class ToolExecutor {
       }
 
       // 文件检查点：写隔离锁拿到后再保存原文件，避免并行 worker 竞争同一目标。
-      const fileCheckpoint = await createFileCheckpointIfNeeded(executionToolName, params, () => {
+      // 判写目标（resolveToolWriteTargets），不枚举工具名；数组兜底 ?? [] 兼容
+      // 返回 undefined 的旧测试桩。
+      const fileCheckpoints = (await createFileCheckpointIfNeeded(toolDef, params, () => {
         if (!effectiveSessionId) return null;
         // messageId 从 context 中获取，如果没有则使用工具调用 ID
         const messageId = options.currentToolCallId || `msg_${Date.now()}`;
@@ -2291,7 +2293,7 @@ export class ToolExecutor {
           messageId,
           workspaceScope: this.runContext?.workspaceScope,
         };
-      }, this.executionCwd);
+      }, this.executionCwd)) ?? [];
 
       // Execute the tool via protocol resolver
       context.approvedToolCall = {
@@ -2320,11 +2322,13 @@ export class ToolExecutor {
         : null;
       const rawResult = delegatedResult
         ?? await resolver.execute(executionToolName, params, context);
-      if (rawResult.success && fileCheckpoint) {
-        await getFileCheckpointService().finalizeCheckpointDigest(
-          fileCheckpoint.checkpointId,
-          fileCheckpoint.filePath,
-        );
+      if (rawResult.success) {
+        for (const fileCheckpoint of fileCheckpoints) {
+          await getFileCheckpointService().finalizeCheckpointDigest(
+            fileCheckpoint.checkpointId,
+            fileCheckpoint.filePath,
+          );
+        }
       }
       const resultWithSurfaceProjection = ensureFailedToolResultError(
         executionToolName,

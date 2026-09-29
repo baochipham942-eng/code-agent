@@ -116,6 +116,47 @@ export class FileCheckpointService {
     }
   }
 
+  /**
+   * 记录一个解析不出的写目标（含通配/变量的重定向等）。
+   * 不落快照内容，只在回退时进 skippedFiles 披露「无法确定写入目标」。
+   * @returns 记录 id，失败返回 null
+   */
+  async recordUncertainWriteTarget(
+    sessionId: string,
+    messageId: string,
+    uncertainTarget: string,
+    attribution?: { workspaceScopeVersion?: string },
+  ): Promise<string | null> {
+    const db = getCheckpointDatabase();
+    if (!db) return null;
+
+    try {
+      await this.enforceLimit(sessionId);
+
+      const id = `ckpt_${Date.now()}_${uuidv4().slice(0, 8)}`;
+      db.prepare(`
+        INSERT INTO file_checkpoints (
+          id, session_id, message_id, file_path, workspace_scope_version,
+          original_content, file_existed, uncertain_target, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, NULL, 0, 1, ?)
+      `).run(
+        id,
+        sessionId,
+        messageId,
+        uncertainTarget,
+        attribution?.workspaceScopeVersion ?? null,
+        Date.now(),
+      );
+
+      logger.debug('Uncertain write target recorded', { id, sessionId, messageId, uncertainTarget });
+      return id;
+    } catch (error) {
+      logger.error('Failed to record uncertain write target', { error, sessionId, messageId, uncertainTarget });
+      return null;
+    }
+  }
+
   async finalizeCheckpointDigest(checkpointId: string, filePath: string): Promise<boolean> {
     const db = getCheckpointDatabase();
     if (!db) return false;
@@ -189,6 +230,7 @@ export class FileCheckpointService {
         file_existed: number;
         post_write_digest: string | null;
         restored_from: string | null;
+        uncertain_target: number;
       }>;
 
       if (!checkpoints || checkpoints.length === 0) {
@@ -200,6 +242,7 @@ export class FileCheckpointService {
         content: string | null;
         existed: boolean;
         expectedDigest: string | null;
+        uncertain: boolean;
         checkpointIds: string[];
         restoredFromMarkers: Array<string | null>;
       }>();
@@ -210,6 +253,7 @@ export class FileCheckpointService {
             content: ckpt.original_content,
             existed: ckpt.file_existed === 1,
             expectedDigest: ckpt.post_write_digest,
+            uncertain: ckpt.uncertain_target === 1,
             checkpointIds: [ckpt.id],
             restoredFromMarkers: [ckpt.restored_from],
           });
@@ -223,6 +267,15 @@ export class FileCheckpointService {
       // 恢复每个文件
       for (const [filePath, original] of fileToOriginal) {
         try {
+          if (original.uncertain) {
+            // 写目标解析不出来（含通配/变量的重定向等），没有快照可回退，逐条披露
+            result.skippedFiles.push({
+              filePath,
+              reason: 'uncertain_write_target',
+              detail: 'The write target could not be resolved when the tool ran, so no snapshot exists to restore.',
+            });
+            continue;
+          }
           const alreadyRestored = options.restoredFrom
             && options.redoCheckpointMessageId
             && original.restoredFromMarkers.every((marker) => marker === options.restoredFrom)
@@ -388,6 +441,7 @@ export class FileCheckpointService {
                original_content, file_existed, post_write_digest, restored_from, created_at
         FROM file_checkpoints
         WHERE session_id = ?
+          AND COALESCE(uncertain_target, 0) = 0
         ORDER BY created_at DESC
       `).all(sessionId) as Array<{
         id: string;

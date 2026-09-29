@@ -87,6 +87,68 @@ const MODE_THRESHOLDS: Record<SanitizationMode, number> = {
   permissive: 0.9,
 };
 
+function foldScanText(text: string): string {
+  return text.normalize('NFKC').replace(ZERO_WIDTH_CHARACTERS, '');
+}
+
+function isReportableSecret(match: SensitiveMatch): boolean {
+  return match.confidence === 'high' || match.confidence === 'medium';
+}
+
+function sensitiveDataWarning(match: SensitiveMatch): SanitizationWarning {
+  return {
+    type: 'sensitive_data',
+    severity: match.confidence === 'high' ? 'medium' : 'low',
+    pattern: match.type,
+    description: `外部数据包含 ${match.type}: ${match.masked}`,
+  };
+}
+
+// 折叠副本上的命中已经过 NFKC 和去零宽，键里不再折一次。
+function sensitiveOccurrenceKey(match: SensitiveMatch, alreadyFolded: boolean): string {
+  const value = alreadyFolded ? match.original : foldScanText(match.original);
+  return `${match.type}:${value}:${match.confidence}`;
+}
+
+// 原文每一次出现都保留。折叠副本只补同一密钥多出来的次数
+// （max(0, foldedCount - rawCount)）。按 type+归一化值+置信度收成一条
+// 会把重复密钥的风险分从 0.625 降到 0.125，moderate 拦截被放掉。
+function appendSensitiveDataWarnings(
+  warnings: SanitizationWarning[],
+  sanitized: string,
+  scanText: string,
+  textWasFolded: boolean,
+): void {
+  const detector = getSensitiveDetector();
+  const rawCounts = new Map<string, number>();
+  for (const match of detector.detect(sanitized).matches) {
+    if (!isReportableSecret(match)) continue;
+    warnings.push(sensitiveDataWarning(match));
+    if (!textWasFolded) continue;
+    const key = sensitiveOccurrenceKey(match, false);
+    rawCounts.set(key, (rawCounts.get(key) ?? 0) + 1);
+  }
+  if (!textWasFolded) return;
+
+  const foldedCounts = new Map<string, { count: number; sample: SensitiveMatch }>();
+  for (const match of detector.detect(scanText).matches) {
+    if (!isReportableSecret(match)) continue;
+    const key = sensitiveOccurrenceKey(match, true);
+    const existing = foldedCounts.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      foldedCounts.set(key, { count: 1, sample: match });
+    }
+  }
+  for (const [key, folded] of foldedCounts) {
+    const extra = Math.max(0, folded.count - (rawCounts.get(key) ?? 0));
+    for (let copy = 0; copy < extra; copy += 1) {
+      warnings.push(sensitiveDataWarning(folded.sample));
+    }
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Input Sanitizer
 // ----------------------------------------------------------------------------
@@ -125,7 +187,8 @@ export class InputSanitizer {
     const { text: withoutSpecialTokens, found: strippedSpecialTokens } = stripSpecialTokenLiterals(input);
     const sanitized = stripBoundaryNonce(withoutSpecialTokens, nonce);
     // 扫描副本只用于匹配。返回的 sanitized 仍是剥离控制 token 后的原文。
-    const scanText = sanitized.normalize('NFKC').replace(ZERO_WIDTH_CHARACTERS, '');
+    const scanText = foldScanText(sanitized);
+    const textWasFolded = scanText !== sanitized;
 
     const warnings: SanitizationWarning[] = [];
 
@@ -143,11 +206,14 @@ export class InputSanitizer {
     for (const item of this.allPatterns) {
       if (!patternAppliesToScope(item, scope)) continue;
       const { pattern, type, severity, description } = item;
-      // 重置 lastIndex（全局正则），并在原文与折叠副本上各跑一次。
+      // 原文没有被折叠时，第二遍与第一遍相同，跳过。
       pattern.lastIndex = 0;
       const rawMatched = pattern.test(sanitized);
-      pattern.lastIndex = 0;
-      const foldedMatched = pattern.test(scanText);
+      let foldedMatched = rawMatched;
+      if (textWasFolded) {
+        pattern.lastIndex = 0;
+        foldedMatched = pattern.test(scanText);
+      }
 
       if (rawMatched || foldedMatched) {
         warnings.push({
@@ -161,6 +227,7 @@ export class InputSanitizer {
       if (foldedMatched && !rawMatched) unicodeObfuscationDetected = true;
     }
 
+    // 有意升档：被 NFKC 或零宽揭开的模式（含 low 的中文模式）另记一条 high，让日志看见规避，不改模式自身严重度。
     if (unicodeObfuscationDetected) {
       warnings.push({
         type: 'prompt_injection',
@@ -170,26 +237,8 @@ export class InputSanitizer {
       });
     }
 
-    // 2. 复用 SensitiveDetector 检测泄露的凭证
-    const sensitiveDetector = getSensitiveDetector();
-    const sensitiveMatches = new Map<string, SensitiveMatch>();
-    for (const text of [sanitized, scanText]) {
-      const sensitiveResult = sensitiveDetector.detect(text);
-      for (const match of sensitiveResult.matches) {
-        const matchKey = `${match.type}:${match.original.normalize('NFKC').replace(ZERO_WIDTH_CHARACTERS, '')}:${match.confidence}`;
-        sensitiveMatches.set(matchKey, match);
-      }
-    }
-    for (const match of sensitiveMatches.values()) {
-      if (match.confidence === 'high' || match.confidence === 'medium') {
-        warnings.push({
-          type: 'sensitive_data',
-          severity: match.confidence === 'high' ? 'medium' : 'low',
-          pattern: match.type,
-          description: `外部数据包含 ${match.type}: ${match.masked}`,
-        });
-      }
-    }
+    // 2. 原文凭证按出现次数逐条保留；折叠副本只补多出来的次数。
+    appendSensitiveDataWarnings(warnings, sanitized, scanText, textWasFolded);
 
     // 3. 计算风险分数
     const riskScore = this.calculateRiskScore(warnings);

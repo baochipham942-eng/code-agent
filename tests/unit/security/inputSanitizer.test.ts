@@ -363,6 +363,51 @@ describe('InputSanitizer', () => {
   });
 
   // --------------------------------------------------------------------------
+  // Sensitive-data counts stay at least the raw-text baseline
+  // --------------------------------------------------------------------------
+  describe('Sensitive data occurrence counts', () => {
+    it('blocks five repeats of one high-confidence secret under the default moderate threshold', () => {
+      const secret = `sk-${'a'.repeat(40)}`;
+      const input = Array.from({ length: 5 }, () => secret).join('\n');
+      const result = sanitizer.sanitize(input, 'web_fetch');
+      const sensitive = result.warnings.filter(w => w.type === 'sensitive_data');
+
+      // One medium warning per occurrence, weight 0.25. 5 * 0.25 / 2 = 0.625 >= 0.6.
+      expect(sensitive, 'repeated secrets must stay unmerged').toHaveLength(5);
+      expect(result.warnings).toHaveLength(5);
+      expect(result.riskScore).toBe(0.625);
+      expect(result.blocked).toBe(true);
+      expect(result.sanitized).toBe(input);
+    });
+
+    it('adds one warning when zero-width characters hide a secret the raw scan misses', () => {
+      const hidden = `sk-\u200B${'b'.repeat(40)}`;
+      const result = sanitizer.sanitize(hidden, 'web_fetch');
+
+      expect(result.sanitized).toBe(hidden);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0]).toMatchObject({ type: 'sensitive_data', severity: 'medium' });
+      expect(result.blocked).toBe(false);
+    });
+
+    it('counts a raw secret and a second copy that appears only after zero-width stripping', () => {
+      const body = 'c'.repeat(40);
+      const visible = `sk-${body}`;
+      const input = `${visible}\nsk-\u200B${body}`;
+      const visibleOnly = sanitizer.sanitize(visible, 'web_fetch');
+      const result = sanitizer.sanitize(input, 'web_fetch');
+      const sensitive = result.warnings.filter(w => w.type === 'sensitive_data');
+
+      expect(visibleOnly.warnings.filter(w => w.type === 'sensitive_data')).toHaveLength(1);
+      expect(sensitive).toHaveLength(2);
+      expect(result.warnings).toHaveLength(2);
+      expect(result.riskScore).toBe(0.25);
+      expect(result.blocked).toBe(false);
+      expect(result.sanitized).toBe(input);
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Control-tag Imitation (Agent SDK 对齐：伪造宿主运行时控制标签)
   // --------------------------------------------------------------------------
   describe('Control-tag Imitation', () => {

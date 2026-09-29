@@ -8,6 +8,7 @@ import { Button } from '../../primitives';
 import type { PendingMemoryConfirm } from '../../../hooks/useMemoryLearning';
 import { getCategoryLabel, getTypeLabel } from '../../../hooks/useMemoryLearning';
 import { useI18n } from '../../../hooks/useI18n';
+import { Z_LAYERS } from '../../../styles/zLayers';
 
 interface MemoryConfirmModalProps {
   pending: PendingMemoryConfirm | null;
@@ -27,7 +28,7 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
   const confidencePercent = Math.round(pending.confidence * 100);
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-4 duration-300">
+    <div className="fixed bottom-4 right-4 animate-in slide-in-from-bottom-4 duration-300" style={{ zIndex: Z_LAYERS.floatingPanel }}>
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-md dark:shadow-2xl w-80 overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 bg-zinc-800 border-b border-zinc-700">

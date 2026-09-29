@@ -199,4 +199,31 @@ describe('CLI JSONOutput', () => {
       data: { success: true, output: 'done' },
     });
   });
+
+  // N-HEADLESS-BARE ④：stream-json 首帧带环境指纹（loaders 装载/跳过自描述），
+  // 走公共输出入口 JSONOutput 真发帧；既有帧 schema 只增不改（旧消费方不受影响）。
+  it('emits the environment fingerprint as the first frame right after start()', () => {
+    const output = new JSONOutput();
+    const { log } = mockConsole();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(5000);
+
+    output.start();
+    output.environment({ bare: true, skills: 'skipped', hooks: 'skipped', mcp: 'skipped' });
+    output.handleEvent({ type: 'agent_complete', data: null } as AgentEvent);
+
+    const frames = loggedObjects(log);
+    expect(frames).toHaveLength(2);
+    expect(frames[0]).toEqual({
+      type: 'environment',
+      timestamp: 5000,
+      data: { bare: true, skills: 'skipped', hooks: 'skipped', mcp: 'skipped' },
+    });
+    // 紧随其后的帧仍是既有类型（complete），旧 schema 消费方不受首帧新增影响
+    expect(frames[1]).toEqual({
+      type: 'complete',
+      timestamp: 5000,
+      data: { duration: 0, toolsUsed: [] },
+    });
+    expect(now).toHaveBeenCalled();
+  });
 });

@@ -21,6 +21,11 @@ const DATA_DIR_PREFIX = 'code-agent-eval-data-';
 
 let fixture: Awaited<ReturnType<typeof createCasebankFixture>>;
 const keptDirs: string[] = [];
+// 私有 TMPDIR：这轮 eval-ci 的 code-agent-eval-data-* 数据根只落在这里。整目录满载跑时，
+// 其它 eval 测试（如 evalConfigIsolation 把 CODE_AGENT_DATA_DIR 置空串）的 eval-ci 子进程
+// 也会在共享 tmpdir 自建同名根——不隔离的话「新出现的目录」可能抓成别人的，然后永远等不到
+// 它被清掉（实测满载 flake，见 ~/work/out/N-GATES-TMP-SELFCLEAN/）。
+const privateTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-eval-tmp-sandbox-test-'));
 
 beforeAll(async () => {
   fixture = await createCasebankFixture();
@@ -29,10 +34,11 @@ beforeAll(async () => {
 afterAll(() => {
   fixture.cleanup();
   for (const dir of keptDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(privateTmp, { recursive: true, force: true });
 });
 
 function existingEvalDataDirs(): Set<string> {
-  return new Set(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith(DATA_DIR_PREFIX)));
+  return new Set(fs.readdirSync(privateTmp).filter((name) => name.startsWith(DATA_DIR_PREFIX)));
 }
 
 async function waitFor(probe: () => boolean, timeoutMs: number, what: string): Promise<void> {
@@ -61,6 +67,7 @@ function spawnEvalCi(extraArgs: string[]): EvalChild {
   // 事件桥只有在没有外部 CODE_AGENT_DATA_DIR 时才自建数据根——彻底删掉这个键
   // （vitest 的 globalSetup 会给 worker 塞一个 run 级数据目录，不删的话 eval-ci 永远不自建）。
   delete env.CODE_AGENT_DATA_DIR;
+  env.TMPDIR = privateTmp;
   const child = spawn(process.execPath, [tsxCli, evalScript, '--scope', 'smoke', '--max-cases', '3', '--repeat', '3', '--json-events', ...extraArgs], {
     cwd: fixture.repoRoot,
     env,
@@ -82,7 +89,7 @@ function spawnEvalCi(extraArgs: string[]): EvalChild {
         return false;
       }, timeoutMs, 'eval-ci 新建的 code-agent-eval-data-* 目录');
       for (const name of existingEvalDataDirs()) {
-        if (!before.has(name)) return path.join(os.tmpdir(), name);
+        if (!before.has(name)) return path.join(privateTmp, name);
       }
       throw new Error('unreachable');
     },

@@ -13,8 +13,22 @@ import {
   sanitizeNotificationText,
   type NotificationIntent,
 } from './notificationPolicy';
+import { getConfigService } from '../core/configService';
+import {
+  getDurableResumeNotificationText,
+  type DurableResumeNotificationLocale,
+} from '../../../shared/i18n/durableResumeNotification';
 
 const logger = createLogger('NotificationService');
+
+/** 通知文案语言跟随用户设置（ui.language）；读取失败按中文兜底，通知本身不许把恢复路径炸掉。 */
+function readNotificationLocale(): DurableResumeNotificationLocale {
+  try {
+    return getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh';
+  } catch {
+    return 'zh';
+  }
+}
 
 export interface TaskNotificationData {
   sessionId: string;
@@ -199,8 +213,10 @@ class NotificationService implements Disposable {
   notifyTaskResuming(data: TaskResumingNotificationData): void {
     if (!this.isIntentAllowed('task_resuming')) return;
     if (!this.shouldNotify(true)) return;
-    const title = `任务正在继续 - ${data.sessionTitle}`;
-    const body = `从中断处继续；本轮成本未知/估算，继续运行会消耗额度。自动续跑第 ${data.autoResumeCount} 次。`;
+    const text = getDurableResumeNotificationText(readNotificationLocale());
+    // 兜底会话名必须与通知同语言，所以在这里（知道 locale 的一方）落兜底，调用方传原始标题。
+    const title = text.resumingTitle(data.sessionTitle || text.untitledSession);
+    const body = text.resumingBody(data.autoResumeCount);
     const entry = this.record({
       type: 'task_resuming',
       sessionId: data.sessionId,

@@ -45,9 +45,14 @@ vi.mock('../../../../src/host/services/skills/skillRepositoryService', () => ({
   }),
 }));
 
-vi.mock('../../../../src/host/security/folderTrustService', () => ({
+const folderTrustMocks = vi.hoisted(() => ({
   isProjectConfigTrusted: async () => true,
-  isProjectConfigTrustedSync: () => true,
+  isProjectConfigTrustedSync: vi.fn(() => true),
+}));
+
+vi.mock('../../../../src/host/security/folderTrustService', () => ({
+  isProjectConfigTrusted: folderTrustMocks.isProjectConfigTrusted,
+  isProjectConfigTrustedSync: folderTrustMocks.isProjectConfigTrustedSync,
 }));
 
 const marketplaceSkillDirs = vi.hoisted(() => new Set<string>());
@@ -109,6 +114,7 @@ describe('SkillDiscoveryService discovery', () => {
     marketplaceOfficialSkillDirs.clear();
     builtinSkillsFixture.skills = [];
     cloudSkillsFixture.skills = [];
+    folderTrustMocks.isProjectConfigTrustedSync.mockClear();
     tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-discovery-'));
     homeDir = path.join(tmpRoot, 'home');
     projectDir = path.join(tmpRoot, 'project');
@@ -421,5 +427,26 @@ describe('SkillDiscoveryService discovery', () => {
       await fs.chmod(legacySkillPath, 0o600);
       await fs.chmod(projectSkillPath, 0o600);
     }
+  });
+
+  it('asks folder trust once when gating many skills in one working directory', async () => {
+    for (let i = 0; i < 40; i += 1) {
+      await writeSkill(path.join(projectDir, '.code-agent', 'skills'), `bulk-skill-${i}`);
+    }
+
+    const service = new SkillDiscoveryService({ includeClaudeLegacySkills: false });
+    await service.initialize(projectDir);
+
+    const names = service.getAllSkills().map((skill) => skill.name);
+    expect(names.length).toBeGreaterThanOrEqual(40);
+    for (const name of names) {
+      expect(service.isSkillEnabled(name)).toBe(true);
+    }
+    expect(service.getSkillsForContext().length).toBeGreaterThanOrEqual(40);
+    expect(folderTrustMocks.isProjectConfigTrustedSync).toHaveBeenCalledTimes(1);
+    expect(folderTrustMocks.isProjectConfigTrustedSync).toHaveBeenCalledWith(
+      projectDir,
+      'project-skill-preferences',
+    );
   });
 });

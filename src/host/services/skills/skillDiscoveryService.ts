@@ -126,6 +126,8 @@ class SkillDiscoveryService {
   private metadataCacheDirty = false;
   /** 初始化中的 promise，用于 fire-and-forget 场景下的并发锁 */
   private initPromise: Promise<void> | null = null;
+  /** 项目级 skill-preferences 信任判定：同一 workingDirectory 只同步问一次。 */
+  private projectSkillPreferencesTrusted: boolean | undefined;
 
   constructor(options: SkillDiscoveryServiceOptions = {}) {
     this.includeClaudeLegacySkills = shouldIncludeClaudeLegacySkills(options);
@@ -175,6 +177,7 @@ class SkillDiscoveryService {
 
   private async doInitialize(normalizedDir: string): Promise<void> {
     this.workingDirectory = normalizedDir;
+    this.projectSkillPreferencesTrusted = undefined;
     this.skills.clear();
     this.protectedOfficialSkillNames.clear();
     this.skillConflicts = [];
@@ -263,10 +266,7 @@ class SkillDiscoveryService {
   isSkillEnabled(skillName: string): boolean {
     if (this.allowedSkillNames && !this.allowedSkillNames.has(skillName)) return false;
     try {
-      if (
-        this.workingDirectory &&
-        isProjectConfigTrustedSync(this.workingDirectory, 'project-skill-preferences')
-      ) {
+      if (this.workingDirectory && this.isProjectSkillPreferencesTrusted()) {
         const override = getProjectSkillPreferenceStore(this.workingDirectory).getOverride(skillName);
         if (override !== undefined) return override;
       }
@@ -274,6 +274,15 @@ class SkillDiscoveryService {
     } catch {
       return true;
     }
+  }
+
+  private isProjectSkillPreferencesTrusted(): boolean {
+    if (this.projectSkillPreferencesTrusted !== undefined) return this.projectSkillPreferencesTrusted;
+    this.projectSkillPreferencesTrusted = isProjectConfigTrustedSync(
+      this.workingDirectory,
+      'project-skill-preferences',
+    );
+    return this.projectSkillPreferencesTrusted;
   }
 
   /**

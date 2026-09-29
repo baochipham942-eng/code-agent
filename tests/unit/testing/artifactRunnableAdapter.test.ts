@@ -31,6 +31,35 @@ async function writeTempFile(content: string | Buffer, fileName: string): Promis
   return filePath;
 }
 
+// 首帧晚于旧的固定窗口（goto 后 500+400+250+250ms）才画。修前两次采样都落在空白上，判 not_runnable。
+const SLOW_FIRST_FRAME_GAME = `
+  <!doctype html>
+  <html>
+  <body>
+    <canvas id="game" width="400" height="300"></canvas>
+    <script>
+      const canvas = document.getElementById('game');
+      const ctx = canvas.getContext('2d');
+      const keys = {};
+      window.addEventListener('keydown', (event) => { keys[event.key] = true; });
+      window.addEventListener('keyup', (event) => { keys[event.key] = false; });
+      setTimeout(() => {
+        let x = 20;
+        const frame = () => {
+          if (keys.ArrowRight) x += 3;
+          ctx.fillStyle = '#123';
+          ctx.fillRect(0, 0, 400, 300);
+          ctx.fillStyle = '#fc0';
+          ctx.fillRect(x, 200, 24, 24);
+          requestAnimationFrame(frame);
+        };
+        frame();
+      }, 1500);
+    </script>
+  </body>
+  </html>
+`;
+
 const CLEAN_HTML_PAGE = `
   <!doctype html>
   <html>
@@ -68,6 +97,15 @@ describe('checkGameSmoke (light contract)', () => {
 
   it('judges the known-good playable specimen runnable', async (ctx) => {
     const result = await checkGameSmoke(GOOD_GAME_PLAYABLE);
+
+    if (result.verdict === 'skipped') ctx.skip();
+    expect(result.verdict).toBe('runnable');
+    expect(result.failures).toEqual([]);
+  });
+
+  it('judges a canvas whose first pixels arrive 1.5s after load runnable', async (ctx) => {
+    const filePath = await writeTempFile(SLOW_FIRST_FRAME_GAME, 'slow-start.html');
+    const result = await checkGameSmoke(filePath);
 
     if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('runnable');

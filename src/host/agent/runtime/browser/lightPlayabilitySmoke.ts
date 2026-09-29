@@ -6,6 +6,105 @@ import { pathToFileURL } from 'url';
 import type { RuntimeSmokeSummary } from '../gameArtifactRuntimeSmoke';
 import { openArtifactPage, type ArtifactPageSession } from './artifactPage';
 
+type SmokePage = import('playwright').Page;
+
+interface CanvasSample {
+  hasCanvas: boolean;
+  uniform: boolean;
+  signature: string;
+}
+
+// 按键必须跨过真实动画帧。墙钟睡眠在渲染器卡住时会先走完，采样仍落在空白帧上。
+const KEY_HOLD_FRAMES = 3;
+const KEY_GAP_FRAMES = 2;
+
+function readLargestCanvasSample(): CanvasSample {
+  const canvases = Array.from(document.querySelectorAll('canvas'));
+  if (canvases.length === 0) return { hasCanvas: false, uniform: false, signature: '' };
+  const canvas = canvases.reduce((a, b) => (a.width * a.height >= b.width * b.height ? a : b));
+  const context = canvas.getContext('2d');
+  if (!context || canvas.width === 0 || canvas.height === 0) {
+    // WebGL 或零尺寸 canvas 无法采样 2D 像素，不做空白判定
+    return { hasCanvas: true, uniform: false, signature: 'unsampled' };
+  }
+  const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  let min = 255;
+  let max = 0;
+  let signature = 0;
+  const stride = Math.max(4, Math.floor(data.length / 4 / 4000) * 4);
+  for (let index = 0; index < data.length; index += stride) {
+    const luminance = (data[index] + data[index + 1] + data[index + 2]) / 3;
+    if (luminance < min) min = luminance;
+    if (luminance > max) max = luminance;
+    signature = (signature + luminance * ((index % 7919) + 1)) % Number.MAX_SAFE_INTEGER;
+  }
+  return { hasCanvas: true, uniform: max - min < 8, signature: String(Math.round(signature)) };
+}
+
+function shouldKeepWaitingForPaint(sample: CanvasSample): boolean {
+  return sample.hasCanvas && sample.signature !== 'unsampled' && sample.uniform;
+}
+
+async function raceDeadline(work: Promise<unknown>, deadline: number): Promise<void> {
+  // 剩余时间为 0 时调用方已经创建了 work。先接住拒绝，否则关页后变成未处理拒绝，整轮测试退出码为 1。
+  const observed = work.then(() => undefined, () => undefined);
+  const left = deadline - Date.now();
+  if (left <= 0) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      observed,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, left);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function waitForAnimationFrames(page: SmokePage, frameCount: number, deadline: number, opTimeoutMs: number): Promise<void> {
+  const left = deadline - Date.now();
+  if (left <= 0 || frameCount <= 0) return;
+  page.setDefaultTimeout(Math.max(1, left));
+  try {
+    await raceDeadline(page.evaluate((count) => new Promise<void>((resolve) => {
+      let seen = 0;
+      const tick = () => {
+        seen += 1;
+        if (seen >= count) resolve();
+        else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }), frameCount), deadline);
+  } finally {
+    page.setDefaultTimeout(opTimeoutMs);
+  }
+}
+
+async function waitForPresentCanvas(page: SmokePage, deadline: number, opTimeoutMs: number): Promise<void> {
+  while (Date.now() < deadline) {
+    const left = deadline - Date.now();
+    if (left <= 0) return;
+    page.setDefaultTimeout(Math.max(1, left));
+    let sample: CanvasSample;
+    try {
+      sample = await page.evaluate(readLargestCanvasSample);
+    } finally {
+      page.setDefaultTimeout(opTimeoutMs);
+    }
+    if (!shouldKeepWaitingForPaint(sample)) return;
+    page.setDefaultTimeout(Math.max(1, deadline - Date.now()));
+    try {
+      await raceDeadline(page.evaluate(() => new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      })), deadline);
+    } finally {
+      page.setDefaultTimeout(opTimeoutMs);
+    }
+  }
+}
+
 export async function runLightPlayabilitySmoke(filePath: string, timeoutMs: number): Promise<RuntimeSmokeSummary> {
   let session: ArtifactPageSession | null = null;
 
@@ -34,42 +133,27 @@ export async function runLightPlayabilitySmoke(filePath: string, timeoutMs: numb
       }
     });
 
-    await page.goto(pathToFileURL(filePath).href, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
-    await page.waitForTimeout(500);
-
-    const sampleCanvas = () => page.evaluate(() => {
-      const canvases = Array.from(document.querySelectorAll('canvas'));
-      if (canvases.length === 0) return { hasCanvas: false, uniform: false, signature: '' };
-      const canvas = canvases.reduce((a, b) => (a.width * a.height >= b.width * b.height ? a : b));
-      const context = canvas.getContext('2d');
-      if (!context || canvas.width === 0 || canvas.height === 0) {
-        // WebGL 或零尺寸 canvas 无法采样 2D 像素，不做空白判定
-        return { hasCanvas: true, uniform: false, signature: 'unsampled' };
-      }
-      const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-      let min = 255;
-      let max = 0;
-      let signature = 0;
-      const stride = Math.max(4, Math.floor(data.length / 4 / 4000) * 4);
-      for (let index = 0; index < data.length; index += stride) {
-        const luminance = (data[index] + data[index + 1] + data[index + 2]) / 3;
-        if (luminance < min) min = luminance;
-        if (luminance > max) max = luminance;
-        signature = (signature + luminance * ((index % 7919) + 1)) % Number.MAX_SAFE_INTEGER;
-      }
-      return { hasCanvas: true, uniform: max - min < 8, signature: String(Math.round(signature)) };
+    // 加载、按键、等首帧共用调用方传入的 timeoutMs，到点仍空白才走下面的判红。
+    const deadline = Date.now() + timeoutMs;
+    page.setDefaultTimeout(Math.max(1, timeoutMs));
+    await page.goto(pathToFileURL(filePath).href, {
+      waitUntil: 'domcontentloaded',
+      timeout: Math.max(1, deadline - Date.now()),
     });
 
-    const beforeInput = await sampleCanvas();
+    const beforeInput = await page.evaluate(readLargestCanvasSample);
     // 常见开始/操作键：Enter（任意键开始）+ 持续向右 + 空格跳跃
     await page.keyboard.press('Enter').catch(() => undefined);
     await page.keyboard.down('ArrowRight').catch(() => undefined);
-    await page.waitForTimeout(400);
+    await waitForAnimationFrames(page, KEY_HOLD_FRAMES, deadline, timeoutMs);
     await page.keyboard.press('Space').catch(() => undefined);
-    await page.waitForTimeout(250);
+    await waitForAnimationFrames(page, KEY_GAP_FRAMES, deadline, timeoutMs);
     await page.keyboard.up('ArrowRight').catch(() => undefined);
-    await page.waitForTimeout(250);
-    const afterInput = await sampleCanvas();
+    await waitForAnimationFrames(page, KEY_GAP_FRAMES, deadline, timeoutMs);
+    if (shouldKeepWaitingForPaint(beforeInput)) {
+      await waitForPresentCanvas(page, deadline, timeoutMs);
+    }
+    const afterInput = await page.evaluate(readLargestCanvasSample);
 
     const failures: string[] = [];
     const checks: string[] = [...launchChecks];

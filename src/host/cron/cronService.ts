@@ -557,7 +557,10 @@ export class CronService implements Disposable {
       if (jitter > 0) {
         await new Promise((resolve) => setTimeout(resolve, jitter));
       }
-      await this.executeJob(definition);
+      // jitter 窗口最长 15min：等待结束必须按 jobId 重取当前 definition（见 runScheduledJob），
+      // 不能拿这个闭包里注册时的旧 definition——等待期间被停用/删除/编辑过的任务
+      // 照跑旧定义会产生模型费用、改过的 prompt 不生效（R2 审查 Important-3）。
+      await this.runScheduledJob(id);
     };
 
     // 上一次执行还没结束时跳过本次 tick（croner 原生 protect），
@@ -626,6 +629,26 @@ export class CronService implements Disposable {
       default:
         return `0 */${interval} * * * *`; // Default to minutes
     }
+  }
+
+  /**
+   * 系统侧执行入口（croner tick 走完 jitter 等待后 / misfire 宽限窗补跑）：
+   * 执行前按 jobId 重取**当前**定义，不存在或已停用则跳过并留痕（不是这次执行的失败，
+   * 不计连败、不发失败告警）——jitter 窗口最长 15min，等待期间任务可能已被停用/删除，
+   * 拿注册时闭包里的旧 definition 照样执行会对已停任务产生模型费用（R2 审查 Important-3）。
+   * 手动 triggerJob 不走这里：用户点「立即运行」就该立即运行。
+   */
+  private async runScheduledJob(jobId: string): Promise<void> {
+    const current = this.jobs.get(jobId)?.definition;
+    if (!current) {
+      console.warn(`[CronService] Job ${jobId} skipped: deleted while waiting to fire`);
+      return;
+    }
+    if (!current.enabled) {
+      console.warn(`[CronService] Job ${jobId} skipped: disabled while waiting to fire`);
+      return;
+    }
+    await this.executeJob(current);
   }
 
   private async executeJob(definition: CronJobDefinition): Promise<CronJobExecution> {
@@ -1154,7 +1177,7 @@ export class CronService implements Disposable {
                 `[CronService] One-time job ${job.id} due ${new Date(ts).toISOString()} `
                 + 'within misfire grace window; running it now',
               );
-              void this.executeJob(job).catch((err) => {
+              void this.runScheduledJob(job.id).catch((err) => {
                 console.error(`[CronService] Grace-window catch-up failed for job ${job.id}:`, err);
               });
               loadedCount += 1;
@@ -1192,7 +1215,7 @@ export class CronService implements Disposable {
                   `[CronService] Job ${job.id} missed tick ${new Date(previousScheduledAt).toISOString()} `
                   + 'within grace window; running catch-up',
                 );
-                void this.executeJob(job).catch((err) => {
+                void this.runScheduledJob(job.id).catch((err) => {
                   console.error(`[CronService] Grace-window catch-up failed for job ${job.id}:`, err);
                 });
               } else {

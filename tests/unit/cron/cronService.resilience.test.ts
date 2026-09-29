@@ -498,6 +498,62 @@ describe('⑤ 重启对账幂等：合并已有任务，禁止删旧建新（Cli
   });
 });
 
+describe('R2：jitter 窗口（最长 15min）内任务被停用/编辑 → 不拿闭包里的过期 definition 执行', () => {
+  // every 1 minute → '0 */1 * * * *'，每分钟 :00 触发；jitter 窗口 = 60s×10% = 6s，
+  // Math.random 固定 0.5 → jitter 恒 3s。NOW=09:03:00，首个 tick 09:04:00。
+  function agentMinuteJob() {
+    return {
+      name: 'jitter 窗口任务',
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 1, unit: 'minutes' as const },
+      action: { type: 'agent' as const, agentType: 'default', prompt: '旧 prompt' },
+      enabled: true,
+    };
+  }
+
+  it('jitter 等待期间任务被停用 → 等待结束不执行（无执行记录，不计失败）', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const randSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5); // jitter 恒 3s
+    const service = new CronService();
+    const job = await service.createJob(agentMinuteJob());
+    const { calls } = patchExecuteAction(service, async () => ({ ok: true }));
+
+    await vi.advanceTimersByTimeAsync(60_000); // 09:04:00 tick，进入 3s jitter 等待
+    expect(calls()).toBe(0); // jitter 未耗尽，还没执行
+    await service.updateJob(job.id, { enabled: false }); // 等待期间停用
+    await vi.advanceTimersByTimeAsync(3_000); // jitter 耗尽
+
+    expect(calls()).toBe(0); // 停用了就不再执行（HEAD 红：拿旧闭包照样跑）
+    expect(dbState.executionRows.filter((row) => row.job_id === job.id)).toHaveLength(0);
+    randSpy.mockRestore();
+    await service.shutdown();
+  });
+
+  it('jitter 等待期间改了 prompt → 等待结束用最新 definition 执行（新 prompt 生效）', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const randSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const service = new CronService();
+    const job = await service.createJob(agentMinuteJob());
+    let executedPrompt: string | undefined;
+    patchExecuteAction(service, async (_definition, action) => {
+      executedPrompt = (action as { prompt: string }).prompt;
+      return { ok: true };
+    });
+
+    await vi.advanceTimersByTimeAsync(60_000); // tick → 3s jitter 等待
+    await service.updateJob(job.id, {
+      action: { ...job.action, prompt: '新 prompt' },
+    });
+    await vi.advanceTimersByTimeAsync(3_000); // jitter 耗尽
+
+    expect(executedPrompt).toBe('新 prompt'); // HEAD 红：闭包里还是旧 prompt
+    randSpy.mockRestore();
+    await service.shutdown();
+  });
+});
+
 describe('② every 小时/天级任务默认分钟按 jobId 哈希稳定错峰', () => {
   it('every 1 hour 的触发分钟 = suggestCronStaggerMinute(jobId)，非整点且重注册不漂移', async () => {
     const service = new CronService();

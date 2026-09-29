@@ -1,4 +1,5 @@
 import type BetterSqlite3 from 'better-sqlite3';
+import { MAX_AUTO_RESUME_COUNT } from '../../../../../shared/contract/durableRun';
 
 /** Fresh durable_runs CHECK。widen 不拿本清单做整体比较——只把清单里缺的 kind 增量补进现有 CHECK（现有未知 kind 原样保留）。 */
 const FRESH_DURABLE_RUN_ENGINE_KINDS = [
@@ -102,6 +103,24 @@ export function applyDurableRunMigrationDraft(db: BetterSqlite3.Database): void 
     );
     CREATE INDEX IF NOT EXISTS idx_durable_run_children_child ON durable_run_children (child_run_id);
   `);
+  markLegacyBudgetExhaustedParks(db);
+}
+
+/**
+ * ADR-075 修订二存量兼容：#2089（09-27）起崩溃预算耗尽的 run 停靠为 waiting 时仍记 crash_or_quit，
+ * 再次重启没人认领、占着会话唯一约束（新消息 409）。这类行一次性改标 budget_exhausted，之后由
+ * listParkedForReclaim 按标记认领。带审批 waiting 或待人工确认 unknown op 的行是「等审批」，不动。
+ * 幂等：新代码不再产出 waiting + crash_or_quit + 计数耗尽 + 无审批 op 的行，重复执行零命中。
+ */
+function markLegacyBudgetExhaustedParks(db: BetterSqlite3.Database): void {
+  db.prepare(`UPDATE durable_runs
+    SET envelope_json = json_set(envelope_json, '$.interruptCause', 'budget_exhausted', '$.interrupt_cause', 'budget_exhausted')
+    WHERE status = 'waiting'
+      AND COALESCE(json_extract(envelope_json, '$.interruptCause'), json_extract(envelope_json, '$.interrupt_cause')) = 'crash_or_quit'
+      AND CAST(COALESCE(json_extract(envelope_json, '$.autoResumeCount'), 0) AS INTEGER) >= ?
+      AND NOT EXISTS (SELECT 1 FROM durable_run_pending_operations op WHERE op.run_id = durable_runs.run_id
+        AND ((op.kind = 'approval' AND op.status = 'waiting') OR (op.status = 'unknown' AND op.requires_human_confirmation = 1)))`)
+    .run(MAX_AUTO_RESUME_COUNT);
 }
 
 /** Rollback is lossful only for the unused draft tables; legacy session/event tables are untouched. */

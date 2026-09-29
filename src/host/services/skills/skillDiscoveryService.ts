@@ -109,6 +109,13 @@ class SkillDiscoveryService {
   private skillConflicts: SkillConflict[] = [];
   private initialized = false;
   private workingDirectory = '';
+  /**
+   * 进程级禁用态（--bare 纯净模式，N-HEADLESS-BARE）。置位后本服务"空库即
+   * 已初始化"：initialize/ensureInitialized 是零磁盘 I/O 的 no-op，所有 getter
+   * 恒空。CLI 的隐式 skill 匹配（conversationRuntime 每条用户消息）、Skill/
+   * skillCreate 工具的懒加载全都汇聚到这个单例，一处守门即全路径生效。
+   */
+  private disabled = false;
   private readonly includeClaudeLegacySkills: boolean;
   private readonly allowedSkillNames?: ReadonlySet<string>;
   private readonly applicabilityOptions: SkillApplicabilityOptions;
@@ -167,6 +174,16 @@ class SkillDiscoveryService {
    */
   async initialize(workingDirectory: string): Promise<void> {
     const normalized = this.normalizeWorkingDirectory(workingDirectory);
+
+    // 禁用态：空库即完成——不读本机任何 skill 目录/云端配置（零磁盘 I/O）。
+    if (this.disabled) {
+      this.workingDirectory = normalized;
+      this.skills.clear();
+      this.protectedOfficialSkillNames.clear();
+      this.skillConflicts = [];
+      this.initialized = true;
+      return;
+    }
 
     // 并发锁：若同目录的 init 正在跑，复用同一个 promise
     if (this.initPromise && this.workingDirectory === normalized) {
@@ -262,6 +279,27 @@ class SkillDiscoveryService {
     if (!this.initialized || this.workingDirectory !== normalized) {
       await this.initialize(normalized);
     }
+  }
+
+  /**
+   * 进程级禁用开关（--bare 纯净模式，N-HEADLESS-BARE）。
+   * 置位：清空并钉死库为空、"已初始化"，后续 initialize/ensureInitialized 与
+   * getter 都保持空（见 `disabled` 字段注释）。复位：回到默认发现语义，供
+   * 同进程多会话（测试）复用单例。
+   */
+  setDisabled(disabled: boolean): void {
+    this.disabled = disabled;
+    if (disabled) {
+      this.skills.clear();
+      this.protectedOfficialSkillNames.clear();
+      this.skillConflicts = [];
+      this.initialized = true;
+      this.metadataCacheDirty = false;
+    }
+  }
+
+  isDisabled(): boolean {
+    return this.disabled;
   }
 
   /**
@@ -537,6 +575,7 @@ class SkillDiscoveryService {
    * 在下载/更新/删除仓库后调用
    */
   async refreshLibraries(): Promise<void> {
+    if (this.disabled) return;
     // 清除 library 来源的 skills
     for (const [name, skill] of this.skills) {
       if (skill.source === 'library') {
@@ -559,6 +598,7 @@ class SkillDiscoveryService {
    * 获取指定名称的 Skill
    */
   getSkill(name: string): ParsedSkill | undefined {
+    if (this.disabled) return undefined;
     if (this.allowedSkillNames && !this.allowedSkillNames.has(name)) return undefined;
     return this.skills.get(name);
   }
@@ -571,6 +611,7 @@ class SkillDiscoveryService {
    * 获取所有已加载的 Skills
    */
   getAllSkills(): ParsedSkill[] {
+    if (this.disabled) return [];
     const skills = Array.from(this.skills.values());
     return this.allowedSkillNames
       ? skills.filter((skill) => this.allowedSkillNames?.has(skill.name))

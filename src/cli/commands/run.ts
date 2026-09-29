@@ -7,7 +7,14 @@ import path from 'path';
 import { Command } from 'commander';
 import { createCLIAgent } from '../adapter';
 import { terminalOutput, jsonOutput } from '../output';
-import { cleanup, initializeCLIServices, getDatabaseService, getCLIEnvironmentFingerprint } from '../bootstrap';
+import {
+  cleanup,
+  initializeCLIServices,
+  getDatabaseService,
+  getCLIEnvironmentFingerprint,
+  whenCLIMcpReady,
+  whenCLISkillsReady,
+} from '../bootstrap';
 import type { CLIGlobalOptions } from '../types';
 import { extractJSON } from '../utils/jsonExtractor';
 import { validateSchema, formatValidationErrors, type JSONSchema } from '../utils/schemaValidator';
@@ -175,7 +182,15 @@ export const runCommand = new Command('run')
         }
       }
 
-      // 环境指纹：init 已定档，此处快照后整 run 复用（cleanup 不改写它）
+      // 环境指纹：init 已定档，此处快照后整 run 复用（cleanup 不改写它）。
+      // 指纹从实况导出，而 skills 发现与 MCP 握手都是 fire-and-forget——json/
+      // stream-json 模式要输出指纹，先等它们落定再快照，skillCount/mcpServers 才
+      // 是实况而非装载中途的 0（agent.run 本就要等 whenCLIMcpReady，端到端不变；
+      // text 模式无指纹输出，不等待，首字路径原样）。
+      if (isJson) {
+        await whenCLISkillsReady();
+        await whenCLIMcpReady();
+      }
       const environmentFingerprint = getCLIEnvironmentFingerprint();
 
       if (!isJson) {

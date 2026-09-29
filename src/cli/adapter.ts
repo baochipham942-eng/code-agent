@@ -6,6 +6,7 @@ import {
   createAgentLoop,
   buildCLIConfig,
   initializeCLIServices,
+  isCLIBareMode,
   getSessionManager,
   getConfigService,
   startCLIDurableRun,
@@ -861,5 +862,7 @@ export class CLIAgent {
 export async function createCLIAgent(options: Partial<CLIGlobalOptions> = {}): Promise<CLIAgent> {
   // 已初始化时是幂等 no-op；对未经 run/chat 先行 init 的调用方，bare 在这里首次定档。
   await initializeCLIServices({ bare: options.bare });
-  return new CLIAgent(options);
+  // bare 定档以首次 init 为准（单一真源）：已初始化后晚到的 bare 不再反向改写
+  // 已按旧档装载的 skills/MCP，hooks/指纹与它们对齐同一个值，不各说各话。
+  return new CLIAgent({ ...options, bare: isCLIBareMode() });
 }

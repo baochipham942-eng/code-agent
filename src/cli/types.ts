@@ -50,15 +50,21 @@ export interface CLIGlobalOptions {
 }
 
 /**
- * 环境指纹：本次 CLI 进程各 loader（skills/hooks/MCP）是装载还是跳过。
+ * 环境指纹：本次 CLI 进程各 loader（skills/hooks/MCP）装载状态的自描述。
  * stream-json 首帧与 --output-format json 终态结果都带它，评测侧据此自描述。
+ * 全部字段从进程实况导出（rework r1：不再硬编码）——skillCount 是发现服务
+ * 实际装载数、mcpServers 是自动装载落定后的已连接名单。
  */
 export interface CLIEnvironmentFingerprint {
   /** true = --bare 纯净模式（全部 loader 跳过） */
   bare: boolean;
   skills: 'loaded' | 'skipped';
+  /** 发现服务实际装载的 skill 数（bare 恒 0；非 bare 为 emit 时实况） */
+  skillCount: number;
   hooks: 'loaded' | 'skipped';
   mcp: 'loaded' | 'skipped';
+  /** 自动装载落定后已连接的 MCP server 名单（未发起/被跳过 = 空数组） */
+  mcpServers: string[];
 }
 
 /**

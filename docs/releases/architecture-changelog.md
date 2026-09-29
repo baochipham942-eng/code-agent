@@ -1081,7 +1081,7 @@ v0.16.44+ 引入平台抽象层，统一封装 Tauri/Electron/Web 的差异 API�
 | 模块 | 位置 | 描述 |
 |------|------|------|
 | **DAG 调度器** | `src/host/scheduler/` | 基于 DAG 的并行任务调度 |
-| **工具 DAG** | `src/host/agent/toolExecution/dagScheduler.ts` | 文件依赖 DAG + Kahn 拓扑排序 |
+| **工具 DAG** | `src/host/agent/toolExecution/dagScheduler.ts` | 已删除工具级草稿（ADR-073 刀4） |
 | **ToolSearch** | `src/host/tools/gen4/toolSearch.ts` | 延迟加载工具发现机制 |
 | **Checkpoint** | `src/host/services/FileCheckpointService.ts` | 文件版本快照与回滚 |
 | **Skills 系统** | `src/host/skills/` | 用户可定义技能 + 数据清洗 Skill |

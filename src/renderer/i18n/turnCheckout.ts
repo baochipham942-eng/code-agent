@@ -9,6 +9,7 @@ export const turnCheckoutChatZh = {
   turnCheckoutNoteChanged: '工作区处理了 {count} 个文件。',
   turnCheckoutNoteHumanEdit: '{file} 检测到人工编辑，未覆盖。',
   turnCheckoutNoteLegacyDigest: '{file} 缺少写后校验信息，未覆盖。',
+  turnCheckoutNoteUncertainTarget: '{file} 的写入目标无法确定，没有快照可回退。',
   turnCheckoutNoteSnapshotFailed: '{file} 无法安全保存反悔快照，未覆盖。',
 };
 
@@ -23,5 +24,6 @@ export const turnCheckoutChatEn: typeof turnCheckoutChatZh = {
   turnCheckoutNoteChanged: '{count} workspace files were processed.',
   turnCheckoutNoteHumanEdit: '{file} has manual edits and was not overwritten.',
   turnCheckoutNoteLegacyDigest: '{file} lacks a post-write digest and was not overwritten.',
+  turnCheckoutNoteUncertainTarget: '{file} had an unresolved write target; no snapshot exists to restore.',
   turnCheckoutNoteSnapshotFailed: '{file} could not be snapshotted safely and was not overwritten.',
 };

@@ -182,12 +182,18 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose, onChe
               .replace('{skipped}', String(checkoutResult.skippedFiles.length))}
           </p>
           {checkoutResult.skippedFiles.map((item) => {
-            const file = item.filePath.split(/[\\/]/).filter(Boolean).at(-1) ?? item.filePath;
+            // uncertain 披露键是合成串（uncertain-redirection:$OUT/a.txt）不是路径，
+            // 取 basename 会剪出误导片段，整串展示
+            const file = item.reason === 'uncertain_write_target'
+              ? item.filePath
+              : item.filePath.split(/[\\/]/).filter(Boolean).at(-1) ?? item.filePath;
             const template = item.reason === 'human_edit'
               ? t.chat.turnCheckoutNoteHumanEdit
               : item.reason === 'missing_post_write_digest'
                 ? t.chat.turnCheckoutNoteLegacyDigest
-                : t.chat.turnCheckoutNoteSnapshotFailed;
+                : item.reason === 'uncertain_write_target'
+                  ? t.chat.turnCheckoutNoteUncertainTarget
+                  : t.chat.turnCheckoutNoteSnapshotFailed;
             return <p key={`${item.filePath}:${item.reason}`} className="mt-1 text-xs text-zinc-400">{template.replace('{file}', file)}</p>;
           })}
           {checkoutResult.failed

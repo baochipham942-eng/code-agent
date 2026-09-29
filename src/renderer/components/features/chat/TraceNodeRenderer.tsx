@@ -1045,12 +1045,18 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
         ? t.chat.turnCheckoutSuccess
         : t.chat.turnCheckoutPartial;
     const skipped = checkoutNote.skippedFiles.map((item) => {
-      const file = item.filePath.split(/[\\/]/).filter(Boolean).at(-1) ?? item.filePath;
+      // uncertain 披露键是合成串（uncertain-redirection:$OUT/a.txt）不是路径，
+      // 取 basename 会剪出误导片段，整串展示
+      const file = item.reason === 'uncertain_write_target'
+        ? item.filePath
+        : item.filePath.split(/[\\/]/).filter(Boolean).at(-1) ?? item.filePath;
       const template = item.reason === 'human_edit'
         ? t.chat.turnCheckoutNoteHumanEdit
         : item.reason === 'missing_post_write_digest'
           ? t.chat.turnCheckoutNoteLegacyDigest
-          : t.chat.turnCheckoutNoteSnapshotFailed;
+          : item.reason === 'uncertain_write_target'
+            ? t.chat.turnCheckoutNoteUncertainTarget
+            : t.chat.turnCheckoutNoteSnapshotFailed;
       return template.replace('{file}', file);
     });
     const otherFailures = checkoutNote.failed

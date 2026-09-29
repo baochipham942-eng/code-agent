@@ -52,6 +52,7 @@ import {
 import {
   clearAllMessagesWithLedger,
   reconcileMessageProjectionOrderWithLedger,
+  shouldAppendMessageToConversationLedger,
 } from './sessionRepositoryMessageLedger';
 import { runTransactionWithFtsRepair, runWithFtsWriteRepair } from '../database/ftsRepair';
 import { runWithSqliteBusyRetry } from '../database/sqliteBusyRetry';
@@ -572,6 +573,7 @@ export class SessionRepository {
     const thinkingContent = message.thinking || message.reasoning || null;
 
     const toolCallsForStorage = ensureToolCallShortDescription(message.toolCalls);
+    const useLedger = shouldAppendMessageToConversationLedger(this.db, this.conversationBranchRepo, sessionId, options);
     const write = (): void => {
       const result = stmt.run(
         message.id,
@@ -597,7 +599,7 @@ export class SessionRepository {
       // OR IGNORE 命中冲突时 changes === 0：消息已存在，本地状态保持不变，无需再动账本/时间戳。
       if (result.changes === 0) return;
 
-      if (this.conversationBranchRepo && !options?.skipConversationLedger) {
+      if (useLedger && this.conversationBranchRepo) {
         const persistedRow = this.db.prepare(`
           SELECT *
           FROM messages
@@ -626,7 +628,6 @@ export class SessionRepository {
           .run(options?.updatedAt ?? Date.now(), sessionId);
       }
     };
-    const useLedger = Boolean(this.conversationBranchRepo && !options?.skipConversationLedger);
     // WAL 多进程下先读后写的事务必须 BEGIN IMMEDIATE（.immediate()），否则升级出 SQLITE_BUSY_SNAPSHOT
     // 直接抛 database is locked（issue #1992）；外层 busy 重试兜底 busy_timeout 到期的普通写锁等待。
     runWithSqliteBusyRetry(() => runWithFtsWriteRepair(this.db, useLedger ? () => this.db.transaction(write).immediate() : write));

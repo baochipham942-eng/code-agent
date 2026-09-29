@@ -9,6 +9,7 @@ import { applySchema } from '../../../src/host/services/core/database/schema';
 import { applyConversationBranchSchema } from '../../../src/host/services/core/database/schemaConversationBranch';
 import { MemoryRepository } from '../../../src/host/services/core/repositories/MemoryRepository';
 import { PermissionDecisionRepository } from '../../../src/host/services/core/repositories/PermissionDecisionRepository';
+import { ConversationBranchRepository } from '../../../src/host/services/core/repositories/ConversationBranchRepository';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { ToolExecutionEventRepository } from '../../../src/host/services/core/repositories/ToolExecutionEventRepository';
 import { DatabaseReadOnlyError } from '../../../src/host/services/core/database/sqliteErrors';
@@ -273,5 +274,98 @@ describe('startup maintenance orphan tool-call closure', () => {
       expect.stringContaining('broken-session'),
       expect.objectContaining({ message: 'injected closure failure' }),
     );
+  });
+
+  it('projects a crash-recovery closure after legacy rows when the session has no branch yet', () => {
+    const sessionId = 'legacy-crashed';
+    createSession(sessionId, 'running');
+    sessionRepo.addMessage(sessionId, {
+      id: 'user-legacy',
+      role: 'user',
+      content: 'run the long command',
+      timestamp: 1,
+    }, { skipConversationLedger: true });
+    sessionRepo.addMessage(
+      sessionId,
+      assistantToolCall('assistant-legacy', 'call-legacy'),
+      { skipConversationLedger: true },
+    );
+    expect(db.prepare(
+      'SELECT COUNT(*) AS count FROM conversation_branches WHERE session_id = ?',
+    ).get(sessionId)).toEqual({ count: 0 });
+
+    runMaintenance();
+    applyConversationBranchSchema(db);
+
+    const boundary = { ownerUserId: null, projectId: null };
+    const branchRepo = new ConversationBranchRepository(db);
+    const audit = branchRepo.auditLineage(sessionId, boundary);
+    const messageIds = sessionRepo.getMessages(sessionId).map((message) => message.id);
+    const ledgerIds = (db.prepare(`
+      SELECT projected_message_id
+      FROM conversation_branch_entries
+      WHERE branch_id = (SELECT id FROM conversation_branches WHERE session_id = ?)
+      ORDER BY ordinal ASC
+    `).all(sessionId) as Array<{ projected_message_id: string }>)
+      .map((row) => row.projected_message_id);
+    let replayError: string | null = null;
+    try {
+      branchRepo.replay(sessionId, boundary);
+    } catch (error) {
+      replayError = error instanceof Error ? error.message : String(error);
+    }
+    expect({
+      auditStatus: audit.status,
+      issues: audit.issues.map((issue) => `${issue.code}: ${issue.detail}`),
+      replayError,
+      ledgerIds,
+      messageIds,
+    }).toEqual({
+      auditStatus: 'healthy',
+      issues: [],
+      replayError: null,
+      ledgerIds: messageIds,
+      messageIds: [
+        'user-legacy',
+        'assistant-legacy',
+        'assistant-legacy:interrupted-tool-results',
+      ],
+    });
+  });
+
+  it('keeps the immutable crash-recovery append when the session already has a branch', () => {
+    const sessionId = 'branched-crashed';
+    createSession(sessionId, 'running');
+    sessionRepo.addMessage(sessionId, assistantToolCall('assistant-branched', 'call-branched'));
+    expect(db.prepare(
+      'SELECT COUNT(*) AS count FROM conversation_branches WHERE session_id = ?',
+    ).get(sessionId)).toEqual({ count: 1 });
+    const eventsBefore = db.prepare(
+      'SELECT COUNT(*) AS count FROM conversation_branch_events',
+    ).get() as { count: number };
+
+    runMaintenance();
+
+    const provenance = db.prepare(`
+      SELECT provenance_json
+      FROM conversation_entries
+      WHERE source_session_id = ? AND source_message_id = ?
+    `).get(sessionId, 'assistant-branched:interrupted-tool-results') as { provenance_json: string };
+    expect(JSON.parse(provenance.provenance_json)).toMatchObject({ kind: 'crash-recovery' });
+    expect(db.prepare('SELECT COUNT(*) AS count FROM conversation_branch_events').get())
+      .toEqual({ count: eventsBefore.count + 1 });
+    const boundary = { ownerUserId: null, projectId: null };
+    const branchRepo = new ConversationBranchRepository(db);
+    expect(branchRepo.auditLineage(sessionId, boundary)).toMatchObject({
+      status: 'healthy',
+      issues: [],
+    });
+    const messageIds = sessionRepo.getMessages(sessionId).map((message) => message.id);
+    expect(messageIds).toEqual([
+      'assistant-branched',
+      'assistant-branched:interrupted-tool-results',
+    ]);
+    expect(branchRepo.replay(sessionId, boundary).messages.map((message) => message.projectedMessageId))
+      .toEqual(messageIds);
   });
 });

@@ -31,7 +31,8 @@ import { setToolLedgerSink } from '../host/tools/toolLedgerSink';
 import { createCliLedgerSink } from './cliLedgerSink';
 import { createCLIPermissionHandler, type CLIPermissionMode } from './permissionPolicy';
 import { getCLISessionManager, type CLISessionManager } from './session';
-import type { CLIConfig, CLIEventHandler } from './types';
+import type { CLIConfig, CLIEventHandler, CLIEnvironmentFingerprint } from './types';
+import type { SkillDiscoveryService } from '../host/services/skills/skillDiscoveryService';
 import type { ModelConfig, Message, AgentEvent } from '../shared/contract';
 import type { TelemetryAdapter } from '../shared/contract/telemetry';
 import type { PlanningService } from '../host/planning';
@@ -99,10 +100,30 @@ let cliDurableRunRuntime: DurableRunApplicationRuntime | null = null;
 let cliDurableProcessInstanceId: string | null = null;
 /** MCP init 的后台 promise（未启用 = null）；首个 agent run 经 whenCLIMcpReady 等它就绪 */
 let mcpInitPromise: Promise<void> | null = null;
+/** skill 发现阶段的后台 promise（bare = null，禁用态无装载可等） */
+let skillsInitPromise: Promise<void> | null = null;
+/** MCP 自动装载落定后的已连接名单快照（指纹实况；init 未发起 = 空数组） */
+let mcpConnectedServers: string[] = [];
+/** --bare 纯净模式：本进程跳过本地 skills/hooks/MCP 装载（N-HEADLESS-BARE） */
+let cliBareMode = false;
 
 /** 首个 agent run 的 MCP 就绪门：init 已发起时等它完成；未启用/已失败立即返回。 */
 export function whenCLIMcpReady(): Promise<void> {
   return mcpInitPromise ?? Promise.resolve();
+}
+
+/** skill 发现就绪门：fire-and-forget init 已发起时等它完成（指纹快照前用）。 */
+export function whenCLISkillsReady(): Promise<void> {
+  return skillsInitPromise ?? Promise.resolve();
+}
+
+/**
+ * 当前进程的 --bare 定档（首次 initializeCLIServices 固定，单一真源）。
+ * 已初始化后晚到的 bare 请求（如 createCLIAgent 的调用方）以此为准对齐
+ * hooks/指纹，不反向改写已按旧档装载的 skills/MCP 状态。
+ */
+export function isCLIBareMode(): boolean {
+  return cliBareMode;
 }
 
 // CLI run/chat/serve do not initialize TaskManager, so its command-center tools
@@ -163,6 +184,12 @@ export interface InitializeCLIServicesOptions {
   dangerouslySkipPermissions?: boolean;
   /** 颗粒度权限档：'auto' = 分类器判安全的自动批准并入账，其余 fail-closed 拒绝 */
   permissionMode?: CLIPermissionMode;
+  /**
+   * --bare 纯净模式：跳过 skill 发现初始化、用户 hooks 装配与 MCP 自动接入
+   * （含 CODE_AGENT_ENABLE_ARGUS_MCP/computer-use 安装态触发的自动接入），
+   * 让 CI/eval 结果不依赖宿主机本地环境。默认 false，行为与历史逐字节一致。
+   */
+  bare?: boolean;
 }
 
 /**
@@ -173,6 +200,37 @@ export interface InitializeCLIServicesOptions {
  */
 export function cliShouldInitMcp(env: NodeJS.ProcessEnv = process.env): boolean {
   return isComputerUseCapabilityInstalledSync(env) || env.CODE_AGENT_ENABLE_ARGUS_MCP === '1';
+}
+
+/**
+ * 环境指纹：本进程 loaders（skills/hooks/MCP）装载状态的自描述。
+ * 全部字段从实况导出（rework r1：不硬编码）——skills 读发现单例的禁用态与
+ * 实际装载数；hooks 读决定其逐消息懒装配开关（enableHooks）的 bare 旗档，
+ * emit 时可观测的决定态就是这扇门本身；MCP 读自动装载是否发起 + 落定后的
+ * 已连接名单。run 命令在 stream-json 首帧与终态结果里带出。
+ */
+export function getCLIEnvironmentFingerprint(): CLIEnvironmentFingerprint {
+  const skills = getSkillDiscoveryService
+    ? readSkillLoaderState(getSkillDiscoveryService())
+    : { status: 'skipped' as const, count: 0 };
+  return {
+    bare: cliBareMode,
+    skills: skills.status,
+    skillCount: skills.count,
+    hooks: cliBareMode ? 'skipped' : 'loaded',
+    mcp: mcpInitPromise ? 'loaded' : 'skipped',
+    mcpServers: mcpInitPromise ? [...mcpConnectedServers] : [],
+  };
+}
+
+function readSkillLoaderState(
+  discovery: SkillDiscoveryService,
+): { status: 'loaded' | 'skipped'; count: number } {
+  if (discovery.isDisabled()) return { status: 'skipped', count: 0 };
+  return {
+    status: 'loaded',
+    count: discovery.isInitialized() ? discovery.getAllSkills().length : 0,
+  };
 }
 
 async function initializeCLIDurableRun(
@@ -250,6 +308,9 @@ export async function terminalCLIDurableRun(
  */
 export async function initializeCLIServices(options: InitializeCLIServicesOptions = {}): Promise<void> {
   if (initialized) return;
+
+  // --bare 纯净模式：首次初始化即定档（幂等：后续调用直接 return）。
+  cliBareMode = options.bare === true;
 
   const isDebug = process.env.DEBUG === 'true' || process.argv.includes('--debug');
   const cliLog = isDebug ? (...args: unknown[]) => console.error(...args) : () => {};
@@ -344,11 +405,15 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
   // 与桌面端同一条 initMCPClient 链路。失败不阻塞 CLI（与数据库初始化同策略）。
   // 云端 MCP 服务器是 HTTP 握手（本机实测 13 个 server 串行 ~7s）——不挡首屏，
   // 与 banner/Ink 并行；首个 agent run 经 whenCLIMcpReady() 等它就绪。
-  if (cliShouldInitMcp()) {
+  // --bare：连 env/安装态触发的自动接入也一并跳过（评测可复现优先）；
+  // 显式 MCP 动作（如 openchronicle on 注册 MCP server）走各自命令路由，不受影响。
+  if (!cliBareMode && cliShouldInitMcp()) {
     mcpInitPromise = (async () => {
       try {
-        const { initMCPClient } = await import('../host/mcp/mcpClient');
+        const { initMCPClient, getMCPClient } = await import('../host/mcp/mcpClient');
         await initMCPClient(undefined, process.cwd());
+        // 指纹实况快照：落定后读真实连接名单（消费侧先过 whenCLIMcpReady 再取指纹）
+        mcpConnectedServers = getMCPClient().getStatus().connectedServers;
         cliLog('MCP client initialized (computer-use enabled)');
       } catch (error) {
         const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
@@ -379,12 +444,21 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
 
   // 初始化 Skill 发现服务（fire-and-forget：skillMetaTool/skillCreateTool 用到时
   // 会通过 ensureInitialized 等待完成，不阻塞启动与首字响应）
+  // --bare：把全局单例切进禁用态（单一真源，rework r1）——不止此处不装载，
+  // 每条用户消息的隐式 skill 匹配（conversationRuntime → resolveSkillInvocation）
+  // 与 Skill/skillCreate 工具的懒加载 ensureInitialized 都经由此单例，禁用态下
+  // 是零磁盘 I/O 的 no-op、库恒空，本机 skill 库不可能再被读进来。
   try {
     const skillDiscoveryService = getSkillDiscoveryService();
-    void skillDiscoveryService.initialize(process.cwd()).then(
-      () => cliLog('SkillDiscoveryService initialized'),
-      (err) => cliLog('SkillDiscoveryService init failed:', err),
-    );
+    skillDiscoveryService.setDisabled(cliBareMode);
+    if (cliBareMode) {
+      cliLog('SkillDiscoveryService disabled (--bare)');
+    } else {
+      skillsInitPromise = skillDiscoveryService.initialize(process.cwd()).then(
+        () => cliLog('SkillDiscoveryService initialized'),
+        (err) => cliLog('SkillDiscoveryService init failed:', err),
+      );
+    }
   } catch (error) {
     cliLog('Failed to kick off SkillDiscoveryService:', error);
   }
@@ -458,7 +532,9 @@ export async function syncCLIWorkingDirectory(workingDirectory: string): Promise
   const resolvedWorkingDirectory = path.resolve(workingDirectory);
   toolExecutor?.setWorkingDirectory(resolvedWorkingDirectory);
 
-  if (getSkillDiscoveryService) {
+  // --bare：skill 发现在 init 时已被跳过，这里也不补等 ensureInitialized
+  //（否则首次调用会反向触发 initialize，纯净模式破功）。
+  if (getSkillDiscoveryService && !cliBareMode) {
     const skillDiscoveryService = getSkillDiscoveryService();
     await skillDiscoveryService.ensureInitialized(resolvedWorkingDirectory);
   }
@@ -490,6 +566,8 @@ export function buildCLIConfig(options: {
   tools?: string;
   disallowedTools?: string;
   originKind?: CLIConfig['originKind'];
+  /** --bare 纯净模式：不装配用户 hook 管理器（enableHooks=false） */
+  bare?: boolean;
 }): CLIConfig {
   const config = getConfigService();
   const settings = config.getSettings();
@@ -526,7 +604,11 @@ export function buildCLIConfig(options: {
     modelConfig,
     outputFormat,
     enablePlanning: options.plan || false,
-    enableHooks: true,
+    // --bare：不装配用户 hooks（AgentLoop 侧 enableHooks=false → 不建 hook 管理器）。
+    // 注意这也一并关掉规划链路的 hooks 桥接（conversationRuntime 只在 hookManager
+    // 存在时才 setBridgeHookManager，toolExecutionEngine 的 planning hooks 同门）——
+    // 纯净模式语义如此：本机 hook 配置一律不参与，--bare --plan 亦不例外。
+    enableHooks: options.bare ? false : true,
     debug: options.debug || false,
     autoApprovePlan: true, // CLI 模式默认自动批准 plan mode
     systemPrompt: options.systemPrompt,
@@ -757,7 +839,8 @@ export async function cleanup(): Promise<void> {
   }
 
   // MCP：断开外部 server 子进程（cua-driver 等），避免 CLI 退出后残留孤儿进程
-  if (cliShouldInitMcp()) {
+  // --bare 从未初始化 MCP，shutdown 同样跳过（与 init 同一条判定链）。
+  if (!cliBareMode && cliShouldInitMcp()) {
     try {
       const { getMCPClient } = await import('../host/mcp/mcpClient');
       await getMCPClient().disconnectAll();
@@ -804,5 +887,16 @@ export async function cleanup(): Promise<void> {
   }
 
   initialized = false;
+  // 复位 --bare 定档与其在 host 单例上的禁用态/本地快照（同进程多会话复用）
+  if (cliBareMode) {
+    try {
+      getSkillDiscoveryService?.().setDisabled(false);
+    } catch {
+      // init 未走到 skills 导入就没有绑定，忽略
+    }
+  }
+  cliBareMode = false;
+  skillsInitPromise = null;
+  mcpConnectedServers = [];
   if (isDebugCleanup) console.error('CLI services cleaned up');
 }

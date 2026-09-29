@@ -186,8 +186,8 @@ export const chatCommand = new Command('chat')
         ? import('../tui-app/inkRunner')
         : null;
 
-      // 初始化服务
-      await initializeCLIServices({ permissionMode });
+      // 初始化服务（--bare 纯净模式：跳过 skills/hooks/MCP 装载）
+      await initializeCLIServices({ permissionMode, bare: globalOpts?.bare });
 
       // 初始化统一命令注册表
       initializeCommands();
@@ -204,6 +204,7 @@ export const chatCommand = new Command('chat')
         tools: options.tools,
         disallowedTools: options.disallowedTools,
         statusFile: options.statusFile,
+        bare: globalOpts?.bare,
         ...(resolveChatOriginKind({ isJsonMode, stdinIsTTY: Boolean(process.stdin.isTTY) })
           ? { originKind: 'headless' as const }
           : {}),

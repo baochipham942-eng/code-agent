@@ -4,7 +4,7 @@
 
 import type { AgentEvent, ToolCall, ToolResult } from '../../shared/contract';
 import type { SwarmEvent } from '../../shared/contract/swarm';
-import type { CLIOutputEvent, CLIRunResult } from '../types';
+import type { CLIOutputEvent, CLIEnvironmentFingerprint, CLIRunResult } from '../types';
 
 /**
  * JSON 输出管理器
@@ -21,6 +21,18 @@ export class JSONOutput {
     this.events = [];
     this.startTime = Date.now();
     this.toolsUsed = [];
+  }
+
+  /**
+   * 输出环境指纹（stream-json 首帧，紧跟 start()）：
+   * 自描述本次 run 的 loaders（skills/hooks/MCP）是装载还是跳过（--bare 全 skipped）。
+   */
+  environment(fingerprint: CLIEnvironmentFingerprint): void {
+    this.emitEvent({
+      type: 'environment',
+      timestamp: Date.now(),
+      data: fingerprint,
+    });
   }
 
   /**

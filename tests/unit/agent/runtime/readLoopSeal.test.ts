@@ -4,7 +4,6 @@ import { ControlState } from '../../../../src/host/agent/runtime/controlState';
 import {
   applyReadLoopHardLimit,
   isReadLikeToolCall,
-  isWriteClassToolCall,
   releaseReadLoopSealAfterSuccessfulWrite,
 } from '../../../../src/host/agent/runtime/readLoopSeal';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
@@ -43,22 +42,28 @@ describe('isReadLikeToolCall', () => {
   });
 });
 
-describe('isWriteClassToolCall', () => {
-  const ctx = makeCtx();
+describe('write-class classification (via releaseReadLoopSealAfterSuccessfulWrite)', () => {
+  // isWriteClassToolCall 是模块私有；经生产入口验证：写类成功调用解除封口，非写类不解除。
+  function releases(toolCall: { name: string; arguments: Record<string, unknown> }): boolean {
+    const ctx = makeCtx();
+    ctx.control.activateReadLoopSeal();
+    releaseReadLoopSealAfterSuccessfulWrite(ctx, toolCall, true);
+    return !ctx.control.readLoopSealActive;
+  }
 
   it('treats Write/Edit and artifact generators as write-class', () => {
-    expect(isWriteClassToolCall(ctx, { name: 'Write', arguments: { file_path: '/tmp/out.docx' } })).toBe(true);
-    expect(isWriteClassToolCall(ctx, { name: 'Edit', arguments: { file_path: '/tmp/a.ts' } })).toBe(true);
-    expect(isWriteClassToolCall(ctx, { name: 'ppt_generate', arguments: { file_path: '/tmp/out.pptx' } })).toBe(true);
-    expect(isWriteClassToolCall(ctx, { name: 'docx_generate', arguments: { file_path: '/tmp/out.docx' } })).toBe(true);
+    expect(releases({ name: 'Write', arguments: { file_path: '/tmp/out.docx' } })).toBe(true);
+    expect(releases({ name: 'Edit', arguments: { file_path: '/tmp/a.ts' } })).toBe(true);
+    expect(releases({ name: 'ppt_generate', arguments: { file_path: '/tmp/out.pptx' } })).toBe(true);
+    expect(releases({ name: 'docx_generate', arguments: { file_path: '/tmp/out.docx' } })).toBe(true);
   });
 
   it('treats mutating Bash as write-class and git log / curl as not', () => {
-    expect(isWriteClassToolCall(ctx, { name: 'Bash', arguments: { command: 'python3 -c "Path(\'out.docx\').write_text(\'x\')"' } })).toBe(true);
-    expect(isWriteClassToolCall(ctx, { name: 'Bash', arguments: { command: 'touch /tmp/out.docx' } })).toBe(true);
-    expect(isWriteClassToolCall(ctx, { name: 'Bash', arguments: { command: 'git log' } })).toBe(false);
-    expect(isWriteClassToolCall(ctx, { name: 'Bash', arguments: { command: 'curl https://example.test' } })).toBe(false);
-    expect(isWriteClassToolCall(ctx, { name: 'Read', arguments: { file_path: '/tmp/a.ts' } })).toBe(false);
+    expect(releases({ name: 'Bash', arguments: { command: 'python3 -c "Path(\'out.docx\').write_text(\'x\')"' } })).toBe(true);
+    expect(releases({ name: 'Bash', arguments: { command: 'touch /tmp/out.docx' } })).toBe(true);
+    expect(releases({ name: 'Bash', arguments: { command: 'git log' } })).toBe(false);
+    expect(releases({ name: 'Bash', arguments: { command: 'curl https://example.test' } })).toBe(false);
+    expect(releases({ name: 'Read', arguments: { file_path: '/tmp/a.ts' } })).toBe(false);
   });
 });
 

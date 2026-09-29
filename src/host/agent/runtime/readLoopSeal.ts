@@ -46,7 +46,7 @@ export function isReadLikeToolCall(
   return Boolean(ctx.antiPatternDetector.isReadOnlyShellCommand?.(command));
 }
 
-export function isWriteClassToolCall(
+function isWriteClassToolCall(
   ctx: Pick<RuntimeContext, 'antiPatternDetector'>,
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
 ): boolean {

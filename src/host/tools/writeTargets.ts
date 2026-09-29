@@ -418,6 +418,64 @@ function splitUnescapedNewlines(command: string): string {
   return command.replace(/(?<!\\)\r?\n/g, ' ; ');
 }
 
+export interface ShellMoveSourceAssessment {
+  /** mv 段里干净解析出的源路径（除最后一个操作数外的全部），绝对路径。 */
+  sources: string[];
+  /** 源解析不出的 mv 段的目的地（绝对路径）：这些目的地的快照必须一并撤下。 */
+  blockedDestinations: string[];
+  /** 源解析不出的 mv 段的披露键（一段一条，保留原始操作数）。 */
+  uncertain: string[];
+}
+
+function collectMoveSources(command: string, workingDirectory: string, out: ShellMoveSourceAssessment): void {
+  const tokens = tokenizeShellCommand(command);
+  let words: string[] = [];
+  const flushSegment = (): void => {
+    // 与 argumentWriteTargets 同一把分词 / 命令名 / 选项过滤（mv 是 'last' 规则的移动语义
+    // 那一个，cp 不动源），保证这里认出的目的地与写目标集合里的目的地是同一条解析，
+    // blockedDestinations 才能准确对上要撤下的快照。
+    if (words.length >= 2 && path.basename(shellWordValue(words[0])) === 'mv') {
+      const operands = words.slice(1).filter((word) => !shellWordValue(word).startsWith('-'));
+      if (operands.length >= 2) {
+        const valued = operands.map(shellWordValue);
+        const destination = valued[valued.length - 1];
+        const segmentSources = valued.slice(0, -1);
+        if (segmentSources.some((source) => !source || /[$`*?{}]/.test(source))) {
+          out.uncertain.push(`uncertain-move:${words.join(' ')}`);
+          // 源解析不出还快照目的地，回退会把目的地恢复 / 删除而源没人恢复——内容彻底
+          // 丢失。整个 mv 按 uncertain 处理：目的地快照撤下，回退不碰。
+          if (destination && !/[$`*?{}]/.test(destination)) {
+            out.blockedDestinations.push(resolveToolPath(destination, workingDirectory));
+          }
+        } else {
+          out.sources.push(...segmentSources.map((source) => resolveToolPath(source, workingDirectory)));
+        }
+      }
+    }
+    for (const script of nestedScriptTexts(words)) {
+      collectMoveSources(script, workingDirectory, out);
+    }
+    words = [];
+  };
+  for (const token of tokens) {
+    if (token.kind === 'separator') flushSegment();
+    else words.push(token.raw);
+  }
+  flushSegment();
+}
+
+/**
+ * mv 类移动命令的源侧评估：mv 的写目标只有目的地，但回退只处理目的地会把源文件内容
+ * 从工作区抹掉——源必须与目的地一起进快照（源记执行前内容，回退时恢复源）。多源
+ * `mv a b dir/` 的全部非最后操作数都是源。走 descriptorAssessment 同款词法预处理
+ * （折续行 + 未转义换行切段），解析口径与写目标完全一致。
+ */
+export function assessShellMoveSources(command: string, workingDirectory: string): ShellMoveSourceAssessment {
+  const out: ShellMoveSourceAssessment = { sources: [], blockedDestinations: [], uncertain: [] };
+  collectMoveSources(splitUnescapedNewlines(command.replace(/\\(?:\r\n?|\n)/g, '')), workingDirectory, out);
+  return out;
+}
+
 function genericPathAssessment(
   value: unknown,
   workingDirectory: string,

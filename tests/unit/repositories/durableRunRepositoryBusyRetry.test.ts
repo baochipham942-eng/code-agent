@@ -48,7 +48,7 @@ async function createFixture() {
   await kernel.createRun({
     runId: 'run-busy', sessionId: 'sess-busy', engine: { kind: 'native' }, now: 1_000,
   });
-  const writer = new Database(dbPath, { timeout: 50 });
+  const writer = new Database(dbPath, { timeout: 100 });
   writer.pragma('journal_mode = WAL');
   const writerRepo = new DurableRunRepository(writer);
   return { dbPath, holder, writer, writerRepo };
@@ -78,7 +78,7 @@ describe('DurableRunRepository 写事务 busy 重试', () => {
       db.pragma('journal_mode = WAL');
       db.exec('BEGIN IMMEDIATE');
       console.log('LOCKED');
-      setTimeout(() => { db.exec('COMMIT'); db.close(); }, 120);
+      setTimeout(() => { db.exec('COMMIT'); db.close(); }, 200);
     `, dbPath], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'inherit'] });
     const locked = new Promise<void>((resolve) => {
       holderChild.stdout!.on('data', (chunk: Buffer) => {
@@ -87,10 +87,12 @@ describe('DurableRunRepository 写事务 busy 重试', () => {
     });
     try {
       await locked;
-      // 写连接 busy_timeout=50ms；锁持有人（独立进程）120ms 后放。
-      // 旧 deferred 形状：SELECT 不挡、UPDATE 等满 50ms 超时抛 SQLITE_BUSY（仓储层无重试）→ 终态丢失；
-      // 修复后：BEGIN IMMEDIATE 每次等满 50ms 抛、busy 重试共 3 次尝试（等待窗口
-      // 0-50/50-100/100-150ms），第 3 个窗口覆盖 120ms 放锁点 → 拿到锁、终态落库。
+      // 写连接 busy_timeout=100ms；锁持有人（独立进程）200ms 后放。
+      // 旧 deferred 形状：SELECT 不挡、UPDATE 等满 100ms 超时抛 SQLITE_BUSY（仓储层无重试）→ 终态丢失；
+      // 修复后：BEGIN IMMEDIATE 每次等满 100ms 抛、busy 重试共 3 次尝试（总耐心 ~300ms，
+      // 实测每次含 ~15% 开销），200ms 放锁点落在第 2 个等待窗口内 → 拿到锁、终态落库。
+      // 两侧余量各 ~100ms：改判 RED 一侧依赖「单窗口 100ms < 200ms」，改判 GREEN 一侧
+      // 依赖「总耐心 300ms > 200ms」，都留足 CI 调度抖动。
       await expect(writerRepo.commitTerminal(terminalInput(2_000)))
         .resolves.toMatchObject({ status: 'completed' });
       expect(await writerRepo.get('run-busy')).toMatchObject({

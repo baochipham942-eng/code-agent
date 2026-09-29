@@ -482,6 +482,8 @@ export class DurableRunRepository implements DurableRunStores {
     return runWithSqliteBusyRetry(() => this.db.transaction(() => {
       const row = this.db.prepare('SELECT * FROM durable_runs WHERE run_id = ?').get(input.runId) as Row | undefined;
       if (!row) return false;
+      // 纵深防御：runId 必须真的属于这个会话（调用方按会话取 latest root，这里不信任传入的配对）。
+      if (String(row.session_id) !== input.sessionId) return false;
       if (row.status !== 'waiting') return false;
       const lastEvent = this.db.prepare(
         'SELECT event_type, event_json FROM durable_run_events WHERE run_id = ? ORDER BY seq DESC LIMIT 1',

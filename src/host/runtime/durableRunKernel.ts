@@ -287,12 +287,14 @@ export class DurableRunKernel implements RunKernelAdapter {
   }
 
   /**
-   * ③（N-CLI-DURABLE-TERMINAL-LOST）：租约未过期、owner 进程活着，跨进程判据拒收——但
-   * run 是 waiting 且接管方已判 native_workspace_unavailable（工作区不存在，任何续跑/
-   * 人工继续路径都会再次判同一个结论），这条租约续的是个没人能用的死胡同。允许收尸放行
-   * `-s` 续跑：不认领租约，判据 fence（status=waiting + 末事件复核结论原样）在仓储层同笔
-   * 事务里校验，不成立即退回原冲突语义。真冲突保护不受影响：running/recovering（有活
-   * handle 或恢复驱动在跑）与其他复核原因（可人工处置）仍拒收。
+   * ③（N-CLI-DURABLE-TERMINAL-LOST）：租约未过期、owner 视为存活（CLI peer 活进程，或
+   * pid 形状解析失败的非 CLI owner——后者 isAbandonedCliProcess 不敢断死，同样落到这
+   * 条路径），跨进程判据拒收——但 run 是 waiting 且接管方已判 native_workspace_unavailable
+   * （工作区不存在，任何续跑/人工继续路径都会再次判同一个结论），这条租约续的是个没人
+   * 能用的死胡同。允许收尸放行 `-s` 续跑：不认领租约，判据 fence（status=waiting +
+   * 末事件复核结论原样）在仓储层同笔事务里校验，不成立即退回原冲突语义。真冲突保护
+   * 不受影响：running/recovering（有活 handle 或恢复驱动在跑）与其他复核原因（可人工
+   * 处置）仍拒收。
    */
   private async cancelUnresumableParkedSessionRoot(
     latest: RunEnvelope,

@@ -14,6 +14,7 @@
 // 判据，用贵模型逐条判不划算，而这些条目大多是「有没有这张表」「z 值是不是 1.64」
 // 这类可核验事实，不需要强推理。
 // ============================================================================
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import mammoth from 'mammoth';
@@ -23,6 +24,7 @@ import { quickTask, getQuickModelRuntimeInfo } from '../src/host/model/quickMode
 import {
   buildRubricPrompt,
   chunkRubric,
+  extractPptxText,
   isInsideRoot,
   TRUNCATED_MARK,
   parseRubricVerdicts,
@@ -121,10 +123,14 @@ function parseArgs(): { patrol: string; run: string; only: string[]; batch: numb
  * 产物提取。xlsx/docx 直连底层库（4 行），不复用 src 的 read_xlsx / read_docx 工具——
  * 那两个是 ToolHandler，要先造一份 ToolContext（logger/workspace/权限/artifacts），
  * 而 read_pdf 还会按配置走模型 OCR，在评分脚本里既慢又花钱。
- * ponytail: pdf/pptx 只留文件名与大小，rubric 里「产物是不是 PDF、叫什么名」那类条目照样判得了；
- * 要判 PDF 正文时再接 poppler pdftotext（仓里已有 sidecar，见 scripts/lib/poppler-sidecar-release.mjs）。
+ * pdf 走 poppler pdftotext（PATH 上找，PDFTOTEXT 可覆盖）；pptx 按页抽 <a:t>。09-28 夜巡实测
+ * 弃权 1905 条里 366 条是「binary 没解析器」，产物里 pdf 53 个、pptx 28 个——之前这些题只能判文件名。
+ * ponytail: png/mp4 仍只给占位，评分模型是纯文本的；要判图再接多模态。
  */
-async function extractFile(absPath: string, relPath: string): Promise<GdpvalArtifactFile> {
+/** artifact = 被评的产物；input = 题目给的参考资料。「坏了就判 false」只对产物成立，输入坏了仍是弃权占位。 */
+type FileRole = 'artifact' | 'input';
+
+async function extractFile(absPath: string, relPath: string, role: FileRole): Promise<GdpvalArtifactFile> {
   let bytes = 0;
   const ext = path.extname(absPath).toLowerCase();
   // 截断要说清楚截了多少：模型据此把「整表存在性」类判据填 unknown 而不是硬判 false。
@@ -136,6 +142,11 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
   };
   try {
     bytes = fs.statSync(absPath).size;
+    if (bytes === 0) {
+      return role === 'artifact'
+        ? { path: relPath, bytes, text: '[空文件：0 字节。这是产物本身为空，不是资料没给全：凡需要看它内容的判据一律判 false]' }
+        : unseen(relPath, bytes, '参考文件为空（0 字节）');
+    }
     if (TEXT_EXT.has(ext)) return { path: relPath, bytes, text: clip(fs.readFileSync(absPath, 'utf8')) };
     if (ext === '.xlsx' || ext === '.xls' || ext === '.xlsm') {
       const workbook = XLSX.read(fs.readFileSync(absPath), { type: 'buffer' });
@@ -165,6 +176,25 @@ async function extractFile(absPath: string, relPath: string): Promise<GdpvalArti
     if (ext === '.docx') {
       const extracted = await mammoth.extractRawText({ buffer: fs.readFileSync(absPath) });
       return { path: relPath, bytes, text: clip(extracted.value) };
+    }
+    if (ext === '.pptx') {
+      return { path: relPath, bytes, text: clip(await extractPptxText(fs.readFileSync(absPath))) };
+    }
+    if (ext === '.pdf') {
+      // 不看退出码：pdftotext 遇到语法警告会非零退出，但正文照样抽出来了（09-28 实测 9408 字被当失败丢掉）。
+      const run = spawnSync(process.env.PDFTOTEXT || 'pdftotext', ['-layout', '-enc', 'UTF-8', absPath, '-'],
+        { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000 });
+      if (run.error) return unseen(relPath, bytes, `pdftotext 不可用 ${run.error.message}`);
+      if (run.stdout.trim()) return { path: relPath, bytes, text: clip(run.stdout) };
+      // 打不开的 PDF 是产物本身坏了，要让模型看见并判负；弃权会把坏交付抬成高分。
+      if (run.status !== 0) {
+        const stderr = run.stderr.trim().slice(0, 160);
+        // 加密 PDF 是合法文件，只是评分端打不开：弃权，不判负。
+        if (role === 'input' || /password|encrypt/i.test(stderr)) return unseen(relPath, bytes, `PDF 打不开（${stderr}）`);
+        return { path: relPath, bytes, text: `[此 PDF 文件损坏、无法打开（${stderr}）。这是产物本身不可用，不是资料没给全：凡需要看它内容的判据一律判 false]` };
+      }
+      // 能打开但没有文字层（扫描件/纯图片）：给占位，空串会被当成「PDF 里什么都没写」判负。
+      return unseen(relPath, bytes, 'PDF 无文字层（疑似扫描件或纯图片）');
     }
   } catch (error) {
     return unseen(relPath, bytes, `提取失败 ${error instanceof Error ? error.message : String(error)}`);
@@ -202,6 +232,7 @@ async function collectWithinBudget(
   entries: Array<{ abs: string; rel: string }>,
   maxFiles: number,
   maxChars: number,
+  role: FileRole,
 ): Promise<{ files: GdpvalArtifactFile[]; skipped: number }> {
   const files: GdpvalArtifactFile[] = [];
   let used = 0;
@@ -214,7 +245,7 @@ async function collectWithinBudget(
       }
       continue;
     }
-    const file = await extractFile(entry.abs, entry.rel);
+    const file = await extractFile(entry.abs, entry.rel, role);
     used += file.text.length;
     files.push(file);
   }
@@ -296,6 +327,7 @@ async function main(): Promise<void> {
       allRels.map((rel) => ({ abs: path.join(taskRoot, rel), rel })),
       MAX_FILES,
       MAX_TASK_CHARS,
+      'artifact',
     );
     if (skippedForBudget > 0) {
       console.warn(`  ${task.id}：产物总量超过 ${MAX_TASK_CHARS} 字，${skippedForBudget} 个文件没给模型看正文`
@@ -319,6 +351,7 @@ async function main(): Promise<void> {
       refEntries,
       MAX_FILES,
       MAX_INPUT_CHARS,
+      'input',
     );
     if (inputsSkipped > 0) {
       console.warn(`  ${task.id}：参考文件总量超过 ${MAX_INPUT_CHARS} 字，${inputsSkipped} 个没给模型看正文`

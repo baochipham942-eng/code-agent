@@ -74,6 +74,21 @@ describe('Read model-facing projection', () => {
     expect(projectReadResultsForModel(expanded)[3].toolResults?.[0].output).toContain('gamma');
   });
 
+  it('encoding 进去重 key：默认读（U+FFFD 乱码）之后的 encoding:gbk 重读不被折成 already-shown 回执', () => {
+    const garbled = 'Read version digest: abc123\n  1\t\uFFFD\uFFFD';
+    const decoded = 'Read version digest: abc123\n  1\t名称';
+    const gbkReread = projectReadResultsForModel(structuredMessages(decoded, { encoding: 'gbk' }));
+    expect(gbkReread[3].toolResults?.[0].output).toBe(decoded);
+    expect(garbled).not.toBe(decoded);
+
+    // 同一种 encoding 的重复读仍可折叠；缺省与显式 utf-8 视为同一种
+    const sameUtf8 = projectReadResultsForModel(structuredMessages(garbled, { encoding: 'utf-8' }));
+    expect(sameUtf8[3].toolResults?.[0].output).toContain('[Read already shown');
+    const twiceGbk = structuredMessages(decoded, { encoding: 'gbk' });
+    (twiceGbk[0].toolCalls![0].arguments as Record<string, unknown>).encoding = 'GBK';
+    expect(projectReadResultsForModel(twiceGbk)[3].toolResults?.[0].output).toContain('[Read already shown');
+  });
+
   it('does not treat a truncated prior result as the source for dedupe', () => {
     const entries = [
       { role: 'assistant', content: '', toolCalls: [readCall('c1')] },

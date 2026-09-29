@@ -429,6 +429,26 @@ describe('SkillDiscoveryService discovery', () => {
     }
   });
 
+  it('re-asks folder trust after the short cache expires so a mid-session revoke takes effect', async () => {
+    await writeSkill(path.join(projectDir, '.code-agent', 'skills'), 'ttl-skill');
+    const service = new SkillDiscoveryService({ includeClaudeLegacySkills: false });
+    await service.initialize(projectDir);
+    const t0 = Date.now() + 60_000; // 越过初始化时留下的缓存
+    const now = vi.spyOn(Date, 'now');
+    folderTrustMocks.isProjectConfigTrustedSync.mockClear();
+    try {
+      now.mockReturnValue(t0);
+      service.isSkillEnabled('ttl-skill');
+      service.isSkillEnabled('ttl-skill');
+      expect(folderTrustMocks.isProjectConfigTrustedSync).toHaveBeenCalledTimes(1);
+      now.mockReturnValue(t0 + 5_001);
+      service.isSkillEnabled('ttl-skill');
+      expect(folderTrustMocks.isProjectConfigTrustedSync).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('asks folder trust once when gating many skills in one working directory', async () => {
     for (let i = 0; i < 40; i += 1) {
       await writeSkill(path.join(projectDir, '.code-agent', 'skills'), `bulk-skill-${i}`);

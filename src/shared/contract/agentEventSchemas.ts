@@ -623,7 +623,9 @@ const SkillActivatedEventSchema = event('skill_activated', z.object({ name: z.st
 // memory_recalled 判定读它；没有 entries 的注入块只能证明「注了点什么」，证明不了「注的是哪条」。
 const MemoryInjectedEventSchema = event('memory_injected', z.object({ id: z.string(), entries: stringArraySchema.optional() }));
 // N-EVAL-MEMORY：durable facts 真落盘那一刻发；written 来自 durableFactWriter 的返回值。
-// N-MEM-WRITECONF：active/candidate/dropped 为按置信度档位的计数（optional，旧事件可缺省）。
+// N-MEM-WRITECONF r5：active/dropped 为按置信度档位的计数（optional，旧事件可缺省）。
+// candidate 档已随 r5 scope cut 移除，字段保留 optional 以兼容早期构建发出的事件
+// （当时 candidate 恒为 0，消费方读不到该键等价于 0）。
 const MemoryWrittenEventSchema = event('memory_written', z.object({
   files: stringArraySchema,
   written: z.number(),

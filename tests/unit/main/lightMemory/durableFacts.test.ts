@@ -80,8 +80,8 @@ function makeFact(index: number, overrides: Partial<DurableFact> = {}): DurableF
     description: `第 ${index} 条长期事实`,
     type: 'user',
     content: `长期内容 ${index}`,
-    // N-MEM-WRITECONF：缺省给高置信度，让存量用例继续走 active 路径；
-    // 分层（drop/candidate）行为由下方专项用例覆盖。
+    // N-MEM-WRITECONF：缺省给过门置信度，让存量用例继续走写入路径；
+    // 丢弃门行为由下方专项用例覆盖。
     confidence: 0.9,
     ...overrides,
   };
@@ -306,7 +306,9 @@ describe('默认助手长期事实写回', () => {
   });
 
   // ------------------------------------------------------------------------
-  // N-MEM-WRITECONF：置信度解析 + 分层写入 + supersedes
+  // N-MEM-WRITECONF r5（final scope cut）：置信度解析 + 唯一丢弃门 + supersedes 链接。
+  // candidate 档已整体移除：≥0.5 的事实按 origin/main 原行为写 active（无 status 行），
+  // 与 main 的逐字节一致由 mainReference() 对照钉死。
   // ------------------------------------------------------------------------
 
   async function readFrontmatter(filename: string): Promise<Record<string, string>> {
@@ -329,7 +331,23 @@ describe('默认助手长期事实写回', () => {
     }
   }
 
-  it('缺失置信度回落保守缺省（candidate 区间），不放大成 active', async () => {
+  /**
+   * origin/main 基线产物：main 的 writeDurableFacts 就是按这个入参形状直调
+   * writeLightMemoryFile（不传 status/supersedes）。r5 写入路径的逐字节一致
+   * 以它为对照——多出来的任何 frontmatter 行（status/deprecated_by/…）都会红。
+   */
+  async function mainReference(fact: DurableFact): Promise<string> {
+    const file = await writeLightMemoryFile({
+      filename: 'main-reference.md',
+      name: fact.name,
+      description: fact.description,
+      type: fact.type,
+      content: fact.content,
+    });
+    return fs.readFile(path.join(memoryDir, file.filename), 'utf-8');
+  }
+
+  it('缺失置信度回落保守缺省（不低于丢弃门），不静默丢弃', async () => {
     memoryModelMocks.memoryTask.mockResolvedValue({
       success: true,
       content: JSON.stringify({
@@ -351,8 +369,6 @@ describe('默认助手长期事实写回', () => {
     expect(judgment.durableFacts[0].confidence).toBe(SESSION_JUDGE.DURABLE_FACT_CONFIDENCE_MISSING_DEFAULT);
     expect(judgment.durableFacts[0].confidence)
       .toBeGreaterThanOrEqual(SESSION_JUDGE.DURABLE_FACT_CONFIDENCE_DROP_BELOW);
-    expect(judgment.durableFacts[0].confidence)
-      .toBeLessThan(SESSION_JUDGE.DURABLE_FACT_CONFIDENCE_ACTIVE_MIN);
   });
 
   it.each([
@@ -395,33 +411,84 @@ describe('默认助手长期事实写回', () => {
     expect(prompt).toContain('- fact-1.md');
   });
 
-  it('低置信度事实被丢弃：不落盘、计入 skipped 与 dropped', async () => {
+  it('r5：低置信度（0.3）事实被丢弃——不落盘、计入 dropped，skipped 只留给写入失败', async () => {
     const result = await writeDurableFacts([makeFact(1, { confidence: 0.3 })]);
 
-    expect(result).toMatchObject({ written: 0, skipped: 1, dropped: 1, active: 0, candidate: 0, files: [] });
+    expect(result).toMatchObject({ written: 0, skipped: 0, dropped: 1, active: 0, files: [] });
     expect(await listFactFiles(memoryDir)).toEqual([]);
     expect(await readIndex()).toBe('');
   });
 
-  it('中置信度事实写 candidate：frontmatter status=candidate 且不进 active INDEX', async () => {
-    const result = await writeDurableFacts([makeFact(1, { confidence: 0.65 })]);
+  it('r5：中置信度（0.65）事实照 main 原行为写 active——逐字节与 main 基线一致（无 status 行）', async () => {
+    const fact = makeFact(1, { confidence: 0.65 });
+    const reference = await mainReference(fact);
 
-    expect(result).toMatchObject({ written: 1, skipped: 0, dropped: 0, candidate: 1, active: 0 });
+    const result = await writeDurableFacts([fact]);
+
+    expect(result).toMatchObject({ written: 1, skipped: 0, dropped: 0, active: 1 });
     expect(result.files).toEqual(['fact-1.md']);
-    expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'candidate' });
-    const index = await readIndex();
-    expect(index).not.toContain('[fact-1.md]');
-  });
-
-  it('高置信度事实写 active：frontmatter status=active 且进 active INDEX', async () => {
-    const result = await writeDurableFacts([makeFact(1, { confidence: 0.9 })]);
-
-    expect(result).toMatchObject({ written: 1, skipped: 0, dropped: 0, active: 1, candidate: 0 });
-    expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
+    expect(await fs.readFile(path.join(memoryDir, 'fact-1.md'), 'utf-8')).toBe(reference);
+    expect((await readFrontmatter('fact-1.md')).status).toBeUndefined();
     expect(await readIndex()).toContain('[fact-1.md]');
   });
 
-  it('r4：高置信度 supersedes 只记录链接：旧条目逐字节不变、仍 active、仍在 INDEX', async () => {
+  it('r5：判断器漏给置信度（回落缺省）同样照 main 原行为写入', async () => {
+    memoryModelMocks.memoryTask.mockResolvedValue({
+      success: true,
+      content: JSON.stringify({
+        worth: true,
+        isMeeting: false,
+        title: '置信度缺省写入测试',
+        worthKnowledge: [],
+        durableFacts: [{
+          filename: 'fact-1.md',
+          name: '事实 1',
+          description: '第 1 条长期事实',
+          type: 'user',
+          content: '长期内容 1',
+        }],
+      }),
+    });
+    const judgment = await judgeConversation({ userMessages: ['请记住我的稳定偏好。'] });
+    const reference = await mainReference(judgment.durableFacts[0]);
+
+    const result = await writeDurableFacts(judgment.durableFacts);
+
+    expect(result).toMatchObject({ written: 1, skipped: 0, dropped: 0, active: 1 });
+    expect(await fs.readFile(path.join(memoryDir, 'fact-1.md'), 'utf-8')).toBe(reference);
+    expect((await readFrontmatter('fact-1.md')).status).toBeUndefined();
+    expect(await readIndex()).toContain('[fact-1.md]');
+  });
+
+  it.each([
+    ['同名已存在 status=active 文件', 'active'],
+    ['同名已存在 status=candidate 文件', 'candidate'],
+    ['同名已存在无 status 行的存量文件', undefined],
+  ] as const)('r5：%s 被过门事实覆盖时与 main 行为一致（整文件重写、无 status 行、单文件单索引行）', async (_label, preexistingStatus) => {
+    await writeLightMemoryFile({
+      filename: 'fact-1.md',
+      name: '旧名称',
+      description: '旧描述',
+      type: 'user',
+      content: '旧内容',
+      ...(preexistingStatus === undefined ? {} : { status: preexistingStatus }),
+    });
+    const fact = makeFact(1, { confidence: 0.9, content: '新内容' });
+    const reference = await mainReference(fact);
+
+    const result = await writeDurableFacts([fact]);
+
+    // main 的语义：writeLightMemoryFile 按名原子覆盖——旧 frontmatter（含 status）
+    // 整体被本次写入的元数据替换，新文件没有 status 行，读侧按缺省 active 处理。
+    expect(result).toMatchObject({ written: 1, active: 1, skipped: 0, dropped: 0 });
+    expect(await listFactFiles(memoryDir)).toContain('fact-1.md');
+    expect(await listFactFiles(memoryDir)).toHaveLength(2); // fact-1.md + main-reference.md
+    expect(await fs.readFile(path.join(memoryDir, 'fact-1.md'), 'utf-8')).toBe(reference);
+    expect((await readFrontmatter('fact-1.md')).status).toBeUndefined();
+    expect(await readIndex()).toContain('[fact-1.md]');
+  });
+
+  it('r5：supersedes 只记录链接：旧条目逐字节不变、仍 active、仍在 INDEX，链接记在新条目 supersedes 字段', async () => {
     await writeDurableFacts([makeFact(1, { content: '旧认知' })]);
     const rawBefore = await fs.readFile(path.join(memoryDir, 'fact-1.md'), 'utf-8');
 
@@ -429,22 +496,20 @@ describe('默认助手长期事实写回', () => {
       makeFact(2, { confidence: 0.9, supersedes: 'fact-1.md', content: '新认知' }),
     ]);
 
-    // 新条目照常写成 active，取代链接只记在它自己的 frontmatter 上
+    // 新条目照常写成（main 形状 + 一行 supersedes 链接）；旧条目不动
     expect(result).toMatchObject({ written: 1, active: 1 });
-    expect(await readFrontmatter('fact-2.md')).toMatchObject({
-      status: 'active',
-      deprecated_by: 'fact-1.md',
-    });
-    // 旧条目逐字节不变（r4 scope cut：判断器输出不得归档/改写既有条目）
+    expect(await readFrontmatter('fact-2.md')).toMatchObject({ supersedes: 'fact-1.md' });
+    expect((await readFrontmatter('fact-2.md')).deprecated_by).toBeUndefined();
+    // 旧条目逐字节不变（判断器输出不得归档/改写既有条目）
     expect(await fs.readFile(path.join(memoryDir, 'fact-1.md'), 'utf-8')).toBe(rawBefore);
-    expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
+    expect((await readFrontmatter('fact-1.md')).status).toBeUndefined();
     const index = await readIndex();
     expect(index).toContain('[fact-1.md]');
     expect(index).toContain('[fact-2.md]');
   });
 
   it.each(['project', 'reference'] as const)(
-    'r4：%s 类型 supersedes 同样只记录链接，旧条目不动（无类型门）',
+    'r5：%s 类型 supersedes 同样只记录链接，旧条目不动（无类型门）',
     async (type) => {
       await writeDurableFacts([makeFact(1, { type, content: '旧材料' })]);
 
@@ -452,30 +517,23 @@ describe('默认助手长期事实写回', () => {
         makeFact(2, { type, confidence: 0.9, supersedes: 'fact-1.md', content: '新材料' }),
       ]);
 
-      expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
-      expect(await readFrontmatter('fact-2.md')).toMatchObject({ deprecated_by: 'fact-1.md' });
+      expect(await readFrontmatter('fact-1.md')).toMatchObject({ type });
+      expect(await readFrontmatter('fact-2.md')).toMatchObject({ supersedes: 'fact-1.md' });
       const index = await readIndex();
       expect(index).toContain('[fact-1.md]');
       expect(index).toContain('[fact-2.md]');
     },
   );
 
-  it('r4：candidate 新条目的 supersedes 同样只记录链接，旧条目保持 active 生效', async () => {
-    await writeDurableFacts([makeFact(1, { content: '旧认知' })]);
+  it('r5：非规范化的 supersedes 名字经 sanitize 命中磁盘上的既有文件，链接记规范化名', async () => {
+    await writeDurableFacts([makeFact(1, { filename: 'user-city.md', content: '用户住在上海。' })]);
 
     const result = await writeDurableFacts([
-      makeFact(2, { confidence: 0.65, supersedes: 'fact-1.md', content: '待确认的新认知' }),
+      makeFact(2, { confidence: 0.9, supersedes: 'User City.md', content: '新认知' }),
     ]);
 
-    expect(result).toMatchObject({ candidate: 1, active: 0 });
-    expect(await readFrontmatter('fact-2.md')).toMatchObject({
-      status: 'candidate',
-      deprecated_by: 'fact-1.md',
-    });
-    expect(await readFrontmatter('fact-1.md')).toMatchObject({ status: 'active' });
-    const index = await readIndex();
-    expect(index).toContain('[fact-1.md]');
-    expect(index).not.toContain('[fact-2.md]');
+    expect(result).toMatchObject({ written: 1, active: 1 });
+    expect(await readFrontmatter('fact-2.md')).toMatchObject({ supersedes: 'user-city.md' });
   });
 
   it('supersedes 指向不存在的文件时不抛错，新条目照常写成且不记链接', async () => {
@@ -483,14 +541,14 @@ describe('默认助手长期事实写回', () => {
       makeFact(1, { confidence: 0.9, supersedes: 'ghost.md' }),
     ])).resolves.toMatchObject({ written: 1, active: 1, files: ['fact-1.md'] });
     const meta = await readFrontmatter('fact-1.md');
-    expect(meta.status).toBe('active');
-    expect(meta.deprecated_by).toBeUndefined();
+    expect(meta.status).toBeUndefined();
+    expect(meta.supersedes).toBeUndefined();
   });
 
   // ------------------------------------------------------------------------
-  // N-MEM-WRITECONF r4：本 PR 没有任何「判断器输出 → 归档旧条目」的路径，supersedes
-  // 只记录链接。directive 经交互确认门建立，这里钉住它（以及任何被指向的旧条目）
-  // 在高置信度 supersedes 下逐字节不变、仍在 INDEX。
+  // N-MEM-WRITECONF r4/r5：本 PR 没有任何「判断器输出 → 归档旧条目」的路径，supersedes
+  // 只记录链接。directive 经交互确认门建立，这里钉住它在被 supersedes 指向时
+  // 逐字节不变、仍在 INDEX。
   // ------------------------------------------------------------------------
 
   /** 按交互确认门的产物形状种一条 directive（生产路径只有那里能传确认旗标）。 */
@@ -508,7 +566,7 @@ describe('默认助手长期事实写回', () => {
     return fs.readFile(path.join(memoryDir, filename), 'utf-8');
   }
 
-  it('r4：高置信度 supersedes 指向 directive：只记链接，directive 逐字节不变、仍在 INDEX', async () => {
+  it('supersedes 指向 directive：只记链接，directive 逐字节不变、仍在 INDEX', async () => {
     const rawBefore = await seedDirective('no-destructive-commands.md', '禁止主动执行任何形式的 rm -rf。');
     expect(await readIndex()).toContain('[no-destructive-commands.md]');
 
@@ -521,11 +579,10 @@ describe('默认助手长期事实写回', () => {
       }),
     ]);
 
-    // 新事实照常写成 active（链接照记）；directive 完全不动（内容逐字节一致），仍在 INDEX
+    // 新事实照常写成（链接照记）；directive 完全不动（内容逐字节一致），仍在 INDEX
     expect(result).toMatchObject({ written: 1, active: 1, skipped: 0 });
     expect(await readFrontmatter('fact-2.md')).toMatchObject({
-      status: 'active',
-      deprecated_by: 'no-destructive-commands.md',
+      supersedes: 'no-destructive-commands.md',
     });
     expect(await fs.readFile(path.join(memoryDir, 'no-destructive-commands.md'), 'utf-8')).toBe(rawBefore);
     expect(await readFrontmatter('no-destructive-commands.md')).toMatchObject({
@@ -537,7 +594,7 @@ describe('默认助手长期事实写回', () => {
     expect(index).toContain('[fact-2.md]');
   });
 
-  it('r3：判断器的现有记忆文件清单不含 directive 条目，且 prompt 声明其不可被 supersedes', async () => {
+  it('判断器的现有记忆文件清单不含 directive 条目，且 prompt 声明其不可被 supersedes', async () => {
     await seedDirective('no-destructive-commands.md', '禁止主动执行任何形式的 rm -rf。');
     await writeDurableFacts([makeFact(1)]);
     memoryModelMocks.memoryTask.mockResolvedValue(llmResult({ durableFacts: [] }));
@@ -548,54 +605,5 @@ describe('默认助手长期事实写回', () => {
     expect(prompt).toContain('- fact-1.md');
     expect(prompt).not.toContain('- no-destructive-commands.md');
     expect(prompt).toContain('supersedes 永远不许指向 directive');
-  });
-
-  // ------------------------------------------------------------------------
-  // N-MEM-WRITECONF r3（Nit 1）：同名检测与写入共用 sanitize 规范化，
-  // 派生文件名为 hash 后缀预留写入侧 96 字符预算。
-  // ------------------------------------------------------------------------
-
-  it('r3：非规范化文件名（大小写/空格）撞上同名 active 条目时，candidate 仍不原地覆盖', async () => {
-    await writeDurableFacts([
-      makeFact(1, { filename: 'user-city.md', confidence: 0.9, content: '用户住在上海。' }),
-    ]);
-
-    const result = await writeDurableFacts([
-      makeFact(1, { filename: 'User City.md', confidence: 0.65, content: '用户住在北京。' }),
-    ]);
-
-    // 查找按写入侧 sanitize 命中 user-city.md → 改写派生文件名而不是覆盖旧条目
-    expect(result.files[0]).toMatch(/^user-city\.candidate-[0-9a-f]{8}\.md$/);
-    expect(await readFrontmatter('user-city.md')).toMatchObject({ status: 'active' });
-    const oldRaw = await fs.readFile(path.join(memoryDir, 'user-city.md'), 'utf-8');
-    expect(oldRaw).toContain('用户住在上海。');
-    expect(oldRaw).not.toContain('北京');
-    expect(await readFrontmatter(result.files[0])).toMatchObject({
-      status: 'candidate',
-      deprecated_by: 'user-city.md',
-    });
-  });
-
-  it('r3：超长同名 active 条目的派生文件名保留 hash 后缀（写入侧 96 字符预算内不截断）', async () => {
-    await writeDurableFacts([
-      makeFact(1, { filename: `${'a'.repeat(120)}.md`, confidence: 0.9, content: '用户住在上海。' }),
-    ]);
-    const onDisk = (await listFactFiles(memoryDir))[0];
-    // 写入侧 sanitize 把去扩展名部分截到 96
-    expect(onDisk).toHaveLength(96 + '.md'.length);
-
-    const result = await writeDurableFacts([
-      makeFact(1, { filename: onDisk, confidence: 0.65, content: '用户住在北京。' }),
-    ]);
-
-    const derived = result.files[0];
-    expect(derived).toMatch(/\.candidate-[0-9a-f]{8}\.md$/);
-    expect(derived.slice(0, -'.md'.length)).toHaveLength(96);
-    // 旧条目原封不动，candidate 落在独立派生文件上
-    expect(await readFrontmatter(onDisk)).toMatchObject({ status: 'active' });
-    expect(await readFrontmatter(derived)).toMatchObject({
-      status: 'candidate',
-      deprecated_by: onDisk,
-    });
   });
 });

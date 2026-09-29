@@ -1,21 +1,18 @@
 // ============================================================================
 // Durable Fact Writer — 将会话判断器提炼的长期事实写入 Light Memory
-// N-MEM-WRITECONF：按判断器置信度分层写入（<0.5 丢弃 / 中间 candidate / ≥0.8 active）。
-// N-MEM-WRITECONF r4（scope cut）：① candidate 绝不指向任何已存在的同名文件——只看
-// 文件存在性，不看 status（本 PR 之前 writeDurableFacts 不写 status，存量文件没有
-// status 行，INDEX 与 lightMemoryFileToEntry 都按缺省 active 处理）；同名时一律改落
-// 派生文件名。② 本 PR 不再有任何「判断器输出 → 归档/降级旧条目」的代码路径：
-// supersedes 只作为链接记录在新条目 frontmatter deprecated_by 上，留给后续工单消费。
-// 高置信度同名写入保持 main 基线行为（原地覆盖为 active）。
+// N-MEM-WRITECONF r5（final scope cut）：candidate 档整体移除（连续 5 轮审查都在
+// 该机制上发现新的数据丢失洞）。唯一保留的质量门是置信度：< DROP_BELOW 丢弃留痕；
+// 其余（含判断器漏给置信度的 MISSING_DEFAULT）按 origin/main 的原行为写 active——
+// 不写 status（读侧按缺省 active 处理）、同名原地覆盖、无派生文件名。
+// supersedes 只作为链接记录在新条目 frontmatter 的 supersedes 字段上，本单不消费；
+// 判断器输出没有任何归档/降级/改写既有条目的路径。
 // ============================================================================
 
-import { createHash } from 'crypto';
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
 import { createLogger } from '../services/infra/logger';
 import { SESSION_JUDGE } from '../../shared/constants';
 import type { DurableFact } from './conversationJudge';
 import {
-  LIGHT_MEMORY_FILENAME_MAX,
   readMemoryFile,
   rebuildLightMemoryIndex,
   sanitizeLightMemoryFilename,
@@ -23,14 +20,6 @@ import {
 } from './lightMemoryIpc';
 
 const logger = createLogger('DurableFactWriter');
-
-type DurableFactTier = 'candidate' | 'active';
-
-function tierForConfidence(confidence: number): DurableFactTier | 'drop' {
-  if (confidence < SESSION_JUDGE.DURABLE_FACT_CONFIDENCE_DROP_BELOW) return 'drop';
-  if (confidence >= SESSION_JUDGE.DURABLE_FACT_CONFIDENCE_ACTIVE_MIN) return 'active';
-  return 'candidate';
-}
 
 function guardFactText(value: string, maxLength?: number): string {
   return guardSensitiveText(value, {
@@ -41,21 +30,7 @@ function guardFactText(value: string, maxLength?: number): string {
 }
 
 /**
- * 同名已存在文件的 candidate 改写名：<base>.candidate-<hash8>.md。
- * hash 取（目标文件名 + 正文）——同一事实同样措辞的重复改写落到同一派生名，
- * 覆盖上次待复核的 candidate 而不是每次会话堆积一个；措辞变化得到新文件。
- * base 按 LIGHT_MEMORY_FILENAME_MAX 预留后缀预算：写入侧 sanitize 会把去扩展名
- * 部分截到该上限，base 不预留时 hash 后缀被截掉，不同措辞会撞同一个派生名。
- */
-function divertedCandidateFilename(target: string, content: string): string {
-  const base = target.trim().replace(/\.md$/i, '');
-  const shortid = createHash('sha256').update(`${target}\n${content}`).digest('hex').slice(0, 8);
-  const suffix = `.candidate-${shortid}`;
-  return `${base.slice(0, LIGHT_MEMORY_FILENAME_MAX - suffix.length)}${suffix}.md`;
-}
-
-/**
- * supersedes 链接的裁决（r4：只记录、不归档）。链接指向的文件必须真实存在，
+ * supersedes 链接的裁决（r5：只记录、不归档）。链接指向的文件必须真实存在，
  * 指向缺失文件只 warn 留痕、不记链接、不抛错。查找一律用 sanitize 后的名字——
  * 磁盘上的文件名都是写入侧规范化的产物。
  */
@@ -69,28 +44,6 @@ async function resolveSupersedeLink(fact: DurableFact): Promise<string | null> {
   return superseded.filename;
 }
 
-/**
- * candidate 写入目标的裁决（r4：只看文件存在性）。同名文件存在——无论 status 是
- * active/candidate/rejected/stale/archived 还是没有 status 行的存量文件——candidate
- * 都改落派生文件名，绝不原地覆盖（writeLightMemoryFile 按 filename 原子覆盖，直接写
- * 会把已在生效或待复核的记忆改写丢掉）。无同名冲突时沿用判断器给的名字；
- * 显式 supersedes 记录为链接。碰撞链接优先于显式 supersedes：同名文件才是内容上
- * 被顶替的那个。链接只记在新条目 frontmatter deprecated_by 上，本单不消费。
- */
-async function resolveCandidateTarget(
-  fact: DurableFact,
-  content: string,
-): Promise<{ filename: string; supersedeLink: string | null }> {
-  const existing = await readMemoryFile(sanitizeLightMemoryFilename(fact.filename));
-  if (existing) {
-    return {
-      filename: divertedCandidateFilename(existing.filename, content),
-      supersedeLink: existing.filename,
-    };
-  }
-  return { filename: fact.filename, supersedeLink: await resolveSupersedeLink(fact) };
-}
-
 export async function writeDurableFacts(
   facts: DurableFact[],
 ): Promise<{
@@ -98,7 +51,6 @@ export async function writeDurableFacts(
   skipped: number;
   files: string[];
   active: number;
-  candidate: number;
   dropped: number;
 }> {
   // N-EVAL-MEMORY：files 只收真写成的那几份——skipped/dropped 的文件名不能混进来，
@@ -107,15 +59,13 @@ export async function writeDurableFacts(
   let written = 0;
   let skipped = 0;
   let active = 0;
-  let candidate = 0;
   let dropped = 0;
 
   for (const fact of facts) {
-    const tier = tierForConfidence(fact.confidence);
-    if (tier === 'drop') {
-      // 计入 skipped 并留痕：丢弃是判断器质量门的决定，不是静默失败。
+    // r5：唯一新增的质量门。丢弃是判断器置信度的决定，不是写入失败——
+    // 只计入 dropped 并留痕，skipped 保留给真正的写入失败。
+    if (fact.confidence < SESSION_JUDGE.DURABLE_FACT_CONFIDENCE_DROP_BELOW) {
       dropped += 1;
-      skipped += 1;
       logger.info('低置信度长期事实已丢弃', {
         filename: fact.filename,
         confidence: fact.confidence,
@@ -132,26 +82,21 @@ export async function writeDurableFacts(
         throw new Error('脱敏后的长期事实缺少必要内容');
       }
 
-      // r4：candidate 先裁决写入目标——同名文件存在（任意 status）即改写派生文件名；
-      // active 保持 main 基线（同名原地覆盖）。supersedes 在两档都只记录链接，
-      // 本函数没有任何归档/降级旧条目的路径（r4 scope cut，交给后续工单）。
-      const target = tier === 'candidate'
-        ? await resolveCandidateTarget(fact, content)
-        : { filename: fact.filename, supersedeLink: await resolveSupersedeLink(fact) };
-
+      // r5：与 origin/main 同一写入形状——不传 status（main 也不传，读侧按缺省
+      // active 处理）、同名原地覆盖。supersedes 仅当指向真实存在的文件时追加
+      // 一行链接字段，除此之外逐字节与 main 的产物一致。
+      const supersedeLink = await resolveSupersedeLink(fact);
       const file = await writeLightMemoryFile({
-        filename: target.filename,
+        filename: fact.filename,
         name,
         description,
         type: fact.type,
         content,
-        status: tier,
-        ...(target.supersedeLink ? { deprecatedBy: target.supersedeLink } : {}),
+        ...(supersedeLink ? { supersedes: supersedeLink } : {}),
       });
       written += 1;
+      active += 1;
       files.push(file.filename);
-      if (tier === 'candidate') candidate += 1;
-      else active += 1;
     } catch (error) {
       skipped += 1;
       logger.warn('写入长期事实失败，已跳过该条', {
@@ -171,5 +116,5 @@ export async function writeDurableFacts(
     }
   }
 
-  return { written, skipped, files, active, candidate, dropped };
+  return { written, skipped, files, active, dropped };
 }

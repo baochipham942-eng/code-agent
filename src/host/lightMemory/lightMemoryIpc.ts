@@ -26,7 +26,10 @@ export interface LightMemoryFile {
   content: string;
   entryId?: string;
   status?: MemoryEntryStatus;
+  /** 本条已被 <filename> 取代（archived 条目上由 archiveMemoryFile 写入）。 */
   deprecatedBy?: string;
+  /** 本条取代了 <filename>（新条目上的前向链接，N-MEM-WRITECONF r5 起记录，暂无消费方）。 */
+  supersedes?: string;
   source?: string;
   schemaVersion?: number;
   scope?: MemoryEntryScope;
@@ -164,12 +167,8 @@ function sanitizeFrontmatterValue(value: string | number | boolean): string {
   return String(value).replace(/\r?\n/g, ' ').replace(/:/g, ' -').trim();
 }
 
-/**
- * sanitizeLightMemoryFilename 生成的去扩展名文件名上限（不含 .md）。
- * 派生文件名（如 candidate 改写名）必须按这个预算预留后缀空间，
- * 否则写入侧截断会吃掉后缀、破坏派生名的确定性。
- */
-export const LIGHT_MEMORY_FILENAME_MAX = 96;
+/** sanitizeLightMemoryFilename 生成的去扩展名文件名上限（不含 .md）。 */
+const LIGHT_MEMORY_FILENAME_MAX = 96;
 
 /**
  * Normalize a raw filename to the exact on-disk form writeLightMemoryFile produces.
@@ -198,6 +197,7 @@ function toLightMemoryFile(filename: string, content: string, updatedAt: Date): 
     entryId: metadata.entry_id,
     status: parseMemoryEntryStatus(metadata.status),
     deprecatedBy: metadata.deprecated_by || undefined,
+    supersedes: metadata.supersedes || undefined,
     source: metadata.source,
     memoryTainted: metadata.memory_tainted === 'true',
     schemaVersion: parseSchemaVersion(metadata.schema_version),
@@ -308,6 +308,7 @@ export async function writeLightMemoryFile(input: {
   entryId?: string;
   status?: MemoryEntryStatus;
   deprecatedBy?: string | null;
+  supersedes?: string | null;
   source?: string;
   schemaVersion?: number;
   scope?: MemoryEntryScope;
@@ -330,6 +331,7 @@ export async function writeLightMemoryFile(input: {
     ['entry_id', input.entryId],
     ['status', input.status],
     ['deprecated_by', input.deprecatedBy || undefined],
+    ['supersedes', input.supersedes || undefined],
     ['source', input.source],
     ['memory_tainted', input.memoryTainted || undefined],
     ['schema_version', input.schemaVersion],

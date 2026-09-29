@@ -24,15 +24,13 @@ export const SESSION_JUDGE = {
   MAX_DURABLE_FACTS: 3,
   /** 单条长期事实正文最大字符数 */
   MAX_DURABLE_FACT_CHARS: 1200,
-  // N-MEM-WRITECONF：长期事实置信度写入门（判断器逐条给 0~1，写入侧按档分流）。
-  // < DROP_BELOW 丢弃并留痕；[DROP_BELOW, ACTIVE_MIN) 写 candidate（进复核页，不注入）；
-  // >= ACTIVE_MIN 写 active（进 INDEX 注入）。0.5/0.8 为任务书基准值：
-  // 低半区留给"推断出来/只在本次成立的伪事实"，高半区留给"用户亲口说的稳定事实"。
-  /** 低于该置信度的长期事实直接丢弃（计入 skipped 并记录原因） */
+  // N-MEM-WRITECONF r5（final scope cut）：长期事实唯一置信度门。candidate 分层
+  // （0.5~0.8 待复核）连续 5 轮审查均发现新的数据丢失洞，整体移除——现在只有
+  // < DROP_BELOW 丢弃留痕，其余照 origin/main 原行为写 active。低半区留给
+  // "推断出来/只在本次成立的伪事实"：宁可少写一条，不可覆盖用户确认过的内容。
+  /** 低于该置信度的长期事实直接丢弃（计入 dropped 并记录原因） */
   DURABLE_FACT_CONFIDENCE_DROP_BELOW: 0.5,
-  /** 达到该置信度才直接写 active，否则写 candidate 待复核 */
-  DURABLE_FACT_CONFIDENCE_ACTIVE_MIN: 0.8,
-  /** 判断器漏给/给出界置信度时的保守缺省——落在 candidate 区间中部，不放大也不静默丢弃 */
+  /** 判断器漏给/给出界置信度时的保守缺省——不低于丢弃门（不静默丢弃），也不顶到 1 */
   DURABLE_FACT_CONFIDENCE_MISSING_DEFAULT: 0.65,
   /**
    * 判断器输入「现有记忆文件清单」的条数上限。清单只为 supersedes 指向真实文件服务，

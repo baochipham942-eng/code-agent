@@ -25,9 +25,9 @@ export interface DurableFact {
   description: string;
   type: 'user' | 'feedback' | 'project' | 'reference';
   content: string;
-  /** 判断器给出的置信度 (0-1)。缺失/越界时解析侧回落保守缺省（candidate 档），不放大。 */
+  /** 判断器给出的置信度 (0-1)。缺失/越界时解析侧回落保守缺省（不低于丢弃门）。 */
   confidence: number;
-  /** 可选：这条事实修正/取代的现有记忆文件名（r4：写入侧只记录为新条目上的链接，不归档旧条目）。 */
+  /** 可选：这条事实修正/取代的现有记忆文件名（r5：写入侧只记录为新条目上的链接，不归档旧条目）。 */
   supersedes?: string;
 }
 
@@ -80,7 +80,7 @@ const JUDGE_PROMPT = `你是会话归档判断器。根据下面这段会话，�
 - 最强信号：你为了完成任务向用户问了一个问题，用户回答了，而且这个答案下次仍然成立。这种事实必须收进 durableFacts。
 - durableFacts 不收本次任务的临时状态、不收能从材料本身推导出的代码或文档或数据自带信息、不收闲聊和一次性调试细节。
 - durableFacts 返回空数组是正常结果，宁缺勿滥；绝大多数轮次都应该返回 []。
-- confidence 校准：用户亲口明说、且明确跨会话成立的给 0.8 以上；从措辞推断或可能只在本任务成立的给 0.5 以下；拿不准给中间值，不要为了写进而抬高。
+- confidence 校准：用户亲口明说、且明确跨会话成立的给 0.5 以上；从措辞推断、可能只在本任务成立、或拿不准的给 0.5 以下——低于 0.5 的事实会被直接丢弃，不要为了写进而抬高。
 - supersedes 只能从下面给出的现有记忆文件清单里选；清单为空或没有可取代的文件时必须省略，禁止编造文件名。
 - directive 类记忆不会出现在清单里：它们由用户显式确认建立、只能由用户移除，supersedes 永远不许指向 directive，即使你猜到了文件名。`;
 
@@ -123,8 +123,8 @@ const DURABLE_FACT_TYPES = new Set<DurableFact['type']>([
 ]);
 
 /**
- * 置信度缺省与夹取：缺失或越界（非有限数 / 超出 [0,1]）一律回落保守缺省
- * （candidate 档中部）——模型漏给字段时既不放大成 active，也不静默丢弃。
+ * 置信度缺省与夹取：缺失或越界（非有限数 / 超出 [0,1]）一律回落保守缺省——
+ * 不低于丢弃门（漏给字段不等于低置信度，不静默丢弃），也不顶到 1。
  */
 function normalizeDurableFactConfidence(value: unknown): number {
   return typeof value === 'number'
@@ -253,12 +253,12 @@ function buildConversationSnippet(userMessages: string[], lastAssistant?: string
 /**
  * 现有记忆文件清单（active 且非 directive 的记忆文件）。
  * 拼进判断器输入，让 supersedes 能指向真实存在的文件而不是编造文件名。
- * r3 起：① directive 不进清单——其建立要过交互确认门、只能由用户移除；
- * r4 起 supersedes 只是记录在新条目上的链接（本单不归档旧条目），但清单仍排除
- * directive，避免诱导未来消费该链接的工单去自动顶替用户确认过的约束。
+ * ① directive 不进清单——其建立要过交互确认门、只能由用户移除；supersedes
+ * 只是记录在新条目上的链接（本单不归档旧条目），但仍排除 directive，避免诱导
+ * 未来消费该链接的工单去自动顶替用户确认过的约束。
  * ② 条数封顶，输入 token 不随记忆量无界增长（超出部分本次不可被 supersedes，
- * 保守无害）。来源从 INDEX 目标改为全目录扫描 + active 过滤：类型信息在文件
- * frontmatter 里而不在 INDEX 行里，且与 INDEX 收录同判据（status 缺省按 active）。
+ * 保守无害）。来源为全目录扫描 + active 过滤：类型信息在文件 frontmatter 里
+ * 而不在 INDEX 行里，且与 INDEX 收录同判据（status 缺省按 active）。
  */
 async function listExistingMemoryFilenames(): Promise<string[]> {
   try {
@@ -305,10 +305,14 @@ export async function judgeConversation(input: {
   }
 
   try {
-    const existingFilenames = await listExistingMemoryFilenames();
-    const prompt = `${JUDGE_PROMPT}${buildSupersedesFileListPrompt(existingFilenames)}\n\n会话内容：\n${buildConversationSnippet(userMessages, input.lastAssistant)}`;
+    // 清单读取与模型调用共用同一个超时预算：清单在 withTimeout 之外时，
+    // 记忆目录变大后会先把会话收尾拖长，超时门却测不到它。
     const result = await withTimeout(
-      memoryTask(prompt, SESSION_JUDGE.MAX_TOKENS),
+      (async () => {
+        const existingFilenames = await listExistingMemoryFilenames();
+        const prompt = `${JUDGE_PROMPT}${buildSupersedesFileListPrompt(existingFilenames)}\n\n会话内容：\n${buildConversationSnippet(userMessages, input.lastAssistant)}`;
+        return memoryTask(prompt, SESSION_JUDGE.MAX_TOKENS);
+      })(),
       SESSION_JUDGE.TIMEOUT_MS,
       'Conversation judgment timed out',
     );

@@ -25,7 +25,7 @@ export class JSONOutput {
 
   /**
    * 输出环境指纹（stream-json 首帧，紧跟 start()）：
-   * 自描述本次 run 的 loaders（skills/hooks/MCP）是装载还是跳过（--bare 全 skipped）。
+   * 自描述本次 run 的 loaders（skills/hooks/MCP）装载状态。
    */
   environment(fingerprint: CLIEnvironmentFingerprint): void {
     this.emitEvent({

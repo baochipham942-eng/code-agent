@@ -43,8 +43,8 @@ export interface CLIGlobalOptions {
    */
   originKind?: SessionOriginKind;
   /**
-   * --bare 纯净模式：跳过本地 skills 发现 / 用户 hooks / MCP 自动装载，
-   * 让 CI/eval 跑出的结果不依赖宿主机的本地环境（N-HEADLESS-BARE）。
+   * --bare 纯净模式：跳过宿主机 skills 目录 / 用户 hooks / MCP 自动装载，
+   * 产品内置 skills 仍装载（N-HEADLESS-BARE-BUILTIN）。
    */
   bare?: boolean;
 }
@@ -56,11 +56,16 @@ export interface CLIGlobalOptions {
  * 实际装载数、mcpServers 是自动装载落定后的已连接名单。
  */
 export interface CLIEnvironmentFingerprint {
-  /** true = --bare 纯净模式（全部 loader 跳过） */
+  /** true = --bare 纯净模式（宿主机 loader 跳过，产品内置 skills 仍在） */
   bare: boolean;
-  skills: 'loaded' | 'skipped';
-  /** 发现服务实际装载的 skill 数（bare 恒 0；非 bare 为 emit 时实况） */
+  skills: 'loaded' | 'skipped' | 'builtin-only';
+  /** 发现服务实际装载的 skill 数（bare 为产品内置实况；非 bare 为 emit 时实况） */
   skillCount: number;
+  /**
+   * 仅 bare 模式出现：本次装入的产品 skill 名，已排序。
+   * 非 bare 帧不得带此字段（字节级不变）。
+   */
+  skillNames?: string[];
   hooks: 'loaded' | 'skipped';
   mcp: 'loaded' | 'skipped';
   /** 自动装载落定后已连接的 MCP server 名单（未发起/被跳过 = 空数组） */
@@ -164,7 +169,7 @@ export interface CLIRunResult {
    * 「部分结果 + 未完成说明」收尾（CLI 映射为退出码 2，见 cli/exitCodes.ts）。
    */
   terminationReason?: 'max_iterations';
-  /** 环境指纹：本次 run 的 loaders（skills/hooks/MCP）装载状态（--bare 全 skipped）。 */
+  /** 环境指纹：本次 run 的 loaders（skills/hooks/MCP）装载状态。 */
   environment?: CLIEnvironmentFingerprint;
 }
 

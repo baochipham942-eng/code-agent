@@ -100,11 +100,11 @@ let cliDurableRunRuntime: DurableRunApplicationRuntime | null = null;
 let cliDurableProcessInstanceId: string | null = null;
 /** MCP init 的后台 promise（未启用 = null）；首个 agent run 经 whenCLIMcpReady 等它就绪 */
 let mcpInitPromise: Promise<void> | null = null;
-/** skill 发现阶段的后台 promise（bare = null，禁用态无装载可等） */
+/** skill 发现阶段的后台 promise（bare 下只装产品内置，仍可等） */
 let skillsInitPromise: Promise<void> | null = null;
 /** MCP 自动装载落定后的已连接名单快照（指纹实况；init 未发起 = 空数组） */
 let mcpConnectedServers: string[] = [];
-/** --bare 纯净模式：本进程跳过本地 skills/hooks/MCP 装载（N-HEADLESS-BARE） */
+/** --bare 纯净模式：跳过宿主机 skills/hooks/MCP，产品内置 skills 仍装载 */
 let cliBareMode = false;
 
 /** 首个 agent run 的 MCP 就绪门：init 已发起时等它完成；未启用/已失败立即返回。 */
@@ -185,9 +185,9 @@ export interface InitializeCLIServicesOptions {
   /** 颗粒度权限档：'auto' = 分类器判安全的自动批准并入账，其余 fail-closed 拒绝 */
   permissionMode?: CLIPermissionMode;
   /**
-   * --bare 纯净模式：跳过 skill 发现初始化、用户 hooks 装配与 MCP 自动接入
-   * （含 CODE_AGENT_ENABLE_ARGUS_MCP/computer-use 安装态触发的自动接入），
-   * 让 CI/eval 结果不依赖宿主机本地环境。默认 false，行为与历史逐字节一致。
+   * --bare 纯净模式：skill 发现只装产品内置（builtin-only），跳过用户 hooks
+   * 装配与 MCP 自动接入（含 CODE_AGENT_ENABLE_ARGUS_MCP/computer-use 安装态
+   * 触发的自动接入）。默认 false，非 bare 行为与历史逐字节一致。
    */
   bare?: boolean;
 }
@@ -204,16 +204,16 @@ export function cliShouldInitMcp(env: NodeJS.ProcessEnv = process.env): boolean 
 
 /**
  * 环境指纹：本进程 loaders（skills/hooks/MCP）装载状态的自描述。
- * 全部字段从实况导出（rework r1：不硬编码）——skills 读发现单例的禁用态与
- * 实际装载数；hooks 读决定其逐消息懒装配开关（enableHooks）的 bare 旗档，
- * emit 时可观测的决定态就是这扇门本身；MCP 读自动装载是否发起 + 落定后的
- * 已连接名单。run 命令在 stream-json 首帧与终态结果里带出。
+ * 全部字段从实况导出——skills 读发现单例的 builtin-only / 装载数；
+ * bare 另附排序后的 skillNames。hooks 读 enableHooks 的 bare 旗档；
+ * MCP 读自动装载是否发起 + 落定后的已连接名单。
+ * run 命令在 stream-json 首帧与终态结果里带出。
  */
 export function getCLIEnvironmentFingerprint(): CLIEnvironmentFingerprint {
   const skills = getSkillDiscoveryService
     ? readSkillLoaderState(getSkillDiscoveryService())
     : { status: 'skipped' as const, count: 0 };
-  return {
+  const fingerprint: CLIEnvironmentFingerprint = {
     bare: cliBareMode,
     skills: skills.status,
     skillCount: skills.count,
@@ -221,12 +221,21 @@ export function getCLIEnvironmentFingerprint(): CLIEnvironmentFingerprint {
     mcp: mcpInitPromise ? 'loaded' : 'skipped',
     mcpServers: mcpInitPromise ? [...mcpConnectedServers] : [],
   };
+  if (cliBareMode) {
+    fingerprint.skillNames = skills.names ?? [];
+  }
+  return fingerprint;
 }
 
 function readSkillLoaderState(
   discovery: SkillDiscoveryService,
-): { status: 'loaded' | 'skipped'; count: number } {
-  if (discovery.isDisabled()) return { status: 'skipped', count: 0 };
+): { status: CLIEnvironmentFingerprint['skills']; count: number; names?: string[] } {
+  if (discovery.isBuiltinOnly()) {
+    const names = discovery.isInitialized()
+      ? discovery.getAllSkills().map((skill) => skill.name).sort()
+      : [];
+    return { status: 'builtin-only', count: names.length, names };
+  }
   return {
     status: 'loaded',
     count: discovery.isInitialized() ? discovery.getAllSkills().length : 0,
@@ -444,21 +453,17 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
 
   // 初始化 Skill 发现服务（fire-and-forget：skillMetaTool/skillCreateTool 用到时
   // 会通过 ensureInitialized 等待完成，不阻塞启动与首字响应）
-  // --bare：把全局单例切进禁用态（单一真源，rework r1）——不止此处不装载，
-  // 每条用户消息的隐式 skill 匹配（conversationRuntime → resolveSkillInvocation）
-  // 与 Skill/skillCreate 工具的懒加载 ensureInitialized 都经由此单例，禁用态下
-  // 是零磁盘 I/O 的 no-op、库恒空，本机 skill 库不可能再被读进来。
+  // --bare：把全局单例切进 builtin-only（单一真源）——initialize 只装产品内置
+  // skills，不扫宿主机目录。隐式匹配与 Skill 工具的懒加载都经由此单例。
   try {
     const skillDiscoveryService = getSkillDiscoveryService();
-    skillDiscoveryService.setDisabled(cliBareMode);
-    if (cliBareMode) {
-      cliLog('SkillDiscoveryService disabled (--bare)');
-    } else {
-      skillsInitPromise = skillDiscoveryService.initialize(process.cwd()).then(
-        () => cliLog('SkillDiscoveryService initialized'),
-        (err) => cliLog('SkillDiscoveryService init failed:', err),
-      );
-    }
+    skillDiscoveryService.setBuiltinOnly(cliBareMode);
+    skillsInitPromise = skillDiscoveryService.initialize(process.cwd()).then(
+      () => cliLog(cliBareMode
+        ? 'SkillDiscoveryService initialized (builtin-only)'
+        : 'SkillDiscoveryService initialized'),
+      (err) => cliLog('SkillDiscoveryService init failed:', err),
+    );
   } catch (error) {
     cliLog('Failed to kick off SkillDiscoveryService:', error);
   }
@@ -532,8 +537,9 @@ export async function syncCLIWorkingDirectory(workingDirectory: string): Promise
   const resolvedWorkingDirectory = path.resolve(workingDirectory);
   toolExecutor?.setWorkingDirectory(resolvedWorkingDirectory);
 
-  // --bare：skill 发现在 init 时已被跳过，这里也不补等 ensureInitialized
-  //（否则首次调用会反向触发 initialize，纯净模式破功）。
+  // --bare：cwd 同步不补等 ensureInitialized（hooks/MCP 行为不变）。
+  // 隐式匹配 / Skill 工具仍会走单例上的 ensureInitialized，builtin-only
+  // 守卫保证那条路径也不扫宿主机 skill 目录。
   if (getSkillDiscoveryService && !cliBareMode) {
     const skillDiscoveryService = getSkillDiscoveryService();
     await skillDiscoveryService.ensureInitialized(resolvedWorkingDirectory);
@@ -887,10 +893,10 @@ export async function cleanup(): Promise<void> {
   }
 
   initialized = false;
-  // 复位 --bare 定档与其在 host 单例上的禁用态/本地快照（同进程多会话复用）
+  // 复位 --bare 定档与其在 host 单例上的 builtin-only 态（同进程多会话复用）
   if (cliBareMode) {
     try {
-      getSkillDiscoveryService?.().setDisabled(false);
+      getSkillDiscoveryService?.().setBuiltinOnly(false);
     } catch {
       // init 未走到 skills 导入就没有绑定，忽略
     }

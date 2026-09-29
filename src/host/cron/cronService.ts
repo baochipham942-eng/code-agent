@@ -104,6 +104,8 @@ export class CronService implements Disposable {
   private disposed = false;
   private unsubscribeCronMissed?: () => void;
   private readonly failureNoticeGate = new CronFailureNoticeGate();
+  /** 正在执行（含退避重试链）的 jobId：系统侧触发互斥，见 runScheduledJob。 */
+  private readonly inFlightJobIds = new Set<string>();
   private cloudRuntime = new CronCloudRuntime(
     () => {
       const config = getConfigService().getSettings().cronCloud;
@@ -648,6 +650,12 @@ export class CronService implements Disposable {
       console.warn(`[CronService] Job ${jobId} skipped: disabled while waiting to fire`);
       return;
     }
+    // 上一趟（含宽限窗补跑、上一 tick）还没结束就跳过本趟：croner 原生 protect 只看它
+    // 自己的回调，直接 executeJob 的补跑会绕过它，与紧接的正常 tick 并发堆会话（R2 审查 Nit-3）。
+    if (this.inFlightJobIds.has(jobId)) {
+      console.error(`[CronService] Job ${jobId} run skipped: previous run still in progress`);
+      return;
+    }
     await this.executeJob(current);
   }
 
@@ -677,6 +685,10 @@ export class CronService implements Disposable {
     // 先落一条 running 记录（maka 护栏自查 A5-④）：不这样做的话，进程在此次
     // 执行期间被杀掉时数据库里不会留下任何痕迹，启动扫描也就无从标记 interrupted。
     await saveCronExecution(execution);
+
+    // in-flight 标记从执行开始持有到 finally 收尾（含 catch 里的整条退避重试链），
+    // 供 runScheduledJob 做系统侧互斥；放在首条 save 之后，异常时不留悬挂标记。
+    this.inFlightJobIds.add(definition.id);
 
     try {
       if (definition.runsOn === 'cloud') {
@@ -762,6 +774,8 @@ export class CronService implements Disposable {
       if (!disableNotified) {
         notifyCronAgentExecution(definition, execution, this.failureNoticeGate);
       }
+
+      this.inFlightJobIds.delete(definition.id);
     }
 
     // self-wake：唤醒等这个任务的会话——wake_on 按任务 id 等，wake_on_event 按任务名字等

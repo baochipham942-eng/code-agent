@@ -514,6 +514,56 @@ describe('⑤ 重启对账幂等：合并已有任务，禁止删旧建新（Cli
   });
 });
 
+describe('R2 Nit-3：宽限窗补跑不与紧接的正常 tick 并发执行同一任务', () => {
+  it('补跑还没跑完时下一个计划 tick 到点 → 跳过本趟，不堆并发会话', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW); // 09:03：'*/5' 上一 tick 09:00 在宽限窗内 → 启动即补跑
+    const randSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5); // tick jitter 恒 = 窗口/2
+    dbState.cronRows = [{
+      id: 'job-catchup-protect',
+      name: '补跑与 tick 撞车任务',
+      description: null,
+      schedule_type: 'cron',
+      schedule: JSON.stringify({ type: 'cron', expression: '*/5 * * * *' }),
+      action: JSON.stringify({ type: 'agent', agentType: 'default', prompt: '巡检' }),
+      enabled: 1,
+      max_retries: 0,
+      retry_delay: null,
+      timeout: 60000,
+      tags: null,
+      metadata: '{}',
+      created_at: NOW - 60 * 60_000,
+      updated_at: NOW - 60 * 60_000,
+    }];
+
+    const service = new CronService();
+    let releaseExecution: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { releaseExecution = resolve; });
+    let calls = 0;
+    patchExecuteAction(service, async () => {
+      calls += 1;
+      await gate; // 补跑挂着不结束，模拟执行时长超过间隔
+      return { ok: true };
+    });
+
+    await service.initialize();
+    await vi.advanceTimersByTimeAsync(1); // 补跑启动并挂起
+    expect(calls).toBe(1);
+
+    // 09:05 正常 tick（补跑仍在进行）：jitter 窗口 = 5min×10% = 30s，rand 0.5 → 15s
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    await vi.advanceTimersByTimeAsync(15_000); // tick jitter 耗尽
+
+    expect(calls).toBe(1); // 上一趟没结束：跳过本趟（HEAD 红：直接 executeJob → 并发第 2 趟）
+    expect(dbState.executionRows.filter((row) => row.job_id === 'job-catchup-protect' && row.status === 'running')).toHaveLength(1);
+
+    releaseExecution!();
+    await vi.advanceTimersByTimeAsync(1); // 让挂起的那趟收尾
+    randSpy.mockRestore();
+    await service.shutdown();
+  });
+});
+
 describe('R2：jitter 窗口（最长 15min）内任务被停用/编辑 → 不拿闭包里的过期 definition 执行', () => {
   // every 1 minute → '0 */1 * * * *'，每分钟 :00 触发；jitter 窗口 = 60s×10% = 6s，
   // Math.random 固定 0.5 → jitter 恒 3s。NOW=09:03:00，首个 tick 09:04:00。

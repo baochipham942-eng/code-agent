@@ -1,5 +1,8 @@
 // N-CHECKPOINT-WRITETARGET 集成测试：middleware 真入口 + 真 FileCheckpointService + 真回退。
 // 不 mock checkpoint service——getDatabase 指到内存 SQLite，Bash 效果用真 shell 落盘。
+// 返修 r4 口径：移动/重命名类（mv）与 MCP/未知工具的写目标推断退出回退——mv 零快照、
+// 回退不碰两侧；MCP 回 origin/main 行为（不建快照）；保留重定向 / cp 目的地 / rm 目标 /
+// tee 与内置写工具 schema 声明的写路径，每条快照单文件单行自足可回退。
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -25,6 +28,8 @@ import { FileCheckpointService, initFileCheckpointService } from '../../../src/h
 import { createFileCheckpointIfNeeded } from '../../../src/host/tools/middleware/fileCheckpointMiddleware';
 import { bashSchema } from '../../../src/host/tools/modules/shell/bash.schema';
 import { docxGenerateSchema } from '../../../src/host/tools/modules/network/docxGenerate.schema';
+import { writeSchema } from '../../../src/host/tools/modules/file/write.schema';
+import { multiEditSchema } from '../../../src/host/tools/modules/file/multiEdit.schema';
 import type { ToolDefinition } from '../../../src/shared/contract';
 import type { ToolSchema } from '../../../src/host/protocol/tools';
 
@@ -51,9 +56,12 @@ function toDefinition(schema: ToolSchema): ToolDefinition {
 
 const bashDefinition = toDefinition(bashSchema);
 const docxDefinition = toDefinition(docxGenerateSchema);
+const writeDefinition = toDefinition(writeSchema);
+const editDefinition = toDefinition(multiEditSchema);
 
 // 无 annotations 的 MCP 工具走 mapMcpAnnotationsToPermission 的兜底档（permissionLevel
-// 'network'，非 read），通用参数扫描按参数名认 path 类后缀。
+// 'network'，非 read）。返修 r4 起 MCP / 未知工具不推断写目标（回 origin/main 行为）：
+// 这个 fixture 钉住「连写字段形状（path）也不建快照」。
 const mcpDefinition: ToolDefinition = {
   name: 'mcp__filesystem__write_text_file',
   description: 'MCP fixture: writes text content to a path',
@@ -79,10 +87,6 @@ const BINARY_PNG_BYTES = Buffer.from([
 
 async function runShell(command: string, cwd?: string): Promise<void> {
   execFileSync('sh', ['-c', command], { cwd, encoding: 'utf-8', stdio: 'pipe' });
-}
-
-async function runShellWithEnv(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<void> {
-  execFileSync('sh', ['-c', command], { cwd, encoding: 'utf-8', stdio: 'pipe', env: { ...process.env, ...env } });
 }
 
 describe('fileCheckpointMiddleware write-target snapshots (integration)', () => {
@@ -195,19 +199,65 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     expect(checkpoints).toEqual([]);
   });
 
-  it('snapshots an MCP tool write through its whitelisted path parameter and restores it on rewind', async () => {
-    const file = path.join(tempDir, 'mcp-note.txt');
-    await fs.writeFile(file, 'before-mcp\n', 'utf-8');
-    const params = { path: file, content: 'after-mcp\n' };
+  it('snapshots a Bash cp destination and restores it on rewind', async () => {
+    const src = path.join(tempDir, 'src.txt');
+    await fs.writeFile(src, 'incoming\n', 'utf-8');
+    const dst = path.join(tempDir, 'dst.md');
+    await fs.writeFile(dst, 'before-cp\n', 'utf-8');
+    const command = `cp ${src} ${dst}`;
 
-    const checkpoints = await snapshotAndFinalize(mcpDefinition, params, () =>
-      fs.writeFile(file, 'after-mcp\n', 'utf-8'));
+    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command));
     expect(checkpoints).toHaveLength(1);
-    expect(checkpoints[0].filePath).toBe(await fs.realpath(file));
+    expect(checkpoints[0].filePath).toBe(await fs.realpath(dst));
+    expect(await fs.readFile(dst, 'utf-8')).toBe('incoming\n');
 
     const rewind = await service.rewindFiles(sessionId, messageId);
     expect(rewind.restoredFiles).toEqual([checkpoints[0].filePath]);
-    expect(await fs.readFile(file, 'utf-8')).toBe('before-mcp\n');
+    expect(await fs.readFile(dst, 'utf-8')).toBe('before-cp\n');
+    expect(await fs.readFile(src, 'utf-8')).toBe('incoming\n');
+  });
+
+  it('snapshots a Bash rm target and restores the deleted file on rewind', async () => {
+    const file = path.join(tempDir, 'doomed.txt');
+    await fs.writeFile(file, 'precious\n', 'utf-8');
+    const realFile = await fs.realpath(file);
+    const command = `rm ${file}`;
+
+    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command));
+    expect(checkpoints).toHaveLength(1);
+    expect(checkpoints[0].filePath).toBe(realFile);
+    await expect(fs.access(file)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const rewind = await service.rewindFiles(sessionId, messageId);
+    expect(rewind.restoredFiles).toEqual([checkpoints[0].filePath]);
+    expect(await fs.readFile(file, 'utf-8')).toBe('precious\n');
+  });
+
+  it('snapshots built-in Write and Edit tools through their declared file_path and restores them', async () => {
+    const writeTarget = path.join(tempDir, 'write-note.md');
+    await fs.writeFile(writeTarget, 'before-write\n', 'utf-8');
+    const writeCheckpoints = await snapshotAndFinalize(
+      writeDefinition,
+      { file_path: writeTarget, content: 'after-write\n' },
+      () => fs.writeFile(writeTarget, 'after-write\n', 'utf-8'),
+    );
+    expect(writeCheckpoints).toHaveLength(1);
+    expect(writeCheckpoints[0].filePath).toBe(await fs.realpath(writeTarget));
+
+    const editTarget = path.join(tempDir, 'edit-note.md');
+    await fs.writeFile(editTarget, 'before-edit\n', 'utf-8');
+    const editCheckpoints = await snapshotAndFinalize(
+      editDefinition,
+      { file_path: editTarget, old_string: 'before', new_string: 'after' },
+      () => fs.writeFile(editTarget, 'after-edit\n', 'utf-8'),
+    );
+    expect(editCheckpoints).toHaveLength(1);
+
+    const rewind = await service.rewindFiles(sessionId, messageId);
+    expect(rewind.restoredFiles.map((filePath) => path.basename(filePath)).sort())
+      .toEqual(['edit-note.md', 'write-note.md']);
+    expect(await fs.readFile(writeTarget, 'utf-8')).toBe('before-write\n');
+    expect(await fs.readFile(editTarget, 'utf-8')).toBe('before-edit\n');
   });
 
   it('snapshots a document-generation tool through its declared output_path and restores it on rewind', async () => {
@@ -223,6 +273,73 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     const rewind = await service.rewindFiles(sessionId, messageId);
     expect(rewind.restoredFiles).toEqual([checkpoints[0].filePath]);
     expect(await fs.readFile(file, 'utf-8')).toBe('before-docx\n');
+  });
+
+  // ---- 返修 r4：移动/重命名类一律不进回退（与 origin/main 一致：不建快照、回退不碰）----
+
+  it('keeps Bash mv entirely out of rollback: no snapshots and rewind touches neither side', async () => {
+    const source = path.join(tempDir, 'notes.md');
+    await fs.writeFile(source, 'notes-content\n', 'utf-8');
+    const target = path.join(tempDir, 'archive.md');
+    // 多源 mv（含目的地目录形状）同样零快照
+    const multiDir = path.join(tempDir, 'dest-dir');
+    await fs.mkdir(multiDir);
+    const first = path.join(tempDir, 'multi-a.md');
+    await fs.writeFile(first, 'multi-a\n', 'utf-8');
+    const second = path.join(tempDir, 'multi-b.md');
+    await fs.writeFile(second, 'multi-b\n', 'utf-8');
+    // 同一命令带一个会建快照的重定向：回退机器真的跑起来，mv 的两侧不在任何窗口里
+    const other = path.join(tempDir, 'other.txt');
+    const command = `mv ${source} ${target}; mv ${first} ${second} ${multiDir}/; echo z > ${other}`;
+
+    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command));
+    expect(checkpoints.map((checkpoint) => path.basename(checkpoint.filePath))).toEqual(['other.txt']);
+    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readFile(target, 'utf-8')).toBe('notes-content\n');
+    expect(await fs.readFile(path.join(multiDir, 'multi-a.md'), 'utf-8')).toBe('multi-a\n');
+
+    const rewind = await service.rewindFiles(sessionId, messageId);
+    expect(rewind.deletedFiles.map((filePath) => path.basename(filePath))).toEqual(['other.txt']);
+    await expect(fs.access(other)).rejects.toMatchObject({ code: 'ENOENT' });
+    // 回退不碰 mv 的任何一侧：源保持移走、目的地保持移动后内容（与 origin/main 一致）
+    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readFile(target, 'utf-8')).toBe('notes-content\n');
+    expect(await fs.readFile(path.join(multiDir, 'multi-a.md'), 'utf-8')).toBe('multi-a\n');
+    expect(await fs.readFile(path.join(multiDir, 'multi-b.md'), 'utf-8')).toBe('multi-b\n');
+  });
+
+  // ---- 返修 r4：MCP / 未知工具的写目标推断删除（回 origin/main 行为，不建快照）----
+
+  it('returns MCP and unknown tools to main behavior: no write-target inference at all', async () => {
+    const file = path.join(tempDir, 'mcp-note.txt');
+    await fs.writeFile(file, 'before-mcp\n', 'utf-8');
+    const moveDefinition: ToolDefinition = {
+      name: 'mcp__filesystem__move_file',
+      description: 'MCP fixture: moves a file from source to destination',
+      inputSchema: { type: 'object' },
+      outputSchema: { type: 'string' },
+      requiresPermission: true,
+      permissionLevel: 'network',
+    };
+    // move 形状（source+destination）与写字段形状（path）都不再推断：MCP 写盘工具
+    // 回到「不建快照」，回退不碰（turnCheckout 的差额披露口径不变）
+    const moveCheckpoints = await createFileCheckpointIfNeeded(
+      moveDefinition,
+      { source: file, destination: path.join(tempDir, 'moved.md') },
+      context,
+      tempDir,
+    );
+    expect(moveCheckpoints).toEqual([]);
+    const writeCheckpoints = await createFileCheckpointIfNeeded(
+      mcpDefinition,
+      { path: file, content: 'after-mcp\n' },
+      context,
+      tempDir,
+    );
+    expect(writeCheckpoints).toEqual([]);
+    expect(db.prepare(
+      'SELECT COUNT(*) AS count FROM file_checkpoints WHERE session_id = ?',
+    ).get(sessionId)).toEqual({ count: 0 });
   });
 
   it('records uncertain redirection targets and reports them in rewind skippedFiles', async () => {
@@ -253,6 +370,35 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     expect(rewind.success).toBe(false);
   });
 
+  it('reports uncertain_write_target (not human_edit) when an unsnapshotable write follows a real snapshot', async () => {
+    const file = path.join(tempDir, 'story.md');
+    await fs.writeFile(file, 'v1\n', 'utf-8');
+    const first = await snapshotAndFinalize(
+      bashDefinition,
+      { command: `echo v2 > ${file}` },
+      () => runShell(`echo v2 > ${file}`),
+    );
+    expect(first).toHaveLength(1);
+    // 第二次写入时文件已是二进制：建不出无损快照 → 该真实路径落披露行
+    await fs.writeFile(file, BINARY_PNG_BYTES);
+    const second = await snapshotAndFinalize(
+      bashDefinition,
+      { command: `echo v3 > ${file}` },
+      () => runShell(`echo v3 > ${file}`),
+    );
+    expect(second).toEqual([]);
+
+    // 回退：窗口内同一路径既有真快照又有披露行——按披露口径回报（成因是第二次写入
+    // 没快照，不是人工编辑），文件保持执行后内容
+    const rewind = await service.rewindFiles(sessionId, messageId);
+    expect(rewind.skippedFiles).toEqual([{
+      filePath: await fs.realpath(file),
+      reason: 'uncertain_write_target',
+      detail: 'The write target could not be resolved or safely snapshotted when the tool ran, so no snapshot exists to restore.',
+    }]);
+    expect(await fs.readFile(file, 'utf-8')).toBe('v3\n');
+  });
+
   it('keeps the tool call unblocked when write-target resolution throws (fail-open)', async () => {
     // 自指符号链接让 resolveCanonicalRunPath 触发环深上限抛错；检查点侧必须吞掉
     await fs.symlink(path.join(tempDir, 'loop'), path.join(tempDir, 'loop'));
@@ -277,253 +423,6 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     expect(db.prepare(
       'SELECT COUNT(*) AS count FROM file_checkpoints WHERE session_id = ?',
     ).get(sessionId)).toEqual({ count: 0 });
-  });
-
-  // ---- 返修 r1：移动/重命名类操作的源与目的地一起进快照 ----
-  // 只快照 mv 的目的地，回退时目的地被删/回写而源无人恢复 → 内容从工作区彻底消失。
-
-  it('snapshots both sides of a Bash mv and restores the source when the destination did not exist', async () => {
-    const source = path.join(tempDir, 'notes.md');
-    await fs.writeFile(source, 'notes-content\n', 'utf-8');
-    const target = path.join(tempDir, 'archive.md');
-    const command = `mv ${source} ${target}`;
-
-    // 目的地原不存在：期望路径 = 父目录 realpath + 文件名（resolveCanonicalRunPath 口径）
-    const realSource = await fs.realpath(source);
-    const realTarget = path.join(await fs.realpath(tempDir), 'archive.md');
-    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command));
-    expect(checkpoints.map((checkpoint) => checkpoint.filePath).sort())
-      .toEqual([realSource, realTarget].sort());
-    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(await fs.readFile(target, 'utf-8')).toBe('notes-content\n');
-
-    const rewind = await service.rewindFiles(sessionId, messageId);
-    expect(rewind.restoredFiles).toEqual([realSource]);
-    expect(rewind.deletedFiles).toEqual([realTarget]);
-    expect(await fs.readFile(source, 'utf-8')).toBe('notes-content\n');
-    await expect(fs.access(target)).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-
-  it('snapshots both sides of a Bash mv and restores both files when the destination existed', async () => {
-    const source = path.join(tempDir, 'notes.md');
-    await fs.writeFile(source, 'notes-content\n', 'utf-8');
-    const target = path.join(tempDir, 'archive.md');
-    await fs.writeFile(target, 'archive-original\n', 'utf-8');
-    const command = `mv ${source} ${target}`;
-
-    const [realSource, realTarget] = await Promise.all([fs.realpath(source), fs.realpath(target)]);
-    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command));
-    expect(checkpoints.map((checkpoint) => checkpoint.filePath).sort()).toEqual([realSource, realTarget].sort());
-
-    const rewind = await service.rewindFiles(sessionId, messageId);
-    expect(rewind.restoredFiles.sort()).toEqual([realSource, realTarget].sort());
-    expect(await fs.readFile(source, 'utf-8')).toBe('notes-content\n');
-    expect(await fs.readFile(target, 'utf-8')).toBe('archive-original\n');
-  });
-
-  it('snapshots the source of an MCP move_file call and restores both files on rewind', async () => {
-    const source = path.join(tempDir, 'mcp-notes.md');
-    await fs.writeFile(source, 'mcp-notes-content\n', 'utf-8');
-    const target = path.join(tempDir, 'mcp-archive.md');
-    await fs.writeFile(target, 'mcp-archive-original\n', 'utf-8');
-    const moveDefinition: ToolDefinition = {
-      name: 'mcp__filesystem__move_file',
-      description: 'MCP fixture: moves a file from source to destination',
-      inputSchema: { type: 'object' },
-      outputSchema: { type: 'string' },
-      requiresPermission: true,
-      permissionLevel: 'network',
-    };
-    const params = { source, destination: target };
-
-    const [realSource, realTarget] = await Promise.all([fs.realpath(source), fs.realpath(target)]);
-    const checkpoints = await snapshotAndFinalize(moveDefinition, params, () => fs.rename(source, target));
-    expect(checkpoints.map((checkpoint) => checkpoint.filePath).sort())
-      .toEqual([realSource, realTarget].sort());
-
-    const rewind = await service.rewindFiles(sessionId, messageId);
-    expect(rewind.restoredFiles.sort()).toEqual([realSource, realTarget].sort());
-    expect(await fs.readFile(source, 'utf-8')).toBe('mcp-notes-content\n');
-    expect(await fs.readFile(target, 'utf-8')).toBe('mcp-archive-original\n');
-  });
-
-  it('snapshots every source of a multi-source mv into a directory and restores them', async () => {
-    const first = path.join(tempDir, 'multi-a.md');
-    const second = path.join(tempDir, 'multi-b.md');
-    await fs.writeFile(first, 'multi-a-content\n', 'utf-8');
-    await fs.writeFile(second, 'multi-b-content\n', 'utf-8');
-    const dir = path.join(tempDir, 'dir');
-    await fs.mkdir(dir);
-    const command = `mv multi-a.md multi-b.md dir/`;
-
-    const [realFirst, realSecond] = await Promise.all([fs.realpath(first), fs.realpath(second)]);
-    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
-    expect(checkpoints.map((checkpoint) => checkpoint.filePath).sort())
-      .toEqual([realFirst, realSecond].sort());
-
-    const rewind = await service.rewindFiles(sessionId, messageId);
-    expect(rewind.restoredFiles.sort()).toEqual([realFirst, realSecond].sort());
-    expect(await fs.readFile(first, 'utf-8')).toBe('multi-a-content\n');
-    expect(await fs.readFile(second, 'utf-8')).toBe('multi-b-content\n');
-  });
-
-  it('treats a Bash mv with an unresolvable source as uncertain and rewinds nothing', async () => {
-    const source = path.join(tempDir, 'vanishing.md');
-    await fs.writeFile(source, 'vanishing-content\n', 'utf-8');
-    const target = path.join(tempDir, 'survivor.md');
-    await fs.writeFile(target, 'survivor-original\n', 'utf-8');
-    // middleware 只看到带变量的命令，解析不出源 —— 与真实执行同一形状
-    const command = 'mv "$SRC" survivor.md';
-
-    const checkpoints = await snapshotAndFinalize(
-      bashDefinition,
-      { command },
-      () => runShellWithEnv(command, tempDir, { SRC: source }),
-    );
-    expect(checkpoints).toEqual([]);
-    expect(await fs.readFile(target, 'utf-8')).toBe('vanishing-content\n');
-
-    // 没有真快照行：一个 uncertain 披露行，不建「只快照一半」的目的地快照
-    const rows = db.prepare(
-      'SELECT file_path, uncertain_target FROM file_checkpoints WHERE session_id = ? ORDER BY file_path',
-    ).all(sessionId) as Array<{ file_path: string; uncertain_target: number }>;
-    expect(rows).toEqual([
-      { file_path: 'uncertain-move:mv "$SRC" survivor.md', uncertain_target: 1 },
-    ]);
-
-    const rewind = await service.rewindFiles(sessionId, messageId);
-    expect(rewind.skippedFiles).toEqual([{
-      filePath: 'uncertain-move:mv "$SRC" survivor.md',
-      reason: 'uncertain_write_target',
-      detail: 'The write target could not be resolved or safely snapshotted when the tool ran, so no snapshot exists to restore.',
-    }]);
-    // 回退不碰：survivor.md 保持执行后状态（与 origin/main 的 Bash 行为一致）
-    expect(await fs.readFile(target, 'utf-8')).toBe('vanishing-content\n');
-  });
-
-  // ---- 返修 r2：移动的源与目的地必须成对建出无损快照，否则整次调用不进回退 ----
-  // createCheckpoint 对超大/读错误返 null、对二进制按 utf-8 有损存入；只快照一半，
-  // 回退会把目的地删掉而源无人恢复（或写回损坏内容）——文件从工作区永久丢失。
-
-  it('keeps every file untouched when a Bash mv source exceeds the snapshot size limit', async () => {
-    const source = path.join(tempDir, 'big.bin');
-    await fs.writeFile(source, Buffer.alloc(1024 * 1024 + 1, 0x37));
-    const outDir = path.join(tempDir, 'out');
-    await fs.mkdir(outDir);
-    const command = 'mv big.bin out/big.bin';
-
-    const realSource = await fs.realpath(source);
-    const realMoved = path.join(await fs.realpath(outDir), 'big.bin');
-    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
-    expect(checkpoints).toEqual([]);
-    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
-
-    // 源与目的地都以 uncertain 披露行落库：没有半对快照
-    const rows = db.prepare(
-      'SELECT file_path, uncertain_target FROM file_checkpoints WHERE session_id = ? ORDER BY file_path',
-    ).all(sessionId) as Array<{ file_path: string; uncertain_target: number }>;
-    expect(rows).toEqual([
-      { file_path: realSource, uncertain_target: 1 },
-      { file_path: realMoved, uncertain_target: 1 },
-    ]);
-
-    const rewind = await service.rewindFiles(sessionId, messageId);
-    expect(rewind.restoredFiles).toEqual([]);
-    expect(rewind.deletedFiles).toEqual([]);
-    // 回退不碰：目的地字节原样（不被 unlink），源保持移走
-    expect(await fs.readFile(realMoved)).toEqual(Buffer.alloc(1024 * 1024 + 1, 0x37));
-    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-
-  it('keeps every file untouched when a Bash mv source is binary (non utf-8)', async () => {
-    const source = path.join(tempDir, 'logo.png');
-    await fs.writeFile(source, BINARY_PNG_BYTES);
-    const assetsDir = path.join(tempDir, 'assets');
-    await fs.mkdir(assetsDir);
-    const command = 'mv logo.png assets/';
-
-    const realSource = await fs.realpath(source);
-    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
-    expect(checkpoints).toEqual([]);
-    const moved = path.join(assetsDir, 'logo.png');
-    expect(await fs.readFile(moved)).toEqual(BINARY_PNG_BYTES);
-    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
-
-    const rewind = await service.rewindFiles(sessionId, messageId);
-    expect(rewind.restoredFiles).toEqual([]);
-    expect(rewind.deletedFiles).toEqual([]);
-    // 回退不碰：二进制逐字节保持执行后状态，不被有损「快照」写回损坏内容
-    expect(await fs.readFile(moved)).toEqual(BINARY_PNG_BYTES);
-    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(rewind.skippedFiles.map((entry) => entry.filePath).sort())
-      .toEqual([await fs.realpath(assetsDir), realSource].sort());
-  });
-
-  it('keeps every file untouched when a Bash mv source cannot be read', async () => {
-    const source = path.join(tempDir, 'sealed.md');
-    await fs.writeFile(source, 'sealed-content\n');
-    await fs.chmod(source, 0o000);
-    const command = 'mv sealed.md delivered.md';
-
-    const realTarget = path.join(await fs.realpath(tempDir), 'delivered.md');
-    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
-    expect(checkpoints).toEqual([]);
-    // rename 只需要目录权限：移动照常发生（rename 保留 mode，先恢复可读再断言）
-    await fs.chmod(realTarget, 0o644);
-    expect(await fs.readFile(realTarget, 'utf-8')).toBe('sealed-content\n');
-
-    const rewind = await service.rewindFiles(sessionId, messageId);
-    expect(rewind.restoredFiles).toEqual([]);
-    expect(rewind.deletedFiles).toEqual([]);
-    // 回退不碰：目的地保持执行后内容，源保持移走
-    expect(await fs.readFile(realTarget, 'utf-8')).toBe('sealed-content\n');
-    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
-    await fs.chmod(realTarget, 0o644);
-  });
-
-  it('keeps every file untouched when a Bash mv destination is binary (non utf-8)', async () => {
-    const source = path.join(tempDir, 'small.txt');
-    await fs.writeFile(source, 'small\n');
-    const target = path.join(tempDir, 'logo.png');
-    await fs.writeFile(target, BINARY_PNG_BYTES);
-    const command = 'mv small.txt logo.png';
-
-    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
-    expect(checkpoints).toEqual([]);
-    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
-
-    const rewind = await service.rewindFiles(sessionId, messageId);
-    expect(rewind.restoredFiles).toEqual([]);
-    expect(rewind.deletedFiles).toEqual([]);
-    // 回退不碰：目的地保持移动后的文本，不被有损「快照」写回损坏的二进制
-    expect(await fs.readFile(target, 'utf-8')).toBe('small\n');
-    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-
-  it('opts the whole call out of rewind when one move pair cannot be snapshotted losslessly', async () => {
-    const big = path.join(tempDir, 'big.bin');
-    await fs.writeFile(big, Buffer.alloc(1024 * 1024 + 1, 0x41));
-    const outDir = path.join(tempDir, 'out');
-    await fs.mkdir(outDir);
-    const command = 'mv big.bin out/big.bin; echo y > c.txt';
-
-    const realBig = await fs.realpath(big);
-    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
-    expect(checkpoints).toEqual([]);
-    const clean = path.join(tempDir, 'c.txt');
-    expect(await fs.readFile(clean, 'utf-8')).toBe('y\n');
-
-    // 同一调用里干净的目标也整单不进回退（「整次调用不进回退」），但逐条披露
-    const rewind = await service.rewindFiles(sessionId, messageId);
-    expect(rewind.restoredFiles).toEqual([]);
-    expect(rewind.deletedFiles).toEqual([]);
-    expect(await fs.readFile(clean, 'utf-8')).toBe('y\n');
-    expect(await fs.readFile(path.join(outDir, 'big.bin'))).toEqual(Buffer.alloc(1024 * 1024 + 1, 0x41));
-    expect(rewind.skippedFiles.map((entry) => entry.filePath).sort()).toEqual([
-      path.join(await fs.realpath(tempDir), 'c.txt'),
-      path.join(await fs.realpath(outDir), 'big.bin'),
-      realBig,
-    ].sort());
   });
 
   it('discloses instead of corrupting a binary file overwritten by a Bash redirection', async () => {
@@ -569,10 +468,7 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     ]);
   });
 
-  // ---- 返修 r3：写目标只认白名单来源，uncertain 披露有界 ----
-  // 通用 path-like 后缀扫描把 Bash 的 working_directory（目录）当写目标：建不出快照，
-  // 每次带 working_directory 的 Bash 调用（哪怕 ls）都落一条 uncertain 披露行，
-  // turn checkout 从 success 变 partial，且披露行无上限增长。
+  // ---- 返修 r3 保留面：working_directory 不算写目标、uncertain 披露去重与上限 ----
 
   it('keeps read-only Bash calls with working_directory free of snapshots and disclosures', async () => {
     const sub = path.join(tempDir, 'sub');
@@ -589,45 +485,6 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     }
     // 零快照行 + 零 uncertain 披露行：turn checkout 的 fileFailures（errors +
     // skippedFiles）无从产生，轮次状态保持 success
-    expect(db.prepare(
-      'SELECT COUNT(*) AS count FROM file_checkpoints WHERE session_id = ?',
-    ).get(sessionId)).toEqual({ count: 0 });
-  });
-
-  it('snapshots only the mv operands when working_directory is set, never the directory itself', async () => {
-    const sub = path.join(tempDir, 'cwd');
-    await fs.mkdir(sub);
-    const source = path.join(sub, 'a.md');
-    await fs.writeFile(source, 'a-content\n', 'utf-8');
-    const command = 'mv a.md b.md';
-
-    const realSource = await fs.realpath(source);
-    const realTarget = path.join(await fs.realpath(sub), 'b.md');
-    const checkpoints = await snapshotAndFinalize(
-      bashDefinition,
-      { command, working_directory: sub },
-      () => runShell(command, sub),
-    );
-    expect(checkpoints.map((checkpoint) => checkpoint.filePath).sort())
-      .toEqual([realSource, realTarget].sort());
-    const rows = db.prepare(
-      'SELECT file_path FROM file_checkpoints WHERE session_id = ? AND COALESCE(uncertain_target, 0) = 0',
-    ).all(sessionId) as Array<{ file_path: string }>;
-    expect(rows.map((row) => row.file_path).sort()).toEqual([realSource, realTarget].sort());
-  });
-
-  it('ignores path-like MCP parameters that are not on the write-target whitelist', async () => {
-    const sub = path.join(tempDir, 'mcp-dir');
-    await fs.mkdir(sub);
-    // 旧后缀扫描会把 directory（后缀命中）当写目标；白名单只认
-    // path/file_path/destination/dest，其余参数一概不是写目标
-    const checkpoints = await createFileCheckpointIfNeeded(
-      mcpDefinition,
-      { directory: sub, cwd: sub, timeout_ms: 30000 },
-      context,
-      tempDir,
-    );
-    expect(checkpoints).toEqual([]);
     expect(db.prepare(
       'SELECT COUNT(*) AS count FROM file_checkpoints WHERE session_id = ?',
     ).get(sessionId)).toEqual({ count: 0 });
@@ -669,28 +526,38 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     ]);
   });
 
-  it('never leaves half a move pair when the per-session limit evicts mid-call', async () => {
-    // middleware 走单例 service：把上限压到 2，一次调用建 3 个目标（配对 a/b + 独立 c），
-    // 调用中途的 enforceLimit 逐出只许吃掉非配对行——配对整对存活，或整单撤下披露
-    initFileCheckpointService({ maxCheckpointsPerSession: 2 });
+  // ---- 返修 r4 不变量：每条快照单文件单行自足，被上限逐出的行其文件回退时不碰 ----
+
+  it('leaves evicted snapshots untouched on rewind after the per-session limit', async () => {
+    // middleware 走单例 service：把上限压到 3，一次调用建 4 个目标——最旧的 f1 被逐出
+    initFileCheckpointService({ maxCheckpointsPerSession: 3 });
     try {
-      const source = path.join(tempDir, 'pair-a.md');
-      await fs.writeFile(source, 'pair-a\n', 'utf-8');
-      const command = 'mv pair-a.md pair-b.md; echo x > pair-c.txt';
+      const files = ['f1.txt', 'f2.txt', 'f3.txt', 'f4.txt'].map((name) => path.join(tempDir, name));
+      for (const file of files) await fs.writeFile(file, 'original\n', 'utf-8');
+      const realFiles = await Promise.all(files.map((file) => fs.realpath(file)));
+      const command = files.map((file) => `echo rewritten > ${file}`).join('; ');
 
-      const realSource = await fs.realpath(source);
-      const realTarget = path.join(await fs.realpath(tempDir), 'pair-b.md');
-      const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
-      expect(checkpoints.map((checkpoint) => checkpoint.filePath)).toEqual(expect.arrayContaining([realSource, realTarget]));
-
+      const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command));
+      // middleware 拿到 4 个 id，但库里只剩 3 行：f1 在 f4 建行时被上限逐出
+      expect(checkpoints).toHaveLength(4);
       const rows = db.prepare(
-        'SELECT file_path, uncertain_target FROM file_checkpoints WHERE session_id = ? ORDER BY file_path',
-      ).all(sessionId) as Array<{ file_path: string; uncertain_target: number }>;
-      // 配对整对存活：被上限挤掉的只能是非配对行（pair-c），没有 uncertain 披露
-      expect(rows).toEqual([
-        { file_path: realSource, uncertain_target: 0 },
-        { file_path: realTarget, uncertain_target: 0 },
-      ].sort((left, right) => left.file_path.localeCompare(right.file_path)));
+        'SELECT file_path FROM file_checkpoints WHERE session_id = ? AND COALESCE(uncertain_target, 0) = 0',
+      ).all(sessionId) as Array<{ file_path: string }>;
+      expect(rows.map((row) => row.file_path).sort())
+        .toEqual([realFiles[1], realFiles[2], realFiles[3]].sort());
+
+      const rewind = await service.rewindFiles(sessionId, messageId);
+      // 存活的三行照常回退
+      expect(rewind.restoredFiles.sort()).toEqual([realFiles[1], realFiles[2], realFiles[3]].sort());
+      for (const file of [files[1], files[2], files[3]]) {
+        expect(await fs.readFile(file, 'utf-8')).toBe('original\n');
+      }
+      // 被逐出的 f1 不被删除也不被改写：回退窗口里根本没有它的行（单行自足不变量）
+      expect(rewind.restoredFiles).not.toContain(realFiles[0]);
+      expect(rewind.deletedFiles).toEqual([]);
+      expect(await fs.readFile(files[0], 'utf-8')).toBe('rewritten\n');
+      expect(rewind.skippedFiles).toEqual([]);
+      expect(rewind.success).toBe(true);
     } finally {
       initFileCheckpointService();
     }

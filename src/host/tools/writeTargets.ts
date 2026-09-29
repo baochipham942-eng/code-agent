@@ -229,15 +229,28 @@ function tokenizeShellCommand(command: string): ShellToken[] {
   return tokens;
 }
 
-/** 写目标在参数位上的命令：cp / mv 写最后一个参数，tee 写每一个文件参数。 */
-const ARGUMENT_WRITE_COMMANDS: Record<string, 'last' | 'all'> = { cp: 'last', mv: 'last', tee: 'all' };
+/** 参数位写命令表：'last' = 只写最后一个操作数（cp/mv 的目的地），'all' = 每个操作数都写（tee）。 */
+type ArgumentWriteCommands = Record<string, 'last' | 'all'>;
 
-function argumentWriteTargets(words: string[]): string[] {
+/** 写目标在参数位上的命令：cp / mv 写最后一个参数，tee 写每一个文件参数。 */
+const ARGUMENT_WRITE_COMMANDS: ArgumentWriteCommands = { cp: 'last', mv: 'last', tee: 'all' };
+
+/**
+ * 检查点口径的参数位写命令（返修 r4 砍范围）：移动/重命名类（mv）一律不进回退——
+ * mv 的源与目的地快照必须**成对**存活、**成对**逐出，而 enforceLimit 跨调用按行逐出
+ * 做不到这一点（连续三轮返修的数据丢失洞），按编排决策整类砍掉（要支持得另立单做
+ * 原子成对快照 + 成对逐出）；rm 补进来：删除目标建快照，回退恢复被删文件。只作用于
+ * 检查点（resolveCheckpointWriteTargets），安全门（resolveToolWriteTargets）的
+ * 参数面一字不动。
+ */
+const CHECKPOINT_ARGUMENT_WRITE_COMMANDS: ArgumentWriteCommands = { cp: 'last', tee: 'all', rm: 'all' };
+
+function argumentWriteTargets(words: string[], commands: ArgumentWriteCommands = ARGUMENT_WRITE_COMMANDS): string[] {
   if (words.length < 2) return [];
   // 命令名也要词法值化：保引号分词后 `c"p"`/`c\p` 这类合法写法带着引号/转义进来，
   // 不词法值化认不出 cp ⇒ 写目标丢失，削弱既有 WRITE_OWNERSHIP_CONFLICT
   // （PR #1709 复审②）。shellWordValue 解完就是 cp。
-  const rule = ARGUMENT_WRITE_COMMANDS[path.basename(shellWordValue(words[0]))];
+  const rule = commands[path.basename(shellWordValue(words[0]))];
   if (!rule) return [];
   // `-r` / `-a` / `--append` 一律是开关不是路径；`--` 之后才是纯路径，但这里不需要区分。
   // 选项判定要先词法值化（PR #1709 复审③：带引号的 `"-f"` 不过滤会混进操作数遮蔽真目标），
@@ -283,8 +296,8 @@ function nestedScriptTexts(words: string[]): string[] {
 }
 
 /** `bash -c '...'` 内嵌脚本的写目标（原始词，值化在出口统一做）。 */
-function nestedScriptTargets(words: string[]): string[] {
-  return nestedScriptTexts(words).flatMap(collectShellTargets);
+function nestedScriptTargets(words: string[], commands: ArgumentWriteCommands = ARGUMENT_WRITE_COMMANDS): string[] {
+  return nestedScriptTexts(words).flatMap((script) => collectShellTargets(script, commands));
 }
 
 export interface ScopedUncertainRedirect {
@@ -379,13 +392,13 @@ export function shellScopedUncertainRedirects(command: string): ScopedUncertainR
 }
 
 /** 收集写目标原始词（引号/转义还在词上）；词法值化只在 shellWriteTargets 出口做一遍。 */
-function collectShellTargets(command: string): string[] {
+function collectShellTargets(command: string, commands: ArgumentWriteCommands = ARGUMENT_WRITE_COMMANDS): string[] {
   const tokens = tokenizeShellCommand(command);
   const targets: string[] = [];
   let words: string[] = [];
   const flushSegment = (): void => {
-    targets.push(...argumentWriteTargets(words));
-    targets.push(...nestedScriptTargets(words));
+    targets.push(...argumentWriteTargets(words, commands));
+    targets.push(...nestedScriptTargets(words, commands));
     words = [];
   };
   for (const token of tokens) {
@@ -403,9 +416,10 @@ function collectShellTargets(command: string): string[] {
  * 上线后评测的越权写信号也用它，别再造一份。
  * ponytail: 只认这三个命令名，不做「哪些命令会写盘」的全量枚举——
  * 按名字枚举永远漏，真正的兜底是沙盒本身，这里只补最常见的三条。
+ * commands 参数是检查点口径（返修 r4：mv 出、rm 入），缺省仍是安全门口径。
  */
-export function shellWriteTargets(command: string): string[] {
-  return collectShellTargets(command).map(shellWordValue);
+export function shellWriteTargets(command: string, commands: ArgumentWriteCommands = ARGUMENT_WRITE_COMMANDS): string[] {
+  return collectShellTargets(command, commands).map(shellWordValue);
 }
 
 /**
@@ -416,71 +430,6 @@ export function shellWriteTargets(command: string): string[] {
  */
 function splitUnescapedNewlines(command: string): string {
   return command.replace(/(?<!\\)\r?\n/g, ' ; ');
-}
-
-export interface ShellMoveSourceAssessment {
-  /** mv 段里干净解析出的源路径（除最后一个操作数外的全部），绝对路径。 */
-  sources: string[];
-  /** 干净解析出的 mv 目的地（最后一个操作数），绝对路径：源与目的地的快照必须成对成功（返修 r2）。 */
-  destinations: string[];
-  /** 源解析不出的 mv 段的目的地（绝对路径）：这些目的地的快照必须一并撤下。 */
-  blockedDestinations: string[];
-  /** 源解析不出的 mv 段的披露键（一段一条，保留原始操作数）。 */
-  uncertain: string[];
-}
-
-function collectMoveSources(command: string, workingDirectory: string, out: ShellMoveSourceAssessment): void {
-  const tokens = tokenizeShellCommand(command);
-  let words: string[] = [];
-  const flushSegment = (): void => {
-    // 与 argumentWriteTargets 同一把分词 / 命令名 / 选项过滤（mv 是 'last' 规则的移动语义
-    // 那一个，cp 不动源），保证这里认出的目的地与写目标集合里的目的地是同一条解析，
-    // blockedDestinations 才能准确对上要撤下的快照。
-    if (words.length >= 2 && path.basename(shellWordValue(words[0])) === 'mv') {
-      const operands = words.slice(1).filter((word) => !shellWordValue(word).startsWith('-'));
-      if (operands.length >= 2) {
-        const valued = operands.map(shellWordValue);
-        const destination = valued[valued.length - 1];
-        const segmentSources = valued.slice(0, -1);
-        if (segmentSources.some((source) => !source || /[$`*?{}]/.test(source))) {
-          out.uncertain.push(`uncertain-move:${words.join(' ')}`);
-          // 源解析不出还快照目的地，回退会把目的地恢复 / 删除而源没人恢复——内容彻底
-          // 丢失。整个 mv 按 uncertain 处理：目的地快照撤下，回退不碰。
-          if (destination && !/[$`*?{}]/.test(destination)) {
-            out.blockedDestinations.push(resolveToolPath(destination, workingDirectory));
-          }
-        } else {
-          out.sources.push(...segmentSources.map((source) => resolveToolPath(source, workingDirectory)));
-          // 目的地也干净时记下：源与目的地的快照必须成对成功（返修 r2），任何一侧
-          // 建不出无损快照，整次调用不进回退。目的地带变量的走既有 uncertain-redirection。
-          if (destination && !/[$`*?{}]/.test(destination)) {
-            out.destinations.push(resolveToolPath(destination, workingDirectory));
-          }
-        }
-      }
-    }
-    for (const script of nestedScriptTexts(words)) {
-      collectMoveSources(script, workingDirectory, out);
-    }
-    words = [];
-  };
-  for (const token of tokens) {
-    if (token.kind === 'separator') flushSegment();
-    else words.push(token.raw);
-  }
-  flushSegment();
-}
-
-/**
- * mv 类移动命令的源侧评估：mv 的写目标只有目的地，但回退只处理目的地会把源文件内容
- * 从工作区抹掉——源必须与目的地一起进快照（源记执行前内容，回退时恢复源）。多源
- * `mv a b dir/` 的全部非最后操作数都是源。走 descriptorAssessment 同款词法预处理
- * （折续行 + 未转义换行切段），解析口径与写目标完全一致。
- */
-export function assessShellMoveSources(command: string, workingDirectory: string): ShellMoveSourceAssessment {
-  const out: ShellMoveSourceAssessment = { sources: [], destinations: [], blockedDestinations: [], uncertain: [] };
-  collectMoveSources(splitUnescapedNewlines(command.replace(/\\(?:\r\n?|\n)/g, '')), workingDirectory, out);
-  return out;
 }
 
 function genericPathAssessment(
@@ -499,34 +448,6 @@ function genericPathAssessment(
   if (!value || typeof value !== 'object') return { targets: [], uncertain: [], mutations: {} };
   return mergeAssessments(Object.entries(value as Record<string, unknown>).map(
     ([childKey, childValue]) => genericPathAssessment(childValue, workingDirectory, childKey),
-  ));
-}
-
-// MCP / 未知工具（无 pathAuthority 声明）的写字段白名单（返修 r3）：只认显式列出的
-// 字段名，不做「字段名以 path/directory/file 等后缀结尾就算」的通用扫描——后缀扫描
-// 把执行基准参数（working_directory）也当写目标，目录建不出快照，每次带它的 Bash
-// 调用都落一条 uncertain 披露行，只读轮次也被拖成 partial。dest 与 destination 同列：
-// MCP 移动形状（source+destination|dest）的目的地必须能进快照，源的配对快照才成立。
-const WHITELISTED_WRITE_PATH_PARAMETERS = new Set(['path', 'file_path', 'destination', 'dest']);
-
-function whitelistedPathAssessment(
-  value: unknown,
-  workingDirectory: string,
-  key?: string,
-): ToolWriteTargets {
-  if (typeof value === 'string') {
-    if (!key || !WHITELISTED_WRITE_PATH_PARAMETERS.has(key)) {
-      return { targets: [], uncertain: [], mutations: {} };
-    }
-    if (value.trim() === '') return { targets: [], uncertain: [`uncertain:${key}`], mutations: {} };
-    return { targets: [resolveToolPath(value, workingDirectory)], uncertain: [], mutations: {} };
-  }
-  if (Array.isArray(value)) {
-    return mergeAssessments(value.map((entry) => whitelistedPathAssessment(entry, workingDirectory, key)));
-  }
-  if (!value || typeof value !== 'object') return { targets: [], uncertain: [], mutations: {} };
-  return mergeAssessments(Object.entries(value as Record<string, unknown>).map(
-    ([childKey, childValue]) => whitelistedPathAssessment(childValue, workingDirectory, childKey),
   ));
 }
 
@@ -603,14 +524,15 @@ function descriptorAssessment(
 /**
  * 命令文本里的写目标评估（重定向 + cp/mv/tee 目标位 + 内嵌脚本，返修 r3 从
  * descriptorAssessment 抽出）：安全门（resolveToolWriteTargets 的 shell 描述符）与
- * 检查点（resolveCheckpointWriteTargets）共用同一条词法，两边认出的目的地才是同一条
- * 解析，移动配对才能精确对上要撤下的快照。memory 目录提及目标**不**在这条共享路径里
+ * 检查点（resolveCheckpointWriteTargets）共用同一条词法，commands 参数区分两边口径
+ * （返修 r4：检查点侧 mv 出、rm 入）。memory 目录提及目标**不**在这条共享路径里
  * ——那是安全门专属（目录建不出快照，进检查点只会落一条噪音披露行，返修 r3）。
  */
 function redirectAndArgumentTargets(
   command: string,
   workingDirectory: string,
   canonical: ReturnType<typeof canonicalizeCommand>,
+  commands: ArgumentWriteCommands = ARGUMENT_WRITE_COMMANDS,
 ): ToolWriteTargets {
   const targets: string[] = [];
   const uncertain: string[] = [];
@@ -622,7 +544,7 @@ function redirectAndArgumentTargets(
   // 做掉它原来顺带做的两件词法预处理：先折词中续行（`\`+换行，照它的折法消掉），
   // 再把没被反斜杠转义的换行切成 `;`（多行脚本第 2 行起不粘第 1 行，PR #1650 第 3 轮）。
   const continuationsFolded = command.replace(/\\(?:\r\n?|\n)/g, '');
-  const redirectTargets = shellWriteTargets(splitUnescapedNewlines(continuationsFolded));
+  const redirectTargets = shellWriteTargets(splitUnescapedNewlines(continuationsFolded), commands);
   if (canonical.parsingFailed && redirectTargets.length > 0) {
     uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
   }
@@ -667,15 +589,17 @@ export function resolveToolWriteTargets(input: ResolveToolWriteTargetsInput): To
 }
 
 /**
- * 检查点路径专用的写目标解析（返修 r3）：只认白名单来源，**不**跑 genericPathAssessment
- * 的通用后缀扫描——那条是安全门（ownership / 写边界闸）的口径，参数面必须宽；检查点面
- * 宽了会把目录类参数（working_directory）变成建不出快照的噪音披露行。三档来源：
- * - 声明 shell 权威的工具（bash / terminal_write）：只从命令解析取目标（重定向、
- *   cp/mv/tee 目标位、内嵌脚本），绝不从 Bash 的其它参数（working_directory、cwd、
- *   timeout 等）取；memory 目录提及目标也不进这条路径（见 redirectAndArgumentTargets）。
+ * 检查点路径专用的写目标解析（返修 r3 白名单来源，返修 r4 最终砍范围）：**不**跑
+ * genericPathAssessment 的通用后缀扫描——那条是安全门（ownership / 写边界闸）的口径，
+ * 参数面必须宽；检查点面宽了会把目录类参数（working_directory）变成建不出快照的
+ * 噪音披露行。来源只有两档：
+ * - 声明 shell 权威的工具（bash / terminal_write）：只从命令解析取**单目标**写入
+ *   （重定向、cp 目的地、rm 目标、tee、内嵌脚本），移动类（mv）除外——一律不进回退
+ *   （返修 r4）；绝不从 Bash 的其它参数（working_directory、cwd、timeout 等）取；
+ *   memory 目录提及目标也不进这条路径（见 redirectAndArgumentTargets）。
  * - 声明 path / global-memory 权威的内置工具：只认 schema 里明确声明的写路径字段
  *   （Write/Edit 的 file_path、docx 的 output_path 等，含 whenParameter 条件命中）。
- * - 无声明的 MCP / 未知工具：只认 WHITELISTED_WRITE_PATH_PARAMETERS 列出的字段名。
+ * - 无声明的 MCP / 未知工具：不推断，零目标零披露（返修 r4 砍掉，回 origin/main 行为）。
  */
 export function resolveCheckpointWriteTargets(input: ResolveToolWriteTargetsInput): ToolWriteTargets {
   const descriptors = input.definition.pathAuthority ?? [];
@@ -686,11 +610,16 @@ export function resolveCheckpointWriteTargets(input: ResolveToolWriteTargetsInpu
       if (typeof command !== 'string' || command.trim() === '') {
         return { targets: [], uncertain: [`uncertain:${descriptor.commandParameter}`], mutations: {} };
       }
-      return redirectAndArgumentTargets(command, input.workingDirectory, canonicalizeCommand(command));
+      return redirectAndArgumentTargets(
+        command,
+        input.workingDirectory,
+        canonicalizeCommand(command),
+        CHECKPOINT_ARGUMENT_WRITE_COMMANDS,
+      );
     }))
     : descriptors.length > 0
       ? mergeAssessments(descriptors.map((descriptor) => descriptorAssessment(descriptor, input)))
-      : whitelistedPathAssessment(input.params, input.workingDirectory);
+      : { targets: [], uncertain: [], mutations: {} };
   return {
     targets: [...new Set(assessment.targets)].sort(),
     uncertain: [...new Set(assessment.uncertain)].sort(),

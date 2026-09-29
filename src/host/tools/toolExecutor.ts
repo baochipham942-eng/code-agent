@@ -2323,11 +2323,18 @@ export class ToolExecutor {
         ?? await resolver.execute(executionToolName, params, context);
       // 执行后摘要不分成败都补：Bash 先 `> f` 写了文件再非零退出时，摘要缺失会让
       // 回退拿 missing_post_write_digest（旧版快照）这个不对的原因披露本可恢复的文件。
-      for (const fileCheckpoint of fileCheckpoints) {
-        await getFileCheckpointService().finalizeCheckpointDigest(
-          fileCheckpoint.checkpointId,
-          fileCheckpoint.filePath,
-        );
+      // 例外：后台启动的 Bash（run_in_background / 超时收养，bash.ts 的 meta.background）
+      // 此刻返回，命令还在跑——现在补的只是执行前状态，之后发生的真实写入会拿它比对
+      // 失败、被误标成人工编辑；不补，摘要留空，回退按 missing_post_write_digest
+      // 如实披露该文件状态未知（ai-review Nit）。
+      const detachedBackgroundStart = rawResult?.metadata?.background === true;
+      if (!detachedBackgroundStart) {
+        for (const fileCheckpoint of fileCheckpoints) {
+          await getFileCheckpointService().finalizeCheckpointDigest(
+            fileCheckpoint.checkpointId,
+            fileCheckpoint.filePath,
+          );
+        }
       }
       const resultWithSurfaceProjection = ensureFailedToolResultError(
         executionToolName,

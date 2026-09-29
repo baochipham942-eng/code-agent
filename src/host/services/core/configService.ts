@@ -1210,12 +1210,13 @@ export class ConfigService implements IReadConfigService {
     try {
       // Create directory if needed
       const dir = path.dirname(this.configPath);
-      await fs.mkdir(dir, { recursive: true });
+      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
 
       // Save config (API keys are stored in SecureStorage, not here)
       const toSave = this.sanitizeSettingsForSave(this.settings);
 
-      await fs.writeFile(this.configPath, JSON.stringify(toSave, null, 2));
+      // mode 只在新建文件时生效；存量文件靠启动扫层收紧（config/dataDirPermissions）
+      await fs.writeFile(this.configPath, JSON.stringify(toSave, null, 2), { mode: 0o600 });
       // 标记本进程刚写过盘,让 config 热重载 watcher 忽略这次自身写入
       this.lastSelfWriteAt = Date.now();
 

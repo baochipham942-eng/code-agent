@@ -151,6 +151,12 @@ export const rotateDatabaseBackup = Object.assign(
   try {
     await options.backupTo(tmpPath);
     rotateSlots(options.dbPath, keep, tmpPath);
+    // 备份副本是库的全量快照，按敏感文件档收紧（FB-238）；收紧失败只 warn，不废掉好备份
+    try {
+      fs.chmodSync(backupSlotPath(options.dbPath, 1), 0o600);
+    } catch (chmodError) {
+      logger.warn('Failed to tighten backup slot permissions', chmodError as Error);
+    }
     writeLast(now);
     logger.info(`Database backup rotated (${backupSlotPath(options.dbPath, 1)})`);
     return 'completed';

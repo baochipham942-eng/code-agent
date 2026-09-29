@@ -66,6 +66,22 @@ describe('rotateDatabaseBackup', () => {
     expect(fs.existsSync(backupSlotPath(dbPath, 3))).toBe(false);
   });
 
+  it('writes backup slot files with 0600 permissions (FB-238)', async () => {
+    const dbPath = tmpDb();
+    const backupTo = async (dest: string) => {
+      fs.writeFileSync(dest, 'copy');
+      // 模拟宽松 umask 下的真实落盘档位（sqlite backup 新建文件没有 mode 入参）
+      fs.chmodSync(dest, 0o644);
+    };
+
+    const result = await rotateDatabaseBackup({
+      dbPath, now: NOW, force: true, backupTo, hasFreeSpace: async () => ({ ok: true, detail: 'ok' }),
+    });
+
+    expect(result).toBe('completed');
+    expect(fs.statSync(backupSlotPath(dbPath, 1)).mode & 0o777).toBe(0o600);
+  });
+
   it('honors the throttle marker unless force is set', async () => {
     const dbPath = tmpDb();
     const backupTo = async (dest: string) => {

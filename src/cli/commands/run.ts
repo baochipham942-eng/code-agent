@@ -7,7 +7,14 @@ import path from 'path';
 import { Command } from 'commander';
 import { createCLIAgent } from '../adapter';
 import { terminalOutput, jsonOutput } from '../output';
-import { cleanup, initializeCLIServices, getDatabaseService } from '../bootstrap';
+import {
+  cleanup,
+  initializeCLIServices,
+  getDatabaseService,
+  getCLIEnvironmentFingerprint,
+  whenCLIMcpReady,
+  whenCLISkillsReady,
+} from '../bootstrap';
 import type { CLIGlobalOptions } from '../types';
 import { extractJSON } from '../utils/jsonExtractor';
 import { validateSchema, formatValidationErrors, type JSONSchema } from '../utils/schemaValidator';
@@ -159,10 +166,11 @@ export const runCommand = new Command('run')
     const maxRetries = parseInt(options.maxRetries || '3', 10);
 
     try {
-      // 初始化服务
+      // 初始化服务（--bare 纯净模式：跳过 skills/hooks/MCP 装载）
       await initializeCLIServices({
         dangerouslySkipPermissions: options.dangerouslySkipPermissions,
         permissionMode,
+        bare: globalOpts?.bare,
       });
 
       // 显示数据库状态
@@ -174,6 +182,17 @@ export const runCommand = new Command('run')
         }
       }
 
+      // 环境指纹：init 已定档，此处快照后整 run 复用（cleanup 不改写它）。
+      // 指纹从实况导出，而 skills 发现与 MCP 握手都是 fire-and-forget——json/
+      // stream-json 模式要输出指纹，先等它们落定再快照，skillCount/mcpServers 才
+      // 是实况而非装载中途的 0（agent.run 本就要等 whenCLIMcpReady，端到端不变；
+      // text 模式无指纹输出，不等待，首字路径原样）。
+      if (isJson) {
+        await whenCLISkillsReady();
+        await whenCLIMcpReady();
+      }
+      const environmentFingerprint = getCLIEnvironmentFingerprint();
+
       if (!isJson) {
         terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
         if (outputSchema) {
@@ -182,6 +201,11 @@ export const runCommand = new Command('run')
         terminalOutput.startThinking('初始化中...');
       } else {
         jsonOutput.start();
+        // stream-json 首帧带环境指纹（loaders 装载/跳过自描述）；
+        // json 模式 stdout 只允许终态一份 JSON，指纹改附在最终结果里。
+        if (isStreamJson) {
+          jsonOutput.environment(environmentFingerprint);
+        }
       }
 
       // 创建 Agent 并运行
@@ -198,6 +222,7 @@ export const runCommand = new Command('run')
         disallowedTools: options.disallowedTools,
         statusFile: options.statusFile,
         originKind: 'headless',
+        bare: globalOpts?.bare,
       });
 
       // 恢复会话（如果指定）
@@ -312,10 +337,11 @@ export const runCommand = new Command('run')
 
       // 输出最终结果（JSON 模式，无 schema 验证时）
       if (isJson && !outputSchema) {
+        const finalResult = { ...result, environment: environmentFingerprint };
         if (isStreamJson) {
-          jsonOutput.result(result, true);
+          jsonOutput.result(finalResult, true);
         } else {
-          jsonOutput.result(result);
+          jsonOutput.result(finalResult);
         }
       } else if (isJson && outputSchema) {
         // schema 模式下 JSON 输出：包含结构化数据和验证状态
@@ -326,6 +352,7 @@ export const runCommand = new Command('run')
           structuredOutput: extracted,
           schemaValid: validation?.valid ?? false,
           schemaErrors: validation?.valid === false ? validation.errors : undefined,
+          environment: environmentFingerprint,
         };
         if (isStreamJson) {
           jsonOutput.result(finalResult, true);

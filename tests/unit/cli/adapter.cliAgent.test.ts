@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
   const buildCLIConfig = vi.fn();
   const createAgentLoop = vi.fn();
   const initializeCLIServices = vi.fn().mockResolvedValue(undefined);
+  const isCLIBareMode = vi.fn().mockReturnValue(false);
   const getSessionManager = vi.fn();
   const getConfigService = vi.fn();
   const startCLIDurableRun = vi.fn().mockResolvedValue(null);
@@ -31,6 +32,7 @@ const mocks = vi.hoisted(() => {
     buildCLIConfig,
     createAgentLoop,
     initializeCLIServices,
+    isCLIBareMode,
     getSessionManager,
     getConfigService,
     startCLIDurableRun,
@@ -51,6 +53,7 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   buildCLIConfig: mocks.buildCLIConfig,
   createAgentLoop: mocks.createAgentLoop,
   initializeCLIServices: mocks.initializeCLIServices,
+  isCLIBareMode: mocks.isCLIBareMode,
   getSessionManager: mocks.getSessionManager,
   getConfigService: mocks.getConfigService,
   startCLIDurableRun: mocks.startCLIDurableRun,

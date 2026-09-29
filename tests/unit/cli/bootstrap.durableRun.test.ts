@@ -89,7 +89,14 @@ vi.mock('../../../src/host/tools/toolExecutor', () => ({
 }));
 vi.mock('../../../src/host/tools/protocolRegistry', () => ({ getProtocolRegistry: vi.fn() }));
 vi.mock('../../../src/host/services/skills', () => ({
-  getSkillDiscoveryService: () => ({ initialize: vi.fn(), ensureInitialized: vi.fn() }),
+  getSkillDiscoveryService: () => ({
+    initialize: vi.fn(),
+    ensureInitialized: vi.fn(),
+    setDisabled: vi.fn(),
+    isDisabled: () => false,
+    isInitialized: () => true,
+    getAllSkills: () => [],
+  }),
 }));
 vi.mock('../../../src/host/telemetry', () => ({
   getTelemetryCollector: vi.fn(() => mocks.telemetryCollector),

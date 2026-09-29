@@ -610,7 +610,7 @@ describe('R2：jitter 窗口（最长 15min）内任务被停用/编辑 → 不�
 
     await vi.advanceTimersByTimeAsync(60_000); // tick → 3s jitter 等待
     await service.updateJob(job.id, {
-      action: { ...job.action, prompt: '新 prompt' },
+      action: { type: 'agent' as const, agentType: 'default', prompt: '新 prompt' },
     });
     await vi.advanceTimersByTimeAsync(3_000); // jitter 耗尽
 

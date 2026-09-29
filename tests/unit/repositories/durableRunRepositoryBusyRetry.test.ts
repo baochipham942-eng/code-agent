@@ -14,7 +14,6 @@ import * as path from 'path';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
-import type BetterSqlite3 from 'better-sqlite3';
 
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';

@@ -1,8 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { envelopeRendererAgentEvent } from '../../../src/host/protocol/rendererAgentStreamCursor';
+import {
+  envelopeWebAgentEvent,
+  getWebStreamEpoch,
+  resetWebAgentEventSequencesForTests,
+} from '../../../src/web/helpers/agentStreamCursor';
 
 describe('rendererAgentStreamCursor', () => {
-  it('uses one process epoch and independent monotonic session watermarks', () => {
+  beforeEach(() => {
+    resetWebAgentEventSequencesForTests();
+  });
+
+  it('shares one process epoch and continues the same per-session seq as the web cursor', () => {
     const first = envelopeRendererAgentEvent('cursor-session-a', {
       type: 'turn_start',
       data: { turnId: 'turn-1', iteration: 1 },
@@ -11,12 +20,13 @@ describe('rendererAgentStreamCursor', () => {
       type: 'turn_start',
       data: { turnId: 'turn-2', iteration: 1 },
     });
-    const second = envelopeRendererAgentEvent('cursor-session-a', {
+    const second = envelopeWebAgentEvent('cursor-session-a', {
       type: 'turn_end',
       data: { turnId: 'turn-1' },
     });
 
-    expect(first.streamEpoch).toMatch(/^native:/);
+    expect(first.streamEpoch).toMatch(/^http:/);
+    expect(first.streamEpoch).toBe(getWebStreamEpoch());
     expect(otherSession.streamEpoch).toBe(first.streamEpoch);
     expect(second.streamEpoch).toBe(first.streamEpoch);
     expect(first.seq).toBe(1);

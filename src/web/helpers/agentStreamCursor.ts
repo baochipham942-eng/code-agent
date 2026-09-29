@@ -1,32 +1,28 @@
-import { randomUUID } from 'node:crypto';
 import type { AgentEvent, AgentEventEnvelope } from '../../shared/contract';
+import {
+  envelopeAgentEvent,
+  getAgentEventStreamEpoch,
+  nextAgentEventStreamSeq,
+  resetAgentEventStreamForTests,
+} from '../../host/protocol/agentEventStreamCursor';
 
-const webStreamEpoch = `http:${randomUUID()}`;
-const sessionSequences = new Map<string, number>();
-
+// 保留 web 侧入口名；计数与 epoch 在进程内唯一游标上。
 export function getWebStreamEpoch(): string {
-  return webStreamEpoch;
+  return getAgentEventStreamEpoch();
 }
 
 export function nextWebAgentEventSeq(sessionId: string): number {
-  const seq = (sessionSequences.get(sessionId) ?? 0) + 1;
-  sessionSequences.set(sessionId, seq);
-  return seq;
+  return nextAgentEventStreamSeq(sessionId);
 }
 
 export function envelopeWebAgentEvent(
   sessionId: string,
   event: AgentEvent,
-  seq = nextWebAgentEventSeq(sessionId),
+  seq?: number,
 ): AgentEventEnvelope {
-  return {
-    ...event,
-    streamEpoch: webStreamEpoch,
-    sessionId,
-    seq,
-  } as AgentEventEnvelope;
+  return envelopeAgentEvent(sessionId, event, seq);
 }
 
 export function resetWebAgentEventSequencesForTests(): void {
-  sessionSequences.clear();
+  resetAgentEventStreamForTests();
 }

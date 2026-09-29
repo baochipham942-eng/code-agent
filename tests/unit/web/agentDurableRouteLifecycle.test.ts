@@ -34,6 +34,7 @@ function createRunRegistry(runHandle = createRunHandle()) {
   const runRegistry = {
     start: vi.fn(() => runHandle),
     startDurable: vi.fn(async () => runHandle),
+    supersedeParkedSessionRoots: vi.fn(async () => undefined),
     terminalDurable: vi.fn(async () => undefined),
     releaseDurable: vi.fn(async () => true),
     unregister: vi.fn(() => true),

@@ -26,7 +26,7 @@ function projectScope(primaryRoot: string, projectId = 'project-native'): Worksp
 function fakeRegistry(startDurable: (input: CreateRunContextInput) => Promise<RunHandle> | RunHandle) {
   const stub = vi.fn(startDurable);
   return {
-    registry: { startDurable: stub, start: vi.fn() } as unknown as RunRegistry,
+    registry: { startDurable: stub, start: vi.fn(), supersedeParkedSessionRoots: vi.fn(async () => undefined) } as unknown as RunRegistry,
     startDurable: stub,
   };
 }

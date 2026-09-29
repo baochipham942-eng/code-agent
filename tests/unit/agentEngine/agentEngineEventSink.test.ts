@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '../../../src/shared/contract';
+import {
+  getAgentEventStreamEpoch,
+  resetAgentEventStreamForTests,
+} from '../../../src/host/protocol/agentEventStreamCursor';
 
 const mocks = vi.hoisted(() => ({
   webContentsSend: vi.fn(),
@@ -18,6 +22,7 @@ describe('external agent engine event sink routing', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAgentEventStreamForTests();
   });
 
   it('routes only to the local sink when one is present', () => {
@@ -37,7 +42,7 @@ describe('external agent engine event sink routing', () => {
       expect.any(String),
       expect.objectContaining({
         ...event,
-        streamEpoch: expect.stringMatching(/^native:/),
+        streamEpoch: getAgentEventStreamEpoch(),
         sessionId: 'desktop-session',
         seq: 1,
       }),

@@ -1,19 +1,11 @@
-import { randomUUID } from 'node:crypto';
 import type { AgentEvent, AgentEventEnvelope } from '../../shared/contract';
+import { envelopeAgentEvent } from './agentEventStreamCursor';
 
-const rendererStreamEpoch = `native:${randomUUID()}`;
-const rendererEventSequences = new Map<string, number>();
-
+// TaskManager / 无 local sink 的外部引擎与 /api/run 共用同一套 epoch 和 seq。
 export function envelopeRendererAgentEvent(
   sessionId: string,
   event: AgentEvent,
 ): AgentEventEnvelope {
-  const seq = (rendererEventSequences.get(sessionId) ?? 0) + 1;
-  rendererEventSequences.set(sessionId, seq);
-  return {
-    ...event,
-    streamEpoch: rendererStreamEpoch,
-    sessionId,
-    seq,
-  } as AgentEventEnvelope;
+  return envelopeAgentEvent(sessionId, event);
 }
+

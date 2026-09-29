@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
-import { collectTurnOrigins, type AgentMessageOrigin } from './messageOrigin';
+import type { AgentMessageOrigin } from './messageOrigin';
 import type { ToolCall } from '../../shared/contract';
 import { ModelRouter } from '../model/modelRouter';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../model/adapters/aiSdkAdapter';
@@ -54,10 +54,15 @@ import {
 import { applySubagentToolExitGate, buildSubagentToolTable, resolveSubagentToolAccess } from './subagentExecutorToolDefs';
 import {
   buildSubagentModelCall,
-  drainSubagentMessages,
   recordSubagentTelemetryTurn,
   type SubagentTelemetryToolCall,
 } from './subagentExecutorTelemetry';
+import {
+  drainQueuedMemberInput,
+  noteUndeliveredMemberInput,
+  peekMemberInputQueues,
+  resolveSubagentWindDown,
+} from './memberInputWindDown';
 import {
   createSubagentCancellationLifecycle,
   flushSubagentCancellation,
@@ -488,7 +493,7 @@ export class SubagentExecutor {
       // subagent taskGate（roadmap 2.6，衔接 1.3）：想收口但名下还有未收口任务时
       // 注入重入消息督办，上限 2 次（MiMo subagent 上限），防跑飞
       let taskGateReentries = 0;
-      const SUBAGENT_TASK_GATE_MAX_REENTRIES = 2;
+      let memberInputReentries = 0;
 
       while (iterations < maxIterations) {
         iterations++;
@@ -570,29 +575,15 @@ export class SubagentExecutor {
           };
         }
 
-        // Drain structured message queue (mid-loop injection)
-        {
-          const externalMessages = context.messageDrain ? await context.messageDrain() : [];
-          const pendingMessages = [
-            ...(context.spawnGuardId ? getSpawnGuard().drainMessages(context.spawnGuardId) : []),
-            ...externalMessages,
-          ];
-          // ADR-067 D3：本轮注入消息的 origin 链挂上 turn context，权限判定取最不可信者
-          currentTurnOrigin = collectTurnOrigins(pendingMessages) ?? currentTurnOrigin;
-          const injected = drainSubagentMessages({
-            agentName: config.name,
-            messages,
-            pendingMessages,
-            logger,
-            pushObservabilityMessage,
-          });
-          if (injected > 0) {
-            emitContextSnapshot();
-          }
-          if (externalMessages.length > 0) {
-            await context.ackMessageDrain?.();
-          }
-        }
+        currentTurnOrigin = await drainQueuedMemberInput({
+          context,
+          agentName: config.name,
+          messages,
+          logger,
+          pushObservabilityMessage,
+          emitContextSnapshot,
+          currentTurnOrigin,
+        });
 
         // Check budget before each iteration
         const iterBudgetCheck = pipeline.checkBudget(pipelineContext);
@@ -710,20 +701,17 @@ export class SubagentExecutor {
 
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
-          // taskGate（roadmap 2.6）：收口前检查名下未收口任务，重入督办（上限 2）
-          const ownedOpenTasks = getIncompleteTasks(sessionId).filter(
-            (t) => t.owner === pipelineContext.agentId,
-          );
-          if (ownedOpenTasks.length > 0 && taskGateReentries < SUBAGENT_TASK_GATE_MAX_REENTRIES) {
-            taskGateReentries++;
-            const taskLines = ownedOpenTasks.map((t) => `- #${t.id} [${t.status}] ${t.subject}`).join('\n');
-            logger.info(`[${config.name}] taskGate re-entry ${taskGateReentries}/${SUBAGENT_TASK_GATE_MAX_REENTRIES}: ${ownedOpenTasks.length} open task(s)`);
-            messages.push(createRuntimeMessage({
-              role: 'user',
-              content:
-                `[taskGate] 你名下还有 ${ownedOpenTasks.length} 个未收口任务：\n${taskLines}\n` +
-                `请先用 TaskManager 把它们置为 completed（已完成）或 cancelled（说明原因），再给出最终总结。`,
-            }));
+          const windDown = resolveSubagentWindDown({
+            openTasks: getIncompleteTasks(sessionId).filter((task) => task.owner === pipelineContext.agentId),
+            taskGateReentries,
+            memberInputReentries,
+            pendingInput: peekMemberInputQueues(context.spawnGuardId || executionAgentId, context.swarmRunScope).length,
+          });
+          if (windDown.action !== 'finish') {
+            taskGateReentries = windDown.taskGateReentries;
+            memberInputReentries = windDown.memberInputReentries;
+            if (windDown.log) logger.info(`[${config.name}] ${windDown.log}`);
+            if (windDown.content) messages.push(createRuntimeMessage({ role: 'user', content: windDown.content }));
             continue;
           }
           finalOutput = response.content;
@@ -1081,6 +1069,11 @@ export class SubagentExecutor {
           await turnObservability.endTurn(telemetryTurnId);
         }
       }
+
+      finalOutput = noteUndeliveredMemberInput(
+        finalOutput,
+        peekMemberInputQueues(context.spawnGuardId || executionAgentId, context.swarmRunScope).length,
+      );
 
       // Get final cost
       cleanupTimer();

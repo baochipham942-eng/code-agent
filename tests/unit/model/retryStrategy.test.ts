@@ -746,6 +746,10 @@ describe('Retry Strategy', () => {
       new Error(`502 Bad Gateway req_${id}`),
       { status: 502 },
     );
+    const connectionReset = () => Object.assign(
+      new Error('Connection error: ECONNRESET'),
+      { code: 'ECONNRESET' },
+    );
 
     it('stops when the same rate-limit fingerprint repeats to the threshold', async () => {
       const fn = vi.fn()
@@ -888,6 +892,83 @@ describe('Retry Strategy', () => {
         fingerprintScope: scope,
       })).resolves.toBe('fallback-ok');
       expect(fallback).toHaveBeenCalledTimes(2);
+    });
+
+    it('gives the fallback provider its full retries after the primary exhausts the same fingerprint', async () => {
+      const scope = createRetryFingerprintScope();
+      const maxRetries = 2;
+      const primary = vi.fn().mockRejectedValue(connectionReset());
+      await expect(withTransientRetry(primary, {
+        providerName: 'primary',
+        model: 'primary-model',
+        maxRetries,
+        baseDelay: 1,
+        fingerprintScope: scope,
+      })).rejects.toThrow('Connection error: ECONNRESET');
+      expect(primary).toHaveBeenCalledTimes(maxRetries + 1);
+
+      const fallback = vi.fn()
+        .mockRejectedValueOnce(connectionReset())
+        .mockRejectedValueOnce(connectionReset())
+        .mockResolvedValue('fallback-ok');
+      await expect(withTransientRetry(fallback, {
+        providerName: 'fallback',
+        model: 'fallback-model',
+        maxRetries,
+        baseDelay: 1,
+        fingerprintScope: scope,
+      })).resolves.toBe('fallback-ok');
+      expect(fallback).toHaveBeenCalledTimes(maxRetries + 1);
+    });
+
+    it('gives the same provider a full retry budget after an earlier call exhausts retries', async () => {
+      const scope = createRetryFingerprintScope();
+      const maxRetries = 2;
+      const shared = {
+        providerName: 'same-provider',
+        model: 'same-model',
+        maxRetries,
+        baseDelay: 1,
+        fingerprintScope: scope,
+      };
+      const first = vi.fn().mockRejectedValue(connectionReset());
+      await expect(withTransientRetry(first, shared)).rejects.toThrow('Connection error: ECONNRESET');
+      expect(first).toHaveBeenCalledTimes(maxRetries + 1);
+
+      const second = vi.fn()
+        .mockRejectedValueOnce(connectionReset())
+        .mockRejectedValueOnce(connectionReset())
+        .mockResolvedValue('second-ok');
+      await expect(withTransientRetry(second, shared)).resolves.toBe('second-ok');
+      expect(second).toHaveBeenCalledTimes(maxRetries + 1);
+    });
+
+    it('does not let a different provider inherit a partial streak left by an empty success', async () => {
+      const scope = createRetryFingerprintScope();
+      const primary = vi.fn()
+        .mockRejectedValueOnce(connectionReset())
+        .mockRejectedValueOnce(connectionReset())
+        .mockResolvedValue({ content: '   ', toolCalls: [] });
+      await expect(withTransientRetry(primary, {
+        providerName: 'primary',
+        model: 'primary-model',
+        maxRetries: 4,
+        baseDelay: 1,
+        fingerprintScope: scope,
+      })).resolves.toEqual({ content: '   ', toolCalls: [] });
+
+      const fallback = vi.fn()
+        .mockRejectedValueOnce(connectionReset())
+        .mockRejectedValueOnce(connectionReset())
+        .mockResolvedValue('fallback-ok');
+      await expect(withTransientRetry(fallback, {
+        providerName: 'fallback',
+        model: 'fallback-model',
+        maxRetries: 4,
+        baseDelay: 1,
+        fingerprintScope: scope,
+      })).resolves.toBe('fallback-ok');
+      expect(fallback).toHaveBeenCalledTimes(3);
     });
 
     it('stops an identical timeout fingerprint at the threshold while the retry budget remains', async () => {

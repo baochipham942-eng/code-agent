@@ -266,10 +266,17 @@ export function extractRetryAfterMs(err: unknown): number | null {
 const REPEATED_RETRYABLE_FINGERPRINT_THRESHOLD = 3;
 
 export interface RetryFingerprintScope {
-  noteFailure(err: unknown): { tripped: boolean; streak: number; fingerprint: string };
+  noteFailure(
+    err: unknown,
+    owner: { provider: string; model?: string },
+  ): { tripped: boolean; streak: number; fingerprint: string };
   observeSuccess<T>(value: T): T;
-  /** 熔断抛出后清连击。下一个 provider 重新计数，不继承已经熔断的这一串。 */
-  releaseAfterBreaker(): void;
+  /**
+   * 丢掉这一家 provider+model 的连击。
+   * 熔断，以及调用以原错误结束（重试次数用尽、超时预算用尽、取消、不可重试）都要调用。
+   * 同一家的下一次调用从 0 开始。另一家用自己的桶，本来就是 0。
+   */
+  release(owner: { provider: string; model?: string }): void;
 }
 
 const REPEATED_RETRYABLE_FINGERPRINT_ERROR = 'RepeatedRetryableFingerprintError';
@@ -340,35 +347,37 @@ function payloadResetsFingerprint(value: unknown): boolean {
   return Array.isArray(calls) && calls.length > 0;
 }
 
+/** 降级链的一跳是 provider+model（ModelConfig / getFallbackChainForRequest）。没传 model 时只按 provider 分桶。 */
+function fingerprintOwnerKey(owner: { provider: string; model?: string }): string {
+  return `${owner.provider}\0${owner.model ?? ''}`;
+}
+
 export function createRetryFingerprintScope(): RetryFingerprintScope {
-  let streak = 0;
-  let fingerprint = '';
+  const buckets = new Map<string, { streak: number; fingerprint: string }>();
   return {
-    noteFailure(err) {
+    noteFailure(err, owner) {
+      const key = fingerprintOwnerKey(owner);
       if (!isRetryableModelCallError(err)) {
-        streak = 0;
-        fingerprint = '';
+        buckets.delete(key);
         return { tripped: false, streak: 0, fingerprint: '' };
       }
       const next = retryableErrorFingerprint(err);
-      streak = next === fingerprint ? streak + 1 : 1;
-      fingerprint = next;
+      const prev = buckets.get(key);
+      const streak = prev?.fingerprint === next ? prev.streak + 1 : 1;
+      buckets.set(key, { streak, fingerprint: next });
       return {
         tripped: streak >= REPEATED_RETRYABLE_FINGERPRINT_THRESHOLD,
         streak,
-        fingerprint,
+        fingerprint: next,
       };
     },
     observeSuccess(value) {
-      if (payloadResetsFingerprint(value)) {
-        streak = 0;
-        fingerprint = '';
-      }
+      // 正文或工具调用清掉整次 run 的连击，不限当前 provider。空白正文不清。
+      if (payloadResetsFingerprint(value)) buckets.clear();
       return value;
     },
-    releaseAfterBreaker() {
-      streak = 0;
-      fingerprint = '';
+    release(owner) {
+      buckets.delete(fingerprintOwnerKey(owner));
     },
   };
 }
@@ -399,7 +408,7 @@ export interface RetryOptions {
   onRetry?: (info: { provider: string; attempt: number; maxRetries: number; delay: number; error: string }) => void;
   /**
    * 同指纹熔断的计数器。缺省每次 withTransientRetry 自建，调用之间不共享。
-   * 一次 run 要让正文或工具调用清掉连击时，由调用方传入同一个 scope。
+   * 一次 run 共用一份时，连击按 provider+model 分桶；正文或工具调用清掉全部分桶。
    */
   fingerprintScope?: RetryFingerprintScope;
 }
@@ -506,6 +515,7 @@ export async function withTransientRetry<T>(
 ): Promise<T> {
   const { providerName, model, maxRetries = 2, baseDelay = 1000, signal, isTimeoutError, maxTimeoutRetries, onRetry } = options;
   const fingerprintScope = options.fingerprintScope ?? createRetryFingerprintScope();
+  const fingerprintOwner = { provider: providerName, model };
   const healthMonitor = getProviderHealthMonitor();
   let timeoutRetriesUsed = 0;
 
@@ -517,7 +527,7 @@ export async function withTransientRetry<T>(
       return fingerprintScope.observeSuccess(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      const noted = signal?.aborted ? null : fingerprintScope.noteFailure(err);
+      const noted = signal?.aborted ? null : fingerprintScope.noteFailure(err, fingerprintOwner);
       let stopForFingerprint = false;
       if (isRetryableModelCallError(err) && attempt < maxRetries && !signal?.aborted) {
         // 超时类错误单独计数：烧满整请求窗口的重试次数到顶就放弃，让错误尽快
@@ -549,6 +559,7 @@ export async function withTransientRetry<T>(
               model,
               error: err,
             });
+            fingerprintScope.release(fingerprintOwner);
             throw err;
           }
           continue;
@@ -560,9 +571,12 @@ export async function withTransientRetry<T>(
         error: err,
       });
       if (stopForFingerprint && noted?.tripped) {
-        fingerprintScope.releaseAfterBreaker();
+        fingerprintScope.release(fingerprintOwner);
         throw new RepeatedRetryableFingerprintError(noted.streak, noted.fingerprint, err);
       }
+      // 重试次数或超时预算用尽时走这里，抛的是原错误，不是熔断错误。
+      // 不清零的话 streak 会留在这个 scope 里，同一 run 的下一次调用第一次相同失败就熔断。
+      fingerprintScope.release(fingerprintOwner);
       throw err;
     }
   }

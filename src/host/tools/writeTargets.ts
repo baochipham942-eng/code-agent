@@ -421,6 +421,8 @@ function splitUnescapedNewlines(command: string): string {
 export interface ShellMoveSourceAssessment {
   /** mv 段里干净解析出的源路径（除最后一个操作数外的全部），绝对路径。 */
   sources: string[];
+  /** 干净解析出的 mv 目的地（最后一个操作数），绝对路径：源与目的地的快照必须成对成功（返修 r2）。 */
+  destinations: string[];
   /** 源解析不出的 mv 段的目的地（绝对路径）：这些目的地的快照必须一并撤下。 */
   blockedDestinations: string[];
   /** 源解析不出的 mv 段的披露键（一段一条，保留原始操作数）。 */
@@ -449,6 +451,11 @@ function collectMoveSources(command: string, workingDirectory: string, out: Shel
           }
         } else {
           out.sources.push(...segmentSources.map((source) => resolveToolPath(source, workingDirectory)));
+          // 目的地也干净时记下：源与目的地的快照必须成对成功（返修 r2），任何一侧
+          // 建不出无损快照，整次调用不进回退。目的地带变量的走既有 uncertain-redirection。
+          if (destination && !/[$`*?{}]/.test(destination)) {
+            out.destinations.push(resolveToolPath(destination, workingDirectory));
+          }
         }
       }
     }
@@ -471,7 +478,7 @@ function collectMoveSources(command: string, workingDirectory: string, out: Shel
  * （折续行 + 未转义换行切段），解析口径与写目标完全一致。
  */
 export function assessShellMoveSources(command: string, workingDirectory: string): ShellMoveSourceAssessment {
-  const out: ShellMoveSourceAssessment = { sources: [], blockedDestinations: [], uncertain: [] };
+  const out: ShellMoveSourceAssessment = { sources: [], destinations: [], blockedDestinations: [], uncertain: [] };
   collectMoveSources(splitUnescapedNewlines(command.replace(/\\(?:\r\n?|\n)/g, '')), workingDirectory, out);
   return out;
 }

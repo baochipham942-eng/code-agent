@@ -72,6 +72,11 @@ const readDefinition: ToolDefinition = {
   permissionLevel: 'read',
 };
 
+// PNG 魔数 + 无效 utf-8 字节（0xff/0xfe/0x81）：解码再编码回不去，是二进制判据的最小样本
+const BINARY_PNG_BYTES = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe, 0x81,
+]);
+
 async function runShell(command: string, cwd?: string): Promise<void> {
   execFileSync('sh', ['-c', command], { cwd, encoding: 'utf-8', stdio: 'pipe' });
 }
@@ -243,7 +248,7 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     expect(rewind.skippedFiles).toEqual([{
       filePath: 'uncertain-redirection:$OUT/a.txt',
       reason: 'uncertain_write_target',
-      detail: 'The write target could not be resolved when the tool ran, so no snapshot exists to restore.',
+      detail: 'The write target could not be resolved or safely snapshotted when the tool ran, so no snapshot exists to restore.',
     }]);
     expect(rewind.success).toBe(false);
   });
@@ -390,9 +395,177 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     expect(rewind.skippedFiles).toEqual([{
       filePath: 'uncertain-move:mv "$SRC" survivor.md',
       reason: 'uncertain_write_target',
-      detail: 'The write target could not be resolved when the tool ran, so no snapshot exists to restore.',
+      detail: 'The write target could not be resolved or safely snapshotted when the tool ran, so no snapshot exists to restore.',
     }]);
     // 回退不碰：survivor.md 保持执行后状态（与 origin/main 的 Bash 行为一致）
     expect(await fs.readFile(target, 'utf-8')).toBe('vanishing-content\n');
+  });
+
+  // ---- 返修 r2：移动的源与目的地必须成对建出无损快照，否则整次调用不进回退 ----
+  // createCheckpoint 对超大/读错误返 null、对二进制按 utf-8 有损存入；只快照一半，
+  // 回退会把目的地删掉而源无人恢复（或写回损坏内容）——文件从工作区永久丢失。
+
+  it('keeps every file untouched when a Bash mv source exceeds the snapshot size limit', async () => {
+    const source = path.join(tempDir, 'big.bin');
+    await fs.writeFile(source, Buffer.alloc(1024 * 1024 + 1, 0x37));
+    const outDir = path.join(tempDir, 'out');
+    await fs.mkdir(outDir);
+    const command = 'mv big.bin out/big.bin';
+
+    const realSource = await fs.realpath(source);
+    const realMoved = path.join(await fs.realpath(outDir), 'big.bin');
+    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
+    expect(checkpoints).toEqual([]);
+    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    // 源与目的地都以 uncertain 披露行落库：没有半对快照
+    const rows = db.prepare(
+      'SELECT file_path, uncertain_target FROM file_checkpoints WHERE session_id = ? ORDER BY file_path',
+    ).all(sessionId) as Array<{ file_path: string; uncertain_target: number }>;
+    expect(rows).toEqual([
+      { file_path: realSource, uncertain_target: 1 },
+      { file_path: realMoved, uncertain_target: 1 },
+    ]);
+
+    const rewind = await service.rewindFiles(sessionId, messageId);
+    expect(rewind.restoredFiles).toEqual([]);
+    expect(rewind.deletedFiles).toEqual([]);
+    // 回退不碰：目的地字节原样（不被 unlink），源保持移走
+    expect(await fs.readFile(realMoved)).toEqual(Buffer.alloc(1024 * 1024 + 1, 0x37));
+    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('keeps every file untouched when a Bash mv source is binary (non utf-8)', async () => {
+    const source = path.join(tempDir, 'logo.png');
+    await fs.writeFile(source, BINARY_PNG_BYTES);
+    const assetsDir = path.join(tempDir, 'assets');
+    await fs.mkdir(assetsDir);
+    const command = 'mv logo.png assets/';
+
+    const realSource = await fs.realpath(source);
+    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
+    expect(checkpoints).toEqual([]);
+    const moved = path.join(assetsDir, 'logo.png');
+    expect(await fs.readFile(moved)).toEqual(BINARY_PNG_BYTES);
+    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const rewind = await service.rewindFiles(sessionId, messageId);
+    expect(rewind.restoredFiles).toEqual([]);
+    expect(rewind.deletedFiles).toEqual([]);
+    // 回退不碰：二进制逐字节保持执行后状态，不被有损「快照」写回损坏内容
+    expect(await fs.readFile(moved)).toEqual(BINARY_PNG_BYTES);
+    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(rewind.skippedFiles.map((entry) => entry.filePath).sort())
+      .toEqual([await fs.realpath(assetsDir), realSource].sort());
+  });
+
+  it('keeps every file untouched when a Bash mv source cannot be read', async () => {
+    const source = path.join(tempDir, 'sealed.md');
+    await fs.writeFile(source, 'sealed-content\n');
+    await fs.chmod(source, 0o000);
+    const command = 'mv sealed.md delivered.md';
+
+    const realTarget = path.join(await fs.realpath(tempDir), 'delivered.md');
+    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
+    expect(checkpoints).toEqual([]);
+    // rename 只需要目录权限：移动照常发生（rename 保留 mode，先恢复可读再断言）
+    await fs.chmod(realTarget, 0o644);
+    expect(await fs.readFile(realTarget, 'utf-8')).toBe('sealed-content\n');
+
+    const rewind = await service.rewindFiles(sessionId, messageId);
+    expect(rewind.restoredFiles).toEqual([]);
+    expect(rewind.deletedFiles).toEqual([]);
+    // 回退不碰：目的地保持执行后内容，源保持移走
+    expect(await fs.readFile(realTarget, 'utf-8')).toBe('sealed-content\n');
+    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
+    await fs.chmod(realTarget, 0o644);
+  });
+
+  it('keeps every file untouched when a Bash mv destination is binary (non utf-8)', async () => {
+    const source = path.join(tempDir, 'small.txt');
+    await fs.writeFile(source, 'small\n');
+    const target = path.join(tempDir, 'logo.png');
+    await fs.writeFile(target, BINARY_PNG_BYTES);
+    const command = 'mv small.txt logo.png';
+
+    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
+    expect(checkpoints).toEqual([]);
+    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const rewind = await service.rewindFiles(sessionId, messageId);
+    expect(rewind.restoredFiles).toEqual([]);
+    expect(rewind.deletedFiles).toEqual([]);
+    // 回退不碰：目的地保持移动后的文本，不被有损「快照」写回损坏的二进制
+    expect(await fs.readFile(target, 'utf-8')).toBe('small\n');
+    await expect(fs.access(source)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('opts the whole call out of rewind when one move pair cannot be snapshotted losslessly', async () => {
+    const big = path.join(tempDir, 'big.bin');
+    await fs.writeFile(big, Buffer.alloc(1024 * 1024 + 1, 0x41));
+    const outDir = path.join(tempDir, 'out');
+    await fs.mkdir(outDir);
+    const command = 'mv big.bin out/big.bin; echo y > c.txt';
+
+    const realBig = await fs.realpath(big);
+    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
+    expect(checkpoints).toEqual([]);
+    const clean = path.join(tempDir, 'c.txt');
+    expect(await fs.readFile(clean, 'utf-8')).toBe('y\n');
+
+    // 同一调用里干净的目标也整单不进回退（「整次调用不进回退」），但逐条披露
+    const rewind = await service.rewindFiles(sessionId, messageId);
+    expect(rewind.restoredFiles).toEqual([]);
+    expect(rewind.deletedFiles).toEqual([]);
+    expect(await fs.readFile(clean, 'utf-8')).toBe('y\n');
+    expect(await fs.readFile(path.join(outDir, 'big.bin'))).toEqual(Buffer.alloc(1024 * 1024 + 1, 0x41));
+    expect(rewind.skippedFiles.map((entry) => entry.filePath).sort()).toEqual([
+      path.join(await fs.realpath(tempDir), 'c.txt'),
+      path.join(await fs.realpath(outDir), 'big.bin'),
+      realBig,
+    ].sort());
+  });
+
+  it('discloses instead of corrupting a binary file overwritten by a Bash redirection', async () => {
+    const file = path.join(tempDir, 'logo.png');
+    await fs.writeFile(file, BINARY_PNG_BYTES);
+    const command = 'echo x > logo.png';
+
+    const realFile = await fs.realpath(file);
+    const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
+    expect(checkpoints).toEqual([]);
+
+    const rewind = await service.rewindFiles(sessionId, messageId);
+    expect(rewind.restoredFiles).toEqual([]);
+    // 回退不把 utf-8 有损读入的「快照」写回二进制文件：保持执行后内容并逐条披露
+    expect(await fs.readFile(file)).toEqual(Buffer.from('x\n'));
+    expect(rewind.skippedFiles).toEqual([{
+      filePath: realFile,
+      reason: 'uncertain_write_target',
+      detail: 'The write target could not be resolved or safely snapshotted when the tool ran, so no snapshot exists to restore.',
+    }]);
+  });
+
+  it('evicts only real snapshots at the per-session limit, never uncertain disclosures', async () => {
+    const limited = new FileCheckpointService({ maxCheckpointsPerSession: 3 });
+    // 最旧的两行是 uncertain 披露：逐出时不得拿它们顶数（真快照数会持续超上限）
+    await limited.recordUncertainWriteTarget(sessionId, 'msg-u1', 'uncertain-redirection:$A');
+    await limited.recordUncertainWriteTarget(sessionId, 'msg-u2', 'uncertain-redirection:$B');
+    for (const name of ['one.md', 'two.md', 'three.md']) {
+      const id = await limited.createCheckpoint(sessionId, 'msg-real', path.join(tempDir, name));
+      expect(id).not.toBeNull();
+    }
+    // 第 4 个真快照触发逐出：被删的是最旧的真快照（one.md），披露行原样保留
+    await limited.createCheckpoint(sessionId, 'msg-real', path.join(tempDir, 'four.md'));
+    const rows = db.prepare(
+      'SELECT file_path, uncertain_target FROM file_checkpoints WHERE session_id = ? ORDER BY file_path',
+    ).all(sessionId) as Array<{ file_path: string; uncertain_target: number }>;
+    expect(rows).toEqual([
+      { file_path: path.join(tempDir, 'four.md'), uncertain_target: 0 },
+      { file_path: path.join(tempDir, 'three.md'), uncertain_target: 0 },
+      { file_path: path.join(tempDir, 'two.md'), uncertain_target: 0 },
+      { file_path: 'uncertain-redirection:$A', uncertain_target: 1 },
+      { file_path: 'uncertain-redirection:$B', uncertain_target: 1 },
+    ]);
   });
 });

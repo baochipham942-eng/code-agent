@@ -18,6 +18,18 @@ function getCheckpointDatabase() {
 
 const MISSING_FILE_DIGEST = 'missing';
 
+/**
+ * 一个路径能否进**无损**快照（返修 r2）。二进制/非 utf-8 的判据用 Buffer 做
+ * 解码再编码的往返比对，不靠 utf-8 字符串——有损读入的字符串看不出自己有损。
+ */
+type SnapshotEligibility = {
+  /** 配对判据用：false = 建不出无损快照，移动配对里出现即整单撤下。目录为 true（无内容可丢）。 */
+  eligible: boolean;
+  /** 是否尝试落快照行（目录等建不出行的为 false）。 */
+  snapshotable: boolean;
+  reason?: 'directory' | 'too_large' | 'read_error' | 'non_utf8_content' | 'unsupported_file_type';
+};
+
 export interface RewindFilesOptions {
   /** Snapshot the pre-restore contents under this synthetic message for Redo. */
   redoCheckpointMessageId?: string;
@@ -113,6 +125,73 @@ export class FileCheckpointService {
     } catch (error) {
       logger.error('Failed to create checkpoint', { error, sessionId, messageId, filePath });
       return null;
+    }
+  }
+
+  /**
+   * 评估一个路径能否被无损快照（工具执行前调用，返修 r2）：
+   * - 文件不存在 → 可快照（新建文件场景，回退时删除）；
+   * - 目录 → 配对不算失败（没有可丢的内容），但快照行建不出来（snapshotable=false）；
+   * - 超过 maxFileSizeBytes、读错误、非 utf-8 内容（二进制）→ 不可快照；
+   * - 字符/块设备、FIFO 等非常规文件 → 不读（读它们可能阻塞），按不可快照处理。
+   * createCheckpoint 对这几类要么返回 null 要么按 utf-8 有损存入（回退写回损坏内容），
+   * 调用方（移动配对判据）必须先问这里。
+   */
+  async assessSnapshotEligibility(filePath: string): Promise<SnapshotEligibility> {
+    const absolutePath = path.isAbsolute(filePath)
+      ? filePath
+      : path.resolve(filePath);
+
+    let stats: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      stats = await fs.stat(absolutePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { eligible: true, snapshotable: true };
+      }
+      return { eligible: false, snapshotable: false, reason: 'read_error' };
+    }
+    if (stats.isDirectory()) {
+      return { eligible: true, snapshotable: false, reason: 'directory' };
+    }
+    if (!stats.isFile()) {
+      return { eligible: false, snapshotable: false, reason: 'unsupported_file_type' };
+    }
+    if (stats.size > this.config.maxFileSizeBytes) {
+      return { eligible: false, snapshotable: false, reason: 'too_large' };
+    }
+    let content: Buffer;
+    try {
+      content = await fs.readFile(absolutePath);
+    } catch {
+      return { eligible: false, snapshotable: false, reason: 'read_error' };
+    }
+    // utf-8 无损往返判据：解码再编码回不去（坏字节被替换成 U+FFFD）= 二进制/非 utf-8，
+    // 硬存进快照，回退时写回的就是损坏内容。
+    if (!Buffer.from(content.toString('utf-8'), 'utf-8').equals(content)) {
+      return { eligible: false, snapshotable: false, reason: 'non_utf8_content' };
+    }
+    return { eligible: true, snapshotable: true };
+  }
+
+  /**
+   * 撤下刚建的检查点行（移动配对失败整单撤回用，返修 r2）：只按本调用拿到的
+   * id 删，不触碰其他调用的行。返回实际删除数。
+   */
+  deleteCheckpoints(checkpointIds: string[]): number {
+    if (checkpointIds.length === 0) return 0;
+    const db = getCheckpointDatabase();
+    if (!db) return 0;
+    try {
+      const placeholders = checkpointIds.map(() => '?').join(', ');
+      const result = db.prepare(`
+        DELETE FROM file_checkpoints
+        WHERE id IN (${placeholders})
+      `).run(...checkpointIds);
+      return result?.changes ?? 0;
+    } catch (error) {
+      logger.error('Failed to delete checkpoints', { error, checkpointIds });
+      return 0;
     }
   }
 
@@ -268,11 +347,12 @@ export class FileCheckpointService {
       for (const [filePath, original] of fileToOriginal) {
         try {
           if (original.uncertain) {
-            // 写目标解析不出来（含通配/变量的重定向等），没有快照可回退，逐条披露
+            // 写目标解析不出来（含通配/变量的重定向等），或建不出无损快照（超大/二进制/
+            // 读错误，返修 r2）——没有可安全回退的快照，逐条披露，回退不碰这些文件
             result.skippedFiles.push({
               filePath,
               reason: 'uncertain_write_target',
-              detail: 'The write target could not be resolved when the tool ran, so no snapshot exists to restore.',
+              detail: 'The write target could not be resolved or safely snapshotted when the tool ran, so no snapshot exists to restore.',
             });
             continue;
           }
@@ -525,7 +605,8 @@ export class FileCheckpointService {
 
     try {
       // 上限只数真快照：uncertain 披露行不占预算，大量带变量的重定向不能把
-      // 可回退的快照挤出每 session 上限（删除侧仍按最旧全量行删，披露行可被逐出）。
+      // 可回退的快照挤出每 session 上限。删除侧同口径（返修 r2 Nit）——最旧的
+      // 若是披露行，删它只会白丢披露，真快照数会持续超上限。
       const countResult = db.prepare(`
         SELECT COUNT(*) as cnt FROM file_checkpoints
         WHERE session_id = ? AND COALESCE(uncertain_target, 0) = 0
@@ -539,7 +620,7 @@ export class FileCheckpointService {
           DELETE FROM file_checkpoints
           WHERE id IN (
             SELECT id FROM file_checkpoints
-            WHERE session_id = ?
+            WHERE session_id = ? AND COALESCE(uncertain_target, 0) = 0
             ORDER BY created_at ASC, rowid ASC
             LIMIT ?
           )

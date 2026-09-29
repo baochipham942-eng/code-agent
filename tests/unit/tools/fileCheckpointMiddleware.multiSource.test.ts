@@ -4,12 +4,16 @@ import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 const mocks = vi.hoisted(() => ({
   createCheckpoint: vi.fn(),
   recordUncertainWriteTarget: vi.fn(),
+  assessSnapshotEligibility: vi.fn(),
+  deleteCheckpoints: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/checkpoint', () => ({
   getFileCheckpointService: () => ({
     createCheckpoint: mocks.createCheckpoint,
     recordUncertainWriteTarget: mocks.recordUncertainWriteTarget,
+    assessSnapshotEligibility: mocks.assessSnapshotEligibility,
+    deleteCheckpoints: mocks.deleteCheckpoints,
   }),
 }));
 
@@ -40,6 +44,7 @@ describe('fileCheckpointMiddleware multi-source attribution', () => {
       { sourceId: 'docs', path: '/repo/docs', role: 'additional', access: 'read_write' },
     ]);
     mocks.createCheckpoint.mockResolvedValue('ckpt-1');
+    mocks.assessSnapshotEligibility.mockResolvedValue({ eligible: true, snapshotable: true });
 
     const checkpoints = await createFileCheckpointIfNeeded(
       writeDefinition,

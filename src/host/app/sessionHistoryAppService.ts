@@ -475,6 +475,17 @@ export class SessionHistoryAppService {
       );
     }
 
+    // uncertain 跳过在这条入口不回传调用方（结果契约面未扩，返修 r3 Nit 记档）：
+    // 至少留一条可判因的日志，别让「跳过了什么」静默丢掉（降级留痕，错题本 2026-08-14）。
+    const uncertainSkips = result.skippedFiles.filter((item) => item.reason === 'uncertain_write_target');
+    if (uncertainSkips.length > 0) {
+      logger.warn('Workspace restore skipped uncertain write targets', {
+        sessionId,
+        checkpointMessageId,
+        skippedFiles: uncertainSkips.map((item) => item.filePath),
+      });
+    }
+
     return {
       success: true,
       sessionId,

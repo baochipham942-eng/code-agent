@@ -21,7 +21,7 @@ vi.mock('../../../src/host/services/core', () => ({
 
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { applySessionsMigrations } from '../../../src/host/services/core/database/migrations';
-import { FileCheckpointService } from '../../../src/host/services/checkpoint/fileCheckpointService';
+import { FileCheckpointService, initFileCheckpointService } from '../../../src/host/services/checkpoint/fileCheckpointService';
 import { createFileCheckpointIfNeeded } from '../../../src/host/tools/middleware/fileCheckpointMiddleware';
 import { bashSchema } from '../../../src/host/tools/modules/shell/bash.schema';
 import { docxGenerateSchema } from '../../../src/host/tools/modules/network/docxGenerate.schema';
@@ -195,7 +195,7 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     expect(checkpoints).toEqual([]);
   });
 
-  it('snapshots an MCP tool write through its path-like parameter and restores it on rewind', async () => {
+  it('snapshots an MCP tool write through its whitelisted path parameter and restores it on rewind', async () => {
     const file = path.join(tempDir, 'mcp-note.txt');
     await fs.writeFile(file, 'before-mcp\n', 'utf-8');
     const params = { path: file, content: 'after-mcp\n' };
@@ -546,7 +546,7 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     }]);
   });
 
-  it('evicts only real snapshots at the per-session limit, never uncertain disclosures', async () => {
+  it('evicts only real snapshots at the per-session limit; disclosures sit outside that budget', async () => {
     const limited = new FileCheckpointService({ maxCheckpointsPerSession: 3 });
     // 最旧的两行是 uncertain 披露：逐出时不得拿它们顶数（真快照数会持续超上限）
     await limited.recordUncertainWriteTarget(sessionId, 'msg-u1', 'uncertain-redirection:$A');
@@ -567,5 +567,132 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
       { file_path: 'uncertain-redirection:$A', uncertain_target: 1 },
       { file_path: 'uncertain-redirection:$B', uncertain_target: 1 },
     ]);
+  });
+
+  // ---- 返修 r3：写目标只认白名单来源，uncertain 披露有界 ----
+  // 通用 path-like 后缀扫描把 Bash 的 working_directory（目录）当写目标：建不出快照，
+  // 每次带 working_directory 的 Bash 调用（哪怕 ls）都落一条 uncertain 披露行，
+  // turn checkout 从 success 变 partial，且披露行无上限增长。
+
+  it('keeps read-only Bash calls with working_directory free of snapshots and disclosures', async () => {
+    const sub = path.join(tempDir, 'sub');
+    await fs.mkdir(sub);
+    await fs.writeFile(path.join(sub, 'note.txt'), 'x\n', 'utf-8');
+    for (const command of ['ls -la', 'cat note.txt', 'git status']) {
+      const checkpoints = await createFileCheckpointIfNeeded(
+        bashDefinition,
+        { command, working_directory: sub },
+        context,
+        tempDir,
+      );
+      expect(checkpoints).toEqual([]);
+    }
+    // 零快照行 + 零 uncertain 披露行：turn checkout 的 fileFailures（errors +
+    // skippedFiles）无从产生，轮次状态保持 success
+    expect(db.prepare(
+      'SELECT COUNT(*) AS count FROM file_checkpoints WHERE session_id = ?',
+    ).get(sessionId)).toEqual({ count: 0 });
+  });
+
+  it('snapshots only the mv operands when working_directory is set, never the directory itself', async () => {
+    const sub = path.join(tempDir, 'cwd');
+    await fs.mkdir(sub);
+    const source = path.join(sub, 'a.md');
+    await fs.writeFile(source, 'a-content\n', 'utf-8');
+    const command = 'mv a.md b.md';
+
+    const realSource = await fs.realpath(source);
+    const realTarget = path.join(await fs.realpath(sub), 'b.md');
+    const checkpoints = await snapshotAndFinalize(
+      bashDefinition,
+      { command, working_directory: sub },
+      () => runShell(command, sub),
+    );
+    expect(checkpoints.map((checkpoint) => checkpoint.filePath).sort())
+      .toEqual([realSource, realTarget].sort());
+    const rows = db.prepare(
+      'SELECT file_path FROM file_checkpoints WHERE session_id = ? AND COALESCE(uncertain_target, 0) = 0',
+    ).all(sessionId) as Array<{ file_path: string }>;
+    expect(rows.map((row) => row.file_path).sort()).toEqual([realSource, realTarget].sort());
+  });
+
+  it('ignores path-like MCP parameters that are not on the write-target whitelist', async () => {
+    const sub = path.join(tempDir, 'mcp-dir');
+    await fs.mkdir(sub);
+    // 旧后缀扫描会把 directory（后缀命中）当写目标；白名单只认
+    // path/file_path/destination/dest，其余参数一概不是写目标
+    const checkpoints = await createFileCheckpointIfNeeded(
+      mcpDefinition,
+      { directory: sub, cwd: sub, timeout_ms: 30000 },
+      context,
+      tempDir,
+    );
+    expect(checkpoints).toEqual([]);
+    expect(db.prepare(
+      'SELECT COUNT(*) AS count FROM file_checkpoints WHERE session_id = ?',
+    ).get(sessionId)).toEqual({ count: 0 });
+  });
+
+  it('records a repeated uncertain target once, not once per tool call', async () => {
+    await createFileCheckpointIfNeeded(
+      bashDefinition,
+      { command: 'echo x > "$OUT"/a.txt' },
+      context,
+      tempDir,
+    );
+    await createFileCheckpointIfNeeded(
+      bashDefinition,
+      { command: 'echo y > "$OUT"/a.txt; echo z > "$OUT"/a.txt' },
+      () => ({ sessionId, messageId: 'tool-call-2' }),
+      tempDir,
+    );
+    const rows = db.prepare(
+      'SELECT file_path, uncertain_target FROM file_checkpoints WHERE session_id = ?',
+    ).all(sessionId) as Array<{ file_path: string; uncertain_target: number }>;
+    expect(rows).toEqual([
+      { file_path: 'uncertain-redirection:$OUT/a.txt', uncertain_target: 1 },
+    ]);
+  });
+
+  it('bounds uncertain disclosures with their own budget instead of growing forever', async () => {
+    const limited = new FileCheckpointService({ maxCheckpointsPerSession: 3 });
+    for (const key of ['$A', '$B', '$C', '$D', '$E']) {
+      await limited.recordUncertainWriteTarget(sessionId, `msg-${key}`, `uncertain-redirection:${key}`);
+    }
+    const rows = db.prepare(
+      'SELECT file_path FROM file_checkpoints WHERE session_id = ? ORDER BY file_path',
+    ).all(sessionId) as Array<{ file_path: string }>;
+    expect(rows.map((row) => row.file_path)).toEqual([
+      'uncertain-redirection:$C',
+      'uncertain-redirection:$D',
+      'uncertain-redirection:$E',
+    ]);
+  });
+
+  it('never leaves half a move pair when the per-session limit evicts mid-call', async () => {
+    // middleware 走单例 service：把上限压到 2，一次调用建 3 个目标（配对 a/b + 独立 c），
+    // 调用中途的 enforceLimit 逐出只许吃掉非配对行——配对整对存活，或整单撤下披露
+    initFileCheckpointService({ maxCheckpointsPerSession: 2 });
+    try {
+      const source = path.join(tempDir, 'pair-a.md');
+      await fs.writeFile(source, 'pair-a\n', 'utf-8');
+      const command = 'mv pair-a.md pair-b.md; echo x > pair-c.txt';
+
+      const realSource = await fs.realpath(source);
+      const realTarget = path.join(await fs.realpath(tempDir), 'pair-b.md');
+      const checkpoints = await snapshotAndFinalize(bashDefinition, { command }, () => runShell(command, tempDir));
+      expect(checkpoints.map((checkpoint) => checkpoint.filePath)).toEqual(expect.arrayContaining([realSource, realTarget]));
+
+      const rows = db.prepare(
+        'SELECT file_path, uncertain_target FROM file_checkpoints WHERE session_id = ? ORDER BY file_path',
+      ).all(sessionId) as Array<{ file_path: string; uncertain_target: number }>;
+      // 配对整对存活：被上限挤掉的只能是非配对行（pair-c），没有 uncertain 披露
+      expect(rows).toEqual([
+        { file_path: realSource, uncertain_target: 0 },
+        { file_path: realTarget, uncertain_target: 0 },
+      ].sort((left, right) => left.file_path.localeCompare(right.file_path)));
+    } finally {
+      initFileCheckpointService();
+    }
   });
 });

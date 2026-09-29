@@ -6,7 +6,7 @@ import path from 'node:path';
 import type { ToolDefinition } from '../../../shared/contract';
 import type { WorkspaceScope } from '../../../shared/contract/project';
 import { resolveWorkspacePath } from '../../runtime/workspaceScope';
-import { assessShellMoveSources, resolveToolPath, resolveToolWriteTargets } from '../writeTargets';
+import { assessShellMoveSources, resolveCheckpointWriteTargets, resolveToolPath } from '../writeTargets';
 
 const logger = createLogger('FileCheckpointMiddleware');
 
@@ -15,9 +15,11 @@ const logger = createLogger('FileCheckpointMiddleware');
 const UNSNAPSHOTABLE_DEVICES = new Set(['/dev/null']);
 
 // MCP 移动类工具（move_file / copy_file 一族）的通用参数形状：source/from 与
-// destination/dest 成对出现。destination 走通用 path-like 扫描已入快照，这里补源。
-// 判据是启发式（审查 Nit）：参数名成对不保证语义真是移动——copy 类工具不动源，
-// 多快照一个 digest 不变的文件，回退时原样重写，无害且保守，不做工具声明级区分。
+// destination/dest 成对出现。destination 走写字段白名单（writeTargets）已入快照，
+// 这里补源。判据是启发式（审查 Nit）：参数名成对不保证语义真是移动——copy 类工具
+// 不动源，多快照一个 digest 不变的文件，回退时原样重写，无害且保守，不做工具声明级
+// 区分；反过来，源不是可用字符串（非字符串 / 空串）就不算可判定的移动形状——不配对、
+// 不撤目的地的快照、不落披露（成对启发式偏宽的另一半，返修 r3 Nit）。
 const MOVE_SOURCE_PARAMETERS = ['source', 'from'] as const;
 const MOVE_DESTINATION_PARAMETERS = ['destination', 'dest'] as const;
 
@@ -60,10 +62,6 @@ function assessMoveTargets(
     if (typeof rawSource === 'string' && rawSource.trim() !== '') {
       sources.push(resolveToolPath(rawSource, workingDirectory));
       destinations.push(resolveToolPath(params[destinationParameter] as string, workingDirectory));
-    } else {
-      // 移动形状成立但源不是可用字符串：整个调用按 uncertain，目的地快照一并撤下
-      uncertain.push(`uncertain-move:${sourceParameter}`);
-      blockedDestinations.add(resolveToolPath(params[destinationParameter] as string, workingDirectory));
     }
   }
   return { sources, destinations, blockedDestinations, uncertain };
@@ -87,12 +85,14 @@ export interface CreatedFileCheckpoint {
 
 /**
  * 在工具执行前按**写目标**创建检查点（不枚举工具名）。
- * 判据是 resolveToolWriteTargets：Bash 重定向、MCP、文档类写盘工具都按各自
- * 声明/暴露的目标入快照；解析不出的目标（含通配/变量的重定向）落 uncertain
- * 记录，回退时逐条进 skippedFiles 披露。移动/重命名类操作（mv、MCP move）的
- * **源**与目的地一起入快照——源记执行前内容，回退时恢复源；两侧必须成对建出
- * **无损**快照，任何一侧建不出（解析不出 / 超大 / 读错误 / 二进制），整次调用
- * 不进回退，全部目标逐条 uncertain 披露（返修 r2）。
+ * 判据是 resolveCheckpointWriteTargets（返修 r3：只认白名单来源——Bash 只从命令
+ * 解析取，声明工具只认 schema 写路径字段，MCP/未知只认白名单字段名，绝不扫
+ * path-like 后缀参数）：Bash 重定向、MCP、文档类写盘工具都按各自声明/暴露的目标
+ * 入快照；解析不出的目标（含通配/变量的重定向）落 uncertain 记录，回退时逐条进
+ * skippedFiles 披露。移动/重命名类操作（mv、MCP move）的**源**与目的地一起入快照
+ * ——源记执行前内容，回退时恢复源；两侧必须成对建出**无损**快照，任何一侧建不出
+ * （解析不出 / 超大 / 读错误 / 二进制），整次调用不进回退，全部目标逐条 uncertain
+ * 披露（返修 r2）。
  */
 export async function createFileCheckpointIfNeeded(
   definition: ToolDefinition,
@@ -121,7 +121,7 @@ export async function createFileCheckpointIfNeeded(
   const created: CreatedFileCheckpoint[] = [];
   try {
     // 写目标解析也在 try 内：符号链接环等异常不允许打断工具执行（fail-open）
-    const { targets, uncertain } = resolveToolWriteTargets({
+    const { targets, uncertain } = resolveCheckpointWriteTargets({
       definition,
       params,
       workingDirectory: effectiveWorkingDirectory,
@@ -163,12 +163,15 @@ export async function createFileCheckpointIfNeeded(
       return [];
     };
     if (pairBroken) return await discloseWholeCall();
-    // 配对成员先建：资格通过后 createCheckpoint 仍可能失败（DB 层错误），任何一侧没
-    // 建成，这次调用已建成的行整单撤下——不允许半对快照留在回退窗口里。
+    // 非配对目标先建、配对成员**后**建（返修 r3 Nit）：createCheckpoint 内部的
+    // enforceLimit 逐出最旧行，配对放最后，调用中途的逐出就优先吃掉非配对行，
+    // 配对不半途断裂。建不出（DB 层错误）的配对成员仍整单撤下——不允许半对快照
+    // 留在回退窗口里。
     const orderedTargets = [
-      ...snapshotableTargets.filter((filePath) => movePairPaths.has(filePath)),
       ...snapshotableTargets.filter((filePath) => !movePairPaths.has(filePath)),
+      ...snapshotableTargets.filter((filePath) => movePairPaths.has(filePath)),
     ];
+    const pairCheckpointIds: string[] = [];
     for (const filePath of orderedTargets) {
       const match = context.workspaceScope
         ? resolveWorkspacePath(context.workspaceScope, filePath, 'read_write')
@@ -179,6 +182,7 @@ export async function createFileCheckpointIfNeeded(
       });
       if (checkpointId) {
         created.push({ checkpointId, filePath });
+        if (movePairPaths.has(filePath)) pairCheckpointIds.push(checkpointId);
       } else if (movePairPaths.has(filePath)) {
         const removed = service.deleteCheckpoints(created.map((entry) => entry.checkpointId));
         if (removed < created.length) {
@@ -190,6 +194,21 @@ export async function createFileCheckpointIfNeeded(
         }
         return await discloseWholeCall();
       }
+    }
+    // enforceLimit 也可能在本调用建行**中途**逐出刚建的配对成员（上限小、或一次调用
+    // 的目标数超过上限，返修 r3 Nit）：行没了还留着另一半，就是 r2 抓过的「半对快照」
+    // 数据丢失形状。收尾复查配对成员齐不齐，缺了整单撤下换成逐条披露。
+    if (pairCheckpointIds.length > 0
+      && service.countCheckpoints(pairCheckpointIds) < pairCheckpointIds.length) {
+      const removed = service.deleteCheckpoints(created.map((entry) => entry.checkpointId));
+      if (removed < created.length) {
+        logger.error('Failed to retract checkpoints after an evicted move pair', {
+          toolName: definition.name,
+          createdCount: created.length,
+          removed,
+        });
+      }
+      return await discloseWholeCall();
     }
     // 没落到快照行的目标（目录这类建不出行的、资格外的）不静默降级：逐条 uncertain 披露
     const createdPaths = new Set(created.map((entry) => entry.filePath));

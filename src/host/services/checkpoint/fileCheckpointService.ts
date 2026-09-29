@@ -196,8 +196,34 @@ export class FileCheckpointService {
   }
 
   /**
+   * 这些检查点行还有几条存活（返修 r3 Nit）：enforceLimit 可能在同一次调用的连续
+   * 创建中途逐出先建的行，移动配对判据要复查成员齐不齐。读失败按 0 计——调用方会
+   * 走整单撤下 + 披露的保守方向。
+   */
+  countCheckpoints(checkpointIds: string[]): number {
+    if (checkpointIds.length === 0) return 0;
+    const db = getCheckpointDatabase();
+    if (!db) return 0;
+    try {
+      const placeholders = checkpointIds.map(() => '?').join(', ');
+      const row = db.prepare(`
+        SELECT COUNT(*) AS cnt FROM file_checkpoints
+        WHERE id IN (${placeholders})
+      `).get(...checkpointIds) as { cnt: number } | undefined;
+      return row?.cnt ?? 0;
+    } catch (error) {
+      logger.error('Failed to count checkpoints', { error, checkpointIds });
+      return 0;
+    }
+  }
+
+  /**
    * 记录一个解析不出的写目标（含通配/变量的重定向等）。
    * 不落快照内容，只在回退时进 skippedFiles 披露「无法确定写入目标」。
+   * 同一 session 同一披露键只留最新一条（返修 r3：同一目标反复出现不去重，会按每次
+   * 工具调用一条无上限增长）；回退窗口按 created_at 取，最新一条总能代表该目标最近的
+   * 一次不确定写入，更早的重复行不增加任何披露信息。披露行也有自己的总量上限
+   * （enforceLimit），不占真快照的预算。
    * @returns 记录 id，失败返回 null
    */
   async recordUncertainWriteTarget(
@@ -211,6 +237,11 @@ export class FileCheckpointService {
 
     try {
       await this.enforceLimit(sessionId);
+
+      db.prepare(`
+        DELETE FROM file_checkpoints
+        WHERE session_id = ? AND file_path = ? AND uncertain_target = 1
+      `).run(sessionId, uncertainTarget);
 
       const id = `ckpt_${Date.now()}_${uuidv4().slice(0, 8)}`;
       db.prepare(`
@@ -627,6 +658,29 @@ export class FileCheckpointService {
         `).run(sessionId, deleteCount);
 
         logger.debug('Enforced checkpoint limit', { sessionId, deleted: deleteCount });
+      }
+
+      // 披露行自己的总量上限（返修 r3）：真快照预算不动，但披露也不许无上限增长
+      // （同键去重之外，不同键各来一条照样能涨）——超出按最旧淘汰，总量封顶。
+      const uncertainResult = db.prepare(`
+        SELECT COUNT(*) as cnt FROM file_checkpoints
+        WHERE session_id = ? AND uncertain_target = 1
+      `).get(sessionId) as { cnt: number } | undefined;
+
+      const uncertainCount = uncertainResult?.cnt || 0;
+      if (uncertainCount >= this.config.maxCheckpointsPerSession) {
+        const uncertainDeleteCount = uncertainCount - this.config.maxCheckpointsPerSession + 1;
+        db.prepare(`
+          DELETE FROM file_checkpoints
+          WHERE id IN (
+            SELECT id FROM file_checkpoints
+            WHERE session_id = ? AND uncertain_target = 1
+            ORDER BY created_at ASC, rowid ASC
+            LIMIT ?
+          )
+        `).run(sessionId, uncertainDeleteCount);
+
+        logger.debug('Enforced uncertain disclosure limit', { sessionId, deleted: uncertainDeleteCount });
       }
     } catch (error) {
       logger.error('Failed to enforce limit', { error, sessionId });

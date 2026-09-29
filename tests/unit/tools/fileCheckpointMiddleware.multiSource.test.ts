@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   recordUncertainWriteTarget: vi.fn(),
   assessSnapshotEligibility: vi.fn(),
   deleteCheckpoints: vi.fn(),
+  countCheckpoints: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/checkpoint', () => ({
@@ -14,6 +15,7 @@ vi.mock('../../../src/host/services/checkpoint', () => ({
     recordUncertainWriteTarget: mocks.recordUncertainWriteTarget,
     assessSnapshotEligibility: mocks.assessSnapshotEligibility,
     deleteCheckpoints: mocks.deleteCheckpoints,
+    countCheckpoints: mocks.countCheckpoints,
   }),
 }));
 

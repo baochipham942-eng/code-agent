@@ -502,6 +502,34 @@ function genericPathAssessment(
   ));
 }
 
+// MCP / 未知工具（无 pathAuthority 声明）的写字段白名单（返修 r3）：只认显式列出的
+// 字段名，不做「字段名以 path/directory/file 等后缀结尾就算」的通用扫描——后缀扫描
+// 把执行基准参数（working_directory）也当写目标，目录建不出快照，每次带它的 Bash
+// 调用都落一条 uncertain 披露行，只读轮次也被拖成 partial。dest 与 destination 同列：
+// MCP 移动形状（source+destination|dest）的目的地必须能进快照，源的配对快照才成立。
+const WHITELISTED_WRITE_PATH_PARAMETERS = new Set(['path', 'file_path', 'destination', 'dest']);
+
+function whitelistedPathAssessment(
+  value: unknown,
+  workingDirectory: string,
+  key?: string,
+): ToolWriteTargets {
+  if (typeof value === 'string') {
+    if (!key || !WHITELISTED_WRITE_PATH_PARAMETERS.has(key)) {
+      return { targets: [], uncertain: [], mutations: {} };
+    }
+    if (value.trim() === '') return { targets: [], uncertain: [`uncertain:${key}`], mutations: {} };
+    return { targets: [resolveToolPath(value, workingDirectory)], uncertain: [], mutations: {} };
+  }
+  if (Array.isArray(value)) {
+    return mergeAssessments(value.map((entry) => whitelistedPathAssessment(entry, workingDirectory, key)));
+  }
+  if (!value || typeof value !== 'object') return { targets: [], uncertain: [], mutations: {} };
+  return mergeAssessments(Object.entries(value as Record<string, unknown>).map(
+    ([childKey, childValue]) => whitelistedPathAssessment(childValue, workingDirectory, childKey),
+  ));
+}
+
 function descriptorAssessment(
   descriptor: ToolPathAuthorityDescriptor,
   input: ResolveToolWriteTargetsInput,
@@ -561,10 +589,31 @@ function descriptorAssessment(
   if (typeof command !== 'string' || command.trim() === '') {
     return { targets: [], uncertain: [`uncertain:${descriptor.commandParameter}`], mutations: {} };
   }
-  const targets: string[] = [];
-  const uncertain: string[] = [];
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const canonical = canonicalizeCommand(command);
+  const assessment = redirectAndArgumentTargets(command, input.workingDirectory, canonical);
+  // 路径边界匹配（Nit 修订）：子串会把命令文本里顺带提到的 `.code-agent/memory`
+  // 当成写记忆目录；真路径必有 token 界 + 后随 `/` 或文本尾，见 hasPathBoundaryMention。
+  if (hasPathBoundaryMention(canonical.command, memoryDir) || hasPathBoundaryMention(canonical.command, memoryAlias)) {
+    assessment.targets.push(memoryDir);
+  }
+  return assessment;
+}
+
+/**
+ * 命令文本里的写目标评估（重定向 + cp/mv/tee 目标位 + 内嵌脚本，返修 r3 从
+ * descriptorAssessment 抽出）：安全门（resolveToolWriteTargets 的 shell 描述符）与
+ * 检查点（resolveCheckpointWriteTargets）共用同一条词法，两边认出的目的地才是同一条
+ * 解析，移动配对才能精确对上要撤下的快照。memory 目录提及目标**不**在这条共享路径里
+ * ——那是安全门专属（目录建不出快照，进检查点只会落一条噪音披露行，返修 r3）。
+ */
+function redirectAndArgumentTargets(
+  command: string,
+  workingDirectory: string,
+  canonical: ReturnType<typeof canonicalizeCommand>,
+): ToolWriteTargets {
+  const targets: string[] = [];
+  const uncertain: string[] = [];
   // 🔴 重定向目标的分词别喂 canonicalizeCommand 的输出（PR #1709 复审①实测双向错）：
   // 它去引号（安全匹配面要的形状，十几个消费方靠它，不能动），于是
   // `echo x > "/tmp/eval-sandbox escape.txt"` 被截成 /tmp/eval-sandbox——界外写被当界内放行；
@@ -577,15 +626,12 @@ function descriptorAssessment(
   if (canonical.parsingFailed && redirectTargets.length > 0) {
     uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
   }
-  // 路径边界匹配（Nit 修订）：子串会把命令文本里顺带提到的 `.code-agent/memory`
-  // 当成写记忆目录；真路径必有 token 界 + 后随 `/` 或文本尾，见 hasPathBoundaryMention。
-  if (hasPathBoundaryMention(canonical.command, memoryDir) || hasPathBoundaryMention(canonical.command, memoryAlias)) targets.push(memoryDir);
   for (const rawTarget of redirectTargets) {
     const target = rawTarget;
     if (!target || /[$`*?{}]/.test(target)) {
       uncertain.push(`uncertain-redirection:${rawTarget || '<missing>'}`);
     } else {
-      targets.push(resolveToolPath(target, input.workingDirectory));
+      targets.push(resolveToolPath(target, workingDirectory));
     }
   }
   return { targets, uncertain, mutations: {} };
@@ -613,6 +659,38 @@ export function resolveToolWriteTargets(input: ResolveToolWriteTargetsInput): To
       : []),
     ...(input.definition.pathAuthority ?? []).map((descriptor) => descriptorAssessment(descriptor, input)),
   ]);
+  return {
+    targets: [...new Set(assessment.targets)].sort(),
+    uncertain: [...new Set(assessment.uncertain)].sort(),
+    mutations: assessment.mutations,
+  };
+}
+
+/**
+ * 检查点路径专用的写目标解析（返修 r3）：只认白名单来源，**不**跑 genericPathAssessment
+ * 的通用后缀扫描——那条是安全门（ownership / 写边界闸）的口径，参数面必须宽；检查点面
+ * 宽了会把目录类参数（working_directory）变成建不出快照的噪音披露行。三档来源：
+ * - 声明 shell 权威的工具（bash / terminal_write）：只从命令解析取目标（重定向、
+ *   cp/mv/tee 目标位、内嵌脚本），绝不从 Bash 的其它参数（working_directory、cwd、
+ *   timeout 等）取；memory 目录提及目标也不进这条路径（见 redirectAndArgumentTargets）。
+ * - 声明 path / global-memory 权威的内置工具：只认 schema 里明确声明的写路径字段
+ *   （Write/Edit 的 file_path、docx 的 output_path 等，含 whenParameter 条件命中）。
+ * - 无声明的 MCP / 未知工具：只认 WHITELISTED_WRITE_PATH_PARAMETERS 列出的字段名。
+ */
+export function resolveCheckpointWriteTargets(input: ResolveToolWriteTargetsInput): ToolWriteTargets {
+  const descriptors = input.definition.pathAuthority ?? [];
+  const shellDescriptors = descriptors.filter((descriptor) => descriptor.kind === 'shell');
+  const assessment = shellDescriptors.length > 0
+    ? mergeAssessments(shellDescriptors.map((descriptor) => {
+      const command = input.params[descriptor.commandParameter];
+      if (typeof command !== 'string' || command.trim() === '') {
+        return { targets: [], uncertain: [`uncertain:${descriptor.commandParameter}`], mutations: {} };
+      }
+      return redirectAndArgumentTargets(command, input.workingDirectory, canonicalizeCommand(command));
+    }))
+    : descriptors.length > 0
+      ? mergeAssessments(descriptors.map((descriptor) => descriptorAssessment(descriptor, input)))
+      : whitelistedPathAssessment(input.params, input.workingDirectory);
   return {
     targets: [...new Set(assessment.targets)].sort(),
     uncertain: [...new Set(assessment.uncertain)].sort(),

@@ -10,6 +10,11 @@ import {
   configureFolderTrustService as configureFolderTrustServiceOptions,
   getFolderTrustServiceOptions,
 } from './folderTrustServiceConfig';
+import {
+  discoveredItemContentDigest,
+  gatedDigestOf,
+  hasNewGatedItems,
+} from './folderTrustDigest';
 
 const logger = createLogger('FolderTrustService');
 const realpathNative = promisify(fs.realpath.native);
@@ -41,6 +46,11 @@ export interface DangerousConfigItem {
   gated: boolean;
   /** 用于文案「N 个……」，只在数得出来的项上有值。 */
   count?: number;
+  /**
+   * sha256 hex of the normalized hook commands or stdio MCP servers.
+   * Absent for ungated shapes. Env values never appear here, only the hash.
+   */
+  contentDigest?: string;
 }
 
 export interface FolderTrustEvaluation {
@@ -359,35 +369,13 @@ function countHookCommands(text: string, legacy: boolean): number {
   return legacy ? count : Math.max(1, count);
 }
 
-function itemKey(item: DangerousConfigItem): string {
-  return `${item.kind}\0${item.path}`;
-}
-
-/** 决定落库时拍下的 gated 项快照，用于事后发现「多出了会自动运行的东西」。 */
-function gatedDigestOf(items: DangerousConfigItem[]): string {
-  return JSON.stringify(items.filter((item) => item.gated).map(itemKey).sort());
-}
-
-function hasNewGatedItems(storedDigest: string | null | undefined, items: DangerousConfigItem[]): boolean {
-  if (!storedDigest) return false; // 本次改动之前落的决定没有快照：不追溯，避免升级后集体重问
-  let known: unknown;
-  try {
-    known = JSON.parse(storedDigest);
-  } catch {
-    return false;
-  }
-  if (!Array.isArray(known)) return false;
-  const knownKeys = new Set(known as string[]);
-  return items.some((item) => item.gated && !knownKeys.has(itemKey(item)));
-}
-
 function pushItem(
   items: DangerousConfigItem[],
   workingDirectory: string,
   kind: DangerousConfigKind,
   filePath: string,
   risk: DangerousConfigRisk,
-  extra: { gated?: boolean; count?: number } = {},
+  extra: { gated?: boolean; count?: number; contentDigest?: string } = {},
 ): void {
   items.push({
     kind,
@@ -396,6 +384,7 @@ function pushItem(
     risk,
     gated: extra.gated ?? isGatedRisk(risk),
     ...(extra.count === undefined ? {} : { count: extra.count }),
+    ...(extra.contentDigest === undefined ? {} : { contentDigest: extra.contentDigest }),
   });
 }
 
@@ -710,7 +699,10 @@ export class FolderTrustService {
       if (text === undefined) continue;
       const hookCount = countHookCommands(text, legacy);
       if (hookCount === 0) continue;
-      pushItem(items, workingDirectory, 'project-hooks', hooksFile, 'execution', { count: hookCount });
+      pushItem(items, workingDirectory, 'project-hooks', hooksFile, 'execution', {
+        count: hookCount,
+        contentDigest: discoveredItemContentDigest('project-hooks', text, legacy),
+      });
     }
 
     for (const [mcpKind, mcpPath] of [
@@ -723,6 +715,7 @@ export class FolderTrustService {
       pushItem(items, workingDirectory, mcpKind, mcpPath, 'mcp', {
         gated: stdioCount > 0,
         count: stdioCount,
+        contentDigest: discoveredItemContentDigest(mcpKind, text),
       });
     }
 
@@ -798,7 +791,10 @@ export class FolderTrustService {
       if (text === undefined) continue;
       const hookCount = countHookCommands(text, legacy);
       if (hookCount === 0) continue;
-      pushItem(items, workingDirectory, 'project-hooks', hooksFile, 'execution', { count: hookCount });
+      pushItem(items, workingDirectory, 'project-hooks', hooksFile, 'execution', {
+        count: hookCount,
+        contentDigest: discoveredItemContentDigest('project-hooks', text, legacy),
+      });
     }
 
     for (const [mcpKind, mcpPath] of [
@@ -811,6 +807,7 @@ export class FolderTrustService {
       pushItem(items, workingDirectory, mcpKind, mcpPath, 'mcp', {
         gated: stdioCount > 0,
         count: stdioCount,
+        contentDigest: discoveredItemContentDigest(mcpKind, text),
       });
     }
 

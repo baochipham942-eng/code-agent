@@ -67,6 +67,10 @@ describe('classifyCronFailure：错误分类判据（集中一处）', () => {
     expect(classifyCronFailure(
       "Command failed: grep 'not found' /var/log/app.log",
     )).toBe('transient');
+    // shell 输出里哪怕撞上我们自己的 permanent 文案（预算护栏），^Command failed: 前缀也一票否决
+    expect(classifyCronFailure(
+      'Command failed: ./check-budget.sh\n成本超限：本月预算已用尽',
+    )).toBe('transient');
   });
 
   it('鉴权/不存在类文本不再判 permanent：无法与外部文本区分 → 退避 + 连败停用（基线行为）', () => {

@@ -16,17 +16,25 @@ const NON_UTF8_REFUSAL =
   'would silently change its encoding. The file was NOT modified. If a change is truly needed, ask the user ' +
   'first whether to convert the file to UTF-8.';
 
+const INVALID_UTF8_EDIT_REFUSAL =
+  'This file is UTF-8 but contains invalid byte sequences. Edit rewrites the whole file, which would replace those ' +
+  'bytes with U+FFFD (EF BF BD) and change the file. The file was NOT modified. Append keeps existing bytes; ' +
+  'or ask the user before repairing the file.';
+
 /**
  * 返回拒写文案；可以写则返回 null。
  * - GB18030：一律拒写。
- * - 无法识别编码：`rejectUndecodable` 为 true（Edit，需要按文本改）时拒写，否则放行（Write 整体覆盖 / Append 不依赖解码）。
+ * - 无法识别编码 / UTF-8 里夹坏字节：`rejectUndecodable` 为 true（Edit，整文件回写会把坏字节写成 U+FFFD）时拒写，
+ *   否则放行（Write 整体覆盖 / Append 只追加、不动已有字节）。
  */
 export function existingFileWriteRefusal(
   existing: Buffer,
   opts: { rejectUndecodable?: boolean } = {},
 ): string | null {
   try {
-    return decodeText(existing).encoding === 'gb18030' ? NON_UTF8_REFUSAL : null;
+    const decoded = decodeText(existing);
+    if (decoded.encoding === 'gb18030') return NON_UTF8_REFUSAL;
+    return opts.rejectUndecodable && decoded.invalidSequences > 0 ? INVALID_UTF8_EDIT_REFUSAL : null;
   } catch (err) {
     if (!(err instanceof TextDecodeError)) throw err;
     return opts.rejectUndecodable

@@ -169,6 +169,89 @@ describe('N-READ-ENCODING', () => {
     });
   });
 
+  describe('偶有坏字节的 UTF-8（不能被整段重解成 GBK 乱码）', () => {
+    const head = Buffer.from('名称,数量\n苹果,3', 'utf-8');
+    const tail = Buffer.from('\n', 'utf-8');
+    const cases: Array<[string, Buffer]> = [
+      ['单个 0x80', Buffer.concat([head, Buffer.from([0x80]), tail])],
+      ['0x92 + 字母', Buffer.concat([head, Buffer.from([0x92, 0x61]), tail])],
+    ];
+
+    for (const [label, bytes] of cases) {
+      it(`Read：${label}，中文原样可见、不出现 GBK 乱码，并告知无法解码的字节数`, async () => {
+        const file = path.join(tmpDir, 'lossy.csv');
+        await fs.writeFile(file, bytes);
+        const result = await read(file);
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.output).toContain('名称,数量');
+        expect(result.output).toContain('苹果,3');
+        expect(result.output).not.toContain('鍚嶇О');
+        expect(result.output).not.toContain('鑻规灉');
+        expect(result.output).not.toContain('GB18030');
+        expect(result.output).toMatch(/1 (byte|invalid)/i);
+      });
+
+      it(`Edit：${label}，拒写（回写会把坏字节变成 EF BF BD），文件字节不变`, async () => {
+        const file = path.join(tmpDir, 'lossy-edit.csv');
+        await fs.writeFile(file, bytes);
+        expect((await read(file)).ok).toBe(true);
+        const result = await edit(file, '苹果', '香蕉');
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error).toMatch(/not valid UTF-8|invalid/i);
+        expect(result.error).not.toContain('GBK');
+        expect(Buffer.compare(await fs.readFile(file), bytes)).toBe(0);
+      });
+
+      it(`Append：${label}，允许且不改动已有字节`, async () => {
+        const file = path.join(tmpDir, 'lossy-append.csv');
+        await fs.writeFile(file, bytes);
+        const result = await (await appendModule.createHandler()).execute(
+          { file_path: file, content: '香蕉,4\n' },
+          ctx,
+          allowAll,
+        );
+        expect(result.ok).toBe(true);
+        const after = await fs.readFile(file);
+        expect(after.subarray(0, bytes.length).equals(bytes)).toBe(true);
+        expect(after.subarray(bytes.length).toString('utf-8')).toBe('香蕉,4\n');
+      });
+    }
+
+    it('真 GBK 样本仍判 GBK、仍拒写（判据没把真 GBK 放过）', async () => {
+      const file = path.join(tmpDir, 'still-gbk.csv');
+      await fs.writeFile(file, GBK_BYTES);
+      const result = await read(file);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.output).toContain('GB18030');
+      const editResult = await edit(file, '苹果', '香蕉');
+      expect(editResult.ok).toBe(false);
+      if (editResult.ok) return;
+      expect(editResult.error).toContain('GBK');
+    });
+
+    it('GBK 文件以「锘」+ BF 开头（字节恰为 EF BB BF）：不能被误当 UTF-8 BOM 剥掉', async () => {
+      // 「锘卡」= EF BB | BF A8。误剥 EF BB BF 后剩 A8 0A，两种编码都失败。
+      const bytes = Buffer.from('efbbbfa80a', 'hex');
+      const file = path.join(tmpDir, 'bom-lookalike.txt');
+      await fs.writeFile(file, bytes);
+      const result = await read(file);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.output).toContain('锘卡');
+      expect(result.output).toContain('GB18030');
+      const appendResult = await (await appendModule.createHandler()).execute(
+        { file_path: file, content: '香蕉\n' },
+        ctx,
+        allowAll,
+      );
+      expect(appendResult.ok).toBe(false);
+      expect(Buffer.compare(await fs.readFile(file), bytes)).toBe(0);
+    });
+  });
+
   describe('UTF-8 往返回归', () => {
     it('UTF-8 文件 Read → Edit 生效，其余字节不变', async () => {
       const file = path.join(tmpDir, 'h.csv');

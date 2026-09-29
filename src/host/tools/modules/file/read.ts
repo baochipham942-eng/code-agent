@@ -40,6 +40,9 @@ import { decodeText, TextDecodeError, type DecodedText } from '../../../utils/de
 const NON_UTF8_READ_NOTICE =
   '[File encoding: GBK/GB18030, decoded to Unicode for display. Edit/Write/Append refuse to modify non-UTF-8 files; ask the user before converting to UTF-8.]\n';
 
+const invalidUtf8ReadNotice = (count: number): string =>
+  `[File is UTF-8 but contains ${count} invalid byte sequence(s), shown as U+FFFD. Edit refuses to modify this file (it would replace those bytes with U+FFFD); Append keeps existing bytes.]\n`;
+
 const BINARY_REDIRECTS: Record<string, string> = {
   '.xlsx': 'read_xlsx',
   '.xls': 'read_xlsx',
@@ -260,7 +263,12 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
         dataFingerprintStore.recordFact(fileFact);
       }
 
-      const encodingNotice = decoded.encoding === 'utf-8' ? '' : NON_UTF8_READ_NOTICE;
+      const encodingNotice =
+        decoded.encoding !== 'utf-8'
+          ? NON_UTF8_READ_NOTICE
+          : decoded.invalidSequences > 0
+            ? invalidUtf8ReadNotice(decoded.invalidSequences)
+            : '';
 
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('Read done', {

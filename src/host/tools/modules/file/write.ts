@@ -30,6 +30,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { atomicWriteFile } from '../../utils/atomicWrite';
+import { existingPathWriteRefusal } from '../../utils/textEncodingGuard';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
@@ -384,6 +385,13 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
             maxSingleWriteChars: MAX_SINGLE_WRITE_ARTIFACT_CHAR_LIMIT,
           },
         };
+      }
+
+      if (existed) {
+        const refusal = await existingPathWriteRefusal(resolvedPath);
+        if (refusal) {
+          return { ok: false, error: refusal, code: 'INVALID_ARGS', meta: { outputPath: resolvedPath } };
+        }
       }
 
       let originalSkillContent: string | undefined;

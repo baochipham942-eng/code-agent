@@ -35,6 +35,11 @@ import { getFileMutationActorId } from './fileMutationIdentity';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readSchema as schema } from './read.schema';
+import { decodeGb18030, decodeUtf8, TextDecodeError } from '../../../utils/decodeText';
+
+/** 默认按 UTF-8 读；坏字节显示为 U+FFFD 时在结果顶部告知，由模型决定是否用 encoding: 'gbk' 重读（不做编码猜测） */
+const invalidUtf8ReadNotice = (count: number): string =>
+  `[此文件有 ${count} 处不是合法 UTF-8 的字节（已显示为 \uFFFD）。如果它是 GBK/GB18030 编码（如国内 Excel 导出的 CSV、旧 Windows 文本），请用 encoding: 'gbk' 重新读取。]\n`;
 
 const BINARY_REDIRECTS: Record<string, string> = {
   '.xlsx': 'read_xlsx',
@@ -165,6 +170,10 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
       (args.offset as number) || DEFAULT_OFFSET,
       (args.limit as number) || DEFAULT_LIMIT,
     );
+    const encoding = args.encoding || 'utf-8';
+    if (encoding !== 'utf-8' && encoding !== 'gbk') {
+      return { ok: false, error: "encoding must be 'utf-8' or 'gbk'", code: 'INVALID_ARGS' };
+    }
 
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {
@@ -194,8 +203,26 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
 
     try {
       const stats = await fs.stat(filePath);
-      const content = await fs.readFile(filePath, 'utf-8');
-      const digest = computeContentDigest(content);
+      const raw = await fs.readFile(filePath);
+      let content: string;
+      let encodingNotice = '';
+      if (encoding === 'gbk') {
+        try {
+          content = decodeGb18030(raw);
+        } catch (err) {
+          if (!(err instanceof TextDecodeError)) throw err;
+          return {
+            ok: false,
+            error: `Cannot read ${filePath} as GBK: ${err.message}. Try without encoding, or the file may be binary.`,
+            code: 'INVALID_ARGS',
+          };
+        }
+      } else {
+        const decoded = decodeUtf8(raw);
+        content = decoded.bom ? `\uFEFF${decoded.text}` : decoded.text; // 与直接 utf-8 读取一致：BOM 留在首行
+        if (decoded.invalidSequences > 0) encodingNotice = invalidUtf8ReadNotice(decoded.invalidSequences);
+      }
+      const digest = computeContentDigest(raw);
       const lines = content.split('\n');
 
       const startLine = Math.max(0, parsed.offset - 1);
@@ -259,7 +286,7 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
 
       return {
         ok: true,
-        output: `Read version digest: ${digest}\n${result}`,
+        output: `Read version digest: ${digest}\n${encodingNotice}${result}`,
         meta: {
           artifact,
           evidenceRef,

@@ -15,6 +15,7 @@ import { confineEvalPath } from '../../file/pathUtils';
 import { appendSchema as schema } from './append.schema';
 import { getFileMutationActorId } from './fileMutationIdentity';
 import { guardSkillOfficialSections } from '../../../security/skillOfficialSectionGuard';
+import { existingPathWriteRefusal } from '../../utils/textEncodingGuard';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
 const LOCK_WAIT_TIMEOUT_MS = 10_000;
@@ -105,6 +106,10 @@ class AppendHandler implements ToolHandler<Record<string, unknown>, string> {
 
     try {
       await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+      const refusal = await existingPathWriteRefusal(resolvedPath);
+      if (refusal) {
+        return { ok: false, error: refusal, code: 'INVALID_ARGS', meta: { outputPath: resolvedPath } };
+      }
       let originalSkillContent: string | undefined;
       if (path.basename(resolvedPath) === 'SKILL.md') {
         try {

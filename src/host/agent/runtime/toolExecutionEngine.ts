@@ -87,6 +87,7 @@ import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 import { planContextTag } from './planApprovalRunBoundary';
 import { extractToolStepTarget } from '../toolStepTarget';
+import { decodeUtf8 } from '../../utils/decodeText';
 
 const logger = createLogger('AgentLoop');
 
@@ -1037,7 +1038,8 @@ export class ToolExecutionEngine {
             if (source === undefined) {
               const abs = isAbsolute(rawPath) ? rawPath : resolvePath(this.ctx.workingDirectory, rawPath);
               try {
-                source = readFileSync(abs, 'utf8');
+                const decoded = decodeUtf8(readFileSync(abs));
+                source = decoded.invalidSequences === 0 ? decoded.text : undefined; // 非法 UTF-8 不猜编码，跳过校验
               } catch {
                 source = undefined;
               }

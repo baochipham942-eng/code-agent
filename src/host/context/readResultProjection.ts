@@ -76,8 +76,11 @@ function readScope(call: ReadCall, metadata?: Record<string, unknown>, output?: 
     ? metadata.digest
     : READ_DIGEST_RE.exec(output || '')?.[1];
   const range = `${start}-${end}${total === undefined ? '' : `/${total}`}`;
+  // 同一字节按不同 encoding 解码出的正文不同（默认读的 U+FFFD 乱码 vs encoding:'gbk' 重读的正确中文），digest 却相同（按原始字节），
+  // 所以 encoding 必须进去重 key；缺省与显式 utf-8 视为同一种。
+  const encoding = typeof args.encoding === 'string' && args.encoding.toLowerCase() !== 'utf-8' ? `@${args.encoding.toLowerCase()}` : '';
   return {
-    key: `${rawPath.trim()}#${range}`,
+    key: `${rawPath.trim()}#${range}${encoding}`,
     label: `${rawPath.trim()}#L${start}-L${end}`,
     ...(digest ? { digest } : {}),
   };

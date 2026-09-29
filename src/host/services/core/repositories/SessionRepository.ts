@@ -914,8 +914,8 @@ export class SessionRepository {
     return this.ftsRepo.countSessionMessagesFts(query, options);
   }
 
-  backfillSessionMessagesFts(): number {
-    return this.ftsRepo.backfillSessionMessagesFts();
+  backfillSessionMessagesFts(options?: { onVerified?: () => void }): number {
+    return this.ftsRepo.backfillSessionMessagesFts(options);
   }
 
   searchTranscriptFts(
@@ -950,8 +950,8 @@ export class SessionRepository {
     return this.ftsRepo.getTranscriptAround(messageId, options);
   }
 
-  backfillTranscriptFts(): number {
-    return this.ftsRepo.backfillTranscriptFts();
+  backfillTranscriptFts(options?: { onVerified?: () => void }): number {
+    return this.ftsRepo.backfillTranscriptFts(options);
   }
 
   getUnsyncedSessions(limit: number = 1000): StoredSession[] {

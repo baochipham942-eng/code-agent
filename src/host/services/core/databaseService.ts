@@ -72,6 +72,7 @@ import type {
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import type { RecoverySnapshot } from './crashRecovery';
 import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
+import { readProjectionSchemaBeforeBoot } from './database/projectionCheckGate';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
 import type { SwarmTraceRepo, SwarmRunEventRecord } from '../../../shared/contract/swarmTrace';
 import { buildSessionLedger, type LedgerSources } from './sessionLedgerProjection';
@@ -507,6 +508,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
         throw new Error('Database not opened');
       }
 
+      const projectionSchemaBeforeBoot = readProjectionSchemaBeforeBoot(this.db);
       applySchema(this.db, logger);
       step('schema');
       applySessionsMigrations(this.db, logger);
@@ -585,6 +587,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
         permissionDecisionRepo: this.permissionDecisionRepo,
         logger,
         step,
+        projectionSchemaBeforeBoot,
+        forceFullProjectionCheck: openedFromRestore || this._integrityOutcome.kind !== 'ok',
       });
       logger.info(`[DatabaseService] init timings: ${summary()}`);
     } catch (err) {

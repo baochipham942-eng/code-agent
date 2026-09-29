@@ -344,14 +344,19 @@ export function runTransactionWithFtsRepair(db: BetterSqlite3.Database, tx: () =
   tx();
 }
 
-export function repairCorruptFtsOnStartup(db: BetterSqlite3.Database): void {
+/** 返回本次是否有表进过修复阶梯（含修复失败）：调用方据此强制完整核对投影 */
+export function repairCorruptFtsOnStartup(db: BetterSqlite3.Database): boolean {
+  let touched = false;
   for (const table of FTS_TABLES) {
     try {
       if (!isFtsTableCorrupt(db, table)) continue;
+      touched = true;
       const outcome = repairFtsTable(db, table);
       logger.warn('startup repair', { table, outcome });
     } catch (err) {
+      touched = true;
       logger.warn('startup repair failed (ignored)', { table, error: err });
     }
   }
+  return touched;
 }

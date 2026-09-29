@@ -15,6 +15,7 @@ import type { createLogger } from '../../infra/logger';
 import { persistCancelledToolCallClosures } from '../../../agent/runtime/cancelledToolCallClosure';
 import { backfillTelemetrySessionTitles } from '../../../telemetry/telemetrySessionTitleBackfill';
 import { repairCorruptFtsOnStartup } from './ftsRepair';
+import { runGatedProjectionCheck } from './projectionCheckGate';
 
 type Logger = ReturnType<typeof createLogger>;
 
@@ -47,6 +48,10 @@ export interface StartupMaintenanceDeps {
   logger: Logger;
   /** 分步计时回调（databaseService 的 init timings 日志） */
   step: (name: string) => void;
+  /** applySchema 之前读到的投影 DDL 签名（readProjectionSchemaBeforeBoot）；null = 没读到，按变化处理 */
+  projectionSchemaBeforeBoot?: string | null;
+  /** 库经过备份恢复/完整性降级：投影一律完整核对 */
+  forceFullProjectionCheck?: boolean;
 }
 
 /** 返回崩溃恢复快照（fail-safe：扫描失败返回 null，不阻塞启动） */
@@ -126,14 +131,24 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
   );
   step('ledger-health');
 
-  repairCorruptFtsOnStartup(db);
+  const ftsRepaired = repairCorruptFtsOnStartup(db);
   step('fts-repair');
 
-  // 首次升级后：从已有 messages 表 backfill episodic FTS 索引（幂等）
-  sessionRepo.backfillSessionMessagesFts();
+  // 投影对账（source 计数 vs FTS 计数，不一致才重建）按需执行：指纹未变就跳过全表计数，
+  // 见 projectionCheckGate.ts 顶部的跳过条件与兜底。
+  const gateInput = {
+    force: ftsRepaired || deps.forceFullProjectionCheck === true,
+    signatureBeforeSchema: deps.projectionSchemaBeforeBoot ?? null,
+    now: Date.now(),
+  };
+  runGatedProjectionCheck(db, 'session_messages_fts', gateInput, (onVerified) => {
+    sessionRepo.backfillSessionMessagesFts({ onVerified });
+  });
   step('fts-messages');
   // 同理：transcript FTS（kind 分解索引，roadmap 2.1）
-  sessionRepo.backfillTranscriptFts();
+  runGatedProjectionCheck(db, 'transcript_fts', gateInput, (onVerified) => {
+    sessionRepo.backfillTranscriptFts({ onVerified });
+  });
   step('fts-transcript');
   // 同理：memories FTS（BM25 检索通道，roadmap 2.5）
   memoryRepo.backfillMemoriesFts();

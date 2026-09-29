@@ -16,6 +16,10 @@ import { getPath } from '../../platform/appPaths';
 import { createLogger } from '../../services/infra/logger';
 import type { EvidenceRef } from '../../../shared/contract/evidence';
 import type { VerificationSkippedCheck } from '../verification';
+import type {
+  PlanExitFallbackDetectedData,
+  PlanExitFallbackNotApplicableData,
+} from './planExitFallback';
 
 const logger = createLogger('TurnTrace');
 
@@ -40,7 +44,9 @@ export type TraceEventType =
   | 'inference_retry'
   | 'turn_outcome'
   | 'compensation_registered'
-  | 'capability_lifecycle';
+  | 'capability_lifecycle'
+  | 'plan_exit_fallback_detected'
+  | 'plan_exit_fallback_not_applicable';
 
 export type RequestManifestMessageRef =
   | { kind: 'ledger_message'; messageId: string }
@@ -232,6 +238,10 @@ export interface TraceEventDataMap {
     action: 'loaded' | 'unloaded' | 'rolled_back' | 'failed';
     detail?: string;
   };
+  /** ADR-074 K1：plan mode 结构化计划正文没配退出工具，已提醒一次并补一轮推理。 */
+  plan_exit_fallback_detected: PlanExitFallbackDetectedData;
+  /** ADR-074 K1：补推理没换来退出工具，按今日文本收尾语义结束（不合成卡，K2 另做）。 */
+  plan_exit_fallback_not_applicable: PlanExitFallbackNotApplicableData;
 }
 
 type TraceEventFor<T extends TraceEventType> = {

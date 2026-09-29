@@ -21,6 +21,8 @@ export class ControlState {
   private _readLoopSealActive = false;
   /** 封口激活后额外被拦的读类调用次数（触发那一次不计入）。 */
   private _readLoopSealBlockedReads = 0;
+  /** ADR-074 K1：plan-exit 兜底提醒已发出，补推理期间写类工具在 admission 层拒绝。 */
+  private _planExitFallbackActive = false;
   private readonly _preApprovedTools = new Set<string>();
   private _externalDataCallCount = 0;
   private _memoryTainted = false;
@@ -39,6 +41,7 @@ export class ControlState {
   get forceFinalResponsePrompt(): string | undefined { return this._forceFinalResponsePrompt; }
   get readLoopSealActive(): boolean { return this._readLoopSealActive; }
   get readLoopSealBlockedReads(): number { return this._readLoopSealBlockedReads; }
+  get planExitFallbackActive(): boolean { return this._planExitFallbackActive; }
   get preApprovedTools(): Set<string> { return this._preApprovedTools; }
   get externalDataCallCount(): number { return this._externalDataCallCount; }
 
@@ -96,10 +99,16 @@ export class ControlState {
     this._forceFinalResponsePrompt = undefined;
   }
 
-  /** per-run 瞬态：forced-final 与只封读都不得泄漏到下一次用户输入。 */
+  /** per-run 瞬态：forced-final、只封读与 plan-exit 兜底封锁都不得泄漏到下一次用户输入。 */
   clearPerRunTransientFlags(): void {
     this.clearForceFinalResponse();
     this.clearReadLoopSeal();
+    this._planExitFallbackActive = false;
+  }
+
+  /** ADR-074 K1：兜底提醒发出时置位；plan mode 退出后配 isPlanMode 判定才继续拦截。 */
+  activatePlanExitFallback(): void {
+    this._planExitFallbackActive = true;
   }
 
   activateReadLoopSeal(): void {
@@ -141,6 +150,7 @@ export class ControlState {
     forceFinalResponsePrompt?: string;
     readLoopSealActive?: boolean;
     readLoopSealBlockedReads?: number;
+    planExitFallbackActive?: boolean;
     preApprovedTools?: Iterable<string>;
     externalDataCallCount?: number;
   }): ControlState {
@@ -156,6 +166,7 @@ export class ControlState {
     if (seed.forceFinalResponsePrompt !== undefined) state._forceFinalResponsePrompt = seed.forceFinalResponsePrompt;
     if (seed.readLoopSealActive !== undefined) state._readLoopSealActive = seed.readLoopSealActive;
     if (seed.readLoopSealBlockedReads !== undefined) state._readLoopSealBlockedReads = seed.readLoopSealBlockedReads;
+    if (seed.planExitFallbackActive !== undefined) state._planExitFallbackActive = seed.planExitFallbackActive;
     if (seed.preApprovedTools !== undefined) for (const t of seed.preApprovedTools) state._preApprovedTools.add(t);
     if (seed.externalDataCallCount !== undefined) state._externalDataCallCount = seed.externalDataCallCount;
     return state;

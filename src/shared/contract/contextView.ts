@@ -99,6 +99,7 @@ export const CONTEXT_INJECTION_SOURCES = [
   'adaptive-thinking',
   'mode-reminder',
   'plan-guidance',
+  'plan-exit-fallback',
   'plan-stream',
   'swarm-guidance',
   'runtime-recovery',

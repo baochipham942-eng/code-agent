@@ -71,6 +71,7 @@ import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 import { shouldEndRunForPlanApproval } from './planApprovalRunBoundary';
+import { isWriteBlockedDuringPlanExitFallback } from './planExitFallback';
 import { persistCancelledToolCallClosures } from './cancelledToolCallClosure';
 import { emitArtifactRepairStopError } from './artifactRepairStopError';
 import { ensureUniqueToolCallIds } from './toolCallIdUniqueness';
@@ -417,9 +418,7 @@ export class MessageProcessor {
         injectSystemMessage: (msg, source) => this.contextAssembly.injectSystemMessage(msg, source),
         goalTracker: this.ctx.goalTracker,
       });
-      if (nudgeTriggered) {
-        return 'continue';
-      }
+      if (nudgeTriggered) return 'continue';
       this.ctx.nudgeManager.emitAbandonedOutputFiles?.((missingFiles) => this.ctx.onEvent({
         type: 'turn_diff',
         data: { turnId: this.ctx.turn.currentTurnId || '', files: [], missingFiles, filesAuthoritative: false },
@@ -650,7 +649,9 @@ export class MessageProcessor {
       );
     }
 
-    const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name));
+    // ADR-074 K1：plan-exit 兜底补推理期间，写类工具与 run 级禁用工具同一 admission 口拒绝。
+    const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name)
+      || isWriteBlockedDuringPlanExitFallback(this.ctx, () => this.toolEngine.runtimeControl?.isPlanMode() === true, toolCall.name));
     if (deniedToolCalls.length > 0) {
       for (const call of toolCalls) {
         const blocked = deniedToolCalls.some((denied) => denied.id === call.id);

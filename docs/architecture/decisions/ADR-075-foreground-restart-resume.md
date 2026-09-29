@@ -285,4 +285,14 @@ Round 2 把「Stop 必须清空待续队列」收成可执行合同：代码里�
 
 **K2 合同的新表述**：`user_stop` / `guard_halt` 仍**不进崩溃自动续跑**——任何一次重启都不进 recovery handler、不消耗自动续跑预算；但重启后被本进程认领为 `waiting`，`canContinueRun` 为真、投影为 `continue`，用户点「继续」才续跑。合同测试 `durableWaitingRunCancel.test.ts`「parks a recovered run with %s: never auto-resumed, but reclaimed as continuable on every restart」同时钉住两面（连续两次重启都不调 handler + 都投影 continue + 继续后同 runId 被 live loop 领养）。
 
-已知未覆盖：`crash_or_quit` 预算耗尽后已停靠为 `waiting` 的 run，再次重启不会被重新认领（`listParkedForReclaim` 对 `crash_or_quit` 只收 `running`/`recovering`；放开会把「预算耗尽后又等审批」的 run 也吞成停靠，需单独判定）。
+## 修订二（2026-09-29）：预算耗尽停靠显式标记 + guard_halt 确认继续收口工具 op
+
+2026-09-29 爸拍板口径（N-RESUME-PARKED-RECLAIM-2）：
+
+1. **崩溃自动续跑预算耗尽的停靠在数据上显式标记**。启动恢复认领预算耗尽的 `crash_or_quit`（`running`/`recovering`）并停靠为 `waiting` 的那一刻，`interruptCause` 改写为 `budget_exhausted`（契约里已有的取值，此前无生产写入方）。之后每次重启 `listParkedForReclaim` 按 `status='waiting' AND cause IN ('user_stop','guard_halt','budget_exhausted')` 认领、出「继续」；**不放宽**它对 `crash_or_quit` 的条件。`findSupersededSessionRoots`（新消息让位）与会话投影 `durableResume.mode='continue'` 同样只按标记判断：`crash_or_quit` 的 `waiting` 无论计数多少都是等审批/待人工确认，不让位、不出「继续」。
+   - **存量**：#2089（09-27）至本修订之间停靠的行形如 `waiting + crash_or_quit + autoResumeCount>=MAX`，重启无人认领、占着会话唯一约束（新消息 409）。开库迁移 `markLegacyBudgetExhaustedParks @ migrations/durableRun.ts` 把其中**没有**审批 `waiting` op、也没有待人工确认 `unknown` op 的行一次性改标 `budget_exhausted`；带这两类 op 的是「预算耗尽后又等审批」，原样不动。幂等（新代码不再产出这种形状）。
+2. **guard_halt 确认继续收口工具 op**。用户在模态里确认「上次外部操作可能已执行、继续可能重复」后，`/api/continue`（及桌面 IPC）同走 `continueParkedDurableRun` → `resetDurableResumeBudget`，此时 `settleModelOpsForManualContinue @ recoveredWaitingRun.ts` 除模型 op 外，把 `tool_call` 类 `prepared`/`dispatched`/`unknown` op 收口为 `abandoned`（`resultRef = tool-recovery:superseded-by-guarded-continue:<operationId>`），这一轮才能写入 `completed`。**只对 `interruptCause=guard_halt` 生效**；`user_stop` / `budget_exhausted` 的「继续」不动工具 op（K2「未知写不重放」语义不变，此时带未决工具 op 的 run 仍无法 `completed`）。确认发生在 renderer 模态；服务端把 guard_halt 的每次「继续」都视为已确认。
+
+合同测试：`tests/unit/host/runtime/durableParkedReclaimMarker.test.ts`（真实 SQLite + RunRegistry + `continueParkedDurableRun`）。
+
+已知未覆盖：`crash_or_quit` 且计数耗尽的**等审批** `waiting`（「预算耗尽后又等审批」）重启后既不进 `listRecoverable`（计数耗尽）也不进 `listParkedForReclaim`（非停靠标记），仍无人认领、占会话唯一约束；本修订只保证它不被误吞成停靠，认领它（恢复同一审批）需单独立单。

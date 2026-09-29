@@ -378,7 +378,9 @@ export class DurableRunKernel implements RunKernelAdapter {
         expectedOwnerEpoch: claimed.owner.epoch,
         status: 'waiting',
         pendingOperations,
-        interruptCause: getRunInterruptCause(claimed.envelope) ?? 'crash_or_quit',
+        // 崩溃预算耗尽的停靠在数据上显式标成 budget_exhausted（ADR-075 修订二）：再次重启按标记认领，
+        // 不靠 crash_or_quit + 计数推断（那会与「预算耗尽后又等审批」的 waiting 混淆）。
+        interruptCause: parkedInterruptCause(getRunInterruptCause(claimed.envelope)),
         autoResumeCount: claimed.envelope.autoResumeCount ?? MAX_AUTO_RESUME_COUNT,
         updatedAt: now,
       });
@@ -489,6 +491,11 @@ export class DurableRunKernel implements RunKernelAdapter {
     if (!this.stores) throw new DurableRunPersistenceUnavailableError();
     return this.stores;
   }
+}
+
+/** listParkedForReclaim 只会带出 crash_or_quit 的预算耗尽行（running/recovering），停靠时改记 budget_exhausted；显式停靠原因原样保留。 */
+function parkedInterruptCause(cause: RunInterruptCause | undefined): RunInterruptCause {
+  return cause === undefined || cause === 'crash_or_quit' ? 'budget_exhausted' : cause;
 }
 
 function classifyOperationForRecovery(

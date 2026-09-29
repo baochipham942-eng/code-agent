@@ -1,6 +1,5 @@
 import {
   getRunInterruptCause,
-  MAX_AUTO_RESUME_COUNT,
   type PendingOperation,
   type RunEnvelope,
 } from '../../shared/contract/durableRun';
@@ -36,20 +35,32 @@ export function findRecoveredWaitingRun(
 /**
  * 手动「继续」由新的 live loop 接管这一轮：停靠时残留的在途模型调用（预算耗尽停靠不做 fence）
  * 必须同笔收口，否则这轮结束时 completed 被「存在未决 op」拒写、run 永远落不了终态。
- * 工具类 op 不动（未知写不重放，K2 语义）。
+ * 工具类 op 默认不动（未知写不重放，K2 语义）；唯独 guard_halt 停靠——用户已在模态里确认
+ * 「上次外部操作可能已执行、继续可能重复」——这一步就是对那些未决工具 op 的人工裁决，同笔收口
+ * 为 abandoned（ADR-075 修订二）。
  */
-export function settleModelOpsForManualContinue(operations: PendingOperation[], now: number): PendingOperation[] {
-  return operations.map((operation) => (
-    operation.kind === 'model_call' && ['prepared', 'dispatched', 'unknown'].includes(operation.status)
-      ? { ...operation, status: 'abandoned' as const, resultRef: `model-recovery:superseded-by-manual-continue:${operation.operationId}`, updatedAt: now }
-      : operation
-  ));
+export function settleModelOpsForManualContinue(
+  operations: PendingOperation[],
+  now: number,
+  parked?: Pick<RunEnvelope, 'interruptCause' | 'interrupt_cause'>,
+): PendingOperation[] {
+  const guardedContinue = parked !== undefined && getRunInterruptCause(parked) === 'guard_halt';
+  return operations.map((operation) => {
+    if (!['prepared', 'dispatched', 'unknown'].includes(operation.status)) return operation;
+    if (operation.kind === 'model_call') {
+      return { ...operation, status: 'abandoned' as const, resultRef: `model-recovery:superseded-by-manual-continue:${operation.operationId}`, updatedAt: now };
+    }
+    if (operation.kind === 'tool_call' && guardedContinue) {
+      return { ...operation, status: 'abandoned' as const, resultRef: `tool-recovery:superseded-by-guarded-continue:${operation.operationId}`, updatedAt: now };
+    }
+    return operation;
+  });
 }
 
 /**
  * 新消息优先（ADR-075 修订 2026-09-29 ③⑤）：同会话里本进程持有、无活 handle 的根 run，
  * 若是等「继续」的停靠 run（user_stop / guard_halt / 预算耗尽）或还在后台排队的自动续跑，
- * 就该让位给新一轮。等审批的 waiting（crash 且预算未耗尽）不在此列，仍按原冲突语义。
+ * 就该让位给新一轮。等审批的 waiting（crash_or_quit，计数多少都一样）不在此列，仍按原冲突语义。
  */
 export function findSupersededSessionRoots(
   envelopes: Iterable<RunEnvelope>,
@@ -61,9 +72,10 @@ export function findSupersededSessionRoots(
     if (envelope.sessionId !== sessionId || envelope.parentRunId || hasHandle(envelope.runId)) return false;
     if (envelope.status === 'recovering') return isQueued(envelope.runId);
     if (envelope.status !== 'waiting') return false;
+    // 按停靠标记判断（ADR-075 修订二）：预算耗尽的停靠已显式记为 budget_exhausted；crash_or_quit 的
+    // waiting 一律是等审批/待人工确认，无论计数多少都不让位。
     const cause = getRunInterruptCause(envelope);
-    return cause !== undefined
-      && (cause !== 'crash_or_quit' || (envelope.autoResumeCount ?? 0) >= MAX_AUTO_RESUME_COUNT);
+    return cause !== undefined && cause !== 'crash_or_quit';
   });
 }
 

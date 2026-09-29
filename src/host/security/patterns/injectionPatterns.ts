@@ -130,9 +130,9 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     severity: 'high',
     description: '试图注入新系统指令',
   },
-  // 名词后若还接着「提示音 / 指令式 / 规则说明」这类复合词，不算指令覆盖。
+  // 名词后若还接着「提示音 / 提示信息 / 提示词 / 提示语 / 指令式 / 规则说明」这类复合词，不算指令覆盖。
   {
-    pattern: /(?:忽略|无视|忘记)\s*(?:之前|上面|以上|前面|所有)\s*(?:的\s*)?(?:所有\s*)?(?:指令|提示|规则)(?![音框集式性说文档条款目表化字])/,
+    pattern: /(?:忽略|无视|忘记)\s*(?:之前|上面|以上|前面|所有)\s*(?:的\s*)?(?:所有\s*)?(?:指令|提示|规则)(?![音框集式性说文档条款目表化字信语词])/,
     type: 'instruction_override',
     severity: 'critical',
     description: '试图忽略、无视或忘记既有指令',
@@ -191,13 +191,13 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     severity: 'high',
     description: '试图激活特权模式',
   },
-  // 必须落到助手 / AI / 模型等角色名词，并且名词停在句界上。
-  // 「你现在是不是」「你现在是在」「你现在是否」没有角色名词，不命中。
+  // 对齐英文 DAN / unrestricted 规则：只有人设明确是越狱或不受限制时才 critical。
+  // 普通「你现在是一名…助手 / 专家 / 翻译」不命中。同一段里的「忽略之前的指令」仍走指令覆盖。
   {
-    pattern: /(?:你现在是|从现在起你(?:将扮演|是))(?:一个|一名|一位)?[^\s，。！？!?\n]{0,16}(?:人工智能|机器人|助手|模型|角色|越狱|DAN|AI)(?=$|[\s，。！？!?、：:,.]|请)/i,
+    pattern: /(?:你现在是|从现在起你(?:将扮演|是))\s*(?:一个|一名|一位)?\s*(?:不受任何限制|没有任何限制|不受限制|不受约束|没有限制|无限制|越狱|邪恶|DAN(?![A-Za-z]))/i,
     type: 'jailbreak_attempt',
     severity: 'critical',
-    description: '试图把助手改写成指定角色',
+    description: '试图把助手改写成不受限制或越狱角色',
   },
   {
     pattern: /(?:do\s+anything\s+now|no\s+(?:rules?|restrictions?|limitations?|filters?|guidelines?))/i,

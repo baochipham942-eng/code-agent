@@ -73,6 +73,19 @@ describe('annotateSummaryWithEncodingNote', () => {
     expect(annotateSummaryWithEncodingNote(annotateSummaryWithEncodingNote(undefined, note), undefined)).toBeUndefined();
   });
 
+  it('摘要接近 2000 字上限：标注保留、只截用户原文，总长不超预算', () => {
+    for (const len of [1959, 1960, 1990, 2000, 5000]) {
+      const long = annotateSummaryWithEncodingNote('长'.repeat(len), note)!;
+      expect(long.length, `len=${len}`).toBeLessThanOrEqual(2000);
+      expect(long).toContain(note);
+      if (len >= 1960) expect(long.endsWith('…')).toBe(true);
+      else expect(long.endsWith('长')).toBe(true);
+    }
+    // 截断后的结果再学一次仍幂等
+    const once = annotateSummaryWithEncodingNote('长'.repeat(5000), note);
+    expect(annotateSummaryWithEncodingNote(once, note)).toBe(once);
+  });
+
   it('无标注且无提示：摘要原样', () => {
     expect(annotateSummaryWithEncodingNote('季度销售', undefined)).toBe('季度销售');
     expect(annotateSummaryWithEncodingNote(undefined, undefined)).toBeUndefined();

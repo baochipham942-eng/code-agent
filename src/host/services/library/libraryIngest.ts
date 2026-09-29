@@ -43,11 +43,22 @@ function decodeLibraryText(buffer: Buffer): { text: string; note?: string } {
   }
 }
 
-/** 把编码标注写进（或从中清除）条目摘要：摘要会注入 pinned 资料索引块，模型读到该条目时能看到这句；重复学习幂等 */
+/** 条目摘要字段上限（同 LibraryRepository 的写入护栏）；超限时护栏按行整段截断，标注 + 原文必须自己先收进这个预算 */
+const SUMMARY_MAX_CHARS = 2000;
+
+/**
+ * 把编码标注写进（或从中清除）条目摘要：摘要会注入 pinned 资料索引块，模型读到该条目时能看到这句；重复学习幂等。
+ * 标注必保留，超预算时只截用户原文（留 … 标记），不把整段交给护栏的按行截断。
+ */
 export function annotateSummaryWithEncodingNote(summary: string | undefined, note: string | undefined): string | undefined {
   const base = summary?.startsWith(GBK_SUMMARY_TAG) ? summary.slice(GBK_SUMMARY_TAG.length).trimStart() : summary;
   if (!note) return base || undefined;
-  return base ? `${GBK_SUMMARY_TAG} ${base}` : GBK_SUMMARY_TAG;
+  if (!base) return GBK_SUMMARY_TAG;
+  const room = SUMMARY_MAX_CHARS - GBK_SUMMARY_TAG.length - 1;
+  if (base.length <= room) return `${GBK_SUMMARY_TAG} ${base}`;
+  let cut = base.slice(0, room - 1);
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1); // 别把代理对劈成两半
+  return `${GBK_SUMMARY_TAG} ${cut}…`;
 }
 
 /** sidecar 目录名（资料库目录内的隐藏目录） */

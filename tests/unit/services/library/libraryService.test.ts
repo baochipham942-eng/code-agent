@@ -89,6 +89,18 @@ describe('LibraryService', () => {
     expect(utf8.summary).toBeUndefined();
   });
 
+  it('GBK 学习时已有近 2000 字的单行摘要：写入后标注在、用户原文只被截短而不是被整段替换成截断标记', async () => {
+    const file = path.join(tmpDir, 'incoming', 'long-summary.csv');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, Buffer.from('c3fbb3c62ccafdc1bf0ac6bbb9fb2c330a', 'hex'));
+    const item = service.addItem({ title: 'long-summary.csv', kind: 'upload', pathOrUri: file, summary: '库'.repeat(1990) }, 1000);
+    const learned = await service.learnItem(item.id, 2000);
+    expect(learned.learnStatus).toBe('ready');
+    expect(learned.summary).toContain('按 GBK 识别');
+    expect(learned.summary).toContain('库库库');
+    expect(learned.summary).not.toContain('output truncated');
+  });
+
   it('importFile 导入 UTF-8 与 GB18030 都解不开的字节：学习失败并提示另存 UTF-8，不入 sidecar', async () => {
     const dir = path.join(tmpDir, 'incoming');
     fs.mkdirSync(dir, { recursive: true });

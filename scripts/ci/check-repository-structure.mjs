@@ -54,7 +54,9 @@ const limits = {
   // 2026-09-25 +2: scripts/perf-journey-ratchet.mjs 及其显式基线文件（N-PERF-JOURNEY-RATCHET：
   // 四条 Neo 用户旅程的 React Profiler commitCount 棘轮，package / swarm-ci post-merge /
   // gates:fast 共用的稳定入口；基线只许降不许升，提额必须连同理由接受评审）。
-  directScriptFiles: 160,
+  // 2026-09-29 +1: scripts/gc-stale-tmp.mjs（N-GATES-TMP-SELFCLEAN：本机临时沙箱陈量回收，
+  // 与 tsc-tests-ratchet / knip-ratchet 等 gates-local 直调治理门同族，留在直属层）。
+  directScriptFiles: 161,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

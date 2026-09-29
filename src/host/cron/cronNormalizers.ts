@@ -53,6 +53,24 @@ export function isCronAgentActionResult(value: unknown): value is CronAgentActio
   return isRecord(value) && typeof value.sessionId === 'string';
 }
 
+/** cron/heartbeat agent 会话档位：context 带 heartbeatTask 的按 heartbeat 建会话。
+ *  （自 cronService 平移，逐字未动——该文件贴 max-lines 线。） */
+export function getCronAgentSessionType(action: CronJobAction): 'schedule' | 'heartbeat' {
+  if (action.type === 'agent' && action.context?.heartbeatTask) {
+    return 'heartbeat';
+  }
+  return 'schedule';
+}
+
+/** cron/heartbeat 会话标题：剥掉历史前缀再按档位重打，避免 [Cron] [Schedule] 叠罗汉。
+ *  （自 cronService 平移，逐字未动——该文件贴 max-lines 线。） */
+export function formatCronAgentSessionTitle(definition: CronJobDefinition, sessionType: 'schedule' | 'heartbeat'): string {
+  const cleanName = definition.name.replace(/^\[(Cron|Schedule|Heartbeat)\]\s*/i, '').trim() || definition.name;
+  return sessionType === 'heartbeat'
+    ? `[Heartbeat] ${cleanName}`
+    : `[Schedule] ${cleanName}`;
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -1,6 +1,7 @@
 import { Cron } from 'croner';
 import { CRON_GUARDRAILS } from '../../shared/constants';
 import type { CronJobDefinition } from '../../shared/contract/cron';
+import { suggestCronStaggerMinute } from '../../shared/cronStagger';
 import {
   createScopedCostLimit,
   isScopedCostLimitExceeded,
@@ -46,6 +47,28 @@ function everyScheduleIntervalSeconds(schedule: CronJobDefinition['schedule']): 
     days: 24 * 60 * 60,
   }[schedule.unit];
   return schedule.interval * multiplier;
+}
+
+/**
+ * every 调度 → cron 表达式。小时/天级任务的分钟位用 jobId 哈希的稳定错峰值，
+ * 不再全部落在 :00（整点扎堆源头）；同一任务重启后分钟不变（jobId 持久）。
+ * （自 cronService 平移，逐字未动——该文件贴 max-lines 线。）
+ */
+export function intervalToCron(interval: number, unit: string, jobId: string): string {
+  switch (unit) {
+    case 'seconds':
+      return `*/${interval} * * * * *`;
+    case 'minutes':
+      return `0 */${interval} * * * *`;
+    case 'hours':
+      return `0 ${suggestCronStaggerMinute(jobId)} */${interval} * * *`;
+    case 'days':
+      return `0 ${suggestCronStaggerMinute(jobId)} 0 */${interval} * *`;
+    case 'weeks':
+      throw new Error('Unsupported interval unit "weeks"; cron day-of-week syntax cannot express every N weeks.');
+    default:
+      return `0 */${interval} * * * *`; // Default to minutes
+  }
 }
 
 function cronScheduleMinimumIntervalSeconds(schedule: CronJobDefinition['schedule']): number | undefined {

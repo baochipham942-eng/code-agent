@@ -14,7 +14,6 @@ import {
   DEFAULT_PROVIDER,
   EXTERNAL_WATCH,
 } from '../../shared/constants';
-import { suggestCronStaggerMinute } from '../../shared/cronStagger';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -39,7 +38,9 @@ import {
   type ResolveRuntimeDefinition,
 } from './cronAutomationBridge';
 import {
+  formatCronAgentSessionTitle,
   isCronAgentActionResult,
+  getCronAgentSessionType,
   normalizeCronJobRow,
   assertSupportedEveryScheduleUnit,
   type SupportedEveryTimeUnit,
@@ -54,6 +55,7 @@ import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
+  intervalToCron,
   runWithCronJobBudget,
   scheduleBoundToDate,
 } from './cronExecutionPolicy';
@@ -584,7 +586,7 @@ export class CronService implements Disposable {
 
         case 'every': {
           // Convert interval to cron expression
-          const cronExpr = this.intervalToCron(schedule.interval, schedule.unit, id);
+          const cronExpr = intervalToCron(schedule.interval, schedule.unit, id);
           // startAt/endAt 是契约既有字段，此前被静默忽略（到期后任务照跑不误）。
           // 交给 croner 原生窗口控制：startAt 前不触发，stopAt 后永久停。
           return new Cron(cronExpr, {
@@ -609,27 +611,6 @@ export class CronService implements Disposable {
     } catch (error) {
       console.error(`[CronService] Failed to create cron instance for job ${id}:`, error);
       return undefined;
-    }
-  }
-
-  /**
-   * every 调度 → cron 表达式。小时/天级任务的分钟位用 jobId 哈希的稳定错峰值，
-   * 不再全部落在 :00（整点扎堆源头）；同一任务重启后分钟不变（jobId 持久）。
-   */
-  private intervalToCron(interval: number, unit: string, jobId: string): string {
-    switch (unit) {
-      case 'seconds':
-        return `*/${interval} * * * * *`;
-      case 'minutes':
-        return `0 */${interval} * * * *`;
-      case 'hours':
-        return `0 ${suggestCronStaggerMinute(jobId)} */${interval} * * *`;
-      case 'days':
-        return `0 ${suggestCronStaggerMinute(jobId)} 0 */${interval} * *`;
-      case 'weeks':
-        throw new Error('Unsupported interval unit "weeks"; cron day-of-week syntax cannot express every N weeks.');
-      default:
-        return `0 */${interval} * * * *`; // Default to minutes
     }
   }
 
@@ -1046,20 +1027,6 @@ export class CronService implements Disposable {
     }
   }
 
-  private getAgentSessionType(action: CronJobAction): 'schedule' | 'heartbeat' {
-    if (action.type === 'agent' && action.context?.heartbeatTask) {
-      return 'heartbeat';
-    }
-    return 'schedule';
-  }
-
-  private formatAgentSessionTitle(definition: CronJobDefinition, sessionType: 'schedule' | 'heartbeat'): string {
-    const cleanName = definition.name.replace(/^\[(Cron|Schedule|Heartbeat)\]\s*/i, '').trim() || definition.name;
-    return sessionType === 'heartbeat'
-      ? `[Heartbeat] ${cleanName}`
-      : `[Schedule] ${cleanName}`;
-  }
-
   private async createCronAgentSession(
     definition: CronJobDefinition,
     action: CronJobAction,
@@ -1079,11 +1046,11 @@ export class CronService implements Disposable {
       : null;
     const baseSession = sourceSession ?? currentSession;
     const settings = configService.getSettings();
-    const sessionType = this.getAgentSessionType(action);
+    const sessionType = getCronAgentSessionType(action);
     const originKind = sessionType === 'heartbeat' ? 'heartbeat' : 'cron';
 
     return sessionManager.createSession({
-      title: this.formatAgentSessionTitle(definition, sessionType),
+      title: formatCronAgentSessionTitle(definition, sessionType),
       modelConfig: resolveSessionDefaultModelConfig({
         provider: settings.model?.provider || baseSession?.modelConfig.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || baseSession?.modelConfig.model || DEFAULT_MODELS.chat,

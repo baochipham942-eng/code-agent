@@ -165,6 +165,11 @@ export const zhSettingsSystem = {
         downloadedMbSuffix: ' MB',
         installedNeedsRestart: '更新已下载安装完成，请重启 Agent Neo 生效',
         installFailed: '更新安装失败，请稍后重试',
+        confirmTitle: '确认安装更新？',
+        confirmRunningMessage: '会中断 {count} 个正在进行的任务。安装完成后应用会自动重启，是否继续？',
+        confirmUnknownMessage: '无法确认是否有正在进行的任务，安装后应用会自动重启并可能中断任务。是否继续？',
+        confirmAction: '仍要安装',
+        confirmCancel: '取消',
       },
       runtimeAssets: {
         title: '本机功能',

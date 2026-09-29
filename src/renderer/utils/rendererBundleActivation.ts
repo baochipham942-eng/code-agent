@@ -63,7 +63,33 @@ export function getRendererBundleActivationText(
     : '刷新界面后回到包内版本';
 }
 
+/** 现在有几个会被「重载界面 / 安装更新」打断的任务（重载与安装共用的唯一判据）。 */
+function countInterruptibleTasks(input: RendererBundleReloadBlockInput): number {
+  const sessions = Math.max(input.runningSessionCount, input.processingSessionCount);
+  const base = sessions + (input.backgroundSessionCount ?? 0) + (input.activeTaskCount ?? 0);
+  return base === 0 && input.isProcessing ? 1 : base;
+}
+
+/**
+ * 安装更新前的中断任务数；拿不到 / 查询失败返回 null（调用方按「有任务」处理）。
+ * 后台任务以现查结果为准，本地 store 计数只负责会话与任务态。
+ */
+export async function resolveInstallInterruptedTaskCount(
+  input: RendererBundleReloadBlockInput,
+  fetchBackgroundTasks: () => Promise<unknown>,
+): Promise<number | null> {
+  try {
+    const background = await fetchBackgroundTasks();
+    if (!Array.isArray(background)) return null;
+    const count = countInterruptibleTasks({ ...input, backgroundSessionCount: background.length });
+    return Number.isFinite(count) ? count : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getRendererBundleReloadBlockedReason(input: RendererBundleReloadBlockInput): string | null {
+  if (countInterruptibleTasks(input) === 0) return null;
   if (input.runningSessionCount > 0) {
     return `有 ${input.runningSessionCount} 个会话正在运行，完成后再刷新`;
   }

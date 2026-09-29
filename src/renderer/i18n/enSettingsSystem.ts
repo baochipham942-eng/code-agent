@@ -163,6 +163,11 @@ export const enSettingsSystem = {
         downloadedMbSuffix: ' MB',
         installedNeedsRestart: 'Update downloaded and installed. Restart Agent Neo to apply it.',
         installFailed: 'Update installation failed, please try again later',
+        confirmTitle: 'Install update?',
+        confirmRunningMessage: 'This will interrupt {count} running task(s). The app restarts automatically after installing. Continue?',
+        confirmUnknownMessage: 'Unable to confirm whether tasks are running. The app restarts automatically after installing and may interrupt them. Continue?',
+        confirmAction: 'Install anyway',
+        confirmCancel: 'Cancel',
       },
       runtimeAssets: {
         title: 'Local capabilities',

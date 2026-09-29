@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsPage } from '../SettingsLayout';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { getRuntimeAssetDisplayKind } from '@shared/contract';
@@ -36,6 +37,7 @@ import {
   getRendererBundleReloadBlockedReason,
   hasRendererBundlePendingActivation,
   readLoadedRendererBundleStatus,
+  resolveInstallInterruptedTaskCount,
 } from '../../../../utils/rendererBundleActivation';
 import {
   getNativeDesktopPermissionStatus,
@@ -474,6 +476,9 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   const updateText = t.settings.update;
   const [isChecking, setIsChecking] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
+  // null = 不弹；count null = 运行状态未知（按有任务处理）
+  const [installConfirm, setInstallConfirm] = useState<{ count: number | null } | null>(null);
+  const [isCheckingTasks, setIsCheckingTasks] = useState(false);
   const [installProgress, setInstallProgress] = useState<UpdateInstallProgress | null>(null);
   const [installedNeedsRestart, setInstalledNeedsRestart] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -675,6 +680,20 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     const timer = window.setInterval(() => { void refreshRuntimeAssetsStatus(); }, 250);
     return () => window.clearInterval(timer);
   }, [preparingRuntimeAssetId]);
+
+  const handleInstallClick = async () => {
+    setIsCheckingTasks(true);
+    const count = await resolveInstallInterruptedTaskCount(
+      { runningSessionCount, processingSessionCount, isProcessing },
+      () => ipcService.invoke(IPC_CHANNELS.BACKGROUND_GET_TASKS),
+    );
+    setIsCheckingTasks(false);
+    if (count === 0) {
+      await handleTauriInstall();
+    } else {
+      setInstallConfirm({ count });
+    }
+  };
 
   const handleTauriInstall = async () => {
     setIsInstalling(true);
@@ -944,8 +963,8 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
               {runningInTauri ? (
                 <div className="space-y-2">
                   <Button
-                    disabled={isDisabled || isInstalling}
-                    onClick={handleTauriInstall}
+                    disabled={isDisabled || isInstalling || isCheckingTasks}
+                    onClick={handleInstallClick}
                     variant="primary"
                     fullWidth
                     leftIcon={isInstalling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
@@ -1003,6 +1022,21 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
           <span className="text-sm">{error}</span>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={installConfirm !== null}
+        title={updateText.install.confirmTitle}
+        message={installConfirm?.count == null
+          ? updateText.install.confirmUnknownMessage
+          : updateText.install.confirmRunningMessage.replace('{count}', String(installConfirm.count))}
+        confirmText={updateText.install.confirmAction}
+        cancelText={updateText.install.confirmCancel}
+        onCancel={() => setInstallConfirm(null)}
+        onConfirm={() => {
+          setInstallConfirm(null);
+          void handleTauriInstall();
+        }}
+      />
     </SettingsPage>
   );
 };

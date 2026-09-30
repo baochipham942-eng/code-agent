@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { CommandDefinition } from '../types';
+import { loadCommandPort } from '../loadCommandPort';
 
 export const clearCommand: CommandDefinition = {
   id: 'clear',
@@ -131,9 +132,11 @@ export const resumeCommand: CommandDefinition = {
 
       if (!targetId) {
         // No arg: find most recent incomplete session in same working directory
-        const { getSessionRecoveryService } = await import(
-          '../../../host/agent/sessionRecovery'
-        );
+        const { getSessionRecoveryService } = await loadCommandPort<{
+          getSessionRecoveryService: () => {
+            checkPreviousSession: (currentSessionId: string, workingDirectory: string) => Promise<string | null>;
+          };
+        }>(ctx, 'loadSessionRecovery');
         // Get working directory from current session
         const getSessionManager = ctx.getSessionManager as (() => { getSession(id: string): Promise<{ workingDirectory?: string } | null> }) | undefined;
         let workingDirectory = process.cwd();

@@ -38,6 +38,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
 import { useDoctorStore } from '../../../../stores/doctorStore';
 import { OS_SANDBOX_DOCTOR_ITEM_NAME } from '@shared/constants/sandbox';
+import { validateUserPermissionRule } from '@shared/permissionRuleSyntax';
 
 export type PermissionMode = 'default' | 'readOnly' | 'acceptEdits' | 'bypassPermissions';
 export type InheritanceMode = 'strict-inherit' | 'child-narrow' | 'independent';
@@ -166,6 +167,37 @@ export function parsePermissionRules(text: string): string[] {
     .filter((line) => line.length > 0);
 }
 
+type PermissionRuleList = 'deny' | 'ask' | 'allow';
+
+type PermissionRuleInvalidText = {
+  empty: string;
+  malformed: string;
+  specifierNotSupported: string;
+  allowAllBash: string;
+};
+
+/** Validate a textarea draft. Invalid drafts stay on screen and are not persisted. */
+export function resolvePermissionRulesBlur(
+  kind: PermissionRuleList,
+  text: string,
+  messages: PermissionRuleInvalidText,
+): { ok: true; rules: string[] } | { ok: false; message: string } {
+  const rules = parsePermissionRules(text);
+  const textByReason = {
+    empty: messages.empty,
+    malformed: messages.malformed,
+    specifier_not_supported: messages.specifierNotSupported,
+    allow_all_bash: messages.allowAllBash,
+  };
+  for (const line of rules) {
+    const verdict = validateUserPermissionRule(line, kind);
+    if (!verdict.ok) {
+      return { ok: false, message: `${line}: ${textByReason[verdict.reason]}` };
+    }
+  }
+  return { ok: true, rules };
+}
+
 export function buildPermissionModeRows(
   activeMode: PermissionMode,
   text: GeneralSettingsText = DEFAULT_GENERAL_SETTINGS_TEXT,
@@ -268,6 +300,7 @@ export const GeneralSettings: React.FC = () => {
   const [denyRules, setDenyRules] = useState<string>('');
   const [askRules, setAskRules] = useState<string>('');
   const [allowRules, setAllowRules] = useState<string>('');
+  const [ruleErrors, setRuleErrors] = useState<Partial<Record<PermissionRuleList, string>>>({});
   const [showMigrationBanner, setShowMigrationBanner] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
   const [pendingPermissionMode, setPendingPermissionMode] = useState<PermissionMode | null>(null);
@@ -399,10 +432,15 @@ export const GeneralSettings: React.FC = () => {
     toast.success(generalText.inheritanceSaved);
   };
 
-  const handleRulesBlur = async (kind: 'deny' | 'ask' | 'allow', text: string) => {
-    const rules = parsePermissionRules(text);
-    await persistPermissions({ [kind]: rules });
-    toast.success(`${kind}${generalText.ruleSavedPrefix}${rules.length}${generalText.ruleSavedSuffix}`);
+  const handleRulesBlur = async (kind: PermissionRuleList, text: string) => {
+    const decision = resolvePermissionRulesBlur(kind, text, generalText.userRules.invalid);
+    if (!decision.ok) {
+      setRuleErrors((current) => ({ ...current, [kind]: decision.message }));
+      return;
+    }
+    setRuleErrors((current) => ({ ...current, [kind]: undefined }));
+    await persistPermissions({ [kind]: decision.rules });
+    toast.success(`${kind}${generalText.ruleSavedPrefix}${decision.rules.length}${generalText.ruleSavedSuffix}`);
   };
 
   const handleAckMigration = async () => {
@@ -838,10 +876,13 @@ export const GeneralSettings: React.FC = () => {
                   onChange={(event) => setDenyRules(event.target.value)}
                   onBlur={(event) => handleRulesBlur('deny', event.target.value)}
                   disabled={isWebMode()}
-                  placeholder={'Bash(rm -rf *)\nWrite(/etc/*)\nNetwork(*)'}
+                  placeholder={'Bash(rm -rf *)\nWrite(/etc/*)\nBash(curl *)'}
                   rows={4}
                   className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-red-500/50 disabled:cursor-not-allowed disabled:opacity-50"
                 />
+                {ruleErrors.deny ? (
+                  <p className="mt-1 text-xs text-badge-danger">{ruleErrors.deny}</p>
+                ) : null}
               </div>
               <div>
                 <label className="mb-1 block text-xs text-badge-warning">{generalText.userRules.askLabel}</label>
@@ -854,6 +895,9 @@ export const GeneralSettings: React.FC = () => {
                   rows={3}
                   className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-badge-warning/50 disabled:cursor-not-allowed disabled:opacity-50"
                 />
+                {ruleErrors.ask ? (
+                  <p className="mt-1 text-xs text-badge-danger">{ruleErrors.ask}</p>
+                ) : null}
               </div>
               <div>
                 <label className="mb-1 block text-xs text-badge-success">{generalText.userRules.allowLabel}</label>
@@ -866,6 +910,9 @@ export const GeneralSettings: React.FC = () => {
                   rows={3}
                   className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"
                 />
+                {ruleErrors.allow ? (
+                  <p className="mt-1 text-xs text-badge-danger">{ruleErrors.allow}</p>
+                ) : null}
               </div>
             </div>
           </div>

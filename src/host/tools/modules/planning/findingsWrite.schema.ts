@@ -36,4 +36,7 @@ export const findingsWriteSchema: ToolSchema = {
   category: 'planning',
   permissionLevel: 'write',
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'write', expression: 'resource(session, findings)' },
+  ],
 };

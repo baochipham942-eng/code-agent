@@ -110,4 +110,8 @@ Features:
   readsUntrustedContent: 'block',
   readOnly: false,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', expression: 'resource(network, web_search)' },
+    { kind: 'write', expression: 'workspaceFile(args.save_to)' },
+  ],
 };

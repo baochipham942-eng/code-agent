@@ -23,4 +23,7 @@ Reuse running agents via send_input when follow-up tasks depend on their prior c
   },
   category: 'multiagent',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'write', expression: 'resource(agent, args.agentId)' },
+  ],
 };

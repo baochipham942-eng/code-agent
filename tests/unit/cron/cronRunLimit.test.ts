@@ -94,11 +94,11 @@ describe('settleCronRunLimit count rules', () => {
   it('counts completed and failed first attempts', async () => {
     const completed = makeSettleHarness();
     expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, completed.hooks)).toBe(false);
-    expect(completed.updates).toEqual([{ runCount: 1 }]);
+    expect(completed.state.definition?.runCount).toBe(1);
 
     const failed = makeSettleHarness();
     expect(await settleCronRunLimit('job-1', fullExecution('failed'), false, failed.hooks)).toBe(false);
-    expect(failed.updates).toEqual([{ runCount: 1 }]);
+    expect(failed.state.definition?.runCount).toBe(1);
   });
 
   it('does not count retries or cancelled/capacity-wait runs', async () => {
@@ -110,6 +110,7 @@ describe('settleCronRunLimit count rules', () => {
     ]) {
       const harness = makeSettleHarness();
       expect(await settleCronRunLimit('job-1', settle, false, harness.hooks)).toBe(false);
+      expect(harness.state.definition?.runCount).toBe(0);
       expect(harness.updates).toEqual([]);
     }
   });
@@ -117,18 +118,19 @@ describe('settleCronRunLimit count rules', () => {
   it('skips one-time (at) jobs and cloud jobs', async () => {
     const atJob = makeSettleHarness({ scheduleType: 'at', schedule: { type: 'at', datetime: 2 } });
     expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, atJob.hooks)).toBe(false);
-    expect(atJob.updates).toEqual([]);
+    expect(atJob.state.definition?.runCount).toBe(0);
 
     const cloudJob = makeSettleHarness({ runsOn: 'cloud', maxRuns: undefined });
     expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, cloudJob.hooks)).toBe(false);
-    expect(cloudJob.updates).toEqual([]);
+    expect(cloudJob.state.definition?.runCount).toBe(0);
   });
 
   it('reaches the limit at exactly N: disables with max_runs_reached and posts one inbox event', async () => {
     const harness = makeSettleHarness({ runCount: 1 });
     expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, harness.hooks)).toBe(true);
+    // 计数走窄写原地落账（不进 updates）；updateJob 只被到数停用调用一次。
+    expect(harness.state.definition?.runCount).toBe(2);
     expect(harness.updates).toEqual([
-      { runCount: 2 },
       { enabled: false, metadata: { disabledReason: 'max_runs_reached' } },
     ]);
     expect(automationState.recordEvent).toHaveBeenCalledTimes(1);
@@ -142,21 +144,37 @@ describe('settleCronRunLimit count rules', () => {
   it('does not double-disable when the same run already disabled the job (permanent path)', async () => {
     const harness = makeSettleHarness({ runCount: 1 });
     expect(await settleCronRunLimit('job-1', fullExecution('failed'), true, harness.hooks)).toBe(true);
-    expect(harness.updates).toEqual([{ runCount: 2 }]);
+    expect(harness.state.definition?.runCount).toBe(2);
+    expect(harness.updates).toEqual([]);
     expect(automationState.recordEvent).not.toHaveBeenCalled();
   });
 
   it('does not disable a job that is already disabled', async () => {
     const harness = makeSettleHarness({ runCount: 1, enabled: false });
     expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, harness.hooks)).toBe(false);
-    expect(harness.updates).toEqual([{ runCount: 2 }]);
+    expect(harness.state.definition?.runCount).toBe(2);
+    expect(harness.updates).toEqual([]);
     expect(automationState.recordEvent).not.toHaveBeenCalled();
   });
 
   it('counts unbounded runs without ever reaching a limit', async () => {
     const harness = makeSettleHarness({ maxRuns: undefined, runCount: 41 });
     expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, harness.hooks)).toBe(false);
-    expect(harness.updates).toEqual([{ runCount: 42 }]);
+    expect(harness.state.definition?.runCount).toBe(42);
+  });
+
+  it('writes plain count increments via the narrow write, never updateJob (PR#2208 ai-review Important)', async () => {
+    // 无 maxRuns：记数不许走 updateJob（停定时器/重校验/整行重写）。
+    const unlimited = makeSettleHarness({ maxRuns: undefined, runCount: 3 });
+    expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, unlimited.hooks)).toBe(false);
+    expect(unlimited.state.definition?.runCount).toBe(4);
+    expect(unlimited.updates).toEqual([]);
+
+    // 有 maxRuns 但未触顶：同样只走窄写。
+    const limited = makeSettleHarness({ maxRuns: 5, runCount: 1 });
+    expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, limited.hooks)).toBe(false);
+    expect(limited.state.definition?.runCount).toBe(2);
+    expect(limited.updates).toEqual([]);
   });
 
   it('is a no-op when the job is gone', async () => {
@@ -164,6 +182,17 @@ describe('settleCronRunLimit count rules', () => {
     harness.state.definition = undefined;
     expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, harness.hooks)).toBe(false);
     expect(harness.updates).toEqual([]);
+  });
+
+  it('never lets a settle error escape: count is settled, job keeps running (PR#2208 ai-review Important)', async () => {
+    const harness = makeSettleHarness({ runCount: 1 });
+    harness.hooks.updateJob = async () => {
+      throw new Error('boom: legacy job fails current schedule validation');
+    };
+    expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, harness.hooks)).toBe(false);
+    // 计数已窄写落账；停用失败只留日志，任务保持启用、通知侧按未停用处理。
+    expect(harness.state.definition).toMatchObject({ runCount: 2, enabled: true });
+    expect(automationState.recordEvent).not.toHaveBeenCalled();
   });
 });
 

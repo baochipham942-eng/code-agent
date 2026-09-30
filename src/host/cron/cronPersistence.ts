@@ -81,6 +81,22 @@ export async function saveCronJob(
   }
 }
 
+/**
+ * 只更新运行计数列（N-CRON-BUDGET-EXPOSE R1，PR#2208 ai-review Important）：
+ * 次数结算每趟都要记数，走 saveCronJob 整行 upsert 会顺改 updated_at 造成无意义
+ * churn；单列 UPDATE 不碰其它字段。与 saveCronJob 同款：落库失败只记日志，
+ * 由内存计数继续撑着，不许把异常甩回 executeJob 的 finally。
+ */
+export async function updateCronJobRunCount(jobId: string, runCount: number): Promise<void> {
+  try {
+    const db = getDatabase().getDb();
+    if (!db) return;
+    db.prepare('UPDATE cron_jobs SET run_count = ? WHERE id = ?').run(runCount, jobId);
+  } catch (error) {
+    console.error('[CronService] Failed to update job run count:', error);
+  }
+}
+
 export async function deleteCronJob(jobId: string): Promise<void> {
   try {
     const db = getDatabase().getDb();

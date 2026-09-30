@@ -977,4 +977,53 @@ describe('N-CRON-BUDGET-EXPOSE maxRuns run-count cap', () => {
     expect(maxRunsEventCalls(job.id)).toHaveLength(0);
     await service.shutdown();
   });
+
+  it('an unlimited job settles runCount via the narrow write: timer untouched, no updatedAt churn', async () => {
+    const service = new CronService();
+    stubExecuteAction(service, async () => ({ ok: true }));
+    const { maxRuns: _noCap, ...unlimited } = limitedAgentJob(0);
+    const job = await service.createJob(unlimited);
+
+    const jobs = (service as unknown as {
+      jobs: Map<string, { cronInstance?: unknown }>;
+    }).jobs;
+    const cronInstanceBefore = jobs.get(job.id)?.cronInstance;
+    expect(cronInstanceBefore).toBeDefined();
+
+    await service.triggerJob(job.id);
+
+    // 记数生效，但定时器是同一个（没被 stop/re-register），updatedAt 没被顺改。
+    expect(service.getJob(job.id)).toMatchObject({ enabled: true, runCount: 1, updatedAt: job.updatedAt });
+    expect(jobs.get(job.id)?.cronInstance).toBe(cronInstanceBefore);
+    await service.shutdown();
+  });
+
+  it('a throw inside settle never wedges the job: in-flight cleared, next scheduled run still fires', async () => {
+    const service = new CronService();
+    const executeAction = stubExecuteAction(service, async () => ({ ok: true }));
+    const job = await service.createJob(limitedAgentJob(1));
+
+    // 复现审查场景：到数停用的 updateJob 抛错（如遗留任务过不了现行校验 / 落库失败）。
+    const originalUpdateJob = service.updateJob.bind(service);
+    vi.spyOn(service, 'updateJob').mockImplementation(async (jobId, updates) => {
+      if (updates.enabled === false && updates.metadata) {
+        throw new Error('boom: legacy job fails current schedule validation');
+      }
+      return originalUpdateJob(jobId, updates);
+    });
+
+    const first = await service.triggerJob(job.id);
+    expect(first?.status).toBe('completed');
+    // 计数已窄写落账；停用虽抛错，任务保持启用。
+    expect(service.getJob(job.id)).toMatchObject({ enabled: true, runCount: 1 });
+
+    // in-flight 标记必须已释放——否则之后每趟都被 "previous run still in progress" 跳过。
+    const inFlight = (service as unknown as { inFlightJobIds: Set<string> }).inFlightJobIds;
+    expect(inFlight.has(job.id)).toBe(false);
+
+    // 下一个排程 tick 照常触发执行。
+    await (service as unknown as { runScheduledJob: (id: string) => Promise<void> }).runScheduledJob(job.id);
+    expect(executeAction).toHaveBeenCalledTimes(2);
+    await service.shutdown();
+  });
 });

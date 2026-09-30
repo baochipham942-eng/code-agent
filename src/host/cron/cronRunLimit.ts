@@ -11,6 +11,7 @@ import type { CronJobDefinition, CronJobExecution } from '../../shared/contract/
 import { getSessionAutomationService } from '../services/sessionAutomation';
 import { getCronAutomationType } from './cronAutomationBridge';
 import { notifyCronJobDisabled } from './cronFailurePolicy';
+import { updateCronJobRunCount } from './cronPersistence';
 
 interface CronRunLimitOutcome {
   /** 本次执行结算后的已计数运行数。 */
@@ -20,7 +21,7 @@ interface CronRunLimitOutcome {
 }
 
 /**
- * 把一趟结束的执行结算进运行计数（纯函数，副作用留在 cronService）。
+ * 把一趟结束的执行结算进运行计数（纯函数；窄写落账见 writeCronRunCountNarrow）。
  * 计数口径：completed / failed 且 retryAttempt === 0 的首趟；退避重试、
  * cancelled（排队等容量被中断）不计；手动 triggerJob 照常计；
  * 一次性（at）任务本就只跑一趟、云端运行不在本地计数，两者跳过。
@@ -70,6 +71,10 @@ type CronServiceUpdateJob = (
  * executeJob finally 里的次数上限结算：排在失败停用分档之后——同一趟已按
  * permanent/consecutive 停用的（disableNotified）或已不在启用态的，不再按
  * max_runs 重复停用/通知。返回更新后的 disableNotified。
+ *
+ * 整体兜底 try/catch（PR#2208 ai-review Important）：任何一步抛错（如遗留任务过不了
+ * 现行调度校验、落库失败）都不许逃出 executeJob 的 finally——那里后面还有执行通知与
+ * inFlightJobIds 释放，逃了任务会被 "previous run still in progress" 永久卡死。
  */
 export async function settleCronRunLimit(
   jobId: string,
@@ -77,21 +82,42 @@ export async function settleCronRunLimit(
   disableNotified: boolean,
   hooks: CronRunLimitHooks,
 ): Promise<boolean> {
-  const base = hooks.getDefinition(jobId);
-  if (!base) return disableNotified;
-  const outcome = applyRunToLimit(base, execution);
-  if (outcome.runCount !== (base.runCount ?? 0)) {
-    await hooks.updateJob(jobId, { runCount: outcome.runCount });
+  try {
+    const base = hooks.getDefinition(jobId);
+    if (!base) return disableNotified;
+    const outcome = applyRunToLimit(base, execution);
+    if (outcome.runCount !== (base.runCount ?? 0)) {
+      // 记数走窄写：不走 updateJob——它会先停定时器、重跑调度校验再整行重写，
+      // 无 maxRuns 的任务每趟都被这么来一遍；旧任务过不了现行校验或落库抛错时
+      // 定时器已停且不再注册（PR#2208 ai-review Important）。
+      await writeCronRunCountNarrow(base, outcome.runCount);
+    }
+    const latest = hooks.getDefinition(jobId);
+    if (!outcome.limitReached || disableNotified || !latest?.enabled) return disableNotified;
+    await hooks.updateJob(jobId, {
+      enabled: false,
+      metadata: { ...latest.metadata, disabledReason: 'max_runs_reached' },
+    });
+    notifyCronJobDisabled(latest, execution, 'max_runs');
+    await recordMaxRunsReachedEvent(latest);
+    return true;
+  } catch (error) {
+    console.error(`[CronService] Job ${jobId} run-limit settle failed (job keeps running):`, error);
+    return disableNotified;
   }
-  const latest = hooks.getDefinition(jobId);
-  if (!outcome.limitReached || disableNotified || !latest?.enabled) return disableNotified;
-  await hooks.updateJob(jobId, {
-    enabled: false,
-    metadata: { ...latest.metadata, disabledReason: 'max_runs_reached' },
-  });
-  notifyCronJobDisabled(latest, execution, 'max_runs');
-  await recordMaxRunsReachedEvent(latest);
-  return true;
+}
+
+/**
+ * 运行计数的窄写：内存定义原地改计数 + DB run_count 单列更新——不走 updateJob 的
+ * 停定时器/重校验/整行重写，updatedAt 不 churn（PR#2208 ai-review Important）。
+ */
+export async function writeCronRunCountNarrow(
+  definition: CronJobDefinition | undefined,
+  runCount: number,
+): Promise<void> {
+  if (!definition) return;
+  definition.runCount = runCount;
+  await updateCronJobRunCount(definition.id, runCount);
 }
 
 /**

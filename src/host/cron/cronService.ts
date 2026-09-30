@@ -748,7 +748,8 @@ export class CronService implements Disposable {
         }
       }
 
-      // 次数上限结算（N-CRON-BUDGET-EXPOSE，实现见 cronRunLimit.ts）：排在失败停用之后，同趟不重复停用。
+      // 次数上限结算（N-CRON-BUDGET-EXPOSE，实现见 cronRunLimit.ts）：排在失败停用之后，同趟不重复停用；
+      // 记数走窄写且整体已兜底，抛错不会逃出 finally 卡死 in-flight（PR#2208 ai-review Important）。
       disableNotified = await settleCronRunLimit(definition.id, execution, disableNotified, {
         getDefinition: (jobId) => this.jobs.get(jobId)?.definition,
         updateJob: (jobId, updates) => this.updateJob(jobId, updates),

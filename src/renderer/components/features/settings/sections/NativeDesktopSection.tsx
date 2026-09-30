@@ -884,7 +884,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
             className={`px-2.5 py-1 rounded-lg text-[11px] inline-flex items-center gap-1 transition-colors ${
               collectorStatus?.running
                 ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-                : 'bg-cyan-600 text-white hover:bg-cyan-500'
+                : 'bg-cyan-700 text-white hover:bg-cyan-800'
             } disabled:opacity-50`}
           >
             {collectorStatus?.running ? (

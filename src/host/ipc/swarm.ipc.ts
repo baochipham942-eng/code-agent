@@ -16,6 +16,13 @@ import {
 import type { CompletedAgentRun } from '../../shared/contract/agentHistory';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { Message } from '../../shared/contract';
+import type { MemberFollowUpFailure } from '../../shared/contract/memberInput';
+import {
+  externalEngineFollowUpFailure,
+  resolveMemberEngine,
+  undeliveredFollowUpFailure,
+} from '../agent/memberRuntimeEngine';
+import type { AgentMessage } from '../agent/messageOrigin';
 import type { SwarmRunDetail } from '../../shared/contract/swarmTrace';
 import { getSwarmServices } from '../agent/swarmServices';
 import { getSwarmEventEmitter } from '../agent/swarmEventPublisher';
@@ -28,6 +35,7 @@ import { createLogger } from '../services/infra/logger';
 import { getSessionManager } from '../services';
 import { getEventBus } from '../services/eventing/bus';
 import { SWARM_TRACE } from '../../shared/constants/storage';
+import { isLiveRunningStatus } from '../agent/spawnGuard';
 
 const logger = createLogger('SwarmIPC');
 
@@ -182,13 +190,32 @@ ensureSwarmBusBridge();
 // IPC Handler 注册（Renderer → Main）
 // ============================================================================
 
+function peekQueue(owner: object, agentId: string): AgentMessage[] {
+  const peek = (owner as { peekMessages?: (id: string) => AgentMessage[] }).peekMessages;
+  return typeof peek === 'function' ? peek.call(owner, agentId) : [];
+}
+
+/** 协调器 mock 不在真实注册表里，没有 peek 时计数为 0，成功/失败回执保持原字段。 */
+function countLiveFollowUps(agentId: string, coordinator: object, spawnGuard: object): number {
+  const seen = new Set<string>();
+  let count = 0;
+  for (const message of [...peekQueue(spawnGuard, agentId), ...peekQueue(coordinator, agentId)]) {
+    const key = message.id ? `id:${message.id}` : `${message.timestamp}\0${message.from}\0${message.payload}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    count += 1;
+  }
+  return count;
+}
+
 /**
  * 用户发消息给某位 Team 成员（渲染层 @专家 直达 / 成员视图补话 / 团队面板都走这一条）。
  * 协调器 durable 入队 → SpawnGuard 回退 → TeammateService 投递账本 → 会话落库。
+ * 外部引擎运行中不入队。已结束且队列里还有信时，如实报未送达。
  */
 export async function sendSwarmUserMessage(
   payload: SwarmSendUserMessagePayload,
-): Promise<{ delivered: boolean; persisted: boolean }> {
+): Promise<{ delivered: boolean; persisted: boolean; failure?: MemberFollowUpFailure }> {
   try {
     const services = getSwarmServices();
     const ref: SwarmAgentRef = payload;
@@ -199,13 +226,22 @@ export async function sendSwarmUserMessage(
 
     const canDeliverToParallel = coordinator.canReceiveMessage(payload.agentId);
     const spawnGuardAgent = services.spawnGuard.get?.(payload.agentId, ref);
-    const canDeliverToSpawnGuard = spawnGuardAgent?.status === 'running';
+    const canDeliverToSpawnGuard = isLiveRunningStatus(spawnGuardAgent?.status);
 
     if (!canDeliverToParallel && !canDeliverToSpawnGuard) {
-      return {
-        delivered: false,
-        persisted: false,
-      };
+      const failure = undeliveredFollowUpFailure(countLiveFollowUps(payload.agentId, coordinator, services.spawnGuard));
+      return failure
+        ? { delivered: false, persisted: false, failure }
+        : { delivered: false, persisted: false };
+    }
+
+    const task = coordinator.getTaskDefinition(payload.agentId);
+    const externalFailure = externalEngineFollowUpFailure(resolveMemberEngine({
+      agentId: payload.agentId,
+      engine: task?.engine,
+    }));
+    if (externalFailure) {
+      return { delivered: false, persisted: false, failure: externalFailure };
     }
 
     const requestedTargetIds = Array.from(new Set([
@@ -222,7 +258,7 @@ export async function sendSwarmUserMessage(
         return false;
       }
       if (coordinator.canReceiveMessage(agentId)) return true;
-      return services.spawnGuard.get?.(agentId, ref)?.status === 'running';
+      return isLiveRunningStatus(services.spawnGuard.get?.(agentId, ref)?.status);
     });
     const sessionMessage = buildPersistedUserMessage(payload, scope, validatedTargetIds);
     // ADR-067 D1：用户直达消息的来源由宿主在此 IPC 入队点铸造（senderKind='user'）。

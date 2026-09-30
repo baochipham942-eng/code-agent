@@ -10,6 +10,20 @@ const snapshotDir = 'packages/internal/evaluation-center/snapshots/request-repla
 const caseIndex = `${snapshotDir}/single-turn-qa/index.json`;
 const sensitiveFile = 'src/host/prompts/builder.ts';
 const readProjectionFile = 'src/host/context/readResultProjection.ts';
+const contextBuilderFile = 'src/host/agent/messageHandling/contextBuilder.ts';
+const converterFile = 'src/host/agent/messageHandling/converter.ts';
+const toolDefinitionsFile = 'src/host/tools/dispatch/toolDefinitions.ts';
+const deferredToolsFile = 'src/host/services/toolSearch/deferredTools.ts';
+const todayAnchorFile = 'src/shared/todayAnchor.ts';
+const toolSchemaFile = 'src/host/tools/modules/file/read.schema.ts';
+const provenSensitiveFiles = [
+  contextBuilderFile,
+  converterFile,
+  toolDefinitionsFile,
+  deferredToolsFile,
+  todayAnchorFile,
+  toolSchemaFile,
+];
 
 function write(root: string, relativePath: string, content: string): void {
   const absolutePath = join(root, relativePath);
@@ -29,6 +43,9 @@ function makeFixture(): string {
   git(root, 'config', 'user.email', 'snapshot-sync-gate@example.test');
   write(root, sensitiveFile, 'export const SYSTEM_PROMPT = "v1";\n');
   write(root, readProjectionFile, 'export const READ_RECEIPT_PREFIX = "[Read already shown";\n');
+  for (const file of provenSensitiveFiles) {
+    write(root, file, 'export const MARKER = "v1";\n');
+  }
   write(root, caseIndex, '{"version":1,"caseId":"single-turn-qa","turns":["turn-01"]}\n');
   write(root, 'README.md', '# fixture\n');
   git(root, 'add', '.');
@@ -127,6 +144,33 @@ describe('snapshot-replay sync gate', () => {
     const result = runGate(root);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('没有任何用例');
+  });
+
+  it.each(provenSensitiveFiles)('改 %s 不同步快照时必须红', (file) => {
+    const root = makeFixture();
+    write(root, file, 'export const MARKER = "v2";\n');
+
+    const result = runGate(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('改了模型可见行为面但没同 PR 重录 request-replay 快照');
+    expect(result.stderr).toContain(file);
+  });
+
+  it.each(provenSensitiveFiles)('改 %s 且快照目录同改时为绿', (file) => {
+    const root = makeFixture();
+    write(root, file, 'export const MARKER = "v2";\n');
+    write(root, caseIndex, '{"version":1,"caseId":"single-turn-qa","turns":["turn-01","turn-02"]}\n');
+
+    const result = runGate(root);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('改 tools/modules 下非 schema 实现文件不触发敏感面', () => {
+    const root = makeFixture();
+    write(root, 'src/host/tools/modules/file/read.ts', 'export function read() { return 1; }\n');
+
+    const result = runGate(root);
+    expect(result.status, result.stderr).toBe(0);
   });
 
   it('已提交的敏感面变更（merge-base 口径）不同步快照时必须红', () => {

@@ -170,6 +170,7 @@ vi.mock('../../../src/host/services/roleAssets', () => ({
 vi.mock('../../../src/host/agent/spawnGuard', () => ({
   getSpawnGuard: () => ({
     drainMessages: () => [],
+    peekMessages: () => [],
     cancelDescendants: vi.fn(),
   }),
 }));

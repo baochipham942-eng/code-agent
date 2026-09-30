@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
-import { collectTurnOrigins, type AgentMessageOrigin } from './messageOrigin';
+import type { AgentMessageOrigin } from './messageOrigin';
 import type { ToolCall } from '../../shared/contract';
 import { ModelRouter } from '../model/modelRouter';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../model/adapters/aiSdkAdapter';
@@ -54,10 +54,14 @@ import {
 import { applySubagentToolExitGate, buildSubagentToolTable, resolveSubagentToolAccess } from './subagentExecutorToolDefs';
 import {
   buildSubagentModelCall,
-  drainSubagentMessages,
   recordSubagentTelemetryTurn,
   type SubagentTelemetryToolCall,
 } from './subagentExecutorTelemetry';
+import {
+  commitMemberTextAnswer,
+  createMemberAnswerLedger,
+  drainQueuedMemberInput,
+} from './memberInputWindDown';
 import {
   createSubagentCancellationLifecycle,
   flushSubagentCancellation,
@@ -181,7 +185,6 @@ export class SubagentExecutor {
     const instanceArtifacts: Array<{ label: string; ref?: string }> = [];
     let toolCallsAttempted = 0;
     let iterations = 0;
-    let finalOutput = '';
     const doomLoopGuard = new SubagentDoomLoopGuard();
     // ADR-067 D3：本轮最新输入的 origin 链。drain 注入时刷新；无注入的迭代保留
     // 上一条（peer 指令的影响跨 iteration 持续，直到下一条新输入到达）。
@@ -245,6 +248,10 @@ export class SubagentExecutor {
       parentRemainingBudget: context.parentRemainingBudget, executionTopology: context.executionTopology,
     });
     const executionAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
+    // peek 与 drain 必须是同一个 id。spawnGuardId 为空时 peek 会落到 executionAgentId，
+    // drain 若只认 spawnGuardId，续跑看得见消息却取不走。
+    const memberInputQueueId = context.spawnGuardId || executionAgentId;
+    const answerLedger = createMemberAnswerLedger(memberInputQueueId, context.swarmRunScope);
     const executionRunId = context.runId || context.swarmRunScope?.runId || context.traceContext?.runId || agentTask.id;
     const turnObservability = createSubagentTurnObservability({
       sessionId, events: context.events,
@@ -489,7 +496,7 @@ export class SubagentExecutor {
       // subagent taskGate（roadmap 2.6，衔接 1.3）：想收口但名下还有未收口任务时
       // 注入重入消息督办，上限 2 次（MiMo subagent 上限），防跑飞
       let taskGateReentries = 0;
-      const SUBAGENT_TASK_GATE_MAX_REENTRIES = 2;
+      let memberInputReentries = 0;
 
       while (iterations < maxIterations) {
         iterations++;
@@ -553,10 +560,10 @@ export class SubagentExecutor {
             getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-cancel');
           }
           // Fire SubagentStop on abort/timeout
-          context.hooks?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:abort', 'warn'));
+          context.hooks?.triggerSubagentStop(config.name, answerLedger.settled() || undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:abort', 'warn'));
           return {
             success: false,
-            output: finalOutput || '',
+            output: answerLedger.settled(),
             error: errorMsg,
             toolsUsed: [...new Set(toolsUsed)],
             toolCallCount: turnObservability.getToolCallCount(),
@@ -571,36 +578,24 @@ export class SubagentExecutor {
           };
         }
 
-        // Drain structured message queue (mid-loop injection)
-        {
-          const externalMessages = context.messageDrain ? await context.messageDrain() : [];
-          const pendingMessages = [
-            ...(context.spawnGuardId ? getSpawnGuard().drainMessages(context.spawnGuardId) : []),
-            ...externalMessages,
-          ];
-          // ADR-067 D3：本轮注入消息的 origin 链挂上 turn context，权限判定取最不可信者
-          currentTurnOrigin = collectTurnOrigins(pendingMessages) ?? currentTurnOrigin;
-          const injected = drainSubagentMessages({
-            agentName: config.name,
-            messages,
-            pendingMessages,
-            logger,
-            pushObservabilityMessage,
-          });
-          if (injected > 0) {
-            emitContextSnapshot();
-          }
-          if (externalMessages.length > 0) {
-            await context.ackMessageDrain?.();
-          }
-        }
-
-        // Check budget before each iteration
+        // 预算不过就不排空：补话留在队列里，收尾才能记成未送达。
         const iterBudgetCheck = pipeline.checkBudget(pipelineContext);
         if (!iterBudgetCheck.allowed) {
           logger.warn(`[${config.name}] Budget exceeded at iteration ${iterations}`);
           break;
         }
+
+        currentTurnOrigin = await drainQueuedMemberInput({
+          context,
+          queueAgentId: memberInputQueueId,
+          agentName: config.name,
+          messages,
+          logger,
+          pushObservabilityMessage,
+          emitContextSnapshot,
+          currentTurnOrigin,
+          onDrained: answerLedger.noteDrained,
+        });
 
         const telemetryTurnId = turnObservability.startTurn(iterations);
         // Auto-compaction: truncate old messages if approaching context limit
@@ -711,39 +706,26 @@ export class SubagentExecutor {
 
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
-          // taskGate（roadmap 2.6）：收口前检查名下未收口任务，重入督办（上限 2）
-          const ownedOpenTasks = getIncompleteTasks(sessionId).filter(
-            (t) => t.owner === pipelineContext.agentId,
-          );
-          if (ownedOpenTasks.length > 0 && taskGateReentries < SUBAGENT_TASK_GATE_MAX_REENTRIES) {
-            taskGateReentries++;
-            const taskLines = ownedOpenTasks.map((t) => `- #${t.id} [${t.status}] ${t.subject}`).join('\n');
-            logger.info(`[${config.name}] taskGate re-entry ${taskGateReentries}/${SUBAGENT_TASK_GATE_MAX_REENTRIES}: ${ownedOpenTasks.length} open task(s)`);
-            messages.push(createRuntimeMessage({
-              role: 'user',
-              content:
-                `[taskGate] 你名下还有 ${ownedOpenTasks.length} 个未收口任务：\n${taskLines}\n` +
-                `请先用 TaskManager 把它们置为 completed（已完成）或 cancelled（说明原因），再给出最终总结。`,
-            }));
-            continue;
-          }
-          finalOutput = response.content;
-          messages.push(createRuntimeMessage({
-            role: 'assistant',
+          const wind = commitMemberTextAnswer({
+            ledger: answerLedger,
             content: response.content,
-            observation: buildObservation('recent_turn', 'assistant_response', {
-              sourceKind: 'message',
-              layer: 'assistant_turn',
-            }),
-          }));
-          pushObservabilityMessage({
-            id: generateMessageId(),
-            role: 'assistant',
-            content: response.content,
-            timestamp: Date.now(),
+            thinking: response.thinking,
+            openTasks: getIncompleteTasks(sessionId).filter((task) => task.owner === pipelineContext.agentId),
+            taskGateReentries,
+            memberInputReentries,
+            agentId: memberInputQueueId,
+            scope: context.swarmRunScope,
+            iterations,
+            maxIterations,
+            messages,
+            log: (message) => logger.info(`[${config.name}] ${message}`),
+            pushObservabilityMessage,
+            emitContextSnapshot,
+            persistTelemetryTurn,
           });
-          emitContextSnapshot();
-          persistTelemetryTurn(response.content, response.thinking);
+          taskGateReentries = wind.taskGateReentries;
+          memberInputReentries = wind.memberInputReentries;
+          if (wind.continueLoop) continue;
           break;
         }
 
@@ -1084,6 +1066,8 @@ export class SubagentExecutor {
         }
       }
 
+      const finalOutput = answerLedger.settled();
+
       // Get final cost
       cleanupTimer();
       stopIdleWatchdog();
@@ -1171,13 +1155,25 @@ export class SubagentExecutor {
       if (context.hooks) {
         context.hooks.triggerSubagentStop(
           config.name,
-          undefined,
+          answerLedger.settled() || undefined,
           sessionId,
           agentTask.id,
         ).catch(() => {});
       }
 
-      if (error instanceof SubagentDoomLoopStopError) return { ...error.toResult(finalOutput, toolsUsed, iterations, getTotalTokens(), getTotalCost(), executionAgentId, latestContextSnapshot), toolCallCount: turnObservability.getToolCallCount() };
+      if (error instanceof SubagentDoomLoopStopError) return { ...error.toResult(answerLedger.settled(), toolsUsed, iterations, getTotalTokens(), getTotalCost(), executionAgentId, latestContextSnapshot), toolCallCount: turnObservability.getToolCallCount() };
+      const preservedExit = answerLedger.failureExit(error, {
+        signalAborted: effectiveSignal.aborted,
+        signalReason: effectiveSignal.reason,
+        toolsUsed,
+        toolCallCount: turnObservability.getToolCallCount(),
+        iterations,
+        tokensUsed: getTotalTokens(),
+        cost: getTotalCost(),
+        agentId: executionAgentId,
+        contextSnapshot: latestContextSnapshot,
+      });
+      if (preservedExit) return preservedExit;
 
       // 把已消耗的 outputTokens 挂到 error 上，让 dynamic-workflow 的 BudgetTracker 在抛出路径
       // 也能记账（provider 产出部分 output 后崩的场景，Codex R2 MED#4）。不影响既有错误处理。

@@ -1,4 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// 缺官方 key 时 resolveJevRoute 会读 OpenRouter key。单测不碰真实钥匙串。
+vi.mock('../../../../../src/host/services/core/configService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../../src/host/services/core/configService')>();
+  return {
+    ...actual,
+    getConfigService: () => {
+      const service = actual.getConfigService();
+      return new Proxy(service, {
+        get(target, prop, receiver) {
+          if (prop === 'getApiKey') return () => undefined;
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    },
+  };
+});
 import type { JevAnswers, JevSystemOneCall } from '../../../../../src/shared/constants/jevQuestions';
 import { BROWSER_STEP_OPERATIONS } from '../../../../../src/shared/constants/jevQuestions';
 import type { JevCapturedSnapshot } from '../../../../../src/host/services/infra/browser/jevBrowserSnapshotPrep';

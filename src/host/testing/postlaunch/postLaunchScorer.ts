@@ -23,9 +23,8 @@ import {
   type PostLaunchScoringResult,
   type PostLaunchTurnScore,
 } from '../../../shared/contract/postLaunchScore';
-import { JEV_JUDGE_MODEL, JEV_MODEL } from '../../../shared/constants/jevQuestions';
-import { resolveProviderApiKey } from '../../model/providers/providerResolution';
-import { systemOne } from '../../model/providers/typesafeProvider';
+import { JEV_JUDGE_MODEL } from '../../../shared/constants/jevQuestions';
+import { resolveJevRoute, systemOne, type JevRoute } from '../../model/providers/typesafeProvider';
 import { classifyFailure, type FailureCodebook } from '../failureCodes';
 import {
   buildPostLaunchJudgePrompt,
@@ -207,8 +206,8 @@ const PRESCREEN_MISSING_KEY_WARN
 function resolveJudgePrescreen(deps: PostLaunchScorerDeps): PostLaunchJudgePrescreen | undefined {
   if (deps.prescreen) return deps.prescreen;
   if (!isPostLaunchJevPrescreenEnabled()) return undefined;
-  const apiKey = resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL });
-  if (!apiKey) {
+  const route: JevRoute | null = resolveJevRoute();
+  if (route === null) {
     console.warn(PRESCREEN_MISSING_KEY_WARN);
     deps.onWarn?.(PRESCREEN_MISSING_KEY_WARN);
     return undefined;

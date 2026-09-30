@@ -6,12 +6,10 @@ import { getInputSanitizer } from './inputSanitizer';
 import {
   JEV_INJECTION_QUESTIONS,
   JEV_INJECTION_THRESHOLDS,
-  JEV_MODEL,
   type JevAnswers,
   type JevNoulAnswer,
   type JevSystemOneCall,
 } from '../../shared/constants/jevQuestions';
-import { resolveProviderApiKey } from '../model/providers/providerResolution';
 
 export interface JevInjectionScanResult {
   skipped: boolean;
@@ -72,9 +70,8 @@ export async function scanWithJevInjection(
   };
 
   const call = systemOne ?? (async (stateArg, questions, options) => {
-    const providerKey = resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL });
-    if (!providerKey) throw new Error('TYPESAFE_KEY_MISSING');
-    const { systemOne: productionSystemOne } = await import('../model/providers/typesafeProvider');
+    const { resolveJevRoute, systemOne: productionSystemOne } = await import('../model/providers/typesafeProvider');
+    if (resolveJevRoute() === null) throw new Error('TYPESAFE_KEY_MISSING');
     return productionSystemOne(stateArg, questions, options);
   });
 

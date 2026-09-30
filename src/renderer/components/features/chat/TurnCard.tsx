@@ -57,6 +57,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
+import { useWorkDetailPolicy } from '../../../utils/workDetailPolicy';
 import { useVoiceLiveRuntime } from '../../../hooks/useVoiceLiveRuntime';
 import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '../../../utils/sessionNeedsInput';
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
@@ -83,8 +84,6 @@ interface TurnCardProps {
   /** 渲染在该 turn 用户消息上方（目前用于分叉子会话首段的来源提示） */
   beforeUserMessage?: React.ReactNode; suppressBusySignal?: boolean;
 }
-// 超过该节点数的已完成 turn 默认折叠成 "Worked for Xm Ys"
-const FOLD_THRESHOLD = 5;
 
 export const TurnCard: React.FC<TurnCardProps> = ({
   turn,
@@ -102,7 +101,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   onRewindUserPrompt,
   beforeUserMessage, suppressBusySignal,
 }) => {
-  const { t } = useI18n();
+  const { t } = useI18n(); const policy = useWorkDetailPolicy();
   const createForkFromReply = useMessageActionStore((state) => state.createForkFromReply);
   const sessionTurnActive = useSessionTurnActive(sessionId);
   const turnActive = Boolean(isSessionProcessing) || sessionTurnActive;
@@ -181,7 +180,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     ? turn.nodes.length > 0
     : turn.status === 'completed' &&
       !isStreaming &&
-      turn.nodes.length >= FOLD_THRESHOLD &&
+      turn.nodes.length >= policy.foldThreshold &&
       Boolean(foldedView.finalTextNode);
   const [userExpanded, setUserExpanded] = useState(
     Boolean(defaultExpanded) || !canFold
@@ -437,12 +436,12 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           <>
             {/* 一个回合内所有思考段继续合并成一个横幅。流式 reasoning 自己承担唯一的
                 「正在思考」信号；底部 StreamingIndicator 在此阶段让位，避免双显。 */}
-            <ThinkingDigestBanner
+            {policy.showThinkingDigest && <ThinkingDigestBanner
               segments={thinkingSegments}
               activeSegmentId={activeThinkingSegmentId}
               hasNonThinkingContentAfterThinking={hasNonThinkingContentAfterThinking}
               turnEndTime={turn.endTime}
-            />
+            />}
             {displayNodes.map((d, i) => {
               if (d.kind === 'tool_group') {
                 return (
@@ -450,7 +449,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                     key={d.key}
                     nodes={d.tools}
                     sessionId={sessionId}
-                    defaultExpanded={false}
+                    defaultExpanded={policy.toolGroupDefaultExpanded}
                     isStreamingTurn={isStreaming}
                     receipts={matchedReceiptItems.filter((item) => (
                       Boolean(item.sourceNodeId)

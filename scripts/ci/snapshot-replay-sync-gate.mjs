@@ -29,6 +29,12 @@ const snapshotDir = 'packages/internal/evaluation-center/snapshots/request-repla
 // readResultProjection.ts 单列出文件而非整目录：src/host/context/ 下其余模块不进
 // 请求拼装；该文件决定重复 Read 结果在模型可见投影里去重成回执还是保留全文
 // （N-SNAPSHOT-CORPUS-READDEDUPE 实证：变异它回放层不红，只能靠本门强制同 PR 重录）。
+// contextBuilder.ts：runtime mode、工作目录规则和 <env> 块进入系统提示。
+// converter.ts：formatToolCallForHistory 拼出的 Called 文本进入后续轮消息。
+// toolDefinitions.ts：延迟工具摘要里的 unlisted 行进入系统提示。
+// deferredTools.ts：延迟工具名字索引进入 <deferred-tools>。
+// todayAnchor.ts：「今天的日期」句式进入系统提示。
+// src/host/tools/modules/**/*.schema.ts：核心工具的 description 与 inputSchema 进入 canonicalTools。
 const SENSITIVE_PREFIXES = [
   'src/host/agent/runtime/contextAssembly/',
   'src/host/context/readResultProjection.ts',
@@ -36,7 +42,23 @@ const SENSITIVE_PREFIXES = [
   'src/host/testing/e2e/',
   'packages/internal/evaluation-center/src/host/evaluation/requestReplay.ts',
   'packages/internal/evaluation-center/src/host/evaluation/requestReplayGate.ts',
+  'src/host/agent/messageHandling/contextBuilder.ts',
+  'src/host/agent/messageHandling/converter.ts',
+  'src/host/tools/dispatch/toolDefinitions.ts',
+  'src/host/services/toolSearch/deferredTools.ts',
+  'src/shared/todayAnchor.ts',
 ];
+
+// schema 与实现文件相邻。敏感面只含 modules 下以 .schema.ts 结尾的路径。
+const TOOL_SCHEMA_DIR = 'src/host/tools/modules/';
+const TOOL_SCHEMA_SUFFIX = '.schema.ts';
+
+function isModelVisiblePath(file) {
+  if (SENSITIVE_PREFIXES.some((prefix) => file === prefix || file.startsWith(prefix))) {
+    return true;
+  }
+  return file.startsWith(TOOL_SCHEMA_DIR) && file.endsWith(TOOL_SCHEMA_SUFFIX);
+}
 
 const args = process.argv.slice(2);
 
@@ -119,9 +141,7 @@ if (caseDirs.length === 0) {
 }
 
 const changed = changedPathsSince(baseSha);
-const sensitiveChanged = [...changed].filter((file) => (
-  SENSITIVE_PREFIXES.some((prefix) => file === prefix || file.startsWith(prefix))
-));
+const sensitiveChanged = [...changed].filter((file) => isModelVisiblePath(file));
 const snapshotChanged = [...changed].filter((file) => file.startsWith(`${snapshotDir}/`));
 
 if (sensitiveChanged.length > 0 && snapshotChanged.length === 0) {

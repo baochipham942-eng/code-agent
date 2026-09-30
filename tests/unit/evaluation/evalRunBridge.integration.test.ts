@@ -58,9 +58,11 @@ describe('EvalRunBridge child-process integration', () => {
       '    expect: { response_contains: [/] }',
       '',
     ].join('\n'));
+    // 分割文件要覆盖全量题（含已到 retire_after 的），与 eval-split.ts / sampleSplits 校验同口径。
+    // 只取未退役的题，到了退役日这条测试就确定性变红（2026-09-30 六题到期当天 CI 全堵）。
     const coreCases = filterTestCases(
       await loadAllTestSuites(path.join(process.cwd(), '.claude', 'test-cases')),
-      {},
+      { includeRetired: true },
     );
     const safety = coreCases.filter(isRedlineCase).map((testCase) => testCase.id);
     const heldIn = coreCases.filter((testCase) => !safety.includes(testCase.id)).map((testCase) => testCase.id);

@@ -46,7 +46,14 @@ const AX_TEXT_MAX_CHARS: usize = 4000;
 #[cfg(target_os = "macos")]
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(target_os = "macos")]
-const SWIFT_TIMEOUT: Duration = Duration::from_secs(5);
+const SWIFT_INLINE_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(target_os = "macos")]
+const PREBUILT_BIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[cfg(target_os = "macos")]
+fn with_timeout_hint(err: &str) -> String {
+    if err.contains("timed out after") { format!("{err} The first Appshot after launch compiles helper code and can be slow; try the hotkey again in a few seconds.") } else { err.to_string() }
+}
 
 /// Appshots 总开关：前端设置同步过来，控制左右 Cmd 热键是否触发捕获。
 #[cfg(target_os = "macos")]
@@ -480,7 +487,7 @@ pub fn capture_now(app: &AppHandle) {
             return;
         }
         Err(e) => {
-            emit_error(app, &request_id, "locate_failed", &e);
+            emit_error(app, &request_id, "locate_failed", &with_timeout_hint(&e));
             return;
         }
     };
@@ -675,7 +682,7 @@ fn locate_frontmost_window() -> Result<Option<LocatedWindow>, String> {
         own_pid = std::process::id()
     );
 
-    let out = run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_TIMEOUT)?;
+    let out = run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_INLINE_TIMEOUT)?;
     let raw: LocateRaw = serde_json::from_str(out.trim())
         .map_err(|e| format!("解析窗口定位结果失败: {e} (输出: {out})"))?;
 
@@ -749,7 +756,7 @@ fn extract_ax_text(pid: i32) -> Option<String> {
         pid = pid
     );
 
-    match run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_TIMEOUT) {
+    match run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_INLINE_TIMEOUT) {
         Ok(text) => Some(text),
         Err(e) => {
             eprintln!("[appshot] AX 文本提取失败: {e}");
@@ -766,7 +773,7 @@ fn ocr_image(app: &AppHandle, image_path: &PathBuf) -> Option<String> {
     // 优先用预编译 vision-ocr 二进制（比 swift -e 冷启快，与项目既有 OCR 用法一致）。
     if let Some(bin) = resolve_vision_ocr(app) {
         let bin_str = bin.to_string_lossy().to_string();
-        match run_command_with_timeout(&bin_str, &["--photo", &path], SWIFT_TIMEOUT) {
+        match run_command_with_timeout(&bin_str, &["--photo", &path], PREBUILT_BIN_TIMEOUT) {
             Ok(out) => {
                 if let Some(text) = parse_vision_ocr_full_text(&out) {
                     return Some(text);
@@ -799,7 +806,7 @@ fn ocr_image(app: &AppHandle, image_path: &PathBuf) -> Option<String> {
         path = path
     );
 
-    match run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_TIMEOUT) {
+    match run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_INLINE_TIMEOUT) {
         Ok(text) => Some(text),
         Err(e) => {
             eprintln!("[appshot] OCR swift 兜底失败: {e}");
@@ -1016,6 +1023,36 @@ mod clean_ax_text_tests {
     fn empty_input_yields_empty_output() {
         assert_eq!(clean_ax_text(""), "");
         assert_eq!(clean_ax_text("\n  \n"), "");
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod swift_timeout_tests {
+    use super::{with_timeout_hint, PREBUILT_BIN_TIMEOUT, SWIFT_INLINE_TIMEOUT};
+    use std::time::Duration;
+
+    #[test]
+    fn appends_hint_to_timeout_errors() {
+        let err = "/usr/bin/swift timed out after 5s";
+        let hinted = with_timeout_hint(err);
+        assert!(hinted.starts_with(err));
+        assert!(hinted.contains("try the hotkey again in a few seconds."));
+    }
+
+    #[test]
+    fn leaves_non_timeout_errors_unchanged() {
+        let err = "/usr/bin/swift exited with status 1";
+        assert_eq!(with_timeout_hint(err), err);
+    }
+
+    #[test]
+    fn inline_timeout_exceeds_prebuilt_timeout() {
+        assert!(SWIFT_INLINE_TIMEOUT > PREBUILT_BIN_TIMEOUT);
+    }
+
+    #[test]
+    fn inline_timeout_allows_cold_compile() {
+        assert!(SWIFT_INLINE_TIMEOUT >= Duration::from_secs(20));
     }
 }
 

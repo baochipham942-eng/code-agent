@@ -29,8 +29,9 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 
 import { initParallelAgentCoordinator } from '../../../src/host/agent/parallelAgentCoordinator';
 import type { AgentTask } from '../../../src/host/agent/parallelAgentCoordinator';
+import { rememberMemberEngine } from '../../../src/host/agent/memberRuntimeEngine';
 import { sendInputModule } from '../../../src/host/tools/modules/multiagent/sendInput';
-import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
+import { getSpawnGuard, resetSpawnGuard, type AgentMessage } from '../../../src/host/agent/spawnGuard';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutor';
 import type { ToolContext, CanUseToolFn } from '../../../src/host/protocol/tools';
 
@@ -171,6 +172,92 @@ describe('sendInput native module (fallback paths)', () => {
     if (!result.ok) {
       expect(result.code).toBe('NOT_FOUND');
       expect(result.error).toBe('Agent not found: missing-agent');
+    }
+  });
+
+  it('refuses follow-up input while an external-engine member is running', async () => {
+    const agentId = 'external-spawned';
+    rememberMemberEngine(agentId, 'claude_code');
+    const guard = getSpawnGuard();
+    guard.register(agentId, 'coder', 'continue work', keepRunning(), new AbortController());
+
+    const handler = await sendInputModule.createHandler();
+    const result = await handler.execute(
+      { agentId, message: 'add a footnote' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('DOMAIN_ERROR');
+      expect(result.error).toContain('Claude Code');
+      expect(result.error).toContain("can't take new input while running");
+      expect(result.error).toContain('after it finishes');
+    }
+    expect(guard.get(agentId)?.messageQueue).toHaveLength(0);
+    rememberMemberEngine(agentId, 'native');
+  });
+
+  it('writes a dual-registered member only to the durable coordinator ledger', async () => {
+    const agentId = 'agent-both';
+    const guard = getSpawnGuard();
+    guard.register(agentId, 'researcher', 'keep context warm', keepRunning(), new AbortController());
+    const coordinator = initParallelAgentCoordinator();
+    const task: AgentTask = { id: agentId, role: 'researcher', task: 'keep context warm', tools: [] };
+    (coordinator as unknown as { taskDefinitions: Map<string, AgentTask> }).taskDefinitions.set(agentId, task);
+    (coordinator as unknown as { messageQueues: Map<string, AgentMessage[]> }).messageQueues.set(agentId, []);
+    const enqueueMessage = vi.fn(async (_agentId: string, body: string, from = 'peer') => ({
+      id: 'mail-1',
+      seq: 1,
+      treeId: 'tree',
+      agentId,
+      from,
+      type: 'text',
+      body,
+      createdAt: 1,
+    }));
+    (coordinator as unknown as { durableController?: { enqueueMessage: typeof enqueueMessage } }).durableController = {
+      enqueueMessage,
+    };
+
+    const handler = await sendInputModule.createHandler();
+    const result = await handler.execute(
+      { agentId, message: 'durable follow up' },
+      makePeerCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain(`Message queued for parallel agent [${agentId}]`);
+    expect(enqueueMessage).toHaveBeenCalledWith(agentId, 'durable follow up', expect.any(String));
+    expect(guard.get(agentId)?.messageQueue).toHaveLength(0);
+  });
+
+  it('reports follow-ups still pending on a completed coordinator node', async () => {
+    const agentId = 'completed-member';
+    const coordinator = initParallelAgentCoordinator();
+    const task: AgentTask = { id: agentId, role: 'researcher', task: 'done', tools: [] };
+    (coordinator as unknown as { taskDefinitions: Map<string, AgentTask> }).taskDefinitions.set(agentId, task);
+    (coordinator as unknown as { messageQueues: Map<string, AgentMessage[]> }).messageQueues.set(agentId, [{
+      type: 'text',
+      from: 'user',
+      payload: 'late note',
+      timestamp: 1,
+    }]);
+    (coordinator as unknown as { completedTasks: Map<string, unknown> }).completedTasks.set(agentId, { success: true });
+
+    const handler = await sendInputModule.createHandler();
+    const result = await handler.execute(
+      { agentId, message: 'one more thing' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('1 follow-up message(s) were never delivered');
+      expect(result.error).not.toContain('Agent not found');
     }
   });
 

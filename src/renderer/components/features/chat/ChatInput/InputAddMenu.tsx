@@ -278,7 +278,7 @@ export const InputAddMenu: React.FC<Props> = ({
             <span>{t.inputAddMenu.uploadLabel}</span>
           </button>
 
-          <button
+          <button /* ds-allow:button: 添加菜单整行热区（图标+标签+原因），与上方上传项同形，Button primitive 不适配 */
             type="button"
             disabled={!lastFrontApp || !lastFrontApp.alive || lastFrontAppLoading}
             onClick={() => { void attachLastFrontApp(); }}

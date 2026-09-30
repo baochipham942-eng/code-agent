@@ -29,6 +29,9 @@ export const delegateTaskSchema: ToolSchema = {
   permissionLevel: 'execute',
   allowInTextForeground: true,
   requiresPermission: false,
+  accesses: [
+    { kind: 'write', expression: 'resource(session, command_center)' },
+  ],
 };
 
 export const steerTaskSchema: ToolSchema = {

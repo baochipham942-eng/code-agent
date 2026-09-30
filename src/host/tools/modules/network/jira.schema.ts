@@ -96,4 +96,7 @@ jira {
   readsUntrustedContent: 'annotate',
   readOnly: false,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(jira, issues)' },
+  ],
 };

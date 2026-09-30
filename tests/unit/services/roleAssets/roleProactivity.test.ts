@@ -667,7 +667,10 @@ describe('roleProactivity', () => {
     });
 
     it('预算护栏：当天醒来次数达上限 → skipped', async () => {
-      freezeClockAt('23:00');
+      // 预算按 UTC 日历日计数。冻在本地 23:00 时，负时区会把 UTC 日推进到下一天，
+      // 预埋的 TODAY 行数成 0，护栏让位给免打扰。冻在 TODAY 的 UTC 中午，播种日和计数日才是同一天。
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(`${TODAY}T12:00:00Z`));
       try {
         mockSettings.value = {
           roleAssets: {

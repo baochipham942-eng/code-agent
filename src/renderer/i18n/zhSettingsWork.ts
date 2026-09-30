@@ -276,6 +276,7 @@ export const zhSettingsWork = {
         enableCors: '启用 CORS',
         encryptKeyLabel: 'Encrypt Key (可选)',
         verificationTokenLabel: 'Verification Token (可选)',
+        approvalCardSecurityWarning: '配置校验令牌后审批卡才生效',
         webhookPortLabel: 'Webhook 端口',
         webSocketLabel: '使用长连接（推荐）',
         webSocketHint: '桌面端默认使用长连接，无需公网回调地址。关闭后改用 Webhook。',
@@ -858,11 +859,20 @@ export const zhSettingsWork = {
       },
       telemetry: {
         title: '数据共享',
-        description: '两个独立开关，切换立即生效，所有上报通道统一遵守。上报的元数据不含完整对话内容或代码。默认均为开启。',
-        usageData: {
-          label: '共享使用数据',
-          body: '产品使用分析、运行轨迹元数据与设备遥测。关闭后本设备不再向云端上报使用情况。',
+        description: '产品使用分析、云端遥测、运行轨迹、崩溃报告各自独立，切换立即生效。上报不含完整对话或代码。默认都开。',
+        posthog: {
+          label: '产品使用分析',
+          body: '关闭后，本设备不再向产品分析服务发送使用情况。',
         },
+        cloudUpload: {
+          label: '云端遥测上传',
+          body: '关闭后，本设备不再把运行元数据上传到云端。',
+        },
+        langfuse: {
+          label: '运行轨迹',
+          body: '关闭后，本设备不再发送模型调用的轨迹元数据。',
+        },
+        envOptOut: '环境变量 {name} 已关闭这些上报。开关已锁定，去掉该变量并重新打开应用后，这里的选择才会生效。',
         crashReports: {
           label: '发送崩溃报告',
           body: '崩溃与错误报告（上传前已脱敏——不含源码、对话内容或密钥），帮助我们修复你遇到的崩溃。',

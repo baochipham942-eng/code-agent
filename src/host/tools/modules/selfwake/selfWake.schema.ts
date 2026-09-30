@@ -35,6 +35,9 @@ export const sleepUntilSchema: ToolSchema = {
   permissionLevel: 'write',
   readOnly: false,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'write', expression: 'resource(session, wake)' },
+  ],
 };
 
 export const wakeOnSchema: ToolSchema = {

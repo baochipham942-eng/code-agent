@@ -33,4 +33,7 @@ export const planUpdateSchema: ToolSchema = {
   category: 'planning',
   permissionLevel: 'write',
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'write', expression: 'resource(session, plan)' },
+  ],
 };

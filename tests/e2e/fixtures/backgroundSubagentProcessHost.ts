@@ -49,6 +49,8 @@ const DEFAULT_IDENTITY = {
 } as const;
 
 const PREPARE_LEASE_MS = 400;
+const REPORTED_COST = 1.25;
+const REPORTED_PROGRESS = 'scanned three modules';
 
 if (phase === 'prepare') await prepareAndWait();
 else if (phase === 'recover') await recoverAndExit();
@@ -87,9 +89,17 @@ async function prepareAndWait(): Promise<never> {
       treeId: identity.treeId,
       startedAt: identity.startedAt,
     });
+    ledger.noteProgress(identity.agentId, {
+      cost: REPORTED_COST,
+      tokensUsed: 80,
+      iterations: 2,
+      toolCalls: 3,
+      lastProgress: REPORTED_PROGRESS,
+    });
   }
 
   const heartbeatRenewed = mutation === 'skip-begin' ? false : await waitForHeartbeatRenewal(identity.agentId);
+  if (mutation !== 'skip-begin') await waitForReportedProgress(identity.agentId);
   marker({
     marker: 'ready',
     pid: process.pid,
@@ -97,6 +107,10 @@ async function prepareAndWait(): Promise<never> {
     oldProcessInstanceId,
     heartbeatRenewed,
     skippedBegin: mutation === 'skip-begin',
+    ...(mutation === 'skip-begin' ? {} : {
+      reportedCost: REPORTED_COST,
+      reportedProgress: REPORTED_PROGRESS,
+    }),
   });
   await new Promise<never>(() => setInterval(() => undefined, 1_000));
   throw new Error('unreachable');
@@ -269,6 +283,27 @@ function leaseRemainingMs(runId: string): number {
   const expiresAt = readLeaseExpiresAt(runId);
   if (expiresAt == null) return 0;
   return expiresAt - Date.now();
+}
+
+async function waitForReportedProgress(runId: string): Promise<void> {
+  const deadline = Date.now() + 3_000;
+  while (Date.now() < deadline) {
+    const cursor = readEngineCursor(runId);
+    if (cursor?.cost === REPORTED_COST && cursor?.lastProgress === REPORTED_PROGRESS) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`progress snapshot was not checkpointed for ${runId}`);
+}
+
+function readEngineCursor(runId: string): { cost?: unknown; lastProgress?: unknown } | null {
+  const row = db.prepare('SELECT envelope_json FROM durable_runs WHERE run_id = ?').get(runId) as
+    | { envelope_json: string }
+    | undefined;
+  if (!row) return null;
+  const envelope = JSON.parse(row.envelope_json) as {
+    cursor?: { engineCursor?: { cost?: unknown; lastProgress?: unknown } };
+  };
+  return envelope.cursor?.engineCursor ?? null;
 }
 
 async function waitForHeartbeatRenewal(runId: string): Promise<boolean> {

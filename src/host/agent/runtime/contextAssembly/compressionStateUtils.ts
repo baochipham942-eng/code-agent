@@ -12,6 +12,7 @@ export function buildCompressionCacheKey(
   entries: ContextTranscriptEntry[],
   interventions: ContextInterventionSnapshot,
   contextWindowSize: number,
+  autocompactTriggerTokens: number,
 ): string {
   const hash = createHash('sha256');
   hash.update(ctx.runtime.sessionId);
@@ -19,6 +20,8 @@ export function buildCompressionCacheKey(
   hash.update(ctx.runtime.agentId || '');
   hash.update('\u0000');
   hash.update(String(contextWindowSize));
+  hash.update('\u0000');
+  hash.update(String(autocompactTriggerTokens));
   hash.update('\u0000');
   hash.update(JSON.stringify(interventions));
   for (const entry of entries) {

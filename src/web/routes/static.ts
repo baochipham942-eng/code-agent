@@ -9,6 +9,7 @@ import {
   resolveRendererServeDecision,
 } from '../../host/services/renderer/rendererBundleCache';
 import { createLogger } from '../../host/services/infra/logger';
+import { TELEMETRY_ENV_WINDOW_KEY, telemetryPageEnv } from '../../shared/observability/privacyFlags';
 
 const logger = createLogger('StaticRouter');
 
@@ -107,6 +108,7 @@ export function createStaticRouter(deps: StaticDeps): Router {
           `${headTag}<script>` +
           `window.__CODE_AGENT_TOKEN__=${toInlineScriptJson(serverAuthToken)};` +
           `window.__CODE_AGENT_RENDERER_BUNDLE__=${toInlineScriptJson(loadedRendererBundle)};` +
+          `window.${TELEMETRY_ENV_WINDOW_KEY}=${toInlineScriptJson(telemetryPageEnv(process.env))};` +
           '</script>'
         )
       );

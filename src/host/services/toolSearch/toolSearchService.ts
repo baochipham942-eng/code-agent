@@ -9,6 +9,9 @@ import type {
   DeferredToolMeta,
   ToolSearchQueryMode,
 } from '../../../shared/contract/toolSearch';
+import type { JevChoiceAnswer, JevNoulAnswer } from '../../../shared/constants/jevQuestions';
+import { JEV_SKILL_RERANK_THRESHOLDS, JEV_TIMEOUT_MS } from '../../../shared/constants/jevQuestions';
+import { withTimeout } from '../infra/timeoutController';
 import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
 import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName, resolveToolAlias } from './deferredTools';
 import { createLogger } from '../infra/logger';
@@ -149,8 +152,11 @@ export class ToolSearchService {
     // 按分数排序
     scored.sort((a, b) => b.score - a.score);
 
+    // Jev 只在 keyword/required 搜索中改变排序；select 必须保持直接选择语义。
+    const reranked = await this.rerankScored(query, scored, options.rerank);
+
     // 取 top N
-    const topResults = scored.slice(0, maxResults);
+    const topResults = reranked.slice(0, maxResults);
     const topScore = topResults[0]?.score;
     const firstResultClearlyAhead = scored.length === 1
       || (topScore !== undefined && topScore - (scored[1]?.score ?? 0) >= DEFERRED_TOOL_LOADING.CLEAR_LEAD_SCORE_GAP);
@@ -536,6 +542,91 @@ export class ToolSearchService {
       return meta.name;
     }
     return undefined;
+  }
+
+  private async rerankScored(
+    query: string,
+    scored: Array<{ meta: DeferredToolMeta; score: number }>,
+    rerank: ToolSearchOptions['rerank'],
+  ): Promise<Array<{ meta: DeferredToolMeta; score: number }>> {
+    if (!rerank?.enabled || !rerank.judge || scored.length === 0) return scored;
+
+    const rosterCandidates = scored
+      .filter(({ meta }) => meta.shortDescription.trim().length > 0)
+      .slice(0, JEV_SKILL_RERANK_THRESHOLDS.maxRoster);
+    if (rosterCandidates.length === 0) return scored;
+
+    try {
+      const first = await this.callRerankJudge(query, rosterCandidates, rerank.judge);
+      if (!this.acceptRerankDecision(first, rosterCandidates)) return scored;
+
+      // The first pass is a cheap roster choice. Re-read the keyword top three
+      // with full descriptions once, then let the judge choose among that set.
+      const reread = scored
+        .filter(({ meta }) => meta.shortDescription.trim().length > 0)
+        .slice(0, 3);
+      if (reread.length === 0) return scored;
+      const second = await this.callRerankJudge(query, reread, rerank.judge);
+      if (!this.acceptRerankDecision(second, reread)) return scored;
+
+      const winner = reread.find(({ meta }) => meta.name === second.choice.choice);
+      if (!winner) return scored;
+      return [
+        winner,
+        ...scored.filter(({ meta }) => meta.name !== winner.meta.name),
+      ];
+    } catch (error) {
+      logger.debug(`Jev skill rerank unavailable; keeping keyword order: ${error instanceof Error ? error.message : String(error)}`);
+      return scored;
+    }
+  }
+
+  private async callRerankJudge(
+    query: string,
+    candidates: Array<{ meta: DeferredToolMeta; score: number }>,
+    judge: NonNullable<ToolSearchOptions['rerank']>['judge'],
+  ) {
+    return withTimeout(
+      judge({
+        query,
+        roster: candidates.map(({ meta }) => ({
+          name: meta.name,
+          description: meta.shortDescription,
+        })),
+      }),
+      JEV_TIMEOUT_MS,
+      'Jev skill rerank judge timed out',
+    );
+  }
+
+  private acceptRerankDecision(
+    decision: {
+      choice: JevChoiceAnswer;
+      nouls: {
+        need_skill: JevNoulAnswer;
+        need_now: JevNoulAnswer;
+        none_of_roster: JevNoulAnswer;
+      };
+    },
+    candidates: Array<{ meta: DeferredToolMeta; score: number }>,
+  ): boolean {
+    if (!decision || typeof decision !== 'object') return false;
+    const { choice, nouls } = decision;
+    if (
+      !choice
+      || typeof choice.choice !== 'string'
+      || !Number.isFinite(choice.confidence)
+      || choice.confidence < 0
+      || choice.confidence > 1
+    ) return false;
+    if (!nouls?.need_skill || !nouls.need_now || !nouls.none_of_roster) return false;
+    if (![nouls.need_skill.noul, nouls.need_now.noul, nouls.none_of_roster.noul]
+      .every((value) => Number.isFinite(value) && value >= 0 && value <= 1)) return false;
+    if (nouls.need_skill.noul < JEV_SKILL_RERANK_THRESHOLDS.minNeedSkill) return false;
+    if (choice.confidence < JEV_SKILL_RERANK_THRESHOLDS.minChoiceConfidence) return false;
+    if (nouls.need_now.noul < JEV_SKILL_RERANK_THRESHOLDS.minNeedNow) return false;
+    if (nouls.none_of_roster.noul > JEV_SKILL_RERANK_THRESHOLDS.maxNoneOfRoster) return false;
+    return candidates.some(({ meta }) => meta.name === choice.choice);
   }
 
   private sessionRound(sessionId: string): number {

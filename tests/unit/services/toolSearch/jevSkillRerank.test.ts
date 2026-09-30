@@ -87,6 +87,12 @@ const ORIGIN_MAIN_SNAPSHOTS = {
   missing: { tools: [], hasMore: false, totalCount: 0, loadedTools: [] },
 } as const;
 
+const NEGATIVE_TRIGGER_SAMPLES = [
+  { query: '把下面这段通知翻译成英文，直接给译文：「各位同事：第四季度全员会定于 11 月 14 日下午两点在三号会议室召开，请提前十分钟入场。」', skill: 'xlsx' },
+  { query: '我们下周要发布一款桌面便签应用 StickyNote Air，帮我写一条 50 字以内的朋友圈发布文案，语气轻快一点。', skill: 'meeting-summary' },
+  { query: '帮我润色这段官网宣传稿，让语气更专业，别改事实：「蓝海厨具与星野物流达成战略合作，双方签署年度框架协议，将为全国 300 家门店提供次日达配送。」', skill: 'contract-review' },
+] as const;
+
 describe('Jev skill/tool rerank', () => {
   beforeEach(() => resetProtocolRegistry());
 
@@ -132,10 +138,10 @@ describe('Jev skill/tool rerank', () => {
   });
 
   it('does not auto-load roster candidates when need_skill is false, including negative trigger samples', async () => {
-    for (const query of ['润色文案', '整理日志']) {
+    for (const { query, skill } of NEGATIVE_TRIGGER_SAMPLES) {
       const service = new ToolSearchService();
       const leading = registerLeadingMcp(service, query);
-      service.registerSkill(query === '润色文案' ? 'contract-review' : 'meeting-summary', 'Negative trigger sample', [query]);
+      service.registerSkill(skill, 'Negative trigger sample', [query]);
       const baseline = await service.searchTools(query, { maxResults: 3, includeMCP: true });
       expect(baseline.loadedTools).toEqual([leading]);
       service.resetLoadedTools();
@@ -161,14 +167,14 @@ describe('Jev skill/tool rerank', () => {
   it('sends at most 255 non-empty-description entries to the judge', async () => {
     const service = new ToolSearchService();
     const names = registerTools(service, 260);
-    service.registerSkill('empty-description', '', ['keyword']);
+    service.registerSkill('keyword', '', ['keyword']);
     const judge = vi.fn(async ({ roster }: JevSkillRerankJudgeInput) => answer(roster[0]!.name));
 
     await service.searchTools('keyword', { maxResults: 3, includeMCP: true, ...enabled(judge) });
 
     expect(judge).toHaveBeenCalled();
     expect(judge.mock.calls[0]![0].roster).toHaveLength(255);
-    expect(judge.mock.calls[0]![0].roster.some((entry) => entry.name === 'skill:empty-description')).toBe(false);
+    expect(judge.mock.calls[0]![0].roster.some((entry) => entry.name === 'skill:keyword')).toBe(false);
     expect(names.slice(0, 255).every((name) => judge.mock.calls[0]![0].roster.some((entry) => entry.name === name))).toBe(true);
   });
 

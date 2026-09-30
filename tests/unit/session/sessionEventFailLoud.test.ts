@@ -7,6 +7,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { AgentEvent } from '../../../src/shared/contract';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 
 const { warn, getDatabase, logger } = vi.hoisted(() => {
   const warn = vi.fn();
@@ -34,37 +35,33 @@ const NOW = 1_700_000_000_000;
 const SAMPLE_EVENT: AgentEvent = { type: 'error', data: { message: 'boom' } };
 
 const openDbs: BetterSqlite3.Database[] = [];
+let nextMessageId = 0;
 
 function createMemoryDb(): BetterSqlite3.Database {
   const db = new Database(':memory:');
+  applyTestSessionSchema(db);
   db.pragma('foreign_keys = ON');
-  db.exec(`
-    CREATE TABLE sessions (
-      id TEXT PRIMARY KEY
-    );
-    CREATE TABLE messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      timestamp INTEGER NOT NULL
-    );
-    CREATE TABLE session_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
-      event_type TEXT NOT NULL,
-      event_data TEXT,
-      timestamp INTEGER NOT NULL,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    );
-  `);
   openDbs.push(db);
   return db;
 }
 
+function ensureSession(db: BetterSqlite3.Database, id = 's1'): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO sessions (id, title, model_provider, model_name, created_at, updated_at)
+     VALUES (?, 'probe', 'test', 'test', ?, ?)`,
+  ).run(id, NOW, NOW);
+}
+
 function insertMessage(db: BetterSqlite3.Database, timestamp: number): void {
-  db.prepare('INSERT INTO messages (timestamp) VALUES (?)').run(timestamp);
+  ensureSession(db);
+  nextMessageId += 1;
+  db.prepare(
+    'INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
+  ).run(`m${nextMessageId}`, 's1', 'user', 'hello', timestamp);
 }
 
 function insertEvent(db: BetterSqlite3.Database, timestamp: number): void {
-  db.prepare("INSERT OR IGNORE INTO sessions (id) VALUES ('s1')").run();
+  ensureSession(db);
   db.prepare(
     "INSERT INTO session_events (session_id, event_type, event_data, timestamp) VALUES ('s1', 'error', NULL, ?)",
   ).run(timestamp);
@@ -184,7 +181,7 @@ describe('saveEvent failures', () => {
 
   it('stores an event when the session row exists', async () => {
     const db = createMemoryDb();
-    db.prepare("INSERT INTO sessions (id) VALUES ('s1')").run();
+    ensureSession(db);
     useDatabase(db);
     const { getSessionEventService } = await loadService();
     const service = getSessionEventService();

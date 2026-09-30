@@ -7,17 +7,24 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCasebankFixture } from '../utils/casebankFixture';
 
 // N-GATES-TMP-SELFCLEAN 验收②：eval-ci（事件桥/真跑桥）的 caseDataDir 家族走 tmp-sandbox，
-// 进程被 SIGTERM 时自清；--keep-tmp 时保留并打印路径。走真实 CLI 入口（tsx + eval-ci.ts），
+// 进程被 SIGTERM 时自清；--keep-tmp 时保留并打印路径。走真实 CLI 入口（tsx loader + eval-ci.ts），
 // 不是模块级替身——wiring 断言贴在 tests/unit/testing/evalCiReport.test.ts。
 //
-// 触发时机用**文件系统**信号（tmp 目录里出现新数据根）而不是 stdout 事件：tsx 会再 fork 一层
-// node，管道里的 run_start 在满载时可能拖到子进程整跑完、数据根已 release 之后才送达（配对跑
-// 实测竞态）。--repeat 3 把数据根的存活窗口拉宽到秒级，50ms 轮询稳稳落在窗口内。
+// 触发时机用**文件系统**信号（tmp 目录里出现新数据根）而不是 stdout 事件：满载时管道里的
+// run_start 可能拖到子进程整跑完、数据根已 release 之后才送达（配对跑实测竞态）。
+// --repeat 3 把数据根的存活窗口拉宽到秒级，50ms 轮询稳稳落在窗口内。
+//
+// N-EVALTMP-TSX-SOCKPATH：子进程用 `node --import <tsx loader>` 起，不用 tsx CLI。
+// CLI 会 `listen $TMPDIR/tsx-<uid>/<pid>.pipe`；本测试把 TMPDIR 嵌在 vitest run 根下，
+// 套接字路径在 CI macOS 上超过 sun_path=104，listen EINVAL，eval-ci 还没建数据根就退了。
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const tsxLoader = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'loader.mjs');
 const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const evalScript = path.join(repoRoot, 'packages', 'internal', 'evaluation-center', 'scripts', 'eval-ci.ts');
 const DATA_DIR_PREFIX = 'code-agent-eval-data-';
+/** Darwin `sockaddr_un.sun_path`；tsx CLI 的 IPC 套接字必须短于这个值。 */
+const MACOS_UNIX_SOCKET_MAX = 104;
 
 let fixture: Awaited<ReturnType<typeof createCasebankFixture>>;
 const keptDirs: string[] = [];
@@ -49,6 +56,48 @@ async function waitFor(probe: () => boolean, timeoutMs: number, what: string): P
   }
 }
 
+function evalCiChildArgs(extraArgs: string[]): string[] {
+  return ['--import', tsxLoader, evalScript, '--scope', 'smoke', '--max-cases', '3', '--repeat', '3', '--json-events', ...extraArgs];
+}
+
+function assertTsxLoaderSpawn(args: readonly string[]): void {
+  const usingLoader = args[0] === '--import' && args[1] === tsxLoader;
+  const usingCli = args.includes(tsxCli);
+  if (!usingLoader || usingCli) {
+    throw new Error(
+      'eval-ci child must start as `node --import <tsx loader> <eval-ci.ts>` (no IPC server). '
+      + 'The tsx CLI listens on `$TMPDIR/tsx-<uid>/<pid>.pipe`; a nested vitest TMPDIR makes that path '
+      + `exceed macOS sun_path=${MACOS_UNIX_SOCKET_MAX} and listen() fails with EINVAL before eval-ci creates its data root.`,
+    );
+  }
+}
+
+function tsxIpcPipePaths(root: string): string[] {
+  if (!fs.existsSync(root)) return [];
+  const found: string[] = [];
+  for (const name of fs.readdirSync(root)) {
+    if (!name.startsWith('tsx-')) continue;
+    const dir = path.join(root, name);
+    let st: fs.Stats;
+    try { st = fs.statSync(dir); } catch { continue; }
+    if (!st.isDirectory()) continue;
+    for (const ent of fs.readdirSync(dir)) {
+      if (ent.endsWith('.pipe')) found.push(path.join(dir, ent));
+    }
+  }
+  return found;
+}
+
+function assertNoTsxIpcSocket(root: string): void {
+  const pipes = tsxIpcPipePaths(root);
+  if (pipes.length > 0) {
+    throw new Error(
+      `eval-ci child created tsx CLI IPC socket(s) under TMPDIR: ${pipes.join(', ')}. `
+      + 'Start via `node --import <tsx loader>`, which creates no IPC server.',
+    );
+  }
+}
+
 interface EvalChild {
   child: ChildProcess;
   stderr: string;
@@ -68,7 +117,9 @@ function spawnEvalCi(extraArgs: string[]): EvalChild {
   // （vitest 的 globalSetup 会给 worker 塞一个 run 级数据目录，不删的话 eval-ci 永远不自建）。
   delete env.CODE_AGENT_DATA_DIR;
   env.TMPDIR = privateTmp;
-  const child = spawn(process.execPath, [tsxCli, evalScript, '--scope', 'smoke', '--max-cases', '3', '--repeat', '3', '--json-events', ...extraArgs], {
+  const childArgs = evalCiChildArgs(extraArgs);
+  assertTsxLoaderSpawn(childArgs);
+  const child = spawn(process.execPath, childArgs, {
     cwd: fixture.repoRoot,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -88,6 +139,7 @@ function spawnEvalCi(extraArgs: string[]): EvalChild {
         }
         return false;
       }, timeoutMs, 'eval-ci 新建的 code-agent-eval-data-* 目录');
+      assertNoTsxIpcSocket(privateTmp);
       for (const name of existingEvalDataDirs()) {
         if (!before.has(name)) return path.join(privateTmp, name);
       }
@@ -101,6 +153,15 @@ function spawnEvalCi(extraArgs: string[]): EvalChild {
 }
 
 describe('eval-ci 事件桥临时数据目录退出自清（N-GATES-TMP-SELFCLEAN）', () => {
+  it('starts eval-ci through the tsx loader and creates no IPC socket under TMPDIR', () => {
+    const args = evalCiChildArgs([]);
+    assertTsxLoaderSpawn(args);
+    expect(args[0]).toBe('--import');
+    expect(args[1]).toBe(tsxLoader);
+    expect(args).not.toContain(tsxCli);
+    expect(tsxIpcPipePaths(privateTmp)).toEqual([]);
+  });
+
   it('SIGTERM：这轮建的 code-agent-eval-data-* 数据根被清掉', async () => {
     const started = spawnEvalCi([]);
     const dataDir = await started.waitForDataDir();

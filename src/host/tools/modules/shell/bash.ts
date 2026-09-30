@@ -1,24 +1,6 @@
 // ============================================================================
-// Bash (P0-6.3 Batch 2a — shell: native ToolModule rewrite)
-//
-// 旧版: src/host/tools/shell/bash.ts (legacy Tool + wrapLegacyTool)
-// 改造点：
-// - 4 参数签名 (args, ctx, canUseTool, onProgress)
-// - inline canUseTool 闸门 + onProgress 事件
-// - 走 ctx.logger（不 import services/infra/logger）
-// - 行为保真（对齐 legacy bash.ts 所有分支）：
-//   * self-referential bash(...) 调用解包（JSON / keyword）
-//   * tool-confusion 预检（write_file/edit_file/... 不允许在 bash 里执行）
-//   * heredoc 截断预检
-//   * PTY 模式（usePty: createPtySession + optional waitForCompletion）
-//   * 后台任务（run_in_background: startBackgroundTask，返回 task_id）
-//   * Codex 沙箱路由（启用且非安全命令则委托）
-//   * 前台 spawn：spawn + getShellPath + sanitizedEnv
-//   * 输出截断（MAX_OUTPUT_LENGTH truncateMiddleErrorAware + guidance 文本）
-//   * stderr 合并 + dataFingerprintStore 指纹提取
-//   * cwd 前缀 + dynamicDescription metadata
-//   * 超时 / 非零退出 / spawn error 分类错误
-// - meta 字段（taskId / sessionId / background / pty / codexThreadId / description 等）放 meta
+// Bash native ToolModule. The handler preserves the legacy shell behavior while
+// keeping permission, sandbox, background, PTY, diagnostics, and artifact paths.
 // ============================================================================
 
 import path from 'node:path';
@@ -38,7 +20,16 @@ import { handoverTimedOutCommand } from '../../shell/timeoutHandover';
 import { runForegroundCommand } from './foregroundCommand';
 import { createPtySession, getPtySessionOutput } from '../../shell/ptyExecutor';
 import { generateBashDescription } from '../../shell/dynamicDescription';
-import { diagnoseSandboxDenial } from '../../shell/sandboxFailureDiagnostics';
+import {
+  diagnoseBashFailure,
+  appendFailureDiagnostics,
+  extractSandboxDeniedPath,
+} from '../../shell/sandboxFailureDiagnostics';
+import {
+  SANDBOX_ESCALATION_DECLINED_MESSAGE,
+  shouldOfferEscalation,
+  type SandboxEscalationMeta,
+} from '../../shell/sandboxEscalation';
 import { getShellPathDiagnostics } from '../../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
@@ -186,67 +177,8 @@ function truncateOutput(
   );
 }
 
-export interface BashFailureDiagnosticsInput {
-  command: string;
-  message?: string;
-  stdout?: string;
-  stderr?: string;
-  signal?: NodeJS.Signals | null;
-  code?: number | string | null;
-  durationMs?: number;
-  sandboxed?: boolean;
-  workingDirectory?: string;
-}
-
-const SELF_KILL_SIGNALS = new Set<NodeJS.Signals>(['SIGTERM', 'SIGKILL']);
-const KILL_COMMAND_PATTERN = /\b(?:pkill|killall|kill)\b/;
-const NODE_TOOL_PATTERN = /\b(npx|node|npm)\b/;
-const MISSING_COMMAND_PATTERN = /\bENOENT\b|command not found|not found/i;
-export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[] {
-  const diagnostics: string[] = [];
-  const signal = input.signal ?? undefined;
-  const durationMs = input.durationMs ?? Number.POSITIVE_INFINITY;
-
-  if (
-    signal
-    && SELF_KILL_SIGNALS.has(signal)
-    && durationMs < 1000
-    && KILL_COMMAND_PATTERN.test(input.command)
-  ) {
-    diagnostics.push(
-      '诊断：命令可能用 kill/pkill/killall 终止了当前 shell 进程；如果目标是清理其他进程，请避免匹配当前 bash，或改用更精确的 PID。',
-    );
-  }
-
-  const nodeTool = input.command.match(NODE_TOOL_PATTERN)?.[1];
-  const failureText = [input.message, input.stdout, input.stderr].filter(Boolean).join('\n');
-
-  const sandboxDenial = diagnoseSandboxDenial({
-    failureText,
-    sandboxed: input.sandboxed,
-    workingDirectory: input.workingDirectory,
-  });
-  if (sandboxDenial) diagnostics.push(sandboxDenial);
-
-  if (nodeTool && MISSING_COMMAND_PATTERN.test(failureText)) {
-    diagnostics.push(
-      `诊断：${nodeTool} 启动失败，可能是 Node.js 依赖或可执行文件缺失（ENOENT / command not found）。建议先确认依赖已安装，并检查 PATH / node_modules。`,
-    );
-  }
-
-  if (String(input.code) === '137') {
-    diagnostics.push(
-      '诊断：exit 137 通常表示进程可能被系统 OOM killer 终止（内存不足）。建议降低并发、减少构建规模，或改用后台任务观察输出。',
-    );
-  }
-
-  return diagnostics;
-}
-
-export function appendFailureDiagnostics(message: string, diagnostics: string[]): string {
-  if (diagnostics.length === 0) return message;
-  return `${message}\n\n${diagnostics.join('\n')}`;
-}
+export { diagnoseBashFailure, appendFailureDiagnostics } from '../../shell/sandboxFailureDiagnostics';
+export type { BashFailureDiagnosticsInput } from '../../shell/sandboxFailureDiagnostics';
 
 export function rewriteImplicitBackgroundCommand(command: string): { command: string; rewritten: boolean } {
   const trimmed = command.trim();
@@ -353,9 +285,10 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const fenceRoot = writeFence
       ? containWriteFenceWorkspaceRoot(ctx.writeFenceWorkspaceRoot)
       : undefined;
+    const permissionMode = permissionModeManager.getModeForSession(ctx.sessionId) as OsSandboxPermissionMode;
     let sandboxDecision = resolveOsSandboxDecision({
       command: normalizedCommand,
-      permissionMode: permissionModeManager.getModeForSession(ctx.sessionId) as OsSandboxPermissionMode,
+      permissionMode,
       unattended,
       writeFence,
       evalRealRoot: process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined,
@@ -427,7 +360,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
       sandboxCleanup = undefined;
       cleanup?.();
     };
-    const applySandbox = (cmd: string, allowNetwork: boolean): { ok: true; command: string } | { ok: false; error: string } => {
+    const applySandbox = (cmd: string, allowNetwork: boolean, extraWriteRoot?: string): { ok: true; command: string } | { ok: false; error: string } => {
       if (!sandboxDecision.apply) return { ok: true, command: cmd };
       try {
         if (writeFence && (!fenceRoot || !isOsWriteFenceAvailable())) {
@@ -449,14 +382,18 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           && isPathWithinRoot(canonicalWorkspace, workingDirectory)
           ? [canonicalWorkspace]
           : undefined;
+        const baseWriteRoots = writeFence && fenceRoot
+          ? [fenceRoot]
+          : scopeWriteRoots ?? workspaceConfinedRoots;
+        const readWriteRoots = extraWriteRoot
+          ? [...(baseWriteRoots ?? [workingDirectory]), extraWriteRoot]
+          : baseWriteRoots;
         const wrapped = wrapCommandForSandbox(cmd, {
           workingDirectory,
           readOnlyRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_only')
             .map((root) => resolveCanonicalRunPath(root.path)),
-          readWriteRoots: writeFence && fenceRoot
-            ? [fenceRoot]
-            : scopeWriteRoots ?? workspaceConfinedRoots,
+          readWriteRoots,
           deniedReadRoots: process.env.CODE_AGENT_EVAL_REAL_ROOT
             ? [process.env.CODE_AGENT_EVAL_REAL_ROOT]
             : undefined,
@@ -823,34 +760,99 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       };
     }
 
+    let sandboxedCommand = sandboxedFg.command;
     let handedOver = false;
+    let sandboxEscalationMeta: SandboxEscalationMeta | undefined;
+    let escalationAttempted = false;
+    const runForegroundAttempt = async () => {
+      try {
+        return await runForegroundCommand({
+          command: sandboxedCommand,
+          cwd: workingDirectory,
+          timeout,
+          abortSignal: ctx.abortSignal,
+          ctx,
+          startedAt: Date.now(),
+          env: childEnvFg.env,
+          toolName: schema.name,
+          onTimeout: unattended ? undefined : ({ child, stdout, stderr, startedAt }) => handoverTimedOutCommand({
+            child,
+            command: sandboxedCommand,
+            cwd: workingDirectory,
+            sessionId: ctx.sessionId,
+            toolCallId: ctx.currentToolCallId,
+            sandboxed: sandboxDecision.sandboxed,
+            onExit: cleanupSandbox,
+            stdout,
+            stderr,
+            startedAt,
+          }),
+        });
+      } catch (error: unknown) {
+        if (escalationAttempted) throw error;
+        const errObj = (error ?? {}) as Record<string, unknown>;
+        const failureText = [
+          error instanceof Error ? error.message : String(error),
+          errObj.stdout,
+          errObj.stderr,
+        ].filter((value): value is string => typeof value === 'string').join('\n');
+        const deniedPath = extractSandboxDeniedPath(failureText);
+        const offeredPath = shouldOfferEscalation({
+          sandboxDecision,
+          foreground: true,
+          pty: false,
+          background: false,
+          unattended,
+          writeFence,
+          evalRealRoot: process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined,
+          permissionMode,
+          abortSignal: ctx.abortSignal,
+          deniedPath,
+        });
+        if (!offeredPath) throw error;
+
+        const escalationReason = `沙盒拦截了这一步：它想写入 ${offeredPath}。允许仅这一次向该路径写入并重跑？`;
+        let permit: Awaited<ReturnType<CanUseToolFn>>;
+        try {
+          permit = await canUseTool('bash', args, escalationReason, {
+            type: 'command',
+            forceConfirm: true,
+            dangerLevel: 'warning',
+            reason: escalationReason,
+            details: {
+              command: normalizedCommand,
+              deniedPath: offeredPath,
+              action: 'sandbox_escalate_once',
+            },
+          });
+        } catch {
+          permit = { allow: false, reason: 'sandbox escalation approval failed' };
+        }
+
+        if (!permit.allow) {
+          sandboxEscalationMeta = { path: offeredPath, decision: 'declined' };
+          throw error;
+        }
+
+        sandboxEscalationMeta = { path: offeredPath, decision: 'approved' };
+        escalationAttempted = true;
+        cleanupSandbox();
+        const retrySandbox = applySandbox(commandForExecution, allowNetworkFg, offeredPath);
+        if (!retrySandbox.ok || !sandboxDecision.sandboxed) {
+          throw new Error(
+            retrySandbox.ok ? 'OS sandbox retry was not applied' : retrySandbox.error,
+            { cause: error },
+          );
+        }
+        sandboxedCommand = retrySandbox.command;
+        return runForegroundAttempt();
+      }
+    };
     try {
       // 并行：生成动态描述（不阻塞命令执行）
       const descriptionPromise = generateBashDescription(normalizedCommand).catch(() => null);
 
-      const startedAt = Date.now();
-      const foregroundResult = await runForegroundCommand({
-        command: sandboxedFg.command,
-        cwd: workingDirectory,
-        timeout,
-        abortSignal: ctx.abortSignal,
-        ctx,
-        startedAt,
-        env: childEnvFg.env,
-        toolName: schema.name,
-        onTimeout: unattended ? undefined : ({ child, stdout, stderr }) => handoverTimedOutCommand({
-          child,
-          command: sandboxedFg.command,
-          cwd: workingDirectory,
-          sessionId: ctx.sessionId,
-          toolCallId: ctx.currentToolCallId,
-          sandboxed: sandboxDecision.sandboxed,
-          onExit: cleanupSandbox,
-          stdout,
-          stderr,
-          startedAt,
-        }),
-      });
+      const foregroundResult = await runForegroundAttempt();
 
       if (foregroundResult.handover) {
         handedOver = true;
@@ -861,6 +863,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           output: `Command timed out after ${timeout / 1000} seconds and was adopted as a background task.\n\n<task-id>${handover.taskId}</task-id>\n<task-type>bash-timeout-handover</task-type>\n<status>running</status>\n<output-preview>\n${preview}\n</output-preview>\n\nUse Process with action="output", task_id="${handover.taskId}" to continue reading the full output.`,
           meta: {
             ...buildSandboxMeta(sandboxDecision),
+            ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}),
             taskId: handover.taskId,
             ...(handover.outputFile ? { outputFile: handover.outputFile } : {}),
             background: true,
@@ -897,6 +900,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         output: cwdPrefix + output,
         meta: {
           ...buildSandboxMeta(sandboxDecision),
+          ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}),
           ...(dynamicDesc ? { description: dynamicDesc } : {}),
           process: {
             command: normalizedCommand,
@@ -934,6 +938,9 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       // 因此把命令输出折进 error，保证非零退出/超时时模型能看到 traceback / stderr，
       // 而不是只看到 "exit code N" 然后瞎重试。meta.output 保留供 telemetry/artifact 使用。
       const withOutput = (msg: string) => (errorOutput ? `${msg}\n${errorOutput}` : msg);
+      const withEscalation = (msg: string) => sandboxEscalationMeta?.decision === 'declined'
+        ? `${msg}\n\n${SANDBOX_ESCALATION_DECLINED_MESSAGE}`
+        : msg;
       const diagnostics = diagnoseBashFailure({
         command: normalizedCommand,
         message: errMsg,
@@ -948,12 +955,14 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       const withDiagnostics = (msg: string) => appendFailureDiagnostics(msg, diagnostics);
 
       // 超时：child_process 超时会 killed + SIGTERM
-      if (ctx.abortSignal.aborted || errObj.name === 'AbortError' || errObj.code === 'ABORT_ERR') {
+      if (!sandboxEscalationMeta && (
+        ctx.abortSignal.aborted || errObj.name === 'AbortError' || errObj.code === 'ABORT_ERR'
+      )) {
         return {
           ok: false,
-          error: 'aborted',
+          error: withEscalation('aborted'),
           code: 'ABORTED',
-          meta: { ...buildSandboxMeta(sandboxDecision), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
+          meta: { ...buildSandboxMeta(sandboxDecision), ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
         };
       }
 
@@ -963,17 +972,17 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           : `Command timed out after ${timeout / 1000} seconds. Consider using run_in_background=true for long-running commands.`;
         return {
           ok: false,
-          error: withOutput(timeoutMessage),
+          error: withEscalation(withOutput(timeoutMessage)),
           code: 'TIMEOUT',
-          meta: { ...buildSandboxMeta(sandboxDecision), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
+          meta: { ...buildSandboxMeta(sandboxDecision), ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
         };
       }
 
       return {
         ok: false,
-        error: withDiagnostics(withOutput(errMsg || 'Command execution failed')),
+        error: withEscalation(withDiagnostics(withOutput(errMsg || 'Command execution failed'))),
         code: 'FS_ERROR',
-        meta: { ...buildSandboxMeta(sandboxDecision), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
+        meta: { ...buildSandboxMeta(sandboxDecision), ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
     } finally {
       // PTY/后台路径把 cleanup 交给执行器的退出回调；这里只收前台路径。

@@ -1405,6 +1405,168 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
   });
 });
 
+describe('bashModule sandbox escalation', () => {
+  const modeMgr = getPermissionModeManager();
+
+  beforeEach(() => {
+    modeMgr.setMode('default', true);
+    process.env.OS_SANDBOX_ENABLED = 'true';
+    wrapMock.mockReset();
+    cleanupMock.mockReset();
+  });
+
+  afterEach(() => {
+    modeMgr.setMode('default', true);
+    process.env.OS_SANDBOX_ENABLED = 'true';
+  });
+
+  it('asks once, appends only the denied path, and retries once after approval', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'sandbox-escalation-'));
+    const deniedPath = join(tmpdir(), `sandbox-escalation-target-${process.pid}.txt`);
+    const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
+    wrapMock
+      .mockReturnValueOnce({ command: denial, cleanup: cleanupMock })
+      .mockReturnValueOnce({ command: "printf 'retried\\n'", cleanup: cleanupMock });
+    const canUse = vi.fn()
+      .mockResolvedValueOnce({ allow: true as const })
+      .mockResolvedValueOnce({ allow: true as const });
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx({ workingDir: cwd }), canUse);
+      expect(result.ok).toBe(true);
+      expect(wrapMock).toHaveBeenCalledTimes(2);
+      expect(wrapMock.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+        readWriteRoots: [resolveCanonicalRunPath(cwd), deniedPath],
+        allowNetwork: false,
+      }));
+      expect(canUse).toHaveBeenCalledTimes(2);
+      expect(canUse.mock.calls[1]).toEqual([
+        'bash',
+        expect.objectContaining({ command: `printf x > ${deniedPath}` }),
+        expect.stringContaining(deniedPath),
+        expect.objectContaining({
+          type: 'command',
+          forceConfirm: true,
+          dangerLevel: 'warning',
+          details: expect.objectContaining({ command: `printf x > ${deniedPath}`, deniedPath, action: 'sandbox_escalate_once' }),
+        }),
+      ]);
+      if (result.ok) expect(result.meta?.sandboxEscalation).toEqual({ path: deniedPath, decision: 'approved' });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves the original failure and explains a declined or thrown approval', async () => {
+    for (const approval of [
+      { allow: false as const, reason: 'declined' },
+      new Error('approval aborted'),
+    ]) {
+      wrapMock.mockReset();
+      wrapMock.mockReturnValue({
+        command: `printf '%s\\n' "EPERM: operation not permitted, open '/tmp/sandbox-escalation-declined-${process.pid}'" >&2; exit 1`,
+        cleanup: cleanupMock,
+      });
+      const canUse = vi.fn()
+        .mockResolvedValueOnce({ allow: true as const })
+        .mockImplementationOnce(async () => {
+          if (approval instanceof Error) throw approval;
+          return approval;
+        });
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute({ command: 'printf x > /tmp/sandbox-escalation-declined' }, makeCtx(), canUse);
+      expect(result.ok).toBe(false);
+      expect(wrapMock).toHaveBeenCalledTimes(1);
+      expect(canUse).toHaveBeenCalledTimes(2);
+      if (!result.ok) {
+        expect(result.error).toContain('Command failed with exit code 1');
+        expect(result.error).toContain('The user declined to widen the sandbox');
+        expect(result.meta?.sandboxEscalation).toEqual({
+          path: `/tmp/sandbox-escalation-declined-${process.pid}`,
+          decision: 'declined',
+        });
+      }
+    }
+  });
+
+  it('does not open a second card when the approved retry fails', async () => {
+    const deniedPath = `/tmp/sandbox-escalation-retry-${process.pid}`;
+    const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
+    wrapMock
+      .mockReturnValueOnce({ command: denial, cleanup: cleanupMock })
+      .mockReturnValueOnce({ command: denial, cleanup: cleanupMock });
+    const canUse = vi.fn()
+      .mockResolvedValueOnce({ allow: true as const })
+      .mockResolvedValueOnce({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(), canUse);
+    expect(result.ok).toBe(false);
+    expect(wrapMock).toHaveBeenCalledTimes(2);
+    expect(canUse).toHaveBeenCalledTimes(2);
+    if (!result.ok) expect(result.meta?.sandboxEscalation).toEqual({ path: deniedPath, decision: 'approved' });
+  });
+
+  it('does not remember an approval across invocations', async () => {
+    const deniedPath = `/tmp/sandbox-escalation-repeat-${process.pid}`;
+    const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
+    wrapMock.mockImplementation(() => ({ command: denial, cleanup: cleanupMock }));
+    const canUse = vi.fn()
+      .mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(), canUse);
+    await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(), canUse);
+    expect(wrapMock).toHaveBeenCalledTimes(4);
+    expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash')).toHaveLength(2);
+  });
+
+  it('does not offer escalation for ineligible sessions, modes, paths, or execution modes', async () => {
+    const target = `/tmp/sandbox-escalation-ineligible-${process.pid}`;
+    const denialFor = (pathText: string) =>
+      `printf '%s\\n' "EPERM: operation not permitted, open '${pathText}'" >&2; exit 1`;
+    const cases: Array<{ label: string; pathText: string; args?: Record<string, unknown>; ctx?: Partial<ToolContext>; mode?: 'default' | 'readOnly' | 'bypassPermissions'; env?: string }> = [
+      { label: 'unattended', pathText: target, ctx: { sessionId: `unattended-escalation-${process.pid}` } },
+      { label: 'readOnly', pathText: target, mode: 'readOnly' },
+      { label: 'bypassPermissions', pathText: target, mode: 'bypassPermissions' },
+      { label: 'write-fence', pathText: target, ctx: { requiresOsWriteFence: true, writeFenceWorkspaceRoot: process.cwd() } },
+      { label: 'eval', pathText: target, env: '/private/eval-root' },
+      { label: 'root', pathText: '/' },
+      { label: 'home', pathText: homedir() },
+      { label: 'relative', pathText: 'relative-target' },
+      { label: 'no-path', pathText: '' },
+      { label: 'background', pathText: target, args: { run_in_background: true } },
+      { label: 'pty', pathText: target, args: { pty: true } },
+    ];
+    const handler = await bashModule.createHandler();
+    for (const testCase of cases) {
+      vi.clearAllMocks();
+      modeMgr.setMode(testCase.mode ?? 'default', true);
+      if (testCase.ctx?.sessionId?.startsWith('unattended-')) {
+        modeMgr.markUnattendedSession(testCase.ctx.sessionId);
+      }
+      if (testCase.env) process.env.CODE_AGENT_EVAL_REAL_ROOT = testCase.env;
+      else delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+      const denial = testCase.label === 'relative'
+        ? `printf 'npm error path relative-target\\nOperation not permitted\\n' >&2; exit 1`
+        : testCase.label === 'no-path'
+          ? `printf 'EPERM: Operation not permitted\\n' >&2; exit 1`
+          : denialFor(testCase.pathText);
+      wrapMock.mockReturnValue({ command: denial, cleanup: cleanupMock });
+      if (testCase.label === 'background') startBackgroundTaskMock.mockReturnValue({ success: false, error: denial });
+      if (testCase.label === 'pty') createPtySessionMock.mockReturnValue({ success: false, error: denial });
+      const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+      await handler.execute(
+        { command: `printf x > ${target}`, ...(testCase.args ?? {}) },
+        makeCtx(testCase.ctx),
+        canUse,
+      );
+      expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash'), testCase.label).toHaveLength(0);
+      expect(canUse).toHaveBeenCalledTimes(1);
+      modeMgr.setMode('default', true);
+      delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+    }
+  });
+});
+
 describe('bashModule write-fence (default mode, unified eligibility)', () => {
   const modeMgr = getPermissionModeManager();
 

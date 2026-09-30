@@ -412,7 +412,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       expect(result.error ?? '').not.toContain('Blocked by path policy');
     });
 
-    it('没配任何路径 deny 时，$SSHDIR 写目标不因解析不出而多一张卡', async () => {
+    it('没配任何路径 deny 时，$SSHDIR 的沙盒拒绝只追加一次明确的扩大确认', async () => {
       const executor = buildPathPolicyExecutor();
 
       await executor.execute(
@@ -422,7 +422,11 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       );
 
       const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));
-      expect(pathPolicyAsks).toHaveLength(0);
+      expect(pathPolicyAsks).toHaveLength(1);
+      expect(pathPolicyAsks[0]).toMatchObject({
+        type: 'command',
+        details: { action: 'sandbox_escalate_once' },
+      });
     });
 
     it('$HOME 写目标仍展开后走路径禁止硬拒，不改成审批卡', async () => {

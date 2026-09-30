@@ -133,6 +133,38 @@ async function invokeMcpAction(
 }
 
 describe('mcp.ipc settings add helpers', () => {
+  it('copies stateless true and rejects a non-boolean marker', () => {
+    expect(normalizeMcpSettingsServerConfig({
+      name: 'filesystem',
+      type: 'stdio',
+      command: 'npx',
+      stateless: true,
+    })).toEqual({
+      name: 'filesystem',
+      type: 'stdio',
+      command: 'npx',
+      args: [],
+      env: {},
+      enabled: false,
+      lazyLoad: true,
+      stateless: true,
+    });
+
+    expect(normalizeMcpSettingsServerConfig({
+      name: 'filesystem',
+      type: 'stdio',
+      command: 'npx',
+      stateless: false,
+    })).not.toHaveProperty('stateless');
+
+    expect(() => normalizeMcpSettingsServerConfig({
+      name: 'filesystem',
+      type: 'stdio',
+      command: 'npx',
+      stateless: 'yes',
+    })).toThrow('stateless must be a boolean');
+  });
+
   it('normalizes stdio server drafts as disabled lazy-load configs', () => {
     expect(normalizeMcpSettingsServerConfig({
       name: 'filesystem',

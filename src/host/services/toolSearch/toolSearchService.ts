@@ -153,7 +153,7 @@ export class ToolSearchService {
     scored.sort((a, b) => b.score - a.score);
 
     // Jev 只在 keyword/required 搜索中改变排序；select 必须保持直接选择语义。
-    const rerankOutcome = options.rerank?.enabled && options.rerank.judge
+    const rerankOutcome = options.rerank?.enabled
       ? await this.rerankScored(query, scored, options.rerank)
       : { scored, suppressAutoLoad: false };
     const reranked = rerankOutcome.scored;

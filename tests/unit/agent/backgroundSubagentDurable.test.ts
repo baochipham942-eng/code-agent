@@ -359,4 +359,189 @@ describe('BackgroundSubagent durable ledger (N-BGSPAWN-DURABLE)', () => {
     await assertion;
     db.close();
   });
+
+  it('进度快照变了才写，且两次写入至少间隔 5 秒', async () => {
+    vi.useFakeTimers();
+    const { db, repository, ledger, kernel } = createStack('process-throttle', 750);
+    const checkpoint = vi.spyOn(kernel, 'checkpoint');
+    await ledger.begin({
+      agentId: 'subagent-bg-progress',
+      sessionId: 'session-progress',
+      parentRunId: 'run-parent-progress',
+      title: '进度',
+      role: 'explore',
+      treeId: 'tree-progress',
+      startedAt: Date.now(),
+    });
+    ledger.noteProgress('subagent-bg-progress', {
+      cost: 0.5,
+      lastProgress: 'x'.repeat(400),
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(checkpoint).toHaveBeenCalledTimes(1);
+    const first = (await repository.get('subagent-bg-progress'))!.cursor.engineCursor as {
+      lastProgress: string;
+      cost: number;
+      title: string;
+      schemaVersion: number;
+    };
+    expect(first.lastProgress).toHaveLength(300);
+    expect(first.lastProgress).toBe('x'.repeat(300));
+    expect(first).toMatchObject({ schemaVersion: 1, title: '进度', cost: 0.5 });
+
+    ledger.noteProgress('subagent-bg-progress', { cost: 0.9, lastProgress: 'second step' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(checkpoint).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(checkpoint).toHaveBeenCalledTimes(2);
+    expect((await repository.get('subagent-bg-progress'))!.cursor.engineCursor).toMatchObject({
+      schemaVersion: 1,
+      kind: 'background_subagent_single',
+      title: '进度',
+      cost: 0.9,
+      lastProgress: 'second step',
+    });
+    expect((await repository.get('subagent-bg-progress'))!.pendingOperations![0]).toMatchObject({
+      status: 'dispatched',
+    });
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(checkpoint).toHaveBeenCalledTimes(2);
+    db.close();
+  });
+
+  it('重启中断通知带上已花成本和最后进度（N-BGSPAWN-REPORT-COST）', async () => {
+    vi.useFakeTimers();
+    const { db, repository, ledger } = createStack('process-1', 750);
+    configureBackgroundSubagentDurableLedger(ledger);
+    const spawned = new BackgroundSubagentRegistry();
+    const agentId = spawned.spawn(() => new Promise<SubagentResult>(() => undefined), {
+      sessionId: 'session-cost',
+      runId: 'run-parent-cost',
+      treeId: 'tree-cost',
+      title: '还在花钱',
+      role: 'explore',
+    });
+    await vi.waitFor(async () => {
+      expect(await repository.get(agentId)).not.toBeNull();
+    });
+    spawned.noteLiveProgress(agentId, {
+      cost: 1.25,
+      tokensUsed: 80,
+      iterations: 2,
+      toolCalls: 3,
+      lastProgress: 'scanned three modules',
+    });
+    expect(spawned.getStatus(agentId)).not.toHaveProperty('liveProgress');
+    await vi.advanceTimersByTimeAsync(300);
+    expect((await repository.get(agentId))!.cursor.engineCursor).toMatchObject({
+      schemaVersion: 1,
+      kind: 'background_subagent_single',
+      title: '还在花钱',
+      role: 'explore',
+      treeId: 'tree-cost',
+      cost: 1.25,
+      tokensUsed: 80,
+      iterations: 2,
+      toolCalls: 3,
+      lastProgress: 'scanned three modules',
+    });
+    vi.useRealTimers();
+
+    const kernel2 = new DurableRunKernel({
+      stores: repository,
+      ownerId: 'native-host',
+      processInstanceId: 'process-2',
+      leaseDurationMs: 60_000,
+    });
+    const recoveredRegistry = new RunRegistry();
+    recoveredRegistry.configureDurableKernel(kernel2);
+    const crashedAt = Date.now() + 120_000;
+    const plans = await recoveredRegistry.recoverDurable(crashedAt);
+    expect(plans).toHaveLength(1);
+    const handler = createBackgroundSubagentRecoveryHandler({ registry: recoveredRegistry });
+    const outcome = await handler.recover(plans[0]!, crashedAt);
+    expect(outcome).toMatchObject({ status: 'recovered', reason: BACKGROUND_SUBAGENT_INTERRUPTED_REASON });
+
+    const records = getBackgroundSubagentRegistry().drainCompletionNotifications({ sessionId: 'session-cost' });
+    expect(records).toHaveLength(1);
+    expect(records[0]!.content).toContain('"cost": 1.25');
+    expect(records[0]!.content).toContain('"last_progress": "scanned three modules"');
+    expect(records[0]!.content).toContain('"iterations": 2');
+    expect(records[0]!.content).toContain('"tool_calls": 3');
+    expect(records[0]!.content).not.toContain('no progress recorded');
+    db.close();
+  });
+
+  it('从未记下进度的中断通知写明 no progress recorded 且不编造 cost', async () => {
+    const { db, repository, ledger } = createStack('process-1');
+    configureBackgroundSubagentDurableLedger(ledger);
+    const spawned = new BackgroundSubagentRegistry();
+    const agentId = spawned.spawn(() => new Promise<SubagentResult>(() => undefined), {
+      sessionId: 'session-empty',
+      runId: 'run-parent-empty',
+      title: '没有进度',
+    });
+    await vi.waitFor(async () => {
+      expect(await repository.get(agentId)).not.toBeNull();
+    });
+
+    const kernel2 = new DurableRunKernel({
+      stores: repository,
+      ownerId: 'native-host',
+      processInstanceId: 'process-2',
+      leaseDurationMs: 60_000,
+    });
+    const recoveredRegistry = new RunRegistry();
+    recoveredRegistry.configureDurableKernel(kernel2);
+    const crashedAt = Date.now() + 120_000;
+    const [plan] = await recoveredRegistry.recoverDurable(crashedAt);
+    const handler = createBackgroundSubagentRecoveryHandler({ registry: recoveredRegistry });
+    await handler.recover(plan!, crashedAt);
+
+    const records = getBackgroundSubagentRegistry().drainCompletionNotifications({ sessionId: 'session-empty' });
+    expect(records).toHaveLength(1);
+    expect(records[0]!.content).toContain('interrupted_by_restart');
+    expect(records[0]!.content).toContain('no progress recorded');
+    expect(records[0]!.summary).toContain('no progress recorded');
+    expect(records[0]!.content).not.toMatch(/"cost"\s*:/);
+    expect(records[0]!.content).not.toContain('last_progress');
+    db.close();
+  });
+
+  it('进度 checkpoint 失败或被 fence 不取消仍在跑的子代理', async () => {
+    const { db, repository, ledger, kernel } = createStack('process-fence', 600);
+    configureBackgroundSubagentDurableLedger(ledger);
+    const reg = new BackgroundSubagentRegistry();
+    const pending = deferred<SubagentResult>();
+    const agentId = reg.spawn(() => pending.promise, {
+      sessionId: 'session-fence',
+      runId: 'run-fence',
+    });
+    await vi.waitFor(async () => {
+      expect(await repository.get(agentId)).not.toBeNull();
+    });
+    let calls = 0;
+    vi.spyOn(kernel, 'checkpoint').mockImplementation(async () => {
+      calls += 1;
+      throw new Error(calls === 1
+        ? `Durable run write fenced by stale owner: ${agentId}`
+        : 'disk full');
+    });
+    reg.noteLiveProgress(agentId, { cost: 0.5, lastProgress: 'reading files' });
+    await vi.waitFor(() => {
+      expect(calls).toBeGreaterThanOrEqual(1);
+    });
+    const afterFailure = (await repository.get(agentId))!.owner!.leaseExpiresAt;
+    await vi.waitFor(async () => {
+      expect((await repository.get(agentId))!.owner!.leaseExpiresAt).toBeGreaterThan(afterFailure);
+    });
+    expect(reg.getStatus(agentId)?.status).toBe('running');
+    expect(calls).toBeGreaterThanOrEqual(2);
+    pending.resolve(fakeResult('still finished', { cost: 0.5 }));
+    await reg.await(agentId);
+    expect(reg.getStatus(agentId)?.status).toBe('completed');
+    db.close();
+  });
 });

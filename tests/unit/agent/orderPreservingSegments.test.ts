@@ -132,12 +132,12 @@ describe('order-preserving segments', () => {
       let clock = 0;
       const inFlight: Array<{ index: number; segment: number }> = [];
       const stamps: Array<{ index: number; segment: number; start: number; end: number }> = [];
-      const results = await executeOrderedSegments(classified.segments, classified.deferred, {
+      const results = await executeOrderedSegments<ToolResult>(classified.segments, classified.deferred, {
         resultCount: calls.length,
         maxParallel: MAX_PARALLEL_TOOLS,
         shouldHalt: () => false,
         prepare: () => {},
-        run: async (entry) => {
+        run: async (entry): Promise<ToolResult> => {
           const segment = segmentOf.get(entry.index);
           expect(segment, label).toBeTypeOf('number');
           clock += 1;
@@ -153,9 +153,9 @@ describe('order-preserving segments', () => {
           const at = inFlight.findIndex((item) => item.index === entry.index);
           inFlight.splice(at, 1);
           stamps.push({ index: entry.index, segment: segment ?? -1, start, end });
-          return { toolCallId: entry.toolCall.id, success: true, output: 'ok' } satisfies ToolResult;
+          return { toolCallId: entry.toolCall.id, success: true, output: 'ok' };
         },
-        deferredResult: (entry) => ({
+        deferredResult: (entry): ToolResult => ({
           toolCallId: entry.toolCall.id,
           success: false,
           error: 'BATCH_TERMINATED: calls after a barrier are deferred',

@@ -13,7 +13,11 @@
 import { validateCommand } from './commandSafety';
 import { getSensitiveDetector } from './sensitiveDetector';
 import { canonicalizeCommand } from './canonicalizeCommand';
-import { OBFUSCATION_PATTERNS } from './patterns/injectionPatterns';
+import {
+  OBFUSCATION_PATTERNS,
+  SSH_PRIVATE_KEY_PATH,
+  SSH_PRIVATE_KEY_READ_VERB,
+} from './patterns/injectionPatterns';
 import { stripSpecialTokenLiterals } from './untrustedContentBoundary';
 
 export interface SkillGuardFinding {
@@ -173,6 +177,12 @@ export function scanSkillContent(content: string): SkillGuardResult {
       findings.push({
         kind: 'dangerous_command',
         detail: `危险命令（${result.securityFlags.join(',') || 'critical'}）：${line.slice(0, 80)}`,
+      });
+    }
+    if (SSH_PRIVATE_KEY_PATH.test(line) && SSH_PRIVATE_KEY_READ_VERB.test(line)) {
+      findings.push({
+        kind: 'dangerous_command',
+        detail: `SSH 私钥读取规则：${line.slice(0, 80)}`,
       });
     }
   }

@@ -112,7 +112,7 @@ interface ActiveSession {
   /** 上一条落库的用户字幕，供 R5 连续字幕并入上一条 */
   transcriptMerge: TranscriptMergeState;
   /** 通话身份的短人设，焦点刷新时要和 Focus 段一起重拼 */
-  personaInstructions: string;
+  personaInstructions: string; userProfile: string;
   /** 当前已下发给上游的完整 instructions，用于语速/焦点刷新去重。 */
   instructions: string;
   /** 本次通话真用的上游模型（设置白名单解析后），挂断摘要如实记它 */
@@ -608,14 +608,14 @@ async function connectAndBind(
   // 低置信近邻只负责暴露正式闸的盲区。等本轮 response.done 才知道模型也没调 end_call。
   let pendingHangupNearMiss = false;
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
-  const continuity = await loadVoiceContinuity(neoSessionId);
+  const [continuity, userProfile] = await Promise.all([loadVoiceContinuity(neoSessionId), import('./voiceUserProfile').then((m) => m.loadVoiceUserProfile())]);
   // 声纹（N-L7-SPK）：embedder 加载与上游建连并行；已注册本人时 continuity 扣住等认人。
   const voiceprint = prepareVoiceprintForCall(liveSettings?.voiceprint !== false);
   const initialInstructions = composeVoiceInstructions(baseInstructions, null, {
     // Phase 3：跟着这台机器真有没有这个能力走。能力与文案同一个判据，不虚构截屏能力。
     screenContextEnabled: isVoiceScreenContextSupported(),
     continuity: voiceprint.withholdContinuity ? null : continuity,
-    speechRate: liveSettings?.speechRate,
+    speechRate: liveSettings?.speechRate, userProfile,
   });
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
@@ -1020,7 +1020,7 @@ async function connectAndBind(
     transcriptCounter,
     transcriptBuf,
     transcriptMerge,
-    personaInstructions: baseInstructions,
+    personaInstructions: baseInstructions, userProfile,
     instructions: initialInstructions,
     conversationModel: selection.model.id,
     continuity: voiceprint.withholdContinuity ? null : continuity,
@@ -1109,7 +1109,7 @@ function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
  */
 function updateSessionInstructions(session: ActiveSession): void {
   const instructions = composeVoiceInstructions(session.personaInstructions, session.focus, {
-    continuity: session.continuity,
+    continuity: session.continuity, userProfile: session.userProfile,
     screenContextEnabled: isVoiceScreenContextSupported(),
     speechRate: readVoiceLiveSettings()?.speechRate,
   });

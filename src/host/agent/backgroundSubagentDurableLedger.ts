@@ -23,6 +23,10 @@
 // engineCursor（N-BGSPAWN-REPORT-COST）：被杀死的进程仍能报出已花成本和最后
 // 进度。heartbeat 被 fence（owner 易主）后停止写账本——之后的 terminal 必然被
 // fence，留给收口路径处理。进度 checkpoint 失败只记日志，不停心跳、不打断子代理。
+// finalize 一开始就把 live run 标成 finalizing：心跳仍可续租，但 flushProgress
+// 必须跳过。否则进度 checkpoint 会插在收口 checkpoint 和 terminal 之间，用
+// dispatched 的 launch operation 盖掉已经 succeeded 的那笔，terminal(completed)
+// 被 assertRunEnvelope 拒绝，正常完成的子代理下次重启被误报成 interrupted。
 //
 // 开关语义：assembleDurableRun 在 durable 激活且 kernel 配置成功后 arm（配置在
 // configureDurableKernel 里完成，assemble 全程同步）；legacy 模式或初始化失败时
@@ -136,6 +140,8 @@ interface LiveRun {
   pendingSnapshot?: BackgroundSubagentProgressSnapshot;
   lastFlushedFingerprint?: string;
   lastFlushAt?: number;
+  /** finalize 已开始。进度 flush 必须跳过；心跳续租不受影响。 */
+  finalizing: boolean;
 }
 
 export class BackgroundSubagentDurableLedger {
@@ -203,12 +209,14 @@ export class BackgroundSubagentDurableLedger {
 
   /**
    * 收成终态：先 checkpoint 把 launch operation 收掉（completed 断言要求无未决
-   * operation），再 terminal。heartbeat 已被 fence 的 run 直接放弃写——写了也
-   * 会被 owner epoch 挡住，交给启动/sweeper 收口。
+   * operation），再 terminal。进入本方法后立刻标 finalizing，心跳可以续租，
+   * 但不得再刷进度。heartbeat 已被 fence 的 run 直接放弃写——写了也会被 owner
+   * epoch 挡住，交给启动/sweeper 收口。
    */
   async finalize(agentId: string, input: BackgroundSubagentDurableFinalizeInput): Promise<void> {
     const live = this.liveRuns.get(agentId);
     if (!live) return;
+    live.finalizing = true;
     const now = input.finishedAt;
     const operationStatus: PendingOperation['status'] = input.outcome === 'completed'
       ? 'succeeded'
@@ -274,7 +282,7 @@ export class BackgroundSubagentDurableLedger {
     pendingOperation: PendingOperation,
   ): void {
     this.untrack(agentId);
-    const live: LiveRun = { owner, attempt, metadata, pendingOperation };
+    const live: LiveRun = { owner, attempt, metadata, pendingOperation, finalizing: false };
     this.liveRuns.set(agentId, live);
     const queued = this.queuedSnapshots.get(agentId);
     if (queued) {
@@ -310,6 +318,9 @@ export class BackgroundSubagentDurableLedger {
   }
 
   private async flushProgress(agentId: string, live: LiveRun): Promise<void> {
+    // 收口 checkpoint 与 terminal 之间如果再写进度，会把 launch operation 写回
+    // dispatched，terminal(completed) 随即失败，行留在 running。
+    if (live.finalizing) return;
     const snapshot = live.pendingSnapshot;
     if (!snapshot) return;
     const fingerprint = progressFingerprint(snapshot);
@@ -338,7 +349,7 @@ export class BackgroundSubagentDurableLedger {
       logger.warn(`background subagent durable progress checkpoint failed for ${agentId}:`, error);
       return;
     }
-    if (this.liveRuns.get(agentId) !== live) return;
+    if (this.liveRuns.get(agentId) !== live || live.finalizing) return;
     live.metadata = metadata;
     live.lastFlushedFingerprint = fingerprint;
     live.lastFlushAt = now;

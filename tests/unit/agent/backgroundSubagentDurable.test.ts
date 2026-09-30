@@ -544,4 +544,54 @@ describe('BackgroundSubagent durable ledger (N-BGSPAWN-DURABLE)', () => {
     expect(reg.getStatus(agentId)?.status).toBe('completed');
     db.close();
   });
+
+  it('心跳进度写入插在收口 checkpoint 和 terminal 之间时，完成态仍是 succeeded', async () => {
+    vi.useFakeTimers();
+    const { db, repository, ledger, kernel } = createStack('process-finalize-race', 750);
+    const agentId = 'subagent-bg-finalize-race';
+    await ledger.begin({
+      agentId,
+      sessionId: 'session-race',
+      parentRunId: 'run-parent-race',
+      title: '收尾竞态',
+      startedAt: Date.now(),
+    });
+    ledger.noteProgress(agentId, {
+      cost: 0.35,
+      lastProgress: 'halfway through the files',
+    });
+
+    const heartbeat = vi.spyOn(kernel, 'heartbeat');
+    const originalCheckpoint = kernel.checkpoint.bind(kernel);
+    let openedWindow = false;
+    vi.spyOn(kernel, 'checkpoint').mockImplementation(async (input) => {
+      const resolvesLaunch = input.pendingOperations.some((operation) => (
+        operation.operationId === 'background-execution' && operation.status === 'succeeded'
+      ));
+      const committed = await originalCheckpoint(input);
+      // 收口 checkpoint 已经落盘，terminal 还没被调用。这段窗口里让心跳把进度写进去。
+      if (resolvesLaunch && !openedWindow) {
+        openedWindow = true;
+        await vi.advanceTimersByTimeAsync(300);
+      }
+      return committed;
+    });
+
+    await ledger.finalize(agentId, {
+      outcome: 'completed',
+      cost: 0.35,
+      finishedAt: Date.now(),
+    });
+
+    const envelope = (await repository.get(agentId))!;
+    expect(openedWindow).toBe(true);
+    expect(heartbeat).toHaveBeenCalled();
+    expect(envelope.status).toBe('completed');
+    expect(envelope.pendingOperations?.[0]).toMatchObject({ status: 'succeeded' });
+    expect((await repository.getLatest(agentId))?.state).toMatchObject({
+      outcome: 'completed',
+      cost: 0.35,
+    });
+    db.close();
+  });
 });

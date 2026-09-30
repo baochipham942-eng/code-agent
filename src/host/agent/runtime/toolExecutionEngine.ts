@@ -1,5 +1,5 @@
 import { getToolAttemptTrace, shouldFreezeNonReadWhileAwaitingUser, buildAwaitingUserBlockedResult, AWAITING_USER_FREEZE_NOTICE } from './toolAttemptTrace';
-import { emitForceFinalSkippedToolResult } from './forceFinalSeal';
+import { emitBatchTerminatedToolResult, emitForceFinalSkippedToolResult } from './forceFinalSeal';
 import { mintUserTurnOrigin } from '../messageOrigin';
 import { attachDocumentOrigin, describeDocumentEvidenceProblems, documentClaimPreflight } from './documentEvidenceBoundary';
 // ============================================================================
@@ -31,7 +31,7 @@ import { isAbsolute, resolve as resolvePath } from 'node:path';
 import type {
   AgentLoopConfig,
 } from '../../agent/loopTypes';
-import { classifyToolCalls } from '../../agent/toolExecution/parallelStrategy';
+import { classifyToolCalls, executeOrderedSegments, toolBatchLabel } from '../../agent/toolExecution/parallelStrategy';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { validateToolArgs, formatSchemaForModel } from './toolArgsValidator';
 import { ToolArgsRepairGate, buildRepairExhaustedMessage } from './toolArgsRepairGate';
@@ -242,81 +242,35 @@ export class ToolExecutionEngine {
       }
     } catch { /* MCP client may not be initialized */ }
 
-    const { parallelGroup, sequentialGroup } = classifyToolCalls(toolCalls, mcpAnnotations);
-    logger.debug(` Tool classification: ${parallelGroup.length} parallel-safe, ${sequentialGroup.length} sequential`);
+    const workspace = this.ctx.workingDirectory || '.';
+    const { segments, deferred } = classifyToolCalls(toolCalls, mcpAnnotations, { workspace, cwd: workspace });
+    logger.debug(` Tool classification: ${segments.length} segments, ${deferred.length} deferred`);
 
-    const results: Array<ToolResult | undefined> = Array.from({ length: toolCalls.length });
-
-    // Execute parallel-safe tools first
-    if (parallelGroup.length > 1) {
-      logger.debug(` Executing ${parallelGroup.length} parallel-safe tools in parallel (max ${MAX_PARALLEL_TOOLS})`);
-
-      for (let batchStart = 0; batchStart < parallelGroup.length; batchStart += MAX_PARALLEL_TOOLS) {
-        const batch = parallelGroup.slice(batchStart, batchStart + MAX_PARALLEL_TOOLS);
-
-        for (const { index, toolCall } of batch) {
-          this.ctx.turn.recordToolUse(toolCall.name);
-          getToolSearchService().markToolCalled(toolCall.name, this.ctx.sessionId);
-          this.runFinalizer.emitTaskProgress('tool_running', `并行执行 ${batch.length} 个工具`, {
-            tool: toolCall.name,
-            toolIndex: index,
-            toolTotal: toolCalls.length,
-            target: extractToolStepTarget(toolCall.arguments),
-            parallel: true,
-          });
-        }
-
-        const batchPromises = batch.map(async ({ index, toolCall }) => {
-          const result = await this.executeSingleTool(toolCall, index, toolCalls.length, true);
-          return { index, result };
+    const results = await executeOrderedSegments(segments, deferred, {
+      resultCount: toolCalls.length,
+      maxParallel: MAX_PARALLEL_TOOLS,
+      shouldHalt: () => this.ctx.control.isCancelled || this.ctx.turn.needsReinference,
+      prepare: (entry, batchSize) => {
+        this.ctx.turn.recordToolUse(entry.toolCall.name);
+        getToolSearchService().markToolCalled(entry.toolCall.name, this.ctx.sessionId);
+        const parallel = batchSize > 1;
+        this.runFinalizer.emitTaskProgress('tool_running', toolBatchLabel(
+          entry.toolCall.name,
+          batchSize,
+          this.ctx.turn.researchModeActive,
+        ), {
+          tool: entry.toolCall.name,
+          toolIndex: entry.index,
+          toolTotal: toolCalls.length,
+          target: extractToolStepTarget(entry.toolCall.arguments),
+          ...(parallel
+            ? { parallel: true }
+            : { progress: Math.round((entry.index / toolCalls.length) * 100) }),
         });
-
-        const batchResults = await Promise.all(batchPromises);
-
-        for (const { index, result } of batchResults) {
-          results[index] = result;
-        }
-      }
-    } else if (parallelGroup.length === 1) {
-      const { index, toolCall } = parallelGroup[0];
-      this.ctx.turn.recordToolUse(toolCall.name);
-      getToolSearchService().markToolCalled(toolCall.name, this.ctx.sessionId);
-      // Research mode: show friendly message for web_fetch
-      const singleToolLabel = this.ctx.turn.researchModeActive && toolCall.name === 'web_fetch'
-        ? '正在抓取详情...'
-        : `执行 ${toolCall.name}`;
-      this.runFinalizer.emitTaskProgress('tool_running', singleToolLabel, {
-        tool: toolCall.name,
-        toolIndex: index,
-        toolTotal: toolCalls.length,
-        target: extractToolStepTarget(toolCall.arguments),
-      });
-      results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length, false);
-    }
-
-    // Execute sequential tools one by one
-    for (const { index, toolCall } of sequentialGroup) {
-      if (this.ctx.control.isCancelled || this.ctx.turn.needsReinference) {
-        logger.debug('[AgentLoop] Cancelled/steered, breaking out of sequential tool execution');
-        break;
-      }
-
-      this.ctx.turn.recordToolUse(toolCall.name);
-      getToolSearchService().markToolCalled(toolCall.name, this.ctx.sessionId);
-      const progress = Math.round((index / toolCalls.length) * 100);
-      // Research mode: show friendly message for web_fetch
-      const toolStepLabel = this.ctx.turn.researchModeActive && toolCall.name === 'web_fetch'
-        ? '正在抓取详情...'
-        : `执行 ${toolCall.name}`;
-      this.runFinalizer.emitTaskProgress('tool_running', toolStepLabel, {
-        tool: toolCall.name,
-        toolIndex: index,
-        toolTotal: toolCalls.length,
-        target: extractToolStepTarget(toolCall.arguments),
-        progress,
-      });
-      results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length, false);
-    }
+      },
+      run: (entry, parallel) => this.executeSingleTool(entry.toolCall, entry.index, toolCalls.length, parallel),
+      deferredResult: (entry) => emitBatchTerminatedToolResult(this.ctx, entry.toolCall, entry.index),
+    });
 
     this.forceFinalResponseBatchActive = false;
     this.forceFinalResponseReasonAtBatchStart = undefined;

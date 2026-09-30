@@ -247,6 +247,8 @@ vi.mock('../../../src/shared/constants', async (importOriginal) => ({
 vi.mock('../../../src/host/agent/toolExecution/parallelStrategy', () => ({
   isParallelSafeTool: vi.fn(),
   classifyToolCalls: vi.fn(),
+  executeOrderedSegments: vi.fn(),
+  toolBatchLabel: (name: string) => name,
 }));
 
 vi.mock('../../../src/host/agent/toolExecution/circuitBreaker', () => ({

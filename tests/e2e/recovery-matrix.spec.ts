@@ -1,8 +1,9 @@
 // Recovery matrix: one cell per failure class, run one at a time (workers: 1).
 // Playwright `mode: 'serial'` would skip every later cell after the first hard-invariant
 // failure, so this file stays in default mode and still shares one server handle.
-// Assertions are the hard invariants only (server returns, a cell has an exit,
-// lineage is not quarantined). Status text and buttons are recorded, not asserted.
+// Assertions are the hard invariants only (server returns, a ledger recovery
+// action is visible, lineage is not quarantined). The full visible list is
+// recorded; starter cards and expand toggles do not count as an exit.
 import { expect, test, type Page } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 
@@ -148,7 +149,7 @@ test('B1 provider failure exhausts stream-break retries', async ({ page }) => {
     assertRecoveryInvariants({
       cell: 'B1-exhausted',
       injectable: true,
-      actions: before.actions,
+      actions: recoveryActions(before.actions),
       autoResolved: false,
     });
   } catch (error) {
@@ -196,10 +197,12 @@ test('B2 provider base URL on a closed local port', async ({ page }) => {
   });
   await openComposer(page, current, 'B2 关闭端口');
   await sendComposer(page, '说一句你好');
+  // Welcome starter cards are already on screen; wait for the failure banner.
   const surface = await waitForSurface(
     page,
-    (candidate) => candidate.actions.length > 0 || candidate.statusText.includes('role=alert') || candidate.statusText.length > 0,
-    60_000,
+    (candidate) => candidate.actions.some((action) => /重试|切换模型/.test(action))
+      || candidate.statusText.includes('role=alert'),
+    90_000,
   ) ?? await captureSurface(page);
   await page.screenshot({ path: shotPath('B2-closed-port'), fullPage: false });
   const leftMachine = /api\.openai\.com|open\.bigmodel|api\.anthropic\.com|api\.deepseek\.com|api\.moonshot\.cn|api\.kimi\.com|api\.minimax\.chat|api\.perplexity\.ai|api\.x\.ai|openrouter\.ai|generativelanguage\.googleapis|api\.groq\.com|dashscope|volces\.com|xiaomimimo|api\.longcat\.chat|api\.0ki\.cn|localhost:11434/.test(current.output());
@@ -652,10 +655,16 @@ function mergeGap(...parts: Array<string | null | undefined>): string | null {
   return text.length > 0 ? text : null;
 }
 
+// 台账恢复动作及其界面原文。欢迎卡、组头展开不算。
+const RECOVERY_ACTION = /继续|放弃|丢弃|重试|切换模型|换模型|允许|拒绝|批准|回答|允许一次/;
+
+function recoveryActions(actions: string[]): string[] {
+  return actions.filter((action) => RECOVERY_ACTION.test(action));
+}
+
 function missingRecoveryGap(actions: string[]): string | null {
-  const recovered = actions.some((action) => /继续|放弃|回答|重试/.test(action));
-  if (recovered) return null;
-  return '继续/放弃/回答/重试 were not visible';
+  if (recoveryActions(actions).length > 0) return null;
+  return '继续/放弃/丢弃/重试/切换模型/换模型/允许/拒绝/批准/回答/允许一次 were not visible';
 }
 
 async function publish(
@@ -667,7 +676,7 @@ async function publish(
   assertRecoveryInvariants({
     cell: record.cell,
     injectable,
-    actions: record.actions,
+    actions: recoveryActions(record.actions),
     autoResolved,
     readback: record.dbReadback,
   });

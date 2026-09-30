@@ -422,6 +422,80 @@ describe('repair prompt and undelivered note (via runDeliverableDiskCheckGate)',
     expect(result.check.missing).toEqual([]);
   });
 
+  function slidesProposal(success: boolean): Message[] {
+    return [
+      message({
+        id: 'slides-call',
+        role: 'assistant',
+        content: '',
+        timestamp: 1_700_000_000_040,
+        toolCalls: [{ id: 'slides-1', name: 'ProposeSlidesOps', arguments: { topic: '演示' } }],
+      }),
+      message({
+        id: 'slides-result',
+        role: 'tool',
+        content: '',
+        timestamp: 1_700_000_000_050,
+        toolResults: [{
+          toolCallId: 'slides-1',
+          success,
+          output: '已生成 10 页演示稿并在预览 tab 打开。文件已保存到当前工作区：deck.pptx',
+        }],
+      }),
+    ];
+  }
+
+  it('a successful ProposeSlidesOps call with only an output-text path is produced', async () => {
+    const finalText = '已生成 10 页演示稿并在预览打开';
+    for (const repairsUsed of [0, 1]) {
+      const result = await runDeliverableDiskCheckGate({
+        workingDirectory: workRoot,
+        messages: [message({ content: '帮我做一个 ppt 演示文稿' }), ...slidesProposal(true)],
+        finalText,
+        repairsUsed,
+      });
+      expect(result.action).toBe('pass');
+      if (result.action !== 'pass') return;
+      expect(result.content).toBe(finalText);
+      expect(result.content).not.toContain('本轮实际未交付');
+      expect(result.check.claims).toEqual([]);
+      expect(result.check.missing).toEqual([]);
+    }
+  });
+
+  it('a failed ProposeSlidesOps call still repairs the missing deck', async () => {
+    const result = await requestedFileGate('帮我做一个 ppt 演示文稿', slidesProposal(false));
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.missing[0]).toMatchObject({ kind: 'none_produced', requestedFormat: 'pptx' });
+  });
+
+  it('a successful Bash call that only writes a script still repairs', async () => {
+    const bashCall = message({
+      id: 'bash-call',
+      role: 'assistant',
+      content: '',
+      timestamp: 1_700_000_000_040,
+      toolCalls: [{ id: 'bash-1', name: 'Bash', arguments: { command: 'python build_reporting.py' } }],
+    });
+    const bashResult = message({
+      id: 'bash-result',
+      role: 'tool',
+      content: '',
+      timestamp: 1_700_000_000_050,
+      toolResults: [{
+        toolCallId: 'bash-1',
+        success: true,
+        output: 'wrote build_reporting.py',
+        metadata: { changedFiles: ['build_reporting.py'] },
+      }],
+    });
+    const result = await requestedFileGate('请生成一个 xlsx 文件', [bashCall, bashResult]);
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.missing[0]).toMatchObject({ kind: 'none_produced', requestedFormat: 'xlsx' });
+  });
+
   it('ends with an honest note and records the stable problem after the repair budget', async () => {
     const result = await requestedFileGate('请生成一个 pdf 文件', [], 1);
     expect(result.action).toBe('pass');

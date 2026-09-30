@@ -699,4 +699,17 @@ describe('close-gate shell injection', () => {
     expect(result.kind).toBe('disk');
     expect(result.missing).toEqual([missingPath]);
   });
+
+  it('none_produced repair log names the requested format', async () => {
+    const result = await applyDeliverableCloseGates({
+      workingDirectory: workRoot,
+      messages: [message({ content: '请生成一个 pdf 文件' })],
+      finalText: '已处理本轮请求。',
+      diskRepairsUsed: 0,
+      visualRepairsUsed: 0,
+    });
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') throw new Error('expected repair');
+    expect(result.missing).toEqual(['pdf']);
+  });
 });

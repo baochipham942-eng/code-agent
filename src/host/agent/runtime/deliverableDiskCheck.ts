@@ -371,7 +371,8 @@ const PRODUCING_TOOL_PATTERN = /^(write|write_file|edit|edit_file|append|append_
 
 /**
  * 产物工具名。与 readLoopSeal 的 DELIVERABLE_GENERATE_TOOLS 同一批，另加设计提案工具。
- * 成功但没报 outputPath 的调用也算「本 run 在生产」。
+ * 成功调用让 none_produced 的前提成立。Write/Edit/Bash 以外的成功调用还直接算已产出：
+ * 设计与生成工具常把路径只写在 output 文本里，不报 outputPath，也不进修改账。
  */
 const ARTIFACT_PRODUCING_TOOLS = new Set([
   'write', 'write_file', 'edit', 'edit_file', 'append', 'append_file', 'multiedit',
@@ -380,6 +381,13 @@ const ARTIFACT_PRODUCING_TOOLS = new Set([
   'excelautomate', 'pdfautomate', 'docedit',
   'image_generate', 'qrcode_generate', 'mermaid_export', 'text_to_speech', 'image_process',
   'proposecanvasops', 'proposeslidesops', 'proposevideoops',
+]);
+
+/** Write/Edit/Bash 及其别名。成功只说明动过写入工具，留下的可能只是脚本。 */
+const WRITE_EDIT_BASH_TOOLS = new Set([
+  'write', 'write_file',
+  'edit', 'edit_file', 'append', 'append_file', 'multiedit',
+  'bash',
 ]);
 
 /**
@@ -411,6 +419,20 @@ function runCalledArtifactProducingTool(messages: readonly Message[]): boolean {
   );
   return active.some((message) => (message.toolCalls ?? []).some((call) =>
     succeeded.has(call.id) && ARTIFACT_PRODUCING_TOOLS.has(call.name.toLowerCase())));
+}
+
+/** 成功的非 Write/Edit/Bash 产物工具：文件已生成，即使结果里没有 outputPath。 */
+function runSucceededWithDeliveredArtifactTool(messages: readonly Message[]): boolean {
+  const active = currentMessages(messages);
+  const succeeded = new Set(
+    active.flatMap((message) => (message.toolResults ?? []).filter((result) => result.success).map((result) => result.toolCallId)),
+  );
+  return active.some((message) => (message.toolCalls ?? []).some((call) => {
+    const name = call.name.toLowerCase();
+    return succeeded.has(call.id)
+      && ARTIFACT_PRODUCING_TOOLS.has(name)
+      && !WRITE_EDIT_BASH_TOOLS.has(name);
+  }));
 }
 
 /**
@@ -621,7 +643,7 @@ function appendUndeliveredNote(content: string, missing: readonly DeliverableMis
     .map((item) => {
       const hits = (item.placeholderHits ?? []).map((hit) => `${hit.location}：${wrapPlaceholderFragment(hit.fragment, nonce)}`).join('；');
       return `- ${item.claim.claimed}（正文仍有未替换的占位符${hits ? `：${hits}` : ''}）`;
-  });
+    });
   const sections: string[] = [];
   if (noneProducedLines.length > 0) {
     sections.push('用户请求的文件本轮没有生成，本轮实际未交付：', ...noneProducedLines);
@@ -643,7 +665,8 @@ function appendUndeliveredNote(content: string, missing: readonly DeliverableMis
 }
 
 /**
- * 声明/声称都为空、且本 run 没写出非脚本文件时，把“请求了但没产出”并入同一 missing 账。
+ * 声明/声称都为空、本 run 没写出非脚本文件、也没有成功的非 Write/Edit/Bash 产物工具时，
+ * 把“请求了但没产出”并入同一 missing 账。
  * 收尾闸和印章的现场核对共用这一处，避免闸被跳过时问题码丢失。
  */
 export function appendRequestedNoneProduced(
@@ -656,7 +679,9 @@ export function appendRequestedNoneProduced(
 ): DeliverableDiskCheckResult {
   if (check.claims.length > 0 || check.missing.some((item) => item.kind === 'none_produced')) return check;
   const requestedFormat = requestedDeliverableFormat(input.messages);
-  if (!requestedFormat || runWroteNonScriptFile(input.messages, input.workingDirectory, input.nudgeManager)) {
+  if (!requestedFormat
+    || runWroteNonScriptFile(input.messages, input.workingDirectory, input.nudgeManager)
+    || runSucceededWithDeliveredArtifactTool(input.messages)) {
     return check;
   }
   // 格式词命中还不够：没有产出工具、也没明确要文件时，不进这条补轮。

@@ -48,7 +48,8 @@ export type TraceEventType =
   | 'capability_lifecycle'
   | 'plan_exit_fallback_detected'
   | 'plan_exit_fallback_not_applicable'
-  | 'plan_exit_fallback_synthesized';
+  | 'plan_exit_fallback_synthesized'
+  | 'failed_round_guard';
 
 export type RequestManifestMessageRef =
   | { kind: 'ledger_message'; messageId: string }
@@ -248,6 +249,11 @@ export interface TraceEventDataMap {
   plan_exit_fallback_not_applicable: PlanExitFallbackNotApplicableData;
   /** ADR-074 K2：补推理仍是结构化计划正文，宿主已合成 synthetic_text 审批卡并结束 run。 */
   plan_exit_fallback_synthesized: PlanExitFallbackSynthesizedData;
+  /** 连续整轮真实工具调用全部失败，已走强制收尾。 */
+  failed_round_guard: {
+    rounds: number;
+    toolNames: string[];
+  };
 }
 
 type TraceEventFor<T extends TraceEventType> = {

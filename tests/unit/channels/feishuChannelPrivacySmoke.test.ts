@@ -210,6 +210,74 @@ describe('Feishu channel privacy smoke', () => {
     expect(json).not.toContain('4242 4242 4242 4242');
   });
 
+  it('rejects card callbacks without verification credentials and preserves the operator identity', async () => {
+    const actionValue = JSON.stringify({ t: 'apv', r: 'allow', a: 'perm-card', s: 'session-card' });
+    const missingCredentialChannel = new FeishuChannel('feishu-card-missing');
+    const missingCredentialActions: unknown[] = [];
+    missingCredentialChannel.on('card_action', (action: unknown) => missingCredentialActions.push(action));
+    await missingCredentialChannel.initialize({
+      type: 'feishu',
+      appId: 'cli_test',
+      appSecret: 'app_secret_test',
+      webhookHost: '127.0.0.1',
+      webhookPort: 0,
+    });
+    await missingCredentialChannel.connect();
+    try {
+      const server = (missingCredentialChannel as unknown as FeishuChannelHarness).webhookServer;
+      const address = server?.address() as AddressInfo | null;
+      const response = await fetch(`http://127.0.0.1:${address!.port}/webhook/feishu`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: { tag: 'button', value: { action: actionValue } },
+          open_id: 'ou_operator',
+          open_chat_id: 'oc_card',
+        }),
+      });
+      expect(response.status).toBe(401);
+      expect(missingCredentialActions).toHaveLength(0);
+    } finally {
+      await missingCredentialChannel.destroy();
+    }
+
+    const configuredChannel = new FeishuChannel('feishu-card-configured');
+    const configuredActions: unknown[] = [];
+    configuredChannel.on('card_action', (action: unknown) => configuredActions.push(action));
+    await configuredChannel.initialize({
+      type: 'feishu',
+      appId: 'cli_test',
+      appSecret: 'app_secret_test',
+      verificationToken: 'token',
+      webhookHost: '127.0.0.1',
+      webhookPort: 0,
+    });
+    await configuredChannel.connect();
+    try {
+      const server = (configuredChannel as unknown as FeishuChannelHarness).webhookServer;
+      const address = server?.address() as AddressInfo | null;
+      const response = await fetch(`http://127.0.0.1:${address!.port}/webhook/feishu`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: { tag: 'button', value: { action: actionValue } },
+          token: 'token',
+          operator: { open_id: 'ou_operator', user_id: 'user_operator' },
+          open_chat_id: 'oc_card',
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect(configuredActions).toEqual([{
+        value: actionValue,
+        operatorOpenId: 'ou_operator',
+        chatId: 'oc_card',
+        verificationConfigured: true,
+      }]);
+    } finally {
+      await configuredChannel.destroy();
+    }
+  });
+
   it('keeps Lark on the Lark SDK domain and webhook path', async () => {
     const { response, message, sdkDomain } = await postLarkWebhook('hello from lark');
 

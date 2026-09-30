@@ -73,6 +73,7 @@ import { captureWorkspaceMutationSnapshot } from '../../services/checkpoint/turn
 import { isTaskMutationToolCall } from '../nudgeManager';
 import { handleToolExecutionError } from './toolExecutionErrorHandler';
 import { applySwarmBudgetClamp, recordSwarmSpend } from './swarmGoalIntegration';
+import { observeFailedToolRound } from '../toolExecution/failedRoundGuard';
 import {
   getReadOnlyPreflightWarning,
   getSearchToReadPreflightBlock,
@@ -324,6 +325,7 @@ export class ToolExecutionEngine {
     // Swarm goal（P4）预算上行记账：workflow 结果的 tokensSpent → goal 消耗（闸3 可见）。
     // 放在 suppress 过滤前——token 已真实花掉，结果被压制也要记账。
     recordSwarmSpend(this.ctx.goalMode, toolCalls, results);
+    observeFailedToolRound(this.ctx, toolCalls, results);
     return results.filter((r): r is ToolResult => r !== undefined && !this.shouldSuppressResult(r));
   }
 

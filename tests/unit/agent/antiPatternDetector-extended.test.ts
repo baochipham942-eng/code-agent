@@ -86,6 +86,68 @@ describe('AntiPatternDetector - Extended', () => {
       expect(result).toBe('HARD_LIMIT');
     });
 
+    it('counts 15 one-read rounds and hard-stops on round 15', () => {
+      let result: string | null = null;
+      for (let round = 0; round < 15; round += 1) {
+        detector.beginReadRound();
+        result = detector.preflightReadOnlyToolExecution('Read');
+        detector.endReadRound();
+      }
+
+      expect(result).toBe('HARD_LIMIT');
+      expect(detector.getConsecutiveReadCount()).toBe(15);
+      expect(detector.getConsecutiveReadCallCount()).toBe(15);
+    });
+
+    it('counts five parallel reads as one round and does not seal after three rounds', () => {
+      for (let round = 0; round < 3; round += 1) {
+        detector.beginReadRound();
+        for (let call = 0; call < 5; call += 1) {
+          expect(detector.preflightReadOnlyToolExecution('Read')).not.toBe('HARD_LIMIT');
+        }
+        detector.endReadRound();
+      }
+
+      expect(detector.getConsecutiveReadCount()).toBe(3);
+      expect(detector.getConsecutiveReadCallCount()).toBe(15);
+    });
+
+    it('trips the 40-call backstop during the fifth eight-read round', () => {
+      let result: string | null = null;
+      for (let round = 0; round < 5; round += 1) {
+        detector.beginReadRound();
+        for (let call = 0; call < 8; call += 1) {
+          result = detector.preflightReadOnlyToolExecution('Read');
+        }
+        detector.endReadRound();
+      }
+
+      expect(result).toBe('HARD_LIMIT');
+      expect(detector.getConsecutiveReadCallCount()).toBe(40);
+      expect(detector.getConsecutiveReadCount()).toBe(5);
+    });
+
+    it('resets both round and call counters after a successful write in a mixed round', () => {
+      detector.beginReadRound();
+      detector.preflightReadOnlyToolExecution('Read');
+      detector.preflightReadOnlyToolExecution('Read');
+      expect(detector.trackToolExecution('Write', true)).toBeNull();
+      detector.endReadRound();
+
+      expect(detector.getConsecutiveReadCount()).toBe(0);
+      expect(detector.getConsecutiveReadCallCount()).toBe(0);
+    });
+
+    it('counts read-only Bash as one read call in the same round as Read', () => {
+      detector.beginReadRound();
+      expect(detector.preflightReadOnlyToolExecution('Read')).toBeNull();
+      expect(detector.preflightReadOnlyShellCommand('cat evidence.txt')).toBeNull();
+      detector.endReadRound();
+
+      expect(detector.getConsecutiveReadCount()).toBe(1);
+      expect(detector.getConsecutiveReadCallCount()).toBe(2);
+    });
+
     it('preflights the fifteenth read-only tool as HARD_LIMIT before execution', () => {
       for (let i = 0; i < 14; i++) {
         detector.trackToolExecution('read_file', true);

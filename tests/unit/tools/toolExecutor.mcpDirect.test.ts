@@ -21,6 +21,9 @@ const mocks = vi.hoisted(() => ({
   getToolDefinitions: vi.fn(),
   parseMCPToolName: vi.fn(),
   callTool: vi.fn(),
+  getServerState: vi.fn(),
+  wasServerReaped: vi.fn(),
+  ensureConnected: vi.fn(),
 }));
 
 vi.mock('../../../src/host/tools/protocolRegistry', () => ({
@@ -44,6 +47,9 @@ vi.mock('../../../src/host/mcp', () => ({
     getToolDefinitions: mocks.getToolDefinitions,
     parseMCPToolName: mocks.parseMCPToolName,
     callTool: mocks.callTool,
+    getServerState: mocks.getServerState,
+    wasServerReaped: mocks.wasServerReaped,
+    ensureConnected: mocks.ensureConnected,
   }),
 }));
 
@@ -84,6 +90,12 @@ describe('ToolExecutor MCP dynamic direct execution', () => {
       output: 'ok',
       duration: 5,
     });
+    mocks.getServerState.mockReset();
+    mocks.getServerState.mockReturnValue(undefined);
+    mocks.wasServerReaped.mockReset();
+    mocks.wasServerReaped.mockReturnValue(false);
+    mocks.ensureConnected.mockReset();
+    mocks.ensureConnected.mockResolvedValue(false);
   });
 
   it('asks permission then dispatches dynamic MCP tools through MCPClient', async () => {
@@ -182,5 +194,74 @@ describe('ToolExecutor MCP dynamic direct execution', () => {
     expect(result.error).toContain('category=missing_required');
     expect(requestPermission).not.toHaveBeenCalled();
     expect(mocks.callTool).not.toHaveBeenCalled();
+  });
+
+  it('reconnects a reaped lazy MCP server before reporting Unknown tool', async () => {
+    const reapedDef = {
+      name: 'mcp__x__y',
+      description: '[MCP:x] y',
+      inputSchema: { type: 'object' as const, properties: {} },
+      requiresPermission: true,
+      permissionLevel: 'network' as const,
+    };
+    let visible = false;
+    mocks.getToolDefinitions.mockImplementation(() => (visible ? [reapedDef] : []));
+    mocks.parseMCPToolName.mockImplementation((name: string) => (
+      name === 'mcp__x__y' ? { serverName: 'x', toolName: 'y' } : null
+    ));
+    mocks.getServerState.mockReturnValue({ status: 'lazy' });
+    mocks.wasServerReaped.mockReturnValue(true);
+    mocks.ensureConnected.mockImplementation(async () => {
+      visible = true;
+      return true;
+    });
+    mocks.callTool.mockResolvedValue({
+      toolCallId: 'call-1',
+      success: true,
+      output: 'ran',
+      duration: 1,
+    });
+
+    const executor = new ToolExecutor({
+      workingDirectory: '/tmp',
+      requestPermission: vi.fn(async () => true),
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'mcp__x__y',
+      {},
+      { sessionId: 'sess-1', currentToolCallId: 'call-1' },
+    );
+
+    expect(mocks.ensureConnected).toHaveBeenCalledWith('x');
+    expect(mocks.callTool).toHaveBeenCalledWith(
+      'call-1',
+      'x',
+      'y',
+      {},
+      { abortSignal: undefined, sessionId: 'sess-1' },
+    );
+    expect(result.success).toBe(true);
+    expect(result.error ?? '').not.toContain('Unknown tool');
+  });
+
+  it('still reports Unknown tool when the name is not a reaped MCP server', async () => {
+    mocks.getToolDefinitions.mockReturnValue([]);
+    const executor = new ToolExecutor({
+      workingDirectory: '/tmp',
+      requestPermission: vi.fn(async () => true),
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'not_a_tool',
+      {},
+      { sessionId: 'sess-1', currentToolCallId: 'call-1' },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Unknown tool: not_a_tool');
+    expect(mocks.ensureConnected).not.toHaveBeenCalled();
   });
 });

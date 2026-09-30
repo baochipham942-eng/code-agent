@@ -3,6 +3,7 @@
 // pptxgenjs is a root dependency. pdf-lib is not; point
 // FRONTEND_SLIDES_EXTRA_NODE_PATH at a node_modules that contains it.
 import * as esbuild from 'esbuild';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,4 +56,7 @@ for (const [input, output] of entries) {
     },
     logLevel: 'info',
   });
+  const outfile = path.join(skillScripts, output);
+  const bundled = fs.readFileSync(outfile, 'utf8').replace(/[ \t]+$/gm, '');
+  fs.writeFileSync(outfile, bundled);
 }

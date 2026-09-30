@@ -72,7 +72,7 @@ const Pane: React.FC<{
           <span className="text-xs text-zinc-600">…</span>
         )}
         {variant.pinned && (
-          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded bg-emerald-500/90 px-1.5 py-0.5 text-[10px] text-white">
+          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded bg-emerald-700 px-1.5 py-0.5 text-[10px] text-white">
             <Star className="h-3 w-3" /> {t.design.mainVersion}
           </span>
         )}
@@ -85,7 +85,7 @@ const Pane: React.FC<{
         <button
           type="button"
           onClick={onPin}
-          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-emerald-500/90 px-2 py-1.5 text-xs text-white hover:bg-emerald-500"
+          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-emerald-700 px-2 py-1.5 text-xs text-white hover:bg-emerald-800"
         >
           <Star className="h-3.5 w-3.5" /> {t.design.setMainVersion}
         </button>

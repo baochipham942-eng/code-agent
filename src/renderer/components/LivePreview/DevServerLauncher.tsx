@@ -200,7 +200,7 @@ export const DevServerLauncher: React.FC = () => {
             type="button"
             onClick={handleStart}
             disabled={!supported || state.status === 'starting' || state.status === 'ready'}
-            className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40"
             data-testid="dev-server-launcher-start"
           >
             {state.status === 'starting' ? (

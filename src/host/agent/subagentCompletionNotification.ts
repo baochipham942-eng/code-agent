@@ -38,8 +38,12 @@ export interface BuildSubagentCompletionRecordInput extends SubagentCompletionSc
   finishedAt?: number;
   failureCode?: AgentFailureCode;
   toolsUsed?: string[];
+  /** 已发生的工具调用次数。没有 toolsUsed 名单时用它填 stats.tool_calls。 */
+  toolCallCount?: number;
   iterations?: number;
   cost?: number;
+  /** 最近一条助手正文或工具步标签。缺省则 payload 不带 last_progress。 */
+  lastProgress?: string;
   /** 声明了但未装配的工具（N-SUBAGENT-ZEROTOOLS 返修 Important 2：后台完成通知透传给父模型）。 */
   missingTools?: string[];
 }
@@ -112,10 +116,11 @@ export function buildSubagentCompletionRecord(input: BuildSubagentCompletionReco
     completion_kind: kind,
     status: input.status,
     summary,
+    ...(input.lastProgress ? { last_progress: input.lastProgress } : {}),
     stats: {
-      tool_calls: input.toolsUsed?.length ?? 0,
+      tool_calls: input.toolCallCount ?? input.toolsUsed?.length ?? 0,
       iterations: input.iterations ?? 0,
-      cost: input.cost,
+      ...(input.cost !== undefined ? { cost: input.cost } : {}),
       duration_ms: durationMs,
     },
     failure_code: input.failureCode,

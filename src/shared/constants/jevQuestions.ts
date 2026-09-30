@@ -589,3 +589,32 @@ export function withBrowserJevStepActionEnum(
     },
   };
 }
+
+// ============================================================================
+// N-JEV-COMPACTION-MOCK 追加块：jevCompaction 钉死窗口与批次估算上限
+// （独立块，不改既有常量块；合并冲突由编排侧处理）
+// ============================================================================
+
+/**
+ * jevCompaction 钉死集合的最近消息窗口（消息条数，不限工具消息）。
+ * 钉死集合 = 最后 pinnedRecentMessages 条消息里的工具消息 ∪ 最后
+ * JEV_COMPACTION_THRESHOLDS.pinnedLatestEntries 条工具条目（只增不减）。
+ * 取值 10 对齐 autoCompressor DEFAULT_CONFIG.preserveRecentCount
+ * （src/host/context/autoCompressor.ts）与 compactionService
+ * DEFAULT_PRESERVE_RECENT_COUNT（src/host/context/compactionService.ts）的默认值。
+ */
+export const JEV_COMPACTION_PINNED_RECENT_MESSAGES = 10;
+
+/**
+ * 单批 state JSON 的字符上限。对齐 tokenEstimator 的精确 BPE 上限
+ * （EXACT_TOKENIZATION_MAX_CHARS=50_000，超过走保守比例估算）：
+ * 批次器与「state+问句估算 ≤ maxBatchTokens」的批次预算断言用同一把尺，
+ * 合并 JSON 的 BPE 计数不超过逐条计数之和（边界合并只会减少 token）。
+ */
+export const JEV_COMPACTION_MAX_BATCH_STATE_CHARS = 50_000;
+
+/**
+ * 每条候选进入批次预算的额外 token 余量：entry JSON 包装（role/kind/content
+ * 字段与命名键）加两条 noul 问句的合计实测约 80-90 token，取 96 留余量。
+ */
+export const JEV_COMPACTION_BATCH_ENTRY_OVERHEAD_TOKENS = 96;

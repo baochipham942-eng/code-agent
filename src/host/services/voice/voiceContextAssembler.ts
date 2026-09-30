@@ -45,6 +45,7 @@ export interface VoiceContinuityContext {
 
 export interface VoiceInstructionContext {
   continuity?: VoiceContinuityContext | null;
+  userProfile?: string;
   /** 这台机器能不能看屏（Phase 3）。调用方一律传 isVoiceScreenContextSupported()，不要自己算。 */
   screenContextEnabled?: boolean;
   /**
@@ -206,6 +207,7 @@ export function composeVoiceInstructions(
   const blocks = [
     // 语速是「怎么说话」的约束，属人设范畴，所以紧跟 persona 排在所有 Context 段之前。
     buildSpeechPaceDirective(context.speechRate),
+    context.userProfile ?? '',
     buildFocusBlock(focus),
     buildScreenContextBlock(context.screenContextEnabled === true),
     buildRecentVoiceBlock(context.continuity ?? null),

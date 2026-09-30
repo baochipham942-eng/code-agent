@@ -128,6 +128,11 @@ export interface SubagentHookPort {
 export interface SubagentEventPort {
   emit(event: string, data: unknown): void;
   progress?(stage: 'starting' | 'running' | 'completing', detail?: string, percent?: number): void;
+  /**
+   * 后台 spawn 的 durable run id。执行器自己的 agent id 与注册表 id 不是同一个，
+   * 进度要记到这上面。前台收养路径不设，执行器改用 executionAgentId。
+   */
+  backgroundDurableAgentId?: string;
 }
 
 export interface SubagentAttachment {

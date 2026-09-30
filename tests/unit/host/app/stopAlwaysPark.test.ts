@@ -7,6 +7,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
 import { continueParkedDurableRun } from '../../../../src/host/app/durableRunContinuation';
+import { finalizeOrParkDurableRun } from '../../../../src/host/agent/orchestrator/durableRunTerminal';
 import {
   mapDurableRunView,
   projectDurableRunToSessionPayload,
@@ -235,5 +236,46 @@ describe('user stop parks a fresh resumable run', () => {
     expect(await repository.get(runId)).toMatchObject({ status: 'cancelled' });
     expect(registry.findRecoveredWaitingRun({ sessionId })).toBeUndefined();
     expect(registry.hasDurableOwner(runId)).toBe(false);
+  });
+
+  it('cancels an auxiliary child that already has a native descriptor instead of parking it', async () => {
+    const sessionId = 'session-auxiliary-stop';
+    const { workspace, repository, registry } = openRegistry('auxiliary');
+    const parent = await registry.startDurable({
+      runId: 'parent-run',
+      sessionId,
+      workspace,
+      cwd: workspace,
+    });
+    const child = await registry.startAuxiliaryDurableChild({
+      runId: 'child-run',
+      sessionId,
+      workspace,
+      cwd: workspace,
+    }, parent.context.runId);
+    await checkpointModel(registry, child.context.runId, 'message-child');
+
+    await finalizeOrParkDurableRun({
+      registry,
+      runId: child.context.runId,
+      handle: child,
+      sessionId,
+      completed: false,
+      cancelled: true,
+      registration: 'auxiliary',
+      parentRunId: parent.context.runId,
+    });
+
+    expect(await repository.get(child.context.runId)).toMatchObject({ status: 'cancelled' });
+    expect(registry.hasDurableOwner(child.context.runId)).toBe(false);
+    expect(registry.get(child.context.runId)).toBeUndefined();
+    const timers = (registry as unknown as { heartbeatTimers: Map<string, unknown> }).heartbeatTimers;
+    expect(timers.has(child.context.runId)).toBe(false);
+    expect(await repository.listChildRuns(parent.context.runId)).toEqual([
+      expect.objectContaining({ childRunId: child.context.runId, status: 'cancelled' }),
+    ]);
+    expect(registry.hasDurableOwner(parent.context.runId)).toBe(true);
+    expect(timers.has(parent.context.runId)).toBe(true);
+    expect(await repository.get(parent.context.runId)).toMatchObject({ status: 'running' });
   });
 });

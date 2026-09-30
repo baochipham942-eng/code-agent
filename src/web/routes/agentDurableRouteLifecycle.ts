@@ -200,6 +200,8 @@ class AgentDurableRouteRunLifecycle {
     if (!this.terminal && this.deps.durableActivation) {
       await this.deps.runRegistry.releaseDurable(this.runHandle.context.runId, this.runHandle);
     } else {
+      // 停靠路径里 finalizeOrParkDurableRun 已经 unregister 过；再调一次是 no-op。
+      // 从未停靠的终态仍要靠这一次卸 handle。
       this.deps.runRegistry.unregister(this.runHandle.context.runId, this.runHandle);
     }
   }

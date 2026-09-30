@@ -39,6 +39,9 @@ export interface AppshotsLastFrontApp {
   bundleId?: string | null;
   appName: string;
   alive: boolean;
+  /** Native classification keeps renderer copy text-free and stable across app names. */
+  attachable?: boolean;
+  reasonCode?: 'app_closed' | 'finder_desktop' | null;
 }
 
 export interface GlobalHotkeyBinding {

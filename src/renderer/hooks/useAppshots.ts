@@ -8,14 +8,31 @@
 // ============================================================================
 
 import { useEffect } from 'react';
-import type { AppshotCapture, AppshotImageReady, AppshotTextReady } from '@shared/contract/appshot';
+import type {
+  AppshotCapture,
+  AppshotErrorEvent,
+  AppshotImageReady,
+  AppshotTextReady,
+} from '@shared/contract/appshot';
+import type { Translations } from '../i18n';
 import { useAppshotsStore } from '../stores/appshotsStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { isNativeCommandRuntimeAvailable, invokeNativeCommandAction } from '../services/nativeCommandFacade';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { toast } from './useToast';
+import { useI18n } from './useI18n';
+
+export function getAppshotErrorMessage(payload: AppshotErrorEvent, t: Translations): string {
+  const detail = payload.reasonCode === 'app_closed' && payload.appName
+    ? t.inputAddMenu.attachLastAppClosed.replace('{appName}', payload.appName)
+    : payload.reasonCode === 'finder_desktop'
+      ? t.inputAddMenu.attachLastAppFinderDesktop
+      : payload.message || payload.code || t.chatInput.unknownError;
+  return `${t.inputAddMenu.appshotFailedPrefix}${detail}`;
+}
 
 export function useAppshots(): void {
+  const { t } = useI18n();
   const setStarting = useAppshotsStore((s) => s.setStarting);
   const setImageReady = useAppshotsStore((s) => s.setImageReady);
   const markHandoff = useAppshotsStore((s) => s.markHandoff);
@@ -81,10 +98,9 @@ export function useAppshots(): void {
             patchText(ready.requestId, ready.axText ?? null, ready.textSource ?? 'none');
           }
         });
-        const offError = await listenTauriEvent<{ code?: string; message?: string }>('appshots:error', (event) => {
+        const offError = await listenTauriEvent<AppshotErrorEvent>('appshots:error', (event) => {
           setStarting(false, null);
-          const msg = event.payload?.message ?? event.payload?.code ?? '未知错误';
-          toast.error(`Appshot 失败：${msg}`);
+          toast.error(getAppshotErrorMessage(event.payload ?? {}, t));
         });
         cleanup = () => {
           offStarting();
@@ -100,5 +116,5 @@ export function useAppshots(): void {
 
     void setup();
     return () => cleanup?.();
-  }, [setStarting, setImageReady, markHandoff, patchText, patchImage]);
+  }, [setStarting, setImageReady, markHandoff, patchText, patchImage, t]);
 }

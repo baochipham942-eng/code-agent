@@ -140,7 +140,7 @@ export const InputAddMenu: React.FC<Props> = ({
     setOpen(false);
   };
   const attachLastFrontApp = async () => {
-    if (!lastFrontApp?.alive) return;
+    if (!lastFrontApp?.alive || lastFrontApp.attachable === false) return;
     if (!appshotsEnabled) {
       openSettingsTab('appshots');
       closeMenu();
@@ -167,13 +167,18 @@ export const InputAddMenu: React.FC<Props> = ({
   const lastFrontAppLabel = lastFrontApp
     ? t.inputAddMenu.attachLastAppLabel.replace('{appName}', lastFrontApp.appName)
     : t.inputAddMenu.attachLastApp;
+  const lastFrontAppAttachable = lastFrontApp
+    ? (lastFrontApp.attachable ?? lastFrontApp.alive) && lastFrontApp.alive
+    : false;
   const lastFrontAppReason = lastFrontAppLoading
     ? t.inputAddMenu.attachLastAppLoading
     : !lastFrontApp
       ? t.inputAddMenu.attachLastAppNoTarget
-      : !lastFrontApp.alive
-        ? t.inputAddMenu.attachLastAppClosed.replace('{appName}', lastFrontApp.appName)
-        : undefined;
+      : lastFrontApp.reasonCode === 'finder_desktop'
+        ? t.inputAddMenu.attachLastAppFinderDesktop
+        : lastFrontApp.reasonCode === 'app_closed' || !lastFrontApp.alive
+          ? t.inputAddMenu.attachLastAppClosed.replace('{appName}', lastFrontApp.appName)
+          : undefined;
   const focusComposer = () => {
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="chat-composer-textarea"]')?.focus());
   };
@@ -280,7 +285,7 @@ export const InputAddMenu: React.FC<Props> = ({
 
           <button /* ds-allow:button: 添加菜单整行热区（图标+标签+原因），与上方上传项同形，Button primitive 不适配 */
             type="button"
-            disabled={!lastFrontApp || !lastFrontApp.alive || lastFrontAppLoading}
+            disabled={!lastFrontAppAttachable || lastFrontAppLoading}
             onClick={() => { void attachLastFrontApp(); }}
             aria-label={lastFrontAppLabel}
             title={lastFrontAppReason}

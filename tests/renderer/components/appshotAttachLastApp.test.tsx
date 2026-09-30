@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
+import { getAppshotErrorMessage } from '../../../src/renderer/hooks/useAppshots';
 
 const state = vi.hoisted(() => ({
   language: 'en',
   lastApp: { pid: 412, bundleId: 'com.apple.TextEdit', appName: 'TextEdit', alive: true } as {
     pid: number; bundleId: string; appName: string; alive: boolean;
+    attachable?: boolean; reasonCode?: 'app_closed' | 'finder_desktop' | null;
   } | null,
   nativeInvoke: vi.fn(),
   settings: vi.fn(),
@@ -103,6 +105,33 @@ describe('composer attach last front app', () => {
     expect(screen.getByText('TextEdit is no longer open')).toBeTruthy();
     fireEvent.click(attach);
     expect(state.nativeInvoke).not.toHaveBeenCalledWith('appshots_trigger_for_pid', expect.anything());
+  });
+
+  it('disables Finder with the desktop reason', async () => {
+    state.language = 'zh';
+    state.lastApp = {
+      pid: 412,
+      bundleId: 'com.apple.finder',
+      appName: 'Finder',
+      alive: true,
+      attachable: false,
+      reasonCode: 'finder_desktop',
+    };
+    await openMenu('更多输入选项');
+    const attach = await screen.findByRole('button', { name: '附加 Finder' });
+    expect((attach as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('桌面无可附加窗口')).toBeTruthy();
+    fireEvent.click(attach);
+    expect(state.nativeInvoke).not.toHaveBeenCalledWith('appshots_trigger_for_pid', expect.anything());
+  });
+
+  it('maps the closed-app error reason code to the Chinese toast text', () => {
+    expect(getAppshotErrorMessage({
+      code: 'no_target',
+      reasonCode: 'app_closed',
+      appName: 'TextEdit',
+      message: '',
+    }, zh)).toBe('Appshot 失败：TextEdit 已关闭');
   });
 
   it('invokes the pid command and closes the menu without touching the chip', async () => {

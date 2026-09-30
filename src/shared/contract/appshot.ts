@@ -15,6 +15,16 @@ export interface AppshotWindowFrame {
 
 export type AppshotTextSource = 'ax' | 'ocr' | 'none';
 
+export type AppshotErrorReasonCode = 'app_closed' | 'finder_desktop';
+
+export interface AppshotErrorEvent {
+  requestId?: string;
+  code?: string;
+  message?: string;
+  reasonCode?: AppshotErrorReasonCode;
+  appName?: string;
+}
+
 /** 飞入动效参数（随 image_ready 下发，便于前端 reduced-motion 与 chip 同步） */
 interface AppshotMotionInfo {
   durationMs: number;

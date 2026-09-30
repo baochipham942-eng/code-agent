@@ -34,6 +34,10 @@ pub const DEFAULT_APPSHOTS_SHORTCUT: &str = "LeftCmd+RightCmd";
 
 #[cfg(target_os = "macos")]
 const OWN_BUNDLE_ID: &str = "com.linchen.code-agent";
+#[cfg(target_os = "macos")]
+const FINDER_BUNDLE_ID: &str = "com.apple.finder";
+const APP_CLOSED_REASON_CODE: &str = "app_closed";
+const FINDER_DESKTOP_REASON_CODE: &str = "finder_desktop";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +46,8 @@ pub struct AppshotsLastFrontApp {
     pub bundle_id: Option<String>,
     pub app_name: String,
     pub alive: bool,
+    pub attachable: bool,
+    pub reason_code: Option<String>,
 }
 
 #[cfg(target_os = "macos")]
@@ -54,6 +60,33 @@ struct LastExternalFrontApp {
 
 #[cfg(target_os = "macos")]
 static LAST_EXTERNAL_FRONT_APP: Mutex<Option<LastExternalFrontApp>> = Mutex::new(None);
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LastFrontAppAvailability {
+    attachable: bool,
+    reason_code: Option<&'static str>,
+}
+
+#[cfg(target_os = "macos")]
+fn classify_last_front_app(bundle_id: Option<&str>, alive: bool) -> LastFrontAppAvailability {
+    if bundle_id == Some(FINDER_BUNDLE_ID) {
+        return LastFrontAppAvailability {
+            attachable: false,
+            reason_code: Some(FINDER_DESKTOP_REASON_CODE),
+        };
+    }
+    if !alive {
+        return LastFrontAppAvailability {
+            attachable: false,
+            reason_code: Some(APP_CLOSED_REASON_CODE),
+        };
+    }
+    LastFrontAppAvailability {
+        attachable: true,
+        reason_code: None,
+    }
+}
 
 /// 运行时真实 bundle id：测试包（com.linchen.code-agent.dev）由 main 注入 CODE_AGENT_BUNDLE_ID，
 /// 缺省时回退到生产常量，保证排除"自己窗口"时认的是当前进程的 bundle 而非写死的生产值。
@@ -151,11 +184,15 @@ pub fn appshots_last_front_app() -> Option<AppshotsLastFrontApp> {
     #[cfg(target_os = "macos")]
     {
         let last = LAST_EXTERNAL_FRONT_APP.lock().ok()?.clone()?;
+        let alive = pid_is_alive(last.pid);
+        let availability = classify_last_front_app(last.bundle_id.as_deref(), alive);
         return Some(AppshotsLastFrontApp {
             pid: last.pid,
             bundle_id: last.bundle_id,
             app_name: last.app_name,
-            alive: pid_is_alive(last.pid),
+            alive,
+            attachable: availability.attachable,
+            reason_code: availability.reason_code.map(str::to_string),
         });
     }
     #[cfg(not(target_os = "macos"))]
@@ -598,17 +635,23 @@ fn capture_now_for_pid(app: &AppHandle, target_pid: i32, target_app_name: Option
     } {
         Ok(Some(loc)) => loc,
         Ok(None) => {
-            let message = if target_pid > 0 {
-                format!("{} is no longer open", target_app_name.unwrap_or("The selected app"))
+            if target_pid > 0 {
+                emit_error_with_context(
+                    app,
+                    &request_id,
+                    "no_target",
+                    "",
+                    Some(APP_CLOSED_REASON_CODE),
+                    target_app_name,
+                );
             } else {
-                "没有可截取的前台窗口（或当前前台就是 Agent Neo 自身）。".to_string()
-            };
-            emit_error(
-                app,
-                &request_id,
-                "no_target",
-                &message,
-            );
+                emit_error(
+                    app,
+                    &request_id,
+                    "no_target",
+                    "没有可截取的前台窗口（或当前前台就是 Agent Neo 自身）。",
+                );
+            }
             return;
         }
         Err(e) => {
@@ -1080,10 +1123,30 @@ fn read_reduce_motion() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn emit_error(app: &AppHandle, request_id: &str, code: &str, message: &str) {    eprintln!("[appshot] {code}: {message}");
+fn emit_error(app: &AppHandle, request_id: &str, code: &str, message: &str) {
+    emit_error_with_context(app, request_id, code, message, None, None);
+}
+
+#[cfg(target_os = "macos")]
+fn emit_error_with_context(
+    app: &AppHandle,
+    request_id: &str,
+    code: &str,
+    message: &str,
+    reason_code: Option<&str>,
+    app_name: Option<&str>,
+) {
+    eprintln!("[appshot] {code}: {message}");
+    let mut payload = serde_json::json!({ "requestId": request_id, "code": code, "message": message });
+    if let Some(reason_code) = reason_code {
+        payload["reasonCode"] = serde_json::json!(reason_code);
+    }
+    if let Some(app_name) = app_name {
+        payload["appName"] = serde_json::json!(app_name);
+    }
     let _ = app.emit(
         "appshots:error",
-        serde_json::json!({ "requestId": request_id, "code": code, "message": message }),
+        payload,
     );
 }
 
@@ -1228,6 +1291,32 @@ mod locate_window_tests {
     fn returns_none_when_pid_has_no_visible_window() {
         let raw: LocateRaw = serde_json::from_str(r#"{"found":false}"#).expect("test JSON should parse");
         assert!(parse_located_window(raw).expect("not-found JSON should be valid").is_none());
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod last_front_app_tests {
+    use super::{classify_last_front_app, APP_CLOSED_REASON_CODE, FINDER_DESKTOP_REASON_CODE};
+
+    #[test]
+    fn finder_is_not_attachable_even_when_the_process_is_alive() {
+        let availability = classify_last_front_app(Some("com.apple.finder"), true);
+        assert!(!availability.attachable);
+        assert_eq!(availability.reason_code, Some(FINDER_DESKTOP_REASON_CODE));
+    }
+
+    #[test]
+    fn closed_external_app_is_not_attachable_with_a_stable_reason_code() {
+        let availability = classify_last_front_app(Some("com.apple.TextEdit"), false);
+        assert!(!availability.attachable);
+        assert_eq!(availability.reason_code, Some(APP_CLOSED_REASON_CODE));
+    }
+
+    #[test]
+    fn live_external_app_is_attachable_without_a_reason() {
+        let availability = classify_last_front_app(Some("com.apple.TextEdit"), true);
+        assert!(availability.attachable);
+        assert_eq!(availability.reason_code, None);
     }
 }
 

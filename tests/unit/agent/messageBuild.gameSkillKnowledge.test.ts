@@ -217,6 +217,9 @@ function makeCtx(
           contextHealth: ContextHealthState.forTest({ compressionState: state } as never),
         })),
       },
+      autoCompressor: {
+        getConfig: () => ({}),
+      },
       messageHistoryCompressor: {
         shouldProactivelyCompress: vi.fn(() => false),
       },

@@ -11,7 +11,7 @@ function runDryRun(args: string[], env: NodeJS.ProcessEnv = {}): string {
   return execFileSync('bash', [SCRIPT, ...args, '--dry-run'], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...process.env, NEO_SLOT_BACKGROUND: '0', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }

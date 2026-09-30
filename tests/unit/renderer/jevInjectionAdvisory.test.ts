@@ -81,3 +81,70 @@ describe('hasCurrentTurnJevInjectionFlag', () => {
     expect(hasCurrentTurnJevInjectionFlag(messages)).toBe(false);
   });
 });
+
+// R1 review fix 夹具：renderer 消息流里工具结果的两种真实形状
+// （实时 toolCalls[].result / 落库 role:'tool' + toolResults）。
+describe('hasCurrentTurnJevInjectionFlag 真实形状（R1）', () => {
+  it('实时形状：tool_call_end 写进 assistant toolCalls[].result → 显示', () => {
+    const messages = [
+      message({ id: 'u1', role: 'user' }),
+      message({
+        id: 'a1',
+        role: 'assistant',
+        toolCalls: [{ id: 'tc-1', name: 'WebSearch', arguments: {}, result: toolResult(true) }],
+      }),
+    ];
+    expect(hasCurrentTurnJevInjectionFlag(messages)).toBe(true);
+  });
+
+  it('落库形状：role:tool 消息的 toolResults 带标记 → 显示', () => {
+    const messages = [
+      message({ id: 'u1', role: 'user' }),
+      message({
+        id: 'a1',
+        role: 'assistant',
+        toolCalls: [{ id: 'tc-1', name: 'WebSearch', arguments: {} }],
+      }),
+      message({ id: 't1', role: 'tool', toolResults: [toolResult(true)] }),
+    ];
+    expect(hasCurrentTurnJevInjectionFlag(messages)).toBe(true);
+  });
+
+  it('实时形状只在上一轮标记 → 不显示', () => {
+    const messages = [
+      message({ id: 'u1', role: 'user' }),
+      message({
+        id: 'a1',
+        role: 'assistant',
+        toolCalls: [{ id: 'tc-1', name: 'WebSearch', arguments: {}, result: toolResult(true) }],
+      }),
+      message({ id: 'u2', role: 'user', content: '继续' }),
+      message({ id: 'a2', role: 'assistant', content: '好的' }),
+    ];
+    expect(hasCurrentTurnJevInjectionFlag(messages)).toBe(false);
+  });
+
+  it('toolCalls 还没有 result（工具在跑/待审批）→ 不显示', () => {
+    const messages = [
+      message({ id: 'u1', role: 'user' }),
+      message({
+        id: 'a1',
+        role: 'assistant',
+        toolCalls: [{ id: 'tc-1', name: 'WebSearch', arguments: {} }],
+      }),
+    ];
+    expect(hasCurrentTurnJevInjectionFlag(messages)).toBe(false);
+  });
+
+  it('实时形状 result.flagged=false → 不显示', () => {
+    const messages = [
+      message({ id: 'u1', role: 'user' }),
+      message({
+        id: 'a1',
+        role: 'assistant',
+        toolCalls: [{ id: 'tc-1', name: 'WebSearch', arguments: {}, result: toolResult(false) }],
+      }),
+    ];
+    expect(hasCurrentTurnJevInjectionFlag(messages)).toBe(false);
+  });
+});

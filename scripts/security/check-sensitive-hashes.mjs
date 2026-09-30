@@ -21,7 +21,9 @@ import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { extractCandidates, HASH_PREFIX_LEN, hmacSha256Hex } from './sensitive-hash-lib.mjs';
 
-const MAX_BYTES = 20 * 1024 * 1024;
+// Built cli/web bundles are about 26MB. Stay above that so the dist stage
+// still hashes them. Larger files are skipped by path only.
+const MAX_BYTES = 64 * 1024 * 1024;
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'coverage', '.next', 'target']);
 
 function fail(message) {

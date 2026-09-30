@@ -26,6 +26,8 @@ import {
   inferAgentFailureCode,
 } from '../../shared/contract/agentFailure';
 import { createTextMessage, getSpawnGuard, type AgentMessage } from './spawnGuard';
+import { rememberMemberEngine, resolveMemberEngine } from './memberRuntimeEngine';
+import { getSubagentEngine } from './agentDefinition';
 import { displayFromForOrigin, type AgentMessageOrigin } from './messageOrigin';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
@@ -229,7 +231,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
     this.taskDefinitions.clear();
     this.messageQueues.clear();
     for (const task of tasks) {
-      this.taskDefinitions.set(task.id, { ...task });
+      const engine = resolveMemberEngine({
+        agentId: task.id,
+        engine: task.engine ?? getSubagentEngine(task.role),
+      });
+      this.taskDefinitions.set(task.id, { ...task, engine });
+      rememberMemberEngine(task.id, engine);
       this.messageQueues.set(task.id, []);
     }
     let currentConcurrent = 0;

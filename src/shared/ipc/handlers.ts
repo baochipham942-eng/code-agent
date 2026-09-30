@@ -12,6 +12,7 @@ import type {
 import type { SkillDraftOrigin } from '../contract/agent';
 import type { ParsedSkill } from '../contract/agentSkill';
 import type { Message, PermissionResponse, Session, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, CanvasVideoRequest, CanvasVideoDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, MCPOAuthConsentRequest, MCPOAuthConsentResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
+import type { MemberFollowUpFailure } from '../contract/memberInput';
 import type { ServiceApiKey } from '../contract/configService';
 import type { DownloadResult, LocalSkillLibrary, SessionSkillMount, SkillCatalogPayload, SkillRecommendation, SkillRepository, StageRepositoryResult, UpdateResult } from '../contract/skillRepository';
 import type { SkillRegistryListItem } from '../contract/skillRegistry';
@@ -434,7 +435,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.BACKGROUND_GET_COUNT]: () => Promise<number>;
 
   // Swarm (Agent Teams)
-  [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: { sessionId: string; runId: string; agentId: string; message: string; messageId?: string; timestamp?: number; metadata?: Message['metadata'] }) => Promise<{ delivered: boolean; persisted: boolean }>;
+  [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: { sessionId: string; runId: string; agentId: string; message: string; messageId?: string; timestamp?: number; metadata?: Message['metadata'] }) => Promise<{ delivered: boolean; persisted: boolean; failure?: MemberFollowUpFailure }>;
   [IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES]: (payload: { sessionId: string; runId: string; agentId: string }) => Promise<Array<{ id: string; from: string; to: string; content: string; timestamp: number; messageType?: string }>>;
   [IPC_CHANNELS.SWARM_SET_DELEGATE_MODE]: (enabled: boolean) => Promise<void>;
   [IPC_CHANNELS.SWARM_GET_DELEGATE_MODE]: () => Promise<boolean>;

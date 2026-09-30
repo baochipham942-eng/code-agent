@@ -133,13 +133,21 @@ export function decideOneTimeJobStartup(
 }
 
 export function assertExecutionLocationConstraints(
-  definition: Pick<CronJobDefinition, 'runsOn' | 'schedule' | 'maxRunBudget'>,
+  definition: Pick<CronJobDefinition, 'runsOn' | 'schedule' | 'maxRunBudget' | 'maxRuns'>,
 ): void {
   if (
     definition.maxRunBudget != null
     && (!Number.isFinite(definition.maxRunBudget) || definition.maxRunBudget < 0)
   ) {
     throw new Error('maxRunBudget must be a finite non-negative number.');
+  }
+  if (definition.maxRuns != null) {
+    if (!Number.isInteger(definition.maxRuns) || definition.maxRuns < 1) {
+      throw new Error('maxRuns must be an integer greater than or equal to 1.');
+    }
+    if (definition.runsOn === 'cloud') {
+      throw new Error('maxRuns is only supported for local jobs; cloud runs are not counted locally.');
+    }
   }
   const intervalSeconds = everyScheduleIntervalSeconds(definition.schedule)
     ?? cronScheduleMinimumIntervalSeconds(definition.schedule);

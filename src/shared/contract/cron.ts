@@ -66,6 +66,16 @@ export interface CronJobDefinition {
    * unattended budget pool; it never replaces or disables that pool.
    */
   maxRunBudget?: number;
+  /**
+   * Optional run-count cap (integer >= 1, local jobs only). The job auto-disables
+   * with reason `max_runs_reached` once this many counted runs have finished.
+   */
+  maxRuns?: number;
+  /**
+   * Counted runs so far (completed/failed first attempts; retries, cancelled and
+   * capacity-wait runs do not count). Read-only for callers; reset to 0 on re-enable.
+   */
+  runCount?: number;
   /** Whether the job is enabled */
   enabled: boolean;
   /** Maximum number of retries on failure */

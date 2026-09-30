@@ -649,6 +649,8 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       action TEXT NOT NULL,
       runs_on TEXT NOT NULL DEFAULT 'local' CHECK (runs_on IN ('local', 'cloud')),
       max_run_budget REAL CHECK (max_run_budget IS NULL OR max_run_budget >= 0),
+      max_runs INTEGER CHECK (max_runs IS NULL OR max_runs >= 1),
+      run_count INTEGER NOT NULL DEFAULT 0,
       min_interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (min_interval_seconds >= 60),
       result_channel TEXT,
       cloud_job_id TEXT,
@@ -667,6 +669,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   // max_run_budget 是 unattended 全局预算池之上的每任务闸，绝不替代全局池。
   safeAlter(db, "ALTER TABLE cron_jobs ADD COLUMN runs_on TEXT NOT NULL DEFAULT 'local' CHECK (runs_on IN ('local', 'cloud'))", logger);
   safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN max_run_budget REAL CHECK (max_run_budget IS NULL OR max_run_budget >= 0)', logger);
+  // N-CRON-BUDGET-EXPOSE：次数上限与已跑计数（仅本地任务计数；云端运行不在本地计数）。
+  safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN max_runs INTEGER CHECK (max_runs IS NULL OR max_runs >= 1)', logger);
+  safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN run_count INTEGER NOT NULL DEFAULT 0', logger);
   safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN min_interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (min_interval_seconds >= 60)', logger);
   safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN result_channel TEXT', logger);
   safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN cloud_job_id TEXT', logger);

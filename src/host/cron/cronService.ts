@@ -73,6 +73,7 @@ import {
   upsertCronExecutionInMemory,
 } from './cronPersistence';
 import { deliverCronResultToChannel } from './cronResultDelivery';
+import { rearmCronRunLimit, settleCronRunLimit } from './cronRunLimit';
 import {
   adoptFailedAgentSession,
   classifyCronFailure,
@@ -224,11 +225,7 @@ export class CronService implements Disposable {
     assertSupportedEveryScheduleUnit(definition.schedule);
 
     const runsOn = definition.runsOn ?? 'local';
-    assertExecutionLocationConstraints({
-      runsOn,
-      schedule: definition.schedule,
-      maxRunBudget: definition.maxRunBudget,
-    });
+    assertExecutionLocationConstraints({ ...definition, runsOn });
 
     const job: CronJobDefinition = {
       ...definition,
@@ -281,6 +278,8 @@ export class CronService implements Disposable {
       ...updates,
       updatedAt: Date.now(),
     };
+    // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
+    if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
     assertSupportedEveryScheduleUnit(updatedJob.schedule);
     assertExecutionLocationConstraints(updatedJob);
 
@@ -718,9 +717,7 @@ export class CronService implements Disposable {
       execution.duration = execution.completedAt - execution.startedAt!;
 
       // For one-time jobs, disable after execution
-      if (definition.scheduleType === 'at') {
-        await this.updateJob(definition.id, { enabled: false });
-      }
+      if (definition.scheduleType === 'at') await this.updateJob(definition.id, { enabled: false });
 
       // Save execution to database
       await saveCronExecution(execution);
@@ -750,6 +747,12 @@ export class CronService implements Disposable {
           disableNotified = true;
         }
       }
+
+      // 次数上限结算（N-CRON-BUDGET-EXPOSE，实现见 cronRunLimit.ts）：排在失败停用之后，同趟不重复停用。
+      disableNotified = await settleCronRunLimit(definition.id, execution, disableNotified, {
+        getDefinition: (jobId) => this.jobs.get(jobId)?.definition,
+        updateJob: (jobId, updates) => this.updateJob(jobId, updates),
+      });
 
       // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session。
       // 停用的那一趟只发停用通知（已含最后错误与出路）——同一笔失败再叠一条

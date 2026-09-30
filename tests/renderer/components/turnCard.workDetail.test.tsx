@@ -95,6 +95,31 @@ describe('TurnCard work detail policy', () => {
     expect(screen.getByTestId('thinking-digest')).not.toBeNull();
   });
 
+  it('keeps the thinking banner during a streaming turn under simple', () => {
+    const turn: TraceTurn = {
+      turnNumber: 1,
+      turnId: 'turn-stream',
+      status: 'streaming',
+      startTime: 1_000,
+      nodes: [
+        { id: 'user-1', type: 'user', content: '帮我看一下', timestamp: 1_000 } as TraceNode,
+        {
+          id: 'thinking-1',
+          type: 'assistant_text',
+          content: '',
+          reasoning: '先读文件。',
+          timestamp: 2_000,
+        } as TraceNode,
+      ],
+    };
+
+    renderAt('simple', turn);
+    expect(screen.getByTestId('thinking-digest')).not.toBeNull();
+    expect(screen.getByText(/正在思考/)).toBeTruthy();
+    expect(document.querySelector('.streaming-caret')).toBeNull();
+    expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
+  });
+
   it('tool groups start expanded only under expert', () => {
     const turn = completedTurn();
     for (const level of ['simple', 'standard', 'advanced', 'expert'] as const) {

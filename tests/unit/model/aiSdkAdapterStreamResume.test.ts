@@ -568,6 +568,41 @@ describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', (
     expect(res.content).toBe('partialok');
   });
 
+  it('B1 空文本断点（断流在 reasoning 阶段）：不拼空 assistant prefix（Moonshot「must not be empty」400 真机教训），原样重发、无 partial 注入、仍无缝', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([
+        { type: 'reasoning-delta', id: 'r', text: 'thinking…' }, // reasoning 也置 emittedOutput
+        { type: 'error', error: new Error('ECONNRESET') },
+      ]))
+      .mockReturnValueOnce(fakeStream([
+        { type: 'text-delta', id: 't2', text: 'regen' },
+        { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+      ]));
+    const col = makeCollector();
+    const cfg = { provider: 'moonshot', model: 'kimi-k2.6', temperature: 0.7 } as ModelConfig;
+
+    const p = inferenceViaAiSdk([{ role: 'user', content: 'x' }], [], cfg, col.onStream);
+    await vi.advanceTimersByTimeAsync(1000);
+    const res = await p;
+
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(2);
+    // 续接请求不拼空 assistant 消息：与原请求逐字一致（空 prefix 无续写信息且被上游 400 拒）
+    expect(JSON.stringify(call(1).messages)).toBe(JSON.stringify(call(0).messages));
+    expect((call(1).messages.at(-1) as { role?: string })?.role).toBe('user');
+    // 双保险联动：末条非 assistant → 续接 model 的 fetch 上线 body 不带 partial
+    const resumeFetch = vi.mocked(createOpenAICompatible).mock.calls.at(-1)?.[0]?.fetch as typeof fetch;
+    await resumeFetch('https://test.local/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify({ model: 'kimi-k2.6', messages: [{ role: 'user', content: 'x' }] }),
+    });
+    const wire = ((vi.mocked(axios).mock.calls.at(-1)?.[0] ?? {}) as unknown as { data: string }).data;
+    expect(wire).not.toContain('partial');
+    // 无缝保持：空 seed append 重生成内容，无重复可拼，不发 stream_break
+    expect(col.byType('stream_break')).toHaveLength(0);
+    expect(res.content).toBe('regen');
+    expect(res.thinking).toBe('thinking…'); // 断点 reasoning 随 seed 延续
+  });
+
   it('claude 4.6+（仓内默认 claude-opus-4-7）自动落 B2：stream_break 分段，重发请求原样不带 prefix assistant', async () => {
     vi.mocked(streamText)
       .mockReturnValueOnce(fakeStream([

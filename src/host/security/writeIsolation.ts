@@ -1,5 +1,4 @@
-import path from 'path';
-import { resolveCanonicalRunPath } from '../runtime/runContext';
+import { normalizeTargetPath, toolResourceAccessesConflict, type ResolvedToolAccess } from './resourceScope';
 
 export type WriteIsolationKind = 'file' | 'workspace';
 
@@ -91,24 +90,21 @@ function firstStringParam(params: Record<string, unknown>, keys: string[]): stri
   return null;
 }
 
-function normalizeTargetPath(workingDirectory: string, candidate: string): string {
-  const resolved = path.normalize(path.isAbsolute(candidate)
-    ? candidate
-    : path.resolve(workingDirectory, candidate));
-  return resolveCanonicalRunPath(resolved);
-}
-
-function isSameOrChild(candidate: string, parent: string): boolean {
-  if (candidate === parent) return true;
-  const relative = path.relative(parent, candidate);
-  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+function writeScopeAccess(scope: WriteIsolationScope): ResolvedToolAccess {
+  if (scope.kind === 'workspace') {
+    return {
+      kind: 'write',
+      domain: { type: 'workspace', root: scope.root, targetPath: scope.targetPath },
+    };
+  }
+  return {
+    kind: 'write',
+    domain: { type: 'path', root: scope.root, targetPath: scope.targetPath },
+  };
 }
 
 function scopeConflicts(left: WriteIsolationScope, right: WriteIsolationScope): boolean {
-  if (left.root !== right.root) return false;
-  if (left.kind === 'workspace' || right.kind === 'workspace') return true;
-  return isSameOrChild(left.targetPath, right.targetPath)
-    || isSameOrChild(right.targetPath, left.targetPath);
+  return toolResourceAccessesConflict(writeScopeAccess(left), writeScopeAccess(right));
 }
 
 export function getWriteIsolationScope(

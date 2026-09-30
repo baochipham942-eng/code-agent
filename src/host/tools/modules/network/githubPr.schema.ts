@@ -118,4 +118,7 @@ github_pr { "action": "merge", "pr": 42, "method": "squash", "delete_branch": tr
   readsUntrustedContent: 'annotate',
   readOnly: false,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(github, pull_request)' },
+  ],
 };

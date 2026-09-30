@@ -1,9 +1,16 @@
 {
   "schemaVersion": 1,
+<<<<<<< HEAD
   "generatedAt": "2026-09-30T09:48:16.546Z",
   "gitHead": "45d9201c88500dcec28dd8a88d3e615146dfa054",
   "promptVersion": "sys-v64",
   "promptInputsHash": "c6eb022760245644dbf68b1d0018837acf9fe5179fd85e60c25cd996ab7d567e",
+=======
+  "generatedAt": "2026-09-30T08:45:36.740Z",
+  "gitHead": "4bede0eb7f3f73a767c8884a53fde344cb8ec31f",
+  "promptVersion": "sys-v63",
+  "promptInputsHash": "8c624b0fb482b5fe9a96df61e77d2b807db99723ab8454f3042873d4d2b7040f",
+>>>>>>> 11fb5735c (feat: derive tool result budgets from context window)
   "passed": true,
   "steps": {
     "staleScan": {

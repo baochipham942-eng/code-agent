@@ -74,6 +74,8 @@ async function chooseIndex(
   if (isFast(pypi)) return PYPI_INDEX_URL;
   const tuna = await probeOne(probe, TUNA_INDEX_URL, root, now);
   if (tuna.ok) return TUNA_INDEX_URL;
+  // Slowness only prefers tuna. A PyPI that answered stays usable when tuna did not.
+  if (pypi.ok) return PYPI_INDEX_URL;
   return null;
 }
 
@@ -84,9 +86,11 @@ async function chooseMirror(
 ): Promise<string | null> {
   const primary = await probeOne(probe, PYTHON_DOWNLOAD_PROBE_URL, root, now);
   if (isFast(primary)) return null;
-  // The mirror is selected when the primary source is not fast, even if this probe fails.
-  await probeOne(probe, PYTHON_INSTALL_MIRROR, root, now);
-  return PYTHON_INSTALL_MIRROR;
+  const mirror = await probeOne(probe, PYTHON_INSTALL_MIRROR, root, now);
+  // Prefer the mirror when it answers, and when the primary itself is down.
+  // A slow primary that did answer is kept if this probe failed.
+  if (mirror.ok || !primary.ok) return PYTHON_INSTALL_MIRROR;
+  return null;
 }
 
 async function runLoggedUv(

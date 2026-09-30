@@ -340,6 +340,82 @@ describe('ensurePythonEnv', () => {
     expect(ready.pythonMirror).toBe(PYTHON_INSTALL_MIRROR);
   });
 
+  it('keeps a slow but reachable PyPI when the tuna probe fails', async () => {
+    const dataDir = makeDataDir();
+    const root = pythonRoot(dataDir);
+    const calls: UvCall[] = [];
+    const hits: ProbeHit[] = [];
+    const result = await ensurePythonEnv({
+      ...lookup(dataDir),
+      runUv: successfulRunUv(calls),
+      probe: async (url, timeoutMs) => {
+        hits.push({ url, timeoutMs });
+        if (url === PYPI_INDEX_URL) return { url, ok: true, ttfbMs: 2000 };
+        if (url === TUNA_INDEX_URL) return { url, ok: false, ttfbMs: 3000 };
+        if (url === PYTHON_DOWNLOAD_PROBE_URL) return { url, ok: true, ttfbMs: 10 };
+        return { url, ok: false, ttfbMs: 3000 };
+      },
+      now: () => new Date('2026-09-30T00:00:00.000Z'),
+    });
+    expect(result).toMatchObject({ ok: true, reused: false, root });
+    expect(hits.map((hit) => hit.url)).toEqual([
+      PYPI_INDEX_URL,
+      TUNA_INDEX_URL,
+      PYTHON_DOWNLOAD_PROBE_URL,
+    ]);
+    const sync = calls.find((call) => call.args[0] === 'pip');
+    expect(sync?.args).toContain(PYPI_INDEX_URL);
+    expect(calls[0]?.env.UV_PYTHON_INSTALL_MIRROR).toBeUndefined();
+    const log = fs.readFileSync(path.join(root, 'install.log'), 'utf8');
+    expect(log).toContain(`chosen index=${PYPI_INDEX_URL} pythonMirror=none`);
+    const ready = JSON.parse(fs.readFileSync(path.join(root, 'ready.json'), 'utf8')) as { indexUrl: string };
+    expect(ready.indexUrl).toBe(PYPI_INDEX_URL);
+  });
+
+  it('keeps a slow but reachable Python download source when the mirror probe fails', async () => {
+    const dataDir = makeDataDir();
+    const root = pythonRoot(dataDir);
+    const calls: UvCall[] = [];
+    const hits: ProbeHit[] = [];
+    const result = await ensurePythonEnv({
+      ...lookup(dataDir),
+      runUv: successfulRunUv(calls),
+      probe: async (url, timeoutMs) => {
+        hits.push({ url, timeoutMs });
+        if (url === PYPI_INDEX_URL) return { url, ok: true, ttfbMs: 10 };
+        if (url === PYTHON_DOWNLOAD_PROBE_URL) return { url, ok: true, ttfbMs: 2000 };
+        return { url, ok: false, ttfbMs: 3000 };
+      },
+      now: () => new Date('2026-09-30T00:00:00.000Z'),
+    });
+    expect(result).toMatchObject({ ok: true, reused: false, root });
+    expect(hits.map((hit) => hit.url)).toEqual([
+      PYPI_INDEX_URL,
+      PYTHON_DOWNLOAD_PROBE_URL,
+      PYTHON_INSTALL_MIRROR,
+    ]);
+    expect(calls[0]?.env.UV_PYTHON_INSTALL_MIRROR).toBeUndefined();
+    const log = fs.readFileSync(path.join(root, 'install.log'), 'utf8');
+    expect(log).toContain(`chosen index=${PYPI_INDEX_URL} pythonMirror=none`);
+    const ready = JSON.parse(fs.readFileSync(path.join(root, 'ready.json'), 'utf8')) as { pythonMirror: string | null };
+    expect(ready.pythonMirror).toBeNull();
+  });
+
+  it('switches a slow Python download source when the mirror probe succeeds', async () => {
+    const dataDir = makeDataDir();
+    const calls: UvCall[] = [];
+    await ensurePythonEnv({
+      ...lookup(dataDir),
+      runUv: successfulRunUv(calls),
+      probe: async (url) => {
+        if (url === PYTHON_DOWNLOAD_PROBE_URL) return { url, ok: true, ttfbMs: 2000 };
+        return { url, ok: true, ttfbMs: 10 };
+      },
+      now: () => new Date('2026-09-30T00:00:00.000Z'),
+    });
+    expect(calls[0]?.env.UV_PYTHON_INSTALL_MIRROR).toBe(PYTHON_INSTALL_MIRROR);
+  });
+
   it('returns OFFLINE before uv when every index probe fails', async () => {
     const dataDir = makeDataDir();
     const root = pythonRoot(dataDir);

@@ -180,6 +180,9 @@ export class FileCheckpointService {
    * 而不是删旧插新——删旧会把更早消息的行抹掉，那条行若是该消息唯一的行，「按消息
    * 回退」的锚点查询就一行不剩。披露行有自己的总量上限（enforceUncertainLimit），
    * 不占真快照的预算：真快照已满时，写一条披露不允许把可回退的快照挤出去。
+   * 例外（N-CHECKPOINT-MCP-WRITETARGET）：`undeclared-tool:` 键按 (session, key,
+   * message) 去重——未声明写盘的披露是逐**轮**的，「这轮用了会写盘的未声明工具」
+   * 必须出现在这轮的回退窗口里，只留最早一条会把后面轮次的披露藏掉。
    * @returns 记录 id（含同键已存在时返回既有行 id），失败返回 null
    */
   async recordUncertainWriteTarget(
@@ -192,11 +195,13 @@ export class FileCheckpointService {
     if (!db) return null;
 
     try {
+      const perMessage = uncertainTarget.startsWith('undeclared-tool:');
       const existing = db.prepare(`
         SELECT id FROM file_checkpoints
         WHERE session_id = ? AND file_path = ? AND uncertain_target = 1
+          ${perMessage ? 'AND message_id = ?' : ''}
         LIMIT 1
-      `).get(sessionId, uncertainTarget) as { id: string } | undefined;
+      `).get(...(perMessage ? [sessionId, uncertainTarget, messageId] : [sessionId, uncertainTarget])) as { id: string } | undefined;
       if (existing) return existing.id;
 
       await this.enforceUncertainLimit(sessionId);
@@ -340,6 +345,18 @@ export class FileCheckpointService {
       for (const [filePath, original] of fileToOriginal) {
         try {
           if (original.uncertain) {
+            // undeclared-tool:<name> 行（N-CHECKPOINT-MCP-WRITETARGET）：该工具的写盘
+            // 从不在回退范围——按 key 分组每工具一条（跑多少次都折叠成一条），带工具
+            // 名披露。是披露不是恢复失败，不计入下面的 success 翻红。
+            if (filePath.startsWith('undeclared-tool:')) {
+              result.skippedFiles.push({
+                filePath,
+                reason: 'undeclared_tool_write',
+                toolName: filePath.slice('undeclared-tool:'.length),
+                detail: 'This tool\'s writes are not in the rollback scope.',
+              });
+              continue;
+            }
             // 写目标解析不出来（含通配/变量的重定向等），或建不出无损快照（超大/二进制/
             // 读错误，返修 r2）——没有可安全回退的快照，逐条披露，回退不碰这些文件
             result.skippedFiles.push({
@@ -445,7 +462,10 @@ export class FileCheckpointService {
         }
       }
 
-      result.success = result.errors.length === 0 && result.skippedFiles.length === 0;
+      // undeclared_tool_write 披露不翻红：未声明工具的写盘从不在回退范围，它的 skip
+      // 是告知不是失败（与 uncertain 披露在 sessionHistoryAppService 的非致命口径对齐）
+      result.success = result.errors.length === 0
+        && !result.skippedFiles.some((item) => item.reason !== 'undeclared_tool_write');
 
       logger.info('Files rewound', {
         sessionId,

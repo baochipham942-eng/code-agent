@@ -32,6 +32,16 @@ interface RewindPanelProps {
   onCheckedOut?: (result: TurnCheckoutResult) => void;
 }
 
+// 未声明工具写盘披露的展示名：mcp__server__tool → 「server / tool」，
+// 解不动（无 tool 段/非 mcp 前缀）原样展示
+function undeclaredToolDisplayName(name: string): string {
+  if (!name.startsWith('mcp__')) return name;
+  const rest = name.slice('mcp__'.length);
+  const separator = rest.indexOf('__');
+  if (separator <= 0 || separator === rest.length - 2) return name;
+  return `${rest.slice(0, separator)} / ${rest.slice(separator + 2)}`;
+}
+
 export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose, onCheckedOut }) => {
   const { t } = useI18n();
   const r = t.taskStatusPanels.rewind;
@@ -187,6 +197,14 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose, onChe
             const file = item.reason === 'uncertain_write_target'
               ? item.filePath
               : item.filePath.split(/[\\/]/).filter(Boolean).at(-1) ?? item.filePath;
+            // 未声明工具写盘（undeclared-tool:<name>）按工具披露，不剪路径
+            if (item.reason === 'undeclared_tool_write') {
+              return (
+                <p key={`${item.filePath}:${item.reason}`} className="mt-1 text-xs text-zinc-400">
+                  {t.chat.turnCheckoutNoteUndeclaredTool.replace('{tool}', undeclaredToolDisplayName(item.toolName ?? item.filePath))}
+                </p>
+              );
+            }
             const template = item.reason === 'human_edit'
               ? t.chat.turnCheckoutNoteHumanEdit
               : item.reason === 'missing_post_write_digest'

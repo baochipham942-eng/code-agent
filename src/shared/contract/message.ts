@@ -416,7 +416,7 @@ export interface MessageMetadata {
     state: 'success' | 'partial';
     done: string[];
     failed: Array<{ step: string; reason: string; filePath?: string }>;
-    skippedFiles: Array<{ filePath: string; reason: string; detail: string }>;
+    skippedFiles: Array<{ filePath: string; reason: string; detail: string; toolName?: string }>;
     changedFileCount: number;
     externalSideEffectsWarning: string;
   };

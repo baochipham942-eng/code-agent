@@ -1031,6 +1031,17 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 };
 
 // ---- System Node ----
+
+// 未声明工具写盘披露的展示名：mcp__server__tool → 「server / tool」，
+// 解不动（无 tool 段/非 mcp 前缀）原样展示（与 RewindPanel 同款口径）
+function undeclaredToolDisplayName(name: string): string {
+  if (!name.startsWith('mcp__')) return name;
+  const rest = name.slice('mcp__'.length);
+  const separator = rest.indexOf('__');
+  if (separator <= 0 || separator === rest.length - 2) return name;
+  return `${rest.slice(0, separator)} / ${rest.slice(separator + 2)}`;
+}
+
 const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   const [expanded, setExpanded] = useState(false);
   const { t } = useI18n();
@@ -1050,6 +1061,13 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
       const file = item.reason === 'uncertain_write_target'
         ? item.filePath
         : item.filePath.split(/[\\/]/).filter(Boolean).at(-1) ?? item.filePath;
+      // 未声明工具写盘（undeclared-tool:<name>）按工具披露，不剪路径
+      if (item.reason === 'undeclared_tool_write') {
+        return t.chat.turnCheckoutNoteUndeclaredTool.replace(
+          '{tool}',
+          undeclaredToolDisplayName(item.toolName ?? item.filePath),
+        );
+      }
       const template = item.reason === 'human_edit'
         ? t.chat.turnCheckoutNoteHumanEdit
         : item.reason === 'missing_post_write_digest'

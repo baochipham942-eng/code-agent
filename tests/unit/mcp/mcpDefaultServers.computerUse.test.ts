@@ -4,7 +4,8 @@ import os from 'node:os';
 import { describe, it, expect, afterAll, afterEach, beforeAll } from 'vitest';
 import { getDefaultMCPServers } from '../../../src/host/mcp/mcpDefaultServers';
 import { pickEnabledComputerUseServers } from '../../../src/host/mcp/computerUseServerSelection';
-import type { MCPServerConfig } from '../../../src/host/mcp/types';
+import { isReapableStdioServer } from '../../../src/host/mcp/mcpReapPolicy';
+import { isStdioConfig, type MCPServerConfig } from '../../../src/host/mcp/types';
 
 // 背景（2026-06-11 真机验证）：initMCPClient 里云端 MCP 清单与本地默认清单
 // 是「二选一」，云端清单存在时本地默认清单整体被跳过——导致 cua-driver/argus
@@ -160,6 +161,45 @@ describe('真实默认清单上的 cua-driver 形态', () => {
         ),
         args: [],
       });
+    });
+  });
+});
+
+// 缺省不标记 = 有会话状态，空闲回收不会杀进程。只有下面这些内置 stdio 明确无登录/页面会话。
+const STATELESS_BUILTIN_REASONS: Record<string, string> = {
+  filesystem: 'each call is a path; the process holds no login or page session',
+  git: 'each call is a git invocation; the repo lives on disk',
+  github: 'stateless HTTPS API calls; the token is env, not a server session',
+  sqlite: 'the database file is durable; the process holds no user session',
+  'brave-search': 'stateless search API calls',
+  'sequential-thinking': 'thought history is replayed by the model; no external session',
+};
+
+describe('built-in reap presets', () => {
+  it('keeps cua-driver, argus, and puppeteer unreapable and lists stateless built-ins with reasons', () => {
+    withPlatform(CUA_SUPPORTED_PLATFORM, () => {
+      process.env.CODE_AGENT_ENABLE_CUA = '1';
+      process.env.CODE_AGENT_ENABLE_ARGUS_MCP = '1';
+      const servers = getDefaultMCPServers();
+      for (const name of ['cua-driver', 'argus', 'puppeteer'] as const) {
+        const config = servers.find((server) => server.name === name);
+        expect(config, name).toBeTruthy();
+        expect(isReapableStdioServer(config)).toBe(false);
+      }
+      for (const name of ['docker', 'memory'] as const) {
+        const config = servers.find((server) => server.name === name);
+        if (!config || !isStdioConfig(config)) throw new Error(name);
+        expect(isReapableStdioServer(config)).toBe(false);
+        expect(config.stateless).not.toBe(true);
+      }
+      const marked = servers
+        .filter((server) => isStdioConfig(server) && server.stateless === true)
+        .map((server) => server.name)
+        .sort();
+      expect(marked).toEqual(Object.keys(STATELESS_BUILTIN_REASONS).sort());
+      for (const name of marked) {
+        expect(STATELESS_BUILTIN_REASONS[name]?.length).toBeGreaterThan(0);
+      }
     });
   });
 });

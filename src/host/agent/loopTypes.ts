@@ -331,6 +331,8 @@ export interface FailedToolCallMatch {
  */
 export interface AntiPatternState {
   consecutiveReadOps: number;
+  /** Raw consecutive read-only calls; the independent backstop counter. */
+  consecutiveReadCalls: number;
   hasWrittenFile: boolean;
   toolFailureTracker: Map<string, ToolFailureEntry>;
   duplicateCallTracker: Map<string, number>;

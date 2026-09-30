@@ -3,6 +3,20 @@
 // ============================================================================
 
 import type { ToolTag, ToolSource } from './tool';
+import type { JevChoiceAnswer, JevNoulAnswer } from '../constants/jevQuestions';
+
+interface JevSkillRerankJudgeResult {
+  choice: JevChoiceAnswer;
+  nouls: {
+    need_skill: JevNoulAnswer;
+    need_now: JevNoulAnswer;
+    none_of_roster: JevNoulAnswer;
+  };
+}
+
+export type JevSkillRerankJudge = (
+  input: { query: string; roster: Array<{ name: string; description: string }> },
+) => Promise<JevSkillRerankJudgeResult>;
 
 
 /**
@@ -79,6 +93,12 @@ export interface ToolSearchOptions {
 
   /** 当前 run 明确禁用的工具；搜索结果和延迟加载都必须排除。 */
   deniedToolNames?: readonly string[];
+
+  /** Optional Jev rerank seam. The caller owns production gating and judge construction. */
+  rerank?: {
+    judge: JevSkillRerankJudge;
+    enabled: boolean;
+  };
 }
 
 /**

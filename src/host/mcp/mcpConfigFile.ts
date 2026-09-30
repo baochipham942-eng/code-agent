@@ -31,6 +31,7 @@ interface ClaudeCodeMcpEntry {
   serverUrl?: string;
   headers?: Record<string, string>;
   enabled?: boolean;
+  stateless?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -81,6 +82,7 @@ function normalizeClaudeEntry(
       env: raw.env || {},
       enabled,
       scope,
+      ...(typeof raw.stateless === 'boolean' ? { stateless: raw.stateless } : {}),
     };
   }
 

@@ -153,6 +153,9 @@ export function getSearchToReadPreflightBlock(
 
 export function activateForceFinalResponse(ctx: RuntimeContext, reason: string): void {
   if (ctx.control.forceFinalResponseReason) return;
+  const readLoopEvidenceRequirement = reason.startsWith('连续只读操作达到硬阈值')
+    ? 'Your final reply must name which evidence is missing and state whether a file was produced. If no file was produced, say so explicitly.'
+    : '';
   ctx.control.forceFinalResponse(reason, [
     '<force-final-response reason="read-loop-hard-limit">',
     'The runtime has stopped further tool use because the session entered a repeated read loop.',
@@ -160,9 +163,10 @@ export function activateForceFinalResponse(ctx: RuntimeContext, reason: string):
     'Do not call any tool, do not switch to Bash/Python/Grep to re-read, and do not ask the user to repeat context.',
     'Do not emit tool-call markup or function-call syntax of any kind (no <longcat_tool_call>, <tool_call>, or JSON call blocks) — plain prose only.',
     'If exact evidence is missing, say which evidence is missing instead of inventing it.',
+    readLoopEvidenceRequirement,
     'Produce the final answer now.',
     '</force-final-response>',
-  ].join('\n'));
+  ].filter(Boolean).join('\n'));
 }
 
 function isBashToolCallName(name: string): boolean {

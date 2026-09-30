@@ -11,6 +11,7 @@ import ipcService from '../services/ipcService';
 import { Button, Modal } from './primitives';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useI18n } from '../hooks/useI18n';
+import { undeclaredToolDisplayName } from '../utils/humanizeToolStep';
 
 interface Checkpoint {
   id: string;
@@ -30,16 +31,6 @@ interface RewindPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onCheckedOut?: (result: TurnCheckoutResult) => void;
-}
-
-// 未声明工具写盘披露的展示名：mcp__server__tool → 「server / tool」，
-// 解不动（无 tool 段/非 mcp 前缀）原样展示
-function undeclaredToolDisplayName(name: string): string {
-  if (!name.startsWith('mcp__')) return name;
-  const rest = name.slice('mcp__'.length);
-  const separator = rest.indexOf('__');
-  if (separator <= 0 || separator === rest.length - 2) return name;
-  return `${rest.slice(0, separator)} / ${rest.slice(separator + 2)}`;
 }
 
 export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose, onCheckedOut }) => {

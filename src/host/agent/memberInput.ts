@@ -83,6 +83,13 @@ export async function sendMemberInput(
     return { outcome: 'rejected', reason: known ? 'finished' : 'not_found' };
   }
 
+  let pendingCount = 0;
+  const finished = (): MemberInputReceipt => ({
+    outcome: 'rejected',
+    reason: 'finished',
+    ...(pendingCount ? { undeliveredCount: pendingCount } : {}),
+  });
+
   if (request.runId) {
     const result = await deps.sendSwarmUserMessage({
       sessionId: request.sessionId,
@@ -106,21 +113,17 @@ export async function sendMemberInput(
     if (result.failure?.code === 'external_engine') {
       return { outcome: 'rejected', reason: 'external_engine', engineLabel: result.failure.engineLabel };
     }
-    if (result.failure?.code === 'undelivered_pending') {
-      return {
-        outcome: 'rejected',
-        reason: 'finished',
-        ...(result.failure.undeliveredCount ? { undeliveredCount: result.failure.undeliveredCount } : {}),
-      };
-    }
-    if (request.kind === 'expert') return { outcome: 'rejected', reason: 'finished' };
+    // undelivered_pending 只是「按 run 作用域投不到、队列里还压着 N 条」的旁证，不等于成员已收工：
+    // spawn 成员仍要走下面的会话级 SpawnGuard 回退，回退也投不到才连同条数一起拒收（PR#2153 复审）。
+    if (result.failure?.code === 'undelivered_pending') pendingCount = result.failure.undeliveredCount ?? 0;
+    if (request.kind === 'expert') return finished();
   }
 
   // spawn 子代理：SpawnGuard 回退（没有 run 作用域、或处理器按作用域投不到时）
   const scope = { sessionId: request.sessionId };
   const agent = deps.spawnGuard.get(request.memberId, scope);
   if (!agent) return { outcome: 'rejected', reason: 'not_found' };
-  if (!LIVE_SPAWN_STATUSES.has(agent.status ?? '')) return { outcome: 'rejected', reason: 'finished' };
+  if (!LIVE_SPAWN_STATUSES.has(agent.status ?? '')) return finished();
   const externalFailure = externalEngineFollowUpFailure(resolveMemberEngine({ agentId: request.memberId }));
   if (externalFailure) {
     return { outcome: 'rejected', reason: 'external_engine', engineLabel: externalFailure.engineLabel };
@@ -138,5 +141,5 @@ export async function sendMemberInput(
   });
   return sent
     ? { outcome: 'delivered', effect: 'next_step', persisted: false }
-    : { outcome: 'rejected', reason: 'finished' };
+    : finished();
 }

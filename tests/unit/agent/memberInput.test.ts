@@ -157,6 +157,36 @@ describe('sendMemberInput', () => {
       .resolves.toEqual({ outcome: 'rejected', reason: 'not_found' });
   });
 
+  // PR#2153 复审：按 run 作用域投不到且队列压着补话（undelivered_pending）≠ 成员已收工，
+  // spawn 成员仍走会话级 SpawnGuard 回退；回退也投不到才连同条数拒收。
+  it('undelivered_pending 但 spawn 成员仍在跑：走 SpawnGuard 回退送达，不报已收工', async () => {
+    const sendMessage = vi.fn().mockReturnValue(true);
+    const d = deps({
+      sendSwarmUserMessage: vi.fn().mockResolvedValue({
+        delivered: false,
+        persisted: false,
+        failure: { code: 'undelivered_pending', undeliveredCount: 1, message: '1 follow-up not delivered' },
+      }),
+      spawnGuard: { get: vi.fn().mockReturnValue({ status: 'running' }), sendMessage },
+    });
+    await expect(sendMemberInput({ ...base, kind: 'agent', runId: 'run-a', memberId: 'agent-9', mode: 'supplement' }, d))
+      .resolves.toEqual({ outcome: 'delivered', effect: 'next_step', persisted: false });
+    expect(sendMessage).toHaveBeenCalled();
+  });
+
+  it('undelivered_pending 且 spawn 成员确已收工：拒收「finished」并带未送达条数', async () => {
+    const d = deps({
+      sendSwarmUserMessage: vi.fn().mockResolvedValue({
+        delivered: false,
+        persisted: false,
+        failure: { code: 'undelivered_pending', undeliveredCount: 2, message: '2 follow-ups not delivered' },
+      }),
+      spawnGuard: { get: vi.fn().mockReturnValue({ status: 'completed' }), sendMessage: vi.fn() },
+    });
+    await expect(sendMemberInput({ ...base, kind: 'agent', runId: 'run-a', memberId: 'agent-9', mode: 'supplement' }, d))
+      .resolves.toEqual({ outcome: 'rejected', reason: 'finished', undeliveredCount: 2 });
+  });
+
   it('外部引擎拒收后不再回退 SpawnGuard，回执带引擎名', async () => {
     const sendMessage = vi.fn().mockReturnValue(true);
     const d = deps({

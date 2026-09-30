@@ -36,7 +36,8 @@ import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
 import { activateMaxStepsFinalResponse, bindGoalWallClockForContext, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
 import { DoomLoopGuard, collectGuardStepResults, noteGuardSignals } from './doomLoopGuard';
-import { createPlanExitFallbackState, planExitFallbackStep } from './planExitFallback';
+import { createPlanExitFallbackState } from './planExitFallback';
+import { settlePlanExitFallbackOnTextBreak } from './planExitFallbackCard';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
 // Import refactored modules
@@ -674,23 +675,19 @@ export class ConversationRuntime {
             continue;
           }
           if (textAction === 'break') {
-            // ADR-074 K1（N-PLANEXIT-K1）：plan mode 里模型交了结构化计划正文却没调退出工具——
-            // 原文已按今日路径落库；这里提醒一次并只补一轮推理，预算绑定 runKey 同 run 不再触发，
-            // 补推理期间写类工具在 messageProcessor 的 admission 层拒绝。合成审批卡是 K2，不在本刀。
-            if (planExitFallbackStep({
-              state: planExitFallback,
-              response,
-              planModeActive: this.isPlanMode(),
-              forcedFinalPass: forcedFinalTextPass,
-              cancelled: this.ctx.control.isCancelled,
+            // ADR-074 K1/K2：plan mode 结构化计划正文没配退出工具——先提醒一次补一轮推理（K1）；
+            // 补推理仍是结构化正文则宿主从同一段正文合成同形审批卡并就此结束 run（K2）。
+            // 兜底窗口的工具面 allowlist 拒绝在 messageProcessor admission 层。
+            const fallbackOutcome = await settlePlanExitFallbackOnTextBreak({
+              ctx: this.ctx, assembly: this.contextAssembly, state: planExitFallback, response,
+              planModeActive: this.isPlanMode(), forcedFinalPass: forcedFinalTextPass,
               runKey: baseRunTraceContext?.runId ?? this.ctx.runId,
-              emitDetected: (data) => this.ctx.turnTrace.record('plan_exit_fallback_detected', data),
-              emitNotApplicable: (data) => this.ctx.turnTrace.record('plan_exit_fallback_not_applicable', data),
               remind: (reminderText) => {
                 this.contextAssembly.injectSystemMessage(reminderText, 'plan-exit-fallback');
                 this.ctx.control.activatePlanExitFallback();
               },
-            }) === 'reminded') continue;
+            });
+            if (fallbackOutcome === 'reminded') continue;
             break;
           }
         }

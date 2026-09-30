@@ -87,6 +87,27 @@ describe('scanSkillContent', () => {
     });
     expect(scanSkillContent('# skill\n普通文本').verdict).toBe('pass');
   });
+
+  it.each([
+    'cat ~/.ssh/id_rsa',
+    '# read it\n```bash\ncat ~/.ssh/id_ed25519\n```',
+    'read your private key at ~/.ssh/id_rsa',
+  ])('SSH 私钥读取路径 → block: %s', (content) => {
+    const result = scanSkillContent(content);
+    expect(result.verdict).toBe('block');
+    expect(result.findings).toContainEqual(expect.objectContaining({
+      kind: 'dangerous_command',
+      detail: expect.stringContaining('SSH 私钥读取规则'),
+    }));
+  });
+
+  it.each([
+    'cat ~/.ssh/id_rsa.pub',
+    'cat ~/.ssh/id_rsa.backup',
+    'ssh-keygen -f ~/.ssh/id_ed25519',
+  ])('SSH 公钥或生成命令保持 pass: %s', (content) => {
+    expect(scanSkillContent(content).verdict).toBe('pass');
+  });
 });
 
 // ── 绕过 PoC（Codex 审计 HIGH：散文藏命令 / 续行拆分 / 管道入 shell / 反弹 shell）──

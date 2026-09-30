@@ -28,6 +28,8 @@ interface ReadyMarker {
   oldProcessInstanceId: string;
   heartbeatRenewed: boolean;
   skippedBegin: boolean;
+  reportedCost?: number;
+  reportedProgress?: string;
 }
 
 interface RecoverResult {
@@ -112,6 +114,13 @@ try {
       && sequential.recover.attempts[0]!.process_instance_id !== sequential.recover.attempts[1]!.process_instance_id
       && sequential.recover.oldProcessInstanceId !== sequential.recover.newProcessInstanceId,
     productionRecoveryPath: sequential.recover.handler === 'background_subagent_single',
+    reportedCost: typeof sequential.ready.reportedCost === 'number'
+      && (sequential.recover.projectedRecords[0]?.content ?? '').includes(`"cost": ${sequential.ready.reportedCost}`),
+    reportedProgress: typeof sequential.ready.reportedProgress === 'string'
+      && sequential.ready.reportedProgress.length > 0
+      && (sequential.recover.projectedRecords[0]?.content ?? '').includes(
+        `"last_progress": ${JSON.stringify(sequential.ready.reportedProgress)}`,
+      ),
     ...(concurrent ? { epochFence: concurrent.pass } : {}),
   };
   const pass = Object.values(gates).every(Boolean);

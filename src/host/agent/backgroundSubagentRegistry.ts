@@ -20,6 +20,7 @@ import {
   isBackgroundSubagentDurableArmed,
   waitForBackgroundSubagentDurableLedger,
   type BackgroundSubagentDurableLedger,
+  type BackgroundSubagentProgressSnapshot,
 } from './backgroundSubagentDurableLedger';
 import {
   buildSubagentCompletionRecord,
@@ -51,6 +52,8 @@ export interface BackgroundSubagentHandle {
 interface BackgroundSubagentEntry extends BackgroundSubagentHandle {
   /** 后台 run 的 promise——await(agentId) 复用它，不重复触发。 */
   done: Promise<SubagentResult | undefined>;
+  /** 运行中快照，只给 durable 账本；不进 getStatus/list。 */
+  liveProgress?: BackgroundSubagentProgressSnapshot;
 }
 
 export interface BackgroundSubagentScopeFilter {
@@ -77,6 +80,7 @@ export class BackgroundSubagentRegistry {
   private readonly entries = new Map<string, BackgroundSubagentEntry>();
   private readonly pendingNotifications: SubagentCompletionRecord[] = [];
   private readonly queuedNotificationKeys = new Set<string>();
+  private readonly liveProgressByAgent = new Map<string, BackgroundSubagentProgressSnapshot>();
   private readonly now: () => number;
 
   // now 注入便于测试；默认墙钟。本类非 DB 写路径，不受 repository Date.now 禁令约束。
@@ -182,9 +186,38 @@ export class BackgroundSubagentRegistry {
       startedAt,
     };
     const ledger = getBackgroundSubagentDurableLedger();
-    if (ledger) return ledger.begin(input).then(() => ledger);
+    if (ledger) return ledger.begin(input).then(() => this.afterDurableBegin(agentId, ledger));
     if (!isBackgroundSubagentDurableArmed()) return null;
-    return waitForBackgroundSubagentDurableLedger().then((ready) => ready.begin(input).then(() => ready));
+    return waitForBackgroundSubagentDurableLedger().then((ready) => ready.begin(input).then(() => this.afterDurableBegin(agentId, ready)));
+  }
+
+  /** 落账完成前到达的进度，在 live run 出现后补进账本。 */
+  private afterDurableBegin(
+    agentId: string,
+    ledger: BackgroundSubagentDurableLedger,
+  ): BackgroundSubagentDurableLedger {
+    const pending = this.liveProgressByAgent.get(agentId);
+    if (pending) {
+      const entry = this.entries.get(agentId);
+      if (entry?.status === 'running') entry.liveProgress = pending;
+      ledger.noteProgress(agentId, pending);
+    }
+    return ledger;
+  }
+
+  /**
+   * 执行器在工具步或助手正文落地时调用。更新注册表条目，并把快照交给账本。
+   * 账本写失败或还没有 live run 时也不抛。
+   */
+  noteLiveProgress(agentId: string, snapshot: BackgroundSubagentProgressSnapshot): void {
+    try {
+      this.liveProgressByAgent.set(agentId, snapshot);
+      const entry = this.entries.get(agentId);
+      if (entry?.status === 'running') entry.liveProgress = snapshot;
+      getBackgroundSubagentDurableLedger()?.noteProgress(agentId, snapshot);
+    } catch (error: unknown) {
+      logger.warn(`background subagent ${agentId} live progress was not recorded:`, error);
+    }
   }
 
   private async finalizeDurable(
@@ -263,6 +296,7 @@ export class BackgroundSubagentRegistry {
   }
 
   private recordCompletion(entry: BackgroundSubagentEntry, options: BackgroundSubagentOptions): void {
+    this.liveProgressByAgent.delete(entry.agentId);
     const record = buildSubagentCompletionRecord({
       agentId: entry.agentId,
       title: entry.title,
@@ -297,8 +331,7 @@ export class BackgroundSubagentRegistry {
   getStatus(agentId: string): BackgroundSubagentHandle | undefined {
     const entry = this.entries.get(agentId);
     if (!entry) return undefined;
-    const { done: _done, ...handle } = entry;
-    return { ...handle };
+    return this.toHandle(entry);
   }
 
   /** 等待后台 subagent 完成并取结果。未知 id 返回 undefined；失败返回 undefined。 */
@@ -310,7 +343,12 @@ export class BackgroundSubagentRegistry {
 
   /** 当前所有后台 subagent 的状态快照（UI/诊断用）。 */
   list(): BackgroundSubagentHandle[] {
-    return [...this.entries.values()].map(({ done: _done, ...handle }) => ({ ...handle }));
+    return [...this.entries.values()].map((entry) => this.toHandle(entry));
+  }
+
+  private toHandle(entry: BackgroundSubagentEntry): BackgroundSubagentHandle {
+    const { done: _done, liveProgress: _liveProgress, ...handle } = entry;
+    return handle;
   }
 
   /**
@@ -329,20 +367,29 @@ export class BackgroundSubagentRegistry {
     treeId?: string;
     startedAt?: number;
     cost?: number;
+    iterations?: number;
+    toolCalls?: number;
+    lastProgress?: string;
+    /** 账本里至少有过一笔花费或进度。缺省视为什么都没记下。 */
+    progressRecorded?: boolean;
   }): SubagentCompletionRecord {
+    const interrupted = 'Background subagent was interrupted by an application restart before it finished '
+      + '(interrupted_by_restart). Its final result is unavailable; inspect the session and '
+      + 'decide whether to spawn it again.';
     const record = buildSubagentCompletionRecord({
       agentId: input.agentId,
       title: input.title,
       role: input.role,
       kind: input.completionKind,
       status: 'failed',
-      error: 'Background subagent was interrupted by an application restart before it finished '
-        + '(interrupted_by_restart). Its final result is unavailable; inspect the session and '
-        + 'decide whether to spawn it again.',
+      error: input.progressRecorded ? interrupted : `${interrupted} no progress recorded`,
       startedAt: input.startedAt,
       finishedAt: this.now(),
       failureCode: AgentFailureCode.ParentGone,
       cost: input.cost,
+      iterations: input.iterations,
+      toolCallCount: input.toolCalls,
+      lastProgress: input.lastProgress,
       sessionId: input.sessionId,
       runId: input.runId,
       treeId: input.treeId,

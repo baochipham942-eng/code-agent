@@ -62,6 +62,8 @@ export interface JevWardenStepInput {
   assistantText?: string;
   /** run 级 abort signal（审查 R2 #4）：已 aborted 直接零调用返回；否则透传给 systemOne。 */
   signal?: AbortSignal;
+  /** 转向代数活读器（审查 R3）：调判官前快照、返回后比对，不一致 = 等待期间用户已 steer，裁决丢弃。 */
+  steerEpoch?: () => number;
 }
 
 /** 动作类型只转向：纠偏注入或强制收尾交还用户；没有 deny，不碰权限链。 */
@@ -95,7 +97,7 @@ export interface JevWardenOptions {
 export interface JevWardenTraceData {
   hit?: string[];
   confirmed?: string[];
-  failOpen?: 'judge_error' | 'bad_shape';
+  failOpen?: 'judge_error' | 'bad_shape' | 'stale_steer';
   rule?: string;
   intercepted?: 'fake_done_final';
 }
@@ -185,12 +187,21 @@ class LiveJevWarden implements JevWarden {
     for (const rule of hit) questions[rule] = JEV_WARDEN_QUESTIONS[rule];
 
     let answers: JevAnswers;
+    const epochAtCall = input.steerEpoch?.();
     try {
       answers = await this.systemOne(this.buildState(input, dangerous), questions, { signal: input.signal });
     } catch (error) {
       // fail-open ponytail：见模块头。与权限线 fail-closed 相反，Warden 故障不转向。
       logger.warn(`[JevWarden] judge unavailable (${error instanceof Error ? error.message : String(error)}); fail-open, no steering`);
       this.recordTrace?.({ hit, failOpen: 'judge_error' });
+      return { kind: 'none' };
+    }
+
+    // 审查 R3：判官等待期间用户已 steer（epoch 推进）→ 旧工具步的裁决整体丢弃：
+    // 不计数、不置标、不转向，让 run 按新指令继续推理。
+    if (epochAtCall !== undefined && input.steerEpoch?.() !== epochAtCall) {
+      logger.warn('[JevWarden] verdict discarded: user steered during judge wait');
+      this.recordTrace?.({ hit, failOpen: 'stale_steer' });
       return { kind: 'none' };
     }
 

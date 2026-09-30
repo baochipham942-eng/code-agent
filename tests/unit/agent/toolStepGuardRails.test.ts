@@ -62,3 +62,16 @@ describe('runToolStepGuardRails — JevWarden 取消语义（审查 R2 #4）', (
     expect(warden.reviewToolStep.mock.calls[0][0].signal).toBe(controller.signal);
   });
 });
+
+describe('runToolStepGuardRails — steer epoch 透传（审查 R3）', () => {
+  it('warden 挂点输入带活的 steerEpoch getter，反映 ctx.control 当前值', async () => {
+    const warden = fakeWarden();
+    const ctx = fakeCtx({ steerEpoch: 3 });
+    await runToolStepGuardRails(baseArgs(ctx, warden));
+    const readEpoch = warden.reviewToolStep.mock.calls[0][0].steerEpoch;
+    expect(typeof readEpoch).toBe('function');
+    expect(readEpoch()).toBe(3);
+    (ctx.control as unknown as { steerEpoch: number }).steerEpoch = 4; // steer 后 getter 必须读到新值
+    expect(readEpoch()).toBe(4);
+  });
+});

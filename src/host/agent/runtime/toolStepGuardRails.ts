@@ -66,6 +66,7 @@ export async function runToolStepGuardRails<TToolAction>(
     stepResults,
     assistantText: args.assistantText,
     signal: ctx.control.runAbortController?.signal,
+    steerEpoch: () => ctx.control.steerEpoch,
   };
   const verdict = await warden.reviewToolStep(wardenInput);
   if (verdict.kind === 'nudge') {

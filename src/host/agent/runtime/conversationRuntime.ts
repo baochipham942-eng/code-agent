@@ -1203,6 +1203,7 @@ export class ConversationRuntime {
     // 先留住被打断那一轮已经写出来的内容，再 abort——顺序反了就等于丢字。
     const partial = await this.preserveStreamedPartial('\n\n[已被新消息打断]');
     this.ctx.control.abortInference();
+    this.ctx.control.noteSteered(); // 审查 R3：推进转向代数，等待中的判官裁决据此判过期
     const persisted = this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata, displayContent);
     this.ctx.turn.requestReinference();
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');

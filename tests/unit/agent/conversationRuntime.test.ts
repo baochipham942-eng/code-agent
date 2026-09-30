@@ -805,6 +805,14 @@ describe('ConversationRuntime', () => {
       expect(ctx.turn.needsReinference).toBe(true);
     });
 
+    it('steer 推进 control.steerEpoch（审查 R3：异步判面过期判定真源）', async () => {
+      const before = ctx.control.steerEpoch;
+
+      await runtime.steer('换个方法');
+
+      expect(ctx.control.steerEpoch).toBe(before + 1);
+    });
+
     it('用户消息自动复活 anti-spin paused goal 并释放 turn-boundary waiter', async () => {
       const goalMode = new GoalModeController({
         goal: 'finish',

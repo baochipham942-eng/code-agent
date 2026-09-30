@@ -402,3 +402,54 @@ describe('审查修复轮 R2', () => {
     expect(vi.mocked(systemOne).mock.calls[0][2]?.signal).toBe(controller.signal);
   });
 });
+
+describe('审查修复轮 R3 — 判官等待期间 steer 的旧裁决丢弃', () => {
+  it('判官等待期间发生 steer：裁决丢弃，计数/置标/收尾全部不提交（R3）', async () => {
+    let epoch = 0;
+    const systemOne: JevSystemOneCall = vi.fn()
+      // 第一次判官 await 期间用户 steer（epoch 推进）；之后 epoch 稳定
+      .mockImplementationOnce(async () => {
+        epoch += 1;
+        return { empty_spin: { noul: 0.95 } };
+      })
+      .mockResolvedValue({ empty_spin: { noul: 0.95 } });
+    const warden = createJevWarden({ systemOne, env: ENABLED_ENV });
+    const stale = await warden.reviewToolStep(step({
+      guardSignals: [SIGNAL_POLLING_REPEAT],
+      steerEpoch: () => epoch,
+    }));
+    expect(stale).toEqual({ kind: 'none' });
+    // 计数未提交：epoch 稳定后再确认，应仍算「首次」→ nudge 而非 force_wrap_up
+    const fresh = await warden.reviewToolStep(step({
+      guardSignals: [SIGNAL_POLLING_REPEAT],
+      steerEpoch: () => epoch,
+    }));
+    expect(fresh.kind).toBe('nudge');
+  });
+
+  it('判官等待期间发生 steer：fake_done 置标不提交，终局不拦（R3）', async () => {
+    let epoch = 0;
+    const systemOne: JevSystemOneCall = vi.fn().mockImplementation(async () => {
+      epoch += 1;
+      return { fake_done: { noul: 1.0 } };
+    });
+    const warden = createJevWarden({ systemOne, env: ENABLED_ENV });
+    const verdict = await warden.reviewToolStep(step({
+      stepResults: [bashResult('npm test', false, 'fail')],
+      steerEpoch: () => epoch,
+    }));
+    expect(verdict).toEqual({ kind: 'none' });
+    expect(warden.interceptFinal(false)).toBeNull();
+  });
+
+  it('判官等待期间未 steer（epoch 稳定）：裁决照常生效（R3）', async () => {
+    const epoch = 7;
+    const systemOne = judgeReturning({ irreversible_unapproved: { noul: 0.9 } });
+    const warden = createJevWarden({ systemOne, env: ENABLED_ENV });
+    const verdict = await warden.reviewToolStep(step({
+      stepResults: [bashResult('rm -rf /tmp/data')],
+      steerEpoch: () => epoch,
+    }));
+    expect(verdict.kind).toBe('force_wrap_up');
+  });
+});

@@ -22,6 +22,7 @@ import { ToolExecutor } from '../tools/toolExecutor';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager, rolePermissionPresetToMode } from '../permissions/modes';
 import type { PermissionAskResult, PermissionDeliveryOutcome } from '../../shared/contract/permission';
+import { deniedExternalEnginePermission } from '../../shared/contract/agentEngine';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
 import { getToolSearchService } from '../services/toolSearch/toolSearchService';
@@ -466,17 +467,12 @@ export class AgentOrchestrator {
     return this.runSettings.getResearchUserSettings();
   }
 
-  /**
-   * 外部引擎（ACP transport）借用同一条审批链的入口。
-   *
-   * ACP agent 把写文件/跑命令反向委托回 Neo，那些副作用必须和 Neo 自己的工具走**同一个**
-   * permission island —— 同一张审批卡、同一套用户预设、同一份账本。这里只是把已有能力
-   * 开一个公开口，不是第二套通道。
-   */
+  /** ACP 写回：会话天花板为 read_only 时直接拒绝，否则每次现读档位再走同一条审批链。 */
   requestExternalEnginePermission(
     request: Omit<PermissionRequest, 'id' | 'timestamp'>,
   ): Promise<PermissionAskResult> {
-    return this.permissions.requestPermission(request);
+    const denial = deniedExternalEnginePermission(request.type, getPermissionModeManager().getModeForSession(request.sessionId));
+    return denial ? Promise.resolve(denial) : this.permissions.requestPermission(request);
   }
 
   handlePermissionResponse(requestId: string, response: PermissionResponse, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome {

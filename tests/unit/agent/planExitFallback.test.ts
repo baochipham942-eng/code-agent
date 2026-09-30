@@ -15,6 +15,10 @@ import {
   type PlanExitFallbackNotApplicableData,
   type PlanExitFallbackState,
 } from '../../../src/host/agent/runtime/planExitFallback';
+import { settlePlanExitFallbackOnTextBreak } from '../../../src/host/agent/runtime/planExitFallbackCard';
+import { executeExitPlanMode } from '../../../src/host/tools/modules/planning/exitPlanMode';
+import type { ToolContext } from '../../../src/host/protocol/tools';
+import type { Message } from '../../../src/shared/contract';
 
 const PLAN_BODY = ['我的方案：', '1. 梳理现有接口', '2. 抽出公共层', '3. 补齐用例'].join('\n');
 
@@ -141,26 +145,31 @@ describe('planExitFallbackStep 触发前提', () => {
   });
 });
 
-describe('planExitFallbackStep runKey 幂等（③）', () => {
-  it('同一 run 第二段合格正文不再提醒，只记一次 not_applicable', () => {
+describe('planExitFallbackStep runKey 幂等（③）与 K2 合成判定', () => {
+  it('同一 run 第二段合格正文不再提醒，改判 synthesize（ADR-074 K2：宿主合成审批卡）', () => {
     const input = makeStepInput();
     expect(planExitFallbackStep(input)).toBe('reminded');
 
     const second = makeStepInput({ state: input.state });
-    expect(planExitFallbackStep(second)).toBe('not-applicable');
+    expect(planExitFallbackStep(second)).toBe('synthesize');
     expect(second.remind).not.toHaveBeenCalled();
-    expect(second.emitNotApplicable).toHaveBeenCalledTimes(1);
-    expect(second.emitNotApplicable).toHaveBeenCalledWith({
+    expect(second.emitNotApplicable).not.toHaveBeenCalled();
+    expect(second.state.synthesized).toBe(true);
+
+    // 每 run 至多合成一次：合成后再来的正文回落 not_applicable，且只记一次
+    const third = makeStepInput({ state: input.state });
+    expect(planExitFallbackStep(third)).toBe('not-applicable');
+    expect(third.emitNotApplicable).toHaveBeenCalledTimes(1);
+    expect(third.emitNotApplicable).toHaveBeenCalledWith({
       retryCount: 1,
       runKey: 'run-1',
       textLength: PLAN_BODY.length,
     });
 
-    // 第三段也不再记：not_applicable 每 run 只落一次
-    const third = makeStepInput({ state: input.state });
-    expect(planExitFallbackStep(third)).toBe('not-applicable');
-    expect(third.emitNotApplicable).not.toHaveBeenCalled();
-    expect(third.remind).not.toHaveBeenCalled();
+    const fourth = makeStepInput({ state: input.state });
+    expect(planExitFallbackStep(fourth)).toBe('not-applicable');
+    expect(fourth.emitNotApplicable).not.toHaveBeenCalled();
+    expect(fourth.remind).not.toHaveBeenCalled();
   });
 
   it('补推理返回澄清文本也走 not-applicable（不循环、不二次提醒）', () => {
@@ -202,22 +211,161 @@ describe('② 判据模块没有动作词/目标词词表', () => {
   });
 });
 
-describe('planExitFallback 写类封锁判定（④）', () => {
-  const activeCtx = () => ({ control: { planExitFallbackActive: true } });
-  const inactiveCtx = () => ({ control: { planExitFallbackActive: false } });
+describe('planExitFallback 写类封锁判定（④，K2 扩为 allowlist）', () => {
+  // 只读 Bash 判定走真 detector 成员：grep/ls/cat 开头算只读，其余（npm install、rm）算写。
+  const activeCtx = () => ({
+    control: { planExitFallbackActive: true },
+    antiPatternDetector: { isReadOnlyShellCommand: (command: string) => /^(grep|ls|cat)\b/.test(command) },
+  });
+  const inactiveCtx = () => ({ control: { planExitFallbackActive: false }, antiPatternDetector: activeCtx().antiPatternDetector });
   const planOn = () => true;
   const planOff = () => false;
+  const call = (name: string, command?: string) => ({ name, arguments: command === undefined ? {} : { command } });
 
-  it.each(['Write', 'write', 'Edit', 'Append', 'Bash'])('补推理中 %s 在 admission 层拒绝', (toolName) => {
-    expect(isWriteBlockedDuringPlanExitFallback(activeCtx(), planOn, toolName)).toBe(true);
+  it.each([
+    ['Write', call('Write')],
+    ['小写 write', call('write')],
+    ['Edit', call('Edit')],
+    ['Append', call('Append')],
+    ['写文件型 Bash', call('Bash', 'npm install left-pad')],
+    ['删目录 Bash', call('Bash', 'rm -rf /tmp/x')],
+    ['MCP 未知工具（fail closed）', call('mcp__github__create_issue')],
+    ['MCP 写工具', call('mcp__fs__write_file')],
+    ['连接器写工具', call('mail')],
+    ['子代理 spawn', call('spawn_agent')],
+    ['Task 子代理', call('Task')],
+    ['产物生成器', call('ppt_generate')],
+  ])('补推理中 %s 在 admission 层拒绝', (_label, toolCall) => {
+    expect(isWriteBlockedDuringPlanExitFallback(activeCtx(), planOn, toolCall)).toBe(true);
   });
 
-  it.each(['Read', 'Grep', 'exit_plan_mode', 'PlanMode'])('%s 不在封锁名单', (toolName) => {
-    expect(isWriteBlockedDuringPlanExitFallback(activeCtx(), planOn, toolName)).toBe(false);
+  it.each([
+    ['Read', call('Read')],
+    ['Grep', call('Grep')],
+    ['只读 Bash', call('Bash', 'grep -r foo src/')],
+    ['只读 bash 小写', call('bash', 'ls -la')],
+    ['退出工具 exit_plan_mode', call('exit_plan_mode')],
+    ['退出工具 PlanMode', call('PlanMode')],
+    ['提问工具 AskUserQuestion', call('AskUserQuestion')],
+  ])('%s 放行', (_label, toolCall) => {
+    expect(isWriteBlockedDuringPlanExitFallback(activeCtx(), planOn, toolCall)).toBe(false);
   });
 
   it('旗标未置或 plan mode 已退出时不封锁', () => {
-    expect(isWriteBlockedDuringPlanExitFallback(inactiveCtx(), planOn, 'Write')).toBe(false);
-    expect(isWriteBlockedDuringPlanExitFallback(activeCtx(), planOff, 'Write')).toBe(false);
+    expect(isWriteBlockedDuringPlanExitFallback(inactiveCtx(), planOn, { name: 'Write', arguments: {} })).toBe(false);
+    expect(isWriteBlockedDuringPlanExitFallback(activeCtx(), planOff, { name: 'Write', arguments: {} })).toBe(false);
+  });
+});
+
+describe('settlePlanExitFallbackOnTextBreak 合成卡（K2）', () => {
+  const PLAN = '方案：\n1. 甲\n2. 乙';
+
+  type SettleInput = Parameters<typeof settlePlanExitFallbackOnTextBreak>[0];
+
+  function makeSettleDeps(autoApprovePlan = false) {
+    const persisted: Message[] = [];
+    const record = vi.fn();
+    const onEvent = vi.fn();
+    const input = {
+      ctx: {
+        control: { isCancelled: false, activatePlanExitFallback: vi.fn() },
+        autoApprovePlan,
+        onEvent,
+        turnTrace: { record },
+      },
+      assembly: {
+        addAndPersistMessage: async (message: Message) => { persisted.push(message); },
+        generateId: () => 'msg-card-1',
+      },
+      remind: vi.fn(),
+    } as unknown as SettleInput;
+    return { input, persisted, record, onEvent };
+  }
+
+  /** 预算已花（首轮已提醒）的 state：一次调用直达 synthesize 分支。 */
+  const spentState = () => ({ ...createPlanExitFallbackState(), runKey: 'run-7', spent: true });
+
+  const settleOver = (input: SettleInput, content: string, state = spentState()) => settlePlanExitFallbackOnTextBreak({
+    ...input,
+    state,
+    response: { type: 'text', content },
+    planModeActive: true,
+    forcedFinalPass: false,
+    runKey: 'run-7',
+  });
+
+  async function modelExitResult(plan: string): Promise<{ output: string; meta: Record<string, unknown> }> {
+    const ctx = {
+      sessionId: 's',
+      workingDir: '/tmp',
+      abortSignal: new AbortController().signal,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      emit: vi.fn(),
+      planMode: { isActive: () => true, enter: vi.fn(), exit: vi.fn() },
+    } as unknown as ToolContext;
+    const result = await executeExitPlanMode({ plan }, ctx, async () => ({ allow: true }));
+    if (!result.ok) throw new Error('model exit failed');
+    return { output: result.output, meta: result.meta as Record<string, unknown> };
+  }
+
+  it('落卡与 executeExitPlanMode 同形（output/metadata/steps 全套），source=synthetic_text', async () => {
+    const { input, persisted, record, onEvent } = makeSettleDeps();
+    const state = spentState();
+
+    await expect(settleOver(input, PLAN, state)).resolves.toBe('synthesize');
+
+    expect(persisted).toHaveLength(1);
+    const cardMessage = persisted[0];
+    expect(cardMessage.role).toBe('assistant');
+    expect(cardMessage.content).toBe('');
+    const toolCall = cardMessage.toolCalls![0];
+    const result = toolCall.result!;
+    const modelExit = await modelExitResult(PLAN);
+    expect(toolCall.id).toBe('synthetic-plan-run-7');
+    expect(toolCall.name).toBe('exit_plan_mode');
+    expect(toolCall.arguments).toEqual({ plan: PLAN });
+    expect(result.toolCallId).toBe('synthetic-plan-run-7');
+    expect(result.success).toBe(true);
+    expect(result.output).toBe(modelExit.output);
+    expect(result.metadata?.requiresUserConfirmation).toBe(modelExit.meta.requiresUserConfirmation);
+    expect(result.metadata?.confirmationType).toBe(modelExit.meta.confirmationType);
+    expect(result.metadata?.plan).toBe(PLAN);
+    const approval = result.metadata?.planApproval as Record<string, unknown>;
+    const modelApproval = modelExit.meta.planApproval as Record<string, unknown>;
+    // 键集完全一致（source 两边都带），差别只有 source 的取值
+    expect(Object.keys(approval).sort()).toEqual(Object.keys(modelApproval).sort());
+    expect(approval.source).toBe('synthetic_text');
+    expect(modelApproval.source).toBe('model_exit');
+    expect(approval.steps).toEqual(modelApproval.steps);
+    expect(approval.originalPlan).toBe(PLAN);
+    // trace + message 事件
+    expect(record).toHaveBeenCalledWith('plan_exit_fallback_synthesized', {
+      runKey: 'run-7',
+      retryCount: 1,
+      cardId: 'synthetic-plan-run-7',
+      source: 'synthetic_text',
+      textLength: PLAN.length,
+    });
+    expect(onEvent).toHaveBeenCalledWith({ type: 'message', data: cardMessage });
+    // 合成后同 run 再来的结构化正文不再合成（每 run 至多一张）
+    await expect(settleOver(input, PLAN, state)).resolves.toBe('not-applicable');
+    expect(persisted).toHaveLength(1);
+  });
+
+  it('正文逐字保留：CJK、代码围栏、行尾换行', async () => {
+    const body = '方案如下：\n1. 先读 `a.ts`\n2. 再跑：\n```bash\nnpm test\n```\n';
+    const { input, persisted } = makeSettleDeps();
+    await expect(settleOver(input, body)).resolves.toBe('synthesize');
+    const result = persisted[0].toolCalls![0].result!;
+    expect(result.metadata?.plan).toBe(body);
+    expect((result.metadata?.planApproval as { originalPlan: string }).originalPlan).toBe(body);
+  });
+
+  it('autoApprovePlan=true：不落卡、不记 synthesized trace（维持今日语义）', async () => {
+    const { input, persisted, record, onEvent } = makeSettleDeps(true);
+    await expect(settleOver(input, PLAN)).resolves.toBe('synthesize');
+    expect(persisted).toHaveLength(0);
+    expect(record).not.toHaveBeenCalledWith('plan_exit_fallback_synthesized', expect.anything());
+    expect(onEvent).not.toHaveBeenCalled();
   });
 });

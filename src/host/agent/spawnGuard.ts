@@ -224,7 +224,7 @@ function getSpawnGuardStatePath(sessionDir: string, scope?: SwarmRunScope): stri
 
 export type OnAgentCompleteCallback = (agent: ManagedAgent) => void;
 
-function isLiveRunningStatus(status: ManagedAgentStatus): boolean {
+export function isLiveRunningStatus(status: ManagedAgentStatus | string | undefined): boolean {
   return status === 'running' || status === 'running-recovered';
 }
 

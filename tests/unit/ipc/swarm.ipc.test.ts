@@ -190,6 +190,8 @@ describe('swarm.ipc run-scoped control plane', () => {
     coordinatorB.canReceiveMessage.mockReturnValue(true);
     coordinatorA.sendMessage.mockReturnValue(true);
     coordinatorB.sendMessage.mockReturnValue(true);
+    coordinatorA.getTaskDefinition.mockReset();
+    coordinatorB.getTaskDefinition.mockReset();
     coordinatorA.abortTask.mockReturnValue(false);
     coordinatorB.abortTask.mockReturnValue(false);
     coordinatorRegistryState.getByRun.mockImplementation((ref: { sessionId: string; runId: string }) => {
@@ -431,6 +433,26 @@ describe('swarm.ipc run-scoped control plane', () => {
     );
   });
 
+  // N-MEMBER-INPUT-DROP（PR#2153 复审）：重连后仍在跑（running-recovered）的成员照样走 SpawnGuard 回退，
+  // 不能因为只认 'running' 被判成已收工拒收。
+  it('delivers through SpawnGuard to a running-recovered member instead of rejecting it as finished', async () => {
+    coordinatorA.canReceiveMessage.mockReturnValue(false);
+    coordinatorA.sendMessage.mockResolvedValue(false);
+    spawnGuardState.get.mockReturnValue({ status: 'running-recovered' });
+    spawnGuardState.sendMessage.mockReturnValue(true);
+
+    const result = await handler('swarm:send-user-message')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      message: '重连后补一句',
+      timestamp: 778,
+    } as never);
+
+    expect(result).toEqual({ delivered: true, persisted: true });
+    expect(spawnGuardState.sendMessage).toHaveBeenCalled();
+  });
+
   // N-SUBAGENT-INPUT：改道时投给成员的 message 带指令行，账本/落库只收 displayMessage 原话
   it('persists and ledgers displayMessage while delivering the full message to the agent', async () => {
     const result = await handler('swarm:send-user-message')({}, {
@@ -453,6 +475,43 @@ describe('swarm.ipc run-scoped control plane', () => {
       content: '换成按季度汇总',
     }));
     expect(teammateState.onUserMessage).toHaveBeenCalledWith(scopeA, agentA, '换成按季度汇总', expect.anything());
+  });
+
+  it('does not report delivered when an external-engine member cannot read follow-up input', async () => {
+    coordinatorA.getTaskDefinition.mockReturnValue({
+      id: agentA,
+      role: 'researcher',
+      engine: 'codex_cli',
+      task: 'review the draft',
+      tools: [],
+    });
+
+    const result = await handler('swarm:send-user-message')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      message: 'add a footnote',
+    } as never) as {
+      delivered: boolean;
+      persisted: boolean;
+      failure?: { code: string; engineLabel?: string; message: string };
+    };
+
+    expect(result).toMatchObject({
+      delivered: false,
+      persisted: false,
+      failure: {
+        code: 'external_engine',
+        engineLabel: 'Codex CLI',
+      },
+    });
+    expect(result.failure?.message).toContain('Codex CLI');
+    expect(result.failure?.message).toContain("can't take new input while running");
+    expect(result.failure?.message).toContain('after it finishes');
+    expect(coordinatorA.sendMessage).not.toHaveBeenCalled();
+    expect(spawnGuardState.sendMessage).not.toHaveBeenCalled();
+    expect(sessionManagerState.addMessageToSession).not.toHaveBeenCalled();
+    expect(teammateState.onUserMessage).not.toHaveBeenCalled();
   });
 
   it('does not display/persist a phantom success for an unavailable target', async () => {

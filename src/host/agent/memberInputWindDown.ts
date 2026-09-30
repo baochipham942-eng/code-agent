@@ -25,7 +25,7 @@ function messageKey(message: AgentMessage): string {
   return `${message.timestamp}\0${message.from}\0${message.payload}`;
 }
 
-function peekMemberInputQueues(agentId: string | undefined, scope?: SwarmRunScope): AgentMessage[] {
+export function peekMemberInputQueues(agentId: string | undefined, scope?: SwarmRunScope): AgentMessage[] {
   if (!agentId) return [];
   const guardMessages = getSpawnGuard().peekMessages(agentId);
   const coordinator = getParallelAgentCoordinatorRegistry().get(scope ?? LEGACY_COORDINATOR_SCOPE);

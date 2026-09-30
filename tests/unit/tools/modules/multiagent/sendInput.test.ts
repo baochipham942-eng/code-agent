@@ -10,11 +10,13 @@ const getSpawnGuardMock = vi.fn();
 const getCoordinatorMock = vi.fn();
 
 vi.mock('../../../../../src/host/agent/spawnGuard', () => ({
-  getSpawnGuard: () => getSpawnGuardMock(),
+  // peekMessages：send_input 如实上报已完成成员残留补话时会查队列（N-MEMBER-INPUT-DROP）
+  getSpawnGuard: () => ({ peekMessages: () => [], ...getSpawnGuardMock() }),
 }));
 
 vi.mock('../../../../../src/host/agent/parallelAgentCoordinator', () => ({
   getParallelAgentCoordinator: () => getCoordinatorMock(),
+  getParallelAgentCoordinatorRegistry: () => ({ get: () => getCoordinatorMock() }),
 }));
 
 import { sendInputModule } from '../../../../../src/host/tools/modules/multiagent/sendInput';
@@ -88,7 +90,7 @@ describe('send_input behavior', () => {
 
   it('SpawnGuard miss → ParallelAgent fallback hit', async () => {
     getSpawnGuardMock.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), sendMessage: vi.fn() });
-    getCoordinatorMock.mockReturnValue({ sendMessage: vi.fn().mockReturnValue(true) });
+    getCoordinatorMock.mockReturnValue({ canReceiveMessage: () => true, getTaskDefinition: () => undefined, sendMessage: vi.fn().mockReturnValue(true) });
     const handler = await sendInputModule.createHandler();
     const result = await handler.execute(
       { agentId: 'parallel-x', message: 'hi' },
@@ -105,7 +107,7 @@ describe('send_input behavior', () => {
 
   it('SpawnGuard miss + ParallelAgent miss → NOT_FOUND', async () => {
     getSpawnGuardMock.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), sendMessage: vi.fn() });
-    getCoordinatorMock.mockReturnValue({ sendMessage: vi.fn().mockReturnValue(false) });
+    getCoordinatorMock.mockReturnValue({ canReceiveMessage: () => false, sendMessage: vi.fn().mockReturnValue(false) });
     const handler = await sendInputModule.createHandler();
     const result = await handler.execute(
       { agentId: 'missing', message: 'hi' },

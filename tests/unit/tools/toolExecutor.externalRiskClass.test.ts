@@ -112,7 +112,7 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
   it('carries plugin and subagent attribution without changing the approval outcome', async () => {
     registerPluginToolOrigin('mail_send', 'example.plugin');
     try {
-      const requestPermission = vi.fn(async () => false);
+      const requestPermission = vi.fn(async (_request: unknown) => false);
       const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
       executor.setAuditEnabled(false);
 
@@ -160,7 +160,7 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
 
   it('host Bash carries no pluginId while another tool is attributed', async () => {
     registerPluginToolOrigin('mail_send', 'example.plugin');
-    const requestPermission = vi.fn(async () => false);
+    const requestPermission = vi.fn(async (_request: unknown) => false);
     try {
       const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
       executor.setAuditEnabled(false);
@@ -205,7 +205,7 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
       readOnly?: boolean;
     }): Promise<RunView> {
       if (options.attributed) registerPluginToolOrigin(options.tool, 'example.plugin');
-      const requestPermission = vi.fn(async () => false);
+      const requestPermission = vi.fn(async (_request: unknown) => false);
       const executor = new ToolExecutor({
         requestPermission,
         workingDirectory: '/tmp/workbench',

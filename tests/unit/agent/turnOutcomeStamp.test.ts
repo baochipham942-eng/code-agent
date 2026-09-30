@@ -418,6 +418,31 @@ describe('turn outcome stamp', () => {
     expect(outcome.evidenceProblems).toEqual([`DELIVERABLE_NOT_ON_DISK: ${path.join(traceRoot, 'ghost.md')}`]);
   });
 
+  it('stamps DELIVERABLE_NONE_PRODUCED from the live detector when a requested file was never written', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const recorder = new TurnTraceRecorder('none-produced-live', traceRoot);
+    const messages = [
+      message({ content: '请生成一个 pdf 报告' }),
+      message({
+        id: 'script-only',
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'write-script', name: 'Write', arguments: { file_path: 'build_report.py' } }],
+        toolResults: [{
+          toolCallId: 'write-script',
+          success: true,
+          output: 'ok',
+          metadata: { outputPath: 'build_report.py' },
+        }],
+      }),
+      message({ id: 'final', role: 'assistant', content: '脚本写好了，还没跑。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceProblems).toContain('DELIVERABLE_NONE_PRODUCED: pdf');
+  });
+
   it('records no-produced requests as self_claimed after the repair budget, with an honest final note', async () => {
     mkdirSync(traceRoot, { recursive: true });
     const recorder = new TurnTraceRecorder('none-produced', traceRoot);

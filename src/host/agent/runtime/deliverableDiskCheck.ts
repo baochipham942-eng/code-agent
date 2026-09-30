@@ -533,6 +533,30 @@ function appendUndeliveredNote(content: string, missing: readonly DeliverableMis
   ].join('\n');
 }
 
+/**
+ * 声明/声称都为空、且本 run 没写出非脚本文件时，把“请求了但没产出”并入同一 missing 账。
+ * 收尾闸和印章的现场核对共用这一处，避免闸被跳过时问题码丢失。
+ */
+export function appendRequestedNoneProduced(
+  check: DeliverableDiskCheckResult,
+  input: {
+    messages: readonly Message[];
+    workingDirectory: string;
+    nudgeManager?: { getModifiedFilesSince(timestamp: number): string[] };
+  },
+): DeliverableDiskCheckResult {
+  if (check.claims.length > 0 || check.missing.some((item) => item.kind === 'none_produced')) return check;
+  const requestedFormat = requestedDeliverableFormat(input.messages);
+  if (!requestedFormat || runWroteNonScriptFile(input.messages, input.workingDirectory, input.nudgeManager)) {
+    return check;
+  }
+  const claim: DeliverableClaim = { claimed: requestedFormat, resolved: '', source: 'inferred' };
+  return {
+    ...check,
+    missing: [...check.missing, { claim, kind: 'none_produced', requestedFormat }],
+  };
+}
+
 export type DeliverableDiskCheckGateResult =
   | { action: 'pass'; content: string; missing: DeliverableMissing[]; check: DeliverableDiskCheckResult }
   | { action: 'repair'; prompt: string; missing: DeliverableMissing[]; check: DeliverableDiskCheckResult };
@@ -564,21 +588,14 @@ export async function runDeliverableDiskCheckGate(input: {
     finalText: input.finalText,
     nudgeManager: input.nudgeManager,
   });
-  let check = await checkDeliverablesOnDisk(
-    claims,
-    input.workingDirectory,
-    { messages: input.messages },
+  const check = appendRequestedNoneProduced(
+    await checkDeliverablesOnDisk(claims, input.workingDirectory, { messages: input.messages }),
+    {
+      messages: input.messages,
+      workingDirectory: input.workingDirectory,
+      nudgeManager: input.nudgeManager,
+    },
   );
-  // 用户明确要文件、但模型没有声明/声称任何路径且本 run 没写出非脚本文件：
-  // 把“什么都没产出”并入同一 missing 账，复用既有补轮和最终说明。
-  const requestedFormat = check.claims.length === 0 ? requestedDeliverableFormat(input.messages) : undefined;
-  if (requestedFormat && !runWroteNonScriptFile(input.messages, input.workingDirectory, input.nudgeManager)) {
-    const claim: DeliverableClaim = { claimed: requestedFormat, resolved: '', source: 'inferred' };
-    check = {
-      ...check,
-      missing: [...check.missing, { claim, kind: 'none_produced', requestedFormat }],
-    };
-  }
   const settled = check.missing.length === 0 || input.repairsUsed >= TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS;
   if (settled) input.artifact?.setLastDeliverableCheck?.(check, Date.now());
   if (check.missing.length === 0) return { action: 'pass', content: input.finalText, missing: [], check };

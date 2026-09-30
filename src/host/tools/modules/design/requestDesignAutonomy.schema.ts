@@ -41,4 +41,7 @@ This is a PRE-AUTHORIZATION of spend, not free money: the user sees and approves
   },
   category: 'planning',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'write', expression: 'resource(design, autonomy)' },
+  ],
 };

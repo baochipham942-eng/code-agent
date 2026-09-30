@@ -247,6 +247,8 @@ export interface FeishuChannelConfig extends ChannelPrivacyConfig {
   outboundAllowlist?: string[];
   /** 已完成入站配对的发送者 open_id；与账号配置一同持久化 */
   inboundAllowlist?: string[];
+  /** 可直接处理审批卡的机器人 owner open_id（可选；配对用户同样允许） */
+  ownerOpenId?: string;
   /** 群聊入站策略，默认 allowlist */
   groupAccessMode?: 'all_members' | 'allowlist' | 'disabled';
   /** 入站准入控制消息语言，默认 zh-CN */
@@ -278,6 +280,8 @@ export interface LarkChannelConfig extends ChannelPrivacyConfig {
   outboundAllowlist?: string[];
   /** 已完成入站配对的发送者 open_id；与账号配置一同持久化 */
   inboundAllowlist?: string[];
+  /** 可直接处理审批卡的机器人 owner open_id（可选；配对用户同样允许） */
+  ownerOpenId?: string;
   /** 群聊入站策略，默认 allowlist */
   groupAccessMode?: 'all_members' | 'allowlist' | 'disabled';
   /** 入站准入控制消息语言，默认 zh-CN */

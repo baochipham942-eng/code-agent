@@ -18,6 +18,7 @@ import { getChannelManager } from '../channelManager';
 import { getSessionManager } from '../../services';
 import { getTaskManager } from '../../task';
 import { createLogger } from '../../services/infra/logger';
+import { getAuditLogger } from '../../security/auditLogger';
 import type { SendMessageResult } from '../../../shared/contract/channel';
 import type { PermissionResponse } from '../../../shared/contract/permission';
 
@@ -42,6 +43,13 @@ interface FeishuCardApi {
     buttons?: Array<{ text: string; value: string }>,
   ): Promise<SendMessageResult>;
   updateCard(messageId: string, text: string): Promise<SendMessageResult>;
+}
+
+interface CardActionPayload {
+  value?: string;
+  operatorOpenId?: string;
+  chatId?: string;
+  verificationConfigured?: boolean;
 }
 
 /**
@@ -129,8 +137,8 @@ export class ApprovalFeishuRelay {
     approvalParkEvents.on('resolved', (event) => {
       void this.onResolved(event);
     });
-    getChannelManager().on('card_action', (_accountId: string, payload: { value?: string }) => {
-      void this.onCardAction(payload?.value);
+    getChannelManager().on('card_action', (accountId: string, payload: CardActionPayload) => {
+      void this.onCardAction(accountId, payload);
     });
     logger.info('Approval → Feishu relay started');
   }
@@ -189,9 +197,48 @@ export class ApprovalFeishuRelay {
     }
   }
 
-  private async onCardAction(value: string | undefined): Promise<void> {
-    const decoded = decodeApprovalValue(value);
+  private async onCardAction(accountId: string, payload: CardActionPayload): Promise<void> {
+    const decoded = decodeApprovalValue(payload?.value);
     if (!decoded) return; // 非审批按钮：忽略
+
+    // Channel callback handlers are the first credential gate. Keep the relay fail-closed
+    // when a test adapter or another ingress path explicitly marks credentials as absent.
+    if (payload.verificationConfigured === false) {
+      this.recordRejectedClick(accountId, decoded, payload.operatorOpenId, undefined, 'verification credential missing');
+      return;
+    }
+
+    const target = await resolveFeishuTarget(decoded.sessionId);
+    if (target?.accountId !== accountId) {
+      this.recordRejectedClick(accountId, decoded, payload.operatorOpenId, payload.chatId, 'account mismatch');
+      await this.sendUnauthorizedReply(accountId, payload.chatId);
+      return;
+    }
+
+    const account = getChannelManager().getAccount(accountId);
+    const config = account?.config;
+    const accountRecord = account as unknown as Record<string, unknown> | undefined;
+    const configRecord = config as Record<string, unknown> | undefined;
+    const allowlist = config && (config.type === 'feishu' || config.type === 'lark')
+      ? config.inboundAllowlist ?? []
+      : [];
+    const ownerOpenId = config && (config.type === 'feishu' || config.type === 'lark')
+      ? (typeof config.ownerOpenId === 'string' ? config.ownerOpenId : undefined)
+        ?? (typeof configRecord?.ownerId === 'string' ? configRecord.ownerId : undefined)
+        ?? (typeof accountRecord?.ownerOpenId === 'string' ? accountRecord.ownerOpenId : undefined)
+        ?? (typeof accountRecord?.ownerId === 'string' ? accountRecord.ownerId : undefined)
+        ?? (typeof accountRecord?.owner === 'string' ? accountRecord.owner : undefined)
+      : undefined;
+    const operatorAllowed = Boolean(
+      payload.operatorOpenId
+      && (allowlist.includes(payload.operatorOpenId) || payload.operatorOpenId === ownerOpenId),
+    );
+    if (!operatorAllowed) {
+      this.recordRejectedClick(accountId, decoded, payload.operatorOpenId, payload.chatId, 'operator not paired or owner');
+      await this.sendUnauthorizedReply(accountId, payload.chatId ?? target.chatId);
+      return;
+    }
+
     // 停车的 run 仍活着（24h 兜底），orchestrator 应在 registry 里。找不到 = 已收尾/孤儿，
     // 静默 no-op；即便找到，resolveParkedApproval 也是 repo 裁决幂等的。
     const orchestrator = getTaskManager().getOrchestrator(decoded.sessionId);
@@ -202,6 +249,44 @@ export class ApprovalFeishuRelay {
       return;
     }
     orchestrator.resolveParkedApproval(decoded.approvalId, decoded.resolution);
+  }
+
+  private async sendUnauthorizedReply(accountId: string, chatId: string | undefined): Promise<void> {
+    if (!chatId) return;
+    const channel = getChannelManager().getActiveChannel(accountId);
+    if (!channel || typeof channel.sendMessage !== 'function') return;
+    try {
+      await channel.sendMessage({ chatId, content: '无权批准' });
+    } catch (err) {
+      logger.warn('Failed to reply to unauthorised Feishu approval click', err);
+    }
+  }
+
+  private recordRejectedClick(
+    accountId: string,
+    decoded: DecodedApprovalValue,
+    operatorOpenId: string | undefined,
+    chatId: string | undefined,
+    reason: string,
+  ): void {
+    try {
+      getAuditLogger().logSecurityIncident({
+        sessionId: decoded.sessionId,
+        toolName: 'feishu_approval',
+        incident: 'Unauthorised Feishu approval attempt',
+        details: {
+          accountId,
+          approvalId: decoded.approvalId,
+          resolution: decoded.resolution,
+          operatorOpenId,
+          chatId,
+          reason,
+        },
+        riskLevel: 'high',
+      });
+    } catch (err) {
+      logger.warn('Failed to audit rejected Feishu approval click', err);
+    }
   }
 }
 

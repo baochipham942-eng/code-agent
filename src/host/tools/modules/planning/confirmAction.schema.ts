@@ -61,4 +61,7 @@ Example:
   },
   category: 'planning',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(session, confirm)' },
+  ],
 };

@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { en, zh } from '../../../src/renderer/i18n';
 import {
   SkillsInstalledTab,
   overrideToSelectValue,
@@ -94,7 +95,65 @@ describe('SkillsInstalledTab 项目覆盖渲染', () => {
     skill.officialConflict = { winnerSource: 'plugin', blockedSkills: [{ source: 'project', basePath: '/project/skills/shadowed' }] };
     const html = render([skill]);
     expect(html).toContain('已被同名官方技能覆盖，未加载');
-    expect(html).toContain('shadowed/SKILL.md');
+    expect(html).toContain('项目技能 /project/skills/shadowed/SKILL.md');
+    expect(html).not.toMatch(/>shadowed\/SKILL\.md</);
     expect(html).toContain('请修改上述 SKILL.md 的 name 和目录名后重新加载');
+  });
+
+  it('用户、项目、技能库各显示来源标签和完整路径，不再只剩目录末段', () => {
+    const skill = makeSkill('xlsx', null);
+    skill.source = 'plugin';
+    skill.officialConflict = {
+      winnerSource: 'plugin',
+      blockedSkills: [
+        { source: 'user', basePath: '/opt/skills/user/xlsx/' },
+        { source: 'project', basePath: '/opt/skills/project/xlsx' },
+        { source: 'library', basePath: '/opt/skills/library/pack/xlsx' },
+      ],
+    };
+    const html = render([skill]);
+    expect(html).toContain('用户技能 /opt/skills/user/xlsx/SKILL.md');
+    expect(html).toContain('项目技能 /opt/skills/project/xlsx/SKILL.md');
+    expect(html).toContain('技能库 /opt/skills/library/pack/xlsx/SKILL.md');
+    expect(html).not.toMatch(/>xlsx\/SKILL\.md</);
+    expect(html).toContain('请修改上述 SKILL.md 的 name 和目录名后重新加载');
+  });
+
+  it('Windows 路径保留反斜杠并去掉末尾分隔符', () => {
+    const skill = makeSkill('xlsx', null);
+    skill.source = 'plugin';
+    skill.officialConflict = {
+      winnerSource: 'plugin',
+      blockedSkills: [{ source: 'user', basePath: 'C:\\skills\\user\\xlsx\\' }],
+    };
+    const html = render([skill]);
+    expect(html).toContain('用户技能 C:\\skills\\user\\xlsx\\SKILL.md');
+    expect(html).toContain('title="C:\\skills\\user\\xlsx\\SKILL.md"');
+    expect(html).not.toContain('xlsx/SKILL.md');
+    expect(html).not.toContain('xlsx\\\\SKILL.md');
+  });
+
+  it('user/project/library 以外的来源回退为原始 source 字符串', () => {
+    const skill = makeSkill('xlsx', null);
+    skill.source = 'builtin';
+    skill.officialConflict = {
+      winnerSource: 'builtin',
+      blockedSkills: [{ source: 'cloud', basePath: '/opt/skills/cloud/xlsx' }],
+    };
+    const html = render([skill]);
+    expect(html).toContain('cloud /opt/skills/cloud/xlsx/SKILL.md');
+    expect(html).not.toMatch(/>xlsx\/SKILL\.md</);
+  });
+});
+
+describe('officialConflictSources i18n', () => {
+  it('zh 与 en 都有 user、project、library 三条非空且互不相同的来源文案', () => {
+    const zhSources = zh.settings.skills.installed.officialConflictSources;
+    const enSources = en.settings.skills.installed.officialConflictSources;
+    for (const source of ['user', 'project', 'library'] as const) {
+      expect(zhSources[source].length).toBeGreaterThan(0);
+      expect(enSources[source].length).toBeGreaterThan(0);
+      expect(enSources[source]).not.toBe(zhSources[source]);
+    }
   });
 });

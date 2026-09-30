@@ -59,4 +59,7 @@ Parameters:
   },
   category: 'multiagent',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(agent, teammate)' },
+  ],
 };

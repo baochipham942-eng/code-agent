@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execFile } from 'child_process';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import os from 'os';
+import { promisify } from 'util';
 import type { MemoryRecord } from '../../../src/host/services/core/repositories';
+
+const execFileAsync = promisify(execFile);
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
@@ -537,6 +541,92 @@ The left menu should keep common daily actions visible.
     expect(packed.items[0].scoreReasons.some((reason) => reason.startsWith('query-match'))).toBe(true);
     expect(packed.block).toContain('<memory-pack>');
     expect(packed.totalChars).toBeLessThanOrEqual(180);
+  });
+
+  it('matches project memory across worktrees of the same repo (N-MEM-PROJECTKEY A 方案)', async () => {
+    // 爸 2026-09-30 拍板 A：只合并记忆——同仓 worktree 共享记忆分区，
+    // 存储仍写原始 projectPath，匹配按 git-common-dir 仓库身份键。
+    const repoDir = path.join(tmpDir, 'repo');
+    const worktreeDir = path.join(tmpDir, 'repo-wt');
+    const unrelatedDir = path.join(tmpDir, 'repo-unrelated');
+    await fs.mkdir(repoDir, { recursive: true });
+    await fs.mkdir(unrelatedDir, { recursive: true });
+    await execFileAsync('git', ['init', '-q'], { cwd: repoDir });
+    await execFileAsync('git', ['-c', 'user.email=mem@test', '-c', 'user.name=mem', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: repoDir });
+    await execFileAsync('git', ['worktree', 'add', '-q', '--detach', worktreeDir], { cwd: repoDir });
+    await execFileAsync('git', ['init', '-q'], { cwd: unrelatedDir });
+
+    const db = {
+      listMemories: vi.fn(() => [
+        record({
+          id: 'mem-worktree-shared',
+          content: 'Repo-wide deploy rule shared by every worktree.',
+          summary: 'worktree shared rule',
+          projectPath: repoDir,
+          metadata: {
+            memoryEntry: {
+              schemaVersion: 2,
+              id: 'mem_entry_worktree_shared',
+              status: 'active',
+              kind: 'project',
+              scope: 'project',
+              sourceOfTruth: 'db_memory',
+              evidence: [{ memoryId: 'mem-worktree-shared' }],
+            },
+          },
+        }),
+      ] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn(),
+    };
+
+    const fromWorktree = await packMemoryEntries({ projectPath: worktreeDir, maxItems: 5 }, db);
+    expect(fromWorktree.items.map((item) => item.entryId)).toContain('mem_entry_worktree_shared');
+    expect(fromWorktree.items[0].scoreReasons).toContain('project-match');
+
+    const fromUnrelated = await packMemoryEntries({ projectPath: unrelatedDir, maxItems: 5 }, db);
+    expect(fromUnrelated.items.map((item) => item.entryId)).not.toContain('mem_entry_worktree_shared');
+  });
+
+  it('does not leak project memory between subdirectories of one repo (PR#2177 ai-review Important)', async () => {
+    // 同仓子目录（monorepo packages/a 与 b）不是 worktree：记忆分区必须隔离，
+    // 否则 A 项目的记忆会以 project-match 加分注入 B 项目的提示词。
+    const repoDir = path.join(tmpDir, 'mono-pack');
+    const pkgA = path.join(repoDir, 'packages', 'a');
+    const pkgB = path.join(repoDir, 'packages', 'b');
+    await fs.mkdir(pkgA, { recursive: true });
+    await fs.mkdir(pkgB, { recursive: true });
+    await execFileAsync('git', ['init', '-q'], { cwd: repoDir });
+
+    const db = {
+      listMemories: vi.fn(() => [
+        record({
+          id: 'mem-pkg-a',
+          content: 'Package A deploy rule.',
+          summary: 'pkg a rule',
+          projectPath: pkgA,
+          metadata: {
+            memoryEntry: {
+              schemaVersion: 2,
+              id: 'mem_entry_pkg_a',
+              status: 'active',
+              kind: 'project',
+              scope: 'project',
+              sourceOfTruth: 'db_memory',
+              evidence: [{ memoryId: 'mem-pkg-a' }],
+            },
+          },
+        }),
+      ] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn(),
+    };
+
+    const fromA = await packMemoryEntries({ projectPath: pkgA, maxItems: 5 }, db);
+    expect(fromA.items.map((item) => item.entryId)).toContain('mem_entry_pkg_a');
+
+    const fromB = await packMemoryEntries({ projectPath: pkgB, maxItems: 5 }, db);
+    expect(fromB.items.map((item) => item.entryId)).not.toContain('mem_entry_pkg_a');
   });
 
   it('merges BM25 recall beyond the recent-window into pack candidates (roadmap 2.5)', async () => {

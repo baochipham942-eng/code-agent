@@ -62,4 +62,7 @@ export const taskSchema: ToolSchema = {
   },
   category: 'multiagent',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'write', expression: 'resource(agent, runtime)' },
+  ],
 };

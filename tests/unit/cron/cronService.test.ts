@@ -905,9 +905,8 @@ describe('N-CRON-BUDGET-EXPOSE maxRuns run-count cap', () => {
   }
 
   function maxRunsEventCalls(jobId: string) {
-    return automationState.recordEvent.mock.calls.filter(
-      ([input]) => (input as { eventId?: string }).eventId === `max_runs:${jobId}`,
-    );
+    const calls = automationState.recordEvent.mock.calls as unknown as Array<[{ eventId?: string }]>;
+    return calls.filter(([input]) => input.eventId === `max_runs:${jobId}`);
   }
 
   it('runs a maxRuns:2 job twice, disables it with max_runs_reached, and posts one inbox notice', async () => {

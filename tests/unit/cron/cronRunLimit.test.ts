@@ -31,48 +31,139 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => automationState,
 }));
 
-import { applyRunToLimit } from '../../../src/host/cron/cronRunLimit';
+vi.mock('../../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyTaskComplete: vi.fn() },
+}));
+
+import { settleCronRunLimit, type CronRunLimitHooks } from '../../../src/host/cron/cronRunLimit';
 import { assertExecutionLocationConstraints } from '../../../src/host/cron/cronExecutionPolicy';
 import { CronService } from '../../../src/host/cron/cronService';
+import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 
-type SettleExecution = Pick<CronJobExecution, 'status' | 'retryAttempt'>;
-
-function execution(status: CronJobExecution['status'], retryAttempt = 0): SettleExecution {
-  return { status, retryAttempt };
+interface SettleHarness {
+  hooks: CronRunLimitHooks;
+  state: { definition: CronJobDefinition | undefined };
+  updates: Array<Partial<Omit<CronJobDefinition, 'id' | 'createdAt'>>>;
 }
 
-describe('applyRunToLimit count rules', () => {
-  const base = { scheduleType: 'every' as const, runsOn: 'local' as const, maxRuns: 2, runCount: 0 };
+function makeSettleHarness(definition: Partial<CronJobDefinition> = {}): SettleHarness {
+  const state: SettleHarness['state'] = {
+    definition: {
+      id: 'job-1',
+      name: 'Limited job',
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 5, unit: 'minutes' },
+      action: { type: 'shell', command: 'echo ok' },
+      runsOn: 'local',
+      enabled: true,
+      maxRuns: 2,
+      runCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+      ...definition,
+    },
+  };
+  const updates: SettleHarness['updates'] = [];
+  return {
+    state,
+    updates,
+    hooks: {
+      getDefinition: () => state.definition,
+      updateJob: async (_jobId, next) => {
+        if (state.definition) state.definition = { ...state.definition, ...next };
+        updates.push(next);
+        return state.definition ?? null;
+      },
+    },
+  };
+}
 
-  it('counts completed and failed first attempts', () => {
-    expect(applyRunToLimit(base, execution('completed'))).toEqual({ runCount: 1, limitReached: false });
-    expect(applyRunToLimit(base, execution('failed'))).toEqual({ runCount: 1, limitReached: false });
+const fullExecution = (status: CronJobExecution['status'], retryAttempt = 0): CronJobExecution => ({
+  id: 'execution-1',
+  jobId: 'job-1',
+  status,
+  scheduledAt: 1,
+  retryAttempt,
+});
+
+describe('settleCronRunLimit count rules', () => {
+  afterEach(() => {
+    automationState.recordEvent.mockClear();
   });
 
-  it('does not count retries or cancelled/capacity-wait runs', () => {
-    expect(applyRunToLimit(base, execution('completed', 1))).toEqual({ runCount: 0, limitReached: false });
-    expect(applyRunToLimit(base, execution('failed', 2))).toEqual({ runCount: 0, limitReached: false });
-    expect(applyRunToLimit(base, execution('cancelled'))).toEqual({ runCount: 0, limitReached: false });
-    expect(applyRunToLimit(base, execution('interrupted'))).toEqual({ runCount: 0, limitReached: false });
+  it('counts completed and failed first attempts', async () => {
+    const completed = makeSettleHarness();
+    expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, completed.hooks)).toBe(false);
+    expect(completed.updates).toEqual([{ runCount: 1 }]);
+
+    const failed = makeSettleHarness();
+    expect(await settleCronRunLimit('job-1', fullExecution('failed'), false, failed.hooks)).toBe(false);
+    expect(failed.updates).toEqual([{ runCount: 1 }]);
   });
 
-  it('skips one-time (at) jobs and cloud jobs', () => {
-    expect(applyRunToLimit({ ...base, scheduleType: 'at' as const }, execution('completed')))
-      .toEqual({ runCount: 0, limitReached: false });
-    expect(applyRunToLimit({ ...base, runsOn: 'cloud' as const, maxRuns: undefined }, execution('completed')))
-      .toEqual({ runCount: 0, limitReached: false });
+  it('does not count retries or cancelled/capacity-wait runs', async () => {
+    for (const settle of [
+      fullExecution('completed', 1),
+      fullExecution('failed', 2),
+      fullExecution('cancelled'),
+      fullExecution('interrupted'),
+    ]) {
+      const harness = makeSettleHarness();
+      expect(await settleCronRunLimit('job-1', settle, false, harness.hooks)).toBe(false);
+      expect(harness.updates).toEqual([]);
+    }
   });
 
-  it('reaches the limit at exactly N', () => {
-    const afterFirst = applyRunToLimit(base, execution('completed'));
-    expect(afterFirst.limitReached).toBe(false);
-    const afterSecond = applyRunToLimit({ ...base, runCount: afterFirst.runCount }, execution('completed'));
-    expect(afterSecond).toEqual({ runCount: 2, limitReached: true });
+  it('skips one-time (at) jobs and cloud jobs', async () => {
+    const atJob = makeSettleHarness({ scheduleType: 'at', schedule: { type: 'at', datetime: 2 } });
+    expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, atJob.hooks)).toBe(false);
+    expect(atJob.updates).toEqual([]);
+
+    const cloudJob = makeSettleHarness({ runsOn: 'cloud', maxRuns: undefined });
+    expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, cloudJob.hooks)).toBe(false);
+    expect(cloudJob.updates).toEqual([]);
   });
 
-  it('counts unbounded runs without ever reaching a limit', () => {
-    const outcome = applyRunToLimit({ ...base, maxRuns: undefined, runCount: 41 }, execution('completed'));
-    expect(outcome).toEqual({ runCount: 42, limitReached: false });
+  it('reaches the limit at exactly N: disables with max_runs_reached and posts one inbox event', async () => {
+    const harness = makeSettleHarness({ runCount: 1 });
+    expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, harness.hooks)).toBe(true);
+    expect(harness.updates).toEqual([
+      { runCount: 2 },
+      { enabled: false, metadata: { disabledReason: 'max_runs_reached' } },
+    ]);
+    expect(automationState.recordEvent).toHaveBeenCalledTimes(1);
+    expect(automationState.recordEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'completed',
+      recordStatus: 'paused',
+      eventId: 'max_runs:job-1',
+    }));
+  });
+
+  it('does not double-disable when the same run already disabled the job (permanent path)', async () => {
+    const harness = makeSettleHarness({ runCount: 1 });
+    expect(await settleCronRunLimit('job-1', fullExecution('failed'), true, harness.hooks)).toBe(true);
+    expect(harness.updates).toEqual([{ runCount: 2 }]);
+    expect(automationState.recordEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not disable a job that is already disabled', async () => {
+    const harness = makeSettleHarness({ runCount: 1, enabled: false });
+    expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, harness.hooks)).toBe(false);
+    expect(harness.updates).toEqual([{ runCount: 2 }]);
+    expect(automationState.recordEvent).not.toHaveBeenCalled();
+  });
+
+  it('counts unbounded runs without ever reaching a limit', async () => {
+    const harness = makeSettleHarness({ maxRuns: undefined, runCount: 41 });
+    expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, harness.hooks)).toBe(false);
+    expect(harness.updates).toEqual([{ runCount: 42 }]);
+  });
+
+  it('is a no-op when the job is gone', async () => {
+    const harness = makeSettleHarness();
+    harness.state.definition = undefined;
+    expect(await settleCronRunLimit('job-1', fullExecution('completed'), false, harness.hooks)).toBe(false);
+    expect(harness.updates).toEqual([]);
   });
 });
 

@@ -12,7 +12,7 @@ import { getSessionAutomationService } from '../services/sessionAutomation';
 import { getCronAutomationType } from './cronAutomationBridge';
 import { notifyCronJobDisabled } from './cronFailurePolicy';
 
-export interface CronRunLimitOutcome {
+interface CronRunLimitOutcome {
   /** 本次执行结算后的已计数运行数。 */
   runCount: number;
   /** 本次执行是否触达 maxRuns 上限。 */
@@ -25,7 +25,7 @@ export interface CronRunLimitOutcome {
  * cancelled（排队等容量被中断）不计；手动 triggerJob 照常计；
  * 一次性（at）任务本就只跑一趟、云端运行不在本地计数，两者跳过。
  */
-export function applyRunToLimit(
+function applyRunToLimit(
   definition: Pick<CronJobDefinition, 'scheduleType' | 'runsOn' | 'maxRuns' | 'runCount'>,
   execution: Pick<CronJobExecution, 'status' | 'retryAttempt'>,
 ): CronRunLimitOutcome {

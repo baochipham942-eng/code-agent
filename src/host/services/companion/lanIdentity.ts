@@ -72,6 +72,7 @@ export async function loadLanIdentity(dataDirectory: string): Promise<KeyPair> {
     if (existing) return existing.identity;
     const identity = createIdentity();
     await writeFileIdentity(dataDirectory, encode(identity));
+    console.warn('[CompanionIdentity] no OS keychain; minted a new companion-identity.json. Already-paired devices will need to re-pair.');
     return identity;
   }
   const account = createHash('sha256').update(dataDirectory).digest('hex');

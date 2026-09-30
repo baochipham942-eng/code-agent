@@ -46,6 +46,8 @@ export interface AntiPatternConfig {
   maxConsecutiveReadsAfterWrite: number;
   /** Hard limit - force stop after this many consecutive reads */
   maxConsecutiveReadsHardLimit: number;
+  /** Independent raw-call backstop for a large parallel-read round sequence. */
+  maxConsecutiveReadCallsBackstop: number;
   /** Max times same tool can fail with same error */
   maxSameToolFailures: number;
   /** Max duplicate successful calls with same args */
@@ -90,6 +92,7 @@ export const DEFAULT_ANTI_PATTERN_CONFIG: AntiPatternConfig = {
   maxConsecutiveReadsBeforeWrite: 5,
   maxConsecutiveReadsAfterWrite: 10,
   maxConsecutiveReadsHardLimit: 15,
+  maxConsecutiveReadCallsBackstop: 40,
   maxSameToolFailures: 3,
   maxDuplicateCalls: 3,
   maxFailuresBeforeAlternative: 2,
@@ -115,11 +118,17 @@ export class AntiPatternDetector {
   private rereadCounter: Map<string, number> = new Map();
   /** 成功写签名计数：key = filePath::normalizedContent，value = 命中次数 */
   private successWriteTracker: Map<string, number> = new Map();
+  /** The engine opens one explicit round per assistant tool-call batch. */
+  private readRoundActive = false;
+  private readRoundSawRead = false;
+  private readRoundSawSuccessfulWrite = false;
+  private readRoundGuardEvaluated = false;
 
   constructor(config: Partial<AntiPatternConfig> = {}) {
     this.config = { ...DEFAULT_ANTI_PATTERN_CONFIG, ...config };
     this.state = {
       consecutiveReadOps: 0,
+      consecutiveReadCalls: 0,
       hasWrittenFile: false,
       toolFailureTracker: new Map(),
       duplicateCallTracker: new Map(),
@@ -188,12 +197,45 @@ export class AntiPatternDetector {
   }
 
   markSemanticProgress(reason: string): void {
-    if (this.state.consecutiveReadOps > 0) {
+    if (this.state.consecutiveReadOps > 0 || this.state.consecutiveReadCalls > 0) {
       logger.info(`[ReadLoop] Resetting read counter after semantic progress: ${reason}`, {
-        previousConsecutiveReads: this.state.consecutiveReadOps,
+        previousConsecutiveReadRounds: this.state.consecutiveReadOps,
+        previousConsecutiveReadCalls: this.state.consecutiveReadCalls,
       });
     }
-    this.state.consecutiveReadOps = 0;
+    this.resetReadCounters();
+    if (this.readRoundActive) {
+      this.readRoundSawRead = false;
+      this.readRoundGuardEvaluated = false;
+    }
+  }
+
+  /** Start the model round that owns the next group of tool calls. */
+  beginReadRound(): void {
+    if (this.readRoundActive) {
+      this.endReadRound();
+    }
+    this.readRoundActive = true;
+    this.readRoundSawRead = false;
+    this.readRoundSawSuccessfulWrite = false;
+    this.readRoundGuardEvaluated = false;
+  }
+
+  /**
+   * Close a model round. A successful write wins over any reads in the same
+   * batch and resets both counters, matching the existing mixed-round policy.
+   */
+  endReadRound(): void {
+    if (!this.readRoundActive) return;
+    if (this.readRoundSawSuccessfulWrite) {
+      this.resetReadCounters();
+    } else if (this.readRoundSawRead) {
+      this.state.consecutiveReadOps++;
+    }
+    this.readRoundActive = false;
+    this.readRoundSawRead = false;
+    this.readRoundSawSuccessfulWrite = false;
+    this.readRoundGuardEvaluated = false;
   }
 
   // --------------------------------------------------------------------------
@@ -208,7 +250,8 @@ export class AntiPatternDetector {
   trackToolExecution(toolName: string, success: boolean): string | null {
     if (WRITE_TOOLS.includes(toolName) && success) {
       this.state.hasWrittenFile = true;
-      this.state.consecutiveReadOps = 0;
+      this.resetReadCounters();
+      if (this.readRoundActive) this.readRoundSawSuccessfulWrite = true;
       return null;
     }
 
@@ -220,40 +263,54 @@ export class AntiPatternDetector {
   }
 
   private reserveReadOperation(toolName: string): string | null {
-    this.state.consecutiveReadOps++;
+    const implicitRound = !this.readRoundActive;
+    if (implicitRound) this.beginReadRound();
 
-    // Hard limit check
-    if (this.state.consecutiveReadOps >= this.config.maxConsecutiveReadsHardLimit) {
-      logger.error(`HARD LIMIT: ${this.state.consecutiveReadOps} consecutive read ops! Force stopping.`, {
-        toolName,
-      });
-      logCollector.agent('ERROR', `Hard limit reached: ${this.state.consecutiveReadOps} consecutive reads, forcing stop`);
-      return 'HARD_LIMIT';
+    this.readRoundSawRead = true;
+    this.state.consecutiveReadCalls++;
+
+    let warning: string | null = null;
+    if (this.state.consecutiveReadCalls >= this.config.maxConsecutiveReadCallsBackstop) {
+      warning = this.hardLimit(toolName, 'calls');
+    } else if (!this.readRoundGuardEvaluated) {
+      const projectedRounds = this.state.consecutiveReadOps + 1;
+      this.readRoundGuardEvaluated = true;
+      if (projectedRounds >= this.config.maxConsecutiveReadsHardLimit) {
+        warning = this.hardLimit(toolName, 'rounds', projectedRounds);
+      } else {
+        const warningThreshold = this.state.hasWrittenFile
+          ? this.config.maxConsecutiveReadsAfterWrite
+          : this.config.maxConsecutiveReadsBeforeWrite;
+        if (projectedRounds >= warningThreshold) {
+          logger.debug(`WARNING: ${projectedRounds} consecutive read-only rounds! hasWritten=${this.state.hasWrittenFile}`, {
+            toolName,
+          });
+          warning = this.generateReadLoopWarning(projectedRounds);
+        }
+      }
     }
 
-    // Warning threshold
-    const warningThreshold = this.state.hasWrittenFile
-      ? this.config.maxConsecutiveReadsAfterWrite
-      : this.config.maxConsecutiveReadsBeforeWrite;
+    if (implicitRound) this.endReadRound();
+    return warning;
+  }
 
-    if (this.state.consecutiveReadOps >= warningThreshold) {
-      logger.debug(`WARNING: ${this.state.consecutiveReadOps} consecutive read ops! hasWritten=${this.state.hasWrittenFile}`, {
-        toolName,
-      });
-      return this.generateReadLoopWarning();
-    }
-
-    return null;
+  private hardLimit(toolName: string, unit: 'rounds' | 'calls', roundCount = this.state.consecutiveReadOps + 1): 'HARD_LIMIT' {
+    logger.error(`HARD LIMIT: ${roundCount} consecutive read-only ${unit}! Force stopping.`, {
+      toolName,
+      consecutiveReadCalls: this.state.consecutiveReadCalls,
+    });
+    logCollector.agent('ERROR', `Hard limit reached: ${roundCount} consecutive read-only ${unit}, forcing stop`);
+    return 'HARD_LIMIT';
   }
 
   /**
    * Generate warning message for read loop
    */
-  private generateReadLoopWarning(): string {
+  private generateReadLoopWarning(readRoundCount = this.state.consecutiveReadOps): string {
     if (this.state.hasWrittenFile) {
       return (
         `<critical-warning>\n` +
-        `WARNING: You have performed ${this.state.consecutiveReadOps} consecutive read operations!\n` +
+        `WARNING: You have performed ${readRoundCount} consecutive read-only rounds!\n` +
         `You have ALREADY created/modified files. The task may be COMPLETE.\n` +
         `Options:\n` +
         `1. If the task is done, respond with a completion message\n` +
@@ -265,7 +322,7 @@ export class AntiPatternDetector {
 
     return (
       `<critical-warning>\n` +
-      `WARNING: You have performed ${this.state.consecutiveReadOps} read/search operations without producing an answer!\n` +
+      `WARNING: You have performed ${readRoundCount} read/search rounds without producing an answer!\n` +
       `The likely issue is evidence drift: previously observed file or search content is being lost in context.\n` +
       `1. STOP reading or re-searching the same material again\n` +
       `2. Use the evidence you have ALREADY gathered to answer now, or make the next concrete edit\n` +
@@ -278,7 +335,7 @@ export class AntiPatternDetector {
    * Generate error message for hard limit reached
    */
   generateHardLimitError(): string {
-    return `操作已被系统中止：检测到无限循环（连续 ${this.state.consecutiveReadOps} 次只读操作，含文件读取与联网搜索）。请基于已经获取到的文件或搜索证据直接输出结论；如果关键证据缺失，明确说明缺失，不要继续换关键词重搜或换工具重读。`;
+    return `操作已被系统中止：检测到无限循环（连续 ${this.state.consecutiveReadOps} 个只读轮次、${this.state.consecutiveReadCalls} 次只读调用，含文件读取与联网搜索）。请基于已经获取到的文件或搜索证据直接输出结论；如果关键证据缺失，明确说明缺失，不要继续换关键词重搜或换工具重读。`;
   }
 
   // --------------------------------------------------------------------------
@@ -950,12 +1007,17 @@ export class AntiPatternDetector {
   reset(): void {
     this.state = {
       consecutiveReadOps: 0,
+      consecutiveReadCalls: 0,
       hasWrittenFile: false,
       toolFailureTracker: new Map(),
       duplicateCallTracker: new Map(),
     };
     this.rereadCounter.clear();
     this.successWriteTracker.clear();
+    this.readRoundActive = false;
+    this.readRoundSawRead = false;
+    this.readRoundSawSuccessfulWrite = false;
+    this.readRoundGuardEvaluated = false;
   }
 
   /**
@@ -963,6 +1025,15 @@ export class AntiPatternDetector {
    */
   getConsecutiveReadCount(): number {
     return this.state.consecutiveReadOps;
+  }
+
+  getConsecutiveReadCallCount(): number {
+    return this.state.consecutiveReadCalls;
+  }
+
+  private resetReadCounters(): void {
+    this.state.consecutiveReadOps = 0;
+    this.state.consecutiveReadCalls = 0;
   }
 
   /**

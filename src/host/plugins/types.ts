@@ -14,6 +14,8 @@ export interface PluginMetadata {
   id: string;
   /** Human-readable name */
   name: string;
+  /** Optional display name shown in user-facing attribution. */
+  displayName?: string;
   /** Plugin version (semver) */
   version: string;
   /** Plugin description */

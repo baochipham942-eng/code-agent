@@ -29,6 +29,7 @@ import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { resolveContextWindow } from '../../model/modelLimits';
 import { getModelErrorStatus, summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
+import { formatThrownError } from '../../../shared/utils/providerError';
 import { getModelAuthFailureMarker, getModelQuotaFailureMarker, getModelUnavailableMarker } from '../../model/errorClassifier';
 
 // Import refactored modules
@@ -146,7 +147,7 @@ export type { RunTerminalInfo, RunTerminalStatus };
 
 function formatTerminalError(error: unknown): string {
   // 先过模型错误分类：鉴权失败/欠费等换成人话 + 建议（内部错误如 runId 原样透出）
-  const raw = error instanceof Error ? error.message : (error === undefined ? 'Unknown runtime error' : String(error));
+  const raw = error === undefined ? 'Unknown runtime error' : formatThrownError(error);
   return summarizeModelErrorForUser(raw, getModelErrorStatus(error));
 }
 

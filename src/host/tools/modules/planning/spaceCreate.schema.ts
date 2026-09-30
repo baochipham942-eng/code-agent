@@ -31,4 +31,8 @@ export const spaceCreateSchema: ToolSchema = {
   category: 'planning',
   permissionLevel: 'write',
   readOnly: false,
+  accesses: [
+    { kind: 'write', expression: 'resource(space, args.name)' },
+    { kind: 'write', expression: 'workspaceFile(args.workspacePath)' },
+  ],
 };

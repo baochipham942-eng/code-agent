@@ -637,13 +637,8 @@ async function initializeServices(): Promise<void> {
       const authService = getAuthService();
       const telemetryUploader = getTelemetryUploaderService();
       const syncTelemetryUploader = (user: AuthUser | null): void => {
-        if (user) {
-          telemetryUploader.startAutoUpload();
-          logger.info('Telemetry upload started');
-        } else {
-          telemetryUploader.stopAutoUpload();
-          logger.info('Telemetry upload stopped');
-        }
+        telemetryUploader.syncAutoUpload(user);
+        logger.info(user && telemetryUploader.isEnabled() ? 'Telemetry upload started' : 'Telemetry upload stopped');
       };
       // 步骤 3 的 auth 回调触发时 DB 还没就绪，这里按已恢复的登录态补启动
       syncTelemetryUploader(authService.getCurrentUser());

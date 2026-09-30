@@ -12,6 +12,7 @@ import {
 import { CompressionState } from '../../../src/host/context/compressionState';
 import { type ProjectableMessage } from '../../../src/host/context/projectionEngine';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
+import { resolveTriggerTokens } from '../../../src/host/context/triggerTokens';
 
 function makeMsg(id: string, role: string, content: string, turnIndex = 0): ProjectableMessage {
   return { id, role, content, turnIndex };
@@ -340,6 +341,37 @@ describe('CompressionPipeline', () => {
       });
 
       expect(result.layersTriggered).toContain('autocompact-needed');
+    });
+
+    it('reports autocompact-needed from the reserved trigger below the occupancy line', async () => {
+      const window = 10_000;
+      const maxOutput = 3_000;
+      const reserved = resolveTriggerTokens(window, undefined, maxOutput);
+      const occupancy = resolveTriggerTokens(window);
+      expect(reserved).toBe(5_976);
+      expect(occupancy).toBe(8_500);
+
+      const transcript: ProjectableMessage[] = [
+        makeMsg('u1', 'user', makeText(6_500)),
+      ];
+      const quietConfig: PipelineConfig = {
+        ...BASE_CONFIG,
+        maxTokens: window,
+        enableSnip: false,
+        enableMicrocompact: false,
+        enableContextCollapse: false,
+      };
+      const reservedResult = await pipeline.evaluate(transcript, state, {
+        ...quietConfig,
+        autocompactTriggerTokens: reserved,
+      });
+      expect(reservedResult.totalTokens).toBeGreaterThanOrEqual(reserved);
+      expect(reservedResult.totalTokens).toBeLessThan(occupancy);
+      expect(reservedResult.layersTriggered).toContain('autocompact-needed');
+
+      const occupancyResult = await pipeline.evaluate(transcript, new CompressionState(), quietConfig);
+      expect(occupancyResult.totalTokens).toBe(reservedResult.totalTokens);
+      expect(occupancyResult.layersTriggered).not.toContain('autocompact-needed');
     });
   });
 

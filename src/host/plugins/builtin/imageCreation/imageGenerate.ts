@@ -23,6 +23,7 @@ import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../../shared/constant
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { buildMediaArtifactMetadata } from '../../../tools/artifacts/mediaArtifactMetadata';
 import { imageGenerateSchema as schema } from './imageGenerate.schema';
+import { isPathWithinRoot, resolveWorkspacePath } from '../../../runtime/workspaceScope';
 import {
   determineImageEngine,
   generateImage,
@@ -225,6 +226,13 @@ function defaultImageOutputPath(workingDir: string): string {
   return path.join(workingDir, DEFAULT_IMAGE_ARTIFACT_DIR, `generated-${timestamp}.png`);
 }
 
+/** Caller-supplied output_path only. The default artifact path is not passed here. */
+function outputPathOutsideWorkspace(resolved: string, ctx: ToolContext): boolean {
+  if (isPathWithinRoot(resolved, ctx.workingDir)) return false;
+  if (!ctx.workspaceScope) return true;
+  return resolveWorkspacePath(ctx.workspaceScope, resolved, 'read_write') === undefined;
+}
+
 // expandPromptWithLLM 还需要一个带超时的 fetch helper，独立于 service。
 async function fetchWithAbort(
   url: string,
@@ -396,6 +404,19 @@ export async function executeImageGenerate(
   const params = args as unknown as ImageGenerateParams;
   if (typeof params.prompt !== 'string' || params.prompt.length === 0) {
     return { ok: false, error: 'prompt is required and must be a string', code: 'INVALID_ARGS' };
+  }
+
+  // 付费复述、扩写、出图和 artifact_write_started 都在 startTime 之后。越界路径在这里拒绝。
+  if (typeof params.output_path === 'string' && params.output_path.length > 0) {
+    const resolvedOutputPath = path.resolve(ctx.workingDir, params.output_path);
+    if (outputPathOutsideWorkspace(resolvedOutputPath, ctx)) {
+      return {
+        ok: false,
+        error: `output_path "${resolvedOutputPath}" must be inside the workspace`,
+        code: 'INVALID_ARGS',
+        meta: { outputPath: resolvedOutputPath },
+      };
+    }
   }
 
   const startTime = Date.now();

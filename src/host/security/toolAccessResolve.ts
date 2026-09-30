@@ -195,6 +195,14 @@ function resolveExpression(
   return { type: 'domain', domain: { type: 'named', name } };
 }
 
+function cwdReadAccess(workspace: string, cwd: string): ResolvedToolAccess {
+  const root = normalizeTargetPath(workspace, '.');
+  return {
+    kind: 'read',
+    domain: { type: 'path', root, targetPath: normalizeTargetPath(cwd, '.') },
+  };
+}
+
 function resolveArgumentNames(
   kind: ToolAccessKind,
   names: readonly string[],
@@ -203,28 +211,33 @@ function resolveArgumentNames(
   cwd: string,
 ): ResolvedToolAccess[] {
   const paths: string[] = [];
-  let sawValue = false;
   for (const name of names) {
     const value = readOwn(params, name);
     if (value === undefined || value === null) continue;
-    sawValue = true;
     if (typeof value === 'string') {
-      if (value.trim() === '') return [unknownAccess(kind)];
+      if (value.trim() === '') {
+        if (kind !== 'read') return [unknownAccess(kind)];
+        continue;
+      }
       paths.push(value);
       continue;
     }
-    if (Array.isArray(value) && value.length > 0) {
-      const segments: string[] = [];
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        if (kind !== 'read') return [unknownAccess(kind)];
+        continue;
+      }
       for (const item of value) {
         if (typeof item !== 'string' || item.trim() === '') return [unknownAccess(kind)];
-        segments.push(item);
+        paths.push(item);
       }
-      paths.push(...segments);
       continue;
     }
     return [unknownAccess(kind)];
   }
-  if (!sawValue || paths.length === 0) return [unknownAccess(kind)];
+  if (paths.length === 0) {
+    return kind === 'read' ? [cwdReadAccess(workspace, cwd)] : [unknownAccess(kind)];
+  }
   const root = normalizeTargetPath(workspace, '.');
   return paths.map((candidate) => ({
     kind,

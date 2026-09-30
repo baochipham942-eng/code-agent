@@ -38,10 +38,16 @@ function domainTarget(domain: ToolResourceDomain): string | null {
   return null;
 }
 
+function isAgentRuntime(access: ResolvedToolAccess): boolean {
+  return access.domain.type === 'named' && access.domain.name === 'agent:runtime';
+}
+
 /**
  * 读/读不冲突。未知域与任意其他访问冲突（含另一个未知域和具体路径上的读），
- * 这样缺声明不会跟后续 Read 并进同一段。命名域只在名字相同时冲突。
- * 路径与 workspace 的包含关系只此一份，写隔离锁走同一个函数。
+ * 这样缺声明不会跟后续 Read 并进同一段。
+ * agent:runtime 与自己不冲突（Task 扇出仍可同段）；与路径、workspace、其他命名域冲突，
+ * 包括读/读。与 unscoped 不在这里强制，落到下面的原规则。
+ * 命名域只在名字相同时冲突。路径与 workspace 的包含关系只此一份，写隔离锁走同一个函数。
  */
 export function toolResourceAccessesConflict(
   left: ResolvedToolAccess,
@@ -49,6 +55,13 @@ export function toolResourceAccessesConflict(
 ): boolean {
   if (left.domain.type === 'unknown' || right.domain.type === 'unknown') {
     return true;
+  }
+  const leftAgent = isAgentRuntime(left);
+  const rightAgent = isAgentRuntime(right);
+  if (leftAgent || rightAgent) {
+    if (leftAgent && rightAgent) return false;
+    const otherType = leftAgent ? right.domain.type : left.domain.type;
+    if (otherType === 'path' || otherType === 'workspace' || otherType === 'named') return true;
   }
   const leftWrites = left.kind !== 'read';
   const rightWrites = right.kind !== 'read';

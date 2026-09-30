@@ -88,7 +88,7 @@ describe('内置 skill 分类回填（builtinSkills.ts SSoT）', () => {
     expect(groups.find((g) => g.key === '__uncategorized__')).toBeUndefined();
     const counts = Object.fromEntries(groups.map((g) => [g.key, g.skills.length]));
     expect(counts).toMatchObject({
-      'docs-office': 4, // xlsx, meeting-summary, reviewer-facing-delivery + E1 明镜 internal-comms
+      'docs-office': 6, // xlsx, meeting-summary, reviewer-facing-delivery, frontend-slides, ppt + E1 明镜 internal-comms
       'data-analysis': 2, // data-cleaning, data-analysis-helper
       product: 3, // E1 牧之：requirement-elicitation, prd-authoring, review-prep
       research: 10, // literature-review, paper-distillation, research-monitor, opencli-search, research-brief-and-split, batch-research + E1 溯真 4（competitor-teardown/multi-source-verification/industry-scan/user-research-synthesis）

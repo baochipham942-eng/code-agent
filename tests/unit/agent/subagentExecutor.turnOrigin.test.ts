@@ -15,13 +15,16 @@ import path from 'node:path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SUBAGENT_EXECUTOR_PATH = path.resolve(__dirname, '../../../src/host/agent/subagentExecutor.ts');
+const MEMBER_INPUT_WIND_DOWN_PATH = path.resolve(__dirname, '../../../src/host/agent/memberInputWindDown.ts');
 const TOOL_ENGINE_PATH = path.resolve(__dirname, '../../../src/host/agent/runtime/toolExecutionEngine.ts');
 
 describe('subagentExecutor turnOrigin plumbing（ADR-067 D3）', () => {
   const source = readFileSync(SUBAGENT_EXECUTOR_PATH, 'utf8');
+  const windDownSource = readFileSync(MEMBER_INPUT_WIND_DOWN_PATH, 'utf8');
 
   it('drain 注入点用 collectTurnOrigins 刷新本轮 origin 链（无注入轮保留上一条）', () => {
-    expect(source).toContain('currentTurnOrigin = collectTurnOrigins(pendingMessages) ?? currentTurnOrigin');
+    expect(source).toContain('currentTurnOrigin = await drainQueuedMemberInput(');
+    expect(windDownSource).toContain('collectTurnOrigins(pendingMessages) ?? params.currentTurnOrigin');
   });
 
   it('工具执行 options 必须带 turnOrigin: currentTurnOrigin（去掉 = peer 起源静默放行）', () => {

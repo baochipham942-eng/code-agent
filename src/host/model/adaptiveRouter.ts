@@ -14,8 +14,10 @@ import {
 import { resolveBaseFallbackChain } from './modelRouterPolicy';
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
 import {
+  JEV_ROUTER_LEVEL_SCORES,
   JEV_ROUTER_QUESTIONS,
   JEV_ROUTER_THRESHOLDS,
+  matchesJevRouterHighRisk,
   type JevAnswers,
   type JevSystemOneCall,
 } from '../../shared/constants/jevQuestions';
@@ -158,8 +160,18 @@ export class AdaptiveRouter {
   }
 
   /**
-   * Optional Jev router for the automatic tier. A low-confidence answer never
-   * downgrades the requested tier; any provider failure returns the heuristic.
+   * Optional Jev router for the automatic tier.
+   *
+   * 消费边界：AdaptiveRouter 只喂模型路由——自动档选模型的消费方是 modelDecision.ts
+   * （runEngineInference / modelRouter 的 complexityOverride）；taskComplexityAnalyzer
+   * （src/host/planning/）喂的是规划与提示（conversationRuntime.ts / autoPlanner.ts）。
+   * 两者不写进同一条 telemetry、互不消费；本函数不改 taskComplexityAnalyzer 一侧。
+   *
+   * A low-confidence answer never downgrades the requested tier; any provider failure
+   * returns the heuristic. 规则地板独立于判官：开关开时，最后一条用户消息命中
+   * JEV_ROUTER_HIGH_RISK_PATTERNS（删除/付款转账/对外发帖发送/凭据变更/不可逆覆盖，
+   * 中英文）则无论 Jev 答什么、无论是否回落启发式，结果都不得为 simple；开关关时
+   * 整段不生效（与启发式逐字段一致，零行为变化）。
    *
    * Per-turn dedup: the agent loop re-runs inference() on every iteration with the
    * same last user message, so the Jev estimate is cached on (content, has_image)
@@ -175,18 +187,31 @@ export class AdaptiveRouter {
     systemOne?: JevSystemOneCall,
     signal?: AbortSignal,
   ): Promise<TaskComplexity> {
-    const fallback = (reason: string) => {
-      logger.warn(`[AdaptiveRouter] Jev fallback: ${reason}`);
-      return this.estimateComplexity(messages);
-    };
     if (process.env.CODE_AGENT_JEV_ROUTER !== '1') return this.estimateComplexity(messages);
     const lastUserMsg = [...messages].reverse().find((message) => message.role === 'user');
+    const content = lastUserMsg
+      ? typeof lastUserMsg.content === 'string'
+        ? lastUserMsg.content
+        : Array.isArray(lastUserMsg.content)
+          ? lastUserMsg.content.filter((part) => part.type === 'text').map((part) => part.text || '').join(' ')
+          : ''
+      : '';
+    // 规则地板在判官之前计算，命中后对 Jev 路径与启发式回落路径同样生效。
+    const ruleFloorHit = content.length > 0 && matchesJevRouterHighRisk(content);
+    const applyRuleFloor = (result: TaskComplexity): TaskComplexity => {
+      if (!ruleFloorHit || result.level !== 'simple') return result;
+      return {
+        ...result,
+        level: 'moderate',
+        score: Math.max(result.score, JEV_ROUTER_LEVEL_SCORES.moderate),
+        signals: [...result.signals, 'high_risk_rule_floor'],
+      };
+    };
+    const fallback = (reason: string) => {
+      logger.warn(`[AdaptiveRouter] Jev fallback: ${reason}`);
+      return applyRuleFloor(this.estimateComplexity(messages));
+    };
     if (!lastUserMsg) return fallback('no_user_message');
-    const content = typeof lastUserMsg.content === 'string'
-      ? lastUserMsg.content
-      : Array.isArray(lastUserMsg.content)
-        ? lastUserMsg.content.filter((part) => part.type === 'text').map((part) => part.text || '').join(' ')
-        : '';
     const hasImage = Array.isArray(lastUserMsg.content) && lastUserMsg.content.some((part) => part.type === 'image');
     const cacheKey = `${hasImage ? 'img' : 'txt'}:${content.slice(0, 12_000)}`;
     const cached = this.jevEstimateCache.get(cacheKey);
@@ -210,44 +235,49 @@ export class AdaptiveRouter {
       answers = await call(state, JEV_ROUTER_QUESTIONS, { signal });
     } catch (error) {
       // 取消不是故障：静默回启发式，不打 warn、不记 provider_error（ai-review R7 Nit）。
-      if (signal?.aborted) return this.estimateComplexity(messages);
+      if (signal?.aborted) return applyRuleFloor(this.estimateComplexity(messages));
       return fallback(`provider_error: ${error instanceof Error ? error.message : String(error)}`);
     }
     const intent = answerChoice(answers, 'intent');
     const complexity = answerChoice(answers, 'complexity');
     const needsClarification = answerNoul(answers, 'needs_clarification');
-    const destructiveIntent = answerNoul(answers, 'destructive_intent');
-    if (!intent || !complexity || needsClarification === null || destructiveIntent === null) {
+    const needsVision = answerNoul(answers, 'needs_vision');
+    const highStakes = answerNoul(answers, 'high_stakes');
+    if (!intent || !complexity || needsClarification === null || needsVision === null || highStakes === null) {
       return fallback('malformed_answers');
     }
     // intent 必须是问句 criteria 里的枚举值，任意字符串不进 signals（ai-review R7 Nit）。
     if (!Object.keys(JEV_ROUTER_QUESTIONS.intent.criteria ?? {}).includes(intent.choice)) {
       return fallback('unknown_intent_choice');
     }
-    const numericLevel = Number(complexity.choice);
-    if (!Number.isInteger(numericLevel) || numericLevel < 0 || numericLevel > 3 || complexity.confidence < JEV_ROUTER_THRESHOLDS.minComplexityConfidence) {
+    // complexity 是命名键（simple/moderate/complex），不再收 0-3 整数；
+    // 校准 confidence 低于下限回落启发式，不阻塞开聊。
+    const level = complexity.choice as keyof typeof JEV_ROUTER_LEVEL_SCORES;
+    if (!Object.keys(JEV_ROUTER_QUESTIONS.complexity.criteria ?? {}).includes(complexity.choice)
+      || complexity.confidence < JEV_ROUTER_THRESHOLDS.minComplexityConfidence) {
       return fallback('low_confidence_or_invalid_complexity');
     }
     const signals = [
       `jev_intent:${intent.choice}`,
       `jev_confidence:${complexity.confidence.toFixed(2)}`,
       `needs_clarification:${needsClarification.toFixed(2)}`,
-      `destructive_intent:${destructiveIntent.toFixed(2)}`,
+      `needs_vision:${needsVision.toFixed(2)}`,
+      `high_stakes:${highStakes.toFixed(2)}`,
     ];
     if (state.has_image === true) signals.push('has_image');
-    // Clarification and destructive intent are safety signals, never a reason to
-    // route down to the free model. The caller still keeps control of side effects.
+    // Clarification、vision、high-stakes、规则地板都是安全信号，只升不降——
+    // 命中任一即不得为 simple（不降到 quick/free 档）。副作用仍由调用方控制。
     const suggestClarification = needsClarification >= JEV_ROUTER_THRESHOLDS.needsClarification;
-    const safeLevel = state.has_image === true || suggestClarification || destructiveIntent >= JEV_ROUTER_THRESHOLDS.destructiveIntent
-      ? Math.max(2, numericLevel)
-      : numericLevel;
-    const safeScore = safeLevel * (100 / 3);
-    const result: TaskComplexity = {
-      level: safeScore < 30 ? 'simple' : safeScore < 60 ? 'moderate' : 'complex',
-      score: Math.round(safeScore),
+    const neverSimple = state.has_image === true || suggestClarification
+      || needsVision >= JEV_ROUTER_THRESHOLDS.needsVision
+      || highStakes >= JEV_ROUTER_THRESHOLDS.highStakes;
+    const safeLevel: TaskComplexity['level'] = neverSimple && level === 'simple' ? 'moderate' : level;
+    const result: TaskComplexity = applyRuleFloor({
+      level: safeLevel,
+      score: JEV_ROUTER_LEVEL_SCORES[safeLevel],
       signals,
       ...(suggestClarification ? { suggestClarification } : {}),
-    };
+    });
     if (this.jevEstimateCache.size >= AdaptiveRouter.JEV_CACHE_MAX_ENTRIES) {
       const oldest = this.jevEstimateCache.keys().next();
       if (!oldest.done) this.jevEstimateCache.delete(oldest.value);

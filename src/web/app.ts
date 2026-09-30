@@ -38,6 +38,7 @@ import {
 
 // Route modules
 import { createHealthRouter } from './routes/health';
+import { createQuitGuardRouter } from './routes/quitGuard';
 import { isDurableRunGateOpen } from './routes/agentDurableRouteLifecycle';
 import { createSettingsRouter } from './routes/settings';
 import { createExtractRouter } from './routes/extract';
@@ -146,6 +147,19 @@ async function tryGetSessionManager() {
 }
 
 /**
+ * 退出确认用的计数。登记表未配置时 activeRuns 为 0；已配置则取 list() 长度。
+ * cron 与登记表都懒加载，失败原样抛给路由，不在这里吞成 0。
+ */
+async function readQuitGuardSnapshot(): Promise<{ activeRuns: number; armedSchedules: number }> {
+  const { getConfiguredApplicationRunRegistry } = await import('../host/app/applicationRunRegistry');
+  const registry = getConfiguredApplicationRunRegistry();
+  const activeRuns = registry === null ? 0 : registry.list().length;
+  const { getCronService } = await import('../host/cron/cronService');
+  const armedSchedules = getCronService().listJobs({ enabled: true }).length;
+  return { activeRuns, armedSchedules };
+}
+
+/**
  * 获取 Supabase client + user_id（用于 Web 模式云端持久化）
  */
 async function getSupabaseForSession(): Promise<WebSupabaseBinding | null> {
@@ -216,6 +230,11 @@ export function createApp(deps: CreateAppDeps): express.Express {
     ),
     getPendingPermissionRequests,
     onRendererReady,
+  }));
+
+  // ── Quit guard：鉴权后的在跑任务 / 已启用定时任务计数 ───────────────
+  app.use('/api', createQuitGuardRouter({
+    getSnapshot: readQuitGuardSnapshot,
   }));
 
   // ── File upload ─────────────────────────────────────────────────────

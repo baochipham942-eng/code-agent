@@ -216,6 +216,10 @@ export async function handleToolResultBookkeeping({
 
       // Optional Jev second layer: regex-clean remote content only. This is an
       // advisory signal; preserve the original text and surface the rationale.
+      // NOT a security boundary: Jev only warns — it never deletes or rewrites
+      // content, and allow/block decisions still go through the existing
+      // approval flow and the deterministic regex layer (injectionPatterns /
+      // scanSkillContent), never through this flag.
       // Awaited so metadata.jevInjectionScan is attached before the tool result
       // is emitted/persisted — the flag is deterministic within the turn.
       // Default-off: 'disabled' returns before any I/O, so the hot path pays a

@@ -73,6 +73,7 @@ vi.mock('../../../src/host/platform', () => ({
   AppWindow: { getFocusedWindow: () => env.focusedWindow },
 }));
 
+import { createLogger } from '../../../src/host/services/infra/logger';
 import { applyLocalProviderDiscoverySnapshot, registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
 
 type HandlerFn = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
@@ -433,6 +434,34 @@ describe('service api keys', () => {
     const data = (await callSettings('getAllServiceKeys')).data as Record<string, string>;
     expect(data.firecrawl).toBe('fc-12345...');
     expect(data.brave).toBeUndefined();
+  });
+
+  it('getAllServiceKeys 含 typesafe，只回前 8 位打码，日志和 console 都不出现完整 key', async () => {
+    const raw = 'ts-live-keychain-secret-value';
+    env.config.getServiceApiKey.mockImplementation((s: string) => (s === 'typesafe' ? raw : undefined));
+    const probe = createLogger('typesafe-key-probe');
+    const proto = Object.getPrototypeOf(probe) as {
+      debug: (...args: unknown[]) => void;
+      info: (...args: unknown[]) => void;
+      warn: (...args: unknown[]) => void;
+      error: (...args: unknown[]) => void;
+    };
+    const loggerSpies = (['debug', 'info', 'warn', 'error'] as const).map((method) => vi.spyOn(proto, method));
+    const consoleSpies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((method) => (
+      vi.spyOn(console, method).mockImplementation(() => {})
+    ));
+    try {
+      const data = (await callSettings('getAllServiceKeys')).data as Record<string, string>;
+      expect(data.typesafe).toBe(`${raw.slice(0, 8)}...`);
+      expect(data.typesafe).not.toBe(raw);
+      expect(JSON.stringify(data)).not.toContain(raw);
+      const blobs = [...loggerSpies, ...consoleSpies].flatMap((spy) => (
+        spy.mock.calls.map((args) => JSON.stringify(args))
+      ));
+      for (const blob of blobs) expect(blob).not.toContain(raw);
+    } finally {
+      for (const spy of [...loggerSpies, ...consoleSpies]) spy.mockRestore();
+    }
   });
 
   it('config 为 null → INTERNAL_ERROR', async () => {

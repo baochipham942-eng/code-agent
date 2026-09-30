@@ -177,6 +177,33 @@ describe('PolicyEngine user rules', () => {
     expect(result.matchedRule?.id).toBe('block-ssh-keys');
   });
 
+  it('loads a hyphenated MCP deny rule and denies the same tool', () => {
+    expect(getPermissionModeManager().setMode('bypassPermissions', true)).toBe(true);
+    const tool = 'mcp__foo-bar__baz';
+    const dotted = 'mcp__foo.bar__baz';
+    expect(validateUserPermissionRule(tool, 'deny')).toEqual({ ok: true });
+    expect(validateUserPermissionRule(dotted, 'deny')).toEqual({ ok: true });
+
+    const engine = freshEngine();
+    engine.loadUserRules({ deny: [tool, dotted] });
+
+    const hyphenated = engine.evaluate({
+      tool,
+      level: 'network',
+      description: 'call hyphenated mcp tool',
+    });
+    expect(hyphenated.action).toBe('deny');
+    expect(hyphenated.matchedRule?.id).toBe(`user-deny-${tool}`);
+
+    const dottedResult = engine.evaluate({
+      tool: dotted,
+      level: 'network',
+      description: 'call dotted mcp tool',
+    });
+    expect(dottedResult.action).toBe('deny');
+    expect(dottedResult.matchedRule?.id).toBe(`user-deny-${dotted}`);
+  });
+
   it('skips an allow-all Bash rule already stored in config and keeps the rest', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const engine = freshEngine();

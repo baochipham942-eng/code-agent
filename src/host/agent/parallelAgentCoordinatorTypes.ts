@@ -1,4 +1,5 @@
 import type { AgentFailureCode } from '../../shared/contract/agentFailure';
+import type { AgentEngineKind } from '../../shared/contract/agentEngine';
 import {
   getSwarmRunScopeKey,
   type SwarmAgentContextSnapshot,
@@ -10,6 +11,8 @@ import type { SubagentResult } from './subagentExecutorTypes';
 export interface AgentTask {
   id: string;
   role: string;
+  /** 该成员实际跑的引擎。缺省按角色注册表，再缺省 native。 */
+  engine?: AgentEngineKind;
   /** 实例显示名（模型给 name 或同角色去重后的 role-N）；缺省时展示层回退 role */
   name?: string;
   task: string;

@@ -12,6 +12,7 @@ import type {
 } from '../../../shared/contract/toolSearch';
 import { getFeatureFlagService } from '../cloud/featureFlagService';
 import { resolveProviderApiKey } from '../../model/providers/providerResolution';
+import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 
 const JEV_SKILL_RERANK_ENV = 'CODE_AGENT_JEV_SKILL_RERANK';
 
@@ -56,9 +57,17 @@ function buildQuestions(roster: Array<{ name: string; description: string }>): R
 function createJevSkillRerankJudge(): JevSkillRerankJudge {
   return async ({ query, roster }) => {
     const { systemOne } = await import('../../model/providers/typesafeProvider');
+    const guard = (value: string) => guardSensitiveText(value, {
+      surface: 'telemetry',
+      mode: 'model-context',
+    });
+    const safeRoster = roster.map(({ name, description }) => ({
+      name,
+      description: guard(description),
+    }));
     const answers = await systemOne(
-      { query, roster },
-      buildQuestions(roster),
+      { query: guard(query), roster: safeRoster },
+      buildQuestions(safeRoster),
       { timeoutMs: JEV_TIMEOUT_MS },
     );
     return {

@@ -7,7 +7,7 @@
 
 import React, { useMemo, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
-import { CalendarClock, CalendarRange, Check, ClipboardCheck, Sparkles, type LucideIcon } from 'lucide-react';
+import { CalendarClock, CalendarRange, Check, ClipboardCheck, Sparkles, Sunrise, type LucideIcon } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useMcpServerStates } from '../../../hooks/useMcpServerStates';
@@ -17,6 +17,7 @@ import {
   FEATURED_CRON_TEMPLATES,
   getMissingTemplateConnectors,
   getTemplateConnectorStatuses,
+  getTemplateDisplayCopy,
   type CronTemplate,
   type TemplateConnectorStatus,
 } from './cronTemplates';
@@ -27,6 +28,7 @@ const TEMPLATE_ICONS: Record<string, LucideIcon> = {
   'daily-lookahead': CalendarClock,
   'daily-review': ClipboardCheck,
   'weekly-review': CalendarRange,
+  'morning-triage': Sunrise,
 };
 
 function findExistingJob(
@@ -110,6 +112,7 @@ export const CronFeaturedTemplates: React.FC = () => {
           const isEnabled = existingJob?.enabled === true;
           const isPending = pendingId === template.id;
           const connectorStatuses = getTemplateConnectorStatuses(template, connectedConnectorIds);
+          const copy = getTemplateDisplayCopy(template, cc.templates);
           const cardStateClassName = isPending || isEnabled
             ? 'border-badge-success/30 bg-emerald-500/5'
             : 'border-zinc-700/80 bg-zinc-900/80 hover:border-badge-warning/50 hover:bg-zinc-900';
@@ -139,10 +142,10 @@ export const CronFeaturedTemplates: React.FC = () => {
                   <TemplateIcon className="h-5 w-5" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-zinc-100">{template.name}</span>
-                  <span className="mt-1 block text-xs text-zinc-400">{template.description}</span>
+                  <span className="block text-sm font-medium text-zinc-100">{copy.name}</span>
+                  <span className="mt-1 block text-xs text-zinc-400">{copy.description}</span>
                   <span className="mt-1.5 block text-[11px] text-badge-warning/90">
-                    {template.scheduleLabel}
+                    {copy.scheduleLabel}
                   </span>
                 </span>
                 <Button
@@ -152,7 +155,7 @@ export const CronFeaturedTemplates: React.FC = () => {
                   disabled={isEnabled}
                   loading={isPending}
                   leftIcon={isEnabled ? <Check className="h-3.5 w-3.5" /> : undefined}
-                  aria-label={`${enableLabel}${template.name}`}
+                  aria-label={`${enableLabel}${copy.name}`}
                   data-testid={`cron-featured-${template.id}`}
                 >
                   {enableLabel}

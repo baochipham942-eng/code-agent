@@ -42,6 +42,8 @@ export const MEMORY = {
   HISTORY_PART_TEXT_MAX_CHARS: 1500,
   /** memory packing 的 BM25 混合召回条数上限（roadmap 2.5） */
   PACK_BM25_RECALL_LIMIT: 30,
+  /** memory packing 解析条目记忆键（git rev-parse）的并发上限（PR#2177 Nit） */
+  PACK_KEY_RESOLVE_CONCURRENCY: 8,
   /** Skill injection: 会话启动时最多注入多少条 skill 记忆 */
   SKILL_MAX_INJECTION_COUNT: 3,
   /** Skill injection: 所有 skill 拼起来的字符上限（~token 预算，粗估 4 chars/token）。

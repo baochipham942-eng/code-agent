@@ -296,7 +296,7 @@ export const zhSettingsWork = {
         fallbackProxyUrlLabel: '备用代理 URL (可选)',
         fallbackProxyUrlPlaceholder: '主代理不可用时自动切换',
         allowedUserIdsLabel: '白名单用户 ID (可选)',
-        allowedUserIdsPlaceholder: '逗号分隔，留空允许所有用户',
+        allowedUserIdsPlaceholder: '逗号分隔；留空=陌生人仅访客档（只读工具），群内需 @ 或回复 Bot',
         telegramTipSearchPrefix: '在 Telegram 中搜索 ',
         telegramTipSearchSuffix: ' 创建 Bot',
         telegramTipNewBotPrefix: '发送 ',

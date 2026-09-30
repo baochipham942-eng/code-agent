@@ -82,6 +82,7 @@ import { resolveServerConfigSecrets } from './mcpSecretResolver';
 import { processBatched } from './mcpSearchUtils';
 import { discoverLazyMcpServersForSearch, type McpLazySearchClient } from './mcpLazySearch';
 import { McpIdleReaper, type McpIdleReapingOptions } from './mcpIdleReaper';
+import { acquireMcpToolClient, isReapableStdioServer } from './mcpReapPolicy';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
   DEFAULT_MCP_SERVERS as _DEFAULT_MCP_SERVERS,
@@ -182,6 +183,8 @@ export class MCPClient extends EventEmitter {
   private inProcessServers: Map<string, InProcessMCPServerInterface> = new Map();
   /** Monotonic process-local generation; changes after every successful reconnect. */
   private serverConnectionGenerations: Map<string, number> = new Map();
+  /** Generation at which the current external client was installed. Disconnect bumps generation without updating this. */
+  private clientBirthGeneration: Map<string, number> = new Map();
   private registry = new MCPToolRegistry();
   // 懒加载：正在连接中的服务器 Promise（防止重复连接）
   private connectingServers: Map<string, Promise<void>> = new Map();
@@ -200,10 +203,10 @@ export class MCPClient extends EventEmitter {
   /** Max cache entries */
   private static readonly MAX_CACHE_SIZE = 20;
 
-  // 只回收能懒加载回来的 server（stdio 且未关闭 lazyLoad）——远程/进程内/lazyLoad:false 断连后
-  // 没有自动重连路径，回收即永久失联。回收后打回 'lazy'（不是 disconnect() 默认的 'disconnected'），
+  // 只回收显式 stateless 且能懒加载回来的 stdio。缺省视为有会话状态，远程/进程内/lazyLoad:false
+  // 断连后也没有自动重连路径，回收即永久失联。回收后打回 'lazy'（不是 disconnect() 默认的 'disconnected'），
   // 与「还没首次连接」同一状态，才不会被 isMcpStatusUsableForScope 滤出 scope、断了重连路。
-  private isReapableServer(serverName: string): boolean { const config = this.serverConfigs.get(serverName); return !!config && isStdioConfig(config) && config.lazyLoad !== false; } private markServerLazyAfterReap(serverName: string): void { const state = this.serverStates.get(serverName); if (state) state.status = 'lazy'; }
+  private isReapableServer(serverName: string): boolean { return isReapableStdioServer(this.serverConfigs.get(serverName)); } private markServerLazyAfterReap(serverName: string): void { const state = this.serverStates.get(serverName); if (state) state.status = 'lazy'; this.idleReaper.markReaped(serverName); }
 
   constructor(options: MCPClientOptions = {}) {
     super(); this.idleReaper = new McpIdleReaper({ clients: this.clients, connectingServers: this.connectingServers, disconnect: (serverName) => this.disconnect(serverName), isReapable: (serverName) => this.isReapableServer(serverName), markLazyAfterReap: (serverName) => this.markServerLazyAfterReap(serverName), now: options.now }, options.idleReaping);
@@ -483,7 +486,7 @@ export class MCPClient extends EventEmitter {
 
       this.clients.set(config.name, connected.client);
       this.transports.set(config.name, connected.transport);
-      this.bumpServerConnectionGeneration(config.name);
+      this.bumpServerConnectionGeneration(config.name, true);
       this.idleReaper.touchServer(config.name);
       const refreshCallbacks = this.buildListRefreshCallbacks(config.name);
       void this.listChangedRecovery.monitor(config.name, connected.client, {
@@ -638,7 +641,7 @@ export class MCPClient extends EventEmitter {
 
     if (client) {
       await client.close();
-      this.clients.delete(serverName);
+      if (this.clients.get(serverName) === client) this.clients.delete(serverName);
     }
 
     if (transport) {
@@ -885,10 +888,15 @@ export class MCPClient extends EventEmitter {
     return generation === undefined ? undefined : `${serverName}:${generation}`;
   }
 
-  private bumpServerConnectionGeneration(serverName: string): void {
-    const current = this.serverConnectionGenerations.get(serverName) ?? 0;
-    this.serverConnectionGenerations.set(serverName, current + 1);
+  private bumpServerConnectionGeneration(serverName: string, rememberBirth = false): void {
+    const next = (this.serverConnectionGenerations.get(serverName) ?? 0) + 1;
+    this.serverConnectionGenerations.set(serverName, next);
+    if (rememberBirth) this.clientBirthGeneration.set(serverName, next);
   }
+
+  wasServerReaped(serverName: string): boolean { return this.idleReaper.wasReaped(serverName); }
+
+  private retireStaleClient(serverName: string, stale: Client): void { if (this.clients.get(serverName) === stale) this.clients.delete(serverName); const state = this.serverStates.get(serverName); if (state && !this.clients.has(serverName) && state.status === 'connected') state.status = 'disconnected'; }
 
   createTaskProtocol(serverName: string, expectedServerIdentity: string): McpTaskProtocol | null {
     const actualIdentity = this.getServerIdentity(serverName);
@@ -966,7 +974,7 @@ export class MCPClient extends EventEmitter {
         } catch {
           // MCP results are independent from tracing availability.
         }
-        return result;
+        return this.idleReaper.applyRestartNotice(serverName, result);
       } catch (error) {
         try {
           if (spanId) getTelemetryService().endSpan(spanId, 'error', { 'mcp.result_status': 'failed' });
@@ -1048,34 +1056,19 @@ export class MCPClient extends EventEmitter {
       return this.registry.callInProcessTool(toolCallId, serverName, toolName, args, inProcessServer, abortSignal);
     }
 
-    // 懒加载
-    let client = this.clients.get(serverName);
-    if (!client) {
-      const state = this.serverStates.get(serverName);
-      if (state?.status === 'lazy' || state?.status === 'disconnected') {
-        logger.info(`Server ${serverName} not connected, triggering lazy-load for tool: ${toolName}`);
-        const connected = await this.ensureConnected(serverName, abortSignal);
-        if (!connected) {
-          // 等待被 abort 打断：按 :999 的取消形状返回，不说成 connection failed
-          if (abortSignal?.aborted) return buildCancelledToolResult(toolCallId);
-          const errorMsg = state?.error || 'Failed to connect to server';
-          return {
-            toolCallId,
-            success: false,
-            error: `MCP server ${serverName} connection failed: ${errorMsg}`,
-          };
-        }
-        client = this.clients.get(serverName);
-      }
-
-      if (!client) {
-        return {
-          toolCallId,
-          success: false,
-          error: `MCP server ${serverName} not connected`,
-        };
-      }
-    }
+    const acquired = await acquireMcpToolClient({
+      toolCallId, serverName, toolName, signal: abortSignal,
+      getClient: () => this.clients.get(serverName),
+      getStatus: () => this.serverStates.get(serverName)?.status,
+      getStatusError: () => this.serverStates.get(serverName)?.error,
+      getGeneration: () => this.serverConnectionGenerations.get(serverName),
+      clientBornAt: () => this.clientBirthGeneration.get(serverName),
+      ensureConnected: (signal) => this.ensureConnected(serverName, signal),
+      retireIfCurrent: (stale) => this.retireStaleClient(serverName, stale),
+    });
+    if (acquired.failure) return acquired.failure;
+    const client = acquired.client;
+    if (!client) return { toolCallId, success: false, error: `MCP server ${serverName} not connected` };
 
     const startTime = Date.now();
 

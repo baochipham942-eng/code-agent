@@ -1,6 +1,7 @@
 import type { Client } from '@modelcontextprotocol/client';
 import { createLogger } from '../services/infra/logger';
 import { MCP_TIMEOUTS } from '../../shared/constants/timeouts';
+import { restartNoticeFor } from './mcpReapPolicy';
 
 export interface McpIdleReapingOptions {
   enabled?: boolean;
@@ -17,7 +18,7 @@ interface McpIdleReaperDependencies {
   connectingServers: ReadonlyMap<string, Promise<void>>;
   disconnect: (serverName: string) => Promise<void>;
   /**
-   * 只有能懒加载回来的 server 才能被回收——非 lazy stdio 与远程/进程内 server
+   * 只有显式 stateless、且能懒加载回来的 server 才能被回收——非 lazy stdio 与远程/进程内 server
    * 断连后没有自动重连路径（ensureConnected 只在 status 'lazy'/'disconnected' 时
    * 触发，但没有任何调用方会主动对它们重新 ensureConnected），回收即永久失联。
    */
@@ -44,6 +45,8 @@ export class McpIdleReaper {
   private readonly activeRequests: Map<string, number> = new Map();
   private readonly connectionLeases: Map<string, Map<string, MCPConnectionLease>> = new Map();
   private readonly reapingServers: Set<string> = new Set();
+  /** Set when a server is reaped; cleared when the next tool result delivers the restart notice. */
+  private readonly reapedPendingNotice = new Set<string>();
   private idleReaperTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(dependencies: McpIdleReaperDependencies, options?: McpIdleReapingOptions) {
@@ -179,11 +182,28 @@ export class McpIdleReaper {
     this.touchServer(serverName);
   }
 
+  markReaped(serverName: string): void {
+    this.reapedPendingNotice.add(serverName);
+  }
+
+  wasReaped(serverName: string): boolean {
+    return this.reapedPendingNotice.has(serverName);
+  }
+
+  applyRestartNotice<T extends { output?: string; error?: string }>(serverName: string, result: T): T {
+    if (!this.reapedPendingNotice.delete(serverName)) return result;
+    const notice = restartNoticeFor(serverName);
+    if (typeof result.output === 'string') return { ...result, output: `${notice}\n${result.output}` };
+    if (typeof result.error === 'string') return { ...result, error: `${notice}\n${result.error}` };
+    return { ...result, output: notice };
+  }
+
   clearServer(serverName: string): void {
     this.lastUsedAt.delete(serverName);
     this.activeRequests.delete(serverName);
     this.connectionLeases.delete(serverName);
     this.reapingServers.delete(serverName);
+    this.reapedPendingNotice.delete(serverName);
   }
 
   clearActiveRequests(serverName: string): void {

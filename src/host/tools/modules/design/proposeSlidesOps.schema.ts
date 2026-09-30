@@ -46,4 +46,7 @@ Provide a concise "topic" (the subject), and — CRITICAL for quality — pass y
   },
   category: 'planning',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'write', expression: 'resource(design, slides)' },
+  ],
 };

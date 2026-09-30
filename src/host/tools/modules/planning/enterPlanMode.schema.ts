@@ -32,4 +32,7 @@ export const enterPlanModeSchema: ToolSchema = {
   permissionLevel: 'write',
   readOnly: false,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'write', expression: 'resource(session, plan)' },
+  ],
 };

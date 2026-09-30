@@ -75,4 +75,7 @@ Only image generation is supported here (no video / no editing of existing image
   },
   category: 'planning',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(design, canvas)' },
+  ],
 };

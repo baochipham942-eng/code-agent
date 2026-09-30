@@ -43,4 +43,7 @@ export const recommendCapabilitySchema: ToolSchema = {
   permissionLevel: 'read',
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', expression: 'resource(capability, catalog)' },
+  ],
 };

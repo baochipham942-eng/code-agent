@@ -7,7 +7,7 @@ export const turnFeedbackWhyZh = {
     skip: '跳过',
     received: '已收到',
     includeAnswer: '附上这段回答（会一起上传）',
-    uploadNotice: '这段话会随反馈上传给团队。关闭「共享使用数据」后，本设备不再向云端上报使用情况。',
+    uploadNotice: '这段话会随反馈上传给团队。关闭「云端遥测上传」后，本设备不再把运行元数据上传到云端。',
   },
 };
 
@@ -18,6 +18,6 @@ export const turnFeedbackWhyEn: typeof turnFeedbackWhyZh = {
     skip: 'Skip',
     received: 'Thanks, received',
     includeAnswer: 'Include this answer (it will be uploaded too)',
-    uploadNotice: 'This note is uploaded to the team with your feedback. Turn off “Share usage data” to stop this device from reporting usage to the cloud.',
+    uploadNotice: 'This note is uploaded to the team with your feedback. Turn off “Cloud telemetry upload” to stop this device from uploading runtime metadata.',
   },
 };

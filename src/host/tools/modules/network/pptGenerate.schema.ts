@@ -174,6 +174,9 @@ export const pptGenerateSchema: ToolSchema = {
   pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
   readOnly: false,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'write', argumentNames: ['output_path'] },
+  ],
 };
 
 export { LEGACY_PPT_GENERATE_ENV };

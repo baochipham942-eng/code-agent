@@ -82,4 +82,8 @@ screenshot_page { "url": "https://example.com", "analyze": true, "prompt": "è¿™ä
   pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
   readOnly: false,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', expression: 'resource(http, args.url)' },
+    { kind: 'write', argumentNames: ['output_path'] },
+  ],
 };

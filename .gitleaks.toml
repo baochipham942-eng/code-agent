@@ -1,0 +1,64 @@
+# Public-repo gitleaks config. Default rules stay on. Each allowlist entry
+# exempts one fake-key fixture already listed in .security-allowlist.
+# Findings that are not those fixtures are not allowlisted.
+
+title = "code-agent public repo"
+minVersion = "v8.25.0"
+
+[extend]
+useDefault = true
+
+# Exemption: synthetic openai-project-key. The detector test plants a fake
+# project key so it can prove the pattern matches. Not a live credential.
+# .security-allowlist: tests/unit/security/sensitiveDetector.test.ts : openai-project-key
+[[allowlists]]
+description = "fake openai-project-key fixture in sensitiveDetector.test.ts"
+targetRules = ["openai-api-key"]
+paths = ['''(?:^|/)tests/unit/security/sensitiveDetector\.test\.ts$''']
+
+# Exemption: synthetic gitlab-pat. Same detector test, fake glpat placeholder.
+# .security-allowlist: tests/unit/security/sensitiveDetector.test.ts : gitlab-pat
+[[allowlists]]
+description = "fake gitlab-pat fixture in sensitiveDetector.test.ts"
+targetRules = ["gitlab-pat"]
+paths = ['''(?:^|/)tests/unit/security/sensitiveDetector\.test\.ts$''']
+
+# Exemption: synthetic aws-access-key. The AWS example id in this test ends
+# with EXAMPLE, which the default aws-access-token rule already ignores.
+# This path exemption is the repo-level match for that fixture.
+# .security-allowlist: tests/unit/security/sensitiveDetector.test.ts : aws-access-key
+[[allowlists]]
+description = "fake aws-access-key fixture in sensitiveDetector.test.ts"
+targetRules = ["aws-access-token"]
+paths = ['''(?:^|/)tests/unit/security/sensitiveDetector\.test\.ts$''']
+
+# Exemption: synthetic openai-project-key in the data-guard test.
+# .security-allowlist: tests/unit/security/sensitiveDataGuard.test.ts : openai-project-key
+[[allowlists]]
+description = "fake openai-project-key fixture in sensitiveDataGuard.test.ts"
+targetRules = ["openai-api-key"]
+paths = ['''(?:^|/)tests/unit/security/sensitiveDataGuard\.test\.ts$''']
+
+# Exemption: slack-token placeholder listed for the troubleshooting guide.
+# The guide file is not in the tree right now; the entry stays so a restored
+# copy of that documented placeholder is still exempt. xox* rules only.
+# .security-allowlist: docs/guides/troubleshooting.md : slack-token
+[[allowlists]]
+description = "documented slack-token placeholder in troubleshooting.md"
+targetRules = [
+    "slack-bot-token",
+    "slack-legacy-bot-token",
+    "slack-legacy-token",
+    "slack-legacy-workspace-token",
+    "slack-user-token",
+]
+paths = ['''(?:^|/)docs/guides/troubleshooting\.md$''']
+
+# Exemption: github-pat placeholder listed for the alignment plan.
+# That plan file is not in the tree right now; the entry stays for the
+# documented placeholder. github-pat (ghp_) only.
+# .security-allowlist: docs/plans/2026-01-22-claude-code-alignment-plan.md : github-pat
+[[allowlists]]
+description = "documented github-pat placeholder in the alignment plan"
+targetRules = ["github-pat"]
+paths = ['''(?:^|/)docs/plans/2026-01-22-claude-code-alignment-plan\.md$''']

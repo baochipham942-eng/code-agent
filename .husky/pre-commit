@@ -2,3 +2,9 @@ bash scripts/check-hardcoded-models.sh
 bash scripts/check-provider-symmetry.sh --quiet
 bash scripts/check-prompt-version-bump.sh
 npx lint-staged
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact
+else
+  echo "gitleaks: not on PATH, skipping staged secret scan"
+fi
+node scripts/security/check-sensitive-hashes.mjs --staged

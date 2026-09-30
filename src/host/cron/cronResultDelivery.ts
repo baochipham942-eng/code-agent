@@ -2,6 +2,7 @@ import type { CronJobAction, CronJobDefinition, CronJobExecution } from '../../s
 import { CRON_AGENT_SNAPSHOT, CRON_RESULT_PUSH, EXTERNAL_WATCH } from '../../shared/constants';
 import { saveCronExecution, upsertCronExecutionInMemory } from './cronPersistence';
 import { truncateUtf8Snapshot } from './cronAgentPrompt';
+import { CRON_SUMMARY_TAG_PATTERN } from '../../shared/cronRunDigest';
 
 interface CronResultDeliveryOutcome {
   delivered: boolean;
@@ -45,11 +46,18 @@ function parseTarget(raw: string): { account: string; chatId?: string } {
 function sanitizePushBody(raw: string): string {
   const snapshotBlocks = new RegExp(CRON_AGENT_SNAPSHOT.TAG_PATTERN.source, 'gi');
   const withoutSnapshots = raw.replace(snapshotBlocks, '');
-  const alertBlocks = new RegExp(EXTERNAL_WATCH.ALERT_TAG_PATTERN.source, 'gi');
-  const alerts = [...withoutSnapshots.matchAll(alertBlocks)]
+  const summaryBlocks = new RegExp(CRON_SUMMARY_TAG_PATTERN.source, 'gi');
+  const summaries = [...withoutSnapshots.matchAll(summaryBlocks)]
     .map((match) => match[1].trim())
     .filter(Boolean);
-  return (alerts.length > 0 ? alerts.join('\n') : withoutSnapshots).trim();
+  const withoutSummaries = withoutSnapshots.replace(summaryBlocks, '');
+  const alertBlocks = new RegExp(EXTERNAL_WATCH.ALERT_TAG_PATTERN.source, 'gi');
+  const alerts = [...withoutSummaries.matchAll(alertBlocks)]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
+  if (alerts.length > 0) return alerts.join('\n');
+  const plainBody = withoutSummaries.trim();
+  return plainBody || summaries.join('\n');
 }
 
 async function pushCronResult(

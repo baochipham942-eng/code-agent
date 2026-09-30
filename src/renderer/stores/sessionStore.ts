@@ -28,6 +28,7 @@ import {
 import { executeCreateSession } from './sessionCreate';
 import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions } from './sessionListPagination';
 import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
+import { groupRunsByTask } from '@shared/cronRunDigest';
 
 const logger = createLogger('SessionStore');
 
@@ -284,6 +285,8 @@ interface SessionActions {
   setSessionDesignBrief: (sessionId: string, brief: DesignBrief) => void;
   clearSessionDesignBrief: (sessionId: string) => void;
   getSessionDesignBrief: (sessionId: string) => DesignBrief | undefined;
+  /** Data contract for cron/heartbeat run grouping; presentation can consume it later. */
+  getCronRunGroups: () => ReturnType<typeof groupRunsByTask<SessionWithMeta>>;
 }
 
 type SessionStore = SessionState & SessionActions;
@@ -311,6 +314,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     sessionDesignBriefs: new Map<string, DesignBrief>(),
 
     getPendingSessionCreate: () => _pendingSessionCreate,
+
+    getCronRunGroups: () => groupRunsByTask(get().sessions),
 
     loadSessions: async (options) => {
       // 实现已迁到 sessionListPagination（侧栏分页 + god-file 门，此处只留接线）。

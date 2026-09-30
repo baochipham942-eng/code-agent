@@ -198,4 +198,18 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
     expect(result.reason).toBeUndefined();
     expect(sendMessage).not.toHaveBeenCalled();
   });
+
+  it('keeps a summary-only digest as unwrapped push text', async () => {
+    const result = await deliver(
+      job('feishu:oc_group1'),
+      '<cron_summary>已生成日报。\nartifact: /tmp/report.md</cron_summary>',
+    ).outcome;
+
+    expect(result).toEqual({ delivered: true, pushedBody: '已生成日报。\nartifact: /tmp/report.md' });
+    expect(sendMessage).toHaveBeenCalledWith(
+      'account-uuid',
+      'oc_group1',
+      '已生成日报。\nartifact: /tmp/report.md',
+    );
+  });
 });

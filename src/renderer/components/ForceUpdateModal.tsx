@@ -191,7 +191,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
         return (
           <button
             onClick={handleOpenFile}
-            className="w-full px-4 py-2.5 text-sm bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors font-medium"
+            className="w-full px-4 py-2.5 text-sm bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors font-medium"
           >
             {n.installNow}
           </button>

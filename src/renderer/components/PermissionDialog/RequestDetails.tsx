@@ -56,11 +56,6 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {labels.pluginOrigin.replace('{plugin}', details.pluginId)}
     </p>
   ) : null;
-  const subagentOriginNotice = request.agentId ? (
-    <p className="text-xs leading-5 text-zinc-400" data-testid="permission-subagent-origin">
-      {labels.subagentOrigin.replace('{agent}', request.agentId)}
-    </p>
-  ) : null;
 
   // N-WRITEBACK-EDIT：可编辑写回工具把参数全部摊开（含正文），不再用只拼 To/CC 的通用预览，
   // 也不显示按 permissionLevel 推断出来的「修改当前项目文件」边界（对邮件是误导）。
@@ -69,7 +64,6 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       <div className="space-y-3">
         {peerOriginNotice}
         {pluginOriginNotice}
-        {subagentOriginNotice}
         <WritebackFieldsView tool={request.tool} args={request.rawArgs} />
         {request.boundary?.id === 'connector.external_write' && (
           <BoundaryDisclosure
@@ -94,7 +88,6 @@ export function RequestDetails({ request }: RequestDetailsProps) {
     <div className="space-y-3">
       {peerOriginNotice}
       {pluginOriginNotice}
-      {subagentOriginNotice}
       {permissionConsequence(request, t) && (
         <p className={`text-xs leading-5 ${type === 'dangerous_command' || request.dangerLevel === 'danger' ? 'text-badge-danger' : 'text-zinc-400'}`} data-testid="permission-consequence">
           {permissionConsequence(request, t)}

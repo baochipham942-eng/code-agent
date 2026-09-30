@@ -1925,7 +1925,6 @@ export class ToolExecutor {
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
       if (pluginId) permissionRequest.details.pluginId = pluginId;
-      if (!permissionRequest.agentId && options.agentId) permissionRequest.agentId = options.agentId;
       if (
         permissionRequest.type === 'file_read'
         || permissionRequest.type === 'file_write'

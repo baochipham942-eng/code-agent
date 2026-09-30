@@ -88,18 +88,24 @@ describe('PermissionCard peer 起源标注（ADR-067 D3）', () => {
     expect(html).not.toContain('的消息触发');
   });
 
-  it('plugin and subagent origins render in both languages and stay absent when unset', () => {
-    const attributed = baseRequest({
-      agentId: 'agent-child',
-      details: { command: 'rm -rf /tmp/x', pluginId: 'example.plugin' },
-    });
-    expect(renderInLanguage(attributed, 'zh')).toContain('来自插件 example.plugin');
-    expect(renderInLanguage(attributed, 'zh')).toContain('来自子 agent agent-child');
-    expect(renderInLanguage(attributed, 'en')).toContain('From plugin example.plugin');
-    expect(renderInLanguage(attributed, 'en')).toContain('From subagent agent-child');
+  it('plugin origin renders in both languages and main-agent ids do not render a subagent line', () => {
+    for (const agentId of ['default', 'role-writer'] as const) {
+      const attributed = baseRequest({
+        agentId,
+        details: { command: 'rm -rf /tmp/x', pluginId: 'example.plugin' },
+      });
+      const zh = renderInLanguage(attributed, 'zh');
+      const en = renderInLanguage(attributed, 'en');
+      expect(zh, agentId).toContain('来自插件 example.plugin');
+      expect(zh, agentId).not.toContain('来自子 agent');
+      expect(en, agentId).toContain('From plugin example.plugin');
+      expect(en, agentId).not.toContain('From subagent');
+      expect(en, agentId).not.toContain(agentId);
+    }
 
-    const withoutAttribution = renderInLanguage(baseRequest({}), 'en');
+    const withoutAttribution = renderInLanguage(baseRequest({ agentId: 'default' }), 'en');
     expect(withoutAttribution).not.toContain('From plugin');
     expect(withoutAttribution).not.toContain('From subagent');
+    expect(withoutAttribution).not.toContain('default');
   });
 });

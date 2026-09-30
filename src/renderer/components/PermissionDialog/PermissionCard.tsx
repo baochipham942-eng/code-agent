@@ -40,7 +40,6 @@ function normalizeRequest(
   return {
     id: request.id,
     sessionId: request.sessionId,
-    agentId: request.agentId,
     forceConfirm: request.forceConfirm,
     tool: request.tool,
     type: request.type as PermissionType,

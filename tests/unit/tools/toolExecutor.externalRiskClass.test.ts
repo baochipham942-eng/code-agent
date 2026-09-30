@@ -109,7 +109,7 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
     expect(rules).toContain('external_side_effect');
   });
 
-  it('carries plugin and subagent attribution without changing the approval outcome', async () => {
+  it('carries plugin attribution without copying the caller agent id or changing the approval outcome', async () => {
     registerPluginToolOrigin('mail_send', 'example.plugin');
     try {
       const requestPermission = vi.fn(async (_request: unknown) => false);
@@ -122,16 +122,57 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
       });
 
       expect(result.success).toBe(false);
-      expect(requestPermission.mock.calls[0]?.[0]).toMatchObject({
-        agentId: 'agent-child',
-        details: { pluginId: 'example.plugin' },
-        decisionTrace: {
-          finalOutcome: 'ask',
-          steps: expect.arrayContaining([
-            expect.objectContaining({ rule: 'plugin_origin', result: 'allow' }),
-          ]),
-        },
+      const request = requestPermission.mock.calls[0]?.[0] as {
+        agentId?: string;
+        details?: { pluginId?: string };
+        decisionTrace?: { finalOutcome: string; steps: TraceStepLike[] };
+      };
+      expect(request.agentId).toBeUndefined();
+      expect(request.details?.pluginId).toBe('example.plugin');
+      expect(request.decisionTrace).toMatchObject({
+        finalOutcome: 'ask',
+        steps: expect.arrayContaining([
+          expect.objectContaining({ rule: 'plugin_origin', result: 'allow' }),
+        ]),
       });
+    } finally {
+      unregisterPluginToolOrigin('mail_send');
+    }
+  });
+
+  it('main-agent approval payload has plugin provenance and no subagent attribution', async () => {
+    registerPluginToolOrigin('mail_send', 'example.plugin');
+    try {
+      for (const agentId of ['default', 'role-writer']) {
+        const requestPermission = vi.fn(async (_request: unknown) => false);
+        const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+        executor.setAuditEnabled(false);
+        await executor.execute('mail_send', { subject: 'hi', to: ['a@b.com'] }, {
+          sessionId: `main-${agentId}`,
+          agentId,
+        });
+        const request = requestPermission.mock.calls[0]?.[0] as {
+          agentId?: string;
+          details?: { pluginId?: string };
+        };
+        expect(request.agentId, agentId).toBeUndefined();
+        expect(request.details?.pluginId, agentId).toBe('example.plugin');
+        expect(JSON.stringify(request), agentId).not.toMatch(/subagent|来自子/);
+      }
+
+      const requestPermission = vi.fn(async (_request: unknown) => false);
+      const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+      executor.setAuditEnabled(false);
+      await executor.execute('Bash', { command: 'plugin-ask-probe --marker' }, {
+        sessionId: 'main-bash-default',
+        agentId: 'default',
+      });
+      const bash = requestPermission.mock.calls[0]?.[0] as {
+        agentId?: string;
+        details?: { pluginId?: string };
+      };
+      expect(bash.agentId).toBeUndefined();
+      expect(bash.details?.pluginId).toBeUndefined();
     } finally {
       unregisterPluginToolOrigin('mail_send');
     }

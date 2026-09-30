@@ -808,6 +808,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           permissionMode,
           abortSignal: ctx.abortSignal,
           deniedPath,
+          workingDirectory,
         });
         if (!offeredPath) throw error;
 

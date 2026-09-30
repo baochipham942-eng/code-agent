@@ -35,7 +35,8 @@ import {
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
-import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
+import { createTraceBuilder } from '../security/decisionTraceBuilder';
+import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
 import { getPluginIdForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
@@ -204,30 +205,14 @@ function shellWritePathPolicyCheck(
       targetPath = expanded;
     }
     const resolved = resolveShellTarget(targetPath, workingDirectory);
-    if (policyEnforcer?.isActive) {
-      const policyCheck = policyEnforcer.checkFilePath(resolved, 'write');
-      if (!policyCheck.allowed) return { kind: 'deny', check: policyCheck };
-    }
-
-    const relative = nodePath.relative(workingDirectory, resolved) || '.';
-    const homeRelative = nodePath.relative(nodeOs.homedir(), resolved);
-    const candidates = [target.path, targetPath, resolved, relative];
-    if (homeRelative && !homeRelative.startsWith('..') && !nodePath.isAbsolute(homeRelative)) {
-      candidates.push(`~/${homeRelative}`);
-    }
-    const matchedRule = getPolicyEngine().matchUserPathDeny(candidates);
-    if (matchedRule) {
-      const reason = `Shell write target "${target.path}" is denied by ${matchedRule.name}`;
-      return {
-        kind: 'deny',
-        check: {
-          allowed: false,
-          reason,
-          section: 'user-permissions',
-          traceStep: createTraceStep('policy_enforcer', matchedRule.id, 'deny', reason, Date.now()),
-        },
-      };
-    }
+    const denied = denyConcreteShellWritePath({
+      resolvedPath: resolved,
+      workingDirectory,
+      policyEnforcer,
+      pathCandidates: [target.path, targetPath],
+      displayPath: target.path,
+    });
+    if (denied) return { kind: 'deny', check: denied };
   }
   if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer)) {
     return { kind: 'ask', uncertain: unresolved };

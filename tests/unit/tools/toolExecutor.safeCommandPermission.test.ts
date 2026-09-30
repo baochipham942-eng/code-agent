@@ -376,6 +376,33 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       );
     }
 
+    function escalationAsks(): PermissionRequestData[] {
+      return permissionRequests.filter((request) => request.details.action === 'sandbox_escalate_once');
+    }
+
+    function buildApprovingPathPolicyExecutor(): ToolExecutor {
+      const executor = new ToolExecutor({
+        workingDirectory: workspace,
+        requestPermission: async (request) => {
+          permissionRequests.push(request);
+          return true;
+        },
+      });
+      executor.setAuditEnabled(false);
+      return executor;
+    }
+
+    async function withSshdir<T>(root: string, run: () => Promise<T>): Promise<T> {
+      const previous = process.env.SSHDIR;
+      process.env.SSHDIR = root;
+      try {
+        return await run();
+      } finally {
+        if (previous === undefined) delete process.env.SSHDIR;
+        else process.env.SSHDIR = previous;
+      }
+    }
+
     it('配了 denied_paths 时，$SSHDIR 写目标必须弹审批卡；拒绝后不执行、也不是路径硬拒', async () => {
       await writeDeniedPathsPolicy();
       const executor = buildPathPolicyExecutor();
@@ -427,6 +454,108 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         type: 'command',
         details: { action: 'sandbox_escalate_once' },
       });
+    });
+
+    it('配了 denied_paths 时，$SSHDIR 落到禁止路径不能出现 sandbox_escalate_once 卡', async () => {
+      const sshRoot = await fs.mkdtemp(path.join('/tmp', 'sandbox-deny-ssh-'));
+      const canonical = resolveCanonicalRunPath(sshRoot);
+      const authorizedKeys = path.join(canonical, 'authorized_keys');
+      try {
+        await fs.writeFile(
+          path.join(workspace, 'code-agent-policy.toml'),
+          [
+            '[filesystem]',
+            `writable_paths = ["./**", "${canonical}/**"]`,
+            `denied_paths = ["${canonical}/**"]`,
+            '',
+          ].join('\n'),
+          'utf8',
+        );
+        const executor = buildApprovingPathPolicyExecutor();
+        const result = await withSshdir(canonical, () => executor.execute(
+          'Bash',
+          { command: 'echo key >> "$SSHDIR/authorized_keys"' },
+          { sessionId: 'unresolved-sshdir-denied-no-escalate', ...echoPreApproved },
+        ));
+
+        const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));
+        expect(pathPolicyAsks.some((request) =>
+          request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny,
+        )).toBe(true);
+        expect(escalationAsks()).toHaveLength(0);
+        expect(result.success).toBe(false);
+        expect(result.error ?? '').toContain(authorizedKeys);
+        expect(result.error ?? '').toContain('Operation not permitted');
+        expect(result.error ?? '').not.toContain('Blocked by path policy');
+        expect(result.error ?? '').not.toContain('declined to widen the sandbox');
+        expect(existsSync(authorizedKeys)).toBe(false);
+      } finally {
+        await fs.rm(sshRoot, { recursive: true, force: true });
+      }
+    });
+
+    it('配了 Edit(path) deny 时，$SSHDIR 落到该路径不能出现 sandbox_escalate_once 卡', async () => {
+      const sshRoot = await fs.mkdtemp(path.join('/tmp', 'sandbox-deny-edit-'));
+      const canonical = resolveCanonicalRunPath(sshRoot);
+      const authorizedKeys = path.join(canonical, 'authorized_keys');
+      try {
+        getPolicyEngine().loadUserRules({ deny: [`Edit(${canonical}/**)`] });
+        const executor = buildApprovingPathPolicyExecutor();
+        const result = await withSshdir(canonical, () => executor.execute(
+          'Bash',
+          { command: 'echo key >> "$SSHDIR/authorized_keys"' },
+          { sessionId: 'unresolved-sshdir-edit-deny-no-escalate', ...echoPreApproved },
+        ));
+
+        const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));
+        expect(pathPolicyAsks.some((request) =>
+          request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny,
+        )).toBe(true);
+        expect(escalationAsks()).toHaveLength(0);
+        expect(result.success).toBe(false);
+        expect(result.error ?? '').toContain(authorizedKeys);
+        expect(result.error ?? '').toContain('Operation not permitted');
+        expect(result.error ?? '').not.toContain('Blocked by path policy');
+        expect(result.error ?? '').not.toContain('declined to widen the sandbox');
+        expect(existsSync(authorizedKeys)).toBe(false);
+      } finally {
+        await fs.rm(sshRoot, { recursive: true, force: true });
+      }
+    });
+
+    it('路径策略放行的区外写入被沙盒拒绝后仍只追加一次扩大确认', async () => {
+      const allowedRoot = await fs.mkdtemp(path.join('/tmp', 'sandbox-escalate-allow-'));
+      const canonical = resolveCanonicalRunPath(allowedRoot);
+      const blockedRoot = path.join(canonical, 'blocked');
+      const target = path.join(canonical, 'out.txt');
+      try {
+        await fs.mkdir(blockedRoot);
+        await fs.writeFile(
+          path.join(workspace, 'code-agent-policy.toml'),
+          [
+            '[filesystem]',
+            `writable_paths = ["./**", "${canonical}/**"]`,
+            `denied_paths = ["${blockedRoot}/**"]`,
+            '',
+          ].join('\n'),
+          'utf8',
+        );
+        const executor = buildApprovingPathPolicyExecutor();
+        await executor.execute(
+          'Bash',
+          { command: `echo key >> ${JSON.stringify(target)}` },
+          { sessionId: 'allowed-outside-still-escalates', ...echoPreApproved },
+        );
+
+        expect(escalationAsks()).toHaveLength(1);
+        expect(escalationAsks()[0]).toMatchObject({
+          type: 'command',
+          forceConfirm: true,
+          details: { action: 'sandbox_escalate_once', deniedPath: target },
+        });
+      } finally {
+        await fs.rm(allowedRoot, { recursive: true, force: true });
+      }
     });
 
     it('$HOME 写目标仍展开后走路径禁止硬拒，不改成审批卡', async () => {

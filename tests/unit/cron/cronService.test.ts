@@ -529,7 +529,7 @@ describe('CronService missed schedule traces', () => {
       reason: 'app-offline',
     }]);
     expect(service.getJob('job-at-missed')).toMatchObject({ enabled: false });
-    expect(dbState.savedRows.some((row) => row[0] === 'job-at-missed' && row[11] === 0)).toBe(true);
+    expect(dbState.savedRows.some((row) => row[0] === 'job-at-missed' && row[13] === 0)).toBe(true);
     unsubscribe();
     await service.shutdown();
   });
@@ -709,7 +709,7 @@ describe('CronService every schedule units', () => {
         actionType: 'agent',
       }),
     }));
-    expect(JSON.parse(String(dbState.savedRows.at(-1)?.[16]))).toMatchObject({
+    expect(JSON.parse(String(dbState.savedRows.at(-1)?.[18]))).toMatchObject({
       sourceSessionId: 'source-session-1',
       createdVia: 'slash_schedule',
     });
@@ -881,6 +881,101 @@ describe('N-CRON-SKIPPED-DELIVERY quiet watch rounds', () => {
     await service.triggerJob(job.id);
     expect(channelState.sendMessage).toHaveBeenCalledTimes(3);
 
+    await service.shutdown();
+  });
+});
+
+describe('N-CRON-BUDGET-EXPOSE maxRuns run-count cap', () => {
+  function limitedAgentJob(maxRuns: number) {
+    return {
+      name: 'Limited agent run',
+      runsOn: 'local' as const,
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
+      action: { type: 'agent' as const, agentType: 'default', prompt: 'work' },
+      enabled: true,
+      maxRuns,
+    };
+  }
+
+  function stubExecuteAction(service: CronService, implementation: () => Promise<unknown>) {
+    const executeAction = vi.fn(implementation);
+    (service as unknown as { executeAction: typeof executeAction }).executeAction = executeAction;
+    return executeAction;
+  }
+
+  function maxRunsEventCalls(jobId: string) {
+    return automationState.recordEvent.mock.calls.filter(
+      ([input]) => (input as { eventId?: string }).eventId === `max_runs:${jobId}`,
+    );
+  }
+
+  it('runs a maxRuns:2 job twice, disables it with max_runs_reached, and posts one inbox notice', async () => {
+    const service = new CronService();
+    const executeAction = stubExecuteAction(service, async () => ({ ok: true }));
+    const job = await service.createJob(limitedAgentJob(2));
+
+    const first = await service.triggerJob(job.id);
+    expect(first?.status).toBe('completed');
+    expect(service.getJob(job.id)).toMatchObject({ enabled: true, runCount: 1 });
+    expect(maxRunsEventCalls(job.id)).toHaveLength(0);
+
+    const second = await service.triggerJob(job.id);
+    expect(second?.status).toBe('completed');
+    const disabled = service.getJob(job.id);
+    expect(disabled).toMatchObject({ enabled: false, runCount: 2 });
+    expect(disabled?.metadata).toMatchObject({ disabledReason: 'max_runs_reached' });
+
+    // 停用后本地定时器已摘除：第三个排程 tick 无从触发。
+    const active = (service as unknown as {
+      jobs: Map<string, { cronInstance?: unknown }>;
+    }).jobs.get(job.id);
+    expect(active?.cronInstance).toBeUndefined();
+
+    // 「待过目」收件箱恰好一条到数停用事件。
+    expect(maxRunsEventCalls(job.id)).toHaveLength(1);
+    expect(maxRunsEventCalls(job.id)[0]?.[0]).toMatchObject({
+      event: 'completed',
+      recordStatus: 'paused',
+    });
+
+    // 第三趟不存在：执行动作只被调用了两次。
+    expect(executeAction).toHaveBeenCalledTimes(2);
+    await service.shutdown();
+  });
+
+  it('re-enabling a maxed-out job gives a full new allowance', async () => {
+    const service = new CronService();
+    stubExecuteAction(service, async () => ({ ok: true }));
+    const job = await service.createJob(limitedAgentJob(1));
+
+    await service.triggerJob(job.id);
+    expect(service.getJob(job.id)).toMatchObject({ enabled: false, runCount: 1 });
+
+    const reenabled = await service.updateJob(job.id, { enabled: true });
+    expect(reenabled).toMatchObject({ enabled: true, runCount: 0 });
+    expect(reenabled?.metadata).not.toMatchObject({ disabledReason: 'max_runs_reached' });
+
+    await service.triggerJob(job.id);
+    expect(service.getJob(job.id)).toMatchObject({ enabled: false, runCount: 1 });
+    await service.shutdown();
+  });
+
+  it('an over-budget run still disables via the existing permanent path and is not double-counted as max_runs', async () => {
+    const service = new CronService();
+    stubExecuteAction(service, async () => {
+      throw new Error('Cron job run exceeded its $0.01 budget limit.');
+    });
+    const job = await service.createJob(limitedAgentJob(2));
+
+    const execution = await service.triggerJob(job.id);
+    expect(execution?.status).toBe('failed');
+
+    const disabled = service.getJob(job.id);
+    expect(disabled?.enabled).toBe(false);
+    // 停用走的是 permanent 分档，不是 max_runs——原因与收件箱事件都不许双记。
+    expect(disabled?.metadata?.disabledReason).toBeUndefined();
+    expect(maxRunsEventCalls(job.id)).toHaveLength(0);
     await service.shutdown();
   });
 });

@@ -3,11 +3,7 @@
   "messageRefs": [
     {
       "kind": "content",
-<<<<<<< HEAD
       "contentHash": "0f15252d14a1000fb8a0c026281056fefa25ce73bc54cf08656cd8b1347d6771",
-=======
-      "contentHash": "01ef1023228162564bdfb2292ab000557499b295864ddd592197fcd0edd85ccd",
->>>>>>> 11fb5735c (feat: derive tool result budgets from context window)
       "reason": "system_prompt_fallback"
     },
     {
@@ -15,7 +11,7 @@
       "messageId": "msg-01"
     }
   ],
-  "toolSchemaHash": "f650b951dd000c7a5beb409ded6b412a6ac89e8da8424f3c1a4064c497b7b1fe",
+  "toolSchemaHash": "b5cd3114211ae404578439989a5cec9aef97af5a9a7552ef5c6fdc80d1bc38d1",
   "toolNames": [
     "AskUserQuestion",
     "Bash",

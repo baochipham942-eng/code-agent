@@ -112,6 +112,7 @@ import {
 import { getPermissionModeManager } from '../../../../../src/host/permissions/modes';
 import { getSandboxManager } from '../../../../../src/host/sandbox';
 import { resolveCanonicalRunPath } from '../../../../../src/host/runtime/runContext';
+import { BASH } from '../../../../../src/shared/constants';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -1809,6 +1810,7 @@ describe('bash output truncation guidance (N-BASH-TRUNC-GUIDANCE)', () => {
     const result = await handler.execute({ command: overflow }, makeCtx(), allowAll);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.output).toContain(`truncated to ${BASH.MAX_OUTPUT_LENGTH}`);
     expect(result.output).toContain(`完整输出已留存于 ${savedAt}，用 Read/Grep 回查`);
     expect(result.output).toContain(savedAt);
     expect(result.output).not.toContain('Use Read tool with offset/limit');

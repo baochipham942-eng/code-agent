@@ -59,12 +59,30 @@ describe('resolveTriggerTokens window tiers', () => {
     expect(compressor.shouldTriggerByTokens(LEGACY_FIXED_TRIGGER_TOKENS, 1_000_000)).toBe(true);
   });
 
-  it('keeps an explicit trigger when the output reserve would be lower', () => {
-    // 1_000_000 - 400_000 - 1_024 = 598_976, below the explicit 900_000.
-    expect(resolveTriggerTokens(1_000_000, 900_000, 400_000)).toBe(900_000);
+  it('keeps an explicit trigger below the window ceiling and clamps one above it', () => {
+    // 80_000 is under both the 850_000 occupancy line and the 598_976 reserve line.
+    expect(resolveTriggerTokens(1_000_000, 80_000, 400_000)).toBe(80_000);
+    // 1_000_000 - 400_000 - 1_024 = 598_976. Explicit 900_000 cannot sit above that ceiling.
+    expect(resolveTriggerTokens(1_000_000, 900_000, 400_000)).toBe(598_976);
+    // No output reserve: the ceiling is the occupancy line, not the raw explicit value.
+    expect(resolveTriggerTokens(1_000_000, 900_000)).toBe(850_000);
+    // Absurd output floors the ceiling at half the window; a lower explicit still wins.
+    expect(resolveTriggerTokens(1_000_000, 900_000, 9_999_999)).toBe(500_000);
+    expect(resolveTriggerTokens(1_000_000, 80_000, 9_999_999)).toBe(80_000);
     const compressor = new AutoContextCompressor({ triggerTokens: 900_000 });
-    expect(compressor.shouldTriggerByTokens(598_976, 1_000_000, 400_000)).toBe(false);
-    expect(compressor.shouldTriggerByTokens(900_000, 1_000_000, 400_000)).toBe(true);
+    expect(compressor.shouldTriggerByTokens(598_975, 1_000_000, 400_000)).toBe(false);
+    expect(compressor.shouldTriggerByTokens(598_976, 1_000_000, 400_000)).toBe(true);
+  });
+
+  it('clamps an explicit trigger above a smaller window to the window ceiling', () => {
+    // floor(128_000 × 0.85) = 108_800. A stored 200_000 from a larger window cannot sit past it.
+    const window = 128_000;
+    const explicit = 200_000;
+    expect(resolveTriggerTokens(window, explicit)).toBe(108_800);
+    const compressor = new AutoContextCompressor({ triggerTokens: explicit });
+    expect(compressor.shouldTriggerByTokens(108_799, window)).toBe(false);
+    expect(compressor.shouldTriggerByTokens(108_800, window)).toBe(true);
+    expect(compressor.shouldTriggerByTokens(explicit, window)).toBe(true);
   });
 
   it('lowers the trigger line for a large max-output model', () => {

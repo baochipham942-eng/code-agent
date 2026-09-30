@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { isChildGone } from './childProcessState';
 import { resolveMutationAcceptanceExitCode } from './mutationExitCode';
+import { assembleTsxChildArgv } from './tsxChildArgv';
 import { DURABLE_RUN_SCHEMA_VERSION } from '../../src/shared/contract/durableRun';
 import { DURABLE_RUN_KILL_RESTART_SCENARIOS } from '../../tests/fixtures/durableRunKillRestart';
 
@@ -229,7 +230,11 @@ function startChild(args: string[]): ChildProcessByStdio<null, Readable, Readabl
   const isolatedDataDir = args.at(-1)!;
   // Spawn the host in this process (tsx loader), not tsx/cli.mjs: the CLI
   // re-execs a grandchild, so SIGKILL on the wrapper left the prepare loop alive.
-  return spawn(process.execPath, ['--require', tsxPreflight, '--import', tsxLoader, childEntry, ...args], {
+  return spawn(process.execPath, assembleTsxChildArgv({
+    preflightPath: tsxPreflight,
+    loaderPath: tsxLoader,
+    childEntry,
+  }, args, process.platform === 'win32'), {
     cwd: root,
     env: childEnv(isolatedDataDir),
     stdio: ['ignore', 'pipe', 'pipe'],

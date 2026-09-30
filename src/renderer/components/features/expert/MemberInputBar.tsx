@@ -16,6 +16,7 @@ import type { RuntimeInputMode } from '@shared/contract/conversationEnvelope';
 import { generateMessageId } from '@shared/utils/id';
 import ipcService from '../../../services/ipcService';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolate } from '../../../i18n/interpolate';
 import { useSessionStore } from '../../../stores/sessionStore';
 
 export interface MemberInputTarget {
@@ -33,10 +34,19 @@ interface LocalReceipt {
   content: string;
   state: ReceiptState;
   detail?: string;
+  engineLabel?: string;
+  undeliveredCount?: number;
 }
 
-function receiptOf(receipt: MemberInputReceipt, mode: RuntimeInputMode): Pick<LocalReceipt, 'state' | 'detail'> {
-  if (receipt.outcome === 'rejected') return { state: 'rejected', detail: receipt.reason };
+function receiptOf(receipt: MemberInputReceipt, mode: RuntimeInputMode): Pick<LocalReceipt, 'state' | 'detail' | 'engineLabel' | 'undeliveredCount'> {
+  if (receipt.outcome === 'rejected') {
+    return {
+      state: 'rejected',
+      detail: receipt.reason,
+      engineLabel: receipt.engineLabel,
+      undeliveredCount: receipt.undeliveredCount,
+    };
+  }
   if (receipt.effect === 'now') return { state: 'read' };
   if (receipt.effect === 'queued') return { state: 'queued' };
   return { state: mode === 'redirect' ? 'redirect_next' : 'delivered' };
@@ -120,8 +130,16 @@ export const MemberInputBar: React.FC<{
       case 'read': return text.receiptRead;
       case 'queued': return text.receiptQueued;
       case 'redirect_next': return text.receiptRedirectNextStep;
-      case 'rejected':
-        return `${text.receiptRejected}：${receipt.detail === 'finished' ? text.rejectFinished : text.rejectNotFound}`;
+      case 'rejected': {
+        if (receipt.detail === 'external_engine') {
+          return `${text.receiptRejected}：${interpolate(text.rejectExternalEngine, { engine: receipt.engineLabel ?? '' })}`;
+        }
+        const reasonText = receipt.detail === 'finished' ? text.rejectFinished : text.rejectNotFound;
+        const leftover = receipt.undeliveredCount
+          ? interpolate(text.undeliveredFollowUps, { count: receipt.undeliveredCount })
+          : '';
+        return `${text.receiptRejected}：${reasonText}${leftover ? ` ${leftover}` : ''}`;
+      }
       case 'failed': return `${text.receiptRejected}：${text.sendFailed}`;
       default: return text.receiptDelivered;
     }

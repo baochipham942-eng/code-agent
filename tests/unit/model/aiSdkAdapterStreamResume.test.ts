@@ -21,6 +21,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { streamText, generateText } from 'ai';
 import axios from 'axios';
 import { createDeepSeek } from '@ai-sdk/deepseek';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import { logger } from '../../../src/host/model/adapters/aiSdkFetch';
 import { retryEvents } from '../../../src/host/model/providers/retryStrategy';
@@ -48,6 +49,12 @@ vi.mock('ai', async (importActual) => {
 vi.mock('@ai-sdk/deepseek', () => ({
   createDeepSeek: vi.fn((_options: { apiKey?: string; baseURL?: string; fetch?: typeof fetch }) =>
     (modelId: string) => ({ providerName: 'deepseek', modelId })),
+}));
+// moonshot prefix-param(partial) 档走 default 分支的 createOpenAICompatible：同款抓
+// 端点/fetch 装配的证据链（baseURL 不变 + fetch wrapper 上线 body 带 partial:true）。
+vi.mock('@ai-sdk/openai-compatible', () => ({
+  createOpenAICompatible: vi.fn((_options: { name?: string; apiKey?: string; baseURL?: string; fetch?: typeof fetch }) =>
+    (modelId: string) => ({ providerName: _options.name, modelId })),
 }));
 vi.mock('axios', () => ({ default: vi.fn(async () => ({ status: 200, statusText: 'OK', headers: {}, data: 'ok' })) }));
 
@@ -102,8 +109,9 @@ beforeEach(() => {
   vi.mocked(streamText).mockReset();
   vi.mocked(generateText).mockReset();
   vi.mocked(logger.warn).mockClear();
-  // mockClear 保实现（createDeepSeek 的工厂链 / axios 的 200 响应），只清调用记录。
+  // mockClear 保实现（createDeepSeek / createOpenAICompatible 的工厂链 / axios 的 200 响应），只清调用记录。
   vi.mocked(createDeepSeek).mockClear();
+  vi.mocked(createOpenAICompatible).mockClear();
   vi.mocked(axios).mockClear();
 });
 afterEach(() => {
@@ -499,6 +507,63 @@ describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', (
     expect(normalWire.url).toContain('https://test.local/v1/chat/completions');
     expect(JSON.parse(normalWire.data)).not.toHaveProperty('prefix');
     // deepseek B1 同样无缝：续写 append 断点同一条消息
+    expect(col.byType('stream_break')).toHaveLength(0);
+    expect(res.content).toBe('partialok');
+  });
+
+  it('B1 prefix-param partial（moonshot）：partial:true 打在末条 assistant 消息上；无顶层 prefix；不切端点；采样默认值仍在', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([
+        { type: 'text-delta', id: 't', text: 'partial' },
+        { type: 'error', error: new Error('ECONNRESET') },
+      ]))
+      .mockReturnValueOnce(fakeStream([
+        { type: 'text-delta', id: 't2', text: 'ok' },
+        { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+      ]));
+    const col = makeCollector();
+    const cfg = { provider: 'moonshot', model: 'kimi-k2.6', temperature: 0.7 } as ModelConfig;
+
+    const p = inferenceViaAiSdk([{ role: 'user', content: 'x' }], [], cfg, col.onStream);
+    await vi.advanceTimersByTimeAsync(1000);
+    const res = await p;
+
+    // moonshot 能力表无 endpointPath → 重建 model 也不切端点，baseURL 与首次一致
+    expect(vi.mocked(createOpenAICompatible)).toHaveBeenCalledTimes(2); // 首次 + B1 重建
+    expect(vi.mocked(createOpenAICompatible).mock.calls[0]![0]).toMatchObject({ baseURL: 'https://test.local/v1' });
+    expect(vi.mocked(createOpenAICompatible).mock.calls[1]![0]).toMatchObject({ baseURL: 'https://test.local/v1' });
+    // 续接 fetch wrapper 上线 body：partial:true 在末条 assistant 消息上（Moonshot Partial Mode
+    // 合同，证据 N-STREAM-RESUME-DOGFOOD-2026-09-30.md B0），顶层无 prefix 键
+    const resumeFetch = vi.mocked(createOpenAICompatible).mock.calls[1]![0]!.fetch as typeof fetch;
+    await resumeFetch('https://test.local/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify({
+        model: 'kimi-k2.6',
+        messages: [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'partial' }],
+      }),
+    });
+    const resumeWire = JSON.parse(
+      ((vi.mocked(axios).mock.calls.at(-1)?.[0] ?? {}) as unknown as { data: string }).data,
+    ) as Record<string, unknown>;
+    expect(resumeWire).not.toHaveProperty('prefix');
+    const resumeMessages = resumeWire.messages as Array<Record<string, unknown>>;
+    expect(resumeMessages[resumeMessages.length - 1]).toEqual({ role: 'assistant', content: 'partial', partial: true });
+    expect(resumeMessages[0]).toEqual({ role: 'user', content: 'x' }); // 其余消息不打标
+    // moonshot 采样默认值（temp=1.0/top_p=0.95）不受 partial 注入影响
+    expect(resumeWire.temperature).toBe(1.0);
+    expect(resumeWire.top_p).toBe(0.95);
+    // 正常请求（末条 user）：partial 不出现在任何消息上
+    const normalFetch = vi.mocked(createOpenAICompatible).mock.calls[0]![0]!.fetch as typeof fetch;
+    await normalFetch('https://test.local/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify({ model: 'kimi-k2.6', messages: [{ role: 'user', content: 'x' }] }),
+    });
+    const normalWire = JSON.parse(
+      ((vi.mocked(axios).mock.calls.at(-1)?.[0] ?? {}) as unknown as { data: string }).data,
+    ) as Record<string, unknown>;
+    expect(JSON.stringify(normalWire)).not.toContain('partial');
+    expect(normalWire).not.toHaveProperty('prefix');
+    // moonshot B1 同样无缝：无 stream_break，续写 append 同一条消息
     expect(col.byType('stream_break')).toHaveLength(0);
     expect(res.content).toBe('partialok');
   });

@@ -39,6 +39,7 @@ import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBu
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
+import { lookupMcpToolAfterReapedReconnect } from './mcpReapedToolLookup';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { isToolDeniedByRunPolicy } from './runToolPolicy';
@@ -640,10 +641,24 @@ export class ToolExecutor {
     });
 
     const resolver = getToolResolver();
-    const toolDef = resolver.getDefinition(requestedToolName)
+    let toolDef = resolver.getDefinition(requestedToolName)
       ?? (normalizedRequestedToolName !== requestedToolName
         ? resolver.getDefinition(normalizedRequestedToolName)
         : undefined);
+
+    if (!toolDef) {
+      toolDef = await lookupMcpToolAfterReapedReconnect(
+        requestedToolName,
+        (name) => resolver.getDefinition(name),
+      ) ?? (
+        normalizedRequestedToolName !== requestedToolName
+          ? await lookupMcpToolAfterReapedReconnect(
+            normalizedRequestedToolName,
+            (name) => resolver.getDefinition(name),
+          )
+          : undefined
+      );
+    }
 
     if (!toolDef) {
       logger.debug('Tool not found', { toolName: requestedToolName });

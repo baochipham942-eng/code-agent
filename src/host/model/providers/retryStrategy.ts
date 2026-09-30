@@ -7,6 +7,7 @@ import { logger } from './shared';
 import { EventEmitter } from 'events';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { normalizeErrorMessage } from '../../lightMemory/normalizeErrorMessage';
+import { formatThrownError } from '../../../shared/utils/providerError';
 
 /** Global retry event emitter for CLI visibility */
 export const retryEvents = new EventEmitter();
@@ -294,7 +295,7 @@ function readErrorCode(err: unknown): string | undefined {
 }
 
 function readErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return formatThrownError(err);
 }
 
 /** 分类和降级读 status/code；文案仍不含 429/5xx，避免包装自己被当成又可重试。 */

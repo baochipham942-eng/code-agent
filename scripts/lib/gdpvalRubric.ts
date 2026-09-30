@@ -8,8 +8,9 @@
 //   「工作簿里有没有名为 X 的表」「z 值是不是 1.64」。拿截断过的二手回显逐条判，
 //   判出来的每一条都是猜的。所以本评分器的输入是夜跑归档的产物目录，不是轨迹。
 // 判据来源：题自带的 rubric_json（中位 47 条、最多 137 条，每条带分值），逐条问、不猜。
-// 漏判的条目按不通过计入分母，但单独计数 unjudged——模型漏答与真判负必须分得开。
-// 调用失败（重试耗尽：401/402/超时）的条目是第三种：整批没拿到判决，剔出分母、绝不按不通过计分，
+// 漏判（pass === null）：补判一轮之后仍然没答的条目剔出分母，并单独计数 unjudged。
+// 漏判与调用失败合计占比超过阈值则整题 scoreFailed——模型没答不许再当成判负去拉低基线。
+// 调用失败（重试耗尽：401/402/超时）的条目是另一种：整批没拿到判决，剔出分母、绝不按不通过计分，
 // 否则评分故障与「产物确实不合格」无法区分（09-28 401 路由错配 896 条、09-29 402 额度耗尽 5976 条假失败）。
 // ============================================================================
 import path from 'node:path';
@@ -67,22 +68,27 @@ export interface GdpvalTaskScore {
   items: GdpvalItemVerdict[];
   /** 模型明确弃权的条目数（资料截断处无从证实），已剔出分母 */
   abstained: number;
-  /** 模型压根没答的条目数，按不通过计入分母 */
+  /** 补判一轮后仍然没答的条目数，已剔出分母 */
   unjudged: number;
   /** 调用失败（重试耗尽）而没判的条目数，已剔出分母；老 jsonl 没有这个字段 */
   callFailed?: number;
-  /** 调用失败条目占比超过阈值：这题的分数不可信，汇总统计剔除；老 jsonl 没有这个字段 */
+  /** 调用失败与漏判合计占比超过阈值：这题的分数不可信，汇总统计剔除；老 jsonl 没有这个字段 */
   scoreFailed?: boolean;
-  /** scoreFailed 时第一条错误原文（截 300 字） */
+  /**
+   * scoreFailed 时的说明，最多 300 字。有漏判时是英文条数（「N of M items were unjudged」），
+   * 同时有调用失败就把第一条错误原文接在后面；只有调用失败时就是那条错误原文。
+   * 老 jsonl 没有这个字段。
+   */
   scoreError?: string;
   files: string[];
 }
 
 /**
- * 调用失败条目占比超过此值 ⇒ 整题 scoreFailed。取 0.3：
+ * 调用失败与漏判合计的条目占比超过此值 ⇒ 整题 scoreFailed。取 0.3：
  * 一题中位 47 条、每批 40 条，丢一批就占 85%，几乎总会触发；
  * 137 条的大题丢一批（40/137≈29%）仍留下七成以上的判决，得分率有参考价值，故不触发。
  * 再低会让偶发的一批 429 抹掉整题，再高则丢掉三分之一以上判据的分数还被当真。
+ * 漏判与调用失败共用这一档：两边都是「这条没有可用判决」，分开设阈值只会让人猜哪边算数。
  */
 const SCORE_FAILED_SHARE = 0.3;
 const SCORE_ERROR_MAX_CHARS = 300;
@@ -197,7 +203,7 @@ function delimit(value: unknown, closingTag: string): string {
   return JSON.stringify(value, null, 2).replaceAll(`</${closingTag}>`, `<\\/${closingTag}>`);
 }
 
-/** 按条数切批：一次问几十条会让模型漏答（漏答按不通过计分，等于白扣分）。 */
+/** 按条数切批：一次问几十条模型容易漏答。漏答会再补判一轮，仍漏的剔出分母。 */
 export function chunkRubric(items: GdpvalRubricItem[], size: number): GdpvalRubricItem[][] {
   // NaN 也要拦：`NaN <= 0` 是 false，放过去之后 `index += NaN` 让下面这个循环永不前进。
   if (!Number.isInteger(size) || size <= 0) throw new Error(`batch size must be a positive integer, got ${size}`);
@@ -336,13 +342,15 @@ export function parseRubricVerdicts(content: string, items: GdpvalRubricItem[]):
 }
 
 /**
- * 三种「不是 true」要分开算：
+ * 四种「不是 true」要分开算：
  * - false：看得到证据、确实没做到 ⇒ 计入分母、不得分
  * - 'unknown'：资料被截断、这条在整份资料上无从证实 ⇒ **剔出分母**。
  *   不剔就是系统性低估：GDPval 的表动辄上千行，rubric 里一堆「表里至少有一行满足 X」，
  *   截断后模型只能判 false，分数会被压到与产物质量无关的水平（自验实测 17%→49% 还在压）。
- * - null：模型正常返回却压根没答这条 ⇒ 按不通过计入分母，并单独计数（漏答与真判负是两回事）
- * - 'call_failed'：调用重试耗尽没拿到判决 ⇒ **剔出分母**、不计不通过；占比超阈值整题 scoreFailed
+ *   弃权是模型做出的判决，不计入下面的不可信占比。
+ * - null：补判一轮后仍然没答 ⇒ **剔出分母**，并单独计数。不算判负。
+ * - 'call_failed'：调用重试耗尽没拿到判决 ⇒ **剔出分母**、不计不通过。
+ * null 与 call_failed 合计的条目占比超过 SCORE_FAILED_SHARE ⇒ 整题 scoreFailed。
  */
 export function summarizeTask(
   id: string,
@@ -354,12 +362,15 @@ export function summarizeTask(
   // 它们不是可得分项，算进满分会把分母压小、把及格线抬高。判 true 时照样扣分。
   const totalRaw = items.reduce((sum, item) => sum + Math.max(item.score, 0), 0);
   const excludedScore = items.reduce(
-    (sum, item) => sum + (item.pass === 'unknown' || item.pass === 'call_failed' ? Math.max(item.score, 0) : 0),
+    (sum, item) => sum + (item.pass === 'unknown' || item.pass === 'call_failed' || item.pass === null
+      ? Math.max(item.score, 0)
+      : 0),
     0,
   );
   const total = totalRaw - excludedScore;
   const failedItems = items.filter((item) => item.pass === 'call_failed');
-  const scoreFailed = items.length > 0 && failedItems.length / items.length > SCORE_FAILED_SHARE;
+  const unjudged = items.filter((item) => item.pass === null).length;
+  const scoreFailed = items.length > 0 && (failedItems.length + unjudged) / items.length > SCORE_FAILED_SHARE;
   const earned = items.reduce((sum, item) => sum + (item.pass === true ? item.score : 0), 0);
   return {
     id,
@@ -370,11 +381,18 @@ export function summarizeTask(
     ratio: total > 0 ? earned / total : 0,
     items,
     abstained: items.filter((item) => item.pass === 'unknown').length,
-    unjudged: items.filter((item) => item.pass === null).length,
+    unjudged,
     callFailed: failedItems.length,
-    ...(scoreFailed ? { scoreFailed, scoreError: truncateError(failedItems[0].why) } : {}),
+    ...(scoreFailed ? { scoreFailed, scoreError: scoreFailureText(items.length, unjudged, failedItems[0]?.why) } : {}),
     files,
   };
+}
+
+/** 有漏判时说明条数；只有调用失败时保留错误原文。两边都有就把原文接在条数后面，整段截到 300 字。 */
+function scoreFailureText(itemCount: number, unjudged: number, callFailedWhy: string | undefined): string {
+  if (unjudged <= 0) return truncateError(callFailedWhy ?? '');
+  const head = `${unjudged} of ${itemCount} items were unjudged`;
+  return truncateError(callFailedWhy ? `${head}; ${callFailedWhy}` : head);
 }
 
 interface GdpvalRunSummary {
@@ -385,9 +403,17 @@ interface GdpvalRunSummary {
   median: number | null;
   mean: number | null;
   weighted: number | null;
+  /** 至少有一条漏判的题数。含 scoreFailed 的题：漏判正是要报出来的，不能跟着剔除一起藏掉。 */
+  unjudgedTasks: number;
+  /** 全部题的漏判条目数之和，同样含已被剔除的题。 */
+  unjudgedItems: number;
 }
 
-/** 汇总统计剔除 scoreFailed 的题并单独列出题数——评分故障不许拉低基线。 */
+/**
+ * 汇总统计剔除 scoreFailed 的题并单独列出题数——评分故障不许拉低基线。
+ * 漏判题数与条数按行上已有的 unjudged 累加，不在这里重算 scoreFailed：
+ * 老 jsonl 没有 callFailed/scoreFailed，缺字段就当这题当时没被判失败。
+ */
 export function summarizeRun(scores: GdpvalTaskScore[]): GdpvalRunSummary {
   const failed = scores.filter((score) => score.scoreFailed);
   const ok = scores.filter((score) => !score.scoreFailed);
@@ -401,5 +427,7 @@ export function summarizeRun(scores: GdpvalTaskScore[]): GdpvalRunSummary {
     median: ratios.length === 0 ? null : ratios.length % 2 ? ratios[mid] : (ratios[mid - 1] + ratios[mid]) / 2,
     mean: ratios.length === 0 ? null : ratios.reduce((sum, r) => sum + r, 0) / ratios.length,
     weighted: totalSum > 0 ? ok.reduce((sum, score) => sum + score.earned, 0) / totalSum : null,
+    unjudgedTasks: scores.filter((score) => (score.unjudged ?? 0) > 0).length,
+    unjudgedItems: scores.reduce((sum, score) => sum + (score.unjudged ?? 0), 0),
   };
 }

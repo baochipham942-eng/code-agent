@@ -392,7 +392,7 @@ async function main(): Promise<void> {
     out.write(`${JSON.stringify(score)}\n`);
     console.log(`${task.id.padEnd(16)} ${(score.ratio * 100).toFixed(0).padStart(3)}%  ${score.earned}/${score.total} 分`
       + `（满分 ${score.totalRaw}，弃权 ${score.abstained} 条已剔出分母）`
-      + `  条目 ${verdicts.length}${score.unjudged > 0 ? `（漏判 ${score.unjudged}）` : ''}`
+      + `  条目 ${verdicts.length}${score.unjudged > 0 ? `（漏判 ${score.unjudged}，已剔出分母）` : ''}`
       + `${score.callFailed ? `（调用失败 ${score.callFailed}，已剔出分母）` : ''}${score.scoreFailed ? '  [score failed]' : ''}`
       + `  产物 ${allRels.length} 个  输入 ${inputs.length} 个`);
   }
@@ -401,7 +401,8 @@ async function main(): Promise<void> {
   const summary = summarizeRun(scores);
   const pct = (value: number | null) => (value === null ? 'n/a' : `${(value * 100).toFixed(1)}%`);
   console.log(`统计（已剔除 score failed 的题）：${summary.scored} 题  中位 ${pct(summary.median)}  `
-    + `均值 ${pct(summary.mean)}  加权 ${pct(summary.weighted)}`);
+    + `均值 ${pct(summary.mean)}  加权 ${pct(summary.weighted)}  `
+    + `漏判 ${summary.unjudgedTasks} 题、${summary.unjudgedItems} 条`);
   if (summary.scoreFailed > 0) {
     console.error(`score failed: ${summary.scoreFailed} tasks, first error: ${summary.firstError}`);
     // 全部评分失败 = 评分整体故障，不是产物不合格：非 0 退出让上游脚本看得见。

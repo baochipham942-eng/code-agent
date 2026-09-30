@@ -9,6 +9,7 @@ import {
   summarizeRun,
   summarizeTask,
   type GdpvalRubricItem,
+  type GdpvalTaskScore,
 } from '../../../scripts/lib/gdpvalRubric';
 
 const items: GdpvalRubricItem[] = [
@@ -101,15 +102,18 @@ describe('三值：弃权', () => {
 });
 
 describe('summarizeTask', () => {
-  it('漏判按不通过计分，但单独计数', () => {
+  it('漏判剔出分母并单独计数；条目占比超阈值则整题 scoreFailed', () => {
     const verdicts = parseRubricVerdicts('{"verdicts":[{"n":1,"pass":true},{"n":3,"pass":false}]}', items);
     const score = summarizeTask('gdp-x', verdicts, ['out.xlsx'], 'Accountants');
-    expect(score.total).toBe(6);
+    // 漏掉的是 3 分那条。1/3 > 0.3，整题不可信。
+    expect(score.total).toBe(3);
     expect(score.totalRaw).toBe(6);
     expect(score.earned).toBe(2);
-    expect(score.ratio).toBeCloseTo(2 / 6);
+    expect(score.ratio).toBeCloseTo(2 / 3);
     expect(score.unjudged).toBe(1);
     expect(score.abstained).toBe(0);
+    expect(score.scoreFailed).toBe(true);
+    expect(score.scoreError).toBe('1 of 3 items were unjudged');
   });
 
   it('负分条目是惩罚项，不进分母；判 true 时照样扣分', () => {
@@ -213,7 +217,7 @@ describe('调用失败 ≠ 判不通过（N-GDPVAL-SCORER-CALLFAIL）', () => {
     expect(summarizeTask('gdp-t', verdicts, []).scoreError).toHaveLength(300);
   });
 
-  it('模型正常返回但漏答仍是 null：计入分母、单独计数，不是 call_failed', async () => {
+  it('模型正常返回但漏答仍是 null：剔出分母、单独计数，不是 call_failed', async () => {
     const verdicts = await judgeRubricBatch(
       items,
       async () => ({ success: true, content: '{"verdicts":[{"n":1,"pass":true}]}' }),
@@ -222,10 +226,14 @@ describe('调用失败 ≠ 判不通过（N-GDPVAL-SCORER-CALLFAIL）', () => {
     );
     const score = summarizeTask('gdp-o', verdicts, []);
     expect(verdicts.map((verdict) => verdict.pass)).toEqual([true, null, null]);
-    expect(score.total).toBe(6);
+    expect(score.total).toBe(2);
+    expect(score.earned).toBe(2);
+    expect(score.ratio).toBe(1);
     expect(score.unjudged).toBe(2);
     expect(score.callFailed).toBe(0);
-    expect(score.scoreFailed).toBeUndefined();
+    // 2/3 > 0.3，单次调用里的漏答同样让整题 scoreFailed。补判是外层的事。
+    expect(score.scoreFailed).toBe(true);
+    expect(score.scoreError).toBe('2 of 3 items were unjudged');
   });
 
   it('重试中途成功就不算失败', async () => {
@@ -256,5 +264,120 @@ describe('调用失败 ≠ 判不通过（N-GDPVAL-SCORER-CALLFAIL）', () => {
     const bad = summarizeTask('b', items.map((item) => ({ rubricItemId: item.rubric_item_id, criterion: item.criterion, score: item.score, pass: 'call_failed' as const, why: '401' })), []);
     const summary = summarizeRun([good, bad]);
     expect(summary).toMatchObject({ scored: 1, scoreFailed: 1, firstError: '401', median: 1, mean: 1, weighted: 1 });
+  });
+});
+
+describe('漏判剔出分母（N-GDPVAL-SCORER-UNJUDGED）', () => {
+  const verdict = (
+    rubricItemId: string,
+    score: number,
+    pass: boolean | 'unknown' | 'call_failed' | null,
+    why = '',
+  ): GdpvalTaskScore['items'][number] => ({ rubricItemId, criterion: 'c', score, pass, why });
+
+  it('补判后仍漏判的条目不进分母；不可信占比超阈值则 scoreFailed，并退出中位/均值/加权', () => {
+    // 10 条里 2 条仍是 null：2/10 = 0.2，不超过 0.3。分母只留已判的 8 分。
+    const under = summarizeTask('under', [
+      ...Array.from({ length: 8 }, (_, index) => verdict(`ok-${index}`, 1, true)),
+      verdict('miss-1', 1, null),
+      verdict('miss-2', 1, null),
+    ], []);
+    expect(under.unjudged).toBe(2);
+    expect(under.total).toBe(8);
+    expect(under.earned).toBe(8);
+    expect(under.ratio).toBe(1);
+    expect(under.scoreFailed).toBeUndefined();
+
+    // 2 条漏判 + 1 条调用失败 / 4 条 = 0.75 > 0.3。分母只留判过的那 5 分。
+    const over = summarizeTask('over', [
+      verdict('a', 5, null),
+      verdict('b', 5, null),
+      verdict('c', 5, 'call_failed', 'timeout'),
+      verdict('d', 5, true, 'ok'),
+    ], []);
+    expect(over.scoreFailed).toBe(true);
+    expect(over.total).toBe(5);
+    expect(over.ratio).toBe(1);
+    expect(over.scoreError).toBe('2 of 4 items were unjudged; timeout');
+
+    const good = summarizeTask('good', [verdict('g', 2, true), verdict('h', 2, false)], []);
+    // good 的得分率是 0.5。over 若被算进汇总（得分率 1），中位会从 0.75 变成 1。
+    const summary = summarizeRun([under, over, good]);
+    expect(summary.scored).toBe(2);
+    expect(summary.scoreFailed).toBe(1);
+    expect(summary.median).toBe(0.75);
+    expect(summary.mean).toBe(0.75);
+    expect(summary.weighted).toBeCloseTo((8 + 2) / (8 + 4));
+  });
+
+  it('漏判说明超长时连同调用失败原文一起截到 300 字', () => {
+    const score = summarizeTask('long', [
+      verdict('a', 1, null),
+      verdict('b', 1, 'call_failed', 'e'.repeat(500)),
+    ], []);
+    expect(score.scoreFailed).toBe(true);
+    expect(score.scoreError).toHaveLength(300);
+    expect(score.scoreError?.startsWith('1 of 2 items were unjudged; ')).toBe(true);
+  });
+
+  it('汇总列出漏判题数与条数；33/33 判 scoreFailed，40/59 按 0.3 阈值同样判失败', () => {
+    const row = (id: string, count: number, unjudgedCount: number) => summarizeTask(
+      id,
+      Array.from({ length: count }, (_, index) => verdict(
+        `${id}-${index}`,
+        1,
+        index < unjudgedCount ? null : true,
+      )),
+      [],
+    );
+    const all = row('all', 33, 33);
+    const partial = row('partial', 59, 40);
+    expect(all.unjudged).toBe(33);
+    expect(all.total).toBe(0);
+    expect(all.scoreFailed).toBe(true);
+    expect(all.scoreError).toBe('33 of 33 items were unjudged');
+    // 40/59 ≈ 0.678，高于 0.3，所以第二题也是 scoreFailed，不能拿剩下 19 条去报一个满分。
+    expect(40 / 59).toBeGreaterThan(0.3);
+    expect(partial.unjudged).toBe(40);
+    expect(partial.total).toBe(19);
+    expect(partial.scoreFailed).toBe(true);
+    expect(partial.scoreError).toBe('40 of 59 items were unjudged');
+    const summary = summarizeRun([all, partial]);
+    expect(summary).toMatchObject({
+      scored: 0,
+      scoreFailed: 2,
+      unjudgedTasks: 2,
+      unjudgedItems: 73,
+      median: null,
+      mean: null,
+      weighted: null,
+    });
+  });
+
+  it('没有 callFailed/scoreFailed 的旧 jsonl 行仍按原得分率进入汇总', () => {
+    const legacy: GdpvalTaskScore = {
+      id: 'legacy',
+      total: 10,
+      totalRaw: 12,
+      earned: 4,
+      ratio: 0.4,
+      items: [],
+      abstained: 1,
+      unjudged: 2,
+      files: [],
+    };
+    expect(legacy.callFailed).toBeUndefined();
+    expect(legacy.scoreFailed).toBeUndefined();
+    const summary = summarizeRun([legacy]);
+    expect(summary).toMatchObject({
+      scored: 1,
+      scoreFailed: 0,
+      firstError: '',
+      median: 0.4,
+      mean: 0.4,
+      weighted: 0.4,
+      unjudgedTasks: 1,
+      unjudgedItems: 2,
+    });
   });
 });

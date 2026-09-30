@@ -87,6 +87,7 @@ import {
 } from '../agentTeamDurableLaunch';
 import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
 import { resolveSpawnAgentEngine } from './spawnAgentEngine';
+import { rememberMemberEngine } from '../memberRuntimeEngine';
 import { prepareSpawnAgentWorktree } from './spawnAgentWorktree';
 
 /**
@@ -272,6 +273,7 @@ export async function executeSpawnAgent(
     const agentId = context.swarmRunScope
       ? createScopedSwarmAgentId(context.swarmRunScope, localAgentId)
       : localAgentId;
+    rememberMemberEngine(agentId, engineResolution.engine);
 
     // Defensive check: ensure sessionId is available for task tool sharing
     if (!context.sessionId) {

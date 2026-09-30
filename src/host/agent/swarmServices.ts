@@ -39,6 +39,7 @@ export interface SpawnGuardLike {
   cancelSession(sessionId: string, reason?: string): number;
   cancelAll?(reason?: string): number;
   get?(agentId: string, scope?: SwarmRunRef): { status?: string } | undefined;
+  peekMessages?(agentId: string, scope?: SwarmRunRef): AgentMessage[];
   sendMessage?(agentId: string, message: string | AgentMessage, scope?: SwarmRunRef, origin?: AgentMessageOrigin): boolean;
 }
 

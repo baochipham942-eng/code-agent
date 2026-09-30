@@ -30,9 +30,9 @@ vi.mock('../../../src/host/utils/toolResultSpill', async (importOriginal) => {
 });
 
 import { executeScript } from '../../../src/host/hooks/scriptExecutor';
-import type { ToolHookContext } from '../../../src/host/protocol/events';
+import type { HookExecutionResult, ToolHookContext } from '../../../src/host/protocol/events';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
-import { HOOK_OUTPUT_BUDGET } from '../../../src/shared/constants';
+import { HOOK_OUTPUT_BUDGET, TOOL_RESULT_SPILL } from '../../../src/shared/constants';
 
 function buildPostToolContext(): ToolHookContext {
   return {
@@ -60,6 +60,39 @@ function readSpilledHookOutput(): string {
   const files = fs.readdirSync(dir).filter((file) => file.endsWith('.txt'));
   expect(files).toHaveLength(1);
   return fs.readFileSync(path.join(dir, files[0]), 'utf-8');
+}
+
+function buildOutputScript(output: string, exitCode = 0, stream: 'stdout' | 'stderr' = 'stdout') {
+  fs.mkdirSync(spillTestRoot, { recursive: true });
+  const outputFile = path.join(spillTestRoot, 'hook-script-output.txt');
+  fs.writeFileSync(outputFile, output, 'utf-8');
+  return {
+    command: `node -e 'process.${stream}.write(require("fs").readFileSync(process.env.HOOK_TEST_OUTPUT)); process.exitCode = ${exitCode}'`,
+    env: { HOOK_TEST_OUTPUT: outputFile },
+  };
+}
+
+function expectBudgetedOutput(result: HookExecutionResult, fullOutput: string): void {
+  expect(result.message).toBeDefined();
+  const message = result.message!;
+  const markerIndex = message.indexOf(TOOL_RESULT_SPILL.NOTICE_MARKER);
+  expect(markerIndex).toBeGreaterThan(0);
+  const preview = message.slice(0, markerIndex);
+  const notice = message.slice(markerIndex);
+  expect(estimateTokens(preview)).toBeLessThanOrEqual(HOOK_OUTPUT_BUDGET.DEFAULT_TOKENS);
+  expect(estimateTokens(message)).toBeLessThanOrEqual(
+    HOOK_OUTPUT_BUDGET.DEFAULT_TOKENS + estimateTokens(notice),
+  );
+  expect(message.split(TOOL_RESULT_SPILL.NOTICE_MARKER)).toHaveLength(2);
+  expect(readSpilledHookOutput()).toBe(fullOutput);
+}
+
+function buildLargeOutput(): string {
+  const head = 'HOOK-OUTPUT-HEAD\n';
+  const tail = '\nHOOK-OUTPUT-TAIL';
+  const row = 'hook preview words '.repeat(5) + '\n';
+  const middleSize = 200000 - head.length - tail.length;
+  return head + row.repeat(Math.ceil(middleSize / row.length)).slice(0, middleSize) + tail;
 }
 
 describe('executeScript output parsing', () => {
@@ -187,64 +220,108 @@ describe('executeScript output parsing', () => {
   });
 
   it('spills and budgets 200 KB plain stdout on PostToolUse', async () => {
+    const output = buildLargeOutput();
     const result = await executeScript(
-      { command: `node -e 'process.stdout.write("x".repeat(200000))'` },
+      buildOutputScript(output),
       buildPostToolContext(),
     );
 
     expect(result.action).toBe('allow');
-    expect(result.message!.length).toBeLessThan(30000);
-    expect(result.message).toContain('[Full output saved to:');
-    expect(estimateTokens(result.message!.split('\n[Full output saved to:')[0])).toBeLessThanOrEqual(
-      HOOK_OUTPUT_BUDGET.DEFAULT_TOKENS + 20,
-    );
-    expect(readSpilledHookOutput()).toBe('x'.repeat(200000));
+    expect(result.message!.length).toBeLessThan(output.length / 2);
+    expectBudgetedOutput(result, output);
+    expect(result.message).toContain('HOOK-OUTPUT-HEAD');
+    expect(result.message).toContain('HOOK-OUTPUT-TAIL');
   });
 
   it.each([
-    ['message', `node -e 'process.stdout.write(JSON.stringify({action:"block",message:"x".repeat(200000)}))'`, 'block'],
-    ['additionalContext', `node -e 'process.stdout.write(JSON.stringify({action:"continue",additionalContext:"x".repeat(200000)}))'`, 'continue'],
-  ])('spills and budgets oversize JSON %s without changing action', async (_field, command, action) => {
-    const result = await executeScript({ command }, buildPostToolContext());
+    ['message', 'block'],
+    ['additionalContext', 'continue'],
+    ['nested additionalContext', 'continue'],
+    ['reason', 'block'],
+  ])('spills and budgets oversize JSON %s without changing action', async (field, action) => {
+    const output = buildLargeOutput();
+    const json = field === 'reason'
+      ? { decision: 'block', reason: output }
+      : field === 'nested additionalContext'
+        ? { action, hookSpecificOutput: { additionalContext: output } }
+        : { action, [field]: output };
+    const result = await executeScript(buildOutputScript(JSON.stringify(json)), buildPostToolContext());
 
     expect(result.action).toBe(action);
-    expect(result.message).toContain('[Full output saved to:');
-    expect(readSpilledHookOutput()).toContain('x'.repeat(200000));
+    expectBudgetedOutput(result, output);
   });
 
   it('uses the larger SessionStart budget while PostToolUse truncates', async () => {
-    const command = `node -e 'process.stdout.write("word ".repeat(8000))'`;
-    const sessionStart = await executeScript({ command }, buildSessionStartContext());
-    const postTool = await executeScript({ command }, buildPostToolContext());
+    const output = 'word '.repeat(8000).trim();
+    const options = buildOutputScript(output);
+    const sessionStart = await executeScript(options, buildSessionStartContext());
+    const postTool = await executeScript(options, buildPostToolContext());
 
     expect(estimateTokens(sessionStart.message!)).toBeGreaterThan(HOOK_OUTPUT_BUDGET.DEFAULT_TOKENS);
-    expect(sessionStart.message).toBe('word '.repeat(8000).trim());
-    expect(postTool.message).toContain('[Full output saved to:');
-    expect(estimateTokens(postTool.message!.split('\n[Full output saved to:')[0])).toBeLessThanOrEqual(
-      HOOK_OUTPUT_BUDGET.DEFAULT_TOKENS + 20,
-    );
+    expect(estimateTokens(output)).toBeLessThanOrEqual(HOOK_OUTPUT_BUDGET.SESSION_START_TOKENS);
+    expect(sessionStart.message).toBe(output);
+    expectBudgetedOutput(postTool, output);
   });
 
   it('falls back to a plain truncation marker when spilling fails', async () => {
     spillState.fail = true;
+    const output = buildLargeOutput();
     const result = await executeScript(
-      { command: `node -e 'process.stdout.write("x".repeat(200000))'` },
+      buildOutputScript(output),
       buildPostToolContext(),
     );
 
     expect(result.action).toBe('allow');
-    expect(result.message).toContain(`[hook output truncated to ${HOOK_OUTPUT_BUDGET.DEFAULT_TOKENS} tokens]`);
-    expect(result.message).not.toContain('[Full output saved to:');
+    const marker = `[hook output truncated to ${HOOK_OUTPUT_BUDGET.DEFAULT_TOKENS} tokens]`;
+    expect(result.message).toContain(marker);
+    expect(result.message).not.toContain(TOOL_RESULT_SPILL.NOTICE_MARKER);
+    expect(estimateTokens(result.message!)).toBeLessThanOrEqual(
+      HOOK_OUTPUT_BUDGET.DEFAULT_TOKENS + estimateTokens(marker),
+    );
+    expect(result.message).toContain('HOOK-OUTPUT-HEAD');
+    expect(result.message).toContain('HOOK-OUTPUT-TAIL');
+    expect(fs.existsSync(path.join(spillTestRoot, 'tmp'))).toBe(false);
   });
 
   it('budgets oversize stdout on exit code 1 while preserving block action', async () => {
+    const output = buildLargeOutput();
     const result = await executeScript(
-      { command: `bash -c "node -e 'process.stdout.write(String.fromCharCode(120).repeat(200000))'; exit 1"` },
+      buildOutputScript(output, 1),
       buildPostToolContext(),
     );
 
     expect(result.action).toBe('block');
-    expect(result.message).toContain('[Full output saved to:');
-    expect(readSpilledHookOutput()).toBe('x'.repeat(200000));
+    expectBudgetedOutput(result, output);
+  });
+
+  it.each([1, 2])('budgets oversize block stream on exit code %s while preserving block action', async (code) => {
+    const output = buildLargeOutput();
+    const stream = code === 1 ? 'stdout' : 'stderr';
+    const result = await executeScript(buildOutputScript(output, code, stream), buildPostToolContext());
+
+    expect(result.action).toBe('block');
+    expectBudgetedOutput(result, output);
+  });
+
+  it('budgets an explicit JSON decision on a nonzero exit', async () => {
+    const output = buildLargeOutput();
+    const result = await executeScript(
+      buildOutputScript(JSON.stringify({ action: 'continue', message: output }), 2),
+      buildPostToolContext(),
+    );
+
+    expect(result.action).toBe('continue');
+    expectBudgetedOutput(result, output);
+  });
+
+  it.each(['message', 'additionalContext'])('preserves under-budget JSON %s byte-identically', async (field) => {
+    const output = '  unicode 中文 🚀\n\tspacing  \n';
+    const result = await executeScript(
+      buildOutputScript(JSON.stringify({ [field]: output })),
+      buildPostToolContext(),
+    );
+
+    expect(result.message).toBe(output);
+    expect(fs.existsSync(path.join(spillTestRoot, 'tmp'))).toBe(false);
   });
 });

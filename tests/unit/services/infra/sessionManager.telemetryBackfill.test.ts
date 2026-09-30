@@ -228,4 +228,30 @@ describe('SessionManager telemetry user prompt backfill', () => {
       }),
     }]);
   });
+
+  it('does not backfill a resumed telemetry prompt that repeats the one already matched user message', async () => {
+    const prompt = '把上次停下的改动继续做完';
+    const firstStart = 1_787_550_000_000;
+    existingRows.push({
+      content: prompt,
+      timestamp: firstStart,
+    });
+    telemetryRows.push(
+      {
+        id: 'turn-original',
+        user_prompt: prompt,
+        start_time: firstStart + 1_000,
+      },
+      {
+        id: 'turn-resume',
+        user_prompt: prompt,
+        start_time: firstStart + 5 * 60_000,
+      },
+    );
+
+    await expect(backfill('session-resume-repeat')).resolves.toBe(0);
+
+    expect(dbMock.addMessage).not.toHaveBeenCalled();
+    expect(insertedMessages).toHaveLength(0);
+  });
 });

@@ -37,4 +37,8 @@ export const declareDeliverablesSchema: ToolSchema = {
   permissionLevel: 'read',
   readOnly: true,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'write', expression: 'resource(session, deliverables)' },
+    { kind: 'write', argumentNames: ['final_artifacts'] },
+  ],
 };

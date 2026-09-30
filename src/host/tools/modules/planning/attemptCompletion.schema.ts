@@ -47,4 +47,7 @@ export const attemptCompletionSchema: ToolSchema = {
   permissionLevel: 'read',
   readOnly: true,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'write', expression: 'resource(session, completion)' },
+  ],
 };

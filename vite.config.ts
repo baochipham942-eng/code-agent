@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import fs from 'fs';
 import { builtinModules } from 'module';
+import { TELEMETRY_ENV_WINDOW_KEY, telemetryPageEnv } from './src/shared/observability/privacyFlags';
 
 const packageVersion = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')).version;
 
@@ -53,19 +54,19 @@ function devAuthTokenPlugin(): Plugin {
     name: 'dev-auth-token',
     apply: 'serve',
     transformIndexHtml(html) {
+      let tokenScript = '';
       try {
         const tokenPath = path.resolve(__dirname, '.dev-token');
         const token = fs.readFileSync(tokenPath, 'utf-8').trim();
-        if (token) {
-          return html.replace(
-            '<head>',
-            `<head><script>window.__CODE_AGENT_TOKEN__="${token}";</script>`
-          );
-        }
+        if (token) tokenScript = `window.__CODE_AGENT_TOKEN__="${token}";`;
       } catch {
         // .dev-token not yet created — web server hasn't started
       }
-      return html;
+      const telemetryEnv = JSON.stringify(telemetryPageEnv(process.env)).replace(/</g, '\\u003c');
+      return html.replace(
+        '<head>',
+        `<head><script>${tokenScript}window.${TELEMETRY_ENV_WINDOW_KEY}=${telemetryEnv};</script>`,
+      );
     },
   };
 }

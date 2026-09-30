@@ -63,4 +63,7 @@ Examples:
   readsUntrustedContent: 'block',
   readOnly: false,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(http, args.url)' },
+  ],
 };

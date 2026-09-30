@@ -100,4 +100,7 @@ Safety:
   permissionLevel: 'read',
   readOnly: false,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(session, manager)' },
+  ],
 };

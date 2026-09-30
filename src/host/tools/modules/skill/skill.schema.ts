@@ -33,4 +33,7 @@ export const skillSchema: ToolSchema = {
   permissionLevel: 'read',
   readOnly: false, // skill 可能触发 fork 副作用
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(skill, args.command)' },
+  ],
 };

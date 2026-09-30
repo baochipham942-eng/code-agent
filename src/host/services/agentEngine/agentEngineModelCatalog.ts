@@ -29,17 +29,22 @@ import {
   isRecord,
   logger,
   mergeAgentEngineModelCatalogWithDiscovery,
+  parseClaudeHelpModelCatalog,
+  parseCodexDebugModelsCatalog,
+  parseGrokModelsCatalog,
+  parseJsonModelMapCatalog,
+  parseParenthesizedSupportedModelsCatalog,
   readString,
   type AgentEngineModelDiscoveryProvider,
 } from './agentEngineModelDiscovery';
 
 export type { AgentEngineModelDiscoveryResult } from './agentEngineModelDiscovery';
 export type { AgentEngineModelDiscoveryProvider } from './agentEngineModelDiscovery';
-export { parseCodexDebugModelsCatalog } from './agentEngineModelDiscovery';
-export { parseClaudeHelpModelCatalog } from './agentEngineModelDiscovery';
-export { parseParenthesizedSupportedModelsCatalog } from './agentEngineModelDiscovery';
-export { parseJsonModelMapCatalog } from './agentEngineModelDiscovery';
-export { parseGrokModelsCatalog } from './agentEngineModelDiscovery';
+export { parseCodexDebugModelsCatalog };
+export { parseClaudeHelpModelCatalog };
+export { parseParenthesizedSupportedModelsCatalog };
+export { parseJsonModelMapCatalog };
+export { parseGrokModelsCatalog };
 export { mergeAgentEngineModelCatalogWithDiscovery } from './agentEngineModelDiscovery';
 export { discoverLocalAgentEngineModels } from './agentEngineModelDiscovery';
 

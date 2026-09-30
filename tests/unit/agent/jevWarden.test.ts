@@ -453,3 +453,41 @@ describe('审查修复轮 R3 — 判官等待期间 steer 的旧裁决丢弃', (
     expect(verdict.kind).toBe('force_wrap_up');
   });
 });
+
+describe('审查修复轮 R4 — 混合答案坏形状整体 fail-open', () => {
+  it('命中题中任一坏形状 → 整体 verdict none（计数不增、不置标、不转向），有效答案不单独生效（R4 #2）', async () => {
+    const systemOne = judgeReturning({
+      empty_spin: { noul: 'yes' as unknown as number },
+      irreversible_unapproved: { noul: 0.9 },
+    });
+    const warden = enabledWarden(systemOne);
+    const verdict = await warden.reviewToolStep(step({
+      guardSignals: [SIGNAL_POLLING_REPEAT],
+      stepResults: [bashResult('rm -rf /tmp/data')],
+    }));
+    expect(verdict).toEqual({ kind: 'none' });
+    // 计数未提交：下一次全好形状确认仍算「首次」→ nudge 而非 force_wrap_up
+    vi.mocked(systemOne).mockResolvedValue({
+      empty_spin: { noul: 0.95 },
+      irreversible_unapproved: { noul: 0 },
+    });
+    const fresh = await warden.reviewToolStep(step({
+      guardSignals: [SIGNAL_POLLING_REPEAT],
+      stepResults: [bashResult('rm -rf /tmp/data')],
+    }));
+    expect(fresh.kind).toBe('nudge');
+  });
+
+  it('全部好形状 → 各题照常生效（R4 #2 对照）', async () => {
+    const systemOne = judgeReturning({
+      empty_spin: { noul: 0 },
+      irreversible_unapproved: { noul: 0.9 },
+    });
+    const warden = enabledWarden(systemOne);
+    const verdict = await warden.reviewToolStep(step({
+      guardSignals: [SIGNAL_POLLING_REPEAT],
+      stepResults: [bashResult('rm -rf /tmp/data')],
+    }));
+    expect(verdict.kind).toBe('force_wrap_up');
+  });
+});

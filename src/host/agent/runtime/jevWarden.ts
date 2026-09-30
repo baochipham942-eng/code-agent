@@ -205,14 +205,20 @@ class LiveJevWarden implements JevWarden {
       return { kind: 'none' };
     }
 
-    const confirmed = new Set<JevWardenRule>();
+    // 审查 R4 #2：先完整校验本次响应里所有命中问题的形状——任一坏形状即整体
+    // fail-open 零转向（验收④「一律」），不让其余有效答案单独触发动作。
+    const nouls = new Map<JevWardenRule, number>();
     for (const rule of hit) {
       const noul = readNoulProbability(answers[rule]);
       if (noul === null) {
         logger.warn(`[JevWarden] bad-shaped answer for ${rule}; fail-open, no steering`);
         this.recordTrace?.({ hit, failOpen: 'bad_shape', rule });
-        continue;
+        return { kind: 'none' };
       }
+      nouls.set(rule, noul);
+    }
+    const confirmed = new Set<JevWardenRule>();
+    for (const [rule, noul] of nouls) {
       if (noul >= RULE_THRESHOLDS[rule]) confirmed.add(rule);
     }
     this.recordTrace?.({ hit, confirmed: [...confirmed] });

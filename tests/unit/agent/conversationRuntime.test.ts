@@ -813,6 +813,21 @@ describe('ConversationRuntime', () => {
       expect(ctx.control.steerEpoch).toBe(before + 1);
     });
 
+    it('steer 在第一个 await（preserveStreamedPartial）之前就推进 steerEpoch（审查 R4 #1）', async () => {
+      const before = ctx.control.steerEpoch;
+      // preserveStreamedPartial 挂起：模拟用户转向时落盘 partial 还在路上
+      (runtime as unknown as { preserveStreamedPartial: () => Promise<unknown> }).preserveStreamedPartial =
+        vi.fn().mockImplementation(() => {
+          // 被调用时代数必须已推进——在途判官请求立即过期
+          expect(ctx.control.steerEpoch).toBe(before + 1);
+          return new Promise(() => {});
+        });
+
+      const steerPromise = runtime.steer('改方向');
+      void steerPromise.catch(() => {});
+      expect(ctx.control.steerEpoch).toBe(before + 1);
+    });
+
     it('用户消息自动复活 anti-spin paused goal 并释放 turn-boundary waiter', async () => {
       const goalMode = new GoalModeController({
         goal: 'finish',

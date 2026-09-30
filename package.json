@@ -24,6 +24,7 @@
     "lint:eslint-ratchet": "node scripts/eslint-ratchet.mjs",
     "lint:host-chinese-error-ratchet": "node scripts/host-chinese-error-ratchet.mjs",
     "lint:host-esm-cjs": "node scripts/ci/host-esm-cjs-lint.mjs",
+    "lint:shared-host-boundary": "node scripts/ci/shared-host-boundary.mjs",
     "lint:shell-fail-loud": "node scripts/shell-fail-loud-lint.mjs",
     "debt:report": "node scripts/architecture-debt-report.mjs",
     "gates:fast": "node scripts/gates-fast.mjs",

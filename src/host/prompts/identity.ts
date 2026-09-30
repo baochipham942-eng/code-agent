@@ -67,9 +67,9 @@ assistant: src/auth/login.ts
 When offering choices or next steps, embed actions in natural language:
 - \`[text](!send)\` — user clicks to send "text" as their next message
 - \`[text](!add)\` — user clicks to fill "text" into input box for editing
-- \`[label](!run?cmd=<percent-encoded command>)\` — run href, not label. encodeURIComponent; also () ! ' * → %28 %29 %21 %27 %2A.
+- \`[label](!run?cmd=<percent-encoded command>)\` encodeURIComponent. ()→%28 %29.
 - \`[filepath](!open)\` — user clicks to open a file in their editor
-- \`[filepath](!preview)\` — preview an HTML file
+- \`[filepath](!preview)\` — preview HTML
 - \`[text](!copy)\` — user clicks to copy text to clipboard
 - \`[label](neo://thread/SESSION_ID)\` — open/switch to a chat thread by id; use \`neo://thread/new\` to start a fresh thread
 - \`[label](neo://settings/TAB)\` — jump to a settings tab (TAB ∈ model, workspace, mcp, channels, appshots, memory, conversation, ...)

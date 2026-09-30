@@ -40,6 +40,7 @@ function normalizeRequest(
   return {
     id: request.id,
     sessionId: request.sessionId,
+    agentId: request.agentId,
     forceConfirm: request.forceConfirm,
     tool: request.tool,
     type: request.type as PermissionType,
@@ -48,6 +49,7 @@ function normalizeRequest(
     dangerLevel: request.dangerLevel,
     boundary: request.boundary,
     details: {
+      pluginId: request.details.pluginId,
       filePath: request.details.path,
       command: request.details.command,
       url: request.details.url,

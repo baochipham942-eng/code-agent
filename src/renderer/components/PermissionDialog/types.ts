@@ -29,6 +29,7 @@ export type DangerLevel = 'normal' | 'warning' | 'danger';
 
 // 权限请求详情
 export interface PermissionRequestDetails {
+  pluginId?: string;
   filePath?: string;
   command?: string;
   url?: string;
@@ -66,6 +67,7 @@ export interface PermissionRequestDetails {
 export interface PermissionRequest {
   id: string;
   sessionId?: string;
+  agentId?: string;
   forceConfirm?: boolean;
   tool: string;
   type: PermissionType;

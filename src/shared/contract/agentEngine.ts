@@ -53,6 +53,64 @@ export type AgentEnginePermissionProfile =
   | 'read_only'
   | 'workspace_write';
 
+/**
+ * 会话档 → 外部引擎天花板。bypassPermissions 与 acceptEdits 同一档，没有旁路档。
+ * 未列出的值（含 readOnly / dontAsk / delegate / plan / 未知串）失败关闭到 read_only。
+ */
+const SESSION_MODES_ALLOWING_EXTERNAL_WRITE = new Set([
+  'default',
+  'acceptEdits',
+  'bypassPermissions',
+]);
+
+export function externalProfileCeilingForSessionMode(
+  mode: string | undefined,
+): 'read_only' | 'workspace_write' {
+  return mode !== undefined && SESSION_MODES_ALLOWING_EXTERNAL_WRITE.has(mode)
+    ? 'workspace_write'
+    : 'read_only';
+}
+
+/** default 只在 native 上按 workspace_write 排序；其它引擎（及未知 kind）按 read_only。 */
+function externalProfileRank(
+  profile: AgentEnginePermissionProfile | undefined,
+  kind: AgentEngineKind | undefined,
+): 0 | 1 {
+  if (profile === 'workspace_write') return 1;
+  if (profile === 'default' && kind === 'native') return 1;
+  return 0;
+}
+
+/**
+ * 结果不会比 profile 或 ceiling 更宽。
+ * default 的排序见 externalProfileRank，比较时不把 default 改写成 workspace_write。
+ */
+export function clampProfileToCeiling(
+  profile: AgentEnginePermissionProfile | undefined,
+  ceiling: 'read_only' | 'workspace_write',
+  kind?: AgentEngineKind,
+): AgentEnginePermissionProfile {
+  const ceilingRank = ceiling === 'workspace_write' ? 1 : 0;
+  if (externalProfileRank(profile, kind) <= ceilingRank) {
+    return profile === 'read_only' || profile === 'workspace_write' || profile === 'default'
+      ? profile
+      : 'read_only';
+  }
+  return ceiling;
+}
+
+const EXTERNAL_WRITE_REQUEST_TYPES = new Set(['file_write', 'command']);
+
+/** 天花板是 read_only 时，写文件和命令不进审批卡。其它请求类型交给原审批链。 */
+export function deniedExternalEnginePermission(
+  requestType: string,
+  sessionMode: string | undefined,
+): { approved: false; denialSource: 'fail-closed' } | null {
+  if (!EXTERNAL_WRITE_REQUEST_TYPES.has(requestType)) return null;
+  if (externalProfileCeilingForSessionMode(sessionMode) !== 'read_only') return null;
+  return { approved: false, denialSource: 'fail-closed' };
+}
+
 export type AgentEngineSessionOrigin = 'manual' | 'import' | 'external';
 
 export type AgentEngineCwdPolicy = 'workspace_only';

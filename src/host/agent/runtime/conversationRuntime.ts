@@ -364,7 +364,7 @@ export class ConversationRuntime {
     // Doom loop 三层防护（roadmap 1.2）：per-run 实例化 = 计数器每轮用户输入重置
     const doomLoopGuard = new DoomLoopGuard();
     // Jev 运行时语义主管（N-JEV-WARDEN-MOCK）：开关默认关、判官经注入，per-run 实例化
-    const jevWarden = createJevWarden({ recordTrace: (data) => this.ctx.turnTrace.record('jev_warden', data) });
+    const jevWarden = createJevWarden({ recordTrace: (data) => this.ctx.turnTrace.record('jev_warden', data), sessionId: this.ctx.sessionId });
     // ADR-074 K1：plan-exit 兜底一次性预算，per-run 实例化，runKey 二次防跨 run 复用
     const planExitFallback = createPlanExitFallbackState();
 
@@ -672,6 +672,13 @@ export class ConversationRuntime {
         if (response.type === 'text' && response.content && (response.content.trim().length > 0 || !this.ctx.control.forceFinalResponseReason || iterations < this.ctx.maxIterations)) {
           // 强制收尾文本轮：goal 续跑不得覆盖它的 break（否则回到带工具推理反复触发硬阈值，issue #1991）
           const forcedFinalTextPass = Boolean(this.ctx.control.forceFinalResponseReason);
+          // JevWarden fake_done（审查 R2 #2）：拦截必须先于 handleTextResponse 的持久化与
+          // 终局事件——用户不应先看到被判假的终答再被纠偏。取消/goal 续跑轮不算终局，
+          // 不消费每 run 一次的拦截预算。
+          if (!forcedFinalTextPass && !this.ctx.control.isCancelled && !this.ctx.goalMode?.isPending()) {
+            const wardenNudge = jevWarden.interceptFinal(false);
+            if (wardenNudge) { this.contextAssembly.injectSystemMessage(wardenNudge, 'jev-warden'); continue; }
+          }
           const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);
           if (textAction === 'continue') continue;
           if (!forcedFinalTextPass && this.ctx.goalMode?.isPending()) {
@@ -679,12 +686,6 @@ export class ConversationRuntime {
             continue;
           }
           if (textAction === 'break') {
-            // JevWarden fake_done：置位后第一条非强制收尾终局被拦一次（每 run 至多一次）
-            const wardenNudge = jevWarden.interceptFinal(forcedFinalTextPass);
-            if (wardenNudge) {
-              this.contextAssembly.injectSystemMessage(wardenNudge, 'jev-warden');
-              continue;
-            }
             // ADR-074 K1/K2：plan mode 结构化计划正文没配退出工具——先提醒一次补一轮推理（K1）；
             // 补推理仍是结构化正文则宿主从同一段正文合成同形审批卡并就此结束 run（K2）。
             // 兜底窗口的工具面 allowlist 拒绝在 messageProcessor admission 层。

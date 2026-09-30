@@ -142,7 +142,8 @@ describe('规则先判、命中才问（验收②）', () => {
     const warden = enabledWarden(systemOne);
     await warden.reviewToolStep(step({
       guardSignals: [SIGNAL_SAME_ERROR_FAMILY],
-      stepResults: [bashResult('rm -rf /tmp/x', false, 'boom')],
+      // R2 #3 后危险命令要成功执行才算；fake_done 由另一条失败结果命中
+      stepResults: [bashResult('rm -rf /tmp/x'), bashResult('npm test', false, 'boom')],
       assistantText: 'Done.',
     }));
     expect(systemOne).toHaveBeenCalledTimes(1);
@@ -306,7 +307,8 @@ describe('反向变异守门（验收⑥，常驻测试）', () => {
     const warden = enabledWarden(systemOne);
     const verdict = await warden.reviewToolStep(step({
       guardSignals: [SIGNAL_POLLING_REPEAT],
-      stepResults: [bashResult('rm -rf /tmp/x', false, 'boom')],
+      // R2 #3 口径：成功的危险命令命中 irreversible；失败结果命中 fake_done
+      stepResults: [bashResult('rm -rf /tmp/x'), bashResult('npm test', false, 'boom')],
       assistantText: 'All done.',
     }));
     expect(verdict).toEqual({ kind: 'none' });
@@ -319,5 +321,84 @@ describe('反向变异守门（验收⑥，常驻测试）', () => {
     const warden = enabledWarden(systemOne);
     await warden.reviewToolStep(step({ stepResults: [bashResult('npm test', false, 'fail')] }));
     expect(warden.interceptFinal(false)).not.toBeNull();
+  });
+});
+
+describe('审查修复轮 R2', () => {
+  it('state 统一过 guardSensitiveText：夹具密钥原文不外发（R2 #1）', async () => {
+    const systemOne = judgeReturning({ fake_done: { noul: 0 } });
+    const warden = enabledWarden(systemOne);
+    await warden.reviewToolStep(step({
+      stepResults: [bashResult('cat .env', false, 'api_key=sk-fixture-secret-123456')],
+      assistantText: '看到 token=tok-fixture-abcdef-123456，但还没完成',
+    }));
+    const stateJson = JSON.stringify(vi.mocked(systemOne).mock.calls[0][0]);
+    expect(stateJson).not.toContain('sk-fixture-secret-123456');
+    expect(stateJson).not.toContain('tok-fixture-abcdef-123456');
+  });
+
+  it('失败/被拒的危险命令不算已执行：不进 dangerous_commands、不触发 irreversible 问句（R2 #3）', async () => {
+    const systemOne = judgeReturning({ fake_done: { noul: 0 } });
+    const warden = enabledWarden(systemOne);
+    await warden.reviewToolStep(step({
+      stepResults: [bashResult('rm -rf /tmp/x', false, 'permission denied by user')],
+    }));
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(Object.keys(vi.mocked(systemOne).mock.calls[0][1])).toEqual(['fake_done']);
+    const state = vi.mocked(systemOne).mock.calls[0][0];
+    expect(Object.keys(state.dangerous_commands as Record<string, unknown>)).toHaveLength(0);
+  });
+
+  it('权限层 ask-approved 的危险命令规则层短路不问；auto-approve 仍问且 state 带 approval 凭据（R2 #5）', async () => {
+    const systemOne = judgeReturning({ irreversible_unapproved: { noul: 0 } });
+    const approvedWarden = createJevWarden({
+      systemOne, env: ENABLED_ENV, approvalLookup: () => 'ask-approved',
+    });
+    await approvedWarden.reviewToolStep(step({ stepResults: [bashResult('rm -rf /tmp/data')] }));
+    expect(systemOne).not.toHaveBeenCalled();
+
+    const autoWarden = createJevWarden({
+      systemOne, env: ENABLED_ENV, approvalLookup: () => 'auto-approve',
+    });
+    await autoWarden.reviewToolStep(step({ stepResults: [bashResult('rm -rf /tmp/data')] }));
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(Object.keys(vi.mocked(systemOne).mock.calls[0][1])).toEqual(['irreversible_unapproved']);
+    const state = vi.mocked(systemOne).mock.calls[0][0];
+    const commands = Object.values(state.dangerous_commands as Record<string, { approval: string }>);
+    expect(commands).toHaveLength(1);
+    expect(commands[0].approval).toBe('auto-approve');
+  });
+
+  it('缺审批记录（unknown）按未确认处理：仍问且 state 标 unknown（R2 #5）', async () => {
+    const systemOne = judgeReturning({ irreversible_unapproved: { noul: 0 } });
+    const warden = enabledWarden(systemOne);
+    await warden.reviewToolStep(step({ stepResults: [bashResult('rm -rf /tmp/data')] }));
+    const state = vi.mocked(systemOne).mock.calls[0][0];
+    const commands = Object.values(state.dangerous_commands as Record<string, { approval: string }>);
+    expect(commands[0].approval).toBe('unknown');
+  });
+
+  it('run 已取消（signal 已 aborted）时判官零调用、零转向（R2 #4）', async () => {
+    const systemOne = judgeReturning({ empty_spin: { noul: 1 } });
+    const warden = enabledWarden(systemOne);
+    const controller = new AbortController();
+    controller.abort();
+    const verdict = await warden.reviewToolStep(step({
+      guardSignals: [SIGNAL_POLLING_REPEAT],
+      signal: controller.signal,
+    }));
+    expect(verdict).toEqual({ kind: 'none' });
+    expect(systemOne).not.toHaveBeenCalled();
+  });
+
+  it('run abort signal 透传给 systemOne，判官请求随取消中断（R2 #4）', async () => {
+    const systemOne = judgeReturning({ empty_spin: { noul: 0 } });
+    const warden = enabledWarden(systemOne);
+    const controller = new AbortController();
+    await warden.reviewToolStep(step({
+      guardSignals: [SIGNAL_POLLING_REPEAT],
+      signal: controller.signal,
+    }));
+    expect(vi.mocked(systemOne).mock.calls[0][2]?.signal).toBe(controller.signal);
   });
 });

@@ -2355,6 +2355,9 @@ describe('ConversationRuntime', () => {
 
     it('fake_done 置位后非强制收尾的文本终局被拦一次：注入纠偏并继续', async () => {
       passthroughForceExec();
+      const mp = (runtime as unknown as {
+        messageProcessor: { handleTextResponse: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
       jevWardenMocks.warden.interceptFinal
         .mockReturnValueOnce('<jev-warden>not done</jev-warden>')
         .mockReturnValue(null);
@@ -2369,6 +2372,8 @@ describe('ConversationRuntime', () => {
       );
       // 被拦后 continue 再推理一轮才收尾
       expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(2);
+      // 审查 R2 #2：拦截必须先于持久化/终局事件——被判假的那一轮不进 handleTextResponse
+      expect(mp.handleTextResponse).toHaveBeenCalledTimes(1);
     });
 
     it('warden 无转向时注入面与改动前一致（DoomLoopGuard nudge 顺序不变）', async () => {

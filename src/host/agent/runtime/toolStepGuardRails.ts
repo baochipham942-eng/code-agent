@@ -58,11 +58,14 @@ export async function runToolStepGuardRails<TToolAction>(
     inject(nudge, 'stagnation-guard');
   }
   // JevWarden（验收①挂点：工具结果 recordResults 之后）。规则先判、命中才问。
+  // 审查 R2 #4：本步已取消/中断时跳过判官——用户已停，不再等 Jev 请求。
+  if (ctx.control.isCancelled || ctx.control.isInterrupted) return { outcome: 'proceed', toolAction };
   const wardenInput: JevWardenStepInput = {
     guardLevel: doomCheck.level,
     guardSignals: signalHit.signals,
     stepResults,
     assistantText: args.assistantText,
+    signal: ctx.control.runAbortController?.signal,
   };
   const verdict = await warden.reviewToolStep(wardenInput);
   if (verdict.kind === 'nudge') {

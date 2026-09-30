@@ -26,6 +26,8 @@ import {
   type JevSystemOneCall,
 } from '../../../shared/constants/jevQuestions';
 import { createLogger } from '../../services/infra/logger';
+import { guardSensitiveText } from '../../security/sensitiveDataGuard';
+import { getDecisionHistory, type DecisionOutcome } from '../../security/decisionHistory';
 import { isDangerousCommand } from '../../tools/toolExecutorHelpers';
 import { isBashToolName } from '../../tools/toolNames';
 import { WRITE_TOOLS } from '../loopTypes';
@@ -58,6 +60,8 @@ export interface JevWardenStepInput {
   stepResults: readonly GuardCallResult[];
   /** 本步助手文本（tool_use 步可能带正文）。 */
   assistantText?: string;
+  /** run 级 abort signal（审查 R2 #4）：已 aborted 直接零调用返回；否则透传给 systemOne。 */
+  signal?: AbortSignal;
 }
 
 /** 动作类型只转向：纠偏注入或强制收尾交还用户；没有 deny，不碰权限链。 */
@@ -77,6 +81,13 @@ export interface JevWardenOptions {
   systemOne?: JevSystemOneCall;
   /** 结构化 trace 记录点（仅开关开且有判面活动时调用）。 */
   recordTrace?: (data: JevWardenTraceData) => void;
+  /**
+   * 危险命令的权限层审批凭据查询（审查 R2 #5）：返回该命令最近一次的权限决策
+   * （ask-approved = 用户显式确认）。缺省按 sessionId 查 decisionHistory 单例。
+   */
+  approvalLookup?: (command: string) => DecisionOutcome | undefined;
+  /** 生产接线传入，用于缺省 approvalLookup 按会话过滤决策历史。 */
+  sessionId?: string;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -148,11 +159,16 @@ class LiveJevWarden implements JevWarden {
   constructor(
     private readonly systemOne: JevSystemOneCall,
     private readonly recordTrace?: (data: Record<string, unknown>) => void,
+    private readonly approvalLookup?: (command: string) => DecisionOutcome | undefined,
   ) {}
 
   async reviewToolStep(input: JevWardenStepInput): Promise<JevWardenVerdict> {
+    // 审查 R2 #4：用户已停（cancel/interrupt 会 abort run signal）→ 零调用零转向，
+    // 不再为一次无人看的纠偏等判官最多 5s。
+    if (input.signal?.aborted) return { kind: 'none' };
     this.noteWrites(input.stepResults);
     const dangerous = dangerousCommandsOf(input.stepResults);
+    const unapproved = dangerous.filter((command) => this.approvalOutcomeOf(command) !== 'ask-approved');
     const hit: JevWardenRule[] = [];
     if (input.guardSignals.some((s) => DOOM_LOOP_SIGNALS.includes(s)) || input.guardLevel !== 'none') {
       hit.push('empty_spin');
@@ -160,7 +176,9 @@ class LiveJevWarden implements JevWarden {
     if (input.stepResults.some((r) => !r.success) || COMPLETION_CLAIM_PATTERN.test(input.assistantText ?? '')) {
       hit.push('fake_done');
     }
-    if (dangerous.length > 0) hit.push('irreversible_unapproved');
+    // 审查 R2 #5：权限层凭据 ask-approved（用户显式确认过这条命令）规则层直接短路，
+    // 不问 Jev——已批准的正常操作不该被误判成 irreversible_unapproved。
+    if (unapproved.length > 0) hit.push('irreversible_unapproved');
     if (hit.length === 0) return { kind: 'none' };
 
     const questions: Record<string, (typeof JEV_WARDEN_QUESTIONS)[JevWardenRule]> = {};
@@ -168,7 +186,7 @@ class LiveJevWarden implements JevWarden {
 
     let answers: JevAnswers;
     try {
-      answers = await this.systemOne(this.buildState(input, dangerous), questions);
+      answers = await this.systemOne(this.buildState(input, dangerous), questions, { signal: input.signal });
     } catch (error) {
       // fail-open ponytail：见模块头。与权限线 fail-closed 相反，Warden 故障不转向。
       logger.warn(`[JevWarden] judge unavailable (${error instanceof Error ? error.message : String(error)}); fail-open, no steering`);
@@ -219,23 +237,46 @@ class LiveJevWarden implements JevWarden {
     }
   }
 
+  /** 审查 R2 #1：外发给 api.typesafe.ai 的每个字符串先过 guardSensitiveText（同 jevCompaction 口径）。 */
+  private sanitize(text: string): string {
+    return guardSensitiveText(text.slice(0, JEV_WARDEN_LIMITS.maxResultChars), {
+      surface: 'telemetry',
+      mode: 'model-context',
+    });
+  }
+
+  /** 权限层审批凭据：查询失败/无记录一律 undefined（判据按未确认处理，保守方向是问 Jev）。 */
+  private approvalOutcomeOf(command: string): DecisionOutcome | undefined {
+    try {
+      return this.approvalLookup?.(command);
+    } catch {
+      return undefined;
+    }
+  }
+
   /** state 投影：集合一律命名键（jevQuestions 块头约定），体积受 JEV_WARDEN_LIMITS 约束。 */
   private buildState(input: JevWardenStepInput, dangerous: readonly string[]): Record<string, unknown> {
     const files = [...this.filesWritten].slice(0, JEV_WARDEN_LIMITS.maxFilesWritten);
     return {
-      assistant_text: (input.assistantText ?? '').slice(0, JEV_WARDEN_LIMITS.maxResultChars),
+      assistant_text: this.sanitize(input.assistantText ?? ''),
       guard_level: input.guardLevel,
       guard_signals: namedRecord(input.guardSignals, 'signal'),
-      files_written: namedRecord(files, 'file'),
+      files_written: namedRecord(files.map((file) => this.sanitize(file)), 'file'),
       tool_results: namedRecord(
         input.stepResults.map((r) => ({
           tool: r.name,
           success: r.success,
-          summary: r.summary.slice(0, JEV_WARDEN_LIMITS.maxResultChars),
+          summary: this.sanitize(r.summary),
         })),
         'result',
       ),
-      dangerous_commands: namedRecord(dangerous.slice(0, JEV_WARDEN_LIMITS.maxDangerousCommands), 'command'),
+      dangerous_commands: namedRecord(
+        dangerous.slice(0, JEV_WARDEN_LIMITS.maxDangerousCommands).map((command) => ({
+          command: this.sanitize(command),
+          approval: this.approvalOutcomeOf(command) ?? 'unknown',
+        })),
+        'command',
+      ),
     };
   }
 }
@@ -251,6 +292,8 @@ function namedRecord<T>(values: readonly T[], prefix: string): Record<string, T>
 function dangerousCommandsOf(stepResults: readonly GuardCallResult[]): string[] {
   const commands: string[] = [];
   for (const result of stepResults) {
+    // 审查 R2 #3：失败/被拒/被拦的命令没有真正执行，不算「已执行的不可逆动作」。
+    if (!result.success) continue;
     if (!isBashToolName(result.name)) continue;
     const command = result.arguments?.command;
     if (typeof command === 'string' && isDangerousCommand(command)) commands.push(command);
@@ -267,6 +310,22 @@ function readNoulProbability(answer: unknown): number | null {
 }
 
 /**
+ * 缺省审批凭据查询：从权限决策历史（recordDecision 落账的 summary 截断 80 字符口径）
+ * 找该会话该命令最近一次的决策。返回 undefined = 无记录。
+ */
+function lookupApprovalOutcome(sessionId: string, command: string): DecisionOutcome | undefined {
+  const summary = command.substring(0, 80);
+  const entries = getDecisionHistory().getAll();
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.sessionId !== sessionId || entry.summary !== summary) continue;
+    if (!isBashToolName(entry.toolName)) continue;
+    return entry.outcome;
+  }
+  return undefined;
+}
+
+/**
  * per-run 实例化（计数器/置位随用户输入重置）。开关关时返回零行为 no-op：
  * 判官零调用、零注入、零 trace（验收④）。
  */
@@ -274,5 +333,7 @@ export function createJevWarden(options: JevWardenOptions = {}): JevWarden {
   if (!isJevWardenEnabled(options.env)) return new DisabledJevWarden();
   const systemOne = options.systemOne
     ?? ((state, questions, opts) => import('../../model/providers/typesafeProvider').then((m) => m.systemOne(state, questions, opts)));
-  return new LiveJevWarden(systemOne, options.recordTrace);
+  const approvalLookup = options.approvalLookup
+    ?? (options.sessionId ? (command: string) => lookupApprovalOutcome(options.sessionId ?? '', command) : undefined);
+  return new LiveJevWarden(systemOne, options.recordTrace, approvalLookup);
 }

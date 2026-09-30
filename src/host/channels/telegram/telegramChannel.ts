@@ -26,6 +26,7 @@ import { createLogger } from '../../services/infra/logger';
 import { BoundedDedupeSet } from '../inboundDedupe';
 import { checkOutboundTarget } from '../outboundAllowlist';
 import { checkInboundAccess } from '../inboundAccess';
+import { isTelegramBotMentioned, type TelegramBotIdentity } from './telegramMentions';
 import { CHANNEL_INGRESS } from '../../../shared/constants';
 
 const logger = createLogger('TelegramChannel');
@@ -84,7 +85,7 @@ const TELEGRAM_CHANNEL_CAPABILITIES: ChannelCapabilities = {
   richText: true,
   attachments: true,
   images: true,
-  mentions: false,
+  mentions: true,
   threads: true,
   maxMessageLength: 4096,
 };
@@ -449,8 +450,9 @@ export class TelegramChannel extends BaseChannelPlugin {
     if (!ctx.message?.text || !ctx.from || ctx.from.is_bot) return;
     if (!this.markInboundSeen(ctx)) return;
 
-    // 入站白名单与其他通道共用同一判定 helper。
-    if (!this.checkTelegramIngress(ctx.from.id, ctx.chat?.id)) {
+    // 入站准入与其他通道共用同一判定 helper；访客档消息照发、工具表由下游裁剪。
+    const ingress = this.checkTelegramIngress(ctx);
+    if (!ingress.admitted) {
       logger.info('Message from unauthorized user/chat', {
         userId: ctx.from.id,
         chatId: ctx.chat?.id,
@@ -458,7 +460,7 @@ export class TelegramChannel extends BaseChannelPlugin {
       return;
     }
 
-    const channelMessage = this.buildChannelMessage(ctx, ctx.message.text);
+    const channelMessage = this.buildChannelMessage(ctx, ctx.message.text, undefined, ingress.auth);
     this.emit('message', channelMessage);
   }
 
@@ -468,7 +470,8 @@ export class TelegramChannel extends BaseChannelPlugin {
   private async handlePhotoMessage(ctx: Context): Promise<void> {
     if (!ctx.message?.photo || !ctx.from || ctx.from.is_bot) return;
     if (!this.markInboundSeen(ctx)) return;
-    if (!this.checkTelegramIngress(ctx.from.id, ctx.chat?.id)) return;
+    const ingress = this.checkTelegramIngress(ctx);
+    if (!ingress.admitted) return;
 
     const caption = ctx.message.caption || '[图片]';
     const channelMessage = this.buildChannelMessage(ctx, caption, [{
@@ -476,7 +479,7 @@ export class TelegramChannel extends BaseChannelPlugin {
       type: 'image',
       name: 'photo.jpg',
       size: ctx.message.photo[ctx.message.photo.length - 1].file_size,
-    }]);
+    }], ingress.auth);
     this.emit('message', channelMessage);
   }
 
@@ -486,7 +489,8 @@ export class TelegramChannel extends BaseChannelPlugin {
   private async handleDocumentMessage(ctx: Context): Promise<void> {
     if (!ctx.message?.document || !ctx.from || ctx.from.is_bot) return;
     if (!this.markInboundSeen(ctx)) return;
-    if (!this.checkTelegramIngress(ctx.from.id, ctx.chat?.id)) return;
+    const ingress = this.checkTelegramIngress(ctx);
+    if (!ingress.admitted) return;
 
     const caption = ctx.message.caption || `[文件: ${ctx.message.document.file_name}]`;
     const channelMessage = this.buildChannelMessage(ctx, caption, [{
@@ -495,7 +499,7 @@ export class TelegramChannel extends BaseChannelPlugin {
       name: ctx.message.document.file_name || 'file',
       mimeType: ctx.message.document.mime_type,
       size: ctx.message.document.file_size,
-    }]);
+    }], ingress.auth);
     this.emit('message', channelMessage);
   }
 
@@ -505,7 +509,8 @@ export class TelegramChannel extends BaseChannelPlugin {
   private buildChannelMessage(
     ctx: Context,
     content: string,
-    attachments?: Array<{ id: string; type: 'image' | 'file'; name: string; mimeType?: string; size?: number }>
+    attachments?: Array<{ id: string; type: 'image' | 'file'; name: string; mimeType?: string; size?: number }>,
+    ingressAuth: 'paired' | 'guest' = 'paired'
   ): ChannelMessage {
     const { message: msg, from, chat } = ctx;
     if (!msg || !from || !chat) {
@@ -527,6 +532,7 @@ export class TelegramChannel extends BaseChannelPlugin {
         replyToMessageId: msg.reply_to_message ? String(msg.reply_to_message.message_id) : undefined,
       },
       content,
+      ingressAuth,
       attachments: attachments?.map(a => ({
         id: a.id,
         type: a.type,
@@ -539,15 +545,30 @@ export class TelegramChannel extends BaseChannelPlugin {
     };
   }
 
-  private checkTelegramIngress(userId: number, chatId?: number): boolean {
-    if (!this.telegramConfig) return false;
-    return checkInboundAccess({
+  private botIdentity(): TelegramBotIdentity {
+    try {
+      return this.bot?.botInfo ?? {};
+    } catch {
+      // bot.init() 完成前 botInfo 未就绪；准入门按「未触达」处理（fail-closed）
+      return {};
+    }
+  }
+
+  private checkTelegramIngress(ctx: Context): { admitted: boolean; auth: 'paired' | 'guest' } {
+    if (!this.telegramConfig || !ctx.from) return { admitted: false, auth: 'guest' };
+    const decision = checkInboundAccess({
       channel: 'telegram',
-      senderId: userId,
-      chatId,
+      chatType: ctx.chat?.type === 'private' ? 'p2p' : 'group',
+      senderId: ctx.from.id,
+      chatId: ctx.chat?.id,
+      mentionedBot: isTelegramBotMentioned(ctx.message ?? {}, this.botIdentity()),
       allowedUserIds: this.telegramConfig.allowedUserIds,
       allowedChatIds: this.telegramConfig.allowedChatIds,
-    }).action === 'allow';
+      groupAccessMode: this.telegramConfig.groupAccessMode,
+    });
+    if (decision.action === 'allow') return { admitted: true, auth: 'paired' };
+    if (decision.action === 'guest') return { admitted: true, auth: 'guest' };
+    return { admitted: false, auth: 'guest' };
   }
 
   /**

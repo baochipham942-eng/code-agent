@@ -31,6 +31,7 @@ export const planApprovalZh = {
     evidenceHint: '批准时的完整计划',
     drag: '拖拽重排',
     syntheticSource: '由 Neo 根据计划正文补出',
+    version: '版本 {version}',
   },
 };
 
@@ -67,5 +68,6 @@ export const planApprovalEn: typeof planApprovalZh = {
     evidenceHint: 'Full plan at approval time',
     drag: 'Drag to reorder',
     syntheticSource: 'Neo drafted this from the plan text',
+    version: 'Version {version}',
   },
 };

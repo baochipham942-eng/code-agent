@@ -566,6 +566,7 @@ const PlanApprovalUpdateEventSchema = event('plan_approval_update', typed<PlanAp
     failureReason: z.string().optional(),
     failedAt: z.number().optional(),
     source: z.enum(['model_exit', 'synthetic_text']).optional(),
+    version: z.number().optional(),
   }),
 })));
 const TurnDiffEventSchema = event('turn_diff', typed<TurnDiffEventData>(z.object({

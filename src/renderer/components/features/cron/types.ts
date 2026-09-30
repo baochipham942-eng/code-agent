@@ -21,6 +21,8 @@ export interface CronJobDraft {
   maxRetries: string;
   retryDelay: string;
   timeout: string;
+  maxRunBudget: string;
+  maxRuns: string;
   scheduleType: 'at' | 'every' | 'cron';
   atDatetime: string;
   everyInterval: string;
@@ -59,6 +61,8 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     maxRetries: '0',
     retryDelay: '',
     timeout: '',
+    maxRunBudget: '',
+    maxRuns: '',
     scheduleType: 'every',
     atDatetime: '',
     everyInterval: '1',
@@ -116,6 +120,8 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
   draft.maxRetries = job.maxRetries != null ? String(job.maxRetries) : '0';
   draft.retryDelay = job.retryDelay != null ? String(job.retryDelay) : '';
   draft.timeout = job.timeout != null ? String(job.timeout) : '';
+  draft.maxRunBudget = job.maxRunBudget != null ? String(job.maxRunBudget) : '';
+  draft.maxRuns = job.maxRuns != null ? String(job.maxRuns) : '';
   draft.scheduleType = job.scheduleType;
 
   if (job.schedule.type === 'at') {
@@ -209,6 +215,8 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     maxRetries: parseOptionalNumber(draft.maxRetries) ?? 0,
     retryDelay: parseOptionalNumber(draft.retryDelay),
     timeout: parseOptionalNumber(draft.timeout),
+    maxRunBudget: parseOptionalNumber(draft.maxRunBudget),
+    maxRuns: parseOptionalNumber(draft.maxRuns),
     tags: draft.tagsText
       .split(',')
       .map((tag) => tag.trim())

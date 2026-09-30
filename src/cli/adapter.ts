@@ -31,6 +31,7 @@ import { getAgentDispatchInfo } from './agentDispatch';
 import { createRunContext, type RunContext, type RunHandle } from '../host/runtime/runContext';
 import { createRunTraceContext, withRunTraceContext } from '../host/telemetry/runTraceContext';
 import { generateMessageId } from '../shared/utils/id';
+import { formatThrownError } from '../shared/utils/providerError';
 import { readPersistedExpertThread } from '../shared/contract/expertThread';
 import { resolveExplicitAgentOverride } from '../host/agent/explicitAgentOverride';
 
@@ -39,7 +40,7 @@ export { getAgentDispatchInfo, isAgentDispatchToolName } from './agentDispatch';
 const logger = createLogger('CLI-Adapter');
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return formatThrownError(error);
 }
 
 // Subscribe to retry events for CLI visibility

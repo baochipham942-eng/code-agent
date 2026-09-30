@@ -279,9 +279,20 @@ export function overrideToSelectValue(projectOverride: boolean | null | undefine
   return 'follow';
 }
 
-function skillFileLabel(basePath: string): string {
-  const segments = basePath.split(/[\\/]/).filter(Boolean);
-  return `${segments.at(-1) ?? basePath}/SKILL.md`;
+/** 技能目录 + SKILL.md。含反斜杠的路径按 Windows 分隔符拼接，其余用 /。 */
+function blockedSkillFilePath(basePath: string): string {
+  const separator = basePath.includes('\\') ? '\\' : '/';
+  const trimmed = basePath.replace(/[\\/]+$/, '');
+  const root = trimmed.length > 0 ? trimmed : basePath;
+  return `${root}${separator}SKILL.md`;
+}
+
+function blockedSourceLabel(source: string, labels: SkillsInstalledLabels): string {
+  if (source === 'user' || source === 'project' || source === 'library') {
+    const label = labels.officialConflictSources[source];
+    return label.length > 0 ? label : source;
+  }
+  return source;
 }
 
 interface SkillRowProps {
@@ -345,9 +356,14 @@ const SkillRow: React.FC<SkillRowProps> = ({
         {skill.officialConflict && (
           <div className="mt-2 text-xs text-badge-warning">
             <p>{labels.officialConflictBadge}</p>
-            {skill.officialConflict.blockedSkills.map((blocked) => (
-              <p key={`${blocked.source}:${blocked.basePath}`} className="break-all">{skillFileLabel(blocked.basePath)}</p>
-            ))}
+            {skill.officialConflict.blockedSkills.map((blocked) => {
+              const filePath = blockedSkillFilePath(blocked.basePath);
+              return (
+                <p key={`${blocked.source}:${blocked.basePath}`} className="break-all" title={filePath}>
+                  {blockedSourceLabel(blocked.source, labels)} {filePath}
+                </p>
+              );
+            })}
             <p>{labels.officialConflictTitle}</p>
           </div>
         )}

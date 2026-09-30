@@ -97,4 +97,7 @@ ${CONNECTION_STATE_HONESTY}`,
   category: 'mcp',
   permissionLevel: 'network',
   readsUntrustedContent: 'block',
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(mcp, unified)' },
+  ],
 };

@@ -33,4 +33,7 @@ summary with relevant paths and line references.`,
   },
   category: 'planning',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'write', expression: 'resource(agent, runtime)' },
+  ],
 };

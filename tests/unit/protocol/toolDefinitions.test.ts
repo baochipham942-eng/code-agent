@@ -3,6 +3,7 @@ import {
   getCoreToolDefinitions,
   getLoadedDeferredToolDefinitions,
   getDesignCanvasToolDefinitions,
+  getToolDefinitionWithCloudMeta,
   withDesignCanvasTools,
   withoutGenericMediaToolsInDesign,
 } from '../../../src/host/tools/dispatch/toolDefinitions';
@@ -94,6 +95,13 @@ describe('toolDefinitions deferred loading', () => {
     expect(names).toContain('Task');
     expect(names).toContain('mcp__github__search_code');
     expect(definitions.find((definition) => definition.name === 'mcp__github__search_code')).toEqual(mcpToolDefinition);
+  });
+
+  it('keeps resource accesses off the model-visible tool definition', () => {
+    const definition = getToolDefinitionWithCloudMeta('terminal_list');
+    expect(definition?.name).toBe('terminal_list');
+    expect(definition).not.toHaveProperty('accesses');
+    expect(JSON.stringify(definition)).not.toContain('resource(pty, catalog)');
   });
 
   // 2026-08-14（L8 N-L8-SLIM2）：Append 每轮占 306 token，真库 4748 次调用里只被用到 1 次，

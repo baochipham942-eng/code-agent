@@ -197,4 +197,7 @@ export const taskManagerSchema: ToolSchema = {
   category: 'planning',
   permissionLevel: 'write',
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(session, tasks)' },
+  ],
 };

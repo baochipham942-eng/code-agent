@@ -52,4 +52,7 @@ export const taskCreateSchema: ToolSchema = {
   category: 'planning',
   permissionLevel: 'write',
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'write', expression: 'resource(session, tasks)' },
+  ],
 };

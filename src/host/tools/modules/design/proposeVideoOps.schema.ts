@@ -44,4 +44,7 @@ Use this only in the design workspace. Do not specify coordinates — the canvas
   },
   category: 'planning',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'write', expression: 'resource(design, video)' },
+  ],
 };

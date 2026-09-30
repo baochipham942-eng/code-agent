@@ -243,39 +243,108 @@ function userRequestExemptsPlaceholderScan(messages: readonly Message[]): boolea
   return false;
 }
 
-/** 用户请求文件但本 run 没有落出任何可交付文件时使用的窄格式词表。 */
-const REQUESTED_DELIVERABLE_FORMATS = [
-  { format: 'xlsx', pattern: /\b(?:xlsx|excel|spreadsheet)\b|电子表格|表格/i },
-  { format: 'docx', pattern: /\b(?:docx|word)\b|文字文档|文档/i },
+/**
+ * 文件交付物的格式词。只认文件类型（xlsx/docx/…、电子表格、演示文稿）
+ * 以及绑在「文件」上的说法（表格文件、word 文件）。
+ * 表格 / 文档 / 网页 / word / 图片单独出现是呈现词，不能当成要了一份文件。
+ */
+const REQUESTED_FILE_FORMATS: readonly { format: string; pattern: RegExp }[] = [
+  { format: 'xlsx', pattern: /\b(?:xlsx|excel|spreadsheet)\b|电子表格|表格文件/i },
+  { format: 'docx', pattern: /\bdocx\b|(?:文字)?文档文件|\bword\s*文件|\bword\s+file\b/i },
   { format: 'pptx', pattern: /\b(?:pptx|powerpoint|ppt)\b|演示文稿|幻灯片/i },
-  { format: 'pdf', pattern: /\bpdf\b|PDF文档/i },
+  { format: 'pdf', pattern: /\bpdf\b/i },
   { format: 'csv', pattern: /\bcsv\b/i },
-  { format: 'image', pattern: /\b(?:png|jpe?g|image)\b|图片|图像/i },
+  { format: 'image', pattern: /\b(?:png|jpe?g|image)\b|图片文件|图像文件/i },
   { format: 'audio', pattern: /\b(?:wav|mp3|audio)\b|音频/i },
-  { format: 'html', pattern: /\bhtml\b|网页|网站/i },
+  { format: 'html', pattern: /\bhtml\b|网页文件/i },
   { format: 'zip', pattern: /\bzip\b|压缩包/i },
-] as const;
+];
 const REQUESTED_DELIVERABLE_VERB_PATTERN = /\b(?:create|make|produce|generate|fill|export|save)\b|创建|制作|生成|做|填充|导出|保存|存为|输出/i;
 const NEGATED_REQUESTED_DELIVERABLE_PATTERN = /(?:不要|无需|不用|不需要|don't|do not|never)\s*(?:帮我)?\s*(?:创建|制作|生成|做|填充|导出|保存|存为|输出|create|make|produce|generate|fill|export|save)/i;
 const HOW_TO_QUESTION_PATTERN = /^\s*(?:(?:how|what|why|when|where)\b|请问|如何|怎么|怎样|什么是|能否解释|可以解释)[\s\S]*[?？]?\s*$/i;
 const SCRIPT_EXTENSIONS = new Set(['.py', '.js', '.ts', '.sh', '.mjs']);
+const FILE_FORMAT_SOURCE = REQUESTED_FILE_FORMATS.map(({ pattern }) => `(?:${pattern.source})`).join('|');
+const PRODUCE_VERB_SOURCE = '创建|制作|生成|做|填充|导出|保存|输出';
+/** 量化交付（生成一个/一份）才算要文件；「生成 pdf 的流程」这种紧挨着的提及不算。 */
+const QUANTIFIED_FILE_REQUEST = new RegExp(`(?:${PRODUCE_VERB_SOURCE})\\s*(?:出|成|为)?\\s*一[个份张]`, 'i');
+/** 动词和格式连写（生成xlsx、输出图片文件）。中间隔了空格或「关于」不算。 */
+const GLUED_FILE_REQUEST = new RegExp(`(?:${PRODUCE_VERB_SOURCE})(?:出|成|为)?(?:${FILE_FORMAT_SOURCE}|文件(?!夹))`, 'i');
+const ENGLISH_FILE_REQUEST = /\b(?:create|make|produce|generate|fill|export|save)\s+(?:an?\s+)?(?:[\w.-]+\s+){0,3}?(?:xlsx|excel|spreadsheet|docx|pptx|powerpoint|ppt|pdf|csv|png|jpe?g|html|wav|mp3|zip|file)\b/i;
+const EXPLICIT_SAVE_REQUEST = /导出|保存为|存为|\bexport\b|\bsave\s+as\b/i;
+const EXPLICIT_FILE_PHRASE = /文件(?!夹)|保存为|存为|\bsave\s+as\b|\bexport\b|导出/i;
+const FILE_NOUN = /文件(?!夹)|\bfile\b/i;
+const CONVERSATIONAL_READ_REQUEST = /(?:读|阅读|看看|查看)|summarize|summarise|生成摘要|总结一下|帮我总结/i;
+const QUESTION_CUE = /[?？]|什么|为何|为什么|怎么|如何/;
+const TOPICAL_FORMAT_MENTION = /(?:关于|对于|有关|about|regarding)\s*(?:[\w\u4e00-\u9fff]{0,8}\s*)?(?:pdf|xlsx|excel|docx|word|pptx|powerpoint|html|csv|png|jpe?g|image)\b/i;
+/** 点名产物工具。needsArtifactTaskBrief 把裸「生成」也算产物任务，「生成摘要」会误伤，不用它。 */
+const NAMED_PRODUCING_TOOL = /\b(?:write_file|excel_generate|ExcelAutomate|ppt_generate|docx_generate|pdf_generate|PdfAutomate|DocEdit|image_generate|chart_generate|ProposeCanvasOps|ProposeSlidesOps|ProposeVideoOps)\b|(?:用|使用|调用)\s*(?:Write|Excel|PPT|PowerPoint|Design)\b/i;
+
+function latestCurrentUserText(messages: readonly Message[]): string {
+  const latestUser = currentMessages(messages).find((message) => message.role === 'user');
+  return typeof latestUser?.content === 'string' ? latestUser.content.trim() : '';
+}
+
+function hasConcreteFileFormat(text: string): boolean {
+  return REQUESTED_FILE_FORMATS.some(({ pattern }) => pattern.test(text));
+}
+
+function hasFileProductionFrame(text: string): boolean {
+  return EXPLICIT_SAVE_REQUEST.test(text)
+    || QUANTIFIED_FILE_REQUEST.test(text)
+    || GLUED_FILE_REQUEST.test(text)
+    || ENGLISH_FILE_REQUEST.test(text)
+    || NAMED_PRODUCING_TOOL.test(text);
+}
+
+/** 读/总结且没有另说要导出或生成文件。 */
+function isConversationalReadRequest(text: string): boolean {
+  if (!CONVERSATIONAL_READ_REQUEST.test(text)) return false;
+  if (EXPLICIT_SAVE_REQUEST.test(text)) return false;
+  return !(hasFileProductionFrame(text) && (hasConcreteFileFormat(text) || FILE_NOUN.test(text)));
+}
+
+function closestRequestedFileFormat(text: string, verbIndexes: readonly number[]): string | undefined {
+  let closest: { format: string; distance: number } | undefined;
+  for (const { format, pattern } of REQUESTED_FILE_FORMATS) {
+    const foundAt = text.match(pattern)?.index;
+    if (foundAt === undefined) continue;
+    const distance = Math.min(...verbIndexes.map((verbIndex) => Math.abs(verbIndex - foundAt)));
+    if (distance <= 120 && (!closest || distance < closest.distance)) closest = { format, distance };
+  }
+  if (closest) return closest.format;
+  const phraseAt = text.match(EXPLICIT_FILE_PHRASE)?.index;
+  if (phraseAt === undefined) return undefined;
+  const distance = Math.min(...verbIndexes.map((verbIndex) => Math.abs(verbIndex - phraseAt)));
+  return distance <= 120 ? 'file' : undefined;
+}
 
 function requestedDeliverableFormat(messages: readonly Message[]): string | undefined {
   if (userRequestExemptsPlaceholderScan(messages)) return undefined;
-  const latestUser = currentMessages(messages).find((message) => message.role === 'user');
-  const text = typeof latestUser?.content === 'string' ? latestUser.content.trim() : '';
+  const text = latestCurrentUserText(messages);
   if (!text || HOW_TO_QUESTION_PATTERN.test(text) || NEGATED_REQUESTED_DELIVERABLE_PATTERN.test(text)) return undefined;
-  const verbMatches = [...text.matchAll(new RegExp(REQUESTED_DELIVERABLE_VERB_PATTERN.source, 'gi'))]
+  if (isConversationalReadRequest(text)) return undefined;
+  const verbIndexes = [...text.matchAll(new RegExp(REQUESTED_DELIVERABLE_VERB_PATTERN.source, 'gi'))]
     .map((match) => match.index ?? -1).filter((index) => index >= 0);
-  if (verbMatches.length === 0) return undefined;
-  let closest: { format: string; distance: number } | undefined;
-  for (const { format, pattern } of REQUESTED_DELIVERABLE_FORMATS) {
-    const formatIndex = pattern.exec(text)?.index;
-    if (formatIndex === undefined) continue;
-    const distance = Math.min(...verbMatches.map((verbIndex) => Math.abs(verbIndex - formatIndex)));
-    if (distance <= 120 && (!closest || distance < closest.distance)) closest = { format, distance };
-  }
-  return closest?.format;
+  if (verbIndexes.length === 0) return undefined;
+  return closestRequestedFileFormat(text, verbIndexes);
+}
+
+function taskClearlyAskedForProducingTool(text: string): boolean {
+  if (isConversationalReadRequest(text)) return false;
+  const concrete = hasConcreteFileFormat(text);
+  const fileNoun = FILE_NOUN.test(text);
+  const explicitSave = EXPLICIT_SAVE_REQUEST.test(text);
+  const quantified = QUANTIFIED_FILE_REQUEST.test(text);
+  const named = NAMED_PRODUCING_TOOL.test(text) && (concrete || fileNoun);
+  const strong = explicitSave
+    || named
+    || GLUED_FILE_REQUEST.test(text)
+    || ENGLISH_FILE_REQUEST.test(text)
+    || (quantified && (concrete || fileNoun));
+  if (!strong) return false;
+  // 「生成 pdf 的流程是什么」有格式词，但不是在要文件。量化/导出/文件名词仍算要。
+  if (QUESTION_CUE.test(text) && !explicitSave && !quantified && !fileNoun) return false;
+  return true;
 }
 
 function runWroteNonScriptFile(
@@ -301,6 +370,19 @@ function runWroteNonScriptFile(
 const PRODUCING_TOOL_PATTERN = /^(write|write_file|edit|edit_file|append|append_file|multiedit|bash|notebookedit)$/i;
 
 /**
+ * 产物工具名。与 readLoopSeal 的 DELIVERABLE_GENERATE_TOOLS 同一批，另加设计提案工具。
+ * 成功但没报 outputPath 的调用也算「本 run 在生产」。
+ */
+const ARTIFACT_PRODUCING_TOOLS = new Set([
+  'write', 'write_file', 'edit', 'edit_file', 'append', 'append_file', 'multiedit',
+  'bash', 'notebookedit', 'notebook_edit',
+  'ppt_generate', 'docx_generate', 'excel_generate', 'pdf_generate', 'chart_generate',
+  'excelautomate', 'pdfautomate', 'docedit',
+  'image_generate', 'qrcode_generate', 'mermaid_export', 'text_to_speech', 'image_process',
+  'proposecanvasops', 'proposeslidesops', 'proposevideoops',
+]);
+
+/**
  * 本 run 是否有产出类动作。两条线任一：成功配对的写入族工具调用（Write/Edit/Bash 等）；
  * 或任一成功工具结果报了 outputPath/changedFiles——PPT/设计/图片/音视频等产物生成
  * 工具不靠写入族名字，靠结果元数据报产出（ai-review #2007 第六轮 Nit）。
@@ -320,6 +402,26 @@ function runHasProducingActivity(messages: readonly Message[]): boolean {
       && (typeof result.outputPath === 'string'
         || typeof result.metadata?.outputPath === 'string'
         || (Array.isArray(result.metadata?.changedFiles) && result.metadata.changedFiles.length > 0))));
+}
+
+function runCalledArtifactProducingTool(messages: readonly Message[]): boolean {
+  const active = currentMessages(messages);
+  const succeeded = new Set(
+    active.flatMap((message) => (message.toolResults ?? []).filter((result) => result.success).map((result) => result.toolCallId)),
+  );
+  return active.some((message) => (message.toolCalls ?? []).some((call) =>
+    succeeded.has(call.id) && ARTIFACT_PRODUCING_TOOLS.has(call.name.toLowerCase())));
+}
+
+/**
+ * none_produced 的产出前提：用户明确要文件，或本 run 真的调用了写入/产物工具。
+ * 纯对话（「用表格输出」「生成一段关于 pdf 的介绍」）两边都不沾，不进补轮。
+ */
+function hasNoneProducedProducingPremise(messages: readonly Message[]): boolean {
+  const text = latestCurrentUserText(messages);
+  if (text && taskClearlyAskedForProducingTool(text)) return true;
+  if (!text || QUESTION_CUE.test(text) || TOPICAL_FORMAT_MENTION.test(text)) return false;
+  return runHasProducingActivity(messages) || runCalledArtifactProducingTool(messages);
 }
 
 /**
@@ -460,12 +562,19 @@ function wrapPlaceholderFragment(fragment: string, nonce: string): string {
   return wrapUntrustedContentBoundary({ nonce, source: 'deliverable-content', content: tokenStripped });
 }
 
+function noneProducedNoun(format: string | undefined, claimed: string): string {
+  const token = format ?? claimed;
+  return token === 'file' || token === '文件' ? '文件' : `${token} 文件`;
+}
+
 /** 回喂补轮的系统消息：缺漏带核验后的绝对路径，模型写错相对路径时能自纠。 */
 function buildDeliverableRepairPrompt(missing: readonly DeliverableMissing[]): string {
   const nonce = generateBoundaryNonce();
   const lines = missing.map((item, index) => {
     if (item.kind === 'none_produced') {
-      return `${index + 1}. 用户请求的 ${item.requestedFormat ?? item.claim.claimed} 文件本轮没有生成。`;
+      const noun = noneProducedNoun(item.requestedFormat, item.claim.claimed);
+      const gap = noun === '文件' ? '' : ' ';
+      return `${index + 1}. 用户请求的${gap}${noun}本轮没有生成。`;
     }
     if (item.kind === 'placeholder') {
       const hitLines = (item.placeholderHits ?? []).map((hit) => `   - ${hit.location}：${wrapPlaceholderFragment(hit.fragment, nonce)}`);
@@ -500,7 +609,7 @@ function appendUndeliveredNote(content: string, missing: readonly DeliverableMis
   const nonce = generateBoundaryNonce();
   const noneProducedLines = missing
     .filter((item) => item.kind === 'none_produced')
-    .map((item) => `- ${item.requestedFormat ?? item.claim.claimed} 文件没有生成`);
+    .map((item) => `- ${noneProducedNoun(item.requestedFormat, item.claim.claimed)}没有生成`);
   const absentLines = missing
     .filter((item) => item.kind !== 'placeholder' && item.kind !== 'none_produced')
     .map((item) => {
@@ -550,6 +659,8 @@ export function appendRequestedNoneProduced(
   if (!requestedFormat || runWroteNonScriptFile(input.messages, input.workingDirectory, input.nudgeManager)) {
     return check;
   }
+  // 格式词命中还不够：没有产出工具、也没明确要文件时，不进这条补轮。
+  if (!hasNoneProducedProducingPremise(input.messages)) return check;
   const claim: DeliverableClaim = { claimed: requestedFormat, resolved: '', source: 'inferred' };
   return {
     ...check,

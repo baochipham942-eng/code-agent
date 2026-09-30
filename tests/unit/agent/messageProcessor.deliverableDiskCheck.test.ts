@@ -232,6 +232,38 @@ describe('MessageProcessor deliverable disk check (#1998)', () => {
     );
   });
 
+  it.each([
+    '用表格输出一下 A 和 B 的对比',
+    '帮我读这个文档生成摘要',
+  ])('conversational request %j does not inject a repair round or an undelivered note', async (userContent) => {
+    const ctx = buildCtx({
+      messages: [
+        { id: 'user-1', role: 'user', content: userContent, timestamp: Date.now() },
+      ],
+    });
+    const contextAssembly = buildContextAssembly(ctx);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, buildRunFinalizer());
+
+    const action = await processor.handleTextResponse(
+      textResponse('已处理本轮请求。'),
+      false,
+      2,
+      false,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('break');
+    expect(processor.guardStateForTest.deliverableRepairCount).toBe(0);
+    expect(contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
+      expect.stringContaining('<deliverable-disk-check>'),
+      'deliverable-disk-check',
+    );
+    const persisted = contextAssembly.addAndPersistMessage.mock.calls[0]?.[0] as { content: string } | undefined;
+    expect(persisted?.content).toContain('已处理本轮请求。');
+    expect(persisted?.content).not.toContain('本轮实际未交付');
+    expect(ctx.artifact.lastDeliverableCheck?.result.missing).toEqual([]);
+  });
+
   it('still missing after the repair budget → break and the final reply states what was not delivered', async () => {
     const ctx = buildCtx();
     const contextAssembly = buildContextAssembly(ctx);

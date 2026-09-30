@@ -361,6 +361,55 @@ describe('repair prompt and undelivered note (via runDeliverableDiskCheckGate)',
     expect(result.check.missing).toEqual([]);
   });
 
+  async function expectNoNoneProduced(userContent: string, messagesAfterUser: Message[] = []) {
+    for (const repairsUsed of [0, 1]) {
+      const result = await requestedFileGate(userContent, messagesAfterUser, repairsUsed);
+      expect(result.action).toBe('pass');
+      if (result.action !== 'pass') return;
+      expect(result.content).toBe('已处理本轮请求。');
+      expect(result.content).not.toContain('本轮实际未交付');
+      expect(result.check.missing).toEqual([]);
+    }
+  }
+
+  it.each([
+    '用表格输出一下 A 和 B 的对比',
+    '帮我读这个文档生成摘要',
+    '生成一段关于 pdf 的介绍',
+    'create a word document',
+    '我们生成 pdf 的流程是什么',
+  ])('conversational request %j does not repair or append an undelivered note', async (userContent) => {
+    await expectNoNoneProduced(userContent);
+  });
+
+  it('a prose table request does not repair even when the run wrote a generator script', async () => {
+    await expectNoNoneProduced('用表格输出一下 A 和 B 的对比', [message({
+      id: 'tool', role: 'assistant', content: '', toolResults: [{
+        toolCallId: 'tool-1', success: true, metadata: { changedFiles: ['build_reporting.py'] },
+      }],
+    })]);
+  });
+
+  it('still repairs an explicit word file and an export-to-file request', async () => {
+    const wordFile = await requestedFileGate('请生成一份 word 文件');
+    expect(wordFile.action).toBe('repair');
+    if (wordFile.action !== 'repair') return;
+    expect(wordFile.check.missing[0]).toMatchObject({ kind: 'none_produced', requestedFormat: 'docx' });
+
+    const exported = await requestedFileGate('请导出一份文件');
+    expect(exported.action).toBe('repair');
+    if (exported.action !== 'repair') return;
+    expect(exported.check.missing[0]).toMatchObject({ kind: 'none_produced', requestedFormat: 'file' });
+    expect(exported.prompt).toContain('用户请求的文件本轮没有生成');
+  });
+
+  it('a read-then-create file request still repairs', async () => {
+    const result = await requestedFileGate('请读取资料后生成一个 xlsx 文件');
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.missing[0]).toMatchObject({ kind: 'none_produced', requestedFormat: 'xlsx' });
+  });
+
   it('a successful non-script output file suppresses the no-produced detector', async () => {
     const result = await requestedFileGate('导出一个 xlsx 文件', [message({
       id: 'tool', role: 'assistant', content: '', toolResults: [{

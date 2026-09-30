@@ -215,11 +215,12 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     maxRetries: parseOptionalNumber(draft.maxRetries) ?? 0,
     retryDelay: parseOptionalNumber(draft.retryDelay),
     timeout: parseOptionalNumber(draft.timeout),
-    maxRunBudget: parseOptionalNumber(draft.maxRunBudget),
-    // 云端不支持次数上限（host assertExecutionLocationConstraints 直接拒）：复制本地任务
-    // 到云端、或新建时先填上限再切云端，字段虽被隐藏但 draft 里还留着值，提交前必须丢弃
-    // （PR#2208 ai-review R2 Important）。
-    maxRuns: draft.runsOn === 'cloud' ? undefined : parseOptionalNumber(draft.maxRuns),
+    // 清空/不支持的额度字段必须送 null 而不是 undefined：HTTP 传输 JSON.stringify 会丢
+    // undefined 键，而 host updateJob 是 {...existing, ...updates} 合并——缺键=保留旧值，
+    // 「清空上限」会静默不生效，编辑带 maxRuns 的任务上云端也会把旧值继承回去
+    // （PR#2208 ai-review R4 Important）。云端不支持次数上限（R2）：一律送 null 丢弃。
+    maxRunBudget: parseOptionalNumber(draft.maxRunBudget) ?? null,
+    maxRuns: draft.runsOn === 'cloud' ? null : parseOptionalNumber(draft.maxRuns) ?? null,
     tags: draft.tagsText
       .split(',')
       .map((tag) => tag.trim())

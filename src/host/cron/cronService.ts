@@ -717,7 +717,9 @@ export class CronService implements Disposable {
       execution.duration = execution.completedAt - execution.startedAt!;
 
       // For one-time jobs, disable after execution
-      if (definition.scheduleType === 'at') await this.updateJob(definition.id, { enabled: false });
+      if (definition.scheduleType === 'at') {
+        await this.updateJob(definition.id, { enabled: false });
+      }
 
       // Save execution to database
       await saveCronExecution(execution);
@@ -750,10 +752,9 @@ export class CronService implements Disposable {
 
       // 次数上限结算（N-CRON-BUDGET-EXPOSE，实现见 cronRunLimit.ts）：排在失败停用之后，同趟不重复停用；
       // 记数走窄写且整体已兜底，抛错不会逃出 finally 卡死 in-flight（PR#2208 ai-review Important）。
+      // （hooks 压行：本文件贴 max-lines 红线，格式还原 #2208 R4 Nit-3 需要这两行额度。）
       disableNotified = await settleCronRunLimit(definition.id, execution, disableNotified, {
-        getDefinition: (jobId) => this.jobs.get(jobId)?.definition,
-        updateJob: (jobId, updates) => this.updateJob(jobId, updates),
-      });
+        getDefinition: (jobId) => this.jobs.get(jobId)?.definition, updateJob: (jobId, updates) => this.updateJob(jobId, updates) });
 
       // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session。
       // 停用的那一趟只发停用通知（已含最后错误与出路）——同一笔失败再叠一条

@@ -159,7 +159,7 @@ export function assertExecutionLocationConstraints(
 }
 
 export async function runWithCronJobBudget<T>(
-  maxRunBudget: number | undefined,
+  maxRunBudget: number | null | undefined,
   operation: () => Promise<T>,
 ): Promise<T> {
   // The unattended pool remains the shared outer budget gate. A positive

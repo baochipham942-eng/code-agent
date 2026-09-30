@@ -64,13 +64,16 @@ export interface CronJobDefinition {
   /**
    * Optional per-run USD ceiling. This job-level gate is additive to the shared
    * unattended budget pool; it never replaces or disables that pool.
+   * `null` on update clears a previously set value — JSON transport drops `undefined`
+   * keys, which the host merge would read as "keep the old value".
    */
-  maxRunBudget?: number;
+  maxRunBudget?: number | null;
   /**
    * Optional run-count cap (integer >= 1, local jobs only). The job auto-disables
    * with reason `max_runs_reached` once this many counted runs have finished.
+   * `null` on update clears a previously set value (same JSON-transport reason as above).
    */
-  maxRuns?: number;
+  maxRuns?: number | null;
   /**
    * Counted runs so far (one per settled run with terminal status completed/failed,
    * including runs that went through the retry chain; cancelled and capacity-wait

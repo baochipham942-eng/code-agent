@@ -999,6 +999,24 @@ describe('N-CRON-BUDGET-EXPOSE maxRuns run-count cap', () => {
     await service.shutdown();
   });
 
+  it('updateJob with a JSON-transported null actually clears a set maxRuns (PR#2208 R4 Important)', async () => {
+    const service = new CronService();
+    stubExecuteAction(service, async () => ({ ok: true }));
+    const job = await service.createJob(limitedAgentJob(1));
+
+    // 模拟编辑器「清空上限」经 HTTP JSON 传输后的 updates：null 键保留（undefined 会被丢弃）。
+    const wire = JSON.parse(JSON.stringify({ maxRuns: null }));
+    const updated = await service.updateJob(job.id, wire);
+    expect(updated?.maxRuns).toBeNull();
+
+    // 清空后不再到数停用：旧 maxRuns=1 时一趟就该停，现在连跑两趟仍启用、计数照涨。
+    await service.triggerJob(job.id);
+    await service.triggerJob(job.id);
+    expect(service.getJob(job.id)).toMatchObject({ enabled: true, runCount: 2 });
+    expect(maxRunsEventCalls(job.id)).toHaveLength(0);
+    await service.shutdown();
+  });
+
   it('an unlimited job settles runCount via the narrow write: timer untouched, no updatedAt churn', async () => {
     const service = new CronService();
     stubExecuteAction(service, async () => ({ ok: true }));

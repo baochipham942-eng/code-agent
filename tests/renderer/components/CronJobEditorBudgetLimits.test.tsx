@@ -74,7 +74,7 @@ describe('N-CRON-BUDGET-EXPOSE 编辑器额度字段', () => {
     expect(screen.queryByText('运行次数上限')).toBeNull();
   });
 
-  it('buildCronJobInput emits numbers for filled fields and undefined for empty ones', () => {
+  it('buildCronJobInput emits numbers for filled fields and null for empty ones (PR#2208 R4)', () => {
     const filled = createDefaultCronJobDraft();
     filled.name = '受限任务';
     filled.shellCommand = 'echo ok';
@@ -82,10 +82,26 @@ describe('N-CRON-BUDGET-EXPOSE 编辑器额度字段', () => {
     filled.maxRuns = '4';
     expect(buildCronJobInput(filled)).toMatchObject({ maxRunBudget: 0.25, maxRuns: 4 });
 
+    // 空值必须送 null 而不是 undefined：JSON 传输丢 undefined 键，host 合并时会保留旧值。
     const empty = createDefaultCronJobDraft();
     empty.name = '不限任务';
     empty.shellCommand = 'echo ok';
-    expect(buildCronJobInput(empty)).toMatchObject({ maxRunBudget: undefined, maxRuns: undefined });
+    expect(buildCronJobInput(empty)).toMatchObject({ maxRunBudget: null, maxRuns: null });
+  });
+
+  it('cleared/cloud-dropped limits emit null that survives JSON transport (PR#2208 R4 Important)', () => {
+    // 场景 a：编辑时把已设的上限清空——null 必须活着到 host，updateJob 合并才能真正清掉。
+    const cleared = buildDraftFromJob(makeJob({ maxRuns: 3, maxRunBudget: 0.5 }));
+    cleared.maxRuns = '';
+    cleared.maxRunBudget = '';
+    const clearedWire = JSON.parse(JSON.stringify(buildCronJobInput(cleared)));
+    expect(clearedWire).toMatchObject({ maxRuns: null, maxRunBudget: null });
+
+    // 场景 b：带 maxRuns 的本地任务切/复制到云端——丢弃也必须以 null 落在线上，
+    // 否则缺键会被 host 从旧定义继承回来，云端校验每存必炸。
+    const toCloud = { ...buildDraftFromJob(makeJob({ maxRuns: 3 })), runsOn: 'cloud' as const };
+    const cloudWire = JSON.parse(JSON.stringify(buildCronJobInput(toCloud)));
+    expect(cloudWire.maxRuns).toBeNull();
   });
 
   it('buildDraftFromJob maps an unset budget/limit to empty strings', () => {
@@ -97,7 +113,7 @@ describe('N-CRON-BUDGET-EXPOSE 编辑器额度字段', () => {
   it('buildCronJobInput drops a hidden maxRuns for cloud jobs (PR#2208 R2 Important)', () => {
     // 复制本地任务到云端：draft 里带着来源任务的 maxRuns，但编辑面已把字段隐藏。
     const copied = { ...buildDraftFromJob(makeJob({ maxRuns: 3 })), runsOn: 'cloud' as const };
-    expect(buildCronJobInput(copied).maxRuns).toBeUndefined();
+    expect(buildCronJobInput(copied).maxRuns).toBeNull();
 
     // 新建：先填运行次数上限再切到云端。
     const switched = createDefaultCronJobDraft();
@@ -105,7 +121,7 @@ describe('N-CRON-BUDGET-EXPOSE 编辑器额度字段', () => {
     switched.shellCommand = 'echo ok';
     switched.maxRuns = '5';
     switched.runsOn = 'cloud';
-    expect(buildCronJobInput(switched).maxRuns).toBeUndefined();
+    expect(buildCronJobInput(switched).maxRuns).toBeNull();
 
     // 本地任务照常携带。
     const local = createDefaultCronJobDraft();
@@ -123,6 +139,6 @@ describe('N-CRON-BUDGET-EXPOSE 编辑器额度字段', () => {
     fireEvent.click(screen.getByText('创建任务'));
 
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1), { timeout: 3000 });
-    expect(createJob.mock.calls[0]?.[0]).toMatchObject({ runsOn: 'cloud', maxRuns: undefined });
+    expect(createJob.mock.calls[0]?.[0]).toMatchObject({ runsOn: 'cloud', maxRuns: null });
   });
 });

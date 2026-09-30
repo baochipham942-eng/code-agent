@@ -19,7 +19,9 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 - **回放（默认，可进 PR CI）**：`npm run acceptance:snapshot-replay`
 - **重录（覆写本目录）**：`npm run acceptance:snapshot-replay:record`
 - 动了 `src/host/agent/runtime/contextAssembly/**`、`src/host/prompts/**`、
-  `src/host/testing/e2e/**`、`requestReplay*.ts` 这类模型可见行为，必须同 PR
+  `src/host/testing/e2e/**`、`requestReplay*.ts`、`contextBuilder.ts`、
+  `converter.ts`、`toolDefinitions.ts`、`deferredTools.ts`、`todayAnchor.ts`、
+  以及 `src/host/tools/modules/**/*.schema.ts` 这类模型可见行为，必须同 PR
   重录——`scripts/ci/snapshot-replay-sync-gate.mjs` 守。
 - 若改动确认行为不可见（注释/重命名），重录后字节无变化时，在本文件末尾
   「重录确认」追加一行说明（PR 号 + 原因）作为同 PR 快照目录更新。

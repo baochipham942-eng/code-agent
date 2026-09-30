@@ -56,7 +56,10 @@ const limits = {
   // gates:fast 共用的稳定入口；基线只许降不许升，提额必须连同理由接受评审）。
   // 2026-09-29 +1: scripts/gc-stale-tmp.mjs（N-GATES-TMP-SELFCLEAN：本机临时沙箱陈量回收，
   // 与 tsc-tests-ratchet / knip-ratchet 等 gates-local 直调治理门同族，留在直属层）。
-  directScriptFiles: 161,
+  // 2026-09-30 +1: scripts/run-dev-slot.sh（N-DEVSLOT-BACKGROUND-LAUNCH：Dev 槽构建/安装/
+  // 启动一体入口，任务书与验证说明直接引用 `bash scripts/run-dev-slot.sh <槽> --open-only`，
+  // 与 verify-slotless.mjs / verify-shot.mjs 同族的验证默认入口，留在直属层）。
+  directScriptFiles: 162,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

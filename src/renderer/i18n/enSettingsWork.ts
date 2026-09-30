@@ -274,6 +274,7 @@ export const enSettingsWork = {
         enableCors: 'Enable CORS',
         encryptKeyLabel: 'Encrypt Key (optional)',
         verificationTokenLabel: 'Verification Token (optional)',
+        approvalCardSecurityWarning: 'Configure a verification token before approval cards can be used.',
         webhookPortLabel: 'Webhook port',
         webSocketLabel: 'Use long connection (recommended)',
         webSocketHint: 'Desktop apps use a long connection by default and need no public callback URL. Turn this off to use Webhook.',

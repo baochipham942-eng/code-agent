@@ -818,16 +818,12 @@ export class FeishuChannel extends BaseChannelPlugin {
           return;
         }
 
-        // 卡片按钮回传（B3 审批回批）。两种形态都在此收口：
-        //   - 旧版消息卡片回调：顶层 action.value.action（本 relay 发的就是旧版卡片）
-        //   - 卡片 2.0 事件：header.event_type==='card.action.trigger' + event.action.value.action
-        // 审批卡回调必须有至少一种平台校验凭据；没有凭据时 fail-closed。
-        const cardAction = buildFeishuCardActionPayload(bodyRecord, eventPayload, this.extractCardActionValue(bodyRecord, eventType, eventPayload), Boolean(this.feishuConfig?.verificationToken?.trim() || this.feishuConfig?.encryptKey?.trim()));
+        const verificationToken = this.feishuConfig?.verificationToken?.trim();
+        const cardAction = buildFeishuCardActionPayload(bodyRecord, eventPayload, this.extractCardActionValue(bodyRecord, eventType, eventPayload), Boolean(verificationToken));
         if (cardAction) {
-          const hasVerificationCredential = Boolean(this.feishuConfig?.verificationToken?.trim() || this.feishuConfig?.encryptKey?.trim());
-          if (!hasVerificationCredential) { logger.warn(`${this.meta.name} card action rejected: verification credential not configured`); res.status(401).json({ code: -1, msg: 'verification credential required' }); return; }
+          if (!verificationToken) { logger.warn(`${this.meta.name} card action rejected: verification token not configured`); res.status(401).json({ code: -1, msg: 'verification credential required' }); return; }
           const token = readStringField(bodyRecord, 'token');
-          if (this.feishuConfig?.verificationToken && token !== this.feishuConfig.verificationToken) {
+          if (token !== verificationToken) {
             logger.warn(`${this.meta.name} card action rejected: token mismatch`);
             res.status(401).json({ code: -1, msg: 'invalid token' });
             return;

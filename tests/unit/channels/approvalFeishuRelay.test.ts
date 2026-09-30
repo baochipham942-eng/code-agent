@@ -9,6 +9,8 @@
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
+import type { Server } from 'http';
+import type { AddressInfo } from 'net';
 
 const mockChannel = {
   sendCard: vi.fn(),
@@ -55,6 +57,7 @@ vi.mock('../../../src/host/security/auditLogger', () => ({
 }));
 
 import { approvalParkEvents } from '../../../src/host/agent/approvalParkEvents';
+import { FeishuChannel } from '../../../src/host/channels/feishu/feishuChannel';
 import {
   ApprovalFeishuRelay,
   decodeApprovalValue,
@@ -224,6 +227,42 @@ describe('ApprovalFeishuRelay', () => {
 
     await new Promise((r) => setTimeout(r, 20));
     expect(mockOrchestrator.resolveParkedApproval).not.toHaveBeenCalled();
+  });
+
+  it('encryptKey configured, verificationToken missing, plaintext callback → 401 and no approval resolved', async () => {
+    startRelay();
+    const channel = new FeishuChannel('acc1');
+    const cardActions = vi.fn((payload: unknown) => channelManager.emit('card_action', 'acc1', payload));
+    channel.on('card_action', cardActions);
+    await channel.initialize({
+      type: 'feishu',
+      appId: 'app',
+      appSecret: 'secret',
+      encryptKey: 'encrypt-key',
+      inboundAllowlist: ['paired-open-id'],
+      webhookHost: '127.0.0.1',
+      webhookPort: 0,
+    });
+    await channel.connect();
+    try {
+      const server = (channel as unknown as { webhookServer?: Server }).webhookServer;
+      const address = server?.address() as AddressInfo;
+      const response = await fetch(`http://127.0.0.1:${address.port}/webhook/feishu`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: { tag: 'button', value: { action: JSON.stringify({ t: 'apv', r: 'allow', a: 'perm-encrypt-only', s: 's1' }) } },
+          operator: { open_id: 'paired-open-id' },
+          open_chat_id: 'oc_1',
+        }),
+      });
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({ code: -1, msg: 'verification credential required' });
+      expect(cardActions).not.toHaveBeenCalled();
+      expect(mockOrchestrator.resolveParkedApproval).not.toHaveBeenCalled();
+    } finally {
+      await channel.destroy();
+    }
   });
 
   it('forged approval value with a valid operator still requires the account gate', async () => {

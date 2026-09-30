@@ -106,7 +106,7 @@ export function getChannelConfigSummary(
 function needsApprovalCardSecurityConfig(account: ChannelAccount): boolean {
   if (account.type !== 'feishu' && account.type !== 'lark') return false;
   const config = account.config as FeishuChannelConfig | LarkChannelConfig;
-  return !config.verificationToken?.trim() && !config.encryptKey?.trim();
+  return !config.verificationToken?.trim();
 }
 
 export function getChannelStatusSummary(accounts: ChannelAccount[]) {

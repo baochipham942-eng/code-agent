@@ -32,7 +32,17 @@ type MemberInputRejectReason =
   /** 成员已收工/失败/取消：不排队，回主会话再派 */
   | 'finished'
   /** 三条通道都找不到这位成员 */
-  | 'not_found';
+  | 'not_found'
+  /** 外部引擎成员运行中不读收件箱：当场说明，不显示已送达 */
+  | 'external_engine';
+
+/** swarm:send-user-message 拒收时带回。成功路径不带这个字段。 */
+export interface MemberFollowUpFailure {
+  code: 'external_engine' | 'undelivered_pending';
+  engineLabel?: string;
+  undeliveredCount?: number;
+  message: string;
+}
 
 export type MemberInputReceipt =
   | {
@@ -46,7 +56,14 @@ export type MemberInputReceipt =
       /** 是否已落成主对话里的一条记录（团队路径落用户消息；后台任务路径由运行时落 isMeta）。 */
       persisted: boolean;
     }
-  | { outcome: 'rejected'; reason: MemberInputRejectReason };
+  | {
+      outcome: 'rejected';
+      reason: MemberInputRejectReason;
+      /** external_engine 时给界面填「由谁运行」。 */
+      engineLabel?: string;
+      /** 已收工但队列里还有没人读的补话。 */
+      undeliveredCount?: number;
+    };
 
 /** 主对话里那条折叠记录的标记（isMeta 消息上）。 */
 export interface MemberInputMessageMetadata {

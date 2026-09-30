@@ -93,6 +93,29 @@ describe('useAgentIPC direct swarm scope', () => {
     );
   });
 
+  it('explains an external-engine refusal instead of claiming the message was delivered', async () => {
+    invokeMock.mockResolvedValue({
+      delivered: false,
+      persisted: false,
+      failure: {
+        code: 'external_engine',
+        engineLabel: 'Codex CLI',
+        message: "This member is run by Codex CLI; it can't take new input while running. Ask again after it finishes.",
+      },
+    });
+    const hook = renderDirectHook();
+
+    await act(async () => {
+      await hook.result.current.sendMessage(envelope);
+    });
+
+    const content = useSessionStore.getState().messages.at(-1)?.content ?? '';
+    expect(content).toContain('Codex CLI');
+    expect(content).toContain('进行中不能补话');
+    expect(content).not.toContain('已送达');
+    expect(content).not.toContain('已送到');
+  });
+
   it('rolls back the visible user message when Host reports delivered:false', async () => {
     invokeMock.mockResolvedValue({ delivered: false, persisted: false });
     const hook = renderDirectHook();

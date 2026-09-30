@@ -57,6 +57,7 @@ vi.mock('../../../../src/host/services/team/teamRecipeService', () => ({
 }));
 vi.mock('../../../../src/host/agent/agentDefinition', () => ({
   getPredefinedAgent: (id: string) => ({ id, name: id }),
+  getSubagentEngine: () => undefined,
   listPredefinedAgents: () => [{ id: '牧之' }, { id: '溯真' }, { id: '青禾' }],
   getAgentPrompt: () => 'test prompt',
   getAgentTools: () => ['Read'],

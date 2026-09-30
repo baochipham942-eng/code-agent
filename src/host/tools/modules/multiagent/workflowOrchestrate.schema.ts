@@ -84,4 +84,7 @@ export const workflowOrchestrateSchema: ToolSchema = {
   },
   category: 'multiagent',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(workflow, orchestrate)' },
+  ],
 };

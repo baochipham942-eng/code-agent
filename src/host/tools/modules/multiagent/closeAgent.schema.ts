@@ -17,4 +17,7 @@ export const closeAgentSchema: ToolSchema = {
   },
   category: 'multiagent',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'write', expression: 'resource(agent, args.agentId)' },
+  ],
 };

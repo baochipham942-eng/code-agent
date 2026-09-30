@@ -103,6 +103,12 @@ export function getChannelConfigSummary(
   return labels.configured;
 }
 
+function needsApprovalCardSecurityConfig(account: ChannelAccount): boolean {
+  if (account.type !== 'feishu' && account.type !== 'lark') return false;
+  const config = account.config as FeishuChannelConfig | LarkChannelConfig;
+  return !config.verificationToken?.trim();
+}
+
 export function getChannelStatusSummary(accounts: ChannelAccount[]) {
   return {
     total: accounts.length,
@@ -271,6 +277,8 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
           .split(/[,\n]/)
           .map((target) => target.trim())
           .filter(Boolean),
+        inboundAllowlist: larkLikeConfig?.inboundAllowlist,
+        ownerOpenId: larkLikeConfig?.ownerOpenId,
         privacyMode,
       };
     } else if (type === 'telegram') {
@@ -904,6 +912,11 @@ export const ChannelsSettings: React.FC = () => {
                       {account.errorMessage && (
                         <div className="mt-1 truncate text-xs text-badge-danger" title={account.errorMessage}>
                           {account.errorMessage}
+                        </div>
+                      )}
+                      {needsApprovalCardSecurityConfig(account) && (
+                        <div className="mt-1 text-xs text-badge-warning">
+                          {channelText.modal.approvalCardSecurityWarning}
                         </div>
                       )}
                     </div>

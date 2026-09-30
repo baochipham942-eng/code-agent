@@ -28,6 +28,7 @@ import type { ToolResolver } from '../../dispatch/toolResolver';
 import { spawnAgentSchema, agentSpawnSchema } from './spawnAgent.schema';
 import { withMultiagentMeta } from './resultMeta';
 import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
+import { withBackgroundDurableAgentId } from '../../../agent/backgroundSubagentLiveProgress';
 import { scheduleBackgroundSubagentIdleWake } from '../../../agent/backgroundSubagentIdleWake';
 import type { SubagentResult } from '../../../agent/subagentExecutorTypes';
 import {
@@ -148,6 +149,7 @@ async function runSpawnAgent(
     const agentId = getBackgroundSubagentRegistry().spawn(async (): Promise<SubagentResult> => {
       const bgResult = await executeSpawnAgent(normalizedArgs, {
         ...executionContext,
+        events: withBackgroundDurableAgentId(executionContext.events, agentId),
         abortSignal: bgController.signal,
         // 后台子 agent 标 async_agent（2026-07-13 拍板）：bash 走 ask+forceConfirm
         executionTopology: 'async_agent',

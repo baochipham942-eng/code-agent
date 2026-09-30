@@ -144,4 +144,7 @@ export const workflowSchema: ToolSchema = {
   inputSchema: workflowInputSchema,
   category: 'multiagent',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(workflow, run)' },
+  ],
 };

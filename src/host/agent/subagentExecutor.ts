@@ -91,6 +91,7 @@ import {
 import { startSubagentLifecycle } from './subagentLifecycleHooks';
 import { SubagentDoomLoopGuard, SubagentDoomLoopStopError } from './subagentDoomLoopGuard';
 import { createSubagentTurnObservability, type SubagentRunEndStatus } from './subagentTurnTrace';
+import { noteSubagentLiveProgress } from './backgroundSubagentLiveProgress';
 
 export type {
   SubagentConfig,
@@ -496,6 +497,9 @@ export class SubagentExecutor {
       // 注入重入消息督办，上限 2 次（MiMo subagent 上限），防跑飞
       let taskGateReentries = 0;
       let memberInputReentries = 0;
+      // finalOutput 在循环之后才声明。进度回调若读它，会在 TDZ 里抛 ReferenceError，
+      // 被记账的 catch 吞掉，重启通知就永远没有花费和进度。
+      let latestAssistantText = '';
 
       while (iterations < maxIterations) {
         iterations++;
@@ -705,6 +709,7 @@ export class SubagentExecutor {
 
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
+          latestAssistantText = response.content;
           const wind = commitMemberTextAnswer({
             ledger: answerLedger,
             content: response.content,
@@ -1061,6 +1066,7 @@ export class SubagentExecutor {
         break;
         } finally {
           await turnObservability.endTurn(telemetryTurnId);
+          noteSubagentLiveProgress(context, executionAgentId, getTotalCost, getTotalTokens, () => iterations, () => toolCallsAttempted, () => latestAssistantText, toolsUsed);
         }
       }
 

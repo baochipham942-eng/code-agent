@@ -1,7 +1,8 @@
 // ContextAssembly - Model message construction and transcript projection.
 import type { Message } from '../../../../shared/contract';
 import { ACTIVE_TOOL_RESULT_PRUNE, CONTEXT_LEDGER } from '../../../../shared/constants';
-import { resolveContextWindow } from '../../../model/modelLimits';
+import { resolveContextWindow, resolveModelMaxOutputTokens } from '../../../model/modelLimits';
+import { resolveTriggerTokens } from '../../../context/triggerTokens';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import { formatToolCallForHistory, buildMultimodalContent } from '../../../agent/messageHandling/converter';
 import {
@@ -846,6 +847,11 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   const compressionTranscriptEntries = interventionAdjustedEntries;
   let contextApiView = compressionTranscriptEntries;
   const contextWindowSize = resolveContextWindow(ctx.runtime.modelConfig.model, ctx.runtime.modelConfig.provider);
+  const autocompactTriggerTokens = resolveTriggerTokens(
+    contextWindowSize,
+    ctx.runtime.autoCompressor.getConfig().triggerTokens,
+    resolveModelMaxOutputTokens(ctx.runtime.modelConfig.model, ctx.runtime.modelConfig.provider),
+  );
   try {
     const cache = getRuntimeAssemblyCache(ctx);
     const compressionCacheKey = buildCompressionCacheKey(
@@ -853,6 +859,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       compressionTranscriptEntries,
       transcriptInterventions,
       contextWindowSize,
+      autocompactTriggerTokens,
     );
     const cachedCompression = cache.compression;
     const now = Date.now();
@@ -904,6 +911,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
           interventions: transcriptInterventions,
           // GAP-009: 超预算工具结果落盘到 session 临时目录
           spillSessionId: ctx.runtime.sessionId,
+          autocompactTriggerTokens,
         },
       );
 
@@ -949,7 +957,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
         });
         if (autocompactNeeded) {
           logger.warn(
-            '[ContextAssembly] Pipeline reports autocompact-needed (usage ≥ 85%); ContextPressureController will route the compaction decision',
+            '[ContextAssembly] Pipeline reports autocompact-needed; ContextPressureController will route the compaction decision',
             { totalTokens: pipelineResult.totalTokens },
           );
         }

@@ -60,4 +60,7 @@ export const askUserQuestionSchema: ToolSchema = {
   requiresPermission: false,
   requiresUserPresence: true,
   aliases: ['ask_user_question'],
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(session, question)' },
+  ],
 };

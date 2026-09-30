@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
-import { getAppshotErrorMessage } from '../../../src/renderer/hooks/useAppshots';
+import { getAppshotErrorMessage } from '../../../src/renderer/utils/appshotError';
 
 const state = vi.hoisted(() => ({
   language: 'en',

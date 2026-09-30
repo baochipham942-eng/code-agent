@@ -1100,7 +1100,8 @@ export class CronService implements Disposable {
     // 可能已被停用/删除：拿闭包旧定义照跑是对已停任务再花一笔执行成本。中止重试链，
     // 终态 cancelled（不是这次执行的失败，不计连败；最后一次真实失败仍留在 execution.error）。
     const current = this.jobs.get(definition.id)?.definition;
-    if (!current?.enabled) {
+    // 只拦「等待期间才被停用」：手动运行一个本来就停用的任务，重试照常（PR#2143 复审 R3）。
+    if (!current || (definition.enabled && !current.enabled)) {
       console.warn(`[CronService] Job ${definition.id} retry skipped: job ${current ? 'disabled' : 'deleted'} while waiting to retry`);
       execution.status = 'cancelled';
       return;

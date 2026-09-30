@@ -698,6 +698,27 @@ describe('R3：退避重试等待后按 jobId 重取当前定义再执行（不�
     await service.shutdown();
   });
 
+  it('手动运行一个本来就停用的任务 → 瞬态失败照常重试并记 failed（停用不是在等待期间发生的）', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const service = new CronService();
+    const job = await service.createJob(recurringShellJob({ maxRetries: 1 }));
+    await service.updateJob(job.id, { enabled: false }); // 先停用，再点「立即运行」
+    const { calls } = patchExecuteAction(service, async () => {
+      throw new Error('ECONNRESET: socket hang up');
+    });
+
+    const settled = service.triggerJob(job.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls()).toBe(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(calls()).toBe(2); // 重试照常进行（PR#2143 复审 R3 Important：原来被当成「等待期间停用」中止）
+    const execution = (await settled)!;
+    expect(execution.status).toBe('failed'); // 用户能看到这次失败，而不是 cancelled
+    await service.shutdown();
+  });
+
   it('等待期间任务被删除 → 中止重试链：无第二次执行，终态 cancelled 不计失败', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);

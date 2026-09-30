@@ -64,6 +64,7 @@ import {
 import { getPermissionModeManager } from '../permissions/modes';
 import { pickLeastTrustedOrigin, type AgentMessageOrigin } from '../agent/messageOrigin';
 import { computeActionFingerprint, getDenialRegistry } from '../security/denialRegistry';
+import { computePolicyHash } from '../permissions/policyHash';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
@@ -2216,6 +2217,7 @@ export class ToolExecutor {
             summary: String(params.command || params.file_path || params.path || executionToolName).substring(0, 80),
             reason: denialReason,
             timestamp: Date.now(),
+            policyHash: computePolicyHash(effectiveSessionId),
           });
         }
         recordDecision(executionToolName, params, 'ask-denied', denialReason, permStartTime, traceBuilder.build('deny'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));

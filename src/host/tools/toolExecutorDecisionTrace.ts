@@ -7,6 +7,7 @@ import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 import { AUTO_MODE_RATE_LIMIT } from '../../shared/constants/timeouts';
 import { getToolLedgerSink } from './toolLedgerSink';
 import { getPermissionModeManager } from '../permissions/modes';
+import { computePolicyHash } from '../permissions/policyHash';
 import {
   getDecisionHistory,
   isAutoDenyOutcome,
@@ -54,6 +55,7 @@ export function recordDecision(
       origin,
       recordedAt: now,
       trace: decisionTrace,
+      policyHash: computePolicyHash(sessionId),
     });
   } catch {
     // 静默：账本写入永不阻断主流程

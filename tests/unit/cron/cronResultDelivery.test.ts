@@ -212,4 +212,30 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
       '已生成日报。\nartifact: /tmp/report.md',
     );
   });
+
+  it('strips a snapshot when the only remaining text is a summary', async () => {
+    const result = await deliver(
+      job('feishu:oc_group1'),
+      '<cron_snapshot>state</cron_snapshot><cron_summary>已生成日报。</cron_summary>',
+    ).outcome;
+
+    expect(result).toEqual({ delivered: true, pushedBody: '已生成日报。' });
+    expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', '已生成日报。');
+  });
+
+  it('strips summary tags when other text remains', async () => {
+    const result = await deliver(
+      job('feishu:oc_group1'),
+      '日报正文<cron_snapshot>state</cron_snapshot><cron_summary>摘要</cron_summary>',
+    ).outcome;
+
+    expect(result).toEqual({ delivered: true, pushedBody: '日报正文' });
+  });
+
+  it('keeps the alert inner text when a summary block is also present', async () => {
+    const raw = '巡检完成。<cron_snapshot>{"fingerprint":"abc"}</cron_snapshot><cron_alert>冲突 A</cron_alert> 其余说明 <cron_alert>冲突 B</cron_alert><cron_summary>摘要</cron_summary>';
+    const result = await deliver(job('feishu:oc_group1'), raw).outcome;
+
+    expect(result).toEqual({ delivered: true, pushedBody: '冲突 A\n冲突 B' });
+  });
 });

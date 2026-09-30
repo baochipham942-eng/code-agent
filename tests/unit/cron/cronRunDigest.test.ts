@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildCronAgentPrompt } from '../../../src/host/cron/cronAgentPrompt';
-import { groupRunsByTask, parseCronRunDigest } from '../../../src/shared/cronRunDigest';
+import { countPendingReviewByTask, groupRunsByTask, parseCronRunDigest } from '../../../src/shared/cronRunDigest';
 
 describe('parseCronRunDigest', () => {
   it('extracts the summary and multiple artifact links from the first block', () => {
@@ -32,6 +32,14 @@ describe('parseCronRunDigest', () => {
       Array.from({ length: 10 }, (_, index) => `/tmp/${index}`),
     );
   });
+
+  it('keeps the first block and ignores artifact lines outside it', () => {
+    expect(parseCronRunDigest(
+      'artifact: /outside\n<cron_summary>first\nartifact: /a</cron_summary><cron_summary>second\nartifact: /b</cron_summary>',
+    )).toEqual({ summary: 'first', artifacts: ['/a'] });
+    expect(parseCronRunDigest(null)).toEqual({ artifacts: [] });
+    expect(parseCronRunDigest(undefined)).toEqual({ artifacts: [] });
+  });
 });
 
 describe('buildCronAgentPrompt delivery digest instruction', () => {
@@ -44,6 +52,7 @@ describe('buildCronAgentPrompt delivery digest instruction', () => {
     expect(enabled).toContain('<cron_snapshot>...</cron_snapshot>');
     expect(disabled).toContain('<cron_summary>...</cron_summary>');
     expect(disabled).toContain('artifact: <path>');
+    expect(disabled).not.toContain('<cron_snapshot>');
   });
 });
 
@@ -68,5 +77,54 @@ describe('groupRunsByTask', () => {
     const cron = { id: 'cron', updatedAt: 10, origin: { kind: 'cron' as const, id: 'job-a' } };
 
     expect(groupRunsByTask([manual, noOrigin, cron]).ungrouped).toEqual([manual, noOrigin]);
+  });
+
+  it('passes sessions without a cron or heartbeat task id through in original order', () => {
+    const first = { id: 'manual-1', updatedAt: 1, origin: { kind: 'manual' as const } };
+    const cron = { id: 'cron', updatedAt: 2, origin: { kind: 'cron' as const, id: '   ' } };
+    const second = { id: 'manual-2', updatedAt: 3 };
+    expect(groupRunsByTask([first, cron, second]).ungrouped).toEqual([first, cron, second]);
+  });
+});
+
+describe('countPendingReviewByTask', () => {
+  const session = (id: string, kind: string, taskId?: string) => ({
+    id,
+    updatedAt: 1,
+    origin: { kind, ...(taskId ? { id: taskId } : {}) },
+  });
+
+  it('folds records that share a cron or heartbeat task and leaves the rest', () => {
+    const records = [
+      { resultSessionId: 'run-1' },
+      { resultSessionId: 'run-2' },
+      { config: { pendingReview: { resultSessionId: 'run-3' } } },
+      { resultSessionId: 'missing' },
+      { resultSessionId: 'chat-1' },
+    ];
+    const sessionsById = {
+      'run-1': session('run-1', 'cron', 'job-a'),
+      'run-2': session('run-2', 'heartbeat', 'job-a'),
+      'run-3': session('run-3', 'cron', 'job-b'),
+      'chat-1': session('chat-1', 'manual', 'job-a'),
+    };
+
+    expect(countPendingReviewByTask(records, sessionsById)).toBe(4);
+  });
+
+  it('prefers resultSessionId over the pending-review session when both are set', () => {
+    const records = [{
+      resultSessionId: 'run-new',
+      config: { pendingReview: { resultSessionId: 'run-old' } },
+    }];
+    const sessionsById = {
+      'run-new': session('run-new', 'cron', 'job-new'),
+      'run-old': session('run-old', 'cron', 'job-old'),
+    };
+    expect(countPendingReviewByTask(records, sessionsById)).toBe(1);
+    expect(countPendingReviewByTask([
+      { resultSessionId: 'run-new' },
+      { resultSessionId: 'run-old' },
+    ], sessionsById)).toBe(2);
   });
 });

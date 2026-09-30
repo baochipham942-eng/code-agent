@@ -5,6 +5,7 @@ import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import type { DesignBrief } from '@shared/contract/designBrief';
 import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import type { ContextHealthState } from '@shared/contract/contextHealth';
+import { shouldReplaceContextHealth } from './sessionContextHealth';
 import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
 import { useStatusStore } from './statusStore';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
@@ -28,7 +29,7 @@ import {
 import { executeCreateSession } from './sessionCreate';
 import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions } from './sessionListPagination';
 import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
-import { groupRunsByTask } from '@shared/cronRunDigest';
+import { groupRunsByTask, type CronRunGroups } from '@shared/cronRunDigest';
 
 const logger = createLogger('SessionStore');
 
@@ -81,22 +82,6 @@ async function refreshContextHealthForSession(sessionId: string, switchVersion: 
       useAppStore.getState().setContextHealth(null);
     }
   }
-}
-
-function shouldReplaceContextHealth(
-  next: ContextHealthState | null | undefined,
-  previous: ContextHealthState | null | undefined,
-): boolean {
-  if (!previous) {
-    return true;
-  }
-  if (!next) {
-    return false;
-  }
-  if (next.currentTokens > 0) {
-    return true;
-  }
-  return previous.currentTokens <= 0;
 }
 
 export interface SessionWithMeta extends Session {
@@ -286,7 +271,7 @@ interface SessionActions {
   clearSessionDesignBrief: (sessionId: string) => void;
   getSessionDesignBrief: (sessionId: string) => DesignBrief | undefined;
   /** Data contract for cron/heartbeat run grouping; presentation can consume it later. */
-  getCronRunGroups: () => ReturnType<typeof groupRunsByTask<SessionWithMeta>>;
+  getCronRunGroups: () => CronRunGroups<SessionWithMeta>;
 }
 
 type SessionStore = SessionState & SessionActions;

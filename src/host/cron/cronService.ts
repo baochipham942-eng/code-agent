@@ -852,11 +852,8 @@ export class CronService implements Disposable {
         const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
         let hasAlert = !isExternalWatch;
 
-        let result: unknown;
-        let finalAssistantText = '';
-        let digest = parseCronRunDigest('');
-        let runError: unknown;
-        let runFailed = false;
+        let result: unknown; let finalAssistantText = '';
+        let runError: unknown; let runFailed = false;
         try {
           try {
             const sendMessage = () => orchestrator.sendMessage(
@@ -871,7 +868,6 @@ export class CronService implements Disposable {
             const messages = orchestrator.getMessages();
             const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
             finalAssistantText = lastAssistant?.content.trim() ?? '';
-            digest = parseCronRunDigest(finalAssistantText);
             const snapshotMatch = finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN);
             // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
             // 当成状态存下来，下一轮再原样注回提示词。
@@ -983,7 +979,7 @@ export class CronService implements Disposable {
           prompt: action.prompt,
           result,
           sessionId: cronSession.id,
-          digest,
+          digest: parseCronRunDigest(finalAssistantText),
           ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
         };
       }

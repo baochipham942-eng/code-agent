@@ -21,6 +21,7 @@ import { validateSchema, formatValidationErrors, type JSONSchema } from '../util
 import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
 import { resolveCLIPermissionModeFlag, type CLIPermissionMode } from '../permissionPolicy';
 import { resolveRunExitCode } from '../exitCodes';
+import { formatThrownError } from '../../shared/utils/providerError';
 
 /**
  * Read stdin when piped (non-TTY)
@@ -365,7 +366,7 @@ export const runCommand = new Command('run')
       await cleanup();
       process.exit(resolveRunExitCode(result));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = formatThrownError(error);
 
       if (isJson) {
         jsonOutput.error(message);

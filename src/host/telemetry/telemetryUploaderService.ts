@@ -22,6 +22,7 @@ import { Disposable, getServiceRegistry } from '../services/serviceRegistry';
 import { app } from '../platform';
 import { getTelemetryStorage } from './telemetryStorage';
 import { scrubString } from '../../shared/observability/scrubEvent';
+import { buildTelemetryTurnUploadRow } from './telemetryUploadRow';
 import { TELEMETRY_UPLOAD_RESILIENCE } from '../../shared/constants';
 import type { TelemetryDiagnosticBundleRecord, TelemetryFeedback, TelemetryRendererBundleAttempt, TelemetrySession, TelemetryTurn, TelemetryTurnScoreRecord } from '../../shared/contract/telemetry';
 import {
@@ -89,7 +90,9 @@ export class TelemetryUploaderService implements Disposable {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private uploadEpoch = 0; // startAutoUpload() 每次递增，防止 stop 后又 start 时旧调度链复活
   private uploading = false;
-  private enabled = true; // 运行时开关（telemetry.cloudUpload.enabled）
+  private enabled = true; // 运行时开关（privacy.cloudUpload）
+  // 登录态曾经要求自动上传。关开关会停掉调度；重新打开时只有这个标记为真才恢复。
+  private autoUploadWanted = false;
   private authSkipLogged = false; // 2a(ADR-030): auth-gated skip 只记一次，避免每 5min 刷日志
   private uploadHealth: TelemetryUploadHealth = {
     lastUploadAt: null,
@@ -113,6 +116,25 @@ export class TelemetryUploaderService implements Disposable {
 
   setEnabled(value: boolean): void {
     this.enabled = value;
+    if (!value) {
+      this.stopAutoUpload();
+      return;
+    }
+    if (this.autoUploadWanted) this.startAutoUpload();
+  }
+
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
+  /**
+   * 登录起、登出停。cloudUpload 关闭时不启动；之后 setEnabled(true) 会在仍登录时恢复。
+   * webServer 的登录回调走这里，测试不用把整台 server 拉起来。
+   */
+  syncAutoUpload(user: unknown): void {
+    this.autoUploadWanted = user != null;
+    if (this.autoUploadWanted && this.enabled) this.startAutoUpload();
+    else this.stopAutoUpload();
   }
 
   getUploadHealth(): TelemetryUploadHealth {
@@ -188,7 +210,7 @@ export class TelemetryUploaderService implements Disposable {
   }
 
   startAutoUpload(intervalMs: number = TELEMETRY_UPLOAD_RESILIENCE.BASE_INTERVAL_MS): void {
-    if (this.timer) return;
+    if (!this.enabled || this.timer) return;
     this.currentIntervalMs = intervalMs;
     this.uploadEpoch += 1;
     this.scheduleNext(0, this.uploadEpoch);
@@ -499,42 +521,7 @@ export class TelemetryUploaderService implements Disposable {
   }
 
   private toTurnRow(t: TelemetryTurn, sessionId: string, userId: string, homeDir: string) {
-    // metadata-only：不含 prompt/completion/userPrompt/assistantResponse/工具入参或返回内容
-    const payload = {
-      modelCalls: t.modelCalls.map((m) => ({
-        provider: m.provider,
-        model: m.model,
-        latencyMs: m.latencyMs,
-        inputTokens: m.inputTokens,
-        outputTokens: m.outputTokens,
-        responseType: m.responseType,
-        fallbackUsed: m.fallbackUsed,
-        error: m.error ? scrubString(m.error, { homeDir }) : undefined,
-      })),
-      toolCalls: t.toolCalls.map((c) => ({
-        name: c.name,
-        success: c.success,
-        errorCategory: c.errorCategory,
-        durationMs: c.durationMs,
-        error: c.error ? scrubString(c.error, { homeDir }) : undefined,
-      })),
-    };
-    return {
-      id: t.id,
-      session_id: sessionId,
-      user_id: userId,
-      turn_number: t.turnNumber,
-      turn_type: t.turnType,
-      agent_id: t.agentId ?? null,
-      intent: t.intent?.primary ?? null,
-      outcome_status: t.outcome?.status ?? null,
-      duration_ms: t.durationMs,
-      total_input_tokens: t.totalInputTokens,
-      total_output_tokens: t.totalOutputTokens,
-      tool_call_count: t.toolCalls.length,
-      error_count: t.outcome?.signals?.errorCount ?? 0,
-      payload,
-    };
+    return buildTelemetryTurnUploadRow(t, sessionId, userId, homeDir);
   }
 
   private toFeedbackRow(f: TelemetryFeedback, userId: string, turnId: string | null) {

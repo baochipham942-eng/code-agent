@@ -103,8 +103,9 @@ describe('createStaticRouter', () => {
 
     expect(response.status).toBe(200);
     expect(body).toContain(
-      '<head data-vite="true"><script>window.__CODE_AGENT_TOKEN__="test-token";window.__CODE_AGENT_RENDERER_BUNDLE__=null;</script>',
+      '<head data-vite="true"><script>window.__CODE_AGENT_TOKEN__="test-token";window.__CODE_AGENT_RENDERER_BUNDLE__=null;window.__NEO_TELEMETRY_ENV__=',
     );
+    expect(body).toContain('</script>');
   });
 });
 

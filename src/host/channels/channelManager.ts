@@ -301,7 +301,12 @@ export class ChannelManager extends EventEmitter {
     });
 
     // 卡片按钮回传（B3 审批回批）：透传给上层 relay，带上是哪个账号发来的。
-    channel.on('card_action', (payload: { value?: string }) => {
+    channel.on('card_action', (payload: {
+      value?: string;
+      operatorOpenId?: string;
+      chatId?: string;
+      verificationConfigured?: boolean;
+    }) => {
       this.emit('card_action', accountId, payload);
     });
 
@@ -750,7 +755,10 @@ export class ChannelManager extends EventEmitter {
     // 调用消息处理器
     if (this.messageHandler) {
       this.messageHandler(accountId, message).catch(error => {
-        logger.error('Message handler error', { accountId, error });
+        logger.error('Message handler error', {
+          accountId,
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
     }
   }

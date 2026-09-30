@@ -55,6 +55,7 @@ describe('builtin skills: batch-research / self-awareness', () => {
     // 何时触发：自我相关问题（至少命中两类问法）
     expect(self.description).toMatch(/你是谁/);
     expect(self.description).toMatch(/记得我什么|能做什么/);
+    expect(self.description).toMatch(/我们聊过什么/);
   });
 
   it('aliases 只留低歧义专名，通用问法写在 description', () => {
@@ -151,6 +152,9 @@ describe('builtin skills: batch-research / self-awareness', () => {
       expect(self.promptContent, `self-awareness 正文应点名 ${tool}`).toContain(tool);
       expect(discoverable.has(tool), tool).toBe(true);
     }
+    const deferredNames = new Set(DEFERRED_TOOLS_META.map((meta) => meta.name));
+    expect(deferredNames.has('MemoryRead')).toBe(true);
+    expect(deferredNames.has('memory_search')).toBe(true);
     // space_query 的 skills 只含空间级显式覆盖（spaceOperationsService.query 取
     // getAllOverrides 的 true 项），不能当全局技能清单答「有哪些技能」（第二轮 Important 2 修复钉）
     expect(self.promptContent).toContain('查到空列表不等于没有技能');

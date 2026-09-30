@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ParsedSkill } from '../../../shared/contract/agentSkill';
+import { refreshFrontendSlidesBasePath } from './builtinFrontendSlides';
 import { BUILTIN_SKILLS } from './builtinSkillsData';
 
 export { BUILTIN_SKILLS };
@@ -11,6 +12,7 @@ export { BUILTIN_SKILLS };
  * 获取所有内置 Skills
  */
 export function getBuiltinSkills(): ParsedSkill[] {
+  refreshFrontendSlidesBasePath();
   return BUILTIN_SKILLS;
 }
 
@@ -18,6 +20,7 @@ export function getBuiltinSkills(): ParsedSkill[] {
  * 按名称获取内置 Skill
  */
 export function getBuiltinSkill(name: string): ParsedSkill | undefined {
+  refreshFrontendSlidesBasePath();
   return BUILTIN_SKILLS.find(skill => skill.name === name);
 }
 

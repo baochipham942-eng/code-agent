@@ -11,6 +11,13 @@
 # 用法：
 #   bash scripts/run-dev-slot.sh [N]             # NEO_SLOT=N（缺省 1）构建+安装+启动
 #   bash scripts/run-dev-slot.sh [N] --open-only # 不构建，只拉起已装的槽 N
+#   bash scripts/run-dev-slot.sh [N] --background # 启动时不抢前台
+#   bash scripts/run-dev-slot.sh [N] --dry-run    # 只打印将执行的启动命令
+#
+# Verification limits under --background (expected, not measured):
+#   - system-level screenshots of the window
+#   - global hotkeys
+#   - inputs needing real focus
 #
 # 注意：agent 沙箱可能连 `open` 都拦（要和 launchd 通信）。open 失败时把脚本
 # 末尾打出的那条命令交回用户终端执行，别在沙箱里重试。
@@ -23,13 +30,21 @@ SLOT_META="$PROJECT_ROOT/src-tauri/.dev-slot.json"
 
 SLOT="1"
 OPEN_ONLY=0
+BACKGROUND=0
+DRY_RUN=0
 for arg in "$@"; do
   case "$arg" in
     --open-only) OPEN_ONLY=1 ;;
+    --background) BACKGROUND=1 ;;
+    --dry-run) DRY_RUN=1 ;;
     [1-9]) SLOT="$arg" ;;
-    *) echo "Usage: bash scripts/run-dev-slot.sh [NEO_SLOT 1-9] [--open-only]" >&2; exit 1 ;;
+    *) echo "Usage: bash scripts/run-dev-slot.sh [NEO_SLOT 1-9] [--open-only] [--background] [--dry-run]" >&2; exit 1 ;;
   esac
 done
+
+if [ "${NEO_SLOT_BACKGROUND:-}" = "1" ]; then
+  BACKGROUND=1
+fi
 
 # --open-only 没有刚生成的 .dev-slot.json 可读（它反映的是上一次构建的槽），
 # 这里按 src/shared/devSlot.ts 钉死的规则拼槽名：槽 1 无后缀，槽 N 是 " N"。
@@ -41,7 +56,7 @@ app_name_for_slot() {
   fi
 }
 
-if [ "$OPEN_ONLY" = "0" ]; then
+if [ "$OPEN_ONLY" = "0" ] && [ "$DRY_RUN" = "0" ]; then
   cd "$PROJECT_ROOT"
   # tauri:build:dev = tauri:package:dev + tauri-install-dev.sh，装完会删掉
   # target/ 里的中间 .app 并向 LaunchServices 注册 /Applications 里的槽。
@@ -66,17 +81,39 @@ if [ "$OPEN_ONLY" = "0" ]; then
 else
   APP_NAME="$(app_name_for_slot "$SLOT")"
   WEB_PORT=$((8180 + SLOT))
-  if [ ! -d "/Applications/$APP_NAME.app" ]; then
+  if [ "$DRY_RUN" = "0" ] && [ ! -d "/Applications/$APP_NAME.app" ]; then
     echo "Error: /Applications/$APP_NAME.app 不存在（先不带 --open-only 跑一遍构建+安装）" >&2
     exit 1
   fi
 fi
 
 APP_PATH="/Applications/$APP_NAME.app"
+print_launch_command() {
+  if [ "$BACKGROUND" = "1" ]; then
+    printf 'open -g -j "%s"' "$APP_PATH"
+  else
+    printf 'open "%s"' "$APP_PATH"
+  fi
+}
+
+if [ "$DRY_RUN" = "1" ]; then
+  printf '[run-dev-slot] would run: '
+  print_launch_command
+  printf '\n'
+  exit 0
+fi
+
 echo "[run-dev-slot] 启动 $APP_PATH"
-if ! open "$APP_PATH"; then
+if [ "$BACKGROUND" = "1" ]; then
+  launch_app() { open -g -j "$APP_PATH"; }
+else
+  launch_app() { open "$APP_PATH"; }
+fi
+if ! launch_app; then
   echo "[run-dev-slot] open 失败——如果你正在 agent 沙箱里，把这条命令交回用户终端执行：" >&2
-  echo "  open '$APP_PATH'" >&2
+  printf '  ' >&2
+  print_launch_command >&2
+  printf '\n' >&2
   exit 1
 fi
 

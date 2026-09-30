@@ -978,6 +978,27 @@ describe('N-CRON-BUDGET-EXPOSE maxRuns run-count cap', () => {
     await service.shutdown();
   });
 
+  it('a run that only succeeds after retries still counts toward maxRuns (PR#2208 R3 Important)', async () => {
+    const service = new CronService();
+    // 第一趟 transient 失败 → 退避重试（retryDelay 压到 1ms）；第二趟成功。
+    // retryExecution 在同一个 execution 对象上 retryAttempt++，终态 completed 必须计 1。
+    const executeAction = stubExecuteAction(service, vi.fn()
+      .mockRejectedValueOnce(new Error('network timeout'))
+      .mockResolvedValueOnce({ ok: true }));
+    const job = await service.createJob({ ...limitedAgentJob(1), maxRetries: 1, retryDelay: 1 });
+
+    const execution = await service.triggerJob(job.id);
+    expect(execution?.status).toBe('completed');
+    expect(execution?.retryAttempt).toBe(1);
+    expect(executeAction).toHaveBeenCalledTimes(2);
+
+    const disabled = service.getJob(job.id);
+    expect(disabled).toMatchObject({ enabled: false, runCount: 1 });
+    expect(disabled?.metadata).toMatchObject({ disabledReason: 'max_runs_reached' });
+    expect(maxRunsEventCalls(job.id)).toHaveLength(1);
+    await service.shutdown();
+  });
+
   it('an unlimited job settles runCount via the narrow write: timer untouched, no updatedAt churn', async () => {
     const service = new CronService();
     stubExecuteAction(service, async () => ({ ok: true }));

@@ -22,20 +22,21 @@ interface CronRunLimitOutcome {
 
 /**
  * 把一趟结束的执行结算进运行计数（纯函数；窄写落账见 writeCronRunCountNarrow）。
- * 计数口径：completed / failed 且 retryAttempt === 0 的首趟；退避重试、
- * cancelled（排队等容量被中断）不计；手动 triggerJob 照常计；
+ * 计数口径：终态 completed / failed 即计 1——finally 每趟只结算一次，退避重试在同一
+ * 个 execution 对象上原地累加 retryAttempt（retryExecution，PR#2208 ai-review R3：
+ * 旧口径要求 retryAttempt === 0，导致任何进过重试链的趟永远不计数，maxRuns 形同虚设）；
+ * cancelled（排队等容量被中断）/ interrupted 不计；手动 triggerJob 照常计；
  * 一次性（at）任务本就只跑一趟、云端运行不在本地计数，两者跳过。
  */
 function applyRunToLimit(
   definition: Pick<CronJobDefinition, 'scheduleType' | 'runsOn' | 'maxRuns' | 'runCount'>,
-  execution: Pick<CronJobExecution, 'status' | 'retryAttempt'>,
+  execution: Pick<CronJobExecution, 'status'>,
 ): CronRunLimitOutcome {
   const runCount = definition.runCount ?? 0;
   if (definition.scheduleType === 'at' || definition.runsOn === 'cloud') {
     return { runCount, limitReached: false };
   }
-  const counted = (execution.status === 'completed' || execution.status === 'failed')
-    && execution.retryAttempt === 0;
+  const counted = execution.status === 'completed' || execution.status === 'failed';
   if (!counted) return { runCount, limitReached: false };
   const next = runCount + 1;
   return {

@@ -101,13 +101,16 @@ describe('settleCronRunLimit count rules', () => {
     expect(failed.state.definition?.runCount).toBe(1);
   });
 
-  it('does not count retries or cancelled/capacity-wait runs', async () => {
-    for (const settle of [
-      fullExecution('completed', 1),
-      fullExecution('failed', 2),
-      fullExecution('cancelled'),
-      fullExecution('interrupted'),
-    ]) {
+  it('counts retried runs that settled completed/failed; skips cancelled/interrupted (PR#2208 R3)', async () => {
+    // 生产真实形状：retryExecution 在同一个 execution 对象上 retryAttempt++，
+    // finally 每趟只结算一次——进过重试链的趟终态 completed/failed 照样计 1。
+    for (const settle of [fullExecution('completed', 1), fullExecution('failed', 2)]) {
+      const harness = makeSettleHarness();
+      expect(await settleCronRunLimit('job-1', settle, false, harness.hooks)).toBe(false);
+      expect(harness.state.definition?.runCount).toBe(1);
+    }
+
+    for (const settle of [fullExecution('cancelled'), fullExecution('interrupted')]) {
       const harness = makeSettleHarness();
       expect(await settleCronRunLimit('job-1', settle, false, harness.hooks)).toBe(false);
       expect(harness.state.definition?.runCount).toBe(0);

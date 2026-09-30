@@ -100,7 +100,7 @@ function main() {
     return;
   }
 
-  console.log(`PASS ${DOC_RELATIVE_PATH}: entries=${result.entryCount}, missing paths=${result.missingPaths.length}`);
+  console.log(`PASS ${DOC_RELATIVE_PATH}: entries=${result.entryCount}, ${result.missingPaths.length} missing paths`);
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';

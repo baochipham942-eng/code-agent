@@ -1332,6 +1332,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               setSlashFilter('');
             }}
             onSelect={handleSlashCommandSelect}
+            composerValue={value}
+            composerSessionId={currentSessionId}
           />
           {isAgentCommandAutocompleteOpen && (
             <div className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-[240px] overflow-y-auto rounded-lg elevation-l2 popover-enter">
@@ -1449,6 +1451,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <InputArea
             ref={inputAreaRef}
             value={value}
+            sideChatSessionId={currentSessionId}
             onChange={handleDictationAwareValueChange}
             onSubmit={(opts) => { void submitWithRuntimeChoice(undefined, opts); }}
             onFileSelect={handleFileSelect}

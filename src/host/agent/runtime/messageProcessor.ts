@@ -649,9 +649,9 @@ export class MessageProcessor {
       );
     }
 
-    // ADR-074 K1：plan-exit 兜底补推理期间，写类工具与 run 级禁用工具同一 admission 口拒绝。
+    // ADR-074 K1/K2：plan-exit 兜底窗口内工具面收成 allowlist，落选者与 run 级禁用工具同一 admission 口拒绝。
     const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name)
-      || isWriteBlockedDuringPlanExitFallback(this.ctx, () => this.toolEngine.runtimeControl?.isPlanMode() === true, toolCall.name));
+      || isWriteBlockedDuringPlanExitFallback(this.ctx, () => this.toolEngine.runtimeControl?.isPlanMode() === true, toolCall));
     if (deniedToolCalls.length > 0) {
       for (const call of toolCalls) {
         const blocked = deniedToolCalls.some((denied) => denied.id === call.id);

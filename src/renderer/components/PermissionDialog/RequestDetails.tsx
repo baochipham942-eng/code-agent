@@ -51,9 +51,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {labels.triggeredByAgentMessage.replace('{sender}', details.triggeredByAgentMessage.senderAgentId ?? '?')}
     </p>
   ) : null;
-  const pluginOriginNotice = details.pluginId ? (
+  const pluginOriginNotice = (details.pluginName ?? details.pluginId) ? (
     <p className="text-xs leading-5 text-zinc-400" data-testid="permission-plugin-origin">
-      {labels.pluginOrigin.replace('{plugin}', details.pluginId)}
+      {labels.pluginOrigin.replace('{plugin}', details.pluginName ?? details.pluginId ?? '')}
     </p>
   ) : null;
 

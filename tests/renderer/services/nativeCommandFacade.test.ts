@@ -29,6 +29,12 @@ describe('nativeCommandFacade', () => {
     await invokeNativeCommandAction('triggerAppshot');
     expect(tauriInvoke).toHaveBeenLastCalledWith('appshots_trigger', undefined);
 
+    await invokeNativeCommandAction('getLastFrontApp');
+    expect(tauriInvoke).toHaveBeenLastCalledWith('appshots_last_front_app', undefined);
+
+    await invokeNativeCommandAction('triggerAppshotForPid', { pid: 412 });
+    expect(tauriInvoke).toHaveBeenLastCalledWith('appshots_trigger_for_pid', { pid: 412 });
+
     await invokeNativeCommandAction('readAppshotImageDataUrl', { path: '/tmp/capture.png' });
     expect(tauriInvoke).toHaveBeenLastCalledWith('appshots_read_image_data_url', { path: '/tmp/capture.png' });
 

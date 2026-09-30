@@ -10,15 +10,14 @@
 // 成功/取消的 run 收尾后隐藏（最终结果已进聊天）。多 run 时显示 activeRunId 指向的当前 run。
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { GitBranch, ChevronUp, ChevronDown, Loader2, Check, X, Circle, MinusCircle, Zap, Square } from 'lucide-react';
 import { useWorkflowStore } from '../../../stores/workflowStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import type { ScriptRunAgentSnapshot, ScriptRunAgentStatus, ScriptRunSnapshot } from '@shared/contract/scriptRun';
-
-const NO_PHASE = '__no_phase__';
+import { buildWorkflowTimeline, WORKFLOW_TIMELINE_NO_PHASE } from '../../../utils/workflowTimeline';
 
 function StatusIcon({ status }: { status: ScriptRunAgentStatus }) {
   switch (status) {
@@ -36,30 +35,6 @@ function StatusIcon({ status }: { status: ScriptRunAgentStatus }) {
   }
 }
 
-/** 把 agents 按 phase 分组，保持 snapshot.phases 的声明顺序，无 phase 的归 NO_PHASE 末组。 */
-function groupByPhase(snap: ScriptRunSnapshot): Array<{ phase: string; agents: ScriptRunAgentSnapshot[] }> {
-  const buckets = new Map<string, ScriptRunAgentSnapshot[]>();
-  for (const a of snap.agents) {
-    const key = a.phase ?? NO_PHASE;
-    const arr = buckets.get(key) ?? [];
-    arr.push(a);
-    buckets.set(key, arr);
-  }
-  const ordered: Array<{ phase: string; agents: ScriptRunAgentSnapshot[] }> = [];
-  for (const phase of snap.phases) {
-    const agents = buckets.get(phase);
-    if (agents) {
-      ordered.push({ phase, agents });
-      buckets.delete(phase);
-    }
-  }
-  // phases 里没声明但 agent 自带的 phase（理论少见）+ 无 phase 桶，补在后面。
-  for (const [phase, agents] of buckets) {
-    ordered.push({ phase, agents });
-  }
-  return ordered;
-}
-
 export function WorkflowInlineMonitor() {
   // 会话隔离（Codex R1 HIGH#1）：只显示当前会话的 run，别串到别的会话视图。
   const currentSessionId = useSessionStore((s) => s.currentSessionId ?? undefined);
@@ -67,12 +42,30 @@ export function WorkflowInlineMonitor() {
   const snap = useWorkflowStore((s) => s.activeSnapshot(currentSessionId));
   const [collapsed, setCollapsed] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  // One roster swap per snapshot object. Parent re-renders keep the same snap reference.
+  const pinMemory = useRef<{
+    runId: string;
+    snap: ScriptRunSnapshot;
+    pins: Record<string, string[]>;
+    timeline: ReturnType<typeof buildWorkflowTimeline>;
+  } | null>(null);
 
   if (!snap) return null;
   // running / failed 显示（失败保留报错可见）；completed / cancelled / pending 不显示。
   if (snap.status !== 'running' && snap.status !== 'failed') return null;
 
-  const groups = groupByPhase(snap);
+  const cached = pinMemory.current;
+  const timeline = cached?.snap === snap
+    ? cached.timeline
+    : buildWorkflowTimeline(snap, cached?.runId === snap.runId ? cached.pins : undefined);
+  if (cached?.snap !== snap) {
+    pinMemory.current = {
+      runId: snap.runId,
+      snap,
+      timeline,
+      pins: Object.fromEntries(timeline.phases.map((phase) => [phase.name, phase.pinned.map((agent) => agent.id)])),
+    };
+  }
   const durationSec = snap.startedAt
     ? Math.max(0, Math.round(((snap.finishedAt ?? Date.now()) - snap.startedAt) / 1000))
     : undefined;
@@ -98,9 +91,9 @@ export function WorkflowInlineMonitor() {
           <span className="text-zinc-300">workflow</span>
           {snap.goal && <span className="text-zinc-500 truncate max-w-[40%]" title={snap.goal}>· {snap.goal}</span>}
           <div className="ml-auto flex items-center gap-2 text-zinc-500">
-            {snap.runningCount > 0 && <span className="text-badge-success">{snap.runningCount} running</span>}
-            {snap.doneCount > 0 && <span>{snap.doneCount} done</span>}
-            {snap.errorCount > 0 && <span className="text-badge-danger">{snap.errorCount} error</span>}
+            {timeline.totals.running > 0 && <span className="text-badge-success">{timeline.totals.running} running</span>}
+            {timeline.totals.done > 0 && <span>{timeline.totals.done} done</span>}
+            {timeline.totals.error > 0 && <span className="text-badge-danger">{timeline.totals.error} error</span>}
             {durationSec !== undefined && <span>{durationSec}s</span>}
             {snap.status === 'running' && (
               <button
@@ -125,21 +118,26 @@ export function WorkflowInlineMonitor() {
         </div>
         {!collapsed && (
           <div className="border-t border-zinc-700/40 max-h-64 overflow-y-auto py-1">
-            {groups.length === 0 && (
+            {timeline.phases.length === 0 && (
               <div className="px-3 py-2 text-zinc-500 italic">
                 {snap.currentPhase ? `phase: ${snap.currentPhase}` : '正在启动…'}
               </div>
             )}
-            {groups.map(({ phase, agents }) => (
-              <div key={phase} className="py-0.5">
-                {phase !== NO_PHASE && (
+            {timeline.phases.map((phase) => (
+              <div key={phase.name} className="py-0.5">
+                {phase.name !== WORKFLOW_TIMELINE_NO_PHASE && (
                   <div className="px-3 py-1 text-zinc-500 font-medium uppercase tracking-wide text-[10px]">
-                    {phase}
+                    {phase.name}
                   </div>
                 )}
-                {agents.map((a) => (
-                  <WorkflowAgentRow key={a.id} agent={a} />
+                {phase.pinned.map((agent) => (
+                  <WorkflowAgentRow key={agent.id} agent={agent} />
                 ))}
+                {phase.hiddenCount > 0 && (
+                  <div className="px-3 py-1 text-zinc-500 font-medium uppercase tracking-wide text-[10px]">
+                    +{phase.hiddenCount} more
+                  </div>
+                )}
               </div>
             ))}
             {snap.error && (

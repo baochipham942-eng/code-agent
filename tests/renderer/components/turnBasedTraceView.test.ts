@@ -696,6 +696,46 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     );
   });
 
+  it('清空搜索后再武装同一个命中下标，会再次 scrollToIndex 居中', () => {
+    const projection: TraceProjection = {
+      sessionId: 'session-9',
+      activeTurnIndex: -1,
+      turns: [
+        { ...makeStreamingTurn(), status: 'completed' },
+        { ...makeStreamingTurn({ turnNumber: 2, turnId: 'turn-2', startTime: 200 }), status: 'completed' },
+      ],
+    };
+    const match = { turnIndex: 1, nodeIndex: 0, offset: 5 };
+    const view = render(React.createElement(TurnBasedTraceView, {
+      projection,
+      searchMatches: [match],
+      activeMatchIndex: 0,
+    }));
+    flushView();
+    mocks.scrollToIndex.mockClear();
+
+    view.rerender(React.createElement(TurnBasedTraceView, {
+      projection,
+      searchMatches: [],
+      activeMatchIndex: 0,
+    }));
+    flushView();
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+
+    view.rerender(React.createElement(TurnBasedTraceView, {
+      projection,
+      searchMatches: [match],
+      activeMatchIndex: 0,
+    }));
+    flushView();
+
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({
+      index: 1,
+      align: 'center',
+      behavior: 'auto',
+    });
+  });
+
   it('显式回到底部会覆盖旧的手势抑制并恢复跟随', () => {
     const projection = makeStreamingProjection(makeStreamingTurn());
     const view = render(React.createElement(TurnBasedTraceView, { projection }));

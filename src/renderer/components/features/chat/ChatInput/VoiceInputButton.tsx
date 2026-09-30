@@ -163,10 +163,10 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
         className={`relative flex-shrink-0 w-9 h-9 overflow-hidden rounded-xl flex items-center justify-center transition-all duration-300 ${
           isRecording
             ? silenceWarning
-              ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/25'
+              ? 'bg-amber-700 hover:bg-amber-800 text-white shadow-lg shadow-amber-500/25'
               : 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/30'
             : isTranscribing
-              ? 'bg-primary-500 text-white'
+              ? 'bg-primary-700 text-white'
               : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700'
         } ${(disabled || isTranscribing) ? 'opacity-50 cursor-not-allowed' : ''}`}
       >

@@ -209,6 +209,7 @@ export class ToolExecutionEngine {
     logger.debug(` executeToolsWithHooks called with ${toolCalls.length} tool calls`);
     this.forceFinalResponseBatchActive = true;
     this.forceFinalResponseReasonAtBatchStart = this.ctx.control.forceFinalResponseReason;
+    this.ctx.antiPatternDetector.beginReadRound?.();
     seedArtifactRepairGuardFromContext(this.ctx);
     // Swarm goal（P4）预算下行 clamp：workflow 扇出预算压到 goal 剩余预算以内（模型自报不可信）
     applySwarmBudgetClamp(this.ctx, toolCalls);
@@ -319,6 +320,7 @@ export class ToolExecutionEngine {
 
     this.forceFinalResponseBatchActive = false;
     this.forceFinalResponseReasonAtBatchStart = undefined;
+    this.ctx.antiPatternDetector.endReadRound?.();
     // Swarm goal（P4）预算上行记账：workflow 结果的 tokensSpent → goal 消耗（闸3 可见）。
     // 放在 suppress 过滤前——token 已真实花掉，结果被压制也要记账。
     recordSwarmSpend(this.ctx.goalMode, toolCalls, results);

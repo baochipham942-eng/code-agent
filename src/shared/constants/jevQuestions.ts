@@ -233,8 +233,9 @@ export const JEV_ROUTER_LEVEL_SCORES = {
  * 规则地板高风险词表（中英文，独立于判官）：覆盖删除 / 付款转账 / 对外发帖发送 /
  * 凭据变更 / 不可逆覆盖。命中即不得为 simple——无论 Jev 答什么、是否回落启发式。
  * 只在 CODE_AGENT_JEV_ROUTER=1 时生效；方向只升不降，误伤的代价仅是少走 free 档。
+ * 模块内部常量（生产消费只走 matchesJevRouterHighRisk），不导出——knip dead-export 棘轮。
  */
-export const JEV_ROUTER_HIGH_RISK_PATTERNS: readonly RegExp[] = [
+const JEV_ROUTER_HIGH_RISK_PATTERNS: readonly RegExp[] = [
   // 删除 / 清空
   /删除|删掉|清空|抹除|擦除/,
   /\b(delete|deleting|erase|wipe|purge|rm\s+-rf)\b/i,

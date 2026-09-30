@@ -830,6 +830,7 @@ export const enSettingsWork = {
       boundary: {
         title: 'Permissions and data boundaries',
         description: 'Explains and links out only. The actual switches stay on their original settings pages.',
+        noticeLink: 'View data flow and capability boundaries',
         dataLabel: 'Data: ',
         storageLabel: 'Storage: ',
         cloudLabel: 'Cloud: ',

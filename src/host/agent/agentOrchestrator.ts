@@ -47,7 +47,7 @@ import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { assembleTurnDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import { adoptExistingDurableRun, startRunPreferringDurable } from './orchestrator/durableRunStart';
-import { createTerminalEventTracker, finalizeDurableRun } from './orchestrator/durableRunTerminal';
+import { createTerminalEventTracker, finalizeOrParkDurableRun } from './orchestrator/durableRunTerminal';
 import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
 import { OrchestratorRunSettings } from './orchestratorRunSettings';
 import { OrchestratorMessageHistory } from './orchestratorMessageHistory';
@@ -1097,9 +1097,7 @@ export class AgentOrchestrator {
         getPermissionModeManager().clearRolePresetSession(rolePresetSessionId);
       }
       if (registeredRun && this.runRegistry?.hasDurableOwner(nativeRunId)) {
-        if (options?.resumeExistingDurableRun && terminalTracker.snapshot().cancelled) {
-          await this.runRegistry.parkDurable(nativeRunId, { reason: 'user_stop' }, registeredRun);
-        } else await finalizeDurableRun({
+        await finalizeOrParkDurableRun({
           registry: this.runRegistry, runId: nativeRunId, handle: registeredRun, sessionId,
           completed: runCompletedNormally && !terminalTracker.snapshot().terminalError,
           cancelled: terminalTracker.snapshot().cancelled, registration: options?.runRegistration ?? 'primary',

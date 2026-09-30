@@ -10,6 +10,7 @@
 
 import type { RunRegistry } from '../../runtime/runRegistry';
 import type { RunHandle } from '../../runtime/runContext';
+import { isNativeRecoveryDescriptor } from '../../runtime/nativeRecoveryHost';
 import { createLogger } from '../../services/infra/logger';
 import type { AgentEvent } from '../../../shared/contract';
 import { isTerminalAgentError } from '../../../shared/utils/agentErrorClassification';
@@ -30,7 +31,7 @@ export interface DurableRunTerminalInput {
   parentRunId?: string;
 }
 
-export async function finalizeDurableRun(input: DurableRunTerminalInput): Promise<void> {
+async function finalizeDurableRun(input: DurableRunTerminalInput): Promise<void> {
   const { registry, runId, handle, sessionId, completed, cancelled, registration, parentRunId } = input;
   const isAuxiliary = registration === 'auxiliary';
   const status = cancelled ? 'cancelled' : completed ? 'completed' : 'failed';
@@ -52,6 +53,23 @@ export async function finalizeDurableRun(input: DurableRunTerminalInput): Promis
   }, handle).catch((error) => {
     logger.error(`Failed to persist ${isAuxiliary ? 'auxiliary' : 'primary'} durable terminal state`, error);
   });
+}
+
+/**
+ * 用户取消时：checkpoint 已是可续跑的 native descriptor 就停靠（保留 owner，只卸 handle）；
+ * 否则走调用方今天的终态 cancelled。没有 descriptor 的 run，Continue 接不回来，不能停靠。
+ * `terminal` 缺省是编排器的 finalizeDurableRun；网页路由传入自己的 terminalDurable 写入。
+ */
+export async function finalizeOrParkDurableRun(
+  input: DurableRunTerminalInput,
+  terminal: (input: DurableRunTerminalInput) => Promise<void> = finalizeDurableRun,
+): Promise<void> {
+  if (input.cancelled && isNativeRecoveryDescriptor(input.registry.getDurableCheckpointState(input.runId))) {
+    await input.registry.parkDurable(input.runId, { reason: 'user_stop' }, input.handle);
+    input.registry.unregister(input.runId, input.handle);
+    return;
+  }
+  await terminal(input);
 }
 
 export interface TerminalEventTracker {

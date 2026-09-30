@@ -87,6 +87,7 @@ import {
 import { startSubagentLifecycle } from './subagentLifecycleHooks';
 import { SubagentDoomLoopGuard, SubagentDoomLoopStopError } from './subagentDoomLoopGuard';
 import { createSubagentTurnObservability, type SubagentRunEndStatus } from './subagentTurnTrace';
+import { noteSubagentLiveProgress } from './backgroundSubagentLiveProgress';
 
 export type {
   SubagentConfig,
@@ -1079,6 +1080,7 @@ export class SubagentExecutor {
         break;
         } finally {
           await turnObservability.endTurn(telemetryTurnId);
+          noteSubagentLiveProgress(context, executionAgentId, getTotalCost, getTotalTokens, () => iterations, () => toolCallsAttempted, () => finalOutput, toolsUsed);
         }
       }
 

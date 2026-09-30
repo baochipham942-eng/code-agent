@@ -67,4 +67,7 @@ export const lspSchema: ToolSchema = {
   permissionLevel: 'read',
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', argumentNames: ['file_path'] },
+  ],
 };

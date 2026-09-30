@@ -64,4 +64,7 @@ export const grepSchema: ToolSchema = {
   allowInTextForeground: true,
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', argumentNames: ['path'] },
+  ],
 };

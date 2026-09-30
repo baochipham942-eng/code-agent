@@ -44,4 +44,7 @@ export const globSchema: ToolSchema = {
   allowInTextForeground: true,
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', argumentNames: ['path'] },
+  ],
 };

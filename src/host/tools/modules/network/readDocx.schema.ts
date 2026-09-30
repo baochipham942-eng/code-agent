@@ -37,4 +37,7 @@ read_docx { "file_path": "report.docx", "format": "markdown" }
   readsUntrustedContent: 'block',
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', argumentNames: ['file_path'] },
+  ],
 };

@@ -77,4 +77,7 @@ image_analyze { "paths": ["/Users/xxx/Photos/*.jpg"], "filter": "有猫的照片
   permissionLevel: 'network',
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', argumentNames: ['path', 'paths'] },
+  ],
 };

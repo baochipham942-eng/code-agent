@@ -163,6 +163,24 @@ describe('TurnCostRepository', () => {
     ]);
   });
 
+  it('reads tools-changed back and maps an unknown cache-break reason to none', () => {
+    const id = repo.insert({
+      sessionId: 'session-tools-changed',
+      provider: 'custom',
+      modelId: 'private-model',
+      inputTokens: 1,
+      outputTokens: 1,
+      usd: null,
+      source: 'unknown',
+      createdAt: 50,
+      cacheBreakReason: 'tools-changed',
+    });
+
+    expect(repo.getById(id)?.cacheBreakReason).toBe('tools-changed');
+    db.prepare('UPDATE turn_cost_estimates SET cache_break_reason = ? WHERE id = ?').run('not-a-reason', id);
+    expect(repo.getById(id)?.cacheBreakReason).toBe('none');
+  });
+
   it('rejects invalid stats windows', () => {
     expect(() => repo.getCostStats(0)).toThrow('days must be a positive integer');
     expect(() => repo.getCostStats(1.5)).toThrow('days must be a positive integer');

@@ -747,3 +747,4 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 | 073 | 工具资源声明与保序并行分段 | 已拍板 | [ADR-073](./architecture/decisions/ADR-073-tool-resource-order-preserving-segments.md) |
 | 074 | Plan 模式正文收尾但未调用退出工具的兜底 | 已拍板 | [ADR-074](./architecture/decisions/ADR-074-plan-mode-exit-fallback.md) |
 | 075 | 重启后前台任务自动续跑（先接管已有 runId；parked=waiting+中断原因；崩溃自动续 / 其余发送按钮继续态） | 已拍板 | [ADR-075](./architecture/decisions/ADR-075-foreground-restart-resume.md) |
+| 082 | 云端定时任务审批往返（窄门只考虑 cron_approval 帧与 POST /api/cron/approval；复用现有停车、飞书与手机） | 草稿·待拍板 | [ADR-082](./architecture/decisions/ADR-082-cloud-cron-approval.md) |

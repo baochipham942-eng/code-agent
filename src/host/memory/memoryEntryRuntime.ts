@@ -27,6 +27,13 @@ import {
   type LightMemoryFile,
 } from '../lightMemory/lightMemoryIpc';
 import { hashInboxContent } from './knowledgeInboxDecision';
+import { resolveProjectMemoryKey } from './projectMemoryKey';
+import {
+  scopeMatches,
+  scoreMemoryEntry,
+  tokenizeQuery,
+  type ProjectMemoryMatch,
+} from './memoryEntryScoring';
 import { sanitizeMemoryContent } from '../utils/sanitizeMemoryContent';
 import { MEMORY } from '../../shared/constants';
 import { withMemoryBackgroundGuidance } from './memoryContextGuidance';
@@ -157,19 +164,6 @@ function clampNumber(value: number | undefined, fallback: number, min: number, m
   return Math.max(min, Math.min(max, Math.floor(value as number)));
 }
 
-function normalizeText(value: string | null | undefined): string {
-  return (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
-}
-
-function tokenizeQuery(query: string): string[] {
-  const text = normalizeText(query);
-  if (!text) return [];
-  const tokens = text.split(/[^a-z0-9_\u4e00-\u9fff]+/i)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2);
-  return Array.from(new Set(tokens)).slice(0, 12);
-}
-
 function truncateForBudget(value: string, limit: number): { content: string; truncated: boolean } {
   if (value.length <= limit) return { content: value, truncated: false };
   return {
@@ -187,65 +181,6 @@ function memoryEntryFingerprint(entry: MemoryEntry): string {
     entry.summary,
     entry.content,
   ].join('\n'));
-}
-
-function scopeMatches(entry: MemoryEntry, request: MemoryPackRequest): boolean {
-  if (entry.scope === 'global') return true;
-  if (entry.scope === 'project') return !entry.projectPath || Boolean(request.projectPath && entry.projectPath === request.projectPath);
-  if (entry.scope === 'session') return Boolean(request.sessionId && entry.sessionId === request.sessionId);
-  return false;
-}
-
-function scoreMemoryEntry(entry: MemoryEntry, request: MemoryPackRequest, tokens: string[]): {
-  score: number;
-  reasons: string[];
-} {
-  let score = 0;
-  const reasons: string[] = [];
-  if (entry.status === 'active') {
-    score += 25;
-    reasons.push('active');
-  }
-  if (entry.scope === 'global') {
-    score += 4;
-    reasons.push('global');
-  }
-  if (request.projectPath && entry.projectPath === request.projectPath) {
-    score += 16;
-    reasons.push('project-match');
-  }
-  if (request.sessionId && entry.sessionId === request.sessionId) {
-    score += 10;
-    reasons.push('session-match');
-  }
-  if (entry.source.sourceOfTruth === 'light_file') {
-    score += 8;
-    reasons.push('light-source');
-  }
-  score += Math.max(0, Math.min(12, entry.confidence * 12));
-
-  if (tokens.length > 0) {
-    const title = normalizeText(entry.title);
-    const summary = normalizeText(entry.summary);
-    const content = normalizeText(entry.content);
-    let matched = 0;
-    for (const token of tokens) {
-      if (title.includes(token)) {
-        score += 12;
-        matched++;
-      } else if (summary.includes(token)) {
-        score += 8;
-        matched++;
-      } else if (content.includes(token)) {
-        score += 4;
-        matched++;
-      }
-    }
-    if (matched > 0) reasons.push(`query-match:${matched}`);
-    else score -= 12;
-  }
-
-  return { score, reasons };
 }
 
 function antiLostInMiddleOrder(items: PackedMemoryItem[]): PackedMemoryItem[] {
@@ -645,13 +580,32 @@ export async function packMemoryEntries(
     }
   }
 
+  // N-MEM-PROJECTKEY：项目记忆按仓库身份键匹配（git-common-dir + 仓内相对路径），
+  // 同仓 worktree 根共享分区、仓内子目录隔离；存储仍写原始 projectPath，永不抛错。
+  // 只对 scope=project 的条目解析键，分批限流避免首轮 pack 并发拉起大量 git 进程（PR#2177 Nit）。
+  const requestProjectMemoryKey = request.projectPath
+    ? await resolveProjectMemoryKey(request.projectPath)
+    : undefined;
+  const entryMemoryKeys = new Map<string, string>();
+  const projectEntries = entries.filter((entry) => entry.scope === 'project' && entry.projectPath);
+  for (let i = 0; i < projectEntries.length; i += MEMORY.PACK_KEY_RESOLVE_CONCURRENCY) {
+    await Promise.all(
+      projectEntries
+        .slice(i, i + MEMORY.PACK_KEY_RESOLVE_CONCURRENCY)
+        .map(async (entry) => {
+          entryMemoryKeys.set(entry.id, await resolveProjectMemoryKey(entry.projectPath as string));
+        }),
+    );
+  }
+  const projectMatch: ProjectMemoryMatch = { requestKey: requestProjectMemoryKey, entryKeys: entryMemoryKeys };
+
   const candidates = entries
     .filter((entry) => statuses.has(entry.status))
     .filter((entry) => !excludedEntryIds.has(entry.id))
     .filter((entry) => !kinds || kinds.has(entry.kind))
-    .filter((entry) => scopeMatches(entry, request))
+    .filter((entry) => scopeMatches(entry, request, projectMatch))
     .map((entry) => {
-      const scored = scoreMemoryEntry(entry, request, tokens);
+      const scored = scoreMemoryEntry(entry, request, projectMatch, tokens);
       return { entry, score: scored.score, reasons: scored.reasons };
     })
     .filter((item) => tokens.length === 0 || item.score > 0)

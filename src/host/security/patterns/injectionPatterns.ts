@@ -95,6 +95,10 @@ export const OBFUSCATION_PATTERNS: Array<InjectionPattern & { flag: string }> = 
   },
 ];
 
+/** Skill-only rule for reading or exfiltrating SSH private key files. */
+export const SSH_PRIVATE_KEY_PATH = /(?:~(?:\/[^\s"'`<>)]*)?|\$HOME(?:\/[^\s"'`<>)]*)?|\$\{HOME\}(?:\/[^\s"'`<>)]*)?|\/(?:Users|home)\/[^\s"'`<>/]+(?:\/[^\s"'`<>)]*)?)\/\.ssh\/(?:id_rsa|id_ed25519|id_ecdsa|id_dsa)(?!\.pub\b)(?![A-Za-z0-9_-])/i;
+export const SSH_PRIVATE_KEY_READ_VERB = /\b(?:cat|less|more|head|tail|cp|scp|base64|xxd|strings|curl|read|print|send|upload|open|copy|exfiltrate)\b/i;
+
 /**
  * 检测 prompt injection / jailbreak 的正则模式（唯一正则库）
  *

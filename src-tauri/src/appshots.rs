@@ -636,11 +636,15 @@ fn capture_now_for_pid(app: &AppHandle, target_pid: i32, target_app_name: Option
         Ok(Some(loc)) => loc,
         Ok(None) => {
             if target_pid > 0 {
+                let message = format!(
+                    "{} is no longer open",
+                    target_app_name.unwrap_or("The selected app")
+                );
                 emit_error_with_context(
                     app,
                     &request_id,
                     "no_target",
-                    "",
+                    &message,
                     Some(APP_CLOSED_REASON_CODE),
                     target_app_name,
                 );

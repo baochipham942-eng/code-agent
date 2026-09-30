@@ -9,7 +9,7 @@ description: Load when a contract, name, default, schema, or user-facing copy ch
 
 | Change axis | Known blind spot |
 | --- | --- |
-| Type narrowing | A shared union or guard narrows, but host adapters, renderer callers, or fixtures still send the wider shape. |
+| Type narrowing | A shared union or guard narrows, but host adapters, agent tools, renderer callers, or fixtures still send the wider shape. |
 | Field rename | A serializer, IPC/SSE mapper, snapshot, or documentation example still emits or reads the old key. |
 | Default value change | Omitted input keeps an old default in config, CLI, web/SSE, desktop UI, or the Tauri shell. |
 | Contract/schema change | Runtime validation, generated types, persistence, or replay fixtures accept a schema different from the shared contract. |

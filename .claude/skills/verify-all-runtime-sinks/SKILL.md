@@ -11,7 +11,7 @@ Start every row as `unknown`. Replace it only after checking the real consumer a
 
 | Dimension | What to inspect in Neo | Status |
 | --- | --- | --- |
-| parse -> runtime | Trace parsed input through the shared contract, host runtime, and the observable result. | `unknown` |
+| parse -> runtime | Trace parsed input through the shared contract, host runtime, agent tools, and the observable result. | `unknown` |
 | alternate entry points | Confirm the real list with grep before editing this row: desktop UI, web/SSE, headless/CLI runner, and ACP/external engine adapters. Exercise each entry point. | `unknown` |
 | generated or cached values | Check generated requests, persisted defaults, compiled output, caches, and any replayed value that can outlive the source change. | `unknown` |
 | fixtures and artifacts | Check tests/fixtures, snapshot-replay data, serialized bytes, and delivered artifacts for old behavior. | `unknown` |

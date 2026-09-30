@@ -10,6 +10,12 @@ import path from 'path';
 import process from 'process';
 
 import {
+  assertReplayPersistedState,
+  assertReplayProtocolLayer,
+  assertReplayRenderLayer,
+  writeReplayThreeLayerSidecars,
+} from '../../src/host/evaluation/replayThreeLayerEvidence';
+import {
   buildSnapshotIdMap,
   buildSnapshotScrubRules,
   buildSnapshotTurnFiles,
@@ -218,6 +224,15 @@ export async function recordSnapshotCorpus(options: {
     }
     recordedTurns += selfCheck.verified;
     console.log(`  ✓ 录制 ${spec.caseId}: ${turns.length} 轮（${spec.coverage.join(' + ')}），自验通过`);
+
+    // 三层证据只先钉一条真用例。旁路与用例目录同级，同步门把它们算进快照更新。
+    if (spec.caseId === 'write-file') {
+      await writeReplayThreeLayerSidecars(caseDir);
+      assertReplayProtocolLayer(caseDir);
+      assertReplayRenderLayer(caseDir);
+      await assertReplayPersistedState(caseDir);
+      console.log(`  ✓ 三层旁路 ${spec.caseId}.render.json / ${spec.caseId}.state.json`);
+    }
   }
 
   console.log(`snapshot replay corpus recorded: ${SNAPSHOT_CASES.length} 条会话 ${recordedTurns} 轮 → ${path.relative(repoRoot, options.corpusDir)}`);

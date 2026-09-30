@@ -625,7 +625,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
               type="button"
               onClick={handleStart}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {state === 'completed' || isReadyGreen ? (
                 <>

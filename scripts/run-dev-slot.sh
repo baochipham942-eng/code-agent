@@ -11,8 +11,9 @@
 # 用法：
 #   bash scripts/run-dev-slot.sh [N]             # NEO_SLOT=N（缺省 1）构建+安装+启动
 #   bash scripts/run-dev-slot.sh [N] --open-only # 不构建，只拉起已装的槽 N
-#   bash scripts/run-dev-slot.sh [N] --background # 启动时不抢前台
+#   bash scripts/run-dev-slot.sh [N] --background # 启动时尽量不抢前台
 #   bash scripts/run-dev-slot.sh [N] --dry-run    # 只打印将执行的启动命令
+#   NEO_SLOT_BACKGROUND=1 bash scripts/run-dev-slot.sh [N] # 等价于 --background
 #
 # Verification limits under --background (expected, not measured):
 #   - system-level screenshots of the window
@@ -88,12 +89,21 @@ else
 fi
 
 APP_PATH="/Applications/$APP_NAME.app"
+LAUNCH=(open)
+if [ "$BACKGROUND" = "1" ]; then
+  LAUNCH+=(-g -j)
+fi
+LAUNCH+=("$APP_PATH")
+
 print_launch_command() {
-  if [ "$BACKGROUND" = "1" ]; then
-    printf 'open -g -j "%s"' "$APP_PATH"
-  else
-    printf 'open "%s"' "$APP_PATH"
-  fi
+  local arg
+  printf '%s' "${LAUNCH[0]}"
+  for arg in "${LAUNCH[@]:1}"; do
+    case "$arg" in
+      -*) printf ' %s' "$arg" ;;
+      *) printf ' "%s"' "$arg" ;;
+    esac
+  done
 }
 
 if [ "$DRY_RUN" = "1" ]; then
@@ -104,12 +114,7 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 
 echo "[run-dev-slot] 启动 $APP_PATH"
-if [ "$BACKGROUND" = "1" ]; then
-  launch_app() { open -g -j "$APP_PATH"; }
-else
-  launch_app() { open "$APP_PATH"; }
-fi
-if ! launch_app; then
+if ! "${LAUNCH[@]}"; then
   echo "[run-dev-slot] open 失败——如果你正在 agent 沙箱里，把这条命令交回用户终端执行：" >&2
   printf '  ' >&2
   print_launch_command >&2

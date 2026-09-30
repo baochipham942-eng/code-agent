@@ -32,9 +32,9 @@ describe('run-dev-slot.sh --dry-run', () => {
   it('prints the background command for the flag and environment forms', () => {
     const expected = '[run-dev-slot] would run: open -g -j "/Applications/Agent Neo Dev 3.app"';
 
-    expect(runDryRun(['3', '--open-only', '--background']).trim()).toBe(expected);
+    expect(runDryRun(['3', '--open-only', '--background'], { NEO_SLOT_BACKGROUND: '0' }).trim()).toBe(expected);
     expect(runDryRun(['3', '--open-only'], { NEO_SLOT_BACKGROUND: '1' }).trim()).toBe(expected);
-    expect(runDryRun(['1', '--open-only', '--background']).trim()).toBe(
+    expect(runDryRun(['1', '--open-only', '--background'], { NEO_SLOT_BACKGROUND: '0' }).trim()).toBe(
       '[run-dev-slot] would run: open -g -j "/Applications/Agent Neo Dev.app"',
     );
   });
@@ -75,12 +75,12 @@ describe('run-dev-slot.sh --dry-run', () => {
         chmodSync(stub, 0o755);
       }
 
-      const output = runDryRun(['3', '--open-only'], {
+      const output = runDryRun(['3'], {
         PATH: `${bin}:${process.env.PATH ?? ''}`,
         RUN_DEV_SLOT_MARKER: marker,
       });
 
-      expect(output).toContain('[run-dev-slot] would run:');
+      expect(output.trim()).toBe('[run-dev-slot] would run: open "/Applications/Agent Neo Dev 3.app"');
       expect(existsSync(marker)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });

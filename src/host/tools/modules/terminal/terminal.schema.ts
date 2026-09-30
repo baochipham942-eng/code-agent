@@ -28,6 +28,9 @@ ${ROUTING}`,
   permissionLevel: 'read',
   readOnly: false,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'write', expression: 'resource(pty, catalog)' },
+  ],
 };
 
 export const terminalListSchema: ToolSchema = {
@@ -41,6 +44,9 @@ ${ROUTING}`,
   permissionLevel: 'read',
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', expression: 'resource(pty, catalog)' },
+  ],
 };
 
 export const terminalReadSchema: ToolSchema = {
@@ -66,6 +72,9 @@ ${ROUTING}`,
   permissionLevel: 'read',
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', expression: 'pty(args.session_id)' },
+  ],
 };
 
 export const terminalWriteSchema: ToolSchema = {
@@ -110,6 +119,9 @@ ${ROUTING}`,
   pathAuthority: [{ kind: 'shell', commandParameter: 'input' }],
   readOnly: false,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'write', expression: 'pty(args.session_id)' },
+  ],
 };
 
 export const terminalWaitSchema: ToolSchema = {
@@ -143,4 +155,7 @@ ${ROUTING}`,
   permissionLevel: 'read',
   readOnly: true,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'read', expression: 'pty(args.session_id)' },
+  ],
 };

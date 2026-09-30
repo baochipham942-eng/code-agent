@@ -184,6 +184,7 @@
         "src/renderer/slots/productSlotHosts.tsx",
         "scripts/perf/long-session-browser-harness.tsx",
         "scripts/perf/long-session-browser-smoke.ts",
+        "scripts/perf/search-navigation-ready.ts",
         "scripts/perf/wait-for-stable.ts",
         "scripts/perf/journey-long-session-harness.tsx",
         "scripts/perf/journey-browser-smoke.ts",

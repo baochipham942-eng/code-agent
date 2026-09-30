@@ -41,4 +41,7 @@ export const mcpInvokeSchema: UntrustedContentToolSchema = {
   category: 'mcp',
   permissionLevel: 'network',
   readsUntrustedContent: 'block',
+  accesses: [
+    { kind: 'readwrite', expression: 'mcp(server, tool)' },
+  ],
 };

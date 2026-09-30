@@ -12,6 +12,7 @@ import {
 import { CompressionState } from '../../../src/host/context/compressionState';
 import { type ProjectableMessage } from '../../../src/host/context/projectionEngine';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
+import { resolveTriggerTokens } from '../../../src/host/context/triggerTokens';
 
 function makeMsg(id: string, role: string, content: string, turnIndex = 0): ProjectableMessage {
   return { id, role, content, turnIndex };
@@ -20,6 +21,27 @@ function makeMsg(id: string, role: string, content: string, turnIndex = 0): Proj
 /** Generate ~N tokens of English text */
 function makeText(targetTokens: number): string {
   return 'word '.repeat(targetTokens);
+}
+
+/** One user message whose projected count is at least `target` and as small as the estimator allows. */
+function userTranscriptReaching(target: number): {
+  transcript: ProjectableMessage[];
+  projected: number;
+} {
+  const projectedFor = (words: number) => 7 + estimateTokens('word '.repeat(words));
+  let low = 1;
+  let high = Math.max(target, 1);
+  while (projectedFor(high) < target) high *= 2;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (projectedFor(mid) >= target) high = mid;
+    else low = mid + 1;
+  }
+  const content = 'word '.repeat(low);
+  return {
+    transcript: [makeMsg('u1', 'user', content)],
+    projected: 3 + 4 + estimateTokens(content),
+  };
 }
 
 const BASE_CONFIG: PipelineConfig = {
@@ -340,6 +362,74 @@ describe('CompressionPipeline', () => {
       });
 
       expect(result.layersTriggered).toContain('autocompact-needed');
+    });
+
+    it('reports autocompact-needed from the reserved trigger below the occupancy line', async () => {
+      const window = 10_000;
+      const maxOutput = 3_000;
+      const reserved = resolveTriggerTokens(window, undefined, maxOutput);
+      const occupancy = resolveTriggerTokens(window);
+      expect(reserved).toBe(5_976);
+      expect(occupancy).toBe(8_500);
+
+      const transcript: ProjectableMessage[] = [
+        makeMsg('u1', 'user', makeText(6_500)),
+      ];
+      const quietConfig: PipelineConfig = {
+        ...BASE_CONFIG,
+        maxTokens: window,
+        enableSnip: false,
+        enableMicrocompact: false,
+        enableContextCollapse: false,
+      };
+      const reservedResult = await pipeline.evaluate(transcript, state, {
+        ...quietConfig,
+        autocompactTriggerTokens: reserved,
+      });
+      expect(reservedResult.totalTokens).toBeGreaterThanOrEqual(reserved);
+      expect(reservedResult.totalTokens).toBeLessThan(occupancy);
+      expect(reservedResult.layersTriggered).toContain('autocompact-needed');
+
+      const occupancyResult = await pipeline.evaluate(transcript, new CompressionState(), quietConfig);
+      expect(occupancyResult.totalTokens).toBe(reservedResult.totalTokens);
+      expect(occupancyResult.layersTriggered).not.toContain('autocompact-needed');
+    });
+
+    it('fires autocompact-needed at the window ceiling when explicit triggerTokens exceeds it', async () => {
+      // Review scenario: a stored 200K trigger on a 128K window. The forced line
+      // stays at floor(128_000 × 0.85) = 108_800, not at the unbounded 200_000.
+      const window = 128_000;
+      const explicit = 200_000;
+      const windowCeiling = 108_800;
+      const line = resolveTriggerTokens(window, explicit);
+
+      const quietConfig: PipelineConfig = {
+        ...BASE_CONFIG,
+        maxTokens: window,
+        enableSnip: false,
+        enableMicrocompact: false,
+        enableContextCollapse: false,
+      };
+      const above = userTranscriptReaching(windowCeiling);
+      expect(above.projected).toBeGreaterThanOrEqual(windowCeiling);
+      expect(above.projected).toBeLessThan(explicit);
+
+      const fired = await pipeline.evaluate(above.transcript, state, {
+        ...quietConfig,
+        autocompactTriggerTokens: line,
+      });
+      expect(fired.totalTokens).toBeGreaterThanOrEqual(windowCeiling);
+      expect(fired.totalTokens).toBeLessThan(explicit);
+      expect(fired.layersTriggered).toContain('autocompact-needed');
+      expect(line).toBe(windowCeiling);
+
+      const below = await pipeline.evaluate(
+        [makeMsg('u1', 'user', makeText(1_000))],
+        new CompressionState(),
+        { ...quietConfig, autocompactTriggerTokens: line },
+      );
+      expect(below.totalTokens).toBeLessThan(windowCeiling);
+      expect(below.layersTriggered).not.toContain('autocompact-needed');
     });
   });
 

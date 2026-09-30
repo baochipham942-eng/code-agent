@@ -422,14 +422,21 @@ export interface AppSettings {
     publicKey: string;
     secretKey: string;
     baseUrl?: string;
-    /** 旧遥测开关字段：privacy.usageDataEnabled 缺省时作为兼容回退（见 shared/observability/privacyFlags.ts） */
+    /** 旧遥测开关字段：三个使用数据通道都没单独配置、且没有 usageDataEnabled 时作为兼容回退 */
     enabled?: boolean;
   };
-  // 隐私开关（承诺 → 通道的映射统一在 host 侧 privacyGate，两个开关都必须真接线）
+  // 隐私开关。四个通道各自接线（posthog / cloudUpload / langfuse / crashReporting）。
+  // usageDataEnabled 与 langfuse.enabled 只作为旧配置回退，见 shared/observability/privacyFlags.ts。
   privacy?: {
-    /** 使用数据：LLM tracing（Langfuse）+ 产品分析（PostHog）+ fleet telemetry（Supabase）。缺省 = 开 */
+    /** 旧总开关。三个使用数据通道都没单独配置时，作为它们的共同回退。 */
     usageDataEnabled?: boolean;
-    /** 崩溃报告：Sentry node + renderer。缺省 = 开 */
+    /** 产品分析（PostHog）。缺省 = 回退 usageDataEnabled / langfuse.enabled / 开 */
+    posthogEnabled?: boolean;
+    /** 云端遥测上传（Supabase fleet）。缺省规则同上。 */
+    cloudUploadEnabled?: boolean;
+    /** 运行轨迹（Langfuse）。缺省规则同上。 */
+    langfuseEnabled?: boolean;
+    /** 崩溃报告：Sentry node + renderer。缺省 = 开。环境变量硬关见 privacyFlags.ts。 */
     crashReportingEnabled?: boolean;
     /**
      * 上线后质量评分：把本机真实会话的正文发给用户自己配置的评分模型打分（ADR-063 §3）。

@@ -68,6 +68,7 @@ async function main(): Promise<void> {
       ['openchronicle', '管理屏幕记忆'], ['debug', '调试快照与回放'],
       ['policy', 'exec-policy 离线校验与规则解释'],
       ['doctor', '健康检查 / OS 沙箱探测'],
+      ['telemetry', '查看遥测开关状态，或预览一条不会发出的上传信封'],
     ]) {
       program.command(name).description(description);
     }
@@ -79,6 +80,9 @@ async function main(): Promise<void> {
   } else if (requestedCommand === 'doctor') {
     const { doctorCliCommand } = await import('./commands/doctor');
     program.addCommand(doctorCliCommand);
+  } else if (requestedCommand === 'telemetry') {
+    const { telemetryCommand } = await import('./commands/telemetry');
+    program.addCommand(telemetryCommand);
   } else if (requestedCommand !== 'session') {
     const [
       { chatCommand }, { runCommand }, { serveCommand }, { exportCommand },

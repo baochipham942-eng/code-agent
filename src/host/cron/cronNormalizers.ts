@@ -11,6 +11,7 @@ import type {
   CronScheduleConfig,
   CronJobAction,
 } from '../../shared/contract/cron';
+import { CRON_GUARDRAILS } from '../../shared/constants';
 
 export interface CronAgentActionResult {
   agentType: string;
@@ -50,6 +51,24 @@ export type SupportedEveryTimeUnit = typeof SUPPORTED_EVERY_TIME_UNITS[number];
 
 export function isCronAgentActionResult(value: unknown): value is CronAgentActionResult {
   return isRecord(value) && typeof value.sessionId === 'string';
+}
+
+/** cron/heartbeat agent 会话档位：context 带 heartbeatTask 的按 heartbeat 建会话。
+ *  （自 cronService 平移，逐字未动——该文件贴 max-lines 线。） */
+export function getCronAgentSessionType(action: CronJobAction): 'schedule' | 'heartbeat' {
+  if (action.type === 'agent' && action.context?.heartbeatTask) {
+    return 'heartbeat';
+  }
+  return 'schedule';
+}
+
+/** cron/heartbeat 会话标题：剥掉历史前缀再按档位重打，避免 [Cron] [Schedule] 叠罗汉。
+ *  （自 cronService 平移，逐字未动——该文件贴 max-lines 线。） */
+export function formatCronAgentSessionTitle(definition: CronJobDefinition, sessionType: 'schedule' | 'heartbeat'): string {
+  const cleanName = definition.name.replace(/^\[(Cron|Schedule|Heartbeat)\]\s*/i, '').trim() || definition.name;
+  return sessionType === 'heartbeat'
+    ? `[Heartbeat] ${cleanName}`
+    : `[Schedule] ${cleanName}`;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -330,7 +349,11 @@ export function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
     resultChannel,
     enabled: row.enabled === 1 || row.enabled === true,
     maxRetries: readOptionalNumberField(row, 'max_retries'),
-    retryDelay: readOptionalNumberField(row, 'retry_delay'),
+    // 旧版保存把未设置的 retryDelay 写成 5000（`|| 5000` + schema DEFAULT 5000），
+    // 会把退避序列永久钉死在 5s；等于旧默认的存量值视为未设置，走指数退避（R2 审查 Important-2）。
+    retryDelay: readOptionalNumberField(row, 'retry_delay') === CRON_GUARDRAILS.LEGACY_DEFAULT_RETRY_DELAY_MS
+      ? undefined
+      : readOptionalNumberField(row, 'retry_delay'),
     timeout: readOptionalNumberField(row, 'timeout'),
     tags: normalizeTags(parseJsonValue(row.tags)),
     metadata: normalizeUnknownRecord(parseJsonValue(row.metadata)),

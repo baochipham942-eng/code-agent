@@ -534,12 +534,45 @@ export const TOOL_TIMEOUT_THRESHOLDS: Record<string, number> = {
   mcp: 60_000,              // 1 min
 } as const;
 
-/** 定时任务护栏（maka A5 automation 自查补丁，2026-07-10） */
+/**
+ * 定时任务护栏（maka A5 automation 自查补丁，2026-07-10；N-CRON-RESILIENCE 2026-09-29 扩充）。
+ * 失败处置分档：transient → 指数退避重试 → 连败停用；permanent → 首次即停用并告知用户。
+ */
 export const CRON_GUARDRAILS = {
-  /** 循环任务触发前的随机 jitter 上限 (ms)，防同刻多任务惊群 */
-  FIRE_JITTER_MAX_MS: 2_000,
-  /** 循环任务连续失败达到此次数后自动停用（防静默烧钱死循环） */
+  /**
+   * 循环任务触发前的随机 jitter 窗口下限 (ms)。分钟级任务保持原有的秒级抖动，
+   * 窗口随周期放大（见 FIRE_JITTER_PERIOD_RATIO）但不会低于此值。
+   */
+  FIRE_JITTER_MIN_MS: 2_000,
+  /** jitter 窗口 = 周期 × 此比例（小时级任务由此得到分钟级抖动，防整点扎堆） */
+  FIRE_JITTER_PERIOD_RATIO: 0.1,
+  /** jitter 窗口上限 (ms)：天级任务也不会被推迟超过 15 分钟 */
+  FIRE_JITTER_MAX_MS: 15 * 60_000,
+  /** 循环任务连续失败达到此次数后自动停用（防静默烧钱死循环）——退避 exhausted 后的最终停用档 */
   MAX_CONSECUTIVE_FAILURES: 5,
+  /** 失败退避基数：第 n 次重试前等待 min(BASE × FACTOR^(n-1), MAX_INTERVAL) */
+  RETRY_BACKOFF_BASE_MS: 30_000,
+  /** 失败退避倍率：每多重试一次，下一次间隔 × 此值 */
+  RETRY_BACKOFF_FACTOR: 2,
+  /** 失败退避上限 (ms)：瞬态故障自愈后任务能在合理时间内恢复节奏 */
+  RETRY_BACKOFF_MAX_INTERVAL_MS: 15 * 60_000,
+  /**
+   * misfire 宽限窗 (ms)：错过触发时间在窗内则补跑（覆盖重启/升级/短暂崩溃的空档）；
+   * 超过判离线错过，标 skipped 不补跑——陈旧任务补跑多半违背现状，等下一个正常 tick。
+   */
+  MISFIRE_GRACE_MS: 5 * 60_000,
+  /**
+   * 失败通知冷却 (ms)：同 (jobId + 归一化错误消息) 的失败告警在此窗口内只发一次，
+   * 防止按周期重试的坏任务把同一条错误刷屏一整天（对齐 TELEMETRY_UPLOAD_RESILIENCE 的降噪思路）。
+   * 最终停用通知不受冷却约束。
+   */
+  FAILURE_NOTICE_COOLDOWN_MS: 60 * 60_000,
+  /**
+   * retry_delay 的旧版默认值：旧保存路径把未设置写成 `|| 5000`（schema DEFAULT 5000），
+   * 会把存量任务的失败退避永久钉死在 5s。读侧（normalizeCronJobRow）把等于此旧默认的
+   * 存量值视为未设置，走指数退避；新代码显式写下的其它值不受影响。
+   */
+  LEGACY_DEFAULT_RETRY_DELAY_MS: 5_000,
 } as const;
 
 /**

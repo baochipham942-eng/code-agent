@@ -20,6 +20,7 @@ import type {
   CronJobAction,
   CronServiceStats,
   CronMissedEvent,
+  CronMissedReason,
   CreateCronJobDefinition,
 } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
@@ -27,7 +28,6 @@ import { getConfigService } from '../services/core/configService';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
-import { notificationService } from '../services/infra/notificationService';
 import {
   readCronSourceSessionId,
   recordCronAutomationCreated,
@@ -39,7 +39,9 @@ import {
   type ResolveRuntimeDefinition,
 } from './cronAutomationBridge';
 import {
+  formatCronAgentSessionTitle,
   isCronAgentActionResult,
+  getCronAgentSessionType,
   normalizeCronJobRow,
   assertSupportedEveryScheduleUnit,
   type SupportedEveryTimeUnit,
@@ -54,6 +56,8 @@ import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
+  decideOneTimeJobStartup,
+  intervalToCron,
   runWithCronJobBudget,
   scheduleBoundToDate,
 } from './cronExecutionPolicy';
@@ -61,12 +65,23 @@ import { CronCloudRuntime } from './cronCloudRuntime';
 import {
   deleteCronJob,
   loadCronExecutionStatus,
+  loadCronLastRunAt,
   mapCronExecutionRows,
+  markInterruptedCronExecutions,
   saveCronExecution,
   saveCronJob,
   upsertCronExecutionInMemory,
 } from './cronPersistence';
 import { deliverCronResultToChannel } from './cronResultDelivery';
+import {
+  adoptFailedAgentSession,
+  classifyCronFailure,
+  countTrailingCronFailures,
+  cronRetryBackoffMs,
+  CronFailureNoticeGate,
+  notifyCronAgentExecution,
+  notifyCronJobDisabled,
+} from './cronFailurePolicy';
 export { computeCronFireJitterMs } from './cronExecutionPolicy';
 
 const execAsync = promisify(exec);
@@ -92,6 +107,9 @@ export class CronService implements Disposable {
   private isInitialized = false;
   private disposed = false;
   private unsubscribeCronMissed?: () => void;
+  private readonly failureNoticeGate = new CronFailureNoticeGate();
+  /** 正在执行（含退避重试链）的 jobId：系统侧触发互斥，见 runScheduledJob。 */
+  private readonly inFlightJobIds = new Set<string>();
   private cloudRuntime = new CronCloudRuntime(
     () => {
       const config = getConfigService().getSettings().cronCloud;
@@ -113,7 +131,7 @@ export class CronService implements Disposable {
       onCompleted: async (definition, execution, summary) => {
         await recordCronAutomationExecution(definition, execution, this.resolveAutomationRuntime);
         await this.deliverCronResult(definition, summary, execution.id);
-        this.notifyAgentExecution(definition, execution);
+        notifyCronAgentExecution(definition, execution, this.failureNoticeGate);
         void this.notifyWakeOnJobCompleted(definition, execution);
       },
     },
@@ -135,7 +153,7 @@ export class CronService implements Disposable {
 
     // 中断可见性（maka 护栏自查 A5-④遗留）：上次运行中途被杀掉的执行记录会永远
     // 停在 running，让用户误以为还在跑。启动时先把这些残留行标记为 interrupted。
-    await this.markInterruptedExecutions();
+    await markInterruptedCronExecutions();
 
     // Load jobs from database
     await this.loadJobsFromDatabase();
@@ -541,11 +559,14 @@ export class CronService implements Disposable {
     const { schedule, id } = definition;
 
     const callback = async () => {
-      const jitter = computeCronFireJitterMs(schedule.type);
+      const jitter = computeCronFireJitterMs(schedule);
       if (jitter > 0) {
         await new Promise((resolve) => setTimeout(resolve, jitter));
       }
-      await this.executeJob(definition);
+      // jitter 窗口最长 15min：等待结束必须按 jobId 重取当前 definition（见 runScheduledJob），
+      // 不能拿这个闭包里注册时的旧 definition——等待期间被停用/删除/编辑过的任务
+      // 照跑旧定义会产生模型费用、改过的 prompt 不生效（R2 审查 Important-3）。
+      await this.runScheduledJob(id);
     };
 
     // 上一次执行还没结束时跳过本次 tick（croner 原生 protect），
@@ -567,7 +588,7 @@ export class CronService implements Disposable {
 
         case 'every': {
           // Convert interval to cron expression
-          const cronExpr = this.intervalToCron(schedule.interval, schedule.unit);
+          const cronExpr = intervalToCron(schedule.interval, schedule.unit, id);
           // startAt/endAt 是契约既有字段，此前被静默忽略（到期后任务照跑不误）。
           // 交给 croner 原生窗口控制：startAt 前不触发，stopAt 后永久停。
           return new Cron(cronExpr, {
@@ -595,21 +616,30 @@ export class CronService implements Disposable {
     }
   }
 
-  private intervalToCron(interval: number, unit: string): string {
-    switch (unit) {
-      case 'seconds':
-        return `*/${interval} * * * * *`;
-      case 'minutes':
-        return `0 */${interval} * * * *`;
-      case 'hours':
-        return `0 0 */${interval} * * *`;
-      case 'days':
-        return `0 0 0 */${interval} * *`;
-      case 'weeks':
-        throw new Error('Unsupported interval unit "weeks"; cron day-of-week syntax cannot express every N weeks.');
-      default:
-        return `0 */${interval} * * * *`; // Default to minutes
+  /**
+   * 系统侧执行入口（croner tick 走完 jitter 等待后 / misfire 宽限窗补跑）：
+   * 执行前按 jobId 重取**当前**定义，不存在或已停用则跳过并留痕（不是这次执行的失败，
+   * 不计连败、不发失败告警）——jitter 窗口最长 15min，等待期间任务可能已被停用/删除，
+   * 拿注册时闭包里的旧 definition 照样执行会对已停任务产生模型费用（R2 审查 Important-3）。
+   * 手动 triggerJob 不走这里：用户点「立即运行」就该立即运行。
+   */
+  private async runScheduledJob(jobId: string): Promise<void> {
+    const current = this.jobs.get(jobId)?.definition;
+    if (!current) {
+      console.warn(`[CronService] Job ${jobId} skipped: deleted while waiting to fire`);
+      return;
     }
+    if (!current.enabled) {
+      console.warn(`[CronService] Job ${jobId} skipped: disabled while waiting to fire`);
+      return;
+    }
+    // 上一趟（含宽限窗补跑、上一 tick）还没结束就跳过本趟：croner 原生 protect 只看它
+    // 自己的回调，直接 executeJob 的补跑会绕过它，与紧接的正常 tick 并发堆会话（R2 审查 Nit-3）。
+    if (this.inFlightJobIds.has(jobId)) {
+      console.error(`[CronService] Job ${jobId} run skipped: previous run still in progress`);
+      return;
+    }
+    await this.executeJob(current);
   }
 
   private async executeJob(definition: CronJobDefinition): Promise<CronJobExecution> {
@@ -639,6 +669,10 @@ export class CronService implements Disposable {
     // 执行期间被杀掉时数据库里不会留下任何痕迹，启动扫描也就无从标记 interrupted。
     await saveCronExecution(execution);
 
+    // in-flight 标记从执行开始持有到 finally 收尾（含 catch 里的整条退避重试链），
+    // 供 runScheduledJob 做系统侧互斥；放在首条 save 之后，异常时不留悬挂标记。
+    this.inFlightJobIds.add(definition.id);
+
     try {
       if (definition.runsOn === 'cloud') {
         execution.result = await this.cloudRuntime.runJob(definition);
@@ -655,12 +689,29 @@ export class CronService implements Disposable {
         }
       }
     } catch (error) {
-      execution.status = 'failed';
       execution.error = error instanceof Error ? error.message : String(error);
+      adoptFailedAgentSession(execution, error);
+      const failureKind = classifyCronFailure(execution.error);
 
-      // Handle retries
-      if (execution.error !== 'unsupported_action' && definition.runsOn === 'local' && definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
-        await this.retryExecution(definition, execution);
+      if (failureKind === 'capacity-wait') {
+        // 排队等容量/等并发槽时被中断：不是这次任务的失败，不计失败、不烧重试次数，
+        // 等下一个正常 tick（Cline 实付回归：capacity waits 被当成重试次数烧光）。
+        execution.status = 'cancelled';
+        console.warn(
+          `[CronService] Job ${definition.id} run interrupted while queued for capacity; not counted as failure`,
+        );
+      } else if (failureKind === 'permanent') {
+        // 配置/鉴权类确定性失败：重试无用，直接 failed；停用+告知在 finally 统一处理。
+        execution.status = 'failed';
+        console.error(
+          `[CronService] Job ${definition.id} failed permanently (retry is useless): ${execution.error}`,
+        );
+      } else {
+        // transient：退避重试（延迟序列见 retryExecution，替换旧的固定 5s 兜底）
+        execution.status = 'failed';
+        if (definition.runsOn === 'local' && definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
+          await this.retryExecution(definition, execution);
+        }
       }
     } finally {
       execution.completedAt = Date.now();
@@ -676,23 +727,38 @@ export class CronService implements Disposable {
 
       await recordCronAutomationExecution(definition, execution, this.resolveAutomationRuntime);
 
-      // 连续失败自动停用（maka 护栏自查 A5-⑤）：循环任务连续失败达到阈值后停掉，
-      // 防止坏配置/坏凭据的定时 agent 任务无人值守空转烧钱。
+      // 失败停用分档（N-CRON-RESILIENCE）：permanent 首次即停用（重试无用）；
+      // transient 连败达到阈值（退避重试已烧尽）后最终停用。两条路都发带出处的通知。
       // ponytail: 用内存内 trailing 历史计数，重启后归零；要跨重启严格计数再改查 DB。
-      if (
-        execution.status === 'failed'
-        && definition.scheduleType !== 'at'
-        && this.countTrailingFailures(definition.id) >= CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES
-      ) {
-        console.error(
-          `[CronService] Job ${definition.id} auto-disabled after `
-          + `${CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES} consecutive failures`,
-        );
-        await this.updateJob(definition.id, { enabled: false });
+      let disableNotified = false;
+      if (execution.status === 'failed' && definition.scheduleType !== 'at') {
+        const finalKind = classifyCronFailure(execution.error);
+        if (finalKind === 'permanent') {
+          console.error(
+            `[CronService] Job ${definition.id} auto-disabled after permanent failure: ${execution.error}`,
+          );
+          await this.updateJob(definition.id, { enabled: false });
+          notifyCronJobDisabled(definition, execution, 'permanent');
+          disableNotified = true;
+        } else if (countTrailingCronFailures(this.executions.get(definition.id) ?? []) >= CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES) {
+          console.error(
+            `[CronService] Job ${definition.id} auto-disabled after `
+            + `${CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES} consecutive failures`,
+          );
+          await this.updateJob(definition.id, { enabled: false });
+          notifyCronJobDisabled(definition, execution, 'consecutive');
+          disableNotified = true;
+        }
       }
 
-      // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session
-      this.notifyAgentExecution(definition, execution);
+      // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session。
+      // 停用的那一趟只发停用通知（已含最后错误与出路）——同一笔失败再叠一条
+      // 失败告警就是一次失败两条通知（R2 审查 Nit-1）。
+      if (!disableNotified) {
+        notifyCronAgentExecution(definition, execution, this.failureNoticeGate);
+      }
+
+      this.inFlightJobIds.delete(definition.id);
     }
 
     // self-wake：唤醒等这个任务的会话——wake_on 按任务 id 等，wake_on_event 按任务名字等
@@ -720,41 +786,6 @@ export class CronService implements Disposable {
       if (definition.name) await service.onEvent(definition.name);
     } catch (err) {
       console.error(`[CronService] wake_on notification failed for ${definition.id}:`, err);
-    }
-  }
-
-  /** 末尾连续失败次数（内存历史，最新在最后）。 */
-  private countTrailingFailures(jobId: string): number {
-    const history = this.executions.get(jobId) ?? [];
-    let count = 0;
-    for (let i = history.length - 1; i >= 0; i--) {
-      if (history[i].status !== 'failed') break;
-      count++;
-    }
-    return count;
-  }
-
-  /**
-   * 定时 agent 任务跑完后发完成通知。
-   * 只对生成了会话的 agent action 发——点击通知经 NOTIFICATION_CLICKED 跳到该 session。
-   */
-  private notifyAgentExecution(definition: CronJobDefinition, execution: CronJobExecution): void {
-    if (definition.action.type !== 'agent' || !execution.sessionId) return;
-    try {
-      const succeeded = execution.status === 'completed';
-      notificationService.notifyTaskComplete(
-        {
-          sessionId: execution.sessionId,
-          sessionTitle: `[定时] ${definition.name}`,
-          summary: succeeded ? '定时任务已完成' : `定时任务失败：${execution.error ?? '未知错误'}`,
-          duration: execution.duration ?? 0,
-          toolsUsed: [],
-          succeeded,
-        },
-        { force: true }, // 后台定时任务完成：绕过焦点门，app 前台/后台都提醒
-      );
-    } catch (err) {
-      console.error('[CronService] notifyAgentExecution failed:', err);
     }
   }
 
@@ -924,7 +955,14 @@ export class CronService implements Disposable {
             );
           }
         }
-        if (runFailed) throw runError;
+        if (runFailed) {
+          // 失败也把 cron 会话带出去（挂在 error 上）：失败告警（去重+冷却后）要能
+          // 点击跳到这个半成品会话，执行台账也能关联到它。成功路径走 result.sessionId。
+          if (runError instanceof Error && !('cronSessionId' in runError)) {
+            (runError as Error & { cronSessionId?: string }).cronSessionId = cronSession.id;
+          }
+          throw runError;
+        }
 
         // 无新料的监听轮不投递（FB-239）：skipped 判定必须先于推送，
         // 否则安静轮照样把「没有更新」推到通道，跟 skipped 语义无进收件箱自相矛盾。
@@ -991,20 +1029,6 @@ export class CronService implements Disposable {
     }
   }
 
-  private getAgentSessionType(action: CronJobAction): 'schedule' | 'heartbeat' {
-    if (action.type === 'agent' && action.context?.heartbeatTask) {
-      return 'heartbeat';
-    }
-    return 'schedule';
-  }
-
-  private formatAgentSessionTitle(definition: CronJobDefinition, sessionType: 'schedule' | 'heartbeat'): string {
-    const cleanName = definition.name.replace(/^\[(Cron|Schedule|Heartbeat)\]\s*/i, '').trim() || definition.name;
-    return sessionType === 'heartbeat'
-      ? `[Heartbeat] ${cleanName}`
-      : `[Schedule] ${cleanName}`;
-  }
-
   private async createCronAgentSession(
     definition: CronJobDefinition,
     action: CronJobAction,
@@ -1024,11 +1048,11 @@ export class CronService implements Disposable {
       : null;
     const baseSession = sourceSession ?? currentSession;
     const settings = configService.getSettings();
-    const sessionType = this.getAgentSessionType(action);
+    const sessionType = getCronAgentSessionType(action);
     const originKind = sessionType === 'heartbeat' ? 'heartbeat' : 'cron';
 
     return sessionManager.createSession({
-      title: this.formatAgentSessionTitle(definition, sessionType),
+      title: formatCronAgentSessionTitle(definition, sessionType),
       modelConfig: resolveSessionDefaultModelConfig({
         provider: settings.model?.provider || baseSession?.modelConfig.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || baseSession?.modelConfig.model || DEFAULT_MODELS.chat,
@@ -1066,16 +1090,29 @@ export class CronService implements Disposable {
     definition: CronJobDefinition,
     execution: CronJobExecution
   ): Promise<void> {
-    const delay = definition.retryDelay || 5000;
+    // 指数退避（N-CRON-RESILIENCE）：第 n 次重试前等待 min(BASE×FACTOR^(n-1), MAX)，
+    // 序列 30s→60s→120s→…封顶 15min，替换旧的固定 5s 兜底；显式 retryDelay 仍优先。
+    const delay = definition.retryDelay ?? cronRetryBackoffMs(execution.retryAttempt + 1);
 
     await new Promise((resolve) => setTimeout(resolve, delay));
+
+    // 不变量 A（R3）：等待后再执行——按 jobId 重取当前定义。等待期间（最长 15min）任务
+    // 可能已被停用/删除：拿闭包旧定义照跑是对已停任务再花一笔执行成本。中止重试链，
+    // 终态 cancelled（不是这次执行的失败，不计连败；最后一次真实失败仍留在 execution.error）。
+    const current = this.jobs.get(definition.id)?.definition;
+    // 只拦「等待期间才被停用」：手动运行一个本来就停用的任务，重试照常（PR#2143 复审 R3）。
+    if (!current || (definition.enabled && !current.enabled)) {
+      console.warn(`[CronService] Job ${definition.id} retry skipped: job ${current ? 'disabled' : 'deleted'} while waiting to retry`);
+      execution.status = 'cancelled';
+      return;
+    }
 
     execution.retryAttempt++;
     execution.status = 'running';
     execution.startedAt = Date.now();
 
     try {
-      const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id);
+      const result = await this.executeAction(current, current.action, current.timeout, execution.id);
       if (isCronAgentActionResult(result)) {
         execution.sessionId = result.sessionId;
       }
@@ -1084,10 +1121,14 @@ export class CronService implements Disposable {
     } catch (error) {
       execution.status = 'failed';
       execution.error = error instanceof Error ? error.message : String(error);
+      adoptFailedAgentSession(execution, error);
+
+      // permanent：确定性失败，烧掉剩余重试毫无意义，停在这里等 finally 的停用档。
+      if (classifyCronFailure(execution.error) === 'permanent') return;
 
       // Continue retrying if we haven't reached the limit
-      if (execution.error !== 'unsupported_action' && execution.retryAttempt < (definition.maxRetries || 0)) {
-        await this.retryExecution(definition, execution);
+      if (execution.retryAttempt < (current.maxRetries || 0)) {
+        await this.retryExecution(current, execution);
       }
     }
   }
@@ -1102,28 +1143,6 @@ export class CronService implements Disposable {
       getLatestDefinition: (jobId) => this.jobs.get(jobId)?.definition,
       persistAction: (jobId, action) => this.updateJob(jobId, { action }),
     });
-  }
-
-  /**
-   * 启动时把残留的 running 执行记录标记为 interrupted（maka 护栏自查 A5-④）：
-   * 上次进程退出前没跑完的执行会永远停在 running，误导用户以为还在跑。
-   * 单条 UPDATE，幂等（重复跑不会二次改动已是 interrupted 的行），不影响启动耗时。
-   */
-  private async markInterruptedExecutions(): Promise<void> {
-    try {
-      const db = getDatabase().getDb();
-      if (!db) return;
-      const result = db.prepare(`
-        UPDATE cron_executions
-        SET status = 'interrupted', completed_at = COALESCE(completed_at, ?)
-        WHERE status = 'running'
-      `).run(Date.now());
-      if (result.changes > 0) {
-        console.error(`[CronService] Marked ${result.changes} stale running execution(s) as interrupted`);
-      }
-    } catch (error) {
-      console.error('[CronService] Failed to mark interrupted executions:', error);
-    }
   }
 
   private async loadJobsFromDatabase(): Promise<void> {
@@ -1146,18 +1165,30 @@ export class CronService implements Disposable {
         // 过期的一次性任务停用而不是静默挂起（maka 护栏自查 A5-⑥）：
         // datetime 已过（app 关闭期间错过触发窗）时 croner 永远不会再触发，
         // 旧行为是任务留在 enabled 状态装作还会跑。停用并落库，让状态与事实一致。
+        // misfire 宽限窗（N-CRON-RESILIENCE）：刚错过不久（≤MISFIRE_GRACE_MS）且没跑过的照跑，
+        // 覆盖重启/升级/短暂崩溃的空档；该趟已开始过（跑一半崩溃）不整趟重跑（R3 不变量 B，
+        // 判据见 decideOneTimeJobStartup）；超窗才判离线错过停用。
         if (job.runsOn === 'local' && job.enabled && job.schedule.type === 'at') {
-          const ts = typeof job.schedule.datetime === 'number'
-            ? job.schedule.datetime
-            : Date.parse(String(job.schedule.datetime));
-          if (!Number.isFinite(ts) || ts <= now) {
-            const disabled = { ...job, enabled: false, updatedAt: now };
-            this.jobs.set(disabled.id, { definition: disabled });
-            await this.persistJob(disabled);
-            if (Number.isFinite(ts)) {
-              await this.recordMissedJob(disabled, ts);
+          const decision = decideOneTimeJobStartup(job, now, loadCronLastRunAt(job.id));
+          if (decision.kind !== 'register') {
+            if (decision.kind === 'catch-up') {
+              this.jobs.set(job.id, { definition: job });
+              console.error(
+                `[CronService] One-time job ${job.id} due ${new Date(decision.dueAt).toISOString()} `
+                + 'within misfire grace window; running it now',
+              );
+              void this.runScheduledJob(job.id).catch((err) => {
+                console.error(`[CronService] Grace-window catch-up failed for job ${job.id}:`, err);
+              });
+            } else {
+              const disabled = { ...job, enabled: false, updatedAt: now };
+              this.jobs.set(disabled.id, { definition: disabled });
+              await this.persistJob(disabled);
+              if (decision.dueAt != null) {
+                await this.recordMissedJob(disabled, decision.dueAt, undefined, decision.missedReason);
+              }
+              console.error(`[CronService] One-time job ${job.id} ${decision.alreadyStarted ? 'already started before restart (interrupted mid-run); disabled without re-running' : 'missed its schedule while app was offline; disabled'}`);
             }
-            console.error(`[CronService] One-time job ${job.id} missed its schedule while app was offline; disabled`);
             loadedCount += 1;
             continue;
           }
@@ -1174,9 +1205,21 @@ export class CronService implements Disposable {
             ?.previousRuns(1, new Date(now))[0]
             ?.getTime();
           if (previousScheduledAt != null && previousScheduledAt < now) {
-            const lastRunAt = this.loadLastRunAt(job.id) ?? job.createdAt;
+            const lastRunAt = loadCronLastRunAt(job.id) ?? job.createdAt;
             if (lastRunAt < previousScheduledAt) {
-              await this.recordMissedJob(job, previousScheduledAt, activeJob?.cronInstance?.nextRun()?.getTime());
+              // misfire 宽限窗（N-CRON-RESILIENCE）：窗内照跑（补这一趟），
+              // 超窗判离线错过、标 skipped 不补跑（保留既有 recordMissedJob 语义）。
+              if (now - previousScheduledAt <= CRON_GUARDRAILS.MISFIRE_GRACE_MS) {
+                console.error(
+                  `[CronService] Job ${job.id} missed tick ${new Date(previousScheduledAt).toISOString()} `
+                  + 'within grace window; running catch-up',
+                );
+                void this.runScheduledJob(job.id).catch((err) => {
+                  console.error(`[CronService] Grace-window catch-up failed for job ${job.id}:`, err);
+                });
+              } else {
+                await this.recordMissedJob(job, previousScheduledAt, activeJob?.cronInstance?.nextRun()?.getTime());
+              }
             }
           }
         } else {
@@ -1193,28 +1236,13 @@ export class CronService implements Disposable {
     }
   }
 
-  private loadLastRunAt(jobId: string): number | undefined {
-    try {
-      const db = getDatabase().getDb();
-      if (!db) return undefined;
-      const row = db.prepare(`
-        SELECT MAX(started_at) AS last_run_at
-        FROM cron_executions
-        WHERE job_id = ? AND started_at IS NOT NULL
-      `).get(jobId) as { last_run_at?: number | null } | undefined;
-      return typeof row?.last_run_at === 'number' ? row.last_run_at : undefined;
-    } catch (error) {
-      console.error('[CronService] Failed to load cron last-run timestamp:', error);
-      return undefined;
-    }
-  }
-
   private async recordMissedJob(
     definition: CronJobDefinition,
     scheduledAt: number,
     nextRunAt?: number,
+    missedReason: CronMissedReason = 'app-offline',
   ): Promise<void> {
-    const event: CronMissedEvent = { jobId: definition.id, scheduledAt, reason: 'app-offline' };
+    const event: CronMissedEvent = { jobId: definition.id, scheduledAt, reason: missedReason };
     await persistCronMissedTrace(definition, event, nextRunAt);
     getEventBus().publish('system', 'cron.missed', event, { bridgeToRenderer: false });
   }

@@ -52,6 +52,9 @@ export function findMissingTelemetryPromptRows<
     ...row,
     normalizedContent: normalizePromptForBackfill(row.content),
   }));
+  // Prompts already paired to a persisted user message. A later telemetry row
+  // with the same normalized text is a resumed attempt, not a missing message.
+  const matchedPromptKeys = new Set<string>();
 
   return telemetryRows.filter((row) => {
     const key = normalizePromptForBackfill(row.user_prompt);
@@ -60,6 +63,11 @@ export function findMissingTelemetryPromptRows<
     );
     if (exactMatchIndex >= 0) {
       unmatchedExistingRows.splice(exactMatchIndex, 1);
+      matchedPromptKeys.add(key);
+      return false;
+    }
+
+    if (matchedPromptKeys.has(key)) {
       return false;
     }
 

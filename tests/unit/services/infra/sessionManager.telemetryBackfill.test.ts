@@ -254,4 +254,43 @@ describe('SessionManager telemetry user prompt backfill', () => {
     expect(dbMock.addMessage).not.toHaveBeenCalled();
     expect(insertedMessages).toHaveLength(0);
   });
+
+  it('still backfills a genuinely absent prompt when an unrelated prompt is repeated', async () => {
+    const repeated = '已经落库的用户消息';
+    const absent = '数据库里没有的另一条用户消息';
+    const firstStart = 1_787_560_000_000;
+    existingRows.push({
+      content: repeated,
+      timestamp: firstStart,
+    });
+    telemetryRows.push(
+      {
+        id: 'turn-repeated-original',
+        user_prompt: repeated,
+        start_time: firstStart + 1_000,
+      },
+      {
+        id: 'turn-repeated-resume',
+        user_prompt: repeated,
+        start_time: firstStart + 5 * 60_000,
+      },
+      {
+        id: 'turn-absent',
+        user_prompt: absent,
+        start_time: firstStart + 6 * 60_000,
+      },
+    );
+
+    await expect(backfill('session-absent-beside-repeat')).resolves.toBe(1);
+
+    expect(dbMock.addMessage).toHaveBeenCalledTimes(1);
+    expect(insertedMessages).toEqual([{
+      sessionId: 'session-absent-beside-repeat',
+      message: expect.objectContaining({
+        id: 'telemetry-user-turn-absent',
+        role: 'user',
+        content: expect.stringMatching(/^【历史恢复提示】[\s\S]*\n\n数据库里没有的另一条用户消息$/),
+      }),
+    }]);
+  });
 });

@@ -3,7 +3,9 @@
 // ChatInput 工具栏只露真正高频的（权限模式 / 上下文 / 模型 / 语音 / 发送）。
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Image as ImageIcon, Bot, ChevronRight, Plug, Sparkles, UsersRound } from 'lucide-react';
+import { Plus, Image as ImageIcon, MonitorUp, Bot, ChevronRight, Plug, Sparkles, UsersRound } from 'lucide-react';
+import type { AppSettings } from '@shared/contract';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { isPanelVisibleAgent } from '../../../../../shared/contract/agentRegistry';
@@ -12,6 +14,13 @@ import { useTeamRecipeStore } from '../../../../stores/teamRecipeStore';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { useI18n } from '../../../../hooks/useI18n';
+import { getNativeDesktopPermissionStatus } from '../../../../services/nativeDesktop';
+import {
+  invokeNativeCommandAction,
+  isNativeCommandRuntimeAvailable,
+  type AppshotsLastFrontApp,
+} from '../../../../services/nativeCommandFacade';
+import ipcService from '../../../../services/ipcService';
 import { InputAddSubmenu, type InputAddSubmenuItem } from './InputAddSubmenu';
 
 interface Props {
@@ -54,6 +63,28 @@ export const InputAddMenu: React.FC<Props> = ({
   const refreshRecipes = useTeamRecipeStore((s) => s.refresh);
   const selectedTeamRecipeId = useComposerStore((s) => s.selectedTeamRecipeId);
   const setSelectedTeamRecipeId = useComposerStore((s) => s.setSelectedTeamRecipeId);
+  const openSettingsTab = useAppStore((s) => s.openSettingsTab);
+  const [lastFrontApp, setLastFrontApp] = useState<AppshotsLastFrontApp | null>(null);
+  const [appshotsEnabled, setAppshotsEnabled] = useState(true);
+  const [lastFrontAppLoading, setLastFrontAppLoading] = useState(false);
+
+  const loadLastFrontApp = async () => {
+    if (!isNativeCommandRuntimeAvailable()) {
+      setLastFrontApp(null);
+      setLastFrontAppLoading(false);
+      return;
+    }
+    setLastFrontAppLoading(true);
+    const [lastAppResult, settingsResult] = await Promise.allSettled([
+      invokeNativeCommandAction('getLastFrontApp'),
+      ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get'),
+    ]);
+    if (lastAppResult.status === 'fulfilled') setLastFrontApp(lastAppResult.value);
+    if (settingsResult.status === 'fulfilled') {
+      setAppshotsEnabled(settingsResult.value?.appshots?.enabled !== false);
+    }
+    setLastFrontAppLoading(false);
+  };
 
   const clearSubmenuCloseTimer = () => {
     if (submenuCloseTimerRef.current !== null) {
@@ -108,6 +139,41 @@ export const InputAddMenu: React.FC<Props> = ({
     setSubmenu(null);
     setOpen(false);
   };
+  const attachLastFrontApp = async () => {
+    if (!lastFrontApp?.alive) return;
+    if (!appshotsEnabled) {
+      openSettingsTab('appshots');
+      closeMenu();
+      return;
+    }
+    try {
+      const permissions = await getNativeDesktopPermissionStatus();
+      const required = permissions.permissions.filter((permission) => (
+        permission.kind === 'screenCapture' || permission.kind === 'accessibility'
+      ));
+      if (required.length < 2 || required.some((permission) => permission.status !== 'granted')) {
+        openSettingsTab('appshots');
+        closeMenu();
+        return;
+      }
+    } catch {
+      openSettingsTab('appshots');
+      closeMenu();
+      return;
+    }
+    await invokeNativeCommandAction('triggerAppshotForPid', { pid: lastFrontApp.pid });
+    closeMenu();
+  };
+  const lastFrontAppLabel = lastFrontApp
+    ? t.inputAddMenu.attachLastAppLabel.replace('{appName}', lastFrontApp.appName)
+    : t.inputAddMenu.attachLastApp;
+  const lastFrontAppReason = lastFrontAppLoading
+    ? t.inputAddMenu.attachLastAppLoading
+    : !lastFrontApp
+      ? t.inputAddMenu.attachLastAppNoTarget
+      : !lastFrontApp.alive
+        ? t.inputAddMenu.attachLastAppClosed.replace('{appName}', lastFrontApp.appName)
+        : undefined;
   const focusComposer = () => {
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="chat-composer-textarea"]')?.focus());
   };
@@ -148,6 +214,10 @@ export const InputAddMenu: React.FC<Props> = ({
   useEffect(() => {
     if (open && !recipesLoaded) void refreshRecipes();
   }, [open, recipesLoaded, refreshRecipes]);
+
+  useEffect(() => {
+    if (open) void loadLastFrontApp();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -206,6 +276,21 @@ export const InputAddMenu: React.FC<Props> = ({
           >
             <ImageIcon className="w-3.5 h-3.5 text-zinc-400" />
             <span>{t.inputAddMenu.uploadLabel}</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={!lastFrontApp || !lastFrontApp.alive || lastFrontAppLoading}
+            onClick={() => { void attachLastFrontApp(); }}
+            aria-label={lastFrontAppLabel}
+            title={lastFrontAppReason}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <MonitorUp className="w-3.5 h-3.5 text-zinc-400" />
+            <span className="min-w-0 flex-1 truncate">{lastFrontAppLabel}</span>
+            {lastFrontAppReason && (
+              <span className="max-w-[9rem] truncate text-[10px] text-zinc-500">{lastFrontAppReason}</span>
+            )}
           </button>
 
           <div className="border-t border-zinc-700/60 mt-1 pt-1">

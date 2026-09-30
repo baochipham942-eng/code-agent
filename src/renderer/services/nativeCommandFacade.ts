@@ -34,6 +34,13 @@ export interface AppshotSlot {
   height: number;
 }
 
+export interface AppshotsLastFrontApp {
+  pid: number;
+  bundleId?: string | null;
+  appName: string;
+  alive: boolean;
+}
+
 export interface GlobalHotkeyBinding {
   actionId: KeybindingActionId;
   accelerator: string;
@@ -49,6 +56,14 @@ export interface GlobalHotkeyRegistrationResult {
 export interface NativeCommandActionMap {
   triggerAppshot: {
     payload: undefined;
+    result: boolean;
+  };
+  getLastFrontApp: {
+    payload: undefined;
+    result: AppshotsLastFrontApp | null;
+  };
+  triggerAppshotForPid: {
+    payload: { pid: number };
     result: boolean;
   };
   readAppshotImageDataUrl: {
@@ -121,6 +136,8 @@ const NATIVE_COMMANDS: {
   [K in NativeCommandAction]: string;
 } = {
   triggerAppshot: 'appshots_trigger',
+  getLastFrontApp: 'appshots_last_front_app',
+  triggerAppshotForPid: 'appshots_trigger_for_pid',
   readAppshotImageDataUrl: 'appshots_read_image_data_url',
   readAppshotImageDataUrlById: 'appshots_read_image_data_url_by_id',
   reportAppshotComposerSlot: 'appshots_report_composer_slot',

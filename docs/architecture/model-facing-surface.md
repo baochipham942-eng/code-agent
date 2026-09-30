@@ -20,7 +20,7 @@ The complete Bash schema is paid on each request that carries the core tool list
 
 ### KV-cache impact
 
-The Bash definition is in the **stable prefix** while `CORE_TOOLS` and `getCoreToolDefinitions` select it and `bashSchema` has no dynamic description function. `generateBashDescription` in `src/host/tools/modules/shell/bash.ts` runs after execution and is stored in result metadata, so it does not change that request-prefix text mid-session.
+The Bash definition is in the **stable prefix** while `CORE_TOOLS` and `getCoreToolDefinitions` select it and `bashSchema` has no dynamic description function; `generateBashDescription` in `src/host/tools/modules/shell/bash.ts` runs after execution and is stored in result metadata, so it does not change that request-prefix text mid-session.
 
 ### Known limits
 

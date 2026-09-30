@@ -7,7 +7,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_REPO_ROOT = path.resolve(SCRIPT_DIR, '..');
+const DEFAULT_REPO_ROOT = path.resolve(SCRIPT_DIR, '..', '..');
 const DOC_RELATIVE_PATH = 'docs/architecture/model-facing-surface.md';
 const REQUIRED_HEADINGS = [
   'What the model sees',

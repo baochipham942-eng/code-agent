@@ -30,6 +30,7 @@ export const planApprovalZh = {
     startFailed: '上次没能开始执行，可重试',
     evidenceHint: '批准时的完整计划',
     drag: '拖拽重排',
+    syntheticSource: '由 Neo 根据计划正文补出',
   },
 };
 
@@ -65,5 +66,6 @@ export const planApprovalEn: typeof planApprovalZh = {
     startFailed: 'Failed to start last time; you can retry.',
     evidenceHint: 'Full plan at approval time',
     drag: 'Drag to reorder',
+    syntheticSource: 'Neo drafted this from the plan text',
   },
 };

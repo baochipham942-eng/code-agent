@@ -16,7 +16,7 @@ import {
   type GuardToolCall,
 } from './doomLoopGuard';
 import { settleDoomLoopHandback } from './doomLoopHandback';
-import type { JevWarden } from './jevWarden';
+import type { JevWarden, JevWardenStepInput } from './jevWarden';
 
 const logger = createLogger('AgentLoop');
 
@@ -58,12 +58,13 @@ export async function runToolStepGuardRails<TToolAction>(
     inject(nudge, 'stagnation-guard');
   }
   // JevWarden（验收①挂点：工具结果 recordResults 之后）。规则先判、命中才问。
-  const verdict = await warden.reviewToolStep({
+  const wardenInput: JevWardenStepInput = {
     guardLevel: doomCheck.level,
     guardSignals: signalHit.signals,
     stepResults,
     assistantText: args.assistantText,
-  });
+  };
+  const verdict = await warden.reviewToolStep(wardenInput);
   if (verdict.kind === 'nudge') {
     logger.warn(`[JevWarden] ${verdict.rule} confirmed; injecting steering nudge`);
     inject(verdict.text, 'jev-warden');

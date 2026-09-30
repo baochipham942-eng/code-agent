@@ -29,11 +29,24 @@ import { createLogger } from '../../services/infra/logger';
 import { isDangerousCommand } from '../../tools/toolExecutorHelpers';
 import { isBashToolName } from '../../tools/toolNames';
 import { WRITE_TOOLS } from '../loopTypes';
-import type { DoomLoopCheck, GuardCallResult } from './doomLoopGuard';
+import {
+  SIGNAL_ABAB_ACTION_CYCLE,
+  SIGNAL_POLLING_REPEAT,
+  SIGNAL_SAME_ERROR_FAMILY,
+  type DoomLoopCheck,
+  type GuardCallResult,
+} from './doomLoopGuard';
 
 const logger = createLogger('JevWarden');
 
 type JevWardenRule = 'empty_spin' | 'fake_done' | 'irreversible_unapproved';
+
+/** 验收⑤：与 N-DOOMLOOP-SIGNALS 共享信号枚举，Warden 只认这三个，不另立空转定义。 */
+const DOOM_LOOP_SIGNALS: readonly string[] = [
+  SIGNAL_POLLING_REPEAT,
+  SIGNAL_SAME_ERROR_FAMILY,
+  SIGNAL_ABAB_ACTION_CYCLE,
+];
 
 /** 挂点输入：本步事实。stepResults 是 collectGuardStepResults 的形状。 */
 export interface JevWardenStepInput {
@@ -141,7 +154,9 @@ class LiveJevWarden implements JevWarden {
     this.noteWrites(input.stepResults);
     const dangerous = dangerousCommandsOf(input.stepResults);
     const hit: JevWardenRule[] = [];
-    if (input.guardSignals.length > 0 || input.guardLevel !== 'none') hit.push('empty_spin');
+    if (input.guardSignals.some((s) => DOOM_LOOP_SIGNALS.includes(s)) || input.guardLevel !== 'none') {
+      hit.push('empty_spin');
+    }
     if (input.stepResults.some((r) => !r.success) || COMPLETION_CLAIM_PATTERN.test(input.assistantText ?? '')) {
       hit.push('fake_done');
     }

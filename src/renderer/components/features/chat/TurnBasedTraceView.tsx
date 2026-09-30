@@ -673,9 +673,14 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     return () => scroller.removeEventListener('click', handleClickCapture, true);
   }, [projection.turns, scrollerElement, updateFollowedOutputTurnId]);
 
-  // Scroll to active search match when it changes
+  // Scroll to active search match when it changes.
+  // Clearing the match list resets the cursor: the same index must scroll again
+  // after search is re-armed, instead of being swallowed as a duplicate.
   useEffect(() => {
-    if (searchMatches.length === 0) return;
+    if (searchMatches.length === 0) {
+      prevActiveMatchRef.current = -1;
+      return;
+    }
     const activeMatch = searchMatches[activeMatchIndex];
     if (!activeMatch) return;
     if (activeMatchIndex === prevActiveMatchRef.current) return;

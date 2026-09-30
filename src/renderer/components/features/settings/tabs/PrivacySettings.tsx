@@ -24,7 +24,13 @@ import {
 } from '@shared/contract';
 import { POST_LAUNCH_DEFAULTS } from '@shared/contract/postLaunchScore';
 import ipcService from '../../../../services/ipcService';
-import { applyRendererPrivacyFlags, resolvePrivacyFlags } from '../../../../observability/privacyFlags';
+import {
+  applyRendererPrivacyFlags,
+  readReportedTelemetryEnv,
+  readTelemetryEnvOptOut,
+  resolvePrivacyFlags,
+  type PrivacyFlags,
+} from '../../../../observability/privacyFlags';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
@@ -93,6 +99,43 @@ interface PrivacySettingsProps {
   onNavigateSettings?: (tab: SettingsTab) => void;
 }
 
+const CHANNEL_SETTING_KEY = {
+  posthog: 'posthogEnabled',
+  cloudUpload: 'cloudUploadEnabled',
+  langfuse: 'langfuseEnabled',
+  crashReporting: 'crashReportingEnabled',
+} as const satisfies Record<keyof PrivacyFlags, string>;
+
+function PrivacySwitch(props: {
+  testId: string;
+  checked: boolean;
+  disabled: boolean;
+  label: string;
+  body: string;
+  icon: React.ReactNode;
+  onChange: (next: boolean) => void;
+}): React.ReactElement {
+  return (
+    <label className={`flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 ${props.disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+      <input
+        type="checkbox"
+        data-testid={props.testId}
+        className="mt-0.5 h-4 w-4 accent-primary-700"
+        checked={props.checked}
+        disabled={props.disabled}
+        onChange={(event) => props.onChange(event.target.checked)}
+      />
+      <div className="flex items-center gap-2 text-sm">
+        {props.icon}
+        <div>
+          <div className="text-zinc-200 font-medium">{props.label}</div>
+          <div className="text-xs text-zinc-400 mt-0.5">{props.body}</div>
+        </div>
+      </div>
+    </label>
+  );
+}
+
 const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings }) => {
   const { t } = useI18n();
   const privacyText = t.settings.privacy;
@@ -105,9 +148,9 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   const [loading, setLoading] = useState(true);
   const logEndRef = useRef<HTMLDivElement | null>(null);
 
-  // 隐私两档开关（使用数据 / 崩溃报告）。写 settings.privacy.*，host 侧 privacyGate 统一接线。
-  const [usageDataEnabled, setUsageDataEnabled] = useState(true);
-  const [crashReportingEnabled, setCrashReportingEnabled] = useState(true);
+  // 四个遥测通道。写 settings.privacy.<channel>Enabled，host 侧 privacyGate 按通道接线。
+  const [channels, setChannels] = useState(() => resolvePrivacyFlags(undefined, readReportedTelemetryEnv()));
+  const telemetryOptOut = readTelemetryEnvOptOut(readReportedTelemetryEnv());
   // 三态：'auto' = 跟随槽默认（由 host 侧算），'on' / 'off' 是显式选择。
   // 「跟随默认」发的是显式 'auto'——发 undefined 会被 JSON 与 mergeSettings 一起吞掉，
   // 从「开」切回来等于没切（ai-review PR #1650 Important①）。
@@ -164,9 +207,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         const s = await ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get');
         privacyCfgRef.current = s?.privacy;
         pluginUiCfgRef.current = s?.pluginUi;
-        const flags = resolvePrivacyFlags(s);
-        setUsageDataEnabled(flags.usageData);
-        setCrashReportingEnabled(flags.crashReporting);
+        setChannels(resolvePrivacyFlags(s, readReportedTelemetryEnv()));
         setPostLaunchScoring(s?.privacy?.postLaunchScoring ?? 'auto');
         setPostLaunchReflow(s?.privacy?.postLaunchReflow ?? 'auto');
         setThirdPartyUiEnabled(isThirdPartyPluginUiEnabled(s));
@@ -253,21 +294,18 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
     }
   }, []);
 
-  const handlePrivacyToggle = useCallback(async (
-    key: 'usageDataEnabled' | 'crashReportingEnabled',
-    next: boolean,
-  ) => {
-    const setLocal = key === 'usageDataEnabled' ? setUsageDataEnabled : setCrashReportingEnabled;
+  const handleChannelToggle = useCallback(async (channel: keyof PrivacyFlags, next: boolean) => {
+    if (readTelemetryEnvOptOut(readReportedTelemetryEnv())) return;
     setPrivacySaving(true);
-    setLocal(next); // 乐观更新
+    setChannels((prev) => ({ ...prev, [channel]: next }));
     try {
-      const nextCfg = { ...(privacyCfgRef.current ?? {}), [key]: next };
+      const nextCfg = { ...(privacyCfgRef.current ?? {}), [CHANNEL_SETTING_KEY[channel]]: next };
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { privacy: nextCfg } as Partial<AppSettings>);
       privacyCfgRef.current = nextCfg;
       // renderer 侧通道立即生效（host 侧由 privacyGate 跟随 updateSettings 重放）
-      applyRendererPrivacyFlags(resolvePrivacyFlags({ privacy: nextCfg }));
+      applyRendererPrivacyFlags(resolvePrivacyFlags({ privacy: nextCfg }, readReportedTelemetryEnv()));
     } catch {
-      setLocal(!next); // 回滚
+      setChannels((prev) => ({ ...prev, [channel]: !next }));
     } finally {
       setPrivacySaving(false);
     }
@@ -476,38 +514,47 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         description={privacyText.telemetry.description}
       >
         <div className="space-y-2">
-          <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-primary-700"
-              checked={usageDataEnabled}
-              disabled={privacySaving}
-              onChange={(e) => handlePrivacyToggle('usageDataEnabled', e.target.checked)}
-            />
-            <div className="flex items-center gap-2 text-sm">
-              <Activity className="h-4 w-4 text-zinc-400" />
-              <div>
-                <div className="text-zinc-200 font-medium">{privacyText.telemetry.usageData.label}</div>
-                <div className="text-xs text-zinc-400 mt-0.5">{privacyText.telemetry.usageData.body}</div>
-              </div>
-            </div>
-          </label>
-          <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-primary-700"
-              checked={crashReportingEnabled}
-              disabled={privacySaving}
-              onChange={(e) => handlePrivacyToggle('crashReportingEnabled', e.target.checked)}
-            />
-            <div className="flex items-center gap-2 text-sm">
-              <ShieldCheck className="h-4 w-4 text-zinc-400" />
-              <div>
-                <div className="text-zinc-200 font-medium">{privacyText.telemetry.crashReports.label}</div>
-                <div className="text-xs text-zinc-400 mt-0.5">{privacyText.telemetry.crashReports.body}</div>
-              </div>
-            </div>
-          </label>
+          {telemetryOptOut ? (
+            <p className="text-xs leading-5 text-zinc-400" data-testid="privacy-env-opt-out-reason">
+              {privacyText.telemetry.envOptOut.replace('{name}', telemetryOptOut)}
+            </p>
+          ) : null}
+          <PrivacySwitch
+            testId="privacy-posthog-toggle"
+            checked={channels.posthog}
+            disabled={privacySaving || telemetryOptOut !== null}
+            label={privacyText.telemetry.posthog.label}
+            body={privacyText.telemetry.posthog.body}
+            icon={<Activity className="h-4 w-4 text-zinc-400" />}
+            onChange={(next) => { void handleChannelToggle('posthog', next); }}
+          />
+          <PrivacySwitch
+            testId="privacy-cloud-upload-toggle"
+            checked={channels.cloudUpload}
+            disabled={privacySaving || telemetryOptOut !== null}
+            label={privacyText.telemetry.cloudUpload.label}
+            body={privacyText.telemetry.cloudUpload.body}
+            icon={<Activity className="h-4 w-4 text-zinc-400" />}
+            onChange={(next) => { void handleChannelToggle('cloudUpload', next); }}
+          />
+          <PrivacySwitch
+            testId="privacy-langfuse-toggle"
+            checked={channels.langfuse}
+            disabled={privacySaving || telemetryOptOut !== null}
+            label={privacyText.telemetry.langfuse.label}
+            body={privacyText.telemetry.langfuse.body}
+            icon={<Activity className="h-4 w-4 text-zinc-400" />}
+            onChange={(next) => { void handleChannelToggle('langfuse', next); }}
+          />
+          <PrivacySwitch
+            testId="privacy-crash-reporting-toggle"
+            checked={channels.crashReporting}
+            disabled={privacySaving || telemetryOptOut !== null}
+            label={privacyText.telemetry.crashReports.label}
+            body={privacyText.telemetry.crashReports.body}
+            icon={<ShieldCheck className="h-4 w-4 text-zinc-400" />}
+            onChange={(next) => { void handleChannelToggle('crashReporting', next); }}
+          />
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
             <div className="flex items-start gap-2 text-sm">
               <Activity className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />

@@ -82,4 +82,7 @@ Examples:
   },
   category: 'mcp',
   permissionLevel: 'write',
+  accesses: [
+    { kind: 'write', expression: 'resource(mcp, registry)' },
+  ],
 };

@@ -26,7 +26,7 @@ import {
   chunkRubric,
   extractPptxText,
   isInsideRoot,
-  judgeRubricBatch,
+  judgeRubricBatchRejudgingOmitted,
   TRUNCATED_MARK,
   summarizeRun,
   summarizeTask,
@@ -364,17 +364,17 @@ async function main(): Promise<void> {
     const rubric = task._rubric as GdpvalRubricItem[];
     const verdicts: GdpvalItemVerdict[] = [];
     for (const batch of chunkRubric(rubric, options.batch)) {
-      const prompt = buildRubricPrompt(batch, files, inputs);
       // 失败要重试够：一次 500 或 429 不该让整批条目变成假信号。
       // 退避要拉开：实测智谱 429（code 1305「访问量过大」）在 3 秒后照样 429，
       // 而夜巡一晚要为 216 道题发几百次调用，撞限流是常态不是意外。
-      // 重试耗尽的整批记 call_failed（剔出分母），与模型漏答的 null 分开。
-      verdicts.push(...await judgeRubricBatch(
+      // 重试耗尽的整批记 call_failed（剔出分母）。漏答（null）再补判一轮：只送这些条目，
+      // 提示词按子集重写。一批本来就不超过 --batch，补判因此恰好一次，也不会超过批大小。再漏就留 null。
+      verdicts.push(...await judgeRubricBatchRejudgingOmitted(
         batch,
-        async () => {
+        async (slice) => {
           // 不给超时，模型服务挂起时整夜评分会停在这一批上，后面的题一道都不落盘。
           calls += 1;   // 计在发起处：抛错的那次也是真花了钱的，记在 await 之后会低报付费量
-          return quickTask(prompt, 6000, AbortSignal.timeout(options.callTimeoutMs));
+          return quickTask(buildRubricPrompt(slice, files, inputs), 6000, AbortSignal.timeout(options.callTimeoutMs));
         },
         RETRY_BACKOFF_MS,
         {
@@ -392,7 +392,7 @@ async function main(): Promise<void> {
     out.write(`${JSON.stringify(score)}\n`);
     console.log(`${task.id.padEnd(16)} ${(score.ratio * 100).toFixed(0).padStart(3)}%  ${score.earned}/${score.total} 分`
       + `（满分 ${score.totalRaw}，弃权 ${score.abstained} 条已剔出分母）`
-      + `  条目 ${verdicts.length}${score.unjudged > 0 ? `（漏判 ${score.unjudged}）` : ''}`
+      + `  条目 ${verdicts.length}${score.unjudged > 0 ? `（漏判 ${score.unjudged}，已剔出分母）` : ''}`
       + `${score.callFailed ? `（调用失败 ${score.callFailed}，已剔出分母）` : ''}${score.scoreFailed ? '  [score failed]' : ''}`
       + `  产物 ${allRels.length} 个  输入 ${inputs.length} 个`);
   }
@@ -401,7 +401,8 @@ async function main(): Promise<void> {
   const summary = summarizeRun(scores);
   const pct = (value: number | null) => (value === null ? 'n/a' : `${(value * 100).toFixed(1)}%`);
   console.log(`统计（已剔除 score failed 的题）：${summary.scored} 题  中位 ${pct(summary.median)}  `
-    + `均值 ${pct(summary.mean)}  加权 ${pct(summary.weighted)}`);
+    + `均值 ${pct(summary.mean)}  加权 ${pct(summary.weighted)}  `
+    + `漏判 ${summary.unjudgedTasks} 题、${summary.unjudgedItems} 条`);
   if (summary.scoreFailed > 0) {
     console.error(`score failed: ${summary.scoreFailed} tasks, first error: ${summary.firstError}`);
     // 全部评分失败 = 评分整体故障，不是产物不合格：非 0 退出让上游脚本看得见。

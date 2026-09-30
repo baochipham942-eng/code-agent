@@ -9,6 +9,7 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { canonicalizeWorkspacePath } from '../runtime/workspaceScope';
+import { MEMORY } from '../../shared/constants';
 
 const execFileAsync = promisify(execFile);
 
@@ -24,6 +25,17 @@ interface CacheEntry {
 }
 
 const memoryKeyByPath = new Map<string, CacheEntry>();
+
+/** 写入/刷新缓存：命中提位（LRU），超容量按插入序淘汰最旧（N-MEM-KEYCACHE-BOUND）。 */
+function cacheSet(projectPath: string, entry: CacheEntry): void {
+  memoryKeyByPath.delete(projectPath);
+  memoryKeyByPath.set(projectPath, entry);
+  while (memoryKeyByPath.size > MEMORY.PROJECT_MEMORY_KEY_CACHE_MAX) {
+    const oldest = memoryKeyByPath.keys().next();
+    if (oldest.done) break;
+    memoryKeyByPath.delete(oldest.value);
+  }
+}
 
 function canonicalizeOrResolve(input: string): string {
   try {
@@ -61,14 +73,15 @@ async function resolveGitMemoryKey(projectPath: string): Promise<string | null> 
 export async function resolveProjectMemoryKey(projectPath: string): Promise<string> {
   const cached = memoryKeyByPath.get(projectPath);
   if (cached && (cached.expiresAt === undefined || cached.expiresAt > Date.now())) {
+    cacheSet(projectPath, cached); // LRU 提位
     return cached.key;
   }
   const gitKey = await resolveGitMemoryKey(projectPath);
   if (gitKey !== null) {
-    memoryKeyByPath.set(projectPath, { key: gitKey });
+    cacheSet(projectPath, { key: gitKey });
     return gitKey;
   }
   const fallback = canonicalizeOrResolve(projectPath);
-  memoryKeyByPath.set(projectPath, { key: fallback, expiresAt: Date.now() + FALLBACK_CACHE_TTL_MS });
+  cacheSet(projectPath, { key: fallback, expiresAt: Date.now() + FALLBACK_CACHE_TTL_MS });
   return fallback;
 }

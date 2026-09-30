@@ -249,6 +249,11 @@ export const PlanApprovalCard: React.FC<{
           <span className="text-sm font-medium text-badge-info">{t.planApproval.title}</span>
           <span className="text-xs text-zinc-500">{t.planApproval.stepCount.replace('{count}', String(steps.length))}</span>
         </div>
+        {target.approval.source === 'synthetic_text' && (
+          <p className="border-b border-zinc-800 px-4 py-1.5 text-xs text-zinc-500" data-testid="plan-approval-source">
+            {t.planApproval.syntheticSource}
+          </p>
+        )}
 
         <div className="max-h-[50vh] overflow-y-auto px-4 py-3">
           {target.approval.status === 'failed' && (

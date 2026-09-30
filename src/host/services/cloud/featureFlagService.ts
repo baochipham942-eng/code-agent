@@ -55,6 +55,7 @@ export class FeatureFlagService {
       enableExperimentalTools: this.get('enableExperimentalTools'),
       nativeGenerativeUI: this.get('nativeGenerativeUI'),
       executionManifestV1: this.get('executionManifestV1'),
+      jev_skill_rerank: this.get('jev_skill_rerank'),
     };
   }
 

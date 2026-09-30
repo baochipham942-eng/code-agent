@@ -285,7 +285,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
           type="button"
           onClick={runScript}
           disabled={running}
-          className="flex items-center gap-1 rounded bg-primary-600 px-3 py-1 text-xs font-medium text-white hover:bg-primary-500 disabled:opacity-50"
+          className="flex items-center gap-1 rounded bg-primary-700 px-3 py-1 text-xs font-medium text-white hover:bg-primary-800 disabled:opacity-50"
         >
           <Play className="h-3 w-3" /> {running ? v.running : v.run}
         </button>
@@ -305,7 +305,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
           <button /* ds-allow:button: 脏保护横幅主操作，品牌色实心按钮，Button primitive 无 12px 微尺寸变体 */
             type="button"
             onClick={handleLoadHeldRequest}
-            className="rounded bg-primary-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-primary-500"
+            className="rounded bg-primary-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-primary-800"
           >
             {v.loadRequest}
           </button>

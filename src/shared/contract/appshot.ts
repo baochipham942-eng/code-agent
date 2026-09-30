@@ -15,13 +15,11 @@ export interface AppshotWindowFrame {
 
 export type AppshotTextSource = 'ax' | 'ocr' | 'none';
 
-export type AppshotErrorReasonCode = 'app_closed' | 'finder_desktop';
-
 export interface AppshotErrorEvent {
   requestId?: string;
   code?: string;
   message?: string;
-  reasonCode?: AppshotErrorReasonCode;
+  reasonCode?: 'app_closed' | 'finder_desktop';
   appName?: string;
 }
 

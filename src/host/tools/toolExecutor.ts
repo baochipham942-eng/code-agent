@@ -37,7 +37,7 @@ import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
-import { getPluginIdForTool } from '../plugins/pluginToolOrigin';
+import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
@@ -661,6 +661,7 @@ export class ToolExecutor {
     }
 
     const executionToolName = toolDef.name;
+    const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
     const writeWithoutWorkspaceAuthority = Boolean(
@@ -1924,7 +1925,7 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
-      if (pluginId) permissionRequest.details.pluginId = pluginId;
+      if (pluginOrigin) Object.assign(permissionRequest.details, pluginOrigin);
       if (
         permissionRequest.type === 'file_read'
         || permissionRequest.type === 'file_write'

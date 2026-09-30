@@ -921,11 +921,18 @@ function withEndpointPath(baseURL: string, endpointPath: string): string {
 // seedAccumulatorFromBreakpoint 剔除（D2 铁律：永不进 prefix、永不执行，续写中模型重发
 // 完整调用）。reasoning 不回传：各家 thinking 协议不通用（deepseek reasoning_content /
 // anthropic thinking blocks / gemini thought signatures），前缀不变量只压 text；断点前
-// 只有 reasoning 时 prefix 退化为空文本，模型重写正文——诚实优先于伪续接。
+// 只有 reasoning 时不拼空 prefix（函数内空 content 短路，见下），原样重发重写正文——
+// 诚实优先于伪续接。
 // 原 messages 数组元素引用原样 append（不重建不重排，cacheControl 断点不动）：续接请求
 // 与原请求共享逐字相同的前缀（system + history + user），ADR-032 prompt cache 命中前提
 // （D4 增量成本控制全压在这条上）。
 function withResumePrefixAssistant(prompt: AiSdkPromptShape, acc: StreamAccumulator): AiSdkPromptShape {
+  // 空文本断点（断流发生在 reasoning 阶段，acc.content=''）：空 prefix 不带任何续写信息，
+  // 且 Moonshot 明确 400「assistant must not be empty」（N-STREAM-RESUME-DOGFOOD 刀 D 真机
+  // 抓获，非重试类错误会直接杀死整轮）——不 append，续接 attempt 退化为原样重发：seed 的
+  // content 本来就是空的，重生成 delta append 进空 seed 无重复可拼，天然诚实。prefix-param
+  // 档的双重收紧（末条 assistant 才注入 prefix/partial）随之自动失效，不会误发裸 prefix:true。
+  if (!acc.content) return prompt;
   // content '' 的空形态对齐 toAiMessages 的空 assistant 先例（string content）。
   const prefixMessage = { role: 'assistant', content: acc.content } as AiModelMessage;
   return { ...prompt, messages: [...prompt.messages, prefixMessage] };

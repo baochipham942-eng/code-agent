@@ -357,11 +357,14 @@ function stepfunBackend(apiKey: string): ArbiterBackend {
         throw new Error(`stepfun HTTP ${response.status}${body ? `: ${body.slice(0, 160)}` : ''}`);
       }
       const json = await response.json() as {
-        choices?: Array<{ message?: { content?: string } }>;
+        choices?: Array<{ message?: { content?: string; reasoning_content?: string } }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
       return {
-        content: json.choices?.[0]?.message?.content ?? '',
+        // step-3.5-flash 是 reasoning 模型：max_tokens 不够时 content 为空、全部烧在
+        // reasoning_content 里（实测 512 → finish=length + 空 content）。正常路径读
+        // content；为空时回落 reasoning_content，parseArbiterJson 会做形状校验兜底。
+        content: json.choices?.[0]?.message?.content || json.choices?.[0]?.message?.reasoning_content || '',
         inputTokens: json.usage?.prompt_tokens ?? 0,
         outputTokens: json.usage?.completion_tokens ?? 0,
       };
@@ -719,7 +722,9 @@ async function main(): Promise<void> {
       { role: 'user', content: userContent },
     ];
     try {
-      const result = await backend.call(messages, 512);
+      // 2048：StepFun step-3.5-flash 是 reasoning 模型，512 会被思考烧光导致空 content
+      // （实测 62/95 空）；2048 实测 finish=stop 且 content 为纯 JSON。DeepSeek/Kimi 同值无害。
+      const result = await backend.call(messages, 2048);
       return { id: row.id, label: parseArbiterJson(result.content), inputTokens: result.inputTokens, outputTokens: result.outputTokens, raw: result.content };
     } catch (error) {
       return { id: row.id, label: null, inputTokens: 0, outputTokens: 0, raw: `ERROR ${String(error).slice(0, 120)}` };

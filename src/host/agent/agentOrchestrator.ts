@@ -467,12 +467,12 @@ export class AgentOrchestrator {
     return this.runSettings.getResearchUserSettings();
   }
 
-  /** ACP 写回：会话天花板为 read_only 时直接拒绝，否则每次现读档位再走同一条审批链。 */
+  /** ACP 写回：每次现读档位；read_only 直接拒绝，其余强制人工确认，不吃全局自动放行。 */
   requestExternalEnginePermission(
     request: Omit<PermissionRequest, 'id' | 'timestamp'>,
   ): Promise<PermissionAskResult> {
     const denial = deniedExternalEnginePermission(request.type, getPermissionModeManager().getModeForSession(request.sessionId));
-    return denial ? Promise.resolve(denial) : this.permissions.requestPermission(request);
+    return denial ? Promise.resolve(denial) : this.permissions.requestPermission({ ...request, forceConfirm: true });
   }
 
   handlePermissionResponse(requestId: string, response: PermissionResponse, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome {

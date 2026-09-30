@@ -26,7 +26,7 @@ import {
   chunkRubric,
   extractPptxText,
   isInsideRoot,
-  judgeRubricBatch,
+  judgeRubricBatchRejudgingOmitted,
   TRUNCATED_MARK,
   summarizeRun,
   summarizeTask,
@@ -364,17 +364,17 @@ async function main(): Promise<void> {
     const rubric = task._rubric as GdpvalRubricItem[];
     const verdicts: GdpvalItemVerdict[] = [];
     for (const batch of chunkRubric(rubric, options.batch)) {
-      const prompt = buildRubricPrompt(batch, files, inputs);
       // 失败要重试够：一次 500 或 429 不该让整批条目变成假信号。
       // 退避要拉开：实测智谱 429（code 1305「访问量过大」）在 3 秒后照样 429，
       // 而夜巡一晚要为 216 道题发几百次调用，撞限流是常态不是意外。
-      // 重试耗尽的整批记 call_failed（剔出分母），与模型漏答的 null 分开。
-      verdicts.push(...await judgeRubricBatch(
+      // 重试耗尽的整批记 call_failed（剔出分母）。漏答（null）再补判一轮：只送这些条目，
+      // 提示词按子集重写。一批本来就不超过 --batch，补判因此恰好一次，也不会超过批大小。再漏就留 null。
+      verdicts.push(...await judgeRubricBatchRejudgingOmitted(
         batch,
-        async () => {
+        async (slice) => {
           // 不给超时，模型服务挂起时整夜评分会停在这一批上，后面的题一道都不落盘。
           calls += 1;   // 计在发起处：抛错的那次也是真花了钱的，记在 await 之后会低报付费量
-          return quickTask(prompt, 6000, AbortSignal.timeout(options.callTimeoutMs));
+          return quickTask(buildRubricPrompt(slice, files, inputs), 6000, AbortSignal.timeout(options.callTimeoutMs));
         },
         RETRY_BACKOFF_MS,
         {

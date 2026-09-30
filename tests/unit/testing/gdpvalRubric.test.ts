@@ -5,6 +5,7 @@ import {
   chunkRubric,
   isInsideRoot,
   judgeRubricBatch,
+  judgeRubricBatchRejudgingOmitted,
   parseRubricVerdicts,
   summarizeRun,
   summarizeTask,
@@ -268,6 +269,7 @@ describe('调用失败 ≠ 判不通过（N-GDPVAL-SCORER-CALLFAIL）', () => {
 });
 
 describe('漏判剔出分母（N-GDPVAL-SCORER-UNJUDGED）', () => {
+  const hooks = { sleep: async () => {}, warn: () => {} };
   const verdict = (
     rubricItemId: string,
     score: number,
@@ -275,13 +277,97 @@ describe('漏判剔出分母（N-GDPVAL-SCORER-UNJUDGED）', () => {
     why = '',
   ): GdpvalTaskScore['items'][number] => ({ rubricItemId, criterion: 'c', score, pass, why });
 
-  it('补判后仍漏判的条目不进分母；不可信占比超阈值则 scoreFailed，并退出中位/均值/加权', () => {
-    // 10 条里 2 条仍是 null：2/10 = 0.2，不超过 0.3。分母只留已判的 8 分。
-    const under = summarizeTask('under', [
-      ...Array.from({ length: 8 }, (_, index) => verdict(`ok-${index}`, 1, true)),
-      verdict('miss-1', 1, null),
-      verdict('miss-2', 1, null),
-    ], []);
+  it('漏答的条目自动再判一轮：第二次答上则全部非 null，调用恰好 2 次', async () => {
+    let calls = 0;
+    const seen: string[][] = [];
+    const verdicts = await judgeRubricBatchRejudgingOmitted(
+      items,
+      async (batch) => {
+        calls += 1;
+        seen.push(batch.map((item) => item.rubric_item_id));
+        if (calls === 1) return { success: true, content: '{"verdicts":[{"n":1,"pass":true,"why":"xlsx"}]}' };
+        return {
+          success: true,
+          content: '{"verdicts":[{"n":1,"pass":false,"why":"no sheet"},{"n":2,"pass":true,"why":"1.64"}]}',
+        };
+      },
+      [],
+      hooks,
+    );
+    expect(calls).toBe(2);
+    expect(seen).toEqual([['a', 'b', 'c'], ['b', 'c']]);
+    expect(verdicts.map((item) => item.pass)).toEqual([true, false, true]);
+    expect(verdicts[0].why).toBe('xlsx');
+    expect(verdicts[1].why).toBe('no sheet');
+  });
+
+  it('没有漏答就不补判；整批调用失败也不是漏答，不补判', async () => {
+    let calls = 0;
+    const complete = await judgeRubricBatchRejudgingOmitted(
+      items,
+      async () => {
+        calls += 1;
+        return { success: true, content: '{"verdicts":[{"n":1,"pass":true},{"n":2,"pass":false},{"n":3,"pass":"unknown"}]}' };
+      },
+      [],
+      hooks,
+    );
+    expect(calls).toBe(1);
+    expect(complete.map((item) => item.pass)).toEqual([true, false, 'unknown']);
+
+    calls = 0;
+    const failed = await judgeRubricBatchRejudgingOmitted(
+      items,
+      async () => { calls += 1; return { success: false, error: '402' }; },
+      [],
+      hooks,
+    );
+    expect(calls).toBe(1);
+    expect(failed.every((item) => item.pass === 'call_failed')).toBe(true);
+  });
+
+  it('补判沿用同一套退避：第二次要重试才答上', async () => {
+    const slept: number[] = [];
+    let calls = 0;
+    const verdicts = await judgeRubricBatchRejudgingOmitted(
+      items,
+      async () => {
+        calls += 1;
+        if (calls === 1) return { success: true, content: '{"verdicts":[{"n":1,"pass":true}]}' };
+        if (calls === 2) return { success: false, error: '429' };
+        return { success: true, content: '{"verdicts":[{"n":1,"pass":true},{"n":2,"pass":false}]}' };
+      },
+      [7],
+      { sleep: async (ms) => { slept.push(ms); }, warn: () => {} },
+    );
+    expect(slept).toEqual([7]);
+    expect(calls).toBe(3);
+    expect(verdicts.map((item) => item.pass)).toEqual([true, true, false]);
+  });
+
+  it('补判后仍漏判的条目不进分母；不可信占比超阈值则 scoreFailed，并退出中位/均值/加权', async () => {
+    const many: GdpvalRubricItem[] = Array.from({ length: 10 }, (_, index) => ({
+      score: 1,
+      criterion: `c${index}`,
+      rubric_item_id: `r${index}`,
+    }));
+    let calls = 0;
+    const verdicts = await judgeRubricBatchRejudgingOmitted(
+      many,
+      async () => {
+        calls += 1;
+        if (calls === 1) {
+          const answered = many.slice(0, 8).map((_, index) => `{"n":${index + 1},"pass":true}`).join(',');
+          return { success: true, content: `{"verdicts":[${answered}]}` };
+        }
+        return { success: true, content: '{"verdicts":[]}' };
+      },
+      [],
+      hooks,
+    );
+    expect(calls).toBe(2);
+    // 10 条里 2 条补判后仍是 null：2/10 = 0.2，不超过 0.3。分母只留已判的 8 分。
+    const under = summarizeTask('under', verdicts, []);
     expect(under.unjudged).toBe(2);
     expect(under.total).toBe(8);
     expect(under.earned).toBe(8);

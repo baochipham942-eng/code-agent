@@ -8,7 +8,8 @@
 //   「工作簿里有没有名为 X 的表」「z 值是不是 1.64」。拿截断过的二手回显逐条判，
 //   判出来的每一条都是猜的。所以本评分器的输入是夜跑归档的产物目录，不是轨迹。
 // 判据来源：题自带的 rubric_json（中位 47 条、最多 137 条，每条带分值），逐条问、不猜。
-// 漏判（pass === null）：补判一轮之后仍然没答的条目剔出分母，并单独计数 unjudged。
+// 漏判（pass === null）：judgeRubricBatchRejudgingOmitted 把这些条目再送一批、只补判一轮；
+// 仍然没答的剔出分母，并单独计数 unjudged。
 // 漏判与调用失败合计占比超过阈值则整题 scoreFailed——模型没答不许再当成判负去拉低基线。
 // 调用失败（重试耗尽：401/402/超时）的条目是另一种：整批没拿到判决，剔出分母、绝不按不通过计分，
 // 否则评分故障与「产物确实不合格」无法区分（09-28 401 路由错配 896 条、09-29 402 额度耗尽 5976 条假失败）。
@@ -103,15 +104,20 @@ interface RubricCallResult {
   error?: string;
 }
 
+interface RubricJudgeHooks {
+  sleep: (ms: number) => Promise<void>;
+  warn: (message: string, error?: unknown) => void;
+}
+
 /**
  * 一批判据发给评分模型，失败按退避重试；重试耗尽仍无内容 ⇒ 整批记 call_failed（why=错误原文）。
- * 模型正常返回但漏答的条目仍是 null，二者不混。
+ * 模型正常返回但漏答的条目仍是 null，二者不混。漏答的补判不在这里，见 judgeRubricBatchRejudgingOmitted。
  */
 export async function judgeRubricBatch(
   batch: GdpvalRubricItem[],
   call: () => Promise<RubricCallResult>,
   backoffMs: number[],
-  hooks: { sleep: (ms: number) => Promise<void>; warn: (message: string, error?: unknown) => void },
+  hooks: RubricJudgeHooks,
 ): Promise<GdpvalItemVerdict[]> {
   let content = '';
   let firstError = '';
@@ -140,6 +146,30 @@ export async function judgeRubricBatch(
     pass: 'call_failed' as const,
     why,
   }));
+}
+
+/**
+ * 一批先判一次。仍是 null 的条目（漏答，不是弃权也不是调用失败）再单独送一批，只补这一轮。
+ * 调用方传入的 batch 已经按 --batch 切过，补判不再切开，所以补判恰好一次调用，条数也不会超过批大小。
+ * callFor 收到的是这一次真正要问的条目：提示词必须按这个子集重写，复用整批提示词等于没补判。
+ * 补判结果按 rubric_item_id 盖回去；第二次还是 null 的留 null。
+ */
+export async function judgeRubricBatchRejudgingOmitted(
+  batch: GdpvalRubricItem[],
+  callFor: (items: GdpvalRubricItem[]) => Promise<RubricCallResult>,
+  backoffMs: number[],
+  hooks: RubricJudgeHooks,
+): Promise<GdpvalItemVerdict[]> {
+  const first = await judgeRubricBatch(batch, () => callFor(batch), backoffMs, hooks);
+  const omitted = new Set(
+    first.filter((verdict) => verdict.pass === null).map((verdict) => verdict.rubricItemId),
+  );
+  if (omitted.size === 0) return first;
+  const retryItems = batch.filter((item) => omitted.has(item.rubric_item_id));
+  if (retryItems.length === 0) return first;
+  const second = await judgeRubricBatch(retryItems, () => callFor(retryItems), backoffMs, hooks);
+  const byId = new Map(second.map((verdict) => [verdict.rubricItemId, verdict]));
+  return first.map((verdict) => byId.get(verdict.rubricItemId) ?? verdict);
 }
 
 /**

@@ -413,7 +413,7 @@ const JEV_SKILL_RERANK_QUESTIONS = {
   },
   need_skill: {
     type: 'noul',
-    instructions: 'Does the query require using one of the registered skills in the roster?',
+    instructions: 'Does the query require using one of the registered skills or tools in the roster?',
   },
   need_now: {
     type: 'noul',

@@ -131,7 +131,7 @@ describe('Jev skill/tool rerank', () => {
     expect(result.tools[0]?.name).toBe(names[5]);
   });
 
-  it('does not auto-load skills when need_skill is false, including negative trigger samples', async () => {
+  it('does not auto-load roster candidates when need_skill is false, including negative trigger samples', async () => {
     for (const query of ['润色文案', '整理日志']) {
       const service = new ToolSearchService();
       const leading = registerLeadingMcp(service, query);

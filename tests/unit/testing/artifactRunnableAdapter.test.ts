@@ -24,6 +24,10 @@ const BAD_GAME_REFERENCEERROR = path.join(FIXTURE_DIR, 'bad-game-referenceerror.
 const BAD_GAME_MECHANICS_BROKEN = path.join(FIXTURE_DIR, 'bad-game-mechanics-broken.html');
 const GOOD_GAME_PLAYABLE = path.join(FIXTURE_DIR, 'good-game-playable.html');
 
+// 测试侧显式 deadline（FB-273）：产品默认 LIGHT_PLAYABILITY_SMOKE_MS=6000 不动，
+// 慢 CI 上好标本贴线假红，真浏览器用例统一放宽到 15s。
+const SMOKE_TEST_OPTIONS = { timeoutMs: 15_000 } as const;
+
 async function writeTempFile(content: string | Buffer, fileName: string): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-runnable-'));
   const filePath = path.join(dir, fileName);
@@ -124,7 +128,7 @@ const THROW_ON_LOAD_PAGE = `
 
 describe('checkGameSmoke (light contract)', () => {
   it('judges the bad-game specimen (uncaught ReferenceError on play) not_runnable', async (ctx) => {
-    const result = await checkGameSmoke(BAD_GAME_REFERENCEERROR);
+    const result = await checkGameSmoke(BAD_GAME_REFERENCEERROR, SMOKE_TEST_OPTIONS);
 
     if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('not_runnable');
@@ -137,7 +141,7 @@ describe('checkGameSmoke (light contract)', () => {
   });
 
   it('judges the known-good playable specimen runnable', async (ctx) => {
-    const result = await checkGameSmoke(GOOD_GAME_PLAYABLE);
+    const result = await checkGameSmoke(GOOD_GAME_PLAYABLE, SMOKE_TEST_OPTIONS);
 
     if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('runnable');
@@ -146,7 +150,7 @@ describe('checkGameSmoke (light contract)', () => {
 
   it('judges a canvas whose first pixels arrive 1.5s after load runnable', async (ctx) => {
     const filePath = await writeTempFile(SLOW_FIRST_FRAME_GAME, 'slow-start.html');
-    const result = await checkGameSmoke(filePath);
+    const result = await checkGameSmoke(filePath, SMOKE_TEST_OPTIONS);
 
     if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('runnable');
@@ -155,7 +159,7 @@ describe('checkGameSmoke (light contract)', () => {
 
   it('judges a painted page that throws 800ms after load not_runnable', async (ctx) => {
     const filePath = await writeTempFile(DELAYED_LOAD_ERROR_GAME, 'delayed-load-error.html');
-    const result = await checkGameSmoke(filePath);
+    const result = await checkGameSmoke(filePath, SMOKE_TEST_OPTIONS);
 
     if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('not_runnable');
@@ -164,15 +168,29 @@ describe('checkGameSmoke (light contract)', () => {
 
   it('judges a page that throws 300ms after ArrowRight not_runnable', async (ctx) => {
     const filePath = await writeTempFile(DELAYED_KEY_ERROR_GAME, 'delayed-key-error.html');
-    const result = await checkGameSmoke(filePath);
+    const result = await checkGameSmoke(filePath, SMOKE_TEST_OPTIONS);
 
     if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('not_runnable');
     expect(result.failures.some((failure) => failure.includes('delayedKeyBoom'))).toBe(true);
   });
 
+  it('honours an explicit deadline option (FB-273: 慢 CI 上测试侧放宽 deadline 的接电证明)', async (ctx) => {
+    // 晚首帧标本（1.5s 才画）：15s 下判 runnable；800ms deadline 在首帧前用完——
+    // 快机走「canvas 空白」判红、慢机走 goto 超时判红，两条路都必 not_runnable。
+    // 判红证明 options.timeoutMs 真进了 runLightPlayabilitySmoke 的 deadline。
+    const filePath = await writeTempFile(SLOW_FIRST_FRAME_GAME, 'slow-start-deadline.html');
+    const probe = await checkGameSmoke(filePath, SMOKE_TEST_OPTIONS);
+    if (probe.verdict === 'skipped') ctx.skip();
+    expect(probe.verdict).toBe('runnable');
+
+    const squeezed = await checkGameSmoke(filePath, { timeoutMs: 800 });
+    expect(squeezed.verdict).toBe('not_runnable');
+    expect(squeezed.failures.length).toBeGreaterThan(0);
+  });
+
   it('reports a missing artifact file as file_missing (审计 R1-H1：不许与 not_runnable 混同，防回归标本假绿)', async () => {
-    const result = await checkGameSmoke(path.join(FIXTURE_DIR, 'does-not-exist.html'));
+    const result = await checkGameSmoke(path.join(FIXTURE_DIR, 'does-not-exist.html'), SMOKE_TEST_OPTIONS);
 
     expect(result.verdict).toBe('file_missing');
     expect(result.failures.some((f) => f.includes('not found'))).toBe(true);
@@ -181,7 +199,7 @@ describe('checkGameSmoke (light contract)', () => {
 
 describe('checkGameSmoke (full contract)', () => {
   it('judges the mechanics-broken specimen not_runnable under the full goal-mode contract', async (ctx) => {
-    const result = await checkGameSmoke(BAD_GAME_MECHANICS_BROKEN, { contract: 'full' });
+    const result = await checkGameSmoke(BAD_GAME_MECHANICS_BROKEN, { ...SMOKE_TEST_OPTIONS, contract: 'full' });
 
     if (result.verdict === 'skipped') ctx.skip();
     expect(result.verdict).toBe('not_runnable');

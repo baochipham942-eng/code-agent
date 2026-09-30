@@ -139,6 +139,9 @@ describe('fast gate fail-closed contracts', () => {
       .not.toThrow();
     expect(() => extractGateIds("await gate('inputs', true, run); await gate('inputs', false, run);"))
       .toThrow('duplicate gate registration: inputs');
+    const live = fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8');
+    expect(extractGateIds(live)).toContain('shared-host-boundary');
+    expect(() => validateGateBudgetCoverage(policy, extractGateIds(live))).not.toThrow();
   });
   it('policy leaves 2x headroom over the measured agent-core PR under load (09-15 route-domains TASK run, 3 receipts)', () => {
     // 09-15 负载 ~10 下 TASK 刀逐格实测最大值（tests-typecheck 取单跑 16.7s，vitest 取工单记录的 agentOrchestrator 选中 22.6s）

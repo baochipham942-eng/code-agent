@@ -3,9 +3,12 @@
 // ============================================================================
 
 /**
- * Cron job schedule types
+ * Cron job schedule types.
+ *
+ * `event` jobs have no croner instance and no `nextRunAt`: they are fired by
+ * locally connected channel inbound messages (see `EventScheduleConfig`).
  */
-export type CronScheduleType = 'at' | 'every' | 'cron';
+export type CronScheduleType = 'at' | 'every' | 'cron' | 'event';
 
 /** Execution location selected when a job is created. */
 export type CronRunsOn = 'local' | 'cloud';
@@ -100,7 +103,8 @@ export type CreateCronJobDefinition = Omit<
 export type CronScheduleConfig =
   | AtScheduleConfig
   | EveryScheduleConfig
-  | CronExpressionConfig;
+  | CronExpressionConfig
+  | EventScheduleConfig;
 
 /**
  * One-time schedule at a specific time
@@ -135,6 +139,27 @@ export interface CronExpressionConfig {
   expression: string;
   /** Timezone for the cron expression */
   timezone?: string;
+}
+
+/**
+ * Event-triggered schedule: the job is fired by inbound messages of a channel
+ * account already connected on this machine (ChannelManager), not by time.
+ * No listening port, no HTTP endpoint, no public callback is involved.
+ */
+export interface EventScheduleConfig {
+  type: 'event';
+  /** Event source; only locally connected channels exist today. */
+  source: 'channel';
+  /** Bound channel account id — only this account's messages trigger the job. No wildcard. */
+  accountId: string;
+  /** Optional chat restriction; unset means any chat on the bound account. */
+  chatId?: string;
+  /** Event kind; only inbound 'message' exists today. */
+  eventName: 'message';
+  /** Events arriving within this window merge into one run (seconds). Default 10, max 300. */
+  batchWindowSec?: number;
+  /** Minimum spacing between two runs (seconds). Default 60, floor 30. */
+  minRunIntervalSec?: number;
 }
 
 /**
@@ -239,6 +264,24 @@ export interface RoleWakeAction {
 }
 
 /**
+ * Why an execution ran. Schedule-triggered runs keep this undefined (or carry
+ * `{ kind: 'schedule' }`); event-triggered runs describe the triggering events.
+ */
+export interface CronExecutionTrigger {
+  kind: 'event' | 'schedule';
+  /** Event source; only 'channel' (locally connected channel messages) exists today. */
+  source?: 'channel';
+  /** Channel account whose messages fired the run. */
+  accountId?: string;
+  /** Number of events carried into this run. */
+  eventCount?: number;
+  /** Events dropped (queue overflow or per-run cap) instead of carried. */
+  droppedCount?: number;
+  /** Platform message ids of the carried events. */
+  eventIds?: string[];
+}
+
+/**
  * Cron job execution record
  */
 export interface CronJobExecution {
@@ -268,6 +311,8 @@ export interface CronJobExecution {
   retryAttempt: number;
   /** Exit code for shell commands */
   exitCode?: number;
+  /** Trigger descriptor: why this run happened (event runs only). */
+  trigger?: CronExecutionTrigger;
 }
 
 /**

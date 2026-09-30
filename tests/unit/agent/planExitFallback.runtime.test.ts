@@ -388,6 +388,22 @@ describe('plan exit fallback runtime（ADR-074 K1）', () => {
     expect(recorded).not.toContain('plan_exit_fallback_not_applicable');
   });
 
+  it('①(c) 补推理是澄清文本：不合成卡，只记一次 not_applicable', async () => {
+    const { ctx, modules, runtime } = buildRuntime(true);
+    modules.contextAssembly.inference
+      .mockResolvedValueOnce({ type: 'text', content: PLAN_BODY } as ModelResponse)
+      .mockResolvedValueOnce({ type: 'text', content: '你想先做哪一部分？' } as ModelResponse);
+
+    await runtime.run('出方案');
+
+    expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(2);
+    expect(ctx.messages.filter((m) => m.toolCalls?.some((tc) => tc.id.startsWith('synthetic-plan-')))).toHaveLength(0);
+    const recorded = (ctx.turnTrace.record as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(recorded).toContain('plan_exit_fallback_detected');
+    expect(recorded).toContain('plan_exit_fallback_not_applicable');
+    expect(recorded).not.toContain('plan_exit_fallback_synthesized');
+  });
+
   it('①(c) 澄清问题（问号列表）不触发：一轮即收尾', async () => {
     const { ctx, modules, runtime } = buildRuntime(true);
     modules.contextAssembly.inference

@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-const ANCHOR_RE = /([A-Za-z0-9_./-]+\.ts)#L(\d+)(?:-L(\d+))?/g;
+const ANCHOR_RE = /([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)#L(\d+)(?:-L(\d+))?/g;
 const BANNED_PHRASES = ['已加密', '已审核', '已脱敏', '已验证', 'guaranteed', 'safe'];
 
 function parseTableCells(line) {
@@ -63,7 +63,10 @@ export function checkNotice(text, { exists = () => true, lineCount = () => Numbe
   }
 
   for (const phrase of BANNED_PHRASES) {
-    if (text.includes(phrase)) errors.push(`banned phrase: ${phrase}`);
+    const present = /^[a-z]+$/.test(phrase)
+      ? new RegExp(`\\b${phrase}\\b`, 'i').test(text)
+      : text.includes(phrase);
+    if (present) errors.push(`banned phrase: ${phrase}`);
   }
 
   for (const table of tableRows(text)) {
@@ -94,7 +97,7 @@ function main() {
   const text = fs.readFileSync(noticePath, 'utf8');
   const result = checkNotice(text, {
     exists: (file) => fs.existsSync(path.join(fileRoot, file)),
-    lineCount: (file) => fs.readFileSync(path.join(fileRoot, file), 'utf8').split(/\r?\n/).length,
+    lineCount: (file) => fs.readFileSync(path.join(fileRoot, file), 'utf8').replace(/\r?\n$/, '').split(/\r?\n/).length,
   });
   for (const warning of result.warnings) console.warn(`WARN ${warning}`);
   for (const error of result.errors) console.error(`FAIL ${error}`);

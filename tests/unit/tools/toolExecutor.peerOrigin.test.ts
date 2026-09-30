@@ -67,6 +67,8 @@ import { getPermissionModeManager } from '../../../src/host/permissions/modes';
 import { resetPolicyEnforcer } from '../../../src/host/security/policyEnforcer';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
+import { getPluginOriginForTool, register, unregister } from '../../../src/host/plugins/pluginToolOrigin';
+import { sanitizeToolResultForObservation } from '../../../src/host/agent/runtime/toolObservationSanitizers';
 
 const PEER: AgentMessageOrigin = { senderKind: 'peer-agent', senderAgentId: 'agent-b', sessionId: 's', runId: 'r' };
 const USER: AgentMessageOrigin = { senderKind: 'user', sessionId: 's', runId: 'r' };
@@ -95,6 +97,7 @@ describe('ToolExecutor turn 起源权限闸（ADR-067 D3）', () => {
   });
 
   afterEach(async () => {
+    unregister('Bash');
     execPolicyState.match = () => null;
     classifierState.autoApprove = false;
     if (previousSafetyMode === undefined) delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
@@ -124,6 +127,27 @@ describe('ToolExecutor turn 起源权限闸（ADR-067 D3）', () => {
     sid += 1;
     return `peer-origin-${label}-${sid}`;
   }
+
+  it('approval details and result metadata share the host-derived plugin origin', async () => {
+    // Builtin plugins may register tools without a plugin-id prefix.
+    register('Bash', 'plugin.test', 'Human Plugin');
+    const executor = buildExecutor();
+    const result = await executor.execute(
+      'Bash',
+      { command: 'find . -name dummy.tmp -delete' },
+      { sessionId: sessionId('plugin-origin'), turnOrigin: [PEER] },
+    );
+    const observed = sanitizeToolResultForObservation(
+      { name: 'Bash', arguments: {} },
+      { toolCallId: 'plugin-origin-call', ...result },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0].details).toMatchObject({ pluginId: 'plugin.test', pluginName: 'Human Plugin' });
+    expect(observed.metadata?.pluginOrigin).toEqual(getPluginOriginForTool('Bash'));
+    expect(observed.metadata?.pluginOrigin).toEqual({ pluginId: 'plugin.test', pluginName: 'Human Plugin' });
+    expect(result.success).toBe(false);
+  });
 
   it('peer 起源 bash 必出确认卡：forceConfirm + 卡面带 senderAgentId + turnOrigin 透传', async () => {
     const executor = buildExecutor();

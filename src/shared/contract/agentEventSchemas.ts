@@ -178,6 +178,10 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     affectedFileCount: z.number().int().nonnegative().optional(),
     targetKind: z.enum(FILE_TARGET_KINDS).optional(),
     standingGrantTarget: z.string().optional(),
+    targetApp: z.object({
+      bundleId: z.string().optional(),
+      name: z.string(),
+    }).optional(),
     requestedAccess: z.enum(['read_only', 'read_write']).optional(),
     preview: z.object({
       type: z.enum(['diff', 'command', 'network', 'generic']),

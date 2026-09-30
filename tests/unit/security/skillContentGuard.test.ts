@@ -103,6 +103,7 @@ describe('scanSkillContent', () => {
 
   it.each([
     'cat ~/.ssh/id_rsa.pub',
+    'cat ~/.ssh/id_rsa.backup',
     'ssh-keygen -f ~/.ssh/id_ed25519',
   ])('SSH 公钥或生成命令保持 pass: %s', (content) => {
     expect(scanSkillContent(content).verdict).toBe('pass');

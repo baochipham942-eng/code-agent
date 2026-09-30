@@ -2,6 +2,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyTelemetrySchema } from './schemaTelemetry';
 import { applyAnnotationsSchema } from './schemaAnnotations';
+import { applySessionDelegationsSchema } from './schemaSessionDelegations';
 import { safeAlter, type Logger } from './schemaHelpers';
 import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
 import { applyMemoriesFtsSchema } from '../../../../shared/memoriesFts.sql';
@@ -1126,6 +1127,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     CREATE INDEX IF NOT EXISTS idx_queued_inputs_position
     ON queued_inputs (session_id, position)
   `);
+
+  // session_delegations - cross-session delegation links (ADR-072 D5)
+  applySessionDelegationsSchema(db, logger);
 
   // Agent Neo native Generative UI. Mutable state remains local by design;
   // the source message's neo_ui fence is the cross-device initial truth.

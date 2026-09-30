@@ -35,7 +35,9 @@ import {
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
 import { activateMaxStepsFinalResponse, bindGoalWallClockForContext, createResourceWarning, ensureMaxStepsWrapUp } from './maxStepsFallback';
-import { DoomLoopGuard, collectGuardStepResults, noteGuardSignals } from './doomLoopGuard';
+import { DoomLoopGuard } from './doomLoopGuard';
+import { createJevWarden } from './jevWarden';
+import { runToolStepGuardRails } from './toolStepGuardRails';
 import { createPlanExitFallbackState } from './planExitFallback';
 import { settlePlanExitFallbackOnTextBreak } from './planExitFallbackCard';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
@@ -82,7 +84,7 @@ import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair'
 import { classifyIntent } from '../../telemetry/intentClassifier';
 import { markDistilledSkillTurnSignal } from '../../services/skills/distillSignalStore';
 import { emitGoalAbort } from './goalAbort';
-import { releaseDoomLoopHandbackForSteer, settleDoomLoopHandback } from './doomLoopHandback';
+import { releaseDoomLoopHandbackForSteer } from './doomLoopHandback';
 import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
 import { recordInferenceTrace } from './inferenceCacheTrace';
 import { getCachedDynamicSystemPrompt } from './contextAssembly/runtimeAssemblyCache';
@@ -361,6 +363,8 @@ export class ConversationRuntime {
     let runError: unknown;
     // Doom loop 三层防护（roadmap 1.2）：per-run 实例化 = 计数器每轮用户输入重置
     const doomLoopGuard = new DoomLoopGuard();
+    // Jev 运行时语义主管（N-JEV-WARDEN-MOCK）：开关默认关、判官经注入，per-run 实例化
+    const jevWarden = createJevWarden({ recordTrace: (data) => this.ctx.turnTrace.record('jev_warden', data) });
     // ADR-074 K1：plan-exit 兜底一次性预算，per-run 实例化，runKey 二次防跨 run 复用
     const planExitFallback = createPlanExitFallbackState();
 
@@ -675,6 +679,12 @@ export class ConversationRuntime {
             continue;
           }
           if (textAction === 'break') {
+            // JevWarden fake_done：置位后第一条非强制收尾终局被拦一次（每 run 至多一次）
+            const wardenNudge = jevWarden.interceptFinal(forcedFinalTextPass);
+            if (wardenNudge) {
+              this.contextAssembly.injectSystemMessage(wardenNudge, 'jev-warden');
+              continue;
+            }
             // ADR-074 K1/K2：plan mode 结构化计划正文没配退出工具——先提醒一次补一轮推理（K1）；
             // 补推理仍是结构化正文则宿主从同一段正文合成同形审批卡并就此结束 run（K2）。
             // 兜底窗口的工具面 allowlist 拒绝在 messageProcessor admission 层。
@@ -694,28 +704,18 @@ export class ConversationRuntime {
 
         // 3. Handle tool calls
         if (response.type === 'tool_use' && response.toolCalls) {
-          // Doom loop 防护：L1 同名同参 ×3 → 强警告；警告后仍重复 → 中止交还用户；
-          // L2 整步行动签名 ×3 → nudge（不拒绝，让模型自己换策略）
-          const doomCheck = doomLoopGuard.recordStep(
-            response.toolCalls.map((tc) => ({ name: tc.name, arguments: tc.arguments })),
-          );
-          if (doomCheck.level === 'doom-loop-abort') {
-            const action = await settleDoomLoopHandback(this.ctx, doomLoopGuard, iterations, (text) => {
-              this.contextAssembly.injectSystemMessage(text, 'stagnation-guard');
-            });
-            if (action === 'retry') continue;
-            terminal = { status: 'aborted' };
-            break;
-          }
-          const messagesBeforeTools = this.ctx.messages.length;
-          const toolAction = await this.messageProcessor.handleToolResponse(response, wasForceExecuted, iterations, langfuse);
-          const signalHit = doomLoopGuard.recordResults(collectGuardStepResults(this.ctx.messages, messagesBeforeTools));
-          if (signalHit.signals.length > 0) noteGuardSignals(this.ctx.turnTrace, signalHit.signals);
-          for (const nudge of [doomCheck.nudge, signalHit.nudge]) {
-            if (!nudge) continue;
-            logger.warn(`[DoomLoopGuard] ${nudge === doomCheck.nudge ? doomCheck.level : signalHit.signals.join(',')} detected; injecting nudge`);
-            this.contextAssembly.injectSystemMessage(nudge, 'stagnation-guard');
-          }
+          // Doom loop 防护 + JevWarden 挂点（工具结果 recordResults 之后）：编排抽到
+          // toolStepGuardRails，行为与改动前逐条一致；warden 关时 verdict 恒 none。
+          const rails = await runToolStepGuardRails({
+            ctx: this.ctx, guard: doomLoopGuard, warden: jevWarden, iterations,
+            toolCalls: response.toolCalls.map((tc) => ({ name: tc.name, arguments: tc.arguments })),
+            assistantText: response.content,
+            inject: (text, source) => this.contextAssembly.injectSystemMessage(text, source),
+            runTools: () => this.messageProcessor.handleToolResponse(response, wasForceExecuted, iterations, langfuse),
+          });
+          if (rails.outcome === 'retry') continue;
+          if (rails.outcome === 'abort') { terminal = { status: 'aborted' }; break; }
+          const toolAction = rails.toolAction;
           if (
             toolAction === 'continue-soft-validation'
             && softValidationRetries < TOOL_ARGS_REPAIR_MAX_ATTEMPTS

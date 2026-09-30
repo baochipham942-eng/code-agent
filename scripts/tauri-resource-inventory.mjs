@@ -25,11 +25,19 @@ const betterSqlite3Platform = process.platform === 'linux'
   ? 'linuxmusl'
   : process.platform;
 const betterSqlite3Prebuild = `dist/native/better-sqlite3/prebuilds/${betterSqlite3Platform}-${process.arch}.node`;
+const keytarNative = 'node_modules/keytar/build/Release/keytar.node';
+// Base tauri.conf.json ships prebuilds/darwin-arm64; the x64 overlay rewrites that
+// arch. Verify the arch this process is bundling. Windows/Linux skip this path.
+const nodePtyDarwinNative = `node_modules/node-pty/prebuilds/darwin-${process.arch}/pty.node`;
 
 const REQUIRED_STARTUP_RESOURCES = [
   'dist/renderer/index.html',
   betterSqlite3Prebuild,
+  keytarNative,
 ];
+if (process.platform === 'darwin') {
+  REQUIRED_STARTUP_RESOURCES.push(nodePtyDarwinNative);
+}
 
 function readArg(name) {
   const index = process.argv.indexOf(name);

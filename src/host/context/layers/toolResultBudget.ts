@@ -8,8 +8,9 @@
 // ============================================================================
 
 import { CompressionState } from '../compressionState';
-import { estimateTokens } from '../tokenEstimator';
+import { estimateTokens, TOKEN_RATIOS } from '../tokenEstimator';
 import { spillToolResultArchive, buildSpillNotice } from '../../utils/toolResultSpill';
+import { BASH } from '../../../shared/constants';
 
 export interface ToolResultBudgetConfig {
   maxTokensPerResult: number; // default: resolver fallback when no window is known
@@ -43,6 +44,7 @@ const MAX_L1_MAX_TOKENS = 16000;
 export interface ToolResultBudget {
   l1MaxTokens: number;
   l0MaxTokens: number;
+  maxOutputChars: number;
 }
 
 /**
@@ -64,16 +66,28 @@ export function resolveToolResultBudget(
     ? Math.round(numericOverride)
     : undefined;
   if (override !== undefined) {
-    return { l1MaxTokens: override, l0MaxTokens: override * 2 };
+    return {
+      l1MaxTokens: override,
+      l0MaxTokens: override * 2,
+      maxOutputChars: override * 2 * TOKEN_RATIOS.CODE,
+    };
   }
   if (!hasWindow) {
-    return { l1MaxTokens: FALLBACK_L1_MAX_TOKENS, l0MaxTokens: FALLBACK_L0_MAX_TOKENS };
+    return {
+      l1MaxTokens: FALLBACK_L1_MAX_TOKENS,
+      l0MaxTokens: FALLBACK_L0_MAX_TOKENS,
+      maxOutputChars: BASH.MAX_OUTPUT_LENGTH,
+    };
   }
   const l1MaxTokens = Math.min(
     MAX_L1_MAX_TOKENS,
     Math.max(MIN_L1_MAX_TOKENS, Math.round(contextWindowTokens / 64)),
   );
-  return { l1MaxTokens, l0MaxTokens: l1MaxTokens * 2 };
+  return {
+    l1MaxTokens,
+    l0MaxTokens: l1MaxTokens * 2,
+    maxOutputChars: l1MaxTokens * 2 * TOKEN_RATIOS.CODE,
+  };
 }
 const NEXT_READ_HINT =
   '\n[next-read] If the archived result names source files, call Read on the exact file before Edit or overwrite Write.';

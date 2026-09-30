@@ -344,10 +344,10 @@ describe('applyToolResultBudget', () => {
 
 describe('resolveToolResultBudget', () => {
   it.each([
-    [32_000, { l1MaxTokens: 1_000, l0MaxTokens: 2_000 }],
-    [200_000, { l1MaxTokens: 3_125, l0MaxTokens: 6_250 }],
-    [1_000_000, { l1MaxTokens: 15_625, l0MaxTokens: 31_250 }],
-    [2_000_000, { l1MaxTokens: 16_000, l0MaxTokens: 32_000 }],
+    [32_000, { l1MaxTokens: 1_000, l0MaxTokens: 2_000, maxOutputChars: 6_000 }],
+    [200_000, { l1MaxTokens: 3_125, l0MaxTokens: 6_250, maxOutputChars: 18_750 }],
+    [1_000_000, { l1MaxTokens: 15_625, l0MaxTokens: 31_250, maxOutputChars: 93_750 }],
+    [2_000_000, { l1MaxTokens: 16_000, l0MaxTokens: 32_000, maxOutputChars: 96_000 }],
   ])('derives thresholds for %d-token windows', (window, expected) => {
     expect(resolveToolResultBudget(window)).toEqual(expected);
   });
@@ -355,7 +355,7 @@ describe('resolveToolResultBudget', () => {
   it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
     'uses legacy fallbacks for unknown window %s',
     (window) => {
-      expect(resolveToolResultBudget(window)).toEqual({ l1MaxTokens: 2_000, l0MaxTokens: 4_096 });
+      expect(resolveToolResultBudget(window)).toEqual({ l1MaxTokens: 2_000, l0MaxTokens: 4_096, maxOutputChars: 30_000 });
     },
   );
 
@@ -363,6 +363,7 @@ describe('resolveToolResultBudget', () => {
     expect(resolveToolResultBudget(200_000, 'large-output-tool', 7_500)).toEqual({
       l1MaxTokens: 7_500,
       l0MaxTokens: 15_000,
+      maxOutputChars: 45_000,
     });
   });
 

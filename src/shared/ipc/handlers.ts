@@ -243,6 +243,10 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_GET]: () => Promise<ContextCompressionChannelState>;
   [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_SET]: (patch: ContextCompressionConfigPatch) => Promise<ContextCompressionChannelState>;
 
+  // Read-only side chat. The answer is not a session message.
+  [IPC_CHANNELS.SIDE_CHAT_ASK]: (payload: { sessionId: string; question: string; requestId: string }) => Promise<{ answer: string }>;
+  [IPC_CHANNELS.SIDE_CHAT_ABORT]: (payload: { requestId: string }) => Promise<{ aborted: boolean }>;
+
   // Skills
   [SKILL_CHANNELS.REPO_LIST]: () => Promise<LocalSkillLibrary[]>;
   [SKILL_CHANNELS.REPO_DOWNLOAD]: (repo: SkillRepository) => Promise<DownloadResult>;

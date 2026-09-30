@@ -25,6 +25,7 @@ export { BackgroundTaskSchemas } from './backgroundTask';
 export type { BackgroundTaskRequest } from './backgroundTask';
 export { QueuedInputSchemas, QueuedInputSchema } from './queuedInput';
 export type { QueuedInputRequest } from './queuedInput';
+export { SideChatSchemas } from './sideChat';
 export { VoiceSchemas } from './voice';
 export type { VoiceUserTextInjectionRequest } from './voice';
 export { AdminSchemas } from './admin';

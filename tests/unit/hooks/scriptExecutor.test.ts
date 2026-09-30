@@ -193,6 +193,7 @@ describe('executeScript output parsing', () => {
     );
 
     expect(result.action).toBe('allow');
+    expect(result.message!.length).toBeLessThan(30000);
     expect(result.message).toContain('[Full output saved to:');
     expect(estimateTokens(result.message!.split('\n[Full output saved to:')[0])).toBeLessThanOrEqual(
       HOOK_OUTPUT_BUDGET.DEFAULT_TOKENS + 20,

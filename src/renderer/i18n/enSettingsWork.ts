@@ -294,7 +294,7 @@ export const enSettingsWork = {
         fallbackProxyUrlLabel: 'Fallback proxy URL (optional)',
         fallbackProxyUrlPlaceholder: 'Automatically switch when the primary proxy is unavailable',
         allowedUserIdsLabel: 'Allowlisted user IDs (optional)',
-        allowedUserIdsPlaceholder: 'Comma-separated; leave blank to allow all users',
+        allowedUserIdsPlaceholder: 'Comma-separated; blank = strangers get guest access (read-only tools), groups need @ or a reply',
         telegramTipSearchPrefix: 'Search ',
         telegramTipSearchSuffix: ' in Telegram to create a Bot',
         telegramTipNewBotPrefix: 'Send ',

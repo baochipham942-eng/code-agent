@@ -27,6 +27,7 @@ import { getCurrentActivityContext } from '../../services/activity/activityConte
 import { formatActivityPromptContext } from '../../services/activity/activityPromptFormatter';
 import { getSessionManager } from '../../services';
 import { generateMessageId } from '../../../shared/utils/id';
+import { formatThrownError } from '../../../shared/utils/providerError';
 import { getSessionTodos, setSessionTodos } from '../../agent/todoParser';
 import { resolveContextWindow } from '../../model/modelLimits';
 import { estimateTokens } from '../../context/tokenOptimizer';
@@ -437,7 +438,7 @@ export async function persistFailedRunContinuationContext(
   iterations: number,
   error: unknown,
 ): Promise<void> {
-  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorMessage = formatThrownError(error);
   const truncatedUserMessage = userMessage.length > 2000
     ? `${userMessage.slice(0, 2000)}\n...[truncated user request]...`
     : userMessage;

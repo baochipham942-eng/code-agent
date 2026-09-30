@@ -231,8 +231,9 @@ describe('FolderTrustDialog', () => {
     const block = screen.getByRole('button', { name: zh.folderTrust.block });
     const trust = screen.getByRole('button', { name: zh.folderTrust.trust });
     expect(document.activeElement).toBe(block);
-    expect(block.className).toContain('bg-amber-600');
-    expect(trust.className).not.toContain('bg-amber-600');
+    expect(block.className).toContain('bg-amber-700');
+    expect(block.className).toContain('hover:bg-amber-800');
+    expect(trust.className).not.toContain('bg-amber-700');
 
     fireEvent.click(block);
     expect(onBlock).toHaveBeenCalledTimes(1);

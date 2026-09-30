@@ -3,8 +3,12 @@ import { MCPClient } from '../../../src/host/mcp/mcpClient';
 import { MCPToolRegistry } from '../../../src/host/mcp/mcpToolRegistry';
 import { MCP_TIMEOUTS } from '../../../src/shared/constants/timeouts';
 
-// Reap 候选必须是「能懒加载回来」的 server：stdio 且未显式关闭 lazyLoad。
+// Reap 候选必须显式 stateless，并且能懒加载回来（stdio 且未关闭 lazyLoad）。
 // 用这个当默认夹具——它是 isReapable() 判真的那一类。
+const REAPABLE_STDIO = {
+  name: 'local', type: 'stdio' as const, command: 'echo', args: ['hi'], enabled: true, stateless: true,
+};
+
 function connectedClient(now: () => number) {
   const client = new MCPClient({
     idleReaping: { enabled: true, ttlMs: 100, scanIntervalMs: 25 },
@@ -13,15 +17,30 @@ function connectedClient(now: () => number) {
   const sdkClient = { close: vi.fn(async () => {}) };
   const clients = (client as unknown as { clients: Map<string, unknown> }).clients;
   clients.set('local', sdkClient);
-  (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('local', {
-    name: 'local', type: 'stdio', command: 'echo', args: ['hi'], enabled: true,
-  });
+  (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('local', REAPABLE_STDIO);
   (client as unknown as { serverStates: Map<string, unknown> }).serverStates.set('local', {
-    config: { name: 'local', type: 'stdio', command: 'echo', args: ['hi'], enabled: true },
+    config: REAPABLE_STDIO,
     status: 'connected', toolCount: 0, resourceCount: 0,
   });
   (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('local', 0);
   return { client, sdkClient };
+}
+
+function attachStatelessIdleServer(client: MCPClient, lastUsedAt: number) {
+  const sdkClient = { close: vi.fn(async () => {}) };
+  (client as unknown as { clients: Map<string, unknown> }).clients.set('local', sdkClient);
+  (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('local', REAPABLE_STDIO);
+  (client as unknown as { serverStates: Map<string, unknown> }).serverStates.set('local', {
+    config: REAPABLE_STDIO, status: 'connected', toolCount: 0, resourceCount: 0,
+  });
+  (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('local', lastUsedAt);
+  return sdkClient;
+}
+
+async function advanceToDefaultTtl(expectReaped: { close: ReturnType<typeof vi.fn> }): Promise<void> {
+  await vi.advanceTimersByTimeAsync(MCP_TIMEOUTS.IDLE_REAP_TTL - 1);
+  expect(expectReaped.close).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(MCP_TIMEOUTS.IDLE_REAP_SCAN);
 }
 
 describe('MCPClient idle connection reaping', () => {
@@ -34,7 +53,7 @@ describe('MCPClient idle connection reaping', () => {
     const sdkClient = { close: vi.fn(async () => {}) };
     (client as unknown as { clients: Map<string, unknown> }).clients.set('local', sdkClient);
     (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('local', {
-      name: 'local', type: 'stdio', command: 'echo', enabled: true,
+      name: 'local', type: 'stdio', command: 'echo', enabled: true, stateless: true,
     });
     (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('local', 0);
     now = 100;
@@ -43,6 +62,34 @@ describe('MCPClient idle connection reaping', () => {
     client.configureIdleReaping({ enabled: true, ttlMs: 1, scanIntervalMs: 1 });
     await vi.advanceTimersByTimeAsync(1);
     expect(sdkClient.close).toHaveBeenCalledOnce();
+  });
+
+  it('reaps a stateless stdio server after the default ttl when idle reaping is omitted, and not when enabled is false', async () => {
+    vi.setSystemTime(0);
+    const omitted = new MCPClient();
+    const omittedSdk = attachStatelessIdleServer(omitted, 0);
+    await advanceToDefaultTtl(omittedSdk);
+    expect(omittedSdk.close).toHaveBeenCalledOnce();
+    expect(omitted.isConnected('local')).toBe(false);
+    omitted.stopIdleReaper();
+
+    vi.clearAllTimers();
+    vi.setSystemTime(0);
+    const reconfigured = new MCPClient({ idleReaping: { enabled: false } });
+    const reconfiguredSdk = attachStatelessIdleServer(reconfigured, 0);
+    reconfigured.configureIdleReaping(undefined);
+    await advanceToDefaultTtl(reconfiguredSdk);
+    expect(reconfiguredSdk.close).toHaveBeenCalledOnce();
+    expect(reconfigured.isConnected('local')).toBe(false);
+    reconfigured.stopIdleReaper();
+
+    vi.clearAllTimers();
+    vi.setSystemTime(0);
+    const disabled = new MCPClient({ idleReaping: { enabled: false } });
+    const disabledSdk = attachStatelessIdleServer(disabled, 0);
+    await vi.advanceTimersByTimeAsync(MCP_TIMEOUTS.IDLE_REAP_TTL + MCP_TIMEOUTS.IDLE_REAP_SCAN);
+    expect(disabledSdk.close).not.toHaveBeenCalled();
+    expect(disabled.isConnected('local')).toBe(true);
   });
 
   it('reaps an idle connection and the next lazy operation reconnects', async () => {
@@ -220,10 +267,10 @@ describe('MCPClient idle connection reaping', () => {
     const sdkClient = { close: vi.fn(async () => {}) };
     (client as unknown as { clients: Map<string, unknown> }).clients.set('local', sdkClient);
     (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('local', {
-      name: 'local', type: 'stdio', command: 'echo', args: ['hi'], enabled: true,
+      name: 'local', type: 'stdio', command: 'echo', args: ['hi'], enabled: true, stateless: true,
     });
     (client as unknown as { serverStates: Map<string, unknown> }).serverStates.set('local', {
-      config: { name: 'local', type: 'stdio', command: 'echo', args: ['hi'], enabled: true },
+      config: { name: 'local', type: 'stdio', command: 'echo', args: ['hi'], enabled: true, stateless: true },
       status: 'connected', toolCount: 0, resourceCount: 0,
     });
     (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('local', 0);
@@ -269,5 +316,206 @@ describe('MCPClient idle connection reaping', () => {
 
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
     expect(ensureConnected).toHaveBeenCalledWith('local', controller.signal);
+  });
+
+  it('does not reap an unmarked stdio server when stateless is absent', async () => {
+    let now = 0;
+    const client = new MCPClient({ idleReaping: { enabled: true, ttlMs: 100, scanIntervalMs: 25 }, now: () => now });
+    const sdkClient = { close: vi.fn(async () => {}) };
+    const config = { name: 'local', type: 'stdio' as const, command: 'echo', args: ['hi'], enabled: true };
+    (client as unknown as { clients: Map<string, unknown> }).clients.set('local', sdkClient);
+    (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('local', config);
+    (client as unknown as { serverStates: Map<string, unknown> }).serverStates.set('local', {
+      config, status: 'connected', toolCount: 0, resourceCount: 0,
+    });
+    (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('local', 0);
+
+    now = 500;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(sdkClient.close).not.toHaveBeenCalled();
+    expect(client.isConnected('local')).toBe(true);
+  });
+
+  it('reaps a stateless stdio server after the idle ttl', async () => {
+    let now = 0;
+    const { client, sdkClient } = connectedClient(() => now);
+    now = 100;
+    await vi.advanceTimersByTimeAsync(25);
+    expect(sdkClient.close).toHaveBeenCalledOnce();
+    expect(client.isConnected('local')).toBe(false);
+    expect(client.getServerStates().find((state) => state.config.name === 'local')?.status).toBe('lazy');
+  });
+
+  it('puts the restart notice on the first tool result after a reap and not the second', async () => {
+    let now = 0;
+    const { client, sdkClient } = connectedClient(() => now);
+    const fresh = {
+      callTool: vi.fn(async () => ({ content: [{ type: 'text', text: 'pong' }] })),
+      close: vi.fn(async () => {}),
+    };
+    vi.spyOn(client, 'connect').mockImplementation(async (config) => {
+      (client as unknown as { clients: Map<string, unknown> }).clients.set(config.name, fresh);
+      const state = (client as unknown as { serverStates: Map<string, { status: string }> }).serverStates.get(config.name);
+      if (state) state.status = 'connected';
+      (client as unknown as { bumpServerConnectionGeneration: (name: string, rememberBirth?: boolean) => void })
+        .bumpServerConnectionGeneration(config.name, true);
+    });
+
+    now = 100;
+    await vi.advanceTimersByTimeAsync(25);
+    expect(sdkClient.close).toHaveBeenCalledOnce();
+
+    const notice = 'MCP server local was restarted after idle; prior session state is gone';
+    const first = await client.callTool('c1', 'local', 'ping', {});
+    expect(first.output).toContain(notice);
+    expect(first.output).toContain('pong');
+
+    const second = await client.callTool('c2', 'local', 'ping', {});
+    expect(second.output).toBe('pong');
+    expect(second.output).not.toContain('was restarted after idle');
+  });
+
+  it('does not attach a restart notice on a first-ever connect', async () => {
+    const client = new MCPClient({
+      idleReaping: { enabled: true, ttlMs: 100_000, scanIntervalMs: 60_000 },
+      now: () => 0,
+    });
+    const fresh = {
+      callTool: vi.fn(async () => ({ content: [{ type: 'text', text: 'pong' }] })),
+      close: vi.fn(async () => {}),
+    };
+    vi.spyOn(client, 'connect').mockImplementation(async (config) => {
+      (client as unknown as { clients: Map<string, unknown> }).clients.set(config.name, fresh);
+      const state = (client as unknown as { serverStates: Map<string, { status: string }> }).serverStates.get(config.name);
+      if (state) state.status = 'connected';
+      (client as unknown as { bumpServerConnectionGeneration: (name: string, rememberBirth?: boolean) => void })
+        .bumpServerConnectionGeneration(config.name, true);
+    });
+    client.addServer({
+      name: 'local', type: 'stdio', command: 'echo', args: ['hi'], enabled: true, stateless: true,
+    });
+
+    const result = await client.callTool('c1', 'local', 'ping', {});
+    expect(result.output).toBe('pong');
+    expect(result.output).not.toContain('was restarted after idle');
+    expect(fresh.callTool).toHaveBeenCalledOnce();
+  });
+
+  it('does not use a closing client when its generation was already bumped and reconnects once', async () => {
+    const now = 0;
+    const { client } = connectedClient(() => now);
+    const closing = {
+      callTool: vi.fn(async () => { throw new Error('closed client used'); }),
+      close: vi.fn(async () => {}),
+    };
+    (client as unknown as { clients: Map<string, unknown> }).clients.set('local', closing);
+    const generations = (client as unknown as { serverConnectionGenerations: Map<string, number> }).serverConnectionGenerations;
+    const births = (client as unknown as { clientBirthGeneration: Map<string, number> }).clientBirthGeneration;
+    // disconnect() increments the generation before close() finishes, while this client is still mapped.
+    generations.set('local', 2);
+    births.set('local', 1);
+
+    const fresh = {
+      callTool: vi.fn(async () => ({ content: [{ type: 'text', text: 'fresh' }] })),
+      close: vi.fn(async () => {}),
+    };
+    const connect = vi.spyOn(client, 'connect').mockImplementation(async (config) => {
+      (client as unknown as { clients: Map<string, unknown> }).clients.set(config.name, fresh);
+      const state = (client as unknown as { serverStates: Map<string, { status: string }> }).serverStates.get(config.name);
+      if (state) state.status = 'connected';
+      (client as unknown as { bumpServerConnectionGeneration: (name: string, rememberBirth?: boolean) => void })
+        .bumpServerConnectionGeneration(config.name, true);
+    });
+
+    const result = await client.callTool('c1', 'local', 'ping', {});
+    expect(closing.callTool).not.toHaveBeenCalled();
+    expect(connect).toHaveBeenCalledOnce();
+    expect(fresh.callTool).toHaveBeenCalledOnce();
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('fresh');
+  });
+
+  it('does not let a mid-reap tool call lose the replacement stdio connection', async () => {
+    let now = 0;
+    const { client, sdkClient } = connectedClient(() => now);
+    const transports = (client as unknown as {
+      transports: Map<string, { pid?: number; close: () => Promise<void> }>;
+    }).transports;
+    const oldTransport = { pid: 111, close: vi.fn(async () => {}) };
+    transports.set('local', oldTransport);
+    const registry = (client as unknown as { registry: MCPToolRegistry }).registry;
+    registry.tools.push({
+      serverName: 'local', name: 'ping', description: 'ping', inputSchema: { type: 'object', properties: {} },
+    });
+    const generations = (client as unknown as { serverConnectionGenerations: Map<string, number> }).serverConnectionGenerations;
+    const births = (client as unknown as { clientBirthGeneration: Map<string, number> }).clientBirthGeneration;
+    generations.set('local', 1);
+    births.set('local', 1);
+
+    const closingCall = vi.fn(async () => {
+      throw new Error('closed client used');
+    });
+    Object.assign(sdkClient, { callTool: closingCall });
+    let closeFinished = false;
+    let releaseClose: () => void = () => {};
+    sdkClient.close.mockImplementation(() => new Promise<void>((resolve) => {
+      releaseClose = () => {
+        closeFinished = true;
+        resolve();
+      };
+    }));
+
+    const fresh = {
+      callTool: vi.fn(async () => ({ content: [{ type: 'text', text: 'pong' }] })),
+      close: vi.fn(async () => {}),
+    };
+    const newTransport = { pid: 4242, close: vi.fn(async () => {}) };
+    let connectStartedBeforeClose = false;
+    const connect = vi.spyOn(client, 'connect').mockImplementation(async (config) => {
+      connectStartedBeforeClose = !closeFinished;
+      (client as unknown as { clients: Map<string, unknown> }).clients.set(config.name, fresh);
+      transports.set(config.name, newTransport);
+      registry.tools = [{
+        serverName: 'local', name: 'ping', description: 'ping', inputSchema: { type: 'object', properties: {} },
+      }];
+      const state = (client as unknown as { serverStates: Map<string, { status: string; toolCount: number }> }).serverStates.get(config.name);
+      if (state) {
+        state.status = 'connected';
+        state.toolCount = 1;
+      }
+      (client as unknown as { bumpServerConnectionGeneration: (name: string, rememberBirth?: boolean) => void })
+        .bumpServerConnectionGeneration(config.name, true);
+    });
+
+    now = 100;
+    const reapSettled = (client as unknown as {
+      idleReaper: { reapIdleConnections: () => Promise<void> };
+    }).idleReaper.reapIdleConnections();
+    const toolSettled = client.callTool('c-race', 'local', 'ping', {});
+    await Promise.resolve();
+    releaseClose();
+    const result = await toolSettled;
+    await reapSettled;
+
+    expect(result.success).toBe(true);
+    expect(closingCall).not.toHaveBeenCalled();
+    expect(connect).toHaveBeenCalledOnce();
+    expect(fresh.callTool).toHaveBeenCalledOnce();
+    expect(oldTransport.close).toHaveBeenCalledOnce();
+    expect({
+      connectStartedBeforeClose,
+      status: client.getServerState('local')?.status,
+      pids: client.getStdioChildPids(),
+      transportCount: transports.size,
+      sameTransport: transports.get('local') === newTransport,
+      toolResolvable: client.getToolDefinitions().some((tool) => tool.name === 'mcp__local__ping'),
+    }).toEqual({
+      connectStartedBeforeClose: false,
+      status: 'connected',
+      pids: [4242],
+      transportCount: 1,
+      sameTransport: true,
+      toolResolvable: true,
+    });
   });
 });

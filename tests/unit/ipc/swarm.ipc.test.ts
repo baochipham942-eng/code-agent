@@ -433,6 +433,26 @@ describe('swarm.ipc run-scoped control plane', () => {
     );
   });
 
+  // N-MEMBER-INPUT-DROP（PR#2153 复审）：重连后仍在跑（running-recovered）的成员照样走 SpawnGuard 回退，
+  // 不能因为只认 'running' 被判成已收工拒收。
+  it('delivers through SpawnGuard to a running-recovered member instead of rejecting it as finished', async () => {
+    coordinatorA.canReceiveMessage.mockReturnValue(false);
+    coordinatorA.sendMessage.mockResolvedValue(false);
+    spawnGuardState.get.mockReturnValue({ status: 'running-recovered' });
+    spawnGuardState.sendMessage.mockReturnValue(true);
+
+    const result = await handler('swarm:send-user-message')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      message: '重连后补一句',
+      timestamp: 778,
+    } as never);
+
+    expect(result).toEqual({ delivered: true, persisted: true });
+    expect(spawnGuardState.sendMessage).toHaveBeenCalled();
+  });
+
   // N-SUBAGENT-INPUT：改道时投给成员的 message 带指令行，账本/落库只收 displayMessage 原话
   it('persists and ledgers displayMessage while delivering the full message to the agent', async () => {
     const result = await handler('swarm:send-user-message')({}, {

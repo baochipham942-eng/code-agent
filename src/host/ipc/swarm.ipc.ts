@@ -35,6 +35,7 @@ import { createLogger } from '../services/infra/logger';
 import { getSessionManager } from '../services';
 import { getEventBus } from '../services/eventing/bus';
 import { SWARM_TRACE } from '../../shared/constants/storage';
+import { isLiveRunningStatus } from '../agent/spawnGuard';
 
 const logger = createLogger('SwarmIPC');
 
@@ -225,7 +226,7 @@ export async function sendSwarmUserMessage(
 
     const canDeliverToParallel = coordinator.canReceiveMessage(payload.agentId);
     const spawnGuardAgent = services.spawnGuard.get?.(payload.agentId, ref);
-    const canDeliverToSpawnGuard = spawnGuardAgent?.status === 'running';
+    const canDeliverToSpawnGuard = isLiveRunningStatus(spawnGuardAgent?.status);
 
     if (!canDeliverToParallel && !canDeliverToSpawnGuard) {
       const failure = undeliveredFollowUpFailure(countLiveFollowUps(payload.agentId, coordinator, services.spawnGuard));
@@ -257,7 +258,7 @@ export async function sendSwarmUserMessage(
         return false;
       }
       if (coordinator.canReceiveMessage(agentId)) return true;
-      return services.spawnGuard.get?.(agentId, ref)?.status === 'running';
+      return isLiveRunningStatus(services.spawnGuard.get?.(agentId, ref)?.status);
     });
     const sessionMessage = buildPersistedUserMessage(payload, scope, validatedTargetIds);
     // ADR-067 D1：用户直达消息的来源由宿主在此 IPC 入队点铸造（senderKind='user'）。

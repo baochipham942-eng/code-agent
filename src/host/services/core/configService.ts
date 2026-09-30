@@ -46,6 +46,12 @@ const CONFIG_SELF_WRITE_WINDOW_MS = 1500;
 const SHARED_SEARCH_SERVICE_KEYS = ['brave', 'exa', 'firecrawl', 'openai', 'perplexity', 'tavily'] as const;
 // 接受托管 key 的内置 provider 白名单（先开 xiaomi/MiMo；控制面下发清单之外的一律拒收）
 const SHARED_MODEL_PROVIDER_KEYS = ['xiaomi'] as const;
+const DISCLOSURE_LEVELS = ['simple', 'standard', 'advanced', 'expert'] as const;
+type PersistedDisclosureLevel = (typeof DISCLOSURE_LEVELS)[number];
+
+function isPersistedDisclosureLevel(value: unknown): value is PersistedDisclosureLevel {
+  return typeof value === 'string' && (DISCLOSURE_LEVELS as readonly string[]).includes(value);
+}
 
 const moduleDir = typeof __dirname === 'string'
   ? __dirname
@@ -609,17 +615,9 @@ export class ConfigService implements IReadConfigService {
           this.settings.ui.fontSize = keychainSettings.fontSize;
         }
 
-        // Restore showToolCalls
-        if (typeof keychainSettings.showToolCalls === 'boolean') {
-          this.settings.ui.showToolCalls = keychainSettings.showToolCalls;
-        }
-
-        // Restore disclosureLevel
-        if (keychainSettings.disclosureLevel && typeof keychainSettings.disclosureLevel === 'string') {
-          const validLevels = ['simple', 'standard', 'advanced', 'expert'];
-          if (validLevels.includes(keychainSettings.disclosureLevel)) {
-            this.settings.ui.disclosureLevel = keychainSettings.disclosureLevel as 'simple' | 'standard' | 'advanced' | 'expert';
-          }
+        // 不认识的键直接跳过。非法级别不覆盖磁盘上已经有效的值。
+        if (isPersistedDisclosureLevel(keychainSettings.disclosureLevel)) {
+          this.settings.ui.disclosureLevel = keychainSettings.disclosureLevel;
         }
 
         // === 超时配置 ===
@@ -1252,7 +1250,6 @@ export class ConfigService implements IReadConfigService {
         language: this.settings.ui.language,
         theme: this.settings.ui.theme,
         fontSize: this.settings.ui.fontSize,
-        showToolCalls: this.settings.ui.showToolCalls,
         disclosureLevel: this.settings.ui.disclosureLevel,
         // 超时配置
         timeoutComplexity: this.settings.timeouts?.complexity,
@@ -1276,6 +1273,10 @@ export class ConfigService implements IReadConfigService {
 
   private mergeAppSettings(base: AppSettings, updates: Partial<AppSettings>): AppSettings {
     const merged = this.mergeSettings(base, updates);
+    // 先拷贝再改，避免浅合并时写穿 DEFAULT_SETTINGS。
+    if (!isPersistedDisclosureLevel(merged.ui.disclosureLevel)) {
+      merged.ui = { ...merged.ui, disclosureLevel: 'standard' };
+    }
     const persistedRules = updates.models?.taskStrategy?.rules;
     const defaultRules = DEFAULT_SETTINGS.models.taskStrategy?.rules;
     if (!persistedRules || !defaultRules || !merged.models.taskStrategy) {

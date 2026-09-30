@@ -92,13 +92,19 @@ describe('PermissionCard peer 起源标注（ADR-067 D3）', () => {
     for (const agentId of ['default', 'role-writer'] as const) {
       const attributed = baseRequest({
         agentId,
-        details: { command: 'rm -rf /tmp/x', pluginId: 'example.plugin' },
+        details: {
+          command: 'rm -rf /tmp/x',
+          pluginId: 'example.plugin',
+          pluginName: 'Example Plugin',
+        },
       });
       const zh = renderInLanguage(attributed, 'zh');
       const en = renderInLanguage(attributed, 'en');
-      expect(zh, agentId).toContain('来自插件 example.plugin');
+      expect(zh, agentId).toContain('来自插件《Example Plugin》');
+      expect(zh, agentId).not.toContain('example.plugin');
       expect(zh, agentId).not.toContain('来自子 agent');
-      expect(en, agentId).toContain('From plugin example.plugin');
+      expect(en, agentId).toContain('From plugin Example Plugin');
+      expect(en, agentId).not.toContain('example.plugin');
       expect(en, agentId).not.toContain('From subagent');
       expect(en, agentId).not.toContain(agentId);
     }
@@ -107,5 +113,11 @@ describe('PermissionCard peer 起源标注（ADR-067 D3）', () => {
     expect(withoutAttribution).not.toContain('From plugin');
     expect(withoutAttribution).not.toContain('From subagent');
     expect(withoutAttribution).not.toContain('default');
+  });
+
+  it('falls back to the plugin id on older requests without a display name', () => {
+    const request = baseRequest({ details: { pluginId: 'example.plugin' } });
+    expect(renderInLanguage(request, 'zh')).toContain('来自插件《example.plugin》');
+    expect(renderInLanguage(request, 'en')).toContain('From plugin example.plugin');
   });
 });

@@ -722,9 +722,10 @@ async function main(): Promise<void> {
       { role: 'user', content: userContent },
     ];
     try {
-      // 2048：StepFun step-3.5-flash 是 reasoning 模型，512 会被思考烧光导致空 content
-      // （实测 62/95 空）；2048 实测 finish=stop 且 content 为纯 JSON。DeepSeek/Kimi 同值无害。
-      const result = await backend.call(messages, 2048);
+      // 4096：StepFun step-3.5-flash 是 reasoning 模型，512 会被思考烧光导致空 content
+      // （实测 62/95 空），2048 仍有 14/95 长 prompt 行 finish=length；4096 实测收口。
+      // DeepSeek/Kimi 同值无害（按 stop 截断）。
+      const result = await backend.call(messages, 4096);
       return { id: row.id, label: parseArbiterJson(result.content), inputTokens: result.inputTokens, outputTokens: result.outputTokens, raw: result.content };
     } catch (error) {
       return { id: row.id, label: null, inputTokens: 0, outputTokens: 0, raw: `ERROR ${String(error).slice(0, 120)}` };

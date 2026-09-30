@@ -282,7 +282,7 @@ type: {{user|feedback|project|reference}}
 ## How to Read
 
 - INDEX.md loads every session
-- What you remember/past chats: MemoryRead/memory_search (deferred tools; load via ToolSearch if hidden); never directly Read/Glob this directory.
+- Memory questions: use MemoryRead/memory_search (deferred tools; load via ToolSearch if hidden); never directly Read/Glob this directory.
 
 ## Maintenance
 

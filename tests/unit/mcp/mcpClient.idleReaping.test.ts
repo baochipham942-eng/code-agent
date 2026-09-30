@@ -26,6 +26,23 @@ function connectedClient(now: () => number) {
   return { client, sdkClient };
 }
 
+function attachStatelessIdleServer(client: MCPClient, lastUsedAt: number) {
+  const sdkClient = { close: vi.fn(async () => {}) };
+  (client as unknown as { clients: Map<string, unknown> }).clients.set('local', sdkClient);
+  (client as unknown as { serverConfigs: Map<string, unknown> }).serverConfigs.set('local', REAPABLE_STDIO);
+  (client as unknown as { serverStates: Map<string, unknown> }).serverStates.set('local', {
+    config: REAPABLE_STDIO, status: 'connected', toolCount: 0, resourceCount: 0,
+  });
+  (client as unknown as { idleReaper: { lastUsedAt: Map<string, number> } }).idleReaper.lastUsedAt.set('local', lastUsedAt);
+  return sdkClient;
+}
+
+async function advanceToDefaultTtl(expectReaped: { close: ReturnType<typeof vi.fn> }): Promise<void> {
+  await vi.advanceTimersByTimeAsync(MCP_TIMEOUTS.IDLE_REAP_TTL - 1);
+  expect(expectReaped.close).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(MCP_TIMEOUTS.IDLE_REAP_SCAN);
+}
+
 describe('MCPClient idle connection reaping', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -45,6 +62,34 @@ describe('MCPClient idle connection reaping', () => {
     client.configureIdleReaping({ enabled: true, ttlMs: 1, scanIntervalMs: 1 });
     await vi.advanceTimersByTimeAsync(1);
     expect(sdkClient.close).toHaveBeenCalledOnce();
+  });
+
+  it('reaps a stateless stdio server after the default ttl when idle reaping is omitted, and not when enabled is false', async () => {
+    vi.setSystemTime(0);
+    const omitted = new MCPClient();
+    const omittedSdk = attachStatelessIdleServer(omitted, 0);
+    await advanceToDefaultTtl(omittedSdk);
+    expect(omittedSdk.close).toHaveBeenCalledOnce();
+    expect(omitted.isConnected('local')).toBe(false);
+    omitted.stopIdleReaper();
+
+    vi.clearAllTimers();
+    vi.setSystemTime(0);
+    const reconfigured = new MCPClient({ idleReaping: { enabled: false } });
+    const reconfiguredSdk = attachStatelessIdleServer(reconfigured, 0);
+    reconfigured.configureIdleReaping(undefined);
+    await advanceToDefaultTtl(reconfiguredSdk);
+    expect(reconfiguredSdk.close).toHaveBeenCalledOnce();
+    expect(reconfigured.isConnected('local')).toBe(false);
+    reconfigured.stopIdleReaper();
+
+    vi.clearAllTimers();
+    vi.setSystemTime(0);
+    const disabled = new MCPClient({ idleReaping: { enabled: false } });
+    const disabledSdk = attachStatelessIdleServer(disabled, 0);
+    await vi.advanceTimersByTimeAsync(MCP_TIMEOUTS.IDLE_REAP_TTL + MCP_TIMEOUTS.IDLE_REAP_SCAN);
+    expect(disabledSdk.close).not.toHaveBeenCalled();
+    expect(disabled.isConnected('local')).toBe(true);
   });
 
   it('reaps an idle connection and the next lazy operation reconnects', async () => {

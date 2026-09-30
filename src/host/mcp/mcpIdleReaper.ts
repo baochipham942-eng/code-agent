@@ -38,7 +38,7 @@ export class McpIdleReaper {
   private readonly isReapable: (serverName: string) => boolean;
   private readonly markLazyAfterReap: (serverName: string) => void;
   private readonly now: () => number;
-  private idleReapingEnabled = false;
+  private idleReapingEnabled = true;
   private idleReapTtlMs: number = MCP_TIMEOUTS.IDLE_REAP_TTL;
   private idleReapScanIntervalMs: number = MCP_TIMEOUTS.IDLE_REAP_SCAN;
   readonly lastUsedAt: Map<string, number> = new Map();
@@ -60,7 +60,7 @@ export class McpIdleReaper {
   }
 
   configureIdleReaping(options?: McpIdleReapingOptions): void {
-    this.idleReapingEnabled = options?.enabled ?? false;
+    this.idleReapingEnabled = options?.enabled ?? true;
     this.idleReapTtlMs = Math.max(1, options?.ttlMs ?? MCP_TIMEOUTS.IDLE_REAP_TTL);
     // `??` 对显式的 0 不接管（0 不是 nullish），而 0 不是「关闭扫描」的意思——
     // 那样 Math.max(1, 0) 会得到 1ms 扫描间隔，等于把 CPU 打满。显式 0 按未配置处理，回落默认值。

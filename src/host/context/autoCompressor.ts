@@ -70,24 +70,23 @@ export class AutoContextCompressor {
     this.config = { ...this.config, ...config };
   }
 
-  private resolvedTrigger(contextWindow?: number): number | undefined {
-    const explicit = this.config.triggerTokens;
-    if (typeof explicit === 'number' && explicit > 0) return explicit;
-    if (contextWindow === undefined || !Number.isFinite(contextWindow) || contextWindow <= 0) {
-      return undefined;
-    }
-    const derived = resolveTriggerTokens(contextWindow);
+  private resolvedTrigger(contextWindow?: number, maxOutputTokens?: number): number | undefined {
+    const derived = resolveTriggerTokens(contextWindow ?? 0, this.config.triggerTokens, maxOutputTokens);
     return derived > 0 ? derived : undefined;
   }
 
-  shouldTriggerByTokens(currentTokens: number, contextWindow?: number): boolean {
-    const trigger = this.resolvedTrigger(contextWindow);
+  shouldTriggerByTokens(
+    currentTokens: number,
+    contextWindow?: number,
+    maxOutputTokens?: number,
+  ): boolean {
+    const trigger = this.resolvedTrigger(contextWindow, maxOutputTokens);
     if (trigger === undefined) return false;
     return currentTokens >= trigger;
   }
 
-  shouldWrapUp(contextWindow?: number): boolean {
-    const trigger = this.resolvedTrigger(contextWindow);
+  shouldWrapUp(contextWindow?: number, maxOutputTokens?: number): boolean {
+    const trigger = this.resolvedTrigger(contextWindow, maxOutputTokens);
     if (!this.config.totalTokenBudget || trigger === undefined) return false;
     return this.getCompactionCount() * trigger >= this.config.totalTokenBudget;
   }

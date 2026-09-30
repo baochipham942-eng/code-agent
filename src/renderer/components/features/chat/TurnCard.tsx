@@ -434,9 +434,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* Middle content (folded: hide; expanded: show all except user) */}
         {!folded && (
           <>
-            {/* 一个回合内所有思考段继续合并成一个横幅。流式 reasoning 自己承担唯一的
-                「正在思考」信号；底部 StreamingIndicator 在此阶段让位，避免双显。 */}
-            {policy.showThinkingDigest && <ThinkingDigestBanner
+            {/* 一个回合内所有思考段合并成一个横幅。流式 reasoning 是唯一的「正在思考」
+                信号，底部指示器让位。简洁档只在回合结束后藏横幅，流式期间必须留下。 */}
+            {(policy.showThinkingDigest || isStreaming) && <ThinkingDigestBanner
               segments={thinkingSegments}
               activeSegmentId={activeThinkingSegmentId}
               hasNonThinkingContentAfterThinking={hasNonThinkingContentAfterThinking}

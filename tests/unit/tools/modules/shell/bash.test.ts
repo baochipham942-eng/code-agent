@@ -5,7 +5,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { homedir, tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join, parse, resolve } from 'path';
+import { resetPolicyEngine, getPolicyEngine } from '../../../../../src/host/permissions/policyEngine';
+import { getPolicyEnforcer, resetPolicyEnforcer } from '../../../../../src/host/security/policyEnforcer';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -1563,6 +1565,103 @@ describe('bashModule sandbox escalation', () => {
       expect(canUse).toHaveBeenCalledTimes(1);
       modeMgr.setMode('default', true);
       delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+    }
+  });
+
+  async function expectEscalationOffers(deniedPath: string, offered: boolean): Promise<void> {
+    const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
+    wrapMock.mockReturnValue({ command: denial, cleanup: cleanupMock });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(), canUse);
+    const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+    expect(escalationCalls).toHaveLength(offered ? 1 : 0);
+    expect(canUse).toHaveBeenCalledTimes(offered ? 2 : 1);
+    expect(result.ok).toBe(false);
+    if (!result.ok && !offered) {
+      expect(result.meta?.sandboxEscalation).toBeUndefined();
+      expect(result.error ?? '').not.toContain('declined to widen the sandbox');
+    }
+  }
+
+  it('does not offer an ancestor of the home directory', async () => {
+    const ancestor = dirname(resolve(homedir()));
+    expect(ancestor).not.toBe(resolve(homedir()));
+    expect(ancestor).not.toBe(parse(ancestor).root);
+    await expectEscalationOffers(ancestor, false);
+  });
+
+  it('does not offer a directory whose subpath contains an Edit path deny', async () => {
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-edit-')));
+    const secret = join(parent, 'secret');
+    resetPolicyEngine();
+    getPolicyEngine().loadUserRules({ deny: [`Edit(${secret})`] });
+    try {
+      await expectEscalationOffers(parent, false);
+    } finally {
+      resetPolicyEngine();
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('does not offer a path whose subpath contains a denied_paths descendant', async () => {
+    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-policy-')));
+    const parent = join(project, 'missing-parent');
+    const secret = join(parent, 'secret');
+    writeFileSync(join(project, 'code-agent-policy.toml'), [
+      '[filesystem]',
+      `writable_paths = ["./**", "${parent}", "${parent}/**"]`,
+      `denied_paths = ["${secret}"]`,
+      '',
+    ].join('\n'));
+    resetPolicyEnforcer();
+    getPolicyEnforcer(project);
+    try {
+      await expectEscalationOffers(parent, false);
+    } finally {
+      resetPolicyEnforcer();
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  it('does not offer an existing directory when denied file patterns can match inside it', async () => {
+    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-project-')));
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-dir-')));
+    writeFileSync(join(project, 'code-agent-policy.toml'), [
+      '[filesystem]',
+      `writable_paths = ["./**", "${parent}", "${parent}/**"]`,
+      '',
+    ].join('\n'));
+    resetPolicyEnforcer();
+    getPolicyEnforcer(project);
+    try {
+      await expectEscalationOffers(parent, false);
+    } finally {
+      resetPolicyEnforcer();
+      rmSync(project, { recursive: true, force: true });
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('still offers a file when policy only denies a sibling directory', async () => {
+    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-file-project-')));
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-file-')));
+    const blocked = join(parent, 'blocked');
+    const target = join(parent, 'out.txt');
+    writeFileSync(join(project, 'code-agent-policy.toml'), [
+      '[filesystem]',
+      `writable_paths = ["./**", "${parent}/**"]`,
+      `denied_paths = ["${blocked}/**"]`,
+      '',
+    ].join('\n'));
+    resetPolicyEnforcer();
+    getPolicyEnforcer(project);
+    try {
+      await expectEscalationOffers(target, true);
+    } finally {
+      resetPolicyEnforcer();
+      rmSync(project, { recursive: true, force: true });
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 });

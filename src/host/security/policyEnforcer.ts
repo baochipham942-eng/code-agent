@@ -13,6 +13,7 @@ import { loadPolicy, hasPolicyFile } from './policyLoader';
 import type { SecurityPolicy } from './policyFile';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from './decisionTraceBuilder';
+import { patternIntersectsSubpath } from './patternSubpath';
 
 const logger = createLogger('PolicyEnforcer');
 
@@ -172,6 +173,28 @@ export class PolicyEnforcer {
     }
 
     return { allowed: true };
+  }
+
+  /**
+   * Seatbelt write allows `(subpath root)`. True when a filesystem deny matches
+   * any path in that tree, including a denied file pattern inside a directory.
+   */
+  writeSubpathIncludesFilesystemDeny(root: string): boolean {
+    if (!this.active) return false;
+    const normalizedRoot = this.normalizePath(root);
+    for (const pattern of this.policy.filesystem.denied_paths) {
+      const normalized = this.normalizePath(pattern);
+      if (patternIntersectsSubpath(normalized, normalizedRoot, (candidate) =>
+        this.matchGlob(this.normalizePath(candidate), normalized))) {
+        return true;
+      }
+    }
+    if (this.policy.filesystem.denied_file_patterns.length === 0) return false;
+    try {
+      return fs.statSync(normalizedRoot).isDirectory();
+    } catch {
+      return false;
+    }
   }
 
   /**

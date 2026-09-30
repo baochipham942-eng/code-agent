@@ -79,6 +79,15 @@ describe('worker sweep skills', () => {
         expect(source).toContain('not-applicable');
         expect(source).toContain('unknown');
         expect(source).toContain('If any row is unknown, you may not claim the verification is complete.');
+        for (const dimension of [
+          'parse -> runtime',
+          'alternate entry points',
+          'generated or cached values',
+          'fixtures and artifacts',
+        ]) {
+          const escaped = dimension.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+          expect(source).toMatch(new RegExp(`^\\| ${escaped} \\|`, 'mu'));
+        }
       }
     });
   }

@@ -216,7 +216,10 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     retryDelay: parseOptionalNumber(draft.retryDelay),
     timeout: parseOptionalNumber(draft.timeout),
     maxRunBudget: parseOptionalNumber(draft.maxRunBudget),
-    maxRuns: parseOptionalNumber(draft.maxRuns),
+    // 云端不支持次数上限（host assertExecutionLocationConstraints 直接拒）：复制本地任务
+    // 到云端、或新建时先填上限再切云端，字段虽被隐藏但 draft 里还留着值，提交前必须丢弃
+    // （PR#2208 ai-review R2 Important）。
+    maxRuns: draft.runsOn === 'cloud' ? undefined : parseOptionalNumber(draft.maxRuns),
     tags: draft.tagsText
       .split(',')
       .map((tag) => tag.trim())

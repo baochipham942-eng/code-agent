@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 import type { MCPServerStateSummary } from '../../../src/renderer/hooks/useMcpServerStates';
@@ -92,5 +92,37 @@ describe('N-CRON-BUDGET-EXPOSE 编辑器额度字段', () => {
     const draft = buildDraftFromJob(makeJob());
     expect(draft.maxRunBudget).toBe('');
     expect(draft.maxRuns).toBe('');
+  });
+
+  it('buildCronJobInput drops a hidden maxRuns for cloud jobs (PR#2208 R2 Important)', () => {
+    // 复制本地任务到云端：draft 里带着来源任务的 maxRuns，但编辑面已把字段隐藏。
+    const copied = { ...buildDraftFromJob(makeJob({ maxRuns: 3 })), runsOn: 'cloud' as const };
+    expect(buildCronJobInput(copied).maxRuns).toBeUndefined();
+
+    // 新建：先填运行次数上限再切到云端。
+    const switched = createDefaultCronJobDraft();
+    switched.name = '先填后切';
+    switched.shellCommand = 'echo ok';
+    switched.maxRuns = '5';
+    switched.runsOn = 'cloud';
+    expect(buildCronJobInput(switched).maxRuns).toBeUndefined();
+
+    // 本地任务照常携带。
+    const local = createDefaultCronJobDraft();
+    local.name = '本地任务';
+    local.shellCommand = 'echo ok';
+    local.maxRuns = '5';
+    expect(buildCronJobInput(local).maxRuns).toBe(5);
+  });
+
+  it('复制带 maxRuns 的本地任务到云端：保存时不再提交 maxRuns（PR#2208 R2 Important）', async () => {
+    const createJob = vi.fn(async () => makeJob());
+    useCronStore.setState({ createJob });
+    render(<CronJobEditor isOpen copySource={makeJob({ maxRuns: 3 })} onClose={() => undefined} />);
+
+    fireEvent.click(screen.getByText('创建任务'));
+
+    await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    expect(createJob.mock.calls[0]?.[0]).toMatchObject({ runsOn: 'cloud', maxRuns: undefined });
   });
 });

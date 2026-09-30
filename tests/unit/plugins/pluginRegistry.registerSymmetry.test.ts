@@ -17,6 +17,7 @@ import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { PluginRegistry } from '../../../src/host/plugins/pluginRegistry';
 import { resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { getPluginIdForTool } from '../../../src/host/plugins/pluginToolOrigin';
 import type {
   LoadedPlugin,
   PluginAPI,
@@ -221,5 +222,25 @@ describe('PluginRegistry registerTool / registerToolModule symmetry', () => {
     // 通过 plugin 实例读 registeredTools 验证只有一条
     const plugin = (reg as unknown as { plugins: Map<string, LoadedPlugin> }).plugins.get('p8');
     expect(plugin?.registeredTools.filter((n) => n === 'p8:once')).toHaveLength(1);
+  });
+
+  it('tracks plugin origins for both registration APIs and clears them on unregister/deactivate', async () => {
+    const reg = new PluginRegistry();
+    const api = await getPluginApi(reg, 'p-origin');
+
+    api.registerTool(makeTool('legacy'));
+    api.registerToolModule(makeToolModule('module'));
+    api.registerToolModule(makeToolModule('builtin-style'), { prefixWithPluginId: false });
+
+    expect(getPluginIdForTool('p-origin:legacy')).toBe('p-origin');
+    expect(getPluginIdForTool('p-origin:module')).toBe('p-origin');
+    expect(getPluginIdForTool('builtin-style')).toBe('p-origin');
+
+    api.unregisterTool('legacy');
+    expect(getPluginIdForTool('p-origin:legacy')).toBeUndefined();
+
+    await reg.deactivatePlugin('p-origin');
+    expect(getPluginIdForTool('p-origin:module')).toBeUndefined();
+    expect(getPluginIdForTool('builtin-style')).toBeUndefined();
   });
 });

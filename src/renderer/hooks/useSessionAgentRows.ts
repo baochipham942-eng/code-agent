@@ -31,16 +31,24 @@ export interface SessionAgentRows {
   conflicts: AgentTreeOwnershipConflict[];
 }
 
+/** 主会话 id：未路由为 default，路由后为当前选中的 agent。 */
+function mainConversationAgentIds(activeAgentId: string | null): Set<string> {
+  const ids = new Set<string>(['default']);
+  if (activeAgentId) ids.add(activeAgentId);
+  return ids;
+}
+
 function approvalIdsForSession(
   sessionId: string | null,
   pending: PermissionRequest | null,
   pendingSessionId: string | null,
   queued: Record<string, PermissionRequest[] | undefined> | undefined,
+  mainAgentIds: ReadonlySet<string>,
 ): Set<string> {
   const ids = new Set<string>();
   const add = (request: PermissionRequest | null | undefined) => {
     if (!request || request.resolved) return;
-    if (request.agentId) ids.add(request.agentId);
+    if (request.agentId && !mainAgentIds.has(request.agentId)) ids.add(request.agentId);
     if (request.runId) ids.add(request.runId);
   };
   if (sessionId && pendingSessionId === sessionId) add(pending);
@@ -57,6 +65,7 @@ export function useSessionAgentRows(sessionId: string | null): SessionAgentRows 
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
+  const activeAgentId = useAppStore((state) => state.activeAgentId);
 
   return useMemo(() => {
     const tasks = sessionId
@@ -82,6 +91,7 @@ export function useSessionAgentRows(sessionId: string | null): SessionAgentRows 
       pendingPermissionRequest,
       pendingPermissionSessionId,
       queuedPermissionRequests,
+      mainConversationAgentIds(activeAgentId),
     ));
     return { rows, conflicts: snapshot?.summary.ownershipConflicts ?? [] };
   }, [
@@ -92,5 +102,6 @@ export function useSessionAgentRows(sessionId: string | null): SessionAgentRows 
     pendingPermissionRequest,
     pendingPermissionSessionId,
     queuedPermissionRequests,
+    activeAgentId,
   ]);
 }

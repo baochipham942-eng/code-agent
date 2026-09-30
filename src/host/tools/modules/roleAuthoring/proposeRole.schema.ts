@@ -75,4 +75,7 @@ export const proposeRoleSchema: ToolSchema = {
   permissionLevel: 'write',
   readOnly: false,
   allowInPlanMode: false,
+  accesses: [
+    { kind: 'write', expression: 'resource(role, draft)' },
+  ],
 };

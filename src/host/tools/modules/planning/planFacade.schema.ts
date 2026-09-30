@@ -82,4 +82,7 @@ Examples:
   category: 'planning',
   permissionLevel: 'write',
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(session, plan)' },
+  ],
 };

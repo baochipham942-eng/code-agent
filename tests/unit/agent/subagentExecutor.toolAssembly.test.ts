@@ -277,6 +277,7 @@ type RealEnsureConnectedClient = {
   serverConfigs: Map<string, unknown>;
   serverStates: Map<string, { status: string }>;
   connectingServers: Map<string, Promise<void>>;
+  teardownGate: { inflight(serverName: string): Promise<void> | undefined };
   connect(config: { name: string }): Promise<void>;
   ensureConnected(serverName: string, signal?: AbortSignal): Promise<boolean>;
 };
@@ -295,6 +296,7 @@ function setupRealEnsureConnected(serverNames: string[]): {
     ])),
     serverStates: new Map(serverNames.map((name) => [name, { status: 'lazy' }])),
     connectingServers: new Map(),
+    teardownGate: { inflight: () => undefined },
   });
   const connectSpy = vi.spyOn(client, 'connect');
   mcpState.ensureConnected.mockImplementation(

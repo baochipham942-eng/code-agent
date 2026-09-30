@@ -9,19 +9,36 @@
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
+import type { Server } from 'http';
+import type { AddressInfo } from 'net';
 
 const mockChannel = {
   sendCard: vi.fn(),
   updateCard: vi.fn(),
+  sendMessage: vi.fn(),
 };
 const channelManager = new EventEmitter() as EventEmitter & {
   getActiveChannel: ReturnType<typeof vi.fn>;
+  getAccount: ReturnType<typeof vi.fn>;
 };
 channelManager.getActiveChannel = vi.fn(() => mockChannel);
+channelManager.getAccount = vi.fn(() => ({
+  id: 'acc1',
+  type: 'feishu',
+  config: {
+    type: 'feishu',
+    appId: 'app',
+    appSecret: 'secret',
+    verificationToken: 'token',
+    inboundAllowlist: ['paired-open-id'],
+    ownerOpenId: 'owner-open-id',
+  },
+} as unknown));
 
 const mockOrchestrator = { resolveParkedApproval: vi.fn() };
 const getOrchestrator = vi.fn(() => mockOrchestrator as unknown);
 const getSession = vi.fn();
+const auditLogger = { logSecurityIncident: vi.fn() };
 
 vi.mock('../../../src/host/channels/channelManager', () => ({
   getChannelManager: () => channelManager,
@@ -35,8 +52,12 @@ vi.mock('../../../src/host/task', () => ({
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info() {}, warn() {}, error() {}, debug() {} }),
 }));
+vi.mock('../../../src/host/security/auditLogger', () => ({
+  getAuditLogger: () => auditLogger,
+}));
 
 import { approvalParkEvents } from '../../../src/host/agent/approvalParkEvents';
+import { FeishuChannel } from '../../../src/host/channels/feishu/feishuChannel';
 import {
   ApprovalFeishuRelay,
   decodeApprovalValue,
@@ -85,8 +106,21 @@ describe('ApprovalFeishuRelay', () => {
     approvalParkEvents.removeAllListeners();
     channelManager.removeAllListeners();
     channelManager.getActiveChannel = vi.fn(() => mockChannel);
+    channelManager.getAccount = vi.fn(() => ({
+      id: 'acc1',
+      type: 'feishu',
+      config: {
+        type: 'feishu',
+        appId: 'app',
+        appSecret: 'secret',
+        verificationToken: 'token',
+        inboundAllowlist: ['paired-open-id'],
+        ownerOpenId: 'owner-open-id',
+      },
+    } as unknown));
     mockChannel.sendCard.mockResolvedValue({ success: true, messageId: 'om_1' });
     mockChannel.updateCard.mockResolvedValue({ success: true });
+    mockChannel.sendMessage.mockResolvedValue({ success: true, messageId: 'om_reply' });
     getSession.mockResolvedValue(feishuSession());
   });
 
@@ -128,12 +162,121 @@ describe('ApprovalFeishuRelay', () => {
   it('feishu button → resolves the parked approval on the matching orchestrator (idempotent third mouth)', async () => {
     startRelay();
     const value = JSON.stringify({ t: 'apv', r: 'allow', a: 'perm-9', s: 's9' });
-    channelManager.emit('card_action', 'acc1', { value });
+    channelManager.emit('card_action', 'acc1', {
+      value,
+      operatorOpenId: 'paired-open-id',
+      chatId: 'oc_1',
+      verificationConfigured: true,
+    });
 
     await vi.waitFor(() =>
       expect(mockOrchestrator.resolveParkedApproval).toHaveBeenCalledWith('perm-9', 'allow'),
     );
     expect(getOrchestrator).toHaveBeenCalledWith('s9');
+  });
+
+  it('bot owner clicker → resolves the parked approval even without a pairing entry', async () => {
+    startRelay();
+    const value = JSON.stringify({ t: 'apv', r: 'deny', a: 'perm-owner', s: 's-owner' });
+    channelManager.emit('card_action', 'acc1', {
+      value,
+      operatorOpenId: 'owner-open-id',
+      chatId: 'oc_1',
+      verificationConfigured: true,
+    });
+
+    await vi.waitFor(() =>
+      expect(mockOrchestrator.resolveParkedApproval).toHaveBeenCalledWith('perm-owner', 'deny'),
+    );
+  });
+
+  it('unauthorised group clicker → stays parked, replies, and records a security audit event', async () => {
+    startRelay();
+    const value = JSON.stringify({ t: 'apv', r: 'allow', a: 'perm-unauthorised', s: 's-unauthorised' });
+    channelManager.emit('card_action', 'acc1', {
+      value,
+      operatorOpenId: 'unpaired-open-id',
+      chatId: 'oc_group',
+      verificationConfigured: true,
+    });
+
+    await vi.waitFor(() => expect(mockChannel.sendMessage).toHaveBeenCalledWith({
+      chatId: 'oc_group',
+      content: '无权批准',
+    }));
+    expect(mockOrchestrator.resolveParkedApproval).not.toHaveBeenCalled();
+    expect(auditLogger.logSecurityIncident).toHaveBeenCalledWith(expect.objectContaining({
+      incident: expect.stringContaining('Unauthorised'),
+      details: expect.objectContaining({
+        accountId: 'acc1',
+        operatorOpenId: 'unpaired-open-id',
+        approvalId: 'perm-unauthorised',
+      }),
+    }));
+  });
+
+  it('callback without verification token or encrypt key → rejected before resolving', async () => {
+    startRelay();
+    const value = JSON.stringify({ t: 'apv', r: 'allow', a: 'perm-no-token', s: 's-no-token' });
+    channelManager.emit('card_action', 'acc1', {
+      value,
+      operatorOpenId: 'paired-open-id',
+      chatId: 'oc_1',
+      verificationConfigured: false,
+    });
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mockOrchestrator.resolveParkedApproval).not.toHaveBeenCalled();
+  });
+
+  it('encryptKey configured, verificationToken missing, plaintext callback → 401 and no approval resolved', async () => {
+    startRelay();
+    const channel = new FeishuChannel('acc1');
+    const cardActions = vi.fn((payload: unknown) => channelManager.emit('card_action', 'acc1', payload));
+    channel.on('card_action', cardActions);
+    await channel.initialize({
+      type: 'feishu',
+      appId: 'app',
+      appSecret: 'secret',
+      encryptKey: 'encrypt-key',
+      inboundAllowlist: ['paired-open-id'],
+      webhookHost: '127.0.0.1',
+      webhookPort: 0,
+    });
+    await channel.connect();
+    try {
+      const server = (channel as unknown as { webhookServer?: Server }).webhookServer;
+      const address = server?.address() as AddressInfo;
+      const response = await fetch(`http://127.0.0.1:${address.port}/webhook/feishu`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: { tag: 'button', value: { action: JSON.stringify({ t: 'apv', r: 'allow', a: 'perm-encrypt-only', s: 's1' }) } },
+          operator: { open_id: 'paired-open-id' },
+          open_chat_id: 'oc_1',
+        }),
+      });
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({ code: -1, msg: 'verification credential required' });
+      expect(cardActions).not.toHaveBeenCalled();
+      expect(mockOrchestrator.resolveParkedApproval).not.toHaveBeenCalled();
+    } finally {
+      await channel.destroy();
+    }
+  });
+
+  it('forged approval value with a valid operator still requires the account gate', async () => {
+    startRelay();
+    const value = JSON.stringify({ t: 'apv', r: 'allow', a: 'perm-forged', s: 's-forged' });
+    channelManager.emit('card_action', 'other-account', {
+      value,
+      operatorOpenId: 'paired-open-id',
+      chatId: 'oc_1',
+      verificationConfigured: true,
+    });
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mockOrchestrator.resolveParkedApproval).not.toHaveBeenCalled();
   });
 
   it('foreign card_action value → ignored, never resolves anything', async () => {
@@ -149,6 +292,9 @@ describe('ApprovalFeishuRelay', () => {
     startRelay();
     channelManager.emit('card_action', 'acc1', {
       value: JSON.stringify({ t: 'apv', r: 'deny', a: 'perm-x', s: 'sx' }),
+      operatorOpenId: 'paired-open-id',
+      chatId: 'oc_1',
+      verificationConfigured: true,
     });
     await new Promise((r) => setTimeout(r, 20));
     expect(mockOrchestrator.resolveParkedApproval).not.toHaveBeenCalled();

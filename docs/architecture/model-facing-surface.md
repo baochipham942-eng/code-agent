@@ -40,7 +40,7 @@ The static Skill schema is paid on every request that carries the core tool list
 
 ### KV-cache impact
 
-The static Skill schema is in the **stable prefix** while `CORE_TOOLS` and `getCoreToolDefinitions` assemble the request. The available-skill metadata can **vary** when `skillDiscoveryService` refreshes or filters enabled skills, and `executeSkill` adds rendered skill messages mid-session; those code paths decide the changing content rather than the static schema.
+The static Skill schema is in the **stable prefix** because `CORE_TOOLS` and `getCoreToolDefinitions` assemble it, while available-skill metadata and rendered skill messages **vary** when `skillDiscoveryService` refreshes or filters enabled skills and `executeSkill` adds content mid-session.
 
 ### Known limits
 
@@ -60,7 +60,7 @@ A manifest has no direct request-token charge because it is not sent as a model 
 
 ### KV-cache impact
 
-The manifest object is outside the request prefix. Registered tool schemas are in the **stable prefix** when the plugin is active and the same registry/core selection is reused; `pluginRegistry.ts` activation and `toolDefinitions.ts` selection decide that text. Plugin load, activation, reload, or tool registration can **vary** the available schemas between turns, which changes the prefix for subsequent requests.
+The manifest object is outside the request prefix, registered tool schemas are in the **stable prefix** when `pluginRegistry.ts` activation and `toolDefinitions.ts` core selection reuse the same registry, and plugin load, activation, reload, or tool registration can **vary** the available schemas for later requests.
 
 ### Known limits
 

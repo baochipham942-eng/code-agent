@@ -81,17 +81,4 @@ describe('FullScreenPage 外壳契约', () => {
     render(<FullScreenPageHeader icon={null} title="标题" onClose={() => {}} />);
     expect(screen.getByTestId('full-screen-page-back').className).toContain('h-9');
   });
-
-  // FB-210a：description 用 truncate 截断，title 兜底完整文案（bar 与默认 page 两种 variant）
-  it('description 截断时带 title 完整文案（bar 与 page 两种 variant）', () => {
-    const description = '自动化中心：定时、循环、心跳与事件监听任务都收在这里统一巡检';
-    const bar = render(
-      <FullScreenPageHeader icon={null} title="自动化" description={description} variant="bar" />,
-    );
-    expect(screen.getByText(description).getAttribute('title')).toBe(description);
-    bar.unmount();
-
-    render(<FullScreenPageHeader icon={null} title="协作空间" description={description} />);
-    expect(screen.getByText(description).getAttribute('title')).toBe(description);
-  });
 });

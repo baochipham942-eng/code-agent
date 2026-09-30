@@ -14,7 +14,7 @@ export const CronRunsOnPill: React.FC<{ runsOn: CronRunsOn; localLabel: string; 
   localLabel,
   cloudLabel,
 }) => (
-  <span className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] ${runsOn === 'cloud'
+  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${runsOn === 'cloud'
     ? 'border-badge-info/30 bg-blue-500/10 text-badge-info'
     : 'border-zinc-700 bg-zinc-900 text-zinc-300'}`} data-testid={`cron-runs-on-pill-${runsOn}`}>
     {runsOn === 'cloud' ? <Cloud className="h-3 w-3" /> : <Monitor className="h-3 w-3" />}

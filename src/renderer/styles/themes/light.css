@@ -156,11 +156,6 @@
   --input-border-focus: #A1A1AA;
   --input-placeholder: #A1A1AA;
 
-  /* Field 原语（Input/Select/Textarea，FB-216）：浅色下 zinc-700 底（212 212 216）
-     对 zinc-500 占位符仅 ~3.3:1，白底 + #71717A 占位符到 4.75:1。 */
-  --field-bg: #FFFFFF;
-  --field-placeholder: #71717A;
-
   /* Focus ring */
   --focus-ring: rgba(24, 24, 27, 0.18);
 }

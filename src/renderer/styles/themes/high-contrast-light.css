@@ -155,10 +155,6 @@
   --input-border-focus: var(--accent-accessible);
   --input-placeholder: #606060;
 
-  /* Field 原语（Input/Select/Textarea，FB-216）：白底 + #606060 占位符，AAA 口径。 */
-  --field-bg: #FFFFFF;
-  --field-placeholder: #606060;
-
   /* Focus ring（rgba 字面量与 --accent-accessible 同色系；
      CSS 变量无法从 hex 派生 alpha 通道，改 accent 色时此处需同步） */
   --focus-ring: rgba(0, 0, 204, 0.5);

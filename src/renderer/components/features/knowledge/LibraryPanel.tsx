@@ -451,9 +451,8 @@ export const LibraryPanel: React.FC = () => {
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder={t.library.searchPlaceholder}
                 aria-label={t.library.searchPlaceholder}
-                title={t.library.searchPlaceholder}
                 data-testid="library-search"
-                className="h-8 w-56 min-w-0 text-xs"
+                className="h-8 w-40 min-w-0 text-xs"
               />
             )}
             {view === 'brands' ? (

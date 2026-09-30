@@ -89,12 +89,12 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     };
 
     const baseClasses = [
-      'bg-[var(--field-bg)]',
+      'bg-zinc-700',
       'border',
       'rounded-lg',
       'text-sm',
       'text-zinc-200',
-      'placeholder:text-[var(--field-placeholder)]',
+      'placeholder:text-zinc-500',
       'focus:outline-hidden',
       'transition-colors',
       'px-4',

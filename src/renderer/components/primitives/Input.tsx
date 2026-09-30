@@ -54,11 +54,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const hasError = error || !!errorMessage;
 
     const baseClasses = [
-      'bg-[var(--field-bg)]',
+      'bg-zinc-700',
       'border',
       'rounded-lg',
       'text-zinc-200',
-      'placeholder:text-[var(--field-placeholder)]',
+      'placeholder:text-zinc-500',
       'focus:outline-hidden',
       'transition-colors',
       sizeClasses[inputSize],

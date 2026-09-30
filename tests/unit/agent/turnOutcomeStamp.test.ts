@@ -418,6 +418,30 @@ describe('turn outcome stamp', () => {
     expect(outcome.evidenceProblems).toEqual([`DELIVERABLE_NOT_ON_DISK: ${path.join(traceRoot, 'ghost.md')}`]);
   });
 
+  it('records no-produced requests as self_claimed after the repair budget, with an honest final note', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const recorder = new TurnTraceRecorder('none-produced', traceRoot);
+    const artifactState = ArtifactState.forTest();
+    artifactState.setLastDeliverableCheck({
+      claims: [],
+      evidenceRefs: [],
+      missing: [{
+        claim: { claimed: 'pdf', resolved: '', source: 'inferred' },
+        kind: 'none_produced',
+        requestedFormat: 'pdf',
+      }],
+    }, Date.now());
+    const messages = [
+      message({ content: '请生成一个 pdf 文件' }),
+      message({ id: 'final', role: 'assistant', content: '本轮实际未交付：pdf 文件没有生成。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot, artifact: artifactState }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(messages.at(-1)?.content).toContain('本轮实际未交付');
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceProblems).toContain('DELIVERABLE_NONE_PRODUCED: pdf');
+  });
+
   it('treats a zero-byte claimed deliverable as undelivered', async () => {
     mkdirSync(traceRoot, { recursive: true });
     const artifact = path.join(traceRoot, 'empty.html');

@@ -321,6 +321,66 @@ describe('repair prompt and undelivered note (via runDeliverableDiskCheckGate)',
     expect(result.content).toContain('本轮实际未交付');
     expect(result.content).toContain('output/周报.html');
   });
+
+  function requestedFileGate(userContent: string, messagesAfterUser: Message[] = [], repairsUsed = 0) {
+    return runDeliverableDiskCheckGate({
+      workingDirectory: workRoot,
+      messages: [message({ content: userContent }), ...messagesAfterUser],
+      finalText: '已处理本轮请求。',
+      repairsUsed,
+    });
+  }
+
+  it.each([
+    ['script written but never run', '请生成一个 xlsx 文件', 'build_reporting.py'],
+    ['nothing written and no claim', '请创建一个 PDF 文件', undefined],
+    ['file written under /tmp only', '导出一个 csv 文件', '/tmp/out.csv'],
+  ])('%s fires one bounded repair round', async (_shape, userContent, touchedPath) => {
+    const afterUser = touchedPath
+      ? [message({ id: 'tool', role: 'assistant', content: '', toolResults: [{
+        toolCallId: 'tool-1', success: true, metadata: { changedFiles: [touchedPath] },
+      }] })]
+      : [];
+    const result = await requestedFileGate(userContent, afterUser);
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') return;
+    expect(result.prompt).toContain('运行生成脚本或现在生成文件');
+    expect(result.prompt).toContain('确认文件存在且非空');
+    expect(result.check.claims).toEqual([]);
+    expect(result.missing[0]).toMatchObject({ kind: 'none_produced' });
+  });
+
+  it.each([
+    ['纯问题', '请问如何总结这份 xlsx？'],
+    ['只读请求', 'summarize this xlsx'],
+  ])('%s does not fire', async (_shape, userContent) => {
+    const result = await requestedFileGate(userContent);
+    expect(result.action).toBe('pass');
+    if (result.action !== 'pass') return;
+    expect(result.content).toBe('已处理本轮请求。');
+    expect(result.check.missing).toEqual([]);
+  });
+
+  it('a successful non-script output file suppresses the no-produced detector', async () => {
+    const result = await requestedFileGate('导出一个 xlsx 文件', [message({
+      id: 'tool', role: 'assistant', content: '', toolResults: [{
+        toolCallId: 'tool-1', success: true, outputPath: 'out.xlsx',
+      }],
+    })]);
+    expect(result.action).toBe('pass');
+    if (result.action !== 'pass') return;
+    expect(result.check.claims).toEqual([]);
+    expect(result.check.missing).toEqual([]);
+  });
+
+  it('ends with an honest note and records the stable problem after the repair budget', async () => {
+    const result = await requestedFileGate('请生成一个 pdf 文件', [], 1);
+    expect(result.action).toBe('pass');
+    if (result.action !== 'pass') return;
+    expect(result.content).toContain('本轮实际未交付');
+    expect(result.content).toContain('pdf 文件没有生成');
+    expect(result.check.missing).toMatchObject([{ kind: 'none_produced', requestedFormat: 'pdf' }]);
+  });
 });
 
 // ============================================================================

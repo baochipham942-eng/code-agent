@@ -18,7 +18,7 @@
 
 import { describe, expect, it } from 'vitest';
 import '../../../src/host/prompts/promptIndex';
-import { IDENTITY_PROMPT } from '../../../src/host/prompts/identity';
+import { IDENTITY_PROMPT, MEMORY_SYSTEM } from '../../../src/host/prompts/identity';
 import { TOOLS_PROMPT } from '../../../src/host/prompts/base';
 
 const ALWAYS_ON = `${IDENTITY_PROMPT}\n${TOOLS_PROMPT}`;
@@ -77,5 +77,15 @@ describe('常驻层体量', () => {
     // 和一类真实存在的「光说不做」行为缺陷，不接受再用它顶别的膨胀。
     const total = estimateTokens(IDENTITY_PROMPT) + estimateTokens(TOOLS_PROMPT);
     expect(total).toBeLessThanOrEqual(3100);
+  });
+});
+
+describe('记忆系统读取指引', () => {
+  it('指向记忆工具并禁止直接读取记忆目录', () => {
+    const memorySystem = String(MEMORY_SYSTEM);
+    expect(memorySystem).toContain('MemoryRead');
+    expect(memorySystem).toContain('memory_search');
+    expect(memorySystem).toContain('deferred tools');
+    expect(memorySystem).toMatch(/never directly Read\/Glob this directory/);
   });
 });

@@ -46,6 +46,7 @@ import {
   buildSessionTaskRecord,
   buildSessionToolCapabilityViews,
 } from '../utils/runWorkbenchProjection';
+import { buildWorkflowTimeline } from '../utils/workflowTimeline';
 import { useDurableSwarmRunDetail } from './useDurableSwarmRunDetail';
 
 /**
@@ -173,10 +174,11 @@ function workflowStatusLabel(snapshot: ScriptRunSnapshot): string {
 export function buildWorkflowTaskRecord(snapshot: ScriptRunSnapshot | undefined): TaskRecord | null {
   if (!snapshot) return null;
   const status = workflowStatusToTaskStatus(snapshot.status);
+  const totals = buildWorkflowTimeline(snapshot).totals;
   const agentSummary = [
-    snapshot.runningCount > 0 ? `${snapshot.runningCount} ${getLongTaskStatusLabel('running')}` : null,
-    snapshot.doneCount > 0 ? `${snapshot.doneCount} ${getLongTaskStatusLabel('completed')}` : null,
-    snapshot.errorCount > 0 ? `${snapshot.errorCount} ${getLongTaskStatusLabel('failed')}` : null,
+    totals.running > 0 ? `${totals.running} ${getLongTaskStatusLabel('running')}` : null,
+    totals.done > 0 ? `${totals.done} ${getLongTaskStatusLabel('completed')}` : null,
+    totals.error > 0 ? `${totals.error} ${getLongTaskStatusLabel('failed')}` : null,
   ].filter(Boolean).join(' · ');
 
   return {

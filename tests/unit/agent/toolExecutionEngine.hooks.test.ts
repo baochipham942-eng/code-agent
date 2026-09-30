@@ -936,7 +936,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 
-  it('preflights batched read-only Bash calls before the hard-limit command executes', async () => {
+  it('preflights sequential read-only Bash rounds before the hard-limit command executes', async () => {
     const toolExecutor = {
       execute: vi.fn(async (_toolName: string, args: Record<string, unknown>): Promise<ToolResult> => ({
         toolCallId: '',
@@ -972,7 +972,10 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       } as ToolCall;
     });
 
-    const results = await engine.executeToolsWithHooks(calls);
+    const results: ToolResult[] = [];
+    for (const call of calls) {
+      results.push(...await engine.executeToolsWithHooks([call]));
+    }
 
     expect(toolExecutor.execute).toHaveBeenCalledTimes(14);
     expect(toolExecutor.execute).not.toHaveBeenCalledWith(
@@ -1008,7 +1011,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 
-  it('preflights a runaway WebSearch loop and forces the agent to answer at the hard limit', async () => {
+  it('preflights a runaway WebSearch loop across model rounds and forces the agent to answer at the hard limit', async () => {
     // 回归：模型反复 WebSearch 不收敛（拿到好结果仍自称"截断"重搜）时，
     // 之前因 WebSearch 不在 READ_ONLY_TOOLS，只读循环熔断从不触发，会话停在空白"待处理"。
     // 现在 WebSearch 计入连续只读操作 → 第 15 次硬阈值 preflight 拦截 → 强制收尾。
@@ -1047,7 +1050,10 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       } as ToolCall;
     });
 
-    const results = await engine.executeToolsWithHooks(calls);
+    const results: ToolResult[] = [];
+    for (const call of calls) {
+      results.push(...await engine.executeToolsWithHooks([call]));
+    }
 
     // 前 14 次真正执行，第 15 次被 preflight 硬上限拦截（不再无限搜下去）
     expect(toolExecutor.execute).toHaveBeenCalledTimes(14);

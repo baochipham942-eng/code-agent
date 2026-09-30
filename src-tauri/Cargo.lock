@@ -485,6 +485,7 @@ name = "code-agent-tauri"
 version = "0.16.50"
 dependencies = [
  "base64 0.22.1",
+ "block2",
  "ctrlc",
  "libc",
  "objc2",

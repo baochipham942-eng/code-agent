@@ -216,6 +216,53 @@ describe('ToolExecutionEngine read-loop seal (FB-253)', () => {
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 
+  it('keeps three five-read model rounds below the round hard limit', async () => {
+    const execute = vi.fn(async (name: string): Promise<ToolResult> => ({
+      toolCallId: '',
+      success: true,
+      output: `${name} ok`,
+    }));
+    const { ctx, engine } = makeEngine(execute, { priorReads: 0 });
+
+    for (let round = 0; round < 3; round += 1) {
+      const results = await engine.executeToolsWithHooks(
+        Array.from({ length: 5 }, (_, index) => ({
+          id: `parallel-${round}-${index}`,
+          name: 'Read',
+          arguments: { file_path: `/tmp/parallel-${round}-${index}.txt` },
+        })) as ToolCall[],
+      );
+      expect(results.every((result) => result.success)).toBe(true);
+    }
+
+    expect(ctx.control.readLoopSealActive).toBe(false);
+    expect(ctx.antiPatternDetector.getConsecutiveReadCount()).toBe(3);
+    expect(ctx.antiPatternDetector.getConsecutiveReadCallCount()).toBe(15);
+  });
+
+  it('trips the raw-call backstop during eight-read rounds before round 15', async () => {
+    const execute = vi.fn(async (name: string): Promise<ToolResult> => ({
+      toolCallId: '',
+      success: true,
+      output: `${name} ok`,
+    }));
+    const { ctx, engine } = makeEngine(execute, { priorReads: 0 });
+
+    for (let round = 0; round < 5; round += 1) {
+      await engine.executeToolsWithHooks(
+        Array.from({ length: 8 }, (_, index) => ({
+          id: `backstop-${round}-${index}`,
+          name: 'Read',
+          arguments: { file_path: `/tmp/backstop-${round}-${index}.txt` },
+        })) as ToolCall[],
+      );
+    }
+
+    expect(ctx.antiPatternDetector.getConsecutiveReadCount()).toBe(5);
+    expect(ctx.antiPatternDetector.getConsecutiveReadCallCount()).toBe(40);
+    expect(ctx.control.readLoopSealActive).toBe(true);
+  });
+
   it('a write-file Bash runs while sealed but does not lift the seal', async () => {
     const execute = vi.fn(async (name: string, args: Record<string, unknown>): Promise<ToolResult> => ({
       toolCallId: '',

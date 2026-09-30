@@ -39,6 +39,7 @@ import { inboundAccessText } from '../inboundAccessI18n';
 import type { InboundPairingRequest } from '../inboundPairingService';
 import { CHANNEL_INGRESS } from '../../../shared/constants';
 import { getAuditLogger } from '../../security/auditLogger';
+import { buildFeishuCardActionPayload } from './feishuCardAction';
 
 const logger = createLogger('FeishuChannel');
 type FeishuPlatform = 'feishu' | 'lark';
@@ -820,9 +821,11 @@ export class FeishuChannel extends BaseChannelPlugin {
         // 卡片按钮回传（B3 审批回批）。两种形态都在此收口：
         //   - 旧版消息卡片回调：顶层 action.value.action（本 relay 发的就是旧版卡片）
         //   - 卡片 2.0 事件：header.event_type==='card.action.trigger' + event.action.value.action
-        // 状态变更类回调：配了 verificationToken 就校验（旧版回调带 token 字段）。
-        const cardActionValue = this.extractCardActionValue(bodyRecord, eventType, eventPayload);
-        if (cardActionValue !== undefined) {
+        // 审批卡回调必须有至少一种平台校验凭据；没有凭据时 fail-closed。
+        const cardAction = buildFeishuCardActionPayload(bodyRecord, eventPayload, this.extractCardActionValue(bodyRecord, eventType, eventPayload), Boolean(this.feishuConfig?.verificationToken?.trim() || this.feishuConfig?.encryptKey?.trim()));
+        if (cardAction) {
+          const hasVerificationCredential = Boolean(this.feishuConfig?.verificationToken?.trim() || this.feishuConfig?.encryptKey?.trim());
+          if (!hasVerificationCredential) { logger.warn(`${this.meta.name} card action rejected: verification credential not configured`); res.status(401).json({ code: -1, msg: 'verification credential required' }); return; }
           const token = readStringField(bodyRecord, 'token');
           if (this.feishuConfig?.verificationToken && token !== this.feishuConfig.verificationToken) {
             logger.warn(`${this.meta.name} card action rejected: token mismatch`);
@@ -830,7 +833,7 @@ export class FeishuChannel extends BaseChannelPlugin {
             return;
           }
           logger.info(`${this.meta.name} card action received`);
-          this.emit('card_action', { value: cardActionValue });
+          this.emit('card_action', cardAction);
           res.json({}); // 旧版卡片回调可回卡片/toast 更新；这里由 resolved 事件统一更新，回空即可
           return;
         }

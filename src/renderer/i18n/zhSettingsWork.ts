@@ -276,6 +276,7 @@ export const zhSettingsWork = {
         enableCors: '启用 CORS',
         encryptKeyLabel: 'Encrypt Key (可选)',
         verificationTokenLabel: 'Verification Token (可选)',
+        approvalCardSecurityWarning: '配置校验令牌后审批卡才生效',
         webhookPortLabel: 'Webhook 端口',
         webSocketLabel: '使用长连接（推荐）',
         webSocketHint: '桌面端默认使用长连接，无需公网回调地址。关闭后改用 Webhook。',

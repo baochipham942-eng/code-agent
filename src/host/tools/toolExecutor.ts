@@ -36,6 +36,7 @@ import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
+import { getPluginIdForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
@@ -660,6 +661,7 @@ export class ToolExecutor {
     }
 
     const executionToolName = toolDef.name;
+    const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
     const writeWithoutWorkspaceAuthority = Boolean(
       this.runContext
@@ -1698,6 +1700,9 @@ export class ToolExecutor {
         : null;
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
+      if (pluginId) {
+        traceBuilder.addStep('plugin_hook', 'plugin_origin', 'allow', `Tool registered by plugin ${pluginId}`);
+      }
       /** 分类器抛错（≠ 判 ask）时的错误串；非空表示这次「问用户」其实是故障回退。 */
       let classifierFailedReason: string | undefined;
       // validateCommand 只描述已命中的危险形态：未识别 ask 才标 unknown；命中确定规则
@@ -1919,6 +1924,7 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
+      if (pluginId) permissionRequest.details.pluginId = pluginId;
       if (
         permissionRequest.type === 'file_read'
         || permissionRequest.type === 'file_write'
@@ -2407,7 +2413,10 @@ export class ToolExecutor {
           error: result.error,
           securityFlags: commandValidation?.securityFlags,
           riskLevel: commandValidation?.riskLevel,
-          metadata: sandboxAuditMetadata(result.metadata),
+          metadata: {
+            ...sandboxAuditMetadata(result.metadata),
+            ...(pluginId ? { pluginId } : {}),
+          },
         });
       }
 
@@ -2431,6 +2440,7 @@ export class ToolExecutor {
           error: error instanceof Error ? error.message : 'Unknown error',
           securityFlags: commandValidation?.securityFlags,
           riskLevel: commandValidation?.riskLevel,
+          metadata: pluginId ? { pluginId } : undefined,
         });
       }
 

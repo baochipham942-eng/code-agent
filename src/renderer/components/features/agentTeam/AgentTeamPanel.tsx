@@ -101,7 +101,7 @@ const AgentListItem: React.FC<{
       <div className="text-xs text-zinc-500 truncate">{agent.role}</div>
     </div>
     {unreadCount && unreadCount > 0 && (
-      <span className="px-1.5 py-0.5 text-xs font-medium text-white bg-cyan-500 rounded-full">
+      <span className="px-1.5 py-0.5 text-xs font-medium text-white bg-cyan-700 rounded-full">
         {unreadCount}
       </span>
     )}

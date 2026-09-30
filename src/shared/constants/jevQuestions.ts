@@ -404,6 +404,41 @@ export const PERMCLASS_APPROVE_THRESHOLDS = {
   maxBeyondScope: 0.3,
 } as const;
 
+/** Skill/tool rerank question texts and thresholds. This remains off by default at the caller. */
+const JEV_SKILL_RERANK_QUESTIONS = {
+  choice: {
+    type: 'choice',
+    instructions:
+      'Given `query` and the candidate `roster`, choose the single candidate that best satisfies the query. Use the exact candidate name as the choice; do not invent a name.',
+  },
+  need_skill: {
+    type: 'noul',
+    instructions: 'Does the query require using one of the registered skills or tools in the roster?',
+  },
+  need_now: {
+    type: 'noul',
+    instructions: 'Does the query require loading the chosen tool or skill now rather than only returning it as a search result?',
+  },
+  none_of_roster: {
+    type: 'noul',
+    instructions: 'Does none of the candidates in the roster satisfy the query?',
+  },
+} as const satisfies Record<string, JevQuestionSpec>;
+
+export const JEV_SKILL_RERANK_THRESHOLDS = {
+  maxRoster: 255,
+  minChoiceConfidence: 0.6,
+  minNeedSkill: 0.5,
+  minNeedNow: 0.5,
+  maxNoneOfRoster: 0.5,
+} as const;
+
+/** Named block for callers that need the complete rerank contract. */
+export const skillRerank = {
+  questions: JEV_SKILL_RERANK_QUESTIONS,
+  thresholds: JEV_SKILL_RERANK_THRESHOLDS,
+} as const;
+
 /** 浏览器步选阈值。换 jev 版本必须先重跑 §9 题库再改这里。 */
 export const BROWSER_STEP_THRESHOLDS = {
   minChoiceConfidence: 0.6,

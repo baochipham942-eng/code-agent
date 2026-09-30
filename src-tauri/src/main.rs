@@ -28,10 +28,10 @@ mod pip;
 mod traffic_lights;
 
 use appshots::{
-    appshots_read_image_data_url, appshots_read_image_data_url_by_id, appshots_report_composer_slot,
-    appshots_set_enabled,
+    appshots_last_front_app, appshots_read_image_data_url, appshots_read_image_data_url_by_id,
+    appshots_report_composer_slot, appshots_set_enabled,
     appshots_set_motion_enabled, appshots_set_target_session, appshots_skip_motion,
-    appshots_trigger, AppshotsState,
+    appshots_trigger, appshots_trigger_for_pid, AppshotsState,
 };
 use native_app_icon::desktop_get_app_icon;
 use native_desktop::{
@@ -3991,6 +3991,8 @@ fn main() {
             desktop_stop_voice_aec,
             desktop_get_app_icon,
             appshots_trigger,
+            appshots_last_front_app,
+            appshots_trigger_for_pid,
             appshots_read_image_data_url,
             appshots_read_image_data_url_by_id,
             appshots_report_composer_slot,
@@ -4138,6 +4140,11 @@ fn main() {
             // Global Shortcut (Cmd+Shift+A)
             if let Err(e) = setup_global_shortcut(app) {
                 eprintln!("Failed to setup global shortcut: {e}");
+            }
+
+            #[cfg(target_os = "macos")]
+            if let Err(e) = appshots::start_last_front_app_tracker() {
+                eprintln!("Failed to start Appshots last-front-app tracker: {e}");
             }
 
             Ok(())

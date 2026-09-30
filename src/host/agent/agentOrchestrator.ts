@@ -272,7 +272,8 @@ export class AgentOrchestrator {
       try {
         const mod = await import('../session/sessionEventService');
         eventService = mod.getSessionEventService();
-      } catch { /* evaluation module not available */ }
+        mod.startSessionEventLivenessProbe();
+      } catch (error) { logger.warn(`Failed to load session event service: ${error instanceof Error ? error.message : String(error)}`, error); }
     }
     const telemetryCollector = getTelemetryCollector();
     const sessionAwareOnEvent = (event: AgentEvent) => {

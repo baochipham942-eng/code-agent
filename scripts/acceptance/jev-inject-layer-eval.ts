@@ -186,6 +186,14 @@ function priceUsable(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function clearInheritedProxy(): void {
+  // dotenv reload of the app env file puts a local proxy back after the
+  // caller unset HTTP(S)_PROXY. This run is specified to go direct.
+  for (const name of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']) {
+    delete process.env[name];
+  }
+}
+
 function keyState(name: string): 'set' | 'unset' {
   const value = process.env[name];
   return value !== undefined && value.trim().length > 0 ? 'set' : 'unset';
@@ -738,6 +746,8 @@ async function main(): Promise<void> {
     console.error(`JEV_MODEL=${JEV_MODEL} expected jev-1.13.0`);
     process.exit(1);
   }
+  clearInheritedProxy();
+  console.log('inherited-proxy=cleared');
   const fixturePath = path.resolve(args.find((arg) => !arg.startsWith('--')) ?? defaultFixture);
   const fixture = parseFixture(JSON.parse(fs.readFileSync(fixturePath, 'utf8')) as unknown);
   validateFixture(fixture);

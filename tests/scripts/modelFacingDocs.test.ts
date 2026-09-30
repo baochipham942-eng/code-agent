@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { checkModelFacingDocs } from '../../scripts/check-model-facing-docs.mjs';
+import { checkModelFacingDocs } from '../../scripts/ci/check-model-facing-docs.mjs';
 
 const repoRoot = path.resolve(__dirname, '../..');
 const docPath = path.join(repoRoot, 'docs/architecture/model-facing-surface.md');

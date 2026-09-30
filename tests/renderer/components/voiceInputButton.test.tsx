@@ -81,7 +81,8 @@ describe('VoiceInputButton', () => {
     const html = renderButton();
 
     expect(html).toContain('未检测到明显语音，请检查麦克风输入');
-    expect(html).toContain('bg-amber-500');
+    expect(html).toContain('bg-amber-700');
+    expect(html).toContain('hover:bg-amber-800');
     expect(html).not.toContain('重试');
   });
 

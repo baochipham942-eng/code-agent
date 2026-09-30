@@ -58,6 +58,9 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 const { ToolExecutor } = await import('../../../src/host/tools/toolExecutor');
+import { register as registerPluginToolOrigin, unregister as unregisterPluginToolOrigin } from '../../../src/host/plugins/pluginToolOrigin';
+import { getAuditLogger } from '../../../src/host/security';
+import { getDecisionHistory } from '../../../src/host/security/decisionHistory';
 
 interface TraceStepLike { rule: string }
 
@@ -104,6 +107,231 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
     const request = requestPermission.mock.calls[0][0] as { decisionTrace?: { steps: TraceStepLike[] } };
     const rules = (request.decisionTrace?.steps ?? []).map((s) => s.rule);
     expect(rules).toContain('external_side_effect');
+  });
+
+  it('carries plugin attribution without copying the caller agent id or changing the approval outcome', async () => {
+    registerPluginToolOrigin('mail_send', 'example.plugin');
+    try {
+      const requestPermission = vi.fn(async (_request: unknown) => false);
+      const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+      executor.setAuditEnabled(false);
+
+      const result = await executor.execute('mail_send', { subject: 'hi', to: ['a@b.com'] }, {
+        sessionId: 's1',
+        agentId: 'agent-child',
+      });
+
+      expect(result.success).toBe(false);
+      const request = requestPermission.mock.calls[0]?.[0] as {
+        agentId?: string;
+        details?: { pluginId?: string };
+        decisionTrace?: { finalOutcome: string; steps: TraceStepLike[] };
+      };
+      expect(request.agentId).toBeUndefined();
+      expect(request.details?.pluginId).toBe('example.plugin');
+      expect(request.decisionTrace).toMatchObject({
+        finalOutcome: 'ask',
+        steps: expect.arrayContaining([
+          expect.objectContaining({ rule: 'plugin_origin', result: 'allow' }),
+        ]),
+      });
+    } finally {
+      unregisterPluginToolOrigin('mail_send');
+    }
+  });
+
+  it('main-agent approval payload has plugin provenance and no subagent attribution', async () => {
+    registerPluginToolOrigin('mail_send', 'example.plugin');
+    try {
+      for (const agentId of ['default', 'role-writer']) {
+        const requestPermission = vi.fn(async (_request: unknown) => false);
+        const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+        executor.setAuditEnabled(false);
+        await executor.execute('mail_send', { subject: 'hi', to: ['a@b.com'] }, {
+          sessionId: `main-${agentId}`,
+          agentId,
+        });
+        const request = requestPermission.mock.calls[0]?.[0] as {
+          agentId?: string;
+          details?: { pluginId?: string };
+        };
+        expect(request.agentId, agentId).toBeUndefined();
+        expect(request.details?.pluginId, agentId).toBe('example.plugin');
+        expect(JSON.stringify(request), agentId).not.toMatch(/subagent|来自子/);
+      }
+
+      const requestPermission = vi.fn(async (_request: unknown) => false);
+      const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+      executor.setAuditEnabled(false);
+      await executor.execute('Bash', { command: 'plugin-ask-probe --marker' }, {
+        sessionId: 'main-bash-default',
+        agentId: 'default',
+      });
+      const bash = requestPermission.mock.calls[0]?.[0] as {
+        agentId?: string;
+        details?: { pluginId?: string };
+      };
+      expect(bash.agentId).toBeUndefined();
+      expect(bash.details?.pluginId).toBeUndefined();
+    } finally {
+      unregisterPluginToolOrigin('mail_send');
+    }
+  });
+
+  it('writes pluginId to both success and error audit metadata', async () => {
+    registerPluginToolOrigin('mail_send', 'example.plugin');
+    const audit = getAuditLogger();
+    const logToolUsage = vi.spyOn(audit, 'logToolUsage').mockImplementation(() => {});
+    try {
+      const executor = new ToolExecutor({ requestPermission: async () => true, workingDirectory: '/tmp/workbench' });
+      await executor.execute('mail_send', { subject: 'hi', to: ['a@b.com'] }, { sessionId: 's1' });
+      expect(logToolUsage.mock.calls.at(-1)?.[0]).toMatchObject({ metadata: { pluginId: 'example.plugin' } });
+
+      resolverState.execute.mockRejectedValueOnce(new Error('boom'));
+      await executor.execute('mail_send', { subject: 'hi', to: ['a@b.com'] }, { sessionId: 's1' });
+      expect(logToolUsage.mock.calls.at(-1)?.[0]).toMatchObject({
+        success: false,
+        metadata: { pluginId: 'example.plugin' },
+      });
+    } finally {
+      logToolUsage.mockRestore();
+      unregisterPluginToolOrigin('mail_send');
+    }
+  });
+
+  it('host Bash carries no pluginId while another tool is attributed', async () => {
+    registerPluginToolOrigin('mail_send', 'example.plugin');
+    const requestPermission = vi.fn(async (_request: unknown) => false);
+    try {
+      const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+      executor.setAuditEnabled(false);
+      await executor.execute('Bash', { command: 'plugin-ask-probe --marker' }, { sessionId: 'host-bash-plain' });
+      expect(requestPermission).toHaveBeenCalledTimes(1);
+      const request = requestPermission.mock.calls[0]?.[0] as {
+        details?: { pluginId?: string };
+        decisionTrace?: { steps: TraceStepLike[] };
+      };
+      expect(request.details?.pluginId).toBeUndefined();
+      expect((request.decisionTrace?.steps ?? []).map((step) => step.rule)).not.toContain('plugin_origin');
+    } finally {
+      unregisterPluginToolOrigin('mail_send');
+    }
+  });
+
+  it('keeps deny, ask, and forceConfirm outcomes unchanged when a tool is plugin-attributed', async () => {
+    interface PermissionView {
+      details?: { pluginId?: string };
+      forceConfirm?: boolean;
+      decisionTrace?: { finalOutcome: string; steps: TraceStepLike[] };
+    }
+    interface RunView {
+      success: boolean;
+      error?: string;
+      asked: boolean;
+      executed: boolean;
+      forceConfirm: boolean;
+      finalOutcome?: string;
+      pluginId?: string;
+      pluginStep: boolean;
+      historyOutcome?: string;
+      historyFinal?: string;
+      historyPluginStep: boolean;
+    }
+
+    async function run(options: {
+      tool: 'Bash' | 'mail_send';
+      params: Record<string, unknown>;
+      sessionId: string;
+      attributed: boolean;
+      readOnly?: boolean;
+    }): Promise<RunView> {
+      if (options.attributed) registerPluginToolOrigin(options.tool, 'example.plugin');
+      const requestPermission = vi.fn(async (_request: unknown) => false);
+      const executor = new ToolExecutor({
+        requestPermission,
+        workingDirectory: '/tmp/workbench',
+        ...(options.readOnly ? { permissionModeOverride: 'readOnly' as const } : {}),
+      });
+      executor.setAuditEnabled(false);
+      const executedBefore = resolverState.execute.mock.calls.length;
+      try {
+        const result = await executor.execute(options.tool, options.params, { sessionId: options.sessionId });
+        const request = requestPermission.mock.calls[0]?.[0] as PermissionView | undefined;
+        const history = getDecisionHistory().getAll().filter((entry) => entry.sessionId === options.sessionId).at(-1);
+        return {
+          success: result.success,
+          error: result.error,
+          asked: requestPermission.mock.calls.length > 0,
+          executed: resolverState.execute.mock.calls.length > executedBefore,
+          forceConfirm: request?.forceConfirm === true,
+          finalOutcome: request?.decisionTrace?.finalOutcome,
+          pluginId: request?.details?.pluginId,
+          pluginStep: (request?.decisionTrace?.steps ?? []).some((step) => step.rule === 'plugin_origin'),
+          historyOutcome: history?.outcome,
+          historyFinal: history?.decisionTrace?.finalOutcome,
+          historyPluginStep: (history?.decisionTrace?.steps ?? []).some((step) => step.rule === 'plugin_origin'),
+        };
+      } finally {
+        if (options.attributed) unregisterPluginToolOrigin(options.tool);
+      }
+    }
+
+    function securityOutcome(view: RunView) {
+      return {
+        success: view.success,
+        error: view.error,
+        asked: view.asked,
+        executed: view.executed,
+        forceConfirm: view.forceConfirm,
+        finalOutcome: view.finalOutcome,
+        historyOutcome: view.historyOutcome,
+        historyFinal: view.historyFinal,
+      };
+    }
+
+    const denyCommand = { command: 'chmod 777 /tmp/plugin-deny-probe' };
+    const askCommand = { command: 'plugin-ask-probe --marker' };
+    const denyPlain = await run({ tool: 'Bash', params: denyCommand, sessionId: 'plugin-deny-plain', attributed: false });
+    const denyPlugin = await run({ tool: 'Bash', params: denyCommand, sessionId: 'plugin-deny-plugin', attributed: true });
+    expect(securityOutcome(denyPlugin)).toEqual(securityOutcome(denyPlain));
+    expect(denyPlugin.success).toBe(false);
+    expect(denyPlugin.error).toMatch(/^Denied:/);
+    expect(denyPlugin.asked).toBe(false);
+    expect(denyPlugin.executed).toBe(false);
+    expect(denyPlugin.historyOutcome).toBe('classifier-deny');
+    expect(denyPlugin.historyFinal).toBe('deny');
+    expect(denyPlugin.historyPluginStep).toBe(true);
+    expect(denyPlain.historyPluginStep).toBe(false);
+
+    const askPlain = await run({ tool: 'Bash', params: askCommand, sessionId: 'plugin-ask-plain', attributed: false });
+    const askPlugin = await run({ tool: 'Bash', params: askCommand, sessionId: 'plugin-ask-plugin', attributed: true });
+    expect(securityOutcome(askPlugin)).toEqual(securityOutcome(askPlain));
+    expect(askPlugin.success).toBe(false);
+    expect(askPlugin.asked).toBe(true);
+    expect(askPlugin.executed).toBe(false);
+    expect(askPlugin.forceConfirm).toBe(false);
+    expect(askPlugin.finalOutcome).toBe('ask');
+    expect(askPlugin.pluginId).toBe('example.plugin');
+    expect(askPlugin.pluginStep).toBe(true);
+    expect(askPlain.pluginId).toBeUndefined();
+    expect(askPlain.pluginStep).toBe(false);
+
+    const mailArgs = { subject: 'hi', to: ['a@b.com'] };
+    const confirmPlain = await run({
+      tool: 'mail_send', params: mailArgs, sessionId: 'plugin-confirm-plain', attributed: false, readOnly: true,
+    });
+    const confirmPlugin = await run({
+      tool: 'mail_send', params: mailArgs, sessionId: 'plugin-confirm-plugin', attributed: true, readOnly: true,
+    });
+    expect(securityOutcome(confirmPlugin)).toEqual(securityOutcome(confirmPlain));
+    expect(confirmPlugin.success).toBe(false);
+    expect(confirmPlugin.asked).toBe(true);
+    expect(confirmPlugin.executed).toBe(false);
+    expect(confirmPlugin.forceConfirm).toBe(true);
+    expect(confirmPlugin.finalOutcome).toBe('ask');
+    expect(confirmPlugin.pluginId).toBe('example.plugin');
+    expect(confirmPlain.pluginId).toBeUndefined();
+    expect(confirmPlain.forceConfirm).toBe(true);
   });
 
   it('does NOT add an external step for a plain outside-workspace Write', async () => {

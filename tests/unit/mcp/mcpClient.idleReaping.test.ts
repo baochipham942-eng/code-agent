@@ -357,7 +357,7 @@ describe('MCPClient idle connection reaping', () => {
   });
 
   it('does not use a closing client when its generation was already bumped and reconnects once', async () => {
-    let now = 0;
+    const now = 0;
     const { client } = connectedClient(() => now);
     const closing = {
       callTool: vi.fn(async () => { throw new Error('closed client used'); }),

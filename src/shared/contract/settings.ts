@@ -368,11 +368,14 @@ export interface AppSettings {
   // MCP 配置
   mcp?: {
     /**
-     * 连接空闲回收；默认关闭（不配置就连扫描计时器都不建）。开启前置条件：
-     * 该 workspace 的 MCP server 都不持有服务端会话状态——浏览器/REPL 类
-     * server 持有登录态与页面上下文，被回收后 lazy 重连是全新进程，状态归零，
-     * 模型收不到任何重启信号会继续按旧状态操作。缺省 ttlMs/scanIntervalMs
-     * 使用 host 的 MCP_TIMEOUTS 默认值。
+     * 连接空闲回收。缺省开启（产品负责人 2026-09-30 决定：不配置 `enabled` 就按开处理）。
+     * 显式 `enabled: false` 仍关闭，连扫描计时器都不建。
+     * 可以开，是因为这些解锁条件已经落地：
+     * - 只有显式 stateless:true、且未关闭 lazyLoad 的 stdio server 会被回收，缺省视为有会话状态；
+     * - 浏览器 / REPL / 桌面（cua-driver、argus、puppeteer）和 memory 保持不标记；
+     * - 回收后第一次工具结果带英文重启说明，ToolExecutor 在报 Unknown tool 之前重连该 lazy server；
+     * - 同一 server 的 teardown 排完才允许重连，回收中途的调用不会丢掉替换连接。
+     * 缺省 ttlMs/scanIntervalMs 使用 host 的 MCP_TIMEOUTS 默认值。
      */
     idleReaping?: {
       enabled?: boolean;
@@ -385,6 +388,8 @@ export interface AppSettings {
       args?: string[];
       env?: Record<string, string>;
       enabled: boolean;
+      /** 显式 true 才允许空闲回收。缺省视为有会话状态。 */
+      stateless?: boolean;
     }>;
   };
   // 原生连接器（macOS Calendar/Mail/Reminders）— 默认全关，按需激活

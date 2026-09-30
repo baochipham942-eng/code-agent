@@ -136,6 +136,12 @@ function readMcpSettingsServerScope(value: unknown): McpSettingsServerScope {
   throw new Error("scope must be 'user' or 'project'");
 }
 
+function optionalBoolean(value: unknown, label: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') throw new Error(`${label} must be a boolean`);
+  return value;
+}
+
 function readRequiredString(record: Record<string, unknown>, key: string, message: string): string {
   const value = record[key];
   if (typeof value !== 'string' || !value.trim()) {
@@ -216,6 +222,7 @@ export function normalizeMcpSettingsServerConfig(input: unknown): MCPServerConfi
   if (type === 'stdio') {
     const command = readRequiredString(config, 'command', 'command is required for stdio MCP servers');
     validateStdioCommand(command);
+    const stateless = optionalBoolean(config.stateless, 'stateless');
     return {
       name,
       type: 'stdio',
@@ -224,6 +231,7 @@ export function normalizeMcpSettingsServerConfig(input: unknown): MCPServerConfi
       env: optionalStringMap(config.env, 'env') || {},
       enabled: false,
       lazyLoad: true,
+      ...(stateless === true ? { stateless: true } : {}),
     };
   }
 

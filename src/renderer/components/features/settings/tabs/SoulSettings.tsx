@@ -216,7 +216,7 @@ export const SoulSettings: React.FC = () => {
           className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
             saving || !isDirty
               ? 'cursor-not-allowed bg-zinc-800 text-zinc-500'
-              : 'bg-primary-500 text-white hover:bg-primary-600'
+              : 'bg-primary-700 text-white hover:bg-primary-800'
           }`}
         >
           {saving ? (

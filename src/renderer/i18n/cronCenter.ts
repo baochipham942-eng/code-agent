@@ -198,6 +198,15 @@ export const cronCenterZh = {
     templateEnabled: '已开启',
     templateReenable: '重新开启',
     templateEnableFailed: '开启失败，请稍后重试',
+    // 定时任务模板的展示文案（按模板 id 索引，组件经 getTemplateDisplayCopy 取用）；
+    // 没登记词条的存量模板用模板对象内的兜底文案。新模板文案一律走这里。
+    templates: {
+      'morning-triage': {
+        name: '晨间分诊',
+        description: '汇总昨晚到现在的未读邮件、消息和日历变动',
+        scheduleLabel: '工作日 08:30',
+      },
+    },
     // 模板连接器依赖状态
     connectorConnected: '已连接',
     connectorNotConnected: '未连接',
@@ -400,6 +409,13 @@ export const cronCenterEn: typeof cronCenterZh = {
     templateEnabled: 'On',
     templateReenable: 'Re-enable',
     templateEnableFailed: 'Failed to enable — please try again',
+    templates: {
+      'morning-triage': {
+        name: 'Morning triage',
+        description: 'Round up unread mail, messages, and calendar changes since last night',
+        scheduleLabel: 'Weekdays 08:30',
+      },
+    },
     connectorConnected: 'Connected',
     connectorNotConnected: 'Not connected',
     connectorNeededHint: 'Connect {name} first',

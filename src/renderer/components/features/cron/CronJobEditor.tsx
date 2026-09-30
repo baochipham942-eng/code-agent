@@ -21,6 +21,7 @@ import {
   CRON_TEMPLATES,
   getMissingTemplateConnectors,
   getTemplateConnectorStatuses,
+  getTemplateDisplayCopy,
   type CronTemplate,
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
@@ -111,7 +112,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       : step === 'pick'
         ? '选择任务模板'
         : step === 'fill'
-          ? selectedTemplate?.name || '填写参数'
+          ? (selectedTemplate ? getTemplateDisplayCopy(selectedTemplate, cc.templates).name : '') || '填写参数'
           : '手动配置任务';
 
   const scheduleOptions = useMemo(
@@ -228,6 +229,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         <div className="grid grid-cols-2 gap-3">
           {CRON_TEMPLATES.map((tpl) => {
             const connectorStatuses = getTemplateConnectorStatuses(tpl, connectedConnectorIds);
+            const copy = getTemplateDisplayCopy(tpl, cc.templates);
             return (
               <button
                 key={tpl.id}
@@ -236,10 +238,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
               >
                 <div className="mb-2 text-2xl">{tpl.emoji}</div>
                 <div className="text-sm font-medium text-zinc-200 group-hover:text-zinc-100">
-                  {tpl.name}
+                  {copy.name}
                 </div>
                 <div className="mt-1 text-xs text-zinc-500 group-hover:text-zinc-400">
-                  {tpl.description}
+                  {copy.description}
                 </div>
                 {connectorStatuses.length > 0 && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -318,8 +320,12 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           <div className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950/50 p-3">
             <span className="text-2xl">{selectedTemplate.emoji}</span>
             <div>
-              <div className="text-sm font-medium text-zinc-200">{selectedTemplate.name}</div>
-              <div className="text-xs text-zinc-500">{selectedTemplate.description}</div>
+              <div className="text-sm font-medium text-zinc-200">
+                {getTemplateDisplayCopy(selectedTemplate, cc.templates).name}
+              </div>
+              <div className="text-xs text-zinc-500">
+                {getTemplateDisplayCopy(selectedTemplate, cc.templates).description}
+              </div>
             </div>
           </div>
 

@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 import { join } from 'path';
 import { readdir } from 'fs/promises';
 import { TestCase } from './types.js';
@@ -22,7 +23,7 @@ export async function loadTestCases(): Promise<TestCase[]> {
 
         const modulePath = join(categoryDir, file);
         try {
-          const module = await import(modulePath);
+          const module = await import(pathToFileURL(modulePath).href);
           const testCase = module.default || Object.values(module)[0];
 
           if (testCase && testCase.id) {

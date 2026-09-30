@@ -389,4 +389,88 @@ describe('MCPClient idle connection reaping', () => {
     expect(result.success).toBe(true);
     expect(result.output).toContain('fresh');
   });
+
+  it('does not let a mid-reap tool call lose the replacement stdio connection', async () => {
+    let now = 0;
+    const { client, sdkClient } = connectedClient(() => now);
+    const transports = (client as unknown as {
+      transports: Map<string, { pid?: number; close: () => Promise<void> }>;
+    }).transports;
+    const oldTransport = { pid: 111, close: vi.fn(async () => {}) };
+    transports.set('local', oldTransport);
+    const registry = (client as unknown as { registry: MCPToolRegistry }).registry;
+    registry.tools.push({
+      serverName: 'local', name: 'ping', description: 'ping', inputSchema: { type: 'object', properties: {} },
+    });
+    const generations = (client as unknown as { serverConnectionGenerations: Map<string, number> }).serverConnectionGenerations;
+    const births = (client as unknown as { clientBirthGeneration: Map<string, number> }).clientBirthGeneration;
+    generations.set('local', 1);
+    births.set('local', 1);
+
+    const closingCall = vi.fn(async () => {
+      throw new Error('closed client used');
+    });
+    Object.assign(sdkClient, { callTool: closingCall });
+    let closeFinished = false;
+    let releaseClose: () => void = () => {};
+    sdkClient.close.mockImplementation(() => new Promise<void>((resolve) => {
+      releaseClose = () => {
+        closeFinished = true;
+        resolve();
+      };
+    }));
+
+    const fresh = {
+      callTool: vi.fn(async () => ({ content: [{ type: 'text', text: 'pong' }] })),
+      close: vi.fn(async () => {}),
+    };
+    const newTransport = { pid: 4242, close: vi.fn(async () => {}) };
+    let connectStartedBeforeClose = false;
+    const connect = vi.spyOn(client, 'connect').mockImplementation(async (config) => {
+      connectStartedBeforeClose = !closeFinished;
+      (client as unknown as { clients: Map<string, unknown> }).clients.set(config.name, fresh);
+      transports.set(config.name, newTransport);
+      registry.tools = [{
+        serverName: 'local', name: 'ping', description: 'ping', inputSchema: { type: 'object', properties: {} },
+      }];
+      const state = (client as unknown as { serverStates: Map<string, { status: string; toolCount: number }> }).serverStates.get(config.name);
+      if (state) {
+        state.status = 'connected';
+        state.toolCount = 1;
+      }
+      (client as unknown as { bumpServerConnectionGeneration: (name: string, rememberBirth?: boolean) => void })
+        .bumpServerConnectionGeneration(config.name, true);
+    });
+
+    now = 100;
+    const reapSettled = (client as unknown as {
+      idleReaper: { reapIdleConnections: () => Promise<void> };
+    }).idleReaper.reapIdleConnections();
+    const toolSettled = client.callTool('c-race', 'local', 'ping', {});
+    await Promise.resolve();
+    releaseClose();
+    const result = await toolSettled;
+    await reapSettled;
+
+    expect(result.success).toBe(true);
+    expect(closingCall).not.toHaveBeenCalled();
+    expect(connect).toHaveBeenCalledOnce();
+    expect(fresh.callTool).toHaveBeenCalledOnce();
+    expect(oldTransport.close).toHaveBeenCalledOnce();
+    expect({
+      connectStartedBeforeClose,
+      status: client.getServerState('local')?.status,
+      pids: client.getStdioChildPids(),
+      transportCount: transports.size,
+      sameTransport: transports.get('local') === newTransport,
+      toolResolvable: client.getToolDefinitions().some((tool) => tool.name === 'mcp__local__ping'),
+    }).toEqual({
+      connectStartedBeforeClose: false,
+      status: 'connected',
+      pids: [4242],
+      transportCount: 1,
+      sameTransport: true,
+      toolResolvable: true,
+    });
+  });
 });

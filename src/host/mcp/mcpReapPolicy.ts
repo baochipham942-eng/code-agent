@@ -71,6 +71,84 @@ function cancelled(toolCallId: string): ToolResult {
   };
 }
 
+interface Closable {
+  close(): Promise<unknown> | unknown;
+}
+
+interface Stoppable {
+  stop?: () => Promise<unknown> | unknown;
+}
+
+interface McpServerTeardownHandles {
+  bumpGeneration: () => number;
+  generation: () => number | undefined;
+  client: () => Closable | undefined;
+  dropClientIfCurrent: (client: Closable) => void;
+  transport: () => Closable | undefined;
+  dropTransportIfCurrent: (transport: Closable) => void;
+  inProcess: () => Stoppable | undefined;
+  dropInProcessIfCurrent: (server: Stoppable) => void;
+  stopListRecovery: () => void;
+  wipe: () => void;
+}
+
+/**
+ * One in-flight disconnect per server. Reconnect waits on this promise so it
+ * cannot install a transport that the rest of disconnect() then deletes.
+ */
+export class ServerTeardownGate {
+  private readonly pending = new Map<string, Promise<void>>();
+
+  inflight(serverName: string): Promise<void> | undefined {
+    return this.pending.get(serverName);
+  }
+
+  async run(serverName: string, teardown: () => Promise<void>): Promise<void> {
+    const existing = this.pending.get(serverName);
+    if (existing) {
+      await existing;
+      return this.run(serverName, teardown);
+    }
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.pending.set(serverName, gate);
+    try {
+      await teardown();
+    } finally {
+      if (this.pending.get(serverName) === gate) this.pending.delete(serverName);
+      release();
+    }
+  }
+}
+
+/**
+ * Close only the client and transport captured at the start. A newer connection
+ * keeps its registry entry, status, and stdio child.
+ */
+export async function teardownOwnedMcpServer(handles: McpServerTeardownHandles): Promise<void> {
+  const generation = handles.bumpGeneration();
+  const client = handles.client();
+  const transport = handles.transport();
+  const inProcess = handles.inProcess();
+  handles.stopListRecovery();
+  if (client) {
+    await client.close();
+    handles.dropClientIfCurrent(client);
+  }
+  if (transport) {
+    await transport.close();
+    handles.dropTransportIfCurrent(transport);
+  }
+  if (inProcess) {
+    if (inProcess.stop) await inProcess.stop();
+    handles.dropInProcessIfCurrent(inProcess);
+  }
+  if (handles.generation() !== generation) return;
+  handles.wipe();
+}
+
 /**
  * Take a client for a tool call. Capture the connection generation before the
  * take, and refuse a client whose generation moved (disconnect already bumped

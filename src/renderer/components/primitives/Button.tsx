@@ -39,7 +39,8 @@ const variantStyles: Record<ButtonVariant, string> = {
     'hover:from-primary-700 hover:to-primary-700',
     'text-white',
     'shadow-lg shadow-primary-700/20 hover:shadow-primary-700/30',
-    'disabled:from-primary-800/50 disabled:to-primary-700/50',
+    // 禁用不用 /50 渐变（浅色白字约 1.5:1）。渐变是 background-image，停点透明后底色才露出来。
+    'disabled:from-transparent disabled:to-transparent disabled:bg-btn-secondary-disabled disabled:text-btn-secondary-disabled disabled:shadow-none',
   ].join(' '),
   secondary: [
     'bg-btn-secondary hover:bg-btn-secondary-hover',
@@ -52,9 +53,10 @@ const variantStyles: Record<ButtonVariant, string> = {
     'disabled:text-zinc-600',
   ].join(' '),
   danger: [
+    // red-600 白字 ≥4.5；禁用 /50 白字约 2.6:1，改走同一对 secondary disabled token。
     'bg-red-600 hover:bg-red-700',
     'text-white',
-    'disabled:bg-red-600/50',
+    'disabled:from-transparent disabled:to-transparent disabled:bg-btn-secondary-disabled disabled:text-btn-secondary-disabled disabled:shadow-none',
   ].join(' '),
 };
 

@@ -13,6 +13,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { MCPClient } from '../../../src/host/mcp/mcpClient';
+import { ServerTeardownGate } from '../../../src/host/mcp/mcpReapPolicy';
 
 /**
  * 受控测试客户端：Object.create(MCPClient.prototype) 保留真 ensureConnected，
@@ -25,6 +26,7 @@ type TestableMCPClient = {
   serverConfigs: Map<string, unknown>;
   serverStates: Map<string, { status: string }>;
   connectingServers: Map<string, Promise<void>>;
+  teardownGate: ServerTeardownGate;
   connect(config: { name: string }): Promise<void>;
   ensureConnected(serverName: string, signal?: AbortSignal): Promise<boolean>;
 };
@@ -39,6 +41,7 @@ function makeTestableClient(serverName: string): TestableMCPClient {
     ]),
     serverStates: new Map([[serverName, { status: 'lazy' }]]),
     connectingServers: new Map(),
+    teardownGate: new ServerTeardownGate(),
   });
   return client;
 }

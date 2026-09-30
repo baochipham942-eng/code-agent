@@ -852,9 +852,11 @@ describe('image_generate — output_path stays inside the workspace', () => {
     process.env = { ...origEnv };
   });
 
-  function armPaidFetch(): ReturnType<typeof vi.fn> {
+  function armPaidFetch() {
     process.env.ZHIPU_OFFICIAL_API_KEY = 'official-key';
-    const fetchMock = vi.fn(async (url: unknown) => {
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock;
+    fetchMock.mockImplementation(async (url: unknown) => {
       const target = String(url);
       if (target.includes('/chat/completions')) {
         const body = JSON.stringify({ choices: [{ message: { content: 'expanded cat' } }] });
@@ -883,7 +885,6 @@ describe('image_generate — output_path stays inside the workspace', () => {
         json: async () => JSON.parse(body),
       };
     });
-    global.fetch = fetchMock;
     return fetchMock;
   }
 

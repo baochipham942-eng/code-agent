@@ -153,13 +153,18 @@ export class ToolSearchService {
     scored.sort((a, b) => b.score - a.score);
 
     // Jev 只在 keyword/required 搜索中改变排序；select 必须保持直接选择语义。
-    const reranked = await this.rerankScored(query, scored, options.rerank);
+    const rerankOutcome = options.rerank?.enabled && options.rerank.judge
+      ? await this.rerankScored(query, scored, options.rerank)
+      : { scored, suppressAutoLoad: false };
+    const reranked = rerankOutcome.scored;
 
     // 取 top N
     const topResults = reranked.slice(0, maxResults);
     const topScore = topResults[0]?.score;
-    const firstResultClearlyAhead = scored.length === 1
-      || (topScore !== undefined && topScore - (scored[1]?.score ?? 0) >= DEFERRED_TOOL_LOADING.CLEAR_LEAD_SCORE_GAP);
+    const firstResultClearlyAhead = !rerankOutcome.suppressAutoLoad && (
+      reranked.length === 1
+      || (topScore !== undefined && topScore - (reranked[1]?.score ?? 0) >= DEFERRED_TOOL_LOADING.CLEAR_LEAD_SCORE_GAP)
+    );
     const loadedTools: string[] = [];
     const insertedLoads: InsertedLoadClaim[] = [];
 
@@ -548,36 +553,41 @@ export class ToolSearchService {
     query: string,
     scored: Array<{ meta: DeferredToolMeta; score: number }>,
     rerank: ToolSearchOptions['rerank'],
-  ): Promise<Array<{ meta: DeferredToolMeta; score: number }>> {
-    if (!rerank?.enabled || !rerank.judge || scored.length === 0) return scored;
+  ): Promise<{ scored: Array<{ meta: DeferredToolMeta; score: number }>; suppressAutoLoad: boolean }> {
+    if (!rerank?.enabled || !rerank.judge || scored.length === 0) return { scored, suppressAutoLoad: false };
 
     const rosterCandidates = scored
       .filter(({ meta }) => meta.shortDescription.trim().length > 0)
       .slice(0, JEV_SKILL_RERANK_THRESHOLDS.maxRoster);
-    if (rosterCandidates.length === 0) return scored;
+    if (rosterCandidates.length === 0) return { scored, suppressAutoLoad: false };
 
     try {
       const first = await this.callRerankJudge(query, rosterCandidates, rerank.judge);
-      if (!this.acceptRerankDecision(first, rosterCandidates)) return scored;
+      if (!this.acceptRerankDecision(first, rosterCandidates)) return { scored, suppressAutoLoad: true };
 
-      // The first pass is a cheap roster choice. Re-read the keyword top three
-      // with full descriptions once, then let the judge choose among that set.
-      const reread = scored
-        .filter(({ meta }) => meta.shortDescription.trim().length > 0)
-        .slice(0, 3);
-      if (reread.length === 0) return scored;
+      // The first pass is a cheap roster choice. Re-read the judge winner plus
+      // the keyword top two once, then let the judge choose among those three.
+      const firstChoice = rosterCandidates.find(({ meta }) => meta.name === first.choice.choice);
+      if (!firstChoice) return { scored, suppressAutoLoad: true };
+      const reread = [
+        ...scored
+          .filter(({ meta }) => meta.shortDescription.trim().length > 0 && meta.name !== firstChoice.meta.name)
+          .slice(0, 2),
+        firstChoice,
+      ];
+      if (reread.length === 0) return { scored, suppressAutoLoad: true };
       const second = await this.callRerankJudge(query, reread, rerank.judge);
-      if (!this.acceptRerankDecision(second, reread)) return scored;
+      if (!this.acceptRerankDecision(second, reread)) return { scored, suppressAutoLoad: true };
 
       const winner = reread.find(({ meta }) => meta.name === second.choice.choice);
-      if (!winner) return scored;
-      return [
-        winner,
-        ...scored.filter(({ meta }) => meta.name !== winner.meta.name),
-      ];
+      if (!winner) return { scored, suppressAutoLoad: true };
+      return {
+        scored: [winner, ...scored.filter(({ meta }) => meta.name !== winner.meta.name)],
+        suppressAutoLoad: false,
+      };
     } catch (error) {
       logger.debug(`Jev skill rerank unavailable; keeping keyword order: ${error instanceof Error ? error.message : String(error)}`);
-      return scored;
+      return { scored, suppressAutoLoad: false };
     }
   }
 

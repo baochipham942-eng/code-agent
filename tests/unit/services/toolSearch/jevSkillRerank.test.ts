@@ -3,6 +3,7 @@ import { ToolSearchService } from '../../../../src/host/services/toolSearch/tool
 import type { JevSkillRerankJudge } from '../../../../src/shared/contract/toolSearch';
 import { resetProtocolRegistry } from '../../../../src/host/tools/protocolRegistry';
 import type { DeferredToolMeta } from '../../../../src/shared/contract/toolSearch';
+import { JEV_TIMEOUT_MS } from '../../../../src/shared/constants/jevQuestions';
 type JevSkillRerankJudgeInput = Parameters<JevSkillRerankJudge>[0];
 
 vi.mock('../../../../src/host/services/infra/logger', () => ({
@@ -33,6 +34,19 @@ function registerTools(service: ToolSearchService, count = 3): string[] {
   }));
   service.registerMCPTools(metas);
   return names;
+}
+
+function registerLeadingMcp(service: ToolSearchService, alias: string): string {
+  const name = `mcp__mock__${alias}-primary`;
+  service.registerMCPTool({
+    name,
+    shortDescription: `Primary ${alias} tool`,
+    tags: ['mcp'],
+    aliases: [alias],
+    source: 'mcp',
+    mcpServer: 'mock',
+  });
+  return name;
 }
 
 function enabled(judge: JevSkillRerankJudge) {
@@ -101,31 +115,46 @@ describe('Jev skill/tool rerank', () => {
     expect(result.tools.map((tool) => tool.name)).toEqual([names[2], names[0], names[1]]);
   });
 
-  it('does not auto-load skills when need_skill is false, including negative trigger samples', async () => {
+  it('includes a judge choice outside the keyword top three in the reread', async () => {
     const service = new ToolSearchService();
-    service.registerSkill('contract-review', 'Review contracts for legal risks', ['润色文案']);
-    service.registerSkill('meeting-summary', 'Summarize meetings and notes', ['整理日志']);
-    const judge = vi.fn(async ({ roster }: JevSkillRerankJudgeInput) => answer(roster[0]!.name, 0.9, 0, 1, 0));
+    const names = registerTools(service, 6);
+    let calls = 0;
+    const judge = vi.fn(async ({ roster }: JevSkillRerankJudgeInput) => {
+      calls += 1;
+      return answer(calls === 1 ? roster[5]!.name : roster[2]!.name);
+    });
 
+    const result = await service.searchTools('keyword', { maxResults: 3, includeMCP: true, ...enabled(judge) });
+
+    expect(judge).toHaveBeenCalledTimes(2);
+    expect(judge.mock.calls[1]![0].roster.map((entry) => entry.name)).toEqual([names[0], names[1], names[5]]);
+    expect(result.tools[0]?.name).toBe(names[5]);
+  });
+
+  it('does not auto-load skills when need_skill is false, including negative trigger samples', async () => {
     for (const query of ['润色文案', '整理日志']) {
-      const result = await service.searchTools(query, { maxResults: 3, includeMCP: false, ...enabled(judge) });
+      const service = new ToolSearchService();
+      const leading = registerLeadingMcp(service, query);
+      service.registerSkill(query === '润色文案' ? 'contract-review' : 'meeting-summary', 'Negative trigger sample', [query]);
+      const baseline = await service.searchTools(query, { maxResults: 3, includeMCP: true });
+      expect(baseline.loadedTools).toEqual([leading]);
+      service.resetLoadedTools();
+      const judge = vi.fn(async ({ roster }: JevSkillRerankJudgeInput) => answer(roster[0]!.name, 0.9, 0, 1, 0));
+      const result = await service.searchTools(query, { maxResults: 3, includeMCP: true, ...enabled(judge) });
       expect(result.loadedTools).toEqual([]);
-      expect(result.tools.every((tool) => tool.name.startsWith('skill:'))).toBe(true);
     }
   });
 
   it('does not force a skill when choice confidence is below the threshold', async () => {
     const service = new ToolSearchService();
-    service.registerSkill('contract-review', 'Review contracts for legal risks', ['contract']);
-    service.registerSkill('meeting-summary', 'Summarize meetings and notes', ['contract']);
-    const judge = vi.fn(async ({ roster }: JevSkillRerankJudgeInput) => answer(roster[1]!.name, 0.4));
-
-    const baseline = await service.searchTools('contract', { maxResults: 2, includeMCP: false });
+    const leading = registerLeadingMcp(service, 'contract');
+    const baseline = await service.searchTools('contract', { maxResults: 1, includeMCP: true });
+    expect(baseline.loadedTools).toEqual([leading]);
     service.resetLoadedTools();
-    const result = await service.searchTools('contract', { maxResults: 2, includeMCP: false, ...enabled(judge) });
+    const judge = vi.fn(async ({ roster }: JevSkillRerankJudgeInput) => answer(roster[0]!.name, 0.4));
+    const result = await service.searchTools('contract', { maxResults: 1, includeMCP: true, ...enabled(judge) });
 
     expect(judge).toHaveBeenCalledTimes(1);
-    expect(result).toEqual(baseline);
     expect(result.loadedTools).toEqual([]);
   });
 
@@ -159,14 +188,35 @@ describe('Jev skill/tool rerank', () => {
     expect(result).toEqual(baseline);
   });
 
+  it('falls back byte-identically when the judge times out', async () => {
+    vi.useFakeTimers();
+    try {
+      const baselineService = new ToolSearchService();
+      registerTools(baselineService);
+      const baseline = await baselineService.searchTools('keyword', { maxResults: 3, includeMCP: true });
+
+      const service = new ToolSearchService();
+      registerTools(service);
+      const judge = vi.fn(async () => new Promise<never>(() => {}));
+      const resultPromise = service.searchTools('keyword', { maxResults: 3, includeMCP: true, ...enabled(judge) });
+      await vi.advanceTimersByTimeAsync(JEV_TIMEOUT_MS);
+
+      await expect(resultPromise).resolves.toEqual(baseline);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reverse mutation: need_skill=false blocks a Choice that always returns roster[0]', async () => {
     const service = new ToolSearchService();
-    service.registerSkill('contract-review', 'Review contracts', ['contract']);
+    const leading = registerLeadingMcp(service, 'contract');
+    const baseline = await service.searchTools('contract', { maxResults: 1, includeMCP: true });
+    expect(baseline.loadedTools).toEqual([leading]);
+    service.resetLoadedTools();
     const judge = vi.fn(async ({ roster }: JevSkillRerankJudgeInput) => answer(roster[0]!.name, 0.9, 0, 1, 0));
 
-    const result = await service.searchTools('contract', { maxResults: 1, includeMCP: false, ...enabled(judge) });
+    const result = await service.searchTools('contract', { maxResults: 1, includeMCP: true, ...enabled(judge) });
 
-    expect(judge).toHaveBeenCalledTimes(1);
     expect(result.loadedTools).toEqual([]);
   });
 });

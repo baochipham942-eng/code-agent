@@ -8,12 +8,22 @@
 // ============================================================================
 
 import { CompressionState } from '../compressionState';
-import { estimateTokens } from '../tokenEstimator';
+import { estimateTokens, TOKEN_RATIOS } from '../tokenEstimator';
 import { spillToolResultArchive, buildSpillNotice } from '../../utils/toolResultSpill';
+import { BASH } from '../../../shared/constants';
 
 export interface ToolResultBudgetConfig {
-  maxTokensPerResult: number; // default: 2000
+  maxTokensPerResult: number; // default: resolver fallback when no window is known
   protectedMessageIds?: Set<string>;
+  /** Resolve an optional per-tool budget carried by the transcript entry. */
+  resolveMaxTokens?: (message: {
+    id: string;
+    role: string;
+    content: string;
+    toolCallId?: string;
+    toolName?: string;
+    resultBudgetTokens?: number;
+  }) => number;
   /**
    * GAP-009: 提供 sessionId 时，超预算的工具结果先落盘再截断，
    * 截断文本尾部附加路径提示，模型可用 Read/Grep 回查完整输出。
@@ -25,6 +35,60 @@ export interface ToolResultBudgetConfig {
 const DEFAULT_CONFIG: Pick<ToolResultBudgetConfig, 'maxTokensPerResult'> = {
   maxTokensPerResult: 2000,
 };
+
+const FALLBACK_L1_MAX_TOKENS = 2000;
+const FALLBACK_L0_MAX_TOKENS = 4096;
+const MIN_L1_MAX_TOKENS = 1000;
+const MAX_L1_MAX_TOKENS = 16000;
+
+export interface ToolResultBudget {
+  l1MaxTokens: number;
+  l0MaxTokens: number;
+  maxOutputChars: number;
+}
+
+/**
+ * Resolve both tool-result thresholds from the active model context window.
+ * All inputs are explicit so the resolver stays pure; a valid per-tool value
+ * replaces the derived L1 value and L0 follows it at 2×.
+ */
+export function resolveToolResultBudget(
+  contextWindowTokens: number,
+  toolName?: string,
+  resultBudgetTokens?: number,
+): ToolResultBudget {
+  const hasWindow = Number.isFinite(contextWindowTokens) && contextWindowTokens > 0;
+  const hasToolName = typeof toolName === 'string' && toolName.trim().length > 0;
+  const numericOverride = typeof resultBudgetTokens === 'number' && Number.isFinite(resultBudgetTokens)
+    ? resultBudgetTokens
+    : undefined;
+  const override = hasToolName && numericOverride !== undefined && numericOverride > 0
+    ? Math.round(numericOverride)
+    : undefined;
+  if (override !== undefined) {
+    return {
+      l1MaxTokens: override,
+      l0MaxTokens: override * 2,
+      maxOutputChars: override * 2 * TOKEN_RATIOS.CODE,
+    };
+  }
+  if (!hasWindow) {
+    return {
+      l1MaxTokens: FALLBACK_L1_MAX_TOKENS,
+      l0MaxTokens: FALLBACK_L0_MAX_TOKENS,
+      maxOutputChars: BASH.MAX_OUTPUT_LENGTH,
+    };
+  }
+  const l1MaxTokens = Math.min(
+    MAX_L1_MAX_TOKENS,
+    Math.max(MIN_L1_MAX_TOKENS, Math.round(contextWindowTokens / 64)),
+  );
+  return {
+    l1MaxTokens,
+    l0MaxTokens: l1MaxTokens * 2,
+    maxOutputChars: l1MaxTokens * 2 * TOKEN_RATIOS.CODE,
+  };
+}
 const NEXT_READ_HINT =
   '\n[next-read] If the archived result names source files, call Read on the exact file before Edit or overwrite Write.';
 
@@ -81,7 +145,7 @@ function extractFirstCodeBlock(
  * Truncate text to fit within maxTokens using head+tail strategy.
  * If a code block is found, it is preserved at the head.
  */
-function truncateHeadTail(text: string, maxTokens: number): string {
+export function truncateHeadTail(text: string, maxTokens: number): string {
   const codeBlockResult = extractFirstCodeBlock(text);
 
   if (codeBlockResult) {
@@ -194,7 +258,14 @@ function truncateTail(text: string, maxTokens: number): string {
  * Writes a commit per truncated message.
  */
 export function applyToolResultBudget(
-  messages: Array<{ id: string; role: string; content: string; toolCallId?: string }>,
+  messages: Array<{
+    id: string;
+    role: string;
+    content: string;
+    toolCallId?: string;
+    toolName?: string;
+    resultBudgetTokens?: number;
+  }>,
   state: CompressionState,
   config?: Partial<ToolResultBudgetConfig>,
 ): void {
@@ -206,8 +277,9 @@ export function applyToolResultBudget(
     if (!isToolResult) continue;
     if (cfg.protectedMessageIds?.has(msg.id)) continue;
 
+    const maxTokensPerResult = cfg.resolveMaxTokens?.(msg) ?? cfg.maxTokensPerResult;
     const originalTokens = estimateTokens(msg.content);
-    if (originalTokens <= cfg.maxTokensPerResult) continue;
+    if (originalTokens <= maxTokensPerResult) continue;
 
     // 管线每轮拿到的是从原始 transcript 重建的全文副本，state 跨轮复用。
     // 已 budgeted 的消息必须幂等重截断（否则次轮全文回流 API view），
@@ -226,7 +298,7 @@ export function applyToolResultBudget(
         })
       : null;
 
-    const truncated = truncateHeadTail(msg.content, cfg.maxTokensPerResult);
+    const truncated = truncateHeadTail(msg.content, maxTokensPerResult);
     const truncatedTokens = estimateTokens(truncated);
 
     // Mutate the message content

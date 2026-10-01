@@ -21,6 +21,7 @@ import type {
   PlanExitFallbackNotApplicableData,
 } from './planExitFallback';
 import type { PlanExitFallbackSynthesizedData } from './planExitFallbackCard';
+import type { JevWardenTraceData } from './jevWarden';
 
 const logger = createLogger('TurnTrace');
 
@@ -49,7 +50,8 @@ export type TraceEventType =
   | 'plan_exit_fallback_detected'
   | 'plan_exit_fallback_not_applicable'
   | 'plan_exit_fallback_synthesized'
-  | 'failed_round_guard';
+  | 'failed_round_guard'
+  | 'jev_warden';
 
 export type RequestManifestMessageRef =
   | { kind: 'ledger_message'; messageId: string }
@@ -254,6 +256,8 @@ export interface TraceEventDataMap {
     rounds: number;
     toolNames: string[];
   };
+  /** N-JEV-WARDEN-MOCK：JevWarden 判面活动（仅开关 CODE_AGENT_JEV_WARDEN=1 时产生）。 */
+  jev_warden: JevWardenTraceData;
 }
 
 type TraceEventFor<T extends TraceEventType> = {

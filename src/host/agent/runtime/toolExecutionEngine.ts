@@ -34,6 +34,7 @@ import type {
 import { classifyToolCalls } from '../../agent/toolExecution/parallelStrategy';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { validateToolArgs, formatSchemaForModel } from './toolArgsValidator';
+import { minimalCallExample } from './toolArgsMinimalCall';
 import { ToolArgsRepairGate, buildRepairExhaustedMessage } from './toolArgsRepairGate';
 import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 import { getToolDefinitionWithCloudMeta } from '../../tools/dispatch/toolDefinitions';
@@ -664,7 +665,10 @@ export class ToolExecutionEngine {
       // repair 节流：连续失败超上限 → 不再重注入 schema，改注入终止指引断死循环
       const repair = this.repairGate.recordFailure(toolCall.name);
       const injectMessage = repair.exhausted
-        ? buildRepairExhaustedMessage(toolCall.name, repair.attempt)
+        ? buildRepairExhaustedMessage(toolCall.name, repair.attempt, {
+            missingFields: [...new Set(validation.issues.filter((i) => i.reason === 'missing').map((i) => i.field))],
+            example: minimalCallExample(toolCall.name, definition?.inputSchema),
+          })
         : validation.message;
 
       logger.warn(`[AgentLoop] Tool ${toolCall.name} args failed schema validation (attempt ${repair.attempt}${repair.exhausted ? ', repair exhausted' : ''})`);

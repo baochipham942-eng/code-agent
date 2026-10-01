@@ -7,6 +7,7 @@ import type { DurableRunReadService } from '../../host/app/durableRunReadService
 import type { DurableRunRolloutPolicy } from '../../host/app/durableRunRollout';
 import type { RunHandle } from '../../host/runtime/runContext';
 import type { RunRegistry } from '../../host/runtime/runRegistry';
+import { finalizeOrParkDurableRun } from '../../host/agent/orchestrator/durableRunTerminal';
 import { resolveWorkspacePath } from '../../host/runtime/workspaceScope';
 import {
   ExternalEngineDurableLifecycle,
@@ -75,21 +76,40 @@ class AgentDurableRouteRunLifecycle {
     const durableStatus: ExternalEngineTerminalStatus = finalStatus === 'completed'
       ? 'completed'
       : finalStatus === 'interrupted' ? 'cancelled' : 'failed';
-    if (this.deps.durableActivation && this.runHandle) {
-      await this.deps.runRegistry.terminalDurable(this.runHandle.context.runId, {
-        now: Date.now(),
-        status: durableStatus,
-        reason: finalStatus,
-        event: {
-          type: `run_${finalStatus}`,
-          payload: { sessionId: this.deps.sessionId },
-          recordedAt: Date.now(),
-        },
-      }, this.runHandle);
+    if (finalStatus === 'interrupted' && this.deps.durableActivation && this.runHandle) {
+      const runHandle = this.runHandle;
+      // 停靠后下面把 terminal 标上，release 走 unregister。releaseDurable 会丢掉 owner，Continue 就找不到这条 run。
+      await finalizeOrParkDurableRun({
+        registry: this.deps.runRegistry,
+        runId: runHandle.context.runId,
+        handle: runHandle,
+        sessionId: this.deps.sessionId,
+        completed: false,
+        cancelled: true,
+      }, () => this.commitRouteTerminal(finalStatus, durableStatus));
+    } else {
+      await this.commitRouteTerminal(finalStatus, durableStatus);
     }
     this.terminalStatus = durableStatus;
     this.terminal = true;
     return durableStatus;
+  }
+
+  private async commitRouteTerminal(
+    finalStatus: SessionStatus,
+    durableStatus: ExternalEngineTerminalStatus,
+  ): Promise<void> {
+    if (!(this.deps.durableActivation && this.runHandle)) return;
+    await this.deps.runRegistry.terminalDurable(this.runHandle.context.runId, {
+      now: Date.now(),
+      status: durableStatus,
+      reason: finalStatus,
+      event: {
+        type: `run_${finalStatus}`,
+        payload: { sessionId: this.deps.sessionId },
+        recordedAt: Date.now(),
+      },
+    }, this.runHandle);
   }
 
   async markFailure(input: { disconnected: boolean; message: string }): Promise<void> {
@@ -180,6 +200,8 @@ class AgentDurableRouteRunLifecycle {
     if (!this.terminal && this.deps.durableActivation) {
       await this.deps.runRegistry.releaseDurable(this.runHandle.context.runId, this.runHandle);
     } else {
+      // 停靠路径里 finalizeOrParkDurableRun 已经 unregister 过；再调一次是 no-op。
+      // 从未停靠的终态仍要靠这一次卸 handle。
       this.deps.runRegistry.unregister(this.runHandle.context.runId, this.runHandle);
     }
   }

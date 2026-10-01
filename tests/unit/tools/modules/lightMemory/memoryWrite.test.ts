@@ -267,6 +267,9 @@ describe('memoryWriteModule (native)', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toContain('user_role.md');
+        expect(result.output).toContain('- Type: user');
+        expect(result.output).toContain('- Description: User role and background');
+        expect(result.output).toContain("Saved. This session's memory index is not refreshed; it takes effect next session.");
         expect(result.meta).toMatchObject({
           action: 'write',
           filename: 'user_role.md',

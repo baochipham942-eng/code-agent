@@ -783,6 +783,31 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
               />
             </FormField>
           </div>
+          {draft.runsOn !== 'cloud' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField label="单次预算上限 (USD)" hint="本次运行花费超过该金额即停车并自动停用，留空为不限。">
+                <Input
+                  type="number"
+                  value={draft.maxRunBudget}
+                  onChange={(e) => setField('maxRunBudget', e.target.value)}
+                  placeholder="不限"
+                />
+              </FormField>
+              <FormField
+                label="运行次数上限"
+                hint={job?.maxRuns != null && job.runCount != null
+                  ? `已运行 ${job.runCount}/${job.maxRuns} 次，到数自动停用；重新启用后计数清零。留空为不限。`
+                  : '到数自动停用并通知；重新启用后计数清零。留空为不限。'}
+              >
+                <Input
+                  type="number"
+                  value={draft.maxRuns}
+                  onChange={(e) => setField('maxRuns', e.target.value)}
+                  placeholder="不限"
+                />
+              </FormField>
+            </div>
+          )}
         </div>
       )}
     </Modal>

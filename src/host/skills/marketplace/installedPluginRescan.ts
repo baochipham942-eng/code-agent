@@ -17,7 +17,7 @@ import type { InstalledPluginRecord } from './types';
 const logger = createLogger('InstalledPluginRescan');
 
 /** 记录被扫描时的规则版本；缺 scanner 字段的老记录视为 0（版本化扫描上线前安装的）。 */
-export function getInstalledPluginScannerVersion(record: InstalledPluginRecord): number {
+function getInstalledPluginScannerVersion(record: InstalledPluginRecord): number {
   return record.scanner?.version ?? 0;
 }
 

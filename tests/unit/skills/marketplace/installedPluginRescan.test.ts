@@ -62,7 +62,6 @@ vi.mock('../../../../src/host/skills/marketplace/skillInstallContentGuard', asyn
 import { SKILL_GUARD_VERSION } from '../../../../src/host/security/skillContentGuard';
 import { disablePlugin, enablePlugin } from '../../../../src/host/skills/marketplace/installService';
 import {
-  getInstalledPluginScannerVersion,
   rescanStaleInstalledPlugins,
 } from '../../../../src/host/skills/marketplace/installedPluginRescan';
 import { SkillContentScanBlockedError } from '../../../../src/host/skills/marketplace/skillInstallContentGuard';
@@ -138,10 +137,18 @@ describe('installed plugin scanner versioning and rescan', () => {
     expect(SKILL_GUARD_VERSION).toBeGreaterThan(0);
   });
 
-  it('scanner 字段缺失的老记录视为 version 0，有字段按字段值比较', () => {
-    const record = makeRecord('/nonexistent');
-    expect(getInstalledPluginScannerVersion(record)).toBe(0);
-    expect(getInstalledPluginScannerVersion({ ...record, scanner: freshScanner() })).toBe(SKILL_GUARD_VERSION);
+  it('scanner.version 显式为 0 的记录同样按过期重扫（与缺字段等价，可观察行为口径）', async () => {
+    const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
+    await writeState({
+      'demo@trusted-test': makeRecord(pluginRoot, {
+        scanner: { version: 0, verdict: 'pass', scannedAt: OLD_SCANNED_AT },
+      }),
+    });
+
+    const summary = await rescanStaleInstalledPlugins();
+
+    expect(summary).toEqual({ rescanned: 1, blocked: ['demo@trusted-test'] });
+    expect((await readState())['demo@trusted-test']!.isEnabled).toBe(false);
   });
 
   it('版本已新鲜的已启用记录不重扫（盘上危险内容也不触发）', async () => {

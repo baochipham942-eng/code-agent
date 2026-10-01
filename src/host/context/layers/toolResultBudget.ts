@@ -81,7 +81,7 @@ function extractFirstCodeBlock(
  * Truncate text to fit within maxTokens using head+tail strategy.
  * If a code block is found, it is preserved at the head.
  */
-function truncateHeadTail(text: string, maxTokens: number): string {
+export function truncateHeadTail(text: string, maxTokens: number): string {
   const codeBlockResult = extractFirstCodeBlock(text);
 
   if (codeBlockResult) {

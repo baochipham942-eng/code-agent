@@ -75,6 +75,7 @@ function buildDeps(dataDir: string): CreateAppDeps {
 const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/health'],
   ['get', '/events'],
+  ['get', '/quit-guard'],
   ['post', '/api/upload/temp'],
   ['get', '/api/screenshot'],
   // dev router: devCancellableToolSmoke sub-router

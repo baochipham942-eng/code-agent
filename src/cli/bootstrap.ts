@@ -67,14 +67,11 @@ import {
   type RunTraceContext,
 } from '../host/telemetry/runTraceContext';
 import { createLogger } from '../host/services/infra/logger';
-import * as sessionEventServiceModule from '../host/session/sessionEventService';
+import { getSessionEventService } from '../host/session/sessionEventService';
 
 // CJS 打包态下 import.meta.url 为 undefined（esbuild 把 import.meta 替换成 {}），
 // 必须优先用宿主 require；仅 ESM/tsx dev 态才回退到 createRequire。对齐 nodeModuleLoader.ts。
-const runtimeCliRequire = typeof require === 'function' ? require : Module.createRequire(import.meta.url);
-const cliRequire = (id: string): unknown => id === '../host/session/sessionEventService'
-  ? sessionEventServiceModule
-  : runtimeCliRequire(id);
+const cliRequire = typeof require === 'function' ? require : Module.createRequire(import.meta.url);
 const logger = createLogger('CliBootstrap');
 
 // 延迟导入的模块
@@ -746,8 +743,7 @@ export function createAgentLoop(
   let eventService: { saveEvent: (sid: string, event: AgentEvent) => void } | null = null;
   if (process.env.EVAL_DISABLED !== 'true') {
     try {
-      const mod = cliRequire('../host/session/sessionEventService') as typeof import('../host/session/sessionEventService');
-      eventService = mod.getSessionEventService();
+      eventService = getSessionEventService();
     } catch (error) { logger.warn(`Failed to load session event service: ${error instanceof Error ? error.message : String(error)}`, error); }
   }
 

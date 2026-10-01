@@ -467,9 +467,10 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           readWriteRoots: writeFence && fenceRoot
             ? [fenceRoot]
             : scopeWriteRoots ?? workspaceConfinedRoots,
-          deniedReadRoots: process.env.CODE_AGENT_EVAL_REAL_ROOT
-            ? [process.env.CODE_AGENT_EVAL_REAL_ROOT]
-            : undefined,
+          deniedReadRoots: [
+            ...(ctx.deniedReadRoots ?? []),
+            ...(process.env.CODE_AGENT_EVAL_REAL_ROOT ? [process.env.CODE_AGENT_EVAL_REAL_ROOT] : []),
+          ],
           allowNetwork,
         });
         sandboxCleanup = wrapped.cleanup;

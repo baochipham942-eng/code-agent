@@ -48,20 +48,20 @@ sequenceDiagram
 
 ## 现状锚点
 
-行号在基线 `a567f8513` 上打开文件核对过。任务书里的约数有漂移，下表以打开后的行为准。
+code-agent 各行在基线 `a567f8513` 上打开文件核对过。任务书里的约数有漂移，下表以打开后的行为准。
 
-lobster-sealos 不在本机。任务书给出的检出路径打不开；全盘、本账号可见的远端仓库、私档里都没有 `cronapi/server.mjs`。下表 cronapi 行只写文件与标识符，行号写「未复核」，不把任务书里的约数抄成已核对的行号。
+cronapi 各行由采集方在 `lobster-sealos@d184fad` 核对，不是本机打开的。
 
 | # | 事实 | 锚点 |
 |---|------|------|
-| 1 | 显式白名单这个名字，编排方指到 cronapi 的 `ALLOWED_METHODS`。本机未打开该文件 | `lobster-sealos/cronapi/server.mjs:ALLOWED_METHODS:未复核` |
-| 2 | 只读子集这个名字，编排方指到 `READ_ONLY_METHODS`。本机未打开 | `lobster-sealos/cronapi/server.mjs:READ_ONLY_METHODS:未复核` |
-| 3 | 未列入的方法应 404，错误码 `method_not_allowed`。编排方指到 `handleRpc`。本机未打开 | `lobster-sealos/cronapi/server.mjs:handleRpc:未复核` |
-| 4 | 事件流把事件名写死成 `event: cron`。编排方指到 `handleEvents`。本机未打开 | `lobster-sealos/cronapi/server.mjs:handleEvents:未复核` |
-| 5 | 路由正则被编排方写成 `^/api/cron/([a-z]+)$`。按这个形状，`/api/cron/approval` 会映到方法名 `cron.approval`，今天不在名单里就会 404。正则本身未复核 | `lobster-sealos/cronapi/server.mjs:route:未复核` |
-| 6 | 网关链路上只转发 `frame.event === 'cron'`。编排方指到过滤处与 `onEvent`。本机未打开，也没有 `~/.zagent/openclaw` 可对 | `lobster-sealos/cronapi:frame.event:未复核` |
-| 7 | 「只有 cron 事件离开 pod」写在 cronapi README。本机未打开 README | `lobster-sealos/cronapi/README.md:non-leak:未复核` |
-| 8 | 锁住白名单形状的测试，编排方指到 `server.test.mjs`。本机未打开 | `lobster-sealos/cronapi/server.test.mjs:allow-list-shape:未复核` |
+| 1 | 显式白名单 `ALLOWED_METHODS` 是八项。第 20 行注释禁止前缀匹配 | `lobster-sealos/cronapi/server.mjs:ALLOWED_METHODS:22` |
+| 2 | 只读子集 `READ_ONLY_METHODS` | `lobster-sealos/cronapi/server.mjs:READ_ONLY_METHODS:28` |
+| 3 | `handleRpc` 拒绝未列入的方法。404 `method_not_allowed` 在第 227 行 | `lobster-sealos/cronapi/server.mjs:handleRpc:226` |
+| 4 | `handleEvents` 从这一行开始。`event: cron` 在第 248 行写死 | `lobster-sealos/cronapi/server.mjs:handleEvents:240` |
+| 5 | 路由正则是 `^\/api\/cron\/([a-z]+)$`。方法名 `cron.${m[1]}` 在第 276 行。`/api/cron/approval` 会映到 `cron.approval`，今天不在名单里就会 404 | `lobster-sealos/cronapi/server.mjs:/api/cron/:274` |
+| 6 | 只有 `frame.event === 'cron'` 到达监听者。`onEvent` 在第 206 行 | `lobster-sealos/cronapi/server.mjs:frame.event:107`；`lobster-sealos/cronapi/server.mjs:onEvent:206` |
+| 7 | README 的 `ALLOWED_METHODS` 在第 45 行。只有 cron 事件离开 pod 的那一行是 `README.md:47` | `lobster-sealos/cronapi/README.md:ALLOWED_METHODS:45`；`lobster-sealos/cronapi/README.md:only-cron-events:47` |
+| 8 | 测试锁住：白名单外的方法一律 404 | `lobster-sealos/cronapi/server.test.mjs:白名单外的方法一律 404:63` |
 | 9 | Neo 看到的运行记录没有审批字段，也没有预算字段 | `src/host/cron/cronApiClient.ts:CronApiRun:8` |
 | 10 | 声明到云端的载荷是 `agentTurn` 或 `command`。函数体里没有 `maxRunBudget`，也没有审批字段 | `src/host/cron/cronApiClient.ts:actionToCronApiPayload:72` |
 | 11 | 云端任务固定 `sessionTarget: 'isolated'` | `src/host/cron/cronApiClient.ts:sessionTarget:136` |
@@ -113,7 +113,7 @@ lobster-sealos 不在本机。任务书给出的检出路径打不开；全盘�
 
 ## 令牌能碰到什么
 
-今天这份云端令牌只随定时任务进出。Neo 用它创建、修改、删除、列出、触发任务，拉运行记录，听 `event: cron`。客户端没有审批读，也没有决议写。编排方称 cronapi 名单是八个显式方法（get、list、status、add、update、remove、run、runs），未列入的方法 404。方法名单的文件行号未复核；Neo 侧能证实的是上面这张调用表。
+今天这份云端令牌只随定时任务进出。Neo 用它创建、修改、删除、列出、触发任务，拉运行记录，听 `event: cron`。客户端没有审批读，也没有决议写。采集方在 `lobster-sealos@d184fad` 核对：cronapi 名单是八个显式方法（get、list、status、add、update、remove、run、runs），写在 `server.mjs:ALLOWED_METHODS:22`，第 20 行注释禁止前缀匹配；未列入的方法 404。Neo 侧能证实的是上面这张调用表。
 
 放宽成 A 之后，同一枚令牌还能读到审批元数据（最小集，没有会话正文），并能替一次已经停着的动作提交决议。拿到令牌的人可以批准那次停车，让云端 run 把正在等的动作做完。动作本身可能是写文件、跑命令或访问网络，停在那里就是因为它过不了现有审批。
 

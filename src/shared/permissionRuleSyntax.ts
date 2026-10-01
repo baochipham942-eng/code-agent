@@ -60,7 +60,8 @@ export function validateUserPermissionRule(
   const trimmed = rule.trim();
   if (trimmed.length === 0) return { ok: false, reason: 'empty' };
 
-  if (/^\w+$/.test(trimmed)) {
+  // MCP names are mcp__${serverName}__${tool.name} and keep '-' and '.' (mcpToolRegistry).
+  if (/^[\w.-]+$/.test(trimmed)) {
     if (list === 'allow' && trimmed.toLowerCase() === 'bash') {
       return { ok: false, reason: 'allow_all_bash' };
     }

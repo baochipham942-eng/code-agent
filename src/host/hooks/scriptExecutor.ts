@@ -8,7 +8,10 @@ import type { HookExecutionResult, AnyHookContext, HookActionResult } from '../p
 import { createHookEnvVars } from '../protocol/events';
 import { maskSensitiveData } from '../security/sensitiveDetector';
 import { createLogger } from '../services/infra/logger';
-import { HOOK_TIMEOUTS } from '../../shared/constants';
+import { estimateTokens } from '../context/tokenEstimator';
+import { truncateHeadTail } from '../context/layers/toolResultBudget';
+import { buildSpillNotice, spillToolResultArchive } from '../utils/toolResultSpill';
+import { HOOK_OUTPUT_BUDGET, HOOK_TIMEOUTS, TOOL_RESULT_SPILL } from '../../shared/constants';
 
 const execAsync = promisify(exec);
 const logger = createLogger('ScriptExecutor');
@@ -18,7 +21,24 @@ const logger = createLogger('ScriptExecutor');
 // ----------------------------------------------------------------------------
 
 const DEFAULT_TIMEOUT = HOOK_TIMEOUTS.SCRIPT_DEFAULT;
-const MAX_OUTPUT_LENGTH = 100000; // 100KB; SessionStart memory injection 等场景需要 >10KB
+
+function applyHookOutputBudget(message: string, context: AnyHookContext): string {
+  const budget = context.event === 'SessionStart'
+    ? HOOK_OUTPUT_BUDGET.SESSION_START_TOKENS
+    : HOOK_OUTPUT_BUDGET.DEFAULT_TOKENS;
+  if (estimateTokens(message) <= budget) return message;
+
+  const spillResult = spillToolResultArchive({
+    content: message,
+    toolName: `hook-${context.event}`,
+    sessionId: context.sessionId,
+    reason: 'hook-output-budget',
+  });
+  const truncated = truncateHeadTail(message, budget);
+  return spillResult
+    ? truncated + buildSpillNotice(spillResult.archiveRef)
+    : `${truncated}\n[hook output truncated to ${budget} tokens]`;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -97,7 +117,7 @@ export async function executeScript(
       timeout,
       cwd: options.workingDirectory || context.workingDirectory,
       env,
-      maxBuffer: MAX_OUTPUT_LENGTH,
+      maxBuffer: TOOL_RESULT_SPILL.MAX_SPILL_BYTES,
     });
 
     const duration = Date.now() - startTime;
@@ -109,7 +129,7 @@ export async function executeScript(
     }
 
     // Parse output
-    return parseScriptOutput(stdout, duration);
+    return parseScriptOutput(stdout, duration, context);
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     const duration = Date.now() - startTime;
@@ -136,13 +156,14 @@ export async function executeScript(
     // 再被 parseScriptOutput 判成非法动作回落 allow，把非零退出码的阻断绕掉（ai-review 09-06）。
     if (json && (json.decision === 'block'
       || (typeof json.action === 'string' && ['allow', 'block', 'continue', 'error'].includes(json.action)))) {
-      return parseScriptOutput(stdout, duration);
+      return parseScriptOutput(stdout, duration, context);
     }
     if (errorRecord.code === 1 || errorRecord.code === 2) {
+      const message = readString(errorRecord, 'stderr')?.trim()
+        || (errorRecord.code === 1 ? stdout : '') || 'Blocked by hook script';
       return {
         action: 'block',
-        message: readString(errorRecord, 'stderr')?.trim()
-          || (errorRecord.code === 1 ? stdout : '') || 'Blocked by hook script',
+        message: applyHookOutputBudget(message, context),
         duration,
       };
     }
@@ -166,7 +187,11 @@ export async function executeScript(
 /**
  * Parse script output to determine action and message
  */
-function parseScriptOutput(stdout: string, duration: number): HookExecutionResult {
+function parseScriptOutput(
+  stdout: string,
+  duration: number,
+  context: AnyHookContext,
+): HookExecutionResult {
   const output = stdout.trim();
 
   if (!output) {
@@ -181,9 +206,10 @@ function parseScriptOutput(stdout: string, duration: number): HookExecutionResul
       // 让用户可以直接复用 CC 的 hook 脚本形成自修复闭环
       const additionalContext = extractAdditionalContext(json);
       if (json.decision === 'block') {
+        const message = readString(json, 'reason') || additionalContext || 'Blocked by hook script';
         return {
           action: 'block',
-          message: readString(json, 'reason') || additionalContext || 'Blocked by hook script',
+          message: applyHookOutputBudget(message, context),
           duration,
         };
       }
@@ -192,7 +218,7 @@ function parseScriptOutput(stdout: string, duration: number): HookExecutionResul
       const message = readString(json, 'message') ?? additionalContext;
       return {
         action,
-        message,
+        message: message === undefined ? undefined : applyHookOutputBudget(message, context),
         modifiedInput: readString(json, 'modifiedInput'),
         duration,
       };
@@ -202,9 +228,7 @@ function parseScriptOutput(stdout: string, duration: number): HookExecutionResul
   // Plain text output - treat as message, action is allow
   return {
     action: 'allow',
-    message: output.length > MAX_OUTPUT_LENGTH
-      ? output.substring(0, MAX_OUTPUT_LENGTH) + '...'
-      : output,
+    message: applyHookOutputBudget(output, context),
     duration,
   };
 }

@@ -9,11 +9,15 @@ interface EnabledSkillDescriptor {
 }
 
 /** Resolve enabled plugin Skills and retain whether the official registry owns them. */
-export async function collectEnabledSkillDescriptors(): Promise<EnabledSkillDescriptor[]> {
+export async function collectEnabledSkillDescriptors(
+  excludePluginSpecs?: ReadonlySet<string>,
+): Promise<EnabledSkillDescriptor[]> {
   const { loadInstalledPlugins } = await import('./installService');
   const state: InstalledPluginsFile = await loadInstalledPlugins();
   const descriptors: EnabledSkillDescriptor[] = [];
-  for (const record of Object.values(state)) {
+  for (const [pluginSpec, record] of Object.entries(state)) {
+    // 重扫内存阻断集：禁用落盘失败时也不能装载（ai-review R2 Nit1）
+    if (excludePluginSpecs?.has(pluginSpec)) continue;
     if (!record.isEnabled) continue;
     const official = record.sourceTrust === 'official-registry';
     const pluginRoot = record.pluginRoot || record.sourceMarketplacePath;

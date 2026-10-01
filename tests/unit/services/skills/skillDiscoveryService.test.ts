@@ -3,13 +3,15 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const loggerMocks = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
 vi.mock('../../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
+  createLogger: () => loggerMocks,
 }));
 
 const builtinSkillsFixture = vi.hoisted(() => ({
@@ -62,12 +64,25 @@ vi.mock('../../../../src/host/security/folderTrustService', () => ({
 
 const marketplaceSkillDirs = vi.hoisted(() => new Set<string>());
 const marketplaceOfficialSkillDirs = vi.hoisted(() => new Set<string>());
+const marketplaceDescriptorCalls = vi.hoisted(() => ({
+  excludeArgs: [] as Array<ReadonlySet<string> | undefined>,
+}));
+const rescanMocks = vi.hoisted(() => ({
+  rescanStaleInstalledPlugins: vi.fn(async () => ({ rescanned: 0, blocked: [] as string[] })),
+}));
 
 vi.mock('../../../../src/host/skills/marketplace/installService', () => ({
-  getEnabledSkillDescriptors: async () => [...marketplaceSkillDirs].map((dir) => ({
-    dir,
-    official: marketplaceOfficialSkillDirs.has(dir),
-  })),
+  getEnabledSkillDescriptors: async (excludePluginSpecs?: ReadonlySet<string>) => {
+    marketplaceDescriptorCalls.excludeArgs.push(excludePluginSpecs);
+    return [...marketplaceSkillDirs].map((dir) => ({
+      dir,
+      official: marketplaceOfficialSkillDirs.has(dir),
+    }));
+  },
+}));
+
+vi.mock('../../../../src/host/skills/marketplace/installedPluginRescan', () => ({
+  rescanStaleInstalledPlugins: () => rescanMocks.rescanStaleInstalledPlugins(),
 }));
 
 import { SkillDiscoveryService } from '../../../../src/host/services/skills/skillDiscoveryService';
@@ -117,6 +132,13 @@ describe('SkillDiscoveryService discovery', () => {
   beforeEach(async () => {
     marketplaceSkillDirs.clear();
     marketplaceOfficialSkillDirs.clear();
+    marketplaceDescriptorCalls.excludeArgs.length = 0;
+    loggerMocks.debug.mockClear();
+    loggerMocks.info.mockClear();
+    loggerMocks.warn.mockClear();
+    loggerMocks.error.mockClear();
+    rescanMocks.rescanStaleInstalledPlugins.mockClear();
+    rescanMocks.rescanStaleInstalledPlugins.mockResolvedValue({ rescanned: 0, blocked: [] });
     builtinSkillsFixture.skills = [];
     cloudSkillsFixture.skills = [];
     repoMocks.initialize.mockClear();
@@ -277,6 +299,27 @@ describe('SkillDiscoveryService discovery', () => {
 
     expect(service.getSkill('plugin-demo')?.source).toBe('plugin');
     expect(service.getSkill('hidden-demo')).toBeUndefined();
+  });
+
+  it('passes rescan-blocked plugin specs to the descriptor query so a failed disable persist cannot load them', async () => {
+    rescanMocks.rescanStaleInstalledPlugins.mockResolvedValue({ rescanned: 1, blocked: ['demo@blocked-marketplace'] });
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(marketplaceDescriptorCalls.excludeArgs.at(-1)).toEqual(new Set(['demo@blocked-marketplace']));
+  });
+
+  it('logs a rescan failure as error and still completes discovery with persisted state', async () => {
+    rescanMocks.rescanStaleInstalledPlugins.mockRejectedValueOnce(new Error('boom'));
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(service.isInitialized()).toBe(true);
+    expect(
+      loggerMocks.error.mock.calls.some((call) => String(call[0]).includes('rescan failed')),
+    ).toBe(true);
   });
 
   it('keeps a protected built-in skill when external sources use the same name', async () => {

@@ -327,15 +327,14 @@ function readNoulProbability(answer: unknown): number | null {
 }
 
 /**
- * 缺省审批凭据查询：从权限决策历史（recordDecision 落账的 summary 截断 80 字符口径）
+ * 缺省审批凭据查询：从权限决策历史（recordDecision 落账的 fullCommand 完整指纹，精确匹配）
  * 找该会话该命令最近一次的决策。返回 undefined = 无记录。
  */
 function lookupApprovalOutcome(sessionId: string, command: string): DecisionOutcome | undefined {
-  const summary = command.substring(0, 80);
   const entries = getDecisionHistory().getAll();
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
-    if (entry.sessionId !== sessionId || entry.summary !== summary) continue;
+    if (entry.sessionId !== sessionId || entry.fullCommand !== command) continue; // R5 #2：完整命令精确匹配，无指纹的旧账不算凭据
     if (!isBashToolName(entry.toolName)) continue;
     return entry.outcome;
   }

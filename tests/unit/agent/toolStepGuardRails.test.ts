@@ -75,3 +75,26 @@ describe('runToolStepGuardRails — steer epoch 透传（审查 R3）', () => {
     expect(readEpoch()).toBe(4);
   });
 });
+
+describe('runToolStepGuardRails — 工具执行期间 steer 整步跳过（审查 R5 #1）', () => {
+  it('工具执行中 steer（epoch 变化）→ 判官零调用零裁决', async () => {
+    const warden = fakeWarden();
+    const ctx = fakeCtx({ steerEpoch: 0 });
+    const rails = await runToolStepGuardRails({
+      ...baseArgs(ctx, warden),
+      runTools: () => {
+        (ctx.control as unknown as { steerEpoch: number }).steerEpoch = 1; // 工具执行期间用户 steer
+        return Promise.resolve('continue');
+      },
+    });
+    expect(warden.reviewToolStep).not.toHaveBeenCalled();
+    expect(rails).toEqual({ outcome: 'proceed', toolAction: 'continue' });
+  });
+
+  it('工具执行中未 steer（epoch 稳定）→ 照常送判官', async () => {
+    const warden = fakeWarden();
+    const ctx = fakeCtx({ steerEpoch: 0 });
+    await runToolStepGuardRails(baseArgs(ctx, warden));
+    expect(warden.reviewToolStep).toHaveBeenCalledTimes(1);
+  });
+});

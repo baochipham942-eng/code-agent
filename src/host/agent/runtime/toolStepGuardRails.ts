@@ -39,6 +39,8 @@ export async function runToolStepGuardRails<TToolAction>(
   args: ToolStepGuardRailsArgs<TToolAction>,
 ): Promise<{ outcome: ToolStepGuardOutcome; toolAction?: TToolAction }> {
   const { ctx, guard, warden, iterations, inject } = args;
+  // 审查 R5 #1：工具步开始时快照转向代数——执行期间 steer 的旧步骤不再送判官。
+  const epochAtStepStart = ctx.control.steerEpoch;
   // L1 同名同参 ×3 → 强警告；警告后仍重复 → 中止交还用户；L2 整步签名 ×3 → nudge
   const doomCheck = guard.recordStep(args.toolCalls);
   if (doomCheck.level === 'doom-loop-abort') {
@@ -59,7 +61,8 @@ export async function runToolStepGuardRails<TToolAction>(
   }
   // JevWarden（验收①挂点：工具结果 recordResults 之后）。规则先判、命中才问。
   // 审查 R2 #4：本步已取消/中断时跳过判官——用户已停，不再等 Jev 请求。
-  if (ctx.control.isCancelled || ctx.control.isInterrupted) return { outcome: 'proceed', toolAction };
+  // 审查 R5 #1：工具执行期间发生 steer（代数变了）→ 整步跳过，不调判官、不计数、不置标。
+  if (ctx.control.isCancelled || ctx.control.isInterrupted || ctx.control.steerEpoch !== epochAtStepStart) return { outcome: 'proceed', toolAction };
   const wardenInput: JevWardenStepInput = {
     guardLevel: doomCheck.level,
     guardSignals: signalHit.signals,

@@ -491,3 +491,47 @@ describe('审查修复轮 R4 — 混合答案坏形状整体 fail-open', () => {
     expect(verdict.kind).toBe('force_wrap_up');
   });
 });
+
+describe('审查修复轮 R5 — 审批凭据完整命令精确匹配', () => {
+  // 两条共享 80 字符前缀、尾部不同的危险命令
+  const CMD_A = `rm -rf /tmp/${'a'.repeat(100)}`;
+  const CMD_B = `rm -rf /tmp/${'a'.repeat(100)}-evil`;
+
+  it('recordDecision 落账带完整命令指纹（fullCommand）', async () => {
+    const { recordDecision } = await import('../../../src/host/tools/toolExecutorDecisionTrace');
+    const { getDecisionHistory, resetDecisionHistory } = await import('../../../src/host/security/decisionHistory');
+    resetDecisionHistory();
+    recordDecision('Bash', { command: CMD_A }, 'ask-approved', 'user confirmed', Date.now(), undefined, 's1');
+    const entries = getDecisionHistory().getAll();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].fullCommand).toBe(CMD_A);
+    resetDecisionHistory();
+  });
+
+  it('批准 A 不让同前缀未批准的 B 跳过不可逆判面（R5 #2）', async () => {
+    const { getDecisionHistory, resetDecisionHistory } = await import('../../../src/host/security/decisionHistory');
+    resetDecisionHistory();
+    getDecisionHistory().record({
+      timestamp: Date.now(),
+      toolName: 'Bash',
+      summary: CMD_A.substring(0, 80),
+      fullCommand: CMD_A,
+      outcome: 'ask-approved',
+      reason: 'user confirmed',
+      durationMs: 0,
+      sessionId: 's1',
+    });
+    const systemOne = judgeReturning({ irreversible_unapproved: { noul: 0 } });
+    const warden = createJevWarden({ systemOne, env: ENABLED_ENV, sessionId: 's1' });
+
+    // A 本人：显式批准过 → 规则层短路不问
+    await warden.reviewToolStep(step({ stepResults: [bashResult(CMD_A)] }));
+    expect(systemOne).not.toHaveBeenCalled();
+
+    // B：同 80 字符前缀但尾部不同 → 不算确认凭据，照旧触发 irreversible 判面
+    await warden.reviewToolStep(step({ stepResults: [bashResult(CMD_B)] }));
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(Object.keys(vi.mocked(systemOne).mock.calls[0][1])).toEqual(['irreversible_unapproved']);
+    resetDecisionHistory();
+  });
+});

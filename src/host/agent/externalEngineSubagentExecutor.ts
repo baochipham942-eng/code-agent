@@ -1,12 +1,15 @@
-import { AgentEngineCapabilityError } from '../../shared/contract/agentEngine';
-import type {
-  AgentEnginePermissionProfile,
-  ExternalAgentEngineKind,
+import {
+  AGENT_ENGINE_LABELS,
+  AgentEngineCapabilityError,
+  clampProfileToCeiling,
+  externalProfileCeilingForSessionMode,
+  type AgentEnginePermissionProfile,
+  type ExternalAgentEngineKind,
 } from '../../shared/contract/agentEngine';
-import { AGENT_ENGINE_LABELS } from '../../shared/contract/agentEngine';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 import { getExternalEngineManifestForKind } from '../../shared/externalEngineManifest';
 import { createLogger } from '../services/infra/logger';
+import { getPermissionModeManager } from '../permissions/modes';
 import {
   assertAgentEngineManifestCapability,
   assertExternalSubagentProfile,
@@ -39,7 +42,11 @@ export class ExternalEngineSubagentExecutor implements SubagentExecutorPort {
     });
     try {
       assertAgentEngineManifestCapability(engine, 'execute');
-      const permissionProfile = resolveSubagentPermissionProfile(engine, request.context.cwd);
+      const permissionProfile = resolveSubagentPermissionProfile(
+        engine,
+        request.context.cwd,
+        request.context.sessionId,
+      );
       const model = request.config.roleId
         ? getSubagentModelOverride(request.config.roleId)
         : undefined;
@@ -96,10 +103,16 @@ export class ExternalEngineSubagentExecutor implements SubagentExecutorPort {
 function resolveSubagentPermissionProfile(
   engine: ExternalAgentEngineKind,
   cwd: string,
+  sessionId: string,
 ): AgentEnginePermissionProfile {
+  const ceiling = externalProfileCeilingForSessionMode(
+    getPermissionModeManager().getModeForSession(sessionId),
+  );
   if (!isAgentWorktreePath(cwd)) return 'read_only';
+  const profile = clampProfileToCeiling('workspace_write', ceiling, engine);
+  if (profile !== 'workspace_write') return 'read_only';
   assertAgentEngineManifestCapability(engine, 'workspace_write');
-  return assertExternalSubagentProfile('workspace_write', { origin: 'subagent', cwd });
+  return assertExternalSubagentProfile(profile, { origin: 'subagent', cwd });
 }
 
 function humanizeExternalFailure(

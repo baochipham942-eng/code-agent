@@ -4,7 +4,7 @@
 // Assertions are the hard invariants only (server returns, a ledger recovery
 // action is visible, lineage is not quarantined). The full visible list is
 // recorded; starter cards and expand toggles do not count as an exit.
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/axeTest';
 import { mkdir } from 'node:fs/promises';
 
 import { dismissFirstRunDialogs } from './firstRunDialogs';

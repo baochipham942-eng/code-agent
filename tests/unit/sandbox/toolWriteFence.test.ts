@@ -3,7 +3,10 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../src/host/protocol/tools';
-import { FENCED_IN_PROJECT_WRITE_REASON } from '../../../src/host/sandbox/writeFence';
+import {
+  FENCED_IN_PROJECT_WRITE_REASON,
+  SANDBOX_DENYLIST_WRITE_REASON,
+} from '../../../src/host/sandbox/writeFence';
 import { fileReadTracker } from '../../../src/host/tools/fileReadTracker';
 import { editModule } from '../../../src/host/tools/modules/file/multiEdit';
 import { writeModule } from '../../../src/host/tools/modules/file/write';
@@ -56,7 +59,7 @@ describe('Write/Edit sandbox write fence', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it('allows Write inside the sandbox root and denies a sibling', async () => {
+  it('still denies outside the fence root when the skip-confirm obligation is set', async () => {
     const handler = await writeModule.createHandler();
     const inside = path.join(project, 'inside.txt');
     const outside = path.join(sibling, 'outside.txt');
@@ -125,7 +128,7 @@ describe('Write/Edit sandbox write fence', () => {
       allowAll,
     );
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain(FENCED_IN_PROJECT_WRITE_REASON);
+    if (!result.ok) expect(result.error).toContain(SANDBOX_DENYLIST_WRITE_REASON);
     await expect(fs.access(target)).rejects.toThrow();
     await fs.writeFile(target, 'original');
     const edit = await editModule.createHandler();
@@ -133,7 +136,7 @@ describe('Write/Edit sandbox write fence', () => {
       { file_path: target, edits: [{ old_text: 'original', new_text: 'changed' }], force: true, force_reason: 'test' },
       makeCtx(project, { deniedReadRoots: [denied] }), allowAll,
     );
-    expect(edited).toMatchObject({ ok: false, code: 'SANDBOX_WRITE_DENIED', error: FENCED_IN_PROJECT_WRITE_REASON });
+    expect(edited).toMatchObject({ ok: false, code: 'SANDBOX_WRITE_DENIED', error: SANDBOX_DENYLIST_WRITE_REASON });
     expect(await fs.readFile(target, 'utf-8')).toBe('original');
   });
 
@@ -147,27 +150,34 @@ describe('Write/Edit sandbox write fence', () => {
       ctx, allowAll);
     }
 
-    async function expectDenied(target: string, ctx: ToolContext) {
+    async function expectDenied(
+      target: string,
+      ctx: ToolContext,
+      reason = FENCED_IN_PROJECT_WRITE_REASON,
+    ) {
       expect(await execute(target, ctx)).toMatchObject({
-        ok: false, code: 'SANDBOX_WRITE_DENIED', error: FENCED_IN_PROJECT_WRITE_REASON,
+        ok: false, code: 'SANDBOX_WRITE_DENIED', error: reason,
       });
       if (tool === 'Edit') expect(await fs.readFile(target, 'utf-8')).toBe('before');
       else await expect(fs.access(target)).rejects.toThrow();
     }
 
-    it('uses cwd roots without a classifier fence or workspace', async () => {
+    it('allows an approved write outside the workspace when no fence obligation is set', async () => {
       const ctx = makeCtx(project, { requiresOsWriteFence: undefined, writeFenceWorkspaceRoot: undefined });
       expect((await execute(path.join(project, 'cwd.txt'), ctx)).ok).toBe(true);
-      await expectDenied(path.join(sibling, 'cwd.txt'), ctx);
+      const outside = path.join(sibling, `${tool.toLowerCase()}-approved.txt`);
+      const result = await execute(outside, ctx);
+      expect(result.ok).toBe(true);
+      if (tool === 'Write') expect(await fs.readFile(outside, 'utf-8')).toBe('after');
     });
 
-    it('tightens an ancestor cwd to the immutable workspace', async () => {
+    it('does not confine an approved write to workspace roots', async () => {
       const ctx = makeCtx(project, { workingDir: root, workspace: project, requiresOsWriteFence: undefined });
       expect((await execute(path.join(project, 'workspace.txt'), ctx)).ok).toBe(true);
-      await expectDenied(path.join(sibling, 'workspace.txt'), ctx);
+      expect((await execute(path.join(sibling, `${tool.toLowerCase()}-outside-workspace.txt`), ctx)).ok).toBe(true);
     });
 
-    it('honors all write roots while rejecting read-only and empty write scopes', async () => {
+    it('does not use workspace scope as a write fence without the obligation', async () => {
       const workspaceScope = createWorkspaceScope('sandbox-tool-project', [
         { sourceId: 'primary', path: project, role: 'primary', access: 'read_write' },
         { sourceId: 'second', path: sibling, role: 'additional', access: 'read_write' },
@@ -178,8 +188,8 @@ describe('Write/Edit sandbox write fence', () => {
         { sourceId: 'primary', path: project, role: 'primary', access: 'read_write' },
         { sourceId: 'docs', path: sibling, role: 'additional', access: 'read_only' },
       ]);
-      await expectDenied(path.join(sibling, 'readonly.txt'), { ...ctx, workspaceScope: readOnly });
-      await expectDenied(path.join(project, 'empty-roots.txt'), { ...ctx, workspaceScope: { ...readOnly, roots: [] } });
+      expect((await execute(path.join(sibling, 'readonly.txt'), { ...ctx, workspaceScope: readOnly })).ok).toBe(true);
+      expect((await execute(path.join(project, 'empty-roots.txt'), { ...ctx, workspaceScope: { ...readOnly, roots: [] } })).ok).toBe(true);
     });
 
     it('fails closed when the required fence root is missing', async () => {
@@ -189,13 +199,13 @@ describe('Write/Edit sandbox write fence', () => {
     it('rejects a symlink directory that escapes the root', async () => {
       await fs.symlink(sibling, path.join(project, 'escape'));
       const target = path.join(project, 'escape', 'symlink.txt');
-      await expectDenied(target, makeCtx(project));
+      await expectDenied(target, makeCtx(project), SANDBOX_DENYLIST_WRITE_REASON);
     });
 
     it('rejects sensitive paths within an otherwise writable root', async () => {
       const target = path.join(project, 'credential.txt');
       vi.spyOn(sensitivePaths, 'getSensitiveSandboxPaths').mockReturnValue([{ kind: 'file', path: target }]);
-      await expectDenied(target, makeCtx(project));
+      await expectDenied(target, makeCtx(project), SANDBOX_DENYLIST_WRITE_REASON);
     });
   });
 });

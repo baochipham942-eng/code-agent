@@ -36,9 +36,10 @@ const QUOTED_REDIRECT_TARGET = /(?:[0-9]?>{1,2}|&>)\s*\S*['"`]/;
 const EXPANSION_MARKER = /\$|`|<\(|>\(/;
 
 export const FENCED_IN_PROJECT_WRITE_REASON = 'in-project write under OS write fence';
+export const SANDBOX_DENYLIST_WRITE_REASON = 'write target is on the sandbox deny list';
 
 type ToolWriteBoundaryContext = Pick<ToolContext,
-  'workingDir' | 'workspace' | 'workspaceScope' | 'requiresOsWriteFence'
+  'workingDir' | 'requiresOsWriteFence'
   | 'writeFenceWorkspaceRoot' | 'deniedReadRoots'>;
 
 type ToolWriteTargetResolution = { allowed: true } | { allowed: false; reason: string };
@@ -164,26 +165,10 @@ export function containWriteFenceWorkspaceRoot(workspaceRoot: string | undefined
   return canonical;
 }
 
-function toolWriteBoundaryRoots(context: ToolWriteBoundaryContext): string[] {
-  if (context.requiresOsWriteFence === true) {
-    const fenceRoot = containWriteFenceWorkspaceRoot(context.writeFenceWorkspaceRoot);
-    return fenceRoot ? [fenceRoot] : [];
-  }
-  if (context.workspaceScope) {
-    return context.workspaceScope.roots
-      .filter((root) => root.access === 'read_write')
-      .map((root) => resolveCanonicalRunPath(root.path));
-  }
-  // Same single-root confinement as Bash: workspace tightens cwd only when inside it.
-  const cwd = resolveCanonicalRunPath(context.workingDir);
-  const workspace = context.workspace ? resolveCanonicalRunPath(context.workspace) : undefined;
-  return workspace && isInsideWorkspaceRoot(workspace, cwd) ? [workspace] : [cwd];
-}
-
 /**
- * Single write gate for native file-writing tools. It mirrors the roots passed
- * to SandboxManager.wrapCommand: fence root, read_write Project Sources, or
- * confined cwd. Denied-read roots and sensitive paths are never writable.
+ * Single write gate for native file-writing tools. The OS write fence backs
+ * classifier-granted skip-confirm writes; explicit approvals are not narrowed
+ * to workspace or cwd roots. Denied-read roots and sensitive paths are never writable.
  * The emergency OS_SANDBOX_ENABLED=false switch preserves the pre-fence path.
  */
 export function resolveToolWriteTarget(
@@ -191,10 +176,15 @@ export function resolveToolWriteTarget(
   context: ToolWriteBoundaryContext,
 ): ToolWriteTargetResolution {
   if (!isOsSandboxEnabled()) return { allowed: true };
-  const denied: ToolWriteTargetResolution = { allowed: false, reason: FENCED_IN_PROJECT_WRITE_REASON };
+  const deniedByFence: ToolWriteTargetResolution = { allowed: false, reason: FENCED_IN_PROJECT_WRITE_REASON };
+  const deniedByDenyList: ToolWriteTargetResolution = { allowed: false, reason: SANDBOX_DENYLIST_WRITE_REASON };
+  const fenceRoot = context.requiresOsWriteFence === true
+    ? containWriteFenceWorkspaceRoot(context.writeFenceWorkspaceRoot)
+    : undefined;
+  if (context.requiresOsWriteFence === true && !fenceRoot) return deniedByFence;
   try {
-    const resolvedPath = resolveCanonicalRunPath(path.resolve(context.workingDir, targetPath));
-    const roots = toolWriteBoundaryRoots(context);
+    const lexicalPath = path.resolve(context.workingDir, targetPath);
+    const resolvedPath = resolveCanonicalRunPath(lexicalPath);
     const deniedReadRoots = [
       ...(context.deniedReadRoots ?? []),
       ...(process.env.CODE_AGENT_EVAL_REAL_ROOT ? [process.env.CODE_AGENT_EVAL_REAL_ROOT] : []),
@@ -209,13 +199,18 @@ export function resolveToolWriteTarget(
       ...entry, path: resolveCanonicalRunPath(entry.path),
     }));
     if (targets.some((target) => isPathDeniedBySensitiveSandboxPath(target, deniedEntries)
-      || isPathDeniedBySensitiveSandboxPath(target, canonicalEntries))) return denied;
-    return roots.some((root) => isInsideWorkspaceRoot(resolvedPath, root))
-      ? { allowed: true }
-      : denied;
+      || isPathDeniedBySensitiveSandboxPath(target, canonicalEntries))) return deniedByDenyList;
+    const cwdLexicalRoot = path.resolve(context.workingDir);
+    const cwdCanonicalRoot = tryCanonicalFencePath(cwdLexicalRoot) ?? cwdLexicalRoot;
+    if (isInsideWorkspaceRoot(lexicalPath, cwdLexicalRoot)
+      && !isInsideWorkspaceRoot(resolvedPath, cwdCanonicalRoot)) return deniedByDenyList;
+    if (context.requiresOsWriteFence !== true) return { allowed: true };
+    if (!fenceRoot) return deniedByFence;
+    if (isInsideWorkspaceRoot(resolvedPath, fenceRoot)) return { allowed: true };
+    return isInsideWorkspaceRoot(lexicalPath, fenceRoot) ? deniedByDenyList : deniedByFence;
   } catch {
     // Unresolvable roots or symlink loops cannot establish write authority.
-    return denied;
+    return deniedByDenyList;
   }
 }
 

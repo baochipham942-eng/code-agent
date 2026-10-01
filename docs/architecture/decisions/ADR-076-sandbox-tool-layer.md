@@ -10,7 +10,8 @@
 文件工具的 Node 文件 IO 必须经过一个和 Bash 共用边界语义的入口
 `resolveToolWriteTarget(path, ctx)`。入口返回 `allowed` 或带稳定原因的 `denied`；Write 和 Edit
 先接入，NotebookEdit、SkillCreate、network/* 另列施工单。沙盒开关关闭时保持现有文件工具行为，
-开关开启时越过 `readWriteRoots`、`deniedReadRoots` 或敏感路径均拒绝。
+开关开启时，skip-confirm 写入只允许通过 containment 后的围栏根；`deniedReadRoots`、敏感路径和
+符号链接逃逸始终拒绝，显式批准的根外写入放行。
 
 ## 现状锚点
 
@@ -37,23 +38,24 @@
 
 ## 设计
 
+**2026-10-01：Approval wins over the fence; the fence backs skip-confirm only.**
+
 ### 一个写入 seam
 
 `resolveToolWriteTarget(path, ctx)` 位于 `src/host/sandbox/writeFence.ts`，是所有原生文件写入工具
 的唯一写前检查。它复用现有 `containWriteFenceWorkspaceRoot`、`isOsSandboxEnabled`、敏感路径
-清单和 `FENCED_IN_PROJECT_WRITE_REASON`，并按与 shell 相同的优先级确定根：
+清单和稳定拒绝原因：
 
 1. 有 `requiresOsWriteFence` 时，只允许已 containment 的 `writeFenceWorkspaceRoot`；
-2. 有 `workspaceScope` 时，只允许其中 `access='read_write'` 的 roots；
-3. 否则按 Bash 的单根规则使用 cwd，且 workspace 在 cwd 内时收紧为 workspace。
+2. 没有该义务时不按 `workspaceScope` 或 cwd 根收紧，显式批准决定是否放行。
 
 目标路径和根都做 canonical/现有父目录解析；符号链接不能绕过边界。`deniedReadRoots` 与
 `getSensitiveSandboxPaths()` 一起作为不可写路径检查。返回 `denied(reason)` 时，Write/Edit 将
-返回 `SANDBOX_WRITE_DENIED`，错误正文复用 `FENCED_IN_PROJECT_WRITE_REASON`，不引入新的
-approval kind 或用户界面。
+返回 `SANDBOX_WRITE_DENIED`，围栏根拒绝使用 `FENCED_IN_PROJECT_WRITE_REASON`，拒绝名单使用
+`SANDBOX_DENYLIST_WRITE_REASON`，不引入新的 approval kind 或用户界面。
 
 `OS_SANDBOX_ENABLED=false` 是现有紧急刹车，seam 在此情况下直接放行以保留旧行为；重新开启
-后仍由本地 write fence 拒绝越界写。该开关与审批策略是两个轴，不能把审批通过解释成沙盒授权。
+后仍由本地 write fence 承接 skip-confirm 义务。该开关与审批策略是两个轴，审批通过优先于围栏。
 
 ### Read 侧
 
@@ -67,12 +69,12 @@ approval kind 或用户界面。
 | 开启 | `ask` | Bash：already so；Write/Edit：this ADR |
 | 开启 | `auto` / `acceptEdits` | Bash：already so；Write/Edit：this ADR |
 | 开启 | `never` / `dontAsk` | Bash：already so；Write/Edit：this ADR；这是竞品 `workspace-write + never` 目标格 |
-| 关闭（显式紧急刹车） | `ask` | 审批：already so；文件边界：Decision needed [产品口径] |
-| 关闭（显式紧急刹车） | `auto` / `acceptEdits` | 审批：already so；文件边界：Decision needed [产品口径] |
-| 关闭（显式紧急刹车） | `never` / `dontAsk` | Decision needed [产品口径]：是否允许在无 OS 沙盒时保留旧的无边界行为 |
+| 关闭（显式紧急刹车） | `ask` | OS sandbox off ⇒ pre-fence behavior (no tool-layer boundary) for every approval mode |
+| 关闭（显式紧急刹车） | `auto` / `acceptEdits` | OS sandbox off ⇒ pre-fence behavior (no tool-layer boundary) for every approval mode |
+| 关闭（显式紧急刹车） | `never` / `dontAsk` | OS sandbox off ⇒ pre-fence behavior (no tool-layer boundary) for every approval mode |
 
 矩阵中的「already so」只描述现有 Bash 或审批轴；「this ADR」描述本刀 Write/Edit 接线。
-是否让两个轴正交组合、以及关闭 OS 沙盒后产品是否 fail-closed，属于产品口径，留给爸拍板。
+审批通过后根外写入由工具层放行；围栏只承接 skip-confirm 义务。
 
 ## 后续施工单
 

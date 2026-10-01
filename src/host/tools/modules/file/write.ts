@@ -39,6 +39,7 @@ import { computeContentDigest, fileReadTracker } from '../../fileReadTracker';
 import { checkExternalModification } from '../../utils/externalModificationDetector';
 import { getFileMutationActorId } from './fileMutationIdentity';
 import { guardSkillOfficialSections } from '../../../security/skillOfficialSectionGuard';
+import { resolveToolWriteTarget } from '../../../sandbox/writeFence';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
 const LOCK_WAIT_TIMEOUT_MS = 10_000;
@@ -280,6 +281,15 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
     const filePath = resolveInputPath(rawPath, ctx.workingDir);
     // Eval 沙箱硬隔离：真仓绝对路径重映射回沙箱，防止 mimo 用真仓绝对路径写文件污染主仓
     const resolvedPath = confineEvalPath(path.resolve(filePath), ctx.workingDir);
+    const writeTarget = resolveToolWriteTarget(resolvedPath, ctx);
+    if (!writeTarget.allowed) {
+      return {
+        ok: false,
+        error: writeTarget.reason,
+        code: 'SANDBOX_WRITE_DENIED',
+        meta: { outputPath: resolvedPath },
+      };
+    }
 
     const actorId = getFileMutationActorId(ctx);
     if (!actorId) {

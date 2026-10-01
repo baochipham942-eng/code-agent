@@ -12,14 +12,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   logWarn: vi.fn(),
+  logError: vi.fn(),
   afterDestRead: undefined as undefined | ((filePath: string) => Promise<void>),
+  failNextQuarantineRm: false,
+  failNextRestoreRename: false,
 }));
 
 vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: mocks.logWarn,
-    error: vi.fn(),
+    error: mocks.logError,
     debug: vi.fn(),
   }),
 }));
@@ -33,6 +36,23 @@ vi.mock('fs/promises', async (importActual) => {
       await mocks.afterDestRead?.(String(filePath));
       return content;
     }) as typeof actual.readFile,
+    rm: (async (filePath: Parameters<typeof actual.rm>[0], options?: Parameters<typeof actual.rm>[1]) => {
+      if (mocks.failNextQuarantineRm && String(filePath).includes('.neo-owncheck-')) {
+        mocks.failNextQuarantineRm = false;
+        throw Object.assign(new Error('EACCES: permission denied, unlink'), { code: 'EACCES' });
+      }
+      return actual.rm(filePath, options as never);
+    }) as typeof actual.rm,
+    rename: (async (oldPath: Parameters<typeof actual.rename>[0], newPath: Parameters<typeof actual.rename>[1]) => {
+      // restore rename = 隔离名回原名；隔离化 rename = 原名进隔离名
+      if (mocks.failNextRestoreRename
+        && String(oldPath).includes('.neo-owncheck-')
+        && !String(newPath).includes('.neo-owncheck-')) {
+        mocks.failNextRestoreRename = false;
+        throw Object.assign(new Error('EACCES: permission denied, rename'), { code: 'EACCES' });
+      }
+      return actual.rename(oldPath, newPath);
+    }) as typeof actual.rename,
   };
 });
 
@@ -47,6 +67,10 @@ describe('removeCommandFileIfOwnedByPlugin', () => {
 
   beforeEach(async () => {
     mocks.afterDestRead = undefined;
+    mocks.failNextQuarantineRm = false;
+    mocks.failNextRestoreRename = false;
+    mocks.logWarn.mockClear();
+    mocks.logError.mockClear();
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cmd-ownership-'));
     sourceRoot = path.join(tempRoot, 'plugin');
     await fs.mkdir(path.join(sourceRoot, 'commands'), { recursive: true });
@@ -107,5 +131,29 @@ describe('removeCommandFileIfOwnedByPlugin', () => {
     const siblings = await fs.readdir(path.dirname(dest));
     expect(siblings.filter((name) => name.includes('.neo-owncheck-'))).toEqual([]);
     expect(mocks.logWarn.mock.calls.some((call) => String(call[0]).includes('not owned'))).toBe(true);
+  });
+
+  it('隔离后 rm 失败 → 隔离文件 rename 回原路径，原始错误上抛，无隔离残留', async () => {
+    await fs.writeFile(dest, SOURCE_CONTENT, 'utf8');
+    mocks.failNextQuarantineRm = true;
+
+    await expect(removeCommandFileIfOwnedByPlugin(dest, { sourceRootDir: sourceRoot, commandPaths: ['commands/inspect.md'] }, 0, 'inspect')).rejects.toThrow(/unlink/);
+
+    expect(await fs.readFile(dest, 'utf8')).toBe(SOURCE_CONTENT);
+    const siblings = await fs.readdir(path.dirname(dest));
+    expect(siblings.filter((name) => name.includes('.neo-owncheck-'))).toEqual([]);
+    expect(mocks.logError).not.toHaveBeenCalled();
+  });
+
+  it('隔离后 rm 失败且恢复 rename 也失败 → error 留痕，仍上抛原始 rm 错误', async () => {
+    await fs.writeFile(dest, SOURCE_CONTENT, 'utf8');
+    mocks.failNextQuarantineRm = true;
+    mocks.failNextRestoreRename = true;
+
+    await expect(removeCommandFileIfOwnedByPlugin(dest, { sourceRootDir: sourceRoot, commandPaths: ['commands/inspect.md'] }, 0, 'inspect')).rejects.toThrow(/unlink/);
+
+    expect(
+      mocks.logError.mock.calls.some((call) => String(call[0]).includes('restore quarantined command file')),
+    ).toBe(true);
   });
 });

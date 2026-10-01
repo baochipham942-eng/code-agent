@@ -76,8 +76,23 @@ export async function removeCommandFileIfOwnedByPlugin(
     verified = false;
   }
   if (verified) {
-    await rm(quarantine, { force: true });
-    return 'removed';
+    try {
+      await rm(quarantine, { force: true });
+      return 'removed';
+    } catch (error) {
+      // rm 失败不能把文件留在隔离名（ai-review R7）：rename 回原路径；
+      // 恢复本身也失败则 error 留痕，原始错误照旧上抛（调用方 fail-loud）
+      try {
+        await rename(quarantine, destination);
+      } catch (restoreError) {
+        logger.error('Failed to restore quarantined command file after delete failure', {
+          command: commandName,
+          file: destination,
+          error: restoreError instanceof Error ? restoreError.message : String(restoreError),
+        });
+      }
+      throw error;
+    }
   }
   // 窗口内被改写：rename 回原路径，用户的文件不丢
   await rename(quarantine, destination).catch(() => {});

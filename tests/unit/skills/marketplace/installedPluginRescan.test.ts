@@ -645,6 +645,51 @@ describe('installed plugin scanner versioning and rescan', () => {
     expect(await fs.readFile(path.join(commandsDir, 'inspect.md'), 'utf8')).toBe('new-install copy');
   });
 
+  it('CAS 提交后、下架前并发 force-reinstall 同插件：下架前重核指纹 → 跳过 + warn，新命令副本零删除', async () => {
+    const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
+    const oldCommandContent = '---\ndescription: x\n---\nx';
+    await fs.mkdir(path.join(pluginRoot, 'commands'), { recursive: true });
+    await fs.writeFile(path.join(pluginRoot, 'commands', 'inspect.md'), oldCommandContent, 'utf8');
+    const commandsDir = path.join(mocks.userConfigDir, 'commands');
+    await fs.mkdir(commandsDir, { recursive: true });
+    await fs.writeFile(path.join(commandsDir, 'inspect.md'), oldCommandContent, 'utf8');
+    await writeState({
+      'demo@trusted-test': makeRecord(pluginRoot, { commands: ['inspect'], commandPaths: ['commands/inspect.md'] }),
+    });
+    let reinstalled = false;
+    const summary = await rescanStaleInstalledPlugins({
+      ...realStateIO(),
+      saveInstalledPluginsIfVersionUnchanged: async (state, expectedVersion) => {
+        const committed = await saveInstalledPluginsIfVersionUnchanged(state, expectedVersion);
+        if (committed && !reinstalled) {
+          reinstalled = true;
+          // 状态已提交禁用、下架尚未开始：并发 force-reinstall 换记录（installedAt 变、
+          // 重新启用），源与副本都换成新内容且内容一致（归属校验会放行删除）
+          const concurrent = await loadInstalledPlugins();
+          concurrent['demo@trusted-test'] = makeRecord(pluginRoot, {
+            installedAt: '2026-09-30T00:00:00.000Z',
+            commands: ['inspect'],
+            commandPaths: ['commands/inspect.md'],
+          });
+          await saveInstalledPlugins(concurrent);
+          await fs.writeFile(path.join(pluginRoot, 'commands', 'inspect.md'), 'new-install copy', 'utf8');
+          await fs.writeFile(path.join(commandsDir, 'inspect.md'), 'new-install copy', 'utf8');
+        }
+        return committed;
+      },
+    });
+
+    expect(summary.blocked).toEqual(['demo@trusted-test']);
+    const record = (await readState())['demo@trusted-test']!;
+    expect(record.installedAt).toBe('2026-09-30T00:00:00.000Z');
+    expect(record.isEnabled).toBe(true);
+    // 下架前重读状态核指纹：记录已换 → 整条跳过，新副本零删除
+    expect(await fs.readFile(path.join(commandsDir, 'inspect.md'), 'utf8')).toBe('new-install copy');
+    expect(
+      mocks.logWarn.mock.calls.some((call) => String(call[0]).includes('changed after rescan commit')),
+    ).toBe(true);
+  });
+
   it('commands-only 插件（pluginRoot 有效、skillPaths 为空）也扫插件根并禁用', async () => {
     const pluginRoot = path.join(tempRoot, 'plugins', 'p1');
     await fs.mkdir(path.join(pluginRoot, 'commands'), { recursive: true });

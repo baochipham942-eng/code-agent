@@ -264,26 +264,39 @@ export async function rescanStaleInstalledPlugins(
     return summary;
   }
 
-  // 状态已提交：对本次实际禁用的记录下架 prompt commands（这些记录已通过最终
-  // 指纹核对）。归属校验（ai-review R4/R5 Important 2）只删内容仍与插件源一致
-  // 的副本；下架失败 fail-loud 留痕（ai-review R2 Nit2），残留命令待人工或
-  // 下次安装周期清理。
-  for (const { pluginSpec, record } of disabledRecords) {
-    try {
-      await svc.deactivatePluginCommands({
-        scope: record.scope,
-        projectPath: record.projectPath,
-        commandNames: record.commands || [],
-        verifyOwnership: {
-          sourceRootDir: record.sourceMarketplacePath,
-          commandPaths: record.commandPaths || [],
-        },
-      });
-    } catch (error) {
-      logger.error('Failed to deactivate commands of rescan-disabled plugin', {
-        pluginSpec,
-        error: error instanceof Error ? error.message : String(error),
-      });
+  // 状态已提交：对本次实际禁用的记录下架 prompt commands。下架前再读一次状态
+  // 核对安装指纹（ai-review R7）——CAS 提交到下架之间并发 force-reinstall 会换掉
+  // 记录与命令副本，只有指纹仍与被禁用那条一致（且仍处禁用态）的记录才执行下架，
+  // 指纹变了整条跳过 + warn，新安装的命令文件零删除。归属校验（R4/R5）只删内容
+  // 仍与插件源一致的副本；下架失败 fail-loud 留痕（R2 Nit2）。
+  if (disabledRecords.length > 0) {
+    const beforeDeactivate = await svc.loadInstalledPlugins();
+    for (const { pluginSpec, record } of disabledRecords) {
+      const current = beforeDeactivate[pluginSpec];
+      if (current?.installedAt !== record.installedAt
+        || (current.pluginRoot || current.sourceMarketplacePath) !== (record.pluginRoot || record.sourceMarketplacePath)
+        || current.isEnabled) {
+        logger.warn('Skipped command deactivation: plugin record changed after rescan commit', {
+          pluginSpec,
+        });
+        continue;
+      }
+      try {
+        await svc.deactivatePluginCommands({
+          scope: record.scope,
+          projectPath: record.projectPath,
+          commandNames: record.commands || [],
+          verifyOwnership: {
+            sourceRootDir: record.sourceMarketplacePath,
+            commandPaths: record.commandPaths || [],
+          },
+        });
+      } catch (error) {
+        logger.error('Failed to deactivate commands of rescan-disabled plugin', {
+          pluginSpec,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
   return summary;

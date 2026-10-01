@@ -26,6 +26,13 @@ export interface SkillGuardFinding {
   detail: string;
 }
 
+/**
+ * 内容扫描规则版本。扫描规则（危险命令/密钥/混淆签名等）加严时 +1；
+ * 安装记录里 scanner.version 低于该值的已启用插件会在宿主启动与 enablePlugin 时重扫
+ * （src/host/skills/marketplace/installedPluginRescan.ts）。
+ */
+export const SKILL_GUARD_VERSION = 1;
+
 export interface SkillGuardResult {
   verdict: 'pass' | 'block';
   findings: SkillGuardFinding[];

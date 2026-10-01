@@ -21,12 +21,14 @@ function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
+let tmpDir: string;
+
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   const ctrl = new AbortController();
   return {
     sessionId: 'test-session',
     agentId: 'test-agent',
-    workingDir: process.cwd(),
+    workingDir: tmpDir,
     abortSignal: ctrl.signal,
     logger: makeLogger(),
     emit: () => void 0,
@@ -37,8 +39,6 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 
 describe('multiEditModule evidence metadata', () => {
-  let tmpDir: string;
-
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'multi-edit-evidence-'));
     fileReadTracker.clear();

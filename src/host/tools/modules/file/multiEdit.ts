@@ -45,6 +45,7 @@ import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { confineEvalPath } from '../../file/pathUtils';
 import { getFileMutationActorId } from './fileMutationIdentity';
 import { guardSkillOfficialSections } from '../../../security/skillOfficialSectionGuard';
+import { resolveToolWriteTarget } from '../../../sandbox/writeFence';
 
 interface EditOperation {
   old_text: string;
@@ -113,6 +114,15 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
       ? path.resolve(inputPath)
       : path.resolve(ctx.workingDir, inputPath);
     const filePath = confineEvalPath(inputFilePath, ctx.workingDir);
+    const writeTarget = resolveToolWriteTarget(filePath, ctx);
+    if (!writeTarget.allowed) {
+      return {
+        ok: false,
+        error: writeTarget.reason,
+        code: 'SANDBOX_WRITE_DENIED',
+        meta: { outputPath: filePath },
+      };
+    }
     const actorId = getFileMutationActorId(ctx);
     if (!actorId) {
       return {

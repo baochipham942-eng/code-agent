@@ -106,6 +106,8 @@ export async function executeSendInput(
   const agent = target.scope ? guard.get(agentId, target.scope) : guard.get(agentId);
   // ADR-067 D1：来源由宿主从 ctx 铸造——子代理内执行是 peer-agent（带真实
   // senderAgentId），主代理执行是 orchestrator；落队不再是硬编码的 'user'/'parent'。
+  // ADR-067：peer-agent origin is currently unreachable from this tool because
+  // subagents cannot call it via SUBAGENT_DISABLED_TOOLS; kept as the fail-closed stamp.
   const messageOrigin = mintToolMessageOrigin(ctx);
 
   if (!agent) {

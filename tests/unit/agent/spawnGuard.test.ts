@@ -956,3 +956,28 @@ describe('SpawnGuard', () => {
     });
   });
 });
+
+describe('SpawnGuard.peekMessages 非破坏性读', () => {
+  beforeEach(() => resetSpawnGuard());
+  afterEach(() => resetSpawnGuard());
+
+  it('peek 返回队列副本，不消费消息（后续 drain 仍能取到）', () => {
+    const guard = getSpawnGuard();
+    const pending = new Promise<SubagentResult>(() => {});
+    guard.register('a1', 'coder', 't', pending, new AbortController());
+    guard.sendMessage('a1', createTextMessage('parent', 'hi'));
+
+    const peeked = guard.peekMessages('a1');
+    expect(peeked).toHaveLength(1);
+    expect(peeked[0].payload).toBe('hi');
+
+    // 非破坏：drain 仍应取到同一条
+    const drained = guard.drainMessages('a1');
+    expect(drained).toHaveLength(1);
+    expect(drained[0].payload).toBe('hi');
+  });
+
+  it('未知 agent peek 返回空数组', () => {
+    expect(getSpawnGuard().peekMessages('nope')).toEqual([]);
+  });
+});

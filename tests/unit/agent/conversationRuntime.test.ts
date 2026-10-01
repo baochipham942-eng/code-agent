@@ -357,6 +357,16 @@ vi.mock('../../../src/host/services/skills/skillInvocationResolver', () => ({
   buildSkillInvocationContext: vi.fn(),
 }));
 
+// N-JEV-WARDEN-MOCK：warden 规则/动作逻辑的单测在 jevWarden.test.ts（判官全 mock）；
+// 这里 mock 整个 jevWarden 模块，只验证 conversationRuntime 的挂点与动作应用。
+const jevWardenMocks = vi.hoisted(() => {
+  const warden = { reviewToolStep: vi.fn(), interceptFinal: vi.fn() };
+  return { warden, createJevWarden: vi.fn(() => warden) };
+});
+vi.mock('../../../src/host/agent/runtime/jevWarden', () => ({
+  createJevWarden: jevWardenMocks.createJevWarden,
+}));
+
 // --------------------------------------------------------------------------
 // Import after mocks
 // --------------------------------------------------------------------------
@@ -526,6 +536,9 @@ describe('ConversationRuntime', () => {
     runtime = new ConversationRuntime(ctx);
     modules = createMockModules();
     runtime.setModules(modules.toolEngine, modules.contextAssembly, modules.runFinalizer, modules.learningPipeline);
+    // JevWarden 默认无转向（等价开关关闭），既有用例行为不变
+    jevWardenMocks.warden.reviewToolStep.mockResolvedValue({ kind: 'none' });
+    jevWardenMocks.warden.interceptFinal.mockReturnValue(null);
   });
 
   // ==========================================================================
@@ -790,6 +803,29 @@ describe('ConversationRuntime', () => {
 
       expect(controller.signal.aborted).toBe(true);
       expect(ctx.turn.needsReinference).toBe(true);
+    });
+
+    it('steer 推进 control.steerEpoch（审查 R3：异步判面过期判定真源）', async () => {
+      const before = ctx.control.steerEpoch;
+
+      await runtime.steer('换个方法');
+
+      expect(ctx.control.steerEpoch).toBe(before + 1);
+    });
+
+    it('steer 在第一个 await（preserveStreamedPartial）之前就推进 steerEpoch（审查 R4 #1）', async () => {
+      const before = ctx.control.steerEpoch;
+      // preserveStreamedPartial 挂起：模拟用户转向时落盘 partial 还在路上
+      (runtime as unknown as { preserveStreamedPartial: () => Promise<unknown> }).preserveStreamedPartial =
+        vi.fn().mockImplementation(() => {
+          // 被调用时代数必须已推进——在途判官请求立即过期
+          expect(ctx.control.steerEpoch).toBe(before + 1);
+          return new Promise(() => {});
+        });
+
+      const steerPromise = runtime.steer('改方向');
+      void steerPromise.catch(() => {});
+      expect(ctx.control.steerEpoch).toBe(before + 1);
     });
 
     it('用户消息自动复活 anti-spin paused goal 并释放 turn-boundary waiter', async () => {
@@ -2249,6 +2285,143 @@ describe('ConversationRuntime', () => {
         }),
       );
       expect(ctx.control.runAbortController).toBeNull();
+    });
+  });
+
+  // ==========================================================================
+  // JevWarden wiring（N-JEV-WARDEN-MOCK）
+  // ==========================================================================
+
+  describe('JevWarden wiring (N-JEV-WARDEN-MOCK)', () => {
+    const passthroughForceExec = () => {
+      const mp = (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+    };
+
+    it('每 run 经 createJevWarden 实例化一次（判官经注入、单测全 mock）', async () => {
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Done!' });
+
+      await runtime.run('hello');
+
+      expect(jevWardenMocks.createJevWarden).toHaveBeenCalledTimes(1);
+    });
+
+    it('挂点在工具结果 recordResults 之后：工具步结束后把本步事实交给 warden', async () => {
+      passthroughForceExec();
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => ({
+          type: 'tool_use',
+          toolCalls: [{ id: 't1', name: 'Read', arguments: { path: 'a.ts' } }],
+        }))
+        .mockImplementationOnce(async () => ({ type: 'text', content: 'done' }));
+
+      await runtime.run('do a tool');
+
+      expect(jevWardenMocks.warden.reviewToolStep).toHaveBeenCalledTimes(1);
+      const input = jevWardenMocks.warden.reviewToolStep.mock.calls[0][0];
+      expect(input.guardLevel).toBe('none');
+      expect(input.guardSignals).toEqual([]);
+      expect(Array.isArray(input.stepResults)).toBe(true);
+    });
+
+    it('warden nudge 以 jev-warden 源注入纠偏', async () => {
+      passthroughForceExec();
+      jevWardenMocks.warden.reviewToolStep.mockResolvedValueOnce({
+        kind: 'nudge',
+        rule: 'empty_spin',
+        text: '<jev-warden>change strategy</jev-warden>',
+      });
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => ({
+          type: 'tool_use',
+          toolCalls: [{ id: 't1', name: 'Read', arguments: { path: 'a.ts' } }],
+        }))
+        .mockImplementationOnce(async () => ({ type: 'text', content: 'done' }));
+
+      await runtime.run('spin');
+
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        '<jev-warden>change strategy</jev-warden>',
+        'jev-warden',
+      );
+    });
+
+    it('warden force_wrap_up 触发强制收尾交还用户', async () => {
+      passthroughForceExec();
+      const forceSpy = vi.spyOn(ctx.control, 'forceFinalResponse');
+      jevWardenMocks.warden.reviewToolStep.mockResolvedValueOnce({
+        kind: 'force_wrap_up',
+        rule: 'irreversible_unapproved',
+        reason: 'jev-warden: irreversible action executed',
+        prompt: 'Explain and ask for confirmation.',
+      });
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => ({
+          type: 'tool_use',
+          toolCalls: [{ id: 't1', name: 'Bash', arguments: { command: 'rm -rf /tmp/x' } }],
+        }))
+        .mockImplementationOnce(async () => ({ type: 'text', content: 'wrap up' }));
+
+      await runtime.run('danger');
+
+      expect(forceSpy).toHaveBeenCalledWith(
+        'jev-warden: irreversible action executed',
+        'Explain and ask for confirmation.',
+      );
+    });
+
+    it('fake_done 置位后非强制收尾的文本终局被拦一次：注入纠偏并继续', async () => {
+      passthroughForceExec();
+      const mp = (runtime as unknown as {
+        messageProcessor: { handleTextResponse: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
+      jevWardenMocks.warden.interceptFinal
+        .mockReturnValueOnce('<jev-warden>not done</jev-warden>')
+        .mockReturnValue(null);
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'All done!' });
+
+      await runtime.run('claim done');
+
+      expect(jevWardenMocks.warden.interceptFinal).toHaveBeenCalledWith(false);
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        '<jev-warden>not done</jev-warden>',
+        'jev-warden',
+      );
+      // 被拦后 continue 再推理一轮才收尾
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(2);
+      // 审查 R2 #2：拦截必须先于持久化/终局事件——被判假的那一轮不进 handleTextResponse
+      expect(mp.handleTextResponse).toHaveBeenCalledTimes(1);
+    });
+
+    it('warden 无转向时注入面与改动前一致（DoomLoopGuard nudge 顺序不变）', async () => {
+      passthroughForceExec();
+      modules.contextAssembly.inference.mockResolvedValue({
+        type: 'tool_use',
+        toolCalls: [{ id: 't1', name: 'Read', arguments: { path: 'a.ts' } }],
+      });
+
+      await runtime.run('loop forever');
+
+      const injectedSources = modules.contextAssembly.injectSystemMessage.mock.calls
+        .map((call: unknown[]) => call[1] as string);
+      expect(injectedSources).not.toContain('jev-warden');
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        expect.stringContaining('<doom-loop-guard>'),
+        'stagnation-guard',
+      );
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'loop forever',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'aborted' }),
+      );
     });
   });
 });

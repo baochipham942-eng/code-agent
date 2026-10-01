@@ -31,9 +31,10 @@ const SAME_ERROR_FAMILY_THRESHOLD = 3;
 /** A,B,A,B 需要四步才成立；这是环的长度，不是另一套 ×3 计数。 */
 const ABAB_CYCLE_STEPS = 4;
 
-const SIGNAL_POLLING_REPEAT = 'polling_repeat';
-const SIGNAL_SAME_ERROR_FAMILY = 'same_error_family';
-const SIGNAL_ABAB_ACTION_CYCLE = 'abab_action_cycle';
+/** 空转信号枚举（N-DOOMLOOP-SIGNALS / N-JEV-WARDEN-MOCK 共享，Warden 直接引用不另立定义）。 */
+export const SIGNAL_POLLING_REPEAT = 'polling_repeat';
+export const SIGNAL_SAME_ERROR_FAMILY = 'same_error_family';
+export const SIGNAL_ABAB_ACTION_CYCLE = 'abab_action_cycle';
 
 /** JSON 序列化但排序 object key，防止 key 重排导致的签名假阴性 */
 export function stableStringify(value: unknown): string {
@@ -59,7 +60,7 @@ export interface DoomLoopCheck {
   nudge?: string;
 }
 
-interface GuardCallResult {
+export interface GuardCallResult {
   name: string;
   arguments?: Record<string, unknown>;
   success: boolean;

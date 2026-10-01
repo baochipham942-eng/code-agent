@@ -30,7 +30,9 @@ export function recordDecision(
   const decisionTrace = trace ?? buildHistoryDecisionTrace(toolName, outcome, reason, startTime);
   const durationMs = now - startTime;
   getDecisionHistory().record({
-    timestamp: now, toolName, summary, outcome, reason,
+    timestamp: now, toolName, summary,
+    fullCommand: typeof params.command === 'string' ? params.command : undefined,
+    outcome, reason,
     durationMs,
     decisionTrace,
     sessionId,

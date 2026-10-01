@@ -49,7 +49,6 @@ const MIGRATED: string[] = [
   'tabs/SearchSettings.tsx',
   'tabs/HooksSettings.tsx',
   'tabs/VisualModelsSettings.tsx',
-  'tabs/CapabilityCenterSettings.tsx',
   'tabs/UserDashboardSettings.tsx',
   'tabs/InviteCodesSettings.tsx',
   'tabs/ControlPlaneSettings.tsx',

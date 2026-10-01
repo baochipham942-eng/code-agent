@@ -204,6 +204,8 @@ export interface ToolContext {
   readonly requiresOsWriteFence?: boolean;
   /** Canonical workspaceRoot the classifier used for the in-zone check. */
   readonly writeFenceWorkspaceRoot?: string;
+  /** Host roots denied by the same OS sandbox profile (eval may provide one). */
+  readonly deniedReadRoots?: readonly string[];
   /**
    * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：写边界开关沿 spawn 链下传。
    * subagentToolRuntime 自建 ToolExecutor 不走 forRun，不传子代理就绕过边界。

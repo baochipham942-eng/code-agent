@@ -34,6 +34,7 @@ import type {
 import { classifyToolCalls, executeOrderedSegments, toolBatchLabel } from '../../agent/toolExecution/parallelStrategy';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { validateToolArgs, formatSchemaForModel } from './toolArgsValidator';
+import { minimalCallExample } from './toolArgsMinimalCall';
 import { ToolArgsRepairGate, buildRepairExhaustedMessage } from './toolArgsRepairGate';
 import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 import { getToolDefinitionWithCloudMeta } from '../../tools/dispatch/toolDefinitions';
@@ -73,6 +74,7 @@ import { captureWorkspaceMutationSnapshot } from '../../services/checkpoint/turn
 import { isTaskMutationToolCall } from '../nudgeManager';
 import { handleToolExecutionError } from './toolExecutionErrorHandler';
 import { applySwarmBudgetClamp, recordSwarmSpend } from './swarmGoalIntegration';
+import { observeFailedToolRound } from '../toolExecution/failedRoundGuard';
 import {
   getReadOnlyPreflightWarning,
   getSearchToReadPreflightBlock,
@@ -278,6 +280,7 @@ export class ToolExecutionEngine {
     // Swarm goal（P4）预算上行记账：workflow 结果的 tokensSpent → goal 消耗（闸3 可见）。
     // 放在 suppress 过滤前——token 已真实花掉，结果被压制也要记账。
     recordSwarmSpend(this.ctx.goalMode, toolCalls, results);
+    observeFailedToolRound(this.ctx, toolCalls, results);
     return results.filter((r): r is ToolResult => r !== undefined && !this.shouldSuppressResult(r));
   }
 
@@ -616,7 +619,10 @@ export class ToolExecutionEngine {
       // repair 节流：连续失败超上限 → 不再重注入 schema，改注入终止指引断死循环
       const repair = this.repairGate.recordFailure(toolCall.name);
       const injectMessage = repair.exhausted
-        ? buildRepairExhaustedMessage(toolCall.name, repair.attempt)
+        ? buildRepairExhaustedMessage(toolCall.name, repair.attempt, {
+            missingFields: [...new Set(validation.issues.filter((i) => i.reason === 'missing').map((i) => i.field))],
+            example: minimalCallExample(toolCall.name, definition?.inputSchema),
+          })
         : validation.message;
 
       logger.warn(`[AgentLoop] Tool ${toolCall.name} args failed schema validation (attempt ${repair.attempt}${repair.exhausted ? ', repair exhausted' : ''})`);

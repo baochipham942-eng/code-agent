@@ -22,12 +22,12 @@ export function getInstalledPluginScannerVersion(record: InstalledPluginRecord):
 }
 
 /** 需要重扫的判定：非 builtin 来源且 scanner 版本落后于当前规则版本。 */
-export function isInstalledPluginScanStale(record: InstalledPluginRecord): boolean {
+function isInstalledPluginScanStale(record: InstalledPluginRecord): boolean {
   if (record.sourceTrust === 'builtin') return false;
   return getInstalledPluginScannerVersion(record) < SKILL_GUARD_VERSION;
 }
 
-export interface InstalledPluginRescanOutcome {
+interface InstalledPluginRescanOutcome {
   verdict: 'pass' | 'block';
   findings: SkillGuardFinding[];
   /** 命中阻断的相对文件路径（block 时存在） */
@@ -39,7 +39,7 @@ export interface InstalledPluginRescanOutcome {
  * 对单个已安装记录按当前规则重扫。插件根目录已不存在时返回 null（没有可扫
  * 内容，记录保持原样）。扫描失败（文件不可读等）按 fail-closed 向上抛。
  */
-export async function rescanInstalledPlugin(
+async function rescanInstalledPlugin(
   pluginSpec: string,
   record: InstalledPluginRecord,
 ): Promise<InstalledPluginRescanOutcome | null> {

@@ -133,7 +133,7 @@ export type PluginScope = 'user' | 'project';
 // ----------------------------------------------------------------------------
 
 /** 安装时/重扫后的内容扫描元数据；老记录缺该字段时按 version 0 处理。 */
-export interface InstalledPluginScanRecord {
+interface InstalledPluginScanRecord {
   /** 扫描时的 SKILL_GUARD_VERSION（src/host/security/skillContentGuard.ts） */
   version: number;
   verdict: 'pass' | 'block';

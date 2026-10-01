@@ -2,6 +2,7 @@
 import type { Message } from '../../../../shared/contract';
 import { ACTIVE_TOOL_RESULT_PRUNE, CONTEXT_LEDGER } from '../../../../shared/constants';
 import { resolveContextWindow, resolveModelMaxOutputTokens } from '../../../model/modelLimits';
+import { resolveToolResultBudget } from '../../../context/layers/toolResultBudget';
 import { resolveTriggerTokens } from '../../../context/triggerTokens';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import { formatToolCallForHistory, buildMultimodalContent } from '../../../agent/messageHandling/converter';
@@ -844,8 +845,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   // Keep the unprojected transcript through compression. A duplicate Read
   // receipt may refer to an earlier result, so projection must run only after
   // compression has decided which complete results remain model-visible.
-  const compressionTranscriptEntries = interventionAdjustedEntries;
-  let contextApiView = compressionTranscriptEntries;
+  let contextApiView = interventionAdjustedEntries;
   const contextWindowSize = resolveContextWindow(ctx.runtime.modelConfig.model, ctx.runtime.modelConfig.provider);
   const autocompactTriggerTokens = resolveTriggerTokens(
     contextWindowSize,
@@ -856,7 +856,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     const cache = getRuntimeAssemblyCache(ctx);
     const compressionCacheKey = buildCompressionCacheKey(
       ctx,
-      compressionTranscriptEntries,
+      interventionAdjustedEntries,
       transcriptInterventions,
       contextWindowSize,
       autocompactTriggerTokens,
@@ -885,7 +885,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
 
       const armEnabled = getCompressionPipelineOverride() ?? DEFAULT_COMPRESSION_PIPELINE_ENABLED;
       const pipelineResult = await ctx.runtime.compressionPipeline.evaluate(
-        compressionTranscriptEntries.map((entry) => ({ ...entry })),
+        interventionAdjustedEntries.map((entry) => ({ ...entry })),
         nextCompressionState,
         {
           maxTokens: contextWindowSize,
@@ -899,10 +899,10 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
           enableSnip: armEnabled,
           enableMicrocompact: armEnabled,
           enableContextCollapse: armEnabled,
-          toolResultBudget: 2000,
+          toolResultBudget: resolveToolResultBudget(contextWindowSize).l1MaxTokens,
           activeToolResultPrune: {
             enabled: armEnabled && ACTIVE_TOOL_RESULT_PRUNE.ENABLED,
-            maxTokensPerResult: ACTIVE_TOOL_RESULT_PRUNE.MAX_TOKENS_PER_RESULT,
+            maxTokensPerResult: resolveToolResultBudget(contextWindowSize).l0MaxTokens,
             spillSessionId: ctx.runtime.sessionId,
           },
           protectedToolResultPredicate: (entry) =>

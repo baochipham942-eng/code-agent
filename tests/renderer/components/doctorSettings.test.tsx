@@ -5,12 +5,13 @@
 // 另断言无报告进页时自动触发一次全量诊断。
 // ============================================================================
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { DoctorSettings } from '../../../src/renderer/components/features/settings/tabs/DoctorSettings';
 import { useDoctorStore } from '../../../src/renderer/stores/doctorStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 import type { DoctorReport } from '../../../src/renderer/types/doctor';
 
 const invokeDomainMock = vi.hoisted(() => vi.fn());
@@ -58,6 +59,12 @@ const MOCK_REPORT: DoctorReport = {
   summary: { pass: 1, warn: 1, fail: 2, skip: 0 },
 };
 
+function voiceRecordingProbeCount(invoke: ReturnType<typeof vi.fn>): number {
+  return invoke.mock.calls.filter(
+    (call) => call[0] === IPC_DOMAINS.VOICE && call[1] === 'recordingOverview',
+  ).length;
+}
+
 describe('DoctorSettings（设置页形态）', () => {
   beforeEach(() => {
     invokeDomainMock.mockReset();
@@ -69,10 +76,17 @@ describe('DoctorSettings（设置页形态）', () => {
       lastError: null,
       startupCheckDone: true,
     });
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': false, 'builtin.voice-input': false },
+    });
   });
 
   afterEach(() => {
     cleanup();
+    delete (window as unknown as { domainAPI?: unknown }).domainAPI;
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': false, 'builtin.voice-input': false },
+    });
     useDoctorStore.setState({
       report: null,
       isRunning: false,
@@ -126,6 +140,65 @@ describe('DoctorSettings（设置页形态）', () => {
     render(<DoctorSettings />);
     await waitFor(() => {
       expect(invokeDomainMock).toHaveBeenCalledWith(IPC_DOMAINS.PROVIDER, 'run_doctor', undefined);
+    });
+  });
+
+  describe('通话录音探测跟随 builtin.voice-live', () => {
+    const domainInvoke = vi.fn();
+
+    beforeEach(() => {
+      domainInvoke.mockReset();
+      domainInvoke.mockResolvedValue({
+        success: true,
+        data: { count: 2, totalBytes: 2 * 1024 * 1024 },
+      });
+      (window as unknown as { domainAPI: { invoke: typeof domainInvoke } }).domainAPI = {
+        invoke: domainInvoke,
+      };
+    });
+
+    it('未安装时 domainAPI.invoke 从未以 VOICE/recordingOverview 调用', () => {
+      render(<DoctorSettings />);
+      expect(voiceRecordingProbeCount(domainInvoke)).toBe(0);
+      expect(screen.queryByTestId('doctor-include-recordings')).toBeNull();
+    });
+
+    it('已安装且返回 count>0 时录音勾选框仍显示', async () => {
+      useBundledCapabilityStore.setState({
+        installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
+      });
+      render(<DoctorSettings />);
+      expect(await screen.findByTestId('doctor-include-recordings')).toBeTruthy();
+      expect(screen.getByTestId('doctor-include-recordings').textContent).toContain('2 calls');
+      expect(screen.getByTestId('doctor-include-recordings').textContent).toContain('2.0 MB');
+      expect(voiceRecordingProbeCount(domainInvoke)).toBe(1);
+    });
+
+    async function setVoiceLiveInstalled(installed: boolean) {
+      await act(async () => {
+        useBundledCapabilityStore.setState({
+          installed: { 'builtin.voice-live': installed, 'builtin.voice-input': false },
+        });
+        await Promise.resolve();
+      });
+    }
+
+    it('installed 从未安装翻到已安装再翻回时重跑探测并显隐勾选框', async () => {
+      render(<DoctorSettings />);
+      expect(voiceRecordingProbeCount(domainInvoke)).toBe(0);
+      expect(screen.queryByTestId('doctor-include-recordings')).toBeNull();
+
+      await setVoiceLiveInstalled(true);
+      expect(screen.getByTestId('doctor-include-recordings')).toBeTruthy();
+      expect(voiceRecordingProbeCount(domainInvoke)).toBe(1);
+
+      await setVoiceLiveInstalled(false);
+      expect(screen.queryByTestId('doctor-include-recordings')).toBeNull();
+      expect(voiceRecordingProbeCount(domainInvoke)).toBe(1);
+
+      await setVoiceLiveInstalled(true);
+      expect(voiceRecordingProbeCount(domainInvoke)).toBe(2);
+      expect(screen.getByTestId('doctor-include-recordings')).toBeTruthy();
     });
   });
 });

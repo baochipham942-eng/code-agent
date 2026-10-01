@@ -137,6 +137,7 @@ export const CONTEXT_INJECTION_SOURCES = [
   'runtime-auto-continuation',
   'parallel-execution-hint',
   'complexity-hint',
+  'jev-warden',
 ] as const;
 
 export type ContextInjectionSource = typeof CONTEXT_INJECTION_SOURCES[number];

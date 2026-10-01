@@ -227,7 +227,25 @@ export function permissionDenialError(toolName: string, source: PermissionDenial
 /** 无法可靠解析的 shell 命令不能靠审批放行；重复指纹由会话运行时在发事件前拦住。 */
 export function commandAnalysisDenialError(toolName: string): HostReasonPayload {
   const modelText = `${toolName} 被自动拒绝：命令无法可靠拆词或含静态不可解析的 shell 构造，`
-    + '按安全侧默认拒绝（fail-closed）。该命令不能从当前会话审批放行，只能由用户在会话外手工运行。';
+    + '按安全侧默认拒绝（fail-closed）。该命令不能从当前会话审批放行。'
+    + ' Two allowed continuations:'
+    + ' (A) rewrite it as plain simple commands — no command substitution, heredoc, process substitution,'
+    + ' unterminated quote or exotic expansion; split the work into several Bash calls and prefer read-only forms.'
+    + ' (B) If it truly cannot be expressed that way, stop: report the intent, the exact command and why it was blocked'
+    + ' in your next message (or via AskUserQuestion if it exists in your tool list) and do not retry it.';
+  return createHostReason(HostReasonCode.PermissionCommandAnalysisFailed, modelText, { toolName });
+}
+
+/**
+ * 同一规范化命令在本会话第二次及之后被拒（COMMAND_ANALYSIS_DENY 的 sticky 分支）：
+ * 不换措辞原地重试——停手挂起，给摘要后改做无关工作或结束本轮询问用户。
+ */
+export function commandAnalysisRepeatDenialError(toolName: string): HostReasonPayload {
+  const modelText = `${toolName} was denied again: this same normalized command was already denied in this session`
+    + ' and cannot be approved from the current session.'
+    + ' Do not retry it or trivial rewordings — park it.'
+    + ' Write a 3-5 line summary (goal, command, why blocked, what was already tried),'
+    + ' then continue only with independent work or end the turn by asking the user.';
   return createHostReason(HostReasonCode.PermissionCommandAnalysisFailed, modelText, { toolName });
 }
 

@@ -40,7 +40,7 @@ export const BASH = {
   DEFAULT_TIMEOUT: 120000,
   /** 最大超时 (10 分钟) */
   MAX_TIMEOUT: 600000,
-  /** 最大输出长度 */
+  /** Unknown-window fallback; model-bound Bash results use resolveToolResultBudget. */
   MAX_OUTPUT_LENGTH: 30000,
   /** 最大缓冲区大小 (10MB) */
   MAX_BUFFER: 10 * 1024 * 1024,

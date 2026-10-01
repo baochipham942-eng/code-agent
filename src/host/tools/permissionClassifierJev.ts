@@ -21,6 +21,9 @@ import { isProtectedWritePath, isSensitiveCredentialPath } from '../sandbox/sens
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import {
   PERMCLASS_APPROVE_THRESHOLDS,
+  PERMCLASS_BASH_CHMOD_PATTERN,
+  PERMCLASS_BASH_PATH_TOKEN_PATTERN,
+  PERMCLASS_BASH_PRE_JEV_VETO_PATTERNS,
   PERMCLASS_GUARD_QUESTIONS,
   PERMCLASS_QUESTIONS,
   PERMWIDE_QUESTIONS,
@@ -174,6 +177,32 @@ function hitsDeterministicBoundary(args: Record<string, unknown>, workingDirecto
     || !isWithinAny(resolved, allowedRoots));
 }
 
+function resolveBashPathToken(token: string, workingDirectory: string): string {
+  const unquoted = token.replace(/^["']|["']$/g, '').replace(/[;,]+$/, '');
+  const expanded = unquoted.startsWith('~') ? os.homedir() + unquoted.slice(1) : unquoted;
+  const resolved = path.isAbsolute(expanded)
+    ? path.normalize(expanded)
+    : path.resolve(workingDirectory, expanded);
+  try {
+    return resolveCanonicalRunPath(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+/**
+ * Bash-only deterministic veto before Jev. Jev can narrow the ask bucket, but
+ * it is never allowed to make a privilege/system change, destructive command,
+ * or instruction-like injection look safe.
+ */
+function hitsBashPreJevVeto(command: string, workingDirectory: string): boolean {
+  if (PERMCLASS_BASH_PRE_JEV_VETO_PATTERNS.some((pattern) => pattern.test(command))) return true;
+  if (!PERMCLASS_BASH_CHMOD_PATTERN.test(command)) return false;
+  const workspace = resolveCanonicalRunPath(path.resolve(workingDirectory));
+  const paths = command.match(PERMCLASS_BASH_PATH_TOKEN_PATTERN) ?? [];
+  return paths.some((token) => !isWithinAny(resolveBashPathToken(token, workingDirectory), [workspace]));
+}
+
 /** Jev 不可用只 warn 一行、不抛：key 缺失属配置错误只报一次，其余失败逐次留痕。 */
 function warnJevUnavailable(error: unknown): void {
   const code = (error as { code?: string } | null | undefined)?.code;
@@ -218,6 +247,9 @@ export async function classifyByJev(
   startTime: number,
 ): Promise<ClassificationResult | null> {
   if (!isJevPermissionTool(toolName)) return null;
+  if (isBashToolName(toolName)
+    && typeof args.command === 'string'
+    && hitsBashPreJevVeto(args.command, context.workingDirectory)) return null;
   // 确定性边界预检只对扩桶的非 Bash 工具做（Bash 走原有四问协议，形状与
   // 判据不变）：凭据目录 / 受保护写路径 / 工作目录与临时目录之外，一律 ask。
   if (!isBashToolName(toolName) && hitsDeterministicBoundary(args, context.workingDirectory)) return null;

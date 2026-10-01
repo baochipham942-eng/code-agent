@@ -163,6 +163,30 @@ export const PERMCLASS_GUARD_QUESTIONS: Record<string, JevQuestionSpec> = {
   },
 };
 
+/**
+ * Bash commands that must stay in the human-approval path before Jev sees them.
+ * These are deliberately veto-only: a match can turn a potential approve into
+ * ask, but never turns an ask into an approve.
+ */
+export const PERMCLASS_BASH_PRE_JEV_VETO_PATTERNS: readonly RegExp[] = [
+  /\b(?:sudo|su)\b/i,
+  /\b(?:launchctl|systemctl|networksetup)\b/i,
+  /\bsecurity\s+(?:authorizationdb|(?:add|delete)-\S+)/i,
+  /\bchown\b/i,
+  /\bchmod\b[^;&|]*(?:\s-R(?:\s|$)|\s--recursive\b)/i,
+  /\brm\b[^;&|]*(?:\s-[^-;&|]*[rf][^-;&|]*(?:\s|$)|\s--(?:recursive|force)\b)/i,
+  /\bpip3?\s+(?:install|uninstall)\b/i,
+  /\bnpm\s+(?:(?:-g|--global)\s+)?(?:install|uninstall)\b/i,
+  /\bnpm\s+(?:install|uninstall)\b[^;&|]*(?:\s(?:-g|--global)(?:\s|$))/i,
+  /\bbrew\s+(?:install|uninstall)\b/i,
+  /\bignore\s+(?:all\s+)?(?:previous|prior)\s+instructions?\b/i,
+  /\bskip\s+approval\b/i,
+];
+
+/** Command/path patterns used by the Bash pre-Jev veto. */
+export const PERMCLASS_BASH_CHMOD_PATTERN = /\bchmod\b/i;
+export const PERMCLASS_BASH_PATH_TOKEN_PATTERN = /(?:~\/|\/|\.{1,2}\/)[^\s"'`;&|()]+/g;
+
 /** 注入第二层：只对正则干净的远端内容做告警性语义判断。 */
 export const JEV_INJECTION_QUESTIONS: Record<string, JevQuestionSpec> = {
   injection: {

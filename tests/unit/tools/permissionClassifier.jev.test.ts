@@ -587,20 +587,38 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
       privilegeEscalation: 0,
     });
     const outcomes = await runFixture(lyingReadOnly, 'jev-permclass-guard-samples.json');
-    const wronglyApproved = outcomes.filter(
-      (outcome) => outcome.sample.history_outcome === 'ask-denied' && outcome.decision === 'approve',
-    );
+    const wronglyApproved = outcomes
+      .filter((outcome) => outcome.sample.history_outcome === 'ask-denied' && outcome.decision === 'approve')
+      .map((outcome) => outcome.sample.id);
     const ruleBaseline = await runFixture(
       throwingSystemOne(new Error('not called')),
       'jev-permclass-guard-samples.json',
       false,
     );
     const baselineById = new Map(ruleBaseline.map((outcome) => [outcome.sample.id, outcome]));
-    const ruleProtected = wronglyApproved.filter((outcome) => baselineById.get(outcome.sample.id)?.rule !== 'fallback');
-    const jevDependentFindings = wronglyApproved.filter((outcome) => baselineById.get(outcome.sample.id)?.rule === 'fallback');
-    console.log(`guard fixture lying-stub approvals (rule-protected): ${ruleProtected.map((outcome) => outcome.sample.id).join(', ') || 'none'}`);
-    console.log(`guard fixture lying-stub approvals (Jev-dependent findings): ${jevDependentFindings.map((outcome) => outcome.sample.id).join(', ') || 'none'}`);
-    expect(ruleProtected).toEqual([]);
+    const ruleProtected = wronglyApproved.filter((id) => baselineById.get(id)?.rule !== 'fallback');
+    const jevDependentFindings = wronglyApproved.filter((id) => baselineById.get(id)?.rule === 'fallback');
+    console.log(`guard fixture lying-stub approvals (rule-protected): ${ruleProtected.join(', ') || 'none'}`);
+    console.log(`guard fixture lying-stub approvals (Jev-dependent findings): ${jevDependentFindings.join(', ') || 'none'}`);
+    expect(wronglyApproved).toEqual([]);
+  });
+
+  it('反向变异 A：guard 拒绝样本在 Jev 前全部 veto，systemOne 零调用', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    const denied = loadFixture('jev-permclass-guard-samples.json')
+      .filter((sample) => sample.history_outcome === 'ask-denied');
+
+    for (const sample of denied) {
+      const result = await classifier.classify(
+        sample.tool_name,
+        { command: sample.summary },
+        { workingDirectory: process.cwd() },
+      );
+      expect(result.decision, sample.id.toString()).not.toBe('approve');
+    }
+
+    expect(stub.calls).toHaveLength(0);
   });
 
   it('反向变异 B：systemOne 恒抛错 ⇒ guard 夹具没有 Jev 放行', async () => {

@@ -22,8 +22,10 @@ import {
   getDeferredToolsToPreloadForTurn,
   preloadDeferredToolsForTurn,
 } from '../../../src/host/agent/runtime/contextAssembly/deferredToolPreload';
+import { needsArtifactTaskBrief } from '../../../src/host/prompts/builder';
 import { getToolSearchService, resetToolSearchService } from '../../../src/host/services/toolSearch';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { getLoadedDeferredToolDefinitions } from '../../../src/host/tools/dispatch/toolDefinitions';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { getTextForegroundToolNames } from '../../../src/host/tools/protocolRegistry';
 
@@ -357,12 +359,21 @@ describe('deferred tool preload', () => {
       'run git checkout main then rebuild',   // 裸 checkout 误中 git checkout
       'deploy the express server to prod',    // 裸 press 误中 express
       'query the clickhouse table',           // 裸 click 误中 clickhouse
-      'refine the design in figma',           // 裸 sign[\s-]?in 误中 "design in"
       'update my blog index page',            // 裸 log[\s-]?in 误中 "blog index"
     ])('does not preload Browser for: %s', (content) => {
       expect(getDeferredToolsToPreloadForTurn(runtime({
         messages: [{ id: 'm1', role: 'user', content, timestamp: 1 }],
       }))).toEqual([]);
+    });
+
+    // "design" 是 needsArtifactTaskBrief 的真动词，所以这条只钉 Browser 不因
+    // "design in" 误中 sign-in；Append 由产物预加载规则单独进来。
+    it('does not preload Browser for the design-in sign-in false positive', () => {
+      const content = 'refine the design in figma';
+      expect(needsArtifactTaskBrief(content)).toBe(true);
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content, timestamp: 1 }],
+      }))).toEqual(['Append']);
     });
 
     it('does not preload workflow_orchestrate for dag filenames', () => {
@@ -442,6 +453,43 @@ describe('deferred tool preload', () => {
         deniedToolNames: ['spawn_agent'],
       }))).not.toContain('spawn_agent');
     });
+  });
+
+  // 大产物轮跳过 <deferred-tools> 名字索引，却仍要求 Write 之后用 Append 分块。
+  // 短语必须先被 needsArtifactTaskBrief 真命中，再谈预加载。
+  const ARTIFACT_TURN = 'build a complete single-file HTML game with all assets';
+
+  it('preloads Append when the latest user text needs an artifact brief', () => {
+    expect(needsArtifactTaskBrief(ARTIFACT_TURN)).toBe(true);
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{ id: 'm1', role: 'user', content: ARTIFACT_TURN, timestamp: 1 }],
+    }))).toContain('Append');
+  });
+
+  it('does not preload Append for an ordinary question', () => {
+    expect(needsArtifactTaskBrief('what time is it')).toBe(false);
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{ id: 'm1', role: 'user', content: 'what time is it', timestamp: 1 }],
+    }))).not.toContain('Append');
+  });
+
+  it('does not preload Append when the run denies it', () => {
+    expect(needsArtifactTaskBrief(ARTIFACT_TURN)).toBe(true);
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{ id: 'm1', role: 'user', content: ARTIFACT_TURN, timestamp: 1 }],
+      deniedToolNames: ['Append'],
+    }))).not.toContain('Append');
+  });
+
+  it('loads the real Append definition after preloadDeferredToolsForTurn', () => {
+    expect(needsArtifactTaskBrief(ARTIFACT_TURN)).toBe(true);
+    const loaded = preloadDeferredToolsForTurn(runtime({
+      messages: [{ id: 'm1', role: 'user', content: ARTIFACT_TURN, timestamp: 1 }],
+    }));
+    expect(loaded).toContain('Append');
+    expect(getToolSearchService().isToolLoaded('Append')).toBe(true);
+    const names = getLoadedDeferredToolDefinitions().map((definition) => definition.name);
+    expect(names).toContain('Append');
   });
 
   it('actually loads propose_role through the skill boundary path', () => {

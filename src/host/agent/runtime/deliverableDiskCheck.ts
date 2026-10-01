@@ -28,11 +28,14 @@ import {
   stripSpecialTokenLiterals,
   wrapUntrustedContentBoundary,
 } from '../../security/untrustedContentBoundary';
+import { createLogger } from '../../services/infra/logger';
 import {
   scanDeliverablesForPlaceholders,
   type PlaceholderScanInput,
   type DeliverablePlaceholderHit,
 } from './deliverablePlaceholderScan';
+
+const logger = createLogger('DeliverableDiskCheck');
 
 /** 声称产物的动词；词表与 postLaunchSignals.CLAIM_VERB_PATTERN 同源，另补「已交付/交付了」。 */
 const CLAIM_VERB_PATTERN = /已(?:写入|创建|生成|保存|落盘|交付)|写到|保存到|生成了|交付了|created|wrote|written to|saved to|generated/i;
@@ -435,15 +438,67 @@ function runSucceededWithDeliveredArtifactTool(messages: readonly Message[]): bo
   }));
 }
 
+type NudgeModifiedFiles = { getModifiedFilesSince(timestamp: number): string[] };
+
+function nudgeTouchedPaths(messages: readonly Message[], nudgeManager?: NudgeModifiedFiles): boolean {
+  if (typeof nudgeManager?.getModifiedFilesSince !== 'function') return false;
+  return nudgeManager.getModifiedFilesSince(lastUserTimestamp(messages)).some((value) => value.trim().length > 0);
+}
+
+/** 成功结果里报了 outputPath / changedFiles，才算 Bash 真的改过文件。 */
+function runReportedFileTouch(messages: readonly Message[]): boolean {
+  return currentMessages(messages).some((message) =>
+    (message.toolResults ?? []).some((result) => result.success
+      && (typeof result.outputPath === 'string'
+        || typeof result.metadata?.outputPath === 'string'
+        || (Array.isArray(result.metadata?.changedFiles) && result.metadata.changedFiles.length > 0))));
+}
+
+/** Write/Edit 及其别名。Bash 不在这里：没报路径的成功 Bash 可能只是在读。 */
+function succeededNonBashWrite(messages: readonly Message[]): boolean {
+  const active = currentMessages(messages);
+  const succeeded = new Set(
+    active.flatMap((message) => (message.toolResults ?? []).filter((result) => result.success).map((result) => result.toolCallId)),
+  );
+  return active.some((message) => (message.toolCalls ?? []).some((call) => {
+    const name = call.name.toLowerCase();
+    return succeeded.has(call.id) && WRITE_EDIT_BASH_TOOLS.has(name) && name !== 'bash';
+  }));
+}
+
 /**
- * none_produced 的产出前提：用户明确要文件，或本 run 真的调用了写入/产物工具。
- * 纯对话（「用表格输出」「生成一段关于 pdf 的介绍」）两边都不沾，不进补轮。
+ * 两个具名助手会把任意成功 Bash 算进前提。没有文件变更账时，这条信号只是只读 Bash
+ * （旁边再挂 Read 也一样），不能打开 none_produced。
  */
-function hasNoneProducedProducingPremise(messages: readonly Message[]): boolean {
-  const text = latestCurrentUserText(messages);
-  if (text && taskClearlyAskedForProducingTool(text)) return true;
-  if (!text || QUESTION_CUE.test(text) || TOPICAL_FORMAT_MENTION.test(text)) return false;
+function isReadOnlyBashActivity(messages: readonly Message[], nudgeManager?: NudgeModifiedFiles): boolean {
+  if (nudgeTouchedPaths(messages, nudgeManager) || runReportedFileTouch(messages) || succeededNonBashWrite(messages)) {
+    return false;
+  }
   return runHasProducingActivity(messages) || runCalledArtifactProducingTool(messages);
+}
+
+/**
+ * none_produced 的产出前提。词汇命中只记一条 none_produced_vocabulary_hit，单独不构成前提。
+ * 能打开补轮的是文件变更：Write/Edit 成功、outputPath/changedFiles，或 nudge 修改账。
+ * runHasProducingActivity / runCalledArtifactProducingTool 里的成功 Bash 若没有上述变更，视为只读，关掉。
+ * 成功的非 Write/Edit/Bash 产物工具仍由调用方按已产出短路。模型声称的文件走 claims 落盘核对。
+ * 没有明确要文件时，提问或「关于 pdf」这类提及不进补轮；明确要文件且真有写入时，这两条不再挡。
+ */
+function hasNoneProducedProducingPremise(messages: readonly Message[], nudgeManager?: NudgeModifiedFiles): boolean {
+  const text = latestCurrentUserText(messages);
+  const vocabularyHit = Boolean(text && taskClearlyAskedForProducingTool(text));
+  if (vocabularyHit) {
+    logger.info('none_produced_vocabulary_hit', { event: 'none_produced_vocabulary_hit' });
+  }
+  if (isReadOnlyBashActivity(messages, nudgeManager)) return false;
+  // 模型声称/声明了带扩展名的文件时，调用方已经按 claims 落盘核对返回，不会进到这里。
+  const premise = runHasProducingActivity(messages)
+    || runCalledArtifactProducingTool(messages)
+    || nudgeTouchedPaths(messages, nudgeManager);
+  if (!premise) return false;
+  if (vocabularyHit) return true;
+  if (!text || QUESTION_CUE.test(text) || TOPICAL_FORMAT_MENTION.test(text)) return false;
+  return true;
 }
 
 /**
@@ -684,8 +739,8 @@ export function appendRequestedNoneProduced(
     || runSucceededWithDeliveredArtifactTool(input.messages)) {
     return check;
   }
-  // 格式词命中还不够：没有产出工具、也没明确要文件时，不进这条补轮。
-  if (!hasNoneProducedProducingPremise(input.messages)) return check;
+  // 词汇命中单独不够。要有文件变更、成功的产物工具，或已经进了 claims 账（上面已返回）。
+  if (!hasNoneProducedProducingPremise(input.messages, input.nudgeManager)) return check;
   const claim: DeliverableClaim = { claimed: requestedFormat, resolved: '', source: 'inferred' };
   return {
     ...check,

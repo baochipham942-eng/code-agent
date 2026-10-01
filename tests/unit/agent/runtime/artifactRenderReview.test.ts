@@ -703,7 +703,7 @@ describe('close-gate shell injection', () => {
   it('none_produced repair log names the requested format', async () => {
     const result = await applyDeliverableCloseGates({
       workingDirectory: workRoot,
-      messages: [message({ content: '请生成一个 pdf 文件' })],
+      messages: [message({ content: '请生成一个 pdf 文件' }), producingActivity('build_reporting.py')],
       finalText: '已处理本轮请求。',
       diskRepairsUsed: 0,
       visualRepairsUsed: 0,

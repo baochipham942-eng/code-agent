@@ -2,10 +2,17 @@
 // deliverableDiskCheck — 交付物落盘核对（issue #1998）
 // ============================================================================
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
+const logInfo = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../../src/host/services/infra/logger', () => ({
+  logger: { info: logInfo, warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+  createLogger: () => ({ info: logInfo, warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
 
 import {
   checkDeliverablesOnDisk,
@@ -333,7 +340,6 @@ describe('repair prompt and undelivered note (via runDeliverableDiskCheckGate)',
 
   it.each([
     ['script written but never run', '请生成一个 xlsx 文件', 'build_reporting.py'],
-    ['nothing written and no claim', '请创建一个 PDF 文件', undefined],
     ['file written under /tmp only', '导出一个 csv 文件', '/tmp/out.csv'],
   ])('%s fires one bounded repair round', async (_shape, userContent, touchedPath) => {
     const afterUser = touchedPath
@@ -390,21 +396,47 @@ describe('repair prompt and undelivered note (via runDeliverableDiskCheckGate)',
     })]);
   });
 
-  it('still repairs an explicit word file and an export-to-file request', async () => {
-    const wordFile = await requestedFileGate('请生成一份 word 文件');
+  function scriptOnlyWrite(): Message[] {
+    return [message({
+      id: 'write-script',
+      role: 'assistant',
+      content: '',
+      timestamp: 1_700_000_000_040,
+      toolCalls: [{ id: 'write-1', name: 'Write', arguments: { file_path: 'build_reporting.py' } }],
+      toolResults: [{
+        toolCallId: 'write-1',
+        success: true,
+        output: 'ok',
+        metadata: { outputPath: 'build_reporting.py' },
+      }],
+    })];
+  }
+
+  it('nothing written and no claim does not repair or note', async () => {
+    await expectNoNoneProduced('请创建一个 PDF 文件');
+  });
+
+  it('an explicit word file or export request does not repair without producing activity', async () => {
+    await expectNoNoneProduced('请生成一份 word 文件');
+    await expectNoNoneProduced('请导出一份文件');
+  });
+
+  it('an explicit word file or export request still repairs after a script write', async () => {
+    const script = scriptOnlyWrite();
+    const wordFile = await requestedFileGate('请生成一份 word 文件', script);
     expect(wordFile.action).toBe('repair');
     if (wordFile.action !== 'repair') return;
     expect(wordFile.check.missing[0]).toMatchObject({ kind: 'none_produced', requestedFormat: 'docx' });
 
-    const exported = await requestedFileGate('请导出一份文件');
+    const exported = await requestedFileGate('请导出一份文件', script);
     expect(exported.action).toBe('repair');
     if (exported.action !== 'repair') return;
     expect(exported.check.missing[0]).toMatchObject({ kind: 'none_produced', requestedFormat: 'file' });
     expect(exported.prompt).toContain('用户请求的文件本轮没有生成');
   });
 
-  it('a read-then-create file request still repairs', async () => {
-    const result = await requestedFileGate('请读取资料后生成一个 xlsx 文件');
+  it('a read-then-create file request still repairs after a script write', async () => {
+    const result = await requestedFileGate('请读取资料后生成一个 xlsx 文件', scriptOnlyWrite());
     expect(result.action).toBe('repair');
     if (result.action !== 'repair') return;
     expect(result.missing[0]).toMatchObject({ kind: 'none_produced', requestedFormat: 'xlsx' });
@@ -463,11 +495,8 @@ describe('repair prompt and undelivered note (via runDeliverableDiskCheckGate)',
     }
   });
 
-  it('a failed ProposeSlidesOps call still repairs the missing deck', async () => {
-    const result = await requestedFileGate('帮我做一个 ppt 演示文稿', slidesProposal(false));
-    expect(result.action).toBe('repair');
-    if (result.action !== 'repair') return;
-    expect(result.missing[0]).toMatchObject({ kind: 'none_produced', requestedFormat: 'pptx' });
+  it('a failed ProposeSlidesOps call without a file mutation does not repair or note', async () => {
+    await expectNoNoneProduced('帮我做一个 ppt 演示文稿', slidesProposal(false));
   });
 
   it('a successful Bash call that only writes a script still repairs', async () => {
@@ -497,12 +526,80 @@ describe('repair prompt and undelivered note (via runDeliverableDiskCheckGate)',
   });
 
   it('ends with an honest note and records the stable problem after the repair budget', async () => {
-    const result = await requestedFileGate('请生成一个 pdf 文件', [], 1);
+    const result = await requestedFileGate('请生成一个 pdf 文件', scriptOnlyWrite(), 1);
     expect(result.action).toBe('pass');
     if (result.action !== 'pass') return;
     expect(result.content).toContain('本轮实际未交付');
     expect(result.content).toContain('pdf 文件没有生成');
     expect(result.check.missing).toMatchObject([{ kind: 'none_produced', requestedFormat: 'pdf' }]);
+  });
+
+  it('a ppt outline with no tool activity does not repair, and logs the vocabulary hit once', async () => {
+    const finalText = '大纲：开场、市场、收尾。';
+    for (const repairsUsed of [0, 1]) {
+      logInfo.mockClear();
+      const result = await runDeliverableDiskCheckGate({
+        workingDirectory: workRoot,
+        messages: [message({ content: '帮我生成一个 PPT 大纲' })],
+        finalText,
+        repairsUsed,
+      });
+      expect(result.action).toBe('pass');
+      if (result.action !== 'pass') return;
+      expect(result.content).toBe(finalText);
+      expect(result.content).not.toContain('本轮实际未交付');
+      expect(result.check.missing).toEqual([]);
+      expect(logInfo.mock.calls.filter((call) => call[0] === 'none_produced_vocabulary_hit')).toHaveLength(1);
+    }
+  });
+
+  it('an excel formula request plus a read-only bash does not repair or note', async () => {
+    const readOnlyBash = [
+      message({
+        id: 'bash-call',
+        role: 'assistant',
+        content: '',
+        timestamp: 1_700_000_000_040,
+        toolCalls: [{ id: 'bash-1', name: 'Bash', arguments: { command: 'python -c "print(1)"' } }],
+      }),
+      message({
+        id: 'bash-result',
+        role: 'tool',
+        content: '',
+        timestamp: 1_700_000_000_050,
+        toolResults: [{ toolCallId: 'bash-1', success: true, output: '1' }],
+      }),
+    ];
+    await expectNoNoneProduced('做一个 Excel 公式按月汇总', readOnlyBash);
+  });
+
+  it('a report request that only writes a generator script still repairs, then notes when the budget is spent', async () => {
+    const wroteScript = [message({
+      id: 'write-script',
+      role: 'assistant',
+      content: '',
+      timestamp: 1_700_000_000_040,
+      toolCalls: [{ id: 'write-1', name: 'Write', arguments: { file_path: 'build_reporting.py' } }],
+      toolResults: [{
+        toolCallId: 'write-1',
+        success: true,
+        output: 'ok',
+        metadata: { outputPath: 'build_reporting.py' },
+      }],
+    })];
+    const repair = await requestedFileGate('请生成一份销售报告 xlsx 文件', wroteScript, 0);
+    expect(repair.action).toBe('repair');
+    if (repair.action !== 'repair') return;
+    expect(repair.prompt).toContain('运行生成脚本或现在生成文件');
+    expect(repair.check.claims).toEqual([]);
+    expect(repair.missing[0]).toMatchObject({ kind: 'none_produced', requestedFormat: 'xlsx' });
+
+    const noted = await requestedFileGate('请生成一份销售报告 xlsx 文件', wroteScript, 1);
+    expect(noted.action).toBe('pass');
+    if (noted.action !== 'pass') return;
+    expect(noted.content).toContain('本轮实际未交付');
+    expect(noted.content).toContain('xlsx 文件没有生成');
+    expect(noted.check.missing).toMatchObject([{ kind: 'none_produced', requestedFormat: 'xlsx' }]);
   });
 });
 

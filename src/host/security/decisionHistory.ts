@@ -25,6 +25,8 @@ export interface DecisionHistoryEntry {
   toolName: string;
   /** Command or file path, truncated to 80 chars */
   summary: string;
+  /** 完整命令指纹（未截断，仅 Bash 类 command 参数）。审批凭据精确匹配用，80 字符前缀不够区分。 */
+  fullCommand?: string;
   outcome: DecisionOutcome;
   reason: string;
   durationMs: number;

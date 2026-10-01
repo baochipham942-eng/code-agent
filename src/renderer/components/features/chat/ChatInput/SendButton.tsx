@@ -127,7 +127,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
         onClick={onClick}
         className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 mr-2 ${
           showActiveState
-            ? 'bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 scale-100 hover:scale-105'
+            ? 'bg-gradient-to-r from-primary-700 to-primary-700 hover:from-primary-800 hover:to-primary-800 text-white shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 scale-100 hover:scale-105'
             : 'bg-zinc-700 text-zinc-400 cursor-not-allowed scale-95 opacity-60'
         }`}
       >

@@ -153,14 +153,15 @@ describe('artifact_runnable params 校验（审计 R1：非法参数必须 fail-
 
 describe('game_smoke expectation wiring (真浏览器)', () => {
   it('judges the bad-game specimen red and the pinned regression case green', async (ctx) => {
-    const probe = await checkGameSmoke(path.join(FIXTURE_DIR, 'bad-game-referenceerror.html'));
+    const probe = await checkGameSmoke(path.join(FIXTURE_DIR, 'bad-game-referenceerror.html'), { timeoutMs: 15_000 });
     if (probe.verdict === 'skipped') ctx.skip(); // 无浏览器环境真 skip（不许静默假绿），与生产语义一致
 
+    // timeout_ms=15_000：FB-273 测试侧显式 deadline，慢 CI 不贴产品默认 6s 线。
     const badDefault: Expectation = {
       type: 'game_smoke',
       description: '坏游戏（默认极性）应 fail',
       critical: true,
-      params: { path: path.join(FIXTURE_DIR, 'bad-game-referenceerror.html') },
+      params: { path: path.join(FIXTURE_DIR, 'bad-game-referenceerror.html'), timeout_ms: 15_000 },
     };
     const badPinned: Expectation = {
       type: 'game_smoke',
@@ -169,13 +170,14 @@ describe('game_smoke expectation wiring (真浏览器)', () => {
       params: {
         path: path.join(FIXTURE_DIR, 'bad-game-referenceerror.html'),
         expected_verdict: 'not_runnable',
+        timeout_ms: 15_000,
       },
     };
     const good: Expectation = {
       type: 'game_smoke',
       description: '已知好产物必须 runnable',
       critical: true,
-      params: { path: path.join(FIXTURE_DIR, 'good-game-playable.html') },
+      params: { path: path.join(FIXTURE_DIR, 'good-game-playable.html'), timeout_ms: 15_000 },
     };
 
     const workingDirectory = await makeWorkingDirectory();
@@ -193,7 +195,7 @@ describe('game_smoke expectation wiring (真浏览器)', () => {
 describe('html_renders expectation wiring (真浏览器)', () => {
   it('passes the known-good canvas game (layout findings stay informational)', async (ctx) => {
     const goodPath = path.join(FIXTURE_DIR, 'good-game-playable.html');
-    const probe = await checkGameSmoke(goodPath);
+    const probe = await checkGameSmoke(goodPath, { timeoutMs: 15_000 });
     if (probe.verdict === 'skipped') ctx.skip();
 
     const expectation: Expectation = {

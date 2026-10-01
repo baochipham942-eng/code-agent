@@ -59,7 +59,10 @@ const limits = {
   // 2026-09-30 +1: scripts/run-dev-slot.sh（N-DEVSLOT-BACKGROUND-LAUNCH：Dev 槽构建/安装/
   // 启动一体入口，任务书与验证说明直接引用 `bash scripts/run-dev-slot.sh <槽> --open-only`，
   // 与 verify-slotless.mjs / verify-shot.mjs 同族的验证默认入口，留在直属层）。
-  directScriptFiles: 162,
+  // 2026-09-30 +1: scripts/bundle-frontend-slides-skill.mjs（N-PPT-SKILL-DEADEND：把
+  // frontend-slides skill 的 merge-to-*.mjs 打成自带依赖的 .bundle.mjs，生成物头注释回指此脚本；
+  // 与 build-audio-capture.sh / fetch-rtk.sh 同族的构建输入生成器，留在直属层）。
+  directScriptFiles: 163,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

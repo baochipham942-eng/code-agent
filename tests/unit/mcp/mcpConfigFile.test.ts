@@ -71,6 +71,23 @@ describe('loadMcpConfigFiles', () => {
     expect(result[1]).toMatchObject({ name: 'api', type: 'http-streamable', scope: 'project' });
   });
 
+  it('keeps a boolean stateless marker and drops a non-boolean one', async () => {
+    await write(scopePaths.current.user, {
+      mcpServers: {
+        git: { command: 'npx', args: ['-y', 'server-git'], stateless: true },
+        mem: { command: 'npx', args: ['-y', 'server-memory'], stateless: 'yes' },
+      },
+    });
+    await write(scopePaths.current.project, {
+      servers: [{ name: 'fs', command: 'npx', stateless: true }],
+    });
+
+    const result = await loadMcpConfigFiles('/wd');
+    expect(result.find((server) => server.name === 'git')).toMatchObject({ type: 'stdio', stateless: true });
+    expect(result.find((server) => server.name === 'mem')).not.toHaveProperty('stateless');
+    expect(result.find((server) => server.name === 'fs')).toMatchObject({ stateless: true });
+  });
+
   it('loads Claude Code { mcpServers: {...} } object format', async () => {
     await write(scopePaths.current.user, {
       mcpServers: {

@@ -23,6 +23,8 @@ export class ControlState {
   private _readLoopSealBlockedReads = 0;
   /** ADR-074 K1：plan-exit 兜底提醒已发出，补推理期间写类工具在 admission 层拒绝。 */
   private _planExitFallbackActive = false;
+  /** 转向代数（N-JEV-WARDEN-MOCK 审查 R3）：steer 每发生一次 +1，给等待中的异步判面做过期判定。 */
+  private _steerEpoch = 0;
   private readonly _preApprovedTools = new Set<string>();
   private _externalDataCallCount = 0;
   private _memoryTainted = false;
@@ -42,6 +44,7 @@ export class ControlState {
   get readLoopSealActive(): boolean { return this._readLoopSealActive; }
   get readLoopSealBlockedReads(): number { return this._readLoopSealBlockedReads; }
   get planExitFallbackActive(): boolean { return this._planExitFallbackActive; }
+  get steerEpoch(): number { return this._steerEpoch; }
   get preApprovedTools(): Set<string> { return this._preApprovedTools; }
   get externalDataCallCount(): number { return this._externalDataCallCount; }
 
@@ -55,6 +58,11 @@ export class ControlState {
 
   markSettled(): void {
     this._isSettled = true;
+  }
+
+  /** 用户 steer 改向：代数 +1。等待中的异步判面（如 JevWarden）以此丢弃过期裁决。 */
+  noteSteered(): void {
+    this._steerEpoch += 1;
   }
 
   /** 触发当前推理中断（controller 槽位不动，由 inference 层自清） */

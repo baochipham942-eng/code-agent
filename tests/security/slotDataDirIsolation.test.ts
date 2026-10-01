@@ -299,6 +299,33 @@ describe('槽数据目录读隔离', () => {
     expect(asDev.allowed).toBe(true);
   });
 
+  it('记忆子目录拒绝提示恢复工具，非记忆路径保持原文', () => {
+    const memoryVerdict = evaluateToolSlotDataDirAccess(
+      'Read',
+      { file_path: prodFile },
+      fakeHome,
+      { currentDataDir: devSlot, homeDirs: [fakeHome] },
+    );
+    expect(memoryVerdict.allowed).toBe(false);
+    if (!memoryVerdict.allowed) {
+      expect(memoryVerdict.reason).toContain('MemoryRead');
+      expect(memoryVerdict.reason).toContain('memory_search');
+    }
+
+    const nonMemoryVerdict = evaluateToolSlotDataDirAccess(
+      'Read',
+      { file_path: path.join(prodSlot, 'config.json') },
+      fakeHome,
+      { currentDataDir: devSlot, homeDirs: [fakeHome] },
+    );
+    expect(nonMemoryVerdict.allowed).toBe(false);
+    if (!nonMemoryVerdict.allowed) {
+      expect(nonMemoryVerdict.reason).toBe('这是另一个槽（.code-agent）\u7684数据目录，当前槽无权读取');
+      expect(nonMemoryVerdict.reason).not.toContain('MemoryRead');
+      expect(nonMemoryVerdict.reason).not.toContain('memory_search');
+    }
+  });
+
   it('Glob 相对 pattern 相对搜索根解析，不把 .code-agent/* 当成家目录槽', () => {
     const projectRoot = path.join(fakeHome, 'projects', 'demo');
     mkdirSync(path.join(projectRoot, '.code-agent'), { recursive: true });

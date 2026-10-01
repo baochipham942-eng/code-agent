@@ -4,6 +4,7 @@ import '../../src/renderer/styles/global.css';
 import { TurnBasedTraceView } from '../../src/renderer/components/features/chat/TurnBasedTraceView';
 import type { SearchMatch } from '../../src/renderer/components/features/chat/ChatSearchBar';
 import type { TraceProjection, TraceTurn } from '../../src/shared/contract/trace';
+import { isSearchNavigationReady, searchListGeometrySignature } from './search-navigation-ready';
 import { waitForStable, waitForStableWithRetry } from './wait-for-stable';
 
 interface LongTaskEntry {
@@ -245,11 +246,33 @@ function LongSessionHarness(): React.ReactElement {
       const resumedDistance = distanceFromBottom(scroller);
 
       const targetIndex = 120;
-      setProjection(makeProjection(1000));
-      setSearchMatches([
+      const searchMatchesForTarget = [
         { turnIndex: 999, nodeIndex: 1, offset: 0 },
         { turnIndex: targetIndex, nodeIndex: 1, offset: 0 },
-      ]);
+      ];
+      // The streaming list collapses in this same projection swap. Arming search
+      // before that geometry repeats lets scrollToIndex run against a list that
+      // is still remeasuring; on a busy main thread the jump lands after the
+      // attempt window, and a retry that first visits match 0 scrolls back to
+      // the bottom and unmounts the target.
+      const baselineSignature = searchListGeometrySignature(scroller.scrollHeight, scroller.scrollTop);
+      setProjection(makeProjection(1000));
+      // The replacement commits as a long measure. Wait until that commit has
+      // painted before sampling geometry, or the stability deadline expires
+      // during the measure and search arms on the streaming list.
+      await nextFrame();
+      let previousSignature: string | null = null;
+      await waitForStable(() => {
+        const ready = isSearchNavigationReady({
+          baselineSignature,
+          previousSignature,
+          scrollHeight: scroller.scrollHeight,
+          scrollTop: scroller.scrollTop,
+        });
+        previousSignature = searchListGeometrySignature(scroller.scrollHeight, scroller.scrollTop);
+        return ready ? true : null;
+      });
+      setSearchMatches(searchMatchesForTarget);
       setActiveMatchIndex(1);
       const settledSearchTarget = await waitForStableWithRetry(
         () => {
@@ -257,8 +280,9 @@ function LongSessionHarness(): React.ReactElement {
           return target && isVisibleInScroller(target, scroller) ? target : null;
         },
         async () => {
-          setActiveMatchIndex(0);
+          setSearchMatches([]);
           await nextFrame();
+          setSearchMatches(searchMatchesForTarget);
           setActiveMatchIndex(1);
           await nextFrame();
         },

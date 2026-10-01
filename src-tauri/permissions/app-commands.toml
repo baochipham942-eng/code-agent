@@ -45,6 +45,8 @@ commands.allow = [
   "desktop_stop_voice_aec",
   "desktop_get_app_icon",
   "appshots_trigger",
+  "appshots_last_front_app",
+  "appshots_trigger_for_pid",
   "appshots_read_image_data_url",
   "appshots_read_image_data_url_by_id",
   "appshots_report_composer_slot",

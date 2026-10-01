@@ -3,13 +3,12 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../src/host/protocol/tools';
-import {
-  FENCED_IN_PROJECT_WRITE_REASON,
-  SANDBOX_DENYLIST_WRITE_REASON,
-} from '../../../src/host/sandbox/writeFence';
+import { FENCED_IN_PROJECT_WRITE_REASON } from '../../../src/host/sandbox/writeFence';
 import { fileReadTracker } from '../../../src/host/tools/fileReadTracker';
 import { editModule } from '../../../src/host/tools/modules/file/multiEdit';
 import { writeModule } from '../../../src/host/tools/modules/file/write';
+
+const SANDBOX_DENYLIST_WRITE_REASON = 'write target is on the sandbox deny list';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import * as sensitivePaths from '../../../src/host/sandbox/sensitivePaths';
 

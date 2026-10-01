@@ -36,7 +36,7 @@ const QUOTED_REDIRECT_TARGET = /(?:[0-9]?>{1,2}|&>)\s*\S*['"`]/;
 const EXPANSION_MARKER = /\$|`|<\(|>\(/;
 
 export const FENCED_IN_PROJECT_WRITE_REASON = 'in-project write under OS write fence';
-export const SANDBOX_DENYLIST_WRITE_REASON = 'write target is on the sandbox deny list';
+const SANDBOX_DENYLIST_WRITE_REASON = 'write target is on the sandbox deny list';
 
 type ToolWriteBoundaryContext = Pick<ToolContext,
   'workingDir' | 'requiresOsWriteFence'
